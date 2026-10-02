@@ -221,6 +221,10 @@ export class Seg {
   addTag(t: Tag): void {
     this.tags.add(t);
   }
+  /** 摘掉一个标记（位图路回原图验墨后撤回误判的小节线）。 */
+  removeTag(t: Tag): void {
+    this.tags.delete(t);
+  }
 }
 
 /** 一个音乐符号 = 文字对象里的一个字形 + 认出来的 SMuFL 语义。musicpp 的 `omr::Symbol`。 */

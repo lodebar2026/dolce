@@ -1056,6 +1056,8 @@ export function unknownSegs(pg: SPage): Seg[] {
 /** 谱表的小节：由已认的小节线切开。`System::makeBars` 的页面级前身。
  *  小节线的**样式与反复**由 `barlines.ts` 归组后给出，这里顺带记到 `Bar` 上。 */
 export function makeBars(pg: SPage): void {
+  /** 右端没有小节线收口的末条（最后一根小节线到谱线右端那一截）。 */
+  const openTail = new Set<Bar>();
   for (const stf of pg.staves) {
     const marks = classifyBarlines(pg, stf);
     tagRepeatDots(pg, stf, marks);
@@ -1091,6 +1093,7 @@ export function makeBars(pg: SPage): void {
       bar.right = stf.box.right;
       bar.leftRepeat = prevLeftRepeat;
       stf.bars.push(bar);
+      openTail.add(bar);
     }
     void pendingLeftRepeat;
     for (const s of pg.symbols) {
@@ -1125,17 +1128,25 @@ export function makeBars(pg: SPage): void {
       if (!cand.length) break;
       const aligned = g.every((stf) => stf.bars.length > 1 && Math.abs(stf.bars[0].right - g[0].bars[0].right) <= sp);
       if (aligned && cand.length < g.length) break; // 别的行这一小节有音：留着
-      for (const stf of cand) dropHead(stf);
-      if (!aligned) break;
+      // 对不齐时只删**别的行没有对应小节**的那几条：一行的头尾多出一截零头（终止线到谱线右端的一小段）时各行就对不齐，
+      // 照旧全删会把另一行真的空小节（整小节休止没认出来，别的行同处有音）一起删掉，那一行从此少一个小节（是爱 p5 男声行）
+      const drop = aligned ? cand : cand.filter((stf) => !g.some((o) => o !== stf && !emptyHead(o) && o.bars.length > 1 && Math.abs(o.bars[0].right - stf.bars[0].right) <= sp));
+      if (!drop.length) break;
+      for (const stf of drop) dropHead(stf);
     }
     for (;;) {
-      const emptyTail = (stf: Staff) => stf.bars.length > 1 && !stf.bars[stf.bars.length - 1].notes.length;
+      // **右端有小节线收口的末条是真小节**，空着是里面的音没认出来（数算主恩第二行末小节一个淡印的二分音符），
+      // 与中间的空条一样留着；删的只是最后一根小节线到谱线右端那一截零头。单行的系统才这么分——
+      // 多行系统各行一起空的收口末条照旧删（行末预告调号、拍号前那一根线切出来的）
+      const emptyTail = (stf: Staff) =>
+        stf.bars.length > 1 && !stf.bars[stf.bars.length - 1].notes.length && (g.length > 1 || openTail.has(stf.bars[stf.bars.length - 1]));
       const cand = g.filter(emptyTail);
       if (!cand.length) break;
       const aligned = g.every((stf) => stf.bars.length > 1 && Math.abs(stf.bars[stf.bars.length - 1].left - g[0].bars[g[0].bars.length - 1].left) <= sp);
       if (aligned && cand.length < g.length) break;
-      for (const stf of cand) stf.bars.pop();
-      if (!aligned) break;
+      const drop = aligned ? cand : cand.filter((stf) => !g.some((o) => o !== stf && !emptyTail(o) && o.bars.length > 1 && Math.abs(o.bars[o.bars.length - 1].left - stf.bars[stf.bars.length - 1].left) <= sp));
+      if (!drop.length) break;
+      for (const stf of drop) stf.bars.pop();
     }
   }
 }

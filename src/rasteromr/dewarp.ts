@@ -37,6 +37,15 @@ const TRACK_SPAN = 0.25;
 const SMOOTH = 9;
 /** 逐列的位移超过这么多像素才真的动图。 */
 const MIN_SHIFT = 1;
+/**
+ * 轨迹的一头比邻行少盖页宽的这么多以上，缺的那一截才借邻行的曲线补（见 `trackCurves`）；邻行纵向离得不过 `BORROW_NEAR` 格。
+ * 只管真的断了半行的：行首谱号、调号那一小截各行都量不到、参差几格，一律去借的话各行被邻行的噪声带偏
+ *（借的门槛放到四格时敬拜万世之王音符 94.4 → 62.2%、耶和华是我的牧者 97.6 → 93.8%）；隔得远的行形变也不同。
+ */
+const BORROW_MIN = 0.15;
+const BORROW_NEAR = 15;
+/** 邻行的曲线在缺的那一截上至少起伏这么多格才借。 */
+const BORROW_GAIN = 0.5;
 
 /** 一列上认出来的一行谱：中心 y 与线距。 */
 export interface ColHit {
@@ -186,6 +195,11 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
     for (const y of [four[0].y - avg, four[3].y + avg]) {
       if (y < 0 || y >= bin.h) continue;
       if (outGroups.some((g) => y > g.lines[0].y - avg && y < g.lines[4].y + avg)) continue;
+      // 凑出来的**整行**也不能压在已有的谱行上：只验补的那一条的话，已有谱行末线下一格的通长加线正好在一格开外，
+      // 与那行的后四条又凑成一行，错开一条线叠在上面（是爱 p1 末行钢琴左手，逐列游程已经补出那一行）
+      const top = Math.min(y, four[0].y);
+      const bottom = Math.max(y, four[3].y);
+      if (outGroups.some((g) => top < g.lines[4].y - avg * 0.5 && bottom > g.lines[0].y + avg * 0.5)) continue;
       if (inkAlong(bin, y, left, right) < LINE_INK) continue;
       const add = { y, y0: y - 1, y1: y + 1, left, right };
       const five = [...four, add].sort((a, b) => a.y - b.y);
@@ -461,14 +475,36 @@ export function trackCurves(bin: Binary): TrackCurve[] | null {
   const cols = Math.ceil(bin.w / COL_STEP);
   const out: TrackCurve[] = [];
   let peak = 0;
-  for (const t of tracks) {
+  // **只量到半行的轨迹，缺的那一截借邻行的曲线补**。一行谱的轨迹被长休止、密集的符杠截断后只盖住半行，
+  // 缺的那一截原先按最近的有效值平着补：别的行整页的斜度都推平了，这一行缺的半截没推，成了「单独斜着的半行」
+  //（是爱 p4 钢琴左手只量到左半行，推平之后右端比上一行低一格半，小节线两端落不到外线上，整行少切一个小节）。
+  // 页面的形变上下相邻的行差不多：缺的那一截（要缺页宽的一成半以上）照**纵向最近、那一侧盖得更远的邻行**的曲线走（接在自己最后一个实测值上）；
+  // 没有这样的邻行（各行都只量到那儿）照旧平着补。盖得远的先算，好给盖得近的借。
+  const spanOf = (t: Track) => {
+    const cs = t.xs.map((x) => Math.min(cols - 1, Math.round(x / COL_STEP)));
+    return { first: Math.min(...cs), last: Math.max(...cs) };
+  };
+  const done: { mid: number; first: number; last: number; off: number[] }[] = [];
+  const need = Math.round(cols * BORROW_MIN);
+  for (const t of [...tracks].sort((a, b) => spanOf(b).last - spanOf(b).first - (spanOf(a).last - spanOf(a).first))) {
     const mid = median([...t.ys]);
     const raw = new Array<number>(cols).fill(NaN);
     for (let i = 0; i < t.xs.length; i++) raw[Math.min(cols - 1, Math.round(t.xs[i] / COL_STEP))] = t.ys[i] - mid;
-    const off = smoothFill(raw);
+    const { first, last } = spanOf(t);
+    const donor = (side: -1 | 1) =>
+      done
+        // 纵向不到三格的是**同一行谱的另一截轨迹**，不借：两条曲线各按各的中位高度推，借了之后这行谱上下两半各奔一个高度，
+        // 线距被拉开（耶和华是我的牧者首行，音符 97.6 → 91.7%）
+        .filter((d) => Math.abs(d.mid - mid) >= space * 3 && Math.abs(d.mid - mid) <= space * BORROW_NEAR && (side < 0 ? d.first <= first - need : d.last >= last + need))
+        .sort((a, b) => Math.abs(a.mid - mid) - Math.abs(b.mid - mid))[0];
+    // 邻行的曲线在缺的那一截上起伏不到半格的不借：平着补也差不了多少，借了反倒把邻行的噪声带进来
+    // 邻行的曲线在缺的那一截上起伏不到半格的不借：平着补也差不了多少，借了反倒把邻行的噪声带进来
+    const worth = (d: (typeof done)[number] | undefined, from: number, to: number) => (d && Math.abs(d.off[to] - d.off[from]) >= space * BORROW_GAIN ? d.off : undefined);
+    const off = smoothFill(raw, worth(donor(-1), first, 0), worth(donor(1), last, cols - 1));
     if (!off) continue;
     for (const v of off) peak = Math.max(peak, Math.abs(v));
     out.push({ mid, off });
+    done.push({ mid, first, last, off });
   }
   if (out.length < 2 || peak < MIN_SHIFT) return null;
   return out;
@@ -569,21 +605,28 @@ function buildTracks(hits: ColHit[], space: number, width: number): Track[] {
   return done.filter((t) => t.xs.length >= 8 && t.xs[t.xs.length - 1] - t.xs[0] >= width * TRACK_SPAN);
 }
 
-/** 缺口按最近的有效值补上，再做一遍滑动中位数。 */
-function smoothFill(raw: number[]): number[] | null {
+/**
+ * 缺口按前一个有效值补上，再做一遍滑动中位数。两头没量到的那一段默认也平着补；给了邻行的曲线（`left` / `right`）
+ * 就照它的起伏走、接在自己最靠那一头的实测值上（见 `trackCurves`）。
+ */
+function smoothFill(raw: number[], left?: number[], right?: number[]): number[] | null {
   const n = raw.length;
   const filled = new Array<number>(n).fill(NaN);
-  let last = NaN;
-  for (let i = 0; i < n; i++) {
-    if (!Number.isNaN(raw[i])) last = raw[i];
-    filled[i] = last;
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < n; i++)
+    if (!Number.isNaN(raw[i])) {
+      if (first < 0) first = i;
+      last = i;
+    }
+  if (first < 0) return null;
+  let prev = raw[first];
+  for (let i = first; i <= last; i++) {
+    if (!Number.isNaN(raw[i])) prev = raw[i];
+    filled[i] = prev;
   }
-  let next = NaN;
-  for (let i = n - 1; i >= 0; i--) {
-    if (!Number.isNaN(raw[i])) next = raw[i];
-    if (Number.isNaN(filled[i])) filled[i] = next;
-  }
-  if (filled.some((v) => Number.isNaN(v))) return null;
+  for (let i = 0; i < first; i++) filled[i] = raw[first] + (left ? left[i] - left[first] : 0);
+  for (let i = last + 1; i < n; i++) filled[i] = raw[last] + (right ? right[i] - right[last] : 0);
   const out = new Array<number>(n);
   const half = SMOOTH >> 1;
   for (let i = 0; i < n; i++) {

@@ -599,6 +599,10 @@ const VSEG_JOIN_DX = 2;
 const VSEG_JOIN_GAP = 1.2;
 /** 按竖笔数升号（`sharpsByStrokes`）的起点：谱号左缘往右多少格。 */
 const KEY_FROM = 2.4;
+/** 谱线算「粗」的线宽/线距比（数降号竖笔时抬高度闸，见 `flatsByStrokes`）。 */
+const KEY_THICK_LINE = 0.22;
+/** 粗线页那套降号判据只用于线距小于这么多像素的低分辨率页。 */
+const KEY_COARSE_SPACE = 13;
 /** 降号竖笔顶端到肚子中心的距离（格）。新编赞美诗 11 各行量得 1.5~1.6。 */
 const FLAT_STEM = 1.55;
 /** 粘连升号串（见谱号兜底那段）：盒高上限、竖笔高度范围（格）。 */
@@ -1642,6 +1646,66 @@ export async function recognizeRasterPage(
     }
     syms.push({ box, code });
     ledger.claim(box, `clef:${code}`);
+  }
+  // ── **行首谱号的种类按原图上的墨再定一次** ───────────────────────────────────
+  //
+  // 上面两路都按「并出来的盒有多高」分高低音，盒一不准就错：手写体刻谱的高音谱号中间那道直笔被抽成竖段，
+  // 剩下的碎块只有 3.2 格高，认成低音谱号（是爱 p4 钢琴右手，整行低十二级）；低音谱号按去线图取墨那一路
+  // 把方括号下端的弯钩串进来，盒高 5.6 格，认成高音谱号（同页男声行）。
+  // 两种谱号在谱表上占的位置是死的：高音谱号从谱表上方一路探到下方，**顶线上方**与**第四、五线之间**都有它的墨；
+  // 低音谱号只占上面三格，这两处都是空的。在带谱线的原图上、谱号盒的横向范围里逐行看有没有墨：
+  // 两处都有的是高音谱号，两处都没有的是低音谱号，一有一无的（方括号上端的弯钩压在谱号上方、谱号断得只剩半截）不改。
+  for (const g of groups) {
+    const sp = unit.space;
+    const left = Math.max(...g.lines.map((l) => l.left));
+    const s0 = syms.find((q) => isClef(q.code) && q.box.y < g.lines[4].y && q.box.y + q.box.h > g.lines[0].y && q.box.x < left + sp * 4);
+    if (!s0 || (s0.code !== "gClef" && s0.code !== "fClef")) continue;
+    const bin0 = raster.bin;
+    // 横向取**谱行左端的固定窗口**（让过系统线，到调号之前），不照第一步给的盒：那个盒可能只是压在系统线上的一块碎块
+    //（望十架 p5 低音谱号的盒落在系统线上，竖线上下通着、两段里行行有墨，被改成高音），也可能只罩住谱号的一半
+    const xa = Math.max(0, Math.round(left + sp * CLEF_INK_X[0]));
+    const xb = Math.min(bin0.w - 1, Math.round(left + sp * CLEF_INK_X[1]));
+    // 行首这一段的线位按实测（斜页上与整行平均差得出半格）
+    const ys = localLineModel(bin0, g.lines.map((l) => l.y), left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2);
+    const rowInk = (y: number) => {
+      if (y < 0 || y >= bin0.h) return false;
+      for (let x = xa; x <= xb; x++) if (bin0.data[y * bin0.w + x]) return true;
+      return false;
+    };
+    const frac = (ya: number, yb: number) => {
+      let n = 0;
+      let hit = 0;
+      for (let y = Math.round(ya); y <= Math.round(yb); y++) {
+        n++;
+        if (rowInk(y)) hit++;
+      }
+      return n ? hit / n : 0;
+    };
+    const above = frac(ys[0] - sp * CLEF_INK_ABOVE[0], ys[0] - sp * CLEF_INK_ABOVE[1]);
+    const low = frac(ys[3] + sp * CLEF_INK_LOW[0], ys[4] - sp * CLEF_INK_LOW[1]);
+    const code: SmuflName | null = above >= CLEF_INK_FULL && low >= CLEF_INK_FULL ? "gClef" : above <= CLEF_INK_NONE && low <= CLEF_INK_NONE ? "fClef" : null;
+    if (!code || code === s0.code) continue;
+    s0.code = code;
+    // 盒照新种类收放：高音谱号上下沿着墨探出去（碎块别再被认成音符），低音谱号收回谱表里（弯钩不算它的）
+    if (code === "gClef") {
+      let ya = Math.round(ys[0]);
+      while (ya > ys[0] - sp * 2 && (rowInk(ya - 1) || rowInk(ya - 2))) ya--;
+      let yb = Math.round(ys[4]);
+      while (yb < ys[4] + sp * 2 && (rowInk(yb + 1) || rowInk(yb + 2))) yb++;
+      s0.box = { x: s0.box.x, y: Math.min(s0.box.y, ya), w: s0.box.w, h: Math.max(s0.box.y + s0.box.h, yb) - Math.min(s0.box.y, ya) };
+    } else {
+      const ya = Math.max(s0.box.y, Math.round(ys[0] - sp * 0.3));
+      const yb = Math.min(s0.box.y + s0.box.h, Math.round(ys[4]));
+      s0.box = { x: s0.box.x, y: ya, w: s0.box.w, h: yb - ya };
+    }
+    for (let i = syms.length - 1; i >= 0; i--) {
+      if (syms[i] === s0) continue;
+      const s1 = syms[i].box;
+      const cx0 = s1.x + s1.w / 2;
+      const cy0 = s1.y + s1.h / 2;
+      if (cx0 >= s0.box.x - 1 && cx0 <= s0.box.x + s0.box.w + 1 && cy0 >= s0.box.y - 1 && cy0 <= s0.box.y + s0.box.h + 1) syms.splice(i, 1);
+    }
+    ledger.claim(s0.box, `clef:${code}`);
   }
   /** 行中换谱号那一路验过的谱号（其余行中的谱号在建页前剔掉）。 */
   const midClefs = new Set<RasterSym>();
@@ -3268,7 +3332,7 @@ export async function recognizeRasterPage(
     // 被并进升降号的竖段要摘掉（留着会被当成符干或小节线）
     vSegs: snapHeadsToStems(syms, splitVoiceStems(extendVSegs(
       nl,
-      joinVSegs(nl, [...prims.vSegs.filter((v) => !usedSegs.has(v)), ...stemSegs, ...inkStems], VSEG_JOIN_DX, Math.round(unit.space * VSEG_JOIN_GAP)),
+      joinThroughBars(raster.bin, joinVSegs(nl, [...prims.vSegs.filter((v) => !usedSegs.has(v)), ...stemSegs, ...inkStems], VSEG_JOIN_DX, Math.round(unit.space * VSEG_JOIN_GAP)), groups.map((g) => [g.lines[0].y, g.lines[4].y] as [number, number]), unit.space),
       Math.round(unit.space * 0.35),
       groups.map((g) => [g.lines[0].y, g.lines[4].y] as [number, number]),
       unit.lineThick,
@@ -3299,13 +3363,16 @@ export async function recognizeRasterPage(
   }
   findTails(pg);
   findBarlines(pg);
+  dropLoneBarlines(pg, raster.bin, unit.space);
+  voteSystemBarlines(pg, raster.bin, unit.space);
   const ctx = findClefKeyTime(pg);
   shareSystemClefs(pg, ctx, unit);
+  dropCourtesyKeys(pg, ctx, unit.space);
   demoteMidKeys(pg, ctx);
   extendKeyChains(pg, ctx);
   dropHeadsInKey(pg, ctx);
   extendKeyByStrokes(pg, ctx, raster.bin, unit);
-  shareKeySignature(ctx);
+  shareKeySignature(ctx, shareSystemKeys(pg, ctx));
   extendKeyByCarry(ctx, opts.carryKey);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
   fixFlatReadAsSix(harmonies, ctx);
@@ -4185,6 +4252,21 @@ function tagLooseStems(pg: SPage): void {
  * 整首音高掉到两成）。这里把**不接在谱号那一串后面**、右边 1.5 格内又有同高符头的调号升降号
  * 从 `ctx.key` 里摘出来，交给临时记号那一步。标记摘不掉（`staffomr` 不动），挂靠那一步按 `ctx.key` 认。
  */
+/**
+ * **行末预告下一行转调的调号不算本行的**。曲中转调落在换行处时，上一行行末（复纵线之后）先印一遍新调号。
+ * `ctx.key` 收的是这一行所有挂了 `Key` 的记号、按个数算调，行末那几个一并数进去，这一行就多出几个升降号
+ *（爱是从神而来 p4 第二系统：行首一个降号、行末预告三个降号，认出其中一个，四行都读成两个降号）。
+ * 落在谱行右端 `COURTESY_KEY` 格以内、右边再没有音符的调号记号从 `ctx.key` 里摘掉。
+ */
+function dropCourtesyKeys(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number): void {
+  const notes = pg.symbols.filter((q) => q.hasTag("Note"));
+  for (const [st, c] of ctx) {
+    if (!c.key.length) continue;
+    const tail = (k: Sym) => k.box.left > st.box.right - sp * COURTESY_KEY && k.box.left > st.box.left + sp * 12 && !notes.some((n) => n.ownerStaff === st && n.px > k.px);
+    if (c.key.some(tail)) c.key = c.key.filter((k) => !tail(k));
+  }
+}
+
 function demoteMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>): void {
   const sp = pg.normalStaffSpace || pg.space;
   const heads = pg.symbols.filter((s0) => s0.hasTag("Note"));
@@ -4344,8 +4426,38 @@ function lastKey(pg: SPage, ctx: Map<Staff, StaffContext>, carry: CarryKey | und
   return carry;
 }
 
-function shareKeySignature(ctx: Map<Staff, StaffContext>): void {
-  const all = [...ctx.values()];
+/**
+ * **同一系统各行的调号相同**：三行以上的系统里，认得一模一样的调号行数最多（至少两行、且比别的读法都多）的那个，
+ * 就是这个系统的调号，其余行照它改。返回这样定下来的谱行——它们不再参加全页那一道共享。
+ *
+ * 全页共享立在「整首不转调」上；合唱谱曲中转调时，同页前后两段调号不同，按全页最长的那个补，
+ * 转调前的几个系统全被改成新调（爱是从神而来 p4：前两个系统一个降号、末系统三个降号，十二行全读成三个降号）。
+ * 而一个系统里四行各自认出同一个调号，是四份独立的证据，比别的系统的读数可靠。
+ * 顺带把系统里个别读岔的行拉回来（同页第二系统女声行，行首 C♯ 的临时升号被并进调号读成一个升号）。
+ * 只管三行以上的系统：两行的大谱表上下两行常一起漏认同一个记号，仍交给全页那一道。
+ */
+function shareSystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>): Set<StaffContext> {
+  const settled = new Set<StaffContext>();
+  const sigOf = (c: StaffContext) => c.key.map((k) => k.code).join(",");
+  for (const g of systemGroups(pg)) {
+    if (g.length < 3) continue;
+    const cs = g.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c);
+    const count = new Map<string, number>();
+    for (const c of cs) if (c.key.length) count.set(sigOf(c), (count.get(sigOf(c)) ?? 0) + 1);
+    const ranked = [...count].sort((a, b) => b[1] - a[1]);
+    if (!ranked.length || ranked[0][1] < 2 || (ranked[1] && ranked[1][1] === ranked[0][1])) continue;
+    const best = cs.find((c) => c.key.length && sigOf(c) === ranked[0][0])!;
+    if (best.key.some((k) => k.code !== best.key[0].code)) continue;
+    for (const c of cs) {
+      if (sigOf(c) !== ranked[0][0]) c.key = best.key;
+      settled.add(c);
+    }
+  }
+  return settled;
+}
+
+function shareKeySignature(ctx: Map<Staff, StaffContext>, settled = new Set<StaffContext>()): void {
+  const all = [...ctx.values()].filter((c) => !settled.has(c));
   const sigOf = (c: StaffContext) => c.key.map((k) => k.code).join(",");
   const count = new Map<string, number>();
   for (const c of all) if (c.key.length) count.set(sigOf(c), (count.get(sigOf(c)) ?? 0) + 1);
@@ -4442,6 +4554,177 @@ function sharpsByStrokes(bin: Binary, lineYs: number[], clef: Rect, sp: number):
 function inkSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
   const tol = sp * 0.3;
   const xTol = sp * 0.6;
+  const barAt = makeBarAt(bin, sp);
+  for (const g of systemGroups(pg)) {
+    if (g.length < 2) continue;
+    const lands = (y: number) => g.some((st) => Math.abs(y - st.box.top) <= tol || Math.abs(y - st.box.bottom) <= tol);
+    const barOn = (l: Seg, st: Staff) =>
+      l.isV && (!l.hasAnyTag() || l.hasTag("BarLine")) && l.top <= st.box.top + tol && l.bottom >= st.box.bottom - tol && lands(l.top) && lands(l.bottom) && Math.abs(st.box.left - l.cx) >= sp;
+    for (const a of g)
+      for (const l of pg.segs.filter((q) => barOn(q, a))) {
+        const lack = g.filter((b) => b !== a && !pg.segs.some((m) => barOn(m, b) && Math.abs(m.cx - l.cx) <= xTol));
+        if (!lack.length) continue;
+        // 作准的那一根自己也得过验墨：被谱线切出来、恰好两端压在外线上的一截符干不算
+        if (barAt(a, l.cx, 2) === null) continue;
+        const xs = lack.map((b) => barAt(b, l.cx, Math.round(xTol)));
+        if (xs.some((x) => x === null)) continue;
+        lack.forEach((b, i) => {
+          const x = xs[i]!;
+          pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: x, y0: b.box.top, x1: x, y1: b.box.bottom, lw: l.lw, maxLw: l.lw });
+        });
+      }
+    // **各行都没抽出竖段的小节线**：淡印的页上下两行同时漏（助我进深歌每个系统漏一两条，上面那一趟要有一行抽得出才补得了）。
+    // 沿头一行逐列验墨，过了的再到别的行左右 `xTol` 内验；行行都是「盖满谱行的细线、上下不外伸」才补，
+    // 离已有的小节线、系统线一格以内的不重复补。两行的干同时正好盖满各自的谱行、又同 x，几乎碰不上。
+    const have = (st: Staff, x: number) => pg.segs.some((m) => barOn(m, st) && Math.abs(m.cx - x) <= sp);
+    const first = g[0];
+    for (let x = Math.round(first.box.left + sp * 3); x < first.box.right - sp; x++) {
+      if (have(first, x) || barAt(first, x, 0, true) === null) continue;
+      const xs = g.slice(1).map((b) => barAt(b, x, Math.round(xTol), true));
+      if (xs.some((q) => q === null)) continue;
+      if (g.slice(1).some((b, i) => have(b, xs[i]!))) continue;
+      const lw = Math.max(1, first.lines[0]?.lw ?? 1);
+      pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: x, y0: first.box.top, x1: x, y1: first.box.bottom, lw, maxLw: lw });
+      g.slice(1).forEach((b, i) => pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: xs[i]!, y0: b.box.top, x1: xs[i]!, y1: b.box.bottom, lw, maxLw: lw }));
+      x += Math.round(sp);
+    }
+  }
+}
+
+/**
+ * **多行系统里只在一行上有的小节线，别的行同处原图上也没有竖墨，就不是小节线**（在 `findBarlines` 之后）。
+ *
+ * `findBarlines` 那道「别的行同 x 有像样的竖线才留」放得松（别的行那一根挂成符干的也算，扫描件上真小节线断得多），
+ * 钢琴右手和弦的长干正好盖满谱行、左手同处又有一根别的干时照样留下（是爱 p5 首行钢琴右手多切一刀，
+ * 左手没切，两行从此错开一小节）。这里回原图上验：别的每一行在同 x 左右 0.6 格内都找不到一根贯穿谱行的细竖墨
+ *（不管上下伸不伸出去——大谱表的小节线本来就连着上下两行），才摘掉。
+ */
+function dropLoneBarlines(pg: SPage, bin: Binary, sp: number): void {
+  const xTol = sp * 0.6;
+  const barAt = makeBarAt(bin, sp);
+  for (const g of systemGroups(pg)) {
+    if (g.length < 2) continue;
+    const on = (l: Seg, st: Staff) => l.bottom > st.box.top + sp && l.top < st.box.bottom - sp;
+    const bars = pg.segs.filter((l) => l.isV && l.hasTag("BarLine") && g.some((st) => on(l, st)));
+    for (const l of bars) {
+      const own = g.filter((st) => on(l, st));
+      const others = g.filter((st) => !own.includes(st));
+      if (!others.length) continue;
+      // 行末的小节线不查：各行右端参差，别的行的那一根常被当成谱行右界、没进竖段
+      if (own.some((st) => l.cx > st.box.right - sp * 1.5)) continue;
+      const backed = others.some((st) => bars.some((m) => m !== l && on(m, st) && Math.abs(m.cx - l.cx) <= xTol) || barAt(st, l.cx, Math.round(xTol), false, true) !== null);
+      if (!backed) l.removeTag("BarLine");
+    }
+  }
+}
+
+/**
+ * **贯穿上下两行谱的小节线，在两行之间断成两截的接回一根**（建页之前）。
+ *
+ * 大谱表的小节线从上一行的顶线一直画到下一行的底线。竖段抽取在两行之间那一截常抽不出来
+ *（旁边贴着反复记号的粗线，孤立性过不了：爱是从神而来首行 `|:` 的细线只剩压在两行谱上的两截），
+ * 剩下的两截各自伸出谱表三四分之一格、又不落在任何一行的外线上，`findBarlines` 当它是符干，这一处的小节线就丢了。
+ * 两截各盖满一行谱（两端离外线不过 `THROUGH_END` 格）、同 x、中间那一段原图上**每行都有墨**，就是同一根。
+ */
+function joinThroughBars(bin: Binary, segs: LineSeg[], staves: [number, number][], sp: number): LineSeg[] {
+  const top = (v: LineSeg) => Math.min(v.y0, v.y1);
+  const bot = (v: LineSeg) => Math.max(v.y0, v.y1);
+  const cx = (v: LineSeg) => (v.x0 + v.x1) / 2;
+  const tol = sp * THROUGH_END;
+  /** 这一截盖满第几行谱（没有返回 -1） */
+  const coverOf = (v: LineSeg) => staves.findIndex(([a, b]) => Math.abs(top(v) - a) <= tol && Math.abs(bot(v) - b) <= tol);
+  const rows = [...staves].sort((a, b) => a[0] - b[0]);
+  const cand = segs.filter((v) => bot(v) - top(v) > Math.abs(v.x1 - v.x0) && coverOf(v) >= 0).sort((a, b) => top(a) - top(b));
+  const used = new Set<LineSeg>();
+  const out: LineSeg[] = [];
+  for (const a of cand) {
+    if (used.has(a)) continue;
+    let cur = a;
+    for (let again = true; again; ) {
+      again = false;
+      for (const b of cand) {
+        if (b === a || used.has(b) || top(b) <= bot(cur) || Math.abs(cx(b) - cx(cur)) > sp * 0.2) continue;
+        // 中间不能隔着别的谱行
+        if (rows.some(([ra, rb]) => ra > bot(cur) + tol && rb < top(b) - tol)) continue;
+        const x = Math.round((cx(b) + cx(cur)) / 2);
+        let solid = true;
+        for (let y = Math.ceil(bot(cur)); y <= Math.floor(top(b)) && solid; y++) {
+          const row = y * bin.w;
+          solid = !!(bin.data[row + x] || bin.data[row + x - 1] || bin.data[row + x + 1]);
+        }
+        if (!solid) continue;
+        const la = bot(cur) - top(cur);
+        const lb = bot(b) - top(b);
+        const xm = (cx(cur) * la + cx(b) * lb) / (la + lb);
+        cur = { x0: xm, x1: xm, y0: top(cur), y1: bot(b), lw: (cur.lw * la + b.lw * lb) / (la + lb), maxLw: Math.max(cur.maxLw, b.maxLw) };
+        used.add(b);
+        again = true;
+        break;
+      }
+    }
+    if (cur !== a) (used.add(a), out.push(cur));
+  }
+  // **盖满两行以上谱的竖线，伸出去的那一截剪掉**：小节线上端接着反复房号括线的竖钩（是爱 p5 钢琴两行「1.」起处，
+  // 竖钩从顶线上方三格起、与小节线同 x 连成一根），上端不落在任何一行的外线上，被当成符干。
+  // 符干不会把上下两行谱都盖满；剪到所盖各行最外的两条线上，就是一根正经的贯穿小节线。
+  const clip = (v: LineSeg): LineSeg => {
+    if (bot(v) - top(v) <= Math.abs(v.x1 - v.x0)) return v;
+    const cov = rows.filter(([ra, rb]) => top(v) <= ra + sp * 0.3 && bot(v) >= rb - sp * 0.3);
+    if (cov.length < 2) return v;
+    const ya = cov[0][0];
+    const yb = cov[cov.length - 1][1];
+    if (top(v) >= ya - sp * 0.3 && bot(v) <= yb + sp * 0.3) return v;
+    return { ...v, y0: Math.max(top(v), ya), y1: Math.min(bot(v), yb) };
+  };
+  return [...segs.filter((v) => !used.has(v)), ...out].map(clip);
+}
+
+/**
+ * **三行以上的系统，小节线按行数表决**（在 `findBarlines` 之后）。同一系统各行的小节线同 x，这是版式的铁律；
+ * 低分辨率的合唱扫描件上每行各错各的——这一行漏一根（线断了、被符头压着），那一行多一根（调号降号的竖笔、
+ * 贴着小节线的升降号被收成小节线），七行里各行的小节数是 4/4/5/5/5/5/4（烛光颂曲 p2），逐行对不上。
+ * 把各行的小节线按 x 归簇（0.6 格内）：
+ *   - **过半的行都有**的簇，缺的行照簇的中位 x 补一根（不再验墨：别的行已经作了证）；
+ *   - **只有不到三分之一的行有**、别的行原图上同处也没有贯穿谱行的细竖墨的簇，摘掉。
+ * 两行的系统不走这里（两行各执一词时没有多数，交给验墨的那两道）。
+ */
+function voteSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
+  const xTol = sp * 0.6;
+  const barAt = makeBarAt(bin, sp);
+  for (const g of systemGroups(pg)) {
+    if (g.length < 3) continue;
+    const on = (l: Seg, st: Staff) => l.bottom > st.box.top + sp && l.top < st.box.bottom - sp;
+    const bars = pg.segs.filter((l) => l.isV && l.hasTag("BarLine") && g.some((st) => on(l, st))).sort((a, b) => a.cx - b.cx);
+    // 归簇：与簇里最后一根相距不过 xTol
+    const clusters: Seg[][] = [];
+    for (const l of bars) {
+      const c = clusters[clusters.length - 1];
+      if (c && l.cx - c[c.length - 1].cx <= xTol) c.push(l);
+      else clusters.push([l]);
+    }
+    for (const c of clusters) {
+      const rows = g.filter((st) => c.some((l) => on(l, st)));
+      const xs = c.map((l) => l.cx).sort((a, b) => a - b);
+      const x = xs[xs.length >> 1];
+      if (rows.length * 2 > g.length) {
+        const lw = Math.max(1, c[0].lw);
+        for (const st of g) {
+          if (rows.includes(st)) continue;
+          // 行末那一根各行右端参差，离本行右端一格半以内的不补（本行的右界就是它）
+          if (x > st.box.right - sp * 1.5 || x < st.box.left + sp) continue;
+          pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: x, y0: st.box.top, x1: x, y1: st.box.bottom, lw, maxLw: lw }).addTag("BarLine");
+        }
+      } else if (rows.length * 3 <= g.length) {
+        const others = g.filter((st) => !rows.includes(st));
+        const backed = others.filter((st) => barAt(st, x, Math.round(xTol), false, true) !== null).length;
+        if (backed + rows.length <= g.length / 3) for (const l of c) l.removeTag("BarLine");
+      }
+    }
+  }
+}
+
+/** 原图上验「这一行在某个 x 附近有没有一根小节线模样的竖墨」（`inkSystemBarlines` / `dropLoneBarlines` 共用）。 */
+function makeBarAt(bin: Binary, sp: number): (st: Staff, cx: number, range: number, strict?: boolean, through?: boolean) => number | null {
   const ink = (x: number, y: number) => x >= 0 && x < bin.w && y >= 0 && y < bin.h && bin.data[y * bin.w + x] === 1;
   /** 这一行里含 x 的那段横向连续墨的宽度 */
   const runW = (x: number, y: number) => {
@@ -4489,8 +4772,8 @@ function inkSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
     }
     return n / Math.max(1, y1 - y0 + 1);
   };
-  /** st 这一行在 cx 左右 range 像素内有没有一根小节线模样的竖墨；有则返回它的列 */
-  const barAt = (st: Staff, cx: number, range: number, strict = false): number | null => {
+  /** st 这一行在 cx 左右 range 像素内有没有一根小节线模样的竖墨；有则返回它的列。`through`：不查上下伸不伸出谱表 */
+  return (st: Staff, cx: number, range: number, strict = false, through = false): number | null => {
     const top = Math.round(st.box.top);
     const bottom = Math.round(st.box.bottom);
     const rows = bottom - top + 1;
@@ -4512,46 +4795,12 @@ function inkSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
           if (fat > 2) continue;
         }
         // 上下各往外 0.4~0.9 格那一截不能有墨（符干、连谱号、系统线都会伸出去）
-        if (inked(w.lo, w.hi, Math.round(top - sp * 0.9), Math.round(top - sp * 0.4)) > 0.3) continue;
-        if (inked(w.lo, w.hi, Math.round(bottom + sp * 0.4), Math.round(bottom + sp * 0.9)) > 0.3) continue;
+        if (!through && inked(w.lo, w.hi, Math.round(top - sp * 0.9), Math.round(top - sp * 0.4)) > 0.3) continue;
+        if (!through && inked(w.lo, w.hi, Math.round(bottom + sp * 0.4), Math.round(bottom + sp * 0.9)) > 0.3) continue;
         return x;
       }
     return null;
   };
-  for (const g of systemGroups(pg)) {
-    if (g.length < 2) continue;
-    const lands = (y: number) => g.some((st) => Math.abs(y - st.box.top) <= tol || Math.abs(y - st.box.bottom) <= tol);
-    const barOn = (l: Seg, st: Staff) =>
-      l.isV && (!l.hasAnyTag() || l.hasTag("BarLine")) && l.top <= st.box.top + tol && l.bottom >= st.box.bottom - tol && lands(l.top) && lands(l.bottom) && Math.abs(st.box.left - l.cx) >= sp;
-    for (const a of g)
-      for (const l of pg.segs.filter((q) => barOn(q, a))) {
-        const lack = g.filter((b) => b !== a && !pg.segs.some((m) => barOn(m, b) && Math.abs(m.cx - l.cx) <= xTol));
-        if (!lack.length) continue;
-        // 作准的那一根自己也得过验墨：被谱线切出来、恰好两端压在外线上的一截符干不算
-        if (barAt(a, l.cx, 2) === null) continue;
-        const xs = lack.map((b) => barAt(b, l.cx, Math.round(xTol)));
-        if (xs.some((x) => x === null)) continue;
-        lack.forEach((b, i) => {
-          const x = xs[i]!;
-          pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: x, y0: b.box.top, x1: x, y1: b.box.bottom, lw: l.lw, maxLw: l.lw });
-        });
-      }
-    // **各行都没抽出竖段的小节线**：淡印的页上下两行同时漏（助我进深歌每个系统漏一两条，上面那一趟要有一行抽得出才补得了）。
-    // 沿头一行逐列验墨，过了的再到别的行左右 `xTol` 内验；行行都是「盖满谱行的细线、上下不外伸」才补，
-    // 离已有的小节线、系统线一格以内的不重复补。两行的干同时正好盖满各自的谱行、又同 x，几乎碰不上。
-    const have = (st: Staff, x: number) => pg.segs.some((m) => barOn(m, st) && Math.abs(m.cx - x) <= sp);
-    const first = g[0];
-    for (let x = Math.round(first.box.left + sp * 3); x < first.box.right - sp; x++) {
-      if (have(first, x) || barAt(first, x, 0, true) === null) continue;
-      const xs = g.slice(1).map((b) => barAt(b, x, Math.round(xTol), true));
-      if (xs.some((q) => q === null)) continue;
-      if (g.slice(1).some((b, i) => have(b, xs[i]!))) continue;
-      const lw = Math.max(1, first.lines[0]?.lw ?? 1);
-      pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: x, y0: first.box.top, x1: x, y1: first.box.bottom, lw, maxLw: lw });
-      g.slice(1).forEach((b, i) => pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: xs[i]!, y0: b.box.top, x1: xs[i]!, y1: b.box.bottom, lw, maxLw: lw }));
-      x += Math.round(sp);
-    }
-  }
 }
 
 /**
@@ -4696,7 +4945,7 @@ function shareSystemClefs(pg: SPage, ctx: Map<Staff, StaffContext>, unit: { spac
  * 数到 k 以上、而按块认出的同种记号不足 k 的行补到 k；别的行由 `shareKeySignature` 接着补。
  * 升降两种都数出来时取作证行数多的那种；已认出另一种记号的行不动。
  */
-function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, unit: { space: number; height: number }): void {
+function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, unit: { space: number; height: number; lineThick?: number }): void {
   const rows: { c: StaffContext; flats: Rect[]; sharps: Rect[] }[] = [];
   for (const c of ctx.values()) {
     if (!c.clef || c.staff.lineYs.length !== 5) continue;
@@ -4705,7 +4954,7 @@ function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binar
     const bass = c.clef.code === "fClef";
     rows.push({
       c,
-      flats: flatsByStrokes(bin, c.staff.lineYs, clef, bass, unit.space),
+      flats: flatsByStrokes(bin, c.staff.lineYs, clef, bass, unit.space, unit.lineThick ?? 0),
       sharps: sharpsByStrokesLoose(bin, c.staff.lineYs, clef, bass, unit.space),
     });
   }
@@ -4775,7 +5024,7 @@ function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binar
  * 数出来的反而更少（荣归天父歌各行 4 → 0~3），已撤；整页并回纵向长笔画也试过（前 60 首 25 升 25 降）。
  * 返回的坐标是整页的。
  */
-function keyZoneStrokes(bin: Binary, lineYs: number[], clef: Rect, sp: number, minH: number): { x0: number; strokes: ReturnType<typeof verticalStrokes>; ink: (x: number, y: number) => boolean } | null {
+function keyZoneStrokes(bin: Binary, lineYs: number[], clef: Rect, sp: number, minH: number, maxW = 0.5): { x0: number; strokes: ReturnType<typeof verticalStrokes>; ink: (x: number, y: number) => boolean } | null {
   const top = lineYs[0];
   const bottom = lineYs[lineYs.length - 1];
   const x0 = Math.round(clef.x + Math.min(clef.w, sp * KEY_FROM));
@@ -4791,7 +5040,7 @@ function keyZoneStrokes(bin: Binary, lineYs: number[], clef: Rect, sp: number, m
     }
   const strokes = verticalStrokes(smear, { x: 0, y: 0, w: box.w, h: box.h }, minH, Math.max(2, Math.round(sp * 0.25)))
     .map((k) => ({ ...k, x0: k.x0 + box.x, x1: k.x1 + box.x, top: k.top + box.y, bottom: k.bottom + box.y }))
-    .filter((k) => k.x1 - k.x0 + 1 <= sp * 0.5);
+    .filter((k) => k.x1 - k.x0 + 1 <= sp * maxW);
   const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] === 1;
   return { x0, strokes, ink };
 }
@@ -4867,8 +5116,16 @@ function sharpsByStrokesLoose(bin: Binary, lineYs: number[], clef: Rect, bass: b
  *   - 肚子那一格右侧的墨比左侧多（符头在朝上干的左下、朝下干的右上，拍号 4 的竖笔左边有墨）。
  * 不合的那一根起就停。返回各降号的盒。
  */
-function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean, sp: number): Rect[] {
-  const z = keyZoneStrokes(bin, lineYs, clef, sp, sp * 1.2);
+function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean, sp: number, thick = 0): Rect[] {
+  // **谱线粗的页竖笔要更高才算**：低分辨率的粗线扫描（线宽过线距的两成），降号的肚子连上下两条谱线就有
+  // 「一格 + 两个线宽」高，过了 1.2 格那道闸，肚子那几列与竖笔并成一片宽笔、整串被宽度那道闸滤光
+  //（烛光颂曲线距 10px、线宽 3px，六个降号一根都数不出）。闸抬到肚子连两条线之上。
+  const r = thick / sp;
+  // 只管低分辨率的页：线距够大的粗体铅字本（主使我喜乐，线距 14.5px）升号的两根竖笔抹宽后并成一根粗的，
+  // 放宽了宽度闸就被数成降号（四个升号读成两个降号）
+  const coarse = r > KEY_THICK_LINE && sp < KEY_COARSE_SPACE;
+  // 竖笔本身也粗（三像素的笔抹宽后五像素，连着肚子的弧有八九像素），宽度那道闸跟着放到一格
+  const z = keyZoneStrokes(bin, lineYs, clef, sp, sp * (coarse ? 1 + 2 * r + 0.25 : 1.2), coarse ? 1.0 : 0.5);
   if (!z) return [];
   const { x0, strokes, ink } = z;
   // 各降号**肚子中心**相对头一个（B）的高低（格，向上为负）
@@ -4898,11 +5155,14 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
   let skipAt = -1;
   const boxAt = (x: number, cy: number): Rect => ({ x: Math.round(x) - 1, y: Math.round(cy - sp * FLAT_STEM), w: Math.round(sp * 0.8), h: Math.round(sp * (FLAT_STEM + 0.5)) });
   for (const [i, k] of strokes.entries()) {
-    if (out.length >= 7 || k.h > sp * 3.2) break;
+    // 粗线页竖笔两端顺着粗谱线各多接一截（量得 3.3~3.6 格），高度上限跟着放
+    if (out.length >= 7 || k.h > sp * (coarse ? 4.2 : 3.2)) break;
     // 紧跟着一根差不多高的竖笔：那是升号的两根竖笔（赞美三一歌两个升号的头一根落在 B 的位置上，被数成一个降号）
     const nx = strokes[i + 1];
-    if (nx && (nx.x0 - k.x1) / sp < 0.5 && nx.h >= sp * 1.8 && k.h >= sp * 1.8) break;
-    const gap = (k.x0 - lastX) / sp;
+    // 粗线页的竖笔宽（一根占大半格），相邻两个降号的笔缘只隔两三像素：间距改按**笔心**量（升号的两根笔心隔不到半格，降号隔一格）
+    const mid = (q: { x0: number; x1: number }) => (q.x0 + q.x1) / 2;
+    if (nx && (coarse ? (mid(nx) - mid(k)) / sp < 0.6 : (nx.x0 - k.x1) / sp < 0.5) && nx.h >= sp * 1.8 && k.h >= sp * 1.8) break;
+    const gap = coarse ? (mid(k) - lastX) / sp - (out.length ? 0.5 : 0) : (k.x0 - lastX) / sp;
     if (gap > (out.length ? 2.6 : 4.2)) break;
     // 紧挨着上一根的短笔是它肚子的右缘，跳过
     if (out.length && gap < 0.5) continue;
@@ -4915,7 +5175,8 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
       const d = density(k.x1 + 1, k.x1 + sp * 0.6, y - sp * 0.45, y + sp * 0.45) - density(k.x0 - sp * 0.6, k.x0 - 1, y - sp * 0.45, y + sp * 0.45);
       if (d > bowl) (bowl = d), (cy = y);
     }
-    const at = (n: number) => n < 7 && bowl >= 0.15 && Math.abs((cy - bY) / sp - STEP[n]) <= 0.45;
+    // 粗线页一格只有十来个像素、谱线那几行又不算，肚子中心量出来差半格是常事：容差放到 0.7 格（次序里相邻两个差 1.5 格以上，仍分得开）
+    const at = (n: number) => n < 7 && bowl >= 0.15 && Math.abs((cy - bY) / sp - STEP[n]) <= (coarse ? 0.7 : 0.45);
     const n = out.length;
     if (at(n) && gap <= (n ? 1.6 : 3.2)) out.push(boxAt(k.x0, cy));
     else if (!skipped && at(n + 1) && gap >= 1.2) {
@@ -4924,7 +5185,7 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
       out.push(boxAt(k.x0 - sp * 0.85, bY + STEP[n] * sp), boxAt(k.x0, cy));
     } else if (!n) continue; // 头一个之前的杂笔（谱号的边角）跳过
     else break; // 串起来之后不合就停
-    lastX = k.x1;
+    lastX = coarse ? mid(k) : k.x1;
   }
   // 漏的那一个后面要有**两个**真的接着（漏在最前头的，后面至少还有两个）：只跟着一个的多半是拍号的竖笔
   //（万古磐石歌两个降号，头一行跳过「A」接上拍号 4 的竖笔，数成四个）
@@ -5085,6 +5346,18 @@ const QREST_SPINE_W = 1.25;
 const MID_CLEF_FROM = 5;
 /** 行首谱号被切碎的行：取墨窗口从谱行左缘往右几格起（让过系统线）。 */
 const CLEF_WIN_FROM = 0.5;
+/** 行末预告调号：离谱行右端几格以内（七个记号约占七格）。 */
+const COURTESY_KEY = 8;
+/** 贯穿小节线断成的两截：各自两端离所在谱行的外线不过几格（见 `joinThroughBars`）。 */
+const THROUGH_END = 0.6;
+/** 行首谱号按墨定种类：顶线上方那一段（离顶线几格到几格）、第四五线之间那一段（各让开线几格）。 */
+const CLEF_INK_ABOVE = [1.0, 0.35];
+/** 取墨的横向窗口：离谱行左端几格到几格（谱号约占 0.5~3.2 格，调号从 3.5 格上下起）。 */
+const CLEF_INK_X = [0.6, 3.0];
+const CLEF_INK_LOW = [0.3, 0.25];
+/** 这两段里有墨的行占到几成算「有」、不到几成算「没有」。 */
+const CLEF_INK_FULL = 0.6;
+const CLEF_INK_NONE = 0.15;
 /** 行中换谱号：与本页行首谱号的宽高比差上限、签名距离上限。 */
 const MID_CLEF_ASPECT = 0.15;
 const MID_CLEF_DIST = 130;
