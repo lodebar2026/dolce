@@ -70,6 +70,13 @@ export function projectForJianpu(src: Song): Song {
       if (m.attrs?.divisions !== undefined) divisions = m.attrs.divisions;
       carry = projectMeasure(m, divisions, newId, carry);
       if (m.attrs) delete m.attrs.divisions;
+      // MusicXML 的普通小节不写 `<barline>`，模型里就没有右线；简谱这边「没有右线」是行末开口的小节
+      // （文本谱/123 跨行接着写同一小节），行视图不出小节线元素（`pu/slots.ts::buildRow`），展开档就整行并成一个大小节
+      if (xml) {
+        const right = (m.barlines ?? []).find((bl) => bl.location === "right");
+        if (!right) (m.barlines ??= []).push({ location: "right", style: "regular" });
+        else if (right.style === undefined) right.style = "regular";
+      }
     }
     // 曲末还欠着的和弦：挂回最后一个音符（记为落不到拍位）
     const last = part.measures.flatMap((m) => m.elements).reverse().find((e): e is Chord => e.kind === "chord");

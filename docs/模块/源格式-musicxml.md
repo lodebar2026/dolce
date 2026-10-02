@@ -40,6 +40,11 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuinpu
 - MuseScore 兼容：有任何 `<credit>` 就不再用 `<work-title>` 生成标题 → 缺 title credit 时补一条；
   `<part-name>` 留空并 `print-object="no"`。
 
+- **简谱档的普通小节线由投影补**（`jianpuproject.ts::projectForJianpu`）：MusicXML 的普通小节不写 `<barline>`，模型里没有右线；
+  简谱这边「没有右线」是行末开口的小节，行视图（`pu/slots.ts::buildRow`）不出小节线元素。不补的话展开档与原样档都整行并成
+  一两个大小节、只在双线/终止线处有线，曲中转调也只在这类线上才画得出来。投影在克隆上给每个没有右线的小节补一根普通线
+  （有右线对象而样式未定的填普通线），原模型不动。
+
 ## 在谱面上编辑
 
 没有代码区，谱面上改的是模型（`model/edit.ts`），改完经 `toxml.ts` 整份重写；索引按 DOM 节点的文档序对到隐藏代码区里的原文
