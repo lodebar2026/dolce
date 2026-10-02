@@ -35,21 +35,21 @@ import { staffChordSpans } from "../mixed/layoutpass";
 import type { JpwMeta, JpwRange } from "../omr/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
-import { isTauriRuntime, saveBytes } from "./fileio";
-import { DOC_EXT, acceptAttr, is123File, isProjectFile, isPuFile } from "../common/filetypes";
-import { clearDraft, loadDraft, saveDraft, type Draft } from "./autosave";
+import { isTauriRuntime } from "./fileio";
+import { is123File, isProjectFile, isPuFile } from "../common/filetypes";
+import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost } from "./formats";
 import { SyncIndex, type SyncEntry } from "./sync";
 import { VisualEditController, type VisualHost } from "./visual/controller";
 import { visualCursorExtension } from "./visual/cursor";
 import { hitThroughOverlay } from "./visual/overlay";
 import type { EditDialect } from "./visual/dialect";
-import { describeLosses, planSave } from "../model/capability";
+import { planSave } from "../model/capability";
 import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/parts";
-import { packProject, PROJECT_EXT, unpackProject } from "./omrproject";
+import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../model/convert";
-import { showChoiceDialog, showConfirmDialog } from "./dialogs";
+import { showChoiceDialog } from "./dialogs";
 import { t } from "../i18n";
 import { diagText, dialectLabel, targetLabel, type DiagLike } from "../i18n/labels";
 import { buildMusicXml, sourceMusicXmlBare } from "./export";
@@ -60,10 +60,11 @@ import type { PlayPoint } from "./player";
 import type { PlaySource } from "../score/timeline";
 import { playSourceOf } from "../model/playsong";
 import { OmrController, type OmrHost } from "./omrctl";
+import { FileSession } from "./filesession";
 import { FileFormatSource, FormatSwitch, type FileSwitchHost, type FormatSwitchHost, type OriginFormat } from "./formatswitch";
 import type { JianpuLayoutMode, JpProfileName } from "../jianpu/profile";
 import {
-  loadPersistedSettings, savePersistedSettings, loadLastFile, saveLastFile, clearLastFile,
+  loadPersistedSettings, savePersistedSettings,
 } from "./settings";
 export type { OmrFormat } from "../omr";
 
@@ -710,7 +711,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         // 识别映射随用户编辑迁移偏移，保持点选仍落在正确 token。
         this.omr.remapMeta((m) => mapMeta(m, u.changes));
         this.scheduleReload();
-        this._scheduleDraft();
+        this.files._scheduleDraft();
       }
       // 光标/选区一动就同步到谱面。文档改了不在这里同步——索引还是旧偏移，
       // 等 reload 重建完索引再由 _buildSync 刷一次。
@@ -739,7 +740,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         ],
       }),
     });
-    this._cleanText = initialText; // 启动时的示例不算没存的内容
+    this.files._cleanText = initialText; // 启动时的示例不算没存的内容
     this.reload(initialText);
   }
 
@@ -2807,132 +2808,22 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     while (this._pendingStaff) await this._pendingStaff.catch(() => undefined);
   }
 
-  /** 记住上次打开/保存的文件路径（仅 Tauri：浏览器路径不可复读）。 */
-  rememberLastFile(path: string): void {
-    saveLastFile(path);
-  }
-
-  /** 启动时尝试复读上次打开的文件（仅 Tauri）。返回 true 表示已加载，false 则保持示例文本。 */
-  async tryRestoreLastFile(): Promise<boolean> {
-    if (!isTauriRuntime()) return false;
-    const path = loadLastFile();
-    if (!path) return false;
-    try {
-      const { readFile } = await import("@tauri-apps/plugin-fs");
-      const bytes = await readFile(path);
-      if (isProjectFile(path)) {
-        if (!(await this.openProject(bytes, path))) throw new Error("bad project");
-      } else this.importBytes(bytes, path);
-      this.filePath = path;
-      void this.loadBookSheet();
-      return true;
-    } catch {
-      // 文件已被移动/删除/不可读 — 忘掉它，回退到示例
-      clearLastFile();
-      return false;
-    }
-  }
-
-  async openFile(): Promise<boolean> {
-    if (!(await this.confirmReplace())) return false;
-    if (isTauriRuntime()) {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const { readFile } = await import("@tauri-apps/plugin-fs");
-      const sel = await open({
-        multiple: false,
-        filters: [
-          {
-            name: t("filter.scoreDocs"),
-            // 白名单只在 `common/filetypes.ts` 写一次；`.jpwabc` 另给大写形（部分系统区分）
-            extensions: [...DOC_EXT, "JPWABC"],
-          },
-        ],
-      });
-      if (typeof sel !== "string") return false;
-      const bytes = await readFile(sel);
-      this.importBytes(bytes, sel);
-      this.filePath = sel;
-      this.rememberLastFile(sel);
-      void this.onDocumentOpened();
-      return true;
-    }
-
-    return await new Promise<boolean>((resolve) => {
-      const input = document.createElement("input");
-      let settled = false;
-      let changeStarted = false;
-      const finish = (opened: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(opened);
-      };
-      input.type = "file";
-      input.accept = acceptAttr(DOC_EXT);
-      input.onchange = async () => {
-        changeStarted = true;
-        const file = input.files?.[0];
-        if (!file) { finish(false); return; }
-        const buf = new Uint8Array(await file.arrayBuffer());
-        this.importBytes(buf, file.name);
-        this.filePath = file.name;
-        finish(true);
-        void this.onDocumentOpened();
-      };
-      window.addEventListener("focus", () => setTimeout(() => {
-        if (!changeStarted) finish(false);
-      }, 500), { once: true });
-      input.click();
-    });
-  }
-
-  async saveFile(): Promise<void> {
-    // 有识别会话：存成识别项目（原图、识别结果、在改的原文一起），重开接着核对；只要文本用「另存为」
-    if (this.omr.snapshot()) {
-      await this.saveProject(false);
-      return;
-    }
-    if (this.filePath && isTauriRuntime()) {
-      // 存回原文件 = 原格式进原格式出，不会丢东西，不必问
-      await this.writeTo(this.filePath);
-      this.markClean();
-      return;
-    }
-    await this.saveFileAs();
-  }
-
-  async saveFileAs(): Promise<void> {
-    // 落盘细节（对话框 / a[download]）统一在 fileio.saveBytes，这里只管记住路径。
-    const dest = await saveBytes(this.encodeForSave(), this.defaultSaveName());
-    // 桌面版没给路径 = 对话框里取消了，没存
-    if (!dest && isTauriRuntime()) return;
-    // 浏览器版下载不回路径，也算存过了
-    this.markClean();
-    if (!dest) return;
-    this.filePath = dest;
-    this.rememberLastFile(dest);
-  }
-
-  /** 跨格式另存为：**先算会丢什么，列给用户，确认了再写**（`model/capability.ts`）。
-   *  同格式存回不走这条——那是原文进原文出。 */
-  async saveAsFormat(target: ConvertTarget): Promise<void> {
-    const doc = this.scoreDoc();
-    if (doc) {
-      const losses = planSave(doc, target);
-      if (losses.length) {
-        const ok = await showConfirmDialog(t("saveAs.lossTitle"), describeLosses(target, losses));
-        if (!ok) return;
-      }
-    }
-    const text = this.convertTo(target);
-    if (text === null) {
-      this.setStatus(t("status.saveAsUnsupported", { target }));
-      return;
-    }
-    const adapter = formatOf(targetSpec(target).docFormat);
-    const dest = await saveBytes(adapter.encode(text), (this.documentTitle() || t("file.untitled")) + adapter.defaultExt);
-    if (!dest) return;
-    this.setStatus(t("status.savedAs", { format: targetLabel(target), ext: adapter.defaultExt }));
-  }
+  // ---------------- 文件会话（`filesession.ts`）：打开 / 保存 / 草稿 / 未保存保护，这里只留转发 ----------------
+  readonly files: FileSession = new FileSession(this);
+  rememberLastFile(path: string): void { this.files.rememberLastFile(path); }
+  tryRestoreLastFile(): Promise<boolean> { return this.files.tryRestoreLastFile(); }
+  openFile(): Promise<boolean> { return this.files.openFile(); }
+  saveFile(): Promise<void> { return this.files.saveFile(); }
+  saveFileAs(): Promise<void> { return this.files.saveFileAs(); }
+  saveAsFormat(target: ConvertTarget): Promise<void> { return this.files.saveAsFormat(target); }
+  isDirty(): boolean { return this.files.isDirty(); }
+  confirmReplace(closing = false): Promise<boolean> { return this.files.confirmReplace(closing); }
+  markClean(): void { this.files.markClean(); }
+  takeDraft(): Promise<Draft | null> { return this.files.takeDraft(); }
+  offerDraftRestore(d: Draft | null): Promise<boolean> { return this.files.offerDraftRestore(d); }
+  saveProject(asNew: boolean): Promise<boolean> { return this.files.saveProject(asNew); }
+  /** FileHost：存到 XML 路径上时写的那份 MusicXML。 */
+  musicXmlForSave(): Promise<string> { return buildMusicXml(this); }
 
   /** 当前文档的 `ScoreDoc`（能力表与丢失清单要用）。拿不到就返回 null。 */
   scoreDoc(): ScoreDoc | null {
@@ -2949,7 +2840,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 当前文档 → 目标格式的文本（转换目标表 `model/convert.ts`）。同格式原文照给；转不了返回 null。
    *  换行照简谱视图实际排出的行（`jianpuLineStarts`，与导出 MusicXML 同一口径：小节中间的只留源文写明的），
    *  写在一份克隆上（`breaks.ts::applyBreaks`）；走原样文档布局、量不出来的照源文的行。 */
-  private convertTo(target: ConvertTarget): string | null {
+  convertTo(target: ConvertTarget): string | null {
     const spec = targetSpec(target);
     if (spec.docFormat === this.docFormat && (spec.docFormat !== "pu" || this.puDialect === target)) return this.getText();
     // `.jpwabc` 用排版器那份模型，行首音的 id 才对得上（同 `export.ts::sourceMusicXmlBare`）
@@ -2969,96 +2860,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
   }
 
-  // ---------------- 自动保存与崩溃恢复（`autosave.ts`） ----------------
-  /** 与盘上（或刚打开时）一致的那份原文；null = 还没有这样一份（刚识别完、恢复的草稿） */
-  private _cleanText: string | null = null;
-  private _draftTimer: ReturnType<typeof setTimeout> | undefined;
-
-  /** 有没存的内容：与盘上（或刚打开时）那份不一样，或根本没有那样一份（刚识别完、恢复的草稿）。 */
-  isDirty(): boolean {
-    return this.getText() !== this._cleanText;
-  }
-
-  /** 要用别的内容换掉当前文档（打开、拖入、示例、识别）或关窗之前：有没存的内容就先问。返回 false = 用户不换了。 */
-  async confirmReplace(closing = false): Promise<boolean> {
-    if (!this.isDirty()) return true;
-    return showConfirmDialog(t("unsaved.title"), t(closing ? "unsaved.closeBody" : "unsaved.body"));
-  }
-
-  /** 现在的内容与盘上一致（刚存盘、刚打开）：草稿作废。 */
-  markClean(): void {
-    this._cleanText = this.getText();
-    clearTimeout(this._draftTimer);
-    void clearDraft();
-  }
-
-  /** 改过之后 3 秒存一份草稿；内容与盘上一致就删掉草稿。识别会话连原图一起打包（恢复后不必重新识别）。 */
-  private _scheduleDraft(): void {
-    clearTimeout(this._draftTimer);
-    this._draftTimer = setTimeout(() => {
-      const text = this.getText();
-      if (text === this._cleanText) {
-        void clearDraft();
-        return;
-      }
-      const snap = this.omr.snapshot();
-      void saveDraft({
-        time: Date.now(), filePath: this.filePath, docFormat: this.docFormat, text,
-        ...(snap ? { project: packProject(snap, __APP_VERSION__, true) } : {}),
-      });
-    }, 3000);
-  }
-
-  /** 启动时先把草稿读出来——之后恢复上次的文件会 `markClean` 删掉它（`offerDraftRestore` 拿这份问）。 */
-  takeDraft(): Promise<Draft | null> {
-    return loadDraft();
-  }
-
-  /** 启动时：有上次没存的草稿（且与现在打开的不同）就问要不要恢复。恢复了返回 true。 */
-  async offerDraftRestore(d: Draft | null): Promise<boolean> {
-    if (!d || d.text === this.getText()) return false;
-    const when = new Date(d.time).toLocaleString();
-    const what = d.project ? t("draft.session") : d.filePath ? d.filePath.replace(/^.*[\\/]/, "") : t("draft.untitled");
-    const ok = await showConfirmDialog(t("draft.title"), t("draft.body", { what, when }));
-    if (!ok) {
-      void clearDraft();
-      return false;
-    }
-    // 恢复回来的还没存：草稿留着（不 markClean），打不开识别项目就只恢复文本
-    if (!d.project || !(await this.openProject(d.project, d.filePath ?? "", { draft: true }))) {
-      this.adoptText(d.docFormat as DocFormatId, d.text, d.filePath);
-    }
-    this._cleanText = null;
-    this._scheduleDraft();
-    this.setStatus(t("draft.restored"));
-    return true;
-  }
-
-  // ---------------- 识别项目 `.dolce`（`omrproject.ts`） ----------------
-  /** 存识别项目。桌面版已有 `.dolce` 路径且不是「另存」就直接覆盖，否则问路径（浏览器版下载）。 */
-  async saveProject(asNew: boolean): Promise<boolean> {
-    const snap = this.omr.snapshot();
-    if (!snap) {
-      this.setStatus(t("proj.nothing"));
-      return false;
-    }
-    const bytes = packProject(snap, __APP_VERSION__);
-    if (!asNew && this.filePath && isProjectFile(this.filePath) && isTauriRuntime()) {
-      const { writeFile } = await import("@tauri-apps/plugin-fs");
-      await writeFile(this.filePath, bytes);
-    } else {
-      const dest = await saveBytes(bytes, `${this.documentTitle() || t("proj.defaultName")}.${PROJECT_EXT}`, "application/zip");
-      if (!dest && isTauriRuntime()) return false; // 对话框里取消了，没存
-      if (dest) {
-        this.filePath = dest;
-        this.rememberLastFile(dest);
-      }
-    }
-    this.markClean();
-    this.setStatus(t("proj.saved"));
-    return true;
-  }
-
+  // ---------------- 识别项目 `.dolce`（`omrproject.ts`；存在 `filesession.ts`） ----------------
   /** 打开识别项目：还原识别会话（不重跑识别）。 */
   async openProject(bytes: Uint8Array, name: string, opts: { draft?: boolean } = {}): Promise<boolean> {
     let snap;
@@ -3078,36 +2880,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return true;
   }
 
-  /** 存盘用的文件名：扩展名由适配器给。 */
-  private defaultSaveName(): string {
-    return (this.documentTitle() || t("file.untitled")) + this.adapter.defaultExt;
-  }
-
   /** 当前文档的标题（取法因格式而异，见适配器的 `title`）。 */
-  private documentTitle(): string {
+  documentTitle(): string {
     return this.adapter.title(this);
-  }
-
-  /** 存盘编码：文本谱等是 UTF-8 原文，`.jpwabc` 是 JP-Word 的 UTF-16LE+BOM。 */
-  private encodeForSave(): Uint8Array {
-    return this.adapter.encode(this.getText());
-  }
-
-  /** 盘上那份文件是不是 MusicXML（文本格式另存到 XML 路径时，编辑器里是简谱文本、盘上是 XML）。 */
-  private get onDiskIsXml(): boolean {
-    return this.filePath !== null && /\.(xml|musicxml)$/i.test(this.filePath);
-  }
-
-  private async writeTo(path: string): Promise<void> {
-    const { writeFile } = await import("@tauri-apps/plugin-fs");
-    // `.musicxml` 那一档：文档里就是 XML（未改动是原文，改过的已由 `editScoreDoc` 整份重写）。
-    // 其余格式存到 XML 路径上：由唯一写出端整份重写。
-    const bytes = this.docFormat === "musicxml"
-      ? this.encodeForSave()
-      : this.onDiskIsXml
-        ? new TextEncoder().encode(await buildMusicXml(this))
-        : this.encodeForSave();
-    await writeFile(path, bytes);
   }
 
   /** Load dropped file content (already decoded). */
