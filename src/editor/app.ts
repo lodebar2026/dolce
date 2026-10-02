@@ -38,7 +38,7 @@ import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model
 import { isTauriRuntime, saveBytes } from "./fileio";
 import { DOC_EXT, acceptAttr, is123File, isProjectFile, isPuFile } from "../common/filetypes";
 import { clearDraft, loadDraft, saveDraft, type Draft } from "./autosave";
-import { formatOf, type DocFormatId, type FormatAdapter, type FormatHost } from "./formats";
+import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost } from "./formats";
 import { SyncIndex, type SyncEntry } from "./sync";
 import { VisualEditController, type VisualHost } from "./visual/controller";
 import { visualCursorExtension } from "./visual/cursor";
@@ -841,7 +841,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    */
   staffPhraseLineStarts(doc: ScoreDoc): ReadonlySet<ElementId> | null {
     try {
-      const bare = formatOf("musicxml").toScoreDoc!(scoreDocToMusicXml(doc, { sourceIds: true }));
+      const bare = musicXmlFormat.toScoreDoc(scoreDocToMusicXml(doc, { sourceIds: true }));
       const options = staffOptionsOf(this.meta, this.staffStyle());
       options.page = this.staffPage;
       const { width, byId } = staffChordSpans(layoutStaff(bare, options));
@@ -905,7 +905,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const key = this._mixedDeriveKey();
     if (this.mixedDoc && this._mixedDerivedText === key) return true;
     try {
-      this.mixedDoc = formatOf("musicxml").toScoreDoc!(sourceMusicXmlBare(this, { sourceIds: true }));
+      this.mixedDoc = musicXmlFormat.toScoreDoc(sourceMusicXmlBare(this, { sourceIds: true }));
       this._mixedDerivedText = key;
       this._indexMixedSrcIds(this.mixedDoc);
       return true;
@@ -1184,7 +1184,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   freshModel(): ScoreDoc | null {
     try {
-      return formatOf("musicxml").toScoreDoc!(this.getText());
+      return musicXmlFormat.toScoreDoc(this.getText());
     } catch (e) {
       console.error("MusicXML 读取失败", e);
       return null;
@@ -2232,7 +2232,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _setMixedXml(xml: string): boolean {
     this._mixedDerivedText = null;
     try {
-      this.mixedDoc = formatOf("musicxml").toScoreDoc!(xml);
+      this.mixedDoc = musicXmlFormat.toScoreDoc(xml);
       this._mixedXmlText = xml;
       this._indexMixedSrcIds(this.mixedDoc); // 小节线按小节认（`_mixedMeasureOf`）
       return true;
@@ -2249,7 +2249,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._setMixedXml(text);
     let doc: ScoreDoc;
     try {
-      doc = formatOf("musicxml").toScoreDoc!(text);
+      doc = musicXmlFormat.toScoreDoc(text);
     } catch (e) {
       console.error("MusicXML 读取失败", e);
       this.setStatus(t("status.xmlReadFailed", { error: (e instanceof Error ? e.message : String(e)) }));

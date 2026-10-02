@@ -70,7 +70,7 @@ export interface FormatCaps {
   phraseRelayout: boolean;
 }
 
-export interface FormatAdapter {
+interface FormatAdapterBase {
   id: DocFormatId;
   /** 另存为时的默认扩展名（含点）。扩展名白名单本身只在 `common/filetypes.ts` 写一次。 */
   defaultExt: string;
@@ -87,24 +87,43 @@ export interface FormatAdapter {
   /** 用哪个档位旋钮记「展开/原样」：`jp` = `jpProfile`(normal/pptx)、`original` = `originalProfile`(print/slide)。
    *  两种格式各记各的档，换格式可能就换了档。 */
   profileKnob: "jp" | "original";
-  caps: FormatCaps;
   /** 解析 → 排版 → 渲染。失败返回 false（文本保留不动）。 */
   reload(host: FormatHost, text: string): boolean;
-  /** 这种格式怎么得到一份 `ScoreDoc`（`caps.layout === "scoredoc"` 时必须给）。 */
-  toScoreDoc?(text: string): ScoreDoc;
-  /**
-   * 「按乐句重排」怎么写回原文（`caps.phraseRelayout` 时必须给）。断句本身与格式无关
-   * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`pu/relayout.ts`），
-   * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `model/relayout.ts`）。
-   *
-   * @param measure 行长尺子（展开档才有；没有就按出厂的小节数目标断，也就是一句一行）
-   * @returns 新原文；没有可重排的曲行时原样返回 `text`
-   */
-  relayoutText?(text: string, measure: FitMeasure | null): string;
   /** 可视化编辑怎么改这种格式的原文（`editor/visual/dialect.ts`）。**给了就能在谱面上改谱**；
    *  不给的格式在谱面上只能选中、移动，不能改。 */
   editDialect?: EditDialect;
 }
+
+/** `caps.layout` 与 `toScoreDoc` 的搭配：`scoredoc` 那一路必须给，`.jpwabc` 那一路没有。 */
+type LayoutPart =
+  | {
+    caps: FormatCaps & { layout: "scoredoc" };
+    /** 这种格式怎么得到一份 `ScoreDoc`。 */
+    toScoreDoc(text: string): ScoreDoc;
+  }
+  | { caps: FormatCaps & { layout: "jpwabc" }; toScoreDoc?: undefined };
+
+/** `caps.phraseRelayout` 与 `relayoutText` 的搭配：声明了能重排就必须给写回的办法。 */
+type RelayoutPart =
+  | {
+    caps: FormatCaps & { phraseRelayout: true };
+    /**
+     * 「按乐句重排」怎么写回原文。断句本身与格式无关
+     * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`pu/relayout.ts`），
+     * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `model/relayout.ts`）。
+     *
+     * @param measure 行长尺子（展开档才有；没有就按出厂的小节数目标断，也就是一句一行）
+     * @returns 新原文；没有可重排的曲行时原样返回 `text`
+     */
+    relayoutText(text: string, measure: FitMeasure | null): string;
+  }
+  | { caps: FormatCaps & { phraseRelayout: false }; relayoutText?: undefined };
+
+/** 能力（`caps`）与方法的搭配写进类型：漏配在注册这张表时就编译不过，不必等到打开、重排时才撞见。 */
+export type FormatAdapter = FormatAdapterBase & LayoutPart & RelayoutPart;
+
+/** 有 `toScoreDoc` 的那些适配器（`caps.layout === "scoredoc"`）。 */
+export type ScoreDocAdapter = FormatAdapter & { toScoreDoc(text: string): ScoreDoc };
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -228,7 +247,7 @@ const ABC: FormatAdapter = {
 /** MusicXML —— 五线谱主格式。**没有代码区**：编辑器文档里存的就是 XML 原文（不显示），
  *  谱面由 `ScoreDoc` 出（`fromxml.ts` 读全、读不懂的原样挂 `raw`）。存回原文件：没改过就是原文，
  *  经 `App.editScoreDoc` 改过的已经整份重写成 `toxml.ts` 的产物。 */
-const MUSICXML: FormatAdapter = {
+const MUSICXML: ScoreDocAdapter = {
   id: "musicxml",
   defaultExt: ".musicxml",
   highlighter: [],
@@ -260,3 +279,6 @@ export const FORMATS: Record<DocFormatId, FormatAdapter> = {
 };
 
 export const formatOf = (id: DocFormatId): FormatAdapter => FORMATS[id];
+
+/** `.musicxml` 的适配器（五线谱/混排那一路各格式都要经它读回模型）。 */
+export const musicXmlFormat: ScoreDocAdapter = MUSICXML;
