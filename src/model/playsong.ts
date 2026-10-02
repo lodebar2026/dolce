@@ -17,7 +17,7 @@ import {
   JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
   playOrderByVerses, playOrderFromSpec, playOrderOf,
 } from "../score/playorder";
-import { linesOfVoice, voiceNumbers, type PuSong } from "../pu/ast";
+import { linesOfVoice, voiceNumbers, type MusicElement, type PuSong } from "../pu/ast";
 import { Key, MusicCommon } from "../score/jppitch";
 import type { PlaySource } from "../score/timeline";
 import type { JpwChordIn, JpwMeasureIn, JpwScoreIn } from "./tojpw";
@@ -78,6 +78,25 @@ function partOfVoice(song: Song, voice: number): Part | undefined {
   return song.parts.find((p) => p.id === `P${voice}`) ?? song.parts[voice - 1];
 }
 
+/** 曲中转调：模型小节上的调号（第二小节起，口径同 `jianpuinput.ts` 与 `playdoc.ts`）按元素 id 交给 `buildMeasures`。
+ *  全曲没有转调时不给（`buildMeasures` 照头部调号算）。 */
+function keyChangesOf(view: ReturnType<typeof docView>, part: Part | undefined): { fifthsOf?: (el: MusicElement) => number | undefined } {
+  if (!part || !part.measures.some((m, i) => i > 0 && m.attrs?.key)) return {};
+  const byId = new Map<ElementId, number>();
+  let fifths: number | undefined;
+  part.measures.forEach((m, i) => {
+    if (i > 0 && m.attrs?.key) fifths = m.attrs.key.fifths;
+    if (fifths === undefined) return;
+    for (const el of m.elements) if (el.kind === "chord") byId.set(el.id, fifths);
+  });
+  return {
+    fifthsOf: (el) => {
+      const id = view.idOf.get(el);
+      return id === undefined ? undefined : byId.get(id);
+    },
+  };
+}
+
 interface SongMeasures {
   song: PuSong;
   key: Key;
@@ -113,7 +132,7 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
     if (lines.length === 0) continue;
     const first = parts.length === 0;
     const pitch = withPitch
-      ? { key: { basePitch: MusicCommon.getBasePitchOfKey(key), fifths: key.fifths, alter: {} }, time }
+      ? { key: { basePitch: MusicCommon.getBasePitchOfKey(key), fifths: key.fifths, alter: {} }, time, ...keyChangesOf(view, partOfVoice(doc.songs[songIdx]!, v)) }
       : undefined;
     const built = buildMeasures(lines, (ch, el) => {
       const id = view.idOf.get(el);

@@ -9,7 +9,7 @@
 import { Fraction } from "../common/fraction";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { BarStyle, StartStopDiscontinue } from "../score/enums";
-import { applyJpPitch, type JpKeyState } from "../score/jppitch";
+import { MusicCommon, applyJpPitch, type JpKeyState } from "../score/jppitch";
 import type { PhraseChord, PhraseMeasure, PhrasePart } from "../score/phraseinput";
 import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "./ast";
 import type { LyricLine, Mark, NoteElement, ScoreLine } from "./ast";
@@ -152,7 +152,11 @@ export function buildMeasures(
   lines: readonly ScoreLine[],
   onChord: (ch: ChordOut, el: NoteElement) => void,
   renumberVerses = true,
-  pitch?: { key: JpKeyState; time: { beats: number; beatType: number } },
+  pitch?: {
+    key: JpKeyState; time: { beats: number; beatType: number };
+    /** 曲中转调：这个音所在小节的调号（fifths）。不给就全曲一个调（`pitch.key`） */
+    fifthsOf?: (el: NoteElement) => number | undefined;
+  },
 ): { measures: MeasureOut[]; jumps: JumpOut[] } {
   const measures: MeasureOut[] = [];
   const jumps: JumpOut[] = [];
@@ -271,6 +275,11 @@ export function buildMeasures(
         tuplet: false,
       };
       if (pitch) {
+        const fifths = pitch.fifthsOf?.(el);
+        if (fifths !== undefined && fifths !== pitch.key.fifths) {
+          pitch.key = { basePitch: MusicCommon.getBasePitchOfKey({ fifths }), fifths, alter: {} };
+          mea.keyChange = true;
+        }
         const nt = { number, jpOctave: el.octave, jpAlter: jpAlterOf(el), pitch: 0, step: " ", rest: false, chord: { rest: false } };
         applyJpPitch(pitch.key, nt);
         ch.notes[0]!.pitch = nt.pitch;
