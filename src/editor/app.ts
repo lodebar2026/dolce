@@ -752,6 +752,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       changes: { from: 0, to: this.view.state.doc.length, insert: text },
     });
     // dispatch triggers updateListener -> scheduleReload, but reload now for snappiness
+    // （防抖那一遍撤掉：同一份文本不必 200ms 后再排一次）
+    clearTimeout(this.debounceTimer);
     this.reload(text);
   }
 

@@ -151,9 +151,7 @@ async function boot() {
     appRoot.classList.add("is-starting");
   };
   const showSample = () => {
-    app.view.dispatch({
-      changes: { from: 0, to: app.view.state.doc.length, insert: SAMPLE },
-    });
+    app.setText(SAMPLE);
     app.filePath = null;
     app.markClean(); // 示例谱不算没存的内容
     revealWorkspace();
