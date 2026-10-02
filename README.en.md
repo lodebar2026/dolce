@@ -111,7 +111,8 @@ The interface is available in **English and Chinese**: it follows your browser l
   and the score being edited, all in one file. Reopen it to carry on proofreading against the source image without
   recognizing again.
 - **Autosave.** Unsaved changes are kept as a local draft after a few seconds; after an unexpected close or reload
-  you are offered to restore it.
+  you are offered to restore it. With unsaved changes, opening another file, loading the sample, recognizing a new image
+  or closing the window asks first.
 - **Export** depends on the view:
   - Jianpu views: **vector PPTX**, **MIDI** and **MusicXML**.
   - Staff and mixed views: **PNG**, **PDF**, **MIDI** and **MusicXML**.
