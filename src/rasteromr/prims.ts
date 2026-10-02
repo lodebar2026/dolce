@@ -349,6 +349,9 @@ function isolated(bin: Binary, s: LineSeg, vertical: boolean): boolean {
   return n === 0 || a < n * 0.5;
 }
 
+/** 一行谱的线距与全页的相对差在这个范围里，加线网格才用它自己的线距（见 `ledgerGrid`）。 */
+const LEDGER_OWN_SPACE = [0.04, 0.3];
+
 /**
  * 「这个 y 落在谱线网格的延长线上吗」——判加线用。
  *
@@ -363,17 +366,25 @@ export function ledgerGrid(lineYs: number[], unit: RasterUnit): (y: number) => b
   for (let i = 0; i + 4 < sorted.length; i += 5) {
     anchors.push(sorted[i], sorted[i + 4]);
   }
-  const tol = unit.space * 0.25;
   return (y: number) => {
     for (let i = 0; i < anchors.length; i += 2) {
       const top = anchors[i];
       const bottom = anchors[i + 1];
+      // **线距取这一行谱自己的**，不取全页的：一页上谱表大小可以不一样（望十架人声谱表线距 10.4px、钢琴 11.6px），
+      // 拿全页的线距往外推，小谱表的第二条加线就偏出两三像素、出了容差——骑在上面的头不算骑着加线，
+      // 加线也补不出来，谱表外的音整批挂不上谱表。只在这一行的线距与全页的差出 4% 以上时才换：差得小的是量线位的
+      // 半像素误差（一行只有五条线，全页的中位数更准；一律用自己的，以马内利来临歌、高举主大能各错一两个音），
+      // 差到三成以上的是谱行找错了。
+      const own = (bottom - top) / 4;
+      const d = Math.abs(own - unit.space) / unit.space;
+      const sp = d > LEDGER_OWN_SPACE[0] && d < LEDGER_OWN_SPACE[1] ? own : unit.space;
+      const tol = sp * 0.25;
       if (y < top) {
-        const k = Math.round((top - y) / unit.space);
-        if (k >= 1 && k <= 6 && Math.abs(top - k * unit.space - y) <= tol) return true;
+        const k = Math.round((top - y) / sp);
+        if (k >= 1 && k <= 6 && Math.abs(top - k * sp - y) <= tol) return true;
       } else if (y > bottom) {
-        const k = Math.round((y - bottom) / unit.space);
-        if (k >= 1 && k <= 6 && Math.abs(bottom + k * unit.space - y) <= tol) return true;
+        const k = Math.round((y - bottom) / sp);
+        if (k >= 1 && k <= 6 && Math.abs(bottom + k * sp - y) <= tol) return true;
       }
     }
     return false;
@@ -760,13 +771,19 @@ export function findPrimitives(
       // 还要看得见加线：块的左端或右端往外三成格处有一道细横墨（厚不过谱线的一倍半）。真短杠两头之外是白的
       //（只看干时救主降生一条干没抽全的短杠被误杀，音符 98.5 → 96.9%）
       const d = Math.max(2, Math.round(unit.space * 0.3));
+      // 那道细横墨还得落在谱线网格的延长线上、离谱表不过四格半（歌词带里的横笔两头也是细的）
+      const nearStaff = staffBands.some(([t, b]) => c.bbox.y + c.bbox.h > t - unit.space * 4.5 && c.bbox.y < b + unit.space * 4.5);
       const thinAt = (x: number) => {
-        if (x < 0 || x >= w) return false;
-        for (let y = Math.max(0, c.bbox.y - 1); y <= Math.min(h - 1, c.bbox.y + c.bbox.h); y++) if (bin.data[y * w + x] && vr[y * w + x] <= unit.lineThick * 1.5) return true;
+        if (x < 0 || x >= w || !nearStaff) return false;
+        for (let y = Math.max(0, c.bbox.y - 1); y <= Math.min(h - 1, c.bbox.y + c.bbox.h); y++)
+          if (bin.data[y * w + x] && vr[y * w + x] <= unit.lineThick * 1.5 && onGrid(y)) return true;
         return false;
       };
       const ledgerTail = thinAt(c.bbox.x - d) || thinAt(c.bbox.x + c.bbox.w - 1 + d);
-      if (ledgerTail && (xa === null || xb === null || xb - xa < unit.space * 0.7)) continue;
+      // 块自己得比一条线厚（四成格以上；头贴着加线的那一块量得半格上下）：只有线那么薄的是一道横线（歌词的延长线、单独一截粗加线），不是「头连着加线」。
+      // 高举主大能有一道 26×3 的横线过了前面几条，不再算符杠之后留在歌词条里，那一行歌词读坏（中文 94 → 70%，
+      // 当时被旧的 OCR 缓存盖住没显出来）
+      if (c.bbox.h >= unit.space * 0.4 && ledgerTail && (xa === null || xb === null || xb - xa < unit.space * 0.7)) continue;
     }
     const line = centerLine(bMaskC, w, c, true);
     // **杠厚要匀**：低分辨率页上一串八分的头沿谱线挨个粘成一条（有一位神 m4 五个 B4），过得了宽度与长宽比，
