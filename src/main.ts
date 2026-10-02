@@ -8,7 +8,7 @@ import { showOptionsDialog, showHanConvDialog } from "./editor/dialogs";
 import { showPartsPanel } from "./editor/parts";
 import { showExportDialog, showSaveAsDialog } from "./editor/export";
 import { showHelpDialog } from "./editor/help";
-import { isTauriRuntime } from "./editor/fileio";
+import { encodeJpwabc, isTauriRuntime } from "./editor/fileio";
 import { maybeAutoCheck } from "./editor/update";
 import { PaintResources, ScorePainter, staffOptionsOf } from "./layout/painter";
 import type { MixedOptions } from "./mixed/model";
@@ -150,8 +150,10 @@ async function boot() {
     startScreen.hidden = false;
     appRoot.classList.add("is-starting");
   };
-  const showSample = () => {
-    app.setText(SAMPLE);
+  const showSample = async () => {
+    if (!(await app.confirmReplace())) return;
+    // 走导入那条路：当前开着别的格式或识别会话时，示例（`.jpwabc`）也按自己的格式读
+    app.importBytes(encodeJpwabc(SAMPLE), "sample.jpwabc");
     app.filePath = null;
     app.markClean(); // 示例谱不算没存的内容
     revealWorkspace();
@@ -302,7 +304,7 @@ async function boot() {
   document.getElementById("btn-start-score")?.addEventListener("click", () => void openScore());
   document.getElementById("btn-image-open")?.addEventListener("click", recognizeFromPicker);
   document.getElementById("btn-start-image")?.addEventListener("click", recognizeFromPicker);
-  document.getElementById("btn-start-sample")?.addEventListener("click", showSample);
+  document.getElementById("btn-start-sample")?.addEventListener("click", () => void showSample());
   document.getElementById("btn-home")?.addEventListener("click", showStartScreen);
   mobileCodeBtn.addEventListener("click", () => setMobileView("code"));
   mobileScoreBtn.addEventListener("click", () => setMobileView("score"));
@@ -340,6 +342,19 @@ async function boot() {
       }
     },
   });
+
+  // 关页 / 关窗前有没存的内容先拦一下（草稿照存，真关了下次还能恢复）。
+  // 无头回归脚本（`navigator.webdriver`）不拦：没人去点那个离开确认框。
+  if (isTauriRuntime()) {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    void getCurrentWindow().onCloseRequested(async (ev) => {
+      if (!(await app.confirmReplace(true))) ev.preventDefault();
+    });
+  } else if (!navigator.webdriver) {
+    window.addEventListener("beforeunload", (ev) => {
+      if (app.isDirty()) ev.preventDefault();
+    });
+  }
 
   // 上次没存的内容（自动保存的草稿）先读出来：自动加载上次的文件会把草稿当作已存删掉
   const draft = await app.takeDraft();
@@ -464,6 +479,7 @@ interface RecognitionPickerHooks {
 }
 
 async function pickRecognitionFile(app: App, hooks: RecognitionPickerHooks): Promise<void> {
+  if (!(await app.confirmReplace())) return;
   if (isTauriRuntime()) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const { readFile } = await import("@tauri-apps/plugin-fs");
@@ -523,6 +539,8 @@ async function wireDragDrop(app: App, dropTarget: HTMLElement, hooks: DropHooks)
       if (event.payload.type === "drop") {
         const path = event.payload.paths[0];
         if (!path) return;
+        if (!isImageFile(path) && !isDocFile(path)) return;
+        if (!(await app.confirmReplace())) return;
         if (isImageFile(path)) {
           // 拖入图片 → 本地 OMR 识别，完成后默认显示可编辑的排版结果。一次拖几张（五线谱的多页）按文件名排成一首
           const imgs = event.payload.paths.filter((p) => isImageFile(p)).sort();
@@ -561,10 +579,15 @@ async function wireDragDrop(app: App, dropTarget: HTMLElement, hooks: DropHooks)
       dropTarget.classList.remove("drag-active");
       const file = e.dataTransfer?.files?.[0];
       if (!file) return;
+      // 文件清单在事件回调返回后就读不到了：先全取出来，再问要不要换掉没存的内容
+      const dropped = [...(e.dataTransfer?.files ?? [])];
       const buf = new Uint8Array(await file.arrayBuffer());
+      const isImage = (f: File) => isImageFile(f.name) || f.type.startsWith("image/");
+      if (!isImage(file) && !isDocFile(file.name)) return;
+      if (!(await app.confirmReplace())) return;
       if (isImageFile(file.name) || file.type.startsWith("image/")) {
         // 一次拖几张（五线谱的多页）按文件名排成一首
-        const all = [...(e.dataTransfer?.files ?? [])].filter((f) => isImageFile(f.name) || f.type.startsWith("image/"))
+        const all = dropped.filter((f) => isImageFile(f.name) || f.type.startsWith("image/"))
           .sort((a, b) => a.name.localeCompare(b.name, "zh"));
         const raw = [];
         for (const f of all) raw.push({ bytes: f === file ? buf : new Uint8Array(await f.arrayBuffer()), mime: f.type, name: f.name });

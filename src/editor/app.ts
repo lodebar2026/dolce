@@ -739,6 +739,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         ],
       }),
     });
+    this._cleanText = initialText; // 启动时的示例不算没存的内容
     this.reload(initialText);
   }
 
@@ -2833,6 +2834,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   async openFile(): Promise<boolean> {
+    if (!(await this.confirmReplace())) return false;
     if (isTauriRuntime()) {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const { readFile } = await import("@tauri-apps/plugin-fs");
@@ -2901,6 +2903,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   async saveFileAs(): Promise<void> {
     // 落盘细节（对话框 / a[download]）统一在 fileio.saveBytes，这里只管记住路径。
     const dest = await saveBytes(this.encodeForSave(), this.defaultSaveName());
+    // 桌面版没给路径 = 对话框里取消了，没存
+    if (!dest && isTauriRuntime()) return;
     // 浏览器版下载不回路径，也算存过了
     this.markClean();
     if (!dest) return;
@@ -2970,6 +2974,17 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _cleanText: string | null = null;
   private _draftTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** 有没存的内容：与盘上（或刚打开时）那份不一样，或根本没有那样一份（刚识别完、恢复的草稿）。 */
+  isDirty(): boolean {
+    return this.getText() !== this._cleanText;
+  }
+
+  /** 要用别的内容换掉当前文档（打开、拖入、示例、识别）或关窗之前：有没存的内容就先问。返回 false = 用户不换了。 */
+  async confirmReplace(closing = false): Promise<boolean> {
+    if (!this.isDirty()) return true;
+    return showConfirmDialog(t("unsaved.title"), t(closing ? "unsaved.closeBody" : "unsaved.body"));
+  }
+
   /** 现在的内容与盘上一致（刚存盘、刚打开）：草稿作废。 */
   markClean(): void {
     this._cleanText = this.getText();
@@ -3033,6 +3048,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       await writeFile(this.filePath, bytes);
     } else {
       const dest = await saveBytes(bytes, `${this.documentTitle() || t("proj.defaultName")}.${PROJECT_EXT}`, "application/zip");
+      if (!dest && isTauriRuntime()) return false; // 对话框里取消了，没存
       if (dest) {
         this.filePath = dest;
         this.rememberLastFile(dest);
