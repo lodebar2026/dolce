@@ -153,11 +153,11 @@ function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rul
   return bodies.map((b) => `w:${b}`);
 }
 
-/** 字段值里的换行会把后续内容变成裸行（第二轮解析就当成音乐体了）。
- *  MusicXML 的 `<creator>` 常把多行塞进一个字段（Finale 的习惯），所以一律按行拆成多条同名字段。 */
 /** 字段值里的行界。裸 `\r` 也算（文本谱原文行内夹着的）：带着它写出去，读回按行切开，后半截就成了另一行。 */
 const LINE_END = /\r\n?|\n/;
 
+/** 字段值里的换行会把后续内容变成裸行（第二轮解析就当成音乐体了）。
+ *  MusicXML 的 `<creator>` 常把多行塞进一个字段（Finale 的习惯），所以一律按行拆成多条同名字段。 */
 function pushLines(L: string[], name: string, value: string): void {
   for (const line of value.split(LINE_END)) {
     const t = line.trim();

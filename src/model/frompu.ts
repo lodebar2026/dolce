@@ -588,7 +588,6 @@ function applyVolta(r: LineResult, m: PuMark, measures: Measure[], voltas: { ope
   else (mea.barlines ??= []).push({ location: "right", ending });
 }
 
-/** `PuDoc` → `ScoreDoc`。一首 `PuSong` 对一首 `Song`。 */
 /**
  * 多声部里的隐藏休止 `8`/`9` 是不是**不占时值的占位**（`Chord.placeholder`）。
  *
@@ -618,6 +617,7 @@ function markPlaceholders(song: Song): void {
   }
 }
 
+/** `PuDoc` → `ScoreDoc`。一首 `PuSong` 对一首 `Song`。 */
 export function puToScoreDoc(pu: PuDoc): ScoreDoc {
   const doc: ScoreDoc = emptyDoc("pu");
   doc.puDialect = pu.dialect;

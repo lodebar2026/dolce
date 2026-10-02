@@ -1263,7 +1263,9 @@ export class Line {
     // 跨行的弧记到收尾那一行（最近的、含终点和弦的后一行；展开档同一个和弦每遍各出现一次）
     lines.forEach((l, i) => {
       for (const arc of l.openArcs()) {
-        lines.slice(i + 1).find((x) => x.chordEntry.has(arc.end))?.carriedArcs.push(arc);
+        // 展开档里起头的和弦每遍各出现一次，几遍可能找到同一行：同一条弧只记一次（画两条会在上方带里叠成两层）
+        const to = lines.slice(i + 1).find((x) => x.chordEntry.has(arc.end));
+        if (to && !to.carriedArcs.some((a) => a.start === arc.start && a.end === arc.end && a.tie === arc.tie)) to.carriedArcs.push(arc);
       }
     });
     // 跨行的房：上一行结束时还开着的房号，下一行开头接着画（不重印房号、不画左脚）
