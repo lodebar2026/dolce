@@ -1066,12 +1066,9 @@ export class Line {
   private addSlurTie(a: JNote, b: JNote, ypos: number): void {
     const ena = this.chordEntry.get(a.chord);
     const enb = this.chordEntry.get(b.chord);
-    // 两端都得在**本行**里才画得出来。调用点查的是 `chord`，这里查的是 `note.chord`——
-    // 两者在多声部/并音的谱里可以不是同一个和弦，查不到就只能不画（不是每一行都有两端）。
-    if (!ena || !enb) {
-      console.error("slur/tie 有一端不在本行，跳过");
-      return;
-    }
+    // 两端都得在**本行**里才画得出来（跨行的另走 `addCarriedArcs`）。调用点查的是 `chord`，这里查的是 `note.chord`——
+    // 两者在多声部/并音的谱里可以不是同一个和弦，查不到就只能不画。
+    if (!ena || !enb) return;
     const grp = new Tie();
     // 可视化编辑按「起点和弦:终点和弦」认这条弧（弧自己没有 id，见 `Tie.startId`）
     grp.startId = a.chord.id;
@@ -1190,6 +1187,48 @@ export class Line {
     }
   }
 
+  /** 上面各行起头、收在本行的弧（`Layout.layout` 断行后填）。 */
+  carriedArcs: { start: JChord; end: JChord; tie: boolean }[] = [];
+
+  /** 本行里起头、终点不在本行的弧（连音线与圆滑线）。 */
+  openArcs(): { start: JChord; end: JChord; tie: boolean }[] {
+    const out: { start: JChord; end: JChord; tie: boolean }[] = [];
+    for (const e of new Set(this.chordEntry.values())) {
+      const nt = e.chord.notes[0];
+      const tieEnd = nt.tieStart ? nt.tieNext?.chord : undefined;
+      if (tieEnd && !this.chordEntry.has(tieEnd)) out.push({ start: e.chord, end: tieEnd, tie: true });
+      const slurEnd = e.chord.slurStart ? e.chord.slurEndChord : null;
+      if (slurEnd && !this.chordEntry.has(slurEnd)) out.push({ start: e.chord, end: slurEnd, tie: false });
+    }
+    return out;
+  }
+
+  /**
+   * 跨行的弧**只画后半条**：起头那一行行末不画，收尾这一行从行首起弧画到收尾的音
+   * （口径同原样文档布局 `original/place.ts`，判据是印刷原版：行末空着、下一行行首有弧）。
+   * 左端在本行头一个音符左侧不到一个字宽处。
+   */
+  private addCarriedArcs(opt: LayoutOptions): void {
+    const first = this.entries.find((e): e is NoteEntry => e instanceof NoteEntry);
+    if (!first) return;
+    for (const arc of this.carriedArcs) {
+      const end = this.chordEntry.get(arc.end);
+      if (!end) continue;
+      const ypos = arc.tie ? this.tiedTop(end, opt, false) : this.slurTop(end, opt, false);
+      const size = end.number!.font.size;
+      const xr = end.group.x + end.cx;
+      const xl = Math.min(first.group.x + first.cx, xr) - size * 0.9;
+      const grp = new Tie();
+      grp.startId = arc.start.id;
+      grp.endId = arc.end.id;
+      grp.init(new Point(xl, ypos), new Point(xr, ypos), this.slurStyle);
+      grp.normalizeX();
+      grp.normalizeY();
+      this.group.add(grp);
+      this.slurTies.push(grp);
+    }
+  }
+
   /** 断行之后每一行首个音符的和弦 id（`JChord.id` = `ScoreDoc` 元素 id）。五线谱自动铺排拿它当优选断点
    *  （`App.jianpuLineStarts`）；展开档一个和弦每遍出现一次，用的人自己去重。 */
   lineStarts: number[] = [];
@@ -1221,6 +1260,12 @@ export class Line {
       this.sectionWords.set(next.chord, this.sectionWordOf(last));
       this.sectionWords.set(last.chord, null);
     }
+    // 跨行的弧记到收尾那一行（最近的、含终点和弦的后一行；展开档同一个和弦每遍各出现一次）
+    lines.forEach((l, i) => {
+      for (const arc of l.openArcs()) {
+        lines.slice(i + 1).find((x) => x.chordEntry.has(arc.end))?.carriedArcs.push(arc);
+      }
+    });
     // 跨行的房：上一行结束时还开着的房号，下一行开头接着画（不重印房号、不画左脚）
     let openEnding: string | null = null;
     for (const l of lines) {
@@ -1232,6 +1277,7 @@ export class Line {
       l.addTuplet(opt);
       l.addTie(opt);
       l.addSlur(opt);
+      l.addCarriedArcs(opt);
       l.spreadChordsHorizontally(opt, width);
       l.addDirections(opt, width);
       // 上方带堆叠要排在 addSlur 之后（要弧的实际位置）、addEnding 之前
