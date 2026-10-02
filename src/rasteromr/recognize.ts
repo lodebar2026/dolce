@@ -1843,6 +1843,89 @@ export async function recognizeRasterPage(
     }
   }
 
+  // ── **琶音记号**（和弦左边的竖波浪线）────────────────────────────────────
+  //
+  // 去线图上它是细长的块（宽半格上下、高两格半以上；贯穿谱表的被去谱线切开，只有谱表外那几截够高）。与符干、小节线、括号的分别是**左右摆**：
+  // 逐行墨的中心一格一个周期地来回摆，直线（斜的也算）的中心是一条直线。逐行取墨的中心、减掉首尾连线，
+  // 摆幅（九成分位减一成分位）要过 `ARP_SWING` 格；带半像素回差地数过零，每格的次数落在 `ARP_RATE` 里、间隔还要匀。
+  // 只看逐行墨宽不行——直线上一像素的毛边也粗细交替（破碎干净版一页数出二十来条）。
+  // 认出来的块里字典结果作废（波峰常被读成附点、休止的碎块），挂到和弦上的事在音符建好之后做。
+  const arpeggios: Rect[] = [];
+  for (const c of blobs) {
+    const b = { ...c.bbox };
+    const sp = unit.space;
+    if (b.w > sp * ARP_W || b.h < sp * ARP_H) continue;
+    if (!groups.some((q) => b.y < q.lines[4].y + sp * 2 && b.y + b.h > q.lines[0].y - sp * 2)) continue;
+    const cs: number[] = [];
+    let wide = 0;
+    for (let y = b.y; y < b.y + b.h; y++) {
+      let lo = -1;
+      let hi = -1;
+      for (let x = b.x; x < b.x + b.w; x++)
+        if (nl.data[y * nl.w + x]) {
+          if (lo < 0) lo = x;
+          hi = x;
+        }
+      if (lo < 0) continue;
+      cs.push((lo + hi) / 2);
+      if (hi - lo + 1 > sp * ARP_STROKE) wide++;
+    }
+    if (cs.length < b.h * 0.8 || wide > cs.length * 0.1) continue;
+    const res = cs.map((v, k) => v - (cs[0] + ((cs[cs.length - 1] - cs[0]) * k) / (cs.length - 1)));
+    const sorted = [...res].sort((p, q) => p - q);
+    const swing = sorted[Math.floor(sorted.length * 0.9)] - sorted[Math.floor(sorted.length * 0.1)];
+    const mid = sorted[sorted.length >> 1];
+    // 过零的位置：相邻两次之间隔半个周期
+    const zs: number[] = [];
+    let side = 0;
+    res.forEach((v, k) => {
+      const s1 = v > mid + 0.5 ? 1 : v < mid - 0.5 ? -1 : 0;
+      if (s1 && side && s1 !== side) zs.push(k);
+      if (s1) side = s1;
+    });
+    if (claimed.has(c.id)) continue;
+    // 每格过零一次半到三次多（四分休止只拐两三道弯，直线上的毛边抖得更密）
+    const rate = zs.length / (b.h / sp);
+    if (swing < Math.max(1.5, sp * ARP_SWING) || rate < ARP_RATE[0] || rate > ARP_RATE[1]) continue;
+    // 波浪是匀的：相邻两次过零的间隔在半格上下，六成以上的间隔离中位数不过六成（手写体刻谱的波浪不齐，是爱量得 5~12 像素）
+    const gaps = zs.slice(1).map((z, k) => z - zs[k]).sort((p, q) => p - q);
+    const gm = gaps[gaps.length >> 1] ?? 0;
+    if (gaps.length < 3 || gm < sp * 0.25 || gm > sp * 0.75 || gaps.filter((g0) => Math.abs(g0 - gm) <= gm * 0.6).length < gaps.length * 0.6) continue;
+    // 盒往上下接：谱表里的那几截被去谱线切成小段、不够高，没进上面的筛选。在带谱线的原图上沿这一竖条往两头走，
+    // 连着有墨（容半格的断口）走到哪儿算到哪儿
+    {
+      const bin0 = raster.bin;
+      const rowInk = (y: number) => {
+        if (y < 0 || y >= bin0.h) return false;
+        for (let x = b.x - 1; x <= b.x + b.w; x++) if (bin0.data[y * bin0.w + x]) return true;
+        return false;
+      };
+      let top = b.y;
+      for (let y = b.y - 1, miss = 0; y >= 0 && miss < sp * 0.5; y--) {
+        if (rowInk(y)) (top = y), (miss = 0);
+        else miss++;
+      }
+      let bottom = b.y + b.h - 1;
+      for (let y = bottom + 1, miss = 0; y < bin0.h && miss < sp * 0.5; y++) {
+        if (rowInk(y)) (bottom = y), (miss = 0);
+        else miss++;
+      }
+      // 同一条波浪线的另一截已经收过了
+      if (arpeggios.some((q) => Math.abs(q.x - b.x) <= sp && q.y <= bottom && q.y + q.h >= top)) continue;
+      b.y = top;
+      b.h = bottom - top + 1;
+    }
+    arpeggios.push(b);
+    claimed.add(c.id);
+    for (let i = syms.length - 1; i >= 0; i--) {
+      const s0 = syms[i].box;
+      const cx0 = s0.x + s0.w / 2;
+      const cy0 = s0.y + s0.h / 2;
+      if (cx0 >= b.x - 1 && cx0 <= b.x + b.w + 1 && cy0 >= b.y - 1 && cy0 <= b.y + b.h + 1) syms.splice(i, 1);
+    }
+    ledger.claim(b, "arpeggio");
+  }
+
   // **调号按竖笔补认升号**（`sharpsByStrokes`）：全页至少两行、且过半的行数出同样多个升号才采信，
   // 采信后每行数出的升号盖掉那一段里别的认法（被读成降号串、假符头的碎块）。44 首里它从不多数
   // （降号曲全是 0，升号曲都不超过 GT，粘连升号的《耶和华是我的牧者》每行 2 个），少数由 `shareKeySignature` 补齐。
@@ -3684,6 +3767,14 @@ export async function recognizeRasterPage(
   // `dynamicMP` 8 个）。缺的只是这一句挂接。
   const marks = findNotations(pg);
   attachNotations(pg, notes, marks.marks);
+  // 琶音记号挂到它右边那一列和弦上：纵向落在波浪线范围里（上下各容半格多）、横向在线右 `ARP_REACH` 格内最靠左的那一列
+  for (const b of arpeggios) {
+    const sp = unit.space;
+    const near = notes.filter((n) => !n.rest && n.sym.box.left >= b.x + b.w - sp * 0.3 && n.sym.box.left <= b.x + b.w + sp * ARP_REACH && n.sym.py >= b.y - sp * 0.6 && n.sym.py <= b.y + b.h + sp * 0.6);
+    if (!near.length) continue;
+    const x0 = Math.min(...near.map((n) => n.sym.box.left));
+    for (const n of near) if (n.sym.box.left <= x0 + sp * 1.4) n.marks = [...(n.marks ?? []), "arpeggiato"];
+  }
   // `mf` 印出来是**两个字母**，字典只认得出 `f`——先按版式把一串字母拼起来
   // （`dynamics.ts`），再按力度文本挂接，不走 `attachDynamics` 那条按单个 SMuFL 名的路。
   const dynamics = groupDynamics(marks.dynamics, cmap, unit);
@@ -5790,6 +5881,14 @@ const CLEF_INK_LOW_NONE = 0.4;
 /** 行中换谱号：与本页行首谱号的宽高比差上限、签名距离上限。 */
 /** 行中的高音谱号顶端至少探出首线这么多格（小一号的只探出 0.4 格上下：望十架 p10 量得 0.43）。 */
 const MID_CLEF_G_TOP = 0.3;
+/** 琶音记号（竖波浪线）：块宽上限、高下限（格），逐行墨宽上限（格），挂和弦时线右往外找几格。 */
+const ARP_W = 0.6;
+const ARP_H = 2.5;
+const ARP_STROKE = 0.7;
+const ARP_REACH = 2.5;
+/** 逐行墨中心的摆幅下限（格）、每格过零次数的范围。 */
+const ARP_SWING = 0.1;
+const ARP_RATE = [1.5, 3.2];
 const MID_CLEF_ASPECT = 0.15;
 const MID_CLEF_DIST = 130;
 const MID_CLEF_FILL = 0.08;

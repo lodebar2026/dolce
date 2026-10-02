@@ -258,22 +258,25 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   if (n.slurStop) nots.push(`<slur type="stop" number="1"/>`);
   if (n.slurStart) nots.push(n.slurDashed ? `<slur type="start" number="1" line-type="dashed"/>` : `<slur type="start" number="1"/>`);
   if (n.tuplet) nots.push(`<tuplet type="start"/>`);
-  // `<notations>` 里子元素有固定次序：tied / slur / tuplet / ornaments / articulations / fermata
+  // `<notations>` 里子元素有固定次序：tied / slur / tuplet / ornaments / articulations / fermata / arpeggiate
   const arts: string[] = [];
   const orns: string[] = [];
   let fermata = "";
+  let arpeggiate = false;
   for (const m of n.marks ?? []) {
     const a = ARTICULATION[m];
     if (a) {
       arts.push(a);
       continue;
     }
-    if (m.startsWith("fermata")) fermata = `<fermata type="${m === "fermataBelow" ? "inverted" : "upright"}"/>`;
+    if (m === "arpeggiato") arpeggiate = true;
+    else if (m.startsWith("fermata")) fermata = `<fermata type="${m === "fermataBelow" ? "inverted" : "upright"}"/>`;
     else if (m.startsWith("ornamentTrill") || m.startsWith("wiggleTrill")) orns.push(`<trill-mark/>`);
   }
   if (orns.length) nots.push(`<ornaments>${orns.join("")}</ornaments>`);
   if (arts.length) nots.push(`<articulations>${arts.join("")}</articulations>`);
   if (fermata) nots.push(fermata);
+  if (arpeggiate) nots.push(`<arpeggiate/>`);
   const notations = nots.length ? `<notations>${nots.join("")}</notations>` : "";
   const timeMod = n.tuplet
     ? `<time-modification><actual-notes>${n.tuplet.actual}</actual-notes><normal-notes>${n.tuplet.normal}</normal-notes></time-modification>`
