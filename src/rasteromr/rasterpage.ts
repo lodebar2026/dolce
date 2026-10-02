@@ -21,7 +21,7 @@
 // 所以取完图按「墨迹占比」自检一次：整页乐谱的墨不可能过半（实测约一成），
 // 过半就是翻了，整幅取反。
 import type { Binary } from "../omr/types";
-import { applyTrackWarp, completeStaffLines, trackCurves } from "./dewarp";
+import { applyTrackWarp, completeStaffLines, residualCurves, trackCurves } from "./dewarp";
 import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, HALFTONE_BAND, HALFTONE_RATIO, PINHOLE_RATIO } from "./descreen";
 import { estimateUnit, findStaffLines, groupStaves } from "./staffline";
 
@@ -168,6 +168,7 @@ export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | n
   const also = [gray, lyricGray].filter((g): g is Uint8Array => !!g);
   dewarpPage(bin, also);
   deskew(bin, also);
+  levelStaves(bin, also);
   // 推平之前行投影一行谱都找不到的页（父恩广大那张扫描件谱线微弯，推平前一行都不成），
   // 网纹那一步就没做（网纹符头 166 个音只认出 15 个）；推平之后有尺子了，补做一次——**只补针孔，不去网**。
   // 这一档是低分辨率扫描件（齐来谢主歌线距 11px），谱线细得断成点，孤立点把网点率
@@ -177,6 +178,28 @@ export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | n
 
   const vp = page.getViewport({ scale: 1 });
   return { bin, kind, halftone: halftone ?? 0, faint, gray, lyricGray, scale: vp.width / bin.w, pageWidth: vp.width, pageHeight: vp.height };
+}
+
+/**
+ * **纠斜之后逐行再推平**（判据在 `dewarp.ts::residualCurves`）：整页一个斜率收拾不了上下斜度不同的页。
+ * 自检同 `dewarpPage`：推完谱行数不许少，少了整幅还原。
+ */
+function levelStaves(bin: Binary, also: Uint8Array[]): boolean {
+  const staves = (b: Binary) => {
+    const lines = findStaffLines(b);
+    return completeStaffLines(b, lines, groupStaves(lines), false).groups;
+  };
+  const groups = staves(bin);
+  const curves = residualCurves(bin, groups);
+  if (!curves) return false;
+  const keep = new Uint8Array(bin.data);
+  applyTrackWarp(bin, curves);
+  if (staves(bin).length < groups.length) {
+    bin.data.set(keep);
+    return false;
+  }
+  if (also.length) applyTrackWarp({ ...bin, data: new Uint8Array(bin.w * bin.h) }, curves, also);
+  return true;
 }
 
 /** 行投影找出来的谱行数不到逐列游程看见的这个比例，才判这一页「弯得行投影已经废了」。 */

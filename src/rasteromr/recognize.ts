@@ -17,7 +17,7 @@ import { buildNotes, calcAlters, checkBars, findClefKeyTime, keyFifths, lastTime
 import { attachDynamicTexts, attachNotations, attachWedges, findNotations, findTuplets } from "../staffomr/notations";
 import type { Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
-import { buildRasterPage, makeSymObj, makeTextObj, pushSeg, type RasterSym } from "./adapt";
+import { buildRasterPage, makeSymObj, makeSysBracketObj, makeTextObj, pushSeg, type RasterSym } from "./adapt";
 import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, ledgerGrid, joinVSegs, removeStaffLines, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
 import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, type PitchStep } from "./notehead";
 import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from "./rasterglyphs";
@@ -3413,6 +3413,7 @@ export async function recognizeRasterPage(
   }
   findTails(pg);
   findBarlines(pg);
+  bridgeFaintSysLines(pg, raster.bin, unit.space);
   dropLoneBarlines(pg, raster.bin, unit.space);
   voteSystemBarlines(pg, raster.bin, unit.space);
   const ctx = findClefKeyTime(pg);
@@ -4508,6 +4509,57 @@ function shareSystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>): Set<StaffCon
     }
   }
   return settled;
+}
+
+/** 系统线断开处算「还连着」的墨占比（见 `bridgeFaintSysLines`）。 */
+const SYS_LINE_INK = 0.5;
+/** 两个系统左端差在这么多格以内，才在两个左端之间整段找那条线。 */
+const SYS_LINE_DX = 6;
+
+/**
+ * **系统线淡得断成虚线的系统并回去**：系统由谱行左端那条竖线（或括号）串起来；扫描件上人声方括号与
+ * 钢琴大谱表之间那一截细线常断成虚线，抽不成竖段，一个系统裂成两三个（烛光颂曲 p3 七行裂成 5 + 2、
+ * p6 四行裂成 2 + 2、p7 裂成 4 + 1 + 1）。
+ * 直接在原图上量：相邻两个系统之间，上面那个系统谱行左端一格以内，找墨最满的一列（左右各容一像素），
+ * 这一截里有墨的行过 `SYS_LINE_INK` 的就是系统线还连着——真正的系统间隔那一列是白的
+ *（六首合唱谱实测 0.03~0.34，断开的 0.77~0.99）。连着的几个系统补一个罩住它们的系统括号。
+ */
+function bridgeFaintSysLines(pg: SPage, bin: Binary, sp: number): void {
+  const groups = systemGroups(pg);
+  const linked = (a: Staff, b: Staff) => {
+    const y0 = Math.round(a.box.bottom + sp * 0.5);
+    const y1 = Math.round(b.box.top - sp * 0.5);
+    if (y1 - y0 < sp * 2) return false;
+    const ink = (x: number, y: number) => x >= 0 && x < bin.w && bin.data[y * bin.w + x] === 1;
+    let best = 0;
+    // 下面那行的左端量短了（淡得只剩后半截）时，线在两行左端之间的某一列；差得太远的是缩进不同的两个系统，只看上面那行的
+    const near = Math.abs(a.box.left - b.box.left) <= sp * SYS_LINE_DX;
+    const xa = near ? Math.min(a.box.left, b.box.left) : a.box.left;
+    const xb = near ? Math.max(a.box.left, b.box.left) : a.box.left;
+    for (let x = Math.round(xa - sp); x <= Math.round(xb + sp); x++) {
+      let n = 0;
+      for (let y = y0; y <= y1; y++) if (ink(x, y) || ink(x - 1, y) || ink(x + 1, y)) n++;
+      best = Math.max(best, n);
+    }
+    return best / (y1 - y0 + 1) >= SYS_LINE_INK;
+  };
+  let run: Staff[][] = [];
+  const flush = () => {
+    if (run.length > 1) {
+      const sts = run.flat();
+      const top = Math.min(...sts.map((s) => s.box.top));
+      const bottom = Math.max(...sts.map((s) => s.box.bottom));
+      const left = Math.min(...sts.map((s) => s.box.left));
+      pg.objs.push(makeSysBracketObj(pg.objs.length + pg.segs.length + 1, { x: left - sp, y: top, w: sp * 0.5, h: bottom - top }));
+    }
+    run = [];
+  };
+  for (const g of groups) {
+    const prev = run[run.length - 1];
+    if (prev && !linked(prev[prev.length - 1], g[0])) flush();
+    run.push(g);
+  }
+  flush();
 }
 
 /**

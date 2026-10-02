@@ -510,6 +510,85 @@ export function trackCurves(bin: Binary): TrackCurve[] | null {
   return out;
 }
 
+/** 逐行再推平时，一行谱沿横向量几处。 */
+const LEVEL_PROBES = 9;
+/** 量一处用的窗口半宽（格）。 */
+const LEVEL_WIN = 3;
+/** 相邻两处之间错位最多变这么多格。 */
+const LEVEL_STEP = 0.4;
+/** 五条线在窗口里的墨占比过这么多，这一处才算量到。 */
+const LEVEL_INK = 0.6;
+/** 有一行谱两端的错位差到这么多格，才动图。 */
+export const LEVEL_MIN = 0.5;
+
+/**
+ * **纠斜之后各行谱残余的倾斜**：整页只找一个斜率（`deskew`），而扫描件上下两端的斜度常不一样
+ * ——页首是平的，越往下越斜（烛光颂曲 p3、p5、p7 下半页的谱行行首比平线模型低一格、行尾高一格）。
+ * 这种页逐列游程的推平（`trackCurves`）又常被自检否决（推完丢一行谱），下游拿着平线模型去读斜着的谱：
+ * 行首的谱号、调号窗口偏大半格，音高从行首到行尾一路错过去。
+ *
+ * 这里不再找谱线，只**量已找到的谱行**：一行谱沿横向取 `LEVEL_PROBES` 处，各处把五条线的模型整体上下挪，
+ * 取窗口里压到墨最多的那个错位（五条线一起量，符头、歌词凑不出五条等距的横墨）。
+ * 量到的点拟合一条直线，就是这一行谱的偏移曲线，交给 `applyTrackWarp` 按行分带推平；两端差不到 `LEVEL_MIN` 格的行偏移记零。
+ * 没有哪一行差到这么多的页返回 null（平的页不动图）。
+ */
+export function residualCurves(bin: Binary, groups: StaffGroup[]): TrackCurve[] | null {
+  const cols = Math.ceil(bin.w / COL_STEP);
+  const out: TrackCurve[] = [];
+  let worst = 0;
+  for (const g of groups) {
+    if (g.lines.length !== 5) continue;
+    const sp = g.space;
+    const left = Math.max(...g.lines.map((l) => l.left));
+    const right = Math.min(...g.lines.map((l) => l.right));
+    if (right - left < sp * LEVEL_WIN * 6) continue;
+    const ys = g.lines.map((l) => Math.round(l.y));
+    const pts: { x: number; d: number }[] = [];
+    const half = Math.round(sp * LEVEL_WIN);
+    const step = Math.round(sp * LEVEL_STEP);
+    /** 第 k 处：在 around ± step 里找压到墨最多的错位；没量到返回 null */
+    const probe = (k: number, around: number): number | null => {
+      const cx = Math.round(left + half + ((right - left - half * 2) * k) / (LEVEL_PROBES - 1));
+      let best = 0;
+      let bd = around;
+      for (let d = around - step; d <= around + step; d++) {
+        let n = 0;
+        for (const y of ys) {
+          const yy = y + d;
+          if (yy < 0 || yy >= bin.h) continue;
+          for (let x = cx - half; x <= cx + half; x++) if (x >= 0 && x < bin.w && bin.data[yy * bin.w + x]) n++;
+        }
+        // 一样多的取离上一处近的（线有几像素厚）
+        if (n > best || (n === best && Math.abs(d - around) < Math.abs(bd - around))) (best = n), (bd = d);
+      }
+      if (best < 5 * (half * 2 + 1) * LEVEL_INK) return null;
+      pts.push({ x: cx, d: bd });
+      return bd;
+    };
+    // **从行中往两头一处一处跟**：每处只在上一处的错位上下 `LEVEL_STEP` 格里找。整段放开找的话，
+    // 错开一整格时也有四条线对得上（耶和华是我的牧者首行量出「斜两格」，推完音符 97.6 → 91.7%）
+    const mid = LEVEL_PROBES >> 1;
+    const d0 = probe(mid, 0) ?? 0;
+    for (let k = mid + 1, d = d0; k < LEVEL_PROBES; k++) d = probe(k, d) ?? d;
+    for (let k = mid - 1, d = d0; k >= 0; k--) d = probe(k, d) ?? d;
+    pts.sort((a, b) => a.x - b.x);
+    if (pts.length < LEVEL_PROBES / 2) continue;
+    // 残余的是**倾斜**，按直线拟合（斜率取两两连线的中位数，压到符杠、歌词跳开的个别点带不偏）；
+    // 逐点连折线的话，平的谱行上一像素的量化抖动也被推成锯齿（独唱谱 45 首音符 98.16 → 97.33%）
+    const slopes: number[] = [];
+    for (let a = 0; a < pts.length; a++) for (let b = a + 1; b < pts.length; b++) slopes.push((pts[b].d - pts[a].d) / (pts[b].x - pts[a].x));
+    const slope = median(slopes);
+    const icpt = median(pts.map((q) => q.d - slope * q.x));
+    const tilt = Math.abs(slope * (right - left)) / sp;
+    worst = Math.max(worst, tilt);
+    // 两端差不到 `LEVEL_MIN` 格的行不动（偏移记零，仍留着给相邻的行分带用）
+    const flat = tilt < LEVEL_MIN;
+    const off = Array.from({ length: cols }, (_, i) => (flat ? 0 : icpt + slope * i * COL_STEP));
+    out.push({ mid: (ys[0] + ys[4]) / 2, off });
+  }
+  return out.length && worst >= LEVEL_MIN ? out : null;
+}
+
 /** 逐列找「五段黑、四段白等距」的地方。**排查也用它**（见 `columnStaffTracks`）。 */
 export function columnHits(bin: Binary): ColHit[] {
   const { w, h, data } = bin;

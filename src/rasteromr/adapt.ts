@@ -174,6 +174,13 @@ export function makeSymObj(id: number, s: RasterSym, staffHeight: number): { obj
   return { obj, sym };
 }
 
+/** 一个系统括号的占位对象（打 `SysBracket`，`systemGroups` 只读它的盒）。识别过程中补出来的也走这里。 */
+export function makeSysBracketObj(id: number, b: Rect): PObj {
+  const o = new PObj(id, fakePath(id, b.x, b.y, b.w, b.h, 1), null);
+  o.addTag("SysBracket");
+  return o;
+}
+
 /**
  * 装配 `SPage`。
  *
@@ -208,12 +215,7 @@ export function buildRasterPage(inp: AdaptInput): SPage {
     o.addTag("Bracket");
     pg.objs.push(o);
   }
-  for (const b of inp.sysBrackets ?? []) {
-    const o = new PObj(id, fakePath(id, b.x, b.y, b.w, b.h, 1), null);
-    id++;
-    o.addTag("SysBracket");
-    pg.objs.push(o);
-  }
+  for (const b of inp.sysBrackets ?? []) pg.objs.push(makeSysBracketObj(id++, b));
   for (const s of inp.syms ?? []) {
     const { obj, sym } = makeSymObj(id++, s, inp.unit.height);
     pg.objs.push(obj);
