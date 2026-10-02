@@ -2178,12 +2178,15 @@ export async function recognizeRasterPage(
   // 让位到谱表外的休止只在**两行的大谱表**里收：合唱谱一个声部一行，休止不出谱表，谱表外那一带是歌词与表情记号
   //（不分的话合唱谱扫描档音符 80.59 → 80.42、歌词 65.81 → 65.46）。系统按左端的墨分（与建页时同一个函数）。
   const sysBoxes = groupByLeftInk(raster.bin, groups.map((g) => ({ top: g.lines[0].y, bottom: g.lines[4].y, left: Math.max(...g.lines.map((l) => l.left)) })), unit);
-  const inGrandStaff = (b: Rect) => {
+  /** 块所在的系统是两行的大谱表；`many` 时三行以上的系统也算。 */
+  const inGrandStaff = (b: Rect, many = false) => {
     const cy = b.y + b.h / 2;
     const g = groups.slice().sort((p, q) => Math.min(Math.abs(cy - p.lines[0].y), Math.abs(cy - p.lines[4].y)) - Math.min(Math.abs(cy - q.lines[0].y), Math.abs(cy - q.lines[4].y)))[0];
     if (!g) return false;
     const box = sysBoxes.find((q) => g.lines[0].y < q.y + q.h && g.lines[4].y > q.y);
-    return !!box && groups.filter((o) => o.lines[0].y < box.y + box.h && o.lines[4].y > box.y).length === 2;
+    if (!box) return false;
+    const rows = groups.filter((o) => o.lines[0].y < box.y + box.h && o.lines[4].y > box.y).length;
+    return many ? rows >= 2 : rows === 2;
   };
   for (const c of blobs) {
     if (claimed.has(c.id) || dictClaimed.has(c.id) || merged.has(c.id)) continue;
@@ -2262,7 +2265,8 @@ export async function recognizeRasterPage(
     if (w < QREST_W[0] || w > QREST_SPINE_W || h < QREST_H[0] || h > QREST_H[1]) continue;
     const fill = c.area / Math.max(1, b.w * b.h);
     if (fill < QREST_FILL[0] || fill > QREST_FILL[1]) continue;
-    if (!midOfStaff(b, lines, unit)) continue;
+    // 让位到谱表外的也收（钢琴右手自己分两声部，上声部的四分休止抬到第五线上方，是爱 p4）
+    if (!midOfStaff(b, lines, unit) && !(offStaffRest(b, lines, unit) && inGrandStaff(b, true))) continue;
     if (nearStaffStart(b, groups, staffLefts, unit) || afterKey(b) < unit.space * KEY_TAIL || sharpCrossbars(nl, b, unit)) continue;
     if (syms.some((s0) => overlapFrac(b, s0.box) > 0.3)) continue;
     const inside = (v: LineSeg) => {

@@ -1419,13 +1419,38 @@ function splitVoice(chords: StaffChord[], expect: number): void {
  * （实测音符准确率 93.42% → 93.21%）；无条件按符干方向拆更糟，
  * 普通旋律一小节里本来就上下都有符干，实测全书小节自检从 80.1% 掉到 73.4%。
  */
-function assignVoicesInBar(inBar: StaffNote[], expect: number): void {
+function assignVoicesInBar(inBar: StaffNote[], expect: number, borrowed = false): void {
   const arr = inBar.filter((n) => !n.chordExtra && !n.grace);
   if (arr.length < 4) return;
   const sumOf = (a: StaffNote[]) => a.reduce((x, n) => x + (n.sym.code === "restHBar" ? expect : n.duration), 0);
   if (sumOf(arr) <= expect + 1e-6) return; // 单声部凑得下，不拆
   const up = arr.filter((n) => n.stemUp === true);
   const down = arr.filter((n) => n.stemUp === false);
+  // **让位到谱表外的休止是「这一行有两个声部」的明证**：休止抬到第五线上方的，上声部 = 干朝上的 + 抬高的休止，
+  // 正好凑满拍号就拆；这小节有跨谱表的音（`crossStaff`）时下声部不必凑满——它前半截写在相邻谱行上（跨谱表的分解和弦，是爱 p4 右手：
+  // 上声部「附点二分 + 抬高的四分休止」，下声部四个八分，前面两拍在低音谱表）。压到第一线下方的对称处理。
+  {
+    const lys = arr[0].staff.lineYs;
+    const mid = (n: StaffNote) => (n.sym.box.top + n.sym.box.bottom) / 2;
+    const rests = arr.filter((n) => n.rest && n.sym.code !== "restHBar");
+    for (const side of lys.length >= 2 ? (["up", "down"] as const) : []) {
+      const off = rests.filter((n) => (side === "up" ? mid(n) < lys[0] : mid(n) > lys[lys.length - 1]));
+      if (!off.length || off.length !== rests.length) continue;
+      const own = side === "up" ? up : down;
+      const other = side === "up" ? down : up;
+      if (!own.length || other.length < 2) continue;
+      if (Math.abs(sumOf(own) + sumOf(off) - expect) >= 1e-6 || sumOf(other) > expect + 1e-6) continue;
+      // 另一个声部不满，只在这小节确有借相邻谱行写的音时才认（闭合谱里缺的是漏认的音，硬拆反而更差：贺他为王歌 95.69 → 94.12）
+      if (!borrowed && Math.abs(sumOf(other) - expect) >= 1e-6) continue;
+      // 无干的全音符之类归属不明，有就不拆
+      if (arr.length !== own.length + other.length + off.length) continue;
+      for (const n of side === "up" ? other : [...own, ...off]) {
+        n.voice = 2;
+        if (n.group) n.group.voice = 2;
+      }
+      return;
+    }
+  }
   if (up.length < 2 || down.length < 2) return;
   if (Math.abs(sumOf(up) - expect) >= 1e-6 || Math.abs(sumOf(down) - expect) >= 1e-6) return;
   for (const n of down) {
@@ -1606,7 +1631,7 @@ export function checkBars(
       const overfull = (len: number) => inBar.filter((n) => !n.chordExtra && !n.grace).reduce((a, n) => a + n.duration, 0) > len * 1.3;
       if (full) splitVoice(chords, expect);
       else if (short !== undefined && overfull(short) && (checkFull(chords, short, sp, false) || checkFull(chords, short, sp, true))) splitVoice(chords, short);
-      else assignVoicesInBar(inBar, expect);
+      else assignVoicesInBar(inBar, expect, notes.some((n) => n.staff === stf && n.crossStaff && n.x >= bar.left && n.x < bar.right));
       const heads = inBar.filter((n) => !n.chordExtra && !n.grace);
       const sum = heads
         .filter((n) => n.voice === (heads[0]?.voice ?? 1))
