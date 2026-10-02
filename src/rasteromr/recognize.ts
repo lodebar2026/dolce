@@ -118,7 +118,12 @@ export interface RasterPageResult {
 export interface CarryKey {
   code: string;
   n: number;
+  /** 多行系统各位置上低八度谱号的见证（见 `shareOctaveClefs`），随调号一起往下一页带。 */
+  clefs?: ClefTally;
 }
+
+/** 键是「行数:各行高低音谱号的排法」（如 `7:gggffgf`）；`seen` 是见过几个这样的系统，`g8[i]` 是第 i 行读成低八度谱号的次数。 */
+export type ClefTally = Record<string, { seen: number; g8: number[] }>;
 
 const empty = (page: SPage, raster: RasterPage | null, unit: RasterUnit | null, carryTime?: { beats: number; beatType: number }, carryKey?: CarryKey): RasterPageResult => ({
   page,
@@ -1659,12 +1664,13 @@ export async function recognizeRasterPage(
     const sp = unit.space;
     const left = Math.max(...g.lines.map((l) => l.left));
     const s0 = syms.find((q) => isClef(q.code) && q.box.y < g.lines[4].y && q.box.y + q.box.h > g.lines[0].y && q.box.x < left + sp * 4);
-    if (!s0 || (s0.code !== "gClef" && s0.code !== "fClef")) continue;
+    if (s0 && s0.code !== "gClef" && s0.code !== "fClef") continue;
     const bin0 = raster.bin;
     // 横向取**谱行左端的固定窗口**（让过系统线，到调号之前），不照第一步给的盒：那个盒可能只是压在系统线上的一块碎块
     //（望十架 p5 低音谱号的盒落在系统线上，竖线上下通着、两段里行行有墨，被改成高音），也可能只罩住谱号的一半
-    const xa = Math.max(0, Math.round(left + sp * CLEF_INK_X[0]));
-    const xb = Math.min(bin0.w - 1, Math.round(left + sp * CLEF_INK_X[1]));
+    const base = pastSysLine(bin0, g.lines.map((l) => l.y), left, sp);
+    const xa = Math.max(0, Math.round(base + sp * CLEF_INK_X[0]));
+    const xb = Math.min(bin0.w - 1, Math.round(base + sp * CLEF_INK_X[1]));
     // 行首这一段的线位按实测（斜页上与整行平均差得出半格）
     const ys = localLineModel(bin0, g.lines.map((l) => l.y), left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2);
     const rowInk = (y: number) => {
@@ -1683,8 +1689,22 @@ export async function recognizeRasterPage(
     };
     const above = frac(ys[0] - sp * CLEF_INK_ABOVE[0], ys[0] - sp * CLEF_INK_ABOVE[1]);
     const low = frac(ys[3] + sp * CLEF_INK_LOW[0], ys[4] - sp * CLEF_INK_LOW[1]);
-    const code: SmuflName | null = above >= CLEF_INK_FULL && low >= CLEF_INK_FULL ? "gClef" : above <= CLEF_INK_NONE && low <= CLEF_INK_NONE ? "fClef" : null;
-    if (!code || code === s0.code) continue;
+    // 低音谱号那一侧「第四五线之间」的门槛放到四成：粗线的低分辨率页上谱线的毛边探进这一格，量出 0.17~0.33
+    //（烛光颂曲几十行低音谱号都落在这一段、判不下来；高音谱号这一格是满的）
+    const code: SmuflName | null = above >= CLEF_INK_FULL && low >= CLEF_INK_FULL ? "gClef" : above <= CLEF_INK_NONE && low <= CLEF_INK_LOW_NONE ? "fClef" : null;
+    if (!code || code === s0?.code) continue;
+    if (!s0) {
+      // **一个谱号都没认出的行按墨补一个**（谱号被系统线、括号粘住，两路都没出）。低音谱号要另有正面的证据——
+      // 上面两格（一二线、二三线之间）都有墨；不然空着的行首也合「两处都没有墨」
+      const upper = Math.min(frac(ys[0] + sp * CLEF_INK_LOW[0], ys[1] - sp * CLEF_INK_LOW[1]), frac(ys[1] + sp * CLEF_INK_LOW[0], ys[2] - sp * CLEF_INK_LOW[1]));
+      if (code === "fClef" && upper < CLEF_INK_FULL) continue;
+      const top = code === "gClef" ? ys[0] - sp * 1.5 : ys[0] - sp * 0.3;
+      const bottom = code === "gClef" ? ys[4] + sp * 1.5 : ys[4];
+      const box = { x: xa, y: Math.round(top), w: xb - xa, h: Math.round(bottom - top) };
+      syms.push({ box, code });
+      ledger.claim(box, `clef:${code}`);
+      continue;
+    }
     s0.code = code;
     // 盒照新种类收放：高音谱号上下沿着墨探出去（碎块别再被认成音符），低音谱号收回谱表里（弯钩不算它的）
     if (code === "gClef") {
@@ -3418,6 +3438,7 @@ export async function recognizeRasterPage(
   voteSystemBarlines(pg, raster.bin, unit.space);
   const ctx = findClefKeyTime(pg);
   shareSystemClefs(pg, ctx, unit);
+  const clefTally = shareOctaveClefs(pg, ctx, opts.carryKey?.clefs);
   dropCourtesyKeys(pg, ctx, unit.space);
   demoteMidKeys(pg, ctx);
   extendKeyChains(pg, ctx);
@@ -4007,7 +4028,8 @@ export async function recognizeRasterPage(
     debugGroups: opts.debug ? groups.map((g) => ({ top: g.lines[0].y, bottom: g.lines[4].y, space: g.space })) : undefined,
     debugRest: opts.debug ? blobImage(nl, prims, unit, onGrid) : undefined,
     carryTime: lastTimeSignature(pg, ctx, opts.carryTime),
-    carryKey: lastKey(pg, ctx, opts.carryKey),
+    // 没有调号的页也要把谱号的见证带下去：个数记零（`extendKeyByCarry` 见零不补）
+    carryKey: { ...(lastKey(pg, ctx, opts.carryKey) ?? { code: "accidentalFlat", n: 0 }), clefs: clefTally },
   };
 }
 
@@ -4509,6 +4531,32 @@ function shareSystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>): Set<StaffCon
     }
   }
   return settled;
+}
+
+/**
+ * **谱行左端量进了系统线、括号里的**：粗的方括号加系统线有一格多宽，谱线找出来的左端落在括号左缘，
+ * 「离左端几格」的取墨窗口就罩在括号的竖线上，行行有墨（烛光颂曲 p6 男声行的低音谱号被按墨改成高音）。
+ * 系统线与谱号中间那道直笔的分别是**伸出谱表多远**：系统线连着上一行或下一行谱，谱号的直笔上下各只探出一格半。
+ * 左端往右四格以内，谱表这一段七成半是墨、且顶线上方一到三格或底线下方一到三格也七成半是墨的列是系统线；
+ * 最右那一列离左端过半格的，窗口改从它算起。贴着左端的那一根（正常情形）不动，免得窗口整体右移。
+ */
+function pastSysLine(bin: Binary, lineYs: number[], left: number, sp: number): number {
+  const top = lineYs[0];
+  const bottom = lineYs[lineYs.length - 1];
+  const full = (x: number, ya: number, yb: number) => {
+    let n = 0;
+    let tot = 0;
+    for (let y = Math.round(ya); y <= Math.round(yb); y++) {
+      if (y < 0 || y >= bin.h) continue;
+      tot++;
+      if (bin.data[y * bin.w + x] || bin.data[y * bin.w + x - 1] || bin.data[y * bin.w + x + 1]) n++;
+    }
+    return tot > 0 && n >= tot * 0.75;
+  };
+  let last = -1;
+  for (let x = Math.round(left); x <= Math.min(bin.w - 2, Math.round(left + sp * 4)); x++)
+    if (full(x, top, bottom) && (full(x, top - sp * 3, top - sp) || full(x, bottom + sp, bottom + sp * 3))) last = x;
+  return last > left + sp * 0.5 ? last : left;
 }
 
 /** 系统线断开处算「还连着」的墨占比（见 `bridgeFaintSysLines`）。 */
@@ -5037,6 +5085,39 @@ function fixDottedPairs(notes: StaffNote[], sp: number): void {
       }
     }
   }
+}
+
+/**
+ * **挂「8」没认出来的高音谱号，照别的系统同一位置的定**。「8」贴在谱号尾巴底下，扫描件上尾巴断开、
+ * 「8」淡得连不上时量不出来（烛光颂曲 p3、p7 各一个七行系统的男高音行读成普通高音谱号，整行高八度）。
+ * 分谱的合唱谱里行数相同、各行高低音谱号排法也相同的系统是同一套声部，同一位置的谱号相同：
+ * 这个位置在见过的系统里（本页的连同前面各页带下来的）至少两次、且过半读成低八度谱号，没读出来的就照它改。
+ * 只管四行以上的系统：三行的「独唱 + 钢琴」换一个声部唱，行数与排法都不变。只增不减——挂着的「8」只会漏认。
+ * 返回更新后的见证，随 `carryKey` 带到下一页。
+ */
+function shareOctaveClefs(pg: SPage, ctx: Map<Staff, StaffContext>, carry: ClefTally | undefined): ClefTally {
+  const tally: ClefTally = {};
+  for (const [k, v] of Object.entries(carry ?? {})) tally[k] = { seen: v.seen, g8: v.g8.slice() };
+  const rows: { key: string; cs: StaffContext[] }[] = [];
+  for (const g of systemGroups(pg)) {
+    if (g.length < 4) continue;
+    const cs = g.map((st) => ctx.get(st));
+    if (!cs.every((c): c is StaffContext => !!c?.clef && (c.clef.code === "gClef" || c.clef.code === "gClef8vb" || c.clef.code === "fClef"))) continue;
+    const key = `${g.length}:${cs.map((c) => (c.clef!.code === "fClef" ? "f" : "g")).join("")}`;
+    const t = (tally[key] ??= { seen: 0, g8: cs.map(() => 0) });
+    t.seen++;
+    cs.forEach((c, i) => {
+      if (c.clef!.code === "gClef8vb") t.g8[i]++;
+    });
+    rows.push({ key, cs });
+  }
+  for (const { key, cs } of rows) {
+    const t = tally[key];
+    cs.forEach((c, i) => {
+      if (c.clef!.code === "gClef" && t.g8[i] >= 2 && t.g8[i] * 2 > t.seen) c.clef!.code = "gClef8vb";
+    });
+  }
+  return tally;
 }
 
 /**
@@ -5634,6 +5715,8 @@ const CLEF_8_X = [1.3, 2.6];
 /** 谱号从底线往下连着探出多少格算挂着「8」：普通高音谱号的尾巴 1.6~1.9 格，挂着「8」的 2.5~3.1 格（烛光颂曲实测）。 */
 const CLEF_8_DEPTH = [2.35, 3.4];
 const CLEF_INK_NONE = 0.15;
+/** 判低音谱号时第四五线之间那一段「没有」的门槛（比 `CLEF_INK_NONE` 松，见用处）。 */
+const CLEF_INK_LOW_NONE = 0.4;
 /** 行中换谱号：与本页行首谱号的宽高比差上限、签名距离上限。 */
 const MID_CLEF_ASPECT = 0.15;
 const MID_CLEF_DIST = 130;
