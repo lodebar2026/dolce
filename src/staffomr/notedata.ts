@@ -660,6 +660,11 @@ export interface StaffNote {
    * **按符干方向分**：朝上的是第一声部、朝下的是第二声部。见 `assignVoices`。
    */
   voice: number;
+  /**
+   * **跨谱表书写的音**：符头画在这一行、符干伸进同系统相邻那一行（符杠在那边），是那一行的声部借地方写的
+   *（钢琴左手的琶音升进右手谱表）。不参加这一行的凑拍与分声部，声部号另记。位图路 `markCrossStaff` 填。
+   */
+  crossStaff?: boolean;
   /** 落在八度移位段里（音高已经移过了，这里只记一笔给 `<octave-shift>` 用）。 */
   octaveShift?: "up" | "down";
   /** 力度记号（`mp`/`f`…）。MusicXML 里出成 `<direction>`，排在这个音符之前。 */
@@ -1573,7 +1578,7 @@ export function checkBars(
         ci++;
       }
       const expect = cur.beats / cur.beatType;
-      const inBar = notes.filter((n) => n.staff === stf && n.x >= bar.left && n.x < bar.right);
+      const inBar = notes.filter((n) => n.staff === stf && !n.crossStaff && n.x >= bar.left && n.x < bar.right);
       if (!inBar.length) return;
       // 这一小节里的和弦（`initChords` 已归好，去重即可）
       const chords: StaffChord[] = [];

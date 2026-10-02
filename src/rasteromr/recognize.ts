@@ -3671,6 +3671,7 @@ export async function recognizeRasterPage(
   }
   attachAccidentalsByPitch(pg, ctx, notes);
   splitUnisons(notes, stems, beams, raster.bin, unit.space);
+  markCrossStaff(pg, notes, stems, unit.space);
   fixDottedPairs(notes, unit.space);
   fixQuartersByBarSum(pg, ctx, notes, opts.carryTime, unit.space);
   findTuplets(pg, beams, stems, notes);
@@ -5570,6 +5571,49 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
   //（万古磐石歌两个降号，头一行跳过「A」接上拍号 4 的竖笔，数成四个）
   if (skipAt >= 0 && out.length - skipAt - 1 < 2) out.length = skipAt;
   return out;
+}
+
+/** 跨谱表书写的音另记的声部号（比按符干、按拍分出来的都大）。 */
+const CROSS_VOICE = 5;
+/** 符干至少这么多格长、且远端过了两行谱之间的中线，才算伸进了相邻那一行。 */
+const CROSS_STEM = 5;
+
+/**
+ * **跨谱表书写的音不算这一行的声部**。钢琴左手的琶音常升进右手谱表：符头画在上面那行，符干一路伸到下面那行、
+ * 与那边的音共用一条符杠。照符头所在的行归属，这些音就混进右手的旋律里——一小节多出四五个音，凑不满拍、
+ * 声部也拆不开，逐声部对拍时右手那行整段错位（是爱 p4、p5 各有一个系统多出十来个音）。
+ * 同系统上下相邻的两行之间，符干远端过了两行之间的中线、干长五格以上，且那条符杠上另有相邻那一行自己的音的，是相邻那一行借地方写的：
+ * 标 `crossStaff`，声部号另记，不参加这一行的凑拍（`checkBars`）。音高仍按符头所在那行的谱号读。
+ */
+function markCrossStaff(pg: SPage, notes: StaffNote[], stems: StemInfo[], sp: number): void {
+  const bySym = new Map<Sym, StaffNote>();
+  for (const n of notes) bySym.set(n.sym, n);
+  for (const g of systemGroups(pg)) {
+    for (let i = 0; i + 1 < g.length; i++) {
+      const a = g[i];
+      const b = g[i + 1];
+      const mid = (a.box.bottom + b.box.top) / 2;
+      for (const st of stems) {
+        const len = st.seg.box.bottom - st.seg.box.top;
+        if (len < sp * CROSS_STEM) continue;
+        for (const s of st.notes) {
+          const n = bySym.get(s);
+          if (!n || n.rest) continue;
+          // 上面那行的头、干朝下伸过中线；下面那行的头、干朝上伸过中线
+          const cross = (n.staff === a && !st.up && st.seg.box.bottom > mid) || (n.staff === b && st.up && st.seg.box.top < mid);
+          if (!cross) continue;
+          // 还要那条符杠上另有相邻那一行自己的音：光凭干长，谱表之间挨得近时下加线上的长干音也过中线
+          // 那个音得是实心头——空心头不上符杠，是它的干顶到了这条杠上（爱是从神而来 p4：上行下声部的杠落在两行之间，
+          // 下行二分和弦的干正好顶着它，上行那两组八分被当成借地方写的，这一行 92.7 → 91.9%）
+          const other = n.staff === a ? b : a;
+          const shared = stems.some((o) => o !== st && o.beams.some((q) => st.beams.includes(q)) && o.notes.some((t) => t.code === "noteheadBlack" && bySym.get(t)?.staff === other && !bySym.get(t)?.crossStaff));
+          if (!shared) continue;
+          n.crossStaff = true;
+          n.voice = CROSS_VOICE;
+        }
+      }
+    }
+  }
 }
 
 /**
