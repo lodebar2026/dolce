@@ -1,6 +1,6 @@
 // In-editor playback. The front-end always owns the play clock and drives the
 // cursor-follow highlight; the audio itself comes from one of two sources:
-//   - SamplerSource: Web Audio + smplr SoundFont (browser & desktop, sampled timbre)
+//   - SamplerSource: Web Audio + smplr SoundFont (browser & desktop, sampled timbre; the piano ships with the app)
 //   - NativeSource:  macOS AVMIDIPlayer via Rust (best timbre, desktop only)
 //
 // 一次「会话」= 一份谱 × 一组播放参数排出来的时间线；会话内可暂停、续播、按秒定位（进度条、点音符跳转）。
@@ -11,6 +11,7 @@ import type { ElementId } from "../model/doc";
 import { buildTimeline, partGain, PlayOptions, PlaySource, playTempo, type Timeline } from "../score/timeline";
 import { toMidi } from "../score/midi";
 import { isTauriRuntime } from "./fileio";
+import { asset } from "../common/asset";
 
 export type PlayState = "stopped" | "loading" | "playing" | "paused";
 
@@ -42,6 +43,10 @@ interface Session {
   opts: PlayOptions | undefined;
   midi: number[] | null;
 }
+
+/** 采样音源的钢琴音色（FluidR3 GM 的大钢琴，MIDI.js 格式）：随应用分发，试听不联网。
+ *  只带 mp3 一份——各家浏览器与桌面 WebView 都能解。 */
+const PIANO_SOUNDFONT = "redist/soundfont/acoustic_grand_piano-mp3.js";
 
 /** 采样音源一次往 smplr 里递多远的音（秒）。后台标签页的定时器会被限到 1 秒一次，窗口要比它长。 */
 const FEED_AHEAD = 2;
@@ -172,8 +177,7 @@ export class ScorePlayer {
     const start = Math.max(0, Math.min(startSec, this.session.duration));
 
     this.setState("loading");
-    // 节拍器的嘀嗒用 WebAudio 排，与原生 MIDI 播放器的时钟对不齐：开着节拍器一律用内置采样
-    this.useNative = this.nativeOk !== false && isTauriRuntime() && !opts?.metronome;
+    this.useNative = this.nativeOk !== false && isTauriRuntime();
     if (!this.useNative) {
       try {
         await this.ensureSampler();
@@ -276,7 +280,8 @@ export class ScorePlayer {
     this.segStart = t;
     if (this.useNative) {
       try {
-        s.midi ??= Array.from(toMidi(s.src, s.opts)); // per-part CC7 volume baked in
+        // per-part CC7 volume baked in；节拍器的嘀嗒写成一条打击乐轨，与音符同一个定序器播
+        s.midi ??= Array.from(toMidi(s.src, s.opts, true));
         const { invoke } = await import("@tauri-apps/api/core");
         if (gen !== this.gen) return;
         const from = Math.max(0, t - NATIVE_PREROLL);
@@ -325,7 +330,7 @@ export class ScorePlayer {
     await this.ctx.resume();
     if (this.inst) return;
     if (!this.instLoading) {
-      const inst = Soundfont(this.ctx, { kit: "FluidR3_GM", instrument: "acoustic_grand_piano" });
+      const inst = Soundfont(this.ctx, { instrumentUrl: asset(PIANO_SOUNDFONT) });
       this.instLoading = inst.ready.then(() => inst);
     }
     try {

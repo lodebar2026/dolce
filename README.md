@@ -132,10 +132,12 @@ w:我罪已_得赦免_
   [pdf.js](https://mozilla.github.io/pdf.js/)（PDF 栅格化）、
   [jsPDF](https://github.com/parallax/jsPDF)（PDF 导出）、
   [smplr](https://github.com/danigb/smplr)（试听音源）、
+  [FluidR3 GM](https://github.com/gleitz/midi-js-soundfonts)（试听的钢琴音色，CC BY 3.0）、
   [fflate](https://github.com/101arrowz/fflate)（PPTX 打包）、
   [opentype.js](https://opentype.js.org/)（字形轮廓）
 
 ## 许可
 
 本项目代码以 MIT 授权（见 [LICENSE](LICENSE)）。随附 Bravura 字体按 SIL OFL 授权
-（见 `public/redist`）；各第三方依赖的许可以其自身声明为准。
+（见 `public/redist`），试听的钢琴音色（FluidR3 GM）按 CC BY 3.0 授权
+（见 `public/redist/soundfont/LICENSE.txt`）；各第三方依赖的许可以其自身声明为准。

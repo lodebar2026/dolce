@@ -1,0 +1,13 @@
+acoustic_grand_piano-mp3.js
+
+The acoustic grand piano from the FluidR3 GM SoundFont (FluidR3_GM.sf2,
+by Frank Wen), pre-rendered to MIDI.js format by the midi-js-soundfonts
+project (Benjamin Gleitzman):
+
+  https://github.com/gleitz/midi-js-soundfonts
+
+The file is redistributed unmodified. As stated by that project, the
+FluidR3 GM set is released under the Creative Commons Attribution 3.0
+license:
+
+  https://creativecommons.org/licenses/by/3.0/us/

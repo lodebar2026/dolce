@@ -195,11 +195,13 @@ Regression scripts and test corpora are not part of this repository.
   - [opencc-js](https://github.com/nk2028/opencc-js): Simplified/Traditional conversion
   - [pdf.js](https://mozilla.github.io/pdf.js/): PDF rasterization
   - [jsPDF](https://github.com/parallax/jsPDF): PDF export
-  - [smplr](https://github.com/danigb/smplr): playback samples
+  - [smplr](https://github.com/danigb/smplr): playback sampler
+  - [FluidR3 GM](https://github.com/gleitz/midi-js-soundfonts): the piano sound used for playback (CC BY 3.0)
   - [fflate](https://github.com/101arrowz/fflate): PPTX packaging
   - [opentype.js](https://opentype.js.org/): glyph outlines
 
 ## License
 
 The code is licensed under MIT (see [LICENSE](LICENSE)). The bundled Bravura font is licensed under the SIL OFL
-(see `public/redist`). Third-party dependencies are licensed under their own terms.
+(see `public/redist`), and the bundled piano sound (FluidR3 GM) under CC BY 3.0
+(see `public/redist/soundfont/LICENSE.txt`). Third-party dependencies are licensed under their own terms.

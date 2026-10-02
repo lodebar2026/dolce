@@ -3,7 +3,7 @@
 // Note timing comes from buildTimeline (shared with the in-editor player), so the
 // exported MIDI honors the expanded play order (repeats / voltas / D.C. / D.S.).
 
-import { buildTimeline, partGain, PlayOptions, PlaySource, playTempo, TimedNote } from "./timeline";
+import { buildTimeline, partGain, PlayOptions, PlaySource, playTempo, TimedNote, type Timeline } from "./timeline";
 
 const PPQ = 960;
 
@@ -47,8 +47,15 @@ function tempoTrack(bpm: number): number[] {
   return trackChunk([ev]);
 }
 
+/** GM 的打击乐通道（第 10 通道）：声部不占它，节拍器的嘀嗒写在这儿。 */
+const DRUM_CHANNEL = 9;
+/** 节拍器的音：小节第一拍高木鱼、其余低木鱼（GM 1 就有，各家音源都认）。 */
+const CLICK_DOWN = 76;
+const CLICK_BEAT = 77;
+
 function partTrack(notes: TimedNote[], partIdx: number, opts?: PlayOptions): number[] {
-  const channel = partIdx & 0x0f;
+  // 第 10 个声部起让过打击乐通道
+  const channel = (partIdx < DRUM_CHANNEL ? partIdx : partIdx + 1) & 0x0f;
   const events: Ev[] = [];
   // Channel Volume (CC7) at tick 0 sets this part's level in the GM synth.
   const vol = Math.round(partGain(opts, partIdx) * 127);
@@ -63,9 +70,26 @@ function partTrack(notes: TimedNote[], partIdx: number, opts?: PlayOptions): num
   return trackChunk(events);
 }
 
-export function toMidi(src: PlaySource, opts?: PlayOptions): Uint8Array {
-  const { notes } = buildTimeline(src);
-  const ntracks = 1 + src.parts.length;
+/** 节拍器轨：每拍一个打击乐音，小节第一拍高一些、响一些。 */
+function clickTrack(clicks: Timeline["clicks"]): number[] {
+  const events: Ev[] = [];
+  for (const c of clicks) {
+    const start = Math.round(c.t * PPQ);
+    const pitch = c.down ? CLICK_DOWN : CLICK_BEAT;
+    events.push({ tick: start, order: 1, data: [0x90 | DRUM_CHANNEL, pitch, c.down ? 120 : 90] });
+    events.push({ tick: start + PPQ / 8, order: 0, data: [0x80 | DRUM_CHANNEL, pitch, 0] });
+  }
+  return trackChunk(events);
+}
+
+/**
+ * `click` = 把节拍器的嘀嗒写成一条打击乐轨（`opts.metronome` 开着才有）。只有原生音源试听传它：
+ * 嘀嗒与音符由同一个定序器播，不会错拍。导出 MIDI 不传，文件里不带节拍器。
+ */
+export function toMidi(src: PlaySource, opts?: PlayOptions, click = false): Uint8Array {
+  const { notes, clicks } = buildTimeline(src);
+  const withClick = click && opts?.metronome === true && clicks.length > 0;
+  const ntracks = 1 + src.parts.length + (withClick ? 1 : 0);
   const header = [
     0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, // MThd, len 6
     0, 1, // format 1
@@ -74,5 +98,6 @@ export function toMidi(src: PlaySource, opts?: PlayOptions): Uint8Array {
   ];
   const out: number[] = [...header, ...tempoTrack(playTempo(src, opts))];
   for (let i = 0; i < src.parts.length; i++) out.push(...partTrack(notes, i, opts));
+  if (withClick) out.push(...clickTrack(clicks));
   return new Uint8Array(out);
 }

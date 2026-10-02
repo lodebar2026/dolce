@@ -106,7 +106,7 @@ export class PlaybackController {
     if (this.player && this.active) this.player.setLoop(on ? this.loopRange() : null);
   }
 
-  /** 节拍器开关（持久化）：播放中从当前位置接着播（开着节拍器改用内置音色）。 */
+  /** 节拍器开关（持久化）：播放中从当前位置接着播。 */
   setMetronome(on: boolean): void {
     this.metronome = on;
     this.syncToggles();
