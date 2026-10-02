@@ -181,7 +181,7 @@ export function findTuplets(pg: SPage, beams: BeamShape[], stems: StemInfo[], no
 }
 
 /** 三连音是「n 个音占 n-1 个音的时值」（3:2、6:4），按 musicxml 的惯例取最近的二次幂。 */
-function applyTuplet(marked: Iterable<StaffNote>, n: number): void {
+export function applyTuplet(marked: Iterable<StaffNote>, n: number): void {
   const normal = n === 3 ? 2 : n === 6 ? 4 : n === 5 ? 4 : n === 7 ? 4 : n - 1;
   for (const x of marked) {
     x.tuplet = { actual: n, normal };
@@ -378,5 +378,43 @@ export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[])
     if (!a) continue;
     a.wedgeStart ??= wg.type;
     if (b && b !== a) b.wedgeStop = true;
+  }
+}
+
+/**
+ * 歌词延长线（一字多音）：词尾的字（后面没有连字符）所在的音起着一条圆滑线 / 连音线，线罩着的后续音又都没有这一段的字，
+ * 就在这个字上记 `extend`、线尾那个音上记 `lyricExtendStop`。**纯推导**，不去找那条下划线的墨
+ * ——它印在歌词行里，又细又长，与连字符、汉字的一横分不开。弧线挂完之后跑。
+ */
+export function markLyricExtends(notes: StaffNote[]): void {
+  const rows = new Map<string, StaffNote[]>();
+  const staffIds = new Map<Staff, number>();
+  for (const n of notes) {
+    if (n.chordExtra || n.grace) continue;
+    if (!staffIds.has(n.staff)) staffIds.set(n.staff, staffIds.size);
+    const k = `${staffIds.get(n.staff)}/${n.voice}`;
+    rows.set(k, [...(rows.get(k) ?? []), n]);
+  }
+  for (const seq of rows.values()) {
+    seq.sort((a, b) => a.x - b.x);
+    seq.forEach((n, i) => {
+      for (const l of n.lyrics ?? []) {
+        // 只有拉丁文歌词画延长线；中文逐字挂词，一字多音靠圆滑线表示，不画线
+        if (l.hyphen || !/[A-Za-z]/.test(l.text)) continue;
+        let j = i;
+        let open = false;
+        for (;;) {
+          const c = seq[j];
+          if (c.slurStart || c.tieStart) open = true;
+          else if (j > i && (c.slurStop || c.tieStop)) open = false;
+          const nx = seq[j + 1];
+          if (!open || !nx || nx.rest || (nx.lyrics ?? []).some((v) => v.verse === l.verse)) break;
+          j++;
+        }
+        if (j === i) continue;
+        l.extend = true;
+        (seq[j].lyricExtendStop ??= []).push(l);
+      }
+    });
   }
 }

@@ -185,6 +185,12 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       }
       // `<harmony>` 与 `<direction>` 都排在它们所属的 `<note>` **之前**（MusicXML 规定）
       if (n.chord) body += harmonyXml(n.chord);
+      if (n.metronome) {
+        const [unit, bpm] = n.metronome.split("=");
+        body += `<direction placement="above"><direction-type><metronome><beat-unit>${unit}</beat-unit><per-minute>${bpm}</per-minute></metronome></direction-type><sound tempo="${bpm}"/></direction>`;
+      }
+      for (const w of n.words ?? [])
+        body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><words>${escapeXml(w.text)}</words></direction-type></direction>`;
       if (n.dynamic)
         body += `<direction placement="below"><direction-type><dynamics><${n.dynamic}/></dynamics></direction-type></direction>`;
       // 松叶：**止排在起之前**——同一个音符上前一条松叶收尾、下一条起头是常事，
@@ -250,7 +256,9 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   const acc = n.accidental !== null ? `<accidental>${accidentalName(n.accidental)}</accidental>` : "";
   const stem = n.stemUp === null ? "" : `<stem>${n.stemUp ? "up" : "down"}</stem>`;
   // `<lyric>` 是 `<note>` 的最后一批子元素，排在 `<stem>`/`<accidental>` 之后
-  const lyric = (n.lyrics ?? []).map((l) => lyricXml(l)).join("");
+  // 一字多音收尾的那个音：只出一个带 `<extend type="stop"/>` 的空 `<lyric>`（延长线画到这里）
+  const lyric = (n.lyrics ?? []).map((l) => lyricXml(l)).join("") +
+    (n.lyricExtendStop ?? []).map((l) => `<lyric number="${l.verse}"><extend type="stop"/></lyric>`).join("");
   // `<notations>` 排在 `<lyric>` 之前（MusicXML 的子元素顺序）
   const nots: string[] = [];
   if (n.tieStop) nots.push(`<tied type="stop"/>`);
@@ -319,9 +327,9 @@ const ARTICULATION: Record<string, string> = {
  * `hyphen` = 这个音节后面还有连字符，`cont` = 前面来的也是同一个词。
  * `a-bid-eth` 三段正好走遍 begin / middle / end。
  */
-function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean }): string {
+function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean; extend?: boolean }): string {
   const syllabic = l.cont ? (l.hyphen ? "middle" : "end") : l.hyphen ? "begin" : "single";
-  return `<lyric number="${l.verse}"><syllabic>${syllabic}</syllabic><text>${escapeXml(l.text)}</text></lyric>`;
+  return `<lyric number="${l.verse}"><syllabic>${syllabic}</syllabic><text>${escapeXml(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
 }
 
 function accidentalName(alter: number): string {

@@ -18,6 +18,7 @@ export * from "./notehead";
 export * from "./lyric";
 export * from "./stafflabel";
 export * from "./harmony";
+export * from "./words";
 export * from "./jianpuband";
 export * from "./jianpufuse";
 export * from "./contour";

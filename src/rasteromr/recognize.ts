@@ -14,7 +14,11 @@ import type { Component, Rect } from "../omr/types";
 import { findBarlines, findNoteheads, findStaves, findStems, findTails, isLeadNoteBarline, makeBars, makeSystems, systemGroups, tagSystemBarlines, unknownObjs } from "../staffomr/page";
 import { accidentalAlter, isAccidental, isClef, timeSigDigit, type SmuflName } from "../staffomr/glyphs";
 import { buildNotes, calcAlters, checkBars, findClefKeyTime, keyFifths, lastTimeSignature, type BeamShape, type StaffContext, type StaffNote, type StemInfo, type BarCheck } from "../staffomr/notedata";
-import { attachDynamicTexts, attachNotations, attachWedges, findNotations, findTuplets } from "../staffomr/notations";
+import { findRasterArticulations } from "./artic";
+import { markRepeatsAndVoltas } from "./repeats";
+import { findRasterTuplets } from "./tuplet";
+import { attachWordLines, findWordStrips, type WordLine, type WordStrip } from "./words";
+import { applyTuplet, attachDynamicTexts, attachNotations, attachWedges, findNotations, findTuplets, markLyricExtends } from "../staffomr/notations";
 import type { Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
 import { buildRasterPage, makeSymObj, makeSysBracketObj, makeTextObj, pushSeg, type RasterSym } from "./adapt";
@@ -80,6 +84,8 @@ export interface RasterPageResult {
    * 与歌词条同一套架构：这里只切条，认字靠离线缓存。见 `stafflabel.ts`。
    */
   labelStrips: LabelStrip[];
+  /** 文字指示带（`words.ts`）：不论有没有缓存都切，生成缓存的脚本要它。 */
+  wordStrips: WordStrip[];
   /**
    * 这一页各谱行上方的**和弦带**（`gen-rasterharmony.mjs` 拿它送 OCR）。
    * 与歌词条、标签条同一套架构：这里只切条，认字靠离线缓存。见 `harmony.ts`。
@@ -143,6 +149,7 @@ const empty = (page: SPage, raster: RasterPage | null, unit: RasterUnit | null, 
   slurs: [],
   lyricStrips: [],
   labelStrips: [],
+  wordStrips: [],
   harmonyStrips: [],
   jianpuStrips: [],
   harmonies: [],
@@ -866,6 +873,8 @@ export async function recognizeRasterPage(
     lyricOcr?: Map<string, OcrChar[]>;
     /** 声部标签的 OCR 缓存（`scripts/gen-rasterlabels.mjs` 的产物）。见 `stafflabel.ts`。 */
     labelOcr?: Map<string, string>;
+    /** 文字指示带的 OCR 缓存（`scripts/gen-rasterwords.mjs` 的产物）。见 `words.ts`。 */
+    wordOcr?: Map<string, WordLine[]>;
     /** 和弦条的 OCR 缓存（`scripts/gen-rasterharmony.mjs` 的产物）。见 `harmony.ts`。
      *  值的类型与歌词缓存共用（`OcrChar`）——两边都是「整条送 rec，回来字符带条内 x」。 */
     harmonyOcr?: Map<string, OcrChar[]>;
@@ -3542,6 +3551,8 @@ export async function recognizeRasterPage(
   fixFlatReadAsSix(harmonies, ctx);
   makeSystems(pg);
   makeBars(pg);
+  // 反复记号、房子、同系统的小节线样式（`repeats.ts`）：下游按线宽与圆点符号认，位图路两样常缺，回到图上量
+  markRepeatsAndVoltas(pg, raster.bin, cmap, unit.space);
   // 段的认领：**只记挂上标记的**（谱线/加线/符干/小节线/系统线/符尾）。
   // 没挂上标记的段是「抽出来了却没人要」的，留着当无主，那才是线索。
   for (const sg of pg.segs) {
@@ -3770,7 +3781,10 @@ export async function recognizeRasterPage(
   // 到 Maestro 的 `dynamicForte` 模板只有 19（字典里 `dynamicForte` 26 个实例、
   // `dynamicMP` 8 个）。缺的只是这一句挂接。
   const marks = findNotations(pg);
-  attachNotations(pg, notes, marks.marks);
+  // 贴着符头的那几样（保持音、断奏、重音）不按「x 最近」挂：字典里叫 `articTenuto*` 的九成是谱线残段，
+  // 留给后面的 `findRasterArticulations` 按与符头的关系判
+  const articSyms = marks.marks.filter((m) => /^artic/.test(m.code));
+  attachNotations(pg, notes, marks.marks.filter((m) => !/^artic/.test(m.code)));
   // 琶音记号挂到它右边那一列和弦上：纵向落在波浪线范围里（上下各容半格多）、横向在线右 `ARP_REACH` 格内最靠左的那一列
   for (const b of arpeggios) {
     const sp = unit.space;
@@ -4047,6 +4061,53 @@ export async function recognizeRasterPage(
     )
     : null;
 
+  // ── 带方括号的三连音 ────────────────────────────────────────────────────
+  //
+  // 放在歌词之后：括号常落在歌词带里被字格罩住，候选是无主的加上只被歌词认过的。已经由符杠那一路标过连音的不再动。
+  {
+    const cands = cmap.contours.filter((c) => ledger.claimsOf(c.id).every((q) => q.by === "lyric"));
+    for (const tp of findRasterTuplets(pg, cands, notes, unit.space)) {
+      if (tp.notes.some((n) => n.tuplet)) continue;
+      applyTuplet(tp.notes, 3);
+      for (const c of tp.contours) ledger.claim(c.bbox, "tuplet");
+    }
+  }
+
+  // ── 文字指示与节拍器记号 ────────────────────────────────────────────────
+  //
+  // 带照固定几何切（两行谱之间的空当），认字靠 `wordOcr` 缓存；歌词行、和弦字母已经另有身份，中心落在它们盒里的行不要。
+  const wordStrips = findWordStrips(raster.bin, pg.staves, unit);
+  if (opts.wordOcr) {
+    const skip: Rect[] = [
+      // 认下来的歌词行：从行顶往下两格半（`LyricLine` 只记行顶），左右以首尾音节为界
+      ...lyricLines.filter((ln) => ln.syllables.length >= 3).map((ln) => {
+        const l = Math.min(...ln.syllables.map((sy) => sy.left));
+        const r = Math.max(...ln.syllables.map((sy) => sy.right));
+        return { x: l - unit.space, y: ln.top - unit.space * 0.5, w: r - l + unit.space * 2, h: unit.space * 3 };
+      }),
+      ...harmonies.map((t) => ({ x: t.box.x, y: t.box.y, w: t.box.w, h: t.box.h })),
+    ];
+    const placed = attachWordLines(pg, notes, wordStrips, opts.wordOcr, unit, skip, lyricStrips.map((st) => st.box));
+    // 文字带里读出来的和弦记号：和弦带那一路（要自己的 OCR 缓存，合唱谱没生成）没认到和弦时才用
+    if (!harmonies.length && placed.chords.length) {
+      const objs = placed.chords.map((t, i) => makeTextObj(pg.objs.length + i, { cells: [{ box: t.box, ch: t.text }], sizeDev: t.box.h }));
+      for (const o of objs) o.addTag("Harmony");
+      pg.objs.push(...objs);
+      attachHarmonies(pg, notes, objs, false);
+      liftHarmonies(notes, unit.space);
+    }
+    // OCR 读出来的力度只补按字形那一路没认到的地方（三格内已有的不重复挂）
+    attachDynamicTexts(pg, notes, placed.dynamics.filter((d) => !dynamics.some((q) => Math.abs(q.px - d.px) <= unit.space * 3 && Math.abs(q.py - d.py) <= unit.space * 2)));
+  }
+
+  // ── 贴着符头的演奏法记号（保持音 / 断奏 / 顿音 / 重音 / 延长记号）──────────────
+  //
+  // 放在歌词之后（歌词字的点画已经有主）、松叶与弧线之前（延长记号的弧够宽够拱，不先摘走就成了一条圆滑线）。
+  {
+    const taken: Rect[] = pg.symbols.filter((s0) => s0.hasTag("Augmentation")).map((s0) => ({ x: s0.box.left, y: s0.box.top, w: s0.box.right - s0.box.left, h: s0.box.bottom - s0.box.top }));
+    for (const a of findRasterArticulations(pg, cmap, unit, notes, articSyms, ledger.unclaimed(), taken, (id) => ledger.claimsOf(id).map((q) => q.by))) ledger.claim(a.box, `artic:${a.code}`);
+  }
+
   // ── 松叶 ────────────────────────────────────────────────────────────────
   //
   // 只在**无主**的 contour 里找：认出来的符号不必再判一遍，而松叶从来没人认领。
@@ -4093,6 +4154,7 @@ export async function recognizeRasterPage(
   attachSlurs(slurs, notes, unit.space);
   reconnectSlurs(pg, slurs);
   markSlurNotes(slurs);
+  markLyricExtends(notes);
 
   return {
     page: pg,
@@ -4114,6 +4176,7 @@ export async function recognizeRasterPage(
     harmonies,
     harmonyTexts,
     labelStrips,
+    wordStrips,
     staffLabels,
     wedges,
     dynamics,

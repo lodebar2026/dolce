@@ -10,7 +10,7 @@ import { RasterGlyphLookup, outlineTemplates, type RasterGlyphDict } from "./ras
 import { rasterizePage } from "./rasterpage";
 import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
-import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips } from "./ocrlive";
+import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrWordStrips } from "./ocrlive";
 
 /**
  * 位图路打开 PDF：**关掉浏览器版 pdf.js 的图像解码优化**。缺省它把内嵌位图交成 `ImageBitmap`（离屏画布 / ImageDecoder），
@@ -165,6 +165,7 @@ export async function recognizeRasterPdfs(
         lyric: (s) => ocrLyricStrips(ocr, s),
         label: (s) => ocrLabelStrips(ocr, s),
         jianpu: (s) => ocrJianpuStrips(ocr, s),
+        word: (s) => ocrWordStrips(ocr, s),
       },
     });
   } finally {

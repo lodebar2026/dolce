@@ -12,6 +12,7 @@ import { harmonyKey, type HarmonyStrip } from "./harmony";
 import { stripKey, type LyricStrip, type OcrChar } from "./lyric";
 import { labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
 import { jianpuKey, type JianpuStrip } from "./jianpuband";
+import { keepWordLine, spaceWordText, wordKey, type WordLine, type WordStrip } from "./words";
 import type { JianpuRow } from "./jianpufuse";
 
 type Surface = { width: number; height: number; data: Uint8ClampedArray };
@@ -118,6 +119,25 @@ export async function ocrLabelStrips(ocr: OcrBackend, strips: readonly LabelStri
     }
     const pick = withNum.filter((l) => normalizeLabel(l.text)).sort((a, b) => b.y - a.y || a.x - b.x)[0];
     if (pick) out.set(labelKey(it), pick.text);
+  }
+  return out;
+}
+
+/** 文字指示带：DBNet 找行、逐行 rec，只留像文字指示的行（`keepWordLine`），词界按列投影补空格。空带也回一条空表。 */
+export async function ocrWordStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
+  const out = new Map<string, WordLine[]>();
+  if (!ocr.recognizeRegion) return out;
+  for (const it of strips) {
+    let lines: Awaited<ReturnType<NonNullable<OcrBackend["recognizeRegion"]>>> = [];
+    try {
+      lines = await ocr.recognizeRegion({ w: it.w, h: it.h, data: it.data }, { x: 0, y: 0, w: it.w, h: it.h });
+    } catch {
+      lines = [];
+    }
+    out.set(wordKey(it), lines.filter((l) => keepWordLine(l.text)).map((l) => {
+      const box = { x: Math.round(l.bbox.x), y: Math.round(l.bbox.y), w: Math.round(l.bbox.w), h: Math.round(l.bbox.h) };
+      return { t: spaceWordText(l.text, l.chars, it, box), ...box };
+    }));
   }
   return out;
 }

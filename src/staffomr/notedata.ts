@@ -641,7 +641,9 @@ export interface StaffNote {
   beams: number;
   x: number;
   /** 挂在这个音符上的歌词，按段（verse）。 */
-  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean }[];
+  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; /** 这个字后面拖着延长线（一字多音，见 `markLyricExtends`）。 */ extend?: boolean }[];
+  /** 这些字的歌词延长线到这个音为止（`<extend type="stop"/>`）。记的是那个字本身，段号后来被重排也跟着走。 */
+  lyricExtendStop?: { verse: number }[];
   /** 挂在这个音符上的和弦符号（归一后的原文，如 `Am`、`G/B`、`Dm7`）。 */
   chord?: string;
   /** 编辑器的识别对照用：写进 `<note id>` 的 id（`rasteromr/song.ts` 给）。记在音符上而不是旁表——写出前音符会被复制（`{...n}`） */
@@ -669,6 +671,10 @@ export interface StaffNote {
   octaveShift?: "up" | "down";
   /** 力度记号（`mp`/`f`…）。MusicXML 里出成 `<direction>`，排在这个音符之前。 */
   dynamic?: string;
+  /** 印在这个音符处的文字指示（rit. / a tempo / cresc. / Fine…）：原文与在谱表上方还是下方。MusicXML 里出成 `<direction><words>`。 */
+  words?: { text: string; above: boolean }[];
+  /** 节拍器记号（`quarter=86`）。MusicXML 里出成 `<direction><metronome>`。 */
+  metronome?: string;
   /** 松叶从这个音符**起**（`<wedge type="crescendo|diminuendo">`）。见 `attachWedges`。 */
   wedgeStart?: "crescendo" | "diminuendo";
   /** 松叶到这个音符**止**（`<wedge type="stop">`）。 */

@@ -65,11 +65,14 @@ export function classifyBarlines(pg: SPage, stf: Staff): BarlineMark[] {
       s.py < stf.box.bottom,
   );
 
+  // 粗笔的门槛：三分之一线距；整页小节线本来就粗的（低分辨率的粗线扫描件，线宽过线距三成）按本行的中位线宽的 1.8 倍
+  const lws = groups.map((g) => g.lw).sort((p, q) => p - q);
+  const heavy = Math.max(sp / 3, (lws[lws.length >> 1] ?? 0) * 1.8);
   const out: BarlineMark[] = [];
   for (const g of groups) {
     const left = g.xs[0];
     const x = g.xs[g.xs.length - 1];
-    const style = g.lw > sp / 3 ? "light-heavy" : g.xs.length > 1 ? "light-light" : null;
+    const style = g.lw > heavy ? "light-heavy" : g.xs.length > 1 ? "light-light" : null;
     let before = false;
     let after = false;
     // 只有一道细线的一处，反复点要贴着它（一格内）：附点二分和弦的两个点离后面的小节线两格，
