@@ -851,11 +851,14 @@ function buildMusicLine(
       case "barline": {
         const bl = barlineFrom(t.value ?? "normal", t.repeatTimes, t.source);
         // 线**之前**攒下的跳转记号（`… 6 !fine! |]`）挂这条线，别落到音符的 articulations 上
-        const jumps = pending.decos.map((d) => jumpOrnamentName(d)).filter((v): v is string => !!v);
-        if (jumps.length) {
-          pending.decos = pending.decos.filter((d) => !jumpOrnamentName(d));
-          pending.srcs = pending.srcs.filter((a) => a.kind !== "deco" || !jumpOrnamentName(a.name));
-          bl.ornaments = jumps.map((name) => ({ name, level: 0 }));
+        // **右线**（小节里已有音符）之前攒下的其余记号也是这条线上的（文本谱 `|&ykh` 的右括弧，写出端同样写在线前）：
+        // 音符的装饰总写在音符之前，线前的后面没有音符可挂，留着会落到下一行头一个音上或在曲末丢掉
+        const onLine = (d: string): boolean => !!jumpOrnamentName(d) || pb.measure.elements.length > 0;
+        const taken = pending.decos.filter(onLine);
+        if (taken.length) {
+          pending.decos = pending.decos.filter((d) => !onLine(d));
+          pending.srcs = pending.srcs.filter((a) => a.kind !== "deco" || !onLine(a.name));
+          bl.ornaments = taken.map((d) => ({ name: jumpOrnamentName(d) ?? d, level: 0 }));
         }
         // **小节里还没有元素 = 这是左线**（行首的 `|`、或紧跟上一根），不收尾，
         // 否则会凭空多出一个空小节

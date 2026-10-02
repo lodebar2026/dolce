@@ -155,8 +155,11 @@ function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rul
 
 /** 字段值里的换行会把后续内容变成裸行（第二轮解析就当成音乐体了）。
  *  MusicXML 的 `<creator>` 常把多行塞进一个字段（Finale 的习惯），所以一律按行拆成多条同名字段。 */
+/** 字段值里的行界。裸 `\r` 也算（文本谱原文行内夹着的）：带着它写出去，读回按行切开，后半截就成了另一行。 */
+const LINE_END = /\r\n?|\n/;
+
 function pushLines(L: string[], name: string, value: string): void {
-  for (const line of value.split(/\r?\n/)) {
+  for (const line of value.split(LINE_END)) {
     const t = line.trim();
     if (t) L.push(`${name}:${t}`);
   }
@@ -469,13 +472,17 @@ export abstract class AbcFamilyEmitter {
         ri++;
         el0 = cut.at;
       }
-      out.push(this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext }, el0));
+      const body = this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext }, el0);
+      out.push(body);
       const right = (mea.barlines ?? []).find((b) => b.location === "right");
+      const last = i === part.measures.length - 1;
       // 右线的记号写在线**之前**（`… 6 !fine! |]`）：唱到这儿才跳，读回来也按这个位置认。
       if (right) out.push(...barlineOrnaments(right));
-      out.push(right ? barlineText(right) : "|");
+      // 多敲的一根线（文本谱 `||||` = 终止线 + 一个只有右线的空小节）不写：读回来它成了下一小节的左线，这个空小节并不存在
+      const bare = i > 0 && body === "" && !lefts.length && !mea.attrs
+        && (!right || ((right.style === "regular" || right.style === "none") && !right.repeat && !right.ending && !right.ornaments?.length));
+      if (!bare) out.push(right ? barlineText(right) : "|");
       // 模型记「下一小节起新系统」（`doc.ts::Print`），源码的 `$` 写在本小节之后
-      const last = i === part.measures.length - 1;
       // 原位换行过的小节，下一小节上那份小节级 `print` 是同一处换行，不再写第二个 `$`
       const brk = cuts.length ? null : breakAfter(part, i);
       if (brk && (!last || this.trailingBreak)) out.push(this.breakText(brk === "page"));
@@ -613,18 +620,18 @@ export abstract class AbcFamilyEmitter {
         ["topleft", pt.topLeft], ["topright", pt.topRight],
         ["bottomleft", pt.bottomLeft], ["bottomcenter", pt.bottomCenter], ["bottomright", pt.bottomRight],
       ] as const) {
-        for (const t of arr) for (const line of t.split(/\r?\n/)) if (line.trim()) L.push(`I:${key} ${line.trim()}`);
+        for (const t of arr) for (const line of t.split(LINE_END)) if (line.trim()) L.push(`I:${key} ${line.trim()}`);
       }
     }
     // 扩展 meta（`model/metakeys.ts`）：一项一行；项里自带换行的拆成多行（读回是多项，按 "\n" 合起来文字不变）
     for (const [key, vals] of Object.entries(song.meta ?? {})) {
-      for (const v of vals) for (const line of v.split(/\r?\n/)) L.push(`I:meta ${key} ${line}`.trimEnd());
+      for (const v of vals) for (const line of v.split(LINE_END)) L.push(`I:meta ${key} ${line}`.trimEnd());
     }
     if (song.style?.sheetRef) L.push(`I:style ${song.style.sheetRef}`);
     if (song.linesPerPage) L.push(`I:linesperpage ${song.linesPerPage}`);
     // 指令名**一律小写输出**：`parseInstruction` 读入时会归一成小写（ABC 的 `I:` 不区分大小写），
     // 这里若保留原样大小写，往返一轮就会从 `I:FontSize` 变成 `I:fontsize`
-    for (const r of song.style?.raw ?? []) L.push(`I:${r.key.toLowerCase()} ${r.value}`);
+    for (const r of song.style?.raw ?? []) L.push(`I:${r.key.toLowerCase()} ${r.value.split(LINE_END).join(" ")}`);
     if (song.playOrder?.length) L.push(`I:playorder ${playOrderText(song)}`);
     for (const r of song.remarks ?? []) {
       // `P:` 原文在解析期被塞进 remarks，原样还回去
