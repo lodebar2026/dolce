@@ -112,7 +112,7 @@ export async function recognizeRasterSong(
           if (r1.hasStaff) {
             const harmonyOcr = await opts.live.harmony(r1.harmonyStrips);
             if (opts.cancelled?.()) throw new Error("已取消");
-            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr });
+            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, wantWordStrips: !!opts.live.word });
             const [lyricOcr, labelOcr, jianpuOcr, wordOcr] = await Promise.all([
               opts.live.lyric(r2.lyricStrips),
               opts.live.label(r2.labelStrips),

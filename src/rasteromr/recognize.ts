@@ -84,7 +84,8 @@ export interface RasterPageResult {
    * 与歌词条同一套架构：这里只切条，认字靠离线缓存。见 `stafflabel.ts`。
    */
   labelStrips: LabelStrip[];
-  /** 文字指示带（`words.ts`）：不论有没有缓存都切，生成缓存的脚本要它。 */
+  /** 文字指示带（`words.ts`）。**只在 `opts.wantWordStrips` 时带出来**（生成缓存的脚本、在线识别送 OCR 的那一趟）：
+   *  各条合起来近乎整页的像素，整曲结果又留着每一页，平时带着等于每页多存一份位图。 */
   wordStrips: WordStrip[];
   /**
    * 这一页各谱行上方的**和弦带**（`gen-rasterharmony.mjs` 拿它送 OCR）。
@@ -875,6 +876,8 @@ export async function recognizeRasterPage(
     labelOcr?: Map<string, string>;
     /** 文字指示带的 OCR 缓存（`scripts/gen-rasterwords.mjs` 的产物）。见 `words.ts`。 */
     wordOcr?: Map<string, WordLine[]>;
+    /** 把文字指示带放进结果（`wordStrips`）。缺省不带，见该字段的说明。 */
+    wantWordStrips?: boolean;
     /** 和弦条的 OCR 缓存（`scripts/gen-rasterharmony.mjs` 的产物）。见 `harmony.ts`。
      *  值的类型与歌词缓存共用（`OcrChar`）——两边都是「整条送 rec，回来字符带条内 x」。 */
     harmonyOcr?: Map<string, OcrChar[]>;
@@ -4076,7 +4079,7 @@ export async function recognizeRasterPage(
   // ── 文字指示与节拍器记号 ────────────────────────────────────────────────
   //
   // 带照固定几何切（两行谱之间的空当），认字靠 `wordOcr` 缓存；歌词行、和弦字母已经另有身份，中心落在它们盒里的行不要。
-  const wordStrips = findWordStrips(raster.bin, pg.staves, unit);
+  const wordStrips = opts.wordOcr || opts.wantWordStrips ? findWordStrips(raster.bin, pg.staves, unit) : [];
   if (opts.wordOcr) {
     const skip: Rect[] = [
       // 认下来的歌词行：从行顶往下两格半（`LyricLine` 只记行顶），左右以首尾音节为界
@@ -4176,7 +4179,7 @@ export async function recognizeRasterPage(
     harmonies,
     harmonyTexts,
     labelStrips,
-    wordStrips,
+    wordStrips: opts.wantWordStrips ? wordStrips : [],
     staffLabels,
     wedges,
     dynamics,
