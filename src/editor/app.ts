@@ -9,10 +9,10 @@ import { parse123, parseAbc } from "../j123/parse";
 import { eachChord } from "../model/helpers";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { applyBreaks } from "../model/breaks";
-import type { JChord, JScore } from "../layout/input";
+import type { JScore } from "../layout/input";
 import { clearBreaks } from "../layout/input";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
-import { measureJianpu, PaintResources, ScorePainter, staffOptionsOf, type JianpuPaintRequest } from "../layout/painter";
+import { measureJianpu, PaintResources, ScorePainter, type JianpuPaintRequest } from "../layout/painter";
 import { NoteEntry } from "../layout/entry";
 import { toPt } from "../layout/result";
 import { computeStyle, sanitizeLayer, upsertRule, type StyleEngine, type StyleRule } from "../style/cascade";
@@ -29,9 +29,7 @@ import { JpNumber, Lyric as LayoutLyric, TextFrame, type PageItem } from "../lay
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import { jianpuInputOfDoc, jianpuInputOfJpw } from "../model/jianpuinput";
-import { phraseCuts, type FitMeasure } from "../pu/phrase";
-import { layoutStaff } from "../mixed/layout";
-import { staffChordSpans } from "../mixed/layoutpass";
+import type { FitMeasure } from "../pu/phrase";
 import type { JpwMeta, JpwRange } from "../omr/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
@@ -61,6 +59,7 @@ import type { PlaySource } from "../score/timeline";
 import { playSourceOf } from "../model/playsong";
 import { OmrController, type OmrHost } from "./omrctl";
 import { FileSession } from "./filesession";
+import { MixedSession } from "./mixedsession";
 import { FileFormatSource, FormatSwitch, type FileSwitchHost, type FormatSwitchHost, type OriginFormat } from "./formatswitch";
 import type { JianpuLayoutMode, JpProfileName } from "../jianpu/profile";
 import {
@@ -137,11 +136,20 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 试听输入的缓存：同一份模型、同一档只拼一次（`refreshSpeedUi` 每次重排都要取速度） */
   private _playCache: { doc: ScoreDoc; forExpanded: boolean; src: PlaySource | null } | null = null;
 
-  /** 五线谱/混排档读的模型（MusicXML 形状）；null = 还没有（或读不出）五线谱视图。
-   *  `.musicxml`：底本原文在 `mixedDoc.source`，混排档导出 MusicXML 原样给出（`export.ts::buildMusicXml`）；
-   *  文本格式：进五线谱时由源文派生（`_ensureMixedDoc`），`_mixedDerivedText` 记它由哪份源文与哪套简谱设置来（`_mixedDeriveKey`）。 */
-  mixedDoc: ScoreDoc | null = null;
-  private _mixedDerivedText: string | null = null;
+  /** 五线谱/混排档的模型与它的派生（`mixedsession.ts`）。 */
+  readonly mixed: MixedSession = new MixedSession(this);
+  /** 五线谱/混排档读的模型（`MixedSession.mixedDoc`）；null = 还没有（或读不出）五线谱视图。 */
+  get mixedDoc(): ScoreDoc | null {
+    return this.mixed.mixedDoc;
+  }
+  /** 乐句档的五线谱行首（`MixedSession.staffPhraseLineStarts`）。 */
+  staffPhraseLineStarts(doc: ScoreDoc): ReadonlySet<ElementId> | null {
+    return this.mixed.staffPhraseLineStarts(doc);
+  }
+  /** MixedHost：当前源文投成不带版面坐标的 MusicXML（`export.ts::sourceMusicXmlBare`），带源元素 id。 */
+  mixedSourceXml(): string {
+    return sourceMusicXmlBare(this, { sourceIds: true });
+  }
   /** 在途的五线谱 / 混排排版（异步），`whenIdle` 等它。 */
   private _pendingStaff: Promise<void> | null = null;
   /** 排版模式切换（展开 / 原样 / 五线谱 / 混排）的四个按钮，见 `ViewMode`。 */
@@ -517,13 +525,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   // Selected note (for "play from here"): its chord + which verse/pass row.
   private _selectedId: ElementId | null = null;
   private _selectedVerse = 0;
-  /** 派生五线谱（`mixedDoc`）的和弦 id ↔ 源模型的和弦 id（`_indexMixedSrcIds`）。`.musicxml` 为空。 */
-  private _mixedToSrc = new Map<ElementId, ElementId>();
-  private _srcToMixed = new Map<ElementId, ElementId[]>();
-  /** `.musicxml` 五线谱档那份模型是按哪份原文读的（原文变了才重读）。 */
-  private _mixedXmlText: string | null = null;
-  /** 派生五线谱里各和弦在第几小节（全曲下标）：五线谱上的小节线按小节认（`mixed/prims.ts::StaffLeafData`）。 */
-  private _mixedMeasureOf = new Map<ElementId, number>();
   /** 五线谱 / 混排上选中的和弦组（五线谱层与简谱叠层各一个）。 */
   private _staffSelected: SVGGElement[] = [];
 
@@ -777,13 +778,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.mode === "mixed") {
       // `.musicxml`：原文（模型那一路改的、撤销回来的）变了就重读；索引同步建，谱面异步排
       if (this.docFormat === "musicxml") {
-        if (this._mixedXmlText !== text && !this._setMixedXml(text)) return false;
+        if (this.mixed._mixedXmlText !== text && !this.mixed._setMixedXml(text)) return false;
         if (this.mixedDoc) this._buildSyncIndex(this.mixedDoc);
         void this._renderMixedPages();
         return true;
       }
       if (this.adapter.caps.layout === "jpwabc") this._refreshJpwDoc(text); // 导出 MIDI 读它
-      if (!this._ensureMixedDoc()) return false;
+      if (!this.mixed._ensureMixedDoc()) return false;
       // 索引跟原文同步建（可视化编辑按它改原文），谱面元素等五线谱排完再绑（`_layoutStaff`）
       const src = this.adapter.caps.layout === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
       if (src && this.adapter.caps.textEditor) this._buildSyncIndex(src);
@@ -835,40 +836,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this._phraseOn;
   }
 
-  /**
-   * 乐句档的五线谱行首：同一套断句（`pu/phrase.ts::phraseCuts`），**尺子换成五线谱引擎**——
-   * 不带换行投一份、按当前五线谱纸与样式排一遍，量各和弦的自然跨度（`mixed/layoutpass.ts::staffChordSpans`）。
-   * 小节中间的断点也要（`midLineStarts`：拆小节、中间隐藏线）；分页交给五线谱自己，`PhraseCut.page` 不用。
-   * `doc` 须与投影的那份同一个（`sourceMusicXmlBare` 里那份），元素 id 才对得上。量不出来返回 null，调用方退回简谱行首。
-   */
-  staffPhraseLineStarts(doc: ScoreDoc): ReadonlySet<ElementId> | null {
-    try {
-      const bare = musicXmlFormat.toScoreDoc(scoreDocToMusicXml(doc, { sourceIds: true }));
-      const options = staffOptionsOf(this.meta, this.staffStyle());
-      options.page = this.staffPage;
-      const { width, byId } = staffChordSpans(layoutStaff(bare, options));
-      if (byId.size === 0) return null;
-      const measure: FitMeasure = (score) => {
-        const spans = new Map<JChord, { x0: number; x1: number }>();
-        for (const part of score.parts) {
-          for (const m of part.measures) {
-            for (const e of m.entries) {
-              const sp = e.kind === "chord" && e.id !== null ? byId.get(e.id) : undefined;
-              if (sp) spans.set(e as JChord, sp);
-            }
-          }
-        }
-        return { width, spans };
-      };
-      const cuts = phraseCuts(doc, 0, { measure });
-      if (!cuts) return null;
-      return new Set(cuts.flatMap((c) => (c.id === null ? [] : [c.id])));
-    } catch (e) {
-      console.warn("五线谱按乐句断句失败，按简谱行首", e);
-      return null;
-    }
-  }
-
   /** `.jpwabc` 当前源文的模型（与简谱排版器、导出同一份，元素 id 对得上）。 */
   get jpwDoc(): ScoreDoc | null {
     return this._jpwDoc;
@@ -891,56 +858,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       : { widthPt: STAFF_LONG_IMAGE_WIDTH, heightPt: null, marginsPt, override };
   }
 
-  /** 派生五线谱要看的设置：简谱的档、纸、字号变了，断点跟着变，得重新派生。 */
-  private _mixedDeriveKey(): string {
-    const pg = this.layoutPage;
-    // 乐句档五线谱自己量宽断句，五线谱的纸与样式也进键
-    const staff = this._phraseOn ? ["phrase", this.staffPaper, JSON.stringify(this.staffStyle())] : [];
-    return [this.getText(), this.layoutMode, this.jpPaper, this.puPaper, this.fontSize, pg.w, pg.h, ...staff].join("\u0000");
-  }
-
-  /** 五线谱/混排档的模型备好了没有。`.musicxml` 就是打开时读的那份；文本格式把**当前源文**经
-   *  唯一写出端投成 MusicXML（`export.ts::sourceMusicXmlBare`，与导出 MusicXML 同一条路、只是不补版面坐标）
-   *  再读回——混排排版器只吃 MusicXML 形状。源文没变不重做。 */
-  private _ensureMixedDoc(): boolean {
-    if (this.docFormat === "musicxml") return this.mixedDoc !== null;
-    const key = this._mixedDeriveKey();
-    if (this.mixedDoc && this._mixedDerivedText === key) return true;
-    try {
-      this.mixedDoc = musicXmlFormat.toScoreDoc(sourceMusicXmlBare(this, { sourceIds: true }));
-      this._mixedDerivedText = key;
-      this._indexMixedSrcIds(this.mixedDoc);
-      return true;
-    } catch (e) {
-      console.error("转五线谱失败", e);
-      this.setStatus(t("status.staffFailed", { error: (e instanceof Error ? e.message : String(e)) }));
-      return false;
-    }
-  }
-
-  /** 派生五线谱模型里各和弦的源 id（`Chord.srcId`）两向对照：五线谱点音符 → 代码区，代码区光标 → 五线谱。 */
-  private _indexMixedSrcIds(doc: ScoreDoc): void {
-    this._mixedToSrc.clear();
-    this._srcToMixed.clear();
-    this._mixedMeasureOf.clear();
-    for (const song of doc.songs) {
-      for (const part of song.parts) {
-        for (const [mi, m] of part.measures.entries()) {
-          for (const el of m.elements) {
-            if (el.kind !== "chord") continue;
-            this._mixedMeasureOf.set(el.id, mi);
-            if (el.srcId === undefined) continue;
-            this._mixedToSrc.set(el.id, el.srcId);
-            const list = this._srcToMixed.get(el.srcId);
-            if (list) list.push(el.id);
-            else this._srcToMixed.set(el.srcId, [el.id]);
-          }
-        }
-      }
-    }
-  }
-
-  /** FormatHost：`.jpwabc` 解析 → 排版 → 渲染。 */
   reloadJpwabc(text: string): boolean {
     let f: JpwFile | null;
     try {
@@ -1200,7 +1117,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 源模型的元素 id → 派生五线谱里的 id。文本格式靠 `srcId` 两向表；`.musicxml` 两份是同一份原文读的，id 一样。 */
   private _mixedIds(id: ElementId): ElementId[] {
     if (this.docFormat === "musicxml") return [id];
-    return this._srcToMixed.get(id) ?? [];
+    return this.mixed._srcToMixed.get(id) ?? [];
   }
 
   /** 谱面是哪一路画的：简谱（简谱引擎 / 原样文档）还是五线谱 / 混排。几何命中（减时线、附点）只有简谱那一路有。 */
@@ -1362,7 +1279,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       }
       case "barline": {
         const m = mids(entry.id)[0];
-        const measure = m === undefined ? undefined : this._mixedMeasureOf.get(m);
+        const measure = m === undefined ? undefined : this.mixed._mixedMeasureOf.get(m);
         if (measure === undefined) return [];
         if (entry.edge !== "before") return leaf({ staffRole: "barline", measure, side: "after" });
         // 音符前面那条：系统开头是本小节的 before，其余是前一小节的 after
@@ -1662,7 +1579,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.view.dispatch({
       effects: this._highlightCompartment.reconfigure(this.adapter.highlighter),
     });
-    this._dropMixedDoc(); // 换了格式，五线谱/混排的模型由新格式重新派生（`.musicxml` 由调用方随后读入）
+    this.mixed._dropMixedDoc(); // 换了格式，五线谱/混排的模型由新格式重新派生（`.musicxml` 由调用方随后读入）
     if (this.adapter.caps.layout === "scoredoc" && this.adapter.caps.textEditor) {
       // 乐句重排各格式各有写回原文的办法（`formats.ts::relayoutText`），可用性由各自的 reload 定。
       this._disablePhrase();
@@ -1834,7 +1751,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._selectedVerse = 1;
     this.playback.seekTo({ id, pass: 1 });
     // 文本格式：代码区光标跳到这个音的原文
-    const span = this._sync.spanOfNote(this._mixedToSrc.get(id) ?? -1);
+    const span = this._sync.spanOfNote(this.mixed._mixedToSrc.get(id) ?? -1);
     if (span && this.adapter.caps.textEditor) {
       this._syncing = true;
       try {
@@ -1930,7 +1847,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 索引里的音 id → 试听那份谱里的 id（五线谱 / 混排播的是画出来那份 `mixedDoc`）。 */
   private _playIdOf(id: ElementId): ElementId {
-    return this.mode === "mixed" ? this._srcToMixed.get(id)?.[0] ?? id : id;
+    return this.mode === "mixed" ? this.mixed._srcToMixed.get(id)?.[0] ?? id : id;
   }
 
   /** PlaybackHost：用户在谱面上点了某个音就从那儿起播；没点过就从可视化编辑选区的第一个音起播
@@ -2147,14 +2064,14 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _importBytes(bytes: Uint8Array, name: string): void {
     // ABC 记谱：**原文就是源格式**，原生解析直接进编辑器（`reloadAbc`），不再转 MusicXML。
     if (/\.abc$/i.test(name)) {
-      this._dropMixedDoc(); // 原来在五线谱/混排就留在那档：setText → reload 会重新派生
+      this.mixed._dropMixedDoc(); // 原来在五线谱/混排就留在那档：setText → reload 会重新派生
       this._setDocFormat("abc");
       this.setText(formatOf("abc").decode(bytes));
       return;
     }
     // 123（简谱主格式）：原文就是源格式，直接进编辑器，不做任何转换。
     if (is123File(name)) {
-      this._dropMixedDoc();
+      this.mixed._dropMixedDoc();
       this._setDocFormat("123");
       this.setText(formatOf("123").decode(bytes));
       return;
@@ -2168,7 +2085,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         this.setStatus(t("status.notPu", { reason: sniffed.reason }));
         return;
       }
-      this._dropMixedDoc();
+      this.mixed._dropMixedDoc();
       this._setDocFormat("pu");
       this.setText(puText);
       return;
@@ -2179,7 +2096,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       // 要编辑就「转成文本格式」，那是另一份新文档（`convertToTextDoc`）。
       const xml = formatOf("musicxml").decode(bytes);
       this._setDocFormat("musicxml");
-      if (!this._setMixedXml(xml)) return;
+      if (!this.mixed._setMixedXml(xml)) return;
       this._setMixedAvailable(true);
       // 多声部（SATB 等）歌谱默认进入混排模式
       const toMixed = this.mode === "mixed" || isMultiPartXml(xml);
@@ -2190,7 +2107,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       return;
     } else {
       this._setDocFormat("jpwabc");
-      this._dropMixedDoc();
+      this.mixed._dropMixedDoc();
       this._disablePhrase();
       this.setText(formatOf("jpwabc").decode(bytes));
     }
@@ -2204,7 +2121,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.omr.clear();
     this._documentLoaded();
     const losses = planSave(doc, "123");
-    this._dropMixedDoc();
+    this.mixed._dropMixedDoc();
     this._setMode("jp"); // 识别之后先核对（omrctl 接着进叠加视图）；五线谱/混排从工具条切
     this._setDocFormat("123");
     this.filePath = null;
@@ -2220,7 +2137,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    */
   adoptStaffXml(xml: string): boolean {
     this._setDocFormat("musicxml");
-    if (!this._setMixedXml(xml)) return false;
+    if (!this.mixed._setMixedXml(xml)) return false;
     this._setMixedAvailable(true);
     this._setMode("mixed");
     this.filePath = null;
@@ -2229,26 +2146,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return true;
   }
 
-  /** 五线谱/混排档的模型：MusicXML 读成 `ScoreDoc`（与简谱档那份分开读——那份会被投影、断句层补字段，混排只读原样的）。
-   *  读不出来时置空并提示，返回 false。 */
-  private _setMixedXml(xml: string): boolean {
-    this._mixedDerivedText = null;
-    try {
-      this.mixedDoc = musicXmlFormat.toScoreDoc(xml);
-      this._mixedXmlText = xml;
-      this._indexMixedSrcIds(this.mixedDoc); // 小节线按小节认（`_mixedMeasureOf`）
-      return true;
-    } catch (e) {
-      this.mixedDoc = null;
-      console.error("MusicXML 读取失败", e);
-      this.setStatus(t("status.xmlReadFailed", { error: (e instanceof Error ? e.message : String(e)) }));
-      return false;
-    }
-  }
-
   /** FormatHost：`.musicxml` 读成 `ScoreDoc` → 简谱档排版；五线谱/混排档另读一份（`mixedDoc`）。 */
   reloadMusicXml(text: string): boolean {
-    this._setMixedXml(text);
+    this.mixed._setMixedXml(text);
     let doc: ScoreDoc;
     try {
       doc = musicXmlFormat.toScoreDoc(text);
@@ -2549,7 +2449,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 切档。**唯一入口**：两组状态该怎么配由这里说了算。 */
   async setViewMode(mode: ViewMode): Promise<void> {
     if (mode === "staff" || mode === "mixed") {
-      if (!this._ensureMixedDoc()) return;
+      if (!this.mixed._ensureMixedDoc()) return;
       // 先定简谱层再进混排：setStaffJianpuLayer 会作废 painter，进去后只排一遍
       await this.setStaffJianpuLayer(mode === "mixed");
       await this.showStaffPreview();
@@ -2561,16 +2461,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._syncViewModeButtons();
   }
 
-  /** 丢掉五线谱/混排档的模型与排版器（换文档/换格式时）。 */
-  private _dropMixedDoc(): void {
-    this.mixedDoc = null;
-    this._mixedDerivedText = null;
-    this._mixedToSrc.clear();
-    this._srcToMixed.clear();
-    this._setMixedAvailable(false);
-  }
-
-  private _setMixedAvailable(available: boolean): void {
+  _setMixedAvailable(available: boolean): void {
     this._mixedAvailable = available;
     this._syncViewModeButtons();
   }
@@ -2639,14 +2530,14 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (format === "musicxml") {
       this._setDocFormat("musicxml");
       this.filePath = filePath;
-      if (!this._setMixedXml(text)) return;
+      if (!this.mixed._setMixedXml(text)) return;
       this._setMixedAvailable(true);
       this.setText(text);
       if (this.mode === "mixed") void this._renderMixedPages();
       return;
     }
     const fromXml = this.docFormat === "musicxml";
-    this._dropMixedDoc();
+    this.mixed._dropMixedDoc();
     if (fromXml) this._setMode("jp");
     if (format === "jpwabc") this._disablePhrase();
     this._setDocFormat(format);
@@ -2680,7 +2571,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   async showStaffPreview(): Promise<void> {
-    if (!this._ensureMixedDoc()) return;
+    if (!this.mixed._ensureMixedDoc()) return;
     if (this.mode === "mixed") return;
     this.stopPlayback();
     this._setMode("mixed");
