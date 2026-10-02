@@ -1707,6 +1707,56 @@ export async function recognizeRasterPage(
     }
     ledger.claim(s0.box, `clef:${code}`);
   }
+  // ── **高音谱号底下挂着「8」的是低八度谱号**（男高音谱号，或带括号的「(8)」）──────────────
+  //
+  // 「8」紧贴在谱号尾巴底下，与尾巴连成一串墨：谱号下半那个弯的正下方（`CLEF_8_X`），从底线往下连着有墨的深度
+  // 比普通高音谱号的尾巴深出大半格（`CLEF_8_DEPTH`）。歌词、段号离谱表远，与尾巴之间隔着空行，连不上。
+  // 带括号的「(8)」是「男声唱时低八度」的可选记号，照低八度读（烛光颂曲首页人声行，用户定：与 GT 同口径）。
+  for (const g of groups) {
+    const sp = unit.space;
+    const left = Math.max(...g.lines.map((l) => l.left));
+    const s0 = syms.find((q) => q.code === "gClef" && q.box.y < g.lines[4].y && q.box.y + q.box.h > g.lines[0].y && q.box.x < left + sp * 4);
+    if (!s0) continue;
+    const bin0 = raster.bin;
+    const xa = Math.max(0, Math.round(left + sp * CLEF_8_X[0]));
+    const xb = Math.min(bin0.w - 1, Math.round(left + sp * CLEF_8_X[1]));
+    // 底线按行首实测：斜着没推平的谱行，整行的线位在行首能差出大半格（烛光颂曲 p5），照它量下探深度全是错的。
+    // 模型底线上下一格半里，行首十格内有三格以上横墨的行是谱线行，取最低的那一条
+    const bot0 = localLineModel(bin0, g.lines.map((l) => l.y), left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2)[4];
+    // 一条都找不到的（行首被调号挤满）照模型的；最低的那条比模型高出半格以上的不量——那是第四线（底线在行首断了），照它量会多出一格
+    let bot = bot0;
+    for (let y = Math.round(bot0 + sp * 1.5); y >= Math.round(bot0 - sp); y--) {
+      if (y < 0 || y >= bin0.h) continue;
+      let run = 0;
+      let long = false;
+      for (let x = Math.round(left); x < Math.min(bin0.w, left + sp * 10) && !long; x++) {
+        run = bin0.data[y * bin0.w + x] ? run + 1 : 0;
+        long = run > sp * 3;
+      }
+      if (long) {
+        bot = y;
+        break;
+      }
+    }
+    if (bot < bot0 - sp * 0.5) continue;
+    const rowInk = (y: number) => {
+      if (y < 0 || y >= bin0.h) return false;
+      for (let x = xa; x <= xb; x++) if (bin0.data[y * bin0.w + x]) return true;
+      return false;
+    };
+    // 从底线下半格起往下走，连着有墨（容一行断口）走到哪儿
+    let end = Math.round(bot + sp * 0.5);
+    for (let y = end, miss = 0; y < bin0.h && miss < 2; y++) {
+      if (rowInk(y)) (end = y), (miss = 0);
+      else miss++;
+    }
+    const depth = (end - bot) / sp;
+    if (depth < CLEF_8_DEPTH[0] || depth > CLEF_8_DEPTH[1]) continue;
+    // 行首这一段里别的高音谱号块（同一个谱号被认了两份的）一并改，下游取最左的那个
+    for (const q of syms) if (q.code === "gClef" && q.box.y < g.lines[4].y && q.box.y + q.box.h > g.lines[0].y && q.box.x < left + sp * 4) q.code = "gClef8vb";
+    if (s0.box.y + s0.box.h < end) s0.box = { ...s0.box, h: end - s0.box.y };
+    ledger.claim(s0.box, "clef:gClef8vb");
+  }
   /** 行中换谱号那一路验过的谱号（其余行中的谱号在建页前剔掉）。 */
   const midClefs = new Set<RasterSym>();
   // ── **行中换谱号**（小一号的谱号，印在小节中间或小节线前）──────────────────
@@ -5357,6 +5407,10 @@ const CLEF_INK_X = [0.6, 3.0];
 const CLEF_INK_LOW = [0.3, 0.25];
 /** 这两段里有墨的行占到几成算「有」、不到几成算「没有」。 */
 const CLEF_INK_FULL = 0.6;
+/** 低八度谱号的「8」：横向窗口（离谱行左端几格）、谱号尾巴那一段与「8」下半那一段（离底线几格）。 */
+const CLEF_8_X = [1.3, 2.6];
+/** 谱号从底线往下连着探出多少格算挂着「8」：普通高音谱号的尾巴 1.6~1.9 格，挂着「8」的 2.5~3.1 格（烛光颂曲实测）。 */
+const CLEF_8_DEPTH = [2.35, 3.4];
 const CLEF_INK_NONE = 0.15;
 /** 行中换谱号：与本页行首谱号的宽高比差上限、签名距离上限。 */
 const MID_CLEF_ASPECT = 0.15;
