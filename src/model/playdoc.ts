@@ -123,6 +123,14 @@ function timelinePartOf(part: Part, lead: boolean): TimelinePart {
       if (el.kind !== "chord") continue;
       const onset = pos.get(el.voice) ?? 0;
       if (el.grace) continue;
+      if (el.placeholder) {
+        // 不占时值的占位（`Chord.placeholder`）：自己那一拍不算，身上的增时线延的是前一个音
+        const extra = el.duration.divisions - el.duration.divisions / ((el.sustains?.length ?? 0) + 1);
+        const prev = entries[entries.length - 1];
+        if (extra && prev) entries[entries.length - 1] = { ...prev, duration: prev.duration.plus(new Fraction(extra).divInt(div)) };
+        pos.set(el.voice, onset + extra);
+        continue;
+      }
       pos.set(el.voice, onset + el.duration.divisions);
       if (el.cue) continue;
       let v = velocity;

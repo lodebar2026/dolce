@@ -965,11 +965,11 @@ function applyMetadata(ctx: Ctx, meta: Metadata, key: string, value: string, col
 
 /**
  * 行首前缀：`Q`/`C`/`W`，可跟
- *   - 变体后缀 `!` / `-`（有谱实际在用，手册未载）
+ *   - 变体后缀 `!` / `-`（有谱实际在用，手册未载）；写在段号前后都有（`Q!2:`、`Q2!:`）
  *   - 段号或段号区间 `1` / `1-2`
  *   - 声部名（番茄 `"女高"` / 有谱 `<女高>`）
  */
-export const BODY_PREFIX = /^\s*([QCW])([!+-]?)(\d*)(?:-(\d+))?(?:"([^"]*)"|<([^>]*)>)?\s*[:：]/;
+export const BODY_PREFIX = /^\s*([QCW])([!+-]?)(\d*)(?:-(\d+))?([!+-]?)(?:"([^"]*)"|<([^>]*)>)?\s*[:：]/;
 /** 头部前缀：字母或 FontSize/Margin + `:` */
 const META_PREFIX = /^\s*([A-Za-z]+)\s*[:：]/;
 /** 有谱的分曲线：整行都是连字符（其后是另一首） */
@@ -1091,10 +1091,10 @@ export function parsePuAst(text: string, options: ParseOptions = {}): PuDoc {
     const body = BODY_PREFIX.exec(raw);
     if (body) {
       const kind = body[1]!;
-      const variant = body[2] ?? "";
+      const variant = body[2] || body[5] || "";
       const numberText = body[3] ?? "";
       const rangeEnd = body[4];
-      const caption = body[5] ?? body[6];
+      const caption = body[6] ?? body[7];
       const contentAt = body[0].length;
 
       if (kind === "W") {

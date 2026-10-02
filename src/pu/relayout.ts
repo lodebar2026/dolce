@@ -36,7 +36,7 @@ function labelOf(raw: string): string {
   const variant = m[2] ?? "";
   const num = m[3] ?? "";
   const range = m[4] ? `-${m[4]}` : "";
-  return `${kind}${variant}${num}${range}:`;
+  return `${kind}${variant}${num}${range}${m[5] ?? ""}:`;
 }
 
 /** `Q1: ` / `C1: <1.>` 这段前缀的长度（内容从这里开始）。 */

@@ -91,6 +91,8 @@ export interface NoteElement {
   sound: "note" | "rest" | "rhythm";
   /** 隐藏音符：占位不显形。番茄 `8`；有谱 `8`（跟词）/ `9`（不跟词） */
   hidden: boolean;
+  /** 不占时值的占位（多声部里垫歌词格的隐藏休止，`doc.ts::Chord.placeholder`）：对拍位时不算它这一拍 */
+  placeholder?: true;
   /** 隐藏音符是否仍参与歌词对位。有谱 `9` 为 false，其余隐藏音符为 true。 */
   lyricAnchor: boolean;
   /** 正数为高八度点个数，负数为低八度点 */
@@ -353,7 +355,7 @@ export function tupletRatios(
 /** 音符/增时线的时值，以四分音符为 1。附点 ×(2−2^−n)；多连音比例由调用方另乘。 */
 export function elementQuarters(el: MusicElement): Fraction {
   if (el.kind === "sustain") return new Fraction(1);
-  if (el.kind !== "note") return new Fraction(0);
+  if (el.kind !== "note" || el.placeholder) return new Fraction(0);
   const base = new Fraction(4, el.duration);
   if (el.dots <= 0) return base;
   const denom = 1 << el.dots;

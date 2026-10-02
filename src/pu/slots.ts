@@ -116,6 +116,7 @@ function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
     source: ch.source ?? ZERO,
   };
   if (deg?.accidental) n.accidental = deg.accidental;
+  if (ch.placeholder) n.placeholder = true;
   if (ch.harmony?.text !== undefined) n.chord = ch.harmony.text;
   if (ch.sectionWord !== undefined) n.annotation = ch.sectionWord;
   return n;

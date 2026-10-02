@@ -18,7 +18,7 @@ import { mark } from "../editor/deco";
 
 
 /** 行首前缀：`Q1"女高":` / `C1-2:` / `W:` */
-const BODY_PREFIX = /^\s*([QCW])([!+-]?)(\d*)(?:-\d+)?(?:"[^"]*"|<[^>]*>)?\s*[:：]/;
+const BODY_PREFIX = /^\s*([QCW])([!+-]?)(\d*)(?:-\d+)?[!+-]?(?:"[^"]*"|<[^>]*>)?\s*[:：]/;
 /** 头部字段：`T:` `1=C4/4` `FontSize:` … */
 const META_PREFIX = /^\s*([A-Za-z]+)\s*[:：]/;
 const KEY_LINE = /^\s*[1-7]\s*=/;

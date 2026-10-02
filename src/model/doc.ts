@@ -455,6 +455,10 @@ export interface Chord {
   rhythm?: boolean;
   /** `print-object="no"`：不可见 */
   printObject?: boolean;
+  /** 多声部文本谱里**不占时值的占位**（隐藏休止 `8`/`9`：别的声部字比这一声部的音多时垫一格，见 `frompu.ts::markPlaceholders`）。
+   *  `duration` 照旧按占一拍记（123 写出、五线谱投影不认这一位）；排版对拍位与试听不算它自己那一拍，
+   *  它身上的增时线延的是前一个音。 */
+  placeholder?: boolean;
   /** 是否参与歌词对位。**缺省 = 非休止**；只在与缺省不同时写（文本谱的 `0@`、隐藏休止 `8`/`9`） */
   lyricAnchor?: boolean;
   /** 见 `SourceOrnament` */

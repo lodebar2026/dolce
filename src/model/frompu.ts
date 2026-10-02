@@ -589,6 +589,35 @@ function applyVolta(r: LineResult, m: PuMark, measures: Measure[], voltas: { ope
 }
 
 /** `PuDoc` → `ScoreDoc`。一首 `PuSong` 对一首 `Song`。 */
+/**
+ * 多声部里的隐藏休止 `8`/`9` 是不是**不占时值的占位**（`Chord.placeholder`）。
+ *
+ * 四声部本里下面的声部常写 `3 8 -`：女高这里唱两个字，这一声部只有一个长音，`8` 垫一格好挂字，后面的 `-` 延的是 `3`。
+ * 照占一拍读，这一声部就比女高多出几拍，原样档按拍位对声部（`place.ts::alignVoices`）时后面的音全错开。
+ * 判据按整声部的总时值，每个声部有两种读法：照占一拍读、不算占位那一拍。第一声部自己也会垫（别的声部音多的地方），
+ * 所以先定全曲总时值取第一声部的哪种读法——哪种能让更多的声部（任一读法）对上就取哪种，一样多取占一拍的
+ * （各声部都垫着同样几拍的弱起，是真不出声的休止）。定了之后逐声部：照占一拍读对得上的不动；对不上、不算那一拍正好对上的，
+ * 这一声部的隐藏休止全记成占位；两样都对不上的不动。
+ */
+function markPlaceholders(song: Song): void {
+  if (song.parts.length < 2) return;
+  const read = song.parts.map((part) => {
+    const chords = part.measures.flatMap((m) => m.elements).filter((el): el is Chord => el.kind === "chord" && !el.grace);
+    const hidden = chords.filter((ch) => !!ch.rest && !ch.rhythm && ch.printObject === false);
+    const counted = chords.reduce((t, ch) => t + ch.duration.divisions, 0);
+    const own = hidden.reduce((t, ch) => t + ch.duration.divisions / ((ch.sustains?.length ?? 0) + 1), 0);
+    return { hidden, counted, bare: counted - own };
+  });
+  if (!read.some((r) => r.hidden.length)) return;
+  const fits = (total: number): number => read.filter((r) => r.counted === total || r.bare === total).length;
+  const lead = read[0]!;
+  const total = fits(lead.bare) > fits(lead.counted) ? lead.bare : lead.counted;
+  for (const r of read) {
+    if (r.counted === total || r.bare !== total) continue;
+    for (const ch of r.hidden) ch.placeholder = true;
+  }
+}
+
 export function puToScoreDoc(pu: PuDoc): ScoreDoc {
   const doc: ScoreDoc = emptyDoc("pu");
   doc.puDialect = pu.dialect;
@@ -699,6 +728,7 @@ export function puToScoreDoc(pu: PuDoc): ScoreDoc {
       for (let i = 0; i < part.measures.length; i++) part.measures[i]!.number = String(i + 1);
     }
     song.marks = marks;
+    markPlaceholders(song);
     doc.songs.push(song);
   }
   return doc;
