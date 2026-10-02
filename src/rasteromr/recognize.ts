@@ -3532,7 +3532,7 @@ export async function recognizeRasterPage(
     shareKeySignature(ctx, settled);
     carrySystemKeys(pg, ctx, settled);
   }
-  extendKeyByCarry(ctx, opts.carryKey);
+  extendKeyByCarry(ctx, opts.carryKey, raster.bin, unit.space);
   dropBarsInKey(pg, ctx, unit.space);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
   fixFlatReadAsSix(harmonies, ctx);
@@ -4601,15 +4601,48 @@ function fixFlatReadAsSix(harmonies: HarmonyToken[], ctx: Map<Staff, StaffContex
  * 本页认出的调号与上一页同种、个数更少的，按上一页补足个数（拿本页已认出的最后一个记号重复补——
  * 下游只按个数算变音，记号位置取的是最右那个的右缘，重复不改它）。
  * 本页整页没认出调号的不管（`calcAlters` 本就沿用上一行；跨页那一截另说）。
+ *
+ * **补之前先看后面有没有墨**：记号少了也可能是真转调（望十架第 10 小节起五个降号转一个，
+ * 一路补成五个补到第 6 页）。漏认的记号墨还在纸上；转调后的调号右边是空的。
+ * 认出的最后一个记号右边 `CARRY_GAP` 到 `CARRY_REACH` 格里（传自别的行的调号到记号自己那一行去看），有一列在谱线之外的墨够 `CARRY_INK` 格
+ *（升降号的竖笔）才补；漏的是中间一个时后面没有墨，认出的几个从头到尾已有上一页那个个数那么宽
+ *（每个记号 `CARRY_PITCH` 格）的也补（烛光颂曲 p6 六个降号十行都读成五个）。
  */
-function extendKeyByCarry(ctx: Map<Staff, StaffContext>, carry: CarryKey | undefined): void {
+const CARRY_GAP = 0.1;
+const CARRY_REACH = 1.6;
+const CARRY_INK = 1;
+const CARRY_PITCH = 0.85;
+function extendKeyByCarry(ctx: Map<Staff, StaffContext>, carry: CarryKey | undefined, bin: Binary, sp: number): void {
   if (!carry) return;
   for (const c of ctx.values()) {
     if (!c.key.length || c.key.length >= carry.n) continue;
     if (!c.key.every((k) => k.code === carry.code)) continue;
     const last = c.key[c.key.length - 1];
+    // 漏在中间的（认出的几个已经占满上一页那个个数的宽度）后面没墨也补
+    const span = last.box.right - Math.min(...c.key.map((k) => k.box.left));
+    // 调号可能是别的行传过来的（`carrySystemKeys`），墨要到记号自己那一行去看
+    const cy = (last.box.top + last.box.bottom) / 2;
+    const home = [...ctx.values()].reduce((a, q) => (Math.abs(staffMid(q) - cy) < Math.abs(staffMid(a) - cy) ? q : a), c);
+    if (span < sp * CARRY_PITCH * (carry.n - 0.5) && !inkPastKey(bin, home.staff.lineYs, last.box.right, sp)) continue;
     c.key = [...c.key, ...Array.from({ length: carry.n - c.key.length }, () => last)];
   }
+}
+
+const staffMid = (c: StaffContext) => (c.staff.lineYs[0] + c.staff.lineYs[c.staff.lineYs.length - 1]) / 2;
+
+/** 调号最后一个记号右边还有没有像升降号竖笔的墨（见 `extendKeyByCarry`）。 */
+function inkPastKey(bin: Binary, lineYs: number[], right: number, sp: number): boolean {
+  if (lineYs.length < 2) return true;
+  const y0 = Math.max(0, Math.round(lineYs[0] - sp * 1.5));
+  const y1 = Math.min(bin.h - 1, Math.round(lineYs[lineYs.length - 1] + sp * 1.5));
+  const onLine = (y: number) => lineYs.some((ly) => Math.abs(y - ly) <= sp * 0.2);
+  for (let x = Math.round(right + sp * CARRY_GAP); x <= Math.min(bin.w - 1, Math.round(right + sp * CARRY_REACH)); x++) {
+    let n = 0;
+    // 扫描件的竖笔歪歪扭扭，一列看不全：相邻三列有一列是墨就算
+    for (let y = y0; y <= y1; y++) if (!onLine(y) && (bin.data[y * bin.w + x - 1] || bin.data[y * bin.w + x] || bin.data[y * bin.w + x + 1])) n++;
+    if (n >= sp * CARRY_INK) return true;
+  }
+  return false;
 }
 
 /** 这一页最后一行认出的调号（同种记号才算），没有就沿用上一页的。 */
