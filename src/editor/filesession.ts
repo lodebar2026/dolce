@@ -69,7 +69,8 @@ export class FileSession {
   }
 
   async openFile(): Promise<boolean> {
-    if (!(await this.confirmReplace())) return false;
+    // 没有没存的内容时不 await：浏览器版下面的 `input.click()` 得留在点击手势的同步调用栈里（Safari 隔一个 await 就不弹选文件框）
+    if (this.isDirty() && !(await this.confirmReplace())) return false;
     if (isTauriRuntime()) {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const { readFile } = await import("@tauri-apps/plugin-fs");

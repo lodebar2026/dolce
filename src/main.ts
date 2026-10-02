@@ -347,8 +347,18 @@ async function boot() {
   // 无头回归脚本（`navigator.webdriver`）不拦：没人去点那个离开确认框。
   if (isTauriRuntime()) {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    let asking = false; // 确认框开着时再点关闭：不叠第二个框
     void getCurrentWindow().onCloseRequested(async (ev) => {
-      if (!(await app.confirmReplace(true))) ev.preventDefault();
+      if (asking) {
+        ev.preventDefault();
+        return;
+      }
+      asking = true;
+      try {
+        if (!(await app.confirmReplace(true))) ev.preventDefault();
+      } finally {
+        asking = false;
+      }
     });
   } else if (!navigator.webdriver) {
     window.addEventListener("beforeunload", (ev) => {
@@ -479,7 +489,8 @@ interface RecognitionPickerHooks {
 }
 
 async function pickRecognitionFile(app: App, hooks: RecognitionPickerHooks): Promise<void> {
-  if (!(await app.confirmReplace())) return;
+  // 没有没存的内容时不 await：浏览器版的 `input.click()` 得留在点击手势的同步调用栈里
+  if (app.isDirty() && !(await app.confirmReplace())) return;
   if (isTauriRuntime()) {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const { readFile } = await import("@tauri-apps/plugin-fs");
