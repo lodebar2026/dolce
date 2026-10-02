@@ -4,7 +4,7 @@
 // 粗线那一笔过不了竖段的宽度闸、紧贴着它的细线又过不了孤立性判据，圆点也多半没进形状字典。
 // 这里回到图上量：第二、三间各一个圆点、左右对齐，旁边一格内是一细一粗两根贯穿谱表的竖线。
 // 一个系统里有一行认出来，同系统各行同 x 的小节线都算（反复、终止线是整个系统一起画的）。
-import type { Binary } from "../omr/types";
+import type { Binary, Rect } from "../omr/types";
 import { attachVoltas, type Volta } from "../staffomr/octave";
 import type { Bar, SPage, Staff } from "../staffomr/model";
 import type { ContourMap } from "./contour";
@@ -26,8 +26,12 @@ const VOLTA_LEN = 3;
 const VOLTA_RISE: [number, number] = [1.2, 7];
 const VOLTA_HOOK: [number, number] = [0.6, 5];
 const VOLTA_SNAP = 1.8;
+/** 房子横线的厚度上限（格）。 */
+const VOLTA_THICK = 0.3;
 
 interface RepeatMark {
+  /** 两个圆点的盒（记账用）。 */
+  dots: Rect[];
   staff: Staff;
   /** 细、粗两根线的中点。 */
   x: number;
@@ -78,7 +82,7 @@ export function findRasterRepeats(pg: SPage, bin: Binary, map: ContourMap, sp: n
         if (between > sp * PAIR) continue;
         const x = (near[0] + near[1] + other[0] + other[1]) / 4;
         const dir = side > 0 ? "backward" : "forward";
-        if (!out.some((m) => m.staff === st && m.dir === dir && Math.abs(m.x - x) < sp)) out.push({ staff: st, x, dir });
+        if (!out.some((m) => m.staff === st && m.dir === dir && Math.abs(m.x - x) < sp)) out.push({ staff: st, x, dir, dots: [u.bbox, l.bbox] });
       }
     }
   }
@@ -95,10 +99,12 @@ function spaceY(st: Staff, x: number, i: number): number {
  * 把反复记号、房子落到小节上，并把同系统各行的小节线样式拉齐。
  *
  * @param bin 带谱线的原图（量「贯穿谱表的竖线」要它）。
+ * @returns 认作反复点的圆点的盒：调用方记进账本，免得后面被当成无主的墨（断奏点的候选）。
  */
-export function markRepeatsAndVoltas(pg: SPage, bin: Binary, map: ContourMap, sp: number): void {
+export function markRepeatsAndVoltas(pg: SPage, bin: Binary, map: ContourMap, sp: number): Rect[] {
   const systemOf = (st: Staff) => pg.systems.find((s) => s.staves.includes(st))?.staves ?? [st];
-  for (const m of findRasterRepeats(pg, bin, map, sp)) {
+  const repeats = findRasterRepeats(pg, bin, map, sp);
+  for (const m of repeats) {
     for (const st of systemOf(m.staff)) {
       if (m.dir === "backward") {
         const b = nearest(st.bars, (q) => q.right, m.x, sp * SNAP);
@@ -148,6 +154,9 @@ export function markRepeatsAndVoltas(pg: SPage, bin: Binary, map: ContourMap, sp
     if (!atRowStart && !st.bars.some((b) => Math.abs(b.left - hook.cx) <= sp * VOLTA_SNAP)) continue;
     const len = inkRun(bin, Math.round(hook.cx), Math.round(hook.top), Math.max(2, Math.round(sp * 0.15)));
     if (len < sp * VOLTA_LEN) continue;
+    // 房子的横线是细线：没挂上标记的符干顶端连着符杠也是「竖段顶上往右一道长墨」，但符杠有半格厚
+    const thick = [0.25, 0.5, 0.75].map((f) => inkThick(bin, Math.round(hook.cx + len * f), Math.round(hook.top), Math.round(sp))).sort((p, q) => p - q)[1];
+    if (thick > Math.max(3, sp * VOLTA_THICK)) continue;
     // 钩底也往右拉着一条横线的是文字框的左边（框住的排练号、`Interlude`），不是房子
     if (inkRun(bin, Math.round(hook.cx), Math.round(hook.bottom), Math.max(2, Math.round(sp * 0.15))) > sp * 2) continue;
     // 钩顶往左不能也有横线（那是一个框的右上角，不是房子的左端）
@@ -181,6 +190,21 @@ export function markRepeatsAndVoltas(pg: SPage, bin: Binary, map: ContourMap, sp
       }
     }
   }
+  return repeats.flatMap((m) => m.dots);
+}
+
+/** `(x, y)` 处那道横墨的厚度：从 `y` 上下 `reach` 行里最靠近 `y` 的墨起，量连着的墨有几行。 */
+function inkThick(bin: Binary, x: number, y: number, reach: number): number {
+  if (x < 0 || x >= bin.w) return 0;
+  const on = (cy: number) => cy >= 0 && cy < bin.h && bin.data[cy * bin.w + x] === 1;
+  let y0 = -1;
+  for (let d = 0; d <= reach && y0 < 0; d++) y0 = on(y - d) ? y - d : on(y + d) ? y + d : -1;
+  if (y0 < 0) return 0;
+  let a = y0;
+  let b = y0;
+  while (on(a - 1)) a--;
+  while (on(b + 1)) b++;
+  return b - a + 1;
 }
 
 /** 从 `(x, y)` 沿横向量一道线有多长：上下 `pad` 行里任一行有墨就算连着，容两像素的断口。 */

@@ -3552,7 +3552,7 @@ export async function recognizeRasterPage(
   makeSystems(pg);
   makeBars(pg);
   // 反复记号、房子、同系统的小节线样式（`repeats.ts`）：下游按线宽与圆点符号认，位图路两样常缺，回到图上量
-  markRepeatsAndVoltas(pg, raster.bin, cmap, unit.space);
+  for (const b of markRepeatsAndVoltas(pg, raster.bin, cmap, unit.space)) ledger.claim(b, "repeat:dot");
   // 段的认领：**只记挂上标记的**（谱线/加线/符干/小节线/系统线/符尾）。
   // 没挂上标记的段是「抽出来了却没人要」的，留着当无主，那才是线索。
   for (const sg of pg.segs) {

@@ -64,7 +64,7 @@ export interface RasterArtic {
 
 interface Cand {
   box: Rect;
-  /** 无主 contour 才有（重音、延长记号要量轮廓）。 */
+  /** 从 contour 层来的候选才有（字典符号没有）；重音、延长记号、楔形要量轮廓。 */
   contour?: Contour;
   /** 形状字典给的名字。 */
   dictCode?: string;
@@ -76,7 +76,7 @@ interface Cand {
  * @param dictSyms 形状字典认成 `artic*` 的符号（还没挂到任何音符上）。
  * @param unclaimed 账本上无主的 contour。
  * @param claimsOf 一团墨在账本上的认领者（`ContourLedger.claimsOf` 的 `by`）。
- * @param taken 已经另有身份的盒（附点、反复点、加线）：候选与它们相交的不认。
+ * @param taken 已经挂到音符上的附点的盒：候选与它们相交的不认。
  */
 export function findRasterArticulations(
   pg: SPage,

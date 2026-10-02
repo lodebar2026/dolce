@@ -65,9 +65,10 @@ export function classifyBarlines(pg: SPage, stf: Staff): BarlineMark[] {
       s.py < stf.box.bottom,
   );
 
-  // 粗笔的门槛：三分之一线距；整页小节线本来就粗的（低分辨率的粗线扫描件，线宽过线距三成）按本行的中位线宽的 1.8 倍
-  const lws = groups.map((g) => g.lw).sort((p, q) => p - q);
-  const heavy = Math.max(sp / 3, (lws[lws.length >> 1] ?? 0) * 1.8);
+  // 粗笔的门槛：三分之一线距；整页小节线本来就粗的（低分辨率的粗线扫描件，线宽过线距三成）按**整页**小节线笔画中位线宽的 1.8 倍。
+  // 不按本行取：曲末的短行只有一两处小节线，中位数就是终止线自己。偶数个取偏小的那个，同一个道理
+  const lws = pg.segsWithTag("BarLine").map((s) => s.lw).sort((p, q) => p - q);
+  const heavy = Math.max(sp / 3, (lws[(lws.length - 1) >> 1] ?? 0) * 1.8);
   const out: BarlineMark[] = [];
   for (const g of groups) {
     const left = g.xs[0];
