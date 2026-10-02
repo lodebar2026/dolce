@@ -2276,11 +2276,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    */
   editScoreDoc(mutate: (doc: ScoreDoc) => void): boolean {
     if (this.docFormat !== "musicxml") return false;
-    const doc = this.currentScoreDoc();
+    // 改一份新读的，不动 `currentScoreDoc()` 那份共用对象（行视图、投影按对象身份缓存，原地改了它们不知道）
+    const doc = this.freshModel();
     if (!doc) return false;
     mutate(doc);
-    this.setText(scoreDocToMusicXml(doc));
-    if (this.mode === "mixed") void this._renderMixedPages();
+    this.setText(scoreDocToMusicXml(doc)); // `reload` 按新原文重读模型、重排（混排档同）
     return true;
   }
 
