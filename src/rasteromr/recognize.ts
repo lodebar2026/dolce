@@ -1810,7 +1810,7 @@ export async function recognizeRasterPage(
       const top = g.lines[0].y;
       const bot = g.lines[4].y;
       const fShape = w >= 1.2 && w <= 2.0 && h >= 2.0 && h <= 3.0 && Math.abs(b.y - top) <= sp * 0.5 && b.y + b.h <= bot + sp * 0.5;
-      const gShape = w >= 1.3 && w <= 2.4 && h >= 3.6 && h <= 5.8 && b.y <= top - sp * 0.5 && b.y + b.h >= bot + sp * 0.7;
+      const gShape = w >= 1.3 && w <= 2.4 && h >= 3.6 && h <= 5.8 && b.y <= top - sp * MID_CLEF_G_TOP && b.y + b.h >= bot + sp * 0.7;
       if (!fShape && !gShape) continue;
       const sig = binSig(nl, b);
       let hit: { smufl: SmuflName; dist: number } | null = null;
@@ -5788,6 +5788,8 @@ const CLEF_INK_NONE = 0.15;
 /** 判低音谱号时第四五线之间那一段「没有」的门槛（比 `CLEF_INK_NONE` 松，见用处）。 */
 const CLEF_INK_LOW_NONE = 0.4;
 /** 行中换谱号：与本页行首谱号的宽高比差上限、签名距离上限。 */
+/** 行中的高音谱号顶端至少探出首线这么多格（小一号的只探出 0.4 格上下：望十架 p10 量得 0.43）。 */
+const MID_CLEF_G_TOP = 0.3;
 const MID_CLEF_ASPECT = 0.15;
 const MID_CLEF_DIST = 130;
 const MID_CLEF_FILL = 0.08;
