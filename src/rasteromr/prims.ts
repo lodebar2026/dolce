@@ -58,6 +58,11 @@ const LEFTINK_FRAC = 0.9;
 const VSEG_MIN_H = 1.4;
 
 /** 一条符杠：拟合出来的中心线加包围盒。 */
+/** 谱表外不到这么多格宽的「杠」要两端都连着干才算（见 `findPrims` 里符杠那一段）。 */
+const LEDGER_BEAM_W = 2.5;
+/** 上面那条只在线宽过线距这么多的页判。 */
+const LEDGER_BEAM_THICK = 0.22;
+
 export interface BeamQuad extends LineSeg {
   box: Rect;
 }
@@ -742,6 +747,26 @@ export function findPrimitives(
       // 纵向游程（18px）落在符杠区间里、横向游程也过线，宽度还差一点点就够。
       // 符杠是 3:1 往上的长条，符头是 1.3:1 的椭圆，长宽比一刀分得开。
       if (c.bbox.w < c.bbox.h * 2.5) continue;
+    }
+    // **谱表外的短「杠」两端都要连着干**：粗线的低分辨率页上加线有三像素厚，骑着、贴着加线的符头与加线并成一块
+    //（纵向游程过了「比谱线厚一倍半」那道闸），宽过一格半、够扁，被收成符杠，头就丢了（烛光颂曲管风琴右手
+    // 谱表下方两条加线上的一串八分，一个都没认出）。真的短杠是架在两根干之间的；头连加线只在一侧有干。
+    // 只管谱表外、不到两格半的：谱表里的短杠照旧，长杠不会是一个头。
+    // 只在线宽过线距两成的页判：细线页的加线过不了厚度闸、不会并进来，而那里干抽不全的真短杠会被这一条误杀
+    //（不限线宽时独唱谱时值 97.52 → 96.96%、合唱谱干净档小节自检 88.62 → 86.34%）。
+    if (!shortBeam && unit.lineThick > unit.space * LEDGER_BEAM_THICK && c.bbox.w < unit.space * LEDGER_BEAM_W && !staffBands.some(([t, b]) => c.bbox.y + c.bbox.h / 2 > t - unit.space * 0.3 && c.bbox.y + c.bbox.h / 2 < b + unit.space * 0.3)) {
+      const xa = stemNear(c.bbox.x, c.bbox, tol);
+      const xb = stemNear(c.bbox.x + c.bbox.w - 1, c.bbox, tol);
+      // 还要看得见加线：块的左端或右端往外三成格处有一道细横墨（厚不过谱线的一倍半）。真短杠两头之外是白的
+      //（只看干时救主降生一条干没抽全的短杠被误杀，音符 98.5 → 96.9%）
+      const d = Math.max(2, Math.round(unit.space * 0.3));
+      const thinAt = (x: number) => {
+        if (x < 0 || x >= w) return false;
+        for (let y = Math.max(0, c.bbox.y - 1); y <= Math.min(h - 1, c.bbox.y + c.bbox.h); y++) if (bin.data[y * w + x] && vr[y * w + x] <= unit.lineThick * 1.5) return true;
+        return false;
+      };
+      const ledgerTail = thinAt(c.bbox.x - d) || thinAt(c.bbox.x + c.bbox.w - 1 + d);
+      if (ledgerTail && (xa === null || xb === null || xb - xa < unit.space * 0.7)) continue;
     }
     const line = centerLine(bMaskC, w, c, true);
     // **杠厚要匀**：低分辨率页上一串八分的头沿谱线挨个粘成一条（有一位神 m4 五个 B4），过得了宽度与长宽比，
