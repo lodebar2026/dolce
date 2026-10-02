@@ -3422,7 +3422,11 @@ export async function recognizeRasterPage(
   extendKeyChains(pg, ctx);
   dropHeadsInKey(pg, ctx);
   extendKeyByStrokes(pg, ctx, raster.bin, unit);
-  shareKeySignature(ctx, shareSystemKeys(pg, ctx));
+  {
+    const settled = shareSystemKeys(pg, ctx);
+    shareKeySignature(ctx, settled);
+    carrySystemKeys(pg, ctx, settled);
+  }
   extendKeyByCarry(ctx, opts.carryKey);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
   fixFlatReadAsSix(harmonies, ctx);
@@ -4506,6 +4510,47 @@ function shareSystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>): Set<StaffCon
   return settled;
 }
 
+/**
+ * **按系统定下来的调号往没定的行传**：`shareSystemKeys` 定了调号的系统不参加全页共享，页上别的行
+ * （一行没认出的系统、认岔的两行大谱表）就没处借了。调号管到下一次改之前，所以没定的行照**上一个**定了的系统补
+ * （页首没有上一个的照下一个）：
+ *   - 一个记号都没认出的行、认出的是它的前几个的行，补足；
+ *   - 读法不同的行，同一系统里有别的行与它一致才改（同一系统各行调号相同，两行互证；
+ *     烛光颂曲低音谱表把头一个降号的肚子读成一个升号）。
+ * 曲中转成 C 大调的系统本来就没有调号，会被补上前一个调——这样的谱还没遇到，遇到了要另看还原号。
+ */
+function carrySystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>, settled: Set<StaffContext>): void {
+  const groups = systemGroups(pg).map((g) => g.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c));
+  const keyOf = groups.map((cs) => cs.find((c) => settled.has(c) && c.key.length)?.key);
+  const sigOf = (k: Sym[]) => k.map((q) => q.code).join(",");
+  // 没有哪个系统定下来的页（全是两行的大谱表）：过半的行读成同一个调号的，拿它当参照
+  let pageRef: Sym[] | undefined;
+  if (!settled.size) {
+    const all = groups.flat();
+    const count = new Map<string, number>();
+    for (const c of all) if (c.key.length) count.set(sigOf(c.key), (count.get(sigOf(c.key)) ?? 0) + 1);
+    const top = [...count].sort((a, b) => b[1] - a[1])[0];
+    const k = top && top[1] * 2 > all.length ? all.find((c) => sigOf(c.key) === top[0])!.key : undefined;
+    if (k && k.every((q) => q.code === k[0].code)) pageRef = k;
+    if (!pageRef) return;
+  }
+  for (const [i, cs] of groups.entries()) {
+    if (keyOf[i]) continue;
+    const ref = pageRef ?? keyOf.slice(0, i).reverse().find((k) => k) ?? keyOf.slice(i + 1).find((k) => k);
+    if (!ref) continue;
+    const want = sigOf(ref);
+    const isPrefix = (c: StaffContext) => c.key.length < ref.length && c.key.every((k, j) => k.code === ref[j].code);
+    // 作证的行：读得与它一样，或认出了它的前几个
+    const agree = cs.some((c) => sigOf(c.key) === want || (c.key.length > 0 && isPrefix(c)));
+    for (const c of cs) if (isPrefix(c)) c.key = ref;
+    // 读法不同的行：有作证的行、或补过之后过半的行都是它，才改
+    const same = cs.filter((c) => sigOf(c.key) === want).length;
+    // 比它多认出几个同种记号的行不收回来——按块、按笔数出来的个数只会少不会多
+    const longer = (c: StaffContext) => c.key.length > ref.length && c.key.every((k) => k.code === ref[0].code);
+    if (agree || same * 2 > cs.length) for (const c of cs) if (!longer(c)) c.key = ref;
+  }
+}
+
 function shareKeySignature(ctx: Map<Staff, StaffContext>, settled = new Set<StaffContext>()): void {
   const all = [...ctx.values()].filter((c) => !settled.has(c));
   const sigOf = (c: StaffContext) => c.key.map((k) => k.code).join(",");
@@ -5002,9 +5047,15 @@ function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binar
     const cb = c.clef.box;
     const clef = { x: cb.left, y: cb.top, w: cb.right - cb.left, h: cb.bottom - cb.top };
     const bass = c.clef.code === "fClef";
+    let flats = flatsByStrokes(bin, c.staff.lineYs, clef, bass, unit.space, unit.lineThick ?? 0);
+    // 粗线低分辨率页：高音谱号的行另按探出谱表的竖笔数一遍，取多的（见 `flatsByStairs`）
+    if (!bass && isCoarseKey(unit.space, unit.lineThick ?? 0)) {
+      const st = flatsByStairs(bin, c.staff.lineYs, clef, unit.space, unit.lineThick ?? 0);
+      if (st.length > flats.length) flats = st;
+    }
     rows.push({
       c,
-      flats: flatsByStrokes(bin, c.staff.lineYs, clef, bass, unit.space, unit.lineThick ?? 0),
+      flats,
       sharps: sharpsByStrokesLoose(bin, c.staff.lineYs, clef, bass, unit.space),
     });
   }
@@ -5158,6 +5209,125 @@ function sharpsByStrokesLoose(bin: Binary, lineYs: number[], clef: Rect, bass: b
   return out;
 }
 
+/** `flatsByStairs` 的起点：谱号左缘往右最多这么多格（谱号盒吞了调号时按它封顶；高音谱号自己的头在 1.7 格处）。 */
+const STAIR_FROM = 3.4;
+
+/**
+ * **粗线低分辨率页的降号按「探出谱表的竖笔」数**（只管高音谱号的行）。线距十来个像素时，降号的竖笔与肚子、
+ * 相邻两个降号都糊在一起，`flatsByStrokes` 逐根对肚子的位置对不上（烛光颂曲六个降号各行数出 0~4 个）。
+ * 谱表**上方**是白的：第 2、4 个降号（E、D）的竖笔顶端探出最上一条线，后一根比前一根矮半格、相隔两个身位，
+ * 是一道下行的台阶；别的记号没有这个形状（升号 F、G 探出的高度是先低后高，符干、谱号的头比这宽或高）。
+ * 有这两级就至少四个降号，身位也定了；后面的 G、C、F 按身位逐个验竖笔：那一列有 1.5 格以上的竖墨、
+ * 顶端落在该降号竖笔顶端的位置上（照 E 的顶端按调号次序推）。不合的那一个起就停。
+ * 返回摆好的盒。
+ */
+function flatsByStairs(bin: Binary, lineYs: number[], clef: Rect, sp: number, thick: number): Rect[] {
+  const x0 = Math.round(clef.x + Math.min(clef.w, sp * STAIR_FROM));
+  const x1 = Math.min(bin.w - 1, Math.round(x0 + sp * 9));
+  const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] === 1;
+  // 最上一条线在这一段的实际位置：斜着的谱行行首与平线模型能差半格，取这一段里横向最满的那一行（几行一样满取最上）
+  let top = Math.round(lineYs[0]);
+  {
+    let bestN = 0;
+    for (let y = Math.round(lineYs[0] - sp * 0.7); y <= Math.round(lineYs[0] + sp * 0.7); y++) {
+      let n = 0;
+      for (let x = x0; x <= x1; x++) if (ink(x, y)) n++;
+      if (n > bestN) (bestN = n), (top = y);
+    }
+    if (bestN < (x1 - x0) * 0.8) return [];
+  }
+  // 逐列量：紧贴线上缘起往上连续的墨（线上缘一两像素的毛边不算断）
+  const base = top - 1;
+  const hs: number[] = [];
+  for (let x = x0; x <= x1; x++) {
+    let ya = base;
+    while (ya > base - Math.max(1, Math.round(thick)) && !ink(x, ya)) ya--;
+    let h = 0;
+    while (ink(x, ya - h)) h++;
+    hs.push(h ? base - ya + h : 0);
+  }
+  // 连着的几列并成一根：取最高处
+  const peaks: { x: number; w: number; h: number }[] = [];
+  for (let i = 0; i < hs.length; i++) {
+    // 不到 0.3 格的是线上缘的毛边、肚子的顶，不算（算进来会把相邻两根并成一根宽的）
+    if (hs[i] < sp * 0.3) continue;
+    let j = i;
+    let hi = i;
+    while (j + 1 < hs.length && hs[j + 1] >= sp * 0.3) if (hs[++j] > hs[hi]) hi = j;
+    peaks.push({ x: x0 + hi, w: j - i + 1, h: hs[hi] / sp });
+    i = j;
+  }
+  // 台阶：E 探出 0.7~1.7 格，D 在它右边两个身位、矮四分之一格以上
+  let e: (typeof peaks)[number] | undefined;
+  let d: (typeof peaks)[number] | undefined;
+  for (const [i, p] of peaks.entries()) {
+    if (p.w > sp * 0.7 || p.h < 0.7 || p.h > 1.7 || (p.x - x0) / sp > 4.5) continue;
+    const q = peaks.slice(i + 1).find((q) => q.h >= 0.3 && q.w <= sp * 0.7 && (q.x - p.x) / sp >= 1.5);
+    if (q && (q.x - p.x) / sp <= 2.6 && q.h <= p.h - 0.25) (e = p), (d = q);
+    if (e) break;
+  }
+  if (!e || !d) return [];
+  const pitch = (d.x - e.x) / 2;
+  // 各降号竖笔顶端相对 E 的那一根的高低（格）：照肚子的次序 B E A D G C F
+  const STEP = [0, -1.5, 0.5, -1, 1, -0.5, 1.5];
+  const topOf = (n: number) => top - e!.h * sp + (STEP[n] + 1.5) * sp;
+  /** 第 n 个降号的位置上有没有它的竖笔 */
+  const stemAt = (n: number) => {
+    const cx = e!.x + (n - 1) * pitch;
+    const want = topOf(n);
+    for (let x = Math.round(cx - sp * 0.35); x <= Math.round(cx + sp * 0.35); x++) {
+      let run = 0;
+      for (let y = Math.round(want - sp * 0.5); y <= Math.round(want + sp * 3.4); y++) {
+        if (ink(x, y)) run++;
+        else {
+          if (run >= sp * 1.5 && run <= sp * 3.2 && Math.abs(y - run - want) <= sp * 0.5) return true;
+          run = 0;
+        }
+      }
+    }
+    return false;
+  };
+  let n = 4;
+  while (n < 7 && stemAt(n)) n++;
+  // **按最后一个降号的位置定个数**：调号那一串墨到哪一列断开（半格以上没有谱线以外的墨），
+  // 横向按身位折成个数；再看纵向——末一个身位里墨的顶端要落在五度圈次序里第 n 个降号竖笔顶端的位置上。
+  // 两样都合才采信（头一行后面紧跟拍号的，横向会多折出一两个，纵向对不上，仍用逐个验的那个数）。
+  {
+    const isLine = (y: number) => [0, 1, 2, 3, 4].some((i) => Math.abs(y - (top + thick / 2 + i * (lineYs[4] - lineYs[0]) / 4)) <= thick / 2 + 1);
+    const colTop = (x: number) => {
+      for (let y = Math.round(top - sp * 1.8); y <= Math.round(top + sp * 5.2); y++) if (!isLine(y) && ink(x, y)) return y;
+      return -1;
+    };
+    let end = d.x;
+    for (let x = d.x, blank = 0; x <= Math.min(bin.w - 1, Math.round(e.x + pitch * 7)); x++) {
+      if (colTop(x) >= 0) (end = x), (blank = 0);
+      else if (++blank >= sp * 0.5) break;
+    }
+    // 第 i 个降号（从 0 数）的竖笔在 e.x + (i - 1) 个身位，肚子右缘再往右约 0.8 个身位
+    const m = Math.round((end - e.x) / pitch - 0.8) + 2;
+    if (m > n && m <= 7) {
+      let t = Infinity;
+      for (let x = Math.round(e.x + (m - 2) * pitch - sp * 0.35); x <= end; x++) {
+        const y = colTop(x);
+        if (y >= 0 && y < t) t = y;
+      }
+      if (Math.abs(t - topOf(m - 1)) <= sp * 0.5) n = m;
+    }
+  }
+  const bY = lineYs[2];
+  return Array.from({ length: n }, (_, i) => ({
+    x: Math.round(e!.x + (i - 1) * pitch) - 1,
+    y: Math.round(bY + STEP[i] * sp - sp * FLAT_STEM),
+    w: Math.round(sp * 0.8),
+    h: Math.round(sp * (FLAT_STEM + 0.5)),
+  }));
+}
+
+/** 粗线低分辨率的页（线宽过线距的两成、线距不到 `KEY_COARSE_SPACE`）：调号的降号另有一套量法。 */
+function isCoarseKey(sp: number, thick: number): boolean {
+  return thick / sp > KEY_THICK_LINE && sp < KEY_COARSE_SPACE;
+}
+
 /**
  * **按竖笔数调号降号**（与 `sharpsByStrokes` 同一路）。降号是一根 1.5~3 格的竖笔、肚子在右下：
  * 从谱号后起逐根取竖笔，要求
@@ -5173,7 +5343,7 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
   const r = thick / sp;
   // 只管低分辨率的页：线距够大的粗体铅字本（主使我喜乐，线距 14.5px）升号的两根竖笔抹宽后并成一根粗的，
   // 放宽了宽度闸就被数成降号（四个升号读成两个降号）
-  const coarse = r > KEY_THICK_LINE && sp < KEY_COARSE_SPACE;
+  const coarse = isCoarseKey(sp, thick);
   // 竖笔本身也粗（三像素的笔抹宽后五像素，连着肚子的弧有八九像素），宽度那道闸跟着放到一格
   const z = keyZoneStrokes(bin, lineYs, clef, sp, sp * (coarse ? 1 + 2 * r + 0.25 : 1.2), coarse ? 1.0 : 0.5);
   if (!z) return [];
