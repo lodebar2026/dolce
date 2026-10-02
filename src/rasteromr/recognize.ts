@@ -3450,6 +3450,7 @@ export async function recognizeRasterPage(
     carrySystemKeys(pg, ctx, settled);
   }
   extendKeyByCarry(ctx, opts.carryKey);
+  dropBarsInKey(pg, ctx, unit.space);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
   fixFlatReadAsSix(harmonies, ctx);
   makeSystems(pg);
@@ -4341,6 +4342,31 @@ function dropCourtesyKeys(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number):
     if (!c.key.length) continue;
     const tail = (k: Sym) => k.box.left > st.box.right - sp * COURTESY_KEY && k.box.left > st.box.left + sp * 12 && !notes.some((n) => n.ownerStaff === st && n.px > k.px);
     if (c.key.some(tail)) c.key = c.key.filter((k) => !tail(k));
+  }
+}
+
+/**
+ * **落在行首「谱号 + 调号」那一段里的小节线不是小节线**。六个降号挤在一起，末两个的竖笔粗、孤立，
+ * 被抽成竖段当了小节线（烛光颂曲 p4、p6 有三四行行首多切出一个小节）。同系统表决拦不住——七行里三行都有。
+ * 调号的个数定了之后，这一段有多宽就知道了：谱号右缘（封顶在离谱行左端 3.6 格）起每个记号一格、再让三成格。
+ * 这一段里的 `BarLine` 标记摘掉。只管调号三个以上的行：一两个记号的那一段短，小节线抽错落不到里面。
+ */
+function dropBarsInKey(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number): void {
+  const endOf = (st: Staff) => {
+    const c = ctx.get(st);
+    if (!c?.clef || c.key.length < 3) return -1;
+    return Math.min(c.clef.box.right, st.box.left + sp * 3.6) + sp * (c.key.length + 0.3);
+  };
+  for (const g of systemGroups(pg)) {
+    // 同一系统各行的这一段一样宽：取最靠右的那个（个别行左端量进了括号里，自己算出来的偏左）
+    const end = Math.max(...g.map(endOf));
+    if (end < 0) continue;
+    for (const st of g)
+      for (const sg of pg.segs) {
+        if (!sg.isV || !sg.hasTag("BarLine")) continue;
+        if (sg.bottom <= st.box.top || sg.top >= st.box.bottom) continue;
+        if (sg.cx > st.box.left + sp && sg.cx < end) sg.removeTag("BarLine");
+      }
   }
 }
 
