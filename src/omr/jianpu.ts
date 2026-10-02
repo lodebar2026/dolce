@@ -174,7 +174,14 @@ function stripUnderline(
     const lineW = Math.max(...runs.slice(band[0], band[1] + 1));
     if (digitMode) {
       // 颈：线带上方紧挨的那一行得明显窄于线（上下一样宽 = 数字自己的横笔，不是粘上来的线）
-      const above = band[0] - 1;
+      // 线带顶上断了口的毛边行（横跨够线宽、最长游程却不够）先让过去，至多一条线粗：新编赞美诗·四声部通本 `1̲` 的竖笔直接
+      // 坐在线上，线顶那一行被竖笔两侧的缺口断成两段（f16 `1̲` 30×40：首行游程 18、横跨 28），拿它当「颈」就成了
+      //「上下一样宽」，整块不剥——全本 `1̲→1` 一百五十处。数字自己的横笔横跨不过 need（need 比数字体宽出一截）。
+      // 毛边行还得**密**（墨够四成线宽；274 `1̲` 线顶那行 20/35）：汉字「仁」底横上面那一行只有亻的竖笔和横笔收尾的钩，横跨够、墨很少（选本 346 歌词行
+      // 由此剥出一串「1̲」凑成伪谱行）
+      let above = band[0] - 1;
+      // 几个数字共一条线的块同理（f11 `1̲ 1̲` 右边那个 1 坐线 97×40）：线顶毛边行的游程过了六成线宽、又不到 need
+      for (let skip = 0; skip < lineH && above >= 0 && (multi ? runs[above]! >= lineW * 0.6 : rowSpan(above) >= need && rowCount(above) >= lineW * 0.4); skip++) above--;
       if (above < 0 || (multi ? runs[above]! : rowSpan(above)) >= lineW * 0.6) return null;
     }
     // 吸收毛边行，总厚不超过统计线粗 + 1
@@ -1032,11 +1039,17 @@ function splitArcEndDots(bin: Binary, comps: Component[], numH: number, strokeMa
     const dl = asDot(left, true), dr = asDot(right, false);
     let fl: Rect | null = null, fr: Rect | null = null;
     if (fat) {
-      if (!dl) fl = fatDot(true);
-      if (!dr) fr = fatDot(false);
-      if (fl || fr) {
+      // 四声部页先认这一路：原判据按列量，框连着点顶那截弧脚（29 `1̲̇⌒` 10×14，这一路 10×8），弧脚自己垂下来那一截
+      //（93 `1̇⌒1̇` 左脚 6px 宽）也被它当成点切走，留下的弧框缺了这只脚，旁边真高音点头顶的弧脚就被当成了字
+      // 这一路切不出时退回原判据的框，但它正下方另有一颗独立的点就不是点（是弧脚，93）；172 第 2 系统 `1̇⌒` 的点横着粘在弧左脚旁、
+      // 量不出颈，原判据切得对
+      const footOver = (r: Rect | null): Rect | null => r && comps.some((o) => o !== k && o.bbox.w <= numH * 0.45 && o.bbox.h <= numH * 0.45 &&
+        Math.abs(rcx(o.bbox) - rcx(r)) <= numH * 0.3 && rcy(o.bbox) > rcy(r) && o.bbox.y - rbottom(r) <= numH * 0.4) ? null : r;
+      fl = fatDot(true) ?? footOver(dl); fr = fatDot(false) ?? footOver(dr);
+      if (!fl && !fr) { out.push(k); continue; }
+      {
         probe("splitArcEndDots.fat");
-        const xa = dl ? left![1] : fl ? fl.x - b.x + fl.w : 0, xb = dr ? right![0] : fr ? fr.x - b.x : b.w;
+        const xa = fl ? fl.x - b.x + fl.w : 0, xb = fr ? fr.x - b.x : b.w;
         // 弧框连点头顶那截弧脚一起算（点以上整宽）：不然弧脚落在弧框外，下游量「点上方有没有墨」时把它当成压在点上的字
         const side = tightBox(bin, b, xa, Math.max(xa + 1, xb), 0, b.h);
         const dotTop = Math.min(...[fl, fr].filter((d): d is Rect => d !== null).map((d) => d.y - b.y));
@@ -1044,7 +1057,7 @@ function splitArcEndDots(bin: Binary, comps: Component[], numH: number, strokeMa
         const arcBox = side && cap ? unionRect(side, cap) : side ?? cap;
         // 点的面积按实际墨数：按内部像素数算填充率偏低，上宽下窄的半个圆点会被当成顿音的倒三角（172 第 3 系统男高音 `1̇`）
         const mkDot = (r: Rect): Component => ({ id: nextId++, bbox: r, area: Math.round(inkFill(bin, r) * r.w * r.h), cx: rcx(r), cy: rcy(r) });
-        if (arcBox) { out.push(mk(arcBox), ...[dl ?? fl, dr ?? fr].filter((d): d is Rect => d !== null).map(mkDot)); continue; }
+        if (arcBox) { out.push(mk(arcBox), ...[fl, fr].filter((d): d is Rect => d !== null).map(mkDot)); continue; }
       }
     }
     if (!dl && !dr) { out.push(k); continue; }
@@ -1481,6 +1494,55 @@ function splitBlock(bin: Binary, comp: Component, numH: number): { cores: DigitC
 // 数字高小半格。一轮贪心是按 y 中心从上往下走的，小块会先跟头顶的弧帽结成一行，等数字来时
 // 那行的中位数已经偏高、进不去，小块就跟着那行一起被后面「行里得有小节线」的判据滤掉
 // （8《心持两意的人》第 1 行的 ♮ 正是这样丢的：它与三个弧帽结成 y=154 那行，数字行在 179）。
+/** ♯ 的横笔顶到数字上、连成一块：新编赞美诗·四声部的 ♯ 印得和数字一般宽，两道横笔伸进右邻数字（236 `♯5` 50×41、
+ *  `♯1` 41×46，字号 36），整块当成一个数字读成 `0`——全本漏 ♯ 二百多处。
+ *  判据：块宽 1.0~1.9 字号；从左数 0.45~0.9 字号之间墨最少的一列为界，左半得是 ♯ 的形——**两根竖笔**（列墨 ≥0.55 左半高的
+ *  两段列，隔开）加**两道横笔**（横贯左半 ≥0.85 宽的两段行，隔开）；右半够一个数字高（≥0.7 字号）。
+ *  两个数字粘连的块没有「两竖两横」。拆成 ♯ 与数字两个核，♯ 交给后面的临时升降号判据。 */
+function splitGluedSharp(bin: Binary, comp: Component, numH: number): DigitCore[] | null {
+  const b = comp.bbox;
+  if (b.w < numH * 0.95 || b.w > numH * 1.9 || b.h < numH * 0.8 || b.h > numH * 1.5) return null;
+  const cols = columnInk(bin, b, 0, b.h);
+  // 小号 ♭ 粘在数字左上角（236 `♭6` 40×42：♭ 14×20）：0.25~0.55 字号之间墨最少的一列为界，左半矮（不过右半高的 0.75）、
+  // 悬在上面（底比数字底高 ≥0.2 字号）、形状判成 ♭。
+  {
+    let c2 = -1;
+    for (let xx = Math.round(numH * 0.25); xx <= Math.min(b.w - Math.round(numH * 0.3), Math.round(numH * 0.55)); xx++)
+      if (c2 < 0 || cols[xx]! < cols[c2]!) c2 = xx;
+    if (c2 >= 0 && cols[c2]! <= numH * 0.2) {
+      const l = tightBox(bin, b, 0, c2, 0, b.h), r = tightBox(bin, b, c2, b.w, 0, b.h);
+      if (l && r && r.h >= numH * 0.7 && r.w >= numH * 0.3 && l.w >= numH * 0.25 && l.h >= numH * 0.35 && l.h <= r.h * 0.75 &&
+        rbottom(r) - rbottom(l) >= numH * 0.2 && accidentalOf(bin, l) === "flat") {
+        probe("splitGluedFlat");
+        return [{ bbox: l, div: 0 }, { bbox: r, div: 0 }];
+      }
+    }
+  }
+  if (b.w < numH) return null;
+  let cut = -1;
+  for (let xx = Math.round(numH * 0.45); xx <= Math.min(b.w - Math.round(numH * 0.2), Math.round(numH * 0.9)); xx++)
+    if (cut < 0 || cols[xx]! < cols[cut]!) cut = xx;
+  if (cut < 0 || cols[cut]! > numH * 0.3) return null;
+  const left = tightBox(bin, b, 0, cut, 0, b.h), right = tightBox(bin, b, cut, b.w, 0, b.h);
+  if (!left || !right || right.h < numH * 0.7 || left.h < numH * 0.5 || left.w < numH * 0.4) return null;
+  // 数「隔开的段数」：flags 里连续 true 算一段
+  const bands = (flags: boolean[]): number => flags.reduce((n, f, i) => n + (f && !flags[i - 1] ? 1 : 0), 0);
+  const colFull: boolean[] = [], rowFull: boolean[] = [];
+  for (let x = left.x; x < rright(left); x++) {
+    let n = 0;
+    for (let y = left.y; y < rbottom(left); y++) if (bin.data[y * bin.w + x]) n++;
+    colFull.push(n >= left.h * 0.55);
+  }
+  for (let y = left.y; y < rbottom(left); y++) {
+    let best = 0, cur = 0;
+    for (let x = left.x; x < rright(left); x++) { if (bin.data[y * bin.w + x]) { if (++cur > best) best = cur; } else cur = 0; }
+    rowFull.push(best >= left.w * 0.85);
+  }
+  if (bands(colFull) !== 2 || bands(rowFull) !== 2) return null;
+  probe("splitGluedSharp");
+  return [{ bbox: left, div: 0 }, { bbox: right, div: 0 }];
+}
+
 function groupRows(cores: DigitCore[], numH: number): DigitCore[][] {
   // 自上而下贪心：够近就并进那一行，否则另起一行
   const greedy = (list: DigitCore[], into: DigitCore[][]): DigitCore[][] => {
@@ -1930,7 +1992,18 @@ function buildJpNums(
           // 点还得在**弧端**（弧宽两头三成内）：弧正中下方一颗点是延长记号 ⌒·（四声部 10 行末 `1` 头上那个），照旧算墨挡掉
           arcs.filter((a) => a.bbox.w >= numH * 0.7 && a.bbox.h <= numH * 0.8 && a.bbox.h >= numH * 0.2 &&
             a.bbox.h > (a.area / a.bbox.w) * 2.2 && Math.abs(rcx(kb) - rcx(a.bbox)) >= a.bbox.w * 0.2).map((a) => a.bbox)) >= 0.12;
-        if (!isArcFoot && dotSized(kb) && !hasSideMate(kb) && !nearerOther(true) && !underText && !inTextLine(kb)) {
+        // 点头顶压着一行小字（四声部 37 末系统男高音行上印着小号分部歌词「自古以来」，字底 2241、点顶 2240、数字顶 2251）：
+        // 点整个在那行字的**底线以下**、实心、正对数字、紧贴数字（≤0.35 字号）的照收。字自己底下的点画（灬）在底线以上，
+        // 行里的逗号头顶没有字。
+        const belowTextLine = (): boolean => {
+          if (!voiceMates.length || !solidDot || gapAbove > numH * 0.35) return false;
+          const chars = cls.blocks.filter((k) => !rowCores.some((c) => c.bbox === k.bbox) && k.bbox.h >= numH * 0.45 &&
+            rbottom(k.bbox) <= d.y && rbottom(k.bbox) >= kb.y - numH * 0.3 && Math.abs(rcx(k.bbox) - rcx(kb)) <= numH * 3);
+          if (chars.length < 2 || !chars.some((k) => rcx(kb) >= k.bbox.x && rcx(kb) <= rright(k.bbox))) return false;
+          return kb.y >= median(chars.map((k) => rbottom(k.bbox))) - 1;
+        };
+        if (underText && belowTextLine()) probe("octave.belowTextLine");
+        if (!isArcFoot && dotSized(kb) && !hasSideMate(kb) && !nearerOther(true) && (!underText || belowTextLine()) && !inTextLine(kb)) {
           upDots.push(kb); // 上点 → 高八度（几点算几个八度见下面的裁决）
         }
       // 下点 → 低八度。额外一道门专防**歌词字的顶部笔画**：歌词带紧接在数字下方，字顶的短竖/点
@@ -2152,7 +2225,15 @@ function recountUnderlines(bin: Binary, nums: JpNum[], numH: number, cls: Classi
     while (ink(r + 1, y)) r++;
     return barlineXs.some((bx) => bx > l + 2 && bx < r - 2);
   };
-  const baseOf = (d: Rect) => Math.min(rbottom(d), d.y + medH);
+  // 框比别的数字高、底却与左右邻音齐平的，多出来的是头顶粘着的弧（四声部 8 `3⌒2`：2 连着弧尾，框高 37 对 31），底就是框底；
+  // 照「顶 + 字高」量，2 自己的底横被数成一条减时线（全本 `2→2̲` 四十多处）。底比邻音低的才是粘着线，照旧。
+  const baseOf = (d: Rect) => {
+    if (d.h <= medH * 1.1) return Math.min(rbottom(d), d.y + medH);
+    const near = nums.map((n) => n.bbox).filter((o) => o !== d && o.h <= medH * 1.1)
+      .sort((p, q) => Math.abs(rcx(p) - rcx(d)) - Math.abs(rcx(q) - rcx(d))).slice(0, 4);
+    if (near.length >= 2 && rbottom(d) <= median(near.map(rbottom)) + numH * 0.1) return rbottom(d);
+    return Math.min(rbottom(d), d.y + medH);
+  };
   // 下界：下一声部行的数字顶（四声部两行挨得近，`5`、`7` 的顶横笔又平又横贯字宽，四声部 333 上一声部 `1̇` 下量出两道线）
   const floorOf = (x0: number, x1: number, yb: number) => {
     let f = bin.h;
@@ -2337,6 +2418,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   // 与数字粘连的圆滑线弧帽在此切出，作为合成连通块补进 comps 供 detectSlurs 检测。
   let allCores: DigitCore[] = [];
   const mergedArcs: Rect[] = [];
+  const voicedPage = isVoicedPage(comps, numH);
   for (const blk of c.blocks) {
     // 扁而宽的矮块不是数字：连音弧拱得高一点就够不上横线的扁度门、落进数字块（78《马槽歌》擦掉小节线后接回的
     // `5⌒|5` 弧 56×17，字号 30）。单声部谱上它在数字行上方另成一「行」、随后被滤掉；四声部谱两声部挨得近，
@@ -2345,6 +2427,8 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
     const thinCurve = blk.bbox.w >= numH * 1.5 && blk.bbox.h < numH && blk.area < blk.bbox.w * blk.bbox.h * 0.2;
     if ((blk.bbox.w >= blk.bbox.h * 2.5 && blk.bbox.h < numH * 0.7) || thinCurve ||
       isRejoinedArc(blk)) { probe("block.flatArc"); continue; }
+    const sharp = voicedPage ? splitGluedSharp(bin, blk, numH) : null;
+    if (sharp) { allCores.push(...sharp); continue; }
     const { cores, arc } = splitBlock(bin, blk, numH);
     allCores.push(...cores);
     if (arc) mergedArcs.push(arc);
