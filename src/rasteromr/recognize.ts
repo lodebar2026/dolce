@@ -2530,9 +2530,12 @@ export async function recognizeRasterPage(
     const u0 = set[0].box.y;
     const u1 = set[set.length - 1].box.y + set[set.length - 1].box.h - 1;
     const full: boolean[] = [];
+    // 竖笔一两像素的抖动算连着（同 `sharpBox`）：斜着印的升号两根竖笔从上到下横移一两像素，严格按「整列是墨」一根竖笔都数不出来，
+    // 升号就留成一对黑头（新编赞美诗 275 m4 的 F♯4 前多出 E♭4、G4 两个音）。两根竖笔之间那几列放宽后照样不满。
+    const at = (x: number, y: number) => x >= 0 && x < bin.w && !!bin.data[y * bin.w + x];
     for (let x = x0; x < x1; x++) {
       let ok = true;
-      for (let y = u0; y <= u1 && ok; y++) ok = !!bin.data[y * bin.w + x];
+      for (let y = u0; y <= u1 && ok; y++) ok = at(x, y) || at(x - 1, y) || at(x + 1, y);
       full.push(ok);
     }
     const first = full.indexOf(true);
@@ -2832,7 +2835,11 @@ export async function recognizeRasterPage(
       const h = b.h / sp;
       if (h < 1.8 || h > 3.4 || w < 0.4 || w > 1.2) continue;
       if (syms.some((s0) => overlapFrac(b, s0.box) > 0.3)) continue;
-      const m = matchTemplate(binSig(nl, b), w, h, accTpl, LOOSE_ACC_DIST);
+      // 模板配不上的再按**结构**认升号：两根通高的竖笔（上下两端各一成半高度里都有它们的墨——还原号的左竖只在上半、右竖只在下半）
+      // 加两道横贯的横笔。低分辨率的小号升号（新编赞美诗 359 谱表下方 D♯4 的升号 22×58px、线距 22）签名离模板远过门槛，整块没人认，
+      // 一首漏五个升号。位置先验（右边紧挨着同高的符头）照旧要过。
+      const m = matchTemplate(binSig(nl, b), w, h, accTpl, LOOSE_ACC_DIST) ??
+        (w >= 0.6 && h >= 2.2 && h <= 3.2 && sharpShape(raster.bin, b) ? { smufl: "accidentalSharp" as SmuflName, dist: LOOSE_ACC_DIST } : null);
       if (!m) continue;
       const py = m.smufl === "accidentalFlat" ? b.y + (b.h * (1 + FLAT_BOWL_TOP)) / 2 : b.y + b.h / 2;
       const right = b.x + b.w;
@@ -6994,6 +7001,37 @@ function inkBox(bin: Binary, x0: number, x1: number, y0: number, y1: number): Re
         b = Math.max(b, y);
       }
   return r < 0 ? null : { x: l, y: t, w: r - l + 1, h: b - t + 1 };
+}
+
+/** 块像不像升号：恰两根通高竖笔（`tallStrokes`），两根在块的上、下各 15% 高度带里都有墨；另有两道横贯（≥0.8 块宽）的横笔带。 */
+function sharpShape(bin: Binary, box: Rect): boolean {
+  if (tallStrokes(bin, box) !== 2) return false;
+  const x0 = Math.max(0, Math.floor(box.x)), x1 = Math.min(bin.w, Math.ceil(box.x + box.w));
+  const y0 = Math.max(0, Math.floor(box.y)), y1 = Math.min(bin.h, Math.ceil(box.y + box.h));
+  // 两根竖笔所在的列组
+  const groups: number[][] = [];
+  let prev = -2;
+  for (let x = x0; x < x1; x++) {
+    let run = 0, best = 0;
+    for (let y = y0; y < y1; y++) { if (bin.data[y * bin.w + x]) best = Math.max(best, ++run); else run = 0; }
+    if (best < box.h * 0.55) continue;
+    if (x - prev > 1) groups.push([]);
+    groups[groups.length - 1]!.push(x);
+    prev = x;
+  }
+  const band = Math.max(2, Math.round(box.h * 0.15));
+  const inkIn = (xs: number[], ya: number, yb: number) => { for (let y = ya; y < yb; y++) for (const x of xs) for (const dx of [-1, 0, 1]) if (x + dx >= x0 && x + dx < x1 && bin.data[y * bin.w + x + dx]) return true; return false; };
+  // 左竖比右竖低半拍（升号是斜的）：左竖看下端、右竖看上端各放宽到 30%
+  if (!groups.every((g) => inkIn(g, y0, y0 + band * 2) && inkIn(g, y1 - band * 2, y1))) return false;
+  let bars = 0, inBar = false;
+  for (let y = y0; y < y1; y++) {
+    let n = 0;
+    for (let x = x0; x < x1; x++) if (bin.data[y * bin.w + x]) n++;
+    const full = n >= (x1 - x0) * 0.8;
+    if (full && !inBar) bars++;
+    inBar = full;
+  }
+  return bars === 2;
 }
 
 /** 块里**通高的竖笔**有几根：连续墨长过块高 55% 的列，按相邻成组数组数（隔一列以上算两根）。 */

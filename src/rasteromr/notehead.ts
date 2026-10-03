@@ -502,12 +502,14 @@ export function hollowHeadsFromHoles(
       });
     });
     if (walled) continue;
+    let pairedWhole = false; // 并排有同形内腔的全音符（见下）
     let box: Rect = { x: hole.x - ring, y: hole.y - ring, w: hole.w + ring * 2, h: hole.h + ring * 2 };
     if (round && (hole.w / hole.h < HOLE_RATIO_ROUND || (!stemOf(box, stems, unit, nl) && !stemThrough(box, stems, unit)))) {
       // 没干（或更瘦）的近圆内腔只可能是**全音符**：这类字体的全音符圈厚、内腔斜得竖起来（我一生要赞美你，
       // 头 25px 宽 1.7 格、内腔被谱线豁开并回来 9×11），内腔外扩一圈的盒只有 1 格、够不上全音符宽。
       // 头盒按图上的圈量到外缘，够全音符宽的才往下走。
       let outer = ringOuter(nl, hole, sp);
+      let clipped = false; // 并排有同形内腔
       // 同一高度左右紧挨着另一个内腔的（两个声部同音的全音符并排贴着，我灵镇静末小节），两个头的圈连成一段，
       // 外缘量到了邻头那边（1.9 格，超了上限）：截到两个内腔之间的中线
       if (outer) {
@@ -516,6 +518,7 @@ export function hollowHeadsFromHoles(
           if (o === hole || Math.abs(o.y + o.h / 2 - hcy) > sp * 0.3) continue;
           // 邻孔要长得一样（并排两个全音符的内腔），也是偏竖的近圆
           if (o.w / hole.w < 0.7 || o.w / hole.w > 1.4 || o.h / hole.h < 0.7 || o.h / hole.h > 1.4 || o.w / o.h >= HOLE_RATIO) continue;
+          if ((o.x >= hole.x + hole.w && o.x - (hole.x + hole.w) < sp * 1.2) || (o.x + o.w <= hole.x && hole.x - (o.x + o.w) < sp * 1.2)) clipped = true;
           if (o.x >= hole.x + hole.w && o.x - (hole.x + hole.w) < sp * 1.2) {
             const mid = Math.round((hole.x + hole.w + o.x) / 2);
             if (mid < outer.x + outer.w) outer = { ...outer, w: mid - outer.x };
@@ -525,7 +528,10 @@ export function hollowHeadsFromHoles(
           }
         }
       }
-      if (!outer || outer.w / sp < W_WHOLE) continue;
+      // 并排有个同形内腔的（两声部同音的全音符「oo」），宽度放到 1.25 格：这本的全音符头只有 1.37 格宽（新编赞美诗 218 m4 的 A3），
+      // 过不了单个全音符的宽度门（`W_WHOLE`，防的是没挂上干的二分头——那种不会成对并排）
+      if (!outer || outer.w / sp < (clipped ? 1.25 : W_WHOLE)) continue;
+      pairedWhole = clipped && outer.w / sp < W_WHOLE;
       box = outer;
     }
     const w = box.w / sp;
@@ -559,12 +565,12 @@ export function hollowHeadsFromHoles(
     // 二分符头一定带符干，全音符才不带（宽度那一档与 `judgeHeadBox` 共用 `W_WHOLE`）。
     // 试过把全音符的宽度门槛单独抬到 1.65：时值 90.3% → 90.5%，但音符 69.60% → 69.52%，
     // 不划算。
-    if (HOLE_NEED_STEM && !stem && w < W_WHOLE) continue;
+    if (HOLE_NEED_STEM && !stem && w < W_WHOLE && !pairedWhole) continue;
     // 靠墨柱认下的头标 `weak`：不进空心头模板的样本（`buildHollowMasks`）。它们多半拖着
     // 一根穿过窗口的长干，混进去模板就偏了——善牧恩慈歌两处真二分头认出来，却让模板
     // 再也配不上后面的全音符和弦（音符 90.0% → 89.3%，不进样本 → 91.4%）。
     if (stem && stem !== true) extendStem(stem, box);
-    out.push({ box, code: w >= W_WHOLE && !stem ? "noteheadWhole" : "noteheadHalf", ...(stem === true ? { weak: true } : {}) });
+    out.push({ box, code: (w >= W_WHOLE || pairedWhole) && !stem ? "noteheadWhole" : "noteheadHalf", ...(stem === true ? { weak: true } : {}) });
     taken.push(box);
   }
   // **叠置空心和弦**：符干从一端的头穿过另一个头往外伸（齐来称颂 A4/E4 二分和弦，
