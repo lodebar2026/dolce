@@ -2223,6 +2223,10 @@ function dotInkAbove(bin: Binary, d: Rect, numH: number): boolean {
  *    厚度像线，就两个音都至少一道。线跟数字粘死、数字底下量不清时，空隙里那一段线是干净的。
  *    增时线在数字中线上、够不着这个高度；隔着小节线的不连（减时线不跨小节线）。
  *  只补不减：已数出线的音不动。 */
+/** 已认出的延长记号（弧、或弧点粘成的一块）的框：四声部下一声部的延长记号正扣在上一声部数字的脚下，顶上那道拱又平又宽，
+ *  逐列量像一道减时线（83《…》`3 2 1̂ –` 上声部读成 `1̲`）。数减时线时当作下界。每次识别在认完延长记号后重置。 */
+let fermataCaps: Rect[] = [];
+
 function recountUnderlines(bin: Binary, nums: JpNum[], numH: number, cls: Classified, barlineXs: number[], voiceMates: readonly Rect[]): void {
   const lineH = cls.lineH;
   if (lineH <= 0 || !nums.length) return;
@@ -2252,6 +2256,7 @@ function recountUnderlines(bin: Binary, nums: JpNum[], numH: number, cls: Classi
   const floorOf = (x0: number, x1: number, yb: number) => {
     let f = bin.h;
     for (const m of voiceMates) if (m.y > yb - numH * 0.3 && m.x < x1 + numH * 0.5 && rright(m) > x0 - numH * 0.5) f = Math.min(f, m.y - 1);
+    for (const m of fermataCaps) if (m.y > yb - 2 && m.x < x1 && rright(m) > x0) f = Math.min(f, m.y - 1);
     return f;
   };
   // 一列里从数字底往下数线
@@ -3194,16 +3199,20 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   }
   // 第四路：小号延长记号的点与弧粘成一块（四声部 135 下方声部 `3̂` 16×12），整块落进 dots 当了高音点。
   // 八度点是实心圆，上下一样窄；这块上部是一道宽拱（最宽处 ≥1.5 倍于下部），拱下是空心——上半有一行分成左右两段墨。
+  // 四声部页上这种小记号也有印得比点宽的（88《无量荣光歌》23×13、字号 36：宽 0.64 字号，进不了点候选，哪一类都不是，全书漏三百来个）：
+  // 宽 0.45~0.8、高 0.25~0.5 字号的块一并拿来按同一套拱形判据量。
+  const wideCaps = voicedPage ? comps.filter((k) => k.bbox.w > numH * 0.45 && k.bbox.w <= numH * 0.8 &&
+    k.bbox.h >= numH * 0.25 && k.bbox.h <= numH * 0.5 && !c.dots.includes(k)) : [];
   {
     for (const m of staff) {
       const medH = median(m.rd.map((k) => k.bbox.h)) || numH;
       for (const owner of m.rd) {
         if (fermataOf.get(owner) || owner.bbox.h < medH * 0.85) continue;
         const ob = owner.bbox;
-        for (const o of c.dots) {
+        for (const o of [...c.dots, ...wideCaps]) {
           const b = o.bbox, gap = ob.y - rbottom(b);
           if (fermataDots.has(o) || Math.abs(rcx(b) - rcx(ob)) > numH * 0.25 || gap < -1 || gap > numH * 0.8) continue;
-          if (b.h < Math.max(6, numH * 0.28) || b.w > numH * 0.6) continue;
+          if (b.h < Math.max(6, numH * 0.28) || b.w > numH * (wideCaps.includes(o) ? 0.8 : 0.6)) continue;
           // 每行：横跨宽、墨段数、段间最大空隙
           const spans: number[] = [], runsN: number[] = [], gaps: number[] = [];
           for (let y = b.y; y < rbottom(b); y++) {
@@ -3230,12 +3239,52 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
           probe("fermata.fusedDot");
           fermataOf.set(owner, true);
           fermataDots.add(o);
+          if (wideCaps.includes(o)) fermataArcs.add(o);
           break;
         }
       }
     }
   }
+  // 多声部互证（用户提的思路）：延长记号管的是一个时间点，同一系统里一个声部在这个位置认出来了，别的声部同一位置也有。
+  // 这本各声部各印一个，夹在两行之间的那几个不是粘在数字顶上、就是弧太扁过不了拱形门（83 第 1 系统四个只认出女高一个）。
+  // 对齐位置（横向差 ≤0.4 字号）上放宽了找弧帽：数字头顶 0.8 字号内、宽 0.4~2 字号、高 ≤0.7 字号、不是点也不是别的数字的块，
+  // 横线类的要拱得起来（上声部的减时线也在那里）。找着了，帽下紧挨的那颗点归延长记号（不再当高音点）；
+  // 没找着帽、但已有两个以上声部作证的也补上，点不动。
+  if (sysOf.size && fermataOf.size) {
+    const bySys = new Map<number, (typeof staff)[number][]>();
+    for (const m of staff) { const si = sysOf.get(m)?.sys; if (si !== undefined) (bySys.get(si) ?? bySys.set(si, []).get(si)!).push(m); }
+    for (const rows of bySys.values()) {
+      const seeds = rows.flatMap((m) => m.rd.filter((k) => fermataOf.get(k)).map((k) => ({ m, x: rcx(k.bbox) })));
+      if (!seeds.length) continue;
+      for (const m of rows) for (const k of m.rd) {
+        if (fermataOf.get(k)) continue;
+        const kb = k.bbox;
+        const n = seeds.filter((sd) => sd.m !== m && Math.abs(sd.x - rcx(kb)) <= numH * 0.4).length;
+        if (!n) continue;
+        const cap = comps.find((o) => {
+          const ob = o.bbox;
+          if (c.dots.includes(o) || fermataArcs.has(o)) return false;
+          if (ob.w < numH * 0.4 || ob.w > numH * 2 || ob.h > numH * 0.7) return false;
+          if (Math.abs(rcx(ob) - rcx(kb)) > numH * 0.4 || ob.y >= kb.y) return false;
+          const gap = kb.y - rbottom(ob);
+          if (gap > numH * 0.8 || gap < -numH * 0.3) return false;
+          return !c.hlines.includes(o) || arched(ob);
+        });
+        if (!cap && n < 2) continue;
+        probe(cap ? "fermata.mutualCap" : "fermata.mutual");
+        fermataOf.set(k, true);
+        if (!cap) continue;
+        fermataArcs.add(cap);
+        const dotC = c.dots.filter((o) => !fermataDots.has(o) && Math.abs(rcx(o.bbox) - rcx(cap.bbox)) <= numH * 0.3 &&
+          o.bbox.y >= cap.bbox.y && o.bbox.y - rbottom(cap.bbox) <= numH * 0.25 && rbottom(o.bbox) <= kb.y + 1)
+          .sort((p, q) => p.bbox.y - q.bbox.y)[0];
+        if (dotC) fermataDots.add(dotC);
+      }
+    }
+  }
   if (fermataDots.size) c.dots = c.dots.filter((o) => !fermataDots.has(o));
+  if (fermataDots.size) c.hlines = c.hlines.filter((o) => !fermataDots.has(o));
+  fermataCaps = [...fermataArcs].map((k) => k.bbox);
 
   // 波音（上波音 ∿）：音符正上方一小段**两个尖峰的锯齿**（2152《就是不一样》第 5、8 行）。
   // 与它同区的还有圆滑线弧帽与延长记号，三者都是「音符上方一块扁而宽的墨」，靠两条分开：
