@@ -14,8 +14,9 @@ import { jpPitch } from "../score/jppitch";
 import type { RecognizedScore, JpNum, StaffRow } from "./types";
 import { rright, RHYTHM_DIGIT } from "./types";
 
-/** 一行切出来的一个小节：音符，以及它右边界那根线的 x（行末开口收尾时为 null）。 */
-interface RowMeasure { notes: JpNum[]; rightX: number | null }
+/** 一行切出来的一个小节：音符，以及它右边界那根线的 x（行末开口收尾时为 null）。
+ *  `silent`：声部行里整小节不唱的空小节，写成整小节隐形休止。 */
+interface RowMeasure { notes: JpNum[]; rightX: number | null; silent?: boolean }
 
 // 把一行按小节线 x 切成小节。
 function measuresOfRow(row: StaffRow): RowMeasure[] {
@@ -29,14 +30,25 @@ function measuresOfRow(row: StaffRow): RowMeasure[] {
     }
     cur.push(n);
   }
+  // 静默声部行（整行只有休止，新编赞美诗·四声部 12 第 3 系统 B 声部只印行首 `0`）逐根切开，空小节写成整小节不唱，
+  // 要占住小节，否则同系统各声部小节数对不上、后面整首错位。只认这种行：普通声部行末小节空着多是音没读出来，
+  // 补隐形休止反倒把小节对位搅乱（144、396、f32 末小节）。首音之前的空档不算（页边、连谱号常被收成线，56 首系统 x=4、123）。
+  const silentRow = row.voice !== undefined && row.nums.length > 0 && row.nums.every((n) => n.digit === 0);
+  if (silentRow) {
+    while (bi < row.barlineXs.length - 1) { measures.push({ notes: cur, rightX: row.barlineXs[bi]! }); cur = []; bi++; }
+  }
   // 行末剩下的线（若最后一个音符右侧还有线）里取最后一根：那才是本行末小节的右界。
   measures.push({ notes: cur, rightX: bi < row.barlineXs.length ? row.barlineXs[row.barlineXs.length - 1]! : null });
   // 空小节（复纵线/终止线并排两根之间切出来的）不成节，但它的右界要**顺延给前一个小节**——
   // 否则小节右界停在左边那根上，认不出复纵线（doubleBarXs 记的是右边那根）。
   const out: RowMeasure[] = [];
+  const wide = (row.bottomY - row.topY) * 1.5;
+  let leftX: number | null = null;
   for (const m of measures) {
     if (m.notes.length) out.push(m);
+    else if (silentRow && leftX !== null && m.rightX !== null && m.rightX - leftX >= wide && out.length) out.push({ ...m, silent: true });
     else if (out.length && m.rightX !== null) out[out.length - 1]!.rightX = m.rightX;
+    leftX = m.rightX;
   }
   return out;
 }
@@ -234,6 +246,7 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
   const rowStartIdx = new Set<number>();
   const endStyleIdx = new Set<number>();   // 右边界是终止线（‖）的小节
   const doubleIdx = new Set<number>();     // 右边界是复纵线（细细双线 ‖）的小节
+  const silentIdx = new Set<number>();     // 声部整小节不唱（写整小节隐形休止）
   // 行首段号（`1.`）挂到该行每段第一个有词的音符上（`Lyric.verseLabel`）
   const labelOf = new Map<JpNum, string[]>();
   const breakAfterNum = new Set<JpNum>();
@@ -261,7 +274,10 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
       allMeasures[allMeasures.length - 1].push(...first.notes);
       markDouble(first, allMeasures.length - 1);
     } else if (allMeasures.length) rowStartIdx.add(allMeasures.length);
-    for (const m of ms) { allMeasures.push(m.notes); markDouble(m, allMeasures.length - 1); }
+    for (const m of ms) {
+      allMeasures.push(m.notes); markDouble(m, allMeasures.length - 1);
+      if (m.silent) silentIdx.add(allMeasures.length - 1);
+    }
     if (row.finalBarline === "end") endStyleIdx.add(allMeasures.length - 1);
     openTail = !rowEndsClosed(row);
   }
@@ -281,6 +297,12 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
     if (change && idx > 0 && (change.beats !== curBeats || change.beatType !== curBeatType)) {
       curBeats = change.beats; curBeatType = change.beatType;
       m.attrs = { time: { beats: curBeats, beatType: curBeatType } };
+    }
+    if (silentIdx.has(idx)) {
+      for (let k = 0; k < curBeats; k++) {
+        m.elements.push({ kind: "chord", id: ids.next(), notes: [], rest: {}, printObject: false,
+          duration: { divisions: Q * 4 / curBeatType, dots: 0 }, voice: 1, staff: 1 });
+      }
     }
 
     for (const n of notes) {

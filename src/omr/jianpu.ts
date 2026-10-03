@@ -2667,9 +2667,33 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
       } else braces.push({ ...b });
     }
     braceRects.push(...braces.map((br) => ({ x: br.x0, y: br.y0, w: br.x1 - br.x0, h: br.y1 - br.y0 })));
+    const inBrace = (m: (typeof rowMetaAll)[number], br: (typeof braces)[number]) =>
+      Math.min(m.botY, br.y1 + numH * 0.5) - Math.max(m.topY, br.y0 - numH * 0.5) >= (m.botY - m.topY) * 0.3;
+    // **静默声部行**：系统里某声部整段不唱，只印一个行首 `0` 和几根小节线（新编赞美诗·四声部 12 第 3 系统 B 声部），
+    // 核不到 3 个被上面当噪声剔了，这个系统少一行、整页声部分组验收不过退回单声部。比别的系统少行时，
+    // 连谱号范围内的 1~2 核短行救回来：首核在声部行首音那一列（一字号内）、至少两根小节线与同系统谱行的线对齐。
+    {
+      const counts = braces.map((br) => staff.filter((m) => inBrace(m, br)).length);
+      const full = Math.max(0, ...counts);
+      if (full >= 3 && counts.filter((n) => n === full).length >= 2) {
+        braces.forEach((br, i) => {
+          if (counts[i] >= full) return;
+          const mates = staff.filter((m) => inBrace(m, br));
+          for (const m of rowMetaAll) {
+            if (staff.includes(m) || !m.rd.length || m.rd.length >= 3 || !inBrace(m, br)) continue;
+            if (Math.abs(Math.min(...m.rd.map((k) => k.bbox.x)) - firstX) > numH) continue;
+            if (mates.some((o) => Math.min(o.botY, m.botY) > Math.max(o.topY, m.topY))) continue;
+            const aligned = m.bars.filter((b) => mates.some((o) => o.barlineXs.some((x) => Math.abs(x - rcx(b.bbox)) <= numH * 0.3)));
+            if (aligned.length < 2) continue;
+            probe("voices.silentRow");
+            staff.push(m);
+          }
+        });
+        staff.sort((a, b) => a.topY - b.topY);
+      }
+    }
     braces.forEach((br, sys) => {
-      const inside = staff.filter((m) =>
-        Math.min(m.botY, br.y1 + numH * 0.5) - Math.max(m.topY, br.y0 - numH * 0.5) >= (m.botY - m.topY) * 0.3);
+      const inside = staff.filter((m) => inBrace(m, br));
       if (inside.length < 2) return;
       inside.forEach((m, voice) => {
         sysOf.set(m, { sys, voice });
@@ -3653,7 +3677,21 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
       && [...bySys.values()].every((g) => g.every((r, i) => r.voice === i));
     probe(ok ? "voices" : "voices.reject");
     if (!ok) for (const r of useRows) { delete r.system; delete r.voice; }
-    else resolvePairOctaveDots(useRows, numH);
+    else {
+      resolvePairOctaveDots(useRows, numH);
+      // 系统行末线只画到上面几个声部（12 第 3 系统：下两声部一个尾音一行空、右端无线），各声部同一系统一起收尾——
+      // 缺的那几行借本系统最右那根，否则末小节「开口」并进下一系统、该声部此后整首错一小节。
+      for (const g of bySys.values()) {
+        const endX = Math.max(...g.map((r) => r.barlineXs.length ? r.barlineXs[r.barlineXs.length - 1]! : -Infinity));
+        if (!Number.isFinite(endX)) continue;
+        for (const r of g) {
+          const last = r.barlineXs.length ? r.barlineXs[r.barlineXs.length - 1]! : -Infinity;
+          if (last >= endX - numH * 0.5 || r.nums.some((n) => rright(n.bbox) > endX)) continue;
+          probe("voices.shareEndBar");
+          r.barlineXs.push(endX);
+        }
+      }
+    }
   }
 
   // 转拍号归行：落在哪一谱行的纵向范围里就归哪一行，并锚到**其右侧第一个音符**上
