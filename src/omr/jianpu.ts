@@ -1428,6 +1428,73 @@ function tightBox(bin: Binary, b: Rect, x0: number, x1: number, y0: number, yLim
   return { x: b.x + minX, y: b.y + minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
+/** 增时线贴着数字：密排的四声部页上 `5–––` 的线头顶到数字、`3–0` 三样连成一串（新编赞美诗·四声部 f13《赐下真光》
+ *  整页如此：43×38、72×38 的块当成一个数字读，线全丢，一首漏 29 道增时线）。
+ *  判据：块高是一个数字（0.8~1.3 字号）、宽过一个数字（≥1 字号）；逐列量，**线列**是墨只占薄薄一段（≤max(3, 0.22 字号)）、
+ *  且在块的中段（0.2~0.85 块高：f13 的线印得偏低，线底在 0.78）的列，连着 ≥0.25 字号宽算一道线；其余的列段得有够高的墨（≥0.6 块高）才算数字。
+ *  至少各有一段才拆。数字自己的横笔不在中段（7、5 的顶横、2 的底横），4 的横笔探出竖笔不到 0.25 字号。 */
+function splitDigitDash(bin: Binary, comps: Component[], numH: number): Component[] {
+  const out: Component[] = [];
+  let nextId = 9_000_000;
+  const thin = Math.max(3, numH * 0.22), minRun = numH * 0.25;
+  for (const k of comps) {
+    const b = k.bbox;
+    if (b.h < numH * 0.8 || b.h > numH * 1.3 || b.w < numH || b.w > numH * 5) { out.push(k); continue; }
+    const kind: number[] = [];   // 0 空、1 线列、2 别的
+    const colH: number[] = [];
+    for (let xx = 0; xx < b.w; xx++) {
+      let top = -1, bot = -1;
+      for (let yy = 0; yy < b.h; yy++) if (bin.data[(b.y + yy) * bin.w + b.x + xx]) { if (top < 0) top = yy; bot = yy; }
+      const h = top < 0 ? 0 : bot - top + 1;
+      colH.push(h);
+      kind.push(top < 0 ? 0 : h <= thin && top >= b.h * 0.2 && bot <= b.h * 0.85 ? 1 : 2);
+    }
+    // 按类分段；不够长的线段并回数字（数字笔画的尖端也只有薄薄一段）
+    const segs: { x0: number; x1: number; dash: boolean }[] = [];
+    for (let xx = 0; xx < b.w;) {
+      if (!kind[xx]) { xx++; continue; }
+      const kd = kind[xx]!; let e = xx;
+      while (e + 1 < b.w && kind[e + 1] === kd) e++;
+      const dash = kd === 1 && e - xx + 1 >= minRun;
+      const last = segs[segs.length - 1];
+      if (!dash && last && !last.dash && last.x1 === xx) last.x1 = e + 1;
+      else segs.push({ x0: xx, x1: e + 1, dash });
+      xx = e + 1;
+    }
+    const digits = segs.filter((g) => !g.dash);
+    const okDigits = digits.length > 0 && digits.every((g) => {
+      let mx = 0;
+      for (let xx = g.x0; xx < g.x1; xx++) mx = Math.max(mx, colH[xx]!);
+      return mx >= b.h * 0.6 && g.x1 - g.x0 <= numH * 1.1;
+    });
+    if (!segs.some((g) => g.dash) || !okDigits) { out.push(k); continue; }
+    // 线相对数字的纵向位置：增时线画在数字身上（线心在相邻数字自身高度的 0.25~0.88 之间），减时线在数字底边以下。
+    // 两个八分音符坐在同一条减时线上、线下还挂着低音点的块（338 弱起 `3̲̣4̲̣`），数字之间那截减时线在整块的 0.8 处，光看块高分不开。
+    const boxes = segs.map((g) => tightBox(bin, b, g.x0, g.x1, 0, b.h));
+    const onBody = segs.every((g, i) => {
+      if (!g.dash) return true;
+      const db = boxes[i];
+      const nb = [boxes[i - 1], boxes[i + 1]].filter((r, j) => r && !segs[i + (j ? 1 : -1)]?.dash) as Rect[];
+      return !!db && nb.length > 0 && nb.every((r) => rcy(db) >= r.y + r.h * 0.25 && rcy(db) <= r.y + r.h * 0.88);
+    });
+    if (!onBody) { probe("splitDigitDash.offBody"); out.push(k); continue; }
+    // 歌词里的「十」也是一根细竖两边各伸一道横（338：44×43 拆成线 + 「1」 + 线，凭空多出伪数字、字号估计跟着变）：
+    // 窄段（<0.3 字号）两侧都是线的不拆。
+    if (segs.some((g, i) => !g.dash && g.x1 - g.x0 < numH * 0.3 && segs[i - 1]?.dash && segs[i + 1]?.dash)) { probe("splitDigitDash.cross"); out.push(k); continue; }
+    const parts: Component[] = [];
+    for (const g of segs) {
+      const r = tightBox(bin, b, g.x0, g.x1, 0, b.h);
+      if (!r) continue;
+      let area = 0;
+      for (let yy = r.y; yy < rbottom(r); yy++) for (let xx = r.x; xx < rright(r); xx++) if (bin.data[yy * bin.w + xx]) area++;
+      parts.push({ id: nextId++, bbox: r, area, cx: rcx(r), cy: rcy(r) });
+    }
+    probe("splitDigitDash");
+    out.push(...parts);
+  }
+  return out;
+}
+
 // 探测「圆滑线弧帽 + 数字」粘连块：弧线常贴着它跨越的两个数字顶端，4-连通把弧与数字粘成
 // 一个**明显超高(h>1.2字号)**的块。结构（实测）：顶部弧帽(单段宽笔)→两条下垂弧尾(低墨谷)→
 // 底部 ~一个字号的数字体。据**行墨廓线**找谷底、把数字体定位到底部，弧帽切出来供 detectSlurs 用。
@@ -1764,6 +1831,9 @@ function resolvePairOctaveDots(rows: StaffRow[], numH: number): void {
   }
 }
 
+/** 每页单道增时线的统计宽度（见 buildJpNums 里的 dashUnit），按 Classified 记一次 */
+const dashUnitOf = new WeakMap<Classified, number>();
+
 function buildJpNums(
   bin: Binary, rowCores: DigitCore[], numH: number, cls: Classified, ocrDigit: (b: Rect) => number,
   arcs: Component[], barlineXs: number[], dotSizes: number[],
@@ -2061,6 +2131,18 @@ function buildJpNums(
     let div = 0;
     const augmentRects: Rect[] = [];
     const belowLines: Rect[] = [];
+    // 单道增时线的宽度按**本页**统计（不设按书的常数，换一本谱照样适用）：压在某个数字块中线附近、紧挨在它右边的横线，取中位数。
+    // 按行统计不稳：64 有一行混着一批 15~16px 的短线，行内中位数被拉到 16，30px 的正常单线成了「两道」；整页中位数是 30。
+    const dashUnit = (): number => {
+      let u = dashUnitOf.get(cls);
+      if (u === undefined) {
+        const ws = cls.hlines.map((h) => h.bbox).filter((hb) => hb.w <= numH * 1.2 && cls.blocks.some((k) =>
+          Math.abs(rcy(hb) - rcy(k.bbox)) <= k.bbox.h * 0.35 && hb.x >= rright(k.bbox) - 1 && hb.x - rright(k.bbox) <= numH * 3)).map((hb) => hb.w);
+        u = ws.length >= 5 ? median(ws) : 0;
+        dashUnitOf.set(cls, u);
+      }
+      return u;
+    };
     for (const k of cls.hlines) {
       const kb = k.bbox;
       // 增时线 '-'：横线在数字**右侧**（x 不重叠）、与数字**纵向重叠**、且**大致居中**。
@@ -2073,10 +2155,23 @@ function buildJpNums(
       // 门开在 0.25：两侧各留 0.04 与 0.02 字号的余量，是实测撑得住的最宽位置。
       // 「中心距 < 0.6 字号」那条老判据两头都不严，正是上面后两种混进来的原因，已由这两条取代。
       const yOverlap = kb.y < rbottom(d) && rbottom(kb) > d.y;
-      const centered = Math.abs(rcy(kb) - rcy(d)) <= numH * 0.25;
+      // 声部行往**下**放到 0.35：新编赞美诗·四声部 f13 的增时线印得偏低（线心比数字中线低 9px、字号 36，正卡在 0.25 上，一首漏二三十道）；
+      // 往下离「下一组音符的减时线」（+0.58）还有余量，往上（倚音减时线 −0.27）不动。
+      const dcy0 = rcy(kb) - rcy(d);
+      const centered = dcy0 >= -numH * 0.25 && dcy0 <= numH * (voiceMates.length ? 0.35 : 0.25);
       if (kb.x >= rright(d) - 1 && kb.x < augR && yOverlap && centered &&
           !stackedHline(cls.hlines, kb, numH) &&
-          overlapX(kb, d) < kb.w * 0.4) { augment++; augmentRects.push(kb); continue; }
+          overlapX(kb, d) < kb.w * 0.4) {
+        // 两三道线首尾相接印成一条长线（f13 `4––`：密排时线与线之间不留空）：声部行上比本页单道线的统计宽度（中位数）长出七成、且接近整数倍（差 ≤0.3）的，按宽度折成几道
+        const unit = voiceMates.length ? dashUnit() : 0;
+        const fit = unit ? kb.w / unit : 1;
+        // 只在**挤着排**的地方折：线头贴着前一样东西（数字或上一道线，间隙 ≤ 四分之一道线宽）。线与线之间留得出空的地方不会印成一条——
+        // 297 末系统字号大一号，单道线就有 61px（本页统计 31），前后各空着七八十像素。
+        const prevR = Math.max(rright(d), ...augmentRects.map(rright));
+        const n = fit >= 1.7 && Math.abs(fit - Math.round(fit)) <= 0.3 && kb.x - prevR <= unit * 0.25 ? Math.min(3, Math.round(fit)) : 1;
+        if (n > 1) probe("augment.longDash");
+        augment += n; augmentRects.push(kb); continue;
+      }
       // 减时线(下划线)：横线在数字**正下方**、与数字**横向重叠**（与上面的增时线对偶）；
       // 多条上下堆叠 → div 多层。
       // **弯的不算**：四声部谱两声部挨得近，下一声部头上的圆滑线弧（扁而宽，归进了横线）正好落在上一声部
@@ -2419,6 +2514,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   let comps = mergeBrokenHlines(untangleBridged(raw, bin, estimateNumH(raw)), estimateNumH(raw));
   comps = splitBarDash(bin, comps, estimateNumH(comps));
   comps = splitBarCap(bin, comps, estimateNumH(comps));
+  if (isVoicedPage(comps, estimateNumH(comps))) comps = splitDigitDash(bin, comps, estimateNumH(comps));
   comps = splitArcTail(bin, comps, estimateNumH(comps));
   comps = splitLineOverArc(bin, comps, estimateNumH(comps));
   comps = splitLineDot(bin, comps, estimateNumH(comps), isVoicedPage(comps, estimateNumH(comps)));
