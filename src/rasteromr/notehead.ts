@@ -1207,6 +1207,62 @@ export function probeBareStems(
   return out;
 }
 
+/**
+ * **两根光杆干夹着一个头**：两声部同音共用一个符头，干一上一下——朝上那根贴在头的右边、下端落在头心，朝下那根贴在头的左边、上端落在头心
+ *（新编赞美诗五线谱 026 m2 低音谱表的 A♭3 二分音符：头压在第五线上，圈被去谱线切碎，收拢不出一个头大小的墨，端头收墨那一路进不来）。
+ * 两根干的这两端都没挂上头、横向隔一个头宽（0.8~1.7 格）、纵向对齐（差 ≤0.7 格），中间就是那个头；盒里（谱线行不算）得有墨。
+ * 头心空的落空心头，实的落实心头。头盒取本页空心头的中位尺寸。
+ */
+export function headsBetweenStemPairs(
+  stems: LineSeg[],
+  heads: Rect[],
+  unit: RasterUnit,
+  snap: (y: number) => number | null,
+  size: { w: number; h: number },
+  bin: Binary,
+  onLine: (y: number) => boolean,
+  isBar: (s: LineSeg) => boolean,
+): { box: Rect; code: SmuflName; ids: number[]; weak: true }[] {
+  const sp = unit.space;
+  const out: { box: Rect; code: SmuflName; ids: number[]; weak: true }[] = [];
+  const cand = stems.filter((s) => { const len = Math.abs(s.y1 - s.y0); return len >= sp * 2 && len <= sp * BARE_LEN[1] && !isBar(s); });
+  const xOf = (s: LineSeg) => (s.x0 + s.x1) / 2;
+  const headAt = (x: number, y: number) => heads.some((h) => Math.abs(h.x + h.w / 2 - x) < sp * 1.6 && Math.abs(h.y + h.h / 2 - y) < sp * 1.2);
+  const inkIn = (cx: number, cy: number, w: number, h: number): number => {
+    let n = 0, ink = 0;
+    for (let y = Math.round(cy - h / 2); y <= Math.round(cy + h / 2); y++) {
+      if (y < 0 || y >= bin.h || onLine(y)) continue;
+      for (let x = Math.round(cx - w / 2); x <= Math.round(cx + w / 2); x++) {
+        if (x < 0 || x >= bin.w) continue;
+        n++;
+        if (bin.data[y * bin.w + x]) ink++;
+      }
+    }
+    return n ? ink / n : 0;
+  };
+  const used = new Set<LineSeg>();
+  for (const up of cand) {
+    if (used.has(up)) continue;
+    const ux = xOf(up), uy = Math.max(up.y0, up.y1), uTop = Math.min(up.y0, up.y1);
+    if (headAt(ux, uy) || headAt(ux, uTop)) continue;
+    for (const dn of cand) {
+      if (dn === up || used.has(dn)) continue;
+      const dx = xOf(dn), dy = Math.min(dn.y0, dn.y1), dBot = Math.max(dn.y0, dn.y1);
+      if (ux - dx < sp * 0.8 || ux - dx > sp * 1.7 || Math.abs(uy - dy) > sp * 0.7) continue;
+      if (headAt(dx, dy) || headAt(dx, dBot)) continue;
+      const cx = (ux + dx) / 2;
+      const cy = snap((uy + dy) / 2) ?? (uy + dy) / 2;
+      const fill = inkIn(cx, cy, size.w * 0.9, size.h * 0.9);
+      if (fill < 0.12) continue;
+      const core = inkIn(cx, cy, sp * 0.6, sp * 0.4);
+      out.push({ box: { x: Math.round(cx - size.w / 2), y: Math.round(cy - size.h / 2), w: size.w, h: size.h }, code: core >= BARE_SOLID ? "noteheadBlack" : "noteheadHalf", ids: [], weak: true });
+      used.add(up); used.add(dn);
+      break;
+    }
+  }
+  return out;
+}
+
 /** 光杆干端头收拢出来的墨，够得上一个 / 两个（三度叠头）头的尺寸（格）与填充。 */
 const BARE_W = [0.8, 1.6] as const;
 const BARE_H1 = [0.8, 1.35] as const;

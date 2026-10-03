@@ -23,7 +23,7 @@ import type { Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
 import { buildRasterPage, makeSymObj, makeSysBracketObj, makeTextObj, pushSeg, type RasterSym } from "./adapt";
 import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, ledgerGrid, joinVSegs, removeStaffLines, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
-import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, type PitchStep } from "./notehead";
+import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, type PitchStep } from "./notehead";
 import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from "./rasterglyphs";
 import { sigDistance } from "../omr/glyphdict";
 import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, jianpuKey, type JianpuStrip } from "./jianpuband";
@@ -1419,6 +1419,9 @@ export async function recognizeRasterPage(
       for (const id of hd.ids) claimed.add(id);
       stacked.push(hd);
     }
+    // 两根光杆干夹着一个头（两声部同音共用符头、干一上一下，头压线被切碎）
+    const known = [...headBoxes, ...stacked.map((q) => q.box)];
+    for (const hd of headsBetweenStemPairs(prims.vSegs, known, unit, pitchGrid, size, raster.bin, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), isBar)) stacked.push(hd);
   }
   // 弧与谱线围出的空当当成了空心头的内腔（`notehead.ts::archCavity`），剔掉，墨留给弧那一步；
   {
