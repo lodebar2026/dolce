@@ -165,10 +165,26 @@ export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | n
   // 拿 `findStaffLines` 数一数谱线，没多出一成半就整幅还原。
   // 不验的话干净位图那一档会被推坏（实测歌词 67.7% → 59.9%）——那一档本来就是平的，
   // 逐列偏移量全是噪声。
-  const also = [gray, lyricGray].filter((g): g is Uint8Array => !!g);
+  // 淡谱线补回用的松阈值副本（见下）跟着灰度图一起推平、纠斜，几何才对得上
+  const lineSoft = kind === "rgb" ? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
+  const also = [gray, lyricGray, lineSoft?.data].filter((g): g is Uint8Array => !!g);
   dewarpPage(bin, also);
   deskew(bin, also);
   levelStaves(bin, also);
+  // **淡谱线补回**：个别谱行的线印得浅（新编赞美诗 297 头两个系统的低音谱表，线的灰度 130~175，别的行 100 上下），
+  // `SAUVOLA_K` 那一档把它切成断续的几截，行投影与逐列游程都凑不成行，十行谱只找出八行。整页换松阈值会把别的笔画也弄糊
+  //（见上），所以同补竖笔一样只取一部分：松阈值图里**细而长的横向游程**（纵向厚不过两倍线宽、横向三格以上）——谱线、加线——
+  // 只补原图上的断口。放在推平、纠斜之后，按识别那一路（`completeStaffLines` 的 `loose`）数谱行，**多出来了才留**，否则整幅不动：
+  // 在推平前比、或按推平自检那一路数，识别本来就找得全的页也会被换（f05 我要向山举目歌调号读错 64.6 → 16.9、
+  // 384 诗篇一五零篇推平后本已找全 14 行 89.6 → 88.0）。
+  if (lineSoft) {
+    const u = estimateUnit(bin);
+    if (u) {
+      const trial = { ...bin, data: new Uint8Array(bin.data) };
+      mergeHorizontal(trial, lineSoft, Math.round(u.space * LINE_RUN), Math.max(2, Math.round(u.lineThick * 2)), Math.max(1, Math.round(u.lineThick)));
+      if (staffCount(trial) > staffCount(bin)) bin.data.set(trial.data);
+    }
+  }
   // 推平之前行投影一行谱都找不到的页（父恩广大那张扫描件谱线微弯，推平前一行都不成），
   // 网纹那一步就没做（网纹符头 166 个音只认出 15 个）；推平之后有尺子了，补做一次——**只补针孔，不去网**。
   // 这一档是低分辨率扫描件（齐来谢主歌线距 11px），谱线细得断成点，孤立点把网点率
@@ -217,6 +233,12 @@ const DEWARP_GAIN = 1.15;
  *  「线更多、谱行没多」的推平，扫描件那一档反而降。 */
 function staffScore(bin: Binary): number {
   return groupStaves(findStaffLines(bin)).length;
+}
+
+/** 识别那一路数得出的谱行数（行投影成组 + 逐列游程补线，`loose`）。 */
+function staffCount(bin: Binary): number {
+  const lines = findStaffLines(bin);
+  return completeStaffLines(bin, lines, groupStaves(lines)).groups.length;
 }
 
 /** 推平与不推平都要经过同一条后续去倾斜、补线流程，再比较有无丢行。 */
@@ -510,6 +532,41 @@ function mergeVertical(bin: Binary, soft: Binary, minRun: number): void {
       y = e + 1;
     }
 }
+
+/**
+ * 把 `soft` 里**细而长的横向游程**并进 `bin`：横向连续至少 `minRun` 像素，且其中每一列在 `soft` 里的纵向墨厚不超过 `maxThick`
+ *（谱线、加线；符杠、字的横笔连着竖向的墨，厚出去的那几列不并）。只补 `bin` 上 ±`gapTol` 行都没墨的那些像素（断口）。
+ */
+function mergeHorizontal(bin: Binary, soft: Binary, minRun: number, maxThick: number, gapTol: number): void {
+  const { w, h } = bin;
+  const fill: number[] = [];
+  const thin = (x: number, y: number) => {
+    let a = y, b = y;
+    while (a > 0 && soft.data[(a - 1) * w + x] && y - a < maxThick) a--;
+    while (b + 1 < h && soft.data[(b + 1) * w + x] && b - y < maxThick) b++;
+    return b - a + 1 <= maxThick;
+  };
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; ) {
+      if (!soft.data[y * w + x] || !thin(x, y)) {
+        x++;
+        continue;
+      }
+      let e = x;
+      while (e + 1 < w && soft.data[y * w + e + 1] && thin(e + 1, y)) e++;
+      // 只补断口：这一列在原图上下一个线宽内已经有墨的不动（原有的线不加粗——松阈值下线粗一两个像素，整页加粗后认符头跟着变，297 85 → 72）
+      if (e - x + 1 >= minRun)
+        for (let k = x; k <= e; k++) {
+          let has = false;
+          for (let d = -gapTol; d <= gapTol && !has; d++) if (y + d >= 0 && y + d < h && bin.data[(y + d) * w + k]) has = true;
+          if (!has) fill.push(y * w + k);
+        }
+      x = e + 1;
+    }
+  for (const i of fill) bin.data[i] = 1;
+}
+/** 并回的横向游程至少几格长。 */
+const LINE_RUN = 3;
 
 /** 量单位用的副本：去倾斜之后再量（斜着的一像素线在行投影里碎成两行）。 */
 function prepared(bin: Binary): Binary {

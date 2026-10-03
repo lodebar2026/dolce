@@ -905,6 +905,10 @@ const ALONG_END_TOL = 0.3;
 const BEYOND_SCORE = 0.4;
 const BEYOND_CAVITY = 0.2;
 const ALONG_END_SCORE = 0.2;
+/** 内腔印糊、靠「同干同时值」认的头：模板分、墨占比下限，与「夹在两头中间」的判定距离（格）。 */
+const ALONG_FILLED_SCORE = 0.35;
+const ALONG_FILLED_INK = 0.4;
+const ALONG_SANDWICH = 1.25;
 
 export function hollowHeadsAlongStems(
   bin: Binary,
@@ -976,8 +980,18 @@ export function hollowHeadsAlongStems(
       const ink = inkIn(b.x, st.y, ref.box.w);
       // 干外那一格：模板分够高（`BEYOND_SCORE`）时内腔佐证放到 `BEYOND_CAVITY`——斜缝内腔被谱线切碎，够不上原始孔的尺寸
       const cavMin = beyond && b.s >= BEYOND_SCORE ? BEYOND_CAVITY : ALONG_CAVITY;
-      if (b.s < (atEnd ? ALONG_END_SCORE : ALONG_SCORE) || ink < ALONG_INK[0] || ink > ALONG_INK[1] || cavity(b.x, st.y) < cavMin) continue;
+      if (b.s < (atEnd ? ALONG_END_SCORE : ALONG_SCORE) || ink < ALONG_INK[0] || ink > ALONG_INK[1]) continue;
       const box: Rect = { x: Math.round(b.x - ref.box.w / 2), y: Math.round(st.y - ref.box.h / 2), w: ref.box.w, h: ref.box.h };
+      // **内腔印糊了的头**：同一根干上挂着二分头，这根干上别的头也只能是二分（一根干不会一半空心一半实心），
+      // 内腔不作证也行（新编赞美诗 346 m12/m14 低音谱表 A3 压着第五线、圈里糊满，内腔 0、模板 0.37、墨 0.43）。
+      // 只防「夹在两个头中间」那个位置（墨量也像头心，恩友歌）：上下 `ALONG_SANDWICH` 格内同时有已认出的头的不放宽。
+      if (cavity(b.x, st.y) < cavMin) {
+        const near = (dir: number) => taken.some((t) => {
+          const d = (t.y + t.h / 2 - st.y) * dir;
+          return d > 0 && d <= sp * ALONG_SANDWICH && Math.abs(t.x + t.w / 2 - b.x) < sp * 0.6;
+        });
+        if (b.s < ALONG_FILLED_SCORE || ink < ALONG_FILLED_INK || (near(1) && near(-1))) continue;
+      }
       if (clash(box, taken)) continue;
       out.push({ box, code: "noteheadHalf", weak: true });
       taken.push(box);

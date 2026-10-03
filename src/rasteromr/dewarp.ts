@@ -137,11 +137,25 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
   const need = Math.max(20, cols * BAND_SUPPORT);
   const out = [...lines];
   const outGroups = [...groups];
-  for (let i = 0; i < keep.length; ) {
-    let j = i;
-    while (j + 1 < keep.length && keep[j + 1].cy - keep[j].cy <= space * BAND_TOL) j++;
-    const band = keep.slice(i, j + 1);
-    i = j + 1;
+  // **聚带**：识别用的（`loose`）按轨迹串——相邻取样列的中心 y 接得上（半格内）就连成一条（`buildTracks`，推平也用它），
+  // 被密集音符隔断的几截再按断口两侧的局部 y 接回（`joinTracks`），
+  // 不按全页中心 y 一刀切：页面一斜，同一行谱左右两头的中心差出好几个像素，按 y 聚会切成几截、哪截都不够数。
+  // 推平要不要采纳的那道自检（`loose = false`）照旧按中心 y 聚：它一变，推平采不采纳就跟着变（见下面末段的说明）。
+  const bands: ColHit[][] = [];
+  const made = new Set<StaffGroup>();
+  if (loose) {
+    // 短碎块（谱号、调号那一段只有零星一两列，297 第二系统低音谱表左段 x=172、300 各一列）也先参加接回，接完再按列数筛
+    for (const t of joinTracks(buildTracks(keep, space, bin.w, 0, 1), space)) if (t.xs.length >= 8) bands.push(t.hits);
+    bands.sort((a, b) => b.length - a.length);
+  } else {
+    for (let i = 0; i < keep.length; ) {
+      let j = i;
+      while (j + 1 < keep.length && keep[j + 1].cy - keep[j].cy <= space * BAND_TOL) j++;
+      bands.push(keep.slice(i, j + 1));
+      i = j + 1;
+    }
+  }
+  for (const band of bands) {
     // **支持要够多**：同一行谱在别的窗口上也会凑出「五段黑」（错开一条线的那种），
     // 但那些只有十几列支持，而真谱行有几百列（实测干净页的假带 11~54 列、
     // 真行 260~420 列；主，差遣我 p4 漏掉的五行也有 233~318 列）。
@@ -152,7 +166,8 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
     const thick = Math.max(1, median(band.map((h) => h.thick)));
     const left = Math.min(...band.map((h) => h.x));
     const right = Math.max(...band.map((h) => h.x));
-    const covered = groups.find((g) => cy > g.lines[0].y - space && cy < g.lines[4].y + space);
+    // 按轨迹串时一行谱可能断成几截轨迹：新补出来的行也算已有（`outGroups`），免得重复补
+    const covered = (loose ? outGroups : groups).find((g) => cy > g.lines[0].y - space && cy < g.lines[4].y + space);
     if (covered) {
       // **盖住了、但只盖住半截**：细线扫描件（敬拜万世之王，320dpi、谱线 1px）行投影
       // 凑得出组，线却断成虚线，右端停在页面一半（实测 1004 / 1292，真谱线到 2470），
@@ -161,7 +176,9 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
       const ext = bin.w * EXTEND_MIN;
       const gl = Math.min(...covered.lines.map((l) => l.left));
       const gr = Math.max(...covered.lines.map((l) => l.right));
-      if (right - gr > ext || gl - left > ext)
+      // 这一路自己补出来的行：同一行谱断成的别的几截轨迹，照它们延长（补行时只用了最长那截，左右端短一截——297 头两个系统的低音谱表
+      // 补出来从 528 / 596 起，真左端 172，开头几小节整个丢掉），不看差多少
+      if (made.has(covered) || right - gr > ext || gl - left > ext)
         for (const l of covered.lines) (l.left = Math.min(l.left, left)), (l.right = Math.max(l.right, right));
       continue;
     }
@@ -175,7 +192,9 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
     // 留下一地散线（实测主，差遣我 p4 有 52 条线却只凑出 7 行谱），
     // 合成的五条线混进去会被那些散线搅得凑不成一组
     // （实测补了 25 条线、谱行只从 7 涨到 8；直接给谱行才是 7 → 12）。
-    outGroups.push({ lines: five, space: (five[4].y - five[0].y) / 4 });
+    const g = { lines: five, space: (five[4].y - five[0].y) / 4 };
+    outGroups.push(g);
+    made.add(g);
   }
   // ── 四条等距、缺一条：**外推补上** ─────────────────────────────────────
   //
@@ -638,7 +657,7 @@ export function columnHits(bin: Binary): ColHit[] {
 }
 
 /** 把逐列的命中串成轨迹：x 相邻、中心 y 挨着的算同一行谱。 */
-function buildTracks(hits: ColHit[], space: number, width: number): Track[] {
+function buildTracks(hits: ColHit[], space: number, width: number, minSpan = TRACK_SPAN, minHits = 8): Track[] {
   const byX = new Map<number, ColHit[]>();
   for (const h of hits) {
     const a = byX.get(h.x) ?? [];
@@ -686,7 +705,40 @@ function buildTracks(hits: ColHit[], space: number, width: number): Track[] {
       }
   }
   for (const o of open) done.push(o.t);
-  return done.filter((t) => t.xs.length >= 8 && t.xs[t.xs.length - 1] - t.xs[0] >= width * TRACK_SPAN);
+  return done.filter((t) => t.xs.length >= minHits && t.xs[t.xs.length - 1] - t.xs[0] >= width * minSpan);
+}
+
+/**
+ * 断开的轨迹接回去：音符密的地方一连一百多像素凑不出「五黑四白」，超过 `buildTracks` 能跨的空档，一行谱断成几截。
+ * 按 x 排，拿**两截里长的那截**按自己的走向（最小二乘直线）外推到另一截的端点，中心 y 差在 `TRACK_STEP` 格内、x 上不重叠的接成一条。
+ * 比的是轨迹自己延伸过去的位置，不拿两截端点的 y 直接比——斜的页隔七八百像素就差出大半格（297 第二系统低音谱表）。
+ */
+function joinTracks(tracks: Track[], space: number): Track[] {
+  const fit = (t: Track) => {
+    const n = t.xs.length;
+    const mx = t.xs.reduce((a, x) => a + x, 0) / n, my = t.ys.reduce((a, y) => a + y, 0) / n;
+    let sxx = 0, sxy = 0;
+    for (let k = 0; k < n; k++) (sxx += (t.xs[k] - mx) ** 2), (sxy += (t.xs[k] - mx) * (t.ys[k] - my));
+    const b = sxx > 0 && t.xs[n - 1] - t.xs[0] >= space * 4 ? sxy / sxx : 0;
+    return (x: number) => my + b * (x - mx);
+  };
+  const out: Track[] = [];
+  for (const t of [...tracks].sort((a, b) => a.xs[0] - b.xs[0])) {
+    let best: Track | null = null;
+    let bd = space * TRACK_STEP;
+    for (const o of out) {
+      if (o.xs[o.xs.length - 1] >= t.xs[0]) continue;
+      // 长的那截外推到短的那截靠近的那一端
+      const d = o.xs.length >= t.xs.length ? Math.abs(fit(o)(t.xs[0]) - median(t.ys.slice(0, 5))) : Math.abs(fit(t)(o.xs[o.xs.length - 1]) - median(o.ys.slice(-5)));
+      if (d < bd) (bd = d), (best = o);
+    }
+    if (best) {
+      best.xs.push(...t.xs);
+      best.ys.push(...t.ys);
+      best.hits.push(...t.hits);
+    } else out.push({ xs: [...t.xs], ys: [...t.ys], hits: [...t.hits] });
+  }
+  return out;
 }
 
 /**
