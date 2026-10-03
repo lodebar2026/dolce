@@ -3542,11 +3542,12 @@ export async function recognizeRasterPage(
   demoteMidKeys(pg, ctx);
   extendKeyChains(pg, ctx);
   dropHeadsInKey(pg, ctx);
-  extendKeyByStrokes(pg, ctx, raster.bin, unit);
-  {
-    const settled = shareSystemKeys(pg, ctx);
-    shareKeySignature(ctx, settled);
-    carrySystemKeys(pg, ctx, settled);
+  // 调号的几道全页共享**按段**做（见 `keySections`：一页印几首、各自重印拍号的，各段调号不同）
+  for (const sec of keySections(pg, ctx, raster.bin)) {
+    extendKeyByStrokes(pg, sec, raster.bin, unit);
+    const settled = shareSystemKeys(pg, sec);
+    shareKeySignature(sec, settled);
+    carrySystemKeys(pg, sec, settled);
   }
   extendKeyByCarry(ctx, opts.carryKey, raster.bin, unit.space);
   dropBarsInKey(pg, ctx, unit.space);
@@ -4724,6 +4725,64 @@ function lastKey(pg: SPage, ctx: Map<Staff, StaffContext>, carry: CarryKey | und
   return carry;
 }
 
+/** 行首拍号离谱表左端的上限（格）：谱号、七个升降号之后的那一格。 */
+const HEAD_TIME_SP = 14;
+/** 终止线粗线的宽度下限（格）。 */
+const FINAL_THICK = 0.3;
+
+/**
+ * **调号共享的分段**：按竖笔定调、全页共享、按系统传，都立在「整页一个调」上。一页印好几首短曲（新编赞美诗 400 阿们颂：
+ * 四首各自 1♯、4♭、1♭、4♭），全页过半的四个降号把另两首也改了。一首歌只在结尾印终止线、只在头一个系统印拍号，所以
+ * **上一个系统以终止线收尾**、或**整个系统每行都在行首重印拍号**的，从它起另开一段，各段分头共享。
+ * 拍号这一条单靠不住（400 四首只有一首的拍号认成了拍号符号），终止线回原图量（`endsWithFinal`，这时小节线样式还没定）。
+ * 只有一段的页原样返回整个 `ctx`（判据一个像素不变）。
+ */
+function keySections(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary): Map<Staff, StaffContext>[] {
+  const groups = systemGroups(pg).sort((a, b) => a[0].box.top - b[0].box.top);
+  // 行首的拍号：认出了拍号数字、且落在谱表左端往右 `HEAD_TIME_SP` 格以内（行中换拍不算新段）
+  const headTime = (st: Staff) => {
+    const c = ctx.get(st);
+    if (!c?.time.length || st.lineYs.length !== 5) return false;
+    const sp = (st.lineYs[4] - st.lineYs[0]) / 4;
+    return Math.min(...c.time.map((t) => t.box.left)) < st.box.left + sp * HEAD_TIME_SP;
+  };
+  const secs: Staff[][] = [];
+  groups.forEach((g, i) => {
+    const prev = groups[i - 1];
+    const fin = !!prev && prev.filter((st) => endsWithFinal(st, bin)).length * 2 > prev.length;
+    if (!secs.length || fin || (i > 0 && g.every(headTime))) secs.push([]);
+    secs[secs.length - 1].push(...g);
+  });
+  if (secs.length < 2) return [ctx];
+  return secs.map((sts) => new Map(sts.filter((st) => ctx.has(st)).map((st) => [st, ctx.get(st)!] as [Staff, StaffContext])));
+}
+
+/**
+ * 这一行谱是不是以**终止线**收尾：右端往左两格以内，贯穿谱表（九成的行有墨）的竖线里最右那根粗（≥ `FINAL_THICK` 格）、
+ * 左边一格以内还有一根细的。
+ */
+function endsWithFinal(st: Staff, bin: Binary): boolean {
+  if (st.lineYs.length !== 5) return false;
+  const sp = (st.lineYs[4] - st.lineYs[0]) / 4;
+  const y0 = Math.round(st.lineYs[0]), y1 = Math.round(st.lineYs[4]);
+  const full = (x: number) => {
+    let n = 0;
+    for (let y = y0; y <= y1; y++) if (bin.data[y * bin.w + x]) n++;
+    return n >= (y1 - y0 + 1) * 0.9;
+  };
+  const runs: [number, number][] = [];
+  for (let x = Math.max(0, Math.round(st.box.right - sp * 2)); x <= Math.min(bin.w - 1, Math.round(st.box.right + sp * 0.5)); x++) {
+    if (!full(x)) continue;
+    const last = runs[runs.length - 1];
+    if (last && last[1] === x - 1) last[1] = x;
+    else runs.push([x, x]);
+  }
+  if (runs.length < 2) return false;
+  const [a, b] = runs.slice(-2);
+  const thick = b[1] - b[0] + 1, thin = a[1] - a[0] + 1;
+  return thick >= sp * FINAL_THICK && thin < thick * 0.6 && b[0] - a[1] <= sp;
+}
+
 /**
  * **同一系统各行的调号相同**：三行以上的系统里，认得一模一样的调号行数最多（至少两行、且比别的读法都多）的那个，
  * 就是这个系统的调号，其余行照它改。返回这样定下来的谱行——它们不再参加全页那一道共享。
@@ -4782,6 +4841,8 @@ function pastSysLine(bin: Binary, lineYs: number[], left: number, sp: number): n
 
 /** 系统线断开处算「还连着」的墨占比（见 `bridgeFaintSysLines`）。 */
 const SYS_LINE_INK = 0.5;
+/** 系统线断开处，一列里最长的空白不到这么多格才算虚线（括号钩之间的白有一格半）。 */
+const SYS_LINE_GAP = 0.8;
 /** 两个系统左端差在这么多格以内，才在两个左端之间整段找那条线。 */
 const SYS_LINE_DX = 6;
 
@@ -4800,17 +4861,21 @@ function bridgeFaintSysLines(pg: SPage, bin: Binary, sp: number): void {
     const y1 = Math.round(b.box.top - sp * 0.5);
     if (y1 - y0 < sp * 2) return false;
     const ink = (x: number, y: number) => x >= 0 && x < bin.w && bin.data[y * bin.w + x] === 1;
-    let best = 0;
     // 下面那行的左端量短了（淡得只剩后半截）时，线在两行左端之间的某一列；差得太远的是缩进不同的两个系统，只看上面那行的
     const near = Math.abs(a.box.left - b.box.left) <= sp * SYS_LINE_DX;
     const xa = near ? Math.min(a.box.left, b.box.left) : a.box.left;
     const xb = near ? Math.max(a.box.left, b.box.left) : a.box.left;
+    // 墨过半之外，这一列里**最长的一段空白**还要不到 `SYS_LINE_GAP` 格：两个系统挨得近时，上一个括号的下钩、下一个括号
+    // 往上伸出的一截把间隔两头填满，墨量过半（新编赞美诗 367 第 2、3 系统，0.57），中间却隔着一格半的白；虚线的断口都短
     for (let x = Math.round(xa - sp); x <= Math.round(xb + sp); x++) {
-      let n = 0;
-      for (let y = y0; y <= y1; y++) if (ink(x, y) || ink(x - 1, y) || ink(x + 1, y)) n++;
-      best = Math.max(best, n);
+      let n = 0, gap = 0, maxGap = 0;
+      for (let y = y0; y <= y1; y++) {
+        if (ink(x, y) || ink(x - 1, y) || ink(x + 1, y)) (n++, (gap = 0));
+        else maxGap = Math.max(maxGap, ++gap);
+      }
+      if (n / (y1 - y0 + 1) >= SYS_LINE_INK && maxGap < sp * SYS_LINE_GAP) return true;
     }
-    return best / (y1 - y0 + 1) >= SYS_LINE_INK;
+    return false;
   };
   let run: Staff[][] = [];
   const flush = () => {

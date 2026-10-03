@@ -124,6 +124,8 @@ export interface TrackCurve {
  */
 /** 散线凑谱行时，缺的线位沿整行验墨的下限（见 `completeStaffLines` 末段）。 */
 const LOOSE_INK = 0.7;
+/** 同上，四条已在时缺的那一条的门槛。 */
+const LOOSE_INK4 = 0.4;
 
 export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: StaffGroup[], loose = true): { lines: StaffLineRun[]; groups: StaffGroup[] } {
   const hits = columnHits(bin);
@@ -280,6 +282,9 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
       const left = Math.min(...full.map((l) => l.left));
       const right = Math.max(...full.map((l) => l.right));
       const maxSlot = Math.max(...slot.keys());
+      // 四条已在、三条跨过半页时，第五条的位置已经定死，验墨放到 `LOOSE_INK4`：浅灰印的页上个别谱行的一条线
+      // 二值化后只剩一半（新编赞美诗 400 第二系统高音谱表的第五线，0.50），整行谱丢掉、这个系统的低音谱表也读岔
+      const inkNeed = slot.size >= 4 && full.length >= 3 ? LOOSE_INK4 : LOOSE_INK;
       // 线距照成员拟合（首尾两条的距离 / 线位差）
       const avg = (slot.get(maxSlot)!.y - a.y) / maxSlot;
       let best: { s: number; score: number } | null = null;
@@ -291,7 +296,7 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
         for (let k = 0; k < 5; k++) {
           if (slot.has(k - s0)) continue;
           const v = inkTol(ys[k], left, right);
-          if (v < LOOSE_INK) ok = false;
+          if (v < inkNeed) ok = false;
           score += v;
         }
         if (ok && (!best || score > best.score)) best = { s: s0, score };
