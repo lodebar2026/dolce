@@ -1,7 +1,7 @@
 {
   "name": "dolce",
   "private": true,
-  "version": "0.7.9",
+  "version": "0.8.0",
   "type": "module",
   "description": "开源简谱编辑与排版器：123 简谱格式、谱面可视化编辑、.jpwabc 与文本谱（番茄简谱 / 诗歌本动态谱）、ABC、MusicXML；本地识谱（简谱图片/PDF、五线谱 PDF）、简谱·五线谱混排、试听与 PPTX/MIDI/MusicXML/PDF/PNG 导出 · An open-source jianpu (numbered musical notation) editor & typesetter.",
   "homepage": "https://lodebar2026.github.io/dolce/",

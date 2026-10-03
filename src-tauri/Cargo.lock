@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "dolce"
-version = "0.7.9"
+version = "0.8.0"
 dependencies = [
  "bytemuck",
  "lopdf",
