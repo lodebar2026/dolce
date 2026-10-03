@@ -396,7 +396,9 @@ function buildMusicLine(
     sustainHost: Chord | null;
     /** 刚按计数收掉一个多连音——紧随的 `)` 是写谱人的习惯写法，静默消费、不报「多余」 */
     justClosedTuplet: boolean;
-  } = { last: null, sustainHost: null, justClosedTuplet: false };
+    /** 收在「带着增时线的音」上的弧：后面再来增时线，说明弧是收在增时线中间的（`1-)-`），终点改记到当时最后那根增时线上 */
+    arcEnds: { mk: Mark; host: Chord; su: Sustain }[];
+  } = { last: null, sustainHost: null, justClosedTuplet: false, arcEnds: [] };
   /** ABC：上一个 `-` 还没配到下一个音符（tie 的 stop 端） */
   let pendingTie = false;
   /** ABC：上一个 `>`/`<` 还欠着——正数表示下一个音符要减半、上一个加附点 */
@@ -564,6 +566,9 @@ function buildMusicLine(
           if (hs.length) s.attachedSources = hs;
           pending.srcs = pending.srcs.filter((a) => a.kind !== "harmony");
         }
+        // 弧收在增时线中间（`1-)-`，文本谱里弧画到第一根增时线为止）：终点记到那根增时线上，写回还是 `1-)-`
+        for (const a of cur.arcEnds) if (a.host === host) a.mk.end = a.su.id;
+        cur.arcEnds = [];
         (host.sustains ??= []).push(s);
         host.duration = ctx.d.reduration(host, ctx.len);
         sawSpaceSinceLastNote = false;
@@ -813,6 +818,9 @@ function buildMusicLine(
           const mk: Mark = { type: "slur", start: open.start, end: cur.last.id, level: open.level, closeSource: t.source };
           if (open.openSource) mk.openSource = open.openSource;
           marks.push(mk);
+          const host = cur.sustainHost;
+          const su = host && host === cur.last ? host.sustains?.[host.sustains.length - 1] : undefined;
+          if (host && su) cur.arcEnds.push({ mk, host, su });
         } else {
           report(ctx, "empty-slur", tr("diag.j123.emptySlur"), t.source);
         }
@@ -862,7 +870,11 @@ function buildMusicLine(
         }
         // **小节里还没有元素 = 这是左线**（行首的 `|`、或紧跟上一根），不收尾，
         // 否则会凭空多出一个空小节
-        if (pb.measure.elements.length === 0) {
+        // 例外：前面已经收过小节、这根又是**只能当右线**的终止线/双线/反复收（`… | |]`、`… :| ||`）——
+        // 它是一个只有右线的空小节（文本谱曲末常见），当成左线的话后面没有小节可挂、写回就丢了
+        const closesEmpty = pb.part.measures.length > 0 && !pb.measure.barlines?.length && bl.repeat !== "forward"
+          && (bl.style === "light-heavy" || bl.style === "light-light");
+        if (pb.measure.elements.length === 0 && !closesEmpty) {
           bl.location = "left";
           (pb.measure.barlines ??= []).push(bl);
           break;

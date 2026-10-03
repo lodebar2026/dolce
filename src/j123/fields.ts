@@ -243,9 +243,9 @@ export function parseTimes(value: string): { times: Time[]; note?: string; error
     rest = rest.slice(m[0].length);
   }
   const note = rest.trim();
-  // 说明文字只收**短的中文**（"混合拍"，谱面上就这一路）。剩下的是别的东西（`C`、`3/4x`）
-  // 一律当没认出来、退回 parseTime 去报错，免得把看不懂的拍号默默咽下。
-  const noteOk = !note || /^[一-鿿]{1,8}$/.test(note);
+  // 说明文字只收**中文起头**的一段（"混合拍"、"中速  坚定地"、"(快板）"：可带空格、标点与括号）。
+  // 剩下的是别的东西（`C`、`3/4x`）一律当没认出来、退回 parseTime 去报错，免得把看不懂的拍号默默咽下。
+  const noteOk = !note || /^[(（〔【]?[一-鿿]/.test(note);
   if (!times.length || !noteOk || (times.length === 1 && !note)) {
     // 一个都没凑出来（`C`、`none`、看不懂的）或只有一个拍号且没说明 → 老路，报错口径一并沿用
     const one = parseTime(v);

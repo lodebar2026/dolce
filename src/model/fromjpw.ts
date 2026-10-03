@@ -125,6 +125,8 @@ export interface SrcBar {
   kind: "bar";
   style: NonNullable<Barline["style"]>;
   repeat?: "forward" | "backward";
+  /** `::` / `:|:`（左右都反复），同 `Barline.alsoForward` */
+  alsoForward?: boolean;
   source?: SourceSpan;
 }
 
@@ -155,6 +157,9 @@ function spanOf(sec: Section, t: JpwToken): SourceSpan | undefined {
 }
 
 /** 一个音符 token。 */
+/** 控制参数 `{C:…}`（文法见 `jpword/lex.ts` 的 `CONTROL`）。 */
+const CONTROL_RE = /\{C:[^{}]*\}/g;
+
 function readNote(txt: string, stat: JpKeyState & { inTuplet: boolean; slurDepth: number }): SrcNote {
   const nt: SrcNote = {
     kind: "note", number: "0", jpOctave: 0, jpAlter: " ", pitch: 0, step: " ", rest: false,
@@ -162,6 +167,8 @@ function readNote(txt: string, stat: JpKeyState & { inTuplet: boolean; slurDepth
     tupletBegin: false, tupletEnd: false, graces: [], lyrics: [],
   };
   let acc = "";
+  // 控制参数 `{C:1.5}` `{C:2(true,0),Connect}` 只管排版，先剥掉：留着的话里头的数字会被下面逐字符扫成音高、`.` 扫成附点
+  txt = txt.replace(CONTROL_RE, "");
   const tupletText = "{(3}";
   if (txt.includes(tupletText)) {
     if (stat.inTuplet) throw new Error("");
@@ -280,7 +287,7 @@ function readVoice(sec: VoiceSectionLike, fifths: number, time: { beats: number;
         mea = open();
         newMeasure = false;
       }
-      const txt = tok.text;
+      const txt = tok.text.replace(CONTROL_RE, "");
       const bar: SrcBar = { kind: "bar", style: "regular" };
       switch (txt) {
         case "|": bar.style = "regular"; break;
@@ -289,6 +296,8 @@ function readVoice(sec: VoiceSectionLike, fifths: number, time: { beats: number;
         case "||": bar.style = "light-light"; break;
         case "|:": bar.style = "heavy-light"; bar.repeat = "forward"; break;
         case ":|": bar.style = "light-heavy"; bar.repeat = "backward"; break;
+        case "::":
+        case ":|:": bar.style = "light-heavy"; bar.repeat = "backward"; bar.alsoForward = true; break;
         default: throw new Error(`bad barline: ${txt}`);
       }
       bar.source = spanOf(sec, tok);
@@ -413,6 +422,7 @@ function buildPart(src: readonly SrcMeasure[], ids: IdGen, marks: Mark[]): Part 
         // 每根小节线都是小节分隔；小节里还没有元素时算下一小节的左线
         const b: Barline = { location: "right", style: ent.style };
         if (ent.repeat) b.repeat = ent.repeat;
+        if (ent.alsoForward) b.alsoForward = true;
         if (ent.source) b.source = ent.source;
         pendingInline = null;
         if (mea.elements.length === 0) {

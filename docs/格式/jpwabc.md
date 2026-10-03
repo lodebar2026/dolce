@@ -152,11 +152,11 @@ JP-Word 存的是 **Windows 换行（`\r\n`）**，读入端按行切完要去�
 |---|---|---|
 | `Pitch` 的 `x` / `X`（节奏音符） | 落 `console.log` | 0 |
 | `Chord : '[' Pitch+ ']'` | 未实现，且**刻意不做** | 0 |
-| `ControlOptions {C:…}` | 未实现，**且不剥离 → 会静默读错音符** | 0 |
+| `ControlOptions {C:…}` | 未实现，读入时剥掉（只管排版） | 0 |
 | `Prelude_beg` / `Prelude_end` | 明确忽略 | 0 |
 | `Tuplet {(N}` 的 N≠3 | 未实现 | 0 |
 | `Articulation` 的 `DunYin`/`BoYin`/`ZhongYin` | 解析后丢弃 | 0 |
-| `BarlineType` 的 `::` / `:\|:` | **抛错，整首载入失败** | 0 |
+| `BarlineType` 的 `::` / `:\|:` | 读成左右都反复的线（`alsoForward`）；写出端拆成 `:\|` 与下一小节的 `\|:` | 0 |
 | `House` 的 `结束句` / `N.` | 读入端 `bad barline` 抛错 | 0 |
 | `SlurStart` 的 `{(,…}` 控制参数形 | 未实现 | 0 |
 | `WordsSegment.control`、`WordsItem.alignPos` | 解析后无消费方 | 0.9% |
@@ -164,10 +164,8 @@ JP-Word 存的是 **Windows 换行（`\r\n`）**，读入端按行切完要去�
 
 ## 8. 已知缺陷
 
-1. **`{C:…}` 不剥离会污染音符解析**：逐字符扫描时 `{C:1.5}` 里的 `1`/`5` 被当音高、`.` 被当附点。
-   500 首语料里 0 例，但真实 JP-Word 文件可能带。
-2. **`::` / `:|:` 抛错**导致整首载入失败（文法允许、导入端 `throw`）。语料 0 例。
-两条的真实影响面都已用 568 首语料量过（见 `node ../dev/scripts/census-123.mjs`），故优先级定为低。
+从前的两条（`{C:…}` 不剥离污染音符解析、`::` / `:|:` 抛错）已修：控制参数读入时剥掉，`::` / `:|:` 读成左右都反复的线。
+500 首语料里都是 0 例，回归靠夹具（`node ../dev/scripts/jpw-fixture-check.mjs`）。
 
 ## 9. 表达力边界
 
