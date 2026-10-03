@@ -1217,7 +1217,25 @@ export async function recognizeRasterPage(
     if (!d) continue;
     const x0 = Math.min(b.x, d.bbox.x);
     const box = { x: x0, y: b.y, w: Math.max(b.x + b.w, d.bbox.x + d.bbox.w) - x0, h: d.bbox.y + d.bbox.h - b.y };
-    if (!isEighthRest(nl, box, c.area + d.area, unit)) continue;
+    if (!isEighthRest(nl, box, c.area + d.area, unit, EIGHTH_REST_H_PIECES)) continue;
+    if (restSyms.some((r) => overlapFrac(r.box, box) > 0.3)) continue;
+    restSyms.push({ box, code: "rest8th" });
+  }
+
+  // **球与斜笔左右断开的八分休止**：小号字体的八分休止（新编赞美诗 033 m18 低音谱表，高 1.55 格），球与斜笔之间那一丝连接在去线后断开，
+  // 成了左右并排的两块，上面几路都接不上。没人认领的小球，右边紧挨着（隙不过 3 像素）一根没人认领、窄而高的斜笔、两块顶端齐平，
+  // 合起来按八分休止的形状判
+  for (const c of cmap.contours) {
+    if (ledger.claimsOf(c.id).length) continue;
+    const b = c.bbox;
+    if (b.w < unit.space * 0.35 || b.w > unit.space * 0.8 || b.h < unit.space * 0.3 || b.h > unit.space * 0.7) continue;
+    if (!inBand(b.y + b.h / 2)) continue;
+    const d = cmap.contours.find((o) => o !== c && !ledger.claimsOf(o.id).length && o.bbox.x >= b.x + b.w * 0.3 && o.bbox.x - (b.x + b.w) <= 3 &&
+      Math.abs(o.bbox.y - b.y) <= unit.space * 0.3 && o.bbox.w <= unit.space * 0.8 && o.bbox.h >= unit.space * 1.1 && o.bbox.h <= unit.space * 2.4);
+    if (!d) continue;
+    const x0 = Math.min(b.x, d.bbox.x), y0 = Math.min(b.y, d.bbox.y);
+    const box = { x: x0, y: y0, w: Math.max(b.x + b.w, d.bbox.x + d.bbox.w) - x0, h: Math.max(b.y + b.h, d.bbox.y + d.bbox.h) - y0 };
+    if (!isEighthRest(nl, box, c.area + d.area, unit, EIGHTH_REST_H_PIECES)) continue;
     if (restSyms.some((r) => overlapFrac(r.box, box) > 0.3)) continue;
     restSyms.push({ box, code: "rest8th" });
   }
@@ -6087,6 +6105,9 @@ function nearStaffStart(
 /** 八分休止的尺寸（格）与填充：顶上一个球、下面一根斜笔。 */
 const EIGHTH_REST_W = [0.85, 1.3] as const;
 const EIGHTH_REST_H = [1.7, 2.4] as const;
+/** 两截拼起来判的那两路（被谱线上下切开、球与斜笔左右断开）的高度下限：新编赞美诗那套小号字体的八分休止只有 1.55 格
+ *（033、038 系统末那一排）。全局放到 1.4 时合唱谱是爱2 多出二十来个假八分休止（73.7 → 70.6）、独唱谱 −0.03，只给这两路 */
+const EIGHTH_REST_H_PIECES = 1.4;
 const EIGHTH_REST_FILL = [0.3, 0.5] as const;
 const EIGHTH_REST_SLANT = 0.1;
 
@@ -6096,11 +6117,11 @@ const EIGHTH_REST_SLANT = 0.1;
  * 《向主唱新歌》伴奏满页八分休止（约 1.1×2.0 格），与模板的距离 97~138，过不了门槛，
  * 于是被当成「头 + 干」摘出假头、或被当成四分休止收走。
  */
-function isEighthRest(bin: Binary, b: Rect, area: number, unit: RasterUnit): boolean {
+function isEighthRest(bin: Binary, b: Rect, area: number, unit: RasterUnit, minH: number = EIGHTH_REST_H[0]): boolean {
   const sp = unit.space;
   const w = b.w / sp;
   const h = b.h / sp;
-  if (w < EIGHTH_REST_W[0] || w > EIGHTH_REST_W[1] || h < EIGHTH_REST_H[0] || h > EIGHTH_REST_H[1]) return false;
+  if (w < EIGHTH_REST_W[0] || w > EIGHTH_REST_W[1] || h < minH || h > EIGHTH_REST_H[1]) return false;
   const fill = area / Math.max(1, b.w * b.h);
   if (fill < EIGHTH_REST_FILL[0] || fill > EIGHTH_REST_FILL[1]) return false;
   const rows: { y: number; x0: number; x1: number; ink: number }[] = [];
