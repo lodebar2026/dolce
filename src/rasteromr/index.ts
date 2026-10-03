@@ -17,6 +17,7 @@ export * from "./rasterglyphs";
 export * from "./notehead";
 export * from "./lyric";
 export * from "./stafflabel";
+export * from "./timesig";
 export * from "./harmony";
 export * from "./words";
 export * from "./jianpuband";

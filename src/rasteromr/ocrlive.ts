@@ -12,6 +12,7 @@ import { harmonyKey, type HarmonyStrip } from "./harmony";
 import { stripKey, type LyricStrip, type OcrChar } from "./lyric";
 import { labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
 import { jianpuKey, type JianpuStrip } from "./jianpuband";
+import { timeKey, type TimeStrip } from "./timesig";
 import { keepWordLine, spaceWordText, wordKey, type WordLine, type WordStrip } from "./words";
 import type { JianpuRow } from "./jianpufuse";
 
@@ -171,6 +172,28 @@ export async function ocrJianpuStrips(ocr: OcrBackend, strips: readonly JianpuSt
     } catch {
       // 认不出就不互证，五线谱照自己读的
     }
+  }
+  return out;
+}
+
+/** 拍号数字条：一条一个数字（12、16 是两位）。先走单字数字格那一路（居中放进方格，与简谱数字同一条；
+ *  新编赞美诗 59 首试样 75 行读对、0 行读错）；没读出的再整条当一行字送 rec（多读出一成，两位数也靠它）。
+ *  只存纯数字串，别的存空串；合不合法由 `timesig.ts::timeDigit` 判。 */
+export async function ocrTimeStrips(ocr: OcrBackend, strips: readonly TimeStrip[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (strips.length === 0 || !ocr.recognizeNumerals) return out;
+  const miss: TimeStrip[] = [];
+  for (const s of strips) {
+    const bin: Binary = { w: s.w, h: s.h, data: s.data };
+    const [d] = await ocr.recognizeNumerals(bin, [{ x: 0, y: 0, w: s.w, h: s.h }]);
+    out.set(timeKey(s), d === undefined ? "" : String(d));
+    if (d === undefined) miss.push(s);
+  }
+  if (miss.length && ocr.recognizeTexts) {
+    const got = await ocr.recognizeTexts(miss.map((s) => surfaceOf(s.w, s.h, s.data, 6)));
+    got.forEach((t, k) => {
+      if (/^\d{1,2}$/.test(t.trim())) out.set(timeKey(miss[k]!), t.trim());
+    });
   }
   return out;
 }

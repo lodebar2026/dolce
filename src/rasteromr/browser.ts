@@ -10,7 +10,8 @@ import { RasterGlyphLookup, outlineTemplates, type RasterGlyphDict } from "./ras
 import { rasterizePage } from "./rasterpage";
 import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
-import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrWordStrips } from "./ocrlive";
+import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips } from "./ocrlive";
+import type { TimeStrip } from "./timesig";
 
 /**
  * 位图路打开 PDF：**关掉浏览器版 pdf.js 的图像解码优化**。缺省它把内嵌位图交成 `ImageBitmap`（离屏画布 / ImageDecoder），
@@ -164,6 +165,7 @@ export async function recognizeRasterPdfs(
         harmony: (s) => ocrHarmonyStrips(ocr, s),
         lyric: (s) => ocrLyricStrips(ocr, s),
         label: (s) => ocrLabelStrips(ocr, s),
+        time: (s) => ocrTimeStrips(ocr, s),
         jianpu: (s) => ocrJianpuStrips(ocr, s),
         word: (s) => ocrWordStrips(ocr, s),
       },
@@ -171,4 +173,10 @@ export async function recognizeRasterPdfs(
   } finally {
     for (const s of sources) s.pdf.destroy?.();
   }
+}
+
+/** 拍号数字条送 OCR（生成离线缓存的脚本用：与在线识别同一个实现）。回 `[指纹, 读数]` 对。 */
+export async function ocrTimeStripsRaw(strips: { w: number; h: number; data: number[] }[]): Promise<[string, string][]> {
+  const list = strips.map((s) => ({ ...s, data: Uint8Array.from(s.data), box: { x: 0, y: 0, w: s.w, h: s.h }, staff: 0, role: "num" as const })) satisfies TimeStrip[];
+  return [...(await ocrTimeStrips(paddleOcrBackend(), list))];
 }

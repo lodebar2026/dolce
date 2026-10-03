@@ -9,11 +9,12 @@
 //   - 符头：矢量路查字形字典；位图路按性质判（`notehead.ts`）。
 //   - 文本层：矢量路读文字对象；位图路要 OCR（尚未接，故歌词/力度/速度暂缺）。
 import type { Binary } from "../omr/types";
+import { timeDigit, timeKey, timeStripOf, type TimeStrip } from "./timesig";
 import type { Box } from "../staffomr/model";
 import type { Component, Rect } from "../omr/types";
 import { findBarlines, findNoteheads, findStaves, findStems, findTails, isLeadNoteBarline, makeBars, makeSystems, systemGroups, tagSystemBarlines, unknownObjs } from "../staffomr/page";
 import { accidentalAlter, isAccidental, isClef, timeSigDigit, type SmuflName } from "../staffomr/glyphs";
-import { buildNotes, calcAlters, checkBars, findClefKeyTime, keyFifths, lastTimeSignature, type BeamShape, type StaffContext, type StaffNote, type StemInfo, type BarCheck } from "../staffomr/notedata";
+import { buildNotes, calcAlters, checkBars, findClefKeyTime, keyFifths, lastTimeSignature, timeSignatures, type BeamShape, type StaffContext, type StaffNote, type StemInfo, type BarCheck } from "../staffomr/notedata";
 import { findRasterArticulations } from "./artic";
 import { markRepeatsAndVoltas } from "./repeats";
 import { findRasterTuplets } from "./tuplet";
@@ -84,6 +85,8 @@ export interface RasterPageResult {
    * 与歌词条同一套架构：这里只切条，认字靠离线缓存。见 `stafflabel.ts`。
    */
   labelStrips: LabelStrip[];
+  /** 行首拍号候选列的上下半条（`gen-rastertime.mjs` 拿它送 OCR）。见 `timesig.ts`。 */
+  timeStrips: TimeStrip[];
   /** 文字指示带（`words.ts`）。**只在 `opts.wantWordStrips` 时带出来**（生成缓存的脚本、在线识别送 OCR 的那一趟）：
    *  各条合起来近乎整页的像素，整曲结果又留着每一页，平时带着等于每页多存一份位图。 */
   wordStrips: WordStrip[];
@@ -150,6 +153,7 @@ const empty = (page: SPage, raster: RasterPage | null, unit: RasterUnit | null, 
   slurs: [],
   lyricStrips: [],
   labelStrips: [],
+  timeStrips: [],
   wordStrips: [],
   harmonyStrips: [],
   jianpuStrips: [],
@@ -874,6 +878,8 @@ export async function recognizeRasterPage(
     lyricOcr?: Map<string, OcrChar[]>;
     /** 声部标签的 OCR 缓存（`scripts/gen-rasterlabels.mjs` 的产物）。见 `stafflabel.ts`。 */
     labelOcr?: Map<string, string>;
+    /** 拍号数字条的 OCR 缓存（`scripts/gen-rastertime.mjs` 的产物）。见 `timesig.ts`。 */
+    timeOcr?: Map<string, string>;
     /** 文字指示带的 OCR 缓存（`scripts/gen-rasterwords.mjs` 的产物）。见 `words.ts`。 */
     wordOcr?: Map<string, WordLine[]>;
     /** 把文字指示带放进结果（`wordStrips`）。缺省不带，见该字段的说明。 */
@@ -2359,6 +2365,10 @@ export async function recognizeRasterPage(
   // 缺拍号的那行，允许已被符头那几路认领的块（休止、和弦字母除外）进候选（Audiveris 先认行首段、再找符头；
   // 我们的顺序反过来，粗体 4/4 一整块被并块拆分那一路拆成两个黑头——《欢然颂主》高音谱表），
   // 但只认与已认出的拍号**同值、x 对齐**（1.5 格内）的那一对；认中了，盒里的假头随下面「盖过字典」一并删掉。
+  const timeStrips: TimeStrip[] = [];
+  /** 行首每个「两个数字摞起来」形状的候选列（谱号那一列除外）与 OCR 读出的上下半，留给 `shareTimeSignature` 按系统互证。 */
+  const timeCols: TimeColumn[] = [];
+  const clefBoxes = syms.filter((s0) => isClef(s0.code)).map((s0) => s0.box);
   const timeFound: { x: number; codes: string }[] = [];
   const timeDone = new Set<(typeof groups)[number]>();
   // **C 拍号被当成全音符**：粗体 C 上半截的球头垂下来碰到第三线，围出一块白，被内腔那一路收成全音符
@@ -2387,7 +2397,6 @@ export async function recognizeRasterPage(
       if (pass === 1 && !timeFound.some((t) => Math.abs(t.x - b.x) <= unit.space * 1.5)) return false;
       return b.y + b.h > top - unit.space * 0.5 && b.y < bottom + unit.space * 0.5;
     });
-    if (!cands.length) continue;
     // 按 x 聚成**若干列**，逐列去试。
     //
     // 只试最左那一列不行：行首除了拍号还有谱号被切下来的碎块、调号里字典没认出的
@@ -2397,7 +2406,7 @@ export async function recognizeRasterPage(
     // 容一点缝（0.4 格）：C 拍号被自己的笔画切成好几块，块与块之间差几个像素
     //（实测破碎 p2 那个 C 切成 0.76×2.16 / 0.64×0.93 / 0.58×0.12 / 0.41×0.58）。
     cands.sort((a, b) => a.bbox.x - b.bbox.x);
-    const cols: { box: Rect; ids: number[] }[] = [];
+    const cols: { box: Rect; ids: number[]; ink?: boolean }[] = [];
     for (const c of cands) {
       const b = c.bbox;
       const last = cols[cols.length - 1];
@@ -2408,6 +2417,49 @@ export async function recognizeRasterPage(
         last.ids.push(c.id);
       } else cols.push({ box: { ...b }, ids: [c.id] });
     }
+    // **墨列**（只给 OCR 用）：粗体小号数字的笔画整根被当竖段抽走，连通块里只剩几粒碎屑，上面按块聚不出列
+    //（新编赞美诗 151、121：行首 4/4 一块都没有）。回去线图上按列投影找：谱号右边、谱表带里一段连续有墨的 x，
+    // 宽 0.8~2.5 格、上下正好撑满谱表的，就是「两个数字摞起来」的样子。与按块聚出的列重叠的不重复出
+    if (pass === 0) {
+      const clefR = Math.max(left, ...clefBoxes.filter((cb) => cb.y < bottom && cb.y + cb.h > top && cb.x < left + unit.space * 6).map((cb) => cb.x + cb.w));
+      const yA = Math.max(0, Math.round(top - unit.space * 0.25)), yB = Math.min(nl.h, Math.round(bottom + unit.space * 0.25));
+      const xEnd = Math.min(nl.w, Math.round(left + unit.space * 14));
+      const inkAt = (x: number) => {
+        let n = 0;
+        for (let y = yA; y < yB; y++) if (nl.data[y * nl.w + x]) n++;
+        return n >= 2;
+      };
+      const gap = Math.max(2, Math.round(unit.space * 0.2));
+      let x0 = -1, lastInk = -1;
+      const flush = () => {
+        if (x0 < 0) return;
+        const b: Rect = { x: x0, y: yA, w: lastInk - x0 + 1, h: yB - yA };
+        if (b.w >= unit.space * 0.8 && b.w <= unit.space * 2.5 && !cols.some((c) => Math.min(c.box.x + c.box.w, b.x + b.w) - Math.max(c.box.x, b.x) > b.w * 0.5)) cols.push({ box: b, ids: [], ink: true });
+        x0 = -1;
+      };
+      for (let x = Math.round(clefR) + 1; x < xEnd; x++) {
+        if (inkAt(x)) {
+          if (x0 < 0) x0 = x;
+          lastInk = x;
+        } else if (x0 >= 0 && x - lastInk > gap) flush();
+      }
+      flush();
+      cols.sort((a, b) => a.box.x - b.box.x);
+    }
+    /** 这一段 x 上的墨是不是「上下正好撑满谱表」：顶到第五线、底到第一线，又不探出谱表（带干的和弦、谱号都探出去）。 */
+    const fillsStaff = (b: Rect): boolean => {
+      const xa = Math.max(0, Math.round(b.x)), xb = Math.min(nl.w, Math.round(b.x + b.w));
+      const ya = Math.max(0, Math.round(top - unit.space * 1.5)), yb = Math.min(nl.h, Math.round(bottom + unit.space * 1.5));
+      let lo = -1, hi = -1;
+      for (let y = ya; y < yb; y++) {
+        let n = 0;
+        for (let x = xa; x < xb; x++) if (nl.data[y * nl.w + x]) n++;
+        if (n < 2) continue;
+        if (lo < 0) lo = y;
+        hi = y;
+      }
+      return lo >= top - unit.space * 0.4 && hi <= bottom + unit.space * 0.4 && lo <= top + unit.space * 0.6 && hi >= bottom - unit.space * 0.6;
+    };
     for (const col of cols) {
       const box = col.box;
       if (box.w > unit.space * 2.5 || box.w < unit.space * 0.8) continue;
@@ -2417,9 +2469,12 @@ export async function recognizeRasterPage(
       // 松得起，是因为位置先验很硬：行首那一列、骑在中线上、高约两格或四格。
       const tpl = look.templates ?? [];
       const hits: RasterSym[] = [];
+      let fromOcr = false;
       if (box.h < unit.space * 3) {
+        if (col.ink) continue;
         // **C 拍号**（`timeSigCommon` / `timeSigCutCommon`）是一个块、骑在中线上
         if (Math.abs(box.y + box.h / 2 - mid) > unit.space * 0.8) continue;
+
         const whole = box.h >= unit.space * 1.8 && wholes.some((w) => w.x >= box.x - 1 && w.x + w.w <= box.x + box.w + 1 && w.y >= box.y - 1 && w.y + w.h <= box.y + box.h + 1);
         // 放宽时只在 C 模板里挑：别的模板（和弦字母、休止）在宽上限下反倒更近
         const cTpl = tpl.filter((t) => t.smufl === "timeSigCommon" || t.smufl === "timeSigCutCommon");
@@ -2436,6 +2491,28 @@ export async function recognizeRasterPage(
         const up: Rect = { x: box.x, y: y0, w: box.w, h: Math.round(mid) - y0 };
         const dn: Rect = { x: box.x, y: Math.round(mid), w: box.w, h: y1 - Math.round(mid) };
         if (up.h < unit.space || dn.h < unit.space) continue;
+        // **数字先问 OCR**：两半各出一条，按内容指纹查缓存；上下都读成合法数字才采信，否则走下面模板那一路
+        // 谱号那一列不问：低音谱号的碎块（弧 + 两点）会被读成「7:」「2」之类
+        // 也不问没撑满谱表、或探出谱表的列：带干的和弦读得出「5」「2」（新编赞美诗 121 头一个八分和弦读成 5/2）
+        const inClef = clefBoxes.some((cb) => cb.y < bottom && cb.y + cb.h > top && box.x + box.w / 2 < cb.x + cb.w) || !fillsStaff(box);
+        const sUp = timeStripOf(nl, up, groups.indexOf(g), "num");
+        const sDn = timeStripOf(nl, dn, groups.indexOf(g), "den");
+        const oNum = inClef ? null : timeDigit(opts.timeOcr?.get(timeKey(sUp)), "num");
+        const oDen = inClef ? null : timeDigit(opts.timeOcr?.get(timeKey(sDn)), "den");
+        if (pass === 0 && !inClef) {
+          timeStrips.push(sUp, sDn);
+          timeCols.push({ box, mid, num: oNum, den: oDen });
+        }
+        if (oNum !== null && oDen !== null) {
+          // 两位数（12、16）拆成左右两个数字符号：下游按 x 从左到右拼数（`timeSignatures`）
+          const digitsOf = (n: number, b: Rect): RasterSym[] => {
+            const ds = String(n).split("");
+            const w = b.w / ds.length;
+            return ds.map((d, k) => ({ box: { x: Math.round(b.x + k * w), y: b.y, w: Math.round(w), h: b.h }, code: `timeSig${d}` as SmuflName }));
+          };
+          hits.push(...digitsOf(oNum, up), ...digitsOf(oDen, dn));
+          fromOcr = true;
+        } else if (!col.ink) {
         const two = [up, dn].map((b) => {
           const m = matchTemplate(binSig(nl, b), b.w / unit.space, b.h / unit.space, tpl, TIME_TEMPLATE_DIST);
           return m && timeSigDigit(m.smufl) >= 0 ? { box: b, code: m.smufl } : null;
@@ -2456,13 +2533,17 @@ export async function recognizeRasterPage(
           const den = num ? digitOf(dn, DEN_DIGITS, TIME_DEN_DIST) : null;
           if (num && den) hits.push(num, den);
         }
+        // 模板认出了一对、OCR 只读出其中一半的：那一半听 OCR 的（分母 8 读成 4 是模板最常见的错，OCR 的「8」靠得住）
+        if (hits.length === 2 && oNum !== null && oNum < 10) hits[0] = { box: hits[0].box, code: `timeSig${oNum}` as SmuflName };
+        if (hits.length === 2 && oDen !== null && oDen < 10) hits[1] = { box: hits[1].box, code: `timeSig${oDen}` as SmuflName };
+        }
       }
       if (!hits.length) continue;
       // **分子读成 4 时拿分母复核**：分母那个 4 是同一本同一字号的真 4，分子真是 4 就该长得像它。
       // 模板法分不开的两首（万福泉源歌放大后的「3」到 `timeSig4` 200、到 `timeSig3` 225；
       // 来敬拜荣耀王粗体铅字「3」181 对 244）：分子到分母 232~244，退而求其次的数字 225~256；
       // 真 4/4 那 60 多行分子到分母至多 196、别的数字至少 277。两条都过才改认。
-      if (hits.length === 2 && hits[0].code === "timeSig4" && hits[1].code === "timeSig4" && sigDistance(binSig(nl, hits[0].box), binSig(nl, hits[1].box)) > TIME_SELF_DIST) {
+      if (!fromOcr && hits.length === 2 && hits[0].code === "timeSig4" && hits[1].code === "timeSig4" && sigDistance(binSig(nl, hits[0].box), binSig(nl, hits[1].box)) > TIME_SELF_DIST) {
         const alt = digitOf(hits[0].box, NUM_DIGITS.filter((k) => k !== 4), TIME_ALT_DIST);
         if (alt) hits[0] = alt;
       }
@@ -3578,6 +3659,7 @@ export async function recognizeRasterPage(
     carrySystemKeys(pg, sec, settled);
   }
   extendKeyByCarry(ctx, opts.carryKey, raster.bin, unit.space);
+  shareTimeSignature(pg, ctx, timeCols, unit, raster.bin, !!opts.carryTime);
   dropBarsInKey(pg, ctx, unit.space);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
   fixFlatReadAsSix(harmonies, ctx);
@@ -4208,6 +4290,7 @@ export async function recognizeRasterPage(
     harmonies,
     harmonyTexts,
     labelStrips,
+    timeStrips,
     wordStrips: opts.wantWordStrips ? wordStrips : [],
     staffLabels,
     wedges,
@@ -4757,6 +4840,121 @@ function lastKey(pg: SPage, ctx: Map<Staff, StaffContext>, carry: CarryKey | und
 const HEAD_TIME_SP = 14;
 /** 终止线粗线的宽度下限（格）。 */
 const FINAL_THICK = 0.3;
+
+/** 行首一个拍号候选列：盒、中线 y、OCR 读出的上下半（读不成合法数字的是 null）。 */
+interface TimeColumn {
+  box: Rect;
+  mid: number;
+  num: number | null;
+  den: number | null;
+}
+
+/**
+ * **同一系统各行的拍号互证**（参照 `TimeColumn`：一个系统里每行谱的拍号同值、同 x）。
+ *
+ * 各行原来各认各的：大谱表高音行没认出、低音行认出了，写出端只看领头行，整首就没有拍号（新编赞美诗 035）；
+ * 两行读数不同也没人裁决（071 高音 6/4、低音 4/4，谱面是 6/8）。这里按系统合起来：
+ *   - 每行行首已认出的拍号投一票，OCR 上下两半都读出的候选列再各投一票（文字识别比模板签名靠得住），取票多的；
+ *   - 一行都没认全时，上下两半分头凑：同一列位置上，这一行读出分子、那一行读出分母，合起来就是一个拍号；
+ *   - 定下来的值写回系统里每一行（没有或读数不同的行换掉），那一列盒里被当成符头的块一并删掉。
+ * 行中换拍的不管（只看谱表左端 `HEAD_TIME_SP` 格以内的）。
+ *
+ * **不在一首歌开头的系统从严**（一首歌只在头一个系统印拍号，别的系统行首出现拍号只会是换拍，各行必然都印）：
+ * 至少两行读数相同才算数、才往别的行补；只有一行由 OCR 读出的作废——行首的和弦、休止偶尔也读得成一对数字。
+ * 歌的开头 = 页上头一个系统且前页没传下拍号，或上一个系统以终止线收尾（同 `keySections`）。
+ */
+function shareTimeSignature(pg: SPage, ctx: Map<Staff, StaffContext>, cols: TimeColumn[], unit: RasterUnit, bin: Binary, carried: boolean): void {
+  const sp = unit.space;
+  const key = (t: { beats: number; beatType: number }) => `${t.beats}/${t.beatType}`;
+  const groups = systemGroups(pg).sort((a, b) => a[0].box.top - b[0].box.top);
+  for (const [gi, sys] of groups.entries()) {
+    const staves = sys.filter((st) => ctx.has(st) && st.lineYs.length === 5);
+    if (staves.length < 2) continue;
+    const prev = groups[gi - 1];
+    const songHead = prev ? prev.filter((st) => endsWithFinal(st, bin)).length * 2 > prev.length : !carried;
+    const colsOf = (st: Staff) => cols.filter((c) => c.mid > st.box.top && c.mid < st.box.bottom);
+    const headOf = (st: Staff) => {
+      const all = timeSignatures(ctx.get(st)!.time, sp).filter((t) => t.x < st.box.left + sp * HEAD_TIME_SP);
+      return all.length ? all[0] : null;
+    };
+    const votes = new Map<string, { beats: number; beatType: number; x: number; n: number; staves: Set<Staff> }>();
+    const vote = (t: { beats: number; beatType: number }, x: number, st: Staff) => {
+      const v = votes.get(key(t)) ?? { ...t, x, n: 0, staves: new Set<Staff>() };
+      v.n++;
+      v.staves.add(st);
+      votes.set(key(t), v);
+    };
+    for (const st of staves) {
+      const h = headOf(st);
+      if (h) vote(h, h.x, st);
+      for (const c of colsOf(st)) if (c.num !== null && c.den !== null) vote({ beats: c.num, beatType: c.den }, c.box.x, st);
+    }
+    if (!songHead) {
+      // 从严：不够两行作证的读数，由 OCR 读出的那一行作废，别的原样不动，也不往别的行补
+      const ok = [...votes.values()].filter((v) => v.staves.size >= 2).sort((a, b) => b.staves.size - a.staves.size || b.n - a.n)[0];
+      if (!ok) {
+        for (const st of staves) {
+          const h = headOf(st);
+          if (!h || !colsOf(st).some((c) => c.num === h.beats && c.den === h.beatType && Math.abs(c.box.x - h.x) <= sp * 1.5)) continue;
+          const c = ctx.get(st)!;
+          const old = new Set(c.time.filter((t) => Math.abs(t.px - h.x) <= sp * 3));
+          c.time = c.time.filter((t) => !old.has(t));
+          pg.symbols = pg.symbols.filter((s0) => !old.has(s0));
+        }
+        continue;
+      }
+      for (const k of [...votes.keys()]) if (votes.get(k) !== ok) votes.delete(k);
+    }
+    if (!votes.size && songHead) {
+      // 上下两半分头凑：各行的候选列按 x 对齐，分子、分母各取读得出的那一行
+      const all = staves.flatMap(colsOf).sort((a, b) => a.box.x - b.box.x);
+      for (const c of all) {
+        const near = all.filter((o) => Math.abs(o.box.x - c.box.x) <= sp * 1.5);
+        const num = near.find((o) => o.num !== null)?.num ?? null;
+        const den = near.find((o) => o.den !== null)?.den ?? null;
+        if (num !== null && den !== null) {
+          vote({ beats: num, beatType: den }, c.box.x, staves[0]);
+          break;
+        }
+      }
+    }
+    if (!votes.size) continue;
+    const win = [...votes.values()].sort((a, b) => b.staves.size - a.staves.size || b.n - a.n)[0];
+    for (const st of staves) {
+      const c = ctx.get(st)!;
+      const h = headOf(st);
+      if (h && key(h) === key(win)) continue;
+      // 这一行原来行首那处拍号（读数不同）作废
+      if (h) {
+        const old = new Set(c.time.filter((t) => Math.abs(t.px - h.x) <= sp * 3));
+        c.time = c.time.filter((t) => !old.has(t));
+        pg.symbols = pg.symbols.filter((s0) => !old.has(s0));
+      }
+      const col = colsOf(st).find((o) => Math.abs(o.box.x - win.x) <= sp * 1.5);
+      const x = col ? col.box.x : Math.round(win.x - sp * 0.6);
+      const w = col ? col.box.w : Math.round(sp * 1.2);
+      const top = Math.round(st.box.top), mid = Math.round((st.box.top + st.box.bottom) / 2), bottom = Math.round(st.box.bottom);
+      const put = (n: number, y: number, h0: number) => {
+        const ds = String(n).split("");
+        ds.forEach((d, k) => {
+          const b: Rect = { x: Math.round(x + (k * w) / ds.length), y, w: Math.round(w / ds.length), h: h0 };
+          const { obj, sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box: b, code: `timeSig${d}` as SmuflName }, unit.height);
+          pg.objs.push(obj);
+          pg.symbols.push(sym);
+          c.time.push(sym);
+        });
+      };
+      put(win.beats, top, mid - top);
+      put(win.beatType, mid, bottom - mid);
+      // 这一列里被当成符头的块（粗体数字整块被拆成两个黑头）一并删掉
+      pg.symbols = pg.symbols.filter((s0) => {
+        if (!s0.hasTag("Note")) return true;
+        const cx = (s0.box.left + s0.box.right) / 2, cy = (s0.box.top + s0.box.bottom) / 2;
+        return !(cx > x && cx < x + w && cy > top - sp * 0.5 && cy < bottom + sp * 0.5);
+      });
+    }
+  }
+}
 
 /**
  * **调号共享的分段**：按竖笔定调、全页共享、按系统传，都立在「整页一个调」上。一页印好几首短曲（新编赞美诗 400 阿们颂：

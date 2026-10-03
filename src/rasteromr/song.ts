@@ -9,6 +9,7 @@ import { recognizeRasterPage, settleLyricVerses, type CarryKey, type RasterPageR
 import type { HarmonyStrip } from "./harmony";
 import type { LyricStrip, OcrChar } from "./lyric";
 import type { LabelStrip } from "./stafflabel";
+import type { TimeStrip } from "./timesig";
 import type { JianpuStrip } from "./jianpuband";
 import type { JianpuRow } from "./jianpufuse";
 import type { WordLine, WordStrip } from "./words";
@@ -22,6 +23,7 @@ import type { StaffNote } from "../staffomr/notedata";
 export interface RasterOcrCaches {
   lyricOcr?: Map<string, OcrChar[]>;
   labelOcr?: Map<string, string>;
+  timeOcr?: Map<string, string>;
   harmonyOcr?: Map<string, OcrChar[]>;
   jianpuOcr?: Map<string, JianpuRow[]>;
   wordOcr?: Map<string, WordLine[]>;
@@ -32,6 +34,8 @@ export interface RasterLiveOcr {
   harmony(strips: readonly HarmonyStrip[]): Promise<Map<string, OcrChar[]>>;
   lyric(strips: readonly LyricStrip[]): Promise<Map<string, OcrChar[]>>;
   label(strips: readonly LabelStrip[]): Promise<Map<string, string>>;
+  /** 拍号数字条（可缺：缺了拍号只靠模板）。 */
+  time?(strips: readonly TimeStrip[]): Promise<Map<string, string>>;
   jianpu(strips: readonly JianpuStrip[]): Promise<Map<string, JianpuRow[]>>;
   /** 文字指示带（可缺：缺了就不出 `<words>`）。 */
   word?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
@@ -106,13 +110,14 @@ export async function recognizeRasterSong(
       if (opts.cancelled?.()) throw new Error("已取消");
       const page = await pdf.getPage(pn);
       try {
-        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr };
+        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr };
         if (opts.live) {
           const r1 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey });
           if (r1.hasStaff) {
-            const harmonyOcr = await opts.live.harmony(r1.harmonyStrips);
+            // 拍号条在找符头之前就切好了，不受后面几张表影响：与和弦带同一趟送
+            const [harmonyOcr, timeOcr] = await Promise.all([opts.live.harmony(r1.harmonyStrips), opts.live.time?.(r1.timeStrips)]);
             if (opts.cancelled?.()) throw new Error("已取消");
-            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, wantWordStrips: !!opts.live.word });
+            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, timeOcr, wantWordStrips: !!opts.live.word });
             const [lyricOcr, labelOcr, jianpuOcr, wordOcr] = await Promise.all([
               opts.live.lyric(r2.lyricStrips),
               opts.live.label(r2.labelStrips),
@@ -120,7 +125,7 @@ export async function recognizeRasterSong(
               opts.live.word?.(r2.wordStrips),
             ]);
             if (opts.cancelled?.()) throw new Error("已取消");
-            caches = { harmonyOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr };
+            caches = { harmonyOcr, timeOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr };
           }
         }
         const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, ...caches });
