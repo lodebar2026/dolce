@@ -877,7 +877,7 @@ export interface Song {
 
 export interface ScoreDoc {
   /** 产出它的源格式，用于诊断与导出默认 */
-  sourceFormat: "123" | "abc" | "musicxml" | "jpwabc" | "pu" | "omr";
+  sourceFormat: "123" | "abc" | "musicxml" | "jpwabc" | "pu" | "omr" | "jly";
   /** 文本谱方言（`pu/dialect.ts::Dialect`）。排版取度量用 */
   puDialect?: string;
   /** 源文本（有的话）。点选定位要回指原文 */

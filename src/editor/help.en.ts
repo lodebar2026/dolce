@@ -6,8 +6,8 @@ export const FEATURE_TOPICS_EN: { title: string; body: string[] }[] = [
   {
     title: "Open, save and save as",
     body: [
-      "Use **Open score** on the start page, or drag a file onto the window: 123 (`.123`, the main jianpu format — see the 123 format tab), `.jpwabc` (JP-Word), text jianpu (Fanqie / Shigeben, `.pu` `.fq` `.jps` `.txt`), MusicXML (`.xml` / `.musicxml`), ABC (`.abc`), and recognition projects `.dolce` (see Recognition projects).",
-      "**Save** (top right) writes back in the original format (`.jpwabc` stays JP-Word compatible). **Save As** converts to 123, JPWABC, ABC, Fanqie or Shigeben text jianpu — before converting it lists anything the target format can't hold and asks you to confirm. **Export** produces PPTX, MIDI and MusicXML, plus PNG and PDF in the Staff / Mixed views.",
+      "Use **Open score** on the start page, or drag a file onto the window: 123 (`.123`, the main jianpu format — see the 123 format tab), `.jpwabc` (JP-Word), jianpu-ly (`.jly`, Silas S. Brown's upstream jianpu-ly text scores — typesettable as LilyPond), text jianpu (Fanqie / Shigeben, `.pu` `.fq` `.jps` `.txt`), MusicXML (`.xml` / `.musicxml`), ABC (`.abc`), and recognition projects `.dolce` (see Recognition projects).",
+      "**Save** (top right) writes back in the original format (`.jpwabc` stays JP-Word compatible). **Save As** converts to 123, JPWABC, ABC, Fanqie or Shigeben text jianpu — before converting it lists anything the target format can't hold and asks you to confirm. **Export** produces PPTX, MIDI, MusicXML and jianpu-ly (`.jly`, ready to hand to upstream `jianpu-ly` for LilyPond), plus PNG and PDF in the Staff / Mixed views.",
       "The format drop-down in the source pane header switches a recognition result or a freshly opened file to another format for editing; switch back to “original” to restore it.",
       "**Desktop**: native open/save dialogs write straight to disk, and the last file reopens on startup. **Browser**: files are opened with the web file picker and saved as downloads.",
     ],

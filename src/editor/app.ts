@@ -6,6 +6,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { parsePu, sniffDialect, type Dialect } from "../pu";
 import { parse123, parseAbc } from "../j123/parse";
+import { parseJly } from "../model/fromjly";
 import { eachChord } from "../model/helpers";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { applyBreaks } from "../model/breaks";
@@ -34,7 +35,7 @@ import type { JpwMeta, JpwRange } from "../omr/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";
-import { is123File, isProjectFile, isPuFile } from "../common/filetypes";
+import { is123File, isJlyFile, isProjectFile, isPuFile } from "../common/filetypes";
 import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost } from "./formats";
 import { SyncIndex, type SyncEntry } from "./sync";
@@ -975,6 +976,36 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._syncFormatLabel();
     if (!this._layoutScoreDoc(doc, "ABC")) return false;
     this._reportDiagnostics("ABC", doc.diagnostics);
+    return true;
+  }
+
+  /** FormatHost：jianpu-ly 文本（`.jly`）解析 → 排版 → 渲染。
+   *
+   *  **原生解析直出 `ScoreDoc`**（`model/fromjly.ts::parseJly`），与本项目的 123 / ABC 同一条路：
+   *  每个 token 都带 `SourceSpan`（双向定位、诊断落点、往返都靠它）。
+   *  本版不收的写法（`LP:` 块、倚音和弦、布局开关…）由 `parseJly` 记进 `doc.diagnostics`，
+   *  这里原样报到状态栏与诊断列表——**不静默丢**。 */
+  reloadJly(text: string): boolean {
+    let doc: ScoreDoc;
+    try {
+      doc = parseJly(text).doc;
+    } catch (e) {
+      console.error("jianpu-ly 解析失败", e);
+      this.setStatus(t("status.parseFailed", { what: "jianpu-ly", error: (e instanceof Error ? e.message : String(e)) }));
+      return false;
+    }
+    const notes = doc.songs.reduce((n, song) => n + [...eachChord(song)].length, 0);
+    if (notes === 0) {
+      this._reportDiagnostics("jianpu-ly", doc.diagnostics);
+      this.setStatus(t("status.abcNoNotes"));
+      return false;
+    }
+    this._scoreDoc = { text, doc };
+    this._puScoreCache = null;
+    this._syncPhraseBase(text);
+    this._syncFormatLabel();
+    if (!this._layoutScoreDoc(doc, "jianpu-ly")) return false;
+    this._reportDiagnostics("jianpu-ly", doc.diagnostics);
     return true;
   }
 
@@ -2074,6 +2105,15 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.mixed._dropMixedDoc();
       this._setDocFormat("123");
       this.setText(formatOf("123").decode(bytes));
+      return;
+    }
+    // jianpu-ly（`.jly`）：**只看扩展名** —— 上游输入里没有版本行 / 签名 / 必需项，
+    // 内容嗅探只能靠猜；`.jly` 是它自己 `--export-jly` 写出来的后缀，拿到它就是这个格式
+    // （详见 `model/fromjly.ts` 文件头）。
+    if (isJlyFile(name)) {
+      this.mixed._dropMixedDoc();
+      this._setDocFormat("jly");
+      this.setText(formatOf("jly").decode(bytes));
       return;
     }
     // 文本谱（番茄 / 诗歌本）：原文就是源格式，直接进编辑器，不做任何转换。

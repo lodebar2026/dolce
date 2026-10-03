@@ -88,6 +88,9 @@ export interface EditDialect {
   deco?: { names: Record<DecoKind, string>; text(name: string): string; place: "before" | "after" | "inToken" };
   /** 和弦名怎么写（写在音符 token 前面；123 合规的不带引号、后面跟空格，ABC 一律 `"Am7"`）。没有 = 这种格式请在源码里改 */
   chordText?(name: string): string;
+  /** 和弦名**不在音符旁边**的格式（jianpu-ly 的和弦在文件头上一条 `chords=` 行上、按时间线对位）：
+   *  给它自己的改法 —— 返回值与别的编辑一样是原文改动。没有 = 退回 `chordText`（再没有就报"请在源码里改"）。 */
+  chordEdit?(ctx: import("./ops").EditCtx, note: import("../sync").SyncEntry, name: string): import("./ops").EditOutcome;
   /** 挂在音符前的文字（注记，`"^渐慢"`）与力度（`!mf!`）怎么写；没有 = 这种格式请在源码里改 */
   annotationText?(text: string): string;
   dynamicText?(name: string): string;

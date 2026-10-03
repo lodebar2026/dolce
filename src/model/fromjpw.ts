@@ -571,7 +571,9 @@ export function jpwToScoreDoc(f: JpwFile): ScoreDoc {
 
   const m0 = src[0];
   if (m0) {
-    song.key = { fifths: m0.fifths };
+    // ⚠ `spelling` 必须一起写：引擎输入的调号（`jianpuinput.ts` 的 `meta.mode`）走的是 `spelling`，
+    //   只给 `fifths` 的话会一路退回 C —— 实测这份 `1=D` 的谱导出成 jianpu-ly 写成 `1=C`。
+    song.key = { fifths: m0.fifths, ...(title?.key ? { spelling: title.key } : {}) };
     song.time = { beats: m0.time.beats, beatType: m0.time.beatType };
   }
   const marks: Mark[] = [];

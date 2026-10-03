@@ -85,7 +85,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
 };
 
 /** 目标格式。文本谱两种方言各算一种（装得下的不一样：番茄没有页眉页脚与版面指令字段）。 */
-export type TargetFormat = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "musicxml";
+export type TargetFormat = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "jly" | "musicxml";
 
 /** 丢失清单里给人看的格式名。 */
 export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
@@ -94,6 +94,7 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
   jpwabc: "JPWABC",
   tomato: "番茄简谱",
   shige: "诗歌本文本谱",
+  jly: "jianpu-ly",
   musicxml: "MusicXML",
 };
 
@@ -129,6 +130,14 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `pu/dialect.ts::EmitStyle.pageFields`）
   tomato: allBut(...PU_GONE, "pageText", "layoutDirectives"),
   shige: allBut(...PU_GONE),
+  // jianpu-ly 装不下什么，依据 `docs/格式/jianpu-ly.md` 与 `tojly.ts` 的 `warnings`：
+  //   · 多声部/多曲只写第一路（`NextScore` 本版不写）；扩展 meta、纸、样式表、页面文字没有字段；
+  //   · 演唱顺序只认跳转裸词（`Fine`/`DC`/`Segno`/`ToCoda`），`playOrder` 的自定义跳转写不出；
+  //   · 演奏法（`articulations` 里不是力度名的那批）、拉丁歌词的连字符（`syllabic`）写不出；
+  //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
+  //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
+  jly: allBut("multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
+    "layoutDirectives", "dynamics", "verseLabel"),
   // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
   // 见 `docs/模块/模型-scoredoc.md` 的关键判据。
   musicxml: allBut("playOrder", "style", "layoutDirectives", "nestedArc", "oddTuplet"),

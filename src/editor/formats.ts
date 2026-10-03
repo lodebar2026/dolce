@@ -19,6 +19,8 @@ import { t } from "../i18n";
 import { relayoutPuText } from "../pu/relayout";
 import type { FitMeasure } from "../pu/phrase";
 import { parse123, parseAbc } from "../j123/parse";
+import { parseJly, rewrapJlyText } from "../model/fromjly";
+import { DIALECT_JLY } from "./visual/dialects/jly";
 import { emit123 } from "../j123/emit";
 import { emitAbc } from "../abcfamily/emitabc.entry";
 import type { ScoreDoc } from "../model/doc";
@@ -34,7 +36,7 @@ import { DIALECT_JPW } from "./visual/dialects/jpw";
 import { DIALECT_PU } from "./visual/dialects/pu";
 
 /** 可打开的源格式。`musicxml` 没有代码区（`caps.textEditor === false`），只看谱面、转成文本格式再编辑。 */
-export type DocFormatId = "jpwabc" | "pu" | "123" | "abc" | "musicxml";
+export type DocFormatId = "jpwabc" | "pu" | "123" | "abc" | "musicxml" | "jly";
 
 /** 适配器向 App 要的那些能力（**列全**，加一条就想想是不是该留在 App 里）。 */
 export interface FormatHost {
@@ -51,6 +53,8 @@ export interface FormatHost {
   reload123(text: string): boolean;
   /** `.abc` 重排/重渲染。 */
   reloadAbc(text: string): boolean;
+  /** jianpu-ly 文本重排/重渲染（`.jly`，见 `model/fromjly.ts::parseJly`）。 */
+  reloadJly(text: string): boolean;
   /** `.musicxml` 重排/重渲染。 */
   reloadMusicXml(text: string): boolean;
 }
@@ -244,6 +248,44 @@ const ABC: FormatAdapter = {
   editDialect: DIALECT_ABC,
 };
 
+/** jianpu-ly —— 上游 jianpu-ly 预处理器（简谱文本 → LilyPond）的输入格式。
+ *
+ *  **独立实现**（不进 `abcfamily` 家族）：它的页头（`title=` / `1=Bb` / 裸 `4/4`）、歌词（`L:` / `H:`）
+ *  与连音（`3[ … ]`）都不是那个家族的形状；缘由见 `model/fromjly.ts` 文件头。
+ *
+ *  **判"是不是这个格式"只看扩展名**：上游输入里没有版本行 / 签名 / 必需项
+ *  （README 原话是"普通文本文件**以空格分隔**的"，`title=` / `4/4` 都只是 token），
+ *  所以任何内容嗅探都只是特征猜测，不做。
+ *
+ *  可视化编辑走 `visual/dialects/jly.ts`（词内顺序无关、时值是字母、连音 `3[ ]`、
+ *  装饰 `\fermata` 写在音后；**行结构不是语义，所以换行就写真换行，不写 123 那个 `$`**）。 */
+const JLY: FormatAdapter = {
+  id: "jly",
+  defaultExt: ".jly",
+  // 高亮暂借 123 那一份：字段头与小节线形状接近，音符那一层认不出就不上色（同 ABC 当初的做法）。
+  highlighter: j123Highlighter,
+  decode: (bytes) => new TextDecoder("utf-8").decode(stripBom(bytes)),
+  encode: utf8,
+  label: () => "jianpu-ly",
+  title: (host) => {
+    const first = host
+      .getText()
+      .split(/\r?\n/)
+      .map((l) => /^\s*title\s*=(.*)$/.exec(l))
+      .find((m) => m !== null);
+    return first ? first[1]!.trim() : "";
+  },
+  profileKnob: "original",
+  caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true, originalLayout: "jianpu" },
+  reload: (host, text) => host.reloadJly(text),
+  // 「按乐句重排」：**只把曲行按每 4 小节重新断行**，词行/页头/注释一个字不动（上游不看行，
+  // 但 dolce 自己按文件的行排版；一行到底就挤成一团）。尺子还没接（`measure` 先不用），
+  // 用的是写出端同一套"每 4 小节一行"的出厂值。
+  relayoutText: (text) => rewrapJlyText(text),
+  toScoreDoc: (text) => parseJly(text).doc,
+  editDialect: DIALECT_JLY,
+};
+
 /** MusicXML —— 五线谱主格式。**没有代码区**：编辑器文档里存的就是 XML 原文（不显示），
  *  谱面由 `ScoreDoc` 出（`fromxml.ts` 读全、读不懂的原样挂 `raw`）。存回原文件：没改过就是原文，
  *  经 `App.editScoreDoc` 改过的已经整份重写成 `toxml.ts` 的产物。 */
@@ -276,6 +318,7 @@ export const FORMATS: Record<DocFormatId, FormatAdapter> = {
   "123": J123,
   abc: ABC,
   musicxml: MUSICXML,
+  jly: JLY,
 };
 
 export const formatOf = (id: DocFormatId): FormatAdapter => FORMATS[id];

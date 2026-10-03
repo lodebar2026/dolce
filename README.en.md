@@ -32,13 +32,14 @@ The interface is available in **English and Chinese**: it follows your browser l
 ## Features
 
 **Editing**
-- **Source on the left, live score on the right.** The score is re-typeset as you type. Four text formats are
+- **Source on the left, live score on the right.** The score is re-typeset as you type. Five text formats are
   supported, each with syntax highlighting and diagnostics:
   - **123**, the project's own jianpu format (see below)
   - **JP-Word `.jpwabc`**
   - **Plain-text jianpu scripts**: the *Fanqie* (番茄简谱) script language and the *Shigeben* (诗歌本) text score,
     which the Shigeben app calls a "dynamic score"
   - **ABC notation**
+  - **jianpu-ly `.jly`**, upstream jianpu-ly's text scores, which it typesets as LilyPond
 - **Visual editing.** Select, insert and change notes and marks directly on the score: scale degree or note name, step / semitone / octave, accidentals,
   duration, extension dashes, barlines, slurs and ties, fermatas, accents, and line and page breaks. You can use
   the keyboard, a context menu or a symbol palette, in the jianpu, staff and mixed views alike. Every edit is
@@ -114,7 +115,7 @@ The interface is available in **English and Chinese**: it follows your browser l
   you are offered to restore it. With unsaved changes, opening another file, loading the sample, recognizing a new image
   or closing the window asks first.
 - **Export** depends on the view:
-  - Jianpu views: **vector PPTX**, **MIDI** and **MusicXML**.
+  - Jianpu views: **vector PPTX**, **MIDI**, **MusicXML** and **jianpu-ly text** (`.jly`).
   - Staff and mixed views: **PNG**, **PDF**, **MIDI** and **MusicXML**.
   - Exported MIDI carries the lyrics, verse by verse in singing order, so it can go straight into a
     singing-voice synthesizer (e.g. X Studio).
@@ -158,6 +159,7 @@ In the lyrics, CJK characters take one note each and need no spaces. Latin words
 | ABC | `.abc` | ✅ | ✅ | ✅ | Voices, repeats, endings, chords, ornaments… |
 | MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; a single-voice score can also be converted to 123 etc. for text editing |
 | Image / PDF | `.png` `.jpg` `.webp` `.pdf` | OMR | — | — | Jianpu images and scanned PDFs; staff PDFs, scanned or photographed staff notation |
+| jianpu-ly | `.jly` | ✅ | ✅ | ✅ (Save; use Export to write `.jly`, Save As does not offer it) | Upstream [jianpu-ly](https://github.com/ssb22/jianpu-ly) text scores: opened and edited as jianpu — notes, durations, octaves, accidentals, marks, lyrics and line breaks can be changed on the score (measures and chord names in the source pane); export hands the file to the upstream preprocessor for LilyPond (`.ly`) |
 | Recognition project | `.dolce` | ✅ | ✅ | ✅ | Source images + recognition result + the score being edited; reopens without recognizing again |
 
 ## Install

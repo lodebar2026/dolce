@@ -9,19 +9,20 @@ import type { TargetFormat } from "./capability";
 import { emit123 } from "../j123/emit";
 import { emitAbc } from "../abcfamily/emitabc.entry";
 import { emitJpwabc } from "./tojpw";
+import { emitJly } from "./tojly";
 import { emitPu } from "./topu";
 import { withPageMeta } from "./pagemeta";
 import { t } from "../i18n";
 
 /** 可写出的文本格式。文本谱两种方言各算一种。 */
-export type ConvertTarget = "123" | "abc" | "jpwabc" | "tomato" | "shige";
+export type ConvertTarget = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "jly";
 
 export interface TargetSpec {
   id: ConvertTarget & TargetFormat;
   /** 下拉里的显示名（按界面语言） */
   readonly label: string;
   /** 写出来的文本在编辑器里按哪种源格式打开（`editor/formats.ts::DocFormatId`） */
-  docFormat: "123" | "abc" | "jpwabc" | "pu";
+  docFormat: "123" | "abc" | "jpwabc" | "pu" | "jly";
   emit(doc: ScoreDoc): string;
 }
 
@@ -42,6 +43,8 @@ export const CONVERT_TARGETS: readonly TargetSpec[] = [
   { id: "abc", get label() { return t("fmt.target.abc"); }, docFormat: "abc", emit: (doc) => emitAbc(withPageMeta(doc)) },
   { id: "tomato", get label() { return t("fmt.target.tomato"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "tomato") },
   { id: "shige", get label() { return t("fmt.target.shige"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "shige") },
+  // jianpu-ly：能读能写，导出端是 `tojly.ts`（`%` 注释里带着"装不下什么"的说明，写在文本里随文件走）
+  { id: "jly", get label() { return t("fmt.target.jly"); }, docFormat: "jly", emit: (doc) => emitJly(doc).text },
 ];
 
 export function isConvertTarget(v: unknown): v is ConvertTarget {

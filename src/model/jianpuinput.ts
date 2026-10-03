@@ -653,7 +653,9 @@ function songInput(song: PuSong, idOf: (el: NoteElement) => ElementId | null, fo
   for (const v of voices) {
     const lines = linesOfVoice(song, v);
     if (lines.length === 0) continue;
-    parts.push({ measures: rowsPart(lines, time, key, idOf, forExpanded, forExpanded ? pageEnds(song, v) : undefined, !forExpanded) });
+    // ⚠ 页末（`pageEnds`）**两种视图都要给**：原来只在展开视图里给，于是换页在另一条路上被降级成换行 ——
+    //   实测：123 的 `$$` 与 jianpu-ly 的 `\pageBreak` 导出去都只剩 `\break`（写出端拿不到"这是换页"）。
+    parts.push({ measures: rowsPart(lines, time, key, idOf, forExpanded, pageEnds(song, v), !forExpanded) });
   }
   if (parts.length === 0) return null;
   return { parts, title: meta.titles[0] ?? "", credit, playData };

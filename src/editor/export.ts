@@ -9,6 +9,7 @@ import { asset } from "../common/asset";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { loadScoreDoc } from "../model/fromxml";
 import { jpwToScoreDoc } from "../model/fromjpw";
+import { emitJly } from "../model/tojly";
 import type { ScoreDoc } from "../model/doc";
 import { JpwFile } from "../jpword/jpwfile";
 import { engraveScoreDoc } from "../mixed/engrave";
@@ -170,6 +171,20 @@ export async function exportMusicXml(app: App): Promise<void> {
   );
 }
 
+/** 导出 jianpu-ly 文本（`.jly`），交给上游 `jianpu-ly` 预处理器生成 LilyPond（`jianpu-ly 文件.jly > 文件.ly`）。
+ *
+ *  **单向**：不承诺能再读回编辑器（回读要另加方言，见 `docs/模块/导出.md`）。
+ *  **装不下的东西写在文件里当 `%` 注释**（`tojly.ts` 的 warnings），随文件走，不静默丢。 */
+export async function exportJly(app: App): Promise<void> {
+  // ⚠ 这里必须是 `app.scoreDoc()`（它认 `.jpwabc`，会自己解析原文），**不能**用 `app.currentScoreDoc()`：
+  //   JPWABC 适配器没有 `toScoreDoc`，那个访问器对 `.jpwabc` 恒返回 null →
+  //   导出直接抛"没有曲行"（用户在「导出 → jianpu-ly」实测踩到）。另存为那条路走的是 `scoreDoc()`，所以没事。
+  const doc = app.scoreDoc();
+  if (!doc) throw new Error(t("export.noLines"));
+  const { text } = emitJly(doc);
+  await saveBytes(new TextEncoder().encode(text), `${baseName(app)}.jly`, "text/plain");
+}
+
 /** 当前文档 → MusicXML 文本。**保存回 `.musicxml` 原文件与「导出 MusicXML」共用这一条**。
  *
  *  只有两条路：混排预览有底本 → 底本原样；否则由唯一写出端
@@ -268,6 +283,10 @@ const isMixed = (app: App): boolean => app.mode === "mixed";
 /** 走 `ScoreDoc` 排版的格式（文本谱、123、ABC、MusicXML 的简谱档）：导出项与 `.jpwabc` 那档不同。 */
 const isPu = (app: App): boolean => app.adapter.caps.layout === "scoredoc" && !isMixed(app);
 const isJp = (app: App): boolean => !isPu(app) && !isMixed(app);
+/** jianpu-ly 文本**哪一种非混排档都能写**（`tojly.ts` 同时收 `jianpuInputOfDoc` 与
+ *  `jianpuInputOfJpw`），所以不能挂在 `isPu` 或 `isJp` 单独一边：`isJp` 只在 `.jpwabc` 下为真，
+ *  挂它会让 123 / 文本谱 / ABC 文档都看不到这一项（第一版就是这么错的，用户当场撞上）。 */
+const canJly = (app: App): boolean => !isMixed(app);
 
 /** 顺序即对话框里的顺序。**导出只出别的媒介**（图片、PPT、音频、给第三方软件的 MusicXML）；
  *  换源格式（123 / JPWABC / ABC / 文本谱）走「另存为」（`showSaveAsDialog`），
@@ -286,6 +305,9 @@ const EXPORT_ITEMS: readonly ExportItem[] = [
   { label: "PPTX", available: isJp, run: exportPptx },
   { label: "MIDI", available: isJp, run: exportMidi },
   { label: "MusicXML", available: isJp, run: exportMusicXml },
+  // jianpu-ly：上面三档之外，`isPu` 那一档（文本谱 / 123 / ABC / MusicXML）也要能导出，
+  // 所以单独一条、用 `canJly`（非混排即可）——见那条注释。
+  { label: "jianpu-ly", available: canJly, run: exportJly },
 ];
 
 /** 当前文档就是这种格式（文本谱按方言分）。 */
@@ -306,7 +328,12 @@ function saveAsItems(app: App): ExportItem[] {
     items.push({ label: t("export.project"), available: () => true, run: async (a) => void (await a.saveProject(true)) });
   }
   items.push({
-    label: t("export.currentFormat", { format: app.docFormat === "musicxml" ? "MusicXML" : app.adapter.defaultExt.replace(/^\./, "").toUpperCase() }),
+    label: t("export.currentFormat", {
+      // 扩展名大写当名字："123"/"JPWABC"/"ABC" 恰好就是名字，但 `.jly` 会变成难看的 "JLY" —— 用它自己的名。
+      format: app.docFormat === "musicxml" ? "MusicXML"
+        : app.docFormat === "jly" ? t("fmt.target.jly")
+        : app.adapter.defaultExt.replace(/^\./, "").toUpperCase(),
+    }),
     available: () => true,
     run: (a) => a.saveFileAs(),
   });

@@ -68,7 +68,7 @@ export type EditOutcome = EditResult | { error: string };
 export const isError = (o: EditOutcome): o is { error: string } => "error" in o;
 
 /** 补丁落下之后，原文偏移映射到新文档。 */
-function mapper(state: EditorState, changes: ChangeSpec[]): (pos: number, assoc?: -1 | 1) => number {
+export function mapper(state: EditorState, changes: ChangeSpec[]): (pos: number, assoc?: -1 | 1) => number {
   const cs = state.changes(changes);
   return (pos, assoc = -1) => cs.mapPos(pos, assoc);
 }
@@ -408,8 +408,10 @@ export function chordNameOf(ctx: EditCtx, e: SyncEntry): string {
   return ctx.state.doc.sliceString(e.from, e.to).trim().replace(/^"(.*)"$/, "$1");
 }
 
-/** 音 `note` 的和弦名写成 `name`（空串 = 去掉）：有就换，没有就写在这个音的记号最前面。 */
+/** 音 `note` 的和弦名写成 `name`（空串 = 去掉）：有就换，没有就写在这个音的记号最前面。
+ *  `dialect.chordEdit` 优先 —— 和弦不在音符旁边的格式（jianpu-ly 的 `chords=` 行）要按自己的写法来。 */
 export function setChordName(ctx: EditCtx, note: SyncEntry, name: string): EditOutcome {
+  if (ctx.dialect.chordEdit) return ctx.dialect.chordEdit(ctx, note, name);
   const write = ctx.dialect.chordText;
   if (!write) return { error: tr("ve.chordSrcOnly") };
   if (name.includes('"')) return { error: tr("ve.chordQuote") };

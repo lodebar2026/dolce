@@ -22,6 +22,8 @@ export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
 export { emitJpwabc, writeJpwabc } from "../model/tojpw";
 export { emitPu, emitPuSong, keyNameOf, puArcLosses } from "../model/topu";
+export { emitJly } from "../model/tojly";
+export { scanMusicLine, scanWord, JlyLosses, parseJly, isJlyMusicLine, rewrapJlyText } from "../model/fromjly";
 export { projectForJianpu } from "../model/jianpuproject";
 export { AccidentalCarry } from "../model/jianpu";
 // 文本谱与 `.jpwabc` 读入：迁移工具要拿它们当输入

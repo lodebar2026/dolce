@@ -116,11 +116,14 @@ export interface FileSwitchHost {
   setStatus(text: string): void;
 }
 
-/** 原文是什么格式：可写出的文本格式（`123` / `tomato` …），或只能读的 `musicxml`。 */
-export type OriginFormat = ConvertTarget | "musicxml";
+/** 原文是什么格式：可写出的文本格式（`123` / `tomato` …）、只能读的 `musicxml`，
+ *  以及 **jianpu-ly**（`jly`：能读能写，但**不在 `CONVERT_TARGETS` 那张表里** —— 它是独立实现）。 */
+export type OriginFormat = ConvertTarget | "musicxml" | "jly";
 
 function originName(origin: OriginFormat): string {
-  return origin === "musicxml" ? "MusicXML" : targetSpec(origin).label;
+  if (origin === "musicxml") return "MusicXML";
+  if (origin === "jly") return "jianpu-ly";
+  return targetSpec(origin).label;
 }
 
 /** 下拉里原文那一项的显示名。 */

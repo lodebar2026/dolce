@@ -21,7 +21,7 @@ export type OmrFormat = ConvertTarget;
 
 export interface EmittedScore {
   /** 产物在编辑器里按哪种源格式打开（123 另交 `App.importOmrDoc`，报它装不下的东西） */
-  kind: "123" | "abc" | "jpwabc" | "pu";
+  kind: "123" | "abc" | "jpwabc" | "pu" | "jly";
   text: string;
   /** 点选映射。`.jpwabc` / ABC 没有（`null`） */
   meta: JpwMeta | null;
