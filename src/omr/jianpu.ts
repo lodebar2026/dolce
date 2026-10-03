@@ -769,7 +769,7 @@ function splitArcTail(bin: Binary, comps: Component[], numH: number): Component[
  *  比横线的高度门高一点，哪一类都不是——那条减时线和点一起丢。线薄的时候整块过得了横线门，点也没了。
  *  判据：块顶（或块底）几行是横贯整块的实线（≥0.8 块宽、连毛边行厚不过 max(3, 0.2 字号)），其余各行的墨都挤在一小段里
  *  （≤0.35 字号宽）、够一个点高（≥0.12 字号）。拆成横线 + 点，各归各类。 */
-function splitLineDot(bin: Binary, comps: Component[], numH: number): Component[] {
+function splitLineDot(bin: Binary, comps: Component[], numH: number, trimRagged = false): Component[] {
   const out: Component[] = [];
   let nextId = 8_000_000;
   const maxLine = Math.max(3, Math.round(numH * 0.2));
@@ -795,7 +795,14 @@ function splitLineDot(bin: Binary, comps: Component[], numH: number): Component[
       // 点只在一侧（另一侧到块边不留行），线带之外不再有满行
       const above = la, below = b.h - 1 - lb;
       if (n <= maxLine && (above === 0) !== (below === 0) && !full.some((f, yy) => f && (yy < la || yy > lb))) {
-        const [ya, yb] = above ? [0, la] : [lb + 1, b.h];
+        let [ya, yb] = above ? [0, la] : [lb + 1, b.h];
+        // 贴着线的那一两行常是线的毛边（比点宽、又不到「毛边行」的 0.35 字号）：算进点里，点就胖出点候选的尺寸门
+        //（11《荣归天父歌》男低 `5̳̣`：点 7×7，贴线那行 11px 宽）。比点身中位宽出四成的贴线行归线。
+        const spanOf = (yy: number) => (rows[yy]! > 0 ? x1s[yy]! - x0s[yy]! + 1 : 0);
+        const medSpan = median(Array.from({ length: yb - ya }, (_, j) => spanOf(ya + j)).filter((v) => v > 0)) || 0;
+        // 只在四声部页做：粗黑翻印本（1218）的点本来就上宽下窄，削掉贴线行反倒小出点门（全本 10 首各掉一两个点）
+        if (trimRagged && above) while (yb - ya > 2 && spanOf(yb - 1) > medSpan * 1.4) yb--;
+        else if (trimRagged) while (yb - ya > 2 && spanOf(ya) > medSpan * 1.4) ya++;
         let lo = Infinity, hi = -1, cnt = 0;
         for (let yy = ya; yy < yb; yy++) {
           if (!rows[yy]) continue;
@@ -1874,7 +1881,14 @@ function buildJpNums(
       // 阈值据实测分布定（真八度点 w/h≈0.21~0.30×numH、|dx|≤0.14；噪点误判那个是 0.09×0.11、dx=0.45）：
       // 尺寸下限 0.15、居中收到 0.4，两道独立门都能剔除噪点，且对真点留足余量。
       // 尺寸门同附点按宽高之和量（淡印的点一边常削掉一两像素：新编赞美诗·四声部《圣哉三一歌》低音点 5×9，字号 36）。
-      if (kb.w < numH * 0.12 || kb.h < numH * 0.12 || kb.w + kb.h < numH * 0.3) continue;
+      // 声部行**靠歌词一侧**的低音点宽高和松到 0.27 字号：四声部靠歌词那一声部的低音点印得比上声部小一号（11《荣归天父歌》女低 5×5，字号 35，
+      // 上声部 8×9）。只收紧贴数字的（间隙 <0.45 字号）；两声部之间的不松——那里 5×5 的墨渣会被上下两个音抢着认（47、199 各多出一个假点）。
+      // 「外侧」按距离量：这本是「女高、女低、歌词、男高、男低」，女低底下隔着歌词才是男高——那一侧 1.8 字号内没有别的声部的数字就算。
+      // 只松**低音点**：男高那一行头顶是歌词，段号「4.」的句点 5×5 正落在行首音的头上（47）。
+      const outer = voiceMates.length > 0 && rcy(kb) > dcy && kb.y - rbottom(d) < numH * 0.45 &&
+        ![...voiceMates, ...otherMates].some((ob) => ob.y >= rbottom(d) && ob.y - rbottom(d) < numH * 1.8);
+      const minSide = numH * 0.12, minSum = numH * (outer ? 0.27 : 0.3);
+      if (kb.w < minSide || kb.h < minSide || kb.w + kb.h < minSum) continue;
       // 居中阈值 0.25（原 0.4 过松）：真八度点是**印在数字正上/正下方**的圆点，实测 |dx| ≤0.07~0.14；
       // 而歌词字的顶部小笔画（歌词带紧接在数字下方 ~15px，与「减时线下方的低音点」几乎同高）
       // 偏在两字之间、|dx| 0.3~0.39，旧阈值放它进来 → 凭空多出低八度点，若该音本就有高八度点还会
@@ -2402,7 +2416,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   comps = splitBarCap(bin, comps, estimateNumH(comps));
   comps = splitArcTail(bin, comps, estimateNumH(comps));
   comps = splitLineOverArc(bin, comps, estimateNumH(comps));
-  comps = splitLineDot(bin, comps, estimateNumH(comps));
+  comps = splitLineDot(bin, comps, estimateNumH(comps), isVoicedPage(comps, estimateNumH(comps)));
   // 弧端切点在四声部页上也做：这种页的线跨两个声部（≥2.6 字号），进不了「干净页」的尺子；弧又贴着音起笔，
   // 右脚常压在下一个音的高音点上（新编赞美诗·四声部 172 `1̇⌒2̇` 弧连点 58×22，整本漏高音点三百多处）
   const cleanPage = isCleanPage(comps, estimateNumH(comps));
@@ -2765,10 +2779,30 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
       // 高 ≥0.2 字高）且形状判据认定是 ♯ 的：光凭形状，密排行里正常高度的数字也会被认成 ♯（92、1727 等
       // 八首各丢几个音），谱后正文里汉字的碎块也有矮而悬高、形似 ♯ 的（1811《心愿》）。
       if (k.bbox.h > medH * 1.25) continue;
-      if (k.bbox.w > medW * 0.85 && !(sysOf.has(m) && k.bbox.h < medH * 0.8 &&
-        rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.2 && accidentalOf(bin, k.bbox) === "sharp")) continue;
+      // 「矮」不能只看块高：同书的 ♯ 也有印得和数字差不多高的（97《受难歌》28×32、26×30 对数字 37；101《我有主耶稣歌》`6 ♯5`
+      // 的 ♯ 19×21 ~ 18×26 对数字 17×25），高度门一卡就当音符送去 OCR、读成休止 0。门放到 0.9 字高；再高的要整个悬高——
+      // **顶比右邻数字高出 0.25、底高出 0.3 字高以上**（101 是 0.28~0.44；同行的数字顶是齐的，歪页上相邻两个数字也会差出 0.2：319 末行 `5 5`）。
+      // 声部页上没归进系统的声部行（18《快乐崇拜歌》末系统第 4 声部）也认，见下。
+      const hungLow = rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.2;
+      const raised = k.bbox.h < medH * 0.9 || (k.bbox.h <= medH * 1.1 && nx.bbox.y - k.bbox.y >= medH * 0.25 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3);
+      // 没归进系统的行只收明显矮的（<0.8 字高）。另两样形似 ♯ 的要挡：弧连着三连音的「3」（269，一块百来像素宽）——宽不过 1.5 倍数字宽（140 的 ♯ 34×27 对数字宽 25）；
+      // 倚音的小号数字（319 末行 `⁵⁵5`，矮、悬高）——它脚下压着减时线，♯ 脚下是空的。
+      const underlined = (b: Rect): boolean => {
+        // 从块底两行起扫：减时线常和倚音粘成一块（319：30×29），线就是块的最底几行；♯ 的底是两根竖笔的脚（下横笔在其上，137）
+        // 只看到块底下 0.15 字高：再往下是右邻音符自己的减时线，常伸到 ♯ 底下（140 `♯4̲`）
+        for (let y = rbottom(b) - 2; y <= rbottom(b) + medH * 0.15; y++) {
+          let n = 0;
+          for (let x = b.x; x < rright(b); x++) if (bin.data[Math.round(y) * bin.w + Math.round(x)]) n++;
+          if (n >= b.w * 0.9) return true;
+        }
+        return false;
+      };
+      const wideSharp = (sysOf.has(m) ? raised : voicedPage && k.bbox.h < medH * 0.8) && hungLow && k.bbox.w <= medW * 1.5 &&
+        accidentalOf(bin, k.bbox) === "sharp" && !underlined(k.bbox);
+      if (k.bbox.w > medW * 0.85 && !wideSharp) continue;
       if (k.bbox.h < medH * 0.45 || k.bbox.w < medW * 0.3) continue;         // 太小 → 点/碎片
-      if (nx.bbox.x - rright(k.bbox) > numH * 0.3) continue;                 // 没紧贴右边那个数字
+      // 没紧贴右边那个数字。上面按形状认定的宽 ♯ 间隙放到 0.5 字号：101 第 1 系统 `6 ♯5` 的 ♯ 离数字 10px（字号 25）、67 是 13px（字号 35）
+      if (nx.bbox.x - rright(k.bbox) > numH * (wideSharp ? 0.5 : 0.3)) continue;
       if (nx.bbox.h < medH * 0.85) continue;                                 // 右邻得是个正常数字
       // 记号印在音符的**左上角**：顶比数字高、底也不该垂到数字底下（17 实测记号顶比数字高 10px）。
       if (k.bbox.y > nx.bbox.y + medH * 0.15 || rbottom(k.bbox) > rbottom(nx.bbox) + medH * 0.1) continue;
@@ -3037,7 +3071,8 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
     const medH = median(m.rd.map((k) => k.bbox.h)) || numH;
     for (const arc of comps) {
       const ab = arc.bbox;
-      if (ab.w < numH * 0.5 || ab.w > numH * 1.6) continue;
+      // 四声部页放到 2 字号：新编赞美诗·四声部的延长记号弧大一号（10《齐来谢主歌》70×17、字号 38，1.84），四个声部各印一个
+      if (ab.w < numH * 0.5 || ab.w > numH * (voicedPage ? 2 : 1.6)) continue;
       // 宽高比门 1.5（原 1.8）：新编赞美诗 250 的弧高一号（39×22、字号 32，1.77），点扣在弧里；点居中、正下方紧跟数字、弧拱得起来这几道门够严
       if (ab.h < numH * 0.15 || ab.h > numH * 0.7 || ab.w / ab.h < 1.5) continue;
       const dotC = c.dots.find((o) => {
