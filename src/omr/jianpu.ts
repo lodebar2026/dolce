@@ -2858,6 +2858,51 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
     }
   }
 
+  // 互证用的「同一系统的声部行」：连谱号有时把几个系统括成一组（36：全页 8 行同一个 sys），各系统的小节线、延长记号位置又常常雷同，
+  // 混在一起投票就串了系统。四声部谱每个系统四行：组里行数是 4 的倍数时按纵向次序每四行一组；恰好三行的（三声部）原样；别的不互证。
+  const voiceSystems = (): (typeof staff)[number][][] => {
+    const bySys = new Map<number, (typeof staff)[number][]>();
+    for (const m of staff) { const si = sysOf.get(m)?.sys; if (si !== undefined) (bySys.get(si) ?? bySys.set(si, []).get(si)!).push(m); }
+    const out: (typeof staff)[number][][] = [];
+    for (const rows of bySys.values()) {
+      rows.sort((p, q) => p.topY - q.topY);
+      if (rows.length === 3) out.push(rows);
+      else if (rows.length % 4 === 0) for (let i = 0; i < rows.length; i += 4) out.push(rows.slice(i, i + 4));
+    }
+    return out;
+  };
+  // 小节线多声部互证（同延长记号那条的思路）：小节线管的是一个时间点，同一系统各声部的小节线横向位置相同。
+  // 别的声部里有两行以上在这个位置有线、本行这里又没有数字挡着（线不会从数字身上穿过），本行缺的这根补上。
+  // 缺线多是那一截印淡了、被弧或增时线粘走、或没过行内相对高度门（全本漏小节线二百来处，多数只缺在一个声部）。
+  if (sysOf.size) {
+    for (const rows of voiceSystems()) {
+      const add = new Map<(typeof staff)[number], number[]>();
+      for (const m of rows) {
+        const x0 = Math.min(...m.rd.map((k) => k.bbox.x)), x1 = Math.max(...m.rd.map((k) => rright(k.bbox)));
+        // 本行自己得先像个声部行：已有的线不少于别的行中位根数的一半（至少两根）。连谱号里夹着的歌词行只凑得出一根伪线，
+        // 给它补齐了线它就成了「声部」（43：歌词行补上两根，整首多出一行、全部错位）。
+        const others = median(rows.filter((q) => q !== m).map((q) => q.barlineXs.length));
+        if (m.barlineXs.length < 2 || m.barlineXs.length < others * 0.5) continue;
+        const seen: number[] = [];
+        for (const o of rows) if (o !== m) for (const x of o.barlineXs) {
+          if (seen.some((t) => Math.abs(t - x) <= numH * 0.4)) continue;
+          seen.push(x);
+          // 只补行内的（首尾两个数字之间）：行首的系统起始线、行末线另有各自的规矩（43 补了行首那道，整首错位）
+          if (x <= x0 || x >= x1) continue;
+          if (m.barlineXs.some((t) => Math.abs(t - x) <= numH * 0.4)) continue;
+          const votes = rows.filter((q) => q !== m && q.barlineXs.some((t) => Math.abs(t - x) <= numH * 0.4)).length;
+          if (votes < 2) continue;
+          if (m.rd.some((k) => k.bbox.x - numH * 0.1 < x && rright(k.bbox) + numH * 0.1 > x)) continue;
+          (add.get(m) ?? add.set(m, []).get(m)!).push(x);
+        }
+      }
+      for (const [m, xs] of add) {
+        for (const x of xs) { probe("barline.mutual"); m.barlineXs.push(x); }
+        m.barlineXs.sort((p, q) => p - q);
+      }
+    }
+  }
+
   // 临时升降号：印在音符左侧、紧贴着，比数字矮一截也窄一截（实测 ♯ 是 10×17，同行数字 15×24）。
   // 摘出音符流，记在右邻那个音符上（下游 applyJpPitch 会按简谱规矩在小节内延续）。
   const accidentals = new Map<DigitCore, "sharp" | "flat" | "natural">();
@@ -3349,9 +3394,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   // 横线类的要拱得起来（上声部的减时线也在那里）。找着了，帽下紧挨的那颗点归延长记号（不再当高音点）；
   // 没找着帽、但已有两个以上声部作证的也补上，点不动。
   if (sysOf.size && fermataOf.size) {
-    const bySys = new Map<number, (typeof staff)[number][]>();
-    for (const m of staff) { const si = sysOf.get(m)?.sys; if (si !== undefined) (bySys.get(si) ?? bySys.set(si, []).get(si)!).push(m); }
-    for (const rows of bySys.values()) {
+    for (const rows of voiceSystems()) {
       const seeds = rows.flatMap((m) => m.rd.filter((k) => fermataOf.get(k)).map((k) => ({ m, x: rcx(k.bbox) })));
       if (!seeds.length) continue;
       for (const m of rows) for (const k of m.rd) {
