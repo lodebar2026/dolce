@@ -2720,7 +2720,9 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
     // 还要比**全页各行**的中位高高出 1.4 倍：numH 估小了的页（补充本 155，数字核连着八度点）正经谱行也过得了
     // 前一道门，只按字号判整页谱行全丢。
     const rowH = median(m.rd.map((k) => k.bbox.h));
-    if (rowH >= numH * 1.4 && rowH >= pageRowH * 1.4) { probe("pseudoRow.tall"); return false; }
+    // 有三根以上小节线、核又多（≥6）的不是标题：新编赞美诗·四声部的短歌（f1、f33 等）旋律行印大号字（核高 36）、其余三声部小号（25），
+    // 页字号按多数估成 25，旋律行正好是 1.44 倍，整行被当标题丢掉——每个系统少一个声部。标题那一排凑不出三根贯穿的小节线。
+    if (rowH >= numH * 1.4 && rowH >= pageRowH * 1.4 && !(m.barlineXs.length >= 3 && m.rd.length >= 6)) { probe("pseudoRow.tall"); return false; }
     // 行内拍号「3/4」连着下一行的 ♯ 凑成四个核、底边还压进下面谱行半个字高（选本 586），也算：核 ≤4、重叠放到一个字号内
     if (m.rd.length <= 4 && rowMetaAll.some((o) => o !== m && o.rd.length >= m.rd.length * 2 && o.topY > m.topY &&
       o.topY - m.botY > -numH && o.topY - m.botY < numH * 1.2)) {
