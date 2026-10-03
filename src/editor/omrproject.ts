@@ -101,7 +101,7 @@ export function unpackProject(bytes: Uint8Array): ProjectSnapshot {
   if (typeof manifest?.version !== "number") throw new Error(t("proj.noVersion"));
   if (manifest.version > PROJECT_VERSION) throw new Error(t("proj.tooNew"));
   if (!(["jianpu", "staff", "vector"] as unknown[]).includes(manifest.kind)) throw new Error(t("proj.badKind", { v: String(manifest.kind) }));
-  if (!(["jpwabc", "pu", "123", "abc", "musicxml"] as unknown[]).includes(manifest.docFormat)) throw new Error(t("proj.badFormat", { v: String(manifest.docFormat) }));
+  if (!(["jpwabc", "pu", "123", "abc", "musicxml", "jly"] as unknown[]).includes(manifest.docFormat)) throw new Error(t("proj.badFormat", { v: String(manifest.docFormat) }));
   if (!Array.isArray(manifest.sources)) manifest.sources = [];
   const text = files["doc.txt"] ? strFromU8(files["doc.txt"]) : "";
   const emitted = files["emitted.txt"] ? strFromU8(files["emitted.txt"]) : null;

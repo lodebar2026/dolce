@@ -227,10 +227,19 @@ function hanziGlue(text: string): string {
   return out;
 }
 
+/** 两个音同音高（看首音：度数、八度、记号；后一个音不写记号视为沿用）。 */
+function samePitch(a: JChord, b: JChord): boolean {
+  const x = a.notes[0], y = b.notes[0];
+  if (!x || !y || isRestToken(a) || isRestToken(b)) return false;
+  return x.number === y.number && x.jpOctave === y.jpOctave && (y.jpAlter.trim() === "" || y.jpAlter === x.jpAlter);
+}
+
 interface JlyPlan {
   /** 圆滑线：组首挂开括号、组尾挂闭括号（同一个音上收多条时内层在前） */
   slurOpen: Map<JChord, string>;
   slurClose: Map<JChord, string>;
+  /** 延音线：在这个音后面写 `~` */
+  tieAfter: Set<JChord>;
   /** 歌词位置：**发音**的和弦；一字多音的圆滑线整组算一个位置 */
   slots: JChord[];
   /** 段号（按首次出现的顺序） */
@@ -268,6 +277,7 @@ function planJly(measures: readonly JMeasure[], warnings: Set<string>): JlyPlan 
 
   // 圆滑线分组：引擎输入已经把配对算好（`slurStart` + `slurEndChord`），这里不用自己搭栈。
   const groups: { start: number; end: number; melisma: boolean }[] = [];
+  const tieAfter = new Set<JChord>();
   order.forEach((c, i) => {
     if (!c.slurStart) return;
     const j = c.slurEndChord ? index.get(c.slurEndChord) : undefined;
@@ -278,6 +288,9 @@ function planJly(measures: readonly JMeasure[], warnings: Set<string>): JlyPlan 
       const hits = order.slice(i, j + 1).filter((x) => has(x, v));
       return hits.length <= 1 && (hits.length === 0 || hits[0] === c);
     });
+    // 相邻两个同音、后一个不吃字：这是延音线（简谱里与圆滑线同形，引擎输入里也都归成弧），写 `~`
+    //   —— 写成 `(` `)` 上游会排成圆滑线、MIDI 也会重新起音。
+    if (melisma && j === i + 1 && samePitch(c, order[j]!)) { tieAfter.add(c); return; }
     groups.push({ start: i, end: j, melisma });
   });
   const slurOpen = new Map<JChord, string>();
@@ -296,8 +309,9 @@ function planJly(measures: readonly JMeasure[], warnings: Set<string>): JlyPlan 
 
   const swallowed = new Set<JChord>();                     // 一字多音的弧线里，组首以外的音不吃音节
   for (const g of groups) if (g.melisma) for (let i = g.start + 1; i <= g.end; i++) swallowed.add(order[i]!);
+  for (const c of tieAfter) swallowed.add(order[index.get(c)! + 1]!);   // 延音线接续的音也不吃音节
   const slots = order.filter((c) => !isRestToken(c) && !swallowed.has(c));
-  return { slurOpen, slurClose, slots, verses, at };
+  return { slurOpen, slurClose, tieAfter, slots, verses, at };
 }
 
 /** 一行和弦符号（`chords=c2. g:7 c`）：上游把它原样塞进 `\new ChordNames { \chordmode { … } }`，
@@ -472,7 +486,7 @@ export function emitJlyOfScore(score: JScore, warnings: Set<string> = new Set())
         if (c.beams >= BEAM_LETTER.length) warnings.add("有超过 4 条减时线（64 分）的时值，已按 64 分写出");
       const dots = ".".repeat(c.dot || 0);
         tokens.push(ornamentsBefore(c, tupletSize, warnings) + chordBody(c, BEAM_LETTER[c.beams] ?? "", dots) + sustainOf(c) + ornamentsAfter(c, plan, warnings));
-        if (c.notes.some((n) => n.tieStart)) tokens.push("~");       // 延音线写在两音之间
+        if (plan.tieAfter.has(c)) tokens.push("~");                  // 延音线写在两音之间
       } else if (e.kind === "break") {
         // ⚠ 模型里的换行（`JBreak`）**都是显式的**（123 的 `$`/`$$`、MusicXML 的 `<print new-system>`、
         //   `.jly` 的 `\break`），所以除了收一行，还得把指令写出去 —— 只收一行的话上游根本不看行，

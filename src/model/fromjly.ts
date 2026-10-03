@@ -24,6 +24,7 @@ import {
   type Barline,
   type Chord,
   type Diagnostic,
+  type ElementId,
   type Lyric,
   type Measure,
   type Note,
@@ -34,6 +35,7 @@ import { emptyDoc, emptySong, IdGen } from "./helpers";
 import { BARE_DIRECTION } from "./tojly";
 import { DYNAMICS } from "../pu/glyph";
 import { lyPitchToText, lySuffixToText, parseChordToken } from "./jlychords";
+import { t as tr, type MsgKey } from "../i18n";
 
 // ───────────────────────── 词法 ─────────────────────────
 
@@ -137,35 +139,35 @@ export class JlyLosses {
   add(what: string, raw: string, span?: SourceSpan): void {
     if (!this.seen.has(what)) this.seen.set(what, { raw, span });
   }
-  list(): string[] { return [...this.seen].map(([what, v]) => `${what}（例：${v.raw}）`); }
+  list(): string[] { return [...this.seen].map(([what, v]) => tr("diag.jly.example", { what, raw: v.raw })); }
   /** → 模型诊断（`Diagnostic.source` 必填，所以每个落点都要有 span）。 */
   diagnostics(): Diagnostic[] {
     return [...this.seen].map(([what, v]) => ({
       severity: "warning" as const,
       code: "jly-unsupported",
-      message: what + "：本版不收，已跳过（没有写进模型）",
+      message: tr("diag.jly.skipped", { what }),
       source: v.span ?? ZERO_SPAN,
     }));
   }
 }
 
 /** 本版不收的写法：先认出来、报出去，别当音符硬读。 */
-const NOT_YET: readonly (readonly [RegExp, string])[] = [
-  [/^x$/, "打击乐 `x`（与 dolce 的不可见休止语义不同）"],
-  [/^(LP:|:LP|LPH:|:LPH)$/, "原样 LilyPond 代码块（`LP: … :LP`）"],
-  [/^(KeepLength|ChordsRoman|NoBarNums|NoIndent|OnePage|RaggedLast|SeparateTimesig|angka|WithStaff|PartMidi|RepeatAccidentals|NormalAccidentals)$/, "布局 / 结构开关"],
-  [/^(chords|frets|instrument)=/, "和弦符号 / 指板图 / 乐器"],
-  [/^arp(Up|Down)?$/, "琶音"],
-  [/^(Fr=|slide|souyin|harmonic|bend)/, "二胡符号"],
-  [/^(letter[A-Z0-9]+|glis|Harm:)$/, "排练记号 / 滑音 / 泛音"],
-  [/^[<>]$/, "基准八度切换"],
-  [/^[89]$/, "八度快捷键（`8`=`1'`）"],
-  [/^\\/, "LilyPond 指令"],
+const NOT_YET: readonly (readonly [RegExp, MsgKey])[] = [
+  [/^x$/, "diag.jly.nyPercussion"],
+  [/^(LP:|:LP|LPH:|:LPH)$/, "diag.jly.nyLp"],
+  [/^(KeepLength|ChordsRoman|NoBarNums|NoIndent|OnePage|RaggedLast|SeparateTimesig|angka|WithStaff|PartMidi|RepeatAccidentals|NormalAccidentals)$/, "diag.jly.nyLayout"],
+  [/^(chords|frets|instrument)=/, "diag.jly.nyChords"],
+  [/^arp(Up|Down)?$/, "diag.jly.nyArp"],
+  [/^(Fr=|slide|souyin|harmonic|bend)/, "diag.jly.nyErhu"],
+  [/^(letter[A-Z0-9]+|glis|Harm:)$/, "diag.jly.nyMisc"],
+  [/^[<>]$/, "diag.jly.nyOctaveShift"],
+  [/^[89]$/, "diag.jly.nyOctaveKey"],
+  [/^\\/, "diag.jly.nyCommand"],
 ];
 
 /** `g[#45]` / `g[d4d5s6]` 里的音。**倚音和弦**（`g[1&3&5]`）本版不收（引擎输入里一个倚音只有一个音高）。 */
 function parseGrace(inner: string, loss: JlyLosses, span?: SourceSpan): JlyGraceNote[] | null {
-  if (inner.includes("&")) { loss.add("倚音和弦（`g[1&3&5]`）", inner, span); return null; }
+  if (inner.includes("&")) { loss.add(tr("diag.jly.graceChord"), inner, span); return null; }
   const out: JlyGraceNote[] = [];
   let i = 0;
   while (i < inner.length) {
@@ -175,7 +177,7 @@ function parseGrace(inner: string, loss: JlyLosses, span?: SourceSpan): JlyGrace
     const two = inner.slice(i, i + 2);
     if (ACC[two]) { alter = two; i += 2; }
     else if (ACC[inner[i]!]) { alter = inner[i]!; i++; }
-    if (!/[0-7]/.test(inner[i] ?? "")) { loss.add("倚音组里读不动的写法", inner, span); return null; }
+    if (!/[0-7]/.test(inner[i] ?? "")) { loss.add(tr("diag.jly.graceBad"), inner, span); return null; }
     const degree = Number(inner[i]!);
     i++;
     let octave = 0;
@@ -228,10 +230,10 @@ export function scanWord(word: string, loss: JlyLosses, span?: SourceSpan): JlyT
   if (word === "}") return { kind: "repeat-close" };
   if (/^g\[.*\]$/.test(word)) {
     const notes = parseGrace(word.slice(2, -1), loss, span);
-    return notes ? { kind: "grace", notes } : { kind: "loss", what: "倚音" };
+    return notes ? { kind: "grace", notes } : { kind: "loss", what: "grace" };
   }
   for (const [re, what] of NOT_YET) {
-    if (re.test(word)) { loss.add(what, word, span); return { kind: "loss", what }; }
+    if (re.test(word)) { loss.add(tr(what), word, span); return { kind: "loss", what }; }
   }
   // ── 多音和弦（上游 README「简单和弦：`,135' 1 1b3 1`」）────────────────────────
   // ⚠ 必须在**单音解析之前**：单音那条路碰到第二个数字就 `return null`（下面 `if (degree !== null)`），
@@ -268,7 +270,7 @@ export function scanWord(word: string, loss: JlyLosses, span?: SourceSpan): JlyT
     return null;
   }
   if (degree === null) {
-    if (backslashes) { loss.add("反斜杠时值（`1\\`）", word, span); return { kind: "loss", what: "反斜杠时值" }; }
+    if (backslashes) { loss.add(tr("diag.jly.backslash"), word, span); return { kind: "loss", what: "backslash" }; }
     return null;
   }
   if (backslashes) beams = backslashes === 1 ? 1 : 2;   // README：`1\` 八分、`1\\` 十六分
@@ -317,7 +319,8 @@ function scanChordWord(word: string): JlyNote | null {
   return { kind: "note", degree: first!.degree, alter: first!.alter, octave: first!.octave, beams, dots, chord: rest };
 }
 
-/** 这一行是不是**曲行**（有音符/小节线那些）。`L:`/`H:` 词行、页头、拍号/调号/速度、`NextScore` 都不是。 *  分类与 `parseJly` 的派发次序同一套（改一处要改两处）。 */
+/** 这一行是不是**曲行**（有音符/小节线那些）。`L:`/`H:` 词行、页头、拍号/调号/速度、`NextScore` 都不是。
+ *  分类与 `parseJly` 的派发次序同一套（改一处要改两处）。 */
 export function isJlyMusicLine(line: string): boolean {
   const t = line.trim();
   if (!t || t.startsWith("%")) return false;
@@ -413,7 +416,8 @@ function rewrapJlyRows(rows: { raw: string; sep: string }[], measuresPerLine = 4
   return out.join("\n") + tail;
 }
 
-/** 一整行音乐 → token 与各自的位置（按空白切；`%` 起头是注释，README：「忽略：`% 注释`」）。 */export function scanMusicLine(
+/** 一整行音乐 → token 与各自的位置（按空白切；`%` 起头是注释，README：「忽略：`% 注释`」）。 */
+export function scanMusicLine(
   line: string,
   loss: JlyLosses,
   spanAt?: (col: number, len: number) => SourceSpan,
@@ -442,7 +446,7 @@ function rewrapJlyRows(rows: { raw: string; sep: string }[], measuresPerLine = 4
     else {
       // ⚠ 认不出的词**必须报出来**，不能只塞进 `unknown` 就完事（上游 review 指出：`1 2 ,135 3 |`
       //   会静默变成 `1 2 3`，和弦整块消失）。走 `loss` 才会变成模型诊断、才看得见。
-      loss.add("认不出的词（已跳过）", word, spanAt?.(m.index, word.length));
+      loss.add(tr("diag.jly.unknownWord"), word, spanAt?.(m.index, word.length));
       unknown.push(word);
     }
   }
@@ -569,6 +573,13 @@ export function parseJly(text: string): JlyParse {
   const slots: Chord[] = [];
   let melismaOpen = 0;                   // 已经从**前面**的音开始的圆滑线（本音不吃音节）
   let pendingMelisma = 0;                // 本音自己开的圆滑线：从**下一个**音起才吞
+  /** 还没收的弧：`start` 为 null = 写在音前（算在下一个音头上，读到那个音时补上）。 */
+  const openSlurs: { start: ElementId | null; melisma: boolean; source: SourceSpan }[] = [];
+  /** 曲/声部结束时还没收的弧：报出来（弧不跨 `NextScore`/`NextPart`）。 */
+  const dropOpenSlurs = (): void => {
+    for (const s of openSlurs) loss.add(s.melisma ? tr("diag.jly.slurUnpaired") : tr("diag.jly.phraseUnpaired"), s.melisma ? "(" : "\\(", s.source);
+    openSlurs.length = 0;
+  };
   const verses = new Map<string, { han: boolean; syllables: (JlySyllable | null)[]; span?: SourceSpan }>();
 
   /** 开一小节；`source` 落在这一小节的第一个 token 上（编辑器按它定位小节）。
@@ -642,7 +653,7 @@ export function parseJly(text: string): JlyParse {
       // 上游的 `L:` 行**不拆汉字**（只有 `H:` 行会逐字自动分开），所以一串汉字会被当成一个音节，
       // 排出来是"好几个字挤在一个音下面"。这不改读法（要跟真工具一致），但要说清楚怎么写。
       if (!han && syls.some((s) => s && [...s.text].filter((c) => /[\u3400-\u9fff]/.test(c)).length > 1)) {
-        loss.add("拉丁歌词行（`L:`）里的连续汉字：上游把整串当一个音节，要逐字分开请写成 `H:`", body, head);
+        loss.add(tr("diag.jly.hanInL"), body, head);
       }
       const slot = verses.get(key) ?? { han, syllables: [], span: head };
       slot.syllables.push(...syls);
@@ -661,14 +672,14 @@ export function parseJly(text: string): JlyParse {
       if (key === "title" || key === "movement-title") song.work.title = value;
       else if (key === "subtitle") song.work.subtitles.push(value);
       else if (CREDIT_KEYS.has(key)) song.credits = [...(song.credits ?? []), { type: key, text: value }];
-      else loss.add("页头字段 `" + key + "=`", line, spanOf(0, line.length));
+      else loss.add(tr("diag.jly.header", { key }), line, spanOf(0, line.length));
       advance();
       continue;
     }
     const mTime = /^(\d+)\/(\d+)(,\d+)?$/.exec(line);
     if (mTime) {
       song.time = { beats: Number(mTime[1]), beatType: Number(mTime[2]) };
-      if (mTime[3]) loss.add("弱起拍号（`4/4,8`）", line, spanOf(0, line.length));
+      if (mTime[3]) loss.add(tr("diag.jly.anacrusis"), line, spanOf(0, line.length));
       advance();
       continue;
     }
@@ -676,7 +687,7 @@ export function parseJly(text: string): JlyParse {
     if (mKey) {
       const tonic = mKey[2]!;
       const fifths = FIFTHS[tonic] ?? FIFTHS[tonic[0]!.toUpperCase() + tonic.slice(1)];
-      if (fifths === undefined) loss.add("调号 `" + line + "`", line, spanOf(0, line.length));
+      if (fifths === undefined) loss.add(tr("diag.jly.key", { v: line }), line, spanOf(0, line.length));
       else song.key = { fifths, spelling: tonic };
       advance();
       continue;
@@ -706,9 +717,9 @@ export function parseJly(text: string): JlyParse {
       }
       for (const tok of body.split(/\s+/).filter(Boolean)) {
         const parsed = parseChordToken(tok);
-        if (!parsed) { loss.add("和弦符号行里读不动的 token", tok, head); continue; }
+        if (!parsed) { loss.add(tr("diag.jly.chordToken"), tok, head); continue; }
         const root = lyPitchToText(parsed.pitch);
-        if (root === null) { loss.add("和弦符号行里读不动的音名", tok, head); continue; }
+        if (root === null) { loss.add(tr("diag.jly.chordPitch"), tok, head); continue; }
         const bass = parsed.bass ? lyPitchToText(parsed.bass) : null;
         chordTokens.push({
           song: doc.songs.length - 1,
@@ -723,11 +734,12 @@ export function parseJly(text: string): JlyParse {
     if (line === "NextScore") {      finishSong();       // ⚠ 切曲前先把当前曲收尾（上游 review 第 4 条）
       song = emptySong(); doc.songs.push(song);
       part = { id: "P1", measures: [] }; song.parts.push(part);
-      cur = null; prevChordRef = null; slots.length = 0; melismaOpen = 0; pendingMelisma = 0; autoVerse = 0; advance(); continue;
+      cur = null; prevChordRef = null; slots.length = 0; melismaOpen = 0; pendingMelisma = 0; autoVerse = 0;
+      dropOpenSlurs(); advance(); continue;
     }
     if (line === "NextPart") {
       part = { id: "P" + (song.parts.length + 1), measures: [] }; song.parts.push(part);
-      cur = null; advance(); continue;
+      cur = null; prevChordRef = null; dropOpenSlurs(); advance(); continue;
     }
 
     // 音乐行
@@ -748,7 +760,7 @@ export function parseJly(text: string): JlyParse {
        *  照它的口径存，渲染、跨格式与写出端才都对得上（实测：`!fine!` 导出成裸词 `Fine` 走的就是这条链）。 */
       const addJump = (short: string): void => {
         const host = cur ?? part.measures[part.measures.length - 1];
-        if (!host) { loss.add("跳转记号（还没有小节）", short, spanAt(i)); return; }
+        if (!host) { loss.add(tr("diag.jly.jumpNoBar"), short, spanAt(i)); return; }
         const lines = host.barlines ?? (host.barlines = []);
         const right = lines.find((b) => b.location === "right");
         if (right) right.ornaments = [...(right.ornaments ?? []), { name: short, level: 0 }];
@@ -760,7 +772,7 @@ export function parseJly(text: string): JlyParse {
           // 与 123 同一个落点：`"^渐慢"` 在那边存成 `Chord.sectionWord`（谱上文字）
           const host = lastChord();
           if (host) host.sectionWord = host.sectionWord ? host.sectionWord + " " + tk.value : tk.value;
-          else loss.add("谱上文字（前面没有音）", tk.value, spanAt(i));
+          else loss.add(tr("diag.jly.textNoNote"), tk.value, spanAt(i));
           break;
         }
         case "dynamic": {
@@ -770,13 +782,13 @@ export function parseJly(text: string): JlyParse {
             const not = { ...(host.notations ?? {}) };
             not.articulations = [...(not.articulations ?? []), tk.name];
             host.notations = not;
-          } else loss.add("力度记号（前面没有音）", tk.name, spanAt(i));
+          } else loss.add(tr("diag.jly.dynNoNote"), tk.name, spanAt(i));
           break;
         }
         case "fermata": {
           const host = lastChord();
           if (host) host.notations = { ...(host.notations ?? {}), fermata: true };
-          else loss.add("延长记号 `\\fermata`（前面没有音）", "\\fermata", spanAt(i));
+          else loss.add(tr("diag.jly.fermataNoNote"), "\\fermata", spanAt(i));
           break;
         }
         case "jump": addJump(JUMP_SHORT[tk.text] ?? "fine"); break;
@@ -786,7 +798,7 @@ export function parseJly(text: string): JlyParse {
           //   没有 = 刚收尾的那一小节之后换，记在**下一小节**的 `print` 上（模型的口径与 MusicXML 一致：
           //   `newSystem`/`newPage` 表示「本小节起新系统/新页」）。
           const host = cur && cur.elements.length ? cur : part.measures[part.measures.length - 1];
-          if (!host) { loss.add("换行/换页（前面还没有小节）", tk.page ? "\\pageBreak" : "\\break", spanAt(i)); break; }
+          if (!host) { loss.add(tr("diag.jly.breakNoBar"), tk.page ? "\\pageBreak" : "\\break", spanAt(i)); break; }
           if (cur && cur.elements.length) {
             const last = cur.elements[cur.elements.length - 1];
             if (last && last.kind === "chord") last.lineBreakAfter = tk.page ? "page" : "system";
@@ -808,7 +820,7 @@ export function parseJly(text: string): JlyParse {
           const host = at === "left"
             ? cur!
             : (cur && cur.elements.length ? cur : part.measures[part.measures.length - 1]);
-          if (!host) { loss.add("小节线样式 `\\bar`（前面还没有小节）", st, spanAt(i)); break; }
+          if (!host) { loss.add(tr("diag.jly.barStyleNoBar"), st, spanAt(i)); break; }
           const lines = host.barlines ?? (host.barlines = []);
           let bl = lines.find((b) => b.location === at);
           if (!bl) { bl = { location: at, source: spanAt(i) }; lines.push(bl); }
@@ -823,7 +835,7 @@ export function parseJly(text: string): JlyParse {
             "|": { style: "regular" },
           };
           const hit = map[st];
-          if (!hit) { loss.add("小节线样式 `\\bar`", st, spanAt(i)); break; }
+          if (!hit) { loss.add(tr("diag.jly.barStyle"), st, spanAt(i)); break; }
           if (hit.style) bl.style = hit.style;
           if (hit.repeat) bl.repeat = hit.repeat;
           if (st === ":|:") bl.alsoForward = true;
@@ -860,7 +872,7 @@ export function parseJly(text: string): JlyParse {
         case "alt-open": {
           // `A{` = 第二遍（第二房）开始：上一小节收掉第一房，这一小节起第二房
           const open = repeats[repeats.length - 1];
-          if (!open || open.rEnd < 0) { loss.add("反复跳跃 `A{`（前面没有配对的 `}`）", "A{", spanAt(i)); break; }
+          if (!open || open.rEnd < 0) { loss.add(tr("diag.jly.altNoClose"), "A{", spanAt(i)); break; }
           if (!cur) cur = openMeasure(spanAt(i));
           // ⚠ 先保证 cur 指向 A 段的第一小节（`A{` 前刚被 `}` 收掉，cur 是空的），再取下标；
           //   若先取 `part.measures.length` 会多算一格（`openMeasure` 已经把这一小节推进去了）。
@@ -887,7 +899,7 @@ export function parseJly(text: string): JlyParse {
             break;
           }
           const open = repeats[repeats.length - 1];
-          if (!open) { loss.add("反复跳跃 `}`（前面没有 `R{` / `A{`）", "}", spanAt(i)); break; }
+          if (!open) { loss.add(tr("diag.jly.closeNoOpen"), "}", spanAt(i)); break; }
           // ⚠ `}` 同时也是这一段的**收尾线**：先把进行中的小节收掉再记下标，否则
           //   `R{ 1 2 3 4 } A{ 5 6 7 1 }` 会变成一个 8 拍的小节、反复与房子都丢掉（上游 review 第 3 条）。
           //   （小节反复那条路上面已经这么做了，这里以前漏了。）
@@ -897,7 +909,7 @@ export function parseJly(text: string): JlyParse {
           }
           if (open.aStart >= 0 && open.aEnd < 0) { open.aEnd = part.measures.length - 1; }   // ⚠ 别 pop：收尾要留在表里等后面统一落房号（pop 掉就等于没记）
           else if (open.rEnd < 0) { open.rEnd = part.measures.length - 1; }
-          else { loss.add("反复跳跃 `}`（多出来的）", "}", spanAt(i)); }
+          else { loss.add(tr("diag.jly.closeExtra"), "}", spanAt(i)); }
           break;
         }
         case "grace": {
@@ -940,15 +952,30 @@ export function parseJly(text: string): JlyParse {
           //   弧内（`2` `3`，到 `)` 那个音为止）不吃音节 —— 实测 A→1、B→4；
           //   而弧写在最前面（`( 1 2 ) 3 4`）时它算在**下一个音**头上 —— 实测 A→1、B→3、C→4。
           //   两种都要跟：前一个 token 是音就立刻生效，否则等这个音读完再生效（组首自己是吃音节的）。
-          if (tk.melisma) {
-            if (tokens[i - 1]?.kind === "note") melismaOpen++;
-            else pendingMelisma++;
+          //   弧本身也按这个口径记进 `song.marks`（两种都画弧；乐句线只是不吞音节）。
+          {
+            const afterNote = tokens[i - 1]?.kind === "note" && prevChordRef !== null;
+            if (tk.melisma) {
+              if (afterNote) melismaOpen++;
+              else pendingMelisma++;
+            }
+            openSlurs.push({ start: afterNote ? prevChordRef!.id : null, melisma: tk.melisma, source: spanAt(i) });
           }
-          loss.add(tk.melisma ? "圆滑线 `( )`" : "乐句线 `\\( \\)`", tk.melisma ? "(" : "\\(", spanAt(i));
           break;
-        case "slur-close":
+        case "slur-close": {
           if (tk.melisma) melismaOpen = Math.max(0, melismaOpen - 1);
+          // 收最近一条同类的弧（`(` 与 `\(` 各自配对，可以交叠）
+          let k = openSlurs.length - 1;
+          while (k >= 0 && openSlurs[k]!.melisma !== tk.melisma) k--;
+          const open = k >= 0 ? openSlurs.splice(k, 1)[0]! : null;
+          const end = prevChordRef?.id;
+          if (!open || open.start === null || end === undefined || end === open.start) {
+            loss.add(tk.melisma ? tr("diag.jly.slurUnpaired") : tr("diag.jly.phraseUnpaired"), tk.melisma ? ")" : "\\)", spanAt(i));
+            break;
+          }
+          song.marks.push({ type: "slur", start: open.start, end, level: openSlurs.length, openSource: open.source, closeSource: spanAt(i) });
           break;
+        }
         case "tuplet-open": openTuplet = tk.n; break;
         case "tuplet-close": openTuplet = null; break;
         case "tie": pendingTie = true; break;
@@ -984,8 +1011,13 @@ export function parseJly(text: string): JlyParse {
               // ⚠ 前一个音要**跨小节**回找（上游 review）：`1 2 3 4 ~ | 4 …` 换小节后 `cur` 是空的，
               //   只在 `cur.elements` 里找会变成"后一个 4 有 tie.stop、前一个 4 却没有 tie.start"。
               //   注意不能改用既有的 `lastChord()`：刚闭合的小节那时还没落进 `part.measures`，它会取到更早的音。
+              //   引擎输入与 123 / `.jly` 写出端按 `song.marks` 里的 `tied` 画弧、写弧，只记 `Note.tie` 会在
+              //   谱面与转换里丢掉（只有 ABC 读 `Note.tie`）。
               const pn = prevChordRef?.notes[0];
-              if (pn) pn.tie = { ...(pn.tie ?? {}), start: true };
+              if (pn) {
+                pn.tie = { ...(pn.tie ?? {}), start: true };
+                song.marks.push({ type: "tied", number: 1, start: prevChordRef!.id, end: ch.id });
+              }
               note.tie = { ...(note.tie ?? {}), stop: true };
               tieStop = true;
               pendingTie = false;
@@ -1003,6 +1035,7 @@ export function parseJly(text: string): JlyParse {
           }
           cur.elements.push(ch);
           prevChordRef = ch;
+          for (const s of openSlurs) if (s.start === null) s.start = ch.id;
           // 本音是不是一个歌词位置：启音（倚音）不算、休止不算、已经在圆滑线里（一字多音）的也不算，
           // **被延音线接续的音也不算**（LilyPond 不给它分配音节；算了后面的字会整体前移一位 —— 上游 review）。
           if (tk.degree !== 0 && !ch.grace && melismaOpen === 0 && !tieStop) slots.push(ch);
@@ -1020,7 +1053,7 @@ export function parseJly(text: string): JlyParse {
     const lastM = part.measures[part.measures.length - 1];
     const lastEl = lastM?.elements[lastM.elements.length - 1];
     if (lastEl && lastEl.kind === "chord") lastEl.lineBreakAfter = pendingBreak;
-    else loss.add("换行/换页（后面没有音）", pendingBreak === "page" ? "\\pageBreak" : "\\break", undefined);
+    else loss.add(tr("diag.jly.breakNoNote"), pendingBreak === "page" ? "\\pageBreak" : "\\break", undefined);
     pendingBreak = null;
   }
 
@@ -1077,7 +1110,7 @@ export function parseJly(text: string): JlyParse {
       }
       if (slot.syllables.length > slots.length) {
         loss.add(
-          `歌词第 ${verse} 段多出 ${slot.syllables.length - slots.length} 个音节`,
+          tr("diag.jly.extraSyl", { verse, n: slot.syllables.length - slots.length }),
           slot.syllables.slice(slots.length).map((s) => s?.text ?? '""').slice(0, 3).join(" "),
           slot.span,
         );
@@ -1125,7 +1158,7 @@ export function parseJly(text: string): JlyParse {
         t += whole;
       }
       if (t > total + 1e-6) {
-        loss.add(`和弦符号行比曲子长（超出 ${(t - total).toFixed(2)} 个全音符）`, chordTokens.filter((x) => x.song === songIdx).slice(-1)[0]!.text, undefined);
+        loss.add(tr("diag.jly.chordsTooLong", { n: (t - total).toFixed(2) }), chordTokens.filter((x) => x.song === songIdx).slice(-1)[0]!.text, undefined);
       }
       }
       }
@@ -1133,6 +1166,7 @@ export function parseJly(text: string): JlyParse {
     repeats.length = 0; percentRanges.length = 0; verses.clear(); slots.length = 0;
   }
 
+  dropOpenSlurs();
   finishSong();
 
   doc.diagnostics = loss.diagnostics();
