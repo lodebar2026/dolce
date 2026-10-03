@@ -40,6 +40,7 @@ const isHyphen = (c: string) => /[-‐‑–—]/.test(c);
 // 无害；放开拉丁字符后就会变成伪 verse 污染 .Words，故按文本形态显式剔除（须在 rec 之后）。
 // 段落**起点**方框（用于给乐句排版分段）：Fine/D.C./D.S. 是终止/反复记号而非段落起点，故不在此列。
 const SECTION_MARK_RE = /(intro|verse|chorus|pre-?chorus|bridge|coda|outro|ending|interlude|solo|refrain|tag)\d*/i;
+const CN_SECTION_MARK_RE = /[（(]\s*副\s*歌\s*[)）]|^[\s（(【\[]*副\s*歌[\s)）】\]：:]*$/;
 // 跳转记号 D.C./D.S./Fine/To Coda：不是段落起点（故不进 SECTION_MARK_RE），但它决定演唱顺序，
 // 必须输出到 MusicXML 才能正确展开反复。谱面印在**本谱行**音符的下方近旁（沧海一声笑的 D.C.
 // 印在二房末音右上），因此与段落方框归行方式不同（那个归下一行）。
@@ -791,11 +792,14 @@ export async function recognizeLyrics(
     // SECTION_MARK_RE，给首行安一个假段落起点，乐句排版据此硬换行，整首的 .Words 分行跟着走样
     // （「沧海一声笑」六段词的歌词准确率因此从 99.4% 掉到 80.8%）。跳转记号同理。
     if (!chunks[s].above) {
-      const hit = SECTION_MARK_RE.exec(rawText);
+      // 中文段名「(副歌)」：诗歌本通行写法，带括号印在副歌起头那一小节的上方（新编赞美诗两本各一百五十来处，手工谱记作 `"^(副歌)"`）。
+      // 只认带括号的、或整块只有这两个字的（括号细，文字识别常读丢）——歌词正文里夹着「副歌」二字的不算。一律记成「(副歌)」。
+      const cnHit = CN_SECTION_MARK_RE.exec(rawText);
+      const hit = cnHit ?? SECTION_MARK_RE.exec(rawText);
       if (hit) {
         let acc = 0, xf = 0;
         if (textsPos) for (const c of textsPos[s]) { if (acc >= hit.index) { xf = c.xFrac; break; } acc += c.ch.length; }
-        const word = hit[0][0].toUpperCase() + hit[0].slice(1).toLowerCase();
+        const word = cnHit ? "(副歌)" : hit[0][0].toUpperCase() + hit[0].slice(1).toLowerCase();
         marks.push({ rowIdx, word, x: textsPos ? fracToSrcX(xf) : cells[0].x });
       }
     }
