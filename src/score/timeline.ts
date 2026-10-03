@@ -30,11 +30,24 @@ export interface PlayOptions {
 
 // ───────────────────────── 输入形状 ─────────────────────────
 
+/** 一个音底下的一段歌词（一个字，收尾标点已并进 `text`）。 */
+export interface TimelineLyric {
+  readonly text: string;
+  /** 段号：第几遍唱它（同 `PlayItem.pass`） */
+  readonly number: number;
+  /** 副歌：各遍共用 */
+  readonly refrain?: boolean;
+  /** 续记号（123 的 `_`、MusicXML `<extend>`）：后面紧接的无字音接着唱这个字 */
+  readonly extend?: boolean;
+}
+
 export interface TimelineNote {
   /** MIDI 音高 */
   readonly pitch: number;
   /** 延音线收尾：前一个同音高的音若首尾相接，就延长它、不再起音 */
   readonly tieStop?: boolean;
+  /** 歌词（只看和弦第一个音的）。导出 MIDI 按遍取段写成歌词事件 */
+  readonly lyrics?: readonly TimelineLyric[];
 }
 
 export interface TimelineChord {
@@ -49,6 +62,9 @@ export interface TimelineChord {
   readonly velocity?: number;
   /** false = 不当光标锚点（同一声部里的副 voice）。缺省 true */
   readonly cursor?: boolean;
+  /** 连音弧从这个和弦起 / 在这儿收几条（判一字多音用：弧里没字的音唱前一个字） */
+  readonly slurStart?: boolean;
+  readonly slurEnds?: number;
 }
 
 export interface TimelineMeasure {
@@ -62,12 +78,17 @@ export interface TimelineMeasure {
 
 export interface TimelinePart {
   readonly measures: readonly TimelineMeasure[];
+  /** 声部名（MIDI 轨名） */
+  readonly name?: string;
 }
 
 /** 一份可播的谱：各声部 + 演唱顺序（含速度）。 */
 export interface PlaySource {
+  /** 按模型的声部序（声部面板、MIDI 轨序都按它） */
   readonly parts: readonly TimelinePart[];
   readonly playData: PlayData;
+  /** 主旋律声部（带歌词的那个；演唱顺序按它推、光标跟它、同刻起音先取它）。缺省 0 */
+  readonly lead?: number;
 }
 
 export function isTimelineChord(e: object): e is TimelineChord {
@@ -98,6 +119,20 @@ export interface TimedNote {
   part: number;
   velocity: number;
   chord: TimelineChord;
+  /** 这一遍唱的字（`lyricOfPass`）；一字多音的后几个音是 `-`（歌声合成软件的「延续上一字」） */
+  lyric?: string;
+}
+
+/** 歌词条目前的印刷段号（`1.圣`），同 `NoteEntry.addLyric` 的 `ignoreVerseNumber` */
+const VERSE_PREFIX = /^\d+\.(?=.)/;
+
+/** 第 `pass` 遍唱的字：段号对上的那段，没有就取副歌（同展开档 `NoteEntry.addLyric`）。 */
+function lyricOfPass(note: TimelineNote | undefined, pass: number): { text: string; extend: boolean } | undefined {
+  const lyrics = note?.lyrics;
+  if (!lyrics?.length) return undefined;
+  const l = lyrics.find((x) => x.number === pass) ?? lyrics.find((x) => x.refrain);
+  const text = l?.text.replace(VERSE_PREFIX, "").trim();
+  return text ? { text, extend: l!.extend === true } : undefined;
 }
 
 export interface Anchor {
@@ -108,8 +143,8 @@ export interface Anchor {
 
 export interface Timeline {
   notes: TimedNote[];
-  anchors: Anchor[]; // melody (part 0) sounding chords, ascending by t0 — for cursor
-  /** 所有声部、所有 voice 的起音和弦（按 t0 升序，同刻按声部序）。五线谱的竖直播放线跟它走：女高音休止、别的声部在唱也照走 */
+  anchors: Anchor[]; // melody (`PlaySource.lead`) sounding chords, ascending by t0 — for cursor
+  /** 所有声部、所有 voice 的起音和弦（按 t0 升序，同刻主旋律在前、其余按声部序）。五线谱的竖直播放线跟它走：女高音休止、别的声部在唱也照走 */
   allAnchors: Anchor[];
   /** 节拍器每一拍（四分音符为单位）；`down` = 小节第一拍。复拍子（6/8、9/8、12/8）按附点四分打 */
   clicks: { t: number; down: boolean }[];
@@ -148,13 +183,13 @@ function playRanges(
     }));
   }
   // No expansion computed: linear single pass over all measures.
-  const n = src.parts[0]?.measures.length ?? 0;
+  const n = src.parts[src.lead ?? 0]?.measures.length ?? 0;
   return n > 0 ? [{ mid: 0, end: n, offset: 0, pass: 1, until: Number.POSITIVE_INFINITY }] : [];
 }
 
-/** 第 `limit` 个和弦唱完时的小节内位置（四分音符为单位）。 */
+/** 第 `limit` 个和弦唱完时的小节内位置（四分音符为单位；数的是主旋律声部的和弦，同演唱顺序）。 */
 function chordEnd(src: PlaySource, mid: number, limit: number): number {
-  const m = src.parts[0]?.measures[mid];
+  const m = src.parts[src.lead ?? 0]?.measures[mid];
   if (!m) return Number.POSITIVE_INFINITY;
   let n = 0;
   for (const ent of m.entries) {
@@ -173,6 +208,17 @@ export function buildTimeline(src: PlaySource): Timeline {
   let pos = 0; // running timeline position in quarter notes
   /** 各声部各音高最近一个音（延音线收尾时找它延长） */
   const lastByPitch = new Map<string, TimedNote>();
+  /** 各声部最近一个起音的旋律音（和弦第一个音），判一字多音用 */
+  /** `held` = 这条拖腔链起头的字带续记号（后面的 `-` 是谱上写明的，不撤） */
+  const lastSung = new Map<number, { note: TimedNote; pass: number; held: boolean }>();
+  const lead = src.lead ?? 0;
+  const allAnchorPart = new Map<Anchor, number>();
+  /** 各声部当前开着几条弧 */
+  const slurDepth = new Map<number, number>();
+  /** 记了 `-` 但不在弧里的音（行中间的 `_`）：这一遍后面要是再没有字，说明词已唱完，撤掉 */
+  const looseDash: { note: TimedNote; pass: number }[] = [];
+  /** 各声部各遍最后一个有字的音的起点 */
+  const lastWord = new Map<string, number>();
 
   for (const range of playRanges(src)) {
     for (let mid = range.mid; mid < range.end; mid++) {
@@ -188,26 +234,49 @@ export function buildTimeline(src: PlaySource): Timeline {
           if (cp >= endOffset) continue; // clipped by PlayItem.limit
           const t0 = pos + (cp - startOffset);
           const t1 = t0 + (ent.duration?.toFloat() ?? 0);
-          if (pi === 0 && !ent.rest && ent.cursor !== false) anchors.push({ t0, chord: ent, pass: range.pass });
-          if (!ent.rest) allAnchors.push({ t0, chord: ent, pass: range.pass });
+          if (pi === lead && !ent.rest && ent.cursor !== false) anchors.push({ t0, chord: ent, pass: range.pass });
+          if (!ent.rest) {
+            const an: Anchor = { t0, chord: ent, pass: range.pass };
+            allAnchors.push(an);
+            allAnchorPart.set(an, pi);
+          }
           if (ent.rest) continue;
           const velocity = ent.velocity ?? DEFAULT_VELOCITY;
-          for (const nt of ent.notes) {
+          // 收弧的那个音也在弧里；起弧的那个是带字的
+          const depth = slurDepth.get(pi) ?? 0;
+          const inSlur = depth > 0;
+          slurDepth.set(pi, Math.max(0, depth + (ent.slurStart ? 1 : 0) - (ent.slurEnds ?? 0)));
+          ent.notes.forEach((nt, k) => {
             const key = `${pi}:${nt.pitch}`;
             const prev = nt.tieStop ? lastByPitch.get(key) : undefined;
             // 只接首尾相接的那个：反复跳转、中间隔了休止都照常起音
             if (prev && Math.abs(prev.t1 - t0) < 1e-6) {
               prev.t1 = t1;
-              continue;
+              return;
             }
             const tn: TimedNote = { t0, t1, pitch: nt.pitch, part: pi, velocity, chord: ent };
+            if (k === 0) {
+              // 这一遍没字、紧接着同一遍里上一个有字（或也在拖腔）的音：一字多音，记 `-`。隔了休止、换了一遍都不算。
+              // 起头的字带续记号的是谱上写明的；没写的，在弧里、或这一遍后面还有字才算（否则是这一遍的词唱完了，见 `looseDash`）
+              const before = lastSung.get(pi);
+              const follows = before !== undefined && before.pass === range.pass && Math.abs(before.note.t1 - t0) < 1e-6;
+              const word = lyricOfPass(nt, range.pass);
+              tn.lyric = word?.text ?? (follows && before.note.lyric !== undefined ? "-" : undefined);
+              const held = word ? word.extend : tn.lyric !== undefined && before!.held;
+              if (word !== undefined) lastWord.set(`${pi}:${range.pass}`, t0);
+              else if (tn.lyric !== undefined && !held && !inSlur) looseDash.push({ note: tn, pass: range.pass });
+              // 与上一个音重叠、又没字的（同一声部里的副 voice）不顶替它，免得把主旋律的拖腔链打断
+              if (tn.lyric !== undefined || !before || t0 > before.note.t1 - 1e-6 || before.pass !== range.pass) {
+                lastSung.set(pi, { note: tn, pass: range.pass, held });
+              }
+            }
             notes.push(tn);
             lastByPitch.set(key, tn);
-          }
+          });
         }
       }
       const len = Math.min(measureLen(src, mid), endOffset);
-      const time = src.parts[0]?.measures[mid]?.time;
+      const time = src.parts[lead]?.measures[mid]?.time;
       if (time) {
         const compound = time.beatType === 8 && time.beats % 3 === 0 && time.beats > 3;
         const beat = (4 / time.beatType) * (compound ? 3 : 1);
@@ -222,7 +291,12 @@ export function buildTimeline(src: PlaySource): Timeline {
     }
   }
 
+  for (const { note, pass } of looseDash) {
+    if (note.t0 > (lastWord.get(`${note.part}:${pass}`) ?? Number.NEGATIVE_INFINITY)) delete note.lyric;
+  }
   anchors.sort((a, b) => a.t0 - b.t0);
-  allAnchors.sort((a, b) => a.t0 - b.t0); // 稳定排序：同刻的仍按声部序
+  // 稳定排序：同刻的主旋律在前（播放线同刻只停一处，停在它上面——展开档只画它），其余按声部序
+  const rank = (a: Anchor): number => (allAnchorPart.get(a) === lead ? 0 : 1);
+  allAnchors.sort((a, b) => a.t0 - b.t0 || rank(a) - rank(b));
   return { notes, anchors, allAnchors, clicks, duration: pos };
 }

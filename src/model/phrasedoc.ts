@@ -67,8 +67,22 @@ const TYPE_BEATS: Readonly<Record<string, [number, number]>> = {
   whole: [4, 0], half: [2, 0], quarter: [1, 0], eighth: [1, 1], "16th": [1, 2], "32nd": [1, 3], "64th": [1, 4],
 };
 
-/** 断句输入。`partIndex` 缺省取第一声部（与引擎输入只读 `parts[0]` 一致）。 */
-export function phrasePartOfDoc(song: Song, partIndex = 0): PhraseDocView {
+/** 同一个音底下**段号重复**的词，后来的依次挪到下一个空号（试听用；同简谱展开档的 `pu/phrasesong.ts::distinctVerses`）。
+ *  文本谱同一段曲下写了两行 `C1:`（其实是第 1、2 段），投成五线谱后两行都是第 1 段，不挪就只唱一遍、第二行词丢掉。 */
+export function distinctNumbers<L extends { number: number }>(lyrics: readonly L[]): L[] {
+  const used = new Set<number>();
+  let max = 0;
+  return lyrics.map((l) => {
+    const number = used.has(l.number) ? max + 1 : l.number;
+    used.add(number);
+    max = Math.max(max, number);
+    return number === l.number ? l : { ...l, number };
+  });
+}
+
+/** 断句输入。`partIndex` 缺省取第一声部（与引擎输入只读 `parts[0]` 一致）。
+ *  `distinctLyrics` = 同音同号的词顺延（`distinctNumbers`，只试听的演唱顺序要；断句与引擎输入不顺延）。 */
+export function phrasePartOfDoc(song: Song, partIndex = 0, distinctLyrics = false): PhraseDocView {
   const part = song.parts[partIndex];
   const idOf = new Map<PhraseChord, ElementId>();
   if (!part) return { part: { measures: [] }, idOf };
@@ -90,6 +104,7 @@ export function phrasePartOfDoc(song: Song, partIndex = 0): PhraseDocView {
     measures.push(out);
     at = at.plus(measureEnd(m, div));
   }
+  if (distinctLyrics) for (const m of measures) for (const ch of m.entries) for (const n of ch.notes) n.lyrics = distinctNumbers(n.lyrics);
   findRefrain(measures);
   return { part: { measures }, idOf };
 }

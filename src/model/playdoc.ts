@@ -8,18 +8,28 @@
 
 import { Fraction } from "../common/fraction";
 import { JumpSpec, PlayData, PlaySpecKind, TimePosition, playOrderOf } from "../score/playorder";
-import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineMeasure, type TimelinePart } from "../score/timeline";
-import type { Accidental, Barline, Chord, Direction, Measure, Note, Part, Song } from "./doc";
+import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart } from "../score/timeline";
+import type { Accidental, Barline, Chord, Direction, ElementId, Measure, Note, Part, Song } from "./doc";
 import { midiPitch, topNote } from "./jianpu";
 import type { JpwChordIn, JpwLineBreakIn, JpwMeasureIn, JpwPitchIn, JpwScoreIn } from "./tojpw";
 import { BarStyle } from "../score/enums";
 import { Key } from "../score/jppitch";
-import { phrasePartOfDoc } from "./phrasedoc";
+import { distinctNumbers, phrasePartOfDoc } from "./phrasedoc";
 import type { PhraseChord } from "../score/phraseinput";
 
-/** 演唱顺序（`measures` / `isSimpple` / `hasRepeat` 与跳转表；速度不在这里）。
- *  推理抛错照样抛出。 */
-export function playDataOfDoc(song: Song): PlayData {
+/** 主旋律声部：第一个带歌词的声部，都没词取第一声部（同简谱形状 `forExpanded` 的口径）。
+ *  歌词段数决定唱几遍，第一声部是伴奏、词在后面声部时按第一声部推就少唱了。 */
+export function leadPartOf(song: Song): number {
+  const i = song.parts.findIndex((p) => p.measures.some((m) => m.elements.some((el) => el.kind === "chord" && el.lyrics?.some((l) => l.text.length > 0))));
+  return i < 0 ? 0 : i;
+}
+
+/** 演唱顺序（`measures` / `isSimpple` / `hasRepeat` 与跳转表；速度不在这里）。反复与跳转记号读第一声部。
+ *  推理抛错照样抛出。
+ *  - `lead`：段数按哪个声部的歌词推、`PlayItem.limit` 数哪个声部的和弦。缺省第一声部——引擎输入与 `.jpwabc` 写出端
+ *    画的、写的都是第一声部，必须同一个；只有试听（`playSourceOfDoc`）传主旋律声部（`leadPartOf`）
+ *  - `distinct`：同音同号的词顺延（试听那份，见 `phrasedoc.ts::distinctNumbers`） */
+export function playDataOfDoc(song: Song, { lead = 0, distinct = false }: { lead?: number; distinct?: boolean } = {}): PlayData {
   const pd = new PlayData();
   const part = song.parts[0];
   if (!part) throw new Error("no part");
@@ -27,7 +37,7 @@ export function playDataOfDoc(song: Song): PlayData {
   part.measures.forEach((m, mid) => {
     for (const d of m.directions ?? []) if (d.sound) addSound(pd, d, new TimePosition(mid, cursorAt(m, d).divInt(div)));
   });
-  const order = playOrderOf([phrasePartOfDoc(song).part], pd);
+  const order = playOrderOf([phrasePartOfDoc(song, lead, distinct).part], pd);
   pd.isSimpple = order.isSimple;
   pd.measures = order.measures;
   pd.hasRepeat = order.hasRepeat;
@@ -74,12 +84,51 @@ export interface PlaySourceOptions {
 }
 
 /** 试听/MIDI 的输入（`score/timeline.ts::PlaySource`）。缺省带全部声部（`part` 下标 = `Part` 序）、
- *  各 voice、和弦全部音与力度记号；光标只跟第一声部 voice ≤ 1。 */
+ *  各 voice、和弦全部音与力度记号；光标只跟主旋律声部（`leadPartOf`）的 voice ≤ 1。 */
 export function playSourceOfDoc(song: Song, options: PlaySourceOptions = {}): PlaySource {
-  const playData = playDataOfDoc(song);
+  if (options.melodyOnly) {
+    const playData = playDataOfDoc(song);
+    playData.tempo = tempoOfDoc(song);
+    return { parts: [phrasePartOfDoc(song).part], playData };
+  }
+  const lead = leadPartOf(song);
+  const playData = playDataOfDoc(song, { lead, distinct: true });
   playData.tempo = tempoOfDoc(song);
-  if (options.melodyOnly) return { parts: [phrasePartOfDoc(song).part], playData };
-  return { parts: song.parts.map((p, i) => timelinePartOf(p, i === 0)), playData };
+  const slurs = slursOf(song);
+  return { parts: song.parts.map((p, i) => timelinePartOf(p, i === lead, slurs, lyricsOfPart(song, i))), playData, lead };
+}
+
+/** 连音弧的起止和弦（`TimelineChord.slurStart` / `slurEnds`，判一字多音用；同 `phrasedoc.ts` 的统计）。 */
+function slursOf(song: Song): { starts: Set<ElementId>; ends: Map<ElementId, number> } {
+  const starts = new Set<ElementId>();
+  const ends = new Map<ElementId, number>();
+  for (const mk of song.marks) {
+    if (mk.type !== "slur") continue;
+    starts.add(mk.start);
+    ends.set(mk.end, (ends.get(mk.end) ?? 0) + 1);
+  }
+  return { starts, ends };
+}
+
+/** 一个声部各和弦的歌词（导出 MIDI 的歌词事件）：段号、副歌取断句输入那份（同音同号已顺延、`findRefrain` 判过副歌，
+ *  与 MusicXML 展开档 `jianpuInputOfXml` 同口径——副歌各遍都唱），字取模型的、并上收尾标点。
+ *  断句输入只收 voice ≤ 1，其余 voice 的和弦这里没有，由 `chordEntry` 直接读模型。 */
+function lyricsOfPart(song: Song, partIndex: number): Map<ElementId, TimelineLyric[]> {
+  const out = new Map<ElementId, TimelineLyric[]>();
+  const view = phrasePartOfDoc(song, partIndex, true);
+  const byId = new Map<ElementId, Chord>();
+  for (const m of song.parts[partIndex]!.measures) for (const el of m.elements) if (el.kind === "chord") byId.set(el.id, el);
+  for (const m of view.part.measures) {
+    for (const ch of m.entries as readonly PhraseChord[]) {
+      const id = view.idOf.get(ch);
+      const el = id === undefined ? undefined : byId.get(id);
+      const src = ch.notes[0]?.lyrics ?? [];
+      if (!el || src.length === 0) continue;
+      const model = (el.lyrics ?? []).filter((l) => l.text.length > 0);
+      out.set(id!, src.map((l, k) => ({ text: l.text + (model[k]?.trailingPunctuation ?? ""), number: l.number, refrain: l.refrain, extend: model[k]?.extend })));
+    }
+  }
+  return out;
 }
 
 /** 谱面速度：第一声部里第一处 `<sound tempo>`（20..400，取整），同 `parseSound`。 */
@@ -102,7 +151,11 @@ interface ChordEntry extends TimelineChord {
   readonly duration: Fraction;
 }
 
-function timelinePartOf(part: Part, lead: boolean): TimelinePart {
+function timelinePartOf(
+  part: Part, lead: boolean,
+  slurs?: { starts: ReadonlySet<ElementId>; ends: ReadonlyMap<ElementId, number> },
+  lyrics?: ReadonlyMap<ElementId, TimelineLyric[]>,
+): TimelinePart {
   // 时值按首小节 divisions 折算，与演唱顺序的落点（`playDataOfDoc`）同口径
   const div = part.measures[0]?.attrs?.divisions ?? 1;
   let time = { beats: 4, beatType: 4 };
@@ -135,7 +188,8 @@ function timelinePartOf(part: Part, lead: boolean): TimelinePart {
       if (el.cue) continue;
       let v = velocity;
       for (const e of dyn) if (e.at <= onset) v = e.v;
-      entries.push(chordEntry(el, onset, div, v, lead && el.voice <= 1, shift));
+      const entry = chordEntry(el, onset, div, v, lead && el.voice <= 1, shift, lyrics?.get(el.id));
+      entries.push(slurs ? { ...entry, slurStart: slurs.starts.has(el.id), slurEnds: slurs.ends.get(el.id) ?? 0 } : entry);
     }
     if (dyn.length) velocity = dyn[dyn.length - 1]!.v;
     const t = time;
@@ -153,11 +207,19 @@ function timelinePartOf(part: Part, lead: boolean): TimelinePart {
       },
     });
   }
-  return { measures };
+  return { measures, name: part.name };
 }
 
-function chordEntry(el: Chord, onset: number, div: number, velocity: number, cursor: boolean, shift = 0): ChordEntry {
-  const notes = el.rest ? [] : el.notes.filter((n) => n.pitch).map((n) => (n.tie?.stop ? { pitch: midiPitch(n.pitch!) + shift, tieStop: true } : { pitch: midiPitch(n.pitch!) + shift }));
+function chordEntry(
+  el: Chord, onset: number, div: number, velocity: number, cursor: boolean, shift = 0,
+  phraseLyrics?: TimelineLyric[],
+): ChordEntry {
+  const notes: TimelineNote[] = el.rest ? [] : el.notes.filter((n) => n.pitch).map((n) => (n.tie?.stop ? { pitch: midiPitch(n.pitch!) + shift, tieStop: true } : { pitch: midiPitch(n.pitch!) + shift }));
+  // 歌词挂在和弦第一个音上（导出 MIDI 的歌词事件），收尾标点并进前字。断句输入里有的取它那份（`lyricsOfPart`）
+  const lyrics = phraseLyrics ?? distinctNumbers((el.lyrics ?? [])
+    .filter((l) => l.text.length > 0)
+    .map((l) => ({ text: l.text + (l.trailingPunctuation ?? ""), number: l.number, refrain: l.refrain ?? false, extend: l.extend })));
+  if (notes[0] && lyrics.length) notes[0] = { ...notes[0], lyrics };
   return {
     notes,
     rest: notes.length === 0,

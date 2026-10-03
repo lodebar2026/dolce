@@ -15,7 +15,8 @@ import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "
 import type { LyricLine, Mark, NoteElement, ScoreLine } from "./ast";
 import { docView } from "./slots";
 
-interface LyricOut { text: string; number: number; refrain: boolean }
+/** `extend`：续记号，只试听填（`model/playsong.ts::markExtends`） */
+interface LyricOut { text: string; number: number; refrain: boolean; extend?: boolean }
 /** `pitch`：MIDI 音高，只在 `buildMeasures` 给了调号状态时算（试听用，经 `applyJpPitch`） */
 interface NoteOut {
   number: string; jpOctave: number; pitch: number; jpAlter: string; tieStart: boolean; tieEnd: boolean; lyrics: LyricOut[];

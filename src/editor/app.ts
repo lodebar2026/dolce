@@ -134,7 +134,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** `.jpwabc`：`jpwToScoreDoc` 的结果（试听读它；转不出来为 null） */
   private _jpwDoc: ScoreDoc | null = null;
   /** 试听输入的缓存：同一份模型、同一档只拼一次（`refreshSpeedUi` 每次重排都要取速度） */
-  private _playCache: { doc: ScoreDoc; forExpanded: boolean; src: PlaySource | null } | null = null;
+  private _playCache: { doc: ScoreDoc; src: PlaySource | null } | null = null;
 
   /** 五线谱/混排档的模型与它的派生（`mixedsession.ts`）。 */
   readonly mixed: MixedSession = new MixedSession(this);
@@ -1805,25 +1805,25 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.mode === "jp" || this.mode === "mixed" || this.mode === "recognize";
   }
 
-  /** PlaybackHost：当前该播的谱，由 ScoreDoc 拼。
+  /** PlaybackHost：当前该播的谱，由 ScoreDoc 拼。试听与导出 MIDI 都读它。
    *  MusicXML 形状（`.musicxml`、ABC 回落）带全部声部、voice 与力度；简谱形状（文本谱/123/ABC/`.jpwabc`）
-   *  口径同 `jianpuInputOfDoc`，展开档那一份带歌词的声部当主旋律。 */
+   *  **不论屏幕在哪一档都按展开档的口径**（`forExpanded`：带歌词的声部当主旋律、同号歌词顺延）——
+   *  唱几遍、每遍唱哪段词不随视图变，导出的 MIDI 在哪一档导都一样。 */
   playable(): PlaySource | null {
     // 五线谱 / 混排播画出来的那份（`mixedDoc`），元素 id 与五线谱上的和弦组对得上
     const staff = this.mode === "mixed";
     const jpw = !staff && this.adapter.caps.layout === "jpwabc";
     const doc = staff ? this.mixedDoc : jpw ? this._jpwDoc : this.currentScoreDoc();
     if (!doc) return null;
-    const forExpanded = !staff && !jpw && this.layoutMode === "expanded";
     const c = this._playCache;
-    if (c && c.doc === doc && c.forExpanded === forExpanded) return c.src;
+    if (c && c.doc === doc) return c.src;
     let src: PlaySource | null = null;
     try {
-      src = playSourceOf(doc, 0, forExpanded ? { forExpanded } : {});
+      src = playSourceOf(doc, 0, staff || jpw ? {} : { forExpanded: true });
     } catch (e) {
       console.error("试听输入拼不出", e);
     }
-    this._playCache = { doc, forExpanded, src };
+    this._playCache = { doc, src };
     return src;
   }
 

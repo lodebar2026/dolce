@@ -116,6 +116,8 @@ The interface is available in **English and Chinese**: it follows your browser l
 - **Export** depends on the view:
   - Jianpu views: **vector PPTX**, **MIDI** and **MusicXML**.
   - Staff and mixed views: **PNG**, **PDF**, **MIDI** and **MusicXML**.
+  - Exported MIDI carries the lyrics, verse by verse in singing order, so it can go straight into a
+    singing-voice synthesizer (e.g. X Studio).
 
 ## The 123 format
 

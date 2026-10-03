@@ -4,13 +4,15 @@
 // 与 `playdoc.ts`（MusicXML 形状）分工同断句那一对（`pu/phrasesong.ts` / `phrasedoc.ts`），
 // 小节序列与断句共用 `pu/phrasesong.ts::buildMeasures`，行视图取 `pu/slots.ts::docView`。**口径同简谱引擎输入 `jianpuinput.ts::jianpuInputOfDoc`**：
 //   - 每个有曲行的声部都算一份（歌词段数取各声部最大值），反复与跳转只看第一份；
-//     `forExpanded` 时带歌词的声部排第一、同号歌词顺延（同 `ToScoreOptions.forExpanded`）
+//     `forExpanded` 时带歌词的声部排第一、同号歌词顺延（同 `ToScoreOptions.forExpanded`）。
+//     试听输入（`playSourceOfSong`）推完演唱顺序后把声部排回模型顺序、主旋律记进 `PlaySource.lead`；
+//     编辑器试听不论哪一档都传 `forExpanded`（`App.playable`）
 //   - 跳转记号换算同 `applyJumps`；推不出来（抛错）才退回整曲按段数逐遍
 // 另有两条只归 `.jpwabc` 的：
 //   - 文档自带演唱顺序（`Song.playOrder`，`.Repeat` 段）→ 照它排，不推
 //   - `.jpwabc` 没有 `.Repeat` → 不推，整曲按段数逐遍（JP-Word 本来就这么唱）
 
-import type { ElementId, Part, PlayPass, ScoreDoc, Song } from "./doc";
+import type { Chord, ElementId, Part, PlayPass, ScoreDoc, Song } from "./doc";
 import { writtenOctaveOf } from "./jianpu";
 import { Fraction } from "../common/fraction";
 import {
@@ -63,6 +65,7 @@ export function playDataOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySongOpti
 export function playSourceOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlaySource | null {
   const built = songMeasures(doc, songIdx, options, true);
   if (!built) return null;
+  markExtends(doc.songs[songIdx]!, built.parts);
   const playData = playDataOf(doc, songIdx, built);
   for (const tempo of built.song.metadata.tempos) {
     if (typeof tempo === "number" && tempo >= 20 && tempo <= 400) {
@@ -70,7 +73,33 @@ export function playSourceOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySongOp
       break;
     }
   }
-  return { parts: built.parts.map((measures) => ({ measures })), playData };
+  // 演唱顺序按「带歌词的声部在前」推好了；交出去时声部排回模型的顺序（声部面板、MIDI 轨序按它），主旋律另记
+  const order = built.parts.map((_, i) => i).sort((a, b) => built.docRank[a]! - built.docRank[b]!);
+  return {
+    parts: order.map((i) => ({ measures: built.parts[i]!, name: built.names[i] })),
+    playData,
+    lead: order.indexOf(0),
+  };
+}
+
+/** 歌词的续记号（`_`）从模型补到小节序列的字上（导出 MIDI 判一字多音用：带它的字后面紧接的无字音接着唱它）。
+ *  行视图的音节不带这一项；按元素 id 找回模型的和弦，再按字与段号认是哪一条（`C1-2:` 一条词展开成几段，不能按下标）。 */
+function markExtends(song: Song, parts: readonly MeasureOut[][]): void {
+  const byId = new Map<ElementId, Chord>();
+  for (const p of song.parts) for (const m of p.measures) for (const el of m.elements) if (el.kind === "chord") byId.set(el.id, el);
+  for (const measures of parts) {
+    for (const m of measures) {
+      for (const ch of m.entries) {
+        const model = ch.id === undefined ? undefined : byId.get(ch.id)?.lyrics?.filter((l) => l.extend && l.text.length > 0);
+        if (!model?.length) continue;
+        for (const l of ch.notes[0]!.lyrics) {
+          const same = model.filter((x) => x.text + (x.trailingPunctuation ?? "") === l.text);
+          const hit = same.find((x) => x.number <= l.number && l.number <= (x.numberTo ?? x.number)) ?? same[0];
+          if (hit) l.extend = true;
+        }
+      }
+    }
+  }
 }
 
 /** 行视图的声部号 → 模型的 part（`pu/slots.ts::toPuSong` 按 `P<n>` 的 id 或 part 序编号）。 */
@@ -103,6 +132,10 @@ interface SongMeasures {
   time: { beats: number; beatType: number };
   voices: number[];
   parts: MeasureOut[][];
+  /** 与 `parts` 平行：声部名（MIDI 轨名） */
+  names: (string | undefined)[];
+  /** 与 `parts` 平行：在模型声部序里排第几（`forExpanded` 把带歌词的声部挪到了第一份） */
+  docRank: number[];
   jumps: JumpOut[];
   idToChord: Map<ElementId, { measure: number; index: number }>;
 }
@@ -111,7 +144,8 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
   const view = docView(doc);
   const song = view.songs[songIdx];
   if (!song) return null;
-  let voices = voiceNumbers(song);
+  const docVoices = voiceNumbers(song);
+  let voices = docVoices;
   if (options.forExpanded) {
     const lead = voices.find((v) => linesOfVoice(song, v).some((l) => l.lyrics.length > 0));
     if (lead !== undefined) voices = [lead, ...voices.filter((v) => v !== lead)];
@@ -125,6 +159,8 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
   const fifths = doc.songs[songIdx]!.key?.fifths;
   key.fifths = meta.mode === undefined && fifths !== undefined ? fifths : MusicCommon.keyNameToFifth(meta.mode ?? "C");
   const parts: MeasureOut[][] = [];
+  const names: (string | undefined)[] = [];
+  const docRank: number[] = [];
   let jumps: JumpOut[] = [];
   const idToChord = new Map<ElementId, { measure: number; index: number }>();
   for (const v of voices) {
@@ -151,9 +187,11 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
       }));
     }
     parts.push(built.measures);
+    names.push(partOfVoice(doc.songs[songIdx]!, v)?.name);
+    docRank.push(docVoices.indexOf(v));
   }
   if (parts.length === 0) return null;
-  return { song, key, time, voices, parts, jumps, idToChord };
+  return { song, key, time, voices, parts, names, docRank, jumps, idToChord };
 }
 
 function playDataOf(doc: ScoreDoc, songIdx: number, { song, voices, parts, jumps, idToChord }: SongMeasures): PlayData {
