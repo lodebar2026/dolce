@@ -905,6 +905,9 @@ const ALONG_END_TOL = 0.3;
 const BEYOND_SCORE = 0.4;
 const BEYOND_CAVITY = 0.2;
 const ALONG_END_SCORE = 0.2;
+/** 往干里一个三度那一级（「8」字叠头）：内腔佐证到这么多时，模板分门槛放到这么低。 */
+const THIRD_CAVITY = 0.4;
+const THIRD_SCORE = 0.2;
 /** 内腔印糊、靠「同干同时值」认的头：模板分、墨占比下限，与「夹在两头中间」的判定距离（格）。 */
 const ALONG_FILLED_SCORE = 0.35;
 const ALONG_FILLED_INK = 0.4;
@@ -928,7 +931,7 @@ export function hollowHeadsAlongStems(
   const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
   const taken = heads.map((h) => h.box);
   const cyOf = (h: { box: Rect }) => h.box.y + h.box.h / 2;
-  const ranges: { ref: { box: Rect }; y0: number; y1: number; end?: number; beyond?: boolean }[] = [];
+  const ranges: { ref: { box: Rect }; y0: number; y1: number; end?: number; beyond?: boolean; third?: boolean }[] = [];
   for (const v of stems) {
     const vx = (v.x0 + v.x1) / 2;
     const top = Math.min(v.y0, v.y1);
@@ -947,8 +950,13 @@ export function hollowHeadsAlongStems(
         // **干就断在这个头上**：再往外一个三度处可能还叠着一个没认出的头——两声部的二分三度，两个圈连成一块，
         // 竖段只抽到上面那个头为止（新编赞美诗 14 太阳颂 m2 的 E♭4/G4：干到 G4 就断，底下的 E♭4 没认）。
         // 只看往外一格那一个位置，门槛同别处。
-        if (Math.abs((nearBot ? bot : top) - hy) <= sp * 0.6)
+        if (Math.abs((nearBot ? bot : top) - hy) <= sp * 0.6) {
           ranges.push(nearBot ? { ref: h, y0: hy + sp * 0.75, y1: hy + sp * 1.25, beyond: true } : { ref: h, y0: hy - sp * 1.25, y1: hy - sp * 0.75, beyond: true });
+          // **往干里一个三度**：闭合谱两声部的二分三度（「8」字叠头）共一根干，下一个头离干端的头正好一格；正常长的干（3.5 格）
+          // 过不了下面「自由端 ALONG_FREE 格不找」那道，这一级永远搜不到（新编赞美诗 001 m4 的 E♭4/G4：干 3.4 格，G4 离干顶 2.4 格；
+          // 全书漏掉的空心头里三度叠头九百多个）。门槛同「干外一格」
+          ranges.push(nearBot ? { ref: h, y0: hy - sp * 1.25, y1: hy - sp * 0.75, beyond: true, third: true } : { ref: h, y0: hy + sp * 0.75, y1: hy + sp * 1.25, beyond: true, third: true });
+        }
         if (!strict) continue;
         // 头挂在干的一端：往另一端（自由端）找，到自由端往回 ALONG_FREE 格为止
         if (bot - top < sp * (ALONG_FREE + 1)) continue;
@@ -969,7 +977,7 @@ export function hollowHeadsAlongStems(
       }
     }
   }
-  for (const { ref, y0, y1, end, beyond } of ranges) {
+  for (const { ref, y0, y1, end, beyond, third } of ranges) {
     if (y1 <= y0) continue;
     const cx = ref.box.x + ref.box.w / 2;
     for (const st of stepsIn(y0, y1)) {
@@ -980,7 +988,9 @@ export function hollowHeadsAlongStems(
       const ink = inkIn(b.x, st.y, ref.box.w);
       // 干外那一格：模板分够高（`BEYOND_SCORE`）时内腔佐证放到 `BEYOND_CAVITY`——斜缝内腔被谱线切碎，够不上原始孔的尺寸
       const cavMin = beyond && b.s >= BEYOND_SCORE ? BEYOND_CAVITY : ALONG_CAVITY;
-      if (b.s < (atEnd ? ALONG_END_SCORE : ALONG_SCORE) || ink < ALONG_INK[0] || ink > ALONG_INK[1]) continue;
+      // 往干里一个三度那一级：两个头粘成「8」字，模板对不齐（001 m4 G4 0.23），内腔佐证够强（≥ `THIRD_CAVITY`）时模板分放到 `THIRD_SCORE`
+      const minS = third && cavity(b.x, st.y) >= THIRD_CAVITY ? THIRD_SCORE : atEnd ? ALONG_END_SCORE : ALONG_SCORE;
+      if (b.s < minS || ink < ALONG_INK[0] || ink > ALONG_INK[1]) continue;
       const box: Rect = { x: Math.round(b.x - ref.box.w / 2), y: Math.round(st.y - ref.box.h / 2), w: ref.box.w, h: ref.box.h };
       // **内腔印糊了的头**：同一根干上挂着二分头，这根干上别的头也只能是二分（一根干不会一半空心一半实心），
       // 内腔不作证也行（新编赞美诗 346 m12/m14 低音谱表 A3 压着第五线、圈里糊满，内腔 0、模板 0.37、墨 0.43）。
@@ -1156,7 +1166,9 @@ export function probeBareStems(
     const top = Math.min(s.y0, s.y1);
     const bot = Math.max(s.y0, s.y1);
     if (bot - top < sp * BARE_LEN[0] || bot - top > sp * BARE_LEN[1]) continue;
-    if (isBar(s)) continue;
+    // 形同小节线（两端正落在首末线上）的：压第一线 / 第五线的二分音符，干长 3.5 格，正好也是首线到末线
+    //（新编赞美诗 002 m17 的 E4/G4「8」字叠头）。端头**贴着**一团符头大小的墨（盒的近干一边离干 0.3 格内）才当干，否则照旧当小节线
+    const barLike = isBar(s);
     const sx = (s.x0 + s.x1) / 2;
     /** 端头挂着头。只看两端不看中段：干朝下的和弦，中段的头照常认得出、只有端头那个漏了。 */
     const headAt = (e: number) =>
@@ -1184,6 +1196,10 @@ export function probeBareStems(
         t = Math.min(t, f.box.y);
         b = Math.max(b, f.box.y + f.box.h);
         area += f.area;
+      }
+      if (barLike) {
+        const touch = end === "bottom" ? Math.abs(r - sx) <= sp * 0.3 : Math.abs(l - sx) <= sp * 0.3;
+        if (!touch || r - l < sp * BARE_W[0] || b - t < sp * BARE_H1[0]) continue;
       }
       out.push({ stem: s, end, box: { x: l, y: t, w: r - l, h: b - t }, area, ids: got.map((f) => f.id) });
     }
