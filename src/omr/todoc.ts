@@ -355,12 +355,14 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
       // 顿音 ▼ = staccato（与文本谱 `&dy` 同一口径）、重音 > = accent（`&zy`）；上波音 ∿ = inverted-mordent（123 写回 `!sby!`），
       // 带竖杠的下波音 = mordent（`!xby!`）。
       if (n.articulation) notations.articulations = [n.articulation];
+      const dyn = (n.dynamics ?? []).filter((x) => !/^(cresc|dim)/.test(x)), dynWords = (n.dynamics ?? []).filter((x) => /^(cresc|dim)/.test(x));
+      if (dyn.length) notations.articulations = [...(notations.articulations ?? []), ...dyn];
       if (n.ornament === "upper-mordent") notations.ornaments = ["inverted-mordent"];
       else if (n.ornament === "lower-mordent") notations.ornaments = ["mordent"];
       if (Object.keys(notations).length) ch.notations = notations;
 
       // 段落标记（Intro/Verse/Chorus/Coda…，谱面上多印成方框）→ 段落词
-      if (n.sectionMark) ch.sectionWord = n.sectionMark;
+      if (n.sectionMark || dynWords.length) ch.sectionWord = [n.sectionMark, ...dynWords].filter(Boolean).join(" ");
 
       // 歌词：按 verse 索引，逐字挂音符
       if (n.lyrics) {

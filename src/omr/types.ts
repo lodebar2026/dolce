@@ -50,6 +50,9 @@ export interface JpNum {
   // 段落标记（Intro/Verse/Chorus/Coda…，谱面上多印成方框）：标在该段起始音符上。
   // → `Chord.sectionWord`（123 写成 `"^…"`），下游供乐句排版按段落硬换行（见 score/phrase.ts）。
   sectionMark?: string;
+  // 力度（`p`…`fff`）与渐强渐弱的文字（`cresc.` / `dim.`），印在音符上方的小号斜体字，标在它起作用的那个音上，按 x 排序。
+  // 力度 → `notations.articulations`（123 `!mf!`，与 .jly 读入同一个落点）；`cresc.` / `dim.` 是谱上文字 → `sectionWord`（`"^cresc."`）。
+  dynamics?: string[];
   // 和弦符号（归一后的原文，如 "Am" / "G/B" / "Gsus4"）。印在本谱行音符**上方**，识别见 chordline.ts。
   // → `Chord.harmony` 与文本谱 `"hx:…"`；.jpwabc 装不下和弦，那一路会丢（同力度、渐强渐弱）。
   chord?: string;

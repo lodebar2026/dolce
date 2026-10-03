@@ -40,6 +40,8 @@ const isHyphen = (c: string) => /[-‐‑–—]/.test(c);
 // 无害；放开拉丁字符后就会变成伪 verse 污染 .Words，故按文本形态显式剔除（须在 rec 之后）。
 // 段落**起点**方框（用于给乐句排版分段）：Fine/D.C./D.S. 是终止/反复记号而非段落起点，故不在此列。
 const SECTION_MARK_RE = /(intro|verse|chorus|pre-?chorus|bridge|coda|outro|ending|interlude|solo|refrain|tag)\d*/i;
+// 力度行：整块只由力度记号拼成（`mf`、`p`、`mfdim.`——相邻两个常被读成一块）。
+const DYN_TOKEN_RE = /cresc|dim|ppp|pp|p|mp|mf|fff|ff|f/gi;
 const CN_SECTION_MARK_RE = /[（(]\s*副\s*歌\s*[)）]|^[\s（(【\[]*副\s*歌[\s)）】\]：:]*$/;
 // 跳转记号 D.C./D.S./Fine/To Coda：不是段落起点（故不进 SECTION_MARK_RE），但它决定演唱顺序，
 // 必须输出到 MusicXML 才能正确展开反复。谱面印在**本谱行**音符的下方近旁（沧海一声笑的 D.C.
@@ -711,6 +713,7 @@ export async function recognizeLyrics(
     (textsPos ? textsPos[s].map((c) => c.ch).join("") : texts![s]).replace(/[\s()（）]/g, "").replace(/^[-‐‑–—]$/, "一");
   const cnMarginPage = chunks.some((c, s) => c.margin && marginText(s).length === 1 && CN_NUM.includes(marginText(s)));
   const marks: { rowIdx: number; word: string; x: number }[] = []; // 段落标记（印在下一谱行上方）
+  const dynMarks: { rowIdx: number; name: string; x: number }[] = []; // 力度（同样印在下一谱行上方）
   const jumps: { rowIdx: number; word: string; x: number; y: number; key: string }[] = []; // 跳转记号
   const chordCands = new Map<number, ChordCand[]>();   // rowIdx（和弦所在带的上一谱行）→ 待落位的记号
 
@@ -794,6 +797,21 @@ export async function recognizeLyrics(
     if (!chunks[s].above) {
       // 中文段名「(副歌)」：诗歌本通行写法，带括号印在副歌起头那一小节的上方（新编赞美诗两本各一百五十来处，手工谱记作 `"^(副歌)"`）。
       // 只认带括号的、或整块只有这两个字的（括号细，文字识别常读丢）——歌词正文里夹着「副歌」二字的不算。一律记成「(副歌)」。
+      // 力度：整块只有力度记号的（去掉空白后被记号拼满），各按首字的 x 记下
+      {
+        // 句点、间隔号不算字（斜体小字周围常多读出一两个点：391 `.ff.`）
+        const skip = (ch: string) => !ch.trim() || /[.,·•'`]/.test(ch);
+        const t = [...rawText].filter((ch) => !skip(ch)).join("");
+        const toks = [...t.matchAll(DYN_TOKEN_RE)];
+        if (t && toks.length && toks.reduce((a, m) => a + m[0].length, 0) === t.length) {
+          for (const m of toks) {
+            let acc = 0, xf = 0;
+            if (textsPos) for (const c of textsPos[s]) { if (skip(c.ch)) continue; if (acc >= m.index!) { xf = c.xFrac; break; } acc += c.ch.length; }
+            const name = m[0].toLowerCase();
+            dynMarks.push({ rowIdx, name: /^(cresc|dim)/.test(name) ? name + "." : name, x: textsPos ? fracToSrcX(xf) : cells[0].x });
+          }
+        }
+      }
       const cnHit = CN_SECTION_MARK_RE.exec(rawText);
       const hit = cnHit ?? SECTION_MARK_RE.exec(rawText);
       if (hit) {
@@ -1021,6 +1039,16 @@ export async function recognizeLyrics(
     const barX = row.barlineXs.filter((x) => x < rcx(row.nums[bi].bbox)).pop() ?? -Infinity;
     while (bi > 0 && rcx(row.nums[bi - 1].bbox) > barX) bi--;
     row.nums[bi].sectionMark = mk.word;
+  }
+
+  // 力度落位：归下一谱行里离它最近的那个音（力度不回退到小节首音）
+  for (const mk of dynMarks) {
+    const row = staff[mk.rowIdx + 1];
+    if (!row?.nums.length) continue;
+    let best = row.nums[0]!;
+    for (const nn of row.nums) if (Math.abs(rcx(nn.bbox) - mk.x) < Math.abs(rcx(best.bbox) - mk.x)) best = nn;
+    probe("lyrics.dynamic");
+    (best.dynamics ??= []).push(mk.name);
   }
 
   // 和弦落位：和弦印在**下一谱行**音符的上方（与段落方框同理）。上方带的 rowIdx=-1 自然落到
