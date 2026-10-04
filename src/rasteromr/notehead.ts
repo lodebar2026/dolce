@@ -918,6 +918,10 @@ const THIRD_SCORE = 0.2;
 const ALONG_FILLED_SCORE = 0.35;
 const ALONG_FILLED_INK = 0.4;
 const ALONG_SANDWICH = 1.25;
+/** 干端那一级细圈头的放宽：模板分、内腔佐证到这么多时，墨占比下限放到 `ink`。 */
+const END_THIN = { score: 0.4, cavity: 0.6, ink: 0.3 } as const;
+/** 干穿过一个头又多伸出一格、端上那一级的模板分到这么多，内腔不作证也认（157 m11 高音 0.68、墨 0.38）。 */
+const TIP_SCORE = 0.5;
 
 export function hollowHeadsAlongStems(
   bin: Binary,
@@ -937,7 +941,7 @@ export function hollowHeadsAlongStems(
   const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
   const taken = heads.map((h) => h.box);
   const cyOf = (h: { box: Rect }) => h.box.y + h.box.h / 2;
-  const ranges: { ref: { box: Rect }; y0: number; y1: number; end?: number; beyond?: boolean; third?: boolean }[] = [];
+  const ranges: { ref: { box: Rect }; y0: number; y1: number; end?: number; beyond?: boolean; third?: boolean; tip?: boolean }[] = [];
   for (const v of stems) {
     const vx = (v.x0 + v.x1) / 2;
     const top = Math.min(v.y0, v.y1);
@@ -973,6 +977,10 @@ export function hollowHeadsAlongStems(
         const near = nearBot ? bot : top;
         if (Math.abs(near - hy) >= sp * ALONG_MID)
           ranges.push(nearBot ? { ref: h, y0: hy + sp * 0.75, y1: bot + sp * 0.3, end: bot } : { ref: h, y0: top - sp * 0.3, y1: hy - sp * 0.75, end: top });
+        // **干穿过这个头、又多伸出一格**（离近端 0.75~1.5 格）：干不会白伸出去，端上还挂着一个三度的头——闭合谱两声部的二分三度，
+        // 认出的是靠里那个（新编赞美诗 157 m11 两行、138 m9、254 m12、355 m9）。只看干端那一级
+        else if (Math.abs(near - hy) >= sp * 0.75)
+          ranges.push(nearBot ? { ref: h, y0: bot - sp * 0.3, y1: bot + sp * 0.3, end: bot, third: true, tip: true } : { ref: h, y0: top - sp * 0.3, y1: top + sp * 0.3, end: top, third: true, tip: true });
       } else if (!strict) {
         continue;
       } else if (hy > bot && hy - bot <= sp * ALONG_GAP) {
@@ -983,7 +991,7 @@ export function hollowHeadsAlongStems(
       }
     }
   }
-  for (const { ref, y0, y1, end, beyond, third } of ranges) {
+  for (const { ref, y0, y1, end, beyond, third, tip } of ranges) {
     if (y1 <= y0) continue;
     const cx = ref.box.x + ref.box.w / 2;
     for (const st of stepsIn(y0, y1)) {
@@ -996,7 +1004,9 @@ export function hollowHeadsAlongStems(
       const cavMin = beyond && b.s >= BEYOND_SCORE ? BEYOND_CAVITY : ALONG_CAVITY;
       // 往干里一个三度那一级：两个头粘成「8」字，模板对不齐（001 m4 G4 0.23），内腔佐证够强（≥ `THIRD_CAVITY`）时模板分放到 `THIRD_SCORE`
       const minS = third && cavity(b.x, st.y) >= THIRD_CAVITY ? THIRD_SCORE : atEnd ? ALONG_END_SCORE : ALONG_SCORE;
-      if (b.s < minS || ink < ALONG_INK[0] || ink > ALONG_INK[1]) continue;
+      // 干端那一级、模板与内腔都够硬的（`END_THIN`）：细圈的头墨占比够不上 0.35（新编赞美诗 141 m10 干端的 D4：模板 0.43、内腔 0.63、墨 0.32）
+      const inkMin = atEnd && b.s >= END_THIN.score && cavity(b.x, st.y) >= END_THIN.cavity ? END_THIN.ink : ALONG_INK[0];
+      if (b.s < minS || ink < inkMin || ink > ALONG_INK[1]) continue;
       const box: Rect = { x: Math.round(b.x - ref.box.w / 2), y: Math.round(st.y - ref.box.h / 2), w: ref.box.w, h: ref.box.h };
       // **内腔印糊了的头**：同一根干上挂着二分头，这根干上别的头也只能是二分（一根干不会一半空心一半实心），
       // 内腔不作证也行（新编赞美诗 346 m12/m14 低音谱表 A3 压着第五线、圈里糊满，内腔 0、模板 0.37、墨 0.43）。
@@ -1006,7 +1016,8 @@ export function hollowHeadsAlongStems(
           const d = (t.y + t.h / 2 - st.y) * dir;
           return d > 0 && d <= sp * ALONG_SANDWICH && Math.abs(t.x + t.w / 2 - b.x) < sp * 0.6;
         });
-        if (b.s < ALONG_FILLED_SCORE || ink < ALONG_FILLED_INK || (near(1) && near(-1))) continue;
+        // 干多伸出一格的那个端头：位置已由干钉死，模板分够高（`TIP_SCORE`）就不再要墨占比到「印糊」那一档
+        if (b.s < ALONG_FILLED_SCORE || (ink < ALONG_FILLED_INK && !(tip && b.s >= TIP_SCORE)) || (near(1) && near(-1))) continue;
       }
       if (clash(box, taken)) continue;
       out.push({ box, code: "noteheadHalf", weak: true });
