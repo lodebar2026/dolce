@@ -85,7 +85,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
 };
 
 /** 目标格式。文本谱两种方言各算一种（装得下的不一样：番茄没有页眉页脚与版面指令字段）。 */
-export type TargetFormat = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "jly" | "musicxml";
+export type TargetFormat = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "jly" | "jcx" | "musicxml";
 
 /** 丢失清单里给人看的格式名。 */
 export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
@@ -95,6 +95,7 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
   tomato: "番茄简谱",
   shige: "诗歌本文本谱",
   jly: "jianpu-ly",
+  jcx: "Muse 简谱",
   musicxml: "MusicXML",
 };
 
@@ -138,6 +139,11 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
   jly: allBut("multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
     "layoutDirectives", "dynamics", "verseLabel"),
+  // Muse `.jcx`（`emitjcx.ts`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
+  // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
+  // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
+  jcx: allBut("multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
+    "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak"),
   // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
   // 见 `docs/模块/模型-scoredoc.md` 的关键判据。
   musicxml: allBut("playOrder", "style", "layoutDirectives", "nestedArc", "oddTuplet"),

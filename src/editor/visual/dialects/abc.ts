@@ -28,14 +28,14 @@ const NOTE_RE = /^(\^\^|__|\^|_|=)?([A-Ga-g])([',]*)(\d*)(\/*)(\d*)$/;
 const REST_RE = /^z(\d*)(\/*)(\d*)$/;
 
 /** `2` / `/` / `/4` / `3/2` → 相对 `L:` 的倍数 */
-function lenOf(num: string, slashes: string, den: string): number {
+export function lenOf(num: string, slashes: string, den: string): number {
   const n = num ? Number(num) : 1;
   const d = slashes ? (den ? Number(den) : 1 << slashes.length) : 1;
   return d === 0 ? n : n / d;
 }
 
 /** 以四分音符为 1 的时值 → 增时线 / 减时线 / 附点（写不成的返回 null） */
-function split(q: number): { s: number; h: number; d: number } | null {
+export function split(q: number): { s: number; h: number; d: number } | null {
   for (const d of [0, 1]) {
     for (let h = 0; h <= 4; h++) {
       const beats = (q * (1 << h)) / (d ? 1.5 : 1);
@@ -49,7 +49,7 @@ function split(q: number): { s: number; h: number; d: number } | null {
 }
 
 /** 相对 `L:` 的倍数 → ABC 时值写法 */
-function lenText(r: number): string {
+export function lenText(r: number): string {
   for (const d of [1, 2, 4, 8, 16, 32, 64]) {
     const n = r * d;
     if (Math.abs(n - Math.round(n)) > 1e-9) continue;
@@ -62,7 +62,7 @@ function lenText(r: number): string {
   return "";
 }
 
-function quartersOf(t: NoteToken): number {
+export function quartersOf(t: NoteToken): number {
   return ((1 + t.inlineSustains) / (1 << t.halvings)) * (t.dots ? 1.5 : 1);
 }
 
@@ -78,7 +78,7 @@ function letterOf(wr: number): string {
 }
 
 /** 这个位置上的默认音长：最近一条 `L:`；没写就按 `M:` 推（ABC §3.1.7：拍号小于 3/4 取 1/16，否则 1/8）。 */
-function unitAt(state: EditorState, pos: number): number {
+export function unitAt(state: EditorState, pos: number): number {
   const text = state.doc.sliceString(0, pos);
   let unit: number | null = null;
   let meter: number | null = null;

@@ -68,7 +68,7 @@ export function blockStart(state: EditorState, pos: number, breaks: readonly Syn
 /** `[from, to)` 里的对位格数（按模型里元素的原文位置数）。 */
 export function slotsBetween(doc: ScoreDoc | null, from: number, to: number): number {
   // 休止占不占格按方言分（`lyricslot.ts::LyricSlotRule`）
-  const rule = doc?.sourceFormat === "abc" ? "abc" : "123";
+  const rule = doc?.sourceFormat === "abc" || doc?.sourceFormat === "jcx" ? "abc" : "123";
   let n = 0;
   for (const song of doc?.songs ?? []) {
     for (const part of song.parts) {

@@ -9,7 +9,7 @@
 
 - [docs/需求.md](docs/需求.md) 做什么 · [docs/架构.md](docs/架构.md) 怎么分层、哪些决策不要推翻
 - [docs/模块/](docs/模块/) 每个模块一页：职责/入口/判据/回归/限制（18 篇）
-- [docs/格式/](docs/格式/) 格式规范：[123格式](docs/格式/123格式.md)（简谱主格式）、[jpwabc](docs/格式/jpwabc.md)；
+- [docs/格式/](docs/格式/) 格式规范：[123格式](docs/格式/123格式.md)（简谱主格式）、[jpwabc](docs/格式/jpwabc.md)、[Muse jcx](docs/格式/jcx.md)；
   样式定制见 [docs/样式机制.md](docs/样式机制.md)
 - [docs/实现/](docs/实现/) 判据与踩坑全录（各模块页开头有指向对应篇的链接；没有单独实现篇的写明判据在本页）
 - 还要做什么只记在本地私有仓库的 `../dev/docs/待办.md`（做完的条目直接删）；README 中英两份（`README.md` / `README.en.md`）要同步改

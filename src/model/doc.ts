@@ -728,6 +728,9 @@ export interface Part {
   endBreak?: "system" | "page";
   /** 见 `BreakSource`，按原文顺序 */
   breakSources?: BreakSource[];
+  /** Muse `.jcx` 的 `V:` 声明里 style 与名字以外的参数原文（`ins=1 vol=100 brk=3`，播放乐器、音量、括号…）：
+   *  模型不用它，只为写回 `.jcx` 时照写，不然打开再存一遍 Muse 那边的设置就没了 */
+  museAttrs?: string;
 }
 
 // ───────────────────────── 跨元素的东西 ─────────────────────────
@@ -877,7 +880,7 @@ export interface Song {
 
 export interface ScoreDoc {
   /** 产出它的源格式，用于诊断与导出默认 */
-  sourceFormat: "123" | "abc" | "musicxml" | "jpwabc" | "pu" | "omr" | "jly";
+  sourceFormat: "123" | "abc" | "musicxml" | "jpwabc" | "pu" | "omr" | "jly" | "jcx";
   /** 文本谱方言（`pu/dialect.ts::Dialect`）。排版取度量用 */
   puDialect?: string;
   /** 源文本（有的话）。点选定位要回指原文 */

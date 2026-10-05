@@ -32,6 +32,7 @@ export type TokenKind =
   | "inlineField" // [K:G] / [M:3/4] / [I:style …]
   | "break"       // $ 换行 / $$ 换页
   | "overlay"     // ABC 的 `&`：小节内临时多声部分隔（§7.4 voice overlay）
+  | "wedge"       // Muse 的 `(<` `<)` `(>` `>)`：渐强渐弱起止（value = "crescendo start" 这类）
   | "space"       // 空白（符杠分组的依据，**不能丢**）
   | "unknown";
 
@@ -70,6 +71,8 @@ export interface Token {
   notes?: Token[];
   /** grace：`{/g}` 这种带斜线的短倚音 */
   acciaccatura?: boolean;
+  /** grace：Muse 的 `{@g}` 后倚音 */
+  graceAfter?: boolean;
 }
 
 export interface LexError {

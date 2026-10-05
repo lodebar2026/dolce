@@ -1,11 +1,12 @@
-# 源格式：ABC 家族（123 与标准 ABC）
+# 源格式：ABC 家族（123、标准 ABC、Muse `.jcx`）
 
-**格式规范** → [../格式/123格式.md](../格式/123格式.md)（123 是 ABC 方言，§0 说清了为什么）
+**格式规范** → [../格式/123格式.md](../格式/123格式.md)（123 是 ABC 方言，§0 说清了为什么）·
+[../格式/jcx.md](../格式/jcx.md)（Muse 曲谱软件的脚本，也是 ABC 方言）
 
 ## 职责
 
-123 与标准 ABC 的**词法、解析、写出**。两者只有音乐体不同，所以这里是「基类 + 两个方言」，
-不是两套实现。
+123、标准 ABC 与 Muse `.jcx` 的**词法、解析、写出**。三者只有音乐体与几个字段的语义不同，所以这里是「基类 + 三个方言」，
+不是三套实现。
 
 ## 为什么 ABC 不经 MusicXML 转一手
 
@@ -29,7 +30,9 @@
 | `src/abcfamily/dialectabc.ts` | ABC 的音乐体：音名 `A-G`/`a-g`、前置 `^_=`、分数时值、`z`/`Z` 休止、`[CEG]` 和弦、`>`/`<` 破碎节奏、单字符装饰 |
 | `src/abcfamily/parsedialect.ts` | **组装期钩子**：时值换算、token→`Note`、`K:` 解析、`-` 的语义、默认音长、代码换行算不算谱面换行 |
 | `src/abcfamily/emit.ts` | **写出基类** `AbcFamilyEmitter`：字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展、`I:playorder` |
-| `src/abcfamily/emit123.ts` / `emitabc.ts` | 两个方言的写出 |
+| `src/abcfamily/dialectjcx.ts` | Muse 的音乐体（ABC 词法的子类：`@` 隐形休止、`x`/`X` 节奏音符、`(<` `<)` 渐强渐弱、`{@…}` 后倚音）、字母 ↔ 度数表、`K:` 读法 |
+| `src/abcfamily/emit123.ts` / `emitabc.ts` / `emitjcx.ts` | 三个方言的写出 |
+| `src/common/jcxcodec.ts` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF |
 | `src/abcfamily/abcpitch.ts` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolveAbcPitches` / 写 `withAbcPitches`），见下「关键判据」 |
 | `src/j123/lex.ts` / `emit.ts` | **薄壳**，保留 `lexMusicLine` / `emit123` / `emitSong` 的函数形态给既有调用方 |
 | `src/j123/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位、`I:playorder` 回填。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |
@@ -51,6 +54,10 @@
 | 休止跟词 | 可见休止不占对位格，`x` 占 | 休止、`x` 都不占（§5.1） |
 | 落单 `]` | 不认 | 当收尾线（野外文件的容错） |
 | 调号 | 首调 `1=F` | 音名 `F` / `Em` |
+
+Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨的**字母是唱名**（C=1，`note()` 给度数，`style=staff` 的轨收尾时换回音名再走 `resolveAbcPitches`）；
+升降号相对调号；`I:` 是左上角文字、`W:` 当歌词行、`%%` 是 Muse 的排版参数（原样留给写出端）；声部标志是名字、正文行首 `[V: x]` 切声部；
+`@` 隐形休止、`x`/`X` 节奏音符、`Z` 是带时值的普通休止；破碎节奏的短音取附点音原长的一半（`brokenFromLong`）。
 
 `-` 与 `_` 那两行是**硬冲突**——123 的音乐体因此不是合法 ABC 音乐体，这是方言的代价，
 也是唯一的代价。
@@ -96,6 +103,11 @@
   的元素（口径同 MusicXML 那一路的 `voice <= 1`），歌词对位格也不含它们（`lyricslot.ts`，读写两端共用）。
   五线谱、MusicXML 导出、试听那三条路仍是完整的多声部——**试听要先投影**（`playsong.ts`），
   简谱那条播放路会把并行分支当成接着唱的音。
+- **行首 `[V:x]` 切声部**（ABC §7、Muse 说明书 §3.2.3.1），同一行后面接着的是这个声部的音乐；行内 `[L:]` 改默认音长。
+  ABC 只认数字声部号，Muse 的标志按首次出现编号。
+- **`||:` 读成反复起**：ABC 规范没有，Muse 谱例 45 首里 12 首这么写。
+- **Muse 的写出按声部分块**（`emitjcx.ts::bodyLines`），不照基类按第一声部切系统交错写：各声部断行不同，
+  `w:` 又只对紧挨在前的那行，交错写会把别的声部几行并成一行。歌词多字一音写 `~`、没有印刷段号、延长位写 `*`（`LyricStyle`）。
 - **`w:` 对齐前一行曲**（ABC §5.1）：两种方言共用歌词块规则（见 [源格式-123](源格式-123.md)）。
   ABC 每个代码行都是换行，所以一条音乐行就是一块，正是标准语义；以前从全曲第一个音起挂，交错写的 ABC 读进来全错位。
   写出端两种方言都逐系统交错写。
@@ -106,6 +118,8 @@
 
 ```
 HYMN500=<500首语料根> node ../dev/scripts/j123-migrate.mjs
+node ../dev/scripts/abc-roundtrip.mjs
+node ../dev/scripts/jcx-roundtrip.mjs   # Muse 谱例 45 首往返逐音一致 + 123 GT → jcx
 ```
 
 ## 已知限制

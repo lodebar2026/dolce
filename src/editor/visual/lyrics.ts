@@ -43,7 +43,7 @@ const parseStarts = (body: string, skip: "/" | "*"): number[] => parseLyricLine(
 export function setLyricText(ctx: EditCtx, note: SyncEntry, verse: number, text: string, hyphen: boolean, extend: boolean): EditOutcome {
   if (!ctx.dialect.measure) return setExisting(ctx, note, verse, text);
   const { state } = ctx;
-  const skip: "/" | "*" = ctx.doc?.sourceFormat === "abc" ? "*" : "/";
+  const skip: "/" | "*" = ctx.doc?.sourceFormat === "abc" || ctx.doc?.sourceFormat === "jcx" ? "*" : "/";
   const byLine = !!ctx.dialect.lyricBlockByCodeLine;
   const breaks = ctx.sync.ordered().filter((e) => e.kind === "break");
   const start = blockStart(state, note.from, breaks, byLine);

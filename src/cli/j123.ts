@@ -11,6 +11,8 @@ export * from "../j123/lex";
 export * from "../j123/parse";
 export * from "../j123/emit";
 export { emitAbc } from "../abcfamily/emitabc.entry";
+export { emitJcx } from "../abcfamily/emitjcx.entry";
+export { decodeJcx, encodeJcx } from "../common/jcxcodec";
 export * from "../model/capability";
 export * from "../j123/fields";
 export * from "../model/helpers";

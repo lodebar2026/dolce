@@ -47,6 +47,9 @@ export interface MarkIndex {
   tupletEnd: Map<number, { count: number; outerArcs: number }>;
   /** 起点音后写 `~`（123：跨出多连音连到下一个音的弧，见 `emitutil.ts::arcsToNextNote`） */
   arcNext: Set<number>;
+  /** 渐强渐弱（`Mark.type === "wedge"`）的起止，只有写得出它的方言（`wedgeText`）才用 */
+  wedgeStart?: Map<number, ("crescendo" | "diminuendo")[]>;
+  wedgeEnd?: Map<number, ("crescendo" | "diminuendo")[]>;
 }
 
 /** 小节线上的记号 → `!segno!` 之类的 token（认不出的名字原样写出，别默默丢）。 */
@@ -80,7 +83,18 @@ function barlineText(b: Barline): string {
  *  中间没词的那一段写一条空 `w:` 把段位顶住（丢了会让后面的段整体前移一段）；尾部没词的不写。
  *  段号区间（文本谱 `C1-2:`）与副歌行在这里**逐段各抄一遍**——ABC 没有区间写法。
  *  同段拆几条写的 `+:` 续行只在读入端认，写出端一段一行写完。 */
-function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rule: LyricSlotRule): string[] {
+/** 歌词行的方言写法。缺省是 123/ABC 的：多字并一格包 `{}`、印刷段号写 `<1.>`、延长写 `_`。 */
+export interface LyricStyle {
+  /** 多个 CJK 字并一格怎么写；缺省包 `{}`。Muse 用 `~` 连（`你~们`），它没有花括号写法 */
+  joinMulti?(text: string): string;
+  /** 印刷段号写不写（Muse 没有这种写法，写了会当成歌词印出来） */
+  labels?: boolean;
+  /** 一字多音的延长位怎么写；缺省 `_`。Muse 只有 `*` */
+  extend?: string;
+}
+
+export function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rule: LyricSlotRule, style: LyricStyle = {}): string[] {
+  const ext = style.extend ?? "_";
   const { slots } = lyricSlots(part, sys.from, sys.to, sys.fromEl, sys.toEl, rule);
   // 本系统一共几段（区间行按上界算）
   let maxVerse = 0;
@@ -112,7 +126,7 @@ function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rul
           continue;
         }
         // 空位：先攒着，后面真有字了再落下去
-        pendingSkips += (pendingSkips === "" ? "" : sep) + (hit?.extend ? "_" : skip);
+        pendingSkips += (pendingSkips === "" ? "" : sep) + (hit?.extend ? ext : skip);
         continue;
       }
       // 词内分隔用 `-`，词间用方言的分隔符。
@@ -131,14 +145,13 @@ function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rul
         && (inWordNext || !isOneCjkWithPunct(hit.text));
       // 不包 `{}` 的拉丁词里的字面 `-` 与跳音符要转义，否则读回被拆开（`and/or`）
       const bare = skip === "/" ? hit.text.replace(/[/-]/g, (c) => `\\${c}`) : hit.text;
-      body += (hit.leadingPunctuation ?? "") +
-        (needBrace ? `{${hit.text}}` : bare) +
-        (hit.trailingPunctuation ?? "");
+      const joined = needBrace ? (style.joinMulti ? style.joinMulti(hit.text) : `{${hit.text}}`) : bare;
+      body += (hit.leadingPunctuation ?? "") + joined + (hit.trailingPunctuation ?? "");
       prevSyllabic = hit.syllabic;
       // 以转义字符收尾（`How\-`）同样会被下一个拉丁词粘上，也要空格
       prevLatin = !hit.trailingPunctuation && (isLatinEnd(hit.text) || (!needBrace && /[/-]$/.test(bare) && bare !== hit.text));
       if (hit.extend) {
-        body += sep + "_";
+        body += sep + ext;
         extendConsumes = true;
         prevSyllabic = undefined;
         prevLatin = false;
@@ -146,7 +159,7 @@ function lyricLines(part: Part, sep: string, skip: string, sys: SystemRange, rul
     }
     // 词内分音节跨行（`mid-` 在行末）：`-` 照写，不然读回丢了 syllabic
     if (body !== "" && (prevSyllabic === "begin" || prevSyllabic === "middle")) body += "-";
-    bodies.push(body === "" ? "" : `${label !== undefined ? `<${label}>` : ""}${body}`);
+    bodies.push(body === "" ? "" : `${label !== undefined && style.labels !== false ? `<${label}>` : ""}${body}`);
   }
   // 尾部没词的段不必写（ABC：段数少于最大段号是合法的）
   while (bodies.length > 0 && bodies[bodies.length - 1] === "") bodies.pop();
@@ -325,6 +338,24 @@ export abstract class AbcFamilyEmitter {
    *  后面的 `w:` 歌词行就成了孤儿。 */
   protected readonly trailingBreak: boolean = true;
 
+  /** 渐强渐弱的起止怎么写（Muse 的 `(<` … `<)`）。缺省 null = 这种方言写不出（123、ABC 照旧不写）。 */
+  protected wedgeText(type: "crescendo" | "diminuendo", edge: "start" | "stop"): string | null {
+    void type;
+    void edge;
+    return null;
+  }
+
+  /** 段落词/注记（`Chord.sectionWord`）怎么写：ABC §4.19 的注记，`^` = 标在上方。 */
+  protected annotationText(word: string): string {
+    return `"^${word}"`;
+  }
+
+  /** 段落词写在和弦名之前（Muse：两者都是引号，读入端靠先后分，见 `j123/parse.ts` 的 `chord` 分支）。 */
+  protected readonly annotationBeforeChord: boolean = false;
+
+  /** 歌词行的方言写法（`LyricStyle`）。 */
+  protected readonly lyricStyle: LyricStyle = {};
+
   /** 倚音里的斜线（ABC 的 `{/g}` 短倚音）。 */
   protected graceSlashText(ch: Chord): string {
     void ch;
@@ -417,6 +448,15 @@ export abstract class AbcFamilyEmitter {
         }
       }
     }
+    const wedgeStart = new Map<number, ("crescendo" | "diminuendo")[]>();
+    const wedgeEnd = new Map<number, ("crescendo" | "diminuendo")[]>();
+    if (this.wedgeText("crescendo", "start") !== null) {
+      for (const m of marks) {
+        if (m.type !== "wedge" || !m.wedgeType) continue;
+        wedgeStart.set(m.start, [...(wedgeStart.get(m.start) ?? []), m.wedgeType]);
+        wedgeEnd.set(m.end, [...(wedgeEnd.get(m.end) ?? []), m.wedgeType]);
+      }
+    }
     for (const m of nested) {
       const ts = tupletStart.get(m.start) ?? { ratios: [], outerArcs: nest?.outerOpen.get(m.start) ?? 0 };
       ts.ratios.push({ actual: m.tupletActual ?? 3, normal: m.tupletNormal ?? 2 });
@@ -466,13 +506,13 @@ export abstract class AbcFamilyEmitter {
       time = t;
       let el0 = 0;
       for (const cut of cuts) {
-        out.push(this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext }, el0, cut.at));
+        out.push(this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext, wedgeStart, wedgeEnd }, el0, cut.at));
         out.push(this.breakText(cut.kind === "page"));
         flush();
         ri++;
         el0 = cut.at;
       }
-      const body = this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext }, el0);
+      const body = this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext, wedgeStart, wedgeEnd }, el0);
       out.push(body);
       const right = (mea.barlines ?? []).find((b) => b.location === "right");
       const last = i === part.measures.length - 1;
@@ -530,11 +570,12 @@ export abstract class AbcFamilyEmitter {
       // 和弦符号前置（规范 §8.1）
       // 从 MusicXML 读进来的和弦是结构化的（根音 + kind），没有原文就按结构拼出来
       const chordText = el.harmony ? harmonyText(el.harmony) : "";
+      const word = ch?.sectionWord ?? ch?.sustains?.find((su) => su.sectionWord !== undefined)?.sectionWord;
+      if (word && this.annotationBeforeChord) s += this.annotationText(word);
       if (chordText) s += this.chordSymbolText(chordText);
       // 段落词/注记走 ABC §4.19 的注记写法（`^` = 标在上方）
       // 增时线上的注记（文本谱 `- "…"`）123 挂不到 `-` 上，并到宿主音符写出（宿主自己没有时）
-      const word = ch?.sectionWord ?? ch?.sustains?.find((su) => su.sectionWord !== undefined)?.sectionWord;
-      if (word) s += `"^${word}"`;
+      if (word && !this.annotationBeforeChord) s += this.annotationText(word);
       if (el.notations?.fermata) s += "!fermata!";
       for (const a of el.notations?.articulations ?? []) s += `!${a}!`;
       // 从 MusicXML 读进来的波音/颤音挂在 ornaments 上（`inverted-mordent`），写回简谱来源的同名记号（`!sby!`）——
@@ -543,6 +584,7 @@ export abstract class AbcFamilyEmitter {
       // 同一个音上的开、收按嵌套排：包住多连音组的弧在外层（`((3: 1_ 2_ 3_) 4)`），其余在里层
       const tp = mi.tupletStart.get(el.id);
       const opens = mi.slurStart.get(el.id) ?? 0;
+      for (const w of mi.wedgeStart?.get(el.id) ?? []) s += this.wedgeText(w, "start") ?? "";
       s += "(".repeat(tp?.outerArcs ?? 0);
       // ABC 按个数收尾、没有嵌套的写法，同起的几层只写最外层（以前就是这样）
       for (const r of this.tupletCloses ? tp?.ratios ?? [] : (tp?.ratios ?? []).slice(0, 1)) s += this.tupletText(r.actual, r.normal);
@@ -553,6 +595,7 @@ export abstract class AbcFamilyEmitter {
       const closes = mi.slurEnd.get(el.id) ?? 0;
       s += ")".repeat(closes - (te?.outerArcs ?? 0));
       if (te) s += ")".repeat(te.count + te.outerArcs);
+      for (const w of mi.wedgeEnd?.get(el.id) ?? []) s += this.wedgeText(w, "stop") ?? "";
 
       // 中间小节线按 `afterElements` 计数插入
       while (midIdx < mid.length && mid[midIdx]!.afterElements !== undefined
@@ -647,9 +690,22 @@ export abstract class AbcFamilyEmitter {
     }
     for (const t of texts.sort((a, b) => a.system - b.system)) if (t.text) pushLines(L, "N", t.text);
 
-    // **一行曲一行词**：按第一个声部的换行切系统，每个系统依次写各声部的音乐行与它的 `w` 行。
-    // 读入端把「上一批 `w` 行之后的音乐行」当一个歌词块、`w` 从块首对位（规范 §5.1），与这里一一对应。
-    // 别的声部的小节中间切点按拍位对到第一声部的切点上（`partRanges`）
+    L.push(...this.bodyLines(song));
+    return L.join("\n");
+  }
+
+  /** 声部切换行：声部 `i` 的一行音乐前面写什么（`first`：这个声部第一次出现）。null = 不写。
+   *  缺省是 ABC 的 `V:n`：属性只在首次出现时写（带属性的 `V:` 是声明，之后的只切声部）；单声部有属性也得写 `V:1`。 */
+  protected voiceLine(song: Song, i: number, first: boolean): string | null {
+    const attrs = first ? this.voiceAttrs(song.parts[i]!, song.parts.length > 1) : "";
+    return song.parts.length > 1 || attrs ? `V:${i + 1}${attrs ? " " + attrs : ""}` : null;
+  }
+
+  /** 曲体：**一行曲一行词**，按第一个声部的换行切系统，每个系统依次写各声部的音乐行与它的 `w` 行。
+   *  读入端把「上一批 `w` 行之后的音乐行」当一个歌词块、`w` 从块首对位（规范 §5.1），与这里一一对应。
+   *  别的声部的小节中间切点按拍位对到第一声部的切点上（`partRanges`） */
+  protected bodyLines(song: Song): string[] {
+    const L: string[] = [];
     const ranges = systemRanges(song.parts[0]);
     const pranges = song.parts.map((part) => partRanges(ranges, song.parts[0]!, part));
     const bodies = song.parts.map((part, pi) => this.partSystems(part, song, pranges[pi]!, true));
@@ -658,16 +714,15 @@ export abstract class AbcFamilyEmitter {
       for (let i = 0; i < song.parts.length; i++) {
         const text = bodies[i]![r]!;
         if (text === "") continue;
-        // 声部属性只在首次出现时写（ABC：带属性的 `V:` 是声明，之后的只切声部）；单声部有属性也得写 `V:1`
-        const attrs = declared.has(i) ? "" : this.voiceAttrs(song.parts[i]!, song.parts.length > 1);
+        const v = this.voiceLine(song, i, !declared.has(i));
         declared.add(i);
-        if (song.parts.length > 1 || attrs) L.push(`V:${i + 1}${attrs ? " " + attrs : ""}`);
+        if (v !== null) L.push(v);
         L.push(text);
         const sys = pranges[i]![r]!;
-        for (const line of lyricLines(song.parts[i]!, this.lyricSeparator, this.lyricSkip, sys, this.lyricSlotRule)) L.push(line);
+        for (const line of lyricLines(song.parts[i]!, this.lyricSeparator, this.lyricSkip, sys, this.lyricSlotRule, this.lyricStyle)) L.push(line);
       }
     }
-    return L.join("\n");
+    return L;
   }
 
 

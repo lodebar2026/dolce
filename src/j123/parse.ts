@@ -61,8 +61,9 @@ import {
 import type { Token } from "../abcfamily/types";
 import { isLyricSlot, lyricSlots, type LyricSlotRule } from "../abcfamily/lyricslot";
 import {
-  DIALECT_123, DIALECT_ABC, typeAndDots, type DefaultLen, type ParseDialect,
+  DIALECT_123, DIALECT_ABC, DIALECT_JCX, typeAndDots, type DefaultLen, type ParseDialect,
 } from "../abcfamily/parsedialect";
+import { LETTER_OF_DEGREE } from "../abcfamily/dialectjcx";
 import { t as tr } from "../i18n";
 
 /** 歌词块：一行曲（到 `$` 换行为止的连续音乐行），紧跟其后的 `w` 行从块的第一个对位格起对位
@@ -115,6 +116,10 @@ interface PartBuild {
   clef?: Clef;
   /** 123 的后置 `~` 还没配到下一个音：起点和弦与 `~` 的位置。存在声部级，`~` 可以跨 `$` 行 */
   arcNext: { from: ElementId; source: SourceSpan } | null;
+  /** 开着的渐强渐弱（Muse 的 `(<` … `<)`），起点同弧一样由 `attach` 回填 */
+  openWedges: OpenMark[];
+  /** Muse `V:… style=`：`staff` 的字母是绝对音高（收尾时换算），`tab`/`ukulele` 整轨不读（只认简谱与五线谱） */
+  museStyle?: "jianpu" | "staff" | "skip";
 }
 
 /** 见到 `$`（或 ABC 的代码行末）：当前小节已有和弦时先记下，是不是小节中间换行等后面来的是什么再定（`PartBuild.inlineBreak`）。 */
@@ -286,8 +291,12 @@ export function parseLyricLine(
     if (isCjk(ch)) {
       let text = ch;
       i++;
-      // `~` 把后续词并到同一个音符下
+      // `~` 把后续词并到同一个音符下。后面是标点（Muse 谱里常见 `样~，`）就只是贴标点，照收尾标点收
       while (body[i] === "~" && body[i + 1] !== undefined) {
+        if (isTrailingPunct(body[i + 1]!)) {
+          i++;
+          break;
+        }
         i++;
         text += body[i]!;
         i++;
@@ -375,6 +384,8 @@ interface OpenMark {
   remaining?: number;
   /** `(` 在原文里的位置（见 `Mark.openSource`） */
   openSource?: SourceSpan;
+  /** 渐强渐弱（`type === "wedge"`） */
+  wedgeType?: "crescendo" | "diminuendo";
 }
 
 /** `(` 在原文里的位置：123 的 `)` 收最近开的那个，弧与多连音两个栈靠它比先后 */
@@ -417,7 +428,7 @@ function buildMusicLine(
       const long = pendingBroken > 0 ? prev : ch;
       const short = pendingBroken > 0 ? ch : prev;
       const lo = Math.round(long.duration.divisions * (2 - f));
-      const sh = Math.round(short.duration.divisions * f);
+      const sh = Math.round((ctx.d.brokenFromLong ? long : short).duration.divisions * f);
       // **type/dots 必须跟着 divisions 重算**：只改 divisions 会写出 `B/` 却读回
       // 「八分音符 12 divisions」，往返一轮就变形
       long.duration = { ...long.duration, divisions: lo, ...typeAndDots(lo) };
@@ -466,7 +477,7 @@ function buildMusicLine(
     }
     // 123：`$` 同时结束这一批歌词（`ParseDialect.breakEndsLyricBlock`），同一代码行里 `$` 之后的音符另起一批
     if (ctx.d.breakEndsLyricBlock && pb.block?.broken) {
-      const at = slotCount(pb, ctx.d.id);
+      const at = slotCount(pb, ctx.d.lyricSlotRule);
       pb.block.end = at;
       pb.block = { start: at, cursor: new Map(), verses: 0, broken: false };
       pb.afterLyrics = false;
@@ -481,6 +492,7 @@ function buildMusicLine(
     // 回填还没拿到起点的开弧/开连音——它们的起点就是「`(` 之后的第一个元素」
     for (const o of openSlurs) if (!o.start) o.start = el.id;
     for (const o of openTuplets) if (!o.start) o.start = el.id;
+    for (const o of pb.openWedges) if (!o.start) o.start = el.id;
     // 123：组内**所有**占时值的元素（音符、`0`、`x`、`X`）都按比例折算；嵌套的比例相乘
     if (ctx.d.tupletClose === "paren" && el.kind === "chord" && !el.grace && openTuplets.length) {
       let actual = 1;
@@ -696,6 +708,12 @@ function buildMusicLine(
       }
 
       case "chord":
+        // Muse 的引号不分和弦与文字（都印在音符上方）：同一个音前两段引号，前一段是文字（写出端先写文字，`emitjcx.ts`），
+        // 不能让后一段顶掉（谱例 `"Ⅴ""(玄乐)"`、123 转来的 `"Chorus""E7"`）
+        if (ctx.d.id === "jcx" && pending.chord !== undefined) {
+          pending.annotations.push(pending.chord);
+          for (const a of pending.srcs) if (a.kind === "harmony") a.kind = "annotation";
+        }
         pending.chord = t.value ?? "";
         // 连写两个和弦名只留后一个（上面覆盖），位置也只留后一个
         pending.srcs = pending.srcs.filter((a) => a.kind !== "harmony");
@@ -733,7 +751,7 @@ function buildMusicLine(
           id: ctx.ids.next(),
           notes: (t.notes ?? []).map((g) => ctx.d.note(g)),
           duration: { divisions: 0, dots: 0, type: graceType(t.notes?.[0]) },
-          grace: t.acciaccatura ? { slash: true } : {},
+          grace: { ...(t.acciaccatura ? { slash: true } : {}), ...(t.graceAfter ? { after: true } : {}) },
           voice: pb.voice,
           staff: 1,
           source: t.source,
@@ -827,6 +845,23 @@ function buildMusicLine(
         break;
       }
 
+      case "wedge": {
+        // Muse 的 `(<` … `<)`：起点等 `attach` 回填（同圆滑线），收在当时最后一个元素上
+        const [type, edge] = (t.value ?? "").split(" ") as ["crescendo" | "diminuendo", string];
+        if (edge === "start") {
+          pb.openWedges.push({ type: "wedge", start: 0, level: 0, wedgeType: type, openSource: t.source });
+          break;
+        }
+        const k = pb.openWedges.map((o) => o.wedgeType).lastIndexOf(type);
+        const open = k >= 0 ? pb.openWedges.splice(k, 1)[0]! : undefined;
+        if (open?.start && cur.last) {
+          marks.push({ type: "wedge", start: open.start, end: cur.last.id, wedgeType: type, ...(open.openSource ? { openSource: open.openSource } : {}), closeSource: t.source });
+        } else {
+          report(ctx, "unmatched-wedge", tr("diag.jcx.wedge"), t.source);
+        }
+        break;
+      }
+
       case "tuplet": {
         const actual = Number(t.value ?? 3);
         openTuplets.push({
@@ -846,8 +881,16 @@ function buildMusicLine(
       case "ending": {
         // `[N` 标记第 N 房**开始**（ABC §4.9/§4.10），它总出现在小节开头，
         // 所以挂在**所属小节的左线**上；房号的 stop 由后面那根结束线给出
-        const nums = t.numbers ?? [];
-        const ending = { numbers: nums, type: "start" as const, text: nums.join(",") };
+        let nums = t.numbers ?? [];
+        let text = nums.join(",");
+        // Muse：房号写 0 时，小节线前引号里的字就是房号文字（`"1、3"|0`，说明书 §3.2.3.11）
+        if (ctx.d.id === "jcx" && nums.length === 1 && nums[0] === 0 && pending.chord !== undefined) {
+          text = pending.chord;
+          nums = (text.match(/\d+/g) ?? ["1"]).map(Number);
+          pending.chord = undefined;
+          pending.srcs = pending.srcs.filter((a) => a.kind !== "harmony");
+        }
+        const ending = { numbers: nums, type: "start" as const, text };
         // `|1` 会先产生一根左线，房号挂到它上面；行首直接写 `[1` 时才新建
         const existingLeft = (pb.measure.barlines ?? []).find((b) => b.location === "left");
         if (existingLeft) existingLeft.ending = ending;
@@ -955,12 +998,18 @@ function buildMusicLine(
           if (r.error) report(ctx, "bad-key", r.error, t.source);
           pb.measure.attrs.key = r.key;
         } else if (name === "M") {
-          const r = parseTime(val);
+          // Muse 野外文件有 `[M:4/4/]` 这种笔误（Muse 自己照读）：只取开头的 `n/m`
+          const r = parseTime(ctx.d.id === "jcx" ? /^\s*(\d+\s*\/\s*\d+|C\|?)/i.exec(val)?.[1] ?? val : val);
           if (r.error) report(ctx, "bad-time", r.error, t.source);
           else if (r.time) {
             pb.measure.attrs.time = r.time;
             ctx.time = r.time;
           }
+        } else if (name === "L") {
+          // 曲中改默认音长（ABC §3.1.7；Muse 的 FAQ 就教这么写：一段一拍、一段半拍的谱）。123 的时值不看它
+          const lm = /^(\d+)\s*\/\s*(\d+)$/.exec(val.trim());
+          if (lm && Number(lm[2]) > 0) ctx.len = { num: Number(lm[1]), den: Number(lm[2]) };
+          else report(ctx, "bad-length", tr("diag.j123.badLength", { v: val }), t.source);
         }
         break;
       }
@@ -1094,6 +1143,64 @@ export function parseAbc(text: string, options: ParseOptions = {}): ScoreDoc {
   return parseAbcFamily(text, DIALECT_ABC, options);
 }
 
+/** Muse 曲谱软件的 `.jcx` 文本 → `ScoreDoc`（原生解析，ABC 家族的第三个方言）。
+ *  见 `docs/格式/jcx.md`；字节 → 文本的编码判断在 `common/jcxcodec.ts`。 */
+export function parseJcx(text: string, options: ParseOptions = {}): ScoreDoc {
+  return parseAbcFamily(text, DIALECT_JCX, options);
+}
+
+/** Muse `V:` 声明的一个参数值：`name="主旋律"`、`nm=“Violin I”`（说明书用的是中文弯引号）、`snm=女`。 */
+function museParam(value: string, names: readonly string[]): string | undefined {
+  for (const n of names) {
+    const m = new RegExp(`(?:^|\\s)${n}\\s*=\\s*(?:"([^"]*)"|“([^”]*)”|(\\S+))`).exec(value);
+    if (m) return m[1] ?? m[2] ?? m[3];
+  }
+  return undefined;
+}
+
+/** Muse 的 `V:<标志> style=jianpu name=… ins=… vol=…`（说明书 §3.2.2 表 2）：认音轨类型与名字，其余参数原文留给写出端。
+ *  只在声明那一处读（正文里的 `[V:x]` 只是切声部）。 */
+function museVoiceAttrs(ctx: Ctx, b: PartBuild, f: FieldLine): void {
+  if (b.museStyle !== undefined) return;
+  const rest = f.value.trim().replace(/^\S+\s*/, "");
+  const style = (/(?:^|\s)style\s*=\s*(\S+)/.exec(rest)?.[1] ?? "jianpu").toLowerCase();
+  if (style === "staff") b.museStyle = "staff";
+  else if (style === "jianpu") b.museStyle = "jianpu";
+  else {
+    b.museStyle = "skip";
+    report(ctx, "jcx-track-skipped", tr("diag.jcx.trackSkipped", { style }), f.source);
+  }
+  const name = museParam(rest, ["name", "nm"]);
+  if (name !== undefined && b.part.name === undefined) b.part.name = name;
+  const abbrev = museParam(rest, ["sname", "snm"]);
+  if (abbrev !== undefined && b.part.abbrev === undefined) b.part.abbrev = abbrev;
+  const extra = rest
+    .replace(/(?:^|\s)(?:style|name|nm|sname|snm)\s*=\s*(?:"[^"]*"|“[^”]*”|\S+)/g, "")
+    .trim();
+  if (extra) b.part.museAttrs = extra;
+}
+
+/** Muse 的五线谱轨（`style=staff`）：字母是**绝对音名**（同 ABC），读进来时按简谱轨的口径记成了度数，这里改回音名，
+ *  随后与 ABC 同走 `resolveAbcPitches`（按调号与小节内延续定实际音高，再推度数）。 */
+function museStaffPitches(part: Part): void {
+  const alterOf: Readonly<Record<string, number>> = { "double-flat": -2, flat: -1, natural: 0, sharp: 1, "double-sharp": 2 };
+  for (const m of part.measures) {
+    for (const el of m.elements) {
+      if (el.kind !== "chord") continue;
+      for (const n of el.notes) {
+        const d = n.degree;
+        if (!d || d.number < 1) continue;
+        n.pitch = {
+          step: LETTER_OF_DEGREE[d.number - 1] as NonNullable<typeof n.pitch>["step"],
+          alter: n.accidental ? alterOf[n.accidental] ?? 0 : 0,
+          octave: 4 + d.octaveShift,
+        };
+        delete n.degree;
+      }
+    }
+  }
+}
+
 /** ABC 家族的通用解析：**组装逻辑两种方言共用**，差异全在 `dialect` 那几个钩子里。
  *  见 `docs/模块/源格式-abc家族.md`。 */
 export function parseAbcFamily(
@@ -1140,18 +1247,21 @@ export function parseAbcFamily(
         report(ctx, "orphan-arc-next", "`~` 后面没有音符", b.arcNext.source);
         b.arcNext = null;
       }
+      for (const w of b.openWedges) report(ctx, "unmatched-wedge", tr("diag.jcx.wedge"), w.openSource!);
+      b.openWedges.length = 0;
       closeMeasure(ctx, b);
       markLastEndings(b.part);
-      if (b.block && b.block.end === undefined) b.block.end = slotCount(b, ctx.d.id);
+      if (b.block && b.block.end === undefined) b.block.end = slotCount(b, ctx.d.lyricSlotRule);
       const first = b.part.measures[0];
       if (b.clef && first) (first.attrs ??= {}).clefs = [b.clef];
-      if (b.part.measures.length) song.parts.push(b.part);
+      if (b.museStyle === "staff") museStaffPitches(b.part);
+      if (b.part.measures.length && b.museStyle !== "skip") song.parts.push(b.part);
     }
     const slotsOf = new Map<Part, Element[]>();
     for (const { f, verse, syl, part, block, start } of pendingLyrics) {
       // 歌词挂在它**紧跟的那个声部**上（四声部谱里词常挂在某一个声部下）
       let slots = slotsOf.get(part);
-      if (!slots) slotsOf.set(part, (slots = lyricSlots(part, undefined, undefined, undefined, undefined, ctx.d.id).slots));
+      if (!slots) slotsOf.set(part, (slots = lyricSlots(part, undefined, undefined, undefined, undefined, ctx.d.lyricSlotRule).slots));
       const left = attachLyrics(slots, syl, start, block.end ?? slots.length);
       if (left > 0) {
         report(
@@ -1165,7 +1275,8 @@ export function parseAbcFamily(
     pendingLyrics = [];
     // **ABC 只给音名，简谱那一侧要度数**（排版、`emit123`、播放都按度数走）。
     // 先按调号与小节内延续把音名换成实际音高，度数再从音高推（`abcpitch.ts`，写出端同一份规则）。
-    if (ctx.d.id === "abc") resolveAbcPitches(song);
+    // Muse 的五线谱轨同此（`museStaffPitches` 已把字母落成音名）；简谱轨的音没有音高，这一步不碰它们
+    if (ctx.d.id === "abc" || [...builds.values()].some((b) => b.museStyle === "staff")) resolveAbcPitches(song);
     for (const part of song.parts) breaksAfterToStart(part, ctx.breakAfter);
     ctx.breakAfter.clear();
     song.marks = marks;
@@ -1174,6 +1285,7 @@ export function parseAbcFamily(
     song = null;
     pb = null;
     builds = new Map();
+    voiceIds = new Map();
     marks = [];
     rawPlay = [];
   };
@@ -1195,6 +1307,7 @@ export function parseAbcFamily(
     afterLyrics: false,
     inlineBreak: null,
     arcNext: null,
+    openWedges: [],
   });
   /** `V:n` 切到声部 n：没有就新开，有就**续写**（不收尾它开着的小节）。四声部谱靠这个分开，否则会被拼成一串小节。 */
   const startPart = (voice: number): PartBuild => {
@@ -1205,6 +1318,26 @@ export function parseAbcFamily(
     return b;
   };
   const ensurePart = (): PartBuild => pb ?? startPart(1);
+  /** Muse 的音轨标志可以是任意名字（说明书 §3.2.2「V:音轨」），按首次出现的顺序编成 1、2、3… */
+  let voiceIds = new Map<string, number>();
+  const museVoice = (label: string): number => {
+    let n = voiceIds.get(label);
+    if (n === undefined) voiceIds.set(label, (n = voiceIds.size + 1));
+    return n;
+  };
+  /** 行首的 `[V:x]`：切声部（说明书 §3.2.3.1「在每一行乐谱的开头加上 [V: <音轨标志>]」，ABC §7 同）。
+   *  返回这一行剩下的音乐从第几列起；不是这种行返回 0。ABC 只认数字声部号（同 `fields.ts` 的 `V:`）。 */
+  const inlineVoice = (raw: string): number => {
+    const m = /^\s*\[V\s*[:：]\s*([^\]]*)\]/.exec(raw);
+    if (!m) return 0;
+    const label = m[1]!.trim().split(/\s+/)[0] ?? "";
+    if (ctx.d.id === "jcx") startPart(museVoice(label));
+    else if (/^\d+$/.test(label)) startPart(Number(label));
+    else return 0;
+    return m[0].length;
+  };
+  /** Muse 的 `%%begintext` … `%%endtext` 文字块（说明书 §3.2.6.5）：块里是裸文字，不能当音乐读 */
+  let textBlock: string[] | null = null;
 
   /** 上一条字段名：`+:` 续行接着写它（ABC §3.1.18） */
   let lastField: FieldName | undefined;
@@ -1214,9 +1347,29 @@ export function parseAbcFamily(
     ctx.lineNo = ln;
     ctx.lineOffset = lineOffset;
     const line = raw.trim();
+    if (textBlock) {
+      if (/^%%\s*endtext\b/i.test(line)) {
+        (ensureSong().remarks ??= []).push(textBlock.join("\n"));
+        textBlock = null;
+      } else {
+        textBlock.push(line);
+      }
+      continue;
+    }
     if (line === "") continue;
     // 版本声明与注释
     if (line.startsWith("%")) {
+      // Muse 的 `%%` 是它自己的排版参数（字体、页边、行距，说明书 §3.2.6），不是 ABC 指令：
+      // 原样留着（写回 `.jcx` 时照写），不按 `I:` 解释；文字块另收
+      if (ctx.d.id === "jcx" && line.startsWith("%%")) {
+        if (/^%%\s*begintext\b/i.test(line)) textBlock = [];
+        else if (!/^%%\s*endtext\b/i.test(line)) {
+          const ins = parseInstruction(line.slice(2));
+          const st = (ensureSong().style ??= {});
+          st.raw = [...(st.raw ?? []), { key: ins.name, value: ins.value }];
+        }
+        continue;
+      }
       // `%%directive` 等价 `I:directive`（ABC §11.0.2）
       if (line.startsWith("%%")) {
         applyInstruction(ctx, ensureSong(), parseInstruction(line.slice(2)), { line: ln, column: 0, offset: lineOffset, length: raw.length }, (r) => { rawPlay = rawPlay.concat(r); });
@@ -1224,7 +1377,16 @@ export function parseAbcFamily(
       continue;
     }
 
-    const f = parseFieldLine(raw, ln, lineOffset);
+    // 行首 `[V:x]`：切声部，同一行后面接着的是这个声部的音乐
+    const musicFrom = ctx.d.id === "123" ? 0 : inlineVoice(raw);
+    if (musicFrom > 0 && raw.slice(musicFrom).trim() === "") continue;
+
+    const f = musicFrom > 0 ? null : parseFieldLine(raw, ln, lineOffset);
+    if (f && ctx.d.id === "jcx") {
+      // Muse 把 `W:` 也当歌词行用（谱例《爱的诫命》《充满我》），`V:` 的标志是名字
+      if (f.name === "W") f.name = "w";
+      if (f.name === "V") f.voice = museVoice(f.value.split(/\s+/)[0] ?? "");
+    }
     if (f) {
       // `+:` 续行（ABC §3.1.18）：只支持歌词行——`w:` 太长要拆几条写时用它，
       // 别的字段续行语料里没有、也没有消费方，报一条提示后丢掉
@@ -1244,7 +1406,8 @@ export function parseAbcFamily(
         continue;
       }
       if (f.name === "w") {
-        addLyricLine(ctx, ensurePart(), f, pendingLyrics);
+        const lp = ensurePart();
+        if (lp.museStyle !== "skip") addLyricLine(ctx, lp, f, pendingLyrics);
         continue;
       }
       applyField(ctx, ensureSong(), f, startPart, (r) => { rawPlay = rawPlay.concat(r); });
@@ -1256,14 +1419,16 @@ export function parseAbcFamily(
     const s = ensureSong();
     void s;
     const p = ensurePart();
+    // Muse 的吉他谱、尤克里里谱轨（`style=tab`/`ukulele`）不读：报过一次，这里静默跳过
+    if (p.museStyle === "skip") continue;
     // 上一块已经跟过歌词（或还没有块）：这一行开新歌词块
     if (!p.block || p.afterLyrics || p.block.broken) {
-      const at = slotCount(p, ctx.d.id);
+      const at = slotCount(p, ctx.d.lyricSlotRule);
       if (p.block) p.block.end = at;
       p.block = { start: at, cursor: new Map(), verses: 0, broken: false };
       p.afterLyrics = false;
     }
-    const lex = ctx.d.lex(raw, ln, lineOffset, 0);
+    const lex = ctx.d.lex(raw.slice(musicFrom), ln, lineOffset, musicFrom);
     for (const e of lex.errors) report(ctx, "lex", e.message, e.source);
     buildMusicLine(ctx, p, lex.tokens, marks);
     // ABC §6.1：**代码里的换行就是谱面换行**（默认 `I:linebreak <EOL>`）。
@@ -1314,7 +1479,7 @@ function addLyricLine(ctx: Ctx, pb: PartBuild, f: FieldLine, pendingLyrics: Pend
     return;
   }
   // 音乐行之前就写了词：给它一个从当前位置起的空块（多半全部超出、报 overflow）
-  const block: LyricBlock = pb.block ??= { start: slotCount(pb, ctx.d.id), cursor: new Map(), verses: 0, broken: false };
+  const block: LyricBlock = pb.block ??= { start: slotCount(pb, ctx.d.lyricSlotRule), cursor: new Map(), verses: 0, broken: false };
   pb.afterLyrics = true;
   // `w:` 按块内顺序编段号（ABC §5.1：同一行音乐下的几条 `w:` 依次是各段）
   const from = f.cont ? block.lastVerse ?? ++block.verses : ++block.verses;
@@ -1395,6 +1560,10 @@ function applyField(
       // 八度谱号只在 123 里有简谱语义（男声部高八度记）；ABC 的音名本就是实际音高，照旧不管
       const clef = ctx.d.id === "123" ? parseVoiceClef(f.value) : null;
       if (clef) b.clef = clef;
+      if (ctx.d.id === "jcx") {
+        museVoiceAttrs(ctx, b, f);
+        break;
+      }
       // 声部名：`name="女高"` / `subname="S"`（ABC §3.1.20），只认声明那一处（之后的 `V:n` 只是切声部）
       const nm = /(?:^|\s)name="([^"]*)"/.exec(f.value);
       if (nm && b.part.name === undefined) b.part.name = nm[1]!;
@@ -1409,7 +1578,13 @@ function applyField(
       (song.remarks ??= []).push(f.value);
       break;
     case "I":
-      applyInstruction(ctx, song, parseInstruction(f.value), f.source, addPlay);
+      // Muse 的 `I:` 是写在谱左上角的文字（说明书 §3.2.2「I:提示词」），不是 ABC 指令
+      if (ctx.d.id === "jcx") (song.pageText ??= emptyPageText()).topLeft.push(f.value);
+      else applyInstruction(ctx, song, parseInstruction(f.value), f.source, addPlay);
+      break;
+    case "S":
+      // ABC 与 Muse 都是「来源」；123 照旧不读（以前就丢），只有 Muse 那一档留着写回
+      if (ctx.d.id === "jcx" && f.value) addMeta(song, "source", f.value);
       break;
     case "P":
       // ABC 的段落顺序串（`P:A2`）。**本轮只存原文**，展开语义归后续

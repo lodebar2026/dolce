@@ -18,11 +18,13 @@ import { parsePu } from "../pu";
 import { t } from "../i18n";
 import { relayoutPuText } from "../pu/relayout";
 import type { FitMeasure } from "../pu/phrase";
-import { parse123, parseAbc } from "../j123/parse";
+import { parse123, parseAbc, parseJcx } from "../j123/parse";
 import { parseJly, rewrapJlyText } from "../model/fromjly";
 import { DIALECT_JLY } from "./visual/dialects/jly";
 import { emit123 } from "../j123/emit";
 import { emitAbc } from "../abcfamily/emitabc.entry";
+import { emitJcx } from "../abcfamily/emitjcx.entry";
+import { decodeJcx, encodeJcx } from "../common/jcxcodec";
 import type { ScoreDoc } from "../model/doc";
 import { loadScoreDoc } from "../model/fromxml";
 import { fillDegreesFromPitch } from "../model/jianpu";
@@ -32,11 +34,12 @@ import { JpwFile } from "../jpword/jpwfile";
 import type { EditDialect } from "./visual/dialect";
 import { DIALECT_123 } from "./visual/dialects/j123";
 import { DIALECT_ABC } from "./visual/dialects/abc";
+import { DIALECT_JCX } from "./visual/dialects/jcx";
 import { DIALECT_JPW } from "./visual/dialects/jpw";
 import { DIALECT_PU } from "./visual/dialects/pu";
 
 /** 可打开的源格式。`musicxml` 没有代码区（`caps.textEditor === false`），只看谱面、转成文本格式再编辑。 */
-export type DocFormatId = "jpwabc" | "pu" | "123" | "abc" | "musicxml" | "jly";
+export type DocFormatId = "jpwabc" | "pu" | "123" | "abc" | "musicxml" | "jly" | "jcx";
 
 /** 适配器向 App 要的那些能力（**列全**，加一条就想想是不是该留在 App 里）。 */
 export interface FormatHost {
@@ -53,6 +56,8 @@ export interface FormatHost {
   reload123(text: string): boolean;
   /** `.abc` 重排/重渲染。 */
   reloadAbc(text: string): boolean;
+  /** Muse `.jcx` 重排/重渲染（`parseJcx`）。 */
+  reloadJcx(text: string): boolean;
   /** jianpu-ly 文本重排/重渲染（`.jly`，见 `model/fromjly.ts::parseJly`）。 */
   reloadJly(text: string): boolean;
   /** `.musicxml` 重排/重渲染。 */
@@ -84,6 +89,8 @@ interface FormatAdapterBase {
   decode(bytes: Uint8Array): string;
   /** 存盘编码，与 `decode` 对称。 */
   encode(text: string): Uint8Array;
+  /** 编码装不下原文时的提示（Muse `.jcx` 写 GBK，个别字写不出）；没问题返回 null。缺省 = 总装得下 */
+  encodeWarning?(text: string): string | null;
   /** 代码区右上角的格式标签。 */
   label(host: FormatHost): string;
   /** 文档标题（另存为的默认文件名）。 */
@@ -248,6 +255,37 @@ const ABC: FormatAdapter = {
   editDialect: DIALECT_ABC,
 };
 
+/** Muse 曲谱软件的 `.jcx` —— ABC 家族的第三个方言（简谱轨里字母是首调唱名，C=1），**原生解析直出 `ScoreDoc`**。
+ *  读盘按版本行与内容判编码（`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8），存盘写 `%MUSE2` + GBK、CRLF（新旧版 Muse 都能开），
+ *  打开的是 `%MUSE3` 就照 UTF-8 存回。见 `docs/格式/jcx.md`。 */
+const JCX: FormatAdapter = {
+  id: "jcx",
+  defaultExt: ".jcx",
+  // 高亮暂借 123 那一份（同 ABC）：字段头、小节线、歌词行同形，字母音符不上色
+  highlighter: j123Highlighter,
+  decode: decodeJcx,
+  encode: (text) => encodeJcx(text).bytes,
+  encodeWarning: (text) => {
+    const { missing } = encodeJcx(text);
+    return missing.length ? t("diag.jcx.gbkMissing", { chars: missing.join("") }) : null;
+  },
+  label: () => t("fmt.jcx.label"),
+  title: (host) => {
+    const first = host
+      .getText()
+      .split(/\r?\n/)
+      .map((l) => /^\s*T\s*:(.*)$/.exec(l))
+      .find((m) => m !== null);
+    return first ? first[1]!.trim() : "";
+  },
+  profileKnob: "original",
+  caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true, originalLayout: "jianpu" },
+  reload: (host, text) => host.reloadJcx(text),
+  toScoreDoc: parseJcx,
+  relayoutText: (text, measure) => emitFrom(text, measure, parseJcx, emitJcx),
+  editDialect: DIALECT_JCX,
+};
+
 /** jianpu-ly —— 上游 jianpu-ly 预处理器（简谱文本 → LilyPond）的输入格式。
  *
  *  **独立实现**（不进 `abcfamily` 家族）：它的页头（`title=` / `1=Bb` / 裸 `4/4`）、歌词（`L:` / `H:`）
@@ -319,6 +357,7 @@ export const FORMATS: Record<DocFormatId, FormatAdapter> = {
   abc: ABC,
   musicxml: MUSICXML,
   jly: JLY,
+  jcx: JCX,
 };
 
 export const formatOf = (id: DocFormatId): FormatAdapter => FORMATS[id];

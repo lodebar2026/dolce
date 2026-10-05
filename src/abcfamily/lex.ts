@@ -21,6 +21,8 @@ import { t as tr } from "../i18n";
  *  `[|]` 是不可见小节线——与 `.jpwabc` 和 ABC 都同形同义（语料 3.2%）。 */
 const BARLINES: ReadonlyArray<readonly [string, string]> = [
   ["[|]", "none"],
+  // 双线接反复起（`… ||:`）：Muse 的谱常这么写（谱例 45 首里 12 首），ABC 规范没有、123 以前报「认不出 `:`」
+  ["||:", "repeat-start"],
   ["|::", "heavy-light:3"],
   ["::|", "light-heavy:3"],
   [":|:", "repeat-both"],
@@ -61,6 +63,14 @@ function splitBarlineValue(v: string): [string, number | undefined] {
   return [m[1]!, Number(m[2])];
 }
 
+/** 渐强渐弱的括号（`AbcFamilyLexer.wedgeParens`）→ `wedge` token 的值：`<` 是渐强、`>` 是渐弱，括号在前是起、在后是收。 */
+const WEDGE_PARENS: Readonly<Record<string, string>> = {
+  "(<": "crescendo start",
+  "<)": "crescendo stop",
+  "(>": "diminuendo start",
+  ">)": "diminuendo stop",
+};
+
 function matchBarline(line: string, i: number, strayBracket: boolean): { text: string; value: string } | null {
   for (const [text, value] of BARLINES) {
     if (text === "]" && !strayBracket) continue;
@@ -71,7 +81,7 @@ function matchBarline(line: string, i: number, strayBracket: boolean): { text: s
 
 export abstract class AbcFamilyLexer {
   /** 方言名（诊断与报表用）。 */
-  abstract readonly id: "123" | "abc";
+  abstract readonly id: "123" | "abc" | "jcx";
 
   // ────────── 方言钩子 ──────────
 
@@ -98,6 +108,20 @@ export abstract class AbcFamilyLexer {
 
   /** 后置 `~` 是不是「弧连到下一个音」（123 扩展，规范 §4.1）。ABC 的 `~` 是 roll 装饰，走 `shorthandDecoration`。 */
   protected readonly arcNextTilde: boolean = false;
+
+  /** 节奏音符（有声无音高）用哪几个字母。123 是大写 `X`（ABC 里 X 是音名以外的保留字，那一档没有）；
+   *  Muse `.jcx` 大小写都是（说明书 §3.2.3.4「X 音符」）。 */
+  protected readonly rhythmLetters: string = "";
+
+  /** 不可见休止（占时值不显示）用哪个字符。123、ABC 是 `x`；Muse `.jcx` 是 `@`，它的 `x` 是节奏音符。 */
+  protected readonly invisibleRest: string = "x";
+
+  /** 渐强渐弱的成对括号 `(<` … `<)` / `(>` … `>)`（Muse `.jcx`，说明书 FAQ「如何输入渐强、渐弱」）。
+   *  123 与 ABC 没有这种写法：`(` 后跟 `<` 在 ABC 里是圆滑线 + 破碎节奏。 */
+  protected readonly wedgeParens: boolean = false;
+
+  /** 倚音花括号里打头的这个字符表示**后倚音**（Muse 的 `{@C}`，排在主音之后）。null = 没有这种写法。 */
+  protected readonly postGraceMark: string | null = null;
 
   /** 方言特有的单字符装饰（ABC 的 `.` `~` `H`–`W`）。不认返回 null。 */
   protected shorthandDecoration(line: string, i: number): { len: number; name: string } | null {
@@ -211,6 +235,17 @@ export abstract class AbcFamilyLexer {
         i++;
         push({ kind: "arcNext", text: "~" }, start, 1);
         continue;
+      }
+
+      // 渐强渐弱 `(<` … `<)` / `(>` … `>)`（Muse）：必须排在圆滑线 `(`、破碎节奏 `>` `<` 之前
+      if (this.wedgeParens) {
+        const two = line.slice(i, i + 2);
+        const w = WEDGE_PARENS[two];
+        if (w) {
+          i += 2;
+          push({ kind: "wedge", text: two, value: w }, start, 2);
+          continue;
+        }
       }
 
       // `-`：123 的增时线 / ABC 的 tie
@@ -352,6 +387,12 @@ export abstract class AbcFamilyLexer {
           body = body.slice(1);
           bodyAt += 1;
         }
+        // `{@g}` 是后倚音（Muse，排在主音之后）
+        const after = this.postGraceMark !== null && body.startsWith(this.postGraceMark);
+        if (after) {
+          body = body.slice(1);
+          bodyAt += 1;
+        }
         const inner = this.lexLine(body, lineNo, lineOffset, columnBase + bodyAt);
         i = close + 1;
         const t: Omit<Token, "source"> = {
@@ -360,31 +401,34 @@ export abstract class AbcFamilyLexer {
           notes: inner.tokens.filter((x) => x.kind === "note"),
         };
         if (acciaccatura) t.acciaccatura = true;
+        if (after) t.graceAfter = true;
         push(t, start, i - start);
         continue;
       }
 
-      // 节奏音符 `X`（**大写**，有声无音高，同文本谱的 `X`）——小写 `x` 是不可见休止，两者有别。
-      // ABC 里大写 X 是音名，故只在 123 那一档认；靠 `scanNote` 先手来区分。
-      if (ch === "X" && this.id === "123") {
+      // 节奏音符（有声无音高，同文本谱的 `X`，见 `rhythmLetters`）——123 的小写 `x` 是不可见休止，两者有别。
+      if (this.rhythmLetters.includes(ch)) {
         i++;
-        const t: Omit<Token, "source"> = { kind: "rhythm", text: "X" };
+        const t: Omit<Token, "source"> = { kind: "rhythm", text: ch };
         const mod = this.scanDuration(line, i);
         if (mod) {
           i = mod.next;
           t.beams = mod.beams;
           t.dots = mod.dots;
+          if (mod.num !== undefined) t.num = mod.num;
+          if (mod.den !== undefined) t.den = mod.den;
         }
         push(t, start, i - start);
         continue;
       }
 
-      // 无时值占位 `y` / 不可见休止 `x`（沿用 ABC 的 spacer 与 invisible rest）
-      if (ch === "y" || ch === "x") {
+      // 无时值占位 `y` / 不可见休止（沿用 ABC 的 spacer 与 invisible rest；Muse 写 `@`，见 `invisibleRest`）。
+      // token 的 `value` 归一成 `x`，组装期只认这一个名字
+      if (ch === "y" || ch === this.invisibleRest) {
         i++;
-        const t: Omit<Token, "source"> = { kind: "spacer", text: ch, value: ch };
-        // `x` 占时值，可带时值修饰
-        const mod = ch === "x" ? this.scanDuration(line, i) : null;
+        const t: Omit<Token, "source"> = { kind: "spacer", text: ch, value: ch === "y" ? "y" : "x" };
+        // 不可见休止占时值，可带时值修饰
+        const mod = ch !== "y" ? this.scanDuration(line, i) : null;
         if (mod) {
           i = mod.next;
           t.beams = mod.beams;

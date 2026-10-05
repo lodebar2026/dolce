@@ -10,11 +10,13 @@ export const J123_EXT = ["123"] as const;
  *  也是判"这是不是 jianpu-ly"的**唯一决定性依据** —— 它的输入里没有版本行 / 签名 / 必需项，
  *  内容嗅探只能是特征猜测，所以不做（详见 `model/fromjly.ts` 文件头）。 */
 export const JLY_EXT = ["jly"] as const;
-/** 乐谱文档（编辑器直接打开的）。 */
+/** Muse 曲谱软件的 `.jcx`（ABC 方言，`%MUSE2` 是 GBK、`%MUSE3` 是 UTF-8，见 `common/jcxcodec.ts`）。 */
+export const JCX_EXT = ["jcx"] as const;
 /** 识别项目（原图 + 识别结果 + 在改的原文，`editor/omrproject.ts`）。 */
 export const PROJECT_EXT = ["dolce"] as const;
+/** 乐谱文档（编辑器直接打开的）。 */
 export const DOC_EXT = [
-  "jpwabc", ...J123_EXT, ...JLY_EXT, ...PU_EXT, "xml", "musicxml", "abc", ...PROJECT_EXT,
+  "jpwabc", ...J123_EXT, ...JLY_EXT, ...PU_EXT, "xml", "musicxml", "abc", ...JCX_EXT, ...PROJECT_EXT,
 ] as const;
 // **以前这里有个 `CONVERTED_EXT`**：`.xml`/`.musicxml`/`.abc` 导入后要强制另存为别的格式，
 // 所以不记文件路径。现在五种源格式都原生打开、存回原格式，这个概念没有了。
@@ -26,6 +28,7 @@ const re = (exts: readonly string[]): RegExp => new RegExp(`\\.(${exts.join("|")
 
 export const isPuFile = (name: string): boolean => re(PU_EXT).test(name);
 export const is123File = (name: string): boolean => re(J123_EXT).test(name);
+export const isJcxFile = (name: string): boolean => re(JCX_EXT).test(name);
 export const isJlyFile = (name: string): boolean => re(JLY_EXT).test(name);
 export const isDocFile = (name: string): boolean => re(DOC_EXT).test(name);
 export const isImageFile = (name: string): boolean => re(IMAGE_EXT).test(name);

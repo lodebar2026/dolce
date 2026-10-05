@@ -167,7 +167,8 @@ export class FileSession {
     const adapter = formatOf(targetSpec(target).docFormat);
     const dest = await saveBytes(adapter.encode(text), (this.host.documentTitle() || t("file.untitled")) + adapter.defaultExt);
     if (!dest) return;
-    this.host.setStatus(t("status.savedAs", { format: targetLabel(target), ext: adapter.defaultExt }));
+    const warn = adapter.encodeWarning?.(text);
+    this.host.setStatus(t("status.savedAs", { format: targetLabel(target), ext: adapter.defaultExt }) + (warn ? `；${warn}` : ""));
   }
 
   // ---------------- 自动保存与崩溃恢复（`autosave.ts`） ----------------
@@ -267,7 +268,11 @@ export class FileSession {
 
   /** 存盘编码：文本谱等是 UTF-8 原文，`.jpwabc` 是 JP-Word 的 UTF-16LE+BOM。 */
   private encodeForSave(): Uint8Array {
-    return this.host.adapter.encode(this.host.getText());
+    const text = this.host.getText();
+    // 编码装不下的字（Muse `.jcx` 的 GBK）：照存，但要说
+    const warn = this.host.adapter.encodeWarning?.(text);
+    if (warn) this.host.setStatus(warn);
+    return this.host.adapter.encode(text);
   }
 
   /** 盘上那份文件是不是 MusicXML（文本格式另存到 XML 路径时，编辑器里是简谱文本、盘上是 XML）。 */

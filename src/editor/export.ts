@@ -329,9 +329,10 @@ function saveAsItems(app: App): ExportItem[] {
   }
   items.push({
     label: t("export.currentFormat", {
-      // 扩展名大写当名字："123"/"JPWABC"/"ABC" 恰好就是名字，但 `.jly` 会变成难看的 "JLY" —— 用它自己的名。
+      // 扩展名大写当名字："123"/"JPWABC"/"ABC" 恰好就是名字，但 `.jly`/`.jcx` 会变成难看的 "JLY"/"JCX" —— 用它自己的名。
       format: app.docFormat === "musicxml" ? "MusicXML"
         : app.docFormat === "jly" ? t("fmt.target.jly")
+        : app.docFormat === "jcx" ? t("fmt.target.jcx")
         : app.adapter.defaultExt.replace(/^\./, "").toUpperCase(),
     }),
     available: () => true,

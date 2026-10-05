@@ -5,7 +5,7 @@ import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { Compartment, EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { parsePu, sniffDialect, type Dialect } from "../pu";
-import { parse123, parseAbc } from "../j123/parse";
+import { parse123, parseAbc, parseJcx } from "../j123/parse";
 import { parseJly } from "../model/fromjly";
 import { eachChord } from "../model/helpers";
 import type { ElementId, ScoreDoc } from "../model/doc";
@@ -35,7 +35,7 @@ import type { JpwMeta, JpwRange } from "../omr/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";
-import { is123File, isJlyFile, isProjectFile, isPuFile } from "../common/filetypes";
+import { is123File, isJcxFile, isJlyFile, isProjectFile, isPuFile } from "../common/filetypes";
 import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost } from "./formats";
 import { SyncIndex, type SyncEntry } from "./sync";
@@ -976,6 +976,33 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._syncFormatLabel();
     if (!this._layoutScoreDoc(doc, "ABC")) return false;
     this._reportDiagnostics("ABC", doc.diagnostics);
+    return true;
+  }
+
+  /** FormatHost：Muse 曲谱软件的 `.jcx` 解析 → 排版 → 渲染。ABC 家族的第三个方言（`parseJcx`），
+   *  与 `reloadAbc` 同一条路：原生解析直出 `ScoreDoc`，读不出音符就报错，不回落。 */
+  reloadJcx(text: string): boolean {
+    const what = t("fmt.jcx.label");
+    let doc: ScoreDoc;
+    try {
+      doc = parseJcx(text);
+    } catch (e) {
+      console.error("jcx 解析失败", e);
+      this.setStatus(t("status.parseFailed", { what, error: (e instanceof Error ? e.message : String(e)) }));
+      return false;
+    }
+    const notes = doc.songs.reduce((n, song) => n + [...eachChord(song)].length, 0);
+    if (notes === 0) {
+      this._reportDiagnostics(what, doc.diagnostics);
+      this.setStatus(t("status.jcxNoNotes"));
+      return false;
+    }
+    this._scoreDoc = { text, doc };
+    this._puScoreCache = null;
+    this._syncPhraseBase(text);
+    this._syncFormatLabel();
+    if (!this._layoutScoreDoc(doc, what)) return false;
+    this._reportDiagnostics(what, doc.diagnostics);
     return true;
   }
 
@@ -2032,7 +2059,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   // ---------------- file I/O ----------------
-  /** 按扩展名落地：.abc / .123 / 文本谱 / .musicxml（无代码区）各进原生格式；其余按 UTF-16 .jpwabc 读。 */
+  /** 按扩展名落地：.abc / .123 / .jcx / 文本谱 / .musicxml（无代码区）各进原生格式；其余按 UTF-16 .jpwabc 读。 */
   importBytes(bytes: Uint8Array, name: string): void {
     // 识别项目：还原整个识别会话（原图、识别结果、在改的原文），不重跑识别
     if (isProjectFile(name)) {
@@ -2114,6 +2141,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.mixed._dropMixedDoc();
       this._setDocFormat("jly");
       this.setText(formatOf("jly").decode(bytes));
+      return;
+    }
+    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcxcodec.ts` 判断
+    if (isJcxFile(name)) {
+      this.mixed._dropMixedDoc();
+      this._setDocFormat("jcx");
+      this.setText(formatOf("jcx").decode(bytes));
       return;
     }
     // 文本谱（番茄 / 诗歌本）：原文就是源格式，直接进编辑器，不做任何转换。

@@ -8,6 +8,7 @@ import type { ScoreDoc } from "./doc";
 import type { TargetFormat } from "./capability";
 import { emit123 } from "../j123/emit";
 import { emitAbc } from "../abcfamily/emitabc.entry";
+import { emitJcx } from "../abcfamily/emitjcx.entry";
 import { emitJpwabc } from "./tojpw";
 import { emitJly } from "./tojly";
 import { emitPu } from "./topu";
@@ -15,14 +16,14 @@ import { withPageMeta } from "./pagemeta";
 import { t } from "../i18n";
 
 /** 可写出的文本格式。文本谱两种方言各算一种。 */
-export type ConvertTarget = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "jly";
+export type ConvertTarget = "123" | "abc" | "jpwabc" | "tomato" | "shige" | "jly" | "jcx";
 
 export interface TargetSpec {
   id: ConvertTarget & TargetFormat;
   /** 下拉里的显示名（按界面语言） */
   readonly label: string;
   /** 写出来的文本在编辑器里按哪种源格式打开（`editor/formats.ts::DocFormatId`） */
-  docFormat: "123" | "abc" | "jpwabc" | "pu" | "jly";
+  docFormat: "123" | "abc" | "jpwabc" | "pu" | "jly" | "jcx";
   emit(doc: ScoreDoc): string;
 }
 
@@ -45,6 +46,8 @@ export const CONVERT_TARGETS: readonly TargetSpec[] = [
   { id: "shige", get label() { return t("fmt.target.shige"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "shige") },
   // jianpu-ly：能读能写，导出端是 `tojly.ts`（`%` 注释里带着"装不下什么"的说明，写在文本里随文件走）
   { id: "jly", get label() { return t("fmt.target.jly"); }, docFormat: "jly", emit: (doc) => emitJly(doc).text },
+  // Muse 曲谱软件：存盘按 `%MUSE2` + GBK（`common/jcxcodec.ts`），新旧版 Muse 都能开
+  { id: "jcx", get label() { return t("fmt.target.jcx"); }, docFormat: "jcx", emit: (doc) => emitJcx(doc) },
 ];
 
 export function isConvertTarget(v: unknown): v is ConvertTarget {

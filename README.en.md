@@ -40,6 +40,7 @@ The interface is available in **English and Chinese**: it follows your browser l
     which the Shigeben app calls a "dynamic score"
   - **ABC notation**
   - **jianpu-ly `.jly`**, upstream jianpu-ly's text scores, which it typesets as LilyPond
+  - **Muse `.jcx`**, the script format of the Muse score editor (an ABC dialect)
 - **Visual editing.** Select, insert and change notes and marks directly on the score: scale degree or note name, step / semitone / octave, accidentals,
   duration, extension dashes, barlines, slurs and ties, fermatas, accents, and line and page breaks. You can use
   the keyboard, a context menu or a symbol palette, in the jianpu, staff and mixed views alike. Every edit is
@@ -106,7 +107,7 @@ The interface is available in **English and Chinese**: it follows your browser l
 
 **Save, Save As and Export**
 - **Save** writes back to the original format.
-- **Save As** converts between 123, JPWABC, ABC and the plain-text formats. Anything the target format can't hold
+- **Save As** converts between 123, JPWABC, ABC, Muse `.jcx` and the plain-text formats. Anything the target format can't hold
   is listed before you confirm.
 - A recognized score is saved as a **recognition project** (`.dolce`): the source images, the recognition result
   and the score being edited, all in one file. Reopen it to carry on proofreading against the source image without
@@ -160,6 +161,7 @@ In the lyrics, CJK characters take one note each and need no spaces. Latin words
 | MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; a single-voice score can also be converted to 123 etc. for text editing |
 | Image / PDF | `.png` `.jpg` `.webp` `.pdf` | OMR | — | — | Jianpu images and scanned PDFs; staff PDFs, scanned or photographed staff notation |
 | jianpu-ly | `.jly` | ✅ | ✅ | ✅ (Save; use Export to write `.jly`, Save As does not offer it) | Upstream [jianpu-ly](https://github.com/ssb22/jianpu-ly) text scores: opened and edited as jianpu — notes, durations, octaves, accidentals, marks, lyrics and line breaks can be changed on the score (measures and chord names in the source pane); export hands the file to the upstream preprocessor for LilyPond (`.ly`) |
+| Muse jianpu | `.jcx` | ✅ | ✅ | ✅ | Muse score editor scripts (an ABC dialect): reads files from old and new Muse versions (GBK / BIG5 / UTF-8) and saves GBK files that both can open, so recognized scores can be handed to Muse. Only jianpu and staff tracks are read |
 | Recognition project | `.dolce` | ✅ | ✅ | ✅ | Source images + recognition result + the score being edited; reopens without recognizing again |
 
 ## Install

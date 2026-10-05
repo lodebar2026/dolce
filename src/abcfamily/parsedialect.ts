@@ -14,6 +14,8 @@ import { SIMPLE_DIVISIONS, type Chord, type Key, type Note, type NoteType, type 
 import { parseKey as parseKey123 } from "../j123/fields";
 import { LEXER_123 } from "./dialect123";
 import { LEXER_ABC } from "./dialectabc";
+import { DEGREE_OF_LETTER, LEXER_JCX, parseKeyJcx } from "./dialectjcx";
+import type { LyricSlotRule } from "./lyricslot";
 import type { LexResult, Token } from "./types";
 import { t as tr } from "../i18n";
 
@@ -26,7 +28,7 @@ export interface DefaultLen {
 }
 
 export interface ParseDialect {
-  id: "123" | "abc";
+  id: "123" | "abc" | "jcx";
   lex(line: string, lineNo: number, lineOffset: number, columnBase?: number): LexResult;
   /** token → 时值。`sustains` 只有 123 用（增时线各加一拍）。 */
   duration(t: Token, len: DefaultLen, sustains?: number): Chord["duration"];
@@ -49,6 +51,11 @@ export interface ParseDialect {
   spaceBeams: boolean;
   /** 歌词里「跳过一个音符」的记号。123 用 `/`（同文本谱诗歌本，免 Shift）；ABC §5.1 是 `*`。 */
   lyricSkip: "/" | "*";
+  /** 休止占不占歌词对位格（`lyricslot.ts`，读写两端同一份）。 */
+  lyricSlotRule: LyricSlotRule;
+  /** 破碎节奏 `a>b` 里短的那个音的长度：ABC §4.4 是**它自己**的长度减半；Muse 是**附点那个音**原长的一半——
+   *  野外的 `e>G/`、`c2>G/`、`A/>A//` 只有这么算才凑得齐整小节（两音写得一样长时两种算法相同）。 */
+  brokenFromLong?: boolean;
   /** **`$` 是不是同时结束一批歌词**。123 是（同 `.jpwabc`：一行曲一批 `w:`，同一代码行里 `$` 之后的音符另起一批，
    *  不与前一行共用）；ABC 不是——§5.1 的 `w:` 对的是它前面那条**代码行**，行内的 `$` 只是谱面换行。 */
   breakEndsLyricBlock: boolean;
@@ -115,6 +122,7 @@ export const DIALECT_123: ParseDialect = {
   lineEndIsBreak: false,
   spaceBeams: false,
   lyricSkip: "/",
+  lyricSlotRule: "123",
   breakEndsLyricBlock: true,
   tupletClose: "paren",
   tupletNormal: (n) => tupletNormal123(n),
@@ -216,6 +224,45 @@ export const DIALECT_ABC: ParseDialect = {
   lineEndIsBreak: true,
   spaceBeams: true,
   lyricSkip: "*",
+  lyricSlotRule: "abc",
+  breakEndsLyricBlock: false,
+  tupletClose: "count",
+  tupletNormal: tupletNormalAbc,
+};
+
+// ───────────────────────── Muse `.jcx` ─────────────────────────
+
+/** Muse 的简谱轨：ABC 的词法与时值，**字母是首调唱名**（C 恒为 1，见 `dialectjcx.ts`），所以 `note()` 给度数、不给音高。
+ *  `style=staff` 的声部字母是绝对音高，组装完后单独换算（`parse.ts::museStaffPitches`）。
+ *
+ *  - 代码换行**按谱面换行读**：Muse 的「强制换行」打开时就照第一音轨的脚本断行排，Muse 自己「按屏幕每行小节数整理脚本」
+ *    也是一行一行地写；一行写到底的谱（谱例里有）由排版器自己折行。`w:` 对紧挨在前的那条代码行（说明书「歌词与上面一行音符相对应」）。
+ *  - 歌词中文逐字成音节、`*` 跳一个音、休止不配字（说明书 §3.2.2「w:歌词」，谱例逐首核过）。
+ *  - 多连音的默认比例照 ABC 那张表——说明书里的表（`(4` 是「2 个音占 3」）显然是笔误。 */
+export const DIALECT_JCX: ParseDialect = {
+  id: "jcx",
+  lex: (line, lineNo, lineOffset, columnBase = 0) =>
+    LEXER_JCX.lexLine(line, lineNo, lineOffset, columnBase),
+  duration: (t, len) => durationAbc(t.num ?? 1, t.den ?? 1, len),
+  reduration: (host) => host.duration,
+  note: (t) => {
+    const n: Note = { degree: { number: DEGREE_OF_LETTER[t.step ?? "C"] ?? 1, octaveShift: t.octave ?? 0 } };
+    if (t.accidental) {
+      n.degree!.accidental = t.accidental;
+      n.accidental = t.accidental;
+    }
+    return n;
+  },
+  isRest: (t) => t.kind === "rest",
+  parseKey: parseKeyJcx,
+  hyphen: "tie",
+  // 说明书 §3.2.3.6：没写 `L:` 时按拍号推，与 ABC 同一条
+  defaultLen: DIALECT_ABC.defaultLen,
+  lineEndIsBreak: true,
+  spaceBeams: true,
+  lyricSkip: "*",
+  lyricSlotRule: "abc",
+  brokenFromLong: true,
   breakEndsLyricBlock: false,
   tupletClose: "count",
   tupletNormal: tupletNormalAbc,
