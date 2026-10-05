@@ -24,6 +24,7 @@ import { reprojectRecognized, type Reprojected } from "../omr/reproject";
 import { baseImage, doubtItems } from "../omr/overlay";
 import type { ProjectKind, ProjectSnapshot } from "./omrproject";
 import { t } from "../i18n";
+import { COMPARE_VALUES, type CompareValue } from "./comparemode";
 
 /** 是否 PDF 字节（mime 或 `%PDF-` 魔数）。与 `omr/decode.ts` 里那份同判据。 */
 function isPdfBytes(bytes: Uint8Array, mime?: string): boolean {
@@ -77,6 +78,8 @@ export interface OmrHost {
   importOmrDoc(doc: ScoreDoc, text: string): void;
   /** 识别产物有无变了：同步排版档按钮（简谱识别期间不露「五线谱」「混排」两档）。 */
   syncViewModes(): void;
+  /** 切排版档（展开 / 原样 / 五线谱 / 混排），`App.setViewMode` */
+  setViewMode(mode: "expanded" | "original" | "staff" | "mixed"): Promise<void>;
 
   /** 清空 #score-pane 与翻页状态（各预览铺页前都要做）。 */
   clearPages(): void;
@@ -146,8 +149,9 @@ export class OmrController implements FormatSource {
   }
 
   // ---------------- 持久化 ----------------
-  loadSettings(s: { omrFormat?: unknown; recogView?: unknown; omrFollow?: unknown; omrKind?: unknown; omrSide?: unknown; omrAdjust?: unknown; sideHideCode?: unknown }): void {
+  loadSettings(s: { omrFormat?: unknown; recogView?: unknown; omrFollow?: unknown; omrKind?: unknown; omrSide?: unknown; omrAdjust?: unknown; sideHideCode?: unknown; omrCompare?: unknown }): void {
     if (isOmrFormat(s.omrFormat)) this.format = s.omrFormat;
+    if ((COMPARE_VALUES as readonly unknown[]).includes(s.omrCompare)) this.compare = s.omrCompare as CompareValue;
     if (typeof s.omrFollow === "boolean") this.follow = s.omrFollow;
     if (typeof s.omrSide === "boolean") this.side = s.omrSide;
     if (typeof s.sideHideCode === "boolean") this.hideCode = s.sideHideCode;
@@ -343,6 +347,8 @@ export class OmrController implements FormatSource {
     // 位图路有页面位图与音符坐标：「原图对照」可用（矢量 PDF 那一路没有位图，不给）
     if (this.btnEl) this.btnEl.textContent = t("omr.compare");
     this.host.setContextControl(this.btnEl, true);
+    // 谱表正上方认出了简谱行（简线混排谱，`rasteromr/jianpuband.ts`）进混排档，否则五线谱档
+    await this.enterAfterRecognize(res.pages.some((p) => p.result.jianpuStrips.length > 0) ? "mixed" : "staff");
     const s = res.stats;
     this.host.setStatus(
       t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: s.pages, parts: s.parts ?? 1, notes: s.notes }) +
@@ -388,7 +394,7 @@ export class OmrController implements FormatSource {
       this.sessionKind = "jianpu";
       this.host.setContextControl(this.kindField(), true);
       this.syncPagesBtn();
-      await this.toggle(); // 进原图对照，同刚识别完
+      await this.enterAfterRecognize("original"); // 同刚识别完
       return;
     }
     // 五线谱会话只出 MusicXML；万一存的是别的格式（旧包、手工拼的包），照原格式落地，对照数据仍按原图补
@@ -401,6 +407,8 @@ export class OmrController implements FormatSource {
     if ((s.kind === "staff" || s.kind === "vector") && this.lastInputs.length) {
       if (this.btnEl) this.btnEl.textContent = t("omr.compare");
       this.host.setContextControl(this.btnEl, true);
+      // 对照方式同刚识别完；档位不动（还没补回对照数据，不知道是不是简线混排谱）。对照数据由并排 / 叠加视图自己从原图补
+      await this.enterAfterRecognize(null);
     }
   }
 
@@ -522,6 +530,38 @@ export class OmrController implements FormatSource {
     }
     box.replaceChildren(svg);
     box.hidden = false;
+  }
+
+  // ---------------- 识别完进哪儿 ----------------
+  /** 用户在状态栏「核对」下拉里亲手选过的那一项（持久化 `omrCompare`，`comparemode.ts` 的六个值）；
+   *  null = 没选过，识别完按**并排原图**。程序自己切的（识别完自动进、重开项目）不算 */
+  compare: CompareValue | null = null;
+  /** 让「核对」下拉选中某一项并照它切（`main.ts` 接上 `comparemode.ts::apply`）；无头环境里没有，退到只开并排 */
+  applyCompare: ((value: CompareValue) => void) | null = null;
+
+  /** 「核对」下拉上的用户选择 → 记下来 */
+  setComparePreference(value: string): void {
+    if (!(COMPARE_VALUES as readonly string[]).includes(value)) return;
+    this.compare = value as CompareValue;
+    this.host.saveSettings();
+  }
+
+  /**
+   * 识别完（含重开识别项目）进视图：先切档——简谱进**原样**、五线谱进**五线谱**、简线混排谱进**混排**；
+   * 再按用户在「核对」下拉里选过的方式进核对（没选过就并排原图）。`tier` 为 null 不切档。
+   */
+  private async enterAfterRecognize(tier: "original" | "staff" | "mixed" | null): Promise<void> {
+    const pref = this.compare ?? "side";
+    // 「并排原图」「原图页」按会话显出来（识别流程里它本在更晚处同步，「核对」下拉按它判这一项能不能选）
+    this.syncPagesBtn();
+    // 切档要在排版稿里切（核对视图里档位按钮不管用）
+    if (this.host.mode === "recognize") await this.toggle();
+    if (tier) await this.host.setViewMode(tier);
+    if (this.applyCompare) this.applyCompare(pref);
+    else {
+      this.side = pref === "side";
+      this.syncSide(null);
+    }
   }
 
   // ---------------- 并排原图 ----------------
@@ -725,7 +765,7 @@ export class OmrController implements FormatSource {
 
   // ---------------- 识别 ----------------
   /** 已取得图片字节后的识别核心（供拖拽识别复用）。
-   *  保留二值图+识别结果，完成后默认进入叠加核对视图（先核对；「原图对照」可切回排版稿）。 */
+   *  保留二值图+识别结果，完成后进原样档，核对方式按用户在「核对」下拉里选过的（没选过就并排原图，`enterAfterRecognize`）。 */
   async recognizeBytes(picked: { bytes: Uint8Array; mime?: string }, jianpuOnly = false): Promise<boolean> {
     // 外部直接调（回归脚本、旧入口）走完整分流
     if (!jianpuOnly) return this.recognizeFiles([picked]);
@@ -744,7 +784,7 @@ export class OmrController implements FormatSource {
       if (g !== this.gen) return false;
       this.emit(score, bin);
       this.host.setContextControl(this.kindField(), true);
-      if (this.host.mode !== "recognize") await this.toggle(); // 识别后默认进叠加核对（本仓库「先核对」取向）
+      await this.enterAfterRecognize("original"); // 简谱进原样档，对照方式按用户上次的选择（没选过就并排）
       const n = this.beatMarks.length;
       this.host.setStatus(t("omr.done", { sec: ((performance.now() - t0) / 1000).toFixed(1) })
         + (n ? t("omr.beatIssues", { n }) : ""));
@@ -803,6 +843,7 @@ export class OmrController implements FormatSource {
     } catch (e) {
       console.warn("矢量 PDF 渲不出对照底图", e);
     }
+    if (g2 === this.gen) await this.enterAfterRecognize("staff");
     this.host.setStatus(
       t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: res.pages, parts: res.parts, notes: res.notes }) +
         (res.skipped ? t("omr.staffSkipped", { n: res.skipped }) : "") +

@@ -276,7 +276,14 @@ async function boot() {
     const recognize = byId<HTMLButtonElement>("btn-recognize");
     const side = byId<HTMLButtonElement>("btn-src-side");
     const follow = byId<HTMLButtonElement>("btn-src-follow");
-    if (select && field && recognize && side && follow && recogViewSel) setupCompareSelect({ select, field, recognize, side, follow, view: recogViewSel });
+    if (select && field && recognize && side && follow && recogViewSel) {
+      const compare = setupCompareSelect({
+        select, field, recognize, side, follow, view: recogViewSel,
+        // 用户选过的核对方式：以后识别完照它进
+        onUserChange: (v) => app.omr.setComparePreference(v),
+      });
+      app.omr.applyCompare = (v) => compare.apply(v);
+    }
   }
   const docFormatSel = document.getElementById("sel-doc-format") as HTMLSelectElement | null;
   if (docFormatSel) app.formats.bind(docFormatSel); // 选项由来源（识别结果 / 打开的文件）给，见 editor/formatswitch.ts

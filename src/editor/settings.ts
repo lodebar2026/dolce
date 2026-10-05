@@ -30,6 +30,8 @@ export interface PersistedSettings {
   /** 排版稿里跟随选中显示原图片段（同上） */
   omrFollow?: unknown;
   omrSide?: unknown;
+  /** 识别完的核对方式（「核对」下拉的六个值之一），用户亲手选过才有（同上） */
+  omrCompare?: unknown;
   /** 并排原图时收起代码区 */
   sideHideCode?: unknown;
   omrAdjust?: unknown;

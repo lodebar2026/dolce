@@ -4,6 +4,9 @@
 // 它不另起状态，驱动的是原来那几个控件（`omrctl.ts` 的原图对照钮、并排钮、片段钮与叠加方式下拉，
 // 都留在页面里、只是不显示）：它们的显隐照旧表示「这一项现在能不能用」，按下状态表示「开着没有」。
 // 下拉的选中项与可选项都从它们读回来，别的入口（快捷键、读设置、识别完自动进核对视图）改了也跟得上。
+//
+// 用户**亲手**在下拉里选的那一项报给 `onUserChange`（记成以后识别完的核对方式，`OmrController.compare`）；
+// 识别完由 `apply` 按那一项进（选不了的退到并排、再退到不核对），程序自己切的不回报。
 
 export interface CompareControls {
   select: HTMLSelectElement;
@@ -13,11 +16,17 @@ export interface CompareControls {
   side: HTMLButtonElement;
   follow: HTMLButtonElement;
   view: HTMLSelectElement;
+  /** 用户在下拉里选了一项（程序经 `apply` 选的不报） */
+  onUserChange?(value: string): void;
 }
+
+/** 下拉的六个值 */
+export const COMPARE_VALUES = ["none", "side", "follow", "floating", "inplace", "original"] as const;
+export type CompareValue = (typeof COMPARE_VALUES)[number];
 
 const OVERLAY = new Set(["floating", "inplace", "original"]);
 
-export function setupCompareSelect(c: CompareControls): void {
+export function setupCompareSelect(c: CompareControls): { apply(value: CompareValue): void } {
   const body = document.getElementById("body");
   const inProof = () => !!body?.classList.contains("recognize");
   const pressed = (b: HTMLButtonElement) => b.getAttribute("aria-pressed") === "true";
@@ -49,8 +58,7 @@ export function setupCompareSelect(c: CompareControls): void {
     if (c.select.value !== v) c.select.value = v;
   };
 
-  c.select.addEventListener("change", () => {
-    const v = c.select.value;
+  const choose = (v: string): void => {
     if (OVERLAY.has(v)) {
       if (c.view.value !== v) {
         c.view.value = v;
@@ -64,6 +72,12 @@ export function setupCompareSelect(c: CompareControls): void {
       if (pressed(c.follow) !== (v === "follow")) c.follow.click();
     }
     sync();
+  };
+
+  c.select.addEventListener("change", () => {
+    const v = c.select.value;
+    choose(v);
+    c.onUserChange?.(v);
   });
 
   const watch = { attributes: true, attributeFilter: ["hidden", "aria-pressed"] };
@@ -72,4 +86,12 @@ export function setupCompareSelect(c: CompareControls): void {
   if (body) mo.observe(body, { attributes: true, attributeFilter: ["class"] });
   c.view.addEventListener("change", sync);
   sync();
+  return {
+    apply(value) {
+      sync();
+      // 这次识别没有这一项（矢量 PDF 没有叠加视图的底图、五线谱没有片段小窗）：退到并排，再退到不核对
+      const ok = (v: string) => !option(v)?.disabled;
+      choose(ok(value) ? value : ok("side") ? "side" : "none");
+    },
+  };
 }

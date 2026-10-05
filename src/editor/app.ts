@@ -669,6 +669,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       omrFormat: this.omr.format,
       omrFollow: this.omr.follow,
       omrSide: this.omr.side,
+      ...(this.omr.compare ? { omrCompare: this.omr.compare } : {}),
       sideHideCode: this.omr.hideCode,
       omrAdjust: this.omr.adjustFirst,
       omrKind: this.omr.kind,
@@ -2196,7 +2197,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._documentLoaded();
     const losses = planSave(doc, "123");
     this.mixed._dropMixedDoc();
-    this._setMode("jp"); // 识别之后先核对（omrctl 接着进叠加视图）；五线谱/混排从工具条切
+    this._setMode("jp"); // omrctl 接着切原样档、按用户选过的核对方式进（没选过就并排原图，`enterAfterRecognize`）
     this._setDocFormat("123");
     this.filePath = null;
     this.setText(text);
