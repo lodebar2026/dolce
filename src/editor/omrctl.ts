@@ -1081,7 +1081,7 @@ export class OmrController implements FormatSource {
   /** 位图五线谱识别（或上次重建）刚落地时的原文：与当前原文不同即手改过 */
   private staffEmitted: string | null = null;
 
-  /** 这份结果有没有点选映射（123 / 文本谱产物有，`.jpwabc` / ABC 没有）。 */
+  /** 这份结果有没有点选映射（123 / 文本谱 / Muse `.jcx` 产物有，`.jpwabc` / ABC 没有）。 */
   get hasMeta(): boolean {
     return this.meta !== null;
   }

@@ -1,12 +1,12 @@
 // 简谱识别核对的点选映射：识别产物写成文本后，「第 i 个识别音符 → 代码区间」。
 //
 // 识别结果的音符序是 `flatten(rows[].nums)`（`omr/emit.ts` 的约定），`omr/todoc.ts` 按这个序
-// 一个 num 建一个 `Chord`（倚音另建、长休止拆成几个 0），各写出端（`emit123` / `emitPu`）也保持这个序。
+// 一个 num 建一个 `Chord`（倚音另建、长休止拆成几个 0），各写出端（`emit123` / `emitPu` / `emitJcx`）也保持这个序。
 // 所以这里**重解析写出的文本**，按元素序（倚音、无时值占位除外）取各元素的源区间，歌词取音节的源区间，
-// 就与识别序逐位对齐——映射从读入端的源区间来，不在写出端边写边记，两种格式同一个做法。
+// 就与识别序逐位对齐——映射从读入端的源区间来，不在写出端边写边记，几种格式同一个做法。
 import type { JpwMeta, JpwRange } from "./types";
 import type { ScoreDoc, SourceSpan } from "../model/doc";
-import { parse123 } from "../j123/parse";
+import { parse123, parseJcx } from "../j123/parse";
 import { parsePu } from "../pu/parse";
 import type { Dialect } from "../pu/dialect";
 
@@ -55,6 +55,13 @@ function headerMeta(meta: JpwMeta, text: string, titleField: string, authorField
 /** 123 核对文本的点选映射。 */
 export function metaFrom123(text: string): JpwMeta {
   const meta = elementMeta(parse123(text));
+  headerMeta(meta, text, "T", "C");
+  return meta;
+}
+
+/** Muse `.jcx` 的点选映射（增时线并进音长、不另成元素，不可见休止 `@` 与 123 的 `x` 一样是元素，序不变）。 */
+export function metaFromJcx(text: string): JpwMeta {
+  const meta = elementMeta(parseJcx(text));
   headerMeta(meta, text, "T", "C");
   return meta;
 }

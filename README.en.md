@@ -161,7 +161,7 @@ In the lyrics, CJK characters take one note each and need no spaces. Latin words
 | MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; a single-voice score can also be converted to 123 etc. for text editing |
 | Image / PDF | `.png` `.jpg` `.webp` `.pdf` | OMR | — | — | Jianpu images and scanned PDFs; staff PDFs, scanned or photographed staff notation |
 | jianpu-ly | `.jly` | ✅ | ✅ | ✅ (Save; use Export to write `.jly`, Save As does not offer it) | Upstream [jianpu-ly](https://github.com/ssb22/jianpu-ly) text scores: opened and edited as jianpu — notes, durations, octaves, accidentals, marks, lyrics and line breaks can be changed on the score (measures and chord names in the source pane); export hands the file to the upstream preprocessor for LilyPond (`.ly`) |
-| Muse jianpu | `.jcx` | ✅ | ✅ | ✅ | Muse score editor scripts (an ABC dialect): reads files from old and new Muse versions (GBK / BIG5 / UTF-8) and saves GBK files that both can open, so recognized scores can be handed to Muse. Only jianpu and staff tracks are read |
+| Muse jianpu | `.jcx` | ✅ | ✅ | ✅ | Muse score editor scripts (an ABC dialect): reads files from old and new Muse versions (GBK / BIG5 / UTF-8) and saves GBK files that both can open, so recognition can output Muse jianpu directly (click-to-compare with the source image still works) and the checked score can be handed to Muse. Only jianpu and staff tracks are read |
 | Recognition project | `.dolce` | ✅ | ✅ | ✅ | Source images + recognition result + the score being edited; reopens without recognizing again |
 
 ## Install

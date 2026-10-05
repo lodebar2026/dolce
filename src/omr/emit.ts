@@ -14,7 +14,7 @@ import type { JpwMeta, RecognizedScore } from "./types";
 import type { ScoreDoc } from "../model/doc";
 import { CONVERT_TARGETS, type ConvertTarget } from "../model/convert";
 import { recognizedToDoc } from "./todoc";
-import { metaFrom123, metaFromPu } from "./meta";
+import { metaFrom123, metaFromJcx, metaFromPu } from "./meta";
 
 /** 识别结果的输出格式：就是转换目标（文本谱两种方言各算一种）。 */
 export type OmrFormat = ConvertTarget;
@@ -45,6 +45,7 @@ export const OMR_EMITTERS: readonly ScoreEmitter[] = CONVERT_TARGETS.map((t) => 
     const text = t.emit(doc);
     const meta = t.docFormat === "123" ? metaFrom123(text)
       : t.id === "tomato" || t.id === "shige" ? metaFromPu(text, t.id)
+      : t.id === "jcx" ? metaFromJcx(text)
       : null;
     return { kind: t.docFormat, text, meta, doc };
   },

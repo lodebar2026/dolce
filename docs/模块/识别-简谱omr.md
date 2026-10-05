@@ -21,8 +21,8 @@
 | `src/omr/paddleocr.ts` | PP-OCR 推理 |
 | `src/omr/overlay.ts` | 识别核对叠加层（含小节时值自检报出的小节，虚线红框，悬停显示差几拍） |
 | `src/omr/beats.ts` | 小节时值自检：识别结果 → `todoc.ts` 的模型 → `model/beatcheck.ts`（与编辑器同一份判据），问题小节对回源图坐标；CLI 导出给 `beat-check.mjs` |
-| `src/omr/emit.ts` | 输出格式：识别结果 → `todoc.ts` 的模型 → 转换目标表（`model/convert.ts`）写成文本 |
-| `src/omr/todoc.ts` | → 简谱形状的 `ScoreDoc`：123 / JPWABC / ABC / 文本谱都由它写出（文本谱走 `model/topu.ts::emitPu`）；四声部时第 3、4 声部（男高、男低）标八度谱号 `treble-8`（按高八度记，试听低八度） |
+| `src/omr/emit.ts` | 输出格式：识别结果 → `todoc.ts` 的模型 → 转换目标表（`model/convert.ts`）写成文本；点选映射（`omr/meta.ts`）123、文本谱、Muse `.jcx` 有，JPWABC、ABC 没有 |
+| `src/omr/todoc.ts` | → 简谱形状的 `ScoreDoc`：123 / JPWABC / ABC / 文本谱 / jianpu-ly / Muse `.jcx` 都由它写出（文本谱走 `model/topu.ts::emitPu`）；四声部时第 3、4 声部（男高、男低）标八度谱号 `treble-8`（按高八度记，试听低八度） |
 | `src/omr/meta.ts` | 点选映射：重解析写出的 123 / 文本谱，按元素序取源区间（`metaFrom123` / `metaFromPu`） |
 | `src/omr/vector.ts` / `inventory.ts` / `glyphdict.ts` | 矢量 PDF 对象层、归类、形状字典 |
 | `src/editor/omrctl.ts` | 编辑器侧控制器（识别 → 出文本 → 叠加核对 → 点选定位；核对视图试听时按 `meta` 源区间把播放的音对回识别框，见 [播放](播放.md)）；核对视图里可视化编辑、排版稿的「原图片段」跟随小窗 |
