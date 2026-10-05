@@ -36,18 +36,18 @@ export function lyricBody(line: Line): { head: string; body: string; bodyFrom: n
 }
 
 /** 词行 body 里第 `k` 个对位格的起点（格数不足 k 时为 body 末尾）。印刷段号 `<1.>` 不占格，留在前半。 */
-function slotOffset(body: string, k: number, skip: "/" | "*"): number {
+function slotOffset(body: string, k: number, skip: "/" | "*", joinTilde = false): number {
   if (k <= 0) {
     const label = /^\s*(?:<[^>]*>|"[^"]*")\s*/.exec(body);
     return label ? label[0].length : 0;
   }
-  const { starts } = parseLyricLine(body, 1, ZERO_SPAN, undefined, skip);
+  const { starts } = parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, joinTilde);
   return k < starts.length ? starts[k]! : body.length;
 }
 
 /** 词行 body 占几个对位格。 */
-export function slotCount(body: string, skip: "/" | "*"): number {
-  return parseLyricLine(body, 1, ZERO_SPAN, undefined, skip).starts.length;
+export function slotCount(body: string, skip: "/" | "*", joinTilde = false): number {
+  return parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, joinTilde).starts.length;
 }
 
 /** 这一行曲从哪个偏移开始：往上找最近的 `$` 或 `w:`/`+:` 行（都结束上一行曲）。 */
@@ -144,7 +144,7 @@ export function insertBreak(ctx: EditCtx, pos: number, page: boolean): EditOutco
   const secondHalf: string[] = [];
   for (const w of lyr) {
     const { head: h, body } = lyricBody(w);
-    const off = slotOffset(body, k, skip);
+    const off = slotOffset(body, k, skip, ctx.doc?.sourceFormat === "jcx");
     firstHalf.push(`${h} ${body.slice(0, off).trimEnd()}`.trimEnd());
     secondHalf.push(`${h} ${body.slice(off).trimStart()}`.trimEnd());
   }
@@ -218,7 +218,7 @@ export function deleteBreak(ctx: EditCtx, entry: SyncEntry): EditOutcome {
   for (let i = 0; i < Math.max(lyrA.length, lyrB.length); i++) {
     const a = lyrA[i] ? lyricBody(lyrA[i]!).body.trim() : "";
     const b = lyrB[i] ? lyricBody(lyrB[i]!).body.trim() : "";
-    const lack = Math.max(0, kA - slotCount(a, skip));
+    const lack = Math.max(0, kA - slotCount(a, skip, ctx.doc?.sourceFormat === "jcx"));
     merged.push(`w: ${[a, b ? pad(lack) : "", b].filter((s) => s !== "").join(" ")}`.trimEnd());
   }
   const codeB = state.doc.sliceString(state.doc.line(nextN).from, lastB.to);

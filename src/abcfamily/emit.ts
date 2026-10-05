@@ -85,7 +85,8 @@ function barlineText(b: Barline): string {
  *  同段拆几条写的 `+:` 续行只在读入端认，写出端一段一行写完。 */
 /** 歌词行的方言写法。缺省是 123/ABC 的：多字并一格包 `{}`、印刷段号写 `<1.>`、延长写 `_`。 */
 export interface LyricStyle {
-  /** 多个 CJK 字并一格怎么写；缺省包 `{}`。Muse 用 `~` 连（`你~们`），它没有花括号写法 */
+  /** 一格里的字读回会被拆成几格时怎么写；缺省是多个 CJK 字包 `{}`。给了它就**每格都过一遍**（不只含 CJK 的）：
+   *  Muse 没有花括号，用 `~` 连（`你~们`、`1.~圣`、`the~Lord`），读回会拆开的地方都要连上 */
   joinMulti?(text: string): string;
   /** 印刷段号写不写（Muse 没有这种写法，写了会当成歌词印出来） */
   labels?: boolean;
@@ -145,7 +146,7 @@ export function lyricLines(part: Part, sep: string, skip: string, sys: SystemRan
         && (inWordNext || !isOneCjkWithPunct(hit.text));
       // 不包 `{}` 的拉丁词里的字面 `-` 与跳音符要转义，否则读回被拆开（`and/or`）
       const bare = skip === "/" ? hit.text.replace(/[/-]/g, (c) => `\\${c}`) : hit.text;
-      const joined = needBrace ? (style.joinMulti ? style.joinMulti(hit.text) : `{${hit.text}}`) : bare;
+      const joined = style.joinMulti ? style.joinMulti(hit.text) : needBrace ? `{${hit.text}}` : bare;
       body += (hit.leadingPunctuation ?? "") + joined + (hit.trailingPunctuation ?? "");
       prevSyllabic = hit.syllabic;
       // 以转义字符收尾（`How\-`）同样会被下一个拉丁词粘上，也要空格

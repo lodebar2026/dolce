@@ -14,6 +14,7 @@ import { LETTER_OF_DEGREE } from "./dialectjcx";
 import { assignDegrees, keySpelling } from "../model/jianpu";
 import { projectForJianpu } from "../model/jianpuproject";
 import { getMeta } from "../model/metakeys";
+import { parseLyricLine } from "../j123/parse";
 
 /** 写出端固定的默认音长：八分音符（同 `emitabc.ts`，幂等的前提）。 */
 const UNIT = SIMPLE_DIVISIONS / 2;
@@ -68,6 +69,16 @@ function marksOffSustains(src: Song): Song {
   };
 }
 
+const ZERO_SPAN = { line: 0, column: 0, offset: 0, length: 0 };
+
+/** 一格里的字按读入端（`parseLyricLine`，不开 `joinTilde`）会拆成几格，就在拆开处插 `~`：
+ *  读回时 `~` 把它们并回一格（Muse 的 `~`，拉丁与拉丁之间并成空格）。 */
+function museJoin(text: string): string {
+  const parts = parseLyricLine(text, 1, ZERO_SPAN, undefined, "*").syllables;
+  if (parts.length < 2) return text;
+  return parts.map((p) => (p.leadingPunctuation ?? "") + p.text + (p.trailingPunctuation ?? "")).join("~");
+}
+
 /** 文字值里不能有换行（会断成裸行），也不能把字段前缀带出去。 */
 const oneLine = (s: string): string => s.split(/\r\n?|\n/).map((x) => x.trim()).filter(Boolean).join(" ");
 
@@ -119,7 +130,7 @@ export class EmitterJcx extends AbcFamilyEmitter {
   protected override readonly lyricSlotRule = "abc" as const;
   /** Muse 没有 `{多字}` 与印刷段号；多字一音用 `~` 连，一字多音的延长位只能写 `*` */
   protected override readonly lyricStyle: LyricStyle = {
-    joinMulti: (text) => [...text].join("~"),
+    joinMulti: museJoin,
     labels: false,
     extend: "*",
   };
@@ -186,8 +197,8 @@ export class EmitterJcx extends AbcFamilyEmitter {
   override emitSong(src: Song): string {
     const song = marksOffSustains(withDegrees(isXmlShaped(src) ? projectForJianpu(src) : src));
     const L: string[] = [];
-    // Muse 自己的排版参数（读入时原样留在 `style.raw`）照写回去
-    for (const r of song.style?.raw ?? []) L.push(`%%${r.key} ${oneLine(r.value)}`.trimEnd());
+    // Muse 自己的排版参数（读入时原样留在 `museDirectives`）照写回去；本项目的版面指令（`style.raw`）不是这一套，不写
+    for (const d of song.museDirectives ?? []) L.push(`%%${oneLine(d)}`);
     // 说明书 FAQ「最容易犯的错误」：头部必须以 `T:` 起，哪怕是空的
     L.push(`T:${oneLine(song.work.title ?? "")}`);
     for (const st of song.work.subtitles) L.push(`T:${oneLine(st)}`);
@@ -222,7 +233,9 @@ export class EmitterJcx extends AbcFamilyEmitter {
   /** 整份文档 → 文本。**Muse 一个文件一首**：多曲文档只写第一首（`capability.ts` 报 `multiSong` 丢失）。 */
   override emitDoc(doc: Parameters<AbcFamilyEmitter["emitDoc"]>[0]): string {
     const first = doc.songs[0];
-    return [this.versionLine, first ? this.emitSong(first) : "T:\nK:C"].join("\n") + "\n";
+    // 读进来的就是 `%MUSE3`（UTF-8）文件：照原版本号写（按乐句重排等整份重写的路），存盘随之按 UTF-8（`jcxcodec.ts`），不降级成 GBK
+    const version = doc.sourceFormat === "jcx" && /^\s*%MUSE3/.test(doc.source ?? "") ? "%MUSE3" : this.versionLine;
+    return [version, first ? this.emitSong(first) : "T:\nK:C"].join("\n") + "\n";
   }
 }
 

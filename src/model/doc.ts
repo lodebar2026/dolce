@@ -871,6 +871,9 @@ export interface Song {
   pageText?: PageText;
   /** 无前缀的自由文字行（注记、勘误、版权说明） */
   remarks?: string[];
+  /** Muse `.jcx` 自己的排版参数行（`%%vocalfont "黑体" 17.1`，`%%` 之后的原文）。
+   *  与本项目的版面指令（`style.raw`）不是一套，**不交样式层解释**、也不往别的格式写，只为写回 `.jcx` 时照写 */
+  museDirectives?: string[];
   /** 扩展 meta（英文标题、经文、标签、分类…）。键见 `model/metakeys.ts`，读写走那里的 `getMeta`/`setMeta`。 */
   meta?: SongMeta;
   /** 每页谱行数（`.jpwabc` 的 `.Layout LinesPerPage`，只对展开档有意义） */

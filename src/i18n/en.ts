@@ -611,6 +611,7 @@ export const en: Record<MsgKey, string> = {
   "diag.abc.graceOpen": "Grace notes are missing `}`",
   "diag.abc.badChar": "Unrecognized symbol `{ch}`",
   "diag.jcx.wedge": "Unpaired crescendo/diminuendo brackets (`(<` … `<)`, `(>` … `>)`)",
+  "diag.jcx.textOpen": "`%%begintext` has no matching `%%endtext`; everything after it was read as a text block",
   "diag.jcx.trackSkipped": "Muse {style} tracks (guitar/ukulele tablature) are not supported yet; this track was not read",
   "diag.jcx.gbkMissing": "These characters cannot be written in GBK and were saved as ?: {chars}",
   // 文本谱方言嗅探与杂项错误

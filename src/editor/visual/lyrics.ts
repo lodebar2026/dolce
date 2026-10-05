@@ -34,7 +34,8 @@ function sepAfter(oldSep: string, text: string, next: string | null, hyphen: boo
 }
 
 /** 词行 body 里各格的起点（与解析器同一份口径）。 */
-const parseStarts = (body: string, skip: "/" | "*"): number[] => parseLyricLine(body, 1, ZERO_SPAN, undefined, skip).starts;
+const parseStarts = (body: string, skip: "/" | "*", joinTilde = false): number[] =>
+  parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, joinTilde).starts;
 
 /**
  * 把音 `note` 第 `verse` 段（1 起）的字写成 `text`（空串 = 这格改成跳格）。`hyphen` 后面接连字符；
@@ -62,7 +63,7 @@ export function setLyricText(ctx: EditCtx, note: SyncEntry, verse: number, text:
     return { changes: [{ from: after.to, to: after.to, insert }], anchor: state.selection.main.anchor, head: state.selection.main.head };
   }
   const { body, bodyFrom } = lyricBody(line);
-  const starts = parseStarts(body, skip);
+  const starts = parseStarts(body, skip, ctx.doc?.sourceFormat === "jcx");
   const changes: { from: number; to: number; insert: string }[] = [];
   if (k >= starts.length) {
     // 词不够长：补跳格符到第 k 格再写

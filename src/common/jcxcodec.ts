@@ -22,16 +22,33 @@ function gbkTable(): Map<string, number> {
       pair[0] = hi;
       pair[1] = lo;
       const ch = dec.decode(pair);
-      if (ch.length === 1 && ch !== "�" && !map.has(ch)) map.set(ch, (hi << 8) | lo);
+      if (ch.length === 1 && ch !== "\ufffd" && !map.has(ch)) map.set(ch, (hi << 8) | lo);
     }
   }
   gbkMap = map;
   return map;
 }
 
-const bad = (s: string): number => (s.match(/�/g) ?? []).length;
+const bad = (s: string): number => (s.match(/\ufffd/g) ?? []).length;
 
-/** 字节 → 文本（行尾归一成 `\n`）。BOM 优先；`%MUSE3` 或合法 UTF-8 按 UTF-8；否则 GBK，GBK 解不干净再试 BIG5（繁体版 Muse）。 */
+/** 双字节字里尾字节落在 0x40–0x7E 的比例超过这个数就按 BIG5 读。谱例 45 首（简体 GBK）最高 0.75%；
+ *  BIG5 的繁体文本一般在四成上下（这一段常用字最多）。 */
+const BIG5_LOW_TRAIL = 0.15;
+
+function looksBig5(bytes: Uint8Array): boolean {
+  let pairs = 0;
+  let low = 0;
+  for (let i = 0; i < bytes.length - 1; i++) {
+    if (bytes[i]! < 0x81) continue;
+    pairs++;
+    const t = bytes[i + 1]!;
+    if (t >= 0x40 && t <= 0x7e) low++;
+    i++;
+  }
+  return pairs > 0 && low / pairs > BIG5_LOW_TRAIL;
+}
+
+/** 字节 → 文本（行尾归一成 `\n`）。BOM 优先；`%MUSE3` 或合法 UTF-8 按 UTF-8；否则 GBK；字节分布像 BIG5 的（繁体版 Muse）按 BIG5。 */
 export function decodeJcx(bytes: Uint8Array): string {
   let text: string;
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) text = new TextDecoder("utf-8").decode(bytes.subarray(3));
@@ -43,9 +60,11 @@ export function decodeJcx(bytes: Uint8Array): string {
       text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     } catch {
       text = new TextDecoder("gbk").decode(bytes);
-      if (bad(text) > 0) {
+      // GBK 解码器能把 BIG5 的每对字节都解成**某个字**，不出替换字符，所以不能等它报错再改试 BIG5：
+      // 按字节判——BIG5 的常用字大量用 0x40–0x7E 当尾字节，简体 GBK 文本几乎全落在 GB2312 区（尾字节 ≥ 0xA1）
+      if (looksBig5(bytes)) {
         const big5 = new TextDecoder("big5").decode(bytes);
-        if (bad(big5) < bad(text)) text = big5;
+        if (bad(big5) <= bad(text)) text = big5;
       }
     }
   }

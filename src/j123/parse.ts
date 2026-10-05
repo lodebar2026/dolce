@@ -118,6 +118,9 @@ interface PartBuild {
   arcNext: { from: ElementId; source: SourceSpan } | null;
   /** 开着的渐强渐弱（Muse 的 `(<` … `<)`），起点同弧一样由 `attach` 回填 */
   openWedges: OpenMark[];
+  /** 行内 `[L:…]` 改过的默认音长：**只管这个声部**（ABC §7：声部里的行内字段只作用于该声部），
+   *  交错或分块写的别的声部仍用头部的 `L:` */
+  len?: DefaultLen;
   /** Muse `V:… style=`：`staff` 的字母是绝对音高（收尾时换算），`tab`/`ukulele` 整轨不读（只认简谱与五线谱） */
   museStyle?: "jianpu" | "staff" | "skip";
 }
@@ -198,7 +201,9 @@ function barlineFrom(value: string, times: number | undefined, source: SourceSpa
  *    `~` 与 `{}` 多字一音、`|` 推进到下一小节；`\-` `\/` 是字面字符。
  *  - 123 里写了旧的 `*`：报 `lyric-old-skip`，仍当跳音符（不然整行静默错一格）。
  *  - 收尾标点并入前一字、不占音符格（`common/cjkpunct.ts` 的同一份规则）。
- *  - 段首 `<1.>` 是**印刷段号**，不占音符格（语料 55.6% 这么写）。 */
+ *  - 段首 `<1.>` 是**印刷段号**，不占音符格（语料 55.6% 这么写）。
+ *  - `joinTilde`（Muse `.jcx`）：`~` 在**任何**音节后面都把下一个音节并到同一个音（说明书「~ 连接两个字」），
+ *    不只在汉字后面——`1.~圣`、`the~Lord` 都是一格，拉丁与拉丁之间并成空格。123/ABC 不开：那两档拉丁词里的 `~` 照旧是字面字符。 */
 export function parseLyricLine(
   body: string,
   verse: number,
@@ -206,6 +211,7 @@ export function parseLyricLine(
   valueOffset?: number,
   skip: "/" | "*" = "/",
   warn?: (code: string, message: string) => void,
+  joinTilde = false,
 ): { syllables: Lyric[]; label?: string; starts: number[] } {
   const out: Lyric[] = [];
   /** 各音节（含跳音符、续记号这类空音节）在 body 里的起点，与 `out` 一一对应——
@@ -227,7 +233,23 @@ export function parseLyricLine(
   /** 还没有前字可并的行首标点，攒着挂到下一个音节前面 */
   let prefix = "";
 
+  /** 收尾标点。`joinTilde` 时 `~` 是并字符号、不是标点（标点表里有它） */
+  const trail = (c: string): boolean => isTrailingPunct(c) && !(joinTilde && c === "~");
+  /** 上一个音节后面跟着 `~`：下一个有字的音节并进去（`joinTilde`） */
+  let joinNext = false;
   const push = (l: Lyric): void => {
+    const prev = out[out.length - 1];
+    if (joinNext && prev && l.text !== "") {
+      joinNext = false;
+      const latin = /[A-Za-z0-9]$/.test(prev.text) && !prev.trailingPunctuation && /^[A-Za-z0-9]/.test(l.leadingPunctuation ?? l.text);
+      prev.text += (prev.trailingPunctuation ?? "") + (latin ? " " : "") + (l.leadingPunctuation ?? "") + l.text;
+      if (l.trailingPunctuation) prev.trailingPunctuation = l.trailingPunctuation;
+      else delete prev.trailingPunctuation;
+      if (l.syllabic) prev.syllabic = l.syllabic;
+      if (prev.source && l.source) prev.source = { ...prev.source, length: l.source.offset + l.source.length - prev.source.offset };
+      return;
+    }
+    joinNext = false;
     out.push(l);
     starts.push(tokStart);
   };
@@ -248,6 +270,11 @@ export function parseLyricLine(
     const ch = body[i]!;
     if (ch === " " || ch === "\t") { i++; continue; }
     tokStart = i;
+    if (joinTilde && ch === "~") {
+      joinNext = out.length > 0;
+      i++;
+      continue;
+    }
     // 跳一个音符（该音符不配字）
     if (ch === skip) { push(mk("")); i++; continue; }
     if (ch === "*") {
@@ -293,7 +320,7 @@ export function parseLyricLine(
       i++;
       // `~` 把后续词并到同一个音符下。后面是标点（Muse 谱里常见 `样~，`）就只是贴标点，照收尾标点收
       while (body[i] === "~" && body[i + 1] !== undefined) {
-        if (isTrailingPunct(body[i + 1]!)) {
+        if (trail(body[i + 1]!)) {
           i++;
           break;
         }
@@ -302,7 +329,7 @@ export function parseLyricLine(
         i++;
       }
       let trailing = "";
-      while (i < body.length && isTrailingPunct(body[i]!)) {
+      while (i < body.length && trail(body[i]!)) {
         trailing += body[i]!;
         i++;
       }
@@ -318,7 +345,7 @@ export function parseLyricLine(
         let text = ch + next;
         i += 2;
         let trailing = "";
-        while (i < body.length && isTrailingPunct(body[i]!)) { trailing += body[i]!; i++; }
+        while (i < body.length && trail(body[i]!)) { trailing += body[i]!; i++; }
         const l = mk(text);
         if (trailing) l.trailingPunctuation = trailing;
         push(l);
@@ -329,7 +356,7 @@ export function parseLyricLine(
     }
     // 标点并到前一音节；**前面没字可并时不能丢**——`《圣经》…` 行首那个 `《`
     // 丢了就会让整行少一个字符、往返不稳
-    if (isTrailingPunct(ch)) {
+    if (trail(ch)) {
       const prev = out[out.length - 1];
       if (prev) prev.trailingPunctuation = (prev.trailingPunctuation ?? "") + ch;
       else prefix += ch;
@@ -343,7 +370,7 @@ export function parseLyricLine(
       while (j < body.length) {
         const c = body[j]!;
         if (c === "\\" && (body[j + 1] === "-" || body[j + 1] === "/")) { text += body[j + 1]!; j += 2; continue; }
-        if (/[\s\-_*|{}\\]/.test(c) || c === skip || isCjk(c) || isTrailingPunct(c)) break;
+        if (/[\s\-_*|{}\\]/.test(c) || c === skip || isCjk(c) || trail(c) || (joinTilde && c === "~")) break;
         text += c;
         j++;
       }
@@ -355,7 +382,7 @@ export function parseLyricLine(
         i++;
       }
       let trailing = "";
-      while (i < body.length && isTrailingPunct(body[i]!)) { trailing += body[i]!; i++; }
+      while (i < body.length && trail(body[i]!)) { trailing += body[i]!; i++; }
       const l = mk(text);
       if (syllabic) l.syllabic = syllabic;
       if (trailing) l.trailingPunctuation = trailing;
@@ -1008,7 +1035,7 @@ function buildMusicLine(
         } else if (name === "L") {
           // 曲中改默认音长（ABC §3.1.7；Muse 的 FAQ 就教这么写：一段一拍、一段半拍的谱）。123 的时值不看它
           const lm = /^(\d+)\s*\/\s*(\d+)$/.exec(val.trim());
-          if (lm && Number(lm[2]) > 0) ctx.len = { num: Number(lm[1]), den: Number(lm[2]) };
+          if (lm && Number(lm[2]) > 0) ctx.len = pb.len = { num: Number(lm[1]), den: Number(lm[2]) };
           else report(ctx, "bad-length", tr("diag.j123.badLength", { v: val }), t.source);
         }
         break;
@@ -1337,7 +1364,7 @@ export function parseAbcFamily(
     return m[0].length;
   };
   /** Muse 的 `%%begintext` … `%%endtext` 文字块（说明书 §3.2.6.5）：块里是裸文字，不能当音乐读 */
-  let textBlock: string[] | null = null;
+  let textBlock: { lines: string[]; source: SourceSpan } | null = null;
 
   /** 上一条字段名：`+:` 续行接着写它（ABC §3.1.18） */
   let lastField: FieldName | undefined;
@@ -1349,10 +1376,10 @@ export function parseAbcFamily(
     const line = raw.trim();
     if (textBlock) {
       if (/^%%\s*endtext\b/i.test(line)) {
-        (ensureSong().remarks ??= []).push(textBlock.join("\n"));
+        (ensureSong().remarks ??= []).push(textBlock.lines.join("\n"));
         textBlock = null;
       } else {
-        textBlock.push(line);
+        textBlock.lines.push(line);
       }
       continue;
     }
@@ -1360,14 +1387,10 @@ export function parseAbcFamily(
     // 版本声明与注释
     if (line.startsWith("%")) {
       // Muse 的 `%%` 是它自己的排版参数（字体、页边、行距，说明书 §3.2.6），不是 ABC 指令：
-      // 原样留着（写回 `.jcx` 时照写），不按 `I:` 解释；文字块另收
+      // 原文另存（`Song.museDirectives`，只写回 `.jcx`），不按 `I:` 解释、不进 `style.raw`（那是本项目的版面指令）；文字块另收
       if (ctx.d.id === "jcx" && line.startsWith("%%")) {
-        if (/^%%\s*begintext\b/i.test(line)) textBlock = [];
-        else if (!/^%%\s*endtext\b/i.test(line)) {
-          const ins = parseInstruction(line.slice(2));
-          const st = (ensureSong().style ??= {});
-          st.raw = [...(st.raw ?? []), { key: ins.name, value: ins.value }];
-        }
+        if (/^%%\s*begintext\b/i.test(line)) textBlock = { lines: [], source: { line: ln, column: 0, offset: lineOffset, length: raw.length } };
+        else if (!/^%%\s*endtext\b/i.test(line)) (ensureSong().museDirectives ??= []).push(line.slice(2).trim());
         continue;
       }
       // `%%directive` 等价 `I:directive`（ABC §11.0.2）
@@ -1430,7 +1453,11 @@ export function parseAbcFamily(
     }
     const lex = ctx.d.lex(raw.slice(musicFrom), ln, lineOffset, musicFrom);
     for (const e of lex.errors) report(ctx, "lex", e.message, e.source);
+    // 这个声部自己的默认音长（行内 `[L:]` 改过的）只在读它的行时生效，读完还回头部那一份
+    const headerLen = ctx.len;
+    if (p.len) ctx.len = p.len;
     buildMusicLine(ctx, p, lex.tokens, marks);
+    ctx.len = headerLen;
     // ABC §6.1：**代码里的换行就是谱面换行**（默认 `I:linebreak <EOL>`）。
     // 123 不吃这一条——它用显式的 `$`，简谱一行常写得很长，不该被源码折行绑死。
     // 语义同 `$`：「这一小节之后换行」，所以挂在刚收尾的那一个上。
@@ -1447,6 +1474,11 @@ export function parseAbcFamily(
       }
       if (p.block) p.block.broken = true;
     }
+  }
+  // 文字块没收尾：后面的全被当成文字吞了，曲谱多半读不出音符——指到那条 `%%begintext`，别只报「没读出音符」
+  if (textBlock) {
+    report(ctx, "jcx-text-open", tr("diag.jcx.textOpen"), textBlock.source);
+    (ensureSong().remarks ??= []).push(textBlock.lines.join("\n"));
   }
   finishSong();
   return doc;
@@ -1487,6 +1519,7 @@ function addLyricLine(ctx: Ctx, pb: PartBuild, f: FieldLine, pendingLyrics: Pend
   const { syllables, label } = parseLyricLine(
     f.value, from, f.source, f.valueOffset, ctx.d.lyricSkip,
     (code, message) => report(ctx, code, message, f.source),
+    ctx.d.id === "jcx",
   );
   // 印刷段号不占音符格，挂在该段**第一个非空**音节上——空音节（跳音符）不会被挂到元素上
   // （`attachLyrics` 会跳过），label 跟着它一起丢

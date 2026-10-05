@@ -610,6 +610,7 @@ export const zh = {
   "diag.abc.graceOpen": "倚音缺 `}`",
   "diag.abc.badChar": "认不出的记号 `{ch}`",
   "diag.jcx.wedge": "渐强/渐弱的括号没有配对（`(<` … `<)`、`(>` … `>)`）",
+  "diag.jcx.textOpen": "`%%begintext` 没有对应的 `%%endtext`：后面的内容都当成了文字块",
   "diag.jcx.trackSkipped": "Muse 的 {style} 音轨（吉他谱/尤克里里谱）暂不支持，这一轨没有读入",
   "diag.jcx.gbkMissing": "GBK 写不出这些字，存成了 ?：{chars}",
   // 文本谱方言嗅探与杂项错误
