@@ -1,6 +1,6 @@
 [package]
 name = "dolce"
-version = "0.8.0"
+version = "0.8.1"
 description = "悦谱 Dolce：简谱与五线谱的编辑、识谱与排版"
 authors = []
 edition = "2021"
