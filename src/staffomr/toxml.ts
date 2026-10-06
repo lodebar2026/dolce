@@ -5,7 +5,7 @@
 import { barlineXml, escapeXml, scorePartXml, workXml, wrapPartwise } from "../score/xmlutil";
 import { harmonyXml } from "../score/harmonyxml";
 import type { StaffNote } from "./notedata";
-import { fifthsAt, timeSignatures, type StaffContext } from "./notedata";
+import { clefFor, fifthsAt, timeSignatures, type StaffContext } from "./notedata";
 import { Bar, type Staff } from "./model";
 import type { StaffScore } from "./score";
 
@@ -143,7 +143,7 @@ export function toMusicXml(lines: StaffLineResult[], opts: StaffXmlOptions = {})
  *（下谱表 5、6，通行写法），且一律写 `<voice>`。各行谱都从 1 编的话，上下谱表的
  * voice 1 被读成同一个声部，拍数自检把两行的时值加在一起（每小节都成了两倍）。
  */
-function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: number): string {
+function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: number, midClefs: { x: number; xml: string }[] = []): string {
   // **起点不能用 `ticks`**：那个函数有 `Math.max(1, …)` 的下限（时值再短也得占一格），
   // 拿它换算 offset=0 会得到 1，于是每个从小节头起的声部都白白多出一个 1 格的 `<forward>`。
   const at = (dur: number) => Math.round(ticks(1) * dur);
@@ -169,7 +169,10 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
     }
     let cur = 0;
     let prev: StaffNote | null = null;
+    // 行中换谱号写在第一个声部里、它右边第一个音之前（`<attributes>` 按时间位置对整个谱表生效）
+    const clefsLeft = vi === 0 ? midClefs.slice() : [];
     for (const n0 of vn) {
+      while (clefsLeft.length && !n0.chordExtra && n0.x > clefsLeft[0].x) body += `<attributes>${clefsLeft.shift()!.xml}</attributes>`;
       // **`<chord/>` 按写出的次序定**，不按 `chordExtra`：那个标记是按和弦数组的下标给的
       //（下标 0 的不带），上面按音高重排之后，带标记的常常排到了第一个——
       // `<chord/>` 的意思是「与前一个音同时」，于是和弦的顶音被挂到了**前一拍**上
@@ -209,9 +212,22 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       body += `<forward><duration>${full - cur}</duration></forward>`;
       cur = full;
     }
+    for (const c of clefsLeft) body += `<attributes>${c.xml}</attributes>`;
     if (vi < voices.length - 1 && cur > 0) body += `<backup><duration>${cur}</duration></backup>`;
   });
   return body;
+}
+
+/** 行首离谱表左端几个线距以内的谱号算行首的（同 `notedata.ts` 里 `clefs` 的切法）。 */
+const ROW_START_CLEF = 5;
+type SysEntry = StaffScore["systems"][number];
+function rowStartClef(entry: SysEntry, st: Staff): string {
+  const sp = st.stepDistance() * 2;
+  return clefFor(entry.page, entry.ctx, st, st.box.left + sp * ROW_START_CLEF)?.code ?? "gClef";
+}
+function midRowClefs(entry: SysEntry, st: Staff) {
+  const sp = st.stepDistance() * 2;
+  return (entry.ctx.get(st)?.clefs ?? []).filter((c) => c.box.left >= st.box.left + sp * ROW_START_CLEF);
 }
 
 /** `emitVoices` 用掉的时长（大谱表换行时要照它倒回小节头）。 */
@@ -442,8 +458,9 @@ function scoreToMusicXmlRaw(
           }
         }
         if (bi === 0) {
-          // 多谱表声部：`<staves>` 与逐谱表的 `<clef number=n>`
-          const clefs = staves.map((st) => (st ? clefXml(entry.ctx.get(st)?.clef?.code ?? "gClef") : ""));
+          // 多谱表声部：`<staves>` 与逐谱表的 `<clef number=n>`。
+          // 行首的谱号与读音高时用的同一个（`clefFor`）：这一行没认出谱号的沿用上一系统的，不是一律高音谱号
+          const clefs = staves.map((st) => (st ? clefXml(rowStartClef(entry, st)) : ""));
           if (clefs.join("|") !== prevClef.join("|")) {
             if (staves.length > 1) attrs += `<staves>${staves.length}</staves>`;
             clefs.forEach((c, k) => {
@@ -467,7 +484,14 @@ function scoreToMusicXmlRaw(
           const bar = st.bars[bi];
           if (!bar) return;
           const inBar = notesOf(st).filter((n) => n.x >= bar.left && n.x < bar.right);
-          body += emitVoices(inBar, ticks, staves.length > 1 ? k + 1 : 0);
+          // 行中换谱号（读音高时已经按它读了，`clefFor`）：写进这一小节，下一行行首要不要再写照它比
+          const mids = midRowClefs(entry, st).filter((c) => c.box.left >= bar.left && c.box.left < bar.right);
+          const midXml = mids.map((c) => {
+            const x = clefXml(c.code);
+            return { x: c.box.left, xml: staves.length > 1 ? x.replace("<clef>", `<clef number="${k + 1}">`) : x };
+          });
+          if (mids.length) prevClef[k] = clefXml(mids[mids.length - 1].code);
+          body += emitVoices(inBar, ticks, staves.length > 1 ? k + 1 : 0, midXml);
           const used = voiceTicks(inBar, ticks);
           // 换到下一行谱之前要把时间**倒回**小节头（MusicXML 的 `<backup>`）
           if (k < staves.length - 1 && used > 0) body += `<backup><duration>${used}</duration></backup>`;
