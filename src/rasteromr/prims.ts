@@ -94,39 +94,20 @@ function vRuns(bin: Binary): Uint16Array {
   return out;
 }
 
-/**
- * 去线图上，把**整段被抹空**的压线墨从原图补回来：这一列去线的那几行一点墨不剩、原图的竖游程却比一根线厚出两像素以上、不到 0.8 格
- *（一根杠那么厚，不到一个头），就把这一段原样补上。薄杠压线时整段（杠 + 线）落在去线的那几行里、上下又不连墨，
- * 被当成谱线整个抹掉（望十架 p7）。只削薄了的不补：补回去杠量厚了，一层读成两层（p6 钢琴右手八分读成十六分）。
- * 只给量符杠厚度用（见 `findPrimitives` 的「符杠」）。
- */
-function restoreLinesUnderInk(nl: Binary, orig: Binary, lineYs: number[], unit: RasterUnit): Binary {
-  const { w, h } = nl;
-  const out: Binary = { w, h, data: nl.data.slice() };
-  const runs = vRuns(orig);
-  // 线带与 `removeStaffLines` 同一套：逐列的局部线心（扫描件斜着，全局 y 差一两像素就补错了行）
-  const half = unit.lineThick / 2 + 1;
+/** 本页谱线的实测厚度：各谱线 y 上逐列（每隔三列）取竖游程，取九成分位（只取不到 0.4 格的，压着符号的不算）。
+ *  不取中位数：扫描件的线粗细不匀（望十架 2~3 像素，中位数 2）。 */
+function measuredLineThick(bin: Binary, vr: Uint16Array, lineYs: number[], unit: RasterUnit): number {
+  const ts: number[] = [];
   for (const ly of lineYs) {
-    const centers = localLineCenters(orig, runs, ly, unit);
-    for (let x = 0; x < w; x++) {
-      const ya = Math.max(0, Math.floor(centers[x] - half));
-      const yb = Math.min(h - 1, Math.ceil(centers[x] + half));
-      // 去线图上这一段还有墨的（只削薄了、或本来就留着）不动：补回去会把杠量厚，一层读成两层
-      let kept = false;
-      for (let y = ya; y <= yb && !kept; y++) if (nl.data[y * w + x]) kept = true;
-      if (kept) continue;
-      let y = -1;
-      for (let yy = ya; yy <= yb; yy++) if (orig.data[yy * w + x] && (y < 0 || runs[yy * w + x] > runs[y * w + x])) y = yy;
-      // 下限要稳稳高过一根线：估出来的线宽常比实际薄一像素（望十架 p6 估 2px、谱线实有 3px），只按倍数卡会把空谱线整条补回来
-      if (y < 0 || runs[y * w + x] < Math.max(unit.lineThick + 2, unit.space * 0.4) || runs[y * w + x] > unit.space * 0.8) continue;
-      let a = y;
-      while (a > 0 && orig.data[(a - 1) * w + x]) a--;
-      // 整段都在线带里才补（压线的薄杠连线一起被抹）；伸出线带的是别的墨，去线时本来就留着
-      if (a < ya || a + runs[y * w + x] - 1 > yb) continue;
-      for (let k = a; k < a + runs[y * w + x]; k++) out.data[k * w + x] = 1;
+    const y = Math.round(ly);
+    if (y < 0 || y >= bin.h) continue;
+    for (let x = 0; x < bin.w; x += 3) {
+      const t = vr[y * bin.w + x];
+      if (t > 0 && t <= unit.space * 0.4) ts.push(t);
     }
   }
-  return out;
+  ts.sort((p, q) => p - q);
+  return ts.length ? ts[Math.floor(ts.length * 0.9)] : unit.lineThick;
 }
 
 /** 逐像素的横向游程长度。 */
@@ -647,8 +628,6 @@ export function findPrimitives(
   staffLefts: number[] = [],
   /** 细线扫描件（`RasterPage.faint`）：竖笔的「细」放宽，见「竖笔画」那段。 */
   faint = false,
-  /** 去线之前的原图：量压在谱线上的符杠厚度时把谱线补回去（见「符杠」那段）。 */
-  orig: Binary | null = null,
 ): RasterPrims {
   const { w, h } = bin;
   const onGrid = ledgerGrid(staffLineYs, unit);
@@ -748,13 +727,7 @@ export function findPrimitives(
   // 符杠长宽比闸。干净页仍由四分之一格定下限（正常的细符杠要保留）。
   const bLo = Math.max(unit.space * 0.25, unit.lineThick * 1.5);
   const bHi = unit.space * 1.1;
-  // **压在谱线上的杠**：去线时连杠带线抹掉一个线宽，薄杠剩下的过不了 `bLo`（望十架 p7 长笛一串八分的杠贴着第四线，
-  // 原图 5~6 像素、去线后 3~4，线宽 3；钢琴右手贴着第五线的两条杠同样没了，二十来个八分读成四分）。
-  // 量厚度时把比谱线厚的那段压线墨从原图补回来（空着的谱线不补）
-  const nlB = orig ? restoreLinesUnderInk(bin, orig, staffLineYs, unit) : null;
-  const vrB = nlB ? vRuns(nlB) : vr;
-  const hrB = nlB ? hRuns(nlB) : hr;
-  for (let i = 0; i < bMask.length; i++) if (vrB[i] >= bLo && vrB[i] <= bHi && hrB[i] >= unit.space) bMask[i] = 1;
+  for (let i = 0; i < bMask.length; i++) if (vr[i] >= bLo && vr[i] <= bHi && hr[i] >= unit.space) bMask[i] = 1;
   // **沿 x 闭一道**，与横笔画同一个道理：符干穿过符杠的那几列横向游程很短，
   // 出了「横向游程 ≥ 一个线距」这道闸，符杠于是被每根符干切成小段
   //（实测你要等候 p2 一条符杠碎成 1.33~1.65 格的六截，`w ≥ 1.5 格` 那道闸挡掉大半，
@@ -967,8 +940,7 @@ function partialBeams(bin: Binary, beams: BeamQuad[], unit: RasterUnit, vSegs: L
         // 落在已认出的杠上的不算（十六分那组两条杠都是整条，从第一条往外走就撞上第二条）
         const cy = (top + bot) / 2;
         if (beams.some((q) => q !== b && x0 >= q.box.x - 2 && x1 <= q.box.x + q.box.w + 2 && cy >= q.box.y && cy <= q.box.y + q.box.h)) continue;
-        // 下限与整条杠同口径（`bLo`）：只有一根谱线厚的是去线剩下的线头（望十架 p6 钢琴右手杠下第五线的两截，八分读成十六分）
-        if (bot - top + 1 < Math.max(sp * PARTIAL_BEAM_H[0], unit.lineThick * 1.5) || bot - top + 1 > sp * PARTIAL_BEAM_H[1]) continue;
+        if (bot - top + 1 < sp * PARTIAL_BEAM_H[0] || bot - top + 1 > sp * PARTIAL_BEAM_H[1]) continue;
         // 与主杠**同一根干**：杠端附近有一列从主杠一直连墨到这一截（干穿过那道白缝）
         const reachY = side > 0 ? bot : top;
         const onStem = [...Array(Math.round(unit.lineThick * 2) + 5).keys()].some((d) => {
@@ -1189,9 +1161,50 @@ export function removeStaffLines(bin: Binary, lineYs: number[], unit: RasterUnit
   const look = Math.max(1, Math.round(unit.lineThick));
   const runs = vRuns(bin);
   const maxRun = unit.lineThick * THIN_ONLY_RUN;
+  // **比一根线厚得多、又横着连成一段的不抹**：压在谱线上的薄符杠，杠连线整段落在线带里、上下又不连墨，照「上下没墨」抹就连杠一起没了
+  //（望十架 p7 长笛一串八分的杠贴着第四线，原图 5~6 像素、线 3 像素；钢琴右手贴第五线的两条杠同样，二十来个八分读成四分）。
+  // 厚度下限与符杠同口径（`findPrimitives` 的 `bLo`），线宽取本页谱线实测的九成分位：估值常比实际薄一像素
+  //（望十架 p6 估 2、实有 3），只按估值卡，厚一点的那几段空谱线也会留下来
+  const lineT = Math.max(unit.lineThick, measuredLineThick(bin, runs, lineYs, unit));
+  const keepRun = Math.max(unit.space * 0.25, lineT * 1.5);
   for (const cy of lineYs) {
     const centers = localLineCenters(bin, runs, cy, unit);
     const thin = thinOnly.has(cy);
+    // 这条线上逐列的「厚」：线带里的竖游程过 `keepRun`、又不到 0.8 格（再厚是符头、干，上下本来就连着墨）。
+    // 只留**横向连着一格半以上都厚**的那几段（杠那么长）：升降号、符头压线的那一小截不够长，照旧抹
+    const thickCol = new Uint8Array(w);
+    const tAt = new Uint16Array(w);
+    for (let x = 0; x < w; x++) {
+      const y0 = Math.max(0, Math.floor(centers[x] - half));
+      const y1 = Math.min(h - 1, Math.ceil(centers[x] + half));
+      let t = 0;
+      for (let y = y0; y <= y1; y++) t = Math.max(t, runs[y * w + x]);
+      tAt[x] = t;
+      if (t >= keepRun && t <= unit.space * 0.8) thickCol[x] = 1;
+    }
+    /** 这一段比**同一条线两旁**（各四格、不算厚列）的中位厚度厚出两像素以上：低清放大的扫描件谱线本身就有一段段糊厚的（齐来谢主歌），两旁一样厚 */
+    const thickerThanSides = (xa: number, xb: number) => {
+      const side: number[] = [];
+      for (const [p0, p1] of [[xa - unit.space * 4, xa - 1], [xb + 1, xb + unit.space * 4]])
+        for (let x = Math.max(0, Math.round(p0)); x <= Math.min(w - 1, Math.round(p1)); x++) if (!thickCol[x] && tAt[x] > 0) side.push(tAt[x]);
+      if (!side.length) return false;
+      side.sort((p, q) => p - q);
+      const mid: number[] = [];
+      for (let x = xa; x <= xb; x++) mid.push(tAt[x]);
+      mid.sort((p, q) => p - q);
+      return mid[mid.length >> 1] >= side[side.length >> 1] + 2;
+    };
+    const keep = new Uint8Array(w);
+    for (let x = 0; x < w; ) {
+      if (!thickCol[x]) {
+        x++;
+        continue;
+      }
+      let x2 = x;
+      while (x2 + 1 < w && thickCol[x2 + 1]) x2++;
+      if (x2 - x + 1 >= unit.space * 1.5 && thickerThanSides(x, x2)) keep.fill(1, x, x2 + 1);
+      x = x2 + 1;
+    }
     for (let x = 0; x < w; x++) {
       const y0 = Math.max(0, Math.floor(centers[x] - half));
       const y1 = Math.min(h - 1, Math.ceil(centers[x] + half));
@@ -1200,6 +1213,7 @@ export function removeStaffLines(bin: Binary, lineYs: number[], unit: RasterUnit
         for (let y = y0; y <= y1; y++) run = Math.max(run, runs[y * w + x]);
         if (run > maxRun) continue;
       }
+      if (keep[x]) continue;
       let up = 0;
       for (let y = Math.max(0, y0 - look); y < y0; y++) up |= data[y * w + x];
       if (up) continue;

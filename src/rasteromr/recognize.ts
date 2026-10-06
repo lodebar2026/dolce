@@ -961,7 +961,7 @@ export async function recognizeRasterPage(
   const strayLines: LineSeg[] = lines
     .filter((l) => !groupedLines.has(l))
     .map((l) => ({ x0: l.left, y0: l.y, x1: l.right, y1: l.y, lw: l.y1 - l.y0 + 1, maxLw: l.y1 - l.y0 + 1 }));
-  const prims = findPrimitives(nl, unit, gridYs, staffLefts, raster.faint, raster.bin);
+  const prims = findPrimitives(nl, unit, gridYs, staffLefts, raster.faint);
 
   // ── 简谱行（混排谱）：**先于一切**认领 ─────────────────────────────────────
   //
@@ -3887,6 +3887,29 @@ export async function recognizeRasterPage(
     });
     if (beside) notes.splice(i, 1);
   }
+  // **谱表里读成四分休止的降号**：扫描件上降号的肚子与竖笔连得细，字典常认成四分休止（望十架 p7 m55 B♭5 前的降号，
+  // 那一小节的升降全按调号读）。四分休止是折线，没有一根贯通的直竖笔；降号有一根、肚子在下面。
+  // 右边一格半以内有个头、头心落在这一块的下半截（肚子那里），块里只数出一根通高竖笔的，改成降号交给临时记号那一路。
+  for (let i = notes.length - 1; i >= 0; i--) {
+    const r = notes[i];
+    if (!r.rest || r.sym.code !== "restQuarter") continue;
+    const rb = r.sym.box;
+    const hgt = rb.bottom - rb.top;
+    const owner = notes.some((n) => {
+      if (n.rest || n.staff !== r.staff) return false;
+      const dx = n.sym.box.left - rb.right;
+      const hy = (n.sym.box.top + n.sym.box.bottom) / 2;
+      return dx >= -unit.space * 0.3 && dx <= unit.space * 1.5 && hy >= rb.top + hgt * 0.45 && hy <= rb.bottom + unit.space * 0.25;
+    });
+    if (!owner) continue;
+    const pad = Math.round(unit.space * 0.3);
+    if (tallStrokes(raster.bin, { x: rb.left - pad, y: rb.top, w: rb.right - rb.left + pad * 2, h: hgt }) !== 1) continue;
+    r.sym.code = "accidentalFlat";
+    // 盒收到肚子上（`py` 跟着落到肚子中心），同字典认出的降号
+    r.sym.box = { ...rb, top: rb.top + hgt * 0.45 };
+    r.sym.py = (r.sym.box.top + r.sym.box.bottom) / 2;
+    notes.splice(i, 1);
+  }
   attachAccidentalsByPitch(pg, ctx, notes);
   splitUnisons(notes, stems, beams, raster.bin, unit.space);
   markCrossStaff(pg, notes, stems, unit.space);
@@ -4715,6 +4738,8 @@ const LYRIC_NOTE_DX = 0.9;
 /** 改挂到下方那行谱：音节要有这么多对得上下方那行的音、且比上方那行多这么多。 */
 const LYRIC_BELOW_FIT = 0.6;
 const LYRIC_BELOW_MARGIN = 0.3;
+/** 至少这么多个音节才判。 */
+const LYRIC_BELOW_MIN = 8;
 
 /**
  * **印在谱表上方的歌词挂到下方那行谱**（`buildLyricLines` 的 `pickBelow`）。默认一行歌词归它上方最近的那行谱；
@@ -4727,6 +4752,8 @@ function lyricsBelongBelow(cxs: number[], above: Staff | null, below: Staff, not
     const xs = notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
     return cxs.filter((cx) => xs.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX)).length / cxs.length;
   };
+  // 太短的行（几个字）上下两行都对得上几个，比不出来（烛光颂曲 p5 一行六个字，上 0.67、下 1.00，其实是上面那行的）
+  if (cxs.length < LYRIC_BELOW_MIN) return undefined;
   const fb = fit(below);
   if (fb < LYRIC_BELOW_FIT) return undefined;
   if (!above) return below;

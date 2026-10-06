@@ -507,9 +507,11 @@ export function buildLyricLines(
         const d = st.box.top - r.bottom;
         if (d >= 0 && d < belowD) (belowD = d), (below = st);
       }
-      if (below && belowD <= maxGap) {
+      // 只判汉字行：一字一音，音节中心与符头对得齐；拉丁行按词切，词中心落在几个音中间，对位比不出来
+      if (below && belowD <= maxGap && !r.objs.some(latin)) {
         const cxs = dedupeSyllables(r.objs.flatMap((o) => splitSyllables(o, dict))).map((q) => q.cx);
-        const alt = cxs.length ? pickBelow(cxs, best && bestD <= maxGap ? best : null, below) : undefined;
+        // 上方的谱只要有就交出去（多段歌词后几段离谱远、靠链式接上，也是上方那行的）
+        const alt = cxs.length ? pickBelow(cxs, best, below) : undefined;
         if (alt) {
           const a = byStaff.get(alt) ?? [];
           a.push({ top: r.top, bottom: r.bottom, objs: r.objs });
