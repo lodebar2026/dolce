@@ -20,7 +20,7 @@ import { markRepeatsAndVoltas } from "./repeats";
 import { findRasterTuplets } from "./tuplet";
 import { attachWordLines, findWordStrips, type WordLine, type WordStrip } from "./words";
 import { applyTuplet, attachDynamicTexts, attachNotations, attachWedges, findNotations, findTuplets, markLyricExtends } from "../staffomr/notations";
-import type { Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
+import type { PObj, Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
 import { buildRasterPage, makeSymObj, makeSysBracketObj, makeTextObj, pushSeg, type RasterSym } from "./adapt";
 import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, ledgerGrid, joinVSegs, removeStaffLines, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
@@ -39,7 +39,7 @@ import { findRasterWedges, type RasterWedge } from "./wedge";
 import { groupDynamics, type RasterDynamic } from "./dynamics";
 import { findRasterDashedSlurs, findRasterSlurs } from "./slur";
 import { ContourLedger } from "./ledger";
-import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine } from "../staffomr/textanalyze";
+import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { attachSlurs, markSlurNotes, reconnectSlurs, type SlurArc } from "../staffomr/slur";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
@@ -4072,6 +4072,8 @@ export async function recognizeRasterPage(
         }
       }
     }
+    /** 行首印着段号的歌词对象。 */
+    const verseObjs = new Set<PObj>();
     for (const strip of ocr ? lyricStrips : []) {
       const chars = ocr!.get(stripKey(strip));
       if (!chars) continue; // 缓存没命中：这一条没跑过 OCR，宁可留空不编造
@@ -4100,11 +4102,15 @@ export async function recognizeRasterPage(
         : [latin ? latinCells(strip, chars) : mapCharsToCells(strip, chars)];
       // 「字数 == 格数」这个结构指标只对汉字行有意义（拉丁行压根不切格）
       if (!latin && !mix && foldLyricChars(chars).length === strip.cells.length) lyricStats.parity++;
+      // 行首印着段号（「1.」「2、」）：OCR 读出来、折叠时剔掉了，这里记一笔——段号是歌词的强判据（`lyricsBelongBelow`）
+      // 只认一位数：页顶标题前的诗歌编号（有一位神「23.有一位神」）也是「数字 + 点」
+      const verseNo = /^[1-9][.．、]/.test([...chars].sort((a, b) => a.xFrac - b.xFrac).map((c) => c.ch).join(""));
       for (const cells of parts) {
         if (!cells.some((c) => c.ch)) continue;
         const o = makeTextObj(pg.objs.length + objs.length, { cells, sizeDev: strip.charH });
         o.addTag("Lyric");
         objs.push(o);
+        if (verseNo) verseObjs.add(o);
       }
     }
     pg.objs.push(...objs);
@@ -4151,7 +4157,7 @@ export async function recognizeRasterPage(
         notes.splice(i, 1);
       }
     }
-    lyricLines.push(...buildLyricLines(pg, objs, undefined, (cxs, above, below, own, chained) => lyricsBelongBelow(cxs, above, below, own, chained, notes, unit.space)));
+    lyricLines.push(...buildLyricLines(pg, objs, undefined, (row) => lyricsBelongBelow(row, verseObjs, notes, unit.space)));
     foldBilingualLyrics(pg, lyricLines);
     moveEchoLines(pg, lyricLines, notes, unit.space);
     splitVoiceLyrics(pg, lyricLines, notes, unit.space);
@@ -4781,14 +4787,20 @@ function pruneMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, sp:
 
 /** 音节离符头多远（格）算对得上。 */
 const LYRIC_NOTE_DX = 0.9;
-/** 改挂到下方那行谱：下方那行对得上的音节占比下限。 */
+/** 改挂到下方那行谱：下方那行**一音一字**对得上的音节占比下限。 */
 const LYRIC_BELOW_FIT = 0.6;
+/**
+ * 上方没有谱（页顶那条带）的行要一音一字对上这么多才挂：那里还有标题。大字号标题的整字比歌词字号上限高，进不了歌词带，
+ * 只剩几个零碎偏旁当字格，字距也就量不准（你的信实广大页顶标题 5/7 = 0.71 对得上下方的音；望十架 p3 页顶那行歌词 0.93）。
+ */
+const LYRIC_HEAD_FIT = 0.8;
 /** 「只对得上一边」的音节至少几个、且是另一边的几倍，才算这一边的证据压过另一边。 */
 const LYRIC_ONLY_MIN = 3;
 const LYRIC_ONLY_RATIO = 2;
-/** 至少这么多个音节才判。上方没有谱的（页顶那条带）要 `LYRIC_HEAD_MIN` 个。 */
+/** 至少这么多个音节才判。 */
 const LYRIC_BELOW_MIN = 4;
-const LYRIC_HEAD_MIN = 8;
+/** 歌词的字距：相邻音节中心距的中位数至少是字高的这么多倍。标题、署名字挨着字排（1.0 上下），歌词跟着音符排开。 */
+const LYRIC_PITCH_MIN = 1.5;
 
 /** 一串音节 x 里，「只对得上 a 那串音、对不上 b 那串」的个数与「反过来」的个数（x 差在 `LYRIC_NOTE_DX` 格以内算对上）。 */
 function onlyFits(cxs: number[], a: number[], b: number[], sp: number): [number, number] {
@@ -4803,35 +4815,67 @@ function onlyFits(cxs: number[], a: number[], b: number[], sp: number): [number,
 }
 
 /**
+ * **一音一字**对得上的音节占比：按 x 从左到右，每个音节配离它最近、还没配过的那一拍（同一列的和弦成员算一拍），
+ * x 差在 `LYRIC_NOTE_DX` 格以内才算。只看「附近有没有音」的话，一个音能被前后几个字都算上，挤在一起的标题也凑得出高比例。
+ */
+function oneToOneFit(cxs: number[], noteXs: number[], sp: number): number {
+  const cols: number[] = [];
+  for (const x of [...noteXs].sort((p, q) => p - q)) if (!cols.length || x - cols[cols.length - 1] > sp * 0.3) cols.push(x);
+  const used = new Set<number>();
+  let hit = 0;
+  for (const cx of [...cxs].sort((p, q) => p - q)) {
+    let bi = -1;
+    for (let i = 0; i < cols.length; i++) if (!used.has(i) && Math.abs(cols[i] - cx) <= sp * LYRIC_NOTE_DX && (bi < 0 || Math.abs(cols[i] - cx) < Math.abs(cols[bi] - cx))) bi = i;
+    if (bi >= 0) used.add(bi), hit++;
+  }
+  return cxs.length ? hit / cxs.length : 0;
+}
+
+/**
  * **夹在两行谱之间的歌词归哪一行**（`buildLyricLines` 的 `pickBelow`）。默认一行歌词归它上方最近的那行谱；
  * 可有的声部把词印在谱表上方（望十架 p3 独唱声部；页底那行词其实是下一系统顶行的，挂到了上一系统的钢琴左手上）。
  *
  * 照简谱夹在两行数字之间的八度点那套判法（`omr/jianpu.ts::resolvePairOctaveDots`，见实现篇「两声部一组裁决」）：
- * **不按远近、也不比总的对位率**，只看**排除性的证据**——
- *   - 上方没有谱（页顶那条带）：没有别的主，下方那行对得上六成就是它的；
+ * **不按远近、也不比总的对位率**，先看互斥、再看排除性的证据——
+ *   - 上方没有谱（页顶那条带）：没有别的主，可那里也有标题、署名、速度语。**行首有段号（一位数）的是歌词**（强判据，
+ *     免掉字距、一音一字对上六成就挂）；
+ *     否则要字距像歌词（相邻音节中心距的中位数 ≥ 1.5 个字高：标题、署名字挨着字排）、且一音一字对得上下方那行八成；
  *   - **互斥**：下方那行谱是单声部、自己下面已经有词（简谱「下声部脚下已有点，夹在中间的这颗归上声部」），归上方；
  *     两声部一行的谱上下可以各挂一行（各归一个声部），不互斥；上方那行谱与这一行之间已有它自己的汉字行的，这一行是
  *     它往下接的一段，也归上方；
  *   - 两边都有谱：逐音节看对不对得上两边的音，**两边都对得上的不表态**（SATB 上下两行节奏一样，各音节两边都对得上，
  *     证据为零，照默认挂上方）；只对得上下方的至少 `LYRIC_ONLY_MIN` 个、且是只对得上上方的 `LYRIC_ONLY_RATIO` 倍，
- *     下方那行又对得上六成，才挂下方。按总对位率比（下方高三成就挪）时，上方那行恰好在几处休止的短行也被挪走
- *     （烛光颂曲 p5 一行六个字，上 0.67、下 1.00，只对得上下方的只有两个）。
+ *     下方那行又一音一字对得上六成，才挂下方。
  */
-function lyricsBelongBelow(cxs: number[], above: Staff | null, below: Staff, belowHasOwn: boolean, aboveHasOwn: boolean, notes: StaffNote[], sp: number): Staff | undefined {
+function lyricsBelongBelow(row: LyricRowInfo, verseObjs: Set<PObj>, notes: StaffNote[], sp: number): Staff | undefined {
+  const { syllables, above, below } = row;
+  const cxs = syllables.map((q) => q.cx);
   const xsOf = (st: Staff) => notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
-  if (cxs.length < LYRIC_BELOW_MIN) return undefined;
   const xb = xsOf(below);
-  const fb = cxs.filter((cx) => xb.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX)).length / cxs.length;
-  if (fb < LYRIC_BELOW_FIT) return undefined;
-  // 上方没有谱（页顶那条带）：没有别的主，可那里也有标题、署名、速度语，五六个字碰巧对得上下方的音
-  //（你的信实广大页顶标题挂成第 1 段，中文 100 → 71.6%）。这一档照旧要 `LYRIC_HEAD_MIN` 个音节
-  if (!above) return cxs.length >= LYRIC_HEAD_MIN ? below : undefined;
+  if (!above) {
+    const fit = oneToOneFit(cxs, xb, sp);
+    // 段号是强判据：免掉字距，一音一字照两行之间那一档（六成）
+    if (row.objs.some((o) => verseObjs.has(o))) return fit >= LYRIC_BELOW_FIT ? below : undefined;
+    if (cxs.length < LYRIC_BELOW_MIN) return undefined;
+    // 字距：相邻音节中心距的中位数 / 字号。字号取各音节字格**长边**（宽、高取大）的 85 分位（汉字是方的；同 `lyric.ts` 量字宽）：
+    // 大字号的标题整字进不了歌词带，只剩碎笔当字格，高只有两三像素（我一生要赞美你页顶标题「一」只剩一横，
+    // 按字格高量字距 3.3 倍，六个字又碰巧一音一字全对上；碎笔长短不一，中位数也只有 44、真字 83）；整行的行盒也不行，
+    // 一行里常并着别处小字号的字。真歌词的字号很齐，85 分位就是字号
+    const sorted = [...syllables].sort((p, q) => p.cx - q.cx);
+    const gaps = sorted.slice(1).map((q, i) => q.cx - sorted[i].cx).sort((p, q) => p - q);
+    const hs = sorted.map((q) => Math.max(0, ...q.glyphs.map((g) => Math.max(g.bbox.w, g.bbox.h)))).sort((p, q) => p - q);
+    const charH = hs[Math.min(hs.length - 1, Math.floor(hs.length * 0.85))];
+    if (!(charH > 0) || gaps[gaps.length >> 1] < charH * LYRIC_PITCH_MIN) return undefined;
+    return fit >= LYRIC_HEAD_FIT ? below : undefined;
+  }
+  if (cxs.length < LYRIC_BELOW_MIN) return undefined;
+  if (oneToOneFit(cxs, xb, sp) < LYRIC_BELOW_FIT) return undefined;
   // 互斥：下方那行谱是单声部、自己下面已有词，这一行就是上方那行的（破碎 p8 女低那行词有几处女低休止、男高有音，按证据挪去了男高）。
   // 两声部一行的不算：上方的词归上声部、下方的归下声部，两边各挂一行（望十架独唱 / 女低，见 `splitVoiceLyrics`）
-  if (belowHasOwn && !notes.some((n) => n.staff === below && !n.rest && n.voice !== 1)) return undefined;
+  if (row.belowHasOwn && !notes.some((n) => n.staff === below && !n.rest && n.voice !== 1)) return undefined;
   // 另一面的互斥：上方那行谱与这一行之间已有它自己的汉字行，这一行是那串多段歌词往下接的一段
   //（万古磐石歌第 4 段离下一系统近、下一系统两声部，按证据挪了过去，中文 100 → 75%）
-  if (aboveHasOwn) return undefined;
+  if (row.aboveHasOwn) return undefined;
   const [onlyA, onlyB] = onlyFits(cxs, xsOf(above), xb, sp);
   return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO ? below : undefined;
 }
