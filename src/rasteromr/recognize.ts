@@ -574,8 +574,8 @@ const LATIN_CHAIN = 3;
 const CJK_SEED_MIN = 4;
 /** 不管「下方那行谱下面已有词」那道互斥的证据：只对得上下方的至少这么多个（上方一个没有）。 */
 const LYRIC_ONLY_DECISIVE = 6;
-/** 表情文字的术语、页脚注的字样（OCR 不出空格，按连写匹配）：带这些的拉丁行不是歌词（望十架 p1 页脚「Words: … Tune: …」「Flute part is on page 43」）。 */
-const DIRECTION_TERM_RE = /tempo|cresc|poco|unis|dim\.|rall|rit\.|stagger|section|words:|tune:|music:|page\d|copyright|©/i;
+/** 表情文字的术语、页脚注的字样（OCR 不出空格，按连写匹配，**别收会落在连写词缝里的短串**：「For all gen-」连写含 rall、「Spirit.」含 rit.）：带这些的拉丁行不是歌词（望十架 p1 页脚「Words: … Tune: …」「Flute part is on page 43」）。 */
+const DIRECTION_TERM_RE = /tempo|cresc|poco|molto|unis\.|dim\.|rall\.|stagger|section|words:|tune:|music:|page\d|copyright|©/i;
 /** 上下贴着的两个头（`isStackedPair`）拆分时每个头的得分门槛。 */
 const PAIR_SCORE_MIN = 0.4;
 /** 同音两声部只挂上一根干时，头另一侧的竖墨至少这么多格才算另一根干（`splitUnisons`）。 */
