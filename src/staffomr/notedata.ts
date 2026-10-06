@@ -764,7 +764,7 @@ export interface StaffNote {
  * 只在**系统内的同一位置**之间继承：一个系统里第 k 行是同一个声部，
  * 声部中途不会换谱号（真换谱号时那一行必然印出来，也就认得出）。
  */
-function clefFor(pg: SPage, ctx: Map<Staff, StaffContext>, stf: Staff, x = Infinity): Sym | null {
+export function clefFor(pg: SPage, ctx: Map<Staff, StaffContext>, stf: Staff, x = Infinity): Sym | null {
   // **行中换谱号**：取音左边最近的那个谱号（望十架 p9 钢琴右手行中换低音谱号）
   const cs = ctx.get(stf)?.clefs ?? [];
   const before = cs.filter((c) => c.box.left < x);
