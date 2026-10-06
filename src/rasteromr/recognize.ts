@@ -853,6 +853,12 @@ const SNAP_AMBIG = 0.25;
 const THIN_BEAM_H = 0.3;
 /** 离最近谱表外线超过这么多格的符头要有加线链才留。扫过 **3.75** / 4.25 / 4.75：93.47 / 93.32 / 93.23%。 */
 const FAR_HEAD = 3.75;
+/**
+ * 离谱表外线超过几格的头要查加线链（建页前那一道）。原来同 `FAR_HEAD`（3.75 格，三条加线以外）；
+ * 谱表上方的表情文字（「unis. no vibrato」）里的字母离外线两三格，收成实心头、没有干读成全音符 D6、C6
+ *（望十架 p1、p6、p10 十来个）。要一条加线以上（1.25 格）就查：真音外线到头之间每隔一格都有加线墨，字没有。
+ */
+const LEDGER_CHAIN_FROM = 1.25;
 /** 墨柱补干：从头心算起伸出去的长度（格），同 `notehead.ts::INK_STEM`。 */
 const INK_STEM_REACH = [2.5, 7] as const;
 
@@ -1223,7 +1229,9 @@ export async function recognizeRasterPage(
     if (!d) continue;
     const x0 = Math.min(b.x, d.bbox.x);
     const box = { x: x0, y: b.y, w: Math.max(b.x + b.w, d.bbox.x + d.bbox.w) - x0, h: d.bbox.y + d.bbox.h - b.y };
-    if (!isEighthRest(nl, box, c.area + d.area, unit, EIGHTH_REST_H_PIECES)) continue;
+    // 墨按**不去线**的量：去线把符号压在线上的那几行也抹了（望十架 p5 低音谱表一排八分休止，两块合起来墨占 0.25，过不了 0.3）
+    // 两块各自过了尺寸闸、又上球下笔隔着一条线，比整块认的那一路多一道证据，墨占比下限放到 `EIGHTH_REST_FILL_PIECES`
+    if (!isEighthRest(nl, box, symbolInk(nl, raster.bin, box, unit.lineThick), unit, EIGHTH_REST_H_PIECES, EIGHTH_REST_FILL_PIECES)) continue;
     if (restSyms.some((r) => overlapFrac(r.box, box) > 0.3)) continue;
     restSyms.push({ box, code: "rest8th" });
   }
@@ -3501,7 +3509,7 @@ export async function recognizeRasterPage(
   //
   // 大字本的歌词夹在两行谱之间，字的横笔被当成加线、一笔收成符头，读成高音谱表下方的 C3、B♭2
   //（所信有根基一首多出十几个）。44 首独唱谱 GT 里高音谱表上下、低音谱表上方最多 3 条加线，
-  // 低音谱表下方 4 条；离最近谱表外线超过 `FAR_HEAD` 格的头，要从外线到头之间**每隔一格都有一条横墨**
+  // 低音谱表下方 4 条；离最近谱表外线超过 `LEDGER_CHAIN_FROM` 格的头，要从外线到头之间**每隔一格都有一条横墨**
   //（横跨头心左右各半格、够 0.9 格长）才留——合唱谱钢琴行真有五六条加线的音，加线链是全的。
   // 1-bit 扫描件（`gray1`）不做：破碎扫描件一页丢七十九个（音符 +0.1），但挂词锚点连锁变，歌词 −2.6。
   if (raster.kind !== "gray1") {
@@ -3515,7 +3523,7 @@ export async function recognizeRasterPage(
         const dd = Math.max(0, g.lines[0].y - cy, cy - g.lines[4].y);
         if (dd < d) (d = dd), (g0 = g);
       }
-      if (d <= sp * FAR_HEAD) continue;
+      if (d <= sp * LEDGER_CHAIN_FROM) continue;
       // 加线链：谱表外线到头之间每隔一格（上下容 0.3 格）一条横墨，头心左右各 0.5 格里够 0.9 格长
       const b = syms[i].box;
       const cx = b.x + b.w / 2;
@@ -4146,7 +4154,7 @@ export async function recognizeRasterPage(
     lyricLines.push(...buildLyricLines(pg, objs, undefined, (cxs, above, below) => lyricsBelongBelow(cxs, above, below, notes, unit.space)));
     foldBilingualLyrics(pg, lyricLines);
     moveEchoLines(pg, lyricLines, notes, unit.space);
-    splitVoiceLyrics(pg, lyricLines, notes);
+    splitVoiceLyrics(pg, lyricLines, notes, unit.space);
     numberVersesByScript(pg, lyricLines);
     attachLyrics(notes, lyricLines, unit.space * 0.3);
     liftLyrics(pg, notes, unit.space);
@@ -4422,25 +4430,38 @@ const isLatinLine = (l: LyricLine) => {
  * 落进中文第 2 段（GT 记在英文第 1 段，中文第 2 段整段归零）。
  * 英文从第几段起要看**整首**的中文段数（倚靠主第二页只有副歌），这里先占位，见 `settleLyricVerses`。
  */
-/** 两声部一行谱：每个声部至少这么多个音才算两声部。 */
-const VOICE_LYRIC_MIN = 3;
-
 /**
- * **一行谱两个声部、上下各印一行词：上方的词归上声部，下方的归下声部**（望十架独唱 / 女低共用一行谱，
- * 独唱的词印在谱表上方、女低的印在下方）。不分的话两行词按 x 挂到同一串音上，下方那行成了上声部的第 2 段，
- * 下声部一个字也没有（GT 是各声部各一段中文）。只在谱表上方真有词（`pickBelow` 挂过来的）、下方也有、
- * 两个声部都有音时分；普通 SATB 一行谱两个声部共用下方的词，不动。
+ * **一行谱两个声部、上下各印一行词：各归哪个声部**（望十架独唱 / 女低共用一行谱，独唱的词印在谱表上方、女低的印在下方）。
+ * 不分的话两行词按 x 挂到同一串音上，下方那行成了上声部的第 2 段，下声部一个字也没有（GT 是各声部各一段中文）。
+ *
+ * 同 `lyricsBelongBelow`，照简谱两声部一组裁决八度点的判法：**不按上下位置定，按排除性证据定**。
+ * 逐音节数「只对得上第一声部的音」与「只对得上其余声部的音」（两个声部同一拍都有音的不表态），
+ * 比「上方那行归第一声部、下方归其余」与「反过来」两种分法哪种的证据多；**一个声部同一处不会挂两行同文种的词**，
+ * 所以一行定了另一行就是另一个声部。证据至少 `LYRIC_ONLY_MIN` 个、且是另一种分法的 `LYRIC_ONLY_RATIO` 倍才分，
+ * 否则照原样（两行当同一串音的两段词）。只拿汉字行算证据，同一侧的拉丁行跟着同侧的汉字行走。
  */
-function splitVoiceLyrics(pg: SPage, lines: LyricLine[], notes: StaffNote[]): void {
+function splitVoiceLyrics(pg: SPage, lines: LyricLine[], notes: StaffNote[], sp: number): void {
   for (const st of pg.staves) {
     const ls = lines.filter((l) => l.staff === st);
     const above = ls.filter((l) => l.top < st.box.top);
     const below = ls.filter((l) => l.top > st.box.bottom);
     if (!above.length || !below.length) continue;
     const ns = notes.filter((n) => n.staff === st && !n.rest);
-    if (ns.filter((n) => n.voice === 1).length < VOICE_LYRIC_MIN || ns.filter((n) => n.voice !== 1).length < VOICE_LYRIC_MIN) continue;
-    for (const l of above) l.voice = 1;
-    for (const l of below) l.voice = 2;
+    const v1 = ns.filter((n) => n.voice === 1).map((n) => n.x);
+    const v2 = ns.filter((n) => n.voice !== 1).map((n) => n.x);
+    if (!v1.length || !v2.length) continue;
+    const cxs = (side: LyricLine[]) => side.filter((l) => !isLatinLine(l)).flatMap((l) => l.syllables.map((q) => q.cx));
+    const [a1, a2] = onlyFits(cxs(above), v1, v2, sp);
+    const [b1, b2] = onlyFits(cxs(below), v1, v2, sp);
+    const straight = a1 + b2; // 上方归第一声部、下方归其余
+    const swapped = a2 + b1;
+    const [upper, lower] =
+      straight >= LYRIC_ONLY_MIN && straight >= swapped * LYRIC_ONLY_RATIO ? [1, 2] as const
+      : swapped >= LYRIC_ONLY_MIN && swapped >= straight * LYRIC_ONLY_RATIO ? [2, 1] as const
+      : [null, null];
+    if (!upper || !lower) continue;
+    for (const l of above) l.voice = upper;
+    for (const l of below) l.voice = lower;
   }
 }
 
@@ -4760,29 +4781,47 @@ function pruneMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, sp:
 
 /** 音节离符头多远（格）算对得上。 */
 const LYRIC_NOTE_DX = 0.9;
-/** 改挂到下方那行谱：音节要有这么多对得上下方那行的音、且比上方那行多这么多。 */
+/** 改挂到下方那行谱：下方那行对得上的音节占比下限。 */
 const LYRIC_BELOW_FIT = 0.6;
-const LYRIC_BELOW_MARGIN = 0.3;
+/** 「只对得上一边」的音节至少几个、且是另一边的几倍，才算这一边的证据压过另一边。 */
+const LYRIC_ONLY_MIN = 3;
+const LYRIC_ONLY_RATIO = 2;
 /** 至少这么多个音节才判。 */
-const LYRIC_BELOW_MIN = 8;
+const LYRIC_BELOW_MIN = 4;
+
+/** 一串音节 x 里，「只对得上 a 那串音、对不上 b 那串」的个数与「反过来」的个数（x 差在 `LYRIC_NOTE_DX` 格以内算对上）。 */
+function onlyFits(cxs: number[], a: number[], b: number[], sp: number): [number, number] {
+  const hit = (xs: number[], cx: number) => xs.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX);
+  let oa = 0, ob = 0;
+  for (const cx of cxs) {
+    const ha = hit(a, cx), hb = hit(b, cx);
+    if (ha && !hb) oa++;
+    else if (hb && !ha) ob++;
+  }
+  return [oa, ob];
+}
 
 /**
- * **印在谱表上方的歌词挂到下方那行谱**（`buildLyricLines` 的 `pickBelow`）。默认一行歌词归它上方最近的那行谱；
- * 可有的声部把词印在谱表上方（望十架 p3 独唱声部：页顶第一行词上面没有谱、整行丢了；页底那行词其实是下一系统
- * 顶行的，挂到了上一系统的钢琴左手上）。按音节与符头的 x 判：下方那行对得上六成以上、比上方那行多三成，
- * 或上方根本没有谱（页顶）而下方对得上六成，就挂下方。SATB 那种上下两行节奏一样的，两边对得一样好，照默认。
+ * **夹在两行谱之间的歌词归哪一行**（`buildLyricLines` 的 `pickBelow`）。默认一行歌词归它上方最近的那行谱；
+ * 可有的声部把词印在谱表上方（望十架 p3 独唱声部；页底那行词其实是下一系统顶行的，挂到了上一系统的钢琴左手上）。
+ *
+ * 照简谱夹在两行数字之间的八度点那套判法（`omr/jianpu.ts::resolvePairOctaveDots`，见实现篇「两声部一组裁决」）：
+ * **不按远近、也不比总的对位率**，只看**排除性的证据**——
+ *   - 上方没有谱（页顶那条带）：没有别的主，下方那行对得上六成就是它的；
+ *   - 两边都有谱：逐音节看对不对得上两边的音，**两边都对得上的不表态**（SATB 上下两行节奏一样，各音节两边都对得上，
+ *     证据为零，照默认挂上方）；只对得上下方的至少 `LYRIC_ONLY_MIN` 个、且是只对得上上方的 `LYRIC_ONLY_RATIO` 倍，
+ *     下方那行又对得上六成，才挂下方。按总对位率比（下方高三成就挪）时，上方那行恰好在几处休止的短行也被挪走
+ *     （烛光颂曲 p5 一行六个字，上 0.67、下 1.00，只对得上下方的只有两个）。
  */
 function lyricsBelongBelow(cxs: number[], above: Staff | null, below: Staff, notes: StaffNote[], sp: number): Staff | undefined {
-  const fit = (st: Staff) => {
-    const xs = notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
-    return cxs.filter((cx) => xs.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX)).length / cxs.length;
-  };
-  // 太短的行（几个字）上下两行都对得上几个，比不出来（烛光颂曲 p5 一行六个字，上 0.67、下 1.00，其实是上面那行的）
+  const xsOf = (st: Staff) => notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
   if (cxs.length < LYRIC_BELOW_MIN) return undefined;
-  const fb = fit(below);
+  const xb = xsOf(below);
+  const fb = cxs.filter((cx) => xb.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX)).length / cxs.length;
   if (fb < LYRIC_BELOW_FIT) return undefined;
   if (!above) return below;
-  return fb >= fit(above) + LYRIC_BELOW_MARGIN ? below : undefined;
+  const [onlyA, onlyB] = onlyFits(cxs, xsOf(above), xb, sp);
+  return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO ? below : undefined;
 }
 
 /** 双小节线：小节线两侧这么多格以内另有一根贯通谱表的竖墨。 */
@@ -6678,6 +6717,8 @@ const EIGHTH_REST_H = [1.7, 2.4] as const;
  *（033、038 系统末那一排）。全局放到 1.4 时合唱谱是爱2 多出二十来个假八分休止（73.7 → 70.6）、独唱谱 −0.03，只给这两路 */
 const EIGHTH_REST_H_PIECES = 1.4;
 const EIGHTH_REST_FILL = [0.3, 0.5] as const;
+/** 被谱线切成两截、按不去线的墨接回来的八分休止：墨占比下限（望十架 p5 细笔扫描件 0.28）。 */
+const EIGHTH_REST_FILL_PIECES = 0.25;
 const EIGHTH_REST_SLANT = 0.1;
 
 /**
@@ -6686,13 +6727,37 @@ const EIGHTH_REST_SLANT = 0.1;
  * 《向主唱新歌》伴奏满页八分休止（约 1.1×2.0 格），与模板的距离 97~138，过不了门槛，
  * 于是被当成「头 + 干」摘出假头、或被当成四分休止收走。
  */
-function isEighthRest(bin: Binary, b: Rect, area: number, unit: RasterUnit, minH: number = EIGHTH_REST_H[0]): boolean {
+/**
+ * **按不去线的图数符号的墨**：去线图上的墨，加上原图里被当谱线抹掉、**上下（`reach` 像素内）都紧挨着去线图上的墨**的那些像素
+ * ——符号压在谱线上的那一截。去线只认「这几行是线」，把压在线上的笔画一起抹了，按去线图数墨、量墨占比，
+ * 骑线的符号都偏空（望十架 p5 被谱线切成两截的八分休止）。
+ */
+function symbolInk(nl: Binary, bin: Binary, box: Rect, reach: number): number {
+  const r = Math.max(1, Math.round(reach) + 1);
+  const at = (b: Binary, x: number, y: number) => x >= 0 && y >= 0 && x < b.w && y < b.h && b.data[y * b.w + x] === 1;
+  let n = 0;
+  for (let y = box.y; y < box.y + box.h; y++)
+    for (let x = box.x; x < box.x + box.w; x++) {
+      if (at(nl, x, y)) n++;
+      else if (at(bin, x, y)) {
+        let up = false, dn = false;
+        for (let k = 1; k <= r && !(up && dn); k++) {
+          up ||= at(nl, x, y - k);
+          dn ||= at(nl, x, y + k);
+        }
+        if (up && dn) n++;
+      }
+    }
+  return n;
+}
+
+function isEighthRest(bin: Binary, b: Rect, area: number, unit: RasterUnit, minH: number = EIGHTH_REST_H[0], minFill: number = EIGHTH_REST_FILL[0]): boolean {
   const sp = unit.space;
   const w = b.w / sp;
   const h = b.h / sp;
   if (w < EIGHTH_REST_W[0] || w > EIGHTH_REST_W[1] || h < minH || h > EIGHTH_REST_H[1]) return false;
   const fill = area / Math.max(1, b.w * b.h);
-  if (fill < EIGHTH_REST_FILL[0] || fill > EIGHTH_REST_FILL[1]) return false;
+  if (fill < minFill || fill > EIGHTH_REST_FILL[1]) return false;
   const rows: { y: number; x0: number; x1: number; ink: number }[] = [];
   for (let y = b.y; y < b.y + b.h; y++) {
     let x0 = -1, x1 = -1, ink = 0;
