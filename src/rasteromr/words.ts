@@ -118,14 +118,26 @@ export function headerCredits(lines: readonly WordLine[], strip: WordStrip): Hea
   if (!ls.length) return [];
   const H = Math.max(...ls.map((l) => l.h));
   const mid = strip.box.x + strip.box.w / 2;
-  return ls.map((l) => {
+  return ls.flatMap((l) => {
     const cx = strip.box.x + l.x + l.w / 2;
     const justify = Math.abs(cx - mid) <= strip.box.w * 0.15 ? "center" : cx < mid ? "left" : "right";
     const type = justify === "center" ? (l.h >= H * 0.8 ? "title" : "subtitle") : justify === "left" ? "lyricist" : "composer";
-    // 标题字距拉得开（「望 十 架」），按列投影补出来的空格夹在两个汉字之间的不要
-    const text = l.t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
-    return { text, type, justify, box: { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h } };
+    const box = { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h };
+    return splitHeaderText(l.t).map((text) => ({ text, type, justify, box }));
   });
+}
+
+/**
+ * 页眉一行的字 → 一条或几条：标题字距拉得开（「望 十 架」），按列投影补出来的、夹在两个汉字之间的空格不要；
+ * 标题行行首的诗歌编号（「1 9 數算主恩」「8 奇異恩典」，编号字距也拉得开）不要；
+ * 中文标题与英文标题印在同一行的（「數算主恩 Count Your Blessings」）拆成两条——中英标题本是两个页眉元素。
+ */
+export function splitHeaderText(t: string): string[] {
+  let text = t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
+  const num = /^(\d\s?){1,3}\s*(?=[\u3400-\u9fff])/.exec(text);
+  if (num) text = text.slice(num[0].length);
+  const m = /^([\u3400-\u9fff]{2,}[\u3400-\u9fff\s]*)\s*([A-Za-z][A-Za-z\s,'’!.-]{3,})$/.exec(text);
+  return m ? [m[1]!.trim(), m[2]!.trim()] : [text];
 }
 
 /** 条的内容指纹（与 `stafflabel.ts::labelKey` 同一套：尺寸 + FNV-1a）。 */
