@@ -13,7 +13,7 @@ import { stripKey, type LyricStrip, type OcrChar } from "./lyric";
 import { labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
 import { jianpuKey, type JianpuStrip } from "./jianpuband";
 import { timeKey, type TimeStrip } from "./timesig";
-import { keepWordLine, spaceWordText, wordKey, type WordLine, type WordStrip } from "./words";
+import { keepHeaderLine, keepWordLine, spaceWordText, wordKey, type WordLine, type WordStrip } from "./words";
 import type { JianpuRow } from "./jianpufuse";
 
 type Surface = { width: number; height: number; data: Uint8ClampedArray };
@@ -136,6 +136,25 @@ export async function ocrWordStrips(ocr: OcrBackend, strips: readonly WordStrip[
       lines = [];
     }
     out.set(wordKey(it), lines.filter((l) => keepWordLine(l.text)).map((l) => {
+      const box = { x: Math.round(l.bbox.x), y: Math.round(l.bbox.y), w: Math.round(l.bbox.w), h: Math.round(l.bbox.h) };
+      return { t: spaceWordText(l.text, l.chars, it, box), ...box };
+    }));
+  }
+  return out;
+}
+
+/** 页眉带：同文字指示带，但中文行也留（`keepHeaderLine`）。 */
+export async function ocrHeaderStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
+  const out = new Map<string, WordLine[]>();
+  if (!ocr.recognizeRegion) return out;
+  for (const it of strips) {
+    let lines: Awaited<ReturnType<NonNullable<OcrBackend["recognizeRegion"]>>> = [];
+    try {
+      lines = await ocr.recognizeRegion({ w: it.w, h: it.h, data: it.data }, { x: 0, y: 0, w: it.w, h: it.h });
+    } catch {
+      lines = [];
+    }
+    out.set(wordKey(it), lines.filter((l) => keepHeaderLine(l.text)).map((l) => {
       const box = { x: Math.round(l.bbox.x), y: Math.round(l.bbox.y), w: Math.round(l.bbox.w), h: Math.round(l.bbox.h) };
       return { t: spaceWordText(l.text, l.chars, it, box), ...box };
     }));

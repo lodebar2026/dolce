@@ -71,6 +71,63 @@ export function findWordStrips(bin: Binary, staves: { box: { left: number; right
   return out;
 }
 
+/**
+ * **页眉带**（曲首页）：页顶 → 首行谱上方文字指示带（`EDGE_BAND`）的上沿，整页宽——标题、副标题、词曲作者、译者。
+ * 下沿从文字指示带上沿往上找第一条空白行（墨不过两点），免得把一行字拦腰切开；几何只看谱行与像素，指纹稳。
+ * 与文字指示带同一套认字（DBNet + rec），缓存另放（`gen-rasterheader.mjs` → `rasterheader.json`）：那边只留拉丁行，这边中文也要。
+ */
+export function findHeaderStrip(bin: Binary, staves: { box: { top: number } }[], unit: RasterUnit): WordStrip | null {
+  if (!staves.length) return null;
+  const sp = unit.space;
+  let y1 = Math.min(bin.h - 1, Math.round(Math.min(...staves.map((s) => s.box.top)) - sp * EDGE_BAND));
+  const inkOf = (y: number) => {
+    let n = 0;
+    for (let x = 0; x < bin.w && n <= HEADER_BLANK; x++) n += bin.data[y * bin.w + x];
+    return n;
+  };
+  while (y1 > 0 && inkOf(y1) > HEADER_BLANK) y1--;
+  if (y1 < sp * 2) return null;
+  const box = { x: 0, y: 0, w: bin.w, h: y1 };
+  const data = new Uint8Array(box.w * box.h);
+  let ink = 0;
+  for (let i = 0; i < data.length; i++) ink += data[i] = bin.data[i];
+  return ink ? { w: box.w, h: box.h, data, box } : null;
+}
+/** 页眉带下沿的「空白行」：一行墨不过这么多点（扫描件的零星噪点）。 */
+const HEADER_BLANK = 2;
+
+/** 页眉里值得留的行：有汉字，或有两个以上拉丁字母（页码、噪点、单个字母不要）。 */
+export function keepHeaderLine(text: string): boolean {
+  return /[\u3400-\u9fff]/.test(text) || (text.match(/[A-Za-z]/g)?.length ?? 0) >= 2;
+}
+
+/** 页眉的一行（页面坐标）与它的角色（MusicXML `<credit-type>`）、对齐。 */
+export interface HeaderCredit {
+  text: string;
+  type?: "title" | "subtitle" | "composer" | "lyricist";
+  justify: "left" | "center" | "right";
+  box: Rect;
+}
+
+/**
+ * 页眉带读出来的行 → 页眉各条：最高的一行是标题；居中的行里与标题差不多高（八成以上）的也算标题（中英两个标题上下排），
+ * 其余居中的是副标题；靠左的是作词 / 译者、靠右的是作曲（诗歌本、合唱谱的通行排法）。居中 = 行心离页心不过页宽一成半。
+ */
+export function headerCredits(lines: readonly WordLine[], strip: WordStrip): HeaderCredit[] {
+  const ls = lines.filter((l) => keepHeaderLine(l.t)).sort((a, b) => a.y - b.y || a.x - b.x);
+  if (!ls.length) return [];
+  const H = Math.max(...ls.map((l) => l.h));
+  const mid = strip.box.x + strip.box.w / 2;
+  return ls.map((l) => {
+    const cx = strip.box.x + l.x + l.w / 2;
+    const justify = Math.abs(cx - mid) <= strip.box.w * 0.15 ? "center" : cx < mid ? "left" : "right";
+    const type = justify === "center" ? (l.h >= H * 0.8 ? "title" : "subtitle") : justify === "left" ? "lyricist" : "composer";
+    // 标题字距拉得开（「望 十 架」），按列投影补出来的空格夹在两个汉字之间的不要
+    const text = l.t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
+    return { text, type, justify, box: { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h } };
+  });
+}
+
 /** 条的内容指纹（与 `stafflabel.ts::labelKey` 同一套：尺寸 + FNV-1a）。 */
 export function wordKey(s: WordStrip): string {
   let h1 = 0x811c9dc5;

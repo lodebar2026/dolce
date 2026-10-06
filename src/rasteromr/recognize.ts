@@ -18,7 +18,7 @@ import { buildNotes, calcAlters, checkBars, fifthsAt, findClefKeyTime, headKey, 
 import { findRasterArticulations } from "./artic";
 import { markRepeatsAndVoltas } from "./repeats";
 import { findRasterTuplets } from "./tuplet";
-import { attachWordLines, findWordStrips, type WordLine, type WordStrip } from "./words";
+import { attachWordLines, findHeaderStrip, findWordStrips, headerCredits, wordKey, type HeaderCredit, type WordLine, type WordStrip } from "./words";
 import { applyTuplet, attachDynamicTexts, attachNotations, attachWedges, findNotations, findTuplets, markLyricExtends } from "../staffomr/notations";
 import type { PObj, Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
@@ -37,7 +37,7 @@ import { findStaffLabels, labelKey, normalizeLabel, type LabelStrip } from "./st
 import { findHarmonyStrips, harmonyKey, harmonyLine, readHarmonyStrip, type HarmonyStrip, type HarmonyToken } from "./harmony";
 import { findRasterWedges, type RasterWedge } from "./wedge";
 import { groupDynamics, type RasterDynamic } from "./dynamics";
-import { findRasterDashedSlurs, findRasterSlurs } from "./slur";
+import { findFusedSlurs, findRasterDashedSlurs, findRasterSlurs } from "./slur";
 import { ContourLedger } from "./ledger";
 import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { attachSlurs, markSlurNotes, reconnectSlurs, type SlurArc } from "../staffomr/slur";
@@ -90,6 +90,10 @@ export interface RasterPageResult {
   /** 文字指示带（`words.ts`）。**只在 `opts.wantWordStrips` 时带出来**（生成缓存的脚本、在线识别送 OCR 的那一趟）：
    *  各条合起来近乎整页的像素，整曲结果又留着每一页，平时带着等于每页多存一份位图。 */
   wordStrips: WordStrip[];
+  /** 页眉带（`words.ts::findHeaderStrip`）：只在 `opts.wantHeader` 时切（曲首页），送 OCR 用。 */
+  headerStrips: WordStrip[];
+  /** 页眉各条（`opts.headerOcr` 命中时）：标题、副标题、词曲作者。 */
+  header: HeaderCredit[];
   /**
    * 这一页各谱行上方的**和弦带**（`gen-rasterharmony.mjs` 拿它送 OCR）。
    * 与歌词条、标签条同一套架构：这里只切条，认字靠离线缓存。见 `harmony.ts`。
@@ -155,6 +159,8 @@ const empty = (page: SPage, raster: RasterPage | null, unit: RasterUnit | null, 
   labelStrips: [],
   timeStrips: [],
   wordStrips: [],
+  headerStrips: [],
+  header: [],
   harmonyStrips: [],
   jianpuStrips: [],
   harmonies: [],
@@ -892,6 +898,10 @@ export async function recognizeRasterPage(
     wordOcr?: Map<string, WordLine[]>;
     /** 把文字指示带放进结果（`wordStrips`）。缺省不带，见该字段的说明。 */
     wantWordStrips?: boolean;
+    /** 这一页是曲首页：切页眉带（`headerStrips`），有缓存就读出页眉（`header`）。 */
+    wantHeader?: boolean;
+    /** 页眉带的 OCR 缓存（`gen-rasterheader.mjs` 的产物，值同文字指示带）。 */
+    headerOcr?: Map<string, WordLine[]>;
     /** 和弦条的 OCR 缓存（`scripts/gen-rasterharmony.mjs` 的产物）。见 `harmony.ts`。
      *  值的类型与歌词缓存共用（`OcrChar`）——两边都是「整条送 rec，回来字符带条内 x」。 */
     harmonyOcr?: Map<string, OcrChar[]>;
@@ -4267,6 +4277,10 @@ export async function recognizeRasterPage(
   //
   // 带照固定几何切（两行谱之间的空当），认字靠 `wordOcr` 缓存；歌词行、和弦字母已经另有身份，中心落在它们盒里的行不要。
   const wordStrips = opts.wordOcr || opts.wantWordStrips ? findWordStrips(raster.bin, pg.staves, unit) : [];
+  // 页眉（曲首页）：标题、词曲作者。认字同文字指示带，缓存另放
+  const headerStrip = opts.wantHeader ? findHeaderStrip(raster.bin, pg.staves, unit) : null;
+  const headerLines = headerStrip ? opts.headerOcr?.get(wordKey(headerStrip)) : undefined;
+  const header = headerStrip && headerLines ? headerCredits(headerLines, headerStrip) : [];
   if (opts.wordOcr) {
     const skip: Rect[] = [
       // 认下来的歌词行：从行顶往下两格半（`LyricLine` 只记行顶），左右以首尾音节为界
@@ -4316,7 +4330,13 @@ export async function recognizeRasterPage(
   // 认出来之后交给矢量路现成的那一套：挂两端 → 接回跨行的 → 落到音符上，
   // `toxml` 出 `<slur>` / `<tied>`。判据与松叶正好相反（逐列一段墨、而且拱着），
   // 所以要在松叶**之后**跑，把松叶认走的先剔掉。
-  const slurs = findRasterSlurs(cmap, unit, ledger.unclaimed(), pg.objs.length + pg.segs.length + 1000);
+  // 只被符杠认过的也算：`findPrimitives` 抽的横段里混着弧的一截（够粗、够平的那段），按中心线一记账整条弧就「有主」了
+  // （望十架 p3 m24 女低 E4–D4 那条）。真符杠是直的，过不了「拱」那道闸
+  const beamOnly = cmap.contours.filter((c) => {
+    const cl = ledger.claimsOf(c.id);
+    return cl.length > 0 && cl.every((k) => k.by === "beam");
+  });
+  const slurs = findRasterSlurs(cmap, unit, [...ledger.unclaimed(), ...beamOnly], pg.objs.length + pg.segs.length + 1000);
   for (const sl of slurs) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur");
   // 虚线弧（`slur.ts::findRasterDashedSlurs`）：无主块之外，只被歌词字格认过的短划也算（弧两头那截常落在歌词带上沿，
   // Holy, Holy, Holy m10）；上方还是下方看近旁最近的符头；离谱表四格半开外的不认（歌词带里成串的连字符）
@@ -4341,6 +4361,14 @@ export async function recognizeRasterPage(
   const dashed = findRasterDashedSlurs([...ledger.unclaimed(), ...lyricOnly], unit, pg.objs.length + pg.segs.length + 1000 + slurs.length, dashSide);
   for (const sl of dashed) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur:dashed");
   slurs.push(...dashed);
+  // 粘在音符上的弧（`slur.ts::findFusedSlurs`）：只看认领里有符头的那几团墨
+  {
+    const headBoxes: Rect[] = notes.filter((n) => !n.rest).map((n) => ({ x: n.sym.box.left, y: n.sym.box.top, w: n.sym.box.right - n.sym.box.left, h: n.sym.box.bottom - n.sym.box.top }));
+    const groupsWithHeads = cmap.contours.filter((c) => ledger.claimsOf(c.id).some((k) => /^(head|stack|cluster):/.test(k.by)));
+    const fused = findFusedSlurs(cmap, unit, groupsWithHeads, headBoxes, pg.objs.length + pg.segs.length + 1000 + slurs.length);
+    for (const sl of fused) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur:fused");
+    slurs.push(...fused);
+  }
   attachSlurs(slurs, notes, unit.space);
   reconnectSlurs(pg, slurs);
   markSlurNotes(slurs);
@@ -4368,6 +4396,8 @@ export async function recognizeRasterPage(
     labelStrips,
     timeStrips,
     wordStrips: opts.wantWordStrips ? wordStrips : [],
+    headerStrips: headerStrip ? [headerStrip] : [],
+    header,
     staffLabels,
     wedges,
     dynamics,

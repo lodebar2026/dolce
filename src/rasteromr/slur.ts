@@ -49,7 +49,10 @@ export function findRasterSlurs(map: ContourMap, unit: RasterUnit, only: Contour
 }
 
 function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number): SlurArc | null {
-  const b = c.bbox;
+  return judgeArcBox(c.bbox, (x, y) => map.labels[y * map.w + x] === c.id, unit, id);
+}
+
+function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: RasterUnit, id: number): SlurArc | null {
   const ys: number[] = [];
   let one = 0;
   let cols = 0;
@@ -62,7 +65,7 @@ function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number): Sl
     let sum = 0;
     let n = 0;
     for (let y = b.y; y < b.y + b.h; y++) {
-      const on = map.labels[y * map.w + x] === c.id;
+      const on = ink(x, y);
       if (on) {
         if (top < 0) top = y;
         bot = y;
@@ -115,6 +118,109 @@ function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number): Sl
     above: bow < 0,
     tie: false,
   };
+}
+
+// ── 粘在音符上的弧 ─────────────────────────────────────────────────────────
+//
+// 扫描件里弧两端常粘着符头、符干、符杠，整团墨归了音符那一组（望十架 p7 m54 女低两条），无主的候选里根本没有它。
+// 在**有符头认领**的那团墨里抠掉粗的（逐列墨段高过 `THIN_RUN` 格：符头、符杠）、竖的（逐列墨段长过 `STEM_RUN` 格：符干、小节线）
+// 和符头盒，剩下的细墨按八邻接分块，每块照样过弧线那几道闸，再加两道：更宽（`FUSED_MIN_W`）、更拱（`FUSED_BOW_MIN`）。
+
+/** 逐列墨段高过这么多格的是粗笔（符头、符杠），抠掉。弧身两三个像素。 */
+const THIN_RUN = 0.35;
+/** 符头盒往外放这么多格一起抠掉（弧端贴着符头的那截）。 */
+const HEAD_PAD = 0.2;
+/** 粘连弧的宽度下限、拱的下限（格）：抠剩下的碎墨（符尾、字的笔画）比独立的弧多，闸收紧一档。 */
+const FUSED_MIN_W = 2.5;
+const FUSED_BOW_MIN = 0.35;
+
+/**
+ * 从音符那组墨里抠出粘连的弧。`groups` 是要看的 contour（有符头认领、够宽的），`heads` 是全页符头盒。
+ */
+export function findFusedSlurs(map: ContourMap, unit: RasterUnit, groups: Contour[], heads: readonly Rect[], nextId: number): SlurArc[] {
+  const sp = unit.space;
+  const out: SlurArc[] = [];
+  for (const c of groups) {
+    const b = c.bbox;
+    if (b.w < sp * FUSED_MIN_W) continue;
+    const keep = new Uint8Array(b.w * b.h);
+    for (let x = 0; x < b.w; x++) {
+      let y = 0;
+      while (y < b.h) {
+        if (map.labels[(b.y + y) * map.w + b.x + x] !== c.id) {
+          y++;
+          continue;
+        }
+        let e = y;
+        while (e < b.h && map.labels[(b.y + e) * map.w + b.x + x] === c.id) e++;
+        if (e - y <= sp * THIN_RUN) for (let k = y; k < e; k++) keep[k * b.w + x] = 1;
+        y = e;
+      }
+    }
+    const pad = sp * HEAD_PAD;
+    for (const h of heads) {
+      const x0 = Math.max(0, Math.floor(h.x - pad - b.x));
+      const x1 = Math.min(b.w, Math.ceil(h.x + h.w + pad - b.x));
+      const y0 = Math.max(0, Math.floor(h.y - pad - b.y));
+      const y1 = Math.min(b.h, Math.ceil(h.y + h.h + pad - b.y));
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) keep[y * b.w + x] = 0;
+    }
+    // 八邻接分块
+    const lab = new Int32Array(b.w * b.h);
+    let n = 0;
+    const stack: number[] = [];
+    for (let i = 0; i < keep.length; i++) {
+      if (!keep[i] || lab[i]) continue;
+      n++;
+      lab[i] = n;
+      stack.push(i);
+      let minX = b.w, maxX = -1, minY = b.h, maxY = -1, area = 0;
+      while (stack.length) {
+        const j = stack.pop()!;
+        const x = j % b.w, y = (j - x) / b.w;
+        area++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx, yy = y + dy;
+            if (xx < 0 || yy < 0 || xx >= b.w || yy >= b.h) continue;
+            const k = yy * b.w + xx;
+            if (keep[k] && !lab[k]) (lab[k] = n), stack.push(k);
+          }
+      }
+      const w = maxX - minX + 1, h = maxY - minY + 1;
+      if (w < sp * FUSED_MIN_W || h > sp * MAX_H || area > w * sp * THIN_RUN * 1.5) continue;
+      const id = n;
+      const box: Rect = { x: b.x + minX, y: b.y + minY, w, h };
+      const arc = judgeArcBox(box, (x, y) => lab[(y - b.y) * b.w + x - b.x] === id, unit, nextId + out.length);
+      if (!arc) continue;
+      const bow = Math.abs(arcBow(box, (x, y) => lab[(y - b.y) * b.w + x - b.x] === id));
+      if (bow < sp * FUSED_BOW_MIN) continue;
+      out.push(arc);
+    }
+  }
+  return out;
+}
+
+/** 弧离两端连线最远处（像素，y 向下为正）。同 `judgeArcBox` 的量法，两端各取一列。 */
+function arcBow(b: Rect, ink: (x: number, y: number) => boolean): number {
+  const ys: number[] = [];
+  for (let x = b.x; x < b.x + b.w; x++) {
+    let s = 0, k = 0;
+    for (let y = b.y; y < b.y + b.h; y++) if (ink(x, y)) (s += y), k++;
+    if (k) ys.push(s / k);
+  }
+  if (ys.length < 2) return 0;
+  const ly = ys[0]!, ry = ys[ys.length - 1]!;
+  let bow = 0;
+  ys.forEach((y, i) => {
+    const d = y - (ly + (ry - ly) * (i / (ys.length - 1)));
+    if (Math.abs(d) > Math.abs(bow)) bow = d;
+  });
+  return bow;
 }
 
 /** 造一个只带包围盒的假对象——`SlurArc.obj` 要一个 `PObj`，下游只用它的盒与标记。 */

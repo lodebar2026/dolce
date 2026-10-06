@@ -503,6 +503,8 @@ export function buildLyricLines(
   // 每首最多两段，用不上链式；开着反而收进本不该收的行——实测赞美之泉的歌词档
   // 94.95% → 94.88%，连带「同一版」那一档的曲目集合也动了（时值 97.71% → 97.62%）。
   const chainGap = maxGap / 3 * 0.8;
+  // 改挂到下方那行谱的汉字行（`pickBelow` 判的）：同一夹缝里紧挨着它下面的拉丁行跟着走
+  const movedBelow = new Map<(typeof rows)[number], Staff>();
   for (const r of rows) {
     // 上方最近的那行谱
     let best: Staff | null = null;
@@ -536,9 +538,23 @@ export function buildLyricLines(
         const chained = !!best && rows.some((o) => o !== r && o.top >= best!.box.bottom && o.bottom <= r.top && !o.objs.some(latin));
         const alt = syllables.length ? pickBelow({ syllables, objs: r.objs, above: best, below, belowHasOwn: own, aboveHasOwn: chained }) : undefined;
         if (alt) {
+          movedBelow.set(r, alt);
           const a = byStaff.get(alt) ?? [];
           a.push({ top: r.top, bottom: r.bottom, objs: r.objs });
           byStaff.set(alt, a);
+          continue;
+        }
+      }
+      // 拉丁行对位比不出来，跟它上面紧挨着的那行汉字走（望十架 p3 页顶：独唱声部的中英两行词都印在谱表上方，
+      // 汉字行按对位挂到下方，英文行原来没有上方的谱、整行丢了）
+      if (below && belowD <= maxGap && r.objs.some(latin)) {
+        const prev = rows
+          .filter((o) => o !== r && o.top < r.top && o.bottom <= r.top + (r.bottom - r.top) * 0.5 && !o.objs.some(latin))
+          .sort((a, b) => b.bottom - a.bottom)[0];
+        if (prev && movedBelow.get(prev) === below && !pg.staves.some((st) => st.box.top >= prev.bottom && st.box.bottom <= r.top)) {
+          const a = byStaff.get(below) ?? [];
+          a.push({ top: r.top, bottom: r.bottom, objs: r.objs });
+          byStaff.set(below, a);
           continue;
         }
       }

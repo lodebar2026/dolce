@@ -49,7 +49,9 @@ export function classifyBarlines(pg: SPage, stf: Staff): BarlineMark[] {
   for (const it of xs) {
     const g = groups[groups.length - 1];
     if (g && it.x - g.xs[g.xs.length - 1] < sp * 2) {
-      if (it.x - g.xs[g.xs.length - 1] > 0.3) g.xs.push(it.x); // 同一笔的重描不算新笔
+      // 同一笔的重描不算新笔。位图路一笔常断成上下两截、x 差一两个像素（扫描件歪斜，望十架 p5 m42 689 / 690），
+      // 按 0.3 个单位算成复纵线；真复纵线两笔隔半格上下，门槛取四分之一格
+      if (it.x - g.xs[g.xs.length - 1] > Math.max(0.3, sp * 0.25)) g.xs.push(it.x);
       g.lw = Math.max(g.lw, it.lw);
     } else {
       groups.push({ xs: [it.x], lw: it.lw });

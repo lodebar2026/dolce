@@ -23,6 +23,8 @@ export interface StaffXmlOptions {
   partId?: string;
   /** 给 `<note>` 写 `id`（编辑器的识别对照按它把模型里的音对回源图坐标）；返回 undefined 不写 */
   noteId?: (n: StaffNote) => string | undefined;
+  /** 页眉各条（位图路 OCR 读出的标题、词曲作者），写成曲首页的 `<credit>` */
+  credits?: { text: string; type?: string; justify?: string }[];
 }
 
 /** 本次写出的 `noteId`（`scoreToMusicXml` 进出时设、清；写出是同步的） */
@@ -121,6 +123,7 @@ export function toMusicXml(lines: StaffLineResult[], opts: StaffXmlOptions = {})
 
   return wrapPartwise({
     work: workXml(opts.title),
+    credits: creditsXml(opts.credits),
     partList: scorePartXml(partId),
     body: `<part id="${partId}">${body}</part>`,
   });
@@ -511,7 +514,15 @@ function scoreToMusicXmlRaw(
 
   return wrapPartwise({
     work: workXml(opts.title),
+    credits: creditsXml(opts.credits),
     partList: partList.join(""),
     body: bodies.join("\n"),
   });
+}
+
+/** 页眉 → `<credit page="1">`，一条一个。 */
+function creditsXml(credits: StaffXmlOptions["credits"]): string {
+  return (credits ?? [])
+    .map((c) => `<credit page="1">${c.type ? `<credit-type>${escapeXml(c.type)}</credit-type>` : ""}<credit-words${c.justify ? ` justify="${c.justify}"` : ""}>${escapeXml(c.text)}</credit-words></credit>`)
+    .join("");
 }

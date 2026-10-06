@@ -12,7 +12,7 @@ import type { LabelStrip } from "./stafflabel";
 import type { TimeStrip } from "./timesig";
 import type { JianpuStrip } from "./jianpuband";
 import type { JianpuRow } from "./jianpufuse";
-import type { WordLine, WordStrip } from "./words";
+import type { HeaderCredit, WordLine, WordStrip } from "./words";
 import { markSplitBars } from "../staffomr/notedata";
 import { buildScore, type StaffScore } from "../staffomr/score";
 import { scoreToMusicXml } from "../staffomr/toxml";
@@ -27,6 +27,7 @@ export interface RasterOcrCaches {
   harmonyOcr?: Map<string, OcrChar[]>;
   jianpuOcr?: Map<string, JianpuRow[]>;
   wordOcr?: Map<string, WordLine[]>;
+  headerOcr?: Map<string, WordLine[]>;
 }
 
 /** 在线识别（编辑器用）：把一页切出来的条送 OCR，回同形的表（`ocrlive.ts`）。 */
@@ -39,6 +40,8 @@ export interface RasterLiveOcr {
   jianpu(strips: readonly JianpuStrip[]): Promise<Map<string, JianpuRow[]>>;
   /** 文字指示带（可缺：缺了就不出 `<words>`）。 */
   word?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
+  /** 页眉带（可缺：缺了就不出 `<credit>`）。 */
+  header?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
 }
 
 export interface RasterSongStats {
@@ -105,34 +108,41 @@ export async function recognizeRasterSong(
   const barPages: Parameters<typeof markSplitBars>[0] = [];
   const total = sources.reduce((n, s) => n + (s.pdf.numPages as number), 0);
   let done = 0;
+  /** 曲首页（第一页有谱的）的页眉 */
+  let header: HeaderCredit[] | null = null;
   for (const [si, { pdf, OPS }] of sources.entries()) {
     for (let pn = 1; pn <= (pdf.numPages as number); pn++) {
       if (opts.cancelled?.()) throw new Error("已取消");
       const page = await pdf.getPage(pn);
       try {
-        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr };
+        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr, headerOcr: opts.headerOcr };
+        const wantHeader = header === null;
         if (opts.live) {
           const r1 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey });
           if (r1.hasStaff) {
             // 拍号条在找符头之前就切好了，不受后面几张表影响：与和弦带同一趟送
             const [harmonyOcr, timeOcr] = await Promise.all([opts.live.harmony(r1.harmonyStrips), opts.live.time?.(r1.timeStrips)]);
             if (opts.cancelled?.()) throw new Error("已取消");
-            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, timeOcr, wantWordStrips: !!opts.live.word });
-            const [lyricOcr, labelOcr, jianpuOcr, wordOcr] = await Promise.all([
+            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, timeOcr, wantWordStrips: !!opts.live.word, wantHeader: wantHeader && !!opts.live.header });
+            const [lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr] = await Promise.all([
               opts.live.lyric(r2.lyricStrips),
               opts.live.label(r2.labelStrips),
               opts.live.jianpu(r2.jianpuStrips),
               opts.live.word?.(r2.wordStrips),
+              r2.headerStrips.length ? opts.live.header?.(r2.headerStrips) : undefined,
             ]);
             if (opts.cancelled?.()) throw new Error("已取消");
-            caches = { harmonyOcr, timeOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr };
+            caches = { harmonyOcr, timeOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr };
           }
         }
-        const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, ...caches });
+        const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, ...caches, wantHeader });
         if (r.jianpuFix) for (const k of Object.keys(stats.jianpuFix) as (keyof RasterSongStats["jianpuFix"])[]) stats.jianpuFix[k] += r.jianpuFix[k];
         carryTime = r.carryTime;
         carryKey = r.carryKey;
         if (r.hasStaff) {
+          if (wantHeader) header = r.header;
+          // 页眉带近乎半页像素，读完就不留
+          r.headerStrips = [];
           stats.pages++;
           stats.notes += r.notes.length;
           stats.harmonies += r.harmonies?.length ?? 0;
@@ -180,7 +190,10 @@ export async function recognizeRasterSong(
   // 拉丁段挪到全曲中文段后面（页内先占位，见 `recognize.ts::settleLyricVerses`）
   settleLyricVerses([...notesByStaff.values()].flat());
   let score = buildScore(entries);
-  const xml = scoreToMusicXml(score, notesOf, { title: opts.title, ...(noteId ? { noteId } : {}) });
+  const credits = (header ?? []).map(({ text, type, justify }) => ({ text, type, justify }));
+  // 没给标题（编辑器里打开的图、PDF）就拿页眉的头一个标题
+  const title = opts.title ?? credits.find((c) => c.type === "title")?.text;
+  const xml = scoreToMusicXml(score, notesOf, { title, credits, ...(noteId ? { noteId } : {}) });
   stats.systems = score.systems.length;
   stats.parts = score.parts.length;
   return {
@@ -188,7 +201,7 @@ export async function recognizeRasterSong(
     assignment: () => score.systems.map((e, si) => e.sys.staves.map((st) => score.scoreStaves.findIndex((ss) => ss.staves[si] === st))),
     rebuild: (slots) => {
       score = buildScore(entries, { slots });
-      return { xml: scoreToMusicXml(score, notesOf, { title: opts.title, ...(noteId ? { noteId } : {}) }), score };
+      return { xml: scoreToMusicXml(score, notesOf, { title, credits, ...(noteId ? { noteId } : {}) }), score };
     },
   };
 }
