@@ -354,6 +354,8 @@ export interface LyricLine {
   verse: number;
   top: number;
   syllables: Syllable[];
+  /** 只挂这个声部的音（1 = 上声部，2 = 其余声部）；不设挂全行。位图路两声部一行谱、上下各印一行词时设（`splitVoiceLyrics`）。 */
+  voice?: 1 | 2;
 }
 
 /**
@@ -548,6 +550,7 @@ interface NoteLike {
   staff: Staff;
   rest: boolean;
   x: number;
+  voice?: number;
   lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean }[];
   chord?: string;
 }
@@ -560,7 +563,7 @@ interface NoteLike {
  */
 export function attachLyrics(notes: NoteLike[], lines: LyricLine[], sameCol = 0): void {
   for (const line of lines) {
-    const cand = notes.filter((n) => n.staff === line.staff && !n.rest).sort((a, b) => a.x - b.x);
+    const cand = notes.filter((n) => n.staff === line.staff && !n.rest && (!line.voice || (line.voice === 1) === (n.voice === 1))).sort((a, b) => a.x - b.x);
     if (!cand.length) continue;
     let ni = 0;
     // 上一个音节末尾带连字符 → 这一个是**词中的续段**，MusicXML 的 `syllabic`

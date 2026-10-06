@@ -56,6 +56,10 @@ const TAIL_BAND = 24;
 /** 末行谱下第一行歌词离谱表底最多几个线距（实测 1.8~3.3 格；谱末经文 8.5 格）。 */
 const TAIL_FIRST = 6;
 
+/** 页顶那行谱上方的带往上放多少个线距，最近一行词离谱表上缘最多几个线距（望十架 p3：英文行 3.5 格、中文行 6 格）。 */
+const HEAD_BAND = 14;
+const HEAD_FIRST = 6;
+
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0);
 
 const rbottom = (r: Rect) => r.y + r.h;
@@ -73,14 +77,19 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
   /** 先按几何切一遍，**全页的字宽要等切完才量得出来**，剔假字格是第二遍的事。 */
   const raw: LyricRow[] = [];
   const sp = unit.space;
-  for (let i = 0; i < staves.length; i++) {
-    const st = staves[i];
+  // i = -1 是**页顶那行谱上方**的带（望十架 p3 独唱声部把词印在谱表上方，页顶第一行词上面没有谱）：
+  // 从谱表上缘往上 `HEAD_BAND` 格，一行接一行往上收（同末行谱下面那条带）。挂哪行谱交给 `buildLyricLines`
+  // （上方没有谱，对得上下方那行的音才挂，见 `pickBelow`），对不上的标题、速度记号一行行留在这里没人要。
+  for (let i = staves.length ? -1 : 0; i < staves.length; i++) {
+    const head = i < 0;
+    const st = staves[Math.max(0, i)];
     // 带的下界：下一行谱的上缘；最后一行取 `TAIL_BAND` 个线距
     // ——够罩住整页最多的那几段歌词，又不至于把页脚的版权行收进来。
-    const limit = i + 1 < staves.length ? staves[i + 1].top : st.bottom + sp * TAIL_BAND;
+    const limit = head ? st.top - sp * 0.3 : i + 1 < staves.length ? staves[i + 1].top : st.bottom + sp * TAIL_BAND;
+    const from = head ? st.top - sp * HEAD_BAND : st.bottom + sp * 0.3;
     const band = blobs.filter((c) => {
       const b = c.bbox;
-      if (b.y < st.bottom + sp * 0.3 || rbottom(b) > limit) return false;
+      if (b.y < from || rbottom(b) > limit) return false;
       if (rright(b) < st.left - sp || b.x > st.right + sp) return false;
       const h = b.h / sp;
       // 偏旁可以很矮，整字的高度另在下面卡；扁而宽的横笔（「一」「上」的底横）也收
@@ -96,7 +105,23 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     // **末行谱下面的带要一行接一行**：第一行离谱表不过 `TAIL_FIRST` 个线距，往下每行与上一行的间隔不过上一行高。
     // 谱末印的经文、版权、出处（《信心使我得胜》末行谱下 8.5 格处的「我倚靠神，我要讚美祂的話……詩篇五十六篇」）
     // 字号与歌词一样，只有位置分得开；真的歌词第一行离谱表 1.8~3.3 格，各段紧挨着排
-    if (i === staves.length - 1) {
+    if (head) {
+      // 页顶那条带从谱表往上数：最近一行离谱表不过 `TAIL_FIRST` 格，再往上每行与下一行的间隔不过下一行高
+      const kept: Component[][] = [];
+      for (const r of [...rowsHere].reverse()) {
+        const bot = Math.max(...r.map((c) => rbottom(c.bbox)));
+        const prev = kept[kept.length - 1];
+        if (!prev) {
+          if (st.top - bot > sp * HEAD_FIRST) break;
+        } else {
+          const p0 = Math.min(...prev.map((c) => c.bbox.y));
+          const p1 = Math.max(...prev.map((c) => rbottom(c.bbox)));
+          if (p0 - bot > p1 - p0) break;
+        }
+        kept.push(r);
+      }
+      rowsHere = kept.reverse();
+    } else if (i === staves.length - 1) {
       const kept: Component[][] = [];
       for (const r of rowsHere) {
         const top = Math.min(...r.map((c) => c.bbox.y));

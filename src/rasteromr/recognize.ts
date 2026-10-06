@@ -3911,6 +3911,7 @@ export async function recognizeRasterPage(
     notes.splice(i, 1);
   }
   attachAccidentalsByPitch(pg, ctx, notes);
+  naturalsByStrokes(pg, ctx, notes, raster.bin, unit.space);
   splitUnisons(notes, stems, beams, raster.bin, unit.space);
   markCrossStaff(pg, notes, stems, unit.space);
   fixDottedPairs(notes, unit.space);
@@ -4145,6 +4146,7 @@ export async function recognizeRasterPage(
     lyricLines.push(...buildLyricLines(pg, objs, undefined, (cxs, above, below) => lyricsBelongBelow(cxs, above, below, notes, unit.space)));
     foldBilingualLyrics(pg, lyricLines);
     moveEchoLines(pg, lyricLines, notes, unit.space);
+    splitVoiceLyrics(pg, lyricLines, notes);
     numberVersesByScript(pg, lyricLines);
     attachLyrics(notes, lyricLines, unit.space * 0.3);
     liftLyrics(pg, notes, unit.space);
@@ -4420,11 +4422,34 @@ const isLatinLine = (l: LyricLine) => {
  * 落进中文第 2 段（GT 记在英文第 1 段，中文第 2 段整段归零）。
  * 英文从第几段起要看**整首**的中文段数（倚靠主第二页只有副歌），这里先占位，见 `settleLyricVerses`。
  */
+/** 两声部一行谱：每个声部至少这么多个音才算两声部。 */
+const VOICE_LYRIC_MIN = 3;
+
+/**
+ * **一行谱两个声部、上下各印一行词：上方的词归上声部，下方的归下声部**（望十架独唱 / 女低共用一行谱，
+ * 独唱的词印在谱表上方、女低的印在下方）。不分的话两行词按 x 挂到同一串音上，下方那行成了上声部的第 2 段，
+ * 下声部一个字也没有（GT 是各声部各一段中文）。只在谱表上方真有词（`pickBelow` 挂过来的）、下方也有、
+ * 两个声部都有音时分；普通 SATB 一行谱两个声部共用下方的词，不动。
+ */
+function splitVoiceLyrics(pg: SPage, lines: LyricLine[], notes: StaffNote[]): void {
+  for (const st of pg.staves) {
+    const ls = lines.filter((l) => l.staff === st);
+    const above = ls.filter((l) => l.top < st.box.top);
+    const below = ls.filter((l) => l.top > st.box.bottom);
+    if (!above.length || !below.length) continue;
+    const ns = notes.filter((n) => n.staff === st && !n.rest);
+    if (ns.filter((n) => n.voice === 1).length < VOICE_LYRIC_MIN || ns.filter((n) => n.voice !== 1).length < VOICE_LYRIC_MIN) continue;
+    for (const l of above) l.voice = 1;
+    for (const l of below) l.voice = 2;
+  }
+}
+
 function numberVersesByScript(pg: SPage, lines: LyricLine[]): void {
   const span = (l: LyricLine) => [Math.min(...l.syllables.map((s) => s.left)), Math.max(...l.syllables.map((s) => s.right))] as const;
   const extra: LyricLine[] = [];
-  for (const st of pg.staves) {
-    const ls = lines.filter((l) => l.staff === st).sort((a, b) => a.top - b.top);
+  // 分了声部的（`splitVoiceLyrics`）各声部各编各的段号
+  for (const st of pg.staves) for (const v of [undefined, 1, 2] as const) {
+    const ls = lines.filter((l) => l.staff === st && l.voice === v).sort((a, b) => a.top - b.top);
     // 第几段 = 上方同文种、**横向盖得住**它的行数 + 1。各段全宽排的，彼此都盖得住，照旧按上下次序；
     // 副歌只印在右半边的（信心使我得胜「Faith is the vic-to-ry!」印在中文第 3 段那一行的右边），
     // 左边主歌那几段盖不着它，就是本文种的第 1 段。
@@ -4929,6 +4954,45 @@ function shareMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number): voi
   }
 }
 
+/**
+ * **一像素细笔的还原号按两根错开的竖笔补认**（望十架 p7 m55：五行谱十来个 F♮、C♮，去线后横笔断成碎点，
+ * 字典一个也没认出，整小节按调号读成 F♯、C♯）。只补「按调号或本小节前文会变音」、又没挂临时记号的音：
+ * 符头左边 1.6 格内找两根细竖笔——宽不过 0.3 格、高 1.5~3.3 格，左高右低各错开 0.3 格以上、相距 0.3~0.9 格，
+ * 左笔上端在符头中心上方 0.8~2.2 格、右笔下端在下方 0.8~2.2 格（还原号上半左笔、下半右笔，符头在中间那格）。
+ * 两笔都不能是别的音的符干（符干上端或下端挨着符头）。
+ */
+function naturalsByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], bin: Binary, sp: number): void {
+  let hit = false;
+  const heads = notes.filter((n) => !n.rest).map((n) => n.sym.box);
+  // 竖笔一端挨着某个符头就是符干
+  const isStem = (s: { x0: number; x1: number; top: number; bottom: number }) =>
+    heads.some((b) => s.x1 >= b.left - 2 && s.x0 <= b.right + 2 && ((s.top >= b.top - 3 && s.top <= b.bottom + 3) || (s.bottom >= b.top - 3 && s.bottom <= b.bottom + 3)));
+  for (const n of notes) {
+    if (n.rest || n.accidental !== null || n.alter === 0) continue;
+    const b = n.sym.box;
+    const py = n.sym.py;
+    const x0 = Math.max(0, Math.round(b.left - sp * 1.6));
+    const y0 = Math.max(0, Math.round(py - sp * 2.4));
+    const zone = { x: x0, y: y0, w: Math.max(0, Math.round(b.left) - 1 - x0), h: Math.min(bin.h - y0, Math.round(sp * 4.8)) };
+    const ss = verticalStrokes(bin, zone, sp * 1.5).filter((s) => s.x1 - s.x0 + 1 <= sp * 0.3 && s.h <= sp * 3.3 && !isStem(s));
+    const ok = ss.some((l) =>
+      ss.some((r) => {
+        const dx = r.x0 - l.x1;
+        return (
+          dx >= sp * 0.3 && dx <= sp * 0.9 &&
+          r.top - l.top >= sp * 0.3 && r.bottom - l.bottom >= sp * 0.3 &&
+          py - l.top >= sp * 0.8 && py - l.top <= sp * 2.2 &&
+          r.bottom - py >= sp * 0.8 && r.bottom - py <= sp * 2.2
+        );
+      }),
+    );
+    if (!ok) continue;
+    n.accidental = 0;
+    hit = true;
+  }
+  if (hit) calcAlters(pg, ctx, notes);
+}
+
 /** 临时记号离符头最远多少格还算它的（见 `attachAccidentalsByPitch`）。 */
 const LOOSE_ACC_GAP = 1.5;
 /**
@@ -4952,6 +5016,7 @@ function attachAccidentalsByPitch(pg: SPage, ctx: Map<Staff, StaffContext>, note
   const keys = new Set([...ctx.values()].flatMap((c) => c.key));
   for (const n of notes) n.accidental = null;
   const taken = new Set<Sym>();
+  const between = pg.symbols.filter((a) => isAccidental(a.code) && !keys.has(a));
   for (const a of pg.symbols) {
     if (!isAccidental(a.code) || keys.has(a)) continue;
     let best: StaffNote | null = null;
@@ -4959,7 +5024,9 @@ function attachAccidentalsByPitch(pg: SPage, ctx: Map<Staff, StaffContext>, note
     for (const n of notes) {
       if (n.rest || taken.has(n.sym)) continue;
       if (Math.abs(n.sym.py - a.py) > sp / 4) continue;
-      const gap = n.sym.box.left - a.box.right;
+      let gap = n.sym.box.left - a.box.right;
+      // 和弦里错开排的记号：中间隔着的别的临时记号宽度不算（望十架 p7 m55 还原号在降号左边，离 F 头 1.9 格）
+      for (const o of between) if (o !== a && o.box.left >= a.box.right - 2 && o.box.right <= n.sym.box.left + 2 && Math.abs(o.py - a.py) <= sp * 3) gap -= o.box.right - o.box.left;
       if (gap < -2 || gap > sp * LOOSE_ACC_GAP || gap >= bd) continue;
       best = n;
       bd = gap;
