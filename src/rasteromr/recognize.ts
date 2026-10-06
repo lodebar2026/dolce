@@ -29,7 +29,7 @@ import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from
 import { sigDistance } from "../omr/glyphdict";
 import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, jianpuKey, type JianpuStrip } from "./jianpuband";
 import { fuseJianpu, type FuseStats, type JianpuRow } from "./jianpufuse";
-import { findLyricRows, foldLyricChars, isLatinRow, LATIN_MIN_CHAINED, latinCells, mapCharsToCells, splitMixedChars, stripKey, stripOf, stripWithout, type LyricRow, type LyricStrip, type OcrChar } from "./lyric";
+import { CHAR_MAX as LYRIC_CHAR_MAX, findLyricRows, foldLyricChars, isLatinRow, LATIN_MIN_CHAINED, latinCells, mapCharsToCells, splitMixedChars, stripKey, stripOf, stripWithout, type LyricRow, type LyricStrip, type OcrChar } from "./lyric";
 import { findHoles, traceContours, type ContourMap } from "./contour";
 import { buildHeadMasks, buildHollowMasks, headFromStemBlock, scoreAt, solidHeadsAlongStems, splitHeadCluster } from "./headmask";
 import { headProb, trainHeadClassifier } from "./headclass";
@@ -853,6 +853,8 @@ const SNAP_AMBIG = 0.25;
 const THIN_BEAM_H = 0.3;
 /** 离最近谱表外线超过这么多格的符头要有加线链才留。扫过 **3.75** / 4.25 / 4.75：93.47 / 93.32 / 93.23%。 */
 const FAR_HEAD = 3.75;
+/** 页顶标题字高的上限（格）：再高的是大括号、竖线一类。 */
+const TITLE_CHAR_MAX = 12;
 /**
  * 离谱表外线超过几格的头要查加线链（建页前那一道）。原来同 `FAR_HEAD`（3.75 格，三条加线以外）；
  * 谱表上方的表情文字（「unis. no vibrato」）里的字母离外线两三格，收成实心头、没有干读成全音符 D6、C6
@@ -1001,6 +1003,35 @@ export async function recognizeRasterPage(
     prims.beams = prims.beams.filter(outside);
   }
   const blobs = findBlobs(nl, prims, unit, ledgerGrid(gridYs, unit));
+
+  // ── 顶部大字号文字：**先认成标题** ────────────────────────────────────────
+  //
+  // 页顶标题的字比歌词字号上限（`lyric.ts::CHAR_MAX`，2.8 格）高，整字进不了歌词带，被切下来的碎笔却进得去，
+  // 拼成一行「歌词」挂到第一行谱上（你的信实广大、我一生要赞美你的标题五六个字碰巧一音一字对得上）；
+  // 字里的圈与横笔还会被收成符头、休止（我一生要赞美你标题「你」配上了八分休止）。
+  // 第一行谱上方、高过 `CHAR_MAX` 的块按纵向重叠归行，一行里有两个以上的就是标题行：中心落在那一行纵向范围里的块
+  //（大字被去线切下的碎笔、并排印着的小字）先全部认领，歌词带与符头那几路都看不见。
+  const titleIds = new Set<number>();
+  if (groups.length) {
+    const sp = unit.space;
+    const top0 = Math.min(...groups.map((g) => g.lines[0].y));
+    const above = blobs.filter((c) => c.bbox.y + c.bbox.h < top0 - sp);
+    const big = above.filter((c) => c.bbox.h > sp * LYRIC_CHAR_MAX && c.bbox.h < sp * TITLE_CHAR_MAX).sort((a, b) => a.bbox.y - b.bbox.y);
+    const bands: { y0: number; y1: number; n: number }[] = [];
+    for (const c of big) {
+      const y0 = c.bbox.y, y1 = c.bbox.y + c.bbox.h;
+      const b = bands.find((q) => Math.min(q.y1, y1) - Math.max(q.y0, y0) > Math.min(q.y1 - q.y0, y1 - y0) * 0.5);
+      if (b) (b.y0 = Math.min(b.y0, y0)), (b.y1 = Math.max(b.y1, y1)), b.n++;
+      else bands.push({ y0, y1, n: 1 });
+    }
+    for (const b of bands) {
+      if (b.n < 2) continue;
+      for (const c of above) {
+        const cy = c.bbox.y + c.bbox.h / 2;
+        if (cy >= b.y0 && cy <= b.y1) titleIds.add(c.id);
+      }
+    }
+  }
 
   // ── 和弦带：**先于符头认领** ──────────────────────────────────────────────
   //
@@ -1300,13 +1331,13 @@ export async function recognizeRasterPage(
   // 几何闸那一路同样要剔杠头：善牧恩慈歌放大后，符杠左端提剩的一截 0.86×0.6 格，
   // 刚好卡过实心头的尺寸下限，出了个 F5。只剔**矮**的（不到 0.65 格）：贴着符杠、又被去线
   // 削扁的真头中心也会落在杠的中线上（宁静的伯利恒三个 1.1×0.72 格的，门槛 0.75 时被剔掉）。
-  const rawHeads = findRasterHeads(nl, blobs.filter((c) => !restIds.has(c.id) && !harmonyIds.has(c.id)), prims.vSegs, unit, onGrid, inBand, matchHollow, offStaff);
+  const rawHeads = findRasterHeads(nl, blobs.filter((c) => !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id)), prims.vSegs, unit, onGrid, inBand, matchHollow, offStaff);
   const heads = rawHeads.filter((hd) => {
     if (hd.code !== "noteheadBlack") return true;
     if (beamStump(hd.box, rawHeads.map((o) => o.box))) return false;
     return hd.box.h >= unit.space * BEAM_STUMP_H || !onBeamLine(hd.box);
   });
-  const claimed = new Set([...heads.map((h) => h.comp.id), ...restIds, ...harmonyIds]);
+  const claimed = new Set([...heads.map((h) => h.comp.id), ...restIds, ...harmonyIds, ...titleIds]);
 
   // ── 空心符头：按**内腔（洞）**再找一遍 ───────────────────────────────────
   //
@@ -2398,7 +2429,7 @@ export async function recognizeRasterPage(
       const b = c.bbox;
       // 并块拆分认领的块第一趟就进来：4/4 两个数字连成一块，被拆成两个黑头（齐来崇拜第一行：本页头模板一变就拆了）。
       // 数字那一路按位置切上下两半、各配模板，真的两个叠头配不上数字
-      if ((claimed.has(c.id) && !(pass === 1 && !restIds.has(c.id) && !harmonyIds.has(c.id)) && !splitIds.has(c.id)) || merged.has(c.id)) return false;
+      if ((claimed.has(c.id) && !(pass === 1 && !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id)) && !splitIds.has(c.id)) || merged.has(c.id)) return false;
       const dc = dictClaimed.has(c.id) ? look.lookup(binSig(nl, b), b.w / unit.space, b.h / unit.space) : null;
       if (dc && (isClef(dc) || isAccidental(dc))) return false;
       if (b.x < left || b.x > left + unit.space * 14) return false;
@@ -3995,7 +4026,7 @@ export async function recognizeRasterPage(
     // 条子才与离线生成缓存时切得一模一样。
     const noteCenters = notes.map((n) => ({ x: (n.sym.box.left + n.sym.box.right) / 2, y: (n.sym.box.top + n.sym.box.bottom) / 2 }));
     const orphanHead = (c: Component) =>
-      claimed.has(c.id) && !restIds.has(c.id) && !harmonyIds.has(c.id) &&
+      claimed.has(c.id) && !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id) &&
       !noteCenters.some((p) => p.x >= c.bbox.x - 1 && p.x <= c.bbox.x + c.bbox.w + 1 && p.y >= c.bbox.y - 1 && p.y <= c.bbox.y + c.bbox.h + 1);
     // **没人要的横段、竖段也是歌词的笔画**：「一」整字、「下」「生」的横笔、「上」的竖笔
     // 被原语那一步当成线段抽走，不成块，字格里就缺了那个字（《赞美一神》两行各缺一两个）。
