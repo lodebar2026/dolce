@@ -4151,7 +4151,7 @@ export async function recognizeRasterPage(
         notes.splice(i, 1);
       }
     }
-    lyricLines.push(...buildLyricLines(pg, objs, undefined, (cxs, above, below) => lyricsBelongBelow(cxs, above, below, notes, unit.space)));
+    lyricLines.push(...buildLyricLines(pg, objs, undefined, (cxs, above, below, own, chained) => lyricsBelongBelow(cxs, above, below, own, chained, notes, unit.space)));
     foldBilingualLyrics(pg, lyricLines);
     moveEchoLines(pg, lyricLines, notes, unit.space);
     splitVoiceLyrics(pg, lyricLines, notes, unit.space);
@@ -4786,8 +4786,9 @@ const LYRIC_BELOW_FIT = 0.6;
 /** 「只对得上一边」的音节至少几个、且是另一边的几倍，才算这一边的证据压过另一边。 */
 const LYRIC_ONLY_MIN = 3;
 const LYRIC_ONLY_RATIO = 2;
-/** 至少这么多个音节才判。 */
+/** 至少这么多个音节才判。上方没有谱的（页顶那条带）要 `LYRIC_HEAD_MIN` 个。 */
 const LYRIC_BELOW_MIN = 4;
+const LYRIC_HEAD_MIN = 8;
 
 /** 一串音节 x 里，「只对得上 a 那串音、对不上 b 那串」的个数与「反过来」的个数（x 差在 `LYRIC_NOTE_DX` 格以内算对上）。 */
 function onlyFits(cxs: number[], a: number[], b: number[], sp: number): [number, number] {
@@ -4808,18 +4809,29 @@ function onlyFits(cxs: number[], a: number[], b: number[], sp: number): [number,
  * 照简谱夹在两行数字之间的八度点那套判法（`omr/jianpu.ts::resolvePairOctaveDots`，见实现篇「两声部一组裁决」）：
  * **不按远近、也不比总的对位率**，只看**排除性的证据**——
  *   - 上方没有谱（页顶那条带）：没有别的主，下方那行对得上六成就是它的；
+ *   - **互斥**：下方那行谱是单声部、自己下面已经有词（简谱「下声部脚下已有点，夹在中间的这颗归上声部」），归上方；
+ *     两声部一行的谱上下可以各挂一行（各归一个声部），不互斥；上方那行谱与这一行之间已有它自己的汉字行的，这一行是
+ *     它往下接的一段，也归上方；
  *   - 两边都有谱：逐音节看对不对得上两边的音，**两边都对得上的不表态**（SATB 上下两行节奏一样，各音节两边都对得上，
  *     证据为零，照默认挂上方）；只对得上下方的至少 `LYRIC_ONLY_MIN` 个、且是只对得上上方的 `LYRIC_ONLY_RATIO` 倍，
  *     下方那行又对得上六成，才挂下方。按总对位率比（下方高三成就挪）时，上方那行恰好在几处休止的短行也被挪走
  *     （烛光颂曲 p5 一行六个字，上 0.67、下 1.00，只对得上下方的只有两个）。
  */
-function lyricsBelongBelow(cxs: number[], above: Staff | null, below: Staff, notes: StaffNote[], sp: number): Staff | undefined {
+function lyricsBelongBelow(cxs: number[], above: Staff | null, below: Staff, belowHasOwn: boolean, aboveHasOwn: boolean, notes: StaffNote[], sp: number): Staff | undefined {
   const xsOf = (st: Staff) => notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
   if (cxs.length < LYRIC_BELOW_MIN) return undefined;
   const xb = xsOf(below);
   const fb = cxs.filter((cx) => xb.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX)).length / cxs.length;
   if (fb < LYRIC_BELOW_FIT) return undefined;
-  if (!above) return below;
+  // 上方没有谱（页顶那条带）：没有别的主，可那里也有标题、署名、速度语，五六个字碰巧对得上下方的音
+  //（你的信实广大页顶标题挂成第 1 段，中文 100 → 71.6%）。这一档照旧要 `LYRIC_HEAD_MIN` 个音节
+  if (!above) return cxs.length >= LYRIC_HEAD_MIN ? below : undefined;
+  // 互斥：下方那行谱是单声部、自己下面已有词，这一行就是上方那行的（破碎 p8 女低那行词有几处女低休止、男高有音，按证据挪去了男高）。
+  // 两声部一行的不算：上方的词归上声部、下方的归下声部，两边各挂一行（望十架独唱 / 女低，见 `splitVoiceLyrics`）
+  if (belowHasOwn && !notes.some((n) => n.staff === below && !n.rest && n.voice !== 1)) return undefined;
+  // 另一面的互斥：上方那行谱与这一行之间已有它自己的汉字行，这一行是那串多段歌词往下接的一段
+  //（万古磐石歌第 4 段离下一系统近、下一系统两声部，按证据挪了过去，中文 100 → 75%）
+  if (aboveHasOwn) return undefined;
   const [onlyA, onlyB] = onlyFits(cxs, xsOf(above), xb, sp);
   return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO ? below : undefined;
 }

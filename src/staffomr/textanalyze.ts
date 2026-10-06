@@ -448,7 +448,7 @@ export function buildLyricLines(
    * 位图路传：一行歌词**改挂到下方那行谱**的判据（印在谱表上方的词）。给出这一行各音节的中心 x、
    * 上方最近的谱（没有为 null）、下方最近的谱，返回要挂的那行谱；返回 undefined 照默认（上方最近的那行）。
    */
-  pickBelow?: (cxs: number[], above: Staff | null, below: Staff) => Staff | undefined,
+  pickBelow?: (cxs: number[], above: Staff | null, below: Staff, belowHasOwn: boolean, aboveHasOwn: boolean) => Staff | undefined,
 ): LyricLine[] {
   const rows: { top: number; bottom: number; objs: PObj[] }[] = [];
   // **位图路合成的对象（`#` 打头的字体）要纵向重叠过半才并**：那边一条歌词条就是一行，
@@ -513,7 +513,15 @@ export function buildLyricLines(
       if (below && belowD <= maxGap && !r.objs.some(latin)) {
         const cxs = dedupeSyllables(r.objs.flatMap((o) => splitSyllables(o, dict))).map((q) => q.cx);
         // 上方的谱只要有就交出去（多段歌词后几段离谱远、靠链式接上，也是上方那行的）
-        const alt = cxs.length ? pickBelow(cxs, best, below) : undefined;
+        // 下方那行谱**自己下面已经有词**（它与再下一行谱之间、离它最近的就是它）：照简谱八度点「下声部脚下已有点，这颗归上声部」的互斥
+        const own = rows.some((o) => {
+          if (o === r || o.top <= below!.box.bottom) return false;
+          const d = o.top - below!.box.bottom;
+          return d <= maxGap && !pg.staves.some((st) => st !== below && st.box.bottom <= o.top && o.top - st.box.bottom < d);
+        });
+        // 上方那行谱与这一行之间**已有它自己的汉字行**：这一行是那串多段歌词往下接的一段（万古磐石歌第 4 段离下一系统近）
+        const chained = !!best && rows.some((o) => o !== r && o.top >= best!.box.bottom && o.bottom <= r.top && !o.objs.some(latin));
+        const alt = cxs.length ? pickBelow(cxs, best, below, own, chained) : undefined;
         if (alt) {
           const a = byStaff.get(alt) ?? [];
           a.push({ top: r.top, bottom: r.bottom, objs: r.objs });
