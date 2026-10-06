@@ -570,6 +570,12 @@ const KEY_OVERLAP = 0.5;
 /** 不带连字符的拉丁行离带连字符的那行多近（字高的倍数）算同一块歌词。
  *  2.5 → 3：拉丁行的字高常只量到小写字母高（更亲近恩主 12px、行距 34px），末段后半「heights of joy…」链不进来。 */
 const LATIN_CHAIN = 3;
+/** 拉丁行靠中文歌词行作保时，那行中文至少这么多个汉字。 */
+const CJK_SEED_MIN = 4;
+/** 不管「下方那行谱下面已有词」那道互斥的证据：只对得上下方的至少这么多个（上方一个没有）。 */
+const LYRIC_ONLY_DECISIVE = 6;
+/** 表情文字的术语、页脚注的字样（OCR 不出空格，按连写匹配）：带这些的拉丁行不是歌词（望十架 p1 页脚「Words: … Tune: …」「Flute part is on page 43」）。 */
+const DIRECTION_TERM_RE = /tempo|cresc|poco|unis|dim\.|rall|rit\.|stagger|section|words:|tune:|music:|page\d|copyright|©/i;
 /** 上下贴着的两个头（`isStackedPair`）拆分时每个头的得分门槛。 */
 const PAIR_SCORE_MIN = 0.4;
 /** 同音两声部只挂上一根干时，头另一侧的竖墨至少这么多格才算另一根干（`splitUnisons`）。 */
@@ -4098,9 +4104,24 @@ export async function recognizeRasterPage(
     // （原来卡两成，父恩广大末系统英文第 1 行字高 20、邻行 26，没连字符又链不进来，英文 2~4 段整体前移，拉丁 69.4 → 94.3%）。
     const latinStrips = new Set<LyricStrip>();
     {
-      const cand = (ocr ? lyricStrips : []).filter((st) => { const ch = ocr!.get(stripKey(st)); return ch && isLatinRow(ch, false, LATIN_MIN_CHAINED); });
+      // 表情文字行（「poco rit.」「a tempo」「unis.」「molto cresc.」）字号与歌词一样、又夹在歌词行之间，种子、链入都会把它收进来；带这些术语的不收
+      const cand = (ocr ? lyricStrips : []).filter((st) => { const ch = ocr!.get(stripKey(st)); return ch && isLatinRow(ch, false, LATIN_MIN_CHAINED) && !DIRECTION_TERM_RE.test(ch.map((c) => c.ch).join("")); });
       for (const st of cand) if (isLatinRow(ocr!.get(stripKey(st))!)) latinStrips.add(st);
       const yOf = (st: LyricStrip) => Math.min(...stripRow.get(st)!.cells.map((c) => c.y));
+      // **紧挨着一行中文歌词的也是种子**（不要连字符，字母仍要够 `isLatinRow` 的下限）：中英对照谱英文行就印在中文行下面，
+      // 一整行单音节词常见（望十架 p3「love. Face the cross, He dies to set us free.」两行整行丢了）。
+      // 书眉、版权行旁边没有中文歌词行；字高比中文行矮一半以上的（页脚小字）不算
+      const cjkStrips = (ocr ? lyricStrips : []).filter((st) => {
+        const ch = ocr!.get(stripKey(st));
+        const n = ch ? ch.filter((c) => /[\u4e00-\u9fff]/.test(c.ch)).length : 0;
+        return n >= CJK_SEED_MIN && n >= ch!.length * 0.6;
+      });
+      for (const st of cand) {
+        const chs = ocr!.get(stripKey(st))!;
+        if (latinStrips.has(st) || !isLatinRow(chs, false)) continue;
+        const r = stripRow.get(st)!;
+        if (cjkStrips.some((o) => stripRow.get(o)!.staffIndex === r.staffIndex && st.charH >= o.charH * 0.5 && Math.abs(yOf(o) - yOf(st)) <= Math.max(o.charH, st.charH) * LATIN_CHAIN)) latinStrips.add(st);
+      }
       for (let grew = true; grew; ) {
         grew = false;
         for (const st of cand) {
@@ -4933,11 +4954,15 @@ function lyricsBelongBelow(row: LyricRowInfo, verseObjs: Set<PObj>, notes: Staff
   if (oneToOneFit(cxs, xb, sp) < LYRIC_BELOW_FIT) return undefined;
   // 互斥：下方那行谱是单声部、自己下面已有词，这一行就是上方那行的（破碎 p8 女低那行词有几处女低休止、男高有音，按证据挪去了男高）。
   // 两声部一行的不算：上方的词归上声部、下方的归下声部，两边各挂一行（望十架独唱 / 女低，见 `splitVoiceLyrics`）
-  if (row.belowHasOwn && !notes.some((n) => n.staff === below && !n.rest && n.voice !== 1)) return undefined;
+  // 证据压倒的不管这道互斥：只对得上下方的够多、上方一个都对不上、下方一音一字几乎全对上
+  //（望十架 p3 独唱 / 女低共用一行谱，词上下各一行；这时声部还没分，`voice` 全是 1，上方那行被挡在上一系统的钢琴左手上）
+  const fit = oneToOneFit(cxs, xb, sp);
+  const [onlyA, onlyB] = onlyFits(cxs, xsOf(above), xb, sp);
+  const decisive = onlyA === 0 && onlyB >= LYRIC_ONLY_DECISIVE && fit >= 0.9;
+  if (row.belowHasOwn && !decisive && !notes.some((n) => n.staff === below && !n.rest && n.voice !== 1)) return undefined;
   // 另一面的互斥：上方那行谱与这一行之间已有它自己的汉字行，这一行是那串多段歌词往下接的一段
   //（万古磐石歌第 4 段离下一系统近、下一系统两声部，按证据挪了过去，中文 100 → 75%）
   if (row.aboveHasOwn) return undefined;
-  const [onlyA, onlyB] = onlyFits(cxs, xsOf(above), xb, sp);
   return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO ? below : undefined;
 }
 

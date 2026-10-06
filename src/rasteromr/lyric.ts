@@ -666,6 +666,9 @@ const LATIN_CH = /[A-Za-z'\u2019\-\u2013\u2014,.;:!?]/;
  *  0.7 个字号落在中间那片空当里。取 0.28 那一档（照排印词距）整行碎成单字母
  *  （`w orld`、`M an`）。 */
 const SPACE_GAP = 0.7;
+/** 超长的词（这么多个字母以上，英文词极少）里再按小一档的空白切。 */
+const LONG_WORD = 7;
+const SPACE_GAP_TIGHT = 0.22;
 
 /** 这一行是拉丁歌词吗。 */
 export function isLatinRow(chars: OcrChar[], needHyphen = true, minLatin = LATIN_MIN): boolean {
@@ -738,16 +741,24 @@ export function latinCells(strip: LyricStrip, chars: OcrChar[]): { box: Rect; ch
   for (let y = 0; y < strip.h; y++)
     for (let x = 0; x < strip.w; x++) if (strip.data[y * strip.w + x]) col[x]++;
   const minGap = Math.max(2, strip.charH * SPACE_GAP);
-  const blanks: [number, number][] = [];
-  let run = 0;
-  for (let x = 0; x <= strip.w; x++) {
-    if (x < strip.w && !col[x]) {
-      run++;
-      continue;
+  const blanksOf = (min: number): [number, number][] => {
+    const out: [number, number][] = [];
+    let run = 0;
+    for (let x = 0; x <= strip.w; x++) {
+      if (x < strip.w && !col[x]) {
+        run++;
+        continue;
+      }
+      if (run >= min) out.push([(x - run) / strip.w, x / strip.w]);
+      run = 0;
     }
-    if (run >= minGap) blanks.push([(x - run) / strip.w, x / strip.w]);
-    run = 0;
-  }
+    return out;
+  };
+  const blanks = blanksOf(minGap);
+  // 照排印词距排的密行（八分音符一字一音，词与词只隔半个字号上下，望十架 p5「Feel His love from deep with-in」）
+  // 按 `SPACE_GAP` 断不开，整句连成一个词。全条降门槛会把别处的词劈开（见上），只在**超长的词**（`LONG_WORD` 个字母以上）里
+  // 再按小一档的空白（`SPACE_GAP_TIGHT`）切
+  const tight = blanksOf(Math.max(3, strip.charH * SPACE_GAP_TIGHT));
   const gaps = keep.slice(1).map((c, i) => c.xFrac - keep[i].xFrac).filter((g) => g > 0).sort((a, b) => a - b);
   const pitch = gaps.length ? gaps[gaps.length >> 1] : 1 / Math.max(1, keep.length);
   const out: { box: Rect; ch: string }[] = [];
@@ -764,12 +775,21 @@ export function latinCells(strip: LyricStrip, chars: OcrChar[]): { box: Rect; ch
     },
     ch,
   });
+  const between = (bs: [number, number][], a: number, b: number) => bs.some((q) => (q[0] + q[1]) / 2 > a && (q[0] + q[1]) / 2 < b);
+  // 每个字后面断不断：两个字之间**夹着一段空白列**就补个空格（`splitSyllables` 见空格断词）
+  const brk = keep.map((c, i) => !!keep[i + 1] && between(blanks, c.xFrac, keep[i + 1].xFrac));
+  for (let i = 0; i < keep.length; ) {
+    let j = i;
+    while (j < keep.length - 1 && !brk[j] && !/[-\u2013\u2014]/.test(keep[j].ch)) j++;
+    if (keep.slice(i, j + 1).filter((c) => /[A-Za-z]/.test(c.ch)).length >= LONG_WORD)
+      for (let k = i; k < j; k++) if (between(tight, keep[k].xFrac, keep[k + 1].xFrac)) brk[k] = true;
+    i = j + 1;
+  }
   keep.forEach((c, i) => {
     const next = keep[i + 1];
     const end = next ? Math.min(c.xFrac + pitch, next.xFrac) : Math.min(1, c.xFrac + pitch);
     out.push(boxAt(c.xFrac, end, c.ch));
-    // 两个字之间**夹着一段空白列**就补个空格（`splitSyllables` 见空格断词）
-    if (next && blanks.some((b) => (b[0] + b[1]) / 2 > c.xFrac && (b[0] + b[1]) / 2 < next.xFrac)) out.push(boxAt(end, next.xFrac, " "));
+    if (next && brk[i]) out.push(boxAt(end, next.xFrac, " "));
   });
   return out;
 }
