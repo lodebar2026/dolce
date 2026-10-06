@@ -67,6 +67,8 @@ export interface StaffContext {
   key: Sym[];
   /** 拍号数字（按 x 排，上下两排各一半）。 */
   time: Sym[];
+  /** 这行谱上小节线的 x（还没切小节时由识别那边先给，见 `keyChanges`；切了小节就用 `staff.bars`）。 */
+  barXs?: number[];
 }
 
 /**
@@ -197,6 +199,47 @@ export function keyFifths(key: Sym[]): number {
     else if (s.code === "accidentalFlat") res--;
   }
   return res;
+}
+
+/** 调号记号之间隔多远（格）算另一处调号（行中转调）。同一处调号相邻两个记号的间距不到一格。 */
+const KEY_CLUSTER_GAP = 1.5;
+
+/**
+ * **行中转调**：`ctx.key` 里除了行首调号，还收着行中小节线后面的调号（`findClefKeyTime`「紧跟在小节线之后」那一条）。
+ * 按 x 聚成几簇：头一簇与谱号之间没有小节线的是本行调号（`x` 为 -Infinity），其余每簇从它的 x 起改调。
+ * 不按「离谱号几格」判：有的行调号离谱号三格开外（烛光颂曲 p1、p2 行首），按距离判就成了行中转调、行首没调号。
+ * 不分簇、整行一个 `keyFifths` 的话，望十架 p7「两个升号 → 行中一个降号」整行按一个升号读，升降全错。
+ * 只有还原号的那簇是转到 C 大调（0）。
+ */
+export function keyChanges(c: StaffContext): { x: number; fifths: number }[] {
+  if (!c.key.length) return [];
+  const sp = c.staff.stepDistance() * 2;
+  const ks = [...c.key].sort((a, b) => a.box.left - b.box.left);
+  const clusters: Sym[][] = [];
+  for (const k of ks) {
+    const cur = clusters[clusters.length - 1];
+    if (cur && k.box.left - cur[cur.length - 1].box.right <= sp * KEY_CLUSTER_GAP) cur.push(k);
+    else clusters.push([k]);
+  }
+  const from = (c.clef?.box.right ?? c.staff.box.left) + sp * 0.5;
+  const bars = c.staff.bars.length ? c.staff.bars.map((b) => b.left) : (c.barXs ?? []);
+  const headOk = (x: number) => !bars.some((b) => b > from && b < x);
+  return clusters.map((cl, i) => ({ x: i === 0 && headOk(cl[0].box.left) ? -Infinity : cl[0].box.left, fifths: keyFifths(cl) }));
+}
+
+/** 行首那段调号的记号（不含行中转调的，见 `keyChanges`）。 */
+export function headKey(c: StaffContext): Sym[] {
+  const ch = keyChanges(c);
+  if (!ch.length || ch[0].x > -Infinity) return [];
+  const cut = ch.length > 1 ? ch[1].x : Infinity;
+  return c.key.filter((q) => q.box.left < cut);
+}
+
+/** 这一行谱在 x 处生效的调号；行首没印调号的取 `inherit`（上一行的）。 */
+export function fifthsAt(c: StaffContext | undefined, x: number, inherit = 0): number {
+  let f = inherit;
+  for (const ch of c ? keyChanges(c) : []) if (ch.x <= x) f = ch.fifths;
+  return f;
 }
 
 /**
@@ -1482,12 +1525,12 @@ const CIRCLE = [3, 0, 4, 1, 5, 2, 6];
  */
 export function calcAlters(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[]): void {
   // 谱行的调号：本行没印的沿用上一行（`analyzeBarData` 的 prev 逻辑）
+  // 行中转调的，按位置取（`fifthsAt`）；下一行没印调号的，接着用这一行最后那个
   let fifths = 0;
   const fifthsOf = new Map<Staff, number>();
   for (const st of pg.staves) {
-    const c = ctx.get(st);
-    if (c && c.key.length) fifths = keyFifths(c.key);
     fifthsOf.set(st, fifths);
+    fifths = fifthsAt(ctx.get(st), Infinity, fifths);
   }
   // 按 (谱行, 小节) 分组，组内按 x
   const byBar = new Map<string, StaffNote[]>();
@@ -1502,7 +1545,7 @@ export function calcAlters(pg: SPage, ctx: Map<Staff, StaffContext>, notes: Staf
   }
   for (const [key, arr] of byBar) {
     const st = arr[0].staff;
-    const kf = fifthsOf.get(st) ?? 0;
+    const kf = fifthsAt(ctx.get(st), Math.min(...arr.map((n) => n.x)), fifthsOf.get(st) ?? 0);
     const stat = new Map<number, number>();
     // 调号：作用于所有八度
     for (let i = 0; i < kf; i++) for (let oct = 0; oct < 12; oct++) stat.set(oct * 7 + CIRCLE[i], 1);

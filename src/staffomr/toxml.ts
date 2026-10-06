@@ -5,7 +5,7 @@
 import { barlineXml, escapeXml, scorePartXml, workXml, wrapPartwise } from "../score/xmlutil";
 import { harmonyXml } from "../score/harmonyxml";
 import type { StaffNote } from "./notedata";
-import { keyFifths, timeSignatures, type StaffContext } from "./notedata";
+import { fifthsAt, timeSignatures, type StaffContext } from "./notedata";
 import { Bar, type Staff } from "./model";
 import type { StaffScore } from "./score";
 
@@ -84,8 +84,9 @@ export function toMusicXml(lines: StaffLineResult[], opts: StaffXmlOptions = {})
       measureNo++;
       let attrs = "";
       if (measureNo === 1) attrs += `<divisions>${divisions}</divisions>`;
-      const fifths = ctx ? keyFifths(ctx.key) : 0;
-      if (bi === 0 && ctx && fifths !== prevFifths) {
+      // 行中转调（`keyChanges`）：小节里有新调号的从这一小节起写
+      const fifths = ctx ? fifthsAt(ctx, bar.right - 1) : 0;
+      if (ctx && fifths !== prevFifths) {
         attrs += `<key><fifths>${fifths}</fifths></key>`;
         prevFifths = fifths;
       }
@@ -425,12 +426,13 @@ function scoreToMusicXmlRaw(
         measureNo++;
         let attrs = "";
         if (measureNo === 1) attrs += `<divisions>${divisions}</divisions>`;
-        const fifths = ctx ? keyFifths(ctx.key) : 0;
-        if (bi === 0 && ctx && fifths !== prevFifths) {
+        const bar0 = lead.bars[bi];
+        // 行中转调（`keyChanges`）：小节里有新调号的从这一小节起写
+        const fifths = ctx ? fifthsAt(ctx, bar0 ? bar0.right - 1 : -Infinity) : 0;
+        if (ctx && fifths !== prevFifths) {
           attrs += `<key><fifths>${fifths}</fifths></key>`;
           prevFifths = fifths;
         }
-        const bar0 = lead.bars[bi];
         while (bar0 && tc < timeChanges.length && timeChanges[tc].x < bar0.right) {
           const t = timeChanges[tc++];
           const k = `${t.beats}/${t.beatType}`;

@@ -438,7 +438,16 @@ export function splitSyllables(o: PObj, dict?: TextGlyphLookup): Syllable[] {
  * 规则：一行歌词属于**它上方最近的那行谱**；同一行谱下方的歌词行按 y 从上到下
  * 依次是第 1、2、3 段。归行用纵向重叠（同一段歌词可能拆成好几个文本对象）。
  */
-export function buildLyricLines(pg: SPage, lyrics: PObj[], dict?: TextGlyphLookup): LyricLine[] {
+export function buildLyricLines(
+  pg: SPage,
+  lyrics: PObj[],
+  dict?: TextGlyphLookup,
+  /**
+   * 位图路传：一行歌词**改挂到下方那行谱**的判据（印在谱表上方的词）。给出这一行各音节的中心 x、
+   * 上方最近的谱（没有为 null）、下方最近的谱，返回要挂的那行谱；返回 undefined 照默认（上方最近的那行）。
+   */
+  pickBelow?: (cxs: number[], above: Staff | null, below: Staff) => Staff | undefined,
+): LyricLine[] {
   const rows: { top: number; bottom: number; objs: PObj[] }[] = [];
   // **位图路合成的对象（`#` 打头的字体）要纵向重叠过半才并**：那边一条歌词条就是一行，
   // 行距窄的中文段上下两条的盒互相压着十来个像素（标点、偏旁出头），擦边就并，
@@ -489,6 +498,24 @@ export function buildLyricLines(pg: SPage, lyrics: PObj[], dict?: TextGlyphLooku
       if (d < bestD) {
         bestD = d;
         best = st;
+      }
+    }
+    if (pickBelow) {
+      let below: Staff | null = null;
+      let belowD = Infinity;
+      for (const st of pg.staves) {
+        const d = st.box.top - r.bottom;
+        if (d >= 0 && d < belowD) (belowD = d), (below = st);
+      }
+      if (below && belowD <= maxGap) {
+        const cxs = dedupeSyllables(r.objs.flatMap((o) => splitSyllables(o, dict))).map((q) => q.cx);
+        const alt = cxs.length ? pickBelow(cxs, best && bestD <= maxGap ? best : null, below) : undefined;
+        if (alt) {
+          const a = byStaff.get(alt) ?? [];
+          a.push({ top: r.top, bottom: r.bottom, objs: r.objs });
+          byStaff.set(alt, a);
+          continue;
+        }
       }
     }
     if (!best) continue;

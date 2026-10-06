@@ -14,7 +14,7 @@ import type { Box } from "../staffomr/model";
 import type { Component, Rect } from "../omr/types";
 import { findBarlines, findNoteheads, findStaves, findStems, findTails, isLeadNoteBarline, makeBars, makeSystems, systemGroups, tagSystemBarlines, unknownObjs } from "../staffomr/page";
 import { accidentalAlter, isAccidental, isClef, timeSigDigit, type SmuflName } from "../staffomr/glyphs";
-import { buildNotes, calcAlters, checkBars, findClefKeyTime, keyFifths, lastTimeSignature, timeSignatures, type BeamShape, type StaffContext, type StaffNote, type StemInfo, type BarCheck } from "../staffomr/notedata";
+import { buildNotes, calcAlters, checkBars, fifthsAt, findClefKeyTime, headKey, keyChanges, keyFifths, lastTimeSignature, timeSignatures, type BeamShape, type StaffContext, type StaffNote, type StemInfo, type BarCheck } from "../staffomr/notedata";
 import { findRasterArticulations } from "./artic";
 import { markRepeatsAndVoltas } from "./repeats";
 import { findRasterTuplets } from "./tuplet";
@@ -961,7 +961,7 @@ export async function recognizeRasterPage(
   const strayLines: LineSeg[] = lines
     .filter((l) => !groupedLines.has(l))
     .map((l) => ({ x0: l.left, y0: l.y, x1: l.right, y1: l.y, lw: l.y1 - l.y0 + 1, maxLw: l.y1 - l.y0 + 1 }));
-  const prims = findPrimitives(nl, unit, gridYs, staffLefts, raster.faint);
+  const prims = findPrimitives(nl, unit, gridYs, staffLefts, raster.faint, raster.bin);
 
   // ── 简谱行（混排谱）：**先于一切**认领 ─────────────────────────────────────
   //
@@ -3645,12 +3645,16 @@ export async function recognizeRasterPage(
   dropLoneBarlines(pg, raster.bin, unit.space);
   voteSystemBarlines(pg, raster.bin, unit.space);
   const ctx = findClefKeyTime(pg);
+  // 小节线的 x 先交给调号（`keyChanges` 分行首与行中转调要用，这时还没切小节）
+  for (const [st, c] of ctx) c.barXs = pg.segs.filter((l) => l.isV && l.hasTag("BarLine") && l.bottom > st.box.top && l.top < st.box.bottom).map((l) => l.cx);
   shareSystemClefs(pg, ctx, unit);
   const clefTally = shareOctaveClefs(pg, ctx, opts.carryKey?.clefs);
   dropCourtesyKeys(pg, ctx, unit.space);
   demoteMidKeys(pg, ctx);
   extendKeyChains(pg, ctx);
   dropHeadsInKey(pg, ctx);
+  pruneMidKeys(pg, ctx, raster.bin, unit.space);
+  fixKeyNaturals(ctx, raster.bin, unit.space);
   // 调号的几道全页共享**按段**做（见 `keySections`：一页印几首、各自重印拍号的，各段调号不同）
   for (const sec of keySections(pg, ctx, raster.bin)) {
     extendKeyByStrokes(pg, sec, raster.bin, unit);
@@ -3659,6 +3663,8 @@ export async function recognizeRasterPage(
     carrySystemKeys(pg, sec, settled);
   }
   extendKeyByCarry(ctx, opts.carryKey, raster.bin, unit.space);
+  findMidKeysByTemplate(pg, ctx, raster.bin, unit);
+  shareMidKeys(pg, ctx, unit.space);
   shareTimeSignature(pg, ctx, timeCols, unit, raster.bin, !!opts.carryTime);
   dropBarsInKey(pg, ctx, unit.space);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
@@ -4113,7 +4119,7 @@ export async function recognizeRasterPage(
         notes.splice(i, 1);
       }
     }
-    lyricLines.push(...buildLyricLines(pg, objs));
+    lyricLines.push(...buildLyricLines(pg, objs, undefined, (cxs, above, below) => lyricsBelongBelow(cxs, above, below, notes, unit.space)));
     foldBilingualLyrics(pg, lyricLines);
     moveEchoLines(pg, lyricLines, notes, unit.space);
     numberVersesByScript(pg, lyricLines);
@@ -4628,8 +4634,9 @@ function dropCourtesyKeys(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number):
 function dropBarsInKey(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number): void {
   const endOf = (st: Staff) => {
     const c = ctx.get(st);
-    if (!c?.clef || c.key.length < 3) return -1;
-    return Math.min(c.clef.box.right, st.box.left + sp * 3.6) + sp * (c.key.length + 0.3);
+    const n = c ? headKey(c).length : 0;
+    if (!c?.clef || n < 3) return -1;
+    return Math.min(c.clef.box.right, st.box.left + sp * 3.6) + sp * (n + 0.3);
   };
   for (const g of systemGroups(pg)) {
     // 同一系统各行的这一段一样宽：取最靠右的那个（个别行左端量进了括号里，自己算出来的偏左）
@@ -4660,6 +4667,238 @@ function demoteMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>): void {
       if (chained) edge = k.box.right;
     }
     c.key = keep;
+  }
+}
+
+/**
+ * **调号里只有一根通高竖笔的「还原号」是降号**。还原号是左上、右下两根错开的竖笔，各占记号高的六七成；
+ * 降号只有一根竖笔、右下是肚子。这份扫描件上降号的肚子与竖笔连得细，字典常认成还原号
+ *（望十架 p7 行中转一个降号五行读成三个还原号、两个没认；下一系统行首一个降号有两行读成还原号），
+ * 行中转调整行升降跟着错。只改 `ctx.key` 里的（谱中的临时还原号不碰），数竖笔在去线前的图上、左右各放宽 0.3 格。
+ */
+function fixKeyNaturals(ctx: Map<Staff, StaffContext>, bin: Binary, sp: number): void {
+  const pad = Math.round(sp * 0.3);
+  for (const c of ctx.values())
+    for (const k of c.key) {
+      if (k.code !== "accidentalNatural") continue;
+      const b = k.box;
+      if (tallStrokes(bin, { x: b.left - pad, y: b.top, w: b.right - b.left + pad * 2, h: b.bottom - b.top }) === 1) k.code = "accidentalFlat";
+    }
+}
+
+/**
+ * **行中的调号簇要紧跟双小节线才算转调**：`findClefKeyTime` 把「紧跟在小节线之后」的升降还原号都收成调号，
+ * 小节头一个音的临时记号也在里面（宁静的伯利恒低音谱表四处 B♮ 收成调号）。以前整行一个 `keyFifths`、还原号不计，
+ * 混进来也只是悄悄多算一两个升降；分出行中转调（`keyChanges`）之后，它们会从那里起把整段改调。
+ * 转调一律印在双小节线后面，左边三格以内没有双线的行中那簇摘出调号（交回去当临时记号，`attachAccidentalsByPitch` 认）。
+ */
+function pruneMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, sp: number): void {
+  for (const [st, c] of ctx) {
+    if (st.lineYs.length !== 5) continue;
+    const head = new Set(headKey(c));
+    const mids = keyChanges(c).filter((q) => q.x > -Infinity);
+    if (!mids.length) continue;
+    const bars = pg.segs.filter((l) => l.isV && l.hasTag("BarLine") && l.bottom > st.box.top && l.top < st.box.bottom).map((l) => l.cx);
+    const drop = new Set<Sym>();
+    mids.forEach((m, i) => {
+      const ok = bars.some((x) => x < m.x && m.x - x <= sp * 3 && doubleBarRight(bin, st.lineYs, x, sp) !== null);
+      if (ok) return;
+      const next = mids[i + 1]?.x ?? Infinity;
+      for (const k of c.key) if (!head.has(k) && k.box.left >= m.x && k.box.left < next) drop.add(k);
+    });
+    if (drop.size) c.key = c.key.filter((k) => !drop.has(k));
+  }
+}
+
+/** 音节离符头多远（格）算对得上。 */
+const LYRIC_NOTE_DX = 0.9;
+/** 改挂到下方那行谱：音节要有这么多对得上下方那行的音、且比上方那行多这么多。 */
+const LYRIC_BELOW_FIT = 0.6;
+const LYRIC_BELOW_MARGIN = 0.3;
+
+/**
+ * **印在谱表上方的歌词挂到下方那行谱**（`buildLyricLines` 的 `pickBelow`）。默认一行歌词归它上方最近的那行谱；
+ * 可有的声部把词印在谱表上方（望十架 p3 独唱声部：页顶第一行词上面没有谱、整行丢了；页底那行词其实是下一系统
+ * 顶行的，挂到了上一系统的钢琴左手上）。按音节与符头的 x 判：下方那行对得上六成以上、比上方那行多三成，
+ * 或上方根本没有谱（页顶）而下方对得上六成，就挂下方。SATB 那种上下两行节奏一样的，两边对得一样好，照默认。
+ */
+function lyricsBelongBelow(cxs: number[], above: Staff | null, below: Staff, notes: StaffNote[], sp: number): Staff | undefined {
+  const fit = (st: Staff) => {
+    const xs = notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
+    return cxs.filter((cx) => xs.some((x) => Math.abs(x - cx) <= sp * LYRIC_NOTE_DX)).length / cxs.length;
+  };
+  const fb = fit(below);
+  if (fb < LYRIC_BELOW_FIT) return undefined;
+  if (!above) return below;
+  return fb >= fit(above) + LYRIC_BELOW_MARGIN ? below : undefined;
+}
+
+/** 双小节线：小节线两侧这么多格以内另有一根贯通谱表的竖墨。 */
+const DOUBLE_BAR_REACH = 1.0;
+
+/** 小节线 x 处是不是双线；是的话返回右边那根的右缘，不是返回 null。在原图上逐列量贯通五线的竖墨。 */
+function doubleBarRight(bin: Binary, lineYs: number[], x: number, sp: number): number | null {
+  const y0 = Math.round(lineYs[0]);
+  const y1 = Math.round(lineYs[lineYs.length - 1]);
+  const full = (cx: number) => {
+    if (cx < 1 || cx + 1 >= bin.w) return false;
+    let n = 0;
+    for (let y = y0; y <= y1; y++) if (bin.data[y * bin.w + cx] || bin.data[y * bin.w + cx - 1] || bin.data[y * bin.w + cx + 1]) n++;
+    return n >= (y1 - y0 + 1) * 0.9;
+  };
+  const runs: [number, number][] = [];
+  for (let cx = Math.round(x - sp * DOUBLE_BAR_REACH); cx <= Math.round(x + sp * DOUBLE_BAR_REACH); cx++) {
+    if (!full(cx)) continue;
+    const last = runs[runs.length - 1];
+    if (last && cx - last[1] <= 1) last[1] = cx;
+    else runs.push([cx, cx]);
+  }
+  return runs.length >= 2 ? runs[runs.length - 1][1] : null;
+}
+
+/** 行中调号与模板比墨：模板的墨要有这么多落在目标上（一像素以内），目标那一段的墨也要有这么多落在模板上。 */
+const MID_KEY_RECALL = 0.7;
+const MID_KEY_PRECISION = 0.45;
+
+/**
+ * **行中转调按下一系统行首的调号认**：转调的调号印在双小节线后面，可调号的那几路（字典、按块、按竖笔）都只在谱号右边找，
+ * 行中的升降号要么没认成记号、要么被当成头一个音的临时记号、要么读成全音符（望十架 p6 转两个升号、p8 转一个升号，
+ * 五行一行都没认出，整段升降全错；按竖笔数也只量得出半截）。
+ * 转调之后，**下一个系统的行首必然印着新调号**，而行首那几路是认得好的。于是拿它当模板：
+ * 双小节线右边一格半以内滑动，与下一系统同种谱号那几行的行首调号逐像素比墨（谱线那几行不算，一像素以内算对上）。
+ * 同一系统、同一处至少两行对上同一个读数才收；没对上的行交给 `shareMidKeys` 补。已有行中调号的那处不动。
+ * 一页最后一个系统里的转调没有模板，不管。
+ */
+function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, unit: { space: number; height: number; lineThick?: number }): void {
+  const sp = unit.space;
+  const thick = Math.max(1, Math.round(unit.lineThick ?? sp * 0.1));
+  const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] === 1;
+  const near1 = (x: number, y: number) => ink(x, y) || ink(x - 1, y) || ink(x + 1, y) || ink(x, y - 1) || ink(x, y + 1);
+  const onLine = (st: Staff, y: number) => st.lineYs.some((l) => Math.abs(y - l) <= thick);
+  const groups = systemGroups(pg).sort((a, b) => a[0].box.top - b[0].box.top);
+  const found: { c: StaffContext; x: number; fifths: number; syms: Sym[]; gi: number }[] = [];
+  for (const [gi, g] of groups.entries()) {
+    const next = groups[gi + 1];
+    if (!next) continue;
+    const cands = next.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c?.clef && c.staff.lineYs.length === 5 && headKey(c).length > 0);
+    for (const st of g) {
+      const c = ctx.get(st);
+      if (!c?.clef || st.lineYs.length !== 5) continue;
+      const xs = pg.segs
+        .filter((l) => l.isV && l.hasTag("BarLine") && l.bottom > st.box.top && l.top < st.box.bottom && l.cx > st.box.left + sp * 6 && l.cx < st.box.right - sp * 3)
+        .map((l) => l.cx)
+        .sort((a, b) => a - b);
+      let prev = -Infinity;
+      for (const x of xs) {
+        if (x - prev < sp * 1.5) continue;
+        prev = x;
+        const right = doubleBarRight(bin, st.lineYs, x, sp);
+        if (right === null) continue;
+        prev = right;
+        if (c.key.some((k) => k.box.left > right && k.box.left < right + sp * 3)) continue;
+        const clefHere = (c.clefs ?? []).filter((q) => q.box.left < right).pop() ?? c.clef;
+        let best: { score: number; cand: StaffContext; dx: number; dy: number } | null = null;
+        for (const cand of cands) {
+          if (cand.clef!.code !== clefHere.code) continue;
+          const csp = cand.staff.stepDistance() * 2;
+          if (Math.abs(csp - st.stepDistance() * 2) > sp * 0.12) continue;
+          const head = headKey(cand);
+          if (keyFifths(head) === fifthsAt(c, right)) continue;
+          const tx0 = Math.round(Math.min(...head.map((k) => k.box.left)));
+          const tx1 = Math.round(Math.max(...head.map((k) => k.box.right)));
+          const ty0 = Math.round(cand.staff.lineYs[0] - sp * 2);
+          const ty1 = Math.round(cand.staff.lineYs[4] + sp * 2);
+          const tpl: [number, number][] = [];
+          for (let y = ty0; y <= ty1; y++) if (!onLine(cand.staff, y)) for (let x = tx0; x <= tx1; x++) if (ink(x, y)) tpl.push([x - tx0, y - cand.staff.lineYs[0]]);
+          if (tpl.length < sp * 2) continue;
+          for (let dx = Math.round(sp * 0.2); dx <= Math.round(sp * 1.5); dx++)
+            for (let dy = -Math.round(sp * 0.3); dy <= Math.round(sp * 0.3); dy++) {
+              const ox = right + dx;
+              const oy = st.lineYs[0] + dy;
+              let hit = 0;
+              for (const [px, py] of tpl) if (near1(ox + px, Math.round(oy + py))) hit++;
+              const recall = hit / tpl.length;
+              if (recall < MID_KEY_RECALL || (best && recall <= best.score)) continue;
+              // 反过来：目标那一段（模板宽）的墨也要多半落在模板上，满是墨的一片（符头、粗线）对得上模板但对不过来
+              const tset = new Set(tpl.map(([px, py]) => `${px},${Math.round(py)}`));
+              let tot = 0;
+              let back = 0;
+              for (let y = Math.round(oy - sp * 2); y <= Math.round(oy + sp * 6); y++) {
+                if (onLine(st, y)) continue;
+                for (let x = ox; x <= ox + tx1 - tx0; x++) {
+                  if (!ink(x, y)) continue;
+                  tot++;
+                  const px = x - ox;
+                  const py = Math.round(y - oy);
+                  if (tset.has(`${px},${py}`) || tset.has(`${px - 1},${py}`) || tset.has(`${px + 1},${py}`) || tset.has(`${px},${py - 1}`) || tset.has(`${px},${py + 1}`)) back++;
+                }
+              }
+              if (!tot || back / tot < MID_KEY_PRECISION) continue;
+              best = { score: recall, cand, dx, dy };
+            }
+        }
+              if (!best) continue;
+        const head = headKey(best.cand);
+        const tx0 = Math.min(...head.map((k) => k.box.left));
+        const ddy = st.lineYs[0] + best.dy - best.cand.staff.lineYs[0];
+        const syms = head.map((k, i) => {
+          const b = k.box;
+          const sym = makeSymObj(pg.objs.length + pg.segs.length + 1 + i, { box: { x: Math.round(right + best!.dx + b.left - tx0), y: Math.round(b.top + ddy), w: Math.round(b.right - b.left), h: Math.round(b.bottom - b.top) }, code: k.code }, unit.height).sym;
+          sym.addTag("Key");
+          return sym;
+        });
+        found.push({ c, x: right, fifths: keyFifths(head), syms, gi });
+      }
+    }
+  }
+  for (const f of found) {
+    const peers = found.filter((o) => o.gi === f.gi && Math.abs(o.x - f.x) <= sp * MID_KEY_DX && o.fifths === f.fifths);
+    if (new Set(peers.map((o) => o.c)).size < 2) continue;
+    f.c.key.push(...f.syms);
+    f.c.key.sort((a, b) => a.box.left - b.box.left);
+  }
+}
+
+/** 换掉行首那段调号（`headKey`），行中转调的记号留着。 */
+function setHeadKey(c: StaffContext, head: Sym[]): void {
+  const old = new Set(headKey(c));
+  c.key = [...head, ...c.key.filter((k) => !old.has(k))];
+}
+
+/** 行中转调：同系统各行的那处调号在这么多格以内算同一处。 */
+const MID_KEY_DX = 2.5;
+
+/**
+ * **行中转调同系统互证**：一个系统里各行在同一条小节线后转调，记号各认各的，有的行没认出、有的认岔
+ *（望十架 p7：五行里三行认出、两行一个都没有）。各行行中那几簇调号（`keyChanges`）按 x 归到一处，
+ * 至少两行认出、读数取多数的；没认出或读数不同的行照它补（借那一行的记号对象，下游只看种类、个数与 x）。
+ */
+function shareMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>, sp: number): void {
+  for (const g of systemGroups(pg)) {
+    const cs = g.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c);
+    if (cs.length < 2) continue;
+    const mids = cs.flatMap((c) => {
+      const ch = keyChanges(c).filter((q) => q.x > -Infinity);
+      return ch.map((q, i) => ({ c, x: q.x, fifths: q.fifths, syms: c.key.filter((k) => k.box.left >= q.x && (i + 1 >= ch.length || k.box.left < ch[i + 1].x)) }));
+    });
+    const used = new Set<(typeof mids)[number]>();
+    for (const m of mids) {
+      if (used.has(m)) continue;
+      const near = mids.filter((o) => !used.has(o) && Math.abs(o.x - m.x) <= sp * MID_KEY_DX);
+      for (const o of near) used.add(o);
+      if (new Set(near.map((o) => o.c)).size < 2) continue;
+      const votes = new Map<number, number>();
+      for (const o of near) votes.set(o.fifths, (votes.get(o.fifths) ?? 0) + 1);
+      const [best, n] = [...votes].sort((a, b) => b[1] - a[1])[0];
+      if ([...votes.values()].filter((v) => v === n).length > 1) continue;
+      const ref = near.find((o) => o.fifths === best)!;
+      for (const c of cs) {
+        const mine = near.filter((o) => o.c === c);
+        if (mine.length && mine.every((o) => o.fifths === best)) continue;
+        const drop = new Set(mine.flatMap((o) => o.syms));
+        c.key = [...c.key.filter((k) => !drop.has(k)), ...ref.syms].sort((a, b) => a.box.left - b.box.left);
+      }
+    }
   }
 }
 
@@ -4797,16 +5036,18 @@ const CARRY_PITCH = 0.85;
 function extendKeyByCarry(ctx: Map<Staff, StaffContext>, carry: CarryKey | undefined, bin: Binary, sp: number): void {
   if (!carry) return;
   for (const c of ctx.values()) {
-    if (!c.key.length || c.key.length >= carry.n) continue;
-    if (!c.key.every((k) => k.code === carry.code)) continue;
-    const last = c.key[c.key.length - 1];
+    // 只看行首那段（行中转调的记号另算，见 `keyChanges`）
+    const head = headKey(c);
+    if (!head.length || head.length >= carry.n) continue;
+    if (!head.every((k) => k.code === carry.code)) continue;
+    const last = head[head.length - 1];
     // 漏在中间的（认出的几个已经占满上一页那个个数的宽度）后面没墨也补
-    const span = last.box.right - Math.min(...c.key.map((k) => k.box.left));
+    const span = last.box.right - Math.min(...head.map((k) => k.box.left));
     // 调号可能是别的行传过来的（`carrySystemKeys`），墨要到记号自己那一行去看
     const cy = (last.box.top + last.box.bottom) / 2;
     const home = [...ctx.values()].reduce((a, q) => (Math.abs(staffMid(q) - cy) < Math.abs(staffMid(a) - cy) ? q : a), c);
     if (span < sp * CARRY_PITCH * (carry.n - 0.5) && !inkPastKey(bin, home.staff.lineYs, last.box.right, sp)) continue;
-    c.key = [...c.key, ...Array.from({ length: carry.n - c.key.length }, () => last)];
+    c.key = [...head, ...Array.from({ length: carry.n - head.length }, () => last), ...c.key.filter((k) => !head.includes(k))];
   }
 }
 
@@ -5021,18 +5262,18 @@ function endsWithFinal(st: Staff, bin: Binary): boolean {
  */
 function shareSystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>): Set<StaffContext> {
   const settled = new Set<StaffContext>();
-  const sigOf = (c: StaffContext) => c.key.map((k) => k.code).join(",");
+  const sigOf = (c: StaffContext) => headKey(c).map((k) => k.code).join(",");
   for (const g of systemGroups(pg)) {
     if (g.length < 3) continue;
     const cs = g.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c);
     const count = new Map<string, number>();
-    for (const c of cs) if (c.key.length) count.set(sigOf(c), (count.get(sigOf(c)) ?? 0) + 1);
+    for (const c of cs) if (headKey(c).length) count.set(sigOf(c), (count.get(sigOf(c)) ?? 0) + 1);
     const ranked = [...count].sort((a, b) => b[1] - a[1]);
     if (!ranked.length || ranked[0][1] < 2 || (ranked[1] && ranked[1][1] === ranked[0][1])) continue;
-    const best = cs.find((c) => c.key.length && sigOf(c) === ranked[0][0])!;
-    if (best.key.some((k) => k.code !== best.key[0].code)) continue;
+    const best = headKey(cs.find((c) => headKey(c).length && sigOf(c) === ranked[0][0])!);
+    if (best.some((k) => k.code !== best[0].code)) continue;
     for (const c of cs) {
-      if (sigOf(c) !== ranked[0][0]) c.key = best.key;
+      if (sigOf(c) !== ranked[0][0]) setHeadKey(c, best);
       settled.add(c);
     }
   }
@@ -5133,16 +5374,16 @@ function bridgeFaintSysLines(pg: SPage, bin: Binary, sp: number): void {
  */
 function carrySystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>, settled: Set<StaffContext>): void {
   const groups = systemGroups(pg).map((g) => g.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c));
-  const keyOf = groups.map((cs) => cs.find((c) => settled.has(c) && c.key.length)?.key);
+  const keyOf = groups.map((cs) => { const c = cs.find((c) => settled.has(c) && headKey(c).length); return c ? headKey(c) : undefined; });
   const sigOf = (k: Sym[]) => k.map((q) => q.code).join(",");
   // 没有哪个系统定下来的页（全是两行的大谱表）：过半的行读成同一个调号的，拿它当参照
   let pageRef: Sym[] | undefined;
   if (!settled.size) {
     const all = groups.flat();
     const count = new Map<string, number>();
-    for (const c of all) if (c.key.length) count.set(sigOf(c.key), (count.get(sigOf(c.key)) ?? 0) + 1);
+    for (const c of all) if (headKey(c).length) count.set(sigOf(headKey(c)), (count.get(sigOf(headKey(c))) ?? 0) + 1);
     const top = [...count].sort((a, b) => b[1] - a[1])[0];
-    const k = top && top[1] * 2 > all.length ? all.find((c) => sigOf(c.key) === top[0])!.key : undefined;
+    const k = top && top[1] * 2 > all.length ? headKey(all.find((c) => sigOf(headKey(c)) === top[0])!) : undefined;
     if (k && k.every((q) => q.code === k[0].code)) pageRef = k;
     if (!pageRef) return;
   }
@@ -5151,46 +5392,48 @@ function carrySystemKeys(pg: SPage, ctx: Map<Staff, StaffContext>, settled: Set<
     const ref = pageRef ?? keyOf.slice(0, i).reverse().find((k) => k) ?? keyOf.slice(i + 1).find((k) => k);
     if (!ref) continue;
     const want = sigOf(ref);
-    const isPrefix = (c: StaffContext) => c.key.length < ref.length && c.key.every((k, j) => k.code === ref[j].code);
+    const isPrefix = (c: StaffContext) => headKey(c).length < ref.length && headKey(c).every((k, j) => k.code === ref[j].code);
     // 作证的行：读得与它一样，或认出了它的前几个
-    const agree = cs.some((c) => sigOf(c.key) === want || (c.key.length > 0 && isPrefix(c)));
-    for (const c of cs) if (isPrefix(c)) c.key = ref;
+    const agree = cs.some((c) => sigOf(headKey(c)) === want || (headKey(c).length > 0 && isPrefix(c)));
+    for (const c of cs) if (isPrefix(c)) setHeadKey(c, ref);
     // 读法不同的行：有作证的行、或补过之后过半的行都是它，才改
-    const same = cs.filter((c) => sigOf(c.key) === want).length;
+    const same = cs.filter((c) => sigOf(headKey(c)) === want).length;
     // 比它多认出几个同种记号的行不收回来——按块、按笔数出来的个数只会少不会多
-    const longer = (c: StaffContext) => c.key.length > ref.length && c.key.every((k) => k.code === ref[0].code);
-    if (agree || same * 2 > cs.length) for (const c of cs) if (!longer(c)) c.key = ref;
+    const longer = (c: StaffContext) => headKey(c).length > ref.length && headKey(c).every((k) => k.code === ref[0].code);
+    if (agree || same * 2 > cs.length) for (const c of cs) if (!longer(c)) setHeadKey(c, ref);
   }
 }
 
 function shareKeySignature(ctx: Map<Staff, StaffContext>, settled = new Set<StaffContext>()): void {
   const all = [...ctx.values()].filter((c) => !settled.has(c));
-  const sigOf = (c: StaffContext) => c.key.map((k) => k.code).join(",");
+  const sigOf = (c: StaffContext) => headKey(c).map((k) => k.code).join(",");
   const count = new Map<string, number>();
-  for (const c of all) if (c.key.length) count.set(sigOf(c), (count.get(sigOf(c)) ?? 0) + 1);
+  for (const c of all) if (headKey(c).length) count.set(sigOf(c), (count.get(sigOf(c)) ?? 0) + 1);
   let best: StaffContext | null = null;
-  for (const c of all) if (c.key.length && count.get(sigOf(c))! >= 2 && (!best || c.key.length > best.key.length)) best = c;
+  for (const c of all) if (headKey(c).length && count.get(sigOf(c))! >= 2 && (!best || headKey(c).length > headKey(best).length)) best = c;
   // 最长的那个只出现一次也行——只要别的行（至少两行）认出的都是它的**前几个**：
   // 敬拜万世之王五行里一行认出两个降号、四行只认出头一个（第二个降号被去谱线切碎）
-  const longest = all.filter((c) => c.key.length).sort((a, b) => b.key.length - a.key.length)[0];
-  const others = all.filter((c) => c.key.length && c !== longest);
+  const longest = all.filter((c) => headKey(c).length).sort((a, b) => headKey(b).length - headKey(a).length)[0];
+  const others = all.filter((c) => headKey(c).length && c !== longest);
   // 混着两种记号的不当「最长」：行首调号不会升降混排，那是多认了一个（我灵镇静第三行低音谱表「♭♯」，
   // 选中它后整条共享因混排作罢，另两行低音谱表的 1♭ 都没补上）
-  const pure = (c: StaffContext) => c.key.every((k) => k.code === c.key[0].code);
-  if (longest && pure(longest) && others.length >= 2 && (!best || longest.key.length > best.key.length) && others.every((c) => c.key.every((k, i) => k.code === longest.key[i].code)))
+  const pure = (c: StaffContext) => headKey(c).every((k) => k.code === headKey(c)[0].code);
+  if (longest && pure(longest) && others.length >= 2 && (!best || headKey(longest).length > headKey(best).length) && others.every((c) => headKey(c).every((k, i) => k.code === headKey(longest)[i]?.code)))
     best = longest;
   if (!best) return;
-  const kind = best.key[0].code;
-  if (best.key.some((k) => k.code !== kind)) return;
+  const bk = headKey(best);
+  const kind = bk[0].code;
+  if (bk.some((k) => k.code !== kind)) return;
   // 串里混着**还原号**的也照补：行首谱号后面的调号不会有还原号（取消记号印在转调前的小节线处），
   // 那是粘连的升降号认岔了——万福泉源歌第一行三个降号挤在一起，前两个连成一块读成还原号，
   // 这一行（也就是整首高音声部）只剩一个降号
   for (const c of all) {
-    if (c.key.length <= best.key.length && c.key.every((k) => k.code === kind || k.code === "accidentalNatural") && c.key.filter((k) => k.code === kind).length < best.key.length)
-      c.key = best.key;
+    const h = headKey(c);
+    if (h.length <= bk.length && h.every((k) => k.code === kind || k.code === "accidentalNatural") && h.filter((k) => k.code === kind).length < bk.length)
+      setHeadKey(c, bk);
     // 前面几个与共享的那串一致、后面跟着异种记号的：后面那几个是多认的
-    else if (c.key.length > best.key.length && best.key.every((_, i) => c.key[i]?.code === kind) && c.key.slice(best.key.length).every((k) => k.code !== kind))
-      c.key = best.key;
+    else if (h.length > bk.length && bk.every((_, i) => h[i]?.code === kind) && h.slice(bk.length).every((k) => k.code !== kind))
+      setHeadKey(c, bk);
   }
 }
 
@@ -5730,25 +5973,49 @@ function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binar
   const { k, m } = useSharp ? sh : f;
   const code: SmuflName = useSharp ? "accidentalSharp" : "accidentalFlat";
   const strokesOf = (r: (typeof rows)[number]) => (useSharp ? r.sharps : r.flats);
-  const countOf = (c: StaffContext) => c.key.filter((q) => q.code === code).length;
+  // 只看**行首**那段调号：行中转调的记号（`keyChanges`）不算「混着别种」，改行首时也原样留着
+  const headOf = headKey;
+  const midOf = (c: StaffContext) => {
+    const head = new Set(headOf(c));
+    return c.key.filter((q) => !head.has(q));
+  };
+  const countOf = (c: StaffContext) => headOf(c).filter((q) => q.code === code).length;
   const setKey = (c: StaffContext, boxes: Rect[]) => {
+    const mid = midOf(c);
     c.key = boxes.map((box, i) => {
       const sym = makeSymObj(pg.objs.length + pg.segs.length + 1 + i, { box, code }, unit.height).sym;
       sym.addTag("Key");
       return sym;
     });
+    c.key.push(...mid);
   };
+  // **同一系统里至少两行按块认出一模一样的另一种调号的，这个系统另有自己的调**，不拿全页数出来的盖：
+  // 竖笔数的是全页，可一页上会转调（望十架 p7 上一个系统两个升号、下一个系统转一个降号，
+  // 五行认得齐齐的两个升号被全页过半的一个降号整个盖掉）
+  const own = new Set<StaffContext>();
+  for (const g of systemGroups(pg)) {
+    const cs = g.map((st) => ctx.get(st)).filter((c): c is StaffContext => !!c);
+    const count = new Map<string, number>();
+    for (const c of cs) {
+      const h = headOf(c);
+      if (!h.length || h.some((q) => q.code !== h[0].code) || h[0].code === code || (h[0].code !== "accidentalFlat" && h[0].code !== "accidentalSharp")) continue;
+      const sig = `${h[0].code}${h.length}`;
+      count.set(sig, (count.get(sig) ?? 0) + 1);
+    }
+    if ([...count.values()].some((v) => v >= 2)) for (const c of cs) own.add(c);
+  }
   // **按块多认的收回来**：比 k 多的行只是少数（不到三分之一）、而竖笔没有哪一行数过 k——多出来的是调号后面
   // 头一个音的临时记号（三博士歌一个升号，有一行按块读成三个，`shareKeySignature` 见别的行都是它的前缀就全页照它补）
   const maxStroke = Math.max(...rows.map((r) => strokesOf(r).length));
   const longer = rows.filter((r) => countOf(r.c) > k);
-  if (maxStroke <= k && longer.length && longer.length * 3 <= rows.length) for (const r of longer) r.c.key = r.c.key.filter((q) => q.code === code).slice(0, k);
+  if (maxStroke <= k && longer.length && longer.length * 3 <= rows.length) for (const r of longer) r.c.key = [...headOf(r.c).filter((q) => q.code === code).slice(0, k), ...midOf(r.c)];
   // **过半的行都数到 k**：全页照它定——混着别种记号的行（主恩更多歌头一行「♯♭」）、一个都没认出的行也补上
   const strong = (m >= 2 && m * 2 >= rows.length) || lone;
   for (const r of rows) {
     const c = r.c;
+    if (own.has(c)) continue;
     const got = strokesOf(r);
-    const mixed = c.key.some((q) => q.code !== code);
+    const mixed = headOf(c).some((q) => q.code !== code);
     if (!mixed && countOf(c) >= k) continue;
     // 混着别种记号的行：自己数到了 k（有福确据歌头一行按块读成一个降号、竖笔数出两个升号）或全页已定，才改
     if (mixed && !strong && got.length < k) continue;
