@@ -1665,6 +1665,7 @@ export function checkBars(
       }
       let full = checkFull(chords, expect, sp, false);
       if (!full) full = checkFull(chords, expect, sp, true);
+      if (!full) full = blackenMixed(chords, expect, sp);
       // **短小节按同系统上面那行的长度再凑一次**：与弱起配套的末小节只有三拍，
       // 两个声部挤在一行、节奏各走各的（《赞美一神》男高「四分 + 两个八分」、
       // 男低「两个八分 + 四分」），拿拍号的四拍去凑，两趟都凑不满、也拆不开声部，
@@ -1690,6 +1691,27 @@ export function checkBars(
     });
   }
   return out;
+}
+
+/**
+ * **凑不满的小节里，一半空心一半实心的和弦整枚改成实心**：一根干上的头只能同一种，扫描件的实心头印出白斑被认成空心
+ *（望十架 p3 m31-32 四分和弦有的半枚读成二分）。改完再凑一次拍子。
+ * 只改「半空半实」的那几枚：试过把小节里全部有干的二分和弦都改，别处漏了音的小节碰巧凑满、真二分被改坏（望十架 p4 m38、p5 m39）；
+ * 也试过改完凑不满就退回，反倒少救了几处（凑不满的小节多半还漏着别的音，和弦本身改对了照样省步数：合唱谱扫描档 79.28 → 79.33%）。
+ */
+function blackenMixed(chords: StaffChord[], expect: number, sp: number): boolean {
+  let hit = false;
+  for (const c of chords) {
+    if (!c.stem || c.grace || !c.notes.every((n) => !n.rest && n.beams === 0)) continue;
+    if (!c.notes.some((n) => n.base === 1 / 4) || !c.notes.some((n) => n.base === 1 / 2)) continue;
+    for (const n of c.notes)
+      if (n.base === 1 / 2) {
+        n.base = 1 / 4;
+        n.duration = n.base * (2 - 1 / 2 ** n.dots);
+      }
+    hit = true;
+  }
+  return hit && (checkFull(chords, expect, sp, false) || checkFull(chords, expect, sp, true));
 }
 
 /** 这一页最后生效的拍号（给下一页当 `carry`）。 */

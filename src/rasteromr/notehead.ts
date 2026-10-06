@@ -503,7 +503,10 @@ export function hollowHeadsFromHoles(
     });
     if (walled) continue;
     let pairedWhole = false; // 并排有同形内腔的全音符（见下）
-    let box: Rect = { x: hole.x - ring, y: hole.y - ring, w: hole.w + ring * 2, h: hole.h + ring * 2 };
+    // 内腔占满一个间的细圈头（望十架 p1 m4 的 F4 二分：内腔 0.86 格高），上下圈压在两条谱线里，照满圈外扩盒就高出 `H_MAX`：
+    // 上下那一圈收到正好够得上 `H_MAX`
+    const ringY = Math.max(1, Math.min(ring, Math.floor((sp * H_MAX - hole.h) / 2)));
+    let box: Rect = { x: hole.x - ring, y: hole.y - ringY, w: hole.w + ring * 2, h: hole.h + ringY * 2 };
     if (round && (hole.w / hole.h < HOLE_RATIO_ROUND || (!stemOf(box, stems, unit, nl) && !stemThrough(box, stems, unit)))) {
       // 没干（或更瘦）的近圆内腔只可能是**全音符**：这类字体的全音符圈厚、内腔斜得竖起来（我一生要赞美你，
       // 头 25px 宽 1.7 格、内腔被谱线豁开并回来 9×11），内腔外扩一圈的盒只有 1 格、够不上全音符宽。

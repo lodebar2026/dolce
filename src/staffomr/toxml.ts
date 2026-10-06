@@ -172,6 +172,7 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
     }
     let cur = 0;
     let prev: StaffNote | null = null;
+    const movedLyrics = new Set<NonNullable<StaffNote["lyrics"]>[number]>();
     // 行中换谱号写在第一个声部里、它右边第一个音之前（`<attributes>` 按时间位置对整个谱表生效）
     const clefsLeft = vi === 0 ? midClefs.slice() : [];
     for (const n0 of vn) {
@@ -181,8 +182,21 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       // `<chord/>` 的意思是「与前一个音同时」，于是和弦的顶音被挂到了**前一拍**上
       //（实测《善牧恩慈歌》每个 SATB 和弦的女高都前移一拍）。
       const extra = timed || grouped ? !n0.grace && !!prev && !prev.grace && prev.group === n0.group : !!n0.chordExtra;
-      const n = extra === !!n0.chordExtra ? n0 : { ...n0, chordExtra: extra || undefined };
+      let n = extra === !!n0.chordExtra ? n0 : { ...n0, chordExtra: extra || undefined };
       prev = n0;
+      // **歌词挂到和弦打头写出的那个音上**：字挂在和弦里哪个头上是识别时按位置配的，写出时那个头常带着 `<chord/>`，
+      // 而读入端（与多数软件）只认和弦第一个 `<note>` 上的 `<lyric>`，字就丢了（望十架 p7 m57-58 一串八个字）
+      if (!extra && !n0.grace && n0.group) {
+        const have = new Set((n.lyrics ?? []).map((l) => l.verse));
+        const add = vn
+          .filter((m) => m !== n0 && m.group === n0.group)
+          .flatMap((m) => m.lyrics ?? [])
+          .filter((l) => !have.has(l.verse) && (have.add(l.verse), true));
+        if (add.length) {
+          for (const l of add) movedLyrics.add(l);
+          n = { ...n, lyrics: [...(n.lyrics ?? []), ...add] };
+        }
+      } else if (extra && n.lyrics?.some((l) => movedLyrics.has(l))) n = { ...n, lyrics: n.lyrics.filter((l) => !movedLyrics.has(l)) };
       if (timed && !n.chordExtra && !n.grace) {
         const off = at(n.group!.offset);
         if (off > cur) {

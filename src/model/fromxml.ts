@@ -663,6 +663,9 @@ function readMeasure(
         if (noteSize) note.typeSize = noteSize;
         if (isChordNote && last) {
           last.notes.push(note);
+          // 和弦里后面那几个音上的歌词并到和弦上（同段号已有的不收）：有的软件把字挂在和弦的非首音上，只读首音会丢字
+          const more = readLyrics(c).filter((l) => !last!.lyrics?.some((k) => k.number === l.number));
+          if (more.length) last.lyrics = [...(last.lyrics ?? []), ...more];
           const nots = readNotations(c, marks, last.id, last.notations, last.notes.length - 1);
           if (nots) last.notations = nots;
           break;
