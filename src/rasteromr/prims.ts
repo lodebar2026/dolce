@@ -1411,7 +1411,8 @@ export function removeStaffLines(bin: Binary, lineYs: number[], unit: RasterUnit
  * 减的时候要**按线宽外扩一点**（`lw / 2 + 1`）：中心线是拟合出来的，
  * 直接照中心线抹只抹掉一像素宽，笔画的两侧还留着，连通关系照旧。
  */
-export function findBlobs(bin: Binary, prims: RasterPrims, unit: RasterUnit, onGrid?: (y: number) => boolean): Component[] {
+/** `labels`：给了就把连通块标号图落进去（下标即 `Component.id`）。 */
+export function findBlobs(bin: Binary, prims: RasterPrims, unit: RasterUnit, onGrid?: (y: number) => boolean, labels?: Int32Array): Component[] {
   const rest = blobImage(bin, prims, unit, onGrid);
   // 宽高**分别**设限，不能共用一个数：高音谱号窄而高，实测 2.8 × **7.5** 个线距
   //（连着尾巴那一圈），共用「六个线距」的上限会把整页的谱号挡在外面
@@ -1421,7 +1422,7 @@ export function findBlobs(bin: Binary, prims: RasterPrims, unit: RasterUnit, onG
   const minSide = unit.space * 0.25;
   const maxW = unit.space * 6;
   const maxH = unit.space * 9;
-  return connectedComponents(rest, Math.round(minSide * minSide)).filter((c) => {
+  return connectedComponents(rest, Math.round(minSide * minSide), labels).filter((c) => {
     const b = c.bbox;
     if (b.w > maxW || b.h > maxH) return false;
     if (b.w < minSide && b.h < minSide) return false;

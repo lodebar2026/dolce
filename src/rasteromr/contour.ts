@@ -95,6 +95,70 @@ export function traceContours(bin: Binary, unit: RasterUnit, staves: ContourStaf
   return { contours, labels, w, h, ink, byId };
 }
 
+/**
+ * 修补图（`prims.ts::repairLineCuts`）上的 contour 层，连同每块由去线图上哪几块碎块组成（按像素对：修补块里落着的 `cmap` 标号）。
+ * 一页只取一次，各路按自己那一刻的候选集合从里面挑整块（`candidateMap`）。
+ */
+export interface RepairedLayer {
+  rmap: ContourMap;
+  /** 修补块 id → 组成它的去线图碎块 id。 */
+  parts: Map<number, number[]>;
+}
+
+export function repairedLayer(cmap: ContourMap, repaired: Binary, unit: RasterUnit, staves: ContourStaff[] = []): RepairedLayer {
+  const rmap = traceContours(repaired, unit, staves);
+  const sets = new Map<number, Set<number>>();
+  for (let i = 0; i < rmap.labels.length; i++) {
+    const r = rmap.labels[i];
+    if (!r) continue;
+    let set = sets.get(r);
+    if (!set) sets.set(r, (set = new Set()));
+    const c = cmap.labels[i];
+    if (c) set.add(c);
+  }
+  return { rmap, parts: new Map([...sets].map(([r, s]) => [r, [...s]])) };
+}
+
+/** 候选 contour 图：整块换进来的修补块（`merged`）与它们各自的碎块（`parts`，按新 id）。 */
+export interface CandidateMap {
+  map: ContourMap;
+  merged: Contour[];
+  parts: Map<number, number[]>;
+}
+
+/**
+ * **候选 contour 图**：被谱线切开的对象不必先切成碎块再拼。修补图上的一块，组成它的去线图碎块**全是候选**（`isCand`）的，
+ * 整块换成修补块（新 id 接在 `cmap` 最大 id 之后，标号按修补图的像素写，去线图上有、修补图清掉的谱线残段不归任何块）；
+ * 连上了别的东西（符头、干）的修补块不换，碎块照 `cmap` 原样留着。
+ * `accept`：修补块本身再过一道（按位置挡掉某类对象不会出现的地方）。
+ * `minParts`：至少由几块碎块并成才换（2 = 只换真被谱线切开、修补后连上的；1 = 一块的也换成修补图上的样子，谱线残段清掉）。
+ * 认领照旧按盒子查 `cmap` 的标号（`ContourLedger`），合并块的账是它那几块碎块的账。
+ */
+export function candidateMap(cmap: ContourMap, layer: RepairedLayer, isCand: (id: number) => boolean, minParts = 1, accept: (rc: Contour) => boolean = () => true): CandidateMap {
+  const { rmap } = layer;
+  let offset = 0;
+  for (const c of cmap.contours) offset = Math.max(offset, c.id);
+  const whole = new Set<number>();
+  const covered = new Set<number>();
+  for (const [r, ps] of layer.parts) {
+    // 标号图里有、`contours` 里没有的块（`traceContours` 滤掉的小块）不换
+    const rc = rmap.byId.get(r);
+    if (!rc || ps.length < Math.max(1, minParts) || !ps.every(isCand) || !accept(rc)) continue;
+    whole.add(r);
+    for (const id of ps) covered.add(id);
+  }
+  const labels = new Int32Array(cmap.labels);
+  for (let i = 0; i < labels.length; i++) {
+    const r = rmap.labels[i];
+    if (r && whole.has(r)) labels[i] = r + offset;
+    else if (labels[i] && covered.has(labels[i])) labels[i] = 0;
+  }
+  const merged = rmap.contours.filter((rc) => whole.has(rc.id)).map((rc) => ({ ...rc, id: rc.id + offset }));
+  const contours = [...cmap.contours.filter((c) => !covered.has(c.id)), ...merged];
+  const map: ContourMap = { contours, labels, w: cmap.w, h: cmap.h, ink: cmap.ink, byId: new Map(contours.map((c) => [c.id, c])) };
+  return { map, merged, parts: new Map(merged.map((m) => [m.id, layer.parts.get(m.id - offset)!])) };
+}
+
 /** 逐块量特征。 */
 function describe(bin: Binary, labels: Int32Array, c: Component, unit: RasterUnit, staves: ContourStaff[]): Contour {
   const b = c.bbox;
