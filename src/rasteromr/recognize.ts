@@ -906,6 +906,34 @@ const INK_STEM_REACH = [2.5, 7] as const;
 /** 头缘贴着短竖段、改走墨柱补干时，墨柱远端离谱表的上限（格）。 */
 const SHORT_STEM_OUT = 1.5;
 
+/**
+ * 拼页面读出的页眉：文字层的行与**同一行、紧挨着**的 OCR 行并成一行（宁静「詞／曲／編：余遠淳」是贴的小图块、
+ * 后面的「Yenn Chwen Er」在文字层，谱面上是一行字；同一行的中英文记一条，分行印的才各记一条）。
+ * 同一行 = 纵向重叠过矮者一半；紧挨着 = 横向空当不过两个字高。
+ */
+function mergeLayerLines(ocr: readonly WordLine[], layer: readonly WordLine[]): WordLine[] {
+  const out = ocr.map((l) => ({ ...l }));
+  for (const l of layer) {
+    const o = out.find((m) => {
+      const h = Math.min(m.h, l.h);
+      const vy = Math.min(m.y + m.h, l.y + l.h) - Math.max(m.y, l.y);
+      const gap = Math.max(m.x, l.x) - Math.min(m.x + m.w, l.x + l.w);
+      return vy >= h * 0.5 && gap <= Math.max(m.h, l.h) * 2;
+    });
+    if (!o) {
+      out.push({ ...l });
+      continue;
+    }
+    const [a, b] = o.x <= l.x ? [o, l] : [l, o];
+    const x = Math.min(o.x, l.x);
+    const y = Math.min(o.y, l.y);
+    const r = Math.max(o.x + o.w, l.x + l.w);
+    const bot = Math.max(o.y + o.h, l.y + l.h);
+    Object.assign(o, { t: `${a.t} ${b.t}`, x, y, w: r - x, h: bot - y });
+  }
+  return out;
+}
+
 /** 认一页。顺序照 `staffomr/index.ts::recognizeStaffPage`，**别调**。 */
 export async function recognizeRasterPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4469,7 +4497,7 @@ export async function recognizeRasterPage(
     if (comp) (headerStrip = comp.strip), (layerLines = comp.texts);
   }
   const ocrLines = headerStrip ? opts.headerOcr?.get(wordKey(headerStrip)) : undefined;
-  const headerLines = ocrLines || layerLines.length ? [...(ocrLines ?? []), ...layerLines] : undefined;
+  const headerLines = ocrLines || layerLines.length ? mergeLayerLines(ocrLines ?? [], layerLines) : undefined;
   const header = headerStrip && headerLines ? headerCredits(headerLines, headerStrip) : [];
   if (opts.wordOcr) {
     const skip: Rect[] = [
