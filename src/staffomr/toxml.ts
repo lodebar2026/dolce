@@ -151,10 +151,19 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
   // 拿它换算 offset=0 会得到 1，于是每个从小节头起的声部都白白多出一个 1 格的 `<forward>`。
   const at = (dur: number) => Math.round(ticks(1) * dur);
   let body = "";
+  const timed = inBar.every((n) => n.group?.timed);
+  // **没凑满的小节里，跨谱表书写的音并进本行 x 最近那个音的声部**、按 x 排进去：它们另记的声部号单独成一个声部、从小节头写起，
+  // 与本行的音落在同一时刻（宁静的伯利恒 p1 m9 钢琴：左手琶音第四个八分 A3 跨到右手谱表，右手的和弦在它之后，读回来成了同时）。
+  // 凑满了的小节按 offset 写，不动
+  if (!timed && inBar.some((n) => n.crossStaff) && inBar.some((n) => !n.crossStaff)) {
+    const own = inBar.filter((n) => !n.crossStaff);
+    inBar = inBar
+      .map((n) => (n.crossStaff ? { ...n, voice: own.reduce((a, b) => (Math.abs(b.x - n.x) < Math.abs(a.x - n.x) ? b : a)).voice } : n))
+      .sort((a, b) => a.x - b.x);
+  }
   const voices = [...new Set(inBar.map((n) => n.voice))].sort((a, b) => a - b);
   const withVoice = voices.length > 1 || staffNo > 0;
   const voiceBase = staffNo > 0 ? (staffNo - 1) * 4 : 0;
-  const timed = inBar.every((n) => n.group?.timed);
   const full = timed ? voiceTicks(inBar, ticks) : 0;
   voices.forEach((v, vi) => {
     const vn = inBar.filter((n) => n.voice === v);

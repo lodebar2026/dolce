@@ -512,6 +512,16 @@ export function buildStems(pg: SPage, sp: number): StemInfo[] {
   const proper = (st: StemInfo, nt: Sym) => Math.abs((st.up ? nt.box.right : nt.box.left) - st.seg.cx) <= win0(nt);
   for (const st of out)
     st.notes = st.notes.filter((nt) => proper(st, nt) || !out.some((o) => o !== st && o.notes.includes(nt) && proper(o, nt)));
+  // 两声部三度叠放、上头空心下头实心（望十架 p3 m26 女高 A4 二分、女低 F4 四分）：朝下那根干从上头的左缘起笔，两个头都收进去，
+  // 上头又在朝上那根干的右缘，两边都「正经」。同一根干上头型不同（空心 / 实心）不会是一个和弦：
+  // 头在另一根干上独自挂着的，从这根上摘掉
+  const filled = (nt: Sym) => nt.code === "noteheadBlack";
+  for (const st of out) {
+    if (st.notes.length < 2) continue;
+    st.notes = st.notes.filter(
+      (nt) => !(st.notes.some((m) => m !== nt && filled(m) !== filled(nt)) && out.some((o) => o !== st && o.up !== st.up && o.notes.length === 1 && o.notes[0] === nt && proper(o, nt))),
+    );
+  }
   return out.filter((st) => st.notes.length);
 }
 

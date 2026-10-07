@@ -10,7 +10,7 @@
 // 认出来之后交给矢量路现成的那一套（`staffomr/slur.ts`）：`attachSlurs` 挂两端、
 // `reconnectSlurs` 接回跨行的、`markSlurNotes` 落到音符上，`toxml` 出 `<slur>`/`<tied>`
 // ——那边一行不改，只是这边要造一个假 `PObj` 装着盒（与 `adapt.ts` 造假字形同一套路）。
-import type { Rect } from "../omr/types";
+import type { Binary, Rect } from "../omr/types";
 import { PObj } from "../staffomr/model";
 import type { SlurArc } from "../staffomr/slur";
 import type { Contour, ContourMap } from "./contour";
@@ -18,10 +18,10 @@ import type { RasterUnit } from "./staffline";
 
 /** 形状闸（一律按线距）。 */
 /** 宽度下限。扫过 2.0 / 1.4 / 1.2 / 1.0：圆滑线 37.6 / **39.4** / 39.4 / 39.4%
- *  （凭空多出 23 → 25），1.4 往下是平台，取 1.4。 */
-const MIN_W = 1.4;
-const MAX_W = 40;
-const MAX_H = 4.0;
+ *  （凭空多出 23 → 25），1.4 往下是平台，取过 1.4；只被谱线认过的块也进候选之后，两个八分之间的小弧 1.3 格（破碎 p2 m2），放到 1.2。 */
+const MIN_W = 1.2;
+const MAX_W = 110;
+const MAX_H = 12;
 /** 团状度上限：又宽又扁才有资格。 */
 const MAX_COMPACT = 0.25;
 /** 逐列一段墨的列要占多少——两段的是松叶。 */
@@ -302,3 +302,190 @@ export function findRasterDashedSlurs(
   return out;
 }
 
+
+// ── 弧端接过谱线 ───────────────────────────────────────────────────────────
+//
+// 弧斜着穿过谱线，压在线上的那几列被去线抹掉，弧端那一截成了另一团碎墨（或干脆没了）：认出来的弧停在离音三四格处，
+// `attachSlurs` 够不着（宁静的伯利恒 p2 m25 低音、钢琴那几条大弧）。从弧端顺着切线逐列往外走：
+// 预计位置上下两像素内有墨就跟上，落在谱线行上没墨也照走（最多 `EXT_GAP` 格），过了线又接上墨，端点才延过去；
+// 一路没跨过谱线的不延（贴着符头、符杠的墨跟过去会越走越远）。总长不过 `EXT_MAX` 格。
+
+/** 跨谱线时允许连续没墨的列数（格）。 */
+const EXT_GAP = 1.5;
+/** 一端最多延长（格）。 */
+const EXT_MAX = 3;
+/** 越过谱线接上墨之后再跟多远（格）。 */
+const EXT_AFTER = 1;
+
+export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) => boolean, sp: number): void {
+  const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < nl.w && y < nl.h && nl.data[y * nl.w + x] === 1;
+  /** 弧盒里某一列的墨心（离 y0 最近的那个墨点）。 */
+  const colY = (x: number, y0: number, top: number, bot: number): number | null => {
+    let best: number | null = null;
+    for (let y = top; y <= bot; y++) if (ink(x, y) && (best === null || Math.abs(y - y0) < Math.abs(best - y0))) best = y;
+    return best;
+  };
+  const lineAt = (y: number) => onLine(Math.round(y)) || onLine(Math.round(y) - 1) || onLine(Math.round(y) + 1);
+  for (const sl of arcs) {
+    const b = sl.obj.box;
+    const k = Math.max(3, Math.round(sp * 0.6));
+    for (const dir of [-1, 1] as const) {
+      const x0 = Math.round(dir < 0 ? sl.lx : sl.rx);
+      const y0 = dir < 0 ? sl.ly : sl.ry;
+      // 端头往里 k 列处的墨心定切线方向（单位向量，沿它逐像素走：竖着下去的那一截按列走跟不上）
+      const yIn = colY(x0 - dir * k, y0, Math.round(b.top), Math.round(b.bottom));
+      if (yIn === null) continue;
+      let vx = dir * k, vy = y0 - yIn;
+      let n = Math.hypot(vx, vy);
+      vx /= n;
+      vy /= n;
+      let x = x0, y = y0, gap = 0, crossed = false, after = 0;
+      let end: { x: number; y: number } | null = null;
+      for (let step = 0; step < sp * EXT_MAX; step++) {
+        const px = x + vx, py = y + vy;
+        // 垂直于走向 ±2 像素内找墨
+        let hit: { x: number; y: number } | null = null;
+        for (let d = 0; d <= 2 && !hit; d++)
+          for (const sgn of d ? [-1, 1] : [1]) {
+            const qx = Math.round(px - vy * d * sgn), qy = Math.round(py + vx * d * sgn);
+            if (ink(qx, qy)) {
+              hit = { x: qx, y: qy };
+              break;
+            }
+          }
+        if (hit) {
+          if ((gap > 0 && crossed) || end) end = hit;
+          // 越线接上之后最多再跟 `EXT_AFTER` 格：再往外多半是贴着的符头、符干（晨曦破晓 m5 跟过头挂到了前一个 D4）
+          if (end && ++after > sp * EXT_AFTER) break;
+          const ax = hit.x - x, ay = hit.y - y;
+          const an = Math.hypot(ax, ay) || 1;
+          vx = vx * 0.7 + (ax / an) * 0.3;
+          vy = vy * 0.7 + (ay / an) * 0.3;
+          n = Math.hypot(vx, vy);
+          vx /= n;
+          vy /= n;
+          x = hit.x;
+          y = hit.y;
+          gap = 0;
+          continue;
+        }
+        if (lineAt(py)) {
+          x = px;
+          y = py;
+          gap++;
+          crossed = true;
+          if (gap > sp * EXT_GAP) break;
+          continue;
+        }
+        break;
+      }
+      if (!end) continue;
+      if (dir < 0) (sl.lx = end.x), (sl.ly = end.y);
+      else (sl.rx = end.x), (sl.ry = end.y);
+    }
+  }
+}
+
+// ── 被谱线切断的小弧 ─────────────────────────────────────────────────────────
+//
+// 两个音之间的小弧（一两格宽）横跨一条谱线，去线后断成线上、线下几截，每截不到一格、还被记在谱线账上，
+// 单看哪截都过不了弧线的闸（破碎 p2 m2–m5 高音谱表一整排）。把这样的碎块并回去：
+// 横向挨着（隔 `SPLIT_DX` 像素内）、纵向隔着谱线行（缝不过线宽加两像素、缝里有谱线行）的连成一组，
+// 谱线行上原图有墨、上下都接着组里墨的那些像素补回，整组照弧线的闸判一次。
+
+/** 碎块的尺寸上限（格）。 */
+const SPLIT_PIECE_MAX = 3;
+/** 相邻两截横向的缝（像素）。 */
+const SPLIT_DX = 2;
+/** 拱顶压线、剩两条腿时两腿之间的缝上限（格）。 */
+const SPLIT_CAP_DX = 1;
+
+export function findSplitArcs(
+  map: ContourMap,
+  unit: RasterUnit,
+  pieces: Contour[],
+  bin: Binary,
+  onLine: (y: number) => boolean,
+  nextId: number,
+): SlurArc[] {
+  const sp = unit.space;
+  const ps = pieces.filter((c) => c.w <= SPLIT_PIECE_MAX && c.h <= SPLIT_PIECE_MAX && c.area >= 4);
+  const parent = ps.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const vgapMax = unit.lineThick + 2;
+  /** 盒的上沿 / 下沿贴着的那条谱线的行（贴不着为 null）。 */
+  const touch = (b: Rect, edge: "top" | "bottom"): number | null => {
+    // 粗的拱顶贴着线那几行常被当成线厚一起抹掉，盒沿就落在线行里：盒沿上下两行内有线行都算
+    for (let d = -2; d <= 2; d++) {
+      const y = edge === "top" ? b.y - d : b.y + b.h - 1 + d;
+      if (onLine(y)) return y;
+    }
+    return null;
+  };
+  /** 拱顶压在谱线上被抹掉、剩下两条腿：缺口那几列谱线行上的原图墨补回（行 → 是否补）。 */
+  const capRows = new Set<number>();
+  for (let i = 0; i < ps.length; i++)
+    for (let j = i + 1; j < ps.length; j++) {
+      const a = ps[i].bbox, b = ps[j].bbox;
+      const dx = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+      if (dx <= SPLIT_DX) {
+        const top = a.y < b.y ? a : b, bot = a.y < b.y ? b : a;
+        const g0 = top.y + top.h, g1 = bot.y; // 纵向的缝 [g0, g1)
+        if (g1 - g0 > vgapMax || g1 - g0 < 0) continue;
+        let line = false;
+        for (let y = g0; y < g1 && !line; y++) if (onLine(y)) line = true;
+        if (line) parent[find(i)] = find(j);
+        continue;
+      }
+      // 横向隔开（不过 `SPLIT_CAP_DX` 格）、同一边贴着同一条线：拱顶 / 拱底压在线上
+      if (dx > sp * SPLIT_CAP_DX) continue;
+      for (const edge of ["top", "bottom"] as const) {
+        const ta = touch(a, edge), tb = touch(b, edge);
+        if (ta === null || tb === null || Math.abs(ta - tb) > 1) continue;
+        parent[find(i)] = find(j);
+        for (let y = Math.min(ta, tb) - unit.lineThick; y <= Math.max(ta, tb) + unit.lineThick; y++) if (onLine(y)) capRows.add(y);
+      }
+    }
+  const groups = new Map<number, Contour[]>();
+  ps.forEach((c, i) => {
+    const r = find(i);
+    groups.set(r, [...(groups.get(r) ?? []), c]);
+  });
+  const out: SlurArc[] = [];
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const ids = new Set(g.map((c) => c.id));
+    const x0 = Math.min(...g.map((c) => c.bbox.x)), y0 = Math.min(...g.map((c) => c.bbox.y));
+    const x1 = Math.max(...g.map((c) => c.bbox.x + c.bbox.w)), y1 = Math.max(...g.map((c) => c.bbox.y + c.bbox.h));
+    const box: Rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    // 拱顶 / 拱底压着的线行并进盒
+    const capIn = [...capRows].filter((y) => y >= y0 - vgapMax && y < y1 + vgapMax);
+    if (capIn.length) {
+      const lo = Math.min(y0, ...capIn), hi = Math.max(y1, ...capIn.map((y) => y + 1));
+      box.y = lo;
+      box.h = hi - lo;
+    }
+    if (box.w < sp * MIN_W || box.h > sp * MAX_H) continue;
+    const mine = (x: number, y: number) => ids.has(map.labels[y * map.w + x]);
+    /** 这一列有没有组里线外的墨。 */
+    const colHas = (x: number) => {
+      for (let y = y0; y < y1; y++) if (mine(x, y) && !onLine(y)) return true;
+      return false;
+    };
+    /** 谱线行上补回：原图有墨，这一列上下线宽加两像素内各有组里的墨；或拱顶那几列（这一列没有组里的墨、是贴着的那条线）。 */
+    const bridged = (x: number, y: number) => {
+      if (!onLine(y) || !bin.data[y * bin.w + x]) return false;
+      if (capRows.has(y) && !colHas(x)) return true;
+      let up = false, dn = false;
+      for (let d = 1; d <= vgapMax && !(up && dn); d++) {
+        if (y - d >= y0 && mine(x, y - d) && !onLine(y - d)) up = true;
+        if (y + d < y1 && mine(x, y + d) && !onLine(y + d)) dn = true;
+      }
+      return up && dn;
+    };
+    // 碎块里常带着线行的残墨（线没抹干净的那一截）：有线外墨的列，线行一律不算，只靠上下接续补
+    const arc = judgeArcBox(box, (x, y) => (mine(x, y) && !onLine(y)) || bridged(x, y), unit, nextId + out.length);
+    if (arc) out.push(arc);
+  }
+  return out;
+}

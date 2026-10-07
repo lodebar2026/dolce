@@ -213,7 +213,7 @@ function arcOf(o: PObj): SlurArc | null {
  */
 const SLUR_REACH = 3;
 
-function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number, sp: number, above: boolean): number | null {
+export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number, sp: number, above: boolean): number | null {
   // y 向下：`nt.top` 是视觉上沿。原文比的是 y 向上的 top/bottom，这里整段翻过来。
   if (py < nt.top - sp * SLUR_REACH) return null;
   if (py > nt.bottom + sp * SLUR_REACH) return null;

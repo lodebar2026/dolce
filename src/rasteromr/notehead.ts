@@ -1541,7 +1541,16 @@ export function hollowSlit(bin: Binary, b: Rect, sp: number): boolean {
  * 贴线那头不会是最宽的（斜缝各行差不多宽，椭圆中间最宽）。
  * 谱线从头中间横穿的（骑线头），线另一边盒中段接着还有墨，不算。
  */
-export function archCavity(bin: Binary, box: Rect, onLine: (y: number) => boolean): boolean {
+export function archCavity(bin: Binary, box: Rect, onLine0: (y: number) => boolean): boolean {
+  // 紧挨谱线、整行八成以上是墨的也算谱线行：扫描件谱线上的白点让那一行量出一两像素的「缝」，混进内腔，形状就量歪了（望十架 p7 m55）
+  const onLine = (y: number): boolean => {
+    if (onLine0(y)) return true;
+    if (y < 0 || y >= bin.h || !(onLine0(y - 1) || onLine0(y + 1))) return false;
+    let n = 0;
+    const x0 = Math.max(0, box.x), x1 = Math.min(bin.w, box.x + box.w);
+    for (let x = x0; x < x1; x++) if (bin.data[y * bin.w + x]) n++;
+    return n >= (x1 - x0) * 0.8;
+  };
   /** 这一行盒里夹在两段墨之间最长的一段白。 */
   const gap = (y: number): number => {
     if (y < 0 || y >= bin.h) return 0;
@@ -1569,19 +1578,20 @@ export function archCavity(bin: Binary, box: Rect, onLine: (y: number) => boolea
   const ws: number[] = [];
   for (let y = best.a; y <= best.b; y++) ws.push(gap(y));
   const most = Math.max(...ws);
-  /** 从这一头越过谱线，线那边还有内腔、或盒的中段（左右各让两成）还有墨吗：骑线头的另半截（半截内腔常靠盒外的干围住，量不出白）。 */
-  const beyond = (y: number, dy: number): boolean => {
+  /** 从这一头越过谱线，线那边还有内腔、或盒的中段（左右各让两成）还有墨吗：骑线头的另半截（半截内腔常靠盒外的干围住，量不出白）。
+   *  中段的墨只数贴线那一行（`ref`）里是白的列：贴着干的盒（弧尾搭在干上，望十架 p7 m55 女高），干那一列线两边都是墨，不是另半截。 */
+  const beyond = (y: number, dy: number, ref: number): boolean => {
     while (onLine(y)) y += dy;
     if (y < 0 || y >= bin.h) return false;
     if (gap(y) > 0) return true;
     const m = Math.round(box.w * 0.2);
-    for (let x = box.x + m; x < box.x + box.w - m; x++) if (x >= 0 && x < bin.w && bin.data[y * bin.w + x]) return true;
+    for (let x = box.x + m; x < box.x + box.w - m; x++) if (x >= 0 && x < bin.w && bin.data[y * bin.w + x] && !bin.data[ref * bin.w + x]) return true;
     return false;
   };
   // 往贴线那头一路变宽（容一像素的抖动）：拱与楔是这样，斜缝与椭圆不是
   const widening = (xs: number[]) => xs.every((w, i) => i === 0 || w >= xs[i - 1] - 1);
-  const bottom = onLine(best.b + 1) && ws[ws.length - 1] >= most * 0.9 && ws[0] <= most * 0.4 && widening(ws) && !beyond(best.b + 1, 1);
-  const top = onLine(best.a - 1) && ws[0] >= most * 0.9 && ws[ws.length - 1] <= most * 0.4 && widening([...ws].reverse()) && !beyond(best.a - 1, -1);
+  const bottom = onLine(best.b + 1) && ws[ws.length - 1] >= most * 0.9 && ws[0] <= most * 0.4 && widening(ws) && !beyond(best.b + 1, 1, best.b);
+  const top = onLine(best.a - 1) && ws[0] >= most * 0.9 && ws[ws.length - 1] <= most * 0.4 && widening([...ws].reverse()) && !beyond(best.a - 1, -1, best.a);
   return bottom || top;
 }
 

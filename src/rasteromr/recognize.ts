@@ -37,10 +37,10 @@ import { findStaffLabels, labelKey, normalizeLabel, type LabelStrip } from "./st
 import { findHarmonyStrips, harmonyKey, harmonyLine, readHarmonyStrip, type HarmonyStrip, type HarmonyToken } from "./harmony";
 import { findRasterWedges, type RasterWedge } from "./wedge";
 import { groupDynamics, type RasterDynamic } from "./dynamics";
-import { findFusedSlurs, findRasterDashedSlurs, findRasterSlurs } from "./slur";
+import { extendArcEnds, findFusedSlurs, findRasterDashedSlurs, findRasterSlurs, findSplitArcs } from "./slur";
 import { ContourLedger } from "./ledger";
 import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
-import { attachSlurs, markSlurNotes, reconnectSlurs, type SlurArc } from "../staffomr/slur";
+import { attachSlurs, markSlurNotes, reconnectSlurs, validateSlurNote, type SlurArc } from "../staffomr/slur";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
 import { rasterizePage, type RasterPage } from "./rasterpage";
@@ -590,7 +590,9 @@ const DUP_HEAD_DX = 0.5;
 /** 上下贴着的两个实心头填满外框的九成以上（所信有根基 F4/D♭4 0.904），拆块的「太实是黑块」上限 0.9 对它放到这个数。 */
 const PAIR_FILL_MAX = 0.96;
 /** 空心头正上/正下一格、头宽×头高七成的窗里墨占这么多，算贴着一个实心头。 */
-const SOLID_NEIGHBOR_FILL = 0.9;
+const SOLID_NEIGHBOR_FILL = 0.7;
+/** 歌词账上来的弧，两端离头外缘的上限（格）。 */
+const LYRIC_ARC_REACH = 1.5;
 /** 实心头盒宽到这么多格、盒里又有干的，按带着加线截盒（全音符不论宽窄都查）。 */
 const WIDE_BLACK = 1.45;
 
@@ -873,6 +875,8 @@ const TITLE_CHAR_MAX = 12;
  *（望十架 p1、p6、p10 十来个）。要一条加线以上（1.25 格）就查：真音外线到头之间每隔一格都有加线墨，字没有。
  */
 const LEDGER_CHAIN_FROM = 1.25;
+/** 第一加线上的空心头：穿过头心的横墨（头 + 两侧加线）至少这么长（格）。 */
+const FIRST_LEDGER_RUN = 1.4;
 /** 墨柱补干：从头心算起伸出去的长度（格），同 `notehead.ts::INK_STEM`。 */
 const INK_STEM_REACH = [2.5, 7] as const;
 
@@ -3570,6 +3574,26 @@ export async function recognizeRasterPage(
         const dd = Math.max(0, g.lines[0].y - cy, cy - g.lines[4].y);
         if (dd < d) (d = dd), (g0 = g);
       }
+      // 落在第一加线上（离外线 0.75~1.25 格）的空心头：穿过头心那条加线（上下 0.3 格内）连着头的横墨要有 `FIRST_LEDGER_RUN` 格长
+      //（头宽加两侧伸出的加线）。谱表上方说明文字里的「n」拱形围出内腔，收成空心头读成 A5 全音符（宁静的伯利恒每页一两个），
+      // 字里最长的横笔不到一格
+      if (d > sp * 0.75 && d <= sp * LEDGER_CHAIN_FROM && syms[i].code !== "noteheadBlack") {
+        const b = syms[i].box;
+        const cx = Math.round(b.x + b.w / 2);
+        const ly = cy < g0.lines[0].y ? g0.lines[0].y - sp : g0.lines[4].y + sp;
+        let best = 0;
+        for (let y = Math.round(ly - sp * 0.3); y <= Math.round(ly + sp * 0.3); y++) {
+          if (y < 0 || y >= raster.bin.h) continue;
+          const on = (x: number) => x >= 0 && x < raster.bin.w && !!raster.bin.data[y * raster.bin.w + x];
+          // 从头心往两边各走到断开（容一像素的缝）
+          let l = cx, r = cx;
+          while (on(l - 1) || on(l - 2)) l--;
+          while (on(r + 1) || on(r + 2)) r++;
+          if (on(cx) || on(cx - 1) || on(cx + 1)) best = Math.max(best, r - l + 1);
+        }
+        if (best < sp * FIRST_LEDGER_RUN) syms.splice(i, 1);
+        continue;
+      }
       if (d <= sp * LEDGER_CHAIN_FROM) continue;
       // 加线链：谱表外线到头之间每隔一格（上下容 0.3 格）一条横墨，头心左右各 0.5 格里够 0.9 格长
       const b = syms[i].box;
@@ -4352,10 +4376,16 @@ export async function recognizeRasterPage(
   // `toxml` 出 `<slur>` / `<tied>`。判据与松叶正好相反（逐列一段墨、而且拱着），
   // 所以要在松叶**之后**跑，把松叶认走的先剔掉。
   // 只被符杠认过的也算：`findPrimitives` 抽的横段里混着弧的一截（够粗、够平的那段），按中心线一记账整条弧就「有主」了
-  // （望十架 p3 m24 女低 E4–D4 那条）。真符杠是直的，过不了「拱」那道闸
+  // （望十架 p3 m24 女低 E4–D4 那条）。真符杠是直的，过不了「拱」那道闸。
+  // 只被谱线认过的也算：贴着线的小弧，去线时剩下的那截记在谱线账上（破碎 p2 m2 两个八分之间那条）。
+  // 被歌词字格认过的也算：谱表外的弧伸进歌词带上沿，整条记在歌词账上（望十架 p3 m29 钢琴右手的延音线、p5 m40 长笛高音上方的三条）。
+  // 字的弯笔（2~3 格）也过得了弧线那几道闸（高举主大能一页二十几处），但挂不上两端的音，不出东西
+  const lyricArcBoxes = new Set<string>();
   const beamOnly = cmap.contours.filter((c) => {
     const cl = ledger.claimsOf(c.id);
-    return cl.length > 0 && cl.every((k) => k.by === "beam");
+    const ok = cl.length > 0 && cl.every((k) => k.by === "beam" || k.by === "lyric" || k.by === "seg:Staff");
+    if (ok && cl.some((k) => k.by === "lyric")) lyricArcBoxes.add(`${c.bbox.x},${c.bbox.y}`);
+    return ok;
   });
   const slurs = findRasterSlurs(cmap, unit, [...ledger.unclaimed(), ...beamOnly], pg.objs.length + pg.segs.length + 1000);
   for (const sl of slurs) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur");
@@ -4382,6 +4412,18 @@ export async function recognizeRasterPage(
   const dashed = findRasterDashedSlurs([...ledger.unclaimed(), ...lyricOnly], unit, pg.objs.length + pg.segs.length + 1000 + slurs.length, dashSide);
   for (const sl of dashed) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur:dashed");
   slurs.push(...dashed);
+  // 被谱线切断的小弧（`slur.ts::findSplitArcs`）：无主或只被谱线认过的碎块
+  {
+    const lineOnly = cmap.contours.filter((c) => {
+      const cl = ledger.claimsOf(c.id);
+      return cl.length === 0 || cl.every((k) => k.by === "seg:Staff");
+    });
+    // 线行按半个线宽判：按整个线宽，贴着线的弧身那一两行也成了「线」
+    const onLine = (y: number) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 0.5);
+    const split = findSplitArcs(cmap, unit, lineOnly, raster.bin, onLine, pg.objs.length + pg.segs.length + 1000 + slurs.length);
+    for (const sl of split) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur:split");
+    slurs.push(...split);
+  }
   // 粘在音符上的弧（`slur.ts::findFusedSlurs`）：只看认领里有符头的那几团墨
   {
     const headBoxes: Rect[] = notes.filter((n) => !n.rest).map((n) => ({ x: n.sym.box.left, y: n.sym.box.top, w: n.sym.box.right - n.sym.box.left, h: n.sym.box.bottom - n.sym.box.top }));
@@ -4390,9 +4432,32 @@ export async function recognizeRasterPage(
     for (const sl of fused) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur:fused");
     slurs.push(...fused);
   }
+  extendArcEnds(slurs, nl, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), unit.space);
   attachSlurs(slurs, notes, unit.space);
+  attachSlursByStem(slurs, notes, unit.space);
+  // 歌词账上来的弧，挂上的端要贴着音（弧端离头外缘 `LYRIC_ARC_REACH` 格内，真弧实测 ≤1.35）：字的弯笔（「悲」「恩」的心字底、「w」的顶）
+  // 离上方的音两三格（实测至少一端 ≥1.8），`attachSlurs` 的窗口够得着（当我们回到天家 m1、m5，你的信实广大 m26–30）。一端离得远就整条不挂
+  for (const sl of slurs) {
+    if (!lyricArcBoxes.has(`${sl.obj.box.left},${sl.obj.box.top}`)) continue;
+    const far = (n: StaffNote | undefined, y: number) => !!n && (sl.above ? n.sym.box.top - y : y - n.sym.box.bottom) > unit.space * LYRIC_ARC_REACH;
+    if (far(sl.from, sl.ly) || far(sl.to, sl.ry)) (sl.from = undefined), (sl.to = undefined), (sl.tie = false);
+  }
+  // 延音线只连相邻两个音：两端同音高、中间却夹着同一行谱上别的音的，是跨几个音的圆滑线（宁静的伯利恒 p2 m25 钢琴右手 C5…C5）
+  for (const sl of slurs) {
+    if (!sl.tie || !sl.from || !sl.to) continue;
+    const { from, to } = sl;
+    const pad = unit.space * 0.6;
+    // 只数音高相近（`TIE_BETWEEN_STEPS` 个音级内）的：一行谱两个声部时，延音线中间常夹着另一声部的音（是爱 p4 m54 F5 下面的 F4、G4）。
+    // 无干的（全音符）多是另一声部，不算（是爱 p5 m65）；两个声部并存时干向与起点相反的也不算（晨曦破晓 m5 D4 延音线下面的 B3）
+    // 起点或终点同一时刻有反向干的音（这行谱上两个声部并存）才按干向分；单声部旋律的干随音高翻（破碎低音），不分
+    const opp = (m: StaffNote) => notes.some((n) => !n.rest && n.staff === m.staff && n.stemUp !== null && m.stemUp !== null && n.stemUp !== m.stemUp && Math.abs(n.x - m.x) < pad);
+    const twoVoices = opp(from) || opp(to);
+    if (notes.some((n) => !n.rest && n.staff === from.staff && n.stemUp !== null && (!twoVoices || from.stemUp === null || n.stemUp === from.stemUp) && Math.abs(n.diatonic - from.diatonic) <= TIE_BETWEEN_STEPS && n.x > from.x + pad && n.x < to.x - pad)) sl.tie = false;
+  }
   reconnectSlurs(pg, slurs);
+  const chordTies = tieChords(slurs, notes, unit.space);
   markSlurNotes(slurs);
+  for (const [a, b] of chordTies) (a.tieStart = true), (b.tieStop = true);
   markLyricExtends(notes);
 
   return {
@@ -7918,5 +7983,83 @@ function bridgeFaintBars(vSegs: LineSeg[], gray: Uint8Array, w: number, staves: 
       if (!gap || hit < gap * FAINT_BAR_FILL) continue;
       vSegs[i] = { ...v, x0: x, x1: x, y0: Math.min(a, top), y1: Math.max(b, bot) };
     }
+  }
+}
+
+// ── 和弦上的延音线 ───────────────────────────────────────────────────────────
+//
+// 两个同样的和弦之间每个音各一条延音线：上面那条压着谱线、去线时抹掉大半，中间的被谱线切成几截（还会被认成保持音），
+// 剩下认得出的常只有最外侧那条（望十架 p3 m29–30 钢琴右手）。而这条弧挂端点按最近的符头挑，常挂到和弦里别的音上，成了圆滑线。
+// 两件事：① 弧两头都在和弦上、两边有共同的音级、弧近水平，改挂到最外侧的共同音（弧在下取最低、在上取最高），判延音线；
+// ② 两边音级完全相同（两个音以上）、已有一条延音线，其余同音也补上（返回要补的对，`markSlurNotes` 之后打标记）。
+
+/** 弧两端纵向差的上限（格）：延音线是平的。 */
+const CHORD_TIE_DY = 0.6;
+/** 延音线中间夹着的音，离两端几个音级以内才算同一声部。 */
+const TIE_BETWEEN_STEPS = 5;
+/** 改挂时弧端离那个音外缘的上限（格）。 */
+const CHORD_TIE_REACH = 1;
+
+function tieChords(slurs: SlurArc[], notes: StaffNote[], sp: number): [StaffNote, StaffNote][] {
+  const column = (n: StaffNote): StaffNote[] =>
+    notes.filter((m) => !m.rest && !m.grace && m.staff === n.staff && (m.group === n.group || Math.abs(m.x - n.x) < sp * 1.2));
+  const out: [StaffNote, StaffNote][] = [];
+  for (const sl of slurs) {
+    const { from, to } = sl;
+    if (!from || !to || from === to || from.staff !== to.staff || to.x <= from.x) continue;
+    if (Math.abs(sl.ly - sl.ry) > sp * CHORD_TIE_DY) continue;
+    const A = column(from), B = column(to);
+    if (A.length < 2 || B.length < 2) continue;
+    const dA = new Set(A.map((n) => n.diatonic)), dB = new Set(B.map((n) => n.diatonic));
+    const common = [...dA].filter((d) => dB.has(d)).sort((a, b) => a - b);
+    if (!common.length) continue;
+    if (!sl.tie) {
+      const d = sl.above ? common[common.length - 1]! : common[0]!;
+      const a = A.find((n) => n.diatonic === d)!, b = B.find((n) => n.diatonic === d)!;
+      // 弧端要贴着那个音（弧在下离头下缘、在上离头上缘一格以内）：跨两个和弦的圆滑线挂在别处（万口欢唱 m7）
+      const near = (n: StaffNote, y: number) => (sl.above ? n.sym.box.top - y : y - n.sym.box.bottom) <= sp * CHORD_TIE_REACH;
+      if (!near(a, sl.ly) || !near(b, sl.ry)) continue;
+      sl.from = a;
+      sl.to = b;
+      sl.tie = true;
+    }
+    if (dA.size < 2 || dA.size !== dB.size || common.length !== dA.size) continue;
+    for (const d of common) {
+      const a = A.find((n) => n.diatonic === d)!, b = B.find((n) => n.diatonic === d)!;
+      if (a !== sl.from) out.push([a, b]);
+    }
+  }
+  return out;
+}
+
+/**
+ * 弧端挂不上符头时，把音连同它的符干一起当盒再挂一次：钢琴低音的八分一组干朝下、杠在下面，圆滑线画在杠下、
+ * 弧端贴着干端，离符头三格开外（破碎 p2 低音 m2–m6 一整排）。挂上的是这根干上离弧端最近的那个头；
+ * 两端同音高的照样判延音线（同 `attachSlurs`）。
+ */
+function attachSlursByStem(slurs: SlurArc[], notes: StaffNote[], sp: number): void {
+  const withStem = notes.filter((n) => !n.rest && n.group?.stem);
+  for (const sl of slurs) {
+    if (sl.from && sl.to) continue;
+    for (const isEnd of [false, true]) {
+      if (isEnd ? sl.to : sl.from) continue;
+      const px = isEnd ? sl.rx : sl.lx, py = isEnd ? sl.ry : sl.ly;
+      let best: StaffNote | undefined;
+      let bd = Infinity;
+      for (const n of withStem) {
+        const h = n.sym.box, g = n.group!.stem!.seg.box;
+        const box = { left: Math.min(h.left, g.left), right: Math.max(h.right, g.right), top: Math.min(h.top, g.top), bottom: Math.max(h.bottom, g.bottom) };
+        const v = validateSlurNote(isEnd, box, px, py, sp, sl.above);
+        if (v === null) continue;
+        // 同一根干上几个头：取离弧端最近的
+        const d = v * 1e6 + Math.hypot((h.left + h.right) / 2 - px, (h.top + h.bottom) / 2 - py);
+        if (d < bd) (bd = d), (best = n);
+      }
+      if (!best) continue;
+      if (isEnd) sl.to = best;
+      else sl.from = best;
+    }
+    if (sl.from && sl.to && sl.from === sl.to) sl.to = undefined;
+    if (sl.from && sl.to && sl.from.staff === sl.to.staff && sl.from.diatonic === sl.to.diatonic) sl.tie = true;
   }
 }
