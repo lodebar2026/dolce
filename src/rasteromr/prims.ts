@@ -71,6 +71,8 @@ export interface RasterPrims {
   hSegs: LineSeg[];
   vSegs: LineSeg[];
   beams: BeamQuad[];
+  /** 叠头和弦的短干（`cleanTail`）：不进 `vSegs`，只给光杆干探头用，探出了头才并进去（`recognize.ts`）。 */
+  shortStems?: LineSeg[];
 }
 
 /** 逐像素的纵向游程长度（该像素所在的那一竖条黑色游程有多长）。 */
@@ -207,6 +209,8 @@ function centerLine(mask: Uint8Array, w: number, c: Component, horizontal: boole
 /** `narrowPart` 取出的窄段至少多长（格）。 */
 const NARROW_STEM = 3;
 const INK_RUN_STEM = 2.5;
+/** 干净尾巴的长度下限（格），见 `cleanTail`。 */
+const CLEAN_TAIL = 2.5;
 
 /** `isolated` 按 `maxLw` 开的邻墨窗里（中心列两侧）有没有一列从第五线到第一线都有墨（≥95% 行）。 */
 function barColumnNear(bin: Binary, x: number, maxLw: number, bands: [number, number][]): boolean {
@@ -249,7 +253,7 @@ function modalRowWidth(mask: Uint8Array, w: number, c: Component): number {
  * 判成「不孤立」扔掉，小节线随后被当成那个头的干（我一生要赞美你第六行 x=240）。
  * 直接按平均线宽开窗是全局改动，谱号、升号的竖笔也跟着过了闸（赞美三一真神音符 94 → 55%）。
  */
-function narrowPart(mask: Uint8Array, w: number, c: Component, lw: number, unit: RasterUnit): LineSeg | null {
+function narrowPart(mask: Uint8Array, w: number, c: Component, lw: number, unit: RasterUnit, minLen = NARROW_STEM): LineSeg | null {
   const b = c.bbox;
   if (b.w <= lw * 2) return null;
   let best: [number, number] | null = null;
@@ -267,7 +271,7 @@ function narrowPart(mask: Uint8Array, w: number, c: Component, lw: number, unit:
     }
   }
   // 够一根符干长：破碎干净版这样收进来的多是 1.5~2.7 格的短笔（满拍自检 64.6 → 61.8），真干约 3.5 格
-  if (!best || best[1] - best[0] < unit.space * NARROW_STEM) return null;
+  if (!best || best[1] - best[0] < unit.space * minLen) return null;
   let sx = 0, n = 0, maxW = 0;
   for (let y = best[0]; y < best[1]; y++) {
     const [a, z] = rows[y - b.y];
@@ -363,6 +367,56 @@ function isolated(bin: Binary, s: LineSeg, vertical: boolean): boolean {
     }
   }
   return n === 0 || a < n * 0.5;
+}
+
+/**
+ * 竖段一端连续 `CLEAN_TAIL` 格两侧都空着：叠着几个头的和弦干，头那一半两侧全是墨（再加上压着的谱线行），
+ * 整条过不了孤立性（是爱 p1 m1 钢琴右手 F5/A5/C6 二分和弦，干 4.3 格、一半贴着头）。符干另一头是光的；
+ * 谱号的中央竖笔、升号、拍号「4」的竖笔都没有这么长一截光杆。
+ */
+function cleanTail(bin: Binary, s: LineSeg, unit: RasterUnit): boolean {
+  const t = Math.min(s.y0, s.y1), b = Math.max(s.y0, s.y1);
+  const L = unit.space * CLEAN_TAIL;
+  if (b - t < L) return false;
+  const at = (y0: number, y1: number): LineSeg => ({ ...s, y0, y1, x0: s.x0 + ((s.x1 - s.x0) * (y0 - s.y0)) / (s.y1 - s.y0 || 1), x1: s.x0 + ((s.x1 - s.x0) * (y1 - s.y0)) / (s.y1 - s.y0 || 1) });
+  return strictlyIsolated(bin, at(t, t + L)) || strictlyIsolated(bin, at(b - L, b));
+}
+
+/** 竖段沿原图那一列墨往两端延到断墨处（各至多 `max` 像素）：窄段只取到叠头以下，干端要落在最外那个头上，端头探头才对得上。 */
+function alongInk(bin: Binary, s: LineSeg, max: number): LineSeg {
+  const x = Math.round((s.x0 + s.x1) / 2);
+  const half = Math.max(1, Math.floor(s.lw / 2));
+  const ink = (y: number) => {
+    if (y < 0 || y >= bin.h) return false;
+    for (let xx = x - half; xx <= x + half; xx++) if (xx >= 0 && xx < bin.w && bin.data[y * bin.w + xx]) return true;
+    return false;
+  };
+  let t = Math.round(Math.min(s.y0, s.y1)), b = Math.round(Math.max(s.y0, s.y1));
+  const t0 = t, b0 = b;
+  while (t0 - t < max && ink(t - 1)) t--;
+  while (b - b0 < max && ink(b + 1)) b++;
+  return { ...s, x0: x, x1: x, y0: t, y1: b };
+}
+
+/** 同 `isolated`，但邻墨行只许两成半（谱线行、跨过的加线）。 */
+function strictlyIsolated(bin: Binary, s: LineSeg): boolean {
+  const { w, h, data } = bin;
+  const half = Math.max(1, Math.ceil(s.maxLw / 2));
+  const near = half + 1;
+  const far = half + Math.max(2, Math.round(s.maxLw * 2));
+  let n = 0, a = 0;
+  const cx = Math.round((s.x0 + s.x1) / 2);
+  for (let y = Math.round(Math.min(s.y0, s.y1)); y <= Math.round(Math.max(s.y0, s.y1)); y++) {
+    if (y < 0 || y >= h) continue;
+    n++;
+    let hit = 0;
+    for (let d = near; d <= far && !hit; d++) {
+      if (cx - d >= 0) hit |= data[y * w + cx - d];
+      if (cx + d < w) hit |= data[y * w + cx + d];
+    }
+    a += hit;
+  }
+  return n > 0 && a <= n * 0.25;
 }
 
 /** 一行谱的线距与全页的相对差在这个范围里，加线网格才用它自己的线距（见 `ledgerGrid`）。 */
@@ -692,6 +746,8 @@ export function findPrimitives(
   for (let i = 0; i < vMask0.length; i++) if (hr[i] && hr[i] <= thinV) vMask0[i] = 1;
   const vMask = close1d(vMask0, w, h, Math.round(unit.lineThick * 2), false);
   const vSegs: LineSeg[] = [];
+  /** 叠头和弦的短干（见下），单独交出去 */
+  const shortStems: LineSeg[] = [];
   for (const c of comps(vMask, w, h, Math.max(3, unit.lineThick * 2))) {
     if (c.bbox.h < unit.space * VSEG_MIN_H) continue;
     if (c.bbox.w > thinV * 2) {
@@ -702,6 +758,11 @@ export function findPrimitives(
         // 行宽按这块自己的众数放宽（按细笔上限放的话，贴干的头边也收进来，干粗到 8px：高举主大能 m7 F3 丢了）
         const narrow = inkRun(bin, narrowPart(vMask, w, c, modalRowWidth(vMask, w, c), unit), unit, staffBands);
         if (narrow && !atStaffLeft(narrow.x0) && isolated(bin, narrow, true)) vSegs.push(narrow);
+        else if (!narrow) {
+          // 不到 `NARROW_STEM` 的（叠头和弦的干，头以下只剩 2.9 格）要有一截光杆（`cleanTail`）
+          const short = inkRun(bin, narrowPart(vMask, w, c, modalRowWidth(vMask, w, c), unit, CLEAN_TAIL), unit, staffBands);
+          if (short && !atStaffLeft(short.x0) && cleanTail(bin, short, unit)) shortStems.push(alongInk(bin, short, unit.space * CLEAN_TAIL));
+        }
       }
       continue;
     }
@@ -848,7 +909,7 @@ export function findPrimitives(
   vSegs.push(...beamStems(bin, beams, vSegs, unit, staffLineYs));
   // 杠上补出的干也能揭出头那一端的假杠，再剔一遍
   dropHeadEndBeams(beams, vSegs, unit);
-  return { hSegs, vSegs, beams };
+  return { hSegs, vSegs, beams, shortStems };
 }
 
 /**
@@ -1145,6 +1206,111 @@ function dropHeadEndBeams(beams: BeamQuad[], vSegs: LineSeg[], unit: RasterUnit)
     if (touched && fake) drop.add(q);
   }
   for (let i = beams.length - 1; i >= 0; i--) if (drop.has(beams[i])) beams.splice(i, 1);
+}
+
+/** 修补图：压线处的笔画认作「存疑」补回时，看左右多远（格）有没有挨着线带的墨。 */
+const REPAIR_REACH = 0.75;
+/** 斜穿过线的笔画，线上、线下挨着的墨纵向厚不过这么多（格）：再厚是符头、干。 */
+const REPAIR_THIN = 0.4;
+/** 拱顶压线、剩两条腿时两腿之间的缝上限（格）。 */
+const REPAIR_CAP = 1;
+
+/**
+ * **修补图**：去线图上把「存疑」的线带像素补回去，给按形状认的那几路用（弧线候选）；认干、认杠照旧用去线图。
+ *
+ * 去线逐列判：线带上下紧挨着有墨才留。弧、松叶贴着线斜穿时，中间那几列整段落在线带里、上下都不连墨，被当线抹掉，
+ * 笔画断成几截（宁静的伯利恒、破碎的小弧一排排断在线上）。原图上那几列的线带比本线厚：
+ * - 线带竖向墨厚比本线实测线宽厚出一像素以上，且左右 `REPAIR_REACH` 格内线带紧上方或紧下方有墨（有东西压着线、从这里进出）；
+ * - 或者线带上方挨着的一截细笔与下方挨着的一截（纵向都不过 `REPAIR_THIN` 格）横向相隔不过 `REPAIR_REACH` 格，补两截之间那道缝（斜穿，线带没加厚也接上）。
+ * 反过来，线带只有本线厚、又不是穿线段的那几列在这张图上清掉：去线时因为上下挨着墨留下的谱线残段，粘在弧身上就不拱了。
+ * 这两种列上原图有墨的线带像素补回。和谱线完全重合、一点没加厚的笔画（平躺在线上的延音线、还原号横笔）补不回来。
+ */
+export function repairLineCuts(bin: Binary, nl: Binary, lineYs: number[], unit: RasterUnit): Binary {
+  const { w, h, data } = bin;
+  const out: Binary = { w, h, data: new Uint8Array(nl.data) };
+  const runs = vRuns(bin);
+  const nlRuns = vRuns(nl);
+  const half = unit.lineThick / 2 + 1;
+  const look = Math.max(1, Math.round(unit.lineThick));
+  const lineT = Math.max(unit.lineThick, measuredLineThick(bin, runs, lineYs, unit));
+  const reach = Math.max(2, Math.round(unit.space * REPAIR_REACH));
+  const thinMax = unit.space * REPAIR_THIN;
+  for (const cy of lineYs) {
+    const centers = localLineCenters(bin, runs, cy, unit);
+    const band = (x: number): [number, number] => [Math.max(0, Math.floor(centers[x] - half)), Math.min(h - 1, Math.ceil(centers[x] + half))];
+    // 逐列：线带紧上方 / 紧下方挨着的去线图墨（细的才算，-1 = 没有或太粗）、线带是否加厚
+    const above = new Int8Array(w), below = new Int8Array(w), thick = new Uint8Array(w);
+    for (let x = 0; x < w; x++) {
+      const [y0, y1] = band(x);
+      let t = 0;
+      for (let y = y0; y <= y1; y++) t = Math.max(t, runs[y * w + x]);
+      if (t >= lineT + 1 && t <= unit.space * 0.8) thick[x] = 1;
+      for (let y = Math.max(0, y0 - look); y < y0; y++) if (nl.data[y * w + x]) above[x] = nlRuns[y * w + x] <= thinMax ? 1 : 2;
+      for (let y = y1 + 1; y <= Math.min(h - 1, y1 + look); y++) if (nl.data[y * w + x]) below[x] = nlRuns[y * w + x] <= thinMax ? 1 : 2;
+    }
+    // 穿线段：线上挨着的一段细墨 [a0,a1] 与线下挨着的一段 [b0,b1] 横向相隔不过 `reach`，二者之间的缝（相接时取接头那两列）
+    const ivals = (m: Int8Array): [number, number][] => {
+      const out2: [number, number][] = [];
+      for (let x = 0; x < w; x++) {
+        if (m[x] !== 1) continue;
+        let e = x;
+        while (e + 1 < w && m[e + 1] === 1) e++;
+        out2.push([x, e]);
+        x = e;
+      }
+      return out2;
+    };
+    const ups = ivals(above), dns = ivals(below);
+    const cross = new Uint8Array(w);
+    for (const [a0, a1] of ups)
+      for (const [b0, b1] of dns) {
+        // 一左一右：缝 [左段末, 右段首]
+        const [l1, r0] = a1 < b0 ? [a1, b0] : b1 < a0 ? [b1, a0] : [Math.max(a0, b0), Math.min(a1, b1)];
+        if (r0 - l1 > reach) continue;
+        for (let x = Math.min(l1, r0); x <= Math.max(l1, r0); x++) cross[x] = 1;
+      }
+    // 拱顶（拱底）压在线上、只剩两条腿：同一侧挨着线的两截细墨相隔不过 `REPAIR_CAP` 格，缝补上（破碎扫描版 p1 m2 C5–B4 上方那条）。
+    // 拱顶那几列与谱线重合、线带一点没加厚，前两条都补不着
+    const capGap = Math.round(unit.space * REPAIR_CAP);
+    // 缝那一侧 0.6 格内过半的列得是空的：弧身拱在缝上方（坐在线上的延音线，望十架 p4 m33 低音 D3）的补了就和线围成一圈；
+    // 拱顶压线的，缝下只有几点拱顶残墨（破碎扫描版 p1 m2）
+    const clear = Math.round(unit.space * 0.6);
+    const emptySide = (x0: number, x1: number, up: boolean) => {
+      let inked = 0;
+      for (let x = x0; x <= x1; x++) {
+        const [y0, y1] = band(x);
+        for (let k = 1; k <= clear; k++) {
+          const y = up ? y0 - k : y1 + k;
+          if (y >= 0 && y < h && nl.data[y * w + x]) {
+            inked++;
+            break;
+          }
+        }
+      }
+      return inked <= (x1 - x0 + 1) * 0.5;
+    };
+    for (const [side, up] of [[ups, true], [dns, false]] as const)
+      for (let i = 0; i + 1 < side.length; i++) {
+        const g0 = side[i][1], g1 = side[i + 1][0];
+        if (g1 - g0 > 1 && g1 - g0 <= capGap && emptySide(g0 + 1, g1 - 1, up)) for (let x = g0; x <= g1; x++) cross[x] = 1;
+      }
+    const near = new Int32Array(w + 1);
+    for (let x = 0; x < w; x++) near[x + 1] = near[x] + (above[x] || below[x] ? 1 : 0);
+    const nearInk = (x: number) => near[Math.min(w, x + reach + 1)] - near[Math.max(0, x - reach)] > 0;
+    for (let x = 0; x < w; x++) {
+      const [y0, y1] = band(x);
+      let t = 0;
+      for (let y = y0; y <= y1; y++) t = Math.max(t, runs[y * w + x]);
+      // 线带只有本线那么厚、又不是穿线段：去线时因为上下挨着墨留下的一截谱线（弧身贴着线走，破碎 p2 m2），这张图上清掉
+      if (t > 0 && t <= lineT && !cross[x]) {
+        for (let y = y0; y <= y1; y++) out.data[y * w + x] = 0;
+        continue;
+      }
+      if (!(cross[x] || (thick[x] && nearInk(x)))) continue;
+      for (let y = y0; y <= y1; y++) if (data[y * w + x]) out.data[y * w + x] = 1;
+    }
+  }
+  return out;
 }
 
 /** 两端各连着干的短杠：宽度下限（格）。 */

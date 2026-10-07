@@ -24,6 +24,8 @@ const MAX_W = 110;
 const MAX_H = 12;
 /** 团状度上限：又宽又扁才有资格。 */
 const MAX_COMPACT = 0.25;
+/** 团状度超了、但逐列平均墨厚不过这么多（格）的也放进来：一格半宽的小弧盒子扁，团状度天然偏高（破碎 p2 m2 G4–F4 下方那条 0.26）。 */
+const THIN_MEAN = 0.2;
 /** 逐列一段墨的列要占多少——两段的是松叶。 */
 const ONE_RUN_FRAC = 0.8;
 /** **拱**：离两端连线最远处的下限（线距）。直的那些是松叶的臂、加线、连音线的一截。 */
@@ -37,19 +39,20 @@ const SPREAD_MAX = 0.6;
  * @param only 只看这些 contour（传账本里**无主**的那些）。
  * @param nextId 造假 `PObj` 用的起始 id（与页面里其它对象别撞号）。
  */
-export function findRasterSlurs(map: ContourMap, unit: RasterUnit, only: Contour[], nextId: number): SlurArc[] {
+export function findRasterSlurs(map: ContourMap, unit: RasterUnit, only: Contour[], nextId: number, mask?: Binary): SlurArc[] {
   const out: SlurArc[] = [];
   for (const c of only) {
     if (c.w < MIN_W || c.w > MAX_W || c.h > MAX_H) continue;
-    if (c.compact > MAX_COMPACT) continue;
-    const arc = judgeArc(map, c, unit, nextId + out.length);
+    if (c.compact > MAX_COMPACT && c.area > c.bbox.w * unit.space * THIN_MEAN) continue;
+    const arc = judgeArc(map, c, unit, nextId + out.length, mask);
     if (arc) out.push(arc);
   }
   return out;
 }
 
-function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number): SlurArc | null {
-  return judgeArcBox(c.bbox, (x, y) => map.labels[y * map.w + x] === c.id, unit, id);
+/** `mask`：只认这张图上也有墨的像素（去线图上的块按修补图判：去线时留下的谱线残段在修补图上清掉了）。 */
+function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number, mask?: Binary): SlurArc | null {
+  return judgeArcBox(c.bbox, (x, y) => map.labels[y * map.w + x] === c.id && (!mask || mask.data[y * mask.w + x] === 1), unit, id);
 }
 
 function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: RasterUnit, id: number): SlurArc | null {
@@ -133,6 +136,8 @@ const HEAD_PAD = 0.2;
 /** 粘连弧的宽度下限、拱的下限（格）：抠剩下的碎墨（符尾、字的笔画）比独立的弧多，闸收紧一档。 */
 const FUSED_MIN_W = 2.5;
 const FUSED_BOW_MIN = 0.35;
+/** 竖笔抠掉后弧上补回的缝宽上限（格）：符干、小节线两三个像素。 */
+const BRIDGE_GAP = 0.25;
 
 /**
  * 从音符那组墨里抠出粘连的弧。`groups` 是要看的 contour（有符头认领、够宽的），`heads` 是全页符头盒。
@@ -157,6 +162,21 @@ export function findFusedSlurs(map: ContourMap, unit: RasterUnit, groups: Contou
         y = e;
       }
     }
+    // 弧穿过符干、小节线：竖笔抠掉后弧断成两截，中间一道窄缝（不过 `BRIDGE_GAP` 格）。同一行（上下一像素内）缝两边都有细墨、
+    // 缝里原本是墨的，补回（破碎 p2 m15–16 钢琴右手 G4 延音线跨小节线，整条记在小节线账上）
+    const gapMax = Math.max(2, Math.round(sp * BRIDGE_GAP));
+    const kept = (x: number, y: number) => x >= 0 && x < b.w && y >= 0 && y < b.h && keep[y * b.w + x] === 1;
+    const near = (x: number, y: number) => kept(x, y) || kept(x, y - 1) || kept(x, y + 1);
+    const bridge: number[] = [];
+    for (let y = 0; y < b.h; y++)
+      for (let x = 1; x < b.w - 1; x++) {
+        if (keep[y * b.w + x] || map.labels[(b.y + y) * map.w + b.x + x] !== c.id || !near(x - 1, y)) continue;
+        let e = x;
+        while (e < b.w && !keep[y * b.w + e] && map.labels[(b.y + y) * map.w + b.x + e] === c.id && e - x < gapMax) e++;
+        if (e - x >= gapMax || !near(e, y)) continue;
+        for (let k = x; k < e; k++) bridge.push(y * b.w + k);
+      }
+    for (const i of bridge) keep[i] = 1;
     const pad = sp * HEAD_PAD;
     for (const h of heads) {
       const x0 = Math.max(0, Math.floor(h.x - pad - b.x));
@@ -384,108 +404,4 @@ export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) =
       else (sl.rx = end.x), (sl.ry = end.y);
     }
   }
-}
-
-// ── 被谱线切断的小弧 ─────────────────────────────────────────────────────────
-//
-// 两个音之间的小弧（一两格宽）横跨一条谱线，去线后断成线上、线下几截，每截不到一格、还被记在谱线账上，
-// 单看哪截都过不了弧线的闸（破碎 p2 m2–m5 高音谱表一整排）。把这样的碎块并回去：
-// 横向挨着（隔 `SPLIT_DX` 像素内）、纵向隔着谱线行（缝不过线宽加两像素、缝里有谱线行）的连成一组，
-// 谱线行上原图有墨、上下都接着组里墨的那些像素补回，整组照弧线的闸判一次。
-
-/** 碎块的尺寸上限（格）。 */
-const SPLIT_PIECE_MAX = 3;
-/** 相邻两截横向的缝（像素）。 */
-const SPLIT_DX = 2;
-/** 拱顶压线、剩两条腿时两腿之间的缝上限（格）。 */
-const SPLIT_CAP_DX = 1;
-
-export function findSplitArcs(
-  map: ContourMap,
-  unit: RasterUnit,
-  pieces: Contour[],
-  bin: Binary,
-  onLine: (y: number) => boolean,
-  nextId: number,
-): SlurArc[] {
-  const sp = unit.space;
-  const ps = pieces.filter((c) => c.w <= SPLIT_PIECE_MAX && c.h <= SPLIT_PIECE_MAX && c.area >= 4);
-  const parent = ps.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-  const vgapMax = unit.lineThick + 2;
-  /** 盒的上沿 / 下沿贴着的那条谱线的行（贴不着为 null）。 */
-  const touch = (b: Rect, edge: "top" | "bottom"): number | null => {
-    // 粗的拱顶贴着线那几行常被当成线厚一起抹掉，盒沿就落在线行里：盒沿上下两行内有线行都算
-    for (let d = -2; d <= 2; d++) {
-      const y = edge === "top" ? b.y - d : b.y + b.h - 1 + d;
-      if (onLine(y)) return y;
-    }
-    return null;
-  };
-  /** 拱顶压在谱线上被抹掉、剩下两条腿：缺口那几列谱线行上的原图墨补回（行 → 是否补）。 */
-  const capRows = new Set<number>();
-  for (let i = 0; i < ps.length; i++)
-    for (let j = i + 1; j < ps.length; j++) {
-      const a = ps[i].bbox, b = ps[j].bbox;
-      const dx = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
-      if (dx <= SPLIT_DX) {
-        const top = a.y < b.y ? a : b, bot = a.y < b.y ? b : a;
-        const g0 = top.y + top.h, g1 = bot.y; // 纵向的缝 [g0, g1)
-        if (g1 - g0 > vgapMax || g1 - g0 < 0) continue;
-        let line = false;
-        for (let y = g0; y < g1 && !line; y++) if (onLine(y)) line = true;
-        if (line) parent[find(i)] = find(j);
-        continue;
-      }
-      // 横向隔开（不过 `SPLIT_CAP_DX` 格）、同一边贴着同一条线：拱顶 / 拱底压在线上
-      if (dx > sp * SPLIT_CAP_DX) continue;
-      for (const edge of ["top", "bottom"] as const) {
-        const ta = touch(a, edge), tb = touch(b, edge);
-        if (ta === null || tb === null || Math.abs(ta - tb) > 1) continue;
-        parent[find(i)] = find(j);
-        for (let y = Math.min(ta, tb) - unit.lineThick; y <= Math.max(ta, tb) + unit.lineThick; y++) if (onLine(y)) capRows.add(y);
-      }
-    }
-  const groups = new Map<number, Contour[]>();
-  ps.forEach((c, i) => {
-    const r = find(i);
-    groups.set(r, [...(groups.get(r) ?? []), c]);
-  });
-  const out: SlurArc[] = [];
-  for (const g of groups.values()) {
-    if (g.length < 2) continue;
-    const ids = new Set(g.map((c) => c.id));
-    const x0 = Math.min(...g.map((c) => c.bbox.x)), y0 = Math.min(...g.map((c) => c.bbox.y));
-    const x1 = Math.max(...g.map((c) => c.bbox.x + c.bbox.w)), y1 = Math.max(...g.map((c) => c.bbox.y + c.bbox.h));
-    const box: Rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-    // 拱顶 / 拱底压着的线行并进盒
-    const capIn = [...capRows].filter((y) => y >= y0 - vgapMax && y < y1 + vgapMax);
-    if (capIn.length) {
-      const lo = Math.min(y0, ...capIn), hi = Math.max(y1, ...capIn.map((y) => y + 1));
-      box.y = lo;
-      box.h = hi - lo;
-    }
-    if (box.w < sp * MIN_W || box.h > sp * MAX_H) continue;
-    const mine = (x: number, y: number) => ids.has(map.labels[y * map.w + x]);
-    /** 这一列有没有组里线外的墨。 */
-    const colHas = (x: number) => {
-      for (let y = y0; y < y1; y++) if (mine(x, y) && !onLine(y)) return true;
-      return false;
-    };
-    /** 谱线行上补回：原图有墨，这一列上下线宽加两像素内各有组里的墨；或拱顶那几列（这一列没有组里的墨、是贴着的那条线）。 */
-    const bridged = (x: number, y: number) => {
-      if (!onLine(y) || !bin.data[y * bin.w + x]) return false;
-      if (capRows.has(y) && !colHas(x)) return true;
-      let up = false, dn = false;
-      for (let d = 1; d <= vgapMax && !(up && dn); d++) {
-        if (y - d >= y0 && mine(x, y - d) && !onLine(y - d)) up = true;
-        if (y + d < y1 && mine(x, y + d) && !onLine(y + d)) dn = true;
-      }
-      return up && dn;
-    };
-    // 碎块里常带着线行的残墨（线没抹干净的那一截）：有线外墨的列，线行一律不算，只靠上下接续补
-    const arc = judgeArcBox(box, (x, y) => (mine(x, y) && !onLine(y)) || bridged(x, y), unit, nextId + out.length);
-    if (arc) out.push(arc);
-  }
-  return out;
 }

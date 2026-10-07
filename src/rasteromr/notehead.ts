@@ -1179,6 +1179,8 @@ export function probeBareStems(
   free: { id: number; box: Rect; area: number }[],
   unit: RasterUnit,
   isBar: (s: LineSeg) => boolean,
+  /** 叠头和弦的短干：墨团连着干本身，中心常落在窗口外；盒把干端包在里面的也收 */
+  attached = false,
 ): BareStemProbe[] {
   const sp = unit.space;
   const out: BareStemProbe[] = [];
@@ -1206,6 +1208,7 @@ export function probeBareStems(
         const cx = f.box.x + f.box.w / 2;
         const cy = f.box.y + f.box.h / 2;
         if (f.box.w < sp * DOT_MAX && f.box.h < sp * DOT_MAX) return false;
+        if (attached && sx >= f.box.x - 2 && sx <= f.box.x + f.box.w + 2 && e >= f.box.y - 2 && e <= f.box.y + f.box.h + 2) return true;
         return cx > x0 && cx < x1 && cy > y0 && cy < y1;
       });
       if (!got.length) continue;
@@ -1290,6 +1293,8 @@ const BARE_H2 = [1.6, 2.5] as const;
 const BARE_FILL = [0.15, 0.6] as const;
 /** 头心墨占比：空心头的斜缝内腔实测 0.0~0.51（我灵镇静一处糊的 0.74），实心头 1.0。扫过 0.7 / **0.8**：92.10 / 92.14%。 */
 const BARE_CORE = 0.8;
+/** 压线头按放宽的窗口量头心时，判空心的上限。 */
+const BARE_CORE_WIDE = 0.62;
 /** 一个头高、头心墨占比到这么多才落实心头。 */
 const BARE_SOLID = 0.9;
 
@@ -1310,18 +1315,42 @@ export function headsOnBareStems(
 ): { box: Rect; code: SmuflName; ids: number[]; weak: true }[] {
   const sp = unit.space;
   /** 头心一小块（0.6×0.4 格）在原图里的墨占比，谱线那几行不算。实心头近 1，空心头的斜缝内腔低得多。 */
-  const core = (cx: number, cy: number): number => {
+  /** 加线行：穿过头心的连续墨段横贯 1.8 格以上、两端是薄的（加线穿过头心，是爱 p1 m3 A5）；只数墨点总数的话实心头连着旁边的墨也够数（破碎扫描版 p3 m39） */
+  const ledgerRow = (cx: number, y: number): boolean => {
+    const ink = (x: number) => x >= 0 && x < bin.w && bin.data[y * bin.w + x] === 1;
+    const x0 = Math.round(cx);
+    if (!ink(x0)) return false;
+    let a = x0, b = x0;
+    while (ink(a - 1)) a--;
+    while (ink(b + 1)) b++;
+    if (b - a + 1 < sp * 1.8) return false;
+    // 还得是薄的：墨段两端那一列上下 0.3 格外是白的（网点符杠也横贯头心，杠那几行跳过了就把杠端量成空心头，耶和华是我的牧者 p2）
+    const k = Math.max(2, Math.round(sp * 0.3));
+    const white = (x: number) => [y - k, y + k].every((yy) => yy < 0 || yy >= bin.h || !bin.data[yy * bin.w + x]);
+    return white(a + 1) && white(b - 1);
+  };
+  // 压线的头，±0.2 格里几乎全是线行（是爱 p1 m3 F5 只剩一行、落在圈边上），可量的行不到三行就再按 ±0.35 格量一次：
+  // 返回 [判空心用的, 判实心用的]。宽窗口量到圈边，判空心要过更紧的 `BARE_CORE_WIDE`（空心 0.58/0.60，
+  // 压线带白点的实心 0.67/0.78，破碎扫描版 p9 m93、p11 m100）；判实心取两者大的（压线的实心头 0.885，p3 m39）
+  const core = (cx: number, cy: number, half = 0.2): [number, number] => {
     let n = 0;
     let ink = 0;
-    for (let y = Math.round(cy - sp * 0.2); y <= Math.round(cy + sp * 0.2); y++) {
-      if (onLine(y)) continue;
+    let rows = 0;
+    for (let y = Math.round(cy - sp * half); y <= Math.round(cy + sp * half); y++) {
+      if (y < 0 || y >= bin.h || onLine(y) || ledgerRow(cx, y)) continue;
+      rows++;
       for (let x = Math.round(cx - sp * 0.3); x <= Math.round(cx + sp * 0.3); x++) {
         if (x < 0 || y < 0 || x >= bin.w || y >= bin.h) continue;
         n++;
         if (bin.data[y * bin.w + x]) ink++;
       }
     }
-    return n ? ink / n : 1;
+    const v = n ? ink / n : 1;
+    if (rows < 3 && half < 0.35) {
+      const [w] = core(cx, cy, 0.35);
+      return [Math.min(v, w <= BARE_CORE_WIDE ? w : 1), Math.max(v, w)];
+    }
+    return [v, v];
   };
   const out: { box: Rect; code: SmuflName; ids: number[]; weak: true }[] = [];
   const used = new Set<number>();
@@ -1364,8 +1393,8 @@ export function headsOnBareStems(
     if (strict && ys.some((y) => widest(box, y) < sp * 0.8)) return null;
     const cx = box.x + box.w / 2;
     const cores = ys.map((y) => core(cx, y));
-    if (fill <= BARE_FILL[1] && cores.every((c) => c <= BARE_CORE)) return { ys, code: "noteheadHalf", cx };
-    if (ys.length === 1 && cores[0] >= BARE_SOLID) return { ys, code: "noteheadBlack", cx };
+    if (fill <= BARE_FILL[1] && cores.every((c) => c[0] <= BARE_CORE)) return { ys, code: "noteheadHalf", cx };
+    if (ys.length === 1 && cores[0][1] >= BARE_SOLID) return { ys, code: "noteheadBlack", cx };
     return null;
   };
   for (const p of probes) {
@@ -1395,8 +1424,9 @@ function endInk(bin: Binary, p: BareStemProbe, sp: number, onLine: (y: number) =
   const s = p.stem;
   const sx = (s.x0 + s.x1) / 2;
   const e = p.end === "top" ? Math.min(s.y0, s.y1) : Math.max(s.y0, s.y1);
-  const ya = Math.max(0, Math.round(p.end === "top" ? e - sp * 0.9 : e - sp * 2.0));
-  const yb = Math.min(bin.h - 1, Math.round(p.end === "top" ? e + sp * 2.0 : e + sp * 0.9));
+  // 干端外侧的窗口跟着收拢来的墨团伸（至多 2 格）：干端只到下面那个头里，上面那个头整个在 0.9 格外（是爱 p1 m2 G5/B♭5）
+  const ya = Math.max(0, Math.round(p.end === "top" ? Math.max(e - sp * 2.0, Math.min(e - sp * 0.9, p.box.y)) : e - sp * 2.0));
+  const yb = Math.min(bin.h - 1, Math.round(p.end === "top" ? e + sp * 2.0 : Math.min(e + sp * 2.0, Math.max(e + sp * 0.9, p.box.y + p.box.h - 1))));
   const xa = Math.max(0, Math.round(p.end === "bottom" ? sx - sp * 1.8 : sx - sp * 0.3));
   const xb = Math.min(bin.w - 1, Math.round(p.end === "bottom" ? sx + sp * 0.3 : sx + sp * 1.8));
   const lw = Math.max(1, s.lw);
@@ -1416,6 +1446,18 @@ function endInk(bin: Binary, p: BareStemProbe, sp: number, onLine: (y: number) =
       x1 = Math.max(x1, x);
     }
     rows.push({ y, x0, x1, n, span });
+  }
+  // 窗口伸出 0.9 格的那段只收连着的墨：一碰到空行就截（破碎扫描版 p3 m39 F♯5 头上方隔着空白的记号）
+  {
+    const near0 = p.end === "top" ? e - sp * 0.9 : e + sp * 0.9;
+    const outer = (r: { y: number }) => (p.end === "top" ? r.y < near0 : r.y > near0);
+    const order = p.end === "top" ? [...rows].reverse() : rows;
+    let cut: number | null = null;
+    for (const r of order) if (outer(r) && r.n < 2) { cut = r.y; break; }
+    if (cut !== null) {
+      const c = cut;
+      for (let i = rows.length - 1; i >= 0; i--) if (p.end === "top" ? rows[i].y <= c : rows[i].y >= c) rows.splice(i, 1);
+    }
   }
   // 加线行：连窗口外一共横贯 1.8 格以上、上下三行外就没这么宽了（薄）；两侧紧挨着头那几行的（加线穿过头）留着
   const wide = (i: number) => rows[i].span >= sp * 1.8;
