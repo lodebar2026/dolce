@@ -164,6 +164,10 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
   const voices = [...new Set(inBar.map((n) => n.voice))].sort((a, b) => a - b);
   const withVoice = voices.length > 1 || staffNo > 0;
   const voiceBase = staffNo > 0 ? (staffNo - 1) * 4 : 0;
+  // **合成一个 part 的钢琴两行，`<direction>` 也要带 `<staff>`**：不带的话读入端把它算到整个 part（两行都有一份，
+  // 或一律落到第一行），松叶两行都用 1 号还会互相套住
+  const dirStaff = staffNo ? `<staff>${staffNo}</staff>` : "";
+  const wedgeNo = staffNo || 1;
   const full = timed ? voiceTicks(inBar, ticks) : 0;
   voices.forEach((v, vi) => {
     const vn = inBar.filter((n) => n.voice === v);
@@ -217,17 +221,17 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       if (n.chord) body += harmonyXml(n.chord);
       if (n.metronome) {
         const [unit, bpm] = n.metronome.split("=");
-        body += `<direction placement="above"><direction-type><metronome><beat-unit>${unit}</beat-unit><per-minute>${bpm}</per-minute></metronome></direction-type><sound tempo="${bpm}"/></direction>`;
+        body += `<direction placement="above"><direction-type><metronome><beat-unit>${unit}</beat-unit><per-minute>${bpm}</per-minute></metronome></direction-type>${dirStaff}<sound tempo="${bpm}"/></direction>`;
       }
       for (const w of n.words ?? [])
-        body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><words>${escapeXml(w.text)}</words></direction-type></direction>`;
+        body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><words>${escapeXml(w.text)}</words></direction-type>${dirStaff}</direction>`;
       if (n.dynamic)
-        body += `<direction placement="below"><direction-type><dynamics><${n.dynamic}/></dynamics></direction-type></direction>`;
+        body += `<direction placement="below"><direction-type><dynamics><${n.dynamic}/></dynamics></direction-type>${dirStaff}</direction>`;
       // 松叶：**止排在起之前**——同一个音符上前一条松叶收尾、下一条起头是常事，
       // 反过来写会让两条重叠（MusicXML 里同号的 wedge 不能套嵌）。
-      if (n.wedgeStop) body += `<direction placement="below"><direction-type><wedge number="1" type="stop"/></direction-type></direction>`;
+      if (n.wedgeStop) body += `<direction placement="below"><direction-type><wedge number="${wedgeNo}" type="stop"/></direction-type>${dirStaff}</direction>`;
       if (n.wedgeStart)
-        body += `<direction placement="below"><direction-type><wedge number="1" type="${n.wedgeStart}"/></direction-type></direction>`;
+        body += `<direction placement="below"><direction-type><wedge number="${wedgeNo}" type="${n.wedgeStart}"/></direction-type>${dirStaff}</direction>`;
       body += noteXml(n, ticks(n.duration), staffNo, withVoice, voiceBase);
       if (!n.chordExtra && !n.grace) cur += ticks(n.duration);
     }
