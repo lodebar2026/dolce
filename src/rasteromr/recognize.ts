@@ -4641,6 +4641,17 @@ export async function recognizeRasterPage(
     const twoVoices = opp(from) || opp(to);
     if (notes.some((n) => !n.rest && n.staff === from.staff && n.stemUp !== null && (!twoVoices || from.stemUp === null || n.stemUp === from.stemUp) && Math.abs(n.diatonic - from.diatonic) <= TIE_BETWEEN_STEPS && n.x > from.x + pad && n.x < to.x - pad)) sl.tie = false;
   }
+  // **前后两条圆滑线不共用一个音**：一条止在 n、下一条又从 n 起，而前一条的右端没越过 n 的音头中心——
+  // 那是两条弧首尾相挨、右端搭到了下一条起点那个音上，止端退回 n 前面那个音（宁静 p3 m34 钢琴右手：止在 B4、C5 起下一条）
+  for (const a of slurs) {
+    const n = a.to;
+    if (a.tie || !a.from || !n || a.from === n || !slurs.some((b) => b !== a && !b.tie && b.from === n)) continue;
+    if (a.rx > n.sym.px) continue;
+    const prev = notes
+      .filter((m) => m.staff === n.staff && !m.rest && !m.chordExtra && !m.grace && m.sym.px < n.sym.px - unit.space * 0.3 && m.sym.px > a.from!.sym.px)
+      .reduce<StaffNote | undefined>((x, m) => (!x || m.sym.px > x.sym.px ? m : x), undefined);
+    if (prev) a.to = prev;
+  }
   reconnectSlurs(pg, slurs);
   const chordTies = tieChords(slurs, notes, unit.space);
   markSlurNotes(slurs);
