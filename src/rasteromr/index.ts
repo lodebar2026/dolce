@@ -21,6 +21,7 @@ export * from "./timesig";
 export * from "./harmony";
 export * from "./words";
 export * from "./pagetext";
+export * from "./pagecompose";
 export * from "./jianpuband";
 export * from "./jianpufuse";
 export * from "./contour";

@@ -41,6 +41,7 @@ import { extendArcEnds, findFusedSlurs, findRasterDashedSlurs, findRasterSlurs }
 import { ContourLedger } from "./ledger";
 import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { attachSlurs, markSlurNotes, reconnectSlurs, validateSlurNote, type SlurArc } from "../staffomr/slur";
+import { composeHeaderStrip } from "./pagecompose";
 import { isTextStaff, pageTextKey } from "./pagetext";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
@@ -4460,8 +4461,15 @@ export async function recognizeRasterPage(
   // 带照固定几何切（两行谱之间的空当），认字靠 `wordOcr` 缓存；歌词行、和弦字母已经另有身份，中心落在它们盒里的行不要。
   const wordStrips = opts.wordOcr || opts.wantWordStrips ? findWordStrips(raster.bin, pg.staves, unit) : [];
   // 页眉（曲首页）：标题、词曲作者。认字同文字指示带，缓存另放
-  const headerStrip = opts.wantHeader ? findHeaderStrip(raster.bin, pg.staves, unit) : null;
-  const headerLines = headerStrip ? opts.headerOcr?.get(wordKey(headerStrip)) : undefined;
+  let headerStrip = opts.wantHeader ? findHeaderStrip(raster.bin, pg.staves, unit) : null;
+  // 谱图里切不出页眉带、谱图又没顶到页顶的（排版软件出的 PDF，标题是另贴的小图块与文字层）：拼出谱图上方那一段（`pagecompose.ts`）
+  let layerLines: WordLine[] = [];
+  if (opts.wantHeader && !headerStrip) {
+    const comp = await composeHeaderStrip(pdfPage, OPS, raster.bin.w);
+    if (comp) (headerStrip = comp.strip), (layerLines = comp.texts);
+  }
+  const ocrLines = headerStrip ? opts.headerOcr?.get(wordKey(headerStrip)) : undefined;
+  const headerLines = ocrLines || layerLines.length ? [...(ocrLines ?? []), ...layerLines] : undefined;
   const header = headerStrip && headerLines ? headerCredits(headerLines, headerStrip) : [];
   if (opts.wordOcr) {
     const skip: Rect[] = [

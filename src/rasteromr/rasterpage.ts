@@ -432,7 +432,7 @@ export function deskew(bin: Binary, also: Uint8Array[] = []): number {
  * 而长度是三者唯一都给得出、且互不相同的量。
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function decodeImage(obj: any, w: number, h: number, k = SAUVOLA_K, up = 1): Binary | null {
+export function decodeImage(obj: any, w: number, h: number, k = SAUVOLA_K, up = 1): Binary | null {
   const src: Uint8Array | Uint8ClampedArray = obj.data;
   const data = new Uint8Array(w * h);
   const packed = Math.ceil(w / 8) * h;
