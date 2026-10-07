@@ -138,10 +138,10 @@ export function analyzeText(pg: SPage): TextAnalysis {
 
   for (const t of texts) {
     if (kind.has(t) || notLyric(t)) continue;
-    // 注意 `between(值, 端, 端)` 在这里的参数次序是**反的**：判的是「字顶落在字底与 y 之间」，等于
-    // **任何一条水平线下方的文字都算歌词**。照字面改正（`between(y, top, bottom)`）赞美之泉歌词档
-    // 94.95 → 86.98、同一版 66 → 21 首——那本书的歌词大半是靠它收进来的，别顺手改
-    if (cys.some((y) => between(t.box.top, t.box.bottom, y))) kind.set(t, "lyric");
+    // 纵向跨过锚线（`between(值, 端, 端)`：y 落在字顶与字底之间）。这里曾把参数写反成「字顶在 y 以下」，
+    // 等于任何一条水平线下方的文字都算歌词，赞美之泉的中文歌词大半靠它收进来；改正后由下面「对着符头的一排」
+    // 「同一排里换了字体的字」与补锚的符头那一路接住（见 docs/实现/五线谱矢量识别.md「中文歌词的锚」）
+    if (cys.some((y) => between(y, t.box.top, t.box.bottom))) kind.set(t, "lyric");
   }
 
   // ── 中文歌词行的起锚（本仓新加） ──────────────────────────────────────────
@@ -160,6 +160,45 @@ export function analyzeText(pg: SPage): TextAnalysis {
         (u) => u.run!.font === t.run!.font && Math.abs(u.run!.sizeDev - t.run!.sizeDev) <= t.run!.sizeDev * 0.05 && Math.abs((u.box.top + u.box.bottom) / 2 - cy) <= h * 0.5,
       );
       if (row.length < 3) continue;
+      for (const u of row) kind.set(u, "lyric");
+    }
+  }
+
+  const heads = pg.symbols.filter((h) => h.code.startsWith("notehead"));
+  /** 这段文字正上方（横向放半格）有 `st` 这行谱的符头：歌词逐字对着音符印。 */
+  const underHead = (t: PObj, st: Staff) =>
+    heads.some((h) => {
+      const hx = (h.box.left + h.box.right) / 2, hy = (h.box.top + h.box.bottom) / 2;
+      return hx >= t.box.left - sp / 2 && hx <= t.box.right + sp / 2 && hy < t.box.top && hy > st.box.top - 4 * sp;
+    });
+
+  // ── 对着符头的一排（本仓新加） ────────────────────────────────────────────
+  //
+  // 上面那条要认得出汉字；赞美之泉的中文歌词多是坏 ToUnicode 的子集字体（抽出来是乱码，要等 `textLookup` 才解得出字），
+  // 正则一个都碰不上。不看字面看排法：同字体同字号、同一条基线上三段以上，排在某行谱下方、没越过下一行谱，
+  // **过半的段正上方有那行谱的符头**（歌词逐字对着音符印）。标题、页脚、版权行、段落词都碰不上「对着符头」。
+  {
+    const staffAbove = (t: PObj): Staff | null => {
+      let best: Staff | null = null;
+      for (const st of pg.staves) {
+        if (st.box.bottom > t.box.top || t.box.right <= st.box.left || t.box.left >= st.box.right) continue;
+        if (!best || st.box.bottom > best.box.bottom) best = st;
+      }
+      return best && !pg.staves.some((q) => q.box.top > best!.box.bottom && q.box.top < t.box.bottom) ? best : null;
+    };
+    const cand = texts.filter((t) => !kind.has(t) && t.run && !notLyric(t) && objText(t).trim());
+    const above = new Map(cand.map((t) => [t, staffAbove(t)] as const));
+    for (const t of cand) {
+      const st = above.get(t);
+      if (kind.has(t) || !st) continue;
+      const h = t.box.bottom - t.box.top;
+      const row = cand.filter(
+        (u) =>
+          !kind.has(u) && above.get(u) === st && u.run!.font === t.run!.font &&
+          Math.abs(u.run!.sizeDev - t.run!.sizeDev) <= t.run!.sizeDev * 0.05 && Math.abs(u.box.bottom - t.box.bottom) <= h * 0.25,
+      );
+      if (row.length < 3) continue;
+      if (row.filter((u) => underHead(u, st)).length * 2 <= row.length) continue;
       for (const u of row) kind.set(u, "lyric");
     }
   }
@@ -198,10 +237,13 @@ export function analyzeText(pg: SPage): TextAnalysis {
         // 表情术语只在这一路挡（钢琴 `rit.` 落在男声歌词带里，宣主荣耀 p2）；在延长线那一路也挡，
         // 赞美之泉的配对会连锁变（多两对歌词否决、少配上一首）
         if (kind.has(t) || !t.run || notLyric(t) || EXPRESSIONS.has(objText(t).trim().toLowerCase())) continue;
-        if (!fonts.has(t.run.font)) continue;
-        if (Math.abs(t.run.sizeDev - size) > size * 0.05) continue;
         const st = staffAbove(t);
         if (!st) continue;
+        // 另一条路：正对着符头、字号与某个已知歌词相同（不比中位数：中英对照页中位数落在英文字号上），字体不论。
+        // 行尾弱起那一个「祢」常是另一种字体单印一段（沙仑的玫瑰 p197）
+        const z = t.run.sizeDev;
+        const sameFont = fonts.has(t.run.font) && Math.abs(z - size) <= size * 0.05;
+        if (!sameFont && !(underHead(t, st) && sizes.some((k) => Math.abs(z - k) <= k * 0.05))) continue;
         const off = t.box.top - st.box.bottom;
         // 落在已知歌词那条带里（宽一格的余量），且没越过下一行谱
         if (off < 0 || off > maxOff + sp) continue;
@@ -209,6 +251,29 @@ export function analyzeText(pg: SPage): TextAnalysis {
         if (next) continue;
         kind.set(t, "lyric");
       }
+    }
+  }
+
+  // ── 同一排里换了字体的字（本仓新加） ────────────────────────────────────────
+  //
+  // 「祢」这类字常另印一段：造字区字体（EUDC），或是抽不出文字的图像蒙版字（`#mask`，文本为空，靠 `textLookup` 按字形认）。
+  // 字体与同排歌词不同，上面几路都按字体成排、全漏（赞美之泉几十首「祢」整首缺）。已认定的歌词排里：
+  // 同一条基线、横向落在谱表左右两端之内的，不论字体、有没有文字都并进来。
+  // 横向不按这一排两端卡：行尾的「祢」常常离同排上一个字隔着几拍（我爱祢，我主 p153）。
+  {
+    const lyr = texts.filter((t) => kind.get(t) === "lyric");
+    for (const t of texts) {
+      if (kind.has(t) || !t.run || notLyric(t)) continue;
+      // 同排＝竖向落在那几个字的盒子之内（放四分之一字高）：只比底边不行，有的字盒比同排短一截（深触我心 p167「们」底边高 4pt）
+      const mates = lyr.filter((u) => {
+        const tol = (u.box.bottom - u.box.top) * 0.25;
+        return t.box.top >= u.box.top - tol && t.box.bottom <= u.box.bottom + tol;
+      });
+      if (mates.length < 2) continue;
+      if (!pg.staves.some((st) => t.box.left >= st.box.left && t.box.right <= st.box.right)) continue;
+      // 不跨谱表：这一段与那一排之间不能隔着一行谱的竖向范围
+      if (pg.staves.some((st) => st.box.top < t.box.bottom && st.box.bottom > t.box.top)) continue;
+      kind.set(t, "lyric");
     }
   }
 
