@@ -24,6 +24,8 @@ export interface RasterWedge {
   contourId: number;
   /** 配对认出来的那一条：另一条臂的 contour（单团认出来的没有这一项）。 */
   pairedId?: number;
+  /** 从别的团里切出来的（`findFusedWedges`）：只有这一段是松叶，认领按它记，不按整团。 */
+  box?: { x: number; y: number; w: number; h: number };
 }
 
 /** 松叶的形状闸（一律按线距）。 */
@@ -197,12 +199,98 @@ function pairArms(pool: Contour[], map: ContourMap, unit: RasterUnit): RasterWed
   return out;
 }
 
-/** 逐列量墨迹：这一团是不是松叶，是哪一种。 */
-function judge(map: ContourMap, c: Contour, unit: RasterUnit): RasterWedge | null {
+/**
+ * **粘在小节线上的松叶**：开口一头顶到小节线（破碎 p2 m5–6 那条从 mf 拉到小节末的渐强），与小节线连成一团，
+ * 整团被小节线认领，`findRasterWedges` 只看无主的团，看不到它。
+ * 把团里**竖着贯穿**的那几列（最长竖游程过 `FUSED_BAR_RUN` 格）切掉，剩下每段连续的列各按松叶判一次；
+ * 段的上下跨度也要在松叶的高度闸里（小节线两侧挂着的别的东西，跨度一般更大）。
+ *
+ * @param pool 认领里有小节线的那几团（调用方挑）。
+ */
+export function findFusedWedges(map: ContourMap, unit: RasterUnit, pool: Contour[]): RasterWedge[] {
+  const sp = unit.space;
+  const out: RasterWedge[] = [];
+  for (const c of pool) {
+    const b = c.bbox;
+    if (b.w < sp * MIN_W) continue;
+    const bar = new Uint8Array(b.w);
+    for (let x = b.x; x < b.x + b.w; x++) {
+      let run = 0;
+      let best = 0;
+      for (let y = b.y; y < b.y + b.h; y++) {
+        run = map.labels[y * map.w + x] === c.id ? run + 1 : 0;
+        if (run > best) best = run;
+      }
+      bar[x - b.x] = best > sp * FUSED_BAR_RUN ? 1 : 0;
+    }
+    // 一段段不含小节线的列；每段两头的跨度与纵向中心（小节线两侧接不接得上看它）
+    const col = (x: number) => {
+      let top = -1;
+      let bot = -1;
+      for (let y = b.y; y < b.y + b.h; y++)
+        if (map.labels[y * map.w + x] === c.id) {
+          if (top < 0) top = y;
+          bot = y;
+        }
+      return top < 0 ? null : { top, bot };
+    };
+    const segs: { xa: number; xb: number }[] = [];
+    for (let i = 0; i < b.w; ) {
+      if (bar[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < b.w && !bar[j]) j++;
+      // 段边让开一列：小节线的毛边
+      segs.push({ xa: b.x + i + (i > 0 ? 1 : 0), xb: b.x + j - (j < b.w ? 1 : 0) });
+      i = j;
+    }
+    // **横穿小节线的松叶**（钢琴大谱表两行之间那条，小节线从上贯到下）被切成两段：
+    // 隔着的只有小节线那几列、两侧的跨度与中心都接得上的并回一条，判的时候跳过小节线那几列
+    const runs: { xa: number; xb: number }[] = [];
+    for (const sg of segs) {
+      const prev = runs[runs.length - 1];
+      if (prev && sg.xa - prev.xb <= sp * FUSED_BAR_GAP) {
+        const l = col(prev.xb - 1);
+        const r = col(sg.xa);
+        if (l && r && Math.abs((l.top + l.bot) / 2 - (r.top + r.bot) / 2) <= sp * FUSED_JOIN_DY && Math.abs(l.bot - l.top - (r.bot - r.top)) <= sp * FUSED_JOIN_DY) {
+          prev.xb = sg.xb;
+          continue;
+        }
+      }
+      runs.push({ ...sg });
+    }
+    for (const { xa, xb } of runs) {
+      if (xb - xa < sp * MIN_W) continue;
+      const w = judge(map, c, unit, xa, xb, (x) => !!bar[x - b.x]);
+      if (w) out.push({ ...w, box: { x: xa, y: w.y0, w: xb - xa, h: w.y1 - w.y0 + 1 } });
+    }
+  }
+  return out;
+}
+/** 小节线：一列里连着这么多格的墨。 */
+const FUSED_BAR_RUN = 2;
+/** 小节线两侧的两段并成一条：中间隔着不过这么宽（格），两侧跨度与纵向中心各差不过 `FUSED_JOIN_DY` 格。 */
+const FUSED_BAR_GAP = 0.6;
+const FUSED_JOIN_DY = 0.3;
+
+/** 逐列量墨迹：这一团（`xa`..`xb` 那几列）是不是松叶，是哪一种。 */
+function judge(
+  map: ContourMap,
+  c: Contour,
+  unit: RasterUnit,
+  xa = c.bbox.x,
+  xb = c.bbox.x + c.bbox.w,
+  skip?: (x: number) => boolean,
+): (RasterWedge & { y0: number; y1: number }) | null {
   const b = c.bbox;
   const spread: number[] = [];
   const runs: number[] = [];
-  for (let x = b.x; x < b.x + b.w; x++) {
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (let x = xa; x < xb; x++) {
+    if (skip?.(x)) continue;
     let top = -1;
     let bot = -1;
     let n = 0;
@@ -219,8 +307,12 @@ function judge(map: ContourMap, c: Contour, unit: RasterUnit): RasterWedge | nul
     if (top < 0) continue;
     spread.push(bot - top + 1);
     runs.push(n);
+    y0 = Math.min(y0, top);
+    y1 = Math.max(y1, bot);
   }
   if (spread.length < unit.space * 2) return null;
+  // 切出来的段：上下跨度也要过松叶的高度闸（整团的已经在 `findRasterWedges` 里过了）
+  if (y1 - y0 + 1 > unit.space * MAX_H) return null;
   const twoRun = runs.filter((n) => n >= 2).length / runs.length;
   if (twoRun < TWO_RUN_FRAC) return null; // 逐列只有一段墨：那是弧线，不是松叶
   const k = Math.max(1, Math.round(spread.length * 0.15));
@@ -232,10 +324,12 @@ function judge(map: ContourMap, c: Contour, unit: RasterUnit): RasterWedge | nul
   if (open < OPEN_MIN || tip > TIP_MAX || open < tip * 2) return null;
   return {
     type: right > left ? "crescendo" : "diminuendo",
-    x0: b.x,
-    x1: b.x + b.w - 1,
-    cy: b.y + b.h / 2,
+    x0: xa,
+    x1: xb - 1,
+    cy: (y0 + y1) / 2,
     contourId: c.id,
+    y0,
+    y1,
   };
 }
 

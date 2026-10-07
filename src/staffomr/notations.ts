@@ -308,12 +308,12 @@ export function attachDynamicTexts(pg: SPage, notes: StaffNote[], items: { px: n
  * 取「下缘在它上方、且最近」的那一行；上方没有（页面第一行谱之上）才退回下方最近的一行。
  * 容差各五格与三格——谱表之间隔着歌词带，记号常印在带里。
  */
-function ownerStaff(pg: SPage, cy: number, sp: number): Staff | null {
+function ownerStaff(pg: SPage, cy: number, sp: number, reach = 5): Staff | null {
   let best: Staff | null = null;
   let bd = Infinity;
   for (const st of pg.staves) {
     const d = cy - st.box.bottom;
-    if (d < 0 || d > sp * 5) continue;
+    if (d < 0 || d > sp * reach) continue;
     if (d < bd) {
       bd = d;
       best = st;
@@ -330,6 +330,9 @@ function ownerStaff(pg: SPage, cy: number, sp: number): Staff | null {
   }
   return best;
 }
+
+/** 松叶往上找它那行谱的范围（格）：谱表下方隔着几段歌词也算。 */
+const WEDGE_REACH = 9;
 
 /** 一条松叶：两端的 x 与纵向位置（谁挂给谁由 `attachWedges` 定）。 */
 export interface WedgeSpan {
@@ -351,7 +354,9 @@ export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[])
     // **先定是哪一行谱，再在那一行里找音符。** 松叶印在它那行谱的**下方**
     // （歌词带那一条里也常见），而下面一行谱的上缘往往比它自己那行的下缘还近
     // ——不先定谱行，一条松叶会挂到下一行去，逐声部比出来的次序全乱。
-    const owner = ownerStaff(pg, wg.cy, sp);
+    // 上方够得着的范围放到 `WEDGE_REACH` 格：合唱谱人声的松叶印在**自己那行歌词下面**（破碎 p4 女高、女低），
+    // 离下一行谱表反而更近，五格以内找不到上方那行就挂到了下一行
+    const owner = ownerStaff(pg, wg.cy, sp, WEDGE_REACH);
     const near = (x: number): StaffNote | undefined => {
       // 先在**它那行谱**里找；那一行在这个位置没有音符（人声休止、钢琴前奏一类）
       // 才退回「所有纵向够得着的谱行里 x 最近的那个」。
@@ -374,10 +379,22 @@ export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[])
       return undefined;
     };
     const a = near(wg.x0);
-    const b = near(wg.x1);
     if (!a) continue;
+    // **止端与起端同一行谱**：两端分头找、各自退回别的行，一条松叶会起在女高、止在钢琴（不同声部），
+    // 写出来两个声部各有半条。止端只在起端那行里找：x 最近的；那一带没有音（长音、休止）就取起端之后、
+    // 不越过右端太远的最后一个音。
+    // 试过「止在右端处或其后的第一个音」（谱面上松叶多收在小节线前）：合唱谱多 8 步——GT 的松叶按拍记，
+    // 与印出来的线段常对不齐（破碎 p2 m4 印在小节中段，GT 从小节头拉到小节末），按画面挑止端改不准它
+    const row = notes.filter((n) => n.staff === a.staff && n.sym.px > a.sym.px);
+    let b: StaffNote | undefined;
+    let bd = sp * 4;
+    for (const n of row) {
+      const dx = Math.abs(n.sym.px - wg.x1);
+      if (dx < bd) (bd = dx), (b = n);
+    }
+    b ??= row.filter((n) => n.sym.px <= wg.x1 + sp * 4).reduce<StaffNote | undefined>((m, n) => (!m || n.sym.px > m.sym.px ? n : m), undefined);
     a.wedgeStart ??= wg.type;
-    if (b && b !== a) b.wedgeStop = true;
+    if (b) b.wedgeStop = true;
   }
 }
 

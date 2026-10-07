@@ -4,12 +4,7 @@
 // 定位与认字交给 DBNet + rec，离线按条的内容指纹落盘（`gen-rasterwords.mjs` → `rasterwords.json`），识别时查缓存。
 // 带里还压着歌词、和弦字母、力度字母、小节号——这里按内容分开：只留拉丁文的词句，歌词行、纯数字、力度字母不要。
 import type { Binary, Rect } from "../omr/types";
-import {
-  betterTitle,
-  creditRole,
-  effectiveCharH,
-  isCreditText,
-} from "../omr/headertext";
+import { betterTitle, creditRole, effectiveCharH, isCreditText } from "../omr/headertext";
 import type { SPage, Staff } from "../staffomr/model";
 import type { StaffNote } from "../staffomr/notedata";
 import { CHORD_TOKEN_RE } from "../staffomr/textanalyze";
@@ -42,13 +37,7 @@ const SIDE = 2;
 /**
  * 裁出各条文字带。**几何是死的**（只看谱行的盒），同一页跑几次裁出来一模一样，指纹才稳。
  */
-export function findWordStrips(
-  bin: Binary,
-  staves: {
-    box: { left: number; right: number; top: number; bottom: number };
-  }[],
-  unit: RasterUnit,
-): WordStrip[] {
+export function findWordStrips(bin: Binary, staves: { box: { left: number; right: number; top: number; bottom: number } }[], unit: RasterUnit): WordStrip[] {
   const sp = unit.space;
   const rows = [...staves].sort((a, b) => a.box.top - b.box.top);
   const out: WordStrip[] = [];
@@ -76,27 +65,9 @@ export function findWordStrips(
     const prev = rows[i - 1];
     // 左右并排的两行谱（同一高度）不算上下邻行
     const above = prev && prev.box.bottom < st.box.top ? prev : undefined;
-    if (above)
-      cut(
-        above.box.bottom + sp * LINE_CLEAR,
-        st.box.top - sp * LINE_CLEAR,
-        Math.min(above.box.left, st.box.left),
-        Math.max(above.box.right, st.box.right),
-      );
-    else
-      cut(
-        st.box.top - sp * EDGE_BAND,
-        st.box.top - sp * LINE_CLEAR,
-        st.box.left,
-        st.box.right,
-      );
-    if (i === rows.length - 1)
-      cut(
-        st.box.bottom + sp * LINE_CLEAR,
-        st.box.bottom + sp * EDGE_BAND,
-        st.box.left,
-        st.box.right,
-      );
+    if (above) cut(above.box.bottom + sp * LINE_CLEAR, st.box.top - sp * LINE_CLEAR, Math.min(above.box.left, st.box.left), Math.max(above.box.right, st.box.right));
+    else cut(st.box.top - sp * EDGE_BAND, st.box.top - sp * LINE_CLEAR, st.box.left, st.box.right);
+    if (i === rows.length - 1) cut(st.box.bottom + sp * LINE_CLEAR, st.box.bottom + sp * EDGE_BAND, st.box.left, st.box.right);
   });
   return out;
 }
@@ -106,26 +77,20 @@ export function findWordStrips(
  * 下沿从文字指示带上沿往上找第一条空白行（墨不过两点），免得把一行字拦腰切开；几何只看谱行与像素，指纹稳。
  * 与文字指示带同一套认字（DBNet + rec），缓存另放（`gen-rasterheader.mjs` → `rasterheader.json`）：那边只留拉丁行，这边中文也要。
  *
- * 两种页原先切不出：
  * - **扫描件页边带着贯穿上下的竖条**（破碎扫描版右缘一道 80 点宽的网点灰带，每行十几二十点墨）：没有一行墨不过两点，
  *   往上一路找到页顶。判空白行时不数页边「这一段里平均每列一成以上的行有墨」的列（`HEADER_BORDER`）。
- * 宁静、破碎电子版仍切不出：贴进 PDF 的谱图从速度字起，标题是另贴的逐字小图块（`101×101` 的 ImageMask）、英文标题与署名在文字层，
- * 都不在这张图里（要拼页面才拿得到，没做）。
+ * - 密排的序言曾被凑成一行假谱表、把页眉带截在标题下面：找谱线之前已按文字框剔掉（`pagetext.ts`）。
+ * - 宁静、破碎电子版仍切不出：贴进 PDF 的谱图从速度字起，标题是另贴的逐字小图块（`101×101` 的 ImageMask）、英文标题与署名在文字层，
+ *   都不在这张图里（要拼页面才拿得到，没做）。
  */
-export function findHeaderStrip(
-  bin: Binary,
-  staves: { box: { top: number } }[],
-  unit: RasterUnit,
-): WordStrip | null {
+export function findHeaderStrip(bin: Binary, staves: { box: { top: number } }[], unit: RasterUnit): WordStrip | null {
   if (!staves.length) return null;
   const sp = unit.space;
-  const top = Math.min(...staves.map((s) => s.box.top));
-  let y1 = Math.min(bin.h - 1, Math.round(top - sp * EDGE_BAND));
+  let y1 = Math.min(bin.h - 1, Math.round(Math.min(...staves.map((s) => s.box.top)) - sp * EDGE_BAND));
   if (y1 < sp * 2) return null;
   // 页边的竖条：页顶到起点这一段里，按两格宽滑窗平均、墨行占比过 `HEADER_BORDER` 的列，只看左右各 `HEADER_MARGIN` 页宽
   const colInk = new Uint32Array(bin.w + 1);
-  for (let y = 0; y <= y1; y++)
-    for (let x = 0; x < bin.w; x++) colInk[x + 1] += bin.data[y * bin.w + x];
+  for (let y = 0; y <= y1; y++) for (let x = 0; x < bin.w; x++) colInk[x + 1] += bin.data[y * bin.w + x];
   for (let x = 1; x <= bin.w; x++) colInk[x] += colInk[x - 1];
   const half = Math.max(1, Math.round(sp));
   const border = new Uint8Array(bin.w);
@@ -133,13 +98,11 @@ export function findHeaderStrip(
     if (x > bin.w * HEADER_MARGIN && x < bin.w * (1 - HEADER_MARGIN)) continue;
     const a = Math.max(0, x - half);
     const b = Math.min(bin.w, x + half + 1);
-    border[x] =
-      colInk[b] - colInk[a] > (b - a) * (y1 + 1) * HEADER_BORDER ? 1 : 0;
+    border[x] = colInk[b] - colInk[a] > (b - a) * (y1 + 1) * HEADER_BORDER ? 1 : 0;
   }
   const inkOf = (y: number) => {
     let n = 0;
-    for (let x = 0; x < bin.w && n <= HEADER_BLANK; x++)
-      if (!border[x]) n += bin.data[y * bin.w + x];
+    for (let x = 0; x < bin.w && n <= HEADER_BLANK; x++) if (!border[x]) n += bin.data[y * bin.w + x];
     return n;
   };
   while (y1 > 0 && inkOf(y1) > HEADER_BLANK) y1--;
@@ -159,9 +122,7 @@ const HEADER_MARGIN = 0.12;
 
 /** 页眉里值得留的行：有汉字，或有两个以上拉丁字母（页码、噪点、单个字母不要）。 */
 export function keepHeaderLine(text: string): boolean {
-  return (
-    /[\u3400-\u9fff]/.test(text) || (text.match(/[A-Za-z]/g)?.length ?? 0) >= 2
-  );
+  return /[\u3400-\u9fff]/.test(text) || (text.match(/[A-Za-z]/g)?.length ?? 0) >= 2;
 }
 
 /** 页眉的一行（页面坐标）与它的角色（MusicXML `<credit-type>`）、对齐。 */
@@ -176,57 +137,30 @@ export interface HeaderCredit {
  * 页眉带读出来的行 → 页眉各条。判据与简谱页眉同一份（`omr/headertext.ts`）：
  * 署名按内容认（`作词：`、`盛晓玫 词曲`、`Words by` …），角色看有没有「曲」；其余行里**有效字高**最大的（差不多高取更宽的）是标题，
  * 居中且有标题八成高的也算标题（中英两个标题上下排）；其余居中的是副标题；靠左的是作词 / 译者、靠右的是作曲（诗歌本、合唱谱的通行排法）。
- * 居中 = 行心离页心不过页宽一成半。标题上方靠两边的行是书眉，不收。
+ * 居中 = 行心离页心不过页宽一成半。标题上方靠两边的行是书眉，成段的文字是序言，这两样照收、不给角色。
  */
-export function headerCredits(
-  lines: readonly WordLine[],
-  strip: WordStrip,
-): HeaderCredit[] {
-  const ls = lines
-    .filter((l) => keepHeaderLine(l.t))
-    .sort((a, b) => a.y - b.y || a.x - b.x);
+export function headerCredits(lines: readonly WordLine[], strip: WordStrip): HeaderCredit[] {
+  const ls = lines.filter((l) => keepHeaderLine(l.t)).sort((a, b) => a.y - b.y || a.x - b.x);
   if (!ls.length) return [];
   const effH = (l: WordLine) => effectiveCharH(l.t, l, l.h);
   const maxH = Math.max(...ls.map(effH));
-  const credit = new Set(
-    ls.filter((l) => isCreditText(l.t, effH(l) < maxH, true)),
-  );
+  const credit = new Set(ls.filter((l) => isCreditText(l.t, effH(l) < maxH, true)));
   let title: WordLine | null = null;
-  for (const l of ls)
-    if (
-      !credit.has(l) &&
-      (!title || betterTitle(effH(l), l.w, effH(title), title.w))
-    )
-      title = l;
+  for (const l of ls) if (!credit.has(l) && (!title || betterTitle(effH(l), l.w, effH(title), title.w))) title = l;
   const H = title ? effH(title) : maxH;
   const mid = strip.box.x + strip.box.w / 2;
   const justifyOf = (l: WordLine) => {
     const cx = strip.box.x + l.x + l.w / 2;
-    return Math.abs(cx - mid) <= strip.box.w * 0.15
-      ? "center"
-      : cx < mid
-        ? "left"
-        : "right";
+    return Math.abs(cx - mid) <= strip.box.w * 0.15 ? "center" : cx < mid ? "left" : "right";
   };
-  // **书眉不要**：标题上方、靠两边的行是歌本每页都印的书名 / 出版方（破碎扫描版左上「敬畏你的榮耀」、右上「新心音樂事工」）
-  const runningHead = (l: WordLine) =>
-    !!title &&
-    l !== title &&
-    !credit.has(l) &&
-    l.y + l.h <= title.y &&
-    justifyOf(l) !== "center";
-  return ls
-    .filter((l) => !runningHead(l))
-    .flatMap((l) => {
-      const justify = justifyOf(l);
-      // 成段的文字（序言、经文引言）不是标题副标题，不给角色，原样记一条 `<credit>`
-      const prose =
-        l !== title &&
-        !credit.has(l) &&
-        (l.t.match(/[\u3400-\u9fff]/g)?.length ?? 0) +
-          (l.t.match(/[A-Za-z]+/g)?.length ?? 0) >=
-          PROSE_UNITS;
-      const type: HeaderCredit["type"] = prose
+  // **书眉**：标题上方、靠两边的行是歌本每页都印的书名 / 出版方（破碎扫描版左上「敬畏你的榮耀」、右上「新心音樂事工」）
+  const runningHead = (l: WordLine) => !!title && l !== title && !credit.has(l) && l.y + l.h <= title.y && justifyOf(l) !== "center";
+  // **成段的文字**（序言、经文引言）：一行字数够多的
+  const prose = (l: WordLine) => l !== title && !credit.has(l) && (l.t.match(/[\u3400-\u9fff]/g)?.length ?? 0) + (l.t.match(/[A-Za-z]+/g)?.length ?? 0) >= PROSE_UNITS;
+  return ls.flatMap((l) => {
+    const justify = justifyOf(l);
+    const type: HeaderCredit["type"] =
+      prose(l) || runningHead(l)
         ? undefined
         : credit.has(l)
           ? creditRole(l.t)
@@ -237,34 +171,25 @@ export function headerCredits(
               : justify === "left"
                 ? "lyricist"
                 : "composer";
-      const box = {
-        x: strip.box.x + l.x,
-        y: strip.box.y + l.y,
-        w: l.w,
-        h: l.h,
-      };
-      return splitHeaderText(l.t).map((text) => ({ text, type, justify, box }));
-    });
+    const box = { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h };
+    return splitHeaderText(l.t).map((text) => ({ text, type, justify, box }));
+  });
 }
-
 /** 一行有这么多个字（汉字一字、拉丁一词）就是成段的文字，不是标题。 */
 const PROSE_UNITS = 16;
 
 /**
  * 页眉一行的字 → 一条或几条：标题字距拉得开（「望 十 架」），按列投影补出来的、夹在两个汉字之间的空格不要；
- * 标题行行首的诗歌编号（「1 9 數算主恩」「8 奇異恩典」，编号字距也拉得开）不要；
+ * 标题行行首的诗歌编号（「1 9 數算主恩」「8 奇異恩典」，编号字距也拉得开）不要；字距拉开的小型大写字母并回一个词；
  * 中文标题与英文标题印在同一行的（「數算主恩 Count Your Blessings」）拆成两条——中英标题本是两个页眉元素。
  */
 export function splitHeaderText(t: string): string[] {
-  let text = t
-    .trim()
-    .replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
+  let text = t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
   const num = /^(\d\s?){1,3}\s*(?=[\u3400-\u9fff])/.exec(text);
   if (num) text = text.slice(num[0].length);
-  const m =
-    /^([\u3400-\u9fff]{2,}[\u3400-\u9fff\s]*)\s*([A-Za-z][A-Za-z\s,'’!.-]{3,})$/.exec(
-      text,
-    );
+  // 字距拉开的小型大写（破碎扫描版「B RO K E N」）：整行都是一两个大写字母的碎块，按列投影补的空格不是词界，并回一个词
+  if (/^[A-Z]{1,2}(\s+[A-Z]{1,2}){2,}$/.test(text)) text = text.replace(/\s+/g, "");
+  const m = /^([\u3400-\u9fff]{2,}[\u3400-\u9fff\s]*)\s*([A-Za-z][A-Za-z\s,'’!.-]{3,})$/.exec(text);
   return m ? [m[1]!.trim(), m[2]!.trim()] : [text];
 }
 
@@ -304,8 +229,7 @@ export function spaceWordText(
   let seenInk = false;
   for (let x = x0; x < x1; x++) {
     let ink = false;
-    for (let y = y0; y < y1 && !ink; y++)
-      ink = strip.data[y * strip.w + x] === 1;
+    for (let y = y0; y < y1 && !ink; y++) ink = strip.data[y * strip.w + x] === 1;
     if (ink) {
       if (seenInk && run >= box.h * WORD_GAP) gaps.push(x - run / 2);
       run = 0;
@@ -329,8 +253,7 @@ const WORD_GAP = 0.17;
 /** 力度（另有一路按字形认，`dynamics.ts`；它漏掉的由这里读出来的补）。字行以力度字母起头、后面跟着别的（歌词的头一个字）也算。 */
 const DYNAMIC_RE = /^(ppp|pp|p|mp|mf|fff|ff|f|sfz|sf|fz|fp)(?![a-z])/;
 /** 文字指示的术语：歌词行里夹着的字行，含这些词的才留。 */
-const DIRECTION_RE =
-  /\b(rit|rall|riten|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|d\. ?[sc])\b/i;
+const DIRECTION_RE = /\b(rit|rall|riten|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|d\. ?[sc])\b/i;
 /** 同一高度上有这么多段拉丁文就是一行歌词（歌词带里的门槛低一档）。 */
 const LYRIC_ROW = 3;
 const LYRIC_ROW_IN_ZONE = 2;
@@ -368,26 +291,16 @@ export function attachWordLines(
   unit: RasterUnit,
   skip: Rect[],
   lyricZones: Rect[],
-): {
-  words: PlacedWord[];
-  dynamics: { px: number; py: number; text: string }[];
-  chords: { text: string; box: Rect }[];
-} {
+): { words: PlacedWord[]; dynamics: { px: number; py: number; text: string }[]; chords: { text: string; box: Rect }[] } {
   const sp = unit.space;
   const words: PlacedWord[] = [];
   const dynamics: { px: number; py: number; text: string }[] = [];
-  const inside = (q: Rect, x: number, y: number) =>
-    x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h;
+  const inside = (q: Rect, x: number, y: number) => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h;
   // 先收齐各行（页面坐标），同一处被上下两条带各读一遍的只留一份
   const lines: { text: string; box: Rect }[] = [];
   for (const strip of strips)
     for (const l of ocr.get(wordKey(strip)) ?? []) {
-      const box = {
-        x: strip.box.x + l.x,
-        y: strip.box.y + l.y,
-        w: l.w,
-        h: l.h,
-      };
+      const box = { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h };
       const cx = box.x + box.w / 2;
       const cy = box.y + box.h / 2;
       if (lines.some((q) => inside(q.box, cx, cy))) continue;
@@ -397,24 +310,13 @@ export function attachWordLines(
   // 叠着的两行并成一条（`1st time SA Unison` / `2nd time Parts`）
   for (let i = 0; i < lines.length; i++) {
     const a = lines[i];
-    const j = lines.findIndex(
-      (b, k) =>
-        k > i &&
-        Math.abs(b.box.x - a.box.x) <= sp * STACK_X &&
-        b.box.y - (a.box.y + a.box.h) <= a.box.h * STACK_GAP &&
-        b.box.y > a.box.y + a.box.h * 0.5,
-    );
+    const j = lines.findIndex((b, k) => k > i && Math.abs(b.box.x - a.box.x) <= sp * STACK_X && b.box.y - (a.box.y + a.box.h) <= a.box.h * STACK_GAP && b.box.y > a.box.y + a.box.h * 0.5);
     if (j < 0) continue;
     const b = lines[j];
     if (DYNAMIC_RE.test(a.text) || DYNAMIC_RE.test(b.text)) continue;
     const r = Math.max(a.box.x + a.box.w, b.box.x + b.box.w);
     a.text += "\n" + b.text;
-    a.box = {
-      x: Math.min(a.box.x, b.box.x),
-      y: a.box.y,
-      w: r - Math.min(a.box.x, b.box.x),
-      h: b.box.y + b.box.h - a.box.y,
-    };
+    a.box = { x: Math.min(a.box.x, b.box.x), y: a.box.y, w: r - Math.min(a.box.x, b.box.x), h: b.box.y + b.box.h - a.box.y };
     lines.splice(j, 1);
     i--;
   }
@@ -423,15 +325,12 @@ export function attachWordLines(
   const chordOf = (text: string): string[] | null => {
     const toks = text.split(/\s+/).filter(Boolean);
     const whole = text.replace(/\s+/g, "");
-    const full = (t: string) =>
-      (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
+    const full = (t: string) => (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
     if (full(whole)) return [whole];
     return toks.length > 1 && toks.every(full) ? toks : null;
   };
   const chordLines = lines.filter((l) => chordOf(l.text));
-  const chordPage =
-    chordLines.length >= CHORD_PAGE_MIN &&
-    chordLines.some((l) => l.text.replace(/\s+/g, "").length > 1);
+  const chordPage = chordLines.length >= CHORD_PAGE_MIN && chordLines.some((l) => l.text.replace(/\s+/g, "").length > 1);
   const chords: { text: string; box: Rect }[] = [];
   for (const l of lines) {
     const box = l.box;
@@ -442,11 +341,7 @@ export function attachWordLines(
     const dyn = DYNAMIC_RE.exec(text);
     const rest = dyn ? text.slice(dyn[0].length).trimStart() : "";
     if (dyn && (!rest || /^[\u4e00-\u9fff]/.test(rest))) {
-      dynamics.push({
-        px: box.x + Math.min(box.w, box.h * 0.6 * dyn[0].length) / 2,
-        py: cy,
-        text: dyn[0],
-      });
+      dynamics.push({ px: box.x + Math.min(box.w, box.h * 0.6 * dyn[0].length) / 2, py: cy, text: dyn[0] });
       continue;
     }
     if (skip.some((q) => inside(q, cx, cy))) continue;
@@ -456,41 +351,20 @@ export function attachWordLines(
       const whole = chordOf(text);
       let n = whole ? toks.length : 0;
       // 带后缀的才算（`A tempo` 的 `A` 不是和弦）
-      const isChord = (t: string) =>
-        t.length > 1 && (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
+      const isChord = (t: string) => t.length > 1 && (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
       if (!whole) while (n < toks.length - 1 && isChord(toks[n])) n++;
       if (n > 0) {
         const parts = whole ?? toks.slice(0, n);
-        const span = whole
-          ? box.w
-          : box.w * (toks.slice(0, n).join(" ").length / text.length);
-        parts.forEach((t, i) =>
-          chords.push({
-            text: t,
-            box: {
-              x: box.x + (span * i) / parts.length,
-              y: box.y,
-              w: span / parts.length,
-              h: box.h,
-            },
-          }),
-        );
+        const span = whole ? box.w : box.w * (toks.slice(0, n).join(" ").length / text.length);
+        parts.forEach((t, i) => chords.push({ text: t, box: { x: box.x + (span * i) / parts.length, y: box.y, w: span / parts.length, h: box.h } }));
         if (whole) continue;
         text = toks.slice(n).join(" ");
       }
     }
     // 英文歌词：一行歌词被 DBNet 切成好几段，同一高度上排着三段以上；文字指示一行里顶多一两处。
     // 这样的行里只留含术语的（歌词行中间夹着的 `rit.`）。歌词带里的行两段就算
-    const peers = lines.filter(
-      (o) =>
-        Math.abs(o.box.y + o.box.h / 2 - cy) <= box.h * 0.6 &&
-        /[A-Za-z]{2}/.test(o.text),
-    ).length;
-    const crowded =
-      peers >=
-      (lyricZones.some((q) => inside(q, cx, cy))
-        ? LYRIC_ROW_IN_ZONE
-        : LYRIC_ROW);
+    const peers = lines.filter((o) => Math.abs(o.box.y + o.box.h / 2 - cy) <= box.h * 0.6 && /[A-Za-z]{2}/.test(o.text)).length;
+    const crowded = peers >= (lyricZones.some((q) => inside(q, cx, cy)) ? LYRIC_ROW_IN_ZONE : LYRIC_ROW);
     // rec 偶尔给元音添上重音符（`póco`、`dím.`），术语里没有这种写法，一律去掉
     text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const term = DIRECTION_RE.exec(text);
@@ -498,35 +372,20 @@ export function attachWordLines(
     // 歌词与紧跟着的术语被框成一行（`paid so willingly poco rit.`）：从头一个术语起才是文字指示
     if (crowded && term) text = text.slice(term.index);
     // 头尾粘着的力度字母（`ff unis.`、`unis. mp`）不算在文字里
-    text = text
-      .replace(/^(?:[pmf]{1,3}|s?fz?)\s+(?=\S)/, "")
-      .replace(/\s+(?:[pmf]{1,3}|s?fz?)$/, "");
+    text = text.replace(/^(?:[pmf]{1,3}|s?fz?)\s+(?=\S)/, "").replace(/\s+(?:[pmf]{1,3}|s?fz?)$/, "");
     const metro = METRO_RE.exec(text);
-    if (metro)
-      text = text
-        .slice(0, metro.index)
-        .replace(/[\s(（♩J]+$/, "")
-        .trim();
+    if (metro) text = text.slice(0, metro.index).replace(/[\s(（♩J]+$/, "").trim();
     const letters = (text.match(/[A-Za-z]/g) ?? []).length;
     // 夹着汉字的是歌词或署名；字母太少的多半是把符头、弧线读成了字
-    const isWord =
-      !/[\u4e00-\u9fff]/.test(text) &&
-      (letters >= 3 || SHORT_RE.test(text)) &&
-      !/^[pmfsz]+$/i.test(text.replace(/[^A-Za-z]/g, ""));
+    const isWord = !/[\u4e00-\u9fff]/.test(text) && (letters >= 3 || SHORT_RE.test(text)) && !/^[pmfsz]+$/i.test(text.replace(/[^A-Za-z]/g, ""));
     if (!isWord && !metro) continue;
     // 定谱行：上下最近的那行（按谱表边到字心的距离比）
     let stf: Staff | undefined;
     let bd = sp * REACH;
     let above = true;
     for (const st of pg.staves) {
-      if (cx < st.box.left - sp * SIDE || cx > st.box.right + sp * SIDE)
-        continue;
-      const d =
-        cy < st.box.top
-          ? st.box.top - cy
-          : cy > st.box.bottom
-            ? cy - st.box.bottom
-            : 0;
+      if (cx < st.box.left - sp * SIDE || cx > st.box.right + sp * SIDE) continue;
+      const d = cy < st.box.top ? st.box.top - cy : cy > st.box.bottom ? cy - st.box.bottom : 0;
       if (d < bd) {
         bd = d;
         stf = st;
@@ -535,9 +394,7 @@ export function attachWordLines(
     }
     if (!stf) continue;
     // 定音符：字行左端对着它起作用的那个音——取左端往左让一格之后、右边最近的；没有就取这一行最后一个
-    const row = notes
-      .filter((n) => n.staff === stf && !n.chordExtra && !n.grace)
-      .sort((a, b) => a.x - b.x);
+    const row = notes.filter((n) => n.staff === stf && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
     const note = row.find((n) => n.x >= box.x - sp) ?? row[row.length - 1];
     if (!note) continue;
     if (metro) note.metronome = `quarter=${metro[1].replace(/ /g, "")}`;

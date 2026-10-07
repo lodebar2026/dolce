@@ -35,7 +35,7 @@ import { buildHeadMasks, buildHollowMasks, headFromStemBlock, scoreAt, solidHead
 import { headProb, trainHeadClassifier } from "./headclass";
 import { findStaffLabels, labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
 import { findHarmonyStrips, harmonyKey, harmonyLine, readHarmonyStrip, type HarmonyStrip, type HarmonyToken } from "./harmony";
-import { findRasterWedges, type RasterWedge } from "./wedge";
+import { findFusedWedges, findRasterWedges, type RasterWedge } from "./wedge";
 import { groupDynamics, type RasterDynamic } from "./dynamics";
 import { extendArcEnds, findFusedSlurs, findRasterDashedSlurs, findRasterSlurs } from "./slur";
 import { ContourLedger } from "./ledger";
@@ -4520,7 +4520,13 @@ export async function recognizeRasterPage(
   //
   // 只在**无主**的 contour 里找：认出来的符号不必再判一遍，而松叶从来没人认领。
   const wedges = findRasterWedges(cmap, unit, ledger.unclaimed());
+  // 开口顶到小节线、与小节线连成一团的（`findFusedWedges`）
+  wedges.push(...findFusedWedges(cmap, unit, cmap.contours.filter((c) => ledger.claimsOf(c.id).some((k) => k.by === "seg:BarLine"))));
   for (const wg of wedges) {
+    if (wg.box) {
+      ledger.claim(wg.box, `wedge:${wg.type}`);
+      continue;
+    }
     for (const id of [wg.contourId, wg.pairedId]) {
       const c = id === undefined ? null : cmap.byId.get(id);
       if (c) ledger.claim(c.bbox, `wedge:${wg.type}`);
