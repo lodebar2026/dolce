@@ -758,6 +758,8 @@ export interface StaffNote {
   /** 圆滑线/连音线的起讫（见 `slur.ts`）。一个音符可以同时是上一条的收尾与下一条的起头。 */
   slurStart?: boolean;
   slurStop?: boolean;
+  /** 收尾的那条圆滑线起在哪行谱（跨谱表的弧，钢琴左手起、右手收）：写出时 `<slur number>` 两端要一致，按起端那行编。 */
+  slurStopFrom?: Staff;
   tieStart?: boolean;
   tieStop?: boolean;
   /** 起头的那条圆滑线 / 连音线画成虚线（`<slur line-type="dashed">`）。 */

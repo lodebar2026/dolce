@@ -276,6 +276,9 @@ function voiceTicks(inBar: StaffNote[], ticks: (d: number) => number): number {
   return used;
 }
 
+/** 正在写的 part 里各行谱的谱表号（`<staff>`）：跨谱表的弧止端按起端那行编号用。 */
+const partStaffNo = new Map<Staff, number>();
+
 function noteXml(n: StaffNote, dur: number, staffNo = 0, withVoice = false, voiceBase = 0): string {
   const id = currentNoteId?.(n);
   const xml = noteXmlRaw(n, dur, staffNo, withVoice, voiceBase);
@@ -310,8 +313,12 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   const nots: string[] = [];
   if (n.tieStop) nots.push(`<tied type="stop"/>`);
   if (n.tieStart) nots.push(n.tieDashed ? `<tied type="start" line-type="dashed"/>` : `<tied type="start"/>`);
-  if (n.slurStop) nots.push(`<slur type="stop" number="1"/>`);
-  if (n.slurStart) nots.push(n.slurDashed ? `<slur type="start" number="1" line-type="dashed"/>` : `<slur type="start" number="1"/>`);
+  // 编号按谱表号：钢琴两行合一个 part 时同号的弧按编号配对，右手一条长弧还开着、左手又起又止一条，读入端就配串了（宁静 m32–36）；
+  // 止端按起端那行编（跨谱表的弧）
+  const slurNo = staffNo || 1;
+  const stopNo = (n.slurStopFrom && partStaffNo.get(n.slurStopFrom)) || slurNo;
+  if (n.slurStop) nots.push(`<slur type="stop" number="${stopNo}"/>`);
+  if (n.slurStart) nots.push(n.slurDashed ? `<slur type="start" number="${slurNo}" line-type="dashed"/>` : `<slur type="start" number="${slurNo}"/>`);
   if (n.tuplet) nots.push(`<tuplet type="start"/>`);
   // `<notations>` 里子元素有固定次序：tied / slur / tuplet / ornaments / articulations / fermata / arpeggiate
   const arts: string[] = [];
@@ -509,6 +516,8 @@ function scoreToMusicXmlRaw(
           ending: bar0.endingStart ? bar0.endingNumber : null,
         });
 
+        partStaffNo.clear();
+        if (staves.length > 1) staves.forEach((st, k) => st && partStaffNo.set(st, k + 1));
         staves.forEach((st, k) => {
           if (!st) return;
           const bar = st.bars[bi];

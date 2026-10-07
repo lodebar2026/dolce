@@ -352,7 +352,10 @@ export function markSlurNotes(arcs: SlurArc[]): void {
     }
     if (sl.to) {
       if (sl.tie) sl.to.tieStop = true;
-      else sl.to.slurStop = true;
+      else {
+        sl.to.slurStop = true;
+        if (sl.from) sl.to.slurStopFrom = sl.from.staff;
+      }
     }
   }
 }

@@ -4680,9 +4680,12 @@ export async function recognizeRasterPage(
   }
   mergeArcPieces(slurs, unit.space);
   extendArcEnds(slurs, nl, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), unit.space);
+  // 续过谱线之后再并一次：跨谱表的大弧下截续过右手第一线才够到上截（宁静 p1 m9–12 钢琴 F2→F4 那几条）
+  mergeArcPieces(slurs, unit.space);
   attachSlurs(slurs, notes, unit.space);
   attachSlursByStem(slurs, notes, unit.space);
   attachWideSlurs(slurs, notes, unit.space);
+  attachEdgeSlurEnds(slurs, notes, unit.space);
   // 歌词账上来的弧，挂上的端要贴着音（弧端离头外缘 `LYRIC_ARC_REACH` 格内，真弧实测 ≤1.35）：字的弯笔（「悲」「恩」的心字底、「w」的顶）
   // 离上方的音两三格（实测至少一端 ≥1.8），`attachSlurs` 的窗口够得着（当我们回到天家 m1、m5，你的信实广大 m26–30）。一端离得远就整条不挂
   // 有整页文字框时，贴着谱表（离线不过 `TEXT_ARC_STAFF` 格）又碰不着任何文字框的免掉（`pagetext.ts::touchesText`）：
@@ -4720,6 +4723,7 @@ export async function recognizeRasterPage(
     if (prev) a.to = prev;
   }
   reconnectSlurs(pg, slurs);
+  attachEdgeSlurStarts(slurs, notes, unit.space, new Set(index > 1 ? (pg.systems[0]?.staves ?? []) : []));
   const chordTies = tieChords(slurs, notes, unit.space);
   markSlurNotes(slurs);
   for (const [a, b] of chordTies) (a.tieStart = true), (b.tieStop = true);
@@ -8313,6 +8317,8 @@ function tieChords(slurs: SlurArc[], notes: StaffNote[], sp: number): [StaffNote
 
 /** 判首尾相接时盒外放（格）。 */
 const PIECE_PAD = 0.3;
+/** 两截端点相挨的上限（格）。 */
+const PIECE_TOUCH = 0.6;
 
 function mergeArcPieces(slurs: SlurArc[], sp: number): void {
   const pad = sp * PIECE_PAD;
@@ -8325,7 +8331,11 @@ function mergeArcPieces(slurs: SlurArc[], sp: number): void {
       for (const b of slurs) {
         if (a === b || a.above !== b.above || a.dashed || b.dashed) continue;
         if (!(a.lx < b.lx && b.rx > a.rx)) continue;
-        if (!inBox(a.obj.box, b.lx, b.ly) || !inBox(b.obj.box, a.rx, a.ry)) continue;
+        // 或者两截的端点挨着（续端之后盒子没跟着长，`extendArcEnds` 只挪端点）
+        // 接头不能同时是两截各自的谷底（弧在上方；弧在下方是顶）：首尾共用一个音的前后两条弧，接头两边都往外拱
+        const low = (s: SlurArc, y: number) => (s.above ? y >= s.obj.box.bottom - sp * 0.5 : y <= s.obj.box.top + sp * 0.5);
+        const touch = Math.abs(a.rx - b.lx) <= sp * PIECE_TOUCH && Math.abs(a.ry - b.ly) <= sp * PIECE_TOUCH && !(low(a, a.ry) && low(b, b.ly));
+        if (!touch && (!inBox(a.obj.box, b.lx, b.ly) || !inBox(b.obj.box, a.rx, a.ry))) continue;
         const ab = a.obj.box, bb = b.obj.box;
         const box = { left: Math.min(ab.left, bb.left), right: Math.max(ab.right, bb.right), top: Math.min(ab.top, bb.top), bottom: Math.max(ab.bottom, bb.bottom) };
         (a.obj as { box: typeof box }).box = box;
@@ -8384,6 +8394,52 @@ function attachWideSlurs(slurs: SlurArc[], notes: StaffNote[], sp: number): void
     }
     if (sl.from && sl.to && sl.from === sl.to) sl.to = undefined;
     if (sl.from && sl.to && sl.from.staff === sl.to.staff && sl.from.diatonic === sl.to.diatonic) sl.tie = true;
+  }
+}
+
+// ── 行首行尾越出音符的弧端 ───────────────────────────────────────────────────
+//
+// 一行最后两个音上的圆滑线画在杠上方，右端越过末音右缘近一格、正到行尾（宁静 p1 m4、p3 m36 钢琴右手 A4–B4）；
+// 一行第一个音起的长弧左端在头左缘外一格多（p3 m37 C5–B4）。端头挂不上，两条都像跨行弧的半截，`reconnectSlurs` 把它们互相接上。
+// 右端越过本行末音不过 `EDGE_END` 格的，止端挂末音；左端在本行首音左边不过 `EDGE_START` 格、弧又不短（`EDGE_MIN_W` 格，行首的半截弧更短）、
+// 跨行也没配上的，起端挂首音。
+// 真跨行的弧伸到行尾、离末音更远（破碎 p2 m11 钢琴右手两条 1.3、1.8 格）。
+
+/** 右端越过末音右缘的上限（格）。 */
+const EDGE_END = 1.2;
+/** 左端在首音左缘外的上限（格）。 */
+const EDGE_START = 1.5;
+/** 起端离首音外缘的纵向上限（格）。 */
+const EDGE_START_DY = 2.5;
+/** 起端兜底的弧宽下限（格）。 */
+const EDGE_MIN_W = 3;
+
+function attachEdgeSlurEnds(slurs: SlurArc[], notes: StaffNote[], sp: number): void {
+  for (const sl of slurs) {
+    if (sl.to || !sl.from) continue;
+    const st = sl.from.staff;
+    const last = notes.filter((n) => !n.rest && !n.grace && n.staff === st).reduce<StaffNote | undefined>((a, n) => (!a || n.sym.box.right > a.sym.box.right ? n : a), undefined);
+    if (!last || last === sl.from || last.sym.box.left <= sl.from.sym.box.right) continue;
+    if (sl.rx <= last.sym.box.right || sl.rx - last.sym.box.right > sp * EDGE_END) continue;
+    sl.to = last;
+    if (sl.from.diatonic === last.diatonic) sl.tie = true;
+  }
+}
+
+/** 起端兜底在 `reconnectSlurs` **之后**：上一系统有对应的行尾悬空弧的是真跨行（望十架 p2 女高 G4 前那条，起点同样在首音左边 1.4 格）。
+ *  `skip`：不做的谱行（页上第一个系统可能接的是上一页）。 */
+function attachEdgeSlurStarts(slurs: SlurArc[], notes: StaffNote[], sp: number, skip: Set<unknown>): void {
+  for (const sl of slurs) {
+    if (sl.from || !sl.to || skip.has(sl.to.staff) || sl.rx - sl.lx < sp * EDGE_MIN_W) continue;
+    const st = sl.to.staff;
+    const first = notes.filter((n) => !n.rest && !n.grace && n.staff === st).reduce<StaffNote | undefined>((a, n) => (!a || n.sym.box.left < a.sym.box.left ? n : a), undefined);
+    if (!first || first === sl.to || first.sym.box.right >= sl.to.sym.box.left) continue;
+    if (sl.lx >= first.sym.box.left || first.sym.box.left - sl.lx > sp * EDGE_START) continue;
+    // 起端要贴着首音（弧那一侧 `EDGE_START_DY` 格内）：跨行进来的弧按上一行的高度进行，离首音远（望十架那条高出 3.8 格，宁静 1.6 格）
+    const dy = sl.above ? first.sym.box.top - sl.ly : sl.ly - first.sym.box.bottom;
+    if (dy < 0 || dy > sp * EDGE_START_DY) continue;
+    sl.from = first;
+    if (first.diatonic === sl.to.diatonic) sl.tie = true;
   }
 }
 
