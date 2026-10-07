@@ -476,6 +476,9 @@ export const staffOmrOptions = {
  * 判据照原文：符头的**左缘或右缘**与符干 x 差在四分之一格以内，且纵向相交。
  * （符干贴在符头的一侧，不是穿过中心。）
  */
+/** 伸出头外的干长下限（格），见 `buildStems` 里「一上一下两根干」那段。 */
+const SHORT_STEM_OUT = 2;
+
 export function buildStems(pg: SPage, sp: number): StemInfo[] {
   const heads = pg.symbols.filter((s) => s.hasTag("Note") && !isRest(s.code) && s.ownerStaff);
   const flagSyms = pg.symbols.filter((s) => s.hasTag("Tail"));
@@ -512,6 +515,11 @@ export function buildStems(pg: SPage, sp: number): StemInfo[] {
   const proper = (st: StemInfo, nt: Sym) => Math.abs((st.up ? nt.box.right : nt.box.left) - st.seg.cx) <= win0(nt);
   for (const st of out)
     st.notes = st.notes.filter((nt) => proper(st, nt) || !out.some((o) => o !== st && o.notes.includes(nt) && proper(o, nt)));
+  // 一个头挂在一上一下两根干上，其中一根伸出头外不到 `SHORT_STEM_OUT` 格：那是贴着头的别的竖笔（数字的弯笔还会被认成符尾，带尾的真干本来就长，不另放行）
+  //（破碎扫描版 p6 男低头顶上印的简谱数字「3」，右边那一竖 1.5 格长，头被出成一上一下两个音）。从短的那根上摘掉
+  const reachOut = (st: StemInfo, nt: Sym) => (st.up ? nt.box.top - st.seg.top : st.seg.bottom - nt.box.bottom);
+  for (const st of out)
+    st.notes = st.notes.filter((nt) => reachOut(st, nt) >= sp * SHORT_STEM_OUT || !out.some((o) => o !== st && o.up !== st.up && o.notes.includes(nt) && reachOut(o, nt) >= sp * SHORT_STEM_OUT));
   // 两声部三度叠放、上头空心下头实心（望十架 p3 m26 女高 A4 二分、女低 F4 四分）：朝下那根干从上头的左缘起笔，两个头都收进去，
   // 上头又在朝上那根干的右缘，两边都「正经」。同一根干上头型不同（空心 / 实心）不会是一个和弦：
   // 头在另一根干上独自挂着的，从这根上摘掉

@@ -804,8 +804,9 @@ function toBeamShapes(beams: BeamQuad[]): BeamShape[] {
   });
 }
 
-/** 杠端续到干：干在杠端外这个范围（格）里。 */
-const BEAM_SNAP = [0.2, 1.0] as const;
+/** 杠端续到干：干在杠端外这个范围（格）里；过了 `BEAM_SNAP_FAR` 格的另加两道（见下）。 */
+const BEAM_SNAP = [0.2, 1.5] as const;
+const BEAM_SNAP_FAR = 1.0;
 /** 杠端续到干：干的一端离杠延长线不过这么多格；杠端与干之间沿杠走向有墨的列占比下限。 */
 const BEAM_SNAP_END = 0.75;
 const BEAM_SNAP_INK = 0.8;
@@ -814,8 +815,11 @@ const BEAM_SNAP_INK = 0.8;
  * **杠端没够着干的，续到干上**：斜的网点杠靠干那一截薄、又有网孔，检出的杠盒比真杠短半格
  *（当我们回到天家 m2：杠从 x=712 起，干在 704），`beamConnect` 的容差只有 0.2 格，那根干就接不上杠、八分读成四分。
  * 杠端外 `BEAM_SNAP` 格内有根干、干的一端正落在杠的延长线上、中间沿杠走向（杠厚上下各放一像素）的列大多有墨，就把杠端挪到干上。
+ * 一格开外的（破碎扫描版 p6 m74 男低 A3–G3 一对八分：杠压在第一线上，杠尾那截薄、横向断开进不了杠的掩模，杠停在离干 1.26 格处）
+ * 另加两道：这一段沿杠的墨要比线厚两像素以上（压在线上时线墨处处都有，只看有没有墨等于没判），那根干也还没挂别的杠
+ *（只按有没有墨续到 1.5 格，望十架、破碎干净版各错接几处，十六分读成三十二分）。
  */
-function snapBeamEnds(beams: BeamShape[], stems: Seg[], bin: Binary, sp: number): void {
+function snapBeamEnds(beams: BeamShape[], stems: Seg[], bin: Binary, sp: number, lineThick: number): void {
   const yAt = (b: BeamShape, x: number) => (b.x1 === b.x0 ? b.y0 : b.y0 + ((b.y1 - b.y0) * (x - b.x0)) / (b.x1 - b.x0));
   for (const b of beams) {
     const half = (b.box.bottom - b.box.top) / 2 + 1;
@@ -824,6 +828,14 @@ function snapBeamEnds(beams: BeamShape[], stems: Seg[], bin: Binary, sp: number)
       for (let y = Math.round(cy - half); y <= Math.round(cy + half); y++) if (y >= 0 && y < bin.h && bin.data[y * bin.w + x]) return true;
       return false;
     };
+    /** 这一列沿杠（上下各一个杠厚）最长的竖墨比线厚两像素以上 */
+    const thickCol = (x: number): boolean => {
+      const cy = yAt(b, x);
+      let run = 0, best = 0;
+      for (let y = Math.round(cy - half * 2); y <= Math.round(cy + half * 2); y++) (run = y >= 0 && y < bin.h && bin.data[y * bin.w + x] ? run + 1 : 0), (best = Math.max(best, run));
+      return best >= lineThick + 2;
+    };
+    const beamedElsewhere = (st: Seg) => beams.some((o) => o !== b && st.cx >= o.box.left - 3 && st.cx <= o.box.right + 3 && st.bottom >= o.box.top - sp * 0.4 && st.top <= o.box.bottom + sp * 0.4);
     for (const side of [0, 1] as const) {
       const end = side === 0 ? b.x0 : b.x1;
       let got: Seg | null = null;
@@ -831,7 +843,10 @@ function snapBeamEnds(beams: BeamShape[], stems: Seg[], bin: Binary, sp: number)
         const d = side === 0 ? end - st.cx : st.cx - end;
         if (d < sp * BEAM_SNAP[0] || d > sp * BEAM_SNAP[1]) continue;
         const y = yAt(b, st.cx);
-        if (Math.min(Math.abs(st.top - y), Math.abs(st.bottom - y)) > sp * BEAM_SNAP_END) continue;
+        // 干从杠的高度穿过去、离杠端不到半格的也续：多层杠里靠头那一层，干端在外层杠上（破碎扫描版 p7 m84 A3，第二层杠停在干前 3.9 像素）
+        const through = d <= sp * 0.5 && st.top < y && st.bottom > y;
+        if (!through && Math.min(Math.abs(st.top - y), Math.abs(st.bottom - y)) > sp * BEAM_SNAP_END) continue;
+        if (d > sp * BEAM_SNAP_FAR && beamedElsewhere(st)) continue;
         if (!got || Math.abs(st.cx - end) < Math.abs(got.cx - end)) got = st;
       }
       if (!got) continue;
@@ -839,7 +854,8 @@ function snapBeamEnds(beams: BeamShape[], stems: Seg[], bin: Binary, sp: number)
       const xb = Math.round(Math.max(got.cx, end)) - 1;
       let n = 0;
       let k = 0;
-      for (let x = xa; x <= xb; x++, n++) if (inkCol(x)) k++;
+      const far = Math.abs(got.cx - end) > sp * BEAM_SNAP_FAR;
+      for (let x = xa; x <= xb; x++, n++) if (far ? thickCol(x) : inkCol(x)) k++;
       if (n && k < n * BEAM_SNAP_INK) continue;
       const y = yAt(b, got.cx);
       if (side === 0) {
@@ -1524,7 +1540,78 @@ export async function recognizeRasterPage(
       return false;
     };
     const fake = (q: { box: Rect; code: string }) => (q.code === "noteheadHalf" && arch(q.box)) || (q.code === "noteheadWhole" && byBeam(q.box));
-    for (const h of heads) if (!dropHead.has(h.comp.id) && fake(h)) dropHead.add(h.comp.id);
+    // **一截斜笔不是空心头**：弧穿过谱线、被符杠认去一截之后，剩下的一段斜笔（宽一格多、填充率正落在空心那一档）收成了二分头
+    //（宁静的伯利恒 p5 m64 钢琴两行之间那条弧，读成 F3 全音符）。真空心头中间那几行是「墨-白-墨」两段；
+    // 中段（谱线行不算）七成五以上的行只有一段墨、而墨从盒左右两边都穿出去的，是长笔画的一截
+    const strokePiece = (h: { box: Rect }): boolean => {
+      const b = h.box;
+      // 笔画从盒里穿出去：去线图上盒左、盒右 0.4 格内都有墨（真头至多一侧挨着干、弧端）；
+      // 只看紧挨着的一列不行，笔画斜穿谱线那几列被去线抹了，缺口正落在盒边（这一处 5 列）
+      const reach = Math.max(2, Math.round(unit.space * 0.4));
+      // 加线行：盒里一段墨横贯九成以上（骑加线的二分头，加线伸出盒两侧、那几行又只有一段墨，以马内利来临歌 m16、m22 两个头被剔了）
+      const ledgerRow = (y: number) => {
+        if (y < 0 || y >= raster.bin.h) return false;
+        let run = 0, best = 0;
+        for (let x = Math.max(0, b.x); x < Math.min(raster.bin.w, b.x + b.w); x++) (run = raster.bin.data[y * raster.bin.w + x] ? run + 1 : 0), (best = Math.max(best, run));
+        return best >= b.w * 0.9;
+      };
+      const sideInk = (x0: number, dir: number) => {
+        for (let k = 0; k < reach; k++) {
+          const x = x0 + dir * k;
+          if (x < 0 || x >= nl.w) return false;
+          for (let y = Math.max(0, b.y - 3); y < Math.min(nl.h, b.y + b.h + 3); y++) if (nl.data[y * nl.w + x] && !ledgerRow(y)) return true;
+        }
+        return false;
+      };
+      if (!sideInk(b.x - 1, -1) || !sideInk(b.x + b.w, 1)) return false;
+      // 挨着竖段（干）的是真头：一截斜笔不带干（以马内利来临歌 m22 B3 挂在加线下、圈左下角断开，量不出内腔）
+      const tolX = Math.max(3, unit.lineThick * 2);
+      if (prims.vSegs.some((v) => { const vx = (v.x0 + v.x1) / 2; return vx >= b.x - tolX && vx <= b.x + b.w + tolX && Math.min(v.y0, v.y1) <= b.y + b.h && Math.max(v.y0, v.y1) >= b.y; })) return false;
+      // 盒里有被墨围住的白（内腔，从盒边灌不进去）的是真头：斜缝内腔的空心头挂在加线下，前两条都会命中（以马内利来临歌 m22 B3）
+      // 盒常偏在头的一边（只框住半个圈，内腔从盒边漏出去），量内腔时左右各外放 0.3 格、上下 0.2 格
+      {
+        const px = Math.round(unit.space * 0.3), py = Math.round(unit.space * 0.2);
+        const bx = b.x - px, by = b.y - py;
+        const W = b.w + px * 2, H = b.h + py * 2, seen = new Uint8Array(W * H);
+        const white = (i: number) => {
+          const x = bx + (i % W), y = by + ((i / W) | 0);
+          return x >= 0 && y >= 0 && x < raster.bin.w && y < raster.bin.h && !raster.bin.data[y * raster.bin.w + x];
+        };
+        const stack: number[] = [];
+        for (let i = 0; i < W * H; i++) {
+          const x = i % W, y = (i / W) | 0;
+          if ((x === 0 || y === 0 || x === W - 1 || y === H - 1) && white(i)) (seen[i] = 1), stack.push(i);
+        }
+        while (stack.length) {
+          const i = stack.pop()!;
+          const x = i % W, y = (i / W) | 0;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const xx = x + dx, yy = y + dy;
+            if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+            const j = yy * W + xx;
+            if (!seen[j] && white(j)) (seen[j] = 1), stack.push(j);
+          }
+        }
+        let enclosed = 0;
+        for (let i = 0; i < W * H; i++) if (!seen[i] && white(i)) enclosed++;
+        if (enclosed >= 3) return false;
+      }
+      let rows = 0, single = 0;
+      for (let y = Math.round(b.y + b.h * 0.2); y <= Math.round(b.y + b.h * 0.8); y++) {
+        if (onStaffLine(y) || y < 0 || y >= raster.bin.h || ledgerRow(y)) continue;
+        let runs = 0, prev = false;
+        for (let x = Math.max(0, b.x); x < Math.min(raster.bin.w, b.x + b.w); x++) {
+          const on = !!raster.bin.data[y * raster.bin.w + x];
+          if (on && !prev) runs++;
+          prev = on;
+        }
+        if (!runs) continue;
+        rows++;
+        if (runs === 1) single++;
+      }
+      return rows >= 3 && single >= rows * 0.75;
+    };
+    for (const h of heads) if (!dropHead.has(h.comp.id) && (fake(h) || (h.code === "noteheadHalf" && strokePiece(h)))) dropHead.add(h.comp.id);
     for (let i = stacked.length - 1; i >= 0; i--) if (fake(stacked[i])) stacked.splice(i, 1);
     // **盒里有干的「全音符」、过宽的实心头是带着加线的有干头**：网纹实心头看着像空心，连着右边伸出的一截加线盒宽到了 1.7 格，
     // 干落在盒中间、不在盒缘，找干那一步够不着（倚靠主永远膀臂 m3 C4、B♭3，干上还挂着 A♭4/G4，整串都没挂上干）。
@@ -3840,7 +3927,7 @@ export async function recognizeRasterPage(
     return !stemSegs0.some((s0) => inside(s0.cx, s0.top) || inside(s0.cx, s0.bottom));
   };
   const beams = toBeamShapes(prims.beams.filter((b) => !thinOnLine(b) && !textStroke(b)));
-  snapBeamEnds(beams, pg.segs.filter((sg) => sg.isV && sg.hasTag("Stem")), raster.bin, unit.space);
+  snapBeamEnds(beams, pg.segs.filter((sg) => sg.isV && sg.hasTag("Stem")), raster.bin, unit.space, unit.lineThick);
   const stems: StemInfo[] = [];
   // **认成实心、其实中间是空的头**：圈细、内腔被没抹掉的谱线切成几小块的空心头（耶和华、高举主大能、你的信实广大），
   // 过不了空心头的形状闸，被收成实心。头的中心椭圆（半径取盒的三成，跳过谱线那几行）里白占 HOLLOW_FILL 以上、
@@ -4365,6 +4452,28 @@ export async function recognizeRasterPage(
       }),
       ...harmonies.map((t) => ({ x: t.box.x, y: t.box.y, w: t.box.w, h: t.box.h })),
     ];
+    // **文字指示里的字母收成了音**：谱表上方的「Unison」「coda」，字母的圈被认成头、没有干读成全音符（是爱 p4 m55 三个 B♭5）。
+    // OCR 认得出的文字行（三个以上拉丁字母或两个以上汉字）框里、在谱表外、没挂干的音删掉；挂了干的不动（贴着字的真音）
+    {
+      const wordBoxes: Rect[] = [];
+      for (const strip of wordStrips)
+        for (const l of opts.wordOcr.get(wordKey(strip)) ?? [])
+          if (/[A-Za-z]{3,}|[\u4e00-\u9fff]{2,}/.test(l.t)) wordBoxes.push({ x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h });
+      const pad = unit.space * 0.1;
+      const inWord = (n: StaffNote) => {
+        if (n.rest || n.stemUp !== null) return false;
+        const b = n.sym.box;
+        const cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
+        if (cy > n.staff.box.top - unit.space * 0.5 && cy < n.staff.box.bottom + unit.space * 0.5) return false;
+        return wordBoxes.some((q) => cx >= q.x - pad && cx <= q.x + q.w + pad && cy >= q.y - pad && cy <= q.y + q.h + pad);
+      };
+      for (let i = notes.length - 1; i >= 0; i--) {
+        if (!inWord(notes[i])) continue;
+        const next = notes[i + 1];
+        if (!notes[i].chordExtra && next?.chordExtra && next.staff === notes[i].staff) next.chordExtra = undefined;
+        notes.splice(i, 1);
+      }
+    }
     const placed = attachWordLines(pg, notes, wordStrips, opts.wordOcr, unit, skip, lyricStrips.map((st) => st.box));
     // 文字带里读出来的和弦记号：和弦带那一路（要自己的 OCR 缓存，合唱谱没生成）没认到和弦时才用
     if (!harmonies.length && placed.chords.length) {
