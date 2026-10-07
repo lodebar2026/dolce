@@ -1213,7 +1213,9 @@ const REPAIR_REACH = 0.75;
 /** 斜穿过线的笔画，线上、线下挨着的墨纵向厚不过这么多（格）：再厚是符头、干。 */
 const REPAIR_THIN = 0.4;
 /** 拱顶压线、剩两条腿时两腿之间的缝上限（格）。 */
-const REPAIR_CAP = 1;
+const REPAIR_CAP = 1.5;
+/** 缝宽过这么多格时另一侧也要空（破碎 p4 m30–31 女高两条小弧，拱顶压在第一线上，两腿相隔 1.17 格）。 */
+const REPAIR_CAP_NARROW = 1;
 
 /**
  * **修补图**：去线图上把「存疑」的线带像素补回去，给按形状认的那几路用（弧线候选）；认干、认杠照旧用去线图。
@@ -1272,6 +1274,7 @@ export function repairLineCuts(bin: Binary, nl: Binary, lineYs: number[], unit: 
     // 拱顶（拱底）压在线上、只剩两条腿：同一侧挨着线的两截细墨相隔不过 `REPAIR_CAP` 格，缝补上（破碎扫描版 p1 m2 C5–B4 上方那条）。
     // 拱顶那几列与谱线重合、线带一点没加厚，前两条都补不着
     const capGap = Math.round(unit.space * REPAIR_CAP);
+    const capGapNarrow = Math.round(unit.space * REPAIR_CAP_NARROW);
     // 缝那一侧 0.6 格内过半的列得是空的：弧身拱在缝上方（坐在线上的延音线，望十架 p4 m33 低音 D3）的补了就和线围成一圈；
     // 拱顶压线的，缝下只有几点拱顶残墨（破碎扫描版 p1 m2）
     const clear = Math.round(unit.space * 0.6);
@@ -1292,7 +1295,11 @@ export function repairLineCuts(bin: Binary, nl: Binary, lineYs: number[], unit: 
     for (const [side, up] of [[ups, true], [dns, false]] as const)
       for (let i = 0; i + 1 < side.length; i++) {
         const g0 = side[i][1], g1 = side[i + 1][0];
-        if (g1 - g0 > 1 && g1 - g0 <= capGap && emptySide(g0 + 1, g1 - 1, up)) for (let x = g0; x <= g1; x++) cross[x] = 1;
+        if (g1 - g0 <= 1 || g1 - g0 > capGap || !emptySide(g0 + 1, g1 - 1, up)) continue;
+        // 缝宽过一格的，线另一侧正对着缝的地方也得空：拱顶压线的弧另一侧是空的谱间；两条腿接着穿过线、在另一侧收成碗底的是别的字形
+        //（主我敬拜你 U 形小记号，两腿在线上、碗底在线下）
+        if (g1 - g0 > capGapNarrow && !emptySide(g0 + 1, g1 - 1, !up)) continue;
+        for (let x = g0; x <= g1; x++) cross[x] = 1;
       }
     const near = new Int32Array(w + 1);
     for (let x = 0; x < w; x++) near[x + 1] = near[x] + (above[x] || below[x] ? 1 : 0);

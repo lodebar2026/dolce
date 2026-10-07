@@ -37,12 +37,12 @@ import { findStaffLabels, labelKey, normalizeLabel, type LabelStrip } from "./st
 import { findHarmonyStrips, harmonyKey, harmonyLine, readHarmonyStrip, type HarmonyStrip, type HarmonyToken } from "./harmony";
 import { findFusedWedges, findRasterWedges, type RasterWedge } from "./wedge";
 import { groupDynamics, type RasterDynamic } from "./dynamics";
-import { extendArcEnds, findFusedSlurs, findRasterDashedSlurs, findRasterSlurs } from "./slur";
+import { extendArcEnds, findFusedSlurs, findRasterDashedSlurs, findRasterSlurs, findStubSlurs } from "./slur";
 import { ContourLedger } from "./ledger";
 import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { attachSlurs, markSlurNotes, reconnectSlurs, validateSlurNote, type SlurArc } from "../staffomr/slur";
 import { composeHeaderStrip } from "./pagecompose";
-import { isTextStaff, pageTextKey } from "./pagetext";
+import { isTextStaff, pageTextKey, touchesText } from "./pagetext";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
 import { rasterizePage, type RasterPage } from "./rasterpage";
@@ -601,6 +601,13 @@ const PAIR_FILL_MAX = 0.96;
 const SOLID_NEIGHBOR_FILL = 0.7;
 /** 歌词账上来的弧，两端离头外缘的上限（格）。 */
 const LYRIC_ARC_REACH = 1.5;
+/** 歌词账上来的弧离文字框多远（格）以内仍按字的笔画裁决。 */
+const TEXT_ARC_PAD = 0.5;
+/** 免判的弧离谱表（上下线）不过这么多格。 */
+const TEXT_ARC_STAFF = 2;
+/** 行首半截弧的窗口：第一个音左边几格以内；上下离谱表几格以内。 */
+const STUB_LEAD = 3;
+const STUB_REACH = 4;
 /** 实心头盒宽到这么多格、盒里又有干的，按带着加线截盒（全音符不论宽窄都查）。 */
 const WIDE_BLACK = 1.45;
 
@@ -4620,6 +4627,24 @@ export async function recognizeRasterPage(
   slurs.push(...findRasterSlurs(cmap, unit, singles, pg.objs.length + pg.segs.length + 1000 + slurs.length, repaired));
   // 歌词账上来的块：修补块里含着歌词碎块的也算
   for (const rc of whole) if ([...parts.get(rc.id)!].some((id) => ledger.claimsOf(id).some((k) => k.by === "lyric"))) lyricArcBoxes.add(`${rc.bbox.x},${rc.bbox.y}`);
+  // 跨行弧的半截（`slur.ts::findStubSlurs`）：只看各行谱第一个音之前、最后一个音之后那段（行首行尾）
+  {
+    const sp = unit.space;
+    const wins: Rect[] = [];
+    for (const st of pg.staves) {
+      const ns = notes.filter((n) => n.staff === st && !n.rest);
+      if (!ns.length) continue;
+      const first = Math.min(...ns.map((n) => n.sym.box.left)), last = Math.max(...ns.map((n) => n.sym.box.right));
+      const y = st.box.top - sp * STUB_REACH, h = st.box.bottom - st.box.top + sp * STUB_REACH * 2;
+      wins.push({ x: first - sp * STUB_LEAD, y, w: sp * (STUB_LEAD + 0.5), h });
+      wins.push({ x: last - sp * 0.5, y, w: st.box.right - last + sp * 1.5, h });
+    }
+    const inWin = (b: Rect) => wins.some((w) => b.x >= w.x && b.x + b.w <= w.x + w.w && b.y >= w.y && b.y + b.h <= w.y + w.h);
+    const taken = slurs.map((sl) => sl.obj.box);
+    const free = (b: Rect) => !taken.some((t) => b.x < t.right && b.x + b.w > t.left && b.y < t.bottom && b.y + b.h > t.top);
+    const cands = [...ledger.unclaimed(), ...beamOnly].filter((c) => inWin(c.bbox) && free(c.bbox));
+    slurs.push(...findStubSlurs(cmap, unit, cands, pg.objs.length + pg.segs.length + 1000 + slurs.length, repaired));
+  }
   for (const sl of slurs) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur");
   // 虚线弧（`slur.ts::findRasterDashedSlurs`）：无主块之外，只被歌词字格认过的短划也算（弧两头那截常落在歌词带上沿，
   // Holy, Holy, Holy m10）；上方还是下方看近旁最近的符头；离谱表四格半开外的不认（歌词带里成串的连字符）
@@ -4660,8 +4685,14 @@ export async function recognizeRasterPage(
   attachWideSlurs(slurs, notes, unit.space);
   // 歌词账上来的弧，挂上的端要贴着音（弧端离头外缘 `LYRIC_ARC_REACH` 格内，真弧实测 ≤1.35）：字的弯笔（「悲」「恩」的心字底、「w」的顶）
   // 离上方的音两三格（实测至少一端 ≥1.8），`attachSlurs` 的窗口够得着（当我们回到天家 m1、m5，你的信实广大 m26–30）。一端离得远就整条不挂
+  // 有整页文字框时，贴着谱表（离线不过 `TEXT_ARC_STAFF` 格）又碰不着任何文字框的免掉（`pagetext.ts::touchesText`）：
+  // 歌词条的认领框比字宽，谱表上沿隔着顿音点、离音两格半的延音线也记在歌词账上（破碎 p4 m33 钢琴右手）。
+  // 只凭字框不够：DBNet 在密排的三段歌词上常整片漏检（你的信实广大一页只检出 45 个框，m26–30 的歌词行一个没有）
   for (const sl of slurs) {
     if (!lyricArcBoxes.has(`${sl.obj.box.left},${sl.obj.box.top}`)) continue;
+    const ab = sl.obj.box;
+    const nearStaff = pg.staves.some((st) => ab.bottom > st.box.top - unit.space * TEXT_ARC_STAFF && ab.top < st.box.bottom + unit.space * TEXT_ARC_STAFF);
+    if (textBoxes && nearStaff && !touchesText({ x: ab.left, y: ab.top, w: ab.right - ab.left, h: ab.bottom - ab.top }, textBoxes, unit.space * TEXT_ARC_PAD)) continue;
     const far = (n: StaffNote | undefined, y: number) => !!n && (sl.above ? n.sym.box.top - y : y - n.sym.box.bottom) > unit.space * LYRIC_ARC_REACH;
     if (far(sl.from, sl.ly) || far(sl.to, sl.ry)) (sl.from = undefined), (sl.to = undefined), (sl.tie = false);
   }

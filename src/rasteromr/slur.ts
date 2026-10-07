@@ -50,12 +50,35 @@ export function findRasterSlurs(map: ContourMap, unit: RasterUnit, only: Contour
   return out;
 }
 
-/** `mask`：只认这张图上也有墨的像素（去线图上的块按修补图判：去线时留下的谱线残段在修补图上清掉了）。 */
-function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number, mask?: Binary): SlurArc | null {
-  return judgeArcBox(c.bbox, (x, y) => map.labels[y * map.w + x] === c.id && (!mask || mask.data[y * mask.w + x] === 1), unit, id);
+// ── 跨行弧的半截 ───────────────────────────────────────────────────────────
+//
+// 跨系统的延音线、圆滑线在下一行开头只画一小截（谱号调号之后、第一个音之前），上一行末尾同理：
+// 只有一格来宽、拱得也浅（半条弧），过不了 `MIN_W` 与 `BOW_MIN`（破碎 p2 第三系统钢琴右手开头 A4 下方两截，1.17 / 1.23 格）。
+// 只在行首行尾那段窗口里（调用方给）放宽这两道闸。
+
+/** 半截弧的宽度下限、拱的下限（格）。 */
+const STUB_MIN_W = 0.8;
+const STUB_BOW_MIN = 0.08;
+/** 半截弧逐列一段墨的占比下限：贴着谱线的那截去线后有几列断成两段（同上，下方那截压在第五线上）。 */
+const STUB_ONE_RUN = 0.6;
+
+export function findStubSlurs(map: ContourMap, unit: RasterUnit, only: Contour[], nextId: number, mask?: Binary): SlurArc[] {
+  const out: SlurArc[] = [];
+  for (const c of only) {
+    if (c.w < STUB_MIN_W || c.w >= MIN_W * 2 || c.h > 1.5) continue;
+    if (c.compact > MAX_COMPACT && c.area > c.bbox.w * unit.space * THIN_MEAN) continue;
+    const arc = judgeArc(map, c, unit, nextId + out.length, mask, STUB_BOW_MIN, STUB_ONE_RUN);
+    if (arc) out.push(arc);
+  }
+  return out;
 }
 
-function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: RasterUnit, id: number): SlurArc | null {
+/** `mask`：只认这张图上也有墨的像素（去线图上的块按修补图判：去线时留下的谱线残段在修补图上清掉了）。 */
+function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number, mask?: Binary, bowMin = BOW_MIN, oneRun = ONE_RUN_FRAC): SlurArc | null {
+  return judgeArcBox(c.bbox, (x, y) => map.labels[y * map.w + x] === c.id && (!mask || mask.data[y * mask.w + x] === 1), unit, id, bowMin, oneRun);
+}
+
+function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: RasterUnit, id: number, bowMin = BOW_MIN, oneRun = ONE_RUN_FRAC): SlurArc | null {
   const ys: number[] = [];
   let one = 0;
   let cols = 0;
@@ -87,7 +110,7 @@ function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: Rast
     if (bot - top > unit.space * SPREAD_MAX) wide++;
     ys.push(sum / n);
   }
-  if (!cols || one < cols * ONE_RUN_FRAC) return null;
+  if (!cols || one < cols * oneRun) return null;
   if (wide > cols * 0.15) return null; // 跨度大的列太多：那是松叶或实心块
   // **两端的 y 只取最外那一小截**（三十分之一），不能取六分之一：
   // 弧的两头是尖的，往里取一段，端点的 y 会被拉向弧背，`validateSlurNote`
@@ -109,7 +132,7 @@ function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: Rast
     const d = ys[i] - (ly + (ry - ly) * t);
     if (Math.abs(d) > Math.abs(bow)) bow = d;
   }
-  if (Math.abs(bow) < unit.space * BOW_MIN) return null; // 直的不是弧
+  if (Math.abs(bow) < unit.space * bowMin) return null; // 直的不是弧
   const box: Rect = { x: b.x, y: b.y, w: b.w, h: b.h };
   return {
     obj: fakeArcObj(id, box),
@@ -334,6 +357,8 @@ export function findRasterDashedSlurs(
 const EXT_GAP = 1.5;
 /** 一端最多延长（格）。 */
 const EXT_MAX = 3;
+/** 越线途中找墨的垂直窗口（格）。 */
+const EXT_CROSS_PERP = 0.3;
 /** 越过谱线接上墨之后再跟多远（格）。 */
 const EXT_AFTER = 1;
 
@@ -345,13 +370,20 @@ export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) =
     for (let y = top; y <= bot; y++) if (ink(x, y) && (best === null || Math.abs(y - y0) < Math.abs(best - y0))) best = y;
     return best;
   };
+  const vRun = (x: number, y: number) => {
+    let a = y, b = y;
+    while (ink(x, a - 1)) a--;
+    while (ink(x, b + 1)) b++;
+    return b - a + 1;
+  };
   const lineAt = (y: number) => onLine(Math.round(y)) || onLine(Math.round(y) - 1) || onLine(Math.round(y) + 1);
   for (const sl of arcs) {
     const b = sl.obj.box;
     const k = Math.max(3, Math.round(sp * 0.6));
     for (const dir of [-1, 1] as const) {
       const x0 = Math.round(dir < 0 ? sl.lx : sl.rx);
-      const y0 = dir < 0 ? sl.ly : sl.ry;
+      // 从端头那一列真实的墨点起步：`ly`/`ry` 是最外一小截的平均，斜着的弧尾比端点那列的墨高（低）两三像素，第一步就落空
+      const y0 = colY(x0, dir < 0 ? sl.ly : sl.ry, Math.round(b.top), Math.round(b.bottom)) ?? (dir < 0 ? sl.ly : sl.ry);
       // 端头往里 k 列处的墨心定切线方向（单位向量，沿它逐像素走：竖着下去的那一截按列走跟不上）
       const yIn = colY(x0 - dir * k, y0, Math.round(b.top), Math.round(b.bottom));
       if (yIn === null) continue;
@@ -363,12 +395,15 @@ export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) =
       let end: { x: number; y: number } | null = null;
       for (let step = 0; step < sp * EXT_MAX; step++) {
         const px = x + vx, py = y + vy;
-        // 垂直于走向 ±2 像素内找墨
+        // 垂直于走向 ±2 像素内找墨；越线途中放宽到 `EXT_CROSS_PERP` 格：平着斜进线的弧在线带里走一格来宽，
+        // 出线时比进线前陡，照进线的切线走差出三四像素（宁静 p1 m2、m4 钢琴右手两条长弧的止端）
+        const perp = gap > 0 && crossed ? Math.max(2, Math.round(sp * EXT_CROSS_PERP)) : 2;
         let hit: { x: number; y: number } | null = null;
-        for (let d = 0; d <= 2 && !hit; d++)
+        for (let d = 0; d <= perp && !hit; d++)
           for (const sgn of d ? [-1, 1] : [1]) {
             const qx = Math.round(px - vy * d * sgn), qy = Math.round(py + vx * d * sgn);
-            if (ink(qx, qy)) {
+            // 越过线之后找到的墨要细（竖向不过 `THIN_RUN` 格）：碰上贴着的符头就跟过去了（我灵镇静 F4 延音线左端挂到前一个 E4）
+            if (ink(qx, qy) && (!crossed || vRun(qx, qy) <= sp * THIN_RUN)) {
               hit = { x: qx, y: qy };
               break;
             }

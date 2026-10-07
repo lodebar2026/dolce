@@ -287,10 +287,38 @@ export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number): vo
  * 按谱行顺序两两配。
  */
 export function reconnectSlurs(pg: SPage, arcs: SlurArc[]): void {
-  const order = new Map(pg.staves.map((s, i) => [s, i]));
   const staffOf = (a: SlurArc) => (a.from ?? a.to)?.staff;
   const dangRight = arcs.filter((a) => a.from && !a.to);
   const dangLeft = arcs.filter((a) => !a.from && a.to);
+  const join = (a: SlurArc, b: SlurArc) => {
+    a.to = b.to;
+    b.from = undefined;
+    b.to = undefined;
+    // 接回来之后再判一次连音线
+    if (a.from && a.to && a.from.diatonic === a.to.diatonic) a.tie = true;
+  };
+  // **按系统配**：一个系统几行谱（合唱谱人声 + 钢琴）时，「下一行谱」是同一系统的下一个声部，不是下一系统的同一行。
+  // 本系统第 k 行右端悬空的，配下一系统第 k 行左端悬空的（两个系统行数相同才配）
+  //（破碎 p2 m11 钢琴右手 A4 延音线与它下方那条圆滑线）
+  const systems = pg.systems.filter((sy) => sy.staves.length);
+  if (systems.length) {
+    const rel = (a: SlurArc, y: number) => y - staffOf(a)!.box.top;
+    for (let i = 0; i + 1 < systems.length; i++) {
+      const A = systems[i].staves, B = systems[i + 1].staves;
+      if (A.length !== B.length) continue;
+      for (let k = 0; k < A.length; k++) {
+        // 行尾悬空的取最靠右的、行首悬空的取最靠左的（行里别处也有悬空的弧：另一端没挂上的），各取同样几条再按高低配
+        let rs = dangRight.filter((a) => staffOf(a) === A[k]).sort((p, q) => q.rx - p.rx);
+        let ls = dangLeft.filter((b) => staffOf(b) === B[k]).sort((p, q) => p.lx - q.lx);
+        const n = Math.min(rs.length, ls.length);
+        rs = rs.slice(0, n).sort((p, q) => rel(p, p.ry) - rel(q, q.ry));
+        ls = ls.slice(0, n).sort((p, q) => rel(p, p.ly) - rel(q, q.ly));
+        for (let j = 0; j < n; j++) join(rs[j], ls[j]);
+      }
+    }
+    return;
+  }
+  const order = new Map(pg.staves.map((s, i) => [s, i]));
   const used = new Set<SlurArc>();
   for (const a of dangRight) {
     const sa = staffOf(a);
@@ -306,12 +334,8 @@ export function reconnectSlurs(pg: SPage, arcs: SlurArc[]): void {
       break;
     }
     if (!best) continue;
-    a.to = best.to;
-    best.from = undefined;
-    best.to = undefined;
+    join(a, best);
     used.add(best);
-    // 接回来之后再判一次连音线
-    if (a.from && a.to && a.from.diatonic === a.to.diatonic) a.tie = true;
   }
 }
 

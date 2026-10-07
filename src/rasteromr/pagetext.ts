@@ -57,3 +57,11 @@ export function isTextStaff(g: StaffGroup, boxes: readonly Rect[]): boolean {
 const TEXT_COVER = 0.5;
 const TEXT_LINES = 3;
 const TEXT_BOX_MAX = 3.5;
+
+/**
+ * 盒子碰不碰得着文字框（外放 `pad` 像素，不论框多高）。认弧时用：歌词条的认领框比字宽松得多，谱表上沿的弧也常记在歌词账上，
+ * 离所有文字框都远的就不是字的笔画。
+ */
+export function touchesText(b: Rect, boxes: readonly Rect[], pad: number): boolean {
+  return boxes.some((t) => b.x < t.x + t.w + pad && t.x < b.x + b.w + pad && b.y < t.y + t.h + pad && t.y < b.y + b.h + pad);
+}
