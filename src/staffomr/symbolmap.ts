@@ -86,7 +86,9 @@ const MAESTRO: Record<number, SmuflName> = {
   0x67: "wiggleTrill", // 'g'
   0xdf: "dynamicSforzando", // 'ß'
   0x50: "dynamicMP", // 'P'
-  0x70: "dynamicMF", // 'p' —— 照 musicpp 原文（Maestro 里 'p' 是 mf 的合字）
+  // 'p'：musicpp 原文写成 mf（注「'p' 是 mf 的合字」），实测不对——宣主荣耀（Finale 直出）的 'p' 宽 0.5 em，
+  // 与 'F'（mf，0.86 em）不是一个字形，谱面就是 p。赞美之泉那本 Maestro 没用过 'p'，改了不动它
+  0x70: "dynamicPiano", // 'p'
   0x46: "dynamicMF", // 'F'
   0x66: "dynamicForte", // 'f'
   0x192: "dynamicFF", // 'ƒ'

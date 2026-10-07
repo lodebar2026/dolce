@@ -82,7 +82,8 @@ ${parts.body}
 
 /** `<score-part>`：不给乐器名——Dorico/MuseScore 会把 `<part-name>` 当乐器名显示在谱前，
  *  简谱没有这个概念。空内容 + print-object="no"，两种软件都不显示。 */
-export function scorePartXml(id: string, name?: string): string {
+export function scorePartXml(id: string, name?: string, abbr?: string): string {
   const n = name ? `<part-name>${escapeXml(name)}</part-name>` : `<part-name print-object="no"></part-name>`;
-  return `<score-part id="${escapeAttr(id)}">${n}</score-part>`;
+  const a = abbr ? `<part-abbreviation>${escapeXml(abbr)}</part-abbreviation>` : "";
+  return `<score-part id="${escapeAttr(id)}">${n}${a}</score-part>`;
 }

@@ -463,6 +463,9 @@ export class ScoreStaff {
 export class Part {
   index = -1;
   scoreStaves: ScoreStaff[] = [];
+  /** 谱面印的声部名（首个系统的全名，`Soprano`）与之后系统的缩写（`S.`）；没印为 undefined。见 `score.ts::nameParts`。 */
+  name?: string;
+  abbr?: string;
 }
 
 /** 一页。musicpp 的 `omr::Page`。 */

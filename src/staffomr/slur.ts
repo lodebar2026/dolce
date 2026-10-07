@@ -71,6 +71,41 @@ export function findWedges(pg: SPage): PObj[] {
 }
 
 /**
+ * `findWedges` 挑出来的对象 → 松叶（`attachWedges` 吃的形状）。原文到打标为止，挂音符是本仓加的。
+ *
+ * 三点折线：中间那点是尖——尖在左是渐强、在右是渐弱。两条斜线（`findWedges` 成对推进 `out`）：
+ * 哪一头两线挨得近，尖就在哪一头。
+ */
+export function wedgeSpans(objs: PObj[]): import("./notations").WedgeSpan[] {
+  const out: import("./notations").WedgeSpan[] = [];
+  const span = (tipX: number, tipY: number, x0: number, x1: number): void => {
+    out.push({ type: tipX <= (x0 + x1) / 2 ? "crescendo" : "diminuendo", x0, x1, cy: tipY });
+  };
+  for (let i = 0; i < objs.length; i++) {
+    const pts = objs[i].path ? pathPoints(objs[i].path!) : [];
+    if (pts.length === 3) {
+      const xs = pts.map((p) => p.x);
+      span(pts[1].x, pts[1].y, Math.min(...xs), Math.max(...xs));
+      continue;
+    }
+    const o2 = objs[i + 1];
+    const q = o2?.path ? pathPoints(o2.path) : [];
+    if (pts.length !== 2 || q.length !== 2) continue;
+    i++;
+    const ends = (p: typeof pts) => (p[0].x <= p[1].x ? [p[0], p[1]] : [p[1], p[0]]);
+    const [al, ar] = ends(pts);
+    const [bl, br] = ends(q);
+    const leftGap = Math.abs(al.y - bl.y);
+    const rightGap = Math.abs(ar.y - br.y);
+    const x0 = Math.min(al.x, bl.x);
+    const x1 = Math.max(ar.x, br.x);
+    if (leftGap <= rightGap) span(x0, (al.y + bl.y) / 2, x0, x1);
+    else span(x1, (ar.y + br.y) / 2, x0, x1);
+  }
+  return out;
+}
+
+/**
  * `Page::findSlurTies`：填充的曲线路径就是弧。
  *
  * 一处要害照原文：**落在系统线左边**、且与它纵向相交的曲线不是弧，是**谱表括号**
@@ -91,6 +126,17 @@ export function findSlurs(pg: SPage): SlurArc[] {
     //      是 60 段直线围出来的月牙、`curves` 恰好是 0）——只认 `curves > 0` 的话
     //      那些页一条弧都找不到。折线段数取 12 作门槛：符杠是 4 点、矩形 4~5 点。
     if (!p.curves && p.segs < 12) continue;
+    // **又窄又高、在系统线左边的曲线是花括号**（Finale 直出把它画成上下两半两条曲线，各 5×36 点）。
+    // 下面那道「又宽又扁」的形状闸会先把它筛掉、走不到判括号那一步，于是钢琴谱的两行一直没有花括号可认
+    // ——分声部只能靠「相邻 G + F 谱号」那条兜底，把合唱谱的女低（G）与男声（F）并成了一个大谱表（宣主荣耀）。
+    {
+      const bw = o.box.right - o.box.left;
+      const bh = o.box.bottom - o.box.top;
+      if (bh >= sp * 4 && bh >= bw * 3 && syslines.some((l) => o.box.right <= l.box.left + sp * 0.5 && o.box.left >= l.box.left - sp * 4 && !(o.box.bottom < l.box.top || l.box.bottom < o.box.top))) {
+        o.addTag("Bracket");
+        continue;
+      }
+    }
     // **描边的曲线也要收**：musicpp 只认填充（`path->fill()`），那是因为它只见过
     // Finale 那一路把弧画成实心月牙；Sibelius 的 Anastasia 页把弧画成描边曲线，
     // 只认填充的话那 115 页一条弧都找不到。

@@ -829,6 +829,19 @@ export function buildNotes(
 
   const dots = pg.symbols.filter((s) => s.code === "augmentationDot" && !s.hasAnyTag());
   const out: StaffNote[] = [];
+  // 临时记号 → 它的符头：右边一格内、纵向交叠的符头里中心离它最近的那一个
+  const heads = pg.symbols.filter((q) => q.hasTag("Note") && q.ownerStaff);
+  const ownerCache = new Map<Sym, Sym | null>();
+  const accidentalOwner = (a: Sym): Sym | null => {
+    if (ownerCache.has(a)) return ownerCache.get(a)!;
+    let best: Sym | null = null;
+    for (const h of heads) {
+      if (!overlapY(a.box, h.box) || a.px > h.box.left || xSpace(a.box, h.box) > sp) continue;
+      if (!best || Math.abs(h.py - a.py) < Math.abs(best.py - a.py)) best = h;
+    }
+    ownerCache.set(a, best);
+    return best;
+  };
 
   for (const s of pg.symbols) {
     if (!s.hasTag("Note") || !s.ownerStaff) continue;
@@ -893,13 +906,13 @@ export function buildNotes(
       for (let i = 0; i < nb; i++) base /= 2;
     }
 
-    // 谱面上印出来的临时记号：贴在符头左边、同高度
+    // 谱面上印出来的临时记号：贴在符头左边、同高度。**一个记号只归一个符头**（`accidentalOwner`）：
+    // 升号字形高约三格，三度和弦里上面那个头也跟它纵向交叠，按交叠认会一个升号给两个头
+    // （宣主荣耀钢琴 m11 `♯C4 E4 G4` 读成 C♯ + E♯）
     let accidental: number | null = null;
     for (const a of pg.symbols) {
       if (!a.hasTag("Accidental")) continue;
-      if (!overlapY(a.box, s.box)) continue;
-      if (a.px > s.box.left) continue;
-      if (xSpace(a.box, s.box) > sp) continue;
+      if (accidentalOwner(a) !== s) continue;
       accidental = accidentalAlter(a.code);
       break;
     }
@@ -1200,7 +1213,12 @@ function initChords(notes: StaffNote[], stems: StemInfo[], sp: number): StaffCho
   // （错开画的二度也只差一个符头宽），纵向与和弦里最近的那个头不超过一格半
   //（再远就是另一路旋律了，那才该分声部）。
   const orphan = notes.filter((n) => !byNote.has(n) && !n.rest);
+  // **真字体的全音符头不并**：矢量路的符头直接来自字形，`noteheadWhole` 就是全音符，不会是「干没挂上的二分」。
+  // 并进去的话下面「带干的和弦里没有全音符」那条还会把它改成二分——宣主荣耀钢琴右手 m16 上声部 D4 全音符
+  // 并进了下声部的二分，成了「D4+F3 二分」一个和弦。位图路的符号挂在合成字体（`#raster`）上，照旧并
+  const glyphWhole = (n: StaffNote) => n.sym.code === "noteheadWhole" && !(n.sym.parent.run?.font ?? "#").startsWith("#");
   for (const n of orphan) {
+    if (glyphWhole(n)) continue;
     let best: StaffChord | null = null;
     let bd = Infinity;
     for (const ch of out) {
@@ -1459,7 +1477,16 @@ function splitVoice(chords: StaffChord[], expect: number): void {
   // 这里只剔**层里只有一个和弦、且它自己就占满一小节**的那种，并回第一声部。
   // 而且只剔排在真声部**前面**的：排在后面的挤不掉真旋律，倒常是真的——合唱谱男低一个全音符、
   // 男高两个二分（Holy, Holy, Holy m8），并回第一声部就接在男高后面，这小节成了八拍。
-  const solo = (grp: StaffChord[]) => grp.length === 1 && Math.abs(grp[0].dur - expect) < EPS;
+  //
+  // **豁免：标准的上下两声部写法**——下面那一层真声部有符干的**全朝下**、这个长音又在它们**上方**
+  // （宣主荣耀钢琴右手 m2：上声部 A4 全音符，下声部「休止 F E D」符干朝下）。那是真的上声部，
+  // 并回第一声部就成了「全音符 + 四拍」八拍的一个声部。位图路误检的假全音符很少恰好碰上这个组合。
+  const upperOfTwo = (grp: StaffChord[]): boolean => {
+    const ch = grp[0];
+    const others = layers.filter((g) => g !== grp).flat().filter((c) => c.stem && !c.notes[0].rest);
+    return others.length > 0 && others.every((c) => !c.notes[0].stemUp && c.top > ch.top);
+  };
+  const solo = (grp: StaffChord[]) => grp.length === 1 && Math.abs(grp[0].dur - expect) < EPS && !upperOfTwo(grp);
   const firstReal = layers.findIndex((grp) => !solo(grp));
   const real = firstReal < 0 ? [] : layers.filter((grp, i) => i >= firstReal || !solo(grp));
   const merged = real.length && real.length < layers.length ? real : layers;

@@ -5,7 +5,7 @@
 // 为什么要这一层：一首曲子印成好几个系统，**每个系统里的第 n 行谱是同一个声部**。
 // 不连起来的话，钢琴谱的伴奏行会被当成一堆互不相干的谱行，导出时只能挑顶行
 // （本仓在移植这一层之前就是这么做的，伴奏整个丢掉）。
-import { Part, ScoreStaff, SPage, SSystem, Staff, overlapY } from "./model";
+import { type Box, Part, ScoreStaff, SPage, SSystem, Staff, overlapY } from "./model";
 import type { StaffContext } from "./notedata";
 
 /** 一行谱的「身份签名」。musicpp 的 `StaffToken`。 */
@@ -59,10 +59,10 @@ export function tokenOf(
   let topOfBrace = false;
   let bottomOfBrace = false;
   const cy = stf.cy;
-  const braces = [
+  const braces = mergeBraceHalves([
     ...pg.objs.filter((o) => o.hasTag("Bracket")).map((o) => o.box),
     ...pg.symbols.filter((s) => s.code === "bracket" || s.code === "brace").map((s) => s.box),
-  ];
+  ], sp);
   for (const b of braces) {
     if (!overlapY(b, stf.box)) continue;
     // 括号只盖住这一行的话不算「分成上下两半」
@@ -72,6 +72,18 @@ export function tokenOf(
   }
   const pf = profileOf(stf);
   return { clef: ctx.get(stf)?.clef?.code ?? "", size, topOfBrace, bottomOfBrace, lyric: pf.lyric, pitch: pf.pitch, label: pf.label ?? null, staff: stf };
+}
+
+/** 上下相接、横向重叠的几段括号并成一个（Finale 直出的花括号是上下两半两条曲线，各自只盖住一行谱）。 */
+function mergeBraceHalves(boxes: Box[], sp: number): Box[] {
+  const out: Box[] = [];
+  for (const b of [...boxes].sort((p, q) => p.top - q.top)) {
+    const last = out[out.length - 1];
+    if (last && b.top <= last.bottom + sp * 0.5 && b.left < last.right && b.right > last.left) {
+      out[out.length - 1] = { left: Math.min(last.left, b.left), right: Math.max(last.right, b.right), top: last.top, bottom: Math.max(last.bottom, b.bottom) };
+    } else out.push({ ...b });
+  }
+  return out;
 }
 
 /** 最长公共子序列的配对（用签名相等判）。`SystemConnector` 用 dtl 的 diff，这里手写一份。 */
@@ -393,9 +405,12 @@ function finishScore(systems: StaffScore["systems"], scoreStaves: ScoreStaff[]):
     const tok = lastToken(ss, systems);
     let newPart = !tok?.bottomOfBrace;
     if (!parts.length || tok?.topOfBrace) newPart = true;
+    // 兜底只在**这个系统一处花括号都没认出来**时用：认出了花括号，不在括号里的就不是大谱表
+    //（宣主荣耀：女低 G 谱号、男声 F 谱号相邻，钢琴另有花括号——按谱号并就把两个人声并成了一个大谱表）
     if (
       parts.length &&
       !tok?.topOfBrace &&
+      !braceInSystemOf(ss, systems) &&
       prevTok?.clef.startsWith("gClef") &&
       tok?.clef.startsWith("fClef") &&
       sameSystemSomewhere(parts[parts.length - 1].scoreStaves, ss)
@@ -407,7 +422,52 @@ function finishScore(systems: StaffScore["systems"], scoreStaves: ScoreStaff[]):
     prevTok = tok;
   }
   parts.forEach((p, i) => (p.index = i));
+  nameParts(systems, parts);
   return { systems, scoreStaves, parts };
+}
+
+/**
+ * 声部名：文本层认出的 `Instrument`（谱表左边的「Soprano」「T. & B.」「Pno.」）落到 part 上。
+ * 逐系统找这个 part 在本系统的几行谱，取纵向落在它们范围里（上下各容一格）、在谱表左边、离中线最近的那一段；
+ * 第一次见到的是全名，之后头一个不同的是缩写（刻谱的通行排法：首系统全名、后续缩写）。
+ */
+function nameParts(systems: StaffScore["systems"], parts: Part[]): void {
+  for (const part of parts) {
+    for (let si = 0; si < systems.length; si++) {
+      const sts = part.scoreStaves.map((ss) => ss.staves[si]).filter((st): st is Staff => !!st);
+      if (!sts.length) continue;
+      const { page } = systems[si];
+      const sp = page.normalStaffSpace || page.space;
+      const top = Math.min(...sts.map((st) => st.box.top)) - sp;
+      const bottom = Math.max(...sts.map((st) => st.box.bottom)) + sp;
+      const left = Math.min(...sts.map((st) => st.box.left));
+      const mid = (top + bottom) / 2;
+      let best: { text: string; d: number } | null = null;
+      for (const o of page.objs) {
+        if (!o.run || !o.hasTag("Instrument") || o.box.right > left) continue;
+        const cy = (o.box.top + o.box.bottom) / 2;
+        if (cy < top || cy > bottom) continue;
+        const text = o.run.glyphs.map((g) => g.unicode).join("").trim();
+        if (text && (!best || Math.abs(cy - mid) < best.d)) best = { text, d: Math.abs(cy - mid) };
+      }
+      if (!best) continue;
+      if (!part.name) part.name = best.text;
+      else if (!part.abbr && best.text !== part.name) part.abbr = best.text;
+    }
+  }
+}
+
+/** 这行谱最后出现的那个系统里，有没有哪一行认出了花括号。 */
+function braceInSystemOf(ss: ScoreStaff, systems: StaffScore["systems"]): boolean {
+  for (let i = ss.staves.length - 1; i >= 0; i--) {
+    if (!ss.staves[i]) continue;
+    const e = systems[i];
+    return e.sys.staves.some((st) => {
+      const t = tokenOf(e.page, st, e.ctx);
+      return t.topOfBrace || t.bottomOfBrace;
+    });
+  }
+  return false;
 }
 
 /** 两行谱有没有在某个系统里同时出现过（同一系统 = 同时演奏）。 */

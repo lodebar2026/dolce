@@ -458,7 +458,7 @@ function scoreToMusicXmlRaw(
   const bodies: string[] = [];
   score.parts.forEach((part, pi) => {
     const id = `P${pi + 1}`;
-    partList.push(scorePartXml(id));
+    partList.push(scorePartXml(id, part.name, part.abbr));
     let body = "";
     let measureNo = 0;
     let prevFifths: number | null = null;

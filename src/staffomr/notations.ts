@@ -50,6 +50,42 @@ export function findNotations(pg: SPage): { marks: Sym[]; dynamics: Sym[] } {
   return { marks, dynamics };
 }
 
+/** 琶音挂到线右边多少格以内的和弦（与位图路 `rasteromr/recognize.ts` 的 `ARP_REACH` 同值）。 */
+const ARP_REACH = 2.5;
+
+/**
+ * 琶音记号：Finale 把它画成**一串竖排的 `wiggleTrill` 字形**（Maestro 'g'，同 x、上下一个接一个，
+ * 宣主荣耀 p1 左手三和弦前六个）。不先挑出来，每一个都会被当成颤音挂到最近的音上。
+ * 两个以上同列相接才算（单个的 wiggle 是真颤音线的一截）；挂法同位图路：线右 `ARP_REACH` 格内、
+ * 纵向落在线的范围里（上下容半格多）最靠左的那一列和弦。返回没被收走的记号。
+ */
+export function takeArpeggios(pg: SPage, notes: StaffNote[], marks: Sym[]): Sym[] {
+  const sp = pg.normalStaffSpace || pg.space;
+  const wig = marks.filter((m) => m.code === "wiggleTrill").sort((a, b) => a.box.left - b.box.left || a.box.top - b.box.top);
+  const used = new Set<Sym>();
+  for (const w of wig) {
+    if (used.has(w)) continue;
+    const col = [w];
+    for (const u of wig) {
+      if (used.has(u) || col.includes(u)) continue;
+      const last = col[col.length - 1];
+      if (Math.abs(u.box.left - w.box.left) > sp * 0.3) continue;
+      if (u.box.top < last.box.top || u.box.top > last.box.bottom + sp * 0.5) continue;
+      col.push(u);
+    }
+    if (col.length < 2) continue;
+    for (const u of col) used.add(u);
+    const right = Math.max(...col.map((u) => u.box.right));
+    const top = Math.min(...col.map((u) => u.box.top));
+    const bottom = Math.max(...col.map((u) => u.box.bottom));
+    const near = notes.filter((n) => !n.rest && n.sym.box.left >= right - sp * 0.3 && n.sym.box.left <= right + sp * ARP_REACH && n.sym.py >= top - sp * 0.6 && n.sym.py <= bottom + sp * 0.6);
+    if (!near.length) continue;
+    const x0 = Math.min(...near.map((n) => n.sym.box.left));
+    for (const n of near) if (n.sym.box.left <= x0 + sp * 1.4) n.marks = [...(n.marks ?? []), "arpeggiato"];
+  }
+  return marks.filter((m) => !used.has(m));
+}
+
 /**
  * 演奏法记号挂到音符上：同一行谱里 **x 最近**的那个音符。
  *
@@ -260,7 +296,7 @@ export const DYNAMIC_NAME: Record<string, string> = {
  * 与演奏法的区别：力度印在谱表**下方**（人声谱有时在上方）且不必对准某个符头，
  * 所以只按 x 找最近的音符，容差放到三格。
  */
-export function attachDynamics(pg: SPage, notes: StaffNote[], dynamics: Sym[]): void {
+export function attachDynamics(pg: SPage, notes: StaffNote[], dynamics: Sym[], lyricBottom?: Map<Staff, number>): void {
   attachDynamicTexts(
     pg,
     notes,
@@ -268,6 +304,7 @@ export function attachDynamics(pg: SPage, notes: StaffNote[], dynamics: Sym[]): 
       const text = DYNAMIC_NAME[d.code];
       return text ? [{ px: d.px, py: d.py, text }] : [];
     }),
+    lyricBottom,
   );
 }
 
@@ -277,11 +314,11 @@ export function attachDynamics(pg: SPage, notes: StaffNote[], dynamics: Sym[]): 
  * 位图路认出来的是一个个字母块（`p`、`m`、`f` 各一个 contour），拼完才是一个力度记号，
  * 给不出单个 SMuFL 名——判据只留这一份，`attachDynamics` 查完表委托过来。
  */
-export function attachDynamicTexts(pg: SPage, notes: StaffNote[], items: { px: number; py: number; text: string }[]): void {
+export function attachDynamicTexts(pg: SPage, notes: StaffNote[], items: { px: number; py: number; text: string }[], lyricBottom?: Map<Staff, number>): void {
   const sp = pg.normalStaffSpace || pg.space;
   for (const d of items) {
     // 与松叶同一条：先定谱行（力度也印在它那行谱的下方），再在行内按 x 找最近的音符
-    const owner = ownerStaff(pg, d.py, sp);
+    const owner = ownerStaff(pg, d.py, sp, 5, lyricBottom);
     for (const only of [true, false]) {
       let best: StaffNote | undefined;
       let bd = Infinity;
@@ -308,7 +345,7 @@ export function attachDynamicTexts(pg: SPage, notes: StaffNote[], items: { px: n
  * 取「下缘在它上方、且最近」的那一行；上方没有（页面第一行谱之上）才退回下方最近的一行。
  * 容差各五格与三格——谱表之间隔着歌词带，记号常印在带里。
  */
-function ownerStaff(pg: SPage, cy: number, sp: number, reach = 5): Staff | null {
+function ownerStaff(pg: SPage, cy: number, sp: number, reach = 5, lyricBottom?: Map<Staff, number>): Staff | null {
   let best: Staff | null = null;
   let bd = Infinity;
   for (const st of pg.staves) {
@@ -317,6 +354,17 @@ function ownerStaff(pg: SPage, cy: number, sp: number, reach = 5): Staff | null 
     if (d < bd) {
       bd = d;
       best = st;
+    }
+  }
+  // **隔着上一行的歌词、紧贴着下一行谱的，是下一行的**（`lyricBottom` 给了才判，矢量路给）。
+  // 人声力度有两种版式：印在自己那行歌词下面（破碎，上面那条约定由它来）；印在自己谱表上方——也就是
+  // 上一行的歌词下面（宣主荣耀：男声 m1 的 p、m9 的渐强挂到了女低）。光凭几何分不开，歌词分得开：
+  // 记号在上一行歌词**下沿之下**、且下方三格内就是一行谱，归下面那行。钢琴两行之间没有歌词，不受影响
+  if (best && lyricBottom) {
+    const lb = lyricBottom.get(best);
+    if (lb !== undefined && cy > lb) {
+      const below = pg.staves.filter((st) => st.box.top >= cy && st.box.top - cy <= sp * 3).sort((a, b) => a.box.top - b.box.top)[0];
+      if (below) return below;
     }
   }
   if (best) return best;
@@ -348,7 +396,7 @@ export interface WedgeSpan {
  * 与力度同一套「按 x 找最近、纵向在谱表带外四格以内」的判据（那一条已经调过）。
  * 两端落到同一个音符时**只留起点**——MusicXML 里同一处既起又止没有意义。
  */
-export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[]): void {
+export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[], lyricBottom?: Map<Staff, number>): void {
   const sp = pg.normalStaffSpace || pg.space;
   for (const wg of wedges) {
     // **先定是哪一行谱，再在那一行里找音符。** 松叶印在它那行谱的**下方**
@@ -356,7 +404,7 @@ export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[])
     // ——不先定谱行，一条松叶会挂到下一行去，逐声部比出来的次序全乱。
     // 上方够得着的范围放到 `WEDGE_REACH` 格：合唱谱人声的松叶印在**自己那行歌词下面**（破碎 p4 女高、女低），
     // 离下一行谱表反而更近，五格以内找不到上方那行就挂到了下一行
-    const owner = ownerStaff(pg, wg.cy, sp, WEDGE_REACH);
+    const owner = ownerStaff(pg, wg.cy, sp, WEDGE_REACH, lyricBottom);
     const near = (x: number): StaffNote | undefined => {
       // 先在**它那行谱**里找；那一行在这个位置没有音符（人声休止、钢琴前奏一类）
       // 才退回「所有纵向够得着的谱行里 x 最近的那个」。

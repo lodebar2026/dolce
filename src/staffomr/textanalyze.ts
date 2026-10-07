@@ -27,6 +27,9 @@ function collectTexts(pg: SPage): { texts: PObj[]; hlines: Box[] } {
     let inStaff = false;
     const cy = (o.box.top + o.box.bottom) / 2;
     for (const st of pg.staves) {
+      // 横向也要落在谱表里：谱表**左边**同高的是声部名（「Soprano」「T. & B.」），不是谱内元素
+      // （宣主荣耀那种声部名正对着谱行印的，原来整列被挡在外面，只认出印在两行之间的「Piano」）
+      if (o.box.right <= st.box.left || o.box.left >= st.box.right) continue;
       if (Math.abs(st.middleStep(cy)) <= 4) {
         inStaff = true;
         break;
@@ -40,6 +43,9 @@ function collectTexts(pg: SPage): { texts: PObj[]; hlines: Box[] } {
 }
 
 const isStepChar = (c: string): boolean => c >= "A" && c <= "G";
+
+/** 一个汉字（可带句读）成一段：中文歌词逐字一个文本对象的样子。 */
+const LYRIC_CJK_SINGLE = /^[㐀-鿿豈-﫿][!,.?;:！，。？；：、]?$/;
 
 /** 单个和弦记号的语法。与 `src/omr/chordline.ts::CHORD_TOKEN_RE` 同一条
  *  （根音必须大写、长后缀在前），**改一处要两处一起改**。
@@ -114,9 +120,48 @@ export function analyzeText(pg: SPage): TextAnalysis {
     kind.set(t, "lyric");
   }
   for (const l of hlines) cys.push(l.top);
+  // 下面两路（延长线锚、自校准）都只看纵向，横向不管：**谱表左边**的声部名（第二个系统起的「A.」「T. & B.」）
+  // 与**表情术语**（印在歌词带里的 `rit.`）会被收成歌词（宣主荣耀 p2 女高唱出了「來A.敬拜」）。先挡掉
+  const firstX = Math.min(...pg.staves.map((st) => st.box.left));
+  const lastStaff = pg.staves.reduce<Staff | null>((m, st) => (!m || st.box.bottom > m.box.bottom ? st : m), null);
+  const notLyric = (t: PObj) => {
+    const s = objText(t).trim();
+    // 页脚（宣主荣耀 p2「宣主榮耀 2」）：最后一行谱以下、整句一段的汉字，**正上方那行谱在它的横向范围里一个符头都没有**。
+    // 光凭「最后一行谱以下、两字以上」会挡掉赞美之泉印在末行谱下的成段歌词（「耀、尊」「高臺，」，歌词档 −0.06）
+    // ——歌词总对着音符印，页脚不是
+    const footer =
+      !!lastStaff && t.box.top > lastStaff.box.bottom && (s.match(/[\u3400-\u9fff]/g)?.length ?? 0) >= 2 &&
+      !pg.symbols.some((h) => h.code.startsWith("notehead") && overlapY(h.box, lastStaff.box) && h.box.right > t.box.left && h.box.left < t.box.right);
+    // 纯数字（小节号）不在这里挡：后面拼音节时会剔掉；在这里挡了它们会转去别的类，赞美之泉切曲目跟着变（少配上一首）
+    return t.box.right <= firstX || footer;
+  };
+
   for (const t of texts) {
-    if (kind.has(t)) continue;
+    if (kind.has(t) || notLyric(t)) continue;
+    // 注意 `between(值, 端, 端)` 在这里的参数次序是**反的**：判的是「字顶落在字底与 y 之间」，等于
+    // **任何一条水平线下方的文字都算歌词**。照字面改正（`between(y, top, bottom)`）赞美之泉歌词档
+    // 94.95 → 86.98、同一版 66 → 21 首——那本书的歌词大半是靠它收进来的，别顺手改
     if (cys.some((y) => between(t.box.top, t.box.bottom, y))) kind.set(t, "lyric");
+  }
+
+  // ── 中文歌词行的起锚（本仓新加） ──────────────────────────────────────────
+  //
+  // 下面那道补锚要先有**一个**认定的歌词才能自校准；一页里中文歌词既不连字、也没有延长线时（宣主荣耀 p1
+  // 三行人声全是一字一段），一个锚都没有，整页歌词全丢。中文歌词的样子本身就是锚：**一个汉字（可带句读）一段**，
+  // 同字体同字号、同一条基线上排成一排（三段以上），排在某行谱下方。标题、页眉、署名都是整句一段，碰不上这条。
+  {
+    const single = texts.filter((t) => !kind.has(t) && t.run && LYRIC_CJK_SINGLE.test(objText(t).trim()));
+    const underStaff = (t: PObj) => pg.staves.some((st) => st.box.bottom <= t.box.top && t.box.left < st.box.right && t.box.right > st.box.left);
+    for (const t of single) {
+      if (kind.has(t) || !underStaff(t)) continue;
+      const h = t.box.bottom - t.box.top;
+      const cy = (t.box.top + t.box.bottom) / 2;
+      const row = single.filter(
+        (u) => u.run!.font === t.run!.font && Math.abs(u.run!.sizeDev - t.run!.sizeDev) <= t.run!.sizeDev * 0.05 && Math.abs((u.box.top + u.box.bottom) / 2 - cy) <= h * 0.5,
+      );
+      if (row.length < 3) continue;
+      for (const u of row) kind.set(u, "lyric");
+    }
   }
 
   // ── 中文歌词行的补锚（本仓新加） ──────────────────────────────────────────
@@ -150,7 +195,9 @@ export function analyzeText(pg: SPage): TextAnalysis {
     }
     if (maxOff > 0) {
       for (const t of texts) {
-        if (kind.has(t) || !t.run) continue;
+        // 表情术语只在这一路挡（钢琴 `rit.` 落在男声歌词带里，宣主荣耀 p2）；在延长线那一路也挡，
+        // 赞美之泉的配对会连锁变（多两对歌词否决、少配上一首）
+        if (kind.has(t) || !t.run || notLyric(t) || EXPRESSIONS.has(objText(t).trim().toLowerCase())) continue;
         if (!fonts.has(t.run.font)) continue;
         if (Math.abs(t.run.sizeDev - size) > size * 0.05) continue;
         const st = staffAbove(t);
@@ -163,6 +210,17 @@ export function analyzeText(pg: SPage): TextAnalysis {
         kind.set(t, "lyric");
       }
     }
+  }
+
+  // 延长线那一路（水平线以下都算歌词）会把印在歌词带与下一行谱之间的表情术语也收进来（宣主荣耀 p2 钢琴的 `rit.`
+  // 唱进了男声歌词）。改归表情只认这一种：斜体、整段是术语、**离下面那行谱比离上面那行谱近**（是给下面那行的）。
+  // 放宽到「斜体术语一律退回」，赞美之泉的配对会连锁变（歌词里少一个拉丁词，汉字占比跨过歌词否决的门槛，少配上一首）
+  for (const [t, k] of kind) {
+    if (k !== "lyric" || !t.run || !/italic|oblique/i.test(t.run.font)) continue;
+    if (!EXPRESSIONS.has(objText(t).trim().toLowerCase())) continue;
+    const up = Math.min(...pg.staves.filter((st) => st.box.bottom <= t.box.top).map((st) => t.box.top - st.box.bottom));
+    const down = Math.min(...pg.staves.filter((st) => st.box.top >= t.box.bottom).map((st) => st.box.top - t.box.bottom));
+    if (down < up) kind.set(t, "expression");
   }
 
   // ── markHarmony ───────────────────────────────────────────────────────────
@@ -375,6 +433,16 @@ export function splitSyllables(o: PObj, dict?: TextGlyphLookup): Syllable[] {
   const flush = (hyphen: boolean) => {
     if (!cur) return;
     const text = cur.chars.join("").trim();
+    // **半角标点紧贴在前一个音节后面的，并回去**（「祂!」「拜,」）：另起一个音节就占掉下一个音，
+    // 后面的字整体错一格（宣主荣耀 m6 起女高唱成「祂 ! 哈 利」）
+    const last = out[out.length - 1];
+    if (last && /^[!,.?;:]+$/.test(text) && cur.left - last.right < em * 0.6) {
+      last.text += text;
+      last.right = cur.right;
+      last.glyphs = [...last.glyphs, ...cur.glyphs];
+      cur = null;
+      return;
+    }
     // 纯数字的不是歌词：那是**小节号**（`findMeasureNumber` 只认得贴着系统线的那些，
     // 印在框里的漏网）与行首的段号「1.」。GT 那边也把段号剔掉了。
     if (text && !/^[-_–—]+$/.test(text) && !/^\d+[.．、]?$/.test(text)) {
@@ -708,5 +776,48 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
       .sort((a, b) => Math.abs(a.x - g.box.left) - Math.abs(b.x - g.box.left));
     const best = cands.find((n) => !n.chord);
     if (best) best.chord = text;
+  }
+}
+
+// ── 速度与表情文字 → 音符上的 words / metronome ─────────────────────────────
+
+/** 节拍器文字（`q = c 76`、`♩= 72`）：音符字形（正文字体里的 `q`/`h`/`e`，或乐谱字形的 ♩）+ `=` + 可带 `c.`/`ca.` 的数字。 */
+const METRO_TEXT_RE = /([qhe♩♪𝅗𝅥])?\.?\s*=\s*(?:ca?\.?\s*)?(\d{2,3})/;
+const METRO_UNIT: Record<string, string> = { q: "quarter", "♩": "quarter", h: "half", "𝅗𝅥": "half", e: "eighth", "♪": "eighth" };
+
+/**
+ * `analyzeText` 认出的**速度**（`Andante`、`q = c 76`）与**表情**（`rit.`）挂到音符上，出 `<direction>`。
+ * 原文到打标为止；挂法同位图路的 `rasteromr/words.ts::attachWordLines`：先定谱行（纵向离谁近），
+ * 再取这一行里文字左端往左让一格之后、右边最近的那个音（没有就取这一行最后一个）。
+ * 速度一行常是好几段（`Andante` 与 `q = c 76` 各一段），按段各挂各的：文字出 `<words>`、带 `=` 的出节拍器。
+ */
+export function attachDirectionTexts(
+  pg: SPage,
+  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean }[]; metronome?: string }[],
+  text: TextAnalysis,
+): void {
+  const sp = pg.normalStaffSpace || pg.space;
+  for (const o of [...text.tempo, ...text.expression]) {
+    const s = objText(o).replace(/\s+/g, " ").trim();
+    if (!s) continue;
+    const cx = (o.box.left + o.box.right) / 2;
+    const cy = (o.box.top + o.box.bottom) / 2;
+    let stf: Staff | undefined;
+    let bd = Infinity;
+    for (const st of pg.staves) {
+      if (cx < st.box.left - sp * 2 || cx > st.box.right + sp * 2) continue;
+      const d = cy < st.box.top ? st.box.top - cy : cy > st.box.bottom ? cy - st.box.bottom : 0;
+      if (d < bd) (bd = d), (stf = st);
+    }
+    if (!stf) continue;
+    const row = notes.filter((n) => n.staff === stf && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
+    const note = row.find((n) => n.x >= o.box.left - sp) ?? row[row.length - 1];
+    if (!note) continue;
+    const metro = METRO_TEXT_RE.exec(s);
+    if (metro && s.includes("=")) {
+      note.metronome = `${METRO_UNIT[metro[1] ?? "q"] ?? "quarter"}=${metro[2]}`;
+      continue;
+    }
+    (note.words ??= []).push({ text: s, above: cy < (stf.box.top + stf.box.bottom) / 2 });
   }
 }
