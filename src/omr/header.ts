@@ -8,6 +8,7 @@ import { surfaceFromBinary, type Surface } from "./surface";
 import { clusterByY, median, overlapRatioX, overlapRatioY, unionRect, unionRects } from "./geom";
 import { accidentalOf } from "./accidental";
 import { probe } from "./probe";
+import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, effectiveCharH, betterTitle } from "./headertext";
 
 const rcyOf = (r: Rect) => r.y + r.h / 2;
 const hanziCount = (s: string) => (s.match(/[一-鿿]/g) || []).length;
@@ -991,40 +992,14 @@ export async function recognizeHeader(
   }
 
   async function classify(ls: HLine[]) {
-    // 著作者前缀：`作词：`/`词曲：`，也含顿号/斜杠分列的 `词、曲：`、`作词/作曲：`。
-    const creditRe = /^\s*[作詞词曲編编譯译]{1,2}(?:\s*[、，,/／]\s*[作詞词曲編编譯译]{1,2})*\s*[:：]/;
-    // 后缀式著作者：中文谱很常见把职能写在名字**后面**、且不带冒号——"盛晓玫 词曲"、
-    // "卢永亨词曲"、"黄霑作词、作曲"。前缀式一条都认不出（实测 4 首词曲整档 0 分）。
-    // 判据是整行恰好等于「人名(2~4 字，可顿号并列) + 职能词组」。**认出来后照谱面原样输出**
-    // （从前归一成 `<职能>：<名字>`）：谱面怎么印就怎么写，不调换次序、不补分隔符——
-    // "黄 霑作词、作曲" 那种名字与职能之间本就没有空当，补一个反倒不是原样。
-    // 要求**不是最大字号行**，免得短标题被当成著作者、连标题一起丢掉。
-    // 名字组**非贪婪**、职能组锚定行尾：贪婪会把「卢永亨词曲」的「词」吃进名字、只剩「曲」→
-    // 出成 `作曲：卢永亨词`。非贪婪 + `$` 让引擎先给名字最短长度，回溯到「卢永亨」+「词曲」。
-    // 职能词之间的分隔符**可选**：既有「作词、作曲」也有连写的「词曲」，后者若强求分隔符，
-    // 职能组只吃得下一个字，剩下那个会被名字回溯吞掉（→ `作曲：卢永亨词`）。
-    const creditSuffixRe = /^\s*([一-鿿·]{2,4}?(?:\s*[、，,]\s*[一-鿿·]{2,4}?)*)\s*((?:[作編编]?[詞词曲])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲]))*)\s*$/;
-    // 后缀式著作者的名字也可能是**英文名**——"John Laudon 词曲"（1《以色列的圣者》）。上面那条
-    // 正则的名字组只收汉字，整行就落到"非著作者行"里、词曲整档为空。故另走一条：先按行尾的
-    // 职能词组切开，剩下的前半必须是**纯拉丁名**（字母 + 空格/点/连字符之类），再按字距补回
-    // 词间空格（rec 不吐空格，读出来是 `JohnLaudon词曲`）。名字里但凡有个汉字就不走这条，
-    // 仍归上面那条中文名规则，两条互不重叠。
-    const creditRoleTailRe = /((?:[作編编]?[詞词曲])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲]))*)\s*$/;
-    // 名字里还可能带生卒/出版年份与括号（"Felice de Giardini (1769) 曲"），故收数字与括号；
-    // 但**必须以字母打头**——纯数字/符号的短碎块（页码、调号）不会被当成人名。
-    const latinNameRe = /^[A-Za-z][A-Za-z0-9 .,'’&·()（）\-]*$/;
-    // 名字 + 职能 + 年份（新编赞美诗·四声部：「希伯词 1826」「刘廷芳 杨荫浏合译 1932」「柯克帕特里克曲 1838 – 1921」
-    // 「据传马丁·路德词 1530」）。上面那条名字只收 2~4 字、不收「译」、行尾也不许带年份，一条都认不出。
-    const creditYearRe = /^\s*[一-鿿·]{2,10}?\s*(?:合译|[作編编]?[詞词曲譯译])\s*\d{4}(?:\s*[-–—]\s*\d{4})?\s*$/;
-    // 署名下一行括号里的原文名（「(Reginald Heber)」「(John B. Dykes)」），单独成行。
-    const latinParenRe = /^\s*[(（][A-Za-z][A-Za-z .'’\-]*[)）]\s*$/;
+    const creditRe = CREDIT_PREFIX_RE;
+    const creditSuffixRe = CREDIT_SUFFIX_RE;
+    const creditRoleTailRe = CREDIT_ROLE_TAIL_RE;
+    const latinNameRe = LATIN_NAME_RE;
+    const creditYearRe = CREDIT_YEAR_RE;
+    const latinParenRe = LATIN_PAREN_RE;
     const maxCharH = Math.max(0, ...ls.map((l) => l.charH));
-    const effH = (l: HLine) => {
-      const units = [...l.text].reduce((a, c) => a + (/[一-鿿]/.test(c) ? 1 : /[A-Za-z0-9]/.test(c) ? 0.6 : 0), 0);
-      // 只在明显叠排（按字宽算不到框高七成）时才换：det 框高带留白，正常一排字的「框宽 ÷ 字数」也比框高小一成上下，
-      // 一律取小会把标题与右上角分类行拉平、按宽度输掉（选本 36「第三十六首」输给「相信接受29」）
-      return units >= 2 && l.bbox.w / units < l.charH * 0.7 ? l.bbox.w / units : l.charH;
-    };
+    const effH = (l: HLine) => effectiveCharH(l.text, l.bbox, l.charH);
     const creditAt: Rect[] = [];   // 本函数收下的每条署名所在行框（与 out.credits 同序），末尾按栏重排用
     let titleLine: HLine | null = null;
     const rest: HLine[] = [];
@@ -1100,9 +1075,7 @@ export async function recognizeHeader(
       // 是一整句、出版方只有四个字。
       // 比的是**有效字高**：框高与「框宽 ÷ 字数」取小。上下叠两排的框（选本 303 速度「不慢」叠着力度 mf，框高 54、宽才 106）
       // 按框高比会顶掉真标题（29px）
-      if (!titleLine) titleLine = ln;
-      else if (effH(ln) > effH(titleLine) * 1.25) titleLine = ln;
-      else if (effH(ln) >= effH(titleLine) * 0.85 && ln.bbox.w > titleLine.bbox.w) titleLine = ln;
+      if (!titleLine || betterTitle(effH(ln), ln.bbox.w, effH(titleLine), titleLine.bbox.w)) titleLine = ln;
     }
     // 署名按「左栏自上而下、再右栏」排：det 出框的先后不是阅读序（78《马槽歌》右栏的「柯克帕特里克曲」
     // 框顶比左栏第二行还高 1px，按 y 排就插到了左栏中间）。同一排左右各一条（作词在左、作曲在右）照旧左先。

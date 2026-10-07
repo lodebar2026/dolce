@@ -41,6 +41,7 @@ import { extendArcEnds, findFusedSlurs, findRasterDashedSlurs, findRasterSlurs }
 import { ContourLedger } from "./ledger";
 import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { attachSlurs, markSlurNotes, reconnectSlurs, validateSlurNote, type SlurArc } from "../staffomr/slur";
+import { isTextStaff, pageTextKey } from "./pagetext";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
 import { rasterizePage, type RasterPage } from "./rasterpage";
@@ -94,6 +95,12 @@ export interface RasterPageResult {
   headerStrips: WordStrip[];
   /** 页眉各条（`opts.headerOcr` 命中时）：标题、副标题、词曲作者。 */
   header: HeaderCredit[];
+  /** 页的内容指纹（`pagetext.ts::pageTextKey`）：文字区缓存按它寻址。只在给了 `pageTexts` 或 `wantTextBin` 时算。 */
+  textKey?: string;
+  /** 送文字检测的那张位图（`opts.wantTextBin` 且缓存里还没有这一页时带出，在线识别拿去检测）。 */
+  textBin?: Binary;
+  /** 这一页用上的文字框（`opts.pageTexts` 命中时）。 */
+  textBoxes?: Rect[];
   /**
    * 这一页各谱行上方的**和弦带**（`gen-rasterharmony.mjs` 拿它送 OCR）。
    * 与歌词条、标签条同一套架构：这里只切条，认字靠离线缓存。见 `harmony.ts`。
@@ -930,6 +937,10 @@ export async function recognizeRasterPage(
     wantHeader?: boolean;
     /** 页眉带的 OCR 缓存（`gen-rasterheader.mjs` 的产物，值同文字指示带）。 */
     headerOcr?: Map<string, WordLine[]>;
+    /** 整页文字框（`gen-rastertext.mjs` 的产物，按 `pageTextKey` 寻址；在线识别由 `song.ts` 现检）。见 `pagetext.ts`。 */
+    pageTexts?: Map<string, Rect[]>;
+    /** 缓存里没有这一页的文字框时把位图带出来（`textBin`），在线识别拿去检测。 */
+    wantTextBin?: boolean;
     /** 和弦条的 OCR 缓存（`scripts/gen-rasterharmony.mjs` 的产物）。见 `harmony.ts`。
      *  值的类型与歌词缓存共用（`OcrChar`）——两边都是「整条送 rec，回来字符带条内 x」。 */
     harmonyOcr?: Map<string, OcrChar[]>;
@@ -953,11 +964,21 @@ export async function recognizeRasterPage(
   if (!raster) return empty(blank, null, null, opts.carryTime, opts.carryKey);
   const unit = estimateUnit(raster.bin);
   if (!unit) return empty(blank, raster, null, opts.carryTime, opts.carryKey);
+  // 整页文字框（找谱线之前就要）：缓存按页指纹查，查不到且要在线检测的把位图带出去
+  const textKey = opts.pageTexts || opts.wantTextBin ? pageTextKey(raster.bin) : undefined;
+  const textBoxes = textKey ? opts.pageTexts?.get(textKey) : undefined;
+  const textBin = opts.wantTextBin && !textBoxes ? { w: raster.bin.w, h: raster.bin.h, data: new Uint8Array(raster.bin.data) } : undefined;
+  const withText = (r: RasterPageResult): RasterPageResult => Object.assign(r, { textKey, textBin, textBoxes });
   // 行投影找谱线；**明显不够的页面**（扫得糊、线细断）再拿逐列游程的轨迹补上
   // ——判据与推平同一道闸，见 `dewarp.ts::completeStaffLines`。
   const rowLines = findStaffLines(raster.bin);
-  const { lines, groups } = completeStaffLines(raster.bin, rowLines, groupStaves(rowLines));
-  if (!groups.length) return empty(blank, raster, unit, opts.carryTime, opts.carryKey);
+  const found = completeStaffLines(raster.bin, rowLines, groupStaves(rowLines));
+  // **落在文字里的「谱表」不要**（密排的中文段落凑出的五条等距横笔，见 `pagetext.ts`），它的线也不当谱线去抹
+  const textStaves = textBoxes ? found.groups.filter((g) => isTextStaff(g, textBoxes)) : [];
+  const textLines = new Set(textStaves.flatMap((g) => g.lines));
+  const groups = found.groups.filter((g) => !textStaves.includes(g));
+  const lines = found.lines.filter((l) => !textLines.has(l));
+  if (!groups.length) return withText(empty(blank, raster, unit, opts.carryTime, opts.carryKey));
   // 谱线左端顺着线再往左追（弯页左段落在横带外，见 `traceLeft`）。一行谱五条线的左端
   // 本该一致，追的时候中间几条常被谱号挡住（齐来称颂第一行追到 153/209/216/193/153），
   // 取**至少两条吻合的最小左端**统一给五条线——下游一律拿五条线左端的最大值当谱行左缘。
@@ -3814,7 +3835,7 @@ export async function recognizeRasterPage(
     braces: findBraces(nl, prims, unit, staffLefts, groups.map((g) => ({ top: g.lines[0].y, bottom: g.lines[4].y }))).map((c) => c.bbox),
     sysBrackets: groupByLeftInk(raster.bin, groups.map((g) => ({ top: g.lines[0].y, bottom: g.lines[4].y, left: Math.max(...g.lines.map((l) => l.left)) })), unit),
   });
-  if (!findStaves(pg)) return empty(pg, raster, unit, opts.carryTime, opts.carryKey);
+  if (!findStaves(pg)) return withText(empty(pg, raster, unit, opts.carryTime, opts.carryKey));
   // 读音高按该处实测的五线、相邻两线间的相对位置（`Staff.middleStep`）
   for (const stf of pg.staves) {
     if (stf.lineYs.length !== 5) continue;
@@ -4644,6 +4665,9 @@ export async function recognizeRasterPage(
     wordStrips: opts.wantWordStrips ? wordStrips : [],
     headerStrips: headerStrip ? [headerStrip] : [],
     header,
+    textKey,
+    textBin,
+    textBoxes,
     staffLabels,
     wedges,
     dynamics,

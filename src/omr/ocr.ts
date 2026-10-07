@@ -28,6 +28,9 @@ export interface OcrBackend {
   rankDigits?(bin: Binary, rects: Rect[]): Promise<number[][]>;
   /** 可选：用文本检测(DBNet)在 region 内自动找文本行 + 逐行识别，返回 {文本, 框}（原图坐标，阅读序）。
    *  仅 PaddleOCR(含 det 模型)实现。页眉(标题/著作者)整片识别用，免去靠连通域几何切行的脆弱启发式。 */
+  /** 可选：只做文本检测（DBNet），返回 region 内各文字行的框（原图坐标）。整页分块检测，`scale` 是送检前的缩放
+   *  （按字号定：字高缩到十几像素检得最稳）。位图五线谱拿它在找谱线之前圈出文字区（`rasteromr/pagetext.ts`）。 */
+  detectTexts?(bin: Binary, region: Rect, opts?: { scale?: number }): Promise<Rect[]>;
   recognizeRegion?(bin: Binary, region: Rect): Promise<{ text: string; bbox: Rect; chars?: { text: string; cx: number; x1?: number }[] }[]>;
 }
 

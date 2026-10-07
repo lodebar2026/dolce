@@ -13,6 +13,8 @@ import type { TimeStrip } from "./timesig";
 import type { JianpuStrip } from "./jianpuband";
 import type { JianpuRow } from "./jianpufuse";
 import type { HeaderCredit, WordLine, WordStrip } from "./words";
+import { textDetScale } from "./pagetext";
+import type { Binary, Rect } from "../omr/types";
 import { markSplitBars } from "../staffomr/notedata";
 import { buildScore, type StaffScore } from "../staffomr/score";
 import { scoreToMusicXml } from "../staffomr/toxml";
@@ -28,6 +30,8 @@ export interface RasterOcrCaches {
   jianpuOcr?: Map<string, JianpuRow[]>;
   wordOcr?: Map<string, WordLine[]>;
   headerOcr?: Map<string, WordLine[]>;
+  /** 整页文字框（`gen-rastertext.mjs`），按页指纹寻址。见 `pagetext.ts`。 */
+  pageTexts?: Map<string, Rect[]>;
 }
 
 /** 在线识别（编辑器用）：把一页切出来的条送 OCR，回同形的表（`ocrlive.ts`）。 */
@@ -42,6 +46,8 @@ export interface RasterLiveOcr {
   word?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
   /** 页眉带（可缺：缺了就不出 `<credit>`）。 */
   header?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
+  /** 整页文字检测（可缺：缺了各路判据不避文字）。`scale` 见 `pagetext.ts::textDetScale`。 */
+  textDet?(bin: Binary, scale: number): Promise<Rect[]>;
 }
 
 export interface RasterSongStats {
@@ -110,20 +116,25 @@ export async function recognizeRasterSong(
   let done = 0;
   /** 曲首页（第一页有谱的）的页眉 */
   let header: HeaderCredit[] | null = null;
+  /** 整页文字框：离线给的缓存，在线识别时逐页现检补进来 */
+  const pageTexts = opts.pageTexts ?? new Map<string, Rect[]>();
   for (const [si, { pdf, OPS }] of sources.entries()) {
     for (let pn = 1; pn <= (pdf.numPages as number); pn++) {
       if (opts.cancelled?.()) throw new Error("已取消");
       const page = await pdf.getPage(pn);
       try {
-        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr, headerOcr: opts.headerOcr };
+        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr, headerOcr: opts.headerOcr, pageTexts };
         const wantHeader = header === null;
         if (opts.live) {
-          const r1 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey });
+          const r1 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, pageTexts, wantTextBin: !!opts.live.textDet });
+          // 文字框在找谱线之前就要用：头一趟带出位图现检，后两趟都带着它
+          if (r1.textBin && r1.textKey && r1.unit && opts.live.textDet) pageTexts.set(r1.textKey, await opts.live.textDet(r1.textBin, textDetScale(r1.unit)));
+          r1.textBin = undefined;
           if (r1.hasStaff) {
             // 拍号条在找符头之前就切好了，不受后面几张表影响：与和弦带同一趟送
             const [harmonyOcr, timeOcr] = await Promise.all([opts.live.harmony(r1.harmonyStrips), opts.live.time?.(r1.timeStrips)]);
             if (opts.cancelled?.()) throw new Error("已取消");
-            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, timeOcr, wantWordStrips: !!opts.live.word, wantHeader: wantHeader && !!opts.live.header });
+            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, timeOcr, pageTexts, wantWordStrips: !!opts.live.word, wantHeader: wantHeader && !!opts.live.header });
             const [lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr] = await Promise.all([
               opts.live.lyric(r2.lyricStrips),
               opts.live.label(r2.labelStrips),
@@ -132,7 +143,7 @@ export async function recognizeRasterSong(
               r2.headerStrips.length ? opts.live.header?.(r2.headerStrips) : undefined,
             ]);
             if (opts.cancelled?.()) throw new Error("已取消");
-            caches = { harmonyOcr, timeOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr };
+            caches = { harmonyOcr, timeOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr, pageTexts };
           }
         }
         const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, ...caches, wantHeader });

@@ -8,12 +8,14 @@ import { setOmrRuntime } from "../omr/runtime";
 import { nodeRuntime, threadInfo } from "../omr/runtime.node";
 import { recognizeMusicppDetailed } from "../omr/recognize";
 import { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter, type OmrFormat, type EmittedScore } from "../omr/emit";
-import { omrProfile, omrProfileReset } from "../omr/paddleocr";
+import { omrProfile, omrProfileReset, paddleOcrBackend } from "../omr/paddleocr";
 
 setOmrRuntime(nodeRuntime);
 installNodeDecoder();
 
 export { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter, omrProfile, omrProfileReset, threadInfo };
+// 整页文字检测（位图五线谱的文字区缓存 `gen-rastertext.mjs` 在 Node 里直接跑 DBNet）
+export { paddleOcrBackend };
 export type { OmrFormat, EmittedScore };
 export { recognizeMusicppDetailed };
 // 换解码器用（默认 sharp；要接别的解码库从这里换）。

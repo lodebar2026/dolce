@@ -10,7 +10,7 @@ import { RasterGlyphLookup, outlineTemplates, type RasterGlyphDict } from "./ras
 import { rasterizePage } from "./rasterpage";
 import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
-import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips } from "./ocrlive";
+import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips, detectPageTexts } from "./ocrlive";
 import type { TimeStrip } from "./timesig";
 
 /**
@@ -169,6 +169,7 @@ export async function recognizeRasterPdfs(
         jianpu: (s) => ocrJianpuStrips(ocr, s),
         word: (s) => ocrWordStrips(ocr, s),
         header: (s) => ocrHeaderStrips(ocr, s),
+        textDet: (bin, scale) => detectPageTexts(ocr, bin, scale),
       },
     });
   } finally {

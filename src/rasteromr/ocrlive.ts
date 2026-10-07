@@ -6,7 +6,7 @@
 // 只在浏览器里跑（PP-OCR 走 onnxruntime-web）。
 
 import type { OcrBackend } from "../omr/ocr";
-import type { Binary } from "../omr/types";
+import type { Binary, Rect } from "../omr/types";
 import { recognizeJianpu } from "../omr/jianpu";
 import { harmonyKey, type HarmonyStrip } from "./harmony";
 import { stripKey, type LyricStrip, type OcrChar } from "./lyric";
@@ -160,6 +160,16 @@ export async function ocrHeaderStrips(ocr: OcrBackend, strips: readonly WordStri
     }));
   }
   return out;
+}
+
+/** 整页文字检测（只检测、不认字）：文字区见 `pagetext.ts`。框取整、检不了（没有 det 模型）回空。 */
+export async function detectPageTexts(ocr: OcrBackend, bin: Binary, scale: number): Promise<Rect[]> {
+  if (!ocr.detectTexts) return [];
+  try {
+    return (await ocr.detectTexts(bin, { x: 0, y: 0, w: bin.w, h: bin.h }, { scale })).map((b) => ({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) }));
+  } catch {
+    return [];
+  }
 }
 
 /** 简线混排谱的简谱行：走简谱那条路本身（`recognizeJianpu`），四周垫 40 白（数字、高音点贴边时行切分吃亏），只留互证用得上的几样。 */

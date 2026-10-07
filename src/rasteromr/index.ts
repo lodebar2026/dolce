@@ -20,6 +20,7 @@ export * from "./stafflabel";
 export * from "./timesig";
 export * from "./harmony";
 export * from "./words";
+export * from "./pagetext";
 export * from "./jianpuband";
 export * from "./jianpufuse";
 export * from "./contour";

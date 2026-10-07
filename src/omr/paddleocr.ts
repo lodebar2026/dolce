@@ -233,6 +233,61 @@ async function detectRegion(src: Surface, region: Rect): Promise<Rect[]> {
   return boxes;
 }
 
+/**
+ * **整页分块文字检测**（只检测、不认字）：`detectRegion` 一次把子图缩到边长 960，整页谱一缩歌词只剩七八个像素、检不出来；
+ * 按 `scale` 定块（每块原图边长 960/scale，缩完正好 960），块与块叠 `TILE_OVERLAP`。
+ * 每块只收**中心落在本块「芯」里**的框（芯 = 块往里让半个重叠带，页边那一侧不让），一个框只有一块收；
+ * 被块边切断的长行（序言一行字比块宽）各段收下后，再把同一行上首尾相接的并回一个框。
+ */
+async function detectTiled(src: Surface, region: Rect, scale: number): Promise<Rect[]> {
+  const T = Math.round(960 / Math.min(1, scale));
+  const ov = Math.round(T * TILE_OVERLAP);
+  const x0 = Math.max(0, Math.round(region.x)), y0 = Math.max(0, Math.round(region.y));
+  const x1 = Math.min(src.width, Math.round(region.x + region.w)), y1 = Math.min(src.height, Math.round(region.y + region.h));
+  const starts = (a: number, b: number) => {
+    const out: number[] = [];
+    for (let v = a; ; v += T - ov) {
+      out.push(Math.min(v, Math.max(a, b - T)));
+      if (v + T >= b) break;
+    }
+    return [...new Set(out)];
+  };
+  const xs = starts(x0, x1), ys = starts(y0, y1);
+  const got: Rect[] = [];
+  for (const ty of ys)
+    for (const tx of xs) {
+      const tw = Math.min(T, x1 - tx), th = Math.min(T, y1 - ty);
+      const cx0 = tx === x0 ? x0 : tx + ov / 2, cy0 = ty === y0 ? y0 : ty + ov / 2;
+      const cx1 = tx + tw >= x1 ? x1 : tx + tw - ov / 2, cy1 = ty + th >= y1 ? y1 : ty + th - ov / 2;
+      for (const b of await detectRegion(src, { x: tx, y: ty, w: tw, h: th })) {
+        const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+        if (cx >= cx0 && cx < cx1 && cy >= cy0 && cy < cy1) got.push(b);
+      }
+    }
+  // 同一行（纵向重叠过矮者的六成）、横向首尾相接（空当不过矮者高的一半）的并成一个框
+  const boxes = got.sort((a, b) => a.x - b.x);
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (let i = 0; i < boxes.length && !merged; i++)
+      for (let j = i + 1; j < boxes.length && !merged; j++) {
+        const a = boxes[i], b = boxes[j];
+        const h = Math.min(a.h, b.h);
+        const vy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        const gap = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+        if (vy < h * 0.6 || gap > h * 0.5) continue;
+        const u = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: 0, h: 0 };
+        u.w = Math.max(a.x + a.w, b.x + b.w) - u.x;
+        u.h = Math.max(a.y + a.h, b.y + b.h) - u.y;
+        boxes.splice(j, 1);
+        boxes[i] = u;
+        merged = true;
+      }
+  }
+  return boxes.sort((a, b) => a.y - b.y || a.x - b.x);
+}
+/** 分块检测时相邻两块叠这么多（块边长的比例）。 */
+const TILE_OVERLAP = 0.2;
+
 /** 把一个 rect 裁成 cell×cell 居中白底黑字格（等比缩放到 inner）。 */
 function cellOf(src: Surface, bin: Binary, r: Rect, cell = 64, pad = 8): Surface {
   const inner = cell - pad * 2;
@@ -493,6 +548,10 @@ export function paddleOcrBackend(): OcrBackend {
       if (!strips.length) return [];
       await ensureSession();
       return recognizeCharsPosMany(strips, "auto"); // 一次 IPC
+    },
+    async detectTexts(bin: Binary, region: Rect, opts?: { scale?: number }): Promise<Rect[]> {
+      await ensureDetSession();
+      return detectTiled(surfaceFromBinary(bin), region, opts?.scale ?? 1);
     },
     async recognizeRegion(bin: Binary, region: Rect): Promise<{ text: string; bbox: Rect; chars?: { text: string; cx: number; x1?: number }[] }[]> {
       await ensureSession();
