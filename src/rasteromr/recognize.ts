@@ -30,7 +30,7 @@ import { sigDistance } from "../omr/glyphdict";
 import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, jianpuKey, type JianpuStrip } from "./jianpuband";
 import { fuseJianpu, type FuseStats, type JianpuRow } from "./jianpufuse";
 import { CHAR_MAX as LYRIC_CHAR_MAX, findLyricRows, foldLyricChars, isLatinRow, LATIN_MIN_CHAINED, latinCells, mapCharsToCells, splitMixedChars, stripKey, stripOf, stripWithout, type LyricRow, type LyricStrip, type OcrChar } from "./lyric";
-import { findHoles, traceContours, type ContourMap } from "./contour";
+import { candidateMap, findHoles, repairedLayer, traceContours, type Contour, type ContourMap } from "./contour";
 import { buildHeadMasks, buildHollowMasks, headFromStemBlock, scoreAt, solidHeadsAlongStems, splitHeadCluster } from "./headmask";
 import { headProb, trainHeadClassifier } from "./headclass";
 import { findStaffLabels, labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
@@ -1040,7 +1040,25 @@ export async function recognizeRasterPage(
     prims.hSegs = prims.hSegs.filter(outside);
     prims.beams = prims.beams.filter(outside);
   }
-  const blobs = findBlobs(nl, prims, unit, ledgerGrid(gridYs, unit));
+  const blobLabels = new Int32Array(nl.w * nl.h);
+  const blobs = findBlobs(nl, prims, unit, ledgerGrid(gridYs, unit), blobLabels);
+  // **修补图**（`prims.ts::repairLineCuts`）：去线时贴线穿过、被当线抹掉的笔画补回，被谱线切开的对象在这张图上是一整块。
+  // 各路从这里取整块，不先切碎再按盒距拼：符号块（下面「碎块并起来再查一次字典」）、contour（`contour.ts::candidateMap`）
+  const repaired = repairLineCuts(raster.bin, nl, gridYs, unit);
+  const rBlobLabels = new Int32Array(nl.w * nl.h);
+  const rBlobs = findBlobs(repaired, prims, unit, ledgerGrid(gridYs, unit), rBlobLabels);
+  /** 修补图上的符号块 → 组成它的去线图符号块 */
+  const rBlobParts = new Map<number, Set<number>>();
+  {
+    const known = new Set(blobs.map((c) => c.id));
+    for (let i = 0; i < rBlobLabels.length; i++) {
+      const r = rBlobLabels[i], c = blobLabels[i];
+      if (!r || !c || !known.has(c)) continue;
+      let set = rBlobParts.get(r);
+      if (!set) rBlobParts.set(r, (set = new Set()));
+      set.add(c);
+    }
+  }
 
   // ── 顶部大字号文字：**先认成标题** ────────────────────────────────────────
   //
@@ -1153,13 +1171,16 @@ export async function recognizeRasterPage(
   //
   // 在**去谱线图**上取轮廓（原图上五条谱线把整行谱连成一团），一团墨一个号；
   // 下面每认出一样东西就按它的盒记一笔。识别判据一条不改——账本只记账。
-  const cmap = traceContours(nl, unit, groups.map((g) => ({
+  const contourStaves = groups.map((g) => ({
     top: g.lines[0].y,
     bottom: g.lines[4].y,
     left: Math.max(...g.lines.map((l) => l.left)),
     right: Math.min(...g.lines.map((l) => l.right)),
-  })));
+  }));
+  const cmap = traceContours(nl, unit, contourStaves);
   const ledger = new ContourLedger(cmap);
+  // 修补图上的 contour 层：各路按自己那一刻的候选从里面挑整块（`contour.ts::candidateMap`）
+  const rlayer = repairedLayer(cmap, repaired, unit, contourStaves);
   // **段要等下游挂上标记再记**（`findStaves` / `findLegers` / `findStems` /
   // `findBarlines` 之后，见下面那一处）：`findPrimitives` 抽出来的横段里混着松叶的臂、
   // 连音线的一截——照抽出来就记，这些正是要找的东西反而成了「有主的」。
@@ -1285,7 +1306,21 @@ export async function recognizeRasterPage(
     restSyms.push({ box: full.box, code: "rest8th" });
   }
   // **被谱线切成两截的八分休止**：球在线上、斜笔在线下（破碎扫描版 p8 女低 m?），去线后是两块，
-  // 上面那一路回填不过谱线。没人认领的小球，正下方隔着一条谱线（间隙不过一个线宽加 3 像素）、横向重叠的另一块，
+  // 上面那一路回填不过谱线。先在**修补图**上取：碎块全无主、修补后连成一块的，整块按八分休止的形状判（墨也在修补图上数）
+  {
+    const rv = candidateMap(cmap, rlayer, (id) => ledger.claimsOf(id).every((q) => q.by === "seg:Staff"));
+    for (const c of rv.merged) {
+      if (rv.parts.get(c.id)!.length < 2) continue;
+      const box = c.bbox;
+      if (!inBand(box.y + box.h / 2)) continue;
+      if (!isEighthRest(repaired, box, c.area, unit, EIGHTH_REST_H_PIECES, EIGHTH_REST_FILL_PIECES)) continue;
+      if (restSyms.some((r) => overlapFrac(r.box, box) > 0.3)) continue;
+      restSyms.push({ box, code: "rest8th" });
+      // 盒里的符号块记到休止名下：不然字典那一路按块再认一个，同一个休止出两个
+      for (const b of blobs) if (overlapFrac(b.bbox, box) > 0.5) restIds.add(b.id);
+    }
+  }
+  // 修补图没连上的（线上那截与谱线完全重合、补不回来）：没人认领的小球，正下方隔着一条谱线（间隙不过一个线宽加 3 像素）、横向重叠的另一块，
   // 合起来按八分休止的形状判
   for (const c of cmap.contours) {
     if (ledger.claimsOf(c.id).length) continue;
@@ -2162,6 +2197,38 @@ export async function recognizeRasterPage(
   // 并完再查一次；查得到才认。x 分开的不并（那是相邻的两个符号）。
   const unmatched = blobs.filter((c) => !claimed.has(c.id) && !dictClaimed.has(c.id));
   const merged = new Set<number>();
+  /** 并出来的盒按 `img` 再查一次；查得到、过了位置闸才认 */
+  const tryMerged = (box: Rect, group: number[], img: Binary): boolean => {
+    // 已经认出来的符号压着的不再并（被谱线切开的八分休止，球那一块认过了、斜笔那块还剩着）
+    if (syms.some((q) => overlapFrac(q.box, box) > 0.3)) return false;
+    // 字典认不出就**按性质判一次符头**：空心符头骑在谱线上时会被去谱线切成两截，
+    // 两截都不成符头、字典里也没有二分符头的类（见 `judgeHeadBox`）。
+    const code = look.lookup(binSig(img, box), box.w / unit.space, box.h / unit.space) ?? judgeHeadBox(img, box, unit, prims.vSegs, inBand);
+    if (!code) return false;
+    // 全 / 二分休止只贴在一条线的一侧，不会被谱线切开：修补图上连成一块的是休止挨着别的墨（主我敬拜你 m3 多出一个全休止）
+    if (img === repaired && isBarRest(code)) return false;
+    // 位置闸与字典那一路一样：并出来的扁块也要贴着第二、三线
+    if (isBarRest(code) && (!nearRestLine(box, staffLines, unit) || besideStem(box))) return false;
+    if (code === "noteheadBlack" && beamStump(box, syms.filter((s0) => /^notehead/.test(s0.code)).map((s0) => s0.box))) return false;
+    // 并出来的空心头要有**封闭的内腔**（在去线图 / 修补图上量，谱线不算圈）：全音符下沿与谱线之间的空当也像个腔，谱线一去就通到外面了
+    //（我灵镇静 m8 加一线上 C4 全音符底下拼出一个 A3）。窗口只外扩 2 像素，别把上面那个全音符自己的内腔框进来
+    // 全音符同理（贴着谱线的一小段弧，修补后整块像个扁圆，破碎扫描版 p1 m2）
+    if ((code === "noteheadHalf" || code === "noteheadWhole") && enclosedWhite(img, { left: box.x, right: box.x + box.w, top: box.y, bottom: box.y + box.h }, unit.space, 2) < box.w * box.h * MERGE_HOLLOW_CAVITY) return false;
+    for (const id of group) merged.add(id);
+    syms.push({ box, code });
+    ledger.claim(box, `merge:${code}`);
+    return true;
+  };
+  // 先按**修补图**并：修补图上连成一块、碎块全没认出来的，整块在修补图上查（被谱线切开的符号）
+  {
+    const free = new Set(unmatched.map((c) => c.id));
+    for (const rb of rBlobs) {
+      const ids = [...(rBlobParts.get(rb.id) ?? [])];
+      if (ids.length < 2 || !ids.every((id) => free.has(id) && !merged.has(id))) continue;
+      tryMerged(rb.bbox, ids, repaired);
+    }
+  }
+  // 修补图没连上的（被竖笔、横段抽取切开的）：把**x 上重叠、上下又贴着**的未识别块并起来（谱线间距的四成以内算贴着）
   for (const a of unmatched) {
     if (merged.has(a.id)) continue;
     let box = { ...a.bbox };
@@ -2182,19 +2249,7 @@ export async function recognizeRasterPage(
       }
     }
     if (group.length < 2) continue;
-    // 字典认不出就**按性质判一次符头**：空心符头骑在谱线上时会被去谱线切成两截，
-    // 两截都不成符头、字典里也没有二分符头的类（见 `judgeHeadBox`）。
-    const code = look.lookup(binSig(nl, box), box.w / unit.space, box.h / unit.space) ?? judgeHeadBox(nl, box, unit, prims.vSegs, inBand);
-    if (!code) continue;
-    // 位置闸与字典那一路一样：并出来的扁块也要贴着第二、三线
-    if (isBarRest(code) && (!nearRestLine(box, staffLines, unit) || besideStem(box))) continue;
-    if (code === "noteheadBlack" && beamStump(box, syms.filter((s0) => /^notehead/.test(s0.code)).map((s0) => s0.box))) continue;
-    // 并出来的空心头要有**封闭的内腔**（去线图上）：全音符下沿与谱线之间的空当也像个腔，谱线一去就通到外面了
-    //（我灵镇静 m8 加一线上 C4 全音符底下拼出一个 A3）。窗口只外扩 2 像素，别把上面那个全音符自己的内腔框进来
-    if (code === "noteheadHalf" && enclosedWhite(nl, { left: box.x, right: box.x + box.w, top: box.y, bottom: box.y + box.h }, unit.space, 2) < box.w * box.h * MERGE_HOLLOW_CAVITY) continue;
-    for (const id of group) merged.add(id);
-    syms.push({ box, code });
-    ledger.claim(box, `merge:${code}`);
+    tryMerged(box, group, nl);
   }
 
   // ── 升降号：把**被抽走的那道竖笔**并回来 ─────────────────────────────────
@@ -4490,18 +4545,35 @@ export async function recognizeRasterPage(
   // ── 贴着符头的演奏法记号（保持音 / 断奏 / 顿音 / 重音 / 延长记号）──────────────
   //
   // 放在歌词之后（歌词字的点画已经有主）、松叶与弧线之前（延长记号的弧够宽够拱，不先摘走就成了一条圆滑线）。
+  //
+  // 演奏法记号、松叶都在**候选 contour 图**上找（`candView`）：压线的保持音、重音、穿线的松叶在修补图上是一整块，不在去线图上切成碎块再拼
+  /** 候选 contour 图与它上面的账：碎块全是 `loose`（无主，或只被这几样认过）的修补块整块换进来；
+   *  合并块的账取它那几块碎块的并集，谱线那一笔不算（谱线残段在修补图上已清掉，剩下的才是这个对象） */
+  const candView = (loose: (by: string) => boolean, accept?: (rc: Contour) => boolean) => {
+    const cv = candidateMap(cmap, rlayer, (id) => ledger.claimsOf(id).every((q) => q.by === "seg:Staff" || loose(q.by)), 2, accept);
+    const claimsOf = (id: number): string[] => {
+      const ps = cv.parts.get(id);
+      if (!ps) return ledger.claimsOf(id).map((q) => q.by);
+      return [...new Set(ps.flatMap((p) => ledger.claimsOf(p).map((q) => q.by)))].filter((by) => by !== "seg:Staff");
+    };
+    return { map: cv.map, claimsOf, unclaimed: () => cv.map.contours.filter((c) => !claimsOf(c.id).length) };
+  };
   {
     const taken: Rect[] = pg.symbols.filter((s0) => s0.hasTag("Augmentation")).map((s0) => ({ x: s0.box.left, y: s0.box.top, w: s0.box.right - s0.box.left, h: s0.box.bottom - s0.box.top }));
-    for (const a of findRasterArticulations(pg, cmap, unit, notes, articSyms, ledger.unclaimed(), taken, (id) => ledger.claimsOf(id).map((q) => q.by))) ledger.claim(a.box, `artic:${a.code}`);
+    // 合并的候选与 `findRasterArticulations` 里另收的有主小记号同口径：只被符杠、歌词、附点认过的也算
+    const av = candView((by) => by === "beam" || by === "lyric" || by === "dict:augmentationDot");
+    for (const a of findRasterArticulations(pg, av.map, unit, notes, articSyms, av.unclaimed(), taken, av.claimsOf)) ledger.claim(a.box, `artic:${a.code}`);
   }
 
   // ── 松叶 ────────────────────────────────────────────────────────────────
   //
   // 只在**无主**的 contour 里找：认出来的符号不必再判一遍，而松叶从来没人认领。
-  const wedges = findRasterWedges(cmap, unit, ledger.unclaimed());
+  // 松叶只取谱表外并起来的：扫描件谱表里断续的谱线残段在修补图上连成一团，也张得开（破碎扫描版 p7、望十架 p1 各一处）
+  const wv = candView(() => false, (rc) => rc.place.zone !== "in");
+  const wedges = findRasterWedges(wv.map, unit, wv.unclaimed());
   for (const wg of wedges) {
     for (const id of [wg.contourId, wg.pairedId]) {
-      const c = id === undefined ? null : cmap.byId.get(id);
+      const c = id === undefined ? null : wv.map.byId.get(id);
       if (c) ledger.claim(c.bbox, `wedge:${wg.type}`);
     }
   }
@@ -4529,34 +4601,21 @@ export async function recognizeRasterPage(
   // 修补图上的一块，组成它的去线图碎块全是候选（无主或只被符杠、歌词、谱线认过）才整块判；
   // 连上了别的东西（符头、干）的，退回去线图上一块一块判（同以前）
   const candIds = new Set([...ledger.unclaimed(), ...beamOnly].map((c) => c.id));
-  const repaired = repairLineCuts(raster.bin, nl, gridYs, unit);
-  const rmap = traceContours(repaired, unit);
-  const parts = new Map<number, Set<number>>();
-  for (let i = 0; i < rmap.labels.length; i++) {
-    const r = rmap.labels[i];
-    if (!r) continue;
-    const c = cmap.labels[i];
-    let set = parts.get(r);
-    if (!set) parts.set(r, (set = new Set()));
-    if (c) set.add(c);
-  }
-  const whole = rmap.contours.filter((rc) => {
-    const set = parts.get(rc.id);
-    return !!set && set.size > 0 && [...set].every((id) => candIds.has(id));
-  });
+  const cand = candidateMap(cmap, rlayer, (id) => candIds.has(id));
+  const whole = cand.merged;
   /** 整块判过的修补块里的去线碎块，不再单独判 */
-  const covered = new Set(whole.flatMap((rc) => [...parts.get(rc.id)!]));
-  const slurs = findRasterSlurs(rmap, unit, whole, pg.objs.length + pg.segs.length + 1000);
+  const covered = new Set(whole.flatMap((rc) => cand.parts.get(rc.id)!));
+  const slurs = findRasterSlurs(cand.map, unit, whole, pg.objs.length + pg.segs.length + 1000);
   // 修补块判成了弧的，碎块已归它；没判成的修补块里的碎块也照旧单独判一次（补线连上了别的细墨，整块不像弧）
   const wholeHit = new Set(slurs.map((sl) => `${sl.obj.box.left},${sl.obj.box.top}`));
   const singles = [...ledger.unclaimed(), ...beamOnly].filter((c) => {
     if (!covered.has(c.id)) return true;
-    const rc = whole.find((q) => parts.get(q.id)!.has(c.id))!;
+    const rc = whole.find((q) => cand.parts.get(q.id)!.includes(c.id))!;
     return !wholeHit.has(`${rc.bbox.x},${rc.bbox.y}`);
   });
   slurs.push(...findRasterSlurs(cmap, unit, singles, pg.objs.length + pg.segs.length + 1000 + slurs.length, repaired));
   // 歌词账上来的块：修补块里含着歌词碎块的也算
-  for (const rc of whole) if ([...parts.get(rc.id)!].some((id) => ledger.claimsOf(id).some((k) => k.by === "lyric"))) lyricArcBoxes.add(`${rc.bbox.x},${rc.bbox.y}`);
+  for (const rc of whole) if (cand.parts.get(rc.id)!.some((id) => ledger.claimsOf(id).some((k) => k.by === "lyric"))) lyricArcBoxes.add(`${rc.bbox.x},${rc.bbox.y}`);
   for (const sl of slurs) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur");
   // 虚线弧（`slur.ts::findRasterDashedSlurs`）：无主块之外，只被歌词字格认过的短划也算（弧两头那截常落在歌词带上沿，
   // Holy, Holy, Holy m10）；上方还是下方看近旁最近的符头；离谱表四格半开外的不认（歌词带里成串的连字符）
@@ -4574,11 +4633,10 @@ export async function recognizeRasterPage(
     }
     return best ? (y < best.cy ? "above" : "below") : null;
   };
-  const lyricOnly = cmap.contours.filter((c) => {
-    const cl = ledger.claimsOf(c.id);
-    return cl.length > 0 && cl.every((k) => k.by === "lyric");
-  });
-  const dashed = findRasterDashedSlurs([...ledger.unclaimed(), ...lyricOnly], unit, pg.objs.length + pg.segs.length + 1000 + slurs.length, dashSide);
+  // 也在候选 contour 图上取：压线的短划在修补图上连回整截
+  const dv = candView((by) => by === "lyric");
+  const dashCands = dv.map.contours.filter((c) => dv.claimsOf(c.id).every((by) => by === "lyric"));
+  const dashed = findRasterDashedSlurs(dashCands, unit, pg.objs.length + pg.segs.length + 1000 + slurs.length, dashSide);
   for (const sl of dashed) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur:dashed");
   slurs.push(...dashed);
   // 粘在音符上的弧（`slur.ts::findFusedSlurs`）：只看认领里有符头的那几团墨
