@@ -261,6 +261,8 @@ const LYRIC_ROW_IN_ZONE = 2;
 const CHORD_PAGE_MIN = 3;
 /** 两个字母以内也算文字指示的那几样（声部缩写、管风琴键盘名）。 */
 const SHORT_RE = /^(S|A|T|B|SA|TB|ST|AB|Ch|Sw|Gt)\.?$/;
+/** 短标记的字高下限（格）。 */
+const SHORT_MIN_H = 1.3;
 /** 上下两行字叠成一条指示：左端对齐（格）、行距不过行高的这么多倍。 */
 const STACK_X = 1.5;
 const STACK_GAP = 0.6;
@@ -379,6 +381,9 @@ export function attachWordLines(
     // 夹着汉字的是歌词或署名；字母太少的多半是把符头、弧线读成了字
     const isWord = !/[\u4e00-\u9fff]/.test(text) && (letters >= 3 || SHORT_RE.test(text)) && !/^[pmfsz]+$/i.test(text.replace(/[^A-Za-z]/g, ""));
     if (!isWord && !metro) continue;
+    // 只靠 `SHORT_RE` 进来的一两个字母（声部标记、排练号）要够大：排练号、分部标记是大字，一格来高的多是别的东西读成的
+    //（宁静 p3 只剩一个字的歌词行「人.」读成 `A.`、谱表左缘的小号码读成 `A`，一页好几个）
+    if (isWord && letters < 3 && box.h < sp * SHORT_MIN_H) continue;
     // 定谱行：上下最近的那行（按谱表边到字心的距离比）
     let stf: Staff | undefined;
     let bd = sp * REACH;
