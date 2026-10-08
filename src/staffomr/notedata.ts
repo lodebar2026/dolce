@@ -747,6 +747,8 @@ export interface StaffNote {
   lyricExtendStop?: { verse: number }[];
   /** 挂在这个音符上的和弦符号（归一后的原文，如 `Am`、`G/B`、`Dm7`）。 */
   chord?: string;
+  /** 长音中途换的和弦：`frac` 是它落在这个音时值里的位置（0–1），写出成 `<harmony><offset>`。见 `attachHarmonies`。 */
+  chordLater?: { text: string; frac: number }[];
   /** 编辑器的识别对照用：写进 `<note id>` 的 id（`rasteromr/song.ts` 给）。记在音符上而不是旁表——写出前音符会被复制（`{...n}`） */
   omrId?: string;
   /**

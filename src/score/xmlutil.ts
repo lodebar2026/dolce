@@ -5,8 +5,12 @@
 // DOM 后处理那一路的工具在 ./xmldom.ts。
 import { Fraction } from "../common/fraction";
 
+// XML 1.0 不许出现的控制字符一并剔掉：矢量识别从没有 ToUnicode 的音乐字体里取文字，
+// 会吐出 \x03 之类（牵我的手的速度「= 60」），原样写进去整份文件就读不开了
 export const escapeXml = (s: string): string =>
-  s.replace(/[<>&]/g, (c) => (c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"));
+  s
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g, "")
+    .replace(/[<>&]/g, (c) => (c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"));
 
 export const escapeAttr = (s: string): string => escapeXml(s).replace(/"/g, "&quot;");
 

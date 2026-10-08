@@ -17,6 +17,44 @@ export function objText(o: PObj): string {
   return o.run ? o.run.glyphs.map((g) => g.unicode).join("") : "";
 }
 
+/** 文字对象里切出来的一段：原文、墨迹盒、逐字右缘（升降号插在哪个字母后面靠它）。 */
+interface TextPiece {
+  text: string;
+  box: Box;
+  chars: { c: string; right: number }[];
+}
+
+/**
+ * 一个文字对象按**字形间隙**切段（间隙超过 `gap`）。和弦带里同一次 TJ 常印着好几个和弦，
+ * 中间只隔一大段空白（牵我的手 `A    E/G♯`、`A    B`）：当一个对象判，拼成 `AE/G` 解不出、`AB` 不合文法被收成歌词。
+ * 位图路合成的对象（`#` 字体）一个就是一个记号，不切。
+ */
+function glyphPieces(o: PObj, gap: number): TextPiece[] {
+  const run = o.run;
+  if (!run || run.font.startsWith("#")) {
+    const t = objText(o);
+    // 拿不到逐字位置：第一个字右缘记成盒左缘、其余记成无穷远，升降号就照旧插在第一个字母后面
+    return [{ text: t, box: { ...o.box }, chars: [...t].map((c, i) => ({ c, right: i ? Infinity : o.box.left })) }];
+  }
+  const out: TextPiece[] = [];
+  let cur: TextPiece | null = null;
+  for (const g of run.glyphs) {
+    if (!g.unicode.trim()) continue;
+    const left = g.bbox.x;
+    const right = g.bbox.x + g.bbox.w;
+    const top = Math.min(g.bbox.y, g.bbox.y + g.bbox.h);
+    const bottom = Math.max(g.bbox.y, g.bbox.y + g.bbox.h);
+    if (!cur || left - cur.box.right > gap) {
+      cur = { text: "", box: { left, right, top, bottom }, chars: [] };
+      out.push(cur);
+    }
+    cur.text += g.unicode;
+    cur.chars.push({ c: g.unicode, right });
+    cur.box = { left: Math.min(cur.box.left, left), right: Math.max(cur.box.right, right), top: Math.min(cur.box.top, top), bottom: Math.max(cur.box.bottom, bottom) };
+  }
+  return out;
+}
+
 /**
  * `TextAnalyze` 的构造：收「不在谱表五线之内」的文字对象与非虚线的水平段。
  * 落在谱线之间的文字是谱内元素（力度、指法），不进这一摊。
@@ -74,11 +112,26 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // 而歌词那一步的判据（纵向跨过某条水平线的 y）会把和弦一并收成歌词
   // ——实测 p100 的 `G` 被挂成了第二段歌词。所以先把**明确是和弦记号**的挑出来。
   // 记号语法用三路共用的 `omrkit/chordgrammar.ts::CHORD_TOKEN_RE`（根音必须大写，理由见那边的注释）。
+  // 贴身描边框圈住的字是排练号（`[A]` `[B]`），单个大写字母合和弦文法，不挡掉就被收成和弦
+  // （牵我的手 Violin 上三个）。只认框比字大不出两格的：大框（整段文字框、版面边框）里的和弦照收；
+  // 框里的字留给后面 findBoxedText 打标。这本的框是**填充**画的（外矩形套内矩形的一圈），不限描边
+  const frames = pg.objs.filter((o) => !o.hasAnyTag() && o.path && !o.path.curves);
+  const framed = (t: PObj) =>
+    frames.some(
+      (f) =>
+        f.box.left <= t.box.left && f.box.right >= t.box.right && f.box.top <= t.box.top && f.box.bottom >= t.box.bottom &&
+        f.box.right - f.box.left < t.box.right - t.box.left + 4 * sp && f.box.bottom - f.box.top < t.box.bottom - t.box.top + 4 * sp,
+    );
   for (const t of texts) {
-    if (kind.has(t)) continue;
+    if (kind.has(t) || framed(t)) continue;
     const raw = objText(t).replace(/\s+/g, "");
     if (!raw) continue;
     if (isWholeChord(raw)) kind.set(t, "harmony");
+    else {
+      // 一个对象里隔着大段空白印了几个和弦（`A    B`）：逐段都合文法才算
+      const ps = glyphPieces(t, 2 * sp);
+      if (ps.length > 1 && ps.every((p) => isWholeChord(p.text.replace(/\s+/g, "")))) kind.set(t, "harmony");
+    }
   }
 
   // ── markHarmonySuffix（**提前到歌词之前**） ────────────────────────────────
@@ -287,7 +340,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // ── markHarmony ───────────────────────────────────────────────────────────
   // 判据照原文：含 `/`（转位和弦）；或整段就是一个大写音名；或 `X Y` 两个音名夹一个空格。
   for (const t of texts) {
-    if (kind.has(t)) continue;
+    if (kind.has(t) || framed(t)) continue;
     let s = objText(t);
     let harm = s.includes("/");
     if (s.endsWith(" ")) s = s.slice(0, -1);
@@ -522,6 +575,21 @@ export function splitSyllables(o: PObj, dict?: TextGlyphLookup): Syllable[] {
       flush(false);
       continue;
     }
+    // **没有 ToUnicode 的 CJK 字体**（牵我的手的 PMingLiU 子集）：吐出来的是 CID 当码位，
+    // `ĭ`、`ㇳ`、`Ἀ` 之类，大半落在下面「是不是汉字」那个区段外，被当成拉丁字母连成一个词，
+    // 字间没空格的一段（「恩惠慈愛」）整段挂到一个音上，后面的字跟着错位。
+    // 按墨迹认：乱码字形墨迹宽过 0.6 em 的是全角字，一字一音节（汉字墨迹实测 ≥0.77 em）；
+    // 紧跟在这种字后面、宽不到 0.4 em 的乱码是半角标点（`;` `?` 偏高，上一条拦不住），
+    // 另起音节会白占一个音，丢掉。拉丁词中间的重音字母（`cur` 非空）不受影响。
+    if (c && !synth && !g.bboxEstimated && !isKnownChar(c)) {
+      if (g.bbox.w >= em * 0.6) {
+        flush(false);
+        out.push({ text: c, cx: g.bbox.x + g.bbox.w / 2, left: g.bbox.x, right: g.bbox.x + g.bbox.w, hyphen: false, glyphs: [g], font: run.font, sizeDev: run.sizeDev });
+        continue;
+      }
+      const last = out[out.length - 1];
+      if (!cur && last?.glyphs.length === 1 && last.glyphs[0].bbox.w >= em * 0.6 && g.bbox.w < em * 0.4) continue;
+    }
     // **整字见方的墨迹，却只读出一个 ASCII 字符：那是这套字体的全角空格。**
     // 这本书的歌词逐字一个文本对象，每个字后面跟一个这样的字形（全书 1754 个），
     // 它的 ToUnicode 是 `!`、轮廓是个空的字身框，量出来正好一个 em 见方。
@@ -719,6 +787,7 @@ interface NoteLike {
   voice?: number;
   lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean }[];
   chord?: string;
+  chordLater?: { text: string; frac: number }[];
 }
 
 /**
@@ -776,18 +845,21 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
       row.bottom = Math.max(row.bottom, o.box.bottom);
     } else rows.push({ top: o.box.top, bottom: o.box.bottom, objs: [o] });
   }
-  const groups: { text: string; box: Box }[] = [];
+  const groups: TextPiece[] = [];
   for (const row of rows) {
-    row.objs.sort((a, b) => a.box.left - b.box.left);
-    let last: { text: string; box: Box } | null = null;
-    for (const o of row.objs) {
-      const t = objText(o).trim();
+    // 逐段拼（`glyphPieces`）：一个对象里隔着大段空白的几个和弦先拆开，各拼各的后缀
+    const pieces = row.objs.flatMap((o) => (merge ? glyphPieces(o, 2 * sp) : glyphPieces(o, Infinity).slice(0, 1)));
+    pieces.sort((a, b) => a.box.left - b.box.left);
+    let last: TextPiece | null = null;
+    for (const o of pieces) {
+      const t = o.text.trim();
       if (!t) continue;
       // 同一个和弦记号的根音与后缀是紧挨着的两个对象（`D` + `m7`、`B` + `Maj7`、`A` + `dim`）。
       // 门槛取两个线距——`A dim` 中间有个空格，实测 10pt ≈ 2 格；
       // 而同一行里相邻的两个和弦间隔十格开外，不会误并。
       if (merge && last && o.box.left - last.box.right < 2 * sp) {
         last.text += t;
+        last.chars.push(...o.chars);
         last.box = {
           left: last.box.left,
           right: Math.max(last.box.right, o.box.right),
@@ -795,7 +867,7 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
           bottom: Math.max(last.box.bottom, o.box.bottom),
         };
       } else {
-        last = { text: t, box: { ...o.box } };
+        last = { text: t, box: { ...o.box }, chars: o.chars.slice() };
         groups.push(last);
       }
     }
@@ -806,10 +878,16 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
     if (s.hasTag("Key") || s.hasTag("Accidental")) continue;
     const g = groups.find((q) => overlapY(q.box, s.box) && s.box.left >= q.box.left && s.box.left - q.box.right < sp);
     if (!g) continue;
-    // 升降号写在根音**之后**（`Bb` / `F#`）——`harmonyXml` 是这么解的。
+    // 升降号写在音名**之后**（`Bb` / `F#`）——`harmonyXml` 是这么解的。
     // 谱面印的是 `B♭Maj7`（升降号在根音后、后缀前），拼出来的 `BMaj7b` 解不出，
-    // 所以插在第一个字母后面，而不是往末尾追加。
-    g.text = g.text.slice(0, 1) + (s.code === "accidentalFlat" ? "b" : "#") + g.text.slice(1);
+    // 所以插在它左边紧挨着的那个字母后面，而不是往末尾追加；转位低音的（`E/G♯`）就落在低音后面。
+    // 拿不到逐字位置的（位图路合成对象）退回第一个字母后面，见 `glyphPieces`
+    let at = 0;
+    for (let i = 0; i < g.chars.length; i++) if (g.chars[i].right <= s.box.left + sp * 0.2) at = i;
+    const pos = g.chars.slice(0, at + 1).reduce((a, ch) => a + ch.c.length, 0);
+    const acc = s.code === "accidentalFlat" ? "b" : "#";
+    g.text = g.text.slice(0, pos) + acc + g.text.slice(pos);
+    g.chars.splice(at + 1, 0, { c: acc, right: s.box.right });
     g.box.right = Math.max(g.box.right, s.box.right);
   }
   for (const g of groups) {
@@ -836,7 +914,24 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
       .filter((n) => n.staff === staff && Math.abs(n.x - g.box.left) < sp * 6)
       .sort((a, b) => Math.abs(a.x - g.box.left) - Math.abs(b.x - g.box.left));
     const best = cands.find((n) => !n.chord);
-    if (best) best.chord = text;
+    if (best) {
+      best.chord = text;
+      continue;
+    }
+    // **长音中途换和弦**（牵我的手 Bass 全音符上 `F♯m … F♯7`、`B sus4 … B`）：附近没有空着的音，
+    // 挂到这一刻还在响的那个音上（同一小节里、在和弦左边最近的音），按横向位置折成音内的偏移，
+    // 写出时出 `<harmony><offset>`。量到下一个音或小节线为止。
+    // 只开在矢量路（`merge`）：位图路的和弦条另有一套判据，那边原样丢弃
+    if (!merge) continue;
+    const bar = staff.bars.find((b) => g.box.left >= b.left && g.box.left < b.right);
+    if (!bar) continue;
+    const row = notes.filter((n) => n.staff === staff && !n.rest && n.x >= bar.left && n.x < bar.right).sort((a, b) => a.x - b.x);
+    const host = row.filter((n) => n.x <= g.box.left).pop();
+    if (!host) continue;
+    const end = row.find((n) => n.x > host.x + sp * 0.5)?.x ?? bar.right;
+    const frac = (g.box.left - host.x) / Math.max(end - host.x, sp);
+    if (frac <= 0 || frac >= 1) continue;
+    (host.chordLater ??= []).push({ text, frac });
   }
 }
 

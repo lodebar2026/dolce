@@ -224,6 +224,12 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       }
       // `<harmony>` 与 `<direction>` 都排在它们所属的 `<note>` **之前**（MusicXML 规定）
       if (n.chord) body += harmonyXml(n.chord);
+      // 音内换和弦：偏移取整到拍（二分及更长的音按四分、短音按八分），谱面上和弦不会落在拍子中间
+      for (const h of n.chordLater ?? []) {
+        const grid = n.duration >= 0.5 ? 0.25 : 0.125;
+        const off = Math.round((n.duration * h.frac) / grid) * grid;
+        if (off > 0 && off < n.duration) body += harmonyXml(h.text, ticks(off));
+      }
       // 速度文字与节拍器印在一条上的（`Andante ♩ = c. 76`）合进同一个 `<direction>`：先文字、后节拍器，一个对象
       if (n.metronome || n.tempoText) {
         const m = n.metronome;
