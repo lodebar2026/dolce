@@ -1560,6 +1560,8 @@ const BARE_CORE_WIDE = 0.62;
 const BARE_SOLID = 0.9;
 /** 两干夹头那一路：盒里最大一块封闭白占盒的比例不到这么多算实心（网纹实心头，见用处）。 */
 const BARE_HOLE = 0.06;
+/** 形同小节线那一档要验内腔的墨占比上限（见用处）。 */
+const BAR_ARC_FILL = 0.35;
 /** 按封闭白判网纹实心头时，头心墨占比的下限（网纹本身只有一半上下是墨：我灵镇静 m22 0.48~0.55）。 */
 const BARE_NETTED = 0.45;
 
@@ -1717,8 +1719,9 @@ export function headsOnBareStems(
     }
     if (!got) continue;
     // 形同小节线的那一档，空心头要有自己围出的内腔（谱线行当白）：跨小节线的连音线尾巴贴着小节线，弧与谱线围出一块白，
-    // 照判据收成了二分头（我灵镇静 m5 C5、低音 m5 E3/m18 F3）
-    if (p.bar && got.code === "noteheadHalf" && got.ys.every((y) => largestHole(bin, { x: Math.round(got!.cx - size.w / 2), y: Math.round(y - size.h / 2), w: size.w, h: size.h }, onLine, false) < size.w * size.h * BARE_HOLE)) continue;
+    // 照判据收成了二分头（我灵镇静 m5 C5、低音 m5 E3/m18 F3）。只管一个头、墨稀（弧尾 0.22~0.26）的：压首末线的「8」字叠头
+    // 内腔是斜缝、围不严，墨占 0.43 以上（新编赞美诗 248、153、139 一律剔掉过）
+    if (p.bar && got.code === "noteheadHalf" && got.ys.length === 1 && p.area < p.box.w * p.box.h * BAR_ARC_FILL && got.ys.every((y) => largestHole(bin, { x: Math.round(got!.cx - size.w / 2), y: Math.round(y - size.h / 2), w: size.w, h: size.h }, onLine, false) < size.w * size.h * BARE_HOLE)) continue;
     for (const id of p.ids) used.add(id);
     // 网纹实心头按收拢墨的中心出盒常离干几像素、挂不上干（读成全音符）：盒贴到干的那一侧
     let x0 = Math.round(got.cx - size.w / 2);

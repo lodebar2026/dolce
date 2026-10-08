@@ -2717,7 +2717,8 @@ export async function recognizeRasterPage(
       const rm = straight ? null : matchTemplate(binSig(nl, b), b.w / unit.space, b.h / unit.space, restTpl);
       // **骑在谱线上的八分休止**：球在一间、斜笔在下一间，中间压着的那条线去掉后只剩细笔连着，墨占比掉到 0.3 以下
       //（信心使我得胜 m18 女高、男高共用的那枚，0.29）。盒中段压着一条谱线的，墨占比下限放到拼块那一档
-      const straddle = staffLines.some((l) => l.y > b.y + b.h * 0.3 && l.y < b.y + b.h * 0.7);
+      // 这一档还要够宽（≥1 格，真休止 1.14）：窄的是干带尾的一截（新编赞美诗 f37 m12，0.87 格）
+      const straddle = b.w >= unit.space && staffLines.some((l) => l.y > b.y + b.h * 0.3 && l.y < b.y + b.h * 0.7);
       const rs = rm ?? (!straight && (isEighthRest(nl, b, c.area, unit) || (straddle && isEighthRest(nl, b, c.area, unit, undefined, EIGHTH_REST_FILL_PIECES))) ? { smufl: "rest8th" as SmuflName } : null);
       // 休止不会离谱表几格远：标题行的「你」字（我一生要赞美你，离第一线 8 格）配上了八分休止
       if (rs && !inBand(b.y + b.h / 2)) continue;
