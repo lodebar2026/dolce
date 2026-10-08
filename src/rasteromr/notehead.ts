@@ -1398,10 +1398,35 @@ const DOT_MAX = 0.45;
 
 export interface BareStemProbe {
   stem: LineSeg;
+  /** 这根「干」形同小节线（两端正落在首末线上）。 */
+  bar?: boolean;
   end: "top" | "bottom";
   box: Rect;
   area: number;
   ids: number[];
+}
+
+/**
+ * 同一列上下几截竖段（隔着不到一格）合起来贯穿整个谱表的，是被别的笔画切断的小节线：跨小节线的连音线把它切成两截，
+ * 单看一截不像小节线，当了光杆干，弧尾收成了头（我灵镇静 m5、低音 m5/m18 读出一个 C5/E3/F3）。
+ */
+function barPiece(s: LineSeg, stems: LineSeg[], isBar: (s: LineSeg) => boolean, unit: RasterUnit): boolean {
+  const xOf = (q: LineSeg) => (q.x0 + q.x1) / 2;
+  let top = Math.min(s.y0, s.y1);
+  let bot = Math.max(s.y0, s.y1);
+  const col = stems.filter((t) => Math.abs(xOf(t) - xOf(s)) <= unit.lineThick + 1);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const t of col) {
+      const a = Math.min(t.y0, t.y1);
+      const b = Math.max(t.y0, t.y1);
+      if (b < top - unit.space || a > bot + unit.space || (a >= top && b <= bot)) continue;
+      top = Math.min(top, a);
+      bot = Math.max(bot, b);
+      grew = true;
+    }
+  }
+  return (top < Math.min(s.y0, s.y1) || bot > Math.max(s.y0, s.y1)) && isBar({ ...s, y0: top, y1: bot });
 }
 
 export function probeBareStems(
@@ -1422,6 +1447,7 @@ export function probeBareStems(
     // 形同小节线（两端正落在首末线上）的：压第一线 / 第五线的二分音符，干长 3.5 格，正好也是首线到末线
     //（新编赞美诗 002 m17 的 E4/G4「8」字叠头）。端头**贴着**一团符头大小的墨（盒的近干一边离干 0.3 格内）才当干，否则照旧当小节线
     const barLike = isBar(s);
+    if (!barLike && barPiece(s, stems, isBar, unit)) continue;
     const sx = (s.x0 + s.x1) / 2;
     /** 端头挂着头。只看两端不看中段：干朝下的和弦，中段的头照常认得出、只有端头那个漏了。 */
     const headAt = (e: number) =>
@@ -1455,7 +1481,7 @@ export function probeBareStems(
         const touch = end === "bottom" ? Math.abs(r - sx) <= sp * 0.3 : Math.abs(l - sx) <= sp * 0.3;
         if (!touch || r - l < sp * BARE_W[0] || b - t < sp * BARE_H1[0]) continue;
       }
-      out.push({ stem: s, end, box: { x: l, y: t, w: r - l, h: b - t }, area, ids: got.map((f) => f.id) });
+      out.push({ stem: s, end, box: { x: l, y: t, w: r - l, h: b - t }, area, ids: got.map((f) => f.id), bar: barLike || undefined });
     }
   }
   return out;
@@ -1479,8 +1505,8 @@ export function headsBetweenStemPairs(
 ): { box: Rect; code: SmuflName; ids: number[]; weak: true }[] {
   const sp = unit.space;
   const out: { box: Rect; code: SmuflName; ids: number[]; weak: true }[] = [];
-  const cand = stems.filter((s) => { const len = Math.abs(s.y1 - s.y0); return len >= sp * 2 && len <= sp * BARE_LEN[1] && !isBar(s); });
   const xOf = (s: LineSeg) => (s.x0 + s.x1) / 2;
+  const cand = stems.filter((s) => { const len = Math.abs(s.y1 - s.y0); return len >= sp * 2 && len <= sp * BARE_LEN[1] && !isBar(s) && !barPiece(s, stems, isBar, unit); });
   const headAt = (x: number, y: number) => heads.some((h) => Math.abs(h.x + h.w / 2 - x) < sp * 1.6 && Math.abs(h.y + h.h / 2 - y) < sp * 1.2);
   const inkIn = (cx: number, cy: number, w: number, h: number): number => {
     let n = 0, ink = 0;
@@ -1509,7 +1535,11 @@ export function headsBetweenStemPairs(
       const fill = inkIn(cx, cy, size.w * 0.9, size.h * 0.9);
       if (fill < 0.12) continue;
       const core = inkIn(cx, cy, sp * 0.6, sp * 0.4);
-      out.push({ box: { x: Math.round(cx - size.w / 2), y: Math.round(cy - size.h / 2), w: size.w, h: size.h }, code: core >= BARE_SOLID ? "noteheadBlack" : "noteheadHalf", ids: [], weak: true });
+      const box = { x: Math.round(cx - size.w / 2), y: Math.round(cy - size.h / 2), w: size.w, h: size.h };
+      // 网纹印的实心头里散着白点，头心墨占比到不了 `BARE_SOLID`（我灵镇静 m22 B♭4/G4 四分读成全音符）：
+      // 最大的一块封闭白不到头盒的 `BARE_HOLE` 也算实心——空心头的内腔是整整一块
+      const solid = core >= BARE_SOLID || largestHole(bin, box, onLine) < box.w * box.h * BARE_HOLE;
+      out.push({ box, code: solid ? "noteheadBlack" : "noteheadHalf", ids: [], weak: true });
       used.add(up); used.add(dn);
       break;
     }
@@ -1528,6 +1558,47 @@ const BARE_CORE = 0.8;
 const BARE_CORE_WIDE = 0.62;
 /** 一个头高、头心墨占比到这么多才落实心头。 */
 const BARE_SOLID = 0.9;
+/** 两干夹头那一路：盒里最大一块封闭白占盒的比例不到这么多算实心（网纹实心头，见用处）。 */
+const BARE_HOLE = 0.06;
+/** 按封闭白判网纹实心头时，头心墨占比的下限（网纹本身只有一半上下是墨：我灵镇静 m22 0.48~0.55）。 */
+const BARE_NETTED = 0.45;
+
+/** 盒里不碰盒边的白连通块（谱线行算白）中最大的一块像素数。 */
+function largestHole(bin: Binary, b: Rect, onLine: (y: number) => boolean, linesInk = true): number {
+  const W = b.w;
+  const H = b.h;
+  if (W <= 2 || H <= 2) return 0;
+  const white = (x: number, y: number) => {
+    const X = b.x + x;
+    const Y = b.y + y;
+    return X < 0 || Y < 0 || X >= bin.w || Y >= bin.h || (linesInk && onLine(Y)) ? false : !bin.data[Y * bin.w + X] || onLine(Y);
+  };
+  const seen = new Uint8Array(W * H);
+  let best = 0;
+  for (let y0 = 0; y0 < H; y0++)
+    for (let x0 = 0; x0 < W; x0++) {
+      if (seen[y0 * W + x0] || !white(x0, y0)) continue;
+      let n = 0;
+      let edge = false;
+      const stack = [x0, y0];
+      seen[y0 * W + x0] = 1;
+      while (stack.length) {
+        const y = stack.pop()!;
+        const x = stack.pop()!;
+        n++;
+        if (x === 0 || y === 0 || x === W - 1 || y === H - 1) edge = true;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx] || !white(nx, ny)) continue;
+          seen[ny * W + nx] = 1;
+          stack.push(nx, ny);
+        }
+      }
+      if (!edge) best = Math.max(best, n);
+    }
+  return best;
+}
 
 /**
  * 光杆干端头 → 空心头（一个，或三度叠着的两个），或一个实心头（被连音线之类粘住漏掉的四分，晨曦破晓）。
@@ -1602,7 +1673,7 @@ export function headsOnBareStems(
     }
     return most;
   };
-  const judge = (box: Rect, area: number, strict = false): { ys: number[]; code: SmuflName; cx: number } | null => {
+  const judge = (box: Rect, area: number, strict = false): { ys: number[]; code: SmuflName; cx: number; netted?: boolean } | null => {
     const w = box.w / sp;
     const h = box.h / sp;
     const fill = area / (box.w * box.h);
@@ -1624,6 +1695,10 @@ export function headsOnBareStems(
     if (strict && ys.some((y) => widest(box, y) < sp * 0.8)) return null;
     const cx = box.x + box.w / 2;
     const cores = ys.map((y) => core(cx, y));
+    // 网纹印的实心头里散着白点，头心墨占比到不了 `BARE_SOLID`、还常落到 `BARE_CORE` 以下（我灵镇静 m22 B♭4/G4 四分读成全音符）：
+    // 每个头盒里最大的一块封闭白都不到盒的 `BARE_HOLE` 的算实心——空心头的内腔是整整一块
+    const netted = ys.every((y) => largestHole(bin, { x: Math.round(cx - size.w / 2), y: Math.round(y - size.h / 2), w: size.w, h: size.h }, onLine) < size.w * size.h * BARE_HOLE);
+    if (netted && cores.every((c) => c[1] >= BARE_NETTED)) return { ys, code: "noteheadBlack", cx, netted: true };
     if (fill <= BARE_FILL[1] && cores.every((c) => c[0] <= BARE_CORE)) return { ys, code: "noteheadHalf", cx };
     if (ys.length === 1 && cores[0][1] >= BARE_SOLID) return { ys, code: "noteheadBlack", cx };
     return null;
@@ -1637,12 +1712,21 @@ export function headsOnBareStems(
     if (!got && p.box.h / sp > BARE_H1[1]) {
       const cut = endInk(bin, p, sp, onLine);
       if (cut) got = judge(cut.box, cut.area, true);
-      // 只收空心头：实心的那几种前后别的路认得出，这里截出来的位置反倒偏（晨曦破晓 m8 低音 A3）
-      if (got?.code !== "noteheadHalf") got = null;
+      // 只收空心头：实心的那几种前后别的路认得出，这里截出来的位置反倒偏（晨曦破晓 m8 低音 A3）。网纹实心头除外（别的路认不出）
+      if (got?.code !== "noteheadHalf" && !got?.netted) got = null;
     }
     if (!got) continue;
+    // 形同小节线的那一档，空心头要有自己围出的内腔（谱线行当白）：跨小节线的连音线尾巴贴着小节线，弧与谱线围出一块白，
+    // 照判据收成了二分头（我灵镇静 m5 C5、低音 m5 E3/m18 F3）
+    if (p.bar && got.code === "noteheadHalf" && got.ys.every((y) => largestHole(bin, { x: Math.round(got!.cx - size.w / 2), y: Math.round(y - size.h / 2), w: size.w, h: size.h }, onLine, false) < size.w * size.h * BARE_HOLE)) continue;
     for (const id of p.ids) used.add(id);
-    for (const y of got.ys) out.push({ box: { x: Math.round(got.cx - size.w / 2), y: Math.round(y - size.h / 2), w: size.w, h: size.h }, code: got.code, ids: p.ids, weak: true });
+    // 网纹实心头按收拢墨的中心出盒常离干几像素、挂不上干（读成全音符）：盒贴到干的那一侧
+    let x0 = Math.round(got.cx - size.w / 2);
+    if (got.netted) {
+      const sx = (p.stem.x0 + p.stem.x1) / 2;
+      x0 = sx > got.cx ? Math.round(sx - size.w) : Math.round(sx);
+    }
+    for (const y of got.ys) out.push({ box: { x: x0, y: Math.round(y - size.h / 2), w: size.w, h: size.h }, code: got.code, ids: p.ids, weak: true });
   }
   return out;
 }
