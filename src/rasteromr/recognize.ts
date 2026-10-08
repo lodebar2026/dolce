@@ -2760,12 +2760,20 @@ export async function recognizeRasterPage(
         // 谱号那一列不问：低音谱号的碎块（弧 + 两点）会被读成「7:」「2」之类
         // 也不问没撑满谱表、或探出谱表的列：带干的和弦读得出「5」「2」（新编赞美诗 121 头一个八分和弦读成 5/2）
         const inClef = clefBoxes.some((cb) => cb.y < bottom && cb.y + cb.h > top && box.x + box.w / 2 < cb.x + cb.w) || !fillsStaff(box);
+        // 压线笔画补回的那条（`timeStripOf` 的 `raw`）只给下面「模板认出一对、OCR 只读出一半」那一步兜底：去线条读不出的
+        //（「9」读成「0」、「6」「3」读空）问它。不让它单独成对采信——行首的和弦列补了线也读得成一对数字（373 低音行读出 5/2），
+        // 补线还会把「3」左侧压线的开口封上、读成「8」（万口欢唱 3/2）
+        const reach = Math.ceil(unit.lineThick) + 2;
         const sUp = timeStripOf(nl, up, groups.indexOf(g), "num");
         const sDn = timeStripOf(nl, dn, groups.indexOf(g), "den");
+        const fUp = timeStripOf(nl, up, groups.indexOf(g), "num", raster.bin, reach);
+        const fDn = timeStripOf(nl, dn, groups.indexOf(g), "den", raster.bin, reach);
         const oNum = inClef ? null : timeDigit(opts.timeOcr?.get(timeKey(sUp)), "num");
         const oDen = inClef ? null : timeDigit(opts.timeOcr?.get(timeKey(sDn)), "den");
+        const fNum = inClef ? null : oNum ?? timeDigit(opts.timeOcr?.get(timeKey(fUp)), "num");
+        const fDen = inClef ? null : oDen ?? timeDigit(opts.timeOcr?.get(timeKey(fDn)), "den");
         if (pass === 0 && !inClef) {
-          timeStrips.push(sUp, sDn);
+          timeStrips.push(sUp, sDn, fUp, fDn);
           timeCols.push({ box, mid, num: oNum, den: oDen });
         }
         if (oNum !== null && oDen !== null) {
@@ -2799,8 +2807,8 @@ export async function recognizeRasterPage(
           if (num && den) hits.push(num, den);
         }
         // 模板认出了一对、OCR 只读出其中一半的：那一半听 OCR 的（分母 8 读成 4 是模板最常见的错，OCR 的「8」靠得住）
-        if (hits.length === 2 && oNum !== null && oNum < 10) hits[0] = { box: hits[0].box, code: `timeSig${oNum}` as SmuflName };
-        if (hits.length === 2 && oDen !== null && oDen < 10) hits[1] = { box: hits[1].box, code: `timeSig${oDen}` as SmuflName };
+        if (hits.length === 2 && fNum !== null && fNum < 10) hits[0] = { box: hits[0].box, code: `timeSig${fNum}` as SmuflName };
+        if (hits.length === 2 && fDen !== null && fDen < 10) hits[1] = { box: hits[1].box, code: `timeSig${fDen}` as SmuflName };
         }
       }
       if (!hits.length) continue;

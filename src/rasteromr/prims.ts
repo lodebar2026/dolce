@@ -1491,6 +1491,9 @@ export function groupByLeftInk(
 ): { x: number; y: number; w: number; h: number }[] {
   if (!staves.length) return [];
   const ss = [...staves].sort((a, b) => a.top - b.top);
+  // 全页各行左端的中位：个别行的谱线左段淡得断开、左端量晚一大截（新编赞美诗 369 中间系统两行从谱号后才起，
+  // 别的行都从括号边上起），只按它自己的左端开窗就够不着括号，窗口左边再延到中位
+  const medLeft = ss.map((s) => s.left).sort((a, b) => a - b)[ss.length >> 1];
   const groups: (typeof ss)[] = [[ss[0]]];
   for (let i = 1; i < ss.length; i++) {
     const a = ss[i - 1];
@@ -1498,7 +1501,7 @@ export function groupByLeftInk(
     const y0 = Math.round(a.bottom) + 1;
     const y1 = Math.round(b.top) - 1;
     const left = Math.min(a.left, b.left);
-    const x0 = Math.max(0, Math.round(left - unit.space * LEFTINK_OUT));
+    const x0 = Math.max(0, Math.round(Math.min(left, medLeft) - unit.space * LEFTINK_OUT));
     const x1 = Math.min(bin.w - 1, Math.round(left + unit.space * LEFTINK_IN));
     let rows = 0;
     let hit = 0;

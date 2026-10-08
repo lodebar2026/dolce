@@ -110,6 +110,16 @@ export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | n
         const big = decodeImage(best, w, h, k, 2);
         if (big) return { bin: big, up: 2 };
       }
+      // 原分辨率上线宽量不准：浅灰底上 Sauvola 把淡谱线两侧的灰边也算成墨，两像素的线量成三像素、线宽比过闸
+      //（046 赞美不尽歌 3/11）。放大一倍再按谱线横带的中位厚度量一次（线距按原图的两倍），闸用更严的 `UPSCALE_RECHECK`
+      if (u0 && u0.space < UPSCALE_SPACE) {
+        const big = decodeImage(best, w, h, k, 2);
+        if (big) {
+          const ts = findStaffLines(prepared(big)).map((l) => l.y1 - l.y0 + 1).sort((a, b) => a - b);
+          const t2 = ts.length >= 5 ? ts[ts.length >> 1] : Infinity;
+          if (t2 / (u0.space * 2) < UPSCALE_RECHECK) return { bin: big, up: 2 };
+        }
+      }
       return { bin: b, up: 1 };
     };
     let got = build(SAUVOLA_K, bin);
@@ -514,6 +524,11 @@ const UPSCALE_SPACE = 14;
  * 那两页放大是赚的（整份 60.8% → 61.4%）。
  */
 const UPSCALE_THIN = 0.22;
+/**
+ * 原分辨率线宽比过了 `UPSCALE_THIN`、放大一倍再量的那道闸（`rasterizePage`）。真细线放大后 046 赞美不尽歌 3/22 = 0.14；
+ * 望十架扫描件的粗线放大后 5/23 = 0.22，按 `UPSCALE_THIN` 刚好过闸，整份被放大（扫描档 83.7 → 71.8，歌词掉得最多）。
+ */
+const UPSCALE_RECHECK = 0.16;
 /** 线宽/线距低于这个数算细线扫描件。实测敬拜万世之王 0.053，其余彩色底本 0.067（坚固保障）以上。 */
 const FAINT_RATIO = 0.06;
 
