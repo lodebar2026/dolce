@@ -5,6 +5,7 @@
 import { SPage, Seg, Sym, type Staff } from "./model";
 import type { BeamShape, StaffNote, StemInfo } from "./notedata";
 import { objText } from "./textanalyze";
+import { subPaths } from "./vecgeom";
 
 /** 会挂到音符上的记号（SMuFL 名）。力度记号另走 `<direction>`，见 `toxml.ts`。 */
 const NOTATION_CODES = new Set([
@@ -229,7 +230,7 @@ export function applyTuplet(marked: Iterable<StaffNote>, n: number): void {
  * 连音**方括号**那一路：数字左右各有一截横线，两截同高、在数字两侧。
  *
  * 判据（都按线距 `sp` 量，别写绝对点值）：
- *   - 两截横线的 y 差不到半格（同一条括号被数字断成两截）；
+ *   - 两截在数字两侧的内端点 y 差不到半格（同一条括号被数字断成两截）；可以是斜的（斜率 ≤0.5、两截斜率相近）；
  *   - 它们的 y 与数字中心差不到一格半（数字是嵌在括号里的）；
  *   - 一截在数字左、一截在数字右，间隙都不超过两格。
  *
@@ -240,8 +241,29 @@ export function applyTuplet(marked: Iterable<StaffNote>, n: number): void {
 function bracketGroup(pg: SPage, num: { n: number; cx: number; cy: number; w: number; h: number }, notes: StaffNote[], sp: number): StaffNote[] | null {
   let left: Seg | null = null;
   let right: Seg | null = null;
-  for (const g of pg.segs) {
-    if (g.hasAnyTag() || !g.isH) continue;
+  // **括号可以是斜的**：Finale 让它顺着音高走（牵我的手 W 声部 `G F E` 一路往下，两截各斜 1.8~2.8pt），
+  // 只认水平段就一个也收不到，四分三连音整小节多出一拍。斜率放到 0.5，另靠下面「两截共线」把关
+  const slope = (g: Seg) => (g.y1 - g.y0) / (g.x1 - g.x0);
+  // 斜段不在 `pg.segs` 里（`segsOf` 只收水平、竖直两种，谱线、符干、小节线都靠这一点），
+  // 在数字附近的未打标路径里另收：两点子路径或折线（括号是「横线 + 一截钩」一笔画下来的）
+  const slanted: Seg[] = [];
+  for (const o of pg.objs) {
+    if (!o.path || o.hasAnyTag()) continue;
+    if (o.box.right < num.cx - sp * 12 || o.box.left > num.cx + sp * 12 || o.box.bottom < num.cy - sp * 2 || o.box.top > num.cy + sp * 2) continue;
+    for (const sub of subPaths(o.path)) {
+      if (sub.pts.some((q) => q.curve)) continue;
+      for (let i = 1; i < sub.pts.length; i++) {
+        const a = sub.pts[i - 1];
+        const b = sub.pts[i];
+        if (Math.abs(b.x - a.x) < 0.02) continue;
+        const g = new Seg(o, a.x, a.y, b.x, b.y, Math.max(o.path.lineWidth, 0.3));
+        if (!g.isH) slanted.push(g);
+      }
+    }
+  }
+  for (const g of [...pg.segs, ...slanted]) {
+    if (g.hasAnyTag() || g.isV) continue;
+    if (!g.isH && (Math.abs(slope(g)) > 0.5 || g.right - g.left < sp)) continue;
     if (Math.abs(g.cy - num.cy) > sp * 1.5) continue;
     if (g.right <= num.cx && num.cx - g.right < sp * 2) {
       if (!left || g.right > left.right) left = g;
@@ -250,7 +272,15 @@ function bracketGroup(pg: SPage, num: { n: number; cx: number; cy: number; w: nu
     }
   }
   if (!left || !right) return null;
-  if (Math.abs(left.cy - right.cy) > sp * 0.5) return null;
+  // 同一条括号被数字断成两截：比**数字两侧的内端点**同不同高（水平括号就是两截同高），斜的还要斜率相近。
+  // 楔形线（渐强渐弱）的两条一正一负，过不了这一关
+  const yAt = (g: Seg, x: number) => (g.isH ? g.cy : g.y0 + slope(g) * (x - g.x0));
+  if (Math.abs(yAt(left, left.right) - yAt(right, right.left)) > sp * 0.5) return null;
+  if (!left.isH || !right.isH) {
+    const a = left.isH ? 0 : slope(left);
+    const b = right.isH ? 0 : slope(right);
+    if (Math.abs(a - b) > 0.15) return null;
+  }
   const x0 = left.left;
   const x1 = right.right;
   // 括号下（或上）方那一行谱：取跨度内音符最多的那行
