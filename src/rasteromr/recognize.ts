@@ -884,7 +884,8 @@ export async function recognizeRasterPage(
     if (!d) continue;
     const x0 = Math.min(b.x, d.bbox.x), y0 = Math.min(b.y, d.bbox.y);
     const box = { x: x0, y: y0, w: Math.max(b.x + b.w, d.bbox.x + d.bbox.w) - x0, h: Math.max(b.y + b.h, d.bbox.y + d.bbox.h) - y0 };
-    if (!isEighthRest(nl, box, c.area + d.area, unit, EIGHTH_REST_H_PIECES)) continue;
+    // 墨按不去线的量（同上一路）：骑线的那枚两块合起来按去线图数只有 0.29（信心使我得胜 m18 男低谱表）
+    if (!isEighthRest(nl, box, symbolInk(nl, raster.bin, box, unit.lineThick), unit, EIGHTH_REST_H_PIECES)) continue;
     if (restSyms.some((r) => overlapFrac(r.box, box) > 0.3)) continue;
     restSyms.push({ box, code: "rest8th" });
   }
@@ -2707,7 +2708,10 @@ export async function recognizeRasterPage(
       const vr = longestVRun(raster.bin, b);
       const straight = vr >= b.h * 0.85 && vr >= unit.space * 2.5;
       const rm = straight ? null : matchTemplate(binSig(nl, b), b.w / unit.space, b.h / unit.space, restTpl);
-      const rs = rm ?? (!straight && isEighthRest(nl, b, c.area, unit) ? { smufl: "rest8th" as SmuflName } : null);
+      // **骑在谱线上的八分休止**：球在一间、斜笔在下一间，中间压着的那条线去掉后只剩细笔连着，墨占比掉到 0.3 以下
+      //（信心使我得胜 m18 女高、男高共用的那枚，0.29）。盒中段压着一条谱线的，墨占比下限放到拼块那一档
+      const straddle = staffLines.some((l) => l.y > b.y + b.h * 0.3 && l.y < b.y + b.h * 0.7);
+      const rs = rm ?? (!straight && (isEighthRest(nl, b, c.area, unit) || (straddle && isEighthRest(nl, b, c.area, unit, undefined, EIGHTH_REST_FILL_PIECES))) ? { smufl: "rest8th" as SmuflName } : null);
       // 休止不会离谱表几格远：标题行的「你」字（我一生要赞美你，离第一线 8 格）配上了八分休止
       if (rs && !inBand(b.y + b.h / 2)) continue;
       if (rs) {
