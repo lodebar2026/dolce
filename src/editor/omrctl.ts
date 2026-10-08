@@ -290,9 +290,10 @@ export class OmrController implements FormatSource {
         const rb = await import("../rasteromr/browser");
         const pdfs: Uint8Array[] = [];
         for (const f of files) pdfs.push(await rb.asRasterPdf(f.bytes, f.mime));
-        const isStaff = this.kind === "staff" || (await rb.looksLikeStaffBytes(pdfs[0]!));
+        // 判路时栅格化过的页交给识别，不再取一遍
+        const probe = this.kind === "staff" ? null : await rb.probeRasterStaff(pdfs[0]!);
         if (g !== this.gen) return false;
-        if (isStaff) return await this.recognizeRasterStaff(pdfs, files, t0, g);
+        if (!probe || probe.isStaff) return await this.recognizeRasterStaff(pdfs, files, t0, g, probe?.pages);
       } catch (e) {
         if (g !== this.gen) return false;
         if (this.kind === "staff") {
@@ -309,7 +310,7 @@ export class OmrController implements FormatSource {
   }
 
   /** 位图五线谱：在线 OCR 跑整曲识别，产物是 MusicXML，落地同打开 `.musicxml`（无代码区、谱面上改模型）。 */
-  private async recognizeRasterStaff(pdfs: Uint8Array[], files: readonly RecogInput[], t0: number, g: number): Promise<boolean> {
+  private async recognizeRasterStaff(pdfs: Uint8Array[], files: readonly RecogInput[], t0: number, g: number, firstPages?: Map<number, import("../rasteromr/rasterpage").RasterPage | null>): Promise<boolean> {
     const rb = await import("../rasteromr/browser");
     this.busy = true;
     this.cancelRequested = false;
@@ -321,6 +322,7 @@ export class OmrController implements FormatSource {
         onPage: (done, total) => g === this.gen && this.progress(t("omr.staffProgress", { done, total }) + t("omr.escCancel")),
         // 过时的（又开始了一次识别、打开了别的文档）自己停下
         cancelled: () => g !== this.gen || this.cancelRequested,
+        firstPages,
       });
     } catch (e) {
       if (g === this.gen) this.host.setStatus(this.cancelRequested ? t("omr.cancelled") : t("omr.staffFailed", { error: e instanceof Error ? e.message : String(e) }));
@@ -433,7 +435,12 @@ export class OmrController implements FormatSource {
       try {
         const sb = await import("../staffomr/browser");
         const bytes = this.lastInputs[0]!.bytes;
-        return land(await sb.vectorOverlayResult(bytes, await sb.recognizeStaffPdf(bytes, { noteIds: true })));
+        const doc = await sb.openStaffPdf(bytes);
+        try {
+          return land(await sb.vectorOverlayResult(doc, await sb.recognizeStaffPdf(doc, { noteIds: true })));
+        } finally {
+          doc.pdf.destroy?.();
+        }
       } catch (e) {
         if (g === this.gen) this.host.setStatus(t("omr.loadFailed", { error: e instanceof Error ? e.message : String(e) }));
         return false;
@@ -800,17 +807,35 @@ export class OmrController implements FormatSource {
    * 让调用方继续走简谱那条（该 PDF 多半是扫描件或简谱）。
    */
   private async tryStaffPdf(bytes: Uint8Array, t0: number, g: number): Promise<boolean> {
-    const { openStaffPdf, isStaffPdf, recognizeStaffPdf } = await import("../staffomr/browser");
+    const { openStaffPdf, isStaffPdf, recognizeStaffPdf, vectorOverlayResult } = await import("../staffomr/browser");
+    // 一份 PDF 只打开一次：判路、识别、渲对照底图共用
+    let doc: Awaited<ReturnType<typeof openStaffPdf>>;
+    try {
+      doc = await openStaffPdf(bytes);
+    } catch {
+      return false;
+    }
+    try {
+      return await this.adoptStaffPdf(doc, t0, g, isStaffPdf, recognizeStaffPdf, vectorOverlayResult);
+    } finally {
+      doc.pdf.destroy?.();
+    }
+  }
+
+  private async adoptStaffPdf(
+    doc: import("../staffomr/browser").StaffPdfDoc, t0: number, g: number,
+    isStaffPdf: typeof import("../staffomr/browser").isStaffPdf,
+    recognizeStaffPdf: typeof import("../staffomr/browser").recognizeStaffPdf,
+    vectorOverlayResult: typeof import("../staffomr/browser").vectorOverlayResult,
+  ): Promise<boolean> {
     let ok = false;
     try {
-      const { pdf, OPS } = await openStaffPdf(bytes);
-      ok = await isStaffPdf(pdf, OPS);
-      pdf.destroy?.();
+      ok = await isStaffPdf(doc.pdf, doc.OPS);
     } catch {
       return false;
     }
     if (!ok || g !== this.gen) return false;
-    const res = await recognizeStaffPdf(bytes, {
+    const res = await recognizeStaffPdf(doc, {
       onProgress: (done, total) => g === this.gen && this.host.setStatus(t("omr.staffProgress", { done, total })),
       noteIds: true,
     });
@@ -830,8 +855,7 @@ export class OmrController implements FormatSource {
     const g2 = this.gen; // 上面 clear() 换了代号
     // 原图对照：页面渲成位图、框放大到像素（`vectorOverlayResult`），之后与位图那一路同一套对照视图与关联表
     try {
-      const { vectorOverlayResult } = await import("../staffomr/browser");
-      const overlay = await vectorOverlayResult(bytes, res);
+      const overlay = await vectorOverlayResult(doc, res);
       if (g2 !== this.gen) return true;
       this.staffResult = overlay;
       if (this.btnEl) this.btnEl.textContent = t("omr.compare");

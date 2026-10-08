@@ -2509,21 +2509,24 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   // 去连通：把贯穿全高的小节线（常像"桥"把弧/增时线粘成一团）从像素上擦掉重做连通域，
   // 让弧/小节线/数字各自独立、以干净连通块流入下面的 classify 与 detectSlurs。
   const raw = connectedComponents(bin, 4);
-  let comps = mergeBrokenHlines(untangleBridged(raw, bin, estimateNumH(raw)), estimateNumH(raw));
-  comps = splitBarDash(bin, comps, estimateNumH(comps));
-  comps = splitBarCap(bin, comps, estimateNumH(comps));
-  if (isVoicedPage(comps, estimateNumH(comps))) comps = splitDigitDash(bin, comps, estimateNumH(comps));
-  comps = splitArcTail(bin, comps, estimateNumH(comps));
-  comps = splitLineOverArc(bin, comps, estimateNumH(comps));
-  comps = splitLineDot(bin, comps, estimateNumH(comps), isVoicedPage(comps, estimateNumH(comps)));
+  // 每拆一步块表就换一份，字号随之重估；同一份块表只估一次（各 split 都返回新数组、不就地改块，按数组认就行）
+  let nhOf: Component[] | null = null, nhVal = 0;
+  const numHOf = (cs: Component[]): number => (cs === nhOf ? nhVal : ((nhOf = cs), (nhVal = estimateNumH(cs))));
+  let comps = mergeBrokenHlines(untangleBridged(raw, bin, numHOf(raw)), numHOf(raw));
+  comps = splitBarDash(bin, comps, numHOf(comps));
+  comps = splitBarCap(bin, comps, numHOf(comps));
+  if (isVoicedPage(comps, numHOf(comps))) comps = splitDigitDash(bin, comps, numHOf(comps));
+  comps = splitArcTail(bin, comps, numHOf(comps));
+  comps = splitLineOverArc(bin, comps, numHOf(comps));
+  comps = splitLineDot(bin, comps, numHOf(comps), isVoicedPage(comps, numHOf(comps)));
   // 弧端切点在四声部页上也做：这种页的线跨两个声部（≥2.6 字号），进不了「干净页」的尺子；弧又贴着音起笔，
   // 右脚常压在下一个音的高音点上（新编赞美诗·四声部 172 `1̇⌒2̇` 弧连点 58×22，整本漏高音点三百多处）
-  const cleanPage = isCleanPage(comps, estimateNumH(comps));
+  const cleanPage = isCleanPage(comps, numHOf(comps));
   // 这本的弧画得粗（4~5px、字号 32~36，中位列墨 0.13~0.15 字号），笔画门放到 0.18
-  if (cleanPage || isVoicedPage(comps, estimateNumH(comps))) comps = splitArcEndDots(bin, comps, estimateNumH(comps), cleanPage ? 0.12 : 0.18, !cleanPage);
+  if (cleanPage || isVoicedPage(comps, numHOf(comps))) comps = splitArcEndDots(bin, comps, numHOf(comps), cleanPage ? 0.12 : 0.18, !cleanPage);
   if (cleanPage) {
-    comps = splitArcInnerDots(bin, comps, estimateNumH(comps));
-    comps = splitMordentDot(bin, comps, estimateNumH(comps));
+    comps = splitArcInnerDots(bin, comps, numHOf(comps));
+    comps = splitMordentDot(bin, comps, numHOf(comps));
   }
   const { c, numH } = classify(comps, bin);
 

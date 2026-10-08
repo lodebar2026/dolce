@@ -43,7 +43,7 @@ import { ContourLedger } from "./ledger";
 import { attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { attachSlurs, markSlurNotes, reconnectSlurs, validateSlurNote, type SlurArc } from "../staffomr/slur";
 import { composeHeaderStrip } from "./pagecompose";
-import { isTextStaff, pageTextKey, touchesText } from "./pagetext";
+import { isTextStaff, pageTextKey, textDetScale, touchesText } from "./pagetext";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
 import { rasterizePage, type RasterPage } from "./rasterpage";
@@ -943,6 +943,23 @@ function mergeLayerLines(ocr: readonly WordLine[], layer: readonly WordLine[]): 
   return out;
 }
 
+/** 在线识别（编辑器用）：把一页切出来的条送 OCR，回同形的表（`ocrlive.ts`）。
+ *  `recognizeRasterPage` 在每处查缓存的地方，缓存没给就当场把那一处切出的条送它——一页只走一趟。 */
+export interface RasterLiveOcr {
+  harmony(strips: readonly HarmonyStrip[]): Promise<Map<string, OcrChar[]>>;
+  lyric(strips: readonly LyricStrip[]): Promise<Map<string, OcrChar[]>>;
+  label(strips: readonly LabelStrip[]): Promise<Map<string, string>>;
+  /** 拍号数字条（可缺：缺了拍号只靠模板）。 */
+  time?(strips: readonly TimeStrip[]): Promise<Map<string, string>>;
+  jianpu(strips: readonly JianpuStrip[]): Promise<Map<string, JianpuRow[]>>;
+  /** 文字指示带（可缺：缺了就不出 `<words>`）。 */
+  word?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
+  /** 页眉带（可缺：缺了就不出 `<credit>`）。 */
+  header?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
+  /** 整页文字检测（可缺：缺了各路判据不避文字）。`scale` 见 `pagetext.ts::textDetScale`。 */
+  textDet?(bin: Binary, scale: number): Promise<Rect[]>;
+}
+
 /** 认一页。顺序照 `staffomr/pagerun.ts::recognizeStaffPage`，**别调**。 */
 export async function recognizeRasterPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -975,7 +992,7 @@ export async function recognizeRasterPage(
     wantHeader?: boolean;
     /** 页眉带的 OCR 缓存（`gen-rasterheader.mjs` 的产物，值同文字指示带）。 */
     headerOcr?: Map<string, WordLine[]>;
-    /** 整页文字框（`gen-rastertext.mjs` 的产物，按 `pageTextKey` 寻址；在线识别由 `song.ts` 现检）。见 `pagetext.ts`。 */
+    /** 整页文字框（`gen-rastertext.mjs` 的产物，按 `pageTextKey` 寻址；在线识别缺的页当场检测并记进来）。见 `pagetext.ts`。 */
     pageTexts?: Map<string, Rect[]>;
     /** 缓存里没有这一页的文字框时把位图带出来（`textBin`），在线识别拿去检测。 */
     wantTextBin?: boolean;
@@ -984,6 +1001,10 @@ export async function recognizeRasterPage(
     harmonyOcr?: Map<string, OcrChar[]>;
     /** 简谱行的离线识别缓存（`scripts/gen-rasterjianpu.mjs` 的产物）。混排谱拿它给五线谱纠错，见 `jianpufuse.ts`。 */
     jianpuOcr?: Map<string, JianpuRow[]>;
+    /** 在线识别：上面哪张表没给，就在查它的地方把这一页切出的条当场送 OCR（编辑器用；回归脚本给离线缓存，不给它）。 */
+    live?: RasterLiveOcr;
+    /** 这一页已经栅格化过（编辑器判路时取的，`rasteromr/browser.ts::probeRasterStaff`）：直接用，不再取一遍。会被就地改写，只能用一次。 */
+    raster?: RasterPage | null;
     /** 排查用：把连通块与「谁被认领了」带出来（`debugBlobs` 字段）。识别判据一条不改。 */
     debug?: boolean;
     /**
@@ -997,14 +1018,19 @@ export async function recognizeRasterPage(
     staffBandOnly?: boolean;
   } = {},
 ): Promise<RasterPageResult> {
-  const raster = await rasterizePage(pdfPage, OPS);
+  const raster = opts.raster !== undefined ? opts.raster : await rasterizePage(pdfPage, OPS);
   const blank = buildRasterPage({ index, width: raster?.bin.w ?? 1, height: raster?.bin.h ?? 1, unit: { lineThick: 1, space: 1, height: 4 }, staffLines: [], hSegs: [], vSegs: [] });
   if (!raster) return empty(blank, null, null, opts.carryTime, opts.carryKey);
   const unit = estimateUnit(raster.bin);
   if (!unit) return empty(blank, raster, null, opts.carryTime, opts.carryKey);
   // 整页文字框（找谱线之前就要）：缓存按页指纹查，查不到且要在线检测的把位图带出去
-  const textKey = opts.pageTexts || opts.wantTextBin ? pageTextKey(raster.bin) : undefined;
-  const textBoxes = textKey ? opts.pageTexts?.get(textKey) : undefined;
+  const live = opts.live;
+  const textKey = opts.pageTexts || opts.wantTextBin || live?.textDet ? pageTextKey(raster.bin) : undefined;
+  let textBoxes = textKey ? opts.pageTexts?.get(textKey) : undefined;
+  if (textKey && !textBoxes && live?.textDet) {
+    textBoxes = await live.textDet({ w: raster.bin.w, h: raster.bin.h, data: new Uint8Array(raster.bin.data) }, textDetScale(unit));
+    opts.pageTexts?.set(textKey, textBoxes);
+  }
   const textBin = opts.wantTextBin && !textBoxes ? { w: raster.bin.w, h: raster.bin.h, data: new Uint8Array(raster.bin.data) } : undefined;
   const withText = (r: RasterPageResult): RasterPageResult => Object.assign(r, { textKey, textBin, textBoxes });
   // 行投影找谱线；**明显不够的页面**（扫得糊、线细断）再拿逐列游程的轨迹补上
@@ -1183,6 +1209,7 @@ export async function recognizeRasterPage(
     }]),
     unit,
   );
+  const harmonyOcr = opts.harmonyOcr ?? (live ? await live.harmony(harmonyStrips) : undefined);
   const harmonies: HarmonyToken[] = [];
   /** 和弦带里认出来的**文本**（词曲署名、Fine 之类）：不进和弦，单独交出去。 */
   const harmonyTexts: HarmonyToken[] = [];
@@ -1197,7 +1224,7 @@ export async function recognizeRasterPage(
       // 两组连杠 A2 读成两个「D」、头被当和弦字母认领走）。和弦字母离上一行谱远得多
       const prev = groups[strip.staff - 1];
       if (prev && strip.box.y < prev.lines[4].y + unit.space * 1.5) continue;
-      const chars = opts.harmonyOcr?.get(harmonyKey(strip));
+      const chars = harmonyOcr?.get(harmonyKey(strip));
       if (!chars?.length) continue; // 缓存没命中：这条没跑过 OCR，宁可不认领
       const { chords, texts } = readHarmonyStrip(strip, chars);
       if (!lines.has(strip.staff)) lines.set(strip.staff, []), lineTexts.set(strip.staff, []);
@@ -2620,6 +2647,8 @@ export async function recognizeRasterPage(
   // 我们的顺序反过来，粗体 4/4 一整块被并块拆分那一路拆成两个黑头——《欢然颂主》高音谱表），
   // 但只认与已认出的拍号**同值、x 对齐**（1.5 格内）的那一对；认中了，盒里的假头随下面「盖过字典」一并删掉。
   const timeStrips: TimeStrip[] = [];
+  /** 在线时逐列现读（只读头一趟、谱号列以外的那几条，与离线缓存收的条一致）；第二趟只查已读的 */
+  const timeOcr = opts.timeOcr ?? (live?.time ? new Map<string, string>() : undefined);
   /** 行首每个「两个数字摞起来」形状的候选列（谱号那一列除外）与 OCR 读出的上下半，留给 `shareTimeSignature` 按系统互证。 */
   const timeCols: TimeColumn[] = [];
   const clefBoxes = syms.filter((s0) => isClef(s0.code)).map((s0) => s0.box);
@@ -2757,10 +2786,11 @@ export async function recognizeRasterPage(
         const sDn = timeStripOf(nl, dn, groups.indexOf(g), "den");
         const fUp = timeStripOf(nl, up, groups.indexOf(g), "num", raster.bin, reach);
         const fDn = timeStripOf(nl, dn, groups.indexOf(g), "den", raster.bin, reach);
-        const oNum = inClef ? null : timeDigit(opts.timeOcr?.get(timeKey(sUp)), "num");
-        const oDen = inClef ? null : timeDigit(opts.timeOcr?.get(timeKey(sDn)), "den");
-        const fNum = inClef ? null : oNum ?? timeDigit(opts.timeOcr?.get(timeKey(fUp)), "num");
-        const fDen = inClef ? null : oDen ?? timeDigit(opts.timeOcr?.get(timeKey(fDn)), "den");
+        if (pass === 0 && !inClef && !opts.timeOcr && live?.time && timeOcr) for (const [k, v] of await live.time([sUp, sDn, fUp, fDn])) timeOcr.set(k, v);
+        const oNum = inClef ? null : timeDigit(timeOcr?.get(timeKey(sUp)), "num");
+        const oDen = inClef ? null : timeDigit(timeOcr?.get(timeKey(sDn)), "den");
+        const fNum = inClef ? null : oNum ?? timeDigit(timeOcr?.get(timeKey(fUp)), "num");
+        const fDen = inClef ? null : oDen ?? timeDigit(timeOcr?.get(timeKey(fDn)), "den");
         if (pass === 0 && !inClef) {
           timeStrips.push(sUp, sDn, fUp, fDn);
           timeCols.push({ box, mid, num: oNum, den: oDen });
@@ -4274,9 +4304,10 @@ export async function recognizeRasterPage(
   // 条子**不论有没有缓存都要切**（与歌词字格同一条道理：切出来这件事本身
   // 就是「这块墨是标签」的判断）；认字靠 `labelOcr` 缓存，没缓存就只出条子。
   const labelStrips = findStaffLabels(raster.bin, pg.staves, unit);
+  const labelOcr = opts.labelOcr ?? (live ? await live.label(labelStrips) : undefined);
   const staffLabels = new Map<number, string>();
   for (const st of labelStrips) {
-    const txt = opts.labelOcr?.get(labelKey(st));
+    const txt = labelOcr?.get(labelKey(st));
     const name = txt ? normalizeLabel(txt) : null;
     if (name) staffLabels.set(st.staff, name);
   }
@@ -4353,7 +4384,6 @@ export async function recognizeRasterPage(
     }
     for (const row of rows) for (const cell of row.cells) ledger.claim(cell, "lyric");
     const objs = [];
-    const ocr = opts.lyricOcr;
     lyricStats.rows = rows.length;
     const stripRow = new Map<LyricStrip, LyricRow>();
     for (const row of rows) {
@@ -4363,6 +4393,7 @@ export async function recognizeRasterPage(
         stripRow.set(strip, row);
       }
     }
+    const ocr = opts.lyricOcr ?? (live ? await live.lyric(lyricStrips) : undefined);
     /** OCR 认得出字的歌词行（剔「字的笔画被收成符头」要用，见下）。 */
     const readRows: LyricRow[] = [];
     const latinRows = new Set<LyricRow>();
@@ -4543,12 +4574,13 @@ export async function recognizeRasterPage(
   //
   // 放在歌词挂完之后：纠的是音高与时值，删的是简谱对不上的多余音——
   // 挂歌词那一步要看到**所有**候选音才挂得准，先删了反而让字挂错位。
-  const jianpuFix = opts.jianpuOcr && jianpuStrips.length
+  const jianpuOcr = opts.jianpuOcr ?? (live && jianpuStrips.length ? await live.jianpu(jianpuStrips) : undefined);
+  const jianpuFix = jianpuOcr && jianpuStrips.length
     ? fuseJianpu(
       notes,
       jianpuStrips,
       (strip) => pg.staves.find((st) => Math.abs(st.box.top - groups[strip.staff].lines[0].y) < unit.space),
-      (strip) => opts.jianpuOcr!.get(jianpuKey(strip)),
+      (strip) => jianpuOcr.get(jianpuKey(strip)),
       (st) => keyFifths(ctx.get(st)?.key ?? []),
       unit,
     )
@@ -4569,7 +4601,8 @@ export async function recognizeRasterPage(
   // ── 文字指示与节拍器记号 ────────────────────────────────────────────────
   //
   // 带照固定几何切（两行谱之间的空当），认字靠 `wordOcr` 缓存；歌词行、和弦字母已经另有身份，中心落在它们盒里的行不要。
-  const wordStrips = opts.wordOcr || opts.wantWordStrips ? findWordStrips(raster.bin, pg.staves, unit) : [];
+  const wordStrips = opts.wordOcr || opts.wantWordStrips || live?.word ? findWordStrips(raster.bin, pg.staves, unit) : [];
+  const wordOcr = opts.wordOcr ?? (live?.word ? await live.word(wordStrips) : undefined);
   // 页眉（曲首页）：标题、词曲作者。认字同文字指示带，缓存另放
   let headerStrip = opts.wantHeader ? findHeaderStrip(raster.bin, pg.staves, unit) : null;
   // 谱图里切不出页眉带、谱图又没顶到页顶的（排版软件出的 PDF，标题是另贴的小图块与文字层）：拼出谱图上方那一段（`pagecompose.ts`）
@@ -4578,10 +4611,11 @@ export async function recognizeRasterPage(
     const comp = await composeHeaderStrip(pdfPage, OPS, raster.bin.w);
     if (comp) (headerStrip = comp.strip), (layerLines = comp.texts);
   }
-  const ocrLines = headerStrip ? opts.headerOcr?.get(wordKey(headerStrip)) : undefined;
+  const headerOcr = opts.headerOcr ?? (headerStrip && live?.header ? await live.header([headerStrip]) : undefined);
+  const ocrLines = headerStrip ? headerOcr?.get(wordKey(headerStrip)) : undefined;
   const headerLines = ocrLines || layerLines.length ? mergeLayerLines(ocrLines ?? [], layerLines) : undefined;
   const header = headerStrip && headerLines ? headerCredits(headerLines, headerStrip) : [];
-  if (opts.wordOcr) {
+  if (wordOcr) {
     const skip: Rect[] = [
       // 认下来的歌词行：从行顶往下两格半（`LyricLine` 只记行顶），左右以首尾音节为界
       ...lyricLines.filter((ln) => ln.syllables.length >= 3).map((ln) => {
@@ -4596,7 +4630,7 @@ export async function recognizeRasterPage(
     {
       const wordBoxes: Rect[] = [];
       for (const strip of wordStrips)
-        for (const l of opts.wordOcr.get(wordKey(strip)) ?? [])
+        for (const l of wordOcr.get(wordKey(strip)) ?? [])
           if (/[A-Za-z]{3,}|[\u4e00-\u9fff]{2,}/.test(l.t)) wordBoxes.push({ x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h });
       const pad = unit.space * 0.1;
       const inWord = (n: StaffNote) => {
@@ -4613,7 +4647,7 @@ export async function recognizeRasterPage(
         notes.splice(i, 1);
       }
     }
-    const placed = attachWordLines(pg, notes, wordStrips, opts.wordOcr, unit, skip, lyricStrips.map((st) => st.box));
+    const placed = attachWordLines(pg, notes, wordStrips, wordOcr, unit, skip, lyricStrips.map((st) => st.box));
     // 文字带里读出来的和弦记号：和弦带那一路（要自己的 OCR 缓存，合唱谱没生成）没认到和弦时才用
     if (!harmonies.length && placed.chords.length) {
       const objs = placed.chords.map((t, i) => makeTextObj(pg.objs.length + i, { cells: [{ box: t.box, ch: t.text }], sizeDev: t.box.h }));

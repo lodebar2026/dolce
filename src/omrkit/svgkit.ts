@@ -18,7 +18,7 @@ function binDataUrl(bin: Binary): string {
 }
 
 function binDataUrlRaw(bin: Binary): string {
-  const surf = surfaceFromBinary(bin); // 黑字白底
+  const surf = surfaceFromBinary(bin); // 黑字白底（底图 data URL 本身按图缓存在上面）
   const cv = document.createElement("canvas");
   cv.width = bin.w;
   cv.height = bin.h;

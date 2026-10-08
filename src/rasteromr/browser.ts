@@ -4,11 +4,11 @@
 // 图片为什么要包成 PDF：位图路吃的是 pdf.js 的页对象（取页里最大的那张内嵌位图，`rasterpage.ts`），
 // 包一层就能复用整条管线，回归脚本也是这么喂图片的（`jpegToPdf` 与那边逐字节同构）。
 
-import { openStaffPdf } from "../staffomr/browser";
+import { openPdf } from "../omrkit/pdf.browser";
 import { paddleOcrBackend } from "../omrkit/paddleocr";
 import { installBrowserOmr } from "../omrkit/browser";
 import { RasterGlyphLookup, outlineTemplates, type RasterGlyphDict } from "./rasterglyphs";
-import { rasterizePage } from "./rasterpage";
+import { rasterizePage, type RasterPage } from "./rasterpage";
 import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
 import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips, detectPageTexts } from "./ocrlive";
@@ -23,7 +23,7 @@ installBrowserOmr();
  * `rasterpage.ts` 要的是原始像素（`obj.data`），取不到就当这页没有整页位图——Node 版（回归脚本）本来就给原始像素。
  */
 function openRasterPdf(bytes: Uint8Array) {
-  return openStaffPdf(bytes, { isOffscreenCanvasSupported: false, isImageDecoderSupported: false });
+  return openPdf(bytes, { disableFontFace: true, isOffscreenCanvasSupported: false, isImageDecoderSupported: false });
 }
 
 const isJpeg = (b: Uint8Array): boolean => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
@@ -116,18 +116,31 @@ export async function asRasterPdf(bytes: Uint8Array, mime?: string): Promise<Uin
  * 判据见 `detect.ts`；矢量 PDF（没有整页位图）不在这里认，由矢量那条路（`staffomr`）先判。
  */
 export async function looksLikeStaffBytes(pdfBytes: Uint8Array): Promise<boolean> {
+  return (await probeRasterStaff(pdfBytes)).isStaff;
+}
+
+/** 判路的结果，外加判的时候栅格化过的页（页号 → 结果）：交给 `recognizeRasterPdfs` 的 `firstPages`，那几页不再栅格化一遍。 */
+export interface RasterProbe {
+  isStaff: boolean;
+  pages: Map<number, RasterPage | null>;
+}
+
+export async function probeRasterStaff(pdfBytes: Uint8Array): Promise<RasterProbe> {
+  const pages = new Map<number, RasterPage | null>();
   const { pdf, OPS } = await openRasterPdf(pdfBytes);
   try {
     for (let pn = 1; pn <= Math.min(3, pdf.numPages as number); pn++) {
       const page = await pdf.getPage(pn);
       try {
         const r = await rasterizePage(page, OPS);
-        if (r && staffGroupCount(r.bin) > 0) return true;
+        pages.set(pn, r);
+        // 判路只读不改：`staffGroupCount` 不动位图
+        if (r && staffGroupCount(r.bin) > 0) return { isStaff: true, pages };
       } finally {
         page.cleanup?.();
       }
     }
-    return false;
+    return { isStaff: false, pages };
   } finally {
     pdf.destroy?.();
   }
@@ -153,7 +166,13 @@ function glyphLookup(): Promise<RasterGlyphLookup> {
  */
 export async function recognizeRasterPdfs(
   pdfs: readonly Uint8Array[],
-  opts: { title?: string; onPage?: (done: number, total: number) => void; cancelled?: () => boolean } = {},
+  opts: {
+    title?: string;
+    onPage?: (done: number, total: number) => void;
+    cancelled?: () => boolean;
+    /** 第一份底本判路时栅格化过的页（`probeRasterStaff`）：用一次就丢 */
+    firstPages?: Map<number, RasterPage | null>;
+  } = {},
 ): Promise<RasterSongResult> {
   const look = await glyphLookup();
   const ocr = paddleOcrBackend();
@@ -165,6 +184,12 @@ export async function recognizeRasterPdfs(
       onPage: opts.onPage,
       cancelled: opts.cancelled,
       noteIds: true,
+      rastered: (si, pn) => {
+        if (si !== 0 || !opts.firstPages?.has(pn)) return undefined;
+        const r = opts.firstPages.get(pn)!;
+        opts.firstPages.delete(pn);
+        return r;
+      },
       live: {
         harmony: (s) => ocrHarmonyStrips(ocr, s),
         lyric: (s) => ocrLyricStrips(ocr, s),

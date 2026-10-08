@@ -29,8 +29,19 @@ export function createSurface(w: number, h: number, fill = 255): Surface {
   return { width, height, data };
 }
 
-/** 整幅二值图 → 黑字白底表面（前景 1 → 黑）。供逐格/逐条裁剪。 */
+/** 上一次转的那张：一页识别里各路 OCR（数字、歌词、页眉、附段……）都对同一张整页图取格，转一次就够。
+ *  只留一张（整页 RGBA 有几十 MB，不按图长期缓存）。**`Binary` 一经送 OCR 就当不可变**：要改像素请换新对象。 */
+let lastSurface: { bin: Binary; surf: Surface } | null = null;
+
+/** 整幅二值图 → 黑字白底表面（前景 1 → 黑）。供逐格/逐条裁剪，只读不写。 */
 export function surfaceFromBinary(bin: Binary): Surface {
+  if (lastSurface?.bin === bin) return lastSurface.surf;
+  const surf = surfaceFromBinaryRaw(bin);
+  lastSurface = { bin, surf };
+  return surf;
+}
+
+function surfaceFromBinaryRaw(bin: Binary): Surface {
   const s = createSurface(bin.w, bin.h);
   const d = s.data;
   for (let i = 0; i < bin.data.length; i++) {

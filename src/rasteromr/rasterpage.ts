@@ -134,9 +134,11 @@ export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | n
   // 只看彩色档：其余底本线宽/线距实测都在 0.067 以上（见 `FAINT_RATIO`）。
   let faint = false;
   let gray: Uint8Array | undefined;
+  /** 松阈值那一档（`SAUVOLA_K_FAINT`）的二值图：补竖笔与下面补淡谱线同一张，只解一次 */
+  let soft: Binary | null = null;
   if (kind === "rgb") {
     const u = estimateUnit(prepared(bin));
-    const soft = u && u.lineThick / u.space < FAINT_RATIO ? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
+    soft = u && u.lineThick / u.space < FAINT_RATIO ? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
     if (soft && u) mergeVertical(bin, soft, Math.round(u.space * VERT_RUN)), (faint = true), (gray = grayOf(best, w, h, up) ?? undefined);
   }
 
@@ -163,7 +165,7 @@ export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | n
   // 不验的话干净位图那一档会被推坏（实测歌词 67.7% → 59.9%）——那一档本来就是平的，
   // 逐列偏移量全是噪声。
   // 淡谱线补回用的松阈值副本（见下）跟着灰度图一起推平、纠斜，几何才对得上
-  const lineSoft = kind === "rgb" ? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
+  const lineSoft = kind === "rgb" ? soft ?? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
   const also = [gray, lyricGray, lineSoft?.data].filter((g): g is Uint8Array => !!g);
   dewarpPage(bin, also);
   deskew(bin, also);

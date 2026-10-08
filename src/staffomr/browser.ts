@@ -31,20 +31,34 @@ export async function openStaffPdf(bytes: Uint8Array, extra: Record<string, unkn
  * 只在真跑这条路时才加载。
  */
 export async function recognizeStaffPdf(
-  bytes: Uint8Array,
+  src: Uint8Array | StaffPdfDoc,
   opts: { pages?: number[]; title?: string; onProgress?: (done: number, total: number) => void; noteIds?: boolean } = {},
 ): Promise<StaffPdfResult> {
-  const { pdf, OPS } = await openStaffPdf(bytes);
-  // 字形字典**动态 import**：Vite 会单独切一个 chunk，只在真跑五线谱识别时加载，
-  // 而且永远与 `src/staffomr/*.json` 同步（拷进 public/ 会走味）。
-  const [glyphDict, lyricDict] = await Promise.all([
+  const doc = src instanceof Uint8Array ? await openStaffPdf(src) : src;
+  const { look, textLookup } = await lookups();
+  try {
+    return await recognizeStaffDoc(doc.pdf, doc.OPS, look, textLookup, opts);
+  } finally {
+    if (src instanceof Uint8Array) doc.pdf.destroy?.();
+  }
+}
+
+/** 打开了的 PDF（`openStaffPdf` 的结果）：判路、识别、渲对照底图共用一份，调用方用完 `destroy`。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type StaffPdfDoc = { pdf: any; OPS: OpsEnum };
+
+let lookupsPromise: Promise<{ look: StaffGlyphLookup; textLookup: TextGlyphLookup }> | null = null;
+/**
+ * 字形字典**动态 import**：Vite 会单独切一个 chunk，只在真跑五线谱识别时加载，
+ * 而且永远与 `src/staffomr/*.json` 同步（拷进 public/ 会走味）。查表器建一次全会话共用（构造要解签名；
+ * `StaffGlyphLookup.misses` 只是诊断记账，不影响查表结果）。
+ */
+function lookups(): Promise<{ look: StaffGlyphLookup; textLookup: TextGlyphLookup }> {
+  lookupsPromise ??= Promise.all([
     import("./glyphmap.json").then((m) => m.default as unknown as StaffGlyphDict),
     import("./lyricglyphs.json").then((m) => m.default as unknown as TextGlyphDict),
-  ]);
-  const look = new StaffGlyphLookup(glyphDict);
-  const textLookup = new TextGlyphLookup(lyricDict);
-
-  return recognizeStaffDoc(pdf, OPS, look, textLookup, opts);
+  ]).then(([glyphDict, lyricDict]) => ({ look: new StaffGlyphLookup(glyphDict), textLookup: new TextGlyphLookup(lyricDict) }));
+  return lookupsPromise;
 }
 
 /** 渲成对照底图的倍数：PDF 点 × 它 = 位图像素（约 144 dpi，五线谱的符头、临时记号看得清） */
@@ -55,10 +69,10 @@ const OVERLAY_SCALE = 2;
  * （`review.ts::StaffReviewResult`），对照视图、并排原图、谱表 ↔ 声部关联表照用。框坐标从 PDF 点放大到位图像素；
  * 页面结构（谱线）仍是点，`scale` 告诉用的人乘多少。
  */
-export async function vectorOverlayResult(bytes: Uint8Array, res: StaffPdfResult): Promise<StaffReviewResult> {
+export async function vectorOverlayResult(src: Uint8Array | StaffPdfDoc, res: StaffPdfResult): Promise<StaffReviewResult> {
   const d = res.detail;
   if (!d) throw new Error("识别时没开 noteIds，没有对照数据");
-  const { pdf } = await openStaffPdf(bytes);
+  const { pdf } = src instanceof Uint8Array ? await openStaffPdf(src) : src;
   const pages: StaffReviewResult["pages"] = [];
   try {
     for (const p of d.pages) {
@@ -83,7 +97,7 @@ export async function vectorOverlayResult(bytes: Uint8Array, res: StaffPdfResult
       });
     }
   } finally {
-    pdf.destroy?.();
+    if (src instanceof Uint8Array) pdf.destroy?.();
   }
   const s = OVERLAY_SCALE;
   const noteBoxes: StaffReviewResult["noteBoxes"] = new Map(

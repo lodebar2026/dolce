@@ -5,17 +5,12 @@
 // 读数才对得上。不碰 DOM（Node 与浏览器都跑）；OCR 两种来法——离线缓存（回归脚本，`caches`）或在线识别（编辑器，`live`）。
 
 import type { RasterGlyphLookup } from "./rasterglyphs";
-import { recognizeRasterPage, settleLyricVerses, type CarryKey, type RasterPageResult } from "./recognize";
-import type { HarmonyStrip } from "./harmony";
-import type { LyricStrip, OcrChar } from "./lyric";
-import type { LabelStrip } from "./stafflabel";
-import type { TimeStrip } from "./timesig";
-import type { JianpuStrip } from "./jianpuband";
+import type { RasterPage } from "./rasterpage";
+import { recognizeRasterPage, settleLyricVerses, type CarryKey, type RasterLiveOcr, type RasterPageResult } from "./recognize";
+import type { OcrChar } from "./lyric";
 import type { JianpuRow } from "./jianpufuse";
 import type { HeaderCredit, WordLine } from "../omrkit/headertext";
-import type { WordStrip } from "./words";
-import { textDetScale } from "./pagetext";
-import type { Binary, Rect } from "../omrkit/types";
+import type { Rect } from "../omrkit/types";
 import { markSplitBars } from "../staffomr/notedata";
 import { buildScore } from "../staffomr/score";
 import type { StaffReviewResult, StaffReviewStats } from "../staffomr/review";
@@ -36,29 +31,13 @@ export interface RasterOcrCaches {
   pageTexts?: Map<string, Rect[]>;
 }
 
-/** 在线识别（编辑器用）：把一页切出来的条送 OCR，回同形的表（`ocrlive.ts`）。 */
-export interface RasterLiveOcr {
-  harmony(strips: readonly HarmonyStrip[]): Promise<Map<string, OcrChar[]>>;
-  lyric(strips: readonly LyricStrip[]): Promise<Map<string, OcrChar[]>>;
-  label(strips: readonly LabelStrip[]): Promise<Map<string, string>>;
-  /** 拍号数字条（可缺：缺了拍号只靠模板）。 */
-  time?(strips: readonly TimeStrip[]): Promise<Map<string, string>>;
-  jianpu(strips: readonly JianpuStrip[]): Promise<Map<string, JianpuRow[]>>;
-  /** 文字指示带（可缺：缺了就不出 `<words>`）。 */
-  word?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
-  /** 页眉带（可缺：缺了就不出 `<credit>`）。 */
-  header?(strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>>;
-  /** 整页文字检测（可缺：缺了各路判据不避文字）。`scale` 见 `pagetext.ts::textDetScale`。 */
-  textDet?(bin: Binary, scale: number): Promise<Rect[]>;
-}
-
 export type RasterSongStats = StaffReviewStats;
 export type RasterSongResult = StaffReviewResult<RasterPageResult>;
 
 /**
  * 整曲识别。`sources` 每项是一份打开了的 PDF（pdf.js 的文档对象与 OPS 表）。
- * 有 `live` 时每页跑三趟：先取和弦带送 OCR（和弦字母在找符头之前认领，不带它切出的歌词条会多出「和弦行」），
- * 再带着和弦取歌词条、声部标签条、简谱行送 OCR，最后带全部结果出这一页。没有 `live` 就用 `caches` 一趟出。
+ * 每页一趟：有 `live` 时识别走到哪一处要 OCR（整页文字框、和弦带、拍号条、声部标签、歌词条、简谱行、文字指示、页眉），
+ * 就当场把那一处切出的条送 `live`（`recognizeRasterPage`）；没有 `live` 就查 `caches`。
  */
 export async function recognizeRasterSong(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +49,8 @@ export async function recognizeRasterSong(
     onPage?: (done: number, total: number) => void;
     /** 返回 true = 取消（逐页之间查一次） */
     cancelled?: () => boolean;
+    /** 判路时已栅格化过的页（第几份底本、第几页 → 结果）：识别那一页时直接用 */
+    rastered?: (source: number, pn: number) => RasterPage | null | undefined;
     /** 给每个 `<note>` 写 `id="omr<k>"` 并记下源图框（编辑器的识别对照用；回归脚本不开，产物逐字节不变） */
     noteIds?: boolean;
   } = {},
@@ -96,30 +77,9 @@ export async function recognizeRasterSong(
       if (opts.cancelled?.()) throw new Error("已取消");
       const page = await pdf.getPage(pn);
       try {
-        let caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr, headerOcr: opts.headerOcr, pageTexts };
+        const caches: RasterOcrCaches = { lyricOcr: opts.lyricOcr, labelOcr: opts.labelOcr, timeOcr: opts.timeOcr, harmonyOcr: opts.harmonyOcr, jianpuOcr: opts.jianpuOcr, wordOcr: opts.wordOcr, headerOcr: opts.headerOcr, pageTexts };
         const wantHeader = header === null;
-        if (opts.live) {
-          const r1 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, pageTexts, wantTextBin: !!opts.live.textDet });
-          // 文字框在找谱线之前就要用：头一趟带出位图现检，后两趟都带着它
-          if (r1.textBin && r1.textKey && r1.unit && opts.live.textDet) pageTexts.set(r1.textKey, await opts.live.textDet(r1.textBin, textDetScale(r1.unit)));
-          r1.textBin = undefined;
-          if (r1.hasStaff) {
-            // 拍号条在找符头之前就切好了，不受后面几张表影响：与和弦带同一趟送
-            const [harmonyOcr, timeOcr] = await Promise.all([opts.live.harmony(r1.harmonyStrips), opts.live.time?.(r1.timeStrips)]);
-            if (opts.cancelled?.()) throw new Error("已取消");
-            const r2 = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, harmonyOcr, timeOcr, pageTexts, wantWordStrips: !!opts.live.word, wantHeader: wantHeader && !!opts.live.header });
-            const [lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr] = await Promise.all([
-              opts.live.lyric(r2.lyricStrips),
-              opts.live.label(r2.labelStrips),
-              opts.live.jianpu(r2.jianpuStrips),
-              opts.live.word?.(r2.wordStrips),
-              r2.headerStrips.length ? opts.live.header?.(r2.headerStrips) : undefined,
-            ]);
-            if (opts.cancelled?.()) throw new Error("已取消");
-            caches = { harmonyOcr, timeOcr, lyricOcr, labelOcr, jianpuOcr, wordOcr, headerOcr, pageTexts };
-          }
-        }
-        const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, ...caches, wantHeader });
+        const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, ...caches, live: opts.live, raster: opts.rastered?.(si, pn), wantHeader });
         if (r.jianpuFix) for (const k of Object.keys(stats.jianpuFix) as (keyof RasterSongStats["jianpuFix"])[]) stats.jianpuFix[k] += r.jianpuFix[k];
         carryTime = r.carryTime;
         carryKey = r.carryKey;
