@@ -58,16 +58,27 @@ export function extendKeyChains(pg: SPage, ctx: Map<Staff, StaffContext>): void 
  *（所信有根基低音谱表四个降号，E♭ 的肚子连着 A♭ 的竖笔，收成 E♭3 空心头）。只认这一行谱自己认出的调号
  *（`ctx.key` 可能是从别行借来的）。
  */
-export function dropHeadsInKey(pg: SPage, ctx: Map<Staff, StaffContext>): void {
+export function dropHeadsInKey(pg: SPage, ctx: Map<Staff, StaffContext>, settled = false): void {
   const sp = pg.normalStaffSpace || pg.space;
   const drop = new Set<(typeof pg.symbols)[number]>();
   for (const c of ctx.values()) {
     if (!c.clef) continue;
     const clef = c.clef.box;
     const onStaff = (b: Box) => b.top < c.staff.box.bottom && b.bottom > c.staff.box.top;
-    const keys = pg.symbols.filter((s0) => s0.hasTag("Key") && onStaff(s0.box) && s0.box.left >= clef.left && s0.box.left < clef.right + sp * 10);
+    // `settled`：调号定下来之后再剔一遍，按 `ctx.key` 行首那一串的盒——按竖笔补出的记号不进页面符号表
+    //（倚靠主永远膀臂低音谱表四个降号只按块认出两个，第四个 D♭ 的肚子连竖笔收成 D♭3 二分头）
+    // 这一串的盒常是从别行照抄来的（`shareKeySignature`），纵向落在别的行上：按出处那行与本行谱左端的差平移回来
+    //（耶和华是我的牧者首行缩进，抄到别的行就盖住了调号后头一个音）
+    const shift = (k: Sym) => {
+      if (!settled || onStaff(k.box)) return 0;
+      const ky = (k.box.top + k.box.bottom) / 2;
+      const src = [...ctx.values()].find((o) => ky > o.staff.box.top - sp && ky < o.staff.box.bottom + sp);
+      return src ? c.staff.box.left - src.staff.box.left : 0;
+    };
+    const pool = settled ? headKey(c) : pg.symbols;
+    const keys = pool.filter((s0) => s0.hasTag("Key") && (settled || onStaff(s0.box)) && s0.box.left + shift(s0) >= clef.left && s0.box.left + shift(s0) < clef.right + sp * 10);
     if (!keys.length) continue;
-    const right = Math.max(...keys.map((k) => k.box.right));
+    const right = Math.max(...keys.map((k) => k.box.right + shift(k)));
     for (const s0 of pg.symbols) {
       if (!s0.hasTag("Note") || !onStaff(s0.box)) continue;
       const cx = (s0.box.left + s0.box.right) / 2;

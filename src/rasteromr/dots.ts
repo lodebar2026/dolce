@@ -329,11 +329,15 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     // 右边也放：点心在 1.3 格内、右缘伸出窗口的也要（敬拜万世之王 m18，8 像素宽的点被右沿切掉两列作废；只限谱表里，见下）
     // 左边也放：头盒偏宽（带进了圈外的毛边）时右缘罩住点的左边一两列，点伸出窗口就作废（齐来称颂 m18/m19 附点二分）
     // 靠这一放才收进来的（左缘在原窗口左边）要够大（两边都 0.3 格）：谱线在头右边的残渣原来被窗口切掉（我灵镇静 m21 多出一个点）
-    for (const d of blobsIn(r - sp * DOT_PAD, cy - sp * (0.85 + DOT_PAD), r + sp * (1.3 + DOT_PAD), cy + sp * (bl + DOT_PAD)).filter((q) => {
+    // 上沿在谱线网格验得了间位的地方多放 `DOT_HEAD_TOL`：头盒带进加线下面一截时中心偏下，线上音写在上方间里的点
+    // 就出了窗口（齐来谢主歌 m13 低音谱表上加一线 C4 附点二分，差 0.4 像素）。放进来的仍要过下面按谱线定高差那一道
+    const gridAt = (qy: number) => staffYs.find((ys) => ys.length === 5 && qy > ys[0] - sp * 1.5 && qy < ys[4] + sp * 1.5);
+    const upTol = gridAt(cy) ? DOT_HEAD_TOL : 0;
+    for (const d of blobsIn(r - sp * DOT_PAD, cy - sp * (0.85 + upTol + DOT_PAD), r + sp * (1.3 + DOT_PAD), cy + sp * (bl + DOT_PAD)).filter((q) => {
       const qx = q.x + q.w / 2;
       const qy = q.y + q.h / 2;
       if (q.x < r + sp * 0.05 && (q.w < sp * 0.3 || q.h < sp * 0.3)) return false;
-      if (!(qx > r + sp * 0.05 && qx < r + sp * 1.3 && qy > cy - sp * 0.85 && qy < cy + sp * bl)) return false;
+      if (!(qx > r + sp * 0.05 && qx < r + sp * 1.3 && qy > cy - sp * (0.85 + (gridAt(qy) ? upTol : 0)) && qy < cy + sp * bl)) return false;
       const inStaff = staffYs.some((l) => qy > l[0] - sp && qy < l[l.length - 1] + sp);
       // **按谱线定高差**：附点写在间里，点心离间心不过 `DOT_SPACE_TOL` 格；点所在的间与头的位置（按谱线取整到半格）
       // 只差几档——间上的音同一个间（0）、线上的音上下相邻的间（±半格）、和弦挤着二度的往下挪一个间（+1）。
@@ -349,7 +353,9 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
         if (inside && spaceOff > DOT_SPACE_TOL) return false;
         const dotAt = inside ? Math.floor(pos) + 0.5 : Math.round(pos * 2) / 2;
         const hp = (cy - l[0]) / g;
-        const heads = [Math.floor(hp * 2) / 2, Math.ceil(hp * 2) / 2].filter((h) => Math.abs(h - hp) <= DOT_HEAD_TOL);
+        // 五线以外（加线上下）的头盒更不准：带进加线外那一截，中心偏出近半格（齐来谢主歌 m13 低音谱表上加一线 C4），两个半格都算
+        const off = hp < -DOT_HEAD_TOL || hp > 4 + DOT_HEAD_TOL;
+        const heads = [Math.floor(hp * 2) / 2, Math.ceil(hp * 2) / 2].filter((h) => off || Math.abs(h - hp) <= DOT_HEAD_TOL);
         const ks = [0, -0.5, 0.5, ...(bl === DOT_BELOW_PUSHED ? [1] : [])];
         if (!heads.some((h) => ks.includes(dotAt - h))) return false;
       }

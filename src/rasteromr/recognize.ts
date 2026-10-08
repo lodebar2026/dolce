@@ -3478,6 +3478,7 @@ export async function recognizeRasterPage(
   extendKeyByCarry(ctx, opts.carryKey, raster.bin, unit.space);
   findMidKeysByTemplate(pg, ctx, raster.bin, unit);
   shareMidKeys(pg, ctx, unit.space);
+  dropHeadsInKey(pg, ctx, true);
   shareTimeSignature(pg, ctx, timeCols, unit, raster.bin, !!opts.carryTime);
   dropBarsInKey(pg, ctx, unit.space);
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
