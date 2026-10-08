@@ -112,6 +112,30 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // 而歌词那一步的判据（纵向跨过某条水平线的 y）会把和弦一并收成歌词
   // ——实测 p100 的 `G` 被挂成了第二段歌词。所以先把**明确是和弦记号**的挑出来。
   // 记号语法用三路共用的 `omrkit/chordgrammar.ts::CHORD_TOKEN_RE`（根音必须大写，理由见那边的注释）。
+  // ── 页脚文字块（本仓加的） ──────────────────────────────────────────────
+  // 版权声明（牵我的手每页四行：`Copyright © 2013 …`、两行中文、网址）印在最后一行谱下面，
+  // 这首最后一行是钢琴，下面那条「正上方一个符头都没有」的页脚判据用不上；中文那两行又是一字一个对象，
+  // 被「一字一段排成一排」收成歌词锚，`(www…/copyright)` 带 `/` 还会被当和弦。先挑出来归文本框。
+  // 判据：最后一行谱以下、**整行连排**（相邻两段间隙不到一个字号）、**行中心在页面中线上**（两格内）。
+  // 歌词对着音符散开排，整行连在一起的只有成段文字；居中这一条再挡住偶然连排的短歌词行
+  const lastStaff = pg.staves.reduce<Staff | null>((m, st) => (!m || st.box.bottom > m.box.bottom ? st : m), null);
+  if (lastStaff) {
+    const rows: PObj[][] = [];
+    for (const t of texts.filter((t) => t.run && t.box.top > lastStaff.box.bottom && objText(t).trim()).sort((a, b) => a.box.top - b.box.top)) {
+      const row = rows.find((r) => r.some((u) => overlapY(u.box, t.box) && Math.min(u.box.bottom, t.box.bottom) - Math.max(u.box.top, t.box.top) > (t.box.bottom - t.box.top) * 0.5));
+      if (row) row.push(t);
+      else rows.push([t]);
+    }
+    for (const row of rows) {
+      row.sort((a, b) => a.box.left - b.box.left);
+      const em = Math.max(...row.map((t) => t.run!.sizeDev));
+      if (row.some((t, i) => i > 0 && t.box.left - row[i - 1].box.right > em)) continue;
+      const cx = (row[0].box.left + Math.max(...row.map((t) => t.box.right))) / 2;
+      if (Math.abs(cx - pg.width / 2) > sp * 2) continue;
+      for (const t of row) kind.set(t, "textFrame");
+    }
+  }
+
   // 贴身描边框圈住的字是排练号（`[A]` `[B]`），单个大写字母合和弦文法，不挡掉就被收成和弦
   // （牵我的手 Violin 上三个）。只认框比字大不出两格的：大框（整段文字框、版面边框）里的和弦照收；
   // 框里的字留给后面 findBoxedText 打标。这本的框是**填充**画的（外矩形套内矩形的一圈），不限描边
@@ -172,7 +196,15 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // 下面两路（延长线锚、自校准）都只看纵向，横向不管：**谱表左边**的声部名（第二个系统起的「A.」「T. & B.」）
   // 与**表情术语**（印在歌词带里的 `rit.`）会被收成歌词（宣主荣耀 p2 女高唱出了「來A.敬拜」）。先挡掉
   const firstX = Math.min(...pg.staves.map((st) => st.box.left));
-  const lastStaff = pg.staves.reduce<Staff | null>((m, st) => (!m || st.box.bottom > m.box.bottom ? st : m), null);
+  // 声部名：在**同一高度那几行谱**的左边线以左（首系统缩进，「Piano」「Synthesizer」在全页最左那条线右边，
+  // 只比 `firstX` 挡不住，牵我的手首页的乐器全名被收成了 Synth / Piano 的歌词）。同高 = 纵向离谱表不到一个谱表高
+  const rowLeft = (t: PObj) => {
+    const near = pg.staves.filter((st) => {
+      const h = st.box.bottom - st.box.top;
+      return t.box.bottom > st.box.top - h && t.box.top < st.box.bottom + h;
+    });
+    return near.length ? Math.min(...near.map((st) => st.box.left)) : firstX;
+  };
   const notLyric = (t: PObj) => {
     const s = objText(t).trim();
     // 页脚（宣主荣耀 p2「宣主榮耀 2」）：最后一行谱以下、整句一段的汉字，**正上方那行谱在它的横向范围里一个符头都没有**。
@@ -182,7 +214,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
       !!lastStaff && t.box.top > lastStaff.box.bottom && (s.match(/[\u3400-\u9fff]/g)?.length ?? 0) >= 2 &&
       !pg.symbols.some((h) => h.code.startsWith("notehead") && overlapY(h.box, lastStaff.box) && h.box.right > t.box.left && h.box.left < t.box.right);
     // 纯数字（小节号）不在这里挡：后面拼音节时会剔掉；在这里挡了它们会转去别的类，赞美之泉切曲目跟着变（少配上一首）
-    return t.box.right <= firstX || footer;
+    return t.box.right <= firstX || t.box.right <= rowLeft(t) || footer;
   };
 
   for (const t of texts) {
