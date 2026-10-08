@@ -18,7 +18,7 @@
   逐数字格 / 歌词条 rec→CTC）。模型/字典在
   `public/redist/ocr/`（rec onnx `ch_PP-OCRv6_small_rec_infer.onnx` **~21MB** + `ppocrv6_dict.txt` **18708 字**
   + **det onnx ~4.7MB**（DBNet，仍 PP-OCRv4，页眉用；det 头与 rec 无关故可跨版混用）），wasm 运行时由 npm 包经 Vite `?url`
-  引入（`omr/runtime.browser.ts`，纯 wasm 单线程，免 COOP/COEP；不放 `public/`，见该文件注释）；`onnxruntime-web/wasm` 子入口避开 26MB 的 jsep 构建。
+  引入（`omrkit/runtime.browser.ts`，纯 wasm 单线程，免 COOP/COEP；不放 `public/`，见该文件注释）；`onnxruntime-web/wasm` 子入口避开 26MB 的 jsep 构建。
   - **模型选型**：rec 用 v6_small，因为赞美诗的「祂」——v4 字典里没有、只能读成「他」；v5_mobile 字典有但视觉偏向高频「他」；
     v6_tiny 读成「池」；v6_small 同一批条子全对；v6_medium（76MB）太大。
     前端 CTC 解码字典驱动（`_chars`=["", ...dict]）、数字类别索引 `chars.indexOf` 动态求、Rust argmax 读动态末轴，
@@ -898,7 +898,7 @@ y380 的碎块行，歌词带算出 `yBot < yTop`、整条带直接 `continue`�
 
 ### 按 y 聚成行的五个阈值（`geom.ts::clusterByY`）
 
-「把墨块按纵向中心聚成一行」这个操作在管线里出现五次。实现只有一份（`omr/geom.ts::clusterByY` /
+「把墨块按纵向中心聚成一行」这个操作在管线里出现五次。实现只有一份（`omrkit/geom.ts::clusterByY` /
 `findLineByY`），但**容差 tol 一律由调用点传入、不设默认值**——五处语义不同，统一会改识别结果：
 
 | 位置 | tol | 聚的是什么 | 尺子 |
@@ -1859,8 +1859,8 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 | `runtime.ts` | `runtime.browser.ts`（ort-web/wasm） | `runtime.node.ts`（onnxruntime-node） | 模型/字典从哪来、用什么跑 |
 | `decode.ts` | `decode.browser.ts`（createImageBitmap + pdf.js） | `decode.node.ts`（sharp） | 图片/PDF 字节 → RGBA |
 
-装配是副作用式的：网页端 `omr/index.ts` 顶部装浏览器那套，Node 端 `cli/omr.ts` 装 Node 那套。
-**`runtime.node.ts` / `decode.node.ts` 绝不能进 `omr/index.ts` 的 import 链**，否则 `fs`、`sharp`
+装配：网页端由 `omrkit/browser.ts::installBrowserOmr` 装浏览器那套（`omr/index.ts`、`rasteromr/browser.ts` 各调一次，幂等），Node 端 `cli/omr.ts` 装 Node 那套。
+**`runtime.node.ts` / `decode.node.ts` 绝不能进浏览器入口（`omrkit/browser.ts`）的 import 链**，否则 `fs`、`sharp`
 会被拖进网页产物。Tauri 那条原生 OCR（`paddleocr.ts::nativeOcr`，张量经 IPC 交给 Rust `ort`）
 不走 `runtime.ts`，是并列的第三个后端。
 

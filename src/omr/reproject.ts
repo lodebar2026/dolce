@@ -8,8 +8,8 @@
 // - 歌词：当前词与原识别不同的，在原位另盖一层新字（`lyricFixes`）。
 
 import type { Chord, ElementId, ScoreDoc } from "../model/doc";
-import type { JpNum, RecognizedScore, Rect } from "./types";
-import { RHYTHM_DIGIT } from "./types";
+import type { JpNum, RecognizedScore, Rect } from "../omrkit/types";
+import { RHYTHM_DIGIT } from "../omrkit/types";
 
 export type NumState = "edited" | "deleted";
 

@@ -8,8 +8,8 @@
 //
 // 挂在 jianpu.ts 的歌词落位之后、弧裁决与「有词的 0」复原之前：补上的字要喂给那几步（都看音符有没有词）。
 // **无 DOM 依赖**（Node CLI 要 import 它）。
-import type { JpNum, LyricCheck, LyricCheckItem, RecognizedScore, StaffRow } from "./types";
-import { rcx } from "./types";
+import type { JpNum, LyricCheck, LyricCheckItem, RecognizedScore, StaffRow } from "../omrkit/types";
+import { rcx } from "../omrkit/types";
 import type { LyricCharRef, LyricHooks } from "./lyrics";
 import { simplifiedOf } from "./hanvariant";
 import { recognizedToDoc } from "./todoc";

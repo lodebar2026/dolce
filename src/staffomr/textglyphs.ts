@@ -4,13 +4,13 @@
 // `DFYuan-Lt-HK-BF` / `DFHei-Md-HKSCS-U`），读出来是乱码；`HelveticaExt-No` 更是整体 +1 位移。
 // 实测「对上的 100 首里 83 首歌词读成乱码」——不修这一档，歌词与中文标题都没法用。
 //
-// 修法照 500 首那条路（`src/omr/glyphdict.ts` 的三步走），条件比那边好：
+// 修法照 500 首那条路（`src/omrkit/glyphdict.ts` 的三步走），条件比那边好：
 // **GT 的歌词是齐的**，可以直接拿 GT 的字去给字形投票，不必先跑 OCR。
 //
 // 与 `staffglyphs.ts` 的分工：那份认**乐谱符号**（轮廓 → SMuFL 名，176 类）、
 // 这份认**汉字**（轮廓 → 字符，几千类）。聚类件都复用 `glyphdict.ts`，别再写第三套。
-import { decodeSig, encodeSig, shapeKey, shapeSig, sigDistance } from "../omr/glyphdict";
-import type { VecGlyph } from "../omr/vectext";
+import { decodeSig, encodeSig, shapeKey, shapeSig, sigDistance } from "../omrkit/glyphdict";
+import type { VecGlyph } from "../omrkit/vectext";
 
 export interface TextGlyphClass {
   /** 字体家族（已去子集前缀）+ 形状键。 */
@@ -43,7 +43,7 @@ export interface TextGlyphDict {
    * **贴图字**：指纹 → 汉字。
    *
    * 这本书把造字区的汉字（禰 一类）当 JBIG2 位图贴进内容流，不走文字层
-   * （见 `omr/vectext.ts::maskRun`）。它们没有轮廓、没有码位，只能按位图指纹查。
+   * （见 `omrkit/vectext.ts::maskRun`）。它们没有轮廓、没有码位，只能按位图指纹查。
    * 全书 277 处、归成 22 类，由 `scripts/gen-staffmasks.mjs` 拿 GT 的歌词投票定案。
    */
   masks?: Record<string, string>;

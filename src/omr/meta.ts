@@ -4,7 +4,7 @@
 // 一个 num 建一个 `Chord`（倚音另建、长休止拆成几个 0），各写出端（`emit123` / `emitPu` / `emitJcx`）也保持这个序。
 // 所以这里**重解析写出的文本**，按元素序（倚音、无时值占位除外）取各元素的源区间，歌词取音节的源区间，
 // 就与识别序逐位对齐——映射从读入端的源区间来，不在写出端边写边记，几种格式同一个做法。
-import type { JpwMeta, JpwRange } from "./types";
+import type { JpwMeta, JpwRange } from "../omrkit/types";
 import type { ScoreDoc, SourceSpan } from "../model/doc";
 import { parse123, parseJcx } from "../j123/parse";
 import { parsePu } from "../pu/parse";

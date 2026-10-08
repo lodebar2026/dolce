@@ -107,7 +107,7 @@ async function pdfToImageData(bytes: Uint8Array): Promise<ImageData> {
   return octx.getImageData(0, 0, maxW, Math.max(1, totalH));
 }
 
-/** 装配浏览器解码器。由 omr/index.ts 副作用式调用。 */
+/** 装配浏览器解码器。由 `browser.ts::installBrowserOmr` 调用。 */
 export function installBrowserDecoder(): void {
   setImageDecoder(decodeImage, async (bytes) => {
     const img = await pdfToImageData(bytes);

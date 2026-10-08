@@ -1,6 +1,6 @@
 // 位图五线谱识别的**取图层**：PDF 页 → `Binary`（1 = 墨）。
 //
-// ## 为什么不用 `src/omr/decode.ts`
+// ## 为什么不用 `src/omrkit/decode.ts`
 //
 // 那条路是给简谱的光栅路写的，两点不合用：
 //   1. 它靠 `OffscreenCanvas`，**浏览器专属**；本模块要能进 `src/cli/index.ts`
@@ -20,7 +20,7 @@
 // 正好对上。但 pdf.js 会照 `/Decode` 数组翻转，翻没翻只有量了才知道——
 // 所以取完图按「墨迹占比」自检一次：整页乐谱的墨不可能过半（实测约一成），
 // 过半就是翻了，整幅取反。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 import { applyTrackWarp, completeStaffLines, residualCurves, trackCurves } from "./dewarp";
 import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, HALFTONE_BAND, HALFTONE_RATIO, PINHOLE_RATIO } from "./descreen";
 import { estimateUnit, findStaffLines, groupStaves } from "./staffline";
@@ -475,7 +475,7 @@ function grayOf(obj: any, w: number, h: number, up = 1): Uint8Array | null {
   if (!step) return null;
   const gray = new Uint8Array(w * h);
   for (let i = 0, p = 0; i < gray.length; i++, p += step) {
-    // Rec.601 luma（与 `src/omr/preprocess.ts::toGray` 同一口径）
+    // Rec.601 luma（与 `src/omrkit/preprocess.ts::toGray` 同一口径）
     gray[i] = step === 1 ? src[p] : (src[p] * 0.299 + src[p + 1] * 0.587 + src[p + 2] * 0.114) | 0;
   }
   return up > 1 ? upsample(gray, w, h, up) : gray;

@@ -5,15 +5,16 @@
 // 条怎么垫边、送哪种接口、结果怎么挑，差一点指纹相同而内容不同，读数就会两样（那几个脚本里都记着这样踩过的坑）。
 // 只在浏览器里跑（PP-OCR 走 onnxruntime-web）。
 
-import type { OcrBackend } from "../omr/ocr";
-import type { Binary, Rect } from "../omr/types";
+import type { OcrBackend } from "../omrkit/ocr";
+import type { Binary, Rect } from "../omrkit/types";
 import { recognizeJianpu } from "../omr/jianpu";
 import { harmonyKey, type HarmonyStrip } from "./harmony";
 import { stripKey, type LyricStrip, type OcrChar } from "./lyric";
 import { labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
 import { jianpuKey, type JianpuStrip } from "./jianpuband";
 import { timeKey, type TimeStrip } from "./timesig";
-import { keepHeaderLine, keepWordLine, spaceWordText, wordKey, type WordLine, type WordStrip } from "./words";
+import { keepWordLine, spaceWordText, wordKey, type WordStrip } from "./words";
+import { keepHeaderLine, type WordLine } from "../omrkit/headertext";
 import type { JianpuRow } from "./jianpufuse";
 
 type Surface = { width: number; height: number; data: Uint8ClampedArray };

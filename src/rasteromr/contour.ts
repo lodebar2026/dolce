@@ -10,8 +10,8 @@
 // 剩下的那些就是「无主 contour」，那才是往后取舍的证据。
 //
 // **本文件不参与任何识别判据**：只描述，不裁决。
-import type { Binary, Component, Rect } from "../omr/types";
-import { connectedComponents } from "../omr/ccl";
+import type { Binary, Component, Rect } from "../omrkit/types";
+import { connectedComponents } from "../omrkit/ccl";
 import type { RasterUnit } from "./staffline";
 
 /** 一团墨的描述。尺寸一律**归一到线距**（同一页可能有两种谱表大小）。 */

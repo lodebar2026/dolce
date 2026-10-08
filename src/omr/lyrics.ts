@@ -5,13 +5,14 @@
 //   2. 行内把连通块(汉字常由多个偏旁连通块组成)按 x 邻近并成"字格"。
 //   3. 每个字格裁成画布 → PaddleOCR 识别汉字。
 //   4. 按 x 单调最近，把每个汉字分配给本乐谱行里 x 最接近的音符(melisma→某些音符无字，正确)。
-import type { Binary, Component, JpNum, Rect, StaffRow, TextRegion } from "./types";
-import { rright, rbottom, rcx, rcy } from "./types";
-import type { OcrBackend } from "./ocr";
+import type { Binary, Component, JpNum, Rect, StaffRow, TextRegion } from "../omrkit/types";
+import { rright, rbottom, rcx, rcy } from "../omrkit/types";
+import type { OcrBackend } from "../omrkit/ocr";
 import type { ChordCand } from "./chordline";
-import { chordCandidates, isAnnotationLine, placeChords } from "./chordline";
-import { clusterByY, findLineByY, median } from "./geom";
-import { blit, createSurface, surfaceFromBinary, type Surface } from "./surface";
+import { chordCandidates, placeChords } from "./chordline";
+import { isAnnotationLine } from "../omrkit/chordgrammar";
+import { clusterByY, findLineByY, median } from "../omrkit/geom";
+import { blit, createSurface, surfaceFromBinary, type Surface } from "../omrkit/surface";
 import { probe } from "./probe";
 import { simplifiedOf } from "./hanvariant";
 
@@ -99,28 +100,6 @@ function isFooterNoticeLine(text: string): boolean {
   const cues = new Set(compact.match(FOOTER_CUE_RE) ?? []);
   return cues.size >= 2;
 }
-/** 把一行(同 y)的连通块按 x 邻近并成字格。返回每个字格的合并包围盒，按 x 排序。 */
-export function mergeToChars(line: Component[], charH: number): Rect[] {
-  const sorted = [...line].sort((a, b) => a.bbox.x - b.bbox.x);
-  const cells: Rect[] = [];
-  const gap = charH * 0.28;       // 偏旁间距 < 此值算同字
-  const maxW = charH * 1.7;       // 单字最大宽度，避免把两字并一起
-  for (const c of sorted) {
-    const b = c.bbox;
-    const last = cells[cells.length - 1];
-    if (last && b.x <= rright(last) + gap && (rright(b) - last.x) <= maxW) {
-      // 并入上一个字格
-      const x = Math.min(last.x, b.x), y = Math.min(last.y, b.y);
-      last.w = Math.max(rright(last), rright(b)) - x;
-      last.h = Math.max(rbottom(last), rbottom(b)) - y;
-      last.x = x; last.y = y;
-    } else {
-      cells.push({ ...b });
-    }
-  }
-  return cells;
-}
-
 // 一个 rec 块：本乐谱行(rowIdx)某 verse 的若干相邻字格（拼一条横图整体 rec）。
 // above=true 的块来自**第 0 谱行上方**那条带（rowIdx=-1）：那里没有可归属的歌词行，只可能是
 // 和弦/段落方框，故永不参与歌词装配。

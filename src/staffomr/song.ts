@@ -2,12 +2,12 @@
 //
 // 原先这段在 `browser.ts` 里（那个文件靠 Vite 加载 pdfjs，Node 用不了）。抽出来与位图路的 `rasteromr/song.ts` 同一个做法：
 // 编辑器与回归脚本（合唱谱 `chorus-ops.mjs`）走同一份代码，读数才对得上。不碰 DOM。
-import type { OpsEnum } from "../omr/vector";
-import { extractTextPage } from "../omr/vectext";
+import type { OpsEnum } from "../omrkit/vector";
+import { extractTextPage } from "../omrkit/vectext";
 import { musicFamily } from "./symbolmap";
 import type { StaffGlyphLookup } from "./staffglyphs";
 import type { TextGlyphLookup } from "./textglyphs";
-import { recognizeStaffPage, vectorPageCredits } from "./index";
+import { recognizeStaffPage, vectorPageCredits } from "./pagerun";
 import { buildScore } from "./score";
 import { scoreToMusicXml } from "./toxml";
 import type { StaffNote } from "./notedata";

@@ -8,7 +8,7 @@
 //
 // 检测结果按**页的内容指纹**缓存（`gen-rastertext.mjs` → `rastertext.json`，回归不起模型）；编辑器在线识别走
 // `song.ts` 的 `live.textDet`。两边的位图都是 `rasterizePage` 交出来的那一张、没动过的。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit, StaffGroup } from "./staffline";
 
 /** 页的内容指纹（尺寸 + FNV-1a，同 `wordKey` 一套）。 */

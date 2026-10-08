@@ -11,8 +11,8 @@ import { IdGen, emptyDoc } from "../model/helpers";
 import { creatorOf } from "../model/metakeys";
 import { duration123 } from "../abcfamily/parsedialect";
 import { jpPitch } from "../score/jppitch";
-import type { RecognizedScore, JpNum, StaffRow } from "./types";
-import { rright, RHYTHM_DIGIT } from "./types";
+import type { RecognizedScore, JpNum, StaffRow } from "../omrkit/types";
+import { rright, RHYTHM_DIGIT } from "../omrkit/types";
 
 /** 一行切出来的一个小节：音符，以及它右边界那根线的 x（行末开口收尾时为 null）。
  *  `silent`：声部行里整小节不唱的空小节，写成整小节隐形休止。 */

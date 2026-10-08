@@ -51,7 +51,7 @@ export async function decodeToBinary(bytes: Uint8Array, mime?: string): Promise<
     const img = await _rasterizePdf(bytes);
     return rgbaToBinary(img.data, img.width, img.height);
   }
-  if (!_decodeImage) throw new Error("未装配图片解码器：浏览器侧应 import omr/index，Node 侧见 cli/omr.ts");
+  if (!_decodeImage) throw new Error("未装配图片解码器：浏览器侧应先 installBrowserOmr()，Node 侧见 cli/omr.ts");
   const img = fitWidth(await _decodeImage(bytes, mime));
   return rgbaToBinary(img.data, img.width, img.height);
 }

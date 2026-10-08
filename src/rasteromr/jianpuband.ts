@@ -10,7 +10,7 @@
 // 与谱表的小节线同 x（混排谱按小节对齐排版）。独唱谱、合唱谱的谱表上方
 // 没有这种东西——那里的竖笔是符干（从谱表伸上来，不悬空）和字母笔画（短、不成排）。
 // 对不上两条以上就当没有，这一段对别的底本是空转。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import type { LineSeg } from "./prims";
 import type { RasterUnit } from "./staffline";
 

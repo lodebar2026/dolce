@@ -2,23 +2,24 @@
 //
 // **下游全部复用 `src/staffomr/`**，那边一行不改。本文件只做两件事：
 //   1. 把位图变成 `Staff` / `Seg` / `Sym`（`adapt.ts`）；
-//   2. 按矢量路 `staffomr/index.ts::recognizeStaffPage` 的**同一个次序**往下调。
+//   2. 按矢量路 `staffomr/pagerun.ts::recognizeStaffPage` 的**同一个次序**往下调。
 //
 // 与矢量路的差别只有三处，都是「那边从路径对象里取、这边从像素里取」：
 //   - 符杠：矢量路 `findBeams` 读 `pg.objs` 的填充路径；位图路自己找（`prims.ts`）。
 //   - 符头：矢量路查字形字典；位图路按性质判（`notehead.ts`）。
 //   - 文本层：矢量路读文字对象；位图路要 OCR（尚未接，故歌词/力度/速度暂缺）。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 import { timeDigit, timeKey, timeStripOf, type TimeStrip } from "./timesig";
 import type { Box } from "../staffomr/model";
-import type { Component, Rect } from "../omr/types";
+import type { Component, Rect } from "../omrkit/types";
 import { findBarlines, findNoteheads, findStaves, findStems, findTails, isLeadNoteBarline, makeBars, makeSystems, systemGroups, tagSystemBarlines, unknownObjs } from "../staffomr/page";
 import { accidentalAlter, isAccidental, isClef, timeSigDigit, type SmuflName } from "../staffomr/glyphs";
 import { buildNotes, calcAlters, checkBars, fifthsAt, findClefKeyTime, headKey, keyChanges, keyFifths, lastTimeSignature, timeSignatures, type BeamShape, type StaffContext, type StaffNote, type StemInfo, type BarCheck } from "../staffomr/notedata";
 import { findRasterArticulations } from "./artic";
 import { markRepeatsAndVoltas } from "./repeats";
 import { findRasterTuplets } from "./tuplet";
-import { attachWordLines, findHeaderStrip, findWordStrips, headerCredits, wordKey, type HeaderCredit, type WordLine, type WordStrip } from "./words";
+import { attachWordLines, findHeaderStrip, findWordStrips, wordKey, type WordStrip } from "./words";
+import { headerCredits, type HeaderCredit, type WordLine } from "../omrkit/headertext";
 import { applyTuplet, attachDynamicTexts, attachNotations, attachWedges, findNotations, findTuplets, markLyricExtends } from "../staffomr/notations";
 import type { PObj, Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
@@ -26,7 +27,7 @@ import { buildRasterPage, makeSymObj, makeSysBracketObj, makeTextObj, pushSeg, t
 import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, ledgerGrid, joinVSegs, removeStaffLines, repairLineCuts, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
 import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnStemSeeds, reseatHollowHeads, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, type PitchStep } from "./notehead";
 import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from "./rasterglyphs";
-import { sigDistance } from "../omr/glyphdict";
+import { sigDistance } from "../omrkit/glyphdict";
 import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, jianpuKey, type JianpuStrip } from "./jianpuband";
 import { fuseJianpu, type FuseStats, type JianpuRow } from "./jianpufuse";
 import { CHAR_MAX as LYRIC_CHAR_MAX, findLyricRows, foldLyricChars, isLatinRow, LATIN_MIN_CHAINED, latinCells, mapCharsToCells, splitMixedChars, stripKey, stripOf, stripWithout, type LyricRow, type LyricStrip, type OcrChar } from "./lyric";
@@ -941,7 +942,7 @@ function mergeLayerLines(ocr: readonly WordLine[], layer: readonly WordLine[]): 
   return out;
 }
 
-/** 认一页。顺序照 `staffomr/index.ts::recognizeStaffPage`，**别调**。 */
+/** 认一页。顺序照 `staffomr/pagerun.ts::recognizeStaffPage`，**别调**。 */
 export async function recognizeRasterPage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pdfPage: any,
@@ -4264,7 +4265,7 @@ export async function recognizeRasterPage(
 
   // ── 演奏法与力度 ─────────────────────────────────────────────────────────
   //
-  // 这三步矢量路一直在跑（`staffomr/index.ts`），位图路**从来没调过**——所以力度
+  // 这三步矢量路一直在跑（`staffomr/pagerun.ts`），位图路**从来没调过**——所以力度
   // 一个都没进过 MusicXML，而字典其实早就认得出：实测宁静 p2 那个 `f`
   // 到 Maestro 的 `dynamicForte` 模板只有 19（字典里 `dynamicForte` 26 个实例、
   // `dynamicMP` 8 个）。缺的只是这一句挂接。

@@ -4,7 +4,7 @@
 // 粗线那一笔过不了竖段的宽度闸、紧贴着它的细线又过不了孤立性判据，圆点也多半没进形状字典。
 // 这里回到图上量：第二、三间各一个圆点、左右对齐，旁边一格内是一细一粗两根贯穿谱表的竖线。
 // 一个系统里有一行认出来，同系统各行同 x 的小节线都算（反复、终止线是整个系统一起画的）。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import { attachVoltas, type Volta } from "../staffomr/octave";
 import type { Bar, SPage, Staff } from "../staffomr/model";
 import type { ContourMap } from "./contour";

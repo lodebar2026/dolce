@@ -10,7 +10,7 @@
 // **meta 的序号约定**：所有格式的 `JpwMeta`，`noteRanges` / `lyricRanges`
 // 一律按 `flatten(rows[].nums)` 的下标编号，由重解析写出的文本得到（`omr/meta.ts`）。
 // 识别模式「原图对照」的点选定位（omrctl.ts::rangeOfHit）因此不必分格式。
-import type { JpwMeta, RecognizedScore } from "./types";
+import type { JpwMeta, RecognizedScore } from "../omrkit/types";
 import type { ScoreDoc } from "../model/doc";
 import { CONVERT_TARGETS, type ConvertTarget } from "../model/convert";
 import { recognizedToDoc } from "./todoc";

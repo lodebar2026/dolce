@@ -2,7 +2,7 @@
 //
 // 这是位图路的第一块判据，后面所有几何门槛都按这里量出来的线距写
 // ——与矢量路同一个口径（`page.ts`：「一切长度都是小节线高度 H 的比例」）。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 
 /** 页面的基本单位。musicpp `omr/pixel.cpp::findUnit` 量的就是这两个。 */
 export interface RasterUnit {

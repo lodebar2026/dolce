@@ -15,7 +15,7 @@
 // > 那条说的是拿**全页白游程的众数**当线距（符头内部、歌词笔画的空隙数量远超谱线间隙，
 // > 众数落在 3~5 px）。这里不取众数，而是要求**五连等距**——
 // > 歌词笔画凑不出五段等距的黑白相间，噪声更凑不出。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 import type { StaffGroup, StaffLineRun } from "./staffline";
 
 /** 逐列取样的步长（px）。谱线横跨整页，抽稀不影响；4 px 一页几十毫秒。 */

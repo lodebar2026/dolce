@@ -2,7 +2,7 @@
 //
 // 墨 = 1、白 = 0。面积类操作只看连通块大小，不动形状；闭运算的结构元是 (2r+1)² 的方块，
 // 用积分图做膨胀/腐蚀，与 r 无关地线性时间。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 
 /** 一个连通块：像素下标、面积、外接盒、碰没碰图边。 */
 export interface Blob {

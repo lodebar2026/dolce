@@ -4,7 +4,7 @@
 // 或在线识别（`ocrlive.ts::ocrTimeStrips`）里做。为什么不只靠模板：拍号数字的字形各书差得远（铅字本、粗体小号），
 // 又被谱线横穿，模板签名在 8/4、6/4、3/4 之间分不开；文字识别模型见过的数字字形多得多。
 
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 
 export interface TimeStrip {
   w: number;

@@ -9,7 +9,7 @@
 // 判据是**逐列的墨迹跨度**：松叶的两条臂从尖端往开口张开，跨度近似线性地涨；
 // 弧线（slur）同样又宽又扁、团状度也低，但它逐列只有**一段**墨、跨度处处等于线宽
 // ——「一列几段墨」与「跨度涨不涨」这两条一起用，两者一刀分得开。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 import type { Contour, ContourMap } from "./contour";
 import type { RasterUnit } from "./staffline";
 

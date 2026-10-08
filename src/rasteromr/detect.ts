@@ -3,7 +3,7 @@
 // 简谱页上没有这种东西——减时线、下划线都短，表格线不成五条等距。
 // 调用方看前几页（封面、目录页没有谱表），有一页有就算。
 
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 import { findStaffLines, groupStaves } from "./staffline";
 import { completeStaffLines } from "./dewarp";
 

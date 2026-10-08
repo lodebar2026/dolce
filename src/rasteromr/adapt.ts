@@ -10,10 +10,10 @@
 // （`SPage.barlineHeight` 就是那个 H）。所以位图路直接用像素当设备坐标，
 // 少一道换算、也少一次精度损失。要回到页面坐标时乘 `RasterPage.scale`。
 import { PObj, SPage, Seg, Sym } from "../staffomr/model";
-import type { VecObj } from "../omr/vector";
-import type { VecGlyph, VecTextRun } from "../omr/vectext";
+import type { VecObj } from "../omrkit/vector";
+import type { VecGlyph, VecTextRun } from "../omrkit/vectext";
 import type { SmuflName } from "../staffomr/glyphs";
-import type { Rect } from "../omr/types";
+import type { Rect } from "../omrkit/types";
 import type { LineSeg } from "./prims";
 import type { RasterUnit, StaffLineRun } from "./staffline";
 

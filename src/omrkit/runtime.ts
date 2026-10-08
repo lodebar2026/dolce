@@ -5,8 +5,8 @@
 // 第三条路 Tauri 原生 OCR 不在这里——它绕开 session 直接 IPC 把张量交给 Rust，
 // 见 paddleocr.ts::nativeOcr。
 //
-// 装配：浏览器侧由 `omr/index.ts` 顶部副作用式设好；Node 侧由 `cli/omr.ts` 显式设。
-// **`runtime.node.ts` 绝不能进 `omr/index.ts` 的 import 链**，否则打包会把 fs 拖进浏览器产物。
+// 装配：浏览器侧由 `browser.ts::installBrowserOmr` 设好（各路浏览器入口各调一次）；Node 侧由 `cli/omr.ts` 显式设。
+// **`runtime.node.ts` 绝不能进浏览器入口的 import 链**，否则打包会把 fs 拖进浏览器产物。
 
 export interface OmrRunOut {
   data: Float32Array;
@@ -30,6 +30,6 @@ export function setOmrRuntime(rt: OmrRuntime): void {
 }
 
 export function omrRuntime(): OmrRuntime {
-  if (!_rt) throw new Error("OMR 运行时未装配：浏览器侧应 import omr/index，Node 侧应先 setOmrRuntime()");
+  if (!_rt) throw new Error("OMR 运行时未装配：浏览器侧应先 installBrowserOmr()，Node 侧应先 setOmrRuntime()");
   return _rt;
 }

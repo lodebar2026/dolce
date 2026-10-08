@@ -8,8 +8,8 @@
 //   1. 每个谱行下方一条「歌词带」（本行下缘 → 下一行上缘）；
 //   2. 带内按 y 把块分成若干 verse 行（一首歌可能有两三段歌词）；
 //   3. 行内把块按 x 邻近并成字格——**汉字常由多个偏旁连通块组成**，这一步不能省。
-import type { Component, Rect } from "../omr/types";
-import { mergeToChars } from "../omr/lyrics";
+import type { Component, Rect } from "../omrkit/types";
+import { mergeToChars } from "../omrkit/charcells";
 import type { RasterUnit } from "./staffline";
 
 /** 一条歌词行（某个谱行下方的某一段）。 */

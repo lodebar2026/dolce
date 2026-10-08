@@ -1,12 +1,13 @@
 // 浏览器侧入口：PDF 字节 → MusicXML。**只有这个文件碰 pdfjs 的浏览器构建**，
 // `src/staffomr/` 其余部分一律不碰 DOM（要能进 `src/cli/index.ts` 那条 Node 链）。
 //
-// 与简谱那条路（`src/omr/decode.ts`）的分界：那边把 PDF **光栅化**成位图再走连通域；
+// 与简谱那条路（`src/omrkit/decode.ts`）的分界：那边把 PDF **光栅化**成位图再走连通域；
 // 这边直接读文字层与矢量对象，不栅格化。判「该走哪条路」的是 `isStaffPdf`。
-import type { OpsEnum } from "../omr/vector";
+import type { OpsEnum } from "../omrkit/vector";
 import { StaffGlyphLookup, type StaffGlyphDict } from "./staffglyphs";
 import { TextGlyphLookup, type TextGlyphDict } from "./textglyphs";
 import { recognizeStaffDoc, type StaffPdfResult } from "./song";
+import type { StaffReviewResult } from "./review";
 
 export { isStaffPdf, type StaffPdfResult } from "./song";
 
@@ -56,14 +57,14 @@ const OVERLAY_SCALE = 2;
 
 /**
  * 矢量五线谱 PDF 的原图对照：`noteIds` 识别出的结果 + 各页渲成的位图，拼成位图那一路同形的结果
- * （`RasterSongResult`），对照视图、并排原图、谱表 ↔ 声部关联表照用。框坐标从 PDF 点放大到位图像素；
+ * （`review.ts::StaffReviewResult`），对照视图、并排原图、谱表 ↔ 声部关联表照用。框坐标从 PDF 点放大到位图像素；
  * 页面结构（谱线）仍是点，`scale` 告诉用的人乘多少。
  */
-export async function vectorOverlayResult(bytes: Uint8Array, res: StaffPdfResult): Promise<import("../rasteromr/song").RasterSongResult> {
+export async function vectorOverlayResult(bytes: Uint8Array, res: StaffPdfResult): Promise<StaffReviewResult> {
   const d = res.detail;
   if (!d) throw new Error("识别时没开 noteIds，没有对照数据");
   const { pdf } = await openStaffPdf(bytes);
-  const pages: import("../rasteromr/song").RasterSongResult["pages"] = [];
+  const pages: StaffReviewResult["pages"] = [];
   try {
     for (const p of d.pages) {
       const page = await pdf.getPage(p.pn);
@@ -76,32 +77,32 @@ export async function vectorOverlayResult(bytes: Uint8Array, res: StaffPdfResult
       g.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvasContext: g, viewport: vp }).promise;
       page.cleanup?.();
-      // 灰度过半就算墨：与位图那一路的二值图同一种底图（`omr/overlay.ts::baseImage` 按 0/1 画）
+      // 灰度过半就算墨：与位图那一路的二值图同一种底图（`omrkit/svgkit.ts::baseImage` 按 0/1 画）
       const px = g.getImageData(0, 0, canvas.width, canvas.height).data;
       const data = new Uint8Array(canvas.width * canvas.height);
       // pdf.js 没画到的地方是透明（读出来 RGB 全 0），按纸算，不能当墨
       for (let i = 0; i < data.length; i++) data[i] = px[i * 4 + 3]! >= 128 && px[i * 4]! * 0.3 + px[i * 4 + 1]! * 0.59 + px[i * 4 + 2]! * 0.11 < 160 ? 1 : 0;
       pages.push({
         source: 0, pn: p.pn, scale: OVERLAY_SCALE,
-        result: { raster: { bin: { w: canvas.width, h: canvas.height, data } }, page: p.page, notes: p.notes } as unknown as import("../rasteromr/recognize").RasterPageResult,
+        result: { raster: { bin: { w: canvas.width, h: canvas.height, data } }, page: p.page },
       });
     }
   } finally {
     pdf.destroy?.();
   }
   const s = OVERLAY_SCALE;
-  const noteBoxes: import("../rasteromr/song").RasterSongResult["noteBoxes"] = new Map(
+  const noteBoxes: StaffReviewResult["noteBoxes"] = new Map(
     [...d.noteBoxes].map(([id, b]) => [id, { ...b, box: { left: b.box.left * s, right: b.box.right * s, top: b.box.top * s, bottom: b.box.bottom * s } }]),
   );
   return {
     xml: res.musicxml,
-    score: d.score as unknown as import("../rasteromr/song").RasterSongResult["score"],
+    score: d.score as unknown as StaffReviewResult["score"],
     stats: { notes: res.notes, harmonies: 0, lyricLines: 0, lyricStats: { rows: 0, hit: 0, parity: 0 }, bars: 0, full: 0, unknown: 0, staves: 0, pages: res.pages, halftone: null, kind: "vector", jianpuFix: { pairs: 0, pitch: 0, duration: 0, removed: 0, inserted: 0 }, parts: res.parts },
     pages, noteBoxes,
     assignment: () => d.assignment(),
     rebuild: (slots) => {
       const r = d.rebuild(slots);
-      return { xml: r.xml, score: r.score as unknown as NonNullable<import("../rasteromr/song").RasterSongResult["score"]> };
+      return { xml: r.xml, score: r.score as unknown as NonNullable<StaffReviewResult["score"]> };
     },
   };
 }

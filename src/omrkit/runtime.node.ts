@@ -1,5 +1,5 @@
 // Node 侧 OMR 运行时：onnxruntime-node（原生 CPU 后端，同一套 ONNX Runtime，比浏览器 wasm 快约 2×）。
-// **只有这个文件碰 onnxruntime-node 与 fs**，绝不能进 omr/index.ts 的 import 链（会把 fs 拖进网页产物）。
+// **只有这个文件碰 onnxruntime-node 与 fs**，绝不能进浏览器入口（`browser.ts`）的 import 链（会把 fs 拖进网页产物）。
 //
 // ## 为什么 rec 建两个 session
 // 实测（**M5**，同一模型同一形状）最优线程数随张量形状反转：

@@ -7,13 +7,13 @@
 //
 //   全书 17 万个音乐字形 → 175 个形状类 → 每类定一次语义，识别时纯查表。
 //
-// 聚类件全部复用简谱那条路的 `src/omr/glyphdict.ts`（`shapeKey` 精确键 + 32×32 `shapeSig`
+// 聚类件全部复用简谱那条路的 `src/omrkit/glyphdict.ts`（`shapeKey` 精确键 + 32×32 `shapeSig`
 // 最近邻），**别在这里另写一套**。两处唯一的差别是喂进去的轮廓来源不同：
 // 那边是 `VecObj.data`（转曲路径），这边是 `VecGlyph.outline`（字体程序里的字形）。
 //
 // 无 DOM 依赖。
-import { shapeKey, shapeSig, sigDistance, encodeSig, decodeSig } from "../omr/glyphdict";
-import type { VecGlyph, VecTextRun } from "../omr/vectext";
+import { shapeKey, shapeSig, sigDistance, encodeSig, decodeSig } from "../omrkit/glyphdict";
+import type { VecGlyph, VecTextRun } from "../omrkit/vectext";
 import type { SmuflName } from "./glyphs";
 import { isSmuflName } from "./glyphs";
 import { guessByCode, musicFamily } from "./symbolmap";

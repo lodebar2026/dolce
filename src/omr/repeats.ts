@@ -1,10 +1,10 @@
 // 反复小节线（||: / :||）与一、二房（volta ending）识别。
 // 反复号靠「上下点对 + 邻近竖线」判方向；ending 靠横贯谱行上方的超扁顶括线判范围，
 // 左端小号数字交给现有数字 OCR。识别结果锚定到边界相邻音符，由 todoc.ts 提升为小节线。
-import type { Binary, Component, Rect, StaffRow } from "./types";
-import { rcx, rcy, rright } from "./types";
-import type { OcrBackend } from "./ocr";
-import { median } from "./geom";
+import type { Binary, Component, Rect, StaffRow } from "../omrkit/types";
+import { rcx, rcy, rright } from "../omrkit/types";
+import type { OcrBackend } from "../omrkit/ocr";
+import { median } from "../omrkit/geom";
 import { probe } from "./probe";
 
 function detectRepeatBarlines(dots: Component[], rows: StaffRow[], numH: number): void {

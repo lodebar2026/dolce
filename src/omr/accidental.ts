@@ -1,8 +1,8 @@
 // 变音记号（♯ / ♭ / ♮）的形状分类。谱面上有两处要认它：音符左上角的临时升降号（jianpu.ts），
 // 与页眉调号里的那个（header.ts，`1=♭B` 的 ♭ 常被 OCR 读成 `″` 这类残字，只能回头看形状）。
 // 两处共用同一套判据——同一个记号在同一张图上不该有两种结论。
-import type { Binary, Rect } from "./types";
-import { rbottom, rright } from "./types";
+import type { Binary, Rect } from "../omrkit/types";
+import { rbottom, rright } from "../omrkit/types";
 
 /** 判 ♯ / ♭ / ♮。四象限墨迹占比 + 左右两半的墨迹重心：
  *  - **♯**：两条竖笔上下贯通 → 四象限都有墨、且大致均匀（实测四格 0.38~0.55、rt/rb 0.93~1.18）。

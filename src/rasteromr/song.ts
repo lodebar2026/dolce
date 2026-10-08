@@ -12,11 +12,13 @@ import type { LabelStrip } from "./stafflabel";
 import type { TimeStrip } from "./timesig";
 import type { JianpuStrip } from "./jianpuband";
 import type { JianpuRow } from "./jianpufuse";
-import type { HeaderCredit, WordLine, WordStrip } from "./words";
+import type { HeaderCredit, WordLine } from "../omrkit/headertext";
+import type { WordStrip } from "./words";
 import { textDetScale } from "./pagetext";
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import { markSplitBars } from "../staffomr/notedata";
-import { buildScore, type StaffScore } from "../staffomr/score";
+import { buildScore } from "../staffomr/score";
+import type { StaffReviewResult, StaffReviewStats } from "../staffomr/review";
 import { scoreToMusicXml } from "../staffomr/toxml";
 import type { Staff } from "../staffomr/model";
 import type { StaffNote } from "../staffomr/notedata";
@@ -50,37 +52,8 @@ export interface RasterLiveOcr {
   textDet?(bin: Binary, scale: number): Promise<Rect[]>;
 }
 
-export interface RasterSongStats {
-  notes: number;
-  harmonies: number;
-  lyricLines: number;
-  lyricStats: { rows: number; hit: number; parity: number };
-  bars: number;
-  full: number;
-  unknown: number;
-  staves: number;
-  pages: number;
-  halftone: number | null;
-  kind: string | null;
-  jianpuFix: { pairs: number; pitch: number; duration: number; removed: number; inserted: number };
-  systems?: number;
-  parts?: number;
-}
-
-export interface RasterSongResult {
-  xml: string | null;
-  score: StaffScore | null;
-  stats: RasterSongStats;
-  /** 有谱的各页的识别结果（第几份底本、第几页）：对照视图要它的位图与音符坐标。
-   *  `scale`：页面结构（`result.page` 的谱线坐标）乘它才是位图像素——矢量 PDF 那一路按 PDF 点识别、渲成位图时放大了（缺省 1） */
-  pages: { source: number; pn: number; result: RasterPageResult; scale?: number }[];
-  /** `noteIds` 时：写进 `<note id>` 的 id → 第几页（`pages` 下标）、源图上的框（位图像素） */
-  noteBoxes: Map<string, { page: number; box: { left: number; right: number; top: number; bottom: number }; step: string; octave: number; alter: number; rest: boolean }>;
-  /** 各系统各谱行现在指派到第几个声部行（`buildScore` 的结果；关联表的初值） */
-  assignment(): number[][];
-  /** 按新的指派（`slots[系统][谱行]`，-1 忽略）重建 MusicXML，不重跑识别 */
-  rebuild(slots: number[][]): { xml: string; score: StaffScore };
-}
+export type RasterSongStats = StaffReviewStats;
+export type RasterSongResult = StaffReviewResult<RasterPageResult>;
 
 /**
  * 整曲识别。`sources` 每项是一份打开了的 PDF（pdf.js 的文档对象与 OPS 表）。

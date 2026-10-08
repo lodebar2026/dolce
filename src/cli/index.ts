@@ -5,14 +5,14 @@
 // 碰 canvas/OffscreenCanvas/document 的（decode.ts、paddleocr.ts、lyrics.ts 的 buildStrip、
 // common/measure.ts 及一切依赖它的排版件）一律不许进这条 import 链。
 export * from "../common/cjkpunct";
-export * from "../omr/vector";
-export * from "../omr/vectext";
+export * from "../omrkit/vector";
+export * from "../omrkit/vectext";
 export * from "../staffomr/index";
 export * from "../rasteromr/index";
-export { connectedComponents } from "../omr/ccl";
+export { connectedComponents } from "../omrkit/ccl";
 export * from "../omr/bookprofile";
 export * from "../omr/inventory";
-export * from "../omr/glyphdict";
+export * from "../omrkit/glyphdict";
 export * from "../pdflayout/spec";
 export * from "../style/sheet";
 export * from "../style/cascade";
@@ -29,4 +29,4 @@ export * from "../pdflayout/bookparts";
 export * from "../pdflayout/booktemplate";
 export * from "../pdflayout/manifest";
 export { creatorOf, creatorTypeOf, META_KEYS } from "../model/metakeys";
-export type { Binary, Component, Rect, JpNum, StaffRow, RecognizedScore, TextRegion } from "../omr/types";
+export type { Binary, Component, Rect, JpNum, StaffRow, RecognizedScore, TextRegion } from "../omrkit/types";

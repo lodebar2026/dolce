@@ -1,7 +1,7 @@
 // CJK 标点的分类与「标点挤压」（CLREQ 3.1.6）。
 //
 // **无 DOM 依赖**——Node CLI（scripts/textmetrics.mjs、scripts/line-check.mjs）要 import 它，
-// 约束同 src/omr/vector.ts。度量一律由调用方传进来（`advanceOf`），这里只管规则。
+// 约束同 src/omrkit/vector.ts。度量一律由调用方传进来（`advanceOf`），这里只管规则。
 //
 // 挤压的道理：全角标点占一个字宽，但墨只占其中半格——句读点号与收尾类的右半是空的，
 // 起始类的左半是空的。两个这样的标点相邻时（`：“`、`」「`），两截空白接在一起就是

@@ -9,8 +9,8 @@
 // 要靠谱行结构才能判，那是 inventory.ts 的事，判完回填 `family.role`。
 //
 // 无 DOM 依赖（Node CLI 要用）。
-import type { Rect } from "./types";
-import type { VecObj, VecPage } from "./vector";
+import type { Rect } from "../omrkit/types";
+import type { VecObj, VecPage } from "../omrkit/vector";
 
 /** 字形族的角色。由 inventory.ts 判定后回填。 */
 export type FamilyRole =

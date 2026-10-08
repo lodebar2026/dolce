@@ -12,7 +12,7 @@
 //     （全音符本来就不带符干），空心且有符干的是二分音符。
 //
 // 这三条与字体无关，换一本书也成立——而形状签名是跟着字体走的。
-import type { Binary, Component, Rect } from "../omr/types";
+import type { Binary, Component, Rect } from "../omrkit/types";
 import type { SmuflName } from "../staffomr/glyphs";
 import type { LineSeg } from "./prims";
 import type { RasterUnit } from "./staffline";

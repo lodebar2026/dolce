@@ -1,14 +1,15 @@
 // 简谱页眉(第一行乐谱之上)信息识别：标题、作词/作曲(及编/译)等。
 // 复用歌词的"自然区域分块 rec"（lyrics.ts）：取页眉区连通块 → 按 y 分行 → 每行整体 rec →
 // 按内容/字号归类：含 作/词/曲/编/译 → 著作者 credit；最大字号且较居中的中文行 → 标题。
-import type { Binary, Component, Rect, TextRegion } from "./types";
-import type { OcrBackend } from "./ocr";
-import { mergeToChars, chunkCells, buildStrip } from "./lyrics";
-import { surfaceFromBinary, type Surface } from "./surface";
-import { clusterByY, median, overlapRatioX, overlapRatioY, unionRect, unionRects } from "./geom";
+import type { Binary, Component, Rect, TextRegion } from "../omrkit/types";
+import type { OcrBackend } from "../omrkit/ocr";
+import { chunkCells, buildStrip } from "./lyrics";
+import { mergeToChars } from "../omrkit/charcells";
+import { surfaceFromBinary, type Surface } from "../omrkit/surface";
+import { clusterByY, median, overlapRatioX, overlapRatioY, unionRect, unionRects } from "../omrkit/geom";
 import { accidentalOf } from "./accidental";
 import { probe } from "./probe";
-import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, effectiveCharH, betterTitle } from "./headertext";
+import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, effectiveCharH, betterTitle } from "../omrkit/headertext";
 
 const rcyOf = (r: Rect) => r.y + r.h / 2;
 const hanziCount = (s: string) => (s.match(/[一-鿿]/g) || []).length;

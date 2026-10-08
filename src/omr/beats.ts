@@ -6,7 +6,7 @@
 import type { ElementId } from "../model/doc";
 import { type BeatIssue, checkMeasureDurations, describeBeatIssue } from "../model/beatcheck";
 import { recognizedToDoc } from "./todoc";
-import type { JpNum, Rect, RecognizedScore } from "./types";
+import type { JpNum, Rect, RecognizedScore } from "../omrkit/types";
 import { t } from "../i18n";
 
 export interface RecognizedBeatIssue {

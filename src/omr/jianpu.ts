@@ -7,10 +7,10 @@
 //      每个数字块底部带状区域内直接数下划线层数得 div。
 //   2. 带下划线的连音（如 6_5_）会粘成一个宽连通域，初版 classify 因 w>numH 直接丢弃 →
 //      现按列投影把宽块切成多个数字格。
-import type { Binary, Component, JpNum, Rect, StaffRow, RecognizedScore } from "./types";
-import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, REJOINED_ARC_ID, isRejoinedArc } from "./types";
-import { connectedComponents } from "./ccl";
-import type { OcrBackend } from "./ocr";
+import type { Binary, Component, JpNum, Rect, StaffRow, RecognizedScore } from "../omrkit/types";
+import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, REJOINED_ARC_ID, isRejoinedArc } from "../omrkit/types";
+import { connectedComponents } from "../omrkit/ccl";
+import type { OcrBackend } from "../omrkit/ocr";
 import { recognizeLyrics, type LyricCharRef, type LyricHooks } from "./lyrics";
 import { applyRefLyrics } from "./reflyrics";
 import { recognizeHeader } from "./header";
@@ -18,7 +18,7 @@ import { recognizeTrailingStanzas } from "./stanzas";
 import { detectSlurs, resolveSlurRefits, tupletCandidates } from "./slur";
 import { detectRepeatsAndEndings } from "./repeats";
 import { detectSegno } from "./segno";
-import { median, overlapRatioY, overlapX, unionRect } from "./geom";
+import { median, overlapRatioY, overlapX, unionRect } from "../omrkit/geom";
 import { accidentalOf } from "./accidental";
 import { probe } from "./probe";
 
@@ -40,6 +40,9 @@ interface Classified {
   dashLike: Component[];
   clean: boolean;        // 干净谱面（isCleanPage）：几条专治翻拍件毛病的判据在这种页上不开
   lineH: number;         // 本页统计线粗（strokeLineH），0 = 页上横线太少、量不出
+  /** 已认出的延长记号（弧、或弧点粘成的一块）的框：四声部下一声部的延长记号正扣在上一声部数字的脚下，顶上那道拱又平又宽，
+   *  逐列量像一道减时线（83《…》`3 2 1̂ –` 上声部读成 `1̲`）。数减时线时当作下界（`recountUnderlines`）。认完延长记号后填。 */
+  fermataCaps?: Rect[];
 }
 
 // jianpu.cpp: findBarline/analyze_barline/analyze_hline/analyze_dot —— 按形状分类连通域。
@@ -2318,10 +2321,6 @@ function dotInkAbove(bin: Binary, d: Rect, numH: number): boolean {
  *    厚度像线，就两个音都至少一道。线跟数字粘死、数字底下量不清时，空隙里那一段线是干净的。
  *    增时线在数字中线上、够不着这个高度；隔着小节线的不连（减时线不跨小节线）。
  *  只补不减：已数出线的音不动。 */
-/** 已认出的延长记号（弧、或弧点粘成的一块）的框：四声部下一声部的延长记号正扣在上一声部数字的脚下，顶上那道拱又平又宽，
- *  逐列量像一道减时线（83《…》`3 2 1̂ –` 上声部读成 `1̲`）。数减时线时当作下界。每次识别在认完延长记号后重置。 */
-let fermataCaps: Rect[] = [];
-
 function recountUnderlines(bin: Binary, nums: JpNum[], numH: number, cls: Classified, barlineXs: number[], voiceMates: readonly Rect[]): void {
   const lineH = cls.lineH;
   if (lineH <= 0 || !nums.length) return;
@@ -2351,7 +2350,7 @@ function recountUnderlines(bin: Binary, nums: JpNum[], numH: number, cls: Classi
   const floorOf = (x0: number, x1: number, yb: number) => {
     let f = bin.h;
     for (const m of voiceMates) if (m.y > yb - numH * 0.3 && m.x < x1 + numH * 0.5 && rright(m) > x0 - numH * 0.5) f = Math.min(f, m.y - 1);
-    for (const m of fermataCaps) if (m.y > yb - 2 && m.x < x1 && rright(m) > x0) f = Math.min(f, m.y - 1);
+    for (const m of cls.fermataCaps ?? []) if (m.y > yb - 2 && m.x < x1 && rright(m) > x0) f = Math.min(f, m.y - 1);
     return f;
   };
   // 一列里从数字底往下数线
@@ -3425,7 +3424,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend, opts: { refL
   }
   if (fermataDots.size) c.dots = c.dots.filter((o) => !fermataDots.has(o));
   if (fermataDots.size) c.hlines = c.hlines.filter((o) => !fermataDots.has(o));
-  fermataCaps = [...fermataArcs].map((k) => k.bbox);
+  c.fermataCaps = [...fermataArcs].map((k) => k.bbox);
 
   // 波音（上波音 ∿）：音符正上方一小段**两个尖峰的锯齿**（2152《就是不一样》第 5、8 行）。
   // 与它同区的还有圆滑线弧帽与延长记号，三者都是「音符上方一块扁而宽的墨」，靠两条分开：

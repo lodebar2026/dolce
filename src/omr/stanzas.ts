@@ -7,11 +7,11 @@
 //
 // 判据只有一条：**这一段的音节数等于第 1 段的起字音位数**（容 OCR 多读漏读两个字）。
 // 谱后的背景介绍/版权说明是散文，字数碰不上，整块照旧丢掉（1600《南非之行》那九段正文）。
-import type { Binary, StaffRow, TextRegion } from "./types";
-import { rbottom } from "./types";
-import type { OcrBackend } from "./ocr";
+import type { Binary, StaffRow, TextRegion } from "../omrkit/types";
+import { rbottom } from "../omrkit/types";
+import type { OcrBackend } from "../omrkit/ocr";
 import { CN_NUM, LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct } from "./lyrics";
-import { median } from "./geom";
+import { median } from "../omrkit/geom";
 import { probe } from "./probe";
 
 const isHanzi = (c: string) => /[一-鿿]/.test(c);

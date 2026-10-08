@@ -6,7 +6,7 @@
 //
 // **认领是按盒查标号图**（`ContourMap.labels`），不是按盒相交：盒相交会把
 // 路过盒角的符干、隔壁符号一并算进来。
-import type { Rect } from "../omr/types";
+import type { Rect } from "../omrkit/types";
 import type { Contour, ContourMap } from "./contour";
 
 /** 认领人。字符串而不是枚举——`dict:<smufl>` 这种要带上认成了什么。 */

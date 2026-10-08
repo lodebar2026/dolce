@@ -21,12 +21,13 @@ import type { PlayPoint } from "./player";
 import type { DocFormatId } from "./formats";
 import { confirmDiscardEdits, type FormatOption, type FormatSource, type FormatSwitch } from "./formatswitch";
 import { reprojectRecognized, type Reprojected } from "../omr/reproject";
-import { baseImage, doubtItems } from "../omr/overlay";
+import { doubtItems } from "../omr/overlay";
+import { baseImage } from "../omrkit/svgkit";
 import type { ProjectKind, ProjectSnapshot } from "./omrproject";
 import { t } from "../i18n";
 import { COMPARE_VALUES, type CompareValue } from "./comparemode";
 
-/** 是否 PDF 字节（mime 或 `%PDF-` 魔数）。与 `omr/decode.ts` 里那份同判据。 */
+/** 是否 PDF 字节（mime 或 `%PDF-` 魔数）。与 `omrkit/decode.ts` 里那份同判据。 */
 function isPdfBytes(bytes: Uint8Array, mime?: string): boolean {
   if (mime === "application/pdf") return true;
   return bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
@@ -425,7 +426,7 @@ export class OmrController implements FormatSource {
   private async loadStaffResult(): Promise<boolean> {
     const g = this.gen;
     // 补的途中打开了别的文档：补回来的不能挂到新文档上
-    const land = (r: import("../rasteromr/song").RasterSongResult): boolean => {
+    const land = (r: import("../staffomr/review").StaffReviewResult): boolean => {
       if (g !== this.gen) return false;
       this.staffResult = r;
       this.host.setStatus("");
@@ -462,7 +463,7 @@ export class OmrController implements FormatSource {
   }
 
   /** 位图五线谱的识别结果（各页位图与音符坐标），对照视图用；简谱识别或清掉后为 null */
-  staffResult: import("../rasteromr/song").RasterSongResult | null = null;
+  staffResult: import("../staffomr/review").StaffReviewResult | null = null;
 
   private kindField(): Element | null {
     return this.kindSelects[1]?.closest(".toolbar-select-field") ?? null;

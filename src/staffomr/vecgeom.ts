@@ -8,8 +8,8 @@
 // 一处刻意的背离：musicpp 判水平/垂直用的是**严格相等**（`pts[0].y == pts[1].y`）。
 // 那是因为 pdfium 的点已经是原始坐标；本仓的点经过 ctm 乘法，浮点误差躲不掉，
 // 故改成 `EPS` 容差。EPS 取 0.02pt——比一切真实的斜线都小，比浮点误差大两个数量级。
-import { type Mat, DRAW_CLOSE, DRAW_CUBIC, DRAW_MOVE, DRAW_QUAD, drawOpArity, matApplyX, matApplyY } from "../omr/vector";
-import type { VecObj } from "../omr/vector";
+import { type Mat, DRAW_CLOSE, DRAW_CUBIC, DRAW_MOVE, DRAW_QUAD, drawOpArity, matApplyX, matApplyY } from "../omrkit/vector";
+import type { VecObj } from "../omrkit/vector";
 
 const EPS = 0.02;
 

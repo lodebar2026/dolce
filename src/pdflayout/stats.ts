@@ -9,7 +9,7 @@
 // spec 的具名字段本身就是 inventory 那一整套判据的产物。
 //
 // 无 DOM 依赖。
-import type { Rect } from "../omr/types";
+import type { Rect } from "../omrkit/types";
 import type { PageSpec, TextRun, MarkSpec, SongPlacement } from "./spec";
 import type { BookProfile } from "../omr/bookprofile";
 import { defaultBookStyle, inkSampleOf, roleFontDefaults, type BookStyle, type RoleStyle } from "./bookstyle";

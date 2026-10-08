@@ -8,8 +8,8 @@
 //     倚音）都凑不出「一块空心斜体 + 两颗孤立圆点」。
 // 命中后锚到正下方最近的音符，由 todoc/topu 提升为该小节**左**线上的记号（segno 是跳转目标，
 // D.S. 跳回来落在这条线上，故挂左不挂右）。
-import type { Component, StaffRow } from "./types";
-import { rcx, rcy, rright, rbottom } from "./types";
+import type { Component, StaffRow } from "../omrkit/types";
+import { rcx, rcy, rright, rbottom } from "../omrkit/types";
 import { probe } from "./probe";
 
 /** 主体块是不是 segno 的 S 形：一个字号上下、窄于高、空心。 */

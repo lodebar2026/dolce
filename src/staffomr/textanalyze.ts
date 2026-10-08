@@ -4,9 +4,10 @@
 // musicpp 到**打标为止**就结束了——它的 `toxml.cpp` 并不导出歌词与和弦。
 // 「把歌词逐字挂到音符上」那一段是本仓新加的（`buildLyricLines` / `attachLyrics`），
 // 口径照简谱那条路（`src/omr/lyrics.ts`）：**逐字挂音符**，一行歌词 = 一个 verse。
-import type { VecGlyph } from "../omr/vectext";
+import type { VecGlyph } from "../omrkit/vectext";
 import type { TextGlyphLookup } from "./textglyphs";
 import type { StaffNote } from "./notedata";
+import { CHORD_TOKEN_RE } from "../omrkit/chordgrammar";
 import { type Box, PObj, SPage, Staff, between, overlapX, overlapY, xSpace, ySpace } from "./model";
 
 /** 一段文本的纯文字内容（ToUnicode 的结果，可能是乱码，见文档「坏 ToUnicode」一节）。
@@ -48,11 +49,6 @@ const isStepChar = (c: string): boolean => c >= "A" && c <= "G";
 /** 一个汉字（可带句读）成一段：中文歌词逐字一个文本对象的样子。 */
 const LYRIC_CJK_SINGLE = /^[㐀-鿿豈-﫿][!,.?;:！，。？；：、]?$/;
 
-/** 单个和弦记号的语法。与 `src/omr/chordline.ts::CHORD_TOKEN_RE` 同一条
- *  （根音必须大写、长后缀在前），**改一处要两处一起改**。
- *  位图路切和弦带也用它（`rasteromr/harmony.ts::harmonyTokens`）——那边是导出复用，
- *  **别再抄第三份**。 */
-export const CHORD_TOKEN_RE = /^[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?\d*(?:sus\d*|add\d*)?(?:\/[A-G][#♯b♭]?)?/;
 
 export interface TextAnalysis {
   lyric: PObj[];
@@ -77,7 +73,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // （含 `/`、单个大写音名、`X Y`），本书的 `D m7` / `B♭Maj7` / `A dim/E♭` 一个都不沾边；
   // 而歌词那一步的判据（纵向跨过某条水平线的 y）会把和弦一并收成歌词
   // ——实测 p100 的 `G` 被挂成了第二段歌词。所以先把**明确是和弦记号**的挑出来。
-  // 记号语法复用简谱那条路的 `CHORD_TOKEN_RE`（根音必须大写，理由见那边的注释）。
+  // 记号语法用三路共用的 `omrkit/chordgrammar.ts::CHORD_TOKEN_RE`（根音必须大写，理由见那边的注释）。
   for (const t of texts) {
     if (kind.has(t)) continue;
     const raw = objText(t).replace(/\s+/g, "");

@@ -12,9 +12,9 @@
 //   - 横向游程短的像素 → 竖笔画（符干、小节线）；
 //   - 两个方向都粗的 → 符杠、符头、字。
 // 分完再各自做连通域，笔画就散开了。
-import type { Binary, Component, Rect } from "../omr/types";
-import { SIG_N } from "../omr/glyphdict";
-import { connectedComponents } from "../omr/ccl";
+import type { Binary, Component, Rect } from "../omrkit/types";
+import { SIG_N } from "../omrkit/glyphdict";
+import { connectedComponents } from "../omrkit/ccl";
 import type { RasterUnit } from "./staffline";
 
 /** 一条直线段（像素坐标）。 */

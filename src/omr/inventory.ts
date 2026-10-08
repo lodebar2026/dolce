@@ -23,10 +23,10 @@
 //  - **同一个字画了两遍**：一个 fill 一个 stroke（描边加粗），bbox 差约一个线宽。
 //    两个都要归类（否则重排核对会报 unplaced），但逻辑上是一个字——用 `dup` 标出描边那份，
 //    下游数音符/取文本时只认非 dup 的。
-import type { Rect } from "./types";
+import type { Rect } from "../omrkit/types";
 import type { BookProfile } from "./bookprofile";
-import type { VecObj, VecPage } from "./vector";
-import { concatObjects, intersectRect } from "./vector";
+import type { VecObj, VecPage } from "../omrkit/vector";
+import { concatObjects, intersectRect } from "../omrkit/vector";
 
 export type ObjClass =
   // 乐谱本体

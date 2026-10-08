@@ -12,7 +12,7 @@
 //
 // 无 DOM 依赖（Node CLI 要 import）。
 import type { PageSpec, TextRun, SongPlacement, PageMapEntry } from "./spec";
-import type { Rect } from "../omr/types";
+import type { Rect } from "../omrkit/types";
 
 /** 逐字覆盖：形状键 → 字（校对.db 的 glyph_fix）。返回 null 表示还是读不出。 */
 export type CharOverride = (key: string, current: string) => string | null;

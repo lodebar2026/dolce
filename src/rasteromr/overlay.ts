@@ -2,10 +2,8 @@
 // （谱面上改过的跟着变：改过的标青、删掉的划掉变灰），供逐音核对。命中层每个音一个透明框（`data-omr` = 写进 `<note id>` 的那个 id），
 // 编辑器按它把点选对到模型里的和弦（同简谱的核对视图）。坐标就是位图像素（与 `RasterPageResult.raster.bin` 同一空间）。
 
-import type { Binary } from "../omr/types";
-import { baseImage } from "../omr/overlay";
-
-const SVG_NS = "http://www.w3.org/2000/svg";
+import type { Binary } from "../omrkit/types";
+import { SVG_NS, pageSvg, svgRect } from "../omrkit/svgkit";
 
 export interface StaffMark {
   id: string;
@@ -17,12 +15,7 @@ export interface StaffMark {
 
 /** 一页：位图 + 识别框 + 命中层。`view` 同简谱核对：原位叠加画框与音名，仅原图只留命中层。 */
 export function renderStaffRecognitionPage(bin: Binary, marks: readonly StaffMark[], view: "inplace" | "floating" | "original" = "inplace"): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("class", "omr-recognize omr-staff-recognize");
-  svg.setAttribute("viewBox", `0 0 ${bin.w} ${bin.h}`);
-  svg.style.width = "100%";
-  svg.style.display = "block";
-  svg.appendChild(baseImage(bin));
+  const svg = pageSvg(bin, "omr-recognize omr-staff-recognize");
   const hs = marks.map((m) => m.box.bottom - m.box.top).sort((a, b) => a - b);
   const h = hs.length ? hs[hs.length >> 1]! : 12; // 符头高的中位数：字号、线宽按它
   if (view !== "original") {
@@ -31,16 +24,9 @@ export function renderStaffRecognitionPage(bin: Binary, marks: readonly StaffMar
     for (const m of marks) {
       const sub = document.createElementNS(SVG_NS, "g");
       sub.setAttribute("class", ["omr-staff-note", m.state ? `omr-num-${m.state}` : ""].filter(Boolean).join(" "));
-      const r = document.createElementNS(SVG_NS, "rect");
       const pad = h * 0.15;
-      r.setAttribute("x", String(m.box.left - pad));
-      r.setAttribute("y", String(m.box.top - pad));
-      r.setAttribute("width", String(m.box.right - m.box.left + pad * 2));
-      r.setAttribute("height", String(m.box.bottom - m.box.top + pad * 2));
-      r.setAttribute("rx", String(pad));
-      r.setAttribute("class", "omr-staff-box");
-      r.setAttribute("stroke-width", String(Math.max(1, h * 0.08)));
-      sub.appendChild(r);
+      sub.appendChild(svgRect(m.box.left - pad, m.box.top - pad, m.box.right - m.box.left + pad * 2, m.box.bottom - m.box.top + pad * 2,
+        { rx: String(pad), class: "omr-staff-box", "stroke-width": String(Math.max(1, h * 0.08)) }));
       const t = document.createElementNS(SVG_NS, "text");
       t.setAttribute("x", String((m.box.left + m.box.right) / 2));
       t.setAttribute("y", String(m.box.top - h * 0.35));
@@ -66,16 +52,9 @@ export function renderStaffRecognitionPage(bin: Binary, marks: readonly StaffMar
   hits.setAttribute("class", "omr-hits");
   for (const m of marks) {
     if (m.state === "deleted") continue; // 删掉的音模型里没有了，点它对不上任何东西
-    const r = document.createElementNS(SVG_NS, "rect");
     const pad = h * 0.3;
-    r.setAttribute("x", String(m.box.left - pad));
-    r.setAttribute("y", String(m.box.top - pad));
-    r.setAttribute("width", String(m.box.right - m.box.left + pad * 2));
-    r.setAttribute("height", String(m.box.bottom - m.box.top + pad * 2));
-    r.setAttribute("data-kind", "note");
-    r.setAttribute("data-omr", m.id);
-    r.setAttribute("class", "omr-hit");
-    hits.appendChild(r);
+    hits.appendChild(svgRect(m.box.left - pad, m.box.top - pad, m.box.right - m.box.left + pad * 2, m.box.bottom - m.box.top + pad * 2,
+      { "data-kind": "note", "data-omr": m.id, class: "omr-hit" }));
   }
   svg.appendChild(hits);
   return svg;

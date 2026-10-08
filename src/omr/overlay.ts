@@ -2,15 +2,14 @@
 // 背景为二值化源图、其上按**源图像素坐标**半透明叠加识别出的数字/八度点/减时线/
 // 附点/增时线/小节线/歌词，供用户逐音核对识别准确度。坐标与二值图同空间，直接用。
 
-import type { Binary, RecognizedScore, JpNum, Rect } from "./types";
+import type { Binary, RecognizedScore, JpNum, Rect } from "../omrkit/types";
 import { type MsgKey, t as tr } from "../i18n";
 import type { Reprojected, ShownNum } from "./reproject";
-import { rcx, rcy, rright, RHYTHM_DIGIT } from "./types";
-import { surfaceFromBinary } from "./surface";
-import { clusterRectsByY, median } from "./geom";
+import { rcx, rcy, rright, RHYTHM_DIGIT } from "../omrkit/types";
+import { SVG_NS, baseImage, pageSvg, svgRect } from "../omrkit/svgkit";
+import { clusterRectsByY, median } from "../omrkit/geom";
 import { measureGlyphText } from "../common/measure";
 
-const SVG_NS = "http://www.w3.org/2000/svg";
 // 叠加数字用的字体（须与 styles.css 的 .omr-overlay text 一致，含 700 粗细）。
 const NUM_FONT = "PingFang SC";
 
@@ -24,29 +23,6 @@ function digitFontSize(targetInkH: number): number {
     _emPerInk = ink > 0 ? probe / ink : 1.4; // 回退经验值 ~1.4
   }
   return targetInkH * _emPerInk;
-}
-
-/** 二值图 → PNG dataURL 的缓存：核对视图里改一个音就重画整张叠加层，底图不变，别每次重编码 PNG。 */
-const binUrlCache = new WeakMap<Binary, string>();
-
-/** 二值图 → PNG dataURL（黑字白底，作叠加背景）。 */
-function binDataUrl(bin: Binary): string {
-  const hit = binUrlCache.get(bin);
-  if (hit) return hit;
-  const url = binDataUrlRaw(bin);
-  binUrlCache.set(bin, url);
-  return url;
-}
-
-function binDataUrlRaw(bin: Binary): string {
-  const surf = surfaceFromBinary(bin); // 黑字白底
-  const cv = document.createElement("canvas");
-  cv.width = bin.w;
-  cv.height = bin.h;
-  const ctx = cv.getContext("2d");
-  if (!ctx) throw new Error("无法创建 2D 画布上下文");
-  ctx.putImageData(new ImageData(surf.data, bin.w, bin.h), 0, 0);
-  return cv.toDataURL("image/png");
 }
 
 function line(x1: number, y1: number, x2: number, y2: number, w: number, cls?: string): SVGLineElement {
@@ -434,13 +410,7 @@ function buildHitLayer(score: RecognizedScore, stats: Stats, inserted: Reproject
   });
 
   const hit = (b: Rect, attrs: Record<string, string>): void => {
-    const r = document.createElementNS(SVG_NS, "rect");
-    r.setAttribute("x", String(b.x));
-    r.setAttribute("y", String(b.y));
-    r.setAttribute("width", String(Math.max(1, b.w)));
-    r.setAttribute("height", String(Math.max(1, b.h)));
-    for (const [k, v] of Object.entries(attrs)) r.setAttribute(k, v);
-    g.appendChild(r);
+    g.appendChild(svgRect(b.x, b.y, Math.max(1, b.w), Math.max(1, b.h), attrs));
   };
 
   flat.forEach(({ n, ri }, i) => {
@@ -472,19 +442,6 @@ function buildHitLayer(score: RecognizedScore, stats: Stats, inserted: Reproject
   return g;
 }
 
-/** 二值图作底图（`<image>`，data URL 按二值图缓存）。五线谱的识别对照（`rasteromr/overlay.ts`）也用它。 */
-export function baseImage(bin: Binary): SVGImageElement {
-  const img = document.createElementNS(SVG_NS, "image");
-  img.setAttribute("x", "0");
-  img.setAttribute("y", "0");
-  img.setAttribute("width", String(bin.w));
-  img.setAttribute("height", String(bin.h));
-  const url = binDataUrl(bin);
-  img.setAttributeNS("http://www.w3.org/1999/xlink", "href", url);
-  img.setAttribute("href", url);
-  return img;
-}
-
 /** 二值图 + RecognizedScore → 识别核对 SVG。视图：
  *  - inplace：二值底图 + 半透明识别叠加（原位）。
  *  - floating/original：仅二值底图（浮窗由 app 悬停时另建）。
@@ -496,13 +453,7 @@ export function renderRecognitionSvg(
   /** 核对时改过的东西（`reproject.ts`）：`score` 已是重投影过的那份，这里给新插的音与改过的歌词 */
   edits?: Pick<Reprojected, "inserted" | "lyricFixes">,
 ): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("class", "omr-recognize");
-  svg.setAttribute("viewBox", `0 0 ${bin.w} ${bin.h}`);
-  svg.style.width = "100%";
-  svg.style.display = "block";
-
-  svg.appendChild(baseImage(bin));
+  const svg = pageSvg(bin, "omr-recognize");
 
   const stats = computeStats(score);
   if (view === "inplace") svg.appendChild(buildOverlayGroup(score, stats, edits ? { edits } : undefined));
@@ -512,12 +463,7 @@ export function renderRecognitionSvg(
     const pad = stats.noteH * 0.35;
     for (const m of beatMarks) {
       for (const b of m.boxes) {
-        const r = document.createElementNS(SVG_NS, "rect");
-        r.setAttribute("x", String(b.x - pad));
-        r.setAttribute("y", String(b.y - pad));
-        r.setAttribute("width", String(b.w + pad * 2));
-        r.setAttribute("height", String(b.h + pad * 2));
-        r.setAttribute("rx", String(pad));
+        const r = svgRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2, { rx: String(pad) });
         const t = document.createElementNS(SVG_NS, "title");
         t.textContent = m.text;
         r.appendChild(t);

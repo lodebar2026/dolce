@@ -18,7 +18,7 @@
 //     带放宽就灌进上一行谱的歌词与弧线、收紧就漏掉标签，六种调法（取最靠下的文字行、
 //     加白边、笔画加粗、放宽块高、放宽串宽、放宽带高）**全都劣于原配置**，
 //     全语料认得出的声部名始终卡在 8 个。几何闸没有中间地带——定位这件事交给 DBNet。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit } from "./staffline";
 
 /** 一条标签条：裸像素 + 它在页面上的盒。 */

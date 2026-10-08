@@ -5,13 +5,17 @@
 // 包一层就能复用整条管线，回归脚本也是这么喂图片的（`jpegToPdf` 与那边逐字节同构）。
 
 import { openStaffPdf } from "../staffomr/browser";
-import { paddleOcrBackend } from "../omr/paddleocr";
+import { paddleOcrBackend } from "../omrkit/paddleocr";
+import { installBrowserOmr } from "../omrkit/browser";
 import { RasterGlyphLookup, outlineTemplates, type RasterGlyphDict } from "./rasterglyphs";
 import { rasterizePage } from "./rasterpage";
 import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
 import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips, detectPageTexts } from "./ocrlive";
 import type { TimeStrip } from "./timesig";
+
+// 在线 OCR 要推理运行时：自己装上，不靠编辑器先 import 了 `omr/index`
+installBrowserOmr();
 
 /**
  * 位图路打开 PDF：**关掉浏览器版 pdf.js 的图像解码优化**。缺省它把内嵌位图交成 `ImageBitmap`（离屏画布 / ImageDecoder），

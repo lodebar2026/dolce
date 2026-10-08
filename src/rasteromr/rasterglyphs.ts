@@ -7,7 +7,7 @@
 //
 // 尺寸一律归一到**线距**（与几何判据同口径）。不归一不行：同一本书里
 // 正谱与小谱的谱表差一倍（实测主治万方一页上 18.5 与 15.6 两种线距同时出现）。
-import { SIG_N, decodeSig, encodeSig, sigDistance } from "../omr/glyphdict";
+import { SIG_N, decodeSig, encodeSig, sigDistance } from "../omrkit/glyphdict";
 import type { SmuflName } from "../staffomr/glyphs";
 
 /** 一个形状类。 */

@@ -1,10 +1,10 @@
 // 简谱 OMR 顶层编排：图片 → RecognizedScore。
 // 本地 TS 移植管线（连通域/几何启发式 + 本地 PaddleOCR(PP-OCRv6_small/onnx) 数字与歌词 OCR），
 // 完全在浏览器/桌面本地运行、可离线，无需网络服务。出什么格式由 omr/emit.ts 的 emitter 决定。
-import { decodeToBinary } from "./decode";
+import { decodeToBinary } from "../omrkit/decode";
 import { recognizeJianpu } from "./jianpu";
-import { paddleOcrBackend, omrProfile, omrProfileReset } from "./paddleocr";
-import type { Binary, RecognizedScore } from "./types";
+import { paddleOcrBackend, omrProfile, omrProfileReset } from "../omrkit/paddleocr";
+import type { Binary, RecognizedScore } from "../omrkit/types";
 
 /** musicpp 本地管线的详尽产物：二值图 + 带源图坐标的识别结果（供识别模式叠加）。 */
 export interface MusicppDetail {

@@ -15,7 +15,7 @@
 // 同一页几百个已认出的实心符头一平均，才是这一页真实的长相；
 // 而且**分「骑线 / 在间」两类**，骑线那一类的模板里自然带着谱线，
 // 粘连于是不算「差异」。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit } from "./staffline";
 import type { SmuflName } from "../staffomr/glyphs";
 import type { LineSeg } from "./prims";

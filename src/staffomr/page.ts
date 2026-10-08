@@ -6,8 +6,8 @@
 // **标记挂在段上**。凡 musicpp 写 `o->addTag(...)` 的地方，这里都是 `seg.addTag(...)`。
 //
 // 坐标一律设备坐标、y 向下（见 model.ts 开头那段）。
-import type { VecObj } from "../omr/vector";
-import type { VecTextRun } from "../omr/vectext";
+import type { VecObj } from "../omrkit/vector";
+import type { VecTextRun } from "../omrkit/vectext";
 import { musicFamily } from "./symbolmap";
 import { StaffGlyphLookup } from "./staffglyphs";
 import {
@@ -27,7 +27,7 @@ import {
   sortByTop,
 } from "./model";
 import { isFlag, isNoteHead, isRest } from "./glyphs";
-import { shapeSig } from "../omr/glyphdict";
+import { shapeSig } from "../omrkit/glyphdict";
 import { isWhite, subPaths, thinRectAxis } from "./vecgeom";
 import { classifyBarlines, tagRepeatDots } from "./barlines";
 

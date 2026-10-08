@@ -1,4 +1,4 @@
-// 页眉文字的**纯文本判据**（不看像素）：简谱页眉（`header.ts`）与位图五线谱页眉（`rasteromr/words.ts::headerCredits`）共用。
+// 页眉文字的**纯文本判据**（不看像素）：简谱页眉（`omr/header.ts`）与五线谱页眉（`headerCredits`，位图、矢量两路）共用。
 // 署名几种写法的正则、标题按「有效字高」挑的比法放这里；按墨列补空格、拍号墨迹这些要回源图量的留在各自那边。
 import type { Rect } from "./types";
 
@@ -69,4 +69,88 @@ export const LATIN_CREDIT_RE = /^\s*(?:words|music|lyrics?|text|tune|arr(?:anged
 /** 署名的角色：有「曲」（或 music / tune / arr）的算作曲，只有「词 / 译」的算作词。 */
 export function creditRole(text: string): "lyricist" | "composer" {
   return /[曲編编]|music|tune|arr|harm/i.test(text) ? "composer" : "lyricist";
+}
+
+// ── 五线谱页眉：OCR 行 → 页眉各条（位图路 OCR 出来的行、矢量路文字层拼的行同走这一份） ──
+
+/** OCR 读出来的一行字（带内坐标）。 */
+export interface WordLine {
+  t: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 页眉里值得留的行：有汉字，或有两个以上拉丁字母（页码、噪点、单个字母不要）。 */
+export function keepHeaderLine(text: string): boolean {
+  return /[\u3400-\u9fff]/.test(text) || (text.match(/[A-Za-z]/g)?.length ?? 0) >= 2;
+}
+
+/** 页眉的一行（页面坐标）与它的角色（MusicXML `<credit-type>`）、对齐。 */
+export interface HeaderCredit {
+  text: string;
+  type?: "title" | "subtitle" | "composer" | "lyricist";
+  justify: "left" | "center" | "right";
+  box: Rect;
+}
+
+/**
+ * 页眉带读出来的行 → 页眉各条。判据与简谱页眉同一份（本文件上面那几条）：
+ * 署名按内容认（`作词：`、`盛晓玫 词曲`、`Words by` …），角色看有没有「曲」；其余行里**有效字高**最大的（差不多高取更宽的）是标题，
+ * 居中且有标题八成高的也算标题（中英两个标题上下排）；其余居中的是副标题；靠左的是作词 / 译者、靠右的是作曲（诗歌本、合唱谱的通行排法）。
+ * 居中 = 行心离页心不过页宽一成半。标题上方靠两边的行是书眉，成段的文字是序言，这两样照收、不给角色。
+ */
+export function headerCredits(lines: readonly WordLine[], strip: { box: Rect }): HeaderCredit[] {
+  const ls = lines.filter((l) => keepHeaderLine(l.t)).sort((a, b) => a.y - b.y || a.x - b.x);
+  if (!ls.length) return [];
+  const effH = (l: WordLine) => effectiveCharH(l.t, l, l.h);
+  const maxH = Math.max(...ls.map(effH));
+  const credit = new Set(ls.filter((l) => isCreditText(l.t, effH(l) < maxH, true)));
+  let title: WordLine | null = null;
+  for (const l of ls) if (!credit.has(l) && (!title || betterTitle(effH(l), l.w, effH(title), title.w))) title = l;
+  const H = title ? effH(title) : maxH;
+  const mid = strip.box.x + strip.box.w / 2;
+  const justifyOf = (l: WordLine) => {
+    const cx = strip.box.x + l.x + l.w / 2;
+    return Math.abs(cx - mid) <= strip.box.w * 0.15 ? "center" : cx < mid ? "left" : "right";
+  };
+  // **书眉**：标题上方、靠两边的行是歌本每页都印的书名 / 出版方（破碎扫描版左上「敬畏你的榮耀」、右上「新心音樂事工」）
+  const runningHead = (l: WordLine) => !!title && l !== title && !credit.has(l) && l.y + l.h <= title.y && justifyOf(l) !== "center";
+  // **成段的文字**（序言、经文引言）：一行字数够多的
+  const prose = (l: WordLine) => l !== title && !credit.has(l) && (l.t.match(/[\u3400-\u9fff]/g)?.length ?? 0) + (l.t.match(/[A-Za-z]+/g)?.length ?? 0) >= PROSE_UNITS;
+  return ls.flatMap((l) => {
+    const justify = justifyOf(l);
+    const type: HeaderCredit["type"] =
+      prose(l) || runningHead(l)
+        ? undefined
+        : credit.has(l)
+          ? creditRole(l.t)
+          : l === title || (justify === "center" && effH(l) >= H * 0.8)
+            ? "title"
+            : justify === "center"
+              ? "subtitle"
+              : justify === "left"
+                ? "lyricist"
+                : "composer";
+    const box = { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h };
+    return splitHeaderText(l.t).map((text) => ({ text, type, justify, box }));
+  });
+}
+/** 一行有这么多个字（汉字一字、拉丁一词）就是成段的文字，不是标题。 */
+const PROSE_UNITS = 16;
+
+/**
+ * 页眉一行的字 → 一条或几条：标题字距拉得开（「望 十 架」），按列投影补出来的、夹在两个汉字之间的空格不要；
+ * 标题行行首的诗歌编号（「1 9 數算主恩」「8 奇異恩典」，编号字距也拉得开）不要；字距拉开的小型大写字母并回一个词；
+ * 中文标题与英文标题印在同一行的（「數算主恩 Count Your Blessings」）拆成两条——中英标题本是两个页眉元素。
+ */
+export function splitHeaderText(t: string): string[] {
+  let text = t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
+  const num = /^(\d\s?){1,3}\s*(?=[\u3400-\u9fff])/.exec(text);
+  if (num) text = text.slice(num[0].length);
+  // 字距拉开的小型大写（破碎扫描版「B RO K E N」）：整行都是一两个大写字母的碎块，按列投影补的空格不是词界，并回一个词
+  if (/^[A-Z]{1,2}(\s+[A-Z]{1,2}){2,}$/.test(text)) text = text.replace(/\s+/g, "");
+  const m = /^([\u3400-\u9fff]{2,}[\u3400-\u9fff\s]*)\s*([A-Za-z][A-Za-z\s,'’!.-]{3,})$/.exec(text);
+  return m ? [m[1]!.trim(), m[2]!.trim()] : [text];
 }

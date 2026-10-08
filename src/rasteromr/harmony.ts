@@ -18,11 +18,10 @@
 // **切成记号靠和弦文法**，不靠簇的边界：簇偶尔会并掉两个挨得近的和弦
 // （实测系统三末尾 `Dm G` 只隔 9px），`CHORD_TOKEN_RE` 要求根音是大写 A–G，
 // 从左往右贪心地咬，`DmG` 自然断回 `Dm` + `G`。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit } from "./staffline";
 import type { OcrChar } from "./lyric";
-import { CHORD_TOKEN_RE } from "../staffomr/textanalyze";
-import { blankNonChord } from "../omr/chordline";
+import { CHORD_TOKEN_RE, blankNonChord } from "../omrkit/chordgrammar";
 
 /** 带的窗口（线距的倍数）：顶线上方这一段。
  *

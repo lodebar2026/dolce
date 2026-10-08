@@ -7,7 +7,8 @@
 //
 // 这里只拼页眉：别的 ImageMask 按各自的变换矩阵画到「页顶 → 谱图上沿」那一段（送 OCR，缓存照旧按条指纹），
 // 文字层落在这一段里的字直接当页眉行（不用认）。识别用的位图一点不动，其余各路条子的指纹都不变。
-import type { WordLine, WordStrip } from "./words";
+import type { WordLine } from "../omrkit/headertext";
+import type { WordStrip } from "./words";
 import { decodeImage } from "./rasterpage";
 
 /** 谱图上沿离页顶不到这么多（PDF 点）就不拼：整页扫描件、或页眉本就在谱图里。 */

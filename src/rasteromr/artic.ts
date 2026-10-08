@@ -6,7 +6,7 @@
 // `articTenuto*` 的那一类九成是谱线残段，照挂会平白多出几百个保持音），在这里按关系一并判了、直接落到音符上。
 //
 // 候选只取两路：形状字典认成演奏法的符号，与账本上**无主**的 contour——已经有主的墨不抢。
-import type { Rect } from "../omr/types";
+import type { Rect } from "../omrkit/types";
 import type { SPage, Staff, Sym } from "../staffomr/model";
 import { beamY, type StaffNote } from "../staffomr/notedata";
 import type { Contour, ContourMap } from "./contour";

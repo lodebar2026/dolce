@@ -6,9 +6,9 @@
 //   - 弧线是「宽而薄」的连通块：w ≳ 0.8×字号、w/h ≥ 2，落在数字行**上方**（底边贴近数字顶）。
 //   - 八度上点很小(w,h ≤ 0.45×字号)；增时线 '-' 在数字**中线**、减时线在数字**下方** → 都不在上方，天然不混。
 //   - 数字块 h ≥ 0.55×字号 才算，弧线更矮 → 不会被当成假音符（classify 里已落到 hlines 或被丢弃）。
-import type { Binary, Component, JpNum, Rect, StaffRow } from "./types";
-import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, isRejoinedArc } from "./types";
-import { median, overlapX } from "./geom";
+import type { Binary, Component, JpNum, Rect, StaffRow } from "../omrkit/types";
+import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, isRejoinedArc } from "../omrkit/types";
+import { median, overlapX } from "../omrkit/geom";
 import { probe } from "./probe";
 
 const between = (v: number, lo: number, hi: number) => v >= lo && v <= hi;

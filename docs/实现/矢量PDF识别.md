@@ -1,4 +1,4 @@
-# 矢量 PDF 识别（`src/omr/vector.ts` 等，纯 Node CLI）
+# 矢量 PDF 识别（`src/omrkit/vector.ts` 等，纯 Node CLI）
 
 印刷歌本的 PDF 常常是**文字全部转曲**：没有文字层、没有嵌入字体，整页只剩路径。
 过去这种 PDF 只能栅格化后走光栅 OMR（`decode.ts` → CCL → PaddleOCR）。
@@ -20,10 +20,10 @@
 ## 数据流
 
 ```
-PDF → extractVectorPage      src/omr/vector.ts       路径对象 + ctm + clip + 虚线参数
+PDF → extractVectorPage      src/omrkit/vector.ts       路径对象 + ctm + clip + 虚线参数
     → detectProfile          src/omr/bookprofile.ts  字号族 / 版心 / 页眉页脚带
     → classifyPage           src/omr/inventory.ts    每个对象归一个语义类，列出归不掉的
-    → shapeKey + 字典        src/omr/glyphdict.ts    形状 → 字符
+    → shapeKey + 字典        src/omrkit/glyphdict.ts    形状 → 字符
     → 与 GT 逐项对比          ../dev/scripts/pdf-diff.mjs            差异清单 + 准确率矩阵
 ```
 
@@ -628,5 +628,5 @@ pdf-lib 的原点在左下、y 朝上，页面坐标是 SVG 那套，故 `drawSv
   `decode.ts` 的光栅路。
 - `src/omr/` 的老文件**一行未改**，光栅路 14 首基线零退化
   （`node ../dev/scripts/measure-all.mjs`：音符 100.0 / 对位 100.0 / 歌词 99.5 / 标题 100 / 词曲 100）。
-- `src/omr/vector.ts` 及其 import 链**不得触碰 canvas / OffscreenCanvas / document**——
+- `src/omrkit/vector.ts` 及其 import 链**不得触碰 canvas / OffscreenCanvas / document**——
   Node CLI 要在没有浏览器的情况下 import 它。需要位图时另走 `decode.ts`（浏览器专属）。

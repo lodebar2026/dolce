@@ -31,7 +31,7 @@ import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import { jianpuInputOfDoc, jianpuInputOfJpw } from "../model/jianpuinput";
 import type { FitMeasure } from "../pu/phrase";
-import type { JpwMeta, JpwRange } from "../omr/types";
+import type { JpwMeta, JpwRange } from "../omrkit/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";

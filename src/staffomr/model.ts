@@ -1,6 +1,6 @@
 // 五线谱识别的数据模型。逐条对应 musicpp `qtomr/qomr.h` 的结构体，改之前先核对那边。
 //
-// ## 坐标系：**设备坐标、y 向下**（与 `src/omr/vector.ts` 一致）
+// ## 坐标系：**设备坐标、y 向下**（与 `src/omrkit/vector.ts` 一致）
 //
 // musicpp 全程用 PDF 用户坐标（y 向上），`CFX_FloatRect` 里 `top > bottom`。
 // 本仓反过来：`top < bottom`（top 是视觉上方 = 较小的 y）。移植时凡纵向比较逐处翻——
@@ -8,9 +8,9 @@
 // 全都碰得到。**语义名保持不变**（`top` 仍指视觉上方），只是数值大小关系反了。
 //
 // 无 DOM 依赖（要进 `src/cli/index.ts` 那条 Node 链）。
-import type { VecObj } from "../omr/vector";
-import type { VecTextRun, VecGlyph } from "../omr/vectext";
-import type { Rect } from "../omr/types";
+import type { VecObj } from "../omrkit/vector";
+import type { VecTextRun, VecGlyph } from "../omrkit/vectext";
+import type { Rect } from "../omrkit/types";
 import type { SmuflName } from "./glyphs";
 
 // ── 盒 ──────────────────────────────────────────────────────────────────────

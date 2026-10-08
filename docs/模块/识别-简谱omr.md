@@ -18,13 +18,13 @@
 | `src/omr/stanzas.ts` | 谱后单独排版的附段歌词（诗行）：按第 1 段的音位骨架逐字对位 |
 | `src/omr/repeats.ts` / `segno.ts` | 反复线与一/二房 / segno 𝄋 字形（→ 小节线上的 `hs` 记号） |
 | `src/omr/header.ts` | 页眉标题/曲号/词曲/调号/拍号/速度（PP-OCRv4 DBNet 文本检测整片识别；调号、斜杠式拍号、速度 `♩=`（含附点）按单字符 + 位置为主、det 文本行兜底）。曲号 → 123 `X:`、诗歌本 `XL:`/`XR:`、番茄拼回标题前 |
-| `src/omr/paddleocr.ts` | PP-OCR 推理 |
+| `src/omrkit/paddleocr.ts` | PP-OCR 推理（共享层，见 [识别-共享层](识别-共享层.md)） |
 | `src/omr/overlay.ts` | 识别核对叠加层（含小节时值自检报出的小节，虚线红框，悬停显示差几拍） |
 | `src/omr/beats.ts` | 小节时值自检：识别结果 → `todoc.ts` 的模型 → `model/beatcheck.ts`（与编辑器同一份判据），问题小节对回源图坐标；CLI 导出给 `beat-check.mjs` |
 | `src/omr/emit.ts` | 输出格式：识别结果 → `todoc.ts` 的模型 → 转换目标表（`model/convert.ts`）写成文本；点选映射（`omr/meta.ts`）123、文本谱、Muse `.jcx` 有，JPWABC、ABC 没有 |
 | `src/omr/todoc.ts` | → 简谱形状的 `ScoreDoc`：123 / JPWABC / ABC / 文本谱 / jianpu-ly / Muse `.jcx` 都由它写出（文本谱走 `model/topu.ts::emitPu`）；四声部时第 3、4 声部（男高、男低）标八度谱号 `treble-8`（按高八度记，试听低八度） |
 | `src/omr/meta.ts` | 点选映射：重解析写出的 123 / 文本谱，按元素序取源区间（`metaFrom123` / `metaFromPu`） |
-| `src/omr/vector.ts` / `inventory.ts` / `glyphdict.ts` | 矢量 PDF 对象层、归类、形状字典 |
+| `src/omrkit/vector.ts` / `src/omr/inventory.ts` / `src/omrkit/glyphdict.ts` | 矢量 PDF 对象层、归类、形状字典 |
 | `src/editor/omrctl.ts` | 编辑器侧控制器（识别 → 出文本 → 进原样档并按用户选过的核对方式对照（没选过就并排原图）→ 点选定位；核对视图试听时按 `meta` 源区间把播放的音对回识别框，见 [播放](播放.md)）；核对视图里可视化编辑、排版稿的「原图片段」跟随小窗 |
 | `src/editor/omrproject.ts` | 识别项目 `.dolce`：识别结果、二值图、点选映射与原图一起存，重开不重跑识别（见 [编辑器](编辑器.md)） |
 | `src/editor/omrctl.ts::syncSide` | **并排原图**：排版稿左边铺整页原图（简谱按 `idMapOf` 认框，五线谱按 `<note id>` 认框），选中互通（`OmrHost.selectNote`） |
@@ -45,7 +45,7 @@
   拍数红框在可编辑时由可视化编辑按当前模型画，识别完那一份只在不能编辑（JPWABC / ABC 产物，没有 `meta`）时画。
 - **原图片段跟随**：排版稿里选中音符，按同一份映射找到框、取原图那一行（`renderRowSource`，只画原图不叠识别结果），以这个音为中心裁约 8 个行高宽放进右下角小窗。
 
-- **`src/omr/vector.ts` 及其 import 链不得触碰 canvas / OffscreenCanvas / document**——Node CLI 要 import 它。
+- **`src/omrkit/vector.ts` 及其 import 链不得触碰 canvas / OffscreenCanvas / document**——Node CLI 要 import 它。
 - PDF 栅格化**必须**用 `getDocument({wasmUrl})`。
 - **归类判据一改就要重跑 `../dev/scripts/gen-glyphdict.mjs`**。
 - 矢量路的硬指标是**未归类对象数**。

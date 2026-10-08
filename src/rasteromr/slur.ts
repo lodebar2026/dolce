@@ -10,7 +10,7 @@
 // 认出来之后交给矢量路现成的那一套（`staffomr/slur.ts`）：`attachSlurs` 挂两端、
 // `reconnectSlurs` 接回跨行的、`markSlurNotes` 落到音符上，`toxml` 出 `<slur>`/`<tied>`
 // ——那边一行不改，只是这边要造一个假 `PObj` 装着盒（与 `adapt.ts` 造假字形同一套路）。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import { PObj } from "../staffomr/model";
 import type { SlurArc } from "../staffomr/slur";
 import type { Contour, ContourMap } from "./contour";

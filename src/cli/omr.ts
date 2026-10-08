@@ -3,12 +3,12 @@
 //
 // 与 cli/index.ts 的分工：那个是**矢量 PDF 版面**那一摊（vector/inventory/pdflayout），
 // 这个是**位图简谱识别**这一条（decode → jianpu → emit）。PDF 输入不走这里。
-import { installNodeDecoder } from "../omr/decode.node";
-import { setOmrRuntime } from "../omr/runtime";
-import { nodeRuntime, threadInfo } from "../omr/runtime.node";
+import { installNodeDecoder } from "../omrkit/decode.node";
+import { setOmrRuntime } from "../omrkit/runtime";
+import { nodeRuntime, threadInfo } from "../omrkit/runtime.node";
 import { recognizeMusicppDetailed } from "../omr/recognize";
 import { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter, type OmrFormat, type EmittedScore } from "../omr/emit";
-import { omrProfile, omrProfileReset, paddleOcrBackend } from "../omr/paddleocr";
+import { omrProfile, omrProfileReset, paddleOcrBackend } from "../omrkit/paddleocr";
 
 setOmrRuntime(nodeRuntime);
 installNodeDecoder();
@@ -19,13 +19,13 @@ export { paddleOcrBackend };
 export type { OmrFormat, EmittedScore };
 export { recognizeMusicppDetailed };
 // 换解码器用（默认 sharp；要接别的解码库从这里换）。
-export { setImageDecoder, decodeToBinary } from "../omr/decode";
-export type { ImageDecoder, RgbaImage } from "../omr/decode";
+export { setImageDecoder, decodeToBinary } from "../omrkit/decode";
+export type { ImageDecoder, RgbaImage } from "../omrkit/decode";
 export { recognizedToDoc } from "../omr/todoc";
 export { recognizedBeatIssues } from "../omr/beats";
 export type { RecognizedBeatIssue } from "../omr/beats";
 export { metaFrom123, metaFromPu } from "../omr/meta";
-export type { RecognizedScore, Binary, LyricCheck, LyricCheckItem } from "../omr/types";
+export type { RecognizedScore, Binary, LyricCheck, LyricCheckItem } from "../omrkit/types";
 export { parseRefLyrics, formatLyricCheckItem } from "../omr/reflyrics";
 
 /** 歌词文件字节 → 文本。歌本配套的歌词编码混杂：带 BOM 的 UTF-16LE/UTF-8，否则先按 UTF-8 严格解码、

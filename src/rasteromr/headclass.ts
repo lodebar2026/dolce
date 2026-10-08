@@ -16,7 +16,7 @@
 //
 // 特征只用**与尺度无关**的量（都按线距归一），换一本书、换一种分辨率照样成立。
 // 训练是几十行梯度下降，一页几毫秒——不引任何库，也不落盘任何模型。
-import type { Binary, Rect } from "../omr/types";
+import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit } from "./staffline";
 import { scoreAt, type HeadMask } from "./headmask";
 

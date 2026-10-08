@@ -7,7 +7,7 @@
 // **不是每张图都要做**：干净位图（排版软件贴进去的）与普通扫描件的笔画本来就是实心的，
 // 做一遍只会把细节磨掉。所以先量 `halftoneRatio` 再决定，判据见 `HALFTONE_RATIO`。
 // 去网本身走标准形态学（`morph.ts`），参数从本页统计，见 `descreenMorph`。
-import type { Binary } from "../omr/types";
+import type { Binary } from "../omrkit/types";
 import { areaClose, areaOpen, close, components, quantile } from "./morph";
 
 /** 积分图：`sum(x0,y0,x1,y1)`（半开区间）。0/1 图逐点求和，整型精确。 */
