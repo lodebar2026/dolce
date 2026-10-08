@@ -136,6 +136,18 @@ export function findSlurs(pg: SPage): SlurArc[] {
         o.addTag("Bracket");
         continue;
       }
+      // **跨在系统线上、罩住两行以上谱的窄长曲线是方括号**（合唱谱人声那几行；Finale 画成一笔粗竖带上下两个弯钩的填充）。
+      // 花括号贴在系统线左边、上面那条先收走；方括号骑在系统线上，过不了那条，接着又被下面「又宽又扁」的闸丢掉，谁都没认
+      //（宣主荣耀三声部：S / A / T&B 三行的括号）
+      if (
+        bh >= bw * 3 &&
+        bw <= sp * 2.5 &&
+        syslines.some((l) => o.box.left < l.box.right && o.box.right > l.box.left && !(o.box.bottom < l.box.top || l.box.bottom < o.box.top)) &&
+        pg.staves.filter((st) => !(st.box.bottom < o.box.top || o.box.bottom < st.box.top)).length >= 2
+      ) {
+        o.addTag("PartBracket");
+        continue;
+      }
     }
     // **描边的曲线也要收**：musicpp 只认填充（`path->fill()`），那是因为它只见过
     // Finale 那一路把弧画成实心月牙；Sibelius 的 Anastasia 页把弧画成描边曲线，
@@ -389,8 +401,8 @@ export function reconnectSlurs(pg: SPage, arcs: SlurArc[]): void {
 export function markSlurNotes(arcs: SlurArc[]): void {
   for (const sl of arcs) {
     if (sl.from) {
-      if (sl.tie) sl.from.tieStart = true;
-      else sl.from.slurStart = true;
+      if (sl.tie) (sl.from.tieStart = true), (sl.from.tieAbove = sl.above);
+      else (sl.from.slurStart = true), (sl.from.slurAbove = sl.above);
       if (sl.dashed) {
         if (sl.tie) sl.from.tieDashed = true;
         else sl.from.slurDashed = true;

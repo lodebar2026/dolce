@@ -533,6 +533,41 @@ export function buildStems(pg: SPage, sp: number): StemInfo[] {
   return out.filter((st) => st.notes.length);
 }
 
+/** `<beam>` 的取值。 */
+export type BeamState = "begin" | "continue" | "end" | "forward hook" | "backward hook";
+
+/** 只接上一根干、短于这么多格的杠是半截钩（附点八分 + 十六分的那一截）；长的是另一头的音没认出来，照普通杠算。 */
+const HOOK_MAX = 1.6;
+
+/**
+ * 一根干上逐层的符杠状态：这一层的杠伸出干的左侧 / 右侧（超过 `beamConnect` 的端点容差五分之一格）
+ * 两侧都伸 → continue、只伸右 → begin、只伸左 → end；只接上这一根干的短杠是钩，伸向哪边就是哪边的钩。
+ * 层号照 `calcBeamLevels` 定的，同层被拆成两段的一并看；没定层的（0）各算一层排在后面，与时值的层数口径一致。
+ */
+function beamStates(stem: StemInfo, stems: StemInfo[], sp: number): BeamState[] {
+  const byLevel = new Map<number, BeamShape[]>();
+  let extra = 1000;
+  for (const b of stem.beams) {
+    const k = b.level > 0 ? b.level : extra++;
+    byLevel.set(k, [...(byLevel.get(k) ?? []), b]);
+  }
+  const x = stem.seg.cx;
+  const tol = sp / 5;
+  return [...byLevel.keys()]
+    .sort((a, b) => a - b)
+    .map((k) => {
+      const bs = byLevel.get(k)!;
+      const left = bs.some((b) => b.x0 < x - tol);
+      const right = bs.some((b) => b.x1 > x + tol);
+      const shared = bs.some((b) => stems.some((o) => o !== stem && o.beams.includes(b)));
+      if (!shared && Math.max(...bs.map((b) => b.x1 - b.x0)) < sp * HOOK_MAX) {
+        if (left !== right) return left ? "backward hook" : "forward hook";
+        return bs.reduce((a, b) => a + (b.x0 + b.x1) / 2, 0) / bs.length < x ? "backward hook" : "forward hook";
+      }
+      return left && right ? "continue" : right ? "begin" : left ? "end" : "continue";
+    });
+}
+
 /** `Beam::connect` 的结果。 */
 type BeamHit = "none" | "begin" | "end" | "middle";
 
@@ -700,6 +735,11 @@ export interface StaffNote {
   stemUp: boolean | null;
   /** 符尾/符杠条数。 */
   beams: number;
+  /**
+   * 逐层的符杠状态（下标 = 层 − 1），出 `<beam number>`。**只有接在符杠上的音才有**：挂符尾的八分没有这一项，
+   * MusicXML 里不写 `<beam>` 的短音就画符尾——符杠与符尾靠它分开。见 `beamStates`。
+   */
+  beam?: BeamState[];
   x: number;
   /** 挂在这个音符上的歌词，按段（verse）。 */
   lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; /** 这个字后面拖着延长线（一字多音，见 `markLyricExtends`）。 */ extend?: boolean }[];
@@ -734,8 +774,10 @@ export interface StaffNote {
   dynamic?: string;
   /** 印在这个音符处的文字指示（rit. / a tempo / cresc. / Fine…）：原文与在谱表上方还是下方。MusicXML 里出成 `<direction><words>`。 */
   words?: { text: string; above: boolean }[];
-  /** 节拍器记号（`quarter=86`）。MusicXML 里出成 `<direction><metronome>`。 */
-  metronome?: string;
+  /** 节拍器记号：拍子单位（`quarter`）、每分钟拍数、`<per-minute>` 的原文（带「约」时 `c. 76`，否则省）。MusicXML 里出成 `<direction><metronome>`。 */
+  metronome?: { unit: string; bpm: number; text?: string };
+  /** 与节拍器印在同一条的速度文字（`Andante ♩ = c. 76` 的 `Andante`）：与节拍器写进**同一个** `<direction>`，不拆成两个对象。 */
+  tempoText?: string;
   /** 松叶从这个音符**起**（`<wedge type="crescendo|diminuendo">`）。见 `attachWedges`。 */
   wedgeStart?: "crescendo" | "diminuendo";
   /** 松叶到这个音符**止**（`<wedge type="stop">`）。 */
@@ -762,6 +804,9 @@ export interface StaffNote {
   slurStopFrom?: Staff;
   tieStart?: boolean;
   tieStop?: boolean;
+  /** 起头的那条圆滑线 / 连音线画在音符上方（弧朝上，`SlurArc.above`）还是下方；没认出方向的不写。 */
+  slurAbove?: boolean;
+  tieAbove?: boolean;
   /** 起头的那条圆滑线 / 连音线画成虚线（`<slur line-type="dashed">`）。 */
   slurDashed?: boolean;
   tieDashed?: boolean;
@@ -826,6 +871,8 @@ export function buildNotes(
   // 符头 → 它那根符干
   const stemOf = new Map<Sym, StemInfo>();
   for (const st of stems) for (const n of st.notes) if (!stemOf.has(n)) stemOf.set(n, st);
+  const beamOf = new Map<StemInfo, BeamState[]>();
+  for (const st of stems) if (!st.flags && st.beams.length) beamOf.set(st, beamStates(st, stems, sp));
 
   const dots = pg.symbols.filter((s) => s.code === "augmentationDot" && !s.hasAnyTag());
   const out: StaffNote[] = [];
@@ -917,7 +964,9 @@ export function buildNotes(
       break;
     }
 
-    out.push({ sym: s, staff: stf, rest, diatonic, step, octave, alter: 0, accidental, duration: base, base, dots: 0, stemUp, beams: nb, x: s.px, voice: 1, slash: s.code.startsWith("noteheadSlash") || undefined });
+    // 复合音符字形自带时值、没有杠可分
+    const beam = stem && s.compositeBase === undefined ? beamOf.get(stem) : undefined;
+    out.push({ sym: s, staff: stf, rest, diatonic, step, octave, alter: 0, accidental, duration: base, base, dots: 0, stemUp, beams: nb, ...(beam ? { beam } : {}), x: s.px, voice: 1, slash: s.code.startsWith("noteheadSlash") || undefined });
   }
   // **先按谱行、再按 x**。只按 x 排会把一页里几行谱的音符横向交织在一起
   // ——顺序一乱，与 GT 的逐音比对就全废（实测准确率卡在两成半）。
@@ -1108,6 +1157,7 @@ function inheritDur(ch: StaffChord, ns: StaffNote[], orphan: boolean): void {
     if (!ref) continue;
     n.base = ref.base;
     n.beams = ref.beams;
+    if (ref.beam) n.beam = ref.beam;
     n.dots = Math.max(n.dots, ref.dots);
     n.duration = n.base * (2 - 1 / 2 ** n.dots);
   }

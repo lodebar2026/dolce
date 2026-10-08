@@ -402,8 +402,12 @@ export function attachWordLines(
     const row = notes.filter((n) => n.staff === stf && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
     const note = row.find((n) => n.x >= box.x - sp) ?? row[row.length - 1];
     if (!note) continue;
-    if (metro) note.metronome = `quarter=${metro[1].replace(/ /g, "")}`;
-    if (isWord && text) {
+    if (metro) note.metronome = { unit: "quarter", bpm: Number(metro[1].replace(/ /g, "")) };
+    // 速度文字与节拍器同一行的（`Andante ♩=76`）写进同一个 `<direction>`（见 `staffomr/textanalyze.ts::attachDirectionTexts`）
+    if (metro && isWord && text) {
+      note.tempoText = text;
+      words.push({ text, above, box, note });
+    } else if (isWord && text) {
       (note.words ??= []).push({ text, above });
       words.push({ text, above, box, note });
     }

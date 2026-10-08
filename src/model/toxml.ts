@@ -127,7 +127,7 @@ const OWNS: Readonly<Record<string, { attrs?: readonly string[]; kids?: readonly
   beam: { attrs: ["number"] },
   notations: { kids: ["slur", "tied", "tuplet", "fermata", "arpeggiate", "articulations", "ornaments", "technical"] },
   slur: { attrs: ["type", "number", "placement", "orientation"] },
-  tied: { attrs: ["type", "number"] },
+  tied: { attrs: ["type", "number", "placement", "orientation"] },
   tuplet: { attrs: ["type", "number", "bracket", "placement"] },
   fermata: { attrs: ["type"], same: { type: "upright" } },
   articulations: { kids: "*" },
@@ -486,7 +486,11 @@ function notationsXml(o: Out, n: Chord["notations"], starts: Mark[], stops: Mark
     if (m.type === "slur") {
       const ori = m.orientation ? ` orientation="${m.orientation}"` : "";
       o.leaf("slur", ` type="start" number="${m.number ?? 1}"${pl}${ori}`, sur);
-    } else if (m.type === "tied") o.leaf("tied", ` type="start" number="${m.number ?? 1}"`, sur);
+    } else if (m.type === "tied") {
+      // 连音线的方向（识别稿写 `orientation`）读进来了，写回时也带上，免得读写一遍丢掉
+      const ori = m.orientation ? ` orientation="${m.orientation}"` : "";
+      o.leaf("tied", ` type="start" number="${m.number ?? 1}"${pl}${ori}`, sur);
+    }
     else if (m.type === "tuplet") {
       const br = m.bracket !== undefined ? ` bracket="${m.bracket ? "yes" : "no"}"` : "";
       o.leaf("tuplet", ` type="start" number="${m.number ?? 1}"${br}${pl}`, sur);

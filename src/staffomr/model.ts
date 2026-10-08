@@ -84,6 +84,8 @@ export type Tag =
   | "Bracket"
   /** 把一个系统的几行谱括起来的大括号（`makeSystems` 分系统用，与 `Bracket` 分工见 `findSystemBrackets`）。 */
   | "SysBracket"
+  /** 把几个声部括在一起的方括号（合唱谱人声那几行，矢量路 `findSlurs` 认）。`score.ts::groupParts` 据它出 `<part-group>`。 */
+  | "PartBracket"
   | "BarLine"
   | "Clef"
   | "Key"

@@ -6,6 +6,7 @@
 // 口径照简谱那条路（`src/omr/lyrics.ts`）：**逐字挂音符**，一行歌词 = 一个 verse。
 import type { VecGlyph } from "../omr/vectext";
 import type { TextGlyphLookup } from "./textglyphs";
+import type { StaffNote } from "./notedata";
 import { type Box, PObj, SPage, Staff, between, overlapX, overlapY, xSpace, ySpace } from "./model";
 
 /** 一段文本的纯文字内容（ToUnicode 的结果，可能是乱码，见文档「坏 ToUnicode」一节）。
@@ -847,26 +848,51 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
 // ── 速度与表情文字 → 音符上的 words / metronome ─────────────────────────────
 
 /** 节拍器文字（`q = c 76`、`♩= 72`）：音符字形（正文字体里的 `q`/`h`/`e`，或乐谱字形的 ♩）+ `=` + 可带 `c.`/`ca.` 的数字。 */
-const METRO_TEXT_RE = /([qhe♩♪𝅗𝅥])?\.?\s*=\s*(?:ca?\.?\s*)?(\d{2,3})/;
+const METRO_TEXT_RE = /([qhe♩♪𝅗𝅥])?\.?\s*=\s*(ca?\.?\s*)?(\d{2,3})/;
 const METRO_UNIT: Record<string, string> = { q: "quarter", "♩": "quarter", h: "half", "𝅗𝅥": "half", e: "eighth", "♪": "eighth" };
+
+/** 同一条速度里相邻两段的横向间隙上限（格）：与 `analyzeText` 把 `=` 两边的段收进速度那一步同口径。 */
+const TEMPO_JOIN_GAP = 3;
 
 /**
  * `analyzeText` 认出的**速度**（`Andante`、`q = c 76`）与**表情**（`rit.`）挂到音符上，出 `<direction>`。
  * 原文到打标为止；挂法同位图路的 `rasteromr/words.ts::attachWordLines`：先定谱行（纵向离谁近），
  * 再取这一行里文字左端往左让一格之后、右边最近的那个音（没有就取这一行最后一个）。
- * 速度一行常是好几段（`Andante` 与 `q = c 76` 各一段），按段各挂各的：文字出 `<words>`、带 `=` 的出节拍器。
+ *
+ * **一条速度在文字层里常是好几段**（`Andante` 一段正文字体、`q = c 76` 一段谱字体），要先并回一条：
+ * 纵向交叠、横向相邻的段从左到右连起来，挂在最左那段的音上——各挂各的话文字与节拍器成了两个对象，
+ * 还会落到不同的音上（宣主荣耀钢琴 m1：`Andante` 挂第一拍、节拍器挂到第二拍）。
+ * 并好的一条里有节拍器的：节拍器前面的文字进 `tempoText`，与节拍器写进同一个 `<direction>`。
+ * `c`（EngraverText 的「c.」字形，文字层只吐出一个 c）照谱面写成 `c. 76`。
  */
 export function attachDirectionTexts(
   pg: SPage,
-  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean }[]; metronome?: string }[],
+  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean }[]; metronome?: StaffNote["metronome"]; tempoText?: string }[],
   text: TextAnalysis,
 ): void {
   const sp = pg.normalStaffSpace || pg.space;
-  for (const o of [...text.tempo, ...text.expression]) {
-    const s = objText(o).replace(/\s+/g, " ").trim();
-    if (!s) continue;
-    const cx = (o.box.left + o.box.right) / 2;
-    const cy = (o.box.top + o.box.bottom) / 2;
+  const tempo = [...text.tempo].filter((o) => objText(o).trim()).sort((a, b) => a.box.left - b.box.left);
+  const lines: PObj[][] = [];
+  for (const o of tempo) {
+    const line = lines.find((l) => {
+      const last = l[l.length - 1];
+      return overlapY(last.box, o.box) && xSpace(last.box, o.box) <= sp * TEMPO_JOIN_GAP;
+    });
+    if (line) line.push(o);
+    else lines.push([o]);
+  }
+  const items = [...lines.map((l) => ({ objs: l, tempo: true })), ...text.expression.map((o) => ({ objs: [o], tempo: false }))];
+  for (const { objs, tempo: isTempo } of items) {
+    const parts = objs.map((o) => objText(o).replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (!parts.length) continue;
+    const box = {
+      left: Math.min(...objs.map((o) => o.box.left)),
+      right: Math.max(...objs.map((o) => o.box.right)),
+      top: Math.min(...objs.map((o) => o.box.top)),
+      bottom: Math.max(...objs.map((o) => o.box.bottom)),
+    };
+    const cx = (box.left + box.right) / 2;
+    const cy = (box.top + box.bottom) / 2;
     let stf: Staff | undefined;
     let bd = Infinity;
     for (const st of pg.staves) {
@@ -876,11 +902,15 @@ export function attachDirectionTexts(
     }
     if (!stf) continue;
     const row = notes.filter((n) => n.staff === stf && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
-    const note = row.find((n) => n.x >= o.box.left - sp) ?? row[row.length - 1];
+    const note = row.find((n) => n.x >= box.left - sp) ?? row[row.length - 1];
     if (!note) continue;
-    const metro = METRO_TEXT_RE.exec(s);
-    if (metro && s.includes("=")) {
-      note.metronome = `${METRO_UNIT[metro[1] ?? "q"] ?? "quarter"}=${metro[2]}`;
+    const s = parts.join(" ");
+    const metro = isTempo && s.includes("=") ? METRO_TEXT_RE.exec(s) : null;
+    if (metro) {
+      const bpm = Number(metro[3]);
+      note.metronome = { unit: METRO_UNIT[metro[1] ?? "q"] ?? "quarter", bpm, ...(metro[2] ? { text: `c. ${bpm}` } : {}) };
+      const words = s.slice(0, metro.index).trim();
+      if (words) note.tempoText = words;
       continue;
     }
     (note.words ??= []).push({ text: s, above: cy < (stf.box.top + stf.box.bottom) / 2 });

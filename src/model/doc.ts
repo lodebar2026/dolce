@@ -758,7 +758,7 @@ export interface Mark {
   /** 嵌套层级（简谱的双弧 / 房号抬高） */
   level?: number;
   placement?: "above" | "below";
-  /** [五线谱] `<slur orientation>`：Sibelius 导出只写它不写 `placement` */
+  /** [五线谱] `<slur orientation>`：Sibelius 导出只写它不写 `placement`；`<tied orientation>`（识别稿给连音线写方向用它）同此 */
   orientation?: "over" | "under";
   /** [五线谱] `<tuplet bracket>` */
   bracket?: boolean;

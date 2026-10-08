@@ -307,6 +307,15 @@ export interface StaffScore {
   systems: { page: SPage; sys: SSystem; ctx: Map<Staff, StaffContext> }[];
   scoreStaves: ScoreStaff[];
   parts: Part[];
+  /** 方括号括起来的几个声部（`parts` 的下标，首尾都含）与小节线是否贯穿它们（`<group-barline>`）。见 `groupParts`。 */
+  groups?: PartGroup[];
+}
+
+export interface PartGroup {
+  symbol: "bracket";
+  first: number;
+  last: number;
+  barline: boolean;
 }
 
 /**
@@ -423,7 +432,40 @@ function finishScore(systems: StaffScore["systems"], scoreStaves: ScoreStaff[]):
   }
   parts.forEach((p, i) => (p.index = i));
   nameParts(systems, parts);
-  return { systems, scoreStaves, parts };
+  const groups = groupParts(systems, parts);
+  return { systems, scoreStaves, parts, ...(groups.length ? { groups } : {}) };
+}
+
+/**
+ * 方括号（`PartBracket`）→ 声部分组。逐系统看括号纵向罩住哪几个声部在本系统的**全部**谱行，
+ * 连着两个以上的记一组；同一组声部只记一次（首个认出的系统为准）。
+ * 小节线是否贯穿：组里相邻两个声部之间的空白有没有小节线穿过（合唱谱人声行之间要写歌词，小节线多半逐行断开）。
+ */
+function groupParts(systems: StaffScore["systems"], parts: Part[]): PartGroup[] {
+  const out: PartGroup[] = [];
+  systems.forEach(({ page }, si) => {
+    const sp = page.normalStaffSpace || page.space;
+    for (const o of page.objs) {
+      if (!o.hasTag("PartBracket")) continue;
+      const inside: number[] = [];
+      parts.forEach((part, pi) => {
+        const sts = part.scoreStaves.map((ss) => ss.staves[si]).filter((st): st is Staff => !!st);
+        if (sts.length && sts.every((st) => st.cy > o.box.top && st.cy < o.box.bottom)) inside.push(pi);
+      });
+      if (inside.length < 2 || inside[inside.length - 1] - inside[0] !== inside.length - 1) continue;
+      const first = inside[0];
+      const last = inside[inside.length - 1];
+      if (out.some((g) => !(last < g.first || first > g.last))) continue;
+      const rows = inside.flatMap((pi) => parts[pi].scoreStaves.map((ss) => ss.staves[si]).filter((st): st is Staff => !!st)).sort((a, b) => a.box.top - b.box.top);
+      const bars = page.segsWithTag("BarLine");
+      const barline = rows.length > 1 && rows.slice(1).every((b, k) => {
+        const a = rows[k];
+        return bars.some((s) => s.top <= a.box.bottom + sp * 0.5 && s.bottom >= b.box.top - sp * 0.5);
+      });
+      out.push({ symbol: "bracket", first, last, barline });
+    }
+  });
+  return out.sort((a, b) => a.first - b.first);
 }
 
 /**

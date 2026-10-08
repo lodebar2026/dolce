@@ -210,6 +210,11 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
           n = { ...n, lyrics: [...(n.lyrics ?? []), ...add] };
         }
       } else if (extra && n.lyrics?.some((l) => movedLyrics.has(l))) n = { ...n, lyrics: n.lyrics.filter((l) => !movedLyrics.has(l)) };
+      // 符杠同理：整枚和弦共一根干，杠记在哪个头上都一样，写在打头的那个音上
+      if (!extra && n0.group && !n.beam) {
+        const bm = vn.find((m) => m.group === n0.group && m.beam)?.beam;
+        if (bm) n = { ...n, beam: bm };
+      }
       if (timed && !n.chordExtra && !n.grace) {
         const off = at(n.group!.offset);
         if (off > cur) {
@@ -219,9 +224,13 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       }
       // `<harmony>` 与 `<direction>` 都排在它们所属的 `<note>` **之前**（MusicXML 规定）
       if (n.chord) body += harmonyXml(n.chord);
-      if (n.metronome) {
-        const [unit, bpm] = n.metronome.split("=");
-        body += `<direction placement="above"><direction-type><metronome><beat-unit>${unit}</beat-unit><per-minute>${bpm}</per-minute></metronome></direction-type>${dirStaff}<sound tempo="${bpm}"/></direction>`;
+      // 速度文字与节拍器印在一条上的（`Andante ♩ = c. 76`）合进同一个 `<direction>`：先文字、后节拍器，一个对象
+      if (n.metronome || n.tempoText) {
+        const m = n.metronome;
+        // 文字后面接节拍器时末尾留一个空格（`Andante ♩ = c. 76`），不然排出来文字与音符字形贴在一起
+        const words = n.tempoText ? `<direction-type><words>${escapeXml(m ? `${n.tempoText.trimEnd()} ` : n.tempoText)}</words></direction-type>` : "";
+        const metro = m ? `<direction-type><metronome><beat-unit>${m.unit}</beat-unit><per-minute>${escapeXml(m.text ?? String(m.bpm))}</per-minute></metronome></direction-type>` : "";
+        body += `<direction placement="above">${words}${metro}${dirStaff}${m ? `<sound tempo="${m.bpm}"/>` : ""}</direction>`;
       }
       for (const w of n.words ?? [])
         body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><words>${escapeXml(w.text)}</words></direction-type>${dirStaff}</direction>`;
@@ -312,13 +321,16 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   // `<notations>` 排在 `<lyric>` 之前（MusicXML 的子元素顺序）
   const nots: string[] = [];
   if (n.tieStop) nots.push(`<tied type="stop"/>`);
-  if (n.tieStart) nots.push(n.tieDashed ? `<tied type="start" line-type="dashed"/>` : `<tied type="start"/>`);
+  // 弧的方向：圆滑线写 `placement`、连音线写 `orientation`（两种软件导出的常规写法，读入端两个都认）
+  const tieOri = n.tieAbove === undefined ? "" : ` orientation="${n.tieAbove ? "over" : "under"}"`;
+  if (n.tieStart) nots.push(`<tied type="start"${n.tieDashed ? ` line-type="dashed"` : ""}${tieOri}/>`);
   // 编号按谱表号：钢琴两行合一个 part 时同号的弧按编号配对，右手一条长弧还开着、左手又起又止一条，读入端就配串了（宁静 m32–36）；
   // 止端按起端那行编（跨谱表的弧）
   const slurNo = staffNo || 1;
   const stopNo = (n.slurStopFrom && partStaffNo.get(n.slurStopFrom)) || slurNo;
   if (n.slurStop) nots.push(`<slur type="stop" number="${stopNo}"/>`);
-  if (n.slurStart) nots.push(n.slurDashed ? `<slur type="start" number="${slurNo}" line-type="dashed"/>` : `<slur type="start" number="${slurNo}"/>`);
+  const slurPl = n.slurAbove === undefined ? "" : ` placement="${n.slurAbove ? "above" : "below"}"`;
+  if (n.slurStart) nots.push(`<slur type="start" number="${slurNo}"${n.slurDashed ? ` line-type="dashed"` : ""}${slurPl}/>`);
   if (n.tuplet) nots.push(`<tuplet type="start"/>`);
   // `<notations>` 里子元素有固定次序：tied / slur / tuplet / ornaments / articulations / fermata / arpeggiate
   const arts: string[] = [];
@@ -349,9 +361,11 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   // 但要把符头形状写出来，不然回读时会变成一串真的 B4。`<notehead>` 排在 `<stem>` 之后、
   // `<staff>` 之前——MusicXML 的子元素次序是有规定的。
   const head = n.slash ? `<notehead>slash</notehead>` : "";
+  // `<beam>` 排在 `<staff>` 之后、`<notations>` 之前；和弦只写在打头那个音上（`emitVoices` 已把整枚和弦的杠挪到它身上）
+  const beam = n.chordExtra ? "" : (n.beam ?? []).map((b, i) => `<beam number="${i + 1}">${b}</beam>`).join("");
   return (
     `<note>${grace}${chord}<pitch><step>${escapeXml(n.step)}</step>${alter}<octave>${n.octave}</octave></pitch>` +
-    `${durEl}${tie}${voiceEl}<type>${type}</type>${dots}${acc}${timeMod}${stem}${head}${staffEl}${notations}${lyric}</note>`
+    `${durEl}${tie}${voiceEl}<type>${type}</type>${dots}${acc}${timeMod}${stem}${head}${staffEl}${beam}${notations}${lyric}</note>`
   );
 }
 
@@ -458,7 +472,15 @@ function scoreToMusicXmlRaw(
   const bodies: string[] = [];
   score.parts.forEach((part, pi) => {
     const id = `P${pi + 1}`;
+    // 方括号分组：组首声部之前起、组尾声部之后收（`<part-group>` 夹在 `<score-part>` 之间，number 按组编）
+    score.groups?.forEach((g, gi) => {
+      if (g.first === pi)
+        partList.push(`<part-group type="start" number="${gi + 1}"><group-symbol>${g.symbol}</group-symbol><group-barline>${g.barline ? "yes" : "no"}</group-barline></part-group>`);
+    });
     partList.push(scorePartXml(id, part.name, part.abbr));
+    score.groups?.forEach((g, gi) => {
+      if (g.last === pi) partList.push(`<part-group type="stop" number="${gi + 1}"/>`);
+    });
     let body = "";
     let measureNo = 0;
     let prevFifths: number | null = null;
