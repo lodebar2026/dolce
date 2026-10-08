@@ -237,7 +237,7 @@ export interface JpwMeta {
   authorRanges: Array<{ text: string; range: JpwRange }>; // 作者行里每个作者条目
 }
 
-/** 擦小节线后接回来的弧（jianpu.ts::untangleBridged，id 落在这一段）：确定是弧——归类后不进数字核，
+/** 擦小节线后接回来的弧（compsurgery.ts::untangleBridged，id 落在这一段）：确定是弧——归类后不进数字核，
  *  当弧候选时底边门放宽（弧端垂到音符头顶以下，框被拉高，扁度、墨量、底边这几道门都可能漏）。 */
 export const REJOINED_ARC_ID = 6_000_000;
 export const isRejoinedArc = (k: { id: number }): boolean => k.id >= REJOINED_ARC_ID && k.id < REJOINED_ARC_ID + 1_000_000;

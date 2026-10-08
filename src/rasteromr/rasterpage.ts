@@ -46,7 +46,7 @@ export interface RasterPage {
   faint: boolean;
   /**
    * 细线扫描件的灰度图（与 `bin` 同尺寸、同样推平去倾斜过），别的页没有。
-   * 给识别器回头核「断开的小节线」用（`recognize.ts::bridgeFaintBars`）。
+   * 给识别器回头核「断开的小节线」用（`barvote.ts::bridgeFaintBars`）。
    */
   gray?: Uint8Array;
   /**

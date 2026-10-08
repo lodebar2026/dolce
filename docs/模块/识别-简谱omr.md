@@ -12,7 +12,8 @@
 | 函数/文件 | 作用 |
 |---|---|
 | `recognizeMusicppDetailed` | `src/omr/recognize.ts:16` 顶层编排 |
-| `src/omr/jianpu.ts` | 几何启发式主管线 |
+| `src/omr/jianpu.ts` | 几何启发式主管线（`recognizeJianpu`：预拆 → 归类 `classify` → 分行 → 建音 → 各类记号 → 歌词） |
+| `src/omr/compsurgery.ts` / `digitcores.ts` / `jpnums.ts` / `inkprobe.ts` | 连通块预拆（小节线擦掉重做连通域、弧尾 / 线压点 / 弧端切点…）；数字块 → 数字核、分行、拍号候选；逐行建音 `buildJpNums`（八度点、减时线、增时线、附点）；墨量小工具 |
 | `src/omr/lyrics.ts` | 歌词识别与逐音节↔音符对齐 |
 | `src/omr/reflyrics.ts` | 参照歌词互证：按演唱顺序展开识别歌词、与参照整篇对齐，形近字选字、补漏字，其余不一致报到 `lyricCheck`（CLI `--lyrics`） |
 | `src/omr/stanzas.ts` | 谱后单独排版的附段歌词（诗行）：按第 1 段的音位骨架逐字对位 |

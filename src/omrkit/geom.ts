@@ -90,3 +90,10 @@ export function findLineByY<T>(lines: T[][], keyOf: (t: T) => number, y: number,
 export function clusterRectsByY<T extends { bbox: Rect }>(items: readonly T[], tol: number): T[][] {
   return clusterByY(items, (t) => rcy(t.bbox), tol);
 }
+
+
+export function overlapFrac(a: Rect, b: Rect): number {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? (w * h) / Math.max(1, a.w * a.h) : 0;
+}

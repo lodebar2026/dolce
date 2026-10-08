@@ -161,7 +161,7 @@ export interface AdaptInput {
  * 一个认出来的符号 → `PObj` + `Sym`（造一个假字形与假文本串装着它）。
  *
  * `buildRasterPage` 装配时用，识别过程中**补认**出来的符号也走这里
- * （`recognize.ts::bootstrapFlags` 的符尾就是），两条路造出来的对象要一模一样。
+ * （`flags.ts::bootstrapFlags` 的符尾就是），两条路造出来的对象要一模一样。
  */
 export function makeSymObj(id: number, s: RasterSym, staffHeight: number): { obj: PObj; sym: Sym } {
   const glyph = fakeGlyph(s.box);

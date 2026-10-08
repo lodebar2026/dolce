@@ -644,7 +644,7 @@ function ringOuter(nl: Binary, hole: Rect, sp: number): Rect | null {
 /**
  * **开口内腔** → 空心符头：低分辨率小图上头右上那一笔印得极淡（万福泉源歌第二行末的二分音符，
  * 原图灰度 240 以上，不是二值化丢的），内腔从缺口漏到谱线间的空白里，`findHoles` 找不到孔。
- * 内腔由调用方按「四向都碰得到墨」拼出来（`recognize.ts::openCavities`），常连着头与符干之间那一截、
+ * 内腔由调用方按「四向都碰得到墨」拼出来（`restshape.ts::openCavities`），常连着头与符干之间那一截、
  * 近乎圆，过不了 `hollowHeadsFromHoles` 的横椭圆闸——这里不看内腔形状，
  * 头盒取本页已认二分头的中位尺寸、以内腔中心为心，再按那边同一套填充与符干判据收。
  */

@@ -6,7 +6,7 @@
 
 import type { RasterGlyphLookup } from "./rasterglyphs";
 import type { RasterPage } from "./rasterpage";
-import { recognizeRasterPage, settleLyricVerses, type CarryKey, type RasterLiveOcr, type RasterPageResult } from "./recognize";
+import { recognizeRasterPage, type CarryKey, type RasterLiveOcr, type RasterPageResult } from "./recognize";
 import type { OcrChar } from "./lyric";
 import type { JianpuRow } from "./jianpufuse";
 import type { HeaderCredit, WordLine } from "../omrkit/headertext";
@@ -17,6 +17,7 @@ import type { StaffReviewResult, StaffReviewStats } from "../staffomr/review";
 import { scoreToMusicXml } from "../staffomr/toxml";
 import type { Staff } from "../staffomr/model";
 import type { StaffNote } from "../staffomr/notedata";
+import { settleLyricVerses } from "./lyricpost";
 
 /** 离线缓存（回归脚本用）：按条的内容指纹寻址。 */
 export interface RasterOcrCaches {
@@ -131,7 +132,7 @@ export async function recognizeRasterSong(
   const notesOf = (st: Staff): StaffNote[] => notesByStaff.get(st) ?? [];
   const emptyAssign = (): number[][] => [];
   if (!entries.length) return { xml: null, score: null, stats, pages, noteBoxes, assignment: emptyAssign, rebuild: () => { throw new Error("没有谱表"); } };
-  // 拉丁段挪到全曲中文段后面（页内先占位，见 `recognize.ts::settleLyricVerses`）
+  // 拉丁段挪到全曲中文段后面（页内先占位，见 `lyricpost.ts::settleLyricVerses`）
   settleLyricVerses([...notesByStaff.values()].flat());
   let score = buildScore(entries);
   const credits = (header ?? []).map(({ text, type, justify }) => ({ text, type, justify }));
