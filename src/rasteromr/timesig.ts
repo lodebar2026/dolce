@@ -5,6 +5,7 @@
 // 又被谱线横穿，模板签名在 8/4、6/4、3/4 之间分不开；文字识别模型见过的数字字形多得多。
 
 import type { Binary, Rect } from "../omrkit/types";
+import { contentKey } from "../omrkit/contentkey";
 
 export interface TimeStrip {
   w: number;
@@ -66,12 +67,7 @@ export function timeStripOf(bin: Binary, box: Rect, staff: number, role: TimeStr
 
 /** 条的**内容指纹**（与 `stafflabel.ts::labelKey` 同一套：尺寸 + FNV-1a）。 */
 export function timeKey(s: TimeStrip): string {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < s.data.length; i++) {
-    h1 ^= s.data[i]!;
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-  }
-  return `T${s.w}x${s.h}-${h1.toString(36)}`;
+  return contentKey("T", s.w, s.h, s.data);
 }
 
 /** 分子的合法值：2~9，外加 12（12/8）。 */

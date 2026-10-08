@@ -8,9 +8,11 @@
 //   1. 每个谱行下方一条「歌词带」（本行下缘 → 下一行上缘）；
 //   2. 带内按 y 把块分成若干 verse 行（一首歌可能有两三段歌词）；
 //   3. 行内把块按 x 邻近并成字格——**汉字常由多个偏旁连通块组成**，这一步不能省。
-import type { Component, Rect } from "../omrkit/types";
+import { rbottom, rright, type Component, type Rect } from "../omrkit/types";
+import { median, quantile } from "../omrkit/geom";
 import { mergeToChars } from "../omrkit/charcells";
 import type { RasterUnit } from "./staffline";
+import { contentKey } from "../omrkit/contentkey";
 
 /** 一条歌词行（某个谱行下方的某一段）。 */
 export interface LyricRow {
@@ -60,10 +62,6 @@ const TAIL_FIRST = 6;
 const HEAD_BAND = 14;
 const HEAD_FIRST = 6;
 
-const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0);
-
-const rbottom = (r: Rect) => r.y + r.h;
-const rright = (r: Rect) => r.x + r.w;
 
 /**
  * 切出全页的歌词行。
@@ -170,8 +168,8 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
   // 取全页块高的 85 分位数：那一档正是「一整个字的高度」，偏旁再多也压不下去。
   // 这个字宽只用来挑「宽度接近一个字」的格去量字高（`charH`），不参与切格
   // ——拿它去等分粘连字实测是净亏，见下面那条记账。
-  const heights = raw.flatMap((r) => r.blocks.map((c) => c.bbox.h)).sort((a, b) => a - b);
-  const charW = heights.length ? heights[Math.min(heights.length - 1, Math.floor(heights.length * 0.85))] : sp;
+  const heights = raw.flatMap((r) => r.blocks.map((c) => c.bbox.h));
+  const charW = heights.length ? quantile(heights, 0.85) : sp;
   for (const r of raw) {
     // 扁格不算：竖笔被当成线段抽走之后，「王」「万」「之」的横笔各自成一格（善牧恩慈歌放大后
     // 第一段那行十来个 40×2 的扁格），宽度正好一个字，把字高的中位数压到下限，整行被当成页脚小字剔掉。
@@ -180,8 +178,7 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     // **字格按全页字宽重并**（见 `squareCells`）：汉字等宽，左右结构的字偏旁隔得开时
     // 第一遍那个 `mergeToChars`（按偏旁高的 0.28 当缝）并不回来。
     // 字宽取全页字宽、本行块高的 85 分位、本行字高三者最大：前两个都被碎偏旁拉低（《赞美一神》全页 25px、字 52px）
-    const hs = r.blocks.map((c) => c.bbox.h).sort((a, b) => a - b);
-    const rowW = hs[Math.min(hs.length - 1, Math.floor(hs.length * 0.85))];
+    const rowW = quantile(r.blocks.map((c) => c.bbox.h), 0.85);
     out.push({ ...r, charH, cells: squareCells(r.cells, Math.max(charW, rowW, charH)) });
   }
   // 同一个谱行下面的几行按 y 编 verse 号
@@ -281,8 +278,7 @@ function splitTall(row: Component[]): Component[][] {
   const H = bot - top;
   // 「太高」按块高的 85 分位（整字高）量，不按中位数（偏旁高）：大字底本（《所信有根基》字高 2.5 个线距）
   // 一行字 80px、偏旁十几像素，按中位数算行行都「太高」，又在偏旁之间找得到谷，一行的上半截偏旁被劈成单独一条
-  const hs = row.map((c) => c.bbox.h).sort((a, b) => a - b);
-  if (H <= hs[Math.min(hs.length - 1, Math.floor(hs.length * 0.85))] * 1.7) return [row];
+  if (H <= quantile(row.map((c) => c.bbox.h), 0.85) * 1.7) return [row];
   const cov = new Float64Array(H);
   for (const c of row) for (let y = c.bbox.y; y < c.bbox.y + c.bbox.h; y++) cov[y - top] += c.bbox.w;
   const peak = Math.max(...cov);
@@ -309,8 +305,7 @@ const COLUMN_GAP = 2.5;
  * （独唱谱中文 94.80 → 90.16%、拉丁 94.86 → 79.74%，奇异恩典整首塌掉）。
  */
 function splitTallByColumns(row: Component[]): Component[][] {
-  const hs = row.map((c) => c.bbox.h).sort((a, b) => a - b);
-  const gap = hs[Math.min(hs.length - 1, Math.floor(hs.length * 0.85))] * COLUMN_GAP;
+  const gap = quantile(row.map((c) => c.bbox.h), 0.85) * COLUMN_GAP;
   const sorted = [...row].sort((a, b) => a.bbox.x - b.bbox.x);
   const parts: Component[][] = [];
   let right = -Infinity;
@@ -412,13 +407,7 @@ export function stripOf(bin: { w: number; h: number; data: Uint8Array }, row: Ly
  */
 export function stripKey(s: LyricStrip): string {
   // 有灰度的条送 OCR 的是灰度，指纹也按灰度算（前缀 `g` 与二值条分开）
-  const px = s.gray ?? s.data;
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < px.length; i++) {
-    h1 ^= px[i];
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-  }
-  return `${s.gray ? "g" : ""}${s.w}x${s.h}-${h1.toString(36)}`;
+  return contentKey(s.gray ? "g" : "", s.w, s.h, s.gray ?? s.data);
 }
 
 /** 丢一个字的代价（条宽的分数）。比「摊到最近的格」贵一点：

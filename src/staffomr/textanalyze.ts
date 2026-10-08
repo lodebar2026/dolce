@@ -7,7 +7,7 @@
 import type { VecGlyph } from "../omrkit/vectext";
 import type { TextGlyphLookup } from "./textglyphs";
 import type { StaffNote } from "./notedata";
-import { CHORD_TOKEN_RE } from "../omrkit/chordgrammar";
+import { isWholeChord } from "../omrkit/chordgrammar";
 import { type Box, PObj, SPage, Staff, between, overlapX, overlapY, xSpace, ySpace } from "./model";
 
 /** 一段文本的纯文字内容（ToUnicode 的结果，可能是乱码，见文档「坏 ToUnicode」一节）。
@@ -78,8 +78,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
     if (kind.has(t)) continue;
     const raw = objText(t).replace(/\s+/g, "");
     if (!raw) continue;
-    const m = CHORD_TOKEN_RE.exec(raw);
-    if (m && m[0].length === raw.length) kind.set(t, "harmony");
+    if (isWholeChord(raw)) kind.set(t, "harmony");
   }
 
   // ── markHarmonySuffix（**提前到歌词之前**） ────────────────────────────────

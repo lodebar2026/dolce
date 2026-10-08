@@ -23,7 +23,8 @@
 //  - **同一个字画了两遍**：一个 fill 一个 stroke（描边加粗），bbox 差约一个线宽。
 //    两个都要归类（否则重排核对会报 unplaced），但逻辑上是一个字——用 `dup` 标出描边那份，
 //    下游数音符/取文本时只认非 dup 的。
-import type { Rect } from "../omrkit/types";
+import { rbottom as bottom, rcx as cx, rcy as cy, rright as right, type Rect } from "../omrkit/types";
+import { median, overlap1d, quantile } from "../omrkit/geom";
 import type { BookProfile } from "./bookprofile";
 import type { VecObj, VecPage } from "../omrkit/vector";
 import { concatObjects, intersectRect } from "../omrkit/vector";
@@ -118,29 +119,10 @@ export interface PageInventory {
   unclassified: ClassifiedObj[];
 }
 
-const cx = (r: Rect) => r.x + r.w / 2;
-const cy = (r: Rect) => r.y + r.h / 2;
-const bottom = (r: Rect) => r.y + r.h;
-const right = (r: Rect) => r.x + r.w;
-
-function overlap1d(a0: number, a1: number, b0: number, b1: number): number {
-  return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
-}
-
-function median(v: number[]): number {
-  if (!v.length) return 0;
-  const s = [...v].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
-
 /** 四分之三分位。量「这一行是多大的字」要用它而不是中位数：
  *  行里夹着标点、上标数字（才 2.9 高），中位数会被它们拽下去，
  *  一行歌词那号字的经文（10.6）中位能掉到 9.6，字号闸就形同虚设。 */
-function q75(v: number[]): number {
-  if (!v.length) return 0;
-  const a = [...v].sort((x, y) => x - y);
-  return a[Math.min(a.length - 1, Math.floor(a.length * 0.75))];
-}
+const q75 = (v: number[]): number => quantile(v, 0.75);
 
 /** 粗形状指纹：同一个装饰纹样在页面上重复出现时，这四项完全一致。
  *  （精确到字符的形状键是 glyphdict 的事，这里只要能认出「同一个图形」。） */

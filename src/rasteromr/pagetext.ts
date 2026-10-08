@@ -10,15 +10,11 @@
 // `song.ts` 的 `live.textDet`。两边的位图都是 `rasterizePage` 交出来的那一张、没动过的。
 import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit, StaffGroup } from "./staffline";
+import { contentKey } from "../omrkit/contentkey";
 
 /** 页的内容指纹（尺寸 + FNV-1a，同 `wordKey` 一套）。 */
 export function pageTextKey(bin: Binary): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < bin.data.length; i++) {
-    h ^= bin.data[i];
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return `P${bin.w}x${bin.h}-${h.toString(36)}`;
+  return contentKey("P", bin.w, bin.h, bin.data);
 }
 
 /** 送检前的缩放：线距缩到 `DET_SPACE` 像素（歌词字高一格半到两格，缩完十几像素，DBNet 检得最稳）。 */

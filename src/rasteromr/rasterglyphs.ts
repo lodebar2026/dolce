@@ -9,6 +9,7 @@
 // 正谱与小谱的谱表差一倍（实测主治万方一页上 18.5 与 15.6 两种线距同时出现）。
 import { SIG_N, decodeSig, encodeSig, sigDistance } from "../omrkit/glyphdict";
 import type { SmuflName } from "../staffomr/glyphs";
+import { median } from "../omrkit/geom";
 
 /** 一个形状类。 */
 export interface RasterGlyphClass {
@@ -105,9 +106,8 @@ export class RasterGlyphBuilder {
     c.hs.push(h);
     if (c.pages.length < 5 && !c.pages.includes(page)) c.pages.push(page);
     // 中位数随实例更新——类的代表尺寸要跟着实例走，不能定死在第一个实例上
-    const mid = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
-    c.w = mid(c.ws);
-    c.h = mid(c.hs);
+    c.w = median(c.ws);
+    c.h = median(c.hs);
     return best;
   }
 

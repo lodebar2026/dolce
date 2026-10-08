@@ -17,6 +17,7 @@
 // > 歌词笔画凑不出五段等距的黑白相间，噪声更凑不出。
 import type { Binary } from "../omrkit/types";
 import type { StaffGroup, StaffLineRun } from "./staffline";
+import { median } from "../omrkit/geom";
 
 /** 逐列取样的步长（px）。谱线横跨整页，抽稀不影响；4 px 一页几十毫秒。 */
 const COL_STEP = 4;
@@ -399,9 +400,8 @@ export function completeStaffLines(bin: Binary, lines: StaffLineRun[], groups: S
   // 行首挤着谱号、调号、弱起的音时晚起一大截（善恶两军歌两行从 x=343、548 才起，别的行都从 170 上下起）。
   // 本页各行左端、右端各取中位；短的那一头沿五条线验墨，至少四条够 `LOOSE_INK` 就拉过去。
   if (loose && outGroups.length >= 3) {
-    const med = (a: number[]) => a.slice().sort((p, q) => p - q)[a.length >> 1];
-    const L = med(outGroups.map((g) => Math.min(...g.lines.map((l) => l.left))));
-    const R = med(outGroups.map((g) => Math.max(...g.lines.map((l) => l.right))));
+    const L = median(outGroups.map((g) => Math.min(...g.lines.map((l) => l.left))));
+    const R = median(outGroups.map((g) => Math.max(...g.lines.map((l) => l.right))));
     const inkSeg = (y: number, x0: number, x1: number, tol: number): number => {
       let n = 0;
       let hit = 0;
@@ -776,7 +776,4 @@ function smoothFill(raw: number[], left?: number[], right?: number[]): number[] 
   return out;
 }
 
-function median(a: number[]): number {
-  a.sort((x, y) => x - y);
-  return a.length ? a[a.length >> 1] : 0;
-}
+

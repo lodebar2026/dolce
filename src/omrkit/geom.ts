@@ -1,6 +1,6 @@
 // OMR 管线共用的几何/统计小工具。抽出来只为「同一个式子别写五遍」——
 // 判据本身（阈值、取舍）仍留在各自的识别模块里，因为每条都是拿具体曲子换来的。
-import type { Rect } from "./types";
+import type { Binary, Rect } from "./types";
 import { rcy } from "./types";
 
 /** 中位数（偏上取，长度为偶数时取右中）。空数组返回 fallback。
@@ -8,6 +8,32 @@ import { rcy } from "./types";
 export function median(xs: number[], fallback = 0): number {
   const s = [...xs].sort((a, b) => a - b);
   return s.length ? s[s.length >> 1] : fallback;
+}
+
+/** `p` 分位：排序后取下标 `min(n-1, floor(n*p))`（空序列返回 0）。
+ *  另一种口径 `round((n-1)*p)` 只在 `omr/bookprofile.ts` 用，结果不同，别混。 */
+export function quantile(xs: readonly number[], p: number): number {
+  if (!xs.length) return 0;
+  const a = [...xs].sort((u, v) => u - v);
+  return a[Math.min(a.length - 1, Math.floor(a.length * p))];
+}
+
+/** 均值，跳过 NaN；一个有效值都没有返回 NaN（调用方据此判「量不出」）。 */
+export function meanFinite(xs: readonly number[]): number {
+  const v = xs.filter((y) => !Number.isNaN(y));
+  return v.length ? v.reduce((s, y) => s + y, 0) / v.length : NaN;
+}
+
+/** 一维区间 [a0,a1] 与 [b0,b1] 的重叠长度（不重叠为 0）。 */
+export function overlap1d(a0: number, a1: number, b0: number, b1: number): number {
+  return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+}
+
+/** 第 `y` 行在 [xa, xb]（含两端）里有没有墨；`y` 出图算没有。x 不裁边，调用方自己保证在图内。 */
+export function rowHasInk(bin: Binary, y: number, xa: number, xb: number): boolean {
+  if (y < 0 || y >= bin.h) return false;
+  for (let x = xa; x <= xb; x++) if (bin.data[y * bin.w + x]) return true;
+  return false;
 }
 
 /** 两个包围盒的并集（xywh 语义；common/geom.ts 的 Rect 是 LTRB，两者不通用）。 */
@@ -28,7 +54,7 @@ export function unionRects(rs: readonly Rect[]): Rect {
 
 /** x 向重叠的**像素量**（不重叠为 0）。 */
 export function overlapX(a: Rect, b: Rect): number {
-  return Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  return overlap1d(a.x, a.x + a.w, b.x, b.x + b.w);
 }
 
 /** x 向重叠占**较窄那个**宽度的比例。用于判「是否同一列」。 */

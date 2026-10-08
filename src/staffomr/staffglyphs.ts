@@ -17,6 +17,8 @@ import type { VecGlyph, VecTextRun } from "../omrkit/vectext";
 import type { SmuflName } from "./glyphs";
 import { isSmuflName } from "./glyphs";
 import { guessByCode, musicFamily } from "./symbolmap";
+import { median } from "../omrkit/geom";
+import { toSvgPath } from "../omrkit/vector";
 
 /** 一个形状类。 */
 export interface StaffGlyphClass {
@@ -119,46 +121,11 @@ export class StaffGlyphBuilder {
   }
 }
 
-function median(a: number[]): number {
-  if (!a.length) return 0;
-  const s = a.slice().sort((x, y) => x - y);
-  return s[s.length >> 1];
-}
 
 /** 轮廓（DrawOPS，字形坐标 em=1、y 向上）→ SVG path 的 `d`。 */
 export function outlineToPath(data: Float32Array, precision = 4): string {
-  // 与 vector.ts::toSvgPath 同一套编码，但那份在 vector.ts 里对的是路径对象；
-  // 这里坐标只有 0~1 量级，精度要给够（默认 2 位会把符头压成方块）。
-  const f = (v: number) => Number(v.toFixed(precision)).toString();
-  let d = "";
-  let i = 0;
-  while (i < data.length) {
-    const c = data[i++];
-    switch (c) {
-      case 0:
-        d += `M${f(data[i])} ${f(data[i + 1])}`;
-        i += 2;
-        break;
-      case 1:
-        d += `L${f(data[i])} ${f(data[i + 1])}`;
-        i += 2;
-        break;
-      case 2:
-        d += `C${f(data[i])} ${f(data[i + 1])} ${f(data[i + 2])} ${f(data[i + 3])} ${f(data[i + 4])} ${f(data[i + 5])}`;
-        i += 6;
-        break;
-      case 3:
-        d += `Q${f(data[i])} ${f(data[i + 1])} ${f(data[i + 2])} ${f(data[i + 3])}`;
-        i += 4;
-        break;
-      case 4:
-        d += "Z";
-        break;
-      default:
-        return d;
-    }
-  }
-  return d;
+  // 与路径对象同一套编码（`vector.ts::toSvgPath`）；这里坐标只有 0~1 量级，精度要给够（默认 2 位会把符头压成方块），尾零去掉
+  return toSvgPath(data, precision, true);
 }
 
 // ── 自举与归并 ──────────────────────────────────────────────────────────────

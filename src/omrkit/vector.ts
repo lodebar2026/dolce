@@ -209,8 +209,8 @@ export function pathStats(data: Float32Array): { curves: number; segs: number } 
 // ── SVG ────────────────────────────────────────────────────────────────────
 
 /** DrawOPS 流 → SVG path `d`（路径自身坐标系；配合 ctm 用 transform="matrix(...)"）。 */
-export function toSvgPath(data: Float32Array, precision = 2): string {
-  const f = (v: number) => v.toFixed(precision);
+export function toSvgPath(data: Float32Array, precision = 2, trimZeros = false): string {
+  const f = trimZeros ? (v: number) => Number(v.toFixed(precision)).toString() : (v: number) => v.toFixed(precision);
   let d = "";
   let i = 0;
   while (i < data.length) {

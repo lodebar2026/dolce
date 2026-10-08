@@ -12,6 +12,7 @@
 import type { Binary } from "../omrkit/types";
 import type { Contour, ContourMap } from "./contour";
 import type { RasterUnit } from "./staffline";
+import { meanFinite as mean, median } from "../omrkit/geom";
 
 export interface RasterWedge {
   /** 渐强（尖端在左）/ 渐弱（尖端在右）。 */
@@ -132,10 +133,6 @@ export function armOf(map: ContourMap, c: Contour, unit: RasterUnit): Arm | null
   if (!cols || one < cols * ONE_RUN_FRAC) return null;
   // 两端各取四分之一段的均值（与 `prims.ts::centerLine` 同一套，末端的毛刺影响不到）
   const q = Math.max(1, Math.round(ys.length / 4));
-  const mean = (a: number[]) => {
-    const v = a.filter((y) => !Number.isNaN(y));
-    return v.length ? v.reduce((s, y) => s + y, 0) / v.length : NaN;
-  };
   const y0 = mean(ys.slice(0, q));
   const y1 = mean(ys.slice(-q));
   if (Number.isNaN(y0) || Number.isNaN(y1)) return null;
@@ -316,9 +313,8 @@ function judge(
   const twoRun = runs.filter((n) => n >= 2).length / runs.length;
   if (twoRun < TWO_RUN_FRAC) return null; // 逐列只有一段墨：那是弧线，不是松叶
   const k = Math.max(1, Math.round(spread.length * 0.15));
-  const med = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
-  const left = med(spread.slice(0, k)) / unit.space;
-  const right = med(spread.slice(-k)) / unit.space;
+  const left = median(spread.slice(0, k)) / unit.space;
+  const right = median(spread.slice(-k)) / unit.space;
   const open = Math.max(left, right);
   const tip = Math.min(left, right);
   if (open < OPEN_MIN || tip > TIP_MAX || open < tip * 2) return null;

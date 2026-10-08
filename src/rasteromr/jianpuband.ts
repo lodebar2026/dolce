@@ -13,6 +13,7 @@
 import type { Binary, Rect } from "../omrkit/types";
 import type { LineSeg } from "./prims";
 import type { RasterUnit } from "./staffline";
+import { contentKey } from "../omrkit/contentkey";
 
 /** 简谱小节线的长度（线距的倍数）：《是谁》2.34 格、敬拜万世之王 3.7 格（数字大、上下有高低音点）。 */
 const BAR_LEN = [1.2, 4] as const;
@@ -274,10 +275,5 @@ export function cutJianpuStrip(bin: Binary, band: JianpuBand): JianpuStrip {
 
 /** 条的内容指纹（与 `harmonyKey` / `stripKey` 同一套）。 */
 export function jianpuKey(s: JianpuStrip): string {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < s.data.length; i++) {
-    h1 ^= s.data[i];
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-  }
-  return `J${s.w}x${s.h}-${h1.toString(36)}`;
+  return contentKey("J", s.w, s.h, s.data);
 }

@@ -20,6 +20,7 @@
 //     全语料认得出的声部名始终卡在 8 个。几何闸没有中间地带——定位这件事交给 DBNet。
 import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit } from "./staffline";
+import { contentKey } from "../omrkit/contentkey";
 
 /** 一条标签条：裸像素 + 它在页面上的盒。 */
 export interface LabelStrip {
@@ -79,12 +80,7 @@ export function findStaffLabels(
 /** 条的**内容指纹**（与 `lyric.ts::stripKey` 同一套：尺寸 + FNV-1a）。
  *  几何一动指纹就变，旧缓存自然失效——这正是要的。 */
 export function labelKey(s: LabelStrip): string {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < s.data.length; i++) {
-    h1 ^= s.data[i];
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-  }
-  return `L${s.w}x${s.h}-${h1.toString(36)}`;
+  return contentKey("L", s.w, s.h, s.data);
 }
 
 /**

@@ -17,6 +17,7 @@ import type { SmuflName } from "../staffomr/glyphs";
 import type { LineSeg } from "./prims";
 import type { RasterUnit } from "./staffline";
 import { scoreAt, scoreAtMasked, type HeadMask } from "./headmask";
+import { median } from "../omrkit/geom";
 
 /** 认出来的符头。 */
 export interface RasterHead {
@@ -1083,9 +1084,8 @@ export function hollowHeadsOnStemSeeds(
   const { enclosed, bestMasked, clash, inkIn, cavity } = pitchScorer(bin, nl, rawHoles, allMasks, unit, stems);
   const heads = syms.filter((s) => s.code.startsWith("notehead"));
   const halves = heads.filter((s) => s.code === "noteheadHalf");
-  const med = (xs: number[]) => xs.sort((p, q) => p - q)[xs.length >> 1];
-  const w = halves.length ? med(halves.map((q) => q.box.w)) : Math.round(sp * 1.3);
-  const h = halves.length ? med(halves.map((q) => q.box.h)) : Math.round(sp * 1.1);
+  const w = halves.length ? median(halves.map((q) => q.box.w)) : Math.round(sp * 1.3);
+  const h = halves.length ? median(halves.map((q) => q.box.h)) : Math.round(sp * 1.1);
   const taken = heads.map((q) => q.box);
   const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
   const tol = Math.max(unit.lineThick * 2, sp * 0.25);

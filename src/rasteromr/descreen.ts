@@ -8,38 +8,9 @@
 // 做一遍只会把细节磨掉。所以先量 `halftoneRatio` 再决定，判据见 `HALFTONE_RATIO`。
 // 去网本身走标准形态学（`morph.ts`），参数从本页统计，见 `descreenMorph`。
 import type { Binary } from "../omrkit/types";
-import { areaClose, areaOpen, close, components, quantile } from "./morph";
-
-/** 积分图：`sum(x0,y0,x1,y1)`（半开区间）。0/1 图逐点求和，整型精确。 */
-class Integral {
-  private readonly s: Int32Array;
-  constructor(private readonly bin: Binary) {
-    const { w, h, data } = bin;
-    const s = new Int32Array((w + 1) * (h + 1));
-    for (let y = 0; y < h; y++) {
-      let run = 0;
-      const src = y * w;
-      const cur = (y + 1) * (w + 1);
-      const up = y * (w + 1);
-      for (let x = 0; x < w; x++) {
-        run += data[src + x];
-        s[cur + x + 1] = s[up + x + 1] + run;
-      }
-    }
-    this.s = s;
-  }
-  /** 以 (x,y) 为中心、kw×kh 窗口的墨点数（越界按 0 计）。 */
-  box(x: number, y: number, kw: number, kh: number): number {
-    const { w, h } = this.bin;
-    const x0 = Math.max(0, x - (kw >> 1));
-    const y0 = Math.max(0, y - (kh >> 1));
-    const x1 = Math.min(w, x + (kw >> 1) + 1);
-    const y1 = Math.min(h, y + (kh >> 1) + 1);
-    const s = this.s;
-    const W = w + 1;
-    return s[y1 * W + x1] - s[y0 * W + x1] - s[y1 * W + x0] + s[y0 * W + x0];
-  }
-}
+import { areaClose, areaOpen, close, Integral } from "./morph";
+import { components } from "../omrkit/ccl";
+import { quantile } from "../omrkit/geom";
 
 /**
  * 墨点里「孤立点」的占比：3×3 窗口内墨不过 3 个（含自己）算孤立。

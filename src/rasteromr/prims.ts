@@ -16,6 +16,7 @@ import type { Binary, Component, Rect } from "../omrkit/types";
 import { SIG_N } from "../omrkit/glyphdict";
 import { connectedComponents } from "../omrkit/ccl";
 import type { RasterUnit } from "./staffline";
+import { median } from "../omrkit/geom";
 
 /** 一条直线段（像素坐标）。 */
 export interface LineSeg {
@@ -75,26 +76,33 @@ export interface RasterPrims {
   shortStems?: LineSeg[];
 }
 
-/** 逐像素的纵向游程长度（该像素所在的那一竖条黑色游程有多长）。 */
-function vRuns(bin: Binary): Uint16Array {
+/** 逐像素的游程长度（该像素所在的那一条黑色游程有多长）：`vertical` 沿列量，否则沿行量。 */
+function runLengths(bin: Binary, vertical: boolean): Uint16Array {
   const { w, h, data } = bin;
   const out = new Uint16Array(w * h);
-  for (let x = 0; x < w; x++) {
-    let y = 0;
-    while (y < h) {
-      if (!data[y * w + x]) {
-        y++;
+  const lines = vertical ? w : h;
+  const len = vertical ? h : w;
+  const step = vertical ? w : 1;
+  for (let l = 0; l < lines; l++) {
+    const base = vertical ? l : l * w;
+    let i = 0;
+    while (i < len) {
+      if (!data[base + i * step]) {
+        i++;
         continue;
       }
-      let y2 = y;
-      while (y2 + 1 < h && data[(y2 + 1) * w + x]) y2++;
-      const len = y2 - y + 1;
-      for (let k = y; k <= y2; k++) out[k * w + x] = len;
-      y = y2 + 1;
+      let i2 = i;
+      while (i2 + 1 < len && data[base + (i2 + 1) * step]) i2++;
+      const n = i2 - i + 1;
+      for (let k = i; k <= i2; k++) out[base + k * step] = n;
+      i = i2 + 1;
     }
   }
   return out;
 }
+
+/** 逐像素的纵向游程长度。 */
+const vRuns = (bin: Binary): Uint16Array => runLengths(bin, true);
 
 /** 本页谱线的实测厚度：各谱线 y 上逐列（每隔三列）取竖游程，取九成分位（只取不到 0.4 格的，压着符号的不算）。
  *  不取中位数：扫描件的线粗细不匀（望十架 2~3 像素，中位数 2）。 */
@@ -113,26 +121,7 @@ function measuredLineThick(bin: Binary, vr: Uint16Array, lineYs: number[], unit:
 }
 
 /** 逐像素的横向游程长度。 */
-function hRuns(bin: Binary): Uint16Array {
-  const { w, h, data } = bin;
-  const out = new Uint16Array(w * h);
-  for (let y = 0; y < h; y++) {
-    const row = y * w;
-    let x = 0;
-    while (x < w) {
-      if (!data[row + x]) {
-        x++;
-        continue;
-      }
-      let x2 = x;
-      while (x2 + 1 < w && data[row + x2 + 1]) x2++;
-      const len = x2 - x + 1;
-      for (let k = x; k <= x2; k++) out[row + k] = len;
-      x = x2 + 1;
-    }
-  }
-  return out;
-}
+const hRuns = (bin: Binary): Uint16Array => runLengths(bin, false);
 
 /**
  * 沿一个方向做**闭运算**（先膨胀后腐蚀），把笔画上的小缺口补上。
@@ -995,9 +984,8 @@ function partialBeams(bin: Binary, beams: BeamQuad[], unit: RasterUnit, vSegs: L
         const x0 = Math.min(...xs);
         const x1 = Math.max(...xs);
         // 上下缘取各列的中位数：杠里的白洞会让个别列读岔（把杠的下半截当成半杠），min/max 会把盒拉高
-        const med = (a: number[]) => a.sort((p, q) => p - q)[a.length >> 1];
-        const top = med(cols.map((c) => c.y0));
-        const bot = med(cols.map((c) => c.y1));
+        const top = median(cols.map((c) => c.y0));
+        const bot = median(cols.map((c) => c.y1));
         // 落在已认出的杠上的不算（十六分那组两条杠都是整条，从第一条往外走就撞上第二条）
         const cy = (top + bot) / 2;
         if (beams.some((q) => q !== b && x0 >= q.box.x - 2 && x1 <= q.box.x + q.box.w + 2 && cy >= q.box.y && cy <= q.box.y + q.box.h)) continue;

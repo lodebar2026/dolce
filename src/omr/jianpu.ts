@@ -929,10 +929,9 @@ function inkCount(bin: Binary, r: Rect): number {
 function isCleanPage(comps: Component[], numH: number): boolean {
   const barCands = comps.filter((k) =>
     k.bbox.h >= numH * 0.85 && k.bbox.h <= numH * 1.6 && k.bbox.w <= Math.max(2, numH * 0.35));
-  const med = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1]! : 0);
   return barCands.length >= 4 &&
-    med(barCands.map((k) => k.bbox.w)) >= 2 &&
-    med(barCands.map((k) => k.area / (k.bbox.w * k.bbox.h))) >= 0.95;
+    median(barCands.map((k) => k.bbox.w)) >= 2 &&
+    median(barCands.map((k) => k.area / (k.bbox.w * k.bbox.h))) >= 0.95;
 }
 
 /** 圆滑线的端点粘着高八度点：谱面上弧从 `1̇` 的点旁起笔，两者 8-连通成一块（1697《温州的水 温州的山》

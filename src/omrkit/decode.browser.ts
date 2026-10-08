@@ -2,6 +2,8 @@
 // **只有这个文件碰这些 API**——识别管线其余部分经 decode.ts 的注入点拿解码能力
 // （同 staffomr/browser.ts 的分工约定）。
 import { setImageDecoder, type RgbaImage } from "./decode";
+import { largestPageImage } from "./pdf";
+import { openPdf } from "./pdf.browser";
 
 const PDF_W = 2000; // PDF 光栅化目标宽度（矢量图放大到此宽度取墨迹）
 
@@ -23,26 +25,12 @@ function newCanvas(w: number, h: number): { canvas: OffscreenCanvas; ctx: Offscr
   return { canvas, ctx };
 }
 
-/** 取本页最大的一张内嵌位图（其解码后的 ImageBitmap）。多为扫描版乐谱整页图；无则返回 null。 */
+/** 取本页最大的一张内嵌位图（其解码后的 ImageBitmap）。多为扫描版乐谱整页图；无则返回 null。
+ *  非位图（少见的按 kind 打包的数据）不算，留给整页渲染兜底。 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function largestPageBitmap(page: any, OPS: any): Promise<ImageBitmap | null> {
-  const list = await page.getOperatorList();
-  let best: { bmp: ImageBitmap; area: number } | null = null;
-  for (let i = 0; i < list.fnArray.length; i++) {
-    const fn = list.fnArray[i];
-    if (fn !== OPS.paintImageXObject && fn !== OPS.paintImageMaskXObject) continue;
-    const arg = list.argsArray[i][0];
-    // ImageMask 的参数是 { data: <objId>, ... }；普通图 XObject 的参数是字符串对象名。
-    const id: string = arg && typeof arg === "object" ? arg.data : arg;
-    if (typeof id !== "string") continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const obj: any = await new Promise((r) => page.objs.get(id, r)).catch(() => null);
-    const bmp: ImageBitmap | undefined = obj?.bitmap;
-    if (!bmp) continue; // 非位图（少见的按 kind 打包的数据）留给整页渲染兜底
-    const area = bmp.width * bmp.height;
-    if (!best || area > best.area) best = { bmp, area };
-  }
-  return best?.bmp ?? null;
+  const obj = await largestPageImage(page, OPS, (o) => (o.bitmap ? o.bitmap.width * o.bitmap.height : null));
+  return obj?.bitmap ?? null;
 }
 
 /** 单页 → 白底画布：优先直接抽取内嵌位图（源本就是 1-bit 扫描图，避免整页矢量合成重画、
@@ -72,25 +60,13 @@ async function pdfPageToCanvas(page: any, OPS: any): Promise<OffscreenCanvas> {
 
 /** PDF 字节 → ImageData：逐页取图后竖向拼接为一张白底长图。 */
 async function pdfToImageData(bytes: Uint8Array): Promise<ImageData> {
-  const pdfjs = await import("pdfjs-dist");
-  // worker 由 Vite `?url` 解析为同源资源 URL（离线自包含，dev/build 一致）。
-  const { default: workerUrl } = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-
-  // pdf.js v6 的位图解码器（jbig2.wasm 兼管 CCITTFax G4、openjpeg 管 JPEG2000）需显式指明
-  // wasm 目录，否则内嵌位图（如扫描版乐谱的 1-bit ImageMask）会被静默丢弃、页面只剩矢量文字。
-  // 目录随 public/redist/ 一起部署，离线自包含。
-  const wasmUrl = `${import.meta.env.BASE_URL}redist/pdfjs/`;
-
-  // getDocument 会 detach 传入的 buffer，复制一份避免污染调用方字节。
-  const data = bytes.slice();
-  const pdf = await pdfjs.getDocument({ data, wasmUrl }).promise;
+  const { pdf, OPS } = await openPdf(bytes);
 
   const pages: OffscreenCanvas[] = [];
   let totalH = 0;
   let maxW = 1;
   for (let i = 1; i <= pdf.numPages; i++) {
-    const canvas = await pdfPageToCanvas(await pdf.getPage(i), pdfjs.OPS);
+    const canvas = await pdfPageToCanvas(await pdf.getPage(i), OPS);
     pages.push(canvas);
     totalH += canvas.height;
     maxW = Math.max(maxW, canvas.width);

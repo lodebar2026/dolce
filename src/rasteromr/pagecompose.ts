@@ -10,21 +10,14 @@
 import type { WordLine } from "../omrkit/headertext";
 import type { WordStrip } from "./words";
 import { decodeImage } from "./rasterpage";
+import { pageImageOps, pageImageObj } from "../omrkit/pdf";
+import type { Mat } from "../omrkit/vector";
 
 /** 谱图上沿离页顶不到这么多（PDF 点）就不拼：整页扫描件、或页眉本就在谱图里。 */
 const MIN_GAP_PT = 20;
 /** 一个小图块墨过这么多就当极性反了（字的笔画到不了六成）。 */
 const MASK_FLIP = 0.6;
 
-type Mat = [number, number, number, number, number, number];
-const mul = (m: Mat, n: Mat): Mat => [
-  m[0] * n[0] + m[2] * n[1],
-  m[1] * n[0] + m[3] * n[1],
-  m[0] * n[2] + m[2] * n[3],
-  m[1] * n[2] + m[3] * n[3],
-  m[0] * n[4] + m[2] * n[5] + m[4],
-  m[1] * n[4] + m[3] * n[5] + m[5],
-];
 
 /**
  * 谱图上方那一段的页眉条与文字层行。
@@ -34,25 +27,9 @@ const mul = (m: Mat, n: Mat): Mat => [
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function composeHeaderStrip(page: any, OPS: any, binW: number): Promise<{ strip: WordStrip; texts: WordLine[] } | null> {
-  const list = await page.getOperatorList();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const images: { arg: any; ctm: Mat }[] = [];
-  let ctm: Mat = [1, 0, 0, 1, 0, 0];
-  const stack: Mat[] = [];
-  for (let i = 0; i < list.fnArray.length; i++) {
-    const fn = list.fnArray[i];
-    const args = list.argsArray[i];
-    if (fn === OPS.save) stack.push(ctm);
-    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
-    else if (fn === OPS.transform) ctm = mul(ctm, args as Mat);
-    else if (fn === OPS.paintImageMaskXObject || fn === OPS.paintImageXObject) images.push({ arg: args[0], ctm });
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const objOf = async (arg: any) => {
-    const id = arg && typeof arg === "object" ? arg.data : arg;
-    if (typeof id !== "string") return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const obj: any = await new Promise((r) => page.objs.get(id, r)).catch(() => null);
+  const images = await pageImageOps(page, OPS);
+  const objOf = async (arg: unknown) => {
+    const obj = await pageImageObj(page, arg);
     return obj?.data && obj.width && obj.height ? obj : null;
   };
   // 谱图：最大的那张（与 `rasterizePage` 同一口径）

@@ -18,6 +18,7 @@ import type { StaffNote } from "../staffomr/notedata";
 import type { Staff } from "../staffomr/model";
 import type { JianpuStrip } from "./jianpuband";
 import type { RasterUnit } from "./staffline";
+import { keyAlter, STEPS, tonicStep } from "../score/jppitch";
 
 /** 缓存里一个简谱数字（x 是条内坐标）。字段名缩写见 `gen-rasterjianpu.mjs`。 */
 export interface JianpuNum {
@@ -46,13 +47,8 @@ export interface FuseStats {
 const PAIR_DX = 0.8;
 /** 谱表上与别的音同列的音超过这么多成，算多声部（见 `fuseJianpu`）。独唱简谱混排谱实测 0，SATB 闭合谱 0.67~1.0。 */
 const POLY_FRAC = 0.5;
-const STEP_LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
-const SHARPS = "FCGDAEB";
-const FLATS = "BEADGCF";
 /** fifths → 大调主音的音级（C=0）。简谱是首调的，`1` 就是调号那个大调的主音（小调曲子也一样按关系大调唱名）。 */
-const tonicOf = (fifths: number) => (((fifths * 4) % 7) + 7) % 7;
-const keyAlter = (step: string, fifths: number) =>
-  fifths > 0 ? (SHARPS.slice(0, fifths).includes(step) ? 1 : 0) : fifths < 0 ? (FLATS.slice(0, -fifths).includes(step) ? -1 : 0) : 0;
+const tonicOf = tonicStep;
 
 /** 简谱数字的时值（四分音符 = 1）：减时线逐条减半、附点、增时线各加一拍。 */
 const qOf = (n: JianpuNum) => {
@@ -196,13 +192,13 @@ export function fuseJianpu(
           // 多半是错的（欢然颂主 D5 → D4），差两级以上的多半是配错了对（齐来崇拜 D4 → F4）
           if (dia !== n.diatonic && (!poly || Math.abs(dia - n.diatonic) === 1)) {
             const s = ((dia % 7) + 7) % 7;
-            const step = STEP_LETTERS[s];
+            const step = STEPS[s];
             const keep = step === n.step; // 只差八度：发声的升降照旧
             n.diatonic = dia;
             n.step = step;
             n.octave = Math.floor(dia / 7) - 1;
             if (!keep) {
-              n.alter = keyAlter(step, fifths);
+              n.alter = keyAlter(s, fifths);
               n.accidental = null;
             }
             stats.pitch++;
@@ -263,11 +259,12 @@ export function fuseJianpu(
           const bd = baseDots(j.q);
           if (!bd) continue;
           const dia = base + tonic + j.n.d - 1 + 7 * j.n.oct;
-          const step = STEP_LETTERS[((dia % 7) + 7) % 7];
+          const si = ((dia % 7) + 7) % 7;
+          const step = STEPS[si];
           const x = j.x + shift;
           const n: StaffNote = {
             ...tpl, rest: false, diatonic: dia, step, octave: Math.floor(dia / 7) - 1,
-            alter: keyAlter(step, fifths), accidental: null, base: bd.base, dots: bd.dots, duration: bd.base * (2 - 1 / 2 ** bd.dots),
+            alter: keyAlter(si, fifths), accidental: null, base: bd.base, dots: bd.dots, duration: bd.base * (2 - 1 / 2 ** bd.dots),
             x: x - (cx(tpl) - tpl.x), chordExtra: undefined, group: undefined, lyrics: undefined, chord: undefined,
             slurStart: undefined, slurStop: undefined, tieStart: undefined, tieStop: undefined, marks: undefined,
           };

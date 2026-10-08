@@ -111,7 +111,16 @@ export function isAnnotationLine(text0: string): boolean {
   if (!rest.trim()) return text0.trim().length > 0;             // 纯段落标记（Intro/Chorus…）或纯方括号注
   if (!/[A-Za-z]/.test(rest)) return false;                      // 无字母 → 交给下游伪 verse 过滤
   const { cov, count } = chordCoverage(rest);
-  // 两个以上和弦时容一点残渣（OCR 掉字/多字）；只有一个记号的短行要求完全吃净，免得把
-  // 单个英文词（"Be"、"Ah"）当成和弦行整条丢掉。
+  return isChordLineCoverage(cov, count);
+}
+
+/** 按覆盖率判和弦行：两个以上和弦时容一点残渣（OCR 掉字/多字）；只有一个记号的短行要求完全吃净，免得把
+ *  单个英文词（"Be"、"Ah"）当成和弦行整条丢掉。简谱（`isAnnotationLine`）与位图五线谱（`rasteromr/harmony.ts::harmonyLine`）同一口径。 */
+export function isChordLineCoverage(cov: number, count: number): boolean {
   return count >= 2 ? cov >= 0.85 : count === 1 && cov === 1;
+}
+
+/** 整串恰好是一个和弦记号（空串算是，调用方自己挡）。 */
+export function isWholeChord(t: string): boolean {
+  return (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
 }

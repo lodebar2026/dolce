@@ -4,7 +4,7 @@ import { installBrowserOmr } from "../omrkit/browser";
 installBrowserOmr();
 
 export * from "../omrkit/types";
-export { binarize, rgbaToBinary, toGray, otsuThreshold } from "../omrkit/preprocess";
+export { rgbaToBinary, toGray } from "../omrkit/preprocess";
 export { connectedComponents } from "../omrkit/ccl";
 export { recognizeJianpu } from "./jianpu";
 export { recognizedToDoc } from "./todoc";

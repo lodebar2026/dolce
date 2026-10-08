@@ -1,5 +1,6 @@
-// 连通域标注（8-邻接，迭代式 flood fill，避免递归爆栈）。
-// 对应 musicpp 用 cv::findContours 得到的 contour 包围盒；这里直接给连通块包围盒。
+// 连通域标注（迭代式 flood fill，避免递归爆栈）。两个口径：
+//   - `connectedComponents`：墨的 8 邻接块，给包围盒、面积、质心，可出标号图（对应 musicpp 用 cv::findContours 得到的 contour 包围盒）；
+//   - `components`：墨或白、4 或 8 邻接，给像素表与碰没碰图边（面积开闭运算、找内腔用）。
 import type { Binary, Component, Rect } from "./types";
 
 /**
@@ -52,4 +53,58 @@ export function connectedComponents(bin: Binary, minArea = 4, out?: Int32Array):
     }
   }
   return comps;
+}
+
+/** 一个连通块：像素下标、面积、外接盒、碰没碰图边。 */
+export interface Blob {
+  px: number[];
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  edge: boolean;
+}
+
+/**
+ * 标出值为 `val` 的全部连通块（`conn` 取 4 或 8）。
+ * `keep` 只收回调判为真的块（省内存：大块的像素表不留）。
+ */
+export function components(bin: Binary, val: 0 | 1, conn: 4 | 8, keep: (n: number) => boolean = () => true): Blob[] {
+  const { w, h, data } = bin;
+  const seen = new Uint8Array(w * h);
+  const out: Blob[] = [];
+  const st: number[] = [];
+  for (let s0 = 0; s0 < w * h; s0++) {
+    if (data[s0] !== val || seen[s0]) continue;
+    seen[s0] = 1;
+    st.push(s0);
+    const px: number[] = [];
+    let x0 = w, x1 = 0, y0 = h, y1 = 0;
+    let edge = false;
+    while (st.length) {
+      const i = st.pop()!;
+      px.push(i);
+      const x = i % w;
+      const y = (i - x) / w;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) edge = true;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if ((!dx && !dy) || (conn === 4 && dx && dy)) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const j = ny * w + nx;
+          if (data[j] === val && !seen[j]) {
+            seen[j] = 1;
+            st.push(j);
+          }
+        }
+    }
+    if (keep(px.length)) out.push({ px, x0, y0, x1, y1, edge });
+  }
+  return out;
 }

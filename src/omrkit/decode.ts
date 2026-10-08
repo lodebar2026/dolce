@@ -4,6 +4,7 @@
 import { rgbaToBinary } from "./preprocess";
 import { blit, createSurface } from "./surface";
 import type { Binary } from "./types";
+import { isPdf } from "./pdf";
 
 const MAX_W = 2200; // 过大图先缩小，兼顾速度与连通域稳定性
 
@@ -24,12 +25,6 @@ let _rasterizePdf: PdfRasterizer | null = null;
 export function setImageDecoder(decode: ImageDecoder, pdf?: PdfRasterizer): void {
   _decodeImage = decode;
   _rasterizePdf = pdf ?? null;
-}
-
-/** 是否 PDF 字节（mime 或 %PDF- 魔数）。 */
-export function isPdf(bytes: Uint8Array, mime?: string): boolean {
-  if (mime === "application/pdf") return true;
-  return bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // "%PDF"
 }
 
 /** 超过 MAX_W 就等比缩小（面积平均，见 surface.ts）。 */

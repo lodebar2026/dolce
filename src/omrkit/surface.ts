@@ -41,6 +41,32 @@ export function surfaceFromBinary(bin: Binary): Surface {
   return s;
 }
 
+/** 一条 0/1 墨图（逐像素，1 = 墨）→ 白底黑字表面，四周垫 `pad` 白。 */
+export function surfaceFromInk(w: number, h: number, ink: ArrayLike<number>, pad = 0): Surface {
+  const width = w + pad * 2;
+  const height = h + pad * 2;
+  const data = new Uint8ClampedArray(width * height * 4);
+  data.fill(255);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!ink[y * w + x]) continue;
+      const p = ((y + pad) * width + x + pad) * 4;
+      data[p] = data[p + 1] = data[p + 2] = 0;
+    }
+  }
+  return { width, height, data };
+}
+
+/** 一条灰度图 → 表面（灰度原样，alpha 255）。 */
+export function surfaceFromGray(w: number, h: number, gray: ArrayLike<number>): Surface {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let p = 0; p < w * h; p++) {
+    data[p * 4] = data[p * 4 + 1] = data[p * 4 + 2] = gray[p]!;
+    data[p * 4 + 3] = 255;
+  }
+  return { width: w, height: h, data };
+}
+
 /** 一趟一维重采样的权重表：目标像素 i ← 源区间 [start, start+w.length) 的加权和。 */
 interface Taps { start: Int32Array; wts: Float32Array; n: number }
 

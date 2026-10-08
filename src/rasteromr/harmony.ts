@@ -21,7 +21,9 @@
 import type { Binary, Rect } from "../omrkit/types";
 import type { RasterUnit } from "./staffline";
 import type { OcrChar } from "./lyric";
-import { CHORD_TOKEN_RE, blankNonChord } from "../omrkit/chordgrammar";
+import { CHORD_TOKEN_RE, blankNonChord, isChordLineCoverage } from "../omrkit/chordgrammar";
+import { contentKey } from "../omrkit/contentkey";
+import { components } from "../omrkit/ccl";
 
 /** 带的窗口（线距的倍数）：顶线上方这一段。
  *
@@ -59,33 +61,7 @@ const GROW_BIG = 1.0;
 
 /** 整块落在 `yB` 行以下的连通块抹掉（八连通，就地改）。 */
 function dropBelow(band: Uint8Array, W: number, H: number, yB: number): void {
-  const seen = new Uint8Array(W * H);
-  const comp: number[] = [];
-  for (let i0 = 0; i0 < W * H; i0++) {
-    if (!band[i0] || seen[i0]) continue;
-    comp.length = 0;
-    let minY = H;
-    const stack = [i0];
-    seen[i0] = 1;
-    while (stack.length) {
-      const i = stack.pop()!;
-      comp.push(i);
-      const y = Math.floor(i / W);
-      const x = i % W;
-      if (y < minY) minY = y;
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) {
-          const ny = y + dy;
-          const nx = x + dx;
-          if (ny < 0 || ny >= H || nx < 0 || nx >= W) continue;
-          const j = ny * W + nx;
-          if (!band[j] || seen[j]) continue;
-          seen[j] = 1;
-          stack.push(j);
-        }
-    }
-    if (minY >= yB) for (const i of comp) band[i] = 0;
-  }
+  for (const c of components({ w: W, h: H, data: band }, 1, 8)) if (c.y0 >= yB) for (const i of c.px) band[i] = 0;
 }
 
 /** 带底往下再看多深（线距的倍数），用来认「从下面伸上来的东西」。见 `withoutRisers`。 */
@@ -276,12 +252,7 @@ export function findHarmonyStrips(
 
 /** 条的**内容指纹**（与 `lyric.ts::stripKey` / `stafflabel.ts::labelKey` 同一套）。 */
 export function harmonyKey(s: HarmonyStrip): string {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < s.data.length; i++) {
-    h1 ^= s.data[i];
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-  }
-  return `H${s.w}x${s.h}-${h1.toString(36)}`;
+  return contentKey("H", s.w, s.h, s.data);
 }
 
 /** 切出来的一个和弦记号（页面坐标）。 */
@@ -422,7 +393,7 @@ export function readHarmonyStrip(strip: HarmonyStrip, chars: OcrChar[]): { chord
 export function harmonyLine(chords: HarmonyToken[], texts: HarmonyToken[]): { chords: HarmonyToken[]; texts: HarmonyToken[] } {
   const cc = chords.reduce((n, t) => n + t.text.length, 0);
   const wc = texts.filter((t) => t.kind === "word").reduce((n, t) => n + (t.text.match(/[A-Za-z]|\p{Script=Han}/gu)?.length ?? 0), 0);
-  const isChordLine = chords.length >= 2 ? cc / (cc + wc) >= 0.85 : chords.length === 1 && wc === 0;
+  const isChordLine = chords.length > 0 && isChordLineCoverage(cc / (cc + wc), chords.length);
   if (isChordLine || !chords.length) return { chords, texts };
   const all = [...texts, ...chords.map((t): HarmonyToken => ({ ...t, kind: "word" }))].sort((p, q) => p.box.x - q.box.x);
   return { chords: [], texts: all };

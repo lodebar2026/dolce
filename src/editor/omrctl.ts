@@ -26,12 +26,7 @@ import { baseImage } from "../omrkit/svgkit";
 import type { ProjectKind, ProjectSnapshot } from "./omrproject";
 import { t } from "../i18n";
 import { COMPARE_VALUES, type CompareValue } from "./comparemode";
-
-/** 是否 PDF 字节（mime 或 `%PDF-` 魔数）。与 `omrkit/decode.ts` 里那份同判据。 */
-function isPdfBytes(bytes: Uint8Array, mime?: string): boolean {
-  if (mime === "application/pdf") return true;
-  return bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
-}
+import { isPdf } from "../omrkit/pdf";
 
 /** 一份识别输入（拖进来、选进来的图片或 PDF）。 */
 export interface RecogInput {
@@ -287,7 +282,7 @@ export class OmrController implements FormatSource {
     this.lastInputs = [...files];
     const first = files[0]!;
     // 文字层完整的五线谱 PDF（矢量）先试：只要不是指定按简谱识别
-    if (files.length === 1 && this.kind !== "jianpu" && isPdfBytes(first.bytes, first.mime) && (await this.tryStaffPdf(first.bytes, performance.now(), g))) return true;
+    if (files.length === 1 && this.kind !== "jianpu" && isPdf(first.bytes, first.mime) && (await this.tryStaffPdf(first.bytes, performance.now(), g))) return true;
     if (g !== this.gen) return false;
     if (this.kind !== "jianpu") {
       const t0 = performance.now();

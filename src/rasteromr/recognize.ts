@@ -47,6 +47,7 @@ import { isTextStaff, pageTextKey, touchesText } from "./pagetext";
 import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit, type StaffLineRun } from "./staffline";
 import { completeStaffLines } from "./dewarp";
 import { rasterizePage, type RasterPage } from "./rasterpage";
+import { median, quantile, rowHasInk, unionRect as union } from "../omrkit/geom";
 
 export interface RasterPageResult {
   page: SPage;
@@ -1592,8 +1593,7 @@ export async function recognizeRasterPage(
     const shortProbes = probeBareStems(prims.shortStems ?? [], headBoxes, free, unit, isBar, true).filter((q) => !probes.some((p) => p.ids.some((id) => q.ids.includes(id))));
     probes.push(...shortProbes);
     const halves = [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((q) => q.code === "noteheadHalf" && !(q as { weak?: boolean }).weak);
-    const med = (xs: number[]) => xs.sort((p, q) => p - q)[xs.length >> 1];
-    const size = halves.length ? { w: med(halves.map((q) => q.box.w)), h: med(halves.map((q) => q.box.h)) } : { w: Math.round(unit.space * 1.3), h: Math.round(unit.space * 1.1) };
+    const size = halves.length ? { w: median(halves.map((q) => q.box.w)), h: median(halves.map((q) => q.box.h)) } : { w: Math.round(unit.space * 1.3), h: Math.round(unit.space * 1.1) };
     for (const hd of headsOnBareStems(probes, unit, pitchGrid, size, raster.bin, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick))) {
       for (const id of hd.ids) claimed.add(id);
       stacked.push(hd);
@@ -1958,11 +1958,7 @@ export async function recognizeRasterPage(
     const xb = Math.min(bin0.w - 1, Math.round(base + sp * CLEF_INK_X[1]));
     // 行首这一段的线位按实测（斜页上与整行平均差得出半格）
     const ys = localLineModel(bin0, g.lines.map((l) => l.y), left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2);
-    const rowInk = (y: number) => {
-      if (y < 0 || y >= bin0.h) return false;
-      for (let x = xa; x <= xb; x++) if (bin0.data[y * bin0.w + x]) return true;
-      return false;
-    };
+    const rowInk = (y: number) => rowHasInk(bin0, y, xa, xb);
     const frac = (ya: number, yb: number) => {
       let n = 0;
       let hit = 0;
@@ -2044,11 +2040,7 @@ export async function recognizeRasterPage(
       }
     }
     if (bot < bot0 - sp * 0.5) continue;
-    const rowInk = (y: number) => {
-      if (y < 0 || y >= bin0.h) return false;
-      for (let x = xa; x <= xb; x++) if (bin0.data[y * bin0.w + x]) return true;
-      return false;
-    };
+    const rowInk = (y: number) => rowHasInk(bin0, y, xa, xb);
     // 从底线下半格起往下走，连着有墨（容一行断口）走到哪儿
     let end = Math.round(bot + sp * 0.5);
     for (let y = end, miss = 0; y < bin0.h && miss < 2; y++) {
@@ -2180,11 +2172,7 @@ export async function recognizeRasterPage(
     // 连着有墨（容半格的断口）走到哪儿算到哪儿
     {
       const bin0 = raster.bin;
-      const rowInk = (y: number) => {
-        if (y < 0 || y >= bin0.h) return false;
-        for (let x = b.x - 1; x <= b.x + b.w; x++) if (bin0.data[y * bin0.w + x]) return true;
-        return false;
-      };
+      const rowInk = (y: number) => rowHasInk(bin0, y, b.x - 1, b.x + b.w);
       let top = b.y;
       for (let y = b.y - 1, miss = 0; y >= 0 && miss < sp * 0.5; y--) {
         if (rowInk(y)) (top = y), (miss = 0);
@@ -2972,11 +2960,6 @@ export async function recognizeRasterPage(
       .filter((c) => !claimed.has(c.id) && (!dictClaimed.has(c.id) || dictSym.has(c.id)) && !merged.has(c.id))
       .filter((c) => onStaff(c.bbox))
       .sort((a, b) => a.bbox.x - b.bbox.x);
-    const union = (a: Rect, b: Rect): Rect => {
-      const x = Math.min(a.x, b.x);
-      const y = Math.min(a.y, b.y);
-      return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
-    };
     // 串里**逐个**往右认，每一步先看「被当成符头的升号」、再看普通块：齐来称颂的低音谱表
     // 三个升号，第一个是普通块、后两个各被认成一对黑符头，只认一路就断在第二个上。
     // 第一个记号离谱号右缘放到两格：低音谱号的两点在谱号盒外，实测 1.77 格。
@@ -3445,8 +3428,7 @@ export async function recognizeRasterPage(
       const free = blobs.filter((c) => isFree(c) && inFar(c.bbox.y + c.bbox.h / 2));
       /** 本页已认二分头的中位尺寸（开口内腔那一档用）。 */
       const halves = syms.filter((s0) => s0.code === "noteheadHalf");
-      const med = (xs: number[]) => xs.sort((p, q) => p - q)[xs.length >> 1];
-      const halfSize = halves.length ? { w: med(halves.map((s0) => s0.box.w)), h: med(halves.map((s0) => s0.box.h)) } : null;
+      const halfSize = halves.length ? { w: median(halves.map((s0) => s0.box.w)), h: median(halves.map((s0) => s0.box.h)) } : null;
       // 带宽比 `HOLLOW_BAND` 窄：开口内腔不挑形状，歌词里的字母 o 也围得出一个（我灵镇静「soul」，在谱表下 2.7 格）
       const inCavityBand = (y: number) =>
         groups.some((g) => y > g.lines[0].y - unit.space * OPEN_CAVITY_BAND && y < g.lines[4].y + unit.space * OPEN_CAVITY_BAND);
@@ -4934,7 +4916,6 @@ function liftLyrics(pg: SPage, notes: StaffNote[], sp: number): void {
 const LATIN_VERSE = 100;
 /** 一行里伸出上方各行范围的音节，至少连着这么多个才拆成单独一段（见 `numberVersesByScript`）。 */
 const SPLIT_RUN = 3;
-const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0);
 
 const isLatinLine = (l: LyricLine) => {
   const t = l.syllables.map((s) => s.text).join("");
@@ -5381,8 +5362,7 @@ function lyricsBelongBelow(row: LyricRowInfo, verseObjs: Set<PObj>, notes: Staff
     // 一行里常并着别处小字号的字。真歌词的字号很齐，85 分位就是字号
     const sorted = [...syllables].sort((p, q) => p.cx - q.cx);
     const gaps = sorted.slice(1).map((q, i) => q.cx - sorted[i].cx).sort((p, q) => p - q);
-    const hs = sorted.map((q) => Math.max(0, ...q.glyphs.map((g) => Math.max(g.bbox.w, g.bbox.h)))).sort((p, q) => p - q);
-    const charH = hs[Math.min(hs.length - 1, Math.floor(hs.length * 0.85))];
+    const charH = quantile(sorted.map((q) => Math.max(0, ...q.glyphs.map((g) => Math.max(g.bbox.w, g.bbox.h)))), 0.85);
     if (!(charH > 0) || gaps[gaps.length >> 1] < charH * LYRIC_PITCH_MIN) return undefined;
     return fit >= LYRIC_HEAD_FIT ? below : undefined;
   }

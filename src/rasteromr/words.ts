@@ -7,8 +7,9 @@ import type { Binary, Rect } from "../omrkit/types";
 import type { WordLine } from "../omrkit/headertext";
 import type { SPage, Staff } from "../staffomr/model";
 import type { StaffNote } from "../staffomr/notedata";
-import { CHORD_TOKEN_RE } from "../omrkit/chordgrammar";
+import { isWholeChord } from "../omrkit/chordgrammar";
 import type { RasterUnit } from "./staffline";
+import { contentKey } from "../omrkit/contentkey";
 
 /** 一条文字带：裸像素 + 它在页面上的盒。 */
 export interface WordStrip {
@@ -113,12 +114,7 @@ const HEADER_MARGIN = 0.12;
 
 /** 条的内容指纹（与 `stafflabel.ts::labelKey` 同一套：尺寸 + FNV-1a）。 */
 export function wordKey(s: WordStrip): string {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < s.data.length; i++) {
-    h1 ^= s.data[i];
-    h1 = Math.imul(h1, 0x01000193) >>> 0;
-  }
-  return `W${s.w}x${s.h}-${h1.toString(36)}`;
+  return contentKey("W", s.w, s.h, s.data);
 }
 
 /** 值得存进缓存的行：有拉丁字母（力度只有一个字母），或者像节拍器记号（`= 86`）。纯中文行（歌词、署名）、纯数字不存。 */
@@ -245,7 +241,7 @@ export function attachWordLines(
   const chordOf = (text: string): string[] | null => {
     const toks = text.split(/\s+/).filter(Boolean);
     const whole = text.replace(/\s+/g, "");
-    const full = (t: string) => (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
+    const full = isWholeChord;
     if (full(whole)) return [whole];
     return toks.length > 1 && toks.every(full) ? toks : null;
   };
@@ -271,7 +267,7 @@ export function attachWordLines(
       const whole = chordOf(text);
       let n = whole ? toks.length : 0;
       // 带后缀的才算（`A tempo` 的 `A` 不是和弦）
-      const isChord = (t: string) => t.length > 1 && (CHORD_TOKEN_RE.exec(t)?.[0].length ?? 0) === t.length;
+      const isChord = (t: string) => t.length > 1 && isWholeChord(t);
       if (!whole) while (n < toks.length - 1 && isChord(toks[n])) n++;
       if (n > 0) {
         const parts = whole ?? toks.slice(0, n);

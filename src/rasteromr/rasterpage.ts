@@ -24,6 +24,9 @@ import type { Binary } from "../omrkit/types";
 import { applyTrackWarp, completeStaffLines, residualCurves, trackCurves } from "./dewarp";
 import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, HALFTONE_BAND, HALFTONE_RATIO, PINHOLE_RATIO } from "./descreen";
 import { estimateUnit, findStaffLines, groupStaves } from "./staffline";
+import { median } from "../omrkit/geom";
+import { sauvola as sauvolaInto, toGray } from "../omrkit/preprocess";
+import { largestPageImage } from "../omrkit/pdf";
 
 /** 一页取到的位图，连同它在页面坐标里的位置（识别坐标 ↔ 页面坐标要用）。 */
 export interface RasterPage {
@@ -60,8 +63,6 @@ export interface RasterPage {
   pageHeight: number;
 }
 
-const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0);
-
 /** 墨迹占比超过这个数就判定极性反了。整页乐谱实测约一成，留足余量。 */
 const INK_FLIP_RATIO = 0.5;
 
@@ -71,21 +72,7 @@ const INK_FLIP_RATIO = 0.5;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function rasterizePage(page: any, OPS: any): Promise<RasterPage | null> {
-  const list = await page.getOperatorList();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let best: any = null;
-  for (let i = 0; i < list.fnArray.length; i++) {
-    const fn = list.fnArray[i];
-    if (fn !== OPS.paintImageXObject && fn !== OPS.paintImageMaskXObject) continue;
-    const arg = list.argsArray[i][0];
-    // ImageMask 的参数是 `{ data: <objId>, … }`；普通图 XObject 的参数是对象名字符串
-    const id: string = arg && typeof arg === "object" ? arg.data : arg;
-    if (typeof id !== "string") continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const obj: any = await new Promise((r) => page.objs.get(id, r)).catch(() => null);
-    if (!obj?.data || !obj.width || !obj.height) continue;
-    if (!best || obj.width * obj.height > best.width * best.height) best = obj;
-  }
+  const best = await largestPageImage(page, OPS, (o) => (o.data && o.width && o.height ? o.width * o.height : null));
   if (!best) return null;
 
   const w: number = best.width;
@@ -473,11 +460,7 @@ function grayOf(obj: any, w: number, h: number, up = 1): Uint8Array | null {
   const src: Uint8Array | Uint8ClampedArray = obj.data;
   const step = src.length === w * h * 4 ? 4 : src.length === w * h * 3 ? 3 : src.length === w * h ? 1 : 0;
   if (!step) return null;
-  const gray = new Uint8Array(w * h);
-  for (let i = 0, p = 0; i < gray.length; i++, p += step) {
-    // Rec.601 luma（与 `src/omrkit/preprocess.ts::toGray` 同一口径）
-    gray[i] = step === 1 ? src[p] : (src[p] * 0.299 + src[p + 1] * 0.587 + src[p + 2] * 0.114) | 0;
-  }
+  const gray = toGray(src, w, h, step);
   return up > 1 ? upsample(gray, w, h, up) : gray;
 }
 
@@ -505,10 +488,9 @@ function upsample(gray: Uint8Array, w: number, h: number, up: number): Uint8Arra
 }
 
 /** Sauvola 局部阈值的窗口半径（占页宽的比例）与参数。
- *  `k` 越大收得越紧（墨越细）。`R` 是标准差的量程，灰度图取 128。 */
+ *  `k` 越大收得越紧（墨越细）。 */
 const SAUVOLA_WIN = 1 / 40;
 const SAUVOLA_K = 0.5;
-const SAUVOLA_R = 128;
 /** 标准阈值量不出谱行时依次再试的几档（见 `rasterizePage`）。 */
 const SAUVOLA_K_RETRY = [0.35, 0.2, 0.1];
 /** 细线扫描件的松阈值：页白 250 时阈值约 208（`SAUVOLA_K` 那档约 144）。 */
@@ -591,7 +573,7 @@ function prepared(bin: Binary): Binary {
 }
 
 /**
- * **Sauvola 局部阈值**（`T = m · (1 + k · (s/R − 1))`），用积分图 O(n) 算。
+ * **Sauvola 局部阈值**（`T = m · (1 + k · (s/R − 1))`，内核在 `omrkit/preprocess.ts`），窗口半径取页宽的 `SAUVOLA_WIN`。
  *
  * 全局 Otsu 在这批扫描件上不够：一页里墨色深浅不匀（装订侧偏暗、页心偏淡），
  * 一个阈值要么把淡处的细线切断、要么把暗处的笔画糊粗。望十架那份线距只有 11.5px，
@@ -601,36 +583,7 @@ function prepared(bin: Binary): Binary {
  * 那两档本来就没有灰度可分（`rasterizePage` 上面那两个分支直接取位）。
  */
 function sauvola(gray: Uint8Array, w: number, h: number, out: Uint8Array, k = SAUVOLA_K): void {
-  const r = Math.max(8, Math.round(w * SAUVOLA_WIN));
-  // 积分图（多一行一列的零边，省去边界判断）
-  const S1 = new Float64Array((w + 1) * (h + 1));
-  const S2 = new Float64Array((w + 1) * (h + 1));
-  for (let y = 0; y < h; y++) {
-    let r1 = 0;
-    let r2 = 0;
-    for (let x = 0; x < w; x++) {
-      const v = gray[y * w + x];
-      r1 += v;
-      r2 += v * v;
-      S1[(y + 1) * (w + 1) + x + 1] = S1[y * (w + 1) + x + 1] + r1;
-      S2[(y + 1) * (w + 1) + x + 1] = S2[y * (w + 1) + x + 1] + r2;
-    }
-  }
-  const box = (S: Float64Array, x0: number, y0: number, x1: number, y1: number) =>
-    S[y1 * (w + 1) + x1] - S[y0 * (w + 1) + x1] - S[y1 * (w + 1) + x0] + S[y0 * (w + 1) + x0];
-  for (let y = 0; y < h; y++) {
-    const y0 = Math.max(0, y - r);
-    const y1 = Math.min(h, y + r + 1);
-    for (let x = 0; x < w; x++) {
-      const x0 = Math.max(0, x - r);
-      const x1 = Math.min(w, x + r + 1);
-      const n = (x1 - x0) * (y1 - y0);
-      const m = box(S1, x0, y0, x1, y1) / n;
-      const v = Math.max(0, box(S2, x0, y0, x1, y1) / n - m * m);
-      const t = m * (1 + k * (Math.sqrt(v) / SAUVOLA_R - 1));
-      out[y * w + x] = gray[y * w + x] <= t ? 1 : 0; // 暗 = 墨
-    }
-  }
+  sauvolaInto(gray, w, h, Math.max(8, Math.round(w * SAUVOLA_WIN)), k, out);
 }
 
 /** 墨迹占比。取完图自检、判「这一页是不是空页」都用它。 */

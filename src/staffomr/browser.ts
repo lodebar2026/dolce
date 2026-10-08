@@ -8,6 +8,7 @@ import { StaffGlyphLookup, type StaffGlyphDict } from "./staffglyphs";
 import { TextGlyphLookup, type TextGlyphDict } from "./textglyphs";
 import { recognizeStaffDoc, type StaffPdfResult } from "./song";
 import type { StaffReviewResult } from "./review";
+import { openPdf } from "../omrkit/pdf.browser";
 
 export { isStaffPdf, type StaffPdfResult } from "./song";
 
@@ -20,13 +21,7 @@ export { isStaffPdf, type StaffPdfResult } from "./song";
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function openStaffPdf(bytes: Uint8Array, extra: Record<string, unknown> = {}): Promise<{ pdf: any; OPS: OpsEnum }> {
-  const pdfjs = await import("pdfjs-dist");
-  const { default: workerUrl } = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-  const wasmUrl = `${import.meta.env.BASE_URL}redist/pdfjs/`;
-  // getDocument 会 detach 传入的 buffer，复制一份避免污染调用方字节。
-  const pdf = await pdfjs.getDocument({ data: bytes.slice(), wasmUrl, disableFontFace: true, ...extra }).promise;
-  return { pdf, OPS: pdfjs.OPS as unknown as OpsEnum };
+  return openPdf(bytes, { disableFontFace: true, ...extra });
 }
 
 /**

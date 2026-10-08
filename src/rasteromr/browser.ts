@@ -13,6 +13,7 @@ import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
 import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips, detectPageTexts } from "./ocrlive";
 import type { TimeStrip } from "./timesig";
+import { isPdf } from "../omrkit/pdf";
 
 // 在线 OCR 要推理运行时：自己装上，不靠编辑器先 import 了 `omr/index`
 installBrowserOmr();
@@ -25,7 +26,6 @@ function openRasterPdf(bytes: Uint8Array) {
   return openStaffPdf(bytes, { isOffscreenCanvasSupported: false, isImageDecoderSupported: false });
 }
 
-const isPdf = (b: Uint8Array): boolean => b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
 const isJpeg = (b: Uint8Array): boolean => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
 
 /** JPEG 的宽高与通道数（SOF0/1/2/9/10 帧头）。 */

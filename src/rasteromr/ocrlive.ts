@@ -16,58 +16,29 @@ import { timeKey, type TimeStrip } from "./timesig";
 import { keepWordLine, spaceWordText, wordKey, type WordStrip } from "./words";
 import { keepHeaderLine, type WordLine } from "../omrkit/headertext";
 import type { JianpuRow } from "./jianpufuse";
+import { surfaceFromGray, surfaceFromInk, type Surface } from "../omrkit/surface";
 
-type Surface = { width: number; height: number; data: Uint8ClampedArray };
-
-/** 0/1 墨图 → 白底黑字 RGBA，四周垫 `pad` 白。 */
-function surfaceOf(w: number, h: number, ink: Uint8Array, pad: number): Surface {
-  const width = w + pad * 2;
-  const height = h + pad * 2;
-  const data = new Uint8ClampedArray(width * height * 4);
-  data.fill(255);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!ink[y * w + x]) continue;
-      const p = ((y + pad) * width + x + pad) * 4;
-      data[p] = data[p + 1] = data[p + 2] = 0;
-    }
+/** 条子按批送 rec（整条带字位），每批 `BATCH` 条；`key` 给结果寻址，`surface` 造送检的图。 */
+async function recStripsPos<S>(ocr: OcrBackend, strips: readonly S[], key: (s: S) => string, surface: (s: S) => Surface): Promise<Map<string, OcrChar[]>> {
+  const out = new Map<string, OcrChar[]>();
+  if (!ocr.recognizeTextsPos || strips.length === 0) return out;
+  const BATCH = 24;
+  for (let i = 0; i < strips.length; i += BATCH) {
+    const chunk = strips.slice(i, i + BATCH);
+    const got = await ocr.recognizeTextsPos(chunk.map(surface));
+    got.forEach((chars, k) => out.set(key(chunk[k]!), chars.map((c) => ({ ch: c.ch, xFrac: c.xFrac }))));
   }
-  return { width, height, data };
+  return out;
 }
 
 /** 和弦带：整条送 rec（带字位），左右各垫 6 白——短串（`C`、`F`）贴边会被当成半个字。 */
 export async function ocrHarmonyStrips(ocr: OcrBackend, strips: readonly HarmonyStrip[]): Promise<Map<string, OcrChar[]>> {
-  const out = new Map<string, OcrChar[]>();
-  if (!ocr.recognizeTextsPos || strips.length === 0) return out;
-  const BATCH = 24;
-  for (let i = 0; i < strips.length; i += BATCH) {
-    const chunk = strips.slice(i, i + BATCH);
-    const got = await ocr.recognizeTextsPos(chunk.map((s) => surfaceOf(s.w, s.h, s.data, 6)));
-    got.forEach((chars, k) => out.set(harmonyKey(chunk[k]!), chars.map((c) => ({ ch: c.ch, xFrac: c.xFrac }))));
-  }
-  return out;
+  return recStripsPos(ocr, strips, harmonyKey, (s) => surfaceFromInk(s.w, s.h, s.data, 6));
 }
 
 /** 歌词条：整条送 rec（序列模型靠上下文救单字），不垫边；去过网的页送灰度（细笔画在二值图上被吃了）。 */
 export async function ocrLyricStrips(ocr: OcrBackend, strips: readonly LyricStrip[]): Promise<Map<string, OcrChar[]>> {
-  const out = new Map<string, OcrChar[]>();
-  if (!ocr.recognizeTextsPos || strips.length === 0) return out;
-  const BATCH = 24;
-  for (let i = 0; i < strips.length; i += BATCH) {
-    const chunk = strips.slice(i, i + BATCH);
-    const surfaces = chunk.map((s) => {
-      if (!s.gray) return surfaceOf(s.w, s.h, s.data, 0);
-      const data = new Uint8ClampedArray(s.w * s.h * 4);
-      for (let p = 0; p < s.w * s.h; p++) {
-        data[p * 4] = data[p * 4 + 1] = data[p * 4 + 2] = s.gray[p]!;
-        data[p * 4 + 3] = 255;
-      }
-      return { width: s.w, height: s.h, data };
-    });
-    const got = await ocr.recognizeTextsPos(surfaces);
-    got.forEach((chars, k) => out.set(stripKey(chunk[k]!), chars.map((c) => ({ ch: c.ch, xFrac: c.xFrac }))));
-  }
-  return out;
+  return recStripsPos(ocr, strips, stripKey, (s) => (s.gray ? surfaceFromGray(s.w, s.h, s.gray) : surfaceFromInk(s.w, s.h, s.data, 0)));
 }
 
 /**
@@ -126,26 +97,17 @@ export async function ocrLabelStrips(ocr: OcrBackend, strips: readonly LabelStri
 }
 
 /** 文字指示带：DBNet 找行、逐行 rec，只留像文字指示的行（`keepWordLine`），词界按列投影补空格。空带也回一条空表。 */
-export async function ocrWordStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
-  const out = new Map<string, WordLine[]>();
-  if (!ocr.recognizeRegion) return out;
-  for (const it of strips) {
-    let lines: Awaited<ReturnType<NonNullable<OcrBackend["recognizeRegion"]>>> = [];
-    try {
-      lines = await ocr.recognizeRegion({ w: it.w, h: it.h, data: it.data }, { x: 0, y: 0, w: it.w, h: it.h });
-    } catch {
-      lines = [];
-    }
-    out.set(wordKey(it), lines.filter((l) => keepWordLine(l.text)).map((l) => {
-      const box = { x: Math.round(l.bbox.x), y: Math.round(l.bbox.y), w: Math.round(l.bbox.w), h: Math.round(l.bbox.h) };
-      return { t: spaceWordText(l.text, l.chars, it, box), ...box };
-    }));
-  }
-  return out;
+export function ocrWordStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
+  return ocrLineStrips(ocr, strips, keepWordLine);
 }
 
 /** 页眉带：同文字指示带，但中文行也留（`keepHeaderLine`）。 */
-export async function ocrHeaderStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
+export function ocrHeaderStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
+  return ocrLineStrips(ocr, strips, keepHeaderLine);
+}
+
+/** 文字带（文字指示 / 页眉）：DBNet 找行、逐行 rec，留 `keep` 认的行，词界按列投影补空格。 */
+async function ocrLineStrips(ocr: OcrBackend, strips: readonly WordStrip[], keep: (text: string) => boolean): Promise<Map<string, WordLine[]>> {
   const out = new Map<string, WordLine[]>();
   if (!ocr.recognizeRegion) return out;
   for (const it of strips) {
@@ -155,7 +117,7 @@ export async function ocrHeaderStrips(ocr: OcrBackend, strips: readonly WordStri
     } catch {
       lines = [];
     }
-    out.set(wordKey(it), lines.filter((l) => keepHeaderLine(l.text)).map((l) => {
+    out.set(wordKey(it), lines.filter((l) => keep(l.text)).map((l) => {
       const box = { x: Math.round(l.bbox.x), y: Math.round(l.bbox.y), w: Math.round(l.bbox.w), h: Math.round(l.bbox.h) };
       return { t: spaceWordText(l.text, l.chars, it, box), ...box };
     }));
@@ -220,7 +182,7 @@ export async function ocrTimeStrips(ocr: OcrBackend, strips: readonly TimeStrip[
     if (d === undefined) miss.push(s);
   }
   if (miss.length && ocr.recognizeTexts) {
-    const got = await ocr.recognizeTexts(miss.map((s) => surfaceOf(s.w, s.h, s.data, 6)));
+    const got = await ocr.recognizeTexts(miss.map((s) => surfaceFromInk(s.w, s.h, s.data, 6)));
     got.forEach((t, k) => {
       if (/^\d{1,2}$/.test(t.trim())) out.set(timeKey(miss[k]!), t.trim());
     });

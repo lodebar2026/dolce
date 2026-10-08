@@ -15,6 +15,8 @@ import { PObj } from "../staffomr/model";
 import type { SlurArc } from "../staffomr/slur";
 import type { Contour, ContourMap } from "./contour";
 import type { RasterUnit } from "./staffline";
+import { meanFinite as mean } from "../omrkit/geom";
+import { connectedComponents } from "../omrkit/ccl";
 
 /** 形状闸（一律按线距）。 */
 /** 宽度下限。扫过 2.0 / 1.4 / 1.2 / 1.0：圆滑线 37.6 / **39.4** / 39.4 / 39.4%
@@ -117,21 +119,11 @@ function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: Rast
   // 的「在符头上方/下方三格以内」就判偏了。扫过 1/6、1/12、1/30、1/60、一列：
   // 圆滑线 34.0 / 36.6 / **37.6** / 37.6 / 37.8%——1/30 起是平台。
   const q = Math.max(1, Math.round(ys.length / 30));
-  const mean = (a: number[]) => {
-    const v = a.filter((y) => !Number.isNaN(y));
-    return v.length ? v.reduce((s, y) => s + y, 0) / v.length : NaN;
-  };
   const ly = mean(ys.slice(0, q));
   const ry = mean(ys.slice(-q));
   if (Number.isNaN(ly) || Number.isNaN(ry)) return null;
   // 拱多少、往哪边拱：离两端连线最远的那一点（y 向下，负 = 拱在上方）
-  let bow = 0;
-  for (let i = 0; i < ys.length; i++) {
-    if (Number.isNaN(ys[i])) continue;
-    const t = ys.length > 1 ? i / (ys.length - 1) : 0;
-    const d = ys[i] - (ly + (ry - ly) * t);
-    if (Math.abs(d) > Math.abs(bow)) bow = d;
-  }
+  const bow = chordBow(ys, ly, ry);
   if (Math.abs(bow) < unit.space * bowMin) return null; // 直的不是弧
   const box: Rect = { x: b.x, y: b.y, w: b.w, h: b.h };
   return {
@@ -208,36 +200,12 @@ export function findFusedSlurs(map: ContourMap, unit: RasterUnit, groups: Contou
       const y1 = Math.min(b.h, Math.ceil(h.y + h.h + pad - b.y));
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) keep[y * b.w + x] = 0;
     }
-    // 八邻接分块
+    // 八邻接分块（`keep` 是 0/1）
     const lab = new Int32Array(b.w * b.h);
-    let n = 0;
-    const stack: number[] = [];
-    for (let i = 0; i < keep.length; i++) {
-      if (!keep[i] || lab[i]) continue;
-      n++;
-      lab[i] = n;
-      stack.push(i);
-      let minX = b.w, maxX = -1, minY = b.h, maxY = -1, area = 0;
-      while (stack.length) {
-        const j = stack.pop()!;
-        const x = j % b.w, y = (j - x) / b.w;
-        area++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dx = -1; dx <= 1; dx++) {
-            const xx = x + dx, yy = y + dy;
-            if (xx < 0 || yy < 0 || xx >= b.w || yy >= b.h) continue;
-            const k = yy * b.w + xx;
-            if (keep[k] && !lab[k]) (lab[k] = n), stack.push(k);
-          }
-      }
-      const w = maxX - minX + 1, h = maxY - minY + 1;
+    for (const { id, bbox: bb, area } of connectedComponents({ w: b.w, h: b.h, data: keep }, 0, lab)) {
+      const w = bb.w, h = bb.h;
       if (w < sp * FUSED_MIN_W || h > sp * MAX_H || area > w * sp * THIN_RUN * 1.5) continue;
-      const id = n;
-      const box: Rect = { x: b.x + minX, y: b.y + minY, w, h };
+      const box: Rect = { x: b.x + bb.x, y: b.y + bb.y, w, h };
       const arc = judgeArcBox(box, (x, y) => lab[(y - b.y) * b.w + x - b.x] === id, unit, nextId + out.length);
       if (!arc) continue;
       const bow = Math.abs(arcBow(box, (x, y) => lab[(y - b.y) * b.w + x - b.x] === id));
@@ -257,12 +225,18 @@ function arcBow(b: Rect, ink: (x: number, y: number) => boolean): number {
     if (k) ys.push(s / k);
   }
   if (ys.length < 2) return 0;
-  const ly = ys[0]!, ry = ys[ys.length - 1]!;
+  return chordBow(ys, ys[0]!, ys[ys.length - 1]!);
+}
+
+/** 逐列墨心 `ys`（等距、NaN = 这列没墨）离两端连线（`ly` → `ry`）最远的那一点的偏差，带符号（y 向下，负 = 拱在上方）。 */
+function chordBow(ys: readonly number[], ly: number, ry: number): number {
   let bow = 0;
-  ys.forEach((y, i) => {
-    const d = y - (ly + (ry - ly) * (i / (ys.length - 1)));
+  for (let i = 0; i < ys.length; i++) {
+    if (Number.isNaN(ys[i])) continue;
+    const t = ys.length > 1 ? i / (ys.length - 1) : 0;
+    const d = ys[i]! - (ly + (ry - ly) * t);
     if (Math.abs(d) > Math.abs(bow)) bow = d;
-  });
+  }
   return bow;
 }
 
