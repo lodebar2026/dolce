@@ -101,29 +101,45 @@ const MIN_POOLED = 12;
  * 骑线的位置要拿带着谱线的那张比，否则谱线穿过内腔的那几行全算「不该有的墨」。
  * 某一类样本不够 `minSamples` 时，拿全部样本平均的那张顶上（`onLine` 记成缺的那一类），
  * 一张也凑不出就返回空。
+ *
+ * `align` 给了就做这么多轮**对齐**：每个样本横向挪 ±0.2 格、取与上一轮平均模板最像的位置再平均。样本头盒按内腔外扩，
+ * 左右常偏几像素，直接平均出来内腔不白、圈不实（一片 0.3~0.6 的灰），沿干找叠头时真头只打 0.2 上下；
+ * 对齐三轮后 001 m12 的 B♭4 0.19 → 0.31、126 m1 的 E♭4 0.48 → 0.57（`recognize.ts` 沿干找头那一处用）。
  */
-export function buildHollowMasks(bin: Binary, heads: { box: Rect; code: SmuflName }[], unit: RasterUnit, lineYs: number[], minSamples = 3): HeadMask[] {
+export function buildHollowMasks(bin: Binary, heads: { box: Rect; code: SmuflName }[], unit: RasterUnit, lineYs: number[], minSamples = 3, align = 0): HeadMask[] {
   const hollow = heads.filter((h) => h.code === "noteheadHalf" || h.code === "noteheadWhole");
   if (hollow.length < minSamples) return [];
   const sp = unit.space;
   const w = Math.max(3, Math.round(sp * WIN_W));
   const h = Math.max(3, Math.round(sp * WIN_H));
   const avg = (list: typeof hollow, onLine: boolean): HeadMask => {
-    const sum = new Float32Array(w * h);
-    for (const hd of list) {
-      const x0 = Math.round(hd.box.x + hd.box.w / 2 - w / 2);
-      const y0 = Math.round(hd.box.y + hd.box.h / 2 - h / 2);
-      for (let y = 0; y < h; y++) {
-        const sy = y0 + y;
-        if (sy < 0 || sy >= bin.h) continue;
-        for (let x = 0; x < w; x++) {
-          const sx = x0 + x;
-          if (sx >= 0 && sx < bin.w) sum[y * w + x] += bin.data[sy * bin.w + sx];
+    const dx = new Int32Array(list.length);
+    let p = new Float32Array(w * h);
+    for (let round = 0; round <= align; round++) {
+      const sum = new Float32Array(w * h);
+      list.forEach((hd, i) => {
+        const x0 = Math.round(hd.box.x + hd.box.w / 2 - w / 2);
+        const y0 = Math.round(hd.box.y + hd.box.h / 2 - h / 2);
+        // 对齐轮：横向挪 ±`sp*0.2` 取与上一轮平均模板最像的位置（头盒按内腔外扩、左右常偏几像素，直接平均是一片灰）
+        if (round > 0) {
+          let best = -Infinity;
+          for (let d = -Math.round(sp * 0.2); d <= Math.round(sp * 0.2); d++) {
+            const sc = scoreAt(bin, { w, h, p, n: 0, onLine }, x0 + d + w / 2, y0 + h / 2);
+            if (sc > best) (best = sc), (dx[i] = d);
+          }
         }
-      }
+        for (let y = 0; y < h; y++) {
+          const sy = y0 + y;
+          if (sy < 0 || sy >= bin.h) continue;
+          for (let x = 0; x < w; x++) {
+            const sx = x0 + dx[i] + x;
+            if (sx >= 0 && sx < bin.w) sum[y * w + x] += bin.data[sy * bin.w + sx];
+          }
+        }
+      });
+      p = new Float32Array(w * h);
+      for (let i = 0; i < p.length; i++) p[i] = sum[i] / list.length;
     }
-    const p = new Float32Array(w * h);
-    for (let i = 0; i < p.length; i++) p[i] = sum[i] / list.length;
     return { w, h, p, n: list.length, onLine };
   };
   if (!lineYs.length) return [avg(hollow, false)];
@@ -151,6 +167,46 @@ export function scoreAt(bin: Binary, m: HeadMask, cx: number, cy: number): numbe
     for (let x = 0; x < m.w; x++) {
       const sx = x0 + x;
       if (sx < 0 || sx >= bin.w) continue;
+      const p = m.p[y * m.w + x];
+      const v = bin.data[sy * bin.w + sx];
+      hit += p * v;
+      hitW += p;
+      spill += (1 - p) * v;
+      spillW += 1 - p;
+    }
+  }
+  return (hitW ? hit / hitW : 0) - (spillW ? spill / spillW : 0);
+}
+
+/**
+ * 同 `scoreAt`，但**谱线行与符干列不计**：窗口里墨占满九成宽的行（谱线、加线）、模板里八成是墨的行（模板带着的谱线，
+ * 谱表外的头那里没有线）与 `stemX` ±`stemHalf` 的列，
+ * 既不算「该有的墨」也不算「不该有的墨」。拿模板沿干找叠头时，穿窗的干与压在头上的线不该替头扣分
+ * （新编赞美诗 001 m12 压第三线的 B♭4：干从头右缘穿过，`scoreAt` 只 0.19）。
+ */
+export function scoreAtMasked(bin: Binary, m: HeadMask, cx: number, cy: number, stemX?: number, stemHalf = 1): number {
+  const x0 = Math.round(cx - m.w / 2);
+  const y0 = Math.round(cy - m.h / 2);
+  let hit = 0;
+  let hitW = 0;
+  let spill = 0;
+  let spillW = 0;
+  for (let y = 0; y < m.h; y++) {
+    const sy = y0 + y;
+    if (sy < 0 || sy >= bin.h) continue;
+    let row = 0;
+    for (let x = 0; x < m.w; x++) {
+      const sx = x0 + x;
+      if (sx >= 0 && sx < bin.w) row += bin.data[sy * bin.w + sx];
+    }
+    if (row >= m.w * 0.9) continue;
+    let pr = 0;
+    for (let x = 0; x < m.w; x++) pr += m.p[y * m.w + x];
+    if (pr >= m.w * 0.8) continue;
+    for (let x = 0; x < m.w; x++) {
+      const sx = x0 + x;
+      if (sx < 0 || sx >= bin.w) continue;
+      if (stemX !== undefined && Math.abs(sx - stemX) <= stemHalf) continue;
       const p = m.p[y * m.w + x];
       const v = bin.data[sy * bin.w + sx];
       hit += p * v;

@@ -16,7 +16,7 @@ import type { Binary, Component, Rect } from "../omr/types";
 import type { SmuflName } from "../staffomr/glyphs";
 import type { LineSeg } from "./prims";
 import type { RasterUnit } from "./staffline";
-import { scoreAt, type HeadMask } from "./headmask";
+import { scoreAt, scoreAtMasked, type HeadMask } from "./headmask";
 
 /** 认出来的符头。 */
 export interface RasterHead {
@@ -780,6 +780,46 @@ function pitchScorer(bin: Binary, nl: Binary, rawHoles: Rect[], allMasks: HeadMa
     }
     return b;
   };
+  /** 同 `best`，但谱线行与 `stemX` 那根干的列不计（`scoreAtMasked`）。 */
+  const bestMasked = (st: PitchStep, xa: number, xb: number, stemX: number): { x: number; s: number; y: number } | null => {
+    const m = masks.find((k) => k.onLine === st.line) ?? masks[0];
+    const half = Math.max(1, Math.ceil(unit.lineThick));
+    let b: { x: number; s: number; y: number } | null = null;
+    const dy = Math.round(sp * ALONG_DY);
+    for (let x = Math.round(xa); x <= Math.round(xb); x++)
+      for (let d = -dy; d <= dy; d++) {
+        const sc = scoreAtMasked(bin, m, x, st.y + d, stemX, half);
+        if (!b || sc > b.s) b = { x, s: sc, y: st.y + d };
+      }
+    return b;
+  };
+  /** **行向围合的白**：头心附近（谱线行不算）每个白像素，同一行左右 `sp*0.6` 内都有墨的占比。圈断了口、
+   *  内腔不成闭合的孔（`cavity` 看的原始孔）时，也看得出「这里是被圈夹着的白」；实心头这里没有白。 */
+  const enclosed = (cx: number, cy: number): number => {
+    let n = 0;
+    let hit = 0;
+    const reach = Math.round(sp * 0.6);
+    const half = Math.round(sp * 0.85);
+    for (let y = Math.round(cy - ry); y <= Math.round(cy + ry); y++) {
+      if (y < 0 || y >= bin.h) continue;
+      let row = 0;
+      for (let x = Math.round(cx) - half; x <= Math.round(cx) + half; x++) if (x >= 0 && x < bin.w) row += bin.data[y * bin.w + x];
+      if (row >= (half * 2 + 1) * 0.9) continue;
+      for (let x = Math.round(cx - rx * 0.6); x <= Math.round(cx + rx * 0.6); x++) {
+        if (x < 0 || x >= bin.w) continue;
+        n++;
+        if (bin.data[y * bin.w + x]) continue;
+        let l = false;
+        let r = false;
+        for (let d = 1; d <= reach && !(l && r); d++) {
+          if (!l && x - d >= 0 && bin.data[y * bin.w + x - d]) l = true;
+          if (!r && x + d < bin.w && bin.data[y * bin.w + x + d]) r = true;
+        }
+        if (l && r) hit++;
+      }
+    }
+    return n ? hit / n : 0;
+  };
   /** 与已有的头差不到两级（同一位置或相邻半格）、横向又压着的，算同一个头。 */
   const clash = (b: Rect, list: Rect[]) =>
     list.some(
@@ -822,7 +862,7 @@ function pitchScorer(bin: Binary, nl: Binary, rawHoles: Rect[], allMasks: HeadMa
     }
     return n ? k / n : 0;
   };
-  return { cavity, best, clash, codeOf, inkIn };
+  return { enclosed, cavity, best, bestMasked, clash, codeOf, inkIn };
 }
 
 export function hollowHeadsByPitch(
@@ -925,6 +965,84 @@ const ALONG_SANDWICH = 1.25;
 const END_THIN = { score: 0.4, cavity: 0.6, ink: 0.3 } as const;
 /** 干穿过一个头又多伸出一格、端上那一级的模板分到这么多，内腔不作证也认（157 m11 高音 0.68、墨 0.38）。 */
 const TIP_SCORE = 0.5;
+/** 沿干找头的横向搜索半宽（格）：叠头常比参照头偏出几像素（001 m12 的 B♭4 偏右 5 像素）。 */
+const ALONG_XW = 0.3;
+/** 纵向微调半宽（格）：谱表外加线旁的头心离音高网格三四像素（138 m9 的 B3）。 */
+const ALONG_DY = 0.15;
+/** 行向围合的白（`enclosed`）到这么多，算内腔作证（圈断了口、不成闭合孔的细圈头：126 m1 的 E♭4 0.38、138 m9 的 B3 0.69）。 */
+const ALONG_ENCLOSED = 0.3;
+/** 原始孔作证时行向围合的下限（见用处）。 */
+const ALONG_ENCLOSED_MIN = 0.1;
+/** 「印糊」那一档的墨占比上限：同干上面是实心四分、下面是二分的（017 m8 的 F♯3，墨 0.72），不能靠「同干同时值」收成二分；真印糊的 0.43。 */
+const ALONG_FILLED_INK_MAX = 0.6;
+
+/** 重新落位：相邻一级的模板分要高出本级这么多（202 m9：本级 0.18、上一级 0.54；读对的头本级 0.5~0.7），头心也要比本级更贴干端。
+ *  新编前 80 首扫过 0.1 / 0.2：音符档 90.00 / 89.99%。 */
+const RESEAT_MARGIN = 0.1;
+/** 相邻一级的模板分下限。 */
+const RESEAT_SCORE = 0.35;
+
+/**
+ * **挂在干端的空心头重新落位**：头盒按内腔外扩，骑加线的头内腔只剩线下那半，盒就低了一级（202 m9 的 A3 读成 G3，干端停在 A3 的头心）。
+ * 在本级与上下相邻一级各配一次对齐过的模板（谱线行、干列不计），相邻一级明显高（`RESEAT_MARGIN`）、头心离干端也更近的，挪过去。
+ * 返回挪过的个数（就地改盒）。
+ */
+export function reseatHollowHeads(
+  bin: Binary,
+  nl: Binary,
+  rawHoles: Rect[],
+  allMasks: HeadMask[],
+  unit: RasterUnit,
+  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stems: LineSeg[],
+  heads: { box: Rect; code: string }[],
+): number {
+  if (!allMasks.length) return 0;
+  const sp = unit.space;
+  const { bestMasked, enclosed, cavity } = pitchScorer(bin, nl, rawHoles, allMasks, unit, stems);
+  const tol = Math.max(unit.lineThick * 2, sp * 0.25);
+  let moved = 0;
+  for (const h of heads) {
+    if (h.code !== "noteheadHalf") continue;
+    const cy = h.box.y + h.box.h / 2;
+    const cx = h.box.x + h.box.w / 2;
+    // 干：盒缘贴着、一端离头心不过 0.75 格
+    let v: LineSeg | undefined;
+    let endY = 0;
+    for (const s of stems) {
+      const vx = (s.x0 + s.x1) / 2;
+      if (Math.min(Math.abs(h.box.x - vx), Math.abs(h.box.x + h.box.w - vx)) > tol) continue;
+      const top = Math.min(s.y0, s.y1);
+      const bot = Math.max(s.y0, s.y1);
+      if (bot - top < sp * 1.5) continue;
+      const e = Math.abs(top - cy) < Math.abs(bot - cy) ? top : bot;
+      if (Math.abs(e - cy) > sp * 0.75) continue;
+      v = s;
+      endY = e;
+      break;
+    }
+    if (!v) continue;
+    const vx = (v.x0 + v.x1) / 2;
+    const steps = stepsIn(cy - sp * 0.8, cy + sp * 0.8);
+    if (steps.length < 2) continue;
+    const own = steps.reduce((p, q) => (Math.abs(q.y - cy) < Math.abs(p.y - cy) ? q : p));
+    const ownB = bestMasked(own, cx - sp * 0.3, cx + sp * 0.3, vx);
+    if (!ownB) continue;
+    let pick: { st: PitchStep; b: { x: number; s: number; y: number } } | null = null;
+    for (const st of steps) {
+      if (st === own || Math.abs(Math.abs(st.y - own.y) - sp / 2) > sp * 0.2) continue;
+      const b = bestMasked(st, cx - sp * 0.3, cx + sp * 0.3, vx);
+      if (!b || b.s < RESEAT_SCORE || b.s < ownB.s + RESEAT_MARGIN) continue;
+      if (Math.abs(st.y - endY) >= Math.abs(own.y - endY)) continue;
+      if (cavity(b.x, b.y) < ALONG_CAVITY && enclosed(b.x, b.y) < ALONG_ENCLOSED) continue;
+      if (!pick || b.s > pick.b.s) pick = { st, b };
+    }
+    if (!pick) continue;
+    h.box = { ...h.box, y: Math.round(h.box.y + pick.st.y - cy) };
+    moved++;
+  }
+  return moved;
+}
 
 export function hollowHeadsAlongStems(
   bin: Binary,
@@ -937,14 +1055,12 @@ export function hollowHeadsAlongStems(
   heads: { box: Rect; code: string }[],
 ): { box: Rect; code: SmuflName; weak?: boolean }[] {
   const sp = unit.space;
-  const { best: best0, clash, inkIn, cavity } = pitchScorer(bin, nl, rawHoles, allMasks, unit, stems);
-  // 本页一张空心模板都凑不出时（空心头太少），只按墨判
-  const best = (st: PitchStep, xa: number, xb: number) => (allMasks.length ? best0(st, xa, xb) : { x: Math.round((xa + xb) / 2), s: 1 });
+  const { enclosed, bestMasked, clash, inkIn, cavity } = pitchScorer(bin, nl, rawHoles, allMasks, unit, stems);
   const tol = Math.max(unit.lineThick * 2, sp * 0.25);
   const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
   const taken = heads.map((h) => h.box);
   const cyOf = (h: { box: Rect }) => h.box.y + h.box.h / 2;
-  const ranges: { ref: { box: Rect }; y0: number; y1: number; end?: number; beyond?: boolean; third?: boolean; tip?: boolean }[] = [];
+  const ranges: { ref: { box: Rect }; vx: number; y0: number; y1: number; end?: number; beyond?: boolean; third?: boolean; tip?: boolean }[] = [];
   for (const v of stems) {
     const vx = (v.x0 + v.x1) / 2;
     const top = Math.min(v.y0, v.y1);
@@ -964,63 +1080,76 @@ export function hollowHeadsAlongStems(
         // 竖段只抽到上面那个头为止（新编赞美诗 14 太阳颂 m2 的 E♭4/G4：干到 G4 就断，底下的 E♭4 没认）。
         // 只看往外一格那一个位置，门槛同别处。
         if (Math.abs((nearBot ? bot : top) - hy) <= sp * 0.6) {
-          ranges.push(nearBot ? { ref: h, y0: hy + sp * 0.75, y1: hy + sp * 1.25, beyond: true } : { ref: h, y0: hy - sp * 1.25, y1: hy - sp * 0.75, beyond: true });
+          ranges.push(nearBot ? { ref: h, vx, y0: hy + sp * 0.75, y1: hy + sp * 1.25, beyond: true } : { ref: h, vx, y0: hy - sp * 1.25, y1: hy - sp * 0.75, beyond: true });
           // **往干里一个三度**：闭合谱两声部的二分三度（「8」字叠头）共一根干，下一个头离干端的头正好一格；正常长的干（3.5 格）
           // 过不了下面「自由端 ALONG_FREE 格不找」那道，这一级永远搜不到（新编赞美诗 001 m4 的 E♭4/G4：干 3.4 格，G4 离干顶 2.4 格；
           // 全书漏掉的空心头里三度叠头九百多个）。门槛同「干外一格」
-          ranges.push(nearBot ? { ref: h, y0: hy - sp * 1.25, y1: hy - sp * 0.75, beyond: true, third: true } : { ref: h, y0: hy + sp * 0.75, y1: hy + sp * 1.25, beyond: true, third: true });
+          ranges.push(nearBot ? { ref: h, vx, y0: hy - sp * 1.25, y1: hy - sp * 0.75, beyond: true, third: true } : { ref: h, vx, y0: hy + sp * 0.75, y1: hy + sp * 1.25, beyond: true, third: true });
         }
         if (!strict) continue;
         // 头挂在干的一端：往另一端（自由端）找，到自由端往回 ALONG_FREE 格为止
         if (bot - top < sp * (ALONG_FREE + 1)) continue;
-        if (nearBot) ranges.push({ ref: h, y0: top + sp * ALONG_FREE, y1: hy - sp * 0.75 });
-        else ranges.push({ ref: h, y0: hy + sp * 0.75, y1: bot - sp * ALONG_FREE });
+        if (nearBot) ranges.push({ ref: h, vx, y0: top + sp * ALONG_FREE, y1: hy - sp * 0.75 });
+        else ranges.push({ ref: h, vx, y0: hy + sp * 0.75, y1: bot - sp * ALONG_FREE });
         // 头悬在干中段（离近端也有 ALONG_MID 格以上）：近端挂着的是没认出的和弦头（我灵镇静 m10，
         // F4 上下缘正压两条谱线、内腔够不上，上面的 C5 认出来却在干中段）——近端那头也找
         const near = nearBot ? bot : top;
         if (Math.abs(near - hy) >= sp * ALONG_MID)
-          ranges.push(nearBot ? { ref: h, y0: hy + sp * 0.75, y1: bot + sp * 0.3, end: bot } : { ref: h, y0: top - sp * 0.3, y1: hy - sp * 0.75, end: top });
+          ranges.push(nearBot ? { ref: h, vx, y0: hy + sp * 0.75, y1: bot + sp * 0.3, end: bot } : { ref: h, vx, y0: top - sp * 0.3, y1: hy - sp * 0.75, end: top });
         // **干穿过这个头、又多伸出一格**（离近端 0.75~1.5 格）：干不会白伸出去，端上还挂着一个三度的头——闭合谱两声部的二分三度，
         // 认出的是靠里那个（新编赞美诗 157 m11 两行、138 m9、254 m12、355 m9）。只看干端那一级
         else if (Math.abs(near - hy) >= sp * 0.75)
-          ranges.push(nearBot ? { ref: h, y0: bot - sp * 0.3, y1: bot + sp * 0.3, end: bot, third: true, tip: true } : { ref: h, y0: top - sp * 0.3, y1: top + sp * 0.3, end: top, third: true, tip: true });
+          ranges.push(nearBot ? { ref: h, vx, y0: bot - sp * 0.3, y1: bot + sp * 0.3, end: bot, third: true, tip: true } : { ref: h, vx, y0: top - sp * 0.3, y1: top + sp * 0.3, end: top, third: true, tip: true });
       } else if (!strict) {
         continue;
       } else if (hy > bot && hy - bot <= sp * ALONG_GAP) {
         // 干断在头上方：中间夹着没认出的和弦头（干被叠头的圈切断）
-        ranges.push({ ref: h, y0: bot - sp * 0.3, y1: hy - sp * 0.75 });
+        ranges.push({ ref: h, vx, y0: bot - sp * 0.3, y1: hy - sp * 0.75 });
       } else if (hy < top && top - hy <= sp * ALONG_GAP) {
-        ranges.push({ ref: h, y0: hy + sp * 0.75, y1: top + sp * 0.3 });
+        ranges.push({ ref: h, vx, y0: hy + sp * 0.75, y1: top + sp * 0.3 });
       }
     }
   }
-  for (const { ref, y0, y1, end, beyond, third, tip } of ranges) {
+  for (const { ref, vx, y0, y1, end, beyond, third, tip } of ranges) {
     if (y1 <= y0) continue;
     const cx = ref.box.x + ref.box.w / 2;
     for (const st of stepsIn(y0, y1)) {
       // 干端那一级：干必挂着头，模板分放宽；干端以外的位置照常
       const atEnd = end !== undefined && Math.abs(st.y - end) <= sp * ALONG_END_TOL;
-      const b = best(st, cx - sp * 0.15, cx + sp * 0.15);
+      // 模板沿用本页对齐过的空心模板，谱线行与这根干的列不计（`scoreAtMasked`）；墨占比、内腔都在微调后的头心上量
+      // 本页一张空心模板都凑不出时（空心头太少），只按墨判
+      const b = allMasks.length ? bestMasked(st, cx - sp * ALONG_XW, cx + sp * ALONG_XW, vx) : { x: Math.round(cx), s: 1, y: st.y };
       if (!b) continue;
-      const ink = inkIn(b.x, st.y, ref.box.w);
+      const ink = inkIn(b.x, b.y, ref.box.w);
+      const cav = cavity(b.x, b.y);
       // 干外那一格：模板分够高（`BEYOND_SCORE`）时内腔佐证放到 `BEYOND_CAVITY`——斜缝内腔被谱线切碎，够不上原始孔的尺寸
       const cavMin = beyond && b.s >= BEYOND_SCORE ? BEYOND_CAVITY : ALONG_CAVITY;
       // 往干里一个三度那一级：两个头粘成「8」字，模板对不齐（001 m4 G4 0.23），内腔佐证够强（≥ `THIRD_CAVITY`）时模板分放到 `THIRD_SCORE`
-      const minS = third && cavity(b.x, st.y) >= THIRD_CAVITY ? THIRD_SCORE : atEnd ? ALONG_END_SCORE : ALONG_SCORE;
+      const minS = third && cav >= THIRD_CAVITY ? THIRD_SCORE : atEnd ? ALONG_END_SCORE : ALONG_SCORE;
       // 干端那一级、模板与内腔都够硬的（`END_THIN`）：细圈的头墨占比够不上 0.35（新编赞美诗 141 m10 干端的 D4：模板 0.43、内腔 0.63、墨 0.32）
-      const inkMin = atEnd && b.s >= END_THIN.score && cavity(b.x, st.y) >= END_THIN.cavity ? END_THIN.ink : ALONG_INK[0];
+      const inkMin = atEnd && b.s >= END_THIN.score && cav >= END_THIN.cavity ? END_THIN.ink : ALONG_INK[0];
       if (b.s < minS || ink < inkMin || ink > ALONG_INK[1]) continue;
+      // 内腔佐证来自原始孔、行向却一点不围合的：原始孔里有谱线之间被干、小节线围成的大格，空着的线间挨着下面一个头，
+      // 模板分也有 0.3、内腔佐证 0.66、围合 0.02（高举主大能 m13）。只滤大孔反倒伤圈断口、内腔连进线间的真头（新编 059、070）
+      if (cav >= cavMin && enclosed(b.x, b.y) < ALONG_ENCLOSED_MIN) continue;
       const box: Rect = { x: Math.round(b.x - ref.box.w / 2), y: Math.round(st.y - ref.box.h / 2), w: ref.box.w, h: ref.box.h };
+      // 近干那条盒缘钉在干上：盒宽照搬参照头，头心又微调过，盒缘常越过干好几像素，后面挂干（`findStems` 两倍线宽的窗口）挂不上，
+      // 两个头都落成全音符（027 m5 的 F4/D4：盒右缘过干 8 像素）
+      if (Math.abs(box.x + box.w - vx) <= Math.abs(box.x - vx)) box.x = Math.round(vx - box.w);
+      else box.x = Math.round(vx);
       // **内腔印糊了的头**：同一根干上挂着二分头，这根干上别的头也只能是二分（一根干不会一半空心一半实心），
       // 内腔不作证也行（新编赞美诗 346 m12/m14 低音谱表 A3 压着第五线、圈里糊满，内腔 0、模板 0.37、墨 0.43）。
       // 只防「夹在两个头中间」那个位置（墨量也像头心，恩友歌）：上下 `ALONG_SANDWICH` 格内同时有已认出的头的不放宽。
-      if (cavity(b.x, st.y) < cavMin) {
-        const near = (dir: number) => taken.some((t) => {
-          const d = (t.y + t.h / 2 - st.y) * dir;
-          return d > 0 && d <= sp * ALONG_SANDWICH && Math.abs(t.x + t.w / 2 - b.x) < sp * 0.6;
-        });
+      const near = (dir: number) => taken.some((t) => {
+        const d = (t.y + t.h / 2 - st.y) * dir;
+        return d > 0 && d <= sp * ALONG_SANDWICH && Math.abs(t.x + t.w / 2 - b.x) < sp * 0.6;
+      });
+      // 圈断了口、内腔不成闭合孔的细圈头：行向围合的白够（`ALONG_ENCLOSED`）也算内腔作证，同样防「夹在两头中间」
+      // 「干外一格」那档不认：干端外空着时，下一根干或符尾也能围出白来（晨曦破晓 m8：模板 0.36、围合 0.40，多出 E4）
+      const encOk = !beyond && enclosed(b.x, b.y) >= ALONG_ENCLOSED && !(near(1) && near(-1));
+      if (cav < cavMin && !encOk) {
         // 干多伸出一格的那个端头：位置已由干钉死，模板分够高（`TIP_SCORE`）就不再要墨占比到「印糊」那一档
-        if (b.s < ALONG_FILLED_SCORE || (ink < ALONG_FILLED_INK && !(tip && b.s >= TIP_SCORE)) || (near(1) && near(-1))) continue;
+        if (b.s < ALONG_FILLED_SCORE || ink > ALONG_FILLED_INK_MAX || (ink < ALONG_FILLED_INK && !(tip && b.s >= TIP_SCORE)) || (near(1) && near(-1))) continue;
       }
       if (clash(box, taken)) continue;
       out.push({ box, code: "noteheadHalf", weak: true });
