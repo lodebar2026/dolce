@@ -24,7 +24,7 @@ import type { PObj, Seg, SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
 import { buildRasterPage, makeSymObj, makeSysBracketObj, makeTextObj, pushSeg, type RasterSym } from "./adapt";
 import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, ledgerGrid, joinVSegs, removeStaffLines, repairLineCuts, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
-import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, reseatHollowHeads, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, type PitchStep } from "./notehead";
+import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnStemSeeds, reseatHollowHeads, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, type PitchStep } from "./notehead";
 import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from "./rasterglyphs";
 import { sigDistance } from "../omr/glyphdict";
 import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, jianpuKey, type JianpuStrip } from "./jianpuband";
@@ -3782,6 +3782,31 @@ export async function recognizeRasterPage(
     // 挂在干端、被读偏一级的空心头先挪回去（`notehead.ts::reseatHollowHeads`），下面沿干找头才有对的参照
     reseatHollowHeads(raster.bin, nl, rawHoles, alongMasks, unit, makePitchSteps(groups), [...prims.vSegs, ...stemSegs, ...inkStems], syms);
     const added: RasterSym[] = [];
+    // 两端都没挂头的干：以干为锚、不要参照头（`notehead.ts::hollowHeadsOnStemSeeds`），收到的头下面沿干找头时当参照
+    {
+      // 行首「谱号 + 调号」的右沿（同 `afterKey`），再放半格：调号末一个升降号没认出时，模板会落进前一个的圆肚
+      const inHeader = (b: Rect) => {
+        const cy = b.y + b.h / 2;
+        const g = groups.find((g0) => cy > g0.lines[0].y - unit.space * 2 && cy < g0.lines[4].y + unit.space * 2);
+        if (!g) return false;
+        const inRow = (r: Rect) => r.y + r.h / 2 > g.lines[0].y - unit.space * 2 && r.y + r.h / 2 < g.lines[4].y + unit.space * 2;
+        const clef = syms.filter((s0) => s0.code.endsWith("Clef") && inRow(s0.box) && s0.box.x < b.x + b.w).sort((p, q) => q.box.x - p.box.x)[0];
+        if (!clef) return false;
+        let right = clef.box.x + clef.box.w;
+        const accs = syms.filter((s0) => /^accidental(Flat|Sharp)$/.test(s0.code) && inRow(s0.box) && s0.box.x > clef.box.x).sort((p, q) => p.box.x - q.box.x);
+        for (const [i, a] of accs.entries()) {
+          if (a.box.x - right > unit.space * (i ? 1.2 : 2)) break;
+          right = Math.max(right, a.box.x + a.box.w);
+        }
+        return b.x < right + unit.space * 0.5;
+      };
+      const isBar = (q: LineSeg) => staffGeoms.some((g) => Math.abs(Math.min(q.y0, q.y1) - g.top) < unit.space * 0.4 && Math.abs(Math.max(q.y0, q.y1) - g.bottom) < unit.space * 0.4);
+      for (const f of hollowHeadsOnStemSeeds(raster.bin, nl, rawHoles, alongMasks, unit, makePitchSteps(groups), [...prims.vSegs, ...stemSegs, ...inkStems], syms, prims.beams.map((q) => q.box), isBar, inHeader)) {
+        syms.push(f);
+        added.push(f);
+        ledger.claim(f.box, "seed:noteheadHalf");
+      }
+    }
     for (const f of hollowHeadsAlongStems(raster.bin, nl, rawHoles, alongMasks, unit, makePitchSteps(groups), [...prims.vSegs, ...stemSegs, ...inkStems], syms)) {
       syms.push(f);
       added.push(f);
@@ -3927,13 +3952,13 @@ export async function recognizeRasterPage(
     // 续过的段只进 `SPage`，不回写 `prims`——`findBlobs` 那边仍按原段抹墨，
     // 免得把符头啃掉（见 `extendVSegs` 的说明）。
     // 被并进升降号的竖段要摘掉（留着会被当成符干或小节线）
-    vSegs: snapHeadsToStems(syms, splitVoiceStems(extendVSegs(
+    vSegs: snapHeadsToStems(syms, splitSecondStems(splitVoiceStems(extendVSegs(
       nl,
       joinThroughBars(raster.bin, joinVSegs(nl, [...prims.vSegs.filter((v) => !usedSegs.has(v)), ...stemSegs, ...inkStems], VSEG_JOIN_DX, Math.round(unit.space * VSEG_JOIN_GAP)), groups.map((g) => [g.lines[0].y, g.lines[4].y] as [number, number]), unit.space),
       Math.round(unit.space * 0.35),
       groups.map((g) => [g.lines[0].y, g.lines[4].y] as [number, number]),
       unit.lineThick,
-    ), headBoxes.map((h) => h.box), unit), unit),
+    ), headBoxes.map((h) => h.box), unit), syms, unit), unit),
     syms,
     braces: findBraces(nl, prims, unit, staffLefts, groups.map((g) => ({ top: g.lines[0].y, bottom: g.lines[4].y }))).map((c) => c.bbox),
     sysBrackets: groupByLeftInk(raster.bin, groups.map((g) => ({ top: g.lines[0].y, bottom: g.lines[4].y, left: Math.max(...g.lines.map((l) => l.left)) })), unit),
@@ -7659,6 +7684,41 @@ function splitVoiceStems(segs: LineSeg[], heads: Rect[], unit: RasterUnit): Line
       }
     }
     return v;
+  });
+}
+
+/**
+ * **二度错排的两个声部共一条竖线**：上声部的头在线左（朝上的干出右缘）、下声部的头在线右（朝下的干出左缘），
+ * 两根干正好对齐、连成一条贯穿两个头的竖线（248 m16 低音的 F4/E♭4）。两个头心都在线的中段，`findStems` 要头在干端，
+ * 一根也挂不上，两个头都落成全音符。线左的头比线右的高 0.3~1.2 格、两头心离线两端都有 `SECOND_ARM` 格的，
+ * 在两个头心处切成两根干；线右那个头已因找不到干判成全音符的，改回二分。
+ * 只认二分：两端各挂符尾的实心八分（021 m2）下游本就挂得对，切了反倒带偏后面的时值。
+ */
+const SECOND_ARM = 2;
+function splitSecondStems(segs: LineSeg[], syms: RasterSym[], unit: RasterUnit): LineSeg[] {
+  const sp = unit.space;
+  const tol = Math.max(unit.lineThick * 2, sp * 0.25);
+  const heads = syms.filter((s) => s.code === "noteheadHalf" || s.code === "noteheadWhole");
+  const cy = (h: RasterSym) => h.box.y + h.box.h / 2;
+  return segs.flatMap((v) => {
+    const vx = (v.x0 + v.x1) / 2;
+    const top = Math.min(v.y0, v.y1);
+    const bot = Math.max(v.y0, v.y1);
+    if (bot - top < sp * SECOND_ARM * 2) return [v];
+    const mid = (h: RasterSym) => cy(h) - top >= sp * SECOND_ARM && bot - cy(h) >= sp * SECOND_ARM;
+    const left = heads.filter((h) => h.code === "noteheadHalf" && Math.abs(h.box.x + h.box.w - vx) <= tol && mid(h));
+    const right = heads.filter((h) => Math.abs(h.box.x - vx) <= tol && mid(h));
+    for (const l of left)
+      for (const r of right) {
+        const d = cy(r) - cy(l);
+        if (d < sp * 0.3 || d > sp * 1.2) continue;
+        if (r.code === "noteheadWhole") r.code = "noteheadHalf";
+        return [
+          { ...v, y0: top, y1: cy(l) },
+          { ...v, y0: cy(r), y1: bot },
+        ];
+      }
+    return [v];
   });
 }
 

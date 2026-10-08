@@ -1044,6 +1044,104 @@ export function reseatHollowHeads(
   return moved;
 }
 
+// ── 空心头：**以干为锚、不要参照头** ─────────────────────────────────────────
+//
+// 「8」字叠头两个头都没认出时（069 m1 低音 B3/G3：干 3.7 格，两个头都是被谱线切开的细斜缝），沿干找头那一路没有参照头。
+// 照「竖直种子」的思路：两端都没挂头的干，在端头那一带逐个音高位置配本页对齐过的空心模板（谱线行与干列不计），
+// 头盒按惯例的一侧贴干——干的上端挂头的头在干右（干朝下），下端挂头的头在干左（干朝上）。端带里过门槛的都收
+// （三度叠头两个都落在端带里：069 m1 干端的 B3 模板 0.32、围合 0.35，往里一级的 G3 0.36），更远的交给 `hollowHeadsAlongStems`。
+// 整本新编音符档 90.42 → 90.59%（64 升 9 降，031 掉一步：补对了 B3，声部分配连带变了）。
+
+/** 干长（格）。新编前 80 首扫过下限 3 / **2.5** / 2：音符档 90.24 / 90.35 / 90.35%（2 那档 021 掉一步）；
+ *  升降号、还原号的竖笔有临时记号符号挡着，没认出的也过不了模板分与内腔佐证。 */
+const SEED_LEN = [2.5, 7] as const;
+const SEED_SHORT = 3;
+/** 竖段宽过线宽这么多倍算粗线（复纵线、终止线的粗线）。 */
+const THICK_BAR = 2.5;
+/** 端带：端点往外、往里各这么多格以内的音高位置。 */
+const SEED_OUT = 0.5;
+const SEED_IN = 1.25;
+/** 头心横向微调半宽（格）。 */
+const SEED_XW = 0.15;
+
+export function hollowHeadsOnStemSeeds(
+  bin: Binary,
+  nl: Binary,
+  rawHoles: Rect[],
+  allMasks: HeadMask[],
+  unit: RasterUnit,
+  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stems: LineSeg[],
+  syms: { box: Rect; code: string }[],
+  beams: Rect[],
+  isBar: (s: LineSeg) => boolean,
+  /** 盒落在行首谱号、调号区里 */
+  inHeader: (b: Rect) => boolean,
+): { box: Rect; code: SmuflName; weak?: boolean }[] {
+  if (!allMasks.length) return [];
+  const sp = unit.space;
+  const { enclosed, bestMasked, clash, inkIn, cavity } = pitchScorer(bin, nl, rawHoles, allMasks, unit, stems);
+  const heads = syms.filter((s) => s.code.startsWith("notehead"));
+  const halves = heads.filter((s) => s.code === "noteheadHalf");
+  const med = (xs: number[]) => xs.sort((p, q) => p - q)[xs.length >> 1];
+  const w = halves.length ? med(halves.map((q) => q.box.w)) : Math.round(sp * 1.3);
+  const h = halves.length ? med(halves.map((q) => q.box.h)) : Math.round(sp * 1.1);
+  const taken = heads.map((q) => q.box);
+  const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
+  const tol = Math.max(unit.lineThick * 2, sp * 0.25);
+  const seen = new Set<string>();
+  for (const v of stems) {
+    const vx = (v.x0 + v.x1) / 2;
+    const top = Math.min(v.y0, v.y1);
+    const bot = Math.max(v.y0, v.y1);
+    const len = bot - top;
+    // 复纵线的粗线不当干，细粗两线之间的白也不是内腔（f40 m10 低音收进两个假二分）
+    const thick = (u: LineSeg) => u.lw > unit.lineThick * THICK_BAR;
+    if (len < sp * SEED_LEN[0] || len > sp * SEED_LEN[1] || isBar(v) || thick(v)) continue;
+    // 同一根干在几张表里各有一份
+    const key = `${Math.round(vx / 2)}:${Math.round(top / 4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // 干上（含两端外一格）已挂着头的交给沿干找头
+    if (taken.some((t) => Math.min(Math.abs(t.x - vx), Math.abs(t.x + t.w - vx)) <= sp * 0.4 && t.y + t.h / 2 >= top - sp && t.y + t.h / 2 <= bot + sp)) continue;
+    // 短段在行首段里多是调号降号的竖笔，而调号此时常只认出头一个（倚靠主永远膀臂第二页行首，2.7 格的竖笔、模板落进前一个降号的圆肚）：
+    // 同一高度带（中点上下 4 格）左边一个认出的头都没有的短段不找
+    const mid = (top + bot) / 2;
+    if (len < sp * SEED_SHORT && !heads.some((q) => q.box.x + q.box.w < vx - sp && Math.abs(q.box.y + q.box.h / 2 - mid) <= sp * 4)) continue;
+    // 端头扎进符杠、挂着符尾的不是二分的干
+    if (beams.some((q) => vx >= q.x - tol && vx <= q.x + q.w + tol && ((top >= q.y - tol && top <= q.y + q.h + tol) || (bot >= q.y - tol && bot <= q.y + q.h + tol)))) continue;
+    if (syms.some((q) => /^(flag|accidental)/.test(q.code) && q.box.x <= vx + tol && q.box.x + q.box.w >= vx - tol && q.box.y <= bot && q.box.y + q.box.h >= top)) continue;
+    const picks: { box: Rect; s: number }[] = [];
+    for (const end of ["top", "bot"] as const) {
+      const e = end === "top" ? top : bot;
+      const cx = end === "top" ? vx + w / 2 : vx - w / 2;
+      const steps = end === "top" ? stepsIn(e - sp * SEED_OUT, e + sp * SEED_IN) : stepsIn(e - sp * SEED_IN, e + sp * SEED_OUT);
+      for (const st of steps) {
+        const b = bestMasked(st, cx - sp * SEED_XW, cx + sp * SEED_XW, vx);
+        if (!b || b.s < ALONG_SCORE) continue;
+        const ink = inkIn(b.x, b.y, w);
+        if (ink < ALONG_INK[0] || ink > ALONG_INK[1]) continue;
+        const enc = enclosed(b.x, b.y);
+        // 不到 `SEED_SHORT` 格的短段只认行向围合：原始孔作证的会把实心头边上的白收进来（万古磐石歌 m8：漏认的八分 F3 旁，内腔 0.76、围合 0.12）
+        if (!((cavity(b.x, b.y) >= ALONG_CAVITY && enc >= ALONG_ENCLOSED_MIN && len >= sp * SEED_SHORT) || enc >= ALONG_ENCLOSED)) continue;
+        const box: Rect = { x: end === "top" ? Math.round(vx) : Math.round(vx - w), y: Math.round(st.y - h / 2), w, h };
+        // 落在行首谱号、调号区里的不收
+        if (inHeader(box)) continue;
+        if (stems.some((u) => thick(u) && (u.x0 + u.x1) / 2 > box.x && (u.x0 + u.x1) / 2 < box.x + box.w && Math.min(u.y0, u.y1) < box.y + box.h && Math.max(u.y0, u.y1) > box.y)) continue;
+        picks.push({ box, s: b.s });
+      }
+    }
+    // 端带里过了门槛的都收（三度叠头两个都在端带里），按模板分先后、与已收的相邻一级让位
+    picks.sort((p, q) => q.s - p.s);
+    for (const p of picks) {
+      if (clash(p.box, taken)) continue;
+      out.push({ box: p.box, code: "noteheadHalf", weak: true });
+      taken.push(p.box);
+    }
+  }
+  return out;
+}
+
 export function hollowHeadsAlongStems(
   bin: Binary,
   nl: Binary,
