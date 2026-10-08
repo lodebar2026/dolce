@@ -10,7 +10,8 @@
 import type { Binary, StaffRow, TextRegion } from "../omrkit/types";
 import { rbottom } from "../omrkit/types";
 import type { OcrBackend } from "../omrkit/ocr";
-import { CN_NUM, LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct } from "./lyrics";
+import { CN_NUM } from "./lyrics";
+import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct } from "../omrkit/lyrictext";
 import { median } from "../omrkit/geom";
 import { probe } from "./probe";
 

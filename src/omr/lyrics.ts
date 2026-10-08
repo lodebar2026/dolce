@@ -15,19 +15,9 @@ import { clusterByY, findLineByY, median } from "../omrkit/geom";
 import { blit, createSurface, surfaceFromBinary, type Surface } from "../omrkit/surface";
 import { probe } from "./probe";
 import { simplifiedOf } from "./hanvariant";
+import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct } from "../omrkit/lyrictext";
 
 const isHanzi = (c: string) => /[一-鿿]/.test(c);
-// 歌词里贴在字尾的标点。简谱印刷用全角，但 PP-OCR 常把 ，；：！？ 识成半角 , ; : ! ? ——
-// 一并收下、统一折成全角（与 GT 一致；半角句点 . 不收，避免撞段号 "1." / 小数点）。
-export const LYRIC_PUNCT = /[，。、；：！？…—,;:!?]/;
-// 括号反过来折成半角：四声部本子「(阿 们)」印的是半角括号，rec 常读成全角（参考谱、GT 都写半角）。
-const PUNCT_FULL: Record<string, string> = { ",": "，", ";": "；", ":": "：", "!": "！", "?": "？", "（": "(", "）": ")" };
-export const normPunct = (ch: string) => PUNCT_FULL[ch] ?? ch;
-// 引号（都不占音符）：开引号 “‘ **领起后一字**（如 “阿门”里的 “ 贴 阿），闭引号 ”’ **贴前一字**。
-// PP-OCR 对中文引号输出全角（实测 rec 已能读出 “ ”），故一并收下；半/全角开闭都认。
-// 括号同理：左括号领起后一字、右括号贴前一字（四声部本子末尾的「(阿 们)」，阿、们各占一个阿们音）。
-export const LYRIC_QUOTE_OPEN = /[“‘"'(（]/;
-export const LYRIC_QUOTE_CLOSE = /[”’)）]/;
 // 英文歌词：一个音节 = 一串字母(可含撇号 don't)，音节间以连字符相连（"How-awe-some-you-are"），
 // 词间以空白相隔。故拉丁串按 **连字符** 与 **空白**(rec 不吐空格 → 按源图字距)切成音节单元，
 // 每个音节占一个音符，与汉字单元同等对待。

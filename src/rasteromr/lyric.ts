@@ -13,6 +13,7 @@ import { median, quantile } from "../omrkit/geom";
 import { mergeToChars } from "../omrkit/charcells";
 import type { RasterUnit } from "./staffline";
 import { contentKey } from "../omrkit/contentkey";
+import { fullPunct, LYRIC_PUNCT } from "../omrkit/lyrictext";
 
 /** 一条歌词行（某个谱行下方的某一段）。 */
 export interface LyricRow {
@@ -422,10 +423,10 @@ export interface OcrChar {
 
 /** 收得下的歌词字符：汉字与全角标点。PP-OCR 认不出时会吐拉丁字母或占位符，
  *  收进来就成了歌词里凭空多出的字（实测 `l` 一个就出现二十几次）。 */
-const LYRIC_CH = /[一-鿿，。、；：！？“”‘’（）—…]/;
+const LYRIC_CH = /[一-鿿，。、；：！？“”‘’（）—…,;:!?]/;
 /** 贴在字**尾**的标点：并进前一个字，不另占一个字格（也就不占一个音符）。
- *  与 `src/omr/lyrics.ts` 的 `LYRIC_PUNCT` 同一套，那边已经调熟。 */
-const TRAIL_PUNCT = /[，。、；：！？…—”’）]/;
+ *  句读用简谱那边调熟的同一张表（`omrkit/lyrictext.ts::LYRIC_PUNCT`，半角 `,;:!?` 也收、折成全角），外加闭引号、闭括号。 */
+const isTrailPunct = (ch: string) => LYRIC_PUNCT.test(ch) || /[”’）]/.test(ch);
 /** 领起下一个字的标点（开引号、开括号）。 */
 const LEAD_PUNCT = /[“‘（]/;
 
@@ -468,8 +469,8 @@ export function foldLyricChars(chars: OcrChar[]): OcrChar[] {
       lead += c.ch;
       continue;
     }
-    if (TRAIL_PUNCT.test(c.ch) && out.length) {
-      out[out.length - 1].ch += c.ch;
+    if (isTrailPunct(c.ch) && out.length) {
+      out[out.length - 1].ch += fullPunct(c.ch);
       continue;
     }
     out.push({ ch: lead + c.ch, xFrac: c.xFrac });
