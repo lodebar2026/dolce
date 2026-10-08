@@ -175,16 +175,29 @@ export function splitUnisons(notes: StaffNote[], stems: StemInfo[], beams: BeamS
     // 另一根干短（歌词挤着，只伸出头外 1 格多）的，窗口收回头缘内、反方向的窗口放到头外：
     // 贴着头缘的小节线上下都有墨（我一生要赞美你 m4、有一位神 m1）；沿途也不能有比干宽的墨，
     // 那是紧贴着头的歌词字（晨曦破晓 m14「光」压在低音头上）
+    // 头缘按头心那一行的墨实际伸到哪（至多再出半格）：头盒偏窄时另一根干落在盒缘外几像素，收回头缘内的窗口够不着
+    //（你的信实广大 m14 低音男高男低同音 B♭3，盒宽 14、墨到 20，朝上的干在盒右缘外 3 像素）
+    const cy = Math.round((b.top + b.bottom) / 2);
+    const inkAt = (x: number) => x >= 0 && x < bin.w && cy >= 0 && cy < bin.h && bin.data[cy * bin.w + x] === 1;
+    let bl = Math.round(b.left);
+    while (bl > b.left - sp * 0.5 && inkAt(bl - 1)) bl--;
+    let br = Math.round(b.right);
+    while (br < b.right + sp * 0.5 && inkAt(br + 1)) br++;
+    // 连着的墨比一个头加一根干还宽，是贴着别的头（二度挤在一起、邻音的干），不延（宁静的伯利恒钢琴谱多出假同音）
+    if (br - bl > sp * 1.6) {
+      bl = Math.round(b.left);
+      br = Math.round(b.right);
+    }
     if (up.has(n.sym)) {
       const x1 = b.left + w * 0.3;
-      const len = reach(b.left - out, x1, b.bottom, 1) >= sp * UNISON_REACH && reach(b.left - 1, x1, b.top, -1) < sp * 0.5 ? sp * UNISON_REACH
-        : reach(b.left - 1, x1, b.bottom, 1) >= sp * UNISON_SHORT && reach(b.left - out, x1, b.top, -1) < sp * 0.5 && headRows(b.left - 1, x1, b.bottom + 2, b.bottom + sp * UNISON_SHORT, 0.4, 3) < sp * 0.2 ? sp * UNISON_SHORT : 0;
-      if (len && clear(n.sym, b.left - out, x1, b.bottom + 1, b.bottom + len) && headRows(b.left - out, x1, b.bottom + 2, b.bottom + len) < sp * 0.3) down.add(n.sym);
+      const len = reach(Math.min(b.left - out, bl - 1), x1, b.bottom, 1) >= sp * UNISON_REACH && reach(b.left - 1, x1, b.top, -1) < sp * 0.5 ? sp * UNISON_REACH
+        : reach(bl - 1, x1, b.bottom, 1) >= sp * UNISON_SHORT && reach(Math.min(b.left - out, bl - 1), x1, b.top, -1) < sp * 0.5 && headRows(bl - 1, x1, b.bottom + 2, b.bottom + sp * UNISON_SHORT, 0.4, 3) < sp * 0.2 ? sp * UNISON_SHORT : 0;
+      if (len && clear(n.sym, Math.min(b.left - out, bl - 1), x1, b.bottom + 1, b.bottom + len) && headRows(Math.min(b.left - out, bl - 1), x1, b.bottom + 2, b.bottom + len) < sp * 0.3) down.add(n.sym);
     } else {
       const x0 = b.right - w * 0.3;
-      const len = reach(x0, b.right + out, b.top, -1) >= sp * UNISON_REACH && reach(x0, b.right + 1, b.bottom, 1) < sp * 0.5 ? sp * UNISON_REACH
-        : reach(x0, b.right + 1, b.top, -1) >= sp * UNISON_SHORT && reach(x0, b.right + out, b.bottom, 1) < sp * 0.5 && headRows(x0, b.right + 1, b.top - sp * UNISON_SHORT, b.top - 2, 0.4, 3) < sp * 0.2 ? sp * UNISON_SHORT : 0;
-      if (len && clear(n.sym, x0, b.right + out, b.top - len, b.top - 1) && headRows(x0, b.right + out, b.top - len, b.top - 2) < sp * 0.3) up.add(n.sym);
+      const len = reach(x0, Math.max(b.right + out, br + 1), b.top, -1) >= sp * UNISON_REACH && reach(x0, b.right + 1, b.bottom, 1) < sp * 0.5 ? sp * UNISON_REACH
+        : reach(x0, br + 1, b.top, -1) >= sp * UNISON_SHORT && reach(x0, Math.max(b.right + out, br + 1), b.bottom, 1) < sp * 0.5 && headRows(x0, br + 1, b.top - sp * UNISON_SHORT, b.top - 2, 0.4, 3) < sp * 0.2 ? sp * UNISON_SHORT : 0;
+      if (len && clear(n.sym, x0, Math.max(b.right + out, br + 1), b.top - len, b.top - 1) && headRows(x0, Math.max(b.right + out, br + 1), b.top - len, b.top - 2) < sp * 0.3) up.add(n.sym);
     }
   }
   /** 朝下那根「干」其实是头下方歌词字的一笔：头下 1.2 格内先是一段细墨、接着连续几行 0.9~2.4 格宽的横墨（字的横笔）。

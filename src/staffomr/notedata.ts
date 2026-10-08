@@ -1231,6 +1231,11 @@ function initChords(notes: StaffNote[], stems: StemInfo[], sp: number): StaffCho
       if (Math.abs(xa - xb) > sp * STEM_JOIN_X) continue;
       const gap = Math.max(ca.stem.seg.box.top, cb.stem.seg.box.top) - Math.min(ca.stem.seg.box.bottom, cb.stem.seg.box.bottom);
       if (gap > sp * STEM_JOIN_GAP) continue;
+      // 朝向相反、头一边实一边空的是两个声部（上声部实心头干朝上、下声部空心头干朝下，两干连成一线）：一根干上只挂一种头。
+      // 并成一枚的话时值按最低那个头算，整小节凑不满拍（晨曦破晓 m10 女高 D4 四分与女低 C4 附点二分）
+      const kind = (c: StaffChord) => new Set(c.notes.map((n) => n.base === 1 / 4 && n.beams === 0 ? "q" : n.base === 1 / 2 ? "h" : "o"));
+      const ka = kind(ca), kb = kind(cb);
+      if (ca.stem.up !== cb.stem.up && ka.size === 1 && kb.size === 1 && [...ka][0] !== [...kb][0] && !ka.has("o") && !kb.has("o")) continue;
       for (const n of cb.notes) {
         ca.notes.push(n);
         n.group = ca;
@@ -1804,6 +1809,9 @@ function blackenMixed(chords: StaffChord[], expect: number, sp: number): boolean
   for (const c of chords) {
     if (!c.stem || c.grace || !c.notes.every((n) => !n.rest && n.beams === 0)) continue;
     if (!c.notes.some((n) => n.base === 1 / 4) || !c.notes.some((n) => n.base === 1 / 2)) continue;
+    // 干朝向不一的是两个声部碰巧干连成一条线（上声部实心头干朝上在右缘、下声部空心头干朝下在左缘），不是一根干上的和弦
+    //（以马内利来临歌 m3/m14/m19 女低 G4 附点二分被改成附点四分）
+    if (new Set(c.notes.map((n) => n.stemUp)).size > 1) continue;
     for (const n of c.notes)
       if (n.base === 1 / 2) {
         n.base = 1 / 4;
