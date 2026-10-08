@@ -53,6 +53,13 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     // 两端都贴着符头：这是两个头之间被切出来的一截符干（加线、谱线把符干切断），没有自由端
     if (Math.max(dTop, dBot) < sp * FLAG_BOTH_ENDS) continue;
     let far = dTop > dBot ? st.top : st.bottom;
+    // 同一列另有一根更长的干盖过这一端、再往外伸出一格以上：这一截是长干上重复检出的一段，这一端不是自由端
+    //（父恩广大 m9 男高男低 D4/F3 共一根朝下的干，短段下端停在 F3 头上，头墨当了符尾，两个四分读成八分）
+    const stemsAll = pg.segsWithTag("Stem");
+    // 那根长干要穿过这一截上所有的头（同一个和弦的干）、往外伸出一格以上：干尖附近重复检出的一截原样留着出尾
+    //（那个尾正罩住尾弯里的白，免得收成假空心头：万福泉源歌 m18）
+    if (stemsAll.some((o) => o !== st && Math.abs(o.cx - st.cx) <= Math.max(2, unit.lineThick * 2) && o.top <= Math.min(...ys) + sp * 0.3 && o.bottom >= Math.max(...ys) - sp * 0.3 &&
+      (far === st.bottom ? o.bottom > st.bottom + sp : o.top < st.top - sp))) continue;
     const hy = far === st.top ? Math.min(...ys) : Math.max(...ys);
     // 符杠横在这个窗口里的，不看（理由见上）
     // 符杠斜着搭在符干中段的也算（不只远端那一小截）
