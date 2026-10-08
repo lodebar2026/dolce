@@ -1294,6 +1294,8 @@ export async function recognizeRasterPage(
   for (const s0 of split) ledger.claim(s0.box, "cluster:noteheadBlack");
   for (const s0 of restSyms) ledger.claim(s0.box, "rest:restHBar");
   const dictClaimed = new Set<number>();
+  /** 字典认成整/半休止、却没过位置闸的扁块（见下）。 */
+  const flatPieces = new Set<number>();
   const metIds = new Set<number>();
   for (const c of blobs) {
     if (claimed.has(c.id)) continue;
@@ -1306,12 +1308,17 @@ export async function recognizeRasterPage(
     // 摘得出头就换成它（符干进 SPage、符尾照常补），摘不出才留字典这一个（颂赞与尊贵的 A4 四分）。
     if (code.startsWith("metNote")) metIds.add(c.id);
     if (code.startsWith("artic") && !groups.some((g) => c.bbox.y + c.bbox.h > g.lines[0].y - unit.space * ARTIC_REACH && c.bbox.y < g.lines[4].y + unit.space * ARTIC_REACH)) continue; // 不记账：留给歌词
-    dictClaimed.add(c.id);
     // **半/全休止要按位置验一道**：它的字形是个 1.27×0.51 格的小实心矩形，
     // 位图上这种碎块一大把（符杠断头、粗横笔的一截），实测宁静一首认出 43 个
     // 全部被采纳，而谱面上根本没那么多。它有一条硬位置：
     // 半休止**坐在中线上**、全休止**吊在上面一线下**——不贴着这两条线的不是它。
-    if (isBarRest(code) && (!nearRestLine(c.bbox, staffLines, unit) || besideStem(c.bbox))) continue;
+    dictClaimed.add(c.id);
+    // 没过位置闸的另记一笔：骑加线的实心头被抽加线切成上下两片扁块，正像这种矩形，要放给后面碎块并回那一路（父恩广大 m2 男高 C4）。
+    // 只放给那一路：别的几路照旧当已认领（全放开的话有一位神歌词 −1）
+    if (isBarRest(code) && (!nearRestLine(c.bbox, staffLines, unit) || besideStem(c.bbox))) {
+      flatPieces.add(c.id);
+      continue;
+    }
     syms.push({ box: c.bbox, code });
     ledger.claim(c.bbox, `dict:${code}`);
   }
@@ -1714,7 +1721,7 @@ export async function recognizeRasterPage(
   // 按连通块查字典就只看到半截。休止符与升降号同理——它们也压在谱线上、也有细笔画。
   // 把**x 上重叠、上下又贴着**的未识别块并起来（谱线间距的四成以内算贴着），
   // 并完再查一次；查得到才认。x 分开的不并（那是相邻的两个符号）。
-  const unmatched = blobs.filter((c) => !claimed.has(c.id) && !dictClaimed.has(c.id));
+  const unmatched = blobs.filter((c) => !claimed.has(c.id) && (!dictClaimed.has(c.id) || flatPieces.has(c.id)));
   const merged = new Set<number>();
   /** 并出来的盒按 `img` 再查一次；查得到、过了位置闸才认 */
   const tryMerged = (box: Rect, group: number[], img: Binary): boolean => {

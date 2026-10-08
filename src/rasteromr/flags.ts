@@ -33,6 +33,10 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
   // 给它安一个会把二分读成八分。
   const heads = pg.symbols.filter((s) => s.hasTag("Note") && s.code === "noteheadBlack");
   const lineYs = pg.staves.flatMap((stf) => stf.lineYs);
+  const legers = pg.segsWithTag("Leger");
+  /** 加线压着头盒的上沿或下沿（上下各容 0.2 格）。 */
+  const besideLeger = (b: Box) =>
+    legers.some((l) => l.box.left < b.right && l.box.right > b.left && [b.top, b.bottom].some((y) => l.box.top - sp * 0.2 <= y && y <= l.box.bottom + sp * 0.2));
   /** 干尖右边没长出符尾的干（下面看它是不是接着左邻那道符尾）。 */
   const bare: { cx: number; far: number; up: boolean }[] = [];
   for (const st of pg.segsWithTag("Stem")) {
@@ -221,6 +225,10 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     // **和弦字母不是符尾**：符干朝上顶到和弦行时，窗口里那点墨是「C/E」的 E、「Csus4」的 sus
     //（《主我敬拜你》三处，八分附点、附点二分都读成了带尾的八分）
     if (avoid.some((m) => overlapFrac(fbox, m) > FLAG_AVOID)) continue;
+    // **窗口里那团墨是别的头**：两个头左缘连成的竖墨被当成干，下面那个头（吊在加线下的 B3）左缘离这根「干」稍远、没算作它的头，
+    // 干尖于是成了自由端、头的墨当了符尾（耶和华是我的牧者 m9 E4/B3 读成八分）。已认的实心头大半落在出块里、又贴着加线的不出尾。
+    // 要贴着加线：符尾那团墨自己也常被收成假头（我一生要赞美你 m18 E4 的尾），光看「盖住已认头」会把真尾剔掉
+    if (heads.some((s) => !on.includes(s) && overlapFrac({ x: s.box.left, y: s.box.top, w: s.box.right - s.box.left, h: s.box.bottom - s.box.top }, fbox) > FLAG_ON_HEAD && besideLeger(s.box))) continue;
     out.push({ box: fbox, code });
   }
   // **两个八分的「符尾」连到一起**：左边那根干的符尾弯下来正落在右邻同朝向那根干的尖上（我一生要赞美你 m14 F4–D4），
@@ -314,6 +322,8 @@ const HOOK_PROM = 0.15;
 
 /** 符尾窗口与和弦字母条交叠超过这一成就不认。 */
 const FLAG_AVOID = 0.2;
+/** 出块盖住一个已认实心头的比例上限（见用处）。 */
+const FLAG_ON_HEAD = 0.5;
 
 /** 干尖顺着干往外延的上限（格）。 */
 const FLAG_TIP_EXT = 2.0;

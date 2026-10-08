@@ -44,6 +44,8 @@ export interface RasterHead {
 const W_MIN = 0.85;
 /** 窄块借符干补宽度的下限（线距的倍数）：比这更窄的是残片，不借。 */
 const NARROW_W = 0.6;
+/** 窄头借干中段那几列时块高下限（格）。 */
+const NARROW_MID_H = 0.85;
 /** 上限 1.85。**全音符本身就有 1.70 格宽**（`glyphmap.json` 的 Maestro 模板），
  *  写死 1.7 等于把它卡在门口。留一点余量到 1.85。
  *  （更早试过 1.95，那时还没按宽度分全/二分，多检出的两百多个块全是噪声。） */
@@ -153,7 +155,9 @@ export function findRasterHeads(
     // 贴着的符干被当成竖段抽走，块只剩 10px（0.68 格），过不了宽度下限。
     // 块边上真贴着一根符干的，把符干那几列算回头宽再判——不贴着符干的窄块照旧不收。
     if (b.w / sp < W_MIN && b.w / sp >= NARROW_W && b.h / sp >= H_MIN && t.area / Math.max(1, b.w * b.h) >= FILL_SOLID) {
-      const s0 = stemOf(b, stems, unit);
+      // 和弦里挂在干中段的头也算（救主降生 m2 低音 F3/B♭2 一根朝下的干，B♭2 去线后只剩 0.82 格）：只借宽度，挂干照旧按端点。
+      // 中段这一档要块有一整个头高：被线切开的空心头下半片也贴着干中段（称谢歌伴奏 m7、m12 的二分头读成低一级的四分）
+      const s0 = stemOf(b, stems, unit, undefined, b.h >= sp * NARROW_MID_H);
       if (s0) {
         const sx = (s0.x0 + s0.x1) / 2;
         const half = Math.max(1, (s0.lw ?? unit.lineThick) / 2);
@@ -338,7 +342,7 @@ function extendStem(s: LineSeg, b: Rect): void {
 }
 
 /** 贴在这个符头左缘或右缘、且纵向相交的竖段。 */
-function stemOf(b: Rect, stems: LineSeg[], unit: RasterUnit, nl?: Binary): LineSeg | null {
+function stemOf(b: Rect, stems: LineSeg[], unit: RasterUnit, nl?: Binary, mid = false): LineSeg | null {
   const tol = Math.max(unit.lineThick * 2, unit.space * 0.25);
   for (const s of stems) {
     const x = (s.x0 + s.x1) / 2;
@@ -361,7 +365,7 @@ function stemOf(b: Rect, stems: LineSeg[], unit: RasterUnit, nl?: Binary): LineS
     // **符头要在符干的某一端**，不能在中间——小节线也常擦着符头过
     // （与矢量路 `page.ts::findStems` 同一条闸）。
     const cy = b.y + b.h / 2;
-    if (Math.abs(cy - top) > unit.space && Math.abs(cy - bottom) > unit.space) continue;
+    if (!mid && Math.abs(cy - top) > unit.space && Math.abs(cy - bottom) > unit.space) continue;
     return s;
   }
   return null;

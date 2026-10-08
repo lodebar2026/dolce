@@ -426,6 +426,8 @@ const CHORD_MAX = 3;
 const CHORD_SCORE_MIN = 0.45;
 /** 上下贴成一串的三度和弦头的得分闸（见用处）。 */
 const CHORD_SCORE_STACKED = 0.35;
+/** 紧挨着加线的同干和弦头的得分闸（见 `besideLedger`）。 */
+const CHORD_SCORE_LEDGER = 0.38;
 /** 端上贴串那一档放宽时，头心要实（空心叠头被收成一个实心头：父恩广大 E3/C3 二分、善牧的全音符）。 */
 const STACKED_CORE = 0.9;
 /** 贴串放宽只给够高的块（两个头加一截干）：扫描件上 1.3~2 格的小块也凑得出「两行满头宽」（望十架多收假头）。 */
@@ -475,6 +477,8 @@ export function headFromStemBlock(
   const long = h > STEM_H[1] && h <= STEM_H_LONG;
   if (w < STEM_W[0] || w > STEM_W[1] || h < STEM_H[0] || (h > STEM_H[1] && !long)) return null;
   const fill = area / Math.max(1, box.w * box.h);
+  // 一头两干、两根干各带符尾的块更空（万古磐石歌 m8 低音 F3 八分，0.17）：再空一档的只走一头两干那一路，它自己要验头上下两段竖墨
+  if (fill < STEM_FILL[0] && fill >= TWO_STEM_FILL && !long) return twoStemHead(bin, box, masks, unit.space, Math.max(1, Math.round(unit.space * 0.15)), grid, onLine);
   if (fill < STEM_FILL[0] || fill > STEM_FILL[1]) return null;
   // 两端各留一条带，头只在里面找
   const bands: [number, number][] = [
@@ -595,8 +599,10 @@ export function headFromStemBlock(
   const taken = [best.y];
   for (let k = 0; k < CHORD_MAX - 1; k++) {
     let more: { x: number; y: number; s: number } | null = null;
-    const ya = atTop ? best.y : best.y - sp * CHORD_REACH;
-    const yb = atTop ? best.y + sp * CHORD_REACH : best.y;
+    // 摘出的头外侧块还伸出去一截的，那一截也找：干尖上挂着加线下的头，模板打分输给了线上那个（耶和华是我的牧者 m9 E4/B3、m10 E4/C♯4，
+    // 一根朝上的干，B3 吊在下加一线下）。干尖的符尾根部照旧由 `tipFlag` 挡
+    const ya = atTop ? Math.min(best.y, box.y + hh / 2) : best.y - sp * CHORD_REACH;
+    const yb = atTop ? best.y + sp * CHORD_REACH : Math.max(best.y, box.y + box.h - hh / 2);
     for (let x = Math.round(best.x - sp * 0.4); x <= best.x + sp * 0.4; x += step)
       for (let y = ya; y <= yb; y += sp * 0.25) {
         const g = grid(y);
@@ -607,7 +613,8 @@ export function headFromStemBlock(
         // 紧挨着已收的头一个三度、那一行墨满一个头宽的：三个头上下贴成一串，模板要头的上下是白的，
         // 各扣一截，只有 0.38 上下（《向主唱新歌》A4/F♯4/D4）。这一档放到 `CHORD_SCORE_STACKED`
         const stacked = taken.some((t) => Math.abs(t - g) >= sp * 0.8 && Math.abs(t - g) <= sp * 1.2) && rowSpan(bin, box, g) >= hw * 0.95;
-        if (sc >= (stacked ? CHORD_SCORE_STACKED : CHORD_SCORE_MIN) && (!more || sc > more.s) && rowSpan(bin, box, g) >= hw * 0.7 && !tipFlag(x, g)) more = { x, y: g, s: sc };
+        const min = stacked ? CHORD_SCORE_STACKED : besideLedger(bin, box, g, sp, onLine) ? CHORD_SCORE_LEDGER : CHORD_SCORE_MIN;
+        if (sc >= min && (!more || sc > more.s) && rowSpan(bin, box, g) >= hw * 0.7 && !tipFlag(x, g)) more = { x, y: g, s: sc };
       }
     if (!more) break;
     taken.push(more.y);
@@ -626,14 +633,16 @@ export function headFromStemBlock(
   return { head, extra, stemX, stemY0, stemY1 };
 }
 
+/** 一头两干那一路收的块墨占比下限（低于 `STEM_FILL` 的那一截只走这一路）。 */
+const TWO_STEM_FILL = 0.14;
 /** 一头两干：头上下各伸出去的竖墨至少这么多格。 */
 const TWO_STEM_REACH = 1.5;
 
 /**
  * **一头两干**：上下两个声部同音共用一个头，干一上一下、各带符尾（我灵镇静第一页末两行），
  * 头在块的中段，两端的带里找不到。在两端带之间找一个头（门槛同单头那一档、那一行墨满一个头宽），
- * 头上方与下方都要各有一段 `TWO_STEM_REACH` 格以上的竖墨。只出一个头（GT 同音两声部多只记一个），
- * 干取朝上那根（符尾挂在它顶上）。
+ * 头上方与下方都要各有一段 `TWO_STEM_REACH` 格以上的竖墨。这里只出一个头、干取朝上那根（符尾挂在它顶上）；
+ * 两个声部各出一个音交给 `stems.ts::splitUnisons`（按另一侧那根干克隆）。
  */
 function twoStemHead(
   bin: Binary,
@@ -732,6 +741,21 @@ function ledgerEnd(bin: Binary, box: Rect, headY: number, sp: number, onLine: (y
   const cy = rows.reduce((a, b) => a + b, 0) / rows.length;
   // 加线在谱表外 k 个线距处：往谱表那边挪 k 格落在谱线上
   return [1, 2, 3, 4].some((k) => onLine(cy + k * sp) || onLine(cy - k * sp));
+}
+
+/**
+ * 间里的头上沿或下沿紧挨着一条**加线**（那一行比头宽得多、本身不是谱线、往谱表挪整格落在谱线上）：
+ * 加线压着头的一边，模板那一侧不白，分数掉一截（耶和华是我的牧者 m9 吊在下加一线下的 B3，0.40）。
+ */
+function besideLedger(bin: Binary, box: Rect, g: number, sp: number, onLine: (y: number) => boolean): boolean {
+  if (onLine(g)) return false;
+  for (const dir of [-1, 1])
+    for (let k = -2; k <= 2; k++) {
+      const y = g + (dir * sp) / 2 + k;
+      if (onLine(y) || rowSpan(bin, box, y) < sp * 1.6) continue;
+      if ([1, 2, 3, 4].some((n) => onLine(y + n * sp) || onLine(y - n * sp))) return true;
+    }
+  return false;
 }
 
 function rowSpan(bin: Binary, box: Rect, y: number): number {

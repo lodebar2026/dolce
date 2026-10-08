@@ -1273,6 +1273,9 @@ function initChords(notes: StaffNote[], stems: StemInfo[], sp: number): StaffCho
     let bd = Infinity;
     for (const ch of out) {
       if (ch.staff !== n.staff || !ch.stem) continue;
+      // 全音符不并进全是实心头的和弦：位图路并它是当「干没挂上的二分」，二分只会与空心头同干。
+      // 另一声部的全音符贴着这根干的（我灵镇静 m4 男高 C4 全音符，男低 G3 四分的干从它左缘下去）并进去就成了二分
+      if (n.sym.code === "noteheadWhole" && ch.notes.every((m) => m.sym.code === "noteheadBlack")) continue;
       if (n.sym.box.left > ch.right + sp * 0.6 || n.sym.box.right < ch.left - sp * 0.6) continue;
       const d = Math.min(...ch.notes.map((m) => Math.abs(m.diatonic - n.diatonic)));
       if (d > ORPHAN_STEP || d === 0) continue; // 三级以内才算同一枚；同高的是重复检出，别并
