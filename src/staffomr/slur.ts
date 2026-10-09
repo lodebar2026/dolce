@@ -397,9 +397,46 @@ export function reconnectSlurs(pg: SPage, arcs: SlurArc[]): void {
   }
 }
 
+/** 弧号：写出时给 `<slur>` 配对用（`toxml.ts::renumberSlurs`）。按弧对象记住，同一个弧对象再标一次时号不变。 */
+const slurIdOf = new WeakMap<SlurArc, number>();
+let nextSlurId = 1;
+const pushId = (a: number[] | undefined, id: number) => (a?.includes(id) ? a : [...(a ?? []), id]);
+
+/**
+ * 只认出一端的弧，悬空那端在哪：跨行弧的前半，右端伸到本行**最后一小节**或谱表右缘之外（`end`）；
+ * 跨行弧的后半，左端落在本行**第一小节的前半**（`begin`，谱号调号那段也算）；别处都是 `mid`（系统中间缺一端，多半是端点没挂上符头）。
+ * 只有前两种才去接下一系统 / 上一系统的半截——光看「缺一端」就接，系统中间的半截会被接到隔着几十小节的另一个半截上（是爱 m1→m44）。
+ */
+function orphanEdge(sl: SlurArc, n: StaffNote): "end" | "begin" | "mid" {
+  const bars = n.staff.bars;
+  if (!bars.length) return "mid";
+  if (!sl.to) return sl.rx >= bars[bars.length - 1].left ? "end" : "mid";
+  const b0 = bars[0];
+  return sl.lx <= (b0.left + b0.right) / 2 ? "begin" : "mid";
+}
+
 /** 弧 → 挂到音符上的标记。一个音符可以同时是上一条的收尾与下一条的起头。 */
 export function markSlurNotes(arcs: SlurArc[]): void {
+  // **两端落在同一处的弧算同一条**：同一条圆滑线常被检出两个弧对象（牵我的手每条都是两份），
+  // 还有一头挂在和弦的不同成员上的（我灵镇静 m4 E4→A4、E4→F4，A4/F4 同一个和弦）。
+  // 原来只记布尔值，又按谱表号编号，两条同号、读入端只留一条，碰巧是对的；按弧号逐条写出就成了两条。
+  // 「同一处」= 同一个音，或同一行谱上横向差不到半个符头宽（同一和弦）。两份总在同一批里，按这一批去重
+  const ends: { id: number; from?: StaffNote; to?: StaffNote }[] = [];
+  const near = (a?: StaffNote, b?: StaffNote) =>
+    a === b || (!!a && !!b && a.staff === b.staff && Math.abs(a.x - b.x) < (a.sym.box.right - a.sym.box.left) * 0.5);
   for (const sl of arcs) {
+    if (!sl.tie) {
+      let id = slurIdOf.get(sl);
+      if (id === undefined) {
+        id = ends.find((e) => near(e.from, sl.from) && near(e.to, sl.to))?.id;
+        if (id === undefined) ends.push({ id: (id = nextSlurId++), from: sl.from, to: sl.to });
+        slurIdOf.set(sl, id);
+      }
+      if (sl.from) sl.from.slurStartIds = pushId(sl.from.slurStartIds, id);
+      if (sl.to) sl.to.slurStopIds = pushId(sl.to.slurStopIds, id);
+      const one = sl.from && !sl.to ? sl.from : !sl.from && sl.to ? sl.to : undefined;
+      if (one && !one.slurOrphans?.some((o) => o.id === id)) (one.slurOrphans ??= []).push({ id, edge: orphanEdge(sl, one), above: sl.above });
+    }
     if (sl.from) {
       if (sl.tie) (sl.from.tieStart = true), (sl.from.tieAbove = sl.above);
       else (sl.from.slurStart = true), (sl.from.slurAbove = sl.above);

@@ -804,6 +804,14 @@ export interface StaffNote {
   slurStop?: boolean;
   /** 收尾的那条圆滑线起在哪行谱（跨谱表的弧，钢琴左手起、右手收）：写出时 `<slur number>` 两端要一致，按起端那行编。 */
   slurStopFrom?: Staff;
+  /** 这个音起 / 收的是**哪几条**弧（`markSlurNotes` 给的弧号）。写出时按它配对、分配 `<slur number>`（`renumberSlurs`）；
+   *  光凭上面两个布尔值，同一行谱上交叠的两条弧（嵌套、上下两声部各一条）配不上对。 */
+  slurStartIds?: number[];
+  slurStopIds?: number[];
+  /** 只认出一端的弧（`markSlurNotes` 按几何定）：`end` = 起在这个音、另一端伸到本行最后一小节或谱表右缘之外（跨行弧的前半），
+   *  `begin` = 止在这个音、另一端起在本行第一小节前半（跨行弧的后半），`mid` = 系统中间缺一端。写出时 `renumberSlurs` 只把
+   *  同一声部同一行谱上的 `end` 与这个声部下一个出现的系统里的 `begin` 接成一条，接不上的不写。 */
+  slurOrphans?: { id: number; edge: "end" | "begin" | "mid"; above: boolean }[];
   tieStart?: boolean;
   tieStop?: boolean;
   /** 起头的那条圆滑线 / 连音线画在音符上方（弧朝上，`SlurArc.above`）还是下方；没认出方向的不写。 */

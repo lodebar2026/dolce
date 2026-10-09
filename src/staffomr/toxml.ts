@@ -125,7 +125,7 @@ export function toMusicXml(lines: StaffLineResult[], opts: StaffXmlOptions = {})
     work: workXml(opts.title),
     credits: creditsXml(opts.credits),
     partList: scorePartXml(partId),
-    body: `<part id="${partId}">${body}</part>`,
+    body: `<part id="${partId}">${renumberSlurs(body)}</part>`,
   });
 }
 
@@ -334,9 +334,18 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   // 止端按起端那行编（跨谱表的弧）
   const slurNo = staffNo || 1;
   const stopNo = (n.slurStopFrom && partStaffNo.get(n.slurStopFrom)) || slurNo;
-  if (n.slurStop) nots.push(`<slur type="stop" number="${stopNo}"/>`);
+  // 带弧号的（`markSlurNotes` 给的）先写成临时的 `arc` 属性，整个声部写完后由 `renumberSlurs` 配对、重编号
+  // 落单半截再带上 `edge`、`ab`（几何位置与朝向，见 `slurOrphans`）
+  const arcs = (ids: number[] | undefined) => (ids?.length ? ids : [0]);
+  const arcAttr = (id: number) => {
+    if (!id) return "";
+    const o = n.slurOrphans?.find((x) => x.id === id);
+    return ` arc="${id}"` + (o ? ` edge="${o.edge}" ab="${o.above ? 1 : 0}"` : "");
+  };
+  if (n.slurStop) for (const id of arcs(n.slurStopIds)) nots.push(`<slur type="stop" number="${stopNo}"${arcAttr(id)}/>`);
   const slurPl = n.slurAbove === undefined ? "" : ` placement="${n.slurAbove ? "above" : "below"}"`;
-  if (n.slurStart) nots.push(`<slur type="start" number="${slurNo}"${n.slurDashed ? ` line-type="dashed"` : ""}${slurPl}/>`);
+  if (n.slurStart)
+    for (const id of arcs(n.slurStartIds)) nots.push(`<slur type="start" number="${slurNo}"${arcAttr(id)}${n.slurDashed ? ` line-type="dashed"` : ""}${slurPl}/>`);
   if (n.tuplet) nots.push(`<tuplet type="start"/>`);
   // `<notations>` 里子元素有固定次序：tied / slur / tuplet / ornaments / articulations / fermata / arpeggiate
   const arts: string[] = [];
@@ -401,6 +410,90 @@ const ARTICULATION: Record<string, string> = {
  * `hyphen` = 这个音节后面还有连字符，`cont` = 前面来的也是同一个词。
  * `a-bid-eth` 三段正好走遍 begin / middle / end。
  */
+/**
+ * 一个声部的 `<slur>` 按弧号配对、重编 `number`（临时的 `arc` / `edge` / `ab` 属性随之删掉）。
+ *
+ * 原来编号按谱表号给（第 1 行谱 1 号、第 2 行谱 2 号），同一行谱上两条弧交叠（嵌套、上下两声部各一条）
+ * 或只认出一端的弧，读入端就配串了：MuseScore 报「No matching end found for start of slur number 2 … Older slur will be ignored」
+ * （牵我的手 Synth m24、Piano m12→m18 等五处）。改为：
+ *   · 一条弧的两端里**先写出的那端**占一个空闲编号（1 起最小的空号），后写出的那端交还；
+ *   · **跨行弧的两个半截**在这里接：同一谱表号上，`end` 半截接**这个声部下一个出现的系统**里的 `begin` 半截
+ *     （朝向相同的优先；中间那个系统这个声部的谱表隐藏了也照接——牵我的手 Synth m57→m60）。
+ *     `sysOfBar`（每小节第几个系统）没给的，按相隔不过一小节算。识别时页内已接过一遍（`slur.ts::reconnectSlurs`），
+ *     剩下的是跨页的、和前后两个系统行数不同的（首系统隐藏了人声谱表）——在这里接，声部归属已定、跨页也连着；
+ *   · **接不上的半截不写**：MusicXML 里半截弧没有合法写法，留着就是一个永不闭合的编号（导入端报警告，
+ *     后面同号的还会被配串）。照写成另取的编号试过，回归各档一分不差——读入端（`model/fromxml.ts::MarkSink`）
+ *     本来就把配不上对的半截丢掉，写了也白写。系统中间缺一端的半截是识别没挂上符头，要在识别那头补。
+ * 没有弧号的（不走 `markSlurNotes` 的路）原样不动。
+ */
+export function renumberSlurs(body: string, sysOfBar?: number[]): string {
+  const re = /<slur type="(start|stop)" number="(\d+)" arc="(\d+)"(?: edge="(\w+)" ab="(\d)")?([^>]*)\/>/g;
+  // 第几小节（按 `<measure` 计数）
+  const bars = [...body.matchAll(/<measure[ >]/g)].map((m) => m.index!);
+  const barAt = (at: number) => {
+    let k = 0;
+    while (k < bars.length && bars[k] < at) k++;
+    return k;
+  };
+  const toks = [...body.matchAll(re)].map((m) => ({
+    type: m[1], staff: m[2], arc: Number(m[3]), edge: m[4], above: m[5] === "1", rest: m[6], at: m.index!, len: m[0].length, bar: barAt(m.index!),
+  }));
+  if (!toks.length) return body;
+  // 某小节所在系统之后，这个声部下一个出现的系统
+  const nextSys = (bar: number): number | undefined => {
+    const s0 = sysOfBar![bar - 1];
+    return sysOfBar!.find((x) => x > s0);
+  };
+  const starts = new Set(toks.filter((t) => t.type === "start").map((t) => t.arc));
+  const stops = new Set(toks.filter((t) => t.type === "stop").map((t) => t.arc));
+  const alias = new Map<number, number>(); // 后半截的弧号 → 接上的前半截弧号
+  const orphan = new Set<number>();
+  const pending = new Map<string, { arc: number; bar: number; above: boolean }[]>(); // 谱表号 → 还没接上的 `end` 半截
+  for (const t of toks) {
+    if (t.type === "start" && !stops.has(t.arc)) {
+      orphan.add(t.arc);
+      if (t.edge !== "end") continue;
+      const q = pending.get(t.staff) ?? [];
+      q.push({ arc: t.arc, bar: t.bar, above: t.above });
+      pending.set(t.staff, q);
+    } else if (t.type === "stop" && !starts.has(t.arc)) {
+      orphan.add(t.arc);
+      if (t.edge !== "begin") continue;
+      const q = (pending.get(t.staff) ?? []).filter((p) => (sysOfBar ? sysOfBar[t.bar - 1] === nextSys(p.bar) : t.bar - p.bar <= 1));
+      const hit = q.find((p) => p.above === t.above) ?? q[0];
+      pending.set(t.staff, q.filter((p) => p !== hit));
+      if (hit) {
+        alias.set(t.arc, hit.arc);
+        orphan.delete(t.arc);
+        orphan.delete(hit.arc);
+      }
+    }
+  }
+  const num = new Map<number, number>();
+  const used = new Set<number>();
+  let out = "";
+  let last = 0;
+  for (const t of toks) {
+    const key = alias.get(t.arc) ?? t.arc;
+    out += body.slice(last, t.at);
+    last = t.at + t.len;
+    if (orphan.has(key)) continue;
+    let n = num.get(key);
+    if (n === undefined) {
+      n = 1;
+      while (used.has(n)) n++;
+      used.add(n);
+      num.set(key, n);
+    } else {
+      used.delete(n);
+      num.delete(key);
+    }
+    out += `<slur type="${t.type}" number="${n}"${t.rest}/>`;
+  }
+  out += body.slice(last);
+  return out.replace(/<notations><\/notations>/g, "");
+}
+
 function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean; extend?: boolean }): string {
   const syllabic = l.cont ? (l.hyphen ? "middle" : "end") : l.hyphen ? "begin" : "single";
   return `<lyric number="${l.verse}"><syllabic>${syllabic}</syllabic><text>${escapeXml(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
@@ -489,6 +582,8 @@ function scoreToMusicXmlRaw(
     });
     let body = "";
     let measureNo = 0;
+    /** 每一小节属于第几个系统（`renumberSlurs` 接跨行弧用） */
+    const sysOfBar: number[] = [];
     let prevFifths: number | null = null;
     let prevTime: string | null = null;
     let prevClef: string[] = [];
@@ -505,6 +600,7 @@ function scoreToMusicXmlRaw(
 
       for (let bi = 0; bi < barCount; bi++) {
         measureNo++;
+        sysOfBar.push(si);
         let attrs = "";
         if (measureNo === 1) attrs += `<divisions>${divisions}</divisions>`;
         const bar0 = lead.bars[bi];
@@ -573,7 +669,7 @@ function scoreToMusicXmlRaw(
         body += `</measure>`;
       }
     });
-    bodies.push(`<part id="${id}">${body}</part>`);
+    bodies.push(`<part id="${id}">${renumberSlurs(body, sysOfBar)}</part>`);
   });
 
   return wrapPartwise({
