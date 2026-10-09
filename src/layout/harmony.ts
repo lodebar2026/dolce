@@ -8,6 +8,7 @@ import { GlyphCodes } from "../smufl/smufl";
 import { Font } from "./font";
 import { Group, TextFrame } from "./pageitem";
 import { Matrix33 } from "../common/geom";
+import { chordStepAlter } from "../score/harmonyparse";
 
 /** 和弦符号的一段：文字或 SMuFL 字形，可上标（1）/下标（-1）。 */
 export interface HarmonySeg {
@@ -77,18 +78,15 @@ const PLAIN_ACCIDENTAL_SCALE = 0.6;
 const SHARP_CHARS = "#♯";
 const FLAT_CHARS = "b♭";
 
-/** 根音/低音的「字母 + 升降号」。 */
-function pushStepAlter(segs: HarmonySeg[], letter: string, accidental: string): void {
-  segs.push({ text: letter, music: false, superscript: 0, dy: 0 });
+/** 根音/低音的「字母 + 升降号」。`left`：原文把升降号写在字母前面（`#Fm`），照原样排在前面。 */
+function pushStepAlter(segs: HarmonySeg[], letter: string, accidental: string, left = false): void {
   // 注意：String.includes("") 恒为真，没有升降号时必须先挡掉空串
-  if (accidental === "") {
-    return;
-  }
-  if (SHARP_CHARS.includes(accidental)) {
-    segs.push({ text: GlyphCodes.csymAccidentalSharp, music: true, superscript: 0, dy: 0 });
-  } else if (FLAT_CHARS.includes(accidental)) {
-    segs.push({ text: GlyphCodes.csymAccidentalFlat, music: true, superscript: 0, dy: 0 });
-  }
+  const glyph = accidental === "" ? ""
+    : SHARP_CHARS.includes(accidental) ? GlyphCodes.csymAccidentalSharp
+    : FLAT_CHARS.includes(accidental) ? GlyphCodes.csymAccidentalFlat : "";
+  if (glyph && left) segs.push({ text: glyph, music: true, superscript: 0, dy: 0 });
+  segs.push({ text: letter, music: false, superscript: 0, dy: 0 });
+  if (glyph && !left) segs.push({ text: glyph, music: true, superscript: 0, dy: 0 });
 }
 
 /** 后缀里能直接用 SMuFL 记号表示的质量。 */
@@ -124,14 +122,14 @@ export function chordTextSegs(text: string, plain = false): HarmonySeg[] {
     };
     /** 排一个「字母 + 升降号」，升降号提到字母前面。返回剩下的部分。 */
     const emitRoot = (str: string): string => {
-      const m = /^([A-G])([#♯b♭]?)/.exec(str);
+      const m = chordStepAlter(str);
       if (!m) {
         emit(str);
         return "";
       }
-      if (m[2]) emit(SHARP_CHARS.includes(m[2]) ? "#" : "b", true);
-      emit(m[1]!);
-      return str.slice(m[0].length);
+      if (m.acc) emit(SHARP_CHARS.includes(m.acc) ? "#" : "b", true);
+      emit(m.step);
+      return str.slice(m.len);
     };
     let rest = emitRoot(src);
     let bass = "";
@@ -153,13 +151,14 @@ export function chordTextSegs(text: string, plain = false): HarmonySeg[] {
     return segs.length ? segs : [{ text: src, music: false, superscript: 0, dy: 0 }];
   }
 
-  const root = /^([A-G])([#♯b♭]?)/.exec(src);
+  // 升降号前置后置都认：前置（`#Fm`，中文简谱的写法）照原样排在字母前面
+  const root = chordStepAlter(src);
   if (!root) {
     // 不是「字母打头」的和弦（例如汉字注记），原样排
     return [{ text: src, music: false, superscript: 0, dy: 0 }];
   }
-  pushStepAlter(segs, root[1]!, root[2] ?? "");
-  let rest = src.slice(root[0].length);
+  pushStepAlter(segs, root.step, root.acc, root.left);
+  let rest = src.slice(root.len);
 
   // 低音：`/G`、`/A♭`
   let bass = "";
@@ -200,8 +199,8 @@ export function chordTextSegs(text: string, plain = false): HarmonySeg[] {
 
   if (bass) {
     segs.push({ text: "/", music: false, superscript: 0, dy: 0 });
-    const b = /^([A-G])([#♯b♭]?)/.exec(bass);
-    if (b) pushStepAlter(segs, b[1]!, b[2] ?? "");
+    const b = chordStepAlter(bass);
+    if (b) pushStepAlter(segs, b.step, b.acc, b.left);
     else segs.push({ text: bass, music: false, superscript: 0, dy: 0 });
   }
   return segs;

@@ -34,7 +34,8 @@ const CHORD_HANZI_RE = /[或升降]/g;
 // + 可选转位低音（`/D#`，低音同样大写）。交替里长后缀在前——JS 取**首个**成功的分支而非最长，
 // `maj7` 若先命中 `m` 就会剩下 "aj7" 变成未覆盖。
 // 升降号也可以**前置**（`#Fm`、`D/#F`，中文谱的写法，慕恩《当向众人行善》通篇如此）：不收的话每个 `#`
-// 都算一个未覆盖字符，`#FmEm#FmBm` 覆盖率掉到 0.8，整行和弦被当成歌词丢掉。归一时折成后置。
+// 都算一个未覆盖字符，`#FmEm#FmBm` 覆盖率掉到 0.8，整行和弦被当成歌词丢掉。归一时**照原写法保留**
+// （123 / 文本谱 / MusicXML 的 `location="left"` 都装得下，排版照样印在字母前；ABC 等格式写出时再折成后置）。
 // **根音必须大写**：印刷体和弦的根音从来是大写，而小写字母遍地都是——`Coda` 的 d/a、`Verse` 的 e
 // 一旦算根音，就凭空长出 D、A、E 三个和弦。宁可漏掉 OCR 把 C 读成 c 的那几个，也不放小写进来。
 export const CHORD_TOKEN_RE = /^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?\d*(?:sus\d*|add\d*)?(?:\/[#♯b♭]?[A-G][#♯b♭]?)?/;
@@ -92,14 +93,12 @@ export function splitChordTokens(s: string, xAt?: (i: number) => number): { tok:
 
 /** OCR 形态归一：根音大写、性质符大小写规整、全角升降号折成 ASCII、去空白。
  *  归一后的形式要同时被 layout/harmony.ts 的 chordTextSegs 与 score/harmonyxml.ts 的
- *  harmonyXml 接受——两者都认 `#`/`b`，故统一吐 ASCII 最稳。 */
+ *  harmonyXml 接受——两者都认 `#`/`b`（前置后置都认），故统一吐 ASCII 最稳；升降号的前后位置照源图不动。 */
 export function normalizeChord(tok: string): string {
   let s = tok.replace(/\s/g, "").replace(/♯/g, "#").replace(/♭/g, "b");
-  // 前置升降号折成后置：`#Fm` → `F#m`、`D/#F` → `D/F#`（下游 chordTextSegs / harmonyXml 只认后置）。
-  s = s.replace(/^([#b])([A-G])/, "$2$1").replace(/\/([#b])([A-G])/, "/$2$1");
   // 性质符：`M`（大写）在和弦里表示大三/大七，但 OCR 更常把小写 m 读成大写；简谱上大写 M
   // 几乎不用，故一律折成小写 m（`maj` 另有写法、不受影响）。
-  s = s.replace(/^([A-G][#b]?)M(?!aj)/, (_, r: string) => `${r}m`);
+  s = s.replace(/^([#b]?[A-G][#b]?)M(?!aj)/, (_, r: string) => `${r}m`);
   // 扩展词统一小写：`SUS4` → `sus4`、`Dim` → `dim`。
   s = s.replace(/(maj|min|sus|add|dim|aug)/gi, (m) => m.toLowerCase());
   return s;

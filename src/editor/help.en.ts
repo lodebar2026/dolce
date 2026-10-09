@@ -229,7 +229,7 @@ export const VISUAL_TOPICS_EN: { title: string; body: string[] }[] = [
   {
     title: "Chord names, text and dynamics",
     body: [
-      "Select a note and press `Ctrl/⌘+K` (web: `Alt+K`): a box opens above it for a chord name (`C`, `Am7`, `G/B`, `N.C.`…), prefilled with the existing one. `Space` confirms and moves to the next note (rests can carry chords too), `Shift+Space` goes back, `Enter` confirms and closes, `Esc` cancels; submitting an empty box removes the chord name.",
+      "Select a note and press `Ctrl/⌘+K` (web: `Alt+K`): a box opens above it for a chord name (`C`, `Am7`, `G/B`, `N.C.`…; a prefix accidental such as `#Fm` or `D/#F` is printed as written), prefilled with the existing one. `Space` confirms and moves to the next note (rests can carry chords too), `Shift+Space` goes back, `Enter` confirms and closes, `Esc` cancels; submitting an empty box removes the chord name.",
       "123 writes valid chord names without quotes (`C 1`) and others in quoted form (`\"N.C.\"1`); ABC always `\"C\"`; MusicXML writes `<harmony>` (root and kind parsed from the text). For text jianpu and JP-Word edit chord names in the source.",
       "**Text**: `Ctrl/⌘+T` (web: `Alt+T`) adds text above the selected note (rit., refrain, repeat twice…), `Enter` to submit. **Dynamics**: `Ctrl/⌘+E` (web: `Alt+E`) takes `p` `mp` `mf` `f` `ff` `sfz` `fp` and so on, `Space` moves to the next note. Existing values are prefilled; submitting empty removes them. 123 and ABC write `\"^rit.\"` and `!mf!`; MusicXML writes `<direction>` (text above, dynamics below).",
     ],

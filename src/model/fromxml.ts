@@ -249,6 +249,9 @@ function readPitch(el: Element): Pitch {
   };
 }
 
+/** `<root-alter location="left">`：升降号印在字母前面（`#Fm`）。 */
+const alterLeft = (parent: Element, tag: string): boolean => child(parent, tag)?.getAttribute("location") === "left";
+
 function readHarmony(el: Element): Harmony {
   const rootEl = child(el, "root");
   const kindEl = child(el, "kind");
@@ -259,6 +262,7 @@ function readHarmony(el: Element): Harmony {
     },
     kind: kindEl?.textContent ?? "",
   };
+  if (rootEl && alterLeft(rootEl, "root-alter")) h.root.alterLeft = true;
   const kt = kindEl?.getAttribute("text");
   // `text=""` 是「不印 kind 后缀」，与缺省不同（混排按 null / "" 分），空串也要留
   if (kt !== null && kt !== undefined) h.kindText = kt;
@@ -268,6 +272,7 @@ function readHarmony(el: Element): Harmony {
       step: childText(bassEl, "bass-step") ?? "C",
       alter: num(bassEl, "bass-alter") ?? 0,
     };
+    if (alterLeft(bassEl, "bass-alter")) h.bass.alterLeft = true;
   }
   const degs = children(el, "degree");
   if (degs.length) {

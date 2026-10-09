@@ -1071,6 +1071,8 @@ export enum HarmonyDegreeType {
 export interface HarmonyStepAlter {
   step: string;
   alter: number;
+  /** 升降号印在字母前面（`<root-alter location="left">`，中文简谱的 `#Fm`） */
+  alterLeft?: boolean;
 }
 
 export class HarmonyLayout {
@@ -1088,10 +1090,10 @@ export class HarmonyLayout {
 
   // ---- 语义：一律从 ScoreDoc 取 ----
   get root(): HarmonyStepAlter {
-    return { step: this.src.root.step, alter: this.src.root.alter };
+    return { step: this.src.root.step, alter: this.src.root.alter, alterLeft: this.src.root.alterLeft };
   }
   get bass(): HarmonyStepAlter | null {
-    return this.src.bass ? { step: this.src.bass.step, alter: this.src.bass.alter } : null;
+    return this.src.bass ? { step: this.src.bass.step, alter: this.src.bass.alter, alterLeft: this.src.bass.alterLeft } : null;
   }
   get degree(): { value: number; alter: number; type: HarmonyDegreeType }[] {
     return (this.src.degrees ?? []).map((g) => ({
@@ -1119,17 +1121,14 @@ export class HarmonyLayout {
 
   /** 纯文本形式（仅用于 calcMixedStaffY 的宽度粗估）。 */
   asPlainText(): string {
-    let res = this.root.step;
-    if (this.root.alter === 1) res += "#";
-    else if (this.root.alter === -1) res += "b";
+    const acc = (alter: number): string => (alter === 1 ? "#" : alter === -1 ? "b" : "");
+    let res = this.root.alterLeft ? acc(this.root.alter) + this.root.step : this.root.step + acc(this.root.alter);
     res += harmonyKindSuffix(this.kind, this.kindText);
     for (const d of this.degree) {
       if (d.type === HarmonyDegreeType.Add) res += "add" + d.value;
     }
     if (this.bass) {
-      res += "/" + this.bass.step;
-      if (this.bass.alter === 1) res += "#";
-      else if (this.bass.alter === -1) res += "b";
+      res += "/" + (this.bass.alterLeft ? acc(this.bass.alter) + this.bass.step : this.bass.step + acc(this.bass.alter));
     }
     return res;
   }
@@ -1138,9 +1137,10 @@ export class HarmonyLayout {
   asText(): HarmonySeg[] {
     const segs: HarmonySeg[] = [];
     const stepAlter = (sa: HarmonyStepAlter) => {
+      const glyph = sa.alter === 1 ? GlyphCodes.csymAccidentalSharp : sa.alter === -1 ? GlyphCodes.csymAccidentalFlat : "";
+      if (glyph && sa.alterLeft) segs.push({ text: glyph, music: true, superscript: 0, dy: 0 });
       segs.push({ text: sa.step, music: false, superscript: 0, dy: 0 });
-      if (sa.alter === 1) segs.push({ text: GlyphCodes.csymAccidentalSharp, music: true, superscript: 0, dy: 0 });
-      else if (sa.alter === -1) segs.push({ text: GlyphCodes.csymAccidentalFlat, music: true, superscript: 0, dy: 0 });
+      if (glyph && !sa.alterLeft) segs.push({ text: glyph, music: true, superscript: 0, dy: 0 });
     };
     stepAlter(this.root);
 

@@ -4,6 +4,7 @@
 // 上游怎么用这行：它原样塞进 `\new ChordNames { \chordmode { … } }`，所以 token 就是 LilyPond 和弦语法：
 //   `<音名><时值?><:修饰?>?`（时值按 LilyPond 的"没写就沿用上一个"，第一个默认四分）。
 // 它自己从 MusicXML 生成这行时写的是 `root+xmlDuration(...)+suffix`，也就是 `c2.` `g:7` 这种形态 —— 写出端照它来。
+import { chordSuffixForm } from "../score/harmonyparse";
 
 /** 谱上印的修饰 → LilyPond 和弦修饰。左边是没有前导 `:` 的常见写法（大小写敏感：`M7` 是大七）。 */
 const SUFFIX_TO_LY: ReadonlyArray<readonly [RegExp, string]> = [
@@ -129,7 +130,8 @@ export function wholeToDuration(whole: number): { text: string; exact: boolean }
  *  这条时间线**越走越偏**：第二个和弦的落点就不再是它真正的拍位（实测：跨 2 小节的 `c1...` 只有 1.875，
  *  比 2 少 1/8 拍）。乘数配不上才退回近似。 */
 export function harmonyToChordToken(text: string, whole: number): string | null {
-  const m = /^([A-Ga-g](?:[#♯b♭]|##|bb)?)(.*?)(?:\/([A-Ga-g](?:[#♯b♭]|##|bb)?))?$/.exec(text.trim());
+  // LilyPond 和弦只有「音名在前」一种写法：前置升降号（`#Fm`）先折成后置
+  const m = /^([A-Ga-g](?:[#♯b♭]|##|bb)?)(.*?)(?:\/([A-Ga-g](?:[#♯b♭]|##|bb)?))?$/.exec(chordSuffixForm(text));
   if (!m) return null;
   const pitch = textPitchToLy(m[1]!);
   if (!pitch) return null;

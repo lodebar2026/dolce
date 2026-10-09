@@ -24,8 +24,8 @@ export function chordCandidates(
       const x0 = srcX(index), x1 = srcX(index + tok.length);
       return { tok: normalizeChord(tok), x: x0, bbox: mkBbox(x0, Math.max(x1, x0 + 1)) };
     })
-    // 归一后仍须是合法根音开头（`chordTextSegs`/`harmonyXml` 的最低要求），否则下游只能整段原样排字。
-    .filter((c) => /^[A-G]/.test(c.tok));
+    // 归一后仍须是合法根音开头（可带前置升降号，`chordTextSegs`/`harmonyXml` 的最低要求），否则下游只能整段原样排字。
+    .filter((c) => /^[#b]?[A-G]/.test(c.tok));
 }
 
 /** 把一批带源图 x 的和弦落到某谱行的音符上（含拍内偏移）。

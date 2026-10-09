@@ -257,12 +257,13 @@ export type BeamVal = "begin" | "continue" | "end" | "forward hook" | "backward 
 /** 和弦符号 `<harmony>`。**500 首 MusicXML 100% 都有，共 12646 个**——
  *  旧的简谱输入树装不下，这是新模型存在的首要理由。 */
 export interface Harmony {
-  root: { step: string; alter: number };
+  /** `alterLeft`：升降号印在字母**前面**（`<root-alter location="left">`，中文简谱的 `#Fm`、`bB`） */
+  root: { step: string; alter: number; alterLeft?: boolean };
   /** `<kind>`：major / minor / dominant / major-seventh… */
   kind: string;
   /** 面上要印的原文（`<kind text=>`），如 "m7"、"Δ" */
   kindText?: string;
-  bass?: { step: string; alter: number };
+  bass?: { step: string; alter: number; alterLeft?: boolean };
   degrees?: { value: number; alter: number; type: "add" | "alter" | "subtract" }[];
   /** 整段和弦只有文字、解析不出结构时的原文兜底（识别结果常是这种） */
   text?: string;

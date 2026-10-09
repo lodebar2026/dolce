@@ -421,7 +421,7 @@ function harmonyXml(o: Out, h: Harmony, cx: Ctx): void {
   o.open("harmony", posAttrs(cx.layout?.pos.get(h)) + (h.staff !== undefined ? ` staff="${h.staff}"` : ""), surfaceOf(h));
   o.open("root");
   o.text("root-step", h.root.step);
-  if (h.root.alter) o.text("root-alter", h.root.alter);
+  if (h.root.alter) o.text("root-alter", h.root.alter, h.root.alterLeft ? ' location="left"' : "");
   o.close();
   const kindAttrs =
     (h.kindText !== undefined ? ` text="${escAttr(h.kindText)}"` : "") +
@@ -430,7 +430,7 @@ function harmonyXml(o: Out, h: Harmony, cx: Ctx): void {
   if (h.bass) {
     o.open("bass");
     o.text("bass-step", h.bass.step);
-    if (h.bass.alter) o.text("bass-alter", h.bass.alter);
+    if (h.bass.alter) o.text("bass-alter", h.bass.alter, h.bass.alterLeft ? ' location="left"' : "");
     o.close();
   }
   for (const g of h.degrees ?? []) {

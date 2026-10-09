@@ -31,6 +31,7 @@ import { harmonyText } from "../model/jianpu";
 import { ORNAMENT_TAG } from "../model/xmlproject";
 import { BARLINE_ORNAMENT_NAME } from "./jumpmarks";
 import { tupletNormal123 } from "./parsedialect";
+import { chordSuffixForm } from "../score/harmonyparse";
 
 /** MusicXML 的 `<ornaments>` 元素名 → 123 记号名：`xmlproject.ts::ORNAMENT_TAG` 反过来（同名的取第一个）。 */
 const ORNAMENT_NAME: Readonly<Record<string, string>> = Object.fromEntries(
@@ -329,9 +330,10 @@ export abstract class AbcFamilyEmitter {
     return newPage ? "$$" : "$";
   }
 
-  /** 和弦符号怎么写。ABC 只有引号形 `"Am7"`；123 能省就省（见 `emit123.ts`）。 */
+  /** 和弦符号怎么写。ABC 只有引号形 `"Am7"`；123 能省就省（见 `emit123.ts`）。
+   *  ABC（及沿用它的 jcx）的和弦要求根音打头，前置升降号（`#Fm`）折成后置（`F#m`）；123 照原写法留着。 */
   protected chordSymbolText(text: string): string {
-    return `"${text}"`;
+    return `"${chordSuffixForm(text)}"`;
   }
 
   /** 最后一小节后面还写不写换行标记。123 写（`$` 无害且要保幂等）；

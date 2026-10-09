@@ -20,9 +20,9 @@ const ACCIDENTALS: Readonly<Record<string, Accidental>> = {
   bb: "double-flat",
 };
 
-/** 不带引号的和弦名（规范 §8.1）：根音 + 性质/延伸 + 可选低音。
+/** 不带引号的和弦名（规范 §8.1）：根音 + 性质/延伸 + 可选低音；升降号可写在字母前（`#Fm`、`D/#F`，中文简谱的写法）。
  *  写出端拿它决定能不能省引号（`emit123.ts`），所以**不能放进空白、引号、`%`**——读回时按「到空白为止」切。 */
-export const BARE_CHORD_RE = /^[A-G][#b]?[A-Za-z0-9#+\-°ø()]*(?:\/[A-G][#b]?)?$/;
+export const BARE_CHORD_RE = /^(?:[#b][A-G]|[A-G][#b]?)[A-Za-z0-9#+\-°ø()]*(?:\/(?:[#b][A-G]|[A-G][#b]?))?$/;
 
 export class Lexer123 extends AbcFamilyLexer {
   readonly id = "123" as const;
@@ -35,11 +35,12 @@ export class Lexer123 extends AbcFamilyLexer {
   /** 大写 `X` 是节奏音符（ABC 里 X 不是音名、123 也没占用）。 */
   protected override readonly rhythmLetters = "X";
 
-  /** 不带引号的和弦：**大写 A–G 开头、读到空白为止、后面必须跟空格**。
-   *  123 音乐体里 A–G 没有别的用处（音符是数字、节奏音符是 `X`、行内字段以 `[` 起头），不会撞。
+  /** 不带引号的和弦：**大写 A–G 开头（或 `#`/`b` 紧跟大写 A–G）、读到空白为止、后面必须跟空格**。
+   *  123 音乐体里 A–G 没有别的用处（音符是数字、节奏音符是 `X`、行内字段以 `[` 起头），不会撞；
+   *  音符的升降号后面跟的是数字（`#4`、`b7`），跟大写字母的只能是和弦。
    *  到空白为止是为了切得开：`G71`、`Bb3` 这种粘连读不出是 `G7`+`1` 还是 `B`+`b3`。 */
   protected override scanBareChord(line: string, i: number): { len: number; error?: string } | null {
-    if (!/[A-G]/.test(line[i] ?? "")) return null;
+    if (!/[A-G]/.test(line[i] ?? "") && !/^[#b][A-G]/.test(line.slice(i, i + 2))) return null;
     let j = i + 1;
     while (j < line.length && line[j] !== " " && line[j] !== "\t") j++;
     const body = line.slice(i, j);
