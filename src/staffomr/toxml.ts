@@ -587,12 +587,81 @@ function scoreToMusicXmlRaw(
     let prevFifths: number | null = null;
     let prevTime: string | null = null;
     let prevClef: string[] = [];
+    let hidden = false;
+    const nStaves = part.scoreStaves.length;
+    const staffDetails = (n: number, show: "yes" | "no") =>
+      n > 1 ? Array.from({ length: n }, (_, k) => `<staff-details number="${k + 1}" print-object="${show}"/>`).join("") : `<staff-details print-object="${show}"/>`;
+
+    /**
+     * **这一系统里这个声部的谱表全隐藏了**（Finale「隐藏空谱表」：牵我的手首系统只印了器乐，W / M 两行人声没印）。
+     * 原来整段跳过不写小节，这个声部从第二个系统起算第 1 小节，整体往前错了一个系统（W / M 少开头 6 小节）。
+     * 照样按这一系统的小节数写整小节休止：拍号、调号取同一系统别的谱表的，谱号取这个声部第一次露面那一系统的；
+     * 头一个隐藏小节写 `<staff-details print-object="no"/>`，重新露面时写回 `yes`。
+     * `sysOfBar` 记 -1：隐藏的系统不算这个声部「出现过」，接跨行弧时跳过它（见 `renumberSlurs`）。
+     */
+    const hiddenSystem = (entry: (typeof score.systems)[number]): string => {
+      const ref = entry.sys.staves.find((st) => st.bars.length);
+      if (!ref) return "";
+      const barCount = Math.max(...entry.sys.staves.map((st) => st.bars.length));
+      const ctx = entry.ctx.get(ref);
+      const timeChanges = timeSignatures(ctx?.time ?? [], ref.stepDistance() * 2);
+      let tc = 0;
+      let out = "";
+      for (let bi = 0; bi < barCount; bi++) {
+        measureNo++;
+        sysOfBar.push(-1);
+        let attrs = "";
+        if (measureNo === 1) attrs += `<divisions>${divisions}</divisions>`;
+        const bar0 = ref.bars[bi];
+        const fifths = ctx ? fifthsAt(ctx, bar0 ? bar0.right - 1 : -Infinity) : 0;
+        if (ctx && fifths !== prevFifths) {
+          attrs += `<key><fifths>${fifths}</fifths></key>`;
+          prevFifths = fifths;
+        }
+        while (bar0 && tc < timeChanges.length && timeChanges[tc].x < bar0.right) {
+          const t = timeChanges[tc++];
+          const k = `${t.beats}/${t.beatType}`;
+          if (k !== prevTime) {
+            attrs += `<time><beats>${t.beats}</beats><beat-type>${t.beatType}</beat-type></time>`;
+            prevTime = k;
+          }
+        }
+        if (bi === 0 && !prevClef.length) {
+          // 还没写过谱号（曲首就隐藏）：取这个声部第一次露面那一系统的行首谱号
+          const at = score.systems.findIndex((_, sj) => part.scoreStaves.some((ss) => ss.staves[sj]));
+          if (at >= 0) {
+            const clefs = part.scoreStaves.map((ss) => (ss.staves[at] ? clefXml(rowStartClef(score.systems[at], ss.staves[at]!)) : ""));
+            if (nStaves > 1) attrs += `<staves>${nStaves}</staves>`;
+            clefs.forEach((c, k) => {
+              if (c) attrs += nStaves > 1 ? c.replace("<clef>", `<clef number="${k + 1}">`) : c;
+            });
+            prevClef = clefs;
+          }
+        }
+        if (!hidden) {
+          attrs += staffDetails(nStaves, "no");
+          hidden = true;
+        }
+        const [beats, beatType] = (prevTime ?? "4/4").split("/").map(Number);
+        const dur = ticks(beats / beatType);
+        let notes = "";
+        for (let k = 0; k < nStaves; k++) {
+          if (k) notes += `<backup><duration>${dur}</duration></backup>`;
+          notes += `<note><rest measure="yes"/><duration>${dur}</duration><voice>${k * 4 + 1}</voice>${nStaves > 1 ? `<staff>${k + 1}</staff>` : ""}</note>`;
+        }
+        out += `<measure number="${measureNo}">${attrs ? `<attributes>${attrs}</attributes>` : ""}${notes}</measure>`;
+      }
+      return out;
+    };
 
     score.systems.forEach((entry, si) => {
       // 这个声部在这一系统里的各行谱（隐藏的为 null）
       const staves = part.scoreStaves.map((ss) => ss.staves[si]);
       const lead = staves.find((x) => x) ?? null;
-      if (!lead) return;
+      if (!lead) {
+        body += hiddenSystem(entry);
+        return;
+      }
       const barCount = Math.max(...staves.map((st) => st?.bars.length ?? 0));
       const ctx = entry.ctx.get(lead);
       const timeChanges = timeSignatures(ctx?.time ?? [], lead.stepDistance() * 2);
@@ -629,6 +698,11 @@ function scoreToMusicXmlRaw(
               attrs += staves.length > 1 ? c.replace("<clef>", `<clef number="${k + 1}">`) : c;
             });
             prevClef = clefs;
+          }
+          // 隐藏了一段之后重新露面
+          if (hidden) {
+            attrs += staffDetails(staves.length, "yes");
+            hidden = false;
           }
         }
         body += `<measure number="${measureNo}">`;
