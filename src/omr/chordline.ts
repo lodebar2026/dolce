@@ -19,7 +19,7 @@ export type ChordCand = { tok: string; x: number; bbox: Rect };
 export function chordCandidates(
   rawText: string, srcX: (charIndex: number) => number, mkBbox: (x0: number, x1: number) => Rect,
 ): ChordCand[] {
-  return splitChordTokens(blankNonChord(rawText))
+  return splitChordTokens(blankNonChord(rawText), srcX)
     .map(({ tok, index }) => {
       const x0 = srcX(index), x1 = srcX(index + tok.length);
       return { tok: normalizeChord(tok), x: x0, bbox: mkBbox(x0, Math.max(x1, x0 + 1)) };

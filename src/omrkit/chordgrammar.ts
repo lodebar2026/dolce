@@ -33,9 +33,11 @@ const CHORD_HANZI_RE = /[或升降]/g;
 // 单个和弦记号：根音 **大写** [A-G] + 可选升降号 + 可选性质符 + 可选数字 + 可选 sus/add 扩展
 // + 可选转位低音（`/D#`，低音同样大写）。交替里长后缀在前——JS 取**首个**成功的分支而非最长，
 // `maj7` 若先命中 `m` 就会剩下 "aj7" 变成未覆盖。
+// 升降号也可以**前置**（`#Fm`、`D/#F`，中文谱的写法，慕恩《当向众人行善》通篇如此）：不收的话每个 `#`
+// 都算一个未覆盖字符，`#FmEm#FmBm` 覆盖率掉到 0.8，整行和弦被当成歌词丢掉。归一时折成后置。
 // **根音必须大写**：印刷体和弦的根音从来是大写，而小写字母遍地都是——`Coda` 的 d/a、`Verse` 的 e
 // 一旦算根音，就凭空长出 D、A、E 三个和弦。宁可漏掉 OCR 把 C 读成 c 的那几个，也不放小写进来。
-export const CHORD_TOKEN_RE = /^[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?\d*(?:sus\d*|add\d*)?(?:\/[A-G][#♯b♭]?)?/;
+export const CHORD_TOKEN_RE = /^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?\d*(?:sus\d*|add\d*)?(?:\/[#♯b♭]?[A-G][#♯b♭]?)?/;
 // 记号之间的分隔/标点：不计入覆盖率分母，也不产生 token。句点在其列——和弦之间的点多半是
 // OCR 把字距读成的噪声（`Em F C/E G` 读成 `EmF.C/EG`），一律当未覆盖会把整条和弦行判没。
 // 真含点的 `D.C.`/`D.S.` 另由 JUMP_RE 在切词前整段抹掉，不靠点这一条挡。
@@ -54,8 +56,11 @@ const JUMP_RE = /D\s*[.,·]\s*[CS]\s*[.,·]?(?:\s*al\s*[.,·]?\s*(?:Fine|Coda))?
 const KEY_METER_RE = /\d\s*[=＝:：]\s*[#♯b♭]?[A-G]|(?:[#♯b♭]?[A-G]\s*)?\d+\s*\/\s*\d+/g;
 
 /** 从左到右贪心扫和弦记号。OCR 常把整行和弦连写成一串（"C#mF#mBmBm7E"），故不按空白切 token，
- *  而是逐个吃和弦、吃不动就跳一个字符记为未覆盖。覆盖率与切词共用这一趟扫描，免得两处文法漂移。 */
-function scanChords(s0: string): { toks: { tok: string; index: number }[]; hit: number; total: number } {
+ *  而是逐个吃和弦、吃不动就跳一个字符记为未覆盖。覆盖率与切词共用这一趟扫描，免得两处文法漂移。
+ *  `xAt(i)`（原串字符下标 → 源图 x）给了就裁决升降号归属：记号以升降号收尾、后面紧跟根音时，
+ *  它既可能是本记号的后置升降号（`C#` `F`），也可能是下一个的前置（`D` `#Fm`）——连写串里两种切法
+ *  覆盖率一样，只能看升降号离哪个根音近（《当向众人行善》首行 `D` 与 `#Fm` 隔一整小节，OCR 连成 `D#Fm`）。 */
+function scanChords(s0: string, xAt?: (i: number) => number): { toks: { tok: string; index: number }[]; hit: number; total: number } {
   const s = s0.replace(JUMP_RE, (m) => " ".repeat(m.length))    // 等长抹除，保住字符下标
     .replace(KEY_METER_RE, (m) => " ".repeat(m.length));
   const toks: { tok: string; index: number }[] = [];
@@ -64,7 +69,11 @@ function scanChords(s0: string): { toks: { tok: string; index: number }[]; hit: 
     if (CHORD_SEP_RE.test(s[i])) { i++; continue; }   // 分隔/标点不计入分母
     const m = CHORD_TOKEN_RE.exec(s.slice(i));
     if (m && m[0].length) {
-      toks.push({ tok: m[0], index: i }); hit += m[0].length; total += m[0].length; i += m[0].length;
+      let tok = m[0];
+      const end = i + tok.length;
+      if (xAt && tok.length >= 2 && /[#♯b♭]/.test(tok[tok.length - 1]) && /[A-G]/.test(s[end] ?? "")
+        && xAt(end - 1) - xAt(end - 2) > xAt(end) - xAt(end - 1)) tok = tok.slice(0, -1);
+      toks.push({ tok, index: i }); hit += tok.length; total += tok.length; i += tok.length;
     } else { total++; i++; }
   }
   return { toks, hit, total };
@@ -76,9 +85,9 @@ export function chordCoverage(s: string): { cov: number; count: number } {
   return { cov: total ? hit / total : 0, count: toks.length };
 }
 
-/** 贪心切出一行里的和弦记号，带每个记号在**原串**里的字符下标（供换算源图 x）。 */
-export function splitChordTokens(s: string): { tok: string; index: number }[] {
-  return scanChords(s).toks;
+/** 贪心切出一行里的和弦记号，带每个记号在**原串**里的字符下标（供换算源图 x）；`xAt` 见 scanChords。 */
+export function splitChordTokens(s: string, xAt?: (i: number) => number): { tok: string; index: number }[] {
+  return scanChords(s, xAt).toks;
 }
 
 /** OCR 形态归一：根音大写、性质符大小写规整、全角升降号折成 ASCII、去空白。
@@ -86,6 +95,8 @@ export function splitChordTokens(s: string): { tok: string; index: number }[] {
  *  harmonyXml 接受——两者都认 `#`/`b`，故统一吐 ASCII 最稳。 */
 export function normalizeChord(tok: string): string {
   let s = tok.replace(/\s/g, "").replace(/♯/g, "#").replace(/♭/g, "b");
+  // 前置升降号折成后置：`#Fm` → `F#m`、`D/#F` → `D/F#`（下游 chordTextSegs / harmonyXml 只认后置）。
+  s = s.replace(/^([#b])([A-G])/, "$2$1").replace(/\/([#b])([A-G])/, "/$2$1");
   // 性质符：`M`（大写）在和弦里表示大三/大七，但 OCR 更常把小写 m 读成大写；简谱上大写 M
   // 几乎不用，故一律折成小写 m（`maj` 另有写法、不受影响）。
   s = s.replace(/^([A-G][#b]?)M(?!aj)/, (_, r: string) => `${r}m`);
