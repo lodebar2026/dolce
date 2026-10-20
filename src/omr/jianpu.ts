@@ -386,6 +386,10 @@ function estimateNumH(comps: Component[]): number {
   // 门开在 1.2：差一成多的页照旧。还得跟瘦高块的估计 est2 对得上（差不到一成）：四声部的小节线跨两个声部，锚上的瘦高块混进
   // 别的东西（四声部 f1 数字 25、锚定估出 31 多，一整行丢了）；补充本那些页两者都在 36 上下
   if (est3 && est3 > est * 1.2 && est2 && Math.abs(est3 - est2) <= est3 * 0.1) { probe("numH.barAnchoredUp"); return est3; }
+  // 英文/俄文歌词的小写字母把瘦高块也压低了（青年诗歌 22《将一生奉献》：est 24、est2 28，数字实高 60），est2 对不上。
+  // 锚上的块差一倍多、且九成挤在估计值 ±6% 以内时照样信锚定估计：四声部那种混进别的东西的锚定样本是散的
+  if (est3 && est3 > est * 1.8 &&
+    anchored.filter((k) => Math.abs(k.bbox.h - est3) <= est3 * 0.06).length >= anchored.length * 0.85) { probe("numH.barAnchoredTight"); return est3; }
   return est2 > est * 1.3 ? est2 : est;
 }
 

@@ -116,6 +116,24 @@ const STRIP_PAD = 4; // 拼条时字格两侧留白（也是 xFrac↔源图 x �
  *  它常与两旁的字粘成一块、分字时又被按字宽切开，故不看字格、在整块的横向范围里逐列量：本列墨只是一小截、
  *  落在行高中部，就算横线列；中间断开不到 0.15 字宽的接着算（两个「—」之间的缝）。
  *  门槛 1.4 字宽——单个「一」只有一个字宽，挡在外面。 */
+/** 字格横向范围内、纵向占满字格带的空白列段（至少 `minW` 宽），返回各段中点 x。 */
+function blankRuns(bin: Binary, cells: Rect[], minW: number): number[] {
+  const out: number[] = [];
+  const y0 = Math.max(0, Math.round(Math.min(...cells.map((c) => c.y))));
+  const y1 = Math.min(bin.h - 1, Math.round(Math.max(...cells.map((c) => rbottom(c)))));
+  const xa = Math.max(0, Math.round(Math.min(...cells.map((c) => c.x))));
+  const xb = Math.min(bin.w - 1, Math.round(Math.max(...cells.map((c) => rright(c)))));
+  let r0 = -1;
+  for (let x = xa; x <= xb + 1; x++) {
+    let ink = x > xb;
+    for (let y = y0; !ink && y <= y1; y++) if (bin.data[y * bin.w + x]) ink = true;
+    if (!ink) { if (r0 < 0) r0 = x; continue; }
+    if (r0 >= 0 && x - r0 >= minW && r0 > xa) out.push((r0 + x - 1) / 2);
+    r0 = -1;
+  }
+  return out;
+}
+
 function dashSpans(bin: Binary, cells: Rect[], charW: number): { x0: number; x1: number }[] {
   const out: { x0: number; x1: number }[] = [];
   const y0 = Math.max(0, Math.round(Math.min(...cells.map((c) => c.y))));
@@ -339,6 +357,27 @@ function mergeSplitHalves(blocks: ProjBlock[], charW: number, charH: number): Pr
   return out;
 }
 
+/** 按中心 y 聚出的一行里，字框纵向断开一道空（≥ `gap`）的从空处切成两行（两边各至少两块才切）。
+ *  中心聚行按中位数吸人，挨得近的两行会串成一行：青年诗歌 22《将一生奉献》英文歌词行只有两个带升部的字母够高进带，
+ *  中位 856，下一谱行的和弦「Bm G Em …」中心 898、差 41.5 恰在 0.7 字号（42）以内，整排和弦并进英文行、和弦全丢。
+ *  两行字的字框之间总有一道空（那里英文底 871、和弦顶 879）。 */
+function splitAtVerticalGap(lines: Component[][], k: number, gap: number): Component[][] {
+  const out: Component[][] = [];
+  for (const ln of lines) {
+    const top = (c: Component) => c.bbox.y - k * c.cx, bot = (c: Component) => rbottom(c.bbox) - k * c.cx;
+    const sorted = [...ln].sort((a, b) => top(a) - top(b));
+    let cut = -1, reach = -Infinity;
+    for (let i = 0; i < sorted.length; i++) {
+      if (i >= 2 && sorted.length - i >= 2 && top(sorted[i]!) - reach >= gap) { cut = i; break; }
+      reach = Math.max(reach, bot(sorted[i]!));
+    }
+    if (cut < 0) { out.push(ln); continue; }
+    probe("lyrics.splitLineGap");
+    out.push(...splitAtVerticalGap([sorted.slice(0, cut)], k, gap), ...splitAtVerticalGap([sorted.slice(cut)], k, gap));
+  }
+  return out;
+}
+
 /** 把「相邻的小字块」并成一个字块：英文歌词字号比汉字小得多（约半个字高），一串音节
  *  "How-awe-some-you-are" 本是连排的一段，但淡印处笔画断开时投影会把它切成两块，落进不同 rec 块
  *  → 各自读到半个音节（"How-awe-s" / "ome-you-are"）。故把**两块都矮**(< 0.8×charH，汉字不满足)
@@ -556,7 +595,7 @@ export async function recognizeLyrics(
 
     // S2① 按 deslant-y 分 verse 行（斜线已拉平，同一行 dcy 相近）。
     // 0.7×numH：汉字主体归行的容差，远小于 verse 行距。
-    const lines = clusterByY(band, dcy, numH * 0.7);
+    const lines = splitAtVerticalGap(clusterByY(band, dcy, numH * 0.7), k, numH * 0.1);
     // 细而宽的横笔（如"一"，高度不足 charMin）：并入 deslant-y 足够近的 verse 行，扩其 x 范围/投影窗口。
     for (const c of comps) {
       const b = c.bbox;
@@ -647,7 +686,10 @@ export async function recognizeLyrics(
     // 圆滑线/连音线弧、下划线等：横跨谱行(cov 高)但**矮**（弧高 ~0.5 字高），会被当成一整条伪歌词行
     // （如基督更美副歌行下的 slur → 伪 W5、OCR 出 ".llr" 垃圾）。真歌词行的字≈charH，故按行内中位字高
     // 剔掉 < 0.6×charH 的矮行——提前滤掉、不白跑 OCR（下游伪 verse 过滤也会兜底，但那已浪费识别）。
-    const kept = lineInfo.filter((L) => L.cells.length && L.h >= charH * 0.6 && (L.cov >= maxCov - 1e-9 || L.cov >= 0.35));
+    // 英文歌词行字母比汉字矮（青年诗歌 22《将一生奉献》首末行英文 h28~29、汉字 51）：格多（≥8，并过的英文词块）且横贯谱行的
+    // 矮行放宽到 0.5 字高。弧线伪行一行只有几道弧，凑不够格数
+    const lowOk = (L: (typeof lineInfo)[number]) => L.h >= charH * 0.5 && L.cells.length >= 8 && L.cov >= 0.9;
+    const kept = lineInfo.filter((L) => L.cells.length && (L.h >= charH * 0.6 || lowOk(L)) && (L.cov >= maxCov - 1e-9 || L.cov >= 0.35));
 
     const rowT = TR ? { rowIdx: i, yTop, yBot, charH, bandBoxes: band.map((c) => c.bbox),
       noteBoxes: row.nums.map((n) => n.bbox), verses: [] as Array<{ verse: number; cells: Rect[]; cov: number; longGapBefore?: boolean[] }> } : null;
@@ -956,6 +998,14 @@ export async function recognizeLyrics(
         regions.push(region);
         pend = null;
       };
+      // 英文词距的第二条判据：rec 不吐空格，字格又常是并过的整串（mergeSmallTextBlocks 把间隙 < 半个汉字宽的矮块并成一块），
+      // 整行英文只剩两三格，charW 成了整串的宽、上面那条字距判据断不开词（青年诗歌 22《将一生奉献》整行读成「ToYou，dearLord！」）。
+      // 改看源图：两个字母之间夹着一段 ≥ 0.17 字号的空白列就是词间（该曲数字高 60，词距 10~60px、疏排单词「d e s i e e」的字距 6~9px）。
+      // 尺子用数字字号不用汉字字高：英文小写把这几行的汉字字高中位拉得忽高忽低（39~87）
+      const wordGaps = textsPos![s].some((c) => isLatin(c.ch)) ? blankRuns(bin, cells, numH * 0.17) : [];
+      // 单个小写字母（a、o 以外）成不了词、撇号后也不断：淡印处笔画断开的空白（主祢真伟大「s ome」）不是词距
+      const spaceBetween = (p: { text: string }, a: number, b: number) =>
+        !/^[b-np-z]$/.test(p.text) && !isApostrophe(p.text.slice(-1)) && wordGaps.some((g) => g > a && g < b);
       let at = 0;
       for (const [ti, { ch, xFrac }] of textsPos![s].entries()) {
         const pos = at; at += ch.length;
@@ -970,7 +1020,7 @@ export async function recognizeLyrics(
           regions.push(region);
         } else if (isLatin(ch) || (pend && isApostrophe(ch))) {
           // rec 不吐空格 → 用源图字距断词：间隙明显大于字母间距即另起一个音节单元。
-          if (pend && sx - pend.x1 > charW * 0.5) flushLatin();
+          if (pend && spaceBetween(pend, pend.x1, sx)) flushLatin();
           if (!pend) pend = { text: "", x0: sx, x1: sx };
           pend.text += ch; pend.x1 = sx;
         } else if (isHyphen(ch)) {

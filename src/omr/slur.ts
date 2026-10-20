@@ -185,6 +185,19 @@ export function tupletCandidates(bin: Binary, comps: Component[], rows: StaffRow
       for (let x = b.x; x < rright(b); x++) if (bin.data[y * bin.w + x]) ink++;
     return ink / Math.max(1, b.w * b.h);
   };
+  // 底下四分之一那几行有几段墨（几只脚）：半截括线只有外端那一只脚落下来，里端翘向数字；和弦字母「m」三只脚站在基线上
+  //（青年诗歌 22《将一生奉献》末行和弦「F#m Bm」：「B」当了数字、两个「m」当了两半括线，墨占比都正好 0.5，读成三连音）
+  const legs = (b: Rect): number => {
+    const y0 = rbottom(b) - Math.max(1, Math.round(b.h * 0.25));
+    let n = 0, on = false;
+    for (let x = b.x; x < rright(b); x++) {
+      let ink = false;
+      for (let y = y0; y < rbottom(b) && !ink; y++) ink = bin.data[y * bin.w + x] === 1;
+      if (ink && !on) n++;
+      on = ink;
+    }
+    return n;
+  };
   for (const row of rows) {
     if (row.nums.length < 2) continue;
     const rowTop = median(row.nums.map((n) => n.bbox.y));
@@ -248,7 +261,7 @@ export function tupletCandidates(bin: Binary, comps: Component[], rows: StaffRow
         if (rbottom(b) < nb.y || b.y > rbottom(nb)) return false;   // 纵向不重叠
         // 方括号式「┌3┐」（1218 746）的钩比细弧墨多：实测 0.39、0.42，宽 0.6 字号上下。
         // 平顶括线拆剩的一截直线（青年诗歌 5 前奏第二组：弧尾连着点被 splitArcTail 切走，剩 37×5 的实心横段）够扁也算
-        return inkFill(b) <= 0.5 || b.h <= numH * 0.2;
+        return (inkFill(b) <= 0.5 || b.h <= numH * 0.2) && legs(b) < 3;
       });
       const left = arcAt(-1), right = arcAt(1);
       if (!left || !right) continue;
