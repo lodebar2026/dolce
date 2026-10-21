@@ -77,11 +77,22 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
       for (const r of rows) {
         if (trusted.has(r) || r.skip) continue;
         const done = (res: string) => /^(改|删|补 1 个)/.test(res);
-        let res = fixDurations(r, slots, trusted, sp, notes, add, pg, "shared", dotProbe);
-        // 按两声部共用解不出时，有干的单个头只归它那个声部再试（同列另一声部漏了的才补得出来）
-        if (!r.single && !done(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "solo", dotProbe);
-        // 还解不出、无干的长音自己占满一小节：它单成一个声部，其余的音另成一个再试
-        if (!done(res) && loneChords(r)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "lone", dotProbe);
+        // 按干朝向归、一处都不用改的两声部行不动：按共用归会把另一声部的单头算进来，剪短本来对的长音
+        //（新编 011 m2 上声部 E4 二分、下声部 E4 四分，共用归法把二分剪成四分）
+        if (!r.single && fixDurations(r, slots, trusted, sp, notes, add, pg, "solo", dotProbe, true, true) === "无须改") {
+          if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} 按干朝向归无须改`);
+          continue;
+        }
+        // 先不许拉长的音盖住别的行全都起音的拍（那里多半漏了音，回原图补得出就补）；三种归法都不成，再许它盖
+        let res = "";
+        for (const cover of [false, true]) {
+          res = fixDurations(r, slots, trusted, sp, notes, add, pg, "shared", dotProbe, cover);
+          // 按两声部共用解不出时，有干的单个头只归它那个声部再试（同列另一声部漏了的才补得出来）
+          if (!r.single && !done(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "solo", dotProbe, cover);
+          // 还解不出、无干的长音自己占满一小节：它单成一个声部，其余的音另成一个再试
+          if (!done(res) && loneChords(r)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "lone", dotProbe, cover);
+          if (done(res)) break;
+        }
         if (res.startsWith("补")) added = true;
         if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} ${res}`);
         // `XADBG=cols`：再逐列打出本行（改完以后的）时值与起点、别的行的起点
@@ -314,7 +325,7 @@ function setDur(n: StaffNote, base: number, dots: number): void {
  * 一段对不上时在易混读法里找改一处（不行再两处）能对上、而且只有一种改法的。
  * 改完 `checkFull` 要凑满、配上槽的列起点正好是槽的起点，否则退回。返回一句给调试看的结论。
  */
-function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, mode: VoiceMode, dotProbe?: DotProbe): string {
+function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, mode: VoiceMode, dotProbe?: DotProbe, cover = true, dry = false): string {
   const EPS = 1e-6;
   const expect = r.chk.expect;
   const known = r.cols.map((c) => c.slot?.off);
@@ -334,6 +345,9 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
     const hi = anchored.filter((s0) => s0.x > col.x).reduce((a, s0) => Math.min(a, s0.off!), expect + EPS);
     return [lo, hi];
   };
+  // 别的行全都在这个槽起音
+  const others = new Set(slots.flatMap((s0) => s0.cols.map((c) => c.row)).filter((q) => q !== r));
+  const allMove = (s0: Slot) => [...others].every((q) => s0.cols.some((c) => c.row === q));
   const changes = new Map<StaffChord, [number, number]>();
   const drops = new Set<StaffChord>();
   /** 要补音的槽 → 补的时值与声部（两声部的行：上声部 `true`、下声部 `false`；两条链都缺、或一个声部的行为 `null`） */
@@ -355,13 +369,21 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
       const seg = chain.slice(p, q);
       const durs = seg.map((it) => it.c.notes[0].duration);
       // 一种读法行不行：段内时值和对上、中间那些和弦的起点夹在各自的界里
-      const fits = (ds: number[]) => {
+      // `cover` 为假时，拉长了的音（`changed`）不许跨过别的行**全都**在那里起音、本声部却没有音的槽：那里多半漏了个音，
+      // 先回原图补（新编 264 把八分拉成四分盖住了漏掉的 A4）；补不出再许盖——这个声部本就持续着的也不少
+      //（硬不许盖：新编 031、315、006、114、279 共 +12，086、219、367 那几处漏音又找不着，分不开）。
+      // 只有部分行起音的不算：一行一个声部的开放谱，一个声部拖长音、别的声部在走是常态（扫描四首这么卡 +20 步）；
+      // 剪短的也不算：全音符剪成二分本来就跨着别的声部的拍（是爱 p4 m39、破碎扫描 p6 m75）
+      const fits = (ds: number[], changed: number[] = []) => {
         if (Math.abs(ds.reduce((a, b) => a + b, 0) - span) > EPS) return false;
         let at = start;
-        for (let j = 1; j < ds.length; j++) {
-          at += ds[j - 1];
-          const [lo, hi] = bound(r.cols[seg[j].k]);
-          if (at <= lo + EPS || at >= hi - EPS) return false;
+        for (let j = 0; j < ds.length; j++) {
+          if (j > 0) {
+            const [lo, hi] = bound(r.cols[seg[j].k]);
+            if (at <= lo + EPS || at >= hi - EPS) return false;
+          }
+          if (!cover && changed.includes(j) && ds[j] > durs[j] + EPS && anchored.some((s1) => s1.off! > at + EPS && s1.off! < at + ds[j] - EPS && allMove(s1) && !chain.some((it) => r.cols[it.k].slot === s1))) return false;
+          at += ds[j];
         }
         return true;
       };
@@ -378,7 +400,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
         for (const alt of opts[j]) {
           const ds = [...durs];
           ds[j] = durOf(...alt);
-          if (fits(ds)) sols.push([{ j, alt }]);
+          if (fits(ds, [j])) sols.push([{ j, alt }]);
         }
       if (!sols.length)
         for (let j = 0; j < seg.length; j++)
@@ -388,7 +410,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
                 const ds = [...durs];
                 ds[j] = durOf(...alt);
                 ds[j2] = durOf(...alt2);
-                if (fits(ds)) sols.push([{ j, alt }, { j: j2, alt: alt2 }]);
+                if (fits(ds, [j, j2])) sols.push([{ j, alt }, { j: j2, alt: alt2 }]);
               }
       // **删假头**：段内多出来的正好是一个没配上槽、又没干的头的时值，删掉它中间各列也都夹得进界里
       if (!sols.length && sum > span + EPS) {
@@ -456,6 +478,8 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
       }
     }
   }
+  // 空跑：只看这种归法要不要动
+  if (dry) return changes.size || drops.size || inserts.size ? "要改" : "无须改";
   if (inserts.size) {
     if (inserts.size > 1 || changes.size || drops.size) return `补 ${inserts.size} 删 ${drops.size} 改 ${changes.size}，不做`;
     const [[s0, { dur, up }]] = [...inserts];
