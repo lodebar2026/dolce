@@ -2,7 +2,7 @@
 // `qtomr/NoteData.cpp::analyzeSlurTie` / `SlurTie::checkTie`。
 //
 // 坐标一律设备坐标、y 向下——原文是 y 向上，纵向判据逐处翻过来了，见每处注释。
-import { type Box, PObj, SPage, Seg, overlapX, ySpace } from "./model";
+import { type Box, PObj, SPage, Seg, type Staff, overlapX, ySpace } from "./model";
 import { pathPoints, subPaths } from "./vecgeom";
 import type { StaffNote } from "./notedata";
 
@@ -409,8 +409,14 @@ export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number
 /**
  * @param opts.stemEnds 两端都挂不上符头时按符干端补挂（只矢量路开，见下）
  * @param opts.tieNeighbors 两端同音级还要过 `notTie` 才判延音线（矢量路开；位图路挂完弧端、修过几轮之后在 `pagefinish.ts` 里另判）
+ * @param opts.rowNext 下一（`d = 1`）/ 上一（`d = -1`）系统里同一行谱，本页没有的给 undefined（`overshoot` 时判弧尾拖到行末还是跨行半截）
  */
-export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opts: { stemEnds?: boolean; tieNeighbors?: boolean; overshoot?: boolean; headSlack?: number; spreadTies?: boolean } = {}): void {
+export function attachSlurs(
+  arcs: SlurArc[],
+  notes: StaffNote[],
+  sp: number,
+  opts: { stemEnds?: boolean; tieNeighbors?: boolean; overshoot?: boolean; headSlack?: number; spreadTies?: boolean; rowNext?: (st: Staff, d: 1 | -1) => Staff | undefined } = {},
+): void {
   const pitched = notes.filter((n) => !n.rest);
   for (const sl of arcs) {
     let bestL: StaffNote | undefined;
@@ -470,6 +476,30 @@ export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opt
       const nearEdge = (n: StaffNote, x: number, right: boolean) => (right ? n.staff.box.right - x : x - n.staff.box.left) < sp * 2;
       if (l0 && l0 !== bestR && !nearEdge(l0, sl.lx, false)) bestL = l0;
       if (r0 && r0 !== bestL && !nearEdge(r0, sl.rx, true)) bestR = r0;
+      // 伸到行末（行首）、可下一（上一）系统在这一页而同一行行首（行末）没有同朝向的续段：是弧尾拖到了行末，不是跨行半截，
+      // 止端挂这一行弧下最后一个音（起端挂第一个）。高音笙 m40 G4→A4 弧尾越过 A4 两格多、离行末 0.38 格，
+      // 牵我的手的跨行半截离行末 0.17 格，光比距离分不开
+      const noCont = (st: Staff, right: boolean) => {
+        const row = opts.rowNext?.(st, right ? 1 : -1);
+        if (!row?.bars.length) return false;
+        const b = right ? row.bars[0] : row.bars[row.bars.length - 1];
+        const band = (y: number) => y > row.box.top - sp * 4 && y < row.box.bottom + sp * 4;
+        return !arcs.some((a) => a !== sl && a.above === sl.above && (right ? a.lx <= (b.left + b.right) / 2 && band(a.ly) : a.rx >= b.left && band(a.ry)));
+      };
+      const dy = (sl.above ? 1 : -1) * sp;
+      const under = (st: Staff, right: boolean) =>
+        pitched
+          .filter((n) => n.staff === st && n.sym.box.left < sl.rx && n.sym.box.right > sl.lx)
+          .sort((a, b) => (right ? b.x - a.x : a.x - b.x))
+          .find((n) => validateSlurNote(right, n.sym.box, right ? n.sym.box.right : n.sym.box.left, (right ? sl.ry : sl.ly) + dy, sp, sl.above) !== null);
+      if (!bestR && bestL && bestL.staff.box.right - sl.rx < sp * 2 && noCont(bestL.staff, true)) {
+        const r = under(bestL.staff, true);
+        if (r && r !== bestL && r.x > bestL.x) bestR = r;
+      }
+      if (!bestL && bestR && sl.lx - bestR.staff.box.left < sp * 2 && noCont(bestR.staff, false)) {
+        const l = under(bestR.staff, false);
+        if (l && l !== bestR && l.x < bestR.x) bestL = l;
+      }
     }
     if (bestL && bestL === bestR) {
       // 两端落到同一个音符上：按 x 判掉不合理的那一端（照原文）
@@ -588,12 +618,32 @@ export function retimeTies(arcs: SlurArc[], notes: StaffNote[]): void {
  *
  * 判据：上一行有条弧只有起点没终点（右端悬空），下一行紧接着有条弧只有终点没起点。
  * 按谱行顺序两两配。
+ *
+ * 给了 `notes`（矢量路）时，行首两端都没挂上的弧也当后半截：从行首起笔、收在这一行第一个音之前（页面裁掉了一截，
+ * 八段锦钢片琴 m36→m38 续段收在首音前 30 点），止端挂这一行第一个音，再去配上一系统同一行行尾悬空的。
  */
-export function reconnectSlurs(pg: SPage, arcs: SlurArc[]): void {
+export function reconnectSlurs(pg: SPage, arcs: SlurArc[], notes?: StaffNote[]): void {
   const staffOf = (a: SlurArc) => (a.from ?? a.to)?.staff;
   // 只接真在行尾、行首的半截（`orphanEdge`，写出端同此）：长弧拱顶没认出、左截悬在行中间的，接到下一系统去就成了一条跨行弧（宁静 p7 m89→m93 女高）
   const dangRight = arcs.filter((a) => a.from && !a.to && orphanEdge(a, a.from) === "end");
   const dangLeft = arcs.filter((a) => !a.from && a.to && orphanEdge(a, a.to) === "begin");
+  if (notes)
+    for (let i = 1; i < pg.systems.length; i++) {
+      const A = pg.systems[i - 1].staves, B = pg.systems[i].staves;
+      if (A.length !== B.length) continue;
+      B.forEach((st, k) => {
+        if (!st.bars.length || !dangRight.some((a) => staffOf(a) === A[k])) return;
+        const sp = pg.normalStaffSpace || pg.space;
+        const b0 = st.bars[0];
+        const own = notes.filter((n) => n.staff === st && !n.rest).sort((p, q) => p.x - q.x);
+        for (const a of arcs) {
+          if (a.from || a.to || a.lx > (b0.left + b0.right) / 2 || a.ry < st.box.top - sp * 4 || a.ry > st.box.bottom + sp * 4) continue;
+          if (!own.length || own[0].sym.box.left < a.rx || !dangRight.some((r) => staffOf(r) === A[k] && r.above === a.above)) continue;
+          a.to = own[0];
+          dangLeft.push(a);
+        }
+      });
+    }
   const join = (a: SlurArc, b: SlurArc) => {
     a.to = b.to;
     b.from = undefined;

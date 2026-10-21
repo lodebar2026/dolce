@@ -72,7 +72,7 @@ export async function recognizeStaffPage(
   makeBars(pg, { keepRoomyHead: true });
   const beams = findBeams(pg);
   const stems: StemInfo[] = [];
-  const notes = buildNotes(pg, ctx, beams, stems);
+  const notes = buildNotes(pg, ctx, beams, stems, undefined, true);
   // 三连音要在时值算完之后改（它按比例缩短已算好的时值）
   findTuplets(pg, beams, stems, notes);
   findGraceSlashes(pg, notes);
@@ -81,8 +81,14 @@ export async function recognizeStaffPage(
   const wedges = findWedges(pg);
   // 一条弧在这批 PDF 里画成左右两半两个对象，挂音符之前先并回一条
   const slurs = mergeArcHalves(findSlurs(pg), pg.normalStaffSpace || pg.space);
-  attachSlurs(slurs, notes, pg.normalStaffSpace || pg.space, { stemEnds: true, tieNeighbors: true, overshoot: true, headSlack: 0.4, spreadTies: true });
-  reconnectSlurs(pg, slurs);
+  // 下一 / 上一系统里同一行谱（两个系统行数相同才算，与 `reconnectSlurs` 同口径）
+  const rowNext = (st: Staff, d: 1 | -1): Staff | undefined => {
+    const si = pg.systems.findIndex((sy) => sy.staves.includes(st));
+    const sy = pg.systems[si + d];
+    return si >= 0 && sy && sy.staves.length === pg.systems[si].staves.length ? sy.staves[pg.systems[si].staves.indexOf(st)] : undefined;
+  };
+  attachSlurs(slurs, notes, pg.normalStaffSpace || pg.space, { stemEnds: true, tieNeighbors: true, overshoot: true, headSlack: 0.4, spreadTies: true, rowNext });
+  reconnectSlurs(pg, slurs, notes);
   markSlurNotes(slurs, undefined, true);
   // 八度移位要在音高算完之后、文本层之前：它直接改音符的八度
   const octaves = findOctaveShifts(pg);
