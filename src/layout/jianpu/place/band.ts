@@ -426,12 +426,47 @@ function placeDirections(
       if (Number.isFinite(lowTop)) move(0, lowTop - gap - gBottom());
     }
     if (level > 0) move(0, -level * m.note.levelStep);
+    // 先落定的记号（同一小节里挨着的两组）压上了就抬到它之上
+    {
+      const x0 = gx(), x1 = x0 + gw;
+      let prevTop = Infinity;
+      for (const b of boxes) {
+        if (b.kind !== "direction" || b.x1 <= x0 || b.x0 >= x1) continue;
+        if (b.top < gBottom() && b.bottom > gTop()) prevTop = Math.min(prevTop, b.top);
+      }
+      if (Number.isFinite(prevTop)) move(0, prevTop - gap - gBottom());
+    }
+    liftTextsOver(boxes, gx(), gx() + gw, gTop(), gBottom(), gap, size * 0.25);
     texts.push(...group);
     boxes.push({ key: group[0]!, x0: gx(), x1: gx() + gw, top: gTop(), bottom: gBottom(), layer: 1, kind: "direction" });
     out.set(group[0]!, group);
   }
   for (const { it, mark } of rehearsals) placeRehearsal(it, mark, items, boxes, texts, m, ink, width);
   return out;
+}
+
+/**
+ * 力度、术语落定后压着的段落词、转调标签让到它之上一道空（全局信息在外、局部信息在内，同和弦与转调标签的口径）：
+ * 它们先排、按和弦那一行摆，与贴音的记号撞上时（曲首「欢快 热烈地」压 `mf`、「转1=G」压 ⊕）整条上提，
+ * 再连带把被它顶到的别的段落词/标签一起往上推。
+ */
+function liftTextsOver(boxes: BandItem[], x0: number, x1: number, top: number, bottom: number, gap: number, pad: number): void {
+  const queue: { x0: number; x1: number; top: number; bottom: number; self?: BandItem }[] = [{ x0, x1, top, bottom }];
+  while (queue.length > 0) {
+    const o = queue.shift()!;
+    for (const b of boxes) {
+      if (b === o.self || (b.kind !== "section-word" && b.kind !== "key") || b.x1 <= o.x0 - (o.self ? 0 : pad) || b.x0 >= o.x1 + (o.self ? 0 : pad)) continue;
+      // 只推与它同一行或压在它上沿的（中线不低于它的底）；整个在它下面的不动
+      if (b.bottom <= o.top - gap + 1e-6 || b.top >= o.bottom || (b.top + b.bottom) / 2 > o.bottom) continue;
+      const d = o.top - gap - b.bottom;
+      const t = b.key as PlacedText;
+      t.y += d;
+      t.ink = t.ink.offset(0, d);
+      b.top += d;
+      b.bottom += d;
+      queue.push({ x0: b.x0, x1: b.x1, top: b.top, bottom: b.bottom, self: b });
+    }
+  }
 }
 
 /**
