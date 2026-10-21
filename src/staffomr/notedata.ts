@@ -852,7 +852,7 @@ export interface StaffNote {
   signs?: ("segno" | "coda")[];
   /** 印在这个音（本行末音）之后、行末小节线上的反复记号（`attachSigns`），`<direction>` 写在音之后 */
   signsAfter?: ("segno" | "coda")[];
-  words?: { text: string; above: boolean; /** 字号（页面单位） */ size?: number; /** 基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 加框的排练号（`<rehearsal enclosure="square">`） */ rehearsal?: boolean }[];
+  words?: { text: string; above: boolean; /** 字号（页面单位） */ size?: number; /** 基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 加框的排练号（`<rehearsal enclosure="square">`） */ rehearsal?: boolean; /** 排练号自带【】（`enclosure="none"`） */ bracket?: boolean }[];
   /** 节拍器记号：拍子单位（`quarter`）、每分钟拍数、`<per-minute>` 的原文（带「约」时 `c. 76`，否则省）。MusicXML 里出成 `<direction><metronome>`。 */
   metronome?: { unit: string; bpm: number; text?: string; /** 印在圆括号里（「(♩ = 82)」）→ `<metronome parentheses="yes">` */ parentheses?: boolean };
   /** 与节拍器印在同一条的速度文字（`Andante ♩ = c. 76` 的 `Andante`）：与节拍器写进**同一个** `<direction>`，不拆成两个对象。 */

@@ -382,7 +382,7 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       for (const w of n.words ?? []) {
         const wy = withSourceLayout && w.baseY !== undefined ? ` default-y="${staffY(n.staff, n.sym.box.left, w.baseY)}"` : "";
         const el = w.rehearsal ? "rehearsal" : "words";
-        body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><${el}${w.rehearsal ? ' enclosure="square"' : ""}${wy}${fontAttr(textPt(n, w.size))}>${escapeXml(w.text)}</${el}></direction-type>${dirStaff}</direction>`;
+        body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><${el}${w.rehearsal ? ` enclosure="${w.bracket ? "none" : "square"}"` : ""}${wy}${fontAttr(textPt(n, w.size))}>${escapeXml(w.text)}</${el}></direction-type>${dirStaff}</direction>`;
       }
       if (n.dynamic) body += dynamicXml(n, dirStaff);
       // 松叶：**止排在起之前**——同一个音符上前一条松叶收尾、下一条起头是常事，

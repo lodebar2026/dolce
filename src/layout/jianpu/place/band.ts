@@ -17,7 +17,7 @@ import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedMark, PlacedText } fro
 import { articStack, entryTop, noteBeams, noteInkBottom, stackTop } from "./vertical";
 import { type ChordSpan, sectionWordLines, sectionWordOf, sectionWordSlot, widestLine } from "./sectionword";
 import { barlineBox } from "./spacing";
-import { rehearsalOf } from "../../../model/deconames";
+import { rehearsalBracketed, rehearsalOf } from "../../../model/deconames";
 
 /** 一个声部（或并排块上行）的上方带排完的结果。 */
 export interface VoiceBand {
@@ -552,7 +552,9 @@ function placeRehearsal(
   const fs = m.style.size.note * 0.9;
   const r = ink.text(mark, "term"); // 按术语字号（= 和弦字号）量的，放大 k 倍
   const k = fs / m.style.size.chord;
-  const pad = fs * 0.25;
+  // 自带【】的（八段锦）照原样排字、不套框
+  const framed = !rehearsalBracketed(mark);
+  const pad = framed ? fs * 0.25 : 0;
   const w = (r.ink.right - r.ink.left) * k + pad * 2;
   const nh = m.ink.noteHeight;
   const x0 = Math.max(0, Math.min(it.x - nh / 2, (width || Infinity) - w));
@@ -571,7 +573,7 @@ function placeRehearsal(
   const boxBottomRel = r.ink.bottom * k + pad; // 框底相对文字基线
   const y = bottom - boxBottomRel;
   const t: PlacedText = {
-    kind: "direction", el: it.element, text: mark, face: "text", size: fs, x: x0 + pad - r.ink.left * k, y, boxed: true, bold: true,
+    kind: "direction", el: it.element, text: mark, face: "text", size: fs, x: x0 + pad - r.ink.left * k, y, boxed: framed, bold: true,
     ink: new Rect(x0, y + r.ink.top * k - pad, x1, bottom),
   };
   texts.push(t);

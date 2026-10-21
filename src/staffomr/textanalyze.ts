@@ -1090,6 +1090,25 @@ function exprLines(objs: PObj[]): PObj[][] {
   return out;
 }
 
+/** 排练号：「【」「A」「】」分三段印的（八段锦）从左到右收成一条，别的框里字各自一条 */
+function boxedItems(objs: PObj[]): PObj[][] {
+  const out: PObj[][] = [];
+  // 按左缘排好后别的行的排练号会插在中间（中胡 p2 m65「【D】」与另一行「【C】」交错）：每行各开各的
+  const open: PObj[][] = [];
+  for (const o of [...objs].sort((a, b) => a.box.left - b.box.left)) {
+    const s = objText(o).trim();
+    const k = open.findIndex((g) => overlapY(g[0].box, o.box));
+    if (k >= 0) {
+      open[k].push(o);
+      if (s.endsWith("】")) open.splice(k, 1);
+      continue;
+    }
+    out.push([o]);
+    if (s === "【") open.push(out[out.length - 1]);
+  }
+  return out;
+}
+
 /** 同一条速度里相邻两段的横向间隙上限（格）：与 `analyzeText` 把 `=` 两边的段收进速度那一步同口径。 */
 const TEMPO_JOIN_GAP = 3;
 /** 只有文字的一条速度接后面以节拍器起头的一条：横向间隙上限（格） */
@@ -1108,7 +1127,7 @@ const TEMPO_WORDS_GAP = 5;
  */
 export function attachDirectionTexts(
   pg: SPage,
-  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean; size?: number; rehearsal?: boolean }[]; metronome?: StaffNote["metronome"]; tempoText?: string; tempoSize?: number }[],
+  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean; size?: number; rehearsal?: boolean; bracket?: boolean }[]; metronome?: StaffNote["metronome"]; tempoText?: string; tempoSize?: number }[],
   text: TextAnalysis,
 ): void {
   const sp = pg.normalStaffSpace || pg.space;
@@ -1139,14 +1158,16 @@ export function attachDirectionTexts(
   const items = [
     ...lines.map((l) => ({ objs: l, tempo: true, boxed: false })),
     ...exprLines(text.expression).map((l) => ({ objs: l, tempo: false, boxed: false })),
-    ...text.boxed.map((o) => ({ objs: [o], tempo: false, boxed: true })),
+    ...boxedItems(text.boxed).map((objs) => ({ objs, tempo: false, boxed: true })),
   ];
   for (const { objs, tempo: isTempo, boxed } of items) {
     // 没有 ToUnicode 的字体抽出来是控制字符（牵我的手 `= 60` 的数字读成 `\u0018\u0012`）：剥掉，解不出数的等号也不留
     // 节拍器的音符是乐谱字体的字形（Anastasia 的 `metNoteQuarterUp`），文字层里是空串：换回 `♩`，好让下面认出单位
     const parts = objs.map((o) => (o.symbols.length ? o.symbols.map((y) => METRO_GLYPH[y.code] ?? "").join("") : objText(o).replace(/[\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim())).filter(Boolean);
-    if (boxed) for (let i = 0; i < parts.length; i++) parts[i] = parts[i].replace(/[【】]/g, "");
-    if (!parts.length || (boxed && !parts.join(""))) continue;
+    if (!parts.length) continue;
+    // 方头括号夹着的排练号照谱面连括号写（「【A】」，`enclosure="none"`）
+    const bracket = boxed && /^【.+】$/.test(parts.join(""));
+    if (boxed && !bracket && !parts.join("").replace(/[【】]/g, "")) continue;
     // 一个词断成几段印的（`p` + `izz`）段与段之间不加空格
     const glue = (i: number) => (i && objs[i].box.left - objs[i - 1].box.right < (objs[i].box.bottom - objs[i].box.top) * 0.3 ? "" : " ");
     const box = {
@@ -1169,9 +1190,11 @@ export function attachDirectionTexts(
     }
     if (!stf) continue;
     const row = notes.filter((n) => n.staff === stf && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
-    const note = row.find((n) => n.x >= box.left - sp) ?? row[row.length - 1];
+    // 分段印的「【」不算挂音的左端（照括号挂会落到前一个音上，琵琶 m49）
+    const anchor = bracket && objs.length > 1 && objText(objs[0]).trim() === "【" ? objs[1].box.left : box.left;
+    const note = row.find((n) => n.x >= anchor - sp) ?? row[row.length - 1];
     if (!note) continue;
-    const s = objs.length === parts.length ? parts.map((p, i) => glue(i) + p).join("").trim() : parts.join(" ");
+    const s = bracket ? parts.join("") : objs.length === parts.length ? parts.map((p, i) => glue(i) + p).join("").trim() : parts.join(" ");
     const metro = isTempo && s.includes("=") ? METRO_TEXT_RE.exec(s) : null;
     if (metro) {
       const bpm = Number(metro[3]);
@@ -1187,6 +1210,6 @@ export function attachDirectionTexts(
     }
     const plain = isTempo ? s.replace(/\s*=\s*$/, "") : s;
     if (!plain) continue;
-    (note.words ??= []).push({ text: plain, above: cy < (stf.box.top + stf.box.bottom) / 2, ...(size > 0 ? { size } : {}), ...(boxed ? { rehearsal: true } : {}) });
+    (note.words ??= []).push({ text: plain, above: cy < (stf.box.top + stf.box.bottom) / 2, ...(size > 0 ? { size } : {}), ...(boxed ? { rehearsal: true } : {}), ...(bracket ? { bracket: true } : {}) });
   }
 }

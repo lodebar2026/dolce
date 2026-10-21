@@ -1020,7 +1020,7 @@ function drawTextBlock(container: Group, t: MeasureText): void {
     container.add(tf);
     xpos += it.font.measureText(content);
   }
-  if (t.boxed) {
+  if (t.boxed && !t.frameless) {
     // 排练号的方框：按首行字的墨迹上下沿、整块宽，四周留 0.25 个字号
     const it0 = t.data.find((it) => it.text !== "\n");
     if (!it0) return;

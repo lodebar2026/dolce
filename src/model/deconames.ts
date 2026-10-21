@@ -53,7 +53,6 @@ export function tremoloStrokes(name: string): number | undefined {
   return name === "震音" ? 3 : undefined;
 }
 
-/** 排练号：123 的 `!rehearsal=A!`（也认 `!排练号=A!`）→ `A`；不是排练号返回 undefined。 */
 /** 换符头的装饰 `!head-x!` `!head-circle-x!`（abc2svg：名字以 `head-` 开头的装饰换符头；`head-` 后面用 MusicXML 的 notehead 名）→ 符头名 */
 export function noteheadOf(name: string): string | undefined {
   const m = /^head-([a-z][a-z-]*)$/i.exec(name);
@@ -66,7 +65,13 @@ export function chordNotehead(notes: readonly { notehead?: string }[]): string |
   return h && h !== "normal" && notes.every((n) => n.notehead?.trim() === h) ? h : undefined;
 }
 
+/** 排练号：123 的 `!rehearsal=A!`（也认 `!排练号=A!`）→ `A`；不是排练号返回 undefined。 */
 export function rehearsalOf(name: string): string | undefined {
   const m = /^(?:rehearsal|排练号)\s*=\s*(.+)$/i.exec(name);
   return m ? m[1]!.trim() : undefined;
+}
+
+/** 排练号自带方头括号（谱面印「【A】」，八段锦）：照原样排字、不再套方框；MusicXML 写 `enclosure="none"` */
+export function rehearsalBracketed(text: string): boolean {
+  return /^【.+】$/.test(text.trim());
 }

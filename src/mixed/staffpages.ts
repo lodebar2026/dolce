@@ -282,8 +282,9 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
           }
         }
         placed.push({ x0, x1, y0: t.y, y1: t.y + h });
-        // 框比整块前进宽再往外扩 0.25 个字号（`render.ts::drawTextBlock`），并排的记号从框线外量；接上的块把右缘往后推
-        if (t.boxed) rehearsalAt.set(beatKey, { x1: left + w + (t.data.find((it) => it.text !== "\n")?.font.size ?? 0) * 0.25, y0: t.y, y1: t.y + h });
+        // 框比整块前进宽再往外扩 0.25 个字号（`render.ts::drawTextBlock`），并排的记号从框线外量；接上的块把右缘往后推。
+        // 不套框的「【A】」从墨迹右缘量，接上的字离它 MIXED_TEXT_CLEAR / 2（再近就算撞上、被摞到上面去）
+        if (t.boxed) rehearsalAt.set(beatKey, { x1: (t.frameless ? x1 + MIXED_TEXT_CLEAR / 2 - AFTER_REHEARSAL : left + w + (t.data.find((it) => it.text !== "\n")?.font.size ?? 0) * 0.25), y0: t.y, y1: t.y + h });
         else if (host) rehearsalAt.set(beatKey, { ...host, x1: x1 + WORDS_GAP });
       }
     }

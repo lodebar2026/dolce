@@ -28,7 +28,7 @@ import { Font } from "../layout/font";
 import { compressMultiRests } from "../model/multirest";
 import { dynamicGlyphs } from "../engrave/dynamics";
 import { articGlyph } from "../engrave/articulation";
-import { decoKey } from "../model/deconames";
+import { decoKey, rehearsalBracketed } from "../model/deconames";
 import { EQ_PAD_EM } from "../engrave/spacing";
 import { GlyphCodes } from "../smufl/smufl";
 import type {
@@ -820,9 +820,10 @@ class DocPartLoader {
           if (this.processMetronome(blk, item)) hasText = true;
           break;
         case "rehearsal":
-          // 排练号：照文字排，字加粗放大一号、外面套方框
+          // 排练号：照文字排，字加粗放大一号、外面套方框（自带【】的不套）
           if (this.processWords(blk, { ...item, type: "words" })) {
             blk.boxed = true;
+            blk.frameless = rehearsalBracketed(item.text ?? "");
             for (const it of blk.data) if (it.text !== "\n") it.font = new Font(it.font.family, it.font.size * 1.15, true, it.font.italic);
             hasText = true;
           }

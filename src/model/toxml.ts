@@ -47,6 +47,7 @@ import { harmonyXml as chordTextXml } from "../score/harmonyxml";
 import { escapeAttr, escapeXml } from "../score/xmlutil";
 import { projectForMusicXml, type ProjectOptions } from "./xmlproject";
 import { axisOfSong, type TimeAxis } from "./timeaxis";
+import { rehearsalBracketed } from "./deconames";
 import { SOURCE_ID_PREFIX } from "./helpers";
 import { surfaceOf, type EngravedLayout, type Position, type PrintLayout } from "./xmlsurface";
 import { t as tr } from "../i18n";
@@ -638,7 +639,7 @@ function directionPartXml(o: Out, dir: DirectionPart, sur: Element | undefined, 
       break;
     case "words":
     case "rehearsal":
-      o.text(dir.type, dir.text ?? "", lay, sur);
+      o.text(dir.type, dir.text ?? "", dir.type === "rehearsal" && rehearsalBracketed(dir.text ?? "") ? `${lay} enclosure="none"` : lay, sur);
       break;
     case "wedge":
       o.leaf("wedge", ` type="${dir.spanType === "stop" ? "stop" : dir.wedgeType ?? "crescendo"}"${pos}`, sur);

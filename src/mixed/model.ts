@@ -1437,6 +1437,8 @@ export class MeasureText extends TextBlock {
   src: DocDirection | null = null;
   /** 排练号（`<rehearsal>`）：粗体字外面套方框（render.ts::drawTextBlock） */
   boxed = false;
+  /** 排练号自带【】（`rehearsalBracketed`）：不画方框 */
+  frameless = false;
 
   constructor(measure: PartMeasureLayout) {
     super();
