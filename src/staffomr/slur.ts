@@ -387,16 +387,26 @@ export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number
   }
   let dx: number;
   // `headSlack`：端点可以略出符头（头宽的几成）。矢量路给 0.4：倚音到主音的小弧起笔在倚音头左下方（二胡 m48 倚音 D5，左出 1.4 点），
-  // 卡死在头的左缘就挂到前一小节的同音上去了。位图路不给（破碎干净档的弧挂法会变）
+  // 卡死在头的左缘就挂到前一小节的同音上去了。位图路不给（破碎干净档的弧挂法会变）。
+  // 起点至少容 0.6 格：朝下的弧从符头左下方起笔，二胡 m43 E5 下面那条起在头左缘外 2.8 点（头宽四成只有 2.4）。
+  // 止端不放：牵我的手 p10 左手 C3→A2 跨行弧的前半截，弧尾越过行末 B2 右缘 0.5 格，放了就挂在 B2 上、接不回下一行
   const slack = (nt.right - nt.left) * headSlack;
+  const startSlack = headSlack > 0 ? Math.max(slack, sp * 0.6) : 0;
   if (isEnd) {
     if (px > nt.right + slack) return null;
     if (px < nt.left - 4 * sp) return null;
     dx = px - nt.left;
   } else {
-    if (px < nt.left - slack) return null;
+    if (px < nt.left - startSlack) return null;
     if (px > nt.right + 4 * sp) return null;
     dx = px - nt.right;
+  }
+  // 矢量路（给了 `headSlack`）：按端点到符头盒的横向距离算，横向不在头上的另加半格的罚——Sibelius 的短弧从符头正上方起笔，
+  // 按离右缘量的话头里的起点反比紧挨着的前一个音还远，起点挂到前一个音上（高胡 m13 第二条弧起在 E6 头里，dx −4.2 比前一个 F♯6 的 5.1 还大；
+  // 二胡 m39 起在 D5 头里、比前一个 E5 低 2.5 点，只按距离也归 E5）
+  if (headSlack > 0) {
+    const gap = px < nt.left ? nt.left - px : px > nt.right ? px - nt.right : 0;
+    return gap * gap + dy * dy + (gap > 0 ? (sp * 0.5) ** 2 : 0);
   }
   return dx * dx + dy * dy;
 }
@@ -415,9 +425,16 @@ export function attachSlurs(
   arcs: SlurArc[],
   notes: StaffNote[],
   sp: number,
-  opts: { stemEnds?: boolean; tieNeighbors?: boolean; overshoot?: boolean; headSlack?: number; spreadTies?: boolean; rowNext?: (st: Staff, d: 1 | -1) => Staff | undefined } = {},
+  opts: { stemEnds?: boolean; tieNeighbors?: boolean; overshoot?: boolean; headSlack?: number; spreadTies?: boolean; barClip?: boolean; rowNext?: (st: Staff, d: 1 | -1) => Staff | undefined } = {},
 ): void {
   const pitched = notes.filter((n) => !n.rest);
+  /** x 落在这行谱第几小节（不在任何小节里给 -1） */
+  const barAt = (st: Staff, x: number) => st.bars.findIndex((b) => x >= b.left && x <= b.right);
+  /** 弧端 x 与音不在同一小节（两边都定得出小节时） */
+  const crossBar = (nt: StaffNote, x: number) => {
+    const a = barAt(nt.staff, x), b = barAt(nt.staff, nt.x);
+    return a >= 0 && b >= 0 && a !== b;
+  };
   for (const sl of arcs) {
     let bestL: StaffNote | undefined;
     let bestR: StaffNote | undefined;
@@ -500,6 +517,27 @@ export function attachSlurs(
         const l = under(bestR.staff, false);
         if (l && l !== bestR && l.x < bestR.x) bestL = l;
       }
+    }
+    // 弧尾越过末音两格多、停在小节线前，按距离只够得着小节线那边的音（笛子 m40 G4→A4 弧尾过 A4 2.4 格，挂成了 m41 的 B4）：
+    // 改挂弧尾那一小节里弧下最后一个音（`barClip`，只矢量路开）
+    if (opts.barClip && bestL && bestR && crossBar(bestR, sl.rx)) {
+      const bar = barAt(bestL.staff, sl.rx);
+      const dy = (sl.above ? 1 : -1) * sp;
+      const r = pitched
+        .filter((n) => n.staff === bestL!.staff && n.x > bestL!.x && n.sym.box.right < sl.rx && barAt(n.staff, n.x) === bar)
+        .sort((a, b) => b.x - a.x)
+        .find((n) => validateSlurNote(true, n.sym.box, n.sym.box.right, sl.ry + dy, sp, sl.above) !== null);
+      if (r) bestR = r;
+    }
+    // 矢量路：两端落到同一个音上，改取两端都挂得上、挂在不同音上、两端距离和最小的一对
+    // （二胡 m4 F♯5→E5 十六分上的小弧，止端越过 F♯5 右缘 2.2 点、也落在 E5 头里，单按距离两端都归 F♯5）
+    if (opts.headSlack && bestL && bestL === bestR) {
+      let best = Infinity;
+      let pair: [StaffNote, StaffNote] | undefined;
+      const ls = pitched.map((n) => [n, validateSlurNote(false, n.sym.box, sl.lx, sl.ly, sp, sl.above, opts.headSlack)] as const).filter((x) => x[1] !== null);
+      const rs = pitched.map((n) => [n, validateSlurNote(true, n.sym.box, sl.rx, sl.ry, sp, sl.above, opts.headSlack)] as const).filter((x) => x[1] !== null);
+      for (const [l, vl] of ls) for (const [r, vr] of rs) if (l !== r && l.x < r.x && vl! + vr! < best) (best = vl! + vr!), (pair = [l, r]);
+      if (pair) [bestL, bestR] = pair;
     }
     if (bestL && bestL === bestR) {
       // 两端落到同一个音符上：按 x 判掉不合理的那一端（照原文）

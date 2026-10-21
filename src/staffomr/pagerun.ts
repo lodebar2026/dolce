@@ -87,7 +87,7 @@ export async function recognizeStaffPage(
     const sy = pg.systems[si + d];
     return si >= 0 && sy && sy.staves.length === pg.systems[si].staves.length ? sy.staves[pg.systems[si].staves.indexOf(st)] : undefined;
   };
-  attachSlurs(slurs, notes, pg.normalStaffSpace || pg.space, { stemEnds: true, tieNeighbors: true, overshoot: true, headSlack: 0.4, spreadTies: true, rowNext });
+  attachSlurs(slurs, notes, pg.normalStaffSpace || pg.space, { stemEnds: true, tieNeighbors: true, overshoot: true, headSlack: 0.4, spreadTies: true, barClip: true, rowNext });
   reconnectSlurs(pg, slurs, notes);
   markSlurNotes(slurs, undefined, true);
   // 八度移位要在音高算完之后、文本层之前：它直接改音符的八度
