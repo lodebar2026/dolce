@@ -1092,6 +1092,8 @@ function exprLines(objs: PObj[]): PObj[][] {
 
 /** 同一条速度里相邻两段的横向间隙上限（格）：与 `analyzeText` 把 `=` 两边的段收进速度那一步同口径。 */
 const TEMPO_JOIN_GAP = 3;
+/** 只有文字的一条速度接后面以节拍器起头的一条：横向间隙上限（格） */
+const TEMPO_WORDS_GAP = 5;
 
 /**
  * `analyzeText` 认出的**速度**（`Andante`、`q = c 76`）与**表情**（`rit.`）挂到音符上，出 `<direction>`。
@@ -1119,6 +1121,20 @@ export function attachDirectionTexts(
     });
     if (line) line.push(o);
     else lines.push([o]);
+  }
+  // 术语与节拍器字号不同、隔得比段间远的（八段锦小钗「欢快 热烈地」…「♩ = 144」隔 3.4 格）：
+  // 左边一条只有文字、右边一条以节拍器起头，同一行、隔得不到 TEMPO_WORDS_GAP 格，也并成一条
+  const isMetro = (l: PObj[]) => l[0].symbols.some((y) => METRO_GLYPH[y.code]) || /^\s*[qhe♩♪]?\s*=/.test(objText(l[0]));
+  const hasEq = (l: PObj[]) => l.some((o) => objText(o).includes("="));
+  for (let i = 0; i < lines.length; i++) {
+    const a = lines[i];
+    if (hasEq(a)) continue;
+    const last = a[a.length - 1];
+    const j = lines.findIndex((b, k) => k !== i && isMetro(b) && overlapY(last.box, b[0].box) && b[0].box.left >= last.box.right - 1 && xSpace(last.box, b[0].box) <= sp * TEMPO_WORDS_GAP);
+    if (j < 0) continue;
+    a.push(...lines[j]);
+    lines.splice(j, 1);
+    if (j < i) i--;
   }
   const items = [
     ...lines.map((l) => ({ objs: l, tempo: true, boxed: false })),

@@ -24,6 +24,7 @@ import {
   SysStaff,
   TimeSig,
   Tuplet,
+  ARPEGGIO_RESERVE,
   arcExtent,
   slurEnds,
   smuflBottom,
@@ -174,6 +175,8 @@ function entryReach(score: StaffLayout, mi: number, byStaff?: Map<string, { offs
         if (flag) ink = Math.max(ink, n.chord.stemX() + smuflWidth(meta, flag));
       }
       for (const a of ent.acc.accidentals) if (a.xpos !== null) left = Math.min(left, a.xpos);
+      // 琶音线画在符头、临时记号左边，要让出它的宽（否则首音的琶音压小节线，八段锦钢片琴 m39）
+      if (ent.notes.some((n) => n.arpeg)) left -= ARPEGGIO_RESERVE;
       const key = ent.offset.toString();
       const cur = out.get(key);
       out.set(key, { left: Math.min(cur?.left ?? 0, left), right: Math.max(cur?.right ?? 0, right), ink: Math.max(cur?.ink ?? 0, ink, right) });

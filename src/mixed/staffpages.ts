@@ -92,6 +92,8 @@ const AFTER_REHEARSAL = 6;
 const WORDS_GAP = 4;
 /** segno / coda 墨迹底到下面谱面内容（或顶线）的空（tenths） */
 const SIGN_CLEAR = 8;
+/** 行首 segno / coda 离小节号右缘（tenths） */
+const AFTER_BAR_NUMBER = 3;
 
 export function placeAboveStaff(score: StaffLayout, mixed: boolean): void {
   // 源谱版面档逐个声部摞：首个声部常整行不印（合唱谱人声进来之前），文字记号挂在下面的声部上（望十架曲首的速度与「unis.」叠成一团）
@@ -228,8 +230,15 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
         // segno / coda 记在小节头、小节末的，居中骑在那根小节线上（原谱 m77|m78、m32 末的 ⊕；【E】在它右边）
         if (isSign(t) && !t.signPlaced) {
           const atEnd = t.offset.compareTo(m.dur) >= 0 && m.dur.toFloat() > 0;
-          // 行首小节不挪：骑到系统起始线上就压住小节号与括号（500 首 018 m9 的 𝄋）；钢片琴 m33 行首原谱的 ⊕ 在谱号上方、小节号框之上，没照
+          // 行首小节不骑系统起始线：那样压住小节号与括号（500 首 018 m9 的 𝄋）；
+          // 贴谱表的（`signLow`）照原谱接在行首小节号右边、谱号上方（钢片琴 m33 的 ⊕）
           const atStart = t.offset.toFloat() === 0 && sys.measures[0] !== m;
+          if (signLow && t.offset.toFloat() === 0 && sys.measures[0] === m && m.showBarNumber && !eng.hideBarNumber) {
+            const shift = m.xpos() + new Font(eng.wordFont, 20).measureText(m.number) + AFTER_BAR_NUMBER - x0;
+            t.x += shift;
+            x0 += shift;
+            x1 += shift;
+          }
           if (atEnd || atStart) {
             // 小节线的 x 同 `render.ts` 画小节线：下一小节的 `sibKeyOffset` 往回让，行末再扣掉预告拍号/调号（各连 5 的空）
             const mi = sys.measures.indexOf(m);

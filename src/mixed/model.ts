@@ -2211,9 +2211,26 @@ export class OctaveLine extends SpanObj {
   size = 8;
 }
 
+/** 琶音线（`arpeggioGroup` 的 x）在和弦墨迹左缘（符头、临时记号取最左）往左这么多（tenths）；
+ *  波浪线墨迹在 x 右边 3.9～8.4，离符头约 0.36 格（照八段锦钢片琴原 PDF 量的约 0.3 格） */
+export const ARPEGGIO_LEAD = 12;
+/** 排版给琶音在和弦左边让出的宽：线的墨迹左缘到和弦墨迹左缘 */
+export const ARPEGGIO_RESERVE = ARPEGGIO_LEAD - 3.9;
+
 /** 琶音（model.hpp:435 Arpeggiate）：同一 offset 上的一组音符。 */
 export class Arpeggiate {
   notes: NoteLayout[] = [];
+
+  /** 和弦墨迹左缘（与音符同一坐标）：这组音所在各 entry 的符头与临时记号取最左 */
+  inkLeft(entries: readonly NoteEntry[]): number {
+    let left = Infinity;
+    for (const ent of entries) {
+      if (!ent.notes.some((n) => n.arpeg === this)) continue;
+      for (const n of ent.notes) if (!n.chord.rest) left = Math.min(left, n.x);
+      for (const a of ent.acc.accidentals) if (a.xpos !== null) left = Math.min(left, a.xpos);
+    }
+    return left;
+  }
 }
 
 export class LrcExtend extends SpanOverNotes {

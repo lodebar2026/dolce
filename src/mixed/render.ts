@@ -37,6 +37,7 @@ import {
   TimeSig,
   Tuplet,
   Wedge,
+  ARPEGGIO_LEAD,
   mixedSlurStyle,
   fGe,
   fLt,
@@ -318,11 +319,12 @@ export function drawNotesNormal(
       if (arp.notes.length === 0) continue;
       const n0 = arp.notes[0];
       const n1 = arp.notes[arp.notes.length - 1];
-      // 照 Sibelius 出的谱（八段锦钢片琴原 PDF）：波浪线上下各伸出符头约 0.3 格。原谱离符头还要远半格，
-      // 但这里没给琶音留横向的位，再往左挪就压到小节线上（钢片琴 m39），横向不动
+      // 照 Sibelius 出的谱（八段锦钢片琴原 PDF）：波浪线上下各伸出符头约 0.3 格，画在临时记号左边；
+      // 横向的位由 layoutpass `entryReach` 按 ARPEGGIO_RESERVE 让出
       const y0 = md.staffY(n0.staff) + n0.cy() + 8;
       const y1 = md.staffY(n1.staff) + n1.cy() - 8;
-      const x = md.measureInfo.getEntPos(n0.chord.offset) - 12;
+      const left = arp.inkLeft(md.noteEntries);
+      const x = (Number.isFinite(left) ? left : md.measureInfo.getEntPos(n0.chord.offset)) - ARPEGGIO_LEAD;
       container.add(arpeggioGroup(x, y1, y0, fs));
     }
   }
