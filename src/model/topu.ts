@@ -34,6 +34,7 @@ import { DYNAMICS, TERMS } from "../pu/glyph";
 import { STEPS, keyAlter, tonicStep } from "../score/jppitch";
 import { PU_LYRIC_PUNCTUATION } from "../common/cjkpunct";
 import { projectForJianpu } from "./jianpuproject";
+import { voicesToLayers } from "./innervoice";
 import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote } from "./jianpu";
 import { ownIds, ownMarks, partRanges, systemRanges, type SystemRange } from "./emitutil";
 import { relayoutDocBreaks } from "./relayout";
@@ -364,6 +365,8 @@ interface PartState {
   closeOpenVoltas: boolean;
   /** 上一行开口收尾的那个小节写到的拍位（续行接着算） */
   carryBeat: number;
+  /** 在 `{dsb}`/`{bz}` 层里写：层里不跟词，不可见休止一律写 `8`（番茄没有不跟词的隐藏休止，写 `0` 就印出来了） */
+  inLayer?: boolean;
 }
 
 /** 小节线类型（`frompu.ts::fromPuBarline` 的逆）。只有房号、没有线的返回 null。 */
@@ -429,7 +432,7 @@ function writeInline(items: readonly InlineItem[] | undefined, line: Line, st: P
       }
     }
     const subSt: PartState = {
-      ...st, plan: planArcs(it.marks, pos), pos, openVoltas: 0, autoBoundaries: false, consumedLeft: new Set(),
+      ...st, plan: planArcs(it.marks, pos), pos, openVoltas: 0, autoBoundaries: false, consumedLeft: new Set(), inLayer: true,
     };
     it.measures.forEach((m, mi) => {
       writeMeasureBody(m, 0, Infinity, sub, subSt, []);
@@ -551,7 +554,7 @@ function writeMeasureBody(
       // 承接前音的延长：行首/小节线后的 `-`，读回来就是它
       line.push(opens + "-");
     } else {
-      line.push(opens + headText(ch, d, anchored) + durationText(beams, ch.duration.dots - tailDots));
+      line.push(opens + headText(ch, d, anchored || !!st.inLayer) + durationText(beams, ch.duration.dots - tailDots));
     }
     lastMain = line.tokens.length - 1;
     if (anchored) slots.push({ lyrics: ch.lyrics });
@@ -892,6 +895,16 @@ function withLines(song: Song): Song {
   return phrased;
 }
 
+/** 第二声部 → `{dsb}` 层，连续段在换行处断开（一个 `{dsb…}` 不跨行） */
+function withInnerLayers(song: Song): Song {
+  return voicesToLayers(song, (pi, i) => {
+    const ms = song.parts[pi]!.measures;
+    const next = ms[i + 1];
+    return !!next?.print?.newSystem || !!next?.print?.newPage
+      || ms[i]!.elements.some((el) => el.kind === "chord" && !!el.lineBreakAfter);
+  });
+}
+
 /** 简谱形状的歌：音高要有度数。MusicXML 来的只有绝对音高时补上（在克隆上补，模型本身不动）。 */
 function withDegrees(song: Song): Song {
   const missing = song.parts.some((p) => p.measures.some((m) => m.elements.some((el) =>
@@ -936,7 +949,8 @@ export interface EmitPuOptions {
 export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}): string {
   const d = dialectSpec(dialect);
   // 小节里的 `<direction>`（MusicXML 来的力度、文字、渐强渐弱、曲首速度）先换成简谱那套挂在符号上的写法，同 123
-  const song = withDegrees(withLines(projectForJianpu(directionsAsMarks(src))));
+  // 同一谱表的第二声部写成 `{dsb…}` 并排块（番茄的临时多声部；括起的那一路印在上行），按行断开
+  const song = withDegrees(withInnerLayers(withLines(projectForJianpu(directionsAsMarks(src)))));
   const L = headerLines(song, d, opts);
   if (d.emit.blankBetweenGroups) L.push("");
 

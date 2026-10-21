@@ -102,6 +102,8 @@ export abstract class AbcFamilyLexer {
 
   /** 音乐体里的 `&` 是不是小节内临时多声部分隔（ABC §7.4 voice overlay）。123 没有这个记号。 */
   protected readonly voiceOverlay: boolean = false;
+  /** 节奏音符后可跟 `@E5` 记谱表上的显示位置（123） */
+  protected readonly rhythmPositions: boolean = false;
 
   /** 落单的 `]` 算不算收尾线（野外 ABC 的容错）。123 不认。 */
   protected readonly strayBracketIsFinal: boolean = false;
@@ -412,6 +414,12 @@ export abstract class AbcFamilyLexer {
       if (this.rhythmLetters.includes(ch)) {
         i++;
         const t: Omit<Token, "source"> = { kind: "rhythm", text: ch };
+        // 123 的 `X@E5`：谱表上的显示位置（MusicXML `<unpitched>` 的 display-step/octave）
+        const pos = this.rhythmPositions ? /^@([A-G])(\d)/.exec(line.slice(i)) : null;
+        if (pos) {
+          t.value = pos[1]! + pos[2]!;
+          i += pos[0].length;
+        }
         const mod = this.scanDuration(line, i);
         if (mod) {
           i = mod.next;
@@ -453,7 +461,9 @@ export abstract class AbcFamilyLexer {
         );
         // `cg.dur.next` 是行内绝对下标（scanChordGroup 从 `]` 之后接着扫的）
         i = cg.dur ? cg.dur.next : i + cg.text.length;
-        const t: Omit<Token, "source"> = {
+        // 同时敲的几个节奏音符 `[X@E5X@F5]`：落成一个带几个位置的节奏音符
+        const rhythms = inner.tokens.filter((x) => x.kind === "rhythm");
+        const t: Omit<Token, "source"> = rhythms.length >= 2 ? { kind: "rhythm", text: line.slice(start, i), notes: rhythms } : {
           kind: "chordGroup",
           text: line.slice(start, i),
           notes: inner.tokens.flatMap((x, k) => {

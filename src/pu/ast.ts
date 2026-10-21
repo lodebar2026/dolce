@@ -126,7 +126,8 @@ export interface NoteElement {
 
 /** 和音里叠在上面的一个音（`NoteElement.stack`）。 */
 export interface StackedNote {
-  pitch: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  /** 9 = 节奏音符（打击乐谱同时敲的几个，印 `X`） */
+  pitch: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 9;
   octave: number;
   accidental?: Accidental;
 }
@@ -187,6 +188,9 @@ export interface BeatBoundaryElement {
 export interface InlineLayerElement {
   kind: "inline-layer";
   role: "accompaniment" | "voice";
+  /** 并排块（`role: "voice"`）里这一层排下行、主旋律排上行：同一谱表的第二声部（123/ABC `&`、MusicXML `<voice>`）照五线谱上下位。
+   *  文本谱的 `{dsb}` 括起的是上行，不带 */
+  below?: boolean;
   elements: MusicElement[];
   marks: Mark[];
   code: string;

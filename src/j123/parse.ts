@@ -40,6 +40,7 @@ import type {
   SourceSpan,
   Space,
   Sustain,
+  Pitch,
 } from "../model/doc";
 import { SIMPLE_DIVISIONS } from "../model/doc";
 import { IdGen, breaksAfterToStart, emptyDoc, emptySong } from "../model/helpers";
@@ -446,12 +447,14 @@ function buildMusicLine(
   // 用对象持有：`attach` 是闭包，直接给局部 let 赋值会让 TS 的控制流分析把它窄成 never
   const cur: {
     last: Element | null;
+    /** 紧接着写的倚音（`{5})`：弧收在倚音上）；下一个主音落下就清掉 */
+    lastGrace: Chord | null;
     sustainHost: Chord | null;
     /** 刚按计数收掉一个多连音——紧随的 `)` 是写谱人的习惯写法，静默消费、不报「多余」 */
     justClosedTuplet: boolean;
     /** 收在「带着增时线的音」上的弧：后面再来增时线，说明弧是收在增时线中间的（`1-)-`），终点改记到当时最后那根增时线上 */
     arcEnds: { mk: Mark; host: Chord; su: Sustain }[];
-  } = { last: null, sustainHost: null, justClosedTuplet: false, arcEnds: [] };
+  } = { last: null, lastGrace: null, sustainHost: null, justClosedTuplet: false, arcEnds: [] };
   /** ABC：上一个 `-` 还没配到下一个音符（tie 的 stop 端） */
   let pendingTie = false;
   /** ABC：上一个 `>`/`<` 还欠着——正数表示下一个音符要减半、上一个加附点 */
@@ -537,6 +540,7 @@ function buildMusicLine(
     }
     pb.measure.elements.push(el);
     cur.last = el;
+    cur.lastGrace = null;
     // 123 的 `~`：弧从前一个音连到这个音（倚音不算「下一个音」）
     if (pb.arcNext && el.kind === "chord" && !el.grace) {
       marks.push({ type: "slur", start: pb.arcNext.from, end: el.id, level: openSlurs.length, openSource: pb.arcNext.source });
@@ -724,10 +728,12 @@ function buildMusicLine(
         break;
 
       case "rhythm": {
+        // `X@E5` 的显示位置、`[X@E5X@F5]` 同时敲的几个：各是一个音（同 MusicXML `<unpitched>`）；只写 `X` 的 notes 为空
+        const heads = t.notes?.length ? t.notes : t.value ? [t] : [];
         const ch: Chord = {
           kind: "chord",
           id: ctx.ids.next(),
-          notes: [],
+          notes: heads.map((h) => (h.value ? { unpitched: { step: h.value[0] as Pitch["step"], octave: Number(h.value[1]) } } : {})),
           rhythm: true,
           duration: ctx.d.duration(t, ctx.len),
           voice: pb.voice,
@@ -840,6 +846,7 @@ function buildMusicLine(
             source: t.source,
           };
           pb.measure.elements.push(ch);
+          cur.lastGrace = ch;
           // 弧从倚音起（`({5} 1)`）：倚音不走 `attach`，开着的弧在这里回填起点
           for (const o of openSlurs) if (!o.start) o.start = ch.id;
         }
@@ -907,10 +914,12 @@ function buildMusicLine(
         // 在本音符上刚起的，`)` 收的是它底下那条更早的；只有一条开着时 `(1)` 才是单音弧。
         // 识别出的 `5 3 3` 上外弧 + 首尾相接的两条内弧就写作 `((5 (3) 3))`（1863）。
         // 123 里这条特判只在「下面那层也是弧」时走：两条弧之间夹着一个开着的多连音，就按单音弧收
+        // 紧跟在倚音后面的 `)` 收在倚音上（`(1 … ({5}) 1)`：前一条收在倚音、倚音再起一条，八段锦笛子 m48）
+        const lastId = cur.lastGrace?.id ?? cur.last?.id;
         const top = openSlurs[openSlurs.length - 1];
         const below = openSlurs[openSlurs.length - 2];
         const innerTuplet = openTuplets[openTuplets.length - 1];
-        const chain = top && top.start && top.start === cur.last?.id && below
+        const chain = top && top.start && top.start === lastId && below
           && !(ctx.d.tupletClose === "paren" && innerTuplet && openOffset(innerTuplet) > openOffset(below));
         const open = chain ? openSlurs.splice(openSlurs.length - 2, 1)[0] : openSlurs.pop();
         if (!open) {
@@ -918,12 +927,12 @@ function buildMusicLine(
           break;
         }
         // `open.start` 由 `attach` 回填；同音起止（`(1)`）时起点就是终点，合法（ABC §4.11）
-        if (open.start && cur.last) {
-          const mk: Mark = { type: "slur", start: open.start, end: cur.last.id, level: open.level, closeSource: t.source };
+        if (open.start && lastId !== undefined) {
+          const mk: Mark = { type: "slur", start: open.start, end: lastId, level: open.level, closeSource: t.source };
           if (open.openSource) mk.openSource = open.openSource;
           marks.push(mk);
           const host = cur.sustainHost;
-          const su = host && host === cur.last ? host.sustains?.[host.sustains.length - 1] : undefined;
+          const su = host && host === cur.last && !cur.lastGrace ? host.sustains?.[host.sustains.length - 1] : undefined;
           if (host && su) cur.arcEnds.push({ mk, host, su });
         } else {
           report(ctx, "empty-slur", tr("diag.j123.emptySlur"), t.source);
@@ -1058,6 +1067,7 @@ function buildMusicLine(
         pendingBroken = 0;
         cur.sustainHost = null;
         cur.last = null;
+        cur.lastGrace = null;
         cur.justClosedTuplet = false;
         beamGroup++;
         sawSpaceSinceLastNote = true;

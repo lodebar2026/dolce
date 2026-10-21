@@ -1,18 +1,46 @@
 // 内联层：`{bz…}` 临时伴奏（主旋律上方小字号行）与 `{dsb…}` 并排块。
-import type { ScoreLine } from "../../../pu/ast";
+import type { InlineLayerElement, ScoreLine } from "../../../pu/ast";
 import type { JianpuGrid } from "../metrics";
 import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedSplit } from "./model";
 import { type BeatCtx, SPLIT_BRACE_W, computeUnderlines, layoutVoiceLine } from "./voice";
 import { splitRise } from "./vertical";
 import { placeMarks } from "./marks";
 
-/** 内联层：`{bz}` 是上方小字号行，`{dsb}` 是与主旋律并排的一块（见 PlacedLayer）。 */
+/** 并排块里那一层自己的行（括起的内容）。 */
+export function layerLine(voice: ScoreLine, el: InlineLayerElement): ScoreLine {
+  return { voice: voice.voice, elements: el.elements, marks: el.marks, lyrics: [], raw: el.code, source: el.source };
+}
+
+/** 同一谱表第二声部的并排下行（`below`）：先按自己的节奏排好，与主行一起归列（`spacing.ts::placeColumns`），
+ *  这样下行比主行细的拍位（主行八分、下行十六分）也有自己的列，不用按比例硬塞。返回层 → 排好的行与它从第几小节起。 */
+export function belowLayerLines(
+  voice: ScoreLine,
+  items: readonly PlacedItem[],
+  m: JianpuGrid,
+  ctx: BeatCtx = {},
+): Map<InlineLayerElement, ReturnType<typeof layoutVoiceLine> & { barBase: number }> {
+  const out = new Map<InlineLayerElement, ReturnType<typeof layoutVoiceLine> & { barBase: number }>();
+  voice.elements.forEach((el, srcIndex) => {
+    if (el.kind !== "inline-layer" || el.role !== "voice" || !el.below) return;
+    const hostAt = items.findIndex((it) => it.srcIndex >= srcIndex);
+    if (hostAt < 0) return;
+    const laid = layoutVoiceLine(layerLine(voice, el), m, { meter: ctx.meter });
+    for (const it of laid.items) it.syllables = [];
+    const barBase = items.slice(0, hostAt).filter((it) => it.element.kind === "barline").length;
+    out.set(el, { ...laid, barBase });
+  });
+  return out;
+}
+
+/** 内联层：`{bz}` 是上方小字号行，`{dsb}` 是与主旋律并排的一块（见 PlacedLayer）。
+ *  `prelaid`：已与主行一起归过列的并排下行（`belowLayerLines`），x 照用。 */
 export function placeLayers(
   voice: ScoreLine,
   items: PlacedItem[],
   m: JianpuGrid,
   ink: InkMeasurer,
   ctx: BeatCtx = {},
+  prelaid?: ReadonlyMap<InlineLayerElement, ReturnType<typeof layoutVoiceLine>>,
 ): PlacedLayer[] {
   const out: PlacedLayer[] = [];
   voice.elements.forEach((el, srcIndex) => {
@@ -21,15 +49,9 @@ export function placeLayers(
     const hostAt = items.findIndex((it) => it.srcIndex >= srcIndex);
     const host = hostAt >= 0 ? items[hostAt] : items[items.length - 1];
     const originX = host ? host.x : 0;
-    const inner: ScoreLine = {
-      voice: voice.voice,
-      elements: el.elements,
-      marks: el.marks,
-      lyrics: [],
-      raw: el.code,
-      source: el.source,
-    };
-    const laid = layoutVoiceLine(inner, m, { meter: ctx.meter });
+    const inner = layerLine(voice, el);
+    const pre = prelaid?.get(el);
+    const laid = pre ?? layoutVoiceLine(inner, m, { meter: ctx.meter });
 
     if (el.role !== "voice" || hostAt < 0) {
       // `{bz}`：上方另排一小行，按 layerScale 缩小
@@ -44,7 +66,8 @@ export function placeLayers(
 
     // `{dsb}`：并排块。括起的内容排在上行，主旋律从 host 起**等时长**的一段排在下行，
     // 两行同字号、按拍位对齐（原版里两行结构本就一致）。
-    const split = splitRise(m);
+    // 同一谱表的第二声部（`below`）上下对调：主旋律在上行、第二声部在下行（照五线谱上下位）
+    const split = splitRise(m) * (el.below ? -1 : 1);
     let total = 0;
     for (const it of laid.items) total += it.beats;
     let acc = 0;
@@ -67,7 +90,7 @@ export function placeLayers(
       at += it.beats;
     }
     let beatAt = 0;
-    laid.items.forEach((it) => {
+    if (!pre) laid.items.forEach((it) => {
       const bar = it.element.kind === "barline";
       const hit =
         cols.find((c) => c.bar === bar && Math.abs(c.beat - beatAt) < 1e-6) ??
@@ -102,16 +125,17 @@ export function placeLayers(
       dy: -split,
       line: inner,
       marks,
-      braceTop: -split - m.ink.noteHeight * 0.64,
-      braceBottom: split + m.ink.noteHeight * 0.64,
+      braceTop: -Math.abs(split) - m.ink.noteHeight * 0.64,
+      braceBottom: Math.abs(split) + m.ink.noteHeight * 0.64,
     };
     // 花括号画在并排段与单行段的交界上，开口朝着并排的两行；一直排到行末就只有左边那个。
     // 前面只有隐藏线（`|/`，上一行接过来的并排段）也不画左括号（原版如此）
     const before = items.slice(0, hostAt);
-    if (before.some((it) => it.element.kind !== "barline" || (it.element.type !== "hidden" && it.element.type !== "invisible"))) {
+    // 同一谱表的第二声部（`below`）从行首起也画左括号：不画的话整行并排时上下两行看着像两行不相干的谱
+    if (el.below || before.some((it) => it.element.kind !== "barline" || (it.element.type !== "hidden" && it.element.type !== "invisible"))) {
       // 左括号离前面那条小节线 0.48 个墨迹高（同右括号离线），没有线就按离首音 1.07 个墨迹高往左排
-      const prev = items[hostAt - 1]!;
-      placed.braceLeftX = prev.element.kind === "barline"
+      const prev = items[hostAt - 1];
+      placed.braceLeftX = prev?.element.kind === "barline"
         ? prev.x + m.ink.noteHeight * 0.48
         : items[hostAt]!.x - m.ink.noteHeight * 1.07 - SPLIT_BRACE_W;
     }

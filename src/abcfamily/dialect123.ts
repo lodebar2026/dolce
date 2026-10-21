@@ -34,6 +34,9 @@ export class Lexer123 extends AbcFamilyLexer {
   protected override readonly arcNextTilde = true;
   /** 大写 `X` 是节奏音符（ABC 里 X 不是音名、123 也没占用）。 */
   protected override readonly rhythmLetters = "X";
+  /** `&`：小节内的第二声部（ABC §7.4，规范 §4.3）。 */
+  protected override readonly voiceOverlay = true;
+  protected override readonly rhythmPositions = true;
 
   /** 不带引号的和弦：**大写 A–G 开头（或 `#`/`b` 紧跟大写 A–G）、读到空白为止、后面必须跟空格**。
    *  123 音乐体里 A–G 没有别的用处（音符是数字、节奏音符是 `X`、行内字段以 `[` 起头），不会撞；
@@ -81,6 +84,9 @@ export class Lexer123 extends AbcFamilyLexer {
    *  这样与房号 `[1 …`（后面跟空格）分得开。 */
   protected override scanChordGroup(line: string, i: number): { text: string; notes: NoteScan[]; dur: DurationScan | null } | null {
     if (line[i] !== "[") return null;
+    // 同时敲的几个节奏音符 `[X@E5X@F5]`（打击乐谱一拍里钹与鼓同时），只许全是 `X`
+    const rh = /^\[((?:X(?:@[A-G]\d)?){2,})\]/.exec(line.slice(i));
+    if (rh) return { text: rh[0], notes: [], dur: this.scanDuration(line, i + rh[0].length) };
     const notes: NoteScan[] = [];
     let k = i + 1;
     while (k < line.length && line[k] !== "]") {

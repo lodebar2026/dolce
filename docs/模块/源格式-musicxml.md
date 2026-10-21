@@ -4,7 +4,7 @@
 
 ## 职责
 
-MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuinput.ts` 投影、五线谱/混排由 `ScoreDoc` 建版；导出只有一份写出端 `model/toxml.ts`，见 [导出.md](导出.md)）。
+MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproject.ts::projectForJianpu` → `pu/slots.ts::docView` 直出（不经 123 文本），五线谱/混排由 `ScoreDoc` 建版；导出只有一份写出端 `model/toxml.ts`，见 [导出.md](导出.md)）。
 
 `.abc` 是原生可编辑保存的源格式，读写都在 [源格式-abc家族.md](源格式-abc家族.md)（与 123 共用基类），不经 MusicXML。
 
@@ -67,5 +67,5 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuinpu
 
 - `.Repeat` 的 skip/limit **不表达**（`<ending>` 只能整小节）
 - 长音中间不在整拍上的和弦简谱写不出（提前到音符上，挂不下的进丢失清单）
-- 多声部只保 `parts[0]` 的往返（导入端只读第一声部），但全部 part 照常输出
+- 简谱档里同一谱表的第二个 `<voice>` 排成并排下行（同 123 的 `&`）；第三个起、一个 part 的第二条谱表（`<staves>2`）简谱排不下
 - 跨行小节未合并时会出现 `48+16` 这类时值不满的成对小节（GT 里也如此）

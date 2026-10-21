@@ -7,7 +7,7 @@ import { placeColumns } from "./spacing";
 import { type BeatCtx, assignLyrics, computeUnderlines, layoutVoiceLine, lineEndMeter, lineEndsWithForwardRepeat } from "./voice";
 import { GROUP_CLEAR, braceReach, splitRise, wordsLead, groupHeadroom, lineInkBottom, voiceHeadroom } from "./vertical";
 import { placeMarks } from "./marks";
-import { placeLayers } from "./layers";
+import { belowLayerLines, placeLayers } from "./layers";
 import { placeBand } from "./band";
 
 /**
@@ -121,8 +121,10 @@ export function layoutSong(
         for (const it of l.items) it.syllables = new Array(voice.lyrics.length).fill(null);
         assignLyrics(l.items, voice.lyrics);
       });
+      // 同一谱表第二声部的并排下行也参加归列（它的拍位可能比主行细）
+      const below = laidOut.map((l, vi) => belowLayerLines(group.voices[vi]!, l.items, m, beatCtx));
       // 横向：各声部同一拍位归一列、列宽按内容、歌词避让、两端对齐（spacing.ts）
-      placeColumns(laidOut, m, ink, width);
+      placeColumns([...laidOut, ...below.flatMap((b) => [...b.values()])], m, ink, width);
 
       // 纵向先按各声部**自己的基线**排（上方带、记号、内联层都相对基线），头顶多高排完才知道，再定各声部的 y
       const pre = laidOut.map((l, vi) => {
@@ -138,11 +140,11 @@ export function layoutSong(
           digitBottom + m.style.size.note + Math.max(m.style.size.note * 0.4, inkBottom - digitBottom),
         );
         // 内联层要先排：`{dsb}` 会给主旋律那一段打上 dy，减时线与记号都得跟着走
-        const layers = placeLayers(voice, l.items, m, ink, beatCtx);
-        // 并排块里主旋律下移了半个行距，歌词要跟着让开，否则会和下行音符叠在一起
+        const layers = placeLayers(voice, l.items, m, ink, beatCtx, below[vi]);
+        // 并排块的下行（主旋律下移，或第二声部排在下行）比基线低一个 splitRise，歌词要跟着让开，否则会和下行音符叠在一起
         let splitDrop = 0;
         for (const lay of layers) {
-          if (lay.split) splitDrop = Math.max(splitDrop, -lay.split.dy);
+          if (lay.split) splitDrop = Math.max(splitDrop, Math.abs(lay.split.dy));
         }
         for (const u of underlines) {
           const at = l.items.find((it) => it.x >= u.x0 - 0.01 && it.x <= u.x1 + 0.01);
@@ -375,6 +377,8 @@ function lowestOf(page: PlacedPage): number {
   for (const g of page.groups) {
     for (const v of g.voices) {
       bottom = Math.max(bottom, v.y, ...v.lyricY);
+      // 并排块的下行（`{dsb}` 压下去的主旋律、同谱表第二声部）比基线低一个 splitRise
+      for (const l of v.layers) if (l.split) bottom = Math.max(bottom, v.y + Math.abs(l.split.dy));
     }
   }
   return bottom;

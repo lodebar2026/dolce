@@ -279,7 +279,9 @@ export const TYPE_QUARTERS: Readonly<Record<string, number>> = {
 export function nominalQuarters(el: Element, divisions: number): number {
   const d = el.duration;
   if (!d) return 0;
-  const base = d.type ? TYPE_QUARTERS[d.type] : undefined;
+  // 整小节休止常记成 `<type>whole`、时值却是一整小节（2/4、3/4 里也一样；八段锦小钗 m52）：按实际时值
+  const wholeRest = el.kind === "chord" && !!el.rest && d.type === "whole" && !d.timeMod;
+  const base = d.type && !wholeRest ? TYPE_QUARTERS[d.type] : undefined;
   if (base !== undefined) {
     let q = base;
     let add = base;

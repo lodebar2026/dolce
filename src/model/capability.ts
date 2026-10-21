@@ -32,8 +32,10 @@ export type Feature =
   | "harmonyOffset"  // 落在长音中间、又不在整拍上的和弦（简谱挂不到增时线上）
   | "multiVoice"     // 多声部（多个 part）
   | "noteStack"      // 同一声部里同时发声的几个音（五线谱的和弦内音、民乐分谱的双音）
-  | "innerVoice"     // 同一谱表上的第二 voice（简谱只印第一 voice）
+  | "innerVoice"     // 同一谱表上的第二 voice（ABC/123 的 `&`）
+  | "extraStaff"     // 一个声部的第二条谱表（钢琴下谱表、扬琴 `<staves>2`）
   | "rhythmStack"    // 一个和弦里叠几个节奏音符（打击乐谱钹与鼓同时，`<unpitched>` 带 `<chord/>`）
+  | "rhythmPosition" // 节奏音符在谱表上的显示位置（打击乐谱 `<unpitched>` 的 display-step/octave）
   | "dynamics"       // 力度与渐强渐弱
   | "playOrder"      // 演唱顺序（含 skip/limit）
   | "style"          // 样式表引用
@@ -72,7 +74,9 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   multiVoice: "多声部",
   noteStack: "同一声部里同时发声的音（和音、和弦内音，只留简谱印的最高音）",
   innerVoice: "同一谱表上的第二声部（只留简谱印的第一声部）",
+  extraStaff: "同一声部的第二条谱表（只留第一条）",
   rhythmStack: "同时敲的几个节奏音符（只留一个）",
+  rhythmPosition: "节奏音符在谱表上的位置（五线谱一律画在中线）",
   dynamics: "力度与渐强渐弱",
   playOrder: "演唱顺序（房号跳转、第几遍配第几段词）",
   style: "样式表引用",
@@ -122,9 +126,9 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
 
 /** 文本谱两种方言都装不下的。依据见 `model/topu.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
  *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
- *  音符堆（和音）与同谱表第二声部只写简谱印的那个音；弧线与多连音共用一个先开先闭的括号队列。 */
+ *  音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。 */
 const PU_GONE: Feature[] = [
-  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "innerVoice", "rhythmStack", "nestedArc", "oddTuplet",
+  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "nestedArc", "oddTuplet",
   // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
   "tremolo", "bowing", "rehearsal", "multiRest", "arpeggio", "notehead",
   // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
@@ -143,17 +147,19 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 那些是转换层的账不是格式的账。
   // 嵌套弧与任意比例的多连音（`(5:4:`）都写得出；弧与多连音的括号只许嵌套（从组里连到组外下一个音写 `~`，
   // 跨得更远的写不出）、可见休止不跟词（规范 §4.1、§5.1）
-  // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 另起 `V:` 才写得出，写出端只写第一 voice
-  "123": allBut("harmonyOffset", "innerVoice", "rhythmStack", "slurCrossTuplet", "lyricOnRest"),
+  // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 照 ABC §7.4 写 `&`、
+  // 节奏音符的谱表位置与同时敲的几个写 `X@E5` / `[X@E5X@F5]`（§4.2、§4.3，用户定 2026-10-21 加）；一个声部的第二条谱表写不出（§11）
+  "123": allBut("harmonyOffset", "extraStaff", "slurCrossTuplet", "lyricOnRest"),
   // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
   // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
   // 换页没有记号，写出端退化成换行（`emitabc.ts::breakText`；换行本身含小节中间的都装得下，`break-roundtrip-check` 实测）
   // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
-  abc: allBut("style", "playOrder", "rhythmNote", "rhythmStack", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
+  // 第二条谱表按 `&` 写成同谱表的第二声部（谱表号丢）
+  abc: allBut("style", "playOrder", "rhythmNote", "rhythmStack", "rhythmPosition", "extraStaff", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
-  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "rhythmStack", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
+  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
   // 文本谱：展开档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `pu/dialect.ts::EmitStyle.pageFields`）
@@ -166,12 +172,12 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   //   · 演奏法（`articulations` 里不是力度名的那批）、拉丁歌词的连字符（`syllabic`）写不出；
   //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
   //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
-  jly: allBut("rhythmStack", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
+  jly: allBut("rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
     "layoutDirectives", "dynamics", "verseLabel", "tonicDegree", ...EXT_123),
   // Muse `.jcx`（`emitjcx.ts`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
   // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
   // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
-  jcx: allBut("rhythmStack", "multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
+  jcx: allBut("rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
     "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak", "tonicDegree", ...EXT_123),
   // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
   // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
@@ -234,7 +240,9 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
             if (n?.arpeggiate || n?.articulations?.some((a) => decoKey(a) === "arp")) used.add("arpeggio");
             if (chordNotehead(el.notes) && chordNotehead(el.notes) !== "slash" || n?.articulations?.some((a) => noteheadOf(a))) used.add("notehead");
             if (el.notes.length > 1) used.add(el.rhythm ? "rhythmStack" : "noteStack");
-            if (lane && (el.staff !== lane.staff || el.voice !== lane.voice)) used.add("innerVoice");
+            if (el.rhythm && el.notes.some((x) => x.unpitched?.step)) used.add("rhythmPosition");
+            if (lane && el.staff !== lane.staff) used.add("extraStaff");
+            else if (lane && el.voice !== lane.voice) used.add("innerVoice");
             if (el.grace) used.add("grace");
             if (el.rhythm) used.add("rhythmNote");
             if (el.sectionWord) used.add("textLine");

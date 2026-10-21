@@ -1,10 +1,11 @@
 // 123 方言的写出端。只回答基类问的那几个问题，其余全在 `emit.ts`。
 
-import type { Chord, Element, Key, Measure, Note, Part, Song } from "../model/doc";
+import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Measure, type Note, type Part, type Song } from "../model/doc";
 import { AbcFamilyEmitter, type MarkIndex } from "./emit";
 import { BARE_CHORD_RE } from "./dialect123";
 import { directionsAsMarks } from "../model/directionmarks";
 import { projectForJianpu } from "../model/jianpuproject";
+import { layersToVoices } from "../model/innervoice";
 import { clefName, harmonyText, melodyLane, noteHeight, topNote } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
 
@@ -27,13 +28,32 @@ export class Emitter123 extends AbcFamilyEmitter {
   protected override readonly rehearsalMarks = true;
   protected override readonly spaceBeams = false;
 
-  /** 一个声部只写一路：简谱印的那一路（`melodyLane`），同一谱表上的别的 voice 由 `planSave` 报「innerVoice」丢失。
-   *  那一路里同时发声的几个音写和音 `[13]`（规范 §4.2，照 ABC §4.17 `[CEG]`），自下而上；
-   *  画小的上方装饰音（`<type size="cue">`）不算。以前只写最高音、报「noteStack」丢失。 */
+  /** 一个 `V:` 只写一条谱表：简谱印的那一路（`melodyLane`）所在的谱表。同一谱表上的别的 voice 照 ABC §7.4 用 `&` 接在后面
+   *  （规范 §4.3）；别的谱表（钢琴下谱表）写不出，由 `planSave` 报「extraStaff」丢失。
+   *  每一路里同时发声的几个音写和音 `[13]`（规范 §4.2，照 ABC §4.17 `[CEG]`），自下而上；
+   *  画小的上方装饰音（`<type size="cue">`）不算。 */
   protected override emits(el: Element, mea: Measure): boolean {
     if (el.kind !== "chord") return true;
     const lane = melodyLane(mea);
-    return !lane || (el.staff === lane.staff && el.voice === lane.voice);
+    return !lane || el.staff === lane.staff;
+  }
+
+  /** 小节内的第二声部（ABC §7.4）。 */
+  protected override readonly overlayText = "&";
+
+  /** 分支不从小节起点开始时，前面用不可见休止 `x` 占住：整拍一个 `x`，余下的按减时线拆（`x_`、`x__`…）。 */
+  protected override overlayPad(divisions: number): string {
+    const out: string[] = [];
+    let q = divisions / SIMPLE_DIVISIONS;
+    for (; q >= 1 - 1e-9; q -= 1) out.push("x");
+    for (let k = 1; k <= 6 && q > 1e-9; k++) {
+      const len = 2 ** -k;
+      if (q >= len - 1e-9) {
+        out.push("x" + "_".repeat(k));
+        q -= len;
+      }
+    }
+    return out.join(" ");
   }
 
   protected override chordNotes(ch: Chord): Note[] {
@@ -89,7 +109,8 @@ export class Emitter123 extends AbcFamilyEmitter {
 
   /** MusicXML 读进来的歌先投成简谱形状：123 的 `-` 是增时线、`_` 是减时线，照 MusicXML 的 type/beam 直写会写错时值 */
   override emitSong(song: Song, fallbackNumber?: number): string {
-    return super.emitSong(projectForJianpu(directionsAsMarks(song)), fallbackNumber);
+    // 文本谱的 `{dsb…}` 并排块还原成第二声部，照 `&` 写
+    return super.emitSong(projectForJianpu(directionsAsMarks(layersToVoices(song))), fallbackNumber);
   }
 
   /** 度数 + 八度点。变音记号**前置**（简谱惯例）。 */
@@ -104,6 +125,12 @@ export class Emitter123 extends AbcFamilyEmitter {
     s += String(d.number);
     s += d.octaveShift > 0 ? "'".repeat(d.octaveShift) : ",".repeat(-d.octaveShift);
     return s;
+  }
+
+  /** 节奏音符：打击乐谱读进来的带谱表位置 `X@E5`，同时敲的几个写 `[X@E5X@F5]`（规范 §4.2） */
+  protected override rhythmText(ch: Chord): string {
+    const one = (n: Note | undefined): string => "X" + (n?.unpitched?.step ? `@${n.unpitched.step}${n.unpitched.octave ?? 4}` : "");
+    return ch.notes.length > 1 ? `[${ch.notes.map(one).join("")}]` : one(ch.notes[0]);
   }
 
   /** `printObject === false` 是**不可见休止**，123 有专门的 `x`，写成 `0` 会丢掉「不可见」。 */

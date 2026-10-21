@@ -388,7 +388,8 @@ export abstract class AbcFamilyEmitter {
   }
 
   /** 节奏音符 `X`（123 扩展）。 */
-  protected rhythmText(): string {
+  protected rhythmText(ch: Chord): string {
+    void ch;
     return "X";
   }
 
@@ -467,7 +468,7 @@ export abstract class AbcFamilyEmitter {
     return out;
   }
 
-  /** 小节内临时多声部的分隔符（ABC 的 `&`，§7.4）。123 没有这个记号，恒为 null。 */
+  /** 小节内临时多声部的分隔符（ABC 的 `&`，§7.4；123 同）。null = 这个格式写不出（Muse）。 */
   protected readonly overlayText: string | null = null;
 
   /** 临时声部起点晚于小节起点时，用来占住前面那段时间的不可见休止（ABC 的 `x`）。
@@ -542,7 +543,7 @@ export abstract class AbcFamilyEmitter {
     const ch = el;
     let s = "";
     if (ch.rhythm) {
-      s = this.rhythmText();
+      s = this.rhythmText(ch);
     } else if (ch.rest) {
       s = this.restText(ch);
     } else {
@@ -731,13 +732,29 @@ export abstract class AbcFamilyEmitter {
     const auto = this.spaceBeams && !mea.elements.some((e) => e.kind === "chord" && e.beamGroup !== undefined)
       ? this.autoBeamGroups(mea, mi) : null;
     let prevVoice: number | undefined;
+    // 各分支写到哪儿了（实际时值，四分 = SIMPLE_DIVISIONS）：后面的分支比第一支短的（MusicXML 的副声部提前收尾、
+    // 末尾的 `<forward>` 不留元素）用不可见休止补齐——ABC §7.4 的各分支等长，读回才不报拍数不对
+    const branchLen = new Map<number, number>();
+    let mainVoice: number | undefined;
+    const padBranch = (v: number | undefined): void => {
+      if (v === undefined || v === mainVoice || from > 0 || to < mea.elements.length) return;
+      const lack = (branchLen.get(mainVoice!) ?? 0) - (branchLen.get(v) ?? 0);
+      const pad = lack > 1e-6 ? this.overlayPad(lack) : "";
+      if (pad) pieces.push(pad);
+    };
     for (const j of order) {
       const el = mea.elements[j]!;
       if (!this.emits(el, mea)) continue;
       const ch = el.kind === "chord" ? el : null;
       if (ch?.continued) continue; // 同 `lyricLines`
       const voice = el.voice > 1 ? el.voice : 1;
+      mainVoice ??= voice;
+      if (!ch?.grace && el.duration) {
+        const tm = el.duration.timeMod;
+        branchLen.set(voice, (branchLen.get(voice) ?? 0) + el.duration.divisions * (tm ? tm.normal / tm.actual : 1));
+      }
       if (this.overlayText && prevVoice !== undefined && voice !== prevVoice) {
+        padBranch(prevVoice);
         pieces.push(this.overlayText);
         prevGroup = undefined;
         // 这一支不是从小节起点开的（MusicXML 的交错多声部会这样）：用不可见休止占住前面那段
@@ -821,6 +838,7 @@ export abstract class AbcFamilyEmitter {
       else pieces.push(s);
       prevGroup = group;
     }
+    if (this.overlayText) padBranch(prevVoice);
     // 余下的中间线归末段（小节中间换行时前一段不带它们）
     if (to >= mea.elements.length) while (midIdx < mid.length) { pieces.push(barlineText(mid[midIdx]!)); midIdx++; }
     return pieces.join(" ");

@@ -7,12 +7,12 @@
 // - 落盘编码（`%MUSE2` + GBK）在 `common/jcxcodec.ts`，这里只出文本。
 
 import { directionsAsMarks } from "../model/directionmarks";
-import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Note, type Song } from "../model/doc";
+import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Measure, type Note, type Song } from "../model/doc";
 import { AbcFamilyEmitter, lyricLines, type LyricStyle } from "./emit";
 import { systemRanges } from "../model/emitutil";
 import { isXmlShaped } from "../model/xmlproject";
 import { LETTER_OF_DEGREE } from "./dialectjcx";
-import { assignDegrees, keySpelling } from "../model/jianpu";
+import { assignDegrees, keySpelling, melodyLane } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
 import { projectForJianpu } from "../model/jianpuproject";
 import { getMeta } from "../model/metakeys";
@@ -85,6 +85,13 @@ function museJoin(text: string): string {
 const oneLine = (s: string): string => s.split(/\r\n?|\n/).map((x) => x.trim()).filter(Boolean).join(" ");
 
 export class EmitterJcx extends AbcFamilyEmitter {
+  /** Muse 没有小节内多声部：只写简谱印的那一路（`melodyLane`），别的由 `planSave` 报丢失。 */
+  protected override emits(el: Element, mea: Measure): boolean {
+    if (el.kind !== "chord") return true;
+    const lane = melodyLane(mea);
+    return !lane || (el.staff === lane.staff && el.voice === lane.voice);
+  }
+
   protected override readonly bowAndTremolo = false;
   /** Muse 3.1 以前的版本号；文件按 GBK 落盘（`jcxcodec.ts`），新旧版 Muse 都能开 */
   protected readonly versionLine = "%MUSE2";

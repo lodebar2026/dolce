@@ -16,6 +16,7 @@
 // 已知不表达：承接前音的增时线（`Chord.continued`）按普通音符写、不补 tie；
 // 挂在增时线上的歌词（文本谱 `-@`）与记号不写——MusicXML 里增时线不是独立的音符。
 
+import { layersToVoices } from "./innervoice";
 import type {
   Barline, BeamVal, Chord, Direction, Element, ElementId, Lyric, Mark, Measure, Notations, Part,
   NoteType, SourceOrnament, Song,
@@ -81,7 +82,8 @@ export interface ProjectOptions {
 
 export function projectForMusicXml(src: Song, options: ProjectOptions = {}): Song {
   if (isXmlShaped(src)) return src;
-  const song: Song = structuredClone(src);
+  // 文本谱的 `{dsb…}` 并排块写成同一谱表的第二个 `<voice>`（以前整块丢掉）
+  const song: Song = structuredClone(layersToVoices(src));
   // 123/ABC 里 `I:meta page …` 写的纸还原成 `<page-layout>`
   applyPageMetaToDefaults(song);
   // 多声部不对齐、不补小节：一组不一定含全部声部，写出端按共用时间轴逐格写（`toxml.ts::axisMeasuresXml`，issue 11）

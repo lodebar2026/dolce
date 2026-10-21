@@ -324,8 +324,9 @@ export function computeUnderlines(
   }
 
   const out: PlacedUnderline[] = [];
+  // 不可见的音（`x`、补拍位的隐藏休止）下面不画减时线
   const levelOf = (it: PlacedItem): number =>
-    it.element.kind === "note" ? Math.max(0, Math.log2(it.element.duration / 4)) : 0;
+    it.element.kind === "note" && !it.element.hidden ? Math.max(0, Math.log2(it.element.duration / 4)) : 0;
 
   const maxLevel = Math.max(0, ...items.map(levelOf));
   for (let level = 1; level <= maxLevel; level++) {

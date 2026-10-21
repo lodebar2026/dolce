@@ -22,6 +22,7 @@
 import type {
   BarlineElement,
   BarlineType,
+  InlineLayerElement,
   LyricLine as PuLyricLine,
   LyricSyllable,
   Mark as PuMark,
@@ -42,6 +43,7 @@ import { chordNotehead, decoKey, noteheadOf, tremoloStrokes } from "../model/dec
 import { directionMarks, leadTempo } from "../model/directionmarks";
 import { compressMultiRests } from "../model/multirest";
 import { keySpelling, noteHeight, quarterTempos, topNote } from "../model/jianpu";
+import { hasInnerVoice, innerLayerMeasures, lanesOf } from "../model/innervoice";
 import { songFifths, tonicSpelling } from "../model/keyshift";
 import type {
   Barline,
@@ -147,6 +149,8 @@ function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
     source: ch.source ?? ZERO,
   };
   if (deg?.accidental && !rhythm) n.accidental = deg.accidental;
+  // 同时敲的几个节奏音符（`[X@E5X@F5]`、打击乐谱的 `<unpitched>` 和弦）：几个 `X` 照和音上下叠
+  if (rhythm && !ch.grace && ch.notes.length > 1) n.stack = ch.notes.slice(1).map(() => ({ pitch: 9 as const, octave: 0 }));
   if (stacked.length > 1) {
     n.stack = stacked.slice(1).map((d) => ({
       pitch: d.number as StackedNote["pitch"],
@@ -232,14 +236,43 @@ function pushInline(row: RowBuild, items: readonly InlineItem[] | undefined, mea
   }
 }
 
+/** 同一谱表上的第二声部：连续几个带第二声部的小节并成一个并排块（下行），推在第一个小节的头上。
+ *  不满小节的补不可见休止，好让下行与主行按拍位一列列对齐；块内的弧、连音只收两端都在块里的。 */
+function innerVoiceLayer(run: readonly Measure[], marks: readonly Mark[], nextId: () => ElementId): InlineLayerElement {
+  const sub = innerLayerMeasures(run, nextId);
+  const b = buildRow(sub);
+  const own = marks.filter((mk) => b.indexOf.has(mk.start) && b.indexOf.has(mk.end));
+  return {
+    kind: "inline-layer",
+    role: "voice",
+    below: true,
+    elements: b.elements,
+    marks: [...segmentMarks(own, [b], 0), ...rowTuplets([sub], [b])[0]!.filter((t) => !own.some((mk) => mk.type === "tuplet" && b.indexOf.get(mk.start) === t.start))],
+    code: "",
+    source: ZERO,
+  };
+}
+
 /** `ranges`：切在小节中间的那几个小节只取 `[from, to)` 这一段元素（见 `SystemRow.ranges`）；
- *  右小节线与小节尾的夹层只归最后一段。 */
-function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, readonly [number, number]>): RowBuild {
+ *  右小节线与小节尾的夹层只归最后一段。
+ *  `marks`：本声部的记号，同一谱表上的第二声部并成并排块时取块里的弧（见 `innerVoiceLayer`）。 */
+function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, readonly [number, number]>, marks: readonly Mark[] = []): RowBuild {
   const row: RowBuild = { elements: [], refs: [], indexOf: new Map(), anchors: [], measureSpan: new Map(), wedges: [] };
-  for (const mea of measures) {
+  let padId = 0;
+  const nextPadId = (): ElementId => --padId;
+  /** 小节被换行切开的不并第二声部（块对不齐两段） */
+  const hasInner = measures.map((mea) => !ranges?.has(mea) && hasInnerVoice(mea));
+  for (const [mi, mea] of measures.entries()) {
     const first = row.elements.length;
     const [from, to] = ranges?.get(mea) ?? [0, mea.elements.length];
     const tail = to >= mea.elements.length;
+    const laneOf = lanesOf(mea);
+    if (hasInner[mi] && !hasInner[mi - 1]) {
+      let end = mi;
+      while (hasInner[end + 1]) end++;
+      row.elements.push(innerVoiceLayer(measures.slice(mi, end + 1), marks, nextPadId));
+      row.refs.push({ measure: mea });
+    }
     // **左小节线不输出为元素**：`PuDoc` 里 barline 元素就是小节分隔，行首再来一根会凭空
     // 多出一个空小节（引擎输入随即 `measure has no chord` 抛错）。
     // 它携带的信息已由「前一小节的右线」与房号的 volta mark 承载。
@@ -249,6 +282,7 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
     const headAt = new Map<number, NoteElement | SustainElement>();
     for (const [j, el] of mea.elements.entries()) {
       if (j < from || j >= to) continue;
+      if (laneOf(el) !== "main") continue;
       if (el.kind === "space") {
         // `y`（无时值占位）与 `x`（不可见休止）都落成**隐藏音符**：
         // `PuDoc` 没有无时值占位，`hidden` 的 0 是最接近的东西。
@@ -837,7 +871,7 @@ function toPuSong(song: Song, index: number, rawLines: readonly string[], handPa
     return m ? Number(m[1]) : pi + 1;
   };
   // 各声部的全部行先建好——跨行记号要看别的行有没有端点
-  const builds = perPart.map((rows) => rows.map((row) => buildRow(row.measures, row.ranges)));
+  const builds = perPart.map((rows) => rows.map((row) => buildRow(row.measures, row.ranges, song.marks)));
   perPart.forEach((rows, pi) => carryToPrevBarline(rows.flatMap((r) => r.measures), builds[pi]!, song.time));
   // MusicXML 来源的渐强渐弱只有 direction（`Mark` 在写出时才投成 direction，读回不还原）：按起止配成 Mark
   const hasWedgeMarks = song.marks.some((m) => m.type === "wedge");

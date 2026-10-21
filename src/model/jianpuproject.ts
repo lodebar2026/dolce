@@ -51,13 +51,11 @@ export function projectForJianpu(src: Song): Song {
   const hit = cache.get(src);
   if (hit) return hit;
   const xml = isXmlShaped(src);
-  const overlay = hasVoiceOverlay(src);
-  if (!xml && !isDurationShaped(src) && !overlay) return src;
+  if (!xml && !isDurationShaped(src)) return src;
   const song: Song = structuredClone(src);
-  // ABC `&` 的临时多声部（§7.4）：简谱一个声部行只印一条旋律，同一小节的第二、第三分支印不出来。
-  // **只取主分支**（口径同 MusicXML 那一路的 `jianpuinput.ts::voice <= 1`）——照原文顺序排下去
-  // 会把两条并行旋律串成一条、这一小节凭空多出几拍。五线谱那一路照样是完整的多声部。
-  if (overlay) dropOverlayVoices(song);
+  // 同一谱表上的几个声部（ABC/123 的 `&`、MusicXML 的 `<voice>`）都留着：123 写出端按 `&` 写回，
+  // 简谱行视图把主声部以外的收成并排块（`pu/slots.ts::overlayLayers`）。MusicXML 靠 `<forward>` 留的空拍
+  // 这里补成不可见休止，好让每个声部各自从小节起点线性排下去。
   if (xml) {
     creatorsFromCredits(song);
     headerFromCredits(song);
@@ -66,6 +64,7 @@ export function projectForJianpu(src: Song): Song {
   else tiesToMarks(song);
   let nextId = maxId(song) + 1;
   const newId = (): ElementId => nextId++;
+  if (xml && hasVoiceOverlay(song)) for (const part of song.parts) fillVoiceGaps(part, newId);
   for (const part of song.parts) {
     let divisions = xml ? 1 : Q;
     let carry: Harmony[] = [];
@@ -89,20 +88,32 @@ export function projectForJianpu(src: Song): Song {
   return song;
 }
 
-/** 只留主声部：删掉 `voice > 1` 的元素，端点落在被删元素上的记号一并删（留着会配错对）。 */
-function dropOverlayVoices(song: Song): void {
-  const dropped = new Set<ElementId>();
-  for (const part of song.parts) {
-    for (const m of part.measures) {
-      m.elements = m.elements.filter((el) => {
-        if (el.voice <= 1) return true;
-        dropped.add(el.id);
-        return false;
-      });
+/** 多声部小节里各声部的空拍（`onset` 晚于本声部游标）补不可见休止，并去掉 `onset`（单位是 MusicXML 的 divisions，原样用）。 */
+function fillVoiceGaps(part: Song["parts"][number], newId: () => ElementId): void {
+  for (const m of part.measures) {
+    const voices = new Set(m.elements.filter((e) => e.kind === "chord").map((e) => e.voice));
+    if (voices.size < 2) continue;
+    const out: Element[] = [];
+    const cursor = new Map<number, number>();
+    let end = 0;
+    for (const el of m.elements) {
+      if (el.kind !== "chord") {
+        out.push(el);
+        continue;
+      }
+      const start = el.onset ?? end;
+      const at = cursor.get(el.voice) ?? 0;
+      if (start > at + 1e-9 && !el.grace) {
+        const gap = start - at;
+        out.push({ kind: "chord", id: newId(), notes: [], rest: {}, printObject: false, duration: { divisions: gap, dots: 0 }, voice: el.voice, staff: el.staff });
+      }
+      delete el.onset;
+      out.push(el);
+      end = start + (el.grace ? 0 : el.duration.divisions);
+      cursor.set(el.voice, end);
     }
+    m.elements = out;
   }
-  if (!dropped.size) return;
-  song.marks = song.marks.filter((mk) => !dropped.has(mk.start) && !dropped.has(mk.end));
 }
 
 /** 123 的 `C:` 取自 `identification`。识别出的与不少排版软件导出的 MusicXML 把词曲只写在 `<credit>` 里：
@@ -169,9 +180,11 @@ function projectMeasure(m: Measure, divisions: number, newId: () => ElementId, c
   const out: Element[] = [];
   /** 每个音符的实际起点（四分音符为 1），小节末的 `y` 和弦按它找落点 */
   const startOf = new Map<Chord, number>();
-  let pos = 0;
+  /** 各声部各自的游标（多声部小节里第二声部从小节起点重新算） */
+  const posOf = new Map<number, number>();
   const trailing: Harmony[] = [];
   for (const el of m.elements) {
+    const pos = posOf.get(el.voice) ?? 0;
     if (el.kind === "space" && el.spacer === "y") {
       // `fromxml.ts` 只在小节末尾造 `y`：音符后面还欠着的 `<harmony>`。简谱侧的 `y` 会画成一拍隐藏休止，这里拆掉
       if (el.harmony) trailing.push(el.harmony);
@@ -179,12 +192,12 @@ function projectMeasure(m: Measure, divisions: number, newId: () => ElementId, c
     }
     if (el.kind === "chord" && !el.grace) {
       startOf.set(el, pos);
-      pos += el.duration.divisions / divisions;
+      posOf.set(el.voice, pos + el.duration.divisions / divisions);
     } else if (el.kind === "space" && el.duration) {
-      pos += el.duration.divisions / divisions;
+      posOf.set(el.voice, pos + el.duration.divisions / divisions);
     }
   }
-  const measureEnd = pos;
+  const measureEnd = Math.max(0, ...posOf.values());
   const firstChord = m.elements.find((e): e is Chord => e.kind === "chord" && !e.grace);
   if (firstChord && carryIn.length) {
     for (const h of carryIn) {
@@ -233,6 +246,7 @@ function projectMeasure(m: Measure, divisions: number, newId: () => ElementId, c
       out.push(ch);
       for (let k = 1; k < beats; k++) {
         const r: Chord = { kind: "chord", id: newId(), notes: [], rest: {}, duration: { divisions: Q, dots: 0 }, voice: ch.voice, staff: ch.staff };
+        if (ch.printObject === false) r.printObject = false;
         // 长休止中途换的和弦落到对应那个 0 上
         const h = later.findIndex((x) => Math.abs((x.offset ?? 0) / divisions - k) < 1e-6);
         if (h >= 0) {
@@ -247,6 +261,7 @@ function projectMeasure(m: Measure, divisions: number, newId: () => ElementId, c
       if (rest > 1e-9) {
         const r = jianpuShape(rest);
         const tail: Chord = { kind: "chord", id: newId(), notes: [], rest: {}, duration: { divisions: Math.round(rest * Q), dots: r.dots }, voice: ch.voice, staff: ch.staff };
+        if (ch.printObject === false) tail.printObject = false;
         if (r.beams) tail.beams = Array.from({ length: r.beams }, () => "continue" as const);
         out.push(tail);
       }

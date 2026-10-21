@@ -135,7 +135,7 @@ export function paintNote(c: OriginalCtx,
 
     // 和音：叠在上面的数字（place/vertical.ts::stackedDigits 定落点），各带临时记号、八度点与附点；减时线只在最下面那个下
     for (const sd of stackedDigits(note, m)) {
-      const sch = String(sd.pitch);
+      const sch = sd.pitch === 9 ? "X" : String(sd.pitch);
       const o = digitOrigin(c, sch);
       const by = baseline + sd.y;
       g.add(digitItem(sch, x + o.dx, by + o.dy, c.digitFont, c.ink));

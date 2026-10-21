@@ -135,10 +135,17 @@ function itemBox(it: PlacedItem, m: JianpuGrid, ink: InkMeasurer): { left: numbe
 }
 
 /** 各声部的符号按「小节:拍位」归列（小节线按「第几条」），列按先后排好。键法同旧的多声部对齐。 */
-function columnsOf(lines: ReadonlyArray<{ items: PlacedItem[]; pad: number[] }>, m: JianpuGrid, ink: InkMeasurer): Column[] {
+/** 参加归列的一行：各声部的主行，外加同一谱表第二声部的并排下行（`barBase` = 它从主行第几小节起）。 */
+export interface SpacedLine {
+  items: PlacedItem[];
+  pad: number[];
+  barBase?: number;
+}
+
+function columnsOf(lines: ReadonlyArray<SpacedLine>, m: JianpuGrid, ink: InkMeasurer): Column[] {
   const byKey = new Map<string, { bar: number; beat: number; occ: number; col: Column }>();
   lines.forEach((l, v) => {
-    let bar = 0;
+    let bar = l.barBase ?? 0;
     const seen = new Map<string, number>();
     l.items.forEach((it, i) => {
       const isBar = it.element.kind === "barline";
@@ -274,7 +281,7 @@ function justify(cols: readonly Column[], X: number[], extra: number): void {
  * 返回自然宽（占位右缘，含歌词）。
  */
 export function placeColumns(
-  lines: ReadonlyArray<{ items: PlacedItem[]; pad: number[] }>,
+  lines: ReadonlyArray<SpacedLine>,
   m: JianpuGrid,
   ink: InkMeasurer,
   width: number,
@@ -506,7 +513,7 @@ class BarEndRoom {
  * 返回各符号的自然 x 与这一组的自然宽。
  */
 export function naturalColumns(
-  lines: ReadonlyArray<{ items: PlacedItem[]; pad: number[] }>,
+  lines: ReadonlyArray<SpacedLine>,
   m: JianpuGrid,
   ink: InkMeasurer,
 ): { xOf: Map<PlacedItem, number>; leftOf: Map<PlacedItem, number>; rightOf: Map<PlacedItem, number>; width: number } {
