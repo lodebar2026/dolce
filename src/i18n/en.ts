@@ -557,6 +557,7 @@ export const en: Record<MsgKey, string> = {
   "feat.extraStaff": "Second staff of the same part (only the first staff is kept)",
   "feat.rhythmStack": "Stacked rhythm notes struck together (only one is kept)",
   "feat.rhythmPosition": "Staff positions of rhythm notes (drawn on the middle line)",
+  "feat.graceArc": "Slurs from a grace note to its main note (other slurs move to the main note)",
   "feat.dynamics": "Dynamics and hairpins",
   "feat.playOrder": "Singing order (volta jumps, which verse on which pass)",
   "feat.style": "Style sheet reference",

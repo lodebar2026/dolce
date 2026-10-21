@@ -416,6 +416,12 @@ class MarkSink {
     const k = `${type}#${number}`;
     const list = this.open_.get(k);
     let at = list ? list.length - 1 : -1;
+    // tied：连的是同一个音，和弦里几条同时起、同时收时按音高配；按栈（后进先出）配就成了交叉的 A→D、D→A（八段锦高音笙 m74）
+    if (type === "tied" && list && list.length > 1) {
+      const pitch = pitchKeyOf(el);
+      const i = pitch ? list.map((o) => pitchKeyOf(o.el)).lastIndexOf(pitch) : -1;
+      if (i >= 0) at = i;
+    }
     // slur：先同谱表同声部，再同谱表，再别的谱表（跨谱表弧）
     if (type === "slur" && list) {
       const pick = (ok: (o: { staff: number; voice: number }) => boolean) => {
@@ -956,4 +962,14 @@ export type { DocElement };
 function sourceIdOf(attr: string | null): ElementId | null {
   const m = attr ? new RegExp(`^${SOURCE_ID_PREFIX}(\\d+)$`).exec(attr) : null;
   return m ? Number(m[1]) : null;
+}
+
+/** `<tied>`/`<slur>` 所在那个 `<note>` 的音高（step + alter + octave）；没有音高（休止、节奏音符）为 undefined */
+function pitchKeyOf(notation: Element): string | undefined {
+  // 不用 `closest`：Node 端（测试、CLI）的 DOM 实现没有它
+  let note: Element | null = notation;
+  while (note && note.nodeName !== "note") note = note.parentNode as Element | null;
+  const p = note ? child(note, "pitch") : null;
+  if (!p) return undefined;
+  return `${childText(p, "step")}${childText(p, "alter") ?? ""}${childText(p, "octave")}`;
 }

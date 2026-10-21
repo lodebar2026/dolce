@@ -36,6 +36,7 @@ export type Feature =
   | "extraStaff"     // 一个声部的第二条谱表（钢琴下谱表、扬琴 `<staves>2`）
   | "rhythmStack"    // 一个和弦里叠几个节奏音符（打击乐谱钹与鼓同时，`<unpitched>` 带 `<chord/>`）
   | "rhythmPosition" // 节奏音符在谱表上的显示位置（打击乐谱 `<unpitched>` 的 display-step/octave）
+  | "graceArc"       // 倚音连到自己主音的弧（文本谱的倚音是音符属性，弧落不到倚音上）
   | "dynamics"       // 力度与渐强渐弱
   | "playOrder"      // 演唱顺序（含 skip/limit）
   | "style"          // 样式表引用
@@ -77,6 +78,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   extraStaff: "同一声部的第二条谱表（只留第一条）",
   rhythmStack: "同时敲的几个节奏音符（只留一个）",
   rhythmPosition: "节奏音符在谱表上的位置（五线谱一律画在中线）",
+  graceArc: "倚音连到主音的弧（别的弧改挂到主音上）",
   dynamics: "力度与渐强渐弱",
   playOrder: "演唱顺序（房号跳转、第几遍配第几段词）",
   style: "样式表引用",
@@ -128,7 +130,7 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
  *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
  *  音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。 */
 const PU_GONE: Feature[] = [
-  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "nestedArc", "oddTuplet",
+  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
   // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
   "tremolo", "bowing", "rehearsal", "multiRest", "arpeggio", "notehead",
   // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
@@ -270,6 +272,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
     const arcs = puArcLosses(song);
     if (arcs.nested) used.add("nestedArc");
     if (arcs.oddTuplet) used.add("oddTuplet");
+    if (arcs.graceArc) used.add("graceArc");
   }
   return used;
 }

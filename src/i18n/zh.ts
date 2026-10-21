@@ -556,6 +556,7 @@ export const zh = {
   "feat.extraStaff": "同一声部的第二条谱表（只留第一条）",
   "feat.rhythmStack": "同时敲的几个节奏音符（只留一个）",
   "feat.rhythmPosition": "节奏音符在谱表上的位置（五线谱一律画在中线）",
+  "feat.graceArc": "倚音连到主音的弧（别的弧改挂到主音上）",
   "feat.dynamics": "力度与渐强渐弱",
   "feat.playOrder": "演唱顺序（房号跳转、第几遍配第几段词）",
   "feat.style": "样式表引用",

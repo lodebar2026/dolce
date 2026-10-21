@@ -36,7 +36,7 @@ import { PU_LYRIC_PUNCTUATION } from "../common/cjkpunct";
 import { projectForJianpu } from "./jianpuproject";
 import { voicesToLayers } from "./innervoice";
 import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote } from "./jianpu";
-import { ownIds, ownMarks, partRanges, systemRanges, type SystemRange } from "./emitutil";
+import { ownIds, partRanges, systemRanges, type SystemRange } from "./emitutil";
 import { relayoutDocBreaks } from "./relayout";
 import { decoKey } from "./deconames";
 import { directionMarks, directionsAsMarks } from "./directionmarks";
@@ -915,15 +915,72 @@ function withDegrees(song: Song): Song {
   return copy;
 }
 
+/**
+ * 这一声部写得出的记号（交给 `planArcs`）。弧与延音线另有两处要改挂或去掉：
+ * - **端点在倚音上的弧**改挂到倚音所属的主音（前倚音挂后面那个主音、后倚音挂前面那个）：文本谱的倚音是音符的属性
+ *   （番茄 `1[2]`、诗歌本 `1"yy:2"`），弧落不到它上面——笛子 m47–48 `(… {5}) 1---)` 那条长弧就改收在 `1` 上。
+ *   改挂后起止重合的（倚音连到自己主音的那条）写不出，计入 `graceArc`。
+ * - 和音只写最高音：**挂在别的音上的延音线**不写（`noteStack` 已报）；同一对音上延音线与圆滑线重了的只留延音线——
+ *   两条都写，读回就是同一对音上两条弧、类型也认不对（中音笙 m9：上声部 F 延音、下声部 C→D 圆滑）。
+ */
+function writableMarks(song: Song, part: Part, own: ReadonlySet<ElementId>): { marks: Mark[]; graceArc: number } {
+  const host = new Map<ElementId, ElementId>();
+  const chordOf = new Map<ElementId, Chord>();
+  let pending: ElementId[] = [];
+  let prevMain: ElementId | undefined;
+  for (const m of part.measures) {
+    for (const el of m.elements) {
+      if (el.kind !== "chord") continue;
+      chordOf.set(el.id, el);
+      if (el.grace) {
+        if (el.grace.after && prevMain !== undefined) host.set(el.id, prevMain);
+        else pending.push(el.id);
+        continue;
+      }
+      if (!own.has(el.id)) continue;
+      for (const g of pending) host.set(g, el.id);
+      pending = [];
+      prevMain = el.id;
+    }
+  }
+  const onTop = (id: ElementId, note: number | undefined): boolean => {
+    const ch = chordOf.get(id);
+    if (!ch || ch.notes.length < 2) return true;
+    const top = topNote(ch);
+    return !top || ch.notes.indexOf(top) === (note ?? 0);
+  };
+  let graceArc = 0;
+  const out: Mark[] = [];
+  for (const mk of song.marks) {
+    if (mk.type !== "slur" && mk.type !== "tied") {
+      if (own.has(mk.start) && own.has(mk.end)) out.push(mk);
+      continue;
+    }
+    const start = host.get(mk.start) ?? mk.start;
+    const end = host.get(mk.end) ?? mk.end;
+    if (!own.has(start) || !own.has(end)) continue;
+    if (start === end && (start !== mk.start || end !== mk.end)) {
+      graceArc++;
+      continue;
+    }
+    if (mk.type === "tied" && (!onTop(mk.start, mk.startNote) || !onTop(mk.end, mk.endNote))) continue;
+    out.push(start === mk.start && end === mk.end ? mk : { ...mk, start, end });
+  }
+  const tied = new Set(out.filter((mk) => mk.type === "tied").map((mk) => `${mk.start}:${mk.end}`));
+  return { marks: out.filter((mk) => mk.type !== "slur" || !tied.has(`${mk.start}:${mk.end}`)), graceArc };
+}
+
 /** 这首歌转成文本谱时写不出来的弧线与多连音（给丢失清单用，判据与写出时同一份）。 */
-export function puArcLosses(src: Song): { nested: number; oddTuplet: number } {
+export function puArcLosses(src: Song): { nested: number; oddTuplet: number; graceArc: number } {
   const song = projectForJianpu(src);
-  const out = { nested: 0, oddTuplet: 0 };
+  const out = { nested: 0, oddTuplet: 0, graceArc: 0 };
   for (const part of song.parts) {
     const own = ownIds(part, (el, mi) => isStreamElement(el, part.measures[mi]!));
-    const plan = planArcs(ownMarks(song, own), positions(part));
+    const w = writableMarks(song, part, own);
+    const plan = planArcs(w.marks, positions(part));
     out.nested += plan.dropped.nested;
     out.oddTuplet += plan.dropped.oddTuplet;
+    out.graceArc += w.graceArc;
   }
   return out;
 }
@@ -962,7 +1019,7 @@ export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}
     const own = ownIds(part, (el, mi) => isStreamElement(el, part.measures[mi]!));
     const pos = positions(part);
     return {
-      d, plan: planArcs(ownMarks(song, own), pos), pos, voltaOpenEnd: voltaEnds(part), openVoltas: 0,
+      d, plan: planArcs(writableMarks(song, part, own).marks, pos), pos, voltaOpenEnd: voltaEnds(part), openVoltas: 0,
       time: song.time, home, key: home, autoBoundaries: !hasBoundaries, consumedLeft: new Set(), closeOpenVoltas: !opts.fromPu, carryBeat: 0,
     };
   });
