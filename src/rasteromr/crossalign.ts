@@ -29,6 +29,7 @@ export type DotProbe = (n: StaffNote) => boolean;
 export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], carry: { beats: number; beatType: number } | undefined, sp: number, search?: HeadSearch, dotProbe?: DotProbe): void {
   if (!lastTimeSignature(pg, ctx, carry) || (globalThis as any).process?.env?.XAOFF) return;
   const dbg = !!(globalThis as any).process?.env?.XADBG;
+  const cols = (globalThis as any).process?.env?.XADBG === "cols";
   const checks = checkBars(pg, ctx, notes, carry);
   const heads = notes.filter((n) => !n.rest).map((n) => n.sym.box.bottom - n.sym.box.top).sort((a, b) => a - b);
   const midHead = heads[heads.length >> 1] ?? sp;
@@ -80,6 +81,9 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
         if (!r.single && !/^(改|删|补 1 个)/.test(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, true, dotProbe);
         if (res.startsWith("补")) added = true;
         if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} ${res}`);
+        // `XADBG=cols`：再逐列打出本行（改完以后的）时值与起点、别的行的起点
+        if (cols) console.error("XA     列", r.cols.map((c) => `${(c.x / sp).toFixed(1)}:${c.off}/${c.slot?.off ?? "?"}[${c.chords.map((h) => h.notes.map((n) => (n.rest ? "R" : n.step + n.octave) + "~" + n.duration + (n.stemUp === null ? "" : n.stemUp ? "^" : "v")).join("+")).join(",")}]`).join(" "));
+        if (cols) for (const q of rows) if (q !== r) console.error("XA     他行", staves.indexOf(q.stf), trusted.has(q) ? "锚" : "", q.cols.map((c) => `${(c.x / sp).toFixed(1)}:${c.off ?? "-"}/${c.slot?.off ?? "?"}`).join(" "));
       }
     }
   }
@@ -229,7 +233,44 @@ function trustRows(rows: Row[], slots: Slot[]): Set<Row> {
     }
     last = s0.off;
   }
+  if (trusted.size) promote(full, slots, trusted);
   return trusted;
+}
+
+/**
+ * **提拔**：凑满了、在定了起点的槽上（至少两处）全与锚一致的行也当锚。它被判不可信，多半只是在没有锚的槽上与另一行凑满了
+ * 却读错的行对不上——只有两行时对不上两行都不信（望十架 p10 m75 女低的十六分串与读错的钢琴右手；破碎扫描 p3 m38）。
+ * 当了锚，那个槽有了起点，读错的那一行才改得了。被提拔的行之间在别的槽上起点不一的，都不提拔；提拔后槽起点不随 x 单调的，撤回。
+ */
+function promote(full: Row[], slots: Slot[], trusted: Set<Row>): void {
+  const EPS = 1e-6;
+  const cand = full.filter((r) => {
+    if (trusted.has(r)) return false;
+    let hit = 0;
+    for (const c of r.cols) {
+      if (c.slot?.off === undefined) continue;
+      if (c.off === undefined || Math.abs(c.off - c.slot.off) > EPS) return false;
+      hit++;
+    }
+    return hit >= 2;
+  });
+  const bad = new Set<Row>();
+  for (const s0 of slots) {
+    if (s0.off !== undefined) continue;
+    const cs = s0.cols.filter((c) => cand.includes(c.row));
+    if (cs.some((c) => Math.abs(c.off! - cs[0].off!) > EPS)) for (const c of cs) bad.add(c.row);
+  }
+  const ok = cand.filter((r) => !bad.has(r));
+  if (!ok.length) return;
+  const offs = slots.map((s0) => s0.off ?? s0.cols.find((c) => ok.includes(c.row))?.off);
+  let last = -1;
+  for (const o of offs) {
+    if (o === undefined) continue;
+    if (o <= last + EPS) return;
+    last = o;
+  }
+  slots.forEach((s0, k) => (s0.off = offs[k]));
+  for (const r of ok) trusted.add(r);
 }
 
 /**
@@ -323,7 +364,10 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
       if (fits(durs)) continue;
       // 段长正好是读出时值和的三分之二：一组三连音（带方括号的三连音要到挂完歌词才认，见 `findRasterTuplets`），整行不动
       const sum = durs.reduce((a, b) => a + b, 0);
-      if (Math.abs(sum * 2 - span * 3) < EPS) return `声部${v + 1}段 ${p}-${q} 疑三连音`;
+      // 两个音的、长的那个不过四分（四分＋八分占一个四分）不算，多是符尾/符杠读错了一层（望十架 p10 m75 钢琴右手、新编七处）；
+      // 二分＋四分占一个二分的照旧不动：两对两错，错的是多出个休止、或两声部共用的头归错（新编 015 称谢歌、187 完全恩爱歌）
+      const short2 = seg.length === 2 && Math.max(...durs) <= 1 / 4 + EPS;
+      if (!short2 && Math.abs(sum * 2 - span * 3) < EPS) return `声部${v + 1}段 ${p}-${q} 疑三连音`;
       const opts = seg.map((it) => alternatives(it.c.notes[0], dotProbe));
       const sols: { j: number; alt: [number, number] }[][] = [];
       for (let j = 0; j < seg.length; j++)
