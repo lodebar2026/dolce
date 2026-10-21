@@ -641,6 +641,8 @@ class DocPartLoader {
       const item = new NotationItem();
       if (a === "strong-accent") item.above = true;
       item.symbol = symbol;
+      const pl = n?.articPlacement?.[a];
+      if (pl) item.placed = pl === "above";
       ch.notations.push(item);
     }
     // 波音、颤音（`<ornaments>`）与弓法（`<technical>`）：印在谱表上方（`NotationItem.outside`）。单音震音在符干上，见 render.ts
@@ -967,8 +969,9 @@ class DocPartLoader {
    *  MusicXML 的意思相加（歌本改谱脚本把原程序的 `x += n` 写成 relative-x）；只有 relative-x 或都没有才相对拍位。
    *  再 y=45、右移 15。字形照原程序用 Bravura Text（webview 只注册了 Bravura，同一套字形，
    *  Bravura Text 的 segno/coda 是 Bravura 的 0.8 倍：墨高 629/786、844/1056）。 */
-  private processSegno(blk: MeasureText, coda: boolean, pos?: { defaultX?: number; relativeX?: number }): void {
+  private processSegno(blk: MeasureText, coda: boolean, pos?: { defaultX?: number; defaultY?: number; relativeX?: number }): void {
     blk.y = 45; // todo: parser.cpp 同样硬编码
+    if (pos?.defaultX !== undefined || pos?.defaultY !== undefined) blk.signPlaced = true;
     const dx = pos?.defaultX;
     if (dx !== undefined && !blk.data.length) {
       blk.x = dx + (pos?.relativeX ?? 0);

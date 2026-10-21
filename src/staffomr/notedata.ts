@@ -850,6 +850,8 @@ export interface StaffNote {
   /** 印在这个音符处的文字指示（rit. / a tempo / cresc. / Fine…）：原文与在谱表上方还是下方。MusicXML 里出成 `<direction><words>`。 */
   /** 挂在这个音前面的反复记号（`notations.ts::attachSigns`），出 `<direction>` 的 `<segno/>` / `<coda/>`。 */
   signs?: ("segno" | "coda")[];
+  /** 印在这个音（本行末音）之后、行末小节线上的反复记号（`attachSigns`），`<direction>` 写在音之后 */
+  signsAfter?: ("segno" | "coda")[];
   words?: { text: string; above: boolean; /** 字号（页面单位） */ size?: number; /** 基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 加框的排练号（`<rehearsal enclosure="square">`） */ rehearsal?: boolean }[];
   /** 节拍器记号：拍子单位（`quarter`）、每分钟拍数、`<per-minute>` 的原文（带「约」时 `c. 76`，否则省）。MusicXML 里出成 `<direction><metronome>`。 */
   metronome?: { unit: string; bpm: number; text?: string; /** 印在圆括号里（「(♩ = 82)」）→ `<metronome parentheses="yes">` */ parentheses?: boolean };

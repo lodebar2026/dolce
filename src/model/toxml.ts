@@ -507,7 +507,10 @@ function notationsXml(o: Out, n: Chord["notations"], starts: Mark[], stops: Mark
     const trem = tag === "ornaments" ? n?.tremolo : undefined;
     if (!list?.length && !trem) continue;
     o.open(tag);
-    for (const a of list ?? []) o.leaf(a);
+    for (const a of list ?? []) {
+      const pl = tag === "articulations" ? n?.articPlacement?.[a] : undefined;
+      o.leaf(a, pl ? ` placement="${pl}"` : "");
+    }
     if (trem) o.text("tremolo", trem, ' type="single"');
     o.close();
   }

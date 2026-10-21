@@ -400,6 +400,12 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
         const sn = n;
         pendingStop = (ax) => wedgeStopXml(sn, wNo, wDir, ax);
       }
+      // 行末小节线上的 ⊕ / 𝄋（`signsAfter`）：写在末音之后，读回来落在小节末、画在小节线上
+      if (n.signsAfter?.length) {
+        const prevStop: ((anchorX?: number) => string) | null = pendingStop;
+        const signs = n.signsAfter.map((g) => `<direction placement="above"><direction-type><${g}/></direction-type>${dirStaff}</direction>`).join("");
+        pendingStop = (ax?: number): string => (prevStop ? prevStop(ax) : "") + signs;
+      }
       if (!n.chordExtra && !n.grace) cur += ticks(n.duration);
     }
     if (pendingStop) body += pendingStop(barRight);
@@ -520,7 +526,7 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   for (const m of n.marks ?? []) {
     const a = ARTICULATION[m];
     if (a) {
-      arts.push(a);
+      arts.push(a.replace("/>", ` placement="${m.endsWith("Below") ? "below" : "above"}"/>`));
       continue;
     }
     if (m === "stringsUpBow" || m === "stringsDownBow") {

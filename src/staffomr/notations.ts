@@ -148,7 +148,12 @@ export function attachNotations(pg: SPage, notes: StaffNote[], marks: Sym[]): vo
         best = n;
       }
     }
-    if (best && bd < sp * (/^ornament/.test(m.code) ? 2.5 : 1.5)) (best.marks ??= []).push(m.code);
+    if (!best || bd >= sp * (/^ornament/.test(m.code) ? 2.5 : 1.5)) continue;
+    // 奏法记号按印在符头上方还是下方定字形的 Above / Below（写出时带 `placement`）：重音 `>` 上下是同一个形，
+    // 字形认不出朝向；顿音楔子印在朝上符干那一侧的也有（八段锦二胡 m49 印在杠上方，中胡上下都有），照原位记
+    const art = /^(artic\w+?)(Above|Below)$/.exec(m.code);
+    const code = art ? `${art[1]}${m.py < best.sym.py ? "Above" : "Below"}` : m.code;
+    (best.marks ??= []).push(code);
   }
 }
 
@@ -177,13 +182,17 @@ export function attachSigns(pg: SPage, notes: StaffNote[]): void {
     const right = row.find((m) => m.x >= s.box.left - sp);
     // 换行处的 ⊕/𝄋：Sibelius 行末（右边再没有音）画一个、下一行行首再画一个，是同一个记号，意思落在下一行头一小节上。
     // 下面哪行谱行首有同一个记号的，行末这个只认领不出（八段锦钢片琴 m32→m33，GT 只记 m33）
-    if (!right && signs.some((o) => o.s !== s && o.s.code === s.code && o.st.box.top > st.box.top && o.s.box.left < o.st.box.left + sp * 8)) {
+    // 印在行末：右边再没有音、或中心已越过本行末音（扬琴 m32 的 ⊕ 右边还压着末拍的休止）
+    const rowEnd = !right || (right === row[row.length - 1] && (s.box.left + s.box.right) / 2 > right.sym.box.right);
+    if (rowEnd && signs.some((o) => o.s !== s && o.s.code === s.code && o.st.box.top > st.box.top && o.s.box.left < o.st.box.left + sp * 8)) {
       s.addTag("Notation");
       continue;
     }
     const n = right ?? row[row.length - 1];
     if (!n) continue;
-    (n.signs ??= []).push(s.code);
+    // 行末的记号印在行末小节线上（八段锦各分谱 m32 末的 ⊕），意思落在小节末，写在末音之后
+    if (rowEnd) (n.signsAfter ??= []).push(s.code);
+    else (n.signs ??= []).push(s.code);
     s.addTag("Notation");
   }
 }

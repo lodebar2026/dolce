@@ -324,6 +324,8 @@ export interface Lyric {
 export interface Notations {
   /** accent / staccato / tenuto / marcato… */
   articulations?: string[];
+  /** [五线谱] 奏法记号写明的上下（`<accent placement="below"/>`），键是 `articulations` 里的名字。没写的照通则（单声部印在符头一侧） */
+  articPlacement?: Record<string, "above" | "below">;
   /** trill-mark / mordent / turn…（单音震音不在这里，见 `tremolo`） */
   ornaments?: string[];
   /** 单音震音的斜线道数 1–4（`<tremolo type="single">3</tremolo>`，123 的 `!///!`） */

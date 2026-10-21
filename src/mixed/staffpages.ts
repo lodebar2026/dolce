@@ -86,8 +86,12 @@ export function formatMixedScore(score: StaffLayout, jianpuPart = 0): void {
 /** 第一声部谱表上方那一摞：量上沿（`calcMixedStaffY`）→ 和弦 y → 自动放置的速度/文字记号抬过去。
  *  混排（`formatMixedScore`）与五线谱档共用。带坐标的五线谱档也走：原文和弦的 default-y 常贴着谱表上沿
  *  （Finale 出的 500 首是 9），朝上符干、符杠一高就压上去（007、008），和弦行一律让开谱面内容。 */
-/** 排练号框右缘到并排的 segno / coda 墨迹左缘（tenths，半个线距多一点） */
-const SIGN_AFTER_REHEARSAL = 6;
+/** 排练号框右缘到并排的速度记号墨迹左缘（tenths，半个线距多一点） */
+const AFTER_REHEARSAL = 6;
+/** 排练号后面接成一行的文字与速度记号之间再多空的（tenths；加上 `AFTER_REHEARSAL` 约一个字宽） */
+const WORDS_GAP = 4;
+/** segno / coda 墨迹底到下面谱面内容（或顶线）的空（tenths） */
+const SIGN_CLEAR = 8;
 
 export function placeAboveStaff(score: StaffLayout, mixed: boolean): void {
   // 源谱版面档逐个声部摞：首个声部常整行不印（合唱谱人声进来之前），文字记号挂在下面的声部上（望十架曲首的速度与「unis.」叠成一团）
@@ -154,9 +158,8 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
       // 按出现先后摞的话曲首的 `♩=88` 会被同一拍上的 `mp` 压到下面去
       const isTempo = (t: MeasureText): boolean => !!t.src && [t.src, ...(t.src.more ?? [])].some((d) => d.type === "metronome");
       const blocks = sys.measures.flatMap((m) => (p.measures[m.index]?.textBlocks ?? []).map((t) => ({ m, t })));
-      // segno / coda 排在同拍的排练号之后：要贴到排练号框的右边（见下）
       const isSign = (t: MeasureText): boolean => t.src?.type === "segno" || t.src?.type === "coda";
-      blocks.sort((a, b) => Number(isTempo(a.t)) - Number(isTempo(b.t)) || Number(isSign(a.t)) - Number(isSign(b.t)));
+      blocks.sort((a, b) => Number(isTempo(a.t)) - Number(isTempo(b.t)));
       // 同一拍上的几条文字（`<words>`，曲首「欢快 热烈地」与「pizz」）**先写的在上**（ABC §4.19 连写注记的口径）：
       // 下面按先后往上摞，所以这几条在各自占的位子里倒过来
       const isWords = (t: MeasureText): boolean => !!t.src && t.src.type === "words" && !t.boxed;
@@ -171,8 +174,30 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
         const picked = idx.map((i) => blocks[i]!).reverse();
         idx.forEach((i, k) => (blocks[i] = picked[k]!));
       }
+      // 排练号那一拍上的文字、速度记号接在框右边排成一行（原谱「【A】欢快 热烈地 ♩=144」）：
+      // 这一拍的几条挪到一起、按「框 → 文字 → 速度」的次序排（小钗的 GT 是三条 direction，别的分谱文字与速度合一条）
+      const keyOf = (b: { m: { index: number }; t: MeasureText }) => `${b.m.index}@${b.t.offset.toString()}`;
+      const boxedBeats = new Set(blocks.filter((b) => b.t.boxed).map(keyOf));
+      const inRow = (b: { m: { index: number }; t: MeasureText }) =>
+        boxedBeats.has(keyOf(b)) && (b.t.boxed || isTempo(b.t) || (isWords(b.t) && b.t.src?.placement !== "below"));
+      const rank = (t: MeasureText) => (t.boxed ? 0 : isTempo(t) ? 2 : 1);
+      const firstAt = new Map<string, number>();
+      blocks.forEach((b, i) => {
+        if (inRow(b) && !firstAt.has(keyOf(b))) firstAt.set(keyOf(b), i);
+      });
+      const order = blocks.map((b, i) => (inRow(b) ? firstAt.get(keyOf(b))! + rank(b.t) / 10 : i));
+      const sorted = blocks.map((b, i) => ({ b, o: order[i]! })).sort((a, b) => a.o - b.o).map((x) => x.b);
+      blocks.splice(0, blocks.length, ...sorted);
       // 源谱版面档：文字按它横向跨过的那一段音符与弧贴（原谱「unis.」「dim.」落在低音处、离谱表近），不按整行最高的音一律抬
       const sky = score.keepBreaks && !mixed && !st.hasHarmony ? st.skyline(sys, true).above : null;
+      // segno / coda 不论版面档都按轮廓贴（`signLow`）：轮廓按需量一次
+      let skyAll: number[] | null = null;
+      const localFloorAt = (x0: number, x1: number): number => {
+        skyAll ??= st.skyline(sys, true).above;
+        let top = 0;
+        for (let b = Math.max(0, Math.floor(x0 / SKYLINE_BIN)); b <= Math.min(skyAll.length - 1, Math.floor(x1 / SKYLINE_BIN)); b++) top = Math.max(top, skyAll[b]!);
+        return top + MIXED_TEXT_CLEAR;
+      };
       const localFloor = (x0: number, x1: number): number => {
         let top = 0;
         for (let b = Math.max(0, Math.floor(x0 / SKYLINE_BIN)); b <= Math.min(sky!.length - 1, Math.floor(x1 / SKYLINE_BIN)); b++) top = Math.max(top, sky![b]!);
@@ -188,23 +213,51 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
         if (t.autoY && t.y < 0 && t.src?.placement === "below") continue;
         // 识别稿照原图写了高度的力度（`sourceY`）：源谱版面档里只按它横向跨过的那段轮廓让开，不抬到整行最高处
         const keepSource = t.sourceY && !!sky;
+        // segno / coda 照原谱贴着谱表（按它横向跨过那段轮廓让），不随整行文字抬高（八段锦各分谱 m32、m78 的 ⊕ 就在顶线上方）
+        // 有和弦行的不贴：和弦在谱表与它之间（500 首 018）
+        // 原文写了坐标的（Finale 出的 500 首）照原样，不挪
+        const signLow = isSign(t) && !mixed && !st.hasHarmony && !t.signPlaced;
         // 带坐标的谱：原文高过和弦行的文字也落回和弦那一层（005「（副歌）」用户定：与和弦大致同高），撞上再摞；速度记号不动
-        if (!keepSource && (t.y < floor || (!score.autoLayout && st.hasHarmony && !isTempo(t)))) t.y = floor;
+        if (!keepSource && !signLow && (t.y < floor || (!score.autoLayout && st.hasHarmony && !isTempo(t)))) t.y = floor;
         const w = t.width();
         const left = m.xpos() + t.x - (t.justify === LCR.Center ? w / 2 : t.justify === LCR.Right ? w : 0);
         // 横向按墨迹量：全角括号「（」「）」前进宽里一半是空白，按前进宽量「（副歌）」就把旁边的和弦也算成撞上了（008）
         const [inkL, inkR] = textInkSpan(t);
         let x0 = left + inkL;
         let x1 = left + inkR;
-        if (sky && t.autoY && !isTempo(t)) t.y = localFloor(x0, x1);
+        // segno / coda 记在小节头、小节末的，居中骑在那根小节线上（原谱 m77|m78、m32 末的 ⊕；【E】在它右边）
+        if (isSign(t) && !t.signPlaced) {
+          const atEnd = t.offset.compareTo(m.dur) >= 0 && m.dur.toFloat() > 0;
+          // 行首小节不挪：骑到系统起始线上就压住小节号与括号（500 首 018 m9 的 𝄋）；钢片琴 m33 行首原谱的 ⊕ 在谱号上方、小节号框之上，没照
+          const atStart = t.offset.toFloat() === 0 && sys.measures[0] !== m;
+          if (atEnd || atStart) {
+            // 小节线的 x 同 `render.ts` 画小节线：下一小节的 `sibKeyOffset` 往回让，行末再扣掉预告拍号/调号（各连 5 的空）
+            const mi = sys.measures.indexOf(m);
+            const last = mi === sys.measures.length - 1;
+            const trail = last ? (sys.timeChangeWidth > 0 ? sys.timeChangeWidth + 5 : 0) + (sys.keyChangeWidth > 0 ? sys.keyChangeWidth + 5 : 0) : 0;
+            const barX = atEnd ? m.xpos() + m.width - (sys.measures[mi + 1]?.sibKeyOffset ?? 0) - trail : m.xpos() - m.sibKeyOffset;
+            const shift = barX - (x0 + x1) / 2;
+            t.x += shift;
+            x0 += shift;
+            x1 += shift;
+          }
+        }
+        // 原谱 ⊕ 底离下面的谱面约 0.8 格（m32 行末）到 1.7 格（m78）：贴轮廓留 `SIGN_CLEAR`。
+        // y 是字形基线，⊕ 有一截落在基线下（Bravura 字形盒下沿 −0.632 格 / 字号 4 格），按字形盒补回
+        if (signLow) {
+          const it = t.data.find((d) => d.music);
+          const bb = it ? eng.meta.getBBox(it.text) : null;
+          const descent = bb ? Math.max(0, -bb.bBoxSW[1]) * (it!.font.size / 4) : 0;
+          t.y = Math.max(localFloorAt(x0, x1) - MIXED_TEXT_CLEAR, 0) + SIGN_CLEAR + descent;
+        }
+        else if (sky && t.autoY && !isTempo(t)) t.y = localFloor(x0, x1);
         else if (keepSource) t.y = Math.max(t.y, localFloor(x0, x1) - MIXED_TEXT_CLEAR / 2);
         const h = textInkHeight(t);
-        // 同一拍上的排练号与 segno / coda、速度记号并排：贴在排练号框右边、竖向居中对齐（原谱「【E】𝄌」「【A】欢快 热烈地 ♩=144」），
-        // 不往上摞（八段锦扬琴 m78、m1）
+        // 同一拍上排练号后面的文字、速度记号：接在前一块右边、对排练号框竖向居中，不往上摞（八段锦扬琴、小钗 m1）
         const beatKey = `${m.index}@${t.offset.toString()}`;
-        const host = isSign(t) || isTempo(t) ? rehearsalAt.get(beatKey) : undefined;
+        const host = !t.boxed && inRow({ m, t }) ? rehearsalAt.get(beatKey) : undefined;
         if (host) {
-          const shift = host.x1 + SIGN_AFTER_REHEARSAL - x0;
+          const shift = host.x1 + AFTER_REHEARSAL - x0;
           t.x += shift;
           x0 += shift;
           x1 += shift;
@@ -220,8 +273,9 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
           }
         }
         placed.push({ x0, x1, y0: t.y, y1: t.y + h });
-        // 框比整块前进宽再往外扩 0.25 个字号（`render.ts::drawTextBlock`），并排的记号从框线外量
+        // 框比整块前进宽再往外扩 0.25 个字号（`render.ts::drawTextBlock`），并排的记号从框线外量；接上的块把右缘往后推
         if (t.boxed) rehearsalAt.set(beatKey, { x1: left + w + (t.data.find((it) => it.text !== "\n")?.font.size ?? 0) * 0.25, y0: t.y, y1: t.y + h });
+        else if (host) rehearsalAt.set(beatKey, { ...host, x1: x1 + WORDS_GAP });
       }
     }
   }

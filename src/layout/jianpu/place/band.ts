@@ -14,7 +14,7 @@ import { endingDrop, endingLabelDx, labelBaselineOf } from "../../../engrave/end
 import { stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
 import { barlineSpan, bracketLineWidth, jianpuSlurStyle, keyLabelSize, type JianpuGrid } from "../metrics";
 import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedMark, PlacedText } from "./model";
-import { articStack, entryTop, noteBeams, stackTop } from "./vertical";
+import { articStack, entryTop, noteBeams, noteInkBottom, stackTop } from "./vertical";
 import { type ChordSpan, sectionWordLines, sectionWordOf, sectionWordSlot, widestLine } from "./sectionword";
 import { barlineBox } from "./spacing";
 import { rehearsalOf } from "../../../model/deconames";
@@ -28,6 +28,8 @@ export interface VoiceBand {
   top: number;
   /** 字（和弦、注释、转调标签、力度/术语/跳转字）里最高的墨迹顶；没有字为 null（组间留空另加一个数字高，见 vertical.ts::groupHeadroom） */
   textTop: number | null;
+  /** 器乐谱（`below`）谱行下方那条带（力度、渐强渐弱）的墨迹底（相对基线）；没有为 null */
+  bottom: number | null;
 }
 
 /** 带里算「字」的那几种（组间让位要多留一截，见 `VoiceBand.textTop`） */
@@ -60,6 +62,8 @@ export function placeBand(
   m: JianpuGrid,
   ink: InkMeasurer,
   width: number,
+  /** 器乐谱：力度记号、渐强渐弱记在谱行下方（GB/T 46845 7.3.8 a、7.3.6.3；声乐谱记上方），见 `placeBelow` */
+  below = false,
 ): VoiceBand {
   const nh = m.ink.noteHeight;
   const gap = m.style.vertical.slurGap;
@@ -237,6 +241,7 @@ export function placeBand(
   const hairpinHeight = nh * JP_HAIRPIN.half * 2 + hairpinLw;
   for (const mk of marks) {
     if (mk.mark.type !== "crescendo" && mk.mark.type !== "decrescendo") continue;
+    if (below) continue;
     let top = Infinity;
     for (const it of items) {
       if (it.element.kind === "barline" || it.x < mk.x0 - nh || it.x > mk.x1 + nh) continue;
@@ -297,7 +302,8 @@ export function placeBand(
     }
   }
 
-  const groups = placeDirections(items, boxes, texts, m, ink, width);
+  const lowTexts: PlacedText[] = [];
+  const groups = placeDirections(items, boxes, texts, m, ink, width, below ? lowTexts : null);
   placeCue(items, layers, boxes, m);
   placeEndings(items, marks, boxes, groups, m, ink);
   // 松叶、房号的 y 上面是按声部基线算的（已含下行的 dy）；compose 画记号时还要再加 `mk.dy`，这里扣回去
@@ -324,7 +330,54 @@ export function placeBand(
     top = Math.min(top, b.top);
     if (b.kind && TEXT_KINDS.has(b.kind)) textTop = Math.min(textTop ?? Infinity, b.top);
   }
-  return { texts, boxes, top, textTop };
+  const bottom = below ? placeBelow(items, marks, layers, lowTexts, m) : null;
+  texts.push(...lowTexts);
+  return { texts, boxes, top, textTop, bottom };
+}
+
+/**
+ * **器乐谱谱行下方那条带**：力度记号与渐强渐弱记在谱行下方（GB/T 46845 7.3.8 a）单行谱表器乐曲谱、7.3.6.3 图形力度符号器乐曲谱记在下方，
+ * 谱例《一枝花》《月夜》），声乐谱照旧记上方。整行一条线：竖向中线落在本行最低墨迹（低音点、减时线、并排块下行）之下一道空 + 半个带高，
+ * 力度字与松叶同高；松叶起止碰上同一处的力度字就让到字外一道空（`p <`）。返回这条带的墨迹底（相对基线）。
+ */
+function placeBelow(items: readonly PlacedItem[], marks: PlacedMark[], layers: readonly PlacedLayer[], dyns: PlacedText[], m: JianpuGrid): number | null {
+  const wedges = marks.filter((mk) => mk.mark.type === "crescendo" || mk.mark.type === "decrescendo");
+  if (wedges.length === 0 && dyns.length === 0) return null;
+  const nh = m.ink.noteHeight;
+  const gap = m.style.vertical.slurGap;
+  let low = nh / 2;
+  for (const it of items) {
+    if (it.element.kind !== "note" || it.element.hidden) continue;
+    low = Math.max(low, noteInkBottom(it.element, m) + (it.dy ?? 0));
+  }
+  // 并排块（同谱表第二声部排在下行，八段锦小钗）：那一行也在上面，带要排到它之下
+  for (const lay of layers) {
+    const sp = lay.split;
+    if (!sp) continue;
+    for (const it of lay.items) {
+      if (it.element.kind !== "note" || it.element.hidden) continue;
+      low = Math.max(low, noteInkBottom(it.element, m) + sp.dy + (it.dy ?? 0));
+    }
+  }
+  const hairpinLw = jpHairpinLineWidth(m.style.stroke.hairpin, nh);
+  const hairpinHeight = nh * JP_HAIRPIN.half * 2 + hairpinLw;
+  const half = Math.max(hairpinHeight, ...dyns.map((t) => t.ink.bottom - t.ink.top)) / 2;
+  const mid = low + gap * 1.5 + half;
+  for (const t of dyns) {
+    const d = mid - (t.ink.top + t.ink.bottom) / 2;
+    t.y += d;
+    t.ink = t.ink.offset(0, d);
+  }
+  for (const mk of wedges) {
+    for (const t of dyns) {
+      if (t.ink.right <= mk.x0 - gap || t.ink.left >= mk.x1 + gap) continue;
+      if (t.ink.left <= mk.x0 + nh) mk.x0 = Math.max(mk.x0, t.ink.right + gap);
+      else if (t.ink.right >= mk.x1 - nh) mk.x1 = Math.min(mk.x1, t.ink.left - gap);
+    }
+    // `y` 记松叶墨迹的**底边**；compose 画时还会再加 `mk.dy`，这里扣回去
+    mk.y = mid + hairpinHeight / 2 - (mk.dy ?? 0);
+  }
+  return mid + half;
 }
 
 /**
@@ -335,6 +388,8 @@ export function placeBand(
  */
 function placeDirections(
   items: readonly PlacedItem[], boxes: BandItem[], texts: PlacedText[], m: JianpuGrid, ink: InkMeasurer, width: number,
+  /** 器乐谱：力度字不进上方带，横向定好后收在这里，竖向由 `placeBelow` 定 */
+  lowDyns: PlacedText[] | null = null,
 ): Map<object, PlacedText[]> {
   const out = new Map<object, PlacedText[]>();
   const nh = m.ink.noteHeight;
@@ -367,6 +422,12 @@ function placeDirections(
       } else if (dyn) {
         const fs = m.style.size.note * DYNAMIC_SIZE;
         const r = ink.smufl(dyn, fs);
+        if (lowDyns) {
+          // 器乐谱的力度：居中在音符下（小节线上的贴线右边），竖向等 `placeBelow`
+          const x = el.kind === "barline" ? it.x : it.x - (r.right - r.left) / 2 - r.left;
+          lowDyns.push({ kind: "direction", el, text: dyn, face: "music", size: fs, x, y: dy, ink: r.offset(x, dy) });
+          continue;
+        }
         t = { kind: "direction", el, text: dyn, face: "music", size: fs, x: pen - r.left, y: 0, ink: r.offset(pen - r.left, 0) };
       } else if (term || bm?.text) {
         const s = term ?? bm!.text!;
@@ -487,19 +548,22 @@ function liftTextsOver(boxes: BandItem[], x0: number, x1: number, top: number, b
 function placeRehearsal(
   it: PlacedItem, mark: string, items: readonly PlacedItem[], boxes: BandItem[], texts: PlacedText[], m: JianpuGrid, ink: InkMeasurer, width: number,
 ): void {
-  const k = 1.15;
-  const fs = m.style.size.chord * k;
+  // GB/T 46845 5.9.4「段落序号应使用大字号标记出」，5.9.5 谱例是加框粗体、与音符数字差不多高：取音符字号的 0.9、粗体
+  const fs = m.style.size.note * 0.9;
   const r = ink.text(mark, "term"); // 按术语字号（= 和弦字号）量的，放大 k 倍
+  const k = fs / m.style.size.chord;
   const pad = fs * 0.25;
   const w = (r.ink.right - r.ink.left) * k + pad * 2;
   const nh = m.ink.noteHeight;
   const x0 = Math.max(0, Math.min(it.x - nh / 2, (width || Infinity) - w));
   const x1 = x0 + w;
   const gap = m.style.vertical.slurGap;
-  let top = Math.min(-nh / 2, ...items.filter((o) => o.element.kind === "note" && o.x + nh / 2 > x0 && o.x - nh / 2 < x1)
+  // 左右各多看半个数字宽：框落在行首休止上方、紧挨着右边和音的上层数字，看着像那个和音的一部分（八段锦二胡 C 段 `0 [61]`）
+  const a0 = x0 - nh / 2, a1 = x1 + nh / 2;
+  let top = Math.min(-nh / 2, ...items.filter((o) => o.element.kind === "note" && o.x + nh / 2 > a0 && o.x - nh / 2 < a1)
     .map((o) => entryTop(o.element, m) + (o.dy ?? 0)));
   for (const b of boxes) {
-    if (b.x1 <= x0 || b.x0 >= x1) continue;
+    if (b.x1 <= a0 || b.x0 >= a1) continue;
     top = Math.min(top, b.topAt ? b.topAt(x0, x1) : b.top);
   }
   for (const t of texts) if (t.ink.right > x0 && t.ink.left < x1) top = Math.min(top, t.ink.top);
@@ -507,7 +571,7 @@ function placeRehearsal(
   const boxBottomRel = r.ink.bottom * k + pad; // 框底相对文字基线
   const y = bottom - boxBottomRel;
   const t: PlacedText = {
-    kind: "direction", el: it.element, text: mark, face: "text", size: fs, x: x0 + pad - r.ink.left * k, y, boxed: true,
+    kind: "direction", el: it.element, text: mark, face: "text", size: fs, x: x0 + pad - r.ink.left * k, y, boxed: true, bold: true,
     ink: new Rect(x0, y + r.ink.top * k - pad, x1, bottom),
   };
   texts.push(t);

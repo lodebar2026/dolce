@@ -47,7 +47,7 @@ export function paintBand(c: OriginalCtx, g: Group, el: MusicElement, kinds?: Re
     }
     // SMuFL 字形（奏法、力度、跳转字形）挂 `smufl`（`musicText`）：PPTX 按它转曲、成书按它落乐谱字体（同旧简谱引擎的 `SmuflText`）
     const family = t.face === "lyric" ? m.style.font.lyric.family : m.style.font.text.family;
-    const tf = t.face === "music" ? musicText(t.text, new Font("Bravura", t.size), c.ink) : text(t.text, x, y, new Font(family, t.size), c.ink);
+    const tf = t.face === "music" ? musicText(t.text, new Font("Bravura", t.size), c.ink) : text(t.text, x, y, new Font(family, t.size, !!t.bold), c.ink);
     if (t.face === "music") {
       tf.x = x;
       tf.y = y;
@@ -78,20 +78,21 @@ export function paintBand(c: OriginalCtx, g: Group, el: MusicElement, kinds?: Re
 const NOTE_TEXT = new Set<PlacedText["kind"]>(["chord", "section-word", "key-label"]);
 const NOTE_MARKS = new Set<PlacedText["kind"]>(["artic", "direction"]);
 
-/** 多小节休止：基线上一道粗横杠、两头竖短线，上面印小节数（与五线谱的 H 形长休止同形，简谱器乐分谱的通行印法）。
+/** 多小节休止（GB/T 46845 6.3.7.3「小节休止符」，谱例《豫北叙事曲》├─14─┤）：基线上一道横线、两头竖短线，横线上方居中印小节数。
+ *  照谱例量的（数字墨迹高 h）：横线与竖线一样粗 0.12 h，竖线高 0.8 h，数字墨迹底离横线约 0.25 h。
  *  宽见 place/spacing.ts::MULTI_REST_WIDTH，`x` 是中点。 */
 function paintMultiRest(c: OriginalCtx, g: Group, bars: number, x: number, baseline: number): void {
   const h = c.metrics.ink.noteHeight;
   const w = h * MULTI_REST_WIDTH;
-  const t = h * 0.28;
+  const t = h * 0.12;
   g.add(rect(c.ink, x - w / 2, baseline - t / 2, w, t));
-  for (const ex of [x - w / 2, x + w / 2 - h * 0.08]) g.add(rect(c.ink, ex, baseline - h * 0.35, h * 0.08, h * 0.7));
-  // 小节数：数字墨迹底落在横杠上方约半个数字墨迹高处，多位数逐位排开
+  for (const ex of [x - w / 2, x + w / 2 - t]) g.add(rect(c.ink, ex, baseline - h * 0.4, t, h * 0.8));
+  // 小节数：数字墨迹底落在横线上方约四分之一个数字墨迹高处，多位数逐位排开
   const label = [...String(bars)];
   const step = c.digitFont.measureText("0");
   label.forEach((ch, k) => {
     const { dx, dy } = digitOrigin(c, ch);
-    g.add(digitItem(ch, x + dx + (k - (label.length - 1) / 2) * step, baseline + dy - h * 1.15, c.digitFont, c.ink));
+    g.add(digitItem(ch, x + dx + (k - (label.length - 1) / 2) * step, baseline + dy - h * 0.81, c.digitFont, c.ink));
   });
 }
 

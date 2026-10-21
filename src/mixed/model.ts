@@ -298,6 +298,8 @@ export class NotationItem {
   above = true;
   /** 一律印在谱表上方、谱表之外（波音、颤音、弓法），不随符干翻到下面；`layoutNotations` 摞在符头/符干顶之上 */
   outside = false;
+  /** 原文写明的上下（`placement`，true = 上方）：不按通则翻；落在符干一侧的贴着符干端（八段锦二胡 m49 顿音印在朝上符干的杠上方） */
+  placed?: boolean;
 
   /** model.cpp:1096 NotationItem::isFermata */
   isFermata(): boolean {
@@ -1429,6 +1431,8 @@ export class MeasureText extends TextBlock {
   sourceY = false;
   /** 力度记号原文写了字号：自动铺排不统一成歌词字号 */
   sourceSize = false;
+  /** segno / coda 原文写了 `default-x` / `default-y`：不挪到小节线上、不贴轮廓（`staffpages.ts::placePartAboveStaff`） */
+  signPlaced = false;
   /** `ScoreDoc` 里对应的 `<direction>`（导出时把排好的高度写回，`engrave.ts`） */
   src: DocDirection | null = null;
   /** 排练号（`<rehearsal>`）：粗体字外面套方框（render.ts::drawTextBlock） */
@@ -1910,6 +1914,14 @@ export class PartMeasureLayout {
           it.above = true;
           it.y = outsideY;
           outsideY -= 14;
+          continue;
+        }
+        if (it.placed !== undefined) {
+          it.setAbove(it.placed);
+          const inc = it.above ? -1 : 1;
+          const stemSide = hasStem && ch.stemUp === it.above;
+          const head = it.above ? ch.notes[ch.notes.length - 1]! : ch.notes[0]!;
+          it.y = (stemSide ? ch.tailY(false) : head.cy() + 5 * inc) + 5 * inc;
           continue;
         }
         // musicpp 以「原始字形是否 fermataAbove」判定，setAbove 之前取值。

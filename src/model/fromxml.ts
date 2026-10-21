@@ -334,6 +334,10 @@ function readNotations(noteEl: Element, marks: MarkSink, id: number, into: Notat
   if (art) {
     const list = Array.from(art.children).map((c) => c.tagName);
     if (list.length) n.articulations = list;
+    for (const c of Array.from(art.children)) {
+      const pl = c.getAttribute("placement");
+      if (pl === "above" || pl === "below") (n.articPlacement ??= {})[c.tagName] = pl;
+    }
   }
   const orn = child(nots, "ornaments");
   if (orn) {

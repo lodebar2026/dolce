@@ -79,23 +79,41 @@ function addFilledQuad(
   g.add(p);
 }
 
+/** 断奏楔（staccatissimo）照 Sibelius 出的谱（八段锦二胡、中胡原 PDF）画实心三角：宽 0.54 格、高 0.77 格，尖朝符头。
+ *  Bravura 的 articStaccatissimo 是 0.4×1.17 格的瘦高楔，Wedge 变体也一样瘦，排出来像一道竖线。
+ *  (`cx`, `y`) 是字形原点口径：朝上（印在音上方）的从 y 往上画、尖在下；朝下的从 y 往下画、尖在上 */
+const WEDGE_W = 5.4, WEDGE_H = 7.7;
+function drawStaccatissimo(g: Group, cx: number, y: number, above: boolean): void {
+  const p = new GraphicPath();
+  p.fill = true;
+  p.stroke = false;
+  p.fillColor = 0xff000000;
+  const base = above ? y - WEDGE_H : y + WEDGE_H;
+  p.moveTo(cx - WEDGE_W / 2, base);
+  p.lineTo(cx + WEDGE_W / 2, base);
+  p.lineTo(cx, y);
+  p.close();
+  g.add(p);
+}
+
 // -----------------------------------------------------------------------
-/** 多小节休止：谱表中线上一道粗横杠（两头竖线从第二线到第四线），谱表上方印小节数（SMuFL 拍号数字）。
- *  谱表坐标同别处：顶线 y=0、往下每格 10。横杠占满这一小节、两头各让 1.5 格 */
-function drawMultiRest(g: Group, mif: MeasureLayout, eng: MixedOptions, fs: number): void {
+/** 多小节休止：谱表中线上一道粗横杠（两头竖线从第二线到第四线），谱表上方印小节数。
+ *  数字照 Sibelius 出的谱（八段锦钢片琴原 PDF）用正文衬线体的普通字重、高约 1.8 格，基线在顶线上方 0.4 格；
+ *  原来用 SMuFL 拍号数字（粗、矮）。谱表坐标同别处：顶线 y=0、往下每格 10。横杠占满这一小节、两头各让 1.5 格 */
+const MULTIREST_NUM_SIZE = 27;
+function drawMultiRest(g: Group, mif: MeasureLayout, eng: MixedOptions): void {
   const x0 = mif.dataPos + 15, x1 = mif.getEntPos(mif.dur) - 15;
   if (x1 <= x0) return;
   g.add(fillRect(0xff000000, x0, 15, x1 - x0, 10));
   addLine(g, x0, 10, x0, 30, eng.lineWidths.stem * 1.5);
   addLine(g, x1, 10, x1, 30, eng.lineWidths.stem * 1.5);
-  // 小节数逐位画（元数据按单个字形查宽）
-  const digits = [...String(mif.multiRest)].map((d) => String.fromCharCode(GlyphCodes.timeSig0.charCodeAt(0) + Number(d)));
-  const ws = digits.map((d) => smuflWidth(eng.meta, d));
-  let x = (x0 + x1) / 2 - ws.reduce((a, b) => a + b, 0) / 2;
-  digits.forEach((d, k) => {
-    addSmufl(g, d, x, -15, fs);
-    x += ws[k]!;
-  });
+  const t = new TextFrame();
+  t.text = String(mif.multiRest);
+  t.font = new Font(eng.wordFont, MULTIREST_NUM_SIZE);
+  t.color = 0xff000000;
+  t.x = (x0 + x1) / 2 - t.font.measureText(t.text) / 2;
+  t.y = -4;
+  g.add(t);
 }
 
 /**
@@ -159,7 +177,7 @@ export function drawNotesNormal(
 
       // 并过的多小节休止那一小节只剩一个休止（123 的 `Z` 带着 `whole` 时值，不算 measureRest，按小节认）
       if (ch.rest && md.measureInfo.multiRest > 1) {
-        drawMultiRest(chordGrp(), md.measureInfo, eng, fs);
+        drawMultiRest(chordGrp(), md.measureInfo, eng);
         continue;
       }
       if (ch.measureRest) {
@@ -211,8 +229,10 @@ export function drawNotesNormal(
 
     // stem and flag (skip rests, whole notes, half notes with beams)
     if (ch.rest) continue;
-    // 单音震音（`<tremolo type="single">`）：tremolo1–4 字形压在符干中段。全音符没有符干：照 Sibelius 出的谱（八段锦扬琴原 PDF，用户定照原谱）
-    // 画在音头右侧 0.6 个线距处，竖向居中在假想符干那一端的音头上；斜线照原谱自己画（`drawWholeTremolo`），（离中线最远的音在中线之上，符干朝下，对齐最低的音头；反之对齐最高的）。
+    // 单音震音（`<tremolo type="single">`）：tremolo1–4 字形压在符干中段。全音符没有符干：照 Sibelius 出的谱（八段锦原 PDF，用户定照原谱）
+    // 画在假想符干那一侧：斜线组中心在符干起端的音头（符干朝下是最高的头，朝上是最低的头）往符干方向 1 格、音头中心右边约 1.7 格；
+    // 斜线照原谱自己画（`drawWholeTremolo`）。九份分谱量下来原谱逐处手调过（竖向 −0.5～2 格、横向 1.1～2.3 格），取多数：
+    // 二胡/高胡/琵琶在下方 1～1.5 格，和音（中阮 m92）落在两头之间；扬琴几处与音头齐平，对不上。
     // GB/T 46846 7.8.3.3 b) 是居中画在假想符干上（音头正上 / 正下方），没照它
     const strokes = ch.src.notations?.tremolo;
     const tremolo = strokes ? [GlyphCodes.tremolo1, GlyphCodes.tremolo2, GlyphCodes.tremolo3, GlyphCodes.tremolo4][Math.min(4, strokes) - 1]! : "";
@@ -221,7 +241,7 @@ export function drawNotesNormal(
         // 全音符的 `stemUp` 没按音高算过：照符干方向的通则，离中线（谱表内 y = 20）最远的音在中线之上就朝下
         const ys = ch.notes.map((n) => n.cy() - md.staffY(subStaff));
         const up = 20 - Math.min(...ys) <= Math.max(...ys) - 20;
-        drawWholeTremolo(chordGrp(), Math.min(4, strokes!), headR + 6, up ? Math.min(...ys) : Math.max(...ys));
+        drawWholeTremolo(chordGrp(), Math.min(4, strokes!), headR + 2.5, up ? Math.max(...ys) - 10 : Math.min(...ys) + 10);
       }
       continue; // whole: no stem
     }
@@ -281,6 +301,10 @@ export function drawNotesNormal(
       if (ch.stemUp && ch.noteType.compareTo(new Fraction(4)) < 0) {
         x -= ch.noteheadWidth(meta);
       }
+      if (nota.symbol === GlyphCodes.articStaccatissimoAbove || nota.symbol === GlyphCodes.articStaccatissimoBelow) {
+        drawStaccatissimo(container, x + ch.noteheadWidth(meta) / 2, nota.y, nota.symbol === GlyphCodes.articStaccatissimoAbove);
+        continue;
+      }
       // **墨迹中心对符头中心**：照原排版程序是字形原点对符头左缘，窄的顿音点就偏到左边、宽的延长号偏到右边
       const bb = meta.getBBox(nota.symbol);
       if (bb) x += ch.noteheadWidth(meta) / 2 - ((bb.bBoxSW[0] + bb.bBoxNE[0]) / 2) * 10;
@@ -294,8 +318,10 @@ export function drawNotesNormal(
       if (arp.notes.length === 0) continue;
       const n0 = arp.notes[0];
       const n1 = arp.notes[arp.notes.length - 1];
-      const y0 = md.staffY(n0.staff) + n0.cy() + 5;
-      const y1 = md.staffY(n1.staff) + n1.cy() - 5;
+      // 照 Sibelius 出的谱（八段锦钢片琴原 PDF）：波浪线上下各伸出符头约 0.3 格。原谱离符头还要远半格，
+      // 但这里没给琶音留横向的位，再往左挪就压到小节线上（钢片琴 m39），横向不动
+      const y0 = md.staffY(n0.staff) + n0.cy() + 8;
+      const y1 = md.staffY(n1.staff) + n1.cy() - 8;
       const x = md.measureInfo.getEntPos(n0.chord.offset) - 12;
       container.add(arpeggioGroup(x, y1, y0, fs));
     }
@@ -1115,7 +1141,21 @@ function drawStaff(eng: MixedOptions, container: Group, sysStf: SysStaff, ypos: 
 // -----------------------------------------------------------------------
 // drawClef
 
+/** 打击乐谱号照 Sibelius 出的谱（八段锦小钗、小锣原 PDF）画两道细竖线：各粗 0.2 格、相隔 0.3 格，从第二线到第四线。
+ *  Bravura 的 unpitchedPercussionClef1 是 1.5 格宽的两道粗条。占位仍按字形宽，竖线画在它中间 */
+function drawPercussionClef(container: Group, xpos: number, sc: number): void {
+  const w = 2 * sc, gap = 3 * sc, glyphW = 15.28 * sc;
+  const x0 = xpos + (glyphW - (2 * w + gap)) / 2;
+  const y0 = 20 - 10 * sc, h = 20 * sc;
+  container.add(fillRect(0xff000000, x0, y0, w, h));
+  container.add(fillRect(0xff000000, x0 + w + gap, y0, w, h));
+}
+
 function drawClef(clef: ClefSig, container: Group, xpos: number, fontSize: number, sc = 1): void {
+  if (clef.sign === GlyphCodes.unpitchedPercussionClef1) {
+    drawPercussionClef(container, xpos, sc);
+    return;
+  }
   const y = 50 - clef.line * 10;
   if (sc !== 1) {
     addSmuflScaled(container, clef.sign, xpos, y, fontSize, sc, sc);

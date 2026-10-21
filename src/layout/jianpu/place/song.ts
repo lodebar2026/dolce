@@ -76,6 +76,8 @@ export function layoutSong(
   autoVerseNumbers(song, m);
 
   const bottomLimit = m.page.height - m.page.margin.bottom;
+  // 整首没有一句歌词的按器乐谱排：力度记号、渐强渐弱记在谱行下方（GB/T 46845 7.3.8 a、7.3.6.3；`band.ts::placeBelow`）
+  const instrumental = !song.pages.some((pg) => pg.groups.some((g) => g.voices.some((v) => v.lyrics.length > 0)));
   // 拍号一路带过来：头部 `1=D4/4 3/4 5/4` 这类混合拍只有首个是起头拍号，其余由曲中
   // 的 `"p:3/4"` 逐小节改写（`BarlineElement.temporaryMeter`），故要跨行延续。
   // 只有减时线分组用得着（见 beatGroups）。
@@ -152,11 +154,12 @@ export function layoutSong(
         }
         const marks = placeMarks(voice, l.items, m, ink);
         // 上方带：弧、连音、奏法记号、和弦、松叶、转调标签、力度/跳转字、临时伴奏行、房号按墨迹一次堆清（band.ts）
-        const band = placeBand(l.items, marks, layers, m, ink, width);
+        const band = placeBand(l.items, marks, layers, m, ink, width, instrumental);
         const pv: PlacedVoice = {
           voice, y: 0, items: l.items, underlines, layers, marks, lyricY: [], band: band.texts, top: band.top, textTop: band.textTop,
+          ...(band.bottom !== null ? { bottom: band.bottom } : {}),
         };
-        return { pv, inkBottom, digitBottom, lyricY0, splitDrop };
+        return { pv, inkBottom: Math.max(inkBottom, band.bottom ?? -Infinity), digitBottom, lyricY0, splitDrop };
       });
       const voices = pre.map((p) => p.pv);
 
@@ -376,7 +379,7 @@ function lowestOf(page: PlacedPage): number {
   let bottom = 0;
   for (const g of page.groups) {
     for (const v of g.voices) {
-      bottom = Math.max(bottom, v.y, ...v.lyricY);
+      bottom = Math.max(bottom, v.y, ...v.lyricY, v.bottom !== undefined ? v.y + v.bottom : 0);
       // 并排块的下行（`{dsb}` 压下去的主旋律、同谱表第二声部）比基线低一个 splitRise
       for (const l of v.layers) if (l.split) bottom = Math.max(bottom, v.y + Math.abs(l.split.dy));
     }

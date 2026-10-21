@@ -29,7 +29,8 @@ export const ORNAMENTS: Readonly<Record<string, OrnamentGlyph>> = {
   ycy: { glyph: articGlyph("fermata", true), placement: "above", scale: 1.0, label: "延长记号" },
   bc: { glyph: articGlyph("tenuto", true), placement: "above", scale: 0.9, label: "保持音" },
   zy: { glyph: articGlyph("accent", true), placement: "above", scale: 0.9, label: "重音" },
-  dy: { glyph: articGlyph("staccato", true), placement: "above", scale: 0.9, label: "顿音" },
+  // ▼ 宽约数字高的 0.45、高约 0.4（GB/T 46845 7.9.2.2 谱例量的）
+  dy: { glyph: articGlyph("staccato", true), placement: "above", scale: 1.6, label: "顿音" },
   hx: { glyph: C(0xe4ce), placement: "above", scale: 0.9, label: "呼吸记号" },
   shy: { glyph: C(0xe5d0), placement: "above", scale: 0.9, label: "上滑音" },
   xhy: { glyph: C(0xe5d3), placement: "above", scale: 0.9, label: "下滑音" },
