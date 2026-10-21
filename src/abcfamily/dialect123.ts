@@ -101,6 +101,13 @@ export class Lexer123 extends AbcFamilyLexer {
     return { text: line.slice(i, k + 1), notes, dur: this.scanDuration(line, k + 1) };
   }
 
+  /** `[` 后不留空格一直写到 `]`、又不是合规和音的（`[03]` `[1X]` `[13_]` `[1]`）：房号后面总跟空格，这只能是写错的和音 */
+  protected override malformedChordGroup(line: string, i: number): { message: string; len: number } | null {
+    const m = /^\[[\d#bnX][^\s[\]|"!]*\]/.exec(line.slice(i));
+    if (!m || this.scanChordGroup(line, i)) return null;
+    return { message: tr("diag.j123.badChordGroup", { text: m[0] }), len: m[0].length };
+  }
+
   /** 音符：`[#b n]数字['`,]*[_.]*`。变音记号**前置**（简谱惯例，与 ABC 的 `^_=` 不同）。 */
   protected scanNote(line: string, i: number): NoteScan | null {
     let j = i;

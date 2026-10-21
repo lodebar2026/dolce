@@ -20,6 +20,23 @@ const ACC_TEXT: Readonly<Record<string, string>> = {
   "double-flat": "bb",
 };
 
+/** 一小节只有一个全休止（MusicXML 的 `<type>whole</type>` 或 `measure="yes"`）标成整小节休止：投影会把它拆成一拍一个 `0`，
+ *  标了写出端才写回 `Z`（规范 §9），否则读回五线谱画成几个四分休止。不动原件。 */
+function wholeBarRests(song: Song): Song {
+  let hit = false;
+  const parts = song.parts.map((p) => ({
+    ...p,
+    measures: p.measures.map((m) => {
+      const [el, ...more] = m.elements;
+      if (more.length || el?.kind !== "chord" || !el.rest || el.rest.measure || el.grace || el.printObject === false
+        || el.duration.type !== "whole") return m;
+      hit = true;
+      return { ...m, elements: [{ ...el, rest: { ...el.rest, measure: true } }] };
+    }),
+  }));
+  return hit ? { ...song, parts } : song;
+}
+
 export class Emitter123 extends AbcFamilyEmitter {
   protected readonly versionLine = "%123-1.0";
   protected override readonly tiesAsSlurs = true;
@@ -110,7 +127,7 @@ export class Emitter123 extends AbcFamilyEmitter {
   /** MusicXML 读进来的歌先投成简谱形状：123 的 `-` 是增时线、`_` 是减时线，照 MusicXML 的 type/beam 直写会写错时值 */
   override emitSong(song: Song, fallbackNumber?: number): string {
     // 文本谱的 `{dsb…}` 并排块还原成第二声部，照 `&` 写
-    return super.emitSong(projectForJianpu(directionsAsMarks(layersToVoices(song))), fallbackNumber);
+    return super.emitSong(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(song)))), fallbackNumber);
   }
 
   /** 度数 + 八度点。变音记号**前置**（简谱惯例）。 */

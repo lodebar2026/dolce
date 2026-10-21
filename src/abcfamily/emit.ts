@@ -340,11 +340,16 @@ export abstract class AbcFamilyEmitter {
   }
 
   /** 第 `i` 小节起的多小节休止能写成 `Zn` 就返回 n，否则 0。整串都得是干净的整小节休止：
-   *  没有记号、文字、和弦、歌词，中间的小节不换调号拍号谱号、不带左线与特殊右线、不在中间换行，且不跨出本行（`to`）。 */
+   *  没有记号、文字、和弦、歌词，中间的小节不换调号拍号谱号、不带左线与特殊右线、不在中间换行，且不跨出本行（`to`）。
+   *  单独一个整小节休止（`rest.measure`，投影把它拆成了一拍一个 `0`）返回 1，写 `Z`。 */
   private multiRestRun(part: Part, i: number, to: number): number {
     if (!this.multiRests) return 0;
-    const n = part.measures[i]?.attrs?.multiRest ?? 0;
-    if (n < 2 || i + n - 1 > to || i + n - 1 >= part.measures.length) return 0;
+    const head = part.measures[i];
+    const lone = !!head?.elements.some((el) => el.kind === "chord" && !!el.rest?.measure)
+      && head.elements.every((el) => el.kind === "chord" && !!el.rest && el.printObject !== false && el.voice === head.elements[0]!.voice);
+    const multi = head?.attrs?.multiRest ?? 0;
+    const n = multi >= 2 ? multi : lone ? 1 : 0;
+    if (!n || i + n - 1 > to || i + n - 1 >= part.measures.length) return 0;
     for (let j = i; j < i + n; j++) {
       const m = part.measures[j]!;
       // 头一个小节可以带记号与文字（排练号、力度、pizz），写在 `Z` 前面（`multiRestText`）
@@ -367,7 +372,7 @@ export abstract class AbcFamilyEmitter {
       if (el.sectionWord) s += this.annotationText(el.sectionWord);
       for (const a of el.notations?.articulations ?? []) if (this.rehearsalMarks || rehearsalOf(a) === undefined) s += `!${a}!`;
     }
-    return `${s}Z${n}`;
+    return `${s}Z${n > 1 ? n : ""}`;
   }
 
   /** 排练号 `!rehearsal=A!` 写不写（123 的扩展，ABC 与 Muse 读不懂）。 */

@@ -132,6 +132,13 @@ export abstract class AbcFamilyLexer {
     return null;
   }
 
+  /** 看着是和音、却写错了的方括号（123）：返回诊断与要跳过的长度；不是返回 null。 */
+  protected malformedChordGroup(line: string, i: number): { message: string; len: number } | null {
+    void line;
+    void i;
+    return null;
+  }
+
   /** 同时发声的和音（ABC 的 `[CEG]`、123 的 `[13]`）。不认返回 null。 */
   protected scanChordGroup(
     line: string,
@@ -271,6 +278,13 @@ export abstract class AbcFamilyLexer {
         continue;
       }
 
+      // 写错了的和音（`[03]` 放了休止、`[1X]` 混了节奏音符、`[13_]` 时值写进括号）：报清楚、整段跳过，不落成房号
+      const badGroup = this.malformedChordGroup(line, i);
+      if (badGroup) {
+        errors.push({ message: badGroup.message, source: span(start, badGroup.len) });
+        i += badGroup.len;
+        continue;
+      }
       // 房号 `[1` `[1,3` `[1-3` `[1,3,5-7`（ABC §4.9/§4.10）。**必须排在小节线之前**判，
       // 否则 `[|` 会先吃掉 `[`；反过来 `[|]`/`[|` 已在上面的 inline 判断后、这里之前轮到。
       // 123 的和音 `[13]` 也以 `[数字` 起头：`[` 后紧跟音符、中间无空格、`]` 收住的归和音（见下面的 scanChordGroup）

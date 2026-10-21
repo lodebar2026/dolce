@@ -126,6 +126,9 @@ interface PartBuild {
   arcNext: { from: ElementId; source: SourceSpan } | null;
   /** 和音里单连一个音的 `~`（`[1~3]`）：等下一个和音来，连到它里面的同音 */
   noteTies: { from: Chord; note: number; source: SourceSpan }[];
+  /** 小节内各分支（`&`）各自开着的弧与欠着的 `~`：切走时存下、下一小节切回同一分支时接上，
+   *  弧与延音线才能跨小节线接着同一分支（第一声部的弧不被第二声部截断，第二声部的 `~` 不落到第一声部上） */
+  branchArcs: Map<number, BranchArcs>;
   /** 开着的渐强渐弱（Muse 的 `(<` … `<)`、ABC 的 `!crescendo(!` … `!crescendo)!`），起点同弧一样由 `attach` 回填 */
   openWedges: OpenMark[];
   /** ABC 装饰写的渐强渐弱收尾（`!crescendo)!`）：装饰写在**收尾那个音前面**，等下一个元素挂上才落成 Mark */
@@ -135,6 +138,27 @@ interface PartBuild {
   len?: DefaultLen;
   /** Muse `V:… style=`：`staff` 的字母是绝对音高（收尾时换算），`tab`/`ukulele` 整轨不读（只认简谱与五线谱） */
   museStyle?: "jianpu" | "staff" | "skip";
+}
+
+/** 一个分支切走时存下的弧状态（`PartBuild.branchArcs`） */
+interface BranchArcs {
+  slurs: OpenMark[];
+  arcNext: PartBuild["arcNext"];
+  noteTies: PartBuild["noteTies"];
+}
+
+/** 切到第 `to` 个分支：当前分支开着的弧存下，换上 `to` 上回存下的（没有就是空的）。`openSlurs` 原地改（`buildMusicLine` 持有它的引用） */
+function switchBranch(pb: PartBuild, to: number): void {
+  if (to === pb.voice) return;
+  if (pb.openSlurs.length || pb.arcNext || pb.noteTies.length) {
+    pb.branchArcs.set(pb.voice, { slurs: [...pb.openSlurs], arcNext: pb.arcNext, noteTies: pb.noteTies });
+  }
+  const s = pb.branchArcs.get(to);
+  pb.branchArcs.delete(to);
+  pb.openSlurs.length = 0;
+  if (s) pb.openSlurs.push(...s.slurs);
+  pb.arcNext = s?.arcNext ?? null;
+  pb.noteTies = s?.noteTies ?? [];
 }
 
 /** 见到 `$`（或 ABC 的代码行末）：当前小节已有和弦时先记下，是不是小节中间换行等后面来的是什么再定（`PartBuild.inlineBreak`）。 */
@@ -1047,21 +1071,15 @@ function buildMusicLine(
         // ABC §7.4：`&` 把时间退回本小节起点，后面是与前一分支**同时发声**的临时声部。
         // 这里只切声部号（元素仍按原文顺序存在同一个小节里），小节内各声部的实际起点
         // 由投影按每声部的游标算（`model/xmlproject.ts`），因为那时才折算完多连音与 divisions。
-        if (openSlurs.length) {
-          report(ctx, "overlay-open-slur", tr("diag.j123.slurOverlay"), t.source);
-          openSlurs.length = 0;
-        }
+        // 开着的弧、欠着的 `~` 归本分支，存下来等下一小节的同一分支接着（`switchBranch`）
         if (openTuplets.length) {
           report(ctx, "overlay-open-tuplet", tr("diag.j123.tupletOverlay"), t.source);
           openTuplets.length = 0;
         }
-        if (pb.arcNext) {
-          report(ctx, "orphan-arc-next", "`~` 后面没有音符", pb.arcNext.source);
-          pb.arcNext = null;
-        }
         if (!pb.measure.elements.some((el) => el.voice === pb.voice)) {
           report(ctx, "empty-overlay", tr("diag.j123.overlayBefore"), t.source);
         }
+        switchBranch(pb, pb.voice + 1);
         pb.voice++;
         pb.overlaySource = t.source;
         // 分支各自从头计时，所以分支间的状态一律不继承：tie、破碎节奏、增时线宿主、符杠分组
@@ -1185,6 +1203,7 @@ function closeMeasure(ctx: Ctx, pb: PartBuild): void {
   pb.measure = { number: String(pb.measureNo), elements: [] };
   pb.noteCount = 0;
   // `&` 的临时声部只活到小节线（ABC §7.4），下一小节从主声部重新开始
+  switchBranch(pb, 1);
   pb.voice = 1;
 }
 
@@ -1379,12 +1398,14 @@ export function parseAbcFamily(
         for (const tp of b.openTuplets) report(ctx, "unclosed-tuplet", tr("diag.j123.tupletOpen"), tp.openSource!);
         b.openTuplets.length = 0;
       }
-      for (const nt of b.noteTies) report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
-      b.noteTies = [];
-      if (b.arcNext) {
-        report(ctx, "orphan-arc-next", "`~` 后面没有音符", b.arcNext.source);
-        b.arcNext = null;
+      // 当前分支与别的分支存下的都算：曲末还欠着的 `~` 没有音可连
+      for (const s of [{ arcNext: b.arcNext, noteTies: b.noteTies }, ...b.branchArcs.values()]) {
+        for (const nt of s.noteTies) report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
+        if (s.arcNext) report(ctx, "orphan-arc-next", "`~` 后面没有音符", s.arcNext.source);
       }
+      b.noteTies = [];
+      b.arcNext = null;
+      b.branchArcs.clear();
       for (const w of b.openWedges) report(ctx, "unmatched-wedge", tr(w.abcDeco ? "diag.abc.wedge" : "diag.jcx.wedge"), w.openSource!);
       b.openWedges.length = 0;
       // 写在最后、后面再没有音符可挂的收尾装饰（`!crescendo)!`）
@@ -1462,6 +1483,7 @@ export function parseAbcFamily(
     inlineBreak: null,
     arcNext: null,
     noteTies: [],
+    branchArcs: new Map(),
     openWedges: [],
     wedgeCloseNext: [],
   });

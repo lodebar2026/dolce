@@ -612,17 +612,26 @@ export function tiesToMarks(song: Song): void {
 const sameDegree = (a: Chord["notes"][number], b: Chord["notes"][number]): boolean =>
   !!a.degree && !!b.degree && a.degree.number === b.degree.number && a.degree.octaveShift === b.degree.octaveShift;
 
+/** 延音线两端算不算同音：唱名音看度数与八度（后一个没写变音算沿用），带谱表位置的节奏音符（`X@E5`）看位置 */
+function sameTiedNote(x: Chord["notes"][number], y: Chord["notes"][number]): boolean {
+  if (x.unpitched || y.unpitched) {
+    return !!x.unpitched && !!y.unpitched && x.unpitched.step === y.unpitched.step && x.unpitched.octave === y.unpitched.octave;
+  }
+  return sameDegree(x, y) && !(y.degree!.accidental && y.degree!.accidental !== x.degree!.accidental);
+}
+
 /** 简谱括住相邻两个同音的弧就是延音线（两者同形，文本谱/123 都只写括号）：补上两端的 `Note.tie`，
  *  五线谱画成延音线、导出的 `<tie>` 让别的软件也连着发声。后一个没写记号算沿用（`(#4 4)`），写了不同的不算。
  *  和音（123 `[13]~ [13]`）里每个音各找下一个和音里的同音、各连一条，有一个找不到就仍是圆滑线。返回连上的 `[起, 止]` 下标 */
 function tieSlur(a: Chord, b: Chord): [number, number][] {
   if (a.rest || b.rest || a.grace || b.grace) return [];
-  // 节奏音符（`X`，有声无音高）彼此算同音
-  if (a.rhythm && b.rhythm) return [[0, 0]];
+  // 不带位置的节奏音符（`X`，有声无音高）彼此算同音；带位置的（`[X@E5X@F5]`）同和音一样逐个配
+  if (a.rhythm && b.rhythm && (!a.notes.length || !b.notes.length)) return [[0, 0]];
+  if (!!a.rhythm !== !!b.rhythm) return [];
   const out: [number, number][] = [];
   const used = new Set<number>();
   a.notes.forEach((x, i) => {
-    const j = b.notes.findIndex((y, k) => !used.has(k) && sameDegree(x, y) && !(y.degree!.accidental && y.degree!.accidental !== x.degree!.accidental));
+    const j = b.notes.findIndex((y, k) => !used.has(k) && sameTiedNote(x, y));
     if (j < 0) return;
     used.add(j);
     out.push([i, j]);
@@ -640,12 +649,19 @@ function tieSlur(a: Chord, b: Chord): [number, number][] {
 function normalizeMarks(song: Song, hosts: Map<ElementId, ElementId>): void {
   const written = new Set<ElementId>();
   const order = new Map<ElementId, number>();
-  for (const p of song.parts) {
+  /** 同一路（声部 + 谱表 + voice）里的先后：「相邻两个同音」按这个算，`&` 第二声部夹在中间的第一声部前后两个音照样相邻 */
+  const laneOrder = new Map<ElementId, { lane: string; at: number }>();
+  const laneNext = new Map<string, number>();
+  for (const [pi, p] of song.parts.entries()) {
     for (const m of p.measures) {
       for (const el of m.elements) {
         if (el.kind !== "chord") continue;
         written.add(el.id);
         order.set(el.id, order.size);
+        const lane = `${pi}/${el.staff}/${el.voice}`;
+        const at = laneNext.get(lane) ?? 0;
+        laneNext.set(lane, at + 1);
+        laneOrder.set(el.id, { lane, at });
       }
     }
   }
@@ -665,7 +681,8 @@ function normalizeMarks(song: Song, hosts: Map<ElementId, ElementId>): void {
     if (!written.has(start) || !written.has(end)) continue;
     if ((mk.type === "slur" || mk.type === "tuplet") && order.get(start)! >= order.get(end)!) continue;
     const [a, b] = [chordAt.get(start)!, chordAt.get(end)!];
-    const pairs = mk.type === "slur" && a.part === b.part && order.get(end)! === order.get(start)! + 1 ? tieSlur(a.el, b.el) : [];
+    const [la, lb] = [laneOrder.get(start)!, laneOrder.get(end)!];
+    const pairs = mk.type === "slur" && la.lane === lb.lane && lb.at === la.at + 1 ? tieSlur(a.el, b.el) : [];
     if (pairs.length) {
       for (const [i, j] of pairs) marks.push({ type: "tied", start, end, ...(i ? { startNote: i } : {}), ...(j ? { endNote: j } : {}) });
       continue;
