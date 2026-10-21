@@ -20,6 +20,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
     body: [
       "A file starts with fields: `X:` number, `T:` title (a second `T:` is the subtitle), `C:` credits (may repeat), `K:` key, `M:` time signature, `Q:` tempo.",
       "Write the key as movable do, `K:1=G` (ABC's `K:G` also works); `Q:1/4=76` means 76 beats per minute, used by playback and MIDI export.",
+      "Footers are `I:bottomleft` `I:bottomcenter` `I:bottomright`.",
       "The example below renders the header layout of a title page.",
     ],
   },
@@ -100,7 +101,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
     title: "Chords, annotations and marks",
     body: [
       "Write a chord name **before** its note, separated by a space: `F 1 3`. Quote non-standard names: `\"N.C.\"`.",
-      "Annotations go in quotes with a position prefix: `\"^rit.\"` above, `\"_…\"` below.",
+      "Annotations go in quotes with a position prefix: `\"^rit.\"` above, `\"_…\"` below. Several in a row before one note (`\"^欢快\"\"^pizz\"1`) print on separate lines, the first on top.",
       "Note marks go in `!…!` before the note, in several spellings: `!fermata!`, `!延长!` and `!yc!` are all fermatas; `!>!` and `!accent!` are accents. Dynamics: `!p!` `!mf!` `!f!`.",
     ],
   },
@@ -112,7 +113,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
     title: "Line and page breaks",
     body: [
       "`$` is a line break on the score and `$$` a page break; ordinary line breaks in the code don't affect the score. If the original line ends without a barline, put `$` right after that note.",
-      "`I:linebreak <none>` ignores `$` and leaves line breaking to “By phrase”; `I:linesperpage 4` sets lines per page.",
+      "`I:linebreak <none>` ignores `$` and leaves line breaking to “By phrase”.",
     ],
   },
   {
@@ -120,6 +121,39 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
     body: [
       "`V:1` `V:2` … separate voices; writing `V:n` again continues that voice, so you can interleave them line by line, each voice followed by its own lyrics.",
       "In four-part music, men's parts written an octave up get `V:3 clef=treble-8` where the voice first appears; playback and staff notation then sound and show the actual octave.",
+    ],
+  },
+  {
+    title: "Chords of notes",
+    body: [
+      "Notes sounding together with the same duration go in square brackets, **with no space after** `[`: `[13]` (like ABC's `[CEG]`). Jianpu stacks them vertically; staff notation draws a chord.",
+      "The duration follows `]` and is shared: `[13]_`, `[5,1]__`, `[13] -`; each note carries its own accidental and octave marks: `[#46']`.",
+      "Arcs over the whole chord work as for single notes: `[13]~ [13]`, `([13] [24])`. To tie just one note, put `~` right after it: `[1~3] [15]` ties only the 1. `!arpeggio!` is an arpeggio.",
+      "`[1 …` (followed by a space) is still a first ending; brackets hold no rest `0` and no per-note durations — `[03]` or `[13_]` is reported as an error.",
+    ],
+  },
+  {
+    title: "Second voice in a measure: &",
+    body: [
+      "Two independent rhythms on one staff (flute 1 and 2, two percussion instruments) use ABC's `&`: it rewinds to the start of the measure, and what follows is the second voice. Jianpu prints the two side by side, one above the other, aligned by beat; staff notation draws two voices.",
+      "`&` lasts until the barline — write it again in each measure that needs it; both parts must have equal length, so fill gaps with invisible rests `x`.",
+      "Slurs and `~` stay with their own part and can continue across the barline into the same part of the next measure; lyrics follow the first voice.",
+    ],
+  },
+  {
+    title: "Marks for instrumental parts",
+    body: [
+      "Bowing `!downbow!` `!upbow!`; single-note tremolo `!/!` `!//!` `!///!` (one slash per stroke); rehearsal mark `!rehearsal=A!`, or `!rehearsal=【A】!` when the score prints lenticular brackets. All go before the note.",
+      "`Z4` is a four-measure multi-rest (as in ABC), written as a measure of its own; jianpu prints it as ├─4─┤, staff notation as an H-bar.",
+      "Change clef mid-piece with the inline field `[K:clef=bass]` — clef only, the key stays; staff notation follows it.",
+    ],
+  },
+  {
+    title: "Rhythm notes (percussion)",
+    body: [
+      "Capital `X` is a **rhythm note**: sounded but unpitched, with durations written as for digits (lowercase `x` is an invisible rest).",
+      "`X@E5` sets where it sits on the staff; several struck together are `[X@E5X@F5]`, stacked in jianpu. Without a position, staff notation draws a slash notehead.",
+      "To give a pitched note an x or circle-x notehead write `!head-x!` `!head-circle-x!`; jianpu prints it as `X`.",
     ],
   },
   {
