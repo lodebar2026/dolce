@@ -16,7 +16,7 @@ import { blit, createSurface, surfaceFromBinary, type Surface } from "../omrkit/
 import { probe } from "./probe";
 import { splitEnglishWord } from "./ensyllable";
 import { simplifiedOf } from "./hanvariant";
-import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct } from "../omrkit/lyrictext";
+import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct, punctAfter } from "../omrkit/lyrictext";
 
 const isHanzi = (c: string) => /[一-鿿]/.test(c);
 // 英文歌词：一个音节 = 一串字母(可含撇号 don't)，音节间以连字符相连（"How-awe-some-you-are"），
@@ -1115,10 +1115,10 @@ export async function recognizeLyrics(
         } else if (LYRIC_QUOTE_OPEN.test(ch) && !pend) {
           lead += normPunct(ch);                                               // 开引号：领起后一字，不另立单元
         } else if (LYRIC_PUNCT.test(ch) || LYRIC_QUOTE_CLOSE.test(ch)) {
-          const p = normPunct(ch);
-          if (pend) { pend.text += p; pend.x1 = sx; }               // 贴在当前英文音节尾
+          if (pend) { pend.text += punctAfter(pend.text, ch); pend.x1 = sx; } // 贴在当前英文音节尾（折半角）
           else if (placed.length) {
-            placed[placed.length - 1].ch += p;                      // 尾随标点/闭引号贴前一字（折全角，不移位、不另立单元）
+            const p = punctAfter(placed[placed.length - 1].ch, ch);
+            placed[placed.length - 1].ch += p;                      // 尾随标点/闭引号贴前一字（汉字后折全角、英文后折半角，不移位、不另立单元）
             if (regions.length) regions[regions.length - 1].text += p;
           }
         }
@@ -1154,8 +1154,8 @@ export async function recognizeLyrics(
         else if (isHyphen(ch)) { if (pend) { pend += "-"; flushLatin(); } }
         else if (LYRIC_QUOTE_OPEN.test(ch) && !pend) lead += normPunct(ch);
         else if (LYRIC_PUNCT.test(ch) || LYRIC_QUOTE_CLOSE.test(ch)) {
-          if (pend) pend += normPunct(ch);
-          else if (toks.length) toks[toks.length - 1] += normPunct(ch);
+          if (pend) pend += punctAfter(pend, ch);
+          else if (toks.length) toks[toks.length - 1] += punctAfter(toks[toks.length - 1], ch);
         }
       }
       flushLatin();

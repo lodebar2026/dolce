@@ -767,7 +767,26 @@ function lyricSpecs(slots: readonly Slot[], infos: readonly LyricLineInfo[] | un
   return [...specs.values()].sort((a, b) => a.from - b.from || a.to - b.to || (a.nth ?? 0) - (b.nth ?? 0));
 }
 
-function lyricLine(slots: readonly Slot[], spec: LyricSpec, single: boolean, d: DialectSpec): string | null {
+/** 这一行歌词的字：同 `lyricLine` 的取法。 */
+function specTexts(slots: readonly Slot[], spec: LyricSpec): string[] {
+  return slots.flatMap((s) => {
+    const hit = s.lyrics?.filter((l) =>
+      l.number === spec.from && (l.numberTo ?? l.number) === spec.to &&
+      (spec.lineIndex === undefined || l.lineIndex === undefined || l.lineIndex === spec.lineIndex))[spec.nth ?? 0];
+    return hit?.text ? [hit.text] : [];
+  });
+}
+
+/** 中英对照：第 1 段是汉字，后面依次是第 2、3… 段、字全是拉丁字母（译词），且都不带印刷段号与区间。 */
+function isTranslationSet(slots: readonly Slot[], specs: readonly LyricSpec[]): boolean {
+  if (specs.length < 2) return false;
+  if (specs.some((s, i) => s.from !== i + 1 || s.to !== s.from || s.label !== undefined || s.nth || s.lineIndex !== undefined)) return false;
+  const texts = specs.map((s) => specTexts(slots, s).join(""));
+  return /\p{Script=Han}/u.test(texts[0]!) && texts.slice(1).every((t) => /[A-Za-z]/.test(t) && !/\p{Script=Han}/u.test(t));
+}
+
+/** `bare`：写不带段号的 `C:`（解析端按出现顺序编段，调用方保证读回来段号不变） */
+function lyricLine(slots: readonly Slot[], spec: LyricSpec, bare: boolean, d: DialectSpec): string | null {
   const skip = d.lyricSkip[0] ?? "@";
   const pieces: string[] = [];
   let pendingSkips = 0;
@@ -788,8 +807,8 @@ function lyricLine(slots: readonly Slot[], spec: LyricSpec, single: boolean, d: 
       prev = skip;
       pendingSkips = 0;
     }
-    // ASCII 单词紧挨着会被并成一个音节
-    if (/[A-Za-z']$/.test(prev) && /^[A-Za-z']/.test(tok)) pieces.push(d.wordSeparator);
+    // ASCII 单词紧挨着会被并成一个音节；英文词尾带半角标点的也隔开（`You, dear`，不写成 `You,dear`）
+    if (/[A-Za-z'][,.;:!?]*$/.test(prev) && /^[A-Za-z']/.test(tok)) pieces.push(d.wordSeparator);
     pieces.push(tok);
     prev = tok;
     any = true;
@@ -799,7 +818,7 @@ function lyricLine(slots: readonly Slot[], spec: LyricSpec, single: boolean, d: 
   // 行末的 `}` 会被读成联合括号：真要的照写，不要的补一个跳字符隔开
   if (spec.joinBrace) body += "}";
   else if (body.endsWith("}")) body += skip;
-  const num = single && spec.from === 1 && spec.to === 1 ? "" : `${spec.from}${spec.to !== spec.from ? `-${spec.to}` : ""}`;
+  const num = bare ? "" : `${spec.from}${spec.to !== spec.from ? `-${spec.to}` : ""}`;
   let label = "";
   if (spec.label !== undefined) {
     const [open, close] = d.emit.labelWrap;
@@ -961,8 +980,9 @@ export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}
       group.push(qPrefix(song, pi, first, ri === 0, d) + line.text(d.emit.tokenGap));
       const infos = sys.fromEl === 0 && song.parts.length && first?.print?.lyricLines;
       const specs = lyricSpecs(slots, infos || undefined);
+      const translation = !!d.emit.bareTranslationVerses && isTranslationSet(slots, specs);
       for (const spec of specs) {
-        const text = lyricLine(slots, spec, specs.length === 1, d);
+        const text = lyricLine(slots, spec, translation || (specs.length === 1 && spec.from === 1 && spec.to === 1), d);
         if (text !== null) group.push(text);
       }
     });

@@ -65,6 +65,9 @@ export interface EmitStyle {
   /** 写不写页眉页脚（`XL/XR/TL/TR/BL/BC/BR`）与版面指令（`FontSize:`/`Margin:`…）。
    *  番茄没有这些字段，写了会被 `sniffDialect` 判成诗歌本 */
   pageFields: boolean;
+  /** 中英对照谱（第 1 段汉字、其余几段全是拉丁字母的译词）各行都写不带段号的 `C:`：诗歌本把译词与中文同算第一段。
+   *  解析端裸 `C:` 按出现顺序编段，读回来段号不变 */
+  bareTranslationVerses?: boolean;
 }
 
 /** 头部字段怎么写。加第三种方言时补一份数据，而不是在 emitter 里再写一个 if。 */
@@ -186,6 +189,7 @@ const SHIGE: DialectSpec = {
     labelWrap: ["<", ">"],
     hiddenRestNoLyric: "9",
     pageFields: true,
+    bareTranslationVerses: true,
   },
 };
 

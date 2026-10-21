@@ -11,7 +11,7 @@ import type { Binary, StaffRow, TextRegion } from "../omrkit/types";
 import { rbottom } from "../omrkit/types";
 import type { OcrBackend } from "../omrkit/ocr";
 import { CN_NUM } from "./lyrics";
-import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct } from "../omrkit/lyrictext";
+import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct, punctAfter } from "../omrkit/lyrictext";
 import { median } from "../omrkit/geom";
 import { probe } from "./probe";
 
@@ -43,8 +43,8 @@ export function toSyllables(text: string): string[] {
     else if (/\s/.test(ch)) flush();
     else if (LYRIC_QUOTE_OPEN.test(ch) && !pend) lead += normPunct(ch);
     else if (LYRIC_PUNCT.test(ch) || LYRIC_QUOTE_CLOSE.test(ch)) {
-      if (pend) pend += normPunct(ch);
-      else if (out.length) out[out.length - 1] += normPunct(ch);
+      if (pend) pend += punctAfter(pend, ch);
+      else if (out.length) out[out.length - 1] += punctAfter(out[out.length - 1]!, ch);
     }
   }
   flush();
