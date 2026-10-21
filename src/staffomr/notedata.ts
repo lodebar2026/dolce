@@ -484,6 +484,8 @@ export const staffOmrOptions = {
  * 判据照原文：符头的**左缘或右缘**与符干 x 差在四分之一格以内，且纵向相交。
  * （符干贴在符头的一侧，不是穿过中心。）
  */
+/** 头团里的竖笔离头盒左右缘都至少这么多像素才算藏在盒里（见 `buildStems`）。 */
+const INNER_STROKE = 2;
 /** 伸出头外的干长下限（格），见 `buildStems` 里「一上一下两根干」那段。 */
 const SHORT_STEM_OUT = 2;
 
@@ -514,6 +516,16 @@ export function buildStems(pg: SPage, sp: number): StemInfo[] {
       notes.push(nt);
     }
     if (!notes.length) continue;
+    // 整根藏在所挂头团里的竖笔不是干：纵向被头盒盖满、横向落在每个头盒里面（不贴缘）。
+    // 扫描件上三个实心头叠成一团，团里一道竖笔被抽成竖段（望十架 p8 m64 钢琴右手 B3/D4/F♯4，下面两个头被拆成另一声部的四分）。
+    // 二度和弦夹在两个头之间的短干贴着两个盒的缘，不受这条影响。
+    // 只看实心头：空心头的盒按内腔外扩，自己的干本就常落在盒里（见 `HOLLOW_IN`）
+    const inside = (nt: Sym) => nt.code === "noteheadBlack" && seg.cx - nt.box.left >= INNER_STROKE && nt.box.right - seg.cx >= INNER_STROKE;
+    // 头盒要把竖笔一路盖满：八度和弦两个头之间那截真干两端也不出头（破碎扫描 p4 m56 C4/C5）
+    const covered = (y: number) => notes.some((n) => y >= n.box.top - 1 && y <= n.box.bottom + 1);
+    let hidden = notes.every(inside);
+    for (let y = Math.round(seg.top); hidden && y <= seg.bottom; y++) hidden = covered(y);
+    if (hidden) continue;
     // `Stem::up`：符干伸到符头**上方**就是朝上。高出头顶不到 `STEM_UP_SLACK` 格的不算：干端齐着头顶、
     // 扫描件上高出一两个像素的朝下干会被当成朝上（是爱 p2 m30 女低 F4 二分，干上端比头顶高 1px、往下伸 2.5 格，
     // 分声部时上方 C5 全音符的「上下两声部」豁免因此不成立，三个音排成了一串）。
@@ -550,6 +562,17 @@ export function buildStems(pg: SPage, sp: number): StemInfo[] {
     st.notes = st.notes.filter(
       (nt) => !(st.notes.some((m) => m !== nt && filled(m) !== filled(nt)) && out.some((o) => o !== st && o.up !== st.up && o.notes.length === 1 && o.notes[0] === nt && proper(o, nt))),
     );
+  }
+  // 一上一下两根干挂着同样两个头：两声部三度叠放、头挨着头，两根干都贴着两个头的缘、又都从一个头伸到另一个头
+  // （望十架 p4 m33 男声 B♭3 附点二分朝上、G3 二分朝下，两个头各读出两遍）。照两声部的惯例，朝上的留上头、朝下的留下头
+  for (const st of out) {
+    if (!st.up || st.notes.length !== 2) continue;
+    const o = out.find((q) => !q.up && q.notes.length === 2 && q.notes.every((n) => st.notes.includes(n)));
+    if (!o) continue;
+    const [hi, lo] = [...st.notes].sort((a, b) => a.py - b.py);
+    if (lo.py - hi.py < sp * 0.25) continue;
+    st.notes = [hi];
+    o.notes = [lo];
   }
   return out.filter((st) => st.notes.length);
 }
@@ -939,6 +962,13 @@ export function buildNotes(
     return best;
   };
 
+  // 空心头不上符杠：干端压着一条与别的干共用的杠，这个头就是扫描件上肚里留白的实心头
+  // （望十架 p5 m39–40 低音八分读成二分 / 全音符）。杠要在干端——干中段横穿的粗谱线也会被收成杠（p6 m50 二分 D4）；
+  // 共用这条杠的干要与它同向——二分和弦的干顶顶到上方谱表朝下的那组杠的，是另一声部的杠（爱是从神而来 p4 m40 低音）。
+  const beamedTip = (st: StemInfo): boolean => {
+    const tip = st.up ? st.seg.box.top : st.seg.box.bottom;
+    return st.beams.some((b) => Math.abs(beamY(b, st.seg.cx) - tip) < sp * 0.6 && stems.some((o) => o !== st && o.up === st.up && o.beams.includes(b)));
+  };
   for (const s of pg.symbols) {
     if (!s.hasTag("Note") || !s.ownerStaff) continue;
     const stf = s.ownerStaff;
@@ -993,7 +1023,7 @@ export function buildNotes(
       }
     } else if (s.code === "noteheadWhole" || s.code === "noteheadDoubleWhole") {
       base = s.code === "noteheadDoubleWhole" ? 2 : 1;
-    } else if (s.code === "noteheadHalf") {
+    } else if (s.code === "noteheadHalf" && !(stem && !stem.flags && beamedTip(stem))) {
       base = stem ? 1 / 2 : 1;
     } else if (nb === 0 && s.code === "noteheadBlack" && hollowish?.(s)) {
       base = stem ? 1 / 2 : 1;
@@ -1695,6 +1725,21 @@ function assignVoicesInBar(inBar: StaffNote[], expect: number, borrowed = false)
     }
   }
   if (up.length < 2 || down.length < 2) return;
+  // 休止没让位到谱表外、贴着外线写的（望十架 p5 m39 低音：上声部「八分休止 + 三个八分」两遍，下声部两个二分，休止心离第五线 2px）：
+  // 休止全归一侧、两个声部正好都凑满才拆
+  {
+    const rests = arr.filter((n) => n.rest && n.sym.code !== "restHBar");
+    if (rests.length && arr.length === up.length + down.length + rests.length && Math.abs(sumOf(up) + sumOf(down) + sumOf(rests) - 2 * expect) < 1e-6) {
+      const side = Math.abs(sumOf(up) + sumOf(rests) - expect) < 1e-6 && Math.abs(sumOf(down) - expect) < 1e-6 ? "up" : Math.abs(sumOf(down) + sumOf(rests) - expect) < 1e-6 && Math.abs(sumOf(up) - expect) < 1e-6 ? "down" : null;
+      if (side) {
+        for (const n of side === "up" ? down : [...down, ...rests]) {
+          n.voice = 2;
+          if (n.group) n.group.voice = 2;
+        }
+        return;
+      }
+    }
+  }
   if (Math.abs(sumOf(up) - expect) >= 1e-6 || Math.abs(sumOf(down) - expect) >= 1e-6) return;
   for (const n of down) {
     n.voice = 2;

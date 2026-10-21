@@ -358,6 +358,8 @@ const TIME_NUM_DIST = 230;
 const TIME_DEN_DIST = 300;
 /** 头盒落在符尾盒里的比例过这个数就不算头（见建音符前那一段）。 */
 const FLAG_HEAD_OVERLAP = 0.5;
+/** 量头落不落在符尾里时，符尾盒往尾梢那头延长的格数（见用处）。 */
+const FLAG_TAIL_EXT = 1.5;
 /** 实心头中心椭圆里白占这么多以上、又没有杠和尾的，时值按空心头算（见 `hollowish`）。 */
 const HOLLOW_FILL = 0.3;
 /** 封闭内腔面积占头盒的下限（`hollowish` 的另一路）。 */
@@ -381,6 +383,8 @@ const NINE_MARGIN = 30;
 
 /** 空心符头允许离谱表多远（线距的倍数）。见 `inBand` 那段的说明。 */
 const HOLLOW_BAND = 3.0;
+/** 谱表到头之间的加线都在时，空心头允许离谱表这么多格（见 `inBand`）。 */
+const HOLLOW_BAND_LEDGER = 5.3;
 /** 谱表外的头按墨定高时，墨高（格）要在这个范围里才算一个头。 */
 const HEAD_INK_H = [0.8, 1.3] as const;
 
@@ -396,6 +400,8 @@ const FLAG_HEAD_BAND = 2.5;
 const FLAG_GAP = 2.8;
 /** 头盒中心离整音级这么多（级）以上算悬着，交模板定夺。 */
 const SNAP_AMBIG = 0.25;
+/** 悬着的空心头挪一级后，盒里整行没墨的行多出盒高这么多就不挪（见用处）。 */
+const BLANK_MOVE = 0.25;
 /** 谱线、加线上的「杠」厚不过这么多格、又挨着符头的不算层数（见 `thinOnLine`）。 */
 const THIN_BEAM_H = 0.3;
 /** 离最近谱表外线超过这么多格的符头要有加线链才留。扫过 **3.75** / 4.25 / 4.75：93.47 / 93.32 / 93.23%。 */
@@ -864,8 +870,29 @@ export async function recognizeRasterPage(
   // 小节自检 37.7 / 38.2 / 39.5 / 39.9 / **40.1** / 40.1 / 40.1，
   // 而**歌词在四格以上开始垮**（50.0 → 46.8 → 45.1，歌词带里的字被收成空心符头）。
   // 三格是拐点。
-  const inBand = (y: number) =>
-    groups.some((g) => y > g.lines[0].y - unit.space * HOLLOW_BAND && y < g.lines[4].y + unit.space * HOLLOW_BAND);
+  // 给了 x 的：加线外的头（低音谱表下三条加线外的 G1、五条加线上的 D1）也算，要谱表到头之间那几条加线在头的位置上都在
+  // （望十架 p8 m63 低音 G1 二分、m60 D1/D2 全音符）。加线在原图上逐条验：头心两侧各 0.6 格那一行（上下各容一行）整段有墨
+  const ledgerAt = (x: number, y: number, half: number) => {
+    const B = raster.bin;
+    for (const yy of [Math.round(y) - 1, Math.round(y), Math.round(y) + 1]) {
+      if (yy < 0 || yy >= B.h) continue;
+      let ok = true;
+      for (let xx = Math.round(x - half); xx <= Math.round(x + half) && ok; xx++) ok = xx >= 0 && xx < B.w && B.data[yy * B.w + xx] === 1;
+      if (ok) return true;
+    }
+    return false;
+  };
+  const inBand = (y: number, x?: number) =>
+    groups.some((g) => {
+      if (y > g.lines[0].y - unit.space * HOLLOW_BAND && y < g.lines[4].y + unit.space * HOLLOW_BAND) return true;
+      if (x === undefined) return false;
+      const out = y < g.lines[0].y ? -1 : 1;
+      const edge = out < 0 ? g.lines[0].y : g.lines[4].y;
+      const d = (y - edge) * out;
+      if (d > g.space * HOLLOW_BAND_LEDGER) return false;
+      for (let k = 1; k <= Math.floor(d / g.space + 0.3); k++) if (!ledgerAt(x, edge + out * k * g.space, g.space * 0.6)) return false;
+      return true;
+    });
   /** 中心在某行谱五条线之外、隔着至少一格（延长记号只在这里出现）。 */
   const offStaff = (y: number) =>
     !groups.some((g) => y > g.lines[0].y - unit.space && y < g.lines[4].y + unit.space);
@@ -1187,7 +1214,9 @@ export async function recognizeRasterPage(
   // 并成一个高内腔的叠置空心和弦：按音高位置逐一配模板（`notehead.ts::hollowHeadsByPitch`），
   // 模板拿本页已认出的空心头（骑线 / 在间各一张）
   const lineYs = lines.map((l) => l.y);
-  const hollowSamples = [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((s0) => !(s0 as { weak?: boolean }).weak);
+  // 靠加线才放进谱表带的头（`inBand` 给 x 那一档）不当模板样本：加线把圈切成几截，平均进去模板就糊了（望十架 p10 长笛 G5 全音符跟着丢）
+  const ledgerOnly = (b: Rect) => !inBand(b.y + b.h / 2);
+  const hollowSamples = [...heads.filter((h) => !ledgerOnly(h.box)).map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((s0) => !(s0 as { weak?: boolean }).weak);
   const hollowMasks = buildHollowMasks(raster.bin, hollowSamples, unit, lineYs);
   // 本页空心头内腔的宽（格，下四分位）：手写体扫描件的二分头内腔窄到 0.7 格，叠头判据的宽度与内腔椭圆照它缩（`hollowHeadsByPitch`）
   const cavWs = holes
@@ -1517,7 +1546,7 @@ export async function recognizeRasterPage(
     }
   }
   const syms: RasterSym[] = [
-    ...heads.filter((h) => !dropHead.has(h.comp.id)).map((h) => ({ box: h.box, code: h.code })),
+    ...heads.filter((h) => !dropHead.has(h.comp.id)).map((h) => ({ box: h.box, code: h.code, ...(ledgerOnly(h.box) ? { noSample: true, weak: true } : {}) })),
     ...stacked,
     ...split,
     ...restSyms,
@@ -3593,7 +3622,21 @@ export async function recognizeRasterPage(
         const sc = scoreAt(raster.bin, m, cx, y);
         if (!best || sc > best.s) best = { y, s: sc };
       }
-      if (best) s0.box = { ...s0.box, y: Math.round(s0.box.y + best.y - cy) };
+      if (!best) continue;
+      const moved = { ...s0.box, y: Math.round(s0.box.y + best.y - cy) };
+      // 挪过去盒里多出几行整行没墨的不挪：扫描件上肚里留白的实心头模板对不上哪一级，
+      // 分高的那级会把盒挪出墨外，干端就挂不上了（望十架 p5 m39 低音 B♭3 八分，挪到 A3 线上、盒底空 6 行，读成全音符）
+      const blank = (b: Rect) => {
+        let n = 0;
+        for (let y = b.y; y < b.y + b.h; y++) {
+          let on = false;
+          for (let x = b.x; x < b.x + b.w && !on; x++) on = !!nl.data[y * nl.w + x];
+          if (!on) n++;
+        }
+        return n;
+      };
+      if (blank(moved) - blank(s0.box) >= moved.h * BLANK_MOVE) continue;
+      s0.box = moved;
     }
   }
 
@@ -4349,9 +4392,14 @@ export async function recognizeRasterPage(
   // **大半落在符尾盒里的头不要**：同一块墨先被收成头、后又被符尾自举认成符尾（《所信有根基》八分的尾读成一个 A4 二分）
   {
     const flags = pg.symbols.filter((s0) => s0.hasTag("Tail"));
+    // 符尾盒往尾梢那头延 `FLAG_TAIL_EXT` 格：扫描件上尾卷的下半截常被抽成一根竖段、围出的白收成头，符尾盒只罩住了上半
+    //（望十架 p8 m63 低音 D3 八分的尾读成 A3/F3 两个二分）
     const inFlag = (h: Sym) => flags.some((f) => {
+      const reach = unit.space * FLAG_TAIL_EXT;
+      const top = /Down$/.test(f.code) ? f.box.top - reach : f.box.top;
+      const bottom = /Up$/.test(f.code) ? f.box.bottom + reach : f.box.bottom;
       const w = Math.min(h.box.right, f.box.right) - Math.max(h.box.left, f.box.left);
-      const hh = Math.min(h.box.bottom, f.box.bottom) - Math.max(h.box.top, f.box.top);
+      const hh = Math.min(h.box.bottom, bottom) - Math.max(h.box.top, top);
       return w > 0 && hh > 0 && w * hh >= (h.box.right - h.box.left) * (h.box.bottom - h.box.top) * FLAG_HEAD_OVERLAP;
     });
     // 只剔**空心**的、且左边紧挨着另有一个头（这根朝上的干的头，右缘贴着干）：真的空心头也会被误认出符尾

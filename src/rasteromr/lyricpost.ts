@@ -349,6 +349,9 @@ const LYRIC_HEAD_FIT = 0.8;
 const LYRIC_ONLY_MIN = 3;
 
 const LYRIC_ONLY_RATIO = 2;
+/** 只对得上下方的音节至少占这一行的这么多：按头盒中心量，两行同节奏的谱几乎每个字两边都对得上，
+ *  剩下的零星几个是噪声（新编 054 第三行 23 个字里 3 个，整行挪到了下方谱表）；真要挪的是大半行（望十架 p3 11/11、9/10）。 */
+const LYRIC_ONLY_FRAC = 0.25;
 
 /** 至少这么多个音节才判。 */
 const LYRIC_BELOW_MIN = 4;
@@ -407,7 +410,9 @@ const LYRIC_TWO_VOICE_MIN = 3;
 export function lyricsBelongBelow(row: LyricRowInfo, verseObjs: Set<PObj>, notes: StaffNote[], sp: number): Staff | undefined {
   const { syllables, above, below } = row;
   const cxs = syllables.map((q) => q.cx);
-  const xsOf = (st: Staff) => notes.filter((n) => n.staff === st && !n.rest).map((n) => n.x);
+  // 音位取头盒中心：位图路的 `n.x` 是头盒左缘，字心对的是头的中心，差半个头宽，两行谱的音都落在 `LYRIC_NOTE_DX` 门槛附近，
+  // 谁「只对得上」全看左缘偏到哪边（新编 f28 第二行词上方的二分改对成八分后，盒左缘跟着动，整行挪到了下方谱表）
+  const xsOf = (st: Staff) => notes.filter((n) => n.staff === st && !n.rest).map((n) => (n.sym.box ? (n.sym.box.left + n.sym.box.right) / 2 : n.x));
   const xb = xsOf(below);
   if (!above) {
     const fit = oneToOneFit(cxs, xb, sp);
@@ -440,5 +445,5 @@ export function lyricsBelongBelow(row: LyricRowInfo, verseObjs: Set<PObj>, notes
   // 另一面的互斥：上方那行谱与这一行之间已有它自己的汉字行，这一行是那串多段歌词往下接的一段
   //（万古磐石歌第 4 段离下一系统近、下一系统两声部，按证据挪了过去，中文 100 → 75%）
   if (row.aboveHasOwn) return undefined;
-  return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO ? below : undefined;
+  return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO && onlyB >= cxs.length * LYRIC_ONLY_FRAC ? below : undefined;
 }

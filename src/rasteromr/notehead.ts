@@ -135,7 +135,7 @@ export function findRasterHeads(
    * （实测宁静 p2 的 "Women" 里那个 `o` 成了上加一线的 A5 **全音符**）。
    * 实心符头不受这一条限制——谱表外带加线的黑符头是常态。
    */
-  inStaffBand: (y: number) => boolean = () => true,
+  inStaffBand: (y: number, x?: number) => boolean = () => true,
   /**
    * **空心符头拿模板再验一道**（`rasterglyphs.ts::matchTemplate`，Maestro 的
    * `noteheadWhole` / `noteheadHalf`）。空心块是位图上最容易认错的一档：
@@ -215,7 +215,7 @@ export function findRasterHeads(
       if (m && (m.smufl === "noteheadWhole" || m.smufl === "noteheadHalf")) code = m.smufl;
       else {
         if (w / h < R_HOLLOW_MIN) continue;
-        if (!inStaffBand(b.y + b.h / 2)) continue;
+        if (!inStaffBand(b.y + b.h / 2, b.x + b.w / 2)) continue;
         // 两条线索都要：全音符**又宽又没有符干**。单看宽度，带符干残根的二分音符
         // 会被顶到 1.5 格以上；单看符干，空心符头的右侧笔画与符干在竖笔画掩模里
         // 连成一块、抽不出独立的符干段（304 个空心块里容差放到两格也只有 98 个找得到）。

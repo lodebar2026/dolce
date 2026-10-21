@@ -641,7 +641,7 @@ export function isLeadNoteBarline(l: Seg, nt: Sym, stf: Staff): boolean {
 }
 
 /** 窄头挂干窗口的下限（格），与算窄的盒宽（格）。 */
-const STEM_WIN_MIN = 0.3;
+const STEM_WIN_MIN = 0.4;
 const STEM_WIN_NARROW = 1.15;
 /** 空心头盒里离缘这么多格以内的干也算贴缘（见 `findStems`）。 */
 export const HOLLOW_IN = 0.4;
@@ -666,8 +666,9 @@ export function findStems(pg: SPage): void {
     if (nt.code !== "noteheadBlack" && nt.code !== "noteheadHalf") continue;
     const stf = nt.ownerStaff;
     const space = stf.stepDistance() * 2 || pg.space;
-    // 窄头（小字号，盒宽不到 `STEM_WIN_NARROW` 格）窗口下限 0.3 格：细线页两倍线宽只有 4 像素，
-    // 小字号头的盒右缘离自己的干 5 像素（以马内利来临歌 m23 附点二分读成全音符）。
+    // 窄头（小字号，盒宽不到 `STEM_WIN_NARROW` 格）窗口下限 `STEM_WIN_MIN` 格：细线页两倍线宽只有 4 像素，
+    // 小字号头的盒右缘离自己的干 5 像素（以马内利来临歌 m23 附点二分读成全音符）；
+    // 扫描件上贴着干与谱线的头盒被截窄，干离盒缘 4.5 像素（0.39 格，望十架 p8 m62 低音 G2 八分读成四分），0.3 → 0.4。
     // 不分宽窄都放，宁静的伯利恒少一个满拍小节
     const narrow = nt.box.right - nt.box.left < space * STEM_WIN_NARROW;
     const lw = Math.max((stf.lines[0]?.lw ?? pg.barlineHeight * 0.02) * 2, narrow ? space * STEM_WIN_MIN : 0);

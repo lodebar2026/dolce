@@ -272,6 +272,11 @@ function narrowPart(mask: Uint8Array, w: number, c: Component, lw: number, unit:
   return { x0: x, y0: best[0], x1: x, y1: best[1] - 1, lw: maxW, maxLw: maxW };
 }
 
+/** 窄竖段按墨迹裁端时一端最多裁掉这么多格（见 `findPrimitives` 竖笔画那段）。 */
+const TIP_TRIM = 1;
+/** 裁掉的那截与留下的之间至少空这么多格（见同处）。 */
+const TIP_GAP = 0.25;
+
 /**
  * 竖段按**原图墨迹**收拢：闭运算会跨过空白把干接到别的笔画上——两端补出来的空白行裁掉
  * （主使我喜乐 m8 干顶上方的和弦字母「A」），断口外离谱表 2 格以外的那截墨也裁掉
@@ -764,7 +769,23 @@ export function findPrimitives(
       if (narrow && isolated(bin, narrow, true) && barColumnNear(bin, (seg.x0 + seg.x1) / 2, seg.maxLw, staffBands)) vSegs.push(narrow);
       continue;
     }
-    vSegs.push(seg);
+    // 窄块也按原图墨迹裁两端，只裁短的一截（连断口在内 `TIP_TRIM` 格以内）：闭运算跨过断口把弧尾接到加线上方二分头的干顶
+    // （望十架 p7 m57 长笛 C6，头离干端过远挂不上、读成全音符）；长的那截多是小节线在两行之间的一段，裁了小节线就丢（破碎扫描 p3 m30）
+    // 断口要够宽（`TIP_GAP` 格）：谱表外的长干扫描时断一两个像素，裁了干就短一截（齐来谢主歌 P2 m7 低音 F2 跟着丢）
+    const ink = inkRun(bin, seg, unit, staffBands);
+    const blankRows = (y0: number, y1: number) => {
+      const x = Math.round(seg.x0);
+      const half = Math.ceil(seg.maxLw / 2);
+      let n = 0;
+      for (let y = Math.round(y0); y < Math.round(y1); y++) {
+        let on = false;
+        for (let xx = Math.max(0, x - half); xx <= Math.min(w - 1, x + half) && !on; xx++) on = bin.data[y * w + xx] === 1;
+        if (!on) n++;
+      }
+      return n;
+    };
+    const trimOk = (cut: number, a: number, b: number) => cut <= 0 || (cut <= unit.space * TIP_TRIM && blankRows(a, b) >= unit.space * TIP_GAP);
+    vSegs.push(ink && trimOk(ink.y0 - seg.y0, seg.y0, ink.y0) && trimOk(seg.y1 - ink.y1, ink.y1 + 1, seg.y1 + 1) ? ink : seg);
   }
   vSegs.push(...bandColumns(bin, vMask, staffBands, vSegs, thinV, staffLefts, unit));
 
