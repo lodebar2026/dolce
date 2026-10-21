@@ -76,9 +76,12 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
       if (dbg) debugBar(sys.staves[0].box.top, i, rows, slots, trusted, pg.index);
       for (const r of rows) {
         if (trusted.has(r) || r.skip) continue;
-        let res = fixDurations(r, slots, trusted, sp, notes, add, pg, false, dotProbe);
+        const done = (res: string) => /^(改|删|补 1 个)/.test(res);
+        let res = fixDurations(r, slots, trusted, sp, notes, add, pg, "shared", dotProbe);
         // 按两声部共用解不出时，有干的单个头只归它那个声部再试（同列另一声部漏了的才补得出来）
-        if (!r.single && !/^(改|删|补 1 个)/.test(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, true, dotProbe);
+        if (!r.single && !done(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "solo", dotProbe);
+        // 还解不出、无干的长音自己占满一小节：它单成一个声部，其余的音另成一个再试
+        if (!done(res) && loneChords(r)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "lone", dotProbe);
         if (res.startsWith("补")) added = true;
         if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} ${res}`);
         // `XADBG=cols`：再逐列打出本行（改完以后的）时值与起点、别的行的起点
@@ -311,7 +314,7 @@ function setDur(n: StaffNote, base: number, dots: number): void {
  * 一段对不上时在易混读法里找改一处（不行再两处）能对上、而且只有一种改法的。
  * 改完 `checkFull` 要凑满、配上槽的列起点正好是槽的起点，否则退回。返回一句给调试看的结论。
  */
-function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, soloHeads: boolean, dotProbe?: DotProbe): string {
+function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, mode: VoiceMode, dotProbe?: DotProbe): string {
   const EPS = 1e-6;
   const expect = r.chk.expect;
   const known = r.cols.map((c) => c.slot?.off);
@@ -322,7 +325,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
     last = known[k]!;
   }
   if (!trusted.size) return "没有锚";
-  const chains = voiceChains(r, soloHeads);
+  const chains = voiceChains(r, mode);
   if (typeof chains === "string") return chains;
   // 配不上槽的和弦：起点夹在左右最近两个定了起点的槽之间
   const anchored = slots.filter((s0) => s0.off !== undefined);
@@ -340,7 +343,8 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
   for (const [v, all] of chains.entries()) {
     // 上一条链删掉的假头（两声部共用的那一列）这条链也不要
     const chain = all.filter((it) => !drops.has(it.c));
-    const offOf = (j: number) => (j === chain.length ? expect : known[chain[j].k] ?? (chain[j].k === 0 ? 0 : undefined));
+    // 无干长音单成一个声部时，另一声部的链头不跟它同列也从 0 起
+    const offOf = (j: number) => (j === chain.length ? expect : known[chain[j].k] ?? (chain[j].k === 0 || (mode === "lone" && j === 0) ? 0 : undefined));
     if (offOf(0) === undefined) return `声部${v + 1}链头不在第一列、也没配上槽`;
     const sync = [0, ...chain.map((_, j) => (j > 0 && known[chain[j].k] !== undefined ? j : -1)).filter((j) => j > 0), chain.length];
     for (let s0 = 0; s0 + 1 < sync.length; s0++) {
@@ -434,7 +438,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
           const prev = inserts.get(ok[0].s0);
           if (prev && Math.abs(prev.dur - gap) > EPS) return "两声部补音时值不一";
           // 两条链在同一槽都缺同样长的音：两声部共用的那一个整个漏了，补一个
-          inserts.set(ok[0].s0, { dur: gap, up: prev || chains.length < 2 ? null : v === 0 });
+          inserts.set(ok[0].s0, { dur: gap, up: prev || chains.length < 2 ? null : mode === "lone" ? chainUp(chain) : v === 0 });
           continue;
         }
       }
@@ -492,11 +496,38 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
 }
 
 /**
+ * 声部链怎么归：`shared` 一列只一个和弦的算两声部共用；`solo` 有干的单个头只归它干朝向那个声部；
+ * `lone` 无干的长音（全音符、无干二分）自己占满一小节的，单成一个声部，其余的音另成一个——一行里一个声部全小节长音、
+ * 另一声部走着一串音（是爱 p5 m69 钢琴左手 F3 全音符 + 一串八分），当一个声部链永远凑不上。
+ */
+type VoiceMode = "shared" | "solo" | "lone";
+
+/** 无干、不是休止、时值和正好一小节的长音和弦（其余还有别的和弦）；没有这样的返回 `undefined`。 */
+function loneChords(r: Row): StaffChord[] | undefined {
+  const lone = r.chords.filter((c) => !c.stem && !c.notes[0].rest && c.notes[0].duration >= 1 / 2);
+  if (!lone.length || lone.length === r.chords.length) return undefined;
+  return Math.abs(lone.reduce((a, c) => a + c.notes[0].duration, 0) - r.chk.expect) < 1e-6 ? lone : undefined;
+}
+
+/** 链上有干的音多数朝上为 `true`、朝下 `false`，没有有干的为 `null`（补音的干朝向）。 */
+function chainUp(chain: { c: StaffChord }[]): boolean | null {
+  const dirs = chain.map((it) => it.c.notes[0]).filter((n) => !n.rest && n.stemUp !== null).map((n) => n.stemUp);
+  if (!dirs.length) return null;
+  return dirs.filter((d) => d).length * 2 >= dirs.length;
+}
+
+/**
  * 一行的声部链：`k` 是和弦所在列的下标。两个声部的行：一列两个和弦要一个干朝上一个朝下（休止按高低归），一列多于两个的不拆。
- * 一列只一个和弦的算两声部共用；`soloHeads` 时有干的单个头只归它干朝向那个声部——先不这么归：扫描件上这种头多是同度共用、
+ * 一列只一个和弦的算两声部共用；`solo` 时有干的单个头只归它干朝向那个声部——先不这么归：扫描件上这种头多是同度共用、
  * 或同干另一个头漏认，这么归改时值那一路反倒解不出（破碎扫描十来处，+14 步），只在共用解不出时拿来补另一声部。
  */
-function voiceChains(r: Row, soloHeads: boolean): { c: StaffChord; k: number }[][] | string {
+function voiceChains(r: Row, mode: VoiceMode): { c: StaffChord; k: number }[][] | string {
+  if (mode === "lone") {
+    const lone = loneChords(r)!;
+    const its = r.cols.flatMap((col, k) => col.chords.map((c) => ({ c, k })));
+    return [its.filter((it) => lone.includes(it.c)), its.filter((it) => !lone.includes(it.c))];
+  }
+  const soloHeads = mode === "solo";
   if (r.single) return [r.cols.map((col, k) => ({ c: col.chords[0], k }))];
   const up: { c: StaffChord; k: number }[] = [];
   const down: { c: StaffChord; k: number }[] = [];
@@ -504,7 +535,7 @@ function voiceChains(r: Row, soloHeads: boolean): { c: StaffChord; k: number }[]
   for (const [k, col] of r.cols.entries()) {
     if (col.chords.length > 2) return `第${k}列 ${col.chords.length} 个和弦`;
     if (col.chords.length === 1) {
-      // `soloHeads`：有干的单个头只是它干朝向那一个声部的（另一声部在这里还响着前一个音，或者漏了）
+      // `solo`：有干的单个头只是它干朝向那一个声部的（另一声部在这里还响着前一个音，或者漏了）
       const c = col.chords[0];
       const solo = soloHeads && c.notes.length === 1 && !c.notes[0].rest && c.stem ? c.notes[0].stemUp : null;
       if (solo !== false) up.push({ c, k });
