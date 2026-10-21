@@ -55,6 +55,7 @@ import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseSt
 import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "./clefmeter";
 import { findDots } from "./dots";
 import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "./flags";
+import { fixByCrossStaff } from "./crossalign";
 import { fixDottedPairs, fixQuartersByBarSum } from "./rhythmfix";
 import { finishRasterPage } from "./pagefinish";
 
@@ -4553,6 +4554,7 @@ export async function recognizeRasterPage(
   fixDottedPairs(notes, unit.space);
   fixQuartersByBarSum(pg, ctx, notes, carry.carryTime, unit.space);
   findTuplets(pg, beams, stems, notes);
+  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space);
 
   return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, gridYs, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
 }

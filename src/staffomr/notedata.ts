@@ -1440,7 +1440,7 @@ const chordOverlapX = (a: StaffChord, b: StaffChord): boolean => !(a.left > b.ri
  *
  * `anchorOf`：同系统已凑满的谱行给的拍位（`checkBars` 在前几趟都失败后才传），见下面 `byAnchor`；`lead` 容第一列前面空着。
  */
-function checkFull(chords: StaffChord[], expect: number, sp: number, ignoreSmall: boolean, anchorOf?: (ch: StaffChord) => number | undefined, lead = false): boolean {
+export function checkFull(chords: StaffChord[], expect: number, sp: number, ignoreSmall: boolean, anchorOf?: (ch: StaffChord) => number | undefined, lead = false): boolean {
   if (!chords.length) return false;
   const EPS = 1e-6;
   let chs = chords;
