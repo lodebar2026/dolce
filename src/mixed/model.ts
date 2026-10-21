@@ -497,6 +497,11 @@ export class ChordLayout {
   get slash(): boolean {
     return this.src.notes.some((n) => n.notehead?.trim() === "slash");
   }
+  /** 叉形 / 圈叉符头（整个和弦同一形状才换，打击乐谱的单音） */
+  get crossHead(): "x" | "circle-x" | null {
+    const h = this.src.notes[0]?.notehead?.trim();
+    return (h === "x" || h === "circle-x" || h === "cross") && this.src.notes.every((n) => n.notehead?.trim() === h) ? (h === "circle-x" ? "circle-x" : "x") : null;
+  }
   /** 实际时值（四分音符为 1） */
   get dur(): Fraction {
     return new Fraction(this.src.duration.divisions, this.divisions);
@@ -559,6 +564,13 @@ export class ChordLayout {
     if (this.slash) {
       if (fLe(nt, new Fraction(1))) return GlyphCodes.noteheadSlashVerticalEnds;
       return GlyphCodes.noteheadSlashDiamondWhite; // half/whole slash
+    }
+    const cross = this.crossHead;
+    if (cross) {
+      const circle = cross === "circle-x";
+      if (fLe(nt, new Fraction(1))) return circle ? GlyphCodes.noteheadCircleX : GlyphCodes.noteheadXBlack;
+      if (nt.equals(2)) return circle ? GlyphCodes.noteheadCircleXHalf : GlyphCodes.noteheadXHalf;
+      return circle ? GlyphCodes.noteheadCircleXWhole : GlyphCodes.noteheadXWhole;
     }
     if (fLe(nt, new Fraction(1))) return GlyphCodes.noteheadBlack;
     if (nt.equals(2)) return GlyphCodes.noteheadHalf;

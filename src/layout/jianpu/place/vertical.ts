@@ -4,6 +4,7 @@ import { jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metric
 import { graceBottom, graceGeometry, type GraceGeom } from "../../../engrave/grace";
 import { lowDotY, stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
 import { accidentalLead, accidentalRise, type AccidentalKind } from "../../../engrave/accidental";
+import { JP_ARPEGGIO_LEAD } from "../../../engrave/arpeggio";
 import { ORNAMENTS } from "../../../pu/glyph";
 import type { Rect } from "../../../common/geom";
 import type { InkMeasurer, PlacedItem, PlacedVoice } from "./model";
@@ -213,5 +214,7 @@ export function accidentalLeadOf(el: NoteElement, m: JianpuGrid): number {
   for (const a of [el.accidental, ...(el.stack ?? []).map((n) => n.accidental)]) {
     if (a !== undefined) w = Math.max(w, accidentalLead(a as AccidentalKind, m.ink.noteHeight, m.style.look.accidentalScale));
   }
+  // 琶音线画在临时记号左边（`compose/note.ts`）
+  if (el.ornaments.some((o) => o.name === "arp")) w += m.ink.noteHeight * JP_ARPEGGIO_LEAD;
   return w;
 }

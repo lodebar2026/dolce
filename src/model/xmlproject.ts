@@ -26,7 +26,7 @@ import { AccidentalCarry, quarterTempos } from "./jianpu";
 import { typeOfDuration } from "../score/xmlutil";
 import { DYNAMICS, TERMS } from "../pu/glyph";
 import { applyPageMetaToDefaults } from "./pagemeta";
-import { decoKey, rehearsalOf, tremoloStrokes } from "./deconames";
+import { decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
 import { applyBreaks } from "./breaks";
 import { keyFifths, songFifths } from "./keyshift";
 import { distinctNumbers } from "./phrasedoc";
@@ -986,6 +986,7 @@ function projectOrnaments(ch: Chord, dirs: Direction[], pos: number): void {
     : (ch.notations?.articulations ?? []).map((name) => ({ name, level: 0 }));
   const n: Notations = {};
   if (ch.notations?.fermata) n.fermata = true;
+  if (ch.notations?.arpeggiate) n.arpeggiate = true;
   const artic: string[] = [];
   const orn: string[] = [...(ch.notations?.ornaments ?? [])];
   const tech: string[] = [...(ch.notations?.technical ?? [])];
@@ -993,12 +994,15 @@ function projectOrnaments(ch: Chord, dirs: Direction[], pos: number): void {
   for (const { name } of names) {
     const strokes = tremoloStrokes(name);
     if (strokes) { n.tremolo = strokes; continue; }
+    const head = noteheadOf(name);
+    if (head) { for (const nt of ch.notes) nt.notehead = head; continue; }
     const mark = rehearsalOf(name);
     if (mark) { push(dirs, pos, { type: "rehearsal", placement: "above", text: mark }); continue; }
     // 本来就是 MusicXML 元素名的原样留（`staccatissimo` 不能归成普通顿音）；其余按别名表归一成短名再查
     // （123 的 `!uppermordent!` `!顿音!` 这类，`deconames.ts`）
     const key = XML_ARTICULATIONS.has(name) || XML_ORNAMENTS.has(name) ? name : decoKey(name) ?? name;
     if (FERMATA.test(key)) { n.fermata = true; continue; }
+    if (key === "arp") { n.arpeggiate = true; continue; }
     const a = ARTICULATION[key] ?? (XML_ARTICULATIONS.has(key) ? key : undefined);
     if (a) { if (!artic.includes(a)) artic.push(a); continue; }
     const o = ORNAMENT_TAG[key] ?? (XML_ORNAMENTS.has(key) ? key : undefined);
@@ -1012,7 +1016,7 @@ function projectOrnaments(ch: Chord, dirs: Direction[], pos: number): void {
   if (artic.length) n.articulations = artic;
   if (orn.length) n.ornaments = orn;
   if (tech.length) n.technical = tech;
-  if (n.fermata || n.articulations || n.ornaments || n.technical || n.tremolo) ch.notations = n;
+  if (n.fermata || n.arpeggiate || n.articulations || n.ornaments || n.technical || n.tremolo) ch.notations = n;
   else delete ch.notations;
 }
 

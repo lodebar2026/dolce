@@ -502,6 +502,8 @@ class DocPartLoader {
 
     const pitch = note?.pitch;
     if (!ch.rest && pitch) nt.writtenPitch = pitch.octave * 7 + (STEP_DIATONIC[pitch.step] ?? 0) + this.transposeSteps + this.octaveSteps;
+    // 节奏音符照 `<unpitched>` 的显示位置画（打击乐谱一个声部叠两个位置），不跟移调
+    else if (!ch.rest && note?.unpitched?.step) nt.writtenPitch = (note.unpitched.octave ?? 4) * 7 + (STEP_DIATONIC[note.unpitched.step] ?? 0);
     nt.x = xmlPos(note ?? src)?.defaultX ?? -1;
 
     const stem = noteStem(note);

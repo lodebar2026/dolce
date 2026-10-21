@@ -10,7 +10,8 @@ import { highDotY, lowDotY } from "../../../engrave/stack";
 import { augDotCenter } from "../../../engrave/augdot";
 import { breathPath } from "../../../engrave/breath";
 import type { PlacedItem, PlacedText } from "../place/model";
-import { graceLayout, noteBeams, stackedDigits } from "../place/vertical";
+import { accidentalLeadOf, graceLayout, noteBeams, stackedDigits } from "../place/vertical";
+import { arpeggioGroup, JP_ARPEGGIO_SIZE } from "../../../engrave/arpeggio";
 import { MULTI_REST_WIDTH } from "../place/spacing";
 import { type OriginalCtx, digitItem, digitOrigin, dot, octaveDot, rect, stroke, text } from "./ctx";
 import { musicText } from "../../../engrave/prims";
@@ -151,6 +152,18 @@ export function paintNote(c: OriginalCtx,
         g.add(octaveDot(c.ink, p.cx, p.cy, m.style.dot.aug));
       }
     }
+  }
+
+  // 琶音：竖波浪线从最低的数字画到最高的，在临时记号左边（画法与五线谱同一份，engrave/arpeggio.ts）
+  if (!note.hidden && note.ornaments.some((o) => o.name === "arp")) {
+    const H = m.ink.noteHeight;
+    const o = digitOrigin(c, String(note.pitch));
+    const inkLeft = x + o.dx + o.b.left;
+    const sd = stackedDigits(note, m);
+    const top = baseline + (sd.length ? sd[sd.length - 1]!.y : 0) - H / 2;
+    const accLead = accidentalLeadOf({ ...note, ornaments: [] }, m);
+    // 字形转过来后墨迹在定位点右边 0.39–0.84 个 staff space（= 0.12–0.25 H）：墨迹右缘离临时记号/数字左缘 0.25 H
+    g.add(arpeggioGroup(inkLeft - accLead - H * 0.5, top, baseline + H / 2, H * JP_ARPEGGIO_SIZE, c.ink));
   }
 
   // 附点：落点走公共那一份（engrave/augdot.ts：与数字墨迹中心等高，离数字墨迹右缘一道空）

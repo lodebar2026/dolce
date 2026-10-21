@@ -18,7 +18,7 @@
 // 判据对照：简谱输入模型的 MusicXML 形状分支（`jianpuinput.ts::xmlDuration`）读时值的口径，
 // 回归 `scripts/jianpu-shape-check.mjs` 逐音比对。
 
-import { SIMPLE_DIVISIONS, type Chord, type Element, type ElementId, type Harmony, type Measure, type Song } from "./doc";
+import { SIMPLE_DIVISIONS, type Chord, type Element, type ElementId, type Harmony, type Measure, type PageText, type Song } from "./doc";
 import { harmonyText, jianpuShape, nominalQuarters } from "./jianpu";
 import { hasVoiceOverlay, isXmlShaped, tiesToMarks } from "./xmlproject";
 
@@ -58,7 +58,10 @@ export function projectForJianpu(src: Song): Song {
   // **只取主分支**（口径同 MusicXML 那一路的 `jianpuinput.ts::voice <= 1`）——照原文顺序排下去
   // 会把两条并行旋律串成一条、这一小节凭空多出几拍。五线谱那一路照样是完整的多声部。
   if (overlay) dropOverlayVoices(song);
-  if (xml) creatorsFromCredits(song);
+  if (xml) {
+    creatorsFromCredits(song);
+    headerFromCredits(song);
+  }
   // ABC 的延音线只标在音上（`C3- C3`），简谱画成弧要按 id 配成 `tied` 记号（`slots.ts` 归弧线）
   else tiesToMarks(song);
   let nextId = maxId(song) + 1;
@@ -112,6 +115,38 @@ function creatorsFromCredits(song: Song): void {
     .filter((c) => !(c.type && skip.has(c.type)) && c.text.trim() && c.text.trim() !== title)
     .map((c) => ({ type: c.type ?? "composer", text: c.text.replace(/\n/g, " ").trim() }));
   if (creators.length) song.identification = { ...(song.identification ?? {}), creators };
+}
+
+/**
+ * 副标题与页脚：MusicXML 只写在 `<credit>` 里的（`credit-type` 是 subtitle 的；页面下四分之一的那几条），
+ * 123 / 文本谱有对应字段（`T:` 第二行起、`I:bottomcenter`），以前转出去就没了（《八段锦》的「（民乐合奏）」与页脚）。
+ * 页脚每页一条、只差末尾页码的（「《八段锦》（民乐合奏） 1」「… 2」）去掉页码记一条——简谱页脚只在末页印一次、不带页码。
+ */
+function headerFromCredits(song: Song): void {
+  const credits = song.credits ?? [];
+  if (!song.work.subtitles.length) {
+    const subs = credits.filter((c) => c.type === "subtitle" && c.text.trim()).map((c) => c.text.trim());
+    if (subs.length) song.work.subtitles = [...new Set(subs)];
+  }
+  const pt = song.pageText;
+  if (pt && (pt.bottomLeft.length || pt.bottomCenter.length || pt.bottomRight.length)) return;
+  const h = song.defaults?.pageLayout?.pageHeight;
+  const head = new Set(["title", "subtitle", "composer", "lyricist", "arranger", "poet"]);
+  const feet = credits.filter((c) => c.text.trim() && !(c.type && head.has(c.type)) && h !== undefined && c.y !== undefined && c.y < h / 4);
+  if (!feet.length) return;
+  const strip = (t: string): string => t.trim().replace(/\s*\d+$/, "");
+  const side = (c: (typeof feet)[number]): "bottomLeft" | "bottomCenter" | "bottomRight" =>
+    c.justify === "left" ? "bottomLeft" : c.justify === "right" ? "bottomRight" : "bottomCenter";
+  const out: PageText = { topLeft: [], topRight: [], bottomLeft: [], bottomCenter: [], bottomRight: [], ...(pt ?? {}) };
+  for (const c of feet) {
+    // 带页码的那几条按去掉页码后的文字并一条；不带的照原文
+    // 末尾的数字就是本页页码（单页的谱也照样去掉）
+    const pageNo = /(\d+)$/.exec(c.text.trim())?.[1];
+    const many = feet.filter((o) => strip(o.text) === strip(c.text)).length > 1;
+    const text = many || (pageNo !== undefined && Number(pageNo) === (c.page ?? 1)) ? strip(c.text) : c.text.trim();
+    if (text && !out[side(c)].includes(text)) out[side(c)].push(text);
+  }
+  song.pageText = out;
 }
 
 function maxId(song: Song): number {

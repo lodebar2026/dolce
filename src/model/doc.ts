@@ -507,6 +507,9 @@ export interface Note {
   tie?: { start?: boolean; stop?: boolean };
   /** [五线谱] `<notehead>` */
   notehead?: string;
+  /** [五线谱] 节奏音符（`Chord.rhythm`）的这个音画在谱表哪个位置（`<unpitched><display-step/octave>`）。
+   *  打击乐谱上一个和弦里可以叠几个（小钗 m91：钹与鼓同时），每个各是一个音；简谱来源的节奏音符 `notes` 为空 */
+  unpitched?: { step?: Pitch["step"]; octave?: number };
   /** [五线谱] 这个音自己的 `<type size>`（和弦里单个音画小，如「上方音画小」）。首音的另记在 `Chord.typeSize` */
   typeSize?: string;
 }

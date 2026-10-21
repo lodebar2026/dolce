@@ -38,7 +38,7 @@ import type {
 } from "./ast";
 import { getMeta } from "../model/metakeys";
 import { projectForJianpu } from "../model/jianpuproject";
-import { decoKey, tremoloStrokes } from "../model/deconames";
+import { chordNotehead, decoKey, noteheadOf, tremoloStrokes } from "../model/deconames";
 import { directionMarks, leadTempo } from "../model/directionmarks";
 import { compressMultiRests } from "../model/multirest";
 import { keySpelling, noteHeight, quarterTempos, topNote } from "../model/jianpu";
@@ -89,7 +89,8 @@ function chordOrnaments(ch: Chord): Ornament[] {
     if (!out.some((o) => o.name === name)) out.push({ name, level: 0, source: ZERO });
   };
   if (ch.notations?.fermata) add("yc");
-  for (const a of ch.notations?.articulations ?? []) add(decoKey(a) ?? a);
+  if (ch.notations?.arpeggiate) add("arp");
+  for (const a of ch.notations?.articulations ?? []) if (!noteheadOf(a)) add(decoKey(a) ?? a);
   // MusicXML / 识别来源的波音、颤音挂在 ornaments 上（`inverted-mordent`），以前简谱里不画
   for (const o of ch.notations?.ornaments ?? []) { const k = decoKey(o); if (k) add(k); }
   // 弓法（`<up-bow>`）与单音震音（123 的 `!///!` 在 articulations 里，归成 `trem3`）
@@ -121,18 +122,21 @@ function chordDegrees(ch: Chord): NonNullable<Note["degree"]>[] {
 /** 一个和弦 → 文本谱音符（主音或倚音）。 */
 function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
   // 和音（123 `[13]`、MusicXML 和弦、民乐分谱的双音）：最低的音当本音，其余自下而上叠在它上面；倚音只印最高音
-  const stacked = ch.grace || ch.rest || ch.rhythm ? [] : chordDegrees(ch);
+  // 叉形、圈叉符头（打击乐写在某个音高上的击打）：简谱照节奏音符印 `X`
+  const head = chordNotehead(ch.notes) ?? (ch.notations?.articulations ?? []).map(noteheadOf).find((h) => h !== undefined);
+  const rhythm = ch.rhythm || (!ch.rest && (head === "x" || head === "circle-x" || head === "cross"));
+  const stacked = ch.grace || ch.rest || rhythm ? [] : chordDegrees(ch);
   const deg = stacked.length > 1 ? stacked[0] : topNote(ch)?.degree;
   const beams = ch.beams?.length;
   const n: NoteElement = {
     kind: "note",
     // 节奏音符在 `PuDoc` 里是 pitch 9 + sound "rhythm"（番茄写 `9`、诗歌本写 `X`）
-    pitch: (ch.rhythm ? 9 : ch.rest ? 0 : (deg?.number ?? 0)) as NoteElement["pitch"],
-    sound: ch.rhythm ? "rhythm" : ch.rest ? "rest" : "note",
+    pitch: (rhythm ? 9 : ch.rest ? 0 : (deg?.number ?? 0)) as NoteElement["pitch"],
+    sound: rhythm ? "rhythm" : ch.rest ? "rest" : "note",
     hidden: ch.printObject === false,
     // 倚音不占对位格；123 来源的倚音没有这一位
     lyricAnchor: ch.lyricAnchor ?? (ch.grace ? false : !ch.rest),
-    octave: deg?.octaveShift ?? ch.rest?.octaveShift ?? 0,
+    octave: rhythm ? 0 : deg?.octaveShift ?? ch.rest?.octaveShift ?? 0,
     // 123 的倚音不记 beams，减时线记在符号时值上（`{2__}` 是十六分）；没写的按八分画
     duration: beams === undefined && ch.grace ? GRACE_DURATION[ch.duration.type ?? ""] ?? 8 : 4 << (beams ?? 0),
     dots: ch.duration.dots,
@@ -142,7 +146,7 @@ function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
     code: "",
     source: ch.source ?? ZERO,
   };
-  if (deg?.accidental) n.accidental = deg.accidental;
+  if (deg?.accidental && !rhythm) n.accidental = deg.accidental;
   if (stacked.length > 1) {
     n.stack = stacked.slice(1).map((d) => ({
       pitch: d.number as StackedNote["pitch"],

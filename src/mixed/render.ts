@@ -52,6 +52,7 @@ import { addEndingBracket } from "../engrave/ending";
 import { BarlineGlyph, type BarlineSpec } from "../engrave/barline";
 import { TupletGlyph } from "../engrave/tuplet";
 import { hairpinPath } from "../engrave/hairpin";
+import { arpeggioGroup } from "../engrave/arpeggio";
 import { chordTextSegs, harmonyWidth, layoutHarmonySegs } from "../engrave/chord";
 import { addLine, addSmufl, addSmuflScaled, chordGroup, STAFF_SYSTEM, translated, type StaffChordData, type StaffSystemData } from "./prims";
 import type { ItemIdentity } from "../layout/identity";
@@ -278,15 +279,8 @@ export function drawNotesNormal(
       const n1 = arp.notes[arp.notes.length - 1];
       const y0 = md.staffY(n0.staff) + n0.cy() + 5;
       const y1 = md.staffY(n1.staff) + n1.cy() - 5;
-      const cnt = Math.max(1, Math.ceil((y0 - y1) / 12.0));
-      const str = GlyphCodes.wiggleTrillSlow.repeat(cnt);
       const x = md.measureInfo.getEntPos(n0.chord.offset) - 12;
-      const grp = new Group();
-      const m = new Matrix33();
-      m.setAffine([0, 1, -1, 0, x, y1]); // translate(x,y1) ∘ rotate(90°)
-      grp.matrix = m;
-      addSmufl(grp, str, 0, 0, fs);
-      container.add(grp);
+      container.add(arpeggioGroup(x, y1, y0, fs));
     }
   }
 

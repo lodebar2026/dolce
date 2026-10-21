@@ -534,10 +534,10 @@ function chordXml(o: Out, ch: Chord, starts: Mark[], stops: Mark[], cx: Ctx): vo
       o.text("octave", note.pitch.octave);
       o.close();
     } else if (ch.rhythm) {
-      // 节奏音符（有声无音高）：斜线符头
+      // 节奏音符（有声无音高）：照读进来的显示位置（打击乐谱），简谱来源的没有、放第三线（斜线符头）
       o.open("unpitched");
-      o.text("display-step", "B");
-      o.text("display-octave", 4);
+      o.text("display-step", note?.unpitched?.step ?? "B");
+      o.text("display-octave", note?.unpitched?.octave ?? 4);
       o.close();
     } else {
       o.leaf("rest");
@@ -562,7 +562,8 @@ function chordXml(o: Out, ch: Chord, starts: Mark[], stops: Mark[], cx: Ctx): vo
     }
     const stem = note ? cx.layout?.stems.get(note) : undefined;
     if (stem) o.text("stem", stem);
-    if (ch.rhythm && !isChordNote) o.text("notehead", "slash");
+    // 简谱来源的节奏音符画斜线符头；打击乐谱读进来的（有显示位置）照它原来的符头
+    if (ch.rhythm && !isChordNote && !note?.unpitched?.step) o.text("notehead", "slash");
     else if (note?.notehead) o.text("notehead", note.notehead);
     if (ch.staff > 1) o.text("staff", ch.staff);
     // number 是层号：按下标算，不能 indexOf（两层同为 begin 时会都写成 1）

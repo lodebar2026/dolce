@@ -553,6 +553,7 @@ export const zh = {
   "feat.multiVoice": "多声部",
   "feat.noteStack": "同一声部里同时发声的音（和音、和弦内音，只留简谱印的最高音）",
   "feat.innerVoice": "同一谱表上的第二声部（只留简谱印的第一声部）",
+  "feat.rhythmStack": "同时敲的几个节奏音符（只留一个）",
   "feat.dynamics": "力度与渐强渐弱",
   "feat.playOrder": "演唱顺序（房号跳转、第几遍配第几段词）",
   "feat.style": "样式表引用",
@@ -581,6 +582,8 @@ export const zh = {
   "feat.rehearsal": "排练号",
   "feat.multiRest": "多小节休止（会写成一小节一个休止）",
   "feat.staccatissimo": "楔形顿音（会与点状顿音并成同一个顿音）",
+  "feat.arpeggio": "琶音",
+  "feat.notehead": "叉形、圈叉等符头（简谱印成节奏音符 X）",
   "loss.body": "这份谱里有 {n} 样东西，存成 {format} 之后会丢：",
   "loss.continue": "要继续吗？",
   // 解析诊断（随解析按界面语言产出）

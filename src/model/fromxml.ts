@@ -704,6 +704,14 @@ function readMeasure(
         if (pitchEl) {
           note.pitch = readPitch(pitchEl);
         }
+        const unpEl = pitchEl ? null : child(c, "unpitched");
+        if (unpEl) {
+          const ds = childText(unpEl, "display-step"), dov = childText(unpEl, "display-octave");
+          note.unpitched = {
+            ...(ds && /^[A-G]$/.test(ds) ? { step: ds as Pitch["step"] } : {}),
+            ...(dov && !Number.isNaN(Number(dov)) ? { octave: Number(dov) } : {}),
+          };
+        }
         const accEl = child(c, "accidental");
         const acc = accEl?.textContent;
         if (acc) note.accidental = acc as Note["accidental"];
@@ -718,7 +726,7 @@ function readMeasure(
             if (t.getAttribute("type") === "stop") note.tie.stop = true;
           }
         }
-        if (pitchEl) bindSurface(note, c);
+        if (pitchEl || unpEl) bindSurface(note, c);
         const noteSize = child(c, "type")?.getAttribute("size");
         if (noteSize) note.typeSize = noteSize;
         if (isChordNote && last) {
@@ -743,7 +751,8 @@ function readMeasure(
         const ch: Chord = {
           kind: "chord",
           id: ids.next(),
-          notes: pitchEl ? [note] : [],
+          // 节奏音符也留着这个音：它的延音线（`<tie>`）、显示位置、和弦里叠的第二个都挂在音上
+          notes: pitchEl || unpEl ? [note] : [],
           duration: {
             divisions: num(c, "duration") ?? 0,
             dots: children(c, "dot").length,

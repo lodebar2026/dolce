@@ -26,6 +26,8 @@ const ALIASES: Readonly<Record<string, readonly string[]>> = {
   // 弓法（123 的 `!upbow!` `!downbow!` 是 ABC 标准名；文本谱没有这两个记号，转文本谱时进丢失清单）
   sg: ["upbow", "up-bow", "上弓"],
   xg: ["downbow", "down-bow", "下弓"],
+  // 琶音（ABC 标准装饰 `!arpeggio!`，MusicXML `<arpeggiate>`；文本谱没有，转文本谱时进丢失清单）
+  arp: ["arpeggio", "arpeggiate", "琶音"],
   // 小节线上的跳转记号（123 的写法与归属见 `abcfamily/jumpmarks.ts`）
   hs: ["segno"],
   ty: ["coda"],
@@ -52,6 +54,18 @@ export function tremoloStrokes(name: string): number | undefined {
 }
 
 /** 排练号：123 的 `!rehearsal=A!`（也认 `!排练号=A!`）→ `A`；不是排练号返回 undefined。 */
+/** 换符头的装饰 `!head-x!` `!head-circle-x!`（abc2svg：名字以 `head-` 开头的装饰换符头；`head-` 后面用 MusicXML 的 notehead 名）→ 符头名 */
+export function noteheadOf(name: string): string | undefined {
+  const m = /^head-([a-z][a-z-]*)$/i.exec(name);
+  return m ? m[1]!.toLowerCase() : undefined;
+}
+
+/** 整个和弦共用的非常规符头（打击乐的叉形、圈叉），写 `!head-…!` 用；各音不一样或是普通符头返回 undefined */
+export function chordNotehead(notes: readonly { notehead?: string }[]): string | undefined {
+  const h = notes[0]?.notehead?.trim();
+  return h && h !== "normal" && notes.every((n) => n.notehead?.trim() === h) ? h : undefined;
+}
+
 export function rehearsalOf(name: string): string | undefined {
   const m = /^(?:rehearsal|排练号)\s*=\s*(.+)$/i.exec(name);
   return m ? m[1]!.trim() : undefined;

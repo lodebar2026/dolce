@@ -34,7 +34,7 @@ import { arcsToNextNote, isLatinEnd, isLatinStart, isOneCjkWithPunct, nestArcsIn
 import { clefName, harmonyText } from "../model/jianpu";
 import { ORNAMENT_TAG } from "../model/xmlproject";
 import { BARLINE_ORNAMENT_NAME } from "./jumpmarks";
-import { rehearsalOf } from "../model/deconames";
+import { chordNotehead, rehearsalOf } from "../model/deconames";
 import { tupletNormal123 } from "./parsedialect";
 import { chordSuffixForm } from "../score/harmonyparse";
 
@@ -784,6 +784,11 @@ export abstract class AbcFamilyEmitter {
       if (this.bowAndTremolo) {
         for (const tk of el.notations?.technical ?? []) s += `!${TECHNICAL_NAME[tk] ?? tk}!`;
         if (el.notations?.tremolo) s += `!${"/".repeat(el.notations.tremolo)}!`;
+        // 琶音：ABC 标准装饰（MusicXML 的 `<arpeggiate>` 是和弦级的布尔，不在 articulations 里）
+        if (el.notations?.arpeggiate) s += "!arpeggio!";
+        // 叉形、圈叉符头（打击乐）：abc2svg 的 `!head-…!`
+        const head = el.kind === "chord" ? chordNotehead(el.notes) : undefined;
+        if (head) s += `!head-${head}!`;
       }
       // 同一个音上的开、收按嵌套排：包住多连音组的弧在外层（`((3: 1_ 2_ 3_) 4)`），其余在里层
       const tp = mi.tupletStart.get(el.id);
