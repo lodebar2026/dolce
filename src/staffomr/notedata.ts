@@ -831,6 +831,8 @@ export interface StaffNote {
   chordExtra?: boolean;
   /** 挂在这个音符上的演奏法记号（SMuFL 名，见 `notations.ts`）。 */
   marks?: string[];
+  /** 没有符干的音（全音符）上震音斜线的墨迹中心：x 离符头左缘、y 在谱表顶线之上多少，格（写成 `<tremolo default-x/default-y>`） */
+  tremoloAt?: { x: number; y: number };
   /**
    * 声部号（1 起）。一行谱上写两个声部时（SATB 把女高女低挤在一行），
    * **按符干方向分**：朝上的是第一声部、朝下的是第二声部。见 `assignVoices`。

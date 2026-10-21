@@ -330,6 +330,9 @@ export interface Notations {
   ornaments?: string[];
   /** 单音震音的斜线道数 1–4（`<tremolo type="single">3</tremolo>`，123 的 `!///!`） */
   tremolo?: number;
+  /** 全音符（没有符干）震音斜线的位置：`<tremolo default-x default-y>`，tenths；本仓按斜线那一摞的**墨迹中心**记，
+   *  x 相对符头左缘、y 相对谱表顶线（向上为正）。原谱逐处手调过的（八段锦 Sibelius 分谱）照它画，没有就按通则 */
+  tremoloPos?: { x: number; y: number };
   /** [五线谱] `<technical>`。本轮留空 */
   technical?: string[];
   fermata?: boolean;

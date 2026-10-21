@@ -154,6 +154,9 @@ export function attachNotations(pg: SPage, notes: StaffNote[], marks: Sym[]): vo
     const art = /^(artic\w+?)(Above|Below)$/.exec(m.code);
     const code = art ? `${art[1]}${m.py < best.sym.py ? "Above" : "Below"}` : m.code;
     (best.marks ??= []).push(code);
+    // 全音符的震音原谱逐处手调过（八段锦，竖向 −0.5～2 格），照原位记
+    if (/^tremolo/.test(m.code) && best.stemTip === undefined)
+      best.tremoloAt = { x: ((m.box.left + m.box.right) / 2 - best.sym.box.left) / sp, y: (best.staff.box.top - (m.box.top + m.box.bottom) / 2) / sp };
   }
 }
 

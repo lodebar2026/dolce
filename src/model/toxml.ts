@@ -512,7 +512,7 @@ function notationsXml(o: Out, n: Chord["notations"], starts: Mark[], stops: Mark
       const pl = tag === "articulations" ? n?.articPlacement?.[a] : undefined;
       o.leaf(a, pl ? ` placement="${pl}"` : "");
     }
-    if (trem) o.text("tremolo", trem, ' type="single"');
+    if (trem) o.text("tremolo", trem, ` type="single"${n?.tremoloPos ? ` default-x="${n.tremoloPos.x}" default-y="${n.tremoloPos.y}"` : ""}`);
     o.close();
   }
   o.close();

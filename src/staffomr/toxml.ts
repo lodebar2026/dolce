@@ -537,7 +537,7 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
     else if (m.startsWith("fermata")) fermata = `<fermata type="${m === "fermataBelow" ? "inverted" : "upright"}"/>`;
     else if (m.startsWith("ornamentTrill") || m.startsWith("wiggleTrill")) orns.push(`<trill-mark/>`);
     else if (m === "ornamentShortTrill") orns.push(`<inverted-mordent/>`);
-    else if (/^tremolo[123]$/.test(m)) orns.push(`<tremolo type="single">${m.slice(-1)}</tremolo>`);
+    else if (/^tremolo[123]$/.test(m)) orns.push(`<tremolo type="single"${n.tremoloAt ? ` default-x="${Math.round(n.tremoloAt.x * 100) / 10}" default-y="${Math.round(n.tremoloAt.y * 100) / 10}"` : ""}>${m.slice(-1)}</tremolo>`);
   }
   if (orns.length) nots.push(`<ornaments>${orns.join("")}</ornaments>`);
   if (tech.length) nots.push(`<technical>${tech.join("")}</technical>`);

@@ -122,8 +122,10 @@ function drawMultiRest(g: Group, mif: MeasureLayout, eng: MixedOptions): void {
  * 每道是左右两边竖直的平行四边形，横宽 12.4、中心线左低右高升 5.3、竖向厚 3、相邻两道竖向间距 4.5——
  * 比 Bravura 的 tremolo1–4 字形陡、窄（那个只升约 2，排出来几乎是平的）。`x0` 是左缘，(`cy`) 是整块的竖向中心。
  */
+/** 全音符震音一道斜线的横宽（tenths） */
+const WHOLE_TREMOLO_W = 12.4;
 function drawWholeTremolo(g: Group, n: number, x0: number, cy: number): void {
-  const W = 12.4, R = 5.3, T = 3, S = 4.5;
+  const W = WHOLE_TREMOLO_W, R = 5.3, T = 3, S = 4.5;
   for (let i = 0; i < n; i++) {
     const y = cy + (i - (n - 1) / 2) * S;
     addFilledQuad(g, x0, y + R / 2 - T / 2, x0 + W, y - R / 2 - T / 2, T);
@@ -242,7 +244,10 @@ export function drawNotesNormal(
         // 全音符的 `stemUp` 没按音高算过：照符干方向的通则，离中线（谱表内 y = 20）最远的音在中线之上就朝下
         const ys = ch.notes.map((n) => n.cy() - md.staffY(subStaff));
         const up = 20 - Math.min(...ys) <= Math.max(...ys) - 20;
-        drawWholeTremolo(chordGrp(), Math.min(4, strokes!), headR + 2.5, up ? Math.max(...ys) - 10 : Math.min(...ys) + 10);
+        // 原文记了位置的（`tremoloPos`，斜线墨迹中心相对符头左缘 / 谱表顶线）照它画
+        const at = ch.src.notations?.tremoloPos;
+        if (at) drawWholeTremolo(chordGrp(), Math.min(4, strokes!), headL + at.x - WHOLE_TREMOLO_W / 2, -at.y);
+        else drawWholeTremolo(chordGrp(), Math.min(4, strokes!), headR + 2.5, up ? Math.max(...ys) - 10 : Math.min(...ys) + 10);
       }
       continue; // whole: no stem
     }

@@ -344,6 +344,8 @@ function readNotations(noteEl: Element, marks: MarkSink, id: number, into: Notat
     // 单音震音单收道数（`tremolo`）；双音震音（start/stop）照旧按元素名记
     const trem = Array.from(orn.children).find((c) => c.tagName === "tremolo" && (c.getAttribute("type") ?? "single") === "single");
     if (trem) n.tremolo = Math.min(4, Math.max(1, Number(trem.textContent?.trim() || 3) || 3));
+    const tx = trem?.getAttribute("default-x"), ty = trem?.getAttribute("default-y");
+    if (trem && tx !== null && ty !== null && tx !== undefined && ty !== undefined && Number.isFinite(Number(tx)) && Number.isFinite(Number(ty))) n.tremoloPos = { x: Number(tx), y: Number(ty) };
     const list = Array.from(orn.children).filter((c) => c !== trem).map((c) => c.tagName);
     if (list.length) n.ornaments = list;
   }
