@@ -692,6 +692,8 @@ function buildMusicLine(
           staff: 1,
           source: t.source,
         };
+        // 减时线条数（简谱排版按它画；时值已在 `duration` 里）——漏了的话 `[35]_` 画成四分（八段锦笛子 m62）
+        if ((t.beams ?? 0) > 0) ch.beams = Array.from({ length: t.beams! }, () => "continue" as const);
         applyTieAndBroken(ch);
         attach(ch);
         cur.sustainHost = ch;
