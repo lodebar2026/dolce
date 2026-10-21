@@ -69,6 +69,10 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   （判据与定性清单在 `jianpu.ts` 文件头）。
   已验：`fifths -7..7` 的无点「1」与 `jppitch.ts` 注释记载的值逐个吻合（bB=58、bA=68、#C=61、
   bD=61、#F=bG=66、bE=63、bC=59；A 调不降八度、B 调降八度）。
+- **简谱来源的谱表记号（`Note.accidental` = `<accidental>`）在投影时按五线谱口径另算**（`xmlproject.ts` → `jianpu.ts::StaffAccidentalCarry`）：
+  同字母同八度在一小节内延续、起点是调号、按绝对变音命名，延音线接过来的音不印。源文的简谱记号相对调号、按唱名延续，
+  照抄过去在非 C 调错（`1=F` 的 `#4` 是 B 本位，印还原号不是升号）、跨八度漏（`#4 4'` 后一个要再印）；
+  `.jpwabc`/文本谱只写在 `degree.accidental` 上，不另算谱表上就一个记号都没有。五线谱引擎只印 `Note.accidental`，自己不推。
 - **元素一律带稳定 `id`**（`IdGen` 分配）。`Mark`、歌词锚点、`playOrder` 的 skip/limit 全部引用 id——
   `PuDoc` 用数组下标区间，插一个元素就全错。
 - **增时线是可挂载的独立对象**（`Chord.sustains[]`，各有 id），而时值仍记在 `Chord.duration` 上：

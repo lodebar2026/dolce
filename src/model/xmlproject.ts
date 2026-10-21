@@ -23,7 +23,7 @@ import type {
 } from "./doc";
 import { SIMPLE_DIVISIONS } from "./doc";
 import { Fraction, lcm } from "../common/fraction";
-import { AccidentalCarry, quarterTempos } from "./jianpu";
+import { AccidentalCarry, StaffAccidentalCarry, quarterTempos } from "./jianpu";
 import { typeOfDuration } from "../score/xmlutil";
 import { DYNAMICS, TERMS } from "../pu/glyph";
 import { applyPageMetaToDefaults } from "./pagemeta";
@@ -759,6 +759,7 @@ function projectPart(
   /** 各小节末在原小节里的拍位（拆开的后半从前半末尾接着数） */
   const ends = new Map<Measure, number>();
   const carries = new Map<Measure, AccidentalCarry>();
+  const staffCarries = new Map<Measure, StaffAccidentalCarry>();
   for (const [mi, m] of part.measures.entries()) {
     const cont = continuationOf.get(m);
     const onset = cont ? (ends.get(cont) ?? 0) : 0;
@@ -776,6 +777,8 @@ function projectPart(
     if (clef) octave = clef.octaveChange ?? 0;
     const carry = (cont && carries.get(cont)) || new AccidentalCarry();
     carries.set(m, carry);
+    const staffCarry = (cont && staffCarries.get(cont)) || new StaffAccidentalCarry(fifths);
+    staffCarries.set(m, staffCarry);
     const dirs: Direction[] = [];
     // 小节内各声部的时间游标。一个小节里出现两个以上 voice 只有一种来源：ABC `&` 的临时多声部
     // （§7.4，`j123/parse.ts`），各分支都从小节起点重新计时；其余来源整条 part 就是一个声部。
@@ -804,6 +807,14 @@ function projectPart(
         if (!n.pitch && n.degree && n.degree.number > 0) {
           n.pitch = carry.pitch(n.degree, { fifths });
           n.pitch.octave += octave;
+          // 谱表上印的记号（`<accidental>`）按五线谱口径另算：源文的记号是简谱的（相对调号、按唱名延续），
+          // 照抄在非 C 调、跨八度处都不对；`.jpwabc`/文本谱则根本没写，谱表上一个记号都不印
+          const acc = staffCarry.mark(n.pitch, !!n.tie?.stop);
+          if (acc) n.accidental = acc;
+          else {
+            delete n.accidental;
+            delete n.accidentalParentheses;
+          }
         }
       }
       if (ch.grace) {
