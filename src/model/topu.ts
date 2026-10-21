@@ -38,7 +38,7 @@ import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote }
 import { ownIds, ownMarks, partRanges, systemRanges, type SystemRange } from "./emitutil";
 import { relayoutDocBreaks } from "./relayout";
 import { decoKey } from "./deconames";
-import { directionMarks } from "./directionmarks";
+import { directionMarks, directionsAsMarks } from "./directionmarks";
 import { degreeOfKey, songFifths, tonicSpelling } from "./keyshift";
 
 // ───────────────────────── 头部 ─────────────────────────
@@ -919,7 +919,8 @@ function qPrefix(song: Song, pi: number, first: Measure | undefined, firstSystem
   const [open, close] = d.emit.labelWrap;
   const caption = first?.print?.caption ?? (firstSystem ? song.parts[pi]?.name : undefined);
   const num = song.parts.length > 1 ? String(pi + 1) : "";
-  const cap = caption ? open + caption.replace(/["<>]/g, "") + close : "";
+  // 声部名里的换行（分谱「小锣\n大锣」两行印）写成空格：原样写会把曲行拆成两行
+  const cap = caption ? open + caption.replace(/["<>]/g, "").replace(/\s*\n\s*/g, " ") + close : "";
   return `Q${first?.print?.variant ?? ""}${num}${cap}:`;
 }
 
@@ -933,7 +934,8 @@ export interface EmitPuOptions {
 /** 一首歌 → 文本谱原文（不带结尾换行）。 */
 export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}): string {
   const d = dialectSpec(dialect);
-  const song = withDegrees(withLines(projectForJianpu(src)));
+  // 小节里的 `<direction>`（MusicXML 来的力度、文字、渐强渐弱、曲首速度）先换成简谱那套挂在符号上的写法，同 123
+  const song = withDegrees(withLines(projectForJianpu(directionsAsMarks(src))));
   const L = headerLines(song, d, opts);
   if (d.emit.blankBetweenGroups) L.push("");
 

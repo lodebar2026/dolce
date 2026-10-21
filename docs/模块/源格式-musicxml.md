@@ -32,6 +32,8 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuinpu
   `<score-instrument>` 这类因此不必逐项进模型。
   所以以前「有底本就 patch」的取舍（`.jpwabc` 装得少、重生成 = 降采样）已经退役，增量 patch 删了。
 - MusicXML 形状的文档（首小节带 `attrs.divisions`）不经投影，重写逐字节稳定。
+- 单音震音 `<tremolo type="single">n` 进 `Notations.tremolo`（道数），双音震音仍按元素名留在 `ornaments`；
+  `<measure-style><multiple-rest>` 进 `MeasureAttrs.multiRest`（只记首小节，后面那几个小节照原样在）。
 - **slur 的起止按小节内的时刻配，不按文档序**（`fromxml.ts::MarkSink`）：一小节里先写完谱表 1 再 `<backup>` 写谱表 2，
   钢琴跨谱表弧的止端（右手小节后半的和弦）在文档里排在起端（左手小节头的音）前面，按文档序会把这个止端配给上一条、起端留给下一条的止端，
   一整排弧全错开一个（宁静的伯利恒钢琴每小节一条，GT 与识别稿都这样写）。所以起止先攒着，小节读完按时刻排（同一时刻保持文档序：倚音弧起在倚音、止在同一时刻的主音上）再配。

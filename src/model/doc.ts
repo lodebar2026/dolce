@@ -324,8 +324,10 @@ export interface Lyric {
 export interface Notations {
   /** accent / staccato / tenuto / marcato… */
   articulations?: string[];
-  /** trill-mark / mordent / turn…（[五线谱] 本轮留空） */
+  /** trill-mark / mordent / turn…（单音震音不在这里，见 `tremolo`） */
   ornaments?: string[];
+  /** 单音震音的斜线道数 1–4（`<tremolo type="single">3</tremolo>`，123 的 `!///!`） */
+  tremolo?: number;
   /** [五线谱] `<technical>`。本轮留空 */
   technical?: string[];
   fermata?: boolean;
@@ -614,6 +616,9 @@ export interface MeasureAttrs {
   staves?: number;
   /** [五线谱] */
   transpose?: Transpose;
+  /** 多小节休止：从本小节起 n 个整小节休止合成一个印（`<measure-style><multiple-rest>`，123 的 `Zn`）。
+   *  后面那 n−1 个小节照样在 `measures` 里（各一个整小节休止），只是谱面上并进这一个 */
+  multiRest?: number;
 }
 
 /** `<direction>`：挂在小节某个时间点上的指示。 */

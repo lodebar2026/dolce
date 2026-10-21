@@ -58,6 +58,8 @@ export interface Metadata {
   /** 有谱调号行上拍号后面跟着的说明文字（`1=C3/4 4/4 混合拍`）。 */
   timeNote?: string;
   tempos: Tempo[];
+  /** 印在调号拍号下一行的速度记号（`♩=144`）：123 / MusicXML 来源的曲首速度；文本谱自己的 `J:` 数字不印 */
+  tempoMark?: string;
   /** 有谱 `XL:` `XR:` 序号 */
   indexLeft?: string;
   indexRight?: string;
@@ -104,6 +106,8 @@ export interface NoteElement {
   ornaments: Ornament[];
   graceBefore: NoteElement[];
   graceAfter: NoteElement[];
+  /** 多小节休止占几个小节（画成一道粗横杠、上面印小节数）。文本谱不产生，只有 123 / MusicXML 来源的视图有（`slots.ts::compressMultiRests`） */
+  multiRest?: number;
   /** 音符上方的双引号注释；`hx:` 开头的和弦另存 `chord` */
   annotation?: string;
   chord?: string;

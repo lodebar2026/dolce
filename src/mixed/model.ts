@@ -296,6 +296,8 @@ export class NotationItem {
   dx = 0;
   y = 0;
   above = true;
+  /** 一律印在谱表上方、谱表之外（波音、颤音、弓法），不随符干翻到下面；`layoutNotations` 摞在符头/符干顶之上 */
+  outside = false;
 
   /** model.cpp:1096 NotationItem::isFermata */
   isFermata(): boolean {
@@ -1417,6 +1419,8 @@ export class MeasureText extends TextBlock {
   sourceSize = false;
   /** `ScoreDoc` 里对应的 `<direction>`（导出时把排好的高度写回，`engrave.ts`） */
   src: DocDirection | null = null;
+  /** 排练号（`<rehearsal>`）：粗体字外面套方框（render.ts::drawTextBlock） */
+  boxed = false;
 
   constructor(measure: PartMeasureLayout) {
     super();
@@ -1886,7 +1890,16 @@ export class PartMeasureLayout {
       const hasStem = fLt(ch.noteType, new Fraction(4));
       if (!(hasStem && ch.stemUp === above)) noteSide = true;
 
+      // 谱表上方那一摞（波音、颤音、弓法）：从这个和弦最高的墨迹（符干朝上取符干顶）往上摞，至少在谱表顶线之上
+      const topNote = ch.notes[ch.notes.length - 1]!;
+      let outsideY = Math.min(hasStem && ch.stemUp ? ch.tailY(false) : topNote.cy() - 5, 0) - 10;
       for (const it of ch.notations) {
+        if (it.outside) {
+          it.above = true;
+          it.y = outsideY;
+          outsideY -= 14;
+          continue;
+        }
         // musicpp 以「原始字形是否 fermataAbove」判定，setAbove 之前取值。
         const fermata = it.symbol === GlyphCodes.fermataAbove;
         if (fermata) {
@@ -1984,6 +1997,8 @@ export enum BarGlyph {
 export class MeasureLayout {
   system!: Sys;
   number = "";
+  /** 多小节休止：这一小节代表几个小节（`model/multirest.ts` 并过的；0 = 普通小节）。整小节休止画成 H 形横杠加小节数 */
+  multiRest = 0;
 
   endingNum = new Set<number>();
   leftEndingType = EndingType.None;

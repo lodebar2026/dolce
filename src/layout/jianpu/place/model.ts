@@ -117,6 +117,8 @@ export interface PlacedText {
   ink: Rect;
   /** 逐字笔位（相对 `x`，标点挤压后的，`engrave/sectionword.ts::sectionWordRun`）：段落词才有 */
   xs?: number[] | null;
+  /** 外面套方框（排练号）：`ink` 已含框 */
+  boxed?: boolean;
 }
 
 export interface PlacedGroup {

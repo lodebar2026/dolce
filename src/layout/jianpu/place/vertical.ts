@@ -99,6 +99,8 @@ export function stackTop(el: MusicElement | undefined, m: JianpuGrid, withAccide
 /** 音符那一摞（数字、高八度点、临时记号、倚音）的墨迹顶，相对基线（不含 dy） */
 export function entryTop(el: MusicElement, m: JianpuGrid): number {
   let top = Math.min(-m.ink.noteHeight / 2, stackTop(el, m));
+  // 多小节休止的小节数印在横杠上方（compose/note.ts::paintMultiRest：数字中线在基线上 1.15 个墨迹高）
+  if (el.kind === "note" && el.multiRest) top = Math.min(top, -m.ink.noteHeight * 1.65);
   const g = graceTop(el, m);
   if (g !== null) top = Math.min(top, g);
   return top;

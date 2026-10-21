@@ -14,9 +14,11 @@ const PU_BARLINE_SPEC: Record<string, BarlineSpec | undefined> = {
 };
 
 /** 一条小节线画成什么样；`null` = 不画线（隐藏线、认不出的类型）。
- *  下一小节左线上起反复（`repeatForwardAfter`）：这条线画成 `|:` / `:|:`。 */
+ *  下一小节左线上起反复（`repeatForwardAfter`）：这条线画成 `|:` / `:|:`（终止线、双线后接的也画成 `|:`）。 */
 export function puBarlineSpec(el: BarlineElement): { spec: BarlineSpec; final: boolean } | null {
-  const type = el.repeatForwardAfter && el.type === "normal" ? "repeat-start"
+  // 终止线、双线后紧接起反复（MusicXML 分谱常见：前一小节 `light-heavy`、下一小节左线 `<repeat forward>`）也画成 `|:`，
+  // 否则反复点丢了、`:|` 看着像是跳回曲首
+  const type = el.repeatForwardAfter && (el.type === "normal" || el.type === "end" || el.type === "double") ? "repeat-start"
     : el.repeatForwardAfter && el.type === "repeat-end" ? "repeat-both" : el.type;
   const spec = PU_BARLINE_SPEC[type];
   return spec ? { spec, final: type === "end" } : null;

@@ -575,6 +575,10 @@ export const zh = {
   "feat.slurCrossTuplet": "跨出多连音组的弧线（会截到组的边界）",
   "feat.lyricOnRest": "挂在休止符上的歌词",
   "feat.pageBreak": "换页（会改成换行）",
+  "feat.tremolo": "震音",
+  "feat.bowing": "弓法（上弓、下弓）",
+  "feat.rehearsal": "排练号",
+  "feat.multiRest": "多小节休止（会写成一小节一个休止）",
   "loss.body": "这份谱里有 {n} 样东西，存成 {format} 之后会丢：",
   "loss.continue": "要继续吗？",
   // 解析诊断（随解析按界面语言产出）
@@ -654,6 +658,7 @@ export const zh = {
   "diag.j123.lyricOverflow": "第 {verse} 段歌词比这几行的音符多 {left} 个音节，多出的被忽略",
   "diag.j123.contUnsupported": "`+:` 只支持歌词行续写（紧跟在 `w:` 之后）",
   "diag.j123.verseNumber": "歌词行不带段号（`w{n}:` 已废）：写 `w:`，一行曲下按出现顺序编段，同段续写用 `+:`。这一行已丢弃",
+  "diag.j123.badClef": "看不懂的谱号：{v}",
   "diag.j123.badLength": "看不懂的默认音长：{v}",
   "diag.badKey": "看不懂的调号：{v}",
   "diag.noSuchKey": "没有这个调：{v}（已保留原文）",

@@ -103,7 +103,8 @@ const OWNS: Readonly<Record<string, { attrs?: readonly string[]; kids?: readonly
     kids: ["print", "barline", "attributes", "direction", "harmony", "note", "backup", "forward", "sound"],
   },
   print: { attrs: ["new-system", "new-page"] },
-  attributes: { kids: ["divisions", "key", "time", "staves", "clef", "transpose"] },
+  attributes: { kids: ["divisions", "key", "time", "staves", "clef", "transpose", "measure-style"] },
+  "measure-style": { kids: ["multiple-rest"] },
   key: { kids: ["cancel", "fifths", "mode", "key-step", "key-alter"] },
   time: { attrs: ["symbol"], kids: ["beats", "beat-type"] },
   clef: { attrs: ["number"], kids: ["sign", "line", "clef-octave-change"] },
@@ -461,6 +462,7 @@ function notationsXml(o: Out, n: Chord["notations"], starts: Mark[], stops: Mark
   const has =
     n?.articulations?.length ||
     n?.ornaments?.length ||
+    n?.tremolo ||
     n?.technical?.length ||
     n?.fermata ||
     n?.arpeggiate ||
@@ -502,9 +504,11 @@ function notationsXml(o: Out, n: Chord["notations"], starts: Mark[], stops: Mark
   if (n?.fermata) o.leaf("fermata", n.fermataInverted ? ' type="inverted"' : "");
   if (n?.arpeggiate) o.leaf("arpeggiate");
   for (const [tag, list] of [["articulations", n?.articulations], ["ornaments", n?.ornaments], ["technical", n?.technical]] as const) {
-    if (!list?.length) continue;
+    const trem = tag === "ornaments" ? n?.tremolo : undefined;
+    if (!list?.length && !trem) continue;
     o.open(tag);
-    for (const a of list) o.leaf(a);
+    for (const a of list ?? []) o.leaf(a);
+    if (trem) o.text("tremolo", trem, ' type="single"');
     o.close();
   }
   o.close();
@@ -723,6 +727,11 @@ function attributesXml(o: Out, attrs: MeasureAttrs, shown?: boolean): void {
     if (attrs.transpose.diatonic !== undefined) o.text("diatonic", attrs.transpose.diatonic);
     o.text("chromatic", attrs.transpose.chromatic);
     if (attrs.transpose.octaveChange !== undefined) o.text("octave-change", attrs.transpose.octaveChange);
+    o.close();
+  }
+  if (attrs.multiRest) {
+    o.open("measure-style");
+    o.text("multiple-rest", attrs.multiRest);
     o.close();
   }
   o.close();

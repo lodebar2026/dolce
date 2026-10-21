@@ -15,6 +15,7 @@
 import type {
   Barline,
   Chord,
+  Clef,
   Element,
   ElementId,
   Key,
@@ -30,9 +31,10 @@ import { breakAfter, lyricOfVerse, type BreakKind } from "../model/helpers";
 import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
 import { lyricSlots, type LyricSlotRule } from "./lyricslot";
 import { arcsToNextNote, isLatinEnd, isLatinStart, isOneCjkWithPunct, nestArcsInTuplets, ownIds, ownMarks, partRanges, systemRanges, type SystemRange } from "../model/emitutil";
-import { harmonyText } from "../model/jianpu";
+import { clefName, harmonyText } from "../model/jianpu";
 import { ORNAMENT_TAG } from "../model/xmlproject";
 import { BARLINE_ORNAMENT_NAME } from "./jumpmarks";
+import { rehearsalOf } from "../model/deconames";
 import { tupletNormal123 } from "./parsedialect";
 import { chordSuffixForm } from "../score/harmonyparse";
 
@@ -40,6 +42,9 @@ import { chordSuffixForm } from "../score/harmonyparse";
 const ORNAMENT_NAME: Readonly<Record<string, string>> = Object.fromEntries(
   Object.entries(ORNAMENT_TAG).reverse().map(([name, tag]) => [tag, name]),
 );
+
+/** MusicXML 的 `<technical>` 元素名 → 123 记号名（ABC 标准名）。别的 technical（指法、拨弦…）认不出，原名写出、读回不画 */
+const TECHNICAL_NAME: Readonly<Record<string, string>> = { "up-bow": "upbow", "down-bow": "downbow" };
 
 export interface MarkIndex {
   slurStart: Map<number, number>;
@@ -292,6 +297,59 @@ export abstract class AbcFamilyEmitter {
    *  123 没有单独的 tie 写法；ABC 不是，它有 `-`（见 `tieText`）。 */
   protected readonly tiesAsSlurs: boolean = false;
 
+  /** 第 `i` 小节头上换成的谱号名（第一行谱表）；不换返回 null。小节中间的换谱号过了半小节的算下一小节的。 */
+  private clefAt(part: Part, i: number): string | null {
+    const staff1 = (a: { clefs?: Clef[] } | undefined): Clef | undefined => a?.clefs?.find((x) => (x.staff ?? 1) === 1);
+    const mid = (m: Measure | undefined, late: boolean): Clef | undefined => {
+      const hits = (m?.laterAttrs ?? []).filter((la) => (la.afterElements * 2 >= m!.elements.length) === late && staff1(la.attrs));
+      return hits.length ? staff1(hits[hits.length - 1]!.attrs) : undefined;
+    };
+    const c = mid(part.measures[i], false) ?? staff1(part.measures[i]?.attrs) ?? (i > 0 ? mid(part.measures[i - 1], true) : undefined);
+    return c ? clefName(c) : null;
+  }
+
+  /** 第 `i` 小节起的多小节休止能写成 `Zn` 就返回 n，否则 0。整串都得是干净的整小节休止：
+   *  没有记号、文字、和弦、歌词，中间的小节不换调号拍号谱号、不带左线与特殊右线、不在中间换行，且不跨出本行（`to`）。 */
+  private multiRestRun(part: Part, i: number, to: number): number {
+    if (!this.multiRests) return 0;
+    const n = part.measures[i]?.attrs?.multiRest ?? 0;
+    if (n < 2 || i + n - 1 > to || i + n - 1 >= part.measures.length) return 0;
+    for (let j = i; j < i + n; j++) {
+      const m = part.measures[j]!;
+      // 头一个小节可以带记号与文字（排练号、力度、pizz），写在 `Z` 前面（`multiRestText`）
+      const plainNotations = (el: Chord): boolean => !el.notations
+        || (j === i && Object.keys(el.notations).every((k) => k === "articulations"));
+      const clean = m.elements.length > 0 && m.elements.every((el) => el.kind === "chord" && !!el.rest && !el.grace
+        && plainNotations(el) && !el.ornaments?.length && (j === i || !el.sectionWord) && !el.harmony && !el.lyrics?.length);
+      if (!clean || m.directions?.length || m.laterAttrs?.length) return 0;
+      if (j > i && (m.attrs || m.barlines?.some((b) => b.location === "left"))) return 0;
+      if (j < i + n - 1 && (breakAfter(part, j) || m.barlines?.some((b) => b.location === "right" && (b.style !== "regular" || b.repeat || b.ending || b.ornaments?.length)))) return 0;
+    }
+    return n;
+  }
+
+  /** `Zn` 连同头一个小节休止上挂的记号与文字（`"^pizz"!rehearsal=B!Z3`）。 */
+  private multiRestText(mea: Measure, n: number): string {
+    let s = "";
+    for (const el of mea.elements) {
+      if (el.kind !== "chord") continue;
+      if (el.sectionWord) s += this.annotationText(el.sectionWord);
+      for (const a of el.notations?.articulations ?? []) if (this.rehearsalMarks || rehearsalOf(a) === undefined) s += `!${a}!`;
+    }
+    return `${s}Z${n}`;
+  }
+
+  /** 排练号 `!rehearsal=A!` 写不写（123 的扩展，ABC 与 Muse 读不懂）。 */
+  protected readonly rehearsalMarks: boolean = false;
+  /** 弓法 `!upbow!` `!downbow!` 与单音震音 `!///!` 写不写（ABC 的写法；Muse 没有这些装饰名）。 */
+  protected readonly bowAndTremolo: boolean = true;
+
+  /** 多小节休止写不写成 `Zn`。123 写；ABC 的 `Z` 同义但各家软件的读法不一，先只给 123。 */
+  protected readonly multiRests: boolean = false;
+
+  /** 曲中换谱号写不写（`[K:clef=…]`）。123 写；ABC、Muse 那两档读入端没接，先不写。 */
+  protected readonly inlineClefs: boolean = false;
+
   /** 延音线（ABC 专有：tie 的 start 端写 `-`）。 */
   protected tieText(ch: Chord): string {
     void ch;
@@ -541,6 +599,8 @@ export abstract class AbcFamilyEmitter {
     let key = song.key ? this.keyValue(song.key) : "";
     const timeOf = (t: { beats: number; beatType: number } | undefined): string => (t ? `${t.beats}/${t.beatType}` : "");
     let time = timeOf(song.time);
+    /** 当前谱号名（曲中换谱号才写 `[K:clef=…]`） */
+    let clef = "treble";
     this.curTime = song.time ?? { beats: 4, beatType: 4 };
     /** 收一行：换行标记若是（或带着）真换行，join 出来的两侧空格要收掉；末尾的换行也收掉，否则歌词行前多一个空行。
      *  代码行以「字母（+ 数字）+ 冒号」起头（小节中间换行后 `C :|`、`C4 :|`、123 的 `x :|`）会被读成字段行
@@ -566,8 +626,13 @@ export abstract class AbcFamilyEmitter {
       // 123 一处只能起一个房号；文本谱解析器会留下与新房号重叠的不收口房号，只写最后一个（读回也只认它）
       const lastEnding = lefts.filter((b) => b.ending?.type === "start").pop();
       for (const left of lefts) {
-        // 只有房号、没有实际线时不写线（`[1` 自己就是起点标记）
-        if (left.style !== undefined) out.push(barlineText(left));
+        // 只有房号、没有实际线时不写线（`[1` 自己就是起点标记）。
+        // MusicXML 的起反复常只写 `<repeat direction="forward"/>`、不带 `<bar-style>`，也是一条线（以前丢了，`:|` 跳回曲首）
+        if (left.style !== undefined || left.repeat) {
+          // 前一小节收的是普通线：并成一根 `|:`（写成 `| |:` 谱面上是两根线）
+          if (left.repeat === "forward" && left.style === undefined && out[out.length - 1] === "|") out.pop();
+          out.push(barlineText(left));
+        }
         // 跳转记号紧跟这条线（segno 是跳转目标，落点就是这条线）
         out.push(...barlineOrnaments(left));
         if (left === lastEnding) out.push(`[${left.ending!.numbers.join(",")}`);
@@ -577,6 +642,11 @@ export abstract class AbcFamilyEmitter {
       key = k;
       const t = mea.attrs?.time ? timeOf(mea.attrs.time) : time;
       if (t !== time) out.push(`[M:${t}]`);
+      // 曲中换谱号（大提琴转中音谱号）：`[K:clef=alto]`（ABC §3.1.14 的 clef= 写在 K: 里）。首小节的走 `V:` 声明。
+      // 123 只有小节级的谱号：MusicXML 写在小节中间的（`laterAttrs`，Sibelius 常放在前一小节末尾）落到较近的那个小节头
+      const cn = this.clefAt(part, i);
+      if (this.inlineClefs && cn && i > 0 && cn !== clef) out.push(`[K:clef=${cn}]`);
+      if (cn) clef = cn;
       time = t;
       if (mea.attrs?.time) this.curTime = mea.attrs.time;
       let el0 = 0;
@@ -587,9 +657,12 @@ export abstract class AbcFamilyEmitter {
         ri++;
         el0 = cut.at;
       }
-      const body = this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext, wedgeStart, wedgeEnd }, el0);
+      // 多小节休止（MusicXML `<multiple-rest>`、123 `Zn`）：整串写成一个 `Zn`，跳过后面那几个小节
+      const run = cuts.length ? 0 : this.multiRestRun(part, i, ranges[ri]!.to);
+      const body = run ? this.multiRestText(mea, run) : this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext, wedgeStart, wedgeEnd }, el0);
       out.push(body);
-      const right = (mea.barlines ?? []).find((b) => b.location === "right");
+      if (run) i += run - 1;
+      const right = (part.measures[i]!.barlines ?? []).find((b) => b.location === "right");
       const last = i === part.measures.length - 1;
       // 右线的记号写在线**之前**（`… 6 !fine! |]`）：唱到这儿才跳，读回来也按这个位置认。
       if (right) out.push(...barlineOrnaments(right));
@@ -668,10 +741,15 @@ export abstract class AbcFamilyEmitter {
       // 增时线上的注记（文本谱 `- "…"`）123 挂不到 `-` 上，并到宿主音符写出（宿主自己没有时）
       if (word && !this.annotationBeforeChord) s += this.annotationText(word);
       if (el.notations?.fermata) s += "!fermata!";
-      for (const a of el.notations?.articulations ?? []) s += `!${a}!`;
+      for (const a of el.notations?.articulations ?? []) if (this.rehearsalMarks || rehearsalOf(a) === undefined) s += `!${a}!`;
       // 从 MusicXML 读进来的波音/颤音挂在 ornaments 上（`inverted-mordent`），写回简谱来源的同名记号（`!sby!`）——
       // 不写就整个丢了：以前识别核对那条路（识别 → MusicXML → 123）里 1677《祷告》的两个波音就是这么没的。
       for (const o of el.notations?.ornaments ?? []) s += `!${ORNAMENT_NAME[o] ?? o}!`;
+      // MusicXML 来的弓法、单音震音（123 用 ABC 的写法 `!upbow!` `!///!`）
+      if (this.bowAndTremolo) {
+        for (const tk of el.notations?.technical ?? []) s += `!${TECHNICAL_NAME[tk] ?? tk}!`;
+        if (el.notations?.tremolo) s += `!${"/".repeat(el.notations.tremolo)}!`;
+      }
       // 同一个音上的开、收按嵌套排：包住多连音组的弧在外层（`((3: 1_ 2_ 3_) 4)`），其余在里层
       const tp = mi.tupletStart.get(el.id);
       const opens = mi.slurStart.get(el.id) ?? 0;

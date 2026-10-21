@@ -23,6 +23,9 @@ const ALIASES: Readonly<Record<string, readonly string[]>> = {
   xby: ["lowermordent", "mordent", "下波音"],
   cy: [],
   tr: ["trill", "trill-mark", "颤音"],
+  // 弓法（123 的 `!upbow!` `!downbow!` 是 ABC 标准名；文本谱没有这两个记号，转文本谱时进丢失清单）
+  sg: ["upbow", "up-bow", "上弓"],
+  xg: ["downbow", "down-bow", "下弓"],
   // 小节线上的跳转记号（123 的写法与归属见 `abcfamily/jumpmarks.ts`）
   hs: ["segno"],
   ty: ["coda"],
@@ -38,4 +41,18 @@ const KEY: ReadonlyMap<string, string> = new Map(
 /** 记号名（任一种记法）→ 短名；认不出返回 undefined。 */
 export function decoKey(name: string): string | undefined {
   return KEY.get(name) ?? KEY.get(name.toLowerCase());
+}
+
+/** 单音震音的道数：`!/!` `!//!` `!///!` `!////!`（ABC 2.1 标准没有震音，这是 abcm2ps / abc2svg / abcjs 的写法，四道只有 abcjs 认）、
+ *  中文名 `!震音!`（三道）；不是震音返回 undefined。`tremolo` 不认：MusicXML 的双音震音（`type="start"/"stop"`）按元素名写出来就是它，
+ *  对应那三家的 `!trem1!`–`!trem4!`（两音之间），不是单音的 */
+export function tremoloStrokes(name: string): number | undefined {
+  if (/^\/{1,4}$/.test(name)) return name.length;
+  return name === "震音" ? 3 : undefined;
+}
+
+/** 排练号：123 的 `!rehearsal=A!`（也认 `!排练号=A!`）→ `A`；不是排练号返回 undefined。 */
+export function rehearsalOf(name: string): string | undefined {
+  const m = /^(?:rehearsal|排练号)\s*=\s*(.+)$/i.exec(name);
+  return m ? m[1]!.trim() : undefined;
 }

@@ -41,6 +41,7 @@ import type {
   Space,
   Sustain,
 } from "../model/doc";
+import { SIMPLE_DIVISIONS } from "../model/doc";
 import { IdGen, breaksAfterToStart, emptyDoc, emptySong } from "../model/helpers";
 import { resolveAbcPitches } from "../abcfamily/abcpitch";
 import { addMeta, creatorOf, isMetaKey } from "../model/metakeys";
@@ -67,6 +68,7 @@ import {
 } from "../abcfamily/parsedialect";
 import { LETTER_OF_DEGREE } from "../abcfamily/dialectjcx";
 import { t as tr } from "../i18n";
+import { clefFromName } from "../model/jianpu";
 
 /** 歌词块：一行曲（到 `$` 换行为止的连续音乐行），紧跟其后的 `w` 行从块的第一个对位格起对位
  *  （规范 §5.1，同 ABC §5.1、文本谱 `Q:` 后跟 `C1:`）。
@@ -115,6 +117,8 @@ interface PartBuild {
   /** 刚见过的 `$` 落在小节中间还是小节末，要看后面先来的是音符还是小节线：先记下 `$` 前的最后一个和弦
    *  （及它当时有几条增时线），同一小节里再来音符才落成 `lineBreakAfter`（同 `.jpwabc`，见 `fromjpw.ts`） */
   inlineBreak: { host: Chord; sustains: number; kind: BreakKind } | null;
+  /** `Zn` 还欠着的整小节休止：本小节收尾时再补 n−1 个（`closeMeasure`） */
+  extraRestBars?: number;
   /** `V:n clef=…`（123）：收尾时落到第一小节的 `attrs.clefs` */
   clef?: Clef;
   /** 123 的后置 `~` 还没配到下一个音：起点和弦与 `~` 的位置。存在声部级，`~` 可以跨 `$` 行 */
@@ -629,12 +633,18 @@ function buildMusicLine(
       // ── 下面四种只有标准 ABC 会产生（123 的休止走 note(degree=0)、`-` 是增时线）──
 
       case "rest": {
+        // `Z` / `Zn`：整小节休止，时值是一整小节；n > 1 的记多小节休止，收尾时补齐后面的小节
+        const bars = t.bars;
+        if (bars !== undefined && bars > 1) {
+          (pb.measure.attrs ??= {}).multiRest = bars;
+          pb.extraRestBars = bars - 1;
+        }
         const ch: Chord = {
           kind: "chord",
           id: ctx.ids.next(),
           notes: [],
-          rest: {},
-          duration: ctx.d.duration(t, ctx.len),
+          rest: bars !== undefined ? { measure: true } : {},
+          duration: bars !== undefined ? wholeMeasure(ctx.time) : ctx.d.duration(t, ctx.len),
           voice: pb.voice,
           staff: 1,
           source: t.source,
@@ -1050,7 +1060,13 @@ function buildMusicLine(
         const name = m[1]!.toUpperCase();
         const val = m[2] ?? "";
         pb.measure.attrs ??= {};
-        if (name === "K") {
+        // 曲中换谱号 `[K:clef=tenor]`（只换谱号、不换调）：123 的写出端这么写
+        const clefOnly = name === "K" && ctx.d.id === "123" ? /^\s*clef\s*=\s*(\S+)\s*$/i.exec(val) : null;
+        if (clefOnly) {
+          const c = clefFromName(clefOnly[1]!);
+          if (c) pb.measure.attrs.clefs = [c];
+          else report(ctx, "bad-clef", tr("diag.j123.badClef", { v: clefOnly[1]! }), t.source);
+        } else if (name === "K") {
           const r = ctx.d.parseKey(val);
           if (r.error) report(ctx, "bad-key", r.error, t.source);
           pb.measure.attrs.key = r.key;
@@ -1095,6 +1111,14 @@ function markLastEndings(part: Part): void {
   });
 }
 
+/** 一整小节的时值（`Z` 用）。没有拍号按 4/4；4/4、2/2 这类正好一个全音符的标 `whole`，别的不标符号时值（五线谱照整小节休止画） */
+function wholeMeasure(time: { beats: number; beatType: number } | null): Chord["duration"] {
+  const t = time ?? { beats: 4, beatType: 4 };
+  const d: Chord["duration"] = { divisions: (SIMPLE_DIVISIONS * 4 * t.beats) / t.beatType, dots: 0 };
+  if (t.beats === t.beatType) d.type = "whole";
+  return d;
+}
+
 function closeMeasure(ctx: Ctx, pb: PartBuild): void {
   if (pb.measure.elements.length === 0 && !pb.measure.barlines?.length) return;
   // 末尾那个分支是空的（`… & |`）：`&` 写了却没有音，多半是漏了内容
@@ -1104,6 +1128,25 @@ function closeMeasure(ctx: Ctx, pb: PartBuild): void {
   pb.overlaySource = undefined;
   pb.part.measures.push(pb.measure);
   pb.measureNo++;
+  // `Zn` 后面那 n−1 个小节：各一个整小节休止，收尾的那根线挪到最后一个上
+  const extra = pb.extraRestBars ?? 0;
+  pb.extraRestBars = undefined;
+  if (extra > 0) {
+    const head = pb.measure;
+    const right = head.barlines?.filter((b) => b.location === "right") ?? [];
+    // 中间的小节线一律普通线：没有右线的小节投影成 MusicXML 时会被当成没收口的续段、并回前一小节（`xmlproject.ts`）
+    head.barlines = [...(head.barlines ?? []).filter((b) => b.location !== "right"), { location: "right", style: "regular" }];
+    const rest = head.elements.find((el): el is Chord => el.kind === "chord" && !!el.rest?.measure);
+    for (let k = 0; k < extra; k++) {
+      const m: Measure = {
+        number: String(pb.measureNo),
+        elements: [{ kind: "chord", id: ctx.ids.next(), notes: [], rest: { measure: true }, duration: { ...(rest?.duration ?? wholeMeasure(ctx.time)) }, voice: 1, staff: 1 }],
+      };
+      m.barlines = k === extra - 1 && right.length ? right : [{ location: "right", style: "regular" }];
+      pb.part.measures.push(m);
+      pb.measureNo++;
+    }
+  }
   pb.measure = { number: String(pb.measureNo), elements: [] };
   pb.noteCount = 0;
   // `&` 的临时声部只活到小节线（ABC §7.4），下一小节从主声部重新开始

@@ -25,6 +25,7 @@
 import { getMeta } from "../model/metakeys";
 import { Fraction } from "../common/fraction";
 import { Font } from "../layout/font";
+import { compressMultiRests } from "../model/multirest";
 import { dynamicGlyphs } from "../engrave/dynamics";
 import { articGlyph } from "../engrave/articulation";
 import { decoKey } from "../model/deconames";
@@ -85,6 +86,16 @@ import {
 } from "./layoutpass";
 import { melodyChords, topNote } from "../model/jianpu";
 import { defaultsFonts, measureWidth, noteStem, partSymbolOf, printLayout, staffDetailsOf, wedgeSpread, xmlAlign, xmlFont, xmlPos } from "../model/xmlsurface";
+
+/** 谱表上方的记号：MusicXML 元素名 → SMuFL 字形 */
+const OUTSIDE_GLYPH: Readonly<Record<string, string>> = {
+  "inverted-mordent": GlyphCodes.ornamentShortTrill,
+  mordent: GlyphCodes.ornamentMordent,
+  "trill-mark": GlyphCodes.ornamentTrill,
+  turn: GlyphCodes.ornamentTurn,
+  "up-bow": GlyphCodes.stringsUpBow,
+  "down-bow": GlyphCodes.stringsDownBow,
+};
 
 /** Bravura Text 里 segno/coda 相对 Bravura 同一字形的大小（见 processSegno） */
 const BRAVURA_TEXT_SCALE = 0.8;
@@ -359,6 +370,7 @@ class DocPartLoader {
     const dur = new Fraction(end, div);
     if (dur.compareTo(mif.dur) > 0) mif.dur = dur;
     mif.number = m.number;
+    if (m.attrs?.multiRest) mif.multiRest = m.attrs.multiRest;
     if (m.implicit) mif.implicit = true;
     const width = measureWidth(m);
     if (width !== undefined) mif.width = width;
@@ -627,6 +639,15 @@ class DocPartLoader {
       item.symbol = symbol;
       ch.notations.push(item);
     }
+    // 波音、颤音（`<ornaments>`）与弓法（`<technical>`）：印在谱表上方（`NotationItem.outside`）。单音震音在符干上，见 render.ts
+    for (const name of [...(n?.ornaments ?? []), ...(n?.technical ?? [])]) {
+      const symbol = OUTSIDE_GLYPH[name];
+      if (!symbol) continue;
+      const item = new NotationItem();
+      item.symbol = symbol;
+      item.outside = true;
+      ch.notations.push(item);
+    }
     for (const mk of this.marksByEnd.get(src.id) ?? []) {
       if ((mk.endNote ?? 0) !== k) continue;
       const start = this.chordById.get(mk.start);
@@ -791,6 +812,14 @@ class DocPartLoader {
           break;
         case "metronome":
           if (this.processMetronome(blk, item)) hasText = true;
+          break;
+        case "rehearsal":
+          // 排练号：照文字排，字加粗放大一号、外面套方框
+          if (this.processWords(blk, { ...item, type: "words" })) {
+            blk.boxed = true;
+            for (const it of blk.data) if (it.text !== "\n") it.font = new Font(it.font.family, it.font.size * 1.15, true, it.font.italic);
+            hasText = true;
+          }
           break;
         case "segno":
           this.processSegno(blk, false, xmlPos(item));
@@ -1385,8 +1414,10 @@ function partGroupsOf(score: StaffLayout, song: Song): PartGroup[] {
  * 调用方给好 `MixedOptions`（含已加载的 MetaData）。
  */
 export function layoutStaff(doc: ScoreDoc, options: MixedOptions): StaffLayout {
-  const song = doc.songs[0];
-  if (!song) throw new Error("这份文档里没有曲子");
+  const first = doc.songs[0];
+  if (!first) throw new Error("这份文档里没有曲子");
+  // 多小节休止在谱面上并成一小节（模型不动，见 `model/multirest.ts`）
+  const song = compressMultiRests(first);
   const score = new StaffLayout(options, song);
 
   const def = song.defaults;

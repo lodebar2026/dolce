@@ -22,6 +22,7 @@ import { eachChord, verseCount } from "./helpers";
 import { projectForJianpu } from "./jianpuproject";
 import { melodyLane } from "./jianpu";
 import { puArcLosses } from "./topu";
+import { decoKey, rehearsalOf, tremoloStrokes } from "./deconames";
 import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "./pagemeta";
 import { getLang, t } from "../i18n";
 
@@ -53,7 +54,11 @@ export type Feature =
   | "oddTuplet"      // 比例不是 n:n−1 的多连音（文本谱里 n 个音一律占 n−1 个基本时值）
   | "slurCrossTuplet" // 跨出多连音组、又不是连到下一个音的弧（123 的括号只许嵌套，连到下一个音的写 `~`）
   | "lyricOnRest"    // 挂在可见休止上的词（123、ABC 的休止不占对位格）
-  | "pageBreak";     // 谱里写的换页（小节级或小节中间的）
+  | "pageBreak"      // 谱里写的换页（小节级或小节中间的）
+  | "tremolo"        // 单音震音（MusicXML `<tremolo>`、123 `!///!`）
+  | "bowing"         // 弓法（`<up-bow>` `<down-bow>`、123 `!upbow!` `!downbow!`）
+  | "rehearsal"      // 排练号（`<rehearsal>`、123 `!rehearsal=A!`）
+  | "multiRest";     // 多小节休止（`<multiple-rest>`、123 `Zn`）
 
 /** 人看的名字，直接进丢失清单。 */
 export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
@@ -84,6 +89,10 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   slurCrossTuplet: "跨出多连音组的弧线（会截到组的边界）",
   lyricOnRest: "挂在休止符上的歌词",
   pageBreak: "换页（会改成换行）",
+  tremolo: "震音",
+  bowing: "弓法（上弓、下弓）",
+  rehearsal: "排练号",
+  multiRest: "多小节休止（会写成一小节一个休止）",
 };
 
 /** 目标格式。文本谱两种方言各算一种（装得下的不一样：番茄没有页眉页脚与版面指令字段）。 */
@@ -106,7 +115,11 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
  *  音符堆只写简谱印的那个音；弧线与多连音共用一个先开先闭的括号队列。 */
 const PU_GONE: Feature[] = [
   "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "nestedArc", "oddTuplet",
+  // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
+  "tremolo", "bowing", "rehearsal", "multiRest",
 ];
+/** 只有 123 与 MusicXML 装得下的（123 的扩展写法，规范 §8.3/§9）。 */
+const EXT_123: Feature[] = ["tremolo", "bowing", "rehearsal", "multiRest"];
 
 const ALL: Feature[] = Object.keys(FEATURE_NAMES) as Feature[];
 /** 「除了这几样，其余都装得下」。 */
@@ -124,10 +137,11 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
   // 换页没有记号，写出端退化成换行（`emitabc.ts::breakText`；换行本身含小节中间的都装得下，`break-roundtrip-check` 实测）
-  abc: allBut("style", "playOrder", "rhythmNote", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak"),
+  // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
+  abc: allBut("style", "playOrder", "rhythmNote", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
-  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet"),
+  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
   // 文本谱：展开档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `pu/dialect.ts::EmitStyle.pageFields`）
@@ -141,12 +155,12 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
   //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
   jly: allBut("multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
-    "layoutDirectives", "dynamics", "verseLabel", "tonicDegree"),
+    "layoutDirectives", "dynamics", "verseLabel", "tonicDegree", ...EXT_123),
   // Muse `.jcx`（`emitjcx.ts`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
   // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
   // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
   jcx: allBut("multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
-    "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak", "tonicDegree"),
+    "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak", "tonicDegree", ...EXT_123),
   // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
   // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
   // jianpu-ly、Muse、`.jpwabc` 的调号也只写 `1=` 大调 / 调号，主音唱名同样写不出。
@@ -191,12 +205,18 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
         // 力度与渐强渐弱走 `<direction>`
         for (const d of mea.directions ?? []) {
           if (d.type === "dynamics" || d.type === "wedge") used.add("dynamics");
+          if ([d, ...(d.more ?? [])].some((x) => x.type === "rehearsal")) used.add("rehearsal");
         }
+        if (mea.attrs?.multiRest) used.add("multiRest");
         for (const el of mea.elements) {
           if (el.kind === "space" && el.spacer === "x") used.add("invisibleRest");
           // MusicXML 读进来的和弦是结构化的、没有 text，所以按有无判
           if (el.harmony) used.add("harmony");
           if (el.kind === "chord") {
+            const n = el.notations;
+            if (n?.tremolo || n?.articulations?.some((a) => tremoloStrokes(a) !== undefined)) used.add("tremolo");
+            if (n?.technical?.some((x) => x === "up-bow" || x === "down-bow") || n?.articulations?.some((a) => decoKey(a) === "sg" || decoKey(a) === "xg")) used.add("bowing");
+            if (n?.articulations?.some((a) => rehearsalOf(a) !== undefined)) used.add("rehearsal");
             if (el.notes.length > 1 || (lane && (el.staff !== lane.staff || el.voice !== lane.voice))) used.add("noteStack");
             if (el.grace) used.add("grace");
             if (el.rhythm) used.add("rhythmNote");

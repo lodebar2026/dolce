@@ -17,6 +17,7 @@ import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedMark, PlacedText } fro
 import { articStack, entryTop, noteBeams, stackTop } from "./vertical";
 import { type ChordSpan, sectionWordOf, sectionWordSlot } from "./sectionword";
 import { barlineBox } from "./spacing";
+import { rehearsalOf } from "../../../model/deconames";
 
 /** 一个声部（或并排块上行）的上方带排完的结果。 */
 export interface VoiceBand {
@@ -337,6 +338,7 @@ function placeDirections(
     const b = barlineBox(it.element as BarlineElement, m);
     return { x: it.x, left: it.x - (b?.left ?? 0), right: it.x + (b?.right ?? 0), dy: it.dy ?? 0 };
   });
+  const rehearsals: { it: PlacedItem; mark: string }[] = [];
   for (const it of items) {
     const el = it.element;
     if (el.kind !== "note" && el.kind !== "barline") continue;
@@ -350,7 +352,12 @@ function placeDirections(
       const dyn = DYNAMICS[orn.name];
       const term = TERMS[orn.name];
       const bm = BARLINE_MARKS[orn.name];
-      if (dyn) {
+      const mark = rehearsalOf(orn.name);
+      if (mark) {
+        // 排练号不进这一组横排：等别的记号都落定再单独摆（见循环后），免得与段落词、调号标签挤在一起
+        rehearsals.push({ it, mark });
+        continue;
+      } else if (dyn) {
         const fs = m.style.size.note * DYNAMIC_SIZE;
         const r = ink.smufl(dyn, fs);
         t = { kind: "direction", el, text: dyn, face: "music", size: fs, x: pen - r.left, y: 0, ink: r.offset(pen - r.left, 0) };
@@ -423,7 +430,43 @@ function placeDirections(
     boxes.push({ key: group[0]!, x0: gx(), x1: gx() + gw, top: gTop(), bottom: gBottom(), layer: 1, kind: "direction" });
     out.set(group[0]!, group);
   }
+  for (const { it, mark } of rehearsals) placeRehearsal(it, mark, items, boxes, texts, m, ink, width);
   return out;
+}
+
+/**
+ * **排练号**（`!rehearsal=A!` / `<rehearsal>`）：大一号的字母套方框，左缘对齐所在那个音的墨迹左缘，
+ * 抬到这一段里一切墨迹（和弦、段落词、调号标签、力度、弧、音符那一摞）之上一道空——与五线谱一样印在最上面。
+ * 框就是它的 `ink`（compose/note.ts 照它画框），进带后上面的房号等再按它让。
+ */
+function placeRehearsal(
+  it: PlacedItem, mark: string, items: readonly PlacedItem[], boxes: BandItem[], texts: PlacedText[], m: JianpuGrid, ink: InkMeasurer, width: number,
+): void {
+  const k = 1.15;
+  const fs = m.style.size.chord * k;
+  const r = ink.text(mark, "term"); // 按术语字号（= 和弦字号）量的，放大 k 倍
+  const pad = fs * 0.25;
+  const w = (r.ink.right - r.ink.left) * k + pad * 2;
+  const nh = m.ink.noteHeight;
+  const x0 = Math.max(0, Math.min(it.x - nh / 2, (width || Infinity) - w));
+  const x1 = x0 + w;
+  const gap = m.style.vertical.slurGap;
+  let top = Math.min(-nh / 2, ...items.filter((o) => o.element.kind === "note" && o.x + nh / 2 > x0 && o.x - nh / 2 < x1)
+    .map((o) => entryTop(o.element, m) + (o.dy ?? 0)));
+  for (const b of boxes) {
+    if (b.x1 <= x0 || b.x0 >= x1) continue;
+    top = Math.min(top, b.topAt ? b.topAt(x0, x1) : b.top);
+  }
+  for (const t of texts) if (t.ink.right > x0 && t.ink.left < x1) top = Math.min(top, t.ink.top);
+  const bottom = top - gap;
+  const boxBottomRel = r.ink.bottom * k + pad; // 框底相对文字基线
+  const y = bottom - boxBottomRel;
+  const t: PlacedText = {
+    kind: "direction", el: it.element, text: mark, face: "text", size: fs, x: x0 + pad - r.ink.left * k, y, boxed: true,
+    ink: new Rect(x0, y + r.ink.top * k - pad, x1, bottom),
+  };
+  texts.push(t);
+  boxes.push({ key: t, x0, x1, top: t.ink.top, bottom: t.ink.bottom, layer: 1, kind: "direction" });
 }
 
 /**

@@ -92,6 +92,9 @@ export function meterAdvance(meter: Meter, m: JianpuGrid): number {
 }
 
 /** 一个符号的占位（相对锚点），口径见文件头。 */
+/** 多小节休止那道横杠的宽（数字墨迹高的倍数） */
+export const MULTI_REST_WIDTH = 3.2;
+
 function itemBox(it: PlacedItem, m: JianpuGrid, ink: InkMeasurer): { left: number; right: number; lead: number; want: number; over: number } {
   const el = it.element;
   if (el.kind === "barline") {
@@ -109,6 +112,11 @@ function itemBox(it: PlacedItem, m: JianpuGrid, ink: InkMeasurer): { left: numbe
   let lead = 0;
   let want = 0;
   let over = 0;
+  // 多小节休止：一道粗横杠（compose/note.ts::paintMultiRest），宽 MULTI_REST_WIDTH 个数字墨迹高，落笔点在中间
+  if (el.kind === "note" && el.multiRest) {
+    const half = (m.ink.noteHeight * MULTI_REST_WIDTH) / 2;
+    return { left: half, right: half + (d.advance - (d.ink.right - d.ink.left)) / 2, lead: 0, want: 0, over: 0 };
+  }
   if (el.kind === "note") {
     // 附点是画上去的圆，占位照旧按 `·` 的字面宽留（同旧简谱引擎 `JpNumber.augDotAdvance`）
     if (el.dots > 0) right += ink.digit("·").advance * el.dots;

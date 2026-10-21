@@ -67,6 +67,8 @@ export interface Token {
   numbers?: number[];
   /** 反复次数（`|::` = 3 遍） */
   repeatTimes?: number;
+  /** rest：整小节休止 `Z` / `Zn` 占几个小节（ABC §4.6；123 同写法） */
+  bars?: number;
   /** grace：倚音的音符 token */
   notes?: Token[];
   /** grace：`{/g}` 这种带斜线的短倚音 */
@@ -92,6 +94,8 @@ export interface DurationScan {
   /** ABC：相对 `L:` 的倍数 */
   num?: number;
   den?: number;
+  /** 整小节休止 `Z` / `Zn` 的小节数（ABC §4.6） */
+  bars?: number;
   next: number;
 }
 

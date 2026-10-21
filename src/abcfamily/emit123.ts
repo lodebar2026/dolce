@@ -22,6 +22,9 @@ const ACC_TEXT: Readonly<Record<string, string>> = {
 export class Emitter123 extends AbcFamilyEmitter {
   protected readonly versionLine = "%123-1.0";
   protected override readonly tiesAsSlurs = true;
+  protected override readonly inlineClefs = true;
+  protected override readonly multiRests = true;
+  protected override readonly rehearsalMarks = true;
   protected override readonly spaceBeams = false;
 
   /** 123 没有音符堆（规范：和弦走符号 `"Am7"`，不做 `[1 3 5]`），一个声部也只有一路：
@@ -45,11 +48,12 @@ export class Emitter123 extends AbcFamilyEmitter {
   }
 
   /** 声部名（多声部时）之外再写谱号：八度谱号 `clef=treble-8`（简谱按高八度记的男声部，`writtenOctaveOf`）；
-   *  多声部里低音、中音谱号也写（简谱上不印，五线谱档要它，声部面板改了谱号要能存回）。单声部的普通谱号不写。 */
+   *  低音、中音谱号也写（简谱上不印，五线谱档要它，声部面板改了谱号要能存回）——单声部也写
+   *  （大提琴分谱转过来以前丢了低音谱号，五线谱改排高音谱号）。单声部的高音谱号不写。 */
   protected override voiceAttrs(part: Part, multi: boolean): string {
     const c = part.measures[0]?.attrs?.clefs?.find((x) => (x.staff ?? 1) === 1);
     const treble = !c || (c.sign === "G" && (c.line ?? 2) === 2);
-    const name = c && (c.octaveChange || (multi && !treble)) ? clefName(c) : null;
+    const name = c && (c.octaveChange || !treble) ? clefName(c) : null;
     return [super.voiceAttrs(part, multi), name ? `clef=${name}` : ""].filter(Boolean).join(" ");
   }
 

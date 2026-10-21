@@ -11,6 +11,7 @@ import { augDotCenter } from "../../../engrave/augdot";
 import { breathPath } from "../../../engrave/breath";
 import type { PlacedItem, PlacedText } from "../place/model";
 import { graceLayout, noteBeams } from "../place/vertical";
+import { MULTI_REST_WIDTH } from "../place/spacing";
 import { type OriginalCtx, digitItem, digitOrigin, dot, octaveDot, rect, stroke, text } from "./ctx";
 import { musicText } from "../../../engrave/prims";
 
@@ -56,11 +57,40 @@ export function paintBand(c: OriginalCtx, g: Group, el: MusicElement, kinds?: Re
     } else if (t.kind === "key-label") tf.classes.add("key-change");
     else tf.classes.add(t.kind); // `artic` / `direction`（成书 line-check 认，`pdflayout/browser.ts::CLS_TAGS`）
     g.add(tf);
+    if (t.boxed) {
+      // 排练号的方框：`ink` 就是框（place/band.ts）
+      const b = t.ink.offset(o.x, o.y);
+      const p = stroke(c.ink, 1);
+      p.moveTo(b.left, b.top);
+      p.lineTo(b.right, b.top);
+      p.lineTo(b.right, b.bottom);
+      p.lineTo(b.left, b.bottom);
+      p.close();
+      p.classes.add("rehearsal");
+      g.add(p);
+    }
   }
 }
 
 const NOTE_TEXT = new Set<PlacedText["kind"]>(["chord", "section-word", "key-label"]);
 const NOTE_MARKS = new Set<PlacedText["kind"]>(["artic", "direction"]);
+
+/** 多小节休止：基线上一道粗横杠、两头竖短线，上面印小节数（与五线谱的 H 形长休止同形，简谱器乐分谱的通行印法）。
+ *  宽见 place/spacing.ts::MULTI_REST_WIDTH，`x` 是中点。 */
+function paintMultiRest(c: OriginalCtx, g: Group, bars: number, x: number, baseline: number): void {
+  const h = c.metrics.ink.noteHeight;
+  const w = h * MULTI_REST_WIDTH;
+  const t = h * 0.28;
+  g.add(rect(c.ink, x - w / 2, baseline - t / 2, w, t));
+  for (const ex of [x - w / 2, x + w / 2 - h * 0.08]) g.add(rect(c.ink, ex, baseline - h * 0.35, h * 0.08, h * 0.7));
+  // 小节数：数字墨迹底落在横杠上方约半个数字墨迹高处，多位数逐位排开
+  const label = [...String(bars)];
+  const step = c.digitFont.measureText("0");
+  label.forEach((ch, k) => {
+    const { dx, dy } = digitOrigin(c, ch);
+    g.add(digitItem(ch, x + dx + (k - (label.length - 1) / 2) * step, baseline + dy - h * 1.15, c.digitFont, c.ink));
+  });
+}
 
 export function paintNote(c: OriginalCtx,
   root: Group,
@@ -75,7 +105,8 @@ export function paintNote(c: OriginalCtx,
   g.data = note;
 
   let num: JpNumber | null = null;
-  if (!note.hidden) {
+  if (note.multiRest && !note.hidden) paintMultiRest(c, g, note.multiRest, x, baseline);
+  else if (!note.hidden) {
     const ch = note.sound === "rhythm" ? "X" : String(note.pitch);
     const { dx, dy } = digitOrigin(c, ch);
     num = digitItem(ch, x + dx, baseline + dy, c.digitFont, c.ink);

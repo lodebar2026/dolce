@@ -85,6 +85,7 @@ function museJoin(text: string): string {
 const oneLine = (s: string): string => s.split(/\r\n?|\n/).map((x) => x.trim()).filter(Boolean).join(" ");
 
 export class EmitterJcx extends AbcFamilyEmitter {
+  protected override readonly bowAndTremolo = false;
   /** Muse 3.1 以前的版本号；文件按 GBK 落盘（`jcxcodec.ts`），新旧版 Muse 都能开 */
   protected readonly versionLine = "%MUSE2";
 

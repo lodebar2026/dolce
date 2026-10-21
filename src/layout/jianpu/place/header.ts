@@ -137,8 +137,9 @@ export function placeHeader(meta: Metadata, m: JianpuGrid, ink: HeaderMeasurer):
   }
   let keyBottom = keyY + key.bottom;
 
-  // `J:` 里的文字部分（「深情地」「高亢、自由地」）排在调号拍号**下一行**，左对齐；数字部分是速度值，不印在这里
-  const tempoWords = meta.tempos.filter((t): t is string => typeof t === "string" && t !== "");
+  // `J:` 里的文字部分（「深情地」「高亢、自由地」）排在调号拍号**下一行**，左对齐；文本谱的数字部分是播放速度，不印
+  // 别的来源的速度数字（`♩=144`，`Metadata.tempoMark`）排在这一行最前面
+  const tempoWords = [...(meta.tempoMark ? [meta.tempoMark] : []), ...meta.tempos.filter((t): t is string => typeof t === "string" && t !== "")];
   if (tempoWords.length > 0) {
     const text = tempoWords.join(" ");
     const baseline = keyY + m.style.size.keyMeter * 1.55;

@@ -10,6 +10,7 @@ import { Matrix33, Point } from "../common/geom";
 // layout.ts 里的是**画出来的那条弧**，所以起个别名区分。
 import { GraphicPath, Group, Slur as SlurArc, TextFrame } from "../layout/pageitem";
 import { GlyphCodes } from "../smufl/smufl";
+import { fillRect } from "../engrave/prims";
 import { BarStyle } from "../score/enums";
 import {
   LegerLayout,
@@ -20,6 +21,7 @@ import {
   GroupSymbol,
   LCR,
   LrcExtend,
+  MeasureLayout,
   PartMeasureLayout,
   MeasureText,
   MixedOptions,
@@ -77,6 +79,32 @@ function addFilledQuad(
 }
 
 // -----------------------------------------------------------------------
+/** 多小节休止：谱表中线上一道粗横杠（两头竖线从第二线到第四线），谱表上方印小节数（SMuFL 拍号数字）。
+ *  谱表坐标同别处：顶线 y=0、往下每格 10。横杠占满这一小节、两头各让 1.5 格 */
+function drawMultiRest(g: Group, mif: MeasureLayout, eng: MixedOptions, fs: number): void {
+  const x0 = mif.dataPos + 15, x1 = mif.getEntPos(mif.dur) - 15;
+  if (x1 <= x0) return;
+  g.add(fillRect(0xff000000, x0, 15, x1 - x0, 10));
+  addLine(g, x0, 10, x0, 30, eng.lineWidths.stem * 1.5);
+  addLine(g, x1, 10, x1, 30, eng.lineWidths.stem * 1.5);
+  // 小节数逐位画（元数据按单个字形查宽）
+  const digits = [...String(mif.multiRest)].map((d) => String.fromCharCode(GlyphCodes.timeSig0.charCodeAt(0) + Number(d)));
+  const ws = digits.map((d) => smuflWidth(eng.meta, d));
+  let x = (x0 + x1) / 2 - ws.reduce((a, b) => a + b, 0) / 2;
+  digits.forEach((d, k) => {
+    addSmufl(g, d, x, -15, fs);
+    x += ws[k]!;
+  });
+}
+
+/** 震音字形按墨迹中心摆到 (`cx`, `cy`) */
+function drawTremolo(g: Group, meta: { getBBox(glyph: string): { bBoxSW: number[]; bBoxNE: number[] } | null | undefined }, glyph: string, cx: number, cy: number, fs: number): void {
+  const bb = meta.getBBox(glyph);
+  const ox = bb ? ((bb.bBoxSW[0] + bb.bBoxNE[0]) / 2) * 10 : 0;
+  const oy = bb ? -((bb.bBoxSW[1] + bb.bBoxNE[1]) / 2) * 10 : 0;
+  addSmufl(g, glyph, cx - ox, cy - oy, fs);
+}
+
 // drawNotesNormal（render.cpp:953 drawNotesNormal + drawChord stem/flag）
 
 export function drawNotesNormal(
@@ -115,6 +143,11 @@ export function drawNotesNormal(
       const cue = n.size === 1 || ch.cue || ch.grace;
       const scale = ch.grace ? eng.graceSize : cue ? eng.cueSize : 1;
 
+      // 并过的多小节休止那一小节只剩一个休止（123 的 `Z` 带着 `whole` 时值，不算 measureRest，按小节认）
+      if (ch.rest && md.measureInfo.multiRest > 1) {
+        drawMultiRest(chordGrp(), md.measureInfo, eng, fs);
+        continue;
+      }
       if (ch.measureRest) {
         const mif = md.measureInfo;
         const endPos = mif.getEntPos(mif.dur);
@@ -164,7 +197,16 @@ export function drawNotesNormal(
 
     // stem and flag (skip rests, whole notes, half notes with beams)
     if (ch.rest) continue;
-    if (ch.noteType.compareTo(new Fraction(4)) >= 0) continue; // whole: no stem
+    // 单音震音（`<tremolo type="single">`）：tremolo1–4 字形压在符干中段；全音符没有符干，压在符头上方一格半处
+    const strokes = ch.src.notations?.tremolo;
+    const tremolo = strokes ? [GlyphCodes.tremolo1, GlyphCodes.tremolo2, GlyphCodes.tremolo3, GlyphCodes.tremolo4][Math.min(4, strokes) - 1]! : "";
+    if (ch.noteType.compareTo(new Fraction(4)) >= 0) {
+      if (tremolo && head) {
+        const top = ch.notes[ch.notes.length - 1]!;
+        drawTremolo(chordGrp(), meta, tremolo, head.cx, top.cy() - md.staffY(subStaff) - 15, fs);
+      }
+      continue; // whole: no stem
+    }
 
     const sx = ch.stemX();
     // stemY local = stemY() - md.staffY(subStaff) but for sub=0 staffY=0
@@ -202,6 +244,8 @@ export function drawNotesNormal(
     }
 
     addLine(chordGrp(), sx, sy, sx, ty, eng.lineWidths.stem);
+    // 符干上离符头 3/5 处（偏符干末端，躲开符头与符杠）
+    if (tremolo) drawTremolo(chordGrp(), meta, tremolo, sx, sy + (ty - sy) * 0.6, fs);
   }
 
   // ---- notations (fermata 等) —— render.cpp:328 drawChord 非简谱分支 ----
@@ -936,6 +980,20 @@ function drawTextBlock(container: Group, t: MeasureText): void {
     tf.matrix = m;
     container.add(tf);
     xpos += it.font.measureText(content);
+  }
+  if (t.boxed) {
+    // 排练号的方框：按首行字的墨迹上下沿、整块宽，四周留 0.25 个字号
+    const it0 = t.data.find((it) => it.text !== "\n");
+    if (!it0) return;
+    const b = it0.font.charBound(it0.text);
+    const pad = it0.font.size * 0.25;
+    const x0 = t.x - pad, x1 = t.x + totalW + pad;
+    const y0 = -t.y + b.top - pad, y1 = -t.y + b.bottom + pad;
+    const lw = 1.2;
+    addLine(container, x0, y0, x1, y0, lw);
+    addLine(container, x1, y0, x1, y1, lw);
+    addLine(container, x1, y1, x0, y1, lw);
+    addLine(container, x0, y1, x0, y0, lw);
   }
 }
 

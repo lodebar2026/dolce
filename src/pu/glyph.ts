@@ -37,6 +37,14 @@ export const ORNAMENTS: Readonly<Record<string, OrnamentGlyph>> = {
   xby: { glyph: C(0xe56d), placement: "above", scale: 0.9, label: "下波音" },
   cy: { glyph: C(0xe566), placement: "above", scale: 0.9, label: "颤音" },
   tr: { glyph: C(0xe566), placement: "above", scale: 0.9, label: "颤音" },
+  // 下面几样文本谱的 `&xx` 里没有（番茄脚本规范同），只给 123 / MusicXML 来源的简谱排版用（`pu/slots.ts::chordOrnaments`）
+  sg: { glyph: C(0xe612), placement: "above", scale: 0.9, label: "上弓" }, // stringsUpBow
+  xg: { glyph: C(0xe610), placement: "above", scale: 0.9, label: "下弓" }, // stringsDownBow
+  // 单音震音：简谱印在数字上方的几道斜线（tremolo1–4）
+  trem1: { glyph: C(0xe220), placement: "above", scale: 0.8, label: "震音" },
+  trem2: { glyph: C(0xe221), placement: "above", scale: 0.8, label: "震音" },
+  trem3: { glyph: C(0xe222), placement: "above", scale: 0.8, label: "震音" },
+  trem4: { glyph: C(0xe223), placement: "above", scale: 0.8, label: "震音" },
 };
 
 /** 文本谱认的力度名（语法表）；字形走公共那一份（engrave/dynamics.ts），与五线谱、旧简谱引擎同一套。 */

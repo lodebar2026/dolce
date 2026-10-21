@@ -6,7 +6,7 @@
 //     渐强收尾挂在拍位**之前**的最后一个（写出端 `xmlproject.ts::wedgeDirections` 把收尾写在收尾音的终点）；
 //   - Fine / D.C. / D.S.：挂本小节的右线（唱到这里才跳）；
 //   - 不是术语的文字（`副歌`）当段落词。
-import type { Element, Measure, Song, SourceOrnament } from "./doc";
+import type { DirectionPart, Element, Measure, Song, SourceOrnament } from "./doc";
 import { DYNAMICS, TERMS } from "../pu/glyph";
 import { decoKey } from "./deconames";
 
@@ -70,10 +70,19 @@ export function directionMarks(mea: Measure): DirectionMarks {
       let name: string | undefined;
       if (part.type === "dynamics" && part.text && part.text in DYNAMICS) name = part.text;
       else if (part.type === "segno" || part.type === "coda") name = decoKey(part.type);
+      // 排练号（方框字母）挂在拍位上的音上，记号名带内容：`rehearsal=A`（123 的 `!rehearsal=A!`，`deconames.ts::rehearsalOf`）
+      else if (part.type === "rehearsal" && part.text?.trim()) name = `rehearsal=${part.text.trim()}`;
       else if (part.type === "words" && part.text) {
         const t = part.text.trim();
         name = TERM_OF[t] ?? decoKey(t);
-        if (!name && t && !out.words.has(atOrAfter(p))) out.words.set(atOrAfter(p), t);
+        // 同一拍上两段文字（曲首「欢快 热烈地」与「pizz」）并成一段，空格隔开：段落词一个符号只挂一条，以前后一段丢了
+        if (!name && t) {
+          const at = atOrAfter(p);
+          const had = out.words.get(at);
+          if (had === undefined) out.words.set(at, t);
+          // 括号两侧不加空格：「(」与「副歌)」拆成两段写的（500 首 006）并回「(副歌)」
+          else if (!had.split(" ").includes(t)) out.words.set(at, /[(（\[【《“]$/.test(had) || /^[)）\]】》”,，.。;；:：!！?？]/.test(t) ? had + t : `${had} ${t}`);
+        }
       }
       if (!name) continue;
       if (AT_BAR_END.has(name)) {
@@ -82,6 +91,67 @@ export function directionMarks(mea: Measure): DirectionMarks {
     }
   }
   return out;
+}
+
+/** 拍单位 → 占几分之几全音符（附点另乘 3/2） */
+const BEAT_UNIT: Readonly<Record<string, { num: number; den: number }>> = {
+  whole: { num: 1, den: 1 }, half: { num: 1, den: 2 }, quarter: { num: 1, den: 4 }, eighth: { num: 1, den: 8 }, "16th": { num: 1, den: 16 },
+};
+
+const isTempo = (p: DirectionPart): boolean => p.type === "metronome" && !!p.tempo?.perMinute;
+
+/** 曲首速度在哪：第几声部、第几小节、第几条 direction、其中第几个子元素（0 = 主体，k ≥ 1 = `more[k-1]`）。
+ *  全曲第一个速度落在头两个小节里才算（识别出来的常挂在第一个音之后、弱起曲子落在第二小节）。 */
+function leadTempoAt(song: Song): { pi: number; mi: number; i: number; k: number } | null {
+  for (let pi = 0; pi < song.parts.length; pi++) {
+    const part = song.parts[pi]!;
+    const mi = part.measures.findIndex((m) => (m.directions ?? []).some((d) => [d, ...(d.more ?? [])].some(isTempo)));
+    if (mi < 0 || mi > 1) continue;
+    const dirs = part.measures[mi]!.directions!;
+    const i = dirs.findIndex((d) => [d, ...(d.more ?? [])].some(isTempo));
+    return { pi, mi, i, k: [dirs[i]!, ...(dirs[i]!.more ?? [])].findIndex(isTempo) };
+  }
+  return null;
+}
+
+/** 歌的曲首速度：`tempos` 里的数字（123 `Q:`、文本谱 `J:`），没有就取 MusicXML 曲首的 `<metronome>`。
+ *  `beat` 是拍单位占几分之几全音符（四分 = 1/4）。 */
+export function leadTempo(song: Song): { perMinute: number; beat: { num: number; den: number } } | null {
+  const n = song.tempos?.find((t): t is number => typeof t === "number");
+  if (n !== undefined) return { perMinute: n, beat: song.tempoBeat ?? { num: 1, den: 4 } };
+  const at = leadTempoAt(song);
+  if (!at) return null;
+  const d = song.parts[at.pi]!.measures[at.mi]!.directions![at.i]!;
+  const t = [d, ...(d.more ?? [])][at.k]!.tempo!;
+  const u = BEAT_UNIT[t.beatUnit ?? "quarter"] ?? BEAT_UNIT.quarter!;
+  return { perMinute: t.perMinute!, beat: t.beatUnitDot ? { num: u.num * 3, den: u.den * 2 } : u };
+}
+
+/**
+ * 曲首的速度 `<metronome>`（MusicXML 写在第一小节的 direction 里）→ 歌的 `tempos`（123 `Q:`、文本谱 `J:` 写的就是它）。
+ * 歌已有 `tempos` 或全曲头一个速度不在头两小节里的不动——曲中变速简谱文本格式写不出（以前曲首这条也一起丢了）。
+ */
+function liftLeadTempo(song: Song): void {
+  if (song.tempos?.length) return;
+  const at = leadTempoAt(song);
+  const lead = leadTempo(song);
+  if (!at || !lead) return;
+  song.tempos = [lead.perMinute];
+  if (lead.beat.num * 4 !== lead.beat.den) song.tempoBeat = lead.beat;
+  const dirs = song.parts[at.pi]!.measures[at.mi]!.directions!;
+  const dir = dirs[at.i]!;
+  // 速度常与表情术语同在一个 `<direction>` 里（「欢快 热烈地」+ ♩=144，落在 `more`）：只摘掉速度那一个。
+  // 主体那份要拷一份：下面顶替主体时会先删掉 `dir` 自己的字段
+  const rest = [{ ...dir } as DirectionPart, ...(dir.more ?? [])].filter((_, j) => j !== at.k);
+  if (!rest.length) dirs.splice(at.i, 1);
+  else {
+    // 剩下的子元素顶上来当这条 direction 的主体
+    const [head, ...more] = rest;
+    for (const key of ["type", "text", "tempo", "spanType", "wedgeType", "line", "shift"] as const) delete dir[key];
+    Object.assign(dir, head);
+    if (more.length) dir.more = more;
+    else delete dir.more;
+  }
 }
 
 /** 跳转目标记号的短名 → 123 / ABC 的写法（`!segno!`，见 `abcfamily/jumpmarks.ts`）。 */
@@ -97,6 +167,7 @@ const TEXT_NAME: Readonly<Record<string, string>> = { hs: "segno", ty: "coda" };
 export function directionsAsMarks(src: Song): Song {
   if (!src.parts.some((p) => p.measures.some((m) => m.directions?.length))) return src;
   const song: Song = structuredClone(src);
+  liftLeadTempo(song);
   for (const part of song.parts) {
     // 渐强渐弱常跨小节：起点留着等后面小节的收尾
     const open: { type: "crescendo" | "diminuendo"; id: number }[] = [];

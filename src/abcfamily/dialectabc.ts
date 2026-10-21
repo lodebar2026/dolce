@@ -68,6 +68,8 @@ export class LexerAbc extends AbcFamilyLexer {
     const ch = line[i];
     if (ch !== "z" && ch !== "Z") return null;
     const dur = this.scanDuration(line, i + 1);
+    // `Z4` 的数字是小节数，不是时值
+    if (ch === "Z") return { beams: 0, dots: 0, bars: Math.max(1, dur?.num ?? 1), next: dur?.next ?? i + 1 };
     return {
       beams: 0,
       dots: 0,

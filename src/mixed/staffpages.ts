@@ -415,6 +415,8 @@ function headerLines(
   topMargin: number,
   pageHeight: number,
   pageWidthTenths: number,
+  /** 页脚那几条（`footerCredits`）单独排：不做下面 Sibelius 整块重排的检测（它们本来就在页底） */
+  footer = false,
 ): HeadLine[] {
   // Credits (title block text) for this frame. credit-words 可含换行 → 逐行排版。
   // Sibelius MusicXML 导出 bug：credit-words 的 default-y 被整体压到页面底部
@@ -425,7 +427,7 @@ function headerLines(
   const creditMaxY = credits.length
     ? Math.max(...credits.map((c) => c.y))
     : 0;
-  const reanchorTop = credits.length > 0 && pageHeight - creditMaxY > pageHeight / 2;
+  const reanchorTop = !footer && credits.length > 0 && pageHeight - creditMaxY > pageHeight / 2;
   // 重排时把最高 credit（标题）的基线放在上边距下方一个标题字高处。
   const titleCredit = credits.find((c) => c.y === creditMaxY);
   const titleFontSz = titleCredit && titleCredit.fontSize > 0
@@ -500,6 +502,7 @@ function drawFrames(
   topMargin: number,
   pageHeight: number,
   pageWidthTenths: number,
+  footers: readonly ScoreCredit[] = [],
 ): Group[] {
   const pages: Group[] = [];
   let page: Group | null = null;
@@ -525,8 +528,30 @@ function drawFrames(
     ]);
     sysGrp.matrix = m;
   }
+  // 页脚（「《八段锦》（民乐合奏）2」这类逐页的 `rights`）：照原坐标画在各自那一页，不占版面
+  pages.forEach((pg, p) => {
+    const own = footers.filter((c) => c.page === p);
+    for (const h of headerLines(score, own, topMargin, pageHeight, pageWidthTenths, true)) pg.add(h.tf);
+  });
 
   return pages;
+}
+
+/**
+ * 页脚 credit：落在页面下四分之一的（MusicXML 的 y 从页底量）。整页 credit **全都**落在那里的不算——那是
+ * Sibelius 把整个标题块压到页底的导出 bug（`headerLines` 的 `reanchorTop` 会把它们挪回页首）。
+ * 以前页脚也当页眉：首行让开页眉墨迹时让到了页脚底下，第一页的谱全出了纸（《八段锦》19 份分谱都是）。
+ */
+function footerCredits(credits: readonly ScoreCredit[], pageHeight: number): Set<ScoreCredit> {
+  const out = new Set<ScoreCredit>();
+  const low = (c: ScoreCredit): boolean => c.y < pageHeight / 4;
+  const pages = new Set(credits.map((c) => c.page));
+  for (const p of pages) {
+    const own = credits.filter((c) => c.page === p);
+    if (own.every(low) && p === 0) continue;
+    for (const c of own) if (low(c)) out.add(c);
+  }
+  return out;
 }
 
 /** 排好的五线谱页：各页页面树，连同各系统落在第几页（0 基）、首谱表顶线离页顶多远（tenths）。 */
@@ -542,9 +567,10 @@ export function layoutStaffPages(score: StaffLayout, showJianpuLayer: boolean, j
 
   // M5: flow layout
   const items = getFrames(score);
+  const footers = score.longImage ? new Set<ScoreCredit>() : footerCredits(score.credits, score.defaults.pageHeight ?? PAGE_HEIGHT_FALLBACK);
   if (items.length > 0) {
-    // Add title block (credits) to first frame
-    items[0].credits = score.credits.filter(c => c.page === 0);
+    // Add title block (credits) to first frame；页脚另画（`footerCredits`），不进页眉块、不让位
+    items[0].credits = score.credits.filter(c => c.page === 0 && !footers.has(c));
     // 自动铺排的标题块由 autoLayoutHeader 从上往下堆，词曲行多了会高过缺省的 TITLE_OFFSET：按最低那行让开
     const d = score.defaults;
     const lowest = Math.min(...items[0].credits.map((c) => c.y));
@@ -579,7 +605,7 @@ export function layoutStaffPages(score: StaffLayout, showJianpuLayer: boolean, j
     return { sys: it.system, page: pageNo, top: d.topMargin + layout[i]!.ypos + it.topY + it.musicYOffset };
   });
   const pages = drawFrames(
-    score, items, layout, d.leftMargin, d.topMargin, pageHeight, d.pageWidth ?? 1200,
+    score, items, layout, d.leftMargin, d.topMargin, pageHeight, d.pageWidth ?? 1200, [...footers],
   );
   return { pages, placed };
 }

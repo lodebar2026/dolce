@@ -26,7 +26,7 @@ import { AccidentalCarry, quarterTempos } from "./jianpu";
 import { typeOfDuration } from "../score/xmlutil";
 import { DYNAMICS, TERMS } from "../pu/glyph";
 import { applyPageMetaToDefaults } from "./pagemeta";
-import { decoKey } from "./deconames";
+import { decoKey, rehearsalOf, tremoloStrokes } from "./deconames";
 import { applyBreaks } from "./breaks";
 import { keyFifths, songFifths } from "./keyshift";
 import { distinctNumbers } from "./phrasedoc";
@@ -43,6 +43,8 @@ const ARTICULATION: Readonly<Record<string, string>> = {
   xhy: "falloff",
 };
 const FERMATA = /^(yc|ycy|fermata)$/i;
+/** 归一后的短名 → `<technical>` 元素（弓法） */
+const TECHNICAL: Readonly<Record<string, string>> = { sg: "up-bow", xg: "down-bow" };
 export const ORNAMENT_TAG: Readonly<Record<string, string>> = {
   sby: "inverted-mordent",
   xby: "mordent",
@@ -972,7 +974,13 @@ function projectOrnaments(ch: Chord, dirs: Direction[], pos: number): void {
   if (ch.notations?.fermata) n.fermata = true;
   const artic: string[] = [];
   const orn: string[] = [...(ch.notations?.ornaments ?? [])];
+  const tech: string[] = [...(ch.notations?.technical ?? [])];
+  if (ch.notations?.tremolo) n.tremolo = ch.notations.tremolo;
   for (const { name } of names) {
+    const strokes = tremoloStrokes(name);
+    if (strokes) { n.tremolo = strokes; continue; }
+    const mark = rehearsalOf(name);
+    if (mark) { push(dirs, pos, { type: "rehearsal", placement: "above", text: mark }); continue; }
     // 本来就是 MusicXML 元素名的原样留（`staccatissimo` 不能归成普通顿音）；其余按别名表归一成短名再查
     // （123 的 `!uppermordent!` `!顿音!` 这类，`deconames.ts`）
     const key = XML_ARTICULATIONS.has(name) || XML_ORNAMENTS.has(name) ? name : decoKey(name) ?? name;
@@ -981,13 +989,16 @@ function projectOrnaments(ch: Chord, dirs: Direction[], pos: number): void {
     if (a) { if (!artic.includes(a)) artic.push(a); continue; }
     const o = ORNAMENT_TAG[key] ?? (XML_ORNAMENTS.has(key) ? key : undefined);
     if (o) { if (!orn.includes(o)) orn.push(o); continue; }
-    const d = directionOf({ name, level: 0 });
+    const tk = TECHNICAL[key];
+    if (tk) { if (!tech.includes(tk)) tech.push(tk); continue; }
+    // 归一后再查：123 的 `!coda!` `!segno!` 挂在音符上（小节中间的跳转目标）时是 ABC 名，按原名查不到、整个丢了
+    const d = directionOf({ name: key, level: 0 });
     if (d) push(dirs, pos, d);
   }
   if (artic.length) n.articulations = artic;
   if (orn.length) n.ornaments = orn;
-  if (ch.notations?.technical?.length) n.technical = ch.notations.technical;
-  if (n.fermata || n.articulations || n.ornaments || n.technical) ch.notations = n;
+  if (tech.length) n.technical = tech;
+  if (n.fermata || n.articulations || n.ornaments || n.technical || n.tremolo) ch.notations = n;
   else delete ch.notations;
 }
 

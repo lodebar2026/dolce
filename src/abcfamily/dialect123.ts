@@ -50,9 +50,12 @@ export class Lexer123 extends AbcFamilyLexer {
     return res;
   }
 
-  /** 123 的休止是 `0`，当成 degree 0 的音符走 `scanNote`，这里不单独认。 */
-  protected scanRest(): DurationScan | null {
-    return null;
+  /** 123 的休止是 `0`，当成 degree 0 的音符走 `scanNote`，这里只认整小节休止 `Z` / `Zn`
+   *  （ABC §4.6 同写法：`Z` 一小节，`Z4` 四小节，五线谱、简谱都印成一个多小节休止）。 */
+  protected scanRest(line: string, i: number): DurationScan | null {
+    const m = /^Z(\d*)/.exec(line.slice(i));
+    if (!m) return null;
+    return { beams: 0, dots: 0, bars: m[1] ? Math.max(1, Number(m[1])) : 1, next: i + m[0].length };
   }
 
   /** 时值修饰：`_` 减时线（可多条）与 `.` 附点（可多个），两者可交替出现。 */

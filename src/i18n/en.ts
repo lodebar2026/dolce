@@ -576,6 +576,10 @@ export const en: Record<MsgKey, string> = {
   "feat.slurCrossTuplet": "Slurs crossing a tuplet group (cut at the group boundary)",
   "feat.lyricOnRest": "Lyrics on rests",
   "feat.pageBreak": "Page breaks (turned into line breaks)",
+  "feat.tremolo": "Tremolos",
+  "feat.bowing": "Bowings (up-bow, down-bow)",
+  "feat.rehearsal": "Rehearsal marks",
+  "feat.multiRest": "Multi-measure rests (written out one rest per measure)",
   "loss.body": "This score has {n} thing(s) that will be lost when saved as {format}:",
   "loss.continue": "Continue?",
   // 解析诊断（随解析按界面语言产出）
@@ -655,6 +659,7 @@ export const en: Record<MsgKey, string> = {
   "diag.j123.lyricOverflow": "Verse {verse} has {left} more syllable(s) than notes on these lines; the extra ones were ignored",
   "diag.j123.contUnsupported": "`+:` only continues lyric lines (right after `w:`)",
   "diag.j123.verseNumber": "Lyric lines no longer carry verse numbers (`w{n}:` is obsolete): write `w:` — verses are numbered in order under a music line; continue a verse with `+:`. This line was dropped",
+  "diag.j123.badClef": "Can't understand the clef: {v}",
   "diag.j123.badLength": "Can't understand the default note length: {v}",
   "diag.badKey": "Can't understand the key: {v}",
   "diag.noSuchKey": "No such key: {v} (original text kept)",

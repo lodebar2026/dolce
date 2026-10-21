@@ -37,8 +37,9 @@ import type {
 } from "./ast";
 import { getMeta } from "../model/metakeys";
 import { projectForJianpu } from "../model/jianpuproject";
-import { decoKey } from "../model/deconames";
-import { directionMarks } from "../model/directionmarks";
+import { decoKey, tremoloStrokes } from "../model/deconames";
+import { directionMarks, leadTempo } from "../model/directionmarks";
+import { compressMultiRests } from "../model/multirest";
 import { keySpelling, quarterTempos } from "../model/jianpu";
 import { songFifths, tonicSpelling } from "../model/keyshift";
 import type {
@@ -89,6 +90,13 @@ function chordOrnaments(ch: Chord): Ornament[] {
   for (const a of ch.notations?.articulations ?? []) add(decoKey(a) ?? a);
   // MusicXML / 识别来源的波音、颤音挂在 ornaments 上（`inverted-mordent`），以前简谱里不画
   for (const o of ch.notations?.ornaments ?? []) { const k = decoKey(o); if (k) add(k); }
+  // 弓法（`<up-bow>`）与单音震音（123 的 `!///!` 在 articulations 里，归成 `trem3`）
+  for (const tk of ch.notations?.technical ?? []) { const k = decoKey(tk); if (k) add(k); }
+  const strokes = ch.notations?.tremolo ?? (ch.notations?.articulations ?? []).map(tremoloStrokes).find((n) => n !== undefined);
+  if (strokes) {
+    for (let i = out.length - 1; i >= 0; i--) if (tremoloStrokes(out[i]!.name) !== undefined) out.splice(i, 1);
+    add(`trem${strokes}`);
+  }
   return out;
 }
 
@@ -259,6 +267,7 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
         head = noteOf(ch, pendingGrace);
         pendingGrace = [];
         lastNote = head;
+        if (ch.rest && mea.attrs?.multiRest) head.multiRest = mea.attrs.multiRest;
       }
       row.indexOf.set(ch.id, row.elements.length);
       row.elements.push(head);
@@ -578,7 +587,14 @@ function rowVoltas(measuresByRow: readonly (readonly Measure[])[], rows: readonl
   return out;
 }
 
-function toMetadata(song: Song): Metadata {
+/** 拍单位 → 速度记号里的音符字（文字字体里有的那几个；附点四分写 `♩.`） */
+function beatChar(b: { num: number; den: number }): string {
+  const key = `${b.num}/${b.den}`;
+  return ({ "1/4": "♩", "1/2": "𝅗𝅥", "1/8": "♪", "3/8": "♩.", "3/4": "𝅗𝅥.", "1/1": "𝅝" } as Record<string, string>)[key] ?? "♩";
+}
+
+/** `printTempo`：把速度数字印出来（`♩=144`）。文本谱的 `J:`、`.jpwabc` 的速度数字原样档不印，只给别的来源。 */
+function toMetadata(song: Song, printTempo: boolean): Metadata {
   const meta: Metadata = {
     titles: [],
     authors: [],
@@ -623,6 +639,10 @@ function toMetadata(song: Song): Metadata {
   }
   if (song.timeNote !== undefined) meta.timeNote = song.timeNote;
   for (const t of quarterTempos(song)) meta.tempos.push(t);
+  if (printTempo) {
+    const lead = leadTempo(song);
+    if (lead) meta.tempoMark = `${beatChar(lead.beat)}=${lead.perMinute}`;
+  }
   meta.remarks.push(...(song.remarks ?? []));
   const pt = song.pageText;
   if (pt) {
@@ -779,7 +799,7 @@ function rowTuplets(measuresByRow: readonly (readonly Measure[])[], rows: readon
   return out;
 }
 
-function toPuSong(song: Song, index: number, rawLines: readonly string[], handPages: boolean): SongView {
+function toPuSong(song: Song, index: number, rawLines: readonly string[], handPages: boolean, printTempo: boolean): SongView {
   const perPart = song.parts.map((p) => splitSystems(p));
   /** 文本谱来源：一组不一定含全部声部，按 `print.system` 对回同一组；其余按行序号 */
   const bySystem = perPart.some((rows) => rows.some((r) => r.system !== undefined));
@@ -856,7 +876,7 @@ function toPuSong(song: Song, index: number, rawLines: readonly string[], handPa
     });
   }
   pages.push(page);
-  return { index, song, metadata: toMetadata(song), pages };
+  return { index, song, metadata: toMetadata(song, printTempo), pages };
 }
 
 const views = new WeakMap<ScoreDoc, DocView>();
@@ -870,7 +890,9 @@ export function docView(doc: ScoreDoc): DocView {
   const view: DocView = {
     doc,
     // MusicXML 读进来的先投成简谱形状（长音拆增时线、减时线按 `<type>` 算、和弦补原文）
-    songs: doc.songs.map((s, i) => toPuSong(projectForJianpu(s), i, rawLines, doc.sourceFormat === "123" || doc.sourceFormat === "abc")),
+    songs: doc.songs.map((s, i) => toPuSong(compressMultiRests(projectForJianpu(s)), i, rawLines, doc.sourceFormat === "123" || doc.sourceFormat === "abc",
+      // 速度数字只给 123 / ABC / MusicXML 这类来源印；文本谱的 `J:`、JP-Word 的 `Expression` 原样档本来不印
+      doc.sourceFormat !== "pu" && doc.sourceFormat !== "jpwabc")),
     idOf: new Map(),
     elementOf: new Map(),
     syllableOwner: new Map(),

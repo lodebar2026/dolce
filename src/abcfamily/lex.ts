@@ -482,6 +482,7 @@ export abstract class AbcFamilyLexer {
         t.dots = rest.dots;
         if (rest.num !== undefined) t.num = rest.num;
         if (rest.den !== undefined) t.den = rest.den;
+        if (rest.bars !== undefined) t.bars = rest.bars;
         push(t, start, i - start);
         continue;
       }
