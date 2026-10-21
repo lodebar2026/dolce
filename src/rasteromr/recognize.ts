@@ -4579,7 +4579,7 @@ export async function recognizeRasterPage(
     };
     const floors = new Map<boolean, number>();
     const restCode = (dur: number): SmuflName => (dur >= 1 ? "restWhole" : dur >= 1 / 2 ? "restHalf" : dur >= 1 / 4 ? "restQuarter" : dur >= 1 / 8 ? "rest8th" : "rest16th");
-    return (stf, x, hollow, dur, near) => {
+    return (stf, x, hollow, dur, near, yLim) => {
       const ms = hollow ? hollowMasks : masks;
       const f = frameOf(stf);
       if (!ms.length || !f) return null;
@@ -4608,6 +4608,8 @@ export async function recognizeRasterPage(
       const nearP = near.map((y) => pitchPos(ys, y));
       for (let p = -4; p <= 12; p++) {
         if (nearP.length && nearP.every((q) => Math.abs(q - p) > 7)) continue;
+        const py = pitchY(ys, p);
+        if (yLim && (py <= yLim[0] || py >= yLim[1])) continue;
         for (let dx = -Math.round(sp * 0.5); dx <= Math.round(sp * 0.5); dx++) {
           const y = pitchY(ys, p);
           const sc = scoreAtMasked(raster.bin, pick(ms, p), x + dx, y);

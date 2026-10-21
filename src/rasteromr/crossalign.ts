@@ -5,8 +5,9 @@ import type { SPage, Staff, Sym } from "../staffomr/model";
  * 补漏音的探针：在本行 `x` 附近的原图上找一个漏认的休止（形状字典），没有就找实心（`hollow` 为假）或空心头；
  * 找到就交回一个打好 `Note` 标记、归了本行的符号（还没进页），休止的 `code` 按 `dur` 给。
  * `near` 是本行左右相邻那几个音的头心 y：补的头离它们最近的那个不出一个八度。
+ * `yLim` 给了的话，头心只在这个开区间里找（同列已有另一声部的头时，补的头要在它上方或下方）。
  */
-export type HeadSearch = (stf: Staff, x: number, hollow: boolean, dur: number, near: number[]) => Sym | null;
+export type HeadSearch = (stf: Staff, x: number, hollow: boolean, dur: number, near: number[], yLim?: [number, number]) => Sym | null;
 
 /**
  * **合唱谱按同系统各谱行的拍位互证改时值**。一个系统里各行同一拍落在同一个 x 上：自己凑满了、拍位又与别的行对得上的行是锚，
@@ -30,7 +31,7 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
   const midHead = heads[heads.length >> 1] ?? sp;
   // 补一个音：按槽的 x 回原图找头，造成音符与单音和弦（不进 `notes`，验过再收）
   const add = search
-    ? (r: Row, s0: Slot, dur: number): StaffChord | null => {
+    ? (r: Row, s0: Slot, dur: number, up: boolean | null): StaffChord | null => {
         const kind = STD_DURS.find((q) => Math.abs(q.dur - dur) < 1e-6);
         if (!kind) return null;
         // 左右相邻的音（按 x 离槽最近的各一列）
@@ -39,7 +40,12 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
         const left = heads.filter((n) => n.x < ax).sort((a, b) => b.x - a.x)[0];
         const right = heads.filter((n) => n.x > ax).sort((a, b) => a.x - b.x)[0];
         const near = [left, right].filter((n): n is StaffNote => !!n).map((n) => n.sym.py);
-        const sym = search(r.stf, ax, kind.base >= 1 / 2, kind.base, near);
+        // 同列已有另一声部的头：上声部漏了就在它们上方找、下声部漏了就在下方找（隔开小半格，不把已有的头再认一遍）
+        const col = r.cols.find((c) => c.slot === s0);
+        const ys = col ? col.chords.flatMap((c) => c.notes).filter((n) => !n.rest).map((n) => n.sym.py) : [];
+        const yLim: [number, number] | undefined = !ys.length || up === null ? undefined : up ? [-Infinity, Math.min(...ys) - sp * 0.4] : [Math.max(...ys) + sp * 0.4, Infinity];
+        if (ys.length && up === null) return null;
+        const sym = search(r.stf, ax, kind.base >= 1 / 2, kind.base, near, yLim);
         if (!sym) return null;
         const rest = sym.code.startsWith("rest");
         if (kind.base === 1 && !rest) sym.code = "noteheadWhole";
@@ -47,7 +53,7 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
         const clef = clefFor(pg, ctx, r.stf, sym.box.left);
         const diatonic = rest ? -1 : (clef ? clefMiddleStep(clef.code) ?? 41 : 41) + r.stf.middleStep(sym.py, cx);
         const { step, octave } = rest ? { step: "", octave: 0 } : stepToPitch(diatonic);
-        const n: StaffNote = { sym, staff: r.stf, rest, diatonic, step, octave, alter: 0, accidental: null, duration: dur, base: kind.base, dots: kind.dots, stemUp: null, beams: kind.base >= 1 / 4 ? 0 : Math.round(Math.log2(1 / (kind.base * 4))), x: sym.px, voice: 1 };
+        const n: StaffNote = { sym, staff: r.stf, rest, diatonic, step, octave, alter: 0, accidental: null, duration: dur, base: kind.base, dots: kind.dots, stemUp: rest ? null : up, beams: kind.base >= 1 / 4 ? 0 : Math.round(Math.log2(1 / (kind.base * 4))), x: sym.px, voice: 1 };
         const c: StaffChord = { staff: r.stf, notes: [n], stem: null, left: sym.box.left, right: sym.box.right, top: sym.box.top, offset: 0, dur, grace: false, timed: false, voice: 1 };
         n.group = c;
         return c;
@@ -66,7 +72,9 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
       if (dbg) debugBar(sys.staves[0].box.top, i, rows, slots, trusted);
       for (const r of rows) {
         if (trusted.has(r) || r.skip) continue;
-        const res = fixDurations(r, slots, trusted, sp, notes, add, pg);
+        let res = fixDurations(r, slots, trusted, sp, notes, add, pg, false);
+        // 按两声部共用解不出时，有干的单个头只归它那个声部再试（同列另一声部漏了的才补得出来）
+        if (!r.single && !/^(改|删|补 1 个)/.test(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, true);
         if (res.startsWith("补")) added = true;
         if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} ${res}`);
       }
@@ -257,7 +265,7 @@ function setDur(n: StaffNote, base: number, dots: number): void {
  * 一段对不上时在易混读法里找改一处（不行再两处）能对上、而且只有一种改法的。
  * 改完 `checkFull` 要凑满、配上槽的列起点正好是槽的起点，否则退回。返回一句给调试看的结论。
  */
-function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number) => StaffChord | null) | undefined, pg: SPage): string {
+function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, soloHeads: boolean): string {
   const EPS = 1e-6;
   const expect = r.chk.expect;
   const known = r.cols.map((c) => c.slot?.off);
@@ -268,7 +276,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
     last = known[k]!;
   }
   if (!trusted.size) return "没有锚";
-  const chains = voiceChains(r);
+  const chains = voiceChains(r, soloHeads);
   if (typeof chains === "string") return chains;
   // 配不上槽的和弦：起点夹在左右最近两个定了起点的槽之间
   const anchored = slots.filter((s0) => s0.off !== undefined);
@@ -279,8 +287,8 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
   };
   const changes = new Map<StaffChord, [number, number]>();
   const drops = new Set<StaffChord>();
-  /** 要补音的槽 → 补的时值 */
-  const inserts = new Map<Slot, number>();
+  /** 要补音的槽 → 补的时值与声部（两声部的行：上声部 `true`、下声部 `false`；两条链都缺、或一个声部的行为 `null`） */
+  const inserts = new Map<Slot, { dur: number; up: boolean | null }>();
   // 删得的假头：没有干的实心/空心头（不是休止）、所在那列在别的行没有同拍的列（槽里只有它自己）
   const weak = (it: { c: StaffChord; k: number }) => !it.c.stem && !it.c.notes[0].rest && (r.cols[it.k].slot?.cols.length ?? 1) === 1 && r.cols[it.k].chords.length === 1;
   for (const [v, all] of chains.entries()) {
@@ -360,7 +368,8 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
           at += durs[j - 1];
           const xl = r.cols[seg[j - 1].k].x;
           const xr = j < seg.length ? r.cols[seg[j].k].x : q < chain.length ? r.cols[chain[q].k].x : Infinity;
-          for (const s1 of anchored) if (Math.abs(s1.off! - at) < EPS && s1.x > xl && s1.x < xr && !s1.cols.some((c) => c.row === r)) cands.push({ j, s0: s1 });
+          // 本声部在那个槽上没有和弦（整列空着，或那一列只有另一声部的头）
+          for (const s1 of anchored) if (Math.abs(s1.off! - at) < EPS && s1.x > xl && s1.x < xr && !chain.some((it) => r.cols[it.k].slot === s1)) cands.push({ j, s0: s1 });
         }
         const ok = cands.filter(({ j }) => {
           let a = start;
@@ -374,8 +383,9 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
         });
         if (ok.length === 1 && STD_DURS.some((d) => Math.abs(d.dur - gap) < EPS)) {
           const prev = inserts.get(ok[0].s0);
-          if (prev !== undefined && Math.abs(prev - gap) > EPS) return "两声部补音时值不一";
-          inserts.set(ok[0].s0, gap);
+          if (prev && Math.abs(prev.dur - gap) > EPS) return "两声部补音时值不一";
+          // 两条链在同一槽都缺同样长的音：两声部共用的那一个整个漏了，补一个
+          inserts.set(ok[0].s0, { dur: gap, up: prev || chains.length < 2 ? null : v === 0 });
           continue;
         }
       }
@@ -390,8 +400,8 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
   }
   if (inserts.size) {
     if (inserts.size > 1 || changes.size || drops.size) return `补 ${inserts.size} 删 ${drops.size} 改 ${changes.size}，不做`;
-    const [[s0, dur]] = [...inserts];
-    const c = add!(r, s0, dur);
+    const [[s0, { dur, up }]] = [...inserts];
+    const c = add!(r, s0, dur, up);
     if (!c) return `缺 ${dur} @${s0.off}，原图没找到头`;
     const savedC = r.chords.map((x) => ({ c: x, offset: x.offset, dur: x.dur, timed: x.timed }));
     const ok = checkFull([...r.chords, c], expect, sp, false) && Math.abs(c.offset - s0.off!) < EPS && r.cols.every((col, k) => known[k] === undefined || col.chords.every((x) => Math.abs(x.offset - known[k]!) < EPS));
@@ -405,7 +415,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
     notes.splice(at < 0 ? notes.length : at, 0, n);
     pg.symbols.push(n.sym);
     pg.objs.push(n.sym.parent);
-    return `补 1 个${n.rest ? "休止" : `音 ${n.step}${n.octave}`} ${dur} @${s0.off}`;
+    return `补 1 个${n.rest ? "休止" : `音 ${n.step}${n.octave}`} ${dur} @${s0.off}${up === null ? "" : up ? "（上声部）" : "（下声部）"}`;
   }
   if (!changes.size && !drops.size) return r.full ? "满而不齐、时值都对（次序问题）" : "时值都对、仍不满";
   if (drops.size > 1 || (drops.size && changes.size)) return `删 ${drops.size} 改 ${changes.size}，不做`;
@@ -427,8 +437,12 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
   return `改完凑不上（${changes.size} 处）`;
 }
 
-/** 一行的声部链：`k` 是和弦所在列的下标。两个声部的行：一列两个和弦要一个干朝上一个朝下（休止按高低归），一列多于两个的不拆。 */
-function voiceChains(r: Row): { c: StaffChord; k: number }[][] | string {
+/**
+ * 一行的声部链：`k` 是和弦所在列的下标。两个声部的行：一列两个和弦要一个干朝上一个朝下（休止按高低归），一列多于两个的不拆。
+ * 一列只一个和弦的算两声部共用；`soloHeads` 时有干的单个头只归它干朝向那个声部——先不这么归：扫描件上这种头多是同度共用、
+ * 或同干另一个头漏认，这么归改时值那一路反倒解不出（破碎扫描十来处，+14 步），只在共用解不出时拿来补另一声部。
+ */
+function voiceChains(r: Row, soloHeads: boolean): { c: StaffChord; k: number }[][] | string {
   if (r.single) return [r.cols.map((col, k) => ({ c: col.chords[0], k }))];
   const up: { c: StaffChord; k: number }[] = [];
   const down: { c: StaffChord; k: number }[] = [];
@@ -436,8 +450,11 @@ function voiceChains(r: Row): { c: StaffChord; k: number }[][] | string {
   for (const [k, col] of r.cols.entries()) {
     if (col.chords.length > 2) return `第${k}列 ${col.chords.length} 个和弦`;
     if (col.chords.length === 1) {
-      up.push({ c: col.chords[0], k });
-      down.push({ c: col.chords[0], k });
+      // `soloHeads`：有干的单个头只是它干朝向那一个声部的（另一声部在这里还响着前一个音，或者漏了）
+      const c = col.chords[0];
+      const solo = soloHeads && c.notes.length === 1 && !c.notes[0].rest && c.stem ? c.notes[0].stemUp : null;
+      if (solo !== false) up.push({ c, k });
+      if (solo !== true) down.push({ c, k });
       continue;
     }
     const [a, b] = col.chords;
