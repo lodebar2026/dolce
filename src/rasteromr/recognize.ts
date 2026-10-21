@@ -55,7 +55,7 @@ import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseSt
 import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "./clefmeter";
 import { findDots } from "./dots";
 import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "./flags";
-import { fixByCrossStaff } from "./crossalign";
+import { fixByCrossStaff, type HeadSearch } from "./crossalign";
 import { fixDottedPairs, fixQuartersByBarSum } from "./rhythmfix";
 import { finishRasterPage } from "./pagefinish";
 
@@ -4554,10 +4554,87 @@ export async function recognizeRasterPage(
   fixDottedPairs(notes, unit.space);
   fixQuartersByBarSum(pg, ctx, notes, carry.carryTime, unit.space);
   findTuplets(pg, beams, stems, notes);
-  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space);
+  // 补漏音的探针：同系统别的行在这一拍有音、本行这里空着时，回原图在那个 x 上拿本页自举的模板找头（见 `crossalign.ts`）。
+  // 阈值取本页已认出的头在自己位置上的得分（下 10% 分位）：扫描件淡印、糊团各页差得多，不设常数；
+  // 样本少、糊的页下 10% 分位跌到零下（085 扬声赞美歌空心头 −0.02），再垫一道中位数的 `PROBE_MED_FRAC`
+  const headSearch = ((): HeadSearch | undefined => {
+    if (!masks.length) return undefined;
+    const sp = unit.space;
+    const pick = (ms: typeof masks, p: number) => ms.find((k) => k.onLine === (((p % 2) + 2) % 2 === 0)) ?? ms[0];
+    const frameOf = (stf: Staff) => frames.find((q) => Math.abs(q.top - stf.lineYs[0]) < sp);
+    const floorOf = (hollow: boolean): number => {
+      const ms = hollow ? hollowMasks : masks;
+      const sc: number[] = [];
+      for (const n of notes) {
+        if (n.rest || (n.sym.code === "noteheadBlack") === hollow) continue;
+        const f = frameOf(n.staff);
+        if (!f) continue;
+        const cx = (n.sym.box.left + n.sym.box.right) / 2;
+        const ys = f.at(cx);
+        const p = Math.round(pitchPos(ys, n.sym.py));
+        sc.push(scoreAtMasked(raster.bin, pick(ms, p), cx, pitchY(ys, p)));
+      }
+      sc.sort((a, b) => a - b);
+      return sc.length >= 10 ? Math.max(sc[Math.floor(sc.length * 0.1)], sc[sc.length >> 1] * PROBE_MED_FRAC) : Infinity;
+    };
+    const floors = new Map<boolean, number>();
+    const restCode = (dur: number): SmuflName => (dur >= 1 ? "restWhole" : dur >= 1 / 2 ? "restHalf" : dur >= 1 / 4 ? "restQuarter" : dur >= 1 / 8 ? "rest8th" : "rest16th");
+    return (stf, x, hollow, dur, near) => {
+      const ms = hollow ? hollowMasks : masks;
+      const f = frameOf(stf);
+      if (!ms.length || !f) return null;
+      // **先看那里是不是印着个漏认的休止**：横向一格内、谱表上下一格内的墨块按形状字典认，认成休止就补休止
+      //（扫描档补出来的头有一半落在 GT 记休止的地方：破碎扫描 p3 m42、是爱 p3 m38）
+      for (const c of cmap.contours) {
+        const b = c.bbox;
+        const cx = b.x + b.w / 2;
+        const cy = b.y + b.h / 2;
+        if (Math.abs(cx - x) > sp || cy < f.top - sp || cy > f.bottom + sp || b.h > sp * 4) continue;
+        // 二分/全休止的方块：扁、实，贴着谱线，形状字典常认不出（是爱 p3 m38 低音，38×10 像素贴第三线）
+        const block = b.w >= sp * REST_BLOCK_W[0] && b.w <= sp * REST_BLOCK_W[1] && b.h >= sp * REST_BLOCK_H[0] && b.h <= sp * REST_BLOCK_H[1] && c.area >= b.w * b.h * REST_BLOCK_FILL && cy > f.top && cy < f.bottom;
+        const m = block || !look.templates ? null : matchTemplate(binSig(nl, b), b.w / sp, b.h / sp, look.templates);
+        if (!block && !m?.smufl.startsWith("rest")) continue;
+        if (block && dur < 1 / 2) continue;
+        const { sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box: b, code: restCode(dur) } as RasterSym, unit.height);
+        sym.addTag("Note");
+        sym.ownerStaff = stf;
+        return sym;
+      }
+      if (!floors.has(hollow)) floors.set(hollow, floorOf(hollow));
+      const ys = f.at(x);
+      let best: { x: number; y: number; s: number } | null = null;
+      // 上下各两条加线以内（人声难得写到更外；三条加线那么远的多是谱表外的字与记号：085 扬声赞美歌 m17 补成了 E6）、横向半格以内；
+      // 本行左右有音时只在离它们一个八度以内找
+      const nearP = near.map((y) => pitchPos(ys, y));
+      for (let p = -4; p <= 12; p++) {
+        if (nearP.length && nearP.every((q) => Math.abs(q - p) > 7)) continue;
+        for (let dx = -Math.round(sp * 0.5); dx <= Math.round(sp * 0.5); dx++) {
+          const y = pitchY(ys, p);
+          const sc = scoreAtMasked(raster.bin, pick(ms, p), x + dx, y);
+          if (!best || sc > best.s) best = { x: x + dx, y, s: sc };
+        }
+      }
+      if (!best || best.s < floors.get(hollow)!) return null;
+      if ((globalThis as any).process?.env?.XADBG) console.error("XA probe", hollow ? "空" : "实", "p", Math.round(pitchPos(ys, best.y)), "score", best.s.toFixed(3), "floor", floors.get(hollow)!.toFixed(3), "near", nearP.map((q) => q.toFixed(1)).join(","));
+      const w = Math.round(sp * 1.25);
+      const h = Math.round(sp);
+      const box = { x: Math.round(best.x - w / 2), y: Math.round(best.y - h / 2), w, h };
+      const { sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box, code: hollow ? "noteheadHalf" : "noteheadBlack" } as RasterSym, unit.height);
+      sym.addTag("Note");
+      sym.ownerStaff = stf;
+      return sym;
+    };
+  })();
+  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch);
 
   return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, gridYs, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
 }
+/** 补漏音找头的得分下限至少是本页已认出的头中位得分的这么多（见 `headSearch`）。0.5 会挡掉扫描档一个补对的低分头（0.11，中位约 0.27）。 */
+const PROBE_MED_FRAC = 0.25;
+/** 补漏音认方块休止（二分/全休止）：宽、高（格）与填充下限（见 `headSearch`）。 */
+const REST_BLOCK_W: [number, number] = [0.9, 2.2];
+const REST_BLOCK_H: [number, number] = [0.3, 0.8];
+const REST_BLOCK_FILL = 0.8;
 /**
  * 谱中无主块配升降号模板的签名距离上限（见「谱中没人认领的升降还原号」）。
  * 实测真升号 46~68（齐来称颂 m5、赞美三一真神 m8/m9），误配的最近一个 87（善牧恩慈歌线距 11px
