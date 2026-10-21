@@ -37,6 +37,8 @@ export interface PlacedMark {
   y?: number;
   /** 弧罩住的音符够多（`arc.flatNotes`，成书用），不论跨度都画扁平式（同 `Line.addSlurTie`） */
   flat?: true;
+  /** 和音最下面那个音单连的延音线：画在叠印下方、开口朝上，`y` 是弧端那条线（数字、减时线、低音点之下一道空） */
+  below?: true;
   /** 嵌套层数或 `+` 抬高级别 */
   level: number;
   /** 左端续自上一行 / 右端续到下一行（弧线与跳房子支持跨行） */

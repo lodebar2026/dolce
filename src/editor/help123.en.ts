@@ -128,7 +128,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
     body: [
       "Notes sounding together with the same duration go in square brackets, **with no space after** `[`: `[13]` (like ABC's `[CEG]`). Jianpu stacks them vertically; staff notation draws a chord.",
       "The duration follows `]` and is shared: `[13]_`, `[5,1]__`, `[13] -`; each note carries its own accidental and octave marks: `[#46']`.",
-      "Arcs over the whole chord work as for single notes: `[13]~ [13]`, `([13] [24])`. To tie just one note, put `~` right after it: `[1~3] [15]` ties only the 1. `!arpeggio!` is an arpeggio.",
+      "Arcs over the whole chord work as for single notes: `[13]~ [13]`, `([13] [24])`. To tie just one note, put `~` right after it: `[1~5] [15]` ties only the 1 (a tie on the lowest note is drawn below). `!arpeggio!` is an arpeggio.",
       "`[1 …` (followed by a space) is still a first ending; brackets hold no rest `0` and no per-note durations — `[03]` or `[13_]` is reported as an error.",
     ],
   },

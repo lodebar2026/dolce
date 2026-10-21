@@ -226,6 +226,9 @@ export interface Mark {
   source: SourceSpan;
   /** 收尾符号 `)` 的位置（本行收尾的弧才有）。只给编辑用 */
   closeSource?: SourceSpan;
+  /** 和音里只连一个音的延音线（123 `[1~5] [15]`）：两端各连叠印里第几层（0 = 本音即最低那个，k = `stack[k-1]`）。
+   *  整和音的弧不填（画在叠印顶上一条） */
+  digits?: [number, number];
 }
 
 export interface LyricSyllable {

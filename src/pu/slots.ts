@@ -469,13 +469,54 @@ function rowLyrics(row: RowBuild, infos: readonly LyricLineInfo[] | undefined): 
   return out;
 }
 
+/** 和音里第 `k` 个音（`Chord.notes` 下标）叠印在第几层（0 = 本音即最低那个，同 `chordDegrees` 的次序）；不是叠印的和音为 undefined */
+function stackLevel(ch: Chord, k: number): number | undefined {
+  const d = ch.notes[k]?.degree;
+  const ds = chordDegrees(ch);
+  if (!d || ds.length < 2) return undefined;
+  const i = ds.findIndex((x) => x.number === d.number && x.octaveShift === d.octaveShift && x.accidental === d.accidental);
+  return i < 0 ? undefined : i;
+}
+
+/**
+ * 同一对相邻和音之间的延音线（MusicXML 一个音一条 `<tied>`、123 `[1~5]` 也是一音一条）先归组：
+ * 连上了叠印里每个数字的是整和音的弧，组里只留第一条、不记 `digits`（照旧画在叠印顶上，其余记 null 不画）；
+ * 只连其中几个的各记两端连的是第几层（`PuMark.digits`），简谱照它贴着那个数字画（`place/marks.ts`）。
+ */
+function chordTieDigits(marks: readonly Mark[], chordOf: (id: ElementId) => Chord | undefined): Map<Mark, [number, number] | null> {
+  const out = new Map<Mark, [number, number] | null>();
+  const groups = new Map<string, Mark[]>();
+  for (const m of marks) {
+    if (m.type !== "tied") continue;
+    const k = `${m.start}>${m.end}`;
+    groups.set(k, [...(groups.get(k) ?? []), m]);
+  }
+  for (const g of groups.values()) {
+    const a = chordOf(g[0]!.start);
+    const b = chordOf(g[0]!.end);
+    if (!a || !b) continue;
+    const levels = g.map((m) => [stackLevel(a, m.startNote ?? 0), stackLevel(b, m.endNote ?? 0)] as const);
+    const whole = levels.some(([i, j]) => i === undefined || j === undefined) || new Set(levels.map(([i]) => i)).size >= chordDegrees(a).length;
+    if (whole) for (const m of g.slice(1)) out.set(m, null);
+    else g.forEach((m, n) => out.set(m, [levels[n]![0]!, levels[n]![1]!]));
+  }
+  return out;
+}
+
 /** Mark：id 配对 → 第 `rowIdx` 行的下标区间。跨行的截断在行边界、打上续接标记，
  *  续行那一段的 level 取 `continuationLevels`。 */
 function segmentMarks(marks: readonly Mark[], rows: readonly RowBuild[], rowIdx: number): PuMark[] {
   const row = rows[rowIdx]!;
   const rowOf = (id: ElementId): number => rows.findIndex((r) => r.indexOf.has(id));
+  const chordOf = (id: ElementId): Chord | undefined => {
+    const r = rows[rowOf(id)];
+    return r?.refs[r.indexOf.get(id)!]?.chord;
+  };
+  const digitsOf = chordTieDigits(marks, chordOf);
   const out: PuMark[] = [];
   for (const m of marks) {
+    const digits = digitsOf.get(m);
+    if (digits === null) continue;
     // tie 在简谱里与圆滑线同形，归 slur；pedal/octaveShift/lyricExtend 没有对应物
     const type: PuMark["type"] | null =
       m.type === "slur" || m.type === "tied" ? "slur"
@@ -514,6 +555,7 @@ function segmentMarks(marks: readonly Mark[], rows: readonly RowBuild[], rowIdx:
     if (a === undefined || m.continuesFromPrevious || (m.leadInPreviousLine && seg === 1)) pm.continuationFromPrevious = true;
     if (b === undefined) pm.continuationToNext = true;
     if (m.tupletActual !== undefined) pm.caption = String(m.tupletActual);
+    if (digits) pm.digits = digits;
     out.push(pm);
   }
   return out;

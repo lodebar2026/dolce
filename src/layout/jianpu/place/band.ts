@@ -17,6 +17,7 @@ import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedMark, PlacedText } fro
 import { articStack, entryTop, noteBeams, noteInkBottom, stackTop } from "./vertical";
 import { type ChordSpan, sectionWordLines, sectionWordOf, sectionWordSlot, widestLine } from "./sectionword";
 import { barlineBox } from "./spacing";
+import { belowArcsBottom } from "./marks";
 import { rehearsalBracketed, rehearsalOf } from "../../../model/deconames";
 
 /** 一个声部（或并排块上行）的上方带排完的结果。 */
@@ -87,7 +88,7 @@ export function placeBand(
 
   // ---- 层 0：弧、连音（`rank` = 跨度，短的留在下面） ----
   for (const mk of marks) {
-    if (mk.y === undefined || (mk.mark.type !== "slur" && mk.mark.type !== "tuplet")) continue;
+    if (mk.y === undefined || mk.below || (mk.mark.type !== "slur" && mk.mark.type !== "tuplet")) continue;
     const dy = mk.dy ?? 0;
     const x0 = mk.x0, x1 = Math.max(mk.x1, mk.x0 + 6);
     if (mk.mark.type === "slur") {
@@ -359,6 +360,8 @@ function placeBelow(items: readonly PlacedItem[], marks: PlacedMark[], layers: r
       low = Math.max(low, noteInkBottom(it.element, m) + sp.dy + (it.dy ?? 0));
     }
   }
+  // 叠印下方的延音线（和音最下面那个音单连的）也在带之上
+  low = Math.max(low, belowArcsBottom(marks, m));
   const hairpinLw = jpHairpinLineWidth(m.style.stroke.hairpin, nh);
   const hairpinHeight = nh * JP_HAIRPIN.half * 2 + hairpinLw;
   const half = Math.max(hairpinHeight, ...dyns.map((t) => t.ink.bottom - t.ink.top)) / 2;

@@ -6,7 +6,7 @@ import type { InkMeasurer, PlacedGroup, PlacedPage, PlacedScore, PlacedVoice } f
 import { placeColumns } from "./spacing";
 import { type BeatCtx, assignLyrics, computeUnderlines, layoutVoiceLine, lineEndMeter, lineEndsWithForwardRepeat } from "./voice";
 import { GROUP_CLEAR, braceReach, splitRise, wordsLead, groupHeadroom, lineInkBottom, voiceHeadroom } from "./vertical";
-import { placeMarks } from "./marks";
+import { belowArcsBottom, placeMarks } from "./marks";
 import { belowLayerLines, placeLayers } from "./layers";
 import { placeBand } from "./band";
 
@@ -132,15 +132,6 @@ export function layoutSong(
       const pre = laidOut.map((l, vi) => {
         const voice = group.voices[vi]!;
         const underlines = computeUnderlines(voice, l.items, m, l.groups);
-        // 第一行歌词的位置：样式给了 `lyric-baseline` 就不低于它；自动值与旧简谱引擎同一口径
-        //（`layout.ts::Line.updateLyricY`）：数字墨迹底往下一个音符字号，再让开 max(0.4 字号, 数字底之下的叠层深度)
-        //——一行里有「减时线 + 低音点」叠下来的音，歌词整行跟着下移，免得字顶贴到低音点上。
-        const inkBottom = lineInkBottom(l.items, m);
-        const digitBottom = m.ink.noteHeight / 2;
-        const lyricY0 = Math.max(
-          m.style.vertical.lyricBaseline,
-          digitBottom + m.style.size.note + Math.max(m.style.size.note * 0.4, inkBottom - digitBottom),
-        );
         // 内联层要先排：`{dsb}` 会给主旋律那一段打上 dy，减时线与记号都得跟着走
         const layers = placeLayers(voice, l.items, m, ink, beatCtx, below[vi]);
         // 并排块的下行（主旋律下移，或第二声部排在下行）比基线低一个 splitRise，歌词要跟着让开，否则会和下行音符叠在一起
@@ -153,6 +144,16 @@ export function layoutSong(
           if (at?.dy !== undefined) u.dy = at.dy;
         }
         const marks = placeMarks(voice, l.items, m, ink);
+        // 第一行歌词的位置：样式给了 `lyric-baseline` 就不低于它；自动值与旧简谱引擎同一口径
+        //（`layout.ts::Line.updateLyricY`）：数字墨迹底往下一个音符字号，再让开 max(0.4 字号, 数字底之下的叠层深度)
+        //——一行里有「减时线 + 低音点」叠下来的音，歌词整行跟着下移，免得字顶贴到低音点上。
+        // 叠印下方的延音线（和音最下面那个音单连的）也算进墨迹底
+        const inkBottom = Math.max(lineInkBottom(l.items, m), belowArcsBottom(marks, m));
+        const digitBottom = m.ink.noteHeight / 2;
+        const lyricY0 = Math.max(
+          m.style.vertical.lyricBaseline,
+          digitBottom + m.style.size.note + Math.max(m.style.size.note * 0.4, inkBottom - digitBottom),
+        );
         // 上方带：弧、连音、奏法记号、和弦、松叶、转调标签、力度/跳转字、临时伴奏行、房号按墨迹一次堆清（band.ts）
         const band = placeBand(l.items, marks, layers, m, ink, width, instrumental);
         const pv: PlacedVoice = {

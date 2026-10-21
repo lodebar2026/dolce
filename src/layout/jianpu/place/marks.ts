@@ -1,9 +1,11 @@
 // 跨若干符号的记号（弧线 / 多连音 / 跳房子 / 渐强渐弱）换算成行内坐标，弧按嵌套定层。
-import type { Mark, ScoreLine } from "../../../pu/ast";
+import type { Mark, NoteElement, ScoreLine } from "../../../pu/ast";
+import { Point } from "../../../common/geom";
+import { Slur } from "../../pageitem";
 import { jianpuSlurRise, jianpuSlurStyle, type JianpuGrid } from "../metrics";
-import { ARC_CHAIN_INSET_DIV, arcClearShift, arcRise, jpArcY } from "../../../engrave/arc";
+import { ARC_CHAIN_INSET_DIV, arcClearShift, arcRise, jpArcY, type SlurStyle } from "../../../engrave/arc";
 import type { InkMeasurer, PlacedItem, PlacedMark } from "./model";
-import { articStack, stackTop } from "./vertical";
+import { articStack, noteInkBottom, stackTop } from "./vertical";
 import { barlineLines } from "./spacing";
 import { JP_HAIRPIN } from "../../../engrave/hairpin";
 import { DYNAMIC_SIZE } from "../../../engrave/dynamics";
@@ -79,6 +81,12 @@ export function placeMarks(voice: ScoreLine, items: PlacedItem[], m: JianpuGrid,
       }
       if (!Number.isFinite(top)) top = Math.min(stackTop(a.element, m), stackTop(b.element, m));
       placed.y = top - gap - (level - 1) * m.note.levelStep;
+    } else if (mark.type === "slur" && tieBelow(mark, a, b, openLeft, openRight)) {
+      // 和音最下面那个音单连的延音线（123 `[1~5] [15]`）：顶上那一条已经是整和音的弧的位置，画在那儿就认成连 5，
+      // 所以贴着最低的数字画在叠印下方、开口朝上——数字、减时线、低音点之下一道叠层的空（只认真有的那一端）
+      const ends = [openLeft ? null : a, openRight ? null : b].filter((it): it is PlacedItem => it?.element.kind === "note");
+      placed.below = true;
+      placed.y = Math.max(...ends.map((it) => noteInkBottom(it.element as NoteElement, m))) + m.ink.stack.gap;
     } else if (mark.type === "slur" || mark.type === "tuplet") {
       // **按罩住的音符数改扁**（`slur-flat-notes`，同 `Line.slurNoteCount`）：跨度那条阈值是物理宽度，音符密的谱行上够不着
       // （91《我灵镇静》罩着五六个十六分音符的弧）。数的是音符（含两端），增时线不另算
@@ -104,7 +112,7 @@ export function placeMarks(voice: ScoreLine, items: PlacedItem[], m: JianpuGrid,
   // **弧套弧**（slur 罩着延音线、同一个音起的两条弧、罩着多连音的弧）：外弧按实际弧线判碰里面那些弧的弧顶
   // （engrave/arc.ts::arcClearShift），碰了才整条抬、高出一道空。从短的排起，外层才看得到里层定下的高度
   // （260《感恩的泪》`2⌒2 3 2` 两条弧原先同一个起点、贴在一起）
-  const arcs = out.filter((p) => p.y !== undefined && isArcMark(p.mark));
+  const arcs = out.filter((p) => p.y !== undefined && isArcMark(p.mark) && !p.below);
   arcs.sort((p, q) => (p.mark.end - p.mark.start) - (q.mark.end - q.mark.start));
   // 弧高没有上限的档（展开档的 pptx 预设 `arc.maxHeight` = 0）按各条弧的跨度算，否则一律取上限那一份
   const capped = jianpuSlurRise(m);
@@ -151,6 +159,34 @@ function wedgeSpan(
     if (before > x0 + nh) x1 = before;
   }
   return { x0, x1 };
+}
+
+/** 和音单连一个音的延音线是不是连在最下面那个数字上（两端真有的都是第 0 层、且那个音确是叠印的和音）。
+ *  连在顶上那个的照常画在上方；连在中间那层的（三个以上的和音）也画在上方——数字之间只隔两道叠层的空，放不下一条弧 */
+function tieBelow(mark: Mark, a: PlacedItem, b: PlacedItem, openLeft: boolean, openRight: boolean): boolean {
+  if (!mark.digits) return false;
+  const ends: [PlacedItem, number][] = [];
+  if (!openLeft) ends.push([a, mark.digits[0]]);
+  if (!openRight) ends.push([b, mark.digits[1]]);
+  return ends.length > 0 && ends.every(([it, d]) => d === 0 && it.element.kind === "note" && (it.element.stack?.length ?? 0) > 0);
+}
+
+/** 叠印下方那几条延音线（`PlacedMark.below`）的墨迹底，相对基线（含并排块的 `dy`）；没有为 -Infinity。
+ *  歌词与器乐谱下方那条带据此往下让 */
+export function belowArcsBottom(marks: readonly PlacedMark[], m: JianpuGrid): number {
+  let bottom = -Infinity;
+  for (const mk of marks) {
+    if (!mk.below || mk.y === undefined) continue;
+    const arc = new Slur();
+    arc.init(new Point(mk.x0, mk.y), new Point(Math.max(mk.x1, mk.x0 + 6), mk.y), belowArcStyle(m));
+    bottom = Math.max(bottom, arc.y + arc.height + (mk.dy ?? 0));
+  }
+  return bottom;
+}
+
+/** 叠印下方那条延音线的样式：开口朝上；扁平式只会往上画，关掉（相邻两个和音之间的弧本来就短） */
+export function belowArcStyle(m: JianpuGrid, color = 0): SlurStyle {
+  return { ...jianpuSlurStyle(m, color), side: "down", flatSpan: 0, flatRatio: 0 };
 }
 
 export function isArcMark(mk: Mark): boolean {

@@ -9,6 +9,7 @@ import { beamY, highDotY, lowDotY } from "../../../engrave/stack";
 import { hairpinPath, JP_HAIRPIN, jpHairpinHalves, jpHairpinLineWidth } from "../../../engrave/hairpin";
 import { bracketLineWidth, jianpuSlurStyle } from "../metrics";
 import type { PlacedLayer, PlacedMark } from "../place/model";
+import { belowArcStyle } from "../place/marks";
 import { noteBeams } from "../place/vertical";
 import { type OriginalCtx, dot, rect, text } from "./ctx";
 import { braceItem } from "./brace";
@@ -16,9 +17,9 @@ import { paintVoice } from "./page";
 
 /** 弧线：直接用简谱谱面那套 SlurTieBase（月牙形，中间厚两端尖），两处观感一致。
  *  弧高（含超长跨度改扁平的阈值）由 jianpuSlurStyle 定，与 layout 的纵向预留同源。 */
-function paintArc(c: OriginalCtx, root: Group, x0: number, x1: number, y: number, flat = false): Slur {
+function paintArc(c: OriginalCtx, root: Group, x0: number, x1: number, y: number, flat = false, below = false): Slur {
   const arc = new Slur();
-  const style = jianpuSlurStyle(c.metrics, c.ink);
+  const style = below ? belowArcStyle(c.metrics, c.ink) : jianpuSlurStyle(c.metrics, c.ink);
   arc.init(new Point(x0, y), new Point(x1, y), flat ? { ...style, forceFlat: true } : style);
   arc.update();
   root.add(arc);
@@ -32,7 +33,7 @@ export function paintMark(c: OriginalCtx, root: Group, mk: PlacedMark, left: num
   switch (mk.mark.type) {
     case "slur": {
       const y = baseline + (mk.y ?? -m.ink.noteHeight / 2);
-      const arc = paintArc(c, root, x0, x1, y, mk.flat === true);
+      const arc = paintArc(c, root, x0, x1, y, mk.flat === true, mk.below === true);
       // 弧没有自己的 id，可视化编辑按「起点:终点」认它（同 `Tie.startId`）。
       // **不能用 `mk.mark.start/end`**——那是行内下标，元素 id 要从两端实际落在的符号上取
       const sid = mk.startEl && c.doc?.idOf.get(mk.startEl);
