@@ -58,6 +58,29 @@
     { "family": "Opus", "uni": 61679, "w": 0.294, "h": 0.613, "smufl": "breathMarkComma", "note": "U+F0EF：一枚大逗号" },
     { "family": "Opus", "uni": 61601, "w": 0.939, "h": 0.557, "smufl": "keyboardPedalPed", "note": "U+F0A1：花体 'Ped'。0xA1 不在 musicpp 的 Opus 表里，子集码位恰是 54('6') 才被读成 timeSig6" },
     { "family": "Opus", "uni": 61608, "w": 0.453, "h": 0.927, "smufl": "rest32nd", "note": "U+F0A8：三道钩的休止；与 0.367x0.678 那个十六分休止按尺寸分" },
-    { "family": "OpusSpecial", "uni": 61662, "w": 0.437, "h": 0.359, "smufl": "graceNoteSlashStemUp", "note": "U+F0DE：斜穿倚音符干的那道粗斜线" }
+    { "family": "OpusSpecial", "uni": 61662, "w": 0.437, "h": 0.359, "smufl": "graceNoteSlashStemUp", "note": "U+F0DE：斜穿倚音符干的那道粗斜线" },
+
+    { "family": "Anastasia", "uni": 61630, "w": 0.3, "h": 0.479, "smufl": "tremolo3", "note": "八段锦（XPS 转出的另一版 Anastasia，PUA U+F0xx 子集）：全音符下/符干上三道斜杠" },
+    { "family": "Anastasia", "uni": 61671, "w": 0.3, "h": 0.354, "smufl": "tremolo2", "note": "符干上两道斜杠" },
+    { "family": "Anastasia", "uni": 61670, "w": 0.3, "h": 0.229, "smufl": "tremolo1", "note": "符干上一道斜杠" },
+    { "family": "Anastasia", "uni": 61510, "w": 0.834, "h": 0.585, "smufl": "dynamicMF" },
+    { "family": "Anastasia", "uni": 61520, "w": 0.8, "h": 0.438, "smufl": "dynamicMP" },
+    { "family": "Anastasia", "uni": 61542, "w": 0.515, "h": 0.585, "smufl": "dynamicForte" },
+    { "family": "Anastasia", "uni": 61552, "w": 0.445, "h": 0.438, "smufl": "dynamicPiano" },
+    { "family": "Anastasia", "uni": 61636, "w": 0.801, "h": 0.585, "smufl": "dynamicFF" },
+    { "family": "Anastasia", "uni": 63, "w": 0.688, "h": 0.799, "smufl": "fClef" },
+    { "family": "Anastasia", "uni": 66, "w": 0.674, "h": 1.018, "smufl": "cClef", "note": "中音谱号（大提琴高音区换谱号）" },
+    { "family": "Anastasia", "uni": 61487, "w": 0.174, "h": 0.5, "smufl": "unpitchedPercussionClef1", "note": "两道粗竖杠" },
+    { "family": "Anastasia", "uni": 61605, "w": 0.262, "h": 0.312, "smufl": "clef8", "note": "高音谱号底下的小 8（中阮）" },
+    { "family": "Anastasia", "uni": 61614, "w": 0.138, "h": 0.194, "smufl": "articStaccatissimoAbove", "note": "尖朝下的实心小三角" },
+    { "family": "Anastasia", "uni": 61479, "w": 0.138, "h": 0.194, "smufl": "articStaccatissimoBelow", "note": "尖朝上的实心小三角" },
+    { "family": "Anastasia", "uni": 61618, "w": 0.229, "h": 0.417, "smufl": "stringsUpBow" },
+    { "family": "Anastasia", "uni": 61619, "w": 0.34, "h": 0.351, "smufl": "stringsDownBow" },
+    { "family": "Anastasia", "uni": 61549, "w": 0.606, "h": 0.243, "smufl": "ornamentShortTrill", "note": "两个尖的短波纹（无竖线），印在音上方" },
+    { "family": "Anastasia", "uni": 61657, "w": 0.468, "h": 0.382, "smufl": "ornamentTrill", "note": "tr" },
+    { "family": "Anastasia", "uni": 103, "w": 0.138, "h": 0.534, "smufl": "wiggleArpeggiatoUp", "note": "琶音竖波纹的一截，同 x 上下接成一条（钢片琴和弦左边）" },
+    { "family": "Anastasia", "uni": 206, "w": 0.394, "h": 0.394, "smufl": "noteheadCircleX", "note": "圈 X 符头（吊镲）" },
+    { "family": "Anastasia", "uni": 61607, "w": 0.322, "h": 2.01, "smufl": "brace", "note": "大谱表花括号的上半截（扬琴），与下半截 U+F0FA 同 x 上下相接" },
+    { "family": "Anastasia", "uni": 61674, "w": 0.322, "h": 2.01, "smufl": "brace", "note": "花括号下半截" }
   ]
 }

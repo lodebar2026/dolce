@@ -378,6 +378,7 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
         const metro = m ? `<direction-type><metronome${m.parentheses ? ' parentheses="yes"' : ""}><beat-unit>${m.unit}</beat-unit><per-minute>${escapeXml(m.text ?? String(m.bpm))}</per-minute></metronome></direction-type>` : "";
         body += `<direction placement="above">${words}${metro}${dirStaff}${m ? `<sound tempo="${m.bpm}"/>` : ""}</direction>`;
       }
+      for (const g of n.signs ?? []) body += `<direction placement="above"><direction-type><${g}/></direction-type>${dirStaff}</direction>`;
       for (const w of n.words ?? []) {
         const wy = withSourceLayout && w.baseY !== undefined ? ` default-y="${staffY(n.staff, n.sym.box.left, w.baseY)}"` : "";
         const el = w.rehearsal ? "rehearsal" : "words";
@@ -466,10 +467,11 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   // `<voice>` 排在 `<duration>`/`<tie>` 之后、`<type>` 之前
   const voiceEl = withVoice ? `<voice>${n.voice + voiceBase}</voice>` : "";
   if (n.rest)
-    return `<note><rest/><duration>${dur}</duration>${voiceEl}<type>${type}</type>${dots}${staffEl}</note>`;
+    return `<note${n.hidden ? ' print-object="no"' : ""}><rest/><duration>${dur}</duration>${voiceEl}<type>${type}</type>${dots}${staffEl}</note>`;
   // **倚音不占拍子**：MusicXML 的 `<grace/>` 排在最前（`<chord/>` 之前），
   // 而且这种音**不许写 `<duration>`**——写了小节就超时长，回读的软件多半直接报错。
-  const grace = n.grace ? "<grace/>" : "";
+  // 短倚音的斜杠：路径画的（`findGraceSlashes`）记在 `graceSlash`，字形画的（`graceNoteSlash*`）挂在记号里
+  const grace = n.grace ? (n.graceSlash || n.marks?.some((m) => m.startsWith("graceNoteSlash")) ? '<grace slash="yes"/>' : "<grace/>") : "";
   const durEl = n.grace ? "" : `<duration>${dur}</duration>`;
   // `<chord/>` 紧跟在 `<grace/>` 之后（没有倚音时它就是第一个子元素）
   const chord = n.chordExtra ? "<chord/>" : "";
@@ -528,6 +530,8 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
     if (m === "arpeggiato") arpeggiate = true;
     else if (m.startsWith("fermata")) fermata = `<fermata type="${m === "fermataBelow" ? "inverted" : "upright"}"/>`;
     else if (m.startsWith("ornamentTrill") || m.startsWith("wiggleTrill")) orns.push(`<trill-mark/>`);
+    else if (m === "ornamentShortTrill") orns.push(`<inverted-mordent/>`);
+    else if (/^tremolo[123]$/.test(m)) orns.push(`<tremolo type="single">${m.slice(-1)}</tremolo>`);
   }
   if (orns.length) nots.push(`<ornaments>${orns.join("")}</ornaments>`);
   if (tech.length) nots.push(`<technical>${tech.join("")}</technical>`);
@@ -543,11 +547,11 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   // 斜杠符头（前奏/间奏的「照这个节奏弹和弦」）：音高留着（它就画在第三线上），
   // 但要把符头形状写出来，不然回读时会变成一串真的 B4。`<notehead>` 排在 `<stem>` 之后、
   // `<staff>` 之前——MusicXML 的子元素次序是有规定的。
-  const head = n.slash ? `<notehead>slash</notehead>` : "";
+  const head = n.slash ? `<notehead>slash</notehead>` : n.xHead ? `<notehead>${n.xHead}</notehead>` : "";
   // `<beam>` 排在 `<staff>` 之后、`<notations>` 之前；和弦只写在打头那个音上（`emitVoices` 已把整枚和弦的杠挪到它身上）
   const beam = n.chordExtra ? "" : (n.beam ?? []).map((b, i) => `<beam number="${i + 1}">${b}</beam>`).join("");
   return (
-    `<note>${grace}${chord}<pitch><step>${escapeXml(n.step)}</step>${alter}<octave>${n.octave}</octave></pitch>` +
+    `<note>${grace}${chord}${n.unpitched ? `<unpitched><display-step>${escapeXml(n.step)}</display-step><display-octave>${n.octave}</display-octave></unpitched>` : `<pitch><step>${escapeXml(n.step)}</step>${alter}<octave>${n.octave}</octave></pitch>`}` +
     `${durEl}${tie}${voiceEl}<type>${type}</type>${dots}${acc}${timeMod}${stem}${head}${staffEl}${beam}${notations}${lyric}</note>`
   );
 }
@@ -946,6 +950,20 @@ function scoreToMusicXmlRaw(
       }
       return count >= 2 && len > 0 && len < full ? len : undefined;
     };
+    /** 这一小节是不是多小节休止：印出来的各行都只有一个带数字的 `restHBar`、数字一致，返回小节数（不是返回 0） */
+    const multiRestOf = (staves: readonly (Staff | null | undefined)[], bi: number): number => {
+      let n = 0;
+      for (const st of staves) {
+        if (!st) continue;
+        const bar = st.bars[bi];
+        if (!bar) return 0;
+        const own = barNotes(st, staves, bar).filter((x) => !x.chordExtra);
+        const m = own.length === 1 && own[0].sym.code === "restHBar" ? (own[0].sym.multiRest ?? 0) : 0;
+        if (!m || (n && n !== m)) return 0;
+        n = m;
+      }
+      return n;
+    };
     const hiddenSystem = (entry: (typeof score.systems)[number], si: number): string => {
       const ref = entry.sys.staves.find((st) => st.bars.length);
       if (!ref) return "";
@@ -1047,6 +1065,9 @@ function scoreToMusicXmlRaw(
           // 隐藏了一段之后重新露面；多谱表声部只印了其中几行的（望十架第三页长笛那行没印、钢琴右手照印），没印的那行单独藏
           attrs += staffDetails(staves.map((st) => !!st));
         }
+        // 多小节休止：这个声部印出来的每行谱这一小节都只有一个带数字的 `restHBar`（数字一致），展开成那么多小节
+        const multi = multiRestOf(staves, bi);
+        if (multi > 1) attrs += `<measure-style><multiple-rest>${multi}</multiple-rest></measure-style>`;
         // 被系统换行劈开的小节的后半截：系统里任一行谱配得上就算（一行认漏了音、凑不满，别的行照样配得上，232 主也爱我歌）
         const splitTail = entry.sys.staves.some((st) => st.bars[bi]?.splitTail);
         const [beats, beatType] = (prevTime ?? "4/4").split("/").map((v) => parseInt(v));
@@ -1068,7 +1089,10 @@ function scoreToMusicXmlRaw(
           const bar = st.bars[bi];
           if (!bar) return;
           // 弱起小节里的整小节休止按弱起的实长写
-          const inBar = barNotes(st, staves, bar).map((n) => (pickup && n.sym.code === "restHBar" ? { ...n, duration: pickup / ticks(1) } : n));
+          // 整小节休止（`restHBar`，或一小节里只有一个全休止）按拍号的实长写：2/4 小节里印的全休止是两拍（八段锦 m52）
+          const own0 = barNotes(st, staves, bar);
+          const whole = own0.length === 1 && own0[0].rest && (own0[0].sym.code === "restHBar" || own0[0].base === 1);
+          const inBar = own0.map((n) => (pickup && n.sym.code === "restHBar" ? { ...n, duration: pickup / ticks(1) } : whole && !pickup ? { ...n, duration: beats / beatType } : n));
           // 行中换谱号（读音高时已经按它读了，`clefFor`）：写进这一小节，下一行行首要不要再写照它比
           const mids = midRowClefs(entry, st).filter((c) => c.box.left >= bar.left && c.box.left < bar.right);
           const midXml = mids.map((c) => {
@@ -1076,19 +1100,42 @@ function scoreToMusicXmlRaw(
             return { x: c.box.left, xml: staves.length > 1 ? x.replace("<clef>", `<clef number="${k + 1}">`) : x };
           });
           if (mids.length) prevClef[k] = clefXml(mids[mids.length - 1].code);
+          // 谱面上整小节什么都没印（八段锦钢片琴 m12）：写一个不显示的整小节休止占住时值
+          if (!inBar.length && !midXml.length) {
+            const dur = pickup ?? ticks(beats / beatType);
+            body += `<note print-object="no"><rest measure="yes"/><duration>${dur}</duration>${staves.length > 1 ? `<voice>${k * 4 + 1}</voice><staff>${k + 1}</staff>` : ""}</note>`;
+            if (k < staves.length - 1) body += `<backup><duration>${dur}</duration></backup>`;
+            return;
+          }
           body += emitVoices(inBar, ticks, staves.length > 1 ? k + 1 : 0, midXml, bar.right);
           const used = voiceTicks(inBar, ticks);
           // 换到下一行谱之前要把时间**倒回**小节头（MusicXML 的 `<backup>`）
           if (k < staves.length - 1 && used > 0) body += `<backup><duration>${used}</duration></backup>`;
         });
 
-        if (bar0)
-          body += barlineXml("right", {
-            style: bar0.rightStyle,
-            repeat: bar0.rightRepeat,
-            ending: bar0.endingStop ? bar0.endingNumber : null,
-          });
+        const rightBar = bar0
+          ? barlineXml("right", {
+              style: bar0.rightStyle,
+              repeat: bar0.rightRepeat,
+              ending: bar0.endingStop ? bar0.endingNumber : null,
+            })
+          : "";
+        if (multi <= 1) body += rightBar;
         body += `</measure>`;
+        // 多小节休止后面那几小节：各行一个整小节休止，右边的小节线挪到最后一小节
+        for (let k = 1; k < multi; k++) {
+          measureNo++;
+          sysOfBar.push(si);
+          const dur = ticks(beats / beatType);
+          body += `<measure number="${measureNo}">`;
+          staves.forEach((st, j) => {
+            if (!st) return;
+            if (j) body += `<backup><duration>${dur}</duration></backup>`;
+            body += `<note><rest measure="yes"/><duration>${dur}</duration><voice>${j * 4 + 1}</voice>${staves.length > 1 ? `<staff>${j + 1}</staff>` : ""}</note>`;
+          });
+          if (k === multi - 1) body += rightBar;
+          body += `</measure>`;
+        }
       }
     });
     bodies.push(`<part id="${id}">${renumberSlurs(body, sysOfBar, opts.crossPageTies)}</part>`);

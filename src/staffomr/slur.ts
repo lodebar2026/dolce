@@ -3,7 +3,7 @@
 //
 // 坐标一律设备坐标、y 向下——原文是 y 向上，纵向判据逐处翻过来了，见每处注释。
 import { type Box, PObj, SPage, Seg, overlapX, ySpace } from "./model";
-import { pathPoints } from "./vecgeom";
+import { pathPoints, subPaths } from "./vecgeom";
 import type { StaffNote } from "./notedata";
 
 /** 一条弧。 */
@@ -35,13 +35,28 @@ export interface SlurArc {
  * 两种画法：三点的折线（一笔画出的 `<`）；或者两条**斜的**直线（上下各一笔）
  * 左端对齐、纵向靠近。水平/垂直的直线不算（那是谱线小节线）。
  */
+/**
+ * 松叶的折线点：三点折线照原样；**两段共一个端点**的（八段锦：一条路径 `M a L b M b L c`，或从尖起笔 `M b L a M b L c`）
+ * 也收成三点，尖在中间。又扁又宽才算（宽过两格、高不到宽的四成）——别把别的两笔线当成松叶。
+ */
+function wedgePoints(o: PObj, sp: number): ReturnType<typeof pathPoints> {
+  const pts = pathPoints(o.path!);
+  if (pts.length !== 4) return pts;
+  const same = (a: (typeof pts)[number], b: (typeof pts)[number]) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+  const tri = same(pts[1], pts[2]) ? [pts[0], pts[1], pts[3]] : same(pts[0], pts[2]) ? [pts[1], pts[0], pts[3]] : null;
+  if (!tri) return pts;
+  const w = o.box.right - o.box.left;
+  const h = o.box.bottom - o.box.top;
+  return w > sp * 2 && h < w * 0.4 ? tri : pts;
+}
+
 export function findWedges(pg: SPage): PObj[] {
   const sp = pg.normalStaffSpace || pg.space;
   const out: PObj[] = [];
   const lines: PObj[] = [];
   for (const o of pg.objs) {
     if (o.hasAnyTag() || !o.path) continue;
-    const pts = pathPoints(o.path);
+    const pts = wedgePoints(o, sp);
     if (pts.length === 2) {
       const dy = Math.abs(pts[0].y - pts[1].y);
       const dx = Math.abs(pts[0].x - pts[1].x);
@@ -79,17 +94,17 @@ export function findWedges(pg: SPage): PObj[] {
  * 三点折线：中间那点是尖——尖在左是渐强、在右是渐弱。两条斜线（`findWedges` 成对推进 `out`）：
  * 哪一头两线挨得近，尖就在哪一头。
  */
-export function wedgeSpans(objs: PObj[]): import("./notations").WedgeSpan[] {
+export function wedgeSpans(objs: PObj[], sp = Infinity): import("./notations").WedgeSpan[] {
   const out: import("./notations").WedgeSpan[] = [];
-  const span = (tipX: number, tipY: number, x0: number, x1: number, spread: number): void => {
-    out.push({ type: tipX <= (x0 + x1) / 2 ? "crescendo" : "diminuendo", x0, x1, cy: tipY, ...(spread > 0 ? { spread } : {}) });
+  const span = (tipX: number, tipY: number, x0: number, x1: number, spread: number, closed: boolean): void => {
+    out.push({ type: tipX <= (x0 + x1) / 2 ? "crescendo" : "diminuendo", x0, x1, cy: tipY, ...(spread > 0 ? { spread } : {}), ...(closed ? { closed } : {}) });
   };
   for (let i = 0; i < objs.length; i++) {
-    const pts = objs[i].path ? pathPoints(objs[i].path!) : [];
+    const pts = objs[i].path ? wedgePoints(objs[i], sp) : [];
     if (pts.length === 3) {
       const xs = pts.map((p) => p.x);
       const ys = pts.map((p) => p.y);
-      span(pts[1].x, pts[1].y, Math.min(...xs), Math.max(...xs), Math.max(...ys) - Math.min(...ys));
+      span(pts[1].x, pts[1].y, Math.min(...xs), Math.max(...xs), Math.max(...ys) - Math.min(...ys), true);
       continue;
     }
     const o2 = objs[i + 1];
@@ -103,8 +118,10 @@ export function wedgeSpans(objs: PObj[]): import("./notations").WedgeSpan[] {
     const rightGap = Math.abs(ar.y - br.y);
     const x0 = Math.min(al.x, bl.x);
     const x1 = Math.max(ar.x, br.x);
-    if (leftGap <= rightGap) span(x0, (al.y + bl.y) / 2, x0, x1, rightGap);
-    else span(x1, (ar.y + br.y) / 2, x0, x1, leftGap);
+    // 窄头合成一点（两线端点差不到 0.3 格）：是新起的一条，不是从上一行续过来张着口的那截
+    const tol = Number.isFinite(sp) ? sp * 0.3 : 1;
+    if (leftGap <= rightGap) span(x0, (al.y + bl.y) / 2, x0, x1, rightGap, leftGap < tol);
+    else span(x1, (ar.y + br.y) / 2, x0, x1, leftGap, rightGap < tol);
   }
   return out;
 }
@@ -120,6 +137,45 @@ export function findSlurs(pg: SPage): SlurArc[] {
   const stems: Seg[] = pg.segsWithTag("Stem");
   const sp = pg.normalStaffSpace || pg.space;
   const out: SlurArc[] = [];
+  // **一截弧画三遍**（八段锦：Sibelius 打的谱经 XPS 转出的 PDF）：上下两沿各一条描边贝塞尔（或一条闭合的描边轮廓）、中间一块压平的填充月牙，
+  // 三个外框几乎重合（差不到半个线宽）；整条弧还常从极点断成两截。三遍只留填充那块，两条描边打 `SlurPart`。
+  // 成套的就是弧：半截弧又短又陡（5×5 点），下面「又宽又扁」那道闸对它放宽，不然左半截全丢、右半截单独去挂音
+  const near = (a: Box, b: Box, tol: number) => Math.abs(a.left - b.left) < tol && Math.abs(a.right - b.right) < tol && Math.abs(a.top - b.top) < tol && Math.abs(a.bottom - b.bottom) < tol;
+  const layered = new Set<PObj>();
+  {
+    const strokes = pg.objs.filter((o) => !o.hasAnyTag() && o.path && o.path.curves > 0 && /stroke/i.test(o.path.paint) && !/fill/i.test(o.path.paint));
+    const fills = pg.objs.filter((o) => !o.hasAnyTag() && o.path && !o.path.curves && o.path.segs >= 4 && /fill/i.test(o.path.paint));
+    const used = new Set<PObj>();
+    const eb = new Map(strokes.map((o) => [o, arcBox(o)] as const));
+    for (const a0 of strokes) {
+      if (used.has(a0)) continue;
+      const a = { box: eb.get(a0)! };
+      const mates = strokes.filter((t) => t !== a0 && !used.has(t) && near(eb.get(t)!, a.box, sp * 0.3));
+      // 填充月牙的尖常比描边短一截（中阮 m94 的长延音线左尖短 1.7 点，扬琴 m47 的陡弧尖横竖都短 2 点）：
+      // 落在描边框里、长宽都短不过半格就算同一截
+      const within = (f: PObj) =>
+        f.box.left > a.box.left - sp * 0.3 && f.box.right < a.box.right + sp * 0.3 && f.box.top > a.box.top - sp * 0.3 && f.box.bottom < a.box.bottom + sp * 0.3 &&
+        f.box.right - f.box.left > a.box.right - a.box.left - sp * 0.5 && f.box.bottom - f.box.top > a.box.bottom - a.box.top - sp * 0.5;
+      const fill = fills.filter((f) => !used.has(f) && within(f));
+      // 弧伸出页面左右缘（八段锦钢片琴跨行的长弧，行末那截与下一行行首那截）：填充那块被页面截掉一段（截成矩形，或剩半个月牙），
+      // 落在描边框里、贴着框的一个角（行末那截左上角，行首那截右下角）
+      const touch = (u: number, v: number) => Math.abs(u - v) < sp * 0.3;
+      const offPage = a.box.left < 1 || a.box.right > pg.width - 1;
+      const clipped = fills.filter(
+        (f) =>
+          offPage && !used.has(f) && !fill.includes(f) &&
+          f.box.left > a.box.left - sp * 0.3 && f.box.right < a.box.right + sp * 0.3 && f.box.top > a.box.top - sp * 0.3 && f.box.bottom < a.box.bottom + sp * 0.3 &&
+          (touch(f.box.left, a.box.left) || touch(f.box.right, a.box.right)) && (touch(f.box.top, a.box.top) || touch(f.box.bottom, a.box.bottom)),
+      );
+      if (!mates.length && !fill.length) continue;
+      const group = [a0, ...mates, ...fill, ...clipped];
+      for (const t of group) used.add(t);
+      // 填充是十几段折线的月牙就拿它当这截弧；压成四边形的（中音笙和弦里叠着的延音线，5 段）弯度只剩描边看得出，拿描边
+      const rep = fill.find((f) => f.path!.segs >= 12) ?? a0;
+      layered.add(rep);
+      for (const t of group) if (t !== rep) t.addTag("SlurPart");
+    }
+  }
   for (const o of pg.objs) {
     if (o.hasAnyTag()) continue;
     const p = o.path;
@@ -130,7 +186,7 @@ export function findSlurs(pg: SPage): SlurArc[] {
     //   ③ **压平成多段折线的多边形**（这一批经 Distiller 的 PDF，实测 p205 一条弧
     //      是 60 段直线围出来的月牙、`curves` 恰好是 0）——只认 `curves > 0` 的话
     //      那些页一条弧都找不到。折线段数取 12 作门槛：符杠是 4 点、矩形 4~5 点。
-    if (!p.curves && p.segs < 12) continue;
+    if (!p.curves && p.segs < 12 && !layered.has(o)) continue;
     // **又窄又高、在系统线左边的曲线是花括号**（Finale 直出把它画成上下两半两条曲线，各 5×36 点）。
     // 下面那道「又宽又扁」的形状闸会先把它筛掉、走不到判括号那一步，于是钢琴谱的两行一直没有花括号可认
     // ——分声部只能靠「相邻 G + F 谱号」那条兜底，把合唱谱的女低（G）与男声（F）并成了一个大谱表（宣主荣耀）。
@@ -176,9 +232,11 @@ export function findSlurs(pg: SPage): SlurArc[] {
       w >= h &&
       !pg.objs.some((t) => t.run && t.box.left >= o.box.left && t.box.right <= o.box.right && t.box.top >= o.box.top && t.box.bottom <= o.box.bottom) &&
       !stems.some((sg) => sg.cx >= o.box.left - sp * 0.5 && sg.cx <= o.box.right + sp * 0.5 && [sg.top, sg.bottom].some((y) => y >= o.box.top - sp * 0.5 && y <= o.box.bottom + sp * 0.5));
-    if (w < sp * 0.9 || (w < h * 1.5 && !steep())) continue;
+    // 成套的按长边量：短弧陡的那半截只有两点多宽、五点高（二胡 p1 m3 十六分上的小弧右半），最短的左半截 2.4×2.4 点（二胡 p1 m5）
+    if (layered.has(o) ? Math.max(w, h) < sp * 0.3 : w < sp * 0.9 || (w < h * 1.5 && !steep())) continue;
     let isBracket = false;
-    for (const l of syslines) {
+    // 又长又扁的是弧，不是括号的弯钩：行首跨行弧的后半截从页面左缘起笔，整个在系统线左边（钢片琴系统 7）
+    for (const l of w > sp * 4 && h < w * 0.5 ? [] : syslines) {
       // y 向下：纵向相交 = 不在彼此的上下之外
       if (o.box.bottom < l.box.top || l.box.bottom < o.box.top) continue;
       if (o.box.left < l.box.left) {
@@ -195,6 +253,14 @@ export function findSlurs(pg: SPage): SlurArc[] {
     o.addTag("Slur");
     out.push(arc);
   }
+  // 成套弧端头那一小截描边（0.4×1.1 点的线帽）：贴着某条弧的端点的，也归弧
+  if (layered.size)
+    for (const o of pg.objs) {
+      if (o.hasAnyTag() || !o.path || o.path.curves || o.box.right - o.box.left > sp * 0.35 || o.box.bottom - o.box.top > sp * 0.35) continue;
+      const cx = (o.box.left + o.box.right) / 2;
+      const cy = (o.box.top + o.box.bottom) / 2;
+      if (out.some((a) => layered.has(a.obj) && [[a.lx, a.ly], [a.rx, a.ry]].some(([x, y]) => Math.abs(x - cx) < sp * 0.3 && Math.abs(y - cy) < sp * 0.4))) o.addTag("SlurPart");
+    }
   return out;
 }
 
@@ -229,6 +295,7 @@ export function mergeArcHalves(arcs: SlurArc[], sp: number): SlurArc[] {
       const b = sorted.find((q) => !used.has(q) && joins(cur, q));
       if (!b) break;
       used.add(b);
+      b.obj.addTag("SlurPart");
       cur.rx = b.rx;
       cur.ry = b.ry;
     }
@@ -237,9 +304,26 @@ export function mergeArcHalves(arcs: SlurArc[], sp: number): SlurArc[] {
   return out;
 }
 
+/**
+ * 弧路径的点，去掉夹带的**极短直线子路径**（一点以内）：中音笙和弦里的延音线，一条描边常捎上别的弧端头那 0.6 点的竖线帽，
+ * 外框被撑到另一条弧那里，配不上自己的填充块，朝向也被它带偏。
+ */
+function arcPoints(o: PObj): ReturnType<typeof pathPoints> {
+  const sps = subPaths(o.path!);
+  if (sps.length < 2) return pathPoints(o.path!);
+  const keep = sps.filter((s) => s.pts.some((q) => q.curve) || s.pts.length > 2 || Math.hypot(s.pts[0].x - s.pts[s.pts.length - 1].x, s.pts[0].y - s.pts[s.pts.length - 1].y) > 1);
+  return keep.length ? keep.flatMap((s) => s.pts) : pathPoints(o.path!);
+}
+
+/** `arcPoints` 的外框 */
+function arcBox(o: PObj): Box {
+  const pts = arcPoints(o);
+  return { left: Math.min(...pts.map((q) => q.x)), right: Math.max(...pts.map((q) => q.x)), top: Math.min(...pts.map((q) => q.y)), bottom: Math.max(...pts.map((q) => q.y)) };
+}
+
 /** 从路径点算出弧的两端与朝向（`SlurTie::SlurTie`）。 */
 function arcOf(o: PObj): SlurArc | null {
-  const pts = pathPoints(o.path!);
+  const pts = arcPoints(o);
   if (pts.length < 4) return null;
   let li = 0;
   let ri = 0;
@@ -256,8 +340,11 @@ function arcOf(o: PObj): SlurArc | null {
   const x1 = pts[ri].x;
   const y1 = pts[ri].y;
   if (x1 > x0) {
+    // 端点上的竖直收尾（极点处断开的半截弧，描边末尾还拖一段竖线）不算：它离连线远，却不说明弧往哪边拱。
+    const eps = (x1 - x0) * 0.02;
+    const inner = pts.filter((p) => p.x > x0 + eps && p.x < x1 - eps);
     let far = 0;
-    for (const p of pts) {
+    for (const p of inner.length ? inner : pts) {
       const yLine = y0 + ((y1 - y0) * (p.x - x0)) / (x1 - x0);
       const d = p.y - yLine;
       if (Math.abs(d) > Math.abs(far)) far = d;
@@ -284,7 +371,7 @@ function arcOf(o: PObj): SlurArc | null {
  */
 const SLUR_REACH = 3;
 
-export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number, sp: number, above: boolean): number | null {
+export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number, sp: number, above: boolean, headSlack = 0): number | null {
   // y 向下：`nt.top` 是视觉上沿。原文比的是 y 向上的 top/bottom，这里整段翻过来。
   if (py < nt.top - sp * SLUR_REACH) return null;
   if (py > nt.bottom + sp * SLUR_REACH) return null;
@@ -299,12 +386,15 @@ export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number
     dy = 0;
   }
   let dx: number;
+  // `headSlack`：端点可以略出符头（头宽的几成）。矢量路给 0.4：倚音到主音的小弧起笔在倚音头左下方（二胡 m48 倚音 D5，左出 1.4 点），
+  // 卡死在头的左缘就挂到前一小节的同音上去了。位图路不给（破碎干净档的弧挂法会变）
+  const slack = (nt.right - nt.left) * headSlack;
   if (isEnd) {
-    if (px > nt.right) return null;
+    if (px > nt.right + slack) return null;
     if (px < nt.left - 4 * sp) return null;
     dx = px - nt.left;
   } else {
-    if (px < nt.left) return null;
+    if (px < nt.left - slack) return null;
     if (px > nt.right + 4 * sp) return null;
     dx = px - nt.right;
   }
@@ -320,7 +410,7 @@ export function validateSlurNote(isEnd: boolean, nt: Box, px: number, py: number
  * @param opts.stemEnds 两端都挂不上符头时按符干端补挂（只矢量路开，见下）
  * @param opts.tieNeighbors 两端同音级还要过 `notTie` 才判延音线（矢量路开；位图路挂完弧端、修过几轮之后在 `pagefinish.ts` 里另判）
  */
-export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opts: { stemEnds?: boolean; tieNeighbors?: boolean } = {}): void {
+export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opts: { stemEnds?: boolean; tieNeighbors?: boolean; overshoot?: boolean; headSlack?: number; spreadTies?: boolean } = {}): void {
   const pitched = notes.filter((n) => !n.rest);
   for (const sl of arcs) {
     let bestL: StaffNote | undefined;
@@ -329,8 +419,8 @@ export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opt
     let dr = Infinity;
     for (const nt of pitched) {
       const b = nt.sym.box;
-      const vl = validateSlurNote(false, b, sl.lx, sl.ly, sp, sl.above);
-      const vr = validateSlurNote(true, b, sl.rx, sl.ry, sp, sl.above);
+      const vl = validateSlurNote(false, b, sl.lx, sl.ly, sp, sl.above, opts.headSlack);
+      const vr = validateSlurNote(true, b, sl.rx, sl.ry, sp, sl.above, opts.headSlack);
       if (vl !== null && vl < dl) {
         dl = vl;
         bestL = nt;
@@ -363,6 +453,24 @@ export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opt
       const nearTip = (nt: StaffNote, y: number) => Math.abs(y - nt.stemTip!) <= sp * 1.5;
       if (sl0 && sr0 && sl0 !== sr0 && sl0.staff === sr0.staff && nearTip(sl0, sl.ly) && nearTip(sr0, sl.ry)) (bestL = sl0), (bestR = sr0);
     }
+    // 一端挂不上时容它越过符头一格（八段锦：Sibelius 的弧尾常伸到末音右缘外、甚至贴着后面的休止，琵琶 m48）。只矢量路开（`overshoot`）
+    if (opts.overshoot && (!bestL || !bestR)) {
+      let d0 = Infinity, d1 = Infinity;
+      let l0: StaffNote | undefined, r0: StaffNote | undefined;
+      for (const nt of pitched) {
+        const b = nt.sym.box;
+        // 纵向也容一格：陡的短弧收尾翘得高，端点离符头三格多（中胡 m57 十六分上的小弧）
+        const dy = (sl.above ? 1 : -1) * sp;
+        const vl = bestL ? null : validateSlurNote(false, b, sl.lx + sp * 1.2, sl.ly + dy, sp, sl.above);
+        const vr = bestR ? null : validateSlurNote(true, b, sl.rx - sp * 1.2, sl.ry + dy, sp, sl.above);
+        if (vl !== null && vl < d0) (d0 = vl), (l0 = nt);
+        if (vr !== null && vr < d1) (d1 = vr), (r0 = nt);
+      }
+      // 伸到谱行右缘（左缘）两格以内的是跨行弧的半截，那一端本来就没有音，不补（牵我的手 p1 钢琴左手 C3 行末的弧）
+      const nearEdge = (n: StaffNote, x: number, right: boolean) => (right ? n.staff.box.right - x : x - n.staff.box.left) < sp * 2;
+      if (l0 && l0 !== bestR && !nearEdge(l0, sl.lx, false)) bestL = l0;
+      if (r0 && r0 !== bestL && !nearEdge(r0, sl.rx, true)) bestR = r0;
+    }
     if (bestL && bestL === bestR) {
       // 两端落到同一个音符上：按 x 判掉不合理的那一端（照原文）
       if (bestL.sym.box.left > sl.rx) bestL = undefined;
@@ -371,6 +479,43 @@ export function attachSlurs(arcs: SlurArc[], notes: StaffNote[], sp: number, opt
     sl.from = bestL;
     sl.to = bestR;
     if (bestL && bestR && bestL.staff === bestR.staff && bestL.diatonic === bestR.diatonic && !(opts.tieNeighbors && notTie(bestL, bestR, pitched, sp, sl.above))) sl.tie = true;
+  }
+  if (opts.spreadTies) spreadChordTies(arcs, pitched);
+}
+
+/**
+ * 和弦里叠着的几条延音线常挂到同一对音上（高音笙 m74 A4/F♯4/D4 三条：中间那条贴着 D4 头顶，按距离归了 D4，与最下面那条重了）。
+ * 同一对音上挂了不止一条的，在这个和弦里重新分：每条归**弧那一侧**（朝下的弧在头的下面）离它最近、
+ * 后一个和弦里有同音级的音，一个音只分一条。
+ */
+function spreadChordTies(arcs: SlurArc[], pitched: StaffNote[]): void {
+  const groups = new Map<StaffNote, SlurArc[]>();
+  for (const sl of arcs) if (sl.tie && sl.from && sl.to) groups.set(sl.from, [...(groups.get(sl.from) ?? []), sl]);
+  const tiedFrom = new Set(arcs.filter((a) => a.tie && a.from).map((a) => a.from!));
+  for (const [from, g] of groups) {
+    if (g.length < 2 || g.some((sl) => sl.to !== g[0].to)) continue;
+    const to = g[0].to!;
+    const hw = from.sym.box.right - from.sym.box.left;
+    const col = (n: StaffNote) => pitched.filter((m) => m.staff === n.staff && Math.abs(m.x - n.x) < hw * 0.5);
+    const fromCol = col(from), toCol = col(to);
+    for (const m of fromCol) if (m !== from) tiedFrom.delete(m);
+    tiedFrom.delete(from);
+    const pairs: { sl: SlurArc; m: StaffNote; t: StaffNote; d: number }[] = [];
+    for (const sl of g)
+      for (const m of fromCol) {
+        if (tiedFrom.has(m) || (sl.above ? m.sym.py <= sl.ly : m.sym.py >= sl.ly)) continue;
+        const t = toCol.find((q) => q.diatonic === m.diatonic);
+        if (t) pairs.push({ sl, m, t, d: Math.abs(m.sym.py - sl.ly) });
+      }
+    pairs.sort((a, b) => a.d - b.d);
+    const done = new Set<SlurArc>();
+    for (const p of pairs) {
+      if (done.has(p.sl) || tiedFrom.has(p.m)) continue;
+      p.sl.from = p.m;
+      p.sl.to = p.t;
+      done.add(p.sl);
+      tiedFrom.add(p.m);
+    }
   }
 }
 
@@ -555,7 +700,7 @@ export function orphanEdge(sl: SlurArc, n: StaffNote): "end" | "begin" | "mid" {
  * `newId` 发新弧号（只当写出端配对的键，`toxml.ts::renumberSlurs`）：缺省取进程里的全局计数；位图路按「页码.页内序号」发
  * （多页并行时各 Worker 的计数互不相知，单用计数会跨页撞号、被写出端配成一条）。
  */
-export function markSlurNotes(arcs: SlurArc[], newId: () => string = () => String(nextSlurId++)): void {
+export function markSlurNotes(arcs: SlurArc[], newId: () => string = () => String(nextSlurId++), byDirection = false): void {
   // **两端落在同一处的弧算同一条**：同一条圆滑线常被检出两个弧对象（牵我的手每条都是两份），
   // 还有一头挂在和弦的不同成员上的（我灵镇静 m4 E4→A4、E4→F4，A4/F4 同一个和弦）。
   // 原来只记布尔值，又按谱表号编号，两条同号、读入端只留一条，碰巧是对的；按弧号逐条写出就成了两条。
@@ -567,7 +712,9 @@ export function markSlurNotes(arcs: SlurArc[], newId: () => string = () => Strin
     a === b || (!!a && !!b && a.staff === b.staff && Math.abs(a.x - b.x) < (a.sym.box.right - a.sym.box.left) * 0.5);
   const sameHalf = (a: SlurArc, b: SlurArc) => {
     const n = a.from && a.to ? undefined : (a.from ?? a.to);
-    if (!n) return true;
+    // 两端都挂上的也要朝向相同：和弦上下各一条（新笛 m45 上面 F♯4→G4、下面 D4→E4），两端同处却是两条。
+    // 只矢量路开（`byDirection`）：位图路的弧向不总可靠，同一条弧的两份朝向判得不一，破碎干净档多出五六处「挪连线」
+    if (!n) return !byDirection || a.above === b.above;
     const w = n.sym.box.right - n.sym.box.left;
     return a.above === b.above && Math.abs(a.lx - b.lx) < w * 0.15 && Math.abs(a.rx - b.rx) < w * 0.15;
   };

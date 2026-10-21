@@ -99,6 +99,10 @@ export type Tag =
   | "Leger"
   | "Tail"
   | "Slur"
+  /** 同一条弧另画的那几遍 / 拼进别的对象的那半截（`findSlurs` 的成套弧、`mergeArcHalves`）：有主，但不另算一条。 */
+  | "SlurPart"
+  /** 斜穿倚音干的那道杠（`findGraceSlashes`）。 */
+  | "GraceSlash"
   | "Tied"
   | "Wedge"
   | "OctaveShift"
@@ -109,6 +113,10 @@ export type Tag =
   | "Expression"
   | "Instrument"
   | "TextFrame"
+  /** 多小节休止画成路径时的两端竖线、上方的小节数（`page.ts::findMultiRests`） */
+  | "MultiRest"
+  /** 文字另描一遍的轮廓（描边加粗，`page.ts::markTextInk`）：墨迹算在文字头上。 */
+  | "TextInk"
   | "Boxed"
   | "MeasureNumber";
 
@@ -248,8 +256,12 @@ export class Sym {
    * 那种音符没有单独的符干可数，时值只能由字形本身给出。见 `page.ts::adoptCompositeNotes`。
    */
   compositeBase?: number;
+  /** 多小节休止（`restHBar` 上方印的数字，`page.ts::findMultiRests`）：这一个记号顶几小节。 */
+  multiRest?: number;
   /** 复合音符字形的符干朝向（`true` = 朝上、符头在下）。见 `page.ts::adoptCompositeNotes`。 */
   compositeStemUp?: boolean;
+  /** 同一位置叠印的第二个休止（两声部共用、各画一遍）：照收、照占拍子，写出时不显示。见 `page.ts::findSymbols`。 */
+  redrawn?: boolean;
   /** 位图路：这个全音符头的**形状**已按本页样本确认是全音符（不是干没挂上的二分），见 `rasteromr/notehead.ts::markShapeWholes`。 */
   shapeWhole?: boolean;
   /** 基线原点的 x（musicpp 的 `Symbol::pos.x`）。 */

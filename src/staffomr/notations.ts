@@ -5,7 +5,7 @@
 import { SPage, Seg, Sym, type PObj, type Staff } from "./model";
 import type { BeamShape, StaffNote, StemInfo } from "./notedata";
 import { objText } from "./textanalyze";
-import { subPaths } from "./vecgeom";
+import { isFill, subPaths } from "./vecgeom";
 
 /** 会挂到音符上的记号（SMuFL 名）。力度记号另走 `<direction>`，见 `toxml.ts`。 */
 const NOTATION_CODES = new Set([
@@ -17,7 +17,8 @@ const NOTATION_CODES = new Set([
   "articAccentStaccatoAbove", "articAccentStaccatoBelow",
   "articTenutoStaccatoAbove", "articTenutoStaccatoBelow",
   "fermataAbove", "fermataBelow",
-  "ornamentTrill", "wiggleTrill", "wiggleTrillSlow",
+  "ornamentTrill", "ornamentShortTrill", "wiggleTrill", "wiggleTrillSlow", "wiggleArpeggiatoUp",
+  "tremolo1", "tremolo2", "tremolo3",
   "stringsUpBow", "stringsDownBow",
   "breathMarkComma", "caesura",
   "graceNoteSlashStemUp", "graceNoteSlashStemDown",
@@ -58,12 +59,12 @@ const ARP_REACH = 2.5;
 /**
  * 琶音记号：Finale 把它画成**一串竖排的 `wiggleTrill` 字形**（Maestro 'g'，同 x、上下一个接一个，
  * 宣主荣耀 p1 左手三和弦前六个）。不先挑出来，每一个都会被当成颤音挂到最近的音上。
- * 两个以上同列相接才算（单个的 wiggle 是真颤音线的一截）；挂法同位图路：线右 `ARP_REACH` 格内、
+ * 两个以上同列相接才算（单个的 wiggle 是真颤音线的一截）；Anastasia 有专门的竖波纹 `wiggleArpeggiatoUp`（八段锦钢片琴），一截也算。挂法同位图路：线右 `ARP_REACH` 格内、
  * 纵向落在线的范围里（上下容半格多）最靠左的那一列和弦。返回没被收走的记号。
  */
 export function takeArpeggios(pg: SPage, notes: StaffNote[], marks: Sym[]): Sym[] {
   const sp = pg.normalStaffSpace || pg.space;
-  const wig = marks.filter((m) => m.code === "wiggleTrill").sort((a, b) => a.box.left - b.box.left || a.box.top - b.box.top);
+  const wig = marks.filter((m) => m.code === "wiggleTrill" || m.code === "wiggleArpeggiatoUp").sort((a, b) => a.box.left - b.box.left || a.box.top - b.box.top);
   const used = new Set<Sym>();
   for (const w of wig) {
     if (used.has(w)) continue;
@@ -75,7 +76,7 @@ export function takeArpeggios(pg: SPage, notes: StaffNote[], marks: Sym[]): Sym[
       if (u.box.top < last.box.top || u.box.top > last.box.bottom + sp * 0.5) continue;
       col.push(u);
     }
-    if (col.length < 2) continue;
+    if (col.length < 2 && w.code !== "wiggleArpeggiatoUp") continue;
     for (const u of col) used.add(u);
     const right = Math.max(...col.map((u) => u.box.right));
     const top = Math.min(...col.map((u) => u.box.top));
@@ -86,6 +87,34 @@ export function takeArpeggios(pg: SPage, notes: StaffNote[], marks: Sym[]): Sym[
     for (const n of near) if (n.sym.box.left <= x0 + sp * 1.4) n.marks = [...(n.marks ?? []), "arpeggiato"];
   }
   return marks.filter((m) => !used.has(m));
+}
+
+/**
+ * 短倚音的斜杠：Sibelius 画成一块**斜的填充四边形**（不是字形），斜穿倚音的干与符尾（八段锦二胡 / 高音笙 m48 倚音 D5）。
+ * 没人认的话它又扁又宽、像一截符杠。记到这一列音上（`graceSlash`，写出时只对倚音起作用），路径打 `GraceSlash`。
+ * 倚音要到凑拍子（`checkBars`）才定，这里还不知道：按**小符头**（头宽不到一格）认，
+ * 斜杠要骑在干的中段（干从它中间穿过）——十六分的短钩斜着、也不宽，但只贴在干端。
+ */
+export function findGraceSlashes(pg: SPage, notes: StaffNote[]): void {
+  const sp = pg.normalStaffSpace || pg.space;
+  for (const n of notes) {
+    const hb = n.sym.box;
+    if (n.rest || n.stemTip === undefined || hb.right - hb.left >= sp) continue;
+    const y0 = Math.min(n.stemTip, hb.top), y1 = Math.max(n.stemTip, hb.bottom);
+    const sx = n.stemUp ? hb.right : hb.left;
+    const o = pg.objs.find((o) => {
+      if (o.hasAnyTag() || !o.path || o.path.curves || !isFill(o.path)) return false;
+      const b = o.box;
+      if (b.right - b.left > sp * 2.5 || b.bottom - b.top > sp * 2 || b.right - b.left < sp * 0.8) return false;
+      if (sx < b.left + sp * 0.3 || sx > b.right - sp * 0.3 || b.top > y1 || b.bottom < y0) return false;
+      // 斜的：四边形里有不水平也不竖直的边
+      const sps = subPaths(o.path);
+      return sps.length === 1 && sps[0].pts.some((q, i) => i > 0 && Math.abs(q.x - sps[0].pts[i - 1].x) > 0.3 && Math.abs(q.y - sps[0].pts[i - 1].y) > 0.3);
+    });
+    if (!o) continue;
+    o.addTag("GraceSlash");
+    for (const m of notes) if (m.staff === n.staff && Math.abs(m.x - n.x) < sp * 0.5) m.graceSlash = true;
+  }
 }
 
 /**
@@ -102,14 +131,50 @@ export function attachNotations(pg: SPage, notes: StaffNote[], marks: Sym[]): vo
     for (const n of notes) {
       const st = n.staff;
       // 纵向范围按谱表与这个符头合起来量：加线上的高音头顶印着的记号离谱表三格开外（牵我的手 m67 小提琴 C6 上的下弓）
-      if (m.py < Math.min(st.box.top, n.sym.box.top) - sp * 3 || m.py > Math.max(st.box.bottom, n.sym.box.bottom) + sp * 3) continue;
-      const d = Math.abs(n.sym.px - m.px);
+      // 干尖也算进来：干朝上的音，重音印在干尖上方（八段锦小钗 m96 三个 `>` 离谱表四格）
+      const tip = n.stemTip ?? (n.sym.box.top + n.sym.box.bottom) / 2;
+      // 弓法、装饰音常叠在别的记号上面（高胡 m3：下弓在波音之上），放到四格半
+      const reach = /^(strings|ornament)/.test(m.code) ? 4.5 : 3;
+      if (m.py < Math.min(st.box.top, n.sym.box.top, tip) - sp * reach || m.py > Math.max(st.box.bottom, n.sym.box.bottom, tip) + sp * reach) continue;
+      // 震音斜杠斜穿在符干上（离符头一两格）或印在全音符右边：按横向离符头墨迹的空隙算，不按原点 x
+      // 其余按两边的墨迹中线比：八段锦的短波音比符头宽一倍，原点在左端，按原点比差出一格半（新笛 m30）；
+      // 干朝上的音，顿音印在干那一侧（中胡 m50 偏右四点），按左端比就超了门槛
+      const d = /^tremolo/.test(m.code)
+        ? Math.max(0, m.box.left - n.sym.box.right, n.sym.box.left - m.box.right) + Math.abs(m.py - n.sym.py) * 0.01
+        : Math.abs((n.sym.box.left + n.sym.box.right) / 2 - (m.box.left + m.box.right) / 2);
+      if (/^tremolo/.test(m.code) && Math.abs(m.py - n.sym.py) > sp * 4.5) continue;
       if (d < bd) {
         bd = d;
         best = n;
       }
     }
-    if (best && bd < sp * 1.5) (best.marks ??= []).push(m.code);
+    if (best && bd < sp * (/^ornament/.test(m.code) ? 2.5 : 1.5)) (best.marks ??= []).push(m.code);
+  }
+}
+
+/**
+ * 反复记号 𝄋 / 𝄌（`segno`、`coda`）挂到它右边最近的音上，出 `<direction>`。印在谱表上方，归下面那行谱。
+ *
+ * Anastasia 的 coda 与 ¢（`timeSigCutCommon`）是同一个字形（赞美之泉里当拍号用，字形字典按形状认，分不开）：
+ * 没被拍号收走（不在谱表里）、整个印在某行谱上方四格以内的那个是 coda（八段锦唢呐 m33 前的 ⊕）。
+ */
+export function attachSigns(pg: SPage, notes: StaffNote[]): void {
+  const sp = pg.normalStaffSpace || pg.space;
+  const below = (s: Sym) =>
+    pg.staves
+      .filter((st) => s.box.bottom <= st.box.top + sp * 0.5 && st.box.top - s.box.bottom < sp * 4 && s.box.right > st.box.left && s.box.left < st.box.right)
+      .sort((a, b) => a.box.top - b.box.top)[0];
+  for (const s of pg.symbols) {
+    if (s.hasAnyTag()) continue;
+    if (s.code === "timeSigCutCommon" && below(s)) s.code = "coda";
+    if (s.code !== "segno" && s.code !== "coda") continue;
+    const st = below(s);
+    if (!st) continue;
+    const row = notes.filter((n) => n.staff === st && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
+    const n = row.find((m) => m.x >= s.box.left - sp) ?? row[row.length - 1];
+    if (!n) continue;
+    (n.signs ??= []).push(s.code);
+    s.addTag("Notation");
   }
 }
 
@@ -382,7 +447,8 @@ export function attachDynamicTexts(
       // 隔着领起歌词的段号或印在前面休止小节的末尾（宁静 p3 `mf 1. 寧`，右缘到音 3.9 格；p4 m48 两处同此）
       if (only && owner && d.box && !(best && bd < sp * 3)) {
         const right = d.box.right;
-        const next = notes.filter((n) => n.staff === owner && n.sym.px > right && n.sym.px - right < sp * 4.5).sort((p, q) => p.sym.px - q.sym.px)[0];
+        // 按音的中线比：字框右缘常压过音头左缘一点（高胡 m78 行首 `ff` 右缘过了 E6 头左缘 0.3 点）
+        const next = notes.filter((n) => n.staff === owner && (n.sym.box.left + n.sym.box.right) / 2 > right && n.sym.px - right < sp * 4.5).sort((p, q) => p.sym.px - q.sym.px)[0];
         if (next) {
           best = next;
           bd = 0;
@@ -489,6 +555,8 @@ export interface WedgeSpan {
   spread?: number;
   /** 从粘连的大团里切出来的（位图路小节线切段、剥团） */
   fromBlob?: boolean;
+  /** 窄头合成一点（矢量路量得出）：行首的渐强也是新起的，不是续段（中音笙 m10、m25） */
+  closed?: boolean;
 }
 
 /**
@@ -625,7 +693,7 @@ export function attachWedges(pg: SPage, notes: StaffNote[], wedges: WedgeSpan[],
       }
       return true;
     }
-    return p.wg.type === "crescendo";
+    return p.wg.type === "crescendo" && !p.wg.closed;
   });
   plans.forEach(({ wg, a, b, after, contOut }, i) => {
     if (!contIns[i] && a.wedgeStart === undefined) {

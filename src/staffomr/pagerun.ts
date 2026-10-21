@@ -3,13 +3,13 @@ import { extractVectorPage } from "../omrkit/vector";
 import type { OpsEnum } from "../omrkit/vector";
 import { extractTextPage } from "../omrkit/vectext";
 import { StaffGlyphLookup, type StaffGlyphDict } from "./staffglyphs";
-import { buildPage, findBarlines, findNoteheads, findStaves, findStems, findSymbols, findTails, makeBars, makeSystems, removeWhite, unknownObjs } from "./page";
+import { buildPage, findBarlines, findMultiRests, findNoteheads, findStaves, findStems, findSymbols, findTails, makeBars, makeSystems, markTextInk, removeWhite, unknownObjs } from "./page";
 import type { PObj, SPage, Staff } from "./model";
 import { buildNotes, checkBars, findBeams, findClefKeyTime, lastTimeSignature, staffOmrOptions, type BarCheck, type BeamShape, type StaffContext, type StaffNote, type StemInfo } from "./notedata";
 import { analyzeText, attachDirectionTexts, attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type TextAnalysis } from "./textanalyze";
 import type { TextGlyphLookup } from "./textglyphs";
 import { attachSlurs, findSlurs, mergeArcHalves, findWedges, markSlurNotes, reconnectSlurs, retimeTies, wedgeSpans, type SlurArc } from "./slur";
-import { attachDynamics, attachNotations, attachWedges, findNotations, findTuplets, takeArpeggios } from "./notations";
+import { attachDynamics, attachNotations, attachSigns, attachWedges, findGraceSlashes, findNotations, findTuplets, takeArpeggios } from "./notations";
 import { applyOctaveShifts, attachVoltas, findOctaveShifts, findVoltas, type OctaveShift, type Volta } from "./octave";
 import { headerCredits, type HeaderCredit, type WordLine } from "../omrkit/headertext";
 
@@ -57,30 +57,33 @@ export async function recognizeStaffPage(
   const pg = buildPage(index, vec.width, vec.height, vec.objs, runs);
 
   findSymbols(pg, look);
+  markTextInk(pg);
   if (!findStaves(pg)) {
     removeWhite(pg);
     return { page: pg, hasStaff: false, unknown: unknownObjs(pg).length, ctx: new Map(), beams: [], notes: [], text: emptyText(), lyricLines: [], slurs: [], octaves: [], voltas: [], bars: [], carryTime: opts.carryTime };
   }
+  findMultiRests(pg);
   findNoteheads(pg);
   findStems(pg);
   findTails(pg);
   findBarlines(pg);
   const ctx = findClefKeyTime(pg);
   makeSystems(pg);
-  makeBars(pg);
+  makeBars(pg, { keepRoomyHead: true });
   const beams = findBeams(pg);
   const stems: StemInfo[] = [];
   const notes = buildNotes(pg, ctx, beams, stems);
   // 三连音要在时值算完之后改（它按比例缩短已算好的时值）
   findTuplets(pg, beams, stems, notes);
+  findGraceSlashes(pg, notes);
   // 弧要在音符之后找：判断「哪条曲线是谱表括号」要用到系统线，挂两端要用到音符。
   // 渐强渐弱要**先于**弧挑出来——它们也是又宽又扁的图形。
   const wedges = findWedges(pg);
   // 一条弧在这批 PDF 里画成左右两半两个对象，挂音符之前先并回一条
   const slurs = mergeArcHalves(findSlurs(pg), pg.normalStaffSpace || pg.space);
-  attachSlurs(slurs, notes, pg.normalStaffSpace || pg.space, { stemEnds: true, tieNeighbors: true });
+  attachSlurs(slurs, notes, pg.normalStaffSpace || pg.space, { stemEnds: true, tieNeighbors: true, overshoot: true, headSlack: 0.4, spreadTies: true });
   reconnectSlurs(pg, slurs);
-  markSlurNotes(slurs);
+  markSlurNotes(slurs, undefined, true);
   // 八度移位要在音高算完之后、文本层之前：它直接改音符的八度
   const octaves = findOctaveShifts(pg);
   if (staffOmrOptions.octaveShift) applyOctaveShifts(octaves, notes, pg.normalStaffSpace || pg.space);
@@ -89,6 +92,7 @@ export async function recognizeStaffPage(
   // 演奏法记号要在文本层**之前**挑（它们是乐谱字形，与文本无关，但要先占住位置）
   const marks = findNotations(pg);
   attachNotations(pg, notes, takeArpeggios(pg, notes, marks.marks));
+  attachSigns(pg, notes);
   const text = analyzeText(pg);
   // 力度与松叶挪到文本层之后挂：判「隔着上一行歌词、是下一行的」要知道各行谱下方歌词的下沿（见 `ownerStaff`）
   const lyricBottom = new Map<Staff, number>();
@@ -98,7 +102,7 @@ export async function recognizeStaffPage(
     if (st) lyricBottom.set(st, Math.max(lyricBottom.get(st) ?? -Infinity, o.box.bottom));
   }
   attachDynamics(pg, notes, marks.dynamics, lyricBottom);
-  attachWedges(pg, notes, wedgeSpans(wedges), lyricBottom);
+  attachWedges(pg, notes, wedgeSpans(wedges, pg.normalStaffSpace || pg.space), lyricBottom);
   const lyricLines = buildLyricLines(pg, text.lyric, opts.textLookup);
   attachLyrics(notes, lyricLines);
   attachHarmonies(pg, notes, text.harmony);
@@ -165,7 +169,7 @@ export function vectorPageCredits(pg: SPage): HeaderCredit[] {
   if (!pg.staves.length) return [];
   const sp = pg.normalStaffSpace || pg.space;
   const top = Math.min(...pg.staves.map((st) => st.box.top));
-  const SKIP = ["Lyric", "Tempo", "Instrument", "Expression", "MeasureNumber"] as const;
+  const SKIP = ["Lyric", "Tempo", "Instrument", "Expression", "MeasureNumber", "Boxed"] as const;
   const objs = pg.objs.filter((o) => o.run && !o.symbols.length && !SKIP.some((t) => o.hasTag(t)) && o.box.bottom <= top - sp);
   const lines = pageTextLines(objs);
   const toLine = (l: (typeof lines)[number], x0: number, y0: number): WordLine => ({ t: foldRadicals(l.t).replace(/\s+/g, " ").trim(), x: l.box.left - x0, y: l.box.top - y0, w: l.box.right - l.box.left, h: l.box.bottom - l.box.top, size: l.size });

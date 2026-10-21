@@ -15,7 +15,7 @@ export const SMUFL_NAMES = [
   // 符头
   "noteheadDoubleWhole", "noteheadWhole", "noteheadHalf", "noteheadBlack",
   "noteheadXBlack", "noteheadSlashVerticalEnds", "noteheadSlashHorizontalEnds",
-  "noteheadSlashDiamondWhite", "noteheadDiamondBlack", "noteheadDiamondWhite",
+  "noteheadSlashDiamondWhite", "noteheadDiamondBlack", "noteheadDiamondWhite", "noteheadCircleX",
   // 符尾
   "flag8thUp", "flag8thDown", "flag16thUp", "flag16thDown", "flag32ndUp", "flag32ndDown",
   "flag64thUp", "flag64thDown",
@@ -45,7 +45,7 @@ export const SMUFL_NAMES = [
   // 弓法
   "stringsUpBow", "stringsDownBow",
   // 装饰音与记号
-  "ornamentTrill", "wiggleTrill", "wiggleTrillSlow", "tremolo1", "tremolo2", "tremolo3",
+  "ornamentTrill", "ornamentShortTrill", "wiggleTrill", "wiggleTrillSlow", "wiggleArpeggiatoUp", "tremolo1", "tremolo2", "tremolo3",
   "graceNoteSlashStemUp", "graceNoteSlashStemDown",
   "segno", "coda", "caesura", "breathMarkComma",
   "ottavaAlta", "ottavaBassaVb", "ottava",
@@ -94,7 +94,7 @@ const RESTS: ReadonlySet<string> = new Set([
 const HEADS: ReadonlySet<string> = new Set([
   "noteheadDoubleWhole", "noteheadWhole", "noteheadHalf", "noteheadBlack",
   "noteheadXBlack", "noteheadSlashVerticalEnds", "noteheadSlashHorizontalEnds",
-  "noteheadSlashDiamondWhite", "noteheadDiamondBlack", "noteheadDiamondWhite",
+  "noteheadSlashDiamondWhite", "noteheadDiamondBlack", "noteheadDiamondWhite", "noteheadCircleX",
 ]);
 
 const ACCIDENTALS: ReadonlySet<string> = new Set([

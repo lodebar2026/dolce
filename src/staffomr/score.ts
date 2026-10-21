@@ -378,7 +378,9 @@ export function buildScore(
   const scoreStaves: ScoreStaff[] = [];
 
   // ── 有内容剖面时走**全局指派**（见 `assignSlots`）；外面给了指派就照它（-1 = 忽略）──────
-  const slots = opts.slots ?? (opts.profileOf ? assignSlots(tokensOf) : null);
+  // 每个系统都只有一行谱（分谱）：就是同一行，不拿签名比——谱号会换（八段锦大提琴 m34 起几行换次中音谱号，按谱号拆成了两个声部）
+  const single = !opts.slots && systems.length > 0 && systems.every((e) => e.sys.staves.length === 1) ? systems.map(() => [0]) : null;
+  const slots = opts.slots ?? single ?? (opts.profileOf ? assignSlots(tokensOf) : null);
   if (slots) {
     const n = Math.max(1, ...slots.map((p) => Math.max(-1, ...p) + 1));
     for (let k = 0; k < n; k++) {
@@ -549,11 +551,19 @@ function nameParts(systems: StaffScore["systems"], parts: Part[]): void {
       // 矢量路：文字层里打了 `Instrument` 的；位图路：声部名带读出来的块（`SPage.partNames`）
       const cands = [
         ...page.objs.filter((o) => o.run && o.hasTag("Instrument")).map((o) => ({
-          text: o.run!.glyphs.map((g) => g.unicode).join("").trim(), box: o.box, size: o.textSize ?? o.run!.sizeDev,
+          // 中文名常按字拉开印（「二 胡1.2」）：汉字后面的空格去掉
+          text: o.run!.glyphs.map((g) => g.unicode).join("").trim().replace(/(?<=[\u3400-\u9fff])\s+/g, ""), box: o.box, size: o.textSize ?? o.run!.sizeDev,
         })),
         ...page.partNames,
       ];
-      for (const c of cands) {
+      // 一行谱左边上下印两行名字的（八段锦「小钗 / 小鼓、大鼓」：一行谱上下两个声部各一种乐器），两行都要，上下次序换行连起来
+      const inBand = cands.filter((c) => c.text && c.box.right <= left && (c.box.top + c.box.bottom) / 2 >= top && (c.box.top + c.box.bottom) / 2 <= bottom);
+      const stacked = inBand.length > 1 && inBand.every((c, i) => inBand.every((d, j) => i === j || c.box.bottom <= d.box.top + 1 || d.box.bottom <= c.box.top + 1));
+      if (stacked) {
+        const rows = [...inBand].sort((a, b) => a.box.top - b.box.top);
+        best = { text: rows.map((c) => c.text).join("\n"), d: 0, size: Math.max(...rows.map((c) => c.size)) };
+      }
+      for (const c of stacked ? [] : cands) {
         if (c.box.right > left) continue;
         const cy = (c.box.top + c.box.bottom) / 2;
         if (cy < top || cy > bottom) continue;
