@@ -453,7 +453,8 @@ function writeTail(
     const text = harmonyText(host.harmony);
     if (text) line.glue(quoted(`hx:${text}`));
   }
-  if (host.sectionWord) line.glue(quoted(host.sectionWord));
+  // 文本谱一个符号只挂一条注释：分行的几条用空格连成一行
+  if (host.sectionWord) line.glue(quoted(host.sectionWord.split("\n").filter(Boolean).join(" ")));
   for (const q of opts.quotes ?? []) line.glue(q);
   for (const w of st.plan.wedgeStart.get(id) ?? []) line.glue(w);
   line.glue(")".repeat(st.plan.closes.get(id) ?? 0));

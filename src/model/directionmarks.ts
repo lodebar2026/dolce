@@ -85,13 +85,14 @@ export function directionMarks(mea: Measure): DirectionMarks {
       else if (part.type === "words" && part.text) {
         const t = part.text.trim();
         name = TERM_OF[t] ?? decoKey(t);
-        // 同一拍上两段文字（曲首「欢快 热烈地」与「pizz」）并成一段，空格隔开：段落词一个符号只挂一条，以前后一段丢了
+        // 同一拍上两段文字（曲首「欢快 热烈地」与「pizz」）分行挂在同一个音上（换行隔开、先出现的在上，ABC §4.19）；
+        // 以前空格连成一行、再早后一段直接丢了
         if (!name && t) {
           const at = atOrAfter(p);
           const had = out.words.get(at);
           if (had === undefined) out.words.set(at, t);
           // 括号两侧不加空格：「(」与「副歌)」拆成两段写的（500 首 006）并回「(副歌)」
-          else if (!had.split(" ").includes(t)) out.words.set(at, /[(（\[【《“]$/.test(had) || /^[)）\]】》”,，.。;；:：!！?？]/.test(t) ? had + t : `${had} ${t}`);
+          else if (!had.split("\n").includes(t)) out.words.set(at, /[(（\[【《“]$/.test(had) || /^[)）\]】》”,，.。;；:：!！?？]/.test(t) ? had + t : `${had}\n${t}`);
         }
       }
       if (!name) continue;

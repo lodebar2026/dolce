@@ -15,7 +15,7 @@ import { stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
 import { barlineSpan, bracketLineWidth, jianpuSlurStyle, keyLabelSize, type JianpuGrid } from "../metrics";
 import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedMark, PlacedText } from "./model";
 import { articStack, entryTop, noteBeams, stackTop } from "./vertical";
-import { type ChordSpan, sectionWordOf, sectionWordSlot } from "./sectionword";
+import { type ChordSpan, sectionWordLines, sectionWordOf, sectionWordSlot, widestLine } from "./sectionword";
 import { barlineBox } from "./spacing";
 import { rehearsalOf } from "../../../model/deconames";
 
@@ -164,12 +164,13 @@ export function placeBand(
         if (key) {
           // 同一个音上还有转调标记：排在它右边同一行（用户定：避开转调，要么在右、要么在上）；
           // 本小节里放不下（越过下一条小节线或出版心）就摞到它之上
-          const r = ink.sectionWord(el.annotation);
+          const ann = sectionWordLines(el.annotation).join(" ");
+          const r = ink.sectionWord(ann);
           const bar = items.find((o) => o.element.kind === "barline" && o.x > it.x);
           const at = key.ink.right + m.style.size.chord * 0.4 - r.ink.left;
           const fits = at + r.ink.right <= Math.min(bar ? bar.x - nh * 0.3 : Infinity, width || Infinity);
           const x = fits ? at : it.x - nh * 0.35;
-          const t = sectionWordText(el, el.annotation, x, base, r);
+          const t = sectionWordText(el, ann, x, base, r);
           texts.push(t);
           // 与转调标记同一行时同类（`key`）不互避
           boxes.push({ key: t, x0: t.ink.left, x1: t.ink.right, top: t.ink.top, bottom: t.ink.bottom, layer: fits ? 2 : 2.2, rank: 1, kind: fits ? "key" : "section-word", ...lower(it) });
@@ -213,14 +214,20 @@ export function placeBand(
       if (at) spans.push({ x0: t.ink.left, x1: t.ink.right, at });
     }
     for (const w of words) {
-      const text = sectionWordOf(w.it.element)!;
-      const r = ink.sectionWord(text);
+      // 几条连写的（ABC §4.19：分行、先写的在上）：横向按最宽那行找空档，最后一行落在和弦那一行，前面的依次往上摞
+      const lines = sectionWordLines(sectionWordOf(w.it.element)!);
+      if (lines.length === 0) continue;
+      const rs = lines.map((l) => ink.sectionWord(l));
       const row = spans.filter((c) => (c.at.dy ?? 0) === (w.it.dy ?? 0));
-      const slot = sectionWordSlot(items, w.i, (it) => it.x, row, r.ink, m, width || Infinity);
-      const t = sectionWordText(w.it.element, text, slot.x, w.base, r);
-      texts.push(t);
-      boxes.push({ key: t, x0: t.ink.left, x1: t.ink.right, top: t.ink.top, bottom: t.ink.bottom, layer: 1, rank: 1, kind: "section-word", ...lower(w.it) });
-      if (!slot.lifted && w.it.dy === undefined) laneWords.set(t, w.base);
+      const slot = sectionWordSlot(items, w.i, (it) => it.x, row, widestLine(lines, (l) => ink.sectionWord(l)).ink, m, width || Infinity);
+      let base = w.base;
+      for (let k = lines.length - 1; k >= 0; k--) {
+        const t = sectionWordText(w.it.element, lines[k]!, slot.x, base, rs[k]!);
+        texts.push(t);
+        boxes.push({ key: t, x0: t.ink.left, x1: t.ink.right, top: t.ink.top, bottom: t.ink.bottom, layer: 1, rank: 1, kind: "section-word", ...lower(w.it) });
+        if (k === lines.length - 1 && !slot.lifted && w.it.dy === undefined) laneWords.set(t, w.base);
+        if (k > 0) base = t.ink.top - m.style.size.sectionWord * 0.2 - rs[k - 1]!.ink.bottom;
+      }
     }
   }
 
@@ -451,11 +458,14 @@ function placeDirections(
  * 再连带把被它顶到的别的段落词/标签一起往上推。
  */
 function liftTextsOver(boxes: BandItem[], x0: number, x1: number, top: number, bottom: number, gap: number, pad: number): void {
-  const queue: { x0: number; x1: number; top: number; bottom: number; self?: BandItem }[] = [{ x0, x1, top, bottom }];
-  while (queue.length > 0) {
+  // 队列里放框本身、读实时坐标（存快照的话，两行同时被顶到同一高度会来回互推）；次数封顶防万一
+  const origin = { x0, x1, top, bottom } as BandItem;
+  const queue: BandItem[] = [origin];
+  for (let guard = 0; queue.length > 0 && guard < 200; guard++) {
     const o = queue.shift()!;
+    const p = o === origin ? pad : 0;
     for (const b of boxes) {
-      if (b === o.self || (b.kind !== "section-word" && b.kind !== "key") || b.x1 <= o.x0 - (o.self ? 0 : pad) || b.x0 >= o.x1 + (o.self ? 0 : pad)) continue;
+      if (b === o || (b.kind !== "section-word" && b.kind !== "key") || b.x1 <= o.x0 - p || b.x0 >= o.x1 + p) continue;
       // 只推与它同一行或压在它上沿的（中线不低于它的底）；整个在它下面的不动
       if (b.bottom <= o.top - gap + 1e-6 || b.top >= o.bottom || (b.top + b.bottom) / 2 > o.bottom) continue;
       const d = o.top - gap - b.bottom;
@@ -464,7 +474,7 @@ function liftTextsOver(boxes: BandItem[], x0: number, x1: number, top: number, b
       t.ink = t.ink.offset(0, d);
       b.top += d;
       b.bottom += d;
-      queue.push({ x0: b.x0, x1: b.x1, top: b.top, bottom: b.bottom, self: b });
+      queue.push(b);
     }
   }
 }

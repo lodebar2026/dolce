@@ -156,7 +156,7 @@ export class EmitterJcx extends AbcFamilyEmitter {
 
   /** 音符前引号里的字 Muse 一律印在音符上方（`"_…"` 才在下方），没有 ABC 的 `^` 前缀，写了会照印出来 */
   protected override annotationText(word: string): string {
-    return `"${word.replace(/"/g, "'")}"`;
+    return word.split("\n").filter((l) => l !== "").map((l) => `"${l.replace(/"/g, "'")}"`).join("");
   }
 
   protected override readonly annotationBeforeChord = true;

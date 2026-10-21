@@ -505,7 +505,8 @@ export abstract class AbcFamilyEmitter {
 
   /** 段落词/注记（`Chord.sectionWord`）怎么写：ABC §4.19 的注记，`^` = 标在上方。 */
   protected annotationText(word: string): string {
-    return `"^${word}"`;
+    // 分行的几条各写一条注记（ABC §4.19：同方位连写的分行印、先写的在上）
+    return word.split("\n").filter((l) => l !== "").map((l) => `"^${l}"`).join("");
   }
 
   /** 段落词写在和弦名之前（Muse：两者都是引号，读入端靠先后分，见 `j123/parse.ts` 的 `chord` 分支）。 */

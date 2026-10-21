@@ -11,6 +11,16 @@ export function sectionWordOf(el: MusicElement): string | undefined {
   return el.kind === "note" || el.kind === "sustain" ? el.annotation : undefined;
 }
 
+/** 一个音上的几条段落词（ABC §4.19：同方位连写几条注记就分几行、先写的在上；模型里按换行隔开） */
+export function sectionWordLines(text: string): string[] {
+  return text.split("\n").filter((l) => l !== "");
+}
+
+/** 几行里最宽那一行（横向让位、撑开按它算） */
+export function widestLine<T extends { ink: { left: number; right: number } }>(lines: readonly string[], measure: (s: string) => T): T {
+  return lines.map(measure).reduce((a, b) => (b.ink.right - b.ink.left > a.ink.right - a.ink.left ? b : a));
+}
+
 /** 一行里第一个音符/增时线：行首那一条段落词不往右让、不撑开，justify 之后从行内匀（`nudgeForSectionWords`） */
 export function lineStartIndex(items: readonly PlacedItem[]): number {
   return items.findIndex((it) => it.element.kind === "note" || it.element.kind === "sustain");

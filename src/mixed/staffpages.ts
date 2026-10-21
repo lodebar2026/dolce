@@ -152,6 +152,20 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
       const isTempo = (t: MeasureText): boolean => !!t.src && [t.src, ...(t.src.more ?? [])].some((d) => d.type === "metronome");
       const blocks = sys.measures.flatMap((m) => (p.measures[m.index]?.textBlocks ?? []).map((t) => ({ m, t })));
       blocks.sort((a, b) => Number(isTempo(a.t)) - Number(isTempo(b.t)));
+      // 同一拍上的几条文字（`<words>`，曲首「欢快 热烈地」与「pizz」）**先写的在上**（ABC §4.19 连写注记的口径）：
+      // 下面按先后往上摞，所以这几条在各自占的位子里倒过来
+      const isWords = (t: MeasureText): boolean => !!t.src && t.src.type === "words" && !t.boxed;
+      const sameBeat = new Map<string, number[]>();
+      blocks.forEach(({ m, t }, i) => {
+        if (!isWords(t)) return;
+        const k = `${m.index}@${t.offset.toString()}`;
+        sameBeat.set(k, [...(sameBeat.get(k) ?? []), i]);
+      });
+      for (const idx of sameBeat.values()) {
+        if (idx.length < 2) continue;
+        const picked = idx.map((i) => blocks[i]!).reverse();
+        idx.forEach((i, k) => (blocks[i] = picked[k]!));
+      }
       // 源谱版面档：文字按它横向跨过的那一段音符与弧贴（原谱「unis.」「dim.」落在低音处、离谱表近），不按整行最高的音一律抬
       const sky = score.keepBreaks && !mixed && !st.hasHarmony ? st.skyline(sys, true).above : null;
       const localFloor = (x0: number, x1: number): number => {

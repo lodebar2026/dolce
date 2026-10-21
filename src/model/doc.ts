@@ -457,7 +457,8 @@ export interface Chord {
   laterHarmonies?: Harmony[];
   lyrics?: Lyric[];
   notations?: Notations;
-  /** 段落词（「（副歌）」这类印在谱上的提示） */
+  /** 段落词（「（副歌）」这类印在谱上的提示）。同一个音上几条分行印的按换行隔开、先写的在上
+   *  （ABC §4.19 连写的注记，MusicXML 同一拍上的几条 `<words>`） */
   sectionWord?: string;
   /** 节奏音符：**有声但无音高**（文本谱的 `X` / 番茄的 `9`）。
    *  与休止不同（休止无声），也与不可见休止 `x` 不同（那个无声）。123 写成 `X`。 */

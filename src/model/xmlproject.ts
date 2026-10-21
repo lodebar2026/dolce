@@ -817,7 +817,8 @@ function projectPart(
       });
 
       projectOrnaments(ch, dirs, pos);
-      if (ch.sectionWord) push(dirs, pos, { type: "words", placement: "above", text: ch.sectionWord });
+      // 分行的几条（123 连写的 `"^…""^…"`）各成一条 `<words>`，先写的在上
+      for (const line of (ch.sectionWord ?? "").split("\n")) if (line) push(dirs, pos, { type: "words", placement: "above", text: line });
       ch.lyrics = lyricsOf(ch.lyrics);
       if (!ch.lyrics.length) delete ch.lyrics;
       pos += ch.duration.divisions;

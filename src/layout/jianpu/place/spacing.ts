@@ -17,7 +17,7 @@ import { puBarlineSpec } from "../barspec";
 import { BARLINE_MARKS } from "../../../pu/glyph";
 import type { InkMeasurer, PlacedItem } from "./model";
 import { accidentalLeadOf } from "./vertical";
-import { type ChordSpan, lineStartIndex, sectionWordOf, sectionWordSlot } from "./sectionword";
+import { type ChordSpan, lineStartIndex, sectionWordLines, sectionWordOf, sectionWordSlot, widestLine } from "./sectionword";
 
 /** 一列：同一拍位（或同一条小节线）上各声部的符号。 */
 interface Column {
@@ -353,7 +353,7 @@ class SectionWordRoom {
       const start = lineStartIndex(l.items);
       l.items.forEach((it, i) => {
         const w = sectionWordOf(it.element);
-        if (w) this.words.push({ items: l.items, i, ink: ink.sectionWord(w).ink, start: i === start });
+        if (w && sectionWordLines(w).length) this.words.push({ items: l.items, i, ink: widestLine(sectionWordLines(w), (x) => ink.sectionWord(x)).ink, start: i === start });
       });
     }
   }

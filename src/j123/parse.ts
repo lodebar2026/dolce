@@ -499,7 +499,8 @@ function buildMusicLine(
       pending.chord = undefined;
     }
     if (pending.annotations.length) {
-      const text = pending.annotations.join(" ");
+      // 连写的几条注记分行（ABC §4.19：先写的在上），模型里按换行隔开
+      const text = pending.annotations.join("\n");
       if (el.kind === "chord") el.sectionWord = text;
       pending.annotations = [];
     }

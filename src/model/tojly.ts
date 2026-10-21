@@ -128,8 +128,9 @@ function ornamentsAfter(c: JChord, plan: JlyPlan, warnings: Set<string>): string
   // 谱上文字（123 的 `"^渐慢"` 在模型里是 `Chord.sectionWord`）→ 上游的 `^"…"`
   const said = new Set<string>();
   if (c.sectionWord && c.sectionWord.trim()) {
-    said.add(c.sectionWord.trim());
-    out += ' ^"' + c.sectionWord.trim().replace(/"/g, "'") + '"';
+    const word = c.sectionWord.split("\n").map((l) => l.trim()).filter(Boolean).join(" ");
+    said.add(word);
+    out += ' ^"' + word.replace(/"/g, "'") + '"';
   }
   // 演奏法：其中"看着像力度名"的（`mf` `pp` …）在 123 里就是这么存的，写成 jianpu-ly 的 `\mf`；其余报出来
   const arts: string[] = [];

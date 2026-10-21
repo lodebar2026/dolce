@@ -176,8 +176,11 @@ export function sectionMarkOf(m: Measure, prev?: Measure | null): string | null 
   for (const el of m.elements) {
     if (el.kind !== "chord") continue;
     for (const host of [el, ...(el.sustains ?? [])]) {
-      const w = sectionWordOf(host.sectionWord);
-      if (w !== null) return w;
+      // 分行的几条逐条认（「副歌」与演奏提示叠在一个音上）
+      for (const line of (host.sectionWord ?? "").split("\n")) {
+        const w = sectionWordOf(line || undefined);
+        if (w !== null) return w;
+      }
     }
   }
   return null;
