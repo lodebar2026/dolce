@@ -4,10 +4,12 @@ import type { ElementId } from "../../../model/doc";
 import { AccidentalGlyph, type AccidentalKind } from "../../../engrave/accidental";
 import { ACCIDENTAL_GLYPH, ACCOMP_BRACKET } from "../../../pu/glyph";
 import { Font } from "../../font";
-import { Group, type JpNumber } from "../../pageitem";
+import { GraphicPath, Group, type JpNumber } from "../../pageitem";
 import { chordTextSegs, layoutHarmonySegs } from "../../../engrave/chord";
 import { highDotY, lowDotY } from "../../../engrave/stack";
+import type { Rect } from "../../../common/geom";
 import { augDotCenter } from "../../../engrave/augdot";
+import { jpTremoloCount, jpTremoloStrokes } from "../../../engrave/jptremolo";
 import { breathPath } from "../../../engrave/breath";
 import type { PlacedItem, PlacedText } from "../place/model";
 import { accidentalLeadOf, graceLayout, noteBeams, stackedDigits } from "../place/vertical";
@@ -151,6 +153,7 @@ export function paintNote(c: OriginalCtx,
         const p = augDotCenter(ink, i, m.style.dot.aug, m.ink.stack.gap);
         g.add(octaveDot(c.ink, p.cx, p.cy, m.style.dot.aug));
       }
+      paintTremolo(c, g, note, ink);
     }
   }
 
@@ -177,6 +180,7 @@ export function paintNote(c: OriginalCtx,
     d.ident = { kind: "aug-dot" };
     g.add(d);
   }
+  if (!note.hidden && !note.multiRest) paintTremolo(c, g, note, digitInk);
 
   // 和弦、注释、转调标签（定位端已按墨迹堆好，place/band.ts）
   paintBand(c, g, note, NOTE_TEXT);
@@ -194,6 +198,30 @@ export function paintNote(c: OriginalCtx,
   const id = c.doc?.idOf.get(note);
   if (id !== undefined) g.ident = { kind: "note", id, ...(c.pass !== undefined ? { pass: c.pass } : {}) };
   return num;
+}
+
+/** 同音高震音号：数字（连同附点）右下角几道左低右高的细斜线（`engrave/jptremolo.ts`，GB/T 46845 7.8.2.1）；和音每个数字各画 */
+function paintTremolo(c: OriginalCtx, g: Group, note: NoteElement, digitInk: Rect): void {
+  const n = jpTremoloCount(note.ornaments.map((o) => o.name));
+  if (n === 0) return;
+  const m = c.metrics;
+  const r = m.style.dot.aug;
+  const right = note.dots > 0 ? augDotCenter(digitInk, note.dots - 1, r, m.ink.stack.gap).cx + r : digitInk.right;
+  const cy = (digitInk.top + digitInk.bottom) / 2;
+  for (const s of jpTremoloStrokes(n, m.ink.noteHeight).strokes) {
+    // 两端水平截平的平行四边形（规范谱例的字形）
+    const p = new GraphicPath();
+    p.moveTo(right + s.x0 - s.thick / 2, cy + s.y0);
+    p.lineTo(right + s.x0 + s.thick / 2, cy + s.y0);
+    p.lineTo(right + s.x1 + s.thick / 2, cy + s.y1);
+    p.lineTo(right + s.x1 - s.thick / 2, cy + s.y1);
+    p.close();
+    p.fill = true;
+    p.fillColor = c.ink;
+    p.classes.add("artic");
+    p.ident = { kind: "deco" };
+    g.add(p);
+  }
 }
 
 /**

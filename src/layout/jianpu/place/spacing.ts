@@ -6,6 +6,7 @@
 //
 // 锚点 x 是数字**墨迹中心**（compose 按墨迹居中落笔）；占位按数字**字面宽**算（同旧简谱引擎 `entryWidth`），
 // 所以列的左占位 = 锚点到落笔原点（墨迹中心偏移），右占位 = 字面宽 − 它（+ 附点占位）。
+import { jpTremoloCount, jpTremoloStrokes } from "../../../engrave/jptremolo";
 import type { BarlineElement, Meter, NoteElement } from "../../../pu/ast";
 import { barlineSpan, jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { latinWordBreak } from "../../../engrave/syllable";
@@ -121,6 +122,9 @@ function itemBox(it: PlacedItem, m: JianpuGrid, ink: InkMeasurer): { left: numbe
   if (el.kind === "note") {
     // 附点是画上去的圆，占位照旧按 `·` 的字面宽留（同旧简谱引擎 `JpNumber.augDotAdvance`）
     if (el.dots > 0) right += ink.digit("·").advance * el.dots;
+    // 震音号记在右下角、附点之后（`engrave/jptremolo.ts`）
+    const trem = jpTremoloCount(el.ornaments.map((o) => o.name));
+    if (trem > 0 && !el.hidden) right += jpTremoloStrokes(trem, m.ink.noteHeight).width;
     if (el.graceBefore.length > 0) lead = graceAdvance(jianpuGraceNotes(el.graceBefore), jianpuGraceMetrics(m));
     if (el.graceAfter.length > 0) right += graceAdvance(jianpuGraceNotes(el.graceAfter), jianpuGraceMetrics(m));
     // 临时记号软让位：伸出落笔原点左边多少、再多留一道空（`NoteEntry.addAccidental`）；`classic`（成书照原书）不让

@@ -218,7 +218,7 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
       return layoutJianpu(cfg.reflowSource ?? source, again);
     }
   }
-  // 页脚（BL/BC/BR）：每首末页、最低一行之下。先排一遍拿到占高，连续长图的页高要把它算进去
+  // 页脚（BL/BC/BR）：每首末页，分页贴页底、连续长图在最低一行之下。先排一遍拿到占高，连续长图的页高要把它算进去
   const footers = layoutFooters(c, 0);
   const footerBottom = Math.max(0, ...footers.map((f) => f.bottom));
   // 连续长图：页面尺寸随内容走，不受纸张尺寸约束（短曲子不该拖着一大片空白）

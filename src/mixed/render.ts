@@ -98,6 +98,19 @@ function drawMultiRest(g: Group, mif: MeasureLayout, eng: MixedOptions, fs: numb
   });
 }
 
+/**
+ * 全音符的震音斜线，照 Sibelius 出的谱（八段锦扬琴原 PDF 600 dpi 量的，单位 tenths、一个线距 = 10）：
+ * 每道是左右两边竖直的平行四边形，横宽 12.4、中心线左低右高升 5.3、竖向厚 3、相邻两道竖向间距 4.5——
+ * 比 Bravura 的 tremolo1–4 字形陡、窄（那个只升约 2，排出来几乎是平的）。`x0` 是左缘，(`cy`) 是整块的竖向中心。
+ */
+function drawWholeTremolo(g: Group, n: number, x0: number, cy: number): void {
+  const W = 12.4, R = 5.3, T = 3, S = 4.5;
+  for (let i = 0; i < n; i++) {
+    const y = cy + (i - (n - 1) / 2) * S;
+    addFilledQuad(g, x0, y + R / 2 - T / 2, x0 + W, y - R / 2 - T / 2, T);
+  }
+}
+
 /** 震音字形按墨迹中心摆到 (`cx`, `cy`) */
 function drawTremolo(g: Group, meta: { getBBox(glyph: string): { bBoxSW: number[]; bBoxNE: number[] } | null | undefined }, glyph: string, cx: number, cy: number, fs: number): void {
   const bb = meta.getBBox(glyph);
@@ -198,13 +211,17 @@ export function drawNotesNormal(
 
     // stem and flag (skip rests, whole notes, half notes with beams)
     if (ch.rest) continue;
-    // 单音震音（`<tremolo type="single">`）：tremolo1–4 字形压在符干中段；全音符没有符干，压在符头上方一格半处
+    // 单音震音（`<tremolo type="single">`）：tremolo1–4 字形压在符干中段。全音符没有符干：照 Sibelius 出的谱（八段锦扬琴原 PDF，用户定照原谱）
+    // 画在音头右侧 0.6 个线距处，竖向居中在假想符干那一端的音头上；斜线照原谱自己画（`drawWholeTremolo`），（离中线最远的音在中线之上，符干朝下，对齐最低的音头；反之对齐最高的）。
+    // GB/T 46846 7.8.3.3 b) 是居中画在假想符干上（音头正上 / 正下方），没照它
     const strokes = ch.src.notations?.tremolo;
     const tremolo = strokes ? [GlyphCodes.tremolo1, GlyphCodes.tremolo2, GlyphCodes.tremolo3, GlyphCodes.tremolo4][Math.min(4, strokes) - 1]! : "";
     if (ch.noteType.compareTo(new Fraction(4)) >= 0) {
-      if (tremolo && head) {
-        const top = ch.notes[ch.notes.length - 1]!;
-        drawTremolo(chordGrp(), meta, tremolo, head.cx, top.cy() - md.staffY(subStaff) - 15, fs);
+      if (tremolo && headR > headL) {
+        // 全音符的 `stemUp` 没按音高算过：照符干方向的通则，离中线（谱表内 y = 20）最远的音在中线之上就朝下
+        const ys = ch.notes.map((n) => n.cy() - md.staffY(subStaff));
+        const up = 20 - Math.min(...ys) <= Math.max(...ys) - 20;
+        drawWholeTremolo(chordGrp(), Math.min(4, strokes!), headR + 6, up ? Math.min(...ys) : Math.max(...ys));
       }
       continue; // whole: no stem
     }

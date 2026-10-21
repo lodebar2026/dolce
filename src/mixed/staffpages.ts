@@ -86,6 +86,9 @@ export function formatMixedScore(score: StaffLayout, jianpuPart = 0): void {
 /** 第一声部谱表上方那一摞：量上沿（`calcMixedStaffY`）→ 和弦 y → 自动放置的速度/文字记号抬过去。
  *  混排（`formatMixedScore`）与五线谱档共用。带坐标的五线谱档也走：原文和弦的 default-y 常贴着谱表上沿
  *  （Finale 出的 500 首是 9），朝上符干、符杠一高就压上去（007、008），和弦行一律让开谱面内容。 */
+/** 排练号框右缘到并排的 segno / coda 墨迹左缘（tenths，半个线距多一点） */
+const SIGN_AFTER_REHEARSAL = 6;
+
 export function placeAboveStaff(score: StaffLayout, mixed: boolean): void {
   // 源谱版面档逐个声部摞：首个声部常整行不印（合唱谱人声进来之前），文字记号挂在下面的声部上（望十架曲首的速度与「unis.」叠成一团）
   const ps = score.keepBreaks ? score.parts : score.parts.slice(0, 1);
@@ -151,7 +154,9 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
       // 按出现先后摞的话曲首的 `♩=88` 会被同一拍上的 `mp` 压到下面去
       const isTempo = (t: MeasureText): boolean => !!t.src && [t.src, ...(t.src.more ?? [])].some((d) => d.type === "metronome");
       const blocks = sys.measures.flatMap((m) => (p.measures[m.index]?.textBlocks ?? []).map((t) => ({ m, t })));
-      blocks.sort((a, b) => Number(isTempo(a.t)) - Number(isTempo(b.t)));
+      // segno / coda 排在同拍的排练号之后：要贴到排练号框的右边（见下）
+      const isSign = (t: MeasureText): boolean => t.src?.type === "segno" || t.src?.type === "coda";
+      blocks.sort((a, b) => Number(isTempo(a.t)) - Number(isTempo(b.t)) || Number(isSign(a.t)) - Number(isSign(b.t)));
       // 同一拍上的几条文字（`<words>`，曲首「欢快 热烈地」与「pizz」）**先写的在上**（ABC §4.19 连写注记的口径）：
       // 下面按先后往上摞，所以这几条在各自占的位子里倒过来
       const isWords = (t: MeasureText): boolean => !!t.src && t.src.type === "words" && !t.boxed;
@@ -173,6 +178,8 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
         for (let b = Math.max(0, Math.floor(x0 / SKYLINE_BIN)); b <= Math.min(sky!.length - 1, Math.floor(x1 / SKYLINE_BIN)); b++) top = Math.max(top, sky![b]!);
         return top + MIXED_TEXT_CLEAR;
       };
+      /** 已摆好的排练号框（小节@拍位 → 墨迹范围） */
+      const rehearsalAt = new Map<string, { x1: number; y0: number; y1: number }>();
       for (const { m, t } of blocks) {
         // 原文带 default-y 的谱表上方文字（「（副歌）」）也只往上抬不往下压：混排时简谱层插在谱表与它之间，
         // 五线谱档和弦被抬离符干后原高度会压在和弦行上（006）
@@ -187,11 +194,21 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
         const left = m.xpos() + t.x - (t.justify === LCR.Center ? w / 2 : t.justify === LCR.Right ? w : 0);
         // 横向按墨迹量：全角括号「（」「）」前进宽里一半是空白，按前进宽量「（副歌）」就把旁边的和弦也算成撞上了（008）
         const [inkL, inkR] = textInkSpan(t);
-        const x0 = left + inkL;
-        const x1 = left + inkR;
+        let x0 = left + inkL;
+        let x1 = left + inkR;
         if (sky && t.autoY && !isTempo(t)) t.y = localFloor(x0, x1);
         else if (keepSource) t.y = Math.max(t.y, localFloor(x0, x1) - MIXED_TEXT_CLEAR / 2);
         const h = textInkHeight(t);
+        // 同一拍上的排练号与 segno / coda 并排：记号贴在排练号框右边、竖向居中对齐（原谱「【E】𝄌」），不往上摞（八段锦扬琴 m78）
+        const beatKey = `${m.index}@${t.offset.toString()}`;
+        const host = isSign(t) ? rehearsalAt.get(beatKey) : undefined;
+        if (host) {
+          const shift = host.x1 + SIGN_AFTER_REHEARSAL - x0;
+          t.x += shift;
+          x0 += shift;
+          x1 += shift;
+          t.y = host.y0 + (host.y1 - host.y0 - h) / 2;
+        }
         for (let again = true; again; ) {
           again = false;
           for (const b of placed) {
@@ -202,6 +219,8 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
           }
         }
         placed.push({ x0, x1, y0: t.y, y1: t.y + h });
+        // 框比整块前进宽再往外扩 0.25 个字号（`render.ts::drawTextBlock`），并排的记号从框线外量
+        if (t.boxed) rehearsalAt.set(beatKey, { x1: left + w + (t.data.find((it) => it.text !== "\n")?.font.size ?? 0) * 0.25, y0: t.y, y1: t.y + h });
       }
     }
   }
@@ -324,7 +343,9 @@ function systemGap(a: Sys, b: Sys): number {
  * 上边距是按识别出的墨迹框量的（弧、符杠不在里面），原谱页首那一行的弧与高音常伸进这片地方：
  * 没有页眉的页，首个系统可以上探到离纸边 `SOURCE_MIN_TOP` 为止。
  */
-function sourceFlow(score: StaffLayout, items: FrameItem[], ph: number): LayoutFrame[] {
+function sourceFlow(score: StaffLayout, items: FrameItem[], phOf: (page: number) => number): LayoutFrame[] {
+  /** 当前这一页内容能用的高度（有页脚的页到页脚顶为止，`contentLimit`） */
+  let ph = phOf(0);
   const rise = Math.max(0, score.defaults.topMargin - SOURCE_MIN_TOP_PT / score.scaling);
   const result: LayoutFrame[] = items.map((it) => ({ height: it.height, ypos: 0, newPage: false }));
   const index = new Map(items.map((it, i) => [it.system, i]));
@@ -405,6 +426,7 @@ function sourceFlow(score: StaffLayout, items: FrameItem[], ph: number): LayoutF
   // 挪下去的行先并进下一页；并进去会把那一页原有的行再挤出去（级联）时，挪下去的行单独成页，后面各页照原谱
   let carry: number[] = [];
   for (let p = 0; p < pages.length || carry.length; p++) {
+    ph = phOf(p);
     const own = pages[p] ?? [];
     if (carry.length && own.length) {
       const both = [...carry, ...own];
@@ -552,6 +574,28 @@ function drawFrames(
 }
 
 /**
+ * 每页内容（从上边距量）最多能排多深：页高减上下边距；这一页有页脚、页脚又伸进了下边距以上的，到页脚墨迹顶再留 `HEADER_GAP`。
+ * 页脚照原坐标画、不占版面，以前装页不看它：Sibelius 的页脚常在下边距线以上，末行底下的力度就压在页脚上（八段锦扬琴第 1 页 m30 的 *mf*）。
+ */
+function contentLimit(score: StaffLayout, footers: readonly ScoreCredit[], pageHeight: number): (page: number) => number {
+  const d = score.defaults;
+  const full = pageHeight - d.topMargin - d.bottomMargin;
+  const pageWidthTenths = d.pageWidth ?? 1200;
+  const cache = new Map<number, number>();
+  return (page) => {
+    let v = cache.get(page);
+    if (v === undefined) {
+      const own = footers.filter((c) => c.page === page);
+      const lines = own.length ? headerLines(score, own, d.topMargin, pageHeight, pageWidthTenths, true) : [];
+      const top = Math.min(...lines.map((h) => h.y + h.inkTop));
+      v = Number.isFinite(top) ? Math.min(full, top - d.topMargin - HEADER_GAP) : full;
+      cache.set(page, v);
+    }
+    return v;
+  };
+}
+
+/**
  * 页脚 credit：落在页面下四分之一的（MusicXML 的 y 从页底量）。整页 credit **全都**落在那里的不算——那是
  * Sibelius 把整个标题块压到页底的导出 bug（`headerLines` 的 `reanchorTop` 会把它们挪回页首）。
  * 以前页脚也当页眉：首行让开页眉墨迹时让到了页脚底下，第一页的谱全出了纸（《八段锦》19 份分谱都是）。
@@ -602,9 +646,10 @@ export function layoutStaffPages(score: StaffLayout, showJianpuLayer: boolean, j
   }
   const d = score.defaults;
   let pageHeight = d.pageHeight ?? PAGE_HEIGHT_FALLBACK;
+  const phOf = contentLimit(score, [...footers], pageHeight);
   const layout = score.keepBreaks
-    ? sourceFlow(score, items, pageHeight - d.topMargin - d.bottomMargin)
-    : flowLayout(items, score.longImage ? Infinity : pageHeight - d.topMargin - d.bottomMargin);
+    ? sourceFlow(score, items, phOf)
+    : flowLayout(items, score.longImage ? Infinity : Math.min(...[...new Set([...footers].map((c) => c.page))].map(phOf), phOf(-1)));
   if (score.longImage) {
     // 长图：整首一页，页高 = 内容底 + 上下边距。credit 的 y 从页底量，页高变了整体跟着挪，离页顶的距离不变
     const last = layout[layout.length - 1];

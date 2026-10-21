@@ -4,7 +4,7 @@ import { TextFrame } from "../../pageitem";
 import { layoutRegion, songFields } from "../../../style/template";
 import { type OriginalCtx, text } from "./ctx";
 
-/** 页脚区域（样式表的 `song-foot`，出厂在 print 主题）。按页宽算右缘，所以 `shiftX` 与 paintHeader 同口径；字号按 `as 角色` 取（`footerSize`）。 */
+/** 页脚区域（样式表的 `song-foot`，出厂在 print 主题）。分页时排在本曲末页的页面底部，连续长图跟在本曲最低一行之下。按页宽算右缘，所以 `shiftX` 与 paintHeader 同口径；字号按 `as 角色` 取（`footerSize`）。 */
 export function layoutFooters(c: OriginalCtx, shiftX: number): { page: number; bottom: number; items: TextFrame[] }[] {
   const region = c.foot;
   const placed = c.placed;
@@ -18,6 +18,12 @@ export function layoutFooters(c: OriginalCtx, shiftX: number): { page: number; b
       if (!pg.headers && next && next.song === pg.song) continue; // 不是本曲末页
       let low = 0;
       for (const g of pg.groups) if (!pg.headers || g.song === song) for (const v of g.voices) low = Math.max(low, v.y, ...v.lyricY);
+      // 分页：页脚固定在页面底部（底边贴下边距线，用户定 2026-10-21）；谱排得太低、底部放不下才跟在曲后（不压谱）。
+      // 连续长图没有固定的页底，照旧跟在本曲最低一行之下
+      if (!pg.headers && !c.metrics.page.longImage) {
+        const span = footerAt(c, region, song, 0, shiftX)?.bottom ?? 0;
+        low = Math.max(low, c.pageHeight - c.metrics.page.margin.bottom - span);
+      }
       const f = footerAt(c, region, song, low, shiftX);
       if (f) out.push({ page: i, ...f });
     }
