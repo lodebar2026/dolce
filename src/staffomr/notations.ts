@@ -164,14 +164,24 @@ export function attachSigns(pg: SPage, notes: StaffNote[]): void {
     pg.staves
       .filter((st) => s.box.bottom <= st.box.top + sp * 0.5 && st.box.top - s.box.bottom < sp * 4 && s.box.right > st.box.left && s.box.left < st.box.right)
       .sort((a, b) => a.box.top - b.box.top)[0];
+  const signs: { s: Sym & { code: "segno" | "coda" }; st: Staff }[] = [];
   for (const s of pg.symbols) {
     if (s.hasAnyTag()) continue;
     if (s.code === "timeSigCutCommon" && below(s)) s.code = "coda";
     if (s.code !== "segno" && s.code !== "coda") continue;
     const st = below(s);
-    if (!st) continue;
+    if (st) signs.push({ s: s as Sym & { code: "segno" | "coda" }, st });
+  }
+  for (const { s, st } of signs) {
     const row = notes.filter((n) => n.staff === st && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
-    const n = row.find((m) => m.x >= s.box.left - sp) ?? row[row.length - 1];
+    const right = row.find((m) => m.x >= s.box.left - sp);
+    // 换行处的 ⊕/𝄋：Sibelius 行末（右边再没有音）画一个、下一行行首再画一个，是同一个记号，意思落在下一行头一小节上。
+    // 下面哪行谱行首有同一个记号的，行末这个只认领不出（八段锦钢片琴 m32→m33，GT 只记 m33）
+    if (!right && signs.some((o) => o.s !== s && o.s.code === s.code && o.st.box.top > st.box.top && o.s.box.left < o.st.box.left + sp * 8)) {
+      s.addTag("Notation");
+      continue;
+    }
+    const n = right ?? row[row.length - 1];
     if (!n) continue;
     (n.signs ??= []).push(s.code);
     s.addTag("Notation");

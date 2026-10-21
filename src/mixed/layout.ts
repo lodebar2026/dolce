@@ -97,6 +97,8 @@ const OUTSIDE_GLYPH: Readonly<Record<string, string>> = {
   "down-bow": GlyphCodes.stringsDownBow,
 };
 
+/** 文字与同一条 direction 里随后的速度记号之间的空（字号的倍数） */
+const WORDS_TEMPO_GAP_EM = 0.4;
 /** Bravura Text 里 segno/coda 相对 Bravura 同一字形的大小（见 processSegno） */
 const BRAVURA_TEXT_SCALE = 0.8;
 const STEP_DIATONIC: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
@@ -1041,9 +1043,20 @@ class DocPartLoader {
     let any = false;
     // `parentheses="yes"`：整个节拍器套一对圆括号「(♩ = 82)」
     const paren = !!met.tempo?.parentheses;
-    if (paren) blk.add("(", wordFont, false);
+    // 同一条 direction 里前面已有文字（「欢快 热烈地 ♩=144」）：隔开一个字宽的四成。原文末尾的空格不靠它——
+    // SVG 吞掉文本末尾的普通空格，排版量宽却算进去了，画出来就粘成「热烈地♩」
+    const last = blk.data[blk.data.length - 1];
+    let lead = 0;
+    if (last && last.text !== "\n" && !last.music) {
+      last.text = last.text.trimEnd();
+      lead = wordFont.size * WORDS_TEMPO_GAP_EM;
+    }
+    if (paren) {
+      blk.add("(", wordFont, false, undefined, lead);
+      lead = 0;
+    }
     if (met.tempo?.beatUnit !== undefined) {
-      blk.add(metNoteGlyph(met.tempo.beatUnit) + (met.tempo.beatUnitDot ? GlyphCodes.metAugmentationDot : ""), noteFont, true);
+      blk.add(metNoteGlyph(met.tempo.beatUnit) + (met.tempo.beatUnitDot ? GlyphCodes.metAugmentationDot : ""), noteFont, true, undefined, lead);
       any = true;
     }
     const pm = met.tempo?.perMinuteText?.trim() ?? (met.tempo?.perMinute !== undefined ? String(met.tempo.perMinute) : undefined);
@@ -1051,7 +1064,7 @@ class DocPartLoader {
       // 「=」两侧的空与调号「1 = F」同一个（engrave/spacing.ts::EQ_PAD_EM），按字号算、不靠空格字形
       // （空格宽随字体走，且 SVG 吞掉文本开头的普通空格）
       const pad = wordFont.size * EQ_PAD_EM;
-      blk.add("=", wordFont, false, undefined, any ? pad : 0);
+      blk.add("=", wordFont, false, undefined, any ? pad : lead);
       blk.add(pm, wordFont, false, undefined, pad);
       any = true;
     }

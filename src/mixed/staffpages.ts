@@ -199,9 +199,10 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean):
         if (sky && t.autoY && !isTempo(t)) t.y = localFloor(x0, x1);
         else if (keepSource) t.y = Math.max(t.y, localFloor(x0, x1) - MIXED_TEXT_CLEAR / 2);
         const h = textInkHeight(t);
-        // 同一拍上的排练号与 segno / coda 并排：记号贴在排练号框右边、竖向居中对齐（原谱「【E】𝄌」），不往上摞（八段锦扬琴 m78）
+        // 同一拍上的排练号与 segno / coda、速度记号并排：贴在排练号框右边、竖向居中对齐（原谱「【E】𝄌」「【A】欢快 热烈地 ♩=144」），
+        // 不往上摞（八段锦扬琴 m78、m1）
         const beatKey = `${m.index}@${t.offset.toString()}`;
-        const host = isSign(t) ? rehearsalAt.get(beatKey) : undefined;
+        const host = isSign(t) || isTempo(t) ? rehearsalAt.get(beatKey) : undefined;
         if (host) {
           const shift = host.x1 + SIGN_AFTER_REHEARSAL - x0;
           t.x += shift;
