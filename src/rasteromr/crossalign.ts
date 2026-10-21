@@ -9,6 +9,9 @@ import type { SPage, Staff, Sym } from "../staffomr/model";
  */
 export type HeadSearch = (stf: Staff, x: number, hollow: boolean, dur: number, near: number[], yLim?: [number, number]) => Sym | null;
 
+/** 回原图看这个音符头右边有没有一个点（补附点要有它，见 `alternatives`）。 */
+export type DotProbe = (n: StaffNote) => boolean;
+
 /**
  * **合唱谱按同系统各谱行的拍位互证改时值**。一个系统里各行同一拍落在同一个 x 上：自己凑满了、拍位又与别的行对得上的行是锚，
  * 它们给出的拍位排成**拍位槽**；凑不满的行（或凑满了却与锚对不上的——两处错互相抵掉）逐列配到槽上，
@@ -23,7 +26,7 @@ export type HeadSearch = (stf: Staff, x: number, hollow: boolean, dur: number, n
  *
  * 放在 `findTuplets` 之后：三连音按比例改完时值，凑拍才对得上。只改时值，起点与声部留给后面的 `checkBars` 重算。
  */
-export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], carry: { beats: number; beatType: number } | undefined, sp: number, search?: HeadSearch): void {
+export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], carry: { beats: number; beatType: number } | undefined, sp: number, search?: HeadSearch, dotProbe?: DotProbe): void {
   if (!lastTimeSignature(pg, ctx, carry) || (globalThis as any).process?.env?.XAOFF) return;
   const dbg = !!(globalThis as any).process?.env?.XADBG;
   const checks = checkBars(pg, ctx, notes, carry);
@@ -69,12 +72,12 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
       if (rows.length < 2) continue;
       const slots = buildSlots(rows, sp);
       const trusted = trustRows(rows, slots);
-      if (dbg) debugBar(sys.staves[0].box.top, i, rows, slots, trusted);
+      if (dbg) debugBar(sys.staves[0].box.top, i, rows, slots, trusted, pg.index);
       for (const r of rows) {
         if (trusted.has(r) || r.skip) continue;
-        let res = fixDurations(r, slots, trusted, sp, notes, add, pg, false);
+        let res = fixDurations(r, slots, trusted, sp, notes, add, pg, false, dotProbe);
         // 按两声部共用解不出时，有干的单个头只归它那个声部再试（同列另一声部漏了的才补得出来）
-        if (!r.single && !/^(改|删|补 1 个)/.test(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, true);
+        if (!r.single && !/^(改|删|补 1 个)/.test(res)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, true, dotProbe);
         if (res.startsWith("补")) added = true;
         if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} ${res}`);
       }
@@ -231,9 +234,9 @@ function trustRows(rows: Row[], slots: Slot[]): Set<Row> {
 
 /**
  * 易混的读法：`[base, dots]`。符杠上的音不改层数（杠的逐层状态跟着要改，留给符杠那一路）。
- * 附点不动：试过只补不删，补错的比补对的多（望十架 p7 m59、p9 m68 把八分读成附点八分去凑段长），要看原图有没有点才行。
+ * 附点只补不删、而且要原图上头右边真有个点（`dotProbe`）：不验点时补错的比补对的多（望十架 p7 m59、p9 m68 把八分读成附点八分去凑段长）。
  */
-function alternatives(n: StaffNote): [number, number][] {
+function alternatives(n: StaffNote, dotProbe?: DotProbe): [number, number][] {
   const b = n.base;
   const d = n.dots;
   const out: [number, number][] = [];
@@ -246,6 +249,8 @@ function alternatives(n: StaffNote): [number, number][] {
   // 有干的不会是全音符
   if (b === 1 / 2) out.push([1 / 4, d], ...(n.stemUp === null ? [[1, d] as [number, number]] : []));
   if (b === 1) out.push([1 / 2, d]);
+  // 补附点：原图上头右边真有个点（认附点那一步嫌它不够圆、不够孤立没收）
+  if (!d && b < 1 && dotProbe?.(n)) out.push([b, 1]);
   return out;
 }
 
@@ -265,7 +270,7 @@ function setDur(n: StaffNote, base: number, dots: number): void {
  * 一段对不上时在易混读法里找改一处（不行再两处）能对上、而且只有一种改法的。
  * 改完 `checkFull` 要凑满、配上槽的列起点正好是槽的起点，否则退回。返回一句给调试看的结论。
  */
-function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, soloHeads: boolean): string {
+function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, soloHeads: boolean, dotProbe?: DotProbe): string {
   const EPS = 1e-6;
   const expect = r.chk.expect;
   const known = r.cols.map((c) => c.slot?.off);
@@ -319,7 +324,7 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
       // 段长正好是读出时值和的三分之二：一组三连音（带方括号的三连音要到挂完歌词才认，见 `findRasterTuplets`），整行不动
       const sum = durs.reduce((a, b) => a + b, 0);
       if (Math.abs(sum * 2 - span * 3) < EPS) return `声部${v + 1}段 ${p}-${q} 疑三连音`;
-      const opts = seg.map((it) => alternatives(it.c.notes[0]));
+      const opts = seg.map((it) => alternatives(it.c.notes[0], dotProbe));
       const sols: { j: number; alt: [number, number] }[][] = [];
       for (let j = 0; j < seg.length; j++)
         for (const alt of opts[j]) {
@@ -388,6 +393,11 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
           inserts.set(ok[0].s0, { dur: gap, up: prev || chains.length < 2 ? null : v === 0 });
           continue;
         }
+      }
+      // 补附点只在别的读法凑不上时用：不补点也有一种改法的，就用那一种（新编 f37 信心加上德行歌：十六分→八分与旁边的头补点并列）
+      if (sols.length > 1) {
+        const plain = sols.filter((sol) => sol.every(({ j, alt }) => alt[1] <= seg[j].c.notes[0].dots));
+        if (plain.length === 1) sols.splice(0, sols.length, plain[0]);
       }
       if (sols.length !== 1) return `声部${v + 1}段 ${p}-${q} 差 ${span - sum}（${sols.length ? `改法 ${sols.length} 种` : "易混读法凑不上"}）`;
       for (const { j, alt } of sols[0]) {
@@ -472,7 +482,7 @@ function voiceChains(r: Row, soloHeads: boolean): { c: StaffChord; k: number }[]
 }
 
 
-function debugBar(top: number, i: number, rows: Row[], slots: Slot[], trusted: Set<Row>): void {
+function debugBar(top: number, i: number, rows: Row[], slots: Slot[], trusted: Set<Row>, page: number): void {
   const tag = (r: Row) => (r.skip ? "跳" : trusted.has(r) ? "锚" : r.full ? "满不齐" : "不满");
-  console.error(`XA 系统@${Math.round(top)} m${i + 1}: ${rows.map((r) => `${tag(r)}(${r.chk.sum}/${r.chk.expect},${r.cols.length}列${r.single ? "" : ",多声"})`).join(" ")} 槽 ${slots.map((s0) => `${s0.off ?? "?"}[${s0.cols.length}]`).join(" ")}`);
+  console.error(`XA p${page + 1} 系统@${Math.round(top)} m${i + 1}: ${rows.map((r) => `${tag(r)}(${r.chk.sum}/${r.chk.expect},${r.cols.length}列${r.single ? "" : ",多声"})`).join(" ")} 槽 ${slots.map((s0) => `${s0.off ?? "?"}[${s0.cols.length}]`).join(" ")}`);
 }

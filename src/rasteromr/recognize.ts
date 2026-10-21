@@ -55,7 +55,7 @@ import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseSt
 import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "./clefmeter";
 import { findDots } from "./dots";
 import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "./flags";
-import { fixByCrossStaff, type HeadSearch } from "./crossalign";
+import { fixByCrossStaff, type DotProbe, type HeadSearch } from "./crossalign";
 import { fixDottedPairs, fixQuartersByBarSum } from "./rhythmfix";
 import { finishRasterPage } from "./pagefinish";
 
@@ -4627,12 +4627,75 @@ export async function recognizeRasterPage(
       return sym;
     };
   })();
-  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch);
+  // 补附点的验点：头右边（同 `findDots` 的窗口）有个点状小墨团，去线图上不连着别的符号。比认附点那一步松——
+  // 那一步要点够圆、够孤立、不比本页附点小太多，扫描件糊开的点、贴着符尾的点没收；这里只给跨谱表已经说缺这么点时值的音用
+  const dotProbe: DotProbe = (n) => {
+    const sp = unit.space;
+    const others = pg.symbols.filter((q) => q.code !== "augmentationDot");
+    return (n.group?.notes ?? [n]).some((m) => {
+      const b = m.sym.box;
+      const x0 = Math.round(b.right + sp * 0.05), x1 = Math.round(b.right + sp * 1.3);
+      const y0 = Math.round(m.sym.py - sp * 0.85), y1 = Math.round(m.sym.py + sp * 0.75);
+      return blobsIn(nl, x0, y0, x1, y1).some((d) => {
+        if (d.w < Math.max(2, sp * DOTP_MIN) || d.h < Math.max(2, sp * DOTP_MIN) || d.w > sp * DOTP_MAX || d.h > sp * DOTP_MAX) return false;
+        if (d.w / d.h < 0.5 || d.w / d.h > 2 || d.area < d.w * d.h * 0.4) return false;
+        return !others.some((q) => q.box.left < d.x + d.w && q.box.right > d.x && q.box.top < d.y + d.h && q.box.bottom > d.y);
+      });
+    });
+  };
+  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe);
 
   return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, gridYs, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
 }
 /** 补漏音找头的得分下限至少是本页已认出的头中位得分的这么多（见 `headSearch`）。0.5 会挡掉扫描档一个补对的低分头（0.11，中位约 0.27）。 */
 const PROBE_MED_FRAC = 0.25;
+/** 补附点验点：点的长宽（格）上下限（见 `dotProbe`）。 */
+const DOTP_MIN = 0.15;
+const DOTP_MAX = 0.75;
+/** 窗口里整个落在里面的墨块（八连通），带面积。 */
+function blobsIn(bin: Binary, x0: number, y0: number, x1: number, y1: number): { x: number; y: number; w: number; h: number; area: number }[] {
+  x0 = Math.max(0, x0);
+  y0 = Math.max(0, y0);
+  x1 = Math.min(bin.w, x1);
+  y1 = Math.min(bin.h, y1);
+  const W = x1 - x0;
+  if (W <= 0 || y1 <= y0) return [];
+  const seen = new Uint8Array(W * (y1 - y0));
+  const out: { x: number; y: number; w: number; h: number; area: number }[] = [];
+  const stack: number[] = [];
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      if (seen[(y - y0) * W + (x - x0)] || !bin.data[y * bin.w + x]) continue;
+      let minX = x, maxX = x, minY = y, maxY = y, area = 0, edge = false;
+      seen[(y - y0) * W + (x - x0)] = 1;
+      stack.push(x, y);
+      while (stack.length) {
+        const py = stack.pop()!;
+        const px = stack.pop()!;
+        area++;
+        minX = Math.min(minX, px);
+        maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py);
+        maxY = Math.max(maxY, py);
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = px + dx;
+            const ny = py + dy;
+            if (nx < 0 || ny < 0 || nx >= bin.w || ny >= bin.h || !bin.data[ny * bin.w + nx]) continue;
+            if (nx < x0 || ny < y0 || nx >= x1 || ny >= y1) {
+              edge = true;
+              continue;
+            }
+            const j = (ny - y0) * W + (nx - x0);
+            if (seen[j]) continue;
+            seen[j] = 1;
+            stack.push(nx, ny);
+          }
+      }
+      if (!edge) out.push({ x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, area });
+    }
+  return out;
+}
 /** 补漏音认方块休止（二分/全休止）：宽、高（格）与填充下限（见 `headSearch`）。 */
 const REST_BLOCK_W: [number, number] = [0.9, 2.2];
 const REST_BLOCK_H: [number, number] = [0.3, 0.8];
