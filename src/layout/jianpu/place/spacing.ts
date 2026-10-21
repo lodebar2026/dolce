@@ -10,12 +10,13 @@ import type { BarlineElement, Meter, NoteElement } from "../../../pu/ast";
 import { barlineSpan, jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { latinWordBreak } from "../../../engrave/syllable";
 import { graceAdvance } from "../../../engrave/grace";
-import { ACCIDENTAL_CLEARANCE, accidentalLead, type AccidentalKind } from "../../../engrave/accidental";
+import { ACCIDENTAL_CLEARANCE } from "../../../engrave/accidental";
 import { BarlineGlyph } from "../../../engrave/barline";
 import { timeSigWidth } from "../../../engrave/timesig";
 import { puBarlineSpec } from "../barspec";
 import { BARLINE_MARKS } from "../../../pu/glyph";
 import type { InkMeasurer, PlacedItem } from "./model";
+import { accidentalLeadOf } from "./vertical";
 import { type ChordSpan, lineStartIndex, sectionWordOf, sectionWordSlot } from "./sectionword";
 
 /** 一列：同一拍位（或同一条小节线）上各声部的符号。 */
@@ -123,9 +124,10 @@ function itemBox(it: PlacedItem, m: JianpuGrid, ink: InkMeasurer): { left: numbe
     if (el.graceBefore.length > 0) lead = graceAdvance(jianpuGraceNotes(el.graceBefore), jianpuGraceMetrics(m));
     if (el.graceAfter.length > 0) right += graceAdvance(jianpuGraceNotes(el.graceAfter), jianpuGraceMetrics(m));
     // 临时记号软让位：伸出落笔原点左边多少、再多留一道空（`NoteEntry.addAccidental`）；`classic`（成书照原书）不让
-    if (el.accidental !== undefined && m.style.look.accidentalStyle !== "classic") {
+    const lead0 = accidentalLeadOf(el, m);
+    if (lead0 > 0 && m.style.look.accidentalStyle !== "classic") {
       const h = m.ink.noteHeight;
-      over = Math.max(0, accidentalLead(el.accidental as AccidentalKind, h, m.style.look.accidentalScale) - d.ink.left);
+      over = Math.max(0, lead0 - d.ink.left);
       want = over + h * ACCIDENTAL_CLEARANCE;
     }
   }
@@ -525,3 +527,4 @@ export function naturalColumns(
   });
   return { xOf, leftOf, rightOf, width };
 }
+

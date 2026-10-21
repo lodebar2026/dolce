@@ -76,6 +76,22 @@ export class Lexer123 extends AbcFamilyLexer {
     return { beams, dots, next: j };
   }
 
+  /** 和音 `[13]` `[1,5]` `[#46']`（照 ABC §4.17 的 `[CEG]`）：`[` 后紧跟两个以上的音（不含休止）、中间不留空格、`]` 收住；
+   *  时值写在 `]` 后面、几个音共用（`[13]_.`），括号里的音不带时值。这样与房号 `[1 …`（后面跟空格）分得开。 */
+  protected override scanChordGroup(line: string, i: number): { text: string; notes: NoteScan[]; dur: DurationScan | null } | null {
+    if (line[i] !== "[") return null;
+    const notes: NoteScan[] = [];
+    let k = i + 1;
+    while (k < line.length && line[k] !== "]") {
+      const n = this.scanNote(line, k);
+      if (!n || n.degree === 0 || n.beams || n.dots) return null;
+      notes.push(n);
+      k = n.next;
+    }
+    if (line[k] !== "]" || notes.length < 2) return null;
+    return { text: line.slice(i, k + 1), notes, dur: this.scanDuration(line, k + 1) };
+  }
+
   /** 音符：`[#b n]数字['`,]*[_.]*`。变音记号**前置**（简谱惯例，与 ABC 的 `^_=` 不同）。 */
   protected scanNote(line: string, i: number): NoteScan | null {
     let j = i;

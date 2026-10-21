@@ -356,6 +356,11 @@ const midiOf = (p: Pitch): number => p.octave * 12 + [0, 2, 4, 5, 7, 9, 11][STEP
 /** MIDI 音高（中央 C = 60）。 */
 export const midiPitch = (p: Pitch): number => midiOf(p) + 12;
 
+/** 音的高低（比较用）：有绝对音高按 MIDI，简谱来源按度数与八度。 */
+export function noteHeight(n: Note): number {
+  return n.pitch ? midiOf(n.pitch) : n.degree ? n.degree.octaveShift * 7 + n.degree.number : -Infinity;
+}
+
 /** 和弦里简谱印的那个音：音高最高者；没有绝对音高（简谱来源）时取度数最高者，再没有取第一个。 */
 export function topNote(ch: Chord): Note | undefined {
   let best: Note | undefined;
@@ -364,7 +369,7 @@ export function topNote(ch: Chord): Note | undefined {
   const normal = ch.notes.some((n) => n.typeSize !== "cue");
   for (const n of ch.notes) {
     if (normal && n.typeSize === "cue") continue;
-    const v = n.pitch ? midiOf(n.pitch) : n.degree ? n.degree.octaveShift * 7 + n.degree.number : -Infinity;
+    const v = noteHeight(n);
     if (v > bestV) {
       best = n;
       bestV = v;

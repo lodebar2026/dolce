@@ -32,6 +32,7 @@ import type {
   PuSong,
   ScoreLine,
   ScorePage,
+  StackedNote,
   SustainElement,
   VoiceGroup,
 } from "./ast";
@@ -40,7 +41,7 @@ import { projectForJianpu } from "../model/jianpuproject";
 import { decoKey, tremoloStrokes } from "../model/deconames";
 import { directionMarks, leadTempo } from "../model/directionmarks";
 import { compressMultiRests } from "../model/multirest";
-import { keySpelling, quarterTempos } from "../model/jianpu";
+import { keySpelling, noteHeight, quarterTempos, topNote } from "../model/jianpu";
 import { songFifths, tonicSpelling } from "../model/keyshift";
 import type {
   Barline,
@@ -50,6 +51,7 @@ import type {
   LyricLineInfo,
   Mark,
   Measure,
+  Note,
   Part,
   ScoreDoc,
   SourceOrnament,
@@ -102,9 +104,25 @@ function chordOrnaments(ch: Chord): Ornament[] {
 
 const GRACE_DURATION: Readonly<Record<string, number>> = { eighth: 8, "16th": 16, "32nd": 32 };
 
+/** 和弦里要叠印的几个音的唱名，自下而上；画小的上方装饰音（`cue`）不算，同一个音写两遍的只算一个。 */
+function chordDegrees(ch: Chord): NonNullable<Note["degree"]>[] {
+  const normal = ch.notes.filter((n) => n.typeSize !== "cue");
+  const pool = (normal.length > 0 ? normal : ch.notes).filter((n) => n.degree && n.degree.number >= 1 && n.degree.number <= 7);
+  const out: NonNullable<Note["degree"]>[] = [];
+  for (const n of [...pool].sort((a, b) => noteHeight(a) - noteHeight(b))) {
+    const d = n.degree!;
+    const prev = out[out.length - 1];
+    if (prev && prev.number === d.number && prev.octaveShift === d.octaveShift && prev.accidental === d.accidental) continue;
+    out.push(d);
+  }
+  return out;
+}
+
 /** 一个和弦 → 文本谱音符（主音或倚音）。 */
 function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
-  const deg = ch.notes[0]?.degree;
+  // 和音（123 `[13]`、MusicXML 和弦、民乐分谱的双音）：最低的音当本音，其余自下而上叠在它上面；倚音只印最高音
+  const stacked = ch.grace || ch.rest || ch.rhythm ? [] : chordDegrees(ch);
+  const deg = stacked.length > 1 ? stacked[0] : topNote(ch)?.degree;
   const beams = ch.beams?.length;
   const n: NoteElement = {
     kind: "note",
@@ -125,6 +143,13 @@ function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
     source: ch.source ?? ZERO,
   };
   if (deg?.accidental) n.accidental = deg.accidental;
+  if (stacked.length > 1) {
+    n.stack = stacked.slice(1).map((d) => ({
+      pitch: d.number as StackedNote["pitch"],
+      octave: d.octaveShift,
+      ...(d.accidental ? { accidental: d.accidental } : {}),
+    }));
+  }
   if (ch.placeholder) n.placeholder = true;
   if (ch.harmony?.text !== undefined) n.chord = ch.harmony.text;
   if (ch.sectionWord !== undefined) n.annotation = ch.sectionWord;

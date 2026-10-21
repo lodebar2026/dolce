@@ -551,7 +551,8 @@ export const zh = {
   "feat.harmony": "和弦符号",
   "feat.harmonyOffset": "长音中间不在整拍上的和弦（会提前到音符上）",
   "feat.multiVoice": "多声部",
-  "feat.noteStack": "同一声部里同时发声的音（和弦内音、声部内第二声部，只留简谱印的旋律）",
+  "feat.noteStack": "同一声部里同时发声的音（和音、和弦内音，只留简谱印的最高音）",
+  "feat.innerVoice": "同一谱表上的第二声部（只留简谱印的第一声部）",
   "feat.dynamics": "力度与渐强渐弱",
   "feat.playOrder": "演唱顺序（房号跳转、第几遍配第几段词）",
   "feat.style": "样式表引用",
@@ -579,6 +580,7 @@ export const zh = {
   "feat.bowing": "弓法（上弓、下弓）",
   "feat.rehearsal": "排练号",
   "feat.multiRest": "多小节休止（会写成一小节一个休止）",
+  "feat.staccatissimo": "楔形顿音（会与点状顿音并成同一个顿音）",
   "loss.body": "这份谱里有 {n} 样东西，存成 {format} 之后会丢：",
   "loss.continue": "要继续吗？",
   // 解析诊断（随解析按界面语言产出）

@@ -552,7 +552,8 @@ export const en: Record<MsgKey, string> = {
   "feat.harmony": "Chord symbols",
   "feat.harmonyOffset": "Chords in the middle of a long note off the beat (moved onto the note)",
   "feat.multiVoice": "Multiple parts",
-  "feat.noteStack": "Simultaneous notes in one part (chord tones, second voice — only the printed jianpu melody is kept)",
+  "feat.noteStack": "Simultaneous notes in one part (double stops, chord tones — only the top printed note is kept)",
+  "feat.innerVoice": "Second voice on the same staff (only the first voice is kept)",
   "feat.dynamics": "Dynamics and hairpins",
   "feat.playOrder": "Singing order (volta jumps, which verse on which pass)",
   "feat.style": "Style sheet reference",
@@ -580,6 +581,7 @@ export const en: Record<MsgKey, string> = {
   "feat.bowing": "Bowings (up-bow, down-bow)",
   "feat.rehearsal": "Rehearsal marks",
   "feat.multiRest": "Multi-measure rests (written out one rest per measure)",
+  "feat.staccatissimo": "Staccatissimo wedges (merged into plain staccato)",
   "loss.body": "This score has {n} thing(s) that will be lost when saved as {format}:",
   "loss.continue": "Continue?",
   // 解析诊断（随解析按界面语言产出）

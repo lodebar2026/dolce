@@ -5,7 +5,7 @@ import { AbcFamilyEmitter, type MarkIndex } from "./emit";
 import { BARE_CHORD_RE } from "./dialect123";
 import { directionsAsMarks } from "../model/directionmarks";
 import { projectForJianpu } from "../model/jianpuproject";
-import { clefName, harmonyText, melodyLane, topNote } from "../model/jianpu";
+import { clefName, harmonyText, melodyLane, noteHeight, topNote } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
 
 /** 倚音时值相对八分：下标 = `_` 个数（八分不写，`{2_}` 十六分）。四分倚音写不出，按八分 */
@@ -27,9 +27,9 @@ export class Emitter123 extends AbcFamilyEmitter {
   protected override readonly rehearsalMarks = true;
   protected override readonly spaceBeams = false;
 
-  /** 123 没有音符堆（规范：和弦走符号 `"Am7"`，不做 `[1 3 5]`），一个声部也只有一路：
-   *  只写简谱印的那一路（`melodyLane`）、那一路里每个和弦最高的音。其余的由 `planSave` 报「noteStack」丢失。
-   *  以前挨着写成 `35`，读回来成了两个先后的音，时值翻倍（Praise as One/万古磐石 42 个音读回 84 个）。 */
+  /** 一个声部只写一路：简谱印的那一路（`melodyLane`），同一谱表上的别的 voice 由 `planSave` 报「innerVoice」丢失。
+   *  那一路里同时发声的几个音写和音 `[13]`（规范 §4.2，照 ABC §4.17 `[CEG]`），自下而上；
+   *  画小的上方装饰音（`<type size="cue">`）不算。以前只写最高音、报「noteStack」丢失。 */
   protected override emits(el: Element, mea: Measure): boolean {
     if (el.kind !== "chord") return true;
     const lane = melodyLane(mea);
@@ -37,8 +37,17 @@ export class Emitter123 extends AbcFamilyEmitter {
   }
 
   protected override chordNotes(ch: Chord): Note[] {
-    const top = topNote(ch);
-    return top ? [top] : [];
+    const normal = ch.notes.filter((n) => n.typeSize !== "cue");
+    const pool = normal.length > 0 ? normal : ch.notes;
+    if (pool.length < 2) {
+      const top = topNote(ch);
+      return top ? [top] : [];
+    }
+    return [...pool].sort((a, b) => noteHeight(a) - noteHeight(b));
+  }
+
+  protected override chordGroupText(inner: string, noteCount: number): string {
+    return noteCount > 1 ? `[${inner}]` : inner;
   }
 
   /** 和弦名合规就**不带引号**（`F 3-`），后面必须跟空格——读入端按「到空白为止」切，123 的空格又不管分组。

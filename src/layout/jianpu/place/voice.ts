@@ -2,7 +2,8 @@
 import { elementQuarters, takesLyric, tupletRatios, type BarlineElement, type LyricLine, type Meter, type MusicElement, type ScoreLine } from "../../../pu/ast";
 import { jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { graceAdvance } from "../../../engrave/grace";
-import { ACCIDENTAL_CLEARANCE, accidentalLead, type AccidentalKind } from "../../../engrave/accidental";
+import { ACCIDENTAL_CLEARANCE } from "../../../engrave/accidental";
+import { accidentalLeadOf } from "./vertical";
 import { beatGroupIndex, beatGroupSize, pickupOffset } from "../../../engrave/beatgroup";
 import type { PlacedItem, PlacedUnderline } from "./model";
 import { BRACE_GLYPHS } from "../compose/braceglyphs";
@@ -160,9 +161,8 @@ export function layoutVoiceLine(
     }
     // 变音记号写在数字前，得给它让出位置
     // 让出的宽 = 升降号墨迹宽 + 它与数字的空 + 与前一个音之间的空（engrave/accidental.ts，与画法、旧简谱引擎同一份比例）
-    if (next?.kind === "note" && next.accidental !== undefined) {
-      advance += accidentalLead(next.accidental as AccidentalKind, m.ink.noteHeight, m.style.look.accidentalScale) + m.ink.noteHeight * ACCIDENTAL_CLEARANCE;
-    }
+    const nextLead = next?.kind === "note" ? accidentalLeadOf(next, m) : 0;
+    if (nextLead > 0) advance += nextLead + m.ink.noteHeight * ACCIDENTAL_CLEARANCE;
     // 前倚音也排在数字左边，同样要让位——不让的话倚音会挤在前后两个音符正中间，
     // 看起来像挂在了左边那个音符上（原版给它让出的正是这么多）
     // 宽度走公共那一份（带升降号的倚音要多占一截，不是「颗数 × 常数」）

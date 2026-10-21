@@ -1,9 +1,9 @@
 // 纵向量：头顶让位（读上方带的结果）、倚音落位、音符叠层的顶与底、连谱号伸出量。
-import type { MusicElement, NoteElement } from "../../../pu/ast";
+import type { MusicElement, NoteElement, StackedNote } from "../../../pu/ast";
 import { jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { graceBottom, graceGeometry, type GraceGeom } from "../../../engrave/grace";
-import { stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
-import { accidentalRise, type AccidentalKind } from "../../../engrave/accidental";
+import { lowDotY, stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
+import { accidentalLead, accidentalRise, type AccidentalKind } from "../../../engrave/accidental";
 import { ORNAMENTS } from "../../../pu/glyph";
 import type { Rect } from "../../../common/geom";
 import type { InkMeasurer, PlacedItem, PlacedVoice } from "./model";
@@ -89,10 +89,44 @@ export function stackTop(el: MusicElement | undefined, m: JianpuGrid, withAccide
   const inkTop = -m.ink.noteHeight / 2;
   if (el?.kind !== "note") return inkTop;
   // 临时记号比数字高出一截（engrave/accidental.ts），弧与连音要让开它（简谱弧的起点除外：那个临时记号在弧外侧）
-  const accTop = withAccidental && el.accidental !== undefined
-    ? inkTop - accidentalRise(el.accidental as AccidentalKind, m.ink.noteHeight, m.style.look.accidentalScale) : inkTop;
-  if (el.octave <= 0) return accTop;
-  return Math.min(accTop, stackTopOf(-m.ink.noteHeight / 2, el.octave, m.ink.stack));
+  const rise = (acc: string | undefined): number =>
+    withAccidental && acc !== undefined ? accidentalRise(acc as AccidentalKind, m.ink.noteHeight, m.style.look.accidentalScale) : 0;
+  let top = Math.min(inkTop - rise(el.accidental), digitsTop(el, m));
+  for (const d of stackedDigits(el, m)) top = Math.min(top, d.y + inkTop - rise(d.accidental));
+  return top;
+}
+
+/** 和音里叠上去的那几个数字：各自的基线（相对本音基线，负为上），自下而上。 */
+export interface StackedDigit extends StackedNote {
+  y: number;
+}
+
+/**
+ * 和音的竖向落点（`NoteElement.stack`，123 的 `[13]`）：数字上下叠，最低的音在基线上（减时线、低音点照它画），
+ * 往上每个数字的墨迹底（连同它的低音点）离下面那个数字那一摞的顶（连同高音点）一道叠层空的两倍——
+ * 番茄临时多声部那样两行全尺寸数字上下叠，只是两行共用一套时值。
+ */
+export function stackedDigits(el: NoteElement, m: JianpuGrid): StackedDigit[] {
+  if (!el.stack?.length) return [];
+  const half = m.ink.noteHeight / 2;
+  const st = m.ink.stack;
+  const out: StackedDigit[] = [];
+  let below = stackTopOf(-half, Math.max(0, el.octave), st);
+  for (const n of el.stack) {
+    const bottom = n.octave < 0 ? lowDotY(half, 0, -n.octave - 1, st) + st.dotRadius : half;
+    const y = below - st.gap * 2 - bottom;
+    out.push({ ...n, y });
+    below = y + stackTopOf(-half, Math.max(0, n.octave), st);
+  }
+  return out;
+}
+
+/** 数字连同高八度点那一摞的顶（不含临时记号；和音算到最上面那个数字） */
+export function digitsTop(el: NoteElement, m: JianpuGrid): number {
+  const half = m.ink.noteHeight / 2;
+  const ds = stackedDigits(el, m);
+  const top = ds[ds.length - 1];
+  return top ? top.y + stackTopOf(-half, Math.max(0, top.octave), m.ink.stack) : stackTopOf(-half, Math.max(0, el.octave), m.ink.stack);
 }
 
 
@@ -126,9 +160,12 @@ export function articStack(el: MusicElement, m: JianpuGrid, ink: InkMeasurer, ga
   const glyphs: ArticGlyph[] = [];
   if (el.kind !== "note") return { glyphs, top };
   const nh = m.ink.noteHeight;
-  let artBottom = stackTopOf(-nh / 2, Math.max(0, el.octave), m.ink.stack) - gap;
-  if (el.accidental !== undefined) {
-    artBottom = Math.min(artBottom, -nh / 2 - accidentalRise(el.accidental as AccidentalKind, nh, m.style.look.accidentalScale) - gap * 1.6);
+  let artBottom = digitsTop(el, m) - gap;
+  const ds = stackedDigits(el, m);
+  const topDigit = ds[ds.length - 1];
+  const acc = topDigit ? topDigit.accidental : el.accidental;
+  if (acc !== undefined) {
+    artBottom = Math.min(artBottom, (topDigit?.y ?? 0) - nh / 2 - accidentalRise(acc as AccidentalKind, nh, m.style.look.accidentalScale) - gap * 1.6);
   }
   for (const orn of el.ornaments) {
     // 换气是挂在右上角的 V（compose/note.ts 贴着音符画），不进带
@@ -168,4 +205,13 @@ export function lineInkBottom(items: readonly PlacedItem[], m: JianpuGrid): numb
     if (b > bottom) bottom = b;
   }
   return bottom;
+}
+
+/** 音符前临时记号伸出多宽：和音取几个数字里最宽的那个（叠在一列，左缘取齐）；没有临时记号为 0。 */
+export function accidentalLeadOf(el: NoteElement, m: JianpuGrid): number {
+  let w = 0;
+  for (const a of [el.accidental, ...(el.stack ?? []).map((n) => n.accidental)]) {
+    if (a !== undefined) w = Math.max(w, accidentalLead(a as AccidentalKind, m.ink.noteHeight, m.style.look.accidentalScale));
+  }
+  return w;
 }

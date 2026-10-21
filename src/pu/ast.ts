@@ -106,6 +106,9 @@ export interface NoteElement {
   ornaments: Ornament[];
   graceBefore: NoteElement[];
   graceAfter: NoteElement[];
+  /** 和音：叠在这个音上面同时发声的音，自下而上（本音是最低的那个，减时线、附点照本音画）。
+   *  文本谱不产生，只有 123 `[13]` / MusicXML 和弦来源的视图有（`slots.ts::noteOf`） */
+  stack?: StackedNote[];
   /** 多小节休止占几个小节（画成一道粗横杠、上面印小节数）。文本谱不产生，只有 123 / MusicXML 来源的视图有（`slots.ts::compressMultiRests`） */
   multiRest?: number;
   /** 音符上方的双引号注释；`hx:` 开头的和弦另存 `chord` */
@@ -119,6 +122,13 @@ export interface NoteElement {
   chordSource?: SourceSpan;
   code: string;
   source: SourceSpan;
+}
+
+/** 和音里叠在上面的一个音（`NoteElement.stack`）。 */
+export interface StackedNote {
+  pitch: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  octave: number;
+  accidental?: Accidental;
 }
 
 /** 增时线 `-`：延长前一个音符一拍。 */

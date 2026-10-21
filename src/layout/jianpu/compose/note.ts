@@ -10,7 +10,7 @@ import { highDotY, lowDotY } from "../../../engrave/stack";
 import { augDotCenter } from "../../../engrave/augdot";
 import { breathPath } from "../../../engrave/breath";
 import type { PlacedItem, PlacedText } from "../place/model";
-import { graceLayout, noteBeams } from "../place/vertical";
+import { graceLayout, noteBeams, stackedDigits } from "../place/vertical";
 import { MULTI_REST_WIDTH } from "../place/spacing";
 import { type OriginalCtx, digitItem, digitOrigin, dot, octaveDot, rect, stroke, text } from "./ctx";
 import { musicText } from "../../../engrave/prims";
@@ -130,6 +130,26 @@ export function paintNote(c: OriginalCtx,
     }
     for (let i = 0; i < -note.octave; i++) {
       g.add(octaveDot(c.ink, x, baseline + lowDotY(half, noteBeams(note), i, m.ink.stack), m.style.dot.octave));
+    }
+
+    // 和音：叠在上面的数字（place/vertical.ts::stackedDigits 定落点），各带临时记号、八度点与附点；减时线只在最下面那个下
+    for (const sd of stackedDigits(note, m)) {
+      const sch = String(sd.pitch);
+      const o = digitOrigin(c, sch);
+      const by = baseline + sd.y;
+      g.add(digitItem(sch, x + o.dx, by + o.dy, c.digitFont, c.ink));
+      const sk = sd.accidental as AccidentalKind | undefined;
+      if (sk && ACCIDENTAL_GLYPH[sk]) {
+        const digit = { font: c.digitFont, text: sch, x: x + o.dx, y: by + o.dy };
+        g.add(new AccidentalGlyph(sk, digit, { music: new Font("Bravura", 20), color: c.ink, kind: m.style.look.accidentalStyle, scale: m.style.look.accidentalScale }).item);
+      }
+      for (let i = 0; i < sd.octave; i++) g.add(octaveDot(c.ink, x, by + highDotY(-half, i, m.ink.stack), m.style.dot.octave));
+      for (let i = 0; i < -sd.octave; i++) g.add(octaveDot(c.ink, x, by + lowDotY(half, 0, i, m.ink.stack), m.style.dot.octave));
+      const ink = o.b.offset(x + o.dx, by + o.dy);
+      for (let i = 0; i < note.dots; i++) {
+        const p = augDotCenter(ink, i, m.style.dot.aug, m.ink.stack.gap);
+        g.add(octaveDot(c.ink, p.cx, p.cy, m.style.dot.aug));
+      }
     }
   }
 

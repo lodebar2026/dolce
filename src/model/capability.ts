@@ -31,7 +31,8 @@ export type Feature =
   | "harmony"        // 和弦符号
   | "harmonyOffset"  // 落在长音中间、又不在整拍上的和弦（简谱挂不到增时线上）
   | "multiVoice"     // 多声部（多个 part）
-  | "noteStack"      // 同一声部里同时发声的几个音（五线谱的和弦内音、声部内第二 voice）
+  | "noteStack"      // 同一声部里同时发声的几个音（五线谱的和弦内音、民乐分谱的双音）
+  | "innerVoice"     // 同一谱表上的第二 voice（简谱只印第一 voice）
   | "dynamics"       // 力度与渐强渐弱
   | "playOrder"      // 演唱顺序（含 skip/limit）
   | "style"          // 样式表引用
@@ -58,14 +59,16 @@ export type Feature =
   | "tremolo"        // 单音震音（MusicXML `<tremolo>`、123 `!///!`）
   | "bowing"         // 弓法（`<up-bow>` `<down-bow>`、123 `!upbow!` `!downbow!`）
   | "rehearsal"      // 排练号（`<rehearsal>`、123 `!rehearsal=A!`）
-  | "multiRest";     // 多小节休止（`<multiple-rest>`、123 `Zn`）
+  | "multiRest"      // 多小节休止（`<multiple-rest>`、123 `Zn`）
+  | "staccatissimo"; // 楔形顿音（`<staccatissimo>`、123 `!wedge!`），与点状顿音分开记
 
 /** 人看的名字，直接进丢失清单。 */
 export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   harmony: "和弦符号",
   harmonyOffset: "长音中间不在整拍上的和弦（会提前到音符上）",
   multiVoice: "多声部",
-  noteStack: "同一声部里同时发声的音（和弦内音、声部内第二声部，只留简谱印的旋律）",
+  noteStack: "同一声部里同时发声的音（和音、和弦内音，只留简谱印的最高音）",
+  innerVoice: "同一谱表上的第二声部（只留简谱印的第一声部）",
   dynamics: "力度与渐强渐弱",
   playOrder: "演唱顺序（房号跳转、第几遍配第几段词）",
   style: "样式表引用",
@@ -93,6 +96,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   bowing: "弓法（上弓、下弓）",
   rehearsal: "排练号",
   multiRest: "多小节休止（会写成一小节一个休止）",
+  staccatissimo: "楔形顿音（会与点状顿音并成同一个顿音）",
 };
 
 /** 目标格式。文本谱两种方言各算一种（装得下的不一样：番茄没有页眉页脚与版面指令字段）。 */
@@ -112,11 +116,13 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
 
 /** 文本谱两种方言都装不下的。依据见 `model/topu.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
  *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
- *  音符堆只写简谱印的那个音；弧线与多连音共用一个先开先闭的括号队列。 */
+ *  音符堆（和音）与同谱表第二声部只写简谱印的那个音；弧线与多连音共用一个先开先闭的括号队列。 */
 const PU_GONE: Feature[] = [
-  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "nestedArc", "oddTuplet",
+  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "innerVoice", "nestedArc", "oddTuplet",
   // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
   "tremolo", "bowing", "rehearsal", "multiRest",
+  // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
+  "staccatissimo",
 ];
 /** 只有 123 与 MusicXML 装得下的（123 的扩展写法，规范 §8.3/§9）。 */
 const EXT_123: Feature[] = ["tremolo", "bowing", "rehearsal", "multiRest"];
@@ -129,10 +135,10 @@ const allBut = (...gone: Feature[]): Set<Feature> => new Set(ALL.filter((f) => !
 export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> = {
   // 123 是按「装得下全部」设计的（`docs/格式/123格式.md`），实测全语料只有 0.17% 表达不了，
   // 那些是转换层的账不是格式的账。
-  // 音符堆 123 刻意不做（规范：和弦走符号，`.jpwabc` 的 `[1 3 5]` 语料 0 例）。
   // 嵌套弧与任意比例的多连音（`(5:4:`）都写得出；弧与多连音的括号只许嵌套（从组里连到组外下一个音写 `~`，
   // 跨得更远的写不出）、可见休止不跟词（规范 §4.1、§5.1）
-  "123": allBut("harmonyOffset", "noteStack", "slurCrossTuplet", "lyricOnRest"),
+  // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 另起 `V:` 才写得出，写出端只写第一 voice
+  "123": allBut("harmonyOffset", "innerVoice", "slurCrossTuplet", "lyricOnRest"),
   // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
   // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
@@ -141,7 +147,7 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   abc: allBut("style", "playOrder", "rhythmNote", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
-  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
+  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
   // 文本谱：展开档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `pu/dialect.ts::EmitStyle.pageFields`）
@@ -217,7 +223,9 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
             if (n?.tremolo || n?.articulations?.some((a) => tremoloStrokes(a) !== undefined)) used.add("tremolo");
             if (n?.technical?.some((x) => x === "up-bow" || x === "down-bow") || n?.articulations?.some((a) => decoKey(a) === "sg" || decoKey(a) === "xg")) used.add("bowing");
             if (n?.articulations?.some((a) => rehearsalOf(a) !== undefined)) used.add("rehearsal");
-            if (el.notes.length > 1 || (lane && (el.staff !== lane.staff || el.voice !== lane.voice))) used.add("noteStack");
+            if (n?.articulations?.some((a) => a === "staccatissimo" || a === "wedge")) used.add("staccatissimo");
+            if (el.notes.length > 1) used.add("noteStack");
+            if (lane && (el.staff !== lane.staff || el.voice !== lane.voice)) used.add("innerVoice");
             if (el.grace) used.add("grace");
             if (el.rhythm) used.add("rhythmNote");
             if (el.sectionWord) used.add("textLine");

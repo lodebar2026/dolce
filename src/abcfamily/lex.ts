@@ -130,7 +130,7 @@ export abstract class AbcFamilyLexer {
     return null;
   }
 
-  /** 同时发声的和弦（ABC 的 `[CEG]`）。123 靠多声部表达，这一档没有。 */
+  /** 同时发声的和音（ABC 的 `[CEG]`、123 的 `[13]`）。不认返回 null。 */
   protected scanChordGroup(
     line: string,
     i: number,
@@ -271,7 +271,8 @@ export abstract class AbcFamilyLexer {
 
       // 房号 `[1` `[1,3` `[1-3` `[1,3,5-7`（ABC §4.9/§4.10）。**必须排在小节线之前**判，
       // 否则 `[|` 会先吃掉 `[`；反过来 `[|]`/`[|` 已在上面的 inline 判断后、这里之前轮到。
-      if (ch === "[" && /^\[\d/.test(line.slice(i))) {
+      // 123 的和音 `[13]` 也以 `[数字` 起头：`[` 后紧跟音符、中间无空格、`]` 收住的归和音（见下面的 scanChordGroup）
+      if (ch === "[" && /^\[\d/.test(line.slice(i)) && !this.scanChordGroup(line, i)) {
         const m = /^\[([\d,\-]+)/.exec(line.slice(i))!;
         const nums = expandEndingNumbers(m[1]!);
         i += m[0].length;
@@ -458,8 +459,10 @@ export abstract class AbcFamilyLexer {
           notes: inner.tokens.filter((x) => x.kind === "note"),
         };
         if (cg.dur) {
-          t.num = cg.dur.num;
-          t.den = cg.dur.den;
+          if (cg.dur.num !== undefined) t.num = cg.dur.num;
+          if (cg.dur.den !== undefined) t.den = cg.dur.den;
+          if (cg.dur.beams) t.beams = cg.dur.beams;
+          if (cg.dur.dots) t.dots = cg.dur.dots;
         }
         push(t, start, i - start);
         continue;

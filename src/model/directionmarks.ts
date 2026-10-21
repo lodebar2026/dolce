@@ -9,6 +9,7 @@
 import type { DirectionPart, Element, Measure, Song, SourceOrnament } from "./doc";
 import { DYNAMICS, TERMS } from "../pu/glyph";
 import { decoKey } from "./deconames";
+import { melodyLane } from "./jianpu";
 
 /** 文字术语 → 记号名（MusicXML 的 `<words>rit.</words>`）。 */
 export const TERM_OF: Readonly<Record<string, string>> = Object.fromEntries(
@@ -35,17 +36,26 @@ export function directionMarks(mea: Measure): DirectionMarks {
   const out: DirectionMarks = { byElement: new Map(), barEnd: [], words: new Map(), wedges: [] };
   const dirs = mea.directions ?? [];
   if (!dirs.length) return out;
-  // 各元素的起点（divisions）
+  // 各元素的起点、终点（divisions）：多声部一小节里各声部从头排（`<backup>` 记在 `onset` 上），缺省接前一个元素的终点
   const onset: number[] = [];
+  const end: number[] = [];
   let pos = 0;
   for (const el of mea.elements) {
-    onset.push(pos);
-    if (timed(el)) pos += Math.round(el.duration?.divisions ?? 0);
+    const at = (el.kind === "chord" || el.kind === "space" ? el.onset : undefined) ?? pos;
+    onset.push(at);
+    pos = at + (timed(el) ? Math.round(el.duration?.divisions ?? 0) : 0);
+    end.push(pos);
   }
-  const timedIdx = mea.elements.map((el, i) => (timed(el) ? i : -1)).filter((i) => i >= 0);
+  // 挂靠只挑旋律那一路（简谱印的那一路；别的声部写出端不写，挂上去就丢了）
+  const lane = melodyLane(mea);
+  const inLane = (el: Element): boolean => !lane || el.kind !== "chord" || (el.staff === lane.staff && el.voice === lane.voice);
+  const timedIdx = mea.elements.map((el, i) => (timed(el) && inLane(el) ? i : -1)).filter((i) => i >= 0);
   if (!timedIdx.length) return out;
-  const posOf = (k: number | undefined, offset: number | undefined): number =>
-    (k !== undefined && k < onset.length ? onset[k]! : k !== undefined ? pos : 0) + (offset ?? 0);
+  const posOf = (dir: { afterElements?: number; offset?: number; onset?: number }): number => {
+    const k = dir.afterElements;
+    const base = dir.onset ?? (k === undefined || k === 0 ? 0 : end[Math.min(k, end.length) - 1]!);
+    return base + (dir.offset ?? 0);
+  };
   /** 拍位上（或之后）的第一个占时值的符号 */
   const atOrAfter = (p: number): number => timedIdx.find((i) => onset[i]! >= p - 1e-6) ?? timedIdx[timedIdx.length - 1]!;
   /** 拍位之前的最后一个 */
@@ -60,7 +70,7 @@ export function directionMarks(mea: Measure): DirectionMarks {
     out.byElement.set(i, list);
   };
   for (const dir of dirs) {
-    const p = posOf(dir.afterElements, dir.offset);
+    const p = posOf(dir);
     for (const part of [dir, ...(dir.more ?? [])]) {
       if (part.type === "wedge") {
         if (part.spanType === "start" && part.wedgeType) out.wedges.push({ edge: "start", type: part.wedgeType, index: atOrAfter(p) });
