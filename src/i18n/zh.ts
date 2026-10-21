@@ -649,6 +649,7 @@ export const zh = {
   "diag.j123.oldSkip": "歌词跳音符已改用 `/`，`*` 暂按跳音符读",
   "diag.j123.orphanSustain": "增时线前面没有音符",
   "diag.j123.orphanTie": "延音线前面没有音符",
+  "diag.j123.chordTieNoMatch": "和音里 `~` 连的音，下一个和音里没有同音",
   "diag.j123.emptyTuplet": "多连音里没有音符",
   "diag.j123.extraParen": "多余的 `)`",
   "diag.j123.emptySlur": "圆滑线里没有音符",

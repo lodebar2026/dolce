@@ -77,7 +77,8 @@ export class Lexer123 extends AbcFamilyLexer {
   }
 
   /** 和音 `[13]` `[1,5]` `[#46']`（照 ABC §4.17 的 `[CEG]`）：`[` 后紧跟两个以上的音（不含休止）、中间不留空格、`]` 收住；
-   *  时值写在 `]` 后面、几个音共用（`[13]_.`），括号里的音不带时值。这样与房号 `[1 …`（后面跟空格）分得开。 */
+   *  时值写在 `]` 后面、几个音共用（`[13]_.`），括号里的音不带时值，可后跟 `~` 单连这一个音（`[1~3]`）。
+   *  这样与房号 `[1 …`（后面跟空格）分得开。 */
   protected override scanChordGroup(line: string, i: number): { text: string; notes: NoteScan[]; dur: DurationScan | null } | null {
     if (line[i] !== "[") return null;
     const notes: NoteScan[] = [];
@@ -87,6 +88,8 @@ export class Lexer123 extends AbcFamilyLexer {
       if (!n || n.degree === 0 || n.beams || n.dots) return null;
       notes.push(n);
       k = n.next;
+      // 音后的 `~`：只这一个音连到下一个和音里的同音（同 ABC `[C-E]` 的 tie）
+      if (line[k] === "~") k++;
     }
     if (line[k] !== "]" || notes.length < 2) return null;
     return { text: line.slice(i, k + 1), notes, dur: this.scanDuration(line, k + 1) };

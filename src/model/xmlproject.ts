@@ -611,15 +611,27 @@ const sameDegree = (a: Chord["notes"][number], b: Chord["notes"][number]): boole
   !!a.degree && !!b.degree && a.degree.number === b.degree.number && a.degree.octaveShift === b.degree.octaveShift;
 
 /** 简谱括住相邻两个同音的弧就是延音线（两者同形，文本谱/123 都只写括号）：补上两端的 `Note.tie`，
- *  五线谱画成延音线、导出的 `<tie>` 让别的软件也连着发声。后一个没写记号算沿用（`(#4 4)`），写了不同的不算 */
-function tieSlur(a: Chord, b: Chord): boolean {
-  const x = a.notes[0];
-  const y = b.notes[0];
-  if (a.rest || b.rest || a.grace || b.grace || !x || !y || !sameDegree(x, y)) return false;
-  if (y.degree!.accidental && y.degree!.accidental !== x.degree!.accidental) return false;
-  (x.tie ??= {}).start = true;
-  (y.tie ??= {}).stop = true;
-  return true;
+ *  五线谱画成延音线、导出的 `<tie>` 让别的软件也连着发声。后一个没写记号算沿用（`(#4 4)`），写了不同的不算。
+ *  和音（123 `[13]~ [13]`）里每个音各找下一个和音里的同音、各连一条，有一个找不到就仍是圆滑线。返回连上的 `[起, 止]` 下标 */
+function tieSlur(a: Chord, b: Chord): [number, number][] {
+  if (a.rest || b.rest || a.grace || b.grace) return [];
+  // 节奏音符（`X`，有声无音高）彼此算同音
+  if (a.rhythm && b.rhythm) return [[0, 0]];
+  const out: [number, number][] = [];
+  const used = new Set<number>();
+  a.notes.forEach((x, i) => {
+    const j = b.notes.findIndex((y, k) => !used.has(k) && sameDegree(x, y) && !(y.degree!.accidental && y.degree!.accidental !== x.degree!.accidental));
+    if (j < 0) return;
+    used.add(j);
+    out.push([i, j]);
+  });
+  // 和音只有每个音都连得上才算延音线；只连其中几个的 123 写在括号里（`[1~3]`），整和音的弧仍是圆滑线
+  if (out.length < a.notes.length) return [];
+  for (const [i, j] of out) {
+    (a.notes[i]!.tie ??= {}).start = true;
+    (b.notes[j]!.tie ??= {}).stop = true;
+  }
+  return out;
 }
 
 /** 记号端点归到写得出来的音符上；没收口、倒置、端点不在谱面元素上的丢掉；弧线补 number。 */
@@ -651,8 +663,9 @@ function normalizeMarks(song: Song, hosts: Map<ElementId, ElementId>): void {
     if (!written.has(start) || !written.has(end)) continue;
     if ((mk.type === "slur" || mk.type === "tuplet") && order.get(start)! >= order.get(end)!) continue;
     const [a, b] = [chordAt.get(start)!, chordAt.get(end)!];
-    if (mk.type === "slur" && a.part === b.part && order.get(end)! === order.get(start)! + 1 && tieSlur(a.el, b.el)) {
-      marks.push({ type: "tied", start, end });
+    const pairs = mk.type === "slur" && a.part === b.part && order.get(end)! === order.get(start)! + 1 ? tieSlur(a.el, b.el) : [];
+    if (pairs.length) {
+      for (const [i, j] of pairs) marks.push({ type: "tied", start, end, ...(i ? { startNote: i } : {}), ...(j ? { endNote: j } : {}) });
       continue;
     }
     marks.push({ ...mk, start, end });

@@ -650,6 +650,7 @@ export const en: Record<MsgKey, string> = {
   "diag.j123.oldSkip": "Lyric skips now use `/`; `*` is read as a skip for now",
   "diag.j123.orphanSustain": "Extension dash has no note before it",
   "diag.j123.orphanTie": "Tie has no note before it",
+  "diag.j123.chordTieNoMatch": "The note tied with `~` inside a chord has no matching note in the next chord",
   "diag.j123.emptyTuplet": "Tuplet has no notes",
   "diag.j123.extraParen": "Unmatched `)`",
   "diag.j123.emptySlur": "Slur has no notes",

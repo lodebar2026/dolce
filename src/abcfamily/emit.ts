@@ -297,6 +297,37 @@ export abstract class AbcFamilyEmitter {
    *  123 没有单独的 tie 写法；ABC 不是，它有 `-`（见 `tieText`）。 */
   protected readonly tiesAsSlurs: boolean = false;
 
+  /** 和音里单连一个音的延音线写在括号里那个音后面（123 `[1~3]`，同 ABC `[C-E]`）：`chordText` 照它补 `~` */
+  protected readonly noteTieAfter = new Set<Note>();
+
+  /**
+   * 同一对相邻和弦之间的延音线（MusicXML 一个音一条 `<tied>`）先归并再当弧写：连上了写出的每个音的并成一条整和音的弧
+   * （三音和弦以前写成三层括号 `((([135]-`）；只连其中几个的从弧里拿掉、记进 `noteTieAfter`，写成括号里的 `~`。
+   */
+  private chordTies(part: Part, marks: Mark[]): Mark[] {
+    this.noteTieAfter.clear();
+    const chordOf = new Map<number, Chord>();
+    for (const m of part.measures) for (const el of m.elements) if (el.kind === "chord") chordOf.set(el.id, el);
+    const groups = new Map<string, Mark[]>();
+    for (const m of marks) {
+      if (m.type !== "tied") continue;
+      const k = `${m.start}>${m.end}`;
+      groups.set(k, [...(groups.get(k) ?? []), m]);
+    }
+    const drop = new Set<Mark>();
+    for (const g of groups.values()) {
+      const ch = chordOf.get(g[0]!.start);
+      if (!ch) continue;
+      const written = this.chordNotes(ch);
+      const tied = new Set(g.map((m) => ch.notes[m.startNote ?? 0]).filter((n): n is Note => !!n && written.includes(n)));
+      if (written.length > 1 && tied.size > 0 && tied.size < written.length) {
+        for (const n of tied) this.noteTieAfter.add(n);
+        for (const m of g) drop.add(m);
+      } else for (const m of g.slice(1)) drop.add(m);
+    }
+    return drop.size ? marks.filter((m) => !drop.has(m)) : marks;
+  }
+
   /** 第 `i` 小节头上换成的谱号名（第一行谱表）；不换返回 null。小节中间的换谱号过了半小节的算下一小节的。 */
   private clefAt(part: Part, i: number): string | null {
     const staff1 = (a: { clefs?: Clef[] } | undefined): Clef | undefined => a?.clefs?.find((x) => (x.staff ?? 1) === 1);
@@ -515,7 +546,7 @@ export abstract class AbcFamilyEmitter {
       s = this.restText(ch);
     } else {
       const notes = this.chordNotes(ch);
-      s = this.chordGroupText(notes.map((n) => this.noteText(n)).join(""), notes.length);
+      s = this.chordGroupText(notes.map((n) => this.noteText(n) + (notes.length > 1 && this.noteTieAfter.has(n) ? "~" : "")).join(""), notes.length);
     }
     s += this.durationText(ch);
     s += this.tieText(ch);
@@ -558,6 +589,7 @@ export abstract class AbcFamilyEmitter {
     const tupletEnd = new Map<number, { count: number; outerArcs: number }>();
     const isArc = (m: Mark): boolean => m.type === "slur" || (m.type === "tied" && this.tiesAsSlurs);
     let marks = ownMarks(song, own);
+    if (this.tiesAsSlurs) marks = this.chordTies(part, marks);
     // 123 的多连音与弧共用括号、只许嵌套：连到下一个音的写成 `~`，其余跨出组的弧截进组内（`planSave` 另报 `slurCrossTuplet`）
     const arcNext = new Set<number>();
     if (this.tupletCloses) {
@@ -716,8 +748,10 @@ export abstract class AbcFamilyEmitter {
       if (ch?.grace) {
         // 相邻的一串倚音（同为前/后倚音、同带不带斜线）并回一对花括号：`{2_3_}`
         const prev = mea.elements[j - 1];
-        const g = this.graceText(ch);
-        if (prevGrace && prev?.kind === "chord" && prev.grace && pieces[pieces.length - 1] === prevGrace.text
+        // 从倚音起、在倚音收的弧照样写括号（`({5} 1---)`）：以前只写了主音上的 `)`，弧读回就没了（八段锦二胡 m48）
+        const opens = mi.slurStart.get(el.id) ?? 0, closes = mi.slurEnd.get(el.id) ?? 0;
+        const g = "(".repeat(opens) + this.graceText(ch) + ")".repeat(closes);
+        if (!opens && prevGrace && prev?.kind === "chord" && prev.grace && pieces[pieces.length - 1] === prevGrace.text && !prevGrace.text.endsWith(")")
             && !!prev.grace.slash === !!ch.grace.slash && !!prev.grace.after === !!ch.grace.after) {
           const merged = prevGrace.text.slice(0, -1) + g.slice(1 + this.graceSlashText(ch).length);
           pieces[pieces.length - 1] = merged;

@@ -123,6 +123,8 @@ interface PartBuild {
   clef?: Clef;
   /** 123 的后置 `~` 还没配到下一个音：起点和弦与 `~` 的位置。存在声部级，`~` 可以跨 `$` 行 */
   arcNext: { from: ElementId; source: SourceSpan } | null;
+  /** 和音里单连一个音的 `~`（`[1~3]`）：等下一个和音来，连到它里面的同音 */
+  noteTies: { from: Chord; note: number; source: SourceSpan }[];
   /** 开着的渐强渐弱（Muse 的 `(<` … `<)`、ABC 的 `!crescendo(!` … `!crescendo)!`），起点同弧一样由 `attach` 回填 */
   openWedges: OpenMark[];
   /** ABC 装饰写的渐强渐弱收尾（`!crescendo)!`）：装饰写在**收尾那个音前面**，等下一个元素挂上才落成 Mark */
@@ -539,6 +541,21 @@ function buildMusicLine(
       marks.push({ type: "slur", start: pb.arcNext.from, end: el.id, level: openSlurs.length, openSource: pb.arcNext.source });
       pb.arcNext = null;
     }
+    if (pb.noteTies.length && el.kind === "chord" && !el.grace) {
+      for (const nt of pb.noteTies) {
+        const a = nt.from.notes[nt.note]!;
+        const j = el.notes.findIndex((b) => !!a.degree && !!b.degree && a.degree.number === b.degree.number
+          && a.degree.octaveShift === b.degree.octaveShift && (b.degree.accidental ?? a.degree.accidental) === a.degree.accidental);
+        if (j < 0) {
+          report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
+          continue;
+        }
+        (a.tie ??= {}).start = true;
+        (el.notes[j]!.tie ??= {}).stop = true;
+        marks.push({ type: "tied", start: nt.from.id, end: el.id, startNote: nt.note, endNote: j });
+      }
+      pb.noteTies = [];
+    }
     // 回填还没拿到起点的开弧/开连音——它们的起点就是「`(` 之后的第一个元素」
     for (const o of openSlurs) if (!o.start) o.start = el.id;
     for (const o of openTuplets) if (!o.start) o.start = el.id;
@@ -673,6 +690,9 @@ function buildMusicLine(
         applyTieAndBroken(ch);
         attach(ch);
         cur.sustainHost = ch;
+        (t.notes ?? []).forEach((g, k) => {
+          if (g.tieNext) pb.noteTies.push({ from: ch, note: k, source: g.source });
+        });
         if (pb.voice === 1) pb.noteCount++;
         break;
       }
@@ -819,6 +839,8 @@ function buildMusicLine(
             source: t.source,
           };
           pb.measure.elements.push(ch);
+          // 弧从倚音起（`({5} 1)`）：倚音不走 `attach`，开着的弧在这里回填起点
+          for (const o of openSlurs) if (!o.start) o.start = ch.id;
         }
         break;
       }
@@ -1344,6 +1366,8 @@ export function parseAbcFamily(
         for (const tp of b.openTuplets) report(ctx, "unclosed-tuplet", tr("diag.j123.tupletOpen"), tp.openSource!);
         b.openTuplets.length = 0;
       }
+      for (const nt of b.noteTies) report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
+      b.noteTies = [];
       if (b.arcNext) {
         report(ctx, "orphan-arc-next", "`~` 后面没有音符", b.arcNext.source);
         b.arcNext = null;
@@ -1424,6 +1448,7 @@ export function parseAbcFamily(
     afterLyrics: false,
     inlineBreak: null,
     arcNext: null,
+    noteTies: [],
     openWedges: [],
     wedgeCloseNext: [],
   });

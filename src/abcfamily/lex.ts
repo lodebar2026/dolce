@@ -456,7 +456,10 @@ export abstract class AbcFamilyLexer {
         const t: Omit<Token, "source"> = {
           kind: "chordGroup",
           text: line.slice(start, i),
-          notes: inner.tokens.filter((x) => x.kind === "note"),
+          notes: inner.tokens.flatMap((x, k) => {
+            if (x.kind !== "note") return [];
+            return inner.tokens[k + 1]?.kind === "arcNext" ? [{ ...x, tieNext: true }] : [x];
+          }),
         };
         if (cg.dur) {
           if (cg.dur.num !== undefined) t.num = cg.dur.num;
