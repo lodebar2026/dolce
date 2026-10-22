@@ -360,3 +360,78 @@ export function findHoles(bin: Binary, minArea = 4): Rect[] {
     }
   return out;
 }
+
+/**
+ * 孔**像不像一个符头的内腔**：有一个内腔大（宽 0.72~1.25 格、高 0.55~1 格），凸（`holeSolidity` ≥ 0.8），
+ * 又是椭圆或斜缝、不占满外框（≤ 0.8；符尾、干与谱线围出的空框是方的，占满外框）。真内腔实测凸度 0.88、占外框 0.54~0.58。
+ */
+export function cavityLike(bin: Binary, r: Rect, sp: number): boolean {
+  if (r.w < sp * 0.72 || r.w > sp * 1.25 || r.h < sp * 0.55 || r.h > sp) return false;
+  let k = 0;
+  for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (!bin.data[y * bin.w + x]) k++;
+  return k / (r.w * r.h) <= 0.8 && holeSolidity(bin, r) >= 0.8;
+}
+
+/**
+ * 孔的**凸度**：孔的面积 / 它的凸包面积（凸包按逐行白段的两端算）。孔从盒里离盒心最近的白洪泛，盒角里圈外的白不算。
+ * 符头内腔是椭圆或斜缝，都是凸的（合唱谱各份 0.8~0.9）；两侧墙往里鼓的白（降号肚子与全音符左弧之间）是凹的（0.59）。
+ * 小孔逐像素量凸包天然偏低（低分辨率页 5~13px 的内腔 0.5~0.7），用的地方要自己卡尺寸。
+ */
+export function holeSolidity(bin: Binary, b: Rect): number {
+  const inn = new Uint8Array(b.w * b.h);
+  let seed = -1;
+  let bd = Infinity;
+  for (let y = b.y; y < b.y + b.h; y++)
+    for (let x = b.x; x < b.x + b.w; x++) {
+      if (bin.data[y * bin.w + x]) continue;
+      const d = (x - b.x - b.w / 2) ** 2 + (y - b.y - b.h / 2) ** 2;
+      if (d < bd) (bd = d), (seed = (y - b.y) * b.w + x - b.x);
+    }
+  if (seed < 0) return 0;
+  const stack = [seed];
+  inn[seed] = 1;
+  let area = 0;
+  while (stack.length) {
+    const k = stack.pop()!;
+    area++;
+    const x = k % b.w;
+    const y = (k / b.w) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const X = x + dx;
+      const Y = y + dy;
+      if (X < 0 || Y < 0 || X >= b.w || Y >= b.h) continue;
+      const q = Y * b.w + X;
+      if (inn[q] || bin.data[(Y + b.y) * bin.w + X + b.x]) continue;
+      inn[q] = 1;
+      stack.push(q);
+    }
+  }
+  const pts: [number, number][] = [];
+  for (let y = 0; y < b.h; y++) {
+    let l = -1;
+    let r = -1;
+    for (let x = 0; x < b.w; x++) if (inn[y * b.w + x]) (l < 0 ? (l = x) : 0), (r = x);
+    if (l >= 0) pts.push([l, y], [r + 1, y], [l, y + 1], [r + 1, y + 1]);
+  }
+  pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cross = (o: number[], a: number[], c: number[]) => (a[0] - o[0]) * (c[1] - o[1]) - (a[1] - o[1]) * (c[0] - o[0]);
+  const lo: [number, number][] = [];
+  const up: [number, number][] = [];
+  for (const p of pts) {
+    while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop();
+    lo.push(p);
+  }
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop();
+    up.push(p);
+  }
+  const hull = [...lo.slice(0, -1), ...up.slice(0, -1)];
+  let a2 = 0;
+  for (let i = 0; i < hull.length; i++) {
+    const p = hull[i];
+    const q = hull[(i + 1) % hull.length];
+    a2 += p[0] * q[1] - q[0] * p[1];
+  }
+  return area / Math.max(1, Math.abs(a2) / 2);
+}

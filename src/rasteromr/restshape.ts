@@ -583,7 +583,8 @@ export function flatAccidentalBox(bin: Binary, b: Rect, unit: RasterUnit): Rect 
       seen.add(i);
       const x = i % bin.w, y = (i - x) / bin.w;
       x0 = Math.min(x0, x), x1 = Math.max(x1, x), y0 = Math.min(y0, y), y1 = Math.max(y1, y);
-      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) if (ink(nx, ny) && !seen.has(ny * bin.w + nx)) stack.push(ny * bin.w + nx);
+      // 只灌到竖笔右边一个降号宽：肚子贴着右边的头时，头圈的残墨灌进来就宽出 `FLAT_W`（爱是从神而来 p5 m60 右手 ♭）
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) if (nx <= st.x + sp * FLAT_W[1] - 2 && ink(nx, ny) && !seen.has(ny * bin.w + nx)) stack.push(ny * bin.w + nx);
     }
     const box = { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
     if (x0 < st.x - 1 || box.w < sp * FLAT_W[0] || box.w > sp * FLAT_W[1] || x1 - st.xr < sp * FLAT_BELLY) continue;

@@ -1776,11 +1776,21 @@ function splitVoice(chords: StaffChord[], expect: number): void {
       for (const n of ch.notes) n.voice = i + 1;
     }
   });
-  for (const grp of extra)
+  // 剔出来的孤层排到真声部**后面**，不并回第一声部：并回去它就接在真旋律前头，这小节成了两倍长
+  //（爱是从神而来 p3 m37 钢琴右手：G4 全音符比下声部第一个八分靠左半格、排在了前面，并回去成了「全音符 + 八个八分」）。
+  // 假全音符照样挤不掉真旋律，只多出一个声部。
+  // 全音符在小节开头起音：头不在真声部第一个音左右一个头宽以内的（落在小节中段，多是符尾、弧认成的假全音符，新编 009 m1 F4），
+  // 照旧并回第一声部——排到后面歌词就跟着错挂一串
+  const start = Math.min(...merged.flat().map((c) => c.left));
+  const atStart = (ch: StaffChord) => ch.left <= start + (ch.right - ch.left) * 1.2;
+  let last = merged.length;
+  for (const grp of extra) {
+    const v = grp.every(atStart) ? ++last : 1;
     for (const ch of grp) {
-      ch.voice = 1;
-      for (const n of ch.notes) n.voice = 1;
+      ch.voice = v;
+      for (const n of ch.notes) n.voice = v;
     }
+  }
 }
 
 /**

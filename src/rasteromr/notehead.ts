@@ -148,6 +148,8 @@ export function findRasterHeads(
   offStaff: (y: number) => boolean = () => false,
   /** 因「盒里没有被围住的白」剔掉的块记在这里（块 id → 当时的头盒）：别的几路不再按空心头收它们。 */
   notHollow?: Map<number, Rect>,
+  /** 原图上像内腔的孔（`contour.ts::cavityLike`）：窄块借干那一档用。 */
+  cavities: Rect[] = [],
 ): RasterHead[] {
   const sp = unit.space;
   const out: RasterHead[] = [];
@@ -161,6 +163,15 @@ export function findRasterHeads(
       // 和弦里挂在干中段的头也算（救主降生 m2 低音 F3/B♭2 一根朝下的干，B♭2 去线后只剩 0.82 格）：只借宽度，挂干照旧按端点。
       // 中段这一档要块有一整个头高：被线切开的空心头下半片也贴着干中段（称谢歌伴奏 m7、m12 的二分头读成低一级的四分）
       const s0 = stemOf(b, stems, unit, undefined, b.h >= sp * NARROW_MID_H);
+      // 干对面挨着一个像内腔的孔、孔从块里（或贴着块边）一直伸到块外：这块是空心头连着干的那一截圈
+      //（爱是从神而来 p1 m11 低音 G3 二分，圈的左上角连着干、15×11 读成实心头，挡住了按内腔认的二分）
+      const ring = s0 && cavities.some((h) => {
+        const left = (s0.x0 + s0.x1) / 2 < b.x + b.w / 2;
+        const reach = left ? h.x <= b.x + b.w + sp * 0.2 && h.x + h.w > b.x + b.w : h.x + h.w >= b.x - sp * 0.2 && h.x < b.x;
+        const ov = Math.min(b.y + b.h, h.y + h.h) - Math.max(b.y, h.y);
+        return reach && ov >= Math.min(b.h, h.h) * 0.5;
+      });
+      if (ring) continue;
       if (s0) {
         const sx = (s0.x0 + s0.x1) / 2;
         const half = Math.max(1, (s0.lw ?? unit.lineThick) / 2);
@@ -417,6 +428,27 @@ function extendStem(s: LineSeg, b: Rect): void {
   else if (bottom < b.y) up ? (s.y1 = b.y) : (s.y0 = b.y);
 }
 
+/**
+ * **叠成一摞的空心头，圈的左沿（或右沿）竖着连成一道墨**，沿盒边量墨柱时当成了一根干，上下两个头读成二分
+ *（爱是从神而来 p5 m62 低音 E♭3/G3/B♭3 三个全音符）。真干总有一端伸出头外；
+ * 这一道两端各压着一个像内腔的孔、孔都在它同一侧、两头都没伸出孔外半格。
+ */
+export function ringEdgeSeg(st: LineSeg, holes: Rect[], sp: number): boolean {
+  const x = (st.x0 + st.x1) / 2;
+  const top = Math.min(st.y0, st.y1);
+  const bot = Math.max(st.y0, st.y1);
+  // 不到谱表高：小节线两端也常挨着头的内腔
+  if (bot - top < sp * 1.5 || bot - top > sp * 3.2) return false;
+  const at = (y: number) =>
+    holes.filter((h) => h.w / sp >= HOLE_W[0] && h.w / sp <= HOLE_W[1] && h.h / sp >= HOLE_H[0] && Math.abs(h.y + h.h / 2 - y) <= sp * 0.6 && Math.abs(h.x + h.w / 2 - x) <= sp);
+  const a = at(top);
+  const b = at(bot);
+  if (!a.length || !b.length) return false;
+  const side = (h: Rect) => Math.sign(h.x + h.w / 2 - x);
+  if (![...a, ...b].every((h) => side(h) === side(a[0]))) return false;
+  return Math.min(...a.map((h) => h.y)) - top < sp * 0.5 && bot - Math.max(...b.map((h) => h.y + h.h)) < sp * 0.5;
+}
+
 /** 贴在这个符头左缘或右缘、且纵向相交的竖段。 */
 export function stemOf(b: Rect, stems: LineSeg[], unit: RasterUnit, nl?: Binary, mid = false): LineSeg | null {
   const tol = Math.max(unit.lineThick * 2, unit.space * 0.25);
@@ -656,7 +688,7 @@ export function hollowHeadsFromHoles(
           const tcy = t.y + t.h / 2;
           return edge <= sp * 0.3 && (Math.abs(tcy - col[0]) <= sp * 0.6 || Math.abs(tcy - col[1]) <= sp * 0.6) && side(t) !== side(box);
         });
-      if (reach >= sp * INK_STEM[0] && reach <= sp * INK_STEM[1] && !owner) stem = true;
+      if (reach >= sp * INK_STEM[0] && reach <= sp * INK_STEM[1] && !owner && !ringEdgeSeg({ x0: col![2], y0: col![0], x1: col![2], y1: col![1], lw: 1, maxLw: 1 }, holes, sp)) stem = true;
     }
     if (!stem) {
       const through = stemThrough(box, stems, unit);
@@ -946,7 +978,7 @@ function pitchScorer(bin: Binary, nl: Binary, rawHoles: Rect[], allMasks: HeadMa
       const col = inkColumn(nl, box, unit);
       const cy = box.y + box.h / 2;
       const reach = col ? Math.max(cy - col[0], col[1] - cy) : 0;
-      if (col && reach >= sp * INK_STEM[0] && reach <= sp * INK_STEM[1]) {
+      if (col && reach >= sp * INK_STEM[0] && reach <= sp * INK_STEM[1] && !ringEdgeSeg({ x0: col[2], y0: col[0], x1: col[2], y1: col[1], lw: 1, maxLw: 1 }, rawHoles, sp)) {
         stem = true;
         ink = { x0: col[2], y0: col[0], x1: col[2], y1: col[1], lw: unit.lineThick, maxLw: unit.lineThick * 2 };
       }

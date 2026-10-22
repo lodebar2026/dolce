@@ -29,7 +29,7 @@ import { sigDistance } from "../omrkit/glyphdict";
 import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, type JianpuStrip } from "./jianpuband";
 import type { FuseStats, JianpuRow } from "./jianpufuse";
 import { CHAR_MAX as LYRIC_CHAR_MAX, type LyricStrip, type OcrChar } from "./lyric";
-import { candidateMap, findHoles, repairedLayer, traceContours, type ContourMap } from "./contour";
+import { candidateMap, cavityLike, findHoles, holeSolidity, repairedLayer, traceContours, type ContourMap } from "./contour";
 import { buildHeadMasks, buildHollowMasks, headFromStemBlock, scoreAt, scoreAtMasked, solidHeadsAlongStems, splitHeadCluster } from "./headmask";
 import { headProb, trainHeadClassifier } from "./headclass";
 import type { LabelStrip } from "./stafflabel";
@@ -239,6 +239,10 @@ const ACC_PAIR_W = 2.4;
 /** 头左边找临时记号的窗：往左这么多格、上下各这么多格。 */
 const ACC_PROBE_W = 1.4;
 const ACC_PROBE_H = 1.7;
+/** 窗往上多开到这么多格：降号的竖笔从肚子中心往上就有 1.75 格，顶端碰到窗上沿会被当邻音扣掉（爱是从神而来 p5 m60 右手 ♭）。 */
+const ACC_PROBE_UP = 2.1;
+/** 干尖符尾根（`recognize.ts` 头 + 干块那段）：两个头之间贴着干那一条，去线图上至少这么多行有墨（符尾那一笔）。 */
+const FLAG_STROKE_ROWS = 0.5;
 const ACC_PROBE_SHARP_H = 2.8;
 /** 窄过这么多格的临时记号是半截。 */
 const ACC_HALF_W = 0.45;
@@ -319,6 +323,9 @@ const HOLLOW_PAIR_H = [1.6, 2.5] as const;
 const HOLLOW_PAIR_W = 2.2;
 /** 整格谱间白（见 `cellLike`）的外框里白至少占多少。 */
 const CELL_WHITE = 0.9;
+/** 上下被谱线封住的孔（见 `pinched`）：宽过多少格才判、凸度低于多少不当内腔。合唱谱各份真内腔 0.8~0.9，降号旁那块 0.59。 */
+const PINCHED_W = 0.8;
+const HOLE_CONVEX_MIN = 0.7;
 const OPEN_CAVITY_BAND = 2;
 /** 演奏记号离谱表最远几格（线距）：带加线的低音再往下一格，四格半够了。 */
 const ARTIC_REACH = 4.5;
@@ -1118,7 +1125,8 @@ export async function recognizeRasterPage(
   // 刚好卡过实心头的尺寸下限，出了个 F5。只剔**矮**的（不到 0.65 格）：贴着符杠、又被去线
   // 削扁的真头中心也会落在杠的中线上（宁静的伯利恒三个 1.1×0.72 格的，门槛 0.75 时被剔掉）。
   const notHollow = new Map<number, Rect>();
-  const rawHeads = findRasterHeads(nl, blobs.filter((c) => !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id)), prims.vSegs, unit, onGrid, inBand, matchHollow, offStaff, notHollow);
+  const allHoles = findHoles(raster.bin, Math.max(4, Math.round(unit.space * unit.space * 0.06)));
+  const rawHeads = findRasterHeads(nl, blobs.filter((c) => !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id)), prims.vSegs, unit, onGrid, inBand, matchHollow, offStaff, notHollow, allHoles.filter((h) => cavityLike(raster.bin, h, unit.space)));
   const heads = rawHeads.filter((hd) => {
     if (hd.code !== "noteheadBlack") return true;
     if (beamStump(hd.box, rawHeads.map((o) => o.box))) return false;
@@ -1132,10 +1140,17 @@ export async function recognizeRasterPage(
   // 碎成四片），而它的**内腔**还在。所以在**去谱线之前**的图上取全页的孔，
   // 尺寸像内腔的往外扩一圈就是符头；骑线的头内腔被谱线豁成两半，先并回去。
   // 判据全在 `notehead.ts::hollowHeadsFromHoles`。
-  const rawHoles = findHoles(raster.bin, Math.max(4, Math.round(unit.space * unit.space * 0.06)));
   // 缝落在谱线或加线上都算（`onGrid` 只管谱表外的加线位置）：《高举主大能》第三线上的 B4 二分头
   // 被第三线切成 10×5 与 13×5 两半，谱线上的不认就并不回来，头盒只剩下半截、读低一格
   const onLineOrGrid = (y: number) => onGrid(y) || gridYs.some((ly) => Math.abs(ly - y) <= unit.space * 0.25);
+  // **上下被两条谱线封住、两侧墙往里鼓的白不是内腔**：降号的肚子贴着全音符左沿，肚子与圈之间、上下两条谱线之间那块白
+  // 比真内腔还宽（22×18，真内腔 13×16），收出一个偏左、盖着降号的头，真头的右半落单成附点、降号也丢了
+  //（爱是从神而来 p5 m59、m60 低音 G♭3）。真内腔是椭圆或斜缝，凸度 0.8 以上；这块两侧都凹进来，0.59。
+  // 只判宽过 0.8 格、上下边都贴着谱线的：小孔逐像素量凸度天然偏低（燭光頌曲 5~13px 的内腔 0.5~0.7）
+  const halfLine = unit.lineThick / 2;
+  const pinched = (b: Rect) =>
+    b.w >= unit.space * PINCHED_W && onLineOrGrid(b.y - halfLine - 0.5) && onLineOrGrid(b.y + b.h + halfLine - 0.5) && holeSolidity(raster.bin, b) < HOLE_CONVEX_MIN;
+  const rawHoles = allHoles.filter((b) => !pinched(b));
   // **成摞的整格谱间白**（小节线与贴着它的符干夹出来、隔着谱线一格摞一格）先剔掉：它们纵向相接，
   // 会顺着链把旁边头的内腔并成一个高孔（我一生要赞美你第六行，小节线右边紧贴的 A4 二分头
   // 与上面两格并成 17×42）。单独一格不剔：谱间里的二分头圈的上下边融进谱线、内腔被截平，
@@ -3228,7 +3243,8 @@ export async function recognizeRasterPage(
       const dup = (hb: Rect) => [...syms, ...stemHeads].some((s0) => /^notehead/.test(s0.code) && overlapFrac(hb, s0.box) > 0.3);
       if (dup(r.head)) continue;
       // 块的另一端顺着干连到一个已认出的头、摘出的头又没有和弦伙伴：这块是那个头的干（+ 尾），摘出来的是干尖的符尾
-      //（宁静的伯利恒 p2 m22 男声 A3 八分朝下的干，头单独成块先认了，干抽成竖段，剩下的符尾块在尾尖摘出一个 B2）
+      //（宁静的伯利恒 p2 m22 男声 A3 八分朝下的干，头单独成块先认了，干抽成竖段，剩下的符尾块在尾尖摘出一个 B2）。
+      // 那个头也可能是这一轮刚从「头 + 干」块里摘出的，所以 `stemHeads` 也要查
       if (!r.extra.length) {
         const headTop = r.head.y + r.head.h / 2 < b.y + b.h / 2;
         const dir = headTop ? 1 : -1;
@@ -3241,7 +3257,45 @@ export async function recognizeRasterPage(
         });
         let y = far;
         while (inkAt(y + dir) && Math.abs(y - far) < unit.space * 5) y += dir;
-        if (syms.some((s0) => /^notehead/.test(s0.code) && s0.box.x < r!.stemX + tol && s0.box.x + s0.box.w > r!.stemX - tol && s0.box.y < y + tol && s0.box.y + s0.box.h > y - tol)) continue;
+        const onStem = (k: number) => [...syms, ...stemHeads].filter((s0) => /^notehead/.test(s0.code) && s0.box.x < r!.stemX + k && s0.box.x + s0.box.w > r!.stemX - k);
+        if (onStem(tol).some((s0) => s0.box.y < y + tol && s0.box.y + s0.box.h > y - tol)) continue;
+        // 去线把一根干切成两截、或干尖的符尾根单成一块时，摘出的「头」不在块的远端那头
+        //（爱是从神而来 p5 m55、p3 m38 男声朝下的八分，符尾根压着一截加粗的谱线，摘出 D3）。
+        // 顺着干往里走到一个已认出的头，再从摘出的头往外量干还伸出多少：0.5~2 格的是干尖的符尾根。
+        // 两声部共干、干尖那个头离干端不到 0.3 格；和弦最低音下面的干多有两格半以上，短的接着符杠，或两头之间没有符尾那一笔
+        const hc = r.head.y + r.head.h / 2;
+        const walk = (dir: number): number => {
+          let yy = Math.round(hc);
+          while (inkAt(yy + dir) && Math.abs(yy - hc) < unit.space * 5) yy += dir;
+          return yy;
+        };
+        const flagRoot = [1, -1].some((dir) => {
+          const yi = walk(-dir);
+          const ye = walk(dir);
+          const tail = Math.abs(ye - hc);
+          if (tail < unit.space * 0.5 || tail >= unit.space * 2) return false;
+          // 干端接着符杠的是和弦（倚靠主永远膀臂 m5 附点八分 + 十六分和弦，杠前只伸出 1.9 格）
+          if (prims.beams.some((q) => q.box.x <= r!.stemX + tol && q.box.x + q.box.w >= r!.stemX - tol && ye >= q.box.y - tol && ye <= q.box.y + q.box.h + tol)) return false;
+          const lo = Math.min(yi, hc - dir * unit.space * 0.8);
+          const hi = Math.max(yi, hc - dir * unit.space * 0.8);
+          // 头盒收窄过的离干半格（p3 m38 那颗头左沿离干 6px）
+          const k = onStem(unit.space * 0.5).find((s0) => s0.box.y < hi + tol && s0.box.y + s0.box.h > lo - tol);
+          if (!k) return false;
+          // 两个头之间、摘出的头那一侧贴着干一个头宽的一条，去线图上大半行有墨：那是符尾斜着甩上去的一笔。
+          // 真和弦（父恩广大 m13 朝下的干 B3/G2，G2 下面干只伸 1.4 格）、两声部共干（我灵镇静 m12，两个头分在干两侧）那里是白的
+          const right = r!.head.x + r!.head.w / 2 > r!.stemX;
+          const xa = Math.round(right ? r!.stemX + unit.lineThick + 1 : r!.stemX - unit.space * 1.4);
+          const xb = Math.round(right ? r!.stemX + unit.space * 1.4 : r!.stemX - unit.lineThick - 1);
+          const ya = Math.round(Math.min(k.box.y + k.box.h, r!.head.y + r!.head.h));
+          const yb = Math.round(Math.max(k.box.y, r!.head.y));
+          let rows = 0, inked = 0;
+          for (let y = ya; y < yb; y++) {
+            rows++;
+            for (let x = Math.max(0, xa); x <= Math.min(nl.w - 1, xb); x++) if (nl.data[y * nl.w + x]) { inked++; break; }
+          }
+          return rows > 0 && inked >= rows * FLAG_STROKE_ROWS;
+        });
+        if (flagRoot) continue;
       }
       if (metSym) syms.splice(syms.indexOf(metSym), 1);
       stemHeads.push({ box: r.head, code: "noteheadBlack" });
@@ -4141,7 +4195,7 @@ export async function recognizeRasterPage(
         rx1 = Math.round(a.box.x) - 1;
       }
       const rx0 = Math.max(0, Math.round(rx1 + 1 - sp * ACC_PROBE_W));
-      const ry0 = Math.max(0, Math.round(hcy - sp * ACC_PROBE_H)), ry1 = Math.min(nl.h - 1, Math.round(hcy + sp * ACC_PROBE_H));
+      const ry0 = Math.max(0, Math.round(hcy - sp * ACC_PROBE_UP)), ry1 = Math.min(nl.h - 1, Math.round(hcy + sp * ACC_PROBE_H));
       if (rx1 - rx0 < 3) continue;
       const W = rx1 - rx0 + 1, H = ry1 - ry0 + 1;
       const fromNl = ((): { box: Rect; code: SmuflName } | null => {
