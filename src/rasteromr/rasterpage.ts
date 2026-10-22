@@ -238,7 +238,18 @@ function cleanTexture(bin: Binary, allowDescreen: boolean): number | null {
     return [Math.min(...xs.map((x) => lineYAt(g.lines[0], x))) - g.space * HALFTONE_BAND, Math.max(...xs.map((x) => lineYAt(g.lines[4], x))) + g.space * HALFTONE_BAND];
   });
   const inBand = (y: number) => bands.some(([a, b]) => y > a && y < b);
-  const halftone = halftoneRatio(bin, inBand);
+  // **压在谱线上的像素不算**：低分辨率细线扫描件（数算主恩、齐来谢主歌，线距 11~14px）的谱线断成一串点，
+  // 全算进来网点率虚抬到 0.263、刚过门槛，整页去网把汉字笔画磨掉（数算主恩歌词 94 → 9）。原先靠行投影在微弯页上
+  // 第一趟找不着谱行碰巧躲过；按游程第一趟就找得着，得把线上那几行剔掉。真网点页的符头、笔画里满是网点，不受影响
+  const tol = Math.max(1, Math.round(median(groups.map((g) => g.space)) * 0.12));
+  const onLine = new Uint8Array(bin.w * bin.h);
+  for (const g of groups)
+    for (const l of g.lines)
+      for (let x = Math.max(0, l.left); x <= Math.min(bin.w - 1, l.right); x++) {
+        const y0 = Math.round(lineYAt(l, x));
+        for (let y = Math.max(0, y0 - tol); y <= Math.min(bin.h - 1, y0 + tol); y++) onLine[y * bin.w + x] = 1;
+      }
+  const halftone = halftoneRatio(bin, inBand, (x, y) => onLine[y * bin.w + x] === 1);
   if (halftone > HALFTONE_RATIO && allowDescreen) descreenMorph(bin, inBand);
   // 网纹填充（符头、谱号里是细交叉网纹）不走去网，只补针孔（`fillPinholes`）
   else if (pinholeRatio(bin, inBand) > PINHOLE_RATIO) fillPinholes(bin);

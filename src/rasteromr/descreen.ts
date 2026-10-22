@@ -18,8 +18,10 @@ import { quantile } from "../omrkit/geom";
  * **只量谱表带之内**（`rows` 给出要量的行）。整页量会被空白页毁掉：
  * 实测封面那种几乎没墨的页面，几十个尘点个个孤立，量出来是 1.000；
  * 而谱表带里有谱线、符干这些必然成片的墨，空页与真网点页就分得开了。
+ * `onLine` 给出压在谱线上的像素：那里的孤立点不计（细线扫描件的谱线断成一串点，会虚抬孤立点，见 `rasterpage.ts::cleanTexture`）；
+ * 分母照算全部墨点——连墨一起剔掉，满页网点水印的页（求主同住）孤立点占比反而被抬过门槛。
  */
-export function halftoneRatio(bin: Binary, rows?: (y: number) => boolean): number {
+export function halftoneRatio(bin: Binary, rows?: (y: number) => boolean, onLine?: (x: number, y: number) => boolean): number {
   const it = new Integral(bin);
   const { w, h, data } = bin;
   let ink = 0;
@@ -29,7 +31,7 @@ export function halftoneRatio(bin: Binary, rows?: (y: number) => boolean): numbe
     for (let x = 0; x < w; x++) {
       if (!data[y * w + x]) continue;
       ink++;
-      if (it.box(x, y, 3, 3) <= 3) lone++;
+      if (it.box(x, y, 3, 3) <= 3 && !onLine?.(x, y)) lone++;
     }
   }
   return ink ? lone / ink : 0;
@@ -98,12 +100,13 @@ export function fillPinholes(bin: Binary): void {
 export const PINHOLE_RATIO = 0.012;
 
 /**
- * **判半调网点的门槛**。谱表带内实测：心领那本（抖动印刷）0.359；
- * 合唱谱那批（干净位图 + 真扫描件）全书全页最大 0.157（你要等候 p3），
- * 其余多在 0.1 以下。两档之间是空的，取 0.25——离两边都有余量，
- * 且**合唱谱那批没有一页会触发**，旧基线按构造不动。
+ * **判半调网点的门槛**。压在谱线上的孤立点不计（`halftoneRatio` 的 `onLine`）之后谱表带内实测：
+ * 该去网的坚固保障 0.169；网点水印满页孤点、不该去网的求主同住 0.101；其余独唱谱 0.03 以下，
+ * 合唱谱各页最大 0.026、新编 0.009。取两者的几何中点 0.13。
+ * 原先线上的孤点也算、门槛 0.25：低分辨率细线扫描件的谱线断成一串点，数算主恩 0.263、更亲近恩主 0.254 被整页去网、
+ * 汉字笔画磨掉（歌词 94 → 9、96 → 49）；原先靠行投影在这两页第一趟找不着谱行碰巧躲过（那时心领那本抖动印刷量得 0.359）。
  */
-export const HALFTONE_RATIO = 0.25;
+export const HALFTONE_RATIO = 0.13;
 
 /** 量网点率时谱表上下各带出这么多个线距（歌词/和弦字母不进来，符干与弧线进得来）。 */
 export const HALFTONE_BAND = 2;
