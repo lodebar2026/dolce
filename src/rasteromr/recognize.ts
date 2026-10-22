@@ -1300,7 +1300,9 @@ export async function recognizeRasterPage(
       // 拆块的模板是本页实心头自举的，样本一多一少，这种块就在「两个骑线头」与「拆不出」之间翻（破碎 p3 m17 三处）
       if (c.bbox.w < unit.space * 1.3 && c.bbox.h >= unit.space * 2.2) {
         const vr = longestVRun(raster.bin, c.bbox);
-        if (!(vr >= c.bbox.h * 0.85 && vr >= unit.space * 2.5) && matchTemplate(binSig(nl, c.bbox), c.bbox.w / unit.space, c.bbox.h / unit.space, restTpl)?.smufl === "restQuarter") continue;
+        // 去线图与修补图任一张配得上就算：休止压线的几笔去线时会被啃掉（主我敬拜你 m4、m16 去线图上差到 100、修补图 89，拆成两个黑头）
+        const restLike = (img: Binary) => matchTemplate(binSig(img, c.bbox), c.bbox.w / unit.space, c.bbox.h / unit.space, restTpl)?.smufl === "restQuarter";
+        if (!(vr >= c.bbox.h * 0.85 && vr >= unit.space * 2.5) && (restLike(nl) || restLike(repaired))) continue;
       }
       let parts = splitHeadCluster(noBeam, c.bbox, c.area, masksNB.length ? masksNB : masks, unit, pitchGrid, onLineY);
       // **上下贴着的两个头**（三度和弦，一个头宽、两个头高、很实）：模板要头的上下是白的，

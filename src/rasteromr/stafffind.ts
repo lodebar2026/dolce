@@ -62,7 +62,8 @@ interface Track {
  *   符杠带偏，五条一起量才稳），量到的列之间线性插值，两头按整段的斜率（两两连线斜率的中位数）外推，再滑动中位数压掉单列的跳变。
  *   谱行左右端内起伏不过 `FLAT_SPREAD` 像素、整体偏移不过一像素的不挂曲线。
  * - 左右端：从轨迹两头沿曲线逐列往外验墨，五条线里 `EXTENT_LINES` 条以上有墨的列算谱线还在；断口容半格，
- *   端点要连着一格有墨才算（系统的花括号、乐器名的笔画擦到谱线那一带，不能一擦就把左缘拉过去）。
+ *   端点要连着一格有墨才算（系统的花括号、乐器名的笔画擦到谱线那一带，不能一擦就把左缘拉过去）；
+ *   虚线（各条线断口错开）每条线看左右四分之一格的小窗再走一遍，远出两格以上才用它。
  * - 单位：线距取各行谱线距的中位，线宽取五连各段黑的平均厚度的中位（取整）。
  *
  * 一行谱都凑不出返回 null（封面、歌词页、简谱页）。
@@ -136,21 +137,48 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
     const yAt = (k: number, x: number) => ys[k] + d[colOf(Math.max(0, x))];
     // 左右端：沿曲线往外验墨
     const r = Math.ceil(thick / 2) + 1;
-    const present = (x: number) => {
+    /** x 处五条线里有几条有墨；`half` > 0 时每条线看左右 `half` 列的小窗（虚线） */
+    const present = (half: number) => (x: number) => {
       let n = 0;
       for (let k = 0; k < 5; k++) {
         const yc = Math.round(yAt(k, x));
-        for (let y = Math.max(0, yc - r); y <= Math.min(bin.h - 1, yc + r); y++)
-          if (bin.data[y * bin.w + x]) {
-            n++;
-            break;
-          }
+        let hit = false;
+        for (let xx = Math.max(0, x - half); xx <= Math.min(bin.w - 1, x + half) && !hit; xx++)
+          for (let y = Math.max(0, yc - r); y <= Math.min(bin.h - 1, yc + r); y++)
+            if (bin.data[y * bin.w + xx]) {
+              hit = true;
+              break;
+            }
+        if (hit) n++;
       }
       return n >= EXTENT_LINES;
     };
+    const strict = present(0);
+    // **虚线**：扫描件的谱线断成一截一截、各条线的断口错开（新编 026 第四行），逐列看常常只有两三条线有墨，
+    // 左端一路退到谱号后面（268，别的行 190 上下），按左端开窗的系统线判据罩进了下一行的谱号、两个系统并成一个。
+    // 每条线看左右半格的小窗再走一遍（盖得住一格以内的断口），走完往里退过竖笔（系统线、方括号：开窗会把它的几列
+    // 也算成「五条线都在」）与竖笔、谱线起点之间的空列；比逐列走得远出两格以上才用它，实线的端点一像素不动。
+    // 走到竖笔就停试过：谱号的竖笔也挡（新编 f07 四行虚线谱，左端停在谱号右边，系统没分对）
+    const dashed = present(Math.max(1, Math.round(space * 0.5)));
+    const near = present(1);
+    /** 竖笔（系统线、方括号）：四个间的中点有三个以上有墨 */
+    const vertical = (x: number) => {
+      let n = 0;
+      for (let k = 0; k < 4; k++) {
+        const y = Math.round((yAt(k, x) + yAt(k + 1, x)) / 2);
+        if (y >= 0 && y < bin.h && bin.data[y * bin.w + x]) n++;
+      }
+      return n >= 3;
+    };
+    const walkEnd = (from: number, dir: -1 | 1) => {
+      const a = walk(from, dir, strict);
+      let b = walk(from, dir, dashed);
+      while ((b - a) * dir > 0 && (vertical(b) || !near(b))) b -= dir;
+      return (b - a) * dir > space * 2 ? b : a;
+    };
     const gapMax = Math.max(3, Math.round(space * 0.5));
     const runMin = Math.max(4, Math.round(space));
-    const walk = (from: number, dir: -1 | 1): number => {
+    const walk = (from: number, dir: -1 | 1, present: (x: number) => boolean): number => {
       let end = from;
       let gap = 0;
       let streak = 0;
@@ -165,8 +193,8 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
       }
       return end;
     };
-    const left = walk(st.x0, -1);
-    const right = walk(st.x1, 1);
+    const left = walkEnd(st.x0, -1);
+    const right = walkEnd(st.x1, 1);
     let lo = Infinity;
     let hi = -Infinity;
     for (let c = colOf(left); c <= colOf(right); c++) (lo = Math.min(lo, d[c])), (hi = Math.max(hi, d[c]));

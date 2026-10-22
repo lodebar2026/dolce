@@ -23,7 +23,7 @@
 import type { Binary } from "../omrkit/types";
 import { estimateUnit, findRasterStaves } from "./stafffind";
 import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, HALFTONE_BAND, HALFTONE_RATIO, PINHOLE_RATIO } from "./descreen";
-import { lineYAt } from "./staffline";
+import { lineYAt, type StaffGroup } from "./staffline";
 import { median } from "../omrkit/geom";
 import { sauvola as sauvolaInto, toGray } from "../omrkit/preprocess";
 import { largestPageImageAt } from "../omrkit/pdf";
@@ -201,6 +201,7 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
       const trial = { ...bin, data: new Uint8Array(bin.data) };
       mergeHorizontal(trial, lineSoft, Math.round(u.space * LINE_RUN), Math.max(2, Math.round(u.lineThick * 2)), Math.max(1, Math.round(u.lineThick)));
       if (staffCount(trial) > staffCount(bin)) bin.data.set(trial.data);
+      else mergeFaintStaves(bin, trial);
     }
   }
   // 头一次一行谱都找不到的页（父恩广大那张扫描件谱线微弯，行投影一行都不成），网纹那一步就没做（网纹符头 166 个音只认出 15 个）；
@@ -211,6 +212,48 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   if (halftone == null) halftone = cleanTexture(bin, false);
 
   return { bin, kind, halftone: halftone ?? 0, faint, gray, lyricGray, scale: img.pageWidth / bin.w, pageWidth: img.pageWidth, pageHeight: img.pageHeight, imageRect: imageRectOf(img.ctm, img.view, img.pageWidth, img.pageHeight) };
+}
+
+/** 补线之后一行谱沿曲线有墨的列的占比至少涨这么多，才把这一行的谱表带换成补过线的像素（见 `mergeFaintStaves`）。 */
+const FAINT_GAIN = 0.15;
+
+/**
+ * **只有个别谱行淡**（新编 026 第一行中间三条线大段没了、别的行好好的）：按游程找线时断续的线也凑得成行，
+ * 补线前后谱行数一样，上面「多出来了才留」那条留不住；可这一行的线是残的，去线、音高全跟着错（026 音符 99 → 31）。
+ * 逐行量补线前后沿曲线有墨的列占比（每两列量一次，五条线合算），涨过 `FAINT_GAIN` 的那几行只换它的谱表带（上下各让一格）。
+ * 原先行投影在这种页上第一趟就凑不成行，补完行数变多，整幅都换了，碰巧没事。
+ */
+function mergeFaintStaves(bin: Binary, trial: Binary): void {
+  const found = findRasterStaves(bin);
+  if (!found) return;
+  const tol = Math.max(1, Math.round(found.unit.lineThick / 2));
+  const cover = (img: Binary, g: StaffGroup) => {
+    let hit = 0;
+    let all = 0;
+    for (const l of g.lines)
+      for (let x = Math.max(0, l.left); x <= Math.min(img.w - 1, l.right); x += 2) {
+        const y0 = Math.round(lineYAt(l, x));
+        all++;
+        for (let y = y0 - tol; y <= y0 + tol; y++)
+          if (y >= 0 && y < img.h && img.data[y * img.w + x]) {
+            hit++;
+            break;
+          }
+      }
+    return all ? hit / all : 1;
+  };
+  for (const g of found.groups) {
+    const before = cover(bin, g);
+    const after = cover(trial, g);
+    if (after - before < FAINT_GAIN) continue;
+    const left = Math.max(0, Math.round(Math.min(...g.lines.map((l) => l.left)) - g.space));
+    const right = Math.min(bin.w - 1, Math.round(Math.max(...g.lines.map((l) => l.right)) + g.space));
+    for (let x = left; x <= right; x++) {
+      const y0 = Math.max(0, Math.round(lineYAt(g.lines[0], x) - g.space));
+      const y1 = Math.min(bin.h - 1, Math.round(lineYAt(g.lines[4], x) + g.space));
+      for (let y = y0; y <= y1; y++) bin.data[y * bin.w + x] = trial.data[y * bin.w + x];
+    }
+  }
 }
 
 /** 识别那一路数得出的谱行数（`stafffind.ts::findRasterStaves`）。 */
