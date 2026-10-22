@@ -99,26 +99,43 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     // ——够罩住整页最多的那几段歌词，又不至于把页脚的版权行收进来。
     // 弯、斜的谱行：块先按所在 x 处的谱线偏移拉回谱表中段的高度再切（斜 1.7 格的页上相邻两段词只隔 1.5 格，
     // 按原图的 y 断行会串行），出字格时再挪回原图（`unlift`）。页顶那条带随第一行谱走
-    const lift = st.lift;
+    // 两行谱之间的偏移按高度在上下两行的曲线间插值：页面上下弯得不一样（倚靠主永远膀臂第三行起伏 15px、下一行 5px），
+    // 全按上一行拉，夹在中间的三段词各多拉几像素，行间的谷填平了切不开（歌词 83 → 39）
     const next = !head && i + 1 < staves.length ? staves[i + 1] : null;
+    const curved = !!(st.lift || next?.lift);
+    const liftAt = (x: number, y: number) => {
+      const t = next ? Math.min(1, Math.max(0, (y - st.bottom) / Math.max(1, next.top - st.bottom))) : 0;
+      return (1 - t) * (st.lift?.(x) ?? 0) + t * (next?.lift?.(x) ?? 0);
+    };
     const level = (c: Component): Component => {
-      const d = lift ? Math.round(lift(c.cx)) : 0;
+      const d = curved ? Math.round(liftAt(c.cx, c.cy)) : 0;
       return d ? { ...c, cy: c.cy - d, bbox: { ...c.bbox, y: c.bbox.y - d } } : c;
     };
+    // 按谱线拉平之后**这条带里的字自己还斜多少**（`textSkew`，下面量）：纸面卷得不匀时歌词与谱线各歪各的
+    //（倚靠主永远膀臂第一行谱下的词往右下斜 11px、谱线却往右上翘，按谱线拉反倒斜到 15px，两段词交错切不开）
+    let skew = 0;
+    let skewX = 0;
+    const skewAt = (x: number) => skew * (x - skewX);
     const unlift = (r: Rect): Rect => {
-      const d = lift ? Math.round(lift(r.x + r.w / 2)) : 0;
+      const d = curved ? Math.round(liftAt(r.x + r.w / 2, r.y + r.h / 2) + skewAt(r.x + r.w / 2)) : 0;
       return d ? { ...r, y: r.y + d } : r;
     };
-    const limitAt = (x: number) => (head ? st.top - sp * 0.3 : next ? next.top + (next.lift?.(x) ?? 0) - (lift?.(x) ?? 0) : st.bottom + sp * TAIL_BAND);
+    /** 一行的偏移（裁条用）：按这一行（拉平后）的中线高度取插值，加上带里字的斜度 */
+    const rowLift = (cells: Rect[]) => {
+      const y = (Math.min(...cells.map((c) => c.y)) + Math.max(...cells.map((c) => c.y + c.h))) / 2;
+      return (x: number) => liftAt(x, y) + skewAt(x);
+    };
+    // 拉平后下一行谱的第一线就在它的名义线位上
+    const limit = head ? st.top - sp * 0.3 : next ? next.top : st.bottom + sp * TAIL_BAND;
     const from = head ? st.top - sp * HEAD_BAND : st.bottom + sp * 0.3;
     const origOf = new Map<number, Component>();
-    const band = blobs.map((c) => {
+    const band0 = blobs.map((c) => {
       const l = level(c);
       if (l !== c) origOf.set(c.id, c);
       return l;
     }).filter((c) => {
       const b = c.bbox;
-      if (b.y < from || rbottom(b) > limitAt(c.cx)) return false;
+      if (b.y < from || rbottom(b) > limit) return false;
       if (rright(b) < st.left - sp || b.x > st.right + sp) return false;
       const h = b.h / sp;
       // 偏旁可以很矮，整字的高度另在下面卡；扁而宽的横笔（「一」「上」的底横）也收
@@ -128,6 +145,19 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     // 减时线、符杠碎段），块高又会把字号拉到偏旁以下。切完行再按 y 落进哪一行就并进哪一行。
     const orig = (c: Component) => origOf.get(c.id) ?? c;
     const isFlat = (c: Component) => c.bbox.h / sp < CHAR_MIN * 0.4;
+    if (curved) {
+      const sol = band0.filter((c) => !isFlat(c));
+      skewX = sol.length ? sol.reduce((a, c) => a + c.cx, 0) / sol.length : 0;
+      skew = textSkew(sol, sp, skewX);
+        }
+    const band = skew
+      ? band0.map((c) => {
+          const d = Math.round(skewAt(c.cx));
+          if (!d) return c;
+          origOf.set(c.id, orig(c));
+          return { ...c, cy: c.cy - d, bbox: { ...c.bbox, y: c.bbox.y - d } };
+        })
+      : band0;
     const flat = band.filter(isFlat);
     const solid = band.filter((c) => !isFlat(c));
     if (solid.length < (keepLone && !head ? 1 : MIN_CELLS)) continue;
@@ -151,7 +181,7 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
             const y = Math.round(Math.max(from, r.y - sp * 0.6));
             return { ...r, y, h: rbottom(r) - y };
           });
-        if (cells.length && cells.length < MIN_CELLS) loneRaw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), lone: true, ...(lift ? { lift } : {}) });
+        if (cells.length && cells.length < MIN_CELLS) loneRaw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), lone: true, ...(curved ? { lift: rowLift(cells) } : {}) });
       }
     let rowsHere = split.rows.sort((a, b) => Math.min(...a.map((c) => c.bbox.y)) - Math.min(...b.map((c) => c.bbox.y)));
     // **末行谱下面的带要一行接一行**：第一行离谱表不过 `TAIL_FIRST` 个线距，往下每行与上一行的间隔不过上一行高。
@@ -228,7 +258,7 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
       }
       const cells = merged.filter((r) => r.h >= sp * CHAR_MIN * 0.5 || r.w >= sp * CHAR_MIN * 1.5);
       if (cells.length < MIN_CELLS) continue;
-      raw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), ...(lift ? { lift } : {}) });
+      raw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), ...(curved ? { lift: rowLift(cells) } : {}) });
     }
   }
 
@@ -308,6 +338,44 @@ function squareCells(cells: Rect[], charW: number): Rect[] {
     } else out.push({ ...c });
   }
   return out;
+}
+
+/** 带里字的剩余斜度（每横一像素的落差）在 ±`SKEW_MAX` 里按 `SKEW_STEP` 试；剖面平方和要比不斜时高出 `SKEW_GAIN` 倍以上才认。 */
+const SKEW_MAX = 0.03;
+const SKEW_STEP = 0.001;
+const SKEW_GAIN = 1.1;
+
+/**
+ * 一条带里字块的**剩余斜度**：投影法量倾斜——试一组斜率，每块按斜率扣回后把自己的宽度加到它盖住的每一行上，
+ * 取这条纵向覆盖剖面平方和最大（行与行之间的空当最干净）的那个。只动坐标，不动图。字太少（不到两行的量）不量。
+ * 只拿块心分箱试过：偏旁、标点、段号的中心上下乱跳，倚靠主永远膀臂第一行谱下斜 1.1% 的三段词各斜率得分拉不开（520 / 542 / 524）。
+ */
+function textSkew(blocks: Component[], sp: number, x0: number): number {
+  if (blocks.length < MIN_CELLS * 2) return 0;
+  const top = Math.min(...blocks.map((c) => c.bbox.y)) - sp * 2;
+  const H = Math.ceil(Math.max(...blocks.map((c) => rbottom(c.bbox))) - top + sp * 4);
+  const prof = new Float64Array(H);
+  const score = (k: number) => {
+    prof.fill(0);
+    for (const c of blocks) {
+      const y0 = Math.round(c.bbox.y - k * (c.cx - x0) - top);
+      for (let y = Math.max(0, y0); y < Math.min(H, y0 + c.bbox.h); y++) prof[y] += c.bbox.w;
+    }
+    let v = 0;
+    for (const p of prof) v += p * p;
+    return v;
+  };
+  const base = score(0);
+  let best = 0;
+  let bs = base;
+  for (let i = -Math.round(SKEW_MAX / SKEW_STEP); i <= Math.round(SKEW_MAX / SKEW_STEP); i++) {
+    const v = score(i * SKEW_STEP);
+    if (v > bs) {
+      bs = v;
+      best = i * SKEW_STEP;
+    }
+  }
+  return bs >= base * SKEW_GAIN ? best : 0;
 }
 
 /**
