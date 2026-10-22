@@ -13,7 +13,7 @@ import {
   sortByLeft,
   xSpace,
 } from "./model";
-import { accidentalAlter, flagLevel, isAccidental, isClef, isRest, restDuration, timeSigDigit } from "./glyphs";
+import { accidentalAlter, flagLevel, isAccidental, isClef, isRest, isTimeSig, restDuration, timeSigDigit } from "./glyphs";
 import { subPaths } from "./vecgeom";
 import { HOLLOW_IN } from "./page";
 
@@ -1015,10 +1015,20 @@ export function buildNotes(
     const tip = st.up ? st.seg.box.top : st.seg.box.bottom;
     return st.beams.some((b) => Math.abs(beamY(b, st.seg.cx) - tip) < sp * 0.6 && stems.some((o) => o !== st && o.up === st.up && o.beams.includes(b)));
   };
+  const timeBoxes = pg.symbols.filter((t) => isTimeSig(t.code)).map((t) => t.box);
   for (const s of pg.symbols) {
     if (!s.hasTag("Note") || !s.ownerStaff) continue;
     const stf = s.ownerStaff;
     const rest = isRest(s.code);
+    // 中心落在拍号盒里的不是音：拍号认出之后，后面几路补头还会在数字的笔画上补出头来
+    //（生之颂钢琴 m1 行首 2/2 的两个「2」，右手多出一个三音全音符和弦）
+    if (timeBoxes.some((b) => s.px > b.left && s.px < b.right && s.py > b.top && s.py < b.bottom)) continue;
+    // 行首谱号左缘以左的休止不是谱里的：速度记号「𝅗𝅥 = 72」的空心头落在谱号上方，按字形认成二分休止
+    //（主爱的大能 m1 多出一个全休止）
+    if (rest) {
+      const first = (ctx.get(stf)?.clefs ?? []).reduce<Sym | null>((a, c) => (!a || c.box.left < a.box.left ? c : a), null);
+      if (first && (s.box.left + s.box.right) / 2 < first.box.right) continue;
+    }
     const clef = clefFor(pg, ctx, stf, s.box.left);
     const mid = clef ? clefMiddleStep(clef.code) ?? 41 : 41;
 
@@ -1069,7 +1079,17 @@ export function buildNotes(
           // 按方块的**中线**判：全休止吊在第四线下（中线在谱表中线上方 0.75 格），二分休止坐在中线上（0.25 格），门槛取半格。
           // 原先按底边比半格：八段锦的全休止底边离中线正好半格，卡在线上读成二分；改按底边比四分之一格，
           // 位图路去了谱线的二分休止底边离中线也有零点几格，又读成全休止（新编 076 m18）
-          base = mid - (s.box.top + s.box.bottom) / 2 > space * 0.5 ? 1 : 1 / 2;
+          // 推广开就是**中心落在上下两条线之间的哪一半**：上半是吊着的全休止、下半是坐着的二分休止（谱表外照线距往外推）。
+          // 标准位置上与「离中线半格」同一个门槛；让位到别处的（两声部时上声部的休止抬高一两格）也判得对——
+          // 生之颂钢琴 m13 左手二分休止坐在第二线上，中心比中线高一格，按离中线读成全休止，这一小节多出两拍
+          const ys = [...stf.lineYs].sort((a, b) => a - b);
+          const cy = (s.box.top + s.box.bottom) / 2;
+          if (ys.length >= 2) {
+            const k = ys.filter((y) => y <= cy).length - 1;
+            const above = k >= 0 ? ys[k] : ys[0] - space;
+            const below = k < 0 ? ys[0] : k < ys.length - 1 ? ys[k + 1] : ys[ys.length - 1] + space;
+            base = (cy - above) / (below - above) < 0.5 ? 1 : 1 / 2;
+          } else base = mid - cy > space * 0.5 ? 1 : 1 / 2;
         }
       } else if (s.code === "noteheadWhole" || s.code === "noteheadDoubleWhole") {
         base = s.code === "noteheadDoubleWhole" ? 2 : 1;
@@ -1383,6 +1403,9 @@ function initChords(notes: StaffNote[], stems: StemInfo[], sp: number, vector = 
       // 朝向相反、两截各自挂着符杠的是两组的干碰巧首尾相接：一根干断成两截，只有远端那截够得着符杠
       //（八段锦新笛 m32 十六分 A4 干朝上、紧挨着下一组八分 B4 干朝下，B4 被并成 A4 的和弦音）
       if (vector && ca.stem.up !== cb.stem.up && ca.stem.beams.length && cb.stem.beams.length) continue;
+      // 矢量谱上朝向相反、两个声部撞二度的（朝上那个头比朝下那个高一级、错开画在干两侧，两干正好同 x）：
+      // 在这圣善夜钢琴 m54 右手上声部八分 C5 与下声部四分 B♭4/F4，并成一枚就成了四分和弦、八分丢了，整小节多半拍
+      if (vector && ca.stem.up !== cb.stem.up && !endToEnd(ca, cb)) continue;
       for (const n of cb.notes) {
         ca.notes.push(n);
         n.group = ca;
@@ -1797,6 +1820,22 @@ function assignVoicesInBar(inBar: StaffNote[], expect: number, borrowed = false)
       // 无干的全音符之类归属不明，有就不拆
       if (arr.length !== own.length + other.length + off.length) continue;
       for (const n of side === "up" ? other : [...own, ...off]) {
+        n.voice = 2;
+        if (n.group) n.group.voice = 2;
+      }
+      return;
+    }
+  }
+  // **两个声部共用一个休止**（君王将临 m26 女高女低：上「附点二分」、下「二分 + 四分」，第四拍一个四分休止写在谱表中间两声部共用）：
+  // 两边各加上休止正好一小节、且有上下干的头落在同一列（两个声部同时起音；二度相邻的两个头左右错开一个头宽）才拆，
+  // 休止归上声部；下声部提前收尾，MusicXML 里不算错
+  {
+    const rests = arr.filter((n) => n.rest && n.sym.code !== "restHBar");
+    const sp = arr[0].staff.stepDistance() * 2;
+    if (rests.length && up.length && down.length && arr.length === up.length + down.length + rests.length
+      && Math.abs(sumOf(up) + sumOf(rests) - expect) < 1e-6 && Math.abs(sumOf(down) + sumOf(rests) - expect) < 1e-6
+      && up.some((u) => down.some((d) => Math.abs(u.x - d.x) < sp * 2))) {
+      for (const n of down) {
         n.voice = 2;
         if (n.group) n.group.voice = 2;
       }

@@ -187,7 +187,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
    * 是符尾的尖——符尾弯下来的末端被切断，剩一个圆点贴着笔画的断口（善牧恩慈歌 m9、万福泉源歌 m18）。
    * 只贴着连音线、加线的真附点不算（晨曦破晓 m8、m9 的附点二分）。谱线那几行不算。
    */
-  const isolated = (d: Rect): boolean => {
+  const isolated = (d: Rect, own?: Rect): boolean => {
     const g = Math.max(2, Math.round(sp * DOT_ISOLATE));
     const R = Math.round(sp * 1.5);
     const x0 = Math.max(0, d.x - R), x1 = Math.min(bin.w, d.x + d.w + R);
@@ -204,7 +204,10 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
       while (c < bin.w - 1 && bin.data[y * bin.w + c + 1]) c++;
       return c - a + 1;
     };
-    const inDot = (x: number, y: number) => x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h;
+    // 本头那几列（连同贴在头右缘的干）在头上下半格以内的也不灌：点贴着头右缘一两像素时，从头灌到它自己朝上的干上
+    //（主差遣我 p1 m13 女声 G4 附点四分）。再往外的照灌：本音自己的符尾尖贴着干弯下来（善牧恩慈歌 m8）
+    const ownCol = (x: number, y: number) => !!own && x >= own.x - 1 && x <= own.x + own.w + 1 && y >= own.y - sp * 0.5 && y <= own.y + own.h + sp * 0.5;
+    const inDot = (x: number, y: number) => (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) || ownCol(x, y);
     for (let y = d.y - g; y < d.y + d.h + g; y++) {
       if (y < y0 || y >= y1 || onLine(y)) continue;
       for (let x = d.x - g; x < d.x + d.w + g; x++) {
@@ -370,7 +373,8 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
       return true;
     })) {
       if (out.some((o) => overlapFrac(o, d) > 0)) continue;
-      if (syms.some((s0) => overlapFrac(d, s0.box) > 0.3)) continue;
+      // 本头的盒不算：空心头盒偏宽、罩住紧贴着的点三四列（主差遣我 p2 m29 男声 G3 附点二分）
+      if (syms.some((s0) => s0.box !== b && overlapFrac(d, s0.box) > 0.3)) continue;
       // 反复记号的两点：同一列上下一格处还有一个点。
       // 但**和弦的附点**也是这样上下一格排着：另一个点若落在同列**另一个头**的附点窗口里，
       // 它就有自己的主人、不是反复记号（齐来称颂 m4/m17~m19、赞美三一真神 m5/m8 的附点二分和弦
@@ -391,7 +395,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
       const speckles = blobsIn(dcx - sp * DOT_CLEAR, dcy - sp * DOT_CLEAR, dcx + sp * DOT_CLEAR, dcy + sp * DOT_CLEAR)
         .filter((o) => overlapFrac(o, d) === 0 && offLine(o) && !syms.some((s0) => overlapFrac(o, s0.box) > 0));
       if (speckles.length) continue;
-      if (!isolated(d)) continue;
+      if (!isolated(d, b)) continue;
       out.push(d);
     }
   }

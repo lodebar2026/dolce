@@ -251,7 +251,34 @@ export function splitUnisons(notes: StaffNote[], stems: StemInfo[], beams: BeamS
     n.stemUp = true;
     // 原来那根干的端点不知归哪个声部，两个都不带（排版按缺省长度画）
     n.stemTip = undefined;
-    notes.splice(i + 1, 0, { ...n, stemUp: false, chordExtra: true, lyrics: undefined, chord: undefined });
+    // 空心头一侧的干接着符杠的：那个声部是杠上的八分（十六分），另一侧是二分（一婴孩为我们降生 钢琴 m27–m31：
+    // 上声部二分音符与下声部一串八分共用头，照抄成两个二分、小节多出一拍半；左手反过来，二分朝下、八分朝上）。
+    // 杠数按头缘往外 8 格内横过干那一列的杠数（朝上的干在右缘、朝下的在左缘）
+    const b = n.sym.box;
+    const tol = sp * 0.3;
+    // 只数离头最近那道杠起一格内叠着的几道（再远的是别的谱表的杠：一婴孩为我们降生 p4 m32 左手头上 8 格内够得着右手的杠）
+    const crossing = (x: number, below: boolean) => {
+      // 只认挂着别的音的干的杠：谱线的残段也会当成杠（耶和华是我的牧者 m2，女高女低同音共用 D4 二分，头上一截 6 像素厚的线段）
+      const ys = beams
+        .filter((q) => stems.some((st) => !st.notes.includes(n.sym) && st.beams.includes(q)))
+        .filter((q) => q.box.left <= x + tol && q.box.right >= x - tol && (below ? q.box.top > b.bottom && q.box.top < b.bottom + sp * 8 : q.box.bottom < b.top && q.box.bottom > b.top - sp * 8))
+        .map((q) => (below ? q.box.top - b.bottom : b.top - q.box.bottom));
+      const near = Math.min(...ys);
+      return ys.filter((d) => d <= near + sp).length;
+    };
+    const kUp = crossing(b.right, false);
+    const kDown = crossing(b.left, true);
+    const timed = (k: number) => {
+      const base = k ? 1 / 2 ** (k + 2) : 1 / 2;
+      return { beams: k, base, duration: base * (2 - 0.5 ** n.dots) };
+    };
+    const mixed = n.sym.code === "noteheadHalf" && (kUp > 0) !== (kDown > 0);
+    if (mixed) Object.assign(n, timed(kUp));
+    // 时值不同的不能并成和弦（并进去就按头一个音的时值算），单出一个音交给分声部
+    const twin: StaffNote = { ...n, ...(mixed ? timed(kDown) : {}), stemUp: false, chordExtra: !mixed, lyrics: undefined, chord: undefined };
+    // 自成一枚（不带干）：留着原音那枚的话，分声部按和弦取音、看不见它
+    if (mixed && n.group) twin.group = { ...n.group, notes: [twin], stem: null, offset: 0, dur: 0, timed: false, voice: 1 };
+    notes.splice(i + 1, 0, twin);
   }
 }
 

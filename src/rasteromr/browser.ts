@@ -231,8 +231,10 @@ export interface PendingPage {
  * 并排原图的底图：原样画出 PDF 各页（页眉的小图块、文字层、页边都在）。**不等识别**：开始识别、打开项目时就画，
  * 文档只开一次；外层 promise 在量完各页大小时给出，各页按页序一页页画，画好一页先给一页。
  * 画不出来的页给 null。图片输入不走这里，调用方直接画原图。
+ * `opts.dpi`：按这个分辨率画（每英寸 72 点）；缺省按谱图原分辨率、没有谱图的页按 `PAGE_VIEW_PLAIN_SCALE`。
+ * 两种都受 `PAGE_VIEW_MAX_PX` 封顶（WebKit 单张画布的上限），给太高的 dpi 会降下来。
  */
-export async function renderPdfPages(pdfBytes: Uint8Array): Promise<PendingPage[]> {
+export async function renderPdfPages(pdfBytes: Uint8Array, opts: { dpi?: number } = {}): Promise<PendingPage[]> {
   const { pdf, OPS } = await openRasterPdf(pdfBytes); // 图对象要带 `data`（同取图），不然认不出谱图
   const n = pdf.numPages as number;
   const sizes: { w: number; h: number }[] = [];
@@ -242,7 +244,7 @@ export async function renderPdfPages(pdfBytes: Uint8Array): Promise<PendingPage[
   }
   let prev: Promise<unknown> = Promise.resolve();
   const pages = sizes.map((sz, k) => {
-    const rendered = prev.then(() => renderOne(pdf, OPS, k + 1)).catch(() => null);
+    const rendered = prev.then(() => renderOne(pdf, OPS, k + 1, opts.dpi)).catch(() => null);
     prev = rendered;
     return { ...sz, rendered };
   });
@@ -251,15 +253,16 @@ export async function renderPdfPages(pdfBytes: Uint8Array): Promise<PendingPage[
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function renderOne(pdf: any, OPS: any, pn: number): Promise<RenderedPage | null> {
+async function renderOne(pdf: any, OPS: any, pn: number, dpi?: number): Promise<RenderedPage | null> {
   const page = await pdf.getPage(pn);
   try {
     const found = await largestPageImageAt(page, OPS, (o) => (o.data && o.width && o.height ? o.width * o.height : null));
     const [a, b, c, d] = found?.ctm ?? [0, 0, 0, 0];
     const ctm = found && !b && !c && a > 0 && d > 0 ? [...found.ctm] : null;
     const [x0, y0, x1, y1] = page.view as number[];
-    // 按谱图的原分辨率画（像素/点 = 图宽 / 图在页面上的宽），太大的降下来
-    const r = Math.min(ctm && found ? found.obj.width / a : PAGE_VIEW_PLAIN_SCALE, Math.sqrt(PAGE_VIEW_MAX_PX / ((x1 - x0) * (y1 - y0))));
+    // 给了 dpi 按它画；否则按谱图的原分辨率（像素/点 = 图宽 / 图在页面上的宽）。太大的降下来
+    const want = dpi && dpi > 0 ? dpi / 72 : ctm && found ? found.obj.width / a : PAGE_VIEW_PLAIN_SCALE;
+    const r = Math.min(want, Math.sqrt(PAGE_VIEW_MAX_PX / ((x1 - x0) * (y1 - y0))));
     const vp = page.getViewport({ scale: r });
     const cv = document.createElement("canvas");
     cv.width = Math.round(vp.width);

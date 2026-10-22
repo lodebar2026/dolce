@@ -626,8 +626,9 @@ export function midOfStaff(box: { y: number; h: number }, lines: { y: number }[]
 export const isBarRest = (code: string) => code === "restHalf" || code === "restWhole" || code === "restHBar";
 
 /**
- * 扁矩形休止分全、半：**全休止吊在第二线下，二分休止坐在中线上**。
- * 两者形状一样，只差位置（中心差半格），按中心在第二线与中线的哪一半判。
+ * 扁矩形休止分全、半：**全休止吊在线下，二分休止坐在线上**（标准位置是吊在第二线下、坐在中线上）。
+ * 两者形状一样，只差贴着哪条线，按中心落在上方那条线与下方那条线之间的哪一半判（谱表外照线距往外推）。
+ * 只认标准位置不够：两声部时上声部的休止抬高一两格（生之颂钢琴 m13 左手二分休止坐在第二线上，中心比中线高一格，读成整小节休止）。
  * 全休止仍记 `restHBar`（整小节休止，时值随拍号），二分休止记 `restHalf`
  * ——原先一律记成整小节休止，《是谁》首小节「二分休止 + 四分休止 + 两个八分」因此多出三拍。
  */
@@ -636,7 +637,11 @@ export function restKind(box: { y: number; h: number }, lines: { y: number }[], 
   const ys = [...lines].map((l) => l.y).sort((a, b) => a - b);
   for (let i = 0; i + 4 < ys.length; i += 5) {
     if (cy < ys[i] - unit.space || cy > ys[i + 4] + unit.space) continue;
-    return cy > (ys[i + 1] + ys[i + 2]) / 2 ? "restHalf" : "restHBar";
+    const five = ys.slice(i, i + 5);
+    const k = five.filter((y) => y <= cy).length - 1;
+    const above = k >= 0 ? five[k] : five[0] - unit.space;
+    const below = k < 0 ? five[0] : k < 4 ? five[k + 1] : five[4] + unit.space;
+    return (cy - above) / (below - above) >= 0.5 ? "restHalf" : "restHBar";
   }
   return "restHBar";
 }

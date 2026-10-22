@@ -170,6 +170,11 @@ const OPUS_TEXT: Record<number, SmuflName> = {
 /** Petrucci（同属 Sonata 一系，编码与 Opus 重合，musicpp 里没有单独表）。 */
 const PETRUCCI: Record<number, SmuflName> = OPUS;
 
+/** Sonata 本尊比 Finale 那几套多出来的：十六分上符尾是 'k'（在这圣善夜钢琴 m50 左手，表里只有 Maestro 的 'r'，符尾丢了读成四分）。 */
+const SONATA: Record<number, SmuflName> = {
+  0x6b: "flag16thUp", // 'k'
+};
+
 /** 这些字体名当作音乐符号字体处理。`EngraverTextT` 照 musicpp **不收**
  *  （那是刻谱文字字体：力度、速度术语，走文本那条路）。 */
 export type MusicFontFamily =
@@ -181,6 +186,7 @@ export type MusicFontFamily =
   | "OpusSpecialStd"
   | "OpusText"
   | "Petrucci"
+  | "Sonata"
   | "Anastasia";
 
 /** 字体名（已去子集前缀）→ 家族；不是音乐字体返回 null。 */
@@ -194,6 +200,9 @@ export function musicFamily(font: string): MusicFontFamily | null {
   if (font.startsWith("OpusChords")) return null; // 和弦后缀字体，走文本
   if (font.startsWith("Opus")) return "Opus";
   if (font.startsWith("Petrucci")) return "Petrucci";
+  // 同一套 Sonata 码位：Sonata 本尊、Finale 的 Engraver Font Set
+  if (font.startsWith("Sonata")) return "Sonata";
+  if (font.startsWith("EngraverFontSet")) return "Petrucci";
   if (font.startsWith("Anastasia")) return "Anastasia";
   return null;
 }
@@ -216,6 +225,8 @@ function tableOf(family: MusicFontFamily): Record<number, SmuflName>[] {
       return [OPUS_TEXT];
     case "Petrucci":
       return [PETRUCCI, COMMON];
+    case "Sonata":
+      return [SONATA, PETRUCCI, COMMON];
     case "Anastasia":
       // Sibelius 的手写体。musicpp 全仓没有它的表——本书 115 页用的是它，
       // 只能靠轮廓聚类 + 人工确认建（见 staffglyphs.ts / glyphmap.json）。

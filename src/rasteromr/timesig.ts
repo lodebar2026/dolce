@@ -81,3 +81,42 @@ export function timeDigit(text: string | undefined, role: TimeStrip["role"]): nu
   const n = Number(text);
   return (role === "num" ? TIME_NUMERATORS : TIME_DENOMINATORS).includes(n) ? n : null;
 }
+
+/**
+ * 条里墨迹的**封闭孔**个数：墨迹盒里不通到盒边的空白连通块（四连通）。分子「3」与「8」靠它分：
+ * 「8」上下两个圈是封闭的，「3」的空白全都通向左侧或顶边、一个封闭孔也没有。
+ * 低清图上 OCR 常把 3 读成 8（S018 那种带球形笔端的粗体铅字，左侧开口只剩一条缝）；
+ * 左右对称度分不开这种字形：球形笔端把左缘补满，逐行左右空白之差只剩 0.03（Bravura 渲染的 3、8 也只差 0.05）。
+ * 只数去线条：补线条把压线处补满，「3」左侧那条缝也会被封成孔。
+ */
+export function closedHoles(s: TimeStrip): number {
+  let x0 = s.w, x1 = -1, y0 = s.h, y1 = -1;
+  for (let y = 0; y < s.h; y++)
+    for (let x = 0; x < s.w; x++)
+      if (s.data[y * s.w + x]) (x0 = Math.min(x0, x)), (x1 = Math.max(x1, x)), (y0 = Math.min(y0, y)), (y1 = Math.max(y1, y));
+  if (x1 < 0) return 0;
+  const seen = new Uint8Array(s.w * s.h);
+  let holes = 0;
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const i = y * s.w + x;
+      if (s.data[i] || seen[i]) continue;
+      // 灌一块空白，碰到盒边就不算孔
+      let open = false;
+      const stack = [i];
+      seen[i] = 1;
+      while (stack.length) {
+        const j = stack.pop()!;
+        const jx = j % s.w;
+        const jy = (j - jx) / s.w;
+        if (jx === x0 || jx === x1 || jy === y0 || jy === y1) open = true;
+        for (const [nx, ny] of [[jx - 1, jy], [jx + 1, jy], [jx, jy - 1], [jx, jy + 1]]) {
+          if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
+          const k = ny * s.w + nx;
+          if (!s.data[k] && !seen[k]) (seen[k] = 1), stack.push(k);
+        }
+      }
+      if (!open) holes++;
+    }
+  return holes;
+}

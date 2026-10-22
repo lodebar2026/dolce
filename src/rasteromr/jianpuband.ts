@@ -54,9 +54,28 @@ export function findJianpuBands(
   vSegs: LineSeg[],
   staves: { left: number; right: number; top: number; bottom: number }[],
   unit: RasterUnit,
+  bin?: Binary,
 ): JianpuBand[] {
   const sp = unit.space;
   const out: JianpuBand[] = [];
+  /** 上端吊在一条长横线下（左右任一边伸出两格以上）：是房子括线的竖钩，不是简谱小节线。
+   *  房子的竖钩也与谱表小节线同 x（哈利路亚主复活 m9 一房、二房，渲图上整条带连同二分音的附点被抹掉） */
+  const hooked = (v: LineSeg): boolean => {
+    if (!bin) return false;
+    const x = Math.round((v.x0 + v.x1) / 2);
+    const top = Math.round(Math.min(v.y0, v.y1));
+    const reach = Math.round(unit.lineThick) + 2;
+    for (let y = Math.max(0, top - reach); y <= Math.min(bin.h - 1, top + reach); y++)
+      for (let x0 = x - 1; x0 <= x + 1; x0++) {
+        if (x0 < 0 || x0 >= bin.w || !bin.data[y * bin.w + x0]) continue;
+        let a = x0;
+        let b = x0;
+        while (a > 0 && bin.data[y * bin.w + a - 1]) a--;
+        while (b < bin.w - 1 && bin.data[y * bin.w + b + 1]) b++;
+        if (Math.max(x0 - a, b - x0) >= sp * 2) return true;
+      }
+    return false;
+  };
   staves.forEach((st, k) => {
     const h = st.bottom - st.top;
     const span = (v: LineSeg) => [Math.min(v.y0, v.y1), Math.max(v.y0, v.y1)] as const;
@@ -75,7 +94,7 @@ export function findJianpuBands(
       const len = (b - a) / sp;
       return len >= BAR_LEN[0] && len <= BAR_LEN[1] && b <= st.top - sp * BAR_CLEAR && b >= st.top - sp * BAR_REACH && cx(v) >= st.left - sp && cx(v) <= st.right + sp &&
         // 压着别的谱行的是那一行自己的小节线（你的信实广大谱行只隔 5 格，上一行的小节线落进窗口）
-        !staves.some((o) => o !== st && a < o.bottom && b > o.top);
+        !staves.some((o) => o !== st && a < o.bottom && b > o.top) && !hooked(v);
     });
     const matched0 = cands.filter((v) => staffBars.some((x) => Math.abs(cx(v) - x) <= sp * BAR_DX));
     // **对上的要在同一高度**：取与别人纵向重叠（过短者一半）最多的那一簇。

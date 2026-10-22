@@ -276,6 +276,8 @@ function narrowPart(mask: Uint8Array, w: number, c: Component, lw: number, unit:
 const TIP_TRIM = 1;
 /** 裁掉的那截与留下的之间至少空这么多格（见同处）。 */
 const TIP_GAP = 0.25;
+/** 断口宽、断口外那截不直的，裁得更长：远端那截至多这么多格（见 `cutFarTip`） */
+const TIP_TRIM_FAR = 2.5;
 
 /**
  * 竖段按**原图墨迹**收拢：闭运算会跨过空白把干接到别的笔画上——两端补出来的空白行裁掉
@@ -502,6 +504,42 @@ export function extendVSegs(bin: Binary, segs: LineSeg[], cap: number, staffBand
 }
 
 /** 从 `from` 到 `to`（含，任一方向）每行都有墨、墨段中心离 `x` 不过 1px 且不漂、宽不过线宽加 2：竖笔笔直往外延续。 */
+/**
+ * 竖段两端**隔着半格以上空白接上的、不笔直的一截**裁掉（离端 `TIP_TRIM_FAR` 格以内找断口）：闭运算跨过空白把小节线下端
+ * 接上了小节号「3」（望十架预览 p1 m2/m3，出界端落不到谱线、读成符干，两小节并成一个）。
+ * 断口外那截笔直的（小节线在两行之间的一段、扫描断开的长干）不裁。只给盖满一行谱的段用（见调用处）。
+ */
+function cutFarTip(bin: Binary, s: LineSeg, unit: RasterUnit): LineSeg {
+  const { w, data } = bin;
+  const x = Math.round((s.x0 + s.x1) / 2);
+  const half = Math.ceil(s.maxLw / 2);
+  const on = (y: number) => {
+    for (let xx = Math.max(0, x - half); xx <= Math.min(w - 1, x + half); xx++) if (data[y * w + xx]) return true;
+    return false;
+  };
+  const out = { ...s };
+  const top = Math.round(Math.min(s.y0, s.y1));
+  const bot = Math.round(Math.max(s.y0, s.y1));
+  const reach = Math.round(unit.space * TIP_TRIM_FAR);
+  const minGap = unit.space * 0.5;
+  for (const dir of [1, -1] as const) {
+    const end = dir > 0 ? bot : top;
+    // 远端那截：从端点往回连着墨的几行
+    let y = end;
+    while (Math.abs(y - end) < reach && on(y)) y -= dir;
+    const farEnd = y + dir;
+    if (Math.abs(farEnd - end) >= reach || farEnd === end + dir) continue;
+    let gap = 0;
+    while (Math.abs(y - end) < reach * 2 && !on(y)) (gap++, (y -= dir));
+    if (gap < minGap || Math.abs(y - end) >= reach * 2) continue;
+    if (straight(bin, x, end, farEnd, s.maxLw)) continue;
+    // y 是断口内侧第一行墨
+    if (dir > 0) (s.y1 >= s.y0 ? (out.y1 = y) : (out.y0 = y));
+    else (s.y0 <= s.y1 ? (out.y0 = y) : (out.y1 = y));
+  }
+  return out;
+}
+
 function straight(bin: Binary, x: number, from: number, to: number, lw: number): boolean {
   const { w, h, data } = bin;
   const cx = Math.round(x);
@@ -785,7 +823,10 @@ export function findPrimitives(
       return n;
     };
     const trimOk = (cut: number, a: number, b: number) => cut <= 0 || (cut <= unit.space * TIP_TRIM && blankRows(a, b) >= unit.space * TIP_GAP);
-    vSegs.push(ink && trimOk(ink.y0 - seg.y0, seg.y0, ink.y0) && trimOk(seg.y1 - ink.y1, ink.y1 + 1, seg.y1 + 1) ? ink : seg);
+    const kept = ink && trimOk(ink.y0 - seg.y0, seg.y0, ink.y0) && trimOk(seg.y1 - ink.y1, ink.y1 + 1, seg.y1 + 1) ? ink : seg;
+    // 只裁盖满一行谱的（小节线候选）：符干动了会改歌词条的取图
+    const spans = staffBands.some(([t, b]) => Math.min(kept.y0, kept.y1) <= t + unit.space * 0.5 && Math.max(kept.y0, kept.y1) >= b - unit.space * 0.5);
+    vSegs.push(spans ? cutFarTip(bin, kept, unit) : kept);
   }
   vSegs.push(...bandColumns(bin, vMask, staffBands, vSegs, thinV, staffLefts, unit));
 

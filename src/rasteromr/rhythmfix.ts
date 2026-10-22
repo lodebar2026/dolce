@@ -1,4 +1,5 @@
-import { checkBars, lastTimeSignature, type StaffContext, type StaffNote } from "../staffomr/notedata";
+import { checkBars, lastTimeSignature, type BeamShape, type StaffContext, type StaffNote, type StemInfo } from "../staffomr/notedata";
+import { applyTuplet } from "../staffomr/notations";
 import type { SPage, Staff } from "../staffomr/model";
 
 /**
@@ -86,6 +87,58 @@ export function fixDottedPairs(notes: StaffNote[], sp: number): void {
         b.duration = 1 / 16;
         b.beams = Math.max(b.beams, 2);
       }
+    }
+  }
+}
+
+/**
+ * **连音数字没认出、整小节超拍的，按拍数补认**。低清预览页上一杠六个十六分下面那个小「6」（三连音的「3」同理）
+ * 认不出来，六连音按普通十六分算，每组多出半拍（坚固保障钢琴前奏每小节多 2 拍）。
+ * 超拍的小节里，同一根杠盖住、恰好 3 列或 6 列、各列时值一样、名义上占一拍半、还没挂连音的组都是候选，一小节有两组以上才一起改成连音；
+ * 改完这一小节正好满拍才留，否则退回。数字认出的那几组（`findTuplets`）不动，不超拍的小节不碰。
+ */
+export function tupletsByBarSum(pg: SPage, ctx: Map<Staff, StaffContext>, stems: StemInfo[], notes: StaffNote[], carry: { beats: number; beatType: number } | undefined, sp: number): void {
+  if (!lastTimeSignature(pg, ctx, carry)) return;
+  const eps = 1e-6;
+  const bySym = new Map(notes.map((n) => [n.sym, n]));
+  const groups = new Map<BeamShape, Set<StaffNote>>();
+  for (const st of stems)
+    for (const b of st.beams)
+      for (const s of st.notes) {
+        const n = bySym.get(s);
+        if (n) (groups.get(b) ?? groups.set(b, new Set()).get(b)!).add(n);
+      }
+  // 一组的列（同 x 的几个头算一列）：恰好 3 或 6 列、时值一致才算候选
+  const cands: { ns: StaffNote[]; n: number }[] = [];
+  // 十六分两道杠：同一组音被几个杠形各收一次，按第一个音去重
+  const seen = new Set<StaffNote>();
+  for (const set of groups.values()) {
+    const ns = [...set].filter((n) => !n.rest && !n.grace).sort((a, b) => a.x - b.x);
+    if (!ns.length || seen.has(ns[0])) continue;
+    seen.add(ns[0]);
+    if (ns.some((n) => n.tuplet || n.staff !== ns[0].staff || n.duration !== ns[0].duration)) continue;
+    let cols = 1;
+    for (let i = 1; i < ns.length; i++) if (ns[i].x - ns[i - 1].x > sp * 0.5) cols++;
+    if (cols === 3 || cols === 6) cands.push({ ns, n: cols });
+  }
+  if (!cands.length) return;
+  for (const b of checkBars(pg, ctx, notes, carry)) {
+    if (b.full || b.sum <= b.expect + eps) continue;
+    const bar = b.staff.bars[b.index];
+    // 名义上占**一拍半**的组才像连音（六个十六分、三个八分在 x/4 拍里都是一拍的连音）：3/4 里一杠六个八分、6/8 里三个八分是正常写法
+    const mine = cands.filter((c) => c.ns[0].staff === b.staff && c.ns.every((n) => n.x >= bar.left && n.x < bar.right)
+      && Math.abs(c.n * c.ns[0].duration - b.beat * 1.5) < eps);
+    // 至少两组：连音段落成串出现（坚固保障每小节四组六连音）；只改一组就凑满多半是巧合——小节里另多读了一个八分，
+    // 恰好被一组三个八分抵掉（破碎扫描 5 处、是爱 1 处）
+    if (mine.length < 2) continue;
+    const saved = mine.flatMap((c) => c.ns.map((n) => ({ n, duration: n.duration })));
+    for (const c of mine) applyTuplet(c.ns, c.n);
+    const again = checkBars(pg, ctx, notes, carry).find((x) => x.staff === b.staff && x.index === b.index);
+    // 改完正好满拍才留。放宽到「还超也留」会把扫描件里本来就因别的错超拍的小节中、普通三个八分一杠的组收成三连音（是爱、破碎扫描）
+    if (again?.full) continue;
+    for (const { n, duration } of saved) {
+      n.duration = duration;
+      delete n.tuplet;
     }
   }
 }
