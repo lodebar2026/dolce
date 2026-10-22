@@ -874,6 +874,10 @@ const CAVITY_MIN = 0.5;
 const PAIR_SCORE = 0.25;
 const PAIR_CAVITY = 0.7;
 const PAIR_INK = 0.32;
+/** 内腔窄的手写页上三头内腔区放宽收头的模板分门槛（`hollowHeadsByPitch`）。 */
+const HAND_SCORE = 0.2;
+/** 一摞头里没找着干的那个（在摞的一端），墨柱往摞外伸出这么多格就跟着别的头算二分（`hollowHeadsByPitch`）。 */
+const STACK_STEM_REACH = 1.5;
 
 /** 一个音高位置：中心 y，以及它是不是线位（含加线位）。 */
 export interface PitchStep {
@@ -975,7 +979,9 @@ function pitchScorer(bin: Binary, nl: Binary, rawHoles: Rect[], allMasks: HeadMa
     let stem: LineSeg | true | null = stemOf(box, stems, unit);
     let ink: LineSeg | undefined;
     if (!stem) {
-      const col = inkColumn(nl, box, unit);
+      // 断口容到一条谱线厚：去线图上干被每条谱线切断（是爱线厚 4px，只容两行的话叠头和弦的干在第一条线处就断了，p4 m60 D5/F5 二分找不着干）。
+      // 别处（`hollowHeadsFromHoles`、补全音符那一路）不放：一放破碎扫描 p4 m55 男声行多认一个 C4、丢一个 G3
+      const col = inkColumn(nl, box, unit, false, Math.max(2, Math.round(unit.lineThick)));
       const cy = box.y + box.h / 2;
       const reach = col ? Math.max(cy - col[0], col[1] - cy) : 0;
       if (col && reach >= sp * INK_STEM[0] && reach <= sp * INK_STEM[1] && !ringEdgeSeg({ x0: col[2], y0: col[0], x1: col[2], y1: col[1], lw: 1, maxLw: 1 }, rawHoles, sp)) {
@@ -1098,7 +1104,11 @@ export function hollowHeadsByPitch(
       const b = best(st, cx0 - sp * 0.2, cx0 + sp * 0.2);
       if (!b) continue;
       const cav = cavity(b.x, st.y, cavScale < 1);
-      if (b.s >= PAIR_SCORE && cav >= PAIR_CAVITY && inkIn(b.x, st.y, hole.w + ring * 2) >= PAIR_INK) loose.push({ x: b.x, y: st.y, s: b.s });
+      // 三头内腔区（`tall`，只在内腔窄的手写页）内腔佐证按平常那一档、模板分放到 `HAND_SCORE`：手写斜缝内腔真头只有 0.6~0.66，
+      // 两头之间的位置 0.15~0.19（是爱 p4 m57 D5/F5/A5 二分），成对那一档的 0.7 一个都过不了；手写头倾角各不相同，
+      // 模板分低到 0.21~0.24（m58 F4/A4/C5 的 F4），两头之间的位置只有 0.08~0.14。
+      // 成对的区不放：新编 285、291 的低音十六分和弦被收成二分叠头（+27、+9），是爱 p4 m60 D5/F5 那对因此仍漏（阈值冲突）
+      if (b.s >= (tall ? HAND_SCORE : PAIR_SCORE) && cav >= (tall ? CAVITY_MIN : PAIR_CAVITY) && inkIn(b.x, st.y, hole.w + ring * 2) >= PAIR_INK) loose.push({ x: b.x, y: st.y, s: b.s });
       if (b.s < PITCH_SCORE || cav < CAVITY_MIN) continue;
       cands.push({ x: b.x, y: st.y, s: b.s });
     }
@@ -1131,8 +1141,20 @@ export function hollowHeadsByPitch(
     // 放宽收来的一对**要找得到干**：找不到干的会记成全音符，而那种叠头后面「空心头按模板再搜」
     // 那一路认得对（大地风光 m8 的 B3/D4 二分，抢过来就成了全音符）。
     if (relaxed && picked.some((b) => codeOf(b, picked)?.code !== "noteheadHalf")) continue;
-    for (const box of picked) {
-      let c = codeOf(box, picked);
+    // 一摞头共用一根干：有的够得着干、有的离干端不到 `INK_STEM` 下限（摞在干端那个头）的，一起算二分（是爱 p4 m58 C5，墨柱离头心 2.47 格）。
+    // 墨柱要从这个头**往摞外**伸出 `STACK_STEM_REACH` 格（干从摞的一端伸出去）：往摞里量会穿过别的头接上另一声部的干
+    //（爱是从神而来 p4 m44 低音 E3/G3 全音符摞在 C3 二分上，墨柱从 G3 往下穿过 E3 接上 C3 朝下的干）
+    const codes = picked.map((b) => codeOf(b, picked));
+    const half = codes.find((c) => c?.code === "noteheadHalf");
+    const onStem = (b: Rect): boolean => {
+      const cy = b.y + b.h / 2;
+      const top = picked.every((o) => o.y + o.h / 2 >= cy);
+      const bottom = picked.every((o) => o.y + o.h / 2 <= cy);
+      const col = inkColumn(nl, b, unit, false, Math.max(2, Math.round(unit.lineThick)));
+      return !!col && ((top && cy - col[0] >= sp * STACK_STEM_REACH) || (bottom && col[1] - cy >= sp * STACK_STEM_REACH));
+    };
+    for (const [k, box] of picked.entries()) {
+      let c = codes[k]?.code === "noteheadWhole" && half && onStem(box) ? half : codes[k];
       let wide = false;
       // 内腔窄的页（`cavScale` < 1）按内腔外扩的盒比真头窄：没干时按这一行墨的实宽再判全音符
       if (!c && cavScale < 1) {
@@ -1573,13 +1595,13 @@ export function hollowHeadsOnLedgers(
  * 竖段表之外、直接在图上量的符干：盒左右缘附近各列，从盒中心往上下沿墨走（断口 ≤2 像素），
  * 取纵向最长的一列，返回 `[上端, 下端, 列 x]`。
  */
-export function inkColumn(nl: Binary, b: Rect, unit: RasterUnit, sided = false): [number, number, number] | null {
+export function inkColumn(nl: Binary, b: Rect, unit: RasterUnit, sided = false, gapMax = 2): [number, number, number] | null {
   const tol = Math.round(Math.max(unit.lineThick * 2, unit.space * 0.25));
   const cy = Math.round(b.y + b.h / 2);
   const at = (x: number, y: number) => x >= 0 && y >= 0 && x < nl.w && y < nl.h && nl.data[y * nl.w + x] === 1;
   const walk = (x: number, dir: number): number => {
     let last = cy;
-    for (let y = cy, miss = 0; miss <= 2 && y >= 0 && y < nl.h; y += dir) {
+    for (let y = cy, miss = 0; miss <= gapMax && y >= 0 && y < nl.h; y += dir) {
       if (at(x, y)) {
         last = y;
         miss = 0;

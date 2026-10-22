@@ -58,6 +58,22 @@ const LEFTINK_FRAC = 0.9;
  */
 const VSEG_MIN_H = 1.4;
 
+/** 竖段在原图上有墨的行至少占这么多（见 `inkCover`）。 */
+const VSEG_INK = 0.6;
+
+/** 竖笔块的盒里，原图上有墨的行占几成（不按中心线取列：干上端连着斜的头边，中心线是斜的，逐行偏出干一两像素）。 */
+function inkCover(bin: Binary, b: Rect): number {
+  let n = 0;
+  for (let y = b.y; y < b.y + b.h; y++) {
+    for (let x = Math.max(0, b.x); x < Math.min(bin.w, b.x + b.w); x++)
+      if (bin.data[y * bin.w + x]) {
+        n++;
+        break;
+      }
+  }
+  return n / Math.max(1, b.h);
+}
+
 /** 一条符杠：拟合出来的中心线加包围盒。 */
 /** 谱表外不到这么多格宽的「杠」要两端都连着干才算（见 `findPrims` 里符杠那一段）。 */
 const LEDGER_BEAM_W = 2.5;
@@ -799,6 +815,10 @@ export function findPrimitives(
       continue;
     }
     const seg = centerLine(vMask, w, c, false);
+    // **原图上这一列大半是白的不是笔画**：竖向闭运算跨过了几处断口，几条加线左端毛边上的短横墨（横游程不过细线上限）
+    // 被接成一根「干」（是爱 p5 m69 F6 头左下三条加线的左端，33px 里有墨的只 14 行），挂上头就多出一个朝下的声部。
+    // 盖满谱表的（虚线小节线）不管
+    if (!spansStaff(seg) && inkCover(bin, c.bbox) < VSEG_INK) continue;
     // 谱行左缘那条（系统线）免检，其余要判孤立性——谱号的中央竖笔、升号的竖笔不是原语
     if (!atStaffLeft((seg.x0 + seg.x1) / 2) && !spansStaff(seg) && !isolated(bin, seg, true)) {
       // 只在原窗里有一根盖满谱表的整列（小节线）时按窄段重判：只因某一行偏宽、原本被别的邻墨判不孤立的块
@@ -950,6 +970,12 @@ export function findPrimitives(
     }
     beams.push({ ...line, box: c.bbox });
   }
+  steepBeams(vr, bLo, bHi, w, h, beams, unit, (x, y) => {
+    const tol = Math.max(2, unit.lineThick * 2);
+    // 干端常停在谱线上（去线时断开），杠端在线下半格内
+    const gap = Math.max(2, unit.space * 0.5);
+    return vSegs.some((v) => Math.abs((v.x0 + v.x1) / 2 - x) <= tol && Math.min(v.y0, v.y1) <= y + gap && Math.max(v.y0, v.y1) >= y - gap);
+  });
   // **网点灰的杠被纹理横着切成上下两条**（当我们回到天家 m12：一条杠读成高 3、高 4 两条），被当成两层，
   // 附点八分读成十六分。x 范围基本重合、上下间隙不过一个线宽、合起来不过一根杠厚（0.8 格）的并成一条
   // 独唱谱时值 92.21 → 92.31%（当我们回到天家 +3.2），合唱谱扫描档音符 +0.11、小节自检 +0.27。
@@ -978,6 +1004,69 @@ export function findPrimitives(
   // 杠上补出的干也能揭出头那一端的假杠，再剔一遍
   dropHeadEndBeams(beams, vSegs, unit);
   return { hSegs, vSegs, beams, shortStems };
+}
+
+/** 陡斜杠：沿这几种斜率量游程（横一格的落差，格/格）；比 `STEEP_SLOPES[0]` 平的杠横向游程够长，走上面那一路。 */
+const STEEP_SLOPES = [0.3, 0.4, 0.5, 0.65, 0.8];
+/** 陡斜杠沿斜向的游程横跨至少这么多格。 */
+const STEEP_RUN = 1.5;
+/** 陡斜杠中心线的斜率下限：再平的上面那一路收得到。 */
+const STEEP_MIN = 0.25;
+
+/**
+ * **陡斜的杠**（手写刻谱：是爱 p5 m69 钢琴右手八度双音，上下两组杠斜率 0.35~0.4、厚 0.4 格）：
+ * 横向游程只有一格上下，一半的行过不了「≥ 一格」那道闸，杠碎成几截，过不了宽度闸，
+ * 杠就被当成左边那根干的八分符尾，右边那个音没了杠读成四分；碎成上下两截的还被当成两层，八分读成十六分。
+ *
+ * 杠厚的像素（`vr` 在杠厚范围里）沿 `STEEP_SLOPES` 几种斜率逐条斜线量游程，横跨 `STEEP_RUN` 格以上的收进掩模，
+ * 连通块要宽 1.5 格以上、中心线够陡（`STEEP_MIN`）、平均厚像杠，且**两端都搭着干**——弧线、歌词笔画也会斜着长，
+ * 两头都落在干上的只有杠。收下的杠把压在它上面的碎截（横向那一路收的）换掉。
+ */
+function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: number, beams: BeamQuad[], unit: RasterUnit, stemAt: (x: number, y: number) => boolean): void {
+  const sp = unit.space;
+  const cand = new Uint8Array(w * h);
+  for (let i = 0; i < cand.length; i++) if (vr[i] >= bLo && vr[i] <= bHi) cand[i] = 1;
+  const mask = new Uint8Array(w * h);
+  const minRun = sp * STEEP_RUN;
+  const xs = new Int32Array(w);
+  const ys = new Int32Array(w);
+  for (const s of STEEP_SLOPES)
+    for (const sign of [1, -1]) {
+      const k = s * sign;
+      const reach = Math.ceil(s * w);
+      for (let r0 = sign > 0 ? -reach : 0; r0 < (sign > 0 ? h : h + reach); r0++) {
+        let n = 0;
+        for (let x = 0; x <= w; x++) {
+          const y = x < w ? r0 + Math.round(k * x) : -1;
+          if (x < w && y >= 0 && y < h && cand[y * w + x]) {
+            xs[n] = x;
+            ys[n] = y;
+            n++;
+            continue;
+          }
+          if (n && xs[n - 1] - xs[0] + 1 >= minRun) for (let i = 0; i < n; i++) mask[ys[i] * w + xs[i]] = 1;
+          n = 0;
+        }
+      }
+    }
+  for (const c of comps(mask, w, h, Math.round(sp * sp * 0.2))) {
+    const b = c.bbox;
+    if (b.w < sp * 1.5 || b.h > sp * 3) continue;
+    const line = centerLine(mask, w, c, true);
+    const slope = (line.y1 - line.y0) / Math.max(1, line.x1 - line.x0);
+    if (Math.abs(slope) < STEEP_MIN) continue;
+    const thick = (c.area / b.w) / Math.sqrt(1 + slope * slope);
+    if (thick < bLo * 0.8 || thick > sp * 0.8) continue;
+    if (!stemAt(line.x0, line.y0) || !stemAt(line.x1, line.y1)) continue;
+    // 横向那一路收下的、中心落在这条杠上的（整条或碎截）都换成这一条：碎成上下两截的不然算两层
+    const yAt = (x: number) => line.y0 + slope * (x - line.x0);
+    const on = (q: BeamQuad) => {
+      const cx = q.box.x + q.box.w / 2;
+      return cx >= b.x && cx <= b.x + b.w && Math.abs(q.box.y + q.box.h / 2 - yAt(cx)) < sp * 0.35;
+    };
+    for (let i = beams.length - 1; i >= 0; i--) if (on(beams[i])) beams.splice(i, 1);
+    beams.push({ ...line, box: b });
+  }
 }
 
 /**

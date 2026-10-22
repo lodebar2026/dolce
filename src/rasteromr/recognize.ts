@@ -51,12 +51,12 @@ import { type LineFrame, makePitchSteps, ledgerCandidates, makePitchGrid, shared
 import { bridgeFaintBars, pastSysLine, joinThroughBars, inkSystemBarlines, bridgeFaintSysLines, dropLoneBarlines, voteSystemBarlines } from "./barvote";
 import { nearRestLine, restKind, nearStaffStart, fillAround, isEighthRest, symbolInk, isStackedPair, isBarRest, enclosedWhite, crossRuns, midOfStaff, offStaffRest, sharpCrossbars, crossbarAccidental, crossbarAccidentalBox, flatAccidentalBox, tallStrokes, longestVRun, splitAt, sharpShape, wholesByShape, openCavities, STAFF_START } from "./restshape";
 import { sharpsByStrokes, dropCourtesyKeys, demoteMidKeys, extendKeyChains, dropHeadsInKey, pruneMidKeys, fixKeyNaturals, keySections, extendKeyByStrokes, shareSystemKeys, shareKeySignature, carrySystemKeys, extendKeyByCarry, findMidKeysByTemplate, shareMidKeys, dropBarsInKey, keyFromChords, fixFlatReadAsSix, attachAccidentalsByPitch, naturalsByStrokes, KEY_GAP, KEY_GAP_FIRST, LOOSE_ACC_GAP } from "./keysig";
-import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseStems, splitUnisons, markCrossStaff } from "./stems";
+import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseStems, splitUnisons, doubleUnisonWholes, markCrossStaff } from "./stems";
 import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "./clefmeter";
 import { findDots } from "./dots";
 import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "./flags";
 import { fixByCrossStaff, type DotProbe, type HeadSearch } from "./crossalign";
-import { fixDottedPairs, fixQuartersByBarSum, tupletsByBarSum } from "./rhythmfix";
+import { dropBorrowedBeams, fixDottedPairs, fixQuartersByBarSum, tupletsByBarSum } from "./rhythmfix";
 import { finishRasterPage } from "./pagefinish";
 
 export interface RasterPageResult {
@@ -3882,7 +3882,8 @@ export async function recognizeRasterPage(
         return side;
       });
       if (has && own) continue;
-      const col = inkColumn(nl, b, unit, has);
+      // 墨柱断口容到一条谱线厚：去线图上干被每条谱线切断，粗线页（是爱线厚 4px）只容两行就在第一条线处断了（是爱 −8、破碎扫描 −13）
+      const col = inkColumn(nl, b, unit, has, Math.max(2, Math.round(unit.lineThick)));
       if (!col) continue;
       const reach = Math.max(cy - col[0], col[1] - cy);
       if (reach < sp * INK_STEM_REACH[0] || reach > sp * INK_STEM_REACH[1]) continue;
@@ -4917,9 +4918,11 @@ export async function recognizeRasterPage(
   attachAccidentalsByPitch(pg, ctx, notes);
   naturalsByStrokes(pg, ctx, notes, raster.bin, unit.space);
   splitUnisons(notes, stems, beams, raster.bin, unit.space);
+  doubleUnisonWholes(pg, notes);
   markCrossStaff(pg, notes, stems, unit.space);
   fixDottedPairs(notes, unit.space);
   fixQuartersByBarSum(pg, ctx, notes, carry.carryTime, unit.space);
+  dropBorrowedBeams(pg, ctx, notes, stems, carry.carryTime, unit.space);
   findTuplets(pg, beams, stems, notes);
   tupletsByBarSum(pg, ctx, stems, notes, carry.carryTime, unit.space);
   // 补漏音的探针：同系统别的行在这一拍有音、本行这里空着时，回原图在那个 x 上拿本页自举的模板找头（见 `crossalign.ts`）。

@@ -22,6 +22,11 @@ const UNISON_REST_SPAN = 1.3;
 /** 另一根干够不上 `UNISON_REACH` 时，贴着头缘、反方向（放到头外）也没墨的，这么多格就算（我灵镇静 m26 F4，歌词挤得干只伸出头外 1.1 格）。 */
 const UNISON_SHORT = 1.0;
 
+/** 干中段贴着的头：头盒缘离干（盒外）不过这么多格就收到干上（`snapHeadsToStems`）。 */
+const MID_STEM_GAP = 0.4;
+/** 干中段贴着的头与干端那个头至少隔这么多格（八度 3.5 格）。 */
+const MID_STEM_MATE = 2.5;
+
 /**
  * **`findStems` 漏挂的符干**（位图路补，不动 `staffomr`）。那边两道判据在细线扫描件上太紧：
  *   - 符头边缘离竖段中线要不到**两倍谱线粗**：齐来称颂谱线一两个像素，窗口两像素半，
@@ -298,6 +303,38 @@ export function splitUnisons(notes: StaffNote[], stems: StemInfo[], beams: BeamS
   }
 }
 
+/**
+ * **同音两声部的全音符**：全音符没有干，`splitUnisons` 认不出它是两个声部共用的头。闭合谱上女高女低一路同度
+ *（每个头都挂一上一下两根干、拆成了两个音），到句尾一个全音符照样是两个声部各一个（是爱 p3 m37–38、p5 m67–68 女声 F4）。
+ * 只有全音符（不挂干、不带休止）的小节，同一行谱左边最近的那个别的小节里每个头都拆成了两个音，就照样拆；
+ * 在行首（左边没有别的小节）的看右边。左边是两声部分开写的、右边才合成同度的不拆（是爱 p5 m65 女声 F4 全音符，GT 只记一个）。
+ */
+export function doubleUnisonWholes(pg: SPage, notes: StaffNote[]): void {
+  for (const stf of pg.staves) {
+    const kinds = stf.bars.map((bar) => {
+      const inBar = notes.filter((n) => n.staff === stf && !n.crossStaff && !n.crossTo && n.x >= bar.left && n.x < bar.right);
+      if (!inBar.length) return "empty";
+      if (inBar.every((n) => !n.rest && n.sym.code === "noteheadWhole" && n.stemUp === null) && new Set(inBar.map((n) => n.sym)).size === inBar.length) return "whole";
+      const heads = inBar.filter((n) => !n.rest);
+      const per = new Map<Sym, number>();
+      for (const n of heads) per.set(n.sym, (per.get(n.sym) ?? 0) + 1);
+      return heads.length >= 2 && [...per.values()].every((k) => k === 2) ? "unison" : "other";
+    });
+    const near = (i: number, dir: number): string | undefined => {
+      for (let j = i + dir; j >= 0 && j < kinds.length; j += dir) if (kinds[j] !== "whole" && kinds[j] !== "empty") return kinds[j];
+      return undefined;
+    };
+    stf.bars.forEach((bar, i) => {
+      if (kinds[i] !== "whole" || (near(i, -1) ?? near(i, 1)) !== "unison") return;
+      for (let k = notes.length - 1; k >= 0; k--) {
+        const n = notes[k];
+        if (n.staff !== stf || n.x < bar.left || n.x >= bar.right) continue;
+        notes.splice(k + 1, 0, { ...n, chordExtra: true, lyrics: undefined, chord: undefined });
+      }
+    });
+  }
+}
+
 export function vRunAt(bin: Binary, x: number, y: number): [number, number] | null {
   const ink = (xx: number, yy: number) => yy >= 0 && yy < bin.h && xx >= 0 && xx < bin.w && !!bin.data[yy * bin.w + xx];
   const at = (yy: number) => ink(x, yy) || ink(x - 1, yy) || ink(x + 1, yy);
@@ -421,6 +458,34 @@ export function snapHeadsToStems(syms: RasterSym[], segs: LineSeg[], unit: Raste
       if (vx > b.x && vx < b.x + sp * 0.35) {
         const nx = Math.round(vx);
         s0.box = { ...b, x: nx, w: b.x + b.w - nx };
+        break;
+      }
+    }
+  }
+  // **干中段贴着的头**（八度双音：是爱 p3 m43、m45 钢琴右手 F5/F4、E5/E4，干朝下从上头左缘起笔、穿过下头左缘再往下 2.5 格）：
+  // 拆块时干那几列归了干，下头的盒从干右边 0.3 格才起，`buildStems` 的四分之一格窗口挂不上，读成另一声部的四分。
+  // 干两端都伸出头外一格以上（叠头和弦里挨着的头另有归法，收了反把盒挤坏：是爱 p1 m1 F5/A5/C6）、干端挂着同一列的另一个头、头盒缘离干不过 `MID_STEM_GAP` 格（干在盒外）的，盒缘收到干上
+  for (const s0 of syms) {
+    if (s0.code !== "noteheadHalf" && s0.code !== "noteheadBlack") continue;
+    const b = s0.box;
+    for (const v of segs) {
+      const vx = (v.x0 + v.x1) / 2;
+      const top = Math.min(v.y0, v.y1);
+      const bot = Math.max(v.y0, v.y1);
+      if (bot - top < sp * 2 || top > b.y - sp || bot < b.y + b.h + sp) continue;
+      // 干的起笔端挂着另一个头、与这个头上下对齐（同一列的八度）：十六分串里贴着邻音的干路过的头不收（破碎干净版 p4 m34 G4 等十几处，收进去成了邻音的和弦音）
+      // 两头隔开 `MID_STEM_MATE` 格以上（八度那样中间空着一段干）：密排和弦里挨着的头另有归法，收了盒一挪反把和弦拆乱（望十架 p10 m74 B3/D4、p9 m65）
+      const mate = syms.some((o) => o !== s0 && /^notehead/.test(o.code) && Math.abs(o.box.x - b.x) <= sp * 0.5 &&
+        Math.abs(o.box.y - b.y) >= sp * MID_STEM_MATE &&
+        (Math.abs(o.box.y + o.box.h / 2 - top) <= sp || Math.abs(o.box.y + o.box.h / 2 - bot) <= sp));
+      if (!mate) continue;
+      if (vx < b.x && b.x - vx <= sp * MID_STEM_GAP) {
+        const nx = Math.round(vx);
+        s0.box = { ...b, x: nx, w: b.x + b.w - nx };
+        break;
+      }
+      if (vx > b.x + b.w && vx - (b.x + b.w) <= sp * MID_STEM_GAP) {
+        s0.box = { ...b, w: Math.round(vx) - b.x };
         break;
       }
     }

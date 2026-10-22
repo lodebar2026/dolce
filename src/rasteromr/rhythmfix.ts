@@ -64,6 +64,54 @@ export function fixQuartersByBarSum(pg: SPage, ctx: Map<Staff, StaffContext>, no
 }
 
 /**
+ * **干尖碰上另一行谱的杠**：钢琴右手四分和弦的干朝下伸得长，尖正落在左手那组八分的杠上（是爱 p3 m31、m33，
+ * 手写刻谱），右手读成八分，小节少两拍。干上的杠全是**只连着别的谱行的干**的、这一小节又不满的，
+ * 把这些音退回四分，正好凑满才改（真的跨谱表连杠两边都是自己这一路的拍子，退了凑不满）。
+ */
+export function dropBorrowedBeams(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], stems: StemInfo[], carry: { beats: number; beatType: number } | undefined, sp: number): void {
+  if (!lastTimeSignature(pg, ctx, carry)) return;
+  const eps = 1e-6;
+  const stemOf = new Map<StaffNote["sym"], StemInfo>();
+  for (const st of stems) for (const s of st.notes) if (!stemOf.has(s)) stemOf.set(s, st);
+  const borrowed = (n: StaffNote): boolean => {
+    const st = stemOf.get(n.sym);
+    if (!st || st.flags || !st.beams.length || n.beams !== 1) return false;
+    return st.beams.every((b) => {
+      const others = stems.filter((o) => o !== st && o.beams.includes(b));
+      return others.length > 0 && others.every((o) => o.up !== st.up && o.notes.every((s) => s.ownerStaff && s.ownerStaff !== n.staff));
+    });
+  };
+  for (const b of checkBars(pg, ctx, notes, carry)) {
+    if (b.full) continue;
+    const bar = b.staff.bars[b.index];
+    const inBar = notes.filter((n) => n.staff === b.staff && n.x >= bar.left && n.x < bar.right && !n.grace).sort((p, q) => p.x - q.x);
+    const dirs = [...new Set(inBar.filter((n) => !n.rest).map((n) => n.stemUp))];
+    // 整小节当一个声部先试：和弦干朝上朝下交替的一路（是爱 p3 m31）按朝向拆开哪边都凑不满
+    for (const d of dirs.length > 1 ? [undefined, ...dirs] : [undefined]) {
+      const mine = inBar.filter((n) => n.rest || d === undefined || n.stemUp === d);
+      const cols: { x: number; dur: number; ns: StaffNote[] }[] = [];
+      for (const n of mine) {
+        const c = cols[cols.length - 1];
+        if (c && n.x - c.x <= sp * 0.6) (c.dur = Math.min(c.dur, n.duration)), c.ns.push(n);
+        else cols.push({ x: n.x, dur: n.duration, ns: [n] });
+      }
+      const fix = cols.filter((c) => c.ns.every((n) => !n.rest && !n.dots && n.base === 1 / 8) && c.ns.some(borrowed));
+        if (!fix.length) continue;
+      const sum = cols.reduce((a, c) => a + c.dur, 0) + fix.length / 8;
+      if (Math.abs(sum - b.expect) > eps) continue;
+      for (const c of fix)
+        for (const n of c.ns) {
+          n.base = 1 / 4;
+          n.duration = 1 / 4;
+          n.beams = 0;
+          n.beam = undefined;
+        }
+      break;
+    }
+  }
+}
+
+/**
  * **附点八分后面跟的那个八分，其实是十六分**。「附点八分 + 十六分」凑一拍是最常见的附点节奏，
  * 低分辨率底本上十六分的两条符尾糊成一条，读成八分（新编赞美诗 373 仰望天家歌整首都是这个节奏，
  * 每个小节多出八分之一拍，后面的音拍位全错开）。「附点八分 + 八分」在这类谱里几乎不出现，
