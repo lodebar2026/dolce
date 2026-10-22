@@ -10,7 +10,7 @@
 //   - 文本层：矢量路读文字对象；位图路要 OCR（尚未接，故歌词/力度/速度暂缺）。
 import type { Binary } from "../omrkit/types";
 import { closedHoles, timeDigit, timeKey, timeStripOf, type TimeStrip } from "./timesig";
-import type { Rect } from "../omrkit/types";
+import type { Component, Rect } from "../omrkit/types";
 import { inkTextSize, TEXT_INK_EM } from "./textsize";
 import { definePortable } from "./portablefn";
 import { findBarlines, findNoteheads, findStaves, findStems, findTails, makeBars, makeSystems, tagSystemBarlines } from "../staffomr/page";
@@ -3666,10 +3666,22 @@ export async function recognizeRasterPage(
   // 又过不了孤立性判据——两根都成了没人认领的块，小节线那一步看不见它们。
   // 《善牧恩慈歌》延长记号后、「阿们」之前那道双线就这样丢了，后面一小节并进了前一小节。
   // 判据：上下两端贴着五线的顶线与底线（各 0.4 格内）、宽不过一格、填充八成以上。
+  // **填充率不算两端各两个线厚**：竖条两端落在谱线上，去线后交点那几行常留一圈毛边，盒子被撑宽
+  //（新编 327 末行首根小节线 5px，底端四行 7px，整盒填充 0.72）。推平前这几行恰好被移位削掉，
+  // 不推平就得自己让开。
+  const solidFill = (c: Component): number => {
+    const b = c.bbox;
+    const cut = Math.round(unit.lineThick * 2);
+    let n = 0, lo = Infinity, hi = -Infinity;
+    for (let y = b.y + cut; y < b.y + b.h - cut; y++)
+      for (let x = b.x; x < b.x + b.w; x++)
+        if (blobLabels[y * nl.w + x] === c.id) n++, (lo = Math.min(lo, x)), (hi = Math.max(hi, x));
+    return n ? n / ((hi - lo + 1) * (b.h - cut * 2)) : 0;
+  };
   for (const c of blobs) {
     if (claimed.has(c.id) || dictClaimed.has(c.id) || merged.has(c.id)) continue;
     const b = c.bbox;
-    if (b.w > unit.space || c.area < b.w * b.h * 0.8) continue;
+    if (b.w > unit.space || solidFill(c) < 0.8) continue;
     const g = groups.find((g0) => Math.abs(b.y - yAt(g0, 0, b.x + b.w / 2)) <= unit.space * 0.4 && Math.abs(b.y + b.h - yAt(g0, 4, b.x + b.w / 2)) <= unit.space * 0.4);
     if (!g) continue;
     if (syms.some((s0) => overlapFrac(b, s0.box) > 0.3)) continue;
