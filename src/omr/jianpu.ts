@@ -450,7 +450,9 @@ function classify(comps: Component[], bin: Binary): { c: Classified; numH: numbe
     // 四声部本还有从首声部一直画到末声部、中间隔着四行歌词的系统通长线（343 第 1、2 系统，约 12 字号）：上限放到 14 字号，
     // 另加不过页高三成——挡扫描边框靠的是它贯穿整页
     // 这种线只进 longBarlines：进了 barlines，系统左边那道连线会被反复记号检测配上点、读成「|:」（三一来临歌）
-    const barMaxH = Math.min(numH * 14, bin.h * 0.3);
+    // 页高三成**不压到 6 字号以下**：五线谱上方切出来的单行简谱条连垫边才 170 像素高，三成 51 像素正卡在真小节线上，
+    // 一行小节线时有时无（敬拜万世之王，没线就按拍对不上五线谱、融合把八分改回四分）
+    const barMaxH = Math.max(numH * 6, Math.min(numH * 14, bin.h * 0.3));
     if (h >= numH * 0.85 && w <= Math.max(2, numH * 0.35)) {
       if (h > barMaxH) { probe("barline.tooTall"); }
       else if (h > numH * 6) { c.longBarlines.push(k); continue; }

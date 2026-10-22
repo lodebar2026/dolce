@@ -3356,13 +3356,19 @@ export async function recognizeRasterPage(
   // 不论来自字典还是位置自举。正是「长得像符头但不是」的那一批，
   // 也正是那把没见过负例的尺子分不开的东西。
   //（歌词字格是更靠后才切的，这里取不到。）
+  // **和弦条认领的字母块也是负例**：认领前它们多半被当成升降号、休止进了负例（Bb 的 b 当降号），
+  // 认领后负例平白少几个——《敬拜万世之王》只剩 28 个、不到 `MIN_NEG`，判别器不训，
+  // 后面按判别器补头的两路整段不跑，m4、m18 四个头没了。字母形状正是「长得像符头但不是」。
   const clfPos = [
     ...heads.filter((h) => !dropHead.has(h.comp.id) && h.code === "noteheadBlack").map((h) => h.box),
     ...split.filter((s0) => s0.code === "noteheadBlack").map((s0) => s0.box),
     ...stemHeads.map((s0) => s0.box),
     ...stacked.filter((s0) => s0.code === "noteheadBlack").map((s0) => s0.box),
   ];
-  const clfNeg: Rect[] = syms.filter((s0) => !/notehead/i.test(s0.code)).map((s0) => s0.box);
+  const clfNeg: Rect[] = [
+    ...syms.filter((s0) => !/notehead/i.test(s0.code)).map((s0) => s0.box),
+    ...blobs.filter((c) => harmonyIds.has(c.id) && c.bbox.w <= unit.space * 2.5 && c.bbox.h <= unit.space * 2.5).map((c) => c.bbox),
+  ];
   const clf = masks.length ? trainHeadClassifier(raster.bin, masks, unit, onLineY, clfPos, clfNeg) : null;
   const clfHeads: RasterSym[] = [];
   /** 已有符头压着的位置不再出（「头 + 干」那一路只记账、不标块，这一遍会在同一块里再拆一次）。
