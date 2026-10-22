@@ -29,6 +29,9 @@ export interface LyricRow {
   blocks: Component[];
   /** 不足 `MIN_CELLS` 块的**孤行**（一行只印一个音节：「人」「a」），由 `keepLone` 放行的才有 */
   lone?: boolean;
+  /** 谱行弯、斜时这一行在 x 处比中段高出（负）或低下（正）多少像素：随所挂谱行的谱线走（见 `LyricStaff.lift`），
+   *  裁条时逐列按它上下挪（`stripOf`）。平直的谱行没有。 */
+  lift?: (x: number) => number;
 }
 
 /** 谱行的纵向范围（切歌词带要用）。 */
@@ -37,6 +40,9 @@ export interface LyricStaff {
   bottom: number;
   left: number;
   right: number;
+  /** 弯、斜谱行在 x 处的谱线相对 `top` / `bottom`（谱表中段的线位）的偏移；平直的没有。
+   *  歌词随谱线一起歪（同一张纸一起斜、一起卷），切带、断行都在减掉这个偏移的坐标里做。 */
+  lift?: (x: number) => number;
 }
 
 /** 歌词字号相对线距的上下限。汉字歌词实测在一个到两个线距之间。 */
@@ -91,11 +97,28 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     const st = staves[Math.max(0, i)];
     // 带的下界：下一行谱的上缘；最后一行取 `TAIL_BAND` 个线距
     // ——够罩住整页最多的那几段歌词，又不至于把页脚的版权行收进来。
-    const limit = head ? st.top - sp * 0.3 : i + 1 < staves.length ? staves[i + 1].top : st.bottom + sp * TAIL_BAND;
+    // 弯、斜的谱行：块先按所在 x 处的谱线偏移拉回谱表中段的高度再切（斜 1.7 格的页上相邻两段词只隔 1.5 格，
+    // 按原图的 y 断行会串行），出字格时再挪回原图（`unlift`）。页顶那条带随第一行谱走
+    const lift = st.lift;
+    const next = !head && i + 1 < staves.length ? staves[i + 1] : null;
+    const level = (c: Component): Component => {
+      const d = lift ? Math.round(lift(c.cx)) : 0;
+      return d ? { ...c, cy: c.cy - d, bbox: { ...c.bbox, y: c.bbox.y - d } } : c;
+    };
+    const unlift = (r: Rect): Rect => {
+      const d = lift ? Math.round(lift(r.x + r.w / 2)) : 0;
+      return d ? { ...r, y: r.y + d } : r;
+    };
+    const limitAt = (x: number) => (head ? st.top - sp * 0.3 : next ? next.top + (next.lift?.(x) ?? 0) - (lift?.(x) ?? 0) : st.bottom + sp * TAIL_BAND);
     const from = head ? st.top - sp * HEAD_BAND : st.bottom + sp * 0.3;
-    const band = blobs.filter((c) => {
+    const origOf = new Map<number, Component>();
+    const band = blobs.map((c) => {
+      const l = level(c);
+      if (l !== c) origOf.set(c.id, c);
+      return l;
+    }).filter((c) => {
       const b = c.bbox;
-      if (b.y < from || rbottom(b) > limit) return false;
+      if (b.y < from || rbottom(b) > limitAt(c.cx)) return false;
       if (rright(b) < st.left - sp || b.x > st.right + sp) return false;
       const h = b.h / sp;
       // 偏旁可以很矮，整字的高度另在下面卡；扁而宽的横笔（「一」「上」的底横）也收
@@ -103,6 +126,7 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     });
     // 扁块**不参与切行与量字号**：它们的中心会把上下两行连成一行（简谱行与歌词行之间的
     // 减时线、符杠碎段），块高又会把字号拉到偏旁以下。切完行再按 y 落进哪一行就并进哪一行。
+    const orig = (c: Component) => origOf.get(c.id) ?? c;
     const isFlat = (c: Component) => c.bbox.h / sp < CHAR_MIN * 0.4;
     const flat = band.filter(isFlat);
     const solid = band.filter((c) => !isFlat(c));
@@ -127,7 +151,7 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
             const y = Math.round(Math.max(from, r.y - sp * 0.6));
             return { ...r, y, h: rbottom(r) - y };
           });
-        if (cells.length && cells.length < MIN_CELLS) loneRaw.push({ staffIndex: i, verse: 0, cells, charH, blocks: row, lone: true });
+        if (cells.length && cells.length < MIN_CELLS) loneRaw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), lone: true, ...(lift ? { lift } : {}) });
       }
     let rowsHere = split.rows.sort((a, b) => Math.min(...a.map((c) => c.bbox.y)) - Math.min(...b.map((c) => c.bbox.y)));
     // **末行谱下面的带要一行接一行**：第一行离谱表不过 `TAIL_FIRST` 个线距，往下每行与上一行的间隔不过上一行高。
@@ -204,7 +228,7 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
       }
       const cells = merged.filter((r) => r.h >= sp * CHAR_MIN * 0.5 || r.w >= sp * CHAR_MIN * 1.5);
       if (cells.length < MIN_CELLS) continue;
-      raw.push({ staffIndex: i, verse: 0, cells, charH, blocks: row });
+      raw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), ...(lift ? { lift } : {}) });
     }
   }
 
@@ -434,29 +458,38 @@ export interface LyricStrip {
   gray?: Uint8Array;
 }
 
-/** 从二值图里裁出一条歌词条。 */
+/** 从二值图里裁出一条歌词条。
+ *  挂在弯、斜谱行下的行（`row.lift`）**逐列按谱线偏移上下挪**着取：整行裁成水平矩形，斜 1.7 格的页上
+ *  条子要高出一倍、罩进上下两段词。只是整像素挪列，不插值，条里的笔画与原图逐像素相同。 */
 export function stripOf(bin: { w: number; h: number; data: Uint8Array }, row: LyricRow, pad = 2, grayPage?: Uint8Array): LyricStrip | null {
   const x0 = Math.max(0, Math.min(...row.cells.map((c) => c.x)) - pad);
   const x1 = Math.min(bin.w, Math.max(...row.cells.map((c) => c.x + c.w)) + pad);
-  const y0 = Math.max(0, Math.min(...row.cells.map((c) => c.y)) - pad);
-  const y1 = Math.min(bin.h, Math.max(...row.cells.map((c) => c.y + c.h)) + pad);
+  const lift = row.lift;
+  const dy = (x: number) => (lift ? Math.round(lift(x)) : 0);
+  const y0 = Math.max(0, Math.min(...row.cells.map((c) => c.y - dy(c.x + c.w / 2))) - pad);
+  const y1 = Math.min(bin.h, Math.max(...row.cells.map((c) => c.y + c.h - dy(c.x + c.w / 2))) + pad);
   const w = x1 - x0;
   const h = y1 - y0;
   if (w < 8 || h < 8) return null;
-  const data = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) data[y * w + x] = bin.data[(y0 + y) * bin.w + x0 + x];
-  let gray: Uint8Array | undefined;
-  if (grayPage) {
-    gray = new Uint8Array(w * h);
+  const shift = new Int32Array(w);
+  if (lift) for (let x = 0; x < w; x++) shift[x] = dy(x0 + x);
+  const take = (src: Uint8Array, blank: number) => {
+    const out = new Uint8Array(w * h);
     for (let y = 0; y < h; y++)
-      for (let x = 0; x < w; x++) gray[y * w + x] = grayPage[(y0 + y) * bin.w + x0 + x];
-  }
+      for (let x = 0; x < w; x++) {
+        const sy = y0 + y + shift[x];
+        out[y * w + x] = sy >= 0 && sy < bin.h ? src[sy * bin.w + x0 + x] : blank;
+      }
+    return out;
+  };
+  const data = take(bin.data, 0);
+  const gray = grayPage ? take(grayPage, 255) : undefined;
+  const mid = dy((x0 + x1) / 2);
   return {
     w,
     h,
     data,
-    box: { x: x0, y: y0, w, h },
+    box: { x: x0, y: y0 + mid, w, h },
     charH: row.charH,
     cells: row.cells.map((c) => ({ x0: (c.x - x0) / w, x1: (c.x + c.w - x0) / w, box: c })),
     ...(gray ? { gray } : {}),

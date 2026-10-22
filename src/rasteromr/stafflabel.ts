@@ -19,7 +19,7 @@
 //     加白边、笔画加粗、放宽块高、放宽串宽、放宽带高）**全都劣于原配置**，
 //     全语料认得出的声部名始终卡在 8 个。几何闸没有中间地带——定位这件事交给 DBNet。
 import type { Binary, Rect } from "../omrkit/types";
-import type { RasterUnit } from "./staffline";
+import { liftRange, type RasterUnit } from "./staffline";
 import { contentKey } from "../omrkit/contentkey";
 
 /** 一条标签条：裸像素 + 它在页面上的盒。 */
@@ -51,26 +51,31 @@ const RIGHT_FRAC = 0.45;
  */
 export function findStaffLabels(
   bin: Binary,
-  staves: { box: { left: number; right: number; top: number }; index: number }[],
+  staves: { box: { left: number; right: number; top: number }; index: number; lift?: (x: number) => number }[],
   unit: RasterUnit,
 ): LabelStrip[] {
   const sp = unit.space;
   const out: LabelStrip[] = [];
   for (const st of staves) {
-    const y0 = Math.max(0, Math.round(st.box.top - sp * BAND_TOP));
-    const y1 = Math.max(0, Math.round(st.box.top - sp * BAND_BOTTOM));
     const x0 = Math.max(0, Math.round(st.box.left + sp * LEFT_SKIP));
     const x1 = Math.min(bin.w, Math.round(st.box.left + (st.box.right - st.box.left) * RIGHT_FRAC));
+    // 弯、斜的谱行：带取第一线在这一段的包络，带里低过该列第一线（连让线那一点）的刷白
+    const lift = st.lift;
+    const [lo, hi] = liftRange(lift, x0, x1);
+    const y0 = Math.max(0, Math.round(st.box.top + lo - sp * BAND_TOP));
+    const y1 = Math.max(0, Math.round(st.box.top + hi - sp * BAND_BOTTOM));
     if (y1 - y0 < 8 || x1 - x0 < 8) continue;
     const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     const data = new Uint8Array(box.w * box.h);
     let ink = 0;
-    for (let y = 0; y < box.h; y++)
-      for (let x = 0; x < box.w; x++) {
+    for (let x = 0; x < box.w; x++) {
+      const yb = lift ? Math.min(box.h, Math.round(st.box.top + lift(box.x + x) - sp * BAND_BOTTOM) - box.y) : box.h;
+      for (let y = 0; y < yb; y++) {
         const v = bin.data[(box.y + y) * bin.w + box.x + x];
         data[y * box.w + x] = v;
         ink += v;
       }
+    }
     if (!ink) continue; // 整条空白：这一行没印任何东西，不必送 OCR
     out.push({ w: box.w, h: box.h, data, box, staff: st.index });
   }

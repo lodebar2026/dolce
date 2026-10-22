@@ -34,7 +34,7 @@ import { lastKey } from "./keysig";
 import type { ContourLedger } from "./ledger";
 import type { HarmonyStrip, HarmonyToken } from "./harmony";
 import type { RasterPage } from "./rasterpage";
-import type { LineGrid, RasterUnit, StaffGroup, StaffLineRun } from "./staffline";
+import { liftOf, type LineGrid, type RasterUnit, type StaffGroup, type StaffLineRun } from "./staffline";
 import type { TimeStrip } from "./timesig";
 import type { ClefTally, PageCarry, PageSource, RasterLiveOcr, RasterPageOpts, RasterPageResult } from "./recognize";
 
@@ -246,7 +246,16 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   //
   // 条子**不论有没有缓存都要切**（与歌词字格同一条道理：切出来这件事本身
   // 就是「这块墨是标签」的判断）；认字靠 `labelOcr` 缓存，没缓存就只出条子。
-  const labelStrips = findStaffLabels(raster.bin, pg.staves, unit);
+  // 弯、斜的谱行带上逐列偏移（五线共用一条），文字条随它取带
+  const liftFor = (st: Staff) => {
+    const g = groups.find((q) => Math.abs(q.lines[0].y - st.box.top) < unit.space);
+    return g && liftOf(g.lines[0]);
+  };
+  const lifted = pg.staves.map((st) => {
+    const lift = liftFor(st);
+    return { box: st.box, index: st.index, ...(lift ? { lift } : {}) };
+  });
+  const labelStrips = findStaffLabels(raster.bin, lifted, unit);
   const labelOcr = opts.labelOcr ?? (live ? await live.label(labelStrips) : undefined);
   const staffLabels = new Map<number, string>();
   for (const st of labelStrips) {
@@ -338,7 +347,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     };
     const rows = findLyricRows(
       [...blobs.filter((c) => (!claimed.has(c.id) || orphanHead(c)) && !dictClaimed.has(c.id)), ...segBlobs],
-      pg.staves.map((st) => ({ top: st.box.top, bottom: st.box.bottom, left: st.box.left, right: st.box.right })),
+      lifted.map(({ box, lift }) => ({ top: box.top, bottom: box.bottom, left: box.left, right: box.right, ...(lift ? { lift } : {}) })),
       unit,
       keepLone,
     );
@@ -678,15 +687,15 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   // ── 文字指示与节拍器记号 ────────────────────────────────────────────────
   //
   // 带照固定几何切（两行谱之间的空当），认字靠 `wordOcr` 缓存；歌词行、和弦字母已经另有身份，中心落在它们盒里的行不要。
-  const wordStrips = opts.wordOcr || opts.wantWordStrips || live?.word ? findWordStrips(raster.bin, pg.staves, unit) : [];
+  const wordStrips = opts.wordOcr || opts.wantWordStrips || live?.word ? findWordStrips(raster.bin, lifted, unit) : [];
   // 带里的方框（排练号、框着的段落名）另切一条单独读（`findFrameStrips`）
   wordStrips.push(...findFrameStrips(wordStrips, unit));
   // 声部名带（行首缩进与页边）：认字同文字指示带，归位另走（`partNameLines`）
-  const nameStrips = opts.wordOcr || opts.wantWordStrips || live?.word ? findNameStrips(raster.bin, pg.systems, unit) : [];
+  const nameStrips = opts.wordOcr || opts.wantWordStrips || live?.word ? findNameStrips(raster.bin, pg.systems.map((sy) => ({ staves: sy.staves.map((st) => lifted[pg.staves.indexOf(st)]) })), unit) : [];
   const wordOcr = opts.wordOcr ?? (live?.word ? await live.word([...wordStrips, ...nameStrips]) : undefined);
   if (wordOcr) pg.partNames = partNameLines(pg, nameStrips, wordOcr);
   // 页眉（曲首页）：标题、词曲作者。认字同文字指示带，缓存另放
-  let headerStrip: HeaderStrip | null = carry.wantHeader ? findHeaderStrip(raster.bin, pg.staves, unit) : null;
+  let headerStrip: HeaderStrip | null = carry.wantHeader ? findHeaderStrip(raster.bin, lifted, unit) : null;
   // 谱图里切不出页眉带、谱图又没顶到页顶的（排版软件出的 PDF，标题是另贴的小图块与文字层）：拼出谱图上方那一段（`pagecompose.ts`）
   let layerLines: WordLine[] = [];
   if (carry.wantHeader && !headerStrip) {

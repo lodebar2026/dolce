@@ -41,7 +41,7 @@ import type { LyricLine } from "../staffomr/textanalyze";
 import type { SlurArc } from "../staffomr/slur";
 import { composeHeaderStrip } from "./pagecompose";
 import { isTextStaff, pageTextKey, textDetScale } from "./pagetext";
-import { LineGrid, lineYAt, localLineModel, pitchPos, pitchY, type RasterUnit } from "./staffline";
+import { LineGrid, liftOf, lineYAt, localLineModel, pitchPos, pitchY, type RasterUnit } from "./staffline";
 import { findRasterStaves } from "./stafffind";
 import { rasterizePage, type RasterPage } from "./rasterpage";
 import { median, rowHasInk, unionRect as union, overlapFrac } from "../omrkit/geom";
@@ -763,6 +763,7 @@ export async function recognizeRasterPage(
       index: i,
       // 有简谱行的谱表，和弦字母印在简谱行上方
       ceiling: jianpuBands.find((b) => b.staff === i)?.box.y,
+      lift: liftOf(g.lines[0]),
     }]),
     unit,
   );
@@ -2542,9 +2543,11 @@ export async function recognizeRasterPage(
   for (const g of groups) {
     if (timeDone.has(g) || (pass === 1 && !timeFound.length)) continue;
     const left = Math.max(...g.lines.map((l) => l.left));
-    const mid = g.lines[2].y;
-    const top = g.lines[0].y;
-    const bottom = g.lines[4].y;
+    // 拍号在行首那一小段：弯、斜的谱行取行首往右四格处的线位
+    const ax = left + unit.space * 4;
+    const mid = lineYAt(g.lines[2], ax);
+    const top = lineYAt(g.lines[0], ax);
+    const bottom = lineYAt(g.lines[4], ax);
     // 行首那一段：谱号 + 调号之后、第一个音符之前。放到十四格——
     // 七个升降号的调号就占了八格多。
     // **字典认走的也进来**（谱号与调号升降号除外）：C 拍号与字典里那个

@@ -19,7 +19,7 @@
 // （实测系统三末尾 `Dm G` 只隔 9px），`CHORD_TOKEN_RE` 要求根音是大写 A–G，
 // 从左往右贪心地咬，`DmG` 自然断回 `Dm` + `G`。
 import type { Binary, Rect } from "../omrkit/types";
-import type { RasterUnit } from "./staffline";
+import { levelRows, type RasterUnit } from "./staffline";
 import type { OcrChar } from "./lyric";
 import { CHORD_TOKEN_RE, blankNonChord, isChordLineCoverage } from "../omrkit/chordgrammar";
 import { contentKey } from "../omrkit/contentkey";
@@ -135,119 +135,146 @@ export interface HarmonyStrip {
  */
 export function findHarmonyStrips(
   bin: Binary,
-  /** `ceiling`：谱表上方另有一行东西（简谱行，见 `jianpuband.ts`）时它的上沿，
-   *  和弦带就改贴在它上面 `JP_BAND` 格那一段。 */
-  staves: { box: { left: number; right: number; top: number }; index: number; ceiling?: number }[],
+  staves: HarmonyStaff[],
   unit: RasterUnit,
 ): HarmonyStrip[] {
   const sp = unit.space;
   const out: HarmonyStrip[] = [];
   for (const st of staves) {
-    const jp = st.ceiling != null;
-    const yTop = Math.max(0, Math.round(jp ? st.ceiling! - sp * JP_BAND : st.box.top - sp * BAND_TOP));
-    /** 原来的带底：簇要有墨落在它上面才算。 */
-    const yB = Math.max(0, Math.round(jp ? st.ceiling! : st.box.top - sp * BAND_BOTTOM));
-    // **带底下探到顶线上方**（`LOW_CLEAR`）：全音符小节上方的和弦字母印得低（《赞美一神》「阿们」
-    // 两小节的 C、G 离顶线只有 0.25 格），穿过原带底，被「伸上来的东西」那一步整个抹掉。
-    // 下探之后「伸上来」改成**连着谱表的**（从顶线那几行起灌），浮着的字母留下；
-    // 整块都在原带底以下的（贴着谱表的符头、加线）另外丢掉。
-    // 有简谱行时同样往下放一点（`JP_BELOW`）：简谱行的上沿按行里最高的墨定，和弦字母的下半截
-    // 常压在它里面（颂赞与尊贵字母 215~245、简谱行上沿 239），截掉底的「F」「B♭」OCR 认不出
-    const y1 = jp ? Math.min(bin.h, Math.round(yB + sp * JP_BELOW)) : Math.max(yB, Math.round(st.box.top - sp * LOW_CLEAR));
-    const x0 = Math.max(0, Math.round(st.box.left));
-    const x1 = Math.min(bin.w, Math.round(st.box.right));
-    if (y1 - yTop < 4 || x1 - x0 < 8) continue;
-    // 切一遍：带顶在 `y0`。回报有几条顶到带顶、往上长出一格以上（`GROW_BIG`），以及长到的最高处
-    const cut = (y0: number) => {
-      const strips: HarmonyStrip[] = [];
-      let grown = 0;
-      let top = y0;
-      const band = withoutRisers(bin, x0, x1, y0, y1, Math.ceil(sp * RISER_DEPTH), jp ? -1 : y1);
-      if (!jp) dropBelow(band, x1 - x0, y1 - y0, yB - y0);
-      const at = (x: number, y: number) => band[(y - y0) * (x1 - x0) + (x - x0)];
-      // 列投影 → 游程 → 按空白并成簇
-      const col = new Int32Array(x1 - x0);
-      for (let y = y0; y < y1; y++)
-        for (let x = x0; x < x1; x++) if (at(x, y)) col[x - x0]++;
-      const gap = Math.max(2, Math.round(sp * CLUSTER_GAP));
-      const runs: [number, number][] = [];
-      let s = -1;
-      for (let i = 0; i <= col.length; i++) {
-        const ink = i < col.length && col[i] > 0;
-        if (ink && s < 0) s = i;
-        if (!ink && s >= 0) {
-          const last = runs[runs.length - 1];
-          if (last && s - last[1] - 1 < gap) last[1] = i - 1;
-          else runs.push([s, i - 1]);
-          s = -1;
-        }
-      }
-      for (const [a, b] of runs) {
-        if (b - a + 1 < sp * MIN_W) continue;
-        // 纵向也裁紧：条越紧，rec 越准
-        let ya = y1;
-        let yb = y0;
-        let ink = 0;
-        for (let y = y0; y < y1; y++)
-          for (let x = x0 + a; x <= x0 + b; x++)
-            if (at(x, y)) {
-              ink++;
-              if (y < ya) ya = y;
-              if (y > yb) yb = y;
-            }
-        if (ink < MIN_INK || yb < ya) continue;
-        const rowInk = (y: number) => {
-          for (let x = x0 + a; x <= x0 + b; x++) if (y >= y0 ? at(x, y) : bin.data[y * bin.w + x]) return true;
-          return false;
-        };
-        {
-          // **只留最上面一段**：和弦记号只有一行，同簇里下面隔开的是延长记号
-          //（《赞美一神》延长记号上方的 G 与记号并成一条，OCR 读成「5」）
-          const cut = Math.max(2, Math.round(sp * RUN_GAP));
-          let blank = 0;
-          for (let y = ya; y <= yb; y++) {
-            if (rowInk(y)) blank = 0;
-            else if (++blank >= cut) {
-              yb = y - blank;
-              break;
-            }
-          }
-          while (yb > ya && !rowInk(yb)) yb--;
-          // **碰到带顶的往上长**：延长记号上方的和弦字母印得高，顶上被带顶切掉
-          if (!jp && ya === y0) while (ya > 0 && ya > y0 - sp * GROW_UP && rowInk(ya - 1)) ya--;
-          if (y0 - ya >= sp * GROW_BIG) {
-            grown++;
-            top = Math.min(top, ya);
-          }
-        }
-        const box = { x: x0 + a, y: ya, w: b - a + 1, h: yb - ya + 1 };
-        const data = new Uint8Array(box.w * box.h);
-        for (let y = 0; y < box.h; y++)
-          for (let x = 0; x < box.w; x++) {
-            const py = box.y + y;
-            data[y * box.w + x] = py >= y0 ? at(box.x + x, py) : bin.data[py * bin.w + box.x + x];
-          }
-        strips.push({ w: box.w, h: box.h, data, box, staff: st.index });
-      }
-      return { strips, grown, top };
-    };
-    let r = cut(yTop);
-    // **整行和弦字排得高**：多数条都顶到带顶、往上长过，就把带顶挪到它们长到的最高处再切一遍。
-    // 列投影只看带里的墨，字露在带外的部分左右边界算不进来：《圣哉三一歌伴奏》和弦字在顶线上方
-    // 2.7~4.7 格（音符高、和弦行跟着抬），带里只剩字脚，♭ 的肚子、「7」的上半、F 的横画都被切掉，
-    // OCR 把 E♭ 读成「El」。只有**多数**条都顶到时才挪——偶尔一个印得高的字母（延长记号上方）
-    // 照旧靠往上长解决，其余谱行的条一个像素不变（缓存指纹不动）。
-    if (!jp && r.grown >= 2 && r.grown * 2 >= r.strips.length) r = cut(Math.max(0, r.top));
-    // **带里几乎切不出条**：钢琴伴奏右手音符用到 C6、D6，和弦行被顶到顶线上方 3.3 格开外
-    //（《恩友歌伴奏》35 个和弦一个都没切出来，带里只剩符头与小节号的碎块）。
-    // 把带顶提到 `BAND_TOP_HIGH` 再切一遍，条多出一倍以上才用它。
-    if (!jp && r.strips.length < 3) {
-      const r2 = cut(Math.max(0, Math.round(st.box.top - sp * BAND_TOP_HIGH)));
-      if (r2.strips.length >= 3 && r2.strips.length >= r.strips.length * 2) r = r2;
+    if (!st.lift) {
+      out.push(...staffStrips(bin, st, unit));
+      continue;
     }
-    out.push(...r.strips);
+    // **弯、斜的谱行**在按谱线拉平的子图里切（带底贴着顶线，斜一格的谱行按常数切，一头切进谱线、一头离谱表一格多），
+    // 切出的框按框心的 x 挪回原图。子图上下留足往上提带顶、往上长的余地
+    const lift = st.lift;
+    const top = Math.min(st.box.top, st.ceiling ?? st.box.top);
+    const y0 = Math.floor(top - sp * (BAND_TOP_HIGH + GROW_UP + 2));
+    const sub = levelRows(bin, y0, Math.ceil(st.box.top + sp), lift);
+    const mid = Math.round(lift((st.box.left + st.box.right) / 2));
+    const local = { ...st, box: { ...st.box, top: st.box.top - y0 }, ...(st.ceiling != null ? { ceiling: st.ceiling - mid - y0 } : {}) };
+    for (const s0 of staffStrips(sub, local, unit)) out.push({ ...s0, box: { ...s0.box, y: s0.box.y + y0 + Math.round(lift(s0.box.x + s0.box.w / 2)) } });
   }
   return out;
+}
+
+/** 和弦带要的谱行：盒（页面坐标）、下标，另有简谱行上沿、弯斜谱行的逐列偏移。 */
+export interface HarmonyStaff {
+  box: { left: number; right: number; top: number };
+  index: number;
+  /** `ceiling`：谱表上方另有一行东西（简谱行，见 `jianpuband.ts`）时它的上沿，
+   *  和弦带就改贴在它上面 `JP_BAND` 格那一段。 */
+  ceiling?: number;
+  /** 弯、斜谱行在 x 处的谱线相对 `box.top` 的偏移（`staffline.ts::lineYAt` 那条曲线）；平直的没有。 */
+  lift?: (x: number) => number;
+}
+
+/** 一行谱上方切出的和弦条（`findHarmonyStrips` 的一行，坐标按谱线是平的算）。 */
+function staffStrips(bin: Binary, st: HarmonyStaff, unit: RasterUnit): HarmonyStrip[] {
+  const sp = unit.space;
+  const jp = st.ceiling != null;
+  const yTop = Math.max(0, Math.round(jp ? st.ceiling! - sp * JP_BAND : st.box.top - sp * BAND_TOP));
+  /** 原来的带底：簇要有墨落在它上面才算。 */
+  const yB = Math.max(0, Math.round(jp ? st.ceiling! : st.box.top - sp * BAND_BOTTOM));
+  // **带底下探到顶线上方**（`LOW_CLEAR`）：全音符小节上方的和弦字母印得低（《赞美一神》「阿们」
+  // 两小节的 C、G 离顶线只有 0.25 格），穿过原带底，被「伸上来的东西」那一步整个抹掉。
+  // 下探之后「伸上来」改成**连着谱表的**（从顶线那几行起灌），浮着的字母留下；
+  // 整块都在原带底以下的（贴着谱表的符头、加线）另外丢掉。
+  // 有简谱行时同样往下放一点（`JP_BELOW`）：简谱行的上沿按行里最高的墨定，和弦字母的下半截
+  // 常压在它里面（颂赞与尊贵字母 215~245、简谱行上沿 239），截掉底的「F」「B♭」OCR 认不出
+  const y1 = jp ? Math.min(bin.h, Math.round(yB + sp * JP_BELOW)) : Math.max(yB, Math.round(st.box.top - sp * LOW_CLEAR));
+  const x0 = Math.max(0, Math.round(st.box.left));
+  const x1 = Math.min(bin.w, Math.round(st.box.right));
+  if (y1 - yTop < 4 || x1 - x0 < 8) return [];
+  // 切一遍：带顶在 `y0`。回报有几条顶到带顶、往上长出一格以上（`GROW_BIG`），以及长到的最高处
+  const cut = (y0: number) => {
+    const strips: HarmonyStrip[] = [];
+    let grown = 0;
+    let top = y0;
+    const band = withoutRisers(bin, x0, x1, y0, y1, Math.ceil(sp * RISER_DEPTH), jp ? -1 : y1);
+    if (!jp) dropBelow(band, x1 - x0, y1 - y0, yB - y0);
+    const at = (x: number, y: number) => band[(y - y0) * (x1 - x0) + (x - x0)];
+    // 列投影 → 游程 → 按空白并成簇
+    const col = new Int32Array(x1 - x0);
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) if (at(x, y)) col[x - x0]++;
+    const gap = Math.max(2, Math.round(sp * CLUSTER_GAP));
+    const runs: [number, number][] = [];
+    let s = -1;
+    for (let i = 0; i <= col.length; i++) {
+      const ink = i < col.length && col[i] > 0;
+      if (ink && s < 0) s = i;
+      if (!ink && s >= 0) {
+        const last = runs[runs.length - 1];
+        if (last && s - last[1] - 1 < gap) last[1] = i - 1;
+        else runs.push([s, i - 1]);
+        s = -1;
+      }
+    }
+    for (const [a, b] of runs) {
+      if (b - a + 1 < sp * MIN_W) continue;
+      // 纵向也裁紧：条越紧，rec 越准
+      let ya = y1;
+      let yb = y0;
+      let ink = 0;
+      for (let y = y0; y < y1; y++)
+        for (let x = x0 + a; x <= x0 + b; x++)
+          if (at(x, y)) {
+            ink++;
+            if (y < ya) ya = y;
+            if (y > yb) yb = y;
+          }
+      if (ink < MIN_INK || yb < ya) continue;
+      const rowInk = (y: number) => {
+        for (let x = x0 + a; x <= x0 + b; x++) if (y >= y0 ? at(x, y) : bin.data[y * bin.w + x]) return true;
+        return false;
+      };
+      {
+        // **只留最上面一段**：和弦记号只有一行，同簇里下面隔开的是延长记号
+        //（《赞美一神》延长记号上方的 G 与记号并成一条，OCR 读成「5」）
+        const cut = Math.max(2, Math.round(sp * RUN_GAP));
+        let blank = 0;
+        for (let y = ya; y <= yb; y++) {
+          if (rowInk(y)) blank = 0;
+          else if (++blank >= cut) {
+            yb = y - blank;
+            break;
+          }
+        }
+        while (yb > ya && !rowInk(yb)) yb--;
+        // **碰到带顶的往上长**：延长记号上方的和弦字母印得高，顶上被带顶切掉
+        if (!jp && ya === y0) while (ya > 0 && ya > y0 - sp * GROW_UP && rowInk(ya - 1)) ya--;
+        if (y0 - ya >= sp * GROW_BIG) {
+          grown++;
+          top = Math.min(top, ya);
+        }
+      }
+      const box = { x: x0 + a, y: ya, w: b - a + 1, h: yb - ya + 1 };
+      const data = new Uint8Array(box.w * box.h);
+      for (let y = 0; y < box.h; y++)
+        for (let x = 0; x < box.w; x++) {
+          const py = box.y + y;
+          data[y * box.w + x] = py >= y0 ? at(box.x + x, py) : bin.data[py * bin.w + box.x + x];
+        }
+      strips.push({ w: box.w, h: box.h, data, box, staff: st.index });
+    }
+    return { strips, grown, top };
+  };
+  let r = cut(yTop);
+  // **整行和弦字排得高**：多数条都顶到带顶、往上长过，就把带顶挪到它们长到的最高处再切一遍。
+  // 列投影只看带里的墨，字露在带外的部分左右边界算不进来：《圣哉三一歌伴奏》和弦字在顶线上方
+  // 2.7~4.7 格（音符高、和弦行跟着抬），带里只剩字脚，♭ 的肚子、「7」的上半、F 的横画都被切掉，
+  // OCR 把 E♭ 读成「El」。只有**多数**条都顶到时才挪——偶尔一个印得高的字母（延长记号上方）
+  // 照旧靠往上长解决，其余谱行的条一个像素不变（缓存指纹不动）。
+  if (!jp && r.grown >= 2 && r.grown * 2 >= r.strips.length) r = cut(Math.max(0, r.top));
+  // **带里几乎切不出条**：钢琴伴奏右手音符用到 C6、D6，和弦行被顶到顶线上方 3.3 格开外
+  //（《恩友歌伴奏》35 个和弦一个都没切出来，带里只剩符头与小节号的碎块）。
+  // 把带顶提到 `BAND_TOP_HIGH` 再切一遍，条多出一倍以上才用它。
+  if (!jp && r.strips.length < 3) {
+    const r2 = cut(Math.max(0, Math.round(st.box.top - sp * BAND_TOP_HIGH)));
+    if (r2.strips.length >= 3 && r2.strips.length >= r.strips.length * 2) r = r2;
+  }
+  return r.strips;
 }
 
 /** 条的**内容指纹**（与 `lyric.ts::stripKey` / `stafflabel.ts::labelKey` 同一套）。 */

@@ -25,6 +25,42 @@ export interface LineCurve {
   d: Float32Array;
 }
 
+/** 线上挂的曲线当成 `lift` 函数（x 处相对名义线位的偏移）；平直的线没有。 */
+export function liftOf(l: LineRef): ((x: number) => number) | undefined {
+  const c = l.curve;
+  return c ? (x: number) => curveAt(c, x) : undefined;
+}
+
+/** `lift`（x 处相对名义线位的偏移）在 [x0, x1] 上的最小、最大值，四像素一采。没有 `lift` 是 [0, 0]。 */
+export function liftRange(lift: ((x: number) => number) | undefined, x0: number, x1: number): [number, number] {
+  if (!lift) return [0, 0];
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let x = x0; ; x = Math.min(x1, x + 4)) {
+    const d = lift(x);
+    if (d < lo) lo = d;
+    if (d > hi) hi = d;
+    if (x >= x1) break;
+  }
+  return [lo, hi];
+}
+
+/** 横带 [y0, y1) **按谱线偏移逐列上下挪**成的子图：列 x 的第 y 行取原图第 `y0 + y + round(lift(x))` 行，
+ *  出了页的填白。整像素挪列、不插值，笔画与原图逐像素相同；在子图里切出的框挪回原图时按框心的 x 加回偏移。 */
+export function levelRows(bin: Binary, y0: number, y1: number, lift: (x: number) => number): Binary {
+  const w = bin.w;
+  const h = Math.max(0, y1 - y0);
+  const data = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) {
+    const d = y0 + Math.round(lift(x));
+    for (let y = 0; y < h; y++) {
+      const sy = d + y;
+      if (sy >= 0 && sy < bin.h) data[y * w + x] = bin.data[sy * w + x];
+    }
+  }
+  return { w, h, data };
+}
+
 /** 带不带曲线的线都认：`y` 是整条线的名义位置。 */
 export interface LineRef {
   y: number;
