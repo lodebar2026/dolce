@@ -2068,6 +2068,7 @@ export function checkBars(
       let full = checkFull(chords, expect, sp, false);
       if (!full) full = checkFull(chords, expect, sp, true);
       if (!full) full = blackenMixed(chords, expect, sp);
+      if (!full) full = unHollowish(chords, expect, sp);
       if (!full) full = widenCrossHeads(chords, expect, sp);
       if (!full && chords[0]?.vector) full = extendHalfHook(chords, expect, sp);
       // 同系统已凑满的谱行（钢琴右手之于左手）给拍位，再凑一次（见 `checkFull` 的 `byAnchor`）
@@ -2089,6 +2090,7 @@ export function checkBars(
       // 拿它去凑只会把原来按次序写的小节改成按拍位写（宁静一首十来处，音符反掉）
       const overfull = (len: number) => inBar.filter((n) => !n.chordExtra && !n.grace).reduce((a, n) => a + n.duration, 0) > len * 1.3;
       let split = false;
+      if (full) unifyMixed(chords);
       if (full) splitVoice(chords, expect);
       else if (short !== undefined && overfull(short) && (checkFull(chords, short, sp, false) || checkFull(chords, short, sp, true))) (split = true), splitVoice(chords, short);
       else assignVoicesInBar(inBar, expect, notes.some((n) => n.staff === stf && n.crossStaff && n.x >= bar.left && n.x < bar.right));
@@ -2191,6 +2193,40 @@ function blackenMixed(chords: StaffChord[], expect: number, sp: number): boolean
     hit = true;
   }
   return hit && (checkFull(chords, expect, sp, false) || checkFull(chords, expect, sp, true));
+}
+
+/**
+ * **凑满了的小节里，一半空心一半实心的和弦按凑拍用的时值统一成四分**：和弦按首个音的时值凑拍（`guessDur`），
+ * 首个音是四分、凑满了，就说明四分对，同一根干上读成二分的头跟着它（望十架 p3 m29 女高女低 C5/D4 四分，白斑打花的 C5 读成二分）。
+ * 只往实心统一，与 `blackenMixed` 同向：首个音是二分时反过来把四分拉成二分，是爱 p4 m58、p5 m66 两处真四分被拉长。
+ * 带附点的不动：两声部挤在一根干上（向主唱新歌 m2 上声部 D4 附点二分、下声部 B3 八分）。
+ * 与 `blackenMixed` 同一批和弦：有干、无杠无尾、干朝向一致。
+ */
+function unifyMixed(chords: StaffChord[]): void {
+  for (const c of chords) {
+    if (!c.stem || c.grace || c.notes.length < 2 || !c.notes.every((n) => !n.rest && n.beams === 0 && !n.dots)) continue;
+    if (c.notes[0].base !== 1 / 4 || !c.notes.some((n) => n.base === 1 / 2)) continue;
+    if (new Set(c.notes.map((n) => n.stemUp)).size > 1) continue;
+    for (const n of c.notes) if (n.base === 1 / 2) (n.base = 1 / 4), (n.duration = 1 / 4);
+  }
+}
+
+/**
+ * **凑不满的小节里，实心字形只因头心有白才按二分算的和弦逐枚改回四分**：位图路的 `hollowish` 是个弱判据，
+ * 白斑打花的扫描页上真实心头的头心也有三四成白（望十架 p3 m31 女高女低 F5/F4 两枚都读成二分，这一小节多出一拍）。
+ * 一枚一枚试，改完凑得满才留，凑不满就退回。
+ */
+function unHollowish(chords: StaffChord[], expect: number, sp: number): boolean {
+  for (const c of chords) {
+    if (!c.stem || c.grace) continue;
+    const heads = c.notes.filter((n) => !n.rest);
+    if (!heads.length || !heads.every((n) => n.sym.code === "noteheadBlack" && n.base === 1 / 2 && n.beams === 0)) continue;
+    const set = (b: number) => heads.forEach((n) => ((n.base = b), (n.duration = b * (2 - 1 / 2 ** n.dots))));
+    set(1 / 4);
+    if (checkFull(chords, expect, sp, false) || checkFull(chords, expect, sp, true)) return true;
+    set(1 / 2);
+  }
+  return false;
 }
 
 /**

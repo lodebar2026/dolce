@@ -355,6 +355,8 @@ const KEY_SELF_DIST = 120;
 const BEAM_STUMP_H = 0.65;
 /** 杠端假头的高度上限（格）：主使我喜乐 m16 杠起头连着干尖 0.69 格，有一位神 m10 连着第五线 0.95 格，倚靠主永远膀臂 m11 主杠尾连着下层短杠 1.13 格。 */
 const BEAM_END_STUMP_H = 1.2;
+/** 细杠起头那截扁墨的高度上限（格，`beamRoot`）：望十架 p3 两处 0.6、0.68，正常实心头 0.9 起。 */
+const BEAM_ROOT_H = 0.75;
 /** 结构还原号：两根竖笔的间距（格）。 */
 const NAT_GAP = [0.35, 0.8] as const;
 /** 按角色限定认拍号数字（见拍号那一段）：分子只在 2~9 里挑，分母只在 2、4、8 里挑。
@@ -4564,6 +4566,103 @@ export async function recognizeRasterPage(
     if (b.bottom - b.top > unit.space * HOLLOW_SMALL_H) return false;
     return enclosedWhite(nl, b, unit.space) >= (b.right - b.left) * (b.bottom - b.top) * HOLLOW_CAVITY;
   };
+  // **细杠的起头那一截**：杠细（不到 0.35 格，原语里常收不出杠来），杠与干尖、谱线糊成一块扁墨，收头时的 `atBeamEnd` 够不着。
+  // 扁（不过 `BEAM_ROOT_H` 格）的实心头、一侧边上贴着一根干的端头、这根干往外伸两格以上另一端落在一个正常大小的头上，
+  // 扁块另一侧还有横墨接着伸出去一格（杠身）——干的两端不会都是头（望十架 p3 m26、m27 八分 C4、F4 的杠起头读成 D5、F5）。
+  // 放在各路头都收齐之后：干那端的真头多半是后面几路补出来的
+  {
+    const sp = unit.space;
+    const heads = pg.symbols.filter((s0) => s0.hasTag("Note") && /^notehead/.test(s0.code));
+    const beamRoot = (h: Sym) => {
+      const b = h.box;
+      if (h.code !== "noteheadBlack" || b.bottom - b.top > sp * BEAM_ROOT_H) return false;
+      return prims.vSegs.some((v) => {
+        const x = (v.x0 + v.x1) / 2;
+        const atLeft = Math.abs(x - b.left) <= 2;
+        const atRight = Math.abs(x - b.right) <= 2;
+        if (!atLeft && !atRight) return false;
+        const t = Math.min(v.y0, v.y1);
+        const d = Math.max(v.y0, v.y1);
+        const far = t >= b.top - 3 && t <= b.bottom + 3 && d >= b.bottom + sp * 2 ? d : d >= b.top - 3 && d <= b.bottom + 3 && t <= b.top - sp * 2 ? t : null;
+        if (far === null) return false;
+        if (!heads.some((o) => o !== h && o.box.bottom - o.box.top >= sp * 0.8 && x >= o.box.left - 3 && x <= o.box.right + 3 && far >= o.box.top - 3 && far <= o.box.bottom + 3)) return false;
+        // 杠身：扁块外侧（干的对面）往外一格，每列在扁块上下半格内都有墨。细杠常压着谱线、去线时一起抹掉了，
+        // 所以在原图上量，谱线那几行不算
+        const B = raster.bin;
+        const dir = atLeft ? 1 : -1;
+        const xs = Math.round(atLeft ? b.right + 1 : b.left - 1);
+        const n = Math.round(sp);
+        let hit = 0;
+        for (let k = 0; k < n; k++) {
+          const cx = xs + dir * k;
+          if (cx < 0 || cx >= B.w) break;
+          for (let y = Math.max(0, Math.round(b.top - sp * 0.5)); y <= Math.min(B.h - 1, Math.round(b.bottom + sp * 0.5)); y++)
+            if (B.data[y * B.w + cx] && !gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 1)) {
+              hit++;
+              break;
+            }
+        }
+        return hit >= n * 0.9;
+      });
+    };
+    const drop = new Set(heads.filter(beamRoot));
+    if (drop.size) pg.symbols = pg.symbols.filter((s0) => !drop.has(s0));
+  }
+  // **顶端细细连在头上的四分休止**：两声部时另一声部的休止紧贴着这个头的上下（扫描件上休止顶端那一笔细、连上了头），
+  // 整块被收头那一路认领，休止没人认（望十架 p3 m26 女高女低：上声部 C4 八分、下声部四分休止挂在 C4 底下）。
+  // 头正下（正上）方从贴着头的那两行起灌墨（窗口横向出头缘半格、纵向 3.5 格），灌出来的一块够休止的高宽、
+  // 没有通高的直竖笔（那是干）、碰不到窗口远端，单独裁出来按形状字典是四分休止，就补一个
+  {
+    const sp = unit.space;
+    const B = raster.bin;
+    const restTpl = (look.templates ?? []).filter((t) => t.smufl === "restQuarter" || t.smufl === "rest8th");
+    const heads = pg.symbols.filter((s0) => s0.hasTag("Note") && /^notehead/.test(s0.code) && s0.ownerStaff);
+    const taken = pg.symbols.filter((s0) => s0.hasTag("Note")).map((s0) => s0.box);
+    const added: Sym[] = [];
+    for (const h of restTpl.length ? heads : []) {
+      for (const dir of [1, -1]) {
+        const x0 = Math.max(0, Math.round(h.box.left - sp * 0.5));
+        const x1 = Math.min(B.w - 1, Math.round(h.box.right + sp * 0.5));
+        const y0 = Math.max(0, Math.round(dir > 0 ? h.box.bottom + 1 : h.box.top - sp * 3.5));
+        const y1 = Math.min(B.h - 1, Math.round(dir > 0 ? h.box.bottom + sp * 3.5 : h.box.top - 1));
+        if (y1 - y0 < sp * 2) continue;
+        const W = x1 - x0 + 1;
+        const seen = new Uint8Array(W * (y1 - y0 + 1));
+        const stack: number[] = [];
+        const near = dir > 0 ? [y0, y0 + 1] : [y1, y1 - 1];
+        for (const y of near) for (let x = Math.round(h.box.left); x <= Math.round(h.box.right); x++) if (B.data[y * B.w + x] && !seen[(y - y0) * W + x - x0]) (seen[(y - y0) * W + x - x0] = 1), stack.push(x, y);
+        let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity, edge = false;
+        while (stack.length) {
+          const y = stack.pop()!;
+          const x = stack.pop()!;
+          if (x === x0 || x === x1 || y === (dir > 0 ? y1 : y0)) edge = true;
+          bx0 = Math.min(bx0, x), bx1 = Math.max(bx1, x), by0 = Math.min(by0, y), by1 = Math.max(by1, y);
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx < x0 || nx > x1 || ny < y0 || ny > y1 || !B.data[ny * B.w + nx]) continue;
+              const k = (ny - y0) * W + nx - x0;
+              if (seen[k]) continue;
+              seen[k] = 1;
+              stack.push(nx, ny);
+            }
+        }
+        if (edge || !isFinite(bx0)) continue;
+        const box = { x: bx0, y: by0, w: bx1 - bx0 + 1, h: by1 - by0 + 1 };
+        if (box.h < sp * 1.8 || box.h > sp * 3.3 || box.w < sp * 0.5 || box.w > sp * 1.2) continue;
+        if (longestVRun(B, box) >= box.h * 0.85) continue;
+        if (taken.some((t) => t !== h.box && t.left < box.x + box.w && t.right > box.x && t.top < box.y + box.h && t.bottom > box.y)) continue;
+        if (matchTemplate(binSig(nl, box), box.w / sp, box.h / sp, restTpl)?.smufl !== "restQuarter") continue;
+        const { obj, sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box, code: "restQuarter" } as RasterSym, unit.height);
+        sym.addTag("Note");
+        sym.ownerStaff = h.ownerStaff;
+        pg.objs.push(obj);
+        added.push(sym);
+        taken.push(sym.box);
+      }
+    }
+    pg.symbols.push(...added);
+  }
   // **大半落在符尾盒里的头不要**：同一块墨先被收成头、后又被符尾自举认成符尾（《所信有根基》八分的尾读成一个 A4 二分）
   {
     const flags = pg.symbols.filter((s0) => s0.hasTag("Tail"));
@@ -4598,8 +4697,10 @@ export async function recognizeRasterPage(
       });
     // 再要内腔有一侧直接就是干（`notehead.ts::stemWalledCavity`）：两声部共干、另一端是实心头的真二分头，
     // 上面偶尔也会误认出一个尾（耶和华是我的牧者 m17 加一线上的 A5）
-    const walled = (h: Sym) =>
-      stemWalledCavity(raster.bin, { x: Math.round(h.box.left), y: Math.round(h.box.top), w: Math.round(h.box.right - h.box.left), h: Math.round(h.box.bottom - h.box.top) }, sp0);
+    const walled = (h: Sym) => {
+      const b = { x: Math.round(h.box.left), y: Math.round(h.box.top), w: Math.round(h.box.right - h.box.left), h: Math.round(h.box.bottom - h.box.top) };
+      return stemWalledCavity(raster.bin, b, sp0) || stemWalledCavity(raster.bin, b, sp0, true);
+    };
     pg.symbols = pg.symbols.filter(
       (s0) => !(s0.hasTag("Note") && inFlag(s0) && ((s0.code === "noteheadHalf" && besideHead(s0)) || ((s0.code === "noteheadHalf" || s0.code === "noteheadWhole") && otherEndBlack(s0) && walled(s0)))),
     );

@@ -1787,6 +1787,8 @@ const BARE_W = [0.8, 1.6] as const;
 const BARE_H1 = [0.8, 1.35] as const;
 const BARE_H2 = [1.6, 2.5] as const;
 const BARE_FILL = [0.15, 0.6] as const;
+/** 收到的墨近干一边离干不到这么多格的，按补到干上量（贴干那半个头连在干上被干认领了）：望十架 p9 长笛 0.43。 */
+const BARE_STEM_GAP = 0.5;
 /** 头心墨占比：空心头的斜缝内腔实测 0.0~0.51（我灵镇静一处糊的 0.74），实心头 1.0。扫过 0.7 / **0.8**：92.10 / 92.14%。 */
 const BARE_CORE = 0.8;
 /** 压线头按放宽的窗口量头心时，判空心的上限。 */
@@ -1961,6 +1963,37 @@ export function headsOnBareStems(
     // 只取端头窗口里扣掉干、加线之后的那一截再判一次（万福泉源歌 m21 E♭4/C4「8」字叠头、耶和华是我的牧者 m11
     // 两根干共用的 A3 空心头）。先判原块：两个头高的叠头照原块判得对，削过反倒切坏（我灵镇静 m15、m23）
     let got = judge(p.box, p.area);
+    // 收拢来的墨只有头离干远的那半：贴着干的那半连在干上、跟着干被认领了（望十架 p9 m69 长笛花斑实心头，收出 0.68 格宽）。
+    // 墨的近干一边离干不到 `BARE_STEM_GAP` 格、不够一个头宽、只一个头高的，盒补到干上再判（面积按原图盒里的墨重数）。
+    // 两个头高的不补：多是叠头和弦与邻音的墨，补出来的头错位（新编 101、147、244）
+    if (!got && p.box.w < sp * BARE_W[0] && p.box.h <= sp * BARE_H1[1]) {
+      const sx = (p.stem.x0 + p.stem.x1) / 2;
+      const gap = p.end === "bottom" ? sx - (p.box.x + p.box.w) : p.box.x - sx;
+      // 头贴着干端：盒的端边离干端不过半格（降号的竖笔当了光杆干，肚子在竖笔下段，望十架 p7 m55）
+      const e = p.end === "top" ? Math.min(p.stem.y0, p.stem.y1) : Math.max(p.stem.y0, p.stem.y1);
+      const atEnd = Math.abs((p.end === "top" ? p.box.y : p.box.y + p.box.h) - e) <= sp * 0.5;
+      if (atEnd && gap >= -1 && gap < sp * BARE_STEM_GAP) {
+        const x0 = Math.round(p.end === "bottom" ? p.box.x : sx);
+        const x1 = Math.round(p.end === "bottom" ? sx : p.box.x + p.box.w);
+        const box = { x: x0, y: p.box.y, w: x1 - x0, h: p.box.h };
+        // 盒里干以外还有一根竖笔伸出头外的是升号、还原号（另一根竖笔当了光杆干，爱是从神而来 p2 m16 G♯3 的升号读成 G3/B3 二分）
+        const otherStroke = (() => {
+          for (let x = box.x; x < box.x + box.w; x++) {
+            if (Math.abs(x - sx) <= Math.max(2, p.stem.lw)) continue;
+            let run = 0;
+            for (let y = Math.max(0, Math.round(box.y - sp)); y <= Math.min(bin.h - 1, Math.round(box.y + box.h + sp)); y++) {
+              run = bin.data[y * bin.w + x] ? run + 1 : 0;
+              if (run >= sp * 1.5) return true;
+            }
+          }
+          return false;
+        })();
+        let area = 0;
+        for (let y = box.y; y < box.y + box.h; y++) for (let x = box.x; x < box.x + box.w; x++) if (!onLine(y) && bin.data[y * bin.w + x]) area++;
+        got = otherStroke ? null : judge(box, area);
+        if (got) p.box = box;
+      }
+    }
     if (!got && p.box.h / sp > BARE_H1[1]) {
       const cut = endInk(bin, p, sp, onLine);
       if (cut) got = judge(cut.box, cut.area, true);
@@ -2214,8 +2247,10 @@ export function archCavity(bin: Binary, box: Rect, onLine0: (y: number) => boole
  * 但干从头中间穿过、或压在圈上的字体里也会直接挨着（万口欢唱的骑线二分和弦），所以只配合「落在符尾里」用。
  * 从盒中段离中心最近的白点灌出内腔（碰到盒边的不算封闭内腔），逐行看内腔最左、最右的白外面挨着的墨，
  * 那一列的竖墨长两格以上的行过六成就算。
+ * `vOpen`：内腔碰到盒的上下沿也算——尾弯回来的那块白常一直通到尾梢，头盒只罩住上半截（望十架 p3 m30 女高女低 E5/G4 八分，
+ * 干、尾、谱线围出的白收成 E4 空心头）；左右沿照旧不许碰（贴着干的那一侧本该是墨）。
  */
-export function stemWalledCavity(bin: Binary, box: Rect, sp: number): boolean {
+export function stemWalledCavity(bin: Binary, box: Rect, sp: number, vOpen = false): boolean {
   const x0 = Math.max(0, box.x);
   const y0 = Math.max(0, box.y);
   const x1 = Math.min(bin.w - 1, box.x + box.w - 1);
@@ -2237,11 +2272,11 @@ export function stemWalledCavity(bin: Binary, box: Rect, sp: number): boolean {
   const rowMax = new Map<number, number>();
   while (stack.length) {
     const [x, y] = stack.pop()!;
-    if (x === x0 || x === x1 || y === y0 || y === y1) return false; // 碰到盒边：不是封闭的内腔
+    if (x === x0 || x === x1 || (!vOpen && (y === y0 || y === y1))) return false; // 碰到盒边：不是封闭的内腔
     rowMin.set(y, Math.min(rowMin.get(y) ?? x, x));
     rowMax.set(y, Math.max(rowMax.get(y) ?? x, x));
     for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] as const) {
-      if (ink(nx, ny)) continue;
+      if (ny < y0 || ny > y1 || ink(nx, ny)) continue;
       const k = (ny - y0) * w + nx - x0;
       if (seen[k]) continue;
       seen[k] = 1;
