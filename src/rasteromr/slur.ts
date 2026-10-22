@@ -442,7 +442,7 @@ const EXT_AFTER = 1;
 const DOT_GAP = 0.3;
 const DOT_MAX = 1.2;
 
-export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) => boolean, sp: number): void {
+export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number, x?: number) => boolean, sp: number): void {
   const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < nl.w && y < nl.h && nl.data[y * nl.w + x] === 1;
   /** 弧盒里某一列的墨心（离 y0 最近的那个墨点）。 */
   const colY = (x: number, y0: number, top: number, bot: number): number | null => {
@@ -456,7 +456,7 @@ export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) =
     while (ink(x, b + 1)) b++;
     return b - a + 1;
   };
-  const lineAt = (y: number) => onLine(Math.round(y)) || onLine(Math.round(y) - 1) || onLine(Math.round(y) + 1);
+  const lineAt = (y: number, x?: number) => onLine(Math.round(y), x) || onLine(Math.round(y) - 1, x) || onLine(Math.round(y) + 1, x);
   /** 弧的细尾巴二值化后断成一串点：顺切线往外走，垂直 ±2 像素内的细墨（竖向不过 `THIN_RUN` 格）都算，
    *  断口不过 `DOT_GAP` 格，总长不过 `DOT_MAX` 格；碰上粗墨（干、杠、头）就停。返回最后一粒点，走不出去返回 null */
   const dottedTail = (x0: number, y0: number, vx: number, vy: number): { x: number; y: number } | null => {
@@ -527,7 +527,7 @@ export function extendArcEnds(arcs: SlurArc[], nl: Binary, onLine: (y: number) =
           gap = 0;
           continue;
         }
-        if (lineAt(py)) {
+        if (lineAt(py, px)) {
           x = px;
           y = py;
           gap++;
@@ -577,7 +577,7 @@ const TRACE_MIN = 1.5;
 /** 一端最多追多远（格）。 */
 const TRACE_MAX = 30;
 
-export function traceSteepArcEnds(arcs: SlurArc[], bin: Binary, onLine: (y: number) => boolean, lineThick: number, sp: number): void {
+export function traceSteepArcEnds(arcs: SlurArc[], bin: Binary, onLine: (y: number, x?: number) => boolean, lineThick: number, sp: number): void {
   const raw = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] === 1;
   const vRun = (x: number, y: number) => {
     let a = y, b = y;
@@ -587,7 +587,7 @@ export function traceSteepArcEnds(arcs: SlurArc[], bin: Binary, onLine: (y: numb
   };
   // 谱线行上的墨只在竖向比线粗（`TRACE_ON_LINE` 倍线宽）时算：斜穿谱线时线的那一小截也是细墨，跟上去就顺着线走了；
   // 弧顶贴在线上的那段（宁静 p2 m16 钢琴 A2→C5 拱顶压着高音谱表第二线）线加弧比线粗
-  const ink = (x: number, y: number) => raw(x, y) && (!onLine(y) || vRun(x, y) >= lineThick + TRACE_ON_LINE);
+  const ink = (x: number, y: number) => raw(x, y) && (!onLine(y, x) || vRun(x, y) >= lineThick + TRACE_ON_LINE);
   const W = Math.max(3, Math.round(sp * TRACE_PERP));
   for (const sl of [...arcs]) {
     if (!arcs.includes(sl) || sl.dashed) continue;
@@ -645,7 +645,7 @@ export function traceSteepArcEnds(arcs: SlurArc[], bin: Binary, onLine: (y: numb
         const near = runs.map(extent).sort((p, q) => Math.min(Math.abs(p.a), Math.abs(p.b), p.a <= 0 && p.b >= 0 ? 0 : 99) - Math.min(Math.abs(q.a), Math.abs(q.b), q.a <= 0 && q.b >= 0 ? 0 : 99))[0];
         if (!near) {
           // 落在谱线行上：照切线走过去（同 `extendArcEnds` 的 `EXT_GAP`）
-          if (onLine(Math.round(py))) {
+          if (onLine(Math.round(py), px)) {
             if (++lineGap > sp * EXT_GAP) break;
             x = px;
             y = py;
@@ -740,11 +740,11 @@ const TAIL_STOP_HEAD = 0.5;
 /** 判像不像延音线时，弧端找最近音头的范围（格）。 */
 const TAIL_TIE_NEAR = 1.5;
 
-export function traceLongArcTails(arcs: SlurArc[], bin: Binary, onLine: (y: number) => boolean, heads: readonly { left: number; right: number; top: number; bottom: number }[], staves: readonly { top: number; bottom: number }[], sp: number): void {
+export function traceLongArcTails(arcs: SlurArc[], bin: Binary, onLine: (y: number, x?: number) => boolean, heads: readonly { left: number; right: number; top: number; bottom: number }[], staves: readonly { top: number; bottom: number }[], sp: number): void {
   const headDist = (x: number, y: number) => Math.min(Infinity, ...heads.map((h) => Math.hypot(Math.max(0, h.left - x, x - h.right), Math.max(0, h.top - y, y - h.bottom))));
   const raw = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] === 1;
   // 谱线行上的墨一概不用：尾巴斜着过线，线加弧那几列竖向一长条，会把走向拽成竖直往下；过线当断口照切线走过去
-  const ink = (x: number, y: number) => raw(x, y) && !onLine(y);
+  const ink = (x: number, y: number) => raw(x, y) && !onLine(y, x);
   const staffAt = (y: number) => staves.findIndex((b) => y >= b.top - sp * 2 && y <= b.bottom + sp * 2);
   const W = Math.max(2, Math.round(sp * TAIL_PERP));
   const nearestHead = (x: number, y: number) => {

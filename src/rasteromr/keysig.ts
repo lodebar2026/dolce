@@ -186,7 +186,7 @@ export function pruneMidKeys(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Bina
     const bars = pg.segs.filter((l) => l.isV && l.hasTag("BarLine") && l.bottom > st.box.top && l.top < st.box.bottom).map((l) => l.cx);
     const drop = new Set<Sym>();
     mids.forEach((m, i) => {
-      const ok = bars.some((x) => x < m.x && m.x - x <= sp * 3 && doubleBarRight(bin, st.lineYs, x, sp) !== null);
+      const ok = bars.some((x) => x < m.x && m.x - x <= sp * 3 && doubleBarRight(bin, st.lineYsAt?.(x) ?? st.lineYs, x, sp) !== null);
       if (ok) return;
       const next = mids[i + 1]?.x ?? Infinity;
       for (const k of c.key) if (!head.has(k) && k.box.left >= m.x && k.box.left < next) drop.add(k);
@@ -214,7 +214,9 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
   const thick = Math.max(1, Math.round(unit.lineThick ?? sp * 0.1));
   const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] === 1;
   const near1 = (x: number, y: number) => ink(x, y) || ink(x - 1, y) || ink(x + 1, y) || ink(x, y - 1) || ink(x, y + 1);
-  const onLine = (st: Staff, y: number) => st.lineYs.some((l) => Math.abs(y - l) <= thick);
+  // 线位按 x 取（弯、斜的谱线，`Staff.lineYsAt`）
+  const ysAt = (st: Staff, x: number) => st.lineYsAt?.(x) ?? st.lineYs;
+  const onLine = (st: Staff, y: number, x: number) => ysAt(st, x).some((l) => Math.abs(y - l) <= thick);
   const groups = systemGroups(pg).sort((a, b) => a[0].box.top - b[0].box.top);
   const found: { c: StaffContext; x: number; fifths: number; syms: Sym[]; gi: number }[] = [];
   for (const [gi, g] of groups.entries()) {
@@ -232,7 +234,7 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
       for (const x of xs) {
         if (x - prev < sp * 1.5) continue;
         prev = x;
-        const right = doubleBarRight(bin, st.lineYs, x, sp);
+        const right = doubleBarRight(bin, st.lineYsAt?.(x) ?? st.lineYs, x, sp);
         if (right === null) continue;
         prev = right;
         if (c.key.some((k) => k.box.left > right && k.box.left < right + sp * 3)) continue;
@@ -246,15 +248,16 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
           if (keyFifths(head) === fifthsAt(c, right)) continue;
           const tx0 = Math.round(Math.min(...head.map((k) => k.box.left)));
           const tx1 = Math.round(Math.max(...head.map((k) => k.box.right)));
-          const ty0 = Math.round(cand.staff.lineYs[0] - sp * 2);
-          const ty1 = Math.round(cand.staff.lineYs[4] + sp * 2);
+          const cys = ysAt(cand.staff, (tx0 + tx1) / 2);
+          const ty0 = Math.round(cys[0] - sp * 2);
+          const ty1 = Math.round(cys[4] + sp * 2);
           const tpl: [number, number][] = [];
-          for (let y = ty0; y <= ty1; y++) if (!onLine(cand.staff, y)) for (let x = tx0; x <= tx1; x++) if (ink(x, y)) tpl.push([x - tx0, y - cand.staff.lineYs[0]]);
+          for (let y = ty0; y <= ty1; y++) if (!onLine(cand.staff, y, (tx0 + tx1) / 2)) for (let x = tx0; x <= tx1; x++) if (ink(x, y)) tpl.push([x - tx0, y - cys[0]]);
           if (tpl.length < sp * 2) continue;
           for (let dx = Math.round(sp * 0.2); dx <= Math.round(sp * 1.5); dx++)
             for (let dy = -Math.round(sp * 0.3); dy <= Math.round(sp * 0.3); dy++) {
               const ox = right + dx;
-              const oy = st.lineYs[0] + dy;
+              const oy = ysAt(st, ox + (tx1 - tx0) / 2)[0] + dy;
               let hit = 0;
               for (const [px, py] of tpl) if (near1(ox + px, Math.round(oy + py))) hit++;
               const recall = hit / tpl.length;
@@ -264,7 +267,7 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
               let tot = 0;
               let back = 0;
               for (let y = Math.round(oy - sp * 2); y <= Math.round(oy + sp * 6); y++) {
-                if (onLine(st, y)) continue;
+                if (onLine(st, y, ox + (tx1 - tx0) / 2)) continue;
                 for (let x = ox; x <= ox + tx1 - tx0; x++) {
                   if (!ink(x, y)) continue;
                   tot++;
@@ -280,7 +283,8 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
               if (!best) continue;
         const head = headKey(best.cand);
         const tx0 = Math.min(...head.map((k) => k.box.left));
-        const ddy = st.lineYs[0] + best.dy - best.cand.staff.lineYs[0];
+        const tx1 = Math.max(...head.map((k) => k.box.right));
+        const ddy = ysAt(st, right + best.dx + (tx1 - tx0) / 2)[0] + best.dy - ysAt(best.cand.staff, (tx0 + tx1) / 2)[0];
         const syms = head.map((k, i) => {
           const b = k.box;
           const sym = makeSymObj(pg.objs.length + pg.segs.length + 1 + i, { box: { x: Math.round(right + best!.dx + b.left - tx0), y: Math.round(b.top + ddy), w: Math.round(b.right - b.left), h: Math.round(b.bottom - b.top) }, code: k.code }, unit.height).sym;
@@ -523,7 +527,7 @@ export function extendKeyByCarry(ctx: Map<Staff, StaffContext>, carry: CarryKey 
     // 调号可能是别的行传过来的（`carrySystemKeys`），墨要到记号自己那一行去看
     const cy = (last.box.top + last.box.bottom) / 2;
     const home = [...ctx.values()].reduce((a, q) => (Math.abs(staffMid(q) - cy) < Math.abs(staffMid(a) - cy) ? q : a), c);
-    if (span < sp * CARRY_PITCH * (carry.n - 0.5) && !inkPastKey(bin, home.staff.lineYs, last.box.right, sp)) continue;
+    if (span < sp * CARRY_PITCH * (carry.n - 0.5) && !inkPastKey(bin, home.staff.lineYsAt?.(last.box.right) ?? home.staff.lineYs, last.box.right, sp)) continue;
     c.key = [...head, ...Array.from({ length: carry.n - head.length }, () => last), ...c.key.filter((k) => !head.includes(k))];
   }
 }
@@ -755,16 +759,18 @@ export function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin
     const cb = c.clef.box;
     const clef = { x: cb.left, y: cb.top, w: cb.right - cb.left, h: cb.bottom - cb.top };
     const bass = c.clef.code === "fClef";
-    let flats = flatsByStrokes(bin, c.staff.lineYs, clef, bass, unit.space, unit.lineThick ?? 0);
+    // 调号区的线位取谱号右边一格处（弯、斜的谱线按 `lineYsAt`）
+    const keyYs = c.staff.lineYsAt?.(clef.x + clef.w + unit.space) ?? c.staff.lineYs;
+    let flats = flatsByStrokes(bin, keyYs, clef, bass, unit.space, unit.lineThick ?? 0);
     // 粗线低分辨率页：高音谱号的行另按探出谱表的竖笔数一遍，取多的（见 `flatsByStairs`）
     if (!bass && isCoarseKey(unit.space, unit.lineThick ?? 0)) {
-      const st = flatsByStairs(bin, c.staff.lineYs, clef, unit.space, unit.lineThick ?? 0);
+      const st = flatsByStairs(bin, keyYs, clef, unit.space, unit.lineThick ?? 0);
       if (st.length > flats.length) flats = st;
     }
     rows.push({
       c,
       flats,
-      sharps: sharpsByStrokesLoose(bin, c.staff.lineYs, clef, bass, unit.space),
+      sharps: sharpsByStrokesLoose(bin, keyYs, clef, bass, unit.space),
     });
   }
   const pick = (of: (r: (typeof rows)[number]) => Rect[]) => {

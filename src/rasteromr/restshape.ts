@@ -189,7 +189,7 @@ export function crossRuns(bin: Binary, x0: number, x1: number, y0: number, y1: n
  * 不只左右两半并成的块，整块的也按这套判（附点全音符叠头、「阿们」叠头，内腔被谱线切碎、模板配不上）。
  * 我灵镇静 m8 的 A4/F4、m25 的 A3/F3：内腔是两道竖缝（宽高比 0.5），内腔那一路与模板都认不出。
  */
-export function wholesByShape(bin: Binary, nl: Binary, box0: Rect, unit: RasterUnit, grid: (y: number) => number | null, stems: LineSeg[] = []): Rect[] {
+export function wholesByShape(bin: Binary, nl: Binary, box0: Rect, unit: RasterUnit, grid: (y: number, x?: number) => number | null, stems: LineSeg[] = []): Rect[] {
   const sp = unit.space;
   // **盒收到头上**：加线比头宽，块里带着整条加线时盒宽出一截（以马内利来临歌 m24 加一线上的 C4，43 像素的盒里头只有 30）。
   // 墨横满盒宽九成的行是线，不算；按其余行的墨定左右边
@@ -314,7 +314,7 @@ export function wholesByShape(bin: Binary, nl: Binary, box0: Rect, unit: RasterU
   if (!byRot && !thin && (lr < WHOLE_LR || ud < WHOLE_UD || side < WHOLE_SIDE || mid > side * WHOLE_MID)) return [];
   const out: Rect[] = [];
   for (let k = 0; k < n; k++) {
-    const cy = grid(box.y + (k + 0.5) * hh);
+    const cy = grid(box.y + (k + 0.5) * hh, box.x + box.w / 2);
     if (cy === null) return [];
     out.push({ x: box.x, y: Math.round(cy - hh / 2), w: box.w, h: Math.round(hh) });
   }

@@ -354,6 +354,16 @@ export class Staff {
     return boxCy(this.box);
   }
 
+  /** x 处的第一线 y（位图路的弯、斜谱线按 `lineYsAt`；矢量路就是 `box.top`）。 */
+  topAt(x: number): number {
+    return this.lineYsAt && this.lineYs.length === 5 ? this.lineYsAt(x)[0] : this.box.top;
+  }
+
+  /** x 处的末线 y（同 `topAt`）。 */
+  bottomAt(x: number): number {
+    return this.lineYsAt && this.lineYs.length === 5 ? this.lineYsAt(x)[4] : this.box.bottom;
+  }
+
   /** `Staff::stepDistance`：**半个线距**（相邻两个音级的纵向间隔）。 */
   stepDistance(): number {
     if (this.lineYs.length <= 1) return 0;

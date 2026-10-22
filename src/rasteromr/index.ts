@@ -9,7 +9,7 @@
 // （符头/符干/符杠/小节/时值/和弦/声部/弧线/MusicXML），**那边一行不改**。
 export * from "./rasterpage";
 export * from "./descreen";
-export * from "./dewarp";
+export * from "./stafffind";
 export * from "./staffline";
 export * from "./prims";
 export * from "./adapt";

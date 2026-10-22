@@ -34,7 +34,7 @@ import { lastKey } from "./keysig";
 import type { ContourLedger } from "./ledger";
 import type { HarmonyStrip, HarmonyToken } from "./harmony";
 import type { RasterPage } from "./rasterpage";
-import type { RasterUnit, StaffGroup, StaffLineRun } from "./staffline";
+import type { LineGrid, RasterUnit, StaffGroup, StaffLineRun } from "./staffline";
 import type { TimeStrip } from "./timesig";
 import type { ClefTally, PageCarry, PageSource, RasterLiveOcr, RasterPageOpts, RasterPageResult } from "./recognize";
 
@@ -52,7 +52,7 @@ export interface PageFinishInput {
   groups: StaffGroup[];
   nl: Binary;
   staffLines: StaffLineRun[];
-  gridYs: number[];
+  grid: LineGrid;
   prims: RasterPrims;
   jianpuStrips: JianpuStrip[];
   blobs: Component[];
@@ -66,7 +66,7 @@ export interface PageFinishInput {
   cmap: ContourMap;
   ledger: ContourLedger;
   rlayer: RepairedLayer;
-  onGrid: (y: number) => boolean;
+  onGrid: (y: number, x?: number) => boolean;
   restIds: Set<number>;
   claimed: Set<number>;
   dictClaimed: Set<number>;
@@ -210,7 +210,7 @@ const ARP_REACH = 2.5;
 
 /** 一页的后半程（见文件头）。 */
 export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageResult> {
-  const { index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, gridYs, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes } = s;
+  const { index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes } = s;
   // ── 演奏法与力度 ─────────────────────────────────────────────────────────
   //
   // 这三步矢量路一直在跑（`staffomr/pagerun.ts`），位图路**从来没调过**——所以力度
@@ -994,7 +994,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   const runArcs = new Set<SlurArc>();
   {
     const sp = unit.space;
-    const runNl = removeStaffLinesByRun(raster.bin, staffLines.map((l) => l.y), unit);
+    const runNl = removeStaffLinesByRun(raster.bin, staffLines, unit);
     const runMap = traceContours(runNl, unit, contourStaves);
     const taken = slurs.map((sl) => sl.obj.box);
     const heads = notes.filter((n) => !n.rest).map((n) => n.sym.box);
@@ -1093,12 +1093,12 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     }
   }
   mergeArcPieces(slurs, unit.space);
-  extendArcEnds(slurs, nl, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), unit.space);
-  traceSteepArcEnds(slurs, raster.bin, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 0.5), unit.lineThick, unit.space);
-  traceLongArcTails(slurs, raster.bin, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 0.5), notes.filter((n) => !n.rest).map((n) => n.sym.box), pg.staves.map((st) => st.box), unit.space);
+  extendArcEnds(slurs, nl, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x), unit.space);
+  traceSteepArcEnds(slurs, raster.bin, (y: number, x?: number) => grid.onLine(y, unit.lineThick / 2 + 0.5, x), unit.lineThick, unit.space);
+  traceLongArcTails(slurs, raster.bin, (y: number, x?: number) => grid.onLine(y, unit.lineThick / 2 + 0.5, x), notes.filter((n) => !n.rest).map((n) => n.sym.box), pg.staves.map((st) => st.box), unit.space);
   // 续过谱线之后再并一次：跨谱表的大弧下截续过右手第一线才够到上截（宁静 p1 m9–12 钢琴 F2→F4 那几条）
   mergeArcPieces(slurs, unit.space);
-  bridgeArcPieces(slurs, unit.space, (x, y) => x >= 0 && y >= 0 && x < raster.bin.w && y < raster.bin.h && !!raster.bin.data[y * raster.bin.w + x], (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 0.5));
+  bridgeArcPieces(slurs, unit.space, (x, y) => x >= 0 && y >= 0 && x < raster.bin.w && y < raster.bin.h && !!raster.bin.data[y * raster.bin.w + x], (y: number, x?: number) => grid.onLine(y, unit.lineThick / 2 + 0.5, x));
   attachSlurs(slurs, notes, unit.space);
   // 放宽那遍不给歌词账上来的弧、碰着整页文字框的弧（字的笔画）
   attachSlursByStem(slurs, notes, unit.space, (sl) => {
@@ -1210,7 +1210,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     const xa = Math.max(0, Math.round(x0)), xb = Math.min(bin.w, Math.round(x1));
     const ya = Math.max(0, Math.round(y0)), yb = Math.min(bin.h - 1, Math.round(y1));
     const rows: number[] = [];
-    for (let y = ya; y <= yb; y++) if (!gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick)) rows.push(y);
+    for (let y = ya; y <= yb; y++) if (!grid.onLine(y, unit.lineThick, (xa + xb) / 2)) rows.push(y);
     if (xb <= xa || !rows.length) return 0;
     let hit = 0;
     for (let x = xa; x < xb; x++) if (rows.some((y) => bin.data[y * bin.w + x])) hit++;

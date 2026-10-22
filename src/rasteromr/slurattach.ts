@@ -179,7 +179,7 @@ const BRIDGE_INK = 0.9;
 /** 平的接头（长弧拱顶那段没认出来）两端距离上限（格）。 */
 const BRIDGE_FLAT_GAP = 60;
 
-export function bridgeArcPieces(slurs: SlurArc[], sp: number, ink: (x: number, y: number) => boolean, onLine: (y: number) => boolean): void {
+export function bridgeArcPieces(slurs: SlurArc[], sp: number, ink: (x: number, y: number) => boolean, onLine: (y: number, x?: number) => boolean): void {
   const slope = (x0: number, y0: number, x1: number, y1: number) => (y1 - y0) / Math.max(1, x1 - x0);
   let merged = true;
   while (merged) {
@@ -202,7 +202,7 @@ export function bridgeArcPieces(slurs: SlurArc[], sp: number, ink: (x: number, y
           const y = a.ry + (gy * (x - a.rx)) / gx;
           for (let d = -2; d <= bulge; d++) {
             const yy = Math.round(y + out * d);
-            if (ink(x, yy) && (steep || !onLine(yy))) {
+            if (ink(x, yy) && (steep || !onLine(yy, x))) {
               hit++;
               break;
             }

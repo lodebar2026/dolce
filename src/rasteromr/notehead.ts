@@ -127,7 +127,7 @@ export function findRasterHeads(
   stems: LineSeg[],
   unit: RasterUnit,
   /** 「这个 y 落在谱线网格的延长线上吗」——判剪出来的细横笔是不是加线。 */
-  onLedgerGrid: (y: number) => boolean = () => false,
+  onLedgerGrid: (y: number, x?: number) => boolean = () => false,
   /**
    * 「这个 y 在某行谱的五条线之内吗」（含上下各一格）。**只用来卡空心符头**：
    * 谱表上方的声部标签（"Women"/"Men"）、曲名里的 `o`/`e`/`D` 是接近正方的空心块，
@@ -145,7 +145,7 @@ export function findRasterHeads(
    */
   matchHollow: ((box: Rect) => { smufl: SmuflName; dist: number } | null) | null = null,
   /** 「这个 y 在谱表五条线之外、隔着至少一格吗」——只在那里查「底是开口的弧」（延长记号）。 */
-  offStaff: (y: number) => boolean = () => false,
+  offStaff: (y: number, x?: number) => boolean = () => false,
   /** 因「盒里没有被围住的白」剔掉的块记在这里（块 id → 当时的头盒）：别的几路不再按空心头收它们。 */
   notHollow?: Map<number, Rect>,
   /** 原图上像内腔的孔（`contour.ts::cavityLike`）：窄块借干那一档用。 */
@@ -199,7 +199,7 @@ export function findRasterHeads(
     const stem = stemOf(b, stems, unit);
     // 剪掉了列，且高度落在谱线网格的延长线上 → 那两截细横笔是加线
     const ledger: LineSeg | null =
-      t.trimmed && t.ledgerY != null && onLedgerGrid(t.ledgerY)
+      t.trimmed && t.ledgerY != null && onLedgerGrid(t.ledgerY, c.bbox.x + c.bbox.w / 2)
         ? { x0: c.bbox.x, y0: t.ledgerY, x1: c.bbox.x + c.bbox.w - 1, y1: t.ledgerY, lw: unit.lineThick, maxLw: unit.lineThick }
         : null;
     let code: SmuflName;
@@ -211,7 +211,7 @@ export function findRasterHeads(
       // 真符头是闭合的一圈：中间那几列上下都有墨。只看够一整个头高的——骑线的空心头被去线切开，
       // 上半截本来就是一道弧（那一路交给碎块并回）；也只看谱表外隔一格以上的：斜椭圆的二分头
       // 底笔不一定在一行里横满中段，谱表里照查会误伤（圣哉三一歌伴奏 −0.6、齐来谢主歌 −1.3）。
-      if (h >= OPEN_ARC_H && offStaff(b.y + b.h / 2) && openBelow(bin, b)) continue;
+      if (h >= OPEN_ARC_H && offStaff(b.y + b.h / 2, b.x + b.w / 2) && openBelow(bin, b)) continue;
       // **盒里没有被围住的白不是空心头**：圆滑线起笔的斜笔连着一截没去净的谱线（是爱 p1 m15，28×17、过了宽高比），
       // 斜笔下方的白左右都不封口。真空心头的内腔即使被线切开，每一片也是上下左右都挨着墨
       if (!rayEnclosed(bin, b, sp)) {
@@ -336,7 +336,7 @@ function openBelow(bin: Binary, b: Rect): boolean {
  * 于是两截都不成符头、字典也认不出——实测宁静 p3 那行「附点二分音符 + 四分休止」
  * 只认出了休止，整行五个小节全成了「一个 0.25 的音」。
  */
-export function judgeHeadBox(bin: Binary, box: Rect, unit: RasterUnit, stems: LineSeg[], inStaffBand: (y: number) => boolean): SmuflName | null {
+export function judgeHeadBox(bin: Binary, box: Rect, unit: RasterUnit, stems: LineSeg[], inStaffBand: (y: number, x?: number) => boolean): SmuflName | null {
   const sp = unit.space;
   const w = box.w / sp;
   const h = box.h / sp;
@@ -350,7 +350,7 @@ export function judgeHeadBox(bin: Binary, box: Rect, unit: RasterUnit, stems: Li
   if (fill < 0.3) return null;
   if (fill >= FILL_SOLID) return "noteheadBlack";
   if (w < W_HOLLOW_MIN || w / h < R_HOLLOW_MIN) return null;
-  if (!inStaffBand(box.y + box.h / 2)) return null;
+  if (!inStaffBand(box.y + box.h / 2, box.x + box.w / 2)) return null;
   return w >= W_WHOLE && !stemOf(box, stems, unit) ? "noteheadWhole" : "noteheadHalf";
 }
 
@@ -525,7 +525,7 @@ const INK_STEM_BACK = 1.5;
 const MATE_GAP = 3.5;
 
 /** 把被谱线豁开的内腔并回一个。 */
-export function mergeHoles(holes: Rect[], unit: RasterUnit, onLine: (y: number) => boolean = () => false): Rect[] {
+export function mergeHoles(holes: Rect[], unit: RasterUnit, onLine: (y: number, x?: number) => boolean = () => false): Rect[] {
   const sp = unit.space;
   // **先按尺寸筛一道再并**。页面上最大的一批「孔」是**谱线之间被小节线围住的那些间**
   // （实测 28×20 格一个），不筛就会顺着它们连锁并成整页一个盒（实测并完只剩 155 个、
@@ -547,7 +547,7 @@ export function mergeHoles(holes: Rect[], unit: RasterUnit, onLine: (y: number) 
         // 12×5 与 11×5 两半、重叠 0.45）。两半都扁、中间只隔一条线宽的，重叠四成就并。
         const gapY = r.y > box.y ? box.y + box.h + gap / 2 : r.y + r.h + gap / 2;
         // 缝要落在谱线/加线网格上：棋盘网纹底本满页是小孔，不卡网格就并出假内腔（父恩广大 −1.8）
-        const lineCut = ov >= Math.min(box.w, r.w) * HOLE_OVERLAP_CUT && gap <= unit.lineThick + 1 && box.h <= sp * 0.4 && r.h <= sp * 0.4 && onLine(gapY);
+        const lineCut = ov >= Math.min(box.w, r.w) * HOLE_OVERLAP_CUT && gap <= unit.lineThick + 1 && box.h <= sp * 0.4 && r.h <= sp * 0.4 && onLine(gapY, box.x + box.w / 2);
         if (!lineCut && ov < Math.min(box.w, r.w) * HOLE_OVERLAP) continue;
         if (gap > sp * HOLE_VGAP) continue;
         const x0 = Math.min(box.x, r.x);
@@ -574,7 +574,7 @@ export function hollowHeadsFromHoles(
   holes: Rect[],
   unit: RasterUnit,
   stems: LineSeg[],
-  inStaffBand: (y: number) => boolean,
+  inStaffBand: (y: number, x?: number) => boolean,
   taken: Rect[],
   bars: LineSeg[] = [],
 ): { box: Rect; code: SmuflName; weak?: boolean }[] {
@@ -656,7 +656,7 @@ export function hollowHeadsFromHoles(
     const h = box.h / sp;
     if (w < W_HOLLOW_MIN || w > W_MAX || h < H_MIN || h > H_MAX) continue;
     if (w / h < R_HOLLOW_MIN) continue;
-    if (!inStaffBand(box.y + box.h / 2)) continue;
+    if (!inStaffBand(box.y + box.h / 2, box.x + box.w / 2)) continue;
     // 圈要**围得住**：盒里的墨占三成到七成（全实心的是实心符头、太空的是别的东西的空隙）
     let ink = 0;
     for (let y = box.y; y < box.y + box.h; y++)
@@ -781,7 +781,7 @@ export function hollowHeadsFromCavities(
   cavities: Rect[],
   unit: RasterUnit,
   stems: LineSeg[],
-  inStaffBand: (y: number) => boolean,
+  inStaffBand: (y: number, x?: number) => boolean,
   taken: Rect[],
   size: { w: number; h: number },
   /**
@@ -807,7 +807,7 @@ export function hollowHeadsFromCavities(
     if (cw < HOLE_W[0] || cw > HOLE_W[1] || ch < HOLE_H[0] || ch > HOLE_H[1]) continue;
     const cx = cav.x + cav.w / 2;
     const cy = cav.y + cav.h / 2;
-    if (!inStaffBand(cy)) continue;
+    if (!inStaffBand(cy, cx)) continue;
     const box: Rect = { x: Math.round(cx - size.w / 2), y: Math.round(cy - size.h / 2), w: size.w, h: size.h };
     let ink = 0;
     for (let y = box.y; y < box.y + box.h; y++)
@@ -1074,9 +1074,9 @@ export function hollowHeadsByPitch(
   holes: Rect[],
   allMasks: HeadMask[],
   unit: RasterUnit,
-  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stepsIn: (y0: number, y1: number, x?: number) => PitchStep[],
   stems: LineSeg[],
-  inStaffBand: (y: number) => boolean,
+  inStaffBand: (y: number, x?: number) => boolean,
   taken: Rect[],
   cavW?: number,
 ): { box: Rect; code: SmuflName; weak?: boolean; noSample?: boolean }[] {
@@ -1096,11 +1096,11 @@ export function hollowHeadsByPitch(
     const tall = cavScale < 1 && hh > STACK_H[1] && hh <= STACK3_H;
     if (hw < stackW || hw > HOLE_W[1] || hh <= STACK_H[0] || (hh > STACK_H[1] && !tall)) continue;
     const cx0 = hole.x + hole.w / 2;
-    if (!inStaffBand(hole.y + hole.h / 2)) continue;
+    if (!inStaffBand(hole.y + hole.h / 2, hole.x + hole.w / 2)) continue;
     const bw = hole.w + ring * 2;
     const cands: { x: number; y: number; s: number }[] = [];
     const loose: { x: number; y: number; s: number }[] = [];
-    for (const st of stepsIn(hole.y - sp * 0.3, hole.y + hole.h + sp * 0.3)) {
+    for (const st of stepsIn(hole.y - sp * 0.3, hole.y + hole.h + sp * 0.3, hole.x + hole.w / 2)) {
       const b = best(st, cx0 - sp * 0.2, cx0 + sp * 0.2);
       if (!b) continue;
       const cav = cavity(b.x, st.y, cavScale < 1);
@@ -1245,7 +1245,7 @@ export function reseatHollowHeads(
   rawHoles: Rect[],
   allMasks: HeadMask[],
   unit: RasterUnit,
-  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stepsIn: (y0: number, y1: number, x?: number) => PitchStep[],
   stems: LineSeg[],
   heads: { box: Rect; code: string }[],
 ): number {
@@ -1275,7 +1275,7 @@ export function reseatHollowHeads(
     }
     if (!v) continue;
     const vx = (v.x0 + v.x1) / 2;
-    const steps = stepsIn(cy - sp * 0.8, cy + sp * 0.8);
+    const steps = stepsIn(cy - sp * 0.8, cy + sp * 0.8, vx);
     if (steps.length < 2) continue;
     const own = steps.reduce((p, q) => (Math.abs(q.y - cy) < Math.abs(p.y - cy) ? q : p));
     const ownB = bestMasked(own, cx - sp * 0.3, cx + sp * 0.3, vx);
@@ -1322,7 +1322,7 @@ export function hollowHeadsOnStemSeeds(
   rawHoles: Rect[],
   allMasks: HeadMask[],
   unit: RasterUnit,
-  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stepsIn: (y0: number, y1: number, x?: number) => PitchStep[],
   stems: LineSeg[],
   syms: { box: Rect; code: string }[],
   beams: Rect[],
@@ -1366,7 +1366,7 @@ export function hollowHeadsOnStemSeeds(
     for (const end of ["top", "bot"] as const) {
       const e = end === "top" ? top : bot;
       const cx = end === "top" ? vx + w / 2 : vx - w / 2;
-      const steps = end === "top" ? stepsIn(e - sp * SEED_OUT, e + sp * SEED_IN) : stepsIn(e - sp * SEED_IN, e + sp * SEED_OUT);
+      const steps = end === "top" ? stepsIn(e - sp * SEED_OUT, e + sp * SEED_IN, cx) : stepsIn(e - sp * SEED_IN, e + sp * SEED_OUT, cx);
       for (const st of steps) {
         const b = bestMasked(st, cx - sp * SEED_XW, cx + sp * SEED_XW, vx);
         if (!b || b.s < ALONG_SCORE) continue;
@@ -1399,7 +1399,7 @@ export function hollowHeadsAlongStems(
   rawHoles: Rect[],
   allMasks: HeadMask[],
   unit: RasterUnit,
-  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stepsIn: (y0: number, y1: number, x?: number) => PitchStep[],
   stems: LineSeg[],
   heads: { box: Rect; code: string }[],
 ): { box: Rect; code: SmuflName; weak?: boolean }[] {
@@ -1470,7 +1470,7 @@ export function hollowHeadsAlongStems(
   for (const { ref, vx, y0, y1, end, beyond, third, tip, deep, flip } of ranges) {
     if (y1 <= y0) continue;
     const cx = flip ? 2 * vx - (ref.box.x + ref.box.w / 2) : ref.box.x + ref.box.w / 2;
-    for (const st of stepsIn(y0, y1)) {
+    for (const st of stepsIn(y0, y1, cx)) {
       // 干端那一级：干必挂着头，模板分放宽；干端以外的位置照常
       const atEnd = end !== undefined && Math.abs(st.y - end) <= sp * ALONG_END_TOL;
       // 模板沿用本页对齐过的空心模板，谱线行与这根干的列不计（`scoreAtMasked`）；墨占比、内腔都在微调后的头心上量
@@ -1542,7 +1542,7 @@ export function hollowHeadsOnLedgers(
   allMasks: HeadMask[],
   unit: RasterUnit,
   ledgers: { x0: number; x1: number; y: number }[],
-  stepsIn: (y0: number, y1: number) => PitchStep[],
+  stepsIn: (y0: number, y1: number, x?: number) => PitchStep[],
   stems: LineSeg[],
   taken: Rect[],
   /** 出参：靠墨柱判出来的干（竖段表里没有，`buildNotes` 定时值要用）。 */
@@ -1559,7 +1559,7 @@ export function hollowHeadsOnLedgers(
   for (const l of ledgers) {
     const len = (l.x1 - l.x0) / sp;
     if (len < LEDGER_LEN[0] || len > LEDGER_LEN[1]) continue;
-    for (const st of stepsIn(l.y - sp * 0.7, l.y + sp * 0.7)) {
+    for (const st of stepsIn(l.y - sp * 0.7, l.y + sp * 0.7, (l.x0 + l.x1) / 2)) {
       const b = best(st, l.x0 + sp * 0.4, l.x1 - sp * 0.4);
       if (!b || b.s < LEDGER_SCORE) continue;
       const cv = cavity(b.x, st.y);
@@ -1754,10 +1754,10 @@ export function headsBetweenStemPairs(
   stems: LineSeg[],
   heads: Rect[],
   unit: RasterUnit,
-  snap: (y: number) => number | null,
+  snap: (y: number, x?: number) => number | null,
   size: { w: number; h: number },
   bin: Binary,
-  onLine: (y: number) => boolean,
+  onLine: (y: number, x?: number) => boolean,
   isBar: (s: LineSeg) => boolean,
 ): { box: Rect; code: SmuflName; ids: number[]; weak: true }[] {
   const sp = unit.space;
@@ -1768,7 +1768,7 @@ export function headsBetweenStemPairs(
   const inkIn = (cx: number, cy: number, w: number, h: number): number => {
     let n = 0, ink = 0;
     for (let y = Math.round(cy - h / 2); y <= Math.round(cy + h / 2); y++) {
-      if (y < 0 || y >= bin.h || onLine(y)) continue;
+      if (y < 0 || y >= bin.h || onLine(y, cx)) continue;
       for (let x = Math.round(cx - w / 2); x <= Math.round(cx + w / 2); x++) {
         if (x < 0 || x >= bin.w) continue;
         n++;
@@ -1788,7 +1788,7 @@ export function headsBetweenStemPairs(
       if (ux - dx < sp * 0.8 || ux - dx > sp * 1.7 || Math.abs(uy - dy) > sp * 0.7) continue;
       if (headAt(dx, dy) || headAt(dx, dBot)) continue;
       const cx = (ux + dx) / 2;
-      const cy = snap((uy + dy) / 2) ?? (uy + dy) / 2;
+      const cy = snap((uy + dy) / 2, cx) ?? (uy + dy) / 2;
       const fill = inkIn(cx, cy, size.w * 0.9, size.h * 0.9);
       if (fill < 0.12) continue;
       const core = inkIn(cx, cy, sp * 0.6, sp * 0.4);
@@ -1825,14 +1825,14 @@ const BAR_ARC_FILL = 0.35;
 const BARE_NETTED = 0.45;
 
 /** 盒里不碰盒边的白连通块（谱线行算白）中最大的一块像素数。 */
-function largestHole(bin: Binary, b: Rect, onLine: (y: number) => boolean, linesInk = true): number {
+function largestHole(bin: Binary, b: Rect, onLine: (y: number, x?: number) => boolean, linesInk = true): number {
   const W = b.w;
   const H = b.h;
   if (W <= 2 || H <= 2) return 0;
   const white = (x: number, y: number) => {
     const X = b.x + x;
     const Y = b.y + y;
-    return X < 0 || Y < 0 || X >= bin.w || Y >= bin.h || (linesInk && onLine(Y)) ? false : !bin.data[Y * bin.w + X] || onLine(Y);
+    return X < 0 || Y < 0 || X >= bin.w || Y >= bin.h || (linesInk && onLine(Y, X)) ? false : !bin.data[Y * bin.w + X] || onLine(Y, X);
   };
   const seen = new Uint8Array(W * H);
   let best = 0;
@@ -1886,10 +1886,10 @@ function solidAtEnd(bin: Binary, s: LineSeg, end: "top" | "bottom", sp: number):
 export function headsOnBareStems(
   probes: BareStemProbe[],
   unit: RasterUnit,
-  snap: (y: number) => number | null,
+  snap: (y: number, x?: number) => number | null,
   size: { w: number; h: number },
   bin: Binary,
-  onLine: (y: number) => boolean,
+  onLine: (y: number, x?: number) => boolean,
 ): { box: Rect; code: SmuflName; ids: number[]; weak: true }[] {
   const sp = unit.space;
   /** 头心一小块（0.6×0.4 格）在原图里的墨占比，谱线那几行不算。实心头近 1，空心头的斜缝内腔低得多。 */
@@ -1915,7 +1915,7 @@ export function headsOnBareStems(
     let ink = 0;
     let rows = 0;
     for (let y = Math.round(cy - sp * half); y <= Math.round(cy + sp * half); y++) {
-      if (y < 0 || y >= bin.h || onLine(y) || ledgerRow(cx, y)) continue;
+      if (y < 0 || y >= bin.h || onLine(y, cx) || ledgerRow(cx, y)) continue;
       rows++;
       for (let x = Math.round(cx - sp * 0.3); x <= Math.round(cx + sp * 0.3); x++) {
         if (x < 0 || y < 0 || x >= bin.w || y >= bin.h) continue;
@@ -1937,7 +1937,7 @@ export function headsOnBareStems(
   const widest = (box: Rect, y: number): number => {
     let most = 0;
     for (let yy = Math.round(y - sp * 0.25); yy <= Math.round(y + sp * 0.25); yy++) {
-      if (yy < 0 || yy >= bin.h || onLine(yy)) continue;
+      if (yy < 0 || yy >= bin.h || onLine(yy, box.x + box.w / 2)) continue;
       let x0 = -1;
       let x1 = -1;
       for (let x = box.x; x < box.x + box.w; x++)
@@ -1956,14 +1956,14 @@ export function headsOnBareStems(
     if (w < BARE_W[0] || w > BARE_W[1] || fill < BARE_FILL[0]) return null;
     let ys: number[];
     if (h >= BARE_H1[0] && h <= BARE_H1[1]) {
-      const c = snap(box.y + box.h / 2);
+      const c = snap(box.y + box.h / 2, box.x + box.w / 2);
       if (c === null) return null;
       ys = [c];
     } else if (h >= BARE_H2[0] && h <= BARE_H2[1]) {
       // 两个头各高 box.h − 1 格（中心隔一格）
       const hh = Math.max(sp * 0.8, box.h - sp);
-      const a = snap(box.y + hh / 2);
-      const b = snap(box.y + box.h - hh / 2);
+      const a = snap(box.y + hh / 2, box.x + box.w / 2);
+      const b = snap(box.y + box.h - hh / 2, box.x + box.w / 2);
       if (a === null || b === null || Math.abs(Math.abs(b - a) - sp) > sp * 0.3) return null;
       ys = [a, b];
     } else return null;
@@ -2011,7 +2011,7 @@ export function headsOnBareStems(
           return false;
         })();
         let area = 0;
-        for (let y = box.y; y < box.y + box.h; y++) for (let x = box.x; x < box.x + box.w; x++) if (!onLine(y) && bin.data[y * bin.w + x]) area++;
+        for (let y = box.y; y < box.y + box.h; y++) for (let x = box.x; x < box.x + box.w; x++) if (!onLine(y, x) && bin.data[y * bin.w + x]) area++;
         got = otherStroke ? null : judge(box, area);
         if (got) p.box = box;
       }
@@ -2046,7 +2046,7 @@ export function headsOnBareStems(
  * 光杆干端头窗口里（与 `probeBareStems` 同一个窗口）的墨，扣掉干本身那几列、谱线行与加线行（横向一格半以上的薄行），
  * 再把上下两头只剩一根竖笔（不到 0.4 格宽）的行削掉——另一个声部朝反方向伸出去的干。返回那一截的盒与墨量。
  */
-function endInk(bin: Binary, p: BareStemProbe, sp: number, onLine: (y: number) => boolean): { box: Rect; area: number } | null {
+function endInk(bin: Binary, p: BareStemProbe, sp: number, onLine: (y: number, x?: number) => boolean): { box: Rect; area: number } | null {
   const s = p.stem;
   const sx = (s.x0 + s.x1) / 2;
   const e = p.end === "top" ? Math.min(s.y0, s.y1) : Math.max(s.y0, s.y1);
@@ -2058,7 +2058,7 @@ function endInk(bin: Binary, p: BareStemProbe, sp: number, onLine: (y: number) =
   const lw = Math.max(1, s.lw);
   const rows: { y: number; x0: number; x1: number; n: number; span: number }[] = [];
   for (let y = ya; y <= yb; y++) {
-    if (onLine(y)) continue;
+    if (onLine(y, sx)) continue;
     // 这一行在窗口外左右各一格也算上的墨宽：加线比头宽，只在窗口里数分不开
     let span = 0;
     for (let x = Math.max(0, xa - Math.round(sp)); x <= Math.min(bin.w - 1, xb + Math.round(sp)); x++) span += bin.data[y * bin.w + x];
@@ -2098,7 +2098,7 @@ function endInk(bin: Binary, p: BareStemProbe, sp: number, onLine: (y: number) =
   // 窗口干那一侧的边外还有头那么宽的墨：头比窗口还长（和弦五度的两个头，齐来谢主歌 m3），窗口截出来的尺寸不作数
   for (let k = 1; k <= 2; k++) {
     const y = p.end === "bottom" ? ya - k : yb + k;
-    if (y < 0 || y >= bin.h || onLine(y)) continue;
+    if (y < 0 || y >= bin.h || onLine(y, sx)) continue;
     let n = 0;
     for (let x = xa; x <= xb; x++) if (Math.abs(x - sx) > lw && bin.data[y * bin.w + x]) n++;
     if (n >= sp * 0.4) return null;
@@ -2209,11 +2209,12 @@ export function hollowSlit(bin: Binary, b: Rect, sp: number): boolean {
  * 贴线那头不会是最宽的（斜缝各行差不多宽，椭圆中间最宽）。
  * 谱线从头中间横穿的（骑线头），线另一边盒中段接着还有墨，不算。
  */
-export function archCavity(bin: Binary, box: Rect, onLine0: (y: number) => boolean): boolean {
+export function archCavity(bin: Binary, box: Rect, onLine0: (y: number, x?: number) => boolean): boolean {
   // 紧挨谱线、整行八成以上是墨的也算谱线行：扫描件谱线上的白点让那一行量出一两像素的「缝」，混进内腔，形状就量歪了（望十架 p7 m55）
   const onLine = (y: number): boolean => {
-    if (onLine0(y)) return true;
-    if (y < 0 || y >= bin.h || !(onLine0(y - 1) || onLine0(y + 1))) return false;
+    const cx = box.x + box.w / 2;
+    if (onLine0(y, cx)) return true;
+    if (y < 0 || y >= bin.h || !(onLine0(y - 1, cx) || onLine0(y + 1, cx))) return false;
     let n = 0;
     const x0 = Math.max(0, box.x), x1 = Math.min(bin.w, box.x + box.w);
     for (let x = x0; x < x1; x++) if (bin.data[y * bin.w + x]) n++;

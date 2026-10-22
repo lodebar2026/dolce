@@ -1,7 +1,7 @@
-// 谱线：量出**基本单位**（线宽与线距），再把五条一组的谱线找出来。
+// 谱线的数据结构与读法：基本单位（线宽与线距）、一行谱的五条线（弯、斜的带逐列偏移）、随 x 的线位、音级换算、全页谱线网格。
+// 谱线怎么找见 `stafffind.ts`（按逐列游程，不用行投影）。
 //
-// 这是位图路的第一块判据，后面所有几何门槛都按这里量出来的线距写
-// ——与矢量路同一个口径（`page.ts`：「一切长度都是小节线高度 H 的比例」）。
+// 后面所有几何门槛都按线距写——与矢量路同一个口径（`page.ts`：「一切长度都是小节线高度 H 的比例」）。
 import type { Binary } from "../omrkit/types";
 import { definePortable } from "./portablefn";
 
@@ -16,183 +16,44 @@ export interface RasterUnit {
 }
 
 /**
- * 量线宽与线距：**先找谱线，再从五条一组反推**。
- *
- * 试过先量单位再找线，不行：musicpp `pixel.cpp::findUnit` 的办法是取逐列黑白游程的
- * 众数，一页乐谱里最多的白色纵向游程「应该」是两条谱线之间那一段——
- * 这本书上不成立。符头内部、歌词笔画之间、和弦图格线的小空隙数量远超谱线间隙，
- * 白游程众数实测落在 3~5 px，而真线距是 17~19 px（差了四倍，后面所有门槛全废）。
- *
- * 反过来做就没这个问题：谱线是「一整行几乎全是墨」的横带，行投影一次就找齐
- * （实测宁静的伯利恒 p1 一次找出 50 条 = 10 行谱，分毫不差）；
- * 五条一组分出来之后，组内相邻线的间距就是线距，取全页中位数。
- * **线宽**取这些谱线横带的中位厚度——那是真谱线的厚度，不掺别的。
+ * **曲线谱线**：一条线相对它的 `y` 的逐列偏移（`step` 像素一采样，从 x = 0 起；采样之间线性插值、两头沿用端值）。
+ * 识别不推平、不纠斜（`rasterpage.ts::rasterizeImage`），弯、斜的谱线就用它表示；平直的线不挂（见 `dewarp.ts::fitStaffCurves`），
+ * 一切判据照常数 y 走。
  */
-export function estimateUnit(bin: Binary): RasterUnit | null {
-  const lines = findStaffLines(bin);
-  const groups = groupStaves(lines);
-  if (!groups.length) return null;
-  const spaces = groups.map((g) => g.space).sort((a, b) => a - b);
-  const thicks = groups.flatMap((g) => g.lines.map((l) => l.y1 - l.y0 + 1)).sort((a, b) => a - b);
-  const space = spaces[spaces.length >> 1];
-  const lineThick = thicks[thicks.length >> 1];
-  return { lineThick, space, height: space * 4 };
+export interface LineCurve {
+  step: number;
+  d: Float32Array;
 }
 
-/** 一条谱线：中心 y、上下沿、左右端。 */
+/** 带不带曲线的线都认：`y` 是整条线的名义位置。 */
+export interface LineRef {
+  y: number;
+  curve?: LineCurve;
+}
+
+/** 曲线在 x 处的偏移。 */
+export function curveAt(c: LineCurve, x: number): number {
+  const t = x / c.step;
+  const n = c.d.length;
+  if (t <= 0) return c.d[0];
+  if (t >= n - 1) return c.d[n - 1];
+  const i = Math.floor(t);
+  return c.d[i] + (c.d[i + 1] - c.d[i]) * (t - i);
+}
+
+/** 线在 x 处的 y。 */
+export function lineYAt(l: LineRef, x: number): number {
+  return l.curve ? l.y + curveAt(l.curve, x) : l.y;
+}
+
+/** 一条谱线：中心 y、上下沿、左右端；弯、斜的另带逐列偏移 `curve`。 */
 export interface StaffLineRun {
   y: number;
-  /** 横带里墨量够峰值八成的那几行（上下沿）；`groupStaves` 拿它纠正被符杠拉偏的线，见 `findStaffLines`。 */
-  peak?: [number, number];
+  curve?: LineCurve;
   y0: number;
   y1: number;
   left: number;
   right: number;
-}
-
-/** 谱线候选的墨迹占比门槛：一行里至少这么多列有墨。比这更短的横线是符杠、加线、渐强线。 */
-const LINE_INK_RATIO = 0.3;
-
-/**
- * 找谱线：行投影取出「几乎整行都是墨」的横带，再逐条量它的左右端。
- *
- * **不依赖线距**——线距要靠它反推出来（见 `estimateUnit`）。所以两道门槛都写成
- * 页面尺寸的比例：厚度不超过页高的 1%（比这更厚的是黑边、粗横线、整块反白），
- * 左右端允许中断，连续空白不超过页宽的 5%。
- *
- * 左右端**必须允许中断**：谱线被小节线、符干、歌词框断开是常态，
- * 不允许的话一行谱会碎成十几截，后面「长度 ≥ 最长横线的 35%」那道闸全过不去。
- *
- * 这一版**不处理倾斜**（合唱谱这批底本实测倾斜 ≤1.23px，行投影一次就找齐）。
- * 真扫描件（倾斜 3~4px）要改成按纵向分带各投影一次再连起来，那时再说。
- */
-export function findStaffLines(bin: Binary): StaffLineRun[] {
-  const { w, h, data } = bin;
-  const th = w * LINE_INK_RATIO;
-  const maxThick = Math.max(6, h * 0.01);
-  const maxGap = w * 0.05;
-  const bands: [number, number][] = [];
-  const rowInk = new Uint32Array(h);
-  let start = -1;
-  for (let y = 0; y < h; y++) {
-    let n = 0;
-    const row = y * w;
-    for (let x = 0; x < w; x++) n += data[row + x];
-    rowInk[y] = n;
-    if (n > th) {
-      if (start < 0) start = y;
-    } else if (start >= 0) {
-      bands.push([start, y - 1]);
-      start = -1;
-    }
-  }
-  if (start >= 0) bands.push([start, h - 1]);
-
-  const out: StaffLineRun[] = [];
-  for (const [b0, b1] of bands) {
-    // **另记横带里墨量够峰值八成的那几行**（`peak`）：一行连桁的粗符杠紧贴着谱线时
-    // （我一生要赞美你第二行，C4/A3 和弦的八分一路连到底），符杠那几行也过了 0.3 页宽，
-    // 与谱线连成 10px 的一条带，中心被拉偏 3.5px；五条线不再等距，分组往下错一条，
-    // 第一线下的通长加线顶了进来，整行谱低一格。取八成：第一行的符杠更密，那几行墨量有谱线的七成。
-    // 只给 `groupStaves` 纠偏用：一律拿它当中心、或按它收上下沿都试过，普通谱线的中心也挪零点几个像素，
-    // 音高吸附与去谱线后的歌词条跟着变（收上下沿时中文歌词 45 → 35%）。
-    let peak = b0;
-    for (let y = b0; y <= b1; y++) if (rowInk[y] > rowInk[peak]) peak = y;
-    let p0 = peak, p1 = peak;
-    while (p0 > b0 && rowInk[p0 - 1] >= rowInk[peak] * 0.8) p0--;
-    while (p1 < b1 && rowInk[p1 + 1] >= rowInk[peak] * 0.8) p1++;
-    if (b1 - b0 + 1 > maxThick) continue;
-    const y0 = b0, y1 = b1;
-    // 逐列有没有墨
-    const ink = new Uint8Array(w);
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let y = y0; y <= y1; y++) v |= data[y * w + x];
-      ink[x] = v;
-    }
-    // 端点要**连续有墨**才算，不能见到一个墨点就算起点：
-    // 系统的花括号、乐器名的笔画常常擦到谱线这一带，一擦谱行的左缘就跑到页边
-    // （实测宁静 p1 十行谱里六行的左缘被拉到 x=2，`makeSystems` 判系统线、
-    // `makeBars` 切小节全跟着偏）。要求连着 `runMin` 列有墨。
-    const runMin = Math.max(4, Math.round(maxGap / 4));
-    let left = -1;
-    for (let x = 0; x + runMin <= w; x++) {
-      let ok = true;
-      for (let k = 0; k < runMin; k++)
-        if (!ink[x + k]) {
-          ok = false;
-          x += k;
-          break;
-        }
-      if (ok) {
-        left = x;
-        break;
-      }
-    }
-    if (left < 0) continue;
-    let right = left;
-    let gap = 0;
-    for (let x = left; x < w; x++) {
-      if (ink[x]) {
-        right = x;
-        gap = 0;
-      } else if (++gap > maxGap) break; // 断得太开：右边那截多半是另一件东西
-    }
-    out.push({ y: (y0 + y1) / 2, peak: [p0, p1], y0, y1, left, right });
-  }
-  return out;
-}
-
-/** 往左追谱线时，一列找不到墨最多容忍几列。 */
-const TRACE_GAP = 3;
-
-/**
- * **顺着谱线往左追**：横带定出来的左端，再沿线往左走，每列允许上下各漂一个像素。
- *
- * 去倾斜是整页一个斜率，弯的扫描页（齐来称颂伟大之神）左段谱线比主带低三个像素，
- * 落在横带外，左端就被量到谱号右边（实测 204，真谱线从 155 起）；
- * 谱行左端一偏，谱号落不进候选窗口，后面的升号被当成谱号，整页调号全错。
- * 只接**连着的**墨（断口不过 `TRACE_GAP` 列），乐器名之类隔开的东西接不进来；
- * **在识别阶段、谱线定稿之后才追**（`recognizeRasterPage`）：取图层量网点率也要找谱线，
- * 那时网点还没去，追线会一路追进网点里（实测坚固保障网点率 0.359 → 0，去网没做）。
- * 碰上竖笔（系统线、谱号的竖笔）那一列墨超出线厚，窗口不跟着动。
- */
-export function traceLeft(bin: Binary, left: number, y0: number, y1: number): number {
-  const { w, h, data } = bin;
-  // 补线合成的谱线（`completeStaffLines`）上下沿是小数
-  let lo = Math.floor(y0);
-  let hi = Math.ceil(y1);
-  const thick = hi - lo + 1;
-  let gap = 0;
-  let best = left;
-  for (let x = left - 1; x >= 0; x--) {
-    let a = -1;
-    let b = -1;
-    for (let y = Math.max(0, lo - 1); y <= Math.min(h - 1, hi + 1); y++)
-      if (data[y * w + x]) {
-        if (a < 0) a = y;
-        b = y;
-      }
-    if (a < 0) {
-      if (++gap > TRACE_GAP) break;
-      continue;
-    }
-    gap = 0;
-    best = x;
-    // 窗口只跟着线厚那么宽的墨走；整窗都是墨的是竖笔，不挪
-    if (b - a + 1 <= thick + 1) (lo = a), (hi = b);
-  }
-  return best;
-}
-
-/** 同一行谱五条线的左缘允许差多少（线距的倍数）。 */
-const LEFT_SPREAD = 3;
-
-/** 五条线的平均线距与四个间距里最大的相对偏差。 */
-function spacing(five: StaffLineRun[]): { avg: number; dev: number } {
-  const ds = [1, 2, 3, 4].map((k) => five[k].y - five[k - 1].y);
-  const avg = ds.reduce((a, b) => a + b, 0) / 4;
-  return { avg, dev: avg > 0 ? Math.max(...ds.map((d) => Math.abs(d - avg))) / avg : Infinity };
 }
 
 /** 一行谱：五条线加它们定出来的线距。 */
@@ -200,53 +61,6 @@ export interface StaffGroup {
   lines: StaffLineRun[];
   /** 组内相邻线的平均间距。 */
   space: number;
-}
-
-/**
- * 五条一组。判据两道：
- *   - 组内四个间距彼此相差不超过两成（等距）；
- *   - 五条线的 x 区间交集不短于最短那条的八成（同一行谱的五条线跨度几乎相同）。
- *
- * 第二道不能省：一页上下两行谱的 y 序列首尾相接，光靠等距会把上一行的末两条
- * 与下一行的头三条凑成一「行」。
- */
-export function groupStaves(lines: StaffLineRun[]): StaffGroup[] {
-  const sorted = [...lines].sort((a, b) => a.y - b.y);
-  const out: StaffGroup[] = [];
-  for (let i = 0; i + 4 < sorted.length; ) {
-    const five = sorted.slice(i, i + 5);
-    // 按峰值那几行**明显更等距**（最大偏差少五个百分点以上）就用它：粗符杠贴着谱线把横带中心拉偏
-    // （见 `findStaffLines`）。偏得少的那种（我一生要赞美你第一行，间距 12/15/14/17）照两成的闸
-    // 也算等距，只在不等距时才重试的话它漏过去，那一行音高全低。普通谱线两个中心差不到半像素，不换。
-    const sRaw = spacing(five);
-    const sPk = spacing(five.map((l) => ({ ...l, y: l.peak ? (l.peak[0] + l.peak[1]) / 2 : l.y })));
-    // 原组偏得太厉害（>0.3）的不换：那是一整条线被压住（宁静 p5 第五线盖在三层十六分符杠下），
-    // 这里凑不成组，留给 `completeStaffLines` 按四条等距外推，换了反而小节自检掉 1.2 点。
-    const usePeak = sRaw.dev <= 0.3 && sPk.dev < sRaw.dev - 0.05;
-    const { avg, dev } = usePeak ? sPk : sRaw;
-    const left = Math.max(...five.map((l) => l.left));
-    const right = Math.min(...five.map((l) => l.right));
-    const shortest = Math.min(...five.map((l) => l.right - l.left));
-    // **五条线的左缘要一致**。密集的八度跑动会共用一条**通长的加线**（实测宁静 p5
-    // 那条 y=1004、x[244,1906]，比谱线只短一截），等距与 x 交集两道闸都拦不住它
-    // ——它顶掉了真正的第五线，整行谱因此上移一条线，**那一行的音高整段低两级**
-    //（GT `C5 C6 C5 C6…` 被读成 `A4 A5 A4 A5…`）。
-    // 真谱线从系统线起画，一个系统里五条的左缘几乎相同；加线从音符处才起。
-    const spread = Math.max(...five.map((l) => l.left)) - Math.min(...five.map((l) => l.left));
-    // 五条里不能有**零头**（不到最长那条的四分之一）：x 交集那道闸拿「最短那条的八成」当尺子，最短的只有三十像素时
-    // 交集二十几像素也算过——新编赞美诗 381 一行谱的第五线被一截 31px 的碎线顶替，后面按线长滤谱线时整行谱丢了
-    const longest = Math.max(...five.map((l) => l.right - l.left));
-    if (dev <= 0.2 && right - left >= shortest * 0.8 && shortest >= longest * 0.25 && spread <= avg * LEFT_SPREAD) {
-      // 中心写回**原对象**：`completeStaffLines` 按对象认「已分组」，换成副本的话原来那几条
-      // 被当成散线，又外推出一行错一条线的重复谱行
-      if (usePeak)
-        for (const l of five)
-          if (l.peak) (l.y = (l.peak[0] + l.peak[1]) / 2), (l.y0 = l.peak[0]), (l.y1 = l.peak[1]);
-      out.push({ lines: five, space: avg });
-      i += 5;
-    } else i++;
-  }
-  return out;
 }
 
 /**
@@ -258,22 +72,24 @@ export function groupStaves(lines: StaffLineRun[]): StaffGroup[] {
  *（压着符头、符干的列厚得多，不算），取桶内中位；五条线的偏移再取中位当这一桶的整体平移。
  * 量不到的桶从两侧插值、一侧都没有就取最近的。返回 `x → 五条线的 y`（桶中心之间线性插值）。
  */
-export function localLineModel(bin: Binary, lineYs: number[], left: number, right: number, unit: RasterUnit): (x: number) => number[] {
-  return lineModelAt(localLineData(bin, lineYs, left, right, unit));
+export function localLineModel(bin: Binary, lines: LineRef[], left: number, right: number, unit: RasterUnit): (x: number) => number[] {
+  return lineModelAt(localLineData(bin, lines, left, right, unit));
 }
 
-/** `localLineModel` 量出来的数据（普通对象，可跨线程传）：`sm` 为空表示一桶都没量到、五线取整行的 `lineYs`。 */
+/** `localLineModel` 量出来的数据（普通对象，可跨线程传）：`sm` 为空表示一桶都没量到、五线取各自的曲线（没有就是整行的 `lineYs`）。 */
 export interface LineModelData {
   lineYs: number[];
+  curves: (LineCurve | undefined)[];
   x0: number;
   bw: number;
   sm: Float64Array | null;
 }
 
-/** 按数据造 `x → 五条线的 y`（桶中心之间线性插值）。 */
+/** 按数据造 `x → 五条线的 y`（曲线谱线上再叠桶内实测的整体平移，桶中心之间线性插值）。 */
 export const lineModelAt = definePortable("lineModel", (m: LineModelData): ((x: number) => number[]) => {
-  const { lineYs, x0, bw, sm } = m;
-  if (!sm) return () => lineYs;
+  const { lineYs, curves, x0, bw, sm } = m;
+  const base = (x: number) => lineYs.map((y, k) => (curves[k] ? y + curveAt(curves[k]!, x) : y));
+  if (!sm) return curves.some((c) => c) ? base : () => lineYs;
   const nb = sm.length;
   return (x: number) => {
     const t = (x - x0) / bw - 0.5;
@@ -281,11 +97,13 @@ export const lineModelAt = definePortable("lineModel", (m: LineModelData): ((x: 
     const j = Math.min(nb - 1, i + 1);
     const f = Math.max(0, Math.min(1, t - i));
     const d = sm[i] + (sm[j] - sm[i]) * f;
-    return lineYs.map((y) => y + d);
+    return base(x).map((y) => y + d);
   };
 });
 
-function localLineData(bin: Binary, lineYs: number[], left: number, right: number, unit: RasterUnit): LineModelData {
+function localLineData(bin: Binary, lines: LineRef[], left: number, right: number, unit: RasterUnit): LineModelData {
+  const lineYs = lines.map((l) => l.y);
+  const curves = lines.map((l) => l.curve);
   const sp = unit.space;
   const bw = Math.max(4, Math.round(sp));
   const x0 = Math.max(0, Math.round(left));
@@ -294,11 +112,13 @@ function localLineData(bin: Binary, lineYs: number[], left: number, right: numbe
   const maxRun = unit.lineThick * 2.5;
   const reach = sp * 0.35;
   /** 每条线、每个桶的实测中心（量不到为 NaN）。 */
-  const meas = lineYs.map((ly) => {
+  // 量的是相对曲线的残差：桶内每列的名义 y 取曲线在该列的值
+  const meas = lines.map((l0) => {
     const out = new Float64Array(nb).fill(NaN);
     for (let b = 0; b < nb; b++) {
       const cs: number[] = [];
       for (let x = x0 + b * bw; x < Math.min(x1 + 1, x0 + (b + 1) * bw); x++) {
+        const ly = lineYAt(l0, x);
         let best = NaN;
         for (let y = Math.max(0, Math.round(ly - reach)); y <= Math.min(bin.h - 2, Math.round(ly + reach)); y++) {
           if (!bin.data[y * bin.w + x]) continue;
@@ -313,7 +133,7 @@ function localLineData(bin: Binary, lineYs: number[], left: number, right: numbe
           }
           y = e;
         }
-        if (!isNaN(best)) cs.push(best);
+        if (!isNaN(best)) cs.push(best - (ly - l0.y));
       }
       if (cs.length >= Math.max(2, bw / 4)) {
         cs.sort((a, b2) => a - b2);
@@ -329,7 +149,7 @@ function localLineData(bin: Binary, lineYs: number[], left: number, right: numbe
     if (ds.length >= 3) shift[b] = ds[ds.length >> 1];
   }
   const idx = [...shift.keys()].filter((i) => !isNaN(shift[i]));
-  if (!idx.length) return { lineYs, x0, bw, sm: null };
+  if (!idx.length) return { lineYs, curves, x0, bw, sm: null };
   for (let i = 0; i < nb; i++) {
     if (!isNaN(shift[i])) continue;
     const lo = idx.filter((j) => j < i).pop();
@@ -338,7 +158,7 @@ function localLineData(bin: Binary, lineYs: number[], left: number, right: numbe
   }
   // 相邻三桶取中位，压掉单桶的跳变
   const sm = shift.map((_, i) => [shift[Math.max(0, i - 1)], shift[i], shift[Math.min(nb - 1, i + 1)]].sort((a, c) => a - c)[1]);
-  return { lineYs, x0, bw, sm };
+  return { lineYs, curves, x0, bw, sm };
 }
 
 /** 按**相邻两条线的相对位置**把 y 换成音级位置：第一线为 0、往下每半格 +1；线外按最近的线距外推。 */
@@ -356,4 +176,69 @@ export function pitchY(ys: number[], p: number): number {
   if (p >= 8) return ys[4] + ((p - 8) / 2) * (ys[4] - ys[3]);
   const k = Math.min(3, Math.floor(p / 2));
   return ys[k] + (p / 2 - k) * (ys[k + 1] - ys[k]);
+}
+
+/** 一行谱的线距与全页的相对差在这个范围里，加线网格才用它自己的线距（见 `LineGrid.ledger`）。 */
+const LEDGER_OWN_SPACE = [0.04, 0.3];
+
+/**
+ * **全页谱线网格**：判「这个 y 在不在谱线上 / 加线位置上」。谱线弯、斜时（挂了 `curve`）按给的 x 取该处的线位，
+ * 不给 x 或整页都平直时照各线的常数 y（与原先的 `gridYs.some(...)` / `prims.ts::ledgerGrid` 逐字相同）。
+ */
+export class LineGrid {
+  /** 各行谱的五条线（自上而下） */
+  readonly staves: LineRef[][];
+  /** 全页谱线的常数 y（五条一组、按行谱自上而下） */
+  readonly ys: number[];
+  readonly curved: boolean;
+  constructor(
+    groups: { lines: LineRef[] }[],
+    private readonly unit: RasterUnit,
+  ) {
+    this.staves = groups.map((g) => [...g.lines].sort((a, b) => a.y - b.y)).sort((a, b) => a[0].y - b[0].y);
+    this.ys = this.staves.flatMap((s) => s.map((l) => l.y));
+    this.curved = this.staves.some((s) => s.some((l) => l.curve));
+  }
+
+  /** 第 i 行谱在 x 处的五条线 */
+  at(i: number, x?: number): number[] {
+    return this.staves[i].map((l) => (x === undefined ? l.y : lineYAt(l, x)));
+  }
+
+  /** y 离某条谱线不过 tol */
+  onLine(y: number, tol: number, x?: number): boolean {
+    if (!this.curved || x === undefined) return this.ys.some((ly) => Math.abs(ly - y) <= tol);
+    for (const s of this.staves) for (const l of s) if (Math.abs(lineYAt(l, x) - y) <= tol) return true;
+    return false;
+  }
+
+  /**
+   * y 落在**加线位置**上：第一线上方或第五线下方整数个线距处（1~6 条），容差四分之一线距。
+   * **线距取这一行谱自己的**，不取全页的：一页上谱表大小可以不一样（望十架人声谱表线距 10.4px、钢琴 11.6px）；
+   * 只在这一行的线距与全页的差出 4% 以上时才换（差得小的是量线位的半像素误差），差到三成以上的是谱行找错了。
+   */
+  ledger(y: number, x?: number): boolean {
+    for (const s of this.staves) {
+      if (s.length < 5) continue;
+      const top = x === undefined ? s[0].y : lineYAt(s[0], x);
+      const bottom = x === undefined ? s[4].y : lineYAt(s[4], x);
+      const own = (bottom - top) / 4;
+      const d = Math.abs(own - this.unit.space) / this.unit.space;
+      const sp = d > LEDGER_OWN_SPACE[0] && d < LEDGER_OWN_SPACE[1] ? own : this.unit.space;
+      const tol = sp * 0.25;
+      if (y < top) {
+        const k = Math.round((top - y) / sp);
+        if (k >= 1 && k <= 6 && Math.abs(top - k * sp - y) <= tol) return true;
+      } else if (y > bottom) {
+        const k = Math.round((y - bottom) / sp);
+        if (k >= 1 && k <= 6 && Math.abs(bottom + k * sp - y) <= tol) return true;
+      }
+    }
+    return false;
+  }
+
+  /** 各行谱在 x 处的上下界（第一线、第五线） */
+  bands(x?: number): [number, number][] {
+    return this.staves.filter((s) => s.length >= 5).map((s) => (x === undefined ? [s[0].y, s[4].y] : [lineYAt(s[0], x), lineYAt(s[4], x)]));
+  }
 }

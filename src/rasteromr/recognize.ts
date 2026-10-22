@@ -22,7 +22,7 @@ import type { HeaderCredit, WordLine } from "../omrkit/headertext";
 import { findTuplets, type WedgeOpen, type WedgeRows } from "../staffomr/notations";
 import type { SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { buildRasterPage, makeSymObj, type RasterSym } from "./adapt";
-import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, findPartBrackets, ledgerGrid, joinVSegs, removeStaffLines, repairLineCuts, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
+import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, findPartBrackets, joinVSegs, removeStaffLines, repairLineCuts, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
 import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnStemSeeds, reseatHollowHeads, stemOf, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, markShapeWholes } from "./notehead";
 import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from "./rasterglyphs";
 import { sigDistance } from "../omrkit/glyphdict";
@@ -41,8 +41,8 @@ import type { LyricLine } from "../staffomr/textanalyze";
 import type { SlurArc } from "../staffomr/slur";
 import { composeHeaderStrip } from "./pagecompose";
 import { isTextStaff, pageTextKey, textDetScale } from "./pagetext";
-import { estimateUnit, findStaffLines, groupStaves, localLineModel, pitchPos, pitchY, traceLeft, type RasterUnit } from "./staffline";
-import { completeStaffLines } from "./dewarp";
+import { LineGrid, lineYAt, localLineModel, pitchPos, pitchY, type RasterUnit } from "./staffline";
+import { findRasterStaves } from "./stafffind";
 import { rasterizePage, type RasterPage } from "./rasterpage";
 import { median, rowHasInk, unionRect as union, overlapFrac } from "../omrkit/geom";
 import { connectedComponents } from "../omrkit/ccl";
@@ -445,11 +445,11 @@ const SHORT_STEM_OUT = 1.5;
  * 收成和弦里的空心头。真空心头下面半格内除了谱线、加线那种整行横墨是白的；符尾那一笔每行都有、又窄，而且每行只有一段。
  * 叠成「8」字的三度空心和弦，上头正下方是下头的圈，每行也只有窄墨，但圈从第二三行起就分成左右两段（晨曦破晓 m5 D4/F4）。
  */
-function flagLoop(bin: Binary, b: Rect, onLine: (y: number) => boolean, sp: number): boolean {
+function flagLoop(bin: Binary, b: Rect, onLine: (y: number, x?: number) => boolean, sp: number): boolean {
   let rows = 0;
   let inked = 0;
   for (let y = Math.round(b.y + b.h); y < b.y + b.h + sp * 0.6 && y < bin.h; y++) {
-    if (onLine(y)) continue;
+    if (onLine(y, b.x + b.w / 2)) continue;
     rows++;
     let n = 0;
     let runs = 0;
@@ -601,8 +601,10 @@ export async function recognizeRasterPage(
   const raster = opts.raster !== undefined ? opts.raster : await source.raster();
   const blank = buildRasterPage({ index, width: raster?.bin.w ?? 1, height: raster?.bin.h ?? 1, unit: { lineThick: 1, space: 1, height: 4 }, staffLines: [], hSegs: [], vSegs: [] });
   if (!raster) return emptyPage(blank, null, null);
-  const unit = estimateUnit(raster.bin);
-  if (!unit) return emptyPage(blank, raster, null);
+  // 按逐列游程找谱表（`stafffind.ts::findRasterStaves`），线宽线距跟着出来
+  const found = findRasterStaves(raster.bin);
+  if (!found) return emptyPage(blank, raster, null);
+  const unit = found.unit;
   // 整页文字框（找谱线之前就要）：缓存按页指纹查，查不到且要在线检测的把位图带出去
   const live = opts.live;
   const textKey = opts.pageTexts || opts.wantTextBin || live?.textDet ? pageTextKey(raster.bin) : undefined;
@@ -613,27 +615,10 @@ export async function recognizeRasterPage(
   }
   const textBin = opts.wantTextBin && !textBoxes ? { w: raster.bin.w, h: raster.bin.h, data: new Uint8Array(raster.bin.data) } : undefined;
   const withText = (r: RasterPageResult): RasterPageResult => Object.assign(r, { textKey, textBin, textBoxes });
-  // 行投影找谱线；**明显不够的页面**（扫得糊、线细断）再拿逐列游程的轨迹补上
-  // ——判据与推平同一道闸，见 `dewarp.ts::completeStaffLines`。
-  const rowLines = findStaffLines(raster.bin);
-  const found = completeStaffLines(raster.bin, rowLines, groupStaves(rowLines));
   // **落在文字里的「谱表」不要**（密排的中文段落凑出的五条等距横笔，见 `pagetext.ts`），它的线也不当谱线去抹
   const textStaves = textBoxes ? found.groups.filter((g) => isTextStaff(g, textBoxes)) : [];
-  const textLines = new Set(textStaves.flatMap((g) => g.lines));
   const groups = found.groups.filter((g) => !textStaves.includes(g));
-  const lines = found.lines.filter((l) => !textLines.has(l));
   if (!groups.length) return withText(await emptyPage(blank, raster, unit));
-  // 谱线左端顺着线再往左追（弯页左段落在横带外，见 `traceLeft`）。一行谱五条线的左端
-  // 本该一致，追的时候中间几条常被谱号挡住（齐来称颂第一行追到 153/209/216/193/153），
-  // 取**至少两条吻合的最小左端**统一给五条线——下游一律拿五条线左端的最大值当谱行左缘。
-  for (const g of groups) {
-    const ls = g.lines.map((l) => traceLeft(raster.bin, l.left, l.y0, l.y1)).sort((a, b) => a - b);
-    const agreed = ls.find((v) => ls.filter((u) => Math.abs(u - v) <= 3).length >= 2);
-    // 只在差出两格以上时改：扫描件的左端本来就参差几个像素，照改会把谱号、括号的窗口
-    // 挪动一点点，合唱谱扫描件歌词实测跌 5 个点。
-    const cur = Math.max(...g.lines.map((l) => l.left));
-    if (agreed !== undefined && cur - agreed > unit.space * 2) for (const l of g.lines) l.left = Math.min(l.left, agreed);
-  }
   opts.trace?.("staves", { unit, staves: groups.map((g) => g.lines) });
 
   // **只留谱表带**（默认不开，立 GT 底稿时才开）。独唱谱那种谱表上方印和弦字母的底本，
@@ -653,27 +638,17 @@ export async function recognizeRasterPage(
     for (let y = 0; y < bin.h; y++) if (!keep[y]) bin.data.fill(0, y * bin.w, (y + 1) * bin.w);
   }
 
-  // 没成组的横线（通长加线、谱表外的长横墨）只抹细的那几列：连成一长条的**符杠**也会被投影成一条「线」，
-  // 照谱线抹就整条没了（主使我喜乐第三行谱表下方一格的连杠八分，杠整条被抹、十来个八分读成四分）
-  const grouped = new Set(groups.flatMap((g) => g.lines.map((l) => l.y)));
-  const nl = removeStaffLines(raster.bin, lines.map((l) => l.y), unit, new Set(lines.map((l) => l.y).filter((y) => !grouped.has(y))));
-  /** 分好组的谱线（五条一组）。`lines` 里还混着没成组的横线，按「五条一组」取第几线的判据（`nearRestLine`、`restKind`）
-   *  用它会错位（《所信有根基》简谱行里的减时线过了休止的位置闸，读成二分休止）。 */
+  /** 全页谱线（五条一组、按行谱自上而下） */
   const staffLines = groups.flatMap((g) => g.lines);
+  const nl = removeStaffLines(raster.bin, staffLines, unit);
   const staffLefts = groups.map((g) => Math.max(...g.lines.map((l) => l.left)));
-  // **加线网格只认分好组的线**。`ledgerGrid` 按「五条一组」取锚点，
-  // 混进没成组的线（通长的加线、噪声横线）锚点就全错位，
-  // 于是加线判不出来——而谱表外的符头**要有加线撑着才归得了谱行**
-  // （实测宁静 p5 八度跑动上方那七个符头，认出来了却一个都没归属，窗口里一条横段都没有）。
-  const gridYs = groups.flatMap((g) => g.lines.map((l) => l.y));
+  // **加线网格**（`staffline.ts::LineGrid`，按 x 取弯、斜谱线该处的线位）：加线位置按每行谱的首末线往外推。
+  // 谱表外的符头**要有加线撑着才归得了谱行**（实测宁静 p5 八度跑动上方那七个符头，认出来了却一个都没归属，窗口里一条横段都没有）。
+  const grid = new LineGrid(groups, unit);
+  const onLedger = (y: number, x?: number) => grid.ledger(y, x);
   /** 各谱表五条线的 y（从上到下）。 */
   const staffYs = groups.map((g) => g.lines.map((l) => l.y).sort((p, q) => p - q));
-  // 没进任何一组的行投影线：多半是**通长的加线**（见 `staffLines` 那一处的说明）
-  const groupedLines = new Set(groups.flatMap((g) => g.lines));
-  const strayLines: LineSeg[] = lines
-    .filter((l) => !groupedLines.has(l))
-    .map((l) => ({ x0: l.left, y0: l.y, x1: l.right, y1: l.y, lw: l.y1 - l.y0 + 1, maxLw: l.y1 - l.y0 + 1 }));
-  const prims = findPrimitives(nl, unit, gridYs, staffLefts, raster.faint);
+  const prims = findPrimitives(nl, unit, grid, staffLefts, raster.faint);
 
   // ── 简谱行（混排谱）：**先于一切**认领 ─────────────────────────────────────
   //
@@ -691,7 +666,7 @@ export async function recognizeRasterPage(
     bottom: staffGeoms[i].bottom,
     // 量的范围取**最长**那条线：倾斜页上有一条线的投影段在半途断了，按最短的量，右边一截只能拿末桶外推
     //（颂赞与尊贵第二行右端实测偏 4.5 像素、外推只给 1，m6 的 A4 读成 G4）。线外的桶量不到，按每桶三条以上取中位兜着
-    at: localLineModel(raster.bin, g.lines.map((l) => l.y), Math.min(...g.lines.map((l) => l.left)), Math.max(...g.lines.map((l) => l.right)), unit),
+    at: localLineModel(raster.bin, g.lines, Math.min(...g.lines.map((l) => l.left)), Math.max(...g.lines.map((l) => l.right)), unit),
   }));
   const jianpuBands = findJianpuBands(prims.vSegs, staffGeoms, unit, raster.bin);
   // 简谱小节线同 x 的谱表竖段补成整条小节线（细线扫描件被阈值切断的，见 `completeStaffBars`）
@@ -707,13 +682,13 @@ export async function recognizeRasterPage(
     prims.beams = prims.beams.filter(outside);
   }
   const blobLabels = new Int32Array(nl.w * nl.h);
-  const blobs = findBlobs(nl, prims, unit, ledgerGrid(gridYs, unit), blobLabels);
+  const blobs = findBlobs(nl, prims, unit, onLedger, blobLabels);
   opts.trace?.("blobs", blobs);
   // **修补图**（`prims.ts::repairLineCuts`）：去线时贴线穿过、被当线抹掉的笔画补回，被谱线切开的对象在这张图上是一整块。
   // 各路从这里取整块，不先切碎再按盒距拼：符号块（下面「碎块并起来再查一次字典」）、contour（`contour.ts::candidateMap`）
-  const repaired = repairLineCuts(raster.bin, nl, gridYs, unit);
+  const repaired = repairLineCuts(raster.bin, nl, staffLines, unit);
   const rBlobLabels = new Int32Array(nl.w * nl.h);
-  const rBlobs = findBlobs(repaired, prims, unit, ledgerGrid(gridYs, unit), rBlobLabels);
+  const rBlobs = findBlobs(repaired, prims, unit, onLedger, rBlobLabels);
   /** 修补图上的符号块 → 组成它的去线图符号块 */
   const rBlobParts = new Map<number, Set<number>>();
   {
@@ -869,7 +844,7 @@ export async function recognizeRasterPage(
   }
 
   // 符头按性质判（填充率 + 有没有符干），不查字典；其余的块查字典。
-  const onGrid = ledgerGrid(gridYs, unit);
+  const onGrid = onLedger;
   // 空心符头要卡在谱表带里（见 `findRasterHeads` 的说明）。
   //
   // **上下各让三格**，不是一格：一格只罩得住谱表之内，可**谱表外一两格的空心符头
@@ -1144,14 +1119,14 @@ export async function recognizeRasterPage(
   // 判据全在 `notehead.ts::hollowHeadsFromHoles`。
   // 缝落在谱线或加线上都算（`onGrid` 只管谱表外的加线位置）：《高举主大能》第三线上的 B4 二分头
   // 被第三线切成 10×5 与 13×5 两半，谱线上的不认就并不回来，头盒只剩下半截、读低一格
-  const onLineOrGrid = (y: number) => onGrid(y) || gridYs.some((ly) => Math.abs(ly - y) <= unit.space * 0.25);
+  const onLineOrGrid = (y: number, x?: number) => onGrid(y, x) || grid.onLine(y, unit.space * 0.25, x);
   // **上下被两条谱线封住、两侧墙往里鼓的白不是内腔**：降号的肚子贴着全音符左沿，肚子与圈之间、上下两条谱线之间那块白
   // 比真内腔还宽（22×18，真内腔 13×16），收出一个偏左、盖着降号的头，真头的右半落单成附点、降号也丢了
   //（爱是从神而来 p5 m59、m60 低音 G♭3）。真内腔是椭圆或斜缝，凸度 0.8 以上；这块两侧都凹进来，0.59。
   // 只判宽过 0.8 格、上下边都贴着谱线的：小孔逐像素量凸度天然偏低（燭光頌曲 5~13px 的内腔 0.5~0.7）
   const halfLine = unit.lineThick / 2;
   const pinched = (b: Rect) =>
-    b.w >= unit.space * PINCHED_W && onLineOrGrid(b.y - halfLine - 0.5) && onLineOrGrid(b.y + b.h + halfLine - 0.5) && holeSolidity(raster.bin, b) < HOLE_CONVEX_MIN;
+    b.w >= unit.space * PINCHED_W && onLineOrGrid(b.y - halfLine - 0.5, b.x + b.w / 2) && onLineOrGrid(b.y + b.h + halfLine - 0.5, b.x + b.w / 2) && holeSolidity(raster.bin, b) < HOLE_CONVEX_MIN;
   const rawHoles = allHoles.filter((b) => !pinched(b));
   // **成摞的整格谱间白**（小节线与贴着它的符干夹出来、隔着谱线一格摞一格）先剔掉：它们纵向相接，
   // 会顺着链把旁边头的内腔并成一个高孔（我一生要赞美你第六行，小节线右边紧贴的 A4 二分头
@@ -1159,7 +1134,7 @@ export async function recognizeRasterPage(
   // 也上下贴线、白也近乎占满外框（整格一律剔，坚固保障等掉一刀）。
   const half = unit.lineThick / 2;
   const cellLike = (b: Rect) => {
-    if (b.h < unit.space * 0.6 || !onLineOrGrid(b.y - half - 0.5) || !onLineOrGrid(b.y + b.h + half - 0.5)) return false;
+    if (b.h < unit.space * 0.6 || !onLineOrGrid(b.y - half - 0.5, b.x + b.w / 2) || !onLineOrGrid(b.y + b.h + half - 0.5, b.x + b.w / 2)) return false;
     let white = 0;
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (!raster.bin.data[y * raster.bin.w + x]) white++;
     return white >= b.w * b.h * CELL_WHITE;
@@ -1232,7 +1207,7 @@ export async function recognizeRasterPage(
   const stacked: RasterSym[] = hollowHeadsFromHoles(nl, holes, unit, prims.vSegs, inBand, takenBoxes, barSegs);
   // 并成一个高内腔的叠置空心和弦：按音高位置逐一配模板（`notehead.ts::hollowHeadsByPitch`），
   // 模板拿本页已认出的空心头（骑线 / 在间各一张）
-  const lineYs = lines.map((l) => l.y);
+  const lineYs = staffLines.map((l) => l.y);
   // 靠加线才放进谱表带的头（`inBand` 给 x 那一档）不当模板样本：加线把圈切成几截，平均进去模板就糊了（望十架 p10 长笛 G5 全音符跟着丢）
   const ledgerOnly = (b: Rect) => !inBand(b.y + b.h / 2);
   const hollowSamples = [...heads.filter((h) => !ledgerOnly(h.box)).map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((s0) => !(s0 as { weak?: boolean }).weak);
@@ -1276,7 +1251,7 @@ export async function recognizeRasterPage(
   // 钢琴谱里二度、三度的和弦把两三个符头画得挨着（二度还错开在符干两侧），
   // 位图上并成一块，单头的尺寸闸一律判否——逐谱行摊开，钢琴两行漏得最狠
   //（宁静 P4.1 漏 122、破碎 P6.1 漏 213）。判据与搜索都限死在块内，见 `headmask.ts`。
-  const masks = buildHeadMasks(raster.bin, [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked], unit, lines.map((l) => l.y));
+  const masks = buildHeadMasks(raster.bin, [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked], unit, staffLines.map((l) => l.y));
   // **拆和弦另用一张「符杠已擦」的图**，模板也在这张图上自举。
   //
   // 病因是量出来的（`scripts/raster-gap.mjs`）：漏掉的音里 **63.6% 焊在一团
@@ -1286,9 +1261,9 @@ export async function recognizeRasterPage(
   //（85.09% → 78.63% / 75.71%），那一项正是拆块不出假头的关键，动不得。
   // 换图就两全：符杠不在图里，spill 照旧全额算。
   const noBeam = blobImage(nl, prims, unit, onGrid);
-  const masksNB = buildHeadMasks(noBeam, [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked], unit, lines.map((l) => l.y));
+  const masksNB = buildHeadMasks(noBeam, [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked], unit, staffLines.map((l) => l.y));
   const pitchGrid = makePitchGrid(groups, unit);
-  const onLineY = (y: number) => lines.some((l) => Math.abs(l.y - y) <= unit.space * 0.25);
+  const onLineY = (y: number, x?: number) => grid.onLine(y, unit.space * 0.25, x);
   const split: RasterSym[] = [];
   /** 被并块拆分认领的块（拍号那一段要用：粗体 4/4 一整块常被拆成两个黑头）。 */
   const splitIds = new Set<number>();
@@ -1347,7 +1322,7 @@ export async function recognizeRasterPage(
     probes.push(...shortProbes);
     const halves = [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((q) => q.code === "noteheadHalf" && !(q as { weak?: boolean }).weak);
     const size = halves.length ? { w: median(halves.map((q) => q.box.w)), h: median(halves.map((q) => q.box.h)) } : { w: Math.round(unit.space * 1.3), h: Math.round(unit.space * 1.1) };
-    for (const hd of headsOnBareStems(probes, unit, pitchGrid, size, raster.bin, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick))) {
+    for (const hd of headsOnBareStems(probes, unit, pitchGrid, size, raster.bin, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x))) {
       for (const id of hd.ids) claimed.add(id);
       stacked.push(hd);
       const sp = shortProbes.find((q) => q.ids.some((id) => hd.ids.includes(id)));
@@ -1356,11 +1331,11 @@ export async function recognizeRasterPage(
     // 两根光杆干夹着一个头（两声部同音共用符头、干一上一下，头压线被切碎）
     // 判头那一路因「没有被围住的白」剔掉的块也算占着：剔它之前它挡着这一路，剔了就在符杠斜端与干之间配出假头（是爱 p5 m67）
     const known = [...headBoxes, ...stacked.map((q) => q.box), ...notHollow.values()];
-    for (const hd of headsBetweenStemPairs(prims.vSegs, known, unit, pitchGrid, size, raster.bin, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), isBar)) stacked.push(hd);
+    for (const hd of headsBetweenStemPairs(prims.vSegs, known, unit, pitchGrid, size, raster.bin, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x), isBar)) stacked.push(hd);
   }
   // 弧与谱线围出的空当当成了空心头的内腔（`notehead.ts::archCavity`），剔掉，墨留给弧那一步；
   {
-    const onStaffLine = (y: number) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2);
+    const onStaffLine = (y: number, x?: number) => grid.onLine(y, unit.lineThick / 2, x);
     const arch = (b: Rect) => archCavity(raster.bin, b, onStaffLine);
     // 全音符**贴着符杠、又有干穿过**的也不是：两层十六分杠、干与头围出的白被收成全音符（万福泉源歌 m13）。
     // 全音符不带干，不会与杠挨着（上下 0.2 格、横向盖住半个头以上），盒里也不会有往外伸出一格的竖段。
@@ -1445,7 +1420,7 @@ export async function recognizeRasterPage(
       }
       let rows = 0, single = 0;
       for (let y = Math.round(b.y + b.h * 0.2); y <= Math.round(b.y + b.h * 0.8); y++) {
-        if (onStaffLine(y) || y < 0 || y >= raster.bin.h || ledgerRow(y)) continue;
+        if (onStaffLine(y, b.x + b.w / 2) || y < 0 || y >= raster.bin.h || ledgerRow(y)) continue;
         let runs = 0, prev = false;
         for (let x = Math.max(0, b.x); x < Math.min(raster.bin.w, b.x + b.w); x++) {
           const on = !!raster.bin.data[y * raster.bin.w + x];
@@ -1537,7 +1512,7 @@ export async function recognizeRasterPage(
     const solidBoxes = [...heads.filter((h) => h.code === "noteheadBlack" && !dropHead.has(h.comp.id)).map((h) => h.box), ...split.map((q) => q.box), ...stacked.filter((q) => q.code === "noteheadBlack").map((q) => q.box)];
     const allBoxes = () => [...heads.filter((h) => !dropHead.has(h.comp.id)).map((h) => h.box), ...stacked.map((q) => q.box), ...split.map((q) => q.box)];
     const ink = (x: number, y: number) => x >= 0 && x < raster.bin.w && y >= 0 && y < raster.bin.h && !!raster.bin.data[y * raster.bin.w + x];
-    const onLine = (y: number) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick);
+    const onLine = (y: number, x?: number) => grid.onLine(y, unit.lineThick, x);
     const bw = solidBoxes.length ? solidBoxes.map((b) => b.w).sort((p, q) => p - q)[solidBoxes.length >> 1] : unit.space * 1.25;
     const bh = solidBoxes.length ? solidBoxes.map((b) => b.h).sort((p, q) => p - q)[solidBoxes.length >> 1] : unit.space;
     const hollows = [...heads.filter((h) => h.code === "noteheadHalf" && !dropHead.has(h.comp.id)).map((h) => h.box), ...stacked.filter((q) => q.code === "noteheadHalf").map((q) => q.box)];
@@ -1555,7 +1530,7 @@ export async function recognizeRasterPage(
         let side = 0;
         let rows = 0;
         for (let y = win.y; y < win.y + win.h; y++) {
-          if (onLine(y)) continue;
+          if (onLine(y, cx)) continue;
           rows++;
           if (ink(Math.round(cx - bw / 2 - unit.space * 0.35), y) || ink(Math.round(cx + bw / 2 + unit.space * 0.35), y)) side++;
         }
@@ -1768,11 +1743,11 @@ export async function recognizeRasterPage(
     const bin0 = raster.bin;
     // 横向取**谱行左端的固定窗口**（让过系统线，到调号之前），不照第一步给的盒：那个盒可能只是压在系统线上的一块碎块
     //（望十架 p5 低音谱号的盒落在系统线上，竖线上下通着、两段里行行有墨，被改成高音），也可能只罩住谱号的一半
-    const base = pastSysLine(bin0, g.lines.map((l) => l.y), left, sp);
+    const base = pastSysLine(bin0, g.lines.map((l) => lineYAt(l, left)), left, sp);
     const xa = Math.max(0, Math.round(base + sp * CLEF_INK_X[0]));
     const xb = Math.min(bin0.w - 1, Math.round(base + sp * CLEF_INK_X[1]));
     // 行首这一段的线位按实测（斜页上与整行平均差得出半格）
-    const ys = localLineModel(bin0, g.lines.map((l) => l.y), left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2);
+    const ys = localLineModel(bin0, g.lines, left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2);
     const rowInk = (y: number) => rowHasInk(bin0, y, xa, xb);
     const frac = (ya: number, yb: number) => {
       let n = 0;
@@ -1838,7 +1813,7 @@ export async function recognizeRasterPage(
     const xb = Math.min(bin0.w - 1, Math.round(left + sp * CLEF_8_X[1]));
     // 底线按行首实测：斜着没推平的谱行，整行的线位在行首能差出大半格（烛光颂曲 p5），照它量下探深度全是错的。
     // 模型底线上下一格半里，行首十格内有三格以上横墨的行是谱线行，取最低的那一条
-    const bot0 = localLineModel(bin0, g.lines.map((l) => l.y), left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2)[4];
+    const bot0 = localLineModel(bin0, g.lines, left, Math.min(bin0.w - 1, left + sp * 12), unit)((xa + xb) / 2)[4];
     // 一条都找不到的（行首被调号挤满）照模型的；最低的那条比模型高出半格以上的不量——那是第四线（底线在行首断了），照它量会多出一格
     let bot = bot0;
     for (let y = Math.round(bot0 + sp * 1.5); y >= Math.round(bot0 - sp); y--) {
@@ -2022,7 +1997,7 @@ export async function recognizeRasterPage(
       syms.find((s0) => isClef(s0.code) && s0.box.y + s0.box.h / 2 > g.lines[0].y && s0.box.y + s0.box.h / 2 < g.lines[4].y && s0.box.x < Math.max(...g.lines.map((l) => l.left)) + unit.space * 4);
     const found = groups.map((g) => {
       const c = clefOf(g);
-      return c ? sharpsByStrokes(raster.bin, g.lines.map((l) => l.y), c.box, unit.space) : [];
+      return c ? sharpsByStrokes(raster.bin, g.lines.map((l) => lineYAt(l, c.box.x + c.box.w + unit.space)), c.box, unit.space) : [];
     });
     const tally = new Map<number, number>();
     for (const f of found) if (f.length) tally.set(f.length, (tally.get(f.length) ?? 0) + 1);
@@ -2353,7 +2328,7 @@ export async function recognizeRasterPage(
     // 新编赞美诗 215 奇妙能力歌的四分休止心在第一线下 1.7 格）——头心离外线 `QREST_OFF` 格以内都收
     // 按分好组的谱线判：`lines` 里混着没成组的横线，五条一组会错位（一婴孩为我们降生 p2 男声 m17）
     const mid = midOfStaff(b, staffLines, unit) || shiftedRest(b);
-    if (!mid && !(offStaffRest(b, lines, unit) && inGrandStaff(b))) continue;
+    if (!mid && !(offStaffRest(b, staffLines, unit) && inGrandStaff(b))) continue;
     // 谱表外的：右边 2.4 格内挨着一个符头（头心落在这一块的高度里，上下各容半格）的是那个音的**升降号**，不是休止
     //（归回父家歌下加一线 C♯4 的升号，尺寸正落在四分休止这一档，`sharpCrossbars` 在淡印上验不出横杠）
     // 谱表外的：行首「谱号 + 调号 + 拍号」那一段不收——下面那两道行首闸按「块心在谱表里」找行，谱表外的块找不到行就放过去了
@@ -2426,7 +2401,7 @@ export async function recognizeRasterPage(
     const fill = c.area / Math.max(1, b.w * b.h);
     if (fill < QREST_FILL[0] || fill > QREST_FILL[1]) continue;
     // 让位到谱表外的也收（钢琴右手自己分两声部，上声部的四分休止抬到第五线上方，是爱 p4）
-    if (!midOfStaff(b, staffLines, unit) && !(offStaffRest(b, lines, unit) && inGrandStaff(b, true))) continue;
+    if (!midOfStaff(b, staffLines, unit) && !(offStaffRest(b, staffLines, unit) && inGrandStaff(b, true))) continue;
     if (nearStaffStart(b, groups, staffLefts, unit) || afterKey(b) < unit.space * KEY_TAIL || sharpCrossbars(nl, b, unit)) continue;
     if (syms.some((s0) => overlapFrac(b, s0.box) > 0.3)) continue;
     const inside = (v: LineSeg) => {
@@ -3410,9 +3385,9 @@ export async function recognizeRasterPage(
       // 符杠的断头不是符头：块的中心压在某条符杠的中线上（半个杠厚以内）
       //（《是谁》朝下八分音符的符杠末端 1.06×0.48 格，判别器给过了，出了个 B3）
       if (onBeamLine(b)) continue;
-      const gy = pitchGrid(b.y + b.h / 2);
+      const gy = pitchGrid(b.y + b.h / 2, b.x + b.w / 2);
       if (gy === null) continue;
-      if (headProb(clf, raster.bin, masks, unit, b, gy, onLineY(gy)) < CLF_P) continue;
+      if (headProb(clf, raster.bin, masks, unit, b, gy, onLineY(gy, b.x + b.w / 2)) < CLF_P) continue;
       const hw = Math.round(unit.space * 1.25);
       const hh = Math.round(unit.space * 0.95);
       const box = { x: Math.round(b.x + b.w / 2 - hw / 2), y: Math.round(gy - hh / 2), w: hw, h: hh };
@@ -3436,7 +3411,7 @@ export async function recognizeRasterPage(
         const h = b.h / unit.space;
         if (w > BIG_W || h > BIG_H) continue; // 再大就不是一团连桁了
         const parts = splitHeadCluster(noBeam, b, c.area, masksNB.length ? masksNB : masks, unit, pitchGrid, onLineY, true, (pb, gy) =>
-          headProb(clf, raster.bin, masks, unit, pb, gy, onLineY(gy)) >= CLF_P,
+          headProb(clf, raster.bin, masks, unit, pb, gy, onLineY(gy, pb.x + pb.w / 2)) >= CLF_P,
         );
         if (parts.length < 2) continue;
         for (const pb of parts) {
@@ -3488,11 +3463,11 @@ export async function recognizeRasterPage(
       if (over.some((s0) => !/^met/.test(s0.code))) continue;
       const beamsHit = beamsThrough(b);
       if (beamsHit >= 2 || (beamsHit === 1 && b.h < unit.space * SPOT_BEAM_H)) continue;
-      const gy = pitchGrid(cy);
+      const gy = pitchGrid(cy, b.x + b.w / 2);
       if (gy === null) continue;
       if (!stemBeside(b)) continue;
       if (solidBar(b)) continue;
-      if (headProb(clf, raster.bin, masks, unit, b, gy, onLineY(gy)) < SPOT_P) continue;
+      if (headProb(clf, raster.bin, masks, unit, b, gy, onLineY(gy, b.x + b.w / 2)) < SPOT_P) continue;
       const hw = Math.round(unit.space * 1.25);
       const hh = Math.round(unit.space * 0.95);
       const box = { x: Math.round(b.x + b.w / 2 - hw / 2), y: Math.round(gy - hh / 2), w: hw, h: hh };
@@ -3698,7 +3673,7 @@ export async function recognizeRasterPage(
   // 《善牧恩慈歌》线距 11px，附点只有 3px。两首的附点二分、附点四分一个都没认出来。
   // 附点的位置是死的：符头右边一格之内、同一个间（线上的音写在上方那个间）。
   // 在去谱线图上找那个窗口里**孤立、近圆的小墨团**，找到就补一个附点，时值交给 `attachDots`。
-  for (const d of findDots(nl, syms, unit, staffYs, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick))) {
+  for (const d of findDots(nl, syms, unit, staffYs, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x))) {
     syms.push({ box: d, code: "augmentationDot" });
     ledger.claim(d, "dot:augmentationDot");
   }
@@ -3706,7 +3681,7 @@ export async function recognizeRasterPage(
   {
     const rests = syms.filter((s0) => s0.code === "rest8th" || s0.code === "rest16th" || s0.code === "restQuarter");
     if (rests.length)
-      for (const d of findDots(nl, syms, unit, staffYs, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), rests)) {
+      for (const d of findDots(nl, syms, unit, staffYs, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x), rests)) {
         if (syms.some((s0) => s0.code === "augmentationDot" && overlapFrac(s0.box, d) > 0)) continue;
         syms.push({ box: d, code: "augmentationDot" });
         ledger.claim(d, "dot:augmentationDot");
@@ -3975,7 +3950,7 @@ export async function recognizeRasterPage(
         const ax = sp * 0.3;
         const ay = sp * 0.18;
         for (let y = Math.round(cy - ay); y <= Math.round(cy + ay); y++) {
-          if (y < 0 || y >= raster.bin.h || gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 0.5)) continue;
+          if (y < 0 || y >= raster.bin.h || grid.onLine(y, unit.lineThick / 2 + 0.5, cx)) continue;
           for (let x = Math.round(cx - ax); x <= Math.round(cx + ax); x++) {
             if (x < 0 || x >= raster.bin.w || ((x - cx) / ax) ** 2 + ((y - cy) / ay) ** 2 > 1) continue;
             n++;
@@ -4008,9 +3983,9 @@ export async function recognizeRasterPage(
         if (stemBeside(b, true)) continue;
         if (solidBar(b)) continue;
         const ys: number[] = [];
-        if (stack) for (const st of steps(b.y + sp * 0.35, b.y + b.h - sp * 0.35)) ys.push(st.y);
+        if (stack) for (const st of steps(b.y + sp * 0.35, b.y + b.h - sp * 0.35, b.x + b.w / 2)) ys.push(st.y);
         else {
-          const gy = pitchGrid(cy);
+          const gy = pitchGrid(cy, b.x + b.w / 2);
           if (gy === null) continue;
           ys.push(gy);
         }
@@ -4021,7 +3996,7 @@ export async function recognizeRasterPage(
           if (over.length) continue;
           const wh = white(cx, gy);
           if (wh < HSPOT_WHITE) continue;
-          const m = alongMasks.find((k) => k.onLine === onLineY(gy)) ?? alongMasks[0];
+          const m = alongMasks.find((k) => k.onLine === onLineY(gy, cx)) ?? alongMasks[0];
           let sc = 0;
           for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 1; dy++) sc = Math.max(sc, scoreAtMasked(raster.bin, m, cx + dx, gy + dy));
           if (sc < HSPOT_SCORE) continue;
@@ -4064,7 +4039,7 @@ export async function recognizeRasterPage(
     }
     // 这里补出来的头错过了上面找附点那一步，单给它们再找一次（我灵镇静 m10 附点二分 F4）
     if (added.length)
-      for (const d of findDots(nl, syms, unit, staffYs, (y) => gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick), added)) {
+      for (const d of findDots(nl, syms, unit, staffYs, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x), added)) {
         // 已经认过的附点不再收一遍：补出来的头紧挨着带附点的头时，同一个点会被再认一次、成了两个点
         if (syms.some((q) => q.code === "augmentationDot" && q.box.x < d.x + d.w && d.x < q.box.x + q.box.w && q.box.y < d.y + d.h && d.y < q.box.y + q.box.h)) continue;
         syms.push({ box: d, code: "augmentationDot" });
@@ -4391,7 +4366,7 @@ export async function recognizeRasterPage(
       // 少了它们，那些头的加线是按**邻居**切的、盖不住自己，`findLegers` 就判否
       // ——实测宁静钢琴右手 663 个带内符头只归属 574 个，差的 89 个几乎全是
       // 谱表上方一到两格、等着加线撑的那些。
-      ...sharedLegers([...prims.hSegs, ...strayLines], headBoxes, onGrid, unit),
+      ...sharedLegers(prims.hSegs, headBoxes, onGrid, unit),
       // **骑在加线上的符头，自己那条加线要补出来。**
       // 它压在符头底下，`findPrimitives` 抽不出来（那一带的纵向游程是整个符头的高度）；
       // `trimLedger` 只给 `findRasterHeads` 那一批补，按内腔找出来的、拆块拆出来的都没有。
@@ -4494,7 +4469,8 @@ export async function recognizeRasterPage(
   const thinOnLine = (b: BeamQuad) => {
     if (b.box.h > unit.space * THIN_BEAM_H) return false;
     const cy = b.box.y + b.box.h / 2;
-    if (!onGrid(cy) && !gridYs.some((ly) => Math.abs(ly - cy) <= unit.lineThick + 1)) return false;
+    const bx = b.box.x + b.box.w / 2;
+    if (!onGrid(cy, bx) && !grid.onLine(cy, unit.lineThick + 1, bx)) return false;
     return noteHeads.some((h) => h.box.left < b.box.x + b.box.w && h.box.right > b.box.x && Math.abs((h.box.top + h.box.bottom) / 2 - cy) <= unit.space * 0.6);
   };
   // **歌词字的一横不是杠**：朝上的短干顶到上方歌词行，字里一道粗横笔过了符杠的闸（来敬拜荣耀王 m16 A3 读成八分）。
@@ -4555,7 +4531,7 @@ export async function recognizeRasterPage(
     let wht = 0;
     let tot = 0;
     for (let y = Math.ceil(cy - ry); y <= cy + ry; y++) {
-      if (gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 1)) continue;
+      if (grid.onLine(y, unit.lineThick / 2 + 1, cx)) continue;
       for (let x = Math.ceil(cx - rx); x <= cx + rx; x++) {
         if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 > 1) continue;
         tot++;
@@ -4598,7 +4574,7 @@ export async function recognizeRasterPage(
           const cx = xs + dir * k;
           if (cx < 0 || cx >= B.w) break;
           for (let y = Math.max(0, Math.round(b.top - sp * 0.5)); y <= Math.min(B.h - 1, Math.round(b.bottom + sp * 0.5)); y++)
-            if (B.data[y * B.w + cx] && !gridYs.some((ly) => Math.abs(ly - y) <= unit.lineThick / 2 + 1)) {
+            if (B.data[y * B.w + cx] && !grid.onLine(y, unit.lineThick / 2 + 1, cx)) {
               hit++;
               break;
             }
@@ -5016,7 +4992,7 @@ export async function recognizeRasterPage(
   };
   fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe);
 
-  return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, gridYs, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
+  return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
 }
 /** 补漏音找头的得分下限至少是本页已认出的头中位得分的这么多（见 `headSearch`）。0.5 会挡掉扫描档一个补对的低分头（0.11，中位约 0.27）。 */
 const PROBE_MED_FRAC = 0.25;

@@ -123,7 +123,7 @@ export function trainHeadClassifier(
   bin: Binary,
   masks: HeadMask[],
   unit: RasterUnit,
-  onLine: (y: number) => boolean,
+  onLine: (y: number, x?: number) => boolean,
   pos: Rect[],
   neg: Rect[],
 ): HeadClassifier | null {
@@ -132,7 +132,7 @@ export function trainHeadClassifier(
   const y: number[] = [];
   const push = (box: Rect, label: number) => {
     const cy = box.y + box.h / 2;
-    X.push(features(bin, masks, unit, box, cy, onLine(cy)));
+    X.push(features(bin, masks, unit, box, cy, onLine(cy, box.x + box.w / 2)));
     y.push(label);
   };
   for (const b of pos) push(b, 1);

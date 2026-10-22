@@ -69,7 +69,7 @@ const REPEAT_INK = 0.9;
 /** `onLine`：这一行像素在谱线上（去线后残渣所在）。连通照走，但不计入点的盒、也不算伸出窗口
  *  ——贴着谱线的附点在去线图上常连着一截残渣，盒高超限或伸出窗口就整个丢了（我灵镇静 m3 的附点四分）。
  *  `only`：只给这几个头找（后补的头），其余头照样用来定窗口。 */
-export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staffYs: number[][], onLine: (y: number) => boolean = () => false, only?: RasterSym[]): Rect[] {
+export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staffYs: number[][], onLine: (y: number, x?: number) => boolean = () => false, only?: RasterSym[]): Rect[] {
   const sp = unit.space;
   const out: Rect[] = [];
   const heads = syms.filter((s0) => /^notehead/.test(s0.code));
@@ -102,7 +102,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
           const py = stack.pop()!;
           const px = stack.pop()!;
           grow(a, px, py);
-          if (!onLine(py)) grow(b, px, py);
+          if (!onLine(py, px)) grow(b, px, py);
           for (let dy = -1; dy <= 1; dy++)
             for (let dx = -1; dx <= 1; dx++) {
               const nx = px + dx;
@@ -110,7 +110,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
               if (nx < 0 || ny < 0 || nx >= bin.w || ny >= bin.h || !bin.data[ny * bin.w + nx]) continue;
               if (nx < x0 || ny < y0 || nx >= x1 || ny >= y1) {
                 a.edge = true;
-                if (!onLine(ny)) b.edge = true;
+                if (!onLine(ny, nx)) b.edge = true;
                 continue;
               }
               const j = (ny - y0) * W + (nx - x0);
@@ -161,7 +161,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     const cy = b.y + b.h / 2;
     const above = colHead(b, 0.3, 3.2);
     if (above && colHead(b, -0.1, 0.7) && !colHead(b, -3.2, -0.3)) return DOT_BELOW_PUSHED;
-    if (colHead(b, 0.3, 1.2) || ((above || stemDown(b)) && onLine(Math.round(cy)))) return DOT_BELOW_STACKED;
+    if (colHead(b, 0.3, 1.2) || ((above || stemDown(b)) && onLine(Math.round(cy), b.x + b.w / 2))) return DOT_BELOW_STACKED;
     return DOT_BELOW;
   };
   /** 干从头的左缘往下伸（下声部）：左缘一像素内有一段 1.5 格以上的竖墨，谱线行算连着。
@@ -169,7 +169,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
   const stemDown = (b: Rect) => {
     for (let x = Math.max(0, b.x - 1); x <= Math.min(bin.w - 1, b.x + 1); x++) {
       let run = 0;
-      for (let y = Math.round(b.y + b.h / 2); y < bin.h && (bin.data[y * bin.w + x] || onLine(y)); y++) run++;
+      for (let y = Math.round(b.y + b.h / 2); y < bin.h && (bin.data[y * bin.w + x] || onLine(y, x)); y++) run++;
       if (run >= sp * 1.5 + b.h / 2) return true;
     }
     return false;
@@ -209,7 +209,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     const ownCol = (x: number, y: number) => !!own && x >= own.x - 1 && x <= own.x + own.w + 1 && y >= own.y - sp * 0.5 && y <= own.y + own.h + sp * 0.5;
     const inDot = (x: number, y: number) => (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) || ownCol(x, y);
     for (let y = d.y - g; y < d.y + d.h + g; y++) {
-      if (y < y0 || y >= y1 || onLine(y)) continue;
+      if (y < y0 || y >= y1 || onLine(y, d.x + d.w / 2)) continue;
       for (let x = d.x - g; x < d.x + d.w + g; x++) {
         if (x < x0 || x >= x1 || inDot(x, y) || !bin.data[y * bin.w + x] || seen[(y - y0) * W + x - x0] || hRun(x, y) >= sp) continue;
         seen[(y - y0) * W + x - x0] = 1;
@@ -229,9 +229,9 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
         for (let dx = -1; dx <= 1; dx++) {
           const nx = x + dx;
           let ny = y + dy;
-          if (dy !== 0 && ny >= y0 && ny < y1 && onLine(ny)) {
+          if (dy !== 0 && ny >= y0 && ny < y1 && onLine(ny, nx)) {
             let k = 0;
-            while (k < 8 && ny >= y0 && ny < y1 && onLine(ny)) {
+            while (k < 8 && ny >= y0 && ny < y1 && onLine(ny, nx)) {
               ny += dy;
               k++;
             }
@@ -249,7 +249,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
       let run = 0;
       let most = 0;
       for (let y = a; y <= c; y++) {
-        run = bin.data[y * bin.w + x] || onLine(y) ? run + 1 : 0;
+        run = bin.data[y * bin.w + x] || onLine(y, x) ? run + 1 : 0;
         most = Math.max(most, run);
       }
       if (most >= sp * 1.5) return false;
@@ -261,7 +261,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     let n = 0;
     let sy = 0;
     for (let y = o.y; y < o.y + o.h; y++) {
-      if (onLine(y)) continue;
+      if (onLine(y, o.x + o.w / 2)) continue;
       for (let x = o.x; x < o.x + o.w; x++) if (bin.data[y * bin.w + x]) {
         n++;
         sy += y;
@@ -272,7 +272,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
   /** 盒里有不在谱线行上的墨。 */
   const offLine = (o: Rect) => {
     for (let y = o.y; y < o.y + o.h; y++) {
-      if (onLine(y)) continue;
+      if (onLine(y, o.x + o.w / 2)) continue;
       for (let x = o.x; x < o.x + o.w; x++) if (bin.data[y * bin.w + x]) return true;
     }
     return false;
@@ -293,7 +293,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     // 贯穿谱表的竖墨列，并成一根根竖线
     const full = (x: number) => {
       let ink = 0;
-      for (let y = Math.round(ys[0]); y <= Math.round(ys[4]); y++) if (bin.data[y * bin.w + x] || onLine(y)) ink++;
+      for (let y = Math.round(ys[0]); y <= Math.round(ys[4]); y++) if (bin.data[y * bin.w + x] || onLine(y, x)) ink++;
       return ink >= (Math.round(ys[4]) - Math.round(ys[0]) + 1) * REPEAT_INK;
     };
     const left = Math.min(d.x, o.x), right = Math.max(d.x + d.w, o.x + o.w);
@@ -368,7 +368,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
       // 扫描件谱线下沿的鼓包、残渣正好在那儿（破碎 p6/p7 三处），谱表外歌词字的一笔也常落在这儿（望十架）
       if (bl === DOT_BELOW && qy > cy + sp * DOT_BELOW_SOLID) {
         if (!inStaff) return false;
-        for (let y = q.y - 1; y <= q.y + q.h; y++) if (onLine(y)) return false;
+        for (let y = q.y - 1; y <= q.y + q.h; y++) if (onLine(y, q.x + q.w / 2)) return false;
       }
       return true;
     })) {

@@ -3,7 +3,7 @@ import type { Binary } from "../omrkit/types";
 import type { Rect } from "../omrkit/types";
 import { type LineSeg } from "./prims";
 import { type PitchStep } from "./notehead";
-import { type RasterUnit, type StaffLineRun } from "./staffline";
+import { lineYAt, type LineRef, type RasterUnit, type StaffLineRun } from "./staffline";
 
 /**
  * 加线候选（`hollowHeadsOnLedgers` 用）：每行谱上下第 1~4 条加线的位置上，**直接在原图上**找横向墨段
@@ -16,12 +16,15 @@ export function ledgerCandidates(bin: Binary, groups: { lines: StaffLineRun[]; s
   for (const g of groups) {
     const left = Math.max(...g.lines.map((l) => l.left));
     const right = Math.min(...g.lines.map((l) => l.right));
-    const ys: number[] = [];
-    for (let k = 1; k <= 4; k++) ys.push(g.lines[0].y - k * g.space, g.lines[4].y + k * g.space);
-    for (const fy of ys) {
-      const y = Math.round(fy);
-      if (y < 1 || y >= bin.h - 1) continue;
-      const ink = (x: number) => !!(bin.data[(y - 1) * bin.w + x] || bin.data[y * bin.w + x] || bin.data[(y + 1) * bin.w + x]);
+    // 加线位置按 x 取（弯、斜的谱线，`lineYAt`）：第一线上方、第五线下方 k 个线距
+    const slots: ((x: number) => number)[] = [];
+    for (let k = 1; k <= 4; k++) slots.push((x) => lineYAt(g.lines[0], x) - k * g.space, (x) => lineYAt(g.lines[4], x) + k * g.space);
+    for (const fyAt of slots) {
+      const ink = (x: number) => {
+        const y = Math.round(fyAt(x));
+        if (y < 1 || y >= bin.h - 1) return false;
+        return !!(bin.data[(y - 1) * bin.w + x] || bin.data[y * bin.w + x] || bin.data[(y + 1) * bin.w + x]);
+      };
       let start = -1;
       let miss = 0;
       for (let x = Math.max(0, Math.round(left)); x <= Math.min(bin.w - 1, Math.round(right)) + 1; x++) {
@@ -32,7 +35,8 @@ export function ledgerCandidates(bin: Binary, groups: { lines: StaffLineRun[]; s
           continue;
         }
         if (start >= 0 && ++miss > 1) {
-          out.push({ x0: start, x1: x - miss, y: fy });
+          const fy = fyAt((start + x - miss) / 2);
+          if (fy >= 1 && fy < bin.h - 1) out.push({ x0: start, x1: x - miss, y: fy });
           start = -1;
           miss = 0;
         }
@@ -50,21 +54,35 @@ export interface LineFrame {
 }
 
 /** 区间 [y0, y1] 里的全部音高位置（与 `makePitchGrid` 同一张表：每行谱顶线上下各五条加线的线位与间位）。 */
-export function makePitchSteps(groups: { lines: { y: number }[]; space: number }[]): (y0: number, y1: number) => PitchStep[] {
+export function makePitchSteps(groups: { lines: LineRef[]; space: number }[]): (y0: number, y1: number, x?: number) => PitchStep[] {
   const steps: PitchStep[] = [];
   for (const g of groups) {
     const top = g.lines[0].y;
     const half = g.space / 2;
     for (let k = -10; k <= 18; k++) steps.push({ y: top + k * half, line: k % 2 === 0 });
   }
-  return (y0, y1) => steps.filter((s) => s.y >= y0 && s.y <= y1);
+  const curved = groups.some((g) => g.lines[0].curve);
+  return (y0, y1, x) => {
+    if (!curved || x === undefined) return steps.filter((s) => s.y >= y0 && s.y <= y1);
+    // 弯、斜的谱线：线位按 x 处的第一线往下数
+    const out: PitchStep[] = [];
+    for (const g of groups) {
+      const top = lineYAt(g.lines[0], x);
+      const half = g.space / 2;
+      for (let k = -10; k <= 18; k++) {
+        const y = top + k * half;
+        if (y >= y0 && y <= y1) out.push({ y, line: k % 2 === 0 });
+      }
+    }
+    return out;
+  };
 }
 
 /**
  * 音高格：把一个 y 吸到最近的**线/间中心**（差半格音高就错一级）。
  * 谱表之外也给（加线那一带），上下各放几格；离得太远返回 null。
  */
-export function makePitchGrid(groups: { lines: { y: number }[]; space: number }[], unit: RasterUnit): (y: number) => number | null {
+export function makePitchGrid(groups: { lines: LineRef[]; space: number }[], unit: RasterUnit): (y: number, x?: number) => number | null {
   const steps: number[] = [];
   for (const g of groups) {
     const top = g.lines[0].y;
@@ -72,16 +90,25 @@ export function makePitchGrid(groups: { lines: { y: number }[]; space: number }[
     for (let k = -10; k <= 18; k++) steps.push(top + k * half);
   }
   steps.sort((a, b) => a - b);
-  return (y: number) => {
+  const curved = groups.some((g) => g.lines[0].curve);
+  return (y: number, x?: number) => {
     let best: number | null = null;
     let bd = unit.space * 0.3;
-    for (const s of steps) {
+    const near = (s: number) => {
       const d = Math.abs(s - y);
       if (d < bd) {
         bd = d;
         best = s;
       }
-    }
+    };
+    if (!curved || x === undefined) for (const s of steps) near(s);
+    // 弯、斜的谱线：线位按 x 处的第一线往下数
+    else
+      for (const g of groups) {
+        const top = lineYAt(g.lines[0], x);
+        const half = g.space / 2;
+        for (let k = -10; k <= 18; k++) near(top + k * half);
+      }
     return best;
   };
 }
@@ -102,12 +129,12 @@ export function makePitchGrid(groups: { lines: { y: number }[]; space: number }[
  *
  * 只切**落在谱线网格延长线上**的横段（`ledgerGrid`），那是加线的硬判据。
  */
-export function sharedLegers(hSegs: LineSeg[], heads: { box: Rect }[], onGrid: (y: number) => boolean, unit: RasterUnit): LineSeg[] {
+export function sharedLegers(hSegs: LineSeg[], heads: { box: Rect }[], onGrid: (y: number, x?: number) => boolean, unit: RasterUnit): LineSeg[] {
   const out: LineSeg[] = [];
   for (const seg of hSegs) {
     const y = (seg.y0 + seg.y1) / 2;
     if (Math.abs(seg.x1 - seg.x0) <= unit.space * 3) continue; // 短的下游本来就收得下
-    if (!onGrid(y)) continue;
+    if (!onGrid(y, (seg.x0 + seg.x1) / 2)) continue;
     const left = Math.min(seg.x0, seg.x1);
     const right = Math.max(seg.x0, seg.x1);
     for (const h of heads) {
@@ -130,7 +157,7 @@ export function sharedLegers(hSegs: LineSeg[], heads: { box: Rect }[], onGrid: (
  * 判据：中心落在加线网格上（`ledgerGrid`）、且沿中心线左右各半个符头宽的范围内，
  * 六成以上的列在 ±线宽 内有墨。补出来的段按符头宽的一倍二，与 `trimLedger` 那条同口径。
  */
-export function ownLegers(heads: { box: Rect }[], bin: Binary, onGrid: (y: number) => boolean, unit: RasterUnit): LineSeg[] {
+export function ownLegers(heads: { box: Rect }[], bin: Binary, onGrid: (y: number, x?: number) => boolean, unit: RasterUnit): LineSeg[] {
   const out: LineSeg[] = [];
   const th = Math.max(1, Math.round(unit.lineThick));
   for (const h of heads) {
@@ -159,7 +186,7 @@ export function ownLegers(heads: { box: Rect }[], bin: Binary, onGrid: (y: numbe
     };
     const own: number[] = [];
     for (const y of [cy, cy - unit.space / 2, cy + unit.space / 2]) {
-      if (!onGrid(y) || !inked(y)) continue;
+      if (!onGrid(y, cx) || !inked(y)) continue;
       own.push(y);
       out.push({ x0: cx - half, y0: y, x1: cx + half, y1: y, lw: th, maxLw: th });
     }
@@ -170,7 +197,7 @@ export function ownLegers(heads: { box: Rect }[], bin: Binary, onGrid: (y: numbe
       for (const dir of [-1, 1])
         for (let k = 1; k <= 6; k++) {
           const y = y0 + dir * k * unit.space;
-          if (!onGrid(y) || !inked(y)) break;
+          if (!onGrid(y, cx) || !inked(y)) break;
           if (!out.some((l) => Math.abs(l.y0 - y) < unit.space * 0.25 && Math.abs((l.x0 + l.x1) / 2 - cx) < 1)) out.push({ x0: cx - half, y0: y, x1: cx + half, y1: y, lw: th, maxLw: th });
         }
   }

@@ -908,10 +908,11 @@ export function findBarlines(pg: SPage): boolean {
   // ——实测 Opus 那 68 页（都是大谱表）因此一条小节线都没认出来，整页只切出一个小节。
   // 改判「盖满」：上端不低于第五线、下端不高于第一线，容差半格。
   /** 竖段有一端伸出这行谱 0.3 格以上、又没落在任何一行谱的外线上。 */
+  // 谱表上下界一律按竖线所在的 x 取（位图路的弯、斜谱线，见 `Staff.topAt`；矢量路就是包围盒）
   const overshoots = (l: Seg, st: Staff): boolean => {
     const out = (s2: Staff) => (s2.stepDistance() || 1) * 0.6;
-    const lands = (y: number) => pg.staves.some((s2) => Math.abs(y - s2.box.top) <= out(s2) || Math.abs(y - s2.box.bottom) <= out(s2));
-    return (l.top < st.box.top - out(st) && !lands(l.top)) || (l.bottom > st.box.bottom + out(st) && !lands(l.bottom));
+    const lands = (y: number) => pg.staves.some((s2) => Math.abs(y - s2.topAt(l.cx)) <= out(s2) || Math.abs(y - s2.bottomAt(l.cx)) <= out(s2));
+    return (l.top < st.topAt(l.cx) - out(st) && !lands(l.top)) || (l.bottom > st.bottomAt(l.cx) + out(st) && !lands(l.bottom));
   };
   const topStaff = new Map<Seg, Staff>();
   const covers = new Set<Seg>();
@@ -949,9 +950,10 @@ export function findBarlines(pg: SPage): boolean {
       // 两端离第五线、第一线都不过 0.4 格，长度仍要够一个谱表高（差不到四分之一格）；
       // 符干的下端在头中心，头只落在线上或间里（0 或 0.5 格），碰不上这个口子。
       // 上端不卡的话，从谱表上方一格多伸下来的长符干也进来（齐来谢主歌、父恩广大各多切一刀）。
-      const shifted =
-        l.len >= boxH(st.box) - tol && Math.abs(l.top - st.box.top) <= tol * 1.6 && Math.abs(l.bottom - st.box.bottom) <= tol * 1.6;
-      if ((l.top <= st.box.top + tol && l.bottom >= st.box.bottom - tol) || shifted) {
+      const top = st.topAt(l.cx);
+      const bottom = st.bottomAt(l.cx);
+      const shifted = l.len >= bottom - top - tol && Math.abs(l.top - top) <= tol * 1.6 && Math.abs(l.bottom - bottom) <= tol * 1.6;
+      if ((l.top <= top + tol && l.bottom >= bottom - tol) || shifted) {
         // **伸出谱表的那一端要落在某行谱的外线上**：真小节线两端压在第五线、第一线上，
         // 伸出去也只伸到大谱表另一行的外线。和弦的符干上端高出一格、或两头各伸出 0.3~0.4 格，
         // 头是认不出的「8」字形空心三度，贴头那道闸拦不住（我灵镇静多切四刀）。
