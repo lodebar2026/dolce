@@ -935,7 +935,22 @@ export function findPrimitives(
     }
     beams.push({ ...line, box: c.bbox });
   }
-  steepBeams(vr, bLo, bHi, w, h, beams, unit, (x, y) => {
+  // 陡杠的斜率按相对谱线算：弯、斜的页上杠跟着谱线一起歪。取离杠中点最近那行谱中线在这一处的斜率，平直的页上是 0
+  const staffSlope = (x: number, y: number) => {
+    if (!grid?.curved) return 0;
+    let best = 0;
+    let bd = Infinity;
+    for (const st of grid.staves) {
+      if (st.length < 5) continue;
+      const d = Math.abs(lineYAt(st[2], x) - y);
+      if (d < bd) {
+        bd = d;
+        best = (lineYAt(st[2], x + unit.space) - lineYAt(st[2], x - unit.space)) / (2 * unit.space);
+      }
+    }
+    return best;
+  };
+  steepBeams(vr, bLo, bHi, w, h, beams, unit, staffSlope, (x, y) => {
     const tol = Math.max(2, unit.lineThick * 2);
     // 干端常停在谱线上（去线时断开），杠端在线下半格内
     const gap = Math.max(2, unit.space * 0.5);
@@ -984,10 +999,10 @@ const STEEP_MIN = 0.25;
  * 杠就被当成左边那根干的八分符尾，右边那个音没了杠读成四分；碎成上下两截的还被当成两层，八分读成十六分。
  *
  * 杠厚的像素（`vr` 在杠厚范围里）沿 `STEEP_SLOPES` 几种斜率逐条斜线量游程，横跨 `STEEP_RUN` 格以上的收进掩模，
- * 连通块要宽 1.5 格以上、中心线够陡（`STEEP_MIN`）、平均厚像杠，且**两端都搭着干**——弧线、歌词笔画也会斜着长，
+ * 连通块要宽 1.5 格以上、中心线相对所在谱行的谱线够陡（`STEEP_MIN`）、平均厚像杠，且**两端都搭着干**——弧线、歌词笔画也会斜着长，
  * 两头都落在干上的只有杠。收下的杠把压在它上面的碎截（横向那一路收的）换掉。
  */
-function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: number, beams: BeamQuad[], unit: RasterUnit, stemAt: (x: number, y: number) => boolean): void {
+function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: number, beams: BeamQuad[], unit: RasterUnit, staffSlope: (x: number, y: number) => number, stemAt: (x: number, y: number) => boolean): void {
   const sp = unit.space;
   const cand = new Uint8Array(w * h);
   for (let i = 0; i < cand.length; i++) if (vr[i] >= bLo && vr[i] <= bHi) cand[i] = 1;
@@ -1019,7 +1034,7 @@ function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: num
     if (b.w < sp * 1.5 || b.h > sp * 3) continue;
     const line = centerLine(mask, w, c, true);
     const slope = (line.y1 - line.y0) / Math.max(1, line.x1 - line.x0);
-    if (Math.abs(slope) < STEEP_MIN) continue;
+    if (Math.abs(slope - staffSlope((line.x0 + line.x1) / 2, (line.y0 + line.y1) / 2)) < STEEP_MIN) continue;
     const thick = (c.area / b.w) / Math.sqrt(1 + slope * slope);
     if (thick < bLo * 0.8 || thick > sp * 0.8) continue;
     if (!stemAt(line.x0, line.y0) || !stemAt(line.x1, line.y1)) continue;
