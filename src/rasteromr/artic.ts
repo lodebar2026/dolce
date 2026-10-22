@@ -148,7 +148,8 @@ export function findRasterArticulations(
     let stf: Staff | undefined;
     let bd = sp * FERMATA_GAP;
     for (const st of pg.staves) {
-      const d = shape.up ? st.box.top - cy : cy - st.box.bottom;
+      const ax = arc.box.x + arc.box.w / 2;
+      const d = shape.up ? st.topAt(ax) - cy : cy - st.bottomAt(ax);
       if (d > -sp * 1.5 && d < bd) {
         bd = d;
         stf = st;

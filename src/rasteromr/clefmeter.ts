@@ -46,7 +46,7 @@ export function shareTimeSignature(pg: SPage, ctx: Map<Staff, StaffContext>, col
     if (staves.length < 2) continue;
     const prev = groups[gi - 1];
     const songHead = prev ? prev.filter((st) => endsWithFinal(st, bin)).length * 2 > prev.length : !carried;
-    const colsOf = (st: Staff) => cols.filter((c) => c.mid > st.box.top && c.mid < st.box.bottom);
+    const colsOf = (st: Staff) => cols.filter((c) => c.mid > st.topAt(c.box.x) && c.mid < st.bottomAt(c.box.x));
     const headOf = (st: Staff) => {
       const all = timeSignatures(ctx.get(st)!.time, sp).filter((t) => t.x < st.box.left + sp * HEAD_TIME_SP);
       return all.length ? all[0] : null;
@@ -107,7 +107,9 @@ export function shareTimeSignature(pg: SPage, ctx: Map<Staff, StaffContext>, col
       const col = colsOf(st).find((o) => Math.abs(o.box.x - win.x) <= sp * 1.5);
       const x = col ? col.box.x : Math.round(win.x - sp * 0.6);
       const w = col ? col.box.w : Math.round(sp * 1.2);
-      const top = Math.round(st.box.top), mid = Math.round((st.box.top + st.box.bottom) / 2), bottom = Math.round(st.box.bottom);
+      // 拍号列处的首末线（弯、斜的谱线按 x 取）
+      const t0 = st.topAt(x + w / 2), b0 = st.bottomAt(x + w / 2);
+      const top = Math.round(t0), mid = Math.round((t0 + b0) / 2), bottom = Math.round(b0);
       const put = (n: number, y: number, h0: number) => {
         const ds = String(n).split("");
         ds.forEach((d, k) => {
@@ -137,8 +139,9 @@ export function shareTimeSignature(pg: SPage, ctx: Map<Staff, StaffContext>, col
 export function endsWithFinal(st: Staff, bin: Binary): boolean {
   if (st.lineYs.length !== 5) return false;
   const sp = (st.lineYs[4] - st.lineYs[0]) / 4;
-  const y0 = Math.round(st.lineYs[0]), y1 = Math.round(st.lineYs[4]);
+  // 首末线按列取：行右端是弯、斜谱线偏得最多的地方
   const full = (x: number) => {
+    const y0 = Math.round(st.topAt(x)), y1 = Math.round(st.bottomAt(x));
     let n = 0;
     for (let y = y0; y <= y1; y++) if (bin.data[y * bin.w + x]) n++;
     return n >= (y1 - y0 + 1) * 0.9;
@@ -223,7 +226,8 @@ export function shareSystemClefs(pg: SPage, ctx: Map<Staff, StaffContext>, unit:
         if (c.clef) c.clef.code = code;
         else {
           const st = g[i];
-          const box = { x: st.box.left + unit.space * 0.5, y: st.box.top, w: unit.space * 2.5, h: st.box.bottom - st.box.top };
+          const cx = st.box.left + unit.space * 1.75;
+          const box = { x: st.box.left + unit.space * 0.5, y: st.topAt(cx), w: unit.space * 2.5, h: st.bottomAt(cx) - st.topAt(cx) };
           const sym = makeSymObj(pg.objs.length + pg.segs.length + 1, { box, code }, unit.height).sym;
           sym.addTag("Clef");
           c.clef = sym;

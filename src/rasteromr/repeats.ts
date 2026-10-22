@@ -175,10 +175,12 @@ export function markRepeatsAndVoltas(pg: SPage, bin: Binary, map: ContourMap, sp
   hooks.sort((p, q) => p.cx - q.cx);
   for (const hook of hooks) {
     // 钩下方最近的那行谱（中间不能再隔着别的谱行）
-    const st = pg.staves.filter((s) => s.box.top > hook.top && hook.cx > s.box.left - sp && hook.cx < s.box.right).sort((p, q) => p.box.top - q.box.top)[0];
+    const st = pg.staves.filter((s) => s.topAt(hook.cx) > hook.top && hook.cx > s.box.left - sp && hook.cx < s.box.right).sort((p, q) => p.box.top - q.box.top)[0];
     if (!st) continue;
-    const rise = st.box.top - hook.top;
-    if (rise < sp * VOLTA_RISE[0] || rise > sp * VOLTA_RISE[1] || hook.bottom > st.box.top + sp) continue;
+    // 第一线按钩所在 x 取（弯、斜的谱线）
+    const stTop = st.topAt(hook.cx);
+    const rise = stTop - hook.top;
+    if (rise < sp * VOLTA_RISE[0] || rise > sp * VOLTA_RISE[1] || hook.bottom > stTop + sp) continue;
     // 钩对着一根小节线；换行后接着的那一房印在行首（谱号调号之后），没有小节线可对，落在第一小节里就算
     const atRowStart = !!st.bars[0] && hook.cx > st.bars[0].left && hook.cx < st.bars[0].right - sp * 2;
     if (!atRowStart && !st.bars.some((b) => Math.abs(b.left - hook.cx) <= sp * VOLTA_SNAP)) continue;

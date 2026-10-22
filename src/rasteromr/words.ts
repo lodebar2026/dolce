@@ -728,17 +728,19 @@ export function attachWordLines(
     let above = true;
     for (const st of pg.staves) {
       if (cx < st.box.left - sp * SIDE || cx > st.box.right + sp * SIDE) continue;
-      const d = cy < st.box.top ? st.box.top - cy : cy > st.box.bottom ? cy - st.box.bottom : 0;
+      // 首末线按字心所在 x 取（弯、斜的谱线）
+      const t = st.topAt(cx), b = st.bottomAt(cx);
+      const d = cy < t ? t - cy : cy > b ? cy - b : 0;
       if (d < bd) {
         bd = d;
         stf = st;
-        above = cy < (st.box.top + st.box.bottom) / 2;
+        above = cy < (t + b) / 2;
       }
     }
     if (!stf) continue;
     // 两个系统之间的空当：文字指示、排练号、段落名都印在它管的那个系统**上方**，挂在上一系统末行下方的少（`rit.` 印在谱表下也贴着谱表）。
     // 离下一系统首行不比离上一系统末行远出 `INTER_SYS_BIAS` 倍就归下一系统（宁静 p5「Interelude」框字离上面钢琴左手 4 格、离下面右手 6 格）
-    if (cy > stf.box.bottom) {
+    if (cy > stf.bottomAt(cx)) {
       const sys = pg.systems.find((s) => s.staves.includes(stf!));
       const next = sys && pg.systems.filter((s) => s !== sys && s.box.top > stf!.box.bottom).sort((a, b) => a.box.top - b.box.top)[0];
       const low = next?.staves.reduce<Staff | undefined>((a, s) => (!a || s.box.top < a.box.top ? s : a), undefined);

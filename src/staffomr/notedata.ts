@@ -1082,7 +1082,8 @@ export function buildNotes(
           // 推广开就是**中心落在上下两条线之间的哪一半**：上半是吊着的全休止、下半是坐着的二分休止（谱表外照线距往外推）。
           // 标准位置上与「离中线半格」同一个门槛；让位到别处的（两声部时上声部的休止抬高一两格）也判得对——
           // 生之颂钢琴 m13 左手二分休止坐在第二线上，中心比中线高一格，按离中线读成全休止，这一小节多出两拍
-          const ys = [...stf.lineYs].sort((a, b) => a - b);
+          // 位图路弯、斜的谱线按方块所在 x 取线位（`lineYsAt`）；矢量路没有，就是整行的线位
+          const ys = [...(stf.lineYsAt?.(s.px) ?? stf.lineYs)].sort((a, b) => a - b);
           const cy = (s.box.top + s.box.bottom) / 2;
           if (ys.length >= 2) {
             const k = ys.filter((y) => y <= cy).length - 1;

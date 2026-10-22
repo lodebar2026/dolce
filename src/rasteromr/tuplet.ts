@@ -46,7 +46,8 @@ export function findRasterTuplets(pg: SPage, cands: Contour[], notes: StaffNote[
     // 括号罩着的那行谱：上下最近、跨度里正好三个音（和弦算一个，休止也算）
     let best: { st: Staff; grp: StaffNote[]; d: number } | null = null;
     for (const st of pg.staves) {
-      const dist = d.cy < st.box.top ? st.box.top - d.cy : d.cy > st.box.bottom ? d.cy - st.box.bottom : 0;
+      const t = st.topAt(d.cx), b = st.bottomAt(d.cx);
+      const dist = d.cy < t ? t - d.cy : d.cy > b ? d.cy - b : 0;
       if (dist > sp * REACH) continue;
       const span = notes.filter((n) => n.staff === st && !n.grace && n.x >= x0 - sp * 1.2 && n.x <= x1 + sp * 0.6);
       const mains = span.filter((n) => !n.chordExtra);

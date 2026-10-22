@@ -63,8 +63,8 @@ export function classifyBarlines(pg: SPage, stf: Staff): BarlineMark[] {
     (s) =>
       (s.code === "augmentationDot" || s.code === "repeatDots") &&
       !s.hasTag("Augmentation") &&
-      s.py > stf.box.top &&
-      s.py < stf.box.bottom,
+      s.py > stf.topAt(s.px) &&
+      s.py < stf.bottomAt(s.px),
   );
 
   // 粗笔的门槛：三分之一线距；整页小节线本来就粗的（低分辨率的粗线扫描件，线宽过线距三成）按**整页**小节线笔画中位线宽的 1.8 倍。
@@ -87,7 +87,8 @@ export function classifyBarlines(pg: SPage, stf: Staff): BarlineMark[] {
       // `repeatDots` 一个字形就是上下两点；`augmentationDot` 要两枚才算，而且**夹着第三线**
       // （在第二、三间，两点中点落在谱表中线上）：三度和弦的两个附点也是上下隔一格，但在别的间
       // （我灵镇静 A4/F4 附点二分，点在第一、二间，右边两格就是小节线，被当成反复点，附点整批丢了）
-      const mid = (stf.box.top + stf.box.bottom) / 2;
+      // 中线按点所在 x 取（位图路弯、斜的谱线；矢量路就是盒的中线）
+      const mid = (stf.topAt(d.px) + stf.bottomAt(d.px)) / 2;
       const pair =
         d.code === "repeatDots" ||
         dots.some((o) => o !== d && Math.abs(o.px - d.px) < sp * 0.4 && Math.abs(o.py - d.py) > sp * 0.5 && Math.abs(o.py - d.py) < sp * 1.5 && Math.abs((o.py + d.py) / 2 - mid) < sp * 0.3);
@@ -109,7 +110,7 @@ export function tagRepeatDots(pg: SPage, stf: Staff, marks: BarlineMark[]): void
   for (const s of pg.symbols) {
     if (s.code !== "augmentationDot" && s.code !== "repeatDots") continue;
     if (s.hasAnyTag()) continue;
-    if (s.py < stf.box.top || s.py > stf.box.bottom) continue;
+    if (s.py < stf.topAt(s.px) || s.py > stf.bottomAt(s.px)) continue;
     if (!xs.some((x) => Math.abs(s.px - x) < sp * 2)) continue;
     (s as Sym).addTag("BarLine");
   }

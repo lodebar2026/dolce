@@ -691,7 +691,7 @@ export function findLegers(nt: Sym, stf: Staff, lines: Seg[]): boolean {
   if (need >= 3) {
     const sp = stepDist * 2;
     const down = nt.py > y2;
-    let at = down ? stf.box.bottom : stf.box.top;
+    let at = down ? stf.bottomAt(nt.px) : stf.topAt(nt.px);
     let chain = 0;
     for (const l of poss.slice().sort((a, b) => (down ? a.cy - b.cy : b.cy - a.cy))) {
       const gap = down ? l.cy - at : at - l.cy;
@@ -727,7 +727,7 @@ export function isLeadNoteBarline(l: Seg, nt: Sym, stf: Staff): boolean {
   const cy = (nt.box.top + nt.box.bottom) / 2;
   if (Math.abs(cy - l.bottom) > sp || Math.abs(cy - l.top) <= sp) return false;
   if (Math.abs(nt.box.left - l.cx) >= Math.abs(nt.box.right - l.cx)) return false;
-  return Math.abs(l.top - stf.box.top) <= sp * 0.25 && Math.abs(l.bottom - stf.box.bottom) <= sp * 0.25;
+  return Math.abs(l.top - stf.topAt(l.cx)) <= sp * 0.25 && Math.abs(l.bottom - stf.bottomAt(l.cx)) <= sp * 0.25;
 }
 
 /** 窄头挂干窗口的下限（格），与算窄的盒宽（格）。 */
@@ -804,14 +804,14 @@ export function findStems(pg: SPage): void {
     // （符杠切开的两截纵向是错开的），挂两端离谱表外线远的那根，像小节线的留给小节线——
     // 坚固保障第三行，头盒右缘把旁边的小节线也框进来，干离缘 3.0、小节线 3.5，按远近分不开。
     // 不卡「像小节线」、并排重叠的一律只挂一根，合唱谱扫描件音符 −0.12（粗干断成并排两截）。
-    const edge = (l: Seg) => Math.abs(l.top - stf.box.top) + Math.abs(l.bottom - stf.box.bottom);
+    const edge = (l: Seg) => Math.abs(l.top - stf.topAt(l.cx)) + Math.abs(l.bottom - stf.bottomAt(l.cx));
     for (const side of [0, 1]) {
       const cs = cand.filter((c) => c.side === side);
       const dMin = Math.min(...cs.map((c) => c.d));
       const near = cs.filter((c) => c.d <= dMin + lw * 0.5).sort((p, q) => edge(q.l) - edge(p.l));
       const kept: Seg[] = [];
       for (const c of near) {
-        const barShaped = Math.abs(c.l.top - stf.box.top) <= space * 0.25 && Math.abs(c.l.bottom - stf.box.bottom) <= space * 0.25;
+        const barShaped = Math.abs(c.l.top - stf.topAt(c.l.cx)) <= space * 0.25 && Math.abs(c.l.bottom - stf.bottomAt(c.l.cx)) <= space * 0.25;
         if (barShaped && kept.some((k) => Math.min(k.bottom, c.l.bottom) - Math.max(k.top, c.l.top) > Math.min(k.len, c.l.len) * 0.5)) continue;
         kept.push(c.l);
         c.l.addTag("Stem");
@@ -982,10 +982,10 @@ export function findBarlines(pg: SPage): boolean {
       const g = groups.find((x) => x.includes(ts));
       if (!g) continue;
       const sp = ts.stepDistance() * 2 || pg.space;
-      const spans = (m: Seg, st: Staff) => m.top <= st.box.top + sp * 0.25 && m.bottom >= st.box.bottom - sp * 0.25;
+      const spans = (m: Seg, st: Staff) => m.top <= st.topAt(m.cx) + sp * 0.25 && m.bottom >= st.bottomAt(m.cx) - sp * 0.25;
       // 没挂成符干、压着那一行够半个谱表高的也算：小节线被符头、字压断成两截时没有哪一截盖满
       //（颂主化功歌第一行高音谱表的小节线都是半截的，靠下面「短小节线」那一步按同 x 收回来）
-      const half = (m: Seg, st: Staff) => !m.hasTag("Stem") && Math.min(m.bottom, st.box.bottom) - Math.max(m.top, st.box.top) >= boxH(st.box) * 0.5;
+      const half = (m: Seg, st: Staff) => !m.hasTag("Stem") && Math.min(m.bottom, st.bottomAt(m.cx)) - Math.max(m.top, st.topAt(m.cx)) >= boxH(st.box) * 0.5;
       if (!g.some((st) => st !== ts && (spans(l, st) || allV.some((m) => m !== l && Math.abs(m.cx - l.cx) <= sp * 0.6 && (spans(m, st) || half(m, st)))))) covers.delete(l);
     }
   }
@@ -1060,10 +1060,11 @@ export function tagSystemBarlines(pg: SPage): void {
     if (g.length < 2) continue;
     const sp = g[0].stepDistance() * 2 || pg.space;
     const tol = sp * 0.3;
-    const lands = (y: number) => g.some((st) => Math.abs(y - st.box.top) <= tol || Math.abs(y - st.box.bottom) <= tol);
+    // 外线按竖线所在 x 取（位图路弯、斜的谱线；矢量路就是盒的上下沿）
+    const lands = (y: number, x: number) => g.some((st) => Math.abs(y - st.topAt(x)) <= tol || Math.abs(y - st.bottomAt(x)) <= tol);
     /** 这根竖线盖满 st、两端都落在本系统某行的外线上 */
     const barOn = (l: Seg, st: Staff) =>
-      l.top <= st.box.top + tol && l.bottom >= st.box.bottom - tol && lands(l.top) && lands(l.bottom) && Math.abs(st.box.left - l.cx) >= Math.max(l.lw, 1) * 2;
+      l.top <= st.topAt(l.cx) + tol && l.bottom >= st.bottomAt(l.cx) - tol && lands(l.top, l.cx) && lands(l.bottom, l.cx) && Math.abs(st.box.left - l.cx) >= Math.max(l.lw, 1) * 2;
     // 一端挂着符头的是干，不是小节线：头缘贴着这根线、头心落在线端半格内。小节线与相邻的干多半隔一格以上，
     // 可密排的十六分会把最后一个音的干挤到小节线前几个像素（破碎 p7 m70 钢琴右手 D4，干在小节线左边 6 像素、从第一线伸到头上），
     // 下面按 x 收同伴时一并收进来，那个头就丢了干、被并进前一个音的和弦
