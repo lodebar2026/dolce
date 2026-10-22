@@ -69,7 +69,7 @@ const REPEAT_INK = 0.9;
 /** `onLine`：这一行像素在谱线上（去线后残渣所在）。连通照走，但不计入点的盒、也不算伸出窗口
  *  ——贴着谱线的附点在去线图上常连着一截残渣，盒高超限或伸出窗口就整个丢了（我灵镇静 m3 的附点四分）。
  *  `only`：只给这几个头找（后补的头），其余头照样用来定窗口。 */
-export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staffYs: number[][], onLine: (y: number, x?: number) => boolean = () => false, only?: RasterSym[]): Rect[] {
+export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staffYs: (x: number) => number[][], onLine: (y: number, x?: number) => boolean = () => false, only?: RasterSym[]): Rect[] {
   const sp = unit.space;
   const out: Rect[] = [];
   const heads = syms.filter((s0) => /^notehead/.test(s0.code));
@@ -286,7 +286,7 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     const ax = d.x + d.w / 2, ay = d.y + d.h / 2;
     const bx = o.x + o.w / 2, by = o.y + o.h / 2;
     if (Math.abs(ax - bx) > sp * REPEAT_X) return false;
-    const ys = staffYs.find((l) => l.length === 5 && ay > l[0] && ay < l[4]);
+    const ys = staffYs(ax).find((l) => l.length === 5 && ay > l[0] && ay < l[4]);
     if (!ys) return false;
     const up = Math.min(ay, by), dn = Math.max(ay, by);
     if (Math.abs(up - (ys[1] + ys[2]) / 2) > sp * REPEAT_Y || Math.abs(dn - (ys[2] + ys[3]) / 2) > sp * REPEAT_Y) return false;
@@ -334,20 +334,20 @@ export function findDots(bin: Binary, syms: RasterSym[], unit: RasterUnit, staff
     // 靠这一放才收进来的（左缘在原窗口左边）要够大（两边都 0.3 格）：谱线在头右边的残渣原来被窗口切掉（我灵镇静 m21 多出一个点）
     // 上沿在谱线网格验得了间位的地方多放 `DOT_HEAD_TOL`：头盒带进加线下面一截时中心偏下，线上音写在上方间里的点
     // 就出了窗口（齐来谢主歌 m13 低音谱表上加一线 C4 附点二分，差 0.4 像素）。放进来的仍要过下面按谱线定高差那一道
-    const gridAt = (qy: number) => staffYs.find((ys) => ys.length === 5 && qy > ys[0] - sp * 1.5 && qy < ys[4] + sp * 1.5);
+    const gridAt = (qy: number) => staffYs(r).find((ys) => ys.length === 5 && qy > ys[0] - sp * 1.5 && qy < ys[4] + sp * 1.5);
     const upTol = gridAt(cy) ? DOT_HEAD_TOL : 0;
     for (const d of blobsIn(r - sp * DOT_PAD, cy - sp * (0.85 + upTol + DOT_PAD), r + sp * (1.3 + DOT_PAD), cy + sp * (bl + DOT_PAD)).filter((q) => {
       const qx = q.x + q.w / 2;
       const qy = q.y + q.h / 2;
       if (q.x < r + sp * 0.05 && (q.w < sp * 0.3 || q.h < sp * 0.3)) return false;
       if (!(qx > r + sp * 0.05 && qx < r + sp * 1.3 && qy > cy - sp * (0.85 + (gridAt(qy) ? upTol : 0)) && qy < cy + sp * bl)) return false;
-      const inStaff = staffYs.some((l) => qy > l[0] - sp && qy < l[l.length - 1] + sp);
+      const inStaff = staffYs(qx).some((l) => qy > l[0] - sp && qy < l[l.length - 1] + sp);
       // **按谱线定高差**：附点写在间里，点心离间心不过 `DOT_SPACE_TOL` 格；点所在的间与头的位置（按谱线取整到半格）
       // 只差几档——间上的音同一个间（0）、线上的音上下相邻的间（±半格）、和弦挤着二度的往下挪一个间（+1）。
       // 头盒中心不准（带进一截干、只罩住半个头），拿它直接量高差会错剔二十多个真附点，所以头位置取 ±`DOT_HEAD_TOL` 格内的半格。
       // 点心取不在谱线行上的墨的重心：贴线的点盒子带进线行，中心被拉偏（我灵镇静 m10、父恩广大 m6）。
       // 五线以外没有线，加线音的点常与头齐平（齐来崇拜 m8、m22 的 C4），那里不要求落在间里。谱表外一格半以外的不管
-      const l = staffYs.find((ys) => ys.length === 5 && qy > ys[0] - sp * 1.5 && qy < ys[4] + sp * 1.5);
+      const l = staffYs(qx).find((ys) => ys.length === 5 && qy > ys[0] - sp * 1.5 && qy < ys[4] + sp * 1.5);
       if (l) {
         const g = (l[4] - l[0]) / 4;
         const pos = (inkMidY(q) - l[0]) / g;

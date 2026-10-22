@@ -16,7 +16,7 @@
 // 而且**分「骑线 / 在间」两类**，骑线那一类的模板里自然带着谱线，
 // 粘连于是不算「差异」。
 import type { Binary, Rect } from "../omrkit/types";
-import type { RasterUnit } from "./staffline";
+import { lineYAt, type LineRef, type RasterUnit } from "./staffline";
 import type { SmuflName } from "../staffomr/glyphs";
 import type { LineSeg } from "./prims";
 
@@ -40,11 +40,10 @@ const ON_LINE = 0.25;
 const MIN_SAMPLES = 20;
 
 /** 从已经认出来的**实心**符头平均出模板。在**去谱线之前**的图上取——模板要带着谱线。 */
-export function buildHeadMasks(bin: Binary, heads: { box: Rect; code: SmuflName }[], unit: RasterUnit, lineYs: number[]): HeadMask[] {
+export function buildHeadMasks(bin: Binary, heads: { box: Rect; code: SmuflName }[], unit: RasterUnit, lines: LineRef[]): HeadMask[] {
   const sp = unit.space;
   const w = Math.max(3, Math.round(sp * WIN_W));
   const h = Math.max(3, Math.round(sp * WIN_H));
-  const ys = [...lineYs].sort((a, b) => a - b);
   const buckets = [
     { sum: new Float32Array(w * h), n: 0, onLine: true },
     { sum: new Float32Array(w * h), n: 0, onLine: false },
@@ -53,7 +52,8 @@ export function buildHeadMasks(bin: Binary, heads: { box: Rect; code: SmuflName 
     if (hd.code !== "noteheadBlack") continue;
     const cx = hd.box.x + hd.box.w / 2;
     const cy = hd.box.y + hd.box.h / 2;
-    const b = buckets[ys.some((y) => Math.abs(y - cy) <= sp * ON_LINE) ? 0 : 1];
+    // 骑不骑线按头所在 x 处的线位（弯、斜的谱线按曲线取）
+    const b = buckets[lines.some((l) => Math.abs(lineYAt(l, cx) - cy) <= sp * ON_LINE) ? 0 : 1];
     const x0 = Math.round(cx - w / 2);
     const y0 = Math.round(cy - h / 2);
     for (let y = 0; y < h; y++) {
@@ -106,7 +106,7 @@ const MIN_POOLED = 12;
  * 左右常偏几像素，直接平均出来内腔不白、圈不实（一片 0.3~0.6 的灰），沿干找叠头时真头只打 0.2 上下；
  * 对齐三轮后 001 m12 的 B♭4 0.19 → 0.31、126 m1 的 E♭4 0.48 → 0.57（`recognize.ts` 沿干找头那一处用）。
  */
-export function buildHollowMasks(bin: Binary, heads: { box: Rect; code: SmuflName }[], unit: RasterUnit, lineYs: number[], minSamples = 3, align = 0): HeadMask[] {
+export function buildHollowMasks(bin: Binary, heads: { box: Rect; code: SmuflName }[], unit: RasterUnit, lines: LineRef[], minSamples = 3, align = 0): HeadMask[] {
   const hollow = heads.filter((h) => h.code === "noteheadHalf" || h.code === "noteheadWhole");
   if (hollow.length < minSamples) return [];
   const sp = unit.space;
@@ -142,8 +142,8 @@ export function buildHollowMasks(bin: Binary, heads: { box: Rect; code: SmuflNam
     }
     return { w, h, p, n: list.length, onLine };
   };
-  if (!lineYs.length) return [avg(hollow, false)];
-  const on = hollow.filter((hd) => lineYs.some((y) => Math.abs(y - (hd.box.y + hd.box.h / 2)) <= sp * ON_LINE));
+  if (!lines.length) return [avg(hollow, false)];
+  const on = hollow.filter((hd) => lines.some((l) => Math.abs(lineYAt(l, hd.box.x + hd.box.w / 2) - (hd.box.y + hd.box.h / 2)) <= sp * ON_LINE));
   const off = hollow.filter((hd) => !on.includes(hd));
   const all = avg(hollow, false);
   return [

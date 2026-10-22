@@ -21,7 +21,7 @@ import { findRasterTuplets } from "./tuplet";
 import { findWordStrips, findFrameStrips, findNameStrips, partNameLines, type HeaderStrip, findHeaderStrip, wordKey, headerZoneLines, attachWordLines } from "./words";
 import { type WordLine, headerCredits } from "../omrkit/headertext";
 import { smallCapsCase, inkTextSize } from "./textsize";
-import { type Contour, candidateMap, traceContours, type ContourMap, type RepairedLayer } from "./contour";
+import { type Contour, candidateMap, traceContours, type ContourMap, type ContourStaff, type RepairedLayer } from "./contour";
 import { findRasterArticulations } from "./artic";
 import { findRasterWedges, findFusedWedges, findStrippedWedges } from "./wedge";
 import { findRasterSlurs, findStubSlurs, findRasterDashedSlurs, findFusedSlurs, judgeArcUnion, extendArcEnds, traceSteepArcEnds, traceLongArcTails } from "./slur";
@@ -62,7 +62,7 @@ export interface PageFinishInput {
   harmonies: HarmonyToken[];
   harmonyTexts: HarmonyToken[];
   harmonyIds: Set<number>;
-  contourStaves: { top: number; bottom: number; left: number; right: number }[];
+  contourStaves: ContourStaff[];
   cmap: ContourMap;
   ledger: ContourLedger;
   rlayer: RepairedLayer;
@@ -322,7 +322,9 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       const sp = unit.space;
       const top = Math.min(...row.cells.map((c) => c.y));
       const bot = Math.max(...row.cells.map((c) => c.y + c.h));
-      if (top - st.box.bottom < sp * 0.5 || top - st.box.bottom > sp * LONE_FIRST) return false;
+      // 弯、斜的谱行按这一行所在 x 处的末线
+      const stBot = st.bottomAt((Math.min(...row.cells.map((c) => c.x)) + Math.max(...row.cells.map((c) => c.x + c.w))) / 2);
+      if (top - stBot < sp * 0.5 || top - stBot > sp * LONE_FIRST) return false;
       // 不比本页歌词首行贴谱表近太多（首行离谱表距离中位数的六成）：谱表下的倒延长号（弧加一点）读成「心」，离谱表不到一格，歌词首行在两格开外（新编 209）
       const firstOff = new Map<number, number>();
       for (const r of normal) {
@@ -332,7 +334,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         firstOff.set(r.staffIndex, Math.min(firstOff.get(r.staffIndex) ?? Infinity, off));
       }
       const offs = [...firstOff.values()].filter((v) => v > 0).sort((a, b) => a - b);
-      if (offs.length && top - st.box.bottom < offs[offs.length >> 1] * 0.6) return false;
+      if (offs.length && top - stBot < offs[offs.length >> 1] * 0.6) return false;
       const next = pg.staves[row.staffIndex + 1];
       if (next && next.box.top - bot < sp) return false;
       const xs = notes.filter((n) => n.staff === st && !n.rest).map((n) => (n.sym.box.left + n.sym.box.right) / 2);
@@ -367,7 +369,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         const bx = n.sym.box;
         const cx = (bx.left + bx.right) / 2;
         const cy = (bx.top + bx.bottom) / 2;
-        if (cy > n.staff.box.top - unit.space * 1.25) return false;
+        if (cy > n.staff.topAt(cx) - unit.space * 1.25) return false;
         return spans.some((q) => cx >= q.x0 - pad && cx <= q.x1 + pad && cy >= q.y0 - pad && cy <= q.y1 + pad);
       };
       for (let i = notes.length - 1; i >= 0; i--) if (inText(notes[i])) notes.splice(i, 1);
@@ -571,12 +573,15 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         const cy = (n.sym.box.top + n.sym.box.bottom) / 2;
         // 谱表**上方**也一样：两行谱之间的词归上一行谱，可字的笔画被收成头时落到了下一行谱的上加线区
         //（倚靠主永远膀臂 m3「穌」、大地风光 m3「愛」，低音谱表上方 2.4 格的空心头）
-        const below = cy >= n.staff.box.bottom + unit.space;
+        // 首末线按头所在 x 取（弯、斜的谱线）
+        const stTop = n.staff.topAt(cx);
+        const stBot = n.staff.bottomAt(cx);
+        const below = cy >= stBot + unit.space;
         // 上方只看两格开外：一两格上的是上加线的真音，上一行谱的歌词紧贴着它（当我们回到天家末行八个高音、−2.7）
         // 只剔空心头（字里的口字框才围得出内腔）：实心的多半是高声部的真音（合唱谱扫描档 −0.15）
-        if (!below && (cy > n.staff.box.top - unit.space * 2 || n.sym.code === "noteheadBlack")) return false;
+        if (!below && (cy > stTop - unit.space * 2 || n.sym.code === "noteheadBlack")) return false;
         // 谱表下的头挂着一根往上伸进谱表的干：字的笔画没有这种干（破碎 p10 m91 男低 B♮3，还原号的尾巴伸进「體」的字格，字格撑到了头心）
-        if (below && n.stemUp === true && stemSegsLyr.some((sg) => sg.top <= n.staff.box.bottom && sg.bottom >= n.sym.box.top && Math.abs(sg.cx - n.sym.box.right) <= unit.space * 0.3)) return false;
+        if (below && n.stemUp === true && stemSegsLyr.some((sg) => sg.top <= stBot && sg.bottom >= n.sym.box.top && Math.abs(sg.cx - n.sym.box.right) <= unit.space * 0.3)) return false;
         // 中心要落在（贴着）某个字格上：字被拆散时，剩下的笔画就在旁边成了字格；
         // 真的低音符头旁边没有字格压着（合唱谱谱表间距窄，歌词行离低音符头常只有一格，
         // 只看「落在行里」实测会误删真音）
@@ -591,7 +596,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
           // 残格高 15、字高 40，头中心在残格上方 7px、谱表下 2.4 格，按残格判就漏了）。
           // 只放宽不到字高六成的格、且头在谱表下两格开外：一律按整行高判，齐来称颂、齐来谢主歌各误删一个
           // 真的低音；合唱谱破碎两处谱表下一格的加一线音也被删
-          const far = below ? cy >= n.staff.box.bottom + unit.space * 2 : cy <= n.staff.box.top - unit.space * 2;
+          const far = below ? cy >= stBot + unit.space * 2 : cy <= stTop - unit.space * 2;
           return r.cells.some((c) => {
             const [y0, y1] = far && c.h < r.charH * 0.6 ? [top, bot] : [c.y, c.y + c.h];
             return cx > c.x - pad(r) && cx < c.x + c.w + pad(r) && cy > y0 - pad(r) && cy < y1 + pad(r);
@@ -743,7 +748,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         if (n.rest || n.stemUp !== null) return false;
         const b = n.sym.box;
         const cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
-        if (cy > n.staff.box.top - unit.space * 0.5 && cy < n.staff.box.bottom + unit.space * 0.5) return false;
+        if (cy > n.staff.topAt(cx) - unit.space * 0.5 && cy < n.staff.bottomAt(cx) + unit.space * 0.5) return false;
         return wordBoxes.some((q) => cx >= q.x - pad && cx <= q.x + q.w + pad && cy >= q.y - pad && cy <= q.y + q.h + pad);
       };
       for (let i = notes.length - 1; i >= 0; i--) {

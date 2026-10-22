@@ -1,7 +1,7 @@
 // 位图五线谱的**调号与临时记号**：行首调号的笔画判据（升号竖笔、降号台阶）、跨行跨页沿用、系统内互证、行中换调、还原号与临时记号按音高挂。
 // `recognize.ts` 在符头之前后各调一批。
 import type { Binary } from "../omrkit/types";
-import type { Box } from "../staffomr/model";
+import { boxCx, type Box } from "../staffomr/model";
 import type { Rect } from "../omrkit/types";
 import { systemGroups } from "../staffomr/page";
 import { accidentalAlter, isAccidental, type SmuflName } from "../staffomr/glyphs";
@@ -38,7 +38,8 @@ const FLAT_STEM = 1.55;
 export function extendKeyChains(pg: SPage, ctx: Map<Staff, StaffContext>): void {
   for (const c of ctx.values()) {
     if (!c.key.length) continue;
-    const onStaff = (b: Box) => b.top < c.staff.box.bottom && b.bottom > c.staff.box.top;
+    // 弯、斜的谱行按记号所在 x 处的首末线（`Staff.topAt`）
+    const onStaff = (b: Box) => b.top < c.staff.bottomAt(boxCx(b)) && b.bottom > c.staff.topAt(boxCx(b));
     for (;;) {
       const last = c.key[c.key.length - 1];
       const nx = pg.symbols.find((s0) => {
@@ -64,7 +65,8 @@ export function dropHeadsInKey(pg: SPage, ctx: Map<Staff, StaffContext>, settled
   for (const c of ctx.values()) {
     if (!c.clef) continue;
     const clef = c.clef.box;
-    const onStaff = (b: Box) => b.top < c.staff.box.bottom && b.bottom > c.staff.box.top;
+    // 弯、斜的谱行按记号所在 x 处的首末线（`Staff.topAt`）
+    const onStaff = (b: Box) => b.top < c.staff.bottomAt(boxCx(b)) && b.bottom > c.staff.topAt(boxCx(b));
     // `settled`：调号定下来之后再剔一遍，按 `ctx.key` 行首那一串的盒——按竖笔补出的记号不进页面符号表
     //（倚靠主永远膀臂低音谱表四个降号只按块认出两个，第四个 D♭ 的肚子连竖笔收成 D♭3 二分头）
     // 这一串的盒常是从别行照抄来的（`shareKeySignature`），纵向落在别的行上：按出处那行与本行谱左端的差平移回来
@@ -72,7 +74,8 @@ export function dropHeadsInKey(pg: SPage, ctx: Map<Staff, StaffContext>, settled
     const shift = (k: Sym) => {
       if (!settled || onStaff(k.box)) return 0;
       const ky = (k.box.top + k.box.bottom) / 2;
-      const src = [...ctx.values()].find((o) => ky > o.staff.box.top - sp && ky < o.staff.box.bottom + sp);
+      const kx = boxCx(k.box);
+      const src = [...ctx.values()].find((o) => ky > o.staff.topAt(kx) - sp && ky < o.staff.bottomAt(kx) + sp);
       return src ? c.staff.box.left - src.staff.box.left : 0;
     };
     const pool = settled ? headKey(c) : pg.symbols;

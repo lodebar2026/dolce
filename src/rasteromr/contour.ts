@@ -57,6 +57,8 @@ export interface ContourStaff {
   bottom: number;
   left: number;
   right: number;
+  /** 弯、斜谱行在 x 处的谱线相对 `top` / `bottom` 的偏移（`staffline.ts::liftOf`）；平直的没有。 */
+  lift?: (x: number) => number;
 }
 
 /** 一页的 contour 层：轮廓表 + 像素→id 查表。 */
@@ -277,14 +279,16 @@ function placeOf(c: Component, staves: ContourStaff[], unit: RasterUnit): Contou
   let bd = Infinity;
   for (let i = 0; i < staves.length; i++) {
     const st = staves[i];
-    const d = c.cy < st.top ? st.top - c.cy : c.cy > st.bottom ? c.cy - st.bottom : 0;
+    const dl = st.lift ? st.lift(c.cx) : 0;
+    const d = c.cy < st.top + dl ? st.top + dl - c.cy : c.cy > st.bottom + dl ? c.cy - st.bottom - dl : 0;
     if (d < bd) {
       bd = d;
       best = i;
     }
   }
   const st = staves[best];
-  const zone = c.cy < st.top ? "above" : c.cy > st.bottom ? "below" : "in";
+  const dl = st.lift ? st.lift(c.cx) : 0;
+  const zone = c.cy < st.top + dl ? "above" : c.cy > st.bottom + dl ? "below" : "in";
   return { staff: best, zone, gap: bd / unit.space };
 }
 

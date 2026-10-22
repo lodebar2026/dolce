@@ -199,14 +199,17 @@ export function dropLoneBarlines(pg: SPage, bin: Binary, sp: number): void {
  * 剩下的两截各自伸出谱表三四分之一格、又不落在任何一行的外线上，`findBarlines` 当它是符干，这一处的小节线就丢了。
  * 两截各盖满一行谱（两端离外线不过 `THROUGH_END` 格）、同 x、中间那一段原图上**每行都有墨**，就是同一根。
  */
-export function joinThroughBars(bin: Binary, segs: LineSeg[], staves: [number, number][], sp: number): LineSeg[] {
+export function joinThroughBars(bin: Binary, segs: LineSeg[], staves: ((x: number) => [number, number])[], sp: number): LineSeg[] {
   const top = (v: LineSeg) => Math.min(v.y0, v.y1);
   const bot = (v: LineSeg) => Math.max(v.y0, v.y1);
   const cx = (v: LineSeg) => (v.x0 + v.x1) / 2;
   const tol = sp * THROUGH_END;
   /** 这一截盖满第几行谱（没有返回 -1） */
-  const coverOf = (v: LineSeg) => staves.findIndex(([a, b]) => Math.abs(top(v) - a) <= tol && Math.abs(bot(v) - b) <= tol);
-  const rows = [...staves].sort((a, b) => a[0] - b[0]);
+  // 各行谱的首末线按竖段所在 x 取（弯、斜的谱线）
+  const coverOf = (v: LineSeg) => staves.findIndex((f) => {
+    const [a, b] = f(cx(v));
+    return Math.abs(top(v) - a) <= tol && Math.abs(bot(v) - b) <= tol;
+  });
   const cand = segs.filter((v) => bot(v) - top(v) > Math.abs(v.x1 - v.x0) && coverOf(v) >= 0).sort((a, b) => top(a) - top(b));
   const used = new Set<LineSeg>();
   const out: LineSeg[] = [];
@@ -218,7 +221,10 @@ export function joinThroughBars(bin: Binary, segs: LineSeg[], staves: [number, n
       for (const b of cand) {
         if (b === a || used.has(b) || top(b) <= bot(cur) || Math.abs(cx(b) - cx(cur)) > sp * 0.2) continue;
         // 中间不能隔着别的谱行
-        if (rows.some(([ra, rb]) => ra > bot(cur) + tol && rb < top(b) - tol)) continue;
+        if (staves.some((f) => {
+          const [ra, rb] = f(cx(cur));
+          return ra > bot(cur) + tol && rb < top(b) - tol;
+        })) continue;
         const x = Math.round((cx(b) + cx(cur)) / 2);
         let solid = true;
         for (let y = Math.ceil(bot(cur)); y <= Math.floor(top(b)) && solid; y++) {
@@ -242,7 +248,7 @@ export function joinThroughBars(bin: Binary, segs: LineSeg[], staves: [number, n
   // 符干不会把上下两行谱都盖满；剪到所盖各行最外的两条线上，就是一根正经的贯穿小节线。
   const clip = (v: LineSeg): LineSeg => {
     if (bot(v) - top(v) <= Math.abs(v.x1 - v.x0)) return v;
-    const cov = rows.filter(([ra, rb]) => top(v) <= ra + sp * 0.3 && bot(v) >= rb - sp * 0.3);
+    const cov = staves.map((f) => f(cx(v))).sort((p, q) => p[0] - q[0]).filter(([ra, rb]) => top(v) <= ra + sp * 0.3 && bot(v) >= rb - sp * 0.3);
     if (cov.length < 2) return v;
     const ya = cov[0][0];
     const yb = cov[cov.length - 1][1];

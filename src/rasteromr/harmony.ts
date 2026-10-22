@@ -151,8 +151,8 @@ export function findHarmonyStrips(
     const top = Math.min(st.box.top, st.ceiling ?? st.box.top);
     const y0 = Math.floor(top - sp * (BAND_TOP_HIGH + GROW_UP + 2));
     const sub = levelRows(bin, y0, Math.ceil(st.box.top + sp), lift);
-    const mid = Math.round(lift((st.box.left + st.box.right) / 2));
-    const local = { ...st, box: { ...st.box, top: st.box.top - y0 }, ...(st.ceiling != null ? { ceiling: st.ceiling - mid - y0 } : {}) };
+    // 简谱行的上沿（`jianpuband.ts`）也按谱表中段的线位记，与子图同一个坐标
+    const local = { ...st, box: { ...st.box, top: st.box.top - y0 }, ...(st.ceiling != null ? { ceiling: st.ceiling - y0 } : {}) };
     for (const s0 of staffStrips(sub, local, unit)) out.push({ ...s0, box: { ...s0.box, y: s0.box.y + y0 + Math.round(lift(s0.box.x + s0.box.w / 2)) } });
   }
   return out;

@@ -3,7 +3,7 @@ import type { Binary } from "../omrkit/types";
 import type { Rect } from "../omrkit/types";
 import { type SmuflName } from "../staffomr/glyphs";
 import { type LineSeg } from "./prims";
-import { type RasterUnit } from "./staffline";
+import { lineYAt, type LineRef, type RasterUnit } from "./staffline";
 
 /** 开口内腔（`openCavities`）：射线窗外扩多少格、内腔至少多少格²、中心离谱表上下至多几格。 */
 const OPEN_CAVITY_PAD = 0.3;
@@ -13,14 +13,14 @@ const OPEN_CAVITY_AREA = 0.06;
 /** 盒落在某行谱的**行首那一段**里吗（谱号 + 调号的地盘）。见 `bootstrapQuarterRest` 那一段。 */
 export function nearStaffStart(
   box: { x: number; y: number; h: number },
-  groups: { lines: { y: number }[] }[],
+  groups: { lines: LineRef[] }[],
   lefts: number[],
   unit: RasterUnit,
 ): boolean {
   const cy = box.y + box.h / 2;
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
-    if (cy < g.lines[0].y - unit.space || cy > g.lines[4].y + unit.space) continue;
+    if (cy < lineYAt(g.lines[0], box.x) - unit.space || cy > lineYAt(g.lines[4], box.x) + unit.space) continue;
     if (box.x < lefts[i] + unit.space * STAFF_START) return true;
   }
   return false;
@@ -606,9 +606,14 @@ export function flatAccidentalBox(bin: Binary, b: Rect, unit: RasterUnit): Rect 
   return null;
 }
 
-export function offStaffRest(box: { y: number; h: number }, lines: { y: number }[], unit: RasterUnit): boolean {
+/** 各线在 x 处的 y（弯、斜的谱线按曲线取），按名义线位排、五条一组。 */
+function linesAt(lines: LineRef[], x: number): number[] {
+  return [...lines].sort((a, b) => a.y - b.y).map((l) => lineYAt(l, x));
+}
+
+export function offStaffRest(box: Rect, lines: LineRef[], unit: RasterUnit): boolean {
   const cy = box.y + box.h / 2;
-  const ys = [...lines].map((l) => l.y).sort((a, b) => a - b);
+  const ys = linesAt(lines, box.x + box.w / 2);
   for (let i = 0; i + 4 < ys.length; i += 5) {
     if (cy < ys[i] && ys[i] - cy <= unit.space * QREST_OFF) return true;
     if (cy > ys[i + 4] && cy - ys[i + 4] <= unit.space * QREST_OFF) return true;
@@ -616,9 +621,9 @@ export function offStaffRest(box: { y: number; h: number }, lines: { y: number }
   return false;
 }
 
-export function midOfStaff(box: { y: number; h: number }, lines: { y: number }[], unit: RasterUnit): boolean {
+export function midOfStaff(box: Rect, lines: LineRef[], unit: RasterUnit): boolean {
   const cy = box.y + box.h / 2;
-  const ys = [...lines].map((l) => l.y).sort((a, b) => a - b);
+  const ys = linesAt(lines, box.x + box.w / 2);
   for (let i = 0; i + 4 < ys.length; i += 5) if (Math.abs(cy - ys[i + 2]) <= unit.space * 0.9) return true;
   return false;
 }
@@ -633,9 +638,9 @@ export const isBarRest = (code: string) => code === "restHalf" || code === "rest
  * 全休止仍记 `restHBar`（整小节休止，时值随拍号），二分休止记 `restHalf`
  * ——原先一律记成整小节休止，《是谁》首小节「二分休止 + 四分休止 + 两个八分」因此多出三拍。
  */
-export function restKind(box: { y: number; h: number }, lines: { y: number }[], unit: RasterUnit): SmuflName {
+export function restKind(box: Rect, lines: LineRef[], unit: RasterUnit): SmuflName {
   const cy = box.y + box.h / 2;
-  const ys = [...lines].map((l) => l.y).sort((a, b) => a - b);
+  const ys = linesAt(lines, box.x + box.w / 2);
   for (let i = 0; i + 4 < ys.length; i += 5) {
     if (cy < ys[i] - unit.space || cy > ys[i + 4] + unit.space) continue;
     const five = ys.slice(i, i + 5);
@@ -647,9 +652,9 @@ export function restKind(box: { y: number; h: number }, lines: { y: number }[], 
   return "restHBar";
 }
 
-export function nearRestLine(box: { y: number; h: number }, lines: { y: number }[], unit: RasterUnit): boolean {
+export function nearRestLine(box: Rect, lines: LineRef[], unit: RasterUnit): boolean {
   const cy = box.y + box.h / 2;
-  const ys = [...lines].map((l) => l.y).sort((a, b) => a - b);
+  const ys = linesAt(lines, box.x + box.w / 2);
   for (let i = 0; i + 4 < ys.length; i += 5) {
     for (const k of [1, 2]) if (Math.abs(cy - ys[i + k]) <= unit.space * 0.6) return true;
   }

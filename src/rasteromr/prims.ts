@@ -454,14 +454,16 @@ const EXACT_HEAD_W = 0.6;
  * 续的时候看中心线左右各一列（符干只有一两个像素宽，中心线是拟合出来的，
  * 只看一列会被半像素的偏差卡住）。碰到白就停——不跨空隙，所以续不出别的符号。
  */
-export function extendVSegs(bin: Binary, segs: LineSeg[], cap: number, staffBands: [number, number][] = [], lineThick = 1): LineSeg[] {
+export function extendVSegs(bin: Binary, segs: LineSeg[], cap: number, staffBands: ((x: number) => [number, number])[] = [], lineThick = 1): LineSeg[] {
   // **正好从第五线画到第一线的**（`barlineCore` / `bandColumns` 取出的）续出去的那截要**进了符头**才留：
   // 连线收尾弯进小节线下端，续出 5px（0.35 格）就过不了 `findBarlines` 的「出界端须落谱线」
   //（我一生要赞美你第六、七行各漏一刀）；而和弦的长符干正要靠续进上下两端的头伸出谱表，
   // 才不被收成小节线（一律封顶 0.2 格，万古磐石歌多切两刀）。续出段里（谱线那几行不算）
   // 有一行横向墨宽过 `EXACT_HEAD_W` 算进了头；或者**笔直延续**（符杠下的长符干，同曲 x=1602 上下各伸出半格）
   // 也留。连线收尾只有一笔宽、又斜着偏开。
-  const bandOf = (s: LineSeg) => staffBands.find(([t, b]) => Math.abs(Math.min(s.y0, s.y1) - t) <= 1 && Math.abs(Math.max(s.y0, s.y1) - b) <= 1);
+  // 谱表首末线按段所在 x 取（弯、斜的谱线：`bandColumns` 取出的段两端就是该列的首末线）
+  const bandOf = (s: LineSeg) =>
+    staffBands.map((f) => f((s.x0 + s.x1) / 2)).find(([t, b]) => Math.abs(Math.min(s.y0, s.y1) - t) <= 1 && Math.abs(Math.max(s.y0, s.y1) - b) <= 1);
   return segs.map((s) => {
     const out = { ...s };
     extendIntoInk(bin, out, cap);

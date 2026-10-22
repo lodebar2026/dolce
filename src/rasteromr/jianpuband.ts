@@ -12,7 +12,7 @@
 // 对不上两条以上就当没有，这一段对别的底本是空转。
 import type { Binary, Rect } from "../omrkit/types";
 import type { LineSeg } from "./prims";
-import type { RasterUnit } from "./staffline";
+import { liftRange, type RasterUnit } from "./staffline";
 import { contentKey } from "../omrkit/contentkey";
 
 /** 简谱小节线的长度（线距的倍数）：《是谁》2.34 格、敬拜万世之王 3.7 格（数字大、上下有高低音点）。 */
@@ -42,17 +42,19 @@ const BAR_SIBLING = 0.75;
 const PAD_TOP = 0.8;
 const PAD_BOTTOM = 0.3;
 
-/** 一条简谱行：它压在哪行谱上、带的盒、行内小节线的 x。 */
+/** 一条简谱行：它压在哪行谱上、带的盒、行内小节线的 x。
+ *  弯、斜的谱行（`lift`）上带随谱线走：`box` 的 y 按谱表中段的线位记，x 处的带要加上 `lift(x)`。 */
 export interface JianpuBand {
   staff: number;
   box: Rect;
   bars: number[];
+  lift?: (x: number) => number;
 }
 
-/** 定位各谱行上方的简谱行。`staves` 给每行谱的五线几何。 */
+/** 定位各谱行上方的简谱行。`staves` 给每行谱的五线几何（弯、斜的另带逐列偏移 `lift`）。 */
 export function findJianpuBands(
   vSegs: LineSeg[],
-  staves: { left: number; right: number; top: number; bottom: number }[],
+  staves: { left: number; right: number; top: number; bottom: number; lift?: (x: number) => number }[],
   unit: RasterUnit,
   bin?: Binary,
 ): JianpuBand[] {
@@ -78,8 +80,15 @@ export function findJianpuBands(
   };
   staves.forEach((st, k) => {
     const h = st.bottom - st.top;
-    const span = (v: LineSeg) => [Math.min(v.y0, v.y1), Math.max(v.y0, v.y1)] as const;
     const cx = (v: LineSeg) => (v.x0 + v.x1) / 2;
+    // 弯、斜的谱行：竖线的纵向范围减掉所在 x 处的谱线偏移，按谱线是平的来比（斜 1.7 格的页上两头的简谱小节线错开大半根，
+    // 按原图 y 凑「同一高度」凑不齐）
+    const lift = st.lift;
+    const span = (v: LineSeg) => {
+      const d = lift ? lift(cx(v)) : 0;
+      return [Math.min(v.y0, v.y1) - d, Math.max(v.y0, v.y1) - d] as const;
+    };
+    const liftOf = (o: { lift?: (x: number) => number }, x: number) => (o.lift ? o.lift(x) : 0);
     // 谱表小节线：纵贯五线
     const staffBars = vSegs
       .filter((v) => {
@@ -94,7 +103,7 @@ export function findJianpuBands(
       const len = (b - a) / sp;
       return len >= BAR_LEN[0] && len <= BAR_LEN[1] && b <= st.top - sp * BAR_CLEAR && b >= st.top - sp * BAR_REACH && cx(v) >= st.left - sp && cx(v) <= st.right + sp &&
         // 压着别的谱行的是那一行自己的小节线（你的信实广大谱行只隔 5 格，上一行的小节线落进窗口）
-        !staves.some((o) => o !== st && a < o.bottom && b > o.top) && !hooked(v);
+        !staves.some((o) => o !== st && a < o.bottom + liftOf(o, cx(v)) - liftOf(st, cx(v)) && b > o.top + liftOf(o, cx(v)) - liftOf(st, cx(v))) && !hooked(v);
     });
     const matched0 = cands.filter((v) => staffBars.some((x) => Math.abs(cx(v) - x) <= sp * BAR_DX));
     // **对上的要在同一高度**：取与别人纵向重叠（过短者一半）最多的那一簇。
@@ -124,7 +133,7 @@ export function findJianpuBands(
       .sort((a, b) => a - b);
     const y0 = Math.round(top - sp * PAD_TOP);
     const y1 = Math.min(Math.round(bot + sp * PAD_BOTTOM), Math.round(st.top - sp * 0.2));
-    out.push({ staff: k, box: { x: Math.round(st.left - sp), y: y0, w: Math.round(st.right - st.left + sp * 2), h: y1 - y0 }, bars });
+    out.push({ staff: k, box: { x: Math.round(st.left - sp), y: y0, w: Math.round(st.right - st.left + sp * 2), h: y1 - y0 }, bars, ...(lift ? { lift } : {}) });
   });
   return out;
 }
@@ -152,9 +161,12 @@ export function completeStaffBars(
   const sp = unit.space;
   let n = 0;
   for (const b of bands) {
-    const st = staves[b.staff];
-    const h = st.bottom - st.top;
+    const st0 = staves[b.staff];
+    const h = st0.bottom - st0.top;
     for (const x of b.bars) {
+      // 弯、斜的谱行取这根小节线 x 处的首末线
+      const d = b.lift ? b.lift(x) : 0;
+      const st = { top: st0.top + d, bottom: st0.bottom + d };
       const near = vSegs.filter((v) => {
         const a = Math.min(v.y0, v.y1);
         const e = Math.max(v.y0, v.y1);
@@ -195,13 +207,18 @@ export function completeStaffBars(
  * ——带的下沿离往上的符杠常常不到半格，按矩形一刀切会把符杠削掉。
  * `imgs` 里第一张用来判连通（有谱线的原图），后面几张按同样的像素一并抹。
  */
-export function eraseInBand(imgs: Binary[], band: Rect): number {
+export function eraseInBand(imgs: Binary[], band: Rect, lift?: (x: number) => number): number {
   const bin = imgs[0];
   const x0 = Math.max(0, band.x);
-  const y0 = Math.max(0, band.y);
   const x1 = Math.min(bin.w, band.x + band.w);
-  const y1 = Math.min(bin.h, band.y + band.h);
+  // 弯、斜的谱行：x 处的带上下沿各加 `lift(x)`；外框取包络
+  const [lo, hi] = liftRange(lift, x0, x1);
+  const y0 = Math.max(0, Math.floor(band.y + lo));
+  const y1 = Math.min(bin.h, Math.ceil(band.y + band.h + hi));
   const W = x1 - x0;
+  const dy = new Int32Array(W);
+  if (lift) for (let x = 0; x < W; x++) dy[x] = Math.round(lift(x0 + x));
+  const inBand = (x: number, y: number) => x >= x0 && x < x1 && y >= band.y + dy[x - x0] && y < band.y + band.h + dy[x - x0] && y >= y0 && y < y1;
   const seen = new Uint8Array(W * (y1 - y0));
   let erased = 0;
   const comp: number[] = [];
@@ -209,7 +226,7 @@ export function eraseInBand(imgs: Binary[], band: Rect): number {
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
       const i0 = (y - y0) * W + (x - x0);
-      if (seen[i0] || !bin.data[y * bin.w + x]) continue;
+      if (seen[i0] || !bin.data[y * bin.w + x] || !inBand(x, y)) continue;
       // 灌一块；碰到带外的墨就记下「越界」，但带内的部分照灌完（免得同一块反复起灌）
       comp.length = 0;
       let out = false;
@@ -225,7 +242,7 @@ export function eraseInBand(imgs: Binary[], band: Rect): number {
             const ny = py + dy;
             const nx = px + dx;
             if (ny < 0 || ny >= bin.h || nx < 0 || nx >= bin.w || !bin.data[ny * bin.w + nx]) continue;
-            if (ny < y0 || ny >= y1 || nx < x0 || nx >= x1) {
+            if (!inBand(nx, ny)) {
               out = true;
               continue;
             }
@@ -257,11 +274,14 @@ const CUT_SLIVER = 0.15;
 
 export function cutJianpuStrip(bin: Binary, band: JianpuBand): JianpuStrip {
   const { x, y, w, h } = band.box;
+  // 弯、斜的谱行逐列按谱线偏移挪着取（整像素，同 `lyric.ts::stripOf`）
+  const shift = new Int32Array(w);
+  if (band.lift) for (let xx = 0; xx < w; xx++) shift[xx] = Math.round(band.lift(x + xx));
   const data = new Uint8Array(w * h);
   for (let yy = 0; yy < h; yy++)
     for (let xx = 0; xx < w; xx++) {
       const sx = x + xx;
-      const sy = y + yy;
+      const sy = y + yy + shift[xx];
       if (sx >= 0 && sy >= 0 && sx < bin.w && sy < bin.h) data[yy * w + xx] = bin.data[sy * bin.w + sx];
     }
   // 跨过条顶边、在条里只剩薄薄一截（不到条高的 `CUT_SLIVER`）的墨，是上方和弦字母被截下的底
@@ -270,7 +290,7 @@ export function cutJianpuStrip(bin: Binary, band: JianpuBand): JianpuStrip {
   const seen = new Uint8Array(w * h);
   for (let x0 = 0; x0 < w; x0++) {
     const sx = x + x0;
-    if (!data[x0] || seen[x0] || y <= 0 || sx < 0 || sx >= bin.w || !bin.data[(y - 1) * bin.w + sx]) continue;
+    if (!data[x0] || seen[x0] || y + shift[x0] <= 0 || sx < 0 || sx >= bin.w || !bin.data[(y + shift[x0] - 1) * bin.w + sx]) continue;
     const comp: number[] = [x0];
     seen[x0] = 1;
     let maxY = 0;

@@ -613,7 +613,10 @@ export function findStaffForNote(pg: SPage, nt: Sym, lines: Seg[]): boolean {
   let distA = Infinity;
   let distB = Infinity;
   for (const st of pg.staves) {
-    const dist = y - st.cy;
+    // 位图路弯、斜的谱行按音符所在 x 处的首末线（`Staff.topAt`）；矢量路就是盒的上下沿
+    const top = st.topAt(nt.px);
+    const bottom = st.bottomAt(nt.px);
+    const dist = y - (top + bottom) / 2;
     const dd = Math.abs(dist);
     let sp = st.stepDistance();
     let valid = false;
@@ -621,7 +624,7 @@ export function findStaffForNote(pg: SPage, nt: Sym, lines: Seg[]): boolean {
       if (dd < pg.normalStaffSpace && nt.code === "restHBar") valid = true;
       sp = pg.normalStaffSpace / 2;
     }
-    if (y > st.box.top - sp && y < st.box.bottom + sp) valid = true;
+    if (y > top - sp && y < bottom + sp) valid = true;
     if (valid) {
       nt.ownerStaff = st;
       nt.addTag("Note");

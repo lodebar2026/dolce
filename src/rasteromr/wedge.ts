@@ -337,7 +337,11 @@ export function findStrippedWedges(map: ContourMap, unit: RasterUnit, pool: Cont
   const thin = Math.max(2, Math.round(sp * STRIP_THIN));
   const gap = Math.max(1, Math.round(sp * STRIP_GAP));
   const out: RasterWedge[] = [];
-  const inStaff = (y: number) => staves.some((st) => y >= st.top - sp * 0.2 && y <= st.bottom + sp * 0.2);
+  const inStaff = (x: number, y: number) =>
+    staves.some((st) => {
+      const d = st.lift ? st.lift(x) : 0;
+      return y >= st.top + d - sp * 0.2 && y <= st.bottom + d + sp * 0.2;
+    });
   for (const c of pool) {
     const b = c.bbox;
     const W = b.w;
@@ -353,7 +357,7 @@ export function findStrippedWedges(map: ContourMap, unit: RasterUnit, pool: Cont
         }
         let e = y;
         while (e < H && own(x, e)) e++;
-        if (e - y <= thin && !inStaff(b.y + (y + e) / 2)) for (let k = y; k < e; k++) data[k * W + x] = 1;
+        if (e - y <= thin && !inStaff(b.x + x, b.y + (y + e) / 2)) for (let k = y; k < e; k++) data[k * W + x] = 1;
         y = e;
       }
     }
