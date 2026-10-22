@@ -710,7 +710,17 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   const headerOcr = opts.headerOcr ?? (headerStrip && live?.header ? await live.header([headerStrip]) : undefined);
   // 首行谱上方那一段（`creditFrom` 以下）只留像署名的行，其余归文字指示带；留下的那几行文字指示带就不再读
   const ocrLines = headerStrip ? headerOcr?.get(wordKey(headerStrip)) : undefined;
-  const headRows = ocrLines || layerLines.length ? mergeLayerLines(ocrLines ?? [], layerLines) : undefined;
+  // 页眉带底常压着首行谱上方的和弦行：OCR 偶尔把和弦字母连着符干读成汉字（有一位神「F♯m」读成「衡拉」），
+  // 框有一半落在认出的和弦上的行不算页眉（页眉带在谱图里从页顶切起，带内坐标就是页面坐标，挪列只差几像素）
+  const onChord = (l: WordLine) =>
+    !!headerStrip &&
+    harmonies.some((t) => {
+      const x = headerStrip!.box.x + l.x, y = headerStrip!.box.y + l.y;
+      const ix = Math.min(x + l.w, t.box.x + t.box.w) - Math.max(x, t.box.x);
+      const iy = Math.min(y + l.h, t.box.y + t.box.h) - Math.max(y, t.box.y);
+      return ix > 0 && iy > 0 && ix * iy > l.w * l.h * 0.5;
+    });
+  const headRows = ocrLines || layerLines.length ? mergeLayerLines((ocrLines ?? []).filter((l) => !onChord(l)), layerLines) : undefined;
   const headerLines = headRows && headerStrip?.creditFrom !== undefined ? headerZoneLines(headRows, headerStrip.creditFrom, headerStrip.w) : headRows;
   const headerZone: Rect[] =
     headerLines && headerStrip?.creditFrom !== undefined

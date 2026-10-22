@@ -319,9 +319,21 @@ export function findHeaderStrip(bin: Binary, staves: WordStaff[], unit: RasterUn
   if (y0 < sp * 2) return null;
   y1 = retreat(y1, y0);
   const box = { x: 0, y: 0, w: bin.w, h: y1 };
+  // 弯、斜的页上页眉也斜（晨曦破晓整页斜一格，斜体小字的词缝在斜行里找不到空白列，补不出空格）：按第一行谱曲线两端连线的
+  // 平均斜率（整页的旋转）逐列挪整像素取条，挪出原范围的填白。平直的页条逐像素不变。
+  // 按条里字块自己的排列量（`lyric.ts::textSkew`）试过：页眉是几栏错落的短行，斜到 2.8% 也凑得出尖剖面（晨曦破晓页眉 62.5 → 46.9）
+  const first = staves.reduce<WordStaff | null>((a, s) => (!a || s.box.top < a.box.top ? s : a), null);
+  const x0 = bin.w / 2;
+  const skew = first?.lift ? (first.lift(first.box.right) - first.lift(first.box.left)) / Math.max(1, first.box.right - first.box.left) : 0;
   const data = new Uint8Array(box.w * box.h);
   let ink = 0;
-  for (let i = 0; i < data.length; i++) ink += data[i] = bin.data[i];
+  for (let x = 0; x < box.w; x++) {
+    const d = Math.round(skew * (x - x0));
+    for (let y = 0; y < box.h; y++) {
+      const sy = y + d;
+      if (sy >= 0 && sy < box.h) ink += data[y * box.w + x] = bin.data[sy * bin.w + x];
+    }
+  }
   return ink ? { w: box.w, h: box.h, data, box, creditFrom: y0 } : null;
 }
 
