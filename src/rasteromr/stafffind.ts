@@ -12,9 +12,11 @@ import { median } from "../omrkit/geom";
 
 /** 逐列取样的步长（px）。谱线横跨整页，抽稀不影响；4 px 一页几十毫秒。 */
 const COL_STEP = 4;
-/** 线距的取值范围（px）。这批底本 200~300 dpi，线距实测 11~19。 */
+/** 线距的取值范围（px）。这批底本 200~300 dpi，线距实测 11~19；上限另随页面放大（`maxSpaceOf`）。 */
 const MIN_SPACE = 6;
 const MAX_SPACE = 40;
+/** 高分辨率的图线距上限按长边放：是谁 4958×6600 的图线距六十来像素。 */
+const maxSpaceOf = (bin: Binary) => Math.max(MAX_SPACE, Math.round(Math.max(bin.w, bin.h) / 50));
 /** 五连里四个间距彼此的相对偏差上限。 */
 const EVEN_TOL = 0.22;
 /** 一段「黑」最厚多少（相对线距）——比这更厚的是符头、符杠、黑边。 */
@@ -185,6 +187,7 @@ export function estimateUnit(bin: Binary): RasterUnit | null {
 /** 逐列找「五段黑、四段白等距」的地方。 */
 export function columnHits(bin: Binary): ColHit[] {
   const { w, h, data } = bin;
+  const maxSpace = maxSpaceOf(bin);
   const out: ColHit[] = [];
   const starts: number[] = [];
   const lens: number[] = [];
@@ -213,7 +216,7 @@ export function columnHits(bin: Binary): ColHit[] {
       }
       const ds = [1, 2, 3, 4].map((k) => c[k] - c[k - 1]);
       const avg = (ds[0] + ds[1] + ds[2] + ds[3]) / 4;
-      if (avg < MIN_SPACE || avg > MAX_SPACE) continue;
+      if (avg < MIN_SPACE || avg > maxSpace) continue;
       for (const d of ds) if (Math.abs(d - avg) > avg * EVEN_TOL) ok = false;
       // 「黑」要够薄：谱线约 0.1~0.3 个线距厚，符头、符杠厚得多
       for (let k = 0; k < 5 && ok; k++) if (lens[i + k] > avg * MAX_THICK) ok = false;
