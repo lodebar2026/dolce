@@ -337,11 +337,20 @@ export function splitHeadCluster(
       if (sx >= 0 && sx < bin.w) work.data[y * wx + x] = bin.data[sy * bin.w + sx];
     }
   }
-  const ys = new Set<number>();
-  for (let y = box.y - sp * 0.3; y <= box.y + box.h + sp * 0.3; y += sp * 0.25) {
-    const g = grid(y, box.x + box.w / 2);
-    if (g !== null) ys.add(g);
-  }
+  // 音高格按每个候选的 x 各取一组：斜、弯的谱线上块一宽，在块中心取的线位到块两端就差出一两个像素，
+  // 头心吸到错的一级（信心使我得胜 m15 低音 B♭2 八分，粘着符尾那一块的中心偏右，读成 C3）
+  const ysMemo = new Map<number, number[]>();
+  const ysAt = (x: number): number[] => {
+    let ys = ysMemo.get(x);
+    if (ys) return ys;
+    const set = new Set<number>();
+    for (let y = box.y - sp * 0.3; y <= box.y + box.h + sp * 0.3; y += sp * 0.25) {
+      const g = grid(y, x);
+      if (g !== null) set.add(g);
+    }
+    ysMemo.set(x, (ys = [...set]));
+    return ys;
+  };
   const step = Math.max(1, Math.round(sp * 0.15));
   const picked: { x: number; y: number }[] = [];
   const hw0 = sp * 1.25;
@@ -350,7 +359,7 @@ export function splitHeadCluster(
     let best: { x: number; y: number; s: number } | null = null;
     for (let x = box.x; x <= box.x + box.w; x += step) {
       if (picked.some((p) => Math.abs(p.x - x) < sp * SEP_X_MIN)) continue;
-      for (const y of ys) {
+      for (const y of ysAt(x)) {
         if (picked.some((p) => Math.abs(p.x - x) < sp * SEP_X && Math.abs(p.y - y) < sp * SEP_Y)) continue;
         const m = masks.find((k) => k.onLine === onLine(y, x)) ?? masks[0];
         const sc = scoreAt(work, m, x - ox, y - oy);
@@ -430,6 +439,8 @@ const CHORD_SCORE_STACKED = 0.35;
 const CHORD_SCORE_LEDGER = 0.38;
 /** 端上贴串那一档放宽时，头心要实（空心叠头被收成一个实心头：父恩广大 E3/C3 二分、善牧的全音符）。 */
 const STACKED_CORE = 0.9;
+/** 贴串那一档的邻头，头心上下 0.25 格两行的连续墨下限（头宽的倍数，见 `stackedAt`）。 */
+const STACKED_BODY = 0.7;
 /** 贴串放宽只给够高的块（两个头加一截干）：扫描件上 1.3~2 格的小块也凑得出「两行满头宽」（望十架多收假头）。 */
 const STACKED_H = 3;
 /** 头正长在块端（`edgeAt`）那一档：模板分门槛、头心离「块边往里半个头高」的容差（格）、另一端干尖的行宽上限（头宽的倍数）。
@@ -503,9 +514,13 @@ export function headFromStemBlock(
   };
   const stackedAt = (x: number, y: number): boolean => {
     if (coreInk(x, y) < STACKED_CORE || rowSpan(bin, box, y) < hwFull) return false;
+    // 邻位要真是个头：除了那一行，上下各 0.25 格两行在去线图上也要有大半个头宽的连续墨。只看那一行时，
+    // 邻位落在谱线上、正贴着一个头的顶（底）边，那一行被谱线撑满（去线图上头盒里那段线也留着），
+    // 线位上夹在两个贴着的头中间的假位置（所信有根基 m18 F4/D4 之间的 E4，上邻 G4 正是谱线）就凑成了「贴着一个三度的头」
+    const body = (g: number) => !nl || [-1, 1].every((d) => rowRun(nl, box, g + d * sp * 0.25) >= hwFull * STACKED_BODY);
     for (const dy of [-1, 1]) {
       const g = grid(y + dy * sp, x);
-      if (g !== null && Math.abs(g - y) >= sp * 0.8 && Math.abs(g - y) <= sp * 1.2 && rowSpan(bin, box, g) >= hwFull) return true;
+      if (g !== null && Math.abs(g - y) >= sp * 0.8 && Math.abs(g - y) <= sp * 1.2 && rowSpan(bin, box, g) >= hwFull && body(g)) return true;
     }
     return false;
   };
@@ -771,6 +786,16 @@ function rowSpan(bin: Binary, box: Rect, y: number): number {
       b = x;
     }
   return a < 0 ? 0 : b - a + 1;
+}
+
+/** 块里第 `y` 行最长的一段连续墨。 */
+function rowRun(bin: Binary, box: Rect, y: number): number {
+  const yy = Math.round(y);
+  if (yy < 0 || yy >= bin.h) return 0;
+  let run = 0;
+  let best = 0;
+  for (let x = Math.max(0, box.x); x < Math.min(bin.w, box.x + box.w); x++) (run = bin.data[yy * bin.w + x] ? run + 1 : 0), (best = Math.max(best, run));
+  return best;
 }
 
 /** 块里 `[y0,y1)` 那一段最密的那一列（符干的 x）。 */

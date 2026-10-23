@@ -32,7 +32,8 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
   // **只看实心符头**：空心符头（二分/全音符）本来就不带符尾，
   // 给它安一个会把二分读成八分。
   const heads = pg.symbols.filter((s) => s.hasTag("Note") && s.code === "noteheadBlack");
-  const lineYs = pg.staves.flatMap((stf) => stf.lineYs);
+  /** x 处各行谱的线位（弯、斜的谱线按 `lineYsAt` 取；按常数线位判「谱线行」会偏开一两个像素，谱线那几行混进钩的游程） */
+  const lineYsAt = (x: number) => pg.staves.flatMap((stf) => (stf.lineYsAt && stf.lineYs.length === 5 ? stf.lineYsAt(x) : stf.lineYs));
   const legers = pg.segsWithTag("Leger");
   /** 加线压着头盒的上沿或下沿（上下各容 0.2 格）。 */
   const besideLeger = (b: Box) =>
@@ -65,9 +66,37 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     // 符杠斜着搭在符干中段的也算（不只远端那一小截）
     if (beams.some((b) => b.x0 - sp * 0.5 <= st.cx && st.cx <= b.x1 + sp * 0.5 && st.top - sp * 0.5 < (b.y0 + b.y1) / 2 && (b.y0 + b.y1) / 2 < st.bottom + sp * 0.5)) continue;
     const toward = Math.sign(hy - far) || 1;
+    // **干尖按墨断处定**：从头心顺着干那一列往外走，碰上 `FLAG_STEM_GAP` 格以上整段空白就在断口前收住。
+    // 竖段跨过断口接上了下面歌词字的竖笔，干尖落到字底，字的笔画当了符尾（主使我喜乐 m13 G4 朝下的干，断口 6 行，接上「乐」，读成十六分）
+    // 跨断口拟合的竖段是斜的，x 也偏向字的竖笔（那一处偏 2 像素，窗口罩到干本身），收住时干的 x 按断口以内那段干逐行墨段的中心重取
+    let sx = st.cx;
+    {
+      const cx = Math.round(st.cx);
+      const inkAt = (y: number) => y >= 0 && y < bin.h && [cx - 1, cx, cx + 1].some((x) => x >= 0 && x < bin.w && bin.data[y * bin.w + x]);
+      const gapMin = Math.max(3, Math.round(sp * FLAG_STEM_GAP));
+      let last = Math.round(hy);
+      let gap = 0;
+      for (let y = Math.round(hy); toward > 0 ? y >= far : y <= far; y -= toward) {
+        if (inkAt(y)) (last = y), (gap = 0);
+        else if (++gap >= gapMin) {
+          far = last;
+          const mids: number[] = [];
+          for (let y2 = far; Math.abs(y2 - hy) > sp * 0.6; y2 += toward) {
+            let x = [cx, cx - 1, cx + 1, cx - 2, cx + 2].find((q) => q >= 0 && q < bin.w && bin.data[y2 * bin.w + q]);
+            if (x === undefined) continue;
+            let a = x, b = x;
+            while (a > 0 && bin.data[y2 * bin.w + a - 1]) a--;
+            while (b < bin.w - 1 && bin.data[y2 * bin.w + b + 1]) b++;
+            if (b - a <= unit.lineThick * 2) mids.push((a + b) / 2);
+          }
+          if (mids.length) sx = mids.sort((p, q) => p - q)[mids.length >> 1];
+          break;
+        }
+      }
+    }
     const frac = (d0: number, d1: number, side = 1) => {
-      const x0 = Math.round(side > 0 ? st.cx + sp * FLAG_X[0] : st.cx - sp * FLAG_X[1]);
-      const x1 = Math.round(side > 0 ? st.cx + sp * FLAG_X[1] : st.cx - sp * FLAG_X[0]);
+      const x0 = Math.round(side > 0 ? sx + sp * FLAG_X[0] : sx - sp * FLAG_X[1]);
+      const x1 = Math.round(side > 0 ? sx + sp * FLAG_X[1] : sx - sp * FLAG_X[0]);
       let ink = 0;
       let tot = 0;
       for (let dy = sp * d0; dy < sp * d1; dy++) {
@@ -92,6 +121,7 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     let offset = 0;
     // 干尖**落在谱线上**的也往里找（最多半格）：干冒过钩的起点、顶到线上（万福泉源歌低分辨率本，
     // 钩从干尖下半格才长出来，尖端窗口只罩到一角，八分和弦整批读成四分）
+    const lineYs = lineYsAt(sx);
     const onLineTip = lineYs.some((ly) => Math.abs(ly - far) <= unit.lineThick * 1.5 + 1);
     // 细线页干尖没顶在线上的，也往里找半格（干冒过钩的起点 7 像素：颂赞与尊贵整页单尾八分读成四分），
     // 但窗口不能碰到头（离头心留 0.6 格）：短干上往里挪，窗口罩到干旁边的头本身（晨曦破晓 m6）
@@ -101,7 +131,7 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     while (frac(offset, offset + FLAG_TIP_Y) < FLAG_TIP && offset * sp < reach) offset += 1 / sp;
     /** 干尖顺着干那一列往外延到墨断（上限 `FLAG_TIP_EXT` 格）。 */
     const tipOf = (from: number) => {
-      const cx = Math.round(st.cx);
+      const cx = Math.round(sx);
       const inkAt = (y: number) => y >= 0 && y < bin.h && [cx - 1, cx, cx + 1].some((x) => x >= 0 && x < bin.w && bin.data[y * bin.w + x]);
       let tip = from;
       while (Math.abs(tip - toward - from) <= sp * FLAG_TIP_EXT && inkAt(Math.round(tip - toward))) tip -= toward;
@@ -123,7 +153,7 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
       }
     }
     if (bareHere) {
-      bare.push({ cx: st.cx, far, up: far < hy });
+      bare.push({ cx: sx, far, up: far < hy });
       continue;
     }
     if (frac(offset, offset + FLAG_TIP_Y, -1) >= FLAG_LEFT) continue;
@@ -139,8 +169,8 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     // 低分辨率放大的万古磐石歌两道钩在干边粘成一段，靠这一条。谱线那几行不算。
     // 或者**贴着干的那一窄条里墨分成两段**（两道钩各自连在干上，右缘对齐的字体靠这一条：来敬拜荣耀王）。
     const hookRuns = () => {
-      const x0 = Math.round(st.cx + unit.lineThick);
-      const x1 = Math.round(st.cx + sp * 0.35);
+      const x0 = Math.round(sx + unit.lineThick);
+      const x1 = Math.round(sx + sp * 0.35);
       let runs = 0;
       let gap = 2;
       for (let dy = offset * sp; dy < Math.min(offset + 2.4, room) * sp; dy++) {
@@ -155,17 +185,42 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
       }
       return runs;
     };
+    // 右缘只量**连着这根干**的墨（窗口里从干那一列起八连通填充）：钩都长在干上，从干尖底下擦过的弧不连着干，
+    // 却会在扫描起点那一行冒出一个远在右边的点，当成第一道钩的峰（信心使我得胜 m13 低音 D3 八分，干尖下压着一条弧，读成十六分）
     const twoPeaks = () => {
-      const x0 = Math.round(st.cx + unit.lineThick);
-      const x1 = Math.round(st.cx + sp * 1.2);
+      const x0 = Math.round(sx + unit.lineThick);
+      const x1 = Math.round(sx + sp * 1.2);
       const prom = sp * HOOK_PROM;
+      const dEnd = Math.min(offset + 2.4, room) * sp;
+      const yA = Math.max(0, Math.round(Math.min(far, far + toward * dEnd)) - 1);
+      const yB = Math.min(bin.h - 1, Math.round(Math.max(far, far + toward * dEnd)) + 1);
+      const xA = Math.max(0, Math.round(sx - unit.lineThick - 1));
+      const xB = Math.min(bin.w - 1, x1);
+      const W = xB - xA + 1;
+      const conn = new Uint8Array(W * (yB - yA + 1));
+      const stack: number[] = [];
+      for (let y = yA; y <= yB; y++)
+        for (let x = Math.max(xA, Math.round(sx - 1)); x <= Math.min(xB, Math.round(sx + 1)); x++)
+          if (bin.data[y * bin.w + x] && !conn[(y - yA) * W + x - xA]) (conn[(y - yA) * W + x - xA] = 1), stack.push(x, y);
+      while (stack.length) {
+        const py = stack.pop()!;
+        const px = stack.pop()!;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = px + dx;
+            const ny = py + dy;
+            if (nx < xA || nx > xB || ny < yA || ny > yB || !bin.data[ny * bin.w + nx] || conn[(ny - yA) * W + nx - xA]) continue;
+            conn[(ny - yA) * W + nx - xA] = 1;
+            stack.push(nx, ny);
+          }
+      }
       let max = -1;
       let dip = Infinity;
-      for (let dy = offset * sp; dy < Math.min(offset + 2.4, room) * sp; dy++) {
+      for (let dy = offset * sp; dy < dEnd; dy++) {
         const y = Math.round(far + toward * dy);
-        if (y < 0 || y >= bin.h || lineYs.some((ly) => Math.abs(ly - y) <= unit.lineThick)) continue;
+        if (y < yA || y > yB || lineYs.some((ly) => Math.abs(ly - y) <= unit.lineThick)) continue;
         let r = -1;
-        for (let x = Math.min(x1, bin.w - 1); x >= Math.max(0, x0); x--) if (bin.data[y * bin.w + x]) { r = x; break; }
+        for (let x = Math.min(x1, xB); x >= Math.max(xA, x0); x--) if (conn[(y - yA) * W + x - xA]) { r = x; break; }
         if (r < 0) continue;
         if (dip < Infinity && r - dip >= prom) return true;
         if (r > max) max = r;
@@ -185,7 +240,7 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
       const lineRow = (y: number) => lineYs.some((ly) => Math.abs(ly - y) <= unit.lineThick);
       let cols = 0;
       let twos = 0;
-      for (let x = Math.round(st.cx + unit.lineThick + sp * 0.1); x <= st.cx + sp * FLAG_COLS_X; x++) {
+      for (let x = Math.round(sx + unit.lineThick + sp * 0.1); x <= sx + sp * FLAG_COLS_X; x++) {
         if (x < 0 || x >= bin.w) continue;
         let runs = 0;
         let len = 0;
@@ -228,7 +283,7 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     // 还按符干末端 `far` 出块的话，粗线扫描件上整块会偏出半格。
     const anchor = far + toward * offset * sp;
     const y0 = toward > 0 ? anchor : anchor - h;
-    const fbox = { x: Math.round(st.cx), y: Math.round(y0), w: Math.round(sp * 1.5), h: Math.round(h) };
+    const fbox = { x: Math.round(sx), y: Math.round(y0), w: Math.round(sp * 1.5), h: Math.round(h) };
     // **和弦字母不是符尾**：符干朝上顶到和弦行时，窗口里那点墨是「C/E」的 E、「Csus4」的 sus
     //（《主我敬拜你》三处，八分附点、附点二分都读成了带尾的八分）
     if (avoid.some((m) => overlapFrac(fbox, m) > FLAG_AVOID)) continue;
@@ -263,6 +318,7 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
   const touchesLeft = (b: { cx: number; far: number; up: boolean }) => {
     const x = Math.round(b.cx);
     const y0 = Math.round(b.up ? b.far : b.far - sp * 1.2), y1 = Math.round(b.up ? b.far + sp * 1.2 : b.far);
+    const lineYs = lineYsAt(b.cx);
     for (let y = Math.max(0, y0); y <= Math.min(bin.h - 1, y1); y++) {
       if (lineYs.some((ly) => Math.abs(ly - y) <= unit.lineThick)) continue;
       let xx = x;
@@ -353,6 +409,9 @@ const FLAG_ON_HEAD = 0.5;
 const FLAG_ON_OWN_HEAD = 0.25;
 /** 扣掉头盒之后出块里的墨占比低于这个，才算没有尾（见用处）。 */
 const FLAG_RESIDUAL = 0.12;
+
+/** 干上整段空白到这么多格就算干尖到此为止（见「干尖按墨断处定」）。 */
+const FLAG_STEM_GAP = 0.3;
 
 /** 干尖顺着干往外延的上限（格）。 */
 const FLAG_TIP_EXT = 2.0;

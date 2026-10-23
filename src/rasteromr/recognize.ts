@@ -1560,7 +1560,22 @@ export async function recognizeRasterPage(
           if (ink(Math.round(cx - bw / 2 - unit.space * 0.35), y) || ink(Math.round(cx + bw / 2 + unit.space * 0.35), y)) side++;
         }
         if (!rows || side > rows * 0.2) continue;
-        split.push({ box: { x: Math.round(cx - bw / 2), y: Math.round(ny - bh / 2), w: Math.round(bw), h: Math.round(bh) }, code: "noteheadBlack" });
+        // 头心按去线图上那团实墨的上下沿定：空心头离实心头不一定正好一格，照「空心头心 ± 一格」出盒，
+        // 头心常落在两级之间、吸到哪一级凭运气（信心使我得胜 m15 低音 B♭2，下面符尾弯钩围出的假空心头，读成 C3）
+        const x0 = Math.round(cx - bw * 0.3), x1 = Math.round(cx + bw * 0.3);
+        const solidRow = (y: number) => {
+          if (y < 0 || y >= nl.h) return false;
+          let k = 0;
+          for (let x = Math.max(0, x0); x <= Math.min(nl.w - 1, x1); x++) k += nl.data[y * nl.w + x];
+          return k >= (x1 - x0 + 1) * 0.6;
+        };
+        let ya = Math.round(ny), yb = ya;
+        if (solidRow(ya)) {
+          while (solidRow(ya - 1) && ny - (ya - 1) <= bh) ya--;
+          while (solidRow(yb + 1) && yb + 1 - ny <= bh) yb++;
+        }
+        const hy = solidRow(Math.round(ny)) ? (ya + yb) / 2 : ny;
+        split.push({ box: { x: Math.round(cx - bw / 2), y: Math.round(hy - bh / 2), w: Math.round(bw), h: Math.round(bh) }, code: "noteheadBlack" });
       }
     }
   }
