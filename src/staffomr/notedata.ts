@@ -659,6 +659,10 @@ function beamConnect(b: BeamShape, st: StemInfo, sp: number): BeamHit {
   const cys = st.notes.map((n) => (n.box.top + n.box.bottom) / 2);
   const headEnd = toward > 0 ? Math.max(...cys) : Math.min(...cys);
   if ((y - headEnd) * toward > 0) return "none";
+  // **杠也不会夹在和弦的头之间**：杠总在离干远端最近那个头的远端一侧；落在它朝头那侧半格开外的，是压着加线的头连着加线
+  // 横出去的一截（是爱 p2 m20 钢琴右手 D5/F5/A5，A5 骑的加线读成钩，四分读成八分）
+  const farHead = toward > 0 ? Math.min(...cys) : Math.max(...cys);
+  if ((y - farHead) * toward > sp / 2) return "none";
   const near = Math.abs(st.seg.top - y) < sp || Math.abs(st.seg.bottom - y) < sp;
   if (!near) {
     const d = (y - far) * toward;

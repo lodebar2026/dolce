@@ -266,6 +266,9 @@ const SPOT_RULER = 0.8;
 const SPOT_RULER_N = 8;
 /** 斑点宽的上限：本页中位数的这么多倍。 */
 const SPOT_RULER_MAX = 1.3;
+/** 叠头斑点（见 `stackedSpot`）：至多几个头、高与「一个头高 + 整数格」差多少格以内。 */
+const SPOT_STACK_MAX = 3;
+const SPOT_STACK_TOL = 0.3;
 /** 斑点那一路判别器的门槛：比块那几路（`CLF_P`）松，因为另有干的证据。扫过 0.8 / 0.65 / 0.5：
  *  合唱谱扫描件四份 84.27·80.97·85.31·92.12 / 84.43·80.93·85.63·92.12 / 84.39·80.93·85.66·91.95（破碎扫描·是爱·望十架·爱是从神而来）。 */
 const SPOT_P = 0.65;
@@ -3598,37 +3601,48 @@ export async function recognizeRasterPage(
     const onHead = spotComps.filter((c) => known.some((kb) => overlapFrac(c.bbox, kb) > 0.5));
     const medW = onHead.length >= SPOT_RULER_N ? median(onHead.map((c) => c.bbox.w)) : 0;
     const medH = onHead.length >= SPOT_RULER_N ? median(onHead.map((c) => c.bbox.h)) : 0;
+    // **竖着叠起来的几个头开成一个高斑点**：手写三度和弦「8」字连成一团、中间压着加线，开运算抹不开（是爱 p1 m18 G5/B♭5
+    // 1.33×1.96 格、p2 m20 E5/G5/B♭5 1.38×2.91 格）。宽像本页一个头（中位宽的 `SPOT_RULER`~`SPOT_RULER_MAX` 倍）、
+    // 高正好是一个头高再加整数格（三度一格一个头，差不过 `SPOT_STACK_TOL` 格）的，按一格一个头切开，每个照单头的证据验
+    const stackedSpot = (b: { x: number; y: number; w: number; h: number }) => {
+      if (!medH || b.h / unit.space <= SPOT_H[1] || b.w < medW * SPOT_RULER || b.w > medW * SPOT_RULER_MAX) return [b];
+      const n = Math.round((b.h - medH) / unit.space) + 1;
+      if (n < 2 || n > SPOT_STACK_MAX || Math.abs(b.h - medH - (n - 1) * unit.space) > unit.space * SPOT_STACK_TOL) return [b];
+      const hh = (b.h - (n - 1) * unit.space);
+      return Array.from({ length: n }, (_, k) => ({ x: b.x, y: Math.round(b.y + k * unit.space), w: b.w, h: Math.round(hh) }));
+    };
     const spotHeads: RasterSym[] = [];
     for (const c of spotComps) {
-      const b = c.bbox;
-      const w = b.w / unit.space;
-      const h = b.h / unit.space;
-      if (w < SPOT_W[0] || w > SPOT_W[1] || h < SPOT_H[0] || h > SPOT_H[1]) continue;
-      if (b.w < medW * SPOT_RULER || b.h < medH * SPOT_RULER) continue;
-      // 两根干之间的一截短杠整段留成斑点（追思歌 m14：41×20 像素，同页真头斑点中位 31×22），比头宽出一截
-      if (medW && b.w > medW * SPOT_RULER_MAX) continue;
-      const cy = b.y + b.h / 2;
-      if (!inBand(cy)) continue;
-      // 节拍器字形（`metNote*`）压着的不算占用：谱表带里「头 + 干 + 尾」被字典认成了节拍器的音符（破碎扫描 p1 m6 B♭3），收了头就把它换掉；
-      // 保持音的短横也是：它比开运算的椭圆细，自己留不下斑点，头大小的斑点压着它，是头的残片被认成了保持音（同页 m16 G4）
-      const over = syms.filter((s0) => overlapFrac(b, s0.box) > 0.2 || overlapFrac(s0.box, b) > 0.2);
-      if (over.some((s0) => !/^met/.test(s0.code))) continue;
-      const beamsHit = beamsThrough(b);
-      if (beamsHit >= 2 || (beamsHit === 1 && b.h < unit.space * SPOT_BEAM_H)) continue;
-      const gy = pitchGrid(cy, b.x + b.w / 2);
-      if (gy === null) continue;
-      if (!stemBeside(b)) continue;
-      if (solidBar(b)) continue;
-      if (headProb(clf, raster.bin, masks, unit, b, gy, onLineY(gy, b.x + b.w / 2)) < SPOT_P) continue;
-      const hw = Math.round(unit.space * 1.25);
-      const hh = Math.round(unit.space * 0.95);
-      const box = { x: Math.round(b.x + b.w / 2 - hw / 2), y: Math.round(gy - hh / 2), w: hw, h: hh };
-      if (headTaken(box) || spotHeads.some((s0) => overlapFrac(box, s0.box) > 0.3)) continue;
-      spotHeads.push({ box, code: "noteheadBlack" });
-      ledger.claim(box, "spot:noteheadBlack");
-      for (const s0 of over) {
-        const i = syms.indexOf(s0);
-        if (i >= 0) syms.splice(i, 1);
+      for (const b of stackedSpot(c.bbox)) {
+        const w = b.w / unit.space;
+        const h = b.h / unit.space;
+        if (w < SPOT_W[0] || w > SPOT_W[1] || h < SPOT_H[0] || h > SPOT_H[1]) continue;
+        if (b.w < medW * SPOT_RULER || b.h < medH * SPOT_RULER) continue;
+        // 两根干之间的一截短杠整段留成斑点（追思歌 m14：41×20 像素，同页真头斑点中位 31×22），比头宽出一截
+        if (medW && b.w > medW * SPOT_RULER_MAX) continue;
+        const cy = b.y + b.h / 2;
+        if (!inBand(cy)) continue;
+        // 节拍器字形（`metNote*`）压着的不算占用：谱表带里「头 + 干 + 尾」被字典认成了节拍器的音符（破碎扫描 p1 m6 B♭3），收了头就把它换掉；
+        // 保持音的短横也是：它比开运算的椭圆细，自己留不下斑点，头大小的斑点压着它，是头的残片被认成了保持音（同页 m16 G4）
+        const over = syms.filter((s0) => overlapFrac(b, s0.box) > 0.2 || overlapFrac(s0.box, b) > 0.2);
+        if (over.some((s0) => !/^met/.test(s0.code))) continue;
+        const beamsHit = beamsThrough(b);
+        if (beamsHit >= 2 || (beamsHit === 1 && b.h < unit.space * SPOT_BEAM_H)) continue;
+        const gy = pitchGrid(cy, b.x + b.w / 2);
+        if (gy === null) continue;
+        if (!stemBeside(b)) continue;
+        if (solidBar(b)) continue;
+        if (headProb(clf, raster.bin, masks, unit, b, gy, onLineY(gy, b.x + b.w / 2)) < SPOT_P) continue;
+        const hw = Math.round(unit.space * 1.25);
+        const hh = Math.round(unit.space * 0.95);
+        const box = { x: Math.round(b.x + b.w / 2 - hw / 2), y: Math.round(gy - hh / 2), w: hw, h: hh };
+        if (headTaken(box) || spotHeads.some((s0) => overlapFrac(box, s0.box) > 0.3)) continue;
+        spotHeads.push({ box, code: "noteheadBlack" });
+        ledger.claim(box, "spot:noteheadBlack");
+        for (const s0 of over) {
+          const i = syms.indexOf(s0);
+          if (i >= 0) syms.splice(i, 1);
+        }
       }
     }
     syms.push(...spotHeads);
