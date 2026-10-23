@@ -7,7 +7,7 @@
 // >（符头内部、歌词笔画的空隙数量远超谱线间隙，众数落在 3~5 px）。这里不取众数，而是要求**五连等距**——
 // > 歌词笔画凑不出五段等距的黑白相间，噪声更凑不出。
 import type { Binary } from "../omrkit/types";
-import type { LineCurve, RasterUnit, StaffGroup, StaffLineRun } from "./staffline";
+import { lineYAt, type LineCurve, type RasterUnit, type StaffGroup, type StaffLineRun } from "./staffline";
 import { median } from "../omrkit/geom";
 
 /** 逐列取样的步长（px）。谱线横跨整页，抽稀不影响；4 px 一页几十毫秒。 */
@@ -204,7 +204,42 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
   }
   if (!groups.length) return null;
   groups.sort((a, b) => a.lines[0].y - b.lines[0].y);
-  return { unit: { lineThick: Math.max(1, Math.round(median(thicks))), space: median(groups.map((g) => g.space)), height: median(groups.map((g) => g.space)) * 4 }, groups };
+  // 线宽按推平时代的口径量（`bandThick`），量不出来才退回逐列游程的中位数
+  const bands = groups.flatMap((g) => g.lines.map((l) => bandThick(bin, l))).filter((t): t is number => t !== null).sort((a, b) => a - b);
+  const lineThick = bands.length ? bands[bands.length >> 1] : Math.max(1, Math.round(median(thicks)));
+  return { unit: { lineThick, space: median(groups.map((g) => g.space)), height: median(groups.map((g) => g.space)) * 4 }, groups };
+}
+
+/** 横带取墨量过页宽这个比例的行（同推平时代的行投影找线）。 */
+const BAND_INK = 0.3;
+
+/**
+ * **线宽照推平时代的口径量**：沿这条线逐列按曲线取整对齐（等于整像素推平），再做行投影，墨量过页宽三成的那几行连成的带有多厚。
+ * 逐列游程的中位数是真线厚，比这个小一档（新编 442 页里 295 页小 1~2 像素）：整像素推平留下 ±0.5 像素的残差，
+ * 投影带总比单列厚一行。线宽是全流程的尺子——竖笔、横笔的「细」（两倍线宽）、加线剪列、去线都按它，
+ * 那些阈值都是对着推平后的量法一首首调出来的；换成真线厚，5px 的小节线过不了「细」（新编 005、327 各丢一根），
+ * 斜一像素的加线剪不掉（045 下加一线的 C4）。
+ */
+function bandThick(bin: Binary, l: StaffLineRun): number | null {
+  const { w, h, data } = bin;
+  const R = Math.max(6, Math.round(h * 0.01));
+  const cnt = new Uint32Array(R * 2 + 1);
+  for (let x = Math.max(0, l.left); x <= Math.min(w - 1, l.right); x++) {
+    // 线心是「游程起点 + 长/2」（`columnHits`），比该行像素的中心低半像素：向下取整才落在线所在的行上
+    const y = Math.floor(lineYAt(l, x));
+    for (let o = -R; o <= R; o++) {
+      const yy = y + o;
+      if (yy >= 0 && yy < h && data[yy * w + x]) cnt[o + R]++;
+    }
+  }
+  const th = w * BAND_INK;
+  let peak = R;
+  for (const o of [R - 1, R + 1]) if (cnt[o] > cnt[peak]) peak = o;
+  if (cnt[peak] <= th) return null;
+  let a = peak, b = peak;
+  while (a > 0 && cnt[a - 1] > th) a--;
+  while (b < R * 2 && cnt[b + 1] > th) b++;
+  return b - a + 1;
 }
 
 /** 页面的基本单位（线宽与线距）：按游程找到的谱表反推（`findRasterStaves`）。一行谱都没有返回 null。 */

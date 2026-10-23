@@ -146,10 +146,11 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
     const orig = (c: Component) => origOf.get(c.id) ?? c;
     const isFlat = (c: Component) => c.bbox.h / sp < CHAR_MIN * 0.4;
     if (curved) {
-      const sol = band0.filter((c) => !isFlat(c));
+      // 只拿够字号的块量：带里零星几个噪点、符干碎渣也能「斜着排成一行」（新编 005 末行谱下五个小点斜 1%，成了第五段词）
+      const sol = band0.filter((c) => c.bbox.h / sp >= CHAR_MIN);
       skewX = sol.length ? sol.reduce((a, c) => a + c.cx, 0) / sol.length : 0;
       skew = textSkew(sol, sp, skewX);
-        }
+    }
     const band = skew
       ? band0.map((c) => {
           const d = Math.round(skewAt(c.cx));
@@ -258,6 +259,9 @@ export function findLyricRows(blobs: Component[], staves: LyricStaff[], unit: Ra
       }
       const cells = merged.filter((r) => r.h >= sp * CHAR_MIN * 0.5 || r.w >= sp * CHAR_MIN * 1.5);
       if (cells.length < MIN_CELLS) continue;
+      // 够字号的格也要有 `MIN_CELLS` 个：谱表下符干末梢、加线碎渣这些半格上下的小块也能凑成一行
+      //（新编 005 末行谱下五块 9~15px，线距 22，成了第五段词，整曲歌词错段）
+      if (cells.filter((r) => r.h >= sp * CHAR_MIN).length < MIN_CELLS) continue;
       raw.push({ staffIndex: i, verse: 0, cells: cells.map(unlift), charH, blocks: row.map(orig), ...(curved ? { lift: rowLift(cells) } : {}) });
     }
   }
