@@ -204,8 +204,19 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
   }
   if (!groups.length) return null;
   groups.sort((a, b) => a.lines[0].y - b.lines[0].y);
-  // 线宽按推平时代的口径量（`bandThick`），量不出来才退回逐列游程的中位数
-  const bands = groups.flatMap((g) => g.lines.map((l) => bandThick(bin, l))).filter((t): t is number => t !== null).sort((a, b) => a - b);
+  // 线宽按推平时代的口径量（`bandThick`），量不出来才退回逐列游程的中位数。
+  // 每条线的上下沿也按它自己的带厚取（`y1 − y0 + 1` = 带厚，同行投影）：谱线段的线宽由它来（`adapt.ts`），
+  // 挂干窗口是两倍线宽（`findStems`），按逐列游程多算一像素，宁静 p5 钢琴贯穿小节线离头 6 像素被挂成了符干
+  const bands: number[] = [];
+  for (const g of groups)
+    for (const l of g.lines) {
+      const t = bandThick(bin, l);
+      if (t === null) continue;
+      bands.push(t);
+      l.y0 = l.y - (t - 1) / 2;
+      l.y1 = l.y + (t - 1) / 2;
+    }
+  bands.sort((a, b) => a - b);
   const lineThick = bands.length ? bands[bands.length >> 1] : Math.max(1, Math.round(median(thicks)));
   return { unit: { lineThick, space: median(groups.map((g) => g.space)), height: median(groups.map((g) => g.space)) * 4 }, groups };
 }
@@ -225,8 +236,7 @@ function bandThick(bin: Binary, l: StaffLineRun): number | null {
   const R = Math.max(6, Math.round(h * 0.01));
   const cnt = new Uint32Array(R * 2 + 1);
   for (let x = Math.max(0, l.left); x <= Math.min(w - 1, l.right); x++) {
-    // 线心是「游程起点 + 长/2」（`columnHits`），比该行像素的中心低半像素：向下取整才落在线所在的行上
-    const y = Math.floor(lineYAt(l, x));
+    const y = Math.round(lineYAt(l, x));
     for (let o = -R; o <= R; o++) {
       const yy = y + o;
       if (yy >= 0 && yy < h && data[yy * w + x]) cnt[o + R]++;
@@ -274,7 +284,8 @@ export function columnHits(bin: Binary): ColHit[] {
       let thick = 0;
       let ok = true;
       for (let k = 0; k < 5; k++) {
-        c.push(starts[i + k] + lens[i + k] / 2);
+        // 线心按像素中心算（首行 + 末行）/ 2，与行投影同口径；「起点 + 长/2」整体偏下半像素，干净位图的音高、贴线判据跟着偏
+        c.push(starts[i + k] + (lens[i + k] - 1) / 2);
         thick += lens[i + k];
       }
       const ds = [1, 2, 3, 4].map((k) => c[k] - c[k - 1]);
