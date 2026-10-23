@@ -299,6 +299,12 @@ const REST_FILL = 0.75;
 const REST_BEAM_W = 2.4;
 /** 坐在线上的扁块宽过这么多格，也按整小节休止（二分休止没这么宽）。 */
 const REST_WIDE = 1.7;
+/** 八分休止候选左边 0.8 格、上六成高里墨够这么多（格，按像素数折算）就当左边挨着字母（和弦记号「C7」的 7）。 */
+const SEVEN_LEFT_INK = 1;
+/** 临时记号的盒有这么大一部分落在一个空心头盒里，那个头不算（见「盖住一个临时记号大半的空心头」）。 */
+const ACC_UNDER_HEAD = 0.5;
+/** 从符杠表里捡的休止，不压线的部分至少这么高（格）：手写本的全休止只是线下一道 0.3 格的粗横（是爱 p1 m6、p5 m70）。 */
+const REST_BEAM_H = 0.2;
 
 /** 降号的肚子从盒顶往下第几成开始。取 0.45：盒高 2.36 格时中心正好下移 0.53 格，
  *  与实测的 0.55 格偏差吻合。 */
@@ -958,8 +964,11 @@ export async function recognizeRasterPage(
   for (const q of prims.beams) {
     const b = q.box;
     const w = b.w / unit.space;
-    const hRest = Math.max(0.1, b.h / unit.space - unit.lineThick / unit.space);
-    if (w < REST_W[0] || w > REST_BEAM_W || hRest < 0.3 || hRest > REST_H) continue;
+    // 高度只数不压线的行：杠盒常只罩进半条线，再整扣一个线宽就扣多了（是爱 p1 m6 手写全休止线下只有 0.39 格高）
+    let offRows = 0;
+    for (let y = b.y; y < b.y + b.h; y++) if (!grid.onLine(y, unit.lineThick / 2 + 0.5, b.x + b.w / 2)) offRows++;
+    const hRest = Math.max(0.1, offRows / unit.space);
+    if (w < REST_W[0] || w > REST_BEAM_W || hRest < REST_BEAM_H || hRest > REST_H) continue;
     if (Math.abs(q.y1 - q.y0) > unit.lineThick) continue; // 斜的是真符杠
     if (besideStem(b)) continue;
     if (nearStaffStart(b, groups, staffLefts, unit)) continue;
@@ -979,6 +988,8 @@ export async function recognizeRasterPage(
     const hang = low.some((l) => Math.abs(b.y - lineYAt(l, bx)) <= tol) || (Math.abs(b.y - yAt(grp, 1, bx)) <= tol && !stacked());
     const sit = low.some((l) => Math.abs(b.y + b.h - lineYAt(l, bx)) <= tol);
     if (!hang && !sit) continue;
+    // 薄的只收吊着的（全休止）：坐在线上的薄块多是杠的碎截（新编 031 P2 m6）
+    if (hRest < 0.3 && !hang) continue;
     let fill = 0;
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) fill += raster.bin.data[y * raster.bin.w + x];
     if (fill / Math.max(1, b.w * b.h) < REST_FILL) continue;
@@ -999,6 +1010,8 @@ export async function recognizeRasterPage(
     restIds.add(c.id);
     restSyms.push({ box: full.box, code: "rest8th" });
   }
+  /** 被认成八分休止斜笔的竖段：不当干（是爱 p1 m16 低音 F3 全音符顶上的休止，斜笔一直伸到头顶，头读成二分） */
+  const restStrokes = new Set<LineSeg>();
   // **球也跟着斜笔一起被抽走的八分休止**：手写体的斜笔陡、球又贴着斜笔上端，整枚被当成一根竖段提走（最宽那行把 `maxLw` 撑到 0.8 格），
   // 块图里一点不剩，上面那一路没有球可回填（是爱 p1 m16 低音谱表）。从斜得不像干的短竖段上端在去线图上回填整个连通域，按八分休止的形状判
   for (const v of prims.vSegs) {
@@ -1017,7 +1030,17 @@ export async function recognizeRasterPage(
       for (let x = full.box.x; x < full.box.x + full.box.w; x++) if (nl.data[y * nl.w + x]) (x0 < 0 && (x0 = x)), (x1 = x);
       if (x0 >= 0) topW = Math.max(topW, x1 - x0 + 1);
     }
-    if (topW > unit.space * 0.6) continue;
+    // 只在像「7」时才这么剔（用户定）：和弦记号的 7 左边挨着字母、离开谱线；休止挨着谱线。
+    // 顶上宽的也可能是休止：手写的球顶与斜笔起头同在顶行（是爱 p2 m19 低音谱表上方），底端坐在第五线上、左边是白的
+    const bx = full.box;
+    let onStaffLine = false;
+    for (let y = bx.y - 1; y <= bx.y + bx.h && !onStaffLine; y++) onStaffLine = grid.onLine(y, unit.lineThick / 2 + 0.5, bx.x + bx.w / 2);
+    let leftInk = 0;
+    for (let y = bx.y; y < bx.y + bx.h * 0.6; y++)
+      for (let x = Math.max(0, Math.round(bx.x - unit.space * 0.8)); x < bx.x - 1; x++) leftInk += nl.data[y * nl.w + x];
+    const letterLeft = leftInk >= unit.space * SEVEN_LEFT_INK;
+    if (topW > unit.space * 0.6 && (letterLeft || !onStaffLine)) continue;
+    restStrokes.add(v);
     if (restSyms.some((r) => overlapFrac(r.box, full.box) > 0.3)) continue;
     restSyms.push({ box: full.box, code: "rest8th" });
     for (const b of blobs) if (overlapFrac(b.bbox, full.box) > 0.5) restIds.add(b.id);
@@ -1228,7 +1251,7 @@ export async function recognizeRasterPage(
   const barSegs = prims.vSegs.filter((q) =>
     staffGeoms.some((g) => Math.abs(Math.min(q.y0, q.y1) - g.topAt((q.x0 + q.x1) / 2)) < unit.space * 0.4 && Math.abs(Math.max(q.y0, q.y1) - g.bottomAt((q.x0 + q.x1) / 2)) < unit.space * 0.4),
   );
-  const stacked: RasterSym[] = hollowHeadsFromHoles(nl, holes, unit, prims.vSegs, inBand, takenBoxes, barSegs);
+  const stacked: RasterSym[] = hollowHeadsFromHoles(nl, holes, unit, [...prims.vSegs, ...(prims.shortStems ?? [])], inBand, takenBoxes, barSegs, restStrokes);
   // 并成一个高内腔的叠置空心和弦：按音高位置逐一配模板（`notehead.ts::hollowHeadsByPitch`），
   // 模板拿本页已认出的空心头（骑线 / 在间各一张）
   // 靠加线才放进谱表带的头（`inBand` 给 x 那一档）不当模板样本：加线把圈切成几截，平均进去模板就糊了（望十架 p10 长笛 G5 全音符跟着丢）
@@ -2209,7 +2232,7 @@ export async function recognizeRasterPage(
   // 一条纵向搭得上的竖段，就把两者的盒并起来重查一次字典。
   // 并完要把那条竖段**从 `vSegs` 里摘掉**——留着的话 `findStems` 会把它当符干，
   // `findBarlines` 会把它当小节线。
-  const usedSegs = new Set<LineSeg>();
+  const usedSegs = new Set<LineSeg>(restStrokes);
   // 调号位置：同一行谱的谱号右缘往右四格以内
   const clefSyms = syms.filter((s) => s.code === "gClef" || s.code === "fClef" || s.code === "cClef");
   const atKeySlot = (b: Rect) =>
@@ -2541,6 +2564,9 @@ export async function recognizeRasterPage(
       // 修补前是几块，或块图里没有哪块占到它八成高（碎的那截太小、进不了块图：一婴孩为我们降生 男声 m10）
       pair: rv.parts.get(c.id)!.length >= 2 || !blobs.some((q) => overlapFrac(q.bbox, c.bbox) > 0.5 && q.bbox.h >= c.bbox.h * 0.8),
     }));
+    // 去线图上本就是一整块、块图里却碎成几截的（抽横段时把折弯那几行当横笔抹了：是爱 p1 m3 手写四分休止），也交给这一路；
+    // 下面「一整块的归按块认那一路」那条要它在块图里碎成两块以上
+    for (const c of cmap.contours) if (!rv.parts.has(c.id) && free(c.id) && c.bbox.h >= unit.space * QREST_H[0] && c.bbox.h <= unit.space * QREST_H[1]) cands.push({ bbox: c.bbox, area: c.area, pair: false });
     // 修补没连上的：上下两截只隔一道去掉的谱线（≤ 线粗 + 1）、左右大半叠着，拼成一块再认（一婴孩为我们降生 女声 m5/m8：
     // 劈口落在休止中段的折弯上，修补按竖向接续接不上斜笔）
     {
@@ -4447,6 +4473,14 @@ export async function recognizeRasterPage(
       ledger.claim(found.box, `accprobe:${code}`);
     }
   }
+  // **盖住一个临时记号大半的空心头**是记号的竖笔、谱线与右边的头围出的那块白（是爱 p1 m14 手写降号与 B♭4/D5 之间，
+  // 凸度 0.78、过了「上下贴线的凹孔」那道），真头只挨着记号，盖不到它一半
+  for (let i = syms.length - 1; i >= 0; i--) {
+    const s0 = syms[i];
+    if (s0.code !== "noteheadHalf") continue;
+    if (!syms.some((a) => isAccidental(a.code) && overlapFrac(a.box, s0.box) > ACC_UNDER_HEAD)) continue;
+    syms.splice(i, 1);
+  }
   // 行中的谱号只信「行中换谱号」那一路验过的：字典按块查出来的行中「谱号」多是误认（万古磐石歌八分二度连干带尾认成高音谱号），
   // 从前每行只用行首那个、它们不起作用；现在音高按位置取谱号，留着就把后半行读错
   for (let i = syms.length - 1; i >= 0; i--) {
@@ -4888,8 +4922,10 @@ export async function recognizeRasterPage(
         const last = grid[grid.length - 1];
         const d = (y - last) * out;
         if (d < sp0 * 0.5) continue; // 同一条加线拆成的几段
-        // 间距要像一格：近了是别的横墨，远了是中间缺了一条，往外的都不可靠
-        if (d < spL * 0.8 || d > spL * 1.25) break;
+        // 间距要像一格：近了是别的横墨（跳过它接着找：按头盒补的加线常与真加线差两三像素，是爱 p1 m15 低音 F4），
+        // 远了是中间缺了一条，往外的都不可靠
+        if (d < spL * 0.8) continue;
+        if (d > spL * 1.25) break;
         grid.push(y);
       }
       let pos = -1; // 从边线往外的半格数

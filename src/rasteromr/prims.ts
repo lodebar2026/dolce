@@ -1290,6 +1290,10 @@ function localLineCenters(bin: Binary, runs: Uint16Array, line: LineRef, unit: R
 const THIN_ONLY_RUN = 1.6;
 /** 从杠边伸出多长（格）的细墨柱算干。 */
 const BEAM_STEM_MIN = 2.0;
+/** 墨柱的尽头落在头那么宽的墨上时，伸出这么多（格）就算干：杠离头近的八分干只有一格半上下。 */
+const BEAM_STEM_HEAD = 1.2;
+/** 那个头一侧盒里的墨占比下限（见 `beamStems::solidHead`）。 */
+const BEAM_STEM_HEAD_FILL = 0.6;
 
 /**
  * **挂在杠上的干**：孤立性判据在粗线扫描件上抽不出夹在两个头之间的干——两侧量程按最宽那一行定，
@@ -1328,21 +1332,42 @@ function beamStems(bin: Binary, beams: BeamQuad[], vSegs: LineSeg[], unit: Raste
     }
     return last;
   };
+  /** 墨柱尽头（x, end）顺着走向一侧贴着一个实心头：一边 1.1 格宽、尽头前后 0.2~0.8 格高的盒里墨占六成以上（谱号弯笔围不出这么实的一块） */
+  const solidHead = (x: number, end: number, dir: number): boolean => {
+    const y0 = Math.round(Math.min(end - dir * sp * 0.2, end + dir * sp * 0.8));
+    const y1 = Math.round(Math.max(end - dir * sp * 0.2, end + dir * sp * 0.8));
+    return [-1, 1].some((side) => {
+      let k = 0, n = 0;
+      for (let y = y0; y <= y1; y++)
+        for (let d = 1; d <= Math.round(sp * 1.1); d++) {
+          n++;
+          if (ink(x + side * d, y)) k++;
+        }
+      return k >= n * BEAM_STEM_HEAD_FILL;
+    });
+  };
   const out: LineSeg[] = [];
   for (const q of beams) {
     // 只找已挂着竖段的杠：真杠总有别的干抽得出来；一根都没挂的多是粗体四分休止的斜笔（主我敬拜你 m8）
-    const hung = vSegs.some((v) => {
-      const vx = (v.x0 + v.x1) / 2;
-      return vx >= q.box.x - 2 && vx <= q.box.x + q.box.w + 2 && Math.min(v.y0, v.y1) <= q.box.y + q.box.h + 2 && Math.max(v.y0, v.y1) >= q.box.y - 2;
-    });
-    if (!hung) continue;
+    const hungBy = (gap: number) =>
+      vSegs.some((v) => {
+        const vx = (v.x0 + v.x1) / 2;
+        return vx >= q.box.x - 2 && vx <= q.box.x + q.box.w + 2 && Math.min(v.y0, v.y1) <= q.box.y + q.box.h + gap && Math.max(v.y0, v.y1) >= q.box.y - gap;
+      });
+    const hung = hungBy(2);
+    // 落在实心头上的短墨柱那一档，干端离杠 0.3 格内也算挂着（干常停在杠上方那条谱线上：是爱 p1 m5）；
+    // 长墨柱那一档照旧要贴着，放宽了新编 321 m2 补出假干、和弦拆乱
+    const hungLoose = hung || hungBy(Math.max(2, sp * 0.3));
+    if (!hungLoose) continue;
     // 两端各放 0.3 格：杠的中心线拟合常收不到端头那根干
     const x0 = Math.ceil(Math.min(q.x0, q.x1, q.box.x) - sp * 0.3);
     const x1 = Math.floor(Math.max(q.x0, q.x1, q.box.x + q.box.w) + sp * 0.3);
     for (const dir of [1, -1]) {
-      let run: { x: number; end: number }[] = [];
+      let run: { x: number; end: number; short: boolean }[] = [];
       const flush = () => {
         if (!run.length) return;
+        // 够长的列在就只用够长的列：短的那几列是头边，干端按它们取就停在头顶上
+        if (run.some((r) => !r.short)) run = run.filter((r) => !r.short);
         const wd = run.length;
         const xs = run.map((r) => r.x);
         const cx = (xs[0] + xs[xs.length - 1]) / 2;
@@ -1362,7 +1387,9 @@ function beamStems(bin: Binary, beams: BeamQuad[], vSegs: LineSeg[], unit: Raste
         const yc = q.y0 + (q.y1 - q.y0) * t;
         const edge = Math.round(yc + (dir * (q.lw / 2 + 1)));
         const end = walk(x, edge, dir);
-        if ((end - edge) * dir >= sp * BEAM_STEM_MIN) run.push({ x, end });
+        const len = (end - edge) * dir;
+        if (len >= sp * BEAM_STEM_MIN && hung) run.push({ x, end, short: false });
+        else if (len >= sp * BEAM_STEM_HEAD && runAt(x, end) >= sp * 0.8 && solidHead(x, end, dir)) run.push({ x, end, short: true });
         else flush();
       }
       flush();

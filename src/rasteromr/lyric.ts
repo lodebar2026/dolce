@@ -57,6 +57,8 @@ const ROW_GAP = 0.9;
 
 /** 一行歌词至少要有几个字格才算数（少于这个多半是力度记号、小节号一类）。 */
 const MIN_CELLS = 3;
+/** 读成「一 / 二 / 三」的字格宽过这么多个字高、又扁的，是杠残条不是字（`mapCharsToCells`）。 */
+const BAR_CELL_W = 2;
 
 /** 孤行字格高度的下限（线距的倍数） */
 const LONE_MIN = 0.5;
@@ -727,6 +729,15 @@ function splitWideCells(strip: LyricStrip, extra: number): LyricStrip {
  * 实测那样会丢掉近一半的字（1221 个字里丢 566）。
  */
 export function mapCharsToCells(strip0: LyricStrip, chars: OcrChar[]): { box: Rect; ch: string }[] {
+  const out = mapCharsToCells0(strip0, chars);
+  // **扁长横条上读出的「一 / 二 / 三」不是字**：歌词条里剩下的杠残条（是爱 p5 第二系统钢琴两手之间，99×4、95×5 的几截），
+  // 一个字格宽过两个字高。真「一」的格不会比一个字宽出一倍
+  const h = strip0.charH;
+  if (h > 0) for (const o of out) if (/^[一二三]$/.test(o.ch) && o.box.w > h * BAR_CELL_W && o.box.h < o.box.w * 0.2) o.ch = "";
+  return out;
+}
+
+function mapCharsToCells0(strip0: LyricStrip, chars: OcrChar[]): { box: Rect; ch: string }[] {
   const keep = foldLyricChars(chars);
   const filled = keep.length > strip0.cells.length ? fillMissingCells(strip0, keep) : strip0;
   const strip = keep.length > filled.cells.length ? splitWideCells(filled, keep.length - filled.cells.length) : filled;

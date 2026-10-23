@@ -603,6 +603,8 @@ export type BeamState = "begin" | "continue" | "end" | "forward hook" | "backwar
 
 /** 只接上一根干、短于这么多格的杠是半截钩（附点八分 + 十六分的那一截）；长的是另一头的音没认出来，照普通杠算。 */
 const HOOK_MAX = 1.6;
+/** 两条杠横向叠着不到这么多格的不算一摞（见 `calcBeamLevels`）。 */
+const BEAM_STACK_OV = 0.3;
 
 /**
  * 一根干上逐层的符杠状态：这一层的杠伸出干的左侧 / 右侧（超过 `beamConnect` 的端点容差五分之一格）
@@ -707,6 +709,9 @@ export function calcBeamLevels(beams: BeamShape[], stems: StemInfo[], sp: number
     for (const bj of kept) {
       if (done.has(bj)) continue;
       if (bi.x0 > bj.x1 || bj.x0 > bi.x1) continue;
+      // 只在端头碰着（共用端头那根干）的是一条杠断成先后两截，不是一摞：手写杠在中途提笔（是爱 p1 m10 右手，
+      // 两截在干上错开 0.5 格，按层算就把那个音读成十六分）。真副杠与主杠横向叠着至少一个音距
+      if (Math.min(bi.x1, bj.x1) - Math.max(bi.x0, bj.x0) < sp * BEAM_STACK_OV) continue;
       const si = new Set(conn.get(bi)!.map((h) => h.st));
       if (!conn.get(bj)!.some((h) => si.has(h.st))) continue;
       grp.push(bj);

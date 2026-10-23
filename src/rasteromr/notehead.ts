@@ -517,6 +517,8 @@ const HOLE_RATIO_WHOLE = 0.6;
 /** 二分符头一定带符干（全音符才不带，靠宽度分）。放开这一条实测音符 69.57% → 67.81%。 */
 const HOLE_NEED_STEM = true;
 const FILL_RING = [0.3, 0.75] as const;
+/** 没干的内腔按圈外缘收全音符时，外缘宽高比下限：全音符约 2:1。 */
+const WHOLE_OUTER_RATIO = 1.4;
 /** 图上量出的墨柱往一头伸出多长（格）才算符干：够一根干，又不是花括号、谱号那种长竖笔。 */
 const INK_STEM = [2.5, 7] as const;
 /** 墨柱往另一头至多伸出这么多格（`hollowHeadsFromHoles`）。 */
@@ -577,6 +579,8 @@ export function hollowHeadsFromHoles(
   inStaffBand: (y: number, x?: number) => boolean,
   taken: Rect[],
   bars: LineSeg[] = [],
+  /** 认成休止斜笔的竖段：挂上它的头当没干（见下「内腔扁而偏」） */
+  restStrokes: ReadonlySet<LineSeg> = new Set(),
 ): { box: Rect; code: SmuflName; weak?: boolean }[] {
   const sp = unit.space;
   const ring = Math.max(2, Math.round(sp * RING));
@@ -667,7 +671,10 @@ export function hollowHeadsFromHoles(
     // 已经认出来的符头不重复收
     if (taken.some((t) => overlaps(t, box, sp * 0.4))) continue;
     let stem: LineSeg | true | null = stemOf(box, stems, unit, nl);
-    if (!stem) {
+    // 挂上的「干」是休止的斜笔：头当没干，下面按圈外缘看是不是全音符
+    const restStem = !!stem && restStrokes.has(stem);
+    if (restStem) stem = null;
+    if (!stem && !restStem) {
       // 竖段表里没有的干：闭合谱男声 B3 往下一根干穿过整个谱表到 G♯2（齐来称颂），
       // 长得像小节线，没进竖段表。照 Audiveris `HeadLinker` 的做法直接在图上沿盒边量墨柱，
       // 往一头伸出 2.5~7 格就算有干。
@@ -697,7 +704,20 @@ export function hollowHeadsFromHoles(
     // 二分符头一定带符干，全音符才不带（宽度那一档与 `judgeHeadBox` 共用 `W_WHOLE`）。
     // 试过把全音符的宽度门槛单独抬到 1.65：时值 90.3% → 90.5%，但音符 69.60% → 69.52%，
     // 不划算。
-    if (HOLE_NEED_STEM && !stem && w < W_WHOLE && !pairedWhole) continue;
+    if (HOLE_NEED_STEM && !stem && w < W_WHOLE && !pairedWhole) {
+      // 干是休止斜笔、内腔扁而偏、外扩一圈够不上全音符宽的：按圈量到外缘再看（是爱 p1 m16 低音 F3 手写全音符，头顶上的八分休止斜笔伸到头上，
+      // 内腔 1 格宽、圈 2 格宽）。不限干的来历时新编 204 两个二分和弦旁的空当也收成全音符
+      const outer = !restStem ? null : ringOuter(nl, hole, sp);
+      if (!outer || outer.w / sp < W_WHOLE || outer.w / sp > W_MAX * 1.2 || outer.h / sp > H_MAX || outer.w < outer.h * WHOLE_OUTER_RATIO || taken.some((t) => overlaps(t, outer, sp * 0.4))) continue;
+      // 圈要像空心头：外缘盒里的墨占比在空心头那一档（升号中间的方孔外扩出去是一团交叉的粗笔，望十架 p7 m55）
+      let ink2 = 0;
+      for (let y = outer.y; y < outer.y + outer.h; y++) for (let x = outer.x; x < outer.x + outer.w; x++) if (nl.data[y * nl.w + x]) ink2++;
+      const fill2 = ink2 / Math.max(1, outer.w * outer.h);
+      if (fill2 < FILL_RING[0] || fill2 > FILL_RING[1]) continue;
+      out.push({ box: outer, code: "noteheadWhole" });
+      taken.push(outer);
+      continue;
+    }
     // 靠墨柱认下的头标 `weak`：不进空心头模板的样本（`buildHollowMasks`）。它们多半拖着
     // 一根穿过窗口的长干，混进去模板就偏了——善牧恩慈歌两处真二分头认出来，却让模板
     // 再也配不上后面的全音符和弦（音符 90.0% → 89.3%，不进样本 → 91.4%）。

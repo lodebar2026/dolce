@@ -77,7 +77,8 @@ export function dropBorrowedBeams(pg: SPage, ctx: Map<Staff, StaffContext>, note
     const st = stemOf.get(n.sym);
     if (!st || st.flags || !st.beams.length || n.beams !== 1) return false;
     return st.beams.every((b) => {
-      const others = stems.filter((o) => o !== st && o.beams.includes(b));
+      // 挂着这个头本身的另一根干（同一根干抽成了两段）不算别人（是爱 p1 m15 右手 C5）
+      const others = stems.filter((o) => o !== st && o.beams.includes(b) && !o.notes.includes(n.sym));
       return others.length > 0 && others.every((o) => o.up !== st.up && o.notes.every((s) => s.ownerStaff && s.ownerStaff !== n.staff));
     });
   };
