@@ -1073,7 +1073,9 @@ export function tagSystemBarlines(pg: SPage): void {
       heads.some((h) => {
         const edge = Math.min(Math.abs(h.box.left - l.cx), Math.abs(h.box.right - l.cx));
         const cy = (h.box.top + h.box.bottom) / 2;
-        return edge <= Math.max(l.lw * 2, sp * 0.15) && (Math.abs(cy - l.top) <= sp * 0.5 || Math.abs(cy - l.bottom) <= sp * 0.5);
+        // 头心离线端 0.4 格以内：外侧间里的头心离外线正好半格，卡半格就落在刀刃上（赞美三一歌 006 低音 G3 贴着小节线，
+        // 头心离线端 10.5 像素、半格 11，小节线被当成干）。干止于头心，那种头的干到不了外线，本就过不了 `barOn`
+        return edge <= Math.max(l.lw * 2, sp * 0.15) && (Math.abs(cy - l.top) <= sp * 0.4 || Math.abs(cy - l.bottom) <= sp * 0.4);
       });
     const per = g.map((st) => vlines.filter((l) => barOn(l, st) && !headEnd(l)));
     // 上下两行的 x 容 0.6 格：扫描件歪一点，隔着十几格歌词的两行就错开三四个像素（赞美三一歌 234 对 230）；

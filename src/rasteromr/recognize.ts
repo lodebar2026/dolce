@@ -2657,6 +2657,12 @@ export async function recognizeRasterPage(
       flush();
       cols.sort((a, b) => a.box.x - b.box.x);
     }
+    // 本页已认出过拍号的，与它竖直对齐（1.5 格内）的列先试：同一系统各行的拍号上下对齐，行首调号的碎块聚成的列在它左边，
+    // 按从左到右先试会先撞上（新编 f03 低音行四个降号的碎块撑满谱表，OCR 读成 7/2，后面对齐的 4/4 没轮到，整首拍号读错）
+    if (timeFound.length) {
+      const aligned = (c: (typeof cols)[number]) => (timeFound.some((t) => Math.abs(t.x - c.box.x) <= unit.space * 1.5) ? 1 : 0);
+      cols.sort((a, b) => aligned(b) - aligned(a) || a.box.x - b.box.x);
+    }
     /** 这一段 x 上的墨是不是「上下正好撑满谱表」：顶到第五线、底到第一线，又不探出谱表（带干的和弦、谱号都探出去）。 */
     const fillsStaff = (b: Rect): boolean => {
       const xa = Math.max(0, Math.round(b.x)), xb = Math.min(nl.w, Math.round(b.x + b.w));
@@ -2668,11 +2674,17 @@ export async function recognizeRasterPage(
         for (let x = xa; x < xb; x++) if (nl.data[y * nl.w + x]) n++;
         return n >= 2;
       };
+      // 内侧三条线那几行（按 x 取线位）不算缝：去线的缝正落在线上，宽度跟着去线的口径走，只容「线宽 + 2」时
+      // 线宽量成 3 的页上两个数字在中线处就断开（新编 257 低音行 2/2，整首拍号读成 2/4）。
+      // 外线不放：跨过外线就连上谱表外的墨，判成探出谱表（353 首行 4/4 没了）
       const gapMax = Math.ceil(unit.lineThick) + 2;
+      const lys = g.lines.slice(1, 4).map((l) => lineYAt(l, b.x + b.w / 2));
+      const lineRow = (y: number) => lys.some((ly) => Math.abs(ly - y) <= unit.lineThick + 1);
       const walk = (from: number, step: 1 | -1, end: number) => {
         let last = -1;
         for (let y = from, gap = 0; step > 0 ? y < end : y >= end; y += step) {
           if (inkRow(y)) (last = y), (gap = 0);
+          else if (lineRow(y)) continue;
           else if (last >= 0 && ++gap > gapMax) break;
         }
         return last;
