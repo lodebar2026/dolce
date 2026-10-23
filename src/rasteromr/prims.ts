@@ -119,6 +119,8 @@ function runLengths(bin: Binary, vertical: boolean): Uint16Array {
 
 /** 逐像素的纵向游程长度。 */
 const vRuns = (bin: Binary): Uint16Array => runLengths(bin, true);
+/** 竖段放宽横宽的竖向游程下限（格，见「又长又直的墨按 0.3 格收」）：谱表高 4 格，留点断口余量。 */
+const VBAR_LEN = 3.8;
 
 /** 本页谱线的实测厚度：各谱线 y 上逐列（每隔三列）取竖游程，取九成分位（只取不到 0.4 格的，压着符号的不算）。
  *  不取中位数：扫描件的线粗细不匀（望十架 2~3 像素，中位数 2）。 */
@@ -754,7 +756,27 @@ export function findPrimitives(
   // 只认 `faint`，不按线宽/线距比判：干净位图你要等候也是 1px/18.75px，照放宽的话
   // 符头、符尾的竖边混进竖段，合唱谱干净档小节自检 59.5 → 58.4（该曲 35.6 → 31.3）。
   const thinV = faint ? Math.max(thin, unit.space * 0.3) : thin;
-  for (let i = 0; i < vMask0.length; i++) if (hr[i] && hr[i] <= thinV) vMask0[i] = 1;
+  // **又长又直的墨按 0.3 格收**：竖向游程过一个谱表高（`VBAR_LEN` 格）的，横宽放到 0.3 格。线宽量成 2 的细线页上「细」只有 4px，
+  // 5~6px 的小节线进不了竖段（新编 f04、205 整系统丢小节线）；推平时代线宽量成 3、上限 6px，同一根线收得进来。
+  // 头、杠、字那几行横宽远过 0.3 格，长度条件又挡住了符头、符尾的竖边。
+  // 还要**整段都粗**：上下各 1.5 格里八成的行也不窄于「细」的上限——干只在接符尾的几行变粗，放进来干尖残墨就成了假头（当我们回到天家 m3 多出 D5）；
+  // 0.75 格时两个叠着的空心头圈沿连着干也凑得够（父恩广大 m14 低音 C3/E3 二分丢了干读成全音符），窗口要罩得到圈沿外的细干
+  const thinBar = Math.max(thinV, unit.space * 0.3);
+  const barLen = unit.space * VBAR_LEN;
+  const reachY = Math.round(unit.space * 1.5);
+  const thickAround = (i: number): boolean => {
+    const x = i % w, y = (i - x) / w;
+    let n = 0, k = 0;
+    // 只数有墨的行：窗口伸出小节线两端的白行不算
+    for (let yy = Math.max(0, y - reachY); yy <= Math.min(h - 1, y + reachY); yy++) {
+      const r = hr[yy * w + x];
+      if (!r) continue;
+      n++;
+      if (r >= thinV && r <= thinBar) k++;
+    }
+    return k >= n * 0.8;
+  };
+  for (let i = 0; i < vMask0.length; i++) if (hr[i] && (hr[i] <= thinV || (hr[i] <= thinBar && vr[i] >= barLen && thickAround(i)))) vMask0[i] = 1;
   const vMask = close1d(vMask0, w, h, Math.round(unit.lineThick * 2), false);
   const vSegs: LineSeg[] = [];
   /** 叠头和弦的短干（见下），单独交出去 */
