@@ -55,7 +55,7 @@ import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseSt
 import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "./clefmeter";
 import { findDots } from "./dots";
 import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "./flags";
-import { fixByCrossStaff, type DotProbe, type HeadSearch } from "./crossalign";
+import { fixByCrossStaff, type DotProbe, type GapProbe, type HeadSearch } from "./crossalign";
 import { dropBorrowedBeams, fixDottedPairs, fixQuartersByBarSum, tupletsByBarSum } from "./rhythmfix";
 import { finishRasterPage } from "./pagefinish";
 
@@ -5176,7 +5176,14 @@ export async function recognizeRasterPage(
       });
     });
   };
-  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe);
+  // 不验点补附点的验空：拍位左右各 `GAP_HALF_W` 格、谱表上下各伸半格的窗口里，没有整个落在里面、够大的墨块
+  //（去线图；穿出窗口的干、杠不算）。已被认成别的东西的也算墨：漏认的休止常被认成临时记号（新编 396 m6、m10 四分休止读成 ♭）
+  const gapProbe: GapProbe = (stf, x) => {
+    const sp = unit.space;
+    const b = stf.box;
+    return blobsIn(nl, Math.round(x - sp * GAP_HALF_W), Math.round(b.top - sp / 2), Math.round(x + sp * GAP_HALF_W), Math.round(b.bottom + sp / 2)).some((d) => Math.max(d.w, d.h) >= sp * GAP_INK_MIN);
+  };
+  fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe, gapProbe);
 
   return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
 }
@@ -5185,6 +5192,9 @@ const PROBE_MED_FRAC = 0.25;
 /** 补附点验点：点的长宽（格）上下限（见 `dotProbe`）。 */
 const DOTP_MIN = 0.15;
 const DOTP_MAX = 0.75;
+/** 不验点补附点验空：拍位窗口半宽、算数的墨块长边下限（格，见 `gapProbe`）。 */
+const GAP_HALF_W = 0.9;
+const GAP_INK_MIN = 0.5;
 /** 窗口里整个落在里面的墨块（八连通），带面积。 */
 function blobsIn(bin: Binary, x0: number, y0: number, x1: number, y1: number): { x: number; y: number; w: number; h: number; area: number }[] {
   x0 = Math.max(0, x0);

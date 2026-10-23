@@ -12,6 +12,9 @@ export type HeadSearch = (stf: Staff, x: number, hollow: boolean, dur: number, n
 /** 回原图看这个音符头右边有没有一个点（补附点要有它，见 `alternatives`）。 */
 export type DotProbe = (n: StaffNote) => boolean;
 
+/** 回原图看本行谱表在 `x` 这一拍位上有没有没被认领的墨（漏认的休止、头；不验点补附点要这里是空的，见 `fixDurations`）。 */
+export type GapProbe = (stf: Staff, x: number) => boolean;
+
 /**
  * **合唱谱按同系统各谱行的拍位互证改时值**。一个系统里各行同一拍落在同一个 x 上：自己凑满了、拍位又与别的行对得上的行是锚，
  * 它们给出的拍位排成**拍位槽**；凑不满的行（或凑满了却与锚对不上的——两处错互相抵掉）逐列配到槽上，
@@ -26,7 +29,7 @@ export type DotProbe = (n: StaffNote) => boolean;
  *
  * 放在 `findTuplets` 之后：三连音按比例改完时值，凑拍才对得上。只改时值，起点与声部留给后面的 `checkBars` 重算。
  */
-export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], carry: { beats: number; beatType: number } | undefined, sp: number, search?: HeadSearch, dotProbe?: DotProbe): void {
+export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[], carry: { beats: number; beatType: number } | undefined, sp: number, search?: HeadSearch, dotProbe?: DotProbe, gapProbe?: GapProbe): void {
   if (!lastTimeSignature(pg, ctx, carry) || (globalThis as any).process?.env?.XAOFF) return;
   const dbg = !!(globalThis as any).process?.env?.XADBG;
   const cols = (globalThis as any).process?.env?.XADBG === "cols";
@@ -93,6 +96,17 @@ export function fixByCrossStaff(pg: SPage, ctx: Map<Staff, StaffContext>, notes:
           if (!done(res) && loneChords(r)) res = fixDurations(r, slots, trusted, sp, notes, add, pg, "lone", dotProbe, cover);
           if (done(res)) break;
         }
+        // 都解不出：不验点补附点再试一遍（见 `fixDurations` 的 `blindDot`），不补音、只改一处
+        if (!done(res) && !r.full && gapProbe)
+          for (const mode of ["shared", "solo"] as const) {
+            if (mode === "solo" && r.single) break;
+            const res2 = fixDurations(r, slots, trusted, sp, notes, undefined, pg, mode, dotProbe, true, false, gapProbe);
+            if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} 不验点 ${mode}: ${res2}`);
+            if (done(res2)) {
+              res = res2 + "（不验点补附点）";
+              break;
+            }
+          }
         if (res.startsWith("补")) added = true;
         if (dbg) console.error(`XA   行${staves.indexOf(r.stf)} ${res}`);
         // `XADBG=cols`：再逐列打出本行（改完以后的）时值与起点、别的行的起点
@@ -133,6 +147,8 @@ interface Row {
   single: boolean;
   /** 整小节休止、半截小节、借写的小节：不动。 */
   skip: boolean;
+  /** 本行本小节左线（列与槽的 x 都相对它）。 */
+  left: number;
 }
 interface Slot {
   cols: Col[];
@@ -151,7 +167,7 @@ function rowOf(stf: Staff, i: number, checks: BarCheck[], notes: StaffNote[], sp
   if (!chords.length) return undefined;
   chords.sort((a, b) => a.left - b.left);
   const whole = chords.some((c) => c.notes[0].sym.code === "restHBar");
-  const row: Row = { stf, chk, chords, cols: [], full: chk.full && !chk.split && chords.every((c) => c.timed), single: false, skip: whole || !!chk.split || crossed };
+  const row: Row = { stf, chk, chords, cols: [], full: chk.full && !chk.split && chords.every((c) => c.timed), single: false, skip: whole || !!chk.split || crossed, left: bar.left };
   // 时间列：同 `checkFull`——与上一列首和弦横向不相交就开新列，两根干挨得不到半格仍算一列
   for (const c of chords) {
     const last = row.cols[row.cols.length - 1];
@@ -325,7 +341,7 @@ function setDur(n: StaffNote, base: number, dots: number): void {
  * 一段对不上时在易混读法里找改一处（不行再两处）能对上、而且只有一种改法的。
  * 改完 `checkFull` 要凑满、配上槽的列起点正好是槽的起点，否则退回。返回一句给调试看的结论。
  */
-function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, mode: VoiceMode, dotProbe?: DotProbe, cover = true, dry = false): string {
+function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, notes: StaffNote[], add: ((r: Row, s0: Slot, dur: number, up: boolean | null) => StaffChord | null) | undefined, pg: SPage, mode: VoiceMode, dotProbe?: DotProbe, cover = true, dry = false, blindDot?: GapProbe): string {
   const EPS = 1e-6;
   const expect = r.chk.expect;
   const known = r.cols.map((c) => c.slot?.off);
@@ -395,6 +411,13 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
       const short2 = seg.length === 2 && Math.max(...durs) <= 1 / 4 + EPS;
       if (!short2 && Math.abs(sum * 2 - span * 3) < EPS) return `声部${v + 1}段 ${p}-${q} 疑三连音`;
       const opts = seg.map((it) => alternatives(it.c.notes[0], dotProbe));
+      // `blindDot`：一个音独占两个对齐拍位之间的一段、段长正好是它的一倍半——附点被扫描的白条、污渍盖掉了，原图验不出点，
+      // 满拍与别的行的拍位已经把它定死（是爱 p1 m10 钢琴左手 F3）。不带点时它该收音的那一拍（别的行在那里起音的槽）
+      // 本行谱表上得是空的：那里有墨多半是漏认的八分休止（破碎扫描 p3 m33、p7 m78 两行、p8 m89、p10 m97 不验空都补错）
+      const n0 = seg[0].c.notes[0];
+      const gapAt = anchored.find((s1) => Math.abs(s1.off! - start - n0.duration) < EPS);
+      if (blindDot && seg.length === 1 && !n0.rest && !n0.tuplet && !n0.dots && n0.base < 1 && Math.abs(span - durOf(n0.base, 1)) < EPS && gapAt && !blindDot(r.stf, r.left + gapAt.x) && !opts[0].some(([b, d]) => b === n0.base && d === 1))
+        opts[0].push([n0.base, 1]);
       const sols: { j: number; alt: [number, number] }[][] = [];
       for (let j = 0; j < seg.length; j++)
         for (const alt of opts[j]) {
@@ -503,6 +526,8 @@ function fixDurations(r: Row, slots: Slot[], trusted: Set<Row>, sp: number, note
   if (drops.size > 1 || (drops.size && changes.size)) return `删 ${drops.size} 改 ${changes.size}，不做`;
   // 只有一个锚行时只改一处：锚自己也可能是错读凑满的，配错槽、漏了音的行会被硬凑满（破碎扫描 p4 m49、p7 m81 单锚改了两处都错）
   if (trusted.size < 2 && changes.size > 1) return `单锚改动过多 ${changes.size}`;
+  // 不验点补附点只认补这一个点就凑齐的：同时还要改别处的，点多半是陪着错改凑数（破碎扫描 p3 m33 八分读成四分又补点）
+  if (blindDot && changes.size + drops.size > 1) return `不验点补附点要只改一处（${changes.size + drops.size}）`;
   const saved = r.chords.flatMap((c) => c.notes.map((n) => ({ n, base: n.base, dots: n.dots, duration: n.duration, beams: n.beams })));
   const savedC = r.chords.map((c) => ({ c, offset: c.offset, dur: c.dur, timed: c.timed }));
   const before = [...changes.keys()].map((c) => c.notes[0].duration);
