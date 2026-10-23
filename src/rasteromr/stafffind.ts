@@ -170,11 +170,18 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
       }
       return n >= 3;
     };
+    // 点状虚线（新编 f07 第二系统高音行，谱号到第一个音之间点距过半格）：半格窗只见三条线，再放到一格窗走一遍，同样退过竖笔与空列
+    const dotted = present(Math.max(1, Math.round(space)));
     const walkEnd = (from: number, dir: -1 | 1) => {
       const a = walk(from, dir, strict);
-      let b = walk(from, dir, dashed);
-      while ((b - a) * dir > 0 && (vertical(b) || !near(b))) b -= dir;
-      return (b - a) * dir > space * 2 ? b : a;
+      const back = (b: number) => {
+        while ((b - a) * dir > 0 && (vertical(b) || !near(b))) b -= dir;
+        return b;
+      };
+      const b = back(walk(from, dir, dashed));
+      if ((b - a) * dir > space * 2) return b;
+      const c = back(walk(from, dir, dotted));
+      return (c - a) * dir > space * 2 ? c : a;
     };
     const gapMax = Math.max(3, Math.round(space * 0.5));
     const runMin = Math.max(4, Math.round(space));
