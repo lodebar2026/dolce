@@ -51,7 +51,7 @@ import { type LineFrame, makePitchSteps, ledgerCandidates, makePitchGrid, shared
 import { bridgeFaintBars, pastSysLine, joinThroughBars, inkSystemBarlines, bridgeFaintSysLines, dropLoneBarlines, voteSystemBarlines } from "./barvote";
 import { nearRestLine, restKind, nearStaffStart, fillAround, isEighthRest, symbolInk, isStackedPair, isBarRest, enclosedWhite, crossRuns, midOfStaff, offStaffRest, sharpCrossbars, crossbarAccidental, crossbarAccidentalBox, flatAccidentalBox, tallStrokes, longestVRun, splitAt, sharpShape, wholesByShape, openCavities, STAFF_START } from "./restshape";
 import { sharpsByStrokes, dropCourtesyKeys, demoteMidKeys, extendKeyChains, dropHeadsInKey, pruneMidKeys, fixKeyNaturals, keySections, extendKeyByStrokes, shareSystemKeys, shareKeySignature, carrySystemKeys, extendKeyByCarry, findMidKeysByTemplate, shareMidKeys, dropBarsInKey, keyFromChords, fixFlatReadAsSix, attachAccidentalsByPitch, naturalsByStrokes, KEY_GAP, KEY_GAP_FIRST, LOOSE_ACC_GAP } from "./keysig";
-import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseStems, splitUnisons, doubleUnisonWholes, markCrossStaff } from "./stems";
+import { vRunAt, snapHeadsToStems, splitSecondStems, splitVoiceStems, tagLooseStems, mergeSplitStems, splitUnisons, doubleUnisonWholes, markCrossStaff } from "./stems";
 import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "./clefmeter";
 import { findDots } from "./dots";
 import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "./flags";
@@ -4606,6 +4606,7 @@ export async function recognizeRasterPage(
   tagSystemBarlines(pg);
   findStems(pg);
   tagLooseStems(pg);
+  mergeSplitStems(pg);
   // 符尾**按位置自举**，不查字典（见 `bootstrapFlags`）
   for (const f of bootstrapFlags(nl, pg, prims.beams, unit, harmonyMasks)) {
     ledger.claim(f.box, `flag:${f.code}`);

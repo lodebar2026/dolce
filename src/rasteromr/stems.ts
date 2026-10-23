@@ -3,9 +3,9 @@ import type { Binary } from "../omrkit/types";
 import type { Rect } from "../omrkit/types";
 import { isLeadNoteBarline, systemGroups } from "../staffomr/page";
 import { type BeamShape, type StaffNote, type StemInfo } from "../staffomr/notedata";
-import type { SPage, Sym } from "../staffomr/model";
+import type { Seg, SPage, Sym } from "../staffomr/model";
 import { overlapY } from "../staffomr/model";
-import { type RasterSym } from "./adapt";
+import { pushSeg, type RasterSym } from "./adapt";
 import { type LineSeg } from "./prims";
 import { type RasterUnit } from "./staffline";
 
@@ -59,6 +59,53 @@ export function tagLooseStems(pg: SPage): void {
     // 小节线后紧跟着的第一个音贴着小节线的左缘（同 `findStems`，见 `isLeadNoteBarline`）
     if (!twoSides && on.every((n) => n.ownerStaff && isLeadNoteBarline(l, n, n.ownerStaff))) continue;
     if (upEnd || downEnd || twoSides) l.addTag("Stem");
+  }
+}
+
+/** 断成两截的一根干：两截中线横向差不过这么多格（`mergeSplitStems`）。 */
+const SPLIT_STEM_DX = 0.15;
+/** 两截各自伸出对方至少这么多格才并（`mergeSplitStems`）。 */
+const SPLIT_STEM_OUT = 0.25;
+/** 并成的干至少一头离所挂某个头的头心不过这么多格（`mergeSplitStems`）。 */
+const SPLIT_STEM_END = 0.75;
+
+/**
+ * **一根干抽成了上下两截、互相叠着**：手写叠头和弦的干被头团切开，竖段一截从顶上那个头起、一截从下面那个头起，
+ * 中线差一两个像素、竖向叠着一大段（是爱 p3 m46 钢琴右手 G5/B♭5：一截 2987–3057 挂两个头、一截 3008–3085 只挂 G5，
+ * 外层杠在 3078，只接得上第二截，和弦按第一截算就少一层杠，十六分读成八分）。
+ * 两截中线差不过 `SPLIT_STEM_DX` 格、竖向相交、两头各自伸出对方、又贴着**同一个头**的，并成一根（上下端取两截的并）。
+ * 同一个头两侧的两根干（同度两声部）中线差一个头宽，并不到一起。
+ */
+export function mergeSplitStems(pg: SPage): void {
+  const sp = pg.normalStaffSpace || pg.space;
+  const heads = pg.symbols.filter((s0) => s0.ownerStaff && s0.hasTag("Note") && /^notehead/.test(s0.code));
+  const touches = (l: Seg, n: Sym) => overlapY(l.box, n.box) && (Math.abs(n.box.left - l.cx) < sp * 0.2 || Math.abs(n.box.right - l.cx) < sp * 0.2);
+  for (let again = true; again; ) {
+    again = false;
+    const stems = pg.segs.filter((l) => l.isV && l.hasTag("Stem"));
+    for (let i = 0; i < stems.length && !again; i++)
+      for (let j = i + 1; j < stems.length && !again; j++) {
+        const a = stems[i];
+        const b = stems[j];
+        if (Math.abs(a.cx - b.cx) > sp * SPLIT_STEM_DX || Math.min(a.bottom, b.bottom) < Math.max(a.top, b.top)) continue;
+        // 两头要各自伸出对方（`SPLIT_STEM_OUT` 格以上）：一截整个包在另一截里的是和弦每个头各抽了一段，并了什么也不添，
+        // 反倒把两声部分开的两根干并成一根（新编 340 m14 女低 E4 并进女高的和弦）
+        const [hi, lo] = a.top <= b.top ? [a, b] : [b, a];
+        if (lo.top - hi.top < sp * SPLIT_STEM_OUT || lo.bottom - hi.bottom < sp * SPLIT_STEM_OUT) continue;
+        if (!heads.some((n) => touches(a, n) && touches(b, n))) continue;
+        // 并成的一根至少有一头落在它所挂的头上（离头心 `SPLIT_STEM_END` 格内）：两头都离头远的，是两截别的竖笔（干尾 + 小节线、
+        // 两个声部的干）碰巧共线，不是一根干断成两截
+        const top = Math.min(a.top, b.top);
+        const bottom = Math.max(a.bottom, b.bottom);
+        const cys = heads.filter((n) => touches(a, n) || touches(b, n)).map((n) => (n.box.top + n.box.bottom) / 2);
+        const endGap = Math.min(...cys.map((cy) => Math.min(Math.abs(cy - top), Math.abs(cy - bottom))));
+        if (endGap > sp * SPLIT_STEM_END) continue;
+        const keep = a.len >= b.len ? a : b;
+        for (const l of [a, b]) pg.segs.splice(pg.segs.indexOf(l), 1);
+        const m = pushSeg(pg, pg.objs.length + pg.segs.length + 1, { x0: keep.cx, y0: Math.min(a.top, b.top), x1: keep.cx, y1: Math.max(a.bottom, b.bottom), lw: Math.max(a.lw, b.lw), maxLw: Math.max(a.lw, b.lw) });
+        m.addTag("Stem");
+        again = true;
+      }
   }
 }
 

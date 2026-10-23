@@ -976,7 +976,13 @@ export function findPrimitives(
     const tol = Math.max(2, unit.lineThick * 2);
     // 干端常停在谱线上（去线时断开），杠端在线下半格内
     const gap = Math.max(2, unit.space * 0.5);
-    return vSegs.some((v) => Math.abs((v.x0 + v.x1) / 2 - x) <= tol && Math.min(v.y0, v.y1) <= y + gap && Math.max(v.y0, v.y1) >= y - gap);
+    if (vSegs.some((v) => Math.abs((v.x0 + v.x1) / 2 - x) <= tol && Math.min(v.y0, v.y1) <= y + gap && Math.max(v.y0, v.y1) >= y - gap)) return true;
+    // 手写干这时常还没抽成竖段（被头团、杠切开，要到 `beamStems` 才从杠上补出来）：杠端旁有一道 `STEEP_STEM_RUN` 格以上的竖墨也算
+    //（是爱 p3 m46 钢琴右手十六分，组里四根干只有第一根抽出了竖段）
+    const run = unit.space * STEEP_STEM_RUN;
+    for (let yy = Math.max(0, Math.round(y - gap)); yy <= Math.min(h - 1, Math.round(y + gap)); yy++)
+      for (let xx = Math.max(0, Math.round(x - tol)); xx <= Math.min(w - 1, Math.round(x + tol)); xx++) if (vr[yy * w + xx] >= run) return true;
+    return false;
   });
   // **网点灰的杠被纹理横着切成上下两条**（当我们回到天家 m12：一条杠读成高 3、高 4 两条），被当成两层，
   // 附点八分读成十六分。x 范围基本重合、上下间隙不过一个线宽、合起来不过一根杠厚（0.8 格）的并成一条
@@ -1012,6 +1018,8 @@ export function findPrimitives(
 const STEEP_SLOPES = [0.3, 0.4, 0.5, 0.65, 0.8];
 /** 陡斜杠沿斜向的游程横跨至少这么多格。 */
 const STEEP_RUN = 1.5;
+/** 陡斜杠的端头没有竖段时，旁边的竖墨至少这么多格才算干（见 `steepBeams` 的 `stemAt`）。 */
+const STEEP_STEM_RUN = 1.5;
 /** 陡斜杠中心线的斜率下限：再平的上面那一路收得到。 */
 const STEEP_MIN = 0.25;
 
@@ -1067,7 +1075,24 @@ function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: num
       return cx >= b.x && cx <= b.x + b.w && Math.abs(q.box.y + q.box.h / 2 - yAt(cx)) < sp * 0.35;
     };
     for (let i = beams.length - 1; i >= 0; i--) if (on(beams[i])) beams.splice(i, 1);
-    beams.push({ ...line, box: b });
+    // 横向那一路收下的同一层另一截（中心在本杠外、横向叠着、交叠处贴着本杠延长线）：本杠在叠着的那头剪到它的端点，
+    // 不然两截在交叠处挂同一根干、算成两层（是爱 p3 m46 内层杠被干切成几截，陡杠这一路收左两截、横向那一路收右段，F5/A5 读成三十二分）。
+    // 不并成一条：把长杠按陡杠的斜率拉长会错挂别的干
+    let { x0, x1 } = line;
+    for (const q of beams) {
+      const lo = Math.max(q.box.x, x0);
+      const hi = Math.min(q.box.x + q.box.w, x1);
+      if (hi <= lo) continue;
+      const xm = (lo + hi) / 2;
+      const qy = q.y0 + ((q.y1 - q.y0) * (xm - q.x0)) / Math.max(1, q.x1 - q.x0);
+      if (Math.abs(qy - yAt(xm)) >= sp * 0.35) continue;
+      // 只剪部分相叠的（对方伸出本杠另一头），剪掉的不过本杠一半
+      if (hi - lo > (line.x1 - line.x0) / 2) continue;
+      if (q.box.x > x0 && q.box.x + q.box.w > x1) x1 = Math.min(x1, q.box.x - 1);
+      else if (q.box.x < x0 && q.box.x + q.box.w < x1) x0 = Math.max(x0, q.box.x + q.box.w);
+    }
+    const box = x0 === line.x0 && x1 === line.x1 ? b : { ...b, x: Math.round(x0), w: Math.round(x1 - x0) + 1 };
+    beams.push({ ...line, x0, y0: yAt(x0), x1, y1: yAt(x1), box });
   }
 }
 
@@ -1411,9 +1436,14 @@ function dropHeadEndBeams(beams: BeamQuad[], vSegs: LineSeg[], unit: RasterUnit)
   const tol = unit.lineThick + 2;
   const inBox = (x: number, y: number, b: Rect) => x >= b.x - tol && x <= b.x + b.w + tol && y >= b.y - tol && y <= b.y + b.h + tol;
   const drop = new Set<BeamQuad>();
+  // 一摞：横向重叠、上下 1.5 格内的几层
+  const stackOf = (a: BeamQuad) => beams.filter((o) => o.box.x < a.box.x + a.box.w && a.box.x < o.box.x + o.box.w && Math.abs(o.box.y - a.box.y) <= unit.space * 1.5);
   for (const q of beams) {
     let touched = 0;
     let fake = true;
+    // 比的是两头各自那一摞里最长的：陡杠的内层常被干切成一格半的几截，干顶却挂着头连成的一条横带，拿截长去比就把真杠剔了；
+    // 它旁边挨着整条外层杠，这一头才是杠那头（是爱 p3 m46 钢琴右手十六分）
+    const own = Math.max(...stackOf(q).map((o) => o.box.w));
     for (const v of vSegs) {
       const vx = (v.x0 + v.x1) / 2;
       const top = Math.min(v.y0, v.y1);
@@ -1427,7 +1457,7 @@ function dropHeadEndBeams(beams: BeamQuad[], vSegs: LineSeg[], unit: RasterUnit)
       // 那一头挂的常是半截杠：比的是那一摞（横向重叠、上下 1.5 格内的几层）里最长的一条
       const at = beams.filter((o) => o !== q && inBox(vx, far, o.box));
       const stack = beams.filter((o) => o !== q && at.some((a) => o.box.x < a.box.x + a.box.w && a.box.x < o.box.x + o.box.w && Math.abs(o.box.y - a.box.y) <= unit.space * 1.5));
-      if (!stack.some((o) => o.box.w > q.box.w)) { fake = false; break; }
+      if (!stack.some((o) => o.box.w > own)) { fake = false; break; }
     }
     if (touched && fake) drop.add(q);
   }
