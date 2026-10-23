@@ -662,7 +662,9 @@ export function findStaffForNote(pg: SPage, nt: Sym, lines: Seg[]): boolean {
 
 /** `Page::findLegers`：谱表外的符头要有足够多条加线撑着才认。 */
 export function findLegers(nt: Sym, stf: Staff, lines: Seg[]): boolean {
-  const y2 = stf.cy;
+  // 中线与音级按符头所在 x 取（位图路弯、斜的谱行；矢量路 `topAt` 就是盒的上下沿）：按整行名义中线算，
+  // 谱行往右斜下几像素，挂在末线下的 D4 就数成 C4、要一条加线（望十架 p6 女低三个 D4 整串丢掉）
+  const y2 = (stf.topAt(nt.px) + stf.bottomAt(nt.px)) / 2;
   const stepDist = stf.stepDistance();
   // 往谱表反方向再让半格，免得贴着符头的那条加线被区间端点切掉
   const y1 = nt.py > y2 ? nt.py + stepDist : nt.py - stepDist;
@@ -684,7 +686,7 @@ export function findLegers(nt: Sym, stf: Staff, lines: Seg[]): boolean {
   // 因为它们本来就没有加线。移植成浮点除再加一道 `need > 0` 的闸，
   // 这些音符会全被丢掉；丢掉的符头连带它的符干也无人认领，那根符干随后被当成小节线
   // （实测 p100 的 x=409 就是这么来的）。
-  const need = Math.floor(Math.abs(stf.middleStep(nt.py)) / 2) - 2;
+  const need = Math.floor(Math.abs(stf.middleStep(nt.py, nt.px)) / 2) - 2;
   // 要三条以上加线的，只数从谱表边缘起**按线距连成一串**的：谱表间歌词、简谱字的横笔也横跨符头、长短合格，
   // 会替离谱表很远的假头「数够」加线。两条以内不查：和弦里错开的头，近谱表那条加线只横跨旁边那个头
   //（向主唱新歌 m7 A3 下面的 C4 线只跨 C♯4）

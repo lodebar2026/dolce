@@ -1358,6 +1358,54 @@ export async function recognizeRasterPage(
     const known = [...headBoxes, ...stacked.map((q) => q.box), ...notHollow.values()];
     for (const hd of headsBetweenStemPairs(prims.vSegs, known, unit, pitchGrid, size, raster.bin, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x), isBar)) stacked.push(hd);
   }
+  // **贴着小节线形竖段（`barSegs`）、又挂不成它的头的不要**：干在头左边只会朝下（头在竖段上端）、在右边只会朝上（头在下端），
+  // 和弦中段的头另有一个头占着那一端。那一端没有头的，是小节线、谱线与延音线弧端围出的白格
+  //（望十架 p8 m61 小节线后两道延音线收尾，按音高配出两个二分头、小节线当干，小节多两拍、后面四个四分被砍成八分）
+  {
+    const sp = unit.space;
+    const atEndOf = (bar: LineSeg) => {
+      const cx = (bar.x0 + bar.x1) / 2;
+      return (b: Rect, left: boolean) => {
+        const end = left ? Math.min(bar.y0, bar.y1) : Math.max(bar.y0, bar.y1);
+        return Math.abs(b.y + b.h / 2 - end) <= sp * 0.6 && (left ? b.x + b.w / 2 > cx : b.x + b.w / 2 < cx) && Math.abs((left ? b.x : b.x + b.w) - cx) <= sp * 0.5;
+      };
+    };
+    const lone = (b: Rect) => {
+      const bar = barSegs.find((s0) => {
+        const half = s0.maxLw / 2, cx = (s0.x0 + s0.x1) / 2;
+        const cy = b.y + b.h / 2;
+        if (Math.min(s0.y0, s0.y1) > cy || Math.max(s0.y0, s0.y1) < cy) return false;
+        // 竖段在盒左缘或右缘附近（盒常压进竖段里半个线宽以上）
+        return (cx + half >= b.x - 2 && cx <= b.x + sp * 0.4) || (cx - half <= b.x + b.w + 2 && cx >= b.x + b.w - sp * 0.4);
+      });
+      if (!bar) return false;
+      // 竖墨伸出谱表半格以上的不是本行的小节线：干穿过和弦伸到谱表外（是爱 p3 m36 手写 B♭5/E5/C5 共干，C5 头贴在干中段）
+      {
+        const B = raster.bin;
+        const cx = Math.round((bar.x0 + bar.x1) / 2);
+        const ink = (y: number) => y >= 0 && y < B.h && [cx - 1, cx, cx + 1].some((x) => x >= 0 && x < B.w && !!B.data[y * B.w + x]);
+        const reach = Math.round(sp * 0.6);
+        let up = 0, dn = 0;
+        while (up < reach && ink(Math.min(bar.y0, bar.y1) - unit.lineThick - 1 - up)) up++;
+        while (dn < reach && ink(Math.max(bar.y0, bar.y1) + unit.lineThick + 1 + dn)) dn++;
+        if (up >= reach || dn >= reach) return false;
+      }
+      const left = (bar.x0 + bar.x1) / 2 < b.x + b.w / 2;
+      // 头自己另有一根干的不算：右缘朝上、或左缘朝下，干端落在头上（有一位神 m1 小节线后紧贴的 F4 二分，干在右缘）
+      const cy = b.y + b.h / 2;
+      const ownStem = prims.vSegs.some((v) => {
+        if (v === bar) return false;
+        const vx = (v.x0 + v.x1) / 2, top = Math.min(v.y0, v.y1), bot = Math.max(v.y0, v.y1);
+        if (bot - top < sp * 2) return false;
+        if (Math.abs(vx - (b.x + b.w)) <= sp * 0.3 && Math.abs(bot - cy) <= sp * 0.6) return true;
+        return Math.abs(vx - b.x) <= sp * 0.3 && Math.abs(top - cy) <= sp * 0.6 && Math.abs(vx - (bar.x0 + bar.x1) / 2) > 2;
+      });
+      if (ownStem) return false;
+      const at = atEndOf(bar);
+      return !at(b, left) && !takenBoxes.some((t) => at(t, left)) && !stacked.some((o) => o.box !== b && at(o.box, left));
+    };
+    for (let i = stacked.length - 1; i >= 0; i--) if (lone(stacked[i].box)) stacked.splice(i, 1);
+  }
   // 弧与谱线围出的空当当成了空心头的内腔（`notehead.ts::archCavity`），剔掉，墨留给弧那一步；
   {
     const onStaffLine = (y: number, x?: number) => grid.onLine(y, unit.lineThick / 2, x);
@@ -1921,6 +1969,16 @@ export async function recognizeRasterPage(
       const fShape = w >= 1.2 && w <= 2.0 && h >= 2.0 && h <= 3.0 && Math.abs(b.y - top) <= sp * 0.5 && b.y + b.h <= bot + sp * 0.5;
       const gShape = w >= 1.3 && w <= 2.4 && h >= 3.6 && h <= 5.8 && b.y <= top - sp * MID_CLEF_G_TOP && b.y + b.h >= bot + sp * 0.7;
       if (!fShape && !gShape) continue;
+      // 高音谱号是细笔画：横向连着一格以上墨的行不过两成。叠置的实心和弦带干，宽高、签名、墨占比都像（是爱 p3 m32 B♭4/D5/F5 读成行中高音谱号）
+      if (gShape) {
+        let wide = 0;
+        for (let y = b.y; y < b.y + b.h; y++) {
+          let run = 0, best = 0;
+          for (let x = b.x; x < b.x + b.w; x++) best = Math.max(best, (run = nl.data[y * nl.w + x] ? run + 1 : 0));
+          if (best >= sp) wide++;
+        }
+        if (wide > b.h * 0.2) continue;
+      }
       const sig = binSig(nl, b);
       let hit: { smufl: SmuflName; dist: number } | null = null;
       // 墨占比也要像：谱号是细笔画；实心头连着干和尾的和弦墨实得多（万古磐石歌 m? 八分二度）
@@ -2027,6 +2085,8 @@ export async function recognizeRasterPage(
       const cx0 = s0.x + s0.w / 2;
       const cy0 = s0.y + s0.h / 2;
       if (cx0 >= b.x - 1 && cx0 <= b.x + b.w + 1 && cy0 >= b.y - 1 && cy0 <= b.y + b.h + 1) syms.splice(i, 1);
+      // 符头不会压着波浪线：横向三成以上叠在线上的头是小节线与波浪线之间的白读成的空心头（是爱 p3 m32 两个）
+      else if (/^notehead/.test(syms[i].code) && cy0 >= b.y && cy0 <= b.y + b.h && Math.min(s0.x + s0.w, b.x + b.w) - Math.max(s0.x, b.x) >= s0.w * 0.3) syms.splice(i, 1);
     }
     ledger.claim(b, "arpeggio");
   }
@@ -4775,9 +4835,8 @@ export async function recognizeRasterPage(
   // 头心：在头中段那几列里，从头盒中心往上下走到墨断，墨高像一个头（0.8~1.3 格）、没碰到五线的，取这段墨的中心；
   // 和弦叠头连成两格高、空心头的内腔把墨断开、「8」字叠头顺着谱线连到里面那个头（万古磐石歌），仍用头盒中心。
   // 格子：谱表边线加上头左右那一段的加线，从边线往外逐条排；头心落在哪条线上（离线不到格距的 0.25）、哪个间里，就是哪一级。
-  // 超出最外一条加线 0.9 格的不管（照旧按线距外推）
+  // 超出最外一条加线 0.75 格的不管（照旧按线距外推）
   {
-    const sp0 = unit.space;
     const B = raster.bin;
     const legers = pg.segsWithTag("Leger").filter((sg) => sg.isH);
     for (const h of pg.symbols) {
@@ -4785,6 +4844,9 @@ export async function recognizeRasterPage(
       const stf = h.ownerStaff;
       const hx = (h.box.left + h.box.right) / 2;
       const ys = stf.lineYsAt ? stf.lineYsAt(hx) : stf.lineYs;
+      // 格距一律按本行谱自己的线距：一页上常有小一号的谱行（望十架每个系统的长笛行线距 21px、整页 23.4px），
+      // 按整页的量，小谱上第二加线上的 C6 落在「最外加线外 0.9 格以内」读成 B5
+      const sp0 = (ys[4] - ys[0]) / 4;
       if (h.py > ys[0] - sp0 * 0.3 && h.py < ys[4] + sp0 * 0.3) continue;
       const above = h.py < ys[0];
       const lineRow = (y: number) => ys.some((ly) => Math.abs(ly - y) <= unit.lineThick);
@@ -4813,7 +4875,7 @@ export async function recognizeRasterPage(
       // 边线往外的格子：边线、加线（同一条加线常拆成几段，按 y 并起来）
       const edge = above ? ys[0] : ys[4];
       const out = above ? -1 : 1;
-      const spL = (ys[4] - ys[0]) / 4;
+      const spL = sp0;
       const grid = [edge];
       const ly = legers
         // 加线比头宽，至少一侧伸出头外：只在头里面的横墨是粗体头自己的笔画（我一生要赞美你）
@@ -4836,7 +4898,8 @@ export async function recognizeRasterPage(
       for (let i = 1; i < grid.length; i++) if (Math.abs(yc - grid[i]) < Math.abs(yc - grid[j])) j = i;
       const dj = (yc - grid[j]) * out;
       if (Math.abs(dj) <= gapAt(j) * 0.25) pos = j * 2;
-      else if (dj > 0) pos = j + 1 < grid.length || dj < sp0 * 0.9 ? j * 2 + 1 : -1;
+      // 最外那条线以外：间里的头心离线半格、加线上的一格，过 0.75 格的是没认出加线的那一级，交给 `middleStep` 外推
+      else if (dj > 0) pos = j + 1 < grid.length || dj < sp0 * 0.75 ? j * 2 + 1 : -1;
       else pos = j > 0 ? j * 2 - 1 : -1;
       if (pos < 0) continue;
       // 换成这一级的理想 y，交给 `middleStep` 读；级数没变的不动（临时记号按 py 配对，挪了会配岔：信心使我得胜）

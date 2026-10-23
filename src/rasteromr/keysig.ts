@@ -209,7 +209,7 @@ const MID_KEY_PRECISION = 0.45;
  * 五行一行都没认出，整段升降全错；按竖笔数也只量得出半截）。
  * 转调之后，**下一个系统的行首必然印着新调号**，而行首那几路是认得好的。于是拿它当模板：
  * 双小节线右边一格半以内滑动，与下一系统同种谱号那几行的行首调号逐像素比墨（谱线那几行不算，一像素以内算对上）。
- * 同一系统、同一处至少两行对上同一个读数才收；没对上的行交给 `shareMidKeys` 补。已有行中调号的那处不动。
+ * 同一系统、同一处至少两行对上同一个读数才收；没对上的行交给 `shareMidKeys` 补。已有行中调号而读数与模板不同的，照模板换掉。
  * 一页最后一个系统里的转调没有模板，不管。
  */
 export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, bin: Binary, unit: { space: number; height: number; lineThick?: number }): void {
@@ -221,7 +221,7 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
   const ysAt = (st: Staff, x: number) => st.lineYsAt?.(x) ?? st.lineYs;
   const onLine = (st: Staff, y: number, x: number) => ysAt(st, x).some((l) => Math.abs(y - l) <= thick);
   const groups = systemGroups(pg).sort((a, b) => a[0].box.top - b[0].box.top);
-  const found: { c: StaffContext; x: number; fifths: number; syms: Sym[]; gi: number }[] = [];
+  const found: { c: StaffContext; x: number; fifths: number; syms: Sym[]; had: Sym[]; gi: number }[] = [];
   for (const [gi, g] of groups.entries()) {
     const next = groups[gi + 1];
     if (!next) continue;
@@ -240,7 +240,8 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
         const right = doubleBarRight(bin, st.lineYsAt?.(x) ?? st.lineYs, x, sp);
         if (right === null) continue;
         prev = right;
-        if (c.key.some((k) => k.box.left > right && k.box.left < right + sp * 3)) continue;
+        // 已认出的行中调号也拿模板再比一遍：簇里漏了一个的（望十架 p6 转两个升号，第二个压着两条粗线、块高出一截字典没认）照模板改
+        const had = c.key.filter((k) => k.box.left > right && k.box.left < right + sp * 3);
         const clefHere = (c.clefs ?? []).filter((q) => q.box.left < right).pop() ?? c.clef;
         let best: { score: number; cand: StaffContext; dx: number; dy: number } | null = null;
         for (const cand of cands) {
@@ -248,7 +249,7 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
           const csp = cand.staff.stepDistance() * 2;
           if (Math.abs(csp - st.stepDistance() * 2) > sp * 0.12) continue;
           const head = headKey(cand);
-          if (keyFifths(head) === fifthsAt(c, right)) continue;
+          if (keyFifths(head) === (had.length ? keyFifths(had) : fifthsAt(c, right))) continue;
           const tx0 = Math.round(Math.min(...head.map((k) => k.box.left)));
           const tx1 = Math.round(Math.max(...head.map((k) => k.box.right)));
           const cys = ysAt(cand.staff, (tx0 + tx1) / 2);
@@ -283,7 +284,7 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
               best = { score: recall, cand, dx, dy };
             }
         }
-              if (!best) continue;
+        if (!best) continue;
         const head = headKey(best.cand);
         const tx0 = Math.min(...head.map((k) => k.box.left));
         const tx1 = Math.max(...head.map((k) => k.box.right));
@@ -294,14 +295,15 @@ export function findMidKeysByTemplate(pg: SPage, ctx: Map<Staff, StaffContext>, 
           sym.addTag("Key");
           return sym;
         });
-        found.push({ c, x: right, fifths: keyFifths(head), syms, gi });
+        found.push({ c, x: right, fifths: keyFifths(head), syms, had, gi });
       }
     }
   }
   for (const f of found) {
     const peers = found.filter((o) => o.gi === f.gi && Math.abs(o.x - f.x) <= sp * MID_KEY_DX && o.fifths === f.fifths);
     if (new Set(peers.map((o) => o.c)).size < 2) continue;
-    f.c.key.push(...f.syms);
+    const drop = new Set(f.had);
+    f.c.key = [...f.c.key.filter((k) => !drop.has(k)), ...f.syms];
     f.c.key.sort((a, b) => a.box.left - b.box.left);
   }
 }
@@ -832,6 +834,15 @@ export function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin
       count.set(sig, (count.get(sig) ?? 0) + 1);
     }
     if ([...count.values()].some((v) => v >= 2)) for (const c of cs) own.add(c);
+    // 同种记号、个数比 k 少，但按块与竖笔两路数得一样、系统里也没有哪行竖笔数得更多的，同样是这个系统自己的调
+    //（望十架 p1：上一个系统行中转一个降号，下一个系统四行按块、按竖笔都是一个降号，被全页过半的五个降号盖掉）
+    const rs = rows.filter((r) => cs.includes(r.c));
+    const agree = rs.filter((r) => {
+      const h = headOf(r.c);
+      return h.length > 0 && h.length < k && h.every((q) => q.code === code) && strokesOf(r).length === h.length;
+    });
+    const j = agree[0] ? headOf(agree[0].c).length : 0;
+    if (agree.length >= 2 && agree.every((r) => headOf(r.c).length === j) && rs.every((r) => strokesOf(r).length <= j)) for (const c of cs) own.add(c);
   }
   // **按块多认的收回来**：比 k 多的行只是少数（不到三分之一）、而竖笔没有哪一行数过 k——多出来的是调号后面
   // 头一个音的临时记号（三博士歌一个升号，有一行按块读成三个，`shareKeySignature` 见别的行都是它的前缀就全页照它补）
