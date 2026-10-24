@@ -1373,7 +1373,7 @@ export class OmrController implements FormatSource {
   /** 识别（或上次重建）刚落地时各音的样子（识别 id → 音高 + 时值的签名）：对照视图按它判「改过」。按原文缓存 */
   private staffBase: { text: string; format: DocFormatId; sig: Map<string, string>; noId: number; marks: StaffMarkBase } | null = null;
   /** 索引条目（`omrlinks.ts::markEntryKey`）→ 它现在对的那个歌词 / 弧 / 力度 / 文字的识别 id */
-  private staffMarkOf = new Map<string, string>();
+  private staffMarkOf = new Map<string, { id: string; stopId?: string }>();
 
   /**
    * 识别落地时那份（`staffEmitted`，MusicXML）各音的签名。当前是文本格式时，基准也先过一遍同一种格式（写出再读回、投影），
@@ -1550,7 +1550,10 @@ export class OmrController implements FormatSource {
       for (const mk of staffMarksOf(sv, xml)) {
         const ids = xml ? mk.ids : (mk.key && base0?.marks.idsByKey.get(mk.key)) || (mk.alt && base0?.marks.idsByKey.get(mk.alt)) || [];
         for (const id of ids) if (!markNow.has(id)) markNow.set(id, mk.sig);
-        if (ids[0] && !this.staffMarkOf.has(mk.entry)) this.staffMarkOf.set(mk.entry, ids[0]);
+        if (!ids[0]) continue;
+        // 跨行接上的弧：止端那半截另有 id。文本格式按位置反查得到的是 [起端, 止端] 两个
+        const stopId = xml ? mk.stopId : ids[1];
+        for (const k of [mk.entry, mk.alsoEntry]) if (k && !this.staffMarkOf.has(k)) this.staffMarkOf.set(k, { id: ids[0], ...(stopId ? { stopId } : {}) });
       }
     }
     const othersByPage = new Map<number, StaffSourceMark[]>();
@@ -1886,8 +1889,11 @@ export class OmrController implements FormatSource {
   staffMarkHit(entry: SyncEntry): SVGGraphicsElement | null {
     if (!this.staffResult) return null;
     const key = markEntryKey(entry);
-    const id = key ? this.staffMarkOf.get(key) : undefined;
-    return id ? document.getElementById("score-pane")?.querySelector<SVGRectElement>(`.omr-hits rect[data-omr="${id}"]`) ?? null : null;
+    const hit = key ? this.staffMarkOf.get(key) : undefined;
+    if (!hit) return null;
+    // 弧的 `)` 那一端（成对条目里靠后的那条）对止端那半截的框
+    const id = hit.stopId && entry.pair && entry.pair.from < entry.from ? hit.stopId : hit.id;
+    return document.getElementById("score-pane")?.querySelector<SVGRectElement>(`.omr-hits rect[data-omr="${id}"]`) ?? null;
   }
 
   /** 五线谱对照：和弦里每个音的命中框（`hitFor` 只给第一个音的）；不是五线谱会话返回 null */

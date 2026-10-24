@@ -237,7 +237,8 @@ export function stampXmlIds(xml: string, from: StaffView, load: (xml: string) =>
  * - `id`：MusicXML 原文读元素上的 `id`（`<lyric>` / `<direction>` / `<slur>`、`<tied>` 起止两端，`toxml.ts` 回填，挪了跟着走）；文本格式没有
  * - `key`：按宿主音的识别 id 认的位置（歌词「哪个音第几段」、力度文字「哪个音上第几条」、弧「起在哪个音上第几条」），文本格式靠它反查 id
  * - `sig`：判「改过」比的样子（宿主音与文字；弧是起止两音）
- * - `entry`：对上索引条目用的键（`markEntryKey`）
+ * - `entry`：对上索引条目用的键（`markEntryKey`）；`alsoEntry`：文本格式的力度、注记条目挂在宿主音上（`AttachedSource`），按「宿主音 + 种类」认
+ * - `stopId`：跨行接上的弧，后半截自己的 id（写在止端）：点 `)` 那一端的条目对它的框
  */
 export interface StaffMarkNow {
   ids: string[];
@@ -246,15 +247,35 @@ export interface StaffMarkNow {
   alt?: string;
   sig: string;
   entry: string;
+  alsoEntry?: string;
+  stopId?: string;
 }
 
 /** 索引条目（`sync.ts::SyncEntry`）→ `StaffMarkNow.entry`；不是这几类的返回 null */
-export function markEntryKey(e: { kind: string; id: ElementId; verse: number | null; verseNo?: number; markKind?: string; end?: ElementId; dir?: { pi: number; mi: number; index: number } }): string | null {
+export function markEntryKey(e: { kind: string; id: ElementId; verse: number | null; verseNo?: number; markKind?: string; name?: string; end?: ElementId; dir?: { pi: number; mi: number; index: number } }): string | null {
   if (e.kind === "lyric") return `L:${e.id}:${e.verseNo ?? (e.verse ?? 0) + 1}`;
   if (e.kind !== "mark") return null;
   if ((e.markKind === "slur" || e.markKind === "tied") && e.end !== undefined) return `${e.markKind}:${e.id}:${e.end}`;
   if (e.dir) return `D:${e.dir.pi}:${e.dir.mi}:${e.dir.index}`;
+  // 文本格式：挂在音上的力度、注记（同一个音上同类的几条认成同一个框）
+  if (e.markKind === "dynamic" || e.markKind === "annotation") return `K:${e.id}:${e.markKind}`;
+  // ABC 的力度写成装饰 `!mf!`
+  if (e.markKind === "deco" && e.name && DYNAMIC_NAME.test(e.name)) return `K:${e.id}:dynamic`;
   return null;
+}
+
+const DYNAMIC_NAME = /^(p{1,4}|f{1,4}|m[pf]|s?fz?p?|fp|rfz?|sffz)$/;
+
+/** 小节里各和弦的起点（divisions，按声线接着算） */
+function chordOnsets(m: Measure): Map<Chord, number> {
+  const out = new Map<Chord, number>();
+  const at = new Map<number, number>();
+  for (const el of m.elements) {
+    const start = (el.kind === "chord" ? el.onset : undefined) ?? at.get(el.voice) ?? 0;
+    at.set(el.voice, start + (el.kind === "chord" ? (el.grace ? 0 : el.duration.divisions) : el.duration?.divisions ?? 0));
+    if (el.kind === "chord") out.set(el, start);
+  }
+  return out;
 }
 
 export function staffMarksOf(view: StaffView, withIds: boolean): StaffMarkNow[] {
@@ -284,18 +305,25 @@ export function staffMarksOf(view: StaffView, withIds: boolean): StaffMarkNow[] 
       if (d.type !== "dynamics" && d.type !== "words" && d.type !== "rehearsal") return;
       // 宿主音同索引（`sync.ts::buildXml`）：`afterElements` 之后第一个同声线的和弦，小节末的借最后一个
       const same = (e: Measure["elements"][number]): e is Chord => e.kind === "chord" && (d.voice === undefined || e.voice === d.voice);
-      const h = m.elements.slice(Math.max(0, d.afterElements ?? 0)).find(same) ?? [...m.elements].reverse().find(same);
+      // 文本格式投影出来的只记拍位（`offset`），没有 `afterElements`：取那一拍起的音（没有就取其后最近的）
+      let h: Chord | undefined;
+      if (d.afterElements === undefined) {
+        const want = d.offset ?? d.onset ?? 0;
+        const os = [...chordOnsets(m)].filter(([c]) => same(c) && !c.grace);
+        h = os.filter(([, o]) => o >= want).sort((a, b) => a[1] - b[1])[0]?.[0] ?? os[os.length - 1]?.[0];
+      } else h = m.elements.slice(Math.max(0, d.afterElements)).find(same) ?? [...m.elements].reverse().find(same);
       const host = h ? view.idsOf(h).find((x) => x) : undefined;
       const id = attr(d);
       const pre = d.type === "dynamics" ? "D" : "W";
-      out.push({ ids: id ? [id] : [], key: keyOf(pre, host), sig: `${host}|${d.text ?? ""}`, entry: `D:${pi}:${mi}:${index}` });
+      out.push({ ids: id ? [id] : [], key: keyOf(pre, host), sig: `${host}|${d.text ?? ""}`, entry: `D:${pi}:${mi}:${index}`, ...(h ? { alsoEntry: `K:${h.id}:${d.type === "dynamics" ? "dynamic" : "annotation"}` } : {}) });
     });
   }));
   for (const mk of view.song.marks) {
     if (mk.type !== "slur" && mk.type !== "tied") continue;
-    const ids = [attr(mk, "start"), attr(mk, "stop")].filter((x): x is string => !!x);
+    const stop = attr(mk, "stop");
+    const ids = [attr(mk, "start"), stop].filter((x): x is string => !!x);
     const a = omrOf.get(mk.start);
-    out.push({ ids, key: keyOf(mk.type, a), sig: `${a}|${omrOf.get(mk.end)}`, entry: `${mk.type}:${mk.start}:${mk.end}` });
+    out.push({ ids, key: keyOf(mk.type, a), sig: `${a}|${omrOf.get(mk.end)}`, entry: `${mk.type}:${mk.start}:${mk.end}`, ...(stop ? { stopId: stop } : {}) });
   }
   return out;
 }
