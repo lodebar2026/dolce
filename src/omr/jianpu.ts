@@ -1282,6 +1282,42 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     if (accCores.size) m.rd = m.rd.filter((k) => !accCores.has(k));
   }
 
+  // 下滑音 ↘：数字右上方一笔向右下弯的细线、末端带箭头（迦南诗选 2252《利百加之歌》`5⌒6↘ 3`，箭头 40×80 对数字 58×80）。
+  // 高度与数字相当，进了数字核、读成一个音（`2`）。与数字靠**笔画粗细**分：箭杆每行墨宽不到左邻数字的六成（实测 8~9 对 18~20）；
+  // 另要**箭头**——下部四成里最宽的一行至少是上部箭杆中位墨宽的 1.8 倍；箭尖收在数字底线以上 0.1 字高。
+  const fallOf = new Set<DigitCore>();
+  const runMed = (b: Rect): number => {
+    const runs: number[] = [];
+    for (let y = b.y; y < rbottom(b); y++) {
+      let n = 0;
+      for (let x = b.x; x <= rright(b); x++) {
+        if (x < rright(b) && bin.data[y * bin.w + x]) n++;
+        else if (n) { runs.push(n); n = 0; }
+      }
+    }
+    return median(runs) || 0;
+  };
+  for (const m of staff) {
+    const medH = median(m.rd.map((k) => k.bbox.h)) || numH;
+    const drop = new Set<DigitCore>();
+    for (let j = 1; j < m.rd.length; j++) {
+      const p = m.rd[j - 1]!, k = m.rd[j]!, pb = p.bbox, b = k.bbox;
+      if (pb.h < medH * 0.85 || b.h < medH * 0.5 || b.h > medH * 1.05 || b.w > pb.w * 0.8) continue;
+      const gap = b.x - rright(pb);
+      if (gap < -numH * 0.05 || gap > numH * 0.3) continue;
+      if (b.y > pb.y + medH * 0.2 || rbottom(b) > rbottom(pb) - medH * 0.1) continue;
+      if (runMed(b) > runMed(pb) * 0.6) continue;
+      const rows = rowInk(bin, b);
+      const cut = Math.round(b.h * 0.6);
+      const shaft = median(rows.slice(0, cut).filter((v) => v > 0)) || 0;
+      if (!shaft || Math.max(...rows.slice(cut)) < shaft * 1.8) continue;
+      probe("fall");
+      fallOf.add(p);
+      drop.add(k);
+    }
+    if (drop.size) m.rd = m.rd.filter((k) => !drop.has(k));
+  }
+
   // 倚音：小号数字印在主音符的左上方，**底下压着一两条与它同宽的减时线**，再由一小段弧连到
   // 主音符（2156《祢为我解读一生的道路》第 7 行的 `4 ³5`）。那个小数字比数字带矮一截、中心又高
   // 出大半个字（实测 cy 差 42px > groupRows 的 0.7 字号），挂不上任何谱行，自成一「行」后被
@@ -1991,6 +2027,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       const a = accidentals.get(k); if (a && nums[j]) nums[j].accidental = a;
       if (fermataOf.get(k) && nums[j]) nums[j].fermata = true;
       const orn = ornamentOf.get(k); if (orn && nums[j]) nums[j].ornament = orn;
+      if (fallOf.has(k) && nums[j]) nums[j].fall = true;
       const stb = staccatoOf.get(k);
       if (stb && nums[j]) { nums[j].articulation = "staccato"; staccatoBoxes.set(nums[j], stb); }
       if (accentOf.get(k) && nums[j]) nums[j].articulation = "accent";

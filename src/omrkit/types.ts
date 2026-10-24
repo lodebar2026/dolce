@@ -94,6 +94,8 @@ export interface JpNum {
   // 上波音 → `notations.ornaments: ["inverted-mordent"]`（123 `!sby!`、文本谱 `&sby`）；
   // 下波音 → `["mordent"]`（123 `!xby!`、文本谱 `&xby`）；.jpwabc 装不下。
   ornament?: "upper-mordent" | "lower-mordent";
+  // 下滑音（数字右上方一笔向右下弯、带箭头的细线，见 jianpu.ts）→ `notations.articulations: ["xhy"]`（123 `!xhy!`，转 MusicXML 是 falloff）。
+  fall?: boolean;
   // 倚音（谱面上是主音符左上角的小号数字，底下压着一两条减时线、再由一小段弧连到主音符）。
   // 一个主音符可以带一串（`"yy:5 4# 4b"`），故是数组、按 x 排序。
   // → 主音符之前的 `grace` Chord（不占拍位，123 `{5}`）；文本谱 `"yy:…"`。
