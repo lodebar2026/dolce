@@ -4,7 +4,7 @@
 // **别在这里另写一套** ——那份是简谱导出、文本谱导出与本文件的公共件。
 import { barlineXml, escapeXml, scorePartXml, workXml, wrapPartwise } from "../score/xmlutil";
 import { harmonyXml } from "../score/harmonyxml";
-import type { StaffNote } from "./notedata";
+import type { StaffChord, StaffNote } from "./notedata";
 import { clefFor, fifthsAt, timeSignatures, timeXml, type StaffContext } from "./notedata";
 import { Bar, type SPage, type Staff } from "./model";
 import type { StaffScore } from "./score";
@@ -273,6 +273,8 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       .map((n) => (n.crossStaff ? { ...n, voice: own.reduce((a, b) => (Math.abs(b.x - n.x) < Math.abs(a.x - n.x) ? b : a)).voice } : n))
       .sort((a, b) => a.x - b.x);
   }
+  const split = splitUnisonStems(inBar, ticks);
+  inBar = split.notes;
   const voices = [...new Set(inBar.map((n) => n.voice))].sort((a, b) => a - b);
   const withVoice = voices.length > 1 || staffNo > 0;
   const voiceBase = staffNo > 0 ? (staffNo - 1) * 4 : 0;
@@ -355,6 +357,11 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
         const bm = vn.find((m) => m.group === n0.group && m.beam)?.beam;
         if (bm) n = { ...n, beam: bm };
       }
+      const splitAt = !timed && !n.chordExtra ? split.starts.get(n0) : undefined;
+      if (splitAt !== undefined && splitAt > cur) {
+        body += `<forward><duration>${splitAt - cur}</duration></forward>`;
+        cur = splitAt;
+      }
       if (timed && !n.chordExtra && !n.grace) {
         const off = at(n.group!.offset);
         if (off > cur) {
@@ -432,6 +439,62 @@ function rowStartClef(entry: SysEntry, st: Staff): string {
 function midRowClefs(entry: SysEntry, st: Staff) {
   const sp = st.stepDistance() * 2;
   return (entry.ctx.get(st)?.clefs ?? []).filter((c) => c.box.left >= st.box.left + sp * ROW_START_CLEF);
+}
+
+/**
+ * **两声部同音、各带一根干的，拆回两个声部**（万口欢唱女高女中同是 E4 二分，原谱一个头上下两根干）：识别把两根干并成一枚和弦
+ *（`initChords` 的断干拼接），写出来是一个声部里两个同音高、`<stem>` 一上一下的和弦音——MusicXML 一枚和弦只有一根干，
+ * 混排画成并排两个头加一根干，转 ABC / 123 也只能写成 `[EE]`。
+ *
+ * 判据：一枚和弦里有干朝上、也有干朝下的音，且有一对同音高（音级、升降都同）的一上一下。干朝下的那几个音挪进本小节新开的声部
+ *（声部号接在已有的后面，同一声部拆出来的共用一个），起点同原和弦，其余拍子靠 `<forward>` 补（按拍位写时 `emitVoices` 本来就补；不按拍位写时
+ * 按原声部里它前面那些和弦的时值累加，记在 `starts` 里）。挂在挪走的音上的歌词留给原和弦：读入端按声部配词，挪到第二声部就丢了。
+ */
+function splitUnisonStems(inBar: StaffNote[], ticks: (d: number) => number): { notes: StaffNote[]; starts: Map<StaffNote, number> } {
+  const starts = new Map<StaffNote, number>();
+  const groups = new Set(inBar.map((n) => n.group).filter((g): g is StaffChord => !!g && !g.grace));
+  const hits = [...groups].filter((g) => {
+    const ns = inBar.filter((n) => n.group === g && !n.rest && !n.grace);
+    return ns.some((u) => u.stemUp === true && ns.some((d) => d.stemUp === false && d.diatonic === u.diatonic && d.alter === u.alter));
+  });
+  if (!hits.length) return { notes: inBar, starts };
+  const timed = inBar.every((n) => n.group?.timed);
+  let next = Math.max(...inBar.map((n) => n.voice));
+  // 同一声部里拆出来的音前后不重叠，共用一个新声部
+  const newVoice = new Map<number, number>();
+  const out = inBar.slice();
+  for (const g of hits) {
+    const v = inBar.find((n) => n.group === g)!.voice;
+    const moved = out.filter((n) => n.group === g && n.stemUp === false).sort((a, b) => a.diatonic - b.diatonic);
+    const kept = out.filter((n) => n.group === g && n.stemUp !== false).sort((a, b) => a.diatonic - b.diatonic);
+    const voice = newVoice.get(v) ?? (newVoice.set(v, ++next), next);
+    const ng: StaffChord = { ...g, notes: moved, voice };
+    // 只补原和弦里还没有的段：同一段两个字（挪走的那个多半是错挂的）原先写出时也只留打头那个音上的
+    const have = new Set(kept.flatMap((n) => (n.lyrics ?? []).map((l) => l.verse)));
+    const lyrics = moved.flatMap((n) => n.lyrics ?? []).filter((l) => !have.has(l.verse) && (have.add(l.verse), true));
+    const stopHave = new Set(kept.flatMap((n) => (n.lyricExtendStop ?? []).map((l) => l.verse)));
+    const stops = moved.flatMap((n) => n.lyricExtendStop ?? []).filter((l) => !stopHave.has(l.verse) && (stopHave.add(l.verse), true));
+    const copies = new Map<StaffNote, StaffNote>();
+    moved.forEach((n, i) => copies.set(n, { ...n, group: ng, voice, chordExtra: i > 0 || undefined, lyrics: undefined, lyricExtendStop: undefined }));
+    kept.forEach((n, i) => {
+      const add = i === 0 ? { lyrics: lyrics.length ? [...(n.lyrics ?? []), ...lyrics] : n.lyrics, lyricExtendStop: stops.length ? [...(n.lyricExtendStop ?? []), ...stops] : n.lyricExtendStop } : {};
+      copies.set(n, { ...n, ...add, chordExtra: i > 0 || undefined });
+    });
+    for (let i = 0; i < out.length; i++) out[i] = copies.get(out[i]) ?? out[i];
+    if (!timed) {
+      // 原声部里排在这枚和弦之前的那些和弦（按 x）的时值和，就是它在小节里的起点。按和弦数、每枚一次，不看 `chordExtra`：
+      // 打头音不在这小节里的和弦音也带着它，`emitVoices` 分组写出时照样占拍（天父加恩 m8 的八分 F4）
+      const left = Math.min(...moved.map((n) => n.x));
+      const durOf = new Map<unknown, number>();
+      for (const n of out) {
+        if (n.voice !== v || n.grace || n.x >= left - 1e-6 || n.group === g) continue;
+        const key = n.group ?? n;
+        if (!durOf.has(key) || !n.chordExtra) durOf.set(key, ticks(n.duration));
+      }
+      starts.set(copies.get(moved[0])!, [...durOf.values()].reduce((a, d) => a + d, 0));
+    }
+  }
+  return { notes: out, starts };
 }
 
 /** `emitVoices` 用掉的时长（大谱表换行时要照它倒回小节头）。 */
