@@ -12,7 +12,7 @@ import {
   isEditError, type JumpKind, locate, mergeMeasures, midiOf, type ChordPos, type EditHooks, type InsertAnchor, type ModelEdit, posOf,
   removeChordNote, scaleDuration, setBarKind, setBreakBefore, setDegree, setKeyAt, setTempoAt, setTimeAt, shiftOctave, splitMeasure,
   pasteClip, type ClipItem, setDirectionText, toggleTuplet, setHarmony, setLyric, shiftSemitones, transposeScore, stepDegree, stepSemitone, setStep, degreeOfStep, anchorFifths, toggleAccidental, toggleDeco, toggleDot, toggleEnding, toggleJump, toggleSlur, toggleTie,
-  type DecoKind, deleteDirection, removeNotation, insertPitch, newDurationOf, dirPartner, moveDirection, moveHarmony, moveMarkEnd, type MovedMark, rereadKeyAt, setClefAt, shiftLyrics, toggleGrace, toggleOctaveShift, toggleWedge,
+  type DecoKind, deleteDirection, removeNotation, insertPitch, staffOfVoice, staffVoice, newDurationOf, dirPartner, moveDirection, moveHarmony, moveMarkEnd, type MovedMark, rereadKeyAt, setClefAt, shiftLyrics, toggleGrace, toggleOctaveShift, toggleWedge,
 } from "../../model/edit";
 import { parseClefInput, parseKeyInput, parseTempoInput, parseTimeInput } from "./measureinput";
 import { dropEmbeddedLayout, forgetNoteLayout } from "../../model/xmlsurface";
@@ -39,8 +39,8 @@ export interface ModelActionCtx {
   /** 选区碰到的条目 */
   selectedEntries(): SyncEntry[];
   readonly curDur: NoteDuration;
-  /** 声部输入：插入模式新插的音落在第几声部（1–4） */
-  readonly curVoice: number;
+  /** 声部输入：插入模式新插的音落在光标所在谱表的第几声线（1–4）；null = 没指定过，跟光标前那个音的声线 */
+  readonly curVoice: number | null;
   /** Alt+点击单独选中的和弦里某个音（从低到高第几个）；没有为 null */
   readonly pickedChordNote: { id: ElementId; index: number } | null;
   /** 按键发声 */
@@ -183,31 +183,47 @@ function insertAnchor(ctx: ModelActionCtx, doc: ScoreDoc): InsertAnchor | null {
   const sel = ctx.view.state.selection.main;
   const prev = sel.empty ? entryBeforeCaret(ctx) : ctx.selectedEntries().pop() ?? null;
   if (prev?.kind === "note") return { after: prev.id };
+  const next = entryAfterCaret(ctx);
+  const nl = next?.kind === "note" ? locate(doc, next.id) : null;
   if (prev && (prev.kind === "barline" || prev.kind === "break")) {
     const l = locate(doc, prev.id);
-    // 小节开头：插进当前输入的声线（小节线条目借的是小节里最后那个元素的身份，它的声线不算数）
-    return l ? { measureStart: { si: l.si, pi: l.pi, mi: l.mi + 1, voice: ctx.curVoice } } : null;
+    if (!l) return null;
+    // 小节开头：插进后面那个音的声线（小节线条目借的是小节里最后那个元素的身份，它的声线不算数）；后面没有音取第一条谱表的第一声线
+    const voice = nl && nl.si === l.si && nl.pi === l.pi && nl.mi === l.mi + 1 ? nl.chord.voice : staffVoice(l.part, 1, 1);
+    return { measureStart: { si: l.si, pi: l.pi, mi: l.mi + 1, voice } };
   }
-  const next = entryAfterCaret(ctx);
   const l = next ? locate(doc, next.id) : null;
-  return l ? { measureStart: { si: l.si, pi: l.pi, mi: l.mi, voice: next?.kind === "note" ? l.chord.voice : ctx.curVoice } } : null;
+  return l ? { measureStart: { si: l.si, pi: l.pi, mi: l.mi, voice: nl ? nl.chord.voice : staffVoice(l.part, 1, 1) } } : null;
 }
 
-/** 插入模式插一个音（`degreeAt` 按插入位置给唱名：音名要看那里的调号）。别的声线（声部输入）插在光标所在时刻。 */
+/**
+ * 插入模式插一个音（`degreeAt` 按插入位置给唱名：音名要看那里的调号）。没指定声线就接在光标前那个音的声线里；
+ * 指定了（声部输入）按光标所在谱表的第几声线（`staffVoice`）认，与光标前那个音不是同一声线时插在光标所在时刻。
+ * 以前声部输入缺省第 1 声线、按整个声部的 voice 号比：识别出的钢琴 / 合唱大谱表下谱表是 voice 5、6，
+ * 光标在下谱表时新音一律要往 voice 1 的这一刻塞，上谱表这一刻有音就插不进（issue 23）。
+ */
 function insertNote(ctx: ModelActionCtx, degreeAt: (doc: ScoreDoc, at: InsertAnchor) => number): boolean {
   return commit(ctx, (doc) => {
     const at = insertAnchor(ctx, doc);
     if (!at) return { error: tr("ve.cantInsert") };
     const d = degreeAt(doc, at);
-    const ref = "after" in at ? locate(doc, at.after) : null;
-    if (ref && ref.chord.voice !== ctx.curVoice) {
-      const onset = (chordOnset(doc, ref.chord.id) ?? 0) + ref.chord.duration.divisions;
-      return insertInVoice(doc, { si: ref.si, pi: ref.pi, mi: ref.mi, onset, staff: ref.chord.staff }, ctx.curVoice, d, ctx.curDur, HOOKS);
+    const k = ctx.curVoice;
+    if (k === null) return insertChord(doc, at, d, ctx.curDur, HOOKS);
+    if ("after" in at) {
+      const ref = locate(doc, at.after);
+      const voice = ref ? staffVoice(ref.part, ref.chord.staff, k) : null;
+      if (ref && voice !== null && ref.chord.voice !== voice) {
+        const onset = (chordOnset(doc, ref.chord.id) ?? 0) + ref.chord.duration.divisions;
+        return insertInVoice(doc, { si: ref.si, pi: ref.pi, mi: ref.mi, onset, staff: ref.chord.staff }, voice, d, ctx.curDur, HOOKS, k);
+      }
+      return insertChord(doc, at, d, ctx.curDur, HOOKS);
     }
-    if ("measureStart" in at && at.measureStart.voice !== ctx.curVoice) {
-      const m = at.measureStart;
-      return insertInVoice(doc, { si: m.si, pi: m.pi, mi: m.mi, onset: 0, staff: 1 }, ctx.curVoice, d, ctx.curDur, HOOKS);
-    }
+    const m = at.measureStart;
+    const part = doc.songs[m.si]?.parts[m.pi];
+    if (!part) return { error: tr("ve.cantInsert") };
+    const staff = staffOfVoice(part, m.voice);
+    const voice = staffVoice(part, staff, k);
+    if (voice !== m.voice) return insertInVoice(doc, { si: m.si, pi: m.pi, mi: m.mi, onset: 0, staff }, voice, d, ctx.curDur, HOOKS, k);
     return insertChord(doc, at, d, ctx.curDur, HOOKS);
   }, true);
 }

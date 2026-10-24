@@ -160,8 +160,9 @@ export class VisualEditController {
   private textEditing = false;
   /** 插入模式的「当前时值」：新插的音符用它 */
   curDur: NoteDuration = { halvings: 0, dots: 0 };
-  /** 声部输入：插入模式新插的音落在第几声部（`.musicxml` 用；Ctrl+Alt+1–4） */
-  curVoice = 1;
+  /** 声部输入：插入模式新插的音落在光标所在谱表的第几声线（`.musicxml` 用；Ctrl+Alt+1–4）。
+   *  null = 没指定过，跟光标前那个音的声线；换文档回到 null */
+  curVoice: number | null = null;
   /** Alt+点击单独选中的和弦音（从低到高第几个）；`sel` 是选中时的选区，选区一动就作废 */
   private pickedNote: { id: ElementId; index: number; from: number; to: number } | null = null;
 
@@ -359,6 +360,7 @@ export class VisualEditController {
   /** 换了一份文档（打开、导入、识别落地）：弱起重新认。 */
   documentLoaded(): void {
     this.pickups = null;
+    this.curVoice = null;
   }
 
   /** 重排之后（索引重建了）：把换行符号的原文位置交给代码区，再重画谱面叠加层。 */
@@ -401,7 +403,7 @@ export class VisualEditController {
     }
     if (this.modeEl) {
       this.modeEl.hidden = !on;
-      this.modeEl.textContent = this.mode === "edit" ? tr("vis.modeEdit") : tr("vis.modeInsert", { dur: durName(this.curDur) }) + (this.curVoice > 1 ? tr("vis.modeVoice", { n: this.curVoice }) : "");
+      this.modeEl.textContent = this.mode === "edit" ? tr("vis.modeEdit") : tr("vis.modeInsert", { dur: durName(this.curDur) }) + (this.curVoice !== null ? tr("vis.modeVoice", { n: this.curVoice }) : "");
       this.modeEl.dataset.mode = this.mode;
     }
     if (this.paletteEl) {

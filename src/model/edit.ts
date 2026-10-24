@@ -416,6 +416,31 @@ export type InsertAnchor =
   | { after: ElementId }
   | { measureStart: { si: number; pi: number; mi: number; voice: number } };
 
+/** 某声线落在哪条谱表（取它第一个音的；整个声部都没有它为 1）。 */
+export function staffOfVoice(part: Part, voice: number): number {
+  for (const m of part.measures) for (const e of m.elements) if (e.kind === "chord" && e.voice === voice) return e.staff;
+  return 1;
+}
+
+/**
+ * 谱表内的「第 k 声线」（声部输入 Ctrl+Alt+1–4 的口径，同 MuseScore：每条谱表各有 1–4）在这个声部里的 voice 号。
+ * MusicXML 的 voice 号在整个 `<part>` 里统一编，多谱表通行每条谱表占四个（下谱表 5–8，Finale、MuseScore 写出都这样），
+ * 也有接着编的（下谱表从 2 起）。所以按本谱表实际用到的号从小到大数第 k 个；不够数时从本谱表第一个号
+ * （本谱表还没有音按每谱表四个）往后接，跳开已用掉的号。
+ */
+export function staffVoice(part: Part, staff: number, k: number): number {
+  const mine = new Set<number>();
+  const others = new Set<number>();
+  for (const m of part.measures) {
+    for (const e of m.elements) if (e.kind === "chord") (e.staff === staff ? mine : others).add(e.voice);
+  }
+  const used = [...mine].sort((a, b) => a - b);
+  if (k <= used.length) return used[k - 1]!;
+  let v = (used[0] ?? (staff - 1) * 4 + 1) + k - 1;
+  while (mine.has(v) || others.has(v)) v++;
+  return v;
+}
+
 /** 新音符的时值：相对四分音符的减半次数与附点（与文本格式的「当前时值」同一口径）。 */
 export interface NewDuration {
   halvings: number;
@@ -460,7 +485,8 @@ export function insertChord(doc: ScoreDoc, anchor: InsertAnchor, degree: number,
     voice = a.voice;
     const first = m.elements.findIndex((e) => e.voice === voice);
     index = first < 0 ? m.elements.length : first;
-    staff = m.elements[index]?.staff ?? 1;
+    // 这一小节里本声线还没有音：谱表照它在别的小节落的那条（下谱表的声线不能落回第一条谱表）
+    staff = first >= 0 ? m.elements[first]!.staff : staffOfVoice(p, voice);
   }
   const div = fitDivisions(part, (measureCtx(song, part, mi).dpq / Math.pow(2, dur.halvings)) * dotFactor(dur.dots));
   const { key, time, dpq } = measureCtx(song, part, mi);
@@ -1098,11 +1124,11 @@ export function removeChordNote(doc: ScoreDoc, id: ElementId, index: number, hoo
 /**
  * 在指定声线的某一时刻插一个音（声部输入：第二、三、四条旋律）。插在这个声线里起点不晚于 `onset` 的最后一个音之后，
  * 起点照 `onset` 给（与前一个音之间有空当时写显式起点，写出端补 `<forward>`）；后面同声线的音保持原来的起点不动。
- * 这个声线在本小节还没有音时，新音接在小节元素末尾、显式起点。
+ * 这个声线在本小节还没有音时，新音接在小节元素末尾、显式起点。`shown` 是报错里说的声线号（谱表内第几声线，缺省同 `voice`）。
  */
 export function insertInVoice(
   doc: ScoreDoc, at: { si: number; pi: number; mi: number; onset: number; staff: number }, voice: number, degree: number, dur: NewDuration,
-  hooks: EditHooks = {},
+  hooks: EditHooks = {}, shown = voice,
 ): ModelEdit {
   const song = doc.songs[at.si];
   const part = song?.parts[at.pi];
@@ -1124,7 +1150,7 @@ export function insertInVoice(
   const on = onsets(measure);
   const mine = measure.elements.map((e, i) => ({ e, i })).filter(({ e }) => e.kind === "chord" && e.voice === voice);
   if (mine.some(({ e }) => !(e as Chord).grace && (on.get(e as Chord) ?? 0) === onset)) {
-    return { error: tr("me.voiceBusy", { n: voice }) };
+    return { error: tr("me.voiceBusy", { n: shown }) };
   }
   const before = mine.filter(({ e }) => (on.get(e as Chord) ?? 0) <= onset).pop();
   // 比本声线第一个音还早：插在它前面（不能接在小节元素末尾——排在后面的元素起点在前，符杠与位置都乱）
