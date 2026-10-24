@@ -307,6 +307,8 @@
               <select id="sel-doc-format" title="切换源码格式（识别结果不重新识别；打开的文件切回「原文」可还原）" aria-label="源码格式" data-i18n-title="pane.docFormat.title" data-i18n-aria="pane.docFormat"></select>
               <span class="select-chevron" aria-hidden="true">⌄</span>
             </label>
+            <!-- 转换丢了什么、怎么回到原稿（editor/formatswitch.ts::DocFormatSource.note） -->
+            <span id="doc-format-note" class="pane-note" hidden></span>
           </div>
           <div id="code-pane"></div>
         </section>

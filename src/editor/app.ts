@@ -57,7 +57,7 @@ import { playSourceOf } from "../model/playsong";
 import { OmrController, type OmrHost } from "./omrctl";
 import { FileSession } from "./filesession";
 import { MixedSession } from "./mixedsession";
-import { FileFormatSource, FormatSwitch, type FileSwitchHost, type FormatSwitchHost, type OriginFormat } from "./formatswitch";
+import { DocFormatSource, FormatSwitch, type FileSwitchHost, type FormatSwitchHost, type OriginFormat } from "./formatswitch";
 import type { JianpuLayoutMode, JpProfileName } from "../jianpu/profile";
 import {
   loadPersistedSettings, savePersistedSettings,
@@ -768,6 +768,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** parse -> import -> layout -> render. Returns false on parse failure (text kept). */
   reload(text: string): boolean {
+    this.formats.refreshNote(); // 改过没有：下拉旁「回到原稿」的提示跟着变
     // 识别模式：谱面区是核对视图，不重排成排版稿；但索引跟着原文重建、叠加层按当前模型重画（改过的标出来）
     if (this.mode === "recognize") {
       if (this.adapter.caps.layout === "jpwabc") this._refreshJpwDoc(text);
@@ -1558,6 +1559,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       }
     // 没有代码区的格式（`.musicxml`）把代码区收起来
     document.getElementById("body")?.classList.toggle("no-code", !this.adapter.caps.textEditor);
+    this.omr.applyCodePane(); // 「源码」复选框跟着有没有代码区
     if (this.mode === "mixed") this._syncMixedReadOnly(); // 混排档里换格式：只读随格式走
     // 两种格式各记一个档位（jpProfile / originalProfile），换格式可能就换了档：下次重排按新档取样式
     this._syncViewModeButtons();
@@ -1933,11 +1935,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.formats.use(null);
     this._importBytes(bytes, name);
     this.markClean();
-    // 原文是真身：代码区标题栏的格式下拉可以换成别的格式看、切回来逐字还原（`FileFormatSource`）
+    // 原文是真身：代码区标题栏的格式下拉可以换成别的格式看、切回来逐字还原（`DocFormatSource`）
     const origin = this._originFormat();
-    if (origin) {
-      this.formats.use(new FileFormatSource(this, { format: origin, docFormat: this.docFormat, text: this.getText() }));
-    }
+    if (origin) this._useDocSource(origin);
   }
 
   /** 用户**亲手打开**单声部 MusicXML 之后调（打开对话框、拖入；重开上次文件与回归脚本不走这里）：
@@ -1969,6 +1969,28 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       // 丢失提示里取消了：留在 MusicXML
     }
     await this.setViewMode("staff");
+  }
+
+  /** OmrHost：现在有没有代码区（`.musicxml` 没有）。 */
+  hasCodePane(): boolean {
+    return this.adapter.caps.textEditor;
+  }
+
+  /**
+   * OmrHost：在没有代码区的 `.musicxml`（打开的、五线谱识别出的）上勾「源码」= 转成默认编辑格式来改
+   * （设置里「打开 MusicXML」选的文本格式，没选过用 ABC）。与格式下拉同一条路：装不下的先列出来、给出建议格式，
+   * MusicXML 原文留在下拉里切得回去。
+   */
+  async openSourceView(): Promise<void> {
+    if (this.adapter.caps.textEditor || this.docFormat !== "musicxml") return;
+    await this.convertToTextDoc(isConvertTarget(this.musicXmlImport) ? this.musicXmlImport : "abc");
+  }
+
+  /** 装上「真身跟着改动走」的格式来源（打开的文件、五线谱识别结果）。 */
+  private _useDocSource(origin: OriginFormat): void {
+    const src = new DocFormatSource(this, { format: origin, text: this.getText() });
+    src.onSwitched = () => this.formats.sync();
+    this.formats.use(src);
   }
 
   /** 刚打开的原文是哪种格式（下拉里「原文」那一项）。文本谱按嗅探出的方言算。 */
@@ -2080,6 +2102,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._setMode("mixed");
     this.filePath = null;
     this.setText(xml);
+    // 识别出的 MusicXML 是真身：格式下拉换成 ABC / 123 / 简谱编辑，不重识别、切回来逐字还原
+    this._useDocSource("musicxml");
     void this._renderMixedPages();
     return true;
   }
@@ -2125,7 +2149,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const ok = await src.switchTo(target);
     this.formats.sync();
     if (!ok) return;
-    const now = targetSpec(target).docFormat;
+    // 损失框里可能改用了建议的格式
+    const now: DocFormatId = this.docFormat as DocFormatId; // switchTo 之后已不是 musicxml（TS 还按上面的判断收窄着）
     if (now !== "jpwabc" && now !== "pu") return;
     if (page && isPaper(page.paper)) {
       const choice: PaperChoice = { paper: page.paper!, orientation: page.orientation ?? "portrait", margin: pageMargins(page) ?? null };
@@ -2450,7 +2475,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
     const fromXml = this.docFormat === "musicxml";
     this.mixed._dropMixedDoc();
-    if (fromXml) this._setMode("jp");
+    // 五线谱/混排档里换成文本格式就留在那档（钢琴谱、合唱谱转到简谱档没法看）；
+    // 五线谱识别的原图对照按 MusicXML 的识别 id 认框，文本格式还认不回来，先退回混排
+    if (fromXml && this.mode === "recognize") {
+      this._setMode("mixed");
+      this.setStatus(t("omr.compareNeedsXml"));
+    }
     if (format === "jpwabc") this._disablePhrase();
     this._setDocFormat(format);
     this.filePath = filePath;

@@ -350,6 +350,8 @@ button:focus-visible, select:focus-visible {
 }
 .pane-heading > span:first-child { white-space: nowrap; }
 .pane-meta { color: var(--text-muted); font-size: 9px; }
+.pane-note { color: var(--text-muted); font-size: 10px; display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane-note .link-btn { background: none; border: 0; padding: 0; color: var(--green); font: inherit; cursor: pointer; text-decoration: underline; }
 /* 代码区标题栏里的下拉（识别输出格式）：占的就是格式标签那个位置，所以做得比工具条上的更小 */
 .pane-select-field { position: relative; display: inline-flex; align-items: center; }
 .pane-select-field select {

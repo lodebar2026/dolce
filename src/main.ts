@@ -304,6 +304,8 @@ async function boot() {
   }
   const docFormatSel = document.getElementById("sel-doc-format") as HTMLSelectElement | null;
   if (docFormatSel) app.formats.bind(docFormatSel); // 选项由来源（识别结果 / 打开的文件）给，见 editor/formatswitch.ts
+  const docFormatNote = document.getElementById("doc-format-note");
+  if (docFormatNote) app.formats.bindNote(docFormatNote);
   const originalLayoutBtn = document.getElementById("btn-layout-original") as HTMLButtonElement | null;
   const phraseBtn = document.getElementById("btn-phrase") as HTMLButtonElement | null;
   if (originalLayoutBtn && phraseBtn) {

@@ -79,6 +79,10 @@ export interface OmrHost {
    * 返回 false 表示简谱那一侧转不出来（不影响混排预览）。
    */
   adoptStaffXml(xml: string, rebuild?: boolean): boolean;
+  /** 现在有没有代码区（`.musicxml` 没有）：「源码」复选框按它显示勾没勾。 */
+  hasCodePane(): boolean;
+  /** 没有代码区时勾「源码」：转成默认编辑格式（`App.openSourceView`）。 */
+  openSourceView(): Promise<void>;
   /** 简谱识别产物落地：识别直出的模型与它写成的 123 核对文本。 */
   importOmrDoc(doc: ScoreDoc, text: string): void;
   /** 识别产物有无变了：同步排版档按钮（简谱识别期间不露「五线谱」「混排」两档）。 */
@@ -693,9 +697,12 @@ export class OmrController implements FormatSource {
   setCodeCheckbox(chk: HTMLInputElement): void {
     this.codeCheck = chk;
     chk.addEventListener("change", () => {
-      this.hideCode = !chk.checked;
+      const on = chk.checked;
+      this.hideCode = !on;
       this.host.saveSettings();
       this.applyCodePane();
+      // `.musicxml` 没有代码区：勾上就转成文本格式来改（取消了转换，复选框拨回没勾）
+      if (on && !this.host.hasCodePane()) void this.host.openSourceView().then(() => this.applyCodePane());
     });
     this.applyCodePane();
   }
@@ -703,7 +710,7 @@ export class OmrController implements FormatSource {
   /** 按 `hideCode` 收起 / 放出代码区，复选框跟着。 */
   applyCodePane(): void {
     document.getElementById("body")?.classList.toggle("hide-code", this.hideCode);
-    if (this.codeCheck) this.codeCheck.checked = !this.hideCode;
+    if (this.codeCheck) this.codeCheck.checked = !this.hideCode && this.host.hasCodePane();
   }
 
   setSideBtn(btn: HTMLButtonElement, box: HTMLElement | null): void {
@@ -1151,6 +1158,11 @@ export class OmrController implements FormatSource {
   // ---------------- 核对视图 ----------------
   /** 在「简谱模式」与「识别模式」（二值图+半透明识别叠加）之间切换。需先有 OMR 识别结果。 */
   async toggle(): Promise<void> {
+    // 五线谱的原图对照按 MusicXML 的识别 id 认框；换成文本格式后还认不回来，先请用户切回
+    if (this.host.mode !== "recognize" && (this.sessionKind === "staff" || this.sessionKind === "vector") && this.host.docFormat !== "musicxml") {
+      this.host.setStatus(t("omr.compareNeedsXml"));
+      return;
+    }
     if (this.host.mode !== "recognize" && !this.staffResult && (this.sessionKind === "staff" || this.sessionKind === "vector")) {
       // 补数据期间连点：只进一次（前一下已经进了核对视图）
       if (!(await this.ensureStaffResult()) || (this.host.mode as string) === "recognize") return;
