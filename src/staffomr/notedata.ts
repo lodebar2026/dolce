@@ -820,7 +820,7 @@ export interface StaffNote {
   beam?: BeamState[];
   x: number;
   /** 挂在这个音符上的歌词，按段（verse）。 */
-  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; /** 这个字后面拖着延长线（一字多音，见 `markLyricExtends`）。 */ extend?: boolean; /** 字号（页面单位，见 `SPage.textEm`） */ size?: number; /** 这一行词印在谱表上方（`<lyric placement="above">`） */ above?: boolean; /** 这一行词的基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number }[];
+  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; /** 这个字后面拖着延长线（一字多音，见 `markLyricExtends`）。 */ extend?: boolean; /** 字号（页面单位，见 `SPage.textEm`） */ size?: number; /** 这一行词印在谱表上方（`<lyric placement="above">`） */ above?: boolean; /** 这一行词的基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 原图上这个字的框（页面单位），识别对照用 */ box?: Box; /** 编辑器的识别对照用：写进 `<lyric id>` 的 id（同 `omrId`） */ id?: string }[];
   /** 这些字的歌词延长线到这个音为止（`<extend type="stop"/>`）。记的是那个字本身，段号后来被重排也跟着走。 */
   lyricExtendStop?: { verse: number }[];
   /** 挂在这个音符上的和弦符号（归一后的原文，如 `Am`、`G/B`、`Dm7`）。 */
@@ -863,7 +863,7 @@ export interface StaffNote {
   signs?: ("segno" | "coda")[];
   /** 印在这个音（本行末音）之后、行末小节线上的反复记号（`attachSigns`），`<direction>` 写在音之后 */
   signsAfter?: ("segno" | "coda")[];
-  words?: { text: string; above: boolean; /** 字号（页面单位） */ size?: number; /** 基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 加框的排练号（`<rehearsal enclosure="square">`） */ rehearsal?: boolean; /** 排练号自带【】（`enclosure="none"`） */ bracket?: boolean }[];
+  words?: { text: string; above: boolean; /** 字号（页面单位） */ size?: number; /** 基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 加框的排练号（`<rehearsal enclosure="square">`） */ rehearsal?: boolean; /** 排练号自带【】（`enclosure="none"`） */ bracket?: boolean; /** 原图上的框（页面单位），识别对照用 */ box?: Box; /** 写进 `<direction id>` 的 id（同 `omrId`） */ id?: string }[];
   /** 节拍器记号：拍子单位（`quarter`）、每分钟拍数、`<per-minute>` 的原文（带「约」时 `c. 76`，否则省）。MusicXML 里出成 `<direction><metronome>`。 */
   metronome?: { unit: string; bpm: number; text?: string; /** 印在圆括号里（「(♩ = 82)」）→ `<metronome parentheses="yes">` */ parentheses?: boolean };
   /** 与节拍器印在同一条的速度文字（`Andante ♩ = c. 76` 的 `Andante`）：与节拍器写进**同一个** `<direction>`，不拆成两个对象。 */
@@ -871,6 +871,8 @@ export interface StaffNote {
   tempoSize?: number;
   /** 力度记号在原图上的墨迹框（页面单位）：写出成 `default-y` / `relative-x` / `font-size`，排版照原位原大小。见 `attachDynamicTexts` */
   dynamicBox?: { left: number; right: number; top: number; bottom: number };
+  /** 编辑器的识别对照用：力度那条 `<direction id>`（同 `omrId`，有 `dynamicBox` 的才给） */
+  dynamicId?: string;
   /** 松叶从这个音符**起**（`<wedge type="crescendo|diminuendo">`）。见 `attachWedges`。 */
   wedgeStart?: "crescendo" | "diminuendo";
   /** 起在这个音上的松叶在原图上的样子（页面单位）：左端 x、中线 y、开口高 */
@@ -928,6 +930,11 @@ export interface StaffNote {
   /** 起头的那条圆滑线 / 连音线画成虚线（`<slur line-type="dashed">`）。 */
   slurDashed?: boolean;
   tieDashed?: boolean;
+  /** 起在 / 挂在这个音上的弧在原图上的外框（`markSlurNotes` 按弧号记，同一条画两份的只记头一份）：识别对照给 `<slur id>` 配框 */
+  slurBoxes?: { arc: string; box: Box }[];
+  /** 起在这个音上的延音线在原图上的外框与写进 `<tied id>` 的 id（识别对照用） */
+  tieBox?: Box;
+  tieId?: string;
 }
 
 /**

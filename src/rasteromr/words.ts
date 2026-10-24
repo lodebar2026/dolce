@@ -777,7 +777,7 @@ export function attachWordLines(
       words.push({ text, above, box, note });
     } else if (isWord && text) {
       // 行底当基线（文字指示多是不带下伸笔的西文，墨迹底就在基线上）：写源谱版面时照原位放
-      (note.words ??= []).push({ text, above, size: pg.inkTextSize?.(box, text) || box.h, baseY: box.y + box.h });
+      (note.words ??= []).push({ text, above, size: pg.inkTextSize?.(box, text) || box.h, baseY: box.y + box.h, box: { left: box.x, right: box.x + box.w, top: box.y, bottom: box.y + box.h } });
       words.push({ text, above, box, note });
     }
   }

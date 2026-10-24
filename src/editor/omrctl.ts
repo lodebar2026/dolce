@@ -20,8 +20,9 @@ import {
 } from "../omr";
 import type { Binary, JpwMeta, RecognizedScore } from "../omr";
 import type { Chord, ElementId, ScoreDoc } from "../model/doc";
-import type { StaffBarMark, StaffMark } from "../rasteromr/overlay";
+import type { StaffBarMark, StaffMark, StaffSourceMark } from "../rasteromr/overlay";
 import type { PlayPoint } from "./player";
+import type { SyncEntry } from "./sync";
 import type { DocFormatId } from "./formats";
 import { confirmDiscardEdits, type FormatOption, type FormatSource, type FormatSwitch } from "./formatswitch";
 import { harmonyPlacesOf, reprojectRecognized, type Reprojected } from "../omr/reproject";
@@ -32,7 +33,7 @@ import { t } from "../i18n";
 import { COMPARE_VALUES, type CompareValue } from "./comparemode";
 import { isPdf } from "../omrkit/pdf";
 import type { StaffReviewResult } from "../staffomr/review";
-import { carryIds, COVERED, pitchAt, stampXmlIds, StaffLinks, surfaceIds, textView, xmlShape, type StaffView } from "./omrlinks";
+import { carryIds, COVERED, markEntryKey, pitchAt, stampXmlIds, StaffLinks, staffMarksOf, surfaceIds, textView, xmlShape, type StaffView } from "./omrlinks";
 import type { PendingPage } from "../rasteromr/browser";
 
 /** 一份识别输入（拖进来、选进来的图片或 PDF）。 */
@@ -1370,13 +1371,20 @@ export class OmrController implements FormatSource {
   private staffNoteOfOmr = new Map<string, { chord: ElementId; k: number }>();
 
   /** 识别（或上次重建）刚落地时各音的样子（识别 id → 音高 + 时值的签名）：对照视图按它判「改过」。按原文缓存 */
-  private staffBase: { text: string; format: DocFormatId; sig: Map<string, string>; noId: number } | null = null;
+  private staffBase: { text: string; format: DocFormatId; sig: Map<string, string>; noId: number; marks: StaffMarkBase } | null = null;
+  /** 索引条目（`omrlinks.ts::markEntryKey`）→ 它现在对的那个歌词 / 弧 / 力度 / 文字的识别 id */
+  private staffMarkOf = new Map<string, string>();
 
   /**
    * 识别落地时那份（`staffEmitted`，MusicXML）各音的签名。当前是文本格式时，基准也先过一遍同一种格式（写出再读回、投影），
    * 两边在同一个口径上比：简谱把二分休止拆成几拍、时值类型换算，不该都算成「改过」。
    */
   private staffBaseSig(loadDoc: (xml: string) => ScoreDoc): Map<string, string> | null {
+    return this.staffBaseOf(loadDoc)?.sig ?? null;
+  }
+
+  /** 同 `staffBaseSig`，连歌词字、弧、力度、文字的落地样子（`StaffMarkBase`）一起 */
+  private staffBaseOf(loadDoc: (xml: string) => ScoreDoc): NonNullable<OmrController["staffBase"]> | null {
     const text = this.staffEmitted;
     if (text === null) return null;
     const format = this.host.docFormat;
@@ -1400,12 +1408,21 @@ export class OmrController implements FormatSource {
           if (id) sig.set(id, chordSig(el));
           else if (!el.grace && !view.idsOf(el).includes(COVERED)) noId++;
         }
+        // 歌词字、弧、力度、文字：id 从 MusicXML 那份读（元素上的 `id`），签名按当前格式那份的同一位置取（同上，两边一个口径）
+        const xmlMarks = staffMarksOf({ song: xmlDoc.songs[0]!, idsOf: surfaceIds }, true);
+        const viaSig = new Map<string, string>();
+        if (format !== "musicxml") for (const mk of staffMarksOf(view, false)) for (const k of [mk.key, mk.alt]) if (k) viaSig.set(k, mk.sig);
+        const marks: StaffMarkBase = { sig: new Map(), idsByKey: new Map() };
+        for (const mk of xmlMarks) {
+          for (const id of mk.ids) marks.sig.set(id, (mk.key && viaSig.get(mk.key)) || (mk.alt && viaSig.get(mk.alt)) || mk.sig);
+          if (mk.ids.length) for (const k of [mk.key, mk.alt]) if (k) marks.idsByKey.set(k, mk.ids);
+        }
+        this.staffBase = { text, format, sig, noId, marks };
       } catch {
         return null;
       }
-      this.staffBase = { text, format, sig, noId };
     }
-    return this.staffBase.sig;
+    return this.staffBase;
   }
 
   /** 逐页画：页面位图 + 每个识别出的音一个框，框上标它现在的音名（改过标青、删掉划掉、新插的插值画虚框）；小节线一条竖线。 */
@@ -1415,7 +1432,8 @@ export class OmrController implements FormatSource {
     const { renderStaffRecognitionPage } = await import("../rasteromr/overlay");
     const { loadScoreDoc } = await import("../model/fromxml");
     const sv = this.staffViewOf(this.host.currentScoreDoc());
-    const base = this.staffBaseSig(loadScoreDoc);
+    const base0 = this.staffBaseOf(loadScoreDoc);
+    const base = base0?.sig ?? null;
     const now = new Map<string, { label: string; changed: boolean }>();
     const pitchLabel = (p: { step: string; alter: number; octave: number } | undefined): string =>
       p ? `${p.step}${p.alter > 0 ? "♯".repeat(p.alter) : "♭".repeat(-p.alter)}${p.octave}` : t("omr.restLabel");
@@ -1450,7 +1468,7 @@ export class OmrController implements FormatSource {
             const label = el.rest ? t("omr.restLabel") : pitchLabel(p);
             // 有识别落地时的样子就整个和弦比（音高、时值、附点、连音、倚音、和弦音数）；没有（项目重开）只比音高
             const was = k === 0 ? base?.get(id) : undefined;
-            const changed = was !== undefined ? was !== chordSig(el)
+            const changed = was !== undefined ? soundSig(was) !== soundSig(chordSig(el))
               : el.rest ? !orig.rest : !p || orig.rest || p.step !== orig.step || p.octave !== orig.octave || p.alter !== orig.alter;
             if (!now.has(id)) now.set(id, { label, changed });
           });
@@ -1523,6 +1541,28 @@ export class OmrController implements FormatSource {
       }
       barsByPage.set(i, out);
     });
+    // 歌词字、弧、力度、文字：MusicXML 按元素上的 id 认（挪了跟着走），文本格式按宿主音的位置反查；与落地时的签名不同 = 改过
+    const markNow = new Map<string, string>();
+    this.staffMarkOf.clear();
+    if (sv) {
+      const xml = this.host.docFormat === "musicxml";
+      for (const mk of staffMarksOf(sv, xml)) {
+        const ids = xml ? mk.ids : (mk.key && base0?.marks.idsByKey.get(mk.key)) || (mk.alt && base0?.marks.idsByKey.get(mk.alt)) || [];
+        for (const id of ids) if (!markNow.has(id)) markNow.set(id, mk.sig);
+        if (ids[0] && !this.staffMarkOf.has(mk.entry)) this.staffMarkOf.set(mk.entry, ids[0]);
+      }
+    }
+    const othersByPage = new Map<number, StaffSourceMark[]>();
+    for (const [id, b] of res.markBoxes ?? []) {
+      const was = base0?.marks.sig.get(id);
+      const cur = markNow.get(id);
+      // 落地时就没写出来的（接不上的半截弧、和弦里被并掉的）不画；没有落地样子（项目重开前）只画还在的
+      if (was === undefined && (base0 || cur === undefined)) continue;
+      const state = cur === undefined ? "deleted" as const : was !== undefined && was !== cur ? "edited" as const : undefined;
+      const list = othersByPage.get(b.page) ?? [];
+      list.push({ id, kind: b.kind, box: b.box, ...(state ? { state } : {}) });
+      othersByPage.set(b.page, list);
+    }
     const pages = res.pages;
     const view = this.view;
     this.host.renderPagesWith(pages.length, (i) => {
@@ -1533,7 +1573,7 @@ export class OmrController implements FormatSource {
           ? { id, box: b.box, label: cur.label, ...(cur.changed ? { state: "edited" as const } : {}) }
           : { id, box: b.box, label: b.rest ? t("omr.restLabel") : `${b.step}${b.octave}`, state: "deleted" as const };
       });
-      const svg = renderStaffRecognitionPage(bin, [...marks, ...(insertedByPage.get(i) ?? [])], view, barsByPage.get(i) ?? []);
+      const svg = renderStaffRecognitionPage(bin, [...marks, ...(insertedByPage.get(i) ?? [])], view, barsByPage.get(i) ?? [], othersByPage.get(i) ?? []);
       svg.dataset.page = String(i);
       return svg;
     }, {
@@ -1841,6 +1881,14 @@ export class OmrController implements FormatSource {
   }
 
   /** 索引条目 → 核对视图上的命中框：音符按框序（新插的按元素 id）、歌词按框序与段、页眉另认（`headerHits`）。 */
+  /** 五线谱对照：歌词字、弧、力度、文字的索引条目 → 源图上它的命中框（没有识别框的、不是五线谱会话的为 null） */
+  staffMarkHit(entry: SyncEntry): SVGGraphicsElement | null {
+    if (!this.staffResult) return null;
+    const key = markEntryKey(entry);
+    const id = key ? this.staffMarkOf.get(key) : undefined;
+    return id ? document.getElementById("score-pane")?.querySelector<SVGRectElement>(`.omr-hits rect[data-omr="${id}"]`) ?? null : null;
+  }
+
   /** 五线谱对照：和弦里每个音的命中框（`hitFor` 只给第一个音的）；不是五线谱会话返回 null */
   chordHits(id: ElementId): SVGGraphicsElement[] | null {
     if (!this.staffResult) return null;
@@ -2281,6 +2329,15 @@ function semanticSig(doc: ScoreDoc): string {
   const marks = song.marks.map((mk) => `${mk.type}:${where.get(mk.start)}-${where.get(mk.end)}`).sort();
   return JSON.stringify({ parts, marks });
 }
+
+/** 识别落地时歌词字、弧、力度、文字的样子：识别 id → 签名；位置（`StaffMarkNow.key`）→ 识别 id（文本格式按它反查） */
+interface StaffMarkBase {
+  sig: Map<string, string>;
+  idsByKey: Map<string, string[]>;
+}
+
+/** `chordSig` 去掉歌词那一段：歌词有自己的框（`staffMarksOf`），改字只标那个字，不再把音标成改过 */
+const soundSig = (sig: string): string => sig.split("/").slice(0, 4).join("/");
 
 /** 一个和弦在对照视图里算不算「改过」的签名：音高（各音）、休止、时值、附点、连音、倚音、各段歌词。 */
 function chordSig(c: Chord): string {

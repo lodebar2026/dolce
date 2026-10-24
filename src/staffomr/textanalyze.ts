@@ -908,7 +908,7 @@ interface NoteLike {
   rest: boolean;
   x: number;
   voice?: number;
-  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; size?: number; baseY?: number }[];
+  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; size?: number; baseY?: number; box?: Box }[];
   chord?: string;
   chordSize?: number;
   chordLater?: { text: string; frac: number; size?: number }[];
@@ -942,7 +942,7 @@ export function attachLyrics(notes: NoteLike[], lines: LyricLine[], sameCol = 0)
       for (let j = ni + 1; j < cand.length && cand[j].x - syl.cx <= Math.abs(cand[ni].x - syl.cx); j++)
         if (Math.abs(cand[j].x - syl.cx) < Math.abs(cand[ni].x - syl.cx)) ni = j;
       const n = cand[ni];
-      (n.lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}) });
+      (n.lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}), box: { left: syl.left, right: syl.right, top: line.top, bottom: line.bottom ?? line.top + (syl.right - syl.left) } });
       cont = syl.hyphen;
       // 同一列（x 差不到 `sameCol`）的其余和弦成员一并跳过：一个和弦只挂一个音节。
       // 位图路才传（0.3 个线距）：只挪一个音，下一个音节常落到同一和弦的另一个成员上，
@@ -1127,7 +1127,7 @@ const TEMPO_WORDS_GAP = 5;
  */
 export function attachDirectionTexts(
   pg: SPage,
-  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean; size?: number; rehearsal?: boolean; bracket?: boolean }[]; metronome?: StaffNote["metronome"]; tempoText?: string; tempoSize?: number }[],
+  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean; size?: number; rehearsal?: boolean; bracket?: boolean; box?: Box }[]; metronome?: StaffNote["metronome"]; tempoText?: string; tempoSize?: number }[],
   text: TextAnalysis,
 ): void {
   const sp = pg.normalStaffSpace || pg.space;
@@ -1210,6 +1210,6 @@ export function attachDirectionTexts(
     }
     const plain = isTempo ? s.replace(/\s*=\s*$/, "") : s;
     if (!plain) continue;
-    (note.words ??= []).push({ text: plain, above: cy < (stf.box.top + stf.box.bottom) / 2, ...(size > 0 ? { size } : {}), ...(boxed ? { rehearsal: true } : {}), ...(bracket ? { bracket: true } : {}) });
+    (note.words ??= []).push({ text: plain, above: cy < (stf.box.top + stf.box.bottom) / 2, ...(size > 0 ? { size } : {}), ...(boxed ? { rehearsal: true } : {}), ...(bracket ? { bracket: true } : {}), box });
   }
 }

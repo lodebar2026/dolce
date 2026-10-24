@@ -1212,7 +1212,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   slurEl(entry: SyncEntry): SVGGraphicsElement | null {
-    if (this.mode === "recognize") return null;
+    if (this.mode === "recognize") return this.omr.staffMarkHit(entry);
     if (this.mode === "mixed") return this._staffElsOf(entry)[0] ?? null;
     return entry.end === undefined ? null : this.painter.slurEl(entry.id, entry.end);
   }
@@ -1267,6 +1267,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   private _recognizeElOf(entry: SyncEntry): SVGGraphicsElement | null {
     if (entry.kind === "note") return this.omr.hitFor("note", entry.id);
+    // 五线谱对照：歌词字、弧、力度、文字按写进元素的识别 id 对到源图上的框
+    if ((entry.kind === "lyric" || entry.kind === "mark") && this.omr.hasStaffResult) return this.omr.staffMarkHit(entry);
     if (entry.kind === "lyric") return this.omr.hitFor("lyric", entry.id, entry.verse ?? 0);
     // 和弦名：这个音的第几个（音符本身的在前、增时线上的按序在后，同原文顺序）
     if (entry.kind === "mark" && entry.markKind === "harmony" && !this.omr.hasStaffResult) {

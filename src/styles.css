@@ -542,6 +542,10 @@ button:focus-visible, select:focus-visible {
 .omr-staff-overlay .omr-num-deleted .omr-staff-box { stroke: #868e96; }
 .omr-staff-overlay .omr-num-inserted .omr-staff-box { fill: rgba(8, 127, 91, 0.08); stroke: #087f5b; stroke-dasharray: 4 3; }
 .omr-staff-overlay .omr-num-inserted text, .omr-staff-overlay .omr-num-edited text { fill: #087f5b; }
+.omr-staff-overlay .omr-src-box { fill: none; stroke: #e8590c; opacity: 0.7; }
+.omr-staff-overlay .omr-src-slur .omr-src-box, .omr-staff-overlay .omr-src-tied .omr-src-box { stroke-dasharray: 4 3; opacity: 0.5; }
+.omr-staff-overlay .omr-staff-src.omr-num-edited .omr-src-box { fill: rgba(8, 127, 91, 0.10); stroke: #087f5b; opacity: 1; }
+.omr-staff-overlay .omr-staff-src.omr-num-deleted .omr-src-box { stroke: #868e96; }
 .omr-staff-overlay .omr-staff-bar { stroke: #1565ff; stroke-linecap: round; opacity: 0.55; }
 .omr-staff-overlay .omr-staff-bar-gone { stroke: #868e96; stroke-dasharray: 3 3; opacity: 0.6; }
 .omr-hits rect.omr-playing { fill: rgba(21, 101, 255, 0.18); stroke: #1565ff; stroke-width: 2; }

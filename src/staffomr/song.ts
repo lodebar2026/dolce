@@ -11,6 +11,7 @@ import { recognizeStaffPage, vectorPageCredits, vectorPageFooters } from "./page
 import { buildScore, measureNumbering, restructureSystems, type StaffProfile, type SystemOp } from "./score";
 import { pageTextPt, scoreToMusicXml, type StaffXmlOptions } from "./toxml";
 import type { StaffNote } from "./notedata";
+import { type MarkBox, numberOmrIds } from "./review";
 import type { Staff } from "./model";
 
 /**
@@ -47,6 +48,7 @@ export interface StaffPdfResult {
   detail?: {
     pages: { pn: number; page: Parameters<typeof buildScore>[0][number]["page"]; notes: StaffNote[] }[];
     noteBoxes: Map<string, { page: number; box: { left: number; right: number; top: number; bottom: number }; step: string; octave: number; alter: number; rest: boolean }>;
+    markBoxes: Map<string, MarkBox>;
     score: ReturnType<typeof buildScore>;
     assignment(): number[][];
     rebuild(slots: number[][]): { xml: string; score: ReturnType<typeof buildScore> };
@@ -96,18 +98,10 @@ export async function recognizeStaffDoc(
     return { lyric: ns.some((n) => n.lyrics?.length), pitch: ps.length ? ps[ps.length >> 1]! : null };
   };
   const score = buildScore(entries, { profileOf });
-  // 原图对照：逐页逐音编号写进 `<note id>`、记下源框（同 `rasteromr/song.ts`）
+  // 原图对照：逐页逐音编号写进 `<note id>`、歌词文字力度弧的 id，记下源框（同 `rasteromr/song.ts`）
   const noteBoxes: NonNullable<StaffPdfResult["detail"]>["noteBoxes"] = new Map();
-  if (opts.noteIds) {
-    let k = 0;
-    detailPages.forEach(({ notes }, pi) => {
-      for (const n of notes) {
-        const id = `omr${++k}`;
-        n.omrId = id;
-        noteBoxes.set(id, { page: pi, box: { ...n.sym.box }, step: n.step ?? "C", octave: n.octave ?? 4, alter: n.alter ?? 0, rest: !!n.rest });
-      }
-    });
-  }
+  const markBoxes: NonNullable<StaffPdfResult["detail"]>["markBoxes"] = new Map();
+  const arcId = opts.noteIds ? numberOmrIds(detailPages, noteBoxes, markBoxes) : undefined;
   const notesOf = (st: Staff): StaffNote[] => notesByStaff.get(st) ?? [];
   // 页眉页脚只取曲首那一页（同位图路 `rasteromr/song.ts`）
   const credits: NonNullable<StaffXmlOptions["credits"]> = entries.length ? vectorPageCredits(entries[0].page).map(({ text, type, justify, size, box }) => ({ text, type, justify, box, size: pageTextPt(entries[0]!.page, size) })) : [];
@@ -117,14 +111,14 @@ export async function recognizeStaffDoc(
   });
   const title = opts.title ?? credits.find((c) => c.type === "title")?.text;
   const numbering = measureNumbering(score);
-  const xmlOpts = { title, credits, ...(numbering ? { measureNumbering: numbering } : {}), ...(opts.noteIds ? { noteId: (n: StaffNote) => n.omrId } : {}) };
+  const xmlOpts = { title, credits, ...(numbering ? { measureNumbering: numbering } : {}), ...(opts.noteIds ? { noteId: (n: StaffNote) => n.omrId, arcId } : {}) };
   const musicxml = scoreToMusicXml(score, notesOf, xmlOpts);
   let notes = 0;
   for (const v of notesByStaff.values()) notes += v.length;
   let cur = score;
   // 页、音符与声部结构总是带上（回归脚本按系统切行要用）；`noteIds` 只管写不写 `<note id>` 与源框
   const detail: StaffPdfResult["detail"] = {
-    pages: detailPages, noteBoxes, score,
+    pages: detailPages, noteBoxes, markBoxes, score,
     assignment: () => cur.systems.map((e, si) => e.sys.staves.map((st) => cur.scoreStaves.findIndex((ss) => ss.staves[si] === st))),
     rebuild: (slots) => {
       cur = buildScore(entries, { slots });

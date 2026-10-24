@@ -23,6 +23,9 @@ export interface StaffXmlOptions {
   partId?: string;
   /** 给 `<note>` 写 `id`（编辑器的识别对照按它把模型里的音对回源图坐标）；返回 undefined 不写 */
   noteId?: (n: StaffNote) => string | undefined;
+  /** 给 `<slur type="start">` 写 `id`：`markSlurNotes` 的弧号 → 识别对照的 id（跨行接上的后半截写在 `stop` 上）；返回 undefined 不写。
+   *  歌词、文字、力度、延音线的 id 记在各自身上（`lyrics[].id`、`words[].id`、`dynamicId`、`tieId`），有就写 */
+  arcId?: (arc: string) => string | undefined;
   /** 页眉各条（位图路 OCR 读出的标题、词曲作者），写成曲首页的 `<credit>`；`size` 是字号（pt），
    *  `box` 是它在首个系统那一页上的位置（页面单位），写源谱版面时折成 `default-x` / `default-y` */
   /** 小节号印在哪（`<measure-numbering>`，写在第一声部首小节的 `<print>` 里），见 `score.ts::measureNumbering` */
@@ -39,6 +42,16 @@ export interface StaffXmlOptions {
 
 /** 本次写出的 `noteId`（`scoreToMusicXml` 进出时设、清；写出是同步的） */
 let currentNoteId: StaffXmlOptions["noteId"] | null = null;
+let currentArcId: StaffXmlOptions["arcId"] | null = null;
+
+/** 本次写出已写过的识别 id：同一个音分进两个声部时被复制（`{...n}`），挂在它上面的字、弧也跟着写两遍，id 只给头一份 */
+const writtenIds = new Set<string>();
+/** ` id="…"`（没有、或已写过就空串） */
+const idAttr = (id: string | undefined): string => {
+  if (!id || writtenIds.has(id)) return "";
+  writtenIds.add(id);
+  return ` id="${escapeXml(id)}"`;
+};
 
 /** A4 纸宽（pt）：页面尺寸不可信的页（图片）按页宽 = 它折算 */
 const A4_WIDTH_PT = (210 * 72) / 25.4;
@@ -107,7 +120,7 @@ function dynamicXml(n: StaffNote, dirStaff: string): string {
   const ink = [...name].map((c) => DYNAMIC_INK[c]).filter((v): v is [number, number] => !!v);
   const pg = n.staff?.page;
   if (!withSourceLayout || !b || !ink.length || !pg) {
-    return `<direction placement="below"><direction-type><dynamics><${name}/></dynamics></direction-type>${dirStaff}</direction>`;
+    return `<direction placement="below"${idAttr(n.dynamicId)}><direction-type><dynamics><${name}/></dynamics></direction-type>${dirStaff}</direction>`;
   }
   const lo = Math.min(...ink.map((v) => v[0]));
   const hi = Math.max(...ink.map((v) => v[1]));
@@ -118,7 +131,7 @@ function dynamicXml(n: StaffNote, dirStaff: string): string {
   const pt = roundPt(4 * unit * ptPerUnit(pg));
   const x = n.sym.box.left;
   const pl = aboveStaff(n.staff, x, (b.top + b.bottom) / 2) ? "above" : "below";
-  return `<direction placement="${pl}"><direction-type><dynamics default-y="${staffY(n.staff, x, baseline)}" relative-x="${staffDx(n.staff, pen - x)}" font-size="${pt}"><${name}/></dynamics></direction-type>${dirStaff}</direction>`;
+  return `<direction placement="${pl}"${idAttr(n.dynamicId)}><direction-type><dynamics default-y="${staffY(n.staff, x, baseline)}" relative-x="${staffDx(n.staff, pen - x)}" font-size="${pt}"><${name}/></dynamics></direction-type>${dirStaff}</direction>`;
 }
 
 /** `<wedge>` 起点：写源谱版面时照原图写上下方、中线（`default-y`）、左端离符头左缘（`relative-x`）；渐弱的开口（`spread`）写在起点 */
@@ -337,8 +350,8 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
           const t = !n.metronome && !n.tempoText ? mates.find((m) => m.metronome || m.tempoText) : undefined;
           if (t) n = { ...n, metronome: t.metronome, tempoText: t.tempoText, tempoSize: t.tempoSize };
           const d = !n.dynamic ? mates.find((m) => m.dynamic) : undefined;
-          if (d) n = { ...n, dynamic: d.dynamic, dynamicBox: d.dynamicBox };
-        } else n = { ...n, words: undefined, metronome: undefined, tempoText: undefined, dynamic: undefined };
+          if (d) n = { ...n, dynamic: d.dynamic, dynamicBox: d.dynamicBox, dynamicId: d.dynamicId };
+        } else n = { ...n, words: undefined, metronome: undefined, tempoText: undefined, dynamic: undefined, dynamicId: undefined };
       }
       // 松叶的起止同理：挂在和弦哪个头上都是这一拍，写在打头的那个音前；挂在后写的头上，`<direction>` 落在和弦中间，
       // 读回来是下一拍（按拍位写时和弦先写最高音，主音不一定打头：破碎 m5、m106、m107）
@@ -389,7 +402,7 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
       for (const w of n.words ?? []) {
         const wy = withSourceLayout && w.baseY !== undefined ? ` default-y="${staffY(n.staff, n.sym.box.left, w.baseY)}"` : "";
         const el = w.rehearsal ? "rehearsal" : "words";
-        body += `<direction placement="${w.above ? "above" : "below"}"><direction-type><${el}${w.rehearsal ? ` enclosure="${w.bracket ? "none" : "square"}"` : ""}${wy}${fontAttr(textPt(n, w.size))}>${escapeXml(w.text)}</${el}></direction-type>${dirStaff}</direction>`;
+        body += `<direction placement="${w.above ? "above" : "below"}"${idAttr(w.id)}><direction-type><${el}${w.rehearsal ? ` enclosure="${w.bracket ? "none" : "square"}"` : ""}${wy}${fontAttr(textPt(n, w.size))}>${escapeXml(w.text)}</${el}></direction-type>${dirStaff}</direction>`;
       }
       if (n.dynamic) body += dynamicXml(n, dirStaff);
       // 松叶：**止排在起之前**——同一个音符上前一条松叶收尾、下一条起头是常事，
@@ -560,7 +573,7 @@ function noteXmlRaw(n: StaffNote, dur: number, staffNo = 0, withVoice = false, v
   if (n.tieStop) nots.push(`<tied type="stop"/>`);
   // 弧的方向：圆滑线写 `placement`、连音线写 `orientation`（两种软件导出的常规写法，读入端两个都认）
   const tieOri = n.tieAbove === undefined ? "" : ` orientation="${n.tieAbove ? "over" : "under"}"`;
-  if (n.tieStart) nots.push(`<tied type="start"${n.tieDashed ? ` line-type="dashed"` : ""}${tieOri}/>`);
+  if (n.tieStart) nots.push(`<tied type="start"${idAttr(n.tieId)}${n.tieDashed ? ` line-type="dashed"` : ""}${tieOri}/>`);
   // 编号按谱表号：钢琴两行合一个 part 时同号的弧按编号配对，右手一条长弧还开着、左手又起又止一条，读入端就配串了（宁静 m32–36）；
   // 止端按起端那行编（跨谱表的弧）
   const slurNo = staffNo || 1;
@@ -832,6 +845,9 @@ export function renumberSlurs(body: string, sysOfBar?: number[], crossTies = fal
     }
     return s0 + body.slice(at, to);
   };
+  // 识别对照的 id 写在同一端的**最后一份**上：和弦各音都起着同一条弧时（同一个弧号写了几遍），读入端并成一条、绑的是最后那个标签
+  const lastOf = new Map<string, Tok>();
+  for (const t of toks) lastOf.set(`${t.type}:${t.arc}`, t);
   const num = new Map<string, number>();
   const used = new Set<number>();
   let out = "";
@@ -849,7 +865,8 @@ export function renumberSlurs(body: string, sysOfBar?: number[], crossTies = fal
       if (d >= 0) out = out.slice(0, d + 11) + `<tie type="${t.type}"/>` + out.slice(d + 11);
       // 弧的上下方照抄成延音线的朝向（读入端照 `orientation` 定方向，不写就由排版去猜）
       const ori = t.type === "start" ? ` orientation="${t.above || t.rest.includes('placement="above"') ? "over" : "under"}"` : "";
-      out += `<tied type="${t.type}"${ori}/>`;
+      const tid = lastOf.get(`${t.type}:${t.arc}`) === t && (t.type === "start" || alias.has(t.arc)) ? currentArcId?.(t.arc) : undefined;
+      out += `<tied type="${t.type}"${idAttr(tid)}${ori}/>`;
       continue;
     }
     let n = num.get(key);
@@ -862,16 +879,18 @@ export function renumberSlurs(body: string, sysOfBar?: number[], crossTies = fal
       used.delete(n);
       num.delete(key);
     }
-    out += `<slur type="${t.type}" number="${n}"${t.rest}/>`;
+    // 识别对照的 id：起端写这条弧的；跨行接上的后半截另是一个弧对象，它的 id 写在止端
+    const sid = lastOf.get(`${t.type}:${t.arc}`) !== t ? undefined : t.type === "start" || alias.has(t.arc) ? currentArcId?.(t.arc) : undefined;
+    out += `<slur type="${t.type}" number="${n}"${idAttr(sid)}${t.rest}/>`;
   }
   out += copy(last, body.length);
   return out.replace(/<notations><\/notations>/g, "");
 }
 
 /** `y`：写源谱版面时这一行词的基线（tenths，相对谱表顶线），原图上量的 */
-function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean; extend?: boolean; above?: boolean }, y?: number): string {
+function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean; extend?: boolean; above?: boolean; id?: string }, y?: number): string {
   const syllabic = l.cont ? (l.hyphen ? "middle" : "end") : l.hyphen ? "begin" : "single";
-  return `<lyric number="${l.verse}"${y !== undefined ? ` default-y="${y}"` : ""}${l.above ? ' placement="above"' : ""}><syllabic>${syllabic}</syllabic><text>${escapeXml(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
+  return `<lyric number="${l.verse}"${idAttr(l.id)}${y !== undefined ? ` default-y="${y}"` : ""}${l.above ? ' placement="above"' : ""}><syllabic>${syllabic}</syllabic><text>${escapeXml(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
 }
 
 function accidentalName(alter: number): string {
@@ -927,11 +946,14 @@ export function scoreToMusicXml(
   opts: StaffXmlOptions = {},
 ): string {
   currentNoteId = opts.noteId ?? null;
+  currentArcId = opts.arcId ?? null;
   withSourceLayout = opts.layout !== false;
   try {
     return scoreToMusicXmlRaw(score, notesOf, opts);
   } finally {
     currentNoteId = null;
+    currentArcId = null;
+    writtenIds.clear();
     withSourceLayout = false;
   }
 }

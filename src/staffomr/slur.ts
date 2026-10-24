@@ -814,6 +814,9 @@ export function markSlurNotes(arcs: SlurArc[], newId: () => string = () => Strin
         if (id === undefined) ends.push({ id: (id = newId()), from: sl.from, to: sl.to, sl });
         slurIdOf.set(sl, id);
       }
+      // 原图上的外框记在挂上的那一端（起端优先），识别对照按弧号配框；同一条画两份的只记头一份
+      const host = sl.from ?? sl.to;
+      if (host && !host.slurBoxes?.some((b) => b.arc === id)) (host.slurBoxes ??= []).push({ arc: id, box: { ...sl.obj.box } });
       if (sl.from) sl.from.slurStartIds = pushId(sl.from.slurStartIds, id);
       if (sl.to) sl.to.slurStopIds = pushId(sl.to.slurStopIds, id);
       const one = sl.from && !sl.to ? sl.from : !sl.from && sl.to ? sl.to : undefined;
@@ -821,7 +824,7 @@ export function markSlurNotes(arcs: SlurArc[], newId: () => string = () => Strin
       if (one === sl.to && sl.edgeFirst && !sl.edgeFirst.slurEdgeCands?.some((o) => o.id === id)) (sl.edgeFirst.slurEdgeCands ??= []).push({ id, above: sl.above });
     }
     if (sl.from) {
-      if (sl.tie) (sl.from.tieStart = true), (sl.from.tieAbove = sl.above);
+      if (sl.tie) (sl.from.tieStart = true), (sl.from.tieAbove = sl.above), (sl.from.tieBox ??= { ...sl.obj.box });
       else (sl.from.slurStart = true), (sl.from.slurAbove = sl.above);
       if (sl.dashed) {
         if (sl.tie) sl.from.tieDashed = true;

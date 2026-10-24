@@ -231,3 +231,71 @@ export function stampXmlIds(xml: string, from: StaffView, load: (xml: string) =>
   }
   return root ? new XMLSerializer().serializeToString(root) : xml;
 }
+
+/**
+ * 五线谱对照里音以外的识别框（歌词字、弧、延音线、力度、文字指示）现在各落在哪：
+ * - `id`：MusicXML 原文读元素上的 `id`（`<lyric>` / `<direction>` / `<slur>`、`<tied>` 起止两端，`toxml.ts` 回填，挪了跟着走）；文本格式没有
+ * - `key`：按宿主音的识别 id 认的位置（歌词「哪个音第几段」、力度文字「哪个音上第几条」、弧「起在哪个音上第几条」），文本格式靠它反查 id
+ * - `sig`：判「改过」比的样子（宿主音与文字；弧是起止两音）
+ * - `entry`：对上索引条目用的键（`markEntryKey`）
+ */
+export interface StaffMarkNow {
+  ids: string[];
+  key: string | null;
+  /** 歌词另按「宿主音 + 字」认：换成文本格式时段号会变（ABC 的 `w:` 行按声部接着编） */
+  alt?: string;
+  sig: string;
+  entry: string;
+}
+
+/** 索引条目（`sync.ts::SyncEntry`）→ `StaffMarkNow.entry`；不是这几类的返回 null */
+export function markEntryKey(e: { kind: string; id: ElementId; verse: number | null; verseNo?: number; markKind?: string; end?: ElementId; dir?: { pi: number; mi: number; index: number } }): string | null {
+  if (e.kind === "lyric") return `L:${e.id}:${e.verseNo ?? (e.verse ?? 0) + 1}`;
+  if (e.kind !== "mark") return null;
+  if ((e.markKind === "slur" || e.markKind === "tied") && e.end !== undefined) return `${e.markKind}:${e.id}:${e.end}`;
+  if (e.dir) return `D:${e.dir.pi}:${e.dir.mi}:${e.dir.index}`;
+  return null;
+}
+
+export function staffMarksOf(view: StaffView, withIds: boolean): StaffMarkNow[] {
+  const out: StaffMarkNow[] = [];
+  const attr = (o: object | undefined, role?: string): string | undefined => (withIds && o ? surfaceOf(o, role)?.getAttribute("id") ?? undefined : undefined);
+  const omrOf = new Map<ElementId, string>();
+  const nth = new Map<string, number>();
+  const keyOf = (pre: string, host: string | undefined): string | null => {
+    if (!host) return null;
+    const k = `${pre}|${host}`;
+    const i = nth.get(k) ?? 0;
+    nth.set(k, i + 1);
+    return `${k}|${i}`;
+  };
+  view.song.parts.forEach((part, pi) => part.measures.forEach((m, mi) => {
+    for (const el of m.elements) {
+      if (el.kind !== "chord") continue;
+      const host = view.idsOf(el).find((x) => x);
+      if (host) omrOf.set(el.id, host);
+      for (const ly of el.lyrics ?? []) {
+        if (!ly.text) continue;
+        const id = attr(ly);
+        out.push({ ids: id ? [id] : [], key: host ? `L|${host}|${ly.number}` : null, ...(host ? { alt: `Lt|${host}|${ly.text}` } : {}), sig: `${host}|${ly.text}`, entry: `L:${el.id}:${ly.number}` });
+      }
+    }
+    (m.directions ?? []).forEach((d, index) => {
+      if (d.type !== "dynamics" && d.type !== "words" && d.type !== "rehearsal") return;
+      // 宿主音同索引（`sync.ts::buildXml`）：`afterElements` 之后第一个同声线的和弦，小节末的借最后一个
+      const same = (e: Measure["elements"][number]): e is Chord => e.kind === "chord" && (d.voice === undefined || e.voice === d.voice);
+      const h = m.elements.slice(Math.max(0, d.afterElements ?? 0)).find(same) ?? [...m.elements].reverse().find(same);
+      const host = h ? view.idsOf(h).find((x) => x) : undefined;
+      const id = attr(d);
+      const pre = d.type === "dynamics" ? "D" : "W";
+      out.push({ ids: id ? [id] : [], key: keyOf(pre, host), sig: `${host}|${d.text ?? ""}`, entry: `D:${pi}:${mi}:${index}` });
+    });
+  }));
+  for (const mk of view.song.marks) {
+    if (mk.type !== "slur" && mk.type !== "tied") continue;
+    const ids = [attr(mk, "start"), attr(mk, "stop")].filter((x): x is string => !!x);
+    const a = omrOf.get(mk.start);
+    out.push({ ids, key: keyOf(mk.type, a), sig: `${a}|${omrOf.get(mk.end)}`, entry: `${mk.type}:${mk.start}:${mk.end}` });
+  }
+  return out;
+}

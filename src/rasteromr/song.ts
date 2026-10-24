@@ -16,7 +16,7 @@ import type { HeaderCredit, WordLine } from "../omrkit/headertext";
 import type { Rect } from "../omrkit/types";
 import { markSplitBars } from "../staffomr/notedata";
 import { buildScore, restructureSystems, type StaffProfile } from "../staffomr/score";
-import type { StaffReviewResult, StaffReviewStats } from "../staffomr/review";
+import { type StaffReviewResult, type StaffReviewStats, numberOmrIds } from "../staffomr/review";
 import { pageTextPt, scoreToMusicXml } from "../staffomr/toxml";
 import type { SPage, Staff } from "../staffomr/model";
 import type { LyricLine } from "../staffomr/textanalyze";
@@ -214,22 +214,14 @@ export async function recognizeRasterSong(
   // 自检：凑满拍的，加上结构上的半截小节（弱起、乐句中间劈开的两半，见 `notedata.ts::markSplitBars`）
   markSplitBars(barPages);
   for (const { bars } of barPages) stats.full += bars.filter((b) => b.full || b.split).length;
-  // 音符 id 与源图框：逐页逐音编号，记在音符上（写出前音符会被复制，复制品带着它），重建时 id 不变
+  // 音符与歌词、文字、力度、弧的 id 与源图框：逐页逐音编号，记在各自身上（写出前音符会被复制，复制品带着它），重建时 id 不变
   const noteBoxes: RasterSongResult["noteBoxes"] = new Map();
-  if (opts.noteIds) {
-    let k = 0;
-    pages.forEach(({ result }, pi) => {
-      for (const n of result.notes) {
-        const id = `omr${++k}`;
-        n.omrId = id;
-        noteBoxes.set(id, { page: pi, box: { ...n.sym.box }, step: n.step, octave: n.octave, alter: n.alter, rest: n.rest });
-      }
-    });
-  }
-  const noteId = opts.noteIds ? (n: StaffNote): string | undefined => n.omrId : undefined;
+  const markBoxes: RasterSongResult["markBoxes"] = new Map();
+  const arcId = opts.noteIds ? numberOmrIds(pages.map(({ result }) => result), noteBoxes, markBoxes) : undefined;
+  const idOpts = opts.noteIds ? { noteId: (n: StaffNote): string | undefined => n.omrId, arcId } : {};
   const notesOf = (st: Staff): StaffNote[] => notesByStaff.get(st) ?? [];
   const emptyAssign = (): number[][] => [];
-  if (!entries.length) return { xml: null, score: null, stats, pages, noteBoxes, assignment: emptyAssign, rebuild: () => { throw new Error("没有谱表"); } };
+  if (!entries.length) return { xml: null, score: null, stats, pages, noteBoxes, markBoxes, assignment: emptyAssign, rebuild: () => { throw new Error("没有谱表"); } };
   // 拉丁段挪到全曲中文段后面（页内先占位，见 `lyricpost.ts::settleLyricVerses`）
   settleLyricVerses([...notesByStaff.values()].flat());
   // 内容剖面（有没有词、音域中位数、谱面标签）交给 `buildScore` 做全局指派，见 `score.ts::assignSlots`
@@ -245,20 +237,20 @@ export async function recognizeRasterSong(
   const credits = (header ?? []).map(({ text, type, justify, size, box }) => ({ text, type, justify, box, ...(headerPage ? { size: pageTextPt(headerPage, size) } : {}) }));
   // 没给标题（编辑器里打开的图、PDF）就拿页眉的头一个标题
   const title = opts.title ?? credits.find((c) => c.type === "title")?.text;
-  const xml = scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...(noteId ? { noteId } : {}) });
+  const xml = scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...idOpts });
   stats.systems = score.systems.length;
   stats.parts = score.parts.length;
   return {
-    xml, score, stats, pages, noteBoxes,
+    xml, score, stats, pages, noteBoxes, markBoxes,
     assignment: () => score.systems.map((e, si) => e.sys.staves.map((st) => score.scoreStaves.findIndex((ss) => ss.staves[si] === st))),
     rebuild: (slots) => {
       score = buildScore(entries, { slots, lyricsBelow });
-      return { xml: scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...(noteId ? { noteId } : {}) }), score };
+      return { xml: scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...idOpts }), score };
     },
     restructure: (op) => {
       if (!restructureSystems(entries, op)) return null;
       score = buildScore(entries, { lyricsBelow, profileOf });
-      return { xml: scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...(noteId ? { noteId } : {}) }), score };
+      return { xml: scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...idOpts }), score };
     },
   };
 }

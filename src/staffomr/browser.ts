@@ -101,14 +101,14 @@ export async function vectorOverlayResult(src: Uint8Array | StaffPdfDoc, res: St
     if (src instanceof Uint8Array) pdf.destroy?.();
   }
   const s = OVERLAY_SCALE;
-  const noteBoxes: StaffReviewResult["noteBoxes"] = new Map(
-    [...d.noteBoxes].map(([id, b]) => [id, { ...b, box: { left: b.box.left * s, right: b.box.right * s, top: b.box.top * s, bottom: b.box.bottom * s } }]),
-  );
+  const scaled = <T extends { box: { left: number; right: number; top: number; bottom: number } }>(b: T): T => ({ ...b, box: { left: b.box.left * s, right: b.box.right * s, top: b.box.top * s, bottom: b.box.bottom * s } });
+  const noteBoxes: StaffReviewResult["noteBoxes"] = new Map([...d.noteBoxes].map(([id, b]) => [id, scaled(b)]));
+  const markBoxes: StaffReviewResult["markBoxes"] = new Map([...d.markBoxes].map(([id, b]) => [id, scaled(b)]));
   return {
     xml: res.musicxml,
     score: d.score as unknown as StaffReviewResult["score"],
     stats: { notes: res.notes, harmonies: 0, lyricLines: 0, lyricStats: { rows: 0, hit: 0, parity: 0 }, bars: 0, full: 0, unknown: 0, staves: 0, pages: res.pages, halftone: null, kind: "vector", jianpuFix: { pairs: 0, pitch: 0, duration: 0, removed: 0, inserted: 0 }, parts: res.parts },
-    pages, noteBoxes,
+    pages, noteBoxes, markBoxes,
     assignment: () => d.assignment(),
     rebuild: (slots) => {
       const r = d.rebuild(slots);
