@@ -1406,7 +1406,7 @@ export class OmrController implements FormatSource {
           if (el.kind !== "chord") continue;
           const id = view.idsOf(el).find((x) => x);
           if (id) sig.set(id, chordSig(el));
-          else if (!el.grace && !view.idsOf(el).includes(COVERED)) noId++;
+          else if (!el.grace && !(el.rest && el.printObject === false) && !view.idsOf(el).includes(COVERED)) noId++;
         }
         // 歌词字、弧、力度、文字：id 从 MusicXML 那份读（元素上的 `id`），签名按当前格式那份的同一位置取（同上，两边一个口径）
         const xmlMarks = staffMarksOf({ song: xmlDoc.songs[0]!, idsOf: surfaceIds }, true);
@@ -1477,7 +1477,8 @@ export class OmrController implements FormatSource {
             for (const x of pending.get(voice) ?? []) x.next = first;
             pending.delete(voice);
             lastWithId.set(voice, first);
-          } else if (!el.grace) {
+          } else if (!el.grace && !(el.rest && el.printObject === false)) {
+            // 不可见休止（ABC 第二支 `&` 补齐用的 `x`）识别里本来没有，不当新插的画
             const list = pending.get(voice) ?? [];
             const it = { id: el.id, label: el.rest ? t("omr.restLabel") : pitchLabel(el.notes[0]?.pitch), prev: lastWithId.get(voice) ?? null, next: null, nth: list.length, diat: diatOf(el.notes[0]?.pitch) };
             list.push(it);

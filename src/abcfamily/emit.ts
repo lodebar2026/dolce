@@ -37,6 +37,7 @@ import { ORNAMENT_TAG } from "../model/xmlproject";
 import { BARLINE_ORNAMENT_NAME } from "./jumpmarks";
 import { chordNotehead, rehearsalOf } from "../model/deconames";
 import { tupletNormal123 } from "./parsedialect";
+import { isLyricApostrophe, isLyricTrailingPunct } from "../common/cjkpunct";
 import { chordSuffixForm } from "../score/harmonyparse";
 
 /** MusicXML 的 `<ornaments>` 元素名 → 123 记号名：`xmlproject.ts::ORNAMENT_TAG` 反过来（同名的取第一个）。 */
@@ -168,8 +169,8 @@ export function lyricLines(
       // 「一个字 + 标点」（`哦，` `“主` `主。”`）读回本来就是一个音节，不包——手写的样子就是这样。
       // 但后面要接词内 `-` 的仍然包：CJK 分支不认字后的 `-`（211《等主来》的 `{来”}-`）。
       const inWordNext = hit.syllabic === "begin" || hit.syllabic === "middle";
-      const needBrace = [...hit.text].length > 1 && /[\u3400-\u9fff]/u.test(hit.text)
-        && (inWordNext || !isOneCjkWithPunct(hit.text));
+      const needBrace = ([...hit.text].length > 1 && /[\u3400-\u9fff]/u.test(hit.text)
+        && (inWordNext || !isOneCjkWithPunct(hit.text))) || splitsOnRead(hit.text);
       // 不包 `{}` 的拉丁词里的字面 `-` 与跳音符要转义，否则读回被拆开（`and/or`）
       const bare = skip === "/" ? hit.text.replace(/[/-]/g, (c) => `\\${c}`) : hit.text;
       const joined = style.joinMulti ? style.joinMulti(hit.text) : needBrace ? `{${hit.text}}` : bare;
@@ -197,6 +198,18 @@ export function lyricLines(
   // 尾部没词的段不必写（ABC：段数少于最大段号是合法的）
   while (bodies.length > 0 && bodies[bodies.length - 1] === "") bodies.pop();
   return bodies.map((b) => `w:${b}`);
+}
+
+/**
+ * 拉丁音节读回会被拆开：中间夹着空白，或收尾标点后面还接着字（识别把 `dumb,` `Your` 两格读成了一格 `dumb,Your`）——
+ * 读入端（`j123/parse.ts::parseLyricLine`）在收尾标点处收一个音节，后面的字另起一格，整段往后错一格。这种包 `{}`。
+ */
+function splitsOnRead(text: string): boolean {
+  if (/\s/.test(text.trim())) return true;
+  for (let k = 0; k + 1 < text.length; k++) {
+    if (isLyricTrailingPunct(text[k]!) && !isLyricApostrophe(text, k) && !isLyricTrailingPunct(text[k + 1]!)) return true;
+  }
+  return false;
 }
 
 /** 字段值里的行界。裸 `\r` 也算（文本谱原文行内夹着的）：带着它写出去，读回按行切开，后半截就成了另一行。 */
