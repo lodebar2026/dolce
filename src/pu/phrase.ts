@@ -92,6 +92,25 @@ function alignCut(els: readonly MusicElement[], k: number): number {
   return at;
 }
 
+/** 连音中间的切点挪到连音之后：MusicXML 只能在小节线处换行、连音拆不开小节（`xmlproject.ts::splitInlineBreaks`
+ *  顺延到下一小节），简谱里一组三连音分在两行也看不出是一组。下标是元素流的，「切在 k 之前」。 */
+function pastTuplet(st: VoiceStream, k: number): number {
+  let base = 0;
+  for (const line of st.lines) {
+    const n = line.elements.length;
+    if (k > base && k < base + n) {
+      for (const mk of line.marks) {
+        if (mk.type !== "tuplet" || k - base <= mk.start || k - base > mk.end) continue;
+        let at = base + mk.end + 1;
+        while (at < st.elements.length && st.elements[at]!.kind === "sustain") at += 1;
+        return alignCut(st.elements, at);
+      }
+    }
+    base += n;
+  }
+  return k;
+}
+
 /** 元素流里第一个累计时值 ≥ tick 的下标（对齐用；找不到就是流末）。 */
 function indexAtTick(st: VoiceStream, tick: Fraction): number {
   for (let i = 0; i < st.ticks.length; i++) {
@@ -179,7 +198,7 @@ export function puPhraseLines(
       // 行内断点：在该音符**之后**换行；跟在它后面的增时线属于同一个音，一并带走
       let at = i + 1;
       while (at < lead.elements.length && lead.elements[at]!.kind === "sustain") at += 1;
-      at = alignCut(lead.elements, at);
+      at = pastTuplet(lead, alignCut(lead.elements, at));
       if (at > 0 && at < lead.elements.length) {
         cuts.add(at);
         if (breaks.sectionCutChords.has(ch)) sectionAt.add(at);

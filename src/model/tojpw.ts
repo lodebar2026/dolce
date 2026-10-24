@@ -144,13 +144,15 @@ class LyricProcessor {
   }
 
   private makeText(txt: string): string {
-    if (txt.length === 1) return txt;
+    // 单个英文字母（`a`、`I`）也要包：读入端读完一串 ASCII 字母会顺手跳过下一个字符（当它是分隔符，
+    // `jpwfile.ts::WordsSection`），裸写的 `a{gain,}` 读回吃掉 `{`、丢逗号、多出一个 `}` 音节
+    if (txt.length === 1) return /^[A-Za-z]$/.test(txt) ? `{${txt}}` : txt;
     const mat = LyricProcessor.reg.exec(txt);
     if (mat) {
       return `{${mat[0]}[${txt.substring(mat[0].length)}]}`;
     }
     const left = txt.replace(LyricProcessor.punc, "");
-    const quote = left.length !== 1;
+    const quote = left.length !== 1 || /^[A-Za-z]$/.test(left);
     return quote ? `{${txt}}` : txt;
   }
 
