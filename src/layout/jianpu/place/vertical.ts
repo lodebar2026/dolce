@@ -1,5 +1,6 @@
 // 纵向量：头顶让位（读上方带的结果）、倚音落位、音符叠层的顶与底、连谱号伸出量。
 import { jpTremoloCount } from "../../../engrave/jptremolo";
+import { jpSlideOf } from "../../../engrave/jpslide";
 import type { MusicElement, NoteElement, StackedNote } from "../../../pu/ast";
 import { jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { graceBottom, graceGeometry, type GraceGeom } from "../../../engrave/grace";
@@ -170,8 +171,8 @@ export function articStack(el: MusicElement, m: JianpuGrid, ink: InkMeasurer, ga
     artBottom = Math.min(artBottom, (topDigit?.y ?? 0) - nh / 2 - accidentalRise(acc as AccidentalKind, nh, m.style.look.accidentalScale) - gap * 1.6);
   }
   for (const orn of el.ornaments) {
-    // 换气是挂在右上角的 V、震音号记在右下角（compose/note.ts 贴着音符画，`engrave/jptremolo.ts`），不进带
-    const g = orn.name === "hx" || jpTremoloCount([orn.name]) ? undefined : ORNAMENTS[orn.name];
+    // 换气是挂在右上角的 V、震音号记在右下角、滑音是右侧偏上的箭头（compose/note.ts 贴着音符画，`engrave/jptremolo.ts`、`jpslide.ts`），不进带
+    const g = orn.name === "hx" || jpTremoloCount([orn.name]) || jpSlideOf([orn.name]) ? undefined : ORNAMENTS[orn.name];
     if (!g) continue;
     const size = m.style.size.note * g.scale;
     const r = ink.smufl(g.glyph, size);

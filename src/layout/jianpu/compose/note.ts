@@ -11,6 +11,7 @@ import type { Rect } from "../../../common/geom";
 import { augDotCenter } from "../../../engrave/augdot";
 import { jpTremoloCount, jpTremoloStrokes } from "../../../engrave/jptremolo";
 import { breathPath } from "../../../engrave/breath";
+import { jpSlideArrow, jpSlideOf } from "../../../engrave/jpslide";
 import type { PlacedItem, PlacedText } from "../place/model";
 import { accidentalLeadOf, graceLayout, noteBeams, stackedDigits } from "../place/vertical";
 import { arpeggioGroup, JP_ARPEGGIO_SIZE } from "../../../engrave/arpeggio";
@@ -182,6 +183,7 @@ export function paintNote(c: OriginalCtx,
     g.add(d);
   }
   if (!note.hidden && !note.multiRest) paintTremolo(c, g, note, digitInk);
+  if (!note.hidden && !note.multiRest) paintSlide(c, g, note, digitInk);
 
   // 和弦、注释、转调标签（定位端已按墨迹堆好，place/band.ts）
   paintBand(c, g, note, NOTE_TEXT);
@@ -223,6 +225,26 @@ function paintTremolo(c: OriginalCtx, g: Group, note: NoteElement, digitInk: Rec
     p.ident = { kind: "deco" };
     g.add(p);
   }
+}
+
+/** 上 / 下滑音：数字（连同附点）右侧偏上一根直线短箭头 ↗ / ↘（`engrave/jpslide.ts`，GB/T 46845 7.6.4.3） */
+function paintSlide(c: OriginalCtx, g: Group, note: NoteElement, digitInk: Rect): void {
+  const dir = jpSlideOf(note.ornaments.map((o) => o.name));
+  if (!dir) return;
+  const m = c.metrics;
+  const r = m.style.dot.aug;
+  const right = note.dots > 0 ? augDotCenter(digitInk, note.dots - 1, r, m.ink.stack.gap).cx + r : digitInk.right;
+  const a = jpSlideArrow(dir === "up", m.ink.noteHeight);
+  const p = stroke(c.ink, a.lineWidth);
+  p.moveTo(right + a.x0, digitInk.bottom + a.y0);
+  p.lineTo(right + a.x1, digitInk.bottom + a.y1);
+  for (const [ax, ay] of a.arms) {
+    p.moveTo(right + ax, digitInk.bottom + ay);
+    p.lineTo(right + a.x1, digitInk.bottom + a.y1);
+  }
+  p.classes.add("artic");
+  p.ident = { kind: "deco" };
+  g.add(p);
 }
 
 /**

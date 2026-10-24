@@ -173,11 +173,11 @@ function logicalMarks(rows: readonly RowView[]): LogicalMark[] {
 
 /**
  * 展开档只要旋律与词（投影片）：和弦、段落词、奏法、力度/术语、小节线上的跳转字与 segno、松叶、临时伴奏都不画，
- * 延长记号与倚音留着（倚音用户定保留；同旧简谱引擎展开档的投影 `jianpuinput.ts::rowsPart`）。换下来的符号记同一个 id。
+ * 延长记号与倚音留着（倚音用户定保留；同旧简谱引擎展开档的投影 `jianpuinput.ts::rowsPart`），上 / 下滑音也留着（用户定）。换下来的符号记同一个 id。
  */
 function bare(el: MusicElement): MusicElement {
   if (el.kind === "note") {
-    const ornaments = el.ornaments.filter((o) => o.name === "yc" || o.name === "ycy");
+    const ornaments = el.ornaments.filter((o) => o.name === "yc" || o.name === "ycy" || o.name === "shy" || o.name === "xhy");
     if (!el.chord && !el.annotation && ornaments.length === el.ornaments.length) return el;
     return { ...el, ornaments, chord: undefined, annotation: undefined };
   }

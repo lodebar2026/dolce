@@ -10,6 +10,7 @@ import { bandTop, stackUpperBand, type BandItem } from "../../../engrave/upperba
 import { DYNAMIC_SIZE } from "../../../engrave/dynamics";
 import { JP_HAIRPIN, jpHairpinLineWidth } from "../../../engrave/hairpin";
 import { tupletDigits } from "../../../engrave/tuplet";
+import { jpSlideArrow, jpSlideOf } from "../../../engrave/jpslide";
 import { endingDrop, endingLabelDx, labelBaselineOf } from "../../../engrave/ending";
 import { stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
 import { barlineSpan, bracketLineWidth, jianpuSlurStyle, keyLabelSize, type JianpuGrid } from "../metrics";
@@ -324,6 +325,11 @@ export function placeBand(
       for (const orn of el.ornaments) {
         if (orn.name === "hx") top = Math.min(top, -nh * 1.05 + dy);
         else if (orn.name === "zkh" || orn.name === "ykh") top = Math.min(top, -nh * 0.75 + dy);
+        else if (jpSlideOf([orn.name])) {
+          // 滑音箭头锚在数字墨迹底（compose/note.ts::paintSlide）
+          const a = jpSlideArrow(orn.name === "shy", nh);
+          top = Math.min(top, nh / 2 + Math.min(a.y0, a.y1, ...a.arms.map((p) => p[1])) - a.lineWidth / 2 + dy);
+        }
       }
     }
   }

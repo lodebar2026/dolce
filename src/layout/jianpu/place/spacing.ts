@@ -7,6 +7,7 @@
 // 锚点 x 是数字**墨迹中心**（compose 按墨迹居中落笔）；占位按数字**字面宽**算（同旧简谱引擎 `entryWidth`），
 // 所以列的左占位 = 锚点到落笔原点（墨迹中心偏移），右占位 = 字面宽 − 它（+ 附点占位）。
 import { jpTremoloCount, jpTremoloStrokes } from "../../../engrave/jptremolo";
+import { jpSlideArrow, jpSlideOf } from "../../../engrave/jpslide";
 import type { BarlineElement, Meter, NoteElement } from "../../../pu/ast";
 import { barlineSpan, jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { latinWordBreak } from "../../../engrave/syllable";
@@ -125,6 +126,12 @@ function itemBox(it: PlacedItem, m: JianpuGrid, ink: InkMeasurer): { left: numbe
     // 震音号记在右下角、附点之后（`engrave/jptremolo.ts`）
     const trem = jpTremoloCount(el.ornaments.map((o) => o.name));
     if (trem > 0 && !el.hidden) right += jpTremoloStrokes(trem, m.ink.noteHeight).width;
+    // 滑音箭头记在数字（连同附点）右侧偏上（`engrave/jpslide.ts`）；尽量少占：只补出伸出字面宽之外的那截
+    const slide = jpSlideOf(el.ornaments.map((o) => o.name));
+    if (slide && !el.hidden) {
+      const inkEnd = d.ink.right - center + (el.dots > 0 ? ink.digit("·").advance * el.dots : 0);
+      right = Math.max(right, inkEnd + jpSlideArrow(slide === "up", m.ink.noteHeight).width);
+    }
     if (el.graceBefore.length > 0) lead = graceAdvance(jianpuGraceNotes(el.graceBefore), jianpuGraceMetrics(m));
     if (el.graceAfter.length > 0) right += graceAdvance(jianpuGraceNotes(el.graceAfter), jianpuGraceMetrics(m));
     // 临时记号软让位：伸出落笔原点左边多少、再多留一道空（`NoteEntry.addAccidental`）；`classic`（成书照原书）不让
