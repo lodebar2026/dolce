@@ -22,6 +22,7 @@ import { eachChord, verseCount } from "./helpers";
 import { projectForJianpu } from "./jianpuproject";
 import { melodyLane } from "./jianpu";
 import { hasCrossStaff } from "./staves";
+import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
 import { puArcLosses } from "./topu";
 import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
 import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "./pagemeta";
@@ -36,6 +37,8 @@ export type Feature =
   | "innerVoice"     // 同一谱表上的第二 voice（ABC/123 的 `&`）
   | "extraStaff"     // 一个声部的第二条谱表（钢琴下谱表、扬琴 `<staves>2`）
   | "crossStaff"     // 跨谱表的音与连线（钢琴谱跨谱表书写、连到另一条谱表上的弧）
+  | "octaveShift"    // 八度线（`<octave-shift>`，8va / 8vb）
+  | "beamGroup"      // 不按拍的符杠分组（跨拍连、拍内断开；简谱各格式的减时线一律按拍连）
   | "rhythmStack"    // 一个和弦里叠几个节奏音符（打击乐谱钹与鼓同时，`<unpitched>` 带 `<chord/>`）
   | "rhythmPosition" // 节奏音符在谱表上的显示位置（打击乐谱 `<unpitched>` 的 display-step/octave）
   | "graceArc"       // 倚音连到自己主音的弧（文本谱的倚音是音符属性，弧落不到倚音上）
@@ -79,6 +82,8 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   innerVoice: "同一谱表上的第二声部（只留简谱印的第一声部）",
   extraStaff: "同一声部的第二条谱表（只留第一条）",
   crossStaff: "跨谱表的音与连线（音归它落在的谱表、连到另一条谱表的弧与延音线丢掉）",
+  octaveShift: "八度线（8va / 8vb；丢掉后那几个音差一个八度）",
+  beamGroup: "不按拍的符杠分组（会改成按拍连）",
   rhythmStack: "同时敲的几个节奏音符（只留一个）",
   rhythmPosition: "节奏音符在谱表上的位置（五线谱一律画在中线）",
   graceArc: "倚音连到主音的弧（别的弧改挂到主音上）",
@@ -133,7 +138,7 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
  *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
  *  音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。 */
 const PU_GONE: Feature[] = [
-  "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
+  "beamGroup", "octaveShift", "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
   // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
   "tremolo", "bowing", "rehearsal", "multiRest", "arpeggio", "notehead",
   // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
@@ -155,17 +160,19 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 照 ABC §7.4 写 `&`、
   // 节奏音符的谱表位置与同时敲的几个写 `X@E5` / `[X@E5X@F5]`（§4.2、§4.3，用户定 2026-10-21 加）；
   // 一个声部的几条谱表各写一个 `V:`、第二条起 `part=`（§7，`staves.ts`，用户定 2026-10-24），跨谱表的东西写不出
-  "123": allBut("harmonyOffset", "crossStaff", "slurCrossTuplet", "lyricOnRest"),
+  // 八度线（8va）两种格式都没有写法（abc2svg 的 `!8va(!` 是扩展，用户定不扩），音照实际音高写
+  // 符杠一律按拍自动连（§11「语料高频但刻意不做」），写明的跨拍连杠写不出
+  "123": allBut("harmonyOffset", "crossStaff", "slurCrossTuplet", "lyricOnRest", "octaveShift", "beamGroup"),
   // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
   // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
   // 换页没有记号，写出端退化成换行（`emitabc.ts::breakText`；换行本身含小节中间的都装得下，`break-roundtrip-check` 实测）
   // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
   // 大谱表同 123：每条谱表一个 `V:`、第二条起 `part=`（`staves.ts`），跨谱表的东西写不出
-  abc: allBut("style", "playOrder", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
+  abc: allBut("style", "playOrder", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "octaveShift", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
-  jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
+  jpwabc: allBut("beamGroup", "octaveShift", "tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
   // 文本谱：展开档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `pu/dialect.ts::EmitStyle.pageFields`）
@@ -178,12 +185,12 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   //   · 演奏法（`articulations` 里不是力度名的那批）、拉丁歌词的连字符（`syllabic`）写不出；
   //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
   //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
-  jly: allBut("rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
+  jly: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
     "layoutDirectives", "dynamics", "verseLabel", "tonicDegree", ...EXT_123),
   // Muse `.jcx`（`emitjcx.ts`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
   // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
   // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
-  jcx: allBut("rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
+  jcx: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
     "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak", "tonicDegree", ...EXT_123),
   // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
   // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
@@ -196,6 +203,46 @@ const LAYOUT_DIRECTIVE = /^(fontsize|margin|space|off)$/i;
 
 function keyDiffers(a: NonNullable<Song["key"]>, b: NonNullable<Song["key"]>): boolean {
   return a.fifths !== b.fifths || (a.spelling ?? "") !== (b.spelling ?? "") || (a.tonicDegree ?? "1") !== (b.tonicDegree ?? "1");
+}
+
+/**
+ * MusicXML 写明的符杠分组与按拍自动连的不一样（跨拍连成一组、或一拍里断开）：简谱各格式的减时线按拍连（`autoBeams` 同口径），写不出。
+ * 只看第一层；拍长同 `engrave/beatgroup.ts`（x/8 且拍数是 3 的倍数按附点四分，其余四分）。
+ */
+function irregularBeams(song: Song): boolean {
+  for (const part of song.parts) {
+    let divisions = 1;
+    let time = { beats: 4, beatType: 4 };
+    for (const m of part.measures) {
+      if (m.attrs?.divisions) divisions = m.attrs.divisions;
+      if (m.attrs?.time) time = m.attrs.time;
+      const size = beatGroupSize(time.beats, time.beatType);
+      let end = 0;
+      /** 各声部：上一个连杠音的（组号、拍号） */
+      const prev = new Map<number, { group: number; beat: number }>();
+      let group = 0;
+      for (const el of m.elements) {
+        const s = el.onset ?? end;
+        end = s + (el.kind === "chord" ? (el.grace ? 0 : el.duration.divisions) : el.duration?.divisions ?? 0);
+        if (el.kind !== "chord" || el.grace) continue;
+        const b = el.beams?.[0];
+        if (b === undefined || b === "forward hook" || b === "backward hook") {
+          prev.delete(el.voice);
+          continue;
+        }
+        if (b === "begin") group++;
+        const beat = beatGroupIndex(s / divisions, 0, size);
+        const p = prev.get(el.voice);
+        if (p) {
+          if (b !== "begin" && p.beat !== beat) return true; // 一组跨了拍
+          if (b === "begin" && p.beat === beat) return true; // 同一拍里断开另起
+        }
+        prev.set(el.voice, { group, beat });
+        if (b === "end") prev.set(el.voice, { group: -1, beat });
+      }
+    }
+  }
+  return false;
 }
 
 /** 这份文档实际用到了哪些特性。 */
@@ -231,6 +278,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
         for (const d of mea.directions ?? []) {
           if (d.type === "dynamics" || d.type === "wedge") used.add("dynamics");
           if ([d, ...(d.more ?? [])].some((x) => x.type === "rehearsal")) used.add("rehearsal");
+          if (d.type === "octave-shift") used.add("octaveShift");
         }
         if (mea.attrs?.multiRest) used.add("multiRest");
         for (const el of mea.elements) {
@@ -260,6 +308,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
       }
     }
     if (hasCrossStaff(song)) used.add("crossStaff");
+    if (irregularBeams(song)) used.add("beamGroup");
     for (const { chord } of eachChord(song)) {
       for (const su of chord.sustains ?? []) if (su.harmony) used.add("harmony");
     }

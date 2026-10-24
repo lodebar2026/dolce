@@ -26,6 +26,7 @@ import { keyHit, VISUAL_ACTIONS, type VisualAction, type VisualMode } from "./ke
 import { type Clip, clipFor, itemsToText, setClip } from "./clipboard";
 import { beamGroupOf, clipOfChords, directionTextOf, locate, measureCtx } from "../../model/edit";
 import { pitchAt } from "../omrlinks";
+import { showConfirmDialog } from "../dialogs";
 import { moveAttachedText, moveSlurText, shiftLyricText } from "./moves";
 import { harmonyText } from "../../model/jianpu";
 import { showTransposeDialog, transposeText } from "./transpose";
@@ -81,6 +82,10 @@ export interface VisualHost {
   modelEditing(): boolean;
   /** 按代码区当前原文新读一份模型（模型那一路在它上面改） */
   freshModel(): ScoreDoc | null;
+  /** ABC / 123 借道改模型：当前原文读成 MusicXML 形状的模型（元素 id 与索引的相同）；别的格式为 null */
+  bridgeModel?(): ScoreDoc | null;
+  /** 借道改完的模型整份写回当前格式；写不出为 null */
+  bridgeWrite?(doc: ScoreDoc): string | null;
   /** 模型 → 原文（唯一写出端） */
   writeModel(doc: ScoreDoc): string;
   /** 建索引用的那份模型（与 `sync` 同一版） */
@@ -118,9 +123,15 @@ function textsOf(el: Element): SVGTextElement[] {
 /** 方向键能停的条目：音符、增时线、小节线、原文里有符号的换行 */
 const NAVIGABLE = new Set<SyncEntry["kind"]>(["note", "sustain", "barline", "break"]);
 
-/** 只有 `.musicxml`（改模型那一路）做得了的：简谱各格式没有谱号、渐强渐弱、八度线与这几种奏法装饰的写法 */
+/** 改模型那一路的动作（谱号、渐强渐弱、八度线、倚音、奏法装饰、和弦加音、换声部）：`.musicxml` 直接改；
+ *  ABC / 123 借道（`BRIDGED`）——原文读成 MusicXML 形状的模型、照样改、再整份写回这种格式（`VisualHost.bridgeModel`），
+ *  八度线两种格式都没有写法，只给 `.musicxml` */
 const XML_ONLY = new Set(["meas.clef", "meas.clefReread", "wedge.cresc", "wedge.dim", "ottava.up", "ottava.down", "grace.toggle",
   "deco.staccato", "deco.tenuto", "deco.marcato", "deco.staccatissimo", "deco.fermataInv", "deco.trill", "deco.mordent", "deco.turn"]);
+const BRIDGED = new Set([...XML_ONLY, "chord.add", "voice.set"].filter((id) => !id.startsWith("ottava.")));
+/** 123 / ABC 的大谱表（`V:2 part=1`，两条谱表各写一个 `V:`）：小节的增删、拆并、换调号拍号要两条谱表一起改，也借道
+ *  （文本那一路只改选区所在的那个 `V:`，`measureops.ts`） */
+const STAFF_BRIDGED = new Set(["meas.append", "meas.insert", "meas.delete", "meas.key", "meas.keyReread", "meas.time", "bar.insert"]);
 
 export class VisualEditController {
   /** 谱面上显示换行/换页符号。持久化。 */
@@ -362,6 +373,7 @@ export class VisualEditController {
   documentLoaded(): void {
     this.pickups = null;
     this.curVoice = null;
+    this.bridgeAsked = false;
   }
 
   /** 重排之后（索引重建了）：把换行符号的原文位置交给代码区，再重画谱面叠加层。 */
@@ -859,7 +871,7 @@ export class VisualEditController {
   /** 当前格式能不能做这个动作（菜单不列、面板灰掉）。 */
   available(a: VisualAction): boolean {
     const model = this.host.modelEditing();
-    if (a.id === "chord.add" || a.id === "voice.set" || XML_ONLY.has(a.id)) return model;
+    if (a.id === "chord.add" || a.id === "voice.set" || XML_ONLY.has(a.id)) return model || (BRIDGED.has(a.id) && !!this.host.bridgeModel);
     if (a.group === "meas") return model || !!this.host.editDialect()?.measure;
     return true;
   }
@@ -1460,8 +1472,32 @@ export class VisualEditController {
 
   /** 模型那一路（`.musicxml`）向控制器要的东西 */
   private readonly modelCtx: ModelActionCtx = this.makeModelCtx();
+  /** ABC / 123 借道改模型用的上下文：读写换成 `bridgeModel` / `bridgeWrite` */
+  private readonly bridgeCtx: ModelActionCtx = this.makeModelCtx({
+    freshModel: () => this.host.bridgeModel?.() ?? null,
+    writeModel: (doc) => this.host.bridgeWrite?.(doc) ?? this.host.view.state.doc.toString(),
+    // 改完按模型位置认回选区：同一种 MusicXML 形状里认（元素 id 与索引的相同）
+    syncDoc: () => this.host.bridgeModel?.() ?? null,
+  });
+  /** 这份文档借道整份重写已经问过（原文不是标准写法时问一次：注释、手排的换行空格会按标准写法重排） */
+  private bridgeAsked = false;
 
-  private makeModelCtx(): ModelActionCtx {
+  /** 文本格式里有大谱表（某个声部是另一个声部的下一条谱表） */
+  private grandStaffText(): boolean {
+    return !!this.host.syncDoc()?.songs.some((s) => s.parts.some((p) => p.staffOf));
+  }
+
+  private async runBridged(a: VisualAction, key: string): Promise<void> {
+    if (!this.bridgeAsked) {
+      const doc = this.host.bridgeModel?.();
+      const same = doc ? this.host.bridgeWrite?.(doc) === this.host.view.state.doc.toString() : false;
+      if (!same && !(await showConfirmDialog(tr("ve.bridgeTitle"), tr("ve.bridgeBody")))) return;
+      this.bridgeAsked = true;
+    }
+    runModelAction(this.bridgeCtx, a, key);
+  }
+
+  private makeModelCtx(over: Partial<Pick<ModelActionCtx, "freshModel" | "writeModel" | "syncDoc">> = {}): ModelActionCtx {
     const ctl = this;
     return {
       get view() {
@@ -1487,9 +1523,9 @@ export class VisualEditController {
           resolve(value);
         }, hint);
       }),
-      freshModel: () => ctl.host.freshModel(),
-      writeModel: (doc) => ctl.host.writeModel(doc),
-      syncDoc: () => ctl.host.syncDoc(),
+      freshModel: over.freshModel ?? (() => ctl.host.freshModel()),
+      writeModel: over.writeModel ?? ((doc) => ctl.host.writeModel(doc)),
+      syncDoc: over.syncDoc ?? (() => ctl.host.syncDoc()),
       reloadNow: () => ctl.host.reloadNow(),
       setStatus: (t) => ctl.host.setStatus(t),
       select: (f, t) => ctl.select(f, t),
@@ -1561,6 +1597,10 @@ export class VisualEditController {
     if (this.host.modelEditing()) {
       const r = runModelAction(this.modelCtx, a, key);
       if (r !== null) return r;
+    } else if (this.host.bridgeModel && (BRIDGED.has(a.id) || (this.grandStaffText() && (STAFF_BRIDGED.has(a.id)
+      || (a.id.startsWith("del.") && this.selectedEntries().some((e) => e.kind === "barline")))))) {
+      void this.runBridged(a, key);
+      return true;
     }
     switch (a.id) {
       case "note.digit": return this.digit(Number(key));

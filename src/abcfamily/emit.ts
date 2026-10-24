@@ -268,6 +268,24 @@ export function scoreDirective(song: Song): string | null {
   return out.join(" ");
 }
 
+/** MusicXML 写明的符杠分组（第一层 `begin` … `end`，各声部分开）；一个 `begin` 都没有（简谱来源的减时线占位）为 null。 */
+export function xmlBeamGroups(mea: Measure): Map<ElementId, number> | null {
+  if (!mea.elements.some((e) => e.kind === "chord" && e.beams?.[0] === "begin")) return null;
+  const out = new Map<ElementId, number>();
+  const open = new Map<number, number>();
+  let next = 0;
+  for (const el of mea.elements) {
+    if (el.kind !== "chord" || el.grace) continue;
+    const voice = el.voice > 1 ? el.voice : 1;
+    const b = el.beams?.[0];
+    if (b === "begin") open.set(voice, ++next);
+    const g = open.get(voice);
+    if (g !== undefined && (b === "begin" || b === "continue" || b === "end")) out.set(el.id, g);
+    if (b === "end" || b === undefined) open.delete(voice);
+  }
+  return out;
+}
+
 export abstract class AbcFamilyEmitter {
   /** 文件头的版本声明行（`%123-1.0` / `%abc-2.1`）。 */
   protected abstract readonly versionLine: string;
@@ -766,8 +784,9 @@ export abstract class AbcFamilyEmitter {
     // 一个声部连着一个声部，所以这里只在**声部号变了**的地方断开；MusicXML 读进来的交错
     // 多声部先按声部归并（只在整小节写出时才归并——小节中间换行那条路按下标切片，不能重排）。
     const order = this.voiceOrder(mea, from, to);
+    // MusicXML 来源照它写明的 `<beam>` 分组（识别稿、制谱软件的跨拍连杠），没写才按拍自动分
     const auto = this.spaceBeams && !mea.elements.some((e) => e.kind === "chord" && e.beamGroup !== undefined)
-      ? this.autoBeamGroups(mea, mi) : null;
+      ? xmlBeamGroups(mea) ?? this.autoBeamGroups(mea, mi) : null;
     let prevVoice: number | undefined;
     // 各分支写到哪儿了（实际时值，四分 = SIMPLE_DIVISIONS）：后面的分支比第一支短的（MusicXML 的副声部提前收尾、
     // 末尾的 `<forward>` 不留元素）用不可见休止补齐——ABC §7.4 的各分支等长，读回才不报拍数不对

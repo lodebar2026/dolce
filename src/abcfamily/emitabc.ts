@@ -70,13 +70,19 @@ const GRACE_LEN: Readonly<Record<string, string>> = { quarter: "2", eighth: "", 
 
 export class EmitterAbc extends AbcFamilyEmitter {
   protected readonly versionLine = "%abc-2.1";
+  /** 正在写的歌是 MusicXML 来源（`emitSong` 设） */
+  private xmlSource = false;
+
   /** 曲中换谱号写 `[K:clef=bass]`（ABC §3.1.14 的 `clef=` 写进 `K:`） */
   protected override readonly inlineClefs = true;
 
   /** 声部名之外再写谱号 `clef=bass`（ABC §3.1.20）：低音、中音谱号与八度谱号写，单声部的高音谱号不写。
    *  ABC 的音名是记谱音高，谱号只管画在哪条线上（钢琴左手的低音谱表以前转过来全丢，画成高音谱表上一串加线） */
   protected override voiceAttrs(part: Part, multi: boolean): string {
-    const c = part.measures[0]?.attrs?.clefs?.find((x) => (x.staff ?? 1) === 1);
+    const found = part.measures[0]?.attrs?.clefs?.find((x) => (x.staff ?? 1) === 1);
+    // 八度谱号只照 MusicXML 来源写（音名是记谱音高，读回 `assignDegrees` 按它推唱名，两头对得上）；
+    // 简谱来源的 `treble-8` 是「简谱按高八度记」，ABC 的音名照唱名写、不另写谱号（同以前）
+    const c = found && !this.xmlSource && found.octaveChange ? { ...found, octaveChange: 0 } : found;
     const treble = !c || (c.sign === "G" && (c.line ?? 2) === 2);
     const name = c && (c.octaveChange || !treble) ? clefName(c) : null;
     return [super.voiceAttrs(part, multi), name ? `clef=${name}` : ""].filter(Boolean).join(" ");
@@ -87,6 +93,7 @@ export class EmitterAbc extends AbcFamilyEmitter {
   override emitSong(song: Song, fallbackNumber?: number): string {
     // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
     const own = directionsAsMarks(splitStaves(song));
+    this.xmlSource = isXmlShaped(own);
     return super.emitSong(isXmlShaped(own) ? withAbcAccidentals(withAbcDivisions(own)) : withAbcPitches(own), fallbackNumber);
   }
 

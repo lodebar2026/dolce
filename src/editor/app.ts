@@ -44,6 +44,8 @@ import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/part
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../model/convert";
+import { isXmlShaped, projectForMusicXml } from "../model/xmlproject";
+import { assignDegrees } from "../model/jianpu";
 import { showChoiceDialog } from "./dialogs";
 import { t } from "../i18n";
 import { diagText, targetLabel, type DiagLike } from "../i18n/labels";
@@ -1087,6 +1089,36 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   writeModel(doc: ScoreDoc): string {
     return scoreDocToMusicXml(doc);
+  }
+
+  /** VisualHost：ABC / 123 借道改模型——原文读成 MusicXML 形状（元素 id 与索引的相同，`projectForMusicXml` 不换 id）。 */
+  get bridgeModel(): (() => ScoreDoc | null) | undefined {
+    if (this.docFormat !== "abc" && this.docFormat !== "123") return undefined;
+    return () => {
+      try {
+        const doc = this.adapter.toScoreDoc?.(this.getText());
+        if (!doc) return null;
+        const songs = doc.songs.map((s) => (isXmlShaped(s) ? s : projectForMusicXml(s)));
+        // 模型那一路改的是音高；123 读进来的唱名留着就是旧的（写出端按唱名写），去掉让写出端按音高重推
+        for (const s of songs) for (const p of s.parts) for (const m of p.measures) for (const el of m.elements) {
+          if (el.kind === "chord") for (const n of el.notes) if (n.pitch) delete n.degree;
+        }
+        return { ...doc, songs };
+      } catch {
+        return null;
+      }
+    };
+  }
+
+  /** VisualHost：借道改完整份写回当前格式（123 / ABC 的写出端） */
+  bridgeWrite(doc: ScoreDoc): string | null {
+    try {
+      // 唱名按改过的音高重推（`bridgeModel` 去掉了旧的；ABC 不用唱名，推了也无妨）
+      for (const s of doc.songs) for (const p of s.parts) assignDegrees(p, s.key ?? { fifths: 0 });
+      return targetSpec(this.docFormat === "abc" ? "abc" : "123").emit(doc);
+    } catch {
+      return null;
+    }
   }
 
   /** 源模型的元素 id → 派生五线谱里的 id。文本格式靠 `srcId` 两向表；`.musicxml` 两份是同一份原文读的，id 一样。 */
