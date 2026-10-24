@@ -73,3 +73,16 @@ export function inkCount(bin: Binary, r: Rect): number {
     if (on(x, y) && on(x - 1, y) && on(x + 1, y) && on(x, y - 1) && on(x, y + 1)) ink++;
   return ink;
 }
+
+/** 斜杠 `/`：墨集中在右上—左下那条对角带上（左上、右下两角基本空着）。 */
+export function isSlashInk(bin: Binary, b: Rect): boolean {
+  let diag = 0, off = 0;
+  for (let y = Math.round(b.y); y < Math.round(b.y + b.h); y++) {
+    for (let x = Math.round(b.x); x < Math.round(b.x + b.w); x++) {
+      if (!bin.data[y * bin.w + x]) continue;
+      const u = (x - b.x) / Math.max(1, b.w - 1), v = (y - b.y) / Math.max(1, b.h - 1);
+      if (Math.abs(u + v - 1) <= 0.35) diag++; else off++;
+    }
+  }
+  return diag >= 8 && off <= diag * 0.15;
+}

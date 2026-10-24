@@ -8,6 +8,7 @@ import { mergeToChars } from "../omrkit/charcells";
 import { surfaceFromBinary, type Surface } from "../omrkit/surface";
 import { clusterByY, median, overlapRatioX, overlapRatioY, unionRect, unionRects } from "../omrkit/geom";
 import { accidentalOf } from "./accidental";
+import { isSlashInk } from "./inkprobe";
 import { probe } from "./probe";
 import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, effectiveCharH, betterTitle } from "../omrkit/headertext";
 import { charsForText, gapWideAt, recoverHanziGaps, recoverSpacesByInk } from "../omrkit/textspace";
@@ -608,18 +609,7 @@ export async function recognizeHeader(
    *  - **`=`**：两道上下对齐的扁横，左边紧挨一个读得出 1 的块——`二`/`三` 的横笔、`♩=95` 的 `=` 都靠这一条挡掉；
    *    音名组取 `=` 右侧紧挨着的块。
    *  - **拍号**：几何法认出的页眉分数拍号（geoMeters）或斜杠式拍号，音名组取它左侧紧挨着的块（不写 `1=` 的谱）。 */
-  /** 斜杠 `/`：墨集中在右上—左下那条对角带上（左上、右下两角基本空着）。 */
-  function isSlash(b: Rect): boolean {
-    let diag = 0, off = 0;
-    for (let y = Math.round(b.y); y < Math.round(b.y + b.h); y++) {
-      for (let x = Math.round(b.x); x < Math.round(b.x + b.w); x++) {
-        if (!bin.data[y * bin.w + x]) continue;
-        const u = (x - b.x) / Math.max(1, b.w - 1), v = (y - b.y) / Math.max(1, b.h - 1);
-        if (Math.abs(u + v - 1) <= 0.35) diag++; else off++;
-      }
-    }
-    return diag >= 8 && off <= diag * 0.15;
-  }
+  function isSlash(b: Rect): boolean { return isSlashInk(bin, b); }
 
   /** `=` 的一道横：扁、薄、不比一个字宽。 */
   // 宽上限 1.6 字号（原 1.2）：多段歌词的页上 numH 常被偏旁碎块压小（补充本 151 估成 19，数字实高 35），

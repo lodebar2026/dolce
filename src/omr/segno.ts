@@ -70,6 +70,10 @@ export function detectSegno(comps: Component[], rows: StaffRow[], numH: number):
     for (const k of comps) {
       if (rbottom(k.bbox) > y1 || k.bbox.y < y0) continue;
       if (!segnoBody(k, numH)) continue;
+      // segno 单独印着：左右一个字号内再有字号级的墨块，就是字的一半（选本 375 页眉书眉「难」的「又」旁边是「隹」）
+      if (comps.some((o) => o !== k && Math.max(o.bbox.w, o.bbox.h) > numH * 0.4 &&
+        Math.min(rbottom(o.bbox), rbottom(k.bbox)) - Math.max(o.bbox.y, k.bbox.y) > k.bbox.h * 0.3 &&
+        o.bbox.x < rright(k.bbox) + numH && rright(o.bbox) > k.bbox.x - numH)) continue;
       const form = hasTwoDots(k, comps, numH);
       if (!form || (form === "diag" && k.bbox.y < yDiag)) continue;
       // 锚到正下方最近的音符：segno 印在小节起头上方，那一小节的左线就是跳转落点。

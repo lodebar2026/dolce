@@ -24,7 +24,7 @@ import { probe } from "./probe";
 import { mergeBrokenHlines, untangleBridged, splitBarDash, splitBarCap, splitDigitDash, splitArcTail, splitArcFootDigit, splitLineOverArc, splitArcUnderGlyph, splitLineDot, splitArcEndDots, splitArcInnerDots, splitMordentDot } from "./compsurgery";
 import { splitGluedSharp, splitBlock, meterCandidates, groupRows } from "./digitcores";
 import { buildJpNums, promoteGluedUpDots, resolvePairOctaveDots } from "./jpnums";
-import { rowInk, tightBox, columnInk } from "./inkprobe";
+import { rowInk, tightBox, columnInk, isSlashInk } from "./inkprobe";
 
 /** 一个数字格：紧包围盒 + 自身下划线条数(div)。 */
 export interface DigitCore {
@@ -788,6 +788,36 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     }
   }
 
+  // 曲中斜杠式转拍号「4/4」（选本 376 副歌行首：比数字小一号、印在行首那个音的左上方，三块自成一「行」，
+  // 被当伪行连拍号一起丢掉）：斜笔左右各贴一个同高的数字格；右下方紧挨着正常大小的数字（那一行的首音）——
+  // 页眉里「G调 6/8」的拍号离第一谱行两个字号开外，不算。按 0–9 读成合法拍号才收，三块摘出音符流
+  if (ocr.recognizeNumerals) {
+    const inline = new Set<DigitCore>();
+    for (const sl of allCores) {
+      const sb = sl.bbox;
+      if (sb.h < numH * 0.5 || sb.h > numH * 0.95 || sb.w > sb.h * 0.8 || !isSlashInk(bin, sb)) continue;
+      const gapOf = (k: DigitCore, dir: 1 | -1) => (dir > 0 ? k.bbox.x - rright(sb) : sb.x - rright(k.bbox));
+      const mate = (dir: 1 | -1) => allCores
+        .filter((k) => k !== sl && Math.abs(k.bbox.y - sb.y) <= numH * 0.15 && Math.abs(k.bbox.h - sb.h) <= numH * 0.15 &&
+          gapOf(k, dir) >= -2 && gapOf(k, dir) <= numH * 0.4)
+        .sort((p, q) => gapOf(p, dir) - gapOf(q, dir))[0];
+      const a = mate(-1), b = mate(1);
+      if (!a || !b) continue;
+      const band = unionRect(unionRect(a.bbox, sb), b.bbox);
+      const trio = (k: DigitCore) => k === a || k === b || k === sl;
+      // 同高处还有别的数字格：是谱行里的音，不是拍号
+      if (allCores.some((k) => !trio(k) && Math.abs(rcy(k.bbox) - rcy(band)) <= numH * 0.3 && Math.abs(rcx(k.bbox) - rcx(band)) <= numH * 3)) continue;
+      if (!allCores.some((k) => !trio(k) && k.bbox.h >= numH * 0.85 && k.bbox.y >= rbottom(band) - numH * 0.3 &&
+        k.bbox.y <= rbottom(band) + numH * 0.5 && k.bbox.x >= band.x && k.bbox.x <= rright(band) + numH * 1.5)) continue;
+      const [up, dn] = await ocr.recognizeNumerals(bin, [a.bbox, b.bbox]);
+      if (up === undefined || dn === undefined || !validMeter(up, dn)) continue;
+      probe("meter.slashInline");
+      meterMarks.push({ x: rcx(band), beats: up, beatType: dn, bbox: band });
+      inline.add(a); inline.add(sl); inline.add(b);
+    }
+    if (inline.size) allCores = allCores.filter((k) => !inline.has(k));
+  }
+
   trace?.("cores", { allCores, meterMarks });
   const rowsC = groupRows(allCores, numH);
   // 每行的 y 范围 + 穿过的小节线。
@@ -1162,6 +1192,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   // 摘出音符流，记在右邻那个音符上（下游 applyJpPitch 会按简谱规矩在小节内延续）。
   const accidentals = new Map<DigitCore, "sharp" | "flat" | "natural">();
   const accCores = new Set<DigitCore>();
+  const accClassified = new Set<Component>([...c.barlines, ...c.longBarlines, ...c.hlines, ...c.dots]);
   for (const m of staff) {
     // 尺子用本行数字的**中位高/宽**，不能用整条带高：记号本身骑在数字上方，带高被它撑大
     // （17 第 3 行带高 37、数字才 24），拿带高作比例，右邻的正常数字反倒不达标。
@@ -1170,6 +1201,17 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     //（新编赞美诗·四声部《圣哉三一歌》末系统 Q2 `1 - 1 1 | 1 - 1⌒ᵇ7`，中位 14px = ♭ 的宽）。
     const wideW = m.rd.map((k) => k.bbox.w).filter((w) => w >= numH * 0.45);
     const medW = median(wideW.length ? wideW : m.rd.map((k) => k.bbox.w)) || numH;
+    // 倚音的小号数字（319 末行 `⁵⁵5`，矮、悬高）形似 ♯——它脚下压着减时线，♯ 脚下是空的。
+    const underlined = (b: Rect): boolean => {
+      // 从块底两行起扫：减时线常和倚音粘成一块（319：30×29），线就是块的最底几行；♯ 的底是两根竖笔的脚（下横笔在其上，137）
+      // 只看到块底下 0.15 字高：再往下是右邻音符自己的减时线，常伸到 ♯ 底下（140 `♯4̲`）
+      for (let y = rbottom(b) - 2; y <= rbottom(b) + medH * 0.15; y++) {
+        let n = 0;
+        for (let x = b.x; x < rright(b); x++) if (bin.data[Math.round(y) * bin.w + Math.round(x)]) n++;
+        if (n >= b.w * 0.9) return true;
+      }
+      return false;
+    };
     for (let j = 0; j + 1 < m.rd.length; j++) {
       const k = m.rd[j], nx = m.rd[j + 1];
       // 与数字一般大 → 就是数字。**高度只挡明显更高的**：记号与数字孰高孰低随书而异——
@@ -1193,18 +1235,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       // 声部页上没归进系统的声部行（18《快乐崇拜歌》末系统第 4 声部）也认，见下。
       const hungLow = rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.2;
       const raised = k.bbox.h < medH * 0.9 || (k.bbox.h <= medH * 1.1 && nx.bbox.y - k.bbox.y >= medH * 0.25 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3);
-      // 没归进系统的行只收明显矮的（<0.8 字高）。另两样形似 ♯ 的要挡：弧连着三连音的「3」（269，一块百来像素宽）——宽不过 1.5 倍数字宽（140 的 ♯ 34×27 对数字宽 25）；
-      // 倚音的小号数字（319 末行 `⁵⁵5`，矮、悬高）——它脚下压着减时线，♯ 脚下是空的。
-      const underlined = (b: Rect): boolean => {
-        // 从块底两行起扫：减时线常和倚音粘成一块（319：30×29），线就是块的最底几行；♯ 的底是两根竖笔的脚（下横笔在其上，137）
-        // 只看到块底下 0.15 字高：再往下是右邻音符自己的减时线，常伸到 ♯ 底下（140 `♯4̲`）
-        for (let y = rbottom(b) - 2; y <= rbottom(b) + medH * 0.15; y++) {
-          let n = 0;
-          for (let x = b.x; x < rright(b); x++) if (bin.data[Math.round(y) * bin.w + Math.round(x)]) n++;
-          if (n >= b.w * 0.9) return true;
-        }
-        return false;
-      };
+      // 没归进系统的行只收明显矮的（<0.8 字高）。弧连着三连音的「3」（269，一块百来像素宽）也形似 ♯——宽不过 1.5 倍数字宽（140 的 ♯ 34×27 对数字宽 25）。
       // 单声部行上只收**顶底都悬高**的（顶高出 0.25、底高出 0.3 字高）：青年诗歌 14《雲彩》`7 6 ♯5` 的 ♯ 粗印糊成一团 23×40，
       // 本行数字中位宽 26，差 1px 过不了宽度门，当音符读成了 1
       const hungBoth = k.bbox.h <= medH * 1.1 && nx.bbox.y - k.bbox.y >= medH * 0.25 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3;
@@ -1232,6 +1263,21 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       probe("accidental");
       accidentals.set(nx, kind);
       accCores.add(k);
+    }
+    // 没进谱行的窄 ♯：比数字块宽度门（0.3 字号）还窄的成了未归类块（选本 376 副歌 `5·♯4` `2·♯1` 的 ♯ 12×36，字号 43；
+    // 同页 13px 宽的就认了），`2 ♯2` 的 13×35 进了数字块却没归进谱行。不放回数字通道（窄碎块会被当音读），
+    // 只在这里找：紧贴右邻数字左上、悬高、形状判成 ♯ 的
+    for (const nx of m.rd) {
+      if (accidentals.has(nx) || accCores.has(nx) || nx.bbox.h < medH * 0.85) continue;
+      const k = comps.find((o) => !accClassified.has(o) && o.bbox.w >= numH * 0.2 && o.bbox.w < numH * 0.35 &&
+        !m.rd.some((r) => r.bbox.x === o.bbox.x && r.bbox.y === o.bbox.y) &&
+        o.bbox.h >= medH * 0.6 && o.bbox.h <= medH * 0.95 &&
+        nx.bbox.x - rright(o.bbox) >= -2 && nx.bbox.x - rright(o.bbox) <= numH * 0.3 &&
+        o.bbox.y < nx.bbox.y && rbottom(o.bbox) > nx.bbox.y + medH * 0.3 && rbottom(nx.bbox) - rbottom(o.bbox) >= medH * 0.15 &&
+        accidentalOf(bin, o.bbox) === "sharp" && !underlined(o.bbox));
+      if (!k) continue;
+      probe("accidental.narrowSharp");
+      accidentals.set(nx, "sharp");
     }
     if (accCores.size) m.rd = m.rd.filter((k) => !accCores.has(k));
   }

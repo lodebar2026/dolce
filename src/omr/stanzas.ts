@@ -203,9 +203,9 @@ async function stanzasOfSegment(
     const gapBreak = !labeled && d.lineStart && d.bbox.y - prevBottom > lineH * 1.2;
     prevBottom = d.lineStart ? rbottom(d.bbox) : Math.max(prevBottom, rbottom(d.bbox));
     if (only) {
-      // 段号重复或倒退（277 第三段的「三」读成「二」）：按顺下来的号算，后面粘连的「四你要不死…」才认得出
-      const curLabel: string | undefined = (cur as Stanza | null)?.label;
-      const back: boolean = !!curLabel && CN_LABELS.includes(only[1]) && CN_LABELS.indexOf(only[1]) <= CN_LABELS.indexOf(curLabel);
+      // 段号重复或倒退（277 第三段的「三」读成「二」）：按顺下来的号算，后面粘连的「四你要不死…」才认得出。
+      // 谱后头一段读成「一」的同理（选本 376 粗印的「二」读成「一」，「三主有…」就等成了「二」、两段并成一段整块被拒）
+      const back: boolean = !!nl && CN_LABELS.includes(only[1]) && CN_LABELS.indexOf(only[1]) < CN_LABELS.indexOf(nl);
       stanzas.push(cur = { label: back && nl ? nl : only[1], lines: [] });
       continue;
     }

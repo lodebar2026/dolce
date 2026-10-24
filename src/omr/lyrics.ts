@@ -828,6 +828,12 @@ export async function recognizeLyrics(
         chunks.push({ rowIdx: i, verse, cells: [c0], maxGap, margin: true });
         strips.push(buildStrip(src, [c0], STRIP_H, maxGap));
         body = cells.slice(1);
+      } else if (!above && c1 && c0.w >= c1.w * 1.6 && c0.x + c0.w / 2 <= n0.x && Math.abs(c0.x + c0.w * 0.75 - rcx(n0)) < c1.w * 0.5) {
+        // 粗体边注与首字粘成一格（选本 376 副歌行首「副主」99px，两个字宽）：左半整个在首音左边、右半正对首音，从中间切开
+        const half = c0.w / 2, left = { ...c0, w: half }, right = { ...c0, x: c0.x + half, w: half };
+        chunks.push({ rowIdx: i, verse, cells: [left], maxGap, margin: true });
+        strips.push(buildStrip(src, [left], STRIP_H, maxGap));
+        body = [right, ...cells.slice(1)];
       }
       for (const chunkCellsArr of chunkCells(body, maxGap)) {
         chunks.push({ rowIdx: i, verse, cells: chunkCellsArr, maxGap, above });
