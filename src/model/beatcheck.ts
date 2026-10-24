@@ -76,12 +76,21 @@ export function checkMeasureDurations(doc: ScoreDoc, opts: BeatCheckOptions = {}
     song.parts.forEach((part, partIndex) => {
       let time: Time | undefined = song.time;
       let divisions = SIMPLE_DIVISIONS;
+      // 文本谱的临时拍号记在小节线上（`Barline.time`，`"p:4/4"`）：右线上的自下一小节起生效、左线上的管本小节
+      //（选本 376 换 4/4 写在上一行行末线后面，原先只看 `attrs.time`，诗歌本格式下副歌七个小节全报多 1 拍）
+      let pending: Time | undefined;
       const rows = part.measures.map((m) => {
+        if (pending) { time = pending; pending = undefined; }
+        const leftTime = m.barlines?.find((b) => b.location === "left" && b.time)?.time;
+        if (leftTime) time = leftTime;
         if (m.attrs?.time) time = m.attrs.time;
+        pending = m.barlines?.find((b) => b.location === "right" && b.time)?.time;
         if (m.attrs?.divisions) divisions = m.attrs.divisions;
-        // 混合拍：头部并排写的几个拍号（`Song.extraTimes`）对上任意一个都算
-        const wants = opts.meters?.length ? opts.meters.map(beatsOf)
-          : time ? [time, ...(song.extraTimes ?? [])].map(beatsOf) : [];
+        // 混合拍：头部并排写的几个拍号（`Song.extraTimes`）对上任意一个都算。
+        // 识别给的页眉拍号压不过曲中转拍号：转过拍的小节按当前拍号也算（选本 376 副歌转 4/4，原先仍按页眉 3/4 报不满拍）
+        const wants = opts.meters?.length
+          ? [...opts.meters, ...(time && time !== song.time ? [time] : [])].map(beatsOf)
+          : time ? [time, ...(song.extraTimes?.length && song.time ? [song.time, ...song.extraTimes] : [])].map(beatsOf) : [];
         const byVoice = measureQuarters(m, divisions, xml);
         return { m, wants, byVoice, got: byVoice.values().next().value ?? 0 };
       });
@@ -89,8 +98,9 @@ export function checkMeasureDurations(doc: ScoreDoc, opts: BeatCheckOptions = {}
       const ok = rows.map((r) => r.wants.length === 0 || r.m.elements.length === 0 || !!r.m.implicit
         || r.wants.some((w) => Math.abs(r.got - w) < EPS));
       const short = (i: number): boolean => rows[i]!.wants.some((w) => rows[i]!.got < w - EPS);
+      // 两头拍号不同时对上哪一头都算（选本 376：3/4 的弱起 1 拍 + 转 4/4 后的末小节 3 拍）
       const fills = (a: number, b: number): boolean =>
-        rows[a]!.wants.some((w) => Math.abs(rows[a]!.got + rows[b]!.got - w) < EPS);
+        [...rows[a]!.wants, ...rows[b]!.wants].some((w) => Math.abs(rows[a]!.got + rows[b]!.got - w) < EPS);
       const pickup = opts.pickup?.(songIndex, partIndex) ?? true;
       // 弱起：首尾相加一小节（只有一小节时首尾是同一个，不算）
       if (pickup && n >= 2 && !ok[0] && short(0) && short(n - 1) && fills(0, n - 1)) ok[0] = ok[n - 1] = true;

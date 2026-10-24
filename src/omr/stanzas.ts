@@ -187,6 +187,29 @@ async function stanzasOfSegment(
   const labeled = ordered.some((d) => d.lineStart && (LABEL_ONLY_RE.test(d.text) || LABEL_PREFIX_RE.test(d.text)));
   // 正文起始列：各视觉行首个多字框左缘的中位。段号印在它左边一栏
   const textColX = median(vlines.map((l) => l.find((d) => [...d.text].length > 2)?.bbox.x).filter((x): x is number => x !== undefined));
+  // 段首行整体往左探出一栏的版面（选本 375：段号与正文粘成一框「三耶稣爱我…」，段首行框左缘 80~87、续行 181~185）：
+  // 段号读错了（桌面版推理把「三」读成别的字）就既切不开、空行也断不开（段间空当只比行距宽一点），两段并成一段、照样落在整首音位的容差里。
+  // 各视觉行左缘分成两簇、相隔一个字以上、两簇各有两行以上，且左簇过半的行以中文数字起头时，左簇就是段号栏：
+  // 那里起头的行段号没认出来，也按顺下来的号开新段、去掉行首那个字
+  const lineX = vlines.map((l) => Math.min(...l.map((d) => d.bbox.x)));
+  let labelColX: number | undefined;
+  {
+    const xs = [...lineX].sort((a, b) => a - b);
+    let best = 0, at = -1;
+    for (let i = 1; i < xs.length; i++) if (xs[i]! - xs[i - 1]! > best) { best = xs[i]! - xs[i - 1]!; at = i; }
+    if (at >= 2 && xs.length - at >= 2 && best >= lineH * 0.8) {
+      const cut = (xs[at]! + xs[at - 1]!) / 2;
+      const left = vlines.filter((_, vi) => lineX[vi]! < cut);
+      const numLed = left.filter((l) => CN_NUM.includes([...lineText(l)][0] ?? "")).length;
+      if (numLed * 2 > left.length) labelColX = cut;
+    }
+  }
+  // 段界看行距：相邻视觉行的行顶距明显大于中位行距（1.35 倍以上）的地方断段——不管有没有段号都看，段号读错、读丢时靠它兜住
+  //（选本 375 段内行顶距 71~77、段间 117~121）。行距本就宽的版面（637）各行顶距一般齐，断不开；按框底到框顶的空当量就会被框高带偏
+  const lineTop = vlines.map((l) => Math.min(...l.map((d) => d.bbox.y)));
+  const pitches = lineTop.slice(1).map((t, i) => t - lineTop[i]!);
+  const pitchMed = pitches.length >= 2 ? median(pitches) : 0;
+  const paraBreak = (vi: number) => pitchMed > 0 && vi > 0 && lineTop[vi]! - lineTop[vi - 1]! > pitchMed * 1.35;
   for (const d of ordered) {
     const nl = nextLabel();
     // 段号读错了字（684「西」= 四、「三卷」）：视觉行首单独一个 1–2 字的小框、同一行后面还跟着正文，照样是段号。
@@ -199,8 +222,9 @@ async function stanzasOfSegment(
     const glued = !only && d.lineStart && nl && d.text.length > nl.length && d.text.startsWith(nl) ? ([nl, nl] as unknown as RegExpExecArray) : null;
     const pre = only ? null : LABEL_PREFIX_RE.exec(d.text) ?? glued;
     if (glued && pre === glued) probe("stanza.gluedLabel");
-    // 有段号就按段号切，不再按空行断：行距宽的版面（选本诗歌712 637，行间空当超过一个框高）段内也像空行
-    const gapBreak = !labeled && d.lineStart && d.bbox.y - prevBottom > lineH * 1.2;
+    // 有段号就按段号切，不再按空当断：行距宽的版面（选本诗歌712 637，行间空当超过一个框高）段内也像空行；行顶距的突变（paraBreak）照看
+    const gapBreak = d.lineStart && ((!labeled && d.bbox.y - prevBottom > lineH * 1.2) || paraBreak(d.vi));
+    if (d.lineStart && paraBreak(d.vi)) probe("stanza.pitchBreak");
     prevBottom = d.lineStart ? rbottom(d.bbox) : Math.max(prevBottom, rbottom(d.bbox));
     if (only) {
       // 段号重复或倒退（277 第三段的「三」读成「二」）：按顺下来的号算，后面粘连的「四你要不死…」才认得出。
@@ -211,6 +235,11 @@ async function stanzasOfSegment(
     }
     if (pre) {
       stanzas.push(cur = { label: pre[1], lines: [{ text: d.text.slice(pre[0].length), bbox: d.bbox, vi: d.vi }] });
+      continue;
+    }
+    if (labelColX !== undefined && d.lineStart && nl && lineX[d.vi]! < labelColX && [...d.text].length > 1) {
+      probe("stanza.labelCol");
+      stanzas.push(cur = { label: nl, lines: [{ text: d.text.replace(/^.[.、．。:：\s]*/u, ""), bbox: d.bbox, vi: d.vi }] });
       continue;
     }
     // 段号行后面紧跟的第一行不算空行断开（段号与正文之间本来就隔着点距离）
@@ -252,9 +281,20 @@ async function stanzasOfSegment(
   sylls.forEach((sy, k) => {
     const v = base + k, S = spans[k]!;
     const ls = lineSylls[k]!;
-    if (S === slots.length && ls.length === rowSlots.length && ls.every((l, i) => Math.abs(l.length - rowSlots[i]!.length) <= COUNT_TOL)) {
+    // 只配到某谱行为止的（只配主歌）同样逐行填：选本 375 两行一段，「我却知道」多读一个「我」，「握！」就被挤进下一行
+    // 一行正好多出一个音节、行里又只有一对相邻同字（不带标点的前字）：OCR 把字读重了（桌面版读成「我我却知道」），去掉一个。
+    // 只在多一个时动——「远远」「渐渐」这类真叠字所在的行字数是对的
+    const dedupe = (l: string[], want: number): string[] => {
+      if (l.length !== want + 1) return l;
+      const at = l.flatMap((c, i) => (i > 0 && c === l[i - 1] ? [i] : []));
+      return at.length === 1 ? (probe("stanza.stutter"), l.filter((_, i) => i !== at[0])) : l;
+    };
+    const inSpan: (typeof rowSlots)[number][] = [];
+    for (let n = 0; n < S && inSpan.length < rowSlots.length; ) { const rs = rowSlots[inSpan.length]!; inSpan.push(rs); n += rs.length; }
+    if (inSpan.reduce((a, rs) => a + rs.length, 0) === S && ls.length === inSpan.length &&
+      ls.every((l, i) => Math.abs(l.length - inSpan[i]!.length) <= COUNT_TOL)) {
       probe("stanza.perRow");
-      rowSlots.forEach((rs, i) => rs.forEach((n, j) => { (n.lyrics ??= [])[v] = ls[i]![j] ?? ""; }));
+      inSpan.forEach((rs, i) => { const l = dedupe(ls[i]!, rs.length); rs.forEach((n, j) => { (n.lyrics ??= [])[v] = l[j] ?? ""; }); });
       return;
     }
     if (sy.length !== S) probe("stanza.countMismatch");
