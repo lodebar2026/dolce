@@ -22,6 +22,7 @@ import { SIMPLE_DIVISIONS, type Chord, type Element, type ElementId, type Harmon
 import { harmonyText, jianpuShape, nominalQuarters } from "./jianpu";
 import { isXmlShaped, tiesToMarks } from "./xmlproject";
 import { creatorTypeOf } from "./metakeys";
+import { carryLateDirections } from "./directionmarks";
 
 /** 简谱来源的时值单位（四分音符的 divisions） */
 const Q = SIMPLE_DIVISIONS;
@@ -60,6 +61,8 @@ export function projectForJianpu(src: Song): Song {
   if (xml) {
     creatorsFromCredits(song);
     headerFromCredits(song);
+    // 落在小节末的力度、文字挂到下一小节头（简谱视图、文本谱写出都按 `directionMarks` 挂靠，与 123 / ABC 写出端同一口径）
+    carryLateDirections(song);
   }
   // ABC 的延音线只标在音上（`C3- C3`），简谱画成弧要按 id 配成 `tied` 记号（`slots.ts` 归弧线）
   else tiesToMarks(song);

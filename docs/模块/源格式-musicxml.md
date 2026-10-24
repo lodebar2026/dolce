@@ -67,6 +67,8 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
   credit 与 creator 写法本身不一的（繁简、拼写）认不出，照旧各写各的。
 - **`<direction>` 落在音中间的**（`<offset>` 多是排版软件的微调）挂靠时取最近的拍位：前半段算这个音、后半段算下一个（`directionmarks.ts::directionMarks`）。
   以前一律推到下一个音，转简谱文本读回渐强起点挪一个音（破碎 m30 的 offset 只有八分音符的 1/8）。
+  **力度落在小节末、后面已没有音的**（offset 推过了最后一个音）挪到下一小节开头（`carryLateDirections`，文本写出端与简谱视图都先过它）；
+  文字与渐强起点写在小节末多半就是管小节末的，不挪（望十架、破碎实测挪了更差）。
 
 ## 在谱面上编辑
 

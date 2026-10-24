@@ -6,7 +6,7 @@
 //     渐强收尾挂在拍位**之前**的最后一个（写出端 `xmlproject.ts::wedgeDirections` 把收尾写在收尾音的终点）；
 //   - Fine / D.C. / D.S.：挂本小节的右线（唱到这里才跳）；
 //   - 不是术语的文字（`副歌`）当段落词。
-import type { DirectionPart, Element, Measure, Song, SourceOrnament } from "./doc";
+import type { Direction, DirectionPart, Element, Measure, Song, SourceOrnament } from "./doc";
 import { DYNAMICS, TERMS } from "../pu/glyph";
 import { decoKey } from "./deconames";
 import { melodyLane } from "./jianpu";
@@ -108,6 +108,49 @@ export function directionMarks(mea: Measure): DirectionMarks {
   return out;
 }
 
+/**
+ * 落在小节末、后面已经没有音的 direction（`<offset>` 把它推过了最后一个音，望十架 m57 的 f、m68 的 mp）挪到下一小节开头：
+ * 它管的是下一小节的头一个音。不挪的话挂靠找不到之后的音，退回挂在本小节最后一个音上，转成简谱文本读回提前了。
+ * 只挪力度：文字、渐强渐弱、跳转（Fine / D.S. / To Coda 是写在小节末的）、速度不挪。最后一小节不挪。就地改。
+ */
+export function carryLateDirections(song: Song): void {
+  // 文字（cresc.、dim. poco a poco）与渐强起点写在小节末多半就是管小节末的，挪了反而错（望十架、破碎实测）
+  const movable = (x: DirectionPart): boolean => x.type === "dynamics";
+  for (const part of song.parts) {
+    part.measures.forEach((mea, mi) => {
+      const next = part.measures[mi + 1];
+      if (!next || !mea.directions?.length) return;
+      const end: number[] = [];
+      let pos = 0;
+      for (const el of mea.elements) {
+        pos = ((el.kind === "chord" || el.kind === "space" ? el.onset : undefined) ?? pos) + (timed(el) ? Math.round(el.duration?.divisions ?? 0) : 0);
+        end.push(pos);
+      }
+      const measureEnd = Math.max(0, ...end);
+      if (!measureEnd) return;
+      const late = (d: Direction): boolean => {
+        if (![d, ...(d.more ?? [])].every(movable)) return false;
+        const k = d.afterElements;
+        const base = d.onset ?? (k === undefined || k === 0 ? 0 : end[Math.min(k, end.length) - 1]!);
+        const p = base + (d.offset ?? 0);
+        // 最后一个音的后半段同 `directionMarks` 的取整：算下一个拍位，也就是小节末
+        const lastStart = measureEnd - Math.round(([...mea.elements].reverse().find((el) => timed(el))?.duration?.divisions) ?? 0);
+        return p >= measureEnd - 1e-6 || (p > lastStart + 1e-6 && p - lastStart >= (measureEnd - lastStart) / 2);
+      };
+      const moved = mea.directions.filter(late);
+      if (!moved.length) return;
+      mea.directions = mea.directions.filter((d) => !moved.includes(d));
+      if (!mea.directions.length) delete mea.directions;
+      next.directions = [...moved.map((d) => {
+        const nd: Direction = { ...d, afterElements: 0 };
+        delete nd.onset;
+        delete nd.offset;
+        return nd;
+      }), ...(next.directions ?? [])];
+    });
+  }
+}
+
 /** 拍单位 → 占几分之几全音符（附点另乘 3/2） */
 const BEAT_UNIT: Readonly<Record<string, { num: number; den: number }>> = {
   whole: { num: 1, den: 1 }, half: { num: 1, den: 2 }, quarter: { num: 1, den: 4 }, eighth: { num: 1, den: 8 }, "16th": { num: 1, den: 16 },
@@ -183,6 +226,7 @@ export function directionsAsMarks(src: Song): Song {
   if (!src.parts.some((p) => p.measures.some((m) => m.directions?.length))) return src;
   const song: Song = structuredClone(src);
   liftLeadTempo(song);
+  carryLateDirections(song);
   for (const part of song.parts) {
     // 渐强渐弱常跨小节：起点留着等后面小节的收尾
     const open: { type: "crescendo" | "diminuendo"; id: number }[] = [];

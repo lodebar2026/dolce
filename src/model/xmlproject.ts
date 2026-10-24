@@ -833,6 +833,9 @@ function projectPart(
     const cursors = new Map<number, number>();
     const overlay = new Set(m.elements.map((el) => el.voice || 1)).size > 1;
     let pos = 0;
+    /** 要定印不印记号的音与它的起点：`&` 的各支一支接一支排，第二支第 1 拍的 C 排在第一支第 3 拍的 C♯ 后面，
+     *  按元素先后定就多印一个还原号。同时刻的照原次序（倚音在主音前） */
+    const staffMarks: { t: number; n: Chord["notes"][number] }[] = [];
     for (const el of m.elements) {
       // 简谱来源一个 part 就是一个声部：`<voice>` 一律写 1（文本谱 `Q2:` 的声部号是 part 的事）。
       // **临时多声部例外**：解析已经定好的分支号照原样留着，覆盖掉就把两条并行旋律串成一条了。
@@ -856,13 +859,8 @@ function projectPart(
           n.pitch = carry.pitch(n.degree, { fifths });
           n.pitch.octave += octave;
           // 谱表上印的记号（`<accidental>`）按五线谱口径另算：源文的记号是简谱的（相对调号、按唱名延续），
-          // 照抄在非 C 调、跨八度处都不对；`.jpwabc`/文本谱则根本没写，谱表上一个记号都不印
-          const acc = staffCarry.mark(n.pitch, !!n.tie?.stop);
-          if (acc) n.accidental = acc;
-          else {
-            delete n.accidental;
-            delete n.accidentalParentheses;
-          }
+          // 照抄在非 C 调、跨八度处都不对；`.jpwabc`/文本谱则根本没写，谱表上一个记号都不印。小节走完按时刻排了再定（`marks`）
+          staffMarks.push({ t: pos, n });
         }
       }
       if (ch.grace) {
@@ -903,6 +901,14 @@ function projectPart(
       if (!ch.lyrics.length) delete ch.lyrics;
       pos += ch.duration.divisions;
       cursors.set(voice, pos);
+    }
+    for (const { n } of staffMarks.sort((a, b) => a.t - b.t)) {
+      const acc = staffCarry.mark(n.pitch!, !!n.tie?.stop);
+      if (acc) n.accidental = acc;
+      else {
+        delete n.accidental;
+        delete n.accidentalParentheses;
+      }
     }
     // 小节长度取各分支最远的终点，**不是各分支时值之和**
     pos = Math.max(0, ...cursors.values());
