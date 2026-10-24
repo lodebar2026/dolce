@@ -112,6 +112,10 @@ function subMeasure(m: Measure, keep: (el: Element) => boolean, dirKeep: (d: Dir
     }
   }
   const out: Measure = { ...m, elements };
+  // 留下的音比整小节短（跨谱表的声部这一小节后半在另一条谱表上）：记下原小节长，写出端照它在末尾补空拍，读回各谱表小节等长
+  const full = Math.max(m.duration ?? 0, ...m.elements.map((el, j) => starts[j]! + lengthOf(el)));
+  const subStarts = startsOf(out);
+  if (full > Math.max(0, ...elements.map((el, j) => subStarts[j]! + lengthOf(el)))) out.duration = full;
   if (m.attrs) {
     const a = attrsOf(m.attrs);
     if (a) out.attrs = a;
@@ -328,6 +332,8 @@ export function mergeStaffParts(song: Song): void {
     }
     for (const m of host.measures) {
       for (const la of m.laterAttrs ?? []) if (la.attrs.clefs) la.attrs.clefs = la.attrs.clefs.map((c) => (c.staff ? c : { ...c, staff: 1 }));
+      // 首条自己的力度、文字、渐强渐弱同样写明谱表号：不写的 `<direction>` 别的软件（与评分）当整个声部的，下谱表也算一份
+      if (m.directions) m.directions = m.directions.map((d) => (d.staff ? d : { ...d, staff: 1 }));
     }
     for (const g of guests) merged.add(g.id);
   }

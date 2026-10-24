@@ -1,7 +1,7 @@
 // 123 方言的写出端。只回答基类问的那几个问题，其余全在 `emit.ts`。
 
 import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Measure, type Note, type Part, type Song } from "../model/doc";
-import { AbcFamilyEmitter, type MarkIndex } from "./emit";
+import { AbcFamilyEmitter, timeText, type MarkIndex } from "./emit";
 import { BARE_CHORD_RE } from "./dialect123";
 import { directionsAsMarks } from "../model/directionmarks";
 import { projectForJianpu } from "../model/jianpuproject";
@@ -146,12 +146,14 @@ export class Emitter123 extends AbcFamilyEmitter {
    *  辅助拍号写在括号里的（文本谱 `P: 4/4 ( 2/4 )`）照原样带括号写出。 */
   protected override timeValue(song: Song): string | null {
     if (!song.time) return null;
+    const single = !song.extraTimes?.length && !song.timeNote;
     const parts: string[] = [];
     let inParen = false;
     for (const t of [song.time, ...(song.extraTimes ?? [])]) {
       const paren = t.parenthesized === true;
       if (!paren && inParen) parts[parts.length - 1] += ")";
-      parts.push((paren && !inParen ? "(" : "") + `${t.beats}/${t.beatType}`);
+      // `C` / `C|` 只在单独一个拍号时认得（`fields.ts::parseTimes`），并排几个或带说明的照写分数
+      parts.push((paren && !inParen ? "(" : "") + (single ? timeText(t) : `${t.beats}/${t.beatType}`));
       inParen = paren;
     }
     if (inParen) parts[parts.length - 1] += ")";

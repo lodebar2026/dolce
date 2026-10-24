@@ -69,7 +69,7 @@ export interface Token {
   repeatTimes?: number;
   /** rest：整小节休止 `Z` / `Zn` 占几个小节（ABC §4.6；123 同写法） */
   bars?: number;
-  /** chordGroup 里的 note：音后紧跟 `~`，只这一个音连到下一个和音的同音（123 的 `[1~3]`，同 ABC 的 `[C-E]`） */
+  /** chordGroup 里的 note：音后紧跟 `~` / `-`，只这一个音连到下一个和音的同音（123 的 `[1~3]`、ABC 的 `[C-E]`） */
   tieNext?: boolean;
   /** grace：倚音的音符 token */
   notes?: Token[];

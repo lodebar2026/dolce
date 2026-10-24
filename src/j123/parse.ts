@@ -578,15 +578,18 @@ function buildMusicLine(
     if (pb.noteTies.length && el.kind === "chord" && !el.grace) {
       for (const nt of pb.noteTies) {
         const a = nt.from.notes[nt.note]!;
-        const j = el.notes.findIndex((b) => !!a.degree && !!b.degree && a.degree.number === b.degree.number
-          && a.degree.octaveShift === b.degree.octaveShift && (b.degree.accidental ?? a.degree.accidental) === a.degree.accidental);
+        // 123 按度数配；ABC 的度数读完才推（这时只有音高），按音名与八度配
+        const j = el.notes.findIndex((b) => a.degree && b.degree
+          ? a.degree.number === b.degree.number && a.degree.octaveShift === b.degree.octaveShift && (b.degree.accidental ?? a.degree.accidental) === a.degree.accidental
+          : !!a.pitch && !!b.pitch && a.pitch.step === b.pitch.step && a.pitch.octave === b.pitch.octave);
         if (j < 0) {
           report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
           continue;
         }
         (a.tie ??= {}).start = true;
         (el.notes[j]!.tie ??= {}).stop = true;
-        marks.push({ type: "tied", start: nt.from.id, end: el.id, startNote: nt.note, endNote: j });
+        // ABC 的延音线同整和弦的 `-` 只记在音上，记号由 `xmlproject.ts::tiesToMarks` 统一配（那边见到已有 `tied` 就整份不配了）
+        if (ctx.d.id === "123") marks.push({ type: "tied", start: nt.from.id, end: el.id, startNote: nt.note, endNote: j });
       }
       pb.noteTies = [];
     }

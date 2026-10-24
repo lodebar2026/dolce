@@ -25,6 +25,7 @@ import type {
   Part,
   ScoreDoc,
   Song,
+  Time,
 } from "../model/doc";
 import { SIMPLE_DIVISIONS } from "../model/doc";
 import { breakAfter, lyricOfVerse, type BreakKind } from "../model/helpers";
@@ -289,6 +290,13 @@ export function xmlBeamGroups(mea: Measure): Map<ElementId, number> | null {
   return out;
 }
 
+/** 拍号的写法：印成 `C` / `₵` 的（MusicXML `<time symbol>`）写 `C` / `C|`（ABC §3.1.6，123 同），其余写分数 */
+export function timeText(t: Time): string {
+  if (t.symbol === "common" && t.beats === 4 && t.beatType === 4) return "C";
+  if (t.symbol === "cut" && t.beats === 2 && t.beatType === 2) return "C|";
+  return `${t.beats}/${t.beatType}`;
+}
+
 export abstract class AbcFamilyEmitter {
   /** 文件头的版本声明行（`%123-1.0` / `%abc-2.1`）。 */
   protected abstract readonly versionLine: string;
@@ -313,7 +321,7 @@ export abstract class AbcFamilyEmitter {
 
   /** `M:` 的值。默认只写头一个拍号——并排的混合拍是 123 的扩展，标准 ABC 读不了（见 emit123）。 */
   protected timeValue(song: Song): string | null {
-    return song.time ? `${song.time.beats}/${song.time.beatType}` : null;
+    return song.time ? timeText(song.time) : null;
   }
 
   /** `V:n` 首次出现时跟在声部号后面的属性：多声部时的声部名 `name="女高"` / `subname="S"`（ABC §3.1.20；
@@ -438,6 +446,11 @@ export abstract class AbcFamilyEmitter {
 
   /** 曲中换谱号写不写（`[K:clef=…]`）。123 写；ABC、Muse 那两档读入端没接，先不写。 */
   protected readonly inlineClefs: boolean = false;
+
+  /** 和弦里只连其中几个音时写在那个音后面的记号（123 的 `[1~3]`，见 `chordTies`）。整和弦都连的写在和弦后（`tieText`） */
+  protected noteTieText(n: Note, notes: readonly Note[]): string {
+    return notes.length > 1 && this.noteTieAfter.has(n) ? "~" : "";
+  }
 
   /** 延音线（ABC 专有：tie 的 start 端写 `-`）。 */
   protected tieText(ch: Chord): string {
@@ -606,7 +619,7 @@ export abstract class AbcFamilyEmitter {
       s = this.restText(ch);
     } else {
       const notes = this.chordNotes(ch);
-      s = this.chordGroupText(notes.map((n) => this.noteText(n) + (notes.length > 1 && this.noteTieAfter.has(n) ? "~" : "")).join(""), notes.length);
+      s = this.chordGroupText(notes.map((n) => this.noteText(n) + this.noteTieText(n, notes)).join(""), notes.length);
     }
     s += this.durationText(ch);
     s += this.tieText(ch);
@@ -689,7 +702,7 @@ export abstract class AbcFamilyEmitter {
     // 曲中转调/转拍号写成行内 `[K:]` `[M:]`（解析端 `j123/parse.ts` 的 inlineField 认得）。
     // 以前不写：MusicXML 里 A♭ 转 A 的谱（019《拥戴祂为王》）转成 123 后后半首整体差半音
     let key = song.key ? this.keyValue(song.key) : "";
-    const timeOf = (t: { beats: number; beatType: number } | undefined): string => (t ? `${t.beats}/${t.beatType}` : "");
+    const timeOf = (t: Time | undefined): string => (t ? timeText(t) : "");
     let time = timeOf(song.time);
     /** 当前谱号名（曲中换谱号才写 `[K:clef=…]`） */
     let clef = "treble";
@@ -795,11 +808,17 @@ export abstract class AbcFamilyEmitter {
     // 末尾的 `<forward>` 不留元素）用不可见休止补齐——ABC §7.4 的各分支等长，读回才不报拍数不对
     const branchLen = new Map<number, number>();
     let mainVoice: number | undefined;
+    const whole = from === 0 && to >= mea.elements.length;
+    /** 分支写完：补到第一支的长度；第一支自己补到记下的小节长（`Measure.duration`：拆开的大谱表里跨谱表的声部后半在另一条谱表上） */
     const padBranch = (v: number | undefined): void => {
-      if (v === undefined || v === mainVoice || from > 0 || to < mea.elements.length) return;
-      const lack = (branchLen.get(mainVoice!) ?? 0) - (branchLen.get(v) ?? 0);
+      if (v === undefined || from > 0 || to < mea.elements.length) return;
+      const target = Math.max(v === mainVoice ? 0 : branchLen.get(mainVoice!) ?? 0, mea.duration ?? 0);
+      const lack = target - (branchLen.get(v) ?? 0);
       const pad = lack > 1e-6 ? this.overlayPad(lack) : "";
-      if (pad) pieces.push(pad);
+      if (pad) {
+        pieces.push(pad);
+        branchLen.set(v, target);
+      }
     };
     for (const j of order) {
       const el = mea.elements[j]!;
@@ -808,17 +827,25 @@ export abstract class AbcFamilyEmitter {
       if (ch?.continued) continue; // 同 `lyricLines`
       const voice = el.voice > 1 ? el.voice : 1;
       mainVoice ??= voice;
-      if (!ch?.grace && el.duration) {
-        const tm = el.duration.timeMod;
-        branchLen.set(voice, (branchLen.get(voice) ?? 0) + el.duration.divisions * (tm ? tm.normal / tm.actual : 1));
-      }
       if (this.overlayText && prevVoice !== undefined && voice !== prevVoice) {
         padBranch(prevVoice);
         pieces.push(this.overlayText);
         prevGroup = undefined;
-        // 这一支不是从小节起点开的（MusicXML 的交错多声部会这样）：用不可见休止占住前面那段
-        const pad = el.onset ? this.overlayPad(el.onset) : "";
-        if (pad) pieces.push(pad);
+      }
+      // 这一支在这里空着一段（MusicXML 的交错多声部不从小节起点开；拆开的大谱表里跨谱表的声部前半在另一条谱表上）：
+      // 用不可见休止占住。`onset` 只有 MusicXML 来源写，原生的 `&` 分支按分支游标接着排
+      const at = branchLen.get(voice) ?? 0;
+      if (el.onset !== undefined && el.onset > at + 1e-6 && whole) {
+        const pad = this.overlayPad(el.onset - at);
+        if (pad) {
+          pieces.push(pad);
+          prevGroup = undefined;
+          branchLen.set(voice, el.onset);
+        }
+      }
+      if (!ch?.grace && el.duration) {
+        const tm = el.duration.timeMod;
+        branchLen.set(voice, (branchLen.get(voice) ?? 0) + el.duration.divisions * (tm ? tm.normal / tm.actual : 1));
       }
       prevVoice = voice;
       // 倚音单独成块、紧贴后一个音符

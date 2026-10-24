@@ -116,7 +116,8 @@ export function projectForMusicXml(src: Song, options: ProjectOptions = {}): Son
       ...(first.attrs ?? {}),
       divisions,
       key: { ...(song.key ?? {}), ...(first.attrs?.key ?? {}), fifths: first.attrs?.key?.fifths ?? fifths },
-      time: first.attrs?.time ?? (song.time ? { beats: song.time.beats, beatType: song.time.beatType } : { beats: 4, beatType: 4 }),
+      // 印成 `C` / `₵` 的（123 / ABC 的 `M:C`）带上 `symbol`
+      time: first.attrs?.time ?? (song.time ? { beats: song.time.beats, beatType: song.time.beatType, ...(song.time.symbol ? { symbol: song.time.symbol } : {}) } : { beats: 4, beatType: 4 }),
     };
     for (const [i, m] of part.measures.entries()) {
       if (!m.print) continue;

@@ -53,6 +53,8 @@ function withAbcDivisions(src: Song): Song {
     let divisions = 1;
     for (const m of part.measures) {
       if (m.attrs?.divisions !== undefined) divisions = m.attrs.divisions;
+      // 记下的小节长（拆开的大谱表，`staves.ts::subMeasure`）写出端按它补齐末尾，同一口径
+      if (m.duration) m.duration = Math.round((m.duration / divisions) * SIMPLE_DIVISIONS);
       for (const el of m.elements) {
         if (el.kind === "chord" && el.grace) continue;
         if ((el.kind === "chord" || el.kind === "space") && el.duration) {
@@ -150,9 +152,14 @@ export class EmitterAbc extends AbcFamilyEmitter {
     return dur ? lengthSuffix(dur.divisions) : "";
   }
 
-  /** tie 的 start 端写 `-`（ABC §4.11）。 */
+  /** tie 的 start 端写 `-`（ABC §4.11）：和弦的音全连上写在和弦后，只连其中几个的写在那几个音后（`[D-d]`，`noteTieText`）。 */
   protected override tieText(ch: Chord): string {
-    return ch.notes.some((n) => n.tie?.start) ? "-" : "";
+    const notes = this.chordNotes(ch);
+    return notes.length && notes.every((n) => n.tie?.start) ? "-" : "";
+  }
+
+  protected override noteTieText(n: Note, notes: readonly Note[]): string {
+    return notes.length > 1 && n.tie?.start && !notes.every((x) => x.tie?.start) ? "-" : "";
   }
 
   /** ABC 没有「节奏音符」，退化成一个不发音高的 `x`——比丢掉强，且时值对得上。 */

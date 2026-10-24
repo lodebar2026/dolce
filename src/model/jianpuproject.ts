@@ -20,7 +20,7 @@
 
 import { SIMPLE_DIVISIONS, type Chord, type Element, type ElementId, type Harmony, type Measure, type PageText, type Song } from "./doc";
 import { harmonyText, jianpuShape, nominalQuarters } from "./jianpu";
-import { hasVoiceOverlay, isXmlShaped, tiesToMarks } from "./xmlproject";
+import { isXmlShaped, tiesToMarks } from "./xmlproject";
 
 /** 简谱来源的时值单位（四分音符的 divisions） */
 const Q = SIMPLE_DIVISIONS;
@@ -64,7 +64,7 @@ export function projectForJianpu(src: Song): Song {
   else tiesToMarks(song);
   let nextId = maxId(song) + 1;
   const newId = (): ElementId => nextId++;
-  if (xml && hasVoiceOverlay(song)) for (const part of song.parts) fillVoiceGaps(part, newId);
+  if (xml) for (const part of song.parts) fillVoiceGaps(part, newId);
   for (const part of song.parts) {
     let divisions = xml ? 1 : Q;
     let carry: Harmony[] = [];
@@ -88,11 +88,13 @@ export function projectForJianpu(src: Song): Song {
   return song;
 }
 
-/** 多声部小节里各声部的空拍（`onset` 晚于本声部游标）补不可见休止，并去掉 `onset`（单位是 MusicXML 的 divisions，原样用）。 */
+/** 各声部的空拍（`onset` 晚于本声部游标）补不可见休止，并去掉 `onset`（单位是 MusicXML 的 divisions，原样用）。
+ *  只有一个声部的也补：拆开的大谱表（`staves.ts::splitStaves`）里跨谱表的声部前半在另一条谱表上，留下的音从小节中间起；
+ *  后半在另一条谱表上的，按记下的小节长（`Measure.duration`）在首个声部末尾补齐，读回各谱表小节等长。 */
 function fillVoiceGaps(part: Song["parts"][number], newId: () => ElementId): void {
   for (const m of part.measures) {
     const voices = new Set(m.elements.filter((e) => e.kind === "chord").map((e) => e.voice));
-    if (voices.size < 2) continue;
+    if (voices.size < 2 && !m.duration && !m.elements.some((e) => e.kind === "chord" && e.onset)) continue;
     const out: Element[] = [];
     const cursor = new Map<number, number>();
     let end = 0;
@@ -112,6 +114,15 @@ function fillVoiceGaps(part: Song["parts"][number], newId: () => ElementId): voi
       end = start + (el.grace ? 0 : el.duration.divisions);
       cursor.set(el.voice, end);
     }
+    const first = out.find((e): e is Chord => e.kind === "chord");
+    const lack = (m.duration ?? 0) - (first ? cursor.get(first.voice) ?? 0 : 0);
+    if (first && lack > 1e-9) {
+      let at = out.length;
+      while (at > 0 && !(out[at - 1]!.kind === "chord" && out[at - 1]!.voice === first.voice)) at--;
+      out.splice(at, 0, { kind: "chord", id: newId(), notes: [], rest: {}, printObject: false, duration: { divisions: lack, dots: 0 }, voice: first.voice, staff: first.staff });
+    }
+    // 小节长已落成休止；它的单位是 MusicXML 的 divisions，留着会被当成投影后的口径
+    delete m.duration;
     m.elements = out;
   }
 }

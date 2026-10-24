@@ -622,7 +622,8 @@ function directionXml(o: Out, dir: Direction, cx: Ctx): void {
     const a = soundAttrs(dir.sound);
     if (a) o.leaf("sound", a);
   }
-  if (dir.staff !== undefined && dir.staff > 1) o.text("staff", dir.staff);
+  // 模型里写明了就写（并成大谱表的首条谱表记成 1，`staves.ts::mergeStaffParts`）：多谱表的声部里缺 `<staff>` 的记号别的软件当整个声部的
+  if (dir.staff !== undefined) o.text("staff", dir.staff);
   o.close();
 }
 

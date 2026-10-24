@@ -482,7 +482,9 @@ export abstract class AbcFamilyLexer {
           text: line.slice(start, i),
           notes: inner.tokens.flatMap((x, k) => {
             if (x.kind !== "note") return [];
-            return inner.tokens[k + 1]?.kind === "arcNext" ? [{ ...x, tieNext: true }] : [x];
+            // 123 的 `[1~3]`、ABC 的 `[C-E]`
+            const nx = inner.tokens[k + 1]?.kind;
+            return nx === "arcNext" || nx === "tie" ? [{ ...x, tieNext: true }] : [x];
           }),
         };
         if (cg.dur) {
