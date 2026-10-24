@@ -310,7 +310,10 @@ export function nominalQuarters(el: Element, divisions: number): number {
   if (!d) return 0;
   // 整小节休止常记成 `<type>whole`、时值却是一整小节（2/4、3/4 里也一样；八段锦小钗 m52）：按实际时值
   const wholeRest = el.kind === "chord" && !!el.rest && d.type === "whole" && !d.timeMod;
-  const base = d.type && !wholeRest ? TYPE_QUARTERS[d.type] : undefined;
+  // 不可见休止是占位（ABC `x5` 这种写不成单个音符的时值，写出端只能就近标个 `<type>half`）：也按实际时值，
+  // 不然拆成整拍的 0 时余下那半拍丢了，后面的音整个往前错
+  const spacerRest = el.kind === "chord" && !!el.rest && el.printObject === false && !d.timeMod;
+  const base = d.type && !wholeRest && !spacerRest ? TYPE_QUARTERS[d.type] : undefined;
   if (base !== undefined) {
     let q = base;
     let add = base;

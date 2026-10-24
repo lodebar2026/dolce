@@ -192,6 +192,8 @@ export interface InlineLayerElement {
    *  文本谱的 `{dsb}` 括起的是上行，不带 */
   below?: boolean;
   elements: MusicElement[];
+  /** 并排块（`role: "voice"`）：各元素在模型里的 id（与 `elements` 逐位对应），`docView` 据此登记，块里的音才点得中、对得上原文 */
+  ids?: readonly (number | undefined)[];
   marks: Mark[];
   code: string;
   source: SourceSpan;

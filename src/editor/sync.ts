@@ -117,7 +117,8 @@ export class SyncIndex {
       for (const page of song.pages) {
         for (const group of page.groups) {
           for (const row of group.voices) {
-            for (const el of row.elements) {
+            // 同一谱表的第二声部（123 / ABC 的 `&`）并在块里：块里的音也进索引
+            for (const el of row.elements.flatMap((x) => (x.kind === "inline-layer" && x.role === "voice" ? x.elements : [x]))) {
               if (el.kind !== "note") continue;
               const id = view.idOf.get(el);
               if (id === undefined) continue;

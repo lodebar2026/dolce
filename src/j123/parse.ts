@@ -126,6 +126,8 @@ interface PartBuild {
   arcNext: { from: ElementId; source: SourceSpan } | null;
   /** 和音里单连一个音的 `~`（`[1~3]`）：等下一个和音来，连到它里面的同音 */
   noteTies: { from: Chord; note: number; source: SourceSpan }[];
+  /** ABC：上一个 `-` 还没配到下一个音符（tie 的 stop 端）。存在声部级、随分支存取：`-` 可以在代码行末、`&` 前、小节线前 */
+  abcTie: boolean;
   /** 小节内各分支（`&`）各自开着的弧与欠着的 `~`：切走时存下、下一小节切回同一分支时接上，
    *  弧与延音线才能跨小节线接着同一分支（第一声部的弧不被第二声部截断，第二声部的 `~` 不落到第一声部上） */
   branchArcs: Map<number, BranchArcs>;
@@ -145,13 +147,14 @@ interface BranchArcs {
   slurs: OpenMark[];
   arcNext: PartBuild["arcNext"];
   noteTies: PartBuild["noteTies"];
+  abcTie: boolean;
 }
 
 /** 切到第 `to` 个分支：当前分支开着的弧存下，换上 `to` 上回存下的（没有就是空的）。`openSlurs` 原地改（`buildMusicLine` 持有它的引用） */
 function switchBranch(pb: PartBuild, to: number): void {
   if (to === pb.voice) return;
-  if (pb.openSlurs.length || pb.arcNext || pb.noteTies.length) {
-    pb.branchArcs.set(pb.voice, { slurs: [...pb.openSlurs], arcNext: pb.arcNext, noteTies: pb.noteTies });
+  if (pb.openSlurs.length || pb.arcNext || pb.noteTies.length || pb.abcTie) {
+    pb.branchArcs.set(pb.voice, { slurs: [...pb.openSlurs], arcNext: pb.arcNext, noteTies: pb.noteTies, abcTie: pb.abcTie });
   }
   const s = pb.branchArcs.get(to);
   pb.branchArcs.delete(to);
@@ -159,6 +162,7 @@ function switchBranch(pb: PartBuild, to: number): void {
   if (s) pb.openSlurs.push(...s.slurs);
   pb.arcNext = s?.arcNext ?? null;
   pb.noteTies = s?.noteTies ?? [];
+  pb.abcTie = s?.abcTie ?? false;
 }
 
 /** 见到 `$`（或 ABC 的代码行末）：当前小节已有和弦时先记下，是不是小节中间换行等后面来的是什么再定（`PartBuild.inlineBreak`）。 */
@@ -479,15 +483,13 @@ function buildMusicLine(
     /** 收在「带着增时线的音」上的弧：后面再来增时线，说明弧是收在增时线中间的（`1-)-`），终点改记到当时最后那根增时线上 */
     arcEnds: { mk: Mark; host: Chord; su: Sustain }[];
   } = { last: null, lastGrace: null, sustainHost: null, justClosedTuplet: false, arcEnds: [] };
-  /** ABC：上一个 `-` 还没配到下一个音符（tie 的 stop 端） */
-  let pendingTie = false;
   /** ABC：上一个 `>`/`<` 还欠着——正数表示下一个音符要减半、上一个加附点 */
   let pendingBroken = 0;
   /** ABC：结算欠着的 tie 与破碎节奏。123 永远不会触发（那两种 token 不产生）。 */
   const applyTieAndBroken = (ch: Chord): void => {
-    if (pendingTie) {
+    if (pb.abcTie) {
       for (const n of ch.notes) n.tie = { ...(n.tie ?? {}), stop: true };
-      pendingTie = false;
+      pb.abcTie = false;
     }
     if (pendingBroken !== 0 && cur.sustainHost) {
       // `>` n 个：前音 ×(2-2^-n)、后音 ×2^-n；`<` 反过来
@@ -704,6 +706,9 @@ function buildMusicLine(
 
       case "chordGroup": {
         // `[CEG]`：同时发声的几个音 —— `ScoreDoc.Chord.notes[]` 本来就装得下
+        cur.justClosedTuplet = false;
+        if (sawSpaceSinceLastNote) beamGroup++;
+        sawSpaceSinceLastNote = false;
         const ch: Chord = {
           kind: "chord",
           id: ctx.ids.next(),
@@ -718,6 +723,8 @@ function buildMusicLine(
         };
         // 减时线条数（简谱排版按它画；时值已在 `duration` 里）——漏了的话 `[35]_` 画成四分（八段锦笛子 m62）
         if ((t.beams ?? 0) > 0) ch.beams = Array.from({ length: t.beams! }, () => "continue" as const);
+        // ABC 的空白分组同单音（`[fa] [eg]` 隔着空格就不连杠）：漏了的话和弦按拍自动连，转一圈写法就变了
+        if (ctx.d.spaceBeams) ch.beamGroup = beamGroup;
         applyTieAndBroken(ch);
         attach(ch);
         cur.sustainHost = ch;
@@ -742,7 +749,7 @@ function buildMusicLine(
         // ABC 的 `-`：给前一个和弦的音打 start，下一个音打 stop
         if (cur.sustainHost) {
           for (const n of cur.sustainHost.notes) n.tie = { ...(n.tie ?? {}), start: true };
-          pendingTie = true;
+          pb.abcTie = true;
         } else {
           report(ctx, "orphan-tie", tr("diag.j123.orphanTie"), t.source);
         }
@@ -1082,8 +1089,7 @@ function buildMusicLine(
         switchBranch(pb, pb.voice + 1);
         pb.voice++;
         pb.overlaySource = t.source;
-        // 分支各自从头计时，所以分支间的状态一律不继承：tie、破碎节奏、增时线宿主、符杠分组
-        pendingTie = false;
+        // 分支各自从头计时，所以分支间的状态一律不继承：破碎节奏、增时线宿主、符杠分组（tie 随分支存取，见 `switchBranch`）
         pendingBroken = 0;
         cur.sustainHost = null;
         cur.last = null;
@@ -1483,6 +1489,7 @@ export function parseAbcFamily(
     inlineBreak: null,
     arcNext: null,
     noteTies: [],
+    abcTie: false,
     branchArcs: new Map(),
     openWedges: [],
     wedgeCloseNext: [],

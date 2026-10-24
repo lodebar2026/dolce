@@ -583,15 +583,19 @@ function divisionFactor(song: Song, tuplets: Map<ElementId, { actual: number; no
 }
 
 /** 延音线：简谱来源只在音上标了起止（`Note.tie`），`<tied>` 要按 id 配成对。
- *  两端必须是同一个实音，配不上的两头都去掉——孤立的 start 会让下游软件把线一路拖下去。 */
+ *  两端必须是同一个实音，配不上的两头都去掉——孤立的 start 会让下游软件把线一路拖下去。
+ *  按谱表·声部各配各的：小节里的第二声部（`&`）排在第一声部后面，混着配会把两边的线都当孤立的删掉。 */
 export function tiesToMarks(song: Song): void {
   if (song.marks.some((m) => m.type === "tied")) return;
+  type Open = { chord: Chord; note: Chord["notes"][number] }[];
   for (const p of song.parts) {
-    let open: { chord: Chord; note: Chord["notes"][number] }[] = [];
+    const byVoice = new Map<string, Open>();
     for (const m of p.measures) {
       for (const el of m.elements) {
         if (el.kind !== "chord" || el.grace) continue;
-        const next: typeof open = [];
+        const key = `${el.staff ?? 1}:${el.voice ?? 1}`;
+        const open = byVoice.get(key) ?? [];
+        const next: Open = [];
         for (const note of el.notes) {
           if (note.tie?.stop) {
             const k = open.findIndex((o) => sameDegree(o.note, note));
@@ -605,10 +609,10 @@ export function tiesToMarks(song: Song): void {
           if (note.tie?.start) next.push({ chord: el, note });
         }
         for (const o of open) delete o.note.tie!.start;
-        open = next;
+        byVoice.set(key, next);
       }
     }
-    for (const o of open) delete o.note.tie!.start;
+    for (const open of byVoice.values()) for (const o of open) delete o.note.tie!.start;
   }
 }
 
@@ -841,12 +845,14 @@ function projectPart(
       };
       if (!realBeams) delete ch.beams;
 
-      // 增时线上的和弦：拍位从本音符起算（本体时值 + 前面的增时线条数）
+      // 增时线上的和弦：拍位从本音符起算（本体时值 + 前面的增时线条数），搬成 MusicXML 形状的 `laterHarmonies`（带 offset，
+      // 同 `fromxml`）——留在增时线上的话，再投回简谱（`projectForJianpu` 按 `laterHarmonies` 重排增时线）就丢了
       const bodyQuarters = (nominal - (ch.sustains?.length ?? 0) * SIMPLE_DIVISIONS) / SIMPLE_DIVISIONS;
       (ch.sustains ?? []).forEach((su, k) => {
         if (!su.harmony) return;
         const off = (bodyQuarters + k) * SIMPLE_DIVISIONS * factor * (r ? r.normal / r.actual : 1);
-        su.harmony = { ...su.harmony, offset: Math.round(off) };
+        (ch.laterHarmonies ??= []).push({ ...su.harmony, offset: Math.round(off) });
+        delete su.harmony;
       });
 
       projectOrnaments(ch, dirs, pos);

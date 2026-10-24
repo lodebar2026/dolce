@@ -247,6 +247,7 @@ function innerVoiceLayer(run: readonly Measure[], marks: readonly Mark[], nextId
     role: "voice",
     below: true,
     elements: b.elements,
+    ids: b.refs.map((r) => r.id),
     marks: [...segmentMarks(own, [b], 0), ...rowTuplets([sub], [b])[0]!.filter((t) => !own.some((mk) => mk.type === "tuplet" && b.indexOf.get(mk.start) === t.start))],
     code: "",
     source: ZERO,
@@ -1017,6 +1018,15 @@ export function docView(doc: ScoreDoc): DocView {
             if (label !== undefined && row === g.voices[0] && el.kind === "note" && ref.chord && !labelled.has(ref.measure)) {
               labelled.add(ref.measure);
               el.keyLabel = label;
+            }
+            // 同一谱表的第二声部并成的块：块里的元素也登记（点选、高亮、原文定位靠它）
+            if (el.kind === "inline-layer") {
+              el.elements.forEach((sub, k) => {
+                const sid = el.ids?.[k];
+                if (sid === undefined || sid < 0) return; // 补拍位的不可见休止是临时 id，模型里没有
+                view.idOf.set(sub, sid);
+                if (!view.elementOf.has(sid)) view.elementOf.set(sid, sub);
+              });
             }
             const id = ref.id;
             if (id === undefined) return;

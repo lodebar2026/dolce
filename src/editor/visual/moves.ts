@@ -41,6 +41,11 @@ export function shiftLyricText(ctx: EditCtx, ly: SyncEntry, delta: number, count
   const k0 = starts.findIndex((s, i) => bodyFrom + s <= ly.from && (i + 1 >= starts.length || bodyFrom + starts[i + 1]! > ly.from));
   if (k0 < 0) return { error: tr("me.noLyric") };
   const slot = (): string => `${skip} `;
+  // 删掉一个跳格：它若紧贴着前一格（`morn/ing`，写出端在跳格两边不加空格），前一格补个空格，免得两个字粘成一个
+  const dropSlot = (i: number): void => {
+    toks.splice(i, 1);
+    if (i > 0 && i < toks.length && !/[\s-]$/.test(toks[i - 1]!)) toks[i - 1] += " ";
+  };
   const total = slotsBetween(ctx.doc, start, last.to + 1);
   // 挪几格 = 一格一格挪（与按几下 Alt+→ 一样）
   let k = k0;
@@ -50,14 +55,14 @@ export function shiftLyricText(ctx: EditCtx, ly: SyncEntry, delta: number, count
     while (j + 1 < toks.length && !empty(j + 1) && (j < lim || delta > 0)) j++;
     if (delta > 0) {
       const gap = toks.findIndex((_, i) => i > j && empty(i));
-      if (gap >= 0) toks.splice(gap, 1);
+      if (gap >= 0) dropSlot(gap);
       // 这一行曲里没有空格可吸收：词行多出一格，最后那个字要还有音可配
       else if (toks.length + 1 > total) return { error: tr("me.lyricNoRoom") };
       toks.splice(k, 0, slot());
       k++;
     } else {
       if (k === 0 || !empty(k - 1)) return { error: tr("me.lyricNoRoom") };
-      toks.splice(k - 1, 1);
+      dropSlot(k - 1);
       // 后面的字不动：这串字后面补回一格（行尾就不用补）
       if (j < toks.length) toks.splice(j, 0, slot());
       k--;

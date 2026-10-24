@@ -176,8 +176,11 @@ export function lyricLines(
       prevSyllabic = hit.syllabic;
       // 以转义字符收尾（`How\-`）同样会被下一个拉丁词粘上，也要空格；
       // 拉丁词后跟半角标点（`grace,`）读回不会粘，但照英文排版也空一格（`grace, how`），全角标点（`grace，`）照中文不空
-      prevLatin = hit.trailingPunctuation
-        ? isLatinEnd(hit.text) && /^[!-~]+$/.test(hit.trailingPunctuation)
+      // MusicXML 来的字标点还连在 `text` 里（`ly,`），读回 123 才拆成 `trailingPunctuation`：两种一样算，转一圈写法不变
+      const tail = hit.trailingPunctuation ?? /[!"'),.:;?\]}]+$/.exec(hit.text)?.[0];
+      const core = hit.trailingPunctuation || !tail ? hit.text : hit.text.slice(0, -tail.length);
+      prevLatin = tail
+        ? isLatinEnd(core) && /^[!-~]+$/.test(tail)
         : isLatinEnd(hit.text) || (!needBrace && /[/-]$/.test(bare) && bare !== hit.text);
       if (hit.extend) {
         body += sep + ext;
