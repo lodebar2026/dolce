@@ -19,6 +19,7 @@ import {
   isLyricCjk as isCjk,
   isLyricOpenQuote as isOpenQuote,
   isLyricTrailingPunct as isTrailingPunct,
+  isLyricApostrophe,
 } from "../common/cjkpunct";
 import type {
   AttachedSource,
@@ -275,6 +276,8 @@ export function parseLyricLine(
 
   /** 收尾标点。`joinTilde` 时 `~` 是并字符号、不是标点（标点表里有它） */
   const trail = (c: string): boolean => isTrailingPunct(c) && !(joinTilde && c === "~");
+  /** 后面紧跟字母的 `’` 是撇号、属于这个词（`don’t`、词首省音 `’til`），不跟字母的才是右引号 */
+  const apos = (k: number): boolean => isLyricApostrophe(body, k);
   /** 上一个音节后面跟着 `~`：下一个有字的音节并进去（`joinTilde`） */
   let joinNext = false;
   const push = (l: Lyric): void => {
@@ -398,7 +401,7 @@ export function parseLyricLine(
     }
     // 标点并到前一音节；**前面没字可并时不能丢**——`《圣经》…` 行首那个 `《`
     // 丢了就会让整行少一个字符、往返不稳
-    if (trail(ch)) {
+    if (trail(ch) && !apos(i)) {
       const prev = out[out.length - 1];
       if (prev) prev.trailingPunctuation = (prev.trailingPunctuation ?? "") + ch;
       else prefix += ch;
@@ -412,7 +415,7 @@ export function parseLyricLine(
       while (j < body.length) {
         const c = body[j]!;
         if (c === "\\" && (body[j + 1] === "-" || body[j + 1] === "/")) { text += body[j + 1]!; j += 2; continue; }
-        if (/[\s\-_*|{}\\]/.test(c) || c === skip || isCjk(c) || trail(c) || (joinTilde && c === "~")) break;
+        if (/[\s\-_*|{}\\]/.test(c) || c === skip || isCjk(c) || (trail(c) && !apos(j)) || (joinTilde && c === "~")) break;
         text += c;
         j++;
       }

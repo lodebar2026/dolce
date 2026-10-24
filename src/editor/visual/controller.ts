@@ -2543,8 +2543,9 @@ export class VisualEditController {
     const lyrics = this.host.sync.range(sel.from, sel.to).filter((e) => e.kind === "lyric");
     const ly = exact?.kind === "lyric" ? exact : lyrics[0];
     if (ly && !byMeasure && !endOnly) {
-      const count = lyrics.filter((e) => e.verseNo === ly.verseNo).length;
-      return this.apply(shiftLyricText(c, ly, delta, count > 1 ? count : undefined));
+      // 选中几个字就只挪这几个（打谱软件的方向键都只动选中的东西），选一个字往回挪也只收它自己，与往后挪互逆
+      const count = Math.max(1, lyrics.filter((e) => e.verseNo === ly.verseNo).length);
+      return this.apply(shiftLyricText(c, ly, delta, count));
     }
     if (exact?.kind === "mark" && exact.markKind === "slur" && !byMeasure) return this.apply(moveSlurText(c, exact, which, delta));
     if (exact?.kind === "mark" && exact.markKind !== "slur" && !endOnly && !byMeasure) return this.apply(moveAttachedText(c, exact, delta));

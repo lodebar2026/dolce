@@ -16,7 +16,10 @@ import { blockStart, lastMusicLine, lyricBody, lyricLinesAfter, slotsBetween } f
 import { type EditCtx, type EditOutcome, mapper } from "./ops";
 import { t as tr } from "../../i18n";
 
-/** 歌词条目 `ly` 那个字连同后面紧接的字挪一格（`count` 给了只挪这几个）。 */
+/**
+ * 歌词条目 `ly` 那个字连同后面紧接的字挪一格（`count` 给了只挪这几个：往后挪仍推开挡在前面的字，往回挪只收这几个）。
+ * 可视化编辑总按选中的字数给 `count`，选一个字往回挪就只收它自己。
+ */
 export function shiftLyricText(ctx: EditCtx, ly: SyncEntry, delta: number, count?: number): EditOutcome {
   if (!ctx.dialect.measure) return { error: tr("ve.moveTextFormat") };
   const { state } = ctx;

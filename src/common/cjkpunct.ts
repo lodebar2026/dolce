@@ -237,6 +237,12 @@ export function isLyricTrailingPunct(ch: string): boolean {
   return !isLyricOpenQuote(ch) && (PU_LYRIC_PUNCTUATION.includes(ch) || "”’｡、\"".includes(ch));
 }
 
+/** `text[i]` 是撇号而不是右引号：`’` 后面紧跟字母（词中 `don’t`、词首省音 `’til` `’neath`）。
+ *  Unicode 建议撇号就用 U+2019，智能引号也按「后面跟字母」判——读入端把它留在词里，写出端照拉丁词起头算。 */
+export function isLyricApostrophe(text: string, i: number): boolean {
+  return text[i] === "’" && /\p{L}/u.test(text[i + 1] ?? "");
+}
+
 /** 领起后一个字的左引号与开括号。开括号并到前一字后面的话（`段（副` 切成 `段（` + `副`），
  *  它成了不占位的尾标点，后一个字直接压在括号上。 */
 export function isLyricOpenQuote(ch: string): boolean {

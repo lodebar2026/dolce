@@ -6,7 +6,7 @@
 
 import type { Element, ElementId, Mark, Part, Song } from "./doc";
 import { breakAfter, type BreakKind } from "./helpers";
-import { isLyricCjk, isLyricOpenQuote, isLyricTrailingPunct } from "../common/cjkpunct";
+import { isLyricApostrophe, isLyricCjk, isLyricOpenQuote, isLyricTrailingPunct } from "../common/cjkpunct";
 
 /** 一个系统：第 `from`–`to` 小节（闭区间）。切在小节中间时，首小节从第 `fromEl` 个元素起、末小节到第 `toEl` 个止（不含）。 */
 export interface SystemRange {
@@ -207,7 +207,7 @@ const LATIN_CH = /[\p{L}\p{N}']/u;
 /** 拉丁音节（非 CJK 的字母/数字）起头——歌词读入端的拉丁分支会把它和前面的拉丁词粘在一起 */
 export function isLatinStart(text: string): boolean {
   const c = [...text][0] ?? "";
-  return LATIN_CH.test(c) && !isLyricCjk(c);
+  return (LATIN_CH.test(c) && !isLyricCjk(c)) || isLyricApostrophe(text, 0);
 }
 export function isLatinEnd(text: string): boolean {
   const cs = [...text];
