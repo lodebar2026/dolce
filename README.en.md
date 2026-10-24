@@ -86,7 +86,10 @@ The interface is available in **English and Chinese**: it follows your browser l
   score back in this view.
 - **Staff-notation recognition.** Staff PDFs with an intact text layer, as well as scanned or photographed staff
   images and PDFs, are recognized into MusicXML, which opens in the staff and mixed views and can be edited on the
-  score. Dropped images are routed to jianpu or staff recognition automatically (by looking for five-line staves),
+  score. The source is shown as **ABC** by default (grand staves, chords and multiple voices included; anything ABC
+  can't hold switches to 123 etc. with a notice), and the format menu above the source switches between ABC, 123, the
+  jianpu formats and the MusicXML original at any time without re-recognizing; compare-with-original keeps working in
+  every format. Dropped images are routed to jianpu or staff recognition automatically (by looking for five-line staves),
   or you can choose explicitly. If staves are assigned to the wrong parts, fix the mapping in the parts panel and
   the score is rebuilt without re-recognizing.
 - **Lyrics cross-check.** The command-line recognizer (`omr-cli.mjs image --lyrics lyrics.txt`) can take the
@@ -167,7 +170,7 @@ In the lyrics, CJK characters take one note each and need no spaces. Latin words
 | JP-Word | `.jpwabc` | ✅ | ✅ | ✅ | Opens and saves files JP-Word can read |
 | Plain-text jianpu | `.pu` `.fq` `.jps` `.txt` | ✅ | ✅ | ✅ | Fanqie and Shigeben dialects, detected automatically |
 | ABC | `.abc` | ✅ | ✅ | ✅ | Voices, repeats, endings, chords, ornaments… |
-| MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; a single-voice score can also be converted to 123 etc. for text editing |
+| MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; opened as ABC source by default (Settings can pick 123 etc. or keep MusicXML), and the format menu switches back to the original |
 | Image / PDF | `.png` `.jpg` `.webp` `.pdf` | OMR | — | — | Jianpu images and scanned PDFs; staff PDFs, scanned or photographed staff notation |
 | jianpu-ly | `.jly` | ✅ | ✅ | ✅ (Save; use Export to write `.jly`, Save As does not offer it) | Upstream [jianpu-ly](https://github.com/ssb22/jianpu-ly) text scores: opened and edited as jianpu — notes, durations, octaves, accidentals, marks, lyrics and line breaks can be changed on the score (measures and chord names in the source pane); export hands the file to the upstream preprocessor for LilyPond (`.ly`) |
 | Muse jianpu | `.jcx` | ✅ | ✅ | ✅ | Muse score editor scripts (an ABC dialect): reads files from old and new Muse versions (GBK / BIG5 / UTF-8) and saves GBK files that both can open, so recognition can output Muse jianpu directly (click-to-compare with the source image still works) and the checked score can be handed to Muse. Only jianpu and staff tracks are read |

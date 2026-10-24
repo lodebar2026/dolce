@@ -86,6 +86,8 @@ export interface OmrHost {
   hasCodePane(): boolean;
   /** 没有代码区时勾「源码」：转成默认编辑格式（`App.openSourceView`）。 */
   openSourceView(): Promise<void>;
+  /** MusicXML 落地后转成设置里的默认编辑格式（缺省 ABC，装不下改用建议的；`App.openInEditFormat`）。返回状态栏的说明 */
+  openInEditFormat(): string;
   /** 简谱识别产物落地：识别直出的模型与它写成的 123 核对文本。 */
   importOmrDoc(doc: ScoreDoc, text: string): void;
   /** 识别产物有无变了：同步排版档按钮（简谱识别期间不露「五线谱」「混排」两档）。 */
@@ -371,6 +373,8 @@ export class OmrController implements FormatSource {
     this.sessionKind = "staff";
     this.host.adoptStaffXml(res.xml);
     this.staffEmitted = this.host.getText();
+    // 用默认编辑格式（ABC）看源码；MusicXML 原文留在格式下拉里（识别 id 按拍点、音高带过去）
+    const formatNote = this.host.openInEditFormat();
     this.host.setContextControl(this.kindField(), true);
     // 位图路有页面位图与音符坐标：「原图对照」可用（矢量 PDF 那一路没有位图，不给）
     if (this.btnEl) this.btnEl.textContent = t("omr.compare");
@@ -380,7 +384,7 @@ export class OmrController implements FormatSource {
     const s = res.stats;
     this.host.setStatus(
       t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: s.pages, parts: s.parts ?? 1, notes: s.notes }) +
-        (s.bars ? t("omr.fullBars", { pct: Math.round((s.full / s.bars) * 100) }) : "") + t("omr.editOnScore"),
+        (s.bars ? t("omr.fullBars", { pct: Math.round((s.full / s.bars) * 100) }) : "") + t("omr.editOnScore") + (formatNote ? `　${formatNote}` : ""),
     );
     return true;
   }
@@ -1157,6 +1161,7 @@ export class OmrController implements FormatSource {
     this.host.setContextControl(this.kindField(), true);
     const jpOk = this.host.adoptStaffXml(res.musicxml);
     this.staffEmitted = this.host.getText();
+    const formatNote = jpOk ? this.host.openInEditFormat() : "";
     const g2 = this.gen; // 上面 clear() 换了代号
     // 原图对照：页面渲成位图、框放大到像素（`vectorOverlayResult`），之后与位图那一路同一套对照视图与关联表
     try {
@@ -1172,7 +1177,7 @@ export class OmrController implements FormatSource {
     this.host.setStatus(
       t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: res.pages, parts: res.parts, notes: res.notes }) +
         (res.skipped ? t("omr.staffSkipped", { n: res.skipped }) : "") +
-        (jpOk ? "" : t("omr.staffNoJp")),
+        (jpOk ? "" : t("omr.staffNoJp")) + (formatNote ? `　${formatNote}` : ""),
     );
     return true;
   }

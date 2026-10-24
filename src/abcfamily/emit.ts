@@ -30,7 +30,7 @@ import { SIMPLE_DIVISIONS } from "../model/doc";
 import { breakAfter, lyricOfVerse, type BreakKind } from "../model/helpers";
 import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
 import { lyricSlots, type LyricSlotRule } from "./lyricslot";
-import { arcsToNextNote, isLatinEnd, isLatinStart, isOneCjkWithPunct, nestArcsInTuplets, ownIds, ownMarks, partRanges, systemRanges, type SystemRange } from "../model/emitutil";
+import { arcsToNextNote, beamLevel1, isLatinEnd, isLatinStart, isOneCjkWithPunct, nestArcsInTuplets, ownIds, ownMarks, partRanges, systemRanges, type SystemRange } from "../model/emitutil";
 import { clefName, harmonyText } from "../model/jianpu";
 import { ORNAMENT_TAG } from "../model/xmlproject";
 import { BARLINE_ORNAMENT_NAME } from "./jumpmarks";
@@ -270,14 +270,14 @@ export function scoreDirective(song: Song): string | null {
 
 /** MusicXML 写明的符杠分组（第一层 `begin` … `end`，各声部分开）；一个 `begin` 都没有（简谱来源的减时线占位）为 null。 */
 export function xmlBeamGroups(mea: Measure): Map<ElementId, number> | null {
-  if (!mea.elements.some((e) => e.kind === "chord" && e.beams?.[0] === "begin")) return null;
+  if (!mea.elements.some((e) => e.kind === "chord" && beamLevel1(e.beams) === "begin")) return null;
   const out = new Map<ElementId, number>();
   const open = new Map<number, number>();
   let next = 0;
   for (const el of mea.elements) {
     if (el.kind !== "chord" || el.grace) continue;
     const voice = el.voice > 1 ? el.voice : 1;
-    const b = el.beams?.[0];
+    const b = beamLevel1(el.beams);
     if (b === "begin") open.set(voice, ++next);
     const g = open.get(voice);
     if (g !== undefined && (b === "begin" || b === "continue" || b === "end")) out.set(el.id, g);

@@ -623,10 +623,9 @@ export function showOptionsDialog(app: App): void {
   const header = headerGroup(app);
   pHeader.append(...header.rows);
 
-  // 打开单声部 MusicXML 时怎么办（「记住选择」之后从这里改回「每次询问」）
+  // MusicXML（打开的、五线谱识别出的）落地后用哪种源码格式编辑（缺省 ABC，装不下自动改用建议的格式）
   const xmlImport = document.createElement("select");
   for (const [v, label] of [
-    ["ask", t("settings.xml.ask")],
     ["musicxml", t("settings.xml.keep")],
     ...CONVERT_TARGETS.map((c) => [c.id, t("settings.xml.convert", { format: targetLabel(c.id) })] as const),
   ] as const) {

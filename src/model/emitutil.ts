@@ -224,3 +224,12 @@ export function isOneCjkWithPunct(text: string): boolean {
   if (!isLyricCjk(cs[k] ?? "")) return false;
   return cs.slice(k + 1).every(isLyricTrailingPunct);
 }
+
+/** 第一层符杠在这个音上是起、续还是收（`Chord.beams` 不保证按层排：识别稿的十六分音常是 `["backward hook","continue"]`）。不连为 undefined。 */
+export function beamLevel1(beams: readonly string[] | undefined): "begin" | "continue" | "end" | undefined {
+  const vals = (beams ?? []).filter((v) => v === "begin" || v === "continue" || v === "end");
+  if (!vals.length) return undefined;
+  if (vals.includes("continue")) return "continue";
+  if (vals.includes("begin")) return "begin";
+  return "end";
+}

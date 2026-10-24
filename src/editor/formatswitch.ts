@@ -301,6 +301,13 @@ export class DocFormatSource implements FormatSource {
         losses = planSave(doc, target);
       }
     }
+    if (!this.convert(doc, target, losses)) return false;
+    this.host.setStatus(t("fs.converted", { format: originName(target) }));
+    return true;
+  }
+
+  /** 从真身的模型写出 `target` 落地。写不出返回 false（状态栏已说明）。 */
+  private convert(doc: ScoreDoc, target: OriginFormat, losses: readonly Loss[]): boolean {
     let out: string;
     try {
       out = target === "musicxml" ? scoreDocToMusicXml(doc) : this.emitText(target, doc);
@@ -313,8 +320,26 @@ export class DocFormatSource implements FormatSource {
     this.cur = target;
     this.emitted = out;
     for (const l of losses) if (!this.lost.some((x) => x.feature === l.feature)) this.lost.push(l);
-    this.host.setStatus(t("fs.converted", { format: originName(target) }));
     return true;
+  }
+
+  /**
+   * 落地时换成默认编辑格式（不弹框）：`preferred` 装得下就用它；装不下改用建议的格式（ABC → 123 → MusicXML 取第一个装得下全部的），
+   * 都装不下就留在原格式。返回落到的格式与 `preferred` 装不下的东西（给状态栏说明）。
+   */
+  autoSwitch(preferred: OriginFormat): { to: OriginFormat; lost: Loss[] } {
+    if (!this.has(preferred) || !this.absorbEdits()) return { to: this.cur, lost: [] };
+    const doc = this.truth.doc!;
+    const lost = planSave(doc, preferred);
+    const target = lost.length
+      ? SUGGEST_ORDER.find((f) => this.has(f) && planSave(doc, f).length === 0) ?? this.truth.format
+      : preferred;
+    if (target === this.cur) return { to: target, lost };
+    if (target === this.truth.format) {
+      this.adopt(this.truth);
+      return { to: target, lost };
+    }
+    return this.convert(doc, target, []) ? { to: target, lost } : { to: this.cur, lost };
   }
 
   private emitText(target: OriginFormat, doc: ScoreDoc): string {

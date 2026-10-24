@@ -17,7 +17,7 @@
 // **改这张表之前先去改那几处的实测**——这里只是它们的汇总。
 
 import type { Mark, ScoreDoc, Song } from "./doc";
-import { arcsToNextNote, inlineBreakOf, nestArcsInTuplets } from "./emitutil";
+import { arcsToNextNote, beamLevel1, inlineBreakOf, nestArcsInTuplets } from "./emitutil";
 import { eachChord, verseCount } from "./helpers";
 import { projectForJianpu } from "./jianpuproject";
 import { melodyLane } from "./jianpu";
@@ -225,8 +225,8 @@ function irregularBeams(song: Song): boolean {
         const s = el.onset ?? end;
         end = s + (el.kind === "chord" ? (el.grace ? 0 : el.duration.divisions) : el.duration?.divisions ?? 0);
         if (el.kind !== "chord" || el.grace) continue;
-        const b = el.beams?.[0];
-        if (b === undefined || b === "forward hook" || b === "backward hook") {
+        const b = beamLevel1(el.beams);
+        if (b === undefined) {
           prev.delete(el.voice);
           continue;
         }

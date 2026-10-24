@@ -121,6 +121,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
     body: [
       "`V:1` `V:2` … separate voices; writing `V:n` again continues that voice, so you can interleave them line by line, each voice followed by its own lyrics.",
       "In four-part music, men's parts written an octave up get `V:3 clef=treble-8` where the voice first appears; playback and staff notation then sound and show the actual octave.",
+      "Piano grand staff: one `V:` per staff; the left hand is `V:2 clef=bass part=1` (`part=` names the voice it belongs to), plus `I:score {1 2}` for the brace. Staff, mixed view and playback treat them as one part with two staves.",
     ],
   },
   {
