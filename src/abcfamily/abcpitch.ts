@@ -100,3 +100,31 @@ export function withAbcPitches(src: Song): Song {
   });
   return song;
 }
+
+/**
+ * MusicXML 读进来的歌（已带音高）写 ABC 前：面上的记号按 **ABC 读回的次序**重定。MusicXML 印的记号按时间延续，
+ * 写出端却按声部分段写（`&` 前后各一段，`emit.ts::voiceOrder`），读入端照文字次序延续——后一段里同音名的音
+ * 会被前一段的记号带偏（第二声部先唱的本位 E 读成了第一声部后面的 E♯）。读回会带偏的补上记号，原有的（含提醒记号）照留。在克隆上改。
+ */
+export function withAbcAccidentals(src: Song): Song {
+  const song: Song = structuredClone(src);
+  let carry = new AbcCarry(0);
+  eachMeasure(song, (m, key, fresh) => {
+    if (fresh) carry = new AbcCarry(keyFifths(key));
+    // 与写出端同一个次序：声部按首次出现的先后归并
+    const groups = new Map<number, typeof m.elements>();
+    for (const el of m.elements) {
+      const v = el.voice > 1 ? el.voice : 1;
+      groups.set(v, [...(groups.get(v) ?? []), el]);
+    }
+    for (const el of [...groups.values()].flat()) {
+      if (el.kind !== "chord" || el.rest) continue;
+      for (const n of el.notes) {
+        if (!n.pitch) continue;
+        const need = carry.written(n.pitch);
+        if (need) n.accidental = need;
+      }
+    }
+  });
+  return song;
+}

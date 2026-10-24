@@ -21,6 +21,7 @@ import { arcsToNextNote, inlineBreakOf, nestArcsInTuplets } from "./emitutil";
 import { eachChord, verseCount } from "./helpers";
 import { projectForJianpu } from "./jianpuproject";
 import { melodyLane } from "./jianpu";
+import { hasCrossStaff } from "./staves";
 import { puArcLosses } from "./topu";
 import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
 import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "./pagemeta";
@@ -34,6 +35,7 @@ export type Feature =
   | "noteStack"      // 同一声部里同时发声的几个音（五线谱的和弦内音、民乐分谱的双音）
   | "innerVoice"     // 同一谱表上的第二 voice（ABC/123 的 `&`）
   | "extraStaff"     // 一个声部的第二条谱表（钢琴下谱表、扬琴 `<staves>2`）
+  | "crossStaff"     // 跨谱表的音与连线（钢琴谱跨谱表书写、连到另一条谱表上的弧）
   | "rhythmStack"    // 一个和弦里叠几个节奏音符（打击乐谱钹与鼓同时，`<unpitched>` 带 `<chord/>`）
   | "rhythmPosition" // 节奏音符在谱表上的显示位置（打击乐谱 `<unpitched>` 的 display-step/octave）
   | "graceArc"       // 倚音连到自己主音的弧（文本谱的倚音是音符属性，弧落不到倚音上）
@@ -76,6 +78,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   noteStack: "同一声部里同时发声的音（和音、和弦内音，只留简谱印的最高音）",
   innerVoice: "同一谱表上的第二声部（只留简谱印的第一声部）",
   extraStaff: "同一声部的第二条谱表（只留第一条）",
+  crossStaff: "跨谱表的音与连线（音归它落在的谱表、连到另一条谱表的弧与延音线丢掉）",
   rhythmStack: "同时敲的几个节奏音符（只留一个）",
   rhythmPosition: "节奏音符在谱表上的位置（五线谱一律画在中线）",
   graceArc: "倚音连到主音的弧（别的弧改挂到主音上）",
@@ -150,15 +153,16 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 嵌套弧与任意比例的多连音（`(5:4:`）都写得出；弧与多连音的括号只许嵌套（从组里连到组外下一个音写 `~`，
   // 跨得更远的写不出）、可见休止不跟词（规范 §4.1、§5.1）
   // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 照 ABC §7.4 写 `&`、
-  // 节奏音符的谱表位置与同时敲的几个写 `X@E5` / `[X@E5X@F5]`（§4.2、§4.3，用户定 2026-10-21 加）；一个声部的第二条谱表写不出（§11）
-  "123": allBut("harmonyOffset", "extraStaff", "slurCrossTuplet", "lyricOnRest"),
+  // 节奏音符的谱表位置与同时敲的几个写 `X@E5` / `[X@E5X@F5]`（§4.2、§4.3，用户定 2026-10-21 加）；
+  // 一个声部的几条谱表各写一个 `V:`、第二条起 `part=`（§7，`staves.ts`，用户定 2026-10-24），跨谱表的东西写不出
+  "123": allBut("harmonyOffset", "crossStaff", "slurCrossTuplet", "lyricOnRest"),
   // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
   // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
   // 换页没有记号，写出端退化成换行（`emitabc.ts::breakText`；换行本身含小节中间的都装得下，`break-roundtrip-check` 实测）
   // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
-  // 第二条谱表按 `&` 写成同谱表的第二声部（谱表号丢）
-  abc: allBut("style", "playOrder", "rhythmNote", "rhythmStack", "rhythmPosition", "extraStaff", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
+  // 大谱表同 123：每条谱表一个 `V:`、第二条起 `part=`（`staves.ts`），跨谱表的东西写不出
+  abc: allBut("style", "playOrder", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "verseLabel", "harmonyOffset", "lyricOnRest", "pageBreak", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
   jpwabc: allBut("tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
@@ -255,6 +259,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
         }
       }
     }
+    if (hasCrossStaff(song)) used.add("crossStaff");
     for (const { chord } of eachChord(song)) {
       for (const su of chord.sustains ?? []) if (su.harmony) used.add("harmony");
     }

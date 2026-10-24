@@ -97,6 +97,18 @@ export class AccidentalCarry {
     return offset !== expected ? ACC_BY_OFFSET[offset] : undefined;
   }
 
+  /** 写出前核对：照面上的记号读回（`pitch`）会不会读偏成别的音高；会就返回要改印的记号（本位写 `natural`）。
+   *  不管改不改都按读回的口径更新延续状态。 */
+  repair(degree: Degree, actual: Pitch, key: Key): Accidental | undefined {
+    const offset = actual.alter - keyAlter(STEPS.indexOf(actual.step), key.fifths);
+    const read = this.pitch(degree, key);
+    if (read.alter === actual.alter) return undefined;
+    const acc = ACC_BY_OFFSET[offset];
+    if (!acc) return undefined;
+    this.pitch({ ...degree, accidental: acc }, key);
+    return acc;
+  }
+
   /** 度数（带面上的记号）→ 音高，并更新延续状态。拼写字母取自调号（`jppitch.ts::jpPitch`）。 */
   pitch(degree: Degree, key: Key): Pitch {
     if (degree.accidental) {

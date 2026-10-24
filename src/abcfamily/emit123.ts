@@ -6,8 +6,9 @@ import { BARE_CHORD_RE } from "./dialect123";
 import { directionsAsMarks } from "../model/directionmarks";
 import { projectForJianpu } from "../model/jianpuproject";
 import { layersToVoices } from "../model/innervoice";
-import { clefName, harmonyText, melodyLane, noteHeight, topNote } from "../model/jianpu";
-import { tonicSpelling } from "../model/keyshift";
+import { AccidentalCarry, clefName, continuesMeasure, harmonyText, melodyLane, noteHeight, topNote } from "../model/jianpu";
+import { keyFifths, tonicSpelling } from "../model/keyshift";
+import { splitStaves } from "../model/staves";
 
 /** 倚音时值相对八分：下标 = `_` 个数（八分不写，`{2_}` 十六分）。四分倚音写不出，按八分 */
 const GRACE_TYPES = ["eighth", "16th", "32nd", "64th"];
@@ -45,8 +46,8 @@ export class Emitter123 extends AbcFamilyEmitter {
   protected override readonly rehearsalMarks = true;
   protected override readonly spaceBeams = false;
 
-  /** 一个 `V:` 只写一条谱表：简谱印的那一路（`melodyLane`）所在的谱表。同一谱表上的别的 voice 照 ABC §7.4 用 `&` 接在后面
-   *  （规范 §4.3）；别的谱表（钢琴下谱表）写不出，由 `planSave` 报「extraStaff」丢失。
+  /** 一个 `V:` 只写一条谱表（钢琴大谱表先由 `splitStaves` 拆成每条谱表一个 `V:`）。同一谱表上的别的 voice 照 ABC §7.4 用 `&` 接在后面
+   *  （规范 §4.3）。
    *  每一路里同时发声的几个音写和音 `[13]`（规范 §4.2，照 ABC §4.17 `[CEG]`），自下而上；
    *  画小的上方装饰音（`<type size="cue">`）不算。 */
   protected override emits(el: Element, mea: Measure): boolean {
@@ -81,6 +82,39 @@ export class Emitter123 extends AbcFamilyEmitter {
       return top ? [top] : [];
     }
     return [...pool].sort((a, b) => noteHeight(a) - noteHeight(b));
+  }
+
+  /**
+   * 面上的记号按 **123 读回的次序**核对：简谱的记号按唱名延续（不分八度），读入端照文字次序延续（`xmlproject.ts::projectPart`），
+   * 写出端却按声部分段写（`&`）、和音自下而上排——后写的同唱名音会被先写的记号带偏（第二声部先唱的本位 3 读成第一声部后面的 #3；
+   * `[7,,,4,,b7,,]` 的低音 7 读成本位）。读回会偏的改印记号。只管带绝对音高的（MusicXML 来源）；在克隆上改。
+   */
+  private withReadbackAccidentals(src: Song): Song {
+    if (!src.parts.some((p) => p.measures.some((m) => m.elements.some((el) => el.kind === "chord" && el.notes.some((n) => n.pitch && n.degree))))) return src;
+    const song: Song = structuredClone(src);
+    for (const part of song.parts) {
+      let key: Key = song.key ?? { fifths: 0 };
+      let carry = new AccidentalCarry();
+      part.measures.forEach((m, mi) => {
+        if (m.attrs?.key) key = m.attrs.key;
+        const k: Key = { ...key, fifths: keyFifths(key) };
+        if (!continuesMeasure(part.measures[mi - 1], m)) carry = new AccidentalCarry();
+        const groups = new Map<number, Element[]>();
+        for (const el of m.elements) {
+          const v = el.voice > 1 ? el.voice : 1;
+          groups.set(v, [...(groups.get(v) ?? []), el]);
+        }
+        for (const el of [...groups.values()].flat()) {
+          if (el.kind !== "chord" || el.rest || el.rhythm || !this.emits(el, m)) continue;
+          for (const n of this.chordNotes(el)) {
+            if (!n.pitch || !n.degree || n.degree.number <= 0) continue;
+            const acc = carry.repair(n.degree, n.pitch, k);
+            if (acc) n.degree = { ...n.degree, accidental: acc };
+          }
+        }
+      });
+    }
+    return song;
   }
 
   protected override chordGroupText(inner: string, noteCount: number): string {
@@ -127,7 +161,8 @@ export class Emitter123 extends AbcFamilyEmitter {
   /** MusicXML 读进来的歌先投成简谱形状：123 的 `-` 是增时线、`_` 是减时线，照 MusicXML 的 type/beam 直写会写错时值 */
   override emitSong(song: Song, fallbackNumber?: number): string {
     // 文本谱的 `{dsb…}` 并排块还原成第二声部，照 `&` 写
-    return super.emitSong(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(song)))), fallbackNumber);
+    // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
+    return super.emitSong(this.withReadbackAccidentals(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(splitStaves(song)))))), fallbackNumber);
   }
 
   /** 度数 + 八度点。变音记号**前置**（简谱惯例）。 */

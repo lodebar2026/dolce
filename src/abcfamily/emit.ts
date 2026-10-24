@@ -236,6 +236,38 @@ function playOrderText(song: Song): string {
 }
 
 
+/** `I:score` 的值（ABC §11.1）：大谱表的几条谱表用花括号括起（`{1 2}`），`<part-group>` 的括号 / 花括号包住各自的声部。
+ *  只写最外层一层（读入端只认最外层）：组里有大谱表的，大谱表那层让给组。没有可写的返回 null。 */
+export function scoreDirective(song: Song): string | null {
+  const vno = new Map(song.parts.map((p, i) => [p.id, String(i + 1)]));
+  // 一个声部连同它的从属谱表算一个单位
+  const units: { ids: string[]; text: string }[] = [];
+  for (const p of song.parts) {
+    if (p.staffOf && vno.has(p.staffOf)) continue;
+    const ids = [p.id, ...song.parts.filter((q) => q.staffOf === p.id).map((q) => q.id)];
+    units.push({ ids, text: ids.map((id) => vno.get(id)!).join(" ") });
+  }
+  const groups = (song.partGroups ?? []).filter((g) => g.symbol === "bracket" || g.symbol === "brace");
+  if (!groups.length && units.every((u) => u.ids.length === 1)) return null;
+  const out: string[] = [];
+  for (let i = 0; i < units.length; ) {
+    const g = groups.find((x) => x.parts[0] !== undefined && units[i]!.ids.includes(x.parts[0]));
+    if (g) {
+      const inG = (u: { ids: string[] }): boolean => u.ids.some((id) => g.parts.includes(id));
+      let j = i;
+      while (j < units.length && inG(units[j]!)) j++;
+      const [l, r] = g.symbol === "bracket" ? ["[", "]"] : ["{", "}"];
+      out.push(l + units.slice(i, j).map((u) => u.text).join(" ") + r);
+      i = Math.max(j, i + 1);
+      continue;
+    }
+    const u = units[i]!;
+    out.push(u.ids.length > 1 ? `{${u.text}}` : u.text);
+    i++;
+  }
+  return out.join(" ");
+}
+
 export abstract class AbcFamilyEmitter {
   /** 文件头的版本声明行（`%123-1.0` / `%abc-2.1`）。 */
   protected abstract readonly versionLine: string;
@@ -908,6 +940,11 @@ export abstract class AbcFamilyEmitter {
     // 指令名**一律小写输出**：`parseInstruction` 读入时会归一成小写（ABC 的 `I:` 不区分大小写），
     // 这里若保留原样大小写，往返一轮就会从 `I:FontSize` 变成 `I:fontsize`
     for (const r of song.style?.raw ?? []) L.push(`I:${r.key.toLowerCase()} ${r.value.split(LINE_END).join(" ")}`);
+    // 原文没写分组的（MusicXML 转来的）：按 `<part-group>` 与大谱表（`staffOf`）配一行 `I:score`，括号、花括号读回不丢
+    if (!song.style?.raw?.some((r) => r.key.toLowerCase() === "score")) {
+      const sc = scoreDirective(song);
+      if (sc) L.push(`I:score ${sc}`);
+    }
     if (song.playOrder?.length) L.push(`I:playorder ${playOrderText(song)}`);
     for (const r of song.remarks ?? []) {
       // `P:` 原文在解析期被塞进 remarks，原样还回去
@@ -930,7 +967,10 @@ export abstract class AbcFamilyEmitter {
   /** 声部切换行：声部 `i` 的一行音乐前面写什么（`first`：这个声部第一次出现）。null = 不写。
    *  缺省是 ABC 的 `V:n`：属性只在首次出现时写（带属性的 `V:` 是声明，之后的只切声部）；单声部有属性也得写 `V:1`。 */
   protected voiceLine(song: Song, i: number, first: boolean): string | null {
-    const attrs = first ? this.voiceAttrs(song.parts[i]!, song.parts.length > 1) : "";
+    const part = song.parts[i]!;
+    // 大谱表的第二条起：`part=<首条的 V 号>`（`model/staves.ts`）
+    const host = first && part.staffOf ? song.parts.findIndex((p) => p.id === part.staffOf) : -1;
+    const attrs = first ? [this.voiceAttrs(part, song.parts.length > 1), host >= 0 ? `part=${host + 1}` : ""].filter(Boolean).join(" ") : "";
     return song.parts.length > 1 || attrs ? `V:${i + 1}${attrs ? " " + attrs : ""}` : null;
   }
 

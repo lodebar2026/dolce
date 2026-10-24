@@ -566,6 +566,7 @@ export const en: Record<MsgKey, string> = {
   "feat.noteStack": "Simultaneous notes in one part (double stops, chord tones — only the top printed note is kept)",
   "feat.innerVoice": "Second voice on the same staff (only the first voice is kept)",
   "feat.extraStaff": "Second staff of the same part (only the first staff is kept)",
+  "feat.crossStaff": "Cross-staff notes and lines (notes stay on the staff they sit on; slurs and ties to the other staff are dropped)",
   "feat.rhythmStack": "Stacked rhythm notes struck together (only one is kept)",
   "feat.rhythmPosition": "Staff positions of rhythm notes (drawn on the middle line)",
   "feat.graceArc": "Slurs from a grace note to its main note (other slurs move to the main note)",

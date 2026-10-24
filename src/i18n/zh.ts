@@ -565,6 +565,7 @@ export const zh = {
   "feat.noteStack": "同一声部里同时发声的音（和音、和弦内音，只留简谱印的最高音）",
   "feat.innerVoice": "同一谱表上的第二声部（只留简谱印的第一声部）",
   "feat.extraStaff": "同一声部的第二条谱表（只留第一条）",
+  "feat.crossStaff": "跨谱表的音与连线（音归它落在的谱表、连到另一条谱表的弧与延音线丢掉）",
   "feat.rhythmStack": "同时敲的几个节奏音符（只留一个）",
   "feat.rhythmPosition": "节奏音符在谱表上的位置（五线谱一律画在中线）",
   "feat.graceArc": "倚音连到主音的弧（别的弧改挂到主音上）",

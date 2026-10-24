@@ -1114,7 +1114,7 @@ function buildMusicLine(
         const val = m[2] ?? "";
         pb.measure.attrs ??= {};
         // 曲中换谱号 `[K:clef=tenor]`（只换谱号、不换调）：123 的写出端这么写
-        const clefOnly = name === "K" && ctx.d.id === "123" ? /^\s*clef\s*=\s*(\S+)\s*$/i.exec(val) : null;
+        const clefOnly = name === "K" && (ctx.d.id === "123" || ctx.d.id === "abc") ? /^\s*clef\s*=\s*(\S+)\s*$/i.exec(val) : null;
         if (clefOnly) {
           const c = clefFromName(clefOnly[1]!);
           if (c) pb.measure.attrs.clefs = [c];
@@ -1741,9 +1741,12 @@ function applyField(
     }
     case "V": {
       const b = startPart(f.voice ?? 1);
-      // 八度谱号只在 123 里有简谱语义（男声部高八度记）；ABC 的音名本就是实际音高，照旧不管
-      const clef = ctx.d.id === "123" ? parseVoiceClef(f.value) : null;
+      // 谱号：123 的八度谱号另有简谱语义（男声部高八度记，`writtenOctaveOf`）；ABC 的音名是记谱音高，谱号只管画在哪条线上
+      const clef = ctx.d.id === "123" || ctx.d.id === "abc" ? parseVoiceClef(f.value) : null;
       if (clef) b.clef = clef;
+      // 大谱表的第二条起：`V:2 part=1`（`model/staves.ts`）
+      const host = ctx.d.id === "jcx" ? null : /(?:^|\s)part=(\d+)(?=\s|$)/.exec(f.value);
+      if (host && Number(host[1]) !== (f.voice ?? 1)) b.part.staffOf = `P${host[1]}`;
       if (ctx.d.id === "jcx") {
         museVoiceAttrs(ctx, b, f);
         break;

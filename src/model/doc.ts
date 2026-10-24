@@ -749,6 +749,9 @@ export interface Part {
   nameSize?: number;
   /** [五线谱] 多谱表（钢琴谱） */
   staffCount?: number;
+  /** 123 / ABC 的 `V:n part=m`：这个声部其实是声部 `m` 的下一条谱表（钢琴大谱表的左手）。值是那个声部的 id。
+   *  写 MusicXML 时并回去成 `<staves>`（`staves.ts::mergeStaffParts`），写 ABC 家族时反过来拆（`splitStaves`） */
+  staffOf?: string;
   measures: Measure[];
   /** 最后一小节**之后**的换行/换页（123 行末的 `$`）。见 `Print` 的口径说明 */
   endBreak?: "system" | "page";

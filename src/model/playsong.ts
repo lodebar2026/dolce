@@ -46,7 +46,10 @@ export function playSourceOf(doc: ScoreDoc, songIdx = 0, options: PlaySongOption
   if (isXmlShaped(song)) return playSourceOfDoc(song);
   // ABC `&` 的临时多声部：简谱那条路一个声部行只走一条旋律，会把并行的分支当成接着唱的音。
   // 先投成 MusicXML 形状（元素 id 不变，高亮照样认得）再按 voice 分轨播（`playdoc.ts`）。
-  if (hasVoiceOverlay(song)) return playSourceOfDoc(projectForMusicXml(song));
+  // 大谱表（`V:2 part=1`）与和音（`[CEG]`）同此：简谱那条路一个和弦只响一个音、不读力度
+  if (hasVoiceOverlay(song) || song.parts.some((p) => p.staffOf) || song.parts.some((p) => p.measures.some((m) => m.elements.some((el) => el.kind === "chord" && !el.rhythm && el.notes.length > 1)))) {
+    return playSourceOfDoc(projectForMusicXml(song));
+  }
   return playSourceOfSong(doc, songIdx, options);
 }
 

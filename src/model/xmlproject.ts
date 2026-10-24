@@ -31,6 +31,7 @@ import { decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
 import { applyBreaks } from "./breaks";
 import { keyFifths, songFifths } from "./keyshift";
 import { distinctNumbers } from "./phrasedoc";
+import { mergeStaffParts } from "./staves";
 
 
 /** 记号原名 → `<articulations>` 元素名（`&xx` 与 123 的 `!xx!` 同名）。 */
@@ -130,6 +131,8 @@ export function projectForMusicXml(src: Song, options: ProjectOptions = {}): Son
     wedgeDirections(song, part);
     if (pi === 0) tempoDirection(song, first);
   }
+  // 123 / ABC 的大谱表（`V:2 part=1`）并回一个声部的几条谱表
+  mergeStaffParts(song);
   // wedge 已经全部落成 direction，`<notations>` 那边不认它
   song.marks = song.marks.filter((m) => m.type !== "wedge");
   if (!song.credits?.length) song.credits = creditsOf(song);

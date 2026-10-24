@@ -3,14 +3,15 @@
 // **默认音长固定写 `L:1/8`**：写出端要幂等，就不能让默认音长随内容浮动——
 // 同一份 `ScoreDoc` 第二次写出必须逐字相同。读入端照样认任意 `L:`。
 
-import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Note, type Song } from "../model/doc";
+import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Note, type Part, type Song } from "../model/doc";
 import { AbcFamilyEmitter, type MarkIndex } from "./emit";
-import { harmonyText } from "../model/jianpu";
+import { clefName, harmonyText } from "../model/jianpu";
 import { nominalQuarters } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
 import { isXmlShaped } from "../model/xmlproject";
 import { directionsAsMarks } from "../model/directionmarks";
-import { withAbcPitches } from "./abcpitch";
+import { splitStaves } from "../model/staves";
+import { withAbcAccidentals, withAbcPitches } from "./abcpitch";
 
 /** ABC §4.13 里不随拍号变的默认比例（`parsedialect.ts::tupletNormalAbc`）。 */
 const ABC_FIXED_TUPLET: Readonly<Record<number, number>> = { 2: 3, 3: 2, 4: 3, 6: 2, 8: 3 };
@@ -69,12 +70,24 @@ const GRACE_LEN: Readonly<Record<string, string>> = { quarter: "2", eighth: "", 
 
 export class EmitterAbc extends AbcFamilyEmitter {
   protected readonly versionLine = "%abc-2.1";
+  /** 曲中换谱号写 `[K:clef=bass]`（ABC §3.1.14 的 `clef=` 写进 `K:`） */
+  protected override readonly inlineClefs = true;
+
+  /** 声部名之外再写谱号 `clef=bass`（ABC §3.1.20）：低音、中音谱号与八度谱号写，单声部的高音谱号不写。
+   *  ABC 的音名是记谱音高，谱号只管画在哪条线上（钢琴左手的低音谱表以前转过来全丢，画成高音谱表上一串加线） */
+  protected override voiceAttrs(part: Part, multi: boolean): string {
+    const c = part.measures[0]?.attrs?.clefs?.find((x) => (x.staff ?? 1) === 1);
+    const treble = !c || (c.sign === "G" && (c.line ?? 2) === 2);
+    const name = c && (c.octaveChange || !treble) ? clefName(c) : null;
+    return [super.voiceAttrs(part, multi), name ? `clef=${name}` : ""].filter(Boolean).join(" ");
+  }
 
   /** MusicXML 形状的歌先换时值口径，否则 `L:1/8` 下写出的是原始 divisions（八分写成 `E1/8`）；
    *  简谱形状的（只有度数）先补音高与 ABC 口径的记号（`abcpitch.ts`）。 */
   override emitSong(song: Song, fallbackNumber?: number): string {
-    const own = directionsAsMarks(song);
-    return super.emitSong(isXmlShaped(own) ? withAbcDivisions(own) : withAbcPitches(own), fallbackNumber);
+    // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
+    const own = directionsAsMarks(splitStaves(song));
+    return super.emitSong(isXmlShaped(own) ? withAbcAccidentals(withAbcDivisions(own)) : withAbcPitches(own), fallbackNumber);
   }
 
   /** 长音中途换和弦（123 的 `5 F - C - -`，和弦挂在增时线上）：ABC 没有增时线，拆成连音线相连的几段、
