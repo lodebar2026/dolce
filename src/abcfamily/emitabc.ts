@@ -3,12 +3,12 @@
 // **默认音长固定写 `L:1/8`**：写出端要幂等，就不能让默认音长随内容浮动——
 // 同一份 `ScoreDoc` 第二次写出必须逐字相同。读入端照样认任意 `L:`。
 
-import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Note, type Part, type Song } from "../model/doc";
+import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Note, type Part, type ScoreDoc, type Song } from "../model/doc";
 import { AbcFamilyEmitter, type MarkIndex } from "./emit";
 import { clefName, harmonyText } from "../model/jianpu";
 import { nominalQuarters } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
-import { isXmlShaped } from "../model/xmlproject";
+import { hasTieSyntax, isXmlShaped, slursAsTies } from "../model/xmlproject";
 import { directionsAsMarks } from "../model/directionmarks";
 import { fillEmptyMeasures, splitStaves } from "../model/staves";
 import { withAbcAccidentals, withAbcPitches } from "./abcpitch";
@@ -86,6 +86,11 @@ export class EmitterAbc extends AbcFamilyEmitter {
     const treble = !c || (c.sign === "G" && (c.line ?? 2) === 2);
     const name = c && (c.octaveChange || !treble) ? clefName(c) : null;
     return [super.voiceAttrs(part, multi), name ? `clef=${name}` : ""].filter(Boolean).join(" ");
+  }
+
+  /** 简谱口径的来源（123、文本谱…）相邻同音的括号是延音线，写成 `-`（`slursAsTies`）；ABC / Muse 来的括号就是圆滑线，照写 */
+  override emitDoc(doc: ScoreDoc): string {
+    return super.emitDoc(hasTieSyntax(doc) ? doc : { ...doc, songs: doc.songs.map(slursAsTies) });
   }
 
   /** MusicXML 形状的歌先换时值口径，否则 `L:1/8` 下写出的是原始 divisions（八分写成 `E1/8`）；

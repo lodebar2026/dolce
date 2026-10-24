@@ -158,6 +158,8 @@ export function buildMeasures(
     key: JpKeyState; time: { beats: number; beatType: number };
     /** 曲中转调：这个音所在小节的调号（fifths）。不给就全曲一个调（`pitch.key`） */
     fifthsOf?: (el: NoteElement) => number | undefined;
+    /** 括住相邻两个同音的弧当延音线（缺省是；ABC / Muse 原文的括号就是圆滑线，`xmlproject.ts::hasTieSyntax`） */
+    slurTies?: boolean;
   },
 ): { measures: MeasureOut[]; jumps: JumpOut[] } {
   const measures: MeasureOut[] = [];
@@ -314,7 +316,7 @@ export function buildMeasures(
       if (slur.starts) ch.slurStart = true;
       if (slur.ends) ch.slurEnds++;
       // 相邻两个同音被一条弧括住 = 延音线（简谱里两者同形）：试听只延长、不再起音
-      if (pitch && !ch.rest && lastChord && !lastChord.rest && lastChord.notes[0]!.pitch === ch.notes[0]!.pitch) {
+      if (pitch && pitch.slurTies !== false && !ch.rest && lastChord && !lastChord.rest && lastChord.notes[0]!.pitch === ch.notes[0]!.pitch) {
         const prevAt = lastChordAt;
         const tied = marksAt(line.marks, index, "slur").some((m) => {
           if (m.end !== index || m.continuationToNext) return false;

@@ -44,7 +44,7 @@ import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/part
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../model/convert";
-import { isXmlShaped, projectForMusicXml } from "../model/xmlproject";
+import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
 import { assignDegrees } from "../model/jianpu";
 import { t } from "../i18n";
 import { diagText, targetLabel, type DiagLike } from "../i18n/labels";
@@ -1098,7 +1098,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       try {
         const doc = this.adapter.toScoreDoc?.(this.getText());
         if (!doc) return null;
-        const songs = doc.songs.map((s) => (isXmlShaped(s) ? s : projectForMusicXml(s)));
+        const songs = doc.songs.map((s) => (isXmlShaped(s) ? s : projectForMusicXml(s, { slurTies: !hasTieSyntax(doc) })));
         // 模型那一路改的是音高；123 读进来的唱名留着就是旧的（写出端按唱名写），去掉让写出端按音高重推
         for (const s of songs) for (const p of s.parts) for (const m of p.measures) for (const el of m.elements) {
           if (el.kind === "chord") for (const n of el.notes) if (n.pitch) delete n.degree;

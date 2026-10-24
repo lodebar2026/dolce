@@ -45,7 +45,7 @@ import type {
 } from "./doc";
 import { harmonyXml as chordTextXml } from "../score/harmonyxml";
 import { escapeAttr, escapeXml } from "../score/xmlutil";
-import { projectForMusicXml, type ProjectOptions } from "./xmlproject";
+import { hasTieSyntax, projectForMusicXml, type ProjectOptions } from "./xmlproject";
 import { axisOfSong, type TimeAxis } from "./timeaxis";
 import { rehearsalBracketed } from "./deconames";
 import { SOURCE_ID_PREFIX } from "./helpers";
@@ -963,7 +963,7 @@ export interface ToXmlOptions extends ProjectOptions {
 export function scoreDocToMusicXml(doc: ScoreDoc, options: ToXmlOptions = {}): string {
   const src = doc.songs[options.song ?? 0];
   if (!src) throw new Error(tr("err.noSong"));
-  const song = projectForMusicXml(src, options);
+  const song = projectForMusicXml(src, { ...options, slurTies: options.slurTies ?? !hasTieSyntax(doc) });
   const cx: Ctx = { sourceIds: options.sourceIds === true, ...(options.layout ? { layout: options.layout } : {}) };
   // 文本格式投影出来的一律署上本应用（<encoding><software>）：混排引擎据此认 `<harmony><offset>` 等本写出端的写法
   const projected = song !== src;

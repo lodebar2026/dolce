@@ -10,7 +10,7 @@ import { directionsAsMarks } from "../model/directionmarks";
 import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Measure, type Note, type Song } from "../model/doc";
 import { AbcFamilyEmitter, lyricLines, type LyricStyle } from "./emit";
 import { systemRanges } from "../model/emitutil";
-import { isXmlShaped } from "../model/xmlproject";
+import { hasTieSyntax, isXmlShaped, slursAsTies } from "../model/xmlproject";
 import { LETTER_OF_DEGREE } from "./dialectjcx";
 import { assignDegrees, keySpelling, melodyLane } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
@@ -248,7 +248,8 @@ export class EmitterJcx extends AbcFamilyEmitter {
     const first = doc.songs[0];
     // 读进来的就是 `%MUSE3`（UTF-8）文件：照原版本号写（按乐句重排等整份重写的路），存盘随之按 UTF-8（`jcxcodec.ts`），不降级成 GBK
     const version = doc.sourceFormat === "jcx" && /^\s*%MUSE3/.test(doc.source ?? "") ? "%MUSE3" : this.versionLine;
-    return [version, first ? this.emitSong(first) : "T:\nK:C"].join("\n") + "\n";
+    // 简谱口径的来源相邻同音的括号是延音线，Muse 有 `-`（同 ABC 写出端）
+    return [version, first ? this.emitSong(hasTieSyntax(doc) ? first : slursAsTies(first)) : "T:\nK:C"].join("\n") + "\n";
   }
 }
 

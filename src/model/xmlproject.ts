@@ -19,7 +19,7 @@
 import { layersToVoices } from "./innervoice";
 import type {
   Barline, BeamVal, Chord, Direction, Element, ElementId, Lyric, Mark, Measure, Notations, Part,
-  NoteType, SourceOrnament, Song,
+  NoteType, ScoreDoc, SourceOrnament, Song,
 } from "./doc";
 import { SIMPLE_DIVISIONS } from "./doc";
 import { Fraction, lcm } from "../common/fraction";
@@ -79,6 +79,8 @@ export interface ProjectOptions {
   /** `lineStarts` 落在小节中间的也原位断（拆小节、中间隐藏线）：它们是乐句断点（`App.staffPhraseLineStarts`），
    *  不是简谱版面宽度的产物。不给就只留源文写明的，其余顺延到下一小节。 */
   midLineStarts?: boolean;
+  /** 相邻两个同音的弧当延音线（简谱口径，`tieSlur`）。缺省是；源格式有自己延音线写法的（`hasTieSyntax`：ABC、Muse）传 false */
+  slurTies?: boolean;
 }
 
 export function projectForMusicXml(src: Song, options: ProjectOptions = {}): Song {
@@ -96,7 +98,7 @@ export function projectForMusicXml(src: Song, options: ProjectOptions = {}): Son
   const divisions = SIMPLE_DIVISIONS * factor;
 
   tiesToMarks(song);
-  normalizeMarks(song, hosts);
+  normalizeMarks(song, hosts, options.slurTies ?? true);
   const tupletInner = tupletInnerChords(song, tuplets, hosts);
   /** 拆出来的后半小节的编号（`X1`、`X2`…）；各声部同步拆，各自从头数 */
   let xno: { n: number };
@@ -652,30 +654,67 @@ function tieSlur(a: Chord, b: Chord): [number, number][] {
   return out;
 }
 
-/** 记号端点归到写得出来的音符上；没收口、倒置、端点不在谱面元素上的丢掉；弧线补 number。 */
-function normalizeMarks(song: Song, hosts: Map<ElementId, ElementId>): void {
-  const written = new Set<ElementId>();
-  const order = new Map<ElementId, number>();
-  /** 同一路（声部 + 谱表 + voice）里的先后：「相邻两个同音」按这个算，`&` 第二声部夹在中间的第一声部前后两个音照样相邻 */
-  const laneOrder = new Map<ElementId, { lane: string; at: number }>();
+/** 弧的两端（已归到宿主音）是不是同一路里相邻的两个同音：是就按 `tieSlur` 补上两端的 `Note.tie`、返回连上的音下标对，不是返回空。
+ *  同一路 = 声部 + 谱表 + voice，「相邻」按这一路里的先后算：`&` 第二声部夹在中间的第一声部前后两个音照样相邻 */
+function slurTieTester(song: Song): (start: ElementId, end: ElementId) => [number, number][] {
+  const at = new Map<ElementId, { el: Chord; lane: string; at: number }>();
   const laneNext = new Map<string, number>();
   for (const [pi, p] of song.parts.entries()) {
     for (const m of p.measures) {
       for (const el of m.elements) {
         if (el.kind !== "chord") continue;
-        written.add(el.id);
-        order.set(el.id, order.size);
         const lane = `${pi}/${el.staff}/${el.voice}`;
-        const at = laneNext.get(lane) ?? 0;
-        laneNext.set(lane, at + 1);
-        laneOrder.set(el.id, { lane, at });
+        const k = laneNext.get(lane) ?? 0;
+        laneNext.set(lane, k + 1);
+        at.set(el.id, { el, lane, at: k });
       }
     }
   }
-  const chordAt = new Map<ElementId, { el: Chord; part: number }>();
-  for (const [pi, p] of song.parts.entries()) {
-    for (const m of p.measures) for (const el of m.elements) if (el.kind === "chord") chordAt.set(el.id, { el, part: pi });
+  return (start, end) => {
+    const [a, b] = [at.get(start), at.get(end)];
+    return a && b && a.lane === b.lane && b.at === a.at + 1 ? tieSlur(a.el, b.el) : [];
+  };
+}
+
+/** 有自己延音线写法的源格式（ABC、Muse 的 `-`）：括号就是圆滑线，相邻同音也不当延音线（`ProjectOptions.slurTies`） */
+export const hasTieSyntax = (doc: Pick<ScoreDoc, "sourceFormat">): boolean => doc.sourceFormat === "abc" || doc.sourceFormat === "jcx";
+
+/** 简谱口径的歌写进有 `-` 的格式（ABC、Muse）之前：相邻同音的弧换成延音线（两端补 `Note.tie`、记号改 `tied`），
+ *  否则 123 的 `(1 1)` 照写成 `(C C)`，读回是圆滑线。MusicXML 形状的原样返回（那边圆滑线与延音线本就分开） */
+export function slursAsTies(src: Song): Song {
+  if (isXmlShaped(src) || !src.marks.some((m) => m.type === "slur")) return src;
+  const song: Song = structuredClone(src);
+  const hosts = sustainHosts(song);
+  const slurTie = slurTieTester(song);
+  const marks: Mark[] = [];
+  for (const mk of song.marks) {
+    const start = hosts.get(mk.start) ?? mk.start;
+    const end = hosts.get(mk.end) ?? mk.end;
+    const pairs = mk.type === "slur" && !mk.collapsed ? slurTie(start, end) : [];
+    if (!pairs.length) {
+      marks.push(mk);
+      continue;
+    }
+    for (const [i, j] of pairs) marks.push({ type: "tied", start, end, ...(i ? { startNote: i } : {}), ...(j ? { endNote: j } : {}) });
   }
+  song.marks = marks;
+  return song;
+}
+
+/** 记号端点归到写得出来的音符上；没收口、倒置、端点不在谱面元素上的丢掉；弧线补 number。 */
+function normalizeMarks(song: Song, hosts: Map<ElementId, ElementId>, slurTies: boolean): void {
+  const written = new Set<ElementId>();
+  const order = new Map<ElementId, number>();
+  for (const p of song.parts) {
+    for (const m of p.measures) {
+      for (const el of m.elements) {
+        if (el.kind !== "chord") continue;
+        written.add(el.id);
+        order.set(el.id, order.size);
+      }
+    }
+  }
+  const slurTie = slurTieTester(song);
   const marks: Mark[] = [];
   for (const mk of song.marks) {
     if (mk.type === "wedge") {
@@ -687,9 +726,7 @@ function normalizeMarks(song: Song, hosts: Map<ElementId, ElementId>): void {
     const end = hosts.get(mk.end) ?? mk.end;
     if (!written.has(start) || !written.has(end)) continue;
     if ((mk.type === "slur" || mk.type === "tuplet") && order.get(start)! >= order.get(end)!) continue;
-    const [a, b] = [chordAt.get(start)!, chordAt.get(end)!];
-    const [la, lb] = [laneOrder.get(start)!, laneOrder.get(end)!];
-    const pairs = mk.type === "slur" && la.lane === lb.lane && lb.at === la.at + 1 ? tieSlur(a.el, b.el) : [];
+    const pairs = mk.type === "slur" && slurTies ? slurTie(start, end) : [];
     if (pairs.length) {
       for (const [i, j] of pairs) marks.push({ type: "tied", start, end, ...(i ? { startNote: i } : {}), ...(j ? { endNote: j } : {}) });
       continue;

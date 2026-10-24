@@ -10,7 +10,7 @@
 // 对照里不当新插的音画虚框。
 
 import type { Chord, ElementId, Measure, ScoreDoc, Song } from "../model/doc";
-import { isXmlShaped, projectForMusicXml } from "../model/xmlproject";
+import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
 import { surfaceOf } from "../model/xmlsurface";
 
 /** 接着前一个识别休止的一段（简谱拆开的休止）：不对应识别框，也不算新插的 */
@@ -30,7 +30,7 @@ export interface StaffView {
 export function xmlShape(doc: ScoreDoc): Song | null {
   const song = doc.songs[0];
   if (!song) return null;
-  return isXmlShaped(song) ? song : projectForMusicXml(song);
+  return isXmlShaped(song) ? song : projectForMusicXml(song, { slurTies: !hasTieSyntax(doc) });
 }
 
 /** 和弦第 `k` 个音的实际音高：简谱形状的（123 只有唱名）按投影出来的 MusicXML 形状取。没有返回 undefined */

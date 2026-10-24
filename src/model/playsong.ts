@@ -28,7 +28,7 @@ import type { JpwChordIn, JpwMeasureIn, JpwScoreIn } from "./tojpw";
 import { buildMeasures, type JumpOut, type MeasureOut } from "../pu/phrasesong";
 import { docView } from "../pu/slots";
 import { playSourceOfDoc } from "./playdoc";
-import { hasVoiceOverlay, isXmlShaped, projectForMusicXml } from "./xmlproject";
+import { hasTieSyntax, hasVoiceOverlay, isXmlShaped, projectForMusicXml } from "./xmlproject";
 import { axisOfSong, spreadOnAxis } from "./timeaxis";
 import { breaksOf } from "./breaks";
 
@@ -48,7 +48,7 @@ export function playSourceOf(doc: ScoreDoc, songIdx = 0, options: PlaySongOption
   // 先投成 MusicXML 形状（元素 id 不变，高亮照样认得）再按 voice 分轨播（`playdoc.ts`）。
   // 大谱表（`V:2 part=1`）与和音（`[CEG]`）同此：简谱那条路一个和弦只响一个音、不读力度
   if (hasVoiceOverlay(song) || song.parts.some((p) => p.staffOf) || song.parts.some((p) => p.measures.some((m) => m.elements.some((el) => el.kind === "chord" && !el.rhythm && el.notes.length > 1)))) {
-    return playSourceOfDoc(projectForMusicXml(song));
+    return playSourceOfDoc(projectForMusicXml(song, { slurTies: !hasTieSyntax(doc) }));
   }
   return playSourceOfSong(doc, songIdx, options);
 }
@@ -175,7 +175,7 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
     if (lines.length === 0) continue;
     const first = parts.length === 0;
     const pitch = withPitch
-      ? { key: { basePitch: MusicCommon.getBasePitchOfKey(key), fifths: key.fifths, alter: {} }, time, ...keyChangesOf(view, partOfVoice(doc.songs[songIdx]!, v)) }
+      ? { key: { basePitch: MusicCommon.getBasePitchOfKey(key), fifths: key.fifths, alter: {} }, time, ...keyChangesOf(view, partOfVoice(doc.songs[songIdx]!, v)), slurTies: !hasTieSyntax(doc) }
       : undefined;
     const built = buildMeasures(lines, (ch, el) => {
       const id = view.idOf.get(el);
