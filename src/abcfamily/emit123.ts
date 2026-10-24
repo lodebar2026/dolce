@@ -8,7 +8,7 @@ import { projectForJianpu } from "../model/jianpuproject";
 import { layersToVoices } from "../model/innervoice";
 import { AccidentalCarry, clefName, continuesMeasure, harmonyText, melodyLane, noteHeight, topNote } from "../model/jianpu";
 import { keyFifths, tonicSpelling } from "../model/keyshift";
-import { splitStaves } from "../model/staves";
+import { fillEmptyMeasures, splitStaves } from "../model/staves";
 
 /** 倚音时值相对八分：下标 = `_` 个数（八分不写，`{2_}` 十六分）。四分倚音写不出，按八分 */
 const GRACE_TYPES = ["eighth", "16th", "32nd", "64th"];
@@ -162,7 +162,7 @@ export class Emitter123 extends AbcFamilyEmitter {
   override emitSong(song: Song, fallbackNumber?: number): string {
     // 文本谱的 `{dsb…}` 并排块还原成第二声部，照 `&` 写
     // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
-    return super.emitSong(this.withReadbackAccidentals(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(splitStaves(song)))))), fallbackNumber);
+    return super.emitSong(this.withReadbackAccidentals(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(splitStaves(fillEmptyMeasures(song))))))), fallbackNumber);
   }
 
   /** 度数 + 八度点。变音记号**前置**（简谱惯例）。 */

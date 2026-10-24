@@ -160,6 +160,31 @@ function attrsForStaff(a: MeasureAttrs, k: number): MeasureAttrs | null {
 }
 
 /**
+ * MusicXML 形状的歌里**整小节一个元素都没有**的小节（识别稿整小节空着、合唱谱某声部这一小节没认出音）补一个不可见的整小节休止：
+ * 否则 ABC 家族写出 `| |`，读回投影时被并掉（`mergeEmptyMeasures`），这个声部后面的小节整体错一位。
+ * 长度按小节的 `duration`，没有就按生效的拍号；都没有按四拍。简谱形状的歌不动（空小节是行首 `|:` 之类，本来就该并掉）。不动原件。
+ */
+export function fillEmptyMeasures(song: Song): Song {
+  if (!song.parts.some((p) => p.measures[0]?.attrs?.divisions !== undefined)) return song;
+  let maxId = 0;
+  for (const p of song.parts) for (const m of p.measures) for (const el of m.elements) maxId = Math.max(maxId, el.id);
+  let hit = false;
+  const parts = song.parts.map((p) => {
+    let time = song.time, dpq = 0;
+    const measures = p.measures.map((m) => {
+      if (m.attrs?.time) time = m.attrs.time;
+      if (m.attrs?.divisions) dpq = m.attrs.divisions;
+      if (m.elements.length || !dpq) return m;
+      const len = m.duration ?? (time ? (dpq * 4 * time.beats) / time.beatType : dpq * 4);
+      hit = true;
+      return { ...m, elements: [{ kind: "chord" as const, id: ++maxId, notes: [], rest: { measure: true }, printObject: false, duration: { divisions: len, dots: 0, type: "whole" as const }, voice: 1, staff: 1 }] };
+    });
+    return { ...p, measures };
+  });
+  return hit ? { ...song, parts } : song;
+}
+
+/**
  * 带几条谱表的声部拆成每条谱表一个声部（第二条起 `staffOf` 指向首条）。没有就原样返回。不动原件。
  * 跨谱表的记号（两头落在不同谱表上）丢掉；写到别的谱表上的音归它落在的那条。
  */

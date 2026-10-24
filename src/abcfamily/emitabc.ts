@@ -10,7 +10,7 @@ import { nominalQuarters } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
 import { isXmlShaped } from "../model/xmlproject";
 import { directionsAsMarks } from "../model/directionmarks";
-import { splitStaves } from "../model/staves";
+import { fillEmptyMeasures, splitStaves } from "../model/staves";
 import { withAbcAccidentals, withAbcPitches } from "./abcpitch";
 
 /** ABC §4.13 里不随拍号变的默认比例（`parsedialect.ts::tupletNormalAbc`）。 */
@@ -92,7 +92,7 @@ export class EmitterAbc extends AbcFamilyEmitter {
    *  简谱形状的（只有度数）先补音高与 ABC 口径的记号（`abcpitch.ts`）。 */
   override emitSong(song: Song, fallbackNumber?: number): string {
     // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
-    const own = directionsAsMarks(splitStaves(song));
+    const own = directionsAsMarks(splitStaves(fillEmptyMeasures(song)));
     this.xmlSource = isXmlShaped(own);
     return super.emitSong(isXmlShaped(own) ? withAbcAccidentals(withAbcDivisions(own)) : withAbcPitches(own), fallbackNumber);
   }
