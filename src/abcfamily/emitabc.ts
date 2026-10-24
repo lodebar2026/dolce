@@ -12,6 +12,7 @@ import { hasTieSyntax, isXmlShaped, slursAsTies } from "../model/xmlproject";
 import { directionsAsMarks } from "../model/directionmarks";
 import { fillEmptyMeasures, splitStaves } from "../model/staves";
 import { withAbcAccidentals, withAbcPitches } from "./abcpitch";
+import { creatorsFromCredits, headerFromCredits } from "../model/jianpuproject";
 
 /** ABC §4.13 里不随拍号变的默认比例（`parsedialect.ts::tupletNormalAbc`）。 */
 const ABC_FIXED_TUPLET: Readonly<Record<number, number>> = { 2: 3, 3: 2, 4: 3, 6: 2, 8: 3 };
@@ -55,6 +56,8 @@ function withAbcDivisions(src: Song): Song {
       if (m.attrs?.divisions !== undefined) divisions = m.attrs.divisions;
       // 记下的小节长（拆开的大谱表，`staves.ts::subMeasure`）写出端按它补齐末尾，同一口径
       if (m.duration) m.duration = Math.round((m.duration / divisions) * SIMPLE_DIVISIONS);
+      // 小节中间换谱号的时刻（`emit.ts::midClefChanges`）同此
+      for (const la of m.laterAttrs ?? []) if (la.onset) la.onset = Math.round((la.onset / divisions) * SIMPLE_DIVISIONS);
       for (const el of m.elements) {
         if (el.kind === "chord" && el.grace) continue;
         if ((el.kind === "chord" || el.kind === "space") && el.duration) {
@@ -77,6 +80,8 @@ export class EmitterAbc extends AbcFamilyEmitter {
 
   /** 曲中换谱号写 `[K:clef=bass]`（ABC §3.1.14 的 `clef=` 写进 `K:`） */
   protected override readonly inlineClefs = true;
+  /** 小节中间换谱号在原位写（行内字段 §3 哪儿都能写；钢琴下谱表半小节处转低音谱号） */
+  protected override readonly midClefs = true;
 
   /** 声部名之外再写谱号 `clef=bass`（ABC §3.1.20）：低音、中音谱号与八度谱号写，单声部的高音谱号不写。
    *  ABC 的音名是记谱音高，谱号只管画在哪条线上（钢琴左手的低音谱表以前转过来全丢，画成高音谱表上一串加线） */
@@ -101,11 +106,17 @@ export class EmitterAbc extends AbcFamilyEmitter {
     // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
     const own = directionsAsMarks(splitStaves(fillEmptyMeasures(song)));
     this.xmlSource = isXmlShaped(own);
-    return super.emitSong(isXmlShaped(own) ? withAbcAccidentals(withAbcDivisions(own)) : withAbcPitches(own), fallbackNumber);
+    if (!this.xmlSource) return super.emitSong(withAbcPitches(own), fallbackNumber);
+    // 页眉只写在 `<credit>` 里的署名、左上右上的文字、标题下的英文标题落成 `C:` / `I:topleft` / `T:`（同 123 那一路，`jianpuproject.ts`）
+    const xml = withAbcAccidentals(withAbcDivisions(own));
+    creatorsFromCredits(xml);
+    headerFromCredits(xml);
+    return super.emitSong(xml, fallbackNumber);
   }
 
   /** 长音中途换和弦（123 的 `5 F - C - -`，和弦挂在增时线上）：ABC 没有增时线，拆成连音线相连的几段、
-   *  和弦挂在各段上（`"F"A2-"C"A6`）。只在有增时线带和弦时拆，其余照旧一个音写完。 */
+   *  和弦挂在各段上（`"F"A2-"C"A6`）。只在有增时线带和弦时拆，其余照旧一个音写完。
+   *  MusicXML 的长音中途和弦（`laterHarmonies`）不拆：读回是几个连着的音、不再是一个长音，比丢一个和弦步数还多（丢失清单「长音中间不在整拍上的和弦」） */
   private sustainSegments(ch: Chord): { harmony?: Chord["harmony"]; divisions: number }[] | null {
     const su = ch.sustains;
     if (!su?.some((s) => s.harmony) || ch.rest || ch.grace || ch.rhythm) return null;

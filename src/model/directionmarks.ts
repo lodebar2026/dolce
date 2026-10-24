@@ -54,7 +54,11 @@ export function directionMarks(mea: Measure): DirectionMarks {
   const posOf = (dir: { afterElements?: number; offset?: number; onset?: number }): number => {
     const k = dir.afterElements;
     const base = dir.onset ?? (k === undefined || k === 0 ? 0 : end[Math.min(k, end.length) - 1]!);
-    return base + (dir.offset ?? 0);
+    const p = base + (dir.offset ?? 0);
+    // 落在某个音中间的（`<offset>` 多是排版软件的微调，破碎 m30 渐强 offset 1/8 个八分）取最近的拍位：前半段算这个音、后半段算下一个。
+    // 不取整就被推到下一个音，转成简谱文本再读回挪了一个音
+    const i = timedIdx.find((j) => onset[j]! < p - 1e-6 && p < end[j]! - 1e-6);
+    return i === undefined ? p : p - onset[i]! < (end[i]! - onset[i]!) / 2 ? onset[i]! : end[i]!;
   };
   /** 拍位上（或之后）的第一个占时值的符号 */
   const atOrAfter = (p: number): number => timedIdx.find((i) => onset[i]! >= p - 1e-6) ?? timedIdx[timedIdx.length - 1]!;

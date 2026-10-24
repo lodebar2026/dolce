@@ -21,6 +21,7 @@
 import { SIMPLE_DIVISIONS, type Chord, type Element, type ElementId, type Harmony, type Measure, type PageText, type Song } from "./doc";
 import { harmonyText, jianpuShape, nominalQuarters } from "./jianpu";
 import { isXmlShaped, tiesToMarks } from "./xmlproject";
+import { creatorTypeOf } from "./metakeys";
 
 /** 简谱来源的时值单位（四分音符的 divisions） */
 const Q = SIMPLE_DIVISIONS;
@@ -129,8 +130,11 @@ function fillVoiceGaps(part: Song["parts"][number], newId: () => ElementId): voi
 
 /** 123 的 `C:` 取自 `identification`。识别出的与不少排版软件导出的 MusicXML 把词曲只写在 `<credit>` 里：
  *  没有 creator 时，把标题、副标题、版权以外的 credit 当作者行（`.jpwabc` 那一路的 `WordsByAndMusicBy` 同口径） */
-function creatorsFromCredits(song: Song): void {
-  if (song.identification?.creators.length) return;
+export function creatorsFromCredits(song: Song): void {
+  if (song.identification?.creators.length) {
+    printedCreators(song);
+    return;
+  }
   const skip = new Set(["title", "subtitle", "rights", "page-number"]);
   const title = song.work.title?.trim();
   const creators = (song.credits ?? [])
@@ -144,12 +148,13 @@ function creatorsFromCredits(song: Song): void {
  * 123 / 文本谱有对应字段（`T:` 第二行起、`I:bottomcenter`），以前转出去就没了（《八段锦》的「（民乐合奏）」与页脚）。
  * 页脚每页一条、只差末尾页码的（「《八段锦》（民乐合奏） 1」「… 2」）去掉页码记一条——简谱页脚只在末页印一次、不带页码。
  */
-function headerFromCredits(song: Song): void {
+export function headerFromCredits(song: Song): void {
   const credits = song.credits ?? [];
   if (!song.work.subtitles.length) {
     const subs = credits.filter((c) => c.type === "subtitle" && c.text.trim()).map((c) => c.text.trim());
     if (subs.length) song.work.subtitles = [...new Set(subs)];
   }
+  headTextFromCredits(song);
   const pt = song.pageText;
   if (pt && (pt.bottomLeft.length || pt.bottomCenter.length || pt.bottomRight.length)) return;
   const h = song.defaults?.pageLayout?.pageHeight;
@@ -169,6 +174,77 @@ function headerFromCredits(song: Song): void {
     if (text && !out[side(c)].includes(text)) out[side(c)].push(text);
   }
   song.pageText = out;
+}
+
+const CREATOR_TYPES = new Set(["composer", "lyricist", "arranger", "translator", "poet", "words-and-music", "transcriber"]);
+
+/** 第一页上半页的 credit（页脚、页码不算）。 */
+function headCredits(song: Song): NonNullable<Song["credits"]> {
+  const h = song.defaults?.pageLayout?.pageHeight;
+  return (song.credits ?? []).filter((c) => (c.page ?? 1) === 1 && c.text.trim() && !/^\d+$/.test(c.text.trim()) && !(h !== undefined && c.y !== undefined && c.y < h / 2));
+}
+
+/** 比对用：去空白与标点、不分大小写（「Dudley-Smith」与「Dudley Smith」算同一个） */
+const looseNorm = (t: string): string => t.toLowerCase().replace(/[\s\p{P}]/gu, "");
+
+/** 署名照谱面印的写：`<creator>` 的每个词都出现在页眉某条 credit 里（「Timothy Dudley-Smith词 1926」、几位合印一行
+ *  「词：John Newton 曲：American Melody」），`C:` 就写那条印出来的文字——123 / ABC 的 `C:` 是印在谱上的署名行。
+ *  只含一位的沿用它的类型，合印的按标签认（`metakeys.ts::creatorTypeOf`），认不出取第一位的。没被哪条包含的照旧 */
+function printedCreators(song: Song): void {
+  const creators = song.identification!.creators;
+  // 按空白与标点切词（「陈尚哲编曲（Ricardo Chan）」切成三个）
+  const words = (t: string): string[] => t.split(/[\s\p{P}]+/u).map(looseNorm).filter(Boolean);
+  const covers = (line: string, cr: (typeof creators)[number]): boolean => words(cr.text).length > 0 && words(cr.text).every((w) => line.includes(w));
+  // 一条 credit 里分几行印的保留换行（`C:` 逐行写，读回各是一行）
+  const lines = headCredits(song).filter((c) => !c.type || CREATOR_TYPES.has(c.type)).map((c) => c.text.trim());
+  const used = new Set<(typeof creators)[number]>();
+  /** 第几条 credit → 写成的署名 */
+  const out = new Map<number, (typeof creators)[number]>();
+  lines.forEach((text, i) => {
+    const hit = creators.filter((cr) => !used.has(cr) && covers(looseNorm(text), cr));
+    if (!hit.length) return;
+    for (const cr of hit) used.add(cr);
+    out.set(i, { ...hit[0]!, type: hit.length === 1 ? hit[0]!.type : creatorTypeOf(text) ?? hit[0]!.type, text });
+  });
+  // 一位署名分印在两行（「陈尚哲编曲」/「Arranged by Ricardo Chan」；左右两栏交错排的不相邻）：两行各写一条，类型同这一位
+  for (const cr of creators) {
+    if (used.has(cr)) continue;
+    let pair: [number, number] | null = null;
+    for (let i = 0; i < lines.length && !pair; i++) {
+      for (let j = i + 1; j < lines.length && !pair; j++) {
+        if (!out.has(i) && !out.has(j) && covers(looseNorm(lines[i]! + lines[j]!), cr)) pair = [i, j];
+      }
+    }
+    if (!pair) continue;
+    used.add(cr);
+    for (const k of pair) out.set(k, { ...cr, text: lines[k]! });
+  }
+  if (out.size) song.identification!.creators = [...[...out].sort((a, b) => a[0] - b[0]).map(([, c]) => c), ...creators.filter((c) => !used.has(c))];
+}
+
+/** 页眉里没写类型、标题/副标题/署名又没包含的几条 credit（左上的出处、右上的诗歌本名、标题下的英文标题）：
+ *  靠左的进左上、靠右的进右上（`I:topleft` / `I:topright`），居中的当副标题。署名那几条合印成一行的（「词：… 曲：…」）算已包含。
+ *  只看第一页上半页（页脚另由 `headerFromCredits` 收）；原文已有页面文字的（123 读进来又投成 MusicXML 的）不动 */
+function headTextFromCredits(song: Song): void {
+  if (song.pageText?.topLeft.length || song.pageText?.topRight.length) return;
+  const norm = (t: string): string => t.replace(/\s+/g, "");
+  const creators = (song.identification?.creators ?? []).map((c) => norm(c.text)).filter(Boolean);
+  const known = new Set([song.work.title, song.work.movementTitle, ...song.work.subtitles, ...creators].filter((t): t is string => !!t).map(norm));
+  const covered = (t: string): boolean => known.has(norm(t)) || (creators.length > 1 && creators.every((c) => norm(t).includes(c)));
+  const left: string[] = [], right: string[] = [], subs: string[] = [];
+  for (const c of headCredits(song)) {
+    const text = c.text.trim();
+    if (c.type || covered(text)) continue;
+    (c.justify === "left" ? left : c.justify === "right" ? right : subs).push(text);
+    known.add(norm(text));
+  }
+  if (left.length || right.length) {
+    const pt: PageText = { topLeft: [], topRight: [], bottomLeft: [], bottomCenter: [], bottomRight: [], ...(song.pageText ?? {}) };
+    pt.topLeft.push(...left);
+    pt.topRight.push(...right);
+    song.pageText = pt;
+  }
+  song.work.subtitles.push(...subs);
 }
 
 function maxId(song: Song): number {

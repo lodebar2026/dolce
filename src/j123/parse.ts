@@ -1124,9 +1124,16 @@ function buildMusicLine(
         if (!m) break;
         const name = m[1]!.toUpperCase();
         const val = m[2] ?? "";
-        pb.measure.attrs ??= {};
         // 曲中换谱号 `[K:clef=tenor]`（只换谱号、不换调）：123 的写出端这么写
         const clefOnly = name === "K" && (ctx.d.id === "123" || ctx.d.id === "abc") ? /^\s*clef\s*=\s*(\S+)\s*$/i.exec(val) : null;
+        // ABC 的行内字段可以写在小节中间（钢琴下谱表半小节处换谱号）：记成 `laterAttrs`，挂在第一支同一时刻的音之后。123 只有小节级的谱号
+        if (clefOnly && ctx.d.id === "abc" && pb.measure.elements.length) {
+          const c = clefFromName(clefOnly[1]!);
+          if (c) (pb.measure.laterAttrs ??= []).push({ afterElements: mainElementsBefore(pb.measure, pb.voice), attrs: { clefs: [c] } });
+          else report(ctx, "bad-clef", tr("diag.j123.badClef", { v: clefOnly[1]! }), t.source);
+          break;
+        }
+        pb.measure.attrs ??= {};
         if (clefOnly) {
           const c = clefFromName(clefOnly[1]!);
           if (c) pb.measure.attrs.clefs = [c];
@@ -1793,6 +1800,21 @@ function applyField(
     default:
       break;
   }
+}
+
+/** 写在第 `voice` 支此刻的东西，在第一支里排在第几个元素之后：第一支就是已有的元素数；后面的分支按这一支已走的时值
+ *  数第一支里终点不晚于它的元素（`&` 的各支元素一支接一支排在小节里，第一支在最前） */
+function mainElementsBefore(m: Measure, voice: number): number {
+  const len = (el: Measure["elements"][number]): number => (el.kind === "chord" ? (el.grace ? 0 : el.duration.divisions) : el.duration?.divisions ?? 0);
+  if (voice === 1) return m.elements.length;
+  const t = m.elements.filter((el) => el.voice === voice).reduce((a, el) => a + len(el), 0);
+  let k = 0, end = 0;
+  for (const el of m.elements) {
+    if (el.voice !== 1 || end + len(el) > t) break;
+    end += len(el);
+    k++;
+  }
+  return k;
 }
 
 function emptyPageText(): NonNullable<Song["pageText"]> {

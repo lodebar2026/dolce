@@ -389,9 +389,14 @@ export abstract class AbcFamilyEmitter {
     return drop.size ? marks.filter((m) => !drop.has(m)) : marks;
   }
 
-  /** 第 `i` 小节头上换成的谱号名（第一行谱表）；不换返回 null。小节中间的换谱号过了半小节的算下一小节的。 */
+  /** 第 `i` 小节头上换成的谱号名（第一行谱表）；不换返回 null。小节中间的换谱号过了半小节的算下一小节的
+   *  （写得出小节中间换谱号的方言另在原位写，`midClefs`，这里只看小节头）。 */
   private clefAt(part: Part, i: number): string | null {
     const staff1 = (a: { clefs?: Clef[] } | undefined): Clef | undefined => a?.clefs?.find((x) => (x.staff ?? 1) === 1);
+    if (this.midClefs) {
+      const c = staff1(part.measures[i]?.attrs);
+      return c ? clefName(c) : null;
+    }
     const mid = (m: Measure | undefined, late: boolean): Clef | undefined => {
       const hits = (m?.laterAttrs ?? []).filter((la) => (la.afterElements * 2 >= m!.elements.length) === late && staff1(la.attrs));
       return hits.length ? staff1(hits[hits.length - 1]!.attrs) : undefined;
@@ -446,6 +451,28 @@ export abstract class AbcFamilyEmitter {
 
   /** 曲中换谱号写不写（`[K:clef=…]`）。123 写；ABC、Muse 那两档读入端没接，先不写。 */
   protected readonly inlineClefs: boolean = false;
+  /** 小节中间的换谱号（`laterAttrs`）在原位写 `[K:clef=…]`（ABC 的行内字段哪儿都能写）；否则落到较近的那个小节头（`clefAt`） */
+  protected readonly midClefs: boolean = false;
+  /** `measureBody` 写出的最后一个小节中间的谱号（`partSystems` 据此接着比下一小节头的谱号） */
+  private lastMidClef: string | null = null;
+
+  /** 这一小节中间第一行谱表换谱号的时刻（实际时值，四分 = `SIMPLE_DIVISIONS`）与谱号名，按时刻排 */
+  private midClefChanges(mea: Measure): { t: number; name: string }[] {
+    const later = (mea.laterAttrs ?? []).filter((la) => la.attrs.clefs?.some((c) => (c.staff ?? 1) === 1));
+    if (!later.length) return [];
+    const ends: number[] = [];
+    let end = 0;
+    for (const el of mea.elements) {
+      const tm = el.kind === "chord" || el.kind === "space" ? el.duration?.timeMod : undefined;
+      const len = el.kind === "chord" && el.grace ? 0 : (el.duration?.divisions ?? 0) * (tm ? tm.normal / tm.actual : 1);
+      end = (el.onset ?? end) + len;
+      ends.push(end);
+    }
+    return later.flatMap((la) => {
+      const name = clefName(la.attrs.clefs!.find((c) => (c.staff ?? 1) === 1)!);
+      return name ? [{ t: la.onset ?? (la.afterElements > 0 ? ends[Math.min(la.afterElements, ends.length) - 1]! : 0), name }] : [];
+    }).sort((a, b) => a.t - b.t);
+  }
 
   /** 和弦里只连其中几个音时写在那个音后面的记号（123 的 `[1~3]`，见 `chordTies`）。整和弦都连的写在和弦后（`tieText`） */
   protected noteTieText(n: Note, notes: readonly Note[]): string {
@@ -752,6 +779,7 @@ export abstract class AbcFamilyEmitter {
       const cn = this.clefAt(part, i);
       if (this.inlineClefs && cn && i > 0 && cn !== clef) out.push(`[K:clef=${cn}]`);
       if (cn) clef = cn;
+      this.lastMidClef = null;
       time = t;
       if (mea.attrs?.time) this.curTime = mea.attrs.time;
       let el0 = 0;
@@ -767,6 +795,7 @@ export abstract class AbcFamilyEmitter {
       const body = run ? this.multiRestText(mea, run) : this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext, wedgeStart, wedgeEnd }, el0);
       out.push(body);
       if (run) i += run - 1;
+      if (this.lastMidClef) clef = this.lastMidClef;
       const right = (part.measures[i]!.barlines ?? []).find((b) => b.location === "right");
       const last = i === part.measures.length - 1;
       // 右线的记号写在线**之前**（`… 6 !fine! |]`）：唱到这儿才跳，读回来也按这个位置认。
@@ -809,6 +838,27 @@ export abstract class AbcFamilyEmitter {
     const branchLen = new Map<number, number>();
     let mainVoice: number | undefined;
     const whole = from === 0 && to >= mea.elements.length;
+    // 小节中间换谱号（`midClefs`）：按时刻插在第一支那个时刻起的音前；到第一支末尾还没轮到的写在第一支末尾
+    const clefs = this.midClefs ? this.midClefChanges(mea) : [];
+    let clefIdx = 0;
+    const mainAt = new Map<number, number>();
+    if (clefs.length) {
+      let end = 0;
+      mea.elements.forEach((el, j) => {
+        const tm = el.kind === "chord" || el.kind === "space" ? el.duration?.timeMod : undefined;
+        const s = el.onset ?? end;
+        mainAt.set(j, s);
+        end = s + (el.kind === "chord" && el.grace ? 0 : (el.duration?.divisions ?? 0) * (tm ? tm.normal / tm.actual : 1));
+      });
+    }
+    const pushClefs = (until: number): void => {
+      while (clefIdx < clefs.length && clefs[clefIdx]!.t <= until + 1e-6) {
+        pieces.push(`[K:clef=${clefs[clefIdx]!.name}]`);
+        this.lastMidClef = clefs[clefIdx]!.name;
+        prevGroup = undefined;
+        clefIdx++;
+      }
+    };
     /** 分支写完：补到第一支的长度；第一支自己补到记下的小节长（`Measure.duration`：拆开的大谱表里跨谱表的声部后半在另一条谱表上） */
     const padBranch = (v: number | undefined): void => {
       if (v === undefined || from > 0 || to < mea.elements.length) return;
@@ -829,9 +879,11 @@ export abstract class AbcFamilyEmitter {
       mainVoice ??= voice;
       if (this.overlayText && prevVoice !== undefined && voice !== prevVoice) {
         padBranch(prevVoice);
+        if (prevVoice === mainVoice && to >= mea.elements.length) pushClefs(Infinity);
         pieces.push(this.overlayText);
         prevGroup = undefined;
       }
+      if (clefs.length && voice === mainVoice) pushClefs(mainAt.get(j)!);
       // 这一支在这里空着一段（MusicXML 的交错多声部不从小节起点开；拆开的大谱表里跨谱表的声部前半在另一条谱表上）：
       // 用不可见休止占住。`onset` 只有 MusicXML 来源写，原生的 `&` 分支按分支游标接着排
       const at = branchLen.get(voice) ?? 0;
@@ -925,6 +977,7 @@ export abstract class AbcFamilyEmitter {
       prevGroup = group;
     }
     if (this.overlayText) padBranch(prevVoice);
+    if (clefs.length && prevVoice === mainVoice && to >= mea.elements.length) pushClefs(Infinity);
     // 余下的中间线归末段（小节中间换行时前一段不带它们）
     if (to >= mea.elements.length) while (midIdx < mid.length) { pieces.push(barlineText(mid[midIdx]!)); midIdx++; }
     return pieces.join(" ");

@@ -59,6 +59,14 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
   只有简谱来源（没有显示位置）的才写斜线符头——以前一律写 `slash`，打击乐谱往返一趟符头全变斜线。
 - **副标题与页脚只写在 `<credit>` 里的**（《八段锦》的「（民乐合奏）」、每页「《八段锦》（民乐合奏） n」），转简谱文本时
   照 `credit-type` 与位置落成 `T:` 第二行、`I:bottomcenter`（`jianpuproject.ts::headerFromCredits`，末尾页码去掉）；简谱视图同一份。
+  页眉里没写类型、又不是标题/副标题/署名的几条（左上的出处、右上的诗歌本名、标题下的英文标题）按 `justify` 落成 `I:topleft` / `I:topright` / 副标题
+  （`headTextFromCredits`）；投回 MusicXML 时页面文字的左上、右上写成靠左、靠右的无类型 credit，标题也补一条 title credit（`xmlproject.ts::creditsOf`）。
+- **署名照谱面印的写**（`jianpuproject.ts::printedCreators`）：`<creator>` 的每个词（按空白与标点切、不分大小写）都出现在页眉某条 credit 里的，
+  `C:` 写那条印出来的文字（「Timothy Dudley-Smith词 1926」、几位合印一行的「词：… 曲：… 译：…」）；一位分印两行的（「陈尚哲编曲」/「Arranged by Ricardo Chan」，
+  左右两栏交错的不相邻）两行各写一条。只含一位的沿用它的类型，合印的按标签认。ABC 写出端同走这一步（以前只有 123 经 `projectForJianpu` 走）。
+  credit 与 creator 写法本身不一的（繁简、拼写）认不出，照旧各写各的。
+- **`<direction>` 落在音中间的**（`<offset>` 多是排版软件的微调）挂靠时取最近的拍位：前半段算这个音、后半段算下一个（`directionmarks.ts::directionMarks`）。
+  以前一律推到下一个音，转简谱文本读回渐强起点挪一个音（破碎 m30 的 offset 只有八分音符的 1/8）。
 
 ## 在谱面上编辑
 

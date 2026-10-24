@@ -152,12 +152,15 @@ function applyLineStarts(song: Song, starts: ReadonlySet<ElementId>, mid: boolea
   return applyBreaks(song, [...starts].map((id) => ({ id })), { mid: mid ? "inline" : "source", pages: "keep" });
 }
 
+/** 页眉的 credit：标题、副标题、署名；页面文字的左上、右上写成靠左、靠右的无类型 credit（转回简谱文本时照 `justify` 落回原处，
+ *  `jianpuproject.ts::headTextFromCredits`）。五线谱自动铺排按标题去重（`mixed/layoutpass.ts::autoLayoutHeader`），标题那条不会画两遍 */
 function creditsOf(song: Song): NonNullable<Song["credits"]> {
   const out: NonNullable<Song["credits"]> = [];
+  if (song.work.title) out.push({ type: "title", text: song.work.title, page: 1 });
   for (const t of song.work.subtitles) if (t) out.push({ type: "subtitle", text: t, page: 1 });
   for (const c of song.identification?.creators ?? []) if (c.text) out.push({ type: c.type, text: c.text, page: 1 });
-  for (const t of song.pageText?.topRight ?? []) if (t) out.push({ type: "composer", text: t, page: 1 });
-  for (const t of song.pageText?.topLeft ?? []) if (t) out.push({ type: "lyricist", text: t, page: 1 });
+  for (const t of song.pageText?.topRight ?? []) if (t) out.push({ text: t, page: 1, justify: "right" });
+  for (const t of song.pageText?.topLeft ?? []) if (t) out.push({ text: t, page: 1, justify: "left" });
   return out;
 }
 
