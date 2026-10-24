@@ -39,6 +39,10 @@ export interface FormatSource {
   switchTo(value: string): Promise<boolean>;
   /** 下拉旁的提示；没有为 null */
   note?(): FormatNote | null;
+  /** 还是原稿 `origin`（没改过，只是换了格式看） */
+  pristineOf?(origin: string): boolean;
+  /** 接着上回（识别项目重开）：现在在 `value` 那种格式里、原文是 `text`（当它是改过的，成为真身） */
+  resume?(value: string, text: string): void;
 }
 
 /** 代码区文本被手工改过时，切格式会用真身重出文本、丢掉这些改动：先问一声。 */
@@ -216,6 +220,8 @@ export class DocFormatSource implements FormatSource {
   private cur: OriginFormat;
   /** 上次写进代码区的文本；与当前文本不同即说明改过 */
   private emitted: string;
+  /** 最初的原文（在原格式里改过，`origin.text` 会跟着换） */
+  private readonly originText: string;
   /** 从原稿一路转过来丢掉的（空 = 没丢过，回不回原稿都一样） */
   private lost: Loss[] = [];
 
@@ -224,6 +230,7 @@ export class DocFormatSource implements FormatSource {
     origin: { format: OriginFormat; text: string },
   ) {
     this.origin = { format: origin.format, text: origin.text, filePath: host.filePath, doc: null };
+    this.originText = origin.text;
     this.truth = this.origin;
     this.cur = origin.format;
     this.emitted = origin.text;
@@ -335,6 +342,19 @@ export class DocFormatSource implements FormatSource {
       { value: target, label: t("fs.convertAnyway", { format: originName(target) }) },
     ], { defaultValue: better });
     return res?.value ?? null;
+  }
+
+  resume(value: string, text: string): void {
+    if (!this.has(value as OriginFormat)) return;
+    const format = value as OriginFormat;
+    this.host.adoptText(docFormatOf(format), text, null);
+    this.cur = format;
+    this.emitted = text;
+    if (format !== this.origin.format) this.truth = { format, text, filePath: null, doc: null };
+  }
+
+  pristineOf(origin: string): boolean {
+    return this.originText === origin && this.truth === this.origin && this.origin.text === this.originText && this.host.getText() === this.emitted;
   }
 
   note(): FormatNote | null {

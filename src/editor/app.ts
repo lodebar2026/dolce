@@ -2,7 +2,7 @@
 // Mirrors EditorController in CodeEditor.kt (doBind/tryLoad/updateLayout/paint/load/doSave).
 
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { Compartment, EditorState, MapMode, Prec } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { sniffDialect, type Dialect } from "../pu";
 import type { ElementId, ScoreDoc } from "../model/doc";
@@ -704,6 +704,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       if (u.docChanged) {
         // 识别映射随用户编辑迁移偏移，保持点选仍落在正确 token。
         this.omr.remapMeta((m) => mapMeta(m, u.changes));
+        this.omr.remapStaffLinks((pos) => u.changes.mapPos(pos, 1, MapMode.TrackDel));
         this.scheduleReload();
         this.files._scheduleDraft();
       }
@@ -1060,7 +1061,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   visualEnabled(): boolean {
     // 识别核对：要有点选映射（123 / 文本谱产物）才认得出框对着哪个元素
     if (this.mode === "recognize") {
-      return ((this.adapter.caps.textEditor && this.omr.hasMeta) || (this.docFormat === "musicxml" && this.omr.staffResult !== null)) && this._sync.size > 0;
+      // 五线谱识别的对照按识别 id 认框，原文是哪种格式都行（文本格式按旁表，`omrlinks.ts`）
+      return ((this.adapter.caps.textEditor && this.omr.hasMeta) || (this._visualSource() && this.omr.staffResult !== null)) && this._sync.size > 0;
     }
     return (this.mode === "jp" || this.mode === "mixed") && this._visualSource() && this._sync.size > 0;
   }
@@ -1971,6 +1973,18 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     await this.setViewMode("staff");
   }
 
+  /** OmrHost：一份模型过一遍当前源格式（写出再读回）。 */
+  viaCurrentFormat(doc: ScoreDoc): ScoreDoc | null {
+    const target = this.formats.source?.current();
+    const spec = CONVERT_TARGETS.find((c) => c.id === target);
+    if (!spec || !this.adapter.toScoreDoc) return null;
+    try {
+      return this.adapter.toScoreDoc(spec.emit(doc));
+    } catch {
+      return null;
+    }
+  }
+
   /** OmrHost：现在有没有代码区（`.musicxml` 没有）。 */
   hasCodePane(): boolean {
     return this.adapter.caps.textEditor;
@@ -2463,6 +2477,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    * 切回 `.musicxml` 原文时照打开 `.musicxml` 那样落地（无代码区）；从 `.musicxml` 转出来的回简谱档看代码区对应的谱面。
    */
   adoptText(format: DocFormatId, text: string, filePath: string | null): void {
+    // 五线谱识别会话：识别 id 从换之前那份按拍点、音高带过去（原图对照在任何格式下都认得框，`omrlinks.ts`）
+    const carry = this.omr.beforeAdoptText();
+    this._adoptText(format, format === "musicxml" ? this.omr.stampStaffXml(text, carry, (x) => musicXmlFormat.toScoreDoc(x)) : text, filePath);
+    this.omr.afterAdoptText(carry);
+  }
+
+  private _adoptText(format: DocFormatId, text: string, filePath: string | null): void {
     this._documentLoaded();
     if (format === "musicxml") {
       this._setDocFormat("musicxml");
@@ -2473,14 +2494,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       if (this.mode === "mixed") void this._renderMixedPages();
       return;
     }
-    const fromXml = this.docFormat === "musicxml";
     this.mixed._dropMixedDoc();
-    // 五线谱/混排档里换成文本格式就留在那档（钢琴谱、合唱谱转到简谱档没法看）；
-    // 五线谱识别的原图对照按 MusicXML 的识别 id 认框，文本格式还认不回来，先退回混排
-    if (fromXml && this.mode === "recognize") {
-      this._setMode("mixed");
-      this.setStatus(t("omr.compareNeedsXml"));
-    }
+    // 五线谱/混排档、原图对照里换成文本格式就留在那档（钢琴谱、合唱谱转到简谱档没法看）
     if (format === "jpwabc") this._disablePhrase();
     this._setDocFormat(format);
     this.filePath = filePath;

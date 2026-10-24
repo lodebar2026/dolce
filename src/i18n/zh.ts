@@ -534,7 +534,6 @@ export const zh = {
   "omr.staffDone": "五线谱识别完成（{sec}s）：{pages} 页 / {parts} 个声部 / {notes} 个音符",
   "omr.staffSkipped": "，{n} 页无谱表已跳过",
   "omr.staffNoJp": "；简谱文本未变——五线谱装不进 .jpwabc，请从「导出 → MusicXML」取产物",
-  "omr.compareNeedsXml": "原图对照暂时只认 MusicXML：在代码区上方的格式下拉切回「MusicXML（原文）」再对照",
   "omr.compare": "原图对照",
   "omr.back": "返回排版稿",
   "play.normal": "原速",

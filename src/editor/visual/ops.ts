@@ -245,6 +245,26 @@ export function setLetter(ctx: EditCtx, from: number, to: number, letter: string
   });
 }
 
+/**
+ * 照抄来的音 token 改成另一个音高（五线谱识别对照里 Alt+点补音：音高按点的高低，时值照选中的音）：
+ * 按 `ref`（被抄的那个音现在的实际音高）到 `target` 隔几个音级挪唱名与八度，临时升降去掉（按调号）。
+ */
+export function retargetToken(
+  ctx: EditCtx, at: number, src: string,
+  ref: { step: string; octave: number }, target: { step: string; octave: number },
+): string | { error: string } {
+  const DI = "CDEFGAB";
+  const diff = target.octave * 7 + DI.indexOf(target.step) - (ref.octave * 7 + DI.indexOf(ref.step));
+  const out = rewriteToken(ctx.dialect, src, noteCtx(ctx, at), (t) => {
+    if (t.degree === 0) return null;
+    const pos = stepPos(t.degree, t.octave) + diff;
+    const octave = Math.floor(pos / 7);
+    Object.assign(t, { degree: pos - octave * 7 + 1, octave, acc: null });
+    return Math.abs(t.octave) > 3 ? tr("ve.octaveMax") : t;
+  });
+  return out === null ? src : out;
+}
+
 /** `pos` 之前最近一个音符（不是休止）的音阶位置；没有为 null。 */
 function prevNotePos(ctx: EditCtx, pos: number): number | null {
   for (const e of [...ctx.sync.ordered()].reverse()) {

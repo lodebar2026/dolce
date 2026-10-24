@@ -38,6 +38,8 @@ export interface ProjectSnapshot {
   sources: { name: string; mime?: string; bytes: Uint8Array }[];
   /** 简谱识别的产物 */
   jianpu?: { score: RecognizedScore; bin: Binary; meta: JpwMeta | null };
+  /** 五线谱识别的原文换成了文本格式：格式下拉里是哪一项（`abc` / `123` / `tomato`…）与识别 id 旁表（原文起点 → 各音 id，`omrlinks.ts`） */
+  staffText?: { format: string; links: [number, (string | undefined)[]][] };
 }
 
 /** JSON 里的 `Map`（`JpwMeta.lyricRanges` 是一串 Map）写成 `{ "__map": [[k, v], …] }`。 */
@@ -71,6 +73,7 @@ export function packProject(s: ProjectSnapshot, appVersion: string, fast = false
   s.sources.forEach((src, k) => (files[manifest.sources[k]!.file] = [src.bytes, { level: 0 }]));
   files["doc.txt"] = strToU8(s.text);
   if (s.emitted !== null) files["emitted.txt"] = strToU8(s.emitted);
+  if (s.staffText) files["result/staff-links.json"] = strToU8(JSON.stringify(s.staffText));
   if (s.jianpu) {
     files["result/recognized.json"] = strToU8(JSON.stringify(s.jianpu.score, replacer));
     files["result/bin.raw"] = fast ? [s.jianpu.bin.data, { level: 0 }] : s.jianpu.bin.data;
@@ -117,8 +120,16 @@ export function unpackProject(bytes: Uint8Array): ProjectSnapshot {
       meta: files["result/meta.json"] ? (JSON.parse(strFromU8(files["result/meta.json"]), reviver) as JpwMeta) : null,
     };
   }
+  let staffText: ProjectSnapshot["staffText"];
+  try {
+    const st = files["result/staff-links.json"];
+    if (st) staffText = JSON.parse(strFromU8(st)) as ProjectSnapshot["staffText"];
+  } catch {
+    staffText = undefined; // 坏了就按拍点、音高从识别原文重新对（`restore`）
+  }
   return {
     kind: manifest.kind, docFormat: manifest.docFormat, text, emitted, sources,
+    ...(staffText ? { staffText } : {}),
     ...(manifest.omrFormat ? { omrFormat: manifest.omrFormat } : {}),
     ...(manifest.recogKind ? { recogKind: manifest.recogKind } : {}),
     ...(manifest.recogView ? { recogView: manifest.recogView } : {}),

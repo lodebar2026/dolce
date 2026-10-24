@@ -20,11 +20,12 @@ import { midiOf, NotePreview } from "./preview";
 import type { EditDialect, NoteDuration } from "./dialect";
 import {
   addSustain, clearBeams, deleteEntries, double, dropInlineSustain, type EditCtx, type EditOutcome, groupEnd, halve, insertNote, insertToken,
-  attachedTextOf, chordEntryOf, DYNAMICS, chordNameOf, insertLetter, isError, noteCtx, setAttachedText, setChordName, shiftSemitones, toggleTupletText, spacedInsert, noteSpans, notesIn, setAccidental, setDegree, setLetter, shiftOctave, stepDegree, stepSemitone, toggleDeco, toggleDot, toggleSlur, toggleTie,
+  attachedTextOf, chordEntryOf, DYNAMICS, chordNameOf, insertLetter, isError, noteCtx, retargetToken, setAttachedText, setChordName, shiftSemitones, toggleTupletText, spacedInsert, noteSpans, notesIn, setAccidental, setDegree, setLetter, shiftOctave, stepDegree, stepSemitone, toggleDeco, toggleDot, toggleSlur, toggleTie,
 } from "./ops";
 import { keyHit, VISUAL_ACTIONS, type VisualAction, type VisualMode } from "./keys";
 import { type Clip, clipFor, itemsToText, setClip } from "./clipboard";
 import { beamGroupOf, clipOfChords, directionTextOf, locate, measureCtx } from "../../model/edit";
+import { pitchAt } from "../omrlinks";
 import { moveAttachedText, moveSlurText, shiftLyricText } from "./moves";
 import { harmonyText } from "../../model/jianpu";
 import { showTransposeDialog, transposeText } from "./transpose";
@@ -1104,15 +1105,23 @@ export class VisualEditController {
     if (!c) return true;
     const ref = this.selectedEntries().find((e) => e.kind === "note");
     if (!ref) return this.status(tr("ve.altClickNeedsNote"));
-    // 照抄选中的音（连同它的增时线）：简谱的音高从位置推不出来，PhotoScore 的 Alt+点也是复制选中的那一样
-    const tok = c.state.doc.sliceString(ref.from, this.groupEnd(ref));
+    // 照抄选中的音（连同它的增时线）：简谱的音高从位置推不出来，PhotoScore 的 Alt+点也是复制选中的那一样。
+    // 五线谱识别的对照（原文换成了 ABC / 123）给了音高：音头改成点的那个音高，时值照抄
+    let tok = c.state.doc.sliceString(ref.from, this.groupEnd(ref));
     const pos = after ? this.groupEnd(after) : before ? before.from : null;
     if (pos === null) return this.status(tr("ve.cantInsert"));
+    const doc = this.host.syncDoc();
+    const refPitch = sp.pitch && doc ? pitchAt(doc, ref.id) : undefined;
+    if (sp.pitch && refPitch) {
+      const head = retargetToken(c, ref.from, c.state.doc.sliceString(ref.from, ref.to), refPitch, sp.pitch);
+      if (typeof head !== "string") return this.status(head.error);
+      tok = head + tok.slice(ref.to - ref.from);
+    }
     const out = insertToken(c, pos, tok);
     if (isError(out)) return this.apply(out);
     // 选中刚补的那个音（跳过前面补的空格；补丁就这一处，落点就是 `pos`）
     const lead = /^\s*/.exec(out.changes[0]!.insert)?.[0].length ?? 0;
-    return this.apply({ ...out, anchor: pos + lead, head: pos + lead + (ref.to - ref.from) });
+    return this.apply({ ...out, anchor: pos + lead, head: pos + lead + (tok.length - (this.groupEnd(ref) - ref.to)) });
   }
 
   private status(text: string): true {

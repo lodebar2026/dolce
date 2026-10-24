@@ -535,7 +535,6 @@ export const en: Record<MsgKey, string> = {
   "omr.staffDone": "Staff recognition done ({sec}s): {pages} page(s) / {parts} part(s) / {notes} note(s)",
   "omr.staffSkipped": ", {n} page(s) without staves skipped",
   "omr.staffNoJp": "; the jianpu text is unchanged — staff notation doesn't fit in .jpwabc, get the result via Export → MusicXML",
-  "omr.compareNeedsXml": "Compare with the original image currently needs MusicXML: switch the format menu above the source back to “MusicXML (original)” first",
   "omr.compare": "Compare",
   "omr.back": "Back to score",
   "play.normal": "Normal",

@@ -218,7 +218,8 @@ export async function exportPuMusicXml(app: App): Promise<void> {
 }
 
 /** 五线谱这一路的会话：五线谱 / 混排档，或五线谱识别（`.musicxml`）的核对视图。导出图按五线谱排版出。 */
-const isStaffSession = (app: App): boolean => app.mode === "mixed" || (app.mode === "recognize" && app.docFormat === "musicxml");
+// 五线谱识别的对照视图，原文换成了 ABC / 123 也是五线谱会话
+const isStaffSession = (app: App): boolean => app.mode === "mixed" || (app.mode === "recognize" && app.omr.staffSession);
 /** 简谱展开档（含简谱识别的核对视图停在展开档）：出 PPTX，不出 PNG/PDF。 */
 const isExpanded = (app: App): boolean => !isStaffSession(app) && app.layoutMode === "expanded";
 /** 当前那一档排出来是不是长图（不分页）：长图出一张 PNG，分页纸出 PDF。 */
