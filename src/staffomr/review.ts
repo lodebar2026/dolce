@@ -82,7 +82,9 @@ export function numberOmrIds(
       noteBoxes.set(id, { page: pi, box: { ...n.sym.box }, step: n.step ?? "C", octave: n.octave ?? 4, alter: n.alter ?? 0, rest: !!n.rest });
       for (const l of n.lyrics ?? []) if (l.box) l.id = mark("L", pi, l.box, "lyric");
       for (const w of n.words ?? []) if (w.box) w.id = mark("W", pi, w.box, "words");
-      if (n.dynamic && n.dynamicBox) n.dynamicId = mark("D", pi, n.dynamicBox, "dynamic");
+      if ((n.metronome || n.tempoText) && n.tempoBox) n.tempoId = mark("W", pi, n.tempoBox, "words");
+      const dynBox = n.dynamicBox ?? n.dynamicSrcBox;
+      if (n.dynamic && dynBox) n.dynamicId = mark("D", pi, dynBox, "dynamic");
       if (n.tieStart && n.tieBox) n.tieId = mark("T", pi, n.tieBox, "tied");
       for (const a of n.slurBoxes ?? []) if (!arcs.has(a.arc)) arcs.set(a.arc, mark("S", pi, a.box, "slur"));
     }

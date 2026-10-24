@@ -602,10 +602,10 @@ export function attachWordLines(
   unit: RasterUnit,
   skip: Rect[],
   lyricZones: Rect[],
-): { words: PlacedWord[]; dynamics: { px: number; py: number; text: string }[]; chords: { text: string; box: Rect }[] } {
+): { words: PlacedWord[]; dynamics: { px: number; py: number; text: string; srcBox?: { left: number; right: number; top: number; bottom: number } }[]; chords: { text: string; box: Rect }[] } {
   const sp = unit.space;
   const words: PlacedWord[] = [];
-  const dynamics: { px: number; py: number; text: string }[] = [];
+  const dynamics: { px: number; py: number; text: string; srcBox?: { left: number; right: number; top: number; bottom: number } }[] = [];
   const inside = (q: Rect, x: number, y: number) => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h;
   // 先收齐各行（页面坐标），同一处被上下两条带各读一遍的只留一份
   const lines: { text: string; box: Rect; strip: WordStrip }[] = [];
@@ -675,7 +675,9 @@ export function attachWordLines(
     const dyn = DYNAMIC_RE.exec(text);
     const rest = dyn ? text.slice(dyn[0].length).trimStart() : "";
     if (dyn && (!rest || /^[\u4e00-\u9fff]/.test(rest))) {
-      dynamics.push({ px: box.x + Math.min(box.w, box.h * 0.6 * dyn[0].length) / 2, py: cy, text: dyn[0] });
+      const w = Math.min(box.w, box.h * 0.6 * dyn[0].length);
+      // `srcBox`：字行起头那几个字母的大致范围，只给识别对照画框（不当墨迹框用：挂音、写出照旧按没量到框走）
+      dynamics.push({ px: box.x + w / 2, py: cy, text: dyn[0], srcBox: { left: box.x, right: box.x + w, top: box.y, bottom: box.y + box.h } });
       continue;
     }
     if (skip.some((q) => inside(q, cx, cy))) continue;
@@ -769,6 +771,7 @@ export function attachWordLines(
       const bpm = Number(metro[2].replace(/ /g, ""));
       // 拍子单位只认四分：音符字形 OCR 读成 `J` / `d` 都有（烛光颂曲的四分读成 `d`），字母分不出
       note.metronome = { unit: "quarter", bpm, ...(metro[1] ? { text: `c. ${bpm}` } : {}), ...(paren ? { parentheses: true } : {}) };
+      note.tempoBox = { left: box.x, right: box.x + box.w, top: box.y, bottom: box.y + box.h };
     }
     // 速度文字与节拍器同一行的（`Andante ♩=76`）写进同一个 `<direction>`（见 `staffomr/textanalyze.ts::attachDirectionTexts`）
     if (metro && isWord && text) {

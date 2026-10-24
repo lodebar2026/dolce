@@ -348,10 +348,10 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
           const w = mates.flatMap((m) => m.words ?? []);
           if (w.length) n = { ...n, words: [...(n.words ?? []), ...w] };
           const t = !n.metronome && !n.tempoText ? mates.find((m) => m.metronome || m.tempoText) : undefined;
-          if (t) n = { ...n, metronome: t.metronome, tempoText: t.tempoText, tempoSize: t.tempoSize };
+          if (t) n = { ...n, metronome: t.metronome, tempoText: t.tempoText, tempoSize: t.tempoSize, tempoId: t.tempoId };
           const d = !n.dynamic ? mates.find((m) => m.dynamic) : undefined;
-          if (d) n = { ...n, dynamic: d.dynamic, dynamicBox: d.dynamicBox, dynamicId: d.dynamicId };
-        } else n = { ...n, words: undefined, metronome: undefined, tempoText: undefined, dynamic: undefined, dynamicId: undefined };
+          if (d) n = { ...n, dynamic: d.dynamic, dynamicBox: d.dynamicBox, dynamicSrcBox: d.dynamicSrcBox, dynamicId: d.dynamicId };
+        } else n = { ...n, words: undefined, metronome: undefined, tempoText: undefined, tempoId: undefined, dynamic: undefined, dynamicId: undefined };
       }
       // 松叶的起止同理：挂在和弦哪个头上都是这一拍，写在打头的那个音前；挂在后写的头上，`<direction>` 落在和弦中间，
       // 读回来是下一拍（按拍位写时和弦先写最高音，主音不一定打头：破碎 m5、m106、m107）
@@ -396,7 +396,7 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
         // 文字后面接节拍器时末尾留一个空格（`Andante ♩ = c. 76`），不然排出来文字与音符字形贴在一起
         const words = n.tempoText ? `<direction-type><words${fontAttr(textPt(n, n.tempoSize))}>${escapeXml(m ? `${n.tempoText.trimEnd()} ` : n.tempoText)}</words></direction-type>` : "";
         const metro = m ? `<direction-type><metronome${m.parentheses ? ' parentheses="yes"' : ""}><beat-unit>${m.unit}</beat-unit><per-minute>${escapeXml(m.text ?? String(m.bpm))}</per-minute></metronome></direction-type>` : "";
-        body += `<direction placement="above">${words}${metro}${dirStaff}${m ? `<sound tempo="${m.bpm}"/>` : ""}</direction>`;
+        body += `<direction placement="above"${idAttr(n.tempoId)}>${words}${metro}${dirStaff}${m ? `<sound tempo="${m.bpm}"/>` : ""}</direction>`;
       }
       for (const g of n.signs ?? []) body += `<direction placement="above"><direction-type><${g}/></direction-type>${dirStaff}</direction>`;
       for (const w of n.words ?? []) {

@@ -443,7 +443,7 @@ export function attachDynamics(pg: SPage, notes: StaffNote[], dynamics: Sym[], l
 export function attachDynamicTexts(
   pg: SPage,
   notes: StaffNote[],
-  items: { px: number; py: number; text: string; box?: { left: number; right: number; top: number; bottom: number } }[],
+  items: { px: number; py: number; text: string; box?: { left: number; right: number; top: number; bottom: number }; srcBox?: { left: number; right: number; top: number; bottom: number } }[],
   lyricBottom?: Map<Staff, number>,
 ): Set<number> {
   const sp = pg.normalStaffSpace || pg.space;
@@ -480,6 +480,7 @@ export function attachDynamicTexts(
         if (best.dynamic === undefined) {
           best.dynamic = d.text;
           if (d.box) best.dynamicBox = { left: d.box.left, right: d.box.right, top: d.box.top, bottom: d.box.bottom };
+          else if (d.srcBox) best.dynamicSrcBox = { ...d.srcBox };
         }
         placed.add(di);
         break;

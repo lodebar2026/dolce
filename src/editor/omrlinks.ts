@@ -302,7 +302,7 @@ export function staffMarksOf(view: StaffView, withIds: boolean): StaffMarkNow[] 
       }
     }
     (m.directions ?? []).forEach((d, index) => {
-      if (d.type !== "dynamics" && d.type !== "words" && d.type !== "rehearsal") return;
+      if (d.type !== "dynamics" && d.type !== "words" && d.type !== "rehearsal" && d.type !== "metronome") return;
       // 宿主音同索引（`sync.ts::buildXml`）：`afterElements` 之后第一个同声线的和弦，小节末的借最后一个
       const same = (e: Measure["elements"][number]): e is Chord => e.kind === "chord" && (d.voice === undefined || e.voice === d.voice);
       // 文本格式投影出来的只记拍位（`offset`），没有 `afterElements`：取那一拍起的音（没有就取其后最近的）
@@ -315,7 +315,7 @@ export function staffMarksOf(view: StaffView, withIds: boolean): StaffMarkNow[] 
       const host = h ? view.idsOf(h).find((x) => x) : undefined;
       const id = attr(d);
       const pre = d.type === "dynamics" ? "D" : "W";
-      out.push({ ids: id ? [id] : [], key: keyOf(pre, host), sig: `${host}|${d.text ?? ""}`, entry: `D:${pi}:${mi}:${index}`, ...(h ? { alsoEntry: `K:${h.id}:${d.type === "dynamics" ? "dynamic" : "annotation"}` } : {}) });
+      out.push({ ids: id ? [id] : [], key: keyOf(pre, host), sig: `${host}|${d.text ?? ""}${d.tempo?.perMinute ?? ""}`, entry: `D:${pi}:${mi}:${index}`, ...(h ? { alsoEntry: `K:${h.id}:${d.type === "dynamics" ? "dynamic" : "annotation"}` } : {}) });
     });
   }));
   for (const mk of view.song.marks) {

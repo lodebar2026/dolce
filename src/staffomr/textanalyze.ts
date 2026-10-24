@@ -1127,7 +1127,7 @@ const TEMPO_WORDS_GAP = 5;
  */
 export function attachDirectionTexts(
   pg: SPage,
-  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean; size?: number; rehearsal?: boolean; bracket?: boolean; box?: Box }[]; metronome?: StaffNote["metronome"]; tempoText?: string; tempoSize?: number }[],
+  notes: { staff: Staff; x: number; chordExtra?: boolean; grace?: boolean; words?: { text: string; above: boolean; size?: number; rehearsal?: boolean; bracket?: boolean; box?: Box }[]; metronome?: StaffNote["metronome"]; tempoText?: string; tempoSize?: number; tempoBox?: Box }[],
   text: TextAnalysis,
 ): void {
   const sp = pg.normalStaffSpace || pg.space;
@@ -1201,6 +1201,7 @@ export function attachDirectionTexts(
       // 印在圆括号里（`Andante (q = 76)`）：等号段前紧挨左括号或数后紧跟右括号
       const paren = /[(（]\s*$/.test(s.slice(0, metro.index)) || /^\s*[)）]/.test(s.slice(metro.index + metro[0].length));
       note.metronome = { unit: METRO_UNIT[metro[1] ?? "q"] ?? "quarter", bpm, ...(metro[2] ? { text: `c. ${bpm}` } : {}), ...(paren ? { parentheses: true } : {}) };
+      note.tempoBox = box;
       const words = s.slice(0, metro.index).replace(/[\s(（]+$/, "").trim();
       if (words) {
         note.tempoText = words;

@@ -869,10 +869,15 @@ export interface StaffNote {
   /** 与节拍器印在同一条的速度文字（`Andante ♩ = c. 76` 的 `Andante`）：与节拍器写进**同一个** `<direction>`，不拆成两个对象。 */
   tempoText?: string;
   tempoSize?: number;
+  /** 速度 / 节拍器那一条在原图上的框与写进 `<direction id>` 的 id（识别对照用） */
+  tempoBox?: Box;
+  tempoId?: string;
   /** 力度记号在原图上的墨迹框（页面单位）：写出成 `default-y` / `relative-x` / `font-size`，排版照原位原大小。见 `attachDynamicTexts` */
   dynamicBox?: { left: number; right: number; top: number; bottom: number };
   /** 编辑器的识别对照用：力度那条 `<direction id>`（同 `omrId`，有 `dynamicBox` 的才给） */
   dynamicId?: string;
+  /** OCR 读出、没量墨迹框的力度在原图上的大致范围（字行起头那几个字母）：只给识别对照画框，写出不用 */
+  dynamicSrcBox?: { left: number; right: number; top: number; bottom: number };
   /** 松叶从这个音符**起**（`<wedge type="crescendo|diminuendo">`）。见 `attachWedges`。 */
   wedgeStart?: "crescendo" | "diminuendo";
   /** 起在这个音上的松叶在原图上的样子（页面单位）：左端 x、中线 y、开口高 */
