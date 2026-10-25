@@ -179,6 +179,7 @@ export interface RecognizedScore {
   // 标题行。`.jpwabc` 的 `.Title` 段没有这个字段（既定，不扩语法），走那一路会丢。
   subtitle?: string;
   credits?: string[]; // 著作者整行文本（作词/作曲…），→ `identification.creators`（123 `C:`）
+  creditsTopLeft?: string[]; // 印在标题左边（左上角）的署名，→ `pageText.topLeft`（诗歌本 `TL:`、123 `I:topleft`）
   tempo?: number; // 速度 ♩=NN → `Song.tempos`（123 `Q:1/4=NN`）
   tempoBeat?: { num: number; den: number }; // 速度的拍单位（附点四分 `♩.=` 为 3/8），缺省四分 → `Song.tempoBeat`
   headerRegions?: TextRegion[]; // 页眉文本的源图定位（识别模式按原位叠加）

@@ -203,11 +203,12 @@ export function meterCandidates(cores: DigitCore[], hlines: Component[], numH: n
   }
   // 分子分母**各自**在同一高度左右都有别的数字：两头各属一个谱行（四声部上下两声部），是一个音符的减时线夹在两行之间。
   // 真转拍号的分子分母悬在数字带上下、同高处没有音符；页眉连印的 `3/4 4/4` 邻居本身也是候选，不算
-  // 左右找到 5 字号（原 2.5）：行首弱起的那个八分音符后面隔着小节线，离下一个音 3.9 字号（四声部 281 第 3 系统
-  // 行首上声部 `5̲`、下声部 `3̲` 读成 5/4，两个弱起音都被摘走）
+  // 左右找到 4.5 字号（原 2.5，曾放到 5）：行首弱起的那个八分音符后面隔着小节线，离下一个音 3.9 字号（四声部 281 第 3 系统
+  // 行首上声部 `5̲`、下声部 `3̲` 读成 5/4，两个弱起音都被摘走）。不到 5：页眉左侧两行小字署名的汉字也进了数字格池，
+  // 与页眉拍号的分子、分母恰好各在同一高度、4.95 字号开外（赞美诗歌1384 942《万古磐石》「托普雷迪 / 黑斯廷斯」夹着 3/4，拍号被当成两声部的音丢掉）
   const inCand = new Set(out.flatMap((m) => [m.up, m.dn]));
   const rowMate = (k: DigitCore) => cores.some((o) => o !== k && !inCand.has(o) && o.bbox.h >= k.bbox.h * 0.7 &&
-    Math.abs(rcy(o.bbox) - rcy(k.bbox)) <= numH * 0.2 && Math.abs(rcx(o.bbox) - rcx(k.bbox)) <= numH * 5);
+    Math.abs(rcy(o.bbox) - rcy(k.bbox)) <= numH * 0.2 && Math.abs(rcx(o.bbox) - rcx(k.bbox)) <= numH * 4.5);
   return out.filter((m) => {
     if (rowMate(m.up) && rowMate(m.dn)) { probe("meter.voiceRows"); return false; }
     return true;

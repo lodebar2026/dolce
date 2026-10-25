@@ -821,6 +821,28 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   trace?.("cores", { allCores, meterMarks });
   const rowsC = groupRows(allCores, numH);
   // 每行的 y 范围 + 穿过的小节线。
+  /** 小节线候选连上同一列上下紧挨着（隔 ≤3px）、不比它宽多少的碎段（只量高用，块表不动）。只接没归进小节线的碎块、接完不过两个字号：
+   *  四声部谱穿过声部缝的线本身就是一段段小节线，接起来又高又长，行内尺子跟着抬高，正常的线反被剔掉（圣哉三一歌、马槽歌） */
+  const barSet = new Set(c.barlines);
+  const joinColumnPieces = (b: Component): Component => {
+    let r = b.bbox;
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const k of comps) {
+        const kb = k.bbox;
+        if (k === b || barSet.has(k) || kb.w > r.w * 1.6 + 2 || unionRect(r, kb).h > numH * 2) continue;
+        const ov = Math.min(rright(r), rright(kb)) - Math.max(r.x, kb.x);
+        if (ov < Math.min(r.w, kb.w) * 0.6) continue;
+        if (kb.y >= r.y && rbottom(kb) <= rbottom(r)) continue;
+        if (Math.max(kb.y - rbottom(r), r.y - rbottom(kb)) > 3) continue;
+        r = unionRect(r, kb);
+        grew = true;
+      }
+    }
+    if (r !== b.bbox) probe("barline.joinPieces");
+    return r === b.bbox ? b : { ...b, bbox: r, cx: r.x + r.w / 2, cy: r.y + r.h / 2 };
+  };
+  const joinedBars = c.barlines.map(joinColumnPieces);
   const rowMetaAll = rowsC.map((rd) => {
     const topY = Math.min(...rd.map((k) => k.bbox.y));
     const botY = Math.max(...rd.map((k) => rbottom(k.bbox)));
@@ -844,7 +866,9 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
           // 中腰，只重叠 0.62——长过数字带两倍的线放到 0.55，免得整行被当成没小节线的歌词行丢掉
           (b.bbox.h >= (bandBot - bandTop) * 2 &&
             Math.min(rbottom(b.bbox), bandBot) - Math.max(b.bbox.y, bandTop) >= (bandBot - bandTop) * 0.55));
-    const spanning = c.barlines.filter((b) => b.bbox.h <= rowH * 4 && overlapsRow(b));
+    // 淡印的细线断成上下几截（赞美诗歌1384 946 第 1 行「3 2 1 2 | 3 - - -」那根：19px + 34px，中间隔 1px，上截太短没归进小节线），
+    // 量高之前把同一列上下只隔几像素的碎段接上——不接，下截不到行内最高线的六成被当伪线剔掉
+    const spanning = joinedBars.filter((b) => b.bbox.h <= rowH * 4 && overlapsRow(b));
     // 系统通长线（四声部 343 第 1、2 系统：从首声部画到末声部、中间隔着四行歌词，约 12 字号）：比 4 倍行高还长，
     // 单独收——落在本行音符横向范围内才算，也不进下面的行内相对门（不然本行正常的短线全被它压掉）
     const x1 = Math.max(...rd.map((k) => rright(k.bbox)));
@@ -858,8 +882,11 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     // (45~70)、世上(真 35~49)行内最高与真线同簇，整簇保留。绝对/字号比阈值跨图不通，故用行内相对。
     // 最高线不算行首音左边的：系统起始那道连线（四声部 9 第 3 系统下两声部 2×163，普通线 118）比谁都高，
     // 拿它当尺，断成两截的真线（76px）就过不了 0.6
+    // 末音右边的也不算（行内有两根以上时）：两声部系统末的终止线从上声部画到下声部（946 第 2 系统 203px，行高 53），
+    // 按它取尺子，下声部那几根 54px 的线全被剔掉
     const xFirst = Math.min(...rd.map((k) => k.bbox.x));
-    const inRow = spanning.filter((b) => rcx(b.bbox) > xFirst);
+    const inside = spanning.filter((b) => rcx(b.bbox) > xFirst && rcx(b.bbox) < x1);
+    const inRow = inside.length >= 2 ? inside : spanning.filter((b) => rcx(b.bbox) > xFirst);
     const maxH = Math.max(0, ...(inRow.length ? inRow : spanning).map((b) => b.bbox.h));
     const real = [...spanning.filter((b) => b.bbox.h >= maxH * 0.6), ...longBars].sort((a, b) => rcx(a.bbox) - rcx(b.bbox));
     const barlineXs = real.map((b) => rcx(b.bbox));
@@ -2199,11 +2226,13 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
         for (const r of g.slice(mode)) r.system = nextSys;
         nextSys++;
       }
-      // ② 整个系统的连谱号没认出来（83 第 1 系统）：连续一段没归系统的行，行数正好是众数，自成一个系统
+      // ② 整个系统的连谱号没认出来（83 第 1 系统）：连续一段没归系统的行，行数正好是众数，自成一个系统。
+      //    只给三行以上的系统补：两声部谱前头常有几行单声部（赞美诗歌1384 946《大地音韵飘》前两行先后各唱一句、
+      //    副歌才带连谱号分两声部），两行一段的没括号就是单声部，不硬配成一个系统
       for (let i = 0; i < byY.length; ) {
         let j = i;
         while (j < byY.length && byY[j].system === undefined) j++;
-        if (j - i === mode && mode >= 2) {
+        if (j - i === mode && mode >= 3) {
           probe("voices.orphanSystem");
           for (let k = i; k < j; k++) byY[k].system = nextSys;
           nextSys++;
@@ -2256,9 +2285,15 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       g.forEach((r, i) => { if (r.voice !== i) { probe("voices.renumber"); r.voice = i; } });
     }
     const sizes = [...bySys.values()].map((g) => g.length);
-    // 整首只有一个系统的（393）也算，但要 ≥3 行——两行的「系统」多半是连谱号认错
-    const ok = useRows.every((r) => r.system !== undefined) && (bySys.size >= 2 || sizes[0]! >= 3) && sizes.every((n) => n === sizes[0] && n >= 2)
+    // 整首只有一个系统的（393）也算，但要 ≥3 行——两行的「系统」多半是连谱号认错。
+    // 局部多声部（946《大地音韵飘》：前两行单声部、后两个系统带连谱号分两声部）：没归系统的行照单声部留着，
+    // 每行都得像条正经谱行（两根以上小节线）、且系统是两声部的——三行以上的系统缺了连谱号的那几行（众数对上）上面 ② 已补，
+    // 补不上的多半是认残了，照旧整页退回单声部
+    const orphans = useRows.filter((r) => r.system === undefined);
+    const partial = orphans.length > 0 && bySys.size >= 2 && sizes[0] === 2 && orphans.every((r) => r.barlineXs.length >= 2);
+    const ok = (!orphans.length || partial) && (bySys.size >= 2 || sizes[0]! >= 3) && sizes.every((n) => n === sizes[0] && n >= 2)
       && [...bySys.values()].every((g) => g.every((r, i) => r.voice === i));
+    if (ok && partial) probe("voices.partial");
     probe(ok ? "voices" : "voices.reject");
     if (!ok) for (const r of useRows) { delete r.system; delete r.voice; }
     else {
@@ -2373,7 +2408,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   // 恰好是合法的「根音 + 数字」和弦，「为基督赢得城市」就凭空多出一个 C4）。
   // 拿 header **已采纳**的字段区域当禁区交给 recognizeLyrics 剔，比在文法上猜可靠得多——
   // det 框里那个真和弦 `Am` 不会被 header 采纳，故不在禁区里。
-  let title: string | undefined, subtitle: string | undefined, credits: string[] | undefined;
+  let title: string | undefined, subtitle: string | undefined, credits: string[] | undefined, creditsTopLeft: string[] | undefined;
   let number: string | undefined, numberSide: RecognizedScore["numberSide"];
   let fifths = 0, minor: boolean | undefined, tempo: number | undefined, tempoBeat: RecognizedScore["tempoBeat"];
   let beats = 4, beatType = 4;
@@ -2382,7 +2417,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   if (ocr.recognizeTexts && useRows.length) {
     const h = await recognizeHeader(bin, comps, useRows[0].topY, numH, ocr,
       headerMeters.sort((a, b) => a.bbox.x - b.bbox.x), headExtra);
-    title = h.title; subtitle = h.subtitle; number = h.number; numberSide = h.numberSide; credits = h.credits.length ? h.credits : undefined;
+    title = h.title; subtitle = h.subtitle; number = h.number; numberSide = h.numberSide; credits = h.credits.length ? h.credits : undefined; creditsTopLeft = h.creditsTopLeft;
     if (h.fifths !== undefined) fifths = h.fifths;
     if (h.minor) minor = true;
     if (h.beats !== undefined && h.beatType !== undefined) { beats = h.beats; beatType = h.beatType; }
@@ -2418,12 +2453,15 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       (k.bbox.h >= numH * 2 || k.bbox.y <= br.y + numH * 1.5 || rbottom(k.bbox) >= rbottom(br) - numH * 1.5));
     // 同一系统里共用小节线（有线从上一行穿过缝伸进下一行）的两个声部行（Q1/Q2、Q3/Q4）之间不印歌词，那道缝里只有连音线和线的碎段，
     // 当成歌词行就读出 `////一`、`/a u r` 这类伪歌词（78《马槽歌》下两声部）。
+    // 只看行内（末音左边）的线：系统末那道收尾线常从首声部画到末声部，缝里照样印词（赞美诗歌1384 946《大地音韵飘》
+    // 副歌两个系统：中间的小节线各画各的，只有末尾的线连着，「哈利路亚举手来欢唱」整排被剔掉）
     const pairedGaps: Array<[number, number]> = [];
     for (let i = 0; i + 1 < useRows.length; i++) {
       const r = useRows[i]!, n = useRows[i + 1]!;
       if (r.system === undefined || r.system !== n.system) continue;
       const gapMid = (r.bottomY + n.topY) / 2;
-      if (c.barlines.some((k) => k.bbox.y < gapMid - numH * 0.3 && rbottom(k.bbox) > gapMid + numH * 0.3 &&
+      const lastNote = Math.max(...r.nums.map((k) => rright(k.bbox)));
+      if (c.barlines.some((k) => k.bbox.y < gapMid - numH * 0.3 && rbottom(k.bbox) > gapMid + numH * 0.3 && rcx(k.bbox) < lastNote &&
         r.barlineXs.some((x) => Math.abs(x - rcx(k.bbox)) <= numH * 0.3))) pairedGaps.push([r.bottomY, n.topY]);
     }
     const inPairedGap = (k: Component) => pairedGaps.some(([y0, y1]) => rcy(k.bbox) > y0 && rcy(k.bbox) < y1);
@@ -2559,6 +2597,6 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
 
   const dotDiam = dotSizes.length ? median(dotSizes) : undefined;
 
-  return { key: "C", fifths, minor, beats, beatType, meters, meterNote, rows: useRows, number, numberSide, title, subtitle, credits, tempo, tempoBeat, headerRegions, lyricRegions, chordRegions, stanzaRegions, footnotes, dotDiam, lyricCheck };
+  return { key: "C", fifths, minor, beats, beatType, meters, meterNote, rows: useRows, number, numberSide, title, subtitle, credits, creditsTopLeft, tempo, tempoBeat, headerRegions, lyricRegions, chordRegions, stanzaRegions, footnotes, dotDiam, lyricCheck };
 }
 

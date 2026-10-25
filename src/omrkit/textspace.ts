@@ -53,7 +53,12 @@ export function recoverHanziGaps(bin: Binary, text: string, bbox: Rect, chars?: 
   }
   if (pairGap.size < 3) return text;
   const med = median([...pairGap.values()]);
-  const after = new Set([...pairGap].filter(([, w]) => w >= bbox.h * 0.5 && w >= med * 2).map(([i]) => i));
+  // 宽窄两档分明的（赞美诗歌1384 936「爱 喜乐 生命」：字间白 6、37、6、39，框高 91）：宽的一半、窄的一半，中位落在两档之间，
+  // 空当又不到半个框高，上面两道门都过不去。按宽度排开、相邻两道跳到四倍以上处切开，宽的那档都有 0.35 框高就算分句。
+  const ws = [...pairGap.values()].sort((a, b) => a - b);
+  const k = ws.findIndex((w, i) => i > 0 && w >= Math.max(1, ws[i - 1]) * 4);
+  const cut = k > 0 && ws[k] >= bbox.h * 0.35 ? ws[k] : Infinity;
+  const after = new Set([...pairGap].filter(([, w]) => (w >= bbox.h * 0.5 && w >= med * 2) || w >= cut).map(([i]) => i));
   return cs.map((c, i) => (after.has(i) ? c + " " : c)).join("");
 }
 

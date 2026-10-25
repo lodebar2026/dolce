@@ -9,6 +9,7 @@ import { layersToVoices } from "../model/innervoice";
 import { AccidentalCarry, clefName, continuesMeasure, harmonyText, melodyLane, noteHeight, topNote } from "../model/jianpu";
 import { keyFifths, tonicSpelling } from "../model/keyshift";
 import { fillEmptyMeasures, splitStaves } from "../model/staves";
+import { fillAbsentGroups } from "../model/timeaxis";
 
 /** 倚音时值相对八分：下标 = `_` 个数（八分不写，`{2_}` 十六分）。四分倚音写不出，按八分 */
 const GRACE_TYPES = ["eighth", "16th", "32nd", "64th"];
@@ -163,8 +164,9 @@ export class Emitter123 extends AbcFamilyEmitter {
   /** MusicXML 读进来的歌先投成简谱形状：123 的 `-` 是增时线、`_` 是减时线，照 MusicXML 的 type/beam 直写会写错时值 */
   override emitSong(song: Song, fallbackNumber?: number): string {
     // 文本谱的 `{dsb…}` 并排块还原成第二声部，照 `&` 写
-    // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
-    return super.emitSong(this.withReadbackAccidentals(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(splitStaves(fillEmptyMeasures(song))))))), fallbackNumber);
+    // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）；
+    // 某声部缺席的组（前几行只有一个声部）补整小节不可见休止，123 各声部各数各的小节（`timeaxis.ts::fillAbsentGroups`）
+    return super.emitSong(this.withReadbackAccidentals(projectForJianpu(directionsAsMarks(layersToVoices(wholeBarRests(splitStaves(fillEmptyMeasures(fillAbsentGroups(song)))))))), fallbackNumber);
   }
 
   /** 度数 + 八度点。变音记号**前置**（简谱惯例）。 */

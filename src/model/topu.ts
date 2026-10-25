@@ -37,6 +37,7 @@ import { projectForJianpu } from "./jianpuproject";
 import { voicesToLayers } from "./innervoice";
 import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote } from "./jianpu";
 import { ownIds, partRanges, systemRanges, type SystemRange } from "./emitutil";
+import { axisOfSong } from "./timeaxis";
 import { relayoutDocBreaks } from "./relayout";
 import { decoKey } from "./deconames";
 import { directionMarks, directionsAsMarks } from "./directionmarks";
@@ -986,10 +987,10 @@ export function puArcLosses(src: Song): { nested: number; oddTuplet: number; gra
 }
 
 /** 声部行首：`Q` + 变体 + 声部号 + 声部名 + `:`。 */
-function qPrefix(song: Song, pi: number, first: Measure | undefined, firstSystem: boolean, d: DialectSpec): string {
+function qPrefix(song: Song, pi: number, first: Measure | undefined, firstSystem: boolean, d: DialectSpec, solo = false): string {
   const [open, close] = d.emit.labelWrap;
   const caption = first?.print?.caption ?? (firstSystem ? song.parts[pi]?.name : undefined);
-  const num = song.parts.length > 1 ? String(pi + 1) : "";
+  const num = song.parts.length > 1 && !solo ? String(pi + 1) : "";
   // 声部名里的换行（分谱「小锣\n大锣」两行印）写成空格：原样写会把曲行拆成两行
   const cap = caption ? open + caption.replace(/["<>]/g, "").replace(/\s*\n\s*/g, " ") + close : "";
   return `Q${first?.print?.variant ?? ""}${num}${cap}:`;
@@ -1026,9 +1027,14 @@ export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}
 
   const ranges = systemRanges(song.parts[0]);
   // 别的声部的小节中间切点按拍位对到第一声部的切点上（`partRanges`）
-  const pranges = song.parts.map((part) => partRanges(ranges, song.parts[0]!, part));
+  // 按组排的（前几行只有 `Q:`、后面才分 `Q1:`/`Q2:`，issue 11；识别稿局部多声部）按共用时间轴对齐，缺席的组不写
+  const axis = axisOfSong(song);
+  const pranges = song.parts.map((part, pi) => partRanges(ranges, song.parts[0]!, part,
+    axis.grouped ? { lead: axis.slot[0]!, part: axis.slot[pi]! } : undefined));
   ranges.forEach((_, ri) => {
     const group: string[] = [];
+    // 这一组只有第一声部：写 `Q:`，同原文（读回仍是第一声部）
+    const solo = song.parts.length > 1 && pranges.every((pr, pi) => pi === 0 || pr[ri]!.from > Math.min(pr[ri]!.to, song.parts[pi]!.measures.length - 1));
     song.parts.forEach((part, pi) => {
       const sys: SystemRange = pranges[pi]![ri]!;
       const st = states[pi]!;
@@ -1051,7 +1057,7 @@ export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}
         if (toEl >= mea.elements.length && writeRightBarline(part.measures, mi, line, st, mi === last)) st.carryBeat = end;
       }
       if (line.empty) return;
-      group.push(qPrefix(song, pi, first, ri === 0, d) + line.text(d.emit.tokenGap));
+      group.push(qPrefix(song, pi, first, ri === 0, d, solo) + line.text(d.emit.tokenGap));
       const infos = sys.fromEl === 0 && song.parts.length && first?.print?.lyricLines;
       const specs = lyricSpecs(slots, infos || undefined);
       const translation = !!d.emit.bareTranslationVerses && isTranslationSet(slots, specs);

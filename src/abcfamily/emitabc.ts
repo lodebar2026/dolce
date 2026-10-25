@@ -11,6 +11,7 @@ import { tonicSpelling } from "../model/keyshift";
 import { hasTieSyntax, isXmlShaped, slursAsTies } from "../model/xmlproject";
 import { directionsAsMarks } from "../model/directionmarks";
 import { fillEmptyMeasures, splitStaves } from "../model/staves";
+import { fillAbsentGroups } from "../model/timeaxis";
 import { withAbcAccidentals, withAbcPitches } from "./abcpitch";
 import { creatorsFromCredits, headerFromCredits } from "../model/jianpuproject";
 
@@ -103,8 +104,9 @@ export class EmitterAbc extends AbcFamilyEmitter {
   /** MusicXML 形状的歌先换时值口径，否则 `L:1/8` 下写出的是原始 divisions（八分写成 `E1/8`）；
    *  简谱形状的（只有度数）先补音高与 ABC 口径的记号（`abcpitch.ts`）。 */
   override emitSong(song: Song, fallbackNumber?: number): string {
-    // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）
-    const own = directionsAsMarks(splitStaves(fillEmptyMeasures(song)));
+    // 钢琴大谱表拆成每条谱表一个 `V:`（`part=` 记它属于哪个声部，`model/staves.ts`）；
+    // 某声部缺席的组（前几行只有一个声部）补整小节不可见休止，ABC 各声部各数各的小节（`timeaxis.ts::fillAbsentGroups`）
+    const own = directionsAsMarks(splitStaves(fillEmptyMeasures(fillAbsentGroups(song))));
     this.xmlSource = isXmlShaped(own);
     if (!this.xmlSource) return super.emitSong(withAbcPitches(own), fallbackNumber);
     // 页眉只写在 `<credit>` 里的署名、左上右上的文字、标题下的英文标题落成 `C:` / `I:topleft` / `T:`（同 123 那一路，`jianpuproject.ts`）

@@ -7,7 +7,7 @@
 //
 // 组号取 `Measure.print.system`（各声部每行首小节都有，往后继承）；有声部的首小节没有它（非文本谱来源）就按小节序号一一对应。
 
-import type { Song } from "./doc";
+import { SIMPLE_DIVISIONS, type Chord, type Measure, type Song, type Time } from "./doc";
 
 export interface TimeAxis {
   /** 轴上一共几格 */
@@ -72,4 +72,55 @@ export function spreadOnAxis<T>(items: readonly T[], slots: readonly number[], l
   const out = new Array<T | undefined>(length).fill(undefined);
   items.forEach((it, i) => (out[slots[i]!] = it));
   return out;
+}
+
+/**
+ * 某声部在某组缺席（文本谱前几行只有 `Q:`、识别稿前几行单声部，见 issue 11）的那几格补上整小节**不可见休止**，补完各声部小节一一对应。
+ * 给按声部各数各的小节、不认组号的写出端用（123 / ABC：`V:2` 不写这几行，读回来就从第一小节对起，整体错位）。
+ * 补的小节照抄同一格首个有小节的声部那一小节的小节号、换行（`print`）与拍号，按拍一拍一个休止，余数单成一个。不按组排的原样返回。不动原件。
+ */
+export function fillAbsentGroups(song: Song): Song {
+  const axis = axisOfSong(song);
+  if (!axis.grouped || axis.local.every((l) => l.every((i) => i >= 0))) return song;
+  let maxId = 0;
+  for (const p of song.parts) for (const m of p.measures) for (const el of m.elements) maxId = Math.max(maxId, el.id);
+  // 各格的样板小节（首个有小节的声部）与那一格生效的拍号
+  const timeAt: (Time | undefined)[] = [];
+  const leadAt: Measure[] = [];
+  const dpqAt: number[] = [];
+  for (let s = 0; s < axis.length; s++) {
+    const pi = axis.local.findIndex((l) => l[s]! >= 0);
+    leadAt[s] = song.parts[pi]!.measures[axis.local[pi]![s]!]!;
+  }
+  let time = song.time, dpq = SIMPLE_DIVISIONS;
+  for (let s = 0; s < axis.length; s++) {
+    const a = leadAt[s]!.attrs;
+    if (a?.time) time = a.time;
+    if (a?.divisions) dpq = a.divisions;
+    timeAt[s] = time;
+    dpqAt[s] = dpq;
+  }
+  const parts = song.parts.map((p, pi) => {
+    if (axis.local[pi]!.every((i) => i >= 0)) return p;
+    const measures: Measure[] = [];
+    for (let s = 0; s < axis.length; s++) {
+      const i = axis.local[pi]![s]!;
+      if (i >= 0) { measures.push(p.measures[i]!); continue; }
+      const lead = leadAt[s]!;
+      const len = lead.duration ?? lead.elements.reduce((t, el) => t + (el.kind === "chord" && !el.grace ? el.duration.divisions : 0), 0);
+      const t = timeAt[s];
+      const beat = t ? (dpqAt[s]! * 4) / t.beatType : dpqAt[s]!;
+      const elements: Chord[] = [];
+      for (let left = len; left > 0; left -= beat) {
+        elements.push({ kind: "chord", id: ++maxId, notes: [], rest: {}, printObject: false,
+          duration: { divisions: Math.min(beat, left), dots: 0 }, voice: 1, staff: 1 });
+      }
+      const m: Measure = { number: lead.number, elements };
+      if (lead.print) m.print = { ...(lead.print.newSystem ? { newSystem: true } : {}), ...(lead.print.newPage ? { newPage: true } : {}), ...(lead.print.system !== undefined ? { system: lead.print.system } : {}) };
+      if (lead.attrs?.time || lead.attrs?.divisions) m.attrs = { ...(lead.attrs.time ? { time: lead.attrs.time } : {}), ...(lead.attrs.divisions ? { divisions: lead.attrs.divisions } : {}) };
+      measures.push(m);
+    }
+    return { ...p, measures };
+  });
+  return { ...song, parts };
 }

@@ -62,7 +62,7 @@ export function systemRanges(part: Part | undefined): SystemRange[] {
  *  在别的声部是第几个元素（取拍位不早于切点的第一个）。四声部简谱的弱起曲（78《马槽歌》）谱行末不收
  *  小节线，每条谱行都切在小节中间；别的声部只按整小节归系统的话，行尾那半小节全挤到上一行，
  *  各声部的行就对不齐了。 */
-export function partRanges(ranges: readonly SystemRange[], lead: Part, part: Part): SystemRange[] {
+export function partRanges(ranges: readonly SystemRange[], lead: Part, part: Part, axis?: { lead: readonly number[]; part: readonly number[] }): SystemRange[] {
   if (part === lead) return [...ranges];
   const onsetAt = (p: Part, mi: number, el: number): number => {
     let t = 0;
@@ -78,9 +78,24 @@ export function partRanges(ranges: readonly SystemRange[], lead: Part, part: Par
     for (let j = 0; j <= els.length; j++) if (onsetAt(part, mi, j) >= t) return j;
     return els.length;
   };
-  const map = (mi: number, el: number): number =>
-    el === 0 || !Number.isFinite(el) ? el : indexAt(mi, onsetAt(lead, mi, el));
-  return ranges.map((r) => ({ ...r, fromEl: map(r.from, r.fromEl), toEl: map(r.to, r.toEl) }));
+  const map = (mi: number, el: number, pmi = mi): number =>
+    el === 0 || !Number.isFinite(el) ? el : indexAt(pmi, onsetAt(lead, mi, el));
+  if (!axis) return ranges.map((r) => ({ ...r, fromEl: map(r.from, r.fromEl), toEl: map(r.to, r.toEl) }));
+  // 按组排的歌（`timeaxis.ts`：某声部在有的组里缺席）：第一声部的小节落在轴上第几格，本声部就取同一格起止的小节；
+  // 这一段里本声部一个小节都没有就给空段（from > to，写出端跳过）。小节中间的切点只在两边同一格时照拍位对过去。
+  const atOrAfter = (slot: number): number => { const i = axis.part.findIndex((g) => g >= slot); return i < 0 ? part.measures.length : i; };
+  const atOrBefore = (slot: number): number => { let i = -1; axis.part.forEach((g, k) => { if (g <= slot) i = k; }); return i; };
+  return ranges.map((r) => {
+    const sf = axis.lead[r.from] ?? Infinity;
+    const st = r.to >= lead.measures.length ? Infinity : axis.lead[r.to]!;
+    const from = atOrAfter(sf);
+    const to = st === Infinity ? Number.MAX_SAFE_INTEGER : atOrBefore(st);
+    return {
+      ...r, from, to,
+      fromEl: axis.part[from] === sf ? map(r.from, r.fromEl, from) : 0,
+      toEl: axis.part[to] === st ? map(r.to, r.toEl, to) : Infinity,
+    };
+  });
 }
 
 /** 本声部里写得出来的元素 id（含增时线）。`emits` 判哪些元素写（123 只写简谱印的那一路）。 */
