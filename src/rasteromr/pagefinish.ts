@@ -81,6 +81,8 @@ export interface PageFinishInput {
   notes: StaffNote[];
 }
 
+/** 版权行的字样（歌词里不会出现）：`©`、copyright、「版权所有」「获准使用」 */
+const COPYRIGHT_RE = /©|copyright|版[权權]所有|[获獲]准使用/i;
 /** 歌词条字高不到本页中位数的这个比例就不是歌词（页脚版权小字）。 */
 const LYRIC_MIN_H = 0.4;
 /** 不带连字符的拉丁行离带连字符的那行多近（字高的倍数）算同一块歌词。
@@ -517,6 +519,9 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       // 不到两个谱表高，被收成男声的第 1 段
       // 短拉丁音节（`charsFix`，已按音位验过）放宽到一半：「Glo」字高按块高中位数量，小写字母只有汉字的三成多
       if (strip.charH < medH * LYRIC_MIN_H * (charsFix.has(strip) ? 0.5 : 1)) continue;
+      // **版权行按字样剔**：字号只比歌词小一半上下的（你的信实广大末行下「词曲 © 1923 … Hope publishing Company」「版权所有 获准使用」字高 16、23，
+      // 歌词 39）过得了上面的字高闸，被收成低音谱表下的第 1、2、4 段
+      if (COPYRIGHT_RE.test(chars.map((c) => c.ch).join(""))) continue;
       // **三格以内、认不出一半字的条不收**：谱表紧下方带加线的低音被切成一条（赞美三一真神
       // 末系统 3 格只认出一个「户」），占掉第 1 段，后面四段整体下移一段
       if (strip.cells.length <= 3 && !latinStrips.has(strip) && foldLyricChars(chars).length < strip.cells.length * 0.5) continue;
