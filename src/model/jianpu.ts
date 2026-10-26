@@ -20,7 +20,7 @@
 // - 调号是声部级的（`MeasureAttrs.key`，MusicXML 的 `<key number>` 按谱表分调号语料 0 例，模型未分）；
 //   谱号按谱表取。`attrsAt(part, staff, i)` 是查询入口，将来模型分谱表调号时只改它。
 // - 派生量**不存进 `ScoreDoc`**（`Note.degree` 是例外：它是简谱来源的一手数据，MusicXML 来源由
-//   `assignDegrees` 补上），见 `../dev/docs/待办.md`（私有仓库） §3.1「派生量不存进 ScoreDoc」。
+//   `assignDegrees` 补上）。
 //
 // 无 DOM 依赖（Node CLI 要 import）。
 

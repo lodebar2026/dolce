@@ -12,7 +12,7 @@
 - [docs/格式/](docs/格式/) 格式规范：[123格式](docs/格式/123格式.md)（简谱主格式）、[jpwabc](docs/格式/jpwabc.md)、[Muse jcx](docs/格式/jcx.md)；
   样式定制见 [docs/样式机制.md](docs/样式机制.md)
 - [docs/实现/](docs/实现/) 判据与踩坑全录（各模块页开头有指向对应篇的链接；没有单独实现篇的写明判据在本页）
-- 还要做什么只记在本地私有仓库的 `../dev/docs/待办.md`（做完的条目直接删）；README 中英两份（`README.md` / `README.en.md`）要同步改
+- 还要做什么只记在本地私有仓库的 `../dev/docs/待办/`（按块分篇、索引见其 README；做完的条目直接删）；README 中英两份（`README.md` / `README.en.md`）要同步改
 
 ## 命令
 
