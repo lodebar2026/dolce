@@ -57,6 +57,14 @@ export async function recognizeStaffPage(
   const pg = buildPage(index, vec.width, vec.height, vec.objs, runs);
 
   findSymbols(pg, look);
+  return recognizeBuiltPage(pg, opts);
+}
+
+/**
+ * 建好页、认完字形之后的那一整条（找谱表 → 符头符干 → 小节 → 音符 → 记号 → 文本层 → 自检）。
+ * 转曲的矢量谱（`outlineomr/`）自己建页、自己认字形，从这里接上。
+ */
+export function recognizeBuiltPage(pg: SPage, opts: { textLookup?: TextGlyphLookup; carryTime?: { beats: number; beatType: number } } = {}): StaffPageResult {
   markTextInk(pg);
   if (!findStaves(pg)) {
     removeWhite(pg);

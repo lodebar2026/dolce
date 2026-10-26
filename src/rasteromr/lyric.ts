@@ -1027,3 +1027,14 @@ export function latinCells(strip: LyricStrip, chars: OcrChar[], spaceGap = SPACE
   });
   return out;
 }
+
+/** 汉字歌词行尾的跳转记号（`Fine`、`D.S. al Fine`）：最后一个汉字（或标点，「華美!Fine.」的感叹号是半角）之后的拉丁串整串是跳转记号才摘 */
+export function jumpTail(chars: OcrChar[]): { text: string; xFrac: number; rest: OcrChar[] } | null {
+  let k = chars.length;
+  while (k > 0 && !/\p{Script=Han}|[，。、；：！？,;:!?]/u.test(chars[k - 1]!.ch)) k--;
+  if (k === 0 || k === chars.length) return null;
+  const text = chars.slice(k).map((c) => c.ch).join("").trim();
+  // 「Fine.」带不带句点都有（OCR 读出的与谱面一致）
+  if (!/^(?:fine\.?|D\.?\s*[SC]\b.*)$/i.test(text)) return null;
+  return { text, xFrac: chars[k]!.xFrac, rest: chars.slice(0, k) };
+}

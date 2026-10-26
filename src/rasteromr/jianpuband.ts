@@ -15,8 +15,10 @@ import type { LineSeg } from "./prims";
 import { liftRange, type RasterUnit } from "./staffline";
 import { contentKey } from "../omrkit/contentkey";
 
-/** 简谱小节线的长度（线距的倍数）：《是谁》2.34 格、敬拜万世之王 3.7 格（数字大、上下有高低音点）。 */
-const BAR_LEN = [1.2, 4] as const;
+/** 简谱小节线的长度（线距的倍数）：《是谁》2.34 格、敬拜万世之王 3.7 格（数字大、上下有高低音点）、祢話如甘霖 4.84 格（简谱字号比谱表线距大得多）。 */
+const BAR_LEN = [1.2, 5.5] as const;
+/** 对上的简谱小节线长度不超过它们中位数的几倍 */
+const BAR_LEN_SPREAD = 1.15;
 /** 简谱小节线的下端离谱表顶线至少多远（线距）：再近就是符干、符杠那一带。 */
 const BAR_CLEAR = 0.5;
 /** 往上最多找多远（线距）。 */
@@ -40,6 +42,10 @@ const BAR_SIBLING = 0.75;
  * 下面放得少——再往下是往上的符杠（《是谁》第一行的符杠离小节线下端只有 0.4 格）。
  */
 const PAD_TOP = 0.8;
+/** 叠印的上一行简谱：下一行谱表离这行谱表不过谱表高的几倍才算同一系统（祢話如甘霖两行谱表隔 1.8 倍） */
+const STACK_GAP = 3;
+/** 叠印的上一行简谱：对上这行小节线的成数 */
+const STACK_MATCH = 0.6;
 const PAD_BOTTOM = 0.3;
 
 /** 一条简谱行：它压在哪行谱上、带的盒、行内小节线的 x。
@@ -105,6 +111,21 @@ export function findJianpuBands(
         // 压着别的谱行的是那一行自己的小节线（你的信实广大谱行只隔 5 格，上一行的小节线落进窗口）
         !staves.some((o) => o !== st && a < o.bottom + liftOf(o, cx(v)) - liftOf(st, cx(v)) && b > o.top + liftOf(o, cx(v)) - liftOf(st, cx(v))) && !hooked(v);
     });
+    /** `top`~`bot` 这行简谱上方紧挨着的另一行：同 x（对上这行的小节线）、长度相当的短竖线；返回它的纵向范围与小节线 x */
+    const stackedRow = (top: number, bot: number, bars: number[]): [number, number, number[]] | null => {
+      const minLen = (bot - top) * BAR_SIBLING;
+      const ups = vSegs.filter((v) => {
+        const [a, b] = span(v);
+        return b - a >= minLen && b - a <= sp * BAR_LEN[1] && b <= top - sp * 0.3 && b >= top - (bot - top) - sp * 3 &&
+          bars.some((x) => Math.abs(cx(v) - x) <= sp * BAR_DX) && !hooked(v);
+      });
+      const dg = ups.map((v) => ups.filter((o) => same(v, o)).length);
+      const hb = ups[dg.indexOf(Math.max(...dg))];
+      const row = hb ? ups.filter((v) => same(v, hb)) : [];
+      if (row.length < MIN_MATCH || row.length < bars.length * STACK_MATCH) return null;
+      const ys = row.map(span);
+      return [Math.min(...ys.map((q) => q[0])), Math.max(...ys.map((q) => q[1])), row.map(cx).sort((a, b) => a - b)];
+    };
     const matched0 = cands.filter((v) => staffBars.some((x) => Math.abs(cx(v) - x) <= sp * BAR_DX));
     // **对上的要在同一高度**：取与别人纵向重叠（过短者一半）最多的那一簇。
     // 行首谱表左端上方和弦字母的竖笔也对得上（敬拜万世之王末行 y 比简谱小节线高两格），混进来带顶就罩住和弦
@@ -115,7 +136,12 @@ export function findJianpuBands(
     };
     const deg = matched0.map((v) => matched0.filter((o) => same(v, o)).length);
     const hub = matched0[deg.indexOf(Math.max(...deg))];
-    const matched = hub ? matched0.filter((v) => same(v, hub)) : [];
+    const matched1 = hub ? matched0.filter((v) => same(v, hub)) : [];
+    // **长度要整齐**：小节线长度上限放到 5.5 格之后（祢話如甘霖 4.84 格），与上方字母笔画连成一根的也进得来，
+    // 把带顶抬高、压住和弦（敬拜万世之王第三行）。超过中位数 1.15 倍的不要（敬拜第三行那根 4.26 格，其余 3.3~3.5）
+    const lens = matched1.map((v) => span(v)[1] - span(v)[0]).sort((a, b) => a - b);
+    const medLen = lens[lens.length >> 1] ?? 0;
+    const matched = matched1.filter((v) => span(v)[1] - span(v)[0] <= medLen * BAR_LEN_SPREAD);
     if (matched.length < MIN_MATCH || matched.length < staffBars.length * MIN_MATCH_FRAC) return;
     // 带的纵向范围按对上的那几条定（行首那条可能是简谱行自己的起头线，不一定有谱表小节线对着）
     const ys = matched.map(span);
@@ -133,7 +159,20 @@ export function findJianpuBands(
       .sort((a, b) => a - b);
     const y0 = Math.round(top - sp * PAD_TOP);
     const y1 = Math.min(Math.round(bot + sp * PAD_BOTTOM), Math.round(st.top - sp * 0.2));
-    out.push({ staff: k, box: { x: Math.round(st.left - sp), y: y0, w: Math.round(st.right - st.left + sp * 2), h: y1 - y0 }, bars, ...(lift ? { lift } : {}) });
+    const box = { x: Math.round(st.left - sp), y: y0, w: Math.round(st.right - st.left + sp * 2), h: y1 - y0 };
+    // **叠印两行简谱**（祢話如甘霖 15–19 小节：一个系统两行谱表，两行简谱都印在上行谱表上方）：
+    // 自上而下与谱表一一对应，紧贴上行谱表的那行其实是下行谱表的旋律。上方再有一行同 x 的简谱小节线、
+    // 下面紧跟着同一系统的下一行谱表时，上面那行归这行谱、贴着的那行归下一行谱
+    const below = staves[k + 1];
+    const upper = below && below.top - st.bottom < h * STACK_GAP ? stackedRow(top, bot, bars) : null;
+    if (upper) {
+      const u0 = Math.round(upper[0] - sp * PAD_TOP);
+      const u1 = Math.min(Math.round(upper[1] + sp * PAD_BOTTOM), y0);
+      out.push({ staff: k, box: { ...box, y: u0, h: u1 - u0 }, bars: upper[2], ...(lift ? { lift } : {}) });
+      out.push({ staff: k + 1, box, bars, ...(lift ? { lift } : {}) });
+      return;
+    }
+    out.push({ staff: k, box, bars, ...(lift ? { lift } : {}) });
   });
   return out;
 }

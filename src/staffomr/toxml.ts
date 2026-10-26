@@ -398,11 +398,12 @@ function emitVoices(inBar: StaffNote[], ticks: (d: number) => number, staffNo: n
         const metro = m ? `<direction-type><metronome${m.parentheses ? ' parentheses="yes"' : ""}><beat-unit>${m.unit}</beat-unit><per-minute>${escapeXml(m.text ?? String(m.bpm))}</per-minute></metronome></direction-type>` : "";
         body += `<direction placement="above"${idAttr(n.tempoId)}>${words}${metro}${dirStaff}${m ? `<sound tempo="${m.bpm}"/>` : ""}</direction>`;
       }
-      for (const g of n.signs ?? []) body += `<direction placement="above"><direction-type><${g}/></direction-type>${dirStaff}</direction>`;
+      for (const g of n.signs ?? []) body += `<direction placement="above"><direction-type><${g}/></direction-type>${dirStaff}<sound ${g}="${g}"/></direction>`;
       for (const w of n.words ?? []) {
         const wy = withSourceLayout && w.baseY !== undefined ? ` default-y="${staffY(n.staff, n.sym.box.left, w.baseY)}"` : "";
         const el = w.rehearsal ? "rehearsal" : "words";
-        body += `<direction placement="${w.above ? "above" : "below"}"${idAttr(w.id)}><direction-type><${el}${w.rehearsal ? ` enclosure="${w.bracket ? "none" : "square"}"` : ""}${wy}${fontAttr(textPt(n, w.size))}>${escapeXml(w.text)}</${el}></direction-type>${dirStaff}</direction>`;
+        const snd = w.rehearsal ? "" : jumpSound(w.text);
+        body += `<direction placement="${w.above ? "above" : "below"}"${idAttr(w.id)}><direction-type><${el}${w.rehearsal ? ` enclosure="${w.bracket ? "none" : "square"}"` : ""}${wy}${fontAttr(textPt(n, w.size))}>${escapeXml(w.text)}</${el}></direction-type>${dirStaff}${snd}</direction>`;
       }
       if (n.dynamic) body += dynamicXml(n, dirStaff);
       // 松叶：**止排在起之前**——同一个音符上前一条松叶收尾、下一条起头是常事，
@@ -1379,4 +1380,14 @@ function creditsXml(credits: StaffXmlOptions["credits"], layout?: SourceLayout |
       return `<credit page="${c.page ?? 1}">${c.type ? `<credit-type>${escapeXml(c.type)}</credit-type>` : ""}<credit-words${at}${c.justify ? ` justify="${c.justify}"` : ""}${fontAttr(c.size ? roundPt(c.size) : undefined)}>${escapeXml(c.text)}</credit-words></credit>`;
     })
     .join("");
+}
+
+/** 跳转记号文字的播放语义（`<sound>`）：D.S. → 回到 segno、D.C. → 回到曲首、Fine → 收在这里、To Coda → 跳到 coda。别的文字不出 */
+export function jumpSound(text: string): string {
+  const t = text.trim();
+  if (/^D\.?\s*S\b/i.test(t)) return `<sound dalsegno="segno"/>`;
+  if (/^D\.?\s*C\b/i.test(t)) return `<sound dacapo="yes"/>`;
+  if (/^fine\.?$/i.test(t)) return `<sound fine="yes"/>`;
+  if (/^to\s*coda/i.test(t)) return `<sound tocoda="coda"/>`;
+  return "";
 }

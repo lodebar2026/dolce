@@ -193,7 +193,10 @@ export function fuseJianpu(
           const dia = base + tonic + j.d - 1 + 7 * j.oct;
           // 多声部谱表只收差一级的（五线谱读错最常见的就是差一级）：简谱八度点在这几首靠不住，整八度的「纠正」
           // 多半是错的（欢然颂主 D5 → D4），差两级以上的多半是配错了对（齐来崇拜 D4 → F4）
-          if (dia !== n.diatonic && (!poly || Math.abs(dia - n.diatonic) === 1)) {
+          // 简谱这个数字没读出八度点、五线谱又正好差一个八度：多半是点漏读了（祢話如甘霖 m7 双减时线下的低音点），
+          // 漏读只会往中音区偏，不拿它改。读出了点的整八度照改（五线谱读错加线的也有）
+          const missedDot = j.oct === 0 && Math.abs(dia - n.diatonic) === 7;
+          if (dia !== n.diatonic && !missedDot && (!poly || Math.abs(dia - n.diatonic) === 1)) {
             const s = ((dia % 7) + 7) % 7;
             const step = STEPS[s];
             const keep = step === n.step; // 只差八度：发声的升降照旧

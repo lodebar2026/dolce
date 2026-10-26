@@ -193,10 +193,11 @@ function mergeOne(segs: Seg[], tol: number, out: Seg[]): void {
 }
 
 /** 建页：路径对象与文字对象各包一层 `PObj`，再从路径里抽出直线段。 */
-export function buildPage(index: number, width: number, height: number, paths: VecObj[], runs: VecTextRun[]): SPage {
+export function buildPage(index: number, width: number, height: number, paths: VecObj[], runs: VecTextRun[], barlineHeight?: number): SPage {
   const pg = new SPage(index, width, height);
   let id = 0;
-  pg.barlineHeight = estimateBarlineHeight(runs, width);
+  // 转曲的谱没有音乐字体可量字号：调用方按谱线量好谱表高给进来（`outlineomr/`）
+  pg.barlineHeight = barlineHeight ?? estimateBarlineHeight(runs, width);
   const raw: Seg[] = [];
   for (const p of paths) {
     const o = new PObj(id++, p, null);
@@ -1233,11 +1234,12 @@ export function makeBars(pg: SPage, opts: { keepRoomyHead?: boolean } = {}): voi
     const xs = marks.map((m) => m.x);
     let left = stf.box.left;
     let pendingLeftRepeat = false;
-    // 一行谱的第一小节，左端反复要从**上一行末尾**接过来（跨行的 `|:` 印在行首）
-    let prevLeftRepeat = marks[0]?.repeat === "forward" || marks[0]?.repeat === "both";
     // **两条小节线挨得比两个线距还近，就是同一处**（细+粗的终止线、反复线的两笔）。
     // 原先用半个线距当门槛，实测会在终止线处切出一个 4pt 宽、一个音符都没有的空小节。
     const minBar = (stf.stepDistance() || 1) * 4;
+    // 一行谱的第一小节，左端反复要从**上一行末尾**接过来（跨行的 `|:` 印在行首）。
+    // 头一根标记要真在行首：行首没有标记时它是行内第一根（祢話如甘霖第三行 m10 后的 `|:` 曾记到行首小节上）
+    let prevLeftRepeat = (marks[0]?.repeat === "forward" || marks[0]?.repeat === "both") && marks[0].x - stf.box.left < minBar;
     for (const x of xs) {
       if (x - left < minBar) {
         left = x;
@@ -1247,8 +1249,9 @@ export function makeBars(pg: SPage, opts: { keepRoomyHead?: boolean } = {}): voi
       bar.left = left;
       bar.right = x;
       const mk = marks.find((m) => m.x === x);
-      bar.rightStyle = mk?.style ?? null;
       bar.rightRepeat = mk?.repeat === "backward" || mk?.repeat === "both";
+      // 只是 `|:` 的那根（粗 + 细 + 点）：粗笔属于下一小节的反复记号，不是这一小节的终止线
+      bar.rightStyle = mk?.repeat === "forward" ? null : (mk?.style ?? null);
       // `|:` 记在**下一小节**的左端（MusicXML 的 forward repeat 挂在 location="left"）
       pendingLeftRepeat = mk?.repeat === "forward" || mk?.repeat === "both";
       bar.leftRepeat = prevLeftRepeat;

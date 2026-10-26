@@ -233,7 +233,9 @@ export async function recognizeRasterSong(
       .sort((a, b) => a - b);
     return { lyric: ns.some((n) => n.lyrics?.length), pitch: ps.length ? ps[ps.length >> 1]! : null, label: labelOf.get(st) ?? null };
   };
-  let score = buildScore(entries, { lyricsBelow, profileOf });
+  // 简线混排谱（认出了简谱行）：单行谱表的系统都归 P1
+  const soloToFirst = pages.some((p) => p.result.jianpuStrips.length > 0);
+  let score = buildScore(entries, { lyricsBelow, profileOf, soloToFirst });
   const credits = (header ?? []).map(({ text, type, justify, size, box }) => ({ text, type, justify, box, ...(headerPage ? { size: pageTextPt(headerPage, size) } : {}) }));
   // 没给标题（编辑器里打开的图、PDF）就拿页眉的头一个标题
   const title = opts.title ?? credits.find((c) => c.type === "title")?.text;
@@ -249,7 +251,7 @@ export async function recognizeRasterSong(
     },
     restructure: (op) => {
       if (!restructureSystems(entries, op)) return null;
-      score = buildScore(entries, { lyricsBelow, profileOf });
+      score = buildScore(entries, { lyricsBelow, profileOf, soloToFirst });
       return { xml: scoreToMusicXml(score, notesOf, { title, credits, crossPageTies: true, ...idOpts }), score };
     },
   };

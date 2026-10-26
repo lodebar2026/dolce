@@ -21,6 +21,8 @@
 import type { Binary, Rect } from "../omrkit/types";
 import { levelRows, type RasterUnit } from "./staffline";
 import type { OcrChar } from "./lyric";
+import type { SPage } from "../staffomr/model";
+import type { StaffNote } from "../staffomr/notedata";
 import { CHORD_TOKEN_RE, blankNonChord, isChordLineCoverage } from "../omrkit/chordgrammar";
 import { contentKey } from "../omrkit/contentkey";
 import { components } from "../omrkit/ccl";
@@ -332,6 +334,8 @@ const fixTail = (s: string): string => s.replace(/(?<=[A-G][#b]?)[iíjl]$/, "7")
  * 每个记号 / 文本的 x 由它头尾两个字符的 `xFrac` 定；文本按 OCR 原字符交出（空格、标点照留）。
  */
 const HAN = /\p{Script=Han}/u;
+/** 读成一个 S 的整条高宽比下限：𝄋 高过宽（祢話如甘霖 60×43），延长记号扁 */
+const SEGNO_TALL = 1.2;
 
 export function readHarmonyStrip(strip: HarmonyStrip, chars: OcrChar[]): { chords: HarmonyToken[]; texts: HarmonyToken[] } {
   const chords: HarmonyToken[] = [];
@@ -343,6 +347,9 @@ export function readHarmonyStrip(strip: HarmonyStrip, chars: OcrChar[]): { chord
     return { x: Math.min(x0, x1), y: strip.box.y, w: Math.max(1, Math.abs(x1 - x0)), h: strip.box.h };
   };
   const textOf = (a: number, b: number) => chars.slice(a, b + 1).map((c) => c.ch).join("").trim();
+  // 𝄋 单独成一条（祢話如甘霖反复起点的小节线上方）：rec 读成 S / § / $。要竖长——延长记号读成的 S 是扁的
+  if (/^[S§$]$/.test(textOf(0, chars.length - 1)) && strip.h >= strip.w * SEGNO_TALL)
+    return { chords, texts: [{ text: "segno", box: strip.box, staff: strip.staff, kind: "mark" }] };
   // 1. 记号词：按字符等长抹（一个 OCR 字符一格，抹掉的格子就是记号词的字）
   const orig = chars.map((c) => (c.ch.length === 1 ? c.ch : c.ch[0] ?? " ")).join("");
   const blanked = blankNonChord(orig);
@@ -424,4 +431,31 @@ export function harmonyLine(chords: HarmonyToken[], texts: HarmonyToken[]): { ch
   if (isChordLine || !chords.length) return { chords, texts };
   const all = [...texts, ...chords.map((t): HarmonyToken => ({ ...t, kind: "word" }))].sort((p, q) => p.box.x - q.box.x);
   return { chords: [], texts: all };
+}
+
+/** 和弦带里读出的跳转记号词（`D.S.al.Fine`、`Fine.`、`To Coda`）：挂成文字指示 */
+const JUMP_MARK_RE = /^(?:D\.?\s*[SC]\b|fine\.?$|to\s*coda|coda$)/i;
+
+/**
+ * 和弦带里的跳转记号（简线混排谱把 D.S. al Fine、Fine、𝄋 印在和弦那一高度，`readHarmonyStrip` 认成 `mark`）挂到音上：
+ * 𝄋 挂给右边最近的音（同矢量路 `attachSigns`），记号词照文字指示带那一路挂
+ * （`words.ts::attachWordLines`：字行左端往左让一格之后右边最近的音，没有取这行最后一个）。
+ * `texts` 的 `staff` 是 `pg.staves` 的下标。位图路与转曲矢量路共用。
+ */
+export function attachJumpMarks(pg: SPage, notes: StaffNote[], texts: readonly HarmonyToken[], sp: number): void {
+  for (const t of texts) {
+    if (t.kind !== "mark" || !(t.text === "segno" || JUMP_MARK_RE.test(t.text))) continue;
+    const st = pg.staves[t.staff];
+    if (!st) continue;
+    const row = notes.filter((n) => n.staff === st && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
+    if (t.text === "segno") {
+      const n = row.find((q) => q.x >= t.box.x);
+      if (n && !(n.signs ?? []).includes("segno")) (n.signs ??= []).push("segno");
+      continue;
+    }
+    const n = row.find((q) => q.x >= t.box.x - sp) ?? row[row.length - 1];
+    if (!n) continue;
+    const box = { left: t.box.x, right: t.box.x + t.box.w, top: t.box.y, bottom: t.box.y + t.box.h };
+    (n.words ??= []).push({ text: t.text, above: true, size: pg.inkTextSize?.(t.box, t.text) || t.box.h, baseY: box.bottom, box });
+  }
 }

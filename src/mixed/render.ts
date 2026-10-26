@@ -1590,7 +1590,7 @@ export function drawSystem(container: Group, sys: Sys): Group {
     if (!st.staffVisible) continue;
     ypos += st.distance;
     // 谱表带上沿：混排第一子谱表连同上方的简谱层（与 `drawJianpuOverlay` 的 jpOffY 同式）
-    const mixedTop = st.partStaff.getNotation(new Fraction(0)) === Notation.Mixed && st.partStaff.subIndex === 0
+    const mixedTop = st.partStaff.getNotation(sys.measures[0].offset) === Notation.Mixed && st.partStaff.subIndex === 0
       ? ypos + st.minY - eng.mixStaffDist - eng.mixStaffHeight
       : ypos;
     top ??= mixedTop;

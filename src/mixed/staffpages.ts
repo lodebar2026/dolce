@@ -69,8 +69,9 @@ export function formatMixedScore(score: StaffLayout, jianpuPart = 0): void {
 
   // Set Mixed notation for first staff from tick 0
   p.staves[0].notation.set(new Fraction(0), Notation.Mixed);
+  const hosts = mixedHostsBySystem(score, p);
 
-  placeAboveStaff(score, true);
+  placeAboveStaff(score, true, hosts);
 
   // P2 lyric font × 0.8
   const lastPart = score.parts[score.parts.length - 1];
@@ -81,6 +82,30 @@ export function formatMixedScore(score: StaffLayout, jianpuPart = 0): void {
   }
   // 谱表间距照 MusicXML 的 staff-distance，不按包围盒抬高（formatScorePAO 没有这一步；
   // 成品《受苦圣徒，到基督前》各行谱表间距正是 staff-distance 原值）
+}
+
+/**
+ * 简谱层所在声部的谱表在某个系统里藏着（单行谱的系统只印了另一个声部）：这一系统的简谱层改叠在**第一个可见谱表**上，
+ * 不然整行简谱层是空的（识别的简线混排谱，单行与两行谱表交替）。`notation` 是按 tick 的表，在系统首拍切过去、下一系统首拍切回来。
+ * 返回借去叠简谱层的声部（不含 `p`）。
+ */
+function mixedHostsBySystem(score: StaffLayout, p: PartLayout): PartLayout[] {
+  const hosts = new Set<PartLayout>();
+  for (const sys of score.systems) {
+    const own = sys.staves.find((st) => st.part() === p && st.partStaff.subIndex === 0);
+    if (!own || own.staffVisible) continue;
+    const alt = sys.staves.find((st) => st.staffVisible && st.partStaff.subIndex === 0);
+    if (!alt) continue;
+    const t0 = sys.measures[0].offset;
+    const t1 = sys.measures[sys.measures.length - 1].endTick();
+    // 后面的系统按次序再设，同一 tick 后设的覆盖：连着几个系统都借时不会被切回去
+    p.staves[0].notation.set(t0, Notation.Normal);
+    p.staves[0].notation.set(t1, Notation.Mixed);
+    alt.partStaff.notation.set(t0, Notation.Mixed);
+    alt.partStaff.notation.set(t1, Notation.Normal);
+    hosts.add(alt.part());
+  }
+  return [...hosts];
 }
 
 /** 第一声部谱表上方那一摞：量上沿（`calcMixedStaffY`）→ 和弦 y → 自动放置的速度/文字记号抬过去。
@@ -95,22 +120,27 @@ const SIGN_CLEAR = 8;
 /** 行首 segno / coda 离小节号右缘（tenths） */
 const AFTER_BAR_NUMBER = 3;
 
-export function placeAboveStaff(score: StaffLayout, mixed: boolean): void {
+export function placeAboveStaff(score: StaffLayout, mixed: boolean, hosts: readonly PartLayout[] = []): void {
   // 源谱版面档逐个声部摞：首个声部常整行不印（合唱谱人声进来之前），文字记号挂在下面的声部上（望十架曲首的速度与「unis.」叠成一团）
   const ps = score.keepBreaks ? score.parts : score.parts.slice(0, 1);
   for (const p of ps) placePartAboveStaff(score, p, mixed);
+  // 借去叠简谱层的声部（`mixedHostsBySystem`）：只在它叠着简谱层的那几个系统里摞
+  for (const p of hosts) if (!ps.includes(p)) placePartAboveStaff(score, p, mixed, true);
   // 文字往上摞过后与上一谱表的不碰距离要重量（谱表距离是排行时按当时的文字高量的）
   if (score.keepBreaks) autoStaffDistances(score);
 }
 
-function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean): void {
+function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean, hostingOnly = false): void {
   if (!p || p.staves.length === 0) return;
+  const hosting = (sys: Sys): boolean => p.staves[0]!.getNotation(sys.measures[0].offset) === Notation.Mixed;
   // Calculate mixed staff y positions (needs chords/slurs in place)
-  p.calcMixedStaffY();
+  if (!hostingOnly) p.calcMixedStaffY();
+  else for (const sys of score.systems) if (hosting(sys)) for (const st of sys.staves) if (st.part() === p) st.calcMixedStaffY(sys);
 
   const eng = score.options;
   const [harmTop, harmBot] = harmonyBand(score);
   for (const sys of score.systems) {
+    if (hostingOnly && !hosting(sys)) continue;
     for (const st of sys.staves) {
       if (st.part() !== p) continue;
       // 纯五线谱：和弦底贴着谱表上沿（高音、朝上符干、上方弧）再留一点空。`calcMixedStaffY` 的 harmonyY

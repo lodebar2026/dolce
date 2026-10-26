@@ -32,3 +32,4 @@ export * from "../pdflayout/booktemplate";
 export * from "../pdflayout/manifest";
 export { creatorOf, creatorTypeOf, META_KEYS } from "../model/metakeys";
 export type { Binary, Component, Rect, JpNum, StaffRow, RecognizedScore, TextRegion } from "../omrkit/types";
+export * from "../outlineomr/index";

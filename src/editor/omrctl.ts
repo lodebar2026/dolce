@@ -485,7 +485,11 @@ export class OmrController implements FormatSource {
         const bytes = this.lastInputs[0]!.bytes;
         const doc = await sb.openStaffPdf(bytes);
         try {
-          return land(await sb.vectorOverlayResult(doc, await sb.recognizeStaffPdf(doc, { noteIds: true })));
+          // 转曲的矢量谱（`outlineomr/`）重跑要带 OCR（文字是路径），慢一些
+          const res = (await sb.isStaffPdf(doc.pdf, doc.OPS))
+            ? await sb.recognizeStaffPdf(doc, { noteIds: true })
+            : await (await import("../outlineomr/browser")).recognizeOutlinedPdf(doc, { noteIds: true });
+          return land(await sb.vectorOverlayResult(doc, res));
         } finally {
           doc.pdf.destroy?.();
         }
@@ -1133,21 +1137,25 @@ export class OmrController implements FormatSource {
     vectorOverlayResult: typeof import("../staffomr/browser").vectorOverlayResult,
   ): Promise<boolean> {
     let ok = false;
+    // 文字层完整的走矢量路；没有文字层、路径里有五线谱的（文字与音乐字形都转了曲）走 `outlineomr/`，不再落到简谱识别
+    let outlined: typeof import("../outlineomr/browser") | null = null;
     try {
       ok = await isStaffPdf(doc.pdf, doc.OPS);
+      if (!ok) {
+        const ob = await import("../outlineomr/browser");
+        if (await ob.isOutlinedStaffPdf(doc.pdf, doc.OPS)) (outlined = ob), (ok = true);
+      }
     } catch {
       return false;
     }
     if (!ok || g !== this.gen) return false;
     void this.showPending(this.lastInputs, g);
-    const res = await recognizeStaffPdf(doc, {
-      onProgress: (done, total) => {
-        if (g !== this.gen) return;
-        this.host.setStatus(t("omr.staffProgress", { done, total }));
-        this.markPendingDone(done);
-      },
-      noteIds: true,
-    });
+    const onProgress = (done: number, total: number) => {
+      if (g !== this.gen) return;
+      this.host.setStatus(t("omr.staffProgress", { done, total }));
+      this.markPendingDone(done);
+    };
+    const res = outlined ? await outlined.recognizeOutlinedPdf(doc, { onProgress, noteIds: true }) : await recognizeStaffPdf(doc, { onProgress, noteIds: true });
     if (g !== this.gen) return true; // 过时：不落地，也不让调用方再按简谱试
     if (!res.notes) {
       this.host.setStatus(t("omr.noStaff"));
@@ -1174,7 +1182,8 @@ export class OmrController implements FormatSource {
     } catch (e) {
       console.warn("矢量 PDF 渲不出对照底图", e);
     }
-    if (g2 === this.gen) await this.enterAfterRecognize("staff");
+    // 转曲的简线混排谱（认出了简谱行）进混排档，同位图路
+    if (g2 === this.gen) await this.enterAfterRecognize(outlined && "jianpu" in res && res.jianpu ? "mixed" : "staff");
     this.host.setStatus(
       t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: res.pages, parts: res.parts, notes: res.notes }) +
         (res.skipped ? t("omr.staffSkipped", { n: res.skipped }) : "") +

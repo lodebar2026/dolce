@@ -369,6 +369,8 @@ export function buildScore(
     slots?: number[][];
     /** 下方紧挨着一行谱、两行之间印着歌词的谱行（闭合人声谱的上谱表）：大谱表那两条并声部的规则遇到这样的一对不并，另起声部并用方括号括起 */
     lyricsBelow?: ReadonlySet<Staff>;
+    /** 简线混排谱：只有一行谱表的系统一律归第一个声部（单行就是旋律；按音域分会让各行在两个声部间来回跳，混排简谱层跟着空掉） */
+    soloToFirst?: boolean;
   } = {},
 ): StaffScore {
   const systems: StaffScore["systems"] = [];
@@ -380,7 +382,8 @@ export function buildScore(
   // ── 有内容剖面时走**全局指派**（见 `assignSlots`）；外面给了指派就照它（-1 = 忽略）──────
   // 每个系统都只有一行谱（分谱）：就是同一行，不拿签名比——谱号会换（八段锦大提琴 m34 起几行换次中音谱号，按谱号拆成了两个声部）
   const single = !opts.slots && systems.length > 0 && systems.every((e) => e.sys.staves.length === 1) ? systems.map(() => [0]) : null;
-  const slots = opts.slots ?? single ?? (opts.profileOf ? assignSlots(tokensOf) : null);
+  let slots = opts.slots ?? single ?? (opts.profileOf ? assignSlots(tokensOf) : null);
+  if (slots && opts.soloToFirst && !opts.slots) slots = slots.map((pick) => (pick.length === 1 ? [0] : pick));
   if (slots) {
     const n = Math.max(1, ...slots.map((p) => Math.max(-1, ...p) + 1));
     for (let k = 0; k < n; k++) {

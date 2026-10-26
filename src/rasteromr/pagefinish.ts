@@ -9,7 +9,7 @@ import { findStaffLabels, labelKey, normalizeLabel } from "./stafflabel";
 import { makeTextObj, makeSymObj } from "./adapt";
 import { attachHarmonies, type LyricLine, buildLyricLines, attachLyrics, lyricObjLabel } from "../staffomr/textanalyze";
 import { liftHarmonies, lyricsBelongBelow, keepGapRowOrder, foldBilingualLyrics, splitSmallEchoes, moveEchoLines, splitVoiceLyrics, numberVersesByScript, liftLyrics } from "./lyricpost";
-import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, mapCharsToCells, stripWithout } from "./lyric";
+import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, mapCharsToCells, stripWithout, jumpTail } from "./lyric";
 import type { Staff, PObj, SPage, Sym } from "../staffomr/model";
 import type { Component, Rect, Binary } from "../omrkit/types";
 import { type StaffNote, keyFifths, checkBars, lastTimeSignature, type BeamShape, type StaffContext } from "../staffomr/notedata";
@@ -32,7 +32,7 @@ import { touchesText } from "./pagetext";
 import { unknownObjs } from "../staffomr/page";
 import { lastKey } from "./keysig";
 import type { ContourLedger } from "./ledger";
-import type { HarmonyStrip, HarmonyToken } from "./harmony";
+import { attachJumpMarks, type HarmonyStrip, type HarmonyToken } from "./harmony";
 import type { RasterPage } from "./rasterpage";
 import { liftOf, type LineGrid, type RasterUnit, type StaffGroup, type StaffLineRun } from "./staffline";
 import type { TimeStrip } from "./timesig";
@@ -280,6 +280,9 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     liftHarmonies(notes, pg.normalStaffSpace || pg.space);
   }
 
+  // ── 和弦带里的跳转记号（D.S. al Fine、Fine、𝄋）：见 `harmony.ts::attachJumpMarks`
+  attachJumpMarks(pg, notes, harmonyTexts, unit.space);
+
   // ── 歌词 ────────────────────────────────────────────────────────────────
   //
   // **不走 `analyzeText`**：那一步靠「带连字符的音节」「音节间的延长线」当锚点
@@ -512,9 +515,22 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     /** 行首印着段号的歌词对象。 */
     const verseObjs = new Set<PObj>();
     for (const strip of ocr ? lyricStrips : []) {
-      const chars = charsFix.get(strip) ?? ocr!.get(stripKey(strip));
+      let chars = charsFix.get(strip) ?? ocr!.get(stripKey(strip));
       if (!chars) continue; // 缓存没命中：这一条没跑过 OCR，宁可留空不编造
       lyricStats.hit++;
+      // 汉字歌词行尾印着的跳转记号（祢話如甘霖二房末「…華美！Fine.」）：摘出来挂成谱表下方的文字指示，不当英文歌词
+      const tail = jumpTail(chars);
+      if (tail) {
+        chars = tail.rest;
+        const x = strip.box.x + tail.xFrac * strip.box.w;
+        const st = pg.staves.filter((q) => q.box.bottom < strip.box.y && x > q.box.left && x < q.box.right + unit.space).sort((a, b) => b.box.bottom - a.box.bottom)[0];
+        const row = st ? notes.filter((n) => n.staff === st && !n.chordExtra && !n.grace && n.x <= x).sort((a, b) => a.x - b.x) : [];
+        const n = row[row.length - 1];
+        if (n) {
+          const box = { left: x, right: strip.box.x + strip.box.w, top: strip.box.y, bottom: strip.box.y + strip.box.h };
+          (n.words ??= []).push({ text: tail.text, above: false, size: strip.charH, baseY: box.bottom, box });
+        }
+      }
       // **页脚小字不是歌词**：赞美三一真神末行下面的版权行（字高 12，歌词 34~41）离低音谱表
       // 不到两个谱表高，被收成男声的第 1 段
       // 短拉丁音节（`charsFix`，已按音位验过）放宽到一半：「Glo」字高按块高中位数量，小写字母只有汉字的三成多
