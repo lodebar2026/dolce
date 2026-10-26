@@ -574,6 +574,40 @@ function sourceBreaks(score: StaffLayout, input: LayoutInput): Set<number> {
   return breaks;
 }
 
+/** 源文写明的换行（ABC，`hardBreaks` 而非源谱版面档）：起行照 `sourceBreaks`，源文的行不并。
+ *  只有连最紧一档（`Slot.tight`）都压不下的行——多半是源文没写换行、整首一行（没写 `$` 的 123 转出的 ABC 就是这样）——
+ *  才在行内按自然宽均分成几行，免得压成墨迹相叠的第四档。 */
+function writtenBreaks(score: StaffLayout, input: LayoutInput): Set<number> {
+  const breaks = sourceBreaks(score, input);
+  const n = score.measures.length;
+  const d = score.defaults;
+  const avail = d.pageWidth - d.leftMargin - d.rightMargin;
+  const tight: Squeeze = { mode: 3, s: 0 };
+  const starts = [...breaks].sort((a, b) => a - b);
+  starts.forEach((from, k) => {
+    const to = starts[k + 1] ?? n;
+    const w = (i: number) => score.measures[i]!.width + (i > from ? midAttrWidth(score, i) : 0);
+    let min = autoLead(score, from) - AUTO_ATTR_GAP + TIGHT_ATTR_GAP;
+    let nat = autoLead(score, from);
+    for (let i = from; i < to; i++) {
+      min += squeezedWidth(score, i, tight) + (i > from ? midAttrWidth(score, i) : 0);
+      nat += w(i);
+    }
+    if (min <= avail) return;
+    const pieces = Math.ceil(nat / avail);
+    let acc = autoLead(score, from);
+    let m = 1;
+    for (let i = from; i < to - 1 && m < pieces; i++) {
+      acc += w(i);
+      if (acc >= (nat * m) / pieces) {
+        breaks.add(i + 1);
+        m++;
+      }
+    }
+  });
+  return breaks;
+}
+
 /** 源谱版面档过满的行：小节 → 怎么压的（`Squeeze`）。没压的小节不在表里 */
 const squeezeOf = new WeakMap<MeasureLayout, Squeeze>();
 
@@ -1630,7 +1664,9 @@ export function finishMixedScore(score: StaffLayout, input: LayoutInput, partGro
   // 源谱版面档的页眉带着原图的位置与字号（`staffomr/toxml.ts::creditsXml`）：照原样排，不重排
   const placedHeader = score.keepBreaks && score.credits.some((c) => c.type === "title") && score.credits.every((c) => c.y > 0);
   if (autoLayout && !placedHeader) autoLayoutHeader(score);
-  const autoBreaks = autoLayout ? (score.hardBreaks ? sourceBreaks(score, input) : autoLayoutWidths(score, input)) : undefined;
+  const autoBreaks = !autoLayout
+    ? undefined
+    : score.keepBreaks ? sourceBreaks(score, input) : score.hardBreaks ? writtenBreaks(score, input) : autoLayoutWidths(score, input);
   buildSystemsAndPages(score, input, autoBreaks);
   applyStaffVisibility(score, input);
   updateLayoutByPrint(score, input);

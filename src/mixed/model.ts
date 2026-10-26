@@ -3426,7 +3426,8 @@ export class StaffLayout {
   keepBreaks = false;
   /**
    * 自动铺排时 `new-system` / `new-page` 是硬断点：源谱版面档（`keepBreaks`），或源文写明的换行（`MixedOptions.sourceBreaks`）。
-   * 后者只管分行分页——过满的行同源谱版面档那样压（`justifySourceSystem`），不满的照常拉、换页照写明的换，
+   * 后者只管分行分页——过满的行同源谱版面档那样压（`justifySourceSystem`），压不下的才在行内再拆（`writtenBreaks`），
+   * 不满的照常拉、换页照写明的换，
    * 纵向与装页仍按自动铺排。
    */
   hardBreaks = false;
