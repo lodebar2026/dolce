@@ -9,7 +9,7 @@
 // 照着 layout/walk.ts 的骨架递归扁平化一次就完事，逻辑一比一对应、不冒回归风险。
 import { GraphicPath, JpNumber, JpOctaveDot, Lyric, PageItem, SmuflText, TextFrame } from "../layout/pageitem";
 import type { DrawItem, DrawPage, DrawText } from "./drawlist";
-import type { BookStyle } from "./bookstyle";
+import type { BookStyle } from "../style/bookstyle";
 import type { StyleRole } from "../style/sheet";
 import { computeStyle } from "../style/cascade";
 import { THEMES } from "../style/themes";

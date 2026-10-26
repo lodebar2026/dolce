@@ -4,12 +4,12 @@
 //   - 识别结果（`OmrController`）：真身是 `RecognizedScore`，切格式 = 从识别结果重出文本、不重跑识别；
 //   - 打开的文件与五线谱识别结果（下面的 `DocFormatSource`）：真身起初是**原文**，在哪种格式里改过就换成那份。
 //     切到别的格式 = 从真身的模型写出（装不下的先列出来、给出装得下的建议格式）；切回真身的格式 = 逐字还原。
-// 两者出文本走同一张转换目标表（`model/convert.ts`）。
+// 两者出文本走同一张转换目标表（`convert/targets.ts`）。
 //
 // 下拉顶掉格式标签（`index.html` 的 `#doc-format-field`）：切的本来就是代码区里这份文本是什么格式。
 
 import type { ScoreDoc } from "../model/doc";
-import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../model/convert";
+import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../convert/targets";
 import { describeLosses, planSave, type Loss } from "../model/capability";
 import { scoreDocToMusicXml } from "../model/toxml";
 import type { DocFormatId } from "./formats";

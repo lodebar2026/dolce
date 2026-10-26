@@ -4,7 +4,7 @@ import { toMidi } from "../score/midi";
 import { buildPptx } from "./pptx";
 import { ScorePainter } from "../layout/painter";
 import { isTauriRuntime, saveBytes } from "./fileio";
-import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../model/convert";
+import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../convert/targets";
 import { asset } from "../common/asset";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { loadScoreDoc } from "../model/fromxml";

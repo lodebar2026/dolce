@@ -5,7 +5,7 @@
 import type { StyleRole } from "../style/sheet";
 import type { ComponentFn, Placed } from "../style/template";
 import { parseAvoid } from "../style/ss";
-import type { BookStyle } from "./bookstyle";
+import type { BookStyle } from "../style/bookstyle";
 import type { DrawItem } from "./drawlist";
 import { keyMeterItems, textItem, type KeyMeterSpec, type Measure } from "./bookparts";
 

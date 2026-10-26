@@ -12,7 +12,7 @@
 import type { Rect } from "../omrkit/types";
 import type { PageSpec, TextRun, MarkSpec, SongPlacement } from "./spec";
 import type { BookProfile } from "../omr/bookprofile";
-import { defaultBookStyle, inkSampleOf, roleFontDefaults, type BookStyle, type RoleStyle } from "./bookstyle";
+import { defaultBookStyle, inkSampleOf, roleFontDefaults, type BookStyle, type RoleStyle } from "../style/bookstyle";
 import { STYLE_ROLES, type FontRef, type StyleRole } from "../style/sheet";
 
 /** 段落词（副歌/间奏…）印在和弦带里，字号是那一带的（实测 7pt 上下），

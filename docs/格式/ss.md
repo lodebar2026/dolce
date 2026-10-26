@@ -112,7 +112,7 @@
 
 键：`enable` `lines-per-page` `target-measures` `length-weight` `break-weight` `mid-break` `merge-short` `even-weight`
 `tail-weight` `content-only` `parallel-weight` `tail-long-weight` `more-rows-slack` `fit-slack`，
-各自的含义见 `pdflayout/bookstyle.ts::BookLayoutOpts`。
+各自的含义见 `style/bookstyle.ts::BookLayoutOpts`。
 
 ### 2.4 `@page`：纸
 

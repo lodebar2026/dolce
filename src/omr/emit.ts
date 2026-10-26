@@ -3,7 +3,7 @@
 // `RecognizedScore` 是**格式无关**的那一份，识别完留在内存里；换输出格式只重走这里，
 // **绝不重跑识别**（识别要几十秒，格式转换是毫秒级）。
 //
-// 各格式一律先转成模型（`recognizedToDoc`），再由转换目标表（`model/convert.ts`）写成文本——
+// 各格式一律先转成模型（`recognizedToDoc`），再由转换目标表（`convert/targets.ts`）写成文本——
 // 与打开文件后切格式、另存为别的格式是同一张表、同一批写出端。文本谱以前另有一个直接从识别结果写的
 // emitter，已退役（`model/topu.ts` 是唯一一份）：两份写出端的判据迟早分叉。
 //
@@ -12,7 +12,7 @@
 // 识别模式「原图对照」的点选定位（omrctl.ts::rangeOfHit）因此不必分格式。
 import type { JpwMeta, RecognizedScore } from "../omrkit/types";
 import type { ScoreDoc } from "../model/doc";
-import { CONVERT_TARGETS, type ConvertTarget } from "../model/convert";
+import { CONVERT_TARGETS, type ConvertTarget } from "../convert/targets";
 import { recognizedToDoc } from "./todoc";
 import { metaFrom123, metaFromJcx, metaFromPu } from "./meta";
 

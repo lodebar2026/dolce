@@ -11,7 +11,7 @@ import { formatOf, type DocFormatId, type FormatAdapter } from "./formats";
 import { describeLosses, planSave } from "../model/capability";
 import { packProject, PROJECT_EXT, type ProjectSnapshot } from "./omrproject";
 import { clearLastFile, loadLastFile, saveLastFile } from "./settings";
-import { targetSpec, type ConvertTarget } from "../model/convert";
+import { targetSpec, type ConvertTarget } from "../convert/targets";
 import { showConfirmDialog } from "./dialogs";
 import { t } from "../i18n";
 import { targetLabel } from "../i18n/labels";

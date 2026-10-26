@@ -17,7 +17,7 @@
 // 由消费端原来的 `??` 兜底——补了默认值，出书结果就会变。
 //
 // 无 DOM 依赖。
-import type { BookStyle, RoleStyle } from "../pdflayout/bookstyle";
+import type { BookStyle, RoleStyle } from "./bookstyle";
 import type { Expr } from "./ss";
 import { BREAK_KEYS, FLOW_KEYS, JIANPU_KEYS, TOC_KEYS, type KeyDef } from "./keys";
 import { STYLE_ROLES, type AlignMode, type StyleRole, type StyleSheet } from "./sheet";

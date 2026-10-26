@@ -6,7 +6,7 @@
 // 常量改存比例会出浮点尾差（`em/20` 与 `em*0.05` 在 28 上差一个 ulp），几何基线就破了。
 //
 // 无 DOM 依赖（Node CLI 与浏览器两侧都要 import）。
-import type { BookStyle } from "../pdflayout/bookstyle";
+import type { BookStyle } from "./bookstyle";
 import type { TemplateSheet } from "./ss";
 import type { Length } from "./units";
 
@@ -106,7 +106,7 @@ export interface RoleDecl {
   features?: string;
   /** 成书：逐字定位的口径（`align-mode: ink-center`），见 `AlignMode`。 */
   alignMode?: AlignMode;
-  /** 成书：基线修正（× 字号），见 `pdflayout/bookstyle.ts::RoleStyle.baselineAdjust`。 */
+  /** 成书：基线修正（× 字号），见 `style/bookstyle.ts::RoleStyle.baselineAdjust`。 */
   baselineAdjust?: number;
 }
 

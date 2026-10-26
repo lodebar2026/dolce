@@ -16,7 +16,7 @@ export interface PersistedSettings {
   zoom?: number;
   mixedHideBarNumber?: boolean;
   mixedShowJianpuLayer?: boolean;
-  /** 打开单声部 MusicXML 时：`ask` / `musicxml` / 转换目标（`model/convert.ts`）。App 自己校验 */
+  /** 打开单声部 MusicXML 时：`ask` / `musicxml` / 转换目标（`convert/targets.ts`）。App 自己校验 */
   musicXmlImport?: unknown;
   /** 诗集样式表的手动指定：目录 → 路径（空串 = 不用）。App 自己校验 */
   bookSheets?: unknown;

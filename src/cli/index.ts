@@ -22,7 +22,7 @@ export * from "../style/ss";
 export * from "../style/template";
 export * from "../style/themes";
 export * from "../style/bookss";
-export * from "../pdflayout/bookstyle";
+export * from "../style/bookstyle";
 export * from "../pdflayout/stats";
 export * from "../pdflayout/drawlist";
 export * from "../pdflayout/align";

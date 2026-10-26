@@ -12,9 +12,9 @@
 //
 // 无 DOM 依赖。
 import type { PageSpec, TextRun, PageKind } from "./spec";
-import type { BookStyle } from "./bookstyle";
+import type { BookStyle } from "../style/bookstyle";
 import type { AlignMode, StyleRole } from "../style/sheet";
-import { roleOf } from "./bookstyle";
+import { roleOf } from "../style/bookstyle";
 
 export interface DrawText {
   t: "text";

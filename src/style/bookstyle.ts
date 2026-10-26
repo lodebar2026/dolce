@@ -4,18 +4,18 @@
 //   A 路（relayout --mode=text，文字原位替换）  位置来自原件 PageSpec，样式来自这里
 //   B 路（rebuild，从 musicxml 数据重排）        位置由排版引擎算，样式也来自这里
 //
-// 值一律由 `stats.ts` 从原书 `out/pdf-layout.json` 统计**中位数**得来（见 scripts/gen-bookstyle.mjs），
+// 值一律由 `pdflayout/stats.ts` 从原书 `out/pdf-layout.json` 统计**中位数**得来（见 scripts/gen-bookstyle.mjs），
 // 不是拍脑袋的常量——「保留原书的字体与间距特征」就落在这里。
 //
 // 单位约定（**改字段前先看这条**）：
 //   - 角色的 `size` 是**字号**（font-size，pt），不是墨迹高。原书只量得到墨迹高，
-//     换成字号在生成时做（`stats.ts::inferBookStyle` 的 `inkRatio`，按各角色的样本字实测字体）。
+//     换成字号在生成时做（`pdflayout/stats.ts::inferBookStyle` 的 `inkRatio`，按各角色的样本字实测字体）。
 //   - 随字号缩放的量一律存 em（`*Em` 后缀），基准是**音符字号** `roles.note.size`；
 //     换字号时版式自动跟随。
 //   - 不随字号缩放的量（线宽、点直径、页面尺寸、页边距）存 pt。
 //
 // 无 DOM 依赖（Node CLI 与浏览器两侧都要 import）。
-import { STYLE_ROLES, mergeStyle, type AlignMode, type DeepPartial, type FontRef, type StyleRole } from "../style/sheet";
+import { STYLE_ROLES, mergeStyle, type AlignMode, type DeepPartial, type FontRef, type StyleRole } from "./sheet";
 
 export interface RoleStyle {
   /** 引用 BookStyle.fonts 的键。 */
@@ -30,7 +30,7 @@ export interface RoleStyle {
 }
 
 /** 间距。命名规则：`*Em` 随字号缩放（基准音符字号 roles.note.size；个别项按歌词字号，见 `style/book.ts`），其余为 pt。
- *  每一项的量法见 docs/实现/成书排版.md 的「重排」一节与 stats.ts 的注释。
+ *  每一项的量法见 docs/实现/成书排版.md 的「重排」一节与 pdflayout/stats.ts 的注释。
  *  **只留排版真正读的量**：原书量到而排版不用的（`ink*` 描边宽、各处到谱行的距离…）只进
  *  `bookstyle-report.md` 作比对，不进这里。样式表里的写法见 `style/keys.ts` 的 `book` 一列。 */
 export interface BookMetrics {
@@ -72,7 +72,7 @@ export interface BookMetrics {
    *  原书实测（1205 条，页 40-240）：跨度 0-25pt 的弧高恒为 0.41 × 音符墨迹高
    *  （最短两桶完全相同，说明原书短弧是**定高**的），60-90pt 也才 0.66；
    *  Times 数字墨迹占字号 0.674，折成字号口径是 0.276 / 0.445。
-   *  上限另有一道「压在和弦带下面」的钳制，见 browser.ts。 */
+   *  上限另有一道「压在和弦带下面」的钳制，见 pdflayout/browser.ts。 */
   slurMaxArcEm?: number;
   slurMinArcEm?: number;
   /** 跨度超过「这么多个音符步距」就改画扁平长连音线（两端小钩 + 水平细线，
@@ -178,7 +178,7 @@ export interface BookLayoutOpts {
   maxHorizontalScale: number;
 }
 
-/** 目录与索引页的几何（pt，由 stats.ts 从原书目录/索引页实测）。排法仍在 `bookparts.ts::tocPages`，
+/** 目录与索引页的几何（pt，由 pdflayout/stats.ts 从原书目录/索引页实测）。排法仍在 `pdflayout/bookparts.ts::tocPages`，
  *  样式表里写在 `@toc`（键表 `style/keys.ts::TOC_KEYS`）。 */
 export interface TocRule {
   /** 引导点字符。 */
@@ -194,7 +194,7 @@ export interface TocRule {
   /** 页题基线（「目录」「诗题笔划索引」）。 */
   titleBaseline: number;
   /** 分类标题上下的净距（上一条目基线 → 标题基线 / 标题基线 → 下一条目基线），
-   *  由 stats.ts 从原书目录页实测。缺省时按行距推。 */
+   *  由 pdflayout/stats.ts 从原书目录页实测。缺省时按行距推。 */
   headingGapAbove?: number;
   headingGapBelow?: number;
 }
@@ -240,7 +240,7 @@ export function defaultFonts(): Record<string, FontRef> {
 }
 
 /** 各角色量墨迹高用的样本字：原书量到的是墨迹高，除以这个字在该角色字体里的「墨迹高 ÷ 字号」就是字号。
- *  没列的角色（汉字档）一律用「国」——`stats.ts` 汉字档也只按汉字取样，两边口径一致。 */
+ *  没列的角色（汉字档）一律用「国」——`pdflayout/stats.ts` 汉字档也只按汉字取样，两边口径一致。 */
 export const INK_SAMPLE: Partial<Record<StyleRole, string>> = {
   note: "5",
   tuplet: "3",
@@ -285,7 +285,7 @@ export function roleFontDefaults(): Record<StyleRole, { font: string; align: Ali
   return { ...ROLE_FONT };
 }
 
-/** 一份可用的默认样式（A4 之外的值都是占位，实际由 stats.ts 覆盖）。 */
+/** 一份可用的默认样式（A4 之外的值都是占位，实际由 pdflayout/stats.ts 覆盖）。 */
 export function defaultBookStyle(): BookStyle {
   const roles = {} as Record<StyleRole, RoleStyle>;
   for (const r of STYLE_ROLES) {

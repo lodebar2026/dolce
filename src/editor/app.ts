@@ -43,7 +43,7 @@ import { planSave } from "../model/capability";
 import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/parts";
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
-import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../model/convert";
+import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../convert/targets";
 import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
 import { assignDegrees } from "../model/jianpu";
 import { t } from "../i18n";
@@ -2721,7 +2721,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
   }
 
-  /** 当前文档 → 目标格式的文本（转换目标表 `model/convert.ts`）。同格式原文照给；转不了返回 null。
+  /** 当前文档 → 目标格式的文本（转换目标表 `convert/targets.ts`）。同格式原文照给；转不了返回 null。
    *  换行照简谱视图实际排出的行（`jianpuLineStarts`，与导出 MusicXML 同一口径：小节中间的只留源文写明的），
    *  写在一份克隆上（`breaks.ts::applyBreaks`）；走原样文档布局、量不出来的照源文的行。 */
   convertTo(target: ConvertTarget): string | null {

@@ -2,16 +2,16 @@
 import { Font } from "../../font";
 import { BeamLine, Group, type JpNumber } from "../../pageitem";
 import { sustainDash } from "../../../engrave/dash";
-import { beamY } from "../../../engrave/stack";
+import { beamY, highDotY, lowDotY } from "../../../engrave/stack";
 import { syllableRun } from "../../../engrave/syllable";
 import type { ElementId } from "../../../model/doc";
 import { addBarlineOwner } from "../../identity";
-import type { PlacedGroup, PlacedPage, PlacedVoice } from "../place/model";
-import { wordsLead } from "../place/vertical";
-import { type OriginalCtx, digitItem, digitOrigin, text } from "./ctx";
+import type { PlacedGroup, PlacedLayer, PlacedPage, PlacedVoice } from "../place/model";
+import { noteBeams, wordsLead } from "../place/vertical";
+import { type OriginalCtx, digitItem, digitOrigin, dot, rect, text } from "./ctx";
 import { paintHeader } from "./header";
-import { paintBrace } from "./brace";
-import { paintLayer, paintMark } from "./marks";
+import { braceItem, paintBrace } from "./brace";
+import { paintMark } from "./marks";
 import { paintBand, paintNote } from "./note";
 import { bandOf } from "../place/band";
 import { paintBarline } from "./barline";
@@ -286,4 +286,76 @@ export function paintVoice(c: OriginalCtx,
 function dashDigit(c: OriginalCtx, x: number, base: number): JpNumber {
   const { dx, dy } = digitOrigin(c, "-");
   return digitItem("-", x + dx, base + dy, c.digitFont, c.ink);
+}
+
+/** 内联层（小字层、`{dsb}` 并排块）。并排块的上行借 `paintVoice` 画，`paintVoice` 又回头画各层，所以两者同在本文件。 */
+export function paintLayer(c: OriginalCtx,
+  root: Group,
+  layer: PlacedLayer,
+  left: number,
+  baseline: number,
+  pageIndex = 0,
+): void {
+  const m = c.metrics;
+  const split = layer.split;
+  if (split) {
+    // `{dsb}` 并排块：上行与主旋律**同字号同画法**，所以直接借主行那套绘制
+    paintVoice(c,
+      root,
+      {
+        voice: split.line,
+        y: baseline + split.dy,
+        items: layer.items,
+        underlines: layer.underlines.map((u) => ({ ...u, dy: 0 })),
+        marks: split.marks,
+        band: split.band ?? [],
+        top: 0,
+        textTop: null,
+        layers: [],
+        lyricY: [],
+      },
+      pageIndex,
+      false,
+    );
+    // 花括号：细线描边的自绘路径，尖端朝并排的两行
+    const y0 = baseline + split.braceTop;
+    const y1 = baseline + split.braceBottom;
+    if (split.braceLeftX !== undefined) {
+      root.add(braceItem(c.ink, left + split.braceLeftX, y0, y1, -1, "split"));
+    }
+    if (split.braceRightX !== undefined) {
+      root.add(braceItem(c.ink, left + split.braceRightX, y0, y1, 1, "split"));
+    }
+    return;
+  }
+  const y = baseline + (layer.y ?? -m.ink.noteHeight);
+  const cs = m.style.size.cue;
+  const font = new Font(m.style.font.text.family, c.digitFont.size * cs);
+  const st = m.ink.stack;
+  const cue = { gap: st.gap * cs, dotRadius: st.dotRadius * cs, beamWidth: st.beamWidth * cs };
+  for (const it of layer.items) {
+    const x = left + it.x;
+    if (it.element.kind === "barline") {
+      root.add(rect(c.ink, x - 0.6, y - 10, 1.2, 20));
+      continue;
+    }
+    if (it.element.kind === "sustain") {
+      root.add(sustainDash(x, y, { font, color: c.ink }));
+      continue;
+    }
+    if (it.element.kind !== "note" || it.element.hidden) continue;
+    const ch = String(it.element.pitch);
+    const b = font.charBound(ch);
+    root.add(
+      text(ch, x - (b.left + b.right) / 2, y - (b.top + b.bottom) / 2, font, c.ink),
+    );
+    // 小字层的叠层与主旋律同一套（engrave/stack.ts），整体按 cueScale 缩；低音点同样让开减时线
+    const oct = it.element.octave;
+    const h = m.ink.noteHeight * cs;
+    for (let i = 0; i < oct; i++) root.add(dot(c.ink, x, y + highDotY(-h / 2, i, cue), cue.dotRadius));
+    for (let i = 0; i < -oct; i++) root.add(dot(c.ink, x, y + lowDotY(h / 2, noteBeams(it.element), i, cue), cue.dotRadius));
+  }
+  for (const u of layer.underlines) {
+    root.add(new BeamLine(u.level, left + u.x0, left + u.x1, y + beamY((m.ink.noteHeight * cs) / 2, u.level, cue), cue.beamWidth, c.ink));
+  }
 }

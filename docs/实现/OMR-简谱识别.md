@@ -1966,7 +1966,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 见 [编辑器](../模块/编辑器.md)「源码格式下拉」）——切的本来就是代码区这份文本是什么格式，
 摆在工具条上离得远、还得另加一条「核对」标签解释。选择存在 `dolce-render-settings` 的 `omrFormat`，下次识别沿用。
 
-**各格式一条路**：`todoc.ts::recognizedToDoc` → `ScoreDoc` → 转换目标表 `model/convert.ts` 的写出端
+**各格式一条路**：`todoc.ts::recognizedToDoc` → `ScoreDoc` → 转换目标表 `convert/targets.ts` 的写出端
 （`emit123` / `emitJpwabc` / `emitAbc` / `emitPu`）。123 交 `App.importOmrDoc`（报 123 装不下的东西），其余交 `App.adoptText`。
 
 以前文本谱另有一个直接从 `RecognizedScore` 写的 emitter（`omr/topu.ts`，理由是 `rows` 天然对上「一行 `Q:` 一行谱」），

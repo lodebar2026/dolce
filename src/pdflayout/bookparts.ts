@@ -7,10 +7,10 @@
 //
 // 文字宽度由调用方注入 `measure`（Node 侧是 scripts/textmetrics.mjs，与 pdfwrite
 // 用同一份字体字节）。**无 DOM 依赖。**
-import type { BookStyle } from "./bookstyle";
+import type { BookStyle } from "../style/bookstyle";
 import type { StyleRole } from "../style/sheet";
 import type { DrawItem, DrawPage, DrawText } from "./drawlist";
-import { pageMargins } from "./bookstyle";
+import { pageMargins } from "../style/bookstyle";
 import { NO_LINE_START } from "../common/cjkpunct";
 import { EQ_PAD_EM } from "../engrave/spacing";
 

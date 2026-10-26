@@ -1,5 +1,5 @@
 // 模型层的显示名（模型与 CLI 保留中文原名），界面经这里按语言取。
-import type { ConvertTarget } from "../model/convert";
+import type { ConvertTarget } from "../convert/targets";
 import { t, tOpt } from "./index";
 
 /** 另存为 / 格式下拉里的目标格式名。 */

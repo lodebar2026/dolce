@@ -5,7 +5,7 @@ import { HEADER_ROLES } from "../style/header";
 import { NOTE_FONTS } from "../style/fonts";
 import type { PageDecl } from "../style/sheet";
 import { ORIGINAL_PAPERS, PAGE_RATIOS, PAPER_SIZES } from "../style/themes";
-import { CONVERT_TARGETS } from "../model/convert";
+import { CONVERT_TARGETS } from "../convert/targets";
 import { getLangPref, setLangPref, t, type LangPref, type MsgKey } from "../i18n";
 import { targetLabel } from "../i18n/labels";
 
