@@ -251,7 +251,8 @@ function barlineFrom(value: string, times: number | undefined, source: SourceSpa
  *  - 收尾标点并入前一字、不占音符格（`common/cjkpunct.ts` 的同一份规则）。
  *  - 段首 `<1.>` 是**印刷段号**，不占音符格（语料 55.6% 这么写）。
  *  - `joinTilde`（Muse `.jcx`）：`~` 在**任何**音节后面都把下一个音节并到同一个音（说明书「~ 连接两个字」），
- *    不只在汉字后面——`1.~圣`、`the~Lord` 都是一格，拉丁与拉丁之间并成空格。123/ABC 不开：那两档拉丁词里的 `~` 照旧是字面字符。 */
+ *    不只在汉字后面——`1.~圣`、`the~Lord` 都是一格，拉丁与拉丁之间并成空格。123/ABC 不开：那两档拉丁词里的 `~` 照旧是字面字符。
+ *  - `tildeLabel`（ABC）：该段第一个字前的 `1.~` 是印刷段号（ABC 的惯例写法，`~` 把段号与首字并在一个音下），不占音符格。 */
 export function parseLyricLine(
   body: string,
   verse: number,
@@ -260,6 +261,7 @@ export function parseLyricLine(
   skip: "/" | "*" = "/",
   warn?: (code: string, message: string) => void,
   joinTilde = false,
+  tildeLabel = false,
 ): { syllables: Lyric[]; label?: string; starts: number[] } {
   const out: Lyric[] = [];
   /** 各音节（含跳音符、续记号这类空音节）在 body 里的起点，与 `out` 一一对应——
@@ -320,6 +322,14 @@ export function parseLyricLine(
     const ch = body[i]!;
     if (ch === " " || ch === "\t") { i++; continue; }
     tokStart = i;
+    if (tildeLabel && label === undefined && !out.some((l) => l.text !== "")) {
+      const tm = /^(\d+[.．])~/.exec(body.slice(i));
+      if (tm) {
+        label = tm[1];
+        i += tm[0].length;
+        continue;
+      }
+    }
     if (joinTilde && ch === "~") {
       joinNext = out.length > 0;
       i++;
@@ -1703,6 +1713,7 @@ function addLyricLine(ctx: Ctx, pb: PartBuild, f: FieldLine, pendingLyrics: Pend
     f.value, from, f.source, f.valueOffset, ctx.d.lyricSkip,
     (code, message) => report(ctx, code, message, f.source),
     ctx.d.id === "jcx",
+    ctx.d.id === "abc",
   );
   // 印刷段号不占音符格，挂在该段**第一个非空**音节上——空音节（跳音符）不会被挂到元素上
   // （`attachLyrics` 会跳过），label 跟着它一起丢

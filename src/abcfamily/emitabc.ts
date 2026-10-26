@@ -4,7 +4,7 @@
 // 同一份 `ScoreDoc` 第二次写出必须逐字相同。读入端照样认任意 `L:`。
 
 import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Note, type Part, type ScoreDoc, type Song } from "../model/doc";
-import { AbcFamilyEmitter, type MarkIndex } from "./emit";
+import { AbcFamilyEmitter, type LyricStyle, type MarkIndex } from "./emit";
 import { clefName, harmonyText } from "../model/jianpu";
 import { nominalQuarters } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
@@ -210,6 +210,9 @@ export class EmitterAbc extends AbcFamilyEmitter {
 
   /** 拉丁词必须空格分开，否则读回来粘成一个音节。 */
   protected override readonly lyricSeparator = " ";
+
+  /** 印刷段号照 ABC 惯例写在首字前（`w:1.~道`），读回认（`parseLyricLine` 的 `tildeLabel`） */
+  protected override readonly lyricStyle: LyricStyle = { labels: "tilde" };
 
   /** ABC §5.1 的跳音符。 */
   protected override readonly lyricSkip = "*";

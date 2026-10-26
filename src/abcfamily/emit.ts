@@ -99,8 +99,9 @@ export interface LyricStyle {
   /** 一格里的字读回会被拆成几格时怎么写；缺省是多个 CJK 字包 `{}`。给了它就**每格都过一遍**（不只含 CJK 的）：
    *  Muse 没有花括号，用 `~` 连（`你~们`、`1.~圣`、`the~Lord`），读回会拆开的地方都要连上 */
   joinMulti?(text: string): string;
-  /** 印刷段号写不写（Muse 没有这种写法，写了会当成歌词印出来） */
-  labels?: boolean;
+  /** 印刷段号写不写（Muse 没有这种写法，写了会当成歌词印出来）；`tilde` = ABC 惯例，数字段号写在首字前 `1.~道`
+   *  （别的段号仍写 `<副歌>`） */
+  labels?: boolean | "tilde";
   /** 一字多音的延长位怎么写；缺省 `_`。Muse 只有 `*` */
   extend?: string;
 }
@@ -127,6 +128,8 @@ export function lyricLines(
   for (let verse = 1; verse <= maxVerse; verse++) {
     let body = "";
     let label: string | undefined;
+    /** 段号已写在首字前（`1.~道`），行首不再写 `<1.>` */
+    let labelInline = false;
     /** 末尾连续的空位不必写出来（ABC：音节少于音符是合法的） */
     let pendingSkips = "";
     /** 上一个字带了 `_`（延长到下一音符）——那个空位已由 `_` 表达，**不要再补 `*`**，
@@ -174,6 +177,10 @@ export function lyricLines(
       // 不包 `{}` 的拉丁词里的字面 `-` 与跳音符要转义，否则读回被拆开（`and/or`）
       const bare = skip === "/" ? hit.text.replace(/[/-]/g, (c) => `\\${c}`) : hit.text;
       const joined = style.joinMulti ? style.joinMulti(hit.text) : needBrace ? `{${hit.text}}` : bare;
+      if (style.labels === "tilde" && hit.verseLabel !== undefined && hit.verseLabel === label && /^\d+[.．]$/.test(label) && !labelInline) {
+        body += `${label}~`;
+        labelInline = true;
+      }
       body += (hit.leadingPunctuation ?? "") + joined + (hit.trailingPunctuation ?? "");
       prevSyllabic = hit.syllabic;
       // 以转义字符收尾（`How\-`）同样会被下一个拉丁词粘上，也要空格；
@@ -193,7 +200,7 @@ export function lyricLines(
     }
     // 词内分音节跨行（`mid-` 在行末）：`-` 照写，不然读回丢了 syllabic
     if (body !== "" && (prevSyllabic === "begin" || prevSyllabic === "middle")) body += "-";
-    bodies.push(body === "" ? "" : `${label !== undefined && style.labels !== false ? `<${label}>` : ""}${body}`);
+    bodies.push(body === "" ? "" : `${label !== undefined && style.labels !== false && !labelInline ? `<${label}>` : ""}${body}`);
   }
   // 尾部没词的段不必写（ABC：段数少于最大段号是合法的）
   while (bodies.length > 0 && bodies[bodies.length - 1] === "") bodies.pop();

@@ -453,7 +453,10 @@ function lyricXml(o: Out, l: Lyric, cx: Ctx): void {
   const pl = l.placement ? ` placement="${l.placement}"` : "";
   o.open("lyric", ` number="${escapeAttr(number)}"${name}${pl}${posAttrs(cx.layout?.pos.get(l))}`, surfaceOf(l));
   if (l.syllabic) o.text("syllabic", l.syllabic);
-  o.text("text", (l.leadingPunctuation ?? "") + l.text + (l.trailingPunctuation ?? ""));
+  // 印刷段号并进首字（`1.道`，诗歌本 MusicXML 的惯例写法；读回由 `fromxml.ts::readLyrics` 拆开）。
+  // 只写数字段号：`副歌` 这类并进去读不回来，照旧不写
+  const label = l.verseLabel !== undefined && /^\d+[.．]$/.test(l.verseLabel) ? l.verseLabel : "";
+  o.text("text", label + (l.leadingPunctuation ?? "") + l.text + (l.trailingPunctuation ?? ""));
   if (l.extend) o.leaf("extend", l.extendType ? ` type="${l.extendType}"` : "");
   o.close();
 }

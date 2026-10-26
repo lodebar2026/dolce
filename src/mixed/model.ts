@@ -1046,7 +1046,7 @@ export class LyricLayout {
   get above(): boolean {
     return this.src.placement === "above";
   }
-  /** 源里没写、排版时补的段号（`layout.ts::autoVerseNumbers`）；画法同源里写在首字里的，只是摆位按墨迹（`render.ts::drawLrc`） */
+  /** 源里没写、排版时补的段号（`layout.ts::autoVerseNumbers`）；画法同源里写的（`render.ts::drawLrc`） */
   autoPrefix = "";
   /** 印在首字前的段落号（`1.圣` 的 `1.`）与去掉它的正文 */
   private get split(): { prefix: string; text: string } {
@@ -1060,8 +1060,9 @@ export class LyricLayout {
   get text(): string {
     return this.split.text;
   }
+  /** 首字前印的段号：源里的（`verseLabel`；没拆开的 `1.圣` 也认），没有才用补的 */
   get prefix(): string {
-    return this.split.prefix || this.autoPrefix;
+    return this.src.verseLabel ?? (this.split.prefix || this.autoPrefix);
   }
   /** 词首 / 词尾（`<syllabic>`） */
   get begin(): boolean {
@@ -3333,6 +3334,8 @@ export class MixedOptions {
    *  `auto` 段数多于 `verseNumberAutoMin` 才印，`never` 不印（成书缺省，`pdflayout/songbook.ts`） */
   verseNumbers: "always" | "never" | "auto" = "always";
   verseNumberAutoMin = 3;
+  /** 段号按墨迹摆：右缘离首字左缘 0.3 字号（`render.ts::drawLrc`）；false = musicpp 的固定偏移（成书，逐位不变） */
+  verseLabelByInk = true;
   /** 谱里的 `new-system` / `new-page` 是源文写明的换行换页（ABC 的代码换行与 `%%newpage`），自动铺排时当硬断点（`StaffLayout.hardBreaks`） */
   sourceBreaks = false;
   // ── 简谱层附件相对数字的位置。八度点、减时线走公共那一份（engrave/stack.ts，墨迹到墨迹等距）：

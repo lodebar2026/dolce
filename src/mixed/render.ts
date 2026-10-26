@@ -910,8 +910,8 @@ export function drawLrc(
       pref.font = lrc.font;
       pref.color = 0xff000000;
       const cnt = lrc.prefix.length;
-      // 补的段号按墨迹摆：右缘离首字左缘留 0.3 字号（源里写的照 musicpp 的固定偏移，成书逐位不变）
-      pref.x = lrc.autoPrefix
+      // 段号按墨迹摆：右缘离首字左缘留 0.3 字号；成书照 musicpp 的固定偏移（逐位不变）
+      pref.x = eng.verseLabelByInk
         ? x + lrc.xOffset - lrc.font.run(lrc.prefix, lrc.compress).width - lrc.font.size * 0.3
         : x - (40 + (cnt - 2) * 12);
       pref.y = -lrc.y;
