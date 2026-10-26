@@ -108,7 +108,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   只剩半个小节的一行写不出来）。**读写对在 `model/breaks.ts`**：`breaksOf` 读出行首元素，`applyBreaks` 把一组行首
   写回（替换原有断行；小节中间的按 `inline` / `snap` / `source` 三种口径落，多声部一律顺延，多声部文本谱不重断）。
   乐句重排（`relayout.ts`）、导出 MusicXML 照简谱视图重断（`xmlproject.ts`）、跨格式另存为（`App.convertTo`）都经它。
-  回归 `break-roundtrip-check`：写回 → 六种写出端 → 读回，断点集合不变（ABC 没有换页记号，只比断行位置，能力表记 `pageBreak`）。
+  回归 `break-roundtrip-check`：写回 → 六种写出端 → 读回，断点集合不变（能力表记了 `pageBreak` 的格式只比断行位置；ABC 写 `%%newpage`，换页也比）。
 - **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `timeaxis.ts`）、
   `Chord.continued`、`Mark.startLead/endTrail/leadInPreviousLine/continuationLevels`、`Ending.startOffset/endOffset/pair`…）
   **是排版信息，不是给导出用的**：没有它们谱面就少画或画错（例如弧线端点落在小节线上时简谱引擎认为没收口，弧会接到下一行）。

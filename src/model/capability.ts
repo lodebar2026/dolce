@@ -171,7 +171,7 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
   // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
-  // 换页写 `%%newpage`（§11.4，`emitabc.ts::pageBreakLine`）；换行本身含小节中间的都装得下（`break-roundtrip-check` 实测）
+  // 换页写 `%%newpage`（§11.4.7 排版指令，`emitabc.ts::pageBreakLine`）；换行本身含小节中间的都装得下（`break-roundtrip-check` 实测）
   // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
   // 大谱表同 123：每条谱表一个 `V:`、第二条起 `part=`（`staves.ts`），跨谱表的东西写不出
   abc: allBut("style", "playOrder", "innerVoiceLyrics", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "octaveShift", "verseLabel", "harmonyOffset", "lyricOnRest", "rehearsal", "multiRest"),

@@ -223,7 +223,7 @@ export class EmitterAbc extends AbcFamilyEmitter {
 
   protected override readonly trailingBreak = false;
 
-  /** ABC §11.4 的排版指令 */
+  /** ABC §11.4.7 的排版指令（规范标 VOLATILE，排版程序都认） */
   protected override readonly pageBreakLine = "%%newpage";
 
   /** 倚音长度相对倚音单位（八分，ABC §4.12 单位由软件定）：`{g/}` 十六分、`{g2}` 四分。 */

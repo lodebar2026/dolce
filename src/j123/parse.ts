@@ -1571,7 +1571,7 @@ export function parseAbcFamily(
         else if (!/^%%\s*endtext\b/i.test(line)) (ensureSong().museDirectives ??= []).push(line.slice(2).trim());
         continue;
       }
-      // `%%newpage`（ABC §11.4 排版指令）：上一条代码行末的换行升成换页；曲体前的不算（没有可升的换行）
+      // `%%newpage`（ABC §11.4.7 排版指令，规范标 VOLATILE、排版程序都认）：上一条代码行末的换行升成换页；曲体前的不算（没有可升的换行）
       if (ctx.d.id === "abc" && /^%%\s*newpage\b/i.test(line)) {
         for (const b of builds.values()) breakToPage(ctx, b);
         continue;
