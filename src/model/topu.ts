@@ -704,7 +704,7 @@ const TRAILING_OK = PU_LYRIC_PUNCTUATION + "”’\"）)";
 /**
  * 一个音节 → 文本谱写法。
  *
- * 只有「单个汉字」与「纯 ASCII 单词」能裸写：前者一字一音符，后者被解析端整段收成一个音节。
+ * 只有「单个汉字」（可带左引号）与「纯 ASCII 单词」能裸写：前者一字一音符，后者被解析端整段收成一个音节。
  * 其余一律用两方言通用的并字括号 `{}` 裹住，取其**原样收一个音节**的语义——
  * 多字裸写会被拆成几个音节、整行对位错开；`-` `0` `^` `|` 在歌词行里是要被跳过的记号，裸写会被吞掉。
  * 尾部标点写在括号外——解析端会把它贴到前一字上，不占音符位。
@@ -722,7 +722,8 @@ function lyricToken(l: Lyric): string {
     core = core.slice(0, -1);
   }
   if (!core) return tail ? `{${tail}}` : "";
-  const plain = CJK_ONE.test(core) || /^[A-Za-z']+$/.test(core);
+  // 「左引号 + 一个汉字」（`“主`）也裸写：读入端左引号本就领起后一个字成一个音节
+  const plain = CJK_ONE.test(core) || /^[A-Za-z']+$/.test(core) || (/^[“‘]/.test(core) && CJK_ONE.test(core.slice(1)));
   return (plain ? core : `{${core}}`) + tail;
 }
 
