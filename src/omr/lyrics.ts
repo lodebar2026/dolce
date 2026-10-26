@@ -945,6 +945,28 @@ export async function recognizeLyrics(
   // 记号（和弦行连写成 `G/D C` → 读出一个 `DC`）也不必再事后撤销。判据与阈值一字未改。
   const chordKeys = new Set([...rawByKey.keys()].filter((k) => isAnnotationLine(rawByKey.get(k)!) ||
     (bareByKey.has(k) && bareByKey.get(k) !== rawByKey.get(k) && isAnnotationLine(bareByKey.get(k)!))));
+  // 和弦行里衬线体的 `D.C.` / `D.S.` 被检测切成两块（青年诗歌 48《祂是耶稣》末行 `CG7CD.` | `C.`）：单看哪块都凑不成
+  // 两个点俱全的严格写法，D、C 就成了两个和弦。前块以 `D.` 收尾、同一行紧挨着（缝 < 一个半字高）的后块以 `C.`/`S.` 起头的，
+  // 拼起来认：s → 记号在前块原文里的起点，后块记下要抹掉的开头长度
+  const splitJumpHead = new Map<number, { at: number; word: string }>();
+  const splitJumpTail = new Map<number, number>();
+  for (let s = 0; s < chunks.length; s++) {
+    const a = chunks[s], key = `${a.rowIdx}:${a.verse}`;
+    const head = a.above || a.mark || !chordKeys.has(key) ? null : /D\s*\.\s*$/.exec(rawTexts[s] ?? "");
+    if (!head) continue;
+    const ax1 = Math.max(...a.cells.map((c) => rright(c))), ah = Math.max(...a.cells.map((c) => c.h));
+    let t = -1;
+    for (let u = 0; u < chunks.length; u++) {
+      const b = chunks[u];
+      if (u === s || b.rowIdx !== a.rowIdx || b.verse !== a.verse || b.above || b.cells[0].x < ax1 - 1) continue;
+      if (t < 0 || b.cells[0].x < chunks[t].cells[0].x) t = u;
+    }
+    const tail = t >= 0 && chunks[t].cells[0].x - ax1 < ah * 1.5 ? /^\s*([CS])\s*\./.exec(rawTexts[t] ?? "") : null;
+    if (!tail) continue;
+    probe("lyrics.splitJump");
+    splitJumpHead.set(s, { at: head.index, word: `D.${tail[1]}.` });
+    splitJumpTail.set(t, tail[0].length);
+  }
 
   // ── 趟 2：段落标记/跳转记号就地捞取 + 歌词装配 ──
   for (let s = 0; s < chunks.length; s++) {
@@ -1019,7 +1041,15 @@ export async function recognizeLyrics(
     // 只在**无汉字**的块里找，免得歌词里的 "Do"/"Si" 等被误当记号。
     // 含汉字的块用严格写法（见 INLINE_JUMP_RE），无汉字的注记块沿用宽松写法。
     let jumpSpan: [number, number] | null = null;
-    if (!chunks[s].above) {
+    const split = splitJumpHead.get(s);
+    if (split) {
+      let acc = 0, xf = 0;
+      if (textsPos) for (const c of textsPos[s]) { if (acc >= split.at) { xf = c.xFrac; break; } acc += c.ch.length; }
+      const jy = (Math.min(...cells.map((c) => c.y)) + Math.max(...cells.map((c) => rbottom(c)))) / 2;
+      jumps.push({ rowIdx, word: split.word, x: textsPos ? fracToSrcX(xf) : cells[0].x, y: jy, key });
+      jumpSpan = [split.at, rawText.length];
+    } else if (splitJumpTail.has(s)) jumpSpan = [0, splitJumpTail.get(s)!];
+    else if (!chunks[s].above) {
       // 和弦行先按严格写法找：det 常把记号与前面的和弦连成一片（`EmD.C.`），不能要求前面断开
       const strictHit = chordKeys.has(key) ? CHORD_ROW_JUMP_RE.exec(rawText) : null;
       const hit = strictHit ?? (/[一-鿿]/.test(rawText) ? INLINE_JUMP_RE : JUMP_MARK_RE).exec(rawText);
@@ -1058,7 +1088,7 @@ export async function recognizeLyrics(
       };
       const cands = inHeader
         ? []
-        : chordCandidates(rawText, srcXAt, (x0, x1) => ({ x: x0, y: by0, w: x1 - x0, h: by1 - by0 }));
+        : chordCandidates(split || splitJumpTail.has(s) ? rawText.slice(0, jumpSpan![0]) + " ".repeat(jumpSpan![1] - jumpSpan![0]) + rawText.slice(jumpSpan![1]) : rawText, srcXAt, (x0, x1) => ({ x: x0, y: by0, w: x1 - x0, h: by1 - by0 }));
       if (cands.length) chordCands.set(rowIdx, [...(chordCands.get(rowIdx) ?? []), ...cands]);
     }
     if (chunks[s].mark) continue; // 只为提段落词而 rec 的块：不参与歌词装配

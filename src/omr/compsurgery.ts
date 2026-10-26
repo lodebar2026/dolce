@@ -647,7 +647,7 @@ export function splitArcUnderGlyph(bin: Binary, comps: Component[], numH: number
   let nextId = 7_100_000;
   for (const k of comps) {
     const b = k.bbox;
-    if (b.w < numH * 1.5 || b.h <= numH * 1.05 || b.h > numH * 2) { out.push(k); continue; }
+    if (b.w < numH * 1.5 || b.h <= numH * 0.8 || b.h > numH * 2) { out.push(k); continue; }
     const sub: Binary = { w: b.w, h: b.h, data: new Uint8Array(b.w * b.h) };
     for (let yy = 0; yy < b.h; yy++) for (let xx = 0; xx < b.w; xx++) sub.data[yy * b.w + xx] = bin.data[(b.y + yy) * bin.w + b.x + xx];
     const labels = new Int32Array(b.w * b.h);
@@ -684,8 +684,10 @@ export function splitArcUnderGlyph(bin: Binary, comps: Component[], numH: number
     const endY = Math.min(low[best.x0]!, low[best.x1]!);
     if (runW < numH * 1.2 || t0 > numH * 0.15 || endY - topY < numH * 0.15) { out.push(k); continue; }
     // 弧的像素：段内每列最低墨点往上一个中位厚（加一像素余量）；立在弧上的字脚高出这一截，归字
-    const cap = Math.ceil(t0) + 1;
-    const arcPx = (xx: number, yy: number) => inRun(xx) && yy <= low[xx]! && yy > low[xx]! - cap;
+    // 弧两端陡，竖着量比中位厚得多（48《祂是耶稣》`Am` 下那条短弧 84×21）：底段整段不过 0.2 字号的列整段归弧，
+    // 再厚的才是字脚连着弧，只取一个中位厚
+    const cap = Math.ceil(t0) + 1, capMax = Math.max(cap, numH * 0.2);
+    const arcPx = (xx: number, yy: number) => inRun(xx) && yy <= low[xx]! && yy > low[xx]! - (thick[xx]! <= capMax ? thick[xx]! : cap);
     const box = (pick: (xx: number, yy: number) => boolean): Component | null => {
       let x0 = Infinity, yy0 = Infinity, x1 = -1, yy1 = -1, area = 0;
       for (let yy = 0; yy < b.h; yy++) for (let xx = 0; xx < b.w; xx++) {

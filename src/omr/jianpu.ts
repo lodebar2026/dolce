@@ -1275,10 +1275,14 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       }
       const wideSharp = (sysOf.has(m) ? raised : voicedPage ? k.bbox.h < medH * 0.8 : hungBoth) && hungLow && k.bbox.w <= medW * 1.5 &&
         accidentalOf(bin, k.bbox) === "sharp" && !underlined(k.bbox);
-      if (k.bbox.w > medW * 0.85 && !wideSharp) continue;
+      // 上标小 ♭（青年诗歌 48《祂是耶稣》`ᵇ6` `ᵇ3`：25×27 对数字 29×49，底比数字底高出一半字高）：宽 0.86 字宽过不了宽度门，
+      // 离数字也有 0.4 字号。只收矮（≤0.7 字高）、整个悬在右邻上半截、形状判成 ♭ 的
+      const smallFlat = k.bbox.h <= medH * 0.7 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.35 && k.bbox.w <= medW &&
+        accidentalOf(bin, k.bbox) === "flat" && !underlined(k.bbox);
+      if (k.bbox.w > medW * 0.85 && !wideSharp && !smallFlat) continue;
       if (k.bbox.h < medH * 0.45 || k.bbox.w < medW * 0.3) continue;         // 太小 → 点/碎片
       // 没紧贴右边那个数字。上面按形状认定的宽 ♯ 间隙放到 0.5 字号：101 第 1 系统 `6 ♯5` 的 ♯ 离数字 10px（字号 25）、67 是 13px（字号 35）
-      if (nx.bbox.x - rright(k.bbox) > numH * (wideSharp ? 0.5 : 0.3)) continue;
+      if (nx.bbox.x - rright(k.bbox) > numH * (wideSharp || smallFlat ? 0.5 : 0.3)) continue;
       if (nx.bbox.h < medH * 0.85) continue;                                 // 右邻得是个正常数字
       // 记号印在音符的**左上角**：顶比数字高、底也不该垂到数字底下（17 实测记号顶比数字高 10px）。
       if (k.bbox.y > nx.bbox.y + medH * 0.15 || rbottom(k.bbox) > rbottom(nx.bbox) + medH * 0.1) continue;
