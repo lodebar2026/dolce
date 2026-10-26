@@ -10,6 +10,7 @@ import { clusterByY, median, overlapRatioX, overlapRatioY, unionRect, unionRects
 import { accidentalOf } from "./accidental";
 import { isSlashInk } from "./inkprobe";
 import { probe } from "./probe";
+import { chordCoverage, isAnnotationLine } from "../omrkit/chordgrammar";
 import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, effectiveCharH, betterTitle } from "../omrkit/headertext";
 import { charsForText, gapWideAt, recoverHanziGaps, recoverSpacesByInk } from "../omrkit/textspace";
 
@@ -92,7 +93,9 @@ function parseMeta(lines: HLine[]): MetaInfo {
   // 升降号**印在音名右上角**的写法（`1=E♭`）同样要认，但只在 `1=` 锚定的形里认——不带 `1=`
   // 的裸后缀形（"Ab"、"Fb"）在英文碎片里遍地都是，一放开就满页误判。
   for (const l of lines) {
-    const acc = l.text.match(/1\s*[=＝]\s*([b#♭♯])\s*([A-G])/) || l.text.match(/([b#♭♯])\s*([A-G])(?![a-z])/);
+    // 裸形 `♭B` 不认整行和弦（青年诗歌 49《祂来过》首谱行上方的 `ᵇB(C)Am(Bm)` 落进页眉，调号 `F/G` 读成了 ♭B，那两个和弦也让给了页眉）
+    const chordRow = isAnnotationLine(l.text) && chordCoverage(l.text).count >= 2;
+    const acc = l.text.match(/1\s*[=＝]\s*([b#♭♯])\s*([A-G])/) || (chordRow ? null : l.text.match(/([b#♭♯])\s*([A-G])(?![a-z])/));
     if (acc) { const f = toFifths(acc[2], acc[1]); if (f !== undefined) { res.fifths = f; res.fifthsLine = l; break; } }
     const post = l.text.match(/1\s*[=＝]\s*([A-G])\s*([b#♭♯])(?![a-z])/);
     if (post) { const f = toFifths(post[1], post[2]); if (f !== undefined) { res.fifths = f; res.fifthsLine = l; break; } }
@@ -376,11 +379,13 @@ function joinRowPieces(ls: readonly HLine[]): HLine[] {
 }
 
 /** 拉开字距排的标题（青年诗歌 2「真　　爱」）：det 一字一框、框距近两个字高，`joinRowPieces` 的 1.5 字高门槛并不上，
- *  单字又过不了「至少两个汉字」的标题门。**同一排、字号相近、页上最大一号的单个汉字**逐个并成一行——
- *  只并单字框，带别的字符的框（书眉「002—青年诗歌」、调号）不动。 */
+ *  单字又过不了「至少两个汉字」的标题门。**同一排、字号相近、页上最大一号的纯汉字短框**逐个并成一行——
+ *  带别的字符的框（书眉「002—青年诗歌」、调号）不动。det 也会切成「两字 + 一字」、两框还交叠一截
+ *  （青年诗歌 49「祂　來　過」读成 `祂來` | `過`，后框左缘探进前框 50px），故收 1~3 字、容半个字高的交叠。 */
 function joinSpacedTitleChars(ls: readonly HLine[]): HLine[] {
-  const maxH = Math.max(0, ...ls.map((l) => l.charH));
-  const single = (l: HLine) => /^[一-鿿]$/.test(l.text.trim()) && l.charH >= maxH * 0.8;
+  // 尺子只量纯汉字框：书眉「青年诗歌—049」的大号斜体页码把框撑到 128，标题「過」102 就不够八成
+  const maxH = Math.max(0, ...ls.filter((l) => /^[一-鿿]+$/.test(l.text.trim())).map((l) => l.charH));
+  const single = (l: HLine) => /^[一-鿿]{1,3}$/.test(l.text.trim()) && l.charH >= maxH * 0.8;
   const sorted = ls.filter(single).sort((a, b) => a.bbox.x - b.bbox.x);
   const used = new Set<HLine>();
   const merged: HLine[] = [];
@@ -392,7 +397,7 @@ function joinSpacedTitleChars(ls: readonly HLine[]): HLine[] {
       if (used.has(b) || b === a) continue;
       const h = Math.max(cur.charH, b.charH);
       const gap = b.bbox.x - (cur.bbox.x + cur.bbox.w);
-      if (Math.abs(b.cy - cur.cy) > h * 0.3 || h > Math.min(cur.charH, b.charH) * 1.25 || gap < 0 || gap > h * 4) continue;
+      if (Math.abs(b.cy - cur.cy) > h * 0.3 || h > Math.min(cur.charH, b.charH) * 1.25 || gap < -h * 0.5 || gap > h * 4) continue;
       if (n === 1) used.add(a);
       used.add(b);
       n += 1;

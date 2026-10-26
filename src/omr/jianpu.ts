@@ -1251,8 +1251,10 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       // 高 ≥0.2 字高）且形状判据认定是 ♯ 的：光凭形状，密排行里正常高度的数字也会被认成 ♯（92、1727 等
       // 八首各丢几个音），谱后正文里汉字的碎块也有矮而悬高、形似 ♯ 的（1811《心愿》）。
       // 高悬的大 ♯（青年诗歌 20 `5· ♯4̲`：♯ 28×56 对数字 29×42，顶高出 0.7、底高出 0.4 字高，离数字 0.9 字号）：比数字还高，
-      // 过不了下面的高度门，当音符读成了 0。单声部行上整个悬在右邻数字上方的（顶高出 0.5、底高出 0.3 字高）按形状再认
-      const tallHung = !voicedPage && k.bbox.h > medH * 1.25 && k.bbox.h <= medH * 1.45 && k.bbox.w <= medW * 1.2 &&
+      // 过不了下面的高度门，当音符读成了 0。单声部行上整个悬在右邻数字上方的（顶高出 0.5、底高出 0.3 字高）按形状再认。
+      // 下限接到 hungBoth 的 1.1 字高：青年诗歌 52《清晨的日光》`3· ♯2̲` 的 ♯ 26×58 对数字 29×49（1.18 字高、离数字 0.6 字号），
+      // 卡在两道门之间，读成了 0
+      const tallHung = !voicedPage && k.bbox.h > medH * 1.1 &&k.bbox.h <= medH * 1.45 && k.bbox.w <= medW * 1.2 &&
         nx.bbox.h >= medH * 0.85 && nx.bbox.y - k.bbox.y >= medH * 0.5 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3 &&
         nx.bbox.x - rright(k.bbox) >= 0 && nx.bbox.x - rright(k.bbox) <= numH * 1.0;
       if (k.bbox.h > medH * 1.25 && !tallHung) continue;
@@ -2470,7 +2472,23 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     }
     const inPairedGap = (k: Component) => pairedGaps.some(([y0, y1]) => rcy(k.bbox) > y0 && rcy(k.bbox) < y1);
     const lyricComps = comps.filter((k) => !fermataArcs.has(k) && !inBrace(k) && !inPairedGap(k));
-    const lr = await recognizeLyrics(bin, lyricComps, useRows, numH, ocr, headerRegions);
+    // 条带按整列从图上裁，块剔了墨还在：和弦紧贴在延长记号右边时（青年诗歌 53《同活主身体中》第 4 行 `𝄐G`），弧与点落在字间空隙里
+    // 一并裁进去，rec 读成 `GEmoG`，覆盖率差一点不够和弦行、整行四个和弦全丢。送 rec 的图上抹掉延长记号的墨
+    //（只抹框里不属于别的块的部分，紧挨着的字母不受伤）
+    let lyricBin = bin;
+    const fermataInk = [...fermataArcs, ...fermataDots];
+    if (fermataInk.length) {
+      lyricBin = { ...bin, data: bin.data.slice() };
+      const others = comps.filter((o) => !fermataArcs.has(o) && !fermataDots.has(o));
+      for (const f of fermataInk) {
+        const b = f.bbox;
+        const near = others.filter((o) => overlapX(o.bbox, b) > 0 && o.bbox.y < rbottom(b) && rbottom(o.bbox) > b.y);
+        for (let y = b.y; y < rbottom(b); y++) for (let x = b.x; x < rright(b); x++) {
+          if (!near.some((o) => x >= o.bbox.x && x < rright(o.bbox) && y >= o.bbox.y && y < rbottom(o.bbox))) lyricBin.data[y * bin.w + x] = 0;
+        }
+      }
+    }
+    const lr = await recognizeLyrics(lyricBin, lyricComps, useRows, numH, ocr, headerRegions);
     lyricRegions = lr.lyrics.length ? lr.lyrics : undefined;
     chordRegions = lr.chords.length ? lr.chords : undefined;
     // 一块墨只归一样东西：和弦认领了的（`E7` 的下标小 7 顶横宽、下收一笔，逐行墨宽像倒三角，青年诗歌 21 正落在 `4·` 头上）不是顿音

@@ -1001,7 +1001,13 @@ export async function recognizeLyrics(
       const tp = textsPos?.[s];
       if (!labelEnd && isFirstChunk && first && tp && tp.length >= 2 && CN_NUM.includes(tp[0]!.ch)) {
         const x0 = fracToSrcX(tp[0]!.xFrac), x1 = fracToSrcX(tp[1]!.xFrac);
-        if (x0 < first.bbox.x - numH * 0.5 && Math.abs(x1 - first.bbox.x) < numH * 0.8) { probe("lyrics.bareCnLabel"); labelEnd = 1; }
+        if (x0 < first.bbox.x - numH * 0.5 && Math.abs(x1 - first.bbox.x) < numH * 0.8) {
+          probe("lyrics.bareCnLabel");
+          labelEnd = 1;
+          // 登记成段号（同边注那路）：青年诗歌 53《同活主身体中》「一我们」「三我们」读出了号、「二」整个没进条带，
+          // 不登记的话凑不成套，三个号全丢；登记了下面「漏读补齐」就补得上「二」
+          marginLabel.set(key, tp[0]!.ch);
+        }
       }
     }
     // 段落方框 Intro/Verse/Chorus/Coda：可能独占一块（被 cov 过滤的短行），也可能与和弦行同块
