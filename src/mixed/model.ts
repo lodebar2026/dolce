@@ -1046,6 +1046,8 @@ export class LyricLayout {
   get above(): boolean {
     return this.src.placement === "above";
   }
+  /** 源里没写、排版时补的段号（`layout.ts::autoVerseNumbers`）；画法同源里写在首字里的，只是摆位按墨迹（`render.ts::drawLrc`） */
+  autoPrefix = "";
   /** 印在首字前的段落号（`1.圣` 的 `1.`）与去掉它的正文 */
   private get split(): { prefix: string; text: string } {
     const text = this.src.text.trim();
@@ -1059,7 +1061,7 @@ export class LyricLayout {
     return this.split.text;
   }
   get prefix(): string {
-    return this.split.prefix;
+    return this.split.prefix || this.autoPrefix;
   }
   /** 词首 / 词尾（`<syllabic>`） */
   get begin(): boolean {
@@ -3327,6 +3329,10 @@ export class MixedOptions {
    *  谱里的版面坐标不再用（整份自动铺排）；没给就照谱里的 `<scaling>` / `<lyric-font>`。 */
   staffSizeMm: number | null = null;
   lyricPt: number | null = null;
+  /** 自动段号（样式键 `verse-numbers`，同简谱口径）：`always` 一个声部唱两段以上就在每段首字前印「1.」「2.」…，
+   *  `auto` 段数多于 `verseNumberAutoMin` 才印，`never` 不印（成书缺省，`pdflayout/songbook.ts`） */
+  verseNumbers: "always" | "never" | "auto" = "always";
+  verseNumberAutoMin = 3;
   /** 谱里的 `new-system` / `new-page` 是源文写明的换行换页（ABC 的代码换行与 `%%newpage`），自动铺排时当硬断点（`StaffLayout.hardBreaks`） */
   sourceBreaks = false;
   // ── 简谱层附件相对数字的位置。八度点、减时线走公共那一份（engrave/stack.ts，墨迹到墨迹等距）：

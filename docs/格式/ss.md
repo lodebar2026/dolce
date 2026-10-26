@@ -83,6 +83,7 @@
 - **成书**也读 `@jianpu`（`keys.ts` 的 `book` 一列，落到 `BookStyle.metrics` / `layout`）：间距类写 `em`
   （基准是音符字号；`lyric-gap` `slur-thickness` `barline` `final-barline` 按歌词字号），线宽类（`bracket-width`、
   `repeat-dot-diameter`）写裸数 pt。例：`@jianpu { system-spread: 0.8575em; slur-gap: 0.154em; verse-numbers: auto; }`。
+  `verse-numbers` 五线谱/混排也读（每段首字前印一次段号，见[排版-五线谱混排](../模块/排版-五线谱混排.md)「自动段号」）。
   数值原样存进字段、不在读样式表时乘字号，所以重排结果逐位不变。
 - 简谱只有一个引擎，读 `@jianpu`（尺子 `JianpuStyle`）。多声部才有的 `voice-gap`、`double-barline-gap` 只在多声部谱上起作用。`barline-height`（小节线高，缺省 4/3 em）
   口径同一：上缘在数字基线上 3/4、下缘在下 1/4（缺省即 −1 em / +1/3 em），行内拍号竖向居中于它。

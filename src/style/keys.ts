@@ -88,7 +88,7 @@ export const JIANPU_KEYS: Record<string, KeyDef> = {
   "hairpin-width": { kind: "len", jianpu: "stroke.hairpin" },
   // 拍号（含页眉、转拍）的分数线
   "time-sig-rule": { kind: "len", jianpu: "stroke.timeSigRule" },
-  "verse-numbers": { kind: "word", jianpu: "look.verseNumbers", book: "layout.verseNumbers" },
+  "verse-numbers": { kind: "word", jianpu: "look.verseNumbers", mixed: "verseNumbers", book: "layout.verseNumbers" },
   "max-horizontal-scale": { kind: "num", jianpu: "spacing.maxHorizontalScale", book: "layout.maxHorizontalScale" },
   "grace-scale": { kind: "num", jianpu: "size.grace", mixed: "jpGraceScale" },
   "show-key-change": { kind: "bool", mixed: "showKeyChangeJp", note: "纯简谱一定画调号" },

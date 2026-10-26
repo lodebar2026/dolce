@@ -119,6 +119,8 @@ function songLayout(xml: string, entry: ManifestSong, input: SongbookInput, meta
   // 和弦字体：musicpp Engraver::wordFont 缺省是思源黑体（model.hpp），成品和弦即此；编辑器视图沿用 Times New Roman。
   // 放在 `applyStaffStyle` **之前**：这是书的缺省，样式表里 `chord { font: … }` 要盖得住它。
   options.wordFont = BOOK_FALLBACK_FAMILY;
+  // 段号照书里原样（MusicXML 首字里的 `1.圣`），不自动补；书的样式表写了 `verse-numbers` 照它
+  options.verseNumbers = "never";
   // 样式表最后叠：角色字体与 `@jianpu` / `@staff` 的几何开关由书定
   applyStaffStyle(options, sheet);
   if (metaFlag(song, "layout.chinese-hyphen")) options.chineseHyphen = true;

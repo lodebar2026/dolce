@@ -1561,7 +1561,33 @@ export function layoutStaff(doc: ScoreDoc, options: MixedOptions): StaffLayout {
     pl.load();
     pl.linkLyrics();
   });
+  autoVerseNumbers(score);
 
   finishMixedScore(score, layoutInputOf(song), partGroupsOf(score, song));
   return score;
+}
+
+/**
+ * **自动段号**（同简谱 `place/song.ts::autoVerseNumbers` 的口径，样式键 `verse-numbers`）：一个声部唱两段以上
+ *（`auto` 多于 `verseNumberAutoMin` 段）时，每段第一个字前印「1.」「2.」…（`LyricLayout.autoPrefix`）。
+ * 五线谱照诗歌本惯例只印在每段开头一次，不像简谱逐行补；源里任一段首字带了段号（`1.圣`）的声部整个不补；
+ * 副歌与非数字段号（`chorus`）不标。识别结果、123/ABC 转来的谱都不带印刷段号，从前五线谱一个也不印（issue 24）。
+ */
+function autoVerseNumbers(score: StaffLayout): void {
+  const mode = score.options.verseNumbers;
+  if (mode === "never") return;
+  const min = mode === "auto" ? score.options.verseNumberAutoMin + 1 : 2;
+  for (const part of score.parts) {
+    const firsts = new Map<number, LyricLayout>();
+    let printed = false;
+    for (const md of part.measures) {
+      for (const l of [...md.lyrics].sort((a, b) => a.offset.compareTo(b.offset))) {
+        if (l.prefix) printed = true;
+        if (l.empty || l.src.numberText !== undefined || l.src.refrain) continue;
+        if (!firsts.has(l.src.number)) firsts.set(l.src.number, l);
+      }
+    }
+    if (printed || firsts.size < min) continue;
+    [...firsts.keys()].sort((a, b) => a - b).forEach((n, k) => (firsts.get(n)!.autoPrefix = `${k + 1}.`));
+  }
 }
