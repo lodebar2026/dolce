@@ -614,7 +614,12 @@ export interface Syllable {
   /** 字形所属的字体家族与设备字号（查字典与建库都要，别再回头去 objs 里找）。 */
   font: string;
   sizeDev: number;
+  /** 印在这个字前面的段号（「1.」「2、」照印的写）：只挂在一段词的首字上，跟着字走（行后来拆开、改段号都不丢） */
+  label?: string;
 }
+
+/** 位图路在折叠歌词时剔掉的行首段号（`rasteromr/pagefinish.ts` 记），`buildLyricLines` 挂到这个对象的首字上 */
+export const lyricObjLabel = new WeakMap<PObj, string>();
 
 /**
  * 去掉**重描**出来的重复音节。
@@ -667,9 +672,12 @@ export function splitSyllables(o: PObj, dict?: TextGlyphLookup): Syllable[] {
   const synth = run.font.startsWith("#");
   const out: Syllable[] = [];
   let cur: { chars: string[]; left: number; right: number; glyphs: VecGlyph[] } | null = null;
+  /** 首字前的段号「1.」：不是音节，挂到下一个音节上 */
+  let label: string | undefined;
   const flush = (hyphen: boolean) => {
     if (!cur) return;
     const text = cur.chars.join("").trim();
+    if (!out.length && label === undefined && /^[1-9]\d?[.．、]$/.test(text)) label = text;
     // **半角标点紧贴在前一个音节后面的，并回去**（「祂!」「拜,」）：另起一个音节就占掉下一个音，
     // 后面的字整体错一格（宣主荣耀 m6 起女高唱成「祂 ! 哈 利」）
     const last = out[out.length - 1];
@@ -683,7 +691,7 @@ export function splitSyllables(o: PObj, dict?: TextGlyphLookup): Syllable[] {
     // 纯数字的不是歌词：那是**小节号**（`findMeasureNumber` 只认得贴着系统线的那些，
     // 印在框里的漏网）与行首的段号「1.」。GT 那边也把段号剔掉了。
     if (text && !/^[-_–—]+$/.test(text) && !/^\d+[.．、]?$/.test(text)) {
-      out.push({ text, cx: (cur.left + cur.right) / 2, left: cur.left, right: cur.right, hyphen, glyphs: cur.glyphs, font: run.font, sizeDev: run.sizeDev });
+      out.push({ text, cx: (cur.left + cur.right) / 2, left: cur.left, right: cur.right, hyphen, glyphs: cur.glyphs, font: run.font, sizeDev: run.sizeDev, ...(label !== undefined && !out.length ? { label } : {}) });
     }
     cur = null;
   };
@@ -894,7 +902,12 @@ export function buildLyricLines(
   for (const [staff, rs] of byStaff) {
     rs.sort((a, b) => a.top - b.top);
     rs.forEach((r, i) => {
-      const syllables = dedupeSyllables(r.objs.flatMap((o) => splitSyllables(o, dict)).sort((a, b) => a.cx - b.cx));
+      const syllables = dedupeSyllables(r.objs.flatMap((o) => {
+        const ss = splitSyllables(o, dict);
+        const lab = lyricObjLabel.get(o);
+        if (lab !== undefined && ss[0] && ss[0].label === undefined) ss[0].label = lab;
+        return ss;
+      }).sort((a, b) => a.cx - b.cx));
       if (syllables.length) out.push({ staff, verse: i + 1, top: r.top, bottom: r.bottom, syllables });
     });
   }
@@ -908,7 +921,7 @@ interface NoteLike {
   rest: boolean;
   x: number;
   voice?: number;
-  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; size?: number; baseY?: number; box?: Box }[];
+  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; size?: number; baseY?: number; box?: Box; label?: string }[];
   chord?: string;
   chordSize?: number;
   chordLater?: { text: string; frac: number; size?: number }[];
@@ -942,7 +955,7 @@ export function attachLyrics(notes: NoteLike[], lines: LyricLine[], sameCol = 0)
       for (let j = ni + 1; j < cand.length && cand[j].x - syl.cx <= Math.abs(cand[ni].x - syl.cx); j++)
         if (Math.abs(cand[j].x - syl.cx) < Math.abs(cand[ni].x - syl.cx)) ni = j;
       const n = cand[ni];
-      (n.lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}), box: { left: syl.left, right: syl.right, top: line.top, bottom: line.bottom ?? line.top + (syl.right - syl.left) } });
+      (n.lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.label !== undefined ? { label: syl.label } : {}), ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}), box: { left: syl.left, right: syl.right, top: line.top, bottom: line.bottom ?? line.top + (syl.right - syl.left) } });
       cont = syl.hyphen;
       // 同一列（x 差不到 `sameCol`）的其余和弦成员一并跳过：一个和弦只挂一个音节。
       // 位图路才传（0.3 个线距）：只挪一个音，下一个音节常落到同一和弦的另一个成员上，

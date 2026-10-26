@@ -323,7 +323,7 @@ export function parseLyricLine(
     if (ch === " " || ch === "\t") { i++; continue; }
     tokStart = i;
     if (tildeLabel && label === undefined && !out.some((l) => l.text !== "")) {
-      const tm = /^(\d+[.．])~/.exec(body.slice(i));
+      const tm = /^(\d+[.．、]?)~/.exec(body.slice(i));
       if (tm) {
         label = tm[1];
         i += tm[0].length;

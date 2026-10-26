@@ -888,9 +888,10 @@ export function renumberSlurs(body: string, sysOfBar?: number[], crossTies = fal
 }
 
 /** `y`：写源谱版面时这一行词的基线（tenths，相对谱表顶线），原图上量的 */
-function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean; extend?: boolean; above?: boolean; id?: string }, y?: number): string {
+function lyricXml(l: { verse: number; text: string; hyphen: boolean; cont: boolean; extend?: boolean; above?: boolean; id?: string; label?: string }, y?: number): string {
   const syllabic = l.cont ? (l.hyphen ? "middle" : "end") : l.hyphen ? "begin" : "single";
-  return `<lyric number="${l.verse}"${idAttr(l.id)}${y !== undefined ? ` default-y="${y}"` : ""}${l.above ? ' placement="above"' : ""}><syllabic>${syllabic}</syllabic><text>${escapeXml(l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
+  // 首字前印的段号并进字前（`1.道`；不带点的隔空格 `1 Be`，读入端 `model/fromxml.ts::readLyrics` 拆回 `verseLabel`）
+  return `<lyric number="${l.verse}"${idAttr(l.id)}${y !== undefined ? ` default-y="${y}"` : ""}${l.above ? ' placement="above"' : ""}><syllabic>${syllabic}</syllabic><text>${escapeXml((l.label === undefined ? "" : /\d$/.test(l.label) ? `${l.label} ` : l.label) + l.text)}</text>${l.extend ? '<extend type="start"/>' : ""}</lyric>`;
 }
 
 function accidentalName(alter: number): string {

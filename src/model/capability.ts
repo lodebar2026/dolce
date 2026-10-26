@@ -174,7 +174,7 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 换页写 `%%newpage`（§11.4.7 排版指令，`emitabc.ts::pageBreakLine`）；换行本身含小节中间的都装得下（`break-roundtrip-check` 实测）
   // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
   // 大谱表同 123：每条谱表一个 `V:`、第二条起 `part=`（`staves.ts`），跨谱表的东西写不出
-  abc: allBut("style", "playOrder", "innerVoiceLyrics", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "octaveShift", "verseLabel", "harmonyOffset", "lyricOnRest", "rehearsal", "multiRest"),
+  abc: allBut("style", "playOrder", "innerVoiceLyrics", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "octaveShift", "harmonyOffset", "lyricOnRest", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
   jpwabc: allBut("beamGroup", "octaveShift", "tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),

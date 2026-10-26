@@ -303,9 +303,10 @@ function readLyrics(noteEl: Element): Lyric[] {
     const texts = children(l, "text");
     const text = texts.map((t) => t.textContent ?? "").join("");
     const n = l.getAttribute("number");
-    // 首字前的印刷段号（`1.道`、`<text>1.</text><elision/><text>道</text>`）拆成 `verseLabel`，不算字（写出端 `toxml.ts::lyricXml` 并回去）
+    // 首字前的印刷段号（`1.道`、`<text>1.</text><elision/><text>道</text>`；不带点的英文段号要隔空格 `1 Be`）
+    // 拆成 `verseLabel`，不算字（写出端 `toxml.ts::lyricXml` 并回去）
     const syl0 = childText(l, "syllabic");
-    const lm = !syl0 || syl0 === "single" || syl0 === "begin" ? /^(\d+[.．])\s*(\S.*)$/su.exec(text) : null;
+    const lm = !syl0 || syl0 === "single" || syl0 === "begin" ? /^(\d+[.．、]|\d+(?=\s))\s*(\S.*)$/su.exec(text) : null;
     const lr: Lyric = { number: n ? Number(n.replace(/[^\d]/g, "")) || 1 : 1, text: lm ? lm[2]! : text };
     if (lm) lr.verseLabel = lm[1]!;
     if (n !== null && !/^\d+$/.test(n)) lr.numberText = n;

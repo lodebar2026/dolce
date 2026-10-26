@@ -177,7 +177,7 @@ export function lyricLines(
       // 不包 `{}` 的拉丁词里的字面 `-` 与跳音符要转义，否则读回被拆开（`and/or`）
       const bare = skip === "/" ? hit.text.replace(/[/-]/g, (c) => `\\${c}`) : hit.text;
       const joined = style.joinMulti ? style.joinMulti(hit.text) : needBrace ? `{${hit.text}}` : bare;
-      if (style.labels === "tilde" && hit.verseLabel !== undefined && hit.verseLabel === label && /^\d+[.．]$/.test(label) && !labelInline) {
+      if (style.labels === "tilde" && hit.verseLabel !== undefined && hit.verseLabel === label && /^\d+[.．、]?$/.test(label) && !labelInline) {
         body += `${label}~`;
         labelInline = true;
       }

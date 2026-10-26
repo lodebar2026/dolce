@@ -7,7 +7,7 @@ import { findNotations, attachNotations, attachDynamicTexts, applyTuplet, attach
 import { groupDynamics, findGluedDynamics } from "./dynamics";
 import { findStaffLabels, labelKey, normalizeLabel } from "./stafflabel";
 import { makeTextObj, makeSymObj } from "./adapt";
-import { attachHarmonies, type LyricLine, buildLyricLines, attachLyrics } from "../staffomr/textanalyze";
+import { attachHarmonies, type LyricLine, buildLyricLines, attachLyrics, lyricObjLabel } from "../staffomr/textanalyze";
 import { liftHarmonies, lyricsBelongBelow, keepGapRowOrder, foldBilingualLyrics, splitSmallEchoes, moveEchoLines, splitVoiceLyrics, numberVersesByScript, liftLyrics } from "./lyricpost";
 import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, mapCharsToCells, stripWithout } from "./lyric";
 import type { Staff, PObj, SPage, Sym } from "../staffomr/model";
@@ -554,14 +554,23 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       if (!latin && !mix && foldLyricChars(chars).length === strip.cells.length) lyricStats.parity++;
       // 行首印着段号（「1.」「2、」）：OCR 读出来、折叠时剔掉了，这里记一笔——段号是歌词的强判据（`lyricsBelongBelow`）
       // 只认一位数：页顶标题前的诗歌编号（有一位神「23.有一位神」）也是「数字 + 点」
-      const verseNo = /^[1-9][.．、]/.test([...chars].sort((a, b) => a.xFrac - b.xFrac).map((c) => c.ch).join(""));
+      // 段号照印的记下来（「1.」「2、」），挂到这一行最左那个对象的首字上（`textanalyze.ts::lyricObjLabel`）
+      const lead = [...chars].sort((a, b) => a.xFrac - b.xFrac).map((c) => c.ch).join("");
+      const verseNo = /^[1-9][.．、]/.exec(lead)?.[0];
+      // 英文段常印不带点的「1 Be」：拉丁行数字后面跟着大写字母的也是段号（只记下来，不当歌词归属的判据）。
+      // 跟小写的不算：那多半是首字「I」读成了「1」（求主同住「1need」、更亲近恩主「1am」）
+      const label = verseNo ?? (latin && !mix ? /^[1-9](?=\s*[A-Z‘’'"“])/.exec(lead)?.[0] : undefined);
+      const made: PObj[] = [];
       for (const cells of parts) {
         if (!cells.some((c) => c.ch)) continue;
         const o = makeTextObj(pg.objs.length + objs.length, { cells, sizeDev: strip.charH });
         o.addTag("Lyric");
         objs.push(o);
+        made.push(o);
         if (verseNo) verseObjs.add(o);
       }
+      const first = made.reduce<PObj | null>((a, o) => (!a || o.box.left < a.box.left ? o : a), null);
+      if (label && first) lyricObjLabel.set(first, label);
     }
     pg.objs.push(...objs);
     // 认得出字的行，字格留着给弧的候选按归属剔笔画用（没读出字的「行」可能就是谱表上方一排小弧本身，破碎 p5 钢琴右手）

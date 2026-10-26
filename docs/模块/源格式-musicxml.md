@@ -69,6 +69,9 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
   以前一律推到下一个音，转简谱文本读回渐强起点挪一个音（破碎 m30 的 offset 只有八分音符的 1/8）。
   **力度落在小节末、后面已没有音的**（offset 推过了最后一个音）挪到下一小节开头（`carryLateDirections`，文本写出端与简谱视图都先过它）；
   文字与渐强起点写在小节末多半就是管小节末的，不挪（望十架、破碎实测挪了更差）。
+- **印刷段号并进首字**：MusicXML 没有段号元素，诗歌本的惯例（Sibelius 导出、五线谱识别写出）是写进首字 `<text>1.宁</text>`。
+  读入时首字（`syllabic` 为 single/begin）开头的 `数字+点`（`.` `．` `、`）拆成 `Lyric.verseLabel`（`fromxml.ts::readLyrics`，多个 `<text>` 先拼起来），
+  写出时并回去（`toxml.ts::lyricXml`）；只写数字段号，`副歌` 这类并进去读不回来，照旧不写。五线谱照它印在首字前，简谱当说明印。
 
 ## 在谱面上编辑
 

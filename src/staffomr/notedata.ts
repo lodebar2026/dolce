@@ -820,7 +820,7 @@ export interface StaffNote {
   beam?: BeamState[];
   x: number;
   /** 挂在这个音符上的歌词，按段（verse）。 */
-  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; /** 这个字后面拖着延长线（一字多音，见 `markLyricExtends`）。 */ extend?: boolean; /** 字号（页面单位，见 `SPage.textEm`） */ size?: number; /** 这一行词印在谱表上方（`<lyric placement="above">`） */ above?: boolean; /** 这一行词的基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 原图上这个字的框（页面单位），识别对照用 */ box?: Box; /** 编辑器的识别对照用：写进 `<lyric id>` 的 id（同 `omrId`） */ id?: string }[];
+  lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; /** 这个字后面拖着延长线（一字多音，见 `markLyricExtends`）。 */ extend?: boolean; /** 字号（页面单位，见 `SPage.textEm`） */ size?: number; /** 这一行词印在谱表上方（`<lyric placement="above">`） */ above?: boolean; /** 这一行词的基线（页面单位），写源谱版面时出成 `default-y` */ baseY?: number; /** 原图上这个字的框（页面单位），识别对照用 */ box?: Box; /** 编辑器的识别对照用：写进 `<lyric id>` 的 id（同 `omrId`） */ id?: string; /** 首字前印的段号（「1.」），写出时并进字前（`toxml.ts::lyricXml`） */ label?: string }[];
   /** 这些字的歌词延长线到这个音为止（`<extend type="stop"/>`）。记的是那个字本身，段号后来被重排也跟着走。 */
   lyricExtendStop?: { verse: number }[];
   /** 挂在这个音符上的和弦符号（归一后的原文，如 `Am`、`G/B`、`Dm7`）。 */
