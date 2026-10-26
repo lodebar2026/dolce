@@ -562,7 +562,7 @@ function autoNaturalWidth(score: StaffLayout, mi: number): number {
   return AUTO_LEFT_DATA + span + AUTO_END_PAD;
 }
 
-/** 源谱版面档：起行照谱里的 `new-system` / `new-page`（都是硬断点），各小节宽仍按自然宽给。 */
+/** 硬断点（源谱版面档、源文写明的换行）：起行照谱里的 `new-system` / `new-page`，各小节宽仍按自然宽给。 */
 function sourceBreaks(score: StaffLayout, input: LayoutInput): Set<number> {
   const breaks = new Set<number>([0]);
   for (let i = 0; i < score.measures.length; i++) score.measures[i]!.width = autoNaturalWidth(score, i);
@@ -653,14 +653,15 @@ function autoJustifySystems(score: StaffLayout): void {
     for (const m of sys.measures) sum += m.width;
     if (sum <= 0) continue;
     const attrSum = attr.reduce((a, b) => a + b, 0);
-    if (score.keepBreaks) {
+    let scale = Math.max(0, avail - attrSum) / sum;
+    // 源文写明的硬断点（`hardBreaks`）过满的行也照源谱版面档压
+    if (score.keepBreaks || (score.hardBreaks && scale < 1)) {
       justifySourceSystem(score, sys, avail, attr);
       continue;
     }
     const isLast = si === score.systems.length - 1;
     // 末行也拉满，但最多拉到自然宽的 LAST_LINE_MAX_STRETCH 倍：太短的末行（剩一两个小节）照拉满就稀得不成样子，
     // 拉到上限为止、右边留空
-    let scale = Math.max(0, avail - attrSum) / sum;
     if (isLast && scale > LAST_LINE_MAX_STRETCH) scale = LAST_LINE_MAX_STRETCH;
     sys.measures.forEach((m, k) => { m.width = m.width * scale + attr[k]!; });
   }
@@ -1629,7 +1630,7 @@ export function finishMixedScore(score: StaffLayout, input: LayoutInput, partGro
   // 源谱版面档的页眉带着原图的位置与字号（`staffomr/toxml.ts::creditsXml`）：照原样排，不重排
   const placedHeader = score.keepBreaks && score.credits.some((c) => c.type === "title") && score.credits.every((c) => c.y > 0);
   if (autoLayout && !placedHeader) autoLayoutHeader(score);
-  const autoBreaks = autoLayout ? (score.keepBreaks ? sourceBreaks(score, input) : autoLayoutWidths(score, input)) : undefined;
+  const autoBreaks = autoLayout ? (score.hardBreaks ? sourceBreaks(score, input) : autoLayoutWidths(score, input)) : undefined;
   buildSystemsAndPages(score, input, autoBreaks);
   applyStaffVisibility(score, input);
   updateLayoutByPrint(score, input);

@@ -2650,6 +2650,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       hideBarNumber: this.mixedHideBarNumber,
       // 声部面板里藏起来的声部不排（会话内）；简谱层取的声部下标跟着往前挪
       jianpuPart: this.hiddenParts.has(this.melodyPart) ? 0 : this.melodyPart - [...this.hiddenParts].filter((i) => i < this.melodyPart).length,
+      // ABC 的代码换行与 `%%newpage` 就是谱面换行换页（§6.1）：五线谱照它分，不另按宽度重排（issue 24）
+      sourceBreaks: this.docFormat === "abc" && !this.phraseOn,
     };
   }
 

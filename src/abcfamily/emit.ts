@@ -606,6 +606,9 @@ export abstract class AbcFamilyEmitter {
    *  后面的 `w:` 歌词行就成了孤儿。 */
   protected readonly trailingBreak: boolean = true;
 
+  /** 换页单独占一行写在两个系统之间（ABC 的 `%%newpage`）；null = 换页由 `breakText` 写在行内（123 的 `$$`） */
+  protected readonly pageBreakLine: string | null = null;
+
   /** 渐强渐弱的起止怎么写：缺省是 ABC 的装饰 `!crescendo(!` … `!crescendo)!`（123 同）；Muse 写 `(<` … `<)`。
    *  null = 这种方言写不出。 */
   protected wedgeText(type: "crescendo" | "diminuendo", edge: "start" | "stop"): string | null {
@@ -1099,6 +1102,8 @@ export abstract class AbcFamilyEmitter {
     const bodies = song.parts.map((part, pi) => this.partSystems(part, song, pranges[pi]!, true));
     const declared = new Set<number>();
     for (let r = 0; r < ranges.length; r++) {
+      const prev = ranges[r - 1];
+      if (prev && this.pageBreakLine && (prev.inline ?? breakAfter(song.parts[0]!, prev.to)) === "page") L.push(this.pageBreakLine);
       for (let i = 0; i < song.parts.length; i++) {
         const text = bodies[i]![r]!;
         if (text === "") continue;

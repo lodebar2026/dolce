@@ -339,7 +339,8 @@ function getFrames(score: StaffLayout): FrameItem[] {
   return items;
 }
 
-function flowLayout(items: FrameItem[], ph: number): LayoutFrame[] {
+/** `pageStarts`：写明了换页的系统（源文的 `%%newpage`，`StaffLayout.hardBreaks`），到它必换页 */
+function flowLayout(items: FrameItem[], ph: number, pageStarts: ReadonlySet<Sys> = new Set()): LayoutFrame[] {
   const result: LayoutFrame[] = [];
   let ypos = 0;
   let lastMrg = 0;
@@ -347,7 +348,7 @@ function flowLayout(items: FrameItem[], ph: number): LayoutFrame[] {
     const mrg = Math.max(lastMrg, FRAME_GAP);
     const bot = ypos + frm.height;
     // 首帧总是开新页；长图（ph = Infinity）此后不再分页
-    const np = i === 0 || bot + mrg > ph;
+    const np = i === 0 || bot + mrg > ph || pageStarts.has(frm.system);
     const lf: LayoutFrame = { height: frm.height, ypos: 0, newPage: np };
     if (np) {
       lastMrg = 0;
@@ -714,7 +715,11 @@ export function layoutStaffPages(score: StaffLayout, showJianpuLayer: boolean, j
   const phOf = contentLimit(score, [...footers], pageHeight);
   const layout = score.keepBreaks
     ? sourceFlow(score, items, phOf)
-    : flowLayout(items, score.longImage ? Infinity : Math.min(...[...new Set([...footers].map((c) => c.page))].map(phOf), phOf(-1)));
+    : flowLayout(
+      items,
+      score.longImage ? Infinity : Math.min(...[...new Set([...footers].map((c) => c.page))].map(phOf), phOf(-1)),
+      score.hardBreaks && !score.longImage ? new Set(score.pages.slice(1).map((pg) => pg.systems[0]!)) : undefined,
+    );
   if (score.longImage) {
     // 长图：整首一页，页高 = 内容底 + 上下边距。credit 的 y 从页底量，页高变了整体跟着挪，离页顶的距离不变
     const last = layout[layout.length - 1];

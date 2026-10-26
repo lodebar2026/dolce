@@ -216,12 +216,15 @@ export class EmitterAbc extends AbcFamilyEmitter {
   protected override readonly lyricSlotRule = "abc" as const;
 
   /** ABC 默认「代码换行即谱面换行」（§6.1），所以写真换行而不是 123 的 `$`。
-   *  换页 ABC 没有对应记号，退化成换行。 */
+   *  换页在两个系统之间另起一行写 `%%newpage`（`pageBreakLine`）。 */
   protected override breakText(): string {
     return "\n";
   }
 
   protected override readonly trailingBreak = false;
+
+  /** ABC §11.4 的排版指令 */
+  protected override readonly pageBreakLine = "%%newpage";
 
   /** 倚音长度相对倚音单位（八分，ABC §4.12 单位由软件定）：`{g/}` 十六分、`{g2}` 四分。 */
   protected override graceDurationText(ch: Chord): string {

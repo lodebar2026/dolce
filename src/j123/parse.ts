@@ -172,6 +172,13 @@ function noteInlineBreak(pb: PartBuild, kind: BreakKind): void {
   pb.inlineBreak = last?.kind === "chord" ? { host: last, sustains: last.sustains?.length ?? 0, kind } : null;
 }
 
+/** ABC 的 `%%newpage`：这个声部最近一处换行（代码行末记的，小节末或小节中间）改成换页。 */
+function breakToPage(ctx: Ctx, pb: PartBuild): void {
+  const target = pb.measure.elements.length > 0 ? pb.measure : pb.part.measures[pb.part.measures.length - 1];
+  if (target && ctx.breakAfter.has(target)) ctx.breakAfter.set(target, "page");
+  if (pb.inlineBreak) pb.inlineBreak.kind = "page";
+}
+
 /** 声部里到目前为止的最后一个元素（含还没收尾的小节）。 */
 function lastElementId(pb: PartBuild): ElementId | null {
   const els = pb.measure.elements;
@@ -1562,6 +1569,11 @@ export function parseAbcFamily(
       if (ctx.d.id === "jcx" && line.startsWith("%%")) {
         if (/^%%\s*begintext\b/i.test(line)) textBlock = { lines: [], source: { line: ln, column: 0, offset: lineOffset, length: raw.length } };
         else if (!/^%%\s*endtext\b/i.test(line)) (ensureSong().museDirectives ??= []).push(line.slice(2).trim());
+        continue;
+      }
+      // `%%newpage`（ABC §11.4 排版指令）：上一条代码行末的换行升成换页；曲体前的不算（没有可升的换行）
+      if (ctx.d.id === "abc" && /^%%\s*newpage\b/i.test(line)) {
+        for (const b of builds.values()) breakToPage(ctx, b);
         continue;
       }
       // `%%directive` 等价 `I:directive`（ABC §11.0.2）

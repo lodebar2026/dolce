@@ -1363,7 +1363,7 @@ function printInput(p: NonNullable<Measure["print"]>): PrintInput {
 }
 
 /** 谱里有源谱真实排出的行：第一声部有带 `<system-layout>` 的 `new-system` / `new-page`（识别结果照原谱写的，`staffomr/toxml.ts::sourceLayout`）。
- *  简谱视图、123/ABC 写出的换行不带它，那些仍是优选断点。 */
+ *  简谱视图、123/ABC 写出的换行不带它：那些是优选断点，ABC 源文写明的另由 `MixedOptions.sourceBreaks` 当硬断点（`hardBreaks`）。 */
 function hasSourceBreaks(song: Song): boolean {
   return (song.parts[0]?.measures ?? []).some((m) => m.print && (m.print.newSystem || m.print.newPage) && !!printLayout(m.print)?.systemLayout);
 }
@@ -1537,6 +1537,7 @@ export function layoutStaff(doc: ScoreDoc, options: MixedOptions): StaffLayout {
   // 换了纸，谱里按原纸算好的版面坐标就对不上了：整份按新纸自动铺排
   score.autoLayout = overridePage || resized || !hasEmbeddedLayout(song);
   score.keepBreaks = score.autoLayout && !overridePage && !resized && hasSourceBreaks(song);
+  score.hardBreaks = score.keepBreaks || (score.autoLayout && options.sourceBreaks);
 
   const numMeasures = song.parts[0]?.measures.length ?? 0;
   for (let i = 0; i < numMeasures; i++) {

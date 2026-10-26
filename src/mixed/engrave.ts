@@ -16,12 +16,13 @@ import { ScorePainter } from "../layout/painter";
 const r1 = (v: number): number => Math.round(v * 10) / 10;
 
 /** 给 `doc` 第一首排出导出版面：纸、标题块、换行、弧朝向就地写回模型，坐标等表层装进返回的 `EngravedLayout`
- *  （交给 `scoreDocToMusicXml(doc, { layout })`）。谱里已带版面、或排不出来时返回 null、不动它。 */
-export async function engraveScoreDoc(doc: ScoreDoc, page: MixedOptions["page"]): Promise<EngravedLayout | null> {
+ *  （交给 `scoreDocToMusicXml(doc, { layout })`）。谱里已带版面、或排不出来时返回 null、不动它。
+ *  `sourceBreaks`：谱里的换行换页是源文写明的（ABC），当硬断点（同屏幕上的五线谱，`App.staffRequest`）。 */
+export async function engraveScoreDoc(doc: ScoreDoc, page: MixedOptions["page"], sourceBreaks = false): Promise<EngravedLayout | null> {
   const song = doc.songs[0];
   if (!song || song.defaults) return null;
   const mp = new ScorePainter();
-  await mp.load({ view: "staff", doc, page, hideBarNumber: false });
+  await mp.load({ view: "staff", doc, page, hideBarNumber: false, sourceBreaks });
   const placed = mp.staffPlacement;
   mp.dispose();
   if (!placed?.score.autoLayout || placed.score.song !== song) return null;

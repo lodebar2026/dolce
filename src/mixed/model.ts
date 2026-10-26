@@ -3327,6 +3327,8 @@ export class MixedOptions {
    *  谱里的版面坐标不再用（整份自动铺排）；没给就照谱里的 `<scaling>` / `<lyric-font>`。 */
   staffSizeMm: number | null = null;
   lyricPt: number | null = null;
+  /** 谱里的 `new-system` / `new-page` 是源文写明的换行换页（ABC 的代码换行与 `%%newpage`），自动铺排时当硬断点（`StaffLayout.hardBreaks`） */
+  sourceBreaks = false;
   // ── 简谱层附件相对数字的位置。八度点、减时线走公共那一份（engrave/stack.ts，墨迹到墨迹等距）：
   /** 叠层的空 ÷ 数字墨迹高。样式键 `stack-gap`。 */
   stackGap = STACK_GAP_DEFAULT;
@@ -3422,6 +3424,12 @@ export class StaffLayout {
    * 横向、纵向间距仍自动算，只是行与页不重排（`layoutpass.ts` 源谱版面档、`staffpages.ts::sourceFlow`）。
    */
   keepBreaks = false;
+  /**
+   * 自动铺排时 `new-system` / `new-page` 是硬断点：源谱版面档（`keepBreaks`），或源文写明的换行（`MixedOptions.sourceBreaks`）。
+   * 后者只管分行分页——过满的行同源谱版面档那样压（`justifySourceSystem`），不满的照常拉、换页照写明的换，
+   * 纵向与装页仍按自动铺排。
+   */
+  hardBreaks = false;
   /** 没写朝向的圆滑线、没有多声部/和弦可依的延音线一律画在音符上方（让开下面的歌词）：自动铺排的谱，以及本应用导出的谱
    *  （读回来要与导出前一样）。别的谱照 musicpp：圆滑线缺省在下、延音线与符干反向。 */
   get arcsAbove(): boolean {

@@ -187,7 +187,7 @@ export async function buildMusicXml(app: App): Promise<string> {
  *  谱里自带版面的原样不动。 */
 export async function sourceMusicXml(app: App): Promise<string> {
   const doc = loadScoreDoc(sourceMusicXmlBare(app));
-  const layout = await engraveScoreDoc(doc, app.staffPage);
+  const layout = await engraveScoreDoc(doc, app.staffPage, app.docFormat === "abc" && !app.phraseOn);
   return scoreDocToMusicXml(doc, layout ? { layout } : {});
 }
 
@@ -204,9 +204,10 @@ export function sourceMusicXmlBare(app: App, opts: { sourceIds?: boolean } = {})
     doc = app.currentScoreDoc();
     if (!doc) throw new Error(t("export.noLines"));
   }
-  // 换行：乐句档按五线谱自己量宽断句（小节中间的也原位断）；否则照简谱视图实际排出的行。都是自动铺排的优选断点
+  // 换行：乐句档按五线谱自己量宽断句（小节中间的也原位断）；ABC 照源文的换行（`App.staffRequest` 当硬断点）；
+  // 否则照简谱视图实际排出的行。后两种以外都是自动铺排的优选断点
   const phrase = app.phraseOn ? app.staffPhraseLineStarts(doc) : null;
-  const lineStarts = phrase ?? app.jianpuLineStarts();
+  const lineStarts = phrase ?? (app.docFormat === "abc" ? null : app.jianpuLineStarts());
   // `sourceIds`：`<note>` 带源元素 id，读回的五线谱模型靠它对回代码区（只给 `App._ensureMixedDoc`，导出不带）
   return scoreDocToMusicXml(doc, { lineStarts, midLineStarts: phrase !== null, sourceIds: opts.sourceIds });
 }

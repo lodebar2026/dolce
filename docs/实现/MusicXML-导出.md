@@ -145,7 +145,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 ## 版面
 
 版面坐标由**五线谱引擎**给（`mixed/engrave.ts::engraveScoreDoc`）：与屏幕上的五线谱同一套——
-同一张纸（设置里五线谱/混排那张，`App.staffPage`）、同一套断行（简谱视图实际排出的行当优选断点，见 [混排](混排.md) 自动铺排）、
+同一张纸（设置里五线谱/混排那张，`App.staffPage`）、同一套断行（简谱视图实际排出的行当优选断点；ABC 照源文换行换页、当硬断点，见 [混排](混排.md) 自动铺排）、
 同一套自动铺排，排出来的坐标装进 `EngravedLayout`（不写进模型，与原文的表层同理），由写出端序列化。不碰 DOM。
 
 - 给出的：`<defaults>`（scaling 7mm/40tenths、page-layout、边距，写回模型；`system-layout` 在 `EngravedLayout`）、每行首小节的 `<print new-system|new-page>`（写回模型）与

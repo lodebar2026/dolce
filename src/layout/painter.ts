@@ -45,6 +45,8 @@ export interface StaffPaintRequest {
   readonly hideBarNumber: boolean;
   /** 混排：简谱层叠在第几个声部上（缺省 0） */
   readonly jianpuPart?: number;
+  /** 谱里的换行换页是源文写明的，当硬断点（`MixedOptions.sourceBreaks`） */
+  readonly sourceBreaks?: boolean;
 }
 
 /** 原样文档这一路（文本谱与多声部 123/ABC、MusicXML 的原样档）：整份 `ScoreDoc` 按源行排，印刷原版观感。
@@ -290,6 +292,7 @@ export class ScorePainter {
     const options = staffOptionsOf(meta, req.style);
     options.hideBarNumber = req.hideBarNumber;
     options.page = req.page;
+    options.sourceBreaks = req.sourceBreaks ?? false;
     const score = layoutStaff(req.doc, options);
     const { pages, placed } = layoutStaffPages(score, req.view === "mixed", req.jianpuPart ?? 0);
     const d = score.defaults;
