@@ -21,7 +21,7 @@ import type { Diagnostic } from "../model/doc";
 import { eachChord } from "../model/helpers";
 import type { Dialect } from "../pu";
 import { relayoutPuText } from "../pu/relayout";
-import type { FitMeasure } from "../jianpu/phrase";
+import type { LinePlan } from "../jianpu/phrase";
 import { parse123, parseAbc, parseJcx } from "../abcfamily/parse";
 import { parseJly, rewrapJlyText } from "../jly/fromjly";
 import { DIALECT_JLY } from "./visual/dialects/jly";
@@ -141,14 +141,15 @@ type RelayoutPart =
   | {
     caps: FormatCaps & { phraseRelayout: true };
     /**
-     * 「按乐句重排」怎么写回原文。断句本身与格式无关
+     * 重排（「按乐句重排」/「每行 N 小节」）怎么写回原文。分行本身与格式无关
      * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`pu/relayout.ts`），
      * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `jianpu/docrelayout.ts`）。
      *
-     * @param measure 行长尺子（文本谱与多声部的原样档不给，见 `App._puPhraseMeasure`；没有就按出厂的小节数目标断，也就是一句一行）
+     * @param plan 新行怎么分（`jianpu/phrase.ts::LinePlan`）。按乐句时带行长尺子（文本谱与多声部的原样档不给，
+     *             见 `App._puPhraseMeasure`；没有就按出厂的小节数目标断，也就是一句一行）
      * @returns 新原文；没有可重排的曲行时原样返回 `text`
      */
-    relayoutText(text: string, measure: FitMeasure | null): string;
+    relayoutText(text: string, plan: LinePlan): string;
   }
   | { caps: FormatCaps & { phraseRelayout: false }; relayoutText?: undefined };
 
@@ -167,11 +168,11 @@ const stripBom = (bytes: Uint8Array): Uint8Array =>
 /** 123/ABC 的重排：断点写进模型（小节中间的原位记在和弦上，写出端在那个音后写 `$`），整份重出。
  *  重出会丢注释（注释不进模型），所以再把原文的注释按「跟着哪个和弦」缝回去（`spliceComments`）。 */
 function emitFrom(
-  text: string, measure: FitMeasure | null,
+  text: string, plan: LinePlan,
   parse: (text: string) => ScoreDoc, emit: (doc: ScoreDoc) => string,
 ): string {
   const doc = parse(text);
-  if (!relayoutDocBreaks(doc, { measure, midBreaks: "inline" })) return text;
+  if (!relayoutDocBreaks(doc, { plan, midBreaks: "inline" })) return text;
   const out = emit(doc);
   return spliceComments(text, doc, out, parse(out));
 }
@@ -189,10 +190,10 @@ const JPWABC: FormatAdapter = {
   reload: (host, text) => host.reloadJpwabc(text),
   // `.jpwabc` 是分节文件：只重切 `.Voice` 的行，别的节（样式、歌词、分页描述）一个字不动。
   // 尺子与 123/ABC 同一把：不量的话乐句行在原样档放不下，引擎整首按宽度重断，两种格式排出来就不一样了
-  relayoutText: (text, measure) => {
+  relayoutText: (text, plan) => {
     const f = JpwFile.fromString(text);
     if (!f) return text;
-    return relayoutJpwabcText(text, jpwToScoreDoc(f), { measure });
+    return relayoutJpwabcText(text, jpwToScoreDoc(f), { plan });
   },
   editDialect: DIALECT_JPW,
 };
@@ -225,7 +226,7 @@ const PU: FormatAdapter = {
     // 解析告警不拦排版，按方言报（谱面往往仍然是对的）
     diagLabel: (doc) => dialectLabel((doc.puDialect ?? "tomato") as Dialect),
   },
-  relayoutText: (text, measure) => relayoutPuText(text, parsePu(text), { measure }),
+  relayoutText: (text, plan) => relayoutPuText(text, parsePu(text), { plan }),
   editDialect: DIALECT_PU,
 };
 
@@ -254,7 +255,7 @@ const J123: FormatAdapter = {
     what: () => "123",
     reject: rejectFatal((d) => t("status.j123Fatal", { line: d.source.line + 1, error: diagText(d) })),
   },
-  relayoutText: (text, measure) => emitFrom(text, measure, parse123, emit123),
+  relayoutText: (text, plan) => emitFrom(text, plan, parse123, emit123),
   editDialect: DIALECT_123,
 };
 
@@ -282,7 +283,7 @@ const ABC: FormatAdapter = {
   caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true },
   toScoreDoc: parseAbc,
   reloadSpec: { what: () => "ABC", reject: rejectNoNotes(() => t("status.abcNoNotes")), reportOnReject: true },
-  relayoutText: (text, measure) => emitFrom(text, measure, parseAbc, emitAbc),
+  relayoutText: (text, plan) => emitFrom(text, plan, parseAbc, emitAbc),
   editDialect: DIALECT_ABC,
 };
 
@@ -313,7 +314,7 @@ const JCX: FormatAdapter = {
   caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true },
   toScoreDoc: parseJcx,
   reloadSpec: { what: () => t("fmt.jcx.label"), reject: rejectNoNotes(() => t("status.jcxNoNotes")), reportOnReject: true },
-  relayoutText: (text, measure) => emitFrom(text, measure, parseJcx, emitJcx),
+  relayoutText: (text, plan) => emitFrom(text, plan, parseJcx, emitJcx),
   editDialect: DIALECT_JCX,
 };
 
@@ -346,10 +347,10 @@ const JLY: FormatAdapter = {
   },
   profileKnob: "original",
   caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true },
-  // 「按乐句重排」：**只把曲行按每 4 小节重新断行**，词行/页头/注释一个字不动（上游不看行，
-  // 但 dolce 自己按文件的行排版；一行到底就挤成一团）。尺子还没接（`measure` 先不用），
+  // 重排：**只把曲行按每 N 小节重新断行**，词行/页头/注释一个字不动（上游不看行，
+  // 但 dolce 自己按文件的行排版；一行到底就挤成一团）。按乐句时尺子还没接（`measure` 先不用），
   // 用的是写出端同一套"每 4 小节一行"的出厂值。
-  relayoutText: (text) => rewrapJlyText(text),
+  relayoutText: (text, plan) => (plan.kind === "bars" ? rewrapJlyText(text, plan.n) : rewrapJlyText(text)),
   toScoreDoc: (text) => parseJly(text).doc,
   // 本版不收的写法（`LP:` 块、倚音和弦、布局开关…）`parseJly` 记进诊断，原样报出——不静默丢
   reloadSpec: { what: () => "jianpu-ly", reject: rejectNoNotes(() => t("status.abcNoNotes")), reportOnReject: true },

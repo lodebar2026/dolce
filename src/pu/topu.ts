@@ -888,7 +888,7 @@ function withLines(song: Song): Song {
   if (hasBreaks(song)) return song;
   const doc: ScoreDoc = { sourceFormat: "123", songs: [structuredClone(song)], diagnostics: [] };
   const phrased = doc.songs[0]!;
-  if (relayoutDocBreaks(doc, { measure: null, midBreaks: "snap" }) && hasBreaks(phrased)) return phrased;
+  if (relayoutDocBreaks(doc, { midBreaks: "snap" }) && hasBreaks(phrased)) return phrased;
   for (const p of phrased.parts) {
     p.measures.forEach((m, i) => {
       if (i > 0 && i % FALLBACK_MEASURES_PER_LINE === 0) m.print = { ...m.print, newSystem: true };

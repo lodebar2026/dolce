@@ -292,6 +292,22 @@ button:focus-visible, select:focus-visible {
 }
 #toolbar .layout-mode-switch button:hover:not(:disabled) { color: var(--text); }
 #toolbar .layout-mode-switch button.active { background: var(--panel-hover); color: var(--text); }
+/* 「每行 [N] 小节」：按钮、下拉、单位连成一段，整段随这一档高亮 */
+.layout-mode-switch .bars-per-line { display: flex; align-items: center; border-radius: 4px; color: var(--text-muted); font-size: 12px; font-weight: 650; }
+.layout-mode-switch .bars-per-line.active { background: var(--panel-hover); color: var(--text); }
+#toolbar .layout-mode-switch .bars-per-line button { padding-right: 4px; }
+#toolbar .layout-mode-switch .bars-per-line button.active { background: none; }
+.layout-mode-switch .bars-per-line select {
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.layout-mode-switch .bars-per-line option { background: var(--panel); color: var(--text); }
+.layout-mode-switch .bars-unit { padding: 0 10px 0 4px; }
 .toolbar-select-field {
   position: relative;
   display: inline-flex;

@@ -65,7 +65,7 @@ export class MixedSession {
       const { width, byId } = staffChordSpans(layoutStaff(bare, options));
       if (byId.size === 0) return null;
       const measure: FitMeasure = () => ({ width, spans: byId });
-      const cuts = phraseCuts(doc, 0, { measure });
+      const cuts = phraseCuts(doc, 0, { kind: "phrase", measure });
       if (!cuts) return null;
       return new Set(cuts.flatMap((c) => (c.id === null ? [] : [c.id])));
     } catch (e) {

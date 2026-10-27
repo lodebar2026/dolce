@@ -122,26 +122,17 @@ function indexAtTick(st: VoiceStream, tick: Fraction): number {
 /** 量行长的尺子：量这份文档第 `song` 首各音的自然跨度（键是元素 id，按 id 对回断句输入）。
  *  `noPairs`：只用来判「放不放得下」、不许两句并一行（原样档：要的是一句一行，见 `App._puPhraseMeasure`）。 */
 export type FitMeasure = (doc: ScoreDoc, song: number) => {
-  width: number; spans: ReadonlyMap<string | number, { x0: number; x1: number }>; noPairs?: boolean;
+  width: number; spans: ReadonlyMap<string | number, { x0: number; x1: number; x1b?: number }>; noPairs?: boolean;
 } | null;
 
-/**
- * 算出这一首该怎么按乐句分行。
- *
- * @param measure 真实坐标的行长尺子（`App._puPhraseMeasure`）。不给就只按小节数断，
- *                行长目标是 `phrase.ts` 的出厂值——与 `.jpwabc` 那条路同一个口径。
- * @returns 新的行划分；这份文档没有可排的曲行时返回 null。
- */
-export function puPhraseLines(
-  sdoc: ScoreDoc, songIdx = 0, opt: { measure?: FitMeasure | null } = {},
-): PuNewLine[] | null {
+/** 这一首的断句输入、各声部元素流，以及断点落在哪个声部（主旋律）上。没有可排的曲行时返回 null。 */
+function leadOf(sdoc: ScoreDoc, songIdx: number) {
   const view = docView(sdoc);
   const song = view.songs[songIdx];
   if (!song) return null;
   // 断句输入从 `ScoreDoc` 出；断点经「和弦 → id → 行里的元素」回到原文（重排改写的是原文本身）
   const input = phrasePartOfSong(sdoc, songIdx);
   if (!input) return null;
-  const part = input.part;
   const noteMap = new Map<PhraseChord, NoteElement>();
   for (const [ch, id] of input.idOf) {
     const el = view.elementOf.get(id);
@@ -160,10 +151,139 @@ export function puPhraseLines(
       if (el.kind === "note") where.set(el, { voice: st.voice, idx });
     });
   }
-  const firstChord = part.measures.flatMap((m) => chordsOf(m)).find((c) => noteMap.has(c));
+  const firstChord = input.part.measures.flatMap((m) => chordsOf(m)).find((c) => noteMap.has(c));
   const leadEl = firstChord ? noteMap.get(firstChord) : undefined;
   const lead = streams.get((leadEl && where.get(leadEl)?.voice) ?? voices[0]!);
   if (!lead) return null;
+  return { view, song, input, noteMap, where, voices, streams, lead };
+}
+
+/** 新的行怎么分：按乐句（`measure` 是行长尺子）、或每行固定 `n` 小节。
+ *  `onOverflow`：每行 n 小节时，有一行在 `measure` 量出的版心里放不下就报（1 基行号，只报第一处）。 */
+export type LinePlan =
+  | { kind: "phrase"; measure: FitMeasure | null }
+  | { kind: "bars"; n: number; measure?: FitMeasure | null; onOverflow?: (line: number) => void };
+
+/** 按 `plan` 分出这一首的新行。 */
+export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): PuNewLine[] | null {
+  if (plan.kind === "phrase") return puPhraseLines(sdoc, songIdx, { measure: plan.measure });
+  const lines = barLines(sdoc, songIdx, plan.n);
+  if (lines && plan.measure && plan.onOverflow) {
+    const measured = plan.measure(sdoc, songIdx);
+    const bad = measured ? barLinesOverflow(sdoc, songIdx, lines, measured) : null;
+    if (bad !== null) plan.onOverflow(bad);
+  }
+  return lines;
+}
+
+/**
+ * **每行 n 小节**：只按主旋律的小节线数，原有换行（连同小节中间的）一律作废。
+ *
+ * - 不满的第一小节（弱起）不计数，并进首行：每行 4 小节时首行是「弱起 + 4 小节」；
+ * - 源里原有的换页照留：换页处一定切一刀（落在小节中间也照切），之后从下一个完整小节起重新数；
+ * - 剩下不足 n 的照留为末行，不并、不摊；`|:` 领起新行（`alignCut`）。
+ */
+export function barLines(sdoc: ScoreDoc, songIdx: number, n: number): PuNewLine[] | null {
+  const ctx = leadOf(sdoc, songIdx);
+  if (!ctx || n < 1) return null;
+  const { song, voices, streams, lead } = ctx;
+  const els = lead.elements;
+
+  // 小节起点：小节线之后（`|:` 退到它自己前面）
+  const starts: number[] = [];
+  for (let i = 1; i < els.length; i++) {
+    if (els[i - 1]!.kind !== "barline" || els[i]!.kind === "barline") continue;
+    const at = alignCut(els, i);
+    if (at > 0 && at < els.length && starts[starts.length - 1] !== at) starts.push(at);
+  }
+  if (starts.length === 0) return null;
+  // 弱起：第一小节比第二小节短
+  const tickAt = (i: number): Fraction => (i < lead.ticks.length ? lead.ticks[i]! : new Fraction(0));
+  const pickup = starts.length >= 2 && tickAt(starts[0]!).compareTo(tickAt(starts[1]!).minus(tickAt(starts[0]!))) < 0;
+
+  // 源里的换页：主旋律流里换了页的地方
+  const pageOf = new Map<ScoreLine, number>();
+  song.pages.forEach((pg, p) => pg.groups.forEach((g) => g.voices.forEach((l) => pageOf.set(l, p))));
+  const pageCuts = new Set<number>();
+  for (let i = 1; i < lead.origin.length; i++) {
+    const a = lead.lines[lead.origin[i - 1]!.lineIdx]!;
+    const b = lead.lines[lead.origin[i]!.lineIdx]!;
+    if (a !== b && pageOf.get(a) !== pageOf.get(b)) pageCuts.add(alignCut(els, i));
+  }
+
+  const isStart = new Set(starts);
+  const cuts = new Map<number, boolean>(); // 切点 → 这一刀换页
+  let count = 0;
+  let partial = false; // 换页落在小节中间：后半截小节不计数
+  [...new Set([...starts, ...pageCuts])].sort((a, b) => a - b).forEach((b) => {
+    if (b <= 0 || b >= els.length) return;
+    if (pageCuts.has(b)) {
+      cuts.set(b, true);
+      count = 0;
+      partial = !isStart.has(b);
+      return;
+    }
+    if ((b === starts[0] && pickup) || partial) {
+      partial = false;
+      return;
+    }
+    count += 1;
+    if (count >= n) {
+      cuts.set(b, false);
+      count = 0;
+    }
+  });
+
+  const bounds = [0, ...[...cuts.keys()].sort((a, b) => a - b)];
+  const lines: PuNewLine[] = [];
+  bounds.forEach((from, i) => {
+    const to = bounds[i + 1] ?? els.length;
+    const segs = segsOf(voices, streams, lead, from, to);
+    if (segs.length > 0) lines.push({ segs, pageAfter: to < els.length && cuts.get(to) === true });
+  });
+  return lines.length > 0 ? lines : null;
+}
+
+/** 每行 n 小节分出来的行里，第一个在版心里放不下的（1 基行号）；都放得下返回 null。
+ *  量法同断句的容量判据（`applybreaks.ts::fitForIds`）：行首音的 `x0` 到行末音的 `x1b`（没有就 `x1`）。 */
+function barLinesOverflow(
+  sdoc: ScoreDoc, songIdx: number, lines: readonly PuNewLine[],
+  measured: NonNullable<ReturnType<FitMeasure>>,
+): number | null {
+  const ctx = leadOf(sdoc, songIdx);
+  if (!ctx) return null;
+  const { view, lead } = ctx;
+  for (let li = 0; li < lines.length; li++) {
+    const seg = lines[li]!.segs.find((s) => s.voice === lead.voice);
+    if (!seg) continue;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    for (let k = seg.from; k < seg.to; k++) {
+      const id = view.idOf.get(lead.elements[k]!);
+      const sp = id === undefined ? undefined : measured.spans.get(id);
+      if (!sp) continue;
+      x0 = Math.min(x0, sp.x0);
+      x1 = Math.max(x1, sp.x1b ?? sp.x1);
+    }
+    if (x1 > x0 && x1 - x0 > measured.width + 0.5) return li + 1;
+  }
+  return null;
+}
+
+/**
+ * 算出这一首该怎么按乐句分行。
+ *
+ * @param measure 真实坐标的行长尺子（`App._puPhraseMeasure`）。不给就只按小节数断，
+ *                行长目标是 `phrase.ts` 的出厂值——与 `.jpwabc` 那条路同一个口径。
+ * @returns 新的行划分；这份文档没有可排的曲行时返回 null。
+ */
+export function puPhraseLines(
+  sdoc: ScoreDoc, songIdx = 0, opt: { measure?: FitMeasure | null } = {},
+): PuNewLine[] | null {
+  const ctx = leadOf(sdoc, songIdx);
+  if (!ctx) return null;
+  const { input, noteMap, where, voices, streams, lead } = ctx;
+  const part = input.part;
 
   const breaks = computePhraseBreaks(part, { pageLines: PAGE_LINES });
   if (opt.measure) {
@@ -322,13 +442,11 @@ export interface PhraseCut {
 }
 
 /**
- * 按乐句重排的断点（不含第一行的行首）。**与格式无关**：`puPhraseLines` 只经断句输入读谱，
- * 文本谱 / 123 / ABC / `.jpwabc` 拼出的 `ScoreDoc` 都吃得下。
+ * 重排的断点（不含第一行的行首），新行按 `plan` 分（按乐句 / 每行 n 小节）。**与格式无关**：
+ * 两种分法都只经行视图读谱，文本谱 / 123 / ABC / `.jpwabc` 拼出的 `ScoreDoc` 都吃得下。
  */
-export function phraseCuts(
-  sdoc: ScoreDoc, songIdx = 0, opt: { measure?: FitMeasure | null } = {},
-): PhraseCut[] | null {
-  const lines = puPhraseLines(sdoc, songIdx, opt);
+export function phraseCuts(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): PhraseCut[] | null {
+  const lines = planLines(sdoc, songIdx, plan);
   if (!lines) return null;
   const view = docView(sdoc);
   const song = view.songs[songIdx];

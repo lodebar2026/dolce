@@ -108,7 +108,8 @@ The interface is available in **English and Chinese**: it follows your browser l
   - *Staff*: Western staff notation.
   - *Mixed*: staff notation with a jianpu layer on top.
 - **Phrase-aware re-layout.** Lines are re-broken using lyric punctuation and musical cues (fermatas, final
-  barlines, long notes, rests, slurs). The original line breaks can be restored with one click.
+  barlines, long notes, rests, slurs), or with a fixed number of bars per line (pickup bar not counted, existing
+  page breaks kept). The original line breaks can be restored with one click.
 - **Paper and styling.** Paper size, orientation, margins and header fonts are all adjustable. `.ss` style sheets
   keep fonts, colors and layout consistent across a whole songbook.
 

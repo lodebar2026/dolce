@@ -63,6 +63,9 @@ import type { PaperChoice } from "./stylestate";
 /** 谱面区的四档排版模式。见 `App.setViewModeButtons` 的注释：这是两组正交状态的组合。 */
 export type ViewMode = JianpuLayoutMode | "staff" | "mixed";
 
+/** 工具栏「分行」三档：照原文 / 按乐句重排 / 每行 N 小节（后两档都重写原文）。 */
+export type LineMode = "original" | "phrase" | "bars";
+
 /** 文本谱的扩展名。`.txt` 太泛，靠 sniffDialect 兜底，认不出就不动。 */
 
 export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost, FileSwitchHost, VisualHost {
@@ -122,13 +125,17 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   readonly formats: FormatSwitch = new FormatSwitch(this);
   /** 简谱 OMR 的那一摊（识别、叠加核对、点选定位、输出格式）——见 editor/omrctl.ts。 */
   readonly omr: OmrController = new OmrController(this);
-  // 乐句排版：缓存导入时的「原始排版」文本以便无损切回；_phraseOn 记当前是否乐句排版。
+  // 分行三档：缓存导入时的「原始排版」文本以便无损切回；_lineMode 记当前是哪一档（按乐句 / 每行 N 小节都是重排原文）。
   private _originalLayoutBtnEl: HTMLButtonElement | null = null;
   private _phraseBtnEl: HTMLButtonElement | null = null;
+  private _barsBtnEl: HTMLButtonElement | null = null;
+  private _barsSelEl: HTMLSelectElement | null = null;
   private _origLayoutText: string | null = null;
-  private _phraseOn = false;
+  private _lineMode: LineMode = "original";
   /** 文本谱：上一次重排**产出的**那份原文。文本与它不同了就说明用户自己动过手。 */
   private _phraseText: string | null = null;
+  /** 当前「每行 N 小节」排的是几小节（不在这一档时 null）。 */
+  private _barsAt: number | null = null;
   private _hanziBtnEl: HTMLButtonElement | null = null;
   private _readOnlyCompartment = new Compartment();
   /** 渲染设置（样式层的用户层、诗集样式表、面板读写的字号/纸/配色）：`stylestate.ts`。 */
@@ -432,7 +439,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 「按乐句重排」开着没有。开着时五线谱另按乐句断（`staffPhraseLineStarts`），不跟简谱视图的行。 */
   get phraseOn(): boolean {
-    return this._phraseOn;
+    return this._lineMode === "phrase";
   }
 
   /** `.jpwabc` 当前源文的模型（与简谱排版器、导出同一份，元素 id 对得上）。 */
@@ -1463,18 +1470,18 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this._disablePhrase();
       return;
     }
-    if (this._phraseOn && text !== this._phraseText) {
-      this._phraseOn = false;
-      this._setPhraseActive(false);
+    if (this._lineMode !== "original" && text !== this._phraseText) {
+      this._lineMode = "original";
+      this._setPhraseActive();
     }
-    if (!this._phraseOn) this._origLayoutText = text;
+    if (this._lineMode === "original") this._origLayoutText = text;
     this._setPhraseAvailable(true);
   }
 
   private _disablePhrase(): void {
     this._origLayoutText = null;
-    this._phraseOn = false;
-    this._setPhraseActive(false);
+    this._lineMode = "original";
+    this._setPhraseActive();
     this._setPhraseAvailable(false);
   }
 
@@ -1501,10 +1508,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (group) group.hidden = !group.querySelector("[data-context-control]:not([hidden])");
   }
 
-  setPhraseButtons(original: HTMLButtonElement, phrase: HTMLButtonElement): void {
+  setPhraseButtons(original: HTMLButtonElement, phrase: HTMLButtonElement, bars: HTMLButtonElement, barsSel: HTMLSelectElement): void {
     this._originalLayoutBtnEl = original;
     this._phraseBtnEl = phrase;
-    this._setPhraseActive(false);
+    this._barsBtnEl = bars;
+    this._barsSelEl = barsSel;
+    this._setPhraseActive();
     this._setPhraseAvailable(false);
   }
 
@@ -1512,57 +1521,75 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const switchEl = this._phraseBtnEl?.closest<HTMLElement>(".layout-mode-switch");
     if (!switchEl) return;
     switchEl.hidden = !available;
-    if (this._originalLayoutBtnEl) this._originalLayoutBtnEl.disabled = !available;
-    if (this._phraseBtnEl) this._phraseBtnEl.disabled = !available;
+    for (const el of [this._originalLayoutBtnEl, this._phraseBtnEl, this._barsBtnEl, this._barsSelEl]) {
+      if (el) el.disabled = !available;
+    }
     this._syncContextGroup(switchEl);
   }
 
-  private _setPhraseActive(phrase: boolean): void {
-    this._originalLayoutBtnEl?.classList.toggle("active", !phrase);
-    this._phraseBtnEl?.classList.toggle("active", phrase);
-    this._originalLayoutBtnEl?.setAttribute("aria-pressed", String(!phrase));
-    this._phraseBtnEl?.setAttribute("aria-pressed", String(phrase));
+  private _setPhraseActive(): void {
+    const pairs: Array<[HTMLElement | null, LineMode]> = [
+      [this._originalLayoutBtnEl, "original"], [this._phraseBtnEl, "phrase"], [this._barsBtnEl, "bars"],
+    ];
+    for (const [el, mode] of pairs) {
+      el?.classList.toggle("active", this._lineMode === mode);
+      el?.setAttribute("aria-pressed", String(this._lineMode === mode));
+    }
+    this._barsSelEl?.closest(".bars-per-line")?.classList.toggle("active", this._lineMode === "bars");
   }
 
-  /** 原样排版与按乐句重排之间切换。 */
-  setPhraseLayout(phrase: boolean): void {
-    if (this.adapter.caps.phraseRelayout) this._setPhraseLayout(phrase);
+  /** 切分行档：原始排版 / 按乐句重排 / 每行 `n` 小节。 */
+  setLineMode(mode: LineMode, n?: number): void {
+    if (this.adapter.caps.phraseRelayout) this._setLineMode(mode, n);
   }
 
   /**
-   * 「按乐句重排」：**重排的是原文本身**，两档因此同时就位——文本谱一行 `Q:`（123 一个 `$`）
+   * 「按乐句重排」「每行 N 小节」：**重排的是原文本身**，两档因此同时就位——文本谱一行 `Q:`（123 一个 `$`）
    * 就是谱面一行，展开档的行边界由 `jianpu/jianpuinput.ts` 转成换行条目。怎么写回原文由各格式
    * 的适配器给（`editor/formats.ts::relayoutText`）。
-   * 切回「原样」= 把重排前那份原文放回去（逐字相同，Ctrl+Z 也能整体撤销）。
+   * 两种重排都从**重排前那份原文**起算（互切、改 N 都不在重排结果上再排）；
+   * 切回「原样」= 把那份原文放回去（逐字相同，Ctrl+Z 也能整体撤销）。
    */
-  private _setPhraseLayout(phrase: boolean): void {
-    if (this._phraseOn === phrase) return;
-    const base = this._origLayoutText;
-    if (!phrase) {
-      if (base === null) return;
-      this._phraseOn = false;
-      this._setPhraseActive(false);
+  private _setLineMode(mode: LineMode, n?: number): void {
+    const bars = n ?? this._barsN;
+    if (this._lineMode === mode && (mode !== "bars" || bars === this._barsAt)) return;
+    const base = this._lineMode === "original" ? this.getText() : this._origLayoutText;
+    if (base === null) return;
+    if (mode === "original") {
+      this._lineMode = "original";
+      this._setPhraseActive();
       this.setText(base);
       return;
     }
     const relayout = this.adapter.relayoutText;
     if (!relayout) return;
-    const text = this.getText();
     try {
-      const out = relayout(text, this._puPhraseMeasure());
-      if (out === text) {
-        this.setStatus(t("status.phraseSame"));
+      let overflow: number | null = null;
+      const measure = this._puPhraseMeasure();
+      const out = relayout(base, mode === "phrase"
+        ? { kind: "phrase", measure }
+        : { kind: "bars", n: bars, measure, onOverflow: (line) => { overflow ??= line; } });
+      if (out === base && this._lineMode === "original") {
+        this.setStatus(t(mode === "phrase" ? "status.phraseSame" : "status.barsSame", { n: bars }));
         return;
       }
-      this._origLayoutText = text;
+      this._origLayoutText = base;
       this._phraseText = out;
-      this._phraseOn = true;
-      this._setPhraseActive(true);
-      this.setText(out);
+      this._lineMode = mode;
+      this._barsAt = mode === "bars" ? bars : null;
+      this._setPhraseActive();
+      if (out !== this.getText()) this.setText(out);
+      if (overflow !== null) this.setStatus(t("status.barsOverflow", { n: bars, line: overflow }));
     } catch (e) {
-      console.error("乐句重排失败", e);
+      console.error("重排失败", e);
       this.setStatus(t("status.phraseFailed", { error: (e instanceof Error ? e.message : String(e)) }));
     }
+  }
+
+  /** 「每行 N 小节」的 N（工具栏下拉，记住上次选的）。 */
+  private get _barsN(): number {
+    const v = Number(this._barsSelEl?.value);
+    return Number.isInteger(v) && v > 0 ? v : 4;
   }
 
   /**

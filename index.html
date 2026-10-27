@@ -258,6 +258,11 @@
           <div id="layout-mode-switch" class="layout-mode-switch" data-context-control aria-label="分行方式" data-i18n-aria="toolbar.linesAria" hidden>
             <button id="btn-layout-original" class="active" aria-pressed="true" title="保留导入或识别时的行结构" data-i18n-title="toolbar.layoutOriginal.title" data-i18n="toolbar.layoutOriginal">原始排版</button>
             <button id="btn-phrase" aria-pressed="false" title="根据歌词和音乐乐句重新安排换行" data-i18n-title="toolbar.phrase.title" data-i18n="toolbar.phrase">按乐句重排</button>
+            <span class="bars-per-line">
+              <button id="btn-bars" aria-pressed="false" title="每行固定放几个小节（弱起不计，原有换页保留）" data-i18n-title="toolbar.bars.title" data-i18n="toolbar.bars">每行</button>
+              <select id="sel-bars-per-line" aria-label="每行小节数" data-i18n-aria="toolbar.barsCount"><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select>
+              <span class="bars-unit" data-i18n="toolbar.barsUnit">小节</span>
+            </span>
           </div>
         </div>
         <div id="recognition-tools" class="tool-group context-tool-group" hidden>

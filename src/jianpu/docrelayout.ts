@@ -20,25 +20,28 @@
 
 import type { ScoreDoc } from "../model/doc";
 import { applyBreaks, type LineStart } from "../model/breaks";
-import { phraseCuts, type FitMeasure, type PhraseCut } from "./phrase";
+import { phraseCuts, type LinePlan, type PhraseCut } from "./phrase";
 import { JpwFile, LayoutSection, VoiceSection } from "../jpword/jpwfile";
 
+/** 缺省的分法：按乐句、不量宽 */
+const PHRASE: LinePlan = { kind: "phrase", measure: null };
+
 export interface DocRelayoutOptions {
-  /** 行长尺子（见 `jianpu/phrase.ts::FitMeasure`）；不给就按出厂的小节数目标断。 */
-  measure?: FitMeasure | null;
+  /** 新行怎么分（见 `jianpu/phrase.ts::LinePlan`）；不给就按乐句、出厂的小节数目标断。 */
+  plan?: LinePlan;
   /** 小节中间的断点怎么落：`inline` 原位记在和弦上；`snap` 挪到下一根小节线。 */
   midBreaks: "inline" | "snap";
 }
 
 /**
- * 把按乐句重排的断点写进 `ScoreDoc` 的换行位。逐首处理，**改的是传进来的这份文档**。
+ * 把重排（按乐句 / 每行 n 小节）的断点写进 `ScoreDoc` 的换行位。逐首处理，**改的是传进来的这份文档**。
  *
  * @returns 有没有排出新的行结构（没有可排的曲行时 false）
  */
 export function relayoutDocBreaks(sdoc: ScoreDoc, opt: DocRelayoutOptions): boolean {
   let changed = false;
   sdoc.songs.forEach((song, si) => {
-    const cuts = phraseCuts(sdoc, si, { measure: opt.measure ?? null });
+    const cuts = phraseCuts(sdoc, si, opt.plan ?? PHRASE);
     if (!cuts || cuts.length === 0) return;
     const starts: LineStart[] = [];
     for (const cut of cuts) if (cut.id !== null) starts.push({ id: cut.id, page: cut.page });
@@ -179,14 +182,14 @@ function stripBreaks(text: string): string {
 }
 
 /**
- * 按乐句重排一份 `.jpwabc` 原文：**只重切 `.Voice` 的行**（挪 `$`），别的节原样。
+ * 重排（按乐句 / 每行 n 小节）一份 `.jpwabc` 原文：**只重切 `.Voice` 的行**（挪 `$`），别的节原样。
  *
  * @param text 编辑器里的原文
  * @param sdoc 它解析出来的那一份（`jpwToScoreDoc`）
  * @returns 新原文；没有可重排的曲行时原样返回
  */
-export function relayoutJpwabcText(text: string, sdoc: ScoreDoc, opt: { measure?: FitMeasure | null } = {}): string {
-  const cuts = phraseCuts(sdoc, 0, { measure: opt.measure ?? null });
+export function relayoutJpwabcText(text: string, sdoc: ScoreDoc, opt: { plan?: LinePlan } = {}): string {
+  const cuts = phraseCuts(sdoc, 0, opt.plan ?? PHRASE);
   if (!cuts || cuts.length === 0) return text;
   const file = JpwFile.fromString(text);
   const voice = file?.getSection(VoiceSection) ?? null;

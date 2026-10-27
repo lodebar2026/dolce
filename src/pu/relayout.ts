@@ -23,7 +23,7 @@ import type { ScoreDoc } from "../model/doc";
 import { docView, type RowView } from "../jianpu/slots";
 import { dialectSpec, type Dialect } from "./dialect";
 import { BODY_PREFIX } from "./parse";
-import { puLinesEdited, puPhraseLines, voiceStream, type FitMeasure, type PuNewLine, type VoiceStream } from "../jianpu/phrase";
+import { planLines, puLinesEdited, voiceStream, type LinePlan, type PuNewLine, type VoiceStream } from "../jianpu/phrase";
 
 /** 起头的记号：它们属于**后面**那个元素，切行时归下一行。 */
 const OPENERS = new Set(["(", "["]);
@@ -137,16 +137,16 @@ function lyricSlice(
 }
 
 /**
- * 按乐句重排一份文本谱原文。
+ * 重排一份文本谱原文（按乐句 / 每行 n 小节）。
  *
  * 逐首处理（`-----` 分出的多唱法各自断句）；头部字段、`W:` 文字行、`-----` 原样保留，
  * 换掉的只有曲行与歌词行所在的那一段，以及分组空行与 `[fenye]`（行结构变了，它们要重来）。
  *
  * @param text    编辑器里的原文（`doc` 必须是它解析出来的那一份，`parsePu(text)`）
- * @param measure 行长尺子（`App._puPhraseMeasure`）；不给就按 `phrase.ts` 的出厂目标断
+ * @param plan    新行怎么分（`jianpu/phrase.ts::LinePlan`）；不给就按乐句、`phrase.ts` 的出厂目标断
  */
 export function relayoutPuText(
-  text: string, sdoc: ScoreDoc, opt: { measure?: FitMeasure | null } = {},
+  text: string, sdoc: ScoreDoc, opt: { plan?: LinePlan } = {},
 ): string {
   const raws = text.split(/\r?\n/);
   const doc = docView(sdoc);
@@ -155,7 +155,7 @@ export function relayoutPuText(
   const patches: Array<{ from: number; to: number; lines: string[] }> = [];
 
   doc.songs.forEach((song, songIdx) => {
-    const plan = puPhraseLines(sdoc, songIdx, { measure: opt.measure ?? null });
+    const plan = planLines(sdoc, songIdx, opt.plan ?? { kind: "phrase", measure: null });
     if (!plan) return;
     const region = songRegion(song);
     if (!region) return;

@@ -17,6 +17,9 @@ import { setupPopover } from "./editor/toolpop";
 import { setupCompareSelect } from "./editor/comparemode";
 
 // Built-in sample (圣哉，圣哉，圣哉) — same content as CodeEditor.kt `scr`.
+/** 工具栏「每行 N 小节」上次选的 N */
+const BARS_PER_LINE_KEY = "dolce-bars-per-line";
+
 const SAMPLE = `// ************** JPW-ABC File Ver 1.0 (for JP-Word v5.50m) **************
 .Title
 Title = {圣哉，圣哉，圣哉}
@@ -308,10 +311,23 @@ async function boot() {
   if (docFormatNote) app.formats.bindNote(docFormatNote);
   const originalLayoutBtn = document.getElementById("btn-layout-original") as HTMLButtonElement | null;
   const phraseBtn = document.getElementById("btn-phrase") as HTMLButtonElement | null;
-  if (originalLayoutBtn && phraseBtn) {
-    app.setPhraseButtons(originalLayoutBtn, phraseBtn);
-    originalLayoutBtn.addEventListener("click", () => app.setPhraseLayout(false));
-    phraseBtn.addEventListener("click", () => app.setPhraseLayout(true));
+  const barsBtn = document.getElementById("btn-bars") as HTMLButtonElement | null;
+  const barsSel = document.getElementById("sel-bars-per-line") as HTMLSelectElement | null;
+  if (originalLayoutBtn && phraseBtn && barsBtn && barsSel) {
+    try {
+      const last = localStorage.getItem(BARS_PER_LINE_KEY);
+      if (last && [...barsSel.options].some((o) => o.value === last)) barsSel.value = last;
+    } catch { /* 存储不可用：用出厂的 4 */ }
+    app.setPhraseButtons(originalLayoutBtn, phraseBtn, barsBtn, barsSel);
+    originalLayoutBtn.addEventListener("click", () => app.setLineMode("original"));
+    phraseBtn.addEventListener("click", () => app.setLineMode("phrase"));
+    barsBtn.addEventListener("click", () => app.setLineMode("bars"));
+    barsSel.addEventListener("change", () => {
+      try {
+        localStorage.setItem(BARS_PER_LINE_KEY, barsSel.value);
+      } catch { /* 记不住就算了 */ }
+      app.setLineMode("bars", Number(barsSel.value));
+    });
   }
   const playBtn = document.getElementById("btn-play") as HTMLButtonElement | null;
   if (playBtn) {
