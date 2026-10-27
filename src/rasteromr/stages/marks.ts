@@ -10,7 +10,7 @@ import { isClef, isAccidental } from "../../staffomr/glyphs";
 import { sharpsByStrokes, KEY_GAP } from "../keysig";
 import { RasterGlyphLookup } from "../rasterglyphs";
 import { type RasterPrims, binSig, type LineSeg } from "../prims";
-import { judgeHeadBox } from "../notehead";
+import { judgeHeadBox, stemWalledCavity } from "../notehead";
 import { isBarRest, nearRestLine, enclosedWhite } from "../restshape";
 import { findDots } from "../dots";
 import { MID_CLEF_FROM } from "./shared";
@@ -26,6 +26,8 @@ const FLAG_REACH = 1.6;
 const FLAG_HEAD_BAND = 2.5;
 /** 符尾与干那端实心头的最小距离（格）。 */
 const FLAG_GAP = 2.8;
+/** 同上，内腔一侧直接就是干的（`stemWalledCavity`）放到这么多格；干端离它也只要这么远。 */
+const FLAG_GAP_WALLED = 1.8;
 
 /** **琶音记号**（和弦左边的竖波浪线） */
 export function findArpeggios(c: {
@@ -401,6 +403,10 @@ export function findAugDots(c: {
     };
     const isFlag = (b: Rect) => {
       const cy = b.y + b.h / 2;
+      // 内腔一侧直接就是干的（尾弯回干围出的白），干短也认：手写谱的干只有两格来长（是爱 p3 m36、p4 m56 低音 E3 朝下的八分，
+      // 尾梢围出的白离头两格、干全长 2.4 格，收成 A2 二分把那个八分也带成了二分）。实心头与空心头本就不会挂同一根干
+      let walledB: boolean | undefined;
+      const walled = () => (walledB ??= stemWalledCavity(bin, b, sp, true));
       return joined.some((q) => {
         if (q.y1 - q.y0 < sp * 1.5) return false;
         const sx = (q.x0 + q.x1) / 2;
@@ -410,14 +416,14 @@ export function findAugDots(c: {
         const up = walk(sx, q.y0, -1);
         const dn = walk(sx, q.y1, 1);
         const far = cy - up > dn - cy ? up : dn;
-        if (Math.abs(far - cy) < sp * 2.5) return false;
+        if (Math.abs(far - cy) < sp * 2.5 && !(Math.abs(far - cy) >= sp * FLAG_GAP_WALLED && walled())) return false;
         // 远端的头要在谱表近旁：干的墨顺着断口接进下方歌词，字的笔画也被认成过实心头（齐来崇拜「能」）
         const nearStaff = (y: number) => staffGeoms.some((g) => y > g.topAt(sx) - sp * FLAG_HEAD_BAND && y < g.bottomAt(sx) + sp * FLAG_HEAD_BAND);
         // 符尾离那根干上的头至少三格多（所信有根基 3.5~4 格）；两格上下的是和弦里另一个头
         //（来敬拜荣耀王加线上的空心头被误认成实心，离上面那个空心头只隔两格）
         return blacks.some((h) => {
           const hy = h.box.y + h.box.h / 2;
-          return Math.abs(h.box.x + h.box.w / 2 - sx) < sp * 1.3 && Math.abs(hy - far) < sp && Math.abs(hy - cy) >= sp * FLAG_GAP && nearStaff(hy);
+          return Math.abs(h.box.x + h.box.w / 2 - sx) < sp * 1.3 && Math.abs(hy - far) < sp && (Math.abs(hy - cy) >= sp * FLAG_GAP || (Math.abs(hy - cy) >= sp * FLAG_GAP_WALLED && walled())) && nearStaff(hy);
         });
       });
     };

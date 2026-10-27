@@ -128,7 +128,11 @@ export function reclassLeadClefs(c: {
     // 低音谱号那一侧「第四五线之间」的门槛放到四成：粗线的低分辨率页上谱线的毛边探进这一格，量出 0.17~0.33
     //（烛光颂曲几十行低音谱号都落在这一段、判不下来；高音谱号这一格是满的）
     const code: SmuflName | null = above >= CLEF_INK_FULL && low >= CLEF_INK_FULL ? "gClef" : above <= CLEF_INK_NONE && low <= CLEF_INK_LOW_NONE ? "fClef" : null;
-    if (!code || code === s0?.code) continue;
+    // 认出的「谱号」盒心在谱行左端以左的，是左边的括号（是爱 p2 第三系统，括号上端那块认成低音谱号，真谱号碎在右边、
+    // 中段与调号 ♭ 被收成 D5、B4 两个头）：横向挪到行首窗口，下面按新盒清掉压在谱号上的碎符号
+    const onBracket = !!s0 && !!code && s0.box.x + s0.box.w / 2 < left;
+    if (onBracket) s0!.box = { ...s0!.box, x: xa, w: xb - xa };
+    if (!code || (code === s0?.code && !onBracket)) continue;
     if (!s0) {
       // **一个谱号都没认出的行按墨补一个**（谱号被系统线、括号粘住，两路都没出）。低音谱号要另有正面的证据——
       // 上面两格（一二线、二三线之间）都有墨；不然空着的行首也合「两处都没有墨」

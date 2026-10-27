@@ -917,7 +917,10 @@ export function findPrimitives(
     // 只管谱表外、不到两格半的：谱表里的短杠照旧，长杠不会是一个头。
     // 只在线宽过线距两成的页判：细线页的加线过不了厚度闸、不会并进来，而那里干抽不全的真短杠会被这一条误杀
     //（不限线宽时独唱谱时值 97.52 → 96.96%、合唱谱干净档小节自检 88.62 → 86.34%）。
-    if (!shortBeam && unit.lineThick > unit.space * LEDGER_BEAM_THICK && c.bbox.w < unit.space * LEDGER_BEAM_W && !bandsAt(c.bbox.x + c.bbox.w / 2).some(([t, b]) => c.bbox.y + c.bbox.h / 2 > t - unit.space * 0.3 && c.bbox.y + c.bbox.h / 2 < b + unit.space * 0.3)) {
+    // 细线页上手写的加线也会画得粗（是爱 p1 m1、p3 m31/m46 加一线上的 A5：线 3px、加线 5~6px，头连加线收成一截 1.6 格的杠，头被抹掉）：
+    // 那里要**两头外**都接着细横墨（厚不过线宽两倍），比粗线页那一档（一头就够）多一道证据
+    const thickPage = unit.lineThick > unit.space * LEDGER_BEAM_THICK;
+    if (!shortBeam && c.bbox.w < unit.space * LEDGER_BEAM_W && !bandsAt(c.bbox.x + c.bbox.w / 2).some(([t, b]) => c.bbox.y + c.bbox.h / 2 > t - unit.space * 0.3 && c.bbox.y + c.bbox.h / 2 < b + unit.space * 0.3)) {
       const xa = stemNear(c.bbox.x, c.bbox, tol);
       const xb = stemNear(c.bbox.x + c.bbox.w - 1, c.bbox, tol);
       // 还要看得见加线：块的左端或右端往外三成格处有一道细横墨（厚不过谱线的一倍半）。真短杠两头之外是白的
@@ -925,17 +928,35 @@ export function findPrimitives(
       const d = Math.max(2, Math.round(unit.space * 0.3));
       // 那道细横墨还得落在谱线网格的延长线上、离谱表不过四格半（歌词带里的横笔两头也是细的）
       const nearStaff = bandsAt(c.bbox.x + c.bbox.w / 2).some(([t, b]) => c.bbox.y + c.bbox.h > t - unit.space * 4.5 && c.bbox.y < b + unit.space * 4.5);
-      const thinAt = (x: number) => {
+      const thinAt = (x: number, k = 1.5) => {
         if (x < 0 || x >= w || !nearStaff) return false;
         for (let y = Math.max(0, c.bbox.y - 1); y <= Math.min(h - 1, c.bbox.y + c.bbox.h); y++)
-          if (bin.data[y * w + x] && vr[y * w + x] <= unit.lineThick * 1.5 && onGrid(y, x)) return true;
+          if (bin.data[y * w + x] && vr[y * w + x] <= unit.lineThick * k && onGrid(y, x)) return true;
         return false;
       };
-      const ledgerTail = thinAt(c.bbox.x - d) || thinAt(c.bbox.x + c.bbox.w - 1 + d);
+      const ledgerTail = thickPage
+        ? thinAt(c.bbox.x - d) || thinAt(c.bbox.x + c.bbox.w - 1 + d)
+        : [-1, 1].every((dir) => {
+            // 手写加线探出头外常只有两三像素：端外 2 像素到 0.3 格之间任一列有就算
+            const end = dir < 0 ? c.bbox.x : c.bbox.x + c.bbox.w - 1;
+            for (let k = 2; k <= d; k++) if (thinAt(end + dir * k, 2)) return true;
+            return false;
+          });
       // 块自己得比一条线厚（四成格以上；头贴着加线的那一块量得半格上下）：只有线那么薄的是一道横线（歌词的延长线、单独一截粗加线），不是「头连着加线」。
       // 高举主大能有一道 26×3 的横线过了前面几条，不再算符杠之后留在歌词条里，那一行歌词读坏（中文 94 → 70%，
       // 当时被旧的 OCR 缓存盖住没显出来）
-      if (c.bbox.h >= unit.space * 0.4 && ledgerTail && (xa === null || xb === null || xb - xa < unit.space * 0.7)) continue;
+      // 细线页上块里厚过 0.4 格的列合起来不过一个半格（一个头那么宽）：头连加线是中间鼓的一个头；谱表外一截真短杠一路一样厚
+      //（新编赞美诗 186 m4 谱表下 B3、A3 两个八分的杠，两端碰着加线，厚段 1.68 格；是爱手写头连加线 0.9~1.2 格）
+      const headWide = () => {
+        let n = 0;
+        for (let x = c.bbox.x; x < c.bbox.x + c.bbox.w; x++) {
+          let k = 0;
+          for (let y = c.bbox.y; y < c.bbox.y + c.bbox.h; y++) if (bin.data[y * w + x]) k++;
+          if (k >= unit.space * 0.4) n++;
+        }
+        return n <= unit.space * 1.5;
+      };
+      if (c.bbox.h >= unit.space * 0.4 && ledgerTail && (thickPage || headWide()) && (xa === null || xb === null || xb - xa < unit.space * 0.7)) continue;
     }
     const line = centerLine(bMaskC, w, c, true);
     // **杠厚要匀**：低分辨率页上一串八分的头沿谱线挨个粘成一条（有一位神 m4 五个 B4），过得了宽度与长宽比，

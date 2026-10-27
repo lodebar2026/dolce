@@ -609,7 +609,9 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         const below = cy >= stBot + unit.space;
         // 上方只看两格开外：一两格上的是上加线的真音，上一行谱的歌词紧贴着它（当我们回到天家末行八个高音、−2.7）
         // 只剔空心头（字里的口字框才围得出内腔）：实心的多半是高声部的真音（合唱谱扫描档 −0.15）
-        if (!below && (cy > stTop - unit.space * 2 || n.sym.code === "noteheadBlack")) return false;
+        // 离顶线三格（谱表带）以内的休止也不剔：钢琴两手之间让位的八分休止正压在上一行谱的歌词字格上（是爱 p5 m68 低音谱表上方，心离顶线 2.3 格）；
+        // 歌词整行离谱表远，字收成的假休止心在三格半开外（望十架 p5 m41、p8 m64，3.6、4.0 格）
+        if (!below && (cy > stTop - unit.space * 2 || n.sym.code === "noteheadBlack" || (n.rest && cy > stTop - unit.space * 3))) return false;
         // 谱表下的头挂着一根往上伸进谱表的干：字的笔画没有这种干（破碎 p10 m91 男低 B♮3，还原号的尾巴伸进「體」的字格，字格撑到了头心）
         if (below && n.stemUp === true && stemSegsLyr.some((sg) => sg.top <= stBot && sg.bottom >= n.sym.box.top && Math.abs(sg.cx - n.sym.box.right) <= unit.space * 0.3)) return false;
         // 中心要落在（贴着）某个字格上：字被拆散时，剩下的笔画就在旁边成了字格；

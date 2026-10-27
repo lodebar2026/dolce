@@ -565,6 +565,21 @@ export function mergeHoles(holes: Rect[], unit: RasterUnit, onLine: (y: number, 
   return out;
 }
 
+/** 盒左右各四分之一宽里，有没有一列墨从盒上沿往上、或下沿往下接着伸出 0.4 格以上（粘在头边的临时记号的竖笔）。 */
+function pokesOut(bin: Binary, box: Rect, sp: number): boolean {
+  const reach = Math.ceil(sp * 0.4);
+  const q = Math.max(1, Math.round(box.w / 4));
+  const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && bin.data[y * bin.w + x] !== 0;
+  for (const x0 of [box.x, box.x + box.w - q])
+    for (let x = x0; x < x0 + q; x++) {
+      let up = 0, dn = 0;
+      while (up < reach && ink(x, box.y - 1 - up)) up++;
+      while (dn < reach && ink(x, box.y + box.h + dn)) dn++;
+      if (up >= reach || dn >= reach) return true;
+    }
+  return false;
+}
+
 /**
  * 内腔 → 空心符头。返回还没被认出来的那些（与已认出的符头盒重叠的会跳过）。
  *
@@ -627,6 +642,7 @@ export function hollowHeadsFromHoles(
     if (walled) continue;
     let pairedWhole = false; // 并排有同形内腔的全音符（见下）
     let seamMid: number | undefined; // 并排两个全音符内腔之间的中线 x
+    let fromOuter = false; // 头盒按圈外缘量（全音符）
     // 内腔占满一个间的细圈头（望十架 p1 m4 的 F4 二分：内腔 0.86 格高），上下圈压在两条谱线里，照满圈外扩盒就高出 `H_MAX`：
     // 上下那一圈收到正好够得上 `H_MAX`
     const ringY = Math.max(1, Math.min(ring, Math.floor((sp * H_MAX - hole.h) / 2)));
@@ -666,12 +682,18 @@ export function hollowHeadsFromHoles(
       if (!outer || outer.w / sp < (clipped ? 1.25 : W_WHOLE)) continue;
       pairedWhole = clipped && outer.w / sp < W_WHOLE;
       box = outer;
+      fromOuter = true;
     }
     const w = box.w / sp;
     const h = box.h / sp;
-    if (w < W_HOLLOW_MIN || w > W_MAX || h < H_MIN || h > H_MAX) continue;
+    // 按圈外缘量的全音符宽度上限同下「干是休止斜笔」那一档放到 1.2 倍（是爱 p4 m55 低音 C3 手写全音符外缘 1.86 格）；
+    // 只给不挂干的：带干的放宽了会让 m49 手写斜二分和弦按宽盒先收、挤掉短干那一路
+    if (w < W_HOLLOW_MIN || w > W_MAX * (fromOuter && !stemOf(box, stems, unit, nl) && !stemThrough(box, stems, unit) ? 1.2 : 1) || h < H_MIN || h > H_MAX) continue;
     if (w / h < R_HOLLOW_MIN) continue;
     if (!inStaffBand(box.y + box.h / 2, box.x + box.w / 2)) continue;
+    // 放宽收下的不能是粘着临时记号的头：爱是从神而来 p2 m24 二分 A4 左边粘着还原号、内腔从底下漏出去，外缘把还原号一起围进来（2.01 格），
+    // 读成不带还原号的全音符。还原号竖笔伸出头盒上下 8px，是爱手写全音符圈边至多 1px
+    if (w > W_MAX && pokesOut(nl, box, sp)) continue;
     // 圈要**围得住**：盒里的墨占三成到七成（全实心的是实心符头、太空的是别的东西的空隙）
     let ink = 0;
     for (let y = box.y; y < box.y + box.h; y++)
@@ -737,7 +759,8 @@ export function hollowHeadsFromHoles(
     // 一根穿过窗口的长干，混进去模板就偏了——善牧恩慈歌两处真二分头认出来，却让模板
     // 再也配不上后面的全音符和弦（音符 90.0% → 89.3%，不进样本 → 91.4%）。
     if (stem && stem !== true) extendStem(stem, box);
-    out.push({ box, code: (w >= W_WHOLE || pairedWhole) && !stem ? "noteheadWhole" : "noteheadHalf", ...(stem === true ? { weak: true } : {}) });
+    // 宽过 `W_MAX` 放宽收下的全音符也标 `weak`：进了空心模板样本，是爱 p4 m49 手写斜二分叠头就配不上了
+    out.push({ box, code: (w >= W_WHOLE || pairedWhole) && !stem ? "noteheadWhole" : "noteheadHalf", ...(stem === true || w > W_MAX ? { weak: true } : {}) });
     taken.push(box);
   }
   // **叠置空心和弦**：符干从一端的头穿过另一个头往外伸（齐来称颂 A4/E4 二分和弦，
@@ -2426,12 +2449,14 @@ export function stemWalledCavity(bin: Binary, box: Rect, sp: number, vOpen = fal
     while (d < bin.h - 1 && ink(x, d + 1)) d++;
     return d - t + 1;
   };
+  // 贴边那一列量不够时再看外面一列（干三四像素宽，挨着内腔那列在谱线处错开一像素就断：是爱 p4 m56 低音 E3 的干，贴边列 17px、外一列 64px）
+  const wall = (x: number, d: number, y: number) => ink(x, y) && (run(x, y) >= sp * 2 || (ink(x + d, y) && run(x + d, y) >= sp * 2));
   let left = 0;
   let right = 0;
   for (const [y, a] of rowMin) {
-    if (ink(a - 1, y) && run(a - 1, y) >= sp * 2) left++;
+    if (wall(a - 1, -1, y)) left++;
     const b = rowMax.get(y)!;
-    if (ink(b + 1, y) && run(b + 1, y) >= sp * 2) right++;
+    if (wall(b + 1, 1, y)) right++;
   }
   return rowMin.size >= 2 && Math.max(left, right) >= rowMin.size * 0.6;
 }

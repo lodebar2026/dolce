@@ -860,9 +860,10 @@ export function splitHeadStemBlobs(c: {
       //（信心使我得胜 m18 女高、男高共用的那枚，0.29）。盒中段压着一条谱线的，墨占比下限放到拼块那一档
       // 这一档还要够宽（≥1 格，真休止 1.14）：窄的是干带尾的一截（新编赞美诗 f37 m12，0.87 格）
       const straddle = b.w >= unit.space && staffLines.some((l) => l.y > b.y + b.h * 0.3 && l.y < b.y + b.h * 0.7);
-      const rs = rm ?? (!straight && (isEighthRest(nl, b, c.area, unit) || (straddle && isEighthRest(nl, b, c.area, unit, undefined, EIGHTH_REST_FILL_PIECES))) ? { smufl: "rest8th" as SmuflName } : null);
+      const rs = rm ?? (!straight && (isEighthRest(nl, b, c.area, unit, undefined, undefined, true) || (straddle && isEighthRest(nl, b, c.area, unit, undefined, EIGHTH_REST_FILL_PIECES))) ? { smufl: "rest8th" as SmuflName } : null);
       // 休止不会离谱表几格远：标题行的「你」字（我一生要赞美你，离第一线 8 格）配上了八分休止
-      if (rs && !inBand(b.y + b.h / 2)) continue;
+      // 按盒的上沿、心、下沿任一处算：两行谱之间让位的八分休止心离谱表正好 3 格出头（是爱 p5 m68 低音谱表上方，下沿离顶线 2.1 格）
+      if (rs && ![b.y, b.y + b.h / 2, b.y + b.h].some((y) => inBand(y))) continue;
       if (rs) {
         stemHeads.push({ box: b, code: rs.smufl });
         ledger.claim(b, `rest:${rs.smufl}`);

@@ -35,6 +35,8 @@ const EIGHTH_REST_H = [1.7, 2.4] as const;
 const EIGHTH_REST_FILL = [0.3, 0.5] as const;
 
 const EIGHTH_REST_SLANT = 0.1;
+/** 斜笔收尾的小钩：盒最下这么多（占高）的行，跨度放到这么多格（见 `isEighthRest`）。 */
+const EIGHTH_REST_FOOT = [0.35, 0.9] as const;
 
 /**
  * **八分休止按形状认**：顶上三成有一个够宽的球，下半截每行只有一笔细墨，而且这一笔
@@ -66,7 +68,16 @@ export function symbolInk(nl: Binary, bin: Binary, box: Rect, reach: number): nu
   return n;
 }
 
-export function isEighthRest(bin: Binary, b: Rect, area: number, unit: RasterUnit, minH: number = EIGHTH_REST_H[0], minFill: number = EIGHTH_REST_FILL[0]): boolean {
+export function isEighthRest(
+  bin: Binary,
+  b: Rect,
+  area: number,
+  unit: RasterUnit,
+  minH: number = EIGHTH_REST_H[0],
+  minFill: number = EIGHTH_REST_FILL[0],
+  /** 斜笔收尾带钩的备选判据（见下）：只给整块认的那一路（`stages/heads.ts`），回填、拼块那几路的块本就是拼出来的，开了会多收谱号碎块 */
+  hook = false,
+): boolean {
   const sp = unit.space;
   const w = b.w / sp;
   const h = b.h / sp;
@@ -88,14 +99,52 @@ export function isEighthRest(bin: Binary, b: Rect, area: number, unit: RasterUni
   if (!topRows.length || Math.max(...topRows.map((r) => r.ink)) < sp * 0.55) return false;
   const low = rows.filter((r) => r.y >= b.y + b.h * 0.55);
   if (low.length < b.h * 0.3) return false;
+  /** 那几行中心的斜率（最小二乘，x 对 y）：往下每行左移一成以上像素。实测斜笔 −0.2，符干 0 上下 */
+  const slanted = (rs: typeof rows) => {
+    const my = rs.reduce((a, r) => a + r.y, 0) / rs.length;
+    const mx = rs.reduce((a, r) => a + (r.x0 + r.x1) / 2, 0) / rs.length;
+    let sxy = 0, syy = 0;
+    for (const r of rs) { sxy += (r.y - my) * ((r.x0 + r.x1) / 2 - mx); syy += (r.y - my) ** 2; }
+    return syy > 0 && sxy / syy <= -EIGHTH_REST_SLANT;
+  };
   // 按**跨度**量，不按墨量：符干旁蹭着一截圆滑线的，墨不多、跨度宽（齐来称颂的 G3 −1.3）
-  if (low.some((r) => r.x1 - r.x0 + 1 > sp * 0.4)) return false;
-  // 下半截那一笔中心的斜率（最小二乘，x 对 y）：往下每行左移一成以上像素。实测斜笔 −0.2，符干 0 上下
-  const my = low.reduce((a, r) => a + r.y, 0) / low.length;
-  const mx = low.reduce((a, r) => a + (r.x0 + r.x1) / 2, 0) / low.length;
-  let sxy = 0, syy = 0;
-  for (const r of low) { sxy += (r.y - my) * ((r.x0 + r.x1) / 2 - mx); syy += (r.y - my) ** 2; }
-  return syy > 0 && sxy / syy <= -EIGHTH_REST_SLANT;
+  if (!low.some((r) => r.x1 - r.x0 + 1 > sp * 0.4)) return slanted(low);
+  if (!hook) return false;
+  // 手写的斜笔收尾带个小钩、坐在谱线上（是爱 p5 m67 低音谱表上方，钩宽 0.45 格，压线那一行连着线沿 0.85 格）：
+  // 最下 `EIGHTH_REST_FOOT[0]` 那几行跨度放到 `EIGHTH_REST_FOOT[1]` 格（盒本身不过 `EIGHTH_REST_W` 上限，挡得住一格多宽的符头），
+  // 斜率只用脚以上的细笔，要够 0.2 个盒高
+  // 宽度只量斜笔那一条：逐行取与上一行笔画最近的那段连续墨，旁边分开的噪点不算（是爱 p4 m57 斜笔左边几粒扫描噪点）。
+  // 旁边另有一道逐行连着的笔、连了三成行以上的，是字不是休止（赞美三一真神 P2 m9 歌词里两道平行竖笔的字）
+  const runsAt = (y: number) => {
+    const out: [number, number][] = [];
+    for (let x = b.x; x < b.x + b.w; x++) {
+      if (!bin.data[y * bin.w + x]) continue;
+      if (out.length && x === out[out.length - 1][1] + 1) out[out.length - 1][1] = x;
+      else out.push([x, x]);
+    }
+    return out;
+  };
+  const traced: typeof rows = [];
+  let prev = Infinity, twin = 0, chain = 0;
+  let others: [number, number][] = [];
+  for (const r of rows.filter((q) => q.y >= b.y + b.h * 0.4)) {
+    const rs = runsAt(r.y);
+    if (!rs.length) continue;
+    const pick = prev === Infinity ? rs[rs.length - 1] : rs.reduce((p, q) => (Math.abs((q[0] + q[1]) / 2 - prev) < Math.abs((p[0] + p[1]) / 2 - prev) ? q : p));
+    prev = (pick[0] + pick[1]) / 2;
+    const rest = rs.filter((q) => q !== pick);
+    chain = rest.some((q) => others.some((o) => q[0] <= o[1] && o[0] <= q[1])) ? chain + 1 : rest.length ? 1 : 0;
+    twin = Math.max(twin, chain);
+    others = rest;
+    traced.push({ y: r.y, x0: pick[0], x1: pick[1], ink: pick[1] - pick[0] + 1 });
+  }
+  if (twin > traced.length * 0.3) return false;
+  const footY = b.y + b.h * (1 - EIGHTH_REST_FOOT[0]);
+  if (traced.some((r) => r.y >= b.y + b.h * 0.55 && r.x1 - r.x0 + 1 > sp * (r.y >= footY ? EIGHTH_REST_FOOT[1] : 0.4))) return false;
+  const thin = traced.filter((r) => r.y < footY);
+  if (thin.length < b.h * 0.2 || thin.some((r) => r.x1 - r.x0 + 1 > sp * 0.4)) return false;
+  // 斜笔下半截也得是斜的：印刷歌词里的字（望十架「光」「千」「子」）上头一笔斜撇、下头一根直竖，整体斜率也过得去
+  return slanted(thin) && slanted(thin.slice(Math.floor(thin.length / 2)));
 }
 
 /** 从块里的墨出发，在去线图上 8 连通回填整个连通域；出了窗口（左右各 1 格、上 0.5 格、下 2.6 格）就不算。 */

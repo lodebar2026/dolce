@@ -431,6 +431,29 @@ export function fixBeamsAndHeads(c: {
         .map((sg) => (sg.y0 + sg.y1) / 2)
         .filter((y) => (y - edge) * out > sp0 * 0.5 && (y - yc) * out < sp0 * 0.5)
         .sort((p, q) => (p - q) * out);
+      // 手写谱的加一线常画远了（是爱 p3 m33 高音 A5：加线离顶线 1.5 格、头心正骑在上面，外推读成 B5；这条线也不在加线段表里）：
+      // 一条加线都没认着时，在二值图上找头心上下 0.25 格内、头左右两侧都伸出去的横墨；它离边线 1.25~1.75 格、
+      // 该在加一线的那一带头两侧又都没有横墨的，就是加一线本身，不是缺了加一线的加二线
+      const sideInk = (yy: number) => {
+        if (yy < 0 || yy >= B.h) return false;
+        const m = Math.max(3, Math.round(sp0 * 0.3));
+        const side = (xa: number, xb: number) => {
+          let n = 0;
+          for (let x = Math.max(0, xa); x <= Math.min(B.w - 1, xb); x++) if (B.data[yy * B.w + x]) n++;
+          return n >= (xb - xa + 1) * 0.6;
+        };
+        return side(Math.round(h.box.left) - m, Math.round(h.box.left) - 2) && side(Math.round(h.box.right) + 2, Math.round(h.box.right) + m);
+      };
+      const farFirstLeger = (): number | undefined => {
+        const rows: number[] = [];
+        for (let y = Math.round(yc - sp0 * 0.25); y <= Math.round(yc + sp0 * 0.25); y++) if (sideInk(y)) rows.push(y);
+        if (!rows.length) return undefined;
+        const y = (rows[0] + rows[rows.length - 1]) / 2;
+        const d = (y - edge) * out;
+        if (d <= spL * 1.25 || d > spL * 1.75) return undefined;
+        for (let k = Math.round(sp0 * 0.7); k <= Math.round(sp0 * 1.3); k++) if (sideInk(Math.round(edge + out * k))) return undefined;
+        return y;
+      };
       for (const y of ly) {
         const last = grid[grid.length - 1];
         const d = (y - last) * out;
@@ -440,6 +463,10 @@ export function fixBeamsAndHeads(c: {
         if (d < spL * 0.8) continue;
         if (d > spL * 1.25) break;
         grid.push(y);
+      }
+      if (grid.length === 1) {
+        const y = farFirstLeger();
+        if (y !== undefined) grid.push(y);
       }
       let pos = -1; // 从边线往外的半格数
       const gapAt = (i: number) => (i + 1 < grid.length ? (grid[i + 1] - grid[i]) * out : i > 0 ? (grid[i] - grid[i - 1]) * out : sp0);

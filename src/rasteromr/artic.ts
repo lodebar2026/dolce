@@ -28,7 +28,7 @@ const WEDGE_W: [number, number] = [0.2, 0.6];
 const WEDGE_H: [number, number] = [0.5, 1.0];
 /** 重音 `>`：宽、高（格），开口处两臂的跨度下限与尖端的跨度上限（格），两段墨的列占比下限。 */
 const ACCENT_W: [number, number] = [0.9, 1.75];
-const ACCENT_H: [number, number] = [0.45, 1.1];
+const ACCENT_H: [number, number] = [0.45, 1.3];
 const ACCENT_OPEN = 0.4;
 const ACCENT_TIP = 0.3;
 const ACCENT_TWO_RUN = 0.4;
@@ -44,6 +44,8 @@ const FERMATA_NOTE_X = 1.3;
 /** 干这一侧：记号离干尖（或符杠外缘）的距离（格），重音另放宽；横向可以出到头、干之外这么多格。 */
 const STEM_GAP: [number, number] = [0.15, 1.5];
 const STEM_GAP_ACCENT = 2.4;
+/** 手写的重音常写在干尖旁边、与干尖齐平（是爱 p3 m33 右手下声部 F4 那枚）：重音的心可以比干尖往里这么多格。 */
+const STEM_BESIDE_ACCENT = 0.6;
 const STEM_SIDE_X = 0.45;
 /** 断奏点、顿音离别的墨（音符自己的头、干、杠、谱线除外）至少这么多格。 */
 const CROWD = 0.45;
@@ -102,9 +104,12 @@ export function findRasterArticulations(
   for (const c of map.contours) {
     const by = claimsOf(c.id);
     if (!by.length || !by.every((q) => q === "lyric" || q === "dict:augmentationDot")) continue;
+    // 重音也收：手写的 `>` 大，落进钢琴两手之间的歌词带（是爱 p3 m33/m34 右手干尖下的重音）
+    const accent = c.w >= ACCENT_W[0] && c.w <= ACCENT_W[1] && c.h >= ACCENT_H[0] && c.h <= ACCENT_H[1] && by.every((q) => q === "lyric") && isAccent(map, c, sp);
     const small = isDot({ box: c.bbox, contour: c }, sp) ||
       (c.w >= TENUTO_W[0] && c.w <= TENUTO_W[1] && c.h <= TENUTO_H) ||
-      (c.w >= WEDGE_W[0] && c.w <= WEDGE_W[1] && c.h >= WEDGE_H[0] && c.h <= WEDGE_H[1]);
+      (c.w >= WEDGE_W[0] && c.w <= WEDGE_W[1] && c.h >= WEDGE_H[0] && c.h <= WEDGE_H[1]) ||
+      accent;
     if (!small) continue;
     if (by.includes("lyric") && lyricInk.some((o) => o !== c && Math.abs(o.cx - c.cx) <= sp * LYRIC_ALONE + o.bbox.w / 2 && Math.abs(o.cy - c.cy) <= sp * LYRIC_ALONE + o.bbox.h / 2)) continue;
     cands.push({ box: c.bbox, contour: c });
@@ -215,7 +220,7 @@ export function findRasterArticulations(
         const ends = [stem.up ? stem.seg.top : stem.seg.bottom, ...stem.beams.map((bm) => beamY(bm, sx) + (stem.up ? -1 : 1) * (bm.box.bottom - bm.box.top) * 0.25)];
         const tip = stem.up ? Math.min(...ends) : Math.max(...ends);
         const gap = stem.up ? tip - cy : cy - tip;
-        if (gap < sp * STEM_GAP[0] || gap > sp * (kind === "accent" ? STEM_GAP_ACCENT : STEM_GAP[1])) continue;
+        if (gap < sp * (kind === "accent" ? -STEM_BESIDE_ACCENT : STEM_GAP[0]) || gap > sp * (kind === "accent" ? STEM_GAP_ACCENT : STEM_GAP[1])) continue;
         // 同一根干上只挂最外面那个头（和弦的记号归主音，由 `mainOf` 落）
         const d = gap + sp * 0.5;
         if (d < bd) {
