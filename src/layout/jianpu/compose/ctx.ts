@@ -6,10 +6,10 @@ import { GraphicPath, JpNumber, JpOctaveDot, TextFrame } from "../../pageitem";
 import { jpDot } from "../../../engrave/dot";
 import { fillRect, strokePath, textItem } from "../../../engrave/prims";
 import type { Region } from "../../../style/ss";
-import type { DocView } from "../../../pu/slots";
+import type { DocView } from "../../../jianpu/slots";
 import type { PlacedScore, PlacedText } from "../place/model";
 import type { PlacedHeader } from "../place/header";
-import type { MusicElement } from "../../../pu/ast";
+import type { MusicElement } from "../../../jianpu/ast";
 
 /** 一次原样文档排版的上下文（原 PuPainter 的实例状态）。墨色也在这里：
  *  原先是模块级可变量、在 `load` 开头设一次，现在随上下文传，多个实例互不影响。 */

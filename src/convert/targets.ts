@@ -5,13 +5,13 @@
 // 无 DOM 依赖（Node CLI 与回归脚本也用）。放在 model 之上：它要调各格式的写出端，模型层不反过来依赖格式。
 
 import type { ScoreDoc } from "../model/doc";
-import type { TargetFormat } from "../model/capability";
+import type { TargetFormat } from "./capability";
 import { emit123 } from "../j123/emit";
 import { emitAbc } from "../abcfamily/emitabc.entry";
 import { emitJcx } from "../abcfamily/emitjcx.entry";
-import { emitJpwabc } from "../model/tojpw";
-import { emitJly } from "../model/tojly";
-import { emitPu } from "../model/topu";
+import { emitJpwabc } from "./jpwabc";
+import { emitJly } from "../jly/tojly";
+import { emitPu } from "../pu/topu";
 import { withPageMeta } from "../model/pagemeta";
 import { t } from "../i18n";
 
@@ -44,7 +44,7 @@ export const CONVERT_TARGETS: readonly TargetSpec[] = [
   { id: "abc", get label() { return t("fmt.target.abc"); }, docFormat: "abc", emit: (doc) => emitAbc(withPageMeta(doc)) },
   { id: "tomato", get label() { return t("fmt.target.tomato"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "tomato") },
   { id: "shige", get label() { return t("fmt.target.shige"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "shige") },
-  // jianpu-ly：能读能写，导出端是 `model/tojly.ts`（`%` 注释里带着"装不下什么"的说明，写在文本里随文件走）
+  // jianpu-ly：能读能写，导出端是 `jly/tojly.ts`（`%` 注释里带着"装不下什么"的说明，写在文本里随文件走）
   { id: "jly", get label() { return t("fmt.target.jly"); }, docFormat: "jly", emit: (doc) => emitJly(doc).text },
   // Muse 曲谱软件：存盘按 `%MUSE2` + GBK（`common/jcxcodec.ts`），新旧版 Muse 都能开
   { id: "jcx", get label() { return t("fmt.target.jcx"); }, docFormat: "jcx", emit: (doc) => emitJcx(doc) },

@@ -1,7 +1,7 @@
 // 断句的输入形状。
 //
 // `phrase.ts` / `applybreaks.ts` 只经这组接口读谱。实现由 `ScoreDoc` 拼：MusicXML 形状 `model/phrasedoc.ts`、
-// 简谱形状 `pu/phrasesong.ts`；断点集合与 `FitMetric.spans` 以拼出的对象为键，`idOf` 把它们换回元素 id
+// 简谱形状 `jianpu/phrasesong.ts`；断点集合与 `FitMetric.spans` 以拼出的对象为键，`idOf` 把它们换回元素 id
 // （写回简谱输入模型、回原文都按 id）。字段名与简谱输入模型（`layout/input.ts`）同一套。
 
 import type { Fraction } from "../common/fraction";
@@ -64,4 +64,3 @@ export function chordsOf(m: PhraseMeasure): PhraseChord[] {
 }
 
 // 段落词表与「这一小节有没有段落标记」在模型层（`model/helpers.ts::sectionMarkOf`），各格式同一个判据。
-export { SECTION_WORD_RE } from "../model/helpers";

@@ -68,7 +68,7 @@ const TYPE_BEATS: Readonly<Record<string, [number, number]>> = {
   whole: [4, 0], half: [2, 0], quarter: [1, 0], eighth: [1, 1], "16th": [1, 2], "32nd": [1, 3], "64th": [1, 4],
 };
 
-/** 同一个音底下**段号重复**的词，后来的依次挪到下一个空号（试听用；同简谱展开档的 `pu/phrasesong.ts::distinctVerses`）。
+/** 同一个音底下**段号重复**的词，后来的依次挪到下一个空号（试听用；同简谱展开档的 `jianpu/phrasesong.ts::distinctVerses`）。
  *  文本谱同一段曲下写了两行 `C1:`（其实是第 1、2 段），投成五线谱后两行都是第 1 段，不挪就只唱一遍、第二行词丢掉。 */
 export function distinctNumbers<L extends { number: number }>(lyrics: readonly L[]): L[] {
   const used = new Set<number>();

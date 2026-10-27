@@ -16,7 +16,7 @@
 // 无 DOM 依赖。
 
 import { Fraction } from "../common/fraction";
-import { chooseLineLayout, fitForIds, pageBreakLines } from "../score/applybreaks";
+import { chooseLineLayout, fitForIds, pageBreakLines } from "./applybreaks";
 import { computePhraseBreaks } from "../score/phrase";
 import { chordsOf, type PhraseChord } from "../score/phraseinput";
 import { elementQuarters, linesOfVoice, tupletRatios, voiceNumbers } from "./ast";
@@ -309,7 +309,7 @@ export function puLinesEdited(
 /**
  * 一个断点：**新行从这个元素起**。
  *
- * 两个消费者各取所需：写回 `ScoreDoc` 的那条路（123/ABC，`model/relayout.ts`）按 `id` 找回
+ * 两个消费者各取所需：写回 `ScoreDoc` 的那条路（123/ABC，`jianpu/docrelayout.ts`）按 `id` 找回
  * 模型里的元素；改写原文的那条路（`.jpwabc`）按 `source` 在原文上下刀。小节线没有 `ElementId`
  * （模型里它挂在 `Measure.barlines` 上，不是元素），所以 `|:` 领起的新行 `id` 取它后面那个音
  * ——落到小节级换行上是同一个位置；`source` 仍是 `|:` 自己的，原文才切得对。

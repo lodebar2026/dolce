@@ -33,18 +33,18 @@ import {
   type SustainElement,
   type TextLine,
   type VoiceGroup,
-} from "./ast";
+} from "../jianpu/ast";
 import { dialectSpec, sniffDialect, type Dialect, type DialectSpec } from "./dialect";
-import { puToScoreDoc } from "../model/frompu";
+import { puToScoreDoc } from "./frompu";
 import type { ScoreDoc } from "../model/doc";
 import { PU_LYRIC_PUNCTUATION, PU_LYRIC_QUOTES } from "../common/cjkpunct";
 import { t as tr } from "../i18n";
-import { DYNAMICS } from "./glyph";
+import { DYNAMIC_NAMES } from "../model/marknames";
 
 /** 音符后可跟的记号名（`&xx`）。不在表里的会报 unknown-command 但仍保留。 */
 const NOTE_COMMANDS = new Set([
   "zkh", "ykh", // 伴奏括弧
-  ...Object.keys(DYNAMICS), // 力度（名表在 pu/glyph.ts，与画法同一份）
+  ...DYNAMIC_NAMES, // 力度（名表在 model/marknames.ts，字形表由它长出来）
   "cresc", "dim", "rit", "tempo", "atempo", // 术语
   "yc", "ycy", "bc", "zy", "dy", "hx", // 延长/保持/重音/顿音/呼吸
   "shy", "xhy", "sby", "xby", "cy", "tr", // 滑音/波音/颤音

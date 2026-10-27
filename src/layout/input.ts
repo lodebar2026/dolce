@@ -1,7 +1,7 @@
 // 简谱排版引擎（`layout/`）的**输入接口**：引擎实际读到的字段，一个不多。
 //
-// 引擎只读不写（断句落下的换行由排版之前的那一步插进 `entries`，见 `score/applybreaks.ts`）。
-// 输入由 `ScoreDoc` 投影出来（`model/jianpuinput.ts`）；字段名沿用从 mp/score/score.kt 移植来的那一套。
+// 引擎只读不写（断句落下的换行由排版之前的那一步插进 `entries`，见 `jianpu/applybreaks.ts`）。
+// 输入由 `ScoreDoc` 投影出来（`jianpu/jianpuinput.ts`）；字段名沿用从 mp/score/score.kt 移植来的那一套。
 
 import type { Fraction } from "../common/fraction";
 import type { BarStyle, StartStopDiscontinue } from "../score/enums";

@@ -5,7 +5,7 @@ import { Group } from "../../pageitem";
 import { TimeSigGlyph } from "../../../engrave/timesig";
 import { KeyLabel, keyNameOf } from "../../../engrave/keysig";
 import { EQ_PAD_EM } from "../../../engrave/spacing";
-import { emptyMetadata, type Meter } from "../../../pu/ast";
+import { emptyMetadata, type Meter } from "../../../jianpu/ast";
 import { timeSigRule, type HeaderMeasurer, type HeaderTextRole, type PlacedHeader, type PlacedHeaderLine } from "../place/header";
 import { type OriginalCtx, text } from "./ctx";
 import { textItem } from "../../../engrave/prims";

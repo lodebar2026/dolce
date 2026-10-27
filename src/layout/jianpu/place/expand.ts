@@ -2,16 +2,16 @@
 // 每遍接成一长行、只挂这一遍的歌词，再按版心宽逐行装满（同旧简谱引擎 `layout.ts::Line.doLineBreak`），
 // 拼成一份「展开后的」行视图交给 `layoutSong` 照常排——横向、纵向、上方带全是原样档那一套。
 //
-// 逐遍怎么走（首尾裁切、遍末与往回跳换页）复用 `jianpu/expand.ts::walkPlay`；小节的切法同 `pu/phrasesong.ts::buildMeasures`
+// 逐遍怎么走（首尾裁切、遍末与往回跳换页）复用 `jianpu/expand.ts::walkPlay`；小节的切法同 `jianpu/phrasesong.ts::buildMeasures`
 // （演唱顺序的 `mid` 就是按它数的），只排一个声部：带歌词的那个（同 `songMeasures` 的 `forExpanded`）。
 import { walkPlay } from "../../../jianpu/expand";
 import { Fraction } from "../../../common/fraction";
 import type { PlayItem } from "../../../score/playorder";
-import { distinctVerses } from "../../../pu/phrasesong";
+import { distinctVerses } from "../../../jianpu/phrasesong";
 import type { Measure as DocMeasure } from "../../../model/doc";
 import { REFRAIN_WORD_RE, sectionMarkOf } from "../../../model/helpers";
-import { elementQuarters, takesLyric, tupletRatios, voiceNumbers, type BarlineElement, type ScoreLine, type LyricLine, type LyricSyllable, type Mark, type MusicElement } from "../../../pu/ast";
-import type { DocView, PageView, RowView, SongView, SystemView } from "../../../pu/slots";
+import { elementQuarters, takesLyric, tupletRatios, voiceNumbers, type BarlineElement, type ScoreLine, type LyricLine, type LyricSyllable, type Mark, type MusicElement } from "../../../jianpu/ast";
+import type { DocView, PageView, RowView, SongView, SystemView } from "../../../jianpu/slots";
 import { contentWidth, type JianpuGrid } from "../metrics";
 import type { InkMeasurer } from "./model";
 import { naturalColumns } from "./spacing";

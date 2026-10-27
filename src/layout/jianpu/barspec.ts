@@ -1,6 +1,6 @@
 // 文本谱的小节线类型 → 谱面那一路的 `BarlineSpec`（两边的表达力一一对上）。定位（量宽）与绘制共用。
 import type { BarlineSpec } from "../../engrave/barline";
-import type { BarlineElement } from "../../pu/ast";
+import type { BarlineElement } from "../../jianpu/ast";
 import { BarStyle } from "../../score/enums";
 
 /** 文本谱的小节线类型 → 谱面那一路的 `BarlineSpec`（两边的表达力一一对上）。 */

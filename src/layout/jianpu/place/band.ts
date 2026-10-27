@@ -2,8 +2,9 @@
 // 判据整段从旧简谱引擎搬来（`layout.ts::Line.collectBandItems` / `stackAbove` / `placeDirections` / `addEnding`），
 // 堆叠走公共那一份（`engrave/upperband.ts::stackUpperBand`）：按实际墨迹盒一次排清，不再按固定槽位摆。
 // y 一律在这里定死（相对声部基线、行坐标 x），`compose/` 只照 `PlacedText` / `PlacedMark` 画。
-import type { BarlineElement, MusicElement } from "../../../pu/ast";
-import { BARLINE_MARKS, DYNAMICS, TERMS } from "../../../pu/glyph";
+import type { BarlineElement, MusicElement } from "../../../jianpu/ast";
+import { BARLINE_MARKS, DYNAMICS } from "../../../engrave/jpglyph";
+import { TERMS } from "../../../model/marknames";
 import { Point, Rect } from "../../../common/geom";
 import { Slur } from "../../pageitem";
 import { bandTop, stackUpperBand, type BandItem } from "../../../engrave/upperband";

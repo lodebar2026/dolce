@@ -1,5 +1,5 @@
 // 原样文档布局的定位结构：排版行视图 → 各符号、记号、声部、谱组、页的位置。只有数据，算法在同目录各文件。
-import type { InlineLayerElement, LyricSyllable, Mark, MusicElement, ScoreLine, VoiceGroup } from "../../../pu/ast";
+import type { InlineLayerElement, LyricSyllable, Mark, MusicElement, ScoreLine, VoiceGroup } from "../../../jianpu/ast";
 import type { JianpuGrid } from "../metrics";
 import type { Rect } from "../../../common/geom";
 

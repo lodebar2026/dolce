@@ -4,7 +4,7 @@
 
 ## 职责
 
-JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（直出，带源偏移），`ScoreDoc` → `.jpwabc`。谱面经 `model/jianpuinput.ts::jianpuInputOfJpw` 进简谱引擎。
+JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（直出，带源偏移），`ScoreDoc` → `.jpwabc`。谱面经 `jianpu/jianpuinput.ts::jianpuInputOfJpw` 进简谱引擎。
 
 ## 入口
 
@@ -14,7 +14,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 | `lexVoice(text)` | `src/jpword/lex.ts` | `.Voice` 正文 → token 序列（含空白/注释，带偏移与行列） |
 | `parseVoiceText(text)` | `src/jpword/parse.ts` | 去掉空白/注释的 token 序列；落单 `[` `]` 返回 null |
 | `jpwToScoreDoc(f)` | `src/model/fromjpw.ts` | `JpwFile` → `ScoreDoc`（音符/小节线带 `SourceSpan`）。谱面、试听、转 123/ABC、导出、能力表、双向定位索引都走它 |
-| `jianpuInputOfJpw(doc)` | `src/model/jianpuinput.ts` | `ScoreDoc` → 简谱引擎输入（按原文小节；小节中间的 `$` 照原位换行） |
+| `jianpuInputOfJpw(doc)` | `src/jianpu/jianpuinput.ts` | `ScoreDoc` → 简谱引擎输入（按原文小节；小节中间的 `$` 照原位换行） |
 | `emitJpwabc(doc)` | `src/model/tojpw.ts` | `ScoreDoc` → `.jpwabc` 文本（只写第一声部）。写出端 `writeJpwabc` 只经输入接口读谱 |
 | `TokenData` | `src/jpword/tokens.ts` | 整份文件的行级分词，**仅供语法高亮**（`.Voice` 段复用 `lexVoice`） |
 
@@ -50,13 +50,13 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 - **一房二房没有写法，读入时推**（`fromjpw.ts::inferEndings`，没有 `.Repeat` 时）：`:|` 那一小节与紧跟的一小节**节奏逐音相同、
   首个音的第 1 段词（去标点）也相同**，前者记一房、后者记二房（右端敞口）。命中 009、020、116、144、164；
   447《我灵之光》`1-- :|1--` 底下是「阿/们」，是结尾的阿们、不算。只等长不算（`|1 2 3 4 :| 5- 6 7|` 是照常往下唱）。
-- **词曲一条写了多行**（`作词：…\n作曲：…`）：作者条为写 123 的 `C:` 拼成一行，行视图取 credit 原文照分行（`pu/slots.ts::toMetadata`），
+- **词曲一条写了多行**（`作词：…\n作曲：…`）：作者条为写 123 的 `C:` 拼成一行，行视图取 credit 原文照分行（`jianpu/slots.ts::toMetadata`），
   展开档标题页、原样档页眉都分行。
 - `fromjpw` **不填绝对音高**（`.jpwabc` 只有度数），导出 MusicXML 由投影层按度数 + 调号推。
 - **歌词段锚点 `W2@m,n` 的小节序号**：只有小节**中间**的换行才算开出一个小节，小节末的不算——读入端（`assignLyrics`）
   与写出端（`tojpw.ts::LyricProcessor`）必须同口径，否则多段歌词起点在第一行之后错位。
 - **`jpToStep` 按调号拼写**，不按 fifths：否则 `1=#C`/`1=bD`/`1=#F`/`1=bG` 四个调整首排不出来。
-- **按乐句重排只挪 `$`**（`model/relayout.ts::relayoutJpwabcText`）：`.jpwabc` 是分节文件，
+- **按乐句重排只挪 `$`**（`jianpu/docrelayout.ts::relayoutJpwabcText`）：`.jpwabc` 是分节文件，
   整份按 `emitJpwabc` 重出会把写出端装不下的东西（样式、`.Layout` 的分页描述）一并抹掉；
   歌词在 `.Words` 里按小节/音符号锚定、与行结构无关，所以只重切 `.Voice` 的行就够。
   `.Layout` 里按行号记的 `BreakPoints` 跟着行结构作废，重排时去掉（换页改由 `$(true,0,0,true)` 原位表达）。

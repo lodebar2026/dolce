@@ -6,7 +6,7 @@
 // 「一条减时线 = 时值减半」直接对应；`dots` 是附点个数。转 MusicXML 时再换算成
 // divisions（见 toxml.ts）。
 
-import type { Dialect } from "./dialect";
+import type { Dialect } from "../pu/dialect";
 import { Fraction } from "../common/fraction";
 
 export interface SourceSpan {
@@ -46,7 +46,7 @@ export interface Metadata {
   titles: string[];
   /** 番茄/有谱 `Z:` */
   authors: string[];
-  /** 题下经文（及出处）。文本谱原文没有这个字段（不做语义猜测）；123/ABC/MusicXML 投影过来时由 `Song.meta` 给（`pu/slots.ts`） */
+  /** 题下经文（及出处）。文本谱原文没有这个字段（不做语义猜测）；123/ABC/MusicXML 投影过来时由 `Song.meta` 给（`jianpu/slots.ts`） */
   scripture?: string[];
   /** 调号，如 `C` `bE` `#F` */
   mode?: string;

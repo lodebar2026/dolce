@@ -1,7 +1,7 @@
 // 段落词（音符注释，「（副歌）」）的横向落点：判据是 `engrave/sectionword.ts::placeSectionWord`（与旧简谱引擎同一份），
 // 这里只把一行里的符号换算成它要的几何——横向撑开（spacing.ts，justify 前预演、行首那条 justify 后匀）
 // 与真正摆（band.ts）用同一个换算，两边不会错配。
-import type { MusicElement } from "../../../pu/ast";
+import type { MusicElement } from "../../../jianpu/ast";
 import { placeSectionWord, sectionWordHangLeft, type SectionWordSlot } from "../../../engrave/sectionword";
 import type { JianpuGrid } from "../metrics";
 import type { PlacedItem } from "./model";

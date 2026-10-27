@@ -8,7 +8,7 @@
 // 所以列的左占位 = 锚点到落笔原点（墨迹中心偏移），右占位 = 字面宽 − 它（+ 附点占位）。
 import { jpTremoloCount, jpTremoloStrokes } from "../../../engrave/jptremolo";
 import { jpSlideArrow, jpSlideOf } from "../../../engrave/jpslide";
-import type { BarlineElement, Meter, NoteElement } from "../../../pu/ast";
+import type { BarlineElement, Meter, NoteElement } from "../../../jianpu/ast";
 import { barlineSpan, jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { latinWordBreak } from "../../../engrave/syllable";
 import { graceAdvance } from "../../../engrave/grace";
@@ -16,7 +16,7 @@ import { ACCIDENTAL_CLEARANCE } from "../../../engrave/accidental";
 import { BarlineGlyph } from "../../../engrave/barline";
 import { timeSigWidth } from "../../../engrave/timesig";
 import { puBarlineSpec } from "../barspec";
-import { BARLINE_MARKS } from "../../../pu/glyph";
+import { BARLINE_MARKS } from "../../../engrave/jpglyph";
 import type { InkMeasurer, PlacedItem } from "./model";
 import { accidentalLeadOf } from "./vertical";
 import { type ChordSpan, lineStartIndex, sectionWordLines, sectionWordOf, sectionWordSlot, widestLine } from "./sectionword";

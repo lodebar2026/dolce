@@ -1,5 +1,5 @@
 // 跨若干符号的记号（弧线 / 多连音 / 跳房子 / 渐强渐弱）换算成行内坐标，弧按嵌套定层。
-import type { Mark, NoteElement, ScoreLine } from "../../../pu/ast";
+import type { Mark, NoteElement, ScoreLine } from "../../../jianpu/ast";
 import { Point } from "../../../common/geom";
 import { Slur } from "../../pageitem";
 import { jianpuSlurRise, jianpuSlurStyle, type JianpuGrid } from "../metrics";
@@ -9,7 +9,7 @@ import { articStack, noteInkBottom, stackTop } from "./vertical";
 import { barlineLines } from "./spacing";
 import { JP_HAIRPIN } from "../../../engrave/hairpin";
 import { DYNAMIC_SIZE } from "../../../engrave/dynamics";
-import { DYNAMICS } from "../../../pu/glyph";
+import { DYNAMICS } from "../../../engrave/jpglyph";
 
 /** 把记号的元素下标区间换算成行内 x 区间；弧线、多连音的 y 也在这里定（跳房子、松叶的 y 见 band.ts）。 */
 export function placeMarks(voice: ScoreLine, items: PlacedItem[], m: JianpuGrid, ink: InkMeasurer): PlacedMark[] {

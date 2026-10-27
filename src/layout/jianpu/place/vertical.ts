@@ -1,13 +1,13 @@
 // 纵向量：头顶让位（读上方带的结果）、倚音落位、音符叠层的顶与底、连谱号伸出量。
 import { jpTremoloCount } from "../../../engrave/jptremolo";
 import { jpSlideOf } from "../../../engrave/jpslide";
-import type { MusicElement, NoteElement, StackedNote } from "../../../pu/ast";
+import type { MusicElement, NoteElement, StackedNote } from "../../../jianpu/ast";
 import { jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { graceBottom, graceGeometry, type GraceGeom } from "../../../engrave/grace";
 import { lowDotY, stackBottom, stackTop as stackTopOf } from "../../../engrave/stack";
 import { accidentalLead, accidentalRise, type AccidentalKind } from "../../../engrave/accidental";
 import { JP_ARPEGGIO_LEAD } from "../../../engrave/arpeggio";
-import { ORNAMENTS } from "../../../pu/glyph";
+import { ORNAMENTS } from "../../../engrave/jpglyph";
 import type { Rect } from "../../../common/geom";
 import type { InkMeasurer, PlacedItem, PlacedVoice } from "./model";
 

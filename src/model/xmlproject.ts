@@ -25,7 +25,7 @@ import { SIMPLE_DIVISIONS } from "./doc";
 import { Fraction, lcm } from "../common/fraction";
 import { AccidentalCarry, StaffAccidentalCarry, quarterTempos } from "./jianpu";
 import { typeOfDuration } from "../score/xmlutil";
-import { DYNAMICS, TERMS } from "../pu/glyph";
+import { TERMS, isDynamicName } from "./marknames";
 import { applyPageMetaToDefaults } from "./pagemeta";
 import { decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
 import { applyBreaks } from "./breaks";
@@ -1109,7 +1109,7 @@ function projectOrnaments(ch: Chord, dirs: Direction[], pos: number): void {
 /** 力度、术语、伴奏括弧、跳转记号 → `<direction>`。 */
 function directionOf(o: SourceOrnament): Direction | null {
   const name = o.name;
-  if (DYNAMICS[name]) return { type: "dynamics", placement: "below", text: name };
+  if (isDynamicName(name)) return { type: "dynamics", placement: "below", text: name };
   if (TERMS[name]) return { type: "words", placement: "above", text: TERMS[name] };
   if (name === "zkh" || name === "ykh") return { type: "bracket", placement: "above", spanType: name === "zkh" ? "start" : "stop" };
   if (name === "fine") return { type: "words", placement: "above", text: "Fine", sound: { fine: true } };

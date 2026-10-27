@@ -8,7 +8,7 @@ export const PU_EXT = ["pu", "fq", "jps", "txt"] as const;
 export const J123_EXT = ["123"] as const;
 /** jianpu-ly 的输入文本。**扩展名是它自己 `--export-jly` 写出来的**（上游 README 命令行选项），
  *  也是判"这是不是 jianpu-ly"的**唯一决定性依据** —— 它的输入里没有版本行 / 签名 / 必需项，
- *  内容嗅探只能是特征猜测，所以不做（详见 `model/fromjly.ts` 文件头）。 */
+ *  内容嗅探只能是特征猜测，所以不做（详见 `jly/fromjly.ts` 文件头）。 */
 export const JLY_EXT = ["jly"] as const;
 /** Muse 曲谱软件的 `.jcx`（ABC 方言，`%MUSE2` 是 GBK、`%MUSE3` 是 UTF-8，见 `common/jcxcodec.ts`）。 */
 export const JCX_EXT = ["jcx"] as const;

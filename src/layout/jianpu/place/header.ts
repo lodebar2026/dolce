@@ -3,7 +3,7 @@
 // 排法照 500 首的成书页眉：标题居中，副标题、经文跟在标题下面居中；
 // 词曲署名逐行右对齐、紧接在标题块下面；**调号拍号在左、与最后一行署名同基线**（成书观感）。
 // 窄纸装不下最宽那一行时标题、署名整块等比缩（同 `bookHead` 的 k）。
-import type { Metadata, Meter } from "../../../pu/ast";
+import type { Metadata, Meter } from "../../../jianpu/ast";
 import type { JianpuGrid } from "../metrics";
 import type { Rect } from "../../../common/geom";
 

@@ -34,7 +34,7 @@
 
 ## 反方向：MusicXML → 简谱形状（`model/jianpuproject.ts`）
 
-`.musicxml` 的简谱档（`pu/slots.ts::docView`）与 123 写出端（`Emitter123.emitSong`）之前先投一次，模型本身不动。
+`.musicxml` 的简谱档（`jianpu/slots.ts::docView`）与 123 写出端（`Emitter123.emitSong`）之前先投一次，模型本身不动。
 MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type="half"`；简谱侧读的是减时线条数、简谱附点、增时线。
 不投的话附点二分画成附点四分、没连杠的八分音符当四分、结构化和弦一个都不显示。
 

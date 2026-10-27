@@ -1,8 +1,8 @@
 // 音符：数字、升降号、八度点、附点、和弦与注释、倚音、`&xx` 记号。
-import type { BarlineElement, MusicElement, NoteElement } from "../../../pu/ast";
+import type { BarlineElement, MusicElement, NoteElement } from "../../../jianpu/ast";
 import type { ElementId } from "../../../model/doc";
 import { AccidentalGlyph, type AccidentalKind } from "../../../engrave/accidental";
-import { ACCIDENTAL_GLYPH, ACCOMP_BRACKET } from "../../../pu/glyph";
+import { ACCIDENTAL_GLYPH, ACCOMP_BRACKET } from "../../../engrave/jpglyph";
 import { Font } from "../../font";
 import { GraphicPath, Group, type JpNumber } from "../../pageitem";
 import { chordTextSegs, layoutHarmonySegs } from "../../../engrave/chord";

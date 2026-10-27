@@ -1,17 +1,13 @@
 // `.jpwabc` 写出端（原 `score/jpscore.ts`，ported from mp/score/jpw.kt `JpScore.fromMusicXml`）。
 //
 // 输入形状（`../dev/docs/待办.md`（私有仓库） §3.1 阶段 8③）：只经下面这组接口读谱，不认 `Score` 的类——`Score` 结构上满足，
-// `ScoreDoc` 那一侧由 `emitJpwabc` 按形状拼（MusicXML 形状照 `loadMusicXml`、简谱形状照 `scoreDocToScore`）。
+// `ScoreDoc` 那一侧由 `convert/jpwabc.ts::emitJpwabc` 按形状拼（MusicXML 形状照 `loadMusicXml`、简谱形状照 `scoreDocToScore`）。
 // 字段名与口径沿用 `Score`；判据原样搬来，靠 `scripts/jpw-emit-check.mjs` 双跑逐字节一致。
 //
 // JP-Word 的 `.Voice` 只有单声部：只写第一声部。和弦符号、力度、slur 以外的弧等装不下的，见 `capability.ts`。
 
 import type { Fraction } from "../common/fraction";
 import { BarStyle } from "../score/enums";
-import type { ScoreDoc } from "./doc";
-import { jpwInputOfDoc } from "./playdoc";
-import { isXmlShaped } from "./xmlproject";
-import { jpwInputOfSong } from "./playsong";
 
 function escape(s: string): string {
   return s.replace(/\n/g, "\\n");
@@ -424,11 +420,3 @@ export function writeJpwabc(score: JpwScoreIn): string {
   return w.code;
 }
 
-/** `ScoreDoc` → `.jpwabc` 文本（第 `songIdx` 首）。MusicXML 形状照 `loadMusicXml` 的口径，简谱形状照 `scoreDocToScore`。
- *  这首没有曲行时返回 null。 */
-export function emitJpwabc(doc: ScoreDoc, songIdx = 0): string | null {
-  const song = doc.songs[songIdx];
-  if (!song) return null;
-  const src = isXmlShaped(song) ? jpwInputOfDoc(song) : jpwInputOfSong(doc, songIdx);
-  return src ? writeJpwabc(src) : null;
-}

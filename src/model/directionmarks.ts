@@ -1,13 +1,13 @@
 // 小节里的 `<direction>`（MusicXML / `.jpwabc` 来的力度、术语、跳转、文字、渐强渐弱）→ 简谱那套「挂在符号上的记号」。
 //
-// 简谱一路（文本谱视图 `pu/slots.ts::docView`、文本谱写出 `topu.ts`）的记号都挂在音符/小节线上（`&mp` `&fine`），
+// 简谱一路（文本谱视图 `jianpu/slots.ts::docView`、文本谱写出 `topu.ts`）的记号都挂在音符/小节线上（`&mp` `&fine`），
 // MusicXML 却是小节里独立的 direction，靠「游标位置 + `<offset>`」定拍位。两边在这里对齐，一份规则：
 //   - 挂哪个符号：按**拍位**找——力度、术语、segno/coda、文字、渐强起点挂在拍位上（或之后）的第一个占时值的符号；
 //     渐强收尾挂在拍位**之前**的最后一个（写出端 `xmlproject.ts::wedgeDirections` 把收尾写在收尾音的终点）；
 //   - Fine / D.C. / D.S.：挂本小节的右线（唱到这里才跳）；
 //   - 不是术语的文字（`副歌`）当段落词。
 import type { Direction, DirectionPart, Element, Measure, Song, SourceOrnament } from "./doc";
-import { DYNAMICS, TERMS } from "../pu/glyph";
+import { TERMS, isDynamicName } from "./marknames";
 import { decoKey } from "./deconames";
 import { melodyLane } from "./jianpu";
 
@@ -82,7 +82,7 @@ export function directionMarks(mea: Measure): DirectionMarks {
         continue;
       }
       let name: string | undefined;
-      if (part.type === "dynamics" && part.text && part.text in DYNAMICS) name = part.text;
+      if (part.type === "dynamics" && part.text && isDynamicName(part.text)) name = part.text;
       else if (part.type === "segno" || part.type === "coda") name = decoKey(part.type);
       // 排练号（方框字母）挂在拍位上的音上，记号名带内容：`rehearsal=A`（123 的 `!rehearsal=A!`，`deconames.ts::rehearsalOf`）
       else if (part.type === "rehearsal" && part.text?.trim()) name = `rehearsal=${part.text.trim()}`;

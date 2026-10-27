@@ -16,7 +16,7 @@ import { THEMES } from "../style/themes";
 import { walkPageItem, type ItemVisitor } from "../layout/walk";
 import { Font } from "../layout/font";
 import type { Direction, DirectionPart, ScoreDoc } from "../model/doc";
-import { SECTION_WORD_RE } from "../score/phraseinput";
+import { SECTION_WORD_RE } from "../model/helpers";
 import { normEndingText } from "../engrave/ending";
 import { loadScoreDoc } from "../model/fromxml";
 import { keepFirstPart } from "../model/melodyonly";

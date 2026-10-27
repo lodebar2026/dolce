@@ -1,7 +1,7 @@
 // 演唱顺序：反复、房号、D.C./D.S./Coda、多段歌词逐段一遍，推成 `PlayItem[]`。
 //
 // 演唱顺序的唯一实现（判据从 mp/score 移植）。只经下面这组接口读谱，`ScoreDoc` 两侧拼出满足接口的纯对象：
-// MusicXML 形状 `model/playdoc.ts`、简谱形状 `model/playsong.ts`。
+// MusicXML 形状 `model/playdoc.ts`、简谱形状 `jianpu/playsong.ts`。
 //
 // 产物 `PlayItem[]` 的消费者：试听/MIDI（`timeline.ts`）、展开档（`jianpu/expand.ts::walkPlay`）、断句。
 
@@ -120,7 +120,7 @@ export interface PlayMeasure {
 
 export interface PlayPart {
   /** 按各声部共用的时间轴排（`model/timeaxis.ts`）：这一声部在某格没有小节就是 undefined。
-   *  `parts[0]` 读反复、房号、小节线，须每格都有（简谱形状给的是「每格的代表小节」，见 `model/playsong.ts`） */
+   *  `parts[0]` 读反复、房号、小节线，须每格都有（简谱形状给的是「每格的代表小节」，见 `jianpu/playsong.ts`） */
   readonly measures: readonly (PlayMeasure | undefined)[];
 }
 

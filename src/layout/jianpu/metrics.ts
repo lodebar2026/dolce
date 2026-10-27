@@ -14,7 +14,7 @@ import { Font } from "../font";
 import { arcHeight, type SlurStyle } from "../../engrave/arc";
 import type { GraceMetrics, GraceNote } from "../../engrave/grace";
 import { highDotY, lowDotY, type StackStyle } from "../../engrave/stack";
-import type { NoteElement } from "../../pu/ast";
+import type { NoteElement } from "../../jianpu/ast";
 import type { JianpuStyle } from "../../engrave/jianpustyle";
 
 /**

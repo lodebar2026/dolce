@@ -14,7 +14,7 @@
 //   那些**不是**上游语法，这里一律**不写**（曾经照语料样本抄过 `%END`，是错的）。
 //   判断依据永远是上游 README，而不是某份语料样本。
 //
-// **输入形状**：只经旧简谱引擎的输入接口（`layout/input.ts` 的 `JScore`），由 `model/jianpuinput.ts`
+// **输入形状**：只经旧简谱引擎的输入接口（`layout/input.ts` 的 `JScore`），由 `jianpu/jianpuinput.ts`
 // 从 `ScoreDoc` 投影出来——与 `tojpw.ts` 同一条原则：写出端不认 `ScoreDoc` 的类，口径与谱面一致。
 //
 // **单向导出**：不承诺能把 jianpu-ly 文本再读回编辑器（回读要另加方言与高亮，见 `docs/模块/导出.md`）。
@@ -25,9 +25,9 @@
 //   真要让界面提示，调用方可以自己 `t()`——`capability.ts` 的 losses 就是那种结构化形态。
 
 import type { JChord, JMeasure, JNote, JScore } from "../layout/input";
-import type { ScoreDoc } from "./doc";
-import { jianpuInputOfDoc, jianpuInputOfJpw } from "./jianpuinput";
-import { DYNAMICS } from "../pu/glyph";
+import type { ScoreDoc } from "../model/doc";
+import { jianpuInputOfDoc, jianpuInputOfJpw } from "../jianpu/jianpuinput";
+import { DYNAMICS } from "../engrave/jpglyph";
 import { Fraction } from "../common/fraction";
 import { harmonyToChordToken, wholeToDuration } from "./jlychords";
 import { GlyphCodes } from "../smufl/smufl";
@@ -112,7 +112,7 @@ const JUMP_OUT: Readonly<Record<string, string>> = {
   fine: "Fine", dc: "DC", "d.c.": "DC", ds: "DS", "d.s.": "DS", segno: "Segno", tocoda: "ToCoda",
 };
 
-/** 力度字形串 → 名字（`pu/glyph.ts::DYNAMICS` 的反查）：把字形写回 jianpu-ly 的 `\mf`。
+/** 力度字形串 → 名字（`engrave/jpglyph.ts::DYNAMICS` 的反查）：把字形写回 jianpu-ly 的 `\mf`。
  *  不反查就会把私有区字形当成文字写成 `^"<PUA>"` —— 实测过，印出来是一团乱码。 */
 const DYNAMIC_NAME: ReadonlyMap<string, string> = new Map(Object.entries(DYNAMICS).map(([k, v]) => [v, k]));
 

@@ -1,6 +1,6 @@
 // 「按乐句重排」写回原文——**文本谱以外的那几种格式**（123 / ABC / `.jpwabc`）。
 //
-// 断句本身与格式无关（`score/phrase.ts`），落点也已经由 `pu/phrase.ts::phraseCuts` 换算成
+// 断句本身与格式无关（`score/phrase.ts`），落点也已经由 `jianpu/phrase.ts::phraseCuts` 换算成
 // 「新行从哪个元素起」。这里只管最后一步：把那些落点写回各自的原文。两种写法：
 //
 // - **123 / ABC**：断点写进 `ScoreDoc` 的换行位（`Print.newSystem` / `newPage`），整份按
@@ -18,13 +18,13 @@
 // 各段归行（123 §9「小节中间换行」）。早先 123/ABC 挪到下一根小节线，弱起句的头几个字就留在了
 // 上一行行尾，与 `.jpwabc` 排出来的不一样。
 
-import type { ScoreDoc } from "./doc";
-import { applyBreaks, type LineStart } from "./breaks";
-import { phraseCuts, type FitMeasure, type PhraseCut } from "../pu/phrase";
+import type { ScoreDoc } from "../model/doc";
+import { applyBreaks, type LineStart } from "../model/breaks";
+import { phraseCuts, type FitMeasure, type PhraseCut } from "./phrase";
 import { JpwFile, LayoutSection, VoiceSection } from "../jpword/jpwfile";
 
 export interface DocRelayoutOptions {
-  /** 行长尺子（见 `pu/phrase.ts::FitMeasure`）；不给就按出厂的小节数目标断。 */
+  /** 行长尺子（见 `jianpu/phrase.ts::FitMeasure`）；不给就按出厂的小节数目标断。 */
   measure?: FitMeasure | null;
   /** 小节中间的断点怎么落：`inline` 原位记在和弦上；`snap` 挪到下一根小节线。 */
   midBreaks: "inline" | "snap";

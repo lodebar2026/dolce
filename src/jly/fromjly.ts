@@ -30,10 +30,10 @@ import {
   type Note,
   type ScoreDoc,
   type SourceSpan,
-} from "./doc";
-import { emptyDoc, emptySong, IdGen } from "./helpers";
+} from "../model/doc";
+import { emptyDoc, emptySong, IdGen } from "../model/helpers";
 import { BARE_DIRECTION } from "./tojly";
-import { DYNAMICS } from "../pu/glyph";
+import { DYNAMIC_NAMES } from "../model/marknames";
 import { lyPitchToText, lySuffixToText, parseChordToken } from "./jlychords";
 import { t as tr, type MsgKey } from "../i18n";
 
@@ -100,8 +100,8 @@ export interface JlyPos { col: number; len: number }
 
 const LETTER_BEAMS: Readonly<Record<string, number>> = { q: 1, s: 2, d: 3, h: 4 };
 
-/** 力度指令：从 `pu/glyph.ts::DYNAMICS` 的名字表长出来（别另抄一份名字，两处会漂）。 */
-const DYNAMIC_COMMAND = new RegExp("^\\\\(?:" + Object.keys(DYNAMICS).join("|") + ")$");
+/** 力度指令：从 `model/marknames.ts::DYNAMIC_NAMES`长出来（别另抄一份名字，两处会漂）。 */
+const DYNAMIC_COMMAND = new RegExp("^\\\\(?:" + DYNAMIC_NAMES.join("|") + ")$");
 
 /** 跳转记号写成规范形（`dc` → `D.C.`、`ds` → `D.S.`）：写出端的 `BARE_DIRECTION` 认这几个词。 */
 const JUMP_CANON: Readonly<Record<string, string>> = {

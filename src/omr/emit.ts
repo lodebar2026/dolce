@@ -5,7 +5,7 @@
 //
 // 各格式一律先转成模型（`recognizedToDoc`），再由转换目标表（`convert/targets.ts`）写成文本——
 // 与打开文件后切格式、另存为别的格式是同一张表、同一批写出端。文本谱以前另有一个直接从识别结果写的
-// emitter，已退役（`model/topu.ts` 是唯一一份）：两份写出端的判据迟早分叉。
+// emitter，已退役（`pu/topu.ts` 是唯一一份）：两份写出端的判据迟早分叉。
 //
 // **meta 的序号约定**：所有格式的 `JpwMeta`，`noteRanges` / `lyricRanges`
 // 一律按 `flatten(rows[].nums)` 的下标编号，由重解析写出的文本得到（`omr/meta.ts`）。

@@ -9,7 +9,7 @@ import { asset } from "../common/asset";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { loadScoreDoc } from "../model/fromxml";
 import { jpwToScoreDoc } from "../model/fromjpw";
-import { emitJly } from "../model/tojly";
+import { emitJly } from "../jly/tojly";
 import type { ScoreDoc } from "../model/doc";
 import { JpwFile } from "../jpword/jpwfile";
 import { engraveScoreDoc } from "../mixed/engrave";
@@ -349,7 +349,7 @@ const isCurrentFormat = (app: App, id: ConvertTarget): boolean => {
 };
 
 /** 另存为的选项：当前格式另存一份，外加换成其它源格式。
- *  **换格式前会列出目标格式装不下的东西**（`model/capability.ts`），确认了才写。
+ *  **换格式前会列出目标格式装不下的东西**（`convert/capability.ts`），确认了才写。
  *  - 文本格式：写一份新文件，编辑器里仍是原文档（`App.saveAsFormat`）。
  *  - `.musicxml`：没有代码区，另存成文本格式就是「转成它再编辑」——转过去（`convertToTextDoc`）再落盘，
  *    之后编辑的就是新存的那份。 */

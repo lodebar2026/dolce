@@ -1,5 +1,5 @@
 // 窄纸整首重新断行：源里的行放不下时求新的行首。
-import type { MusicElement, PuSong } from "../../../pu/ast";
+import type { MusicElement, PuSong } from "../../../jianpu/ast";
 import { contentWidth, type JianpuGrid } from "../metrics";
 import { naturalColumns } from "./spacing";
 import { fillLines } from "./expand";

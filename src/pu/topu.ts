@@ -1,7 +1,7 @@
 // `ScoreDoc` → 文本谱原文（番茄简谱 / 诗歌本文本谱）。文本谱**唯一**的写出端：
 // 打开别的格式后切成文本谱、另存为文本谱、识别结果出文本谱（`recognizedToDoc` 之后），都走这里。
 //
-// 映射照 `model/frompu.ts` 反着写，每一处写法以 `pu/parse.ts` 为准：
+// 映射照 `pu/frompu.ts` 反着写，每一处写法以 `pu/parse.ts` 为准：
 //   - 文本谱的小节线一律「收」一个小节，没有左线：模型里的左线（123/ABC 的 `|:`）并到前一小节的右线上写；
 //   - 弧线与多连音共用**一个队列**（`)` 永远收最早开的那条），真嵌套的写不出来，按优先级留（`planArcs`）；
 //   - 休止缺省不跟词、音符一律跟词，例外靠 `@` 翻（`0@` / `-@`）；
@@ -26,22 +26,22 @@ import type {
   SourceOrnament,
   Sustain,
   Time,
-} from "./doc";
-import { SIMPLE_DIVISIONS } from "./doc";
-import type { BarlineType } from "../pu/ast";
-import { dialectSpec, type Dialect, type DialectSpec } from "../pu/dialect";
-import { DYNAMICS, TERMS } from "../pu/glyph";
+} from "../model/doc";
+import { SIMPLE_DIVISIONS } from "../model/doc";
+import type { BarlineType } from "../jianpu/ast";
+import { dialectSpec, type Dialect, type DialectSpec } from "./dialect";
+import { DYNAMIC_NAMES, TERMS } from "../model/marknames";
 import { STEPS, keyAlter, tonicStep } from "../score/jppitch";
 import { PU_LYRIC_PUNCTUATION } from "../common/cjkpunct";
-import { projectForJianpu } from "./jianpuproject";
-import { voicesToLayers } from "./innervoice";
-import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote } from "./jianpu";
-import { ownIds, partRanges, systemRanges, type SystemRange } from "./emitutil";
-import { axisOfSong } from "./timeaxis";
-import { relayoutDocBreaks } from "./relayout";
-import { decoKey } from "./deconames";
-import { directionMarks, directionsAsMarks } from "./directionmarks";
-import { degreeOfKey, songFifths, tonicSpelling } from "./keyshift";
+import { projectForJianpu } from "../model/jianpuproject";
+import { voicesToLayers } from "../model/innervoice";
+import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote } from "../model/jianpu";
+import { ownIds, partRanges, systemRanges, type SystemRange } from "../model/emitutil";
+import { axisOfSong } from "../model/timeaxis";
+import { relayoutDocBreaks } from "../jianpu/docrelayout";
+import { decoKey } from "../model/deconames";
+import { directionMarks, directionsAsMarks } from "../model/directionmarks";
+import { degreeOfKey, songFifths, tonicSpelling } from "../model/keyshift";
 
 // ───────────────────────── 头部 ─────────────────────────
 
@@ -162,7 +162,7 @@ function headerLines(song: Song, d: DialectSpec, opts: EmitPuOptions): string[] 
 
 /** 文本谱认的记号名（`parse.ts` 的 NOTE_COMMANDS / BARLINE_COMMANDS）。不在表里的不写：写了读回也只是 unknown-command。 */
 const PU_COMMANDS = new Set([
-  "zkh", "ykh", ...Object.keys(DYNAMICS), ...Object.keys(TERMS),
+  "zkh", "ykh", ...DYNAMIC_NAMES, ...Object.keys(TERMS),
   "yc", "ycy", "bc", "zy", "dy", "hx", "shy", "xhy", "sby", "xby", "cy", "tr",
   "fine", "dc", "ds", "ty", "hs", "sbf",
 ]);

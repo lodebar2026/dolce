@@ -1,4 +1,4 @@
-// `.jpwabc`（`JpwFile`）→ `ScoreDoc`。编辑器谱面（经 `model/jianpuinput.ts::jianpuInputOfJpw`）、试听、
+// `.jpwabc`（`JpwFile`）→ `ScoreDoc`。编辑器谱面（经 `jianpu/jianpuinput.ts::jianpuInputOfJpw`）、试听、
 // 转 123/ABC、导出 MusicXML、能力表都从这里出。
 //
 // 两步：

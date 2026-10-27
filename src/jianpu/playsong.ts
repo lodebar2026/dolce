@@ -1,8 +1,8 @@
 // 试听统一入口 `playSourceOf`（各格式共用），以及简谱形状的 `ScoreDoc`（文本谱 / 123 / ABC / `.jpwabc`）
 // → 演唱顺序、试听输入、`.jpwabc` 写出端输入。
 //
-// 与 `playdoc.ts`（MusicXML 形状）分工同断句那一对（`pu/phrasesong.ts` / `phrasedoc.ts`），
-// 小节序列与断句共用 `pu/phrasesong.ts::buildMeasures`，行视图取 `pu/slots.ts::docView`。**口径同简谱输入模型 `jianpuinput.ts::jianpuInputOfDoc`**：
+// 与 `playdoc.ts`（MusicXML 形状）分工同断句那一对（`jianpu/phrasesong.ts` / `phrasedoc.ts`），
+// 小节序列与断句共用 `jianpu/phrasesong.ts::buildMeasures`，行视图取 `jianpu/slots.ts::docView`。**口径同简谱输入模型 `jianpuinput.ts::jianpuInputOfDoc`**：
 //   - 每个有曲行的声部都算一份（歌词段数取各声部最大值），反复与跳转只看第一份（它在某格没有小节就看那一格的代表小节）；
 //     各份叠在共用时间轴上（`timeaxis.ts`，文本谱一组不一定含全部声部）；
 //     `forExpanded` 时带歌词的声部排第一、同号歌词顺延（同 `ToScoreOptions.forExpanded`）。
@@ -13,24 +13,24 @@
 //   - 文档自带演唱顺序（`Song.playOrder`，`.Repeat` 段）→ 照它排，不推
 //   - `.jpwabc` 没有 `.Repeat`、也没有反复记号 → 不推，整曲按段数逐遍（JP-Word 本来就这么唱）；有 `|: :|` 照它推
 
-import type { Chord, ElementId, Part, PlayPass, ScoreDoc, Song } from "./doc";
-import { writtenOctaveOf } from "./jianpu";
+import type { Chord, ElementId, Part, PlayPass, ScoreDoc, Song } from "../model/doc";
+import { writtenOctaveOf } from "../model/jianpu";
 import { Fraction } from "../common/fraction";
 import {
   JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
   playOrderByVerses, playOrderFromSpec, playOrderOf,
 } from "../score/playorder";
-import { linesOfVoice, voiceNumbers, type MusicElement, type PuSong } from "../pu/ast";
+import { linesOfVoice, voiceNumbers, type MusicElement, type PuSong } from "./ast";
 import { Key, MusicCommon } from "../score/jppitch";
-import { fifthsOfSpelling } from "./keyshift";
+import { fifthsOfSpelling } from "../model/keyshift";
 import type { PlaySource } from "../score/timeline";
-import type { JpwChordIn, JpwMeasureIn, JpwScoreIn } from "./tojpw";
-import { buildMeasures, type JumpOut, type MeasureOut } from "../pu/phrasesong";
-import { docView } from "../pu/slots";
-import { playSourceOfDoc } from "./playdoc";
-import { hasTieSyntax, hasVoiceOverlay, isXmlShaped, projectForMusicXml } from "./xmlproject";
-import { axisOfSong, spreadOnAxis } from "./timeaxis";
-import { breaksOf } from "./breaks";
+import type { JpwChordIn, JpwMeasureIn, JpwScoreIn } from "../model/tojpw";
+import { buildMeasures, type JumpOut, type MeasureOut } from "./phrasesong";
+import { docView } from "./slots";
+import { playSourceOfDoc } from "../model/playdoc";
+import { hasTieSyntax, hasVoiceOverlay, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
+import { axisOfSong, spreadOnAxis } from "../model/timeaxis";
+import { breaksOf } from "../model/breaks";
 
 export interface PlaySongOptions {
   /** 见 `ToScoreOptions.forExpanded` */
@@ -102,7 +102,7 @@ function markExtends(song: Song, parts: readonly MeasureOut[][]): void {
   }
 }
 
-/** 行视图的声部号 → 模型的 part（`pu/slots.ts::toPuSong` 按 `P<n>` 的 id 或 part 序编号）。 */
+/** 行视图的声部号 → 模型的 part（`jianpu/slots.ts::toPuSong` 按 `P<n>` 的 id 或 part 序编号）。 */
 function partOfVoice(song: Song, voice: number): Part | undefined {
   return song.parts.find((p) => p.id === `P${voice}`) ?? song.parts[voice - 1];
 }
@@ -391,7 +391,7 @@ export function jpwInputOfSong(doc: ScoreDoc, songIdx = 0): JpwScoreIn | null {
     if (text) credit.push({ type, text, page: 0 });
   };
   meta.titles.forEach((t, i) => push(t, i === 0 ? "title" : "subtitle"));
-  // 作者条目照原文分行（`.jpwabc` 的 `WordsByAndMusicBy` 一条多行，行视图已取 credit 原文，见 `pu/slots.ts::toMetadata`）
+  // 作者条目照原文分行（`.jpwabc` 的 `WordsByAndMusicBy` 一条多行，行视图已取 credit 原文，见 `jianpu/slots.ts::toMetadata`）
   for (const a of meta.authors) push(a, "composer");
   for (const t of meta.topRight) push(t, "composer");
   for (const t of meta.topLeft) push(t, "lyricist");

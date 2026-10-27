@@ -6,7 +6,7 @@
 //
 // 为什么落到文本而不是往引擎输入插换行：原样档走的是原样文档布局（吃排版行视图，不经引擎输入），
 // 那一层的断点够不着它。而文本谱里「一行 `Q:` 就是谱面一行」，重切行两档同时就位——
-// 展开档那边行边界照旧由 `model/jianpuinput.ts` 转成换行条目。
+// 展开档那边行边界照旧由 `jianpu/jianpuinput.ts` 转成换行条目。
 //
 // 切点落在**元素之间的间隙**里：元素自己的 span 不含跟在后面的和弦/注释
 // （`1"hx:E♭"` 的 span 只有 `1`），所以按 span 直接切会把和弦切掉。判据是
@@ -17,13 +17,13 @@
 // 读的是 `ScoreDoc` 的排版行视图（`slots.ts::docView`）：元素、音节、曲行/歌词行/文字行的源区间都在上面，
 // 曲行 `raw` 由视图按行号从原文取出。无 DOM 依赖。
 
-import { takesLyric, voiceNumbers } from "./ast";
-import type { LyricLine, PuSong, ScoreLine, SourceSpan } from "./ast";
+import { takesLyric, voiceNumbers } from "../jianpu/ast";
+import type { LyricLine, PuSong, ScoreLine, SourceSpan } from "../jianpu/ast";
 import type { ScoreDoc } from "../model/doc";
-import { docView, type RowView } from "./slots";
+import { docView, type RowView } from "../jianpu/slots";
 import { dialectSpec, type Dialect } from "./dialect";
 import { BODY_PREFIX } from "./parse";
-import { puLinesEdited, puPhraseLines, voiceStream, type FitMeasure, type PuNewLine, type VoiceStream } from "./phrase";
+import { puLinesEdited, puPhraseLines, voiceStream, type FitMeasure, type PuNewLine, type VoiceStream } from "../jianpu/phrase";
 
 /** 起头的记号：它们属于**后面**那个元素，切行时归下一行。 */
 const OPENERS = new Set(["(", "["]);

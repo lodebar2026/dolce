@@ -7,7 +7,7 @@
 import type { ElementId, ScoreDoc } from "../model/doc";
 import type { MetaData } from "../smufl/smufl";
 import { staffOptionsOf } from "../layout/painter";
-import { phraseCuts, type FitMeasure } from "../pu/phrase";
+import { phraseCuts, type FitMeasure } from "../jianpu/phrase";
 import { layoutStaff } from "../mixed/layout";
 import { staffChordSpans } from "../mixed/layoutpass";
 import { scoreDocToMusicXml } from "../model/toxml";
@@ -53,7 +53,7 @@ export class MixedSession {
   _mixedMeasureOf = new Map<ElementId, number>();
 
   /**
-   * 乐句档的五线谱行首：同一套断句（`pu/phrase.ts::phraseCuts`），**尺子换成五线谱引擎**——
+   * 乐句档的五线谱行首：同一套断句（`jianpu/phrase.ts::phraseCuts`），**尺子换成五线谱引擎**——
    * 不带换行投一份、按当前五线谱纸与样式排一遍，量各和弦的自然跨度（`mixed/layoutpass.ts::staffChordSpans`）。
    * 小节中间的断点也要（`midLineStarts`：拆小节、中间隐藏线）；分页交给五线谱自己，`PhraseCut.page` 不用。
    * `doc` 须与投影的那份同一个（`sourceMusicXmlBare` 里那份），元素 id 才对得上。量不出来返回 null，调用方退回简谱行首。

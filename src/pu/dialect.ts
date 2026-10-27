@@ -10,7 +10,7 @@
 //   节奏音符 番茄 `9`；有谱字母 `X`
 // 靠扩展名分不开（两家都可能是 .txt），但头部字段互不兼容，够判。
 
-import type { Accidental } from "./ast";
+import type { Accidental } from "../jianpu/ast";
 import { t as tr } from "../i18n";
 
 export type Dialect = "tomato" | "shige";
@@ -34,14 +34,14 @@ export interface DialectSpec {
   /** 歌词里表示「跳过一个音符」的字符；**第一个是写出去时用的那个**，其余只认不写 */
   lyricSkip: readonly string[];
   /** 小节线写法，按**从长到短**匹配 */
-  barlines: ReadonlyArray<readonly [string, import("./ast").BarlineType]>;
+  barlines: ReadonlyArray<readonly [string, import("../jianpu/ast").BarlineType]>;
   /** 歌词里分隔两个音节的字符（番茄用 `/`，诗歌本用空格） */
   wordSeparator: string;
   /** 并字连接号：把本字并到前一个音节。没有这种写法就留空 */
   joinToken?: string;
   /** 头部字段的写法。**只有 emitter 用**——解析侧两边字段都认，不需要分方言。 */
   header: HeaderStyle;
-  /** 曲行/歌词行的写法。**只有 emitter 用**（`model/topu.ts`）。 */
+  /** 曲行/歌词行的写法。**只有 emitter 用**（`pu/topu.ts`）。 */
   emit: EmitStyle;
 }
 

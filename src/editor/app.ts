@@ -24,9 +24,9 @@ import type { DeepPartial, StyleSheet } from "../style/sheet";
 import { LONG_IMAGE_WIDTH, PAGE_RATIOS, STAFF_LONG_IMAGE_WIDTH, STAFF_PAPER_DEFAULT, THEMES, computeStyleForPaper, isPaper, themeOfMode } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
-import type { FitMeasure } from "../pu/phrase";
-import { docView } from "../pu/slots";
-import { voiceNumbers } from "../pu/ast";
+import type { FitMeasure } from "../jianpu/phrase";
+import { docView } from "../jianpu/slots";
+import { voiceNumbers } from "../jianpu/ast";
 import type { JpwMeta, JpwRange } from "../omrkit/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
@@ -39,7 +39,7 @@ import { VisualEditController, type VisualHost } from "./visual/controller";
 import { visualCursorExtension } from "./visual/cursor";
 import { hitThroughOverlay } from "./visual/overlay";
 import type { EditDialect } from "./visual/dialect";
-import { planSave } from "../model/capability";
+import { planSave } from "../convert/capability";
 import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/parts";
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
@@ -54,7 +54,7 @@ import { jpwToScoreDoc } from "../model/fromjpw";
 import { PlaybackController, type PlaybackHost } from "./playback";
 import type { PlayPoint } from "./player";
 import type { PlaySource } from "../score/timeline";
-import { playSourceOf } from "../model/playsong";
+import { playSourceOf } from "../jianpu/playsong";
 import { OmrController, type OmrHost } from "./omrctl";
 import { FileSession } from "./filesession";
 import { MixedSession } from "./mixedsession";
@@ -2063,7 +2063,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
     // jianpu-ly（`.jly`）：**只看扩展名** —— 上游输入里没有版本行 / 签名 / 必需项，
     // 内容嗅探只能靠猜；`.jly` 是它自己 `--export-jly` 写出来的后缀，拿到它就是这个格式
-    // （详见 `model/fromjly.ts` 文件头）。
+    // （详见 `jly/fromjly.ts` 文件头）。
     if (isJlyFile(name)) {
       this.mixed._dropMixedDoc();
       this._setDocFormat("jly");
@@ -2286,7 +2286,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /**
    * 「按乐句重排」：**重排的是原文本身**，两档因此同时就位——文本谱一行 `Q:`（123 一个 `$`）
-   * 就是谱面一行，展开档的行边界由 `model/jianpuinput.ts` 转成换行条目。怎么写回原文由各格式
+   * 就是谱面一行，展开档的行边界由 `jianpu/jianpuinput.ts` 转成换行条目。怎么写回原文由各格式
    * 的适配器给（`editor/formats.ts::relayoutText`）。
    * 切回「原样」= 把重排前那份原文放回去（逐字相同，Ctrl+Z 也能整体撤销）。
    */

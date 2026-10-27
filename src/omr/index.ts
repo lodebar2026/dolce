@@ -8,7 +8,7 @@ export { rgbaToBinary, toGray } from "../omrkit/preprocess";
 export { connectedComponents } from "../omrkit/ccl";
 export { recognizeJianpu } from "./jianpu";
 export { recognizedToDoc } from "./todoc";
-export { keyNameOf, puArcLosses } from "../model/topu";
+export { keyNameOf, puArcLosses } from "../pu/topu";
 export { metaFrom123, metaFromPu } from "./meta";
 export { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter } from "./emit";
 export type { OmrFormat, ScoreEmitter, EmittedScore } from "./emit";

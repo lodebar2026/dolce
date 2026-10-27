@@ -8,7 +8,7 @@
 // 不必反查 SVG。
 
 export type { PlacedItem, PlacedMark, PlacedLayer, PlacedSplit, PlacedUnderline, PlacedVoice, PlacedGroup, PlacedPage, PlacedScore, InkMeasurer } from "./model";
-export type { NoteElement, SustainElement } from "../../../pu/ast";
+export type { NoteElement, SustainElement } from "../../../jianpu/ast";
 export { elementBeats } from "./voice";
 export { layoutSong, layoutDocument } from "./song";
 export { reflowLineStarts } from "./reflow";

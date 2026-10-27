@@ -238,7 +238,7 @@ export function emptyDoc(sourceFormat: ScoreDoc["sourceFormat"]): ScoreDoc {
   return { sourceFormat, songs: [], diagnostics: [] };
 }
 
-/** 第一首。多曲文件里绝大多数调用方只关心它（对应 `pu/ast.ts::primaryMetadata` 的用法）。 */
+/** 第一首。多曲文件里绝大多数调用方只关心它（对应 `jianpu/ast.ts::primaryMetadata` 的用法）。 */
 export function primarySong(doc: ScoreDoc): Song | null {
   return doc.songs[0] ?? null;
 }

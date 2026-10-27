@@ -6,7 +6,7 @@
 // ## 为什么在这一层
 //
 // 索引建在 **`ScoreDoc` 的 `source: SourceSpan`** 上——每个音符、每个歌词音节解析时就记了它在
-// 原文里的位置（文本谱经 `model/frompu.ts` 转来时照样带着）。有代码区的四种格式（文本谱、123、ABC、
+// 原文里的位置（文本谱经 `pu/frompu.ts` 转来时照样带着）。有代码区的四种格式（文本谱、123、ABC、
 // `.jpwabc`）共用同一套代码。条目按**元素 id** 认，谱面那一侧（`ScorePainter.entryEl(id)` /
 // `lyricEl` / `partEls`）也按 id 取，两路页面树的差别由排版器自己消化。
 //
@@ -38,13 +38,13 @@
 
 // ## 歌词音节怎么配到音符
 //
-// 走排版行视图（`pu/slots.ts::docView`）：音节配给哪个音符在视图里已经定好（`syllableOwner`），
+// 走排版行视图（`jianpu/slots.ts::docView`）：音节配给哪个音符在视图里已经定好（`syllableOwner`），
 // 与排版器、简谱输入模型用的是**同一份**，不在这里另算。
 
 import type { AttachedSource, Chord, ElementId, Measure, Part, ScoreDoc, SourceSpan } from "../model/doc";
 import { breakAfter } from "../model/helpers";
 import { surfaceOf } from "../model/xmlsurface";
-import { docView } from "../pu/slots";
+import { docView } from "../jianpu/slots";
 
 export type SyncKind = "note" | "lyric" | "sustain" | "barline" | "mark" | "break" | "header";
 

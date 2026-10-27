@@ -555,7 +555,7 @@ export const en: Record<MsgKey, string> = {
   "feedback.body": "Please describe the problem or suggestion:",
   "update.title": "New version available",
   "update.body": "You have {cur}; the latest is {latest}. Open the download page?",
-  // 另存为丢失清单（model/capability.ts）
+  // 另存为丢失清单（convert/capability.ts）
   "feat.harmony": "Chord symbols",
   "feat.harmonyOffset": "Chords in the middle of a long note off the beat (moved onto the note)",
   "feat.multiVoice": "Multiple parts",

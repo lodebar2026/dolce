@@ -1,5 +1,5 @@
 // 一行一个声部的符号序列：占位符号、拍位与拍组、减时线分段、歌词音节挂到跟词的符号上。
-import { elementQuarters, takesLyric, tupletRatios, type BarlineElement, type LyricLine, type Meter, type MusicElement, type ScoreLine } from "../../../pu/ast";
+import { elementQuarters, takesLyric, tupletRatios, type BarlineElement, type LyricLine, type Meter, type MusicElement, type ScoreLine } from "../../../jianpu/ast";
 import { jianpuGraceMetrics, jianpuGraceNotes, type JianpuGrid } from "../metrics";
 import { graceAdvance } from "../../../engrave/grace";
 import { ACCIDENTAL_CLEARANCE } from "../../../engrave/accidental";

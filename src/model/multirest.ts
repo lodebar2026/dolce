@@ -1,6 +1,6 @@
 // 多小节休止（`MeasureAttrs.multiRest`：MusicXML `<multiple-rest>`、123 `Zn`）在**谱面上**并成一个小节。
 //
-// 模型里那 n 个小节一个不少（试听、导出、编辑都按真实小节走），只有排版视图（简谱 `pu/slots.ts::docView`、
+// 模型里那 n 个小节一个不少（试听、导出、编辑都按真实小节走），只有排版视图（简谱 `jianpu/slots.ts::docView`、
 // 五线谱 `mixed/layout.ts::layoutStaff`）先过这一道：首小节只留一个休止，后面 n−1 个拿掉，收尾那根线挪到首小节上。
 // 并不了的（中间有音、换行、换拍号调号谱号、左线、记号、歌词……）照常一小节一小节排，`multiRest` 摘掉免得误画。
 

@@ -10,7 +10,7 @@
 
 import type { ScoreDoc } from "../model/doc";
 import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../convert/targets";
-import { describeLosses, planSave, type Loss } from "../model/capability";
+import { describeLosses, planSave, type Loss } from "../convert/capability";
 import { scoreDocToMusicXml } from "../model/toxml";
 import type { DocFormatId } from "./formats";
 import { showChoiceDialog, showConfirmDialog } from "./dialogs";

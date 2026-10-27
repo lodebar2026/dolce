@@ -54,7 +54,7 @@ export function jpPitch(digit: number, jpOctave: number, fifths: number): {
 }
 
 // ---------------- 简谱表述 → Note.pitch（导入侧） ----------------
-// `.jpwabc` 读入（model/fromjpw.ts）与试听输入（pu/phrasesong.ts）都要把简谱表述落成 pitch/step。
+// `.jpwabc` 读入（model/fromjpw.ts）与试听输入（jianpu/phrasesong.ts）都要把简谱表述落成 pitch/step。
 // 两处曾各写一份逐行同构的 calcPitch——音高或临时记号算错就是错音，故只留这一处。
 
 /** 一个声部在小节内的调号状态。`alter` 是**小节内延续**的临时记号（按简谱数字键）。 */

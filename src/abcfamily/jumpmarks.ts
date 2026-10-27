@@ -1,6 +1,6 @@
 // 小节线上的跳转记号（`Barline.ornaments`）在 123 里的写法。规范 §4.14：`!segno! !coda! !D.S.! !D.C.! !fine!`。
 //
-// 内部用的是 `.jpwabc`/文本谱那套短名（`hs`=segno 𝄋、`ty`=coda ⊕，见 `pu/glyph.ts::BARLINE_MARKS`），
+// 内部用的是 `.jpwabc`/文本谱那套短名（`hs`=segno 𝄋、`ty`=coda ⊕，见 `engrave/jpglyph.ts::BARLINE_MARKS`），
 // 写出去要换成规范里的名字，读回来再换一次。
 //
 // **写在线的哪一侧决定它挂哪条线**（emit/parse 两边同一约定）：

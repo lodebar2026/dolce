@@ -1,5 +1,5 @@
 // 一首（及一份文档）的定位：逐组排声部、组间让位、分页，长图把各页接成一张。
-import type { Meter, MusicElement, NoteElement, PuSong } from "../../../pu/ast";
+import type { Meter, MusicElement, NoteElement, PuSong } from "../../../jianpu/ast";
 import { contentWidth, type JianpuGrid } from "../metrics";
 import { paginate, type SystemBlock } from "../../../jianpu/vertical";
 import type { InkMeasurer, PlacedGroup, PlacedPage, PlacedScore, PlacedVoice } from "./model";

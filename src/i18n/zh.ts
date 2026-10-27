@@ -554,7 +554,7 @@ export const zh = {
   "feedback.body": "请描述问题或建议：",
   "update.title": "发现新版本",
   "update.body": "当前版本 {cur}，最新版本 {latest}。是否打开下载页面？",
-  // 另存为丢失清单（model/capability.ts）
+  // 另存为丢失清单（convert/capability.ts）
   "feat.harmony": "和弦符号",
   "feat.harmonyOffset": "长音中间不在整拍上的和弦（会提前到音符上）",
   "feat.multiVoice": "多声部",

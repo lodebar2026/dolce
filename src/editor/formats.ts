@@ -21,9 +21,9 @@ import type { Diagnostic } from "../model/doc";
 import { eachChord } from "../model/helpers";
 import type { Dialect } from "../pu";
 import { relayoutPuText } from "../pu/relayout";
-import type { FitMeasure } from "../pu/phrase";
+import type { FitMeasure } from "../jianpu/phrase";
 import { parse123, parseAbc, parseJcx } from "../j123/parse";
-import { parseJly, rewrapJlyText } from "../model/fromjly";
+import { parseJly, rewrapJlyText } from "../jly/fromjly";
 import { DIALECT_JLY } from "./visual/dialects/jly";
 import { emit123 } from "../j123/emit";
 import { emitAbc } from "../abcfamily/emitabc.entry";
@@ -32,7 +32,7 @@ import { decodeJcx, encodeJcx } from "../common/jcxcodec";
 import type { ScoreDoc } from "../model/doc";
 import { loadScoreDoc } from "../model/fromxml";
 import { fillDegreesFromPitch } from "../model/jianpu";
-import { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../model/relayout";
+import { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { JpwFile } from "../jpword/jpwfile";
 import type { EditDialect } from "./visual/dialect";
@@ -143,7 +143,7 @@ type RelayoutPart =
     /**
      * 「按乐句重排」怎么写回原文。断句本身与格式无关
      * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`pu/relayout.ts`），
-     * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `model/relayout.ts`）。
+     * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `jianpu/docrelayout.ts`）。
      *
      * @param measure 行长尺子（文本谱与多声部的原样档不给，见 `App._puPhraseMeasure`；没有就按出厂的小节数目标断，也就是一句一行）
      * @returns 新原文；没有可重排的曲行时原样返回 `text`
@@ -320,7 +320,7 @@ const JCX: FormatAdapter = {
 /** jianpu-ly —— 上游 jianpu-ly 预处理器（简谱文本 → LilyPond）的输入格式。
  *
  *  **独立实现**（不进 `abcfamily` 家族）：它的页头（`title=` / `1=Bb` / 裸 `4/4`）、歌词（`L:` / `H:`）
- *  与连音（`3[ … ]`）都不是那个家族的形状；缘由见 `model/fromjly.ts` 文件头。
+ *  与连音（`3[ … ]`）都不是那个家族的形状；缘由见 `jly/fromjly.ts` 文件头。
  *
  *  **判"是不是这个格式"只看扩展名**：上游输入里没有版本行 / 签名 / 必需项
  *  （README 原话是"普通文本文件**以空格分隔**的"，`title=` / `4/4` 都只是 token），

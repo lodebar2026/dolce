@@ -1,11 +1,13 @@
-// 文本谱的记号字形：`&xx` → Bravura（SMuFL）码位。
+// 简谱记号的字形：文本谱 `&xx`、力度、小节线记号、临时记号、连谱号 → Bravura（SMuFL）码位。
+// 名字表（力度名、术语）在 `model/marknames.ts`。
 //
 // PUA 码位一律用 String.fromCharCode 写，**切勿在源码里写字面 PUA 字符**
 // （编辑工具会损坏这些字节）。这里不引用项目主谱面的 GlyphCodes，是因为文本谱要的
 // 记号集与它只有部分重叠，各自维护更清楚。
 
-import { dynamicGlyphs } from "../engrave/dynamics";
-import { articGlyph } from "../engrave/articulation";
+import { dynamicGlyphs } from "./dynamics";
+import { articGlyph } from "./articulation";
+import { DYNAMIC_NAMES } from "../model/marknames";
 
 const C = (n: number): string => String.fromCharCode(n);
 
@@ -38,7 +40,7 @@ export const ORNAMENTS: Readonly<Record<string, OrnamentGlyph>> = {
   xby: { glyph: C(0xe56d), placement: "above", scale: 0.9, label: "下波音" },
   cy: { glyph: C(0xe566), placement: "above", scale: 0.9, label: "颤音" },
   tr: { glyph: C(0xe566), placement: "above", scale: 0.9, label: "颤音" },
-  // 下面几样文本谱的 `&xx` 里没有（番茄脚本规范同），只给 123 / MusicXML 来源的简谱排版用（`pu/slots.ts::chordOrnaments`）
+  // 下面几样文本谱的 `&xx` 里没有（番茄脚本规范同），只给 123 / MusicXML 来源的简谱排版用（`jianpu/slots.ts::chordOrnaments`）
   sg: { glyph: C(0xe612), placement: "above", scale: 0.9, label: "上弓" }, // stringsUpBow
   xg: { glyph: C(0xe610), placement: "above", scale: 0.9, label: "下弓" }, // stringsDownBow
   // 单音震音：简谱印在数字上方的几道斜线（tremolo1–4）
@@ -48,19 +50,8 @@ export const ORNAMENTS: Readonly<Record<string, OrnamentGlyph>> = {
   trem4: { glyph: C(0xe223), placement: "above", scale: 0.8, label: "震音" },
 };
 
-/** 文本谱认的力度名（语法表）；字形走公共那一份（engrave/dynamics.ts），与五线谱、旧简谱引擎同一套。 */
-export const DYNAMICS: Readonly<Record<string, string>> = Object.fromEntries(
-  ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "sf", "fp", "sfp", "sfz", "sffz", "fz", "rf", "rfz"].map((n) => [n, dynamicGlyphs(n)]),
-);
-
-/** 术语类记号：直接排文字。 */
-export const TERMS: Readonly<Record<string, string>> = {
-  cresc: "cresc.",
-  dim: "dim.",
-  rit: "rit.",
-  tempo: "a tempo",
-  atempo: "a tempo",
-};
+/** 力度名 → 字形（名字表在 `model/marknames.ts`）；字形走公共那一份（engrave/dynamics.ts），与五线谱、旧简谱引擎同一套。 */
+export const DYNAMICS: Readonly<Record<string, string>> = Object.fromEntries(DYNAMIC_NAMES.map((n) => [n, dynamicGlyphs(n)]));
 
 /** 小节线上的反复/导航记号。 */
 export const BARLINE_MARKS: Readonly<Record<string, { text?: string; glyph?: string; label: string }>> =

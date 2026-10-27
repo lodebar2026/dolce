@@ -8,7 +8,7 @@
 // 数字用系统字体按**墨迹居中**于步进锚点（字号取样式值 size.note），
 // 圆点与线段自绘——位置逐点对齐原版，字形则是规范字形。
 //
-// 入口只收 `ScoreDoc`：先经 `pu/slots.ts::docView` 线性化成排版行（排版几何都按行写成），再定位、绘制。
+// 入口只收 `ScoreDoc`：先经 `jianpu/slots.ts::docView` 线性化成排版行（排版几何都按行写成），再定位、绘制。
 //
 // 播放逐字高亮与双向定位：绘制时把每个音符与每个歌词音节的 PageItem 按**元素 id** 记进索引，
 // 由 ScorePainter 直接按 id 取用，不必反查 SVG，也不依赖对象身份（重新解析一遍 id 不变）。
@@ -22,7 +22,7 @@ import { chordTextSegs, harmonyInk, harmonyWidth } from "../../../engrave/chord"
 import type { Region } from "../../../style/ss";
 import type { JianpuStyle } from "../../../engrave/jianpustyle";
 import type { ElementId, ScoreDoc } from "../../../model/doc";
-import type { DocView } from "../../../pu/slots";
+import type { DocView } from "../../../jianpu/slots";
 import { originalInputOf } from "../input";
 import { applyBreaks } from "../../../model/breaks";
 import type { InkMeasurer, InkTextRole, PlacedPage, PlacedScore } from "../place/model";
@@ -34,7 +34,7 @@ import { footerSpan, layoutFooters } from "./footer";
 import { headerMeasurer, paintSlideLines } from "./header";
 import { placeHeader, placeSlideFooter, placeTitlePage } from "../place/header";
 import { expandView } from "../place/expand";
-import { playDataOfSong } from "../../../model/playsong";
+import { playDataOfSong } from "../../../jianpu/playsong";
 import type { PlayItem } from "../../../score/playorder";
 
 /** 原样文档排版的外部配置：尺子（`style/jianpu.ts::jianpuStyleOf`，与旧简谱引擎同一份）、纸、页脚模板。 */

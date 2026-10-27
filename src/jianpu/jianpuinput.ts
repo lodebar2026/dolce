@@ -1,6 +1,6 @@
 // `ScoreDoc` → 简谱排版引擎的输入（`layout/input.ts`）。**只此一份投影**，按形状分支：
 //
-//   `jianpuInputOfDoc(doc, opts)`   简谱形状：文本谱 / 123 / ABC / `.musicxml` 的简谱档（经排版行视图 `pu/slots.ts::docView`）
+//   `jianpuInputOfDoc(doc, opts)`   简谱形状：文本谱 / 123 / ABC / `.musicxml` 的简谱档（经排版行视图 `jianpu/slots.ts::docView`）
 //   `jianpuInputOfJpw(doc)`         `.jpwabc`（按原文小节，行内 `$` 换行照原位）
 //
 // 判据是**谱面**：三个分支各照原先那条路的口径（从 mp/score 移植、多年验过的口径），
@@ -8,21 +8,22 @@
 // 每个和弦带元素 id：点选、试听高亮、断句量宽都按它认。
 
 import { Fraction } from "../common/fraction";
-import { BARLINE_MARKS, DYNAMICS, TERMS } from "../pu/glyph";
+import { BARLINE_MARKS, DYNAMICS } from "../engrave/jpglyph";
+import { TERMS } from "../model/marknames";
 import { BarStyle, StartStopDiscontinue } from "../score/enums";
 import { MusicCommon } from "../score/jppitch";
-import { fifthsOfSpelling } from "./keyshift";
+import { fifthsOfSpelling } from "../model/keyshift";
 import { PlayData } from "../score/playorder";
 import type {
   JBreak, JChord, JCredit, JKey, JLyric, JMeasure, JNote, JScore, JTime,
 } from "../layout/input";
-import { quarterTempos } from "./jianpu";
-import type { ElementId, Measure as DocMeasure, Mark as DocMark, ScoreDoc, Song } from "./doc";
-import { docView, type SlotRef } from "../pu/slots";
-import { distinctVerses, jpAlterOf } from "../pu/phrasesong";
+import { quarterTempos } from "../model/jianpu";
+import type { ElementId, Measure as DocMeasure, Mark as DocMark, ScoreDoc, Song } from "../model/doc";
+import { docView, type SlotRef } from "./slots";
+import { distinctVerses, jpAlterOf } from "./phrasesong";
 import { playDataOfSong } from "./playsong";
-import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "../pu/ast";
-import type { LyricLine, Mark, NoteElement, PuSong, ScoreLine } from "../pu/ast";
+import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "./ast";
+import type { LyricLine, Mark, NoteElement, PuSong, ScoreLine } from "./ast";
 
 // ───────────────────────── 构造 ─────────────────────────
 
@@ -258,7 +259,7 @@ function rowsPart(
         m.timeChange = true;
       }
       // 小节**左线**上的反复起点（曲首的 `|:`、接在 `||` 后面的 `|:`）：排版行视图不把左线输出成元素
-      //（`pu/slots.ts::buildRow`，否则多出空小节），只靠前一小节右线的 `:|:` 带不回来，在这里直接从模型读
+      //（`jianpu/slots.ts::buildRow`，否则多出空小节），只靠前一小节右线的 `:|:` 带不回来，在这里直接从模型读
       if (src.barlines?.some((b) => b.location === "left" && b.repeat === "forward")) m.repeatForward = true;
     }
     measure = m;

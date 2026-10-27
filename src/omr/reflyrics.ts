@@ -14,7 +14,7 @@ import type { LyricCharRef, LyricHooks } from "./lyrics";
 import { simplifiedOf } from "./hanvariant";
 import { recognizedToDoc } from "./todoc";
 import type { ElementId } from "../model/doc";
-import { jianpuInputOfDoc } from "../model/jianpuinput";
+import { jianpuInputOfDoc } from "../jianpu/jianpuinput";
 import type { JChord } from "../layout/input";
 import { walkPlay } from "../jianpu/expand";
 import { probe } from "./probe";

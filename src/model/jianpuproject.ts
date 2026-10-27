@@ -1,4 +1,4 @@
-// MusicXML 形状的 `Song` → **简谱形状**的 `Song`：简谱排版（`pu/slots.ts`）与 123 写出端之前的投影。
+// MusicXML 形状的 `Song` → **简谱形状**的 `Song`：简谱排版（`jianpu/slots.ts`）与 123 写出端之前的投影。
 // 与 `xmlproject.ts` 方向相反，判据同一条（`xmlproject.ts::isXmlShaped`）。
 //
 // ## 为什么要有这一层
@@ -56,7 +56,7 @@ export function projectForJianpu(src: Song): Song {
   if (!xml && !isDurationShaped(src)) return src;
   const song: Song = structuredClone(src);
   // 同一谱表上的几个声部（ABC/123 的 `&`、MusicXML 的 `<voice>`）都留着：123 写出端按 `&` 写回，
-  // 简谱行视图把主声部以外的收成并排块（`pu/slots.ts::overlayLayers`）。MusicXML 靠 `<forward>` 留的空拍
+  // 简谱行视图把主声部以外的收成并排块（`jianpu/slots.ts::overlayLayers`）。MusicXML 靠 `<forward>` 留的空拍
   // 这里补成不可见休止，好让每个声部各自从小节起点线性排下去。
   if (xml) {
     creatorsFromCredits(song);
@@ -77,7 +77,7 @@ export function projectForJianpu(src: Song): Song {
       carry = projectMeasure(m, divisions, newId, carry);
       if (m.attrs) delete m.attrs.divisions;
       // MusicXML 的普通小节不写 `<barline>`，模型里就没有右线；简谱这边「没有右线」是行末开口的小节
-      // （文本谱/123 跨行接着写同一小节），行视图不出小节线元素（`pu/slots.ts::buildRow`），展开档就整行并成一个大小节
+      // （文本谱/123 跨行接着写同一小节），行视图不出小节线元素（`jianpu/slots.ts::buildRow`），展开档就整行并成一个大小节
       if (xml) {
         const right = (m.barlines ?? []).find((bl) => bl.location === "right");
         if (!right) (m.barlines ??= []).push({ location: "right", style: "regular" });

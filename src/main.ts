@@ -106,8 +106,8 @@ async function boot() {
   // 成书重排（BookStyle 注入 + 页面树 → DrawList）暴露，供 scripts/rebuild.mjs 用。
   win.__book = Promise.all([
     import("./pdflayout/browser"), import("./style/book"), import("./layout/painter"),
-    import("./score/phrase"), import("./score/applybreaks"), import("./jpword/jpwfile"),
-    import("./jpword/parse"), import("./model/jianpuinput"), import("./pu"),
+    import("./score/phrase"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
+    import("./jpword/parse"), import("./jianpu/jianpuinput"), import("./pu"),
     import("./model/fromxml"), import("./model/phrasedoc"), import("./score/timeline"), import("./model/playdoc"),
     import("./score/midi"), import("./layout/input"),
   ]).then(([book, bookStyle, painter, phrase, applybreaks, jpwfile, parse, jianpuinput, pu, fromxml, phrasedoc, timeline, playdoc, midi, input]) => ({
@@ -121,23 +121,23 @@ async function boot() {
   // `loadScoreDoc` 要 DOMParser，Node 侧没有，所以这条必须在浏览器里走（同 __book 的路子）。
   win.__j123 = Promise.all([
     import("./j123/parse"), import("./j123/emit"),
-    import("./model/fromjpw"), import("./model/frompu"), import("./model/helpers"),
-    import("./model/jianpuinput"), import("./pu"),
+    import("./model/fromjpw"), import("./pu/frompu"), import("./model/helpers"),
+    import("./jianpu/jianpuinput"), import("./pu"),
     import("./abcfamily/emitabc.entry"),
-    import("./model/fromxml"), import("./model/toxml"), import("./model/capability"),
+    import("./model/fromxml"), import("./model/toxml"), import("./convert/capability"),
     import("./model/jianpuproject"), import("./model/jianpu"), import("./model/tojpw"), import("./model/xmlproject"),
-    import("./model/breaks"),
+    import("./model/breaks"), import("./convert/jpwabc"),
   ]).then((
     [parse, emit, fromjpw, frompu, helpers, jianpuinput, pu, emitabc,
-     fromxml, toxml, capability, jianpuproject, jianpu, tojpw, xmlproject, breaks],
+     fromxml, toxml, capability, jianpuproject, jianpu, tojpw, xmlproject, breaks, jpwabc],
   ) => ({
     ...parse, ...emit, ...fromjpw, ...frompu, ...helpers, ...jianpuinput, pu,
-    ...emitabc, ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...tojpw, ...xmlproject, ...breaks,
+    ...emitabc, ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...tojpw, ...xmlproject, ...breaks, ...jpwabc,
   }));
   // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engraveScoreDoc`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归
   // （写出端只有 `model/toxml.ts`，在 `__j123` 里）。
   win.__xmlout = Promise.all([
-    import("./mixed/engrave"), import("./model/jianpuinput"), import("./model/fromxml"),
+    import("./mixed/engrave"), import("./jianpu/jianpuinput"), import("./model/fromxml"),
     import("./model/fromjpw"), import("./jpword/jpwfile"), import("./jpword/parse"),
   ]).then(([layout, jianpuinput, fromxml, fromjpw, jpwfile, parse]) =>
     ({ ...layout, ...jianpuinput, ...fromxml, ...fromjpw, ...jpwfile, ...parse }));

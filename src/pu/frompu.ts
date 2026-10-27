@@ -17,8 +17,8 @@
 // 行结构：`PuDoc` 的一个 `VoiceGroup` 是一个系统。每个声部在该组那一行的**首小节**上
 // 挂 `print.newSystem` + `print.system`（组序号）——一组不一定含全部声部，靠组序号对回去。
 
-import { applyTupletTimeMods } from "./tuplets";
-import { axisOfSong } from "./timeaxis";
+import { applyTupletTimeMods } from "../model/tuplets";
+import { axisOfSong } from "../model/timeaxis";
 import type {
   BarlineElement,
   LyricLine as PuLyricLine,
@@ -29,7 +29,7 @@ import type {
   PuDoc,
   ScoreLine,
   SustainElement,
-} from "../pu/ast";
+} from "../jianpu/ast";
 import type {
   AttachedSource,
   Barline,
@@ -47,12 +47,12 @@ import type {
   SourceOrnament,
   Song,
   Sustain,
-} from "./doc";
-import { SIMPLE_DIVISIONS } from "./doc";
+} from "../model/doc";
+import { SIMPLE_DIVISIONS } from "../model/doc";
 import { normalizeSpelling } from "../j123/fields";
-import { IdGen, emptyDoc, emptySong } from "./helpers";
-import { creatorOf } from "./metakeys";
-import { keyOfDegree, songFifths } from "./keyshift";
+import { IdGen, emptyDoc, emptySong } from "../model/helpers";
+import { creatorOf } from "../model/metakeys";
+import { keyOfDegree, songFifths } from "../model/keyshift";
 
 /** `PuDoc` 的 BarlineType → `ScoreDoc` 的 bar-style + repeat。 */
 function fromPuBarline(el: BarlineElement): Barline {
@@ -502,7 +502,7 @@ function nearestId(idAt: Map<number, ElementId>, from: number, dir: 1 | -1): Ele
   return undefined;
 }
 
-/** 第 k 小节在行里的首/末下标（只数有归属的符号与小节线，与 `pu/slots.ts` 的小节跨度同口径） */
+/** 第 k 小节在行里的首/末下标（只数有归属的符号与小节线，与 `jianpu/slots.ts` 的小节跨度同口径） */
 function measureEdge(r: LineResult, k: number, which: "first" | "last"): number | undefined {
   let hit: number | undefined;
   for (const [i, mk] of r.measureAt) {

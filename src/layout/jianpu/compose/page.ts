@@ -240,7 +240,7 @@ export function paintVoice(c: OriginalCtx,
     if (it.element.kind === "barline") {
       if (!skipBarlines || it.dy !== undefined) {
         const g = paintBarline(c, root, x, base, it);
-        // 行视图只出「右线」（`pu/slots.ts`），所以一律是画在前一个音符之后的那一侧
+        // 行视图只出「右线」（`jianpu/slots.ts`），所以一律是画在前一个音符之后的那一侧
         if (g && prevNoteId !== undefined) addBarlineOwner(g, prevNoteId, "after");
       }
       continue;

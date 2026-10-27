@@ -16,16 +16,16 @@
 //
 // **改这张表之前先去改那几处的实测**——这里只是它们的汇总。
 
-import type { Mark, ScoreDoc, Song } from "./doc";
-import { arcsToNextNote, beamLevel1, inlineBreakOf, nestArcsInTuplets } from "./emitutil";
-import { eachChord, verseCount } from "./helpers";
-import { projectForJianpu } from "./jianpuproject";
-import { melodyLane } from "./jianpu";
-import { hasCrossStaff } from "./staves";
+import type { Mark, ScoreDoc, Song } from "../model/doc";
+import { arcsToNextNote, beamLevel1, inlineBreakOf, nestArcsInTuplets } from "../model/emitutil";
+import { eachChord, verseCount } from "../model/helpers";
+import { projectForJianpu } from "../model/jianpuproject";
+import { melodyLane } from "../model/jianpu";
+import { hasCrossStaff } from "../model/staves";
 import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
-import { puArcLosses } from "./topu";
-import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
-import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "./pagemeta";
+import { puArcLosses } from "../pu/topu";
+import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "../model/deconames";
+import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "../model/pagemeta";
 import { getLang, t } from "../i18n";
 
 /** 一项「文档里可能用到、格式可能装不下」的特性。 */
@@ -136,7 +136,7 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
   musicxml: "MusicXML",
 };
 
-/** 文本谱两种方言都装不下的。依据见 `model/topu.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
+/** 文本谱两种方言都装不下的。依据见 `pu/topu.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
  *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
  *  音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。 */
 const PU_GONE: Feature[] = [

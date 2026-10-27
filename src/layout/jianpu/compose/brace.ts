@@ -2,7 +2,7 @@
 import { Font } from "../../font";
 import { Matrix33 } from "../../../common/geom";
 import { GraphicPath, Group, PageItem, type PathSeg } from "../../pageitem";
-import { BRACKET } from "../../../pu/glyph";
+import { BRACKET } from "../../../engrave/jpglyph";
 import { type OriginalCtx, rect, text } from "./ctx";
 import { BRACE_GLYPHS } from "./braceglyphs";
 

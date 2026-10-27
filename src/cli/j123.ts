@@ -13,22 +13,23 @@ export * from "../j123/emit";
 export { emitAbc } from "../abcfamily/emitabc.entry";
 export { emitJcx } from "../abcfamily/emitjcx.entry";
 export { decodeJcx, encodeJcx } from "../common/jcxcodec";
-export * from "../model/capability";
+export * from "../convert/capability";
 export * from "../j123/fields";
 export * from "../model/helpers";
 export * from "../model/metakeys";
 export { decoKey } from "../model/deconames";
-export { docView } from "../pu/slots";
-export { puToScoreDoc } from "../model/frompu";
+export { docView } from "../jianpu/slots";
+export { puToScoreDoc } from "../pu/frompu";
 export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
 export { slursAsTies } from "../model/xmlproject";
 // MusicXML 读入要 `DOMParser`：Node 侧的脚本先装私有仓库 `scripts/xml-dom.mjs` 的极简实现
 export { loadScoreDoc } from "../model/fromxml";
-export { emitJpwabc, writeJpwabc } from "../model/tojpw";
-export { emitPu, emitPuSong, keyNameOf, puArcLosses } from "../model/topu";
-export { emitJly } from "../model/tojly";
-export { scanMusicLine, scanWord, JlyLosses, parseJly, isJlyMusicLine, rewrapJlyText } from "../model/fromjly";
+export { writeJpwabc } from "../model/tojpw";
+export { emitJpwabc } from "../convert/jpwabc";
+export { emitPu, emitPuSong, keyNameOf, puArcLosses } from "../pu/topu";
+export { emitJly } from "../jly/tojly";
+export { scanMusicLine, scanWord, JlyLosses, parseJly, isJlyMusicLine, rewrapJlyText } from "../jly/fromjly";
 export { projectForJianpu } from "../model/jianpuproject";
 export { songFifths } from "../model/keyshift";
 export { AccidentalCarry } from "../model/jianpu";
@@ -36,14 +37,14 @@ export { AccidentalCarry } from "../model/jianpu";
 export { parsePu, parsePuAst, sniffDialect } from "../pu";
 export { JpwFile, RepeatSection } from "../jpword/jpwfile";
 // 按乐句重排（写回原文那一步；断句本身在 score/phrase.ts）
-export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../model/relayout";
+export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 export { applyBreaks, breaksOf } from "../model/breaks";
-export { phraseCuts, puPhraseLines } from "../pu/phrase";
+export { phraseCuts, puPhraseLines } from "../jianpu/phrase";
 // 小节时值自检（私有仓库的对比报告拿它查手工谱各小节满不满）
 export { checkMeasureDurations, describeBeatIssue } from "../model/beatcheck";
 // 模型编辑动作（可视化编辑的 MusicXML 那一路；`ops-actions-check.mjs` 按识别手动操作的口径逐个验）
 export * as modelEdit from "../model/edit";
 // 试听/MIDI（私有仓库的 `chorus-midi.mjs` 拿识别结果与 GT 各导一份 MIDI 逐音比）
-export { playSourceOf } from "../model/playsong";
+export { playSourceOf } from "../jianpu/playsong";
 export { buildTimeline } from "../score/timeline";
 export { toMidi } from "../score/midi";

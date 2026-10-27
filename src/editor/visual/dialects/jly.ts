@@ -10,8 +10,8 @@
 //     绝不写 123 那个 `$`（jianpu-ly 不认它，写进去就是往谱里塞垃圾 ✗）。
 //   · 增时线是**独立 token** `-`（与 123 同）✓。
 
-import { chordTimeline, harmonyToChordToken } from "../../../model/jlychords";
-import { isJlyMusicLine } from "../../../model/fromjly";
+import { chordTimeline, harmonyToChordToken } from "../../../jly/jlychords";
+import { isJlyMusicLine } from "../../../jly/fromjly";
 import { t as tr } from "../../../i18n";
 import { mapper, type EditCtx, type EditOutcome } from "../ops";
 import type { SyncEntry } from "../../sync";

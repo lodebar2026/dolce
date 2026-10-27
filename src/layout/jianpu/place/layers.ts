@@ -1,5 +1,5 @@
 // 内联层：`{bz…}` 临时伴奏（主旋律上方小字号行）与 `{dsb…}` 并排块。
-import type { InlineLayerElement, ScoreLine } from "../../../pu/ast";
+import type { InlineLayerElement, ScoreLine } from "../../../jianpu/ast";
 import type { JianpuGrid } from "../metrics";
 import type { InkMeasurer, PlacedItem, PlacedLayer, PlacedSplit } from "./model";
 import { type BeatCtx, SPLIT_BRACE_W, computeUnderlines, layoutVoiceLine } from "./voice";

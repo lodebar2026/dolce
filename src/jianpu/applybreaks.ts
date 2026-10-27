@@ -5,8 +5,8 @@
 // 无 DOM 依赖。
 import type { Chord, ElementId, Measure, Song } from "../model/doc";
 import { applyBreaks, type LineStart } from "../model/breaks";
-import { chordsOf, type PhraseChord, type PhrasePart } from "./phraseinput";
-import { headFpOf, lyricPunctScore, mainLyricText, type CutCandidate, type FitMetric, type PhraseBreaks } from "./phrase";
+import { chordsOf, type PhraseChord, type PhrasePart } from "../score/phraseinput";
+import { headFpOf, lyricPunctScore, mainLyricText, type CutCandidate, type FitMetric, type PhraseBreaks } from "../score/phrase";
 
 export type { FitMetric };
 

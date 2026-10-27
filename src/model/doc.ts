@@ -5,12 +5,12 @@
 // | 模型 | 现在 | 终局 |
 // |---|---|---|
 // | **`ScoreDoc`**（本文件） | 123 的原生模型 | **唯一语义模型**，其余向它汇聚 |
-// | ~~`Score`~~ | 原先是简谱排版的输入树 | **已删**：旧简谱引擎读 `layout/input.ts` 的只读输入，由 `model/jianpuinput.ts` 从这里投影 |
+// | ~~`Score`~~ | 原先是简谱排版的输入树 | **已删**：旧简谱引擎读 `layout/input.ts` 的只读输入，由 `jianpu/jianpuinput.ts` 从这里投影 |
 // | ~~`MixedScore`~~ | 原先五线谱**语义 + 排版**混在一起 | **已删**：五线谱引擎只留版面态 `StaffLayout`（`mixed/model.ts`），语义一律从这里取 |
-// | ~~`PuDoc`~~（`pu/ast.ts`） | 原先是文本谱的解析产物 | **已退役**：只剩 `pu/parse.ts::parsePuAst` → `model/frompu.ts` 之间的中间结果；`parsePu` 直出 `ScoreDoc`，乐句重排读原文区间（`Print.source` / `LyricLineInfo.sources`） |
+// | ~~`PuDoc`~~（`jianpu/ast.ts`） | 原先是文本谱的解析产物 | **已退役**：只剩 `pu/parse.ts::parsePuAst` → `pu/frompu.ts` 之间的中间结果；`parsePu` 直出 `ScoreDoc`，乐句重排读原文区间（`Print.source` / `LyricLineInfo.sources`） |
 //
 // 各格式的排版、试听、MusicXML 导出、双向定位都直接吃 `ScoreDoc`，
-// 经 `pu/slots.ts::docView` 线性化成排版行（那是排版的事，不是模型的事）。
+// 经 `jianpu/slots.ts::docView` 线性化成排版行（那是排版的事，不是模型的事）。
 //
 // ## 设计依据（不是凭空设计）
 //
@@ -38,7 +38,7 @@
 // ───────────────────────── 基础 ─────────────────────────
 
 /** 源码区间。语法高亮、谱面点选定位、诊断报错全靠它。
- *  结构与 `pu/ast.ts::SourceSpan` 相同，TS 结构化类型下可直接互转。 */
+ *  结构与 `jianpu/ast.ts::SourceSpan` 相同，TS 结构化类型下可直接互转。 */
 export interface SourceSpan {
   /** 0 基行号 */
   line: number;
