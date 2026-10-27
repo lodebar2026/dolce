@@ -11,7 +11,7 @@ import { accidentalOf } from "./accidental";
 import { isSlashInk } from "./inkprobe";
 import { probe } from "./probe";
 import { chordCoverage, isAnnotationLine } from "../omrkit/chordgrammar";
-import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, effectiveCharH, betterTitle } from "../omrkit/headertext";
+import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE, CREDIT_YEAR_RE, LATIN_PAREN_RE, LATIN_BARE_NAME_RE, YEARS_RE, effectiveCharH, betterTitle } from "../omrkit/headertext";
 import { charsForText, gapWideAt, recoverHanziGaps, recoverSpacesByInk } from "../omrkit/textspace";
 
 const rcyOf = (r: Rect) => r.y + r.h / 2;
@@ -1032,6 +1032,20 @@ export async function recognizeHeader(
       });
       if (up) contOf.set(ln, contOf.get(up) ?? up);
     }
+    // 不带职能词的英文署名与它下面的年份行（LATIN_BARE_NAME_RE）：整行在最大字号那行中文（标题）的左边或右边，
+    // 年份行紧贴在名字行下、左缘对齐。居中的英文副标题落在标题宽度里，不进来。
+    const bigHan = ls.filter((l) => hanziCount(l.text) >= 2).sort((a, b) => b.charH - a.charH)[0];
+    const beside = (l: HLine) => !!bigHan && (l.bbox.x + l.bbox.w <= bigHan.bbox.x || l.bbox.x >= bigHan.bbox.x + bigHan.bbox.w);
+    const latinCredits = new Set(ls.filter((l) => l !== bigHan && l.charH < maxCharH && LATIN_BARE_NAME_RE.test(l.text.trim()) && beside(l)));
+    for (const ln of ls) {
+      if (!YEARS_RE.test(ln.text.trim())) continue;
+      const up = [...latinCredits].find((o) => {
+        const gap = ln.bbox.y - (o.bbox.y + o.bbox.h);
+        const h = Math.max(ln.charH, o.charH);
+        return gap > -h * 0.4 && gap < h * 0.6 && Math.abs(ln.bbox.x - o.bbox.x) < h;
+      });
+      if (up) latinCredits.add(ln);
+    }
     for (const ln of ls) {
       const txt = ln.text.trim();
       if (contOf.has(ln)) {
@@ -1074,6 +1088,13 @@ export async function recognizeHeader(
         const yi = t.search(/\d/);
         const cr = spaceIfGap(t, yi, ln, [...t.slice(0, yi)].filter((c) => c !== " ").length);
         probe("header.creditYear");
+        out.credits.push(cr); creditAt.push(ln.bbox);
+        out.regions.push({ text: cr, bbox: ln.bbox, chars: charsForText(cr, ln.chars) });
+        continue;
+      }
+      if (latinCredits.has(ln)) {
+        const cr = YEARS_RE.test(txt) ? txt : recoverSpacesByInk(bin, txt, ln.bbox, ln.chars);
+        probe("header.creditLatinBare");
         out.credits.push(cr); creditAt.push(ln.bbox);
         out.regions.push({ text: cr, bbox: ln.bbox, chars: charsForText(cr, ln.chars) });
         continue;

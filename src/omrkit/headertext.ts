@@ -29,6 +29,10 @@ export const LATIN_NAME_RE = /^[A-Za-z][A-Za-z0-9 .,'’&·()（）\-]*$/;
 export const CREDIT_YEAR_RE = /^\s*[一-鿿·]{2,10}?\s*(?:合译|[作編编]?[詞词曲譯译])\s*\d{4}(?:\s*[-–—]\s*\d{4})?\s*$/;
 // 署名下一行括号里的原文名（「(Reginald Heber)」「(John B. Dykes)」），单独成行。
 export const LATIN_PAREN_RE = /^\s*[(（][A-Za-z][A-Za-z .'’\-]*[)）]\s*$/;
+// 不带职能词的英文署名（传统诗歌选集 1《圣哉》左上「REGINALD HEBER,」/「1783-1826」、右上「JOHN B. DYKES,」/「1861」）：
+// 名字行以逗号收尾（与下一行的年份本是一句），年份另起一行。只在整行落在标题左右两侧时才认（header.ts）。
+export const LATIN_BARE_NAME_RE = /^[A-Za-z][A-Za-z .'’\-]*[A-Za-z.]\s*[,，]$/;
+export const YEARS_RE = /^\d{4}(?:\s*[-–—]\s*\d{4})?$/;
 
 /**
  * 一行字的**有效字高**：框高与「框宽 ÷ 字数」取小——只在明显叠排（按字宽算不到框高七成）时才换：det 框高带留白，
