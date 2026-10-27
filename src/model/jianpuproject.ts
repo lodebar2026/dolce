@@ -11,7 +11,7 @@
 //
 // 模型本身不动（`.musicxml` 重写要逐字节稳定），在克隆上投影，按 `Song` 对象缓存。
 //
-// 原生 ABC（`j123/parse.ts::parseAbc`）是第三种：时值只在 `divisions`（分母 `SIMPLE_DIVISIONS`，与简谱来源同口径），
+// 原生 ABC（`abcfamily/parse.ts::parseAbc`）是第三种：时值只在 `divisions`（分母 `SIMPLE_DIVISIONS`，与简谱来源同口径），
 // 却没有 `attrs.divisions`，也不带 `beams`/`sustains`。不投的话全曲一律画成四分音符（减时线、增时线全丢），
 // 所以同走这一层（`isDurationShaped`）；音上的延音线顺带配成 `tied` 记号。
 //

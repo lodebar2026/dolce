@@ -9,7 +9,7 @@
 //   ③ **连音是 `3[ … ]`** —— 方括号成组；123 是 `(3: … )`、ABC 是 `(3`，都不是这个形状
 //      （且 `[` 在 ABC 家族里已被和弦 / 行内字段占用）。
 //
-// 模型口径（照 `j123/parse.ts` 的权威写法）：
+// 模型口径（照 `abcfamily/parse.ts` 的权威写法）：
 //   八度进 `Degree { number, octaveShift }`；减时线条数 = `Chord.beams` 数组长度；
 //   增时线既要**加成时值**、又要**挂独立 `Sustain` 对象**；连音写 `Duration.timeMod`。
 //

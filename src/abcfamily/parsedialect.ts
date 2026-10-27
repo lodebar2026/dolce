@@ -11,7 +11,7 @@
 // 所以两套 token 汇进同一个模型，不需要第二个模型。
 
 import { SIMPLE_DIVISIONS, type Chord, type Key, type Note, type NoteType, type Pitch } from "../model/doc";
-import { parseKey as parseKey123 } from "../j123/fields";
+import { parseKey as parseKey123 } from "./fields";
 import { LEXER_123 } from "./dialect123";
 import { LEXER_ABC } from "./dialectabc";
 import { DEGREE_OF_LETTER, LEXER_JCX, parseKeyJcx } from "./dialectjcx";

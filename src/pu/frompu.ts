@@ -49,7 +49,7 @@ import type {
   Sustain,
 } from "../model/doc";
 import { SIMPLE_DIVISIONS } from "../model/doc";
-import { normalizeSpelling } from "../j123/fields";
+import { normalizeSpelling } from "../abcfamily/fields";
 import { IdGen, emptyDoc, emptySong } from "../model/helpers";
 import { creatorOf } from "../model/metakeys";
 import { keyOfDegree, songFifths } from "../model/keyshift";
@@ -355,7 +355,7 @@ function attachLyrics(anchors: readonly (Chord | Sustain)[], lyrics: readonly Pu
       const l: Lyric = { number: line.verseFrom, text: syl.text };
       if (line.verseTo !== line.verseFrom) l.numberTo = line.verseTo;
       if (syl.trailingPunctuation) l.trailingPunctuation = syl.trailingPunctuation;
-      // 印刷段号挂在该段**第一个非空**音节上（与 `j123/parse.ts` 同口径）
+      // 印刷段号挂在该段**第一个非空**音节上（与 `abcfamily/parse.ts` 同口径）
       if (!labelled && line.annotation !== undefined) {
         l.verseLabel = line.annotation;
         labelled = true;

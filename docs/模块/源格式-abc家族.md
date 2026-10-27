@@ -18,7 +18,7 @@
 
 所以 `.abc` 要原生解析直出 `ScoreDoc`。而这与写出端的继承复用正好对称：
 123 与 ABC 的头部字段、`V:`/`w:`/`P:`、小节线与房号、装饰、和弦与注记、倚音、多连音
-**全部同源**，`j123/lex.ts` + `parse.ts` 实现的正是这些。
+**全部同源**，`abcfamily/lex123.ts` + `parse.ts` 实现的正是这些。
 
 ## 入口
 
@@ -34,8 +34,8 @@
 | `src/abcfamily/emit123.ts` / `emitabc.ts` / `emitjcx.ts` | 三个方言的写出 |
 | `src/common/jcxcodec.ts` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF |
 | `src/abcfamily/abcpitch.ts` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolveAbcPitches` / 写 `withAbcPitches`），见下「关键判据」 |
-| `src/j123/lex.ts` / `emit.ts` | **薄壳**，保留 `lexMusicLine` / `emit123` / `emitSong` 的函数形态给既有调用方 |
-| `src/j123/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位、`I:playorder` 回填。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |
+| `src/abcfamily/lex123.ts` / `emit123.entry.ts` | **入口**，保留 `lexMusicLine` / `emit123` / `emitSong` 的函数形态给既有调用方 |
+| `src/abcfamily/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位、`I:playorder` 回填。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |
 
 ## 方言差在哪（**只有这张表里的**）
 

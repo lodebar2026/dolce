@@ -16,7 +16,7 @@ import { assignDegrees, keySpelling, melodyLane } from "../model/jianpu";
 import { tonicSpelling } from "../model/keyshift";
 import { projectForJianpu } from "../model/jianpuproject";
 import { getMeta } from "../model/metakeys";
-import { parseLyricLine } from "../j123/parse";
+import { parseLyricLine } from "./parse";
 
 /** 写出端固定的默认音长：八分音符（同 `emitabc.ts`，幂等的前提）。 */
 const UNIT = SIMPLE_DIVISIONS / 2;

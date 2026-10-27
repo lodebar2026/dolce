@@ -8,7 +8,7 @@
 // 邻居按模型找（同一声部同一声线，`model/edit.ts::neighbourChord`），再按索引取它在原文里的位置。
 // 文本谱、`.jpwabc` 的词行与记号写法各不相同，这几样拒绝并说明（同歌词录入只改已有字的口径）。
 
-import { parseLyricLine } from "../../j123/parse";
+import { parseLyricLine } from "../../abcfamily/parse";
 import { ZERO_SPAN } from "../../model/helpers";
 import { neighbourChord } from "../../model/edit";
 import type { SyncEntry } from "../sync";

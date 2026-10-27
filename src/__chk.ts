@@ -1,6 +1,6 @@
 // @ts-ignore
 import { installDomParser } from "../../dev/scripts/xml-dom.mjs";
-import { parse123 } from "./j123/parse";
+import { parse123 } from "./abcfamily/parse";
 import { loadScoreDoc } from "./model/fromxml";
 import { scoreDocToMusicXml } from "./model/toxml";
 installDomParser();

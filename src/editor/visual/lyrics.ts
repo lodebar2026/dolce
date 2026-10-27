@@ -6,7 +6,7 @@
 // 文本谱、`.jpwabc` 的词行写法各不相同，只改已经有字的格（索引里的歌词条目），没字的格请在源码里补。
 
 import type { EditorState } from "@codemirror/state";
-import { parseLyricLine } from "../../j123/parse";
+import { parseLyricLine } from "../../abcfamily/parse";
 import { ZERO_SPAN } from "../../model/helpers";
 import type { SyncEntry } from "../sync";
 import { blockStart, lastMusicLine, lyricBody, lyricLinesAfter, slotsBetween } from "./breaks";

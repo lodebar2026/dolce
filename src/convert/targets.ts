@@ -6,7 +6,7 @@
 
 import type { ScoreDoc } from "../model/doc";
 import type { TargetFormat } from "./capability";
-import { emit123 } from "../j123/emit";
+import { emit123 } from "../abcfamily/emit123.entry";
 import { emitAbc } from "../abcfamily/emitabc.entry";
 import { emitJcx } from "../abcfamily/emitjcx.entry";
 import { emitJpwabc } from "./jpwabc";

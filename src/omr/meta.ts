@@ -6,7 +6,7 @@
 // 就与识别序逐位对齐——映射从读入端的源区间来，不在写出端边写边记，几种格式同一个做法。
 import type { JpwMeta, JpwRange } from "../omrkit/types";
 import type { ScoreDoc, SourceSpan } from "../model/doc";
-import { parse123, parseJcx } from "../j123/parse";
+import { parse123, parseJcx } from "../abcfamily/parse";
 import { parsePu } from "../pu/parse";
 import type { Dialect } from "../pu/dialect";
 

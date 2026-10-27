@@ -17,7 +17,7 @@
 
 import { LexerAbc } from "./dialectabc";
 import type { Key } from "../model/doc";
-import { parseKey as parseKey123 } from "../j123/fields";
+import { parseKey as parseKey123 } from "./fields";
 
 /** 字母 → 简谱度数（C=1 … B=7）。 */
 export const DEGREE_OF_LETTER: Readonly<Record<string, number>> = {

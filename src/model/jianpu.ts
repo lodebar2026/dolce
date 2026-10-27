@@ -186,7 +186,7 @@ function applyAttrs(r: ResolvedAttrs, m: Measure, staff: number): void {
 // ───────────────────────── 记谱八度 ─────────────────────────
 
 /** 八度谱号（`treble-8` 这类）的名字：`G`/2 高音、`F`/4 低音、`C`/3 中音、`C`/4 次中音，再加 `-8`/`+8`。
- *  123 `V:n clef=treble-8` 读写共用（`j123/fields.ts::parseVoiceClef`、`emit123.ts`）。 */
+ *  123 `V:n clef=treble-8` 读写共用（`abcfamily/fields.ts::parseVoiceClef`、`emit123.ts`）。 */
 const CLEF_NAMES: readonly [string, Clef["sign"], number][] = [["treble", "G", 2], ["bass", "F", 4], ["alto", "C", 3], ["tenor", "C", 4]];
 
 export function clefFromName(name: string): Clef | null {

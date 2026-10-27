@@ -6,7 +6,7 @@ import type { App } from "./app";
 import { PaintResources, ScorePainter } from "../layout/painter";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { jpwToScoreDoc } from "../model/fromjpw";
-import { parse123 } from "../j123/parse";
+import { parse123 } from "../abcfamily/parse";
 import type { ScoreDoc } from "../model/doc";
 import type { StyleSheet } from "../style/sheet";
 import { THEMES, computeStyleForPaper, themeOfMode } from "../style/themes";

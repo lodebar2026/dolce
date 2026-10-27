@@ -236,7 +236,7 @@ export function directionsAsMarks(src: Song): Song {
       for (const [i, orns] of dm.byElement) {
         const el = mea.elements[i];
         if (el?.kind !== "chord") continue;
-        // 小节第一个符号上的 segno / coda 是左线上的跳转目标（123 读 `| !segno! 5` 就这么记，`j123/parse.ts`），照它记才往返不变
+        // 小节第一个符号上的 segno / coda 是左线上的跳转目标（123 读 `| !segno! 5` 就这么记，`abcfamily/parse.ts`），照它记才往返不变
         if (i === 0) {
           for (const o of orns.filter((x) => x.name in TEXT_NAME)) {
             const bls = (mea.barlines ??= []);

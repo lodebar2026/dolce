@@ -829,7 +829,7 @@ function projectPart(
     staffCarries.set(m, staffCarry);
     const dirs: Direction[] = [];
     // 小节内各声部的时间游标。一个小节里出现两个以上 voice 只有一种来源：ABC `&` 的临时多声部
-    // （§7.4，`j123/parse.ts`），各分支都从小节起点重新计时；其余来源整条 part 就是一个声部。
+    // （§7.4，`abcfamily/parse.ts`），各分支都从小节起点重新计时；其余来源整条 part 就是一个声部。
     const cursors = new Map<number, number>();
     const overlay = new Set(m.elements.map((el) => el.voice || 1)).size > 1;
     let pos = 0;

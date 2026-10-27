@@ -120,7 +120,7 @@ async function boot() {
   // 123 格式与语义模型暴露，供 scripts/j123-migrate.mjs 跑 MusicXML 那一路——
   // `loadScoreDoc` 要 DOMParser，Node 侧没有，所以这条必须在浏览器里走（同 __book 的路子）。
   win.__j123 = Promise.all([
-    import("./j123/parse"), import("./j123/emit"),
+    import("./abcfamily/parse"), import("./abcfamily/emit123.entry"),
     import("./model/fromjpw"), import("./pu/frompu"), import("./model/helpers"),
     import("./jianpu/jianpuinput"), import("./pu"),
     import("./abcfamily/emitabc.entry"),

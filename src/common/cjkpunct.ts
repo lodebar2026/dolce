@@ -218,7 +218,7 @@ export const PU_LYRIC_PUNCTUATION = "，。！？、；：,.!?;:…—～~《》
 /** `pu/parse.ts`：引号。左引号领起下一个字，右引号贴前一个字（正是 CLREQ 的 open/close 语义）。 */
 export const PU_LYRIC_QUOTES = "“”‘’\"";
 
-// ── 123 歌词行的切分口径：`j123/parse.ts::parseLyricLine` 读、`abcfamily/emit.ts` 判要不要包 `{}`，**两边必须同一份** ──
+// ── 123 歌词行的切分口径：`abcfamily/parse.ts::parseLyricLine` 读、`abcfamily/emit.ts` 判要不要包 `{}`，**两边必须同一份** ──
 
 /** CJK 字：歌词里一字一音节。 */
 export function isLyricCjk(ch: string): boolean {

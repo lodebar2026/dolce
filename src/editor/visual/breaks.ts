@@ -16,7 +16,7 @@
 import type { EditorState, Line } from "@codemirror/state";
 import type { Element, ScoreDoc } from "../../model/doc";
 import { isLyricSlot } from "../../abcfamily/lyricslot";
-import { parseLyricLine } from "../../j123/parse";
+import { parseLyricLine } from "../../abcfamily/parse";
 import { ZERO_SPAN } from "../../model/helpers";
 import type { SyncEntry } from "../sync";
 import { type EditCtx, type EditOutcome, spaceAround } from "./ops";

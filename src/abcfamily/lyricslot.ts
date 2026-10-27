@@ -1,4 +1,4 @@
-// 歌词对位格的判据——**读写两端共用这一份**（`j123/parse.ts::attachLyrics` 与 `abcfamily/emit.ts::lyricLines`）。
+// 歌词对位格的判据——**读写两端共用这一份**（`abcfamily/parse.ts::attachLyrics` 与 `abcfamily/emit.ts::lyricLines`）。
 // 两边口径一旦不一，交错写法下每行起点就差一格，后面整行错位。
 
 import type { Element, Part } from "../model/doc";

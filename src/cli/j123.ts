@@ -7,14 +7,14 @@
 // **只能汇出不碰 DOM 的模块**——排版件（依赖 common/measure.ts 的那些）一律不许进这条链，
 // 所以这里没有排版器 / layout。需要排版的回归走 scripts/harness.mjs 起浏览器那条路。
 export * from "../model/doc";
-export * from "../j123/lex";
-export * from "../j123/parse";
-export * from "../j123/emit";
+export * from "../abcfamily/lex123";
+export * from "../abcfamily/parse";
+export * from "../abcfamily/emit123.entry";
 export { emitAbc } from "../abcfamily/emitabc.entry";
 export { emitJcx } from "../abcfamily/emitjcx.entry";
 export { decodeJcx, encodeJcx } from "../common/jcxcodec";
 export * from "../convert/capability";
-export * from "../j123/fields";
+export * from "../abcfamily/fields";
 export * from "../model/helpers";
 export * from "../model/metakeys";
 export { decoKey } from "../model/deconames";

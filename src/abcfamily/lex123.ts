@@ -1,14 +1,14 @@
-// 123 音乐体的词法——**薄壳**。真正的实现在 `src/abcfamily/`：
+// 123 音乐体的词法入口：
 // 同源的部分（小节线、房号、装饰、和弦、倚音、多连音、行内字段…）在 `lex.ts` 基类里，
 // 123 特有的音符写法在 `dialect123.ts`。为什么这么分见 `docs/模块/源格式-abc家族.md`。
 //
 // 这里保留 `lexMusicLine` 这个函数形态，是因为 `parse.ts` 与既有脚本都按它调用。
 
-import { LEXER_123 } from "../abcfamily/dialect123";
-import type { LexResult } from "../abcfamily/types";
+import { LEXER_123 } from "./dialect123";
+import type { LexResult } from "./types";
 
-export { expandEndingNumbers } from "../abcfamily/lex";
-export type { LexResult, Token, TokenKind } from "../abcfamily/types";
+export { expandEndingNumbers } from "./lex";
+export type { LexResult, Token, TokenKind } from "./types";
 
 /**
  * 扫一行 123 音乐体。

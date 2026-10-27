@@ -209,7 +209,7 @@ export function lyricLines(
 
 /**
  * 拉丁音节读回会被拆开：中间夹着空白，或收尾标点后面还接着字（识别把 `dumb,` `Your` 两格读成了一格 `dumb,Your`）——
- * 读入端（`j123/parse.ts::parseLyricLine`）在收尾标点处收一个音节，后面的字另起一格，整段往后错一格。这种包 `{}`。
+ * 读入端（`abcfamily/parse.ts::parseLyricLine`）在收尾标点处收一个音节，后面的字另起一格，整段往后错一格。这种包 `{}`。
  */
 function splitsOnRead(text: string): boolean {
   if (/\s/.test(text.trim())) return true;
@@ -631,7 +631,7 @@ export abstract class AbcFamilyEmitter {
     return word.split("\n").filter((l) => l !== "").map((l) => `"^${l}"`).join("");
   }
 
-  /** 段落词写在和弦名之前（Muse：两者都是引号，读入端靠先后分，见 `j123/parse.ts` 的 `chord` 分支）。 */
+  /** 段落词写在和弦名之前（Muse：两者都是引号，读入端靠先后分，见 `abcfamily/parse.ts` 的 `chord` 分支）。 */
   protected readonly annotationBeforeChord: boolean = false;
 
   /** 歌词行的方言写法（`LyricStyle`）。 */
@@ -749,7 +749,7 @@ export abstract class AbcFamilyEmitter {
       tupletStart.set(m.start, ts);
     }
 
-    // 曲中转调/转拍号写成行内 `[K:]` `[M:]`（解析端 `j123/parse.ts` 的 inlineField 认得）。
+    // 曲中转调/转拍号写成行内 `[K:]` `[M:]`（解析端 `abcfamily/parse.ts` 的 inlineField 认得）。
     // 以前不写：MusicXML 里 A♭ 转 A 的谱（019《拥戴祂为王》）转成 123 后后半首整体差半音
     let key = song.key ? this.keyValue(song.key) : "";
     const timeOf = (t: Time | undefined): string => (t ? timeText(t) : "");

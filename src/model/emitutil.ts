@@ -28,7 +28,7 @@ export function inlineBreakOf(el: Element): BreakKind | null {
 
 /**
  * 按声部的换行切出系统。最后一段开到无穷，别的声部小节多出来的也归它。
- * **小节中间换行**照原位切（同 `.jpwabc`，读入端 `j123/parse.ts` 记在 `Chord.lineBreakAfter`）；
+ * **小节中间换行**照原位切（同 `.jpwabc`，读入端 `abcfamily/parse.ts` 记在 `Chord.lineBreakAfter`）；
  * 同一处换行在下一小节上还有一份小节级的 `print`（「这一小节之后」），那一份就不再切第二次。
  * 切点按这个声部（第一声部）算；别的声部的小节中间切点由 `partRanges` 按拍位对过去。
  */

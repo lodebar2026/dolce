@@ -1,4 +1,4 @@
-// `.abc` 写出端的函数入口（与 `j123/emit.ts` 的 `emit123` 对称）。
+// `.abc` 写出端的函数入口（与 `emit123.entry.ts` 的 `emit123` 对称）。
 
 import type { ScoreDoc } from "../model/doc";
 import { EMITTER_ABC } from "./emitabc";

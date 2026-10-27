@@ -13,7 +13,7 @@
 
 import { applyTupletTimeMods } from "../model/tuplets";
 import { lineStarts } from "../common/lines";
-import { jumpOrnamentName } from "../abcfamily/jumpmarks";
+import { jumpOrnamentName } from "./jumpmarks";
 import {
   PU_LYRIC_QUOTES,
   isLyricCjk as isCjk,
@@ -45,7 +45,7 @@ import type {
 } from "../model/doc";
 import { SIMPLE_DIVISIONS } from "../model/doc";
 import { IdGen, breaksAfterToStart, emptyDoc, emptySong } from "../model/helpers";
-import { resolveAbcPitches } from "../abcfamily/abcpitch";
+import { resolveAbcPitches } from "./abcpitch";
 import { addMeta, creatorOf, isMetaKey } from "../model/metakeys";
 import type { BreakKind } from "../model/helpers";
 import {
@@ -63,12 +63,12 @@ import {
   type FieldName,
   type RawPlayPass,
 } from "./fields";
-import type { Token } from "../abcfamily/types";
-import { isLyricSlot, lyricSlots, type LyricSlotRule } from "../abcfamily/lyricslot";
+import type { Token } from "./types";
+import { isLyricSlot, lyricSlots, type LyricSlotRule } from "./lyricslot";
 import {
   DIALECT_123, DIALECT_ABC, DIALECT_JCX, typeAndDots, type DefaultLen, type ParseDialect,
-} from "../abcfamily/parsedialect";
-import { LETTER_OF_DEGREE } from "../abcfamily/dialectjcx";
+} from "./parsedialect";
+import { LETTER_OF_DEGREE } from "./dialectjcx";
 import { t as tr } from "../i18n";
 import { clefFromName } from "../model/jianpu";
 
@@ -1866,7 +1866,7 @@ function applyInstruction(
       else (song.style ??= {}).raw = [...(song.style.raw ?? []), { key: name, value: ins.value }];
       break;
     }
-    // 页眉页脚：与 emit 对称（见 `j123/emit.ts` 的同名指令）
+    // 页眉页脚：与 emit 对称（见 `emit.ts` 的同名指令）
     case "indexleft": (song.pageText ??= emptyPageText()).indexLeft = ins.value; break;
     case "indexright": (song.pageText ??= emptyPageText()).indexRight = ins.value; break;
     case "topleft": (song.pageText ??= emptyPageText()).topLeft.push(ins.value); break;
