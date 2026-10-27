@@ -8,8 +8,8 @@
 // 内联在 drawHarmony 里，这里抽出来，文本谱直接复用同一套，两边观感才一致。
 
 import { GlyphCodes } from "../smufl/smufl";
-import { Font } from "../layout/font";
-import { Group, TextFrame } from "../layout/pageitem";
+import { Font } from "../pagetree/font";
+import { Group, TextFrame } from "../pagetree/pageitem";
 import { Matrix33, Rect } from "../common/geom";
 import { chordStepAlter } from "../score/harmonyparse";
 import type { AccidentalSide } from "./spacing";

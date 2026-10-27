@@ -1,5 +1,5 @@
 // 页眉文字（标题、副标题、经文、词曲）的字体：旧简谱引擎与五线谱/混排共用一个取法。
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import type { HeaderFont } from "../style/header";
 
 /**

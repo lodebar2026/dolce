@@ -2,8 +2,8 @@
 // 与页眉项查询（`headerPartsOf`）。不依赖任何排版器，排版器与导出都从这里取。
 
 import { colorToCss } from "../common/geom";
-import { Group, PageItem, TextFrame, SmuflText, findByClass } from "./pageitem";
-import { walkPageItem, type ItemVisitor } from "./walk";
+import { Group, PageItem, TextFrame, SmuflText, findByClass } from "../pagetree/pageitem";
+import { walkPageItem, type ItemVisitor } from "../pagetree/walk";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -121,7 +121,7 @@ export function svgVisitor(nodeMap?: WeakMap<PageItem, SVGGElement>): ItemVisito
 // -----------------------------------------------------------------------
 // PageItem → SVGElement。
 //
-// 遍历骨架与 svgVisitor 共用（layout/walk.ts），但**坐标与颜色语义不同**，
+// 遍历骨架与 svgVisitor 共用（pagetree/walk.ts），但**坐标与颜色语义不同**，
 // 这些差别就是这个 visitor 存在的理由，别把它并回 svgVisitor 去：
 //   - 那边**每个** PageItem 都产生一个 <g>、matrix 加在 <g> 上；这边只有 Group 产生 <g>，
 //     matrix 加在**叶子元素**上（TextFrame 更是无条件加，matrix 里就含 x/y 平移）。
@@ -132,7 +132,7 @@ export function svgVisitor(nodeMap?: WeakMap<PageItem, SVGGElement>): ItemVisito
 
 /** `nodeMap` 给了就记下每个 Group 造出的 `<g>`（编辑器按和弦组放播放线、认点选，见 `mixed/prims.ts::chordGroup`）。
  *  `leafMap` 给了就记下**带身份标签的图元**画出的那个元素（歌词字、小节线这些叶子，以及本身是组的弧、和弦组，
- *  见 `layout/identity.ts`）——只记不改，叶子照旧不带 class，SVG 输出不变。 */
+ *  见 `pagetree/identity.ts`）——只记不改，叶子照旧不带 class，SVG 输出不变。 */
 export function mixedVisitor(
   nodeMap?: WeakMap<PageItem, SVGGElement>,
   leafMap?: WeakMap<PageItem, SVGGraphicsElement>,

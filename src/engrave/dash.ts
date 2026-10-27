@@ -4,8 +4,8 @@
 // 半长 = 墨迹半宽），与字形一模一样，换数字字体自己跟着走；不另给粗细长短。
 // 位置按**墨迹**：墨心落在 (cx, cy)——横向对准拍位，纵向对准数字的墨迹中线。
 import { Point } from "../common/geom";
-import type { Font } from "../layout/font";
-import { GraphicLine } from "../layout/pageitem";
+import type { Font } from "../pagetree/font";
+import { GraphicLine } from "../pagetree/pageitem";
 
 export interface DashStyle {
   /** 数字字体：尺寸按它的「-」墨迹量。 */

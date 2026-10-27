@@ -8,7 +8,8 @@ import { punctClass } from "../common/cjkpunct";
 import { Matrix33, Point } from "../common/geom";
 // `Slur` 这个名字在 model.ts 里是**跨度对象**（哪两个音符之间有弧），
 // layout.ts 里的是**画出来的那条弧**，所以起个别名区分。
-import { GraphicPath, Group, Slur as SlurArc, TextFrame } from "../layout/pageitem";
+import { GraphicPath, Group, TextFrame } from "../pagetree/pageitem";
+import { Slur as SlurArc } from "../engrave/arc";
 import { GlyphCodes } from "../smufl/smufl";
 import { fillRect } from "../engrave/prims";
 import { BarStyle } from "../score/enums";
@@ -48,7 +49,7 @@ import {
   type HarmonyLayout,
   type StaffLayout,
 } from "./model";
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import { addEndingBracket } from "../engrave/ending";
 import { BarlineGlyph, type BarlineSpec } from "../engrave/barline";
 import { TupletGlyph } from "../engrave/tuplet";
@@ -56,7 +57,7 @@ import { hairpinPath } from "../engrave/hairpin";
 import { arpeggioGroup } from "../engrave/arpeggio";
 import { chordTextSegs, harmonyWidth, layoutHarmonySegs } from "../engrave/chord";
 import { addLine, addSmufl, addSmuflScaled, chordGroup, STAFF_SYSTEM, translated, type StaffChordData, type StaffSystemData } from "./prims";
-import type { ItemIdentity } from "../layout/identity";
+import type { ItemIdentity } from "../pagetree/identity";
 import { drawJianpuOverlay } from "./jianpuoverlay";
 
 /** SMuFL breathMarkComma（U+E4CE）。 */
@@ -509,7 +510,7 @@ function drawSlurTied(
 ): void {
   const arc = new SlurArc();
   arc.init(new Point(plx, ply), new Point(prx, pry), mixedSlurStyle(above));
-  // 可视化编辑认弧：起止和弦的元素 id（身份标签，`layout/identity.ts`）
+  // 可视化编辑认弧：起止和弦的元素 id（身份标签，`pagetree/identity.ts`）
   const s = obj.startNote?.chord.src.id;
   const e = obj.endNote?.chord.src.id;
   if (s !== undefined && e !== undefined) arc.ident = { kind: "slur", id: s, end: e };

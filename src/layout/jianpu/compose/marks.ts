@@ -1,7 +1,8 @@
 // 记号层：弧线、多连音、跳房子、渐强渐弱（内联层在 page.ts，与 paintVoice 互相调用）。
-import { Font } from "../../font";
+import { Font } from "../../../pagetree/font";
 import { Point } from "../../../common/geom";
-import { Group, Slur } from "../../pageitem";
+import { Group } from "../../../pagetree/pageitem";
+import { Slur } from "../../../engrave/arc";
 import { addEndingBracket, endingDrop, endingLabelDx } from "../../../engrave/ending";
 import { TupletGlyph } from "../../../engrave/tuplet";
 import { hairpinPath, JP_HAIRPIN, jpHairpinHalves, jpHairpinLineWidth } from "../../../engrave/hairpin";

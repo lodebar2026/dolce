@@ -13,8 +13,8 @@
 // 播放逐字高亮与双向定位：绘制时把每个音符与每个歌词音节的 PageItem 按**元素 id** 记进索引，
 // 由 ScorePainter 直接按 id 取用，不必反查 SVG，也不依赖对象身份（重新解析一遍 id 不变）。
 import { applyDocOptions, contentWidth, gridOf, keyLabelSize, type GridPage, type JianpuGrid } from "../metrics";
-import { Font } from "../../font";
-import { Group } from "../../pageitem";
+import { Font } from "../../../pagetree/font";
+import { Group } from "../../../pagetree/pageitem";
 import { syllableRun } from "../../../engrave/syllable";
 import { sectionWordRun } from "../../../engrave/sectionword";
 import { Rect } from "../../../common/geom";

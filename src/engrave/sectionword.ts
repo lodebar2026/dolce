@@ -1,7 +1,7 @@
 // 段落词（「（副歌）」）的量宽与落点：旧简谱引擎（`layout.ts::Line.addSectionWords` / `spreadForSectionWords` / `nudgeForSectionWords`）
 // 与原样文档（`layout/jianpu/place/band.ts`、`spacing.ts`）共用这一份判据。
 import type { CompressMode } from "../common/cjkpunct";
-import type { Font } from "../layout/font";
+import type { Font } from "../pagetree/font";
 
 /** 段落词落点的几何输入（一行之内，坐标以该行的 group 为原点）。 */
 export interface SectionWordGeom {

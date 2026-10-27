@@ -3,7 +3,7 @@
 // 印刷简谱的换气是一个**细笔画的 V**，挂在音符的**右上角**——不是 SMuFL 的逗号（`breathMarkComma`）。
 // 尺寸都是数字墨迹高 `H` 的倍数，照原样文档的原版矢量量的：V 尖在音符墨心右 0.75 H、
 // 基线上方 0.522 H；开口宽 0.383 H、两臂高 0.477 H。
-import { GraphicPath } from "../layout/pageitem";
+import { GraphicPath } from "../pagetree/pageitem";
 
 const DX = 0.75;
 const WIDTH = 0.383;

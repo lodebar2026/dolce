@@ -12,8 +12,8 @@
 // 拿回纯数据的 DrawPage[] 再交 scripts/pdfwrite.mjs。
 import { Matrix33 } from "../common/geom";
 import { punctClass } from "../common/cjkpunct";
-import { Font } from "../layout/font";
-import { Group, TextFrame } from "../layout/pageitem";
+import { Font } from "../pagetree/font";
+import { Group, TextFrame } from "../pagetree/pageitem";
 import { MetaData } from "../smufl/smufl";
 import { loadScoreDoc } from "../model/fromxml";
 import { metaFlag } from "../model/metakeys";

@@ -1,6 +1,6 @@
 // 小节线（含反复点、跳转记号）的绘制。
-import { Font } from "../../font";
-import { Group } from "../../pageitem";
+import { Font } from "../../../pagetree/font";
+import { Group } from "../../../pagetree/pageitem";
 import { BarlineGlyph } from "../../../engrave/barline";
 import { puBarlineSpec } from "../barspec";
 import { TIME_SIG_PAD_EM } from "../place/spacing";

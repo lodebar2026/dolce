@@ -1,8 +1,8 @@
 // 元素类与三个引擎共用的落笔小件：文字、直线、填充矩形、描边路径、SMuFL 字形文字与它的墨迹盒。
 // 原先原样文档（`compose/` 的 rect/stroke/text）、混排（`mixed/prims.ts::addLine`、`jianpuoverlay.ts::textAt`）各写一份。
 import { Point, Rect } from "../common/geom";
-import type { Font } from "../layout/font";
-import { GraphicLine, GraphicPath, TextFrame } from "../layout/pageitem";
+import type { Font } from "../pagetree/font";
+import { GraphicLine, GraphicPath, TextFrame } from "../pagetree/pageitem";
 import { glyphCodeName, type MetaData } from "../smufl/smufl";
 
 /** 一串 SMuFL 字形（Bravura 等），挂类名 `smufl`：成书按它落乐谱字体、PPTX 按它转曲。

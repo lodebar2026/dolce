@@ -10,7 +10,7 @@
 // 角色的 `size` 该怎么折由适配器自己算，这里只在明确传了 `size` 时用。
 //
 // 无 DOM 依赖。
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import type { StyleRole, StyleSheet, TemplateRole } from "./sheet";
 
 /** `@font-face` 名 → 页面里已注册的 CSS 族（Node 侧读字体文件、`FontFace` 注册后给进来）。 */

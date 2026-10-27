@@ -1,7 +1,7 @@
 // 页眉：标题、副标题、词曲、调号拍号、TL/TR、XL/XR。位置由 place/header.ts::placeHeader 定，这里只照它画。
 import { barlineSpan, type JianpuGrid } from "../metrics";
-import { Font } from "../../font";
-import { Group } from "../../pageitem";
+import { Font } from "../../../pagetree/font";
+import { Group } from "../../../pagetree/pageitem";
 import { TimeSigGlyph } from "../../../engrave/timesig";
 import { KeyLabel, keyNameOf } from "../../../engrave/keysig";
 import { EQ_PAD_EM } from "../../../engrave/spacing";

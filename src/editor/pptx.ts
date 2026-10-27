@@ -6,20 +6,10 @@
 import { zipSync, type Zippable } from "fflate";
 import * as opentype from "opentype.js";
 import { asset } from "../common/asset";
-import {
-  BeamLine,
-  GraphicLine,
-  GraphicPath,
-  Group,
-  JpNumber,
-  JpOctaveDot,
-  PageItem,
-  SmuflText,
-  TextFrame,
-  type PathSeg,
-} from "../layout/pageitem";
+import { GraphicLine, GraphicPath, Group, PageItem, SmuflText, TextFrame, type PathSeg } from "../pagetree/pageitem";
+import { BeamLine, JpNumber, JpOctaveDot } from "../engrave/jpnumber";
 import { STACK_GAP_DEFAULT } from "../engrave/stack";
-import { walkPageItem, type ItemVisitor } from "../layout/walk";
+import { walkPageItem, type ItemVisitor } from "../pagetree/walk";
 
 
 const EMU = (v: number) => Math.round(v * 12700); // 1 pt = 12700 EMU
@@ -172,7 +162,7 @@ function glyphSegs(font: opentype.Font, ch: string, size: number): { segs: PathS
 
 // ---------------- tree walk -> shapes ----------------
 //
-// 遍历骨架与另外三路共用（layout/walk.ts），但**坐标不走矩阵累积**：这里用
+// 遍历骨架与另外三路共用（pagetree/walk.ts），但**坐标不走矩阵累积**：这里用
 // `item.pos(null)` 拿到叶子相对页根的绝对位置，所以 visitor 不需要携带任何东西（M = void）。
 // 与那三路一样，叶子的子级不再往下走。
 function shapeVisitor(font: opentype.Font, out: Shape[], stackGap: number): ItemVisitor<void> {

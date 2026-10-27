@@ -7,8 +7,8 @@
 
 import { Fraction } from "../common/fraction";
 import { Matrix33 } from "../common/geom";
-import { GraphicPath, Group, TextFrame } from "../layout/pageitem";
-import { Font } from "../layout/font";
+import { GraphicPath, Group, TextFrame } from "../pagetree/pageitem";
+import { Font } from "../pagetree/font";
 import { textItem } from "../engrave/prims";
 import { jpDot } from "../engrave/dot";
 import { TimeSigGlyph } from "../engrave/timesig";

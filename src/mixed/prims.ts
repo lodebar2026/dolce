@@ -1,13 +1,13 @@
 // 混排渲染的落笔小工具（线、SMuFL 字形、平移组）。五线谱层（`render.ts`）与简谱叠层（`jianpuoverlay.ts`）共用。
 
 import { Matrix33 } from "../common/geom";
-import { type GraphicLine, Group } from "../layout/pageitem";
+import { type GraphicLine, Group } from "../pagetree/pageitem";
 import { lineItem, textItem } from "../engrave/prims";
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import type { ElementId } from "../model/doc";
 
 /** 一个和弦画出来的那一组（五线谱层的符头、符干、符尾；简谱叠层的那一柱）的类名（`.selected` 描蓝挂在它上面）。
- *  身份走标签（`layout/identity.ts`，`note` + 元素 id），播放线、点选、可视化编辑都经 `layout/scoreindex.ts` 认。 */
+ *  身份走标签（`pagetree/identity.ts`，`note` + 元素 id），播放线、点选、可视化编辑都经 `layout/scoreindex.ts` 认。 */
 export const STAFF_CHORD = "staff-chord";
 /** 一行系统的组的类名。身份标签 `system`；`data` 是 `StaffSystemData`：谱表带（混排连同简谱层）的上下沿，系统坐标（tenths）。 */
 export const STAFF_SYSTEM = "staff-system";

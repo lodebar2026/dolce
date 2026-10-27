@@ -49,7 +49,7 @@ export class MixedSession {
   _srcToMixed = new Map<ElementId, ElementId[]>();
   /** `.musicxml` 五线谱档那份模型是按哪份原文读的（原文变了才重读）。 */
   _mixedXmlText: string | null = null;
-  /** 派生五线谱里各和弦在第几小节（全曲下标）：五线谱上的小节线按小节认（身份标签的 `measure`，`layout/identity.ts`）。 */
+  /** 派生五线谱里各和弦在第几小节（全曲下标）：五线谱上的小节线按小节认（身份标签的 `measure`，`pagetree/identity.ts`）。 */
   _mixedMeasureOf = new Map<ElementId, number>();
 
   /**

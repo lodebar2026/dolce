@@ -1,11 +1,12 @@
 // 一页：谱组、声部、连谱号的绘制。
-import { Font } from "../../font";
-import { BeamLine, Group, type JpNumber } from "../../pageitem";
+import { Font } from "../../../pagetree/font";
+import { Group } from "../../../pagetree/pageitem";
+import { BeamLine, type JpNumber } from "../../../engrave/jpnumber";
 import { sustainDash } from "../../../engrave/dash";
 import { beamY, highDotY, lowDotY } from "../../../engrave/stack";
 import { syllableRun } from "../../../engrave/syllable";
 import type { ElementId } from "../../../model/doc";
-import { addBarlineOwner } from "../../identity";
+import { addBarlineOwner } from "../../../pagetree/identity";
 import type { PlacedGroup, PlacedLayer, PlacedPage, PlacedVoice } from "../place/model";
 import { noteBeams, wordsLead } from "../place/vertical";
 import { type OriginalCtx, digitItem, digitOrigin, dot, rect, text } from "./ctx";

@@ -7,9 +7,9 @@
 // 数字一律是 SMuFL 的 tuplet 数字字形（`tuplet0`…），按**墨迹**居中在横线/弧顶上。
 // 位置（在音符上方多高、两端落在哪）各引擎自己算好，传进来的是坐标。
 import { Point, Rect } from "../common/geom";
-import type { Font } from "../layout/font";
-import { GraphicPath, PageItem, Slur } from "../layout/pageitem";
-import type { SlurStyle } from "./arc";
+import type { Font } from "../pagetree/font";
+import { GraphicPath, PageItem } from "../pagetree/pageitem";
+import { Slur, type SlurStyle } from "./arc";
 import { GlyphCodes, type MetaData } from "../smufl/smufl";
 import { musicInk, musicText } from "./prims";
 

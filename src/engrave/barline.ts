@@ -3,7 +3,7 @@
 // 原语是**纯函数**：只认坐标与 style，不认 Entry / ChordLayout / PlacedItem 那些模型类型，
 // 各路的坐标换算留在自己的调用点（musicpp 的 `sc = staffHeight/40` 之类别漏进来）。
 import { Point } from "../common/geom";
-import { GraphicLine, PageItem } from "../layout/pageitem";
+import { GraphicLine, PageItem } from "../pagetree/pageitem";
 import { BarStyle } from "../score/enums";
 import { jpDot } from "./dot";
 

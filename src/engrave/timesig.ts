@@ -1,7 +1,7 @@
 // 分数式简谱拍号：旧简谱引擎、原样文档、混排简谱层共用。
 import { Point, Rect } from "../common/geom";
-import { GraphicLine, PageItem, TextFrame } from "../layout/pageitem";
-import type { Font } from "../layout/font";
+import { GraphicLine, PageItem, TextFrame } from "../pagetree/pageitem";
+import type { Font } from "../pagetree/font";
 
 /**
  * 分数式拍号的取尺。**一切长度都是小节线高度 H 的比例**——原先三条路各按自己的字号

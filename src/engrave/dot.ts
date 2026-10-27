@@ -1,5 +1,5 @@
 // 实心圆：八度点、附点、反复点共用（旧简谱引擎、原样文档、混排三路同一个画法）。
-import { GraphicPath } from "../layout/pageitem";
+import { GraphicPath } from "../pagetree/pageitem";
 
 /**
  * 实心圆（八度点 / 附点 / 反复点共用）。

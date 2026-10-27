@@ -1,8 +1,9 @@
 // 一次原样文档排版的绘制上下文与几样共用的小画法（点、线、文字、数字落笔原点）。
 import type { JianpuGrid } from "../metrics";
-import { Font } from "../../font";
+import { Font } from "../../../pagetree/font";
 import type { Rect } from "../../../common/geom";
-import { GraphicPath, JpNumber, JpOctaveDot, TextFrame } from "../../pageitem";
+import { GraphicPath, TextFrame } from "../../../pagetree/pageitem";
+import { JpNumber, JpOctaveDot } from "../../../engrave/jpnumber";
 import { jpDot } from "../../../engrave/dot";
 import { fillRect, strokePath, textItem } from "../../../engrave/prims";
 import type { Region } from "../../../style/ss";

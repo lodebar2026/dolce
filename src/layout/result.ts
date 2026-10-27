@@ -4,7 +4,7 @@
 
 import type { ElementId, SourceSpan } from "../model/doc";
 import type { StaffLayout, Sys } from "../mixed/model";
-import type { Group } from "./pageitem";
+import type { Group } from "../pagetree/pageitem";
 
 /** 一页的几何。`viewBox` 是原生坐标（简谱排版单位 / 五线谱 tenths），`sizePt` 是物理尺寸。 */
 export interface PageGeometry {
@@ -28,7 +28,7 @@ export interface LayoutDiagnostic {
   readonly source?: SourceSpan;
 }
 
-/** 五线谱排好的版面与各系统落位（MusicXML 布局导出写版面坐标用，`mixed/engrave.ts`）。`top` 是 tenths。 */
+/** 五线谱排好的版面与各系统落位（MusicXML 布局导出写版面坐标用，`editor/xmllayout.ts`）。`top` 是 tenths。 */
 export interface StaffPlacement {
   readonly songIndex: number;
   readonly score: StaffLayout;

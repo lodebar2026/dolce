@@ -1,9 +1,8 @@
 // 跨若干符号的记号（弧线 / 多连音 / 跳房子 / 渐强渐弱）换算成行内坐标，弧按嵌套定层。
 import type { Mark, NoteElement, ScoreLine } from "../../../jianpu/ast";
 import { Point } from "../../../common/geom";
-import { Slur } from "../../pageitem";
 import { jianpuSlurRise, jianpuSlurStyle, type JianpuGrid } from "../metrics";
-import { ARC_CHAIN_INSET_DIV, arcClearShift, arcRise, jpArcY, type SlurStyle } from "../../../engrave/arc";
+import { ARC_CHAIN_INSET_DIV, Slur, arcClearShift, arcRise, jpArcY, type SlurStyle } from "../../../engrave/arc";
 import type { InkMeasurer, PlacedItem, PlacedMark } from "./model";
 import { articStack, noteInkBottom, stackTop } from "./vertical";
 import { barlineLines } from "./spacing";

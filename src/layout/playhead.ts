@@ -3,7 +3,7 @@
 // 音符所在那一行（`system` 标签，多声部是连谱号括起的整组）里各音符格、增时线格与歌词格墨迹的并集
 // （不取行组本身的包围盒：组里有落在原点的空图元，弧、和弦也会把线撑得忽高忽低）。
 
-import type { PageItem } from "./pageitem";
+import type { PageItem } from "../pagetree/pageitem";
 import type { ScoreIndex } from "./scoreindex";
 
 export interface Span {

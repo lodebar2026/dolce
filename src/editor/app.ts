@@ -1243,7 +1243,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   /** 五线谱 / 混排（文本格式）：索引条目按源 id 换成派生五线谱的 id，对上五线谱上画出的元素。
-   *  音符 → 和弦组（五线谱层与简谱叠层各一个）；歌词、弧、小节线 → 带身份标签的叶子（`layout/identity.ts`）。
+   *  音符 → 和弦组（五线谱层与简谱叠层各一个）；歌词、弧、小节线 → 带身份标签的叶子（`pagetree/identity.ts`）。
    *  增时线在五线谱上不是单独的东西（并进时值 / 延音线），和弦名、装饰暂不认。 */
   private _bindStaffEls(): void {
     for (const entry of this._sync.all()) {

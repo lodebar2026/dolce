@@ -12,7 +12,7 @@
 // - 写出端 `toxml.ts` 按「写出端认得的属性/子节点」之外，把原节点其余的属性与子节点**通用回填**。
 //
 // 克隆出来的对象没有表层（= 文本来源），一律照常；对象被丢弃时旁表随之回收。
-// 导出时五线谱引擎排出来的版面（`mixed/engrave.ts`）是另一个来源，形如 `EngravedLayout`，经 `ToXmlOptions.layout` 交给写出端，同样不写进模型。
+// 导出时五线谱引擎排出来的版面（`editor/xmllayout.ts`）是另一个来源，形如 `EngravedLayout`，经 `ToXmlOptions.layout` 交给写出端，同样不写进模型。
 
 import type { FontSpec, HAlign, Measure, MeasureAttrs, Note, Print, Song } from "./doc";
 import { child, children } from "../score/xmldom";
@@ -276,7 +276,7 @@ export function dropEmbeddedLayout(song: Song): void {
 
 // ───────────────────────── 导出版面 ─────────────────────────
 
-/** 五线谱引擎给导出排出来的版面（`mixed/engrave.ts`），经 `ToXmlOptions.layout` 交给写出端。
+/** 五线谱引擎给导出排出来的版面（`editor/xmllayout.ts`），经 `ToXmlOptions.layout` 交给写出端。
  *  纸、scaling、标题块、换行这些模型本来就有的仍写进模型，这里只装表层的。 */
 export interface EngravedLayout {
   /** `<defaults><system-layout>` */

@@ -16,7 +16,7 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
 | `loadScoreDoc(xml)` | `src/model/fromxml.ts` | → `ScoreDoc`（**直通**：语义进模型，表层绑在原节点上，见 `model/xmlsurface.ts`） |
 | `scoreDocToMusicXml(doc)` | `src/model/toxml.ts` | **唯一写出端**；简谱来源先经 `model/xmlproject.ts` 投影 |
 | `projectForJianpu(song)` | `src/model/jianpuproject.ts` | MusicXML 形状 → 简谱形状（简谱档排版、转 123 之前） |
-| `engraveScoreDoc(doc, page)` | `src/mixed/engrave.ts` | 导出的版面坐标：五线谱引擎排一遍（与屏幕同一套），坐标装进 `EngravedLayout` 交给写出端，不写进模型 |
+| `engraveScoreDoc(doc, page)` | `src/editor/xmllayout.ts` | 导出的版面坐标：五线谱引擎排一遍（与屏幕同一套），坐标装进 `EngravedLayout` 交给写出端，不写进模型 |
 
 `src/score/xmldom.ts` 是 DOM 读取小工具（`child`/`children`/`childText`），`fromxml.ts` 用。
 

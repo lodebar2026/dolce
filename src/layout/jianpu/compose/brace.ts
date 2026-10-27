@@ -1,7 +1,7 @@
 // 花括号（连谱号、并排块、词括号）的轮廓路径。
-import { Font } from "../../font";
+import { Font } from "../../../pagetree/font";
 import { Matrix33 } from "../../../common/geom";
-import { GraphicPath, Group, PageItem, type PathSeg } from "../../pageitem";
+import { GraphicPath, Group, PageItem, type PathSeg } from "../../../pagetree/pageitem";
 import { BRACKET } from "../../../engrave/jpglyph";
 import { type OriginalCtx, rect, text } from "./ctx";
 import { BRACE_GLYPHS } from "./braceglyphs";

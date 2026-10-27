@@ -137,7 +137,7 @@ async function boot() {
   // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engraveScoreDoc`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归
   // （写出端只有 `model/toxml.ts`，在 `__j123` 里）。
   win.__xmlout = Promise.all([
-    import("./mixed/engrave"), import("./jianpu/jianpuinput"), import("./model/fromxml"),
+    import("./editor/xmllayout"), import("./jianpu/jianpuinput"), import("./model/fromxml"),
     import("./model/fromjpw"), import("./jpword/jpwfile"), import("./jpword/parse"),
   ]).then(([layout, jianpuinput, fromxml, fromjpw, jpwfile, parse]) =>
     ({ ...layout, ...jianpuinput, ...fromxml, ...fromjpw, ...jpwfile, ...parse }));

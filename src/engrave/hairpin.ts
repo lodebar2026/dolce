@@ -1,6 +1,6 @@
 // 渐强 / 渐弱（松叶）：原样文档与五线谱/混排共用一个画法。
 // 两条边各是一段直线（一条路径），尖端处两边高度同为 0 自然汇于一点；跨行断开的那一截由调用方给开口。
-import { GraphicPath } from "../layout/pageitem";
+import { GraphicPath } from "../pagetree/pageitem";
 
 export interface HairpinSpec {
   x0: number;

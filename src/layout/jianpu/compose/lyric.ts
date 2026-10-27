@@ -1,7 +1,7 @@
 // 歌词：音节、标点挤压、歌词联合括号与注记。
-import { Font } from "../../font";
-import { Group, Lyric } from "../../pageitem";
-import { syllableRun } from "../../../engrave/syllable";
+import { Font } from "../../../pagetree/font";
+import { Group } from "../../../pagetree/pageitem";
+import { Lyric, syllableRun } from "../../../engrave/syllable";
 import type { PlacedItem, PlacedVoice } from "../place/model";
 import { type OriginalCtx, text } from "./ctx";
 import { braceItem } from "./brace";

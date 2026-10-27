@@ -2,8 +2,8 @@
 // SMuFL 的 `wiggleTrillSlow` 一段段横着拼起来、整串转 90°（照 musicpp render.cpp drawMeasureMeta）。
 // 一段的长度是 1.2 个 staff space（字号 = 4 个 staff space）。
 import { Matrix33 } from "../common/geom";
-import { Font } from "../layout/font";
-import type { PageItem } from "../layout/pageitem";
+import { Font } from "../pagetree/font";
+import type { PageItem } from "../pagetree/pageitem";
 import { GlyphCodes } from "../smufl/smufl";
 import { textItem } from "./prims";
 

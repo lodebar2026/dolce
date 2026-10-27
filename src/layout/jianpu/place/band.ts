@@ -6,7 +6,7 @@ import type { BarlineElement, MusicElement } from "../../../jianpu/ast";
 import { BARLINE_MARKS, DYNAMICS } from "../../../engrave/jpglyph";
 import { TERMS } from "../../../model/marknames";
 import { Point, Rect } from "../../../common/geom";
-import { Slur } from "../../pageitem";
+import { Slur } from "../../../engrave/arc";
 import { bandTop, stackUpperBand, type BandItem } from "../../../engrave/upperband";
 import { DYNAMIC_SIZE } from "../../../engrave/dynamics";
 import { JP_HAIRPIN, jpHairpinLineWidth } from "../../../engrave/hairpin";

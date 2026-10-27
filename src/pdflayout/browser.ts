@@ -6,15 +6,17 @@
 //
 // 为什么导出 DrawList 而不是 SVG 字符串：SVG 要在 Node 侧反解嵌套 transform 与字体度量，
 // 等于把 painter 再写一遍；而页面树本来就只有三种叶子（GraphicPath / GraphicLine / TextFrame），
-// 照着 layout/walk.ts 的骨架递归扁平化一次就完事，逻辑一比一对应、不冒回归风险。
-import { GraphicPath, JpNumber, JpOctaveDot, Lyric, PageItem, SmuflText, TextFrame } from "../layout/pageitem";
+// 照着 pagetree/walk.ts 的骨架递归扁平化一次就完事，逻辑一比一对应、不冒回归风险。
+import { GraphicPath, PageItem, SmuflText, TextFrame } from "../pagetree/pageitem";
+import { JpNumber, JpOctaveDot } from "../engrave/jpnumber";
+import { Lyric } from "../engrave/syllable";
 import type { DrawItem, DrawPage, DrawText } from "./drawlist";
 import type { BookStyle } from "../style/bookstyle";
 import type { StyleRole } from "../style/sheet";
 import { computeStyle } from "../style/cascade";
 import { THEMES } from "../style/themes";
-import { walkPageItem, type ItemVisitor } from "../layout/walk";
-import { Font } from "../layout/font";
+import { walkPageItem, type ItemVisitor } from "../pagetree/walk";
+import { Font } from "../pagetree/font";
 import type { Direction, DirectionPart, ScoreDoc } from "../model/doc";
 import { SECTION_WORD_RE } from "../model/helpers";
 import { normEndingText } from "../engrave/ending";

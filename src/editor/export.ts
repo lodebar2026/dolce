@@ -12,7 +12,7 @@ import { jpwToScoreDoc } from "../model/fromjpw";
 import { emitJly } from "../jly/tojly";
 import type { ScoreDoc } from "../model/doc";
 import { JpwFile } from "../jpword/jpwfile";
-import { engraveScoreDoc } from "../mixed/engrave";
+import { engraveScoreDoc } from "./xmllayout";
 import { colorToCss } from "../common/geom";
 import { t } from "../i18n";
 import { openModal } from "./dialogs";
@@ -183,7 +183,7 @@ export async function buildMusicXml(app: App): Promise<string> {
 }
 
 /** 当前**源文**经唯一写出端投成 MusicXML（不看混排底本），带上给第三方软件看的版面坐标：
- *  由五线谱引擎按设置里的纸排一遍（`mixed/engrave.ts`），与屏幕上的五线谱同一套分行，坐标交给写出端。
+ *  由五线谱引擎按设置里的纸排一遍（`editor/xmllayout.ts`），与屏幕上的五线谱同一套分行，坐标交给写出端。
  *  谱里自带版面的原样不动。 */
 export async function sourceMusicXml(app: App): Promise<string> {
   const doc = loadScoreDoc(sourceMusicXmlBare(app));

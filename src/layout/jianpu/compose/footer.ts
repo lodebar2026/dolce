@@ -1,6 +1,6 @@
 // 页脚（BL/BC/BR 模板）的排版。
-import { Font } from "../../font";
-import { TextFrame } from "../../pageitem";
+import { Font } from "../../../pagetree/font";
+import { TextFrame } from "../../../pagetree/pageitem";
 import { layoutRegion, songFields } from "../../../style/template";
 import { type OriginalCtx, text } from "./ctx";
 

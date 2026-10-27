@@ -24,7 +24,7 @@
 
 import { getMeta } from "../model/metakeys";
 import { Fraction } from "../common/fraction";
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import { compressMultiRests } from "../model/multirest";
 import { dynamicGlyphs } from "../engrave/dynamics";
 import { articGlyph } from "../engrave/articulation";

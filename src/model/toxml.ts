@@ -13,7 +13,7 @@
 //
 // 所以 **`fromxml.ts` 每读一个语义字段，这里的 `OWNS` 就要认领它**，否则原节点上那份会被回填、与模型打架
 // （例如 `note@print-object`：改成可见后不能从原节点带回 `no`）。
-// 导出时五线谱引擎排出来的版面（`ToXmlOptions.layout`，`mixed/engrave.ts`）由写出端显式写，回填跳过同名的。
+// 导出时五线谱引擎排出来的版面（`ToXmlOptions.layout`，`editor/xmllayout.ts`）由写出端显式写，回填跳过同名的。
 //
 // ## 元素顺序是硬要求
 //
@@ -958,7 +958,7 @@ export interface ToXmlOptions extends ProjectOptions {
   /** 每个 `<note>` 带 `id="jp<源元素 id>"`：文本格式派生五线谱（`export.ts::sourceMusicXmlBare`）读回后，
    *  `fromxml` 把它记成 `Chord.srcId`，五线谱上点的音才对得回代码区。**只给这条内部路径用**，导出文件不带。 */
   sourceIds?: boolean;
-  /** 导出版面（`mixed/engrave.ts::engraveScoreDoc` 排出来的坐标、小节宽、系统间距、符干），键是本文档的模型对象 */
+  /** 导出版面（`editor/xmllayout.ts::engraveScoreDoc` 排出来的坐标、小节宽、系统间距、符干），键是本文档的模型对象 */
   layout?: EngravedLayout;
 }
 

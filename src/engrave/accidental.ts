@@ -10,8 +10,8 @@
 //   - 横向：升降号墨迹右缘离数字墨迹左缘 0.143 H（混排实测 2.3 tenths）。
 // 位置一律按**墨迹**（SMuFL 走元数据或 canvas 墨迹，不用 Bravura 那 4 em 高的字体盒）。
 import { Rect } from "../common/geom";
-import type { Font } from "../layout/font";
-import type { TextFrame } from "../layout/pageitem";
+import type { Font } from "../pagetree/font";
+import type { TextFrame } from "../pagetree/pageitem";
 import { GlyphCodes, type MetaData } from "../smufl/smufl";
 import type { AccidentalStyleKind } from "./spacing";
 import { musicInk, musicText } from "./prims";

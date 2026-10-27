@@ -10,7 +10,7 @@
 
 import type { HAlign, ScoreDoc, Song } from "../model/doc";
 import { emptyEngravedLayout, noteStem, type EngravedLayout, type Position } from "../model/xmlsurface";
-import { LCR, type MixedOptions, type StaffLayout, type Sys } from "./model";
+import { LCR, type MixedOptions, type StaffLayout, type Sys } from "../mixed/model";
 import { ScorePainter } from "../layout/painter";
 
 const r1 = (v: number): number => Math.round(v * 10) / 10;

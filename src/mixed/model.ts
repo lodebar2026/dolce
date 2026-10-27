@@ -8,7 +8,7 @@
 
 import { Fraction } from "../common/fraction";
 import { Point } from "../common/geom";
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import { arcClearShift, arcRise, calcSlurPoints, jpArcY, type ArcObstacle, type SlurStyle } from "../engrave/arc";
 import { accidentalRise } from "../engrave/accidental";
 import type { CompressMode } from "../common/cjkpunct";

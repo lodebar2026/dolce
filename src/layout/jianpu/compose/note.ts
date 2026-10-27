@@ -3,8 +3,9 @@ import type { BarlineElement, MusicElement, NoteElement } from "../../../jianpu/
 import type { ElementId } from "../../../model/doc";
 import { AccidentalGlyph, type AccidentalKind } from "../../../engrave/accidental";
 import { ACCIDENTAL_GLYPH, ACCOMP_BRACKET } from "../../../engrave/jpglyph";
-import { Font } from "../../font";
-import { GraphicPath, Group, type JpNumber } from "../../pageitem";
+import { Font } from "../../../pagetree/font";
+import { GraphicPath, Group } from "../../../pagetree/pageitem";
+import { type JpNumber } from "../../../engrave/jpnumber";
 import { chordTextSegs, layoutHarmonySegs } from "../../../engrave/chord";
 import { highDotY, lowDotY } from "../../../engrave/stack";
 import type { Rect } from "../../../common/geom";

@@ -3,7 +3,7 @@
 
 import { latinWordBreak } from "../engrave/syllable";
 import { Fraction } from "../common/fraction";
-import { Font } from "../layout/font";
+import { Font } from "../pagetree/font";
 import { GlyphCodes, type MetaData } from "../smufl/smufl";
 import { xmlPos } from "../model/xmlsurface";
 import {

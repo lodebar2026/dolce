@@ -2,8 +2,8 @@
 // 引擎只管打标签；这里不认任何引擎内部的类型。
 
 import type { ElementId } from "../model/doc";
-import type { PageItem } from "./pageitem";
-import type { IdentityKind } from "./identity";
+import type { PageItem } from "../pagetree/pageitem";
+import type { IdentityKind } from "../pagetree/identity";
 
 export interface Hit {
   page: number;

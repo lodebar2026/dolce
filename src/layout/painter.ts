@@ -6,7 +6,7 @@
 // 点选 / 高亮部分移植自 mp/layout/draw.kt。
 
 import type { PlayItem } from "../score/playorder";
-import { Group, PageItem, TextFrame } from "./pageitem";
+import { Group, PageItem, TextFrame } from "../pagetree/pageitem";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { headerPartsOf, mixedVisitor, renderPageSvg, type HeaderPart } from "./render";
 import { pageGeometry, type LayoutResult } from "./result";
@@ -27,7 +27,7 @@ import type { PlacedPage } from "./jianpu/place";
 import type { JianpuGrid } from "./jianpu/metrics";
 import { ScoreIndex, type Hit } from "./scoreindex";
 import { Playhead, spanIn, svgBox } from "./playhead";
-import type { IdentityKind } from "./identity";
+import type { IdentityKind } from "../pagetree/identity";
 
 /** 五线谱播放线的宽（tenths，线距 10）：两个符头宽上下，各音一样宽 */
 const PLAYHEAD_W = 24;
@@ -349,7 +349,7 @@ export class ScorePainter {
     return out;
   }
 
-  /** 五线谱排好的版面与各系统落位（MusicXML 布局导出写版面坐标用，`mixed/engrave.ts`）。 */
+  /** 五线谱排好的版面与各系统落位（MusicXML 布局导出写版面坐标用，`editor/xmllayout.ts`）。 */
   get staffPlacement(): LayoutResult["staffPlacements"][number] | null {
     return this.result?.staffPlacements[0] ?? null;
   }
