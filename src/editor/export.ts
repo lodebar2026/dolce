@@ -123,7 +123,7 @@ export async function exportMidi(app: App): Promise<void> {
 export async function exportPptx(app: App): Promise<void> {
   // 一律按**展开档**出片（两种格式同一条展开档排版）：屏幕在原样档也导得出 PPT 观感，
   // 切到展开档预览则是所见即所得。字号/纸张取展开档那一套设置。
-  const bytes = await buildPptx(pptxPainter(app).pptxSource, app.colorsOf("expanded").bg);
+  const bytes = await buildPptx(pptxPainter(app).pptxSource, app.style.colorsOf("expanded").bg);
   await saveBytes(
     bytes,
     `${baseName(app)}.pptx`,
@@ -132,7 +132,7 @@ export async function exportPptx(app: App): Promise<void> {
 }
 
 /** 按展开档另排一份。屏幕已在展开档时直接用屏幕那个，省一次排版。
- *  **设置取展开档那一套**（`App.styleOf("expanded")`），不是屏幕上原样档的那套——
+ *  **设置取展开档那一套**（`app.style.styleOf("expanded")`），不是屏幕上原样档的那套——
  *  否则导出的投影片会带着原样档的字号与颜色。 */
 export function pptxPainter(app: App): ScorePainter {
   const cur = app.painter;
@@ -258,7 +258,7 @@ async function layoutPainter(app: App): Promise<{ painter: ScorePainter; name: s
 export async function exportLayoutPng(app: App): Promise<void> {
   const { painter, name } = await layoutPainter(app);
   for (let i = 0; i < painter.pageCount; i++) {
-    const bytes = await svgToBytes(painter.renderPage(i), 2, colorToCss(app.bgColor));
+    const bytes = await svgToBytes(painter.renderPage(i), 2, colorToCss(app.style.bgColor));
     const file = painter.pageCount === 1 ? `${name}.png` : t("export.pngName", { name, n: i + 1 });
     await saveBytes(bytes, file, "image/png");
   }
@@ -283,7 +283,7 @@ export async function exportLayoutPdf(app: App): Promise<void> {
       // 带 `pt` 整页放大 4/3（A5 出来成了近 A4）。无单位的用户单位在这条链上正好 1:1 落成 pt
       svg.setAttribute("width", String(w));
       svg.setAttribute("height", String(h));
-      paintBg(svg, app.bgColor);
+      paintBg(svg, app.style.bgColor);
       pages.push(new XMLSerializer().serializeToString(svg));
     }
     await invoke("export_pdf_cmd", { pagesSvg: pages, widthPt: wPt, heightPt: hPt, outPath });
@@ -293,7 +293,7 @@ export async function exportLayoutPdf(app: App): Promise<void> {
     const pdf = new jsPDF({ unit: "pt", format: [wPt, hPt], orientation: orient(wPt, hPt), compress: true });
     for (let i = 0; i < painter.pageCount; i++) {
       const { w, h } = painter.pageSize(i);
-      const png = await svgToBytes(painter.renderPage(i), 2, colorToCss(app.bgColor));
+      const png = await svgToBytes(painter.renderPage(i), 2, colorToCss(app.style.bgColor));
       if (i > 0) pdf.addPage([w, h], orient(w, h));
       pdf.addImage(png, "PNG", 0, 0, w, h, undefined, "FAST");
     }

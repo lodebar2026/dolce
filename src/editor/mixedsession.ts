@@ -12,6 +12,7 @@ import { layoutStaff } from "../mixed/layout";
 import { staffChordSpans } from "../mixed/layoutpass";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { musicXmlFormat, type DocFormatId } from "./formats";
+import type { StyleState } from "./stylestate";
 import { t } from "../i18n";
 import { normalizeEol } from "../common/lines";
 import type { App } from "./app";
@@ -21,13 +22,11 @@ export interface MixedHost {
   readonly meta: MetaData;
   readonly docFormat: DocFormatId;
   readonly layoutMode: App["layoutMode"];
-  readonly jpPaper: App["jpPaper"];
-  readonly fontSize: App["fontSize"];
-  readonly layoutPage: App["layoutPage"];
+  /** 渲染设置（纸、字号、五线谱样式表） */
+  readonly style: Pick<StyleState, "jpPaper" | "fontSize" | "layoutPage" | "staffStyle">;
   readonly phraseOn: boolean;
   readonly staffPaper: string;
   readonly staffPage: App["staffPage"];
-  staffStyle(): ReturnType<App["staffStyle"]>;
   getText(): string;
   setStatus(s: string): void;
   /** 五线谱 / 混排档可不可用（按钮显隐） */
@@ -61,7 +60,7 @@ export class MixedSession {
   staffPhraseLineStarts(doc: ScoreDoc): ReadonlySet<ElementId> | null {
     try {
       const bare = musicXmlFormat.toScoreDoc(scoreDocToMusicXml(doc, { sourceIds: true }));
-      const options = staffOptionsOf(this.host.meta, this.host.staffStyle());
+      const options = staffOptionsOf(this.host.meta, this.host.style.staffStyle());
       options.page = this.host.staffPage;
       const { width, byId } = staffChordSpans(layoutStaff(bare, options));
       if (byId.size === 0) return null;
@@ -77,10 +76,10 @@ export class MixedSession {
 
   /** 派生五线谱要看的设置：简谱的档、纸、字号变了，断点跟着变，得重新派生。 */
   _mixedDeriveKey(): string {
-    const pg = this.host.layoutPage;
+    const pg = this.host.style.layoutPage;
     // 乐句档五线谱自己量宽断句，五线谱的纸与样式也进键
-    const staff = this.host.phraseOn ? ["phrase", this.host.staffPaper, JSON.stringify(this.host.staffStyle())] : [];
-    return [this.host.getText(), this.host.layoutMode, this.host.jpPaper, this.host.fontSize, pg.w, pg.h, ...staff].join("\u0000");
+    const staff = this.host.phraseOn ? ["phrase", this.host.staffPaper, JSON.stringify(this.host.style.staffStyle())] : [];
+    return [this.host.getText(), this.host.layoutMode, this.host.style.jpPaper, this.host.style.fontSize, pg.w, pg.h, ...staff].join("\u0000");
   }
 
   /** 五线谱/混排档的模型备好了没有。`.musicxml` 就是打开时读的那份；文本格式把**当前源文**经

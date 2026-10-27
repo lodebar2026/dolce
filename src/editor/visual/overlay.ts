@@ -104,7 +104,7 @@ export function musicBox(el: SVGGraphicsElement): { svg: SVGSVGElement; box: Box
   const limit = anchor.box.y + anchor.box.h * 0.95;
   let box = anchor.box;
   for (const k of kids.slice(1)) {
-    // 和弦名是单独可选的记号，不算音符的框（选中音符的方块不罩它；`vis-chord` 由 `App._bindSyncEls` 标上）
+    // 和弦名是单独可选的记号，不算音符的框（选中音符的方块不罩它；`vis-chord` 由 `SyncView.bindEls`（`editor/syncview.ts`） 标上）
     if (k.classList.contains("vis-chord")) continue;
     // 临时记号这类 SMuFL 字（Bravura）按墨迹量：整行字体盒约 4 em，会把框撑出好几行高
     const b = isMusicText(k) ? inkBoxInPage(k) : boxInPage(k);

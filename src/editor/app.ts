@@ -7,21 +7,11 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { sniffDialect, type Dialect } from "../pu";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { applyBreaks } from "../model/breaks";
-import { locate } from "../model/edit";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { measureDocument, PaintResources, ScorePainter, type StaffPaintRequest, type SyncPaintRequest } from "../layout/painter";
-import { computeStyle, sanitizeLayer, upsertRule, type StyleRule } from "../style/cascade";
-import type { Length } from "../style/units";
-import { NOTE_FONTS } from "../style/fonts";
-import { docPageLayer, pageMargins, resolvePaper, songPageDecl } from "../style/paper";
+import { pageMargins, resolvePaper, songPageDecl } from "../style/paper";
 import { songHeaderFonts, songLyricSize, songStaffSize } from "../model/pagemeta";
-import { headerFontsOf, headerLayerOfSong, type HeaderFonts, type HeaderRole } from "../style/header";
-import { dirOf, editorRules, findBookSheet, registerFontFaces, relativePath, type BookSheet, type BookSheetMap } from "./booksheet";
-import { replaceStyleRef } from "../j123/metaedit";
-import type { PageDecl } from "../style/sheet";
-import { jianpuSizes } from "../style/jianpu";
-import type { DeepPartial, StyleSheet } from "../style/sheet";
-import { LONG_IMAGE_WIDTH, PAGE_RATIOS, STAFF_LONG_IMAGE_WIDTH, STAFF_PAPER_DEFAULT, THEMES, computeStyleForPaper, isPaper, themeOfMode } from "../style/themes";
+import { STAFF_LONG_IMAGE_WIDTH, STAFF_PAPER_DEFAULT, isPaper } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import type { FitMeasure } from "../jianpu/phrase";
@@ -34,7 +24,9 @@ import { isTauriRuntime } from "./fileio";
 import { is123File, isJcxFile, isJlyFile, isProjectFile, isPuFile } from "../common/filetypes";
 import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost, type ScoreDocAdapter } from "./formats";
-import { SyncIndex, type SyncEntry } from "./sync";
+import type { SyncIndex, SyncEntry } from "./sync";
+import { SyncView } from "./syncview";
+import { StyleState, type RenderSettings } from "./stylestate";
 import { VisualEditController, type VisualHost } from "./visual/controller";
 import { visualCursorExtension } from "./visual/cursor";
 import { hitThroughOverlay } from "./visual/overlay";
@@ -65,10 +57,8 @@ import {
 } from "./settings";
 export type { OmrFormat } from "../omr";
 
-/** 有纸张设置的三把尺子：简谱原样档、原样文档布局（文本谱等的原样档）、五线谱/混排。 */
-export type PaperEngine = "jianpu" | "staff";
-/** 纸张栏的一次选择：纸名 + 方向 + 边距（`[上, 右, 下, 左]` pt，null = 自动），或跟随文件。 */
-export type PaperChoice = "follow" | { paper: string; orientation: "portrait" | "landscape"; margin: number[] | null };
+export type { PaperEngine, PaperChoice } from "./stylestate";
+import type { PaperChoice } from "./stylestate";
 
 /** 谱面区的四档排版模式。见 `App.setViewModeButtons` 的注释：这是两组正交状态的组合。 */
 export type ViewMode = JianpuLayoutMode | "staff" | "mixed";
@@ -100,22 +90,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _scoreDoc: { text: string; doc: ScoreDoc } | null = null;
   private _highlightCompartment = new Compartment();
 
-  // ---- 双向定位（代码区光标 ↔ 谱面元素，见 editor/sync.ts）----
-  private _sync = new SyncIndex();
-  /** 谱面 `<g>` → 索引条目（点谱面时从事件目标往上找） */
-  private _syncEls = new Map<Element, SyncEntry>();
-  /** 条目 → 谱面 `<g>`（光标移动时直接取） */
-  private _syncElOf = new Map<SyncEntry, SVGGraphicsElement>();
-  /** 页眉字段 → 谱面上画它的那几个 `<g>`（多行署名、调号拍号一组都不止一个） */
-  private _syncHeaderEls = new Map<SyncEntry, SVGGraphicsElement[]>();
-  /** 当前被光标点亮的那些 `<g>` */
-  private _syncMarked: Element[] = [];
-  /** 防回环：两条方向互相触发时，被动的那一侧不要再反推一次 */
-  private _syncing = false;
-  /** 建 `_sync` 用的那份模型（可视化编辑按它数对位格） */
-  private _syncDoc: ScoreDoc | null = null;
-  /** 建 `_sync` 时代码区的原文：与当前原文不同就说明索引落后了（重排还在防抖里） */
-  private _syncText = "";
+  /** 双向定位的谱面一侧（代码区光标 ↔ 谱面元素，`syncview.ts`；索引本身在 `sync.ts`）。 */
+  readonly syncView: SyncView = new SyncView(this);
   /** `.jpwabc`：`jpwToScoreDoc` 的结果（试听读它；转不出来为 null） */
   private _jpwDoc: ScoreDoc | null = null;
   /** 试听输入的缓存：同一份模型、同一档只拼一次（`refreshSpeedUi` 每次重排都要取速度） */
@@ -155,135 +131,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _phraseText: string | null = null;
   private _hanziBtnEl: HTMLButtonElement | null = null;
   private _readOnlyCompartment = new Compartment();
-  // ---- 渲染设置（应用级，不属于文档）：一律经样式层（src/style/）----
-  /** 用户层：每个主题一层规则，**两档各记一套**（用户口径：「区分 展开/原样的字号设置」）。
-   *  同一档里各格式共用一套（字号、纸、配色），规则不带限定。 */
-  private _userLayers: Record<"projection" | "print" | "staff" | "header", StyleRule[]> = { projection: [], print: [], staff: [], header: [] };
-  // `header`：页眉四项（标题/副标题/经文/词曲作者）的字体字号，**各档共用一份**，叠在各档用户层之上（`style/header.ts`）
-
-  /** 某一档、某把尺子看到的 computed 样式表（内置主题 → 曲内层 → 用户层）。
-   *  曲内层（谱里自带的纸，`style/paper.ts`）只垫在原样档下面：展开档是投影片，不认纸。 */
-  styleOf(mode: JianpuLayoutMode): StyleSheet {
-    const theme = themeOfMode(mode);
-    const page = theme === "print" && !this._userSetsPaper("jianpu") ? this._docLayer() : [];
-    return computeStyleForPaper(
-      [THEMES[theme], this._bookLayer, page, this._docHeaderLayer(theme === "print", theme !== "print"), this._userLayers[theme], this._userLayers.header],
-      { mode, engine: "jianpu" },
-    );
-  }
-
-  /** 五线谱/混排看到的 computed 样式表（主题 staff → 曲内层 → 它自己那层用户规则）。
-   *  **纸不借简谱原样档的**：那边出厂是长图，五线谱排成长图就是一张 1000pt 宽的扁图。 */
-  staffStyle(): StyleSheet {
-    const page = this._userSetsPaper("staff") ? [] : this._docLayer();
-    return computeStyleForPaper(
-      [THEMES.staff, this._bookLayer, page, this._docHeaderLayer(), this._userLayers.staff, this._userLayers.header],
-      { mode: "staff", engine: "staff" },
-    );
-  }
-
-  /** 曲内层：当前文档自带的纸（MusicXML `<page-layout>`、123/ABC `I:meta page …`）。`.jpwabc` 与文本谱没有。
-   *  **用户在这一档明确选过纸就整层不用**（`styleOf` / `staffStyle` 判）：选了 A4、边距留空是要排版器自己的边距，
-   *  不是「A4 + 文件里那组边距」。目前曲内层只有纸，将来放别的东西要改成按键剔。 */
-  private _docLayer(): StyleRule[] {
-    if (!this.adapter.toScoreDoc) return [];
-    return docPageLayer(this.currentScoreDoc()?.songs[0]);
-  }
-
-  // ---- 诗集样式表（歌本 `.ss`，`editor/booksheet.ts`）：级联里在内置主题之后、曲内层之前 ----
-  /** 当前生效的诗集样式表（null = 没有）。 */
-  bookSheet: BookSheet | null = null;
-  private _bookLayer: StyleRule[] = [];
-  /** 手动指定：目录 → 样式表路径（空串 = 这个目录不用）。持久化。 */
-  bookSheets: BookSheetMap = {};
-  /** 浏览器版手动选的样式表（拿不到目录，存原文）。持久化。 */
-  private _browserBookSheet: { name: string; text: string } | null = null;
-
-  /** 按当前文件找诗集样式表并装上（见 `booksheet.ts` 的查找顺序），装完重排。 */
-  async loadBookSheet(): Promise<void> {
-    let found: BookSheet | null = null;
-    if (isTauriRuntime()) {
-      const ref = this.docFormat === "123" || this.docFormat === "abc" ? this.currentScoreDoc()?.songs[0]?.style?.sheetRef : undefined;
-      found = this.filePath ? await findBookSheet(this.filePath, ref, this.bookSheets) : null;
-    } else if (this._browserBookSheet) {
-      found = { path: this._browserBookSheet.name, source: "manual", text: this._browserBookSheet.text, others: 0 };
-    }
-    const before = this.bookSheet?.path ?? null;
-    this._useBookSheet(found);
-    if (!found && !before) return; // 本来就没有，现在也没有：不必重排
-    if (this.bookSheet) await registerFontFaces(this._bookLayer, this.bookSheet.path);
-    if (found && this.bookSheet && found.path !== before) {
-      const where = t(found.source === "ref" ? "status.bookSheet.ref" : found.source === "manual" ? "status.bookSheet.manual" : "status.bookSheet.auto");
-      this.setStatus(t("status.bookSheet.using", { where, name: found.path.split(/[\\/]/).pop() ?? "" }) + (found.others ? t("status.bookSheet.others", { n: found.others }) : ""));
-    }
-    this._rerender();
-  }
-
-  private _useBookSheet(found: BookSheet | null): void {
-    this.bookSheet = null;
-    this._bookLayer = [];
-    if (!found) return;
-    try {
-      this._bookLayer = editorRules(found.text);
-      this.bookSheet = found;
-    } catch (e) {
-      this.setStatus(t("status.bookSheet.bad", { name: found.path.split(/[\\/]/).pop() ?? "", error: e instanceof Error ? e.message : String(e) }));
-    }
-  }
-
-  /** 设置面板「诗集样式 → 选择…」：记到当前谱所在目录（浏览器版存原文）。 */
-  async chooseBookSheet(): Promise<void> {
-    if (isTauriRuntime()) {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const sel = await open({ multiple: false, filters: [{ name: t("filter.bookSheet"), extensions: ["ss"] }] });
-      if (typeof sel !== "string") return;
-      const dir = this.filePath ? dirOf(this.filePath) : dirOf(sel);
-      this.bookSheets = { ...this.bookSheets, [dir]: sel };
-    } else {
-      const file = await new Promise<File | null>((resolve) => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".ss";
-        input.onchange = () => resolve(input.files?.[0] ?? null);
-        input.click();
-      });
-      if (!file) return;
-      this._browserBookSheet = { name: file.name, text: await file.text() };
-    }
-    this.saveSettings();
-    await this.loadBookSheet();
-  }
-
-  /** 「不用样式表」：当前谱所在目录记一个空值（屏蔽自动发现）。 */
-  async disableBookSheet(): Promise<void> {
-    if (isTauriRuntime() && this.filePath) this.bookSheets = { ...this.bookSheets, [dirOf(this.filePath)]: "" };
-    this._browserBookSheet = null;
-    this.saveSettings();
-    await this.loadBookSheet();
-  }
-
-  /** 「恢复自动查找」：清掉当前目录的手动指定。 */
-  async resetBookSheet(): Promise<void> {
-    if (this.filePath) {
-      const dir = dirOf(this.filePath);
-      const next = { ...this.bookSheets };
-      delete next[dir];
-      this.bookSheets = next;
-      this.saveSettings();
-    }
-    await this.loadBookSheet();
-  }
-
-  /** 123 / ABC：把当前样式表写成 `I:style 相对路径`（查找顺序的第 1 条就成立了）。 */
-  writeBookSheetRef(): boolean {
-    if (!this.bookSheet || !this.filePath || (this.docFormat !== "123" && this.docFormat !== "abc")) return false;
-    const next = replaceStyleRef(this.getText(), relativePath(dirOf(this.filePath), this.bookSheet.path));
-    if (next !== this.getText()) this.setText(next);
-    return true;
-  }
+  /** 渲染设置（样式层的用户层、诗集样式表、面板读写的字号/纸/配色）：`stylestate.ts`。 */
+  readonly style: StyleState = new StyleState(this);
 
   /** 样式变了：简谱重排，五线谱/混排重铺（`.musicxml` 不经 reload）。 */
-  private _rerender(): void {
+  rerender(): void {
     this._applyPageBg();
     this.reload(this.getText());
     if (this.mode === "mixed" && this.docFormat === "musicxml") void this._renderMixedPages();
@@ -291,203 +143,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 用户打开文件之后（打开对话框、拖入）：找诗集样式，单声部 MusicXML 再问要不要转简谱。 */
   async onDocumentOpened(): Promise<void> {
-    await this.loadBookSheet();
+    await this.style.loadBookSheet();
     await this.promptMusicXmlImport();
-  }
-
-  /** 曲内层的页眉字体：MusicXML `<credit-words>` 自带的、123/ABC 的 `I:meta font-*`（打开自动跟随）。 */
-  private _docHeaderLayer(sizes = true, titleFamily = true): StyleRule[] {
-    if (!this.adapter.toScoreDoc) return [];
-    return headerLayerOfSong(this.currentScoreDoc()?.songs[0], { sizes, titleFamily });
-  }
-
-  /** 页眉四项现在的字体：谱里自带的（「跟随文件」显示用）、用户设的、算出来实际用的（当前档）。 */
-  headerState(): { doc: HeaderFonts; user: HeaderFonts } {
-    // 按当前档看：转换带来的字号只记在原样与五线谱两档（见 `_carryHeaderFonts`），展开档看不到
-    const mode = this.mode === "mixed" ? "staff" : this.layoutMode;
-    const doc = this._docHeaderLayer(mode !== "expanded");
-    return {
-      doc: headerFontsOf(computeStyle([doc], {})),
-      user: headerFontsOf(computeStyle([this._userLayers.header], { mode })),
-    };
-  }
-
-  /** 转成 `.jpwabc` / 文本谱（没有页眉字体字段）时把谱里的页眉字体记进设置：族各档共用；
-   *  字号只记原样与五线谱两档——印刷纸上的字号搬到展开档的投影片上太小（与「跟随文件」同一口径）。 */
-  private _carryHeaderFonts(fonts: Partial<Record<HeaderRole, { family?: string; size?: number; bold?: boolean }>>): void {
-    const roles = Object.entries(fonts) as [HeaderRole, { family?: string; size?: number; bold?: boolean }][];
-    if (!roles.length) return;
-    let layer: StyleRule[] = this._userLayers.header;
-    const fam: Record<string, { family?: string; weight?: string }> = {};
-    const size: Record<string, { size: number }> = {};
-    for (const [role, f] of roles) {
-      if (f.family || f.bold) fam[role] = { ...(f.family ? { family: f.family } : {}), ...(f.bold ? { weight: "bold" } : {}) };
-      if (f.size) size[role] = { size: f.size };
-    }
-    if (Object.keys(fam).length) layer = upsertRule(layer, undefined, { roles: fam });
-    if (Object.keys(size).length) {
-      layer = upsertRule(layer, { mode: "original" }, { roles: size });
-      layer = upsertRule(layer, { mode: "staff" }, { roles: size });
-    }
-    this._userLayers.header = layer;
-  }
-
-  /** 设页眉一项：`null` 的字段清掉（回到跟随文件 / 出厂）。 */
-  setHeaderFont(role: HeaderRole, f: { family: string | null; size: number | null }): void {
-    const rules = this._userLayers.header.map((r) => ({ ...r, set: { ...r.set, roles: { ...(r.set.roles ?? {}) } } }));
-    let rule = rules.find((r) => !r.when);
-    if (!rule) rules.push((rule = { set: { roles: {} } }));
-    const decl = { ...(rule.set.roles?.[role] ?? {}) };
-    if (f.family) decl.family = f.family;
-    else delete decl.family;
-    if (f.size) decl.size = f.size;
-    else delete decl.size;
-    rule.set.roles![role] = decl;
-    // 面板改的是各档共用那条；转换时按档记的字号（`_carryHeaderFonts`）一并清掉，免得它在原样/五线谱档盖过面板
-    for (const r of rules) {
-      if (r === rule || !r.set.roles?.[role]) continue;
-      const { size: _s, ...rest } = r.set.roles[role]!;
-      r.set.roles[role] = rest;
-    }
-    this._userLayers.header = rules;
-  }
-
-  /** 五线谱/混排的谱表大小（mm）与歌词字号（pt）：谱里的（「跟随文件」显示用）与用户设的。 */
-  staffSizeState(): { doc: { mm: number | null; lyricPt: number | null }; user: { mm: number | null; lyricPt: number | null } } {
-    const song = this.adapter.toScoreDoc ? this.currentScoreDoc()?.songs[0] : undefined;
-    const u = computeStyle([this._userLayers.staff], { mode: "staff", engine: "staff" }).staff;
-    return {
-      doc: { mm: song ? songStaffSize(song) : null, lyricPt: song ? songLyricSize(song) : null },
-      user: { mm: u.size ?? null, lyricPt: u.lyricSize ?? null },
-    };
-  }
-
-  /** 设谱表大小 / 歌词字号：`null` = 清掉（跟随文件或出厂）。 */
-  private _setStaffSize(v: { mm?: number | null; lyricPt?: number | null }): void {
-    const rules = this._userLayers.staff.map((r) => ({ ...r, set: { ...r.set, staff: { ...(r.set.staff ?? {}) } } }));
-    let rule = rules.find((r) => !r.when);
-    if (!rule) rules.push((rule = { set: { staff: {} } }));
-    const st = rule.set.staff!;
-    if (v.mm !== undefined) {
-      if (v.mm) st.size = v.mm;
-      else delete st.size;
-    }
-    if (v.lyricPt !== undefined) {
-      if (v.lyricPt) st.lyricSize = v.lyricPt;
-      else delete st.lyricSize;
-    }
-    this._userLayers.staff = rules;
-  }
-
-  /** 设置面板的纸张那一栏：谱里自带的纸（「跟随文件」显示用）、用户层有没有明确选过纸、算出来实际用的那张。 */
-  paperState(engine: PaperEngine): { doc: PageDecl | null; userSet: boolean; page: PageDecl } {
-    const song = this.adapter.toScoreDoc ? this.currentScoreDoc()?.songs[0] : undefined;
-    const doc = song ? songPageDecl(song) : null;
-    const page = engine === "staff" ? this.staffStyle().page : this.styleOf("original").page;
-    return { doc, userSet: this._userSetsPaper(engine), page };
-  }
-
-  /** 用户层有没有明确选过纸/方向/边距（五线谱/混排据此决定要不要盖过谱里的 `<page-layout>`）。 */
-  private _userSetsPaper(engine: PaperEngine): boolean {
-    const layer = engine === "staff" ? this._userLayers.staff : this._userLayers.print;
-    const pg = computeStyle([layer], { mode: engine === "staff" ? "staff" : "original", engine }).page;
-    return pg.paper !== undefined || pg.orientation !== undefined || pg.margin !== undefined;
-  }
-
-  /** 设纸：`follow` = 跟随文件（清掉用户层里的纸、方向、边距；谱里没写纸就回到出厂那张）。 */
-  private _setPaper(engine: PaperEngine, choice: PaperChoice): void {
-    const key = engine === "staff" ? "staff" : "print";
-    if (choice === "follow") {
-      this._userLayers[key] = this._userLayers[key].map((r) => {
-        if (!r.set.page) return r;
-        const { paper: _p, orientation: _o, margin: _m, ...rest } = r.set.page;
-        return { ...r, set: { ...r.set, page: rest } };
-      });
-      return;
-    }
-    if (!isPaper(choice.paper)) return;
-    const page: DeepPartial<PageDecl> = { paper: choice.paper, orientation: choice.orientation };
-    this._userLayers[key] = upsertRule(this._userLayers[key], undefined, { page });
-    // 边距整组替换（深合并会把数组整体换掉）；null = 清掉，回到各排版器自己的缺省
-    const hit = this._userLayers[key].find((r) => !r.when);
-    if (hit?.set.page) {
-      if (choice.margin) hit.set.page.margin = [...choice.margin];
-      else delete hit.set.page.margin;
-    }
-  }
-
-  /** 原样档用户层里的音符字体（`NOTE_FONTS` 的 id；空串 = 没设、按主题默认）。 */
-  get noteFont(): string {
-    const fam = computeStyle([this._userLayers.print], { mode: "original", engine: "jianpu" }).roles.note?.family;
-    return NOTE_FONTS.find((f) => f.family === fam)?.id ?? "";
-  }
-
-  /** 原样档用户层里和弦升降号的写法（空串 = 没设、照原文）。 */
-  get chordAccidental(): "" | "before" | "after" {
-    const v: unknown = computeStyle([this._userLayers.print], { mode: "original", engine: "jianpu" }).jianpu.overrides?.["accidental-side"];
-    return v === "before" || v === "after" ? v : "";
-  }
-
-  /** 设音符字体：字体族写在 `note` 角色上，加不加粗写 `note-bold`；空串 = 两样都清掉。 */
-  private _setNoteFont(id: string): void {
-    const f = NOTE_FONTS.find((x) => x.id === id);
-    const rules = this._userLayers.print.map((r) => ({ ...r, set: { ...r.set, roles: { ...(r.set.roles ?? {}) } } }));
-    for (const r of rules) {
-      if (!r.set.roles!.note) continue;
-      const { family: _f, ...rest } = r.set.roles!.note;
-      r.set.roles!.note = rest;
-    }
-    this._userLayers.print = rules;
-    this._setPrintOverride("note-bold", f ? f.bold : undefined);
-    if (f) this._setStyle("original", { roles: { note: { family: f.family } } });
-  }
-
-  /** 原样档用户层的一个 `@jianpu` 键：给值就写，`undefined` 就从各条规则里删掉。 */
-  private _setPrintOverride(key: string, v: string | boolean | undefined): void {
-    this._userLayers.print = this._userLayers.print.map((r) => {
-      const ov = r.set.jianpu?.overrides;
-      if (!ov || !(key in ov)) return r;
-      const { [key]: _drop, ...rest } = ov;
-      return { ...r, set: { ...r.set, jianpu: { ...r.set.jianpu, overrides: rest } } };
-    });
-    // 词类键（`accidental-side` 等）在样式表里和长度同存一个字段（同 `themes.ts` 的 `lrc-punct-compress`）
-    if (v !== undefined) this._setStyle("original", { jianpu: { overrides: { [key]: v as Length | boolean } } });
-  }
-
-  /** 往某一档的用户层写一条规则（限定相同的就地合并）。 */
-  private _setStyle(mode: JianpuLayoutMode, set: DeepPartial<StyleSheet>): void {
-    const theme = themeOfMode(mode);
-    this._userLayers[theme] = upsertRule(this._userLayers[theme], undefined, set);
-  }
-
-  /** 展开档的投影片尺寸（`PAGE_RATIOS` 那几张）。 */
-  get pageW(): number {
-    return this.styleOf("expanded").page.size?.[0] ?? PAGE_RATIOS["16:9"][0];
-  }
-  get pageH(): number {
-    return this.styleOf("expanded").page.size?.[1] ?? PAGE_RATIOS["16:9"][1];
-  }
-  /** 当前档的简谱字号（展开档三个都能调；原样档**只调基础字号**，标题与词曲按出厂比例派生，见 `style/jianpu.ts`）。
-   *  排版器、设置面板、帮助示例都只认「当前档」。 */
-  get fontSize(): number {
-    return jianpuSizes(this.styleOf(this.layoutMode)).fontSize;
-  }
-  get titleSize(): number {
-    return jianpuSizes(this.styleOf(this.layoutMode)).titleSize;
-  }
-  get creditSize(): number {
-    return jianpuSizes(this.styleOf(this.layoutMode)).creditSize;
-  }
-  /** 当前档实际排版用的那张纸。展开档就是 `pageW`/`pageH` 那张投影片；原样档宽度锁定、
-   *  原样档取 `PAPER_SIZES` 里那张实际纸（长图那一档不分页，返回的高度只是个占位）。
-   *  排版、分行度量（`_phraseFit`）都认它——两处若各用各的纸，行长会按 A 张纸算、
-   *  按 B 张纸排。 */
-  get layoutPage(): { w: number; h: number } {
-    if (this.layoutMode === "expanded") return { w: this.pageW, h: this.pageH };
-    const paper = resolvePaper(this.styleOf("original").page);
-    // 长图：宽固定，高度由内容说了算（传进去的只是个不参与分页的占位）
-    if (!paper) return { w: LONG_IMAGE_WIDTH, h: LONG_IMAGE_WIDTH };
-    return paper;
   }
 
   /** 原样档换纸（「长图」也是其中一档）。 */
@@ -495,24 +152,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.applyRenderSettings({ jpPaper: paper });
   }
 
-  /** 前景色（谱面笔画/文字）与背景色（纸张）。档指的是「展开 / 原样」那一对排版方式，
-   *  跨文档格式——`.jpwabc` 与文本谱在同一档下共用同一份色。
-   *  背景色只作用于「纸」（预览页的底、导出 PNG 的底、PPTX 的幻灯片底），排版器不认识它。 */
-  get color(): number {
-    return this.colorsOf(this.layoutMode).fg;
-  }
-  get bgColor(): number {
-    return this.colorsOf(this.layoutMode).bg;
-  }
-  /** 某一档的配色。导出 PPTX 要按 **展开档**另排一遍，用的就得是那一档的色。 */
-  colorsOf(mode: JianpuLayoutMode): { fg: number; bg: number } {
-    const page = this.styleOf(mode).page;
-    return { fg: page.ink ?? 0xff000000, bg: page.background ?? 0xffffffff };
-  }
-  /** 原样档的纸（键取自 `PAPER_SIZES`，「长图」是其中一档）。 */
-  get jpPaper(): string {
-    return this.styleOf("original").page.paper ?? "长图";
-  }
   mixedHideBarNumber = false; // 混排：隐藏小节号
   /** 用户打开单声部 MusicXML 时怎么办：`ask` 每次问；`musicxml` 保持原文进五线谱；其余是转成哪种源格式编辑。 */
   /** MusicXML（打开的 `.musicxml`、五线谱识别结果）落地后用哪种源码格式编辑；`musicxml` = 保持原样（没有代码区） */
@@ -555,32 +194,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.adapter.profileKnob === "jp") this.reload(this.getText());
   }
 
-  /** 面板那几项设置落进**样式层的用户层**并重排。签名沿用（回归脚本也走它）。
-   *  纸与字号按档、按格式分开记；配色按档记；投影片比例只归展开档。 */
-  applyRenderSettings(opts: {
-    pageW?: number; pageH?: number; jpPaper?: string; staffPaper?: string;
-    /** 纸张栏（纸 + 方向 + 边距，或跟随文件）。给了就盖过上面三个只换纸名的。 */
-    paper?: Partial<Record<PaperEngine, PaperChoice>>;
-    /** 五线谱/混排的谱表大小（mm）与歌词字号（pt）；null = 跟随文件 / 出厂。 */
-    staffSize?: { mm?: number | null; lyricPt?: number | null };
-    fontSize?: number; titleSize?: number; creditSize?: number; color?: number; bgColor?: number;
-    /** 原样档的音符字体（`NOTE_FONTS` 的 id，空串 = 默认）、和弦升降号写在前后（空串 = 照原文）。 */
-    noteFont?: string; chordAccidental?: "" | "before" | "after";
-  }): void {
-    const mode = this.layoutMode;
-    if (opts.pageW || opts.pageH) {
-      this._setStyle("expanded", { page: { size: [opts.pageW || this.pageW, opts.pageH || this.pageH] } });
-    }
-    // 原样档的纸要在重排之前定好——排版时按长图灌 continuousPage
-    if (opts.jpPaper && isPaper(opts.jpPaper)) this._setStyle("original", { page: { paper: opts.jpPaper } });
-    if (opts.staffPaper && isPaper(opts.staffPaper)) this._userLayers.staff = upsertRule(this._userLayers.staff, undefined, { page: { paper: opts.staffPaper } });
-    for (const [engine, choice] of Object.entries(opts.paper ?? {}) as [PaperEngine, PaperChoice][]) this._setPaper(engine, choice);
-    if (opts.staffSize) this._setStaffSize(opts.staffSize);
-    if (opts.noteFont !== undefined) this._setNoteFont(opts.noteFont);
-    if (opts.chordAccidental !== undefined) this._setPrintOverride("accidental-side", opts.chordAccidental || undefined);
-    if (opts.color !== undefined) this._setStyle(mode, { page: { ink: opts.color } });
-    if (opts.bgColor !== undefined) this._setStyle(mode, { page: { background: opts.bgColor } });
-    this._applySizes(mode, opts);
+  /** 面板那几项设置落进**样式层的用户层**（`StyleState.apply`）并重排。签名沿用（回归脚本也走它）。 */
+  applyRenderSettings(opts: RenderSettings): void {
+    this.style.apply(opts);
     this._applyPageBg();
     this.saveSettings();
     this.reload(this.getText());
@@ -588,23 +204,17 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.mode === "mixed" && this.docFormat === "musicxml") void this._renderMixedPages();
   }
 
-  /** 字号落到**当前档**那一套里。原样档只收基础字号——那一档的标题/词曲是派生的，
-   *  面板上根本不显示（见 editor/dialogs.ts），收了也只会被下一次派生覆盖掉。 */
-  private _applySizes(mode: JianpuLayoutMode, opts: { fontSize?: number; titleSize?: number; creditSize?: number }): void {
-    if (mode === "original") {
-      if (opts.fontSize) this._setStyle("original", { roles: { note: { size: opts.fontSize } } });
-      return;
-    }
-    const roles: DeepPartial<StyleSheet["roles"]> = {};
-    if (opts.fontSize) roles.note = { size: opts.fontSize };
-    if (opts.titleSize !== undefined) roles.title = { size: opts.titleSize };
-    if (opts.creditSize !== undefined) roles.credit = { size: opts.creditSize };
-    if (Object.keys(roles).length) this._setStyle("expanded", { roles });
+  /** 前景色与纸色（当前档）。设置面板走 `style`；这两个留着给回归脚本（`style-snapshot.mjs` 读 `__app.color`）。 */
+  get color(): number {
+    return this.style.color;
+  }
+  get bgColor(): number {
+    return this.style.bgColor;
   }
 
   /** 恢复当前档的主题默认（清掉那一档的用户层）。 */
   resetRenderSettings(): void {
-    this._userLayers[themeOfMode(this.layoutMode)] = [];
+    this.style.resetMode(this.layoutMode);
     this._applyPageBg();
     this.saveSettings();
     this.reload(this.getText());
@@ -622,24 +232,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.visual.loadSettings(s);
     if (s.mixedHideBarNumber !== undefined) this.mixedHideBarNumber = s.mixedHideBarNumber;
     if (s.mixedShowJianpuLayer !== undefined) this.mixedShowJianpuLayer = s.mixedShowJianpuLayer;
-    if (s.bookSheets && typeof s.bookSheets === "object") {
-      this.bookSheets = Object.fromEntries(
-        Object.entries(s.bookSheets as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string"),
-      );
-    }
-    const bb = s.browserBookSheet as { name?: unknown; text?: unknown } | null | undefined;
-    if (bb && typeof bb.name === "string" && typeof bb.text === "string") this._browserBookSheet = { name: bb.name, text: bb.text };
-    if (s.musicXmlImport === "musicxml" || isConvertTarget(s.musicXmlImport)) {
-      this.musicXmlImport = s.musicXmlImport;
-    }
-    // 样式用户层（旧版散存的字号/纸/配色字段不读——不做存量迁移）
-    const layers = (s.styleLayers ?? {}) as Record<string, unknown>;
-    this._userLayers = {
-      projection: sanitizeLayer(layers.projection),
-      print: sanitizeLayer(layers.print),
-      staff: sanitizeLayer(layers.staff),
-      header: sanitizeLayer(layers.header),
-    };
+    this.style.load(s);
     if (s.zoom) this.zoom = s.zoom;
     if (s.jpProfile === "normal" || s.jpProfile === "pptx") this.jpProfile = s.jpProfile;
     if (s.originalProfile === "print" || s.originalProfile === "slide") this.originalProfile = s.originalProfile;
@@ -650,13 +243,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 两个控制器也要用（切输出格式 / 改速度后持久化）。 */
   saveSettings(): void {
     savePersistedSettings({
-      styleLayers: this._userLayers,
+      ...this.style.persisted(),
       zoom: this.zoom,
       mixedHideBarNumber: this.mixedHideBarNumber,
       mixedShowJianpuLayer: this.mixedShowJianpuLayer,
       musicXmlImport: this.musicXmlImport,
-      bookSheets: this.bookSheets,
-      browserBookSheet: this._browserBookSheet,
       playSpeed: this.playback.speed,
       playMetronome: this.playback.metronome,
       omrFormat: this.omr.format,
@@ -698,7 +289,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    *  写在容器上而不是逐页写：页元素每次重排都重建（_renderPagesWith），
    *  写在容器上就不必在每条铺页路径里各记一次。 */
   private _applyPageBg(): void {
-    this.scorePane.style.setProperty("--score-page-bg", colorToCss(this.bgColor));
+    this.scorePane.style.setProperty("--score-page-bg", colorToCss(this.style.bgColor));
   }
 
   mountEditor(parent: HTMLElement, initialText: string): void {
@@ -711,9 +302,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         this.files._scheduleDraft();
       }
       // 光标/选区一动就同步到谱面。文档改了不在这里同步——索引还是旧偏移，
-      // 等 reload 重建完索引再由 _buildSync 刷一次。
+      // 等 reload 重建完索引再由 SyncView.build 刷一次。
       if (u.selectionSet && !u.docChanged) {
-        this._syncCursorToScore();
+        this.syncView.cursorToScore();
         this.visual.refresh();
       }
     });
@@ -776,7 +367,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.mode === "recognize") {
       if (this.adapter.caps.layout === "jpwabc") this._refreshJpwDoc(text);
       const doc = this.adapter.caps.layout === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
-      if (doc && this.adapter.caps.textEditor) this._buildSyncIndex(doc);
+      if (doc && this.adapter.caps.textEditor) this.syncView.buildIndex(doc);
       this.omr.renderPages();
       return true;
     }
@@ -784,7 +375,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       // `.musicxml`：原文（模型那一路改的、撤销回来的）变了就重读；索引同步建，谱面异步排
       if (this.docFormat === "musicxml") {
         if (this.mixed._mixedXmlText !== text && !this.mixed._setMixedXml(text)) return false;
-        if (this.mixedDoc) this._buildSyncIndex(this.mixedDoc);
+        if (this.mixedDoc) this.syncView.buildIndex(this.mixedDoc);
         void this._renderMixedPages();
         return true;
       }
@@ -792,7 +383,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       if (!this.mixed._ensureMixedDoc()) return false;
       // 索引跟原文同步建（可视化编辑按它改原文），谱面元素等五线谱排完再绑（`_layoutStaff`）
       const src = this.adapter.caps.layout === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
-      if (src && this.adapter.caps.textEditor) this._buildSyncIndex(src);
+      if (src && this.adapter.caps.textEditor) this.syncView.buildIndex(src);
       void this._renderMixedPages();
       return true;
     }
@@ -820,13 +411,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         const f = JpwFile.fromString(this.getText());
         const doc = this.jpwDoc;
         if (!f || !doc) return null;
-        req = { view: this.layoutMode, doc, style: this.styleOf(this.layoutMode), breakDesc: f.getSection(LayoutSection)?.desc ?? null };
+        req = { view: this.layoutMode, doc, style: this.style.styleOf(this.layoutMode), breakDesc: f.getSection(LayoutSection)?.desc ?? null };
       } else if (this.layoutMode === "expanded") {
         req = this.expandedRequest();
       } else {
         const doc = this.currentScoreDoc();
         if (!doc || this.docFormat === "pu" || this.docFormat === "musicxml" || !singleVoice(doc)) return null;
-        req = { view: "original", doc, style: this.styleOf("original") };
+        req = { view: "original", doc, style: this.style.styleOf("original") };
       }
       if (!req) return null;
       // 另一个排版器实例按当前档与纸排一遍，不动屏幕上那个
@@ -851,16 +442,16 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 五线谱/混排档的纸（键取自 `PAPER_SIZES`），出厂 `STAFF_PAPER_DEFAULT`。 */
   get staffPaper(): string {
-    return this.staffStyle().page.paper ?? STAFF_PAPER_DEFAULT;
+    return this.style.staffStyle().page.paper ?? STAFF_PAPER_DEFAULT;
   }
 
   /** 五线谱/混排档的纸：设置里五线谱那张（谱里写了纸就是谱里那张，见曲内层）；长图按出厂纸宽、`heightPt = null`。
    *  `override`：用户明确选过纸——谱里的 `<page-layout>` 连同版面坐标都不用了，按这张纸重新铺排。 */
   get staffPage(): { widthPt: number; heightPt: number | null; marginsPt?: number[]; override: boolean } {
-    const pg = this.staffStyle().page;
+    const pg = this.style.staffStyle().page;
     const paper = resolvePaper(pg);
     const marginsPt = pageMargins(pg);
-    const override = this._userSetsPaper("staff");
+    const override = this.style.userSetsPaper("staff");
     return paper
       ? { widthPt: paper.w, heightPt: paper.h, marginsPt, override }
       : { widthPt: STAFF_LONG_IMAGE_WIDTH, heightPt: null, marginsPt, override };
@@ -889,13 +480,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const breakDesc = f.getSection(LayoutSection)?.desc ?? null;
     this._breakDesc = breakDesc; // 导出 PPTX 时另排一遍要用同一份分页描述
     try {
-      this.painter.loadSync({ view: this.layoutMode, doc, style: this.styleOf(this.layoutMode), breakDesc });
+      this.painter.loadSync({ view: this.layoutMode, doc, style: this.style.styleOf(this.layoutMode), breakDesc });
     } catch (e) {
       console.error("layout failed", e);
       return false;
     }
     this.renderPages();
-    this._buildSync(doc);
+    this.syncView.build(doc);
     this.playback.refreshSpeedUi(); // 谱面 ♩= 随文本走，速度提示要跟着换（读 `_jpwDoc`）
     return true;
   }
@@ -937,7 +528,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 展开档的排版请求（导出 PPTX 在别的档另排一份用，`export.ts::pptxPainter`）。没有曲行时返回 null。 */
   expandedRequest(): SyncPaintRequest | null {
-    const style = this.styleOf("expanded");
+    const style = this.style.styleOf("expanded");
     const src = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
     if (!src || !hasLines(src)) return null;
     if (this.docFormat === "jpwabc") return { view: "expanded", doc: src, style, breakDesc: this._breakDesc };
@@ -946,7 +537,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 原样档的排版请求（导出 PNG/PDF 在别的档——识别模式、混排——另排一份用，`export.ts::originalPainter`）。没有文档时返回 null。 */
   originalRequest(): SyncPaintRequest | null {
-    const style = this.styleOf("original");
+    const style = this.style.styleOf("original");
     if (this.docFormat === "jpwabc") return this._jpwDoc ? { view: "original", doc: this._jpwDoc, style, breakDesc: this._breakDesc } : null;
     const doc = this.currentScoreDoc();
     return doc ? { view: "original", doc, style } : null;
@@ -954,7 +545,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 原样档的纸是不是长图（导出给 PNG 还是 PDF 按它分）。 */
   get jpLongImage(): boolean {
-    return resolvePaper(this.styleOf("original").page) === null;
+    return resolvePaper(this.style.styleOf("original").page) === null;
   }
 
   /** 展开档排的那份文档：MusicXML 按声部面板换旋律声部与歌词来源（元素 id 不变）。 */
@@ -972,9 +563,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
           this.setStatus(t("status.noLines", { what }));
           return false;
         }
-        this.painter.loadSync({ view: "expanded", doc: this._expandedDoc(doc), style: this.styleOf("expanded") });
+        this.painter.loadSync({ view: "expanded", doc: this._expandedDoc(doc), style: this.style.styleOf("expanded") });
       } else {
-        this.painter.loadSync({ view: "original", doc, style: this.styleOf("original") });
+        this.painter.loadSync({ view: "original", doc, style: this.style.styleOf("original") });
       }
     } catch (e) {
       console.error(`${what}排版失败`, e);
@@ -982,95 +573,26 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       return false;
     }
     this.renderPages();
-    this._buildSync(doc);
+    this.syncView.build(doc);
     return true;
-  }
-
-  // ---------------- 双向定位（代码区光标 ↔ 谱面元素）----------------
-
-  /** 重建索引与「条目 ↔ 谱面 `<g>`」两张反查表。**每次重排后都要建**——页面节点全换了。 */
-  private _buildSync(doc: ScoreDoc): void {
-    this._buildSyncIndex(doc);
-    this._bindSyncEls();
-  }
-
-  /** 只建索引（原文偏移 ↔ 元素 id），不碰谱面。五线谱档的排版是异步的，索引却要跟原文同步——
-   *  可视化编辑的动作按索引改原文，索引落后一拍就会按旧偏移改错地方——所以两步拆开：
-   *  `reload` 里先建索引，排完版再 `_bindSyncEls`。 */
-  private _buildSyncIndex(doc: ScoreDoc): void {
-    this._syncDoc = doc;
-    this._syncText = this.getText();
-    if (this.docFormat === "musicxml") {
-      // 模型不记原文位置：按 DOM 节点的文档序对到隐藏代码区里的 XML 原文（`SyncIndex.buildXml`）
-      if (!this._sync.buildXml(doc, this._syncText)) this.setStatus(t("status.xmlUnaligned"));
-    } else {
-      this._sync.build(doc);
-      const fields = this.editDialect()?.headerFields?.(this._syncText) ?? [];
-      if (fields.length) this._sync.addHeader(fields);
-    }
-    this._syncEls.clear();
-    this._syncElOf.clear();
-    this._syncHeaderEls.clear();
-    this._syncMarked = [];
-  }
-
-  /** 索引条目 ↔ 谱面元素两张反查表。**每次重排后都要建**——页面节点全换了。 */
-  private _bindSyncEls(): void {
-    this._syncEls.clear();
-    this._syncElOf.clear();
-    this._syncHeaderEls.clear();
-    this._syncMarked = [];
-    if (this.mode === "recognize") {
-      this._bindRecognizeEls();
-      this._bindHeader();
-      this._syncCursorToScore();
-      this.visual.afterRebuild();
-      return;
-    }
-    if (this.mode === "mixed") {
-      this._bindStaffEls();
-      this._bindHeader();
-      this._syncCursorToScore();
-      this.visual.afterRebuild();
-      return;
-    }
-    for (const entry of this._sync.all()) {
-      const el = this._syncGroupEl(entry);
-      if (!el) continue;
-      this._syncElOf.set(entry, el);
-      // 和弦名的组标上类名：点亮、方块都按它把和弦从音符里剔出去（`styles.css`、`overlay.ts::musicBox`；SVG 输出本身不带类名）
-      if (entry.kind === "mark" && entry.markKind === "harmony" && el !== this.painter.entryEl(entry.id, 0)) el.classList.add("vis-chord");
-      // 展开档里音符与它的歌词共用一个 `<g>`，先来的音符条目占住它（`all()` 已排好序）
-      if (!this._syncEls.has(el)) this._syncEls.set(el, entry);
-    }
-    // 兜底第二趟：`.jpwabc` 的增时线写在音符 token 里、没有自己的条目，它那几个「-」格于是谁也不指——
-    // 指到宿主音符上，点中了才有得选（点的是第几条由控制器按格认，见 `VisualHost.inlineSustainEls`）。
-    // **必须等第一趟走完**：123 / 文本谱的增时线有自己的条目、那几个格归它们，先兜底就把它们抢了
-    for (const entry of this._sync.all()) {
-      if (entry.kind !== "note") continue;
-      for (const cell of this.inlineSustainEls(entry.id)) if (!this._syncEls.has(cell)) this._syncEls.set(cell, entry);
-    }
-    this._bindHeader();
-    this._syncCursorToScore();
-    this.visual.afterRebuild();
   }
 
   // ---- VisualHost（可视化编辑向 App 要的能力，见 `visual/controller.ts`）----
   get sync(): SyncIndex {
-    return this._sync;
+    return this.syncView.index;
   }
 
   visualEnabled(): boolean {
     // 识别核对：要有点选映射（123 / 文本谱产物）才认得出框对着哪个元素
     if (this.mode === "recognize") {
       // 五线谱识别的对照按识别 id 认框，原文是哪种格式都行（文本格式按旁表，`omrlinks.ts`）
-      return ((this.adapter.caps.textEditor && this.omr.hasMeta) || (this._visualSource() && this.omr.staffResult !== null)) && this._sync.size > 0;
+      return ((this.adapter.caps.textEditor && this.omr.hasMeta) || (this.visualSource() && this.omr.staffResult !== null)) && this.syncView.index.size > 0;
     }
-    return (this.mode === "jp" || this.mode === "mixed") && this._visualSource() && this._sync.size > 0;
+    return (this.mode === "jp" || this.mode === "mixed") && this.visualSource() && this.syncView.index.size > 0;
   }
 
   /** 这种格式能不能在谱面上改：有代码区的文本格式改原文，`.musicxml` 改模型（`modelops.ts`）。 */
-  private _visualSource(): boolean {
+  visualSource(): boolean {
     return this.adapter.caps.textEditor || this.docFormat === "musicxml";
   }
 
@@ -1121,12 +643,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
   }
 
-  /** 源模型的元素 id → 派生五线谱里的 id。文本格式靠 `srcId` 两向表；`.musicxml` 两份是同一份原文读的，id 一样。 */
-  private _mixedIds(id: ElementId): ElementId[] {
-    if (this.docFormat === "musicxml") return [id];
-    return this.mixed._srcToMixed.get(id) ?? [];
-  }
-
   /** 谱面是哪一路画的：简谱（旧简谱引擎 / 原样文档）还是五线谱 / 混排。几何命中（减时线、附点）只有简谱那一路有。 */
   surfaceKind(): "jianpu" | "staff" | "recognize" {
     return this.mode === "mixed" ? "staff" : this.mode === "recognize" ? "recognize" : "jianpu";
@@ -1136,12 +652,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   caretBand(entry: SyncEntry): { svg: SVGSVGElement; y: number; h: number } | null {
     if (this.mode === "recognize") return this.omr.rowBand(entry.id);
     if (this.mode !== "mixed") return null;
-    const m = this._mixedIds(entry.id)[0];
+    const m = this.syncView.mixedIds(entry.id)[0];
     return m === undefined ? null : this.painter.staffBand(m);
-  }
-
-  entryEl(entry: SyncEntry): SVGGraphicsElement | null {
-    return this._syncElOf.get(entry) ?? this._syncGroupEl(entry);
   }
 
   editDialect(): EditDialect | null {
@@ -1149,7 +661,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   syncDoc(): ScoreDoc | null {
-    return this._syncDoc;
+    return this.syncView.doc;
   }
 
   playbackBusy(): boolean {
@@ -1157,7 +669,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   syncFresh(): boolean {
-    return this._syncText === this.getText();
+    return this.syncView.fresh();
   }
 
   reloadNow(): void {
@@ -1166,7 +678,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   entryAtTarget(target: EventTarget | null): SyncEntry | null {
-    return this._syncEntryAt(target);
+    return this.syncView.entryAt(target);
   }
 
   /** Alt+点原图补漏识：点的位置落在哪两个音之间（`OmrController.sourcePoint`） */
@@ -1179,111 +691,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.omr.doubtStops();
   }
 
-  noteEl(id: ElementId): SVGGraphicsElement | null {
-    if (this.mode === "recognize") return this.omr.hitFor("note", id);
-    if (this.mode === "mixed") {
-      const m = this._mixedIds(id)[0];
-      return m === undefined ? null : this.painter.noteEls(m)[0] ?? null;
-    }
-    return this.painter.entryEl(id, 0);
-  }
-
-  chordEls(id: ElementId): SVGGraphicsElement[] {
-    const staff = this.mode === "recognize" ? this.omr.chordHits(id) : null;
-    if (staff?.length) return staff;
-    const one = this.noteEl(id);
-    return one ? [one] : [];
-  }
-
-  // 五线谱 / 混排上：附点、增时线不是单独的图元（附点是符头旁的点、增时线并进时值），小节线与弧走带身份的叶子
-  augDotEls(id: ElementId): SVGGraphicsElement[] {
-    return this.mode !== "jp" ? [] : this.painter.partEls(id, "aug-dot");
-  }
-
-  barlineEl(entry: SyncEntry): SVGGraphicsElement | null {
-    if (this.mode === "recognize") return null;
-    if (this.mode === "mixed") return this._staffElsOf(entry)[0] ?? null;
-    return this.painter.barlineEl(entry.id, entry.edge ?? "after");
-  }
-
-  sustainEl(entry: SyncEntry): SVGGraphicsElement | null {
-    if (this.mode !== "jp") return null;
-    return this.painter.sustainEl(entry.id, entry.ord ?? 0, entry.own, entry.verse ?? 0);
-  }
-
-  slurEl(entry: SyncEntry): SVGGraphicsElement | null {
-    if (this.mode === "recognize") return this.omr.staffMarkHit(entry);
-    if (this.mode === "mixed") return this._staffElsOf(entry)[0] ?? null;
-    return entry.end === undefined ? null : this.painter.slurEl(entry.id, entry.end);
-  }
-
-  inlineSustainEls(id: ElementId): SVGGraphicsElement[] {
-    return this.mode !== "jp" ? [] : this.painter.sustainCellEls(id);
-  }
-
-  /** 一个条目对应的谱面 `<g>`：按元素 id 问排版器（歌词按段取那一个字）。
-   *  小节线与增时线有自己的图元（它们不按自己的 id 定位，见 `ScorePainter.barlineEl` / `sustainEl`）——
-   *  取到了就归它们自己，点击才落得到它们头上；取不到退回宿主音符（旧行为）。 */
-  private _syncGroupEl(entry: SyncEntry): SVGGraphicsElement | null {
-    if (this.mode === "mixed") return this._staffElsOf(entry)[0] ?? null;
-    if (this.mode === "recognize") return this._recognizeElOf(entry);
-    if (entry.kind === "mark") {
-      // 弧有自己的图元（`(` 与 `)` 两条都指向同一条弧）；其余记号按类名在音符格里认
-      if (entry.markKind === "slur") {
-        const arc = this.slurEl(entry);
-        if (arc) return arc;
-      }
-      const part = this._markPartEl(entry);
-      if (part) return part;
-    }
-    if (entry.kind === "lyric") return this.painter.lyricEl(entry.id, entry.verse ?? 0);
-    if (entry.kind === "barline") return this.barlineEl(entry) ?? this.painter.entryEl(entry.id, 0);
-    if (entry.kind === "sustain") return this.sustainEl(entry) ?? this.painter.entryEl(entry.id, 0);
-    return this.painter.entryEl(entry.id, entry.verse ?? 0);
-  }
-
-  /** 五线谱 / 混排（文本格式）：索引条目按源 id 换成派生五线谱的 id，对上五线谱上画出的元素。
-   *  音符 → 和弦组（五线谱层与简谱叠层各一个）；歌词、弧、小节线 → 带身份标签的叶子（`pagetree/identity.ts`）。
-   *  增时线在五线谱上不是单独的东西（并进时值 / 延音线），和弦名、装饰暂不认。 */
-  private _bindStaffEls(): void {
-    for (const entry of this._sync.all()) {
-      const els = this._staffElsOf(entry);
-      if (els.length === 0) continue;
-      this._syncElOf.set(entry, els[0]!);
-      if (els.length > 1) this._syncHeaderEls.set(entry, els);
-      for (const el of els) if (!this._syncEls.has(el)) this._syncEls.set(el, entry);
-    }
-  }
-
-  /** 识别核对（简谱识别结果）：音符、歌词对到核对视图的命中框（`OmrController.hitFor`），页眉按字对（`headerHits`）。 */
-  private _bindRecognizeEls(): void {
-    for (const entry of this._sync.all()) {
-      const el = this._recognizeElOf(entry);
-      if (!el) continue;
-      this._syncElOf.set(entry, el);
-      if (!this._syncEls.has(el)) this._syncEls.set(el, entry);
-    }
-  }
-
-  private _recognizeElOf(entry: SyncEntry): SVGGraphicsElement | null {
-    if (entry.kind === "note") return this.omr.hitFor("note", entry.id);
-    // 五线谱对照：歌词字、弧、力度、文字按写进元素的识别 id 对到源图上的框
-    if ((entry.kind === "lyric" || entry.kind === "mark") && this.omr.hasStaffResult) return this.omr.staffMarkHit(entry);
-    if (entry.kind === "lyric") return this.omr.hitFor("lyric", entry.id, entry.verse ?? 0);
-    // 和弦名：这个音的第几个（音符本身的在前、增时线上的按序在后，同原文顺序）
-    if (entry.kind === "mark" && entry.markKind === "harmony" && !this.omr.hasStaffResult) {
-      const slot = this._sync.marksOf(entry.id).filter((m) => m.markKind === "harmony").indexOf(entry);
-      return slot < 0 ? null : this.omr.hitFor("chord", entry.id, slot);
-    }
-    // 五线谱对照：小节末那条线（条目借本小节最后一个音的 id）按「收尾的是第几小节」对到源图上的那条
-    if (entry.kind === "barline" && entry.edge !== "before" && this.omr.hasStaffResult) {
-      const doc = this.syncDoc();
-      const l = doc ? locate(doc, entry.id) : null;
-      return l ? this.omr.barlineHit(l.mi) : null;
-    }
-    return null;
-  }
-
   // ---- OmrHost：核对视图里的可视化编辑 ----
   playbackActive(): boolean {
     return this.playback.active;
@@ -1291,212 +698,57 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   visualClick(ev: MouseEvent): void {
     const target = hitThroughOverlay(ev);
-    const entry = this._syncEntryAt(target);
+    const entry = this.syncView.entryAt(target);
     if (this.visual.handleClick(ev, entry)) return;
-    if (entry) this._syncScoreToCursor(entry);
+    if (entry) this.syncView.scoreToCursor(entry);
   }
 
   visualDblClick(ev: MouseEvent): void {
-    this.visual.handleDoubleClick(ev, this._syncEntryAt(hitThroughOverlay(ev)));
+    this.visual.handleDoubleClick(ev, this.syncView.entryAt(hitThroughOverlay(ev)));
   }
 
   recognizeRendered(): void {
-    if (this.mode === "recognize" && this._visualSource() && this._syncDoc) this._bindSyncEls();
+    if (this.mode === "recognize" && this.visualSource() && this.syncView.doc) this.syncView.bindEls();
   }
 
-  private _staffElsOf(entry: SyncEntry): SVGGraphicsElement[] {
-    const mids = (id: ElementId): ElementId[] => this._mixedIds(id);
-    const p = this.painter;
-    switch (entry.kind) {
-      case "note":
-        return mids(entry.id).flatMap((m) => p.noteEls(m));
-      case "lyric": {
-        const verse = entry.verseNo ?? (entry.verse ?? 0) + 1;
-        return mids(entry.id).flatMap((m) => p.lyricEls(m, verse));
-      }
-      case "barline": {
-        const m = mids(entry.id)[0];
-        const measure = m === undefined ? undefined : this.mixed._mixedMeasureOf.get(m);
-        if (measure === undefined) return [];
-        if (entry.edge !== "before") return p.measureBarlineEls(measure, "after");
-        // 音符前面那条：系统开头是本小节的 before，其余是前一小节的 after
-        const own = p.measureBarlineEls(measure, "before");
-        return own.length ? own : p.measureBarlineEls(measure - 1, "after");
-      }
-      case "mark": {
-        if (entry.markKind !== "slur" || entry.end === undefined) return [];
-        const s = mids(entry.id)[0];
-        const ends = mids(entry.end);
-        const e = ends[ends.length - 1];
-        return s === undefined || e === undefined ? [] : p.slurEls(s, e);
-      }
-      default:
-        return [];
-    }
+  // 「这个元素画在哪」：SyncView 按当前谱面（简谱 / 五线谱 / 识别核对）取
+  entryEl(entry: SyncEntry): SVGGraphicsElement | null {
+    return this.syncView.entryEl(entry);
   }
-
-  /** 页眉：从原文认出字段（`EditDialect.headerFields`）并进索引，再按字对上谱面上画出来的页眉项。
-   *  字对得上的（画出来的字就是原文的值、或包含它——署名会补「作词：」）归它；调号、拍号按角色归。 */
-  private _bindHeader(): void {
-    const entries = this._sync.ordered().filter((e) => e.kind === "header");
-    if (entries.length === 0) return;
-    // 页眉项：排版器画的那一份；核对视图是识别命中层里的标题、著作者框
-    const parts = this.mode === "recognize" ? this.omr.headerHits() : this.painter.headerParts();
-    const norm = (t: string): string => t.replace(/\s+/g, "");
-    const bind = (e: SyncEntry, el: SVGGraphicsElement): void => {
-      const list = this._syncHeaderEls.get(e) ?? [];
-      if (list.length === 0) {
-        this._syncHeaderEls.set(e, list);
-        this._syncElOf.set(e, el);
-      }
-      list.push(el);
-      if (!this._syncEls.has(el)) this._syncEls.set(el, e);
-    };
-    for (const p of parts) {
-      if (p.role !== "text") {
-        // 调号、拍号：字与原文写法不同，按角色对（`1=C4/4` 这种一处写两样的两者都归它）
-        const e = entries.find((x) => x.headerRole === p.role || x.headerRole === "keytime");
-        if (e) bind(e, p.el);
-        continue;
-      }
-      const t = norm(p.text);
-      let best: SyncEntry | null = null;
-      let score = 0;
-      for (const e of entries) {
-        if (e.headerRole) continue;
-        const v = norm(this._syncText.slice(e.from, e.to));
-        if (!v || !t) continue;
-        const sc = t === v ? 3 : t.includes(v) ? 2 : t.length >= 2 && v.includes(t) ? 1 : 0;
-        if (sc > score) {
-          best = e;
-          score = sc;
-        }
-      }
-      if (best) bind(best, p.el);
-    }
+  noteEl(id: ElementId): SVGGraphicsElement | null {
+    return this.syncView.noteEl(id);
   }
-
+  chordEls(id: ElementId): SVGGraphicsElement[] {
+    return this.syncView.chordEls(id);
+  }
+  augDotEls(id: ElementId): SVGGraphicsElement[] {
+    return this.syncView.augDotEls(id);
+  }
+  barlineEl(entry: SyncEntry): SVGGraphicsElement | null {
+    return this.syncView.barlineEl(entry);
+  }
+  sustainEl(entry: SyncEntry): SVGGraphicsElement | null {
+    return this.syncView.sustainEl(entry);
+  }
+  slurEl(entry: SyncEntry): SVGGraphicsElement | null {
+    return this.syncView.slurEl(entry);
+  }
+  inlineSustainEls(id: ElementId): SVGGraphicsElement[] {
+    return this.syncView.inlineSustainEls(id);
+  }
   textEls(entry: SyncEntry): SVGGraphicsElement[] {
-    const hdr = this._syncHeaderEls.get(entry);
-    if (hdr) return hdr;
-    const el = this._syncElOf.get(entry);
-    return el ? [el] : [];
-  }
-
-  /** 点亮一个条目。 */
-  private _syncMark(el: Element): void {
-    el.classList.add("cursor-at");
-    this._syncMarked.push(el);
-  }
-
-  /** 挂在音符上的记号自己的 `<g>`（和弦名、装饰、注记）：按类名在音符格里找，
-   *  同类记号按原文顺序对第几个。弧、画不出来的记号（引擎只画延长号与重音）取不到，借宿主音符的 `<g>`。 */
-  private _markPartEl(entry: SyncEntry): SVGGraphicsElement | null {
-    const role = entry.markKind === "harmony" || entry.markKind === "deco" || entry.markKind === "annotation" ? entry.markKind : null;
-    if (!role) return null;
-    // 挂在增时线上的（长音中途换的和弦）不在音符格里，按增时线 id 认；音符格里的只数挂在音符本身的
-    const els = entry.own !== undefined ? this.painter.ownedPartEls(entry.own, role) : this.painter.partEls(entry.id, role);
-    const same = this._sync.marksOf(entry.id).filter((m) => m.markKind === entry.markKind && m.own === entry.own);
-    const nth = same.findIndex((m) => m.from === entry.from);
-    return els.length === same.length && nth >= 0 ? els[nth] ?? null : null;
-  }
-
-  /** 文本 → 谱面：光标/选区落在哪些音符上，就给哪些 `<g>` 加 `cursor-at`。
-   *  **走 CSS 类、不重渲染**（沿用编辑器既有判据）。 */
-  private _syncCursorToScore(): void {
-    if (this._syncing) return;
-    for (const el of this._syncMarked) el.classList.remove("cursor-at");
-    this._syncMarked = [];
-    // 五线谱 / 混排（文本格式）与简谱档同一条路：条目 → `_bindStaffEls` 绑好的元素。`.musicxml` 没有代码区，不走
-    if (this.mode === "mixed" ? !this._visualSource() : this.mode !== "jp") return;
-    const sel = this.view.state.selection.main;
-    // 选中的是附点：只点亮附点
-    const dotOf = this.visual.pickedDot();
-    if (dotOf) {
-      for (const el of this.augDotEls(dotOf.id)) {
-        el.classList.add("cursor-at");
-        this._syncMarked.push(el);
-      }
-      if (this._syncMarked.length) return;
-    }
-    const entries = this._sync.range(sel.from, sel.to);
-    // 识别过的谱：排版稿里选中音符时右下角小窗跟着显示原图那一行（`OmrController.followSelection`）
-    if (this.mode !== "recognize") this.omr.followSelection(entries.find((e) => e.kind === "note" || e.kind === "lyric")?.id ?? null);
-    if (entries.length === 0) return;
-    // 选中音符只亮音符，选中歌词只亮那一段的那个字（不连带别的段）
-    for (const entry of entries) {
-      for (const el of this._syncHeaderEls.get(entry) ?? [this._syncElOf.get(entry)]) if (el) this._syncMark(el);
-    }
-    this._scrollSyncIntoView(this._syncMarked[0], entries[0]!);
-  }
-
-  /** 谱面 → 文本：把光标放到这个条目对应的原文区间上。 */
-  private _syncScoreToCursor(entry: SyncEntry): void {
-    const span = entry.kind === "note"
-      ? this._sync.spanOfNote(entry.id)
-      : { from: entry.from, to: entry.to };
-    if (!span) return;
-    this._syncing = true;
-    try {
-      this.view.dispatch({
-        selection: { anchor: span.from, head: span.to },
-        scrollIntoView: true,
-      });
-    } finally {
-      this._syncing = false;
-    }
-    // 谱面这一侧的高亮照旧自己刷一次（上面被 _syncing 挡掉了）
-    this._syncMarkOnly(entry);
-  }
-
-  /** 只点亮这一个条目（谱面点选时用；文本那侧已经跳好了，不必再反推）。 */
-  private _syncMarkOnly(entry: SyncEntry): void {
-    for (const el of this._syncMarked) el.classList.remove("cursor-at");
-    this._syncMarked = [];
-    for (const el of this._syncHeaderEls.get(entry) ?? [this._syncElOf.get(entry)]) if (el) this._syncMark(el);
-  }
-
-  /** 需要的话翻页并滚动到可视区（复用播放高亮那一套做法）。 */
-  private _scrollSyncIntoView(el: Element | undefined, entry: SyncEntry): void {
-    if (!el) return;
-    const page = this.painter.pageOf(entry.id);
-    if (page !== null && page !== this.pageIndex) this.pageIndex = page;
-    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    return this.syncView.textEls(entry);
   }
 
   // ---- 下面三个供脚本化测试（`window.__app`，见 scripts/sync-check.mjs）----
-  /** 索引里的全部条目，只给可序列化的那几个字段。 */
   syncEntries(): Array<{ from: number; to: number; verse: number | null }> {
-    // 只给音符与歌词（`sync-check` 按它们验两个方向；增时线、记号借宿主的 `<g>`，不单独验）
-    return this._sync.all()
-      .filter((e) => e.kind === "note" || e.kind === "lyric")
-      .map((e) => ({ from: e.from, to: e.to, verse: e.verse }));
+    return this.syncView.entries();
   }
-
-  /** 某条目对应的谱面 `<g>`（按 `from` + `verse` 认，跨 evaluate 边界不能靠对象身份）。 */
   syncElAt(from: number, verse: number | null): SVGGraphicsElement | null {
-    for (const [entry, el] of this._syncElOf) {
-      if (entry.from === from && entry.verse === verse) return el;
-    }
-    return null;
+    return this.syncView.elAt(from, verse);
   }
-
-  /** 谱面 `<g>` → 条目（反查表命中与否）。 */
   syncEntryOfEl(el: Element): { from: number; to: number; verse: number | null } | null {
-    const e = this._syncEls.get(el);
-    return e ? { from: e.from, to: e.to, verse: e.verse } : null;
-  }
-
-  /** 谱面上点到的 `<g>` → 索引条目（从事件目标往上找最近的那个）。 */
-  private _syncEntryAt(target: EventTarget | null): SyncEntry | null {
-    let el = target instanceof Element ? target : null;
-    while (el) {
-      const hit = this._syncEls.get(el);
-      if (hit) return hit;
-      el = el.parentElement ?? (el.parentNode as Element | null);
-      if (el && el.nodeType !== 1) return null;
-    }
-    return null;
+    return this.syncView.entryOfEl(el);
   }
 
   /** 解析诊断 → 状态栏。不拦排版：谱面往往仍然是对的，但要让用户看得见。 */
@@ -1669,7 +921,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    *  （点在标题、小节线上都算找不到）。 */
   private _onSyncClick(ev: MouseEvent): boolean {
     if (this.mode !== "jp") return false;
-    const entry = this._syncEntryAt(hitThroughOverlay(ev));
+    const entry = this.syncView.entryAt(hitThroughOverlay(ev));
     const onNote = entry !== null && (entry.kind === "note" || entry.kind === "lyric" || entry.kind === "sustain");
     // 原样文档没有几何拾取：播放 / 暂停中点音符按同步条目跳过去，不进可视化编辑的选中
     if (onNote && this.painter.renderer === "jianpu" && this.playback.active) {
@@ -1677,7 +929,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       return true;
     }
     if (this.visual.handleClick(ev, entry)) return true;
-    if (entry) this._syncScoreToCursor(entry);
+    if (entry) this.syncView.scoreToCursor(entry);
     // 原样文档没有几何拾取（`onPageClick` 不走），起播点按命中的同步条目记：点歌词按段（第 n 段 = 第 n 遍）
     if (entry && this.painter.renderer === "jianpu" && (entry.kind === "note" || entry.kind === "lyric" || entry.kind === "sustain")) {
       this._selectedId = entry.id;
@@ -1700,9 +952,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         this._selectedVerse = 1;
         this.playback.seekTo({ id, pass: 1 });
       }
-      const entry = this._syncEntryAt(target);
+      const entry = this.syncView.entryAt(target);
       if (this.visual.handleClick(ev, entry)) return;
-      if (entry) this._syncScoreToCursor(entry);
+      if (entry) this.syncView.scoreToCursor(entry);
       return;
     }
     if (id === null) return;
@@ -1713,15 +965,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._selectedVerse = 1;
     this.playback.seekTo({ id, pass: 1 });
     // 文本格式：代码区光标跳到这个音的原文
-    const span = this._sync.spanOfNote(this.mixed._mixedToSrc.get(id) ?? -1);
-    if (span && this.adapter.caps.textEditor) {
-      this._syncing = true;
-      try {
-        this.view.dispatch({ selection: { anchor: span.from, head: span.to }, scrollIntoView: true });
-      } finally {
-        this._syncing = false;
-      }
-    }
+    const span = this.syncView.index.spanOfNote(this.mixed._mixedToSrc.get(id) ?? -1);
+    if (span && this.adapter.caps.textEditor) this.syncView.selectSpan(span);
   }
 
   private deselectStaff(): void {
@@ -1733,7 +978,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    *  浏览器先发两次 `click` 再发这一下，所以选中在前、进编辑在后。 */
   private _onSyncDblClick(ev: MouseEvent): void {
     if (this.mode !== "jp" && this.mode !== "mixed") return;
-    this.visual.handleDoubleClick(ev, this._syncEntryAt(hitThroughOverlay(ev)));
+    this.visual.handleDoubleClick(ev, this.syncView.entryAt(hitThroughOverlay(ev)));
   }
 
   private deselect(): void {
@@ -1789,7 +1034,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** OmrHost：并排原图上点了某个音 → 排版稿里选中它（可视化编辑的选区；没有就只记起播点并点亮） */
   selectNote(id: ElementId): void {
-    const span = this._sync.spanOfNote(id);
+    const span = this.syncView.index.spanOfNote(id);
     if (span && this.visualEnabled()) {
       this.visual.select(span.from, span.to);
       this.scorePane.focus({ preventScroll: true });
@@ -2198,12 +1443,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (now !== "jpwabc" && now !== "pu") return;
     if (page && isPaper(page.paper)) {
       const choice: PaperChoice = { paper: page.paper!, orientation: page.orientation ?? "portrait", margin: pageMargins(page) ?? null };
-      this._setPaper("jianpu", choice);
-      this._setPaper("staff", choice);
+      this.style.setPaper("jianpu", choice);
+      this.style.setPaper("staff", choice);
     }
     // 谱表大小与歌词字号也装不下，同样记进五线谱那一档（否则转完五线谱/混排按出厂 7mm，字相对音符小一圈）
-    if (staffMm || lyricPt) this._setStaffSize({ ...(staffMm ? { mm: staffMm } : {}), ...(lyricPt ? { lyricPt } : {}) });
-    this._carryHeaderFonts(headerFonts);
+    if (staffMm || lyricPt) this.style.setStaffSize({ ...(staffMm ? { mm: staffMm } : {}), ...(lyricPt ? { lyricPt } : {}) });
+    this.style.carryHeaderFonts(headerFonts);
     if (!page && !staffMm && !lyricPt && !Object.keys(headerFonts).length) return;
     this.saveSettings();
     this.reload(this.getText());
@@ -2334,8 +1579,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       const doc = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
       if (!doc || !singleVoice(doc)) return null;
     }
-    const sheet = this.styleOf(view);
-    const width = this.layoutPage.w;
+    const sheet = this.style.styleOf(view);
+    const width = this.style.layoutPage.w;
     const noPairs = view === "original";
     return (doc, song) => ({ ...measureDocument(doc, sheet, width, view === "expanded", song), noPairs });
   }
@@ -2645,7 +1890,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return {
       view: this.mixedShowJianpuLayer ? "mixed" : "staff",
       doc,
-      style: this.staffStyle(),
+      style: this.style.staffStyle(),
       page: this.staffPage,
       hideBarNumber: this.mixedHideBarNumber,
       // 声部面板里藏起来的声部不排（会话内）；简谱层取的声部下标跟着往前挪
@@ -2683,8 +1928,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       resetPageIndex: true,
     });
     // 代码区光标所在的音在新画的五线谱上描出来；可视化编辑的叠加层跟着重画
-    if (this._visualSource() && this._syncDoc) this._bindSyncEls();
-    else this._syncCursorToScore();
+    if (this.visualSource() && this.syncView.doc) this.syncView.bindEls();
+    else this.syncView.cursorToScore();
   }
 
   /** 等在途的异步排版（五线谱 / 混排）落定。简谱这一路是同步的，调用返回时已铺好。无头校验脚本用。 */

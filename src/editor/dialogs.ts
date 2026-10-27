@@ -253,7 +253,7 @@ function describePage(p: PageDecl): string {
 /** 纸张栏：纸（谱里写了纸时多一项「跟随文件」）+ 方向 + 四边距（mm，留空 = 自动）。
  *  `read()` 返回 null 表示没动过——没动过就不写用户层，免得把「跟随文件」悄悄钉成一张具体的纸。 */
 function paperGroup(app: App, engine: PaperEngine): { rows: HTMLElement[]; read(): PaperChoice | null } {
-  const st = app.paperState(engine);
+  const st = app.style.paperState(engine);
   const following = !st.userSet && st.doc !== null;
   const paper = document.createElement("select");
   if (st.doc) {
@@ -334,7 +334,7 @@ const HEADER_FAMILIES: readonly [MsgKey | null, string][] = [
 
 /** 页眉一组：标题 / 副标题 / 经文 / 词曲作者，各一个字体下拉 + 字号（pt，留空 = 跟随文件或出厂）。各档共用一份。 */
 function headerGroup(app: App): { rows: HTMLElement[]; apply(): boolean } {
-  const st = app.headerState();
+  const st = app.style.headerState();
   const rows: HTMLElement[] = [];
   const reads: (() => boolean)[] = [];
   for (const role of HEADER_ROLES) {
@@ -377,7 +377,7 @@ function headerGroup(app: App): { rows: HTMLElement[]; apply(): boolean } {
     reads.push(() => {
       if (JSON.stringify([fam.value, size.value]) === init) return false;
       const n = parseFloat(size.value);
-      app.setHeaderFont(role, { family: fam.value || null, size: Number.isFinite(n) && n > 0 ? n : null });
+      app.style.setHeaderFont(role, { family: fam.value || null, size: Number.isFinite(n) && n > 0 ? n : null });
       return true;
     });
   }
@@ -498,7 +498,7 @@ export function showOptionsDialog(app: App): void {
   const ratio = paperSelect(
     Object.keys(PAGE_RATIOS),
     (k) => PAGE_RATIOS[k],
-    (k) => PAGE_RATIOS[k][0] === app.pageW && PAGE_RATIOS[k][1] === app.pageH,
+    (k) => PAGE_RATIOS[k][0] === app.style.pageW && PAGE_RATIOS[k][1] === app.style.pageH,
     false,
   );
   // 纸张栏（纸 + 方向 + 边距）：简谱原样档、五线谱/混排两档各记各的；
@@ -516,10 +516,10 @@ export function showOptionsDialog(app: App): void {
   const linesRow = labeled(t("settings.linesPerPage"), lines);
 
   // ---- 字号 ----
-  const fs = num(app.fontSize, 12, 72);
+  const fs = num(app.style.fontSize, 12, 72);
 
-  const color = colorInput(app.color);
-  const bgColor = colorInput(app.bgColor);
+  const color = colorInput(app.style.color);
+  const bgColor = colorInput(app.style.bgColor);
 
   if (paperUi) {
     pLayout.append(...paperUi.rows);
@@ -540,7 +540,7 @@ export function showOptionsDialog(app: App): void {
   hideBarNum.type = "checkbox";
   hideBarNum.checked = app.mixedHideBarNumber;
   // 五线谱/混排的「基础字号」：谱表大小（mm）+ 歌词字号（pt），留空 = 跟随文件（没写就是出厂 7mm）
-  const ss = app.staffSizeState();
+  const ss = app.style.staffSizeState();
   const staffMm = num(0, 3, 15);
   staffMm.step = "0.1";
   staffMm.value = ss.user.mm ? String(ss.user.mm) : "";
@@ -576,7 +576,7 @@ export function showOptionsDialog(app: App): void {
   if (showNoteSound) pOther.append(labeled(t("settings.noteSound"), noteSound));
 
   // 诗集样式表：显示当前生效的那份与来源；选择 / 不用 / 恢复自动查找 /（123、ABC）写进文件
-  const bs = app.bookSheet;
+  const bs = app.style.bookSheet;
   const bsText = document.createElement("span");
   bsText.style.cssText = "opacity:0.85;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
   bsText.textContent = bs
@@ -595,9 +595,9 @@ export function showOptionsDialog(app: App): void {
   };
   const bsBox = document.createElement("span");
   bsBox.style.cssText = "display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap";
-  bsBox.append(bsText, bsBtn(t("settings.bookSheet.choose"), () => app.chooseBookSheet()), bsBtn(t("settings.bookSheet.disable"), () => app.disableBookSheet()), bsBtn(t("settings.bookSheet.auto"), () => app.resetBookSheet()));
+  bsBox.append(bsText, bsBtn(t("settings.bookSheet.choose"), () => app.style.chooseBookSheet()), bsBtn(t("settings.bookSheet.disable"), () => app.style.disableBookSheet()), bsBtn(t("settings.bookSheet.auto"), () => app.style.resetBookSheet()));
   if (bs && (app.docFormat === "123" || app.docFormat === "abc") && app.filePath) {
-    bsBox.append(bsBtn(t("settings.bookSheet.write"), () => { app.writeBookSheetRef(); }));
+    bsBox.append(bsBtn(t("settings.bookSheet.write"), () => { app.style.writeBookSheetRef(); }));
   }
   pHeader.append(labeled(t("settings.bookSheet"), bsBox));
 
@@ -613,8 +613,8 @@ export function showOptionsDialog(app: App): void {
     }
     return el;
   };
-  const noteFontSel = choice([["", "settings.noteFont.follow"], ...NOTE_FONTS.map((f) => [f.id, `settings.noteFont.${f.id}` as MsgKey] as const)], app.noteFont);
-  const chordAccSel = choice([["", "settings.chordAccidental.source"], ["before", "settings.chordAccidental.before"], ["after", "settings.chordAccidental.after"]], app.chordAccidental);
+  const noteFontSel = choice([["", "settings.noteFont.follow"], ...NOTE_FONTS.map((f) => [f.id, `settings.noteFont.${f.id}` as MsgKey] as const)], app.style.noteFont);
+  const chordAccSel = choice([["", "settings.chordAccidental.source"], ["before", "settings.chordAccidental.before"], ["after", "settings.chordAccidental.after"]], app.style.chordAccidental);
   if (isJianpu) {
     pHeader.append(labeled(t("settings.noteFont"), noteFontSel), labeled(t("settings.chordAccidental"), chordAccSel));
   }
@@ -654,10 +654,10 @@ export function showOptionsDialog(app: App): void {
 
   modal(t("settings.title"), body, () => {
     // 没摆出来的项一律不回灌：把它们的初值当用户输入送回去，等于替用户做了没做过的决定。
-    const [w, h] = isPpt ? PAGE_RATIOS[ratio.value] ?? [app.pageW, app.pageH] : [undefined, undefined];
-    const fontSize = isJp ? parseInt(fs.value, 10) || app.fontSize : undefined;
+    const [w, h] = isPpt ? PAGE_RATIOS[ratio.value] ?? [app.style.pageW, app.style.pageH] : [undefined, undefined];
+    const fontSize = isJp ? parseInt(fs.value, 10) || app.style.fontSize : undefined;
     header.apply(); // 先落用户层，下面 applyRenderSettings 统一存盘并重排
-    const argb = isJp ? colorValue(color, app.color) : undefined;
+    const argb = isJp ? colorValue(color, app.style.color) : undefined;
     if (hasLayoutSection) {
       const linesVal = lines.value.trim();
       if (linesVal !== app.getLinesPerPage()) app.setLinesPerPage(linesVal);
@@ -671,10 +671,10 @@ export function showOptionsDialog(app: App): void {
       staffSize: isMixed && JSON.stringify([staffMm.value, lyricPt.value]) !== staffInit
         ? { mm: parseFloat(staffMm.value) || null, lyricPt: parseFloat(lyricPt.value) || null }
         : undefined,
-      color: argb, bgColor: colorValue(bgColor, app.bgColor),
+      color: argb, bgColor: colorValue(bgColor, app.style.bgColor),
       ...(isJianpu ? {
-        ...(noteFontSel.value !== app.noteFont ? { noteFont: noteFontSel.value } : {}),
-        ...(chordAccSel.value !== app.chordAccidental ? { chordAccidental: chordAccSel.value as "" | "before" | "after" } : {}),
+        ...(noteFontSel.value !== app.style.noteFont ? { noteFont: noteFontSel.value } : {}),
+        ...(chordAccSel.value !== app.style.chordAccidental ? { chordAccidental: chordAccSel.value as "" | "before" | "after" } : {}),
       } : {}),
     });
     if (isMixed) void app.setMixedHideBarNumber(hideBarNum.checked);

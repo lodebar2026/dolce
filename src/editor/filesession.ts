@@ -28,7 +28,7 @@ export interface FileHost {
   importBytes(bytes: Uint8Array, name: string): void;
   openProject(bytes: Uint8Array, name: string, opts?: { draft?: boolean }): Promise<boolean>;
   adoptText(format: DocFormatId, text: string, filePath: string | null): void;
-  loadBookSheet(): Promise<void>;
+  readonly style: { loadBookSheet(): Promise<void> };
   onDocumentOpened(): Promise<void>;
   /** 当前文档的 `ScoreDoc`（丢失清单要用） */
   scoreDoc(): ScoreDoc | null;
@@ -59,7 +59,7 @@ export class FileSession {
         if (!(await this.host.openProject(bytes, path))) throw new Error("bad project");
       } else this.host.importBytes(bytes, path);
       this.host.filePath = path;
-      void this.host.loadBookSheet();
+      void this.host.style.loadBookSheet();
       return true;
     } catch {
       // 文件已被移动/删除/不可读 — 忘掉它，回退到示例
