@@ -23,14 +23,14 @@ import { findTuplets, type WedgeOpen, type WedgeRows } from "../staffomr/notatio
 import type { SPage, Staff, Sym, Tag } from "../staffomr/model";
 import { buildRasterPage, makeSymObj, type RasterSym } from "./adapt";
 import { binSig, blobImage, extendVSegs, findBlobs, findBraces, findPrimitives, groupByLeftInk, findPartBrackets, joinVSegs, removeStaffLines, repairLineCuts, verticalStrokes, type BeamQuad, type LineSeg, type RasterPrims } from "./prims";
-import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnStemSeeds, reseatHollowHeads, stemOf, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, markShapeWholes } from "./notehead";
-import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff } from "./rasterglyphs";
+import { archCavity, stemWalledCavity, findRasterHeads, hollowHeadsByPitch, headsOnBareStems, headsBetweenStemPairs, probeBareStems, hollowHeadsFromCavities, hollowHeadsAlongStems, hollowHeadsFromHoles, hollowHeadsOnStemSeeds, reseatHollowHeads, stemOf, hollowHeadsOnLedgers, hollowSlit, inkColumn, judgeHeadBox, mergeHoles, markShapeWholes, type RasterHead } from "./notehead";
+import { bootstrapClefs, matchTemplate, RasterGlyphLookup, type BootStaff, type OutlineTemplate } from "./rasterglyphs";
 import { sigDistance } from "../omrkit/glyphdict";
-import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, type JianpuStrip } from "./jianpuband";
+import { completeStaffBars, cutJianpuStrip, eraseInBand, findJianpuBands, type JianpuBand, type JianpuStrip } from "./jianpuband";
 import type { FuseStats, JianpuRow } from "./jianpufuse";
 import { CHAR_MAX as LYRIC_CHAR_MAX, type LyricStrip, type OcrChar } from "./lyric";
-import { candidateMap, cavityLike, findHoles, holeSolidity, repairedLayer, traceContours, type ContourMap } from "./contour";
-import { buildHeadMasks, buildHollowMasks, headFromStemBlock, scoreAt, scoreAtMasked, solidHeadsAlongStems, splitHeadCluster } from "./headmask";
+import { candidateMap, cavityLike, findHoles, holeSolidity, repairedLayer, traceContours, type ContourMap, type RepairedLayer } from "./contour";
+import { buildHeadMasks, buildHollowMasks, headFromStemBlock, scoreAt, scoreAtMasked, solidHeadsAlongStems, splitHeadCluster, type HeadMask } from "./headmask";
 import { headProb, trainHeadClassifier } from "./headclass";
 import type { LabelStrip } from "./stafflabel";
 import { findHarmonyStrips, harmonyKey, harmonyLine, readHarmonyStrip, type HarmonyStrip, type HarmonyToken } from "./harmony";
@@ -41,7 +41,7 @@ import type { LyricLine } from "../staffomr/textanalyze";
 import type { SlurArc } from "../staffomr/slur";
 import { composeHeaderStrip } from "./pagecompose";
 import { isTextStaff, pageTextKey, textDetScale } from "./pagetext";
-import { LineGrid, liftOf, lineYAt, localLineModel, pitchPos, pitchY, type RasterUnit } from "./staffline";
+import { LineGrid, liftOf, lineYAt, localLineModel, pitchPos, pitchY, type RasterUnit, type StaffGroup, type StaffLineRun } from "./staffline";
 import { findRasterStaves } from "./stafffind";
 import { rasterizePage, type RasterPage } from "./rasterpage";
 import { median, rowHasInk, unionRect as union, overlapFrac } from "../omrkit/geom";
@@ -665,7 +665,181 @@ export async function recognizeRasterPage(
   /** 各谱行在 x 处的五线（弯、斜的谱线按曲线取），自上而下 */
   const staffYs = (x: number) => groups.map((g) => g.lines.map((l) => lineYAt(l, x)).sort((p, q) => p - q));
   const prims = findPrimitives(nl, unit, grid, staffLefts, raster.faint);
+  // ── 简谱行（混排谱）：**先于一切**认领
+  const { staffGeoms, frames, jianpuBands, jianpuStrips, blobLabels, blobs, repaired, rBlobs, rBlobParts } = claimJianpuRows({ groups, raster, unit, prims, nl, onLedger, opts, staffLines });
+  // ── 顶部大字号文字：**先认成标题**
+  const { titleIds } = claimTitleText({ groups, unit, blobs });
+  // ── 和弦带：**先于符头认领**
+  const { harmonyStrips, harmonies, harmonyTexts, harmonyIds, harmonyMasks } = await claimChordBand({ prims, groups, unit, raster, jianpuBands, opts, live, yAt, blobs });
+  // ── contour 层与认领账本
+  const { contourStaves, cmap, ledger, rlayer, onGrid, inBand, offStaff, matchHollow } = buildClaimLedger({ groups, nl, unit, repaired, prims, onLedger, raster, yAt, look });
+  // ── 整小节休止：**先摘出来，别让符头那一路吃掉**
+  const { besideStem, restIds, restSyms, restStrokes, onBeamLine, beamsThrough, inBeamBody, beamStump, notHollow, allHoles, heads, claimed } = findWholeRests({ prims, unit, blobs, staffLines, grid, groups, staffLefts, yAt, raster, inBand, nl, cmap, rlayer, ledger, repaired, harmonyIds, titleIds, onGrid, matchHollow, offStaff });
+  // ── 空心符头：按**内腔（洞）**再找一遍
+  const { onLineOrGrid, rawHoles, holes, takenBoxes, barSegs, stacked, ledgerOnly, hollowMasks, inkStems } = hollowHeadsByCavity({ onGrid, grid, unit, raster, allHoles, heads, harmonyMasks, notHollow, prims, staffGeoms, nl, inBand, restStrokes, staffLines, groups });
+  // ── 几个实心符头并成一块：按**谱内自举的 mask** 拆开
+  const { masks, noBeam, masksNB, pitchGrid, onLineY, split, splitIds, dropHead, restTpl } = splitMergedSolidHeads({ raster, heads, stacked, unit, staffLines, nl, prims, onGrid, groups, grid, look, blobs, claimed, repaired });
+  // ── **光杆符干端头的无主墨**（`notehead.ts::headsOnBareStems`）
+  const { syms, dictClaimed, flatPieces, metIds } = headsOnBareStemEnds({ heads, dropHead, stacked, split, restSyms, blobs, claimed, inBand, staffGeoms, unit, prims, pitchGrid, raster, grid, notHollow, barSegs, takenBoxes, nl, beamStump, inBeamBody, ledgerOnly, ledger, look, groups, staffLines, besideStem });
+  // ── **并排粘成一块的两个临时记号**：按竖笔之间的缝切开，两半各查一次字典
+  splitPairedAccidentals({ blobs, claimed, dictClaimed, unit, nl, look, syms, ledger, groups, raster });
+  // ── **行首谱号被切碎的行**：块图里只剩碎块（低分辨率页上低音谱号右半那道竖弧被抽成竖段抹掉，望十架扫描版 p10
+  recoverBrokenLeadClefs({ groups, unit, yAt, syms, nl, ledger });
+  // ── **行首谱号的种类按原图上的墨再定一次**
+  reclassLeadClefs({ groups, unit, syms, raster, ledger });
+  // ── **高音谱号底下挂着「8」的是低八度谱号**（男高音谱号，或带括号的「(8)」）
+  const { midClefs } = markOctaveTrebleClefs({ groups, unit, syms, raster, ledger });
+  // ── **行中换谱号**（小一号的谱号，印在小节中间或小节线前）
+  findMidClefChanges({ nl, syms, unit, blobs, claimed, groups, yAt, midClefs, ledger });
+  // ── **琶音记号**（和弦左边的竖波浪线）
+  const { arpeggios } = findArpeggios({ blobs, unit, groups, nl, claimed, raster, syms, ledger });
+  // ── 碎块并起来再查一次字典
+  const { merged } = relookMergedFragments({ blobs, claimed, dictClaimed, flatPieces, syms, look, unit, prims, inBand, repaired, staffLines, besideStem, beamStump, ledger, rBlobs, rBlobParts, nl });
+  // ── 升降号：把**被抽走的那道竖笔**并回来
+  const { usedSegs, natFrom } = rejoinAccidentalStrokes({ restStrokes, syms, unit, blobs, claimed, dictClaimed, merged, prims, nl, look, ledger, raster });
+  // ── 四分休止：**位置 + 形状自举**，字典兜不住
+  findQuarterRests({ groups, yAt, unit, syms, raster, leftEdges, blobs, claimed, dictClaimed, merged, staffLines, staffLefts, nl, prims, ledger, cmap, usedSegs, rlayer, repaired });
+  // ── 拍号：位置自举 + 模板验
+  const { timeStrips, timeCols } = await findTimeSigs({ look, unit, nl, opts, live, syms, groups, blobs, claimed, restIds, harmonyIds, titleIds, splitIds, merged, dictClaimed, raster, ledger });
+  // ── 调号：紧跟谱号的升降号，**位置兜底**
+  const { keySp, sharpAsHeads, hasGapColumn, sharpBox } = findKeySigs({ unit, raster, groups, yAt, syms, blobs, dictClaimed, claimed, merged, nl, ledger, look });
+  // ── 调号记号**按竖笔数**再定一次升降
+  recountKeySigStrokes({ groups, unit, yAt, syms, raster });
+  // ── 谱中的升号被当成两个黑符头
+  fixSharpsAsHeads({ syms, keySp, sharpBox, hasGapColumn, ledger });
+  // ── 谱中没人认领的升降还原号：按位置先验配模板
+  matchUnclaimedAccidentals({ look, unit, blobs, claimed, dictClaimed, merged, syms, nl, raster, ledger });
+  // ── 降号的盒要收到**下面那个肚子**上
+  shrinkFlatBoxes({ syms });
+  // ── 符头 + 符干（+ 符尾）并成一块：把头摘出来
+  const { stemHeads, stemSegs } = splitHeadStemBlobs({ masks, blobs, metIds, merged, claimed, dictClaimed, syms, raster, unit, nl, restTpl, staffLines, inBand, ledger, pitchGrid, onLineY, prims, natFrom });
+  // ── **被几何闸判否的块，交给页内自举的判别器再判一次**
+  const { headTaken, stemBeside, solidBar } = rejudgeGatedBlobs({ heads, dropHead, split, stemHeads, stacked, syms, blobs, harmonyIds, unit, masks, raster, onLineY, claimed, dictClaimed, merged, onBeamLine, pitchGrid, ledger, noBeam, masksNB, groups, beamsThrough });
+  // ── 空心头按模板再搜
+  searchHollowByTemplate({ raster, syms, unit, groups, blobs, claimed, dictClaimed, merged, prims, ledger, nl, pitchGrid, inBand, holes, onLineOrGrid, onLineY });
+  // ── 终止线/段落线：纵贯谱表的**实心条**补成竖段
+  completeFinalBars({ unit, blobLabels, nl, blobs, claimed, dictClaimed, merged, groups, yAt, syms, prims, ledger, sharpAsHeads });
+  // ── 附点：**位置 + 形状自举**，字典兜不住
+  findAugDots({ nl, syms, unit, staffYs, grid, ledger, prims, raster, staffGeoms });
+  // ── 悬在两级之间的**空心头**：按相邻线的相对位置取上下两个候选，模板定夺
+  resolveHangingHollow({ hollowMasks, unit, syms, frames, raster, nl });
+  // ── **实心头里藏着一道斜缝的其实是空心头**
+  slitSolidToHollow({ unit, syms, prims, stemSegs, inkStems, raster });
+  // ── 找不到竖段的二分头：**顺着头缘的墨柱补干**
+  addStemsForHalfNotes({ unit, syms, prims, stemSegs, inkStems, nl, groups, yAt });
+  // ── 沿着已挂了空心头的干补和弦里漏掉的空心头（`notehead.ts::hollowHeadsAlongStems`）
+  hollowAlongStems({ raster, syms, unit, staffLines, nl, rawHoles, groups, prims, stemSegs, inkStems, yAt, staffGeoms, ledger, grid, beamsThrough, stemBeside, solidBar, pitchGrid, onLineY, headTaken, staffYs });
+  // ── 离谱表太远、又没有加线链的符头不要
+  dropFarHeads({ raster, unit, syms, groups, yAt });
+  // ── 同一个头被两路各认一次：只留先认的那个
+  dedupeHeads({ syms, unit });
+  // ── 头左边贴着、没认出来的临时记号：在头左侧的窗里取墨查字典
+  accidentalsLeftOfHeads({ unit, syms, nl, prims, look, repaired, raster, ledger });
+  // ── 符号收尾：盖住临时记号的空心头、行中谱号只信验过的、杠端落在小节线上补干
+  const { headBoxes, barStems } = tidySymbols({ syms, midClefs, groups, yAt, unit, prims });
 
+  // ── 交页：建谱面（找不到谱表就交空页）
+  markShapeWholes(syms, nl, prims.vSegs, unit);
+  opts.trace?.("syms", syms);
+  const pg = buildRasterPage({
+    index,
+    width: raster.bin.w,
+    height: raster.bin.h,
+    unit,
+    // **只把分好组的那些线交下去**。`findStaves` 会拿 segs 自己再分一次组，
+    // 而没进组的线里混着**通长的加线**（八度跑动共用的那条，实测宁静 p5
+    // y=1004、x[244,1906]），它会顶掉真正的第五线、把整行谱上移一条线
+    // ——那一行的音高整段低两级。分组那一步已经按「五条线左缘要一致」把它挡掉了，
+    // 这里就别再把它递下去。
+    staffLines: groups.flatMap((g) => g.lines),
+    // 符头剪出来的加线要一并推进去，`findLegers` 才有得判
+    // **没成组的那些行投影线要当加线用**，不能整个丢掉：密集八度跑动上方那一排短加线
+    // 被行投影连成一条通长的线，它不是谱线（左缘对不上，见 `groupStaves`），
+    // 但确实是加线——丢了的话上方那些符头一条加线都没有、`findLegers` 全判否，
+    // 认出来的符头一个都归不了谱行（实测宁静 p5 那七个 C6 就是这样）。
+    // 交给 `sharedLegers` 按符头切成短段，长度才过得了 `findLegers` 那道闸。
+    hSegs: [
+      ...prims.hSegs,
+      ...heads.map((h) => h.ledger).filter((l): l is NonNullable<typeof l> => !!l),
+      // **所有认出来的符头都要参与切加线**，不只 `findRasterHeads` 那一批：
+      // 按内腔找出来的（`stacked`）、拆块拆出来的（`split`）也压在加线上。
+      // 少了它们，那些头的加线是按**邻居**切的、盖不住自己，`findLegers` 就判否
+      // ——实测宁静钢琴右手 663 个带内符头只归属 574 个，差的 89 个几乎全是
+      // 谱表上方一到两格、等着加线撑的那些。
+      ...sharedLegers(prims.hSegs, headBoxes, onGrid, unit),
+      // **骑在加线上的符头，自己那条加线要补出来。**
+      // 它压在符头底下，`findPrimitives` 抽不出来（那一带的纵向游程是整个符头的高度）；
+      // `trimLedger` 只给 `findRasterHeads` 那一批补，按内腔找出来的、拆块拆出来的都没有。
+      // 于是谱表外一到两格的音「符头认出来了却挂不上谱行」——实测宁静钢琴右手
+      // 120 个未归属的头里 89 个是这一类。
+      // **要验墨**：那一带真有一条横墨才补，不然等于把 `findLegers` 那道防线拆了。
+      ...ownLegers(headBoxes, raster.bin, onGrid, unit),
+    ],
+    // 符干要**续到符头里**才与符头纵向相交（`findStems` / `buildStems` 的硬判据）。
+    // 续过的段只进 `SPage`，不回写 `prims`——`findBlobs` 那边仍按原段抹墨，
+    // 免得把符头啃掉（见 `extendVSegs` 的说明）。
+    // 被并进升降号的竖段要摘掉（留着会被当成符干或小节线）
+    vSegs: snapHeadsToStems(syms, splitSecondStems(splitVoiceStems(extendVSegs(
+      nl,
+      joinThroughBars(raster.bin, joinVSegs(nl, [...prims.vSegs.filter((v) => !usedSegs.has(v)), ...stemSegs, ...inkStems], VSEG_JOIN_DX, Math.round(unit.space * VSEG_JOIN_GAP)), staffSpans, unit.space),
+      Math.round(unit.space * 0.35),
+      staffSpans,
+      unit.lineThick,
+    ).concat(barStems), headBoxes.map((h) => h.box), unit), syms, unit), unit),
+    syms,
+    braces: findBraces(nl, prims, unit, staffLefts, leftEdges).map((c) => c.bbox),
+    sysBrackets: groupByLeftInk(raster.bin, leftEdges, unit),
+    partBrackets: findPartBrackets(raster.bin, leftEdges, unit),
+  });
+  pg.ptPerUnit = raster.imageRect.w / raster.bin.w;
+  pg.originPt = { x: raster.imageRect.x, y: raster.imageRect.y };
+  pg.sizePt = { w: raster.pageWidth, h: raster.pageHeight };
+  // 一像素合一点以上（不到 80dpi）：多半是图片封的单页 PDF（`jpegToPdf` 一像素记一点），页面尺寸不可信
+  pg.sizeKnown = pg.ptPerUnit < LOW_DPI_SCALE;
+  pg.textEm = 1 / TEXT_INK_EM;
+  pg.inkTextSize = inkTextSizeOn(raster.bin);
+  if (!findStaves(pg)) return withText(await emptyPage(pg, raster, unit));
+  // ── 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节
+  const { ctx, carry, clefTally } = await buildPageStructure({ pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands });
+  // ── 符杠与符头：杠的层数、实心其实空心、细杠起头、贴头的四分休止、符尾盒里的头、谱表外的头按加线定音高
+  const { beams, stems, hollowish } = fixBeamsAndHeads({ pg, unit, onGrid, grid, nl, prims, raster, look });
+  // ── 拼音符
+  opts.trace?.("context", ctx);
+  const notes = buildNotes(pg, ctx, beams, stems, hollowish);
+  opts.trace?.("notes", notes);
+  // ── 音符修正：被认成音的升降号与休止、按音高配临时记号、同音、跨谱表、附点对、连音
+  fixNotes({ notes, unit, raster, pg, nl, ctx, stems, beams, carry });
+  // ── 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空
+  crossStaffProbes({ masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry });
+
+  // ── 交出整页结果
+  return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
+}
+
+// ───────────────────────── 认一页的各阶段（`recognizeRasterPage` 按顺序调） ─────────────────────────
+
+/** 简谱行（混排谱）：**先于一切**认领 */
+function claimJianpuRows(c: {
+  groups: StaffGroup[];
+  raster: RasterPage;
+  unit: RasterUnit;
+  prims: RasterPrims;
+  nl: Binary;
+  onLedger: (y: number, x?: number) => boolean;
+  opts: RasterPageOpts;
+  staffLines: StaffLineRun[];
+}): {
+  staffGeoms: { left: number; right: number; top: number; bottom: number; topAt: (x: number) => number; bottomAt: (x: number) => number; lift: ((x: number) => number) | undefined; }[];
+  frames: LineFrame[];
+  jianpuBands: JianpuBand[];
+  jianpuStrips: JianpuStrip[];
+  blobLabels: Int32Array;
+  blobs: Component[];
+  repaired: Binary;
+  rBlobs: Component[];
+  rBlobParts: Map<number, Set<number>>;
+} {
+  const { groups, raster, unit, prims, nl, onLedger, opts, staffLines } = c;
   // ── 简谱行（混排谱）：**先于一切**认领 ─────────────────────────────────────
   //
   // 谱表正上方那行简谱的数字、增时线、高低音点，不挡就被收成全休止和加线上的符头
@@ -729,7 +903,18 @@ export async function recognizeRasterPage(
       set.add(c);
     }
   }
+  return { staffGeoms, frames, jianpuBands, jianpuStrips, blobLabels, blobs, repaired, rBlobs, rBlobParts };
+}
 
+/** 顶部大字号文字：**先认成标题** */
+function claimTitleText(c: {
+  groups: StaffGroup[];
+  unit: RasterUnit;
+  blobs: Component[];
+}): {
+  titleIds: Set<number>;
+} {
+  const { groups, unit, blobs } = c;
   // ── 顶部大字号文字：**先认成标题** ────────────────────────────────────────
   //
   // 页顶标题的字比歌词字号上限（`lyric.ts::CHAR_MAX`，2.8 格）高，整字进不了歌词带，被切下来的碎笔却进得去，
@@ -758,7 +943,28 @@ export async function recognizeRasterPage(
       }
     }
   }
+  return { titleIds };
+}
 
+/** 和弦带：**先于符头认领** */
+async function claimChordBand(c: {
+  prims: RasterPrims;
+  groups: StaffGroup[];
+  unit: RasterUnit;
+  raster: RasterPage;
+  jianpuBands: JianpuBand[];
+  opts: RasterPageOpts;
+  live: RasterLiveOcr | undefined;
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  blobs: Component[];
+}): Promise<{
+  harmonyStrips: HarmonyStrip[];
+  harmonies: HarmonyToken[];
+  harmonyTexts: HarmonyToken[];
+  harmonyIds: Set<number>;
+  harmonyMasks: Rect[];
+}> {
+  const { prims, groups, unit, raster, jianpuBands, opts, live, yAt, blobs } = c;
   // ── 和弦带：**先于符头认领** ──────────────────────────────────────────────
   //
   // 独唱谱在谱表上方印和弦字母。`C`、`D`、`G` 都是圈，正落在空心符头那一档里
@@ -838,7 +1044,31 @@ export async function recognizeRasterPage(
         harmonyIds.add(c.id);
     }
   }
+  return { harmonyStrips, harmonies, harmonyTexts, harmonyIds, harmonyMasks };
+}
 
+/** contour 层与认领账本 */
+function buildClaimLedger(c: {
+  groups: StaffGroup[];
+  nl: Binary;
+  unit: RasterUnit;
+  repaired: Binary;
+  prims: RasterPrims;
+  onLedger: (y: number, x?: number) => boolean;
+  raster: RasterPage;
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  look: RasterGlyphLookup;
+}): {
+  contourStaves: { top: number; bottom: number; left: number; right: number; lift: ((x: number) => number) | undefined; }[];
+  cmap: ContourMap;
+  ledger: ContourLedger;
+  rlayer: RepairedLayer;
+  onGrid: (y: number, x?: number) => boolean;
+  inBand: (y: number, x?: number) => boolean;
+  offStaff: (y: number) => boolean;
+  matchHollow: ((box: Rect) => { smufl: SmuflName; dist: number; } | null) | null;
+} {
+  const { groups, nl, unit, repaired, prims, onLedger, raster, yAt, look } = c;
   // ── contour 层与认领账本 ─────────────────────────────────────────────────
   //
   // 在**去谱线图**上取轮廓（原图上五条谱线把整行谱连成一团），一团墨一个号；
@@ -916,6 +1146,46 @@ export async function recognizeRasterPage(
   const matchHollow = look.templates
     ? (box: Rect) => matchTemplate(binSig(nl, box), box.w / unit.space, box.h / unit.space, look.templates!)
     : null;
+  return { contourStaves, cmap, ledger, rlayer, onGrid, inBand, offStaff, matchHollow };
+}
+
+/** 整小节休止：**先摘出来，别让符头那一路吃掉** */
+function findWholeRests(c: {
+  prims: RasterPrims;
+  unit: RasterUnit;
+  blobs: Component[];
+  staffLines: StaffLineRun[];
+  grid: LineGrid;
+  groups: StaffGroup[];
+  staffLefts: number[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  raster: RasterPage;
+  inBand: (y: number, x?: number) => boolean;
+  nl: Binary;
+  cmap: ContourMap;
+  rlayer: RepairedLayer;
+  ledger: ContourLedger;
+  repaired: Binary;
+  harmonyIds: Set<number>;
+  titleIds: Set<number>;
+  onGrid: (y: number, x?: number) => boolean;
+  matchHollow: ((box: Rect) => { smufl: SmuflName; dist: number; } | null) | null;
+  offStaff: (y: number) => boolean;
+}): {
+  besideStem: (b: Rect) => boolean;
+  restIds: Set<number>;
+  restSyms: RasterSym[];
+  restStrokes: Set<LineSeg>;
+  onBeamLine: (b: Rect, ext?: number) => boolean;
+  beamsThrough: (b: Rect, ext?: number) => number;
+  inBeamBody: (b: Rect) => boolean;
+  beamStump: (b: Rect, others: Rect[]) => boolean;
+  notHollow: Map<number, Rect>;
+  allHoles: Rect[];
+  heads: RasterHead[];
+  claimed: Set<number>;
+} {
+  const { prims, unit, blobs, staffLines, grid, groups, staffLefts, yAt, raster, inBand, nl, cmap, rlayer, ledger, repaired, harmonyIds, titleIds, onGrid, matchHollow, offStaff } = c;
   // ── 整小节休止：**先摘出来，别让符头那一路吃掉** ─────────────────────
   //
   // 全休止是个 1.34×0.64 格、填充 0.92 的实心小矩形——**正好落在实心符头那一档里**
@@ -1160,7 +1430,38 @@ export async function recognizeRasterPage(
     return hd.box.h >= unit.space * BEAM_STUMP_H || !onBeamLine(hd.box);
   });
   const claimed = new Set([...heads.map((h) => h.comp.id), ...restIds, ...harmonyIds, ...titleIds]);
+  return { besideStem, restIds, restSyms, restStrokes, onBeamLine, beamsThrough, inBeamBody, beamStump, notHollow, allHoles, heads, claimed };
+}
 
+/** 空心符头：按**内腔（洞）**再找一遍 */
+function hollowHeadsByCavity(c: {
+  onGrid: (y: number, x?: number) => boolean;
+  grid: LineGrid;
+  unit: RasterUnit;
+  raster: RasterPage;
+  allHoles: Rect[];
+  heads: RasterHead[];
+  harmonyMasks: Rect[];
+  notHollow: Map<number, Rect>;
+  prims: RasterPrims;
+  staffGeoms: { left: number; right: number; top: number; bottom: number; topAt: (x: number) => number; bottomAt: (x: number) => number; lift: ((x: number) => number) | undefined; }[];
+  nl: Binary;
+  inBand: (y: number, x?: number) => boolean;
+  restStrokes: Set<LineSeg>;
+  staffLines: StaffLineRun[];
+  groups: StaffGroup[];
+}): {
+  onLineOrGrid: (y: number, x?: number) => boolean;
+  rawHoles: Rect[];
+  holes: Rect[];
+  takenBoxes: Rect[];
+  barSegs: LineSeg[];
+  stacked: RasterSym[];
+  ledgerOnly: (b: Rect) => boolean;
+  hollowMasks: HeadMask[];
+  inkStems: LineSeg[];
+} {
+  const { onGrid, grid, unit, raster, allHoles, heads, harmonyMasks, notHollow, prims, staffGeoms, nl, inBand, restStrokes, staffLines, groups } = c;
   // ── 空心符头：按**内腔（洞）**再找一遍 ───────────────────────────────────
   //
   // 空心符头被去谱线切碎之后一块都判不成符头（实测宁静 p2 钢琴右手那个二分和弦
@@ -1294,7 +1595,37 @@ export async function recognizeRasterPage(
   // 这块「内腔」是它与旁边的升号、谱线围出来的白（破碎 p8 m84 钢琴右手 C♯5，升号右竖与头之间读成二分 C5，把真头挤掉）
   // 内腔窄的手写粗圈页（`cavW`）上，两圈相接处也是一块实墨，夹在两个孔之间的不算（`solidInside` 的 `holes`）
   for (let i = stacked.length - 1; i >= 0; i--) if (solidInside(raster.bin, stacked[i].box, unit.space, cavW ? rawHoles : undefined)) stacked.splice(i, 1);
+  return { onLineOrGrid, rawHoles, holes, takenBoxes, barSegs, stacked, ledgerOnly, hollowMasks, inkStems };
+}
 
+/** 几个实心符头并成一块：按**谱内自举的 mask** 拆开 */
+function splitMergedSolidHeads(c: {
+  raster: RasterPage;
+  heads: RasterHead[];
+  stacked: RasterSym[];
+  unit: RasterUnit;
+  staffLines: StaffLineRun[];
+  nl: Binary;
+  prims: RasterPrims;
+  onGrid: (y: number, x?: number) => boolean;
+  groups: StaffGroup[];
+  grid: LineGrid;
+  look: RasterGlyphLookup;
+  blobs: Component[];
+  claimed: Set<number>;
+  repaired: Binary;
+}): {
+  masks: HeadMask[];
+  noBeam: Binary;
+  masksNB: HeadMask[];
+  pitchGrid: (y: number, x?: number) => number | null;
+  onLineY: (y: number, x?: number) => boolean;
+  split: RasterSym[];
+  splitIds: Set<number>;
+  dropHead: Set<number>;
+  restTpl: OutlineTemplate[];
+} {
+  const { raster, heads, stacked, unit, staffLines, nl, prims, onGrid, groups, grid, look, blobs, claimed, repaired } = c;
   // ── 几个实心符头并成一块：按**谱内自举的 mask** 拆开 ─────────────────────
   //
   // 钢琴谱里二度、三度的和弦把两三个符头画得挨着（二度还错开在符干两侧），
@@ -1357,7 +1688,44 @@ export async function recognizeRasterPage(
       for (const p of parts) split.push({ box: p, code: h.code === "noteheadBlack" ? "noteheadBlack" : h.code });
     }
   }
+  return { masks, noBeam, masksNB, pitchGrid, onLineY, split, splitIds, dropHead, restTpl };
+}
 
+/** **光杆符干端头的无主墨**（`notehead.ts::headsOnBareStems`） */
+function headsOnBareStemEnds(c: {
+  heads: RasterHead[];
+  dropHead: Set<number>;
+  stacked: RasterSym[];
+  split: RasterSym[];
+  restSyms: RasterSym[];
+  blobs: Component[];
+  claimed: Set<number>;
+  inBand: (y: number, x?: number) => boolean;
+  staffGeoms: { left: number; right: number; top: number; bottom: number; topAt: (x: number) => number; bottomAt: (x: number) => number; lift: ((x: number) => number) | undefined; }[];
+  unit: RasterUnit;
+  prims: RasterPrims;
+  pitchGrid: (y: number, x?: number) => number | null;
+  raster: RasterPage;
+  grid: LineGrid;
+  notHollow: Map<number, Rect>;
+  barSegs: LineSeg[];
+  takenBoxes: Rect[];
+  nl: Binary;
+  beamStump: (b: Rect, others: Rect[]) => boolean;
+  inBeamBody: (b: Rect) => boolean;
+  ledgerOnly: (b: Rect) => boolean;
+  ledger: ContourLedger;
+  look: RasterGlyphLookup;
+  groups: StaffGroup[];
+  staffLines: StaffLineRun[];
+  besideStem: (b: Rect) => boolean;
+}): {
+  syms: RasterSym[];
+  dictClaimed: Set<number>;
+  flatPieces: Set<number>;
+  metIds: Set<number>;
+} {
+  const { heads, dropHead, stacked, split, restSyms, blobs, claimed, inBand, staffGeoms, unit, prims, pitchGrid, raster, grid, notHollow, barSegs, takenBoxes, nl, beamStump, inBeamBody, ledgerOnly, ledger, look, groups, staffLines, besideStem } = c;
   // ── **光杆符干端头的无主墨**（`notehead.ts::headsOnBareStems`）───────────────
   //
   // 在拆块之后、字典之前：前面各路认下的头都算「挂上了」，剩下的无主碎片才轮得到这里。
@@ -1695,6 +2063,23 @@ export async function recognizeRasterPage(
     syms.push({ box: c.bbox, code });
     ledger.claim(c.bbox, `dict:${code}`);
   }
+  return { syms, dictClaimed, flatPieces, metIds };
+}
+
+/** **并排粘成一块的两个临时记号**：按竖笔之间的缝切开，两半各查一次字典 */
+function splitPairedAccidentals(c: {
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  unit: RasterUnit;
+  nl: Binary;
+  look: RasterGlyphLookup;
+  syms: RasterSym[];
+  ledger: ContourLedger;
+  groups: StaffGroup[];
+  raster: RasterPage;
+}): void {
+  const { blobs, claimed, dictClaimed, unit, nl, look, syms, ledger, groups, raster } = c;
   // ── **并排粘成一块的两个临时记号**：按竖笔之间的缝切开，两半各查一次字典 ─────────
   //
   // 和弦前竖排的「♭♯」挨得紧，♭ 的肚子贴着 ♯ 的竖笔连成一块（破碎 p4 m39、p12 m99 钢琴右手 C4/E♭4/F♯4/A4），
@@ -1783,6 +2168,18 @@ export async function recognizeRasterPage(
     syms.push({ box: b, code: h.code });
     ledger.claim(b, `clef:${h.code}`);
   }
+}
+
+/** **行首谱号被切碎的行**：块图里只剩碎块（低分辨率页上低音谱号右半那道竖弧被抽成竖段抹掉，望十架扫描版 p10 */
+function recoverBrokenLeadClefs(c: {
+  groups: StaffGroup[];
+  unit: RasterUnit;
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  syms: RasterSym[];
+  nl: Binary;
+  ledger: ContourLedger;
+}): void {
+  const { groups, unit, yAt, syms, nl, ledger } = c;
   // ── **行首谱号被切碎的行**：块图里只剩碎块（低分辨率页上低音谱号右半那道竖弧被抽成竖段抹掉，望十架扫描版 p10
   // 钢琴右手），`bootstrapClefs` 的尺寸闸一块都过不了，这一行没谱号、沿用默认的高音谱号，整行高十几级。
   // 一个谱号都没认出的行，在去线图上直接取行首窗口里的墨：从左缘往右 `CLEF_WIN_FROM` 格起，逐列有墨就串下去、
@@ -1842,6 +2239,17 @@ export async function recognizeRasterPage(
     syms.push({ box, code });
     ledger.claim(box, `clef:${code}`);
   }
+}
+
+/** **行首谱号的种类按原图上的墨再定一次** */
+function reclassLeadClefs(c: {
+  groups: StaffGroup[];
+  unit: RasterUnit;
+  syms: RasterSym[];
+  raster: RasterPage;
+  ledger: ContourLedger;
+}): void {
+  const { groups, unit, syms, raster, ledger } = c;
   // ── **行首谱号的种类按原图上的墨再定一次** ───────────────────────────────────
   //
   // 上面两路都按「并出来的盒有多高」分高低音，盒一不准就错：手写体刻谱的高音谱号中间那道直笔被抽成竖段，
@@ -1913,6 +2321,19 @@ export async function recognizeRasterPage(
     }
     ledger.claim(s0.box, `clef:${code}`);
   }
+}
+
+/** **高音谱号底下挂着「8」的是低八度谱号**（男高音谱号，或带括号的「(8)」） */
+function markOctaveTrebleClefs(c: {
+  groups: StaffGroup[];
+  unit: RasterUnit;
+  syms: RasterSym[];
+  raster: RasterPage;
+  ledger: ContourLedger;
+}): {
+  midClefs: Set<RasterSym>;
+} {
+  const { groups, unit, syms, raster, ledger } = c;
   // ── **高音谱号底下挂着「8」的是低八度谱号**（男高音谱号，或带括号的「(8)」）──────────────
   //
   // 「8」紧贴在谱号尾巴底下，与尾巴连成一串墨：谱号下半那个弯的正下方（`CLEF_8_X`），从底线往下连着有墨的深度
@@ -1961,6 +2382,22 @@ export async function recognizeRasterPage(
   }
   /** 行中换谱号那一路验过的谱号（其余行中的谱号在建页前剔掉）。 */
   const midClefs = new Set<RasterSym>();
+  return { midClefs };
+}
+
+/** **行中换谱号**（小一号的谱号，印在小节中间或小节线前） */
+function findMidClefChanges(c: {
+  nl: Binary;
+  syms: RasterSym[];
+  unit: RasterUnit;
+  blobs: Component[];
+  claimed: Set<number>;
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  midClefs: Set<RasterSym>;
+  ledger: ContourLedger;
+}): void {
+  const { nl, syms, unit, blobs, claimed, groups, yAt, midClefs, ledger } = c;
   // ── **行中换谱号**（小一号的谱号，印在小节中间或小节线前）──────────────────
   //
   // 钢琴右手下行时临时换成低音谱号（望十架 p9 m65，1.6×2.5 格，行首的是 2.25×3.5 格），
@@ -2035,7 +2472,22 @@ export async function recognizeRasterPage(
       ledger.claim(zone, `clef:${hit.smufl}`);
     }
   }
+}
 
+/** **琶音记号**（和弦左边的竖波浪线） */
+function findArpeggios(c: {
+  blobs: Component[];
+  unit: RasterUnit;
+  groups: StaffGroup[];
+  nl: Binary;
+  claimed: Set<number>;
+  raster: RasterPage;
+  syms: RasterSym[];
+  ledger: ContourLedger;
+}): {
+  arpeggios: Rect[];
+} {
+  const { blobs, unit, groups, nl, claimed, raster, syms, ledger } = c;
   // ── **琶音记号**（和弦左边的竖波浪线）────────────────────────────────────
   //
   // 去线图上它是细长的块（宽半格上下、高两格半以上；贯穿谱表的被去谱线切开，只有谱表外那几截够高）。与符干、小节线、括号的分别是**左右摆**：
@@ -2152,7 +2604,32 @@ export async function recognizeRasterPage(
         }
       }
   }
+  return { arpeggios };
+}
 
+/** 碎块并起来再查一次字典 */
+function relookMergedFragments(c: {
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  flatPieces: Set<number>;
+  syms: RasterSym[];
+  look: RasterGlyphLookup;
+  unit: RasterUnit;
+  prims: RasterPrims;
+  inBand: (y: number, x?: number) => boolean;
+  repaired: Binary;
+  staffLines: StaffLineRun[];
+  besideStem: (b: Rect) => boolean;
+  beamStump: (b: Rect, others: Rect[]) => boolean;
+  ledger: ContourLedger;
+  rBlobs: Component[];
+  rBlobParts: Map<number, Set<number>>;
+  nl: Binary;
+}): {
+  merged: Set<number>;
+} {
+  const { blobs, claimed, dictClaimed, flatPieces, syms, look, unit, prims, inBand, repaired, staffLines, besideStem, beamStump, ledger, rBlobs, rBlobParts, nl } = c;
   // ── 碎块并起来再查一次字典 ────────────────────────────────────────────────
   //
   // 谱号那一路证明了这条：符号常被自己的笔画切开（中央竖笔、两道横笔被当成原语抽走），
@@ -2216,7 +2693,28 @@ export async function recognizeRasterPage(
     if (group.length < 2) continue;
     tryMerged(box, group, nl);
   }
+  return { merged };
+}
 
+/** 升降号：把**被抽走的那道竖笔**并回来 */
+function rejoinAccidentalStrokes(c: {
+  restStrokes: Set<LineSeg>;
+  syms: RasterSym[];
+  unit: RasterUnit;
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  merged: Set<number>;
+  prims: RasterPrims;
+  nl: Binary;
+  look: RasterGlyphLookup;
+  ledger: ContourLedger;
+  raster: RasterPage;
+}): {
+  usedSegs: Set<LineSeg>;
+  natFrom: (sx: number, seed: [number, number]) => Rect | null;
+} {
+  const { restStrokes, syms, unit, blobs, claimed, dictClaimed, merged, prims, nl, look, ledger, raster } = c;
   // ── 升降号：把**被抽走的那道竖笔**并回来 ─────────────────────────────────
   //
   // 降号是「一根细长的竖笔 + 底下一个小肚子」。竖笔沿途两侧都空着，
@@ -2389,7 +2887,32 @@ export async function recognizeRasterPage(
     for (const c2 of blobs) if (!claimed.has(c2.id) && overlapFrac(c2.bbox, box) > 0.8) merged.add(c2.id);
     for (const v of prims.vSegs) if ((v.x0 + v.x1) / 2 >= box.x && (v.x0 + v.x1) / 2 <= box.x + box.w && Math.min(v.y0, v.y1) >= box.y - 2 && Math.max(v.y0, v.y1) <= box.y + box.h + 2) usedSegs.add(v);
   }
+  return { usedSegs, natFrom };
+}
 
+/** 四分休止：**位置 + 形状自举**，字典兜不住 */
+function findQuarterRests(c: {
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  unit: RasterUnit;
+  syms: RasterSym[];
+  raster: RasterPage;
+  leftEdges: { top: number; bottom: number; left: number; }[];
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  merged: Set<number>;
+  staffLines: StaffLineRun[];
+  staffLefts: number[];
+  nl: Binary;
+  prims: RasterPrims;
+  ledger: ContourLedger;
+  cmap: ContourMap;
+  usedSegs: Set<LineSeg>;
+  rlayer: RepairedLayer;
+  repaired: Binary;
+}): void {
+  const { groups, yAt, unit, syms, raster, leftEdges, blobs, claimed, dictClaimed, merged, staffLines, staffLefts, nl, prims, ledger, cmap, usedSegs, rlayer, repaired } = c;
   // ── 四分休止：**位置 + 形状自举**，字典兜不住 ──────────────────────────
   //
   // 四分休止在位图上被切得五花八门（它压着三条谱线，去谱线之后每一段的断法
@@ -2623,7 +3146,32 @@ export async function recognizeRasterPage(
     syms.push({ box: b, code: "restQuarter" });
     ledger.claim(b, "qrest:restQuarter");
   }
+}
 
+/** 拍号：位置自举 + 模板验 */
+async function findTimeSigs(c: {
+  look: RasterGlyphLookup;
+  unit: RasterUnit;
+  nl: Binary;
+  opts: RasterPageOpts;
+  live: RasterLiveOcr | undefined;
+  syms: RasterSym[];
+  groups: StaffGroup[];
+  blobs: Component[];
+  claimed: Set<number>;
+  restIds: Set<number>;
+  harmonyIds: Set<number>;
+  titleIds: Set<number>;
+  splitIds: Set<number>;
+  merged: Set<number>;
+  dictClaimed: Set<number>;
+  raster: RasterPage;
+  ledger: ContourLedger;
+}): Promise<{
+  timeStrips: TimeStrip[];
+  timeCols: TimeColumn[];
+}> {
+  const { look, unit, nl, opts, live, syms, groups, blobs, claimed, restIds, harmonyIds, titleIds, splitIds, merged, dictClaimed, raster, ledger } = c;
   // ── 拍号：位置自举 + 模板验 ────────────────────────────────────────────────
   //
   // 字典里**一个拍号类都没有**（`rasterglyphs.json` 4144 个类未定名，拍号一个没定），
@@ -2914,7 +3462,30 @@ export async function recognizeRasterPage(
       break; // 一行谱只有一个拍号
     }
   }
+  return { timeStrips, timeCols };
+}
 
+/** 调号：紧跟谱号的升降号，**位置兜底** */
+function findKeySigs(c: {
+  unit: RasterUnit;
+  raster: RasterPage;
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  syms: RasterSym[];
+  blobs: Component[];
+  dictClaimed: Set<number>;
+  claimed: Set<number>;
+  merged: Set<number>;
+  nl: Binary;
+  ledger: ContourLedger;
+  look: RasterGlyphLookup;
+}): {
+  keySp: number;
+  sharpAsHeads: (ss: RasterSym[], edge: number, onStaff: (r: Rect) => boolean) => { heads: RasterSym[]; box: Rect; } | null;
+  hasGapColumn: (set: RasterSym[]) => boolean;
+  sharpBox: (set: RasterSym[]) => Rect | null;
+} {
+  const { unit, raster, groups, yAt, syms, blobs, dictClaimed, claimed, merged, nl, ledger, look } = c;
   // ── 调号：紧跟谱号的升降号，**位置兜底** ─────────────────────────────────
   //
   // 字典与模板都认不出的调号升降号，按「谱号右边第一串又窄又高的块」补认。
@@ -3190,7 +3761,18 @@ export async function recognizeRasterPage(
       if (!took) break;
     }
   }
+  return { keySp, sharpAsHeads, hasGapColumn, sharpBox };
+}
 
+/** 调号记号**按竖笔数**再定一次升降 */
+function recountKeySigStrokes(c: {
+  groups: StaffGroup[];
+  unit: RasterUnit;
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  syms: RasterSym[];
+  raster: RasterPage;
+}): void {
+  const { groups, unit, yAt, syms, raster } = c;
   // ── 调号记号**按竖笔数**再定一次升降 ─────────────────────────────────────
   //
   // 升号的两道横笔很细，常常正好压在谱线上，去线时一起抹掉，只剩两根竖笔
@@ -3225,7 +3807,17 @@ export async function recognizeRasterPage(
     const ns = ks.filter((s0) => s0.code === "accidentalSharp").length;
     if (nf && ns && nf !== ns) for (const s0 of ks) if (s0.code === "accidentalFlat" || s0.code === "accidentalSharp") s0.code = nf > ns ? "accidentalFlat" : "accidentalSharp";
   }
+}
 
+/** 谱中的升号被当成两个黑符头 */
+function fixSharpsAsHeads(c: {
+  syms: RasterSym[];
+  keySp: number;
+  sharpBox: (set: RasterSym[]) => Rect | null;
+  hasGapColumn: (set: RasterSym[]) => boolean;
+  ledger: ContourLedger;
+}): void {
+  const { syms, keySp, sharpBox, hasGapColumn, ledger } = c;
   // ── 谱中的升号被当成两个黑符头 ───────────────────────────────────────────
   //
   // 与调号那段同一个病（粗体升号的两道横笔去掉竖笔后就是两个上下叠着的黑头），只是出在谱中：
@@ -3250,7 +3842,22 @@ export async function recognizeRasterPage(
     syms.splice(syms.indexOf(a), 1, { box, code: "accidentalSharp" });
     ledger.claim(box, "acc:accidentalSharp");
   }
+}
 
+/** 谱中没人认领的升降还原号：按位置先验配模板 */
+function matchUnclaimedAccidentals(c: {
+  look: RasterGlyphLookup;
+  unit: RasterUnit;
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  merged: Set<number>;
+  syms: RasterSym[];
+  nl: Binary;
+  raster: RasterPage;
+  ledger: ContourLedger;
+}): void {
+  const { look, unit, blobs, claimed, dictClaimed, merged, syms, nl, raster, ledger } = c;
   // ── 谱中没人认领的升降还原号：按位置先验配模板 ───────────────────────────
   //
   // 字典认不出、也没人认领的块，**右边 1.5 格内有个同高的符头**（升/还原看盒中心，降看肚子），
@@ -3280,7 +3887,13 @@ export async function recognizeRasterPage(
       ledger.claim(b, `acc:${m.smufl}`);
     }
   }
+}
 
+/** 降号的盒要收到**下面那个肚子**上 */
+function shrinkFlatBoxes(c: {
+  syms: RasterSym[];
+}): void {
+  const { syms } = c;
   // ── 降号的盒要收到**下面那个肚子**上 ─────────────────────────────────────
   //
   // 降号的音高位置是肚子，不是盒中心：它的字形是「一根竖笔往上伸 + 底下一个肚子」，
@@ -3297,7 +3910,33 @@ export async function recognizeRasterPage(
     const cut = Math.round(s.box.h * FLAT_BOWL_TOP);
     s.box = { x: s.box.x, y: s.box.y + cut, w: s.box.w, h: s.box.h - cut };
   }
+}
 
+/** 符头 + 符干（+ 符尾）并成一块：把头摘出来 */
+function splitHeadStemBlobs(c: {
+  masks: HeadMask[];
+  blobs: Component[];
+  metIds: Set<number>;
+  merged: Set<number>;
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  syms: RasterSym[];
+  raster: RasterPage;
+  unit: RasterUnit;
+  nl: Binary;
+  restTpl: OutlineTemplate[];
+  staffLines: StaffLineRun[];
+  inBand: (y: number, x?: number) => boolean;
+  ledger: ContourLedger;
+  pitchGrid: (y: number, x?: number) => number | null;
+  onLineY: (y: number, x?: number) => boolean;
+  prims: RasterPrims;
+  natFrom: (sx: number, seed: [number, number]) => Rect | null;
+}): {
+  stemHeads: RasterSym[];
+  stemSegs: LineSeg[];
+} {
+  const { masks, blobs, metIds, merged, claimed, dictClaimed, syms, raster, unit, nl, restTpl, staffLines, inBand, ledger, pitchGrid, onLineY, prims, natFrom } = c;
   // ── 符头 + 符干（+ 符尾）并成一块：把头摘出来 ────────────────────────────
   //
   // 符尾贴着符干走大半程，`isolated` 判那条符干「属于某个符号」，于是抽不成原语、
@@ -3455,7 +4094,39 @@ export async function recognizeRasterPage(
       }
     }
   }
+  return { stemHeads, stemSegs };
+}
 
+/** **被几何闸判否的块，交给页内自举的判别器再判一次** */
+function rejudgeGatedBlobs(c: {
+  heads: RasterHead[];
+  dropHead: Set<number>;
+  split: RasterSym[];
+  stemHeads: RasterSym[];
+  stacked: RasterSym[];
+  syms: RasterSym[];
+  blobs: Component[];
+  harmonyIds: Set<number>;
+  unit: RasterUnit;
+  masks: HeadMask[];
+  raster: RasterPage;
+  onLineY: (y: number, x?: number) => boolean;
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  merged: Set<number>;
+  onBeamLine: (b: Rect, ext?: number) => boolean;
+  pitchGrid: (y: number, x?: number) => number | null;
+  ledger: ContourLedger;
+  noBeam: Binary;
+  masksNB: HeadMask[];
+  groups: StaffGroup[];
+  beamsThrough: (b: Rect, ext?: number) => number;
+}): {
+  headTaken: (hb: Rect) => boolean;
+  stemBeside: (b: Rect, between?: boolean) => boolean;
+  solidBar: (b: Rect) => boolean;
+} {
+  const { heads, dropHead, split, stemHeads, stacked, syms, blobs, harmonyIds, unit, masks, raster, onLineY, claimed, dictClaimed, merged, onBeamLine, pitchGrid, ledger, noBeam, masksNB, groups, beamsThrough } = c;
   // ── **被几何闸判否的块，交给页内自举的判别器再判一次** ────────────────────
   //
   // `findRasterHeads` 的尺寸 + 填充率是一把**没见过负例**的尺子：它只知道符头长什么样，
@@ -3647,7 +4318,29 @@ export async function recognizeRasterPage(
     }
     syms.push(...spotHeads);
   }
+  return { headTaken, stemBeside, solidBar };
+}
 
+/** 空心头按模板再搜 */
+function searchHollowByTemplate(c: {
+  raster: RasterPage;
+  syms: RasterSym[];
+  unit: RasterUnit;
+  groups: StaffGroup[];
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  merged: Set<number>;
+  prims: RasterPrims;
+  ledger: ContourLedger;
+  nl: Binary;
+  pitchGrid: (y: number, x?: number) => number | null;
+  inBand: (y: number, x?: number) => boolean;
+  holes: Rect[];
+  onLineOrGrid: (y: number, x?: number) => boolean;
+  onLineY: (y: number, x?: number) => boolean;
+}): void {
+  const { raster, syms, unit, groups, blobs, claimed, dictClaimed, merged, prims, ledger, nl, pitchGrid, inBand, holes, onLineOrGrid, onLineY } = c;
   // ── 空心头按模板再搜 ─────────────────────────────────────────────────────
   //
   // 低分辨率的全音符（《善牧恩慈歌》线距 11px）两路都认不出：叠成「8」字的三度
@@ -3786,7 +4479,25 @@ export async function recognizeRasterPage(
       }
     }
   }
+}
 
+/** 终止线/段落线：纵贯谱表的**实心条**补成竖段 */
+function completeFinalBars(c: {
+  unit: RasterUnit;
+  blobLabels: Int32Array;
+  nl: Binary;
+  blobs: Component[];
+  claimed: Set<number>;
+  dictClaimed: Set<number>;
+  merged: Set<number>;
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  syms: RasterSym[];
+  prims: RasterPrims;
+  ledger: ContourLedger;
+  sharpAsHeads: (ss: RasterSym[], edge: number, onStaff: (r: Rect) => boolean) => { heads: RasterSym[]; box: Rect; } | null;
+}): void {
+  const { unit, blobLabels, nl, blobs, claimed, dictClaimed, merged, groups, yAt, syms, prims, ledger, sharpAsHeads } = c;
   // ── 终止线/段落线：纵贯谱表的**实心条**补成竖段 ────────────────────────────
   //
   // 「细 + 粗」双线里那根粗线有 0.6 格宽，过不了竖段的宽度闸；紧贴着它的细线
@@ -3847,7 +4558,21 @@ export async function recognizeRasterPage(
       if (/notehead/i.test(syms[i].code) && b.x + b.w / 2 < clef.box.x + clef.box.w && b.y + b.h / 2 >= top && b.y + b.h / 2 <= bottom) syms.splice(i, 1);
     }
   }
+}
 
+/** 附点：**位置 + 形状自举**，字典兜不住 */
+function findAugDots(c: {
+  nl: Binary;
+  syms: RasterSym[];
+  unit: RasterUnit;
+  staffYs: (x: number) => number[][];
+  grid: LineGrid;
+  ledger: ContourLedger;
+  prims: RasterPrims;
+  raster: RasterPage;
+  staffGeoms: { left: number; right: number; top: number; bottom: number; topAt: (x: number) => number; bottomAt: (x: number) => number; lift: ((x: number) => number) | undefined; }[];
+}): void {
+  const { nl, syms, unit, staffYs, grid, ledger, prims, raster, staffGeoms } = c;
   // ── 附点：**位置 + 形状自举**，字典兜不住 ─────────────────────────────────
   //
   // 附点在位图路原先只靠字典认（`augmentationDot`），字典是在线距 15~19px 的合唱谱上建的：
@@ -3931,7 +4656,18 @@ export async function recognizeRasterPage(
     for (let i = syms.length - 1; i >= 0; i--)
       if ((syms[i].code === "noteheadHalf" || syms[i].code === "noteheadWhole") && isFlag(syms[i].box)) syms.splice(i, 1);
   }
+}
 
+/** 悬在两级之间的**空心头**：按相邻线的相对位置取上下两个候选，模板定夺 */
+function resolveHangingHollow(c: {
+  hollowMasks: HeadMask[];
+  unit: RasterUnit;
+  syms: RasterSym[];
+  frames: LineFrame[];
+  raster: RasterPage;
+  nl: Binary;
+}): void {
+  const { hollowMasks, unit, syms, frames, raster, nl } = c;
   // ── 悬在两级之间的**空心头**：按相邻线的相对位置取上下两个候选，模板定夺 ─────
   //
   // 头盒中心按该处实测的五线换成音级位置，离整数 `SNAP_AMBIG` 级以上的（头盒带进了圈的缺口、干根、加线），
@@ -3973,7 +4709,18 @@ export async function recognizeRasterPage(
       s0.box = moved;
     }
   }
+}
 
+/** **实心头里藏着一道斜缝的其实是空心头** */
+function slitSolidToHollow(c: {
+  unit: RasterUnit;
+  syms: RasterSym[];
+  prims: RasterPrims;
+  stemSegs: LineSeg[];
+  inkStems: LineSeg[];
+  raster: RasterPage;
+}): void {
+  const { unit, syms, prims, stemSegs, inkStems, raster } = c;
   // ── **实心头里藏着一道斜缝的其实是空心头** ───────────────────────────────
   //
   // 这套字体的二分头圈粗、内腔只是一道斜缝；骑线时谱线从缝中间横过，去谱线后缝被线残段填上，
@@ -3995,7 +4742,20 @@ export async function recognizeRasterPage(
       if (stemmed && hollowSlit(raster.bin, b, sp)) s0.code = "noteheadHalf";
     }
   }
+}
 
+/** 找不到竖段的二分头：**顺着头缘的墨柱补干** */
+function addStemsForHalfNotes(c: {
+  unit: RasterUnit;
+  syms: RasterSym[];
+  prims: RasterPrims;
+  stemSegs: LineSeg[];
+  inkStems: LineSeg[];
+  nl: Binary;
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+}): void {
+  const { unit, syms, prims, stemSegs, inkStems, nl, groups, yAt } = c;
   // **切加线要用最终认出来的全部符头**：除了 `findRasterHeads`，还有按内腔找的、
   // 拆块拆出来的、字典查出来的、碎块并回再判出来的——少算哪一路，那一路的符头
   // 就只能蹭邻居的加线，`findLegers` 判否、整批挂不上谱行。
@@ -4064,7 +4824,33 @@ export async function recognizeRasterPage(
       inkStems.push({ x0: col[2], y0: col[0], x1: col[2], y1: col[1], lw: unit.lineThick, maxLw: unit.lineThick * 2 });
     }
   }
+}
 
+/** 沿着已挂了空心头的干补和弦里漏掉的空心头（`notehead.ts::hollowHeadsAlongStems`） */
+function hollowAlongStems(c: {
+  raster: RasterPage;
+  syms: RasterSym[];
+  unit: RasterUnit;
+  staffLines: StaffLineRun[];
+  nl: Binary;
+  rawHoles: Rect[];
+  groups: StaffGroup[];
+  prims: RasterPrims;
+  stemSegs: LineSeg[];
+  inkStems: LineSeg[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  staffGeoms: { left: number; right: number; top: number; bottom: number; topAt: (x: number) => number; bottomAt: (x: number) => number; lift: ((x: number) => number) | undefined; }[];
+  ledger: ContourLedger;
+  grid: LineGrid;
+  beamsThrough: (b: Rect, ext?: number) => number;
+  stemBeside: (b: Rect, between?: boolean) => boolean;
+  solidBar: (b: Rect) => boolean;
+  pitchGrid: (y: number, x?: number) => number | null;
+  onLineY: (y: number, x?: number) => boolean;
+  headTaken: (hb: Rect) => boolean;
+  staffYs: (x: number) => number[][];
+}): void {
+  const { raster, syms, unit, staffLines, nl, rawHoles, groups, prims, stemSegs, inkStems, yAt, staffGeoms, ledger, grid, beamsThrough, stemBeside, solidBar, pitchGrid, onLineY, headTaken, staffYs } = c;
   // ── 沿着已挂了空心头的干补和弦里漏掉的空心头（`notehead.ts::hollowHeadsAlongStems`）──
   // 放在墨柱补干之后：叠头的圈把干切碎、竖段表里没有的干，要等上面补进 `inkStems` 才有（我灵镇静 m10）。
   // 模板按**此刻**认出的空心头重建（含弱头、两个就够）：早先那份样本不够时一张都没有（恩友歌第一页），
@@ -4228,6 +5014,17 @@ export async function recognizeRasterPage(
         ledger.claim(d, "dot:augmentationDot");
       }
   }
+}
+
+/** 离谱表太远、又没有加线链的符头不要 */
+function dropFarHeads(c: {
+  raster: RasterPage;
+  unit: RasterUnit;
+  syms: RasterSym[];
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+}): void {
+  const { raster, unit, syms, groups, yAt } = c;
   // ── 离谱表太远、又没有加线链的符头不要 ───────────────────────────────────
   //
   // 大字本的歌词夹在两行谱之间，字的横笔被当成加线、一笔收成符头，读成高音谱表下方的 C3、B♭2
@@ -4294,6 +5091,14 @@ export async function recognizeRasterPage(
       if (!chain) syms.splice(i, 1);
     }
   }
+}
+
+/** 同一个头被两路各认一次：只留先认的那个 */
+function dedupeHeads(c: {
+  syms: RasterSym[];
+  unit: RasterUnit;
+}): void {
+  const { syms, unit } = c;
   // ── 同一个头被两路各认一次：只留先认的那个 ─────────────────────────────────
   //
   // 按内腔找的空心头（`stacked`）不认领块，拆块、碎块并字典、判头各路在同一块上会再认一遍
@@ -4323,6 +5128,20 @@ export async function recognizeRasterPage(
       if (kept.some((k) => cx(k.box) > b.x - tol && cx(k.box) < b.x + b.w + tol && (Math.abs(cy(k.box) - (b.y + b.h)) < unit.space || Math.abs(cy(k.box) - b.y) < unit.space))) syms.splice(i, 1);
     }
   }
+}
+
+/** 头左边贴着、没认出来的临时记号：在头左侧的窗里取墨查字典 */
+function accidentalsLeftOfHeads(c: {
+  unit: RasterUnit;
+  syms: RasterSym[];
+  nl: Binary;
+  prims: RasterPrims;
+  look: RasterGlyphLookup;
+  repaired: Binary;
+  raster: RasterPage;
+  ledger: ContourLedger;
+}): void {
+  const { unit, syms, nl, prims, look, repaired, raster, ledger } = c;
   // ── 头左边贴着、没认出来的临时记号：在头左侧的窗里取墨查字典 ─────────────────
   //
   // 临时记号常与头、干、邻音粘成一块（破碎 p8 m84 C♯5：升号连着头和干成了 29×64 的一块，左竖又断成一小块），
@@ -4487,6 +5306,22 @@ export async function recognizeRasterPage(
       ledger.claim(found.box, `accprobe:${code}`);
     }
   }
+}
+
+/** 符号收尾：盖住临时记号的空心头、行中谱号只信验过的、杠端落在小节线上补干 */
+function tidySymbols(c: {
+  syms: RasterSym[];
+  midClefs: Set<RasterSym>;
+  groups: StaffGroup[];
+  yAt: (g: StaffGroup, k: number, x: number) => number;
+  unit: RasterUnit;
+  prims: RasterPrims;
+}): {
+  headBoxes: { box: Rect; }[];
+  barStems: LineSeg[];
+} {
+  const { syms, midClefs, groups, yAt, unit, prims } = c;
+  // ── 符号收尾：盖住临时记号的空心头、行中谱号只信验过的、杠端落在小节线上补干
   // **盖住一个临时记号大半的空心头**是记号的竖笔、谱线与右边的头围出的那块白（是爱 p1 m14 手写降号与 B♭4/D5 之间，
   // 凸度 0.78、过了「上下贴线的凹孔」那道），真头只挨着记号，盖不到它一半
   for (let i = syms.length - 1; i >= 0; i--) {
@@ -4533,67 +5368,31 @@ export async function recognizeRasterPage(
       else barStems.push({ x0: x, y0: q.box.y, x1: x, y1: h.box.y + h.box.h / 2, lw: unit.lineThick, maxLw: unit.lineThick });
     }
   }
+  return { headBoxes, barStems };
+}
 
-  markShapeWholes(syms, nl, prims.vSegs, unit);
-  opts.trace?.("syms", syms);
-  const pg = buildRasterPage({
-    index,
-    width: raster.bin.w,
-    height: raster.bin.h,
-    unit,
-    // **只把分好组的那些线交下去**。`findStaves` 会拿 segs 自己再分一次组，
-    // 而没进组的线里混着**通长的加线**（八度跑动共用的那条，实测宁静 p5
-    // y=1004、x[244,1906]），它会顶掉真正的第五线、把整行谱上移一条线
-    // ——那一行的音高整段低两级。分组那一步已经按「五条线左缘要一致」把它挡掉了，
-    // 这里就别再把它递下去。
-    staffLines: groups.flatMap((g) => g.lines),
-    // 符头剪出来的加线要一并推进去，`findLegers` 才有得判
-    // **没成组的那些行投影线要当加线用**，不能整个丢掉：密集八度跑动上方那一排短加线
-    // 被行投影连成一条通长的线，它不是谱线（左缘对不上，见 `groupStaves`），
-    // 但确实是加线——丢了的话上方那些符头一条加线都没有、`findLegers` 全判否，
-    // 认出来的符头一个都归不了谱行（实测宁静 p5 那七个 C6 就是这样）。
-    // 交给 `sharedLegers` 按符头切成短段，长度才过得了 `findLegers` 那道闸。
-    hSegs: [
-      ...prims.hSegs,
-      ...heads.map((h) => h.ledger).filter((l): l is NonNullable<typeof l> => !!l),
-      // **所有认出来的符头都要参与切加线**，不只 `findRasterHeads` 那一批：
-      // 按内腔找出来的（`stacked`）、拆块拆出来的（`split`）也压在加线上。
-      // 少了它们，那些头的加线是按**邻居**切的、盖不住自己，`findLegers` 就判否
-      // ——实测宁静钢琴右手 663 个带内符头只归属 574 个，差的 89 个几乎全是
-      // 谱表上方一到两格、等着加线撑的那些。
-      ...sharedLegers(prims.hSegs, headBoxes, onGrid, unit),
-      // **骑在加线上的符头，自己那条加线要补出来。**
-      // 它压在符头底下，`findPrimitives` 抽不出来（那一带的纵向游程是整个符头的高度）；
-      // `trimLedger` 只给 `findRasterHeads` 那一批补，按内腔找出来的、拆块拆出来的都没有。
-      // 于是谱表外一到两格的音「符头认出来了却挂不上谱行」——实测宁静钢琴右手
-      // 120 个未归属的头里 89 个是这一类。
-      // **要验墨**：那一带真有一条横墨才补，不然等于把 `findLegers` 那道防线拆了。
-      ...ownLegers(headBoxes, raster.bin, onGrid, unit),
-    ],
-    // 符干要**续到符头里**才与符头纵向相交（`findStems` / `buildStems` 的硬判据）。
-    // 续过的段只进 `SPage`，不回写 `prims`——`findBlobs` 那边仍按原段抹墨，
-    // 免得把符头啃掉（见 `extendVSegs` 的说明）。
-    // 被并进升降号的竖段要摘掉（留着会被当成符干或小节线）
-    vSegs: snapHeadsToStems(syms, splitSecondStems(splitVoiceStems(extendVSegs(
-      nl,
-      joinThroughBars(raster.bin, joinVSegs(nl, [...prims.vSegs.filter((v) => !usedSegs.has(v)), ...stemSegs, ...inkStems], VSEG_JOIN_DX, Math.round(unit.space * VSEG_JOIN_GAP)), staffSpans, unit.space),
-      Math.round(unit.space * 0.35),
-      staffSpans,
-      unit.lineThick,
-    ).concat(barStems), headBoxes.map((h) => h.box), unit), syms, unit), unit),
-    syms,
-    braces: findBraces(nl, prims, unit, staffLefts, leftEdges).map((c) => c.bbox),
-    sysBrackets: groupByLeftInk(raster.bin, leftEdges, unit),
-    partBrackets: findPartBrackets(raster.bin, leftEdges, unit),
-  });
-  pg.ptPerUnit = raster.imageRect.w / raster.bin.w;
-  pg.originPt = { x: raster.imageRect.x, y: raster.imageRect.y };
-  pg.sizePt = { w: raster.pageWidth, h: raster.pageHeight };
-  // 一像素合一点以上（不到 80dpi）：多半是图片封的单页 PDF（`jpegToPdf` 一像素记一点），页面尺寸不可信
-  pg.sizeKnown = pg.ptPerUnit < LOW_DPI_SCALE;
-  pg.textEm = 1 / TEXT_INK_EM;
-  pg.inkTextSize = inkTextSizeOn(raster.bin);
-  if (!findStaves(pg)) return withText(await emptyPage(pg, raster, unit));
+/** 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节 */
+async function buildPageStructure(c: {
+  pg: SPage;
+  frames: LineFrame[];
+  unit: RasterUnit;
+  raster: RasterPage;
+  nl: Binary;
+  prims: RasterPrims;
+  harmonyMasks: Rect[];
+  ledger: ContourLedger;
+  carryOf: () => Promise<PageCarry>;
+  timeCols: TimeColumn[];
+  harmonies: HarmonyToken[];
+  cmap: ContourMap;
+  jianpuBands: JianpuBand[];
+}): Promise<{
+  ctx: Map<Staff, StaffContext>;
+  carry: PageCarry;
+  clefTally: ClefTally;
+}> {
+  const { pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands } = c;
+  // ── 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节
   // 读音高按该处实测的五线、相邻两线间的相对位置（`Staff.middleStep`）
   for (const stf of pg.staves) {
     if (stf.lineYs.length !== 5) continue;
@@ -4657,6 +5456,26 @@ export async function recognizeRasterPage(
     const tag = SEG_TAGS.find((t) => sg.hasTag(t));
     if (tag) ledger.claim({ x: sg.box.left, y: sg.box.top, w: sg.box.right - sg.box.left, h: sg.box.bottom - sg.box.top }, `seg:${tag}`);
   }
+  return { ctx, carry, clefTally };
+}
+
+/** 符杠与符头：杠的层数、实心其实空心、细杠起头、贴头的四分休止、符尾盒里的头、谱表外的头按加线定音高 */
+function fixBeamsAndHeads(c: {
+  pg: SPage;
+  unit: RasterUnit;
+  onGrid: (y: number, x?: number) => boolean;
+  grid: LineGrid;
+  nl: Binary;
+  prims: RasterPrims;
+  raster: RasterPage;
+  look: RasterGlyphLookup;
+}): {
+  beams: BeamShape[];
+  stems: StemInfo[];
+  hollowish: (s0: Sym) => boolean;
+} {
+  const { pg, unit, onGrid, grid, nl, prims, raster, look } = c;
+  // ── 符杠与符头：杠的层数、实心其实空心、细杠起头、贴头的四分休止、符尾盒里的头、谱表外的头按加线定音高
   // **谱线、加线上挨着符头的薄条不算杠的层数**：线压着符头、被头的墨撑厚成三四像素，过了符杠那道闸
   //（我一生要赞美你 m5–6 第五线上的 D4，八分读成十六分）。照旧留在 `prims.beams` 里抹墨（过检的杠是承重的，
   // 直接丢掉该曲音符 −5.2），只是不交给下游数层数。真杠约半格厚、离头两三格
@@ -4958,9 +5777,23 @@ export async function recognizeRasterPage(
       if (stf.middleStep(py, hx) !== stf.middleStep(h.py, hx)) h.py = py;
     }
   }
-  opts.trace?.("context", ctx);
-  const notes = buildNotes(pg, ctx, beams, stems, hollowish);
-  opts.trace?.("notes", notes);
+  return { beams, stems, hollowish };
+}
+
+/** 音符修正：被认成音的升降号与休止、按音高配临时记号、同音、跨谱表、附点对、连音 */
+function fixNotes(c: {
+  notes: StaffNote[];
+  unit: RasterUnit;
+  raster: RasterPage;
+  pg: SPage;
+  nl: Binary;
+  ctx: Map<Staff, StaffContext>;
+  stems: StemInfo[];
+  beams: BeamShape[];
+  carry: PageCarry;
+}): void {
+  const { notes, unit, raster, pg, nl, ctx, stems, beams, carry } = c;
+  // ── 音符修正：被认成音的升降号与休止、按音高配临时记号、同音、跨谱表、附点对、连音
   // 谱表外的四分休止再验一遍「是不是升降号」：收休止那时谱表外带加线的头还没认出来，贴着头的升降号拦不住
   //（主爱说不尽歌低音谱表上方 C4 前的还原号）。右边 2.4 格内有个头、头心落在这一块的高度里（上下各容半格）的，删掉。
   for (let i = notes.length - 1; i >= 0; i--) {
@@ -5102,6 +5935,25 @@ export async function recognizeRasterPage(
   dropBorrowedBeams(pg, ctx, notes, stems, carry.carryTime, unit.space);
   findTuplets(pg, beams, stems, notes);
   tupletsByBarSum(pg, ctx, stems, notes, carry.carryTime, unit.space);
+}
+
+/** 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空 */
+function crossStaffProbes(c: {
+  masks: HeadMask[];
+  unit: RasterUnit;
+  frames: LineFrame[];
+  hollowMasks: HeadMask[];
+  notes: StaffNote[];
+  raster: RasterPage;
+  cmap: ContourMap;
+  look: RasterGlyphLookup;
+  nl: Binary;
+  pg: SPage;
+  ctx: Map<Staff, StaffContext>;
+  carry: PageCarry;
+}): void {
+  const { masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry } = c;
+  // ── 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空
   // 补漏音的探针：同系统别的行在这一拍有音、本行这里空着时，回原图在那个 x 上拿本页自举的模板找头（见 `crossalign.ts`）。
   // 阈值取本页已认出的头在自己位置上的得分（下 10% 分位）：扫描件淡印、糊团各页差得多，不设常数；
   // 样本少、糊的页下 10% 分位跌到零下（085 扬声赞美歌空心头 −0.02），再垫一道中位数的 `PROBE_MED_FRAC`
@@ -5199,9 +6051,8 @@ export async function recognizeRasterPage(
     return blobsIn(nl, Math.round(x - sp * GAP_HALF_W), Math.round(b.top - sp / 2), Math.round(x + sp * GAP_HALF_W), Math.round(b.bottom + sp / 2)).some((d) => Math.max(d.w, d.h) >= sp * GAP_INK_MIN);
   };
   fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe, gapProbe);
-
-  return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
 }
+
 /** 补漏音找头的得分下限至少是本页已认出的头中位得分的这么多（见 `headSearch`）。0.5 会挡掉扫描档一个补对的低分头（0.11，中位约 0.27）。 */
 const PROBE_MED_FRAC = 0.25;
 /** 补附点验点：点的长宽（格）上下限（见 `dotProbe`）。 */
