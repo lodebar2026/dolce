@@ -945,25 +945,81 @@ export function attachLyrics(notes: NoteLike[], lines: LyricLine[], sameCol = 0)
     const baseY = han ? line.bottom! - (line.bottom! - line.top) * HAN_BASELINE_RISE : undefined;
     const cand = notes.filter((n) => n.staff === line.staff && !n.rest && (!line.voice || (line.voice === 1) === (n.voice === 1))).sort((a, b) => a.x - b.x);
     if (!cand.length) continue;
+    // 从 `from` 起往前推到「再往前就更远」为止。**同 x 的音（两个声部叠在一起）不算「更远」**，要越过去接着找：
+    // 原来碰到距离相等就停，一行从中间起头的词（位图路从主歌行尾拆出来的副歌起句）整串卡在第一个音上
+    const nearest = (cx: number, from: number) => {
+      let ni = from;
+      for (let j = ni + 1; j < cand.length && cand[j].x - cx <= Math.abs(cand[ni].x - cx); j++)
+        if (Math.abs(cand[j].x - cx) < Math.abs(cand[ni].x - cx)) ni = j;
+      return ni;
+    };
+    // 挂完一个音节往后挪一个音。同一列（x 差不到 `sameCol`）的其余和弦成员一并跳过：一个和弦只挂一个音节。
+    // 位图路才传（0.3 个线距）：只挪一个音，下一个音节常落到同一和弦的另一个成员上，
+    // 两个音节挤在同一拍，按拍位展开从高到低排，词序就反了（信心使我得胜「they like a」读成「they a like」）
+    const after = (i: number) => {
+      while (sameCol > 0 && i + 1 < cand.length && Math.abs(cand[i + 1].x - cand[i].x) < sameCol) i++;
+      return i + 1 < cand.length ? i + 1 : i;
+    };
+    const syls = line.syllables;
+    /** 各音节挂到 `cand` 的第几个音 */
+    const at: number[] = [];
     let ni = 0;
+    for (let k = 0; k < syls.length; ) {
+      // **挤排的一串字**（相邻汉字首尾相接）：照就近挂，字格比音偏出半个音距就会跳过一个音，后面整串往后错一个
+      //（新编 f08 m5「等快乐这样」挤在一起印、整串比音偏右二三十像素，「快」的格心离后一个音更近，跳过 B4，
+      // 一直错到 m7 丢了「最」，串尾「样」被挤到下一小节、离字 95 像素）。这一串另按「首字就近、之后一字一音」挂一遍：
+      // 就近挂法有字被挤到离它超过一个字宽的音上、顺序挂法一个都没有，才用顺序挂法。
+      // 只比离散不行：两个字的串偏移总是差不多齐，两个声部错开印的音（333「主声」「耶稣」）也会被改成顺序
+      let e = k + 1;
+      while (e < syls.length && crammed(syls[e - 1], syls[e])) e++;
+      if (e - k < 2) {
+        const n = nearest(syls[k].cx, ni);
+        at.push(n);
+        ni = after(n);
+        k++;
+        continue;
+      }
+      const byNear: number[] = [];
+      for (let q = k, p = ni; q < e; q++) {
+        p = nearest(syls[q].cx, p);
+        byNear.push(p);
+        p = after(p);
+      }
+      const bySeq: number[] = [byNear[0]];
+      for (let q = k + 1; q < e; q++) {
+        const last = bySeq[bySeq.length - 1];
+        let n = after(last);
+        if (n === last) break; // 音不够了
+        // 下一列里有几个声部（x 差不到 `sameCol`）的，取离字心最近的那个，同就近挂法
+        for (let j = n + 1; j < cand.length && Math.abs(cand[j].x - cand[n].x) < sameCol; j++)
+          if (Math.abs(cand[j].x - syls[q].cx) < Math.abs(cand[n].x - syls[q].cx)) n = j;
+        bySeq.push(n);
+      }
+      /** 有字挂到了离字心超过一个字宽的音上 */
+      const strays = (idx: number[]) => idx.some((n, i) => Math.abs(syls[k + i].cx - cand[n].x) > syls[k + i].right - syls[k + i].left);
+      const use = bySeq.length === e - k && strays(byNear) && !strays(bySeq) ? bySeq : byNear;
+      at.push(...use);
+      ni = after(use[use.length - 1]);
+      k = e;
+    }
     // 上一个音节末尾带连字符 → 这一个是**词中的续段**，MusicXML 的 `syllabic`
     // 要出 `middle`/`end` 而不是 `single`（`a-bid-eth` 的中段）。
     let cont = false;
-    for (const syl of line.syllables) {
-      // 往前推到「再往前就更远」为止。**同 x 的音（两个声部叠在一起）不算「更远」**，要越过去接着找：
-      // 原来碰到距离相等就停，一行从中间起头的词（位图路从主歌行尾拆出来的副歌起句）整串卡在第一个音上
-      for (let j = ni + 1; j < cand.length && cand[j].x - syl.cx <= Math.abs(cand[ni].x - syl.cx); j++)
-        if (Math.abs(cand[j].x - syl.cx) < Math.abs(cand[ni].x - syl.cx)) ni = j;
-      const n = cand[ni];
-      (n.lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.label !== undefined ? { label: syl.label } : {}), ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}), box: { left: syl.left, right: syl.right, top: line.top, bottom: line.bottom ?? line.top + (syl.right - syl.left) } });
+    syls.forEach((syl, k) => {
+      (cand[at[k]].lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.label !== undefined ? { label: syl.label } : {}), ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}), box: { left: syl.left, right: syl.right, top: line.top, bottom: line.bottom ?? line.top + (syl.right - syl.left) } });
       cont = syl.hyphen;
-      // 同一列（x 差不到 `sameCol`）的其余和弦成员一并跳过：一个和弦只挂一个音节。
-      // 位图路才传（0.3 个线距）：只挪一个音，下一个音节常落到同一和弦的另一个成员上，
-      // 两个音节挤在同一拍，按拍位展开从高到低排，词序就反了（信心使我得胜「they like a」读成「they a like」）
-      while (sameCol > 0 && ni + 1 < cand.length && Math.abs(cand[ni + 1].x - n.x) < sameCol) ni++;
-      if (ni + 1 < cand.length) ni++;
-    }
+    });
   }
+}
+
+/** 挤排：两个相邻汉字音节之间的缝不到窄的那个字宽的这么多（f08「等快乐这样」缝 −8~11 像素、字宽五十上下） */
+const CRAMMED_GAP = 0.3;
+const HAN_RE = /[㐀-鿿]/;
+
+/** 两个相邻音节是挤排的一串：都是汉字、首尾相接 */
+function crammed(a: Syllable, b: Syllable): boolean {
+  if (!HAN_RE.test(a.text) || !HAN_RE.test(b.text)) return false;
+  return b.left - a.right < CRAMMED_GAP * Math.min(a.right - a.left, b.right - b.left);
 }
 
 /**
