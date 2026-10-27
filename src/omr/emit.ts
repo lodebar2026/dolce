@@ -5,7 +5,7 @@
 //
 // 各格式一律先转成模型（`recognizedToDoc`），再由转换目标表（`convert/targets.ts`）写成文本——
 // 与打开文件后切格式、另存为别的格式是同一张表、同一批写出端。文本谱以前另有一个直接从识别结果写的
-// emitter，已退役（`pu/topu.ts` 是唯一一份）：两份写出端的判据迟早分叉。
+// emitter，已退役（`fanqie/tofanqie.ts` 是唯一一份）：两份写出端的判据迟早分叉。
 //
 // **meta 的序号约定**：所有格式的 `JpwMeta`，`noteRanges` / `lyricRanges`
 // 一律按 `flatten(rows[].nums)` 的下标编号，由重解析写出的文本得到（`omr/meta.ts`）。
@@ -14,14 +14,14 @@ import type { JpwMeta, RecognizedScore } from "../omrkit/types";
 import type { ScoreDoc } from "../model/doc";
 import { CONVERT_TARGETS, type ConvertTarget } from "../convert/targets";
 import { recognizedToDoc } from "./todoc";
-import { metaFrom123, metaFromJcx, metaFromPu } from "./meta";
+import { metaFrom123, metaFromJcx, metaFromFanqie } from "./meta";
 
 /** 识别结果的输出格式：就是转换目标（文本谱两种方言各算一种）。 */
 export type OmrFormat = ConvertTarget;
 
 export interface EmittedScore {
   /** 产物在编辑器里按哪种源格式打开（123 另交 `App.importOmrDoc`，报它装不下的东西） */
-  kind: "123" | "abc" | "jpwabc" | "pu" | "jly" | "jcx";
+  kind: "123" | "abc" | "jpwabc" | "fanqie" | "jly" | "jcx";
   text: string;
   /** 点选映射。`.jpwabc` / ABC 没有（`null`） */
   meta: JpwMeta | null;
@@ -44,7 +44,7 @@ export const OMR_EMITTERS: readonly ScoreEmitter[] = CONVERT_TARGETS.map((t) => 
     const doc = recognizedToDoc(rec);
     const text = t.emit(doc);
     const meta = t.docFormat === "123" ? metaFrom123(text)
-      : t.id === "tomato" || t.id === "shige" ? metaFromPu(text, t.id)
+      : t.id === "tomato" || t.id === "shige" ? metaFromFanqie(text, t.id)
       : t.id === "jcx" ? metaFromJcx(text)
       : null;
     return { kind: t.docFormat, text, meta, doc };

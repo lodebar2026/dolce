@@ -2,7 +2,7 @@
 //
 //   内置主题（themes.ts）
 //     → 书样式表（歌本 .ss；成书的 BookStyle 由它算出，见 style/bookss.ts）
-//       → 曲内局部覆盖（文本谱 `FontSize:`/`Margin:` 是乘法，留在 pu 适配器里，不走深合并）
+//       → 曲内局部覆盖（文本谱 `FontSize:`/`Margin:` 是乘法，留在 fanqie 适配器里，不走深合并）
 //         → 用户面板（编辑器，localStorage）
 //
 // 没有 DOM 树，所以不做 CSS 全量选择器：规则只按上下文限定（档位 / 引擎 / 页位 / 段号）过滤。

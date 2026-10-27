@@ -1,6 +1,6 @@
 // CodeMirror 装饰的公共件。
 //
-// `.jpwabc`（editor/highlight.ts）、文本谱（pu/highlight.ts）与 123（abcfamily/highlight.ts）几套高亮各自扫描各自的文法，
+// `.jpwabc`（editor/highlight.ts）、文本谱（fanqie/highlight.ts）与 123（abcfamily/highlight.ts）几套高亮各自扫描各自的文法，
 // 但**上色的 CSS 类是同一套**（note/barline/metakey/metaval/lrc/lrcspec/comment/text/
 // slash/unknown），造 Decoration 的这一步也就完全一样。
 

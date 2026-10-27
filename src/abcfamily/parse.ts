@@ -15,7 +15,7 @@ import { applyTupletTimeMods } from "../model/tuplets";
 import { lineStarts } from "../common/lines";
 import { jumpOrnamentName } from "./jumpmarks";
 import {
-  PU_LYRIC_QUOTES,
+  FANQIE_LYRIC_QUOTES,
   isLyricCjk as isCjk,
   isLyricOpenQuote as isOpenQuote,
   isLyricTrailingPunct as isTrailingPunct,
@@ -412,7 +412,7 @@ export function parseLyricLine(
         continue;
       }
       // 后面不是汉字：引号照旧不占位；括号不能丢（往返要稳），攒着挂到下一个音节前面
-      if (!PU_LYRIC_QUOTES.includes(ch)) prefix += ch;
+      if (!FANQIE_LYRIC_QUOTES.includes(ch)) prefix += ch;
       i++;
       continue;
     }

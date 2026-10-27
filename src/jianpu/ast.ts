@@ -6,7 +6,7 @@
 // 「一条减时线 = 时值减半」直接对应；`dots` 是附点个数。转 MusicXML 时再换算成
 // divisions（见 toxml.ts）。
 
-import type { Dialect } from "../pu/dialect";
+import type { Dialect } from "../fanqie/dialect";
 import { Fraction } from "../common/fraction";
 
 export interface SourceSpan {
@@ -293,16 +293,16 @@ export interface ScorePage {
 }
 
 /** 一首曲子：自带头部与页面。有谱用整行 `-----` 分隔同一文件里的多个唱法。 */
-export interface PuSong {
+export interface FanqieSong {
   index: number;
   metadata: Metadata;
   pages: ScorePage[];
 }
 
-export interface PuDoc {
+export interface FanqieDoc {
   dialect: Dialect;
   source: string;
-  songs: PuSong[];
+  songs: FanqieSong[];
   diagnostics: Diagnostic[];
 }
 
@@ -337,7 +337,7 @@ export function* eachNoteInElements(elements: readonly MusicElement[]): Generato
 // 「哪些符号跟词」「多连音占几拍」一旦两边不同，排版上看着对、导出的就错。
 
 /** 一个声部的全部曲行（跨 system 接起来）。 */
-export function linesOfVoice(song: PuSong, voice: number): ScoreLine[] {
+export function linesOfVoice(song: FanqieSong, voice: number): ScoreLine[] {
   const out: ScoreLine[] = [];
   for (const page of song.pages) {
     for (const group of page.groups) {
@@ -348,7 +348,7 @@ export function linesOfVoice(song: PuSong, voice: number): ScoreLine[] {
 }
 
 /** 一首曲子里出现过的声部号（按首次出现排序）。一个都没有时退回 [1]。 */
-export function voiceNumbers(song: PuSong): number[] {
+export function voiceNumbers(song: FanqieSong): number[] {
   const seen: number[] = [];
   for (const page of song.pages) {
     for (const group of page.groups) {

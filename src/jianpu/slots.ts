@@ -5,7 +5,7 @@
 // 文本谱「原样」档不自动断行：一个系统就是一行，行内按符号逐个步进、记号按行内区间画。
 // 所以排版必须先把 `ScoreDoc`（声部 → 小节 → 元素，id 配对）**线性化成一行一行的符号流**——
 // 这是排版的事，不是模型的事，任何记谱排版器都要做这一步。以前这一步混在文本谱 AST 里
-// （`PuDoc` 本身就是扁平流），现在 `ScoreDoc` 是唯一语义模型，线性化规则就收在这里，**只写一次**：
+// （`FanqieDoc` 本身就是扁平流），现在 `ScoreDoc` 是唯一语义模型，线性化规则就收在这里，**只写一次**：
 //
 // - 行内顺序：夹层（`before`）→ 主音 / 承接前音的增时线 → 各增时线（带各自夹层）→ 有样式的右小节线（带夹层）→ 行末夹层；
 //   倚音折进宿主音符；左小节线不出现（它的信息由前一小节右线与房号承载）。
@@ -13,7 +13,7 @@
 // - 跨行记号按行切段（续接标记、续行 level）、房号由 `Barline.ending` 还原成行内区间、歌词按行级版式铺回。
 //
 // 视图里符号的形状沿用 `jianpu/ast.ts` 的元素类型（排版器与导出的几何代码按这些字段写成，原样复用），
-// 但**入口只收 `ScoreDoc`**。`scripts/pu-scoredoc-check.mjs` 把视图与解析器的语法树（`parsePuAst`）
+// 但**入口只收 `ScoreDoc`**。`scripts/fanqie-scoredoc-check.mjs` 把视图与解析器的语法树（`parseFanqieAst`）
 // 逐字段比对（含曲行/歌词行/文字行的原文区间，乐句重排靠它们改写原文），证明这份铺排对全语料文本谱无损。
 //
 // `dialect` 缺省填 `"shige"` 只是为了让下游取到一份印刷观感的度量（内置表 `style/books/original-shige.ss`），
@@ -23,14 +23,14 @@ import type {
   BarlineElement,
   BarlineType,
   InlineLayerElement,
-  LyricLine as PuLyricLine,
+  LyricLine as FanqieLyricLine,
   LyricSyllable,
-  Mark as PuMark,
+  Mark as FanqieMark,
   Metadata,
   MusicElement,
   NoteElement,
   Ornament,
-  PuSong,
+  FanqieSong,
   ScoreLine,
   ScorePage,
   StackedNote,
@@ -65,8 +65,8 @@ import type {
 
 const ZERO: SourceSpan = { line: 0, column: 0, offset: 0, length: 0 };
 
-/** 小节线样式 + 反复 → `PuDoc` 的 BarlineType。 */
-function puBarlineType(b: Barline): BarlineType {
+/** 小节线样式 + 反复 → `FanqieDoc` 的 BarlineType。 */
+function fanqieBarlineType(b: Barline): BarlineType {
   if (b.repeat === "forward") return "repeat-start";
   if (b.repeat === "backward") return b.alsoForward ? "repeat-both" : "repeat-end";
   switch (b.style) {
@@ -79,13 +79,13 @@ function puBarlineType(b: Barline): BarlineType {
   }
 }
 
-const puOrnaments = (os: readonly SourceOrnament[] | undefined): Ornament[] =>
+const fanqieOrnaments = (os: readonly SourceOrnament[] | undefined): Ornament[] =>
   (os ?? []).map((o) => ({ name: o.name, level: o.level, source: ZERO }));
 
 /** 和弦上的记号：有原名就照原名（文本谱来源），否则由语义投影推（123 / MusicXML 来源）。
  *  123 的记号几种记法都认（`!staccato!` `!dy!` `!顿音!`），按 `deconames.ts` 归一成字形表的短名；认不出的原样留着。 */
 function chordOrnaments(ch: Chord): Ornament[] {
-  if (ch.ornaments) return puOrnaments(ch.ornaments);
+  if (ch.ornaments) return fanqieOrnaments(ch.ornaments);
   const out: Ornament[] = [];
   const add = (name: string): void => {
     if (!out.some((o) => o.name === name)) out.push({ name, level: 0, source: ZERO });
@@ -132,7 +132,7 @@ function noteOf(ch: Chord, graceBefore: NoteElement[]): NoteElement {
   const beams = ch.beams?.length;
   const n: NoteElement = {
     kind: "note",
-    // 节奏音符在 `PuDoc` 里是 pitch 9 + sound "rhythm"（番茄写 `9`、诗歌本写 `X`）
+    // 节奏音符在 `FanqieDoc` 里是 pitch 9 + sound "rhythm"（番茄写 `9`、诗歌本写 `X`）
     pitch: (rhythm ? 9 : ch.rest ? 0 : (deg?.number ?? 0)) as NoteElement["pitch"],
     sound: rhythm ? "rhythm" : ch.rest ? "rest" : "note",
     hidden: ch.printObject === false,
@@ -175,7 +175,7 @@ function sustainOf(src: {
     kind: "sustain",
     duration: 4,
     lyricAnchor: src.lyricAnchor ?? false,
-    ornaments: puOrnaments(src.ornaments),
+    ornaments: fanqieOrnaments(src.ornaments),
     code: "-",
     source: src.source ?? ZERO,
   };
@@ -202,7 +202,7 @@ interface RowBuild {
   elements: MusicElement[];
   /** 与 `elements` 平行 */
   refs: SlotRef[];
-  /** 元素 id → 行内下标。`PuDoc` 的 Mark 用下标区间配对 */
+  /** 元素 id → 行内下标。`FanqieDoc` 的 Mark 用下标区间配对 */
   indexOf: Map<ElementId, number>;
   /** 参与对位的元素（按顺序），歌词按它铺 */
   anchors: Anchor[];
@@ -274,7 +274,7 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
       row.elements.push(innerVoiceLayer(measures.slice(mi, end + 1), marks, nextPadId));
       row.refs.push({ measure: mea });
     }
-    // **左小节线不输出为元素**：`PuDoc` 里 barline 元素就是小节分隔，行首再来一根会凭空
+    // **左小节线不输出为元素**：`FanqieDoc` 里 barline 元素就是小节分隔，行首再来一根会凭空
     // 多出一个空小节（引擎输入随即 `measure has no chord` 抛错）。
     // 它携带的信息已由「前一小节的右线」与房号的 volta mark 承载。
     let pendingGrace: NoteElement[] = [];
@@ -286,7 +286,7 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
       if (laneOf(el) !== "main") continue;
       if (el.kind === "space") {
         // `y`（无时值占位）与 `x`（不可见休止）都落成**隐藏音符**：
-        // `PuDoc` 没有无时值占位，`hidden` 的 0 是最接近的东西。
+        // `FanqieDoc` 没有无时值占位，`hidden` 的 0 是最接近的东西。
         // `y` 不参与对位（`lyricAnchor: false`），与诗歌本的 `9` 同口径。
         const n: NoteElement = {
           kind: "note",
@@ -338,7 +338,7 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
       row.refs.push({ id: ch.id, chord: ch, measure: mea });
       if (head.lyricAnchor) row.anchors.push(ch);
       if (head.kind === "note" || head.kind === "sustain") headAt.set(j, head);
-      // 增时线展开：`PuDoc` 里它们是独立元素
+      // 增时线展开：`FanqieDoc` 里它们是独立元素
       for (const su of ch.sustains ?? []) {
         pushInline(row, su.before, mea);
         row.indexOf.set(su.id, row.elements.length);
@@ -375,7 +375,7 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
     let rightEl: BarlineElement | undefined;
     if (right && right.style !== undefined) {
       pushInline(row, right.before, mea);
-      rightEl = puBar(right);
+      rightEl = fanqieBar(right);
       row.elements.push(rightEl);
       row.refs.push({ barline: right, measure: mea });
     }
@@ -396,11 +396,11 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
   return row;
 }
 
-function puBar(b: Barline): BarlineElement {
+function fanqieBar(b: Barline): BarlineElement {
   const e: BarlineElement = {
     kind: "barline",
-    type: puBarlineType(b),
-    ornaments: b.ornaments ? puOrnaments(b.ornaments) : [],
+    type: fanqieBarlineType(b),
+    ornaments: b.ornaments ? fanqieOrnaments(b.ornaments) : [],
     code: "|",
     source: b.source ?? ZERO,
   };
@@ -417,7 +417,7 @@ function puBar(b: Barline): BarlineElement {
 }
 
 /** 行内的歌词。有 `print.lyricLines`（文本谱来源）就照它的版式还原；否则按段号铺，全空的行不产生。 */
-function rowLyrics(row: RowBuild, infos: readonly LyricLineInfo[] | undefined): PuLyricLine[] {
+function rowLyrics(row: RowBuild, infos: readonly LyricLineInfo[] | undefined): FanqieLyricLine[] {
   if (infos) {
     return infos.map((info, lineIdx) => {
       const syllables: LyricSyllable[] = [];
@@ -432,7 +432,7 @@ function rowLyrics(row: RowBuild, infos: readonly LyricLineInfo[] | undefined): 
         if (hit?.trailingPunctuation) syl.trailingPunctuation = hit.trailingPunctuation;
         syllables.push(syl);
       }
-      const line: PuLyricLine = {
+      const line: FanqieLyricLine = {
         verseFrom: info.verseFrom,
         verseTo: info.verseTo,
         annotationGap: info.annotationGap,
@@ -450,7 +450,7 @@ function rowLyrics(row: RowBuild, infos: readonly LyricLineInfo[] | undefined): 
       for (let v = l.number; v <= (l.numberTo ?? l.number); v++) verses.add(v);
     }
   }
-  const out: PuLyricLine[] = [];
+  const out: FanqieLyricLine[] = [];
   for (const v of [...verses].sort((a, b) => a - b)) {
     const syllables: LyricSyllable[] = [];
     let label: string | undefined;
@@ -463,7 +463,7 @@ function rowLyrics(row: RowBuild, infos: readonly LyricLineInfo[] | undefined): 
     }
     // 全空就不产生这一行
     if (!syllables.some((s) => s.text !== "")) continue;
-    const line: PuLyricLine = { verseFrom: v, verseTo: v, annotationGap: 20, syllables, source: ZERO };
+    const line: FanqieLyricLine = { verseFrom: v, verseTo: v, annotationGap: 20, syllables, source: ZERO };
     if (label !== undefined) line.annotation = label;
     out.push(line);
   }
@@ -482,7 +482,7 @@ function stackLevel(ch: Chord, k: number): number | undefined {
 /**
  * 同一对相邻和音之间的延音线（MusicXML 一个音一条 `<tied>`、123 `[1~5]` 也是一音一条）先归组：
  * 连上了叠印里每个数字的是整和音的弧，组里只留第一条、不记 `digits`（照旧画在叠印顶上，其余记 null 不画）；
- * 只连其中几个的各记两端连的是第几层（`PuMark.digits`），简谱照它贴着那个数字画（`place/marks.ts`）。
+ * 只连其中几个的各记两端连的是第几层（`FanqieMark.digits`），简谱照它贴着那个数字画（`place/marks.ts`）。
  */
 function chordTieDigits(marks: readonly Mark[], chordOf: (id: ElementId) => Chord | undefined): Map<Mark, [number, number] | null> {
   const out = new Map<Mark, [number, number] | null>();
@@ -506,7 +506,7 @@ function chordTieDigits(marks: readonly Mark[], chordOf: (id: ElementId) => Chor
 
 /** Mark：id 配对 → 第 `rowIdx` 行的下标区间。跨行的截断在行边界、打上续接标记，
  *  续行那一段的 level 取 `continuationLevels`。 */
-function segmentMarks(marks: readonly Mark[], rows: readonly RowBuild[], rowIdx: number): PuMark[] {
+function segmentMarks(marks: readonly Mark[], rows: readonly RowBuild[], rowIdx: number): FanqieMark[] {
   const row = rows[rowIdx]!;
   const rowOf = (id: ElementId): number => rows.findIndex((r) => r.indexOf.has(id));
   const chordOf = (id: ElementId): Chord | undefined => {
@@ -514,12 +514,12 @@ function segmentMarks(marks: readonly Mark[], rows: readonly RowBuild[], rowIdx:
     return r?.refs[r.indexOf.get(id)!]?.chord;
   };
   const digitsOf = chordTieDigits(marks, chordOf);
-  const out: PuMark[] = [];
+  const out: FanqieMark[] = [];
   for (const m of marks) {
     const digits = digitsOf.get(m);
     if (digits === null) continue;
     // tie 在简谱里与圆滑线同形，归 slur；pedal/octaveShift/lyricExtend 没有对应物
-    const type: PuMark["type"] | null =
+    const type: FanqieMark["type"] | null =
       m.type === "slur" || m.type === "tied" ? "slur"
         : m.type === "tuplet" ? "tuplet"
           : m.type === "wedge" ? (m.wedgeType === "diminuendo" ? "decrescendo" : "crescendo")
@@ -546,7 +546,7 @@ function segmentMarks(marks: readonly Mark[], rows: readonly RowBuild[], rowIdx:
       continue;
     }
     const seg = (startRow >= 0 ? rowIdx - startRow : 0) + (m.leadInPreviousLine ? 1 : 0);
-    const pm: PuMark = {
+    const pm: FanqieMark = {
       type,
       start: a !== undefined ? a - (m.startLead ?? 0) : 0,
       end: b !== undefined ? b + (m.endTrail ?? 0) : Math.max(0, row.elements.length - 1),
@@ -615,9 +615,9 @@ function directionWedgeMarks(rows: readonly RowBuild[]): Mark[] {
 const captionOfEnding = (e: NonNullable<Barline["ending"]>): string | undefined =>
   e.captionless ? undefined : (e.text ?? e.numbers.join("."));
 
-/** 房号：`Barline.ending` → Mark volta（`PuDoc` 的排版器靠它画跳房子）。跨行的拆成各行一段。 */
-function rowVoltas(measuresByRow: readonly (readonly Measure[])[], rows: readonly RowBuild[]): PuMark[][] {
-  const out: PuMark[][] = rows.map(() => []);
+/** 房号：`Barline.ending` → Mark volta（`FanqieDoc` 的排版器靠它画跳房子）。跨行的拆成各行一段。 */
+function rowVoltas(measuresByRow: readonly (readonly Measure[])[], rows: readonly RowBuild[]): FanqieMark[][] {
+  const out: FanqieMark[][] = rows.map(() => []);
   interface Open {
     ending: NonNullable<Barline["ending"]>;
     startRow: number;
@@ -630,8 +630,8 @@ function rowVoltas(measuresByRow: readonly (readonly Measure[])[], rows: readonl
     const seg = r - o.startRow;
     return seg === 0 ? (o.ending.level ?? 0) : (o.ending.continuationLevels?.[seg - 1] ?? 0);
   };
-  const mark = (o: Open, r: number, end: number): PuMark => {
-    const pm: PuMark = { type: "volta", start: o.start, end, level: levelOf(o, r), source: ZERO };
+  const mark = (o: Open, r: number, end: number): FanqieMark => {
+    const pm: FanqieMark = { type: "volta", start: o.start, end, level: levelOf(o, r), source: ZERO };
     const caption = captionOfEnding(o.ending);
     if (caption !== undefined) pm.caption = caption;
     if (o.fromPrev) pm.continuationFromPrevious = true;
@@ -647,14 +647,14 @@ function rowVoltas(measuresByRow: readonly (readonly Measure[])[], rows: readonl
         const e = b.ending;
         const caption = captionOfEnding(e);
         if (e.collapsed) {
-          const pm: PuMark = { type: "volta", start: span.first, end: span.first - 1, level: e.level ?? 0, source: ZERO };
+          const pm: FanqieMark = { type: "volta", start: span.first, end: span.first - 1, level: e.level ?? 0, source: ZERO };
           if (caption !== undefined) pm.caption = caption;
           out[r]!.push(pm);
           continue;
         }
         if (e.leadInPreviousLine && r > 0) {
           const prev = rows[r - 1]!;
-          const pm: PuMark = {
+          const pm: FanqieMark = {
             type: "volta", start: prev.elements.length, end: Math.max(0, prev.elements.length - 1),
             level: e.level ?? 0, source: ZERO, continuationToNext: true,
           };
@@ -667,7 +667,7 @@ function rowVoltas(measuresByRow: readonly (readonly Measure[])[], rows: readonl
       }
       for (const right of mea.barlines ?? []) {
         if (right.location === "right" && right.ending?.danglingLead) {
-          const pm: PuMark = {
+          const pm: FanqieMark = {
             type: "volta", start: row.elements.length, end: Math.max(0, row.elements.length - 1),
             level: right.ending.level ?? 0, source: ZERO, continuationToNext: true,
           };
@@ -843,7 +843,7 @@ export interface PageView extends ScorePage {
   groups: SystemView[];
 }
 
-export interface SongView extends PuSong {
+export interface SongView extends FanqieSong {
   song: Song;
   pages: PageView[];
 }
@@ -876,13 +876,13 @@ function keyChangeLabels(song: Song, part: Part): Map<Measure, string> {
 }
 
 /** 连音：`Chord.duration.timeMod` → Mark tuplet。
- *  `PuDoc` 靠它画连音括号、`jianpuinput` 靠它置 `tupletBegin`（写出端才能写 `n[ … ]`）。
- *  ⚠ jly 这条路把连音记在 **`duration.timeMod`** 上，而 123/ABC 的解析器是**同时**写 pu 标记的
+ *  `FanqieDoc` 靠它画连音括号、`jianpuinput` 靠它置 `tupletBegin`（写出端才能写 `n[ … ]`）。
+ *  ⚠ jly 这条路把连音记在 **`duration.timeMod`** 上，而 123/ABC 的解析器是**同时**写 fanqie 标记的
  *  （见 `parse.ts:533/537`）。以前没人把 `timeMod` 翻成标记，于是整条链都看不到连音 ——
  *  实测写出端连 `3[` 都写不出来、`5[ 1 1 1 1 1 ]` 重出成 `1 1 1 1 1`（上游 review 第 9 条）。
  *  连续一串带同一个 `timeMod` 的和弦算一组（跨行的组按行拆成多段，与房号同一处理）。 */
-function rowTuplets(measuresByRow: readonly (readonly Measure[])[], rows: readonly RowBuild[]): PuMark[][] {
-  const out: PuMark[][] = rows.map(() => []);
+function rowTuplets(measuresByRow: readonly (readonly Measure[])[], rows: readonly RowBuild[]): FanqieMark[][] {
+  const out: FanqieMark[][] = rows.map(() => []);
   measuresByRow.forEach((measures, r) => {
     const row = rows[r]!;
     let open: number | null = null;
@@ -905,7 +905,7 @@ function rowTuplets(measuresByRow: readonly (readonly Measure[])[], rows: readon
   return out;
 }
 
-function toPuSong(song: Song, index: number, rawLines: readonly string[], handPages: boolean, printTempo: boolean): SongView {
+function toFanqieSong(song: Song, index: number, rawLines: readonly string[], handPages: boolean, printTempo: boolean): SongView {
   const perPart = song.parts.map((p) => splitSystems(p));
   /** 文本谱来源：一组不一定含全部声部，按 `print.system` 对回同一组；其余按行序号 */
   const bySystem = perPart.some((rows) => rows.some((r) => r.system !== undefined));
@@ -992,13 +992,13 @@ export function docView(doc: ScoreDoc): DocView {
   const hit = views.get(doc);
   if (hit) return hit;
   // 行的 `raw`：文本谱来源按 `Print.source` 的行号取原文（乐句重排改写原文要它）
-  const rawLines = doc.source && doc.sourceFormat === "pu" ? doc.source.split(/\r?\n/) : [];
+  const rawLines = doc.source && doc.sourceFormat === "fanqie" ? doc.source.split(/\r?\n/) : [];
   const view: DocView = {
     doc,
     // MusicXML 读进来的先投成简谱形状（长音拆增时线、减时线按 `<type>` 算、和弦补原文）
-    songs: doc.songs.map((s, i) => toPuSong(compressMultiRests(projectForJianpu(s)), i, rawLines, doc.sourceFormat === "123" || doc.sourceFormat === "abc",
+    songs: doc.songs.map((s, i) => toFanqieSong(compressMultiRests(projectForJianpu(s)), i, rawLines, doc.sourceFormat === "123" || doc.sourceFormat === "abc",
       // 速度数字只给 123 / ABC / MusicXML 这类来源印；文本谱的 `J:`、JP-Word 的 `Expression` 原样档本来不印
-      doc.sourceFormat !== "pu" && doc.sourceFormat !== "jpwabc")),
+      doc.sourceFormat !== "fanqie" && doc.sourceFormat !== "jpwabc")),
     idOf: new Map(),
     elementOf: new Map(),
     syllableOwner: new Map(),
@@ -1014,7 +1014,7 @@ export function docView(doc: ScoreDoc): DocView {
           row.elements.forEach((el, i) => {
             const ref = row.refs[i]!;
             const label = labels.get(ref.measure);
-            // 转调全曲同步（`frompu.ts` 补齐了各声部），标签只印在一组的第一个声部上
+            // 转调全曲同步（`fromfanqie.ts` 补齐了各声部），标签只印在一组的第一个声部上
             if (label !== undefined && row === g.voices[0] && el.kind === "note" && ref.chord && !labelled.has(ref.measure)) {
               labelled.add(ref.measure);
               el.keyLabel = label;

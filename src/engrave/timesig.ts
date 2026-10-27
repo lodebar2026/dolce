@@ -6,7 +6,7 @@ import type { Font } from "../pagetree/font";
 /**
  * 分数式拍号的取尺。**一切长度都是小节线高度 H 的比例**——原先三条路各按自己的字号
  * 或 musicpp 的 staff space 常量给（layout `numberSize*0.625`、mixed `sc*(40+dy)`、
- * pu `font.size*0.62`），换个字号三处就各走各的。以 H 为基准，拍号与小节线自然等高对齐。
+ * fanqie `font.size*0.62`），换个字号三处就各走各的。以 H 为基准，拍号与小节线自然等高对齐。
  *
  * 默认比例照 layout 原来的观感反算（H = numberSize·4/3，故 `numberSize = H·0.75`）：
  *   字号 numberSize·0.75 = H·0.5625、上数字 −numberSize·0.1 = −H·0.075、

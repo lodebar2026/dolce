@@ -24,7 +24,7 @@ export type { ImageDecoder, RgbaImage } from "../omrkit/decode";
 export { recognizedToDoc } from "../omr/todoc";
 export { recognizedBeatIssues } from "../omr/beats";
 export type { RecognizedBeatIssue } from "../omr/beats";
-export { metaFrom123, metaFromPu } from "../omr/meta";
+export { metaFrom123, metaFromFanqie } from "../omr/meta";
 export type { RecognizedScore, Binary, LyricCheck, LyricCheckItem } from "../omrkit/types";
 export { parseRefLyrics, formatLyricCheckItem } from "../omr/reflyrics";
 
@@ -44,7 +44,7 @@ export function decodeLyricsBytes(b: Uint8Array): string {
 export interface RecognizeResult {
   /** 输出原文（123、.jpwabc、ABC 或文本谱原文）。 */
   text: string;
-  /** 产物按哪种源格式打开：`123` / `jpwabc` / `abc` / `pu`（文本谱）。 */
+  /** 产物按哪种源格式打开：`123` / `jpwabc` / `abc` / `fanqie`（文本谱）。 */
   kind: EmittedScore["kind"];
   format: OmrFormat;
   /** 识别中间产物，回归脚本要拿它算指标。 */

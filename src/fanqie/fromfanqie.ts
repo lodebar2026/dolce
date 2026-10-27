@@ -1,32 +1,32 @@
-// `PuDoc` → `ScoreDoc`：文本谱进语义模型的**唯一入口**（`pu/parse.ts::parsePu` 调它，语法树不出解析器）。
+// `FanqieDoc` → `ScoreDoc`：文本谱进语义模型的**唯一入口**（`fanqie/parse.ts::parseFanqie` 调它，语法树不出解析器）。
 //
 // ## 判据：无损
 //
 // 文本谱的排版、导出、试听、双向定位、乐句重排都只吃 `ScoreDoc`，
 // 所以这里转过去的东西必须**足以原样还原出那棵树**——少一样，排版就少画一样；原文区间少一样，重排就切不准。
-// 回归是 `scripts/pu-scoredoc-check.mjs`：树 → `ScoreDoc` → 排版行视图 逐字段比对，差异为 0。
+// 回归是 `scripts/fanqie-scoredoc-check.mjs`：树 → `ScoreDoc` → 排版行视图 逐字段比对，差异为 0。
 // 文本谱特有、MusicXML 装不下的东西（记号原名与 level、`~`/`^`、临时伴奏层、行级歌词版式）
 // 放在 `doc.ts` 里标明来源的字段上，语义那一侧（`notations` / `Barline.ending` / `Mark`）照常填。
 //
 // ## 结构差异
 //
-// `PuDoc` 是**扁平元素流 + 下标区间配对**，`ScoreDoc` 是**小节层级 + id 配对**。
+// `FanqieDoc` 是**扁平元素流 + 下标区间配对**，`ScoreDoc` 是**小节层级 + id 配对**。
 // 先按 barline 切小节，同时建「下标 → 元素 id」的映射，再把 Mark 的下标区间翻成 id。
 // **映射一次建好，不要边转边算**。
 //
-// 行结构：`PuDoc` 的一个 `VoiceGroup` 是一个系统。每个声部在该组那一行的**首小节**上
+// 行结构：`FanqieDoc` 的一个 `VoiceGroup` 是一个系统。每个声部在该组那一行的**首小节**上
 // 挂 `print.newSystem` + `print.system`（组序号）——一组不一定含全部声部，靠组序号对回去。
 
 import { applyTupletTimeMods } from "../model/tuplets";
 import { axisOfSong } from "../model/timeaxis";
 import type {
   BarlineElement,
-  LyricLine as PuLyricLine,
-  Mark as PuMark,
+  LyricLine as FanqieLyricLine,
+  Mark as FanqieMark,
   MusicElement,
   NoteElement,
   Ornament,
-  PuDoc,
+  FanqieDoc,
   ScoreLine,
   SustainElement,
 } from "../jianpu/ast";
@@ -54,8 +54,8 @@ import { IdGen, emptyDoc, emptySong } from "../model/helpers";
 import { creatorOf } from "../model/metakeys";
 import { keyOfDegree, songFifths } from "../model/keyshift";
 
-/** `PuDoc` 的 BarlineType → `ScoreDoc` 的 bar-style + repeat。 */
-function fromPuBarline(el: BarlineElement): Barline {
+/** `FanqieDoc` 的 BarlineType → `ScoreDoc` 的 bar-style + repeat。 */
+function fromFanqieBarline(el: BarlineElement): Barline {
   const b: Barline = { location: "right" };
   switch (el.type) {
     case "end": b.style = "light-heavy"; break;
@@ -145,13 +145,13 @@ function chordOfNote(n: NoteElement, voice: number, ids: IdGen, grace: Chord["gr
     if (n.accidental) note.degree.accidental = n.accidental;
     ch.notes.push(note as Chord["notes"][number]);
   }
-  // 隐藏音符：`PuDoc` 用 hidden 标记，`ScoreDoc` 用 printObject=false（123 写 `x`）
+  // 隐藏音符：`FanqieDoc` 用 hidden 标记，`ScoreDoc` 用 printObject=false（123 写 `x`）
   if (n.hidden) ch.printObject = false;
   // 对位缺省是「非休止」（`doc.ts::Chord.lyricAnchor`），只记例外；倚音一律记（123 的倚音缺省不对位）
   if (grace || n.lyricAnchor !== (n.pitch !== 0 || n.sound === "rhythm")) ch.lyricAnchor = n.lyricAnchor;
   if (beams > 0) ch.beams = Array.from({ length: beams }, () => "continue" as BeamVal);
   if (n.chord !== undefined) ch.harmony = harmonyOf(n.chord);
-  // `"(副歌)"` 这类音符上方的注记：`PuDoc` 存 `annotation`，模型里归 `sectionWord`
+  // `"(副歌)"` 这类音符上方的注记：`FanqieDoc` 存 `annotation`，模型里归 `sectionWord`
   if (n.annotation !== undefined) ch.sectionWord = n.annotation;
   if (n.ornaments.length) {
     ch.ornaments = ornamentsOf(n.ornaments);
@@ -227,7 +227,7 @@ function convertLine(
     const el: MusicElement = elements[i]!;
     switch (el.kind) {
       case "barline": {
-        const b = fromPuBarline(el);
+        const b = fromFanqieBarline(el);
         takePending(b);
         measureAt.set(i, measures.length);
         flush(b, el.temporaryKey);
@@ -283,7 +283,7 @@ function convertLine(
 
       case "note": {
         const n = el;
-        // 倚音：`PuDoc` 挂在主音符上，`ScoreDoc` 是独立的 grace 元素，前倚音在主音之前、后倚音在之后
+        // 倚音：`FanqieDoc` 挂在主音符上，`ScoreDoc` 是独立的 grace 元素，前倚音在主音之前、后倚音在之后
         for (const g of n.graceBefore) mea.elements.push(chordOfNote(g, voice, ids, {}));
         const ch = chordOfNote(n, voice, ids, undefined);
         takePending(ch);
@@ -306,7 +306,7 @@ function convertLine(
         const sub = convertLine(el.elements, voice, ids, 1, { last: null, home: carry.home });
         const marks: Mark[] = [];
         convertMarks(el.marks, sub, marks, { pending: new Map() }, sub.measures);
-        applyTupletTimeMods(marks, sub.measures.flatMap((m) => m.elements), puTupletRatio);
+        applyTupletTimeMods(marks, sub.measures.flatMap((m) => m.elements), fanqieTupletRatio);
         pending.push({ kind: "layer", role: el.role, measures: sub.measures, marks, source: el.source });
         break;
       }
@@ -328,10 +328,10 @@ function convertLine(
   return { measures, idAt, measureAt, anchors, length: elements.length };
 }
 
-/** 歌词铺回音符：`PuDoc` 按行存音节序列，`ScoreDoc` 挂在元素上；行这一级的版式记进 `print.lyricLines`。 */
-function attachLyrics(anchors: readonly (Chord | Sustain)[], lyrics: readonly PuLyricLine[]): LyricLineInfo[] {
+/** 歌词铺回音符：`FanqieDoc` 按行存音节序列，`ScoreDoc` 挂在元素上；行这一级的版式记进 `print.lyricLines`。 */
+function attachLyrics(anchors: readonly (Chord | Sustain)[], lyrics: readonly FanqieLyricLine[]): LyricLineInfo[] {
   const infos: LyricLineInfo[] = [];
-  const rangeKey = (l: PuLyricLine): string => `${l.verseFrom}-${l.verseTo}`;
+  const rangeKey = (l: FanqieLyricLine): string => `${l.verseFrom}-${l.verseTo}`;
   const dup = new Set<string>();
   const seen = new Set<string>();
   for (const l of lyrics) (seen.has(rangeKey(l)) ? dup : seen).add(rangeKey(l));
@@ -369,11 +369,11 @@ function attachLyrics(anchors: readonly (Chord | Sustain)[], lyrics: readonly Pu
   return infos;
 }
 
-/** 跨行记号的待合并状态。`PuDoc` 把一条跨行弧拆成两条（各带 continuation 标记），
+/** 跨行记号的待合并状态。`FanqieDoc` 把一条跨行弧拆成两条（各带 continuation 标记），
  *  而 123 里跨行弧就是**一对 `(` `)`**（中间夹着 `$` 换行），所以要合回一条——
  *  不合的话 emit 会在续接行的行首多写一个 `(`，往返就错层。 */
 interface CrossState {
-  /** 按类型排队。**不能用 level 当 key**——`PuDoc` 跨行时会给续接那条重新编 level
+  /** 按类型排队。**不能用 level 当 key**——`FanqieDoc` 跨行时会给续接那条重新编 level
    *  （见过 3 → 1），拿 level 配对永远配不上。同类多条就按先后顺序配。 */
   pending: Map<string, Mark[]>;
 }
@@ -385,12 +385,12 @@ interface OpenVolta {
   lead?: { caption: string; level: number; placeholder: { mea: Measure; bar: Barline } };
 }
 
-/** 文本谱多连音的比例：写了显示数字照数字，没写按组内符号数 n；一律占 n−1 个（`topu.ts::planArcs` 同一口径） */
-const puTupletRatio = (mk: Mark, n: number) => ({ actual: mk.tupletActual ?? n, normal: (mk.tupletActual ?? n) - 1 });
+/** 文本谱多连音的比例：写了显示数字照数字，没写按组内符号数 n；一律占 n−1 个（`tofanqie.ts::planArcs` 同一口径） */
+const fanqieTupletRatio = (mk: Mark, n: number) => ({ actual: mk.tupletActual ?? n, normal: (mk.tupletActual ?? n) - 1 });
 
 /** Mark：下标区间 → id 配对。房号另走 `applyVolta`（`ScoreDoc` 里是 `Barline.ending`）。 */
 function convertMarks(
-  marks: readonly PuMark[],
+  marks: readonly FanqieMark[],
   r: LineResult,
   out: Mark[],
   cross: CrossState,
@@ -524,8 +524,8 @@ function nearestMeasure(r: LineResult, from: number, dir: 1 | -1): number | unde
 
 let voltaPair = 0;
 
-/** 房号：`PuDoc` 的 volta Mark → 起止小节的 `Barline.ending`。跨行的合成一个 start…stop。 */
-function applyVolta(r: LineResult, m: PuMark, measures: Measure[], voltas: { open: OpenVolta[] }): void {
+/** 房号：`FanqieDoc` 的 volta Mark → 起止小节的 `Barline.ending`。跨行的合成一个 start…stop。 */
+function applyVolta(r: LineResult, m: FanqieMark, measures: Measure[], voltas: { open: OpenVolta[] }): void {
   const caption = m.caption ?? "1";
   const stopType = m.openEnd ? ("discontinue" as const) : ("stop" as const);
 
@@ -635,15 +635,15 @@ function markPlaceholders(song: Song): void {
   }
 }
 
-/** `PuDoc` → `ScoreDoc`。一首 `PuSong` 对一首 `Song`。 */
-export function puToScoreDoc(pu: PuDoc): ScoreDoc {
-  const doc: ScoreDoc = emptyDoc("pu");
-  doc.puDialect = pu.dialect;
-  doc.source = pu.source;
-  doc.diagnostics = [...pu.diagnostics];
+/** `FanqieDoc` → `ScoreDoc`。一首 `FanqieSong` 对一首 `Song`。 */
+export function fanqieToScoreDoc(fanqie: FanqieDoc): ScoreDoc {
+  const doc: ScoreDoc = emptyDoc("fanqie");
+  doc.fanqieDialect = fanqie.dialect;
+  doc.source = fanqie.source;
+  doc.diagnostics = [...fanqie.diagnostics];
   const ids = new IdGen();
 
-  for (const ps of pu.songs) {
+  for (const ps of fanqie.songs) {
     const song: Song = emptySong();
     const meta = ps.metadata;
     if (meta.titles[0] !== undefined) song.work.title = meta.titles[0];
@@ -763,7 +763,7 @@ export function puToScoreDoc(pu: PuDoc): ScoreDoc {
     }
     song.marks = marks;
     // 多连音组内各音的 `timeMod`：与 123 同一份（model/tuplets.ts）。文本谱的组没写数字时 n 个符号占 n−1 个
-    for (const part of song.parts) applyTupletTimeMods(marks, part.measures.flatMap((m) => m.elements), puTupletRatio);
+    for (const part of song.parts) applyTupletTimeMods(marks, part.measures.flatMap((m) => m.elements), fanqieTupletRatio);
     markPlaceholders(song);
     doc.songs.push(song);
   }

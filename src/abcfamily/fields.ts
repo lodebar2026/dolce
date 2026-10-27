@@ -4,7 +4,7 @@
 // §9（`I:linebreak`）、§10（`I:style`）。
 //
 // **字段名一律归一成 ASCII 规范形**再往下走——中文别名只是入口，不进模型。
-// 这与 `pu/dialect.ts` 的取向一致：差异收在一张表里，不在下游写 if。
+// 这与 `fanqie/dialect.ts` 的取向一致：差异收在一张表里，不在下游写 if。
 
 import type { Clef, Diagnostic, Key, PlayPass, SourceSpan, Time } from "../model/doc";
 import { clefFromName } from "../model/jianpu";

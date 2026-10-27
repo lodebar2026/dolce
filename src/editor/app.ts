@@ -4,7 +4,7 @@
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { Compartment, EditorState, MapMode, Prec } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { sniffDialect, type Dialect } from "../pu";
+import { sniffDialect, type Dialect } from "../fanqie";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { applyBreaks } from "../model/breaks";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
@@ -21,7 +21,7 @@ import type { JpwMeta, JpwRange } from "../omrkit/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";
-import { is123File, isJcxFile, isJlyFile, isProjectFile, isPuFile } from "../common/filetypes";
+import { is123File, isJcxFile, isJlyFile, isProjectFile, isFanqieFile } from "../common/filetypes";
 import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost, type ScoreDocAdapter } from "./formats";
 import type { SyncIndex, SyncEntry } from "./sync";
@@ -88,8 +88,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 最近一次排版用的 `.Layout` 分页描述（导出 PPTX 按展开档另排一遍时要用同一份）。 */
   private _breakDesc: string | null = null;
   /** 已解析出的文本谱方言，用于代码区标签（解析前未知）。 */
-  private _puDialect: Dialect | null = null;
-  /** 上次解析结果的缓存（同一份文本不重复解析）。文本谱的乐句重排也读它（原文区间在模型上，`pu/relayout.ts`）。 */
+  private _fanqieDialect: Dialect | null = null;
+  /** 上次解析结果的缓存（同一份文本不重复解析）。文本谱的乐句重排也读它（原文区间在模型上，`fanqie/relayout.ts`）。 */
   private _scoreDoc: { text: string; doc: ScoreDoc } | null = null;
   private _highlightCompartment = new Compartment();
 
@@ -423,7 +423,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         req = this.expandedRequest();
       } else {
         const doc = this.currentScoreDoc();
-        if (!doc || this.docFormat === "pu" || this.docFormat === "musicxml" || !singleVoice(doc)) return null;
+        if (!doc || this.docFormat === "fanqie" || this.docFormat === "musicxml" || !singleVoice(doc)) return null;
         req = { view: "original", doc, style: this.style.styleOf("original") };
       }
       if (!req) return null;
@@ -525,7 +525,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._scoreDoc = { text, doc };
     this._syncPhraseBase(text);
     // 只有文本谱的解析带方言（代码区标签要它），别的格式归 null
-    this._puDialect = (doc.puDialect ?? (adapter.id === "pu" ? "tomato" : null)) as Dialect | null;
+    this._fanqieDialect = (doc.fanqieDialect ?? (adapter.id === "fanqie" ? "tomato" : null)) as Dialect | null;
     this._syncFormatLabel();
     if (!this._layoutScoreDoc(doc, what)) return false;
     // 解析告警不拦排版，但要让用户看得见（谱面往往仍然是对的）
@@ -823,13 +823,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   // ---------------- FormatHost ----------------
   /** FormatHost：文本谱方言短名，供代码区标签用。 */
-  get puDialectName(): string | null {
-    return this._puDialect === null ? null : t(`fmt.short.${this._puDialect}`);
+  get fanqieDialectName(): string | null {
+    return this._fanqieDialect === null ? null : t(`fmt.short.${this._fanqieDialect}`);
   }
 
   /** 当前文本谱的方言（非文本谱为 null）。 */
-  get puDialect(): Dialect | null {
-    return this.docFormat === "pu" ? this._puDialect : null;
+  get fanqieDialect(): Dialect | null {
+    return this.docFormat === "fanqie" ? this._fanqieDialect : null;
   }
 
   /** FormatHost：谱面排版器认得的标题。 */
@@ -849,7 +849,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       // 乐句重排各格式各有写回原文的办法（`formats.ts::relayoutText`），可用性由各自的 reload 定。
       this._disablePhrase();
     } else {
-      this._puDialect = null;
+      this._fanqieDialect = null;
       this._scoreDoc = null;
       }
     // 没有代码区的格式（`.musicxml`）把代码区收起来
@@ -1293,7 +1293,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _originFormat(): OriginFormat | null {
     switch (this.docFormat) {
       case "musicxml": return "musicxml";
-      case "pu": return this._puDialect ?? sniffDialect(this.getText()).dialect;
+      case "fanqie": return this._fanqieDialect ?? sniffDialect(this.getText()).dialect;
       default: return this.docFormat;
     }
   }
@@ -1330,17 +1330,17 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       return;
     }
     // 文本谱（番茄 / 诗歌本）：原文就是源格式，直接进编辑器，不做任何转换。
-    if (isPuFile(name)) {
-      const puText = formatOf("pu").decode(bytes);
-      const sniffed = sniffDialect(puText);
+    if (isFanqieFile(name)) {
+      const fanqieText = formatOf("fanqie").decode(bytes);
+      const sniffed = sniffDialect(fanqieText);
       if (sniffed.dialect === null) {
         // `.txt` 太泛，认不出宁可不动——硬解只会得到一首乱谱
-        this.setStatus(t("status.notPu", { reason: sniffed.reason }));
+        this.setStatus(t("status.notFanqie", { reason: sniffed.reason }));
         return;
       }
       this.mixed._dropMixedDoc();
-      this._setDocFormat("pu");
-      this.setText(puText);
+      this._setDocFormat("fanqie");
+      this.setText(fanqieText);
       return;
     }
     if (/\.(xml|musicxml)$/i.test(name)) {
@@ -1447,7 +1447,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (!ok) return;
     // 损失框里可能改用了建议的格式
     const now: DocFormatId = this.docFormat as DocFormatId; // switchTo 之后已不是 musicxml（TS 还按上面的判断收窄着）
-    if (now !== "jpwabc" && now !== "pu") return;
+    if (now !== "jpwabc" && now !== "fanqie") return;
     if (page && isPaper(page.paper)) {
       const choice: PaperChoice = { paper: page.paper!, orientation: page.orientation ?? "portrait", margin: pageMargins(page) ?? null };
       this.style.setPaper("jianpu", choice);
@@ -1565,7 +1565,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (!relayout) return;
     try {
       let overflow: BarsOverflow | null = null;
-      const measure = this._puPhraseMeasure();
+      const measure = this._fanqiePhraseMeasure();
       const out = relayout(base, mode === "phrase"
         ? { kind: "phrase", measure }
         : { kind: "bars", n: bars, measure, onOverflow: (at) => { overflow ??= at; } });
@@ -1605,7 +1605,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    * 原样档的尺子**只判放不放得下**（`noPairs`）：要的是一句一行，印刷原版就这样；让它并两句的话
    * 会以为「两句并一行还宽绰」，73《我主耶稣是生命源》一行排了 8 小节。多声部的原样档不给尺子（文本谱多声部不重断）。
    */
-  private _puPhraseMeasure(): FitMeasure | null {
+  private _fanqiePhraseMeasure(): FitMeasure | null {
     const view = this.layoutMode;
     if (view === "original") {
       const doc = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
@@ -2003,7 +2003,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    *  写在一份克隆上（`breaks.ts::applyBreaks`）；走原样文档布局、量不出来的照源文的行。 */
   convertTo(target: ConvertTarget): string | null {
     const spec = targetSpec(target);
-    if (spec.docFormat === this.docFormat && (spec.docFormat !== "pu" || this.puDialect === target)) return this.getText();
+    if (spec.docFormat === this.docFormat && (spec.docFormat !== "fanqie" || this.fanqieDialect === target)) return this.getText();
     // `.jpwabc` 用排版器那份模型，行首音的 id 才对得上（同 `export.ts::sourceMusicXmlBare`）
     let doc = (this.docFormat === "jpwabc" ? this.jpwDoc : null) ?? this.scoreDoc();
     if (!doc) return null;

@@ -44,7 +44,7 @@ export interface PlacedMark {
   /** 左端续自上一行 / 右端续到下一行（弧线与跳房子支持跨行） */
   openLeft: boolean;
   openRight: boolean;
-  /** 两端实际落在哪两个符号上。`PuMark.start/end` 是**行内下标**不是元素 id，
+  /** 两端实际落在哪两个符号上。`FanqieMark.start/end` 是**行内下标**不是元素 id，
    *  可视化编辑要按元素 id 认这条弧，只能从这里取（`DocView.idOf`）。排版不读。 */
   startEl?: MusicElement;
   endEl?: MusicElement;

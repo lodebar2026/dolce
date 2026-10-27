@@ -740,7 +740,7 @@ export class VisualEditController {
       const at = nl ?? this.host.view.state.selection.main.head;
       this.select(at, at);
       this.pickedBreak = { after: brk.after, sel: at };
-      this.host.setStatus(tr("vis.puBreakSelected"));
+      this.host.setStatus(tr("vis.fanqieBreakSelected"));
       this.refresh();
       return true;
     }
@@ -1419,7 +1419,7 @@ export class VisualEditController {
     }
     this.select(v.nl, v.nl);
     this.pickedBreak = { after: v.b.after, sel: v.nl };
-    this.host.setStatus(tr("vis.puBreakSelected"));
+    this.host.setStatus(tr("vis.fanqieBreakSelected"));
     this.refresh();
   }
 

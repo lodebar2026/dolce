@@ -1,6 +1,6 @@
 // 小节里的 `<direction>`（MusicXML / `.jpwabc` 来的力度、术语、跳转、文字、渐强渐弱）→ 简谱那套「挂在符号上的记号」。
 //
-// 简谱一路（文本谱视图 `jianpu/slots.ts::docView`、文本谱写出 `topu.ts`）的记号都挂在音符/小节线上（`&mp` `&fine`），
+// 简谱一路（文本谱视图 `jianpu/slots.ts::docView`、文本谱写出 `tofanqie.ts`）的记号都挂在音符/小节线上（`&mp` `&fine`），
 // MusicXML 却是小节里独立的 direction，靠「游标位置 + `<offset>`」定拍位。两边在这里对齐，一份规则：
 //   - 挂哪个符号：按**拍位**找——力度、术语、segno/coda、文字、渐强起点挂在拍位上（或之后）的第一个占时值的符号；
 //     渐强收尾挂在拍位**之前**的最后一个（写出端 `xmlproject.ts::wedgeDirections` 把收尾写在收尾音的终点）；

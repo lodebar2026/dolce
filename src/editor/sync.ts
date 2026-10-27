@@ -6,7 +6,7 @@
 // ## 为什么在这一层
 //
 // 索引建在 **`ScoreDoc` 的 `source: SourceSpan`** 上——每个音符、每个歌词音节解析时就记了它在
-// 原文里的位置（文本谱经 `pu/frompu.ts` 转来时照样带着）。有代码区的四种格式（文本谱、123、ABC、
+// 原文里的位置（文本谱经 `fanqie/fromfanqie.ts` 转来时照样带着）。有代码区的四种格式（文本谱、123、ABC、
 // `.jpwabc`）共用同一套代码。条目按**元素 id** 认，谱面那一侧（`ScorePainter.entryEl(id)` /
 // `lyricEl` / `partEls`）也按 id 取，两路页面树的差别由排版器自己消化。
 //

@@ -1,5 +1,5 @@
 // 窄纸整首重新断行：源里的行放不下时求新的行首。
-import type { MusicElement, PuSong } from "../../../jianpu/ast";
+import type { MusicElement, FanqieSong } from "../../../jianpu/ast";
 import { contentWidth, type JianpuGrid } from "../metrics";
 import { naturalColumns } from "./spacing";
 import { fillLines } from "./expand";
@@ -17,7 +17,7 @@ import { assignLyrics, layoutVoiceLine } from "./voice";
  * 多声部各组的列是共享的（同拍位归一列），量宽取主声部（第一个声部）的小节线位置。
  */
 export function reflowLineStarts(
-  songs: readonly PuSong[],
+  songs: readonly FanqieSong[],
   idOf: ReadonlyMap<MusicElement, string | number>,
   m: JianpuGrid,
   ink: InkMeasurer,
@@ -112,7 +112,7 @@ function startIdOf(els: readonly MusicElement[], from: number, idOf: ReadonlyMap
  * 只看每组第一个声部（成书只排旋律）。
  */
 export function foldLineStarts(
-  songs: readonly PuSong[],
+  songs: readonly FanqieSong[],
   idOf: ReadonlyMap<MusicElement, string | number>,
   m: JianpuGrid,
   ink: InkMeasurer,
@@ -159,7 +159,7 @@ export interface NaturalSpan {
  * 调用方先清掉换行，整首就是一组；源里有多组时各组各量（组内坐标）。
  */
 export function naturalSpans(
-  song: PuSong,
+  song: FanqieSong,
   idOf: ReadonlyMap<MusicElement, string | number>,
   m: JianpuGrid,
   ink: InkMeasurer,

@@ -1,5 +1,5 @@
 // 一首（及一份文档）的定位：逐组排声部、组间让位、分页，长图把各页接成一张。
-import type { Meter, MusicElement, NoteElement, PuSong } from "../../../jianpu/ast";
+import type { Meter, MusicElement, NoteElement, FanqieSong } from "../../../jianpu/ast";
 import { contentWidth, type JianpuGrid } from "../metrics";
 import { paginate, type SystemBlock } from "../../../jianpu/vertical";
 import type { InkMeasurer, PlacedGroup, PlacedPage, PlacedScore, PlacedVoice } from "./model";
@@ -61,7 +61,7 @@ function hideEmptyBarlines(voices: readonly PlacedVoice[], braceFromX: number): 
  * 把一首曲子排成若干页。文本谱自己管分页（`[fenye]`），我们只在一页塞不下时再补断。
  */
 export function layoutSong(
-  song: PuSong,
+  song: FanqieSong,
   m: JianpuGrid,
   songIndex = 0,
   headerBottom = 0,
@@ -309,7 +309,7 @@ function slideBlock(voices: ReadonlyArray<{ pv: PlacedVoice; inkBottom: number }
 
 /** 排一整份文档（可含多首「一首多唱」）。 */
 export function layoutDocument(
-  songs: readonly PuSong[],
+  songs: readonly FanqieSong[],
   m: JianpuGrid,
   headerBottoms: readonly number[] = [],
   ink: InkMeasurer,
@@ -410,7 +410,7 @@ function shiftGroup(g: PlacedGroup, dy: number): void {
  * 补出来的就是一条普通的说明（`LyricLine.annotation`），画法、版心左缘让出（`compose/index.ts` 量伸出量）都同源里写的。
  * 只改行视图，不改 ScoreDoc。
  */
-function autoVerseNumbers(song: PuSong, m: JianpuGrid): void {
+function autoVerseNumbers(song: FanqieSong, m: JianpuGrid): void {
   const mode = m.style.look.verseNumbers;
   if (mode === "never") return;
   const voices = song.pages.flatMap((p) => p.groups).flatMap((g) => g.voices);
@@ -429,7 +429,7 @@ function autoVerseNumbers(song: PuSong, m: JianpuGrid): void {
   }
 }
 
-function moveTrailingSectionWords(song: PuSong): void {
+function moveTrailingSectionWords(song: FanqieSong): void {
   const groups = song.pages.flatMap((p) => p.groups);
   const notes = (els: readonly MusicElement[]) => els.filter((e): e is NoteElement => e.kind === "note" && !e.placeholder);
   for (let gi = 0; gi + 1 < groups.length; gi++) {

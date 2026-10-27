@@ -3,7 +3,7 @@
 // 与 `.jpwabc` / 文本谱的高亮**同一套 CSS 类**（note/barline/metakey/metaval/lrc/
 // lrcspec/comment/text/slash/section/break/unknown），三种格式在同一个编辑器里观感一致。
 //
-// 这里是**独立的轻量扫描，不复用 `lex.ts`/`parse.ts`**（与 `pu/highlight.ts` 同一条判据）：
+// 这里是**独立的轻量扫描，不复用 `lex.ts`/`parse.ts`**（与 `fanqie/highlight.ts` 同一条判据）：
 // 高亮要能在半截、写错的文本上照样上色，而解析器该报诊断就得报，两者目标不同。
 // 行首前缀按**宽松形式**认——只要看着像字段行就当字段行上色，是不是合法字段名归解析器管。
 

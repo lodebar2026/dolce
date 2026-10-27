@@ -694,7 +694,7 @@ export function expandView(
     const pd = plans[i];
     if (!pd) return song;
     const layout = breakDesc && i === 0 ? { desc: breakDesc, simple: pd.isSimpple } : null;
-    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "pu");
+    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie");
   });
   return { ...view, songs };
 }

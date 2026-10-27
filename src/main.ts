@@ -87,7 +87,7 @@ async function boot() {
     paletteBtn: document.getElementById("btn-palette") as HTMLButtonElement | null,
   });
   app.mountEditor(codePane, SAMPLE);
-  const win = window as unknown as { __app: App; __paint: ReturnType<typeof paintProbe>; __mixedModel: unknown; __omr: unknown; __raster: unknown; __project: unknown; __xmlout: unknown; __pu: unknown; __book: unknown;
+  const win = window as unknown as { __app: App; __paint: ReturnType<typeof paintProbe>; __mixedModel: unknown; __omr: unknown; __raster: unknown; __project: unknown; __xmlout: unknown; __fanqie: unknown; __book: unknown;
     __j123: unknown; __pptx: unknown; __songbook: unknown };
   win.__app = app;
   // 统一排版器暴露（`new __paint.ScorePainter(__paint.resources)` + 请求），供混排 / 原样文档的无头回归脚本用。
@@ -101,8 +101,8 @@ async function boot() {
   win.__raster = import("./rasteromr/browser");
   // 识别项目打包 / 自动保存草稿：`omr-project-check.mjs` 拿字节做存—开往返
   win.__project = Promise.all([import("./editor/omrproject"), import("./editor/autosave")]).then(([p, a]) => ({ ...p, ...a }));
-  // 文本谱（番茄 / 有谱）解析与排版暴露，供 pu-*.mjs 回归。
-  win.__pu = import("./pu");
+  // 文本谱（番茄 / 有谱）解析与排版暴露，供 fanqie-*.mjs 回归。
+  win.__fanqie = import("./fanqie");
   // PPTX 导出（序列化器 + 展开档另排一遍那个 painter）暴露，供 scripts/pptx-export.mjs 批量转出用。
   win.__pptx = Promise.all([import("./editor/pptx"), import("./editor/export")])
     .then(([pptx, exp]) => ({ ...pptx, pptxPainter: exp.pptxPainter }));
@@ -110,11 +110,11 @@ async function boot() {
   win.__book = Promise.all([
     import("./pdflayout/browser"), import("./style/book"), import("./layout/painter"),
     import("./score/phrase"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
-    import("./jpword/parse"), import("./jianpu/jianpuinput"), import("./pu"),
+    import("./jpword/parse"), import("./jianpu/jianpuinput"), import("./fanqie"),
     import("./model/fromxml"), import("./model/phrasedoc"), import("./score/timeline"), import("./model/playdoc"),
     import("./score/midi"), import("./layout/input"),
-  ]).then(([book, bookStyle, painter, phrase, applybreaks, jpwfile, parse, jianpuinput, pu, fromxml, phrasedoc, timeline, playdoc, midi, input]) => ({
-    ...book, ...bookStyle, ...painter, ...phrase, ...applybreaks, ...jpwfile, ...parse, ...jianpuinput, pu,
+  ]).then(([book, bookStyle, painter, phrase, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, phrasedoc, timeline, playdoc, midi, input]) => ({
+    ...book, ...bookStyle, ...painter, ...phrase, ...applybreaks, ...jpwfile, ...parse, ...jianpuinput, fanqie,
     ...fromxml, ...phrasedoc, ...timeline, ...playdoc, ...midi, ...input,
   }));
   // 混排歌本（清单 + .ss → DrawPage[]）暴露，供 scripts/kl2020-book.mjs 用。
@@ -124,17 +124,17 @@ async function boot() {
   // `loadScoreDoc` 要 DOMParser，Node 侧没有，所以这条必须在浏览器里走（同 __book 的路子）。
   win.__j123 = Promise.all([
     import("./abcfamily/parse"), import("./abcfamily/emit123.entry"),
-    import("./model/fromjpw"), import("./pu/frompu"), import("./model/helpers"),
-    import("./jianpu/jianpuinput"), import("./pu"),
+    import("./model/fromjpw"), import("./fanqie/fromfanqie"), import("./model/helpers"),
+    import("./jianpu/jianpuinput"), import("./fanqie"),
     import("./abcfamily/emitabc.entry"),
     import("./model/fromxml"), import("./model/toxml"), import("./convert/capability"),
     import("./model/jianpuproject"), import("./model/jianpu"), import("./model/tojpw"), import("./model/xmlproject"),
     import("./model/breaks"), import("./convert/jpwabc"),
   ]).then((
-    [parse, emit, fromjpw, frompu, helpers, jianpuinput, pu, emitabc,
+    [parse, emit, fromjpw, fromfanqie, helpers, jianpuinput, fanqie, emitabc,
      fromxml, toxml, capability, jianpuproject, jianpu, tojpw, xmlproject, breaks, jpwabc],
   ) => ({
-    ...parse, ...emit, ...fromjpw, ...frompu, ...helpers, ...jianpuinput, pu,
+    ...parse, ...emit, ...fromjpw, ...fromfanqie, ...helpers, ...jianpuinput, fanqie,
     ...emitabc, ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...tojpw, ...xmlproject, ...breaks, ...jpwabc,
   }));
   // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engraveScoreDoc`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归

@@ -19,7 +19,7 @@ export * from "../model/helpers";
 export * from "../model/metakeys";
 export { decoKey } from "../model/deconames";
 export { docView } from "../jianpu/slots";
-export { puToScoreDoc } from "../pu/frompu";
+export { fanqieToScoreDoc } from "../fanqie/fromfanqie";
 export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
 export { slursAsTies } from "../model/xmlproject";
@@ -27,19 +27,19 @@ export { slursAsTies } from "../model/xmlproject";
 export { loadScoreDoc } from "../model/fromxml";
 export { writeJpwabc } from "../model/tojpw";
 export { emitJpwabc } from "../convert/jpwabc";
-export { emitPu, emitPuSong, keyNameOf, puArcLosses } from "../pu/topu";
+export { emitFanqie, emitFanqieSong, keyNameOf, fanqieArcLosses } from "../fanqie/tofanqie";
 export { emitJly } from "../jly/tojly";
 export { scanMusicLine, scanWord, JlyLosses, parseJly, isJlyMusicLine, rewrapJlyText } from "../jly/fromjly";
 export { projectForJianpu } from "../model/jianpuproject";
 export { songFifths } from "../model/keyshift";
 export { AccidentalCarry } from "../model/jianpu";
 // 文本谱与 `.jpwabc` 读入：迁移工具要拿它们当输入
-export { parsePu, parsePuAst, sniffDialect } from "../pu";
+export { parseFanqie, parseFanqieAst, sniffDialect } from "../fanqie";
 export { JpwFile, RepeatSection } from "../jpword/jpwfile";
 // 按乐句重排（写回原文那一步；断句本身在 score/phrase.ts）
 export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 export { applyBreaks, breaksOf } from "../model/breaks";
-export { barLines, phraseCuts, puPhraseLines } from "../jianpu/phrase";
+export { barLines, phraseCuts, fanqiePhraseLines } from "../jianpu/phrase";
 // 小节时值自检（私有仓库的对比报告拿它查手工谱各小节满不满）
 export { checkMeasureDurations, describeBeatIssue } from "../model/beatcheck";
 // 模型编辑动作（可视化编辑的 MusicXML 那一路；`ops-actions-check.mjs` 按识别手动操作的口径逐个验）

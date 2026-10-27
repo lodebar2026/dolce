@@ -41,7 +41,7 @@ export interface DialectSpec {
   joinToken?: string;
   /** 头部字段的写法。**只有 emitter 用**——解析侧两边字段都认，不需要分方言。 */
   header: HeaderStyle;
-  /** 曲行/歌词行的写法。**只有 emitter 用**（`pu/topu.ts`）。 */
+  /** 曲行/歌词行的写法。**只有 emitter 用**（`fanqie/tofanqie.ts`）。 */
   emit: EmitStyle;
 }
 
@@ -234,7 +234,7 @@ export function sniffDialect(text: string): SniffResult {
       dialect: null,
       reason: hasBody
         ? tr("sniff.noHeader")
-        : tr("sniff.notPu"),
+        : tr("sniff.notFanqie"),
     };
   }
   if (tomato > shige) return { dialect: "tomato", reason: tr("sniff.tomato", { n: tomato }) };

@@ -139,7 +139,7 @@ export function pptxPainter(app: App): ScorePainter {
   // 识别模式里屏幕上那个排版器不随改动重排（谱面区是核对视图），只有简谱档的才能直接用
   if (app.mode === "jp" && cur.renderer === "jianpu" && cur.jianpuView === "expanded") return cur;
   const req = app.expandedRequest();
-  if (!req) throw new Error(t("export.noPuLines"));
+  if (!req) throw new Error(t("export.noFanqieLines"));
   const p = new ScorePainter(cur.resources);
   p.loadSync(req);
   return p;
@@ -213,7 +213,7 @@ export function sourceMusicXmlBare(app: App, opts: { sourceIds?: boolean } = {})
 }
 
 /** 文本谱/123/ABC → MusicXML。`.musicxml` 那一档文档里就是 XML（原文或 `editScoreDoc` 整份重写过的），原样给出。 */
-export async function exportPuMusicXml(app: App): Promise<void> {
+export async function exportFanqieMusicXml(app: App): Promise<void> {
   const text = app.docFormat === "musicxml" ? app.getText() : await buildMusicXml(app);
   await saveBytes(new TextEncoder().encode(text), `${baseName(app)}.musicxml`, MUSICXML_MIME);
 }
@@ -312,10 +312,10 @@ interface ExportItem {
 
 const isMixed = (app: App): boolean => app.mode === "mixed";
 /** 走 `ScoreDoc` 排版的格式（文本谱、123、ABC、MusicXML 的简谱档）：导出项与 `.jpwabc` 那档不同。 */
-const isPu = (app: App): boolean => app.adapter.caps.layout === "scoredoc" && !isMixed(app);
-const isJp = (app: App): boolean => !isPu(app) && !isMixed(app);
+const isFanqie = (app: App): boolean => app.adapter.caps.layout === "scoredoc" && !isMixed(app);
+const isJp = (app: App): boolean => !isFanqie(app) && !isMixed(app);
 /** jianpu-ly 文本**哪一种非混排档都能写**（`tojly.ts` 同时收 `jianpuInputOfDoc` 与
- *  `jianpuInputOfJpw`），所以不能挂在 `isPu` 或 `isJp` 单独一边：`isJp` 只在 `.jpwabc` 下为真，
+ *  `jianpuInputOfJpw`），所以不能挂在 `isFanqie` 或 `isJp` 单独一边：`isJp` 只在 `.jpwabc` 下为真，
  *  挂它会让 123 / 文本谱 / ABC 文档都看不到这一项（第一版就是这么错的，用户当场撞上）。 */
 const canJly = (app: App): boolean => !isMixed(app);
 
@@ -329,15 +329,15 @@ const EXPORT_ITEMS: readonly ExportItem[] = [
   { label: "PNG", available: (a) => !isExpanded(a) && isLongImage(a), run: exportLayoutPng },
   { label: "PDF", available: (a) => !isExpanded(a) && !isLongImage(a), run: exportLayoutPdf },
   // 文本谱（非混排预览）
-  { label: "MIDI", available: isPu, run: exportMidi },
-  { label: "MusicXML", available: isPu, run: exportPuMusicXml },
+  { label: "MIDI", available: isFanqie, run: exportMidi },
+  { label: "MusicXML", available: isFanqie, run: exportFanqieMusicXml },
   // 混排（五线谱预览）
   { label: "MIDI", available: isMixed, run: exportMidi },
   { label: "MusicXML", available: isMixed, run: exportMusicXml },
   // 简谱
   { label: "MIDI", available: isJp, run: exportMidi },
   { label: "MusicXML", available: isJp, run: exportMusicXml },
-  // jianpu-ly：上面三档之外，`isPu` 那一档（文本谱 / 123 / ABC / MusicXML）也要能导出，
+  // jianpu-ly：上面三档之外，`isFanqie` 那一档（文本谱 / 123 / ABC / MusicXML）也要能导出，
   // 所以单独一条、用 `canJly`（非混排即可）——见那条注释。
   { label: "jianpu-ly", available: canJly, run: exportJly },
 ];
@@ -345,7 +345,7 @@ const EXPORT_ITEMS: readonly ExportItem[] = [
 /** 当前文档就是这种格式（文本谱按方言分）。 */
 const isCurrentFormat = (app: App, id: ConvertTarget): boolean => {
   const spec = targetSpec(id);
-  return app.docFormat === spec.docFormat && (spec.docFormat !== "pu" || app.puDialect === id);
+  return app.docFormat === spec.docFormat && (spec.docFormat !== "fanqie" || app.fanqieDialect === id);
 };
 
 /** 另存为的选项：当前格式另存一份，外加换成其它源格式。

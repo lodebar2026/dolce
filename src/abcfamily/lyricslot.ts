@@ -14,7 +14,7 @@ export type LyricSlotRule = "123" | "abc";
  *  ABC `&` 的临时声部（`voice > 1`，§7.4）不占：`w:` 按声部对位，词只跟主分支走，
  *  否则一小节里两条并行旋律会把词挤成两份、后面整行错位。
  *  `mainVoice`：本声部的主分支号。文本谱读进来的多声部，第 n 声部的元素 `voice` 就是 n
- *  （`pu/frompu.ts`），`Q2` 下的 `C1:` 挂在 voice 2 上——按「>1」判会把整声部的词全丢掉。 */
+ *  （`fanqie/fromfanqie.ts`），`Q2` 下的 `C1:` 挂在 voice 2 上——按「>1」判会把整声部的词全丢掉。 */
 export function isLyricSlot(el: Element, rule: LyricSlotRule = "123", mainVoice = 1): boolean {
   if (el.voice > mainVoice) return false;
   if (el.kind !== "chord") return false;

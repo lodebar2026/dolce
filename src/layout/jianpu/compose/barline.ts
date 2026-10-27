@@ -2,7 +2,7 @@
 import { Font } from "../../../pagetree/font";
 import { Group } from "../../../pagetree/pageitem";
 import { BarlineGlyph } from "../../../engrave/barline";
-import { puBarlineSpec } from "../barspec";
+import { fanqieBarlineSpec } from "../barspec";
 import { TIME_SIG_PAD_EM } from "../place/spacing";
 import { barlineSpan } from "../metrics";
 import type { PlacedItem } from "../place/model";
@@ -44,7 +44,7 @@ export function paintBarline(c: OriginalCtx,
   // 反复点在 ±0.18H 且离线 6px——同一件事两种写法，改一处忘一处。
   // 纵向范围与旧简谱引擎同一口径（`barlineSpan`），连谱号跨声部时下缘再加 spanHeight。
   const span = barlineSpan(m);
-  const bs = puBarlineSpec(el);
+  const bs = fanqieBarlineSpec(el);
   if (!bs) {
     if (el.ornaments.length > 0) {
       const og = new Group();

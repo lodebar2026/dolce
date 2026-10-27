@@ -125,7 +125,7 @@ export function measureDocument(
   const lead = one.parts.find((p) => p.measures.some((m) => m.elements.some((e) => e.kind === "chord" && (e.lyrics?.length ?? 0) > 0))) ?? one.parts[0];
   if (!lead) return { width: 0, spans: new Map() };
   const clone = structuredClone({ ...doc, songs: [{ ...one, parts: [lead] }] });
-  if (doc.sourceFormat !== "pu") for (const song of clone.songs) clearSongBreaks(song);
+  if (doc.sourceFormat !== "fanqie") for (const song of clone.songs) clearSongBreaks(song);
   const r = layoutJianpu(clone, {
     style: jianpuStyleOf(sheet),
     page: { width, height: width, continuous: true },

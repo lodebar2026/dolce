@@ -23,7 +23,7 @@ import { docView, type SlotRef } from "./slots";
 import { distinctVerses, jpAlterOf } from "./phrasesong";
 import { playDataOfSong } from "./playsong";
 import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "./ast";
-import type { LyricLine, Mark, NoteElement, PuSong, ScoreLine } from "./ast";
+import type { LyricLine, Mark, NoteElement, FanqieSong, ScoreLine } from "./ast";
 
 // ───────────────────────── 构造 ─────────────────────────
 
@@ -151,7 +151,7 @@ function marksEdgeAt(marks: readonly Mark[], index: number, type: Mark["type"]):
   };
 }
 
-function songInput(song: PuSong, idOf: (el: NoteElement) => ElementId | null, forExpanded: boolean): JScore | null {
+function songInput(song: FanqieSong, idOf: (el: NoteElement) => ElementId | null, forExpanded: boolean): JScore | null {
   const meta = song.metadata;
   const credit: JCredit[] = [];
   const pushCredit = (text: string, type: string | null): void => {
@@ -192,7 +192,7 @@ function songInput(song: PuSong, idOf: (el: NoteElement) => ElementId | null, fo
 }
 
 /** 源里 `[fenye]` 分出的页边界：每一页里该声部的最后一条曲行（末页不算）。 */
-function pageEnds(song: PuSong, voice: number): Set<ScoreLine> {
+function pageEnds(song: FanqieSong, voice: number): Set<ScoreLine> {
   const out = new Set<ScoreLine>();
   song.pages.forEach((pg, i) => {
     if (i === song.pages.length - 1) return;

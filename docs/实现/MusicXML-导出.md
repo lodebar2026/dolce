@@ -49,7 +49,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 
 **判据**：首小节带 `attrs.divisions` 的是 MusicXML 形状（`fromxml.ts` 读进来的），**原样返回**——
 `.musicxml` 重写因此逐字节不受投影影响（568 份实测）。其余在克隆上投影，不改调用方的文档。
-简谱来源（`frompu`/`j123`/`fromjpw`）一律不写 `attrs.divisions`，时值以一个四分音符 = 48 记名义时值。
+简谱来源（`fromfanqie`/`j123`/`fromjpw`）一律不写 `attrs.divisions`，时值以一个四分音符 = 48 记名义时值。
 
 改 `xmlproject.ts` 之前先读这几条，每条都对应一个对拍出来的问题（全部文本谱语料新旧写出端对拍）：
 

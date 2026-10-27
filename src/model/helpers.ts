@@ -21,7 +21,7 @@ import type {
 // ───────────────────────── id 分配 ─────────────────────────
 
 /** 元素 id 分配器。**全文档唯一、不随数组增删变化**——`Mark`、歌词锚点、`playOrder`
- *  都引用 id，用数组下标的话插一个元素就全错（`PuDoc` 就是那样）。 */
+ *  都引用 id，用数组下标的话插一个元素就全错（`FanqieDoc` 就是那样）。 */
 export class IdGen {
   private _next = 1;
   next(): ElementId {

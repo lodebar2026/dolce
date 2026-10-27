@@ -11,7 +11,7 @@ import { emitAbc } from "../abcfamily/emitabc.entry";
 import { emitJcx } from "../abcfamily/emitjcx.entry";
 import { emitJpwabc } from "./jpwabc";
 import { emitJly } from "../jly/tojly";
-import { emitPu } from "../pu/topu";
+import { emitFanqie } from "../fanqie/tofanqie";
 import { withPageMeta } from "../model/pagemeta";
 import { t } from "../i18n";
 
@@ -23,7 +23,7 @@ export interface TargetSpec {
   /** 下拉里的显示名（按界面语言） */
   readonly label: string;
   /** 写出来的文本在编辑器里按哪种源格式打开（`editor/formats.ts::DocFormatId`） */
-  docFormat: "123" | "abc" | "jpwabc" | "pu" | "jly" | "jcx";
+  docFormat: "123" | "abc" | "jpwabc" | "fanqie" | "jly" | "jcx";
   emit(doc: ScoreDoc): string;
 }
 
@@ -42,8 +42,8 @@ export const CONVERT_TARGETS: readonly TargetSpec[] = [
     },
   },
   { id: "abc", get label() { return t("fmt.target.abc"); }, docFormat: "abc", emit: (doc) => emitAbc(withPageMeta(doc)) },
-  { id: "tomato", get label() { return t("fmt.target.tomato"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "tomato") },
-  { id: "shige", get label() { return t("fmt.target.shige"); }, docFormat: "pu", emit: (doc) => emitPu(doc, "shige") },
+  { id: "tomato", get label() { return t("fmt.target.tomato"); }, docFormat: "fanqie", emit: (doc) => emitFanqie(doc, "tomato") },
+  { id: "shige", get label() { return t("fmt.target.shige"); }, docFormat: "fanqie", emit: (doc) => emitFanqie(doc, "shige") },
   // jianpu-ly：能读能写，导出端是 `jly/tojly.ts`（`%` 注释里带着"装不下什么"的说明，写在文本里随文件走）
   { id: "jly", get label() { return t("fmt.target.jly"); }, docFormat: "jly", emit: (doc) => emitJly(doc).text },
   // Muse 曲谱软件：存盘按 `%MUSE2` + GBK（`common/jcxcodec.ts`），新旧版 Muse 都能开

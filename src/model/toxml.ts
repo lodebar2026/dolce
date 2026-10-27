@@ -1,4 +1,4 @@
-// `ScoreDoc` → MusicXML（**直通**，不经 `PuDoc`）。与 `fromxml.ts` 互逆。
+// `ScoreDoc` → MusicXML（**直通**，不经 `FanqieDoc`）。与 `fromxml.ts` 互逆。
 //
 // ## 为什么敢全量重写
 //

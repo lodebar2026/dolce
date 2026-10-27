@@ -2,7 +2,7 @@
 // 竖向的点与线走叠层（engrave/stack.ts，墨迹到墨迹等距），支持高、低音点（钩子接在最低那件之下）。
 //
 // **两条简谱路共用这一份**（文本谱 `layout/jianpu/compose/note.ts::paintGrace`、成书/编辑器
-// `src/layout/layout.ts::addGraceNotes`）。两边的绘图原语不一样（一边是 pu 自己的
+// `src/layout/layout.ts::addGraceNotes`）。两边的绘图原语不一样（一边是 fanqie 自己的
 // text/dot/rect/stroke，一边是页面树的 TextFrame/GraphicPath），所以这里只算**坐标**，
 // 落笔各自去做。
 //
@@ -53,7 +53,7 @@ export type GraceAlter = "sharp" | "flat" | "natural" | "double-sharp" | "double
 export interface GraceNote {
   digit: string;
   octave: number;
-  /** MusicXML 的 duration 口径：pu 那边是 `gn.duration`，4 = 四分。默认 8（八分）。 */
+  /** MusicXML 的 duration 口径：fanqie 那边是 `gn.duration`，4 = 四分。默认 8（八分）。 */
   duration?: number;
   /** 临时升降号。带号的那一颗要多占 `GRACE_ACC_INSET` 一截（见 `graceAdvance`）。 */
   alter?: GraceAlter;
@@ -65,7 +65,7 @@ export interface GraceGeom {
   dots: { cx: number; cy: number; r: number }[];
   /** 升降号：**按墨迹定位**——两条路各自量自己的 SMuFL 字形，把墨迹右缘贴到 `inkRight`、
    *  墨迹竖向中心对齐 `inkCy`、字号取到墨迹高等于 `inkHeight`。
-   *  给的不是字号是因为两边字体度量不同，靠固定偏移放会随字体漂（与 pu 主音那套同理）。 */
+   *  给的不是字号是因为两边字体度量不同，靠固定偏移放会随字体漂（与 fanqie 主音那套同理）。 */
   accidentals: { alter: GraceAlter; inkRight: number; inkCy: number; inkHeight: number }[];
   /** 减时线（矩形）。**同一层里相邻的倚音连成一条通杠**，不是一颗一小段。 */
   beams: { x: number; y: number; w: number; h: number }[];
@@ -144,7 +144,7 @@ export function graceGeometry(
   notes.forEach((gn, i) => {
     const gx = gxs[i]!;
     out.digits.push({ text: gn.digit, cx: gx, cy: gy, size });
-    // 升降号贴在这一颗数字墨迹的左缘。竖向照 pu 主音那一套（墨迹中心在墨迹底上方
+    // 升降号贴在这一颗数字墨迹的左缘。竖向照 fanqie 主音那一套（墨迹中心在墨迹底上方
     // 0.34 个字高、降号再低 0.08），只是所有量都按倚音的墨迹高。
     if (gn.alter) {
       out.accidentals.push({

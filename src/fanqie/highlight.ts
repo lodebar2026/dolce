@@ -178,7 +178,7 @@ function buildDeco(view: EditorView): DecorationSet {
   return builder.finish();
 }
 
-export const puHighlighter = ViewPlugin.fromClass(
+export const fanqieHighlighter = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
     constructor(view: EditorView) {

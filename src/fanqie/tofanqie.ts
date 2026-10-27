@@ -1,7 +1,7 @@
 // `ScoreDoc` → 文本谱原文（番茄简谱 / 诗歌本文本谱）。文本谱**唯一**的写出端：
 // 打开别的格式后切成文本谱、另存为文本谱、识别结果出文本谱（`recognizedToDoc` 之后），都走这里。
 //
-// 映射照 `pu/frompu.ts` 反着写，每一处写法以 `pu/parse.ts` 为准：
+// 映射照 `fanqie/fromfanqie.ts` 反着写，每一处写法以 `fanqie/parse.ts` 为准：
 //   - 文本谱的小节线一律「收」一个小节，没有左线：模型里的左线（123/ABC 的 `|:`）并到前一小节的右线上写；
 //   - 弧线与多连音共用**一个队列**（`)` 永远收最早开的那条），真嵌套的写不出来，按优先级留（`planArcs`）；
 //   - 休止缺省不跟词、音符一律跟词，例外靠 `@` 翻（`0@` / `-@`）；
@@ -32,7 +32,7 @@ import type { BarlineType } from "../jianpu/ast";
 import { dialectSpec, type Dialect, type DialectSpec } from "./dialect";
 import { DYNAMIC_NAMES, TERMS } from "../model/marknames";
 import { STEPS, keyAlter, tonicStep } from "../score/jppitch";
-import { PU_LYRIC_PUNCTUATION } from "../common/cjkpunct";
+import { FANQIE_LYRIC_PUNCTUATION } from "../common/cjkpunct";
 import { projectForJianpu } from "../model/jianpuproject";
 import { voicesToLayers } from "../model/innervoice";
 import { fillDegreesFromPitch, harmonyText, melodyLane, quarterTempos, topNote } from "../model/jianpu";
@@ -109,7 +109,7 @@ function isSafeRemark(line: string): boolean {
   return !(/[|]/.test(t) && /[0-9]/.test(t));
 }
 
-function headerLines(song: Song, d: DialectSpec, opts: EmitPuOptions): string[] {
+function headerLines(song: Song, d: DialectSpec, opts: EmitFanqieOptions): string[] {
   const h = d.header;
   const L: string[] = [];
   if (h.versionLine) L.push(song.work.version ? `V:${song.work.version}` : h.versionLine);
@@ -161,7 +161,7 @@ function headerLines(song: Song, d: DialectSpec, opts: EmitPuOptions): string[] 
 // ───────────────────────── 音符与记号 ─────────────────────────
 
 /** 文本谱认的记号名（`parse.ts` 的 NOTE_COMMANDS / BARLINE_COMMANDS）。不在表里的不写：写了读回也只是 unknown-command。 */
-const PU_COMMANDS = new Set([
+const FANQIE_COMMANDS = new Set([
   "zkh", "ykh", ...DYNAMIC_NAMES, ...Object.keys(TERMS),
   "yc", "ycy", "bc", "zy", "dy", "hx", "shy", "xhy", "sby", "xby", "cy", "tr",
   "fine", "dc", "ds", "ty", "hs", "sbf",
@@ -173,16 +173,16 @@ function commandText(o: SourceOrnament): string {
 
 /** 元素上的记号：原名优先；没有原名时从 `notations` 反查。 */
 function ornamentsOf(el: { ornaments?: SourceOrnament[]; notations?: Chord["notations"] }): SourceOrnament[] {
-  if (el.ornaments?.length) return el.ornaments.filter((o) => PU_COMMANDS.has(o.name));
+  if (el.ornaments?.length) return el.ornaments.filter((o) => FANQIE_COMMANDS.has(o.name));
   const out: SourceOrnament[] = [];
   const add = (name: string | undefined): void => {
-    if (name && PU_COMMANDS.has(name) && !out.some((o) => o.name === name)) out.push({ name, level: 0 });
+    if (name && FANQIE_COMMANDS.has(name) && !out.some((o) => o.name === name)) out.push({ name, level: 0 });
   };
   const n = el.notations;
   if (n?.fermata) add("yc");
   // 别的来源只有 `notations` 那一侧的名字（123 的几种记法、MusicXML 元素名），按 `deconames.ts` 归一成 `&xx`
-  for (const a of n?.articulations ?? []) add(PU_COMMANDS.has(a) ? a : decoKey(a));
-  for (const o of n?.ornaments ?? []) add(PU_COMMANDS.has(o) ? o : decoKey(o));
+  for (const a of n?.articulations ?? []) add(FANQIE_COMMANDS.has(a) ? a : decoKey(a));
+  for (const o of n?.ornaments ?? []) add(FANQIE_COMMANDS.has(o) ? o : decoKey(o));
   return out;
 }
 
@@ -370,7 +370,7 @@ interface PartState {
   inLayer?: boolean;
 }
 
-/** 小节线类型（`frompu.ts::fromPuBarline` 的逆）。只有房号、没有线的返回 null。 */
+/** 小节线类型（`fromfanqie.ts::fromFanqieBarline` 的逆）。只有房号、没有线的返回 null。 */
 function barlineType(b: Barline): BarlineType | null {
   if (b.repeat === "backward") return b.alsoForward ? "repeat-both" : "repeat-end";
   if (b.repeat === "forward") return "repeat-start";
@@ -699,7 +699,7 @@ function writeRightBarline(measures: readonly Measure[], mi: number, line: Line,
 
 const CJK_ONE = /^[぀-ヿ㐀-鿿豈-﫿]$/u;
 /** 读入端会贴回前一字、不占音符位的收尾字符（`parse.ts::parseLyricBody`）。 */
-const TRAILING_OK = PU_LYRIC_PUNCTUATION + "”’\"）)";
+const TRAILING_OK = FANQIE_LYRIC_PUNCTUATION + "”’\"）)";
 
 /**
  * 一个音节 → 文本谱写法。
@@ -973,7 +973,7 @@ function writableMarks(song: Song, part: Part, own: ReadonlySet<ElementId>): { m
 }
 
 /** 这首歌转成文本谱时写不出来的弧线与多连音（给丢失清单用，判据与写出时同一份）。 */
-export function puArcLosses(src: Song): { nested: number; oddTuplet: number; graceArc: number } {
+export function fanqieArcLosses(src: Song): { nested: number; oddTuplet: number; graceArc: number } {
   const song = projectForJianpu(src);
   const out = { nested: 0, oddTuplet: 0, graceArc: 0 };
   for (const part of song.parts) {
@@ -997,15 +997,15 @@ function qPrefix(song: Song, pi: number, first: Measure | undefined, firstSystem
   return `Q${first?.print?.variant ?? ""}${num}${cap}:`;
 }
 
-export interface EmitPuOptions {
-  /** 模型来自文本谱本身（`ScoreDoc.sourceFormat === "pu"`）：照原文的写法还原，不替它收口房号 */
-  fromPu?: boolean;
+export interface EmitFanqieOptions {
+  /** 模型来自文本谱本身（`ScoreDoc.sourceFormat === "fanqie"`）：照原文的写法还原，不替它收口房号 */
+  fromFanqie?: boolean;
   /** 模型来自 ABC：`X:` 是文件内编号、不是曲号 */
   fromAbc?: boolean;
 }
 
 /** 一首歌 → 文本谱原文（不带结尾换行）。 */
-export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}): string {
+export function emitFanqieSong(src: Song, dialect: Dialect, opts: EmitFanqieOptions = {}): string {
   const d = dialectSpec(dialect);
   // 小节里的 `<direction>`（MusicXML 来的力度、文字、渐强渐弱、曲首速度）先换成简谱那套挂在符号上的写法，同 123
   // 同一谱表的第二声部写成 `{dsb…}` 并排块（番茄的临时多声部；括起的那一路印在上行），按行断开
@@ -1022,7 +1022,7 @@ export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}
     const pos = positions(part);
     return {
       d, plan: planArcs(writableMarks(song, part, own).marks, pos), pos, voltaOpenEnd: voltaEnds(part), openVoltas: 0,
-      time: song.time, home, key: home, autoBoundaries: !hasBoundaries, consumedLeft: new Set(), closeOpenVoltas: !opts.fromPu, carryBeat: 0,
+      time: song.time, home, key: home, autoBoundaries: !hasBoundaries, consumedLeft: new Set(), closeOpenVoltas: !opts.fromFanqie, carryBeat: 0,
     };
   });
 
@@ -1076,7 +1076,7 @@ export function emitPuSong(src: Song, dialect: Dialect, opts: EmitPuOptions = {}
 }
 
 /** 整份文档 → 文本谱原文。多首之间用整行 `-----` 分隔（两家的解析端都认）。 */
-export function emitPu(doc: ScoreDoc, dialect: Dialect): string {
-  const opts: EmitPuOptions = { fromPu: doc.sourceFormat === "pu", fromAbc: doc.sourceFormat === "abc" };
-  return doc.songs.map((s) => emitPuSong(s, dialect, opts)).join("\n-----\n") + "\n";
+export function emitFanqie(doc: ScoreDoc, dialect: Dialect): string {
+  const opts: EmitFanqieOptions = { fromFanqie: doc.sourceFormat === "fanqie", fromAbc: doc.sourceFormat === "abc" };
+  return doc.songs.map((s) => emitFanqieSong(s, dialect, opts)).join("\n-----\n") + "\n";
 }

@@ -12,7 +12,7 @@
 //      断行，否则各声部行长不一、`layout/jianpu/place/spacing.ts` 同拍位归列时会把它们拧成一团。
 //      对齐按**累计时值**做，不按元素下标——各声部的元素个数本来就不一样。
 //
-// 产出是一份「新的行划分」（`PuNewLine[]`），消费者（`relayout.ts`）据此重排文本。
+// 产出是一份「新的行划分」（`FanqieNewLine[]`），消费者（`relayout.ts`）据此重排文本。
 // 无 DOM 依赖。
 
 import { Fraction } from "../common/fraction";
@@ -20,7 +20,7 @@ import { chooseLineLayout, fitForIds, pageBreakLines } from "./applybreaks";
 import { computePhraseBreaks } from "../score/phrase";
 import { chordsOf, type PhraseChord } from "../score/phraseinput";
 import { elementQuarters, linesOfVoice, tupletRatios, voiceNumbers } from "./ast";
-import type { MusicElement, NoteElement, PuSong, ScoreLine, SourceSpan } from "./ast";
+import type { MusicElement, NoteElement, FanqieSong, ScoreLine, SourceSpan } from "./ast";
 import { phrasePartOfSong } from "./phrasesong";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { docView } from "./slots";
@@ -29,15 +29,15 @@ import { docView } from "./slots";
 const PAGE_LINES = 4;
 
 /** 一个声部在某一新行上占的元素区间（半开区间，下标是该声部**整曲元素流**的下标）。 */
-export interface PuLineSeg {
+export interface FanqieLineSeg {
   voice: number;
   from: number;
   to: number;
 }
 
 /** 重排后的一行（一个「系统」：同组各声部各一条）。 */
-export interface PuNewLine {
-  segs: PuLineSeg[];
+export interface FanqieNewLine {
+  segs: FanqieLineSeg[];
   /** 本行行尾换页（下一行另起一页）。 */
   pageAfter: boolean;
 }
@@ -54,7 +54,7 @@ export interface VoiceStream {
 }
 
 /** 把一个声部的所有曲行接成一条元素流（含累计时值，多连音按比例折算）。 */
-export function voiceStream(song: PuSong, voice: number): VoiceStream {
+export function voiceStream(song: FanqieSong, voice: number): VoiceStream {
   const lines = linesOfVoice(song, voice);
   const st: VoiceStream = { voice, lines, origin: [], elements: [], ticks: [] };
   let tick = new Fraction(0);
@@ -120,7 +120,7 @@ function indexAtTick(st: VoiceStream, tick: Fraction): number {
 }
 
 /** 量行长的尺子：量这份文档第 `song` 首各音的自然跨度（键是元素 id，按 id 对回断句输入）。
- *  `noPairs`：只用来判「放不放得下」、不许两句并一行（原样档：要的是一句一行，见 `App._puPhraseMeasure`）。 */
+ *  `noPairs`：只用来判「放不放得下」、不许两句并一行（原样档：要的是一句一行，见 `App._fanqiePhraseMeasure`）。 */
 export type FitMeasure = (doc: ScoreDoc, song: number) => {
   width: number; spans: ReadonlyMap<string | number, { x0: number; x1: number; x1b?: number }>; noPairs?: boolean;
 } | null;
@@ -172,8 +172,8 @@ export type LinePlan =
   | { kind: "bars"; n: number; measure?: FitMeasure | null; onOverflow?: (at: BarsOverflow) => void };
 
 /** 按 `plan` 分出这一首的新行。 */
-export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): PuNewLine[] | null {
-  if (plan.kind === "phrase") return puPhraseLines(sdoc, songIdx, { measure: plan.measure });
+export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): FanqieNewLine[] | null {
+  if (plan.kind === "phrase") return fanqiePhraseLines(sdoc, songIdx, { measure: plan.measure });
   const ctx = leadOf(sdoc, songIdx);
   if (!ctx) return null;
   const lines = barLinesOf(ctx, plan.n);
@@ -192,12 +192,12 @@ export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): PuNe
  * - 源里原有的换页照留：换页处一定切一刀（落在小节中间也照切），之后从下一个完整小节起重新数；
  * - 剩下不足 n 的照留为末行，不并、不摊；`|:` 领起新行（`alignCut`）。
  */
-export function barLines(sdoc: ScoreDoc, songIdx: number, n: number): PuNewLine[] | null {
+export function barLines(sdoc: ScoreDoc, songIdx: number, n: number): FanqieNewLine[] | null {
   const ctx = leadOf(sdoc, songIdx);
   return ctx ? barLinesOf(ctx, n) : null;
 }
 
-function barLinesOf(ctx: NonNullable<ReturnType<typeof leadOf>>, n: number): PuNewLine[] | null {
+function barLinesOf(ctx: NonNullable<ReturnType<typeof leadOf>>, n: number): FanqieNewLine[] | null {
   if (n < 1) return null;
   const { song, voices, streams, lead } = ctx;
   const els = lead.elements;
@@ -248,7 +248,7 @@ function barLinesOf(ctx: NonNullable<ReturnType<typeof leadOf>>, n: number): PuN
   });
 
   const bounds = [0, ...[...cuts.keys()].sort((a, b) => a - b)];
-  const lines: PuNewLine[] = [];
+  const lines: FanqieNewLine[] = [];
   bounds.forEach((from, i) => {
     const to = bounds[i + 1] ?? els.length;
     const segs = segsOf(voices, streams, lead, from, to);
@@ -260,7 +260,7 @@ function barLinesOf(ctx: NonNullable<ReturnType<typeof leadOf>>, n: number): PuN
 /** 每行 n 小节分出来的行里，第一个在版心里放不下的（1 基行号）；都放得下返回 null。
  *  量法同断句的容量判据（`applybreaks.ts::fitForIds`）：行首音的 `x0` 到行末音的 `x1b`（没有就 `x1`）。 */
 function barLinesOverflow(
-  ctx: NonNullable<ReturnType<typeof leadOf>>, lines: readonly PuNewLine[],
+  ctx: NonNullable<ReturnType<typeof leadOf>>, lines: readonly FanqieNewLine[],
   measured: NonNullable<ReturnType<FitMeasure>>,
 ): number | null {
   const { view, lead } = ctx;
@@ -284,13 +284,13 @@ function barLinesOverflow(
 /**
  * 算出这一首该怎么按乐句分行。
  *
- * @param measure 真实坐标的行长尺子（`App._puPhraseMeasure`）。不给就只按小节数断，
+ * @param measure 真实坐标的行长尺子（`App._fanqiePhraseMeasure`）。不给就只按小节数断，
  *                行长目标是 `phrase.ts` 的出厂值——与 `.jpwabc` 那条路同一个口径。
  * @returns 新的行划分；这份文档没有可排的曲行时返回 null。
  */
-export function puPhraseLines(
+export function fanqiePhraseLines(
   sdoc: ScoreDoc, songIdx = 0, opt: { measure?: FitMeasure | null } = {},
-): PuNewLine[] | null {
+): FanqieNewLine[] | null {
   const ctx = leadOf(sdoc, songIdx);
   if (!ctx) return null;
   const { input, noteMap, where, voices, streams, lead } = ctx;
@@ -340,7 +340,7 @@ export function puPhraseLines(
   // 切点 → 各声部同拍位的切点 → 新的行
   const starts = [0, ...[...cuts].sort((a, b) => a - b)];
   const sectionEnds = new Set<number>(); // 1 基新行号：该行是段末
-  const lines: PuNewLine[] = [];
+  const lines: FanqieNewLine[] = [];
   starts.forEach((from, i) => {
     const to = starts[i + 1] ?? lead.elements.length;
     const segs = segsOf(voices, streams, lead, from, to);
@@ -360,10 +360,10 @@ export function puPhraseLines(
 /** 主旋律元素流 `[from, to)` 这一行 → 各声部同拍位的那一段。 */
 function segsOf(
   voices: readonly number[], streams: ReadonlyMap<number, VoiceStream>, lead: VoiceStream, from: number, to: number,
-): PuLineSeg[] {
+): FanqieLineSeg[] {
   const tickFrom = lead.ticks[from] ?? new Fraction(0);
   const tickTo = to < lead.ticks.length ? lead.ticks[to]! : null;
-  const segs: PuLineSeg[] = [];
+  const segs: FanqieLineSeg[] = [];
   for (const v of voices) {
     const st = streams.get(v)!;
     const a = st === lead ? from : indexAtTick(st, tickFrom);
@@ -376,13 +376,13 @@ function segsOf(
 /**
  * **照原文现有的行结构**，只在元素 `afterId` 之后加一刀（`add`）或去掉它后面那一刀（与下一行合并）。
  * 可视化编辑增删文本谱换行用：文本谱的换行就是另起一行 `Q:`，没有符号可增删，只能重切行
- * （写回复用乐句重排那套原文搬运，`relayout.ts::relayoutPuBreak`）。
+ * （写回复用乐句重排那套原文搬运，`relayout.ts::relayoutFanqieBreak`）。
  *
  * @returns 新的行划分；元素不在这首里、或这一刀加不上 / 去不掉时返回 null
  */
-export function puLinesEdited(
+export function fanqieLinesEdited(
   sdoc: ScoreDoc, songIdx: number, edit: { afterId: ElementId; add: boolean; page: boolean },
-): PuNewLine[] | null {
+): FanqieNewLine[] | null {
   const view = docView(sdoc);
   const song = view.songs[songIdx];
   const el = view.elementOf.get(edit.afterId);
@@ -428,7 +428,7 @@ export function puLinesEdited(
     pageCuts.delete(at);
   }
   const starts = [0, ...[...cuts].sort((a, b) => a - b)];
-  const lines: PuNewLine[] = [];
+  const lines: FanqieNewLine[] = [];
   starts.forEach((from, i) => {
     const to = starts[i + 1] ?? lead.elements.length;
     const segs = segsOf(voices, streams, lead, from, to);

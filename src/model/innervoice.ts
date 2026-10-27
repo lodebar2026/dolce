@@ -1,7 +1,7 @@
 // 同一谱表上的第二声部（123/ABC 的 `&`、MusicXML 同一 `<staff>` 里的第二个 `<voice>`）与文本谱 `{dsb…}` 并排块之间的互转。
 //
 // 简谱一行只排一路旋律：主行是 `melodyLane`（最小谱表上的最小 voice），同一谱表的第二路照番茄的临时多声部
-// 排成并排块（`jianpu/slots.ts` 收成下行、`pu/topu.ts` 写成 `{dsb…}`）；第三路起、别的谱表排不下。
+// 排成并排块（`jianpu/slots.ts` 收成下行、`fanqie/tofanqie.ts` 写成 `{dsb…}`）；第三路起、别的谱表排不下。
 // 反过来，文本谱的 `{dsb…}` 层进 123 / MusicXML 时还原成第二声部（123 写 `&`、MusicXML 写 `<voice>2`），
 // 以前这一层在两边的写出端都被静默丢掉。
 

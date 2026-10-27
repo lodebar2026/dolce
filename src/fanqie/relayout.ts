@@ -18,12 +18,12 @@
 // 曲行 `raw` 由视图按行号从原文取出。无 DOM 依赖。
 
 import { takesLyric, voiceNumbers } from "../jianpu/ast";
-import type { LyricLine, PuSong, ScoreLine, SourceSpan } from "../jianpu/ast";
+import type { LyricLine, FanqieSong, ScoreLine, SourceSpan } from "../jianpu/ast";
 import type { ScoreDoc } from "../model/doc";
 import { docView, type RowView } from "../jianpu/slots";
 import { dialectSpec, type Dialect } from "./dialect";
 import { BODY_PREFIX } from "./parse";
-import { planLines, puLinesEdited, voiceStream, type LinePlan, type PuNewLine, type VoiceStream } from "../jianpu/phrase";
+import { planLines, fanqieLinesEdited, voiceStream, type LinePlan, type FanqieNewLine, type VoiceStream } from "../jianpu/phrase";
 
 /** 起头的记号：它们属于**后面**那个元素，切行时归下一行。 */
 const OPENERS = new Set(["(", "["]);
@@ -142,15 +142,15 @@ function lyricSlice(
  * 逐首处理（`-----` 分出的多唱法各自断句）；头部字段、`W:` 文字行、`-----` 原样保留，
  * 换掉的只有曲行与歌词行所在的那一段，以及分组空行与 `[fenye]`（行结构变了，它们要重来）。
  *
- * @param text    编辑器里的原文（`doc` 必须是它解析出来的那一份，`parsePu(text)`）
+ * @param text    编辑器里的原文（`doc` 必须是它解析出来的那一份，`parseFanqie(text)`）
  * @param plan    新行怎么分（`jianpu/phrase.ts::LinePlan`）；不给就按乐句、`phrase.ts` 的出厂目标断
  */
-export function relayoutPuText(
+export function relayoutFanqieText(
   text: string, sdoc: ScoreDoc, opt: { plan?: LinePlan } = {},
 ): string {
   const raws = text.split(/\r?\n/);
   const doc = docView(sdoc);
-  const skip = dialectSpec((sdoc.puDialect ?? "tomato") as Dialect).lyricSkip[0] ?? "@";
+  const skip = dialectSpec((sdoc.fanqieDialect ?? "tomato") as Dialect).lyricSkip[0] ?? "@";
   // 各首各排各的，但都写回同一份文本：先收集「哪一段换成什么」，最后统一拼。
   const patches: Array<{ from: number; to: number; lines: string[] }> = [];
 
@@ -182,15 +182,15 @@ export function relayoutPuText(
  *
  * @returns 新原文；这一刀加不上 / 去不掉时返回 null
  */
-export function relayoutPuBreak(
+export function relayoutFanqieBreak(
   text: string, sdoc: ScoreDoc, edit: { afterId: number; add: boolean; page: boolean },
 ): string | null {
   const raws = text.split(/\r?\n/);
   const doc = docView(sdoc);
-  const skip = dialectSpec((sdoc.puDialect ?? "tomato") as Dialect).lyricSkip[0] ?? "@";
+  const skip = dialectSpec((sdoc.fanqieDialect ?? "tomato") as Dialect).lyricSkip[0] ?? "@";
   for (let songIdx = 0; songIdx < doc.songs.length; songIdx++) {
     const song = doc.songs[songIdx]!;
-    const plan = puLinesEdited(sdoc, songIdx, edit);
+    const plan = fanqieLinesEdited(sdoc, songIdx, edit);
     if (!plan) continue;
     const region = songRegion(song);
     if (!region) return null;
@@ -203,7 +203,7 @@ export function relayoutPuBreak(
 }
 
 /** 一首歌在原文里占的行区间（曲行 / 歌词行 / `W:` 行的最小外包）。 */
-function songRegion(song: PuSong): { from: number; to: number } | null {
+function songRegion(song: FanqieSong): { from: number; to: number } | null {
   let from = Infinity;
   let to = -1;
   const take = (line: number): void => {
@@ -224,8 +224,8 @@ function songRegion(song: PuSong): { from: number; to: number } | null {
 
 /** 生成新的曲行 / 歌词行文本。 */
 function emit(
-  song: PuSong,
-  plan: readonly PuNewLine[],
+  song: FanqieSong,
+  plan: readonly FanqieNewLine[],
   streams: ReadonlyMap<number, VoiceStream>,
   raws: readonly string[],
   skip: string,

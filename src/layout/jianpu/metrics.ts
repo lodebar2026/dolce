@@ -279,7 +279,7 @@ export function jianpuGraceMetrics(m: JianpuGrid): GraceMetrics {
   };
 }
 
-/** pu 的音符元素 → 公共倚音几何要的那几个字段。 */
+/** fanqie 的音符元素 → 公共倚音几何要的那几个字段。 */
 export function jianpuGraceNotes(els: readonly NoteElement[]): GraceNote[] {
   return els.map((gn) => ({
     digit: String(gn.pitch),

@@ -15,7 +15,7 @@ import { graceAdvance } from "../../../engrave/grace";
 import { ACCIDENTAL_CLEARANCE } from "../../../engrave/accidental";
 import { BarlineGlyph } from "../../../engrave/barline";
 import { timeSigWidth } from "../../../engrave/timesig";
-import { puBarlineSpec } from "../barspec";
+import { fanqieBarlineSpec } from "../barspec";
 import { BARLINE_MARKS } from "../../../engrave/jpglyph";
 import type { InkMeasurer, PlacedItem } from "./model";
 import { accidentalLeadOf } from "./vertical";
@@ -49,7 +49,7 @@ export const TIME_SIG_PAD_EM = 1 / 4;
  * 另给出线前那一小格要按的「组里第一个图元的高」（普通线是线高，`:‖` 先画点，是点径）。隐藏线 null。
  */
 export function barlineBox(el: BarlineElement, m: JianpuGrid): { left: number; right: number; first: number } | null {
-  const bs = puBarlineSpec(el);
+  const bs = fanqieBarlineSpec(el);
   if (!bs) return null;
   const span = barlineSpan(m);
   const g = new BarlineGlyph(bs.spec, bs.final, {
@@ -71,7 +71,7 @@ export function barlineBox(el: BarlineElement, m: JianpuGrid): { left: number; r
 
 /** 小节线第一根、最后一根竖线的线心（相对锚点）：房号竖脚对齐线位（`band.ts` / `marks.ts`，同旧简谱引擎 `Line.endingSpan`）。隐藏线 null。 */
 export function barlineLines(el: BarlineElement, m: JianpuGrid): { first: number; last: number } | null {
-  const bs = puBarlineSpec(el);
+  const bs = fanqieBarlineSpec(el);
   if (!bs) return null;
   const span = barlineSpan(m);
   const g = new BarlineGlyph(bs.spec, bs.final, {

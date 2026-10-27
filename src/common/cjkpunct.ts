@@ -8,7 +8,7 @@
 // **整整一个字宽的空洞**。CLREQ 的口径是：相邻标点之间**只留半个字宽**，多出来的那半格压掉。
 // 一侧是汉字时不压（`。人` 只空半格，本就是该有的呼吸），行末另有悬挂/压缩的规矩。
 //
-// 三条排版路（src/layout 简谱、src/pu 文本谱、src/mixed 混排）与成书重排的书级文本
+// 三条排版路（src/layout 简谱、src/fanqie 文本谱、src/mixed 混排）与成书重排的书级文本
 // 共用这一份规则；OpenType 的 `chws` 特性做的是同一件事，字体支持时优先交给它
 // （见 common/measure.ts::punctTrim），这里是**字体没有该特性时的等效实现**，
 // 两条路必须给出同一个数。
@@ -212,11 +212,11 @@ export function compressRun(
  */
 export const LYRIC_SPLIT_PUNCT = "1234567890.,;:'\"!?。：，；！？“”｡､";
 
-/** `pu/parse.ts`：能自动附到前一个字后面、不占音符位的标点。 */
-export const PU_LYRIC_PUNCTUATION = "，。！？、；：,.!?;:…—～~《》()（）";
+/** `fanqie/parse.ts`：能自动附到前一个字后面、不占音符位的标点。 */
+export const FANQIE_LYRIC_PUNCTUATION = "，。！？、；：,.!?;:…—～~《》()（）";
 
-/** `pu/parse.ts`：引号。左引号领起下一个字，右引号贴前一个字（正是 CLREQ 的 open/close 语义）。 */
-export const PU_LYRIC_QUOTES = "“”‘’\"";
+/** `fanqie/parse.ts`：引号。左引号领起下一个字，右引号贴前一个字（正是 CLREQ 的 open/close 语义）。 */
+export const FANQIE_LYRIC_QUOTES = "“”‘’\"";
 
 // ── 123 歌词行的切分口径：`abcfamily/parse.ts::parseLyricLine` 读、`abcfamily/emit.ts` 判要不要包 `{}`，**两边必须同一份** ──
 
@@ -234,7 +234,7 @@ export function isLyricCjk(ch: string): boolean {
 /** 并入前一字、不占音符格的标点。**引号也不占音符格**：直引号 `"` 分不出开闭，一律贴前字——
  *  位置上略有出入，但对位是对的；而把它当成一个音节会让后面整行错位、末尾溢出丢字。 */
 export function isLyricTrailingPunct(ch: string): boolean {
-  return !isLyricOpenQuote(ch) && (PU_LYRIC_PUNCTUATION.includes(ch) || "”’｡、\"".includes(ch));
+  return !isLyricOpenQuote(ch) && (FANQIE_LYRIC_PUNCTUATION.includes(ch) || "”’｡、\"".includes(ch));
 }
 
 /** `text[i]` 是撇号而不是右引号：`’` 后面紧跟字母（词中 `don’t`、词首省音 `’til` `’neath`）。

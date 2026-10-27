@@ -23,7 +23,7 @@ import { projectForJianpu } from "../model/jianpuproject";
 import { melodyLane } from "../model/jianpu";
 import { hasCrossStaff } from "../model/staves";
 import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
-import { puArcLosses } from "../pu/topu";
+import { fanqieArcLosses } from "../fanqie/tofanqie";
 import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "../model/deconames";
 import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "../model/pagemeta";
 import { getLang, t } from "../i18n";
@@ -136,11 +136,11 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
   musicxml: "MusicXML",
 };
 
-/** 文本谱两种方言都装不下的。依据见 `pu/topu.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
+/** 文本谱两种方言都装不下的。依据见 `fanqie/tofanqie.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
  *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
  *  音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。 */
-const PU_GONE: Feature[] = [
-  // `{dsb…}` 并排块里不跟词（`topu.ts`）
+const FANQIE_GONE: Feature[] = [
+  // `{dsb…}` 并排块里不跟词（`tofanqie.ts`）
   "innerVoiceLyrics",
   "beamGroup", "octaveShift", "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
   // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
@@ -180,10 +180,10 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   jpwabc: allBut("beamGroup", "octaveShift", "tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
   // 文本谱：展开档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
-  // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `pu/dialect.ts::EmitStyle.pageFields`）
+  // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `fanqie/dialect.ts::EmitStyle.pageFields`）
   // 番茄的调号字段 `D:` 只有音名、没有主音唱名（诗歌本的 `6=E4/4` 写得出）
-  tomato: allBut(...PU_GONE, "pageText", "layoutDirectives", "tonicDegree"),
-  shige: allBut(...PU_GONE),
+  tomato: allBut(...FANQIE_GONE, "pageText", "layoutDirectives", "tonicDegree"),
+  shige: allBut(...FANQIE_GONE),
   // jianpu-ly 装不下什么，依据 `docs/格式/jianpu-ly.md` 与 `tojly.ts` 的 `warnings`：
   //   · 多声部/多曲只写第一路（`NextScore` 本版不写）；扩展 meta、纸、样式表、页面文字没有字段；
   //   · 演唱顺序只认跳转裸词（`Fine`/`DC`/`Segno`/`ToCoda`），`playOrder` 的自定义跳转写不出；
@@ -203,7 +203,7 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   musicxml: allBut("playOrder", "style", "layoutDirectives", "nestedArc", "oddTuplet", "tonicDegree"),
 };
 
-/** 文本谱认的版面指令（`pu/parse.ts` 的头部字段）。123/ABC 读进来是小写（`I:fontsize`）。 */
+/** 文本谱认的版面指令（`fanqie/parse.ts` 的头部字段）。123/ABC 读进来是小写（`I:fontsize`）。 */
 const LAYOUT_DIRECTIVE = /^(fontsize|margin|space|off)$/i;
 
 function keyDiffers(a: NonNullable<Song["key"]>, b: NonNullable<Song["key"]>): boolean {
@@ -331,7 +331,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
       const nest = nestArcsInTuplets(part, marks, isArc);
       if (nest.crossedMarks.size > arcsToNextNote(part, marks, isArc).size) used.add("slurCrossTuplet");
     }
-    const arcs = puArcLosses(song);
+    const arcs = fanqieArcLosses(song);
     if (arcs.nested) used.add("nestedArc");
     if (arcs.oddTuplet) used.add("oddTuplet");
     if (arcs.graceArc) used.add("graceArc");

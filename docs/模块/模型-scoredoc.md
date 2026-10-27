@@ -23,7 +23,7 @@
 | 试听 / MIDI | `playdoc.ts::playSourceOfDoc` / `playsong.ts::playSourceOfSong` | `score/timeline.ts` |
 | 断句 | `phrasedoc.ts` / `phrasesong.ts` 拼断句输入（带 `idOf`） | `score/phrase.ts` |
 
-`PuDoc`（`src/jianpu/ast.ts`）已退役：只是 `parsePuAst` → `puToScoreDoc` 之间的中间结果，`parsePu` 直出 `ScoreDoc`。
+`FanqieDoc`（`src/jianpu/ast.ts`）已退役：只是 `parseFanqieAst` → `fanqieToScoreDoc` 之间的中间结果，`parseFanqie` 直出 `ScoreDoc`。
 乐句重排改写原文要的行号/列号在模型上（`Print.source` / `textSources`、`LyricLineInfo.source` / `sources`）。
 
 ## 入口
@@ -42,7 +42,7 @@
 | `src/model/xmlproject.ts` | 简谱来源 → MusicXML 形状的投影（音高、divisions、记号原名、跨行小节…），`toxml.ts` 先过它 |
 | `src/model/deconames.ts` | 音符记号的别名表（`decoKey`）：拼音短名 / ABC 名 / MusicXML 名 / 中文名 → 文本谱短名。模型里原名照存，简谱排版、文本谱写出、MusicXML 投影用前先归一 |
 | `src/model/jianpuproject.ts` | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
-| `src/pu/frompu.ts` | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`pu-scoredoc-check` 全语料逐字段还原零差异） |
+| `src/fanqie/fromfanqie.ts` | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
 | `src/jianpu/slots.ts` | → **排版行视图**（`docView`）：线性化规则只写一次，原样档排版器 / 展开档投影 / 双向定位共用；行里每个符号带 `ElementId` |
 | `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
 | `src/model/fromjpw.ts` | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
@@ -76,7 +76,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   照抄过去在非 C 调错（`1=F` 的 `#4` 是 B 本位，印还原号不是升号）、跨八度漏（`#4 4'` 后一个要再印）；
   `.jpwabc`/文本谱只写在 `degree.accidental` 上，不另算谱表上就一个记号都没有。五线谱引擎只印 `Note.accidental`，自己不推。
 - **元素一律带稳定 `id`**（`IdGen` 分配）。`Mark`、歌词锚点、`playOrder` 的 skip/limit 全部引用 id——
-  `PuDoc` 用数组下标区间，插一个元素就全错。
+  `FanqieDoc` 用数组下标区间，插一个元素就全错。
 - **增时线是可挂载的独立对象**（`Chord.sustains[]`，各有 id），而时值仍记在 `Chord.duration` 上：
   语义上 `5 - -` 是一个三拍音符（与 MusicXML 一致），但**和弦可以挂在增时线上**（语料实测 190 次）。
 - **`Space` 元素**承载 `y`（无时值占位，专供挂和弦）与 `x`（不可见休止）。
@@ -114,12 +114,12 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
 - **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `timeaxis.ts`）、
   `Chord.continued`、`Mark.startLead/endTrail/leadInPreviousLine/continuationLevels`、`Ending.startOffset/endOffset/pair`…）
   **是排版信息，不是给导出用的**：没有它们谱面就少画或画错（例如弧线端点落在小节线上时简谱引擎认为没收口，弧会接到下一行）。
-  改 `frompu.ts` 后必须跑 `pu-scoredoc-check`。
+  改 `fromfanqie.ts` 后必须跑 `fanqie-scoredoc-check`。
 - **`source: SourceSpan` 不是可有可无的**：编辑器的双向光标/选择同步（`editor/sync.ts`）
   按它建「源文本偏移 → 元素 id」的索引。新增元素类型时**一定要把 span 填对**。
 - **只给编辑用的原文位置**：`Chord/Sustain/Space.attachedSources`（和弦名、装饰、注记各自的原文）、`Mark.openSource/closeSource`
   （弧的 `(` 与 `)`）、`Part.breakSources`（`$`、`$(…)`、`[fenye]`）。可视化编辑按它们选中、删除挂在音符上的记号与换行符；
-  排版、写出端、试听都不读，比对类回归（`pu-scoredoc-check`）要忽略它们。
+  排版、写出端、试听都不读，比对类回归（`fanqie-scoredoc-check`）要忽略它们。
 - **简繁转换以模型为准**（`model/hanconv.ts`）：
   - 转什么：`textGroups` 枚举人读的文字（标题、署名、版权、页眉页脚、备注、有排版角色的 meta、声部名、段落词、文字指示、
     `W:` 行、歌词及其标点）。和弦、调号拍号、字体族、纸张等代码类值不碰——转了会认不出（字体名 `宋体`→`宋體` 就找不到）。

@@ -1,6 +1,6 @@
 // 源格式适配器注册表。**每加一种可编辑的源格式，只该动这张表**。
 //
-// 以前每种格式的差异是 `app.ts` 里散在约二十处的 `docFormat === "pu"` 三目式：
+// 以前每种格式的差异是 `app.ts` 里散在约二十处的 `docFormat === "fanqie"` 三目式：
 // 高亮、存盘编码、默认扩展名、标题取法、档位旋钮、格式标签、能不能简繁转换……
 // 加第三、第四种格式时那二十处每处都要再分一次叉，漏一处就是一个只在某格式下复现的 bug。
 //
@@ -11,16 +11,16 @@
 
 import type { Extension } from "@codemirror/state";
 import { jpwHighlighter } from "./highlight";
-import { puHighlighter } from "../pu/highlight";
+import { fanqieHighlighter } from "../fanqie/highlight";
 import { j123Highlighter } from "../abcfamily/highlight";
 import { decodeJpwabc, encodeJpwabc } from "./fileio";
-import { parsePu } from "../pu";
+import { parseFanqie } from "../fanqie";
 import { t } from "../i18n";
 import { diagText, dialectLabel } from "../i18n/labels";
 import type { Diagnostic } from "../model/doc";
 import { eachChord } from "../model/helpers";
-import type { Dialect } from "../pu";
-import { relayoutPuText } from "../pu/relayout";
+import type { Dialect } from "../fanqie";
+import { relayoutFanqieText } from "../fanqie/relayout";
 import type { LinePlan } from "../jianpu/phrase";
 import { parse123, parseAbc, parseJcx } from "../abcfamily/parse";
 import { parseJly, rewrapJlyText } from "../jly/fromjly";
@@ -40,16 +40,16 @@ import { DIALECT_123 } from "./visual/dialects/j123";
 import { DIALECT_ABC } from "./visual/dialects/abc";
 import { DIALECT_JCX } from "./visual/dialects/jcx";
 import { DIALECT_JPW } from "./visual/dialects/jpw";
-import { DIALECT_PU } from "./visual/dialects/pu";
+import { DIALECT_FANQIE } from "./visual/dialects/fanqie";
 
 /** 可打开的源格式。`musicxml` 没有代码区（`caps.textEditor === false`），只看谱面、转成文本格式再编辑。 */
-export type DocFormatId = "jpwabc" | "pu" | "123" | "abc" | "musicxml" | "jly" | "jcx";
+export type DocFormatId = "jpwabc" | "fanqie" | "123" | "abc" | "musicxml" | "jly" | "jcx";
 
 /** 适配器向 App 要的那些能力（**列全**，加一条就想想是不是该留在 App 里）。 */
 export interface FormatHost {
   getText(): string;
   /** 文本谱已解析出的方言，用于代码区标签（解析前为 null）。 */
-  readonly puDialectName: string | null;
+  readonly fanqieDialectName: string | null;
   /** 当前谱面排版器认得的标题（`.jpwabc` 那路由引擎输入给）。 */
   readonly painterTitle: string;
   /** `.jpwabc` 重排/重渲染。 */
@@ -142,11 +142,11 @@ type RelayoutPart =
     caps: FormatCaps & { phraseRelayout: true };
     /**
      * 重排（「按乐句重排」/「每行 N 小节」）怎么写回原文。分行本身与格式无关
-     * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`pu/relayout.ts`），
+     * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`fanqie/relayout.ts`），
      * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `jianpu/docrelayout.ts`）。
      *
      * @param plan 新行怎么分（`jianpu/phrase.ts::LinePlan`）。按乐句时带行长尺子（文本谱与多声部的原样档不给，
-     *             见 `App._puPhraseMeasure`；没有就按出厂的小节数目标断，也就是一句一行）
+     *             见 `App._fanqiePhraseMeasure`；没有就按出厂的小节数目标断，也就是一句一行）
      * @returns 新原文；没有可重排的曲行时原样返回 `text`
      */
     relayoutText(text: string, plan: LinePlan): string;
@@ -198,15 +198,15 @@ const JPWABC: FormatAdapter = {
   editDialect: DIALECT_JPW,
 };
 
-const PU: FormatAdapter = {
-  id: "pu",
+const FANQIE: FormatAdapter = {
+  id: "fanqie",
   defaultExt: ".pu",
-  highlighter: puHighlighter,
+  highlighter: fanqieHighlighter,
   // 文本谱是纯文本源格式：UTF-8 原文进、UTF-8 原文出。
   decode: (bytes) =>
     new TextDecoder(bytes[0] === 0xff || bytes[0] === 0xfe ? "utf-16" : "utf-8").decode(bytes),
   encode: utf8,
-  label: (host) => (host.puDialectName === null ? t("fmt.pu.label") : t("fmt.pu.labelWith", { dialect: host.puDialectName })),
+  label: (host) => (host.fanqieDialectName === null ? t("fmt.fanqie.label") : t("fmt.fanqie.labelWith", { dialect: host.fanqieDialectName })),
   // 头部第一条 T:/B:
   title: (host) => {
     const first = host
@@ -218,16 +218,16 @@ const PU: FormatAdapter = {
   },
   profileKnob: "original",
   caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true },
-  toScoreDoc: (text) => parsePu(text),
+  toScoreDoc: (text) => parseFanqie(text),
   // 原样档走原样文档布局（印刷原版的观感），展开档投影成简谱输入模型
   reloadSpec: {
     what: () => t("fmt.textScore"),
-    reject: rejectFatal((d) => t("status.puFatal", { error: diagText(d) })),
+    reject: rejectFatal((d) => t("status.fanqieFatal", { error: diagText(d) })),
     // 解析告警不拦排版，按方言报（谱面往往仍然是对的）
-    diagLabel: (doc) => dialectLabel((doc.puDialect ?? "tomato") as Dialect),
+    diagLabel: (doc) => dialectLabel((doc.fanqieDialect ?? "tomato") as Dialect),
   },
-  relayoutText: (text, plan) => relayoutPuText(text, parsePu(text), { plan }),
-  editDialect: DIALECT_PU,
+  relayoutText: (text, plan) => relayoutFanqieText(text, parseFanqie(text), { plan }),
+  editDialect: DIALECT_FANQIE,
 };
 
 /** 123 —— 简谱主格式。原生解析直出 `ScoreDoc`；排版直接吃 `ScoreDoc`。
@@ -391,7 +391,7 @@ const MUSICXML: ScoreDocAdapter = {
 
 export const FORMATS: Record<DocFormatId, FormatAdapter> = {
   jpwabc: JPWABC,
-  pu: PU,
+  fanqie: FANQIE,
   "123": J123,
   abc: ABC,
   musicxml: MUSICXML,

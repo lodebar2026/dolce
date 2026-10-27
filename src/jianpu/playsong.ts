@@ -20,7 +20,7 @@ import {
   JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
   playOrderByVerses, playOrderFromSpec, playOrderOf,
 } from "../score/playorder";
-import { linesOfVoice, voiceNumbers, type MusicElement, type PuSong } from "./ast";
+import { linesOfVoice, voiceNumbers, type MusicElement, type FanqieSong } from "./ast";
 import { Key, MusicCommon } from "../score/jppitch";
 import { fifthsOfSpelling } from "../model/keyshift";
 import type { PlaySource } from "../score/timeline";
@@ -102,13 +102,13 @@ function markExtends(song: Song, parts: readonly MeasureOut[][]): void {
   }
 }
 
-/** 行视图的声部号 → 模型的 part（`jianpu/slots.ts::toPuSong` 按 `P<n>` 的 id 或 part 序编号）。 */
+/** 行视图的声部号 → 模型的 part（`jianpu/slots.ts::toFanqieSong` 按 `P<n>` 的 id 或 part 序编号）。 */
 function partOfVoice(song: Song, voice: number): Part | undefined {
   return song.parts.find((p) => p.id === `P${voice}`) ?? song.parts[voice - 1];
 }
 
 /** 曲中转调：模型小节上的调号（第二小节起，口径同 `jianpuinput.ts` 与 `playdoc.ts`）按元素 id 交给 `buildMeasures`。
- *  全曲没有转调时不给（`buildMeasures` 照头部调号算）。文本谱后几组才出场的声部，头一小节上的调号也算（缺席时转了调，`frompu.ts` 补在它上面）。 */
+ *  全曲没有转调时不给（`buildMeasures` 照头部调号算）。文本谱后几组才出场的声部，头一小节上的调号也算（缺席时转了调，`fromfanqie.ts` 补在它上面）。 */
 function keyChangesOf(view: ReturnType<typeof docView>, part: Part | undefined): { fifthsOf?: (el: MusicElement) => number | undefined } {
   const changes = (m: Part["measures"][number], i: number): boolean => !!m.attrs?.key && (i > 0 || (m.print?.system ?? 0) > 0);
   if (!part || !part.measures.some(changes)) return {};
@@ -128,7 +128,7 @@ function keyChangesOf(view: ReturnType<typeof docView>, part: Part | undefined):
 }
 
 interface SongMeasures {
-  song: PuSong;
+  song: FanqieSong;
   key: Key;
   time: { beats: number; beatType: number };
   voices: number[];

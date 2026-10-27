@@ -3,7 +3,7 @@
 // Muse `.jcx` 的大写名（`HOLD` 延长、`STACC` 顿音、`ATT`/`HAT` 重音、`HUANQI` 换气、`DANBOYIN` 单波音）。
 //
 // 模型里记号**原名照存**（写回 123 时原样写，作者写什么就还是什么），**用的地方先归一**：
-// 简谱排版（`jianpu/slots.ts`，字形表 `engrave/jpglyph.ts::ORNAMENTS` 按短名查）、文本谱写出（`topu.ts`）、
+// 简谱排版（`jianpu/slots.ts`，字形表 `engrave/jpglyph.ts::ORNAMENTS` 按短名查）、文本谱写出（`tofanqie.ts`）、
 // MusicXML 投影（`xmlproject.ts`）、识别回归的奏法档。以前各处只认自己那一种，
 // `!staccato!` 读得进来、简谱里却不画（识别写出的正是这个名字）。
 //

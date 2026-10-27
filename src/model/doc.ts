@@ -7,19 +7,19 @@
 // | **`ScoreDoc`**（本文件） | 123 的原生模型 | **唯一语义模型**，其余向它汇聚 |
 // | ~~`Score`~~ | 原先是简谱排版的输入树 | **已删**：旧简谱引擎读 `layout/input.ts` 的只读输入，由 `jianpu/jianpuinput.ts` 从这里投影 |
 // | ~~`MixedScore`~~ | 原先五线谱**语义 + 排版**混在一起 | **已删**：五线谱引擎只留版面态 `StaffLayout`（`mixed/model.ts`），语义一律从这里取 |
-// | ~~`PuDoc`~~（`jianpu/ast.ts`） | 原先是文本谱的解析产物 | **已退役**：只剩 `pu/parse.ts::parsePuAst` → `pu/frompu.ts` 之间的中间结果；`parsePu` 直出 `ScoreDoc`，乐句重排读原文区间（`Print.source` / `LyricLineInfo.sources`） |
+// | ~~`FanqieDoc`~~（`jianpu/ast.ts`） | 原先是文本谱的解析产物 | **已退役**：只剩 `fanqie/parse.ts::parseFanqieAst` → `fanqie/fromfanqie.ts` 之间的中间结果；`parseFanqie` 直出 `ScoreDoc`，乐句重排读原文区间（`Print.source` / `LyricLineInfo.sources`） |
 //
 // 各格式的排版、试听、MusicXML 导出、双向定位都直接吃 `ScoreDoc`，
 // 经 `jianpu/slots.ts::docView` 线性化成排版行（那是排版的事，不是模型的事）。
 //
 // ## 设计依据（不是凭空设计）
 //
-// - 层级照 MusicXML：声部 → 小节 → 元素。`PuDoc` 那种扁平元素流每次对接 MusicXML 都得重摊一遍。
+// - 层级照 MusicXML：声部 → 小节 → 元素。`FanqieDoc` 那种扁平元素流每次对接 MusicXML 都得重摊一遍。
 // - 字段清单以混排原先直接读 DOM 的 `mixed/loader.ts` 实读的 88 个 MusicXML 元素为基准（混排改读本模型时缺的都补齐了），叠加 `scripts/census-123.mjs`
 //   对 500 首的实测（`<harmony>` 100% 的曲目都有、`<print new-system>` 100%、`lyric number` 到 8 段）。
 // - **绝对音高与简谱度数并存、可互推**：沿用 `score.ts::Note` 的既有做法（`pitch` + `number/jpOctave`），
 //   换算判据含「无点 1 的绝对音高」那条国标规则，**必须与 `jppitch.ts::jpTonicOctaveShift` 同源**。
-// - **元素一律带稳定 `id`**，`Mark` / 歌词锚点 / `playOrder` 全部引用 id。`PuDoc` 用数组下标区间，
+// - **元素一律带稳定 `id`**，`Mark` / 歌词锚点 / `playOrder` 全部引用 id。`FanqieDoc` 用数组下标区间，
 //   插一个元素就全错；MusicXML 用 `number` 属性配对，同样需要显式 id。
 //
 // ## 本轮填到哪
@@ -470,7 +470,7 @@ export interface Chord {
   rhythm?: boolean;
   /** `print-object="no"`：不可见 */
   printObject?: boolean;
-  /** 多声部文本谱里**不占时值的占位**（隐藏休止 `8`/`9`：别的声部字比这一声部的音多时垫一格，见 `frompu.ts::markPlaceholders`）。
+  /** 多声部文本谱里**不占时值的占位**（隐藏休止 `8`/`9`：别的声部字比这一声部的音多时垫一格，见 `fromfanqie.ts::markPlaceholders`）。
    *  `duration` 照旧按占一拍记（123 写出、五线谱投影不认这一位）；排版对拍位与试听不算它自己那一拍，
    *  它身上的增时线延的是前一个音。 */
   placeholder?: boolean;
@@ -694,7 +694,7 @@ export interface Print {
   /** 本行挂的歌词行版式：段号区间、印刷段号、段号与字的间隙、联合括号、音节个数。
    *  字本身挂在各元素的 `lyrics` 上；这里只记「行」这一级才有的东西，排版要原样还原 */
   lyricLines?: LyricLineInfo[];
-  /** 文本谱 `Q` 行本身在原文的区间。**只给改写原文的**（乐句重排 `pu/relayout.ts`）：它按行号取原文、按列号切 */
+  /** 文本谱 `Q` 行本身在原文的区间。**只给改写原文的**（乐句重排 `fanqie/relayout.ts`）：它按行号取原文、按列号切 */
   source?: SourceSpan;
   /** 与 `texts` 平行：各条 `W:` 行的原文区间（用途同 `source`） */
   textSources?: SourceSpan[];
@@ -774,7 +774,7 @@ export type MarkType =
   | "lyricExtend";
 
 /** 跨元素的记号。**用元素 id 配对**，不用数组下标区间——
- *  `PuDoc` 那种下标区间插一个元素就全错。 */
+ *  `FanqieDoc` 那种下标区间插一个元素就全错。 */
 export interface Mark {
   type: MarkType;
   /** MusicXML 的 `number` 属性：同类记号重叠时靠它配对 */
@@ -912,9 +912,9 @@ export interface Song {
 
 export interface ScoreDoc {
   /** 产出它的源格式，用于诊断与导出默认 */
-  sourceFormat: "123" | "abc" | "musicxml" | "jpwabc" | "pu" | "omr" | "jly" | "jcx";
-  /** 文本谱方言（`pu/dialect.ts::Dialect`）。排版取度量用 */
-  puDialect?: string;
+  sourceFormat: "123" | "abc" | "musicxml" | "jpwabc" | "fanqie" | "omr" | "jly" | "jcx";
+  /** 文本谱方言（`fanqie/dialect.ts::Dialect`）。排版取度量用 */
+  fanqieDialect?: string;
   /** 源文本（有的话）。点选定位要回指原文 */
   source?: string;
   songs: Song[];

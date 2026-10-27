@@ -1451,7 +1451,7 @@ export async function recognizeLyrics(
   const versesOf = (v: number): number[] => verseLabels.get(v) ?? [v + 1];
 
   // 段号本身也留一份原样输出：文本谱把它写成歌词行前置说明 `C1:<1.>…`（排在细竖线与首字
-  // 之间的一小段文字，见 pu/parse.ts::stripLyricAnnotation 与 painter 的 labelLeft）。装配时
+  // 之间的一小段文字，见 fanqie/parse.ts::stripLyricAnnotation 与 painter 的 labelLeft）。装配时
   // 段号被当成非汉字丢弃、不占音符位，故这一份只能在这里另存。
   // **逐谱行各记各的**：多段谱常只在第一谱行印号（后续行照行序共用映射），谱面没印的行就不写。
   // 号取重映射后的规范写法（`3.5.`），OCR 把点吞成 `35` 也能还原成谱面那个样子。

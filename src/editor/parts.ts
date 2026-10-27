@@ -157,7 +157,7 @@ export function showPartsPanel(app: App): void {
     if (!can) {
       body.append(el("p", "parts-note", app.docFormat === "jpwabc"
         ? t("parts.note.jpw")
-        : t("parts.note.pu")));
+        : t("parts.note.fanqie")));
     }
     if (!doc || parts.length === 0) {
       body.append(el("p", "parts-note", t("parts.note.none")));

@@ -24,7 +24,7 @@ export function keyNameOfFifths(fifths: number): KeyName {
 }
 
 /** 文字写法的调名（`bE` / `Eb` / `♭E` / `$E` / `#F` / `F`）→ 调名；认不出返回 null。
- *  `$` 是文本谱里降号的写法（`pu/parse.ts`）。 */
+ *  `$` 是文本谱里降号的写法（`fanqie/parse.ts`）。 */
 export function keyNameOf(text: string): KeyName | null {
   const m = /^([b#$♭♯]?)([A-G])([b#$♭♯]?)$/.exec(text.trim());
   if (!m || (m[1] && m[3])) return null;

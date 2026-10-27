@@ -59,7 +59,7 @@ export interface NoteCtx {
   /** ABC 的默认音长 `L:`，以四分音符为 1 */
   unitQuarters: number;
   /** 文本谱的方言（番茄 / 诗歌本：八度点、升降号写法不同） */
-  puDialect?: "tomato" | "shige";
+  fanqieDialect?: "tomato" | "shige";
 }
 
 /** 面板与快捷键给的常用装饰 */

@@ -1,14 +1,14 @@
 // 简谱识别核对的点选映射：识别产物写成文本后，「第 i 个识别音符 → 代码区间」。
 //
 // 识别结果的音符序是 `flatten(rows[].nums)`（`omr/emit.ts` 的约定），`omr/todoc.ts` 按这个序
-// 一个 num 建一个 `Chord`（倚音另建、长休止拆成几个 0），各写出端（`emit123` / `emitPu` / `emitJcx`）也保持这个序。
+// 一个 num 建一个 `Chord`（倚音另建、长休止拆成几个 0），各写出端（`emit123` / `emitFanqie` / `emitJcx`）也保持这个序。
 // 所以这里**重解析写出的文本**，按元素序（倚音、无时值占位除外）取各元素的源区间，歌词取音节的源区间，
 // 就与识别序逐位对齐——映射从读入端的源区间来，不在写出端边写边记，几种格式同一个做法。
 import type { JpwMeta, JpwRange } from "../omrkit/types";
 import type { ScoreDoc, SourceSpan } from "../model/doc";
 import { parse123, parseJcx } from "../abcfamily/parse";
-import { parsePu } from "../pu/parse";
-import type { Dialect } from "../pu/dialect";
+import { parseFanqie } from "../fanqie/parse";
+import type { Dialect } from "../fanqie/dialect";
 
 const rangeOf = (s: SourceSpan | undefined): JpwRange | null =>
   s && s.length > 0 ? { from: s.offset, to: s.offset + s.length } : null;
@@ -67,8 +67,8 @@ export function metaFromJcx(text: string): JpwMeta {
 }
 
 /** 文本谱的点选映射（番茄的标题字段是 `B:`、诗歌本是 `T:`，著作者都是 `Z:`）。 */
-export function metaFromPu(text: string, dialect: Dialect): JpwMeta {
-  const meta = elementMeta(parsePu(text, { dialect }));
+export function metaFromFanqie(text: string, dialect: Dialect): JpwMeta {
+  const meta = elementMeta(parseFanqie(text, { dialect }));
   headerMeta(meta, text, "B|T", "Z");
   return meta;
 }
