@@ -52,7 +52,8 @@ export async function recognizeRasterSong(
   opts: RasterOcrCaches & {
     title?: string;
     live?: RasterLiveOcr;
-    onPage?: (done: number, total: number) => void;
+    /** 每认完一页（串行时会等它返回：回归测试据此逐页切行覆盖） */
+    onPage?: (done: number, total: number) => void | Promise<void>;
     /** 返回 true = 取消（逐页之间查一次） */
     cancelled?: () => boolean;
     /** 判路时已栅格化过的页（第几份底本、第几页 → 结果）：识别那一页时直接用 */
@@ -152,7 +153,7 @@ export async function recognizeRasterSong(
         page.cleanup?.();
       }
       done++;
-      opts.onPage?.(done, total);
+      await opts.onPage?.(done, total);
     }
   } else {
     // 多页并行（`pagepool.ts`）：在途页数不超过池大小；按页序收结果，收到一页就把下一页的沿用交出去
@@ -208,7 +209,7 @@ export async function recognizeRasterSong(
       consume(r, order[k].si, order[k].pn, wantHeader);
       carries[k + 1]?.resolve({ carryTime, carryKey, wantHeader: header === null, openWedges });
       done++;
-      opts.onPage?.(done, total);
+      void opts.onPage?.(done, total);
       fill();
     }
   }

@@ -297,8 +297,9 @@ export interface RasterPageOpts {
 /**
  * 一页识别的几个阶段（回归测试的阶段快照按它分，见 `opts.trace`）：
  * `staves` 谱表与线距 → `blobs` 去线后的连通块 → `syms` 认出的符号 → `context` 谱号调号拍号 → `notes` 拼好的音 → `page` 整页结果。
+ * 另有 `carry`：这一页拿到的上页沿用（`PageCarry`，普通数据），在第一次用到它时交出——回归测试据它单独重跑一页。
  */
-export type RasterStage = "staves" | "blobs" | "syms" | "context" | "notes" | "page";
+export type RasterStage = "staves" | "blobs" | "syms" | "carry" | "context" | "notes" | "page";
 
 /** 认一页。顺序照 `staffomr/pagerun.ts::recognizeStaffPage`，**别调**。 */
 export async function recognizeRasterPage(
@@ -312,7 +313,11 @@ export async function recognizeRasterPage(
 ): Promise<RasterPageResult> {
   const source: PageSource = opts.source ?? { raster: () => rasterizePage(pdfPage, OPS), composeHeader: (binW) => composeHeaderStrip(pdfPage, OPS, binW) };
   let carryP: Promise<PageCarry> | null = null;
-  const carryOf = (): Promise<PageCarry> => (carryP ??= opts.carry ? opts.carry() : Promise.resolve({ carryTime: opts.carryTime, carryKey: opts.carryKey, wantHeader: opts.wantHeader, openWedges: opts.openWedges }));
+  const carryOf = (): Promise<PageCarry> =>
+    (carryP ??= (opts.carry ? opts.carry() : Promise.resolve({ carryTime: opts.carryTime, carryKey: opts.carryKey, wantHeader: opts.wantHeader, openWedges: opts.openWedges })).then((c) => {
+      opts.trace?.("carry", c);
+      return c;
+    }));
   /** 没认出谱的页照样把沿用原样交下去 */
   const emptyPage = async (page: SPage, raster: RasterPage | null, unit: RasterUnit | null): Promise<RasterPageResult> => {
     const c = await carryOf();
