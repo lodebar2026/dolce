@@ -158,20 +158,29 @@ function leadOf(sdoc: ScoreDoc, songIdx: number) {
   return { view, song, input, noteMap, where, voices, streams, lead };
 }
 
+/** 每行 n 小节有一行放不下：第 `song` 首（0 基，共 `songs` 首）的第 `line` 行（1 基）。 */
+export interface BarsOverflow {
+  song: number;
+  songs: number;
+  line: number;
+}
+
 /** 新的行怎么分：按乐句（`measure` 是行长尺子）、或每行固定 `n` 小节。
- *  `onOverflow`：每行 n 小节时，有一行在 `measure` 量出的版心里放不下就报（1 基行号，只报第一处）。 */
+ *  `onOverflow`：每行 n 小节时，有一行在 `measure` 量出的版心里放不下就报（每首报第一处）。 */
 export type LinePlan =
   | { kind: "phrase"; measure: FitMeasure | null }
-  | { kind: "bars"; n: number; measure?: FitMeasure | null; onOverflow?: (line: number) => void };
+  | { kind: "bars"; n: number; measure?: FitMeasure | null; onOverflow?: (at: BarsOverflow) => void };
 
 /** 按 `plan` 分出这一首的新行。 */
 export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): PuNewLine[] | null {
   if (plan.kind === "phrase") return puPhraseLines(sdoc, songIdx, { measure: plan.measure });
-  const lines = barLines(sdoc, songIdx, plan.n);
+  const ctx = leadOf(sdoc, songIdx);
+  if (!ctx) return null;
+  const lines = barLinesOf(ctx, plan.n);
   if (lines && plan.measure && plan.onOverflow) {
     const measured = plan.measure(sdoc, songIdx);
-    const bad = measured ? barLinesOverflow(sdoc, songIdx, lines, measured) : null;
-    if (bad !== null) plan.onOverflow(bad);
+    const bad = measured ? barLinesOverflow(ctx, lines, measured) : null;
+    if (bad !== null) plan.onOverflow({ song: songIdx, songs: sdoc.songs.length, line: bad });
   }
   return lines;
 }
@@ -185,7 +194,11 @@ export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): PuNe
  */
 export function barLines(sdoc: ScoreDoc, songIdx: number, n: number): PuNewLine[] | null {
   const ctx = leadOf(sdoc, songIdx);
-  if (!ctx || n < 1) return null;
+  return ctx ? barLinesOf(ctx, n) : null;
+}
+
+function barLinesOf(ctx: NonNullable<ReturnType<typeof leadOf>>, n: number): PuNewLine[] | null {
+  if (n < 1) return null;
   const { song, voices, streams, lead } = ctx;
   const els = lead.elements;
 
@@ -247,11 +260,9 @@ export function barLines(sdoc: ScoreDoc, songIdx: number, n: number): PuNewLine[
 /** 每行 n 小节分出来的行里，第一个在版心里放不下的（1 基行号）；都放得下返回 null。
  *  量法同断句的容量判据（`applybreaks.ts::fitForIds`）：行首音的 `x0` 到行末音的 `x1b`（没有就 `x1`）。 */
 function barLinesOverflow(
-  sdoc: ScoreDoc, songIdx: number, lines: readonly PuNewLine[],
+  ctx: NonNullable<ReturnType<typeof leadOf>>, lines: readonly PuNewLine[],
   measured: NonNullable<ReturnType<FitMeasure>>,
 ): number | null {
-  const ctx = leadOf(sdoc, songIdx);
-  if (!ctx) return null;
   const { view, lead } = ctx;
   for (let li = 0; li < lines.length; li++) {
     const seg = lines[li]!.segs.find((s) => s.voice === lead.voice);

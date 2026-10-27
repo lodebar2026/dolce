@@ -127,6 +127,7 @@ export const en: Record<MsgKey, string> = {
   "status.phraseSame": "No change: phrase breaks already match the current lines",
   "status.barsSame": "No change: the score already has {n} bars per line",
   "status.barsOverflow": "{n} bars per line do not fit (line {line}); layout will re-break by paper width. Try fewer bars per line or a wider paper",
+  "status.barsOverflowSong": "{n} bars per line do not fit (song {song}, line {line}); layout will re-break by paper width. Try fewer bars per line or a wider paper",
   "status.phraseFailed": "Re-breaking by phrase failed: {error}",
   "status.hanUnparsable": "The score can't be parsed, so it can't be converted",
   "status.loading": "Loading…",

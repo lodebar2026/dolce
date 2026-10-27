@@ -126,6 +126,7 @@ export const zh = {
   "status.phraseSame": "行结构没变：乐句断点与现在的分行一致",
   "status.barsSame": "行结构没变：现在已经是每行 {n} 小节",
   "status.barsOverflow": "每行 {n} 小节放不下（第 {line} 行），排版时会按纸宽重新断行；可改小每行小节数或换纸",
+  "status.barsOverflowSong": "每行 {n} 小节放不下（第 {song} 首第 {line} 行），排版时会按纸宽重新断行；可改小每行小节数或换纸",
   "status.phraseFailed": "按乐句重排失败：{error}",
   "status.hanUnparsable": "谱面解析不出来，无法简繁转换",
   "status.loading": "加载中",

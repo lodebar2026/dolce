@@ -342,7 +342,7 @@ export function isJlyMusicLine(line: string): boolean {
  * ⚠ **只搬字符、不整份重出**：写出端还不认识 `R{ } A{ }`、倚音、`chords=` 这些，整份重出会把它们抹掉。
  * 所以这里按 token 切片搬运，行内空白规范成一个空格（对上游无意义），其余原样。
  */
-export function rewrapJlyText(text: string, measuresPerLine = 4): string {
+export function rewrapJlyText(text: string, measuresPerLine = 4, opt: { skipPickup?: boolean } = {}): string {
   const rows = [...text.matchAll(/([^\r\n]*)(\r\n|\n|\r|$)/g)]
     .map((m) => ({ raw: m[1]!, sep: m[2] ?? "" }))
     .filter((r, i, all) => !(i === all.length - 1 && r.raw === "" && r.sep === ""));
@@ -362,12 +362,24 @@ export function rewrapJlyText(text: string, measuresPerLine = 4): string {
     acc.push(r);
   }
   segs.push(acc);
-  if (segs.length === 1) return rewrapJlyRows(rows, measuresPerLine);
-  return segs.map((s) => (s.length === 1 && isSep(s[0]!.raw) ? s[0]!.raw + s[0]!.sep : rewrapJlyRows(s, measuresPerLine))).join("");
+  const skip = !!opt.skipPickup;
+  if (segs.length === 1) return rewrapJlyRows(rows, measuresPerLine, skip);
+  return segs.map((s) => (s.length === 1 && isSep(s[0]!.raw) ? s[0]!.raw + s[0]!.sep : rewrapJlyRows(s, measuresPerLine, skip))).join("");
 }
 
-/** 单段的重排（原实现；分隔行已在 `rewrapJlyText` 里切开，不会跨首尾）。 */
-function rewrapJlyRows(rows: { raw: string; sep: string }[], measuresPerLine = 4): string {
+/** 一个小节（token 串）的时值，四分音符为 1：音符按减时线与附点折算、`-` 一拍，连音不折（只拿来比长短）。 */
+function jlyMeasureBeats(words: readonly string[]): number {
+  let beats = 0;
+  for (const tk of scanMusicLine(words.join(" "), new JlyLosses()).tokens) {
+    if (tk.kind === "sustain") beats += 1;
+    else if (tk.kind === "note") beats += (2 - 1 / 2 ** tk.dots) / 2 ** tk.beams;
+  }
+  return beats;
+}
+
+/** 单段的重排（原实现；分隔行已在 `rewrapJlyText` 里切开，不会跨首尾）。
+ *  `skipPickup`：不满的第一小节（比第二小节短的弱起）不计数，并进首行（「每行 N 小节」，同 `jianpu/phrase.ts::barLines`）。 */
+function rewrapJlyRows(rows: { raw: string; sep: string }[], measuresPerLine = 4, skipPickup = false): string {
   const isMusic = rows.map((r) => isJlyMusicLine(r.raw));
   if (!isMusic.some(Boolean)) return rows.map((r) => r.raw + r.sep).join("");
 
@@ -387,12 +399,30 @@ function rewrapJlyRows(rows: { raw: string; sep: string }[], measuresPerLine = 4
   let cur: string[] = [];
   let inMeasure: string[] = [];
   let count = 0;
+  let closed = 0; // 已收的小节数
+  let pickup = false;
+  if (skipPickup) {
+    // 先把头两个小节切出来比长短
+    const heads: string[][] = [];
+    let acc: string[] = [];
+    for (const tk of tokens) {
+      if (/^\|+$/.test(tk) && acc.length) {
+        heads.push(acc);
+        acc = [];
+        if (heads.length === 2) break;
+        continue;
+      }
+      acc.push(tk);
+    }
+    pickup = heads.length === 2 && jlyMeasureBeats(heads[0]!) < jlyMeasureBeats(heads[1]!);
+  }
   const flushLine = (): void => { if (inMeasure.length) { cur.push(...inMeasure); inMeasure = []; } if (cur.length) { lines.push(cur.join(" ")); cur = []; } };
   for (const tk of tokens) {
     if (/^\|+$/.test(tk) && inMeasure.length) {
       inMeasure.push(tk);
       cur.push(...inMeasure);
       inMeasure = [];
+      if (closed++ === 0 && pickup) continue;
       if (++count >= measuresPerLine) { lines.push(cur.join(" ")); cur = []; count = 0; }
       continue;
     }

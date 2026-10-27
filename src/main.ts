@@ -16,10 +16,10 @@ import { initLang, onLangChange, t } from "./i18n";
 import { setupPopover } from "./editor/toolpop";
 import { setupCompareSelect } from "./editor/comparemode";
 
-// Built-in sample (圣哉，圣哉，圣哉) — same content as CodeEditor.kt `scr`.
 /** 工具栏「每行 N 小节」上次选的 N */
 const BARS_PER_LINE_KEY = "dolce-bars-per-line";
 
+// Built-in sample (圣哉，圣哉，圣哉) — same content as CodeEditor.kt `scr`.
 const SAMPLE = `// ************** JPW-ABC File Ver 1.0 (for JP-Word v5.50m) **************
 .Title
 Title = {圣哉，圣哉，圣哉}

@@ -350,7 +350,7 @@ const JLY: FormatAdapter = {
   // 重排：**只把曲行按每 N 小节重新断行**，词行/页头/注释一个字不动（上游不看行，
   // 但 dolce 自己按文件的行排版；一行到底就挤成一团）。按乐句时尺子还没接（`measure` 先不用），
   // 用的是写出端同一套"每 4 小节一行"的出厂值。
-  relayoutText: (text, plan) => (plan.kind === "bars" ? rewrapJlyText(text, plan.n) : rewrapJlyText(text)),
+  relayoutText: (text, plan) => (plan.kind === "bars" ? rewrapJlyText(text, plan.n, { skipPickup: true }) : rewrapJlyText(text)),
   toScoreDoc: (text) => parseJly(text).doc,
   // 本版不收的写法（`LP:` 块、倚音和弦、布局开关…）`parseJly` 记进诊断，原样报出——不静默丢
   reloadSpec: { what: () => "jianpu-ly", reject: rejectNoNotes(() => t("status.abcNoNotes")), reportOnReject: true },

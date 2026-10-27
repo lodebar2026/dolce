@@ -14,7 +14,7 @@ import { songHeaderFonts, songLyricSize, songStaffSize } from "../model/pagemeta
 import { STAFF_LONG_IMAGE_WIDTH, STAFF_PAPER_DEFAULT, isPaper } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
-import type { FitMeasure } from "../jianpu/phrase";
+import type { BarsOverflow, FitMeasure } from "../jianpu/phrase";
 import { docView } from "../jianpu/slots";
 import { voiceNumbers } from "../jianpu/ast";
 import type { JpwMeta, JpwRange } from "../omrkit/types";
@@ -1564,13 +1564,18 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const relayout = this.adapter.relayoutText;
     if (!relayout) return;
     try {
-      let overflow: number | null = null;
+      let overflow: BarsOverflow | null = null;
       const measure = this._puPhraseMeasure();
       const out = relayout(base, mode === "phrase"
         ? { kind: "phrase", measure }
-        : { kind: "bars", n: bars, measure, onOverflow: (line) => { overflow ??= line; } });
+        : { kind: "bars", n: bars, measure, onOverflow: (at) => { overflow ??= at; } });
+      // 放不下比「没变」要紧：原文本来就是每行 N 小节、纸却放不下时也得说
+      const overflowText = (at: BarsOverflow): string => at.songs > 1
+        ? t("status.barsOverflowSong", { n: bars, song: at.song + 1, line: at.line })
+        : t("status.barsOverflow", { n: bars, line: at.line });
       if (out === base && this._lineMode === "original") {
-        this.setStatus(t(mode === "phrase" ? "status.phraseSame" : "status.barsSame", { n: bars }));
+        this.setStatus(overflow !== null ? overflowText(overflow)
+          : t(mode === "phrase" ? "status.phraseSame" : "status.barsSame", { n: bars }));
         return;
       }
       this._origLayoutText = base;
@@ -1579,7 +1584,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this._barsAt = mode === "bars" ? bars : null;
       this._setPhraseActive();
       if (out !== this.getText()) this.setText(out);
-      if (overflow !== null) this.setStatus(t("status.barsOverflow", { n: bars, line: overflow }));
+      if (overflow !== null) this.setStatus(overflowText(overflow));
     } catch (e) {
       console.error("重排失败", e);
       this.setStatus(t("status.phraseFailed", { error: (e instanceof Error ? e.message : String(e)) }));
