@@ -702,7 +702,26 @@ export function splitArcUnderGlyph(bin: Binary, comps: Component[], numH: number
     // 字得从弧顶以上起笔（字脚压在弧上，字身在上面）
     if (!arc || !glyph || glyph.bbox.y > arc.bbox.y - numH * 0.3) { out.push(k); continue; }
     probe("splitArcUnderGlyph");
-    out.push(arc, glyph);
+    // 弧两头各立着一个字（青年诗歌 60《经历基督作牧人》`A⌒⌒A7` 罩着 `7-6|5`）：字那份合成一个横跨整条弧的框，又被当成第二条弧。
+    // 按连通取字墨，横向挨着（间隙不过半个字号）的并成一组——同一个字的几笔（「利」的禾与刂）、`F#m` 的上标 ♯ 都留在一组；
+    // 隔得开的几组各成一块。碎屑（弧边上的一两个像素）不算
+    const rest: Binary = { w: b.w, h: b.h, data: new Uint8Array(b.w * b.h) };
+    for (let yy = 0; yy < b.h; yy++) for (let xx = 0; xx < b.w; xx++) if (own(xx, yy) && !arcPx(xx, yy)) rest.data[yy * b.w + xx] = 1;
+    const groups: Rect[] = [], areas: number[] = [];
+    for (const p of connectedComponents(rest, 4).filter((p) => Math.max(p.bbox.w, p.bbox.h) >= numH * 0.12).sort((p, q) => p.bbox.x - q.bbox.x)) {
+      const g = groups.length - 1;
+      if (g >= 0 && p.bbox.x - rright(groups[g]!) <= numH * 0.5) {
+        const u = groups[g]!, x0 = Math.min(u.x, p.bbox.x), y0 = Math.min(u.y, p.bbox.y);
+        groups[g] = { x: x0, y: y0, w: Math.max(rright(u), rright(p.bbox)) - x0, h: Math.max(rbottom(u), rbottom(p.bbox)) - y0 };
+        areas[g]! += p.area;
+      } else { groups.push({ ...p.bbox }); areas.push(p.area); }
+    }
+    out.push(arc);
+    if (groups.length <= 1) out.push(glyph);
+    else groups.forEach((g, i) => {
+      const r = { x: b.x + g.x, y: b.y + g.y, w: g.w, h: g.h };
+      out.push({ id: nextId++, bbox: r, area: areas[i]!, cx: rcx(r), cy: rcy(r) });
+    });
   }
   return out;
 }

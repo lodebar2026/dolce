@@ -38,7 +38,8 @@ const CHORD_HANZI_RE = /[或升降]/g;
 // （123 / 文本谱 / MusicXML 的 `location="left"` 都装得下，排版照样印在字母前；ABC 等格式写出时再折成后置）。
 // **根音必须大写**：印刷体和弦的根音从来是大写，而小写字母遍地都是——`Coda` 的 d/a、`Verse` 的 e
 // 一旦算根音，就凭空长出 D、A、E 三个和弦。宁可漏掉 OCR 把 C 读成 c 的那几个，也不放小写进来。
-export const CHORD_TOKEN_RE = /^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?\d*(?:sus\d*|add\d*)?(?:\/[#♯b♭]?[A-G][#♯b♭]?)?/;
+// 级数不收单独的「1」（没有这种和弦）：紧挨着的小节线顶、弧头常被 rec 读成 1，挂在和弦后面成了 `Bb1`、`F1`（哦，愿我有千万舌头）
+export const CHORD_TOKEN_RE = /^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?(?:\d{2,}|[02-9])?(?:sus\d*|add\d*)?(?:\/[#♯b♭]?[A-G][#♯b♭]?)?/;
 // 记号之间的分隔/标点：不计入覆盖率分母，也不产生 token。句点在其列——和弦之间的点多半是
 // OCR 把字距读成的噪声（`Em F C/E G` 读成 `EmF.C/EG`），一律当未覆盖会把整条和弦行判没。
 // 真含点的 `D.C.`/`D.S.` 另由 JUMP_RE 在切词前整段抹掉，不靠点这一条挡。

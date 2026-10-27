@@ -410,6 +410,31 @@ function joinSpacedTitleChars(ls: readonly HLine[]): HLine[] {
   return merged.length ? [...ls.filter((l) => !used.has(l)), ...merged] : [...ls];
 }
 
+/** 破折号连着的两截标题（青年诗歌 60「经历基督——作牧人」）：det 切成「经历基督」|「——作牧人」两框、还交叠半个字高，
+ *  标题只取得到一截（宽的那截），副标题也因标题中心偏了过不了居中那道门。**同一排、字号都是页上最大一号**的两框，
+ *  交界处有破折号（前框以它收尾或后框以它起头）、其余全是汉字的才并：书眉「060—青年诗歌」带数字，不动。 */
+function joinDashTitle(ls: readonly HLine[]): HLine[] {
+  const maxH = Math.max(0, ...ls.filter((l) => /^[一-鿿]+$/.test(l.text.trim())).map((l) => l.charH));
+  const piece = (l: HLine) => /^[—–－-]*[一-鿿]+[—–－-]*$/.test(l.text.trim()) && l.charH >= maxH * 0.8;
+  const sorted = ls.filter(piece).sort((a, b) => a.bbox.x - b.bbox.x);
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    const a = sorted[i]!, b = sorted[i + 1]!;
+    const ta = a.text.trim(), tb = b.text.trim();
+    const h = Math.max(a.charH, b.charH);
+    const gap = b.bbox.x - (a.bbox.x + a.bbox.w);
+    if (Math.abs(b.cy - a.cy) > h * 0.3 || h > Math.min(a.charH, b.charH) * 1.25 || gap < -h || gap > h * 1.5) continue;
+    if (!/[—–－-]$/.test(ta) && !/^[—–－-]/.test(tb)) continue;
+    if (/^[—–－-]/.test(ta) || /[—–－-]$/.test(tb)) continue;
+    probe("header.dashTitle");
+    const bbox = unionRect(a.bbox, b.bbox);
+    const text = (ta + tb).replace(/[—–－-]+/, "——");
+    const chars = a.chars && b.chars ? [...a.chars, ...b.chars] : undefined;
+    const joined: HLine = { text, charH: h, cx: bbox.x + bbox.w / 2, cy: bbox.y + bbox.h / 2, n: a.n + b.n, bbox, chars };
+    return [...ls.filter((l) => l !== a && l !== b), joined];
+  }
+  return [...ls];
+}
+
 function mergeStackedColumns(comps: Component[], numH: number): Component[] {
   const boxes = comps.map((c) => ({ ...c.bbox }));
   const alive = boxes.map(() => true);
@@ -1004,7 +1029,7 @@ export async function recognizeHeader(
   }
 
   async function classify(lines: HLine[]) {
-    const ls = joinSpacedTitleChars(lines);
+    const ls = joinDashTitle(joinSpacedTitleChars(lines));
     const creditRe = CREDIT_PREFIX_RE;
     const creditSuffixRe = CREDIT_SUFFIX_RE;
     const creditRoleTailRe = CREDIT_ROLE_TAIL_RE;

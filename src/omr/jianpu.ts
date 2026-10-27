@@ -708,7 +708,9 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   comps = splitArcTail(bin, comps, numHOf(comps));
   comps = splitArcFootDigit(bin, comps, numHOf(comps));
   comps = splitLineOverArc(bin, comps, numHOf(comps));
+  const preGlyphSplit = new Set(comps);
   comps = splitArcUnderGlyph(bin, comps, numHOf(comps));
+  const glyphSplit = new Set(comps.filter((k) => !preGlyphSplit.has(k)));   // 从「弧 + 字」粘连块里拆出来的块
   comps = splitLineDot(bin, comps, numHOf(comps), isVoicedPage(comps, numHOf(comps)));
   // 弧端切点在四声部页上也做：这种页的线跨两个声部（≥2.6 字号），进不了「干净页」的尺子；弧又贴着音起笔，
   // 右脚常压在下一个音的高音点上（新编赞美诗·四声部 172 `1̇⌒2̇` 弧连点 58×22，整本漏高音点三百多处）
@@ -1217,6 +1219,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
 
   // 临时升降号：印在音符左侧、紧贴着，比数字矮一截也窄一截（实测 ♯ 是 10×17，同行数字 15×24）。
   // 摘出音符流，记在右邻那个音符上（下游 applyJpPitch 会按简谱规矩在小节内延续）。
+  const midThickBars = new Map<StaffRow, number[]>();   // 曲中细粗并排两根（单声部行）：右边那根的 x，等 Fine 定夺
   const accidentals = new Map<DigitCore, "sharp" | "flat" | "natural">();
   const accCores = new Set<DigitCore>();
   const accClassified = new Set<Component>([...c.barlines, ...c.longBarlines, ...c.hlines, ...c.dots]);
@@ -1563,8 +1566,10 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
         }
         // 行中出现细+粗：宁可当普通线，别把终止线形态乱扣到曲中。**连谱号括着的声部行**例外：四声部本子
         // 在「阿们」前印一道终止线（《圣哉三一歌》《三一来临歌》），各声部同一位置都有，不会是乱扣。
+        // 单声部行上的先记成候选，等跳转记号落了位再看：线前印着 Fine 的才是曲终（见歌词之后那一步）。
         if (thick) {
           if (braced) { probe("barline.midEnd"); ((m as { endBarXs?: number[] }).endBarXs ??= []).push(rcx(cur.bbox)); }
+          else ((m as { thickBarXs?: number[] }).thickBarXs ??= []).push(rcx(cur.bbox));
           continue;
         }
         // 两根等粗 → 复纵线。再要求高度相近：被切开的数字竖笔、噪声细纹与真线并排时高度差得远。
@@ -2073,6 +2078,8 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       endBarXs: (m as { endBarXs?: number[] }).endBarXs };
     const sv = sysOf.get(m);
     if (sv) { row.system = sv.sys; row.voice = sv.voice; }
+    const thickXs = (m as { thickBarXs?: number[] }).thickBarXs;
+    if (thickXs) midThickBars.set(row, thickXs);
     return row;
   });
 
@@ -2347,7 +2354,8 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   // 反复线与一/二房：以冒号点对/顶括线几何识别，锚到相邻音符，建模型时提升为小节线。
   await detectRepeatsAndEndings(bin, comps, c.dots, useRows, numH, ocr);
   // segno 𝄋（跳转目标）：字形识别，锚到下方音符所在小节的左线。
-  detectSegno(comps, useRows, numH);
+  const segnoInk: Component[] = [];
+  detectSegno(comps, useRows, numH, segnoInk);
   trace?.("repeats", useRows);
 
   // 多连音（三连音 ⌒3⌒）：先于 slur 认——括线的两半自己也够得着圆滑线的判据，认出来后
@@ -2405,7 +2413,8 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   // 圆滑线/连音线：检测音符上方弧形连通块 → 置位起止音符（不依赖 OCR 后端）。
   // comps 之外再补上与数字粘连切出的弧帽（arcComps）。与小节线粘连的弧已在 untangleBridged
   // 去连通阶段还原为 comps 里的独立连通块，这里天然一并检测。
-  const slurRefits = detectSlurs(bin, [...comps, ...arcComps].filter((k) => !tupComps.has(k)), useRows, numH);
+  const slurArcs: Component[] = [];
+  const slurRefits = detectSlurs(bin, [...comps, ...arcComps].filter((k) => !tupComps.has(k)), useRows, numH, slurArcs);
   trace?.("slurs", useRows);
 
   // 页眉：标题/作词/作曲/调号/速度（同样仅 PaddleOCR 后端）。
@@ -2475,16 +2484,64 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     // 条带按整列从图上裁，块剔了墨还在：和弦紧贴在延长记号右边时（青年诗歌 53《同活主身体中》第 4 行 `𝄐G`），弧与点落在字间空隙里
     // 一并裁进去，rec 读成 `GEmoG`，覆盖率差一点不够和弦行、整行四个和弦全丢。送 rec 的图上抹掉延长记号的墨
     //（只抹框里不属于别的块的部分，紧挨着的字母不受伤）
+    // 高悬的临时记号、认成圆滑线的弧、segno 同理（都已归了音符）：青年诗歌 59《主到我这里来》第 1 行 `2· ♯1̲` 的 ♯ 顶伸进和弦带，
+    // `A ♯ D` 读成 `AHD`，覆盖率不够和弦行、整行和弦全丢；末行 G 右脚下就是弧的起笔，读成和弦 `G2`。
+    // 临时记号只抹整块落在记号框里的墨；弧框与和弦字框交叠处的墨留着。弧只抹细的——每列（扣掉别的块框）墨高不过 0.35 字号：
+    // 认成弧的块有的还粘着和弦字母（同首 `Em⌒A7` 弧连着 m 与 A，一起抹掉就读成 `E 7`）。从「弧 + 字」粘连块里拆出来的弧不抹：
+    // 字脚连着弧，rec 对着连着弧的字反倒读得稳（同首 `F#m⌒` 抹了弧，上标小 ♯ 就读丢了）
     let lyricBin = bin;
-    const fermataInk = [...fermataArcs, ...fermataDots];
-    if (fermataInk.length) {
+    // 认临时号那一步也跑在后来剔掉的伪谱行（歌词行）上，「亻」「女」「口」这类窄偏旁会被形状判据当成 ♯/♭（迦南 1717 `姐` 读成 `咀`、
+    // 946「唱」读成「昌」）：只抹最终谱行里、右边紧挨着一个音的
+    const accBoxes = [...accCores].map((k) => k.bbox).filter((b) => useRows.some((r) => r.nums.some((n) => n.accidental &&
+      n.bbox.x >= rright(b) - 2 && n.bbox.x - rright(b) <= numH * 1.0 && n.bbox.y < rbottom(b) && rbottom(n.bbox) > b.y)));
+    const inBoxes = (x: number, y: number, boxes: Rect[]) => boxes.some((o) => x >= o.x && x < rright(o) && y >= o.y && y < rbottom(o));
+    // 只抹端头上立着一个字母大小的块、字脚伸进弧框里的弧（G 的右脚下就是弧的起笔）。别处的弧不动：四声部谱下声部的弧就在两声部间的歌词带里，
+    // 抹了 rec 读歌词反倒不稳（圣哉三一歌、73、主祢真伟大各错一两个字；主祢的英文「some」悬在下一行的弧上方，抹弧后拆成 `s ome`）
+    const letterOnEnd = (a: Component): boolean => {
+      const b = a.bbox, endW = Math.max(numH * 0.5, b.w * 0.15);
+      return comps.some((o) => o !== a && o.bbox.h >= numH * 0.5 && o.bbox.h <= numH * 1.2 && o.bbox.w <= numH * 1.2 &&
+        rcy(o.bbox) < b.y && rbottom(o.bbox) > b.y + 1 &&
+        (overlapX(o.bbox, { ...b, w: endW }) > 0 || overlapX(o.bbox, { ...b, x: rright(b) - endW, w: endW }) > 0));
+    };
+    const thinArc = (a: Component): boolean => {
+      const b = a.bbox;
+      const boxes = comps.filter((o) => o !== a && overlapX(o.bbox, b) > 0 && o.bbox.y < rbottom(b) && rbottom(o.bbox) > b.y).map((o) => o.bbox);
+      for (let x = b.x; x < rright(b); x++) {
+        let n = 0;
+        for (let y = b.y; y < rbottom(b); y++) if (bin.data[y * bin.w + x] && !inBoxes(x, y, boxes)) n++;
+        if (n > numH * 0.35) return false;
+      }
+      return true;
+    };
+    const eraseArcs = slurArcs.filter((a) => !glyphSplit.has(a) && letterOnEnd(a) && thinArc(a));
+    const fermataInk = [...fermataArcs, ...fermataDots, ...segnoInk, ...comps.filter((o) => accBoxes.some((b) =>
+      o.bbox.x >= b.x - 2 && rright(o.bbox) <= rright(b) + 2 && o.bbox.y >= b.y - 2 && rbottom(o.bbox) <= rbottom(b) + 2))];
+    if (fermataInk.length || eraseArcs.length) {
       lyricBin = { ...bin, data: bin.data.slice() };
-      const others = comps.filter((o) => !fermataArcs.has(o) && !fermataDots.has(o));
+      const inkSet = new Set([...fermataInk, ...eraseArcs]);
+      const others = comps.filter((o) => !inkSet.has(o));
+      const nearOf = (b: Rect) => others.filter((o) => overlapX(o.bbox, b) > 0 && o.bbox.y < rbottom(b) && rbottom(o.bbox) > b.y);
+      const inNear = (near: Component[], x: number, y: number) => near.some((o) => x >= o.bbox.x && x < rright(o.bbox) && y >= o.bbox.y && y < rbottom(o.bbox));
       for (const f of fermataInk) {
-        const b = f.bbox;
-        const near = others.filter((o) => overlapX(o.bbox, b) > 0 && o.bbox.y < rbottom(b) && rbottom(o.bbox) > b.y);
-        for (let y = b.y; y < rbottom(b); y++) for (let x = b.x; x < rright(b); x++) {
-          if (!near.some((o) => x >= o.bbox.x && x < rright(o.bbox) && y >= o.bbox.y && y < rbottom(o.bbox))) lyricBin.data[y * bin.w + x] = 0;
+        const b = f.bbox, near = nearOf(b);
+        for (let y = b.y; y < rbottom(b); y++) for (let x = b.x; x < rright(b); x++) if (!inNear(near, x, y)) lyricBin.data[y * bin.w + x] = 0;
+      }
+      // 弧按连通整条抹：从弧框里、别的块框外的墨出发，在弧框内八连通填充。只按框抹的话弧落在和弦字框里那截留下来，
+      // 一小段竖墨读成「1」（哦，愿我有千万舌头 `Bb⌒` 读成 `Bb1`）；字母是另外的连通块，填充进不去
+      for (const a of eraseArcs) {
+        const b = a.bbox, near = nearOf(b);
+        const stack: number[] = [];
+        for (let y = b.y; y < rbottom(b); y++) for (let x = b.x; x < rright(b); x++)
+          if (lyricBin.data[y * bin.w + x] && !inNear(near, x, y)) stack.push(y * bin.w + x);
+        while (stack.length) {
+          const i = stack.pop()!;
+          if (!lyricBin.data[i]) continue;
+          lyricBin.data[i] = 0;
+          const x = i % bin.w, y = (i - x) / bin.w;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx, yy = y + dy;
+            if (xx >= b.x && xx < rright(b) && yy >= b.y && yy < rbottom(b) && lyricBin.data[yy * bin.w + xx]) stack.push(yy * bin.w + xx);
+          }
         }
       }
     }
@@ -2535,6 +2592,25 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     if (opts.refLyrics) {
       lyricCheck = await applyRefLyrics({ key: "C", fifths, beats, beatType, meters, rows: useRows, number, title },
         opts.refLyrics, lr.hooks);
+    }
+    // 曲中细粗并排的两根（单声部行）：Fine 印在这道线前一两个小节上方的，就是曲终的终止线（青年诗歌 60《经历基督作牧人》
+    // `1-- | 1- ‖ 1̇1̇1̇`，Fine 落在后一小节的增时线上方，按 x 归音挂到了前一小节的 1 上）。认作终止线，Fine 挪到线前末音上
+    for (const [row, xs] of midThickBars) {
+      for (const x of xs) {
+        const before = row.nums.filter((n) => rcx(n.bbox) < x);
+        const bars = row.barlineXs.filter((b) => b < x - numH * 0.5);
+        const from = bars.length >= 2 ? bars[bars.length - 2]! : -Infinity;   // 线前两个小节以内
+        const host = before.filter((n) => rcx(n.bbox) > from).find((n) => n.jumpMarks?.includes("Fine"));
+        const last = before[before.length - 1];
+        if (!host || !last) continue;
+        probe("barline.fineEnd");
+        (row.endBarXs ??= []).push(x);
+        if (host !== last) {
+          host.jumpMarks = host.jumpMarks!.filter((w) => w !== "Fine");
+          if (!host.jumpMarks.length) delete host.jumpMarks;
+          (last.jumpMarks ??= []).push("Fine");
+        }
+      }
     }
     // 弧配音两可的（整体右偏的弧），等各段歌词都落位后按一字多音的形裁决。
     resolveSlurRefits(slurRefits);

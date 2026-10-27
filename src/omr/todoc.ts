@@ -296,6 +296,7 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
   const thinEndIdx = new Set<number>();    // 其中只按位置认的（两根没分出粗细）
   const doubleIdx = new Set<number>();     // 右边界是复纵线（细细双线 ‖）的小节
   const silentIdx = new Set<number>();     // 声部整小节不唱（写整小节隐形休止）
+  const hiddenIdx = new Set<number>();     // 右边界是不可见小节线（行末开口、下一行行首却带 segno，见下）
   // 行首段号（`1.`）挂到该行每段第一个有词的音符上（`Lyric.verseLabel`）
   const labelOf = new Map<JpNum, string[]>();
   const breakAfterNum = new Set<JpNum>();
@@ -317,7 +318,11 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
     };
     // 行首就是 `‖:`（上一行末开口）：那道反复线就是本行首小节的左线，不并进上一行——
     // 青年诗歌 13《爱使我们相聚一起》`… 2|1 - - $ ‖:3̲ 4̲|5 …`，并了反复线就落到 `1 - -` 前面
-    if (openTail && allMeasures.length && !ms[0].notes[0]?.repeatForward) {
+    // segno 印在行首、上一行末开口（青年诗歌 60《经历基督作牧人》`… | 1 $ 𝄋 3·♯2̳ | …`）同理：segno 只能挂小节线，
+    // 并进跨行小节就落到上一行的 `1` 前面、D.S. 跳回来多唱一个音。上一行末收一道不可见线 `[|]`，segno 挂本行首小节左线
+    const segnoHead = openTail && allMeasures.length > 0 && !!ms[0].notes[0]?.segno;
+    if (segnoHead) hiddenIdx.add(allMeasures.length - 1);
+    if (openTail && allMeasures.length && !ms[0].notes[0]?.repeatForward && !segnoHead) {
       // 跨行小节：原图换行落在小节中间，记在上一行最后一个音上（`Chord.lineBreakAfter`），写出时原位断行
       const prev = allMeasures[allMeasures.length - 1];
       if (prev.length) breakAfterNum.add(prev[prev.length - 1]);
@@ -497,6 +502,7 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
       // 故不像终止线那样给 endingStop 让位。
       // 下一小节以反复起始 `‖:` 开头：那对粗细线就是反复线本身（青年诗歌 5《第一声呼求》`5 ‖: 3̇`），不另记复纵线
       else if (doubleIdx.has(idx) && !allMeasures[idx + 1]?.some((n) => n.repeatForward)) b.style = "light-light";
+      else if (hiddenIdx.has(idx)) b.style = "none";
       else if (closed) b.style = "regular";
       if (endingStop !== undefined) b.ending = endingOf(endingStop, "stop");
       // 跳转记号（D.C./D.S./Fine/To Coda）：识别时锚在本小节某音符上，记在小节末

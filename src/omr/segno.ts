@@ -59,8 +59,19 @@ function hasTwoDots(body: Component, comps: Component[], numH: number): "diag" |
     Math.abs(rcy(a.bbox) - rcy(z.bbox)) >= numH * 0.1)) ? "diag" : null;
 }
 
-/** 找 segno 并锚到下方最近的音符（`JpNum.segno`）。`comps` 是全图连通块。 */
-export function detectSegno(comps: Component[], rows: StaffRow[], numH: number): void {
+/** 左右夹点那一形的两颗点：左点右缘、右点左缘（找不到的一侧取主体框边）。 */
+function sideDots(body: Component, comps: Component[], numH: number): [number, number] {
+  const b = body.bbox, cy = rcy(b);
+  const side = comps.filter((d) => d !== body && Math.max(d.bbox.w, d.bbox.h) >= numH * 0.08 &&
+    Math.max(d.bbox.w, d.bbox.h) <= numH * 0.3 && Math.abs(rcy(d.bbox) - cy) <= b.h * 0.3);
+  const l = side.filter((d) => rright(d.bbox) <= b.x && rright(d.bbox) >= b.x - numH * 0.7).map((d) => d.bbox.x);
+  const r = side.filter((d) => d.bbox.x >= rright(b) && d.bbox.x <= rright(b) + numH * 0.7).map((d) => rright(d.bbox));
+  return [l.length ? Math.min(...l) : b.x, r.length ? Math.max(...r) : rright(b)];
+}
+
+/** 找 segno 并锚到下方最近的音符（`JpNum.segno`）。`comps` 是全图连通块。
+ *  `inkOut`：认作 segno 的块（主体与两颗点）收进来，送歌词/和弦 rec 的图上抹掉——`·S·D` 不抹就读成 `S·D`、和弦 D 跟着丢。 */
+export function detectSegno(comps: Component[], rows: StaffRow[], numH: number, inkOut?: Component[]): void {
   for (const row of rows) {
     if (!row.nums.length) continue;
     const rowTop = Math.min(...row.nums.map((n) => n.bbox.y));
@@ -70,11 +81,13 @@ export function detectSegno(comps: Component[], rows: StaffRow[], numH: number):
     for (const k of comps) {
       if (rbottom(k.bbox) > y1 || k.bbox.y < y0) continue;
       if (!segnoBody(k, numH)) continue;
-      // segno 单独印着：左右一个字号内再有字号级的墨块，就是字的一半（选本 375 页眉书眉「难」的「又」旁边是「隹」）
+      const form = hasTwoDots(k, comps, numH);
+      // segno 单独印着：左右一个字号内再有字号级的墨块，就是字的一半（选本 375 页眉书眉「难」的「又」旁边是「隹」）。
+      // 左右夹点那一形只看两颗点以内：点外紧挨着的是和弦（青年诗歌 60《经历基督作牧人》`·S·D`，D 离 S 不到一个字号）
+      const [sx0, sx1] = form === "side" ? sideDots(k, comps, numH) : [k.bbox.x - numH, rright(k.bbox) + numH];
       if (comps.some((o) => o !== k && Math.max(o.bbox.w, o.bbox.h) > numH * 0.4 &&
         Math.min(rbottom(o.bbox), rbottom(k.bbox)) - Math.max(o.bbox.y, k.bbox.y) > k.bbox.h * 0.3 &&
-        o.bbox.x < rright(k.bbox) + numH && rright(o.bbox) > k.bbox.x - numH)) continue;
-      const form = hasTwoDots(k, comps, numH);
+        o.bbox.x < sx1 && rright(o.bbox) > sx0)) continue;
       if (!form || (form === "diag" && k.bbox.y < yDiag)) continue;
       // 锚到正下方最近的音符：segno 印在小节起头上方，那一小节的左线就是跳转落点。
       const cx = rcx(k.bbox);
@@ -87,6 +100,11 @@ export function detectSegno(comps: Component[], rows: StaffRow[], numH: number):
       if (!best) continue;
       probe("segno");
       best.segno = true;
+      if (inkOut) {
+        const b = k.bbox, padX = form === "side" ? numH * 0.7 : numH * 0.2;
+        inkOut.push(k, ...comps.filter((d) => d !== k && Math.max(d.bbox.w, d.bbox.h) <= numH * 0.3 &&
+          rcx(d.bbox) >= b.x - padX && rcx(d.bbox) <= rright(b) + padX && rcy(d.bbox) >= b.y - numH * 0.2 && rcy(d.bbox) <= rbottom(b) + numH * 0.2));
+      }
     }
   }
 }

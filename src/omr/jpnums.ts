@@ -161,6 +161,7 @@ export function resolvePairOctaveDots(rows: StaffRow[], numH: number): void {
 
 /** 每页单道增时线的统计宽度（见 buildJpNums 里的 dashUnit），按 Classified 记一次 */
 const dashUnitOf = new WeakMap<Classified, number>();
+const lineThickOf = new WeakMap<Classified, number>();
 
 export function buildJpNums(
   bin: Binary, rowCores: DigitCore[], numH: number, cls: Classified, ocrDigit: (b: Rect) => number,
@@ -524,6 +525,47 @@ export function buildJpNums(
     // 小节凭空少半拍（《主祢真伟大》第 25/33 小节即此，连 GT 都跟着错了）。
     // 改为：自上而下逐层验距，第一条要紧贴数字底，后面每条与上一条的间距不得超过 0.28 字高，
     // 断档就停止计数——真减时线不会稀稀拉拉地散在半个字高的范围里。
+    // 两道减时线挨得太近、连成一块（青年诗歌 60《经历基督作牧人》`3·3̳`：上道罩两音、下道只在后一音底下，
+    // 一头连着上道，合成一块 218×12，本页单道线厚 5~7）：本音符底下逐列数——中间隔着白的按墨段数，
+    // 糊死的按墨厚折成本页单道线厚的几倍；列数的中位是两三层就拆开，交给下面逐层验距去数
+    {
+      let t = lineThickOf.get(cls);
+      if (t === undefined) {
+        t = median(cls.hlines.filter((h) => h.bbox.w >= numH * 0.5 && h.bbox.h <= numH * 0.3).map((h) => h.bbox.h)) || 0;
+        lineThickOf.set(cls, t);
+      }
+      const thick = t;
+      const layersAt = (kb: Rect, x: number): number => {
+        let segs = 0, n = 0, inInk = false;
+        for (let y = kb.y; y < rbottom(kb); y++) {
+          const on = bin.data[y * bin.w + x] !== 0;
+          if (on) { n++; if (!inInk) segs++; }
+          inInk = on;
+        }
+        return segs >= 2 ? segs : n >= thick * 1.7 ? Math.round(n / thick) : segs;
+      };
+      if (thick >= 2) {
+        for (let i = 0; i < belowLines.length; i++) {
+          const kb = belowLines[i]!;
+          if (kb.h < thick * 1.7) continue;
+          const x0 = Math.max(kb.x, d.x), x1 = Math.min(rright(kb), rright(d));
+          const cols: number[] = [];
+          for (let x = x0; x < x1; x++) cols.push(layersAt(kb, x));
+          const layers = Math.min(3, median(cols));
+          if (layers < 2) continue;
+          probe("underline.fusedStack");
+          // 多层那段的横向范围：从本音符往两边连着几层都在的列
+          let a = x0, b = x1;
+          while (a > kb.x && layersAt(kb, a - 1) >= layers) a--;
+          while (b < rright(kb) && layersAt(kb, b) >= layers) b++;
+          const h = kb.h / layers;
+          const parts: Rect[] = [{ x: kb.x, y: kb.y, w: kb.w, h: Math.round(h) }];
+          for (let j = 1; j < layers; j++) parts.push({ x: a, y: Math.round(kb.y + h * j), w: b - a, h: Math.round(h) });
+          belowLines.splice(i, 1, ...parts);
+          i += parts.length - 1;
+        }
+      }
+    }
     belowLines.sort((a, b) => a.y - b.y);
     let prev: Rect | null = null;
     for (const kb of belowLines) {
