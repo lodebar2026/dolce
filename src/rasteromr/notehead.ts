@@ -581,6 +581,10 @@ export function hollowHeadsFromHoles(
   bars: LineSeg[] = [],
   /** 认成休止斜笔的竖段：挂上它的头当没干（见下「内腔扁而偏」） */
   restStrokes: ReadonlySet<LineSeg> = new Set(),
+  /** 收下来的：被并排两个全音符挤掉的「头」（两圈相接处那块实墨，见下 `seamMid`），调用方从已认出的头里删掉 */
+  seams: Rect[] = [],
+  /** 切开的「8」字两半 → 切口所在的 y（`hollowHeadsFromStackedHoles` 给）：量圈外缘时截到这里 */
+  stackMid?: ReadonlyMap<Rect, number>,
 ): { box: Rect; code: SmuflName; weak?: boolean }[] {
   const sp = unit.space;
   const ring = Math.max(2, Math.round(sp * RING));
@@ -622,6 +626,7 @@ export function hollowHeadsFromHoles(
     });
     if (walled) continue;
     let pairedWhole = false; // 并排有同形内腔的全音符（见下）
+    let seamMid: number | undefined; // 并排两个全音符内腔之间的中线 x
     // 内腔占满一个间的细圈头（望十架 p1 m4 的 F4 二分：内腔 0.86 格高），上下圈压在两条谱线里，照满圈外扩盒就高出 `H_MAX`：
     // 上下那一圈收到正好够得上 `H_MAX`
     const ringY = Math.max(1, Math.min(ring, Math.floor((sp * H_MAX - hole.h) / 2)));
@@ -634,6 +639,10 @@ export function hollowHeadsFromHoles(
       let clipped = false; // 并排有同形内腔
       // 同一高度左右紧挨着另一个内腔的（两个声部同音的全音符并排贴着，我灵镇静末小节），两个头的圈连成一段，
       // 外缘量到了邻头那边（1.9 格，超了上限）：截到两个内腔之间的中线
+      const sm = stackMid?.get(hole);
+      if (outer && sm !== undefined) {
+        outer = hole.y < sm ? { ...outer, h: Math.min(outer.y + outer.h, sm) - outer.y } : { ...outer, y: Math.max(outer.y, sm), h: outer.y + outer.h - Math.max(outer.y, sm) };
+      }
       if (outer) {
         const hcy = hole.y + hole.h / 2;
         for (const o of holes) {
@@ -643,9 +652,11 @@ export function hollowHeadsFromHoles(
           if ((o.x >= hole.x + hole.w && o.x - (hole.x + hole.w) < sp * 1.2) || (o.x + o.w <= hole.x && hole.x - (o.x + o.w) < sp * 1.2)) clipped = true;
           if (o.x >= hole.x + hole.w && o.x - (hole.x + hole.w) < sp * 1.2) {
             const mid = Math.round((hole.x + hole.w + o.x) / 2);
+            seamMid = mid;
             if (mid < outer.x + outer.w) outer = { ...outer, w: mid - outer.x };
           } else if (o.x + o.w <= hole.x && hole.x - (o.x + o.w) < sp * 1.2) {
             const mid = Math.round((o.x + o.w + hole.x) / 2);
+            seamMid = mid;
             if (mid > outer.x) outer = { ...outer, x: mid, w: outer.x + outer.w - mid };
           }
         }
@@ -668,8 +679,12 @@ export function hollowHeadsFromHoles(
         if (x >= 0 && y >= 0 && x < nl.w && y < nl.h && nl.data[y * nl.w + x]) ink++;
     const fill = ink / Math.max(1, box.w * box.h);
     if (fill < FILL_RING[0] || fill > FILL_RING[1]) continue;
-    // 已经认出来的符头不重复收
-    if (taken.some((t) => overlaps(t, box, sp * 0.4))) continue;
+    // 已经认出来的符头不重复收。并排两个全音符（「oo」）两圈相接处是一块实墨，不推平之后常被判头那一路收成一个实心头
+    //（我灵镇静末小节两声部同音 F4 全音符读成一个四分）：挡路的只是一个窄过一格、正骑在两内腔中线上的头，就当它是接缝，挤掉
+    const block = taken.filter((t) => overlaps(t, box, sp * 0.4));
+    const seam = (t: Rect) => seamMid !== undefined && t.w < sp * 1.2 && Math.abs(t.x + t.w / 2 - seamMid) < sp * 0.4;
+    if (block.length && !(seamMid !== undefined && block.every(seam))) continue;
+    for (const t of block) if (!seams.includes(t)) seams.push(t);
     let stem: LineSeg | true | null = stemOf(box, stems, unit, nl);
     // 挂上的「干」是休止的斜笔：头当没干，下面按圈外缘看是不是全音符
     const restStem = !!stem && restStrokes.has(stem);
@@ -749,6 +764,84 @@ export function hollowHeadsFromHoles(
     if (!mate) continue;
     out.push({ box: m.box, code: "noteheadHalf" });
     taken.push(m.box);
+  }
+  return out;
+}
+
+/**
+ * 「8」字叠头的最后一道：并成一个高孔、别的几路都没认的上下两个空心头，从中线切开按内腔那一路各走一遍。
+ * 两半都收成头才留（只收一半的多半不是叠头）。
+ */
+export function hollowHeadsFromStackedHoles(
+  nl: Binary,
+  holes: Rect[],
+  unit: RasterUnit,
+  stems: LineSeg[],
+  inStaffBand: (y: number, x?: number) => boolean,
+  taken: Rect[],
+  bars: LineSeg[] = [],
+  restStrokes: ReadonlySet<LineSeg> = new Set(),
+): { box: Rect; code: SmuflName; weak?: boolean }[] {
+  const sp = unit.space;
+  const ring = Math.max(2, Math.round(sp * RING));
+  // 「8」字叠头：上下叠着的两个空心头（我灵镇静低音 m16 A3/C♯4 全音符，一个骑顶线、一个骑上加一线），两个内腔只隔一道圈，
+  // `mergeHoles` 照「纵缝不到 HOLE_VGAP」并成了一个 1.8 格高的孔、尺寸关上被扔掉。并成 1.4~2.1 格高、宽在内腔档、
+  // 正中一带横着一道满宽的墨（两头之间的圈）、又没挂着干的，从中线切回上下两个内腔，量圈外缘时截到中线。
+  // 只当**最后一道**：按内腔、按音高逐位配模板、沿加线这几路都走完，这块地方还空着才切（`stages/heads.ts`）。
+  // 放进按内腔那一路的主循环里先切：半个内腔当了别的内腔的「并排同形内腔」、又占住位置，按音高那一路认得齐的三四个头一摞的手写全音符和弦
+  // 只剩切出来的两个（是爱 p2 m19、m30 和弦音跟着丢）。
+  // 试过在 `mergeHoles` 里一律不并出超过内腔上限的孔：别处碎片不再被吞进大孔扔掉、冒出假头，我灵镇静 67 → 82 步，撤了。
+  const stackPairs: { up: Rect; dn: Rect; mid: number }[] = [];
+  for (const hole of holes) {
+    const hh = hole.h / sp;
+    if (hh < 1.4 || hh > 2.1 || hole.w < sp * HOLE_W[0] || hole.w > sp * HOLE_W[1]) continue;
+    const mid = Math.round(hole.y + hole.h / 2);
+    let solid = 0;
+    for (let y = mid - 2; y <= mid + 2; y++) {
+      let n = 0;
+      for (let x = hole.x; x < hole.x + hole.w; x++) if (nl.data[y * nl.w + x]) n++;
+      if (n >= hole.w * 0.8) solid++;
+    }
+    if (!solid) continue;
+    // 只管不带干的（全音符）：带干的叠置空心和弦另有按音高逐位配模板那一路（`hollowHeadsByPitch`），这里抢先切开反而认偏
+    //（不限干时新编 44 首降）
+    const around = { x: hole.x - ring, y: hole.y - ring, w: hole.w + ring * 2, h: hole.h + ring * 2 };
+    if (stemOf(around, stems, unit, nl) || stemThrough(around, stems, unit)) continue;
+    // 左右两圈之内有一列墨从孔上沿一直通到孔下沿、还往外伸出 0.6 格以上的也不切：那是干（竖段表里未必有），
+    // 干、实心头与旁边斜空心头围出的白（新编 050 低音 m2）。全音符的圈伸不出孔外那么远
+    const inkCol = (x: number) => {
+      if (x < 0 || x >= nl.w) return false;
+      const on = (y: number) => y >= 0 && y < nl.h && !!nl.data[y * nl.w + x];
+      for (let y = hole.y; y < hole.y + hole.h; y++) if (!on(y)) return false;
+      let a = hole.y, b = hole.y + hole.h - 1;
+      while (on(a - 1)) a--;
+      while (on(b + 1)) b++;
+      return hole.y - a >= sp * 0.6 || b - (hole.y + hole.h - 1) >= sp * 0.6;
+    };
+    let stemBeside = false;
+    for (let k = 1; k <= ring * 2 && !stemBeside; k++) stemBeside = inkCol(hole.x - k) || inkCol(hole.x + hole.w - 1 + k);
+    if (stemBeside) continue;
+    const up = { x: hole.x, y: hole.y, w: hole.w, h: mid - hole.y }, dn = { x: hole.x, y: mid, w: hole.w, h: hole.y + hole.h - mid };
+    stackPairs.push({ up, dn, mid });
+  }
+  // 已被别的路认了（哪怕只认了一部分）的不动
+  const free = stackPairs.filter((q) => !taken.some((t) => overlaps(t, { x: q.up.x, y: q.up.y, w: q.up.w, h: q.dn.y + q.dn.h - q.up.y }, 1)));
+  if (!free.length) return [];
+  const mids = new Map<Rect, number>();
+  for (const q of free) { mids.set(q.up, q.mid); mids.set(q.dn, q.mid); }
+  const sub = hollowHeadsFromHoles(nl, [...mids.keys()], unit, stems, inStaffBand, taken, bars, restStrokes, [], mids);
+  const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
+  for (const q of free) {
+    const mine = sub.filter((o) => {
+      const cx = o.box.x + o.box.w / 2, cy = o.box.y + o.box.h / 2;
+      return cx >= q.up.x - ring && cx <= q.up.x + q.up.w + ring && cy >= q.up.y - ring && cy <= q.dn.y + q.dn.h + ring;
+    });
+    const both = mine.some((o) => o.box.y + o.box.h / 2 < q.mid) && mine.some((o) => o.box.y + o.box.h / 2 >= q.mid);
+    for (const o of mine) {
+      if (both) { out.push(o); continue; }
+      const ti = taken.indexOf(o.box);
+      if (ti >= 0) taken.splice(ti, 1);
+    }
   }
   return out;
 }

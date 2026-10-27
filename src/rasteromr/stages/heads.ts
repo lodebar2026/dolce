@@ -4,7 +4,7 @@
 import type { Binary, Rect, Component } from "../../omrkit/types";
 import { LineGrid, type RasterUnit, type StaffLineRun, type StaffGroup, pitchPos, pitchY } from "../staffline";
 import type { RasterPage } from "../rasterpage";
-import { type RasterHead, mergeHoles, hollowHeadsFromHoles, hollowHeadsByPitch, hollowHeadsOnLedgers, probeBareStems, headsOnBareStems, headsBetweenStemPairs, archCavity, hollowHeadsFromCavities, hollowSlit, inkColumn, reseatHollowHeads, hollowHeadsOnStemSeeds, hollowHeadsAlongStems, stemOf } from "../notehead";
+import { type RasterHead, mergeHoles, hollowHeadsFromHoles, hollowHeadsFromStackedHoles, hollowHeadsByPitch, hollowHeadsOnLedgers, probeBareStems, headsOnBareStems, headsBetweenStemPairs, archCavity, hollowHeadsFromCavities, hollowSlit, inkColumn, reseatHollowHeads, hollowHeadsOnStemSeeds, hollowHeadsAlongStems, stemOf } from "../notehead";
 import { type RasterPrims, type LineSeg, blobImage, binSig } from "../prims";
 import type { RasterSym } from "../adapt";
 import { type HeadMask, buildHollowMasks, buildHeadMasks, splitHeadCluster, headFromStemBlock, solidHeadsAlongStems, scoreAt, scoreAtMasked } from "../headmask";
@@ -287,7 +287,11 @@ export function hollowHeadsByCavity(c: {
   const barSegs = prims.vSegs.filter((q) =>
     staffGeoms.some((g) => Math.abs(Math.min(q.y0, q.y1) - g.topAt((q.x0 + q.x1) / 2)) < unit.space * 0.4 && Math.abs(Math.max(q.y0, q.y1) - g.bottomAt((q.x0 + q.x1) / 2)) < unit.space * 0.4),
   );
-  const stacked: RasterSym[] = hollowHeadsFromHoles(nl, holes, unit, [...prims.vSegs, ...(prims.shortStems ?? [])], inBand, takenBoxes, barSegs, restStrokes);
+  const seams: Rect[] = [];
+  const stacked: RasterSym[] = hollowHeadsFromHoles(nl, holes, unit, [...prims.vSegs, ...(prims.shortStems ?? [])], inBand, takenBoxes, barSegs, restStrokes, seams);
+  // 并排两个全音符挤掉的接缝「头」从已认出的头里删掉（`hollowHeadsFromHoles` 的 `seams`）
+  for (let i = heads.length - 1; i >= 0; i--) if (seams.includes(heads[i].box)) heads.splice(i, 1);
+  for (let i = takenBoxes.length - 1; i >= 0; i--) if (seams.includes(takenBoxes[i])) takenBoxes.splice(i, 1);
   // 并成一个高内腔的叠置空心和弦：按音高位置逐一配模板（`notehead.ts::hollowHeadsByPitch`），
   // 模板拿本页已认出的空心头（骑线 / 在间各一张）
   // 靠加线才放进谱表带的头（`inBand` 给 x 那一档）不当模板样本：加线把圈切成几截，平均进去模板就糊了（望十架 p10 长笛 G5 全音符跟着丢）
@@ -323,6 +327,8 @@ export function hollowHeadsByCavity(c: {
   // 竖段表里没有、靠墨柱判出来的干：只进 `SPage`（与 `stemSegs` 同理），`buildNotes` 定时值要它
   const inkStems: LineSeg[] = [];
   stacked.push(...hollowHeadsOnLedgers(raster.bin, nl, rawHoles, hollowMasks, unit, ledgerCandidates(raster.bin, groups), makePitchSteps(groups), prims.vSegs, takenBoxes, inkStems));
+  // 上面几路都没认的「8」字叠头：从中线切开再按内腔走一遍（`notehead.ts::hollowHeadsFromStackedHoles`）
+  stacked.push(...hollowHeadsFromStackedHoles(nl, holes, unit, [...prims.vSegs, ...(prims.shortStems ?? [])], inBand, takenBoxes, barSegs, restStrokes));
   // **压着实心头的「空心头」不要**：一个位置上头只有一种，盒里有一块实心头大小、几乎满墨的地方，那是真头，
   // 这块「内腔」是它与旁边的升号、谱线围出来的白（破碎 p8 m84 钢琴右手 C♯5，升号右竖与头之间读成二分 C5，把真头挤掉）
   // 内腔窄的手写粗圈页（`cavW`）上，两圈相接处也是一块实墨，夹在两个孔之间的不算（`solidInside` 的 `holes`）
