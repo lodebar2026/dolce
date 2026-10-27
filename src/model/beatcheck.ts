@@ -20,7 +20,7 @@
 import type { ElementId, Measure, ScoreDoc, SourceSpan, Time } from "./doc";
 import { SIMPLE_DIVISIONS } from "./doc";
 import { isXmlShaped } from "./xmlproject";
-import { t } from "../i18n";
+import { msg, msgText } from "./msg";
 
 export interface BeatIssue {
   songIndex: number;
@@ -154,7 +154,7 @@ function beatText(q: number): string {
 /** 一条问题的说法：「差 1/2 拍」「多 1 拍」。 */
 export function describeBeatIssue(i: BeatIssue): string {
   const diff = i.got - i.want;
-  return t(diff < 0 ? "beat.short" : "beat.over", { d: beatText(Math.abs(diff)), want: beatText(i.want), got: beatText(i.got) });
+  return msgText(msg(diff < 0 ? "beat.short" : "beat.over", { d: beatText(Math.abs(diff)), want: beatText(i.want), got: beatText(i.got) }));
 }
 
 /** 红框角上标的差额（识谱软件那样一眼看出差多少：`−♩`、`+♪`、`+𝅗𝅥.`）；凑不成一个音符的写拍数（`−1 1/3`）。 */

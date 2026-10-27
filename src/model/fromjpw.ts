@@ -17,7 +17,7 @@ import { SIMPLE_DIVISIONS, type Barline, type BeamVal, type Chord, type Lyric, t
 import { IdGen, breaksAfterToStart, emptyDoc, emptySong } from "./helpers";
 import type { BreakKind } from "./helpers";
 import { creatorTypeOf } from "./metakeys";
-import { t as tr } from "../i18n";
+import { ModelError, msg } from "./msg";
 
 
 /** 减时线/附点/增时线 → 模型时值（名义时值，连音比例另记在 Mark 上）。 */
@@ -541,7 +541,7 @@ export function readJpwSource(f: JpwFile): {
   const [beats, beatType] = (title?.meter ?? "4/4").split("/");
   const time = { beats: parseInt(beats!, 10), beatType: parseInt(beatType!, 10) };
   const voice = f.getVoice();
-  if (!voice) throw new Error(tr("err.noVoice"));
+  if (!voice) throw new ModelError(msg("err.noVoice"));
   const measures = readVoice(voice as VoiceSectionLike, fifths, time);
   assignLyrics(measures, f);
   let passes = 0;

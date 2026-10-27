@@ -2,6 +2,7 @@
 // 静态 DOM 用 data-i18n* 属性，动态文字调 t()；乐谱内容与记谱关键字不走这里。
 import { zh, type MsgKey } from "./zh";
 import { en } from "./en";
+import { setMsgTranslator, type ModelMsg } from "../model/msg";
 
 export type Lang = "zh" | "en";
 /** 用户设置：跟随系统 / 指定语言。 */
@@ -21,6 +22,15 @@ export function t(key: MsgKey, params?: Record<string, string | number>): string
   const s = DICTS[current][key] ?? zh[key] ?? key;
   return params ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in params ? String(params[k]) : m)) : s;
 }
+
+/** 模型层的提示（`model/msg.ts`：键 + 参数，参数里可以再套一条提示）按当前语言出字。 */
+function modelMsgText(m: ModelMsg): string {
+  if (!m.args) return t(m.key);
+  const params: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(m.args)) params[k] = typeof v === "object" ? modelMsgText(v) : v;
+  return t(m.key, params);
+}
+setMsgTranslator(modelMsgText);
 
 /** 键存在才译（用于 code→文案 的查表，如诊断）。 */
 export function tOpt(key: string, params?: Record<string, string | number>): string | undefined {

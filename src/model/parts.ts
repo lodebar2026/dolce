@@ -8,7 +8,7 @@
 
 import type { Chord, Clef, Element, ElementId, Lyric, Mark, Measure, Part, ScoreDoc, Song, Transpose } from "./doc";
 import { SIMPLE_DIVISIONS } from "./doc";
-import { t as tr } from "../i18n";
+import { msg, msgText } from "./msg";
 
 // ───────────────────────── 小工具 ─────────────────────────
 
@@ -211,7 +211,7 @@ export function addPart(doc: ScoreDoc, si: number, props: PartProps & { at?: num
   const ref = song?.parts[0];
   if (!song || !ref) return -1;
   let id = maxId(doc);
-  const part: Part = { id: newPartId(song), name: props.name ?? tr("parts.defaultName", { n: song.parts.length + 1 }), measures: [] };
+  const part: Part = { id: newPartId(song), name: props.name ?? msgText(msg("parts.defaultName", { n: song.parts.length + 1 })), measures: [] };
   if (props.abbrev) part.abbrev = props.abbrev;
   const clef = clefOf(props.clef ?? "treble");
   ref.measures.forEach((rm, mi) => {
@@ -237,7 +237,7 @@ export function duplicatePart(doc: ScoreDoc, si: number, pi: number): number {
   const map = new Map<ElementId, ElementId>();
   const copy: Part = JSON.parse(JSON.stringify(src)) as Part;
   copy.id = newPartId(song);
-  copy.name = tr("parts.copyName", { name: src.name ?? tr("parts.title") });
+  copy.name = msgText(msg("parts.copyName", { name: src.name ?? msg("parts.title") }));
   for (const m of copy.measures) {
     for (const e of m.elements) {
       const nid = ++id;
@@ -297,7 +297,7 @@ export function splitByVoice(doc: ScoreDoc, si: number, pi: number, props: PartP
   if (!song || !src) return -1;
   if (!src.measures.some((m) => m.elements.some((e) => e.voice > 1))) return -1;
   let id = maxId(doc);
-  const part: Part = { id: newPartId(song), name: props.name ?? `${src.name ?? tr("parts.title")} 2`, measures: [] };
+  const part: Part = { id: newPartId(song), name: props.name ?? `${src.name ?? msgText(msg("parts.title"))} 2`, measures: [] };
   const clef = props.clef ? clefOf(props.clef) : src.measures[0]?.attrs?.clefs?.[0];
   src.measures.forEach((m, mi) => {
     const nm = skeleton(m, clef, mi === 0);
@@ -343,7 +343,7 @@ export function splitByChord(doc: ScoreDoc, si: number, pi: number, props: PartP
   if (!song || !src) return -1;
   if (!src.measures.some((m) => m.elements.some((e) => e.kind === "chord" && e.notes.length > 1))) return -1;
   let id = maxId(doc);
-  const part: Part = { id: newPartId(song), name: props.name ?? `${src.name ?? tr("parts.title")} 2`, measures: [] };
+  const part: Part = { id: newPartId(song), name: props.name ?? `${src.name ?? msgText(msg("parts.title"))} 2`, measures: [] };
   const clef = props.clef ? clefOf(props.clef) : src.measures[0]?.attrs?.clefs?.[0];
   const midi = (n: Chord["notes"][number]): number => (n.pitch ? (n.pitch.octave + 1) * 12 + "C D EF G A B".indexOf(n.pitch.step) + n.pitch.alter : 0);
   src.measures.forEach((m, mi) => {

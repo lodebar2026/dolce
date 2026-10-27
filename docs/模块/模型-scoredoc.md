@@ -32,6 +32,8 @@
 |---|---|
 | `src/model/doc.ts` | 类型定义。层级：`ScoreDoc → Song → Part → Measure → Element` |
 | `src/model/helpers.ts` | 遍历/查询/构造 |
+| `src/model/msg.ts` | **给界面的提示只给键与参数**（`ModelMsg`）：`edit.ts` 的报错（`{ error: ModelMsg }`）、`ModelError`（读写失败）、节拍提示与默认声部名都经它；翻译函数由 `i18n/index.ts` 加载时注册（`setMsgTranslator`），显示时 `msgText` 取当前语言的字。模型层对 i18n 只许类型引用（`deps-check.mjs` 守门） |
+| `src/model/marknames.ts` | 记号名字表（力度名、术语）：文本谱 / 123 / ABC / jianpu-ly / MusicXML 投影共用；字形在 `engrave/jpglyph.ts` |
 | `src/model/breaks.ts` | 断行读写对：`breaksOf`（模型 → 行首元素）/ `applyBreaks`（行首元素 → 模型，替换原有断行） |
 | `src/model/jianpu.ts` | **简谱语义层**：音高↔度数、相对调号临时记号延续（`AccidentalCarry`，两个方向共用）、`attrsAt`、减时线/增时线/附点（`jianpuShape`）、和弦原文、旋律取音、延音线/跨元素记号按 id 找对端 |
 | `src/model/fromxml.ts` | ← MusicXML（**直通**：语义进模型，每个模型对象绑到原节点） |

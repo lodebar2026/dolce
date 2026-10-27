@@ -50,7 +50,7 @@ import { axisOfSong, type TimeAxis } from "./timeaxis";
 import { rehearsalBracketed } from "./deconames";
 import { SOURCE_ID_PREFIX } from "./helpers";
 import { surfaceOf, type EngravedLayout, type Position, type PrintLayout } from "./xmlsurface";
-import { t as tr } from "../i18n";
+import { ModelError, msg } from "./msg";
 
 
 /** 一层缩进两格，与 MuseScore 的输出习惯一致。 */
@@ -966,7 +966,7 @@ export interface ToXmlOptions extends ProjectOptions {
  *  简谱来源先经 `xmlproject.ts` 投成 MusicXML 形状，MusicXML 读进来的原样序列化（表层从原节点回填）。 */
 export function scoreDocToMusicXml(doc: ScoreDoc, options: ToXmlOptions = {}): string {
   const src = doc.songs[options.song ?? 0];
-  if (!src) throw new Error(tr("err.noSong"));
+  if (!src) throw new ModelError(msg("err.noSong"));
   const song = projectForMusicXml(src, { ...options, slurTies: options.slurTies ?? !hasTieSyntax(doc) });
   const cx: Ctx = { sourceIds: options.sourceIds === true, ...(options.layout ? { layout: options.layout } : {}) };
   // 文本格式投影出来的一律署上本应用（<encoding><software>）：混排引擎据此认 `<harmony><offset>` 等本写出端的写法

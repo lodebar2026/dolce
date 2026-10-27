@@ -20,6 +20,7 @@ import type { SyncEntry, SyncIndex } from "../sync";
 import type { NoteDuration } from "./dialect";
 import type { VisualAction } from "./keys";
 import { t as tr } from "../../i18n";
+import { msg, msgText } from "../../model/msg";
 
 /** 模型那一路向控制器要的东西。 */
 export interface ModelActionCtx {
@@ -85,7 +86,7 @@ function commit(ctx: ModelActionCtx, fn: (doc: ScoreDoc) => ModelEdit & { moved?
   }
   const out = fn(doc);
   if (isEditError(out)) {
-    ctx.setStatus(out.error);
+    ctx.setStatus(msgText(out.error));
     return true;
   }
   const pos = (c: Chord): ChordPos | null => posOf(doc, c);
@@ -205,7 +206,7 @@ function insertAnchor(ctx: ModelActionCtx, doc: ScoreDoc): InsertAnchor | null {
 function insertNote(ctx: ModelActionCtx, degreeAt: (doc: ScoreDoc, at: InsertAnchor) => number): boolean {
   return commit(ctx, (doc) => {
     const at = insertAnchor(ctx, doc);
-    if (!at) return { error: tr("ve.cantInsert") };
+    if (!at) return { error: msg("ve.cantInsert") };
     const d = degreeAt(doc, at);
     const k = ctx.curVoice;
     if (k === null) return insertChord(doc, at, d, ctx.curDur, HOOKS);
@@ -220,7 +221,7 @@ function insertNote(ctx: ModelActionCtx, degreeAt: (doc: ScoreDoc, at: InsertAnc
     }
     const m = at.measureStart;
     const part = doc.songs[m.si]?.parts[m.pi];
-    if (!part) return { error: tr("ve.cantInsert") };
+    if (!part) return { error: msg("ve.cantInsert") };
     const staff = staffOfVoice(part, m.voice);
     const voice = staffVoice(part, staff, k);
     if (voice !== m.voice) return insertInVoice(doc, { si: m.si, pi: m.pi, mi: m.mi, onset: 0, staff }, voice, d, ctx.curDur, HOOKS, k);
@@ -243,7 +244,7 @@ export function insertAtSourceModel(ctx: ModelActionCtx, at: { after: ElementId 
       const l = locate(doc, at.before);
       if (l) anchor = { measureStart: { si: l.si, pi: l.pi, mi: l.mi, voice: l.chord.voice } };
     }
-    return anchor ? insertPitch(doc, anchor, pitch, dur, HOOKS) : { error: tr("ve.cantInsert") };
+    return anchor ? insertPitch(doc, anchor, pitch, dur, HOOKS) : { error: msg("ve.cantInsert") };
   }, true);
 }
 
@@ -252,7 +253,7 @@ export function pasteModel(ctx: ModelActionCtx, items: readonly ClipItem[]): boo
   const insert = ctx.view.state.selection.main.empty;
   return commit(ctx, (doc) => {
     const at = insertAnchor(ctx, doc);
-    const r = at ? pasteClip(doc, at, items, HOOKS) : { error: tr("ve.cantPaste") };
+    const r = at ? pasteClip(doc, at, items, HOOKS) : { error: msg("ve.cantPaste") };
     return insert && "select" in r ? { caretAfter: r.select[r.select.length - 1]! } : r;
   });
 }
@@ -362,7 +363,7 @@ export function moveSelected(ctx: ModelActionCtx, delta: number, byMeasure: bool
     return commit(ctx, (doc) => {
       const pair = dirPartner(doc, r);
       if (endOnly) {
-        if (!pair) return { error: tr("ve.moveEndOnlyLine") };
+        if (!pair) return { error: msg("ve.moveEndOnlyLine") };
         // 只挪一端：选中的是哪一端无所谓，按 `which` 取起点或终点那条
         const d = doc.songs[0]?.parts[r.pi]?.measures[r.mi]?.directions?.[r.index];
         const isStop = d?.spanType === "stop";
@@ -396,13 +397,13 @@ function removeEntries(ctx: ModelActionCtx, targets: SyncEntry[]): boolean {
   if (bar) {
     return commit(ctx, (doc) => {
       const l = locate(doc, bar.id);
-      return l ? mergeMeasures(doc, l.si, l.mi, HOOKS) : { error: tr("ve.noBarline") };
+      return l ? mergeMeasures(doc, l.si, l.mi, HOOKS) : { error: msg("ve.noBarline") };
     });
   }
   if (brk) {
     return commit(ctx, (doc) => {
       const l = locate(doc, brk.id);
-      return l ? setBreakBefore(doc, l.si, l.mi + 1, null) : { error: tr("ve.noBreak") };
+      return l ? setBreakBefore(doc, l.si, l.mi + 1, null) : { error: msg("ve.noBreak") };
     });
   }
   if (slur && slur.end !== undefined) return commit(ctx, (doc) => toggleSlur(doc, slur.id, slur.end!));
@@ -468,7 +469,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
     case "meas.delete":
       return commit(ctx, (doc) => {
         const r = selectedMeasures(ctx, doc);
-        return r ? deleteMeasures(doc, r.si, r.from, r.to, HOOKS) : { error: tr("ve.selectMeasToDelete") };
+        return r ? deleteMeasures(doc, r.si, r.from, r.to, HOOKS) : { error: msg("ve.selectMeasToDelete") };
       });
     case "meas.key":
     case "meas.time":
@@ -478,17 +479,17 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
         if (v === null) return;
         commit(ctx, (doc) => {
           const r = selectedMeasures(ctx, doc);
-          if (!r) return { error: tr("ve.selectInMeasure") };
+          if (!r) return { error: msg("ve.selectInMeasure") };
           if (a.id === "meas.key") {
             const f = parseKeyInput(v);
-            return f === null ? { error: tr("ve.badKey", { v }) } : setKeyAt(doc, r.si, r.from, f, HOOKS);
+            return f === null ? { error: msg("ve.badKey", { v }) } : setKeyAt(doc, r.si, r.from, f, HOOKS);
           }
           if (a.id === "meas.time") {
             const t = parseTimeInput(v);
-            return t ? setTimeAt(doc, r.si, r.from, t.beats, t.beatType, HOOKS) : { error: tr("ve.badTime", { v }) };
+            return t ? setTimeAt(doc, r.si, r.from, t.beats, t.beatType, HOOKS) : { error: msg("ve.badTime", { v }) };
           }
           const bpm = parseTempoInput(v);
-          return bpm === null ? { error: tr("ve.badTempo", { v }) } : setTempoAt(doc, r.si, r.from, bpm);
+          return bpm === null ? { error: msg("ve.badTempo", { v }) } : setTempoAt(doc, r.si, r.from, bpm);
         });
       });
       return true;
@@ -501,7 +502,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
       const kind = a.id.slice(4) as BarKind;
       return commit(ctx, (doc) => {
         const r = selectedMeasures(ctx, doc);
-        if (!r) return { error: tr("ve.selectMeasOrBar") };
+        if (!r) return { error: msg("ve.selectMeasOrBar") };
         return setBarKind(doc, r.si, kind === "repeatStart" ? r.from : r.to, kind);
       });
     }
@@ -509,7 +510,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
     case "volta.2":
       return commit(ctx, (doc) => {
         const r = selectedMeasures(ctx, doc);
-        return r ? toggleEnding(doc, r.si, r.from, r.to, a.id === "volta.1" ? 1 : 2) : { error: tr("ve.selectVolta") };
+        return r ? toggleEnding(doc, r.si, r.from, r.to, a.id === "volta.1" ? 1 : 2) : { error: msg("ve.selectVolta") };
       });
     case "jump.segno":
     case "jump.coda":
@@ -519,7 +520,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
       return commit(ctx, (doc) => {
         const r = selectedMeasures(ctx, doc);
         const kind = a.id.slice(5) as JumpKind;
-        if (!r) return { error: tr("ve.selectInMeasure") };
+        if (!r) return { error: msg("ve.selectInMeasure") };
         return toggleJump(doc, r.si, kind === "segno" || kind === "coda" ? r.from : r.to, kind);
       });
     case "oct.up": return pitch((doc, l) => shiftOctave(doc, l, 1, HOOKS));
@@ -582,9 +583,9 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
         if (v === null) return;
         commit(ctx, (doc) => {
           const r = selectedMeasures(ctx, doc);
-          if (!r) return { error: tr("ve.selectInMeasure") };
+          if (!r) return { error: msg("ve.selectInMeasure") };
           const f = parseKeyInput(v);
-          return f === null ? { error: tr("ve.badKey", { v }) } : rereadKeyAt(doc, r.si, r.from, f, HOOKS);
+          return f === null ? { error: msg("ve.badKey", { v }) } : rereadKeyAt(doc, r.si, r.from, f, HOOKS);
         });
       });
       return true;
@@ -595,11 +596,11 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
         if (v === null) return;
         commit(ctx, (doc) => {
           const clef = parseClefInput(v);
-          if (!clef) return { error: tr("ve.badClef", { v }) };
+          if (!clef) return { error: msg("ve.badClef", { v }) };
           // 哪一谱表：选中（插入模式：光标前）的那个音所在的
           const id = anchorNote(ctx);
           const l = id !== null ? locate(doc, id) : null;
-          if (!l) return { error: tr("ve.selectInMeasure") };
+          if (!l) return { error: msg("ve.selectInMeasure") };
           const sel = ctx.view.state.selection.main;
           const before = sel.empty ? entryBeforeCaret(ctx) : null;
           const mi = before && (before.kind === "barline" || before.kind === "break") ? l.mi + 1 : l.mi;
@@ -623,9 +624,9 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
       const page = a.id === "brk.page";
       return commit(ctx, (doc) => {
         const l = locate(doc, id);
-        if (!l) return { error: tr("ve.noBreakPos") };
+        if (!l) return { error: msg("ve.noBreakPos") };
         const last = [...l.measure.elements].reverse().find((e) => e.kind === "chord" && e.voice === l.chord.voice);
-        if (last !== l.chord) return { error: tr("ve.breakAtBar") };
+        if (last !== l.chord) return { error: msg("ve.breakAtBar") };
         return setBreakBefore(doc, l.si, l.mi + 1, page ? "page" : "system");
       });
     }
