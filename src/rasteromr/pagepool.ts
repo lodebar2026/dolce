@@ -9,7 +9,7 @@
 
 import { RasterGlyphLookup } from "./rasterglyphs";
 import { rasterizeImage, type PageImage, type RasterPage } from "./rasterpage";
-import { recognizeRasterPage, type PageCarry, type PageSource, type RasterLiveOcr, type RasterPageResult } from "./recognize";
+import { recognizeRasterPage, type PageCarry, type PageSource, type RasterLiveOcr, type RasterPageResult, type RasterStage } from "./recognize";
 import { packPageResult, unpackPageResult } from "./pagetransfer";
 import type { RasterOcrCaches } from "./song";
 
@@ -23,6 +23,8 @@ export interface PageJob {
   seq: number;
   image?: PageImage | null;
   raster?: RasterPage | null;
+  /** 要逐阶段的中间产物（回归测试的阶段快照）：Worker 用 `servePageWorker` 的 `project` 就地投影后发回 */
+  trace?: boolean;
 }
 
 /** 主线程 → Worker */
@@ -37,6 +39,7 @@ export type ToWorker =
 export type FromWorker =
   | { t: "ocr"; rid: number; id: number; name: LiveName; args: unknown[] }
   | { t: "header"; rid: number; id: number; binW: number }
+  | { t: "trace"; id: number; stage: RasterStage; data: unknown }
   | { t: "done"; id: number; result: RasterPageResult }
   | { t: "fail"; id: number; error: string }
   /** Worker 本身出错死了（宿主发现后代它报） */
@@ -52,8 +55,12 @@ export interface PagePort {
 
 // ── Worker 一侧 ──────────────────────────────────────────────────────────────
 
-/** Worker 里的页处理器：收 `init` / `job` / `carry` / `reply`。 */
-export function servePageWorker(post: (msg: FromWorker) => void): (msg: ToWorker) => void {
+/**
+ * Worker 里的页处理器：收 `init` / `job` / `carry` / `reply`。
+ * `project`：阶段中间产物的投影（只有测试的 Worker 入口给）。中间产物是处处回指的类实例图、过后还被就地改，
+ * 传不过线程，只能在 Worker 里当场投成普通数据再发回。
+ */
+export function servePageWorker(post: (msg: FromWorker) => void, project?: (stage: RasterStage, data: unknown) => unknown): (msg: ToWorker) => void {
   let look: RasterGlyphLookup | null = null;
   let caches: RasterOcrCaches = {};
   let live: RasterLiveOcr | undefined;
@@ -93,6 +100,7 @@ export function servePageWorker(post: (msg: FromWorker) => void): (msg: ToWorker
         raster: job.raster,
         pageSeq: job.seq,
         carry: () => carryOf(id).promise,
+        ...(job.trace && project ? { trace: (stage: RasterStage, data: unknown) => post({ t: "trace", id, stage, data: project(stage, data) }) } : {}),
       });
       post({ t: "done", id, result: packPageResult(r) });
     } catch (e) {
@@ -134,6 +142,8 @@ export function servePageWorker(post: (msg: FromWorker) => void): (msg: ToWorker
 export interface PageHost {
   live?: RasterLiveOcr;
   composeHeader(binW: number): ReturnType<PageSource["composeHeader"]>;
+  /** 收 Worker 发回的阶段产物（已投影，见 `servePageWorker` 的 `project`） */
+  trace?: (stage: RasterStage, data: unknown) => void;
 }
 
 interface Slot {
@@ -215,6 +225,9 @@ export class PagePool {
         if (!job || job.id !== m.id) return;
         this.finish(slot);
         job.resolve(unpackPageResult(m.result));
+        return;
+      case "trace":
+        if (job && job.id === m.id) job.host.trace?.(m.stage, m.data);
         return;
       case "crash":
         if (!job) return;

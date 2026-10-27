@@ -61,7 +61,8 @@ export async function recognizeRasterSong(
     pool?: PagePool;
     /** 给每个 `<note>` 写 `id="omr<k>"` 并记下源图框（编辑器的识别对照用；回归脚本不开，产物逐字节不变） */
     noteIds?: boolean;
-    /** 逐页各阶段的中间产物（`recognize.ts::RasterStage`，回归测试的阶段快照）。只在串行时有：Worker 传不过函数 */
+    /** 逐页各阶段的中间产物（`recognize.ts::RasterStage`，回归测试的阶段快照）。多页并行时 Worker 发回的是它那头
+     *  `servePageWorker` 的 `project` 投影过的数据；Worker 入口没给 `project` 就收不到 */
     trace?: (pageSeq: number, stage: RasterStage, data: unknown) => void;
   } = {},
 ): Promise<RasterSongResult> {
@@ -186,8 +187,9 @@ export async function recognizeRasterSong(
             page.cleanup?.();
           }
         },
+        ...(opts.trace ? { trace: (st: RasterStage, d: unknown) => opts.trace!(k, st, d) } : {}),
       };
-      return pool.run({ index: pn, seq: k, image, raster }, carries[k].promise, host);
+      return pool.run({ index: pn, seq: k, image, raster, ...(opts.trace ? { trace: true } : {}) }, carries[k].promise, host);
     };
     const running: Promise<RasterPageResult>[] = [];
     let next = 0;
