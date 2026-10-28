@@ -873,9 +873,10 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   };
   // 只被符杠认过的整团也判一次（宁静 m85 男声、m86 女声那两条四十格长的渐强，两臂被横段抽取当成了符杠）：
   // 只走整团判据（逐列两段墨、一头尖一头张），不当臂去配——一根斜符杠单看就是一条直臂
+  // 字典在臂上另认出的保持音（一道横线）不算别的主（望十架 p9 m65 两条渐弱，开口那头的臂认成了 tenuto）
   const claimedByBeamOnly = (id: number) => {
     const cl = wv.claimsOf(id);
-    return cl.length > 0 && cl.every((by) => by === "beam");
+    return cl.some((by) => by === "beam") && cl.every((by) => by === "beam" || by.startsWith("dict:articTenuto"));
   };
   const wedgeBeamOnly = wv.map.contours.filter((c) => c.w >= 4 && c.h <= 3 && claimedByBeamOnly(c.id));
   const wedges = findRasterWedges(wv.map, unit, wv.unclaimed(), rowEdge, wedgeBeamOnly);
