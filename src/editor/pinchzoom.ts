@@ -108,7 +108,13 @@ export function attachPinchZoom(pane: HTMLElement, opts: PinchZoomOptions): void
     gAnchor = null;
   }, { passive: true });
   pane.addEventListener("touchmove", (e) => {
-    if (e.touches.length !== 2 || !touchBase || touchBase.dist < 1) return;
+    if (e.touches.length !== 2) return;
+    // 三指抬成两指不会再来 touchstart：第一次两指的 move 起基准
+    if (!touchBase) {
+      touchBase = { zoom: opts.get(), dist: spread(e.touches).dist };
+      gAnchor = null;
+    }
+    if (touchBase.dist < 1) return;
     e.preventDefault();
     const s = spread(e.touches);
     scheduleZoom(touchBase.zoom * (s.dist / touchBase.dist), s.cx, s.cy);

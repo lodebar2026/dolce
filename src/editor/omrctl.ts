@@ -768,6 +768,10 @@ export class OmrController implements FormatSource {
     // 鼠标按住拖动 = 滚动（触屏单指本来就原生滚动）；动过 4px 才算拖，随后的 click 不选音
     box.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "touch" || e.button !== 0) return;
+      // 按在面板自己的滚动条上：交给浏览器
+      const rc = box.getBoundingClientRect();
+      if (e.clientX - rc.left >= box.clientLeft + box.clientWidth || e.clientY - rc.top >= box.clientTop + box.clientHeight) return;
+      e.preventDefault(); // 不起 <img> 的原生拖图、不选文字
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: box.scrollLeft, top: box.scrollTop };
       dragged = false;
     });
@@ -833,6 +837,7 @@ export class OmrController implements FormatSource {
     if (this.pending) {
       if (this.sideKey === "plain") return;
       this.sideKey = "plain";
+      this.setSideZoom(1); // 新的一份识别：原图从铺满栏宽看起
       const pages = await this.plainOriginalPages();
       if (this.sideKey === "plain" && this.pending) box.replaceChildren(...pages);
       return;
@@ -844,6 +849,7 @@ export class OmrController implements FormatSource {
         this.sideKey = "plain";
         const pages = await this.plainOriginalPages();
         if (this.sideKey === "plain" && !this.staffResult) box.replaceChildren(...pages);
+        this.setSideZoom(1);
       }
       if (this.staffLoadFailed || !(await this.ensureStaffResult())) return;
     }

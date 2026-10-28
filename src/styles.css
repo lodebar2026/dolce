@@ -344,12 +344,12 @@ button:focus-visible, select:focus-visible {
 #body { flex: 1 1 auto; min-height: 0; position: relative; display: flex; background: var(--canvas); }
 .workspace-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 #code-pane-shell { flex: 0 0 var(--code-w, 38%); background: var(--panel); }
-/* 三栏分隔条（editor/splitters.ts）：6px 可点区、中间一道 1px 线，悬停/拖动变蓝 */
-.pane-splitter { flex: 0 0 6px; margin: 0 -3px; position: relative; z-index: 16; cursor: col-resize; touch-action: none; }
-.pane-splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); background: var(--border); }
+/* 三栏分隔条（editor/splitters.ts）：线画在栏界上，6px 可点区整个压在右栏左沿（左栏右边是滚动条，别挡），悬停/拖动变蓝 */
+.pane-splitter { flex: 0 0 6px; margin-right: -6px; position: relative; z-index: 16; cursor: col-resize; touch-action: none; }
+.pane-splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: var(--border); }
 .pane-splitter:hover::after, .pane-splitter.active::after { width: 3px; background: #1565ff; }
 .pane-splitter[hidden] { display: none; }
-.pane-splitter-abs { position: absolute; bottom: 0; left: var(--side-w, 45%); width: 6px; margin: 0; transform: translateX(-3px); }
+.pane-splitter-abs { position: absolute; bottom: 0; left: var(--side-w, 45%); width: 6px; margin: 0; }
 #body.resizing { cursor: col-resize; user-select: none; }
 #body.resizing #code-pane, #body.resizing #score-pane, #body.resizing .omr-side { pointer-events: none; }
 #body.no-code #split-code { display: none; }
@@ -579,7 +579,7 @@ button:focus-visible, select:focus-visible {
   background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); pointer-events: none; }
 .omr-follow[hidden] { display: none; }
 /* 并排原图：排版稿左边铺整页原图（omrctl.ts::syncSide），谱面让出这一块 */
-.omr-side { position: absolute; left: 0; bottom: 0; width: var(--side-w, 45%); cursor: grab; overflow: auto; z-index: 15; background: var(--canvas); border-right: 1px solid var(--border, #ddd); padding: 8px; box-sizing: border-box; }
+.omr-side { position: absolute; left: 0; bottom: 0; width: var(--side-w, 45%); cursor: grab; touch-action: pan-x pan-y; overflow: auto; z-index: 15; background: var(--canvas); border-right: 1px solid var(--border, #ddd); padding: 8px; box-sizing: border-box; }
 .omr-side[hidden] { display: none; }
 .omr-side.dragging { cursor: grabbing; user-select: none; }
 .omr-side.dragging .omr-side-hit { cursor: grabbing; }

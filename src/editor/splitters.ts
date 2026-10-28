@@ -51,17 +51,16 @@ export function setupSplitters(): void {
         widths[key] = Math.round(Math.min(hi, Math.max(lo, (x / rc.width) * 100)) * 10) / 10;
         apply();
       };
+      // 拖到一半分隔条被藏起（并排原图关掉）也会丢捕获：一律在 lostpointercapture 收尾，免得 #body 卡在 .resizing
       const up = () => {
         bar.removeEventListener("pointermove", move);
-        bar.removeEventListener("pointerup", up);
-        bar.removeEventListener("pointercancel", up);
+        bar.removeEventListener("lostpointercapture", up);
         body.classList.remove("resizing");
         bar.classList.remove("active");
         save(widths);
       };
       bar.addEventListener("pointermove", move);
-      bar.addEventListener("pointerup", up);
-      bar.addEventListener("pointercancel", up);
+      bar.addEventListener("lostpointercapture", up);
     });
     bar.addEventListener("dblclick", () => {
       delete widths[key];
