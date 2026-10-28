@@ -20,7 +20,7 @@ import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "../flags";
 import { makeSymObj, type RasterSym } from "../adapt";
 import { dropCourtesyKeys, demoteMidKeys, extendKeyChains, dropHeadsInKey, pruneMidKeys, fixKeyNaturals, keySections, extendKeyByStrokes, shareSystemKeys, shareKeySignature, carrySystemKeys, extendKeyByCarry, findMidKeysByTemplate, shareMidKeys, dropBarsInKey, keyFromChords, fixFlatReadAsSix, attachAccidentalsByPitch, naturalsByStrokes } from "../keysig";
 import { markRepeatsAndVoltas } from "../repeats";
-import type { PageCarry, ClefTally } from "../recognize";
+import type { PageCarry, ClefTally, RasterProbe } from "../recognize";
 import { RasterGlyphLookup, matchTemplate } from "../rasterglyphs";
 import { enclosedWhite, longestVRun, tallStrokes } from "../restshape";
 import { stemWalledCavity } from "../notehead";
@@ -65,12 +65,14 @@ export async function buildPageStructure(c: {
   harmonies: HarmonyToken[];
   cmap: ContourMap;
   jianpuBands: JianpuBand[];
+  probe?: RasterProbe;
 }): Promise<{
   ctx: Map<Staff, StaffContext>;
   carry: PageCarry;
   clefTally: ClefTally;
 }> {
   const { pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands } = c;
+  const at = (step: string) => c.probe?.(step, { pg });
   // ── 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节
   // 读音高按该处实测的五线、相邻两线间的相对位置（`Staff.middleStep`）
   for (const stf of pg.staves) {
@@ -80,11 +82,17 @@ export async function buildPageStructure(c: {
   }
 
   findNoteheads(pg);
+  at("findNoteheads");
   inkSystemBarlines(pg, raster.bin, unit.space);
+  at("inkSystemBarlines");
   tagSystemBarlines(pg);
+  at("tagSystemBarlines");
   findStems(pg);
+  at("findStems");
   tagLooseStems(pg);
+  at("tagLooseStems");
   mergeSplitStems(pg);
+  at("mergeSplitStems");
   // 符尾**按位置自举**，不查字典（见 `bootstrapFlags`）
   for (const f of bootstrapFlags(nl, pg, prims.beams, unit, harmonyMasks)) {
     ledger.claim(f.box, `flag:${f.code}`);
@@ -92,24 +100,39 @@ export async function buildPageStructure(c: {
     pg.objs.push(obj);
     pg.symbols.push(sym);
   }
+  at("bootstrapFlags");
   findTails(pg);
+  at("findTails");
   findBarlines(pg);
+  at("findBarlines");
   bridgeFaintSysLines(pg, raster.bin, unit.space);
+  at("bridgeFaintSysLines");
   dropLoneBarlines(pg, raster.bin, unit.space);
+  at("dropLoneBarlines");
   voteSystemBarlines(pg, raster.bin, unit.space);
+  at("voteSystemBarlines");
   const ctx = findClefKeyTime(pg);
+  at("findClefKeyTime");
   // 小节线的 x 先交给调号（`keyChanges` 分行首与行中转调要用，这时还没切小节）
   for (const [st, c] of ctx) c.barXs = pg.segs.filter((l) => l.isV && l.hasTag("BarLine") && l.bottom > st.box.top && l.top < st.box.bottom).map((l) => l.cx);
   shareSystemClefs(pg, ctx, unit);
+  at("shareSystemClefs");
   // 从这里起要用上一页的沿用（并行时这里才等上一页交出来）
   const carry = await carryOf();
   const clefTally = shareOctaveClefs(pg, ctx, carry.carryKey?.clefs);
+  at("shareOctaveClefs");
   dropCourtesyKeys(pg, ctx, unit.space);
+  at("dropCourtesyKeys");
   demoteMidKeys(pg, ctx);
+  at("demoteMidKeys");
   extendKeyChains(pg, ctx);
+  at("extendKeyChains");
   dropHeadsInKey(pg, ctx);
+  at("dropHeadsInKey");
   pruneMidKeys(pg, ctx, raster.bin, unit.space);
+  at("pruneMidKeys");
   fixKeyNaturals(ctx, raster.bin, unit.space);
+  at("fixKeyNaturals");
   // 调号的几道全页共享**按段**做（见 `keySections`：一页印几首、各自重印拍号的，各段调号不同）
   for (const sec of keySections(pg, ctx, raster.bin)) {
     extendKeyByStrokes(pg, sec, raster.bin, unit);
@@ -117,18 +140,30 @@ export async function buildPageStructure(c: {
     shareKeySignature(sec, settled);
     carrySystemKeys(pg, sec, settled);
   }
+  at("keySections");
   extendKeyByCarry(ctx, carry.carryKey, raster.bin, unit.space);
+  at("extendKeyByCarry");
   findMidKeysByTemplate(pg, ctx, raster.bin, unit);
+  at("findMidKeysByTemplate");
   shareMidKeys(pg, ctx, unit.space);
+  at("shareMidKeys");
   dropHeadsInKey(pg, ctx, true);
+  at("dropHeadsInKey:二轮");
   shareTimeSignature(pg, ctx, timeCols, unit, raster.bin, !!carry.carryTime);
+  at("shareTimeSignature");
   dropBarsInKey(pg, ctx, unit.space);
+  at("dropBarsInKey");
   keyFromChords(pg, ctx, harmonies.map((h) => h.text), unit);
+  at("keyFromChords");
   fixFlatReadAsSix(harmonies, ctx);
+  at("fixFlatReadAsSix");
   makeSystems(pg);
+  at("makeSystems");
   makeBars(pg);
+  at("makeBars");
   // 反复记号、房子、同系统的小节线样式（`repeats.ts`）：下游按线宽与圆点符号认，位图路两样常缺，回到图上量
   for (const b of markRepeatsAndVoltas(pg, raster.bin, cmap, unit.space, jianpuBands.map((b) => b.box))) ledger.claim(b, "repeat:dot");
+  at("markRepeatsAndVoltas");
   // 段的认领：**只记挂上标记的**（谱线/加线/符干/小节线/系统线/符尾）。
   // 没挂上标记的段是「抽出来了却没人要」的，留着当无主，那才是线索。
   for (const sg of pg.segs) {
@@ -148,12 +183,14 @@ export function fixBeamsAndHeads(c: {
   prims: RasterPrims;
   raster: RasterPage;
   look: RasterGlyphLookup;
+  probe?: RasterProbe;
 }): {
   beams: BeamShape[];
   stems: StemInfo[];
   hollowish: (s0: Sym) => boolean;
 } {
   const { pg, unit, onGrid, grid, nl, prims, raster, look } = c;
+  const at = (step: string) => c.probe?.(step, { pg });
   // ── 符杠与符头：杠的层数、实心其实空心、细杠起头、贴头的四分休止、符尾盒里的头、谱表外的头按加线定音高
   // **谱线、加线上挨着符头的薄条不算杠的层数**：线压着符头、被头的墨撑厚成三四像素，过了符杠那道闸
   //（我一生要赞美你 m5–6 第五线上的 D4，八分读成十六分）。照旧留在 `prims.beams` 里抹墨（过检的杠是承重的，
@@ -210,6 +247,7 @@ export function fixBeamsAndHeads(c: {
   };
   const beams = toBeamShapes(prims.beams.filter((b) => !thinOnLine(b) && !textStroke(b)));
   snapBeamEnds(beams, pg.segs.filter((sg) => sg.isV && sg.hasTag("Stem")), raster.bin, unit.space, unit.lineThick, noteHeads.map((s0) => s0.box));
+  at("snapBeamEnds");
   const stems: StemInfo[] = [];
   // **认成实心、其实中间是空的头**：圈细、内腔被没抹掉的谱线切成几小块的空心头（耶和华、高举主大能、你的信实广大），
   // 过不了空心头的形状闸，被收成实心。头的中心椭圆（半径取盒的三成，跳过谱线那几行）里白占 HOLLOW_FILL 以上、
@@ -282,6 +320,7 @@ export function fixBeamsAndHeads(c: {
   // **顶端细细连在头上的四分休止**：两声部时另一声部的休止紧贴着这个头的上下（扫描件上休止顶端那一笔细、连上了头），
   // 整块被收头那一路认领，休止没人认（望十架 p3 m26 女高女低：上声部 C4 八分、下声部四分休止挂在 C4 底下）。
   // 头正下（正上）方从贴着头的那两行起灌墨（窗口横向出头缘半格、纵向 3.5 格），灌出来的一块够休止的高宽、
+  at("fixBeamsAndHeads:细杠起头");
   // 没有通高的直竖笔（那是干）、碰不到窗口远端，单独裁出来按形状字典是四分休止，就补一个
   {
     const sp = unit.space;
@@ -334,6 +373,7 @@ export function fixBeamsAndHeads(c: {
     }
     pg.symbols.push(...added);
   }
+  at("fixBeamsAndHeads:贴头四分休止");
   // **大半落在符尾盒里的头不要**：同一块墨先被收成头、后又被符尾自举认成符尾（《所信有根基》八分的尾读成一个 A4 二分）
   {
     const flags = pg.symbols.filter((s0) => s0.hasTag("Tail"));
@@ -382,6 +422,7 @@ export function fixBeamsAndHeads(c: {
   // 头心：在头中段那几列里，从头盒中心往上下走到墨断，墨高像一个头（0.8~1.3 格）、没碰到五线的，取这段墨的中心；
   // 和弦叠头连成两格高、空心头的内腔把墨断开、「8」字叠头顺着谱线连到里面那个头（万古磐石歌），仍用头盒中心。
   // 格子：谱表边线加上头左右那一段的加线，从边线往外逐条排；头心落在哪条线上（离线不到格距的 0.25）、哪个间里，就是哪一级。
+  at("fixBeamsAndHeads:符尾盒里的头");
   // 超出最外一条加线 0.75 格的不管（照旧按线距外推）
   {
     const B = raster.bin;
@@ -483,6 +524,7 @@ export function fixBeamsAndHeads(c: {
       if (stf.middleStep(py, hx) !== stf.middleStep(h.py, hx)) h.py = py;
     }
   }
+  at("fixBeamsAndHeads:谱表外按加线定音高");
   return { beams, stems, hollowish };
 }
 
@@ -497,8 +539,10 @@ export function fixNotes(c: {
   stems: StemInfo[];
   beams: BeamShape[];
   carry: PageCarry;
+  probe?: RasterProbe;
 }): void {
   const { notes, unit, raster, pg, nl, ctx, stems, beams, carry } = c;
+  const at = (step: string) => c.probe?.(step, { pg, notes });
   // ── 音符修正：被认成音的升降号与休止、按音高配临时记号、同音、跨谱表、附点对、连音
   // 谱表外的四分休止再验一遍「是不是升降号」：收休止那时谱表外带加线的头还没认出来，贴着头的升降号拦不住
   //（主爱说不尽歌低音谱表上方 C4 前的还原号）。右边 2.4 格内有个头、头心落在这一块的高度里（上下各容半格）的，删掉。
@@ -631,16 +675,27 @@ export function fixNotes(c: {
     a.sym.box = { ...a.sym.box, top: a.stemTip };
     notes.splice(i, 1);
   }
+  at("fixNotes:前置");
   attachAccidentalsByPitch(pg, ctx, notes);
+  at("attachAccidentalsByPitch");
   naturalsByStrokes(pg, ctx, notes, raster.bin, unit.space);
+  at("naturalsByStrokes");
   splitUnisons(notes, stems, beams, raster.bin, unit.space);
+  at("splitUnisons");
   doubleUnisonWholes(pg, notes);
+  at("doubleUnisonWholes");
   markCrossStaff(pg, notes, stems, unit.space);
+  at("markCrossStaff");
   fixDottedPairs(notes, unit.space);
+  at("fixDottedPairs");
   fixQuartersByBarSum(pg, ctx, notes, carry.carryTime, unit.space);
+  at("fixQuartersByBarSum");
   dropBorrowedBeams(pg, ctx, notes, stems, carry.carryTime, unit.space);
+  at("dropBorrowedBeams");
   findTuplets(pg, beams, stems, notes);
+  at("findTuplets");
   tupletsByBarSum(pg, ctx, stems, notes, carry.carryTime, unit.space);
+  at("tupletsByBarSum");
 }
 
 /** 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空 */
@@ -657,8 +712,10 @@ export function crossStaffProbes(c: {
   pg: SPage;
   ctx: Map<Staff, StaffContext>;
   carry: PageCarry;
+  probe?: RasterProbe;
 }): void {
   const { masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry } = c;
+  const at = (step: string) => c.probe?.(step, { pg, notes });
   // ── 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空
   // 补漏音的探针：同系统别的行在这一拍有音、本行这里空着时，回原图在那个 x 上拿本页自举的模板找头（见 `crossalign.ts`）。
   // 阈值取本页已认出的头在自己位置上的得分（下 10% 分位）：扫描件淡印、糊团各页差得多，不设常数；
@@ -757,6 +814,7 @@ export function crossStaffProbes(c: {
     return blobsIn(nl, Math.round(x - sp * GAP_HALF_W), Math.round(b.top - sp / 2), Math.round(x + sp * GAP_HALF_W), Math.round(b.bottom + sp / 2)).some((d) => Math.max(d.w, d.h) >= sp * GAP_INK_MIN);
   };
   fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe, gapProbe);
+  at("fixByCrossStaff");
 }
 
 /** 补漏音找头的得分下限至少是本页已认出的头中位得分的这么多（见 `headSearch`）。0.5 会挡掉扫描档一个补对的低分头（0.11，中位约 0.27）。 */

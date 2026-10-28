@@ -213,6 +213,7 @@ const ARP_REACH = 2.5;
 /** 一页的后半程（见文件头）。 */
 export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageResult> {
   const { index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes } = s;
+  const at = (step: string, slurs?: SlurArc[]) => opts.probe?.(step, { pg, notes, slurs });
   // ── 演奏法与力度 ─────────────────────────────────────────────────────────
   //
   // 这三步矢量路一直在跑（`staffomr/pagerun.ts`），位图路**从来没调过**——所以力度
@@ -227,6 +228,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   // 琶音的一段之类（宁静 p3 m39 八分符尾、破碎扫描 p1 m7），不当颤音挂
   const isUprightWiggle = (m: Sym) => m.code.startsWith("wiggleTrill") && m.box.bottom - m.box.top > m.box.right - m.box.left;
   attachNotations(pg, notes, marks.marks.filter((m) => !/^artic/.test(m.code) && !isUprightWiggle(m)));
+  at("attachNotations");
   // 琶音记号挂到它右边那一列和弦上：纵向落在波浪线范围里（上下各容半格多）、横向在线右 `ARP_REACH` 格内最靠左的那一列
   for (const b of arpeggios) {
     const sp = unit.space;
@@ -241,6 +243,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   // 粘了弧、连了笔的力度字典按整块查不着：拿本页认出的 `f` 当模板在大块里找（`dynamics.ts`）
   dynamics.push(...findGluedDynamics(marks.dynamics, cmap, unit, dynamics));
   const placedDyn = attachDynamicTexts(pg, notes, dynamics);
+  at("attachDynamicTexts");
   // OCR 读出来的力度只让给**挂上了**的那些：字形那一路认出来却没挂上的（印在终止线外：爱是从神而来 p5 m63 `p`），OCR 那份照补
   const dynHeld = dynamics.filter((_, i) => placedDyn.has(i));
 
@@ -282,6 +285,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
 
   // ── 和弦带里的跳转记号（D.S. al Fine、Fine、𝄋）：见 `harmony.ts::attachJumpMarks`
   attachJumpMarks(pg, notes, harmonyTexts, unit.space);
+  at("attachJumpMarks");
 
   // ── 歌词 ────────────────────────────────────────────────────────────────
   //
@@ -651,6 +655,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     splitVoiceLyrics(pg, lyricLines, notes, unit.space);
     numberVersesByScript(pg, lyricLines);
     attachLyrics(notes, lyricLines, unit.space * 0.3);
+    at("attachLyrics");
     liftLyrics(pg, notes, unit.space);
   }
 
@@ -812,6 +817,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     }
     // OCR 读出来的力度只补按字形那一路没认到的地方（三格内已有的不重复挂）
     attachDynamicTexts(pg, notes, placed.dynamics.filter((d) => !dynHeld.some((q) => Math.abs(q.px - d.px) <= unit.space * 3 && Math.abs(q.py - d.py) <= unit.space * 2)));
+    at("attachDynamicTexts:文字带");
   }
 
   // ── 贴着符头的演奏法记号（保持音 / 断奏 / 顿音 / 重音 / 延长记号）──────────────
@@ -899,6 +905,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     }
   }
   const wedgeRows = attachWedges(pg, notes, wedges.map((w) => (w.box ? { ...w, fromBlob: true } : w)), lyricBottom, carry.openWedges);
+  at("attachWedges");
 
   // ── 弧线（圆滑线 / 连音线）────────────────────────────────────────────────
   //
@@ -1156,14 +1163,19 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   mergeArcPieces(slurs, unit.space);
   bridgeArcPieces(slurs, unit.space, (x, y) => x >= 0 && y >= 0 && x < raster.bin.w && y < raster.bin.h && !!raster.bin.data[y * raster.bin.w + x], (y: number, x?: number) => grid.onLine(y, unit.lineThick / 2 + 0.5, x));
   attachSlurs(slurs, notes, unit.space);
+  at("attachSlurs", slurs);
   // 放宽那遍不给歌词账上来的弧、碰着整页文字框的弧（字的笔画）
   attachSlursByStem(slurs, notes, unit.space, (sl) => {
     const b = sl.obj.box;
     return lyricArcBoxes.has(`${b.left},${b.top}`) || (!!textBoxes && touchesText({ x: b.left, y: b.top, w: b.right - b.left, h: b.bottom - b.top }, textBoxes, 0));
   });
+  at("attachSlursByStem", slurs);
   attachWideSlurs(slurs, notes, unit.space);
+  at("attachWideSlurs", slurs);
   attachEdgeSlurEnds(slurs, notes, unit.space);
+  at("attachEdgeSlurEnds", slurs);
   snapSlurEndsToStems(slurs, notes, unit.space);
+  at("snapSlurEndsToStems", slurs);
   // 歌词账上来的弧，挂上的端要贴着音（弧端离头外缘 `LYRIC_ARC_REACH` 格内，真弧实测 ≤1.35）：字的弯笔（「悲」「恩」的心字底、「w」的顶）
   // 离上方的音两三格（实测至少一端 ≥1.8），`attachSlurs` 的窗口够得着（当我们回到天家 m1、m5，你的信实广大 m26–30）。一端离得远就整条不挂
   // 有整页文字框时，贴着谱表（离线不过 `TEXT_ARC_STAFF` 格）又碰不着任何文字框的免掉（`pagetext.ts::touchesText`）：
@@ -1251,6 +1263,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
   };
   for (let i = slurs.length - 1; i >= 0; i--) if (runArcs.has(slurs[i]) && !runEdge(slurs[i]) && (!slurs[i].from || !slurs[i].to || slurs[i].from === slurs[i].to)) slurs.splice(i, 1);
   reconnectSlurs(pg, slurs);
+  at("reconnectSlurs", slurs);
   // 跨行接上的同音两截先当圆滑线写：是不是延音线要看时间上是否紧挨着（同一声部本系统最后一个音、下一系统第一个音），
   // 声部到写出端才定，由 `toxml.ts::renumberSlurs` 判（宁静 p8 m97→m103 女高 E5…E5 是长圆滑线）
   {
@@ -1258,9 +1271,12 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     for (const sl of slurs) if (sl.tie && sl.from && sl.to && sysOf(sl.from.staff) !== sysOf(sl.to.staff)) sl.tie = false;
   }
   attachEdgeSlurStarts(slurs, notes, unit.space, new Set(index > 1 ? (pg.systems[0]?.staves ?? []) : []));
+  at("attachEdgeSlurStarts", slurs);
   completeSlurEnds(slurs, notes, unit.space);
+  at("completeSlurEnds", slurs);
   // 补齐的端是按头中心就近挂的，弧在干那一侧时再按干挪一遍（破碎 p7 m72 钢琴左手 E2 八分那条）
   snapSlurEndsToStems(slurs, notes, unit.space);
+  at("snapSlurEndsToStems:二轮", slurs);
   const chordTies = tieChords(slurs, notes, unit.space, (x0, x1, y0, y1) => {
     const { bin } = raster;
     const xa = Math.max(0, Math.round(x0)), xb = Math.min(bin.w, Math.round(x1));
@@ -1272,11 +1288,14 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     for (let x = xa; x < xb; x++) if (rows.some((y) => bin.data[y * bin.w + x])) hit++;
     return hit / (xb - xa);
   });
+  at("tieChords", slurs);
   // 弧号「页码.页内序号」（页码按 `pageSeq` 数）：只当配对的键用，跨页不能撞号
   let slurSeq = 0;
   markSlurNotes(slurs, opts.pageSeq !== undefined ? () => `${opts.pageSeq! + 1}.${++slurSeq}` : undefined);
+  at("markSlurNotes", slurs);
   for (const [a, b, above] of chordTies) (a.tieStart = true), (a.tieAbove = above), (b.tieStop = true);
   markLyricExtends(notes);
+  at("markLyricExtends", slurs);
 
   const result: RasterPageResult = {
     page: pg,

@@ -6,7 +6,7 @@
 
 import type { RasterGlyphLookup } from "./rasterglyphs";
 import type { RasterPage } from "./rasterpage";
-import { recognizeRasterPage, type RasterStage, type CarryKey, type PageCarry, type RasterLiveOcr, type RasterPageResult } from "./recognize";
+import { recognizeRasterPage, type RasterStage, type RasterProbe, type CarryKey, type PageCarry, type RasterLiveOcr, type RasterPageResult } from "./recognize";
 import { pageImageOf, type PageImage } from "./rasterpage";
 import { composeHeaderStrip } from "./pagecompose";
 import type { PagePool } from "./pagepool";
@@ -65,6 +65,8 @@ export async function recognizeRasterSong(
     /** 逐页各阶段的中间产物（`recognize.ts::RasterStage`，回归测试的阶段快照）。多页并行时 Worker 发回的是它那头
      *  `servePageWorker` 的 `project` 投影过的数据；Worker 入口没给 `project` 就收不到 */
     trace?: (pageSeq: number, stage: RasterStage, data: unknown) => void;
+    /** 逐页逐步骤的细探针（`recognize.ts::RasterPageOpts.probe`）。回调传不进 Worker：给了它就逐页串行，`pool` 不用 */
+    probe?: (pageSeq: number, step: string, view: Parameters<RasterProbe>[1]) => void;
   } = {},
 ): Promise<RasterSongResult> {
   const entries: Parameters<typeof buildScore>[0] = [];
@@ -140,14 +142,14 @@ export async function recognizeRasterSong(
     }
   };
   const order = sources.flatMap(({ pdf }, si) => Array.from({ length: pdf.numPages as number }, (_, i) => ({ si, pn: i + 1 })));
-  if (!opts.pool) {
+  if (!opts.pool || opts.probe) {
     for (const [k, { si, pn }] of order.entries()) {
       if (opts.cancelled?.()) throw new Error("已取消");
       const { pdf, OPS } = sources[si];
       const page = await pdf.getPage(pn);
       try {
         const wantHeader = header === null;
-        const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, openWedges, ...caches, live: opts.live, raster: opts.rastered?.(si, pn), wantHeader, pageSeq: k, trace: opts.trace && ((st, d) => opts.trace!(k, st, d)) });
+        const r = await recognizeRasterPage(page, OPS, look, pn, { carryTime, carryKey, openWedges, ...caches, live: opts.live, raster: opts.rastered?.(si, pn), wantHeader, pageSeq: k, trace: opts.trace && ((st, d) => opts.trace!(k, st, d)), probe: opts.probe && ((st, v) => opts.probe!(k, st, v)) });
         consume(r, si, pn, wantHeader);
       } finally {
         page.cleanup?.();

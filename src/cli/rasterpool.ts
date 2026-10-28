@@ -44,7 +44,7 @@ export function nodeRasterPool(n = rasterWorkerCount()): PagePool {
 /** 整曲识别（同 `rasteromr/song.ts::recognizeRasterSong`）；`RASTER_WORKERS` 不是 1 时多页并行。 */
 export function recognizeRasterSong(...args: Parameters<typeof recognizeRasterSongSerial>): ReturnType<typeof recognizeRasterSongSerial> {
   const [sources, look, opts = {}] = args;
-  if (opts.pool || rasterWorkerCount() <= 1) return recognizeRasterSongSerial(sources, look, opts);
+  if (opts.pool || opts.probe || rasterWorkerCount() <= 1) return recognizeRasterSongSerial(sources, look, opts);
   const p = nodeRasterPool();
   return recognizeRasterSongSerial(sources, look, { ...opts, pool: p }).catch((e) => {
     // 出错的那首可能还有页卡在等沿用、占着 Worker：整池关掉，下一首重起
