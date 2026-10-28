@@ -326,8 +326,9 @@ function normalizeChordText(s: string): string {
     .replace(/[卜ト下尸]/g, "F");
 }
 
-/** 整条拼完之后再做的**结尾**形近纠正（见 `normalizeChordText` 的第二条）。 */
-const fixTail = (s: string): string => s.replace(/(?<=[A-G][#b]?)[iíjl]$/, "7");
+/** 整条拼完之后再做的**结尾**形近纠正（见 `normalizeChordText` 的第二条）。
+ *  根音后单独一个 `1` 也是 7（和弦里没有「1」级，天父世界歌伴奏 B♭7 的 7 单成一条读成 1）；`m` 后结尾的斜杠是 7（「F m7」读成 `Fm/`）。 */
+const fixTail = (s: string): string => s.replace(/(?<=[A-G][#b]?)[iíjl1]$/, "7").replace(/(?<=[A-G][#b]?m)\/$/, "7");
 
 /**
  * 一条的 OCR 字符序列 → 和弦记号 + 文本。

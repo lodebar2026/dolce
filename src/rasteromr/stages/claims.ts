@@ -9,7 +9,7 @@ import type { LineFrame } from "../pitchgrid";
 import { type JianpuBand, type JianpuStrip, findJianpuBands, completeStaffBars, cutJianpuStrip, eraseInBand } from "../jianpuband";
 import { bridgeFaintBars } from "../barvote";
 import type { RasterPageOpts, RasterLiveOcr } from "../recognize";
-import { CHAR_MAX as LYRIC_CHAR_MAX } from "../lyric";
+import { CHAR_MAX as LYRIC_CHAR_MAX, type OcrChar } from "../lyric";
 import { type HarmonyStrip, type HarmonyToken, findHarmonyStrips, harmonyKey, readHarmonyStrip, harmonyLine } from "../harmony";
 import { RasterGlyphLookup, matchTemplate } from "../rasterglyphs";
 import { type ContourMap, type RepairedLayer, traceContours, repairedLayer } from "../contour";
@@ -18,6 +18,8 @@ import type { SmuflName } from "../../staffomr/glyphs";
 
 /** 空心符头允许离谱表多远（线距的倍数）。见 `inBand` 那段的说明。 */
 const HOLLOW_BAND = 3.0;
+/** 字距宽的和弦切成两条时，两条之间的空隙上限（格）：同一和弦里 6 像素（0.3 格），相邻和弦 16~19 像素（0.8 格起，天父世界歌伴奏）。 */
+const HARMONY_JOIN = 0.6;
 /** 谱表到头之间的加线都在时，空心头允许离谱表这么多格（见 `inBand`）。 */
 const HOLLOW_BAND_LEDGER = 5.3;
 /** 页顶标题字高的上限（格）：再高的是大括号、竖线一类。 */
@@ -218,6 +220,7 @@ export async function claimChordBand(c: {
     // 一行谱一行：先逐条读，再按整行判是和弦行还是文本行（`harmonyLine`）
     const lines = new Map<number, { strip: HarmonyStrip; chords: HarmonyToken[] }[]>();
     const lineTexts = new Map<number, HarmonyToken[]>();
+    const read: { strip: HarmonyStrip; chars: OcrChar[] }[] = [];
     for (const strip of harmonyStrips) {
       // 条的上沿够到上一行谱第五线下一格半以内的，是上一行挂下来的符杠与头（当我们回到天家第三系统低音谱表下的
       // 两组连杠 A2 读成两个「D」、头被当和弦字母认领走）。和弦字母离上一行谱远得多
@@ -225,6 +228,21 @@ export async function claimChordBand(c: {
       if (prev && strip.box.y < yAt(prev, 4, strip.box.x + strip.box.w / 2) + unit.space * 1.5) continue;
       const chars = harmonyOcr?.get(harmonyKey(strip));
       if (!chars?.length) continue; // 缓存没命中：这条没跑过 OCR，宁可不认领
+      // **字距宽的和弦被切成两条**（天父世界歌伴奏「G 7/B」「F m7」「B♭ 7」）：后一条开头不是根音字母（小写、数字、斜杠、升降号）、
+      // 离前一条不到 `HARMONY_JOIN` 格的，读出的字接到前一条后面再解析——单读「7/B」只剩一个 B 和弦、「m/」一个也不剩
+      const last = read[read.length - 1];
+      if (last && last.strip.staff === strip.staff && /^[a-z0-9/♭♯#]/.test(chars[0].ch) &&
+        strip.box.x - (last.strip.box.x + last.strip.box.w) < unit.space * HARMONY_JOIN && strip.box.x > last.strip.box.x) {
+        const a = last.strip.box, b = strip.box;
+        const box = { x: a.x, y: Math.min(a.y, b.y), w: b.x + b.w - a.x, h: Math.max(a.y + a.h, b.y + b.h) - Math.min(a.y, b.y) };
+        const re = (c: OcrChar, r: Rect) => ({ ch: c.ch, xFrac: (r.x + c.xFrac * r.w - box.x) / box.w });
+        last.chars = [...last.chars.map((c) => re(c, a)), ...chars.map((c) => re(c, b))];
+        last.strip = { ...last.strip, box, w: box.w, h: box.h };
+        continue;
+      }
+      read.push({ strip, chars });
+    }
+    for (const { strip, chars } of read) {
       const { chords, texts } = readHarmonyStrip(strip, chars);
       if (!lines.has(strip.staff)) lines.set(strip.staff, []), lineTexts.set(strip.staff, []);
       lines.get(strip.staff)!.push({ strip, chords });
