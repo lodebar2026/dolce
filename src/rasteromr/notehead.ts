@@ -197,6 +197,13 @@ export function findRasterHeads(
     if (fill < 0.3) continue; // 太空：是弧线的一段、方框
     if (fill >= FILL_SOLID && beamStub(bin, b, stems, unit)) continue;
     const stem = stemOf(b, stems, unit);
+    // **没挂干、又全是笔画的不是实心头**：扫描件上手写在音符旁的简谱数字（破碎扫描 p8「4 4 3」、p6「2」「5」），
+    // 粗笔写的「4」「5」「6」填充率、尺寸都过闸，却没有一处够得上实心椭圆的厚度——真头的最大内切半径中位 0.40 格、
+    // 这批数字 0.17~0.24 格。只查没挂干的：挂着干的头被去线、干根削薄的也有，那一档交给挂干之后的几路。
+    // 圈里正中围着白的不剔：粗笔印的空心头墨多到过了实心线、又不挂干（是爱的全音符「e」形一圈；
+    // 新编 059 加线上的全音符，内腔被没去净的线切成上下两小块，只围着 0.05~0.12 格²），也没有芯。
+    // 单按白的多少分不开（门槛 0.15 时手写数字剔得干净、059 的全音符跟着丢 12 步），要看白在不在正中
+    if (fill >= FILL_SOLID && !stem && strokeOnly(bin, t.box, sp) && !ringWhite(bin, t.box, sp)) continue;
     // 剪掉了列，且高度落在谱线网格的延长线上 → 那两截细横笔是加线
     const ledger: LineSeg | null =
       t.trimmed && t.ledgerY != null && onLedgerGrid(t.ledgerY, c.bbox.x + c.bbox.w / 2)
@@ -236,6 +243,41 @@ export function findRasterHeads(
     out.push({ comp: c, box: b, code, fill, stem, ledger });
   }
   return out;
+}
+
+/**
+ * 盒里围着一块**居中**的白：围住的白够 `RING_WHITE` 格²、重心离盒心横向不过 `RING_OFF_X`、纵向不过 `RING_OFF_Y`（盒宽高的比例）。
+ * 空心头的内腔在正中，被没去净的谱线切成上下两半，合起来重心也还在正中；手写数字的白偏在一角（「4」的三角、「6」的圈）或几乎没有。
+ */
+function ringWhite(bin: Binary, b: Rect, sp: number): boolean {
+  const at: number[] = [];
+  if (enclosedArea(bin, b, sp, at) < sp * sp * RING_WHITE) return false;
+  let sx = 0, sy = 0;
+  for (let i = 0; i < at.length; i += 2) (sx += at[i], sy += at[i + 1]);
+  const k = at.length / 2;
+  return Math.abs(sx / k - (b.x + (b.w - 1) / 2)) <= b.w * RING_OFF_X && Math.abs(sy / k - (b.y + (b.h - 1) / 2)) <= b.h * RING_OFF_Y;
+}
+
+/** 盒里被围住的白一共多少像素（判据同 `rayEnclosed`，不提前收手）；给了 `at` 就把这些像素的 x、y 依次记进去 */
+function enclosedArea(bin: Binary, b: Rect, sp: number, at?: number[]): number {
+  const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && !!bin.data[y * bin.w + x];
+  const x0 = b.x, x1 = b.x + b.w - 1, y0 = b.y, y1 = b.y + b.h - 1;
+  const pad = Math.round(sp * RAY_PAD);
+  let n = 0;
+  for (let y = y0 + 1; y < y1; y++)
+    for (let x = x0 + 1; x < x1; x++) {
+      if (ink(x, y)) continue;
+      let l = false, r = false, u = false, d = false;
+      for (let xx = x - 1; xx >= x0 && !l; xx--) l = ink(xx, y);
+      for (let xx = x + 1; xx <= x1 && !r; xx++) r = ink(xx, y);
+      for (let yy = y - 1; yy >= y0 - pad && !u; yy--) u = ink(x, yy);
+      for (let yy = y + 1; yy <= y1 + pad && !d; yy++) d = ink(x, yy);
+      if (l && r && u && d) {
+        n++;
+        at?.push(x, y);
+      }
+    }
+  return n;
 }
 
 /** 盒里（去掉一圈边）上下左右四个方向都碰得到墨的白像素，够不够 `RAY_ENCLOSED` 格²。上下的射线可以伸出盒外 `RAY_PAD` 格：
@@ -296,6 +338,33 @@ function beamStub(bin: Binary, b: Rect, stems: LineSeg[], unit: RasterUnit): boo
   const l = dirAt(b.x);
   return (l & dirAt(b.x + b.w)) !== 0;
 }
+
+/**
+ * 盒里没有一个墨点离白（盒外算白）够 `HEAD_CORE` 格远：块全是笔画、没有实心的芯（`findRasterHeads` 剔手写数字）。
+ * 只看每个墨点周围半径那一圈，盒小、开销可以忽略。
+ */
+function strokeOnly(bin: Binary, b: Rect, sp: number): boolean {
+  const r = sp * HEAD_CORE;
+  const R = Math.ceil(r);
+  const ink = (x: number, y: number) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h && !!bin.data[y * bin.w + x];
+  for (let y = b.y; y < b.y + b.h; y++)
+    for (let x = b.x; x < b.x + b.w; x++) {
+      if (!ink(x, y)) continue;
+      let core = true;
+      for (let dy = -R; dy <= R && core; dy++)
+        for (let dx = -R; dx <= R && core; dx++) if (dx * dx + dy * dy < r * r && !ink(x + dx, y + dy)) core = false;
+      if (core) return false;
+    }
+  return true;
+}
+
+/** 没有芯的块围着这么多白（格²）以上、又围在正中的，算空心头的圈，不剔（`ringWhite`）。 */
+const RING_WHITE = 0.04;
+const RING_OFF_X = 0.1;
+const RING_OFF_Y = 0.12;
+
+/** 实心头的芯至少这么厚（最大内切半径，格；`strokeOnly`）。破碎扫描真头 1 分位 0.21、5 分位 0.27、中位 0.40。 */
+const HEAD_CORE = 0.25;
 
 /** 短杠两头的干至少伸出这么多格（`beamStub`）。 */
 const BEAM_STUB_STEM = 1.5;

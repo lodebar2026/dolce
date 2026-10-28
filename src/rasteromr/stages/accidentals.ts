@@ -527,9 +527,14 @@ export function findKeySigs(c: {
       const pair = sharpAsHeads(syms, edge, onStaff);
       if (pair && pair.box.x <= edge + gap) {
         for (const s0 of pair.heads) syms.splice(syms.indexOf(s0), 1);
+        // 升号的另一道横笔单成一个头、上下隔得超过一对的（主使我喜乐首行第四个升号，拆块模板按本页实心头自举，样本一变就拆成这样）：
+        // 压在认出的升号盒里，一并去掉
+        for (let i = syms.length - 1; i >= 0; i--) if (syms[i].code === "noteheadBlack" && overlapFrac(syms[i].box, pair.box) >= 0.5) syms.splice(i, 1);
         syms.push({ box: pair.box, code: "accidentalSharp" });
         ledger.claim(pair.box, "key:accidentalSharp");
         edge = pair.box.x + pair.box.w;
+        // 认出的升号也当「前一个」：后面的拍号 C 上半弧要按它比高矮（否则被当成第五个升号）
+        prevKey = { box: pair.box, code: "accidentalSharp", sig: binSig(nl, pair.box) };
         continue;
       }
       let took = false;
