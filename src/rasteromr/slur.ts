@@ -160,14 +160,15 @@ export function findStubSlurs(map: ContourMap, unit: RasterUnit, only: Contour[]
 
 /**
  * 几块拼成一条判：弧顶（弧底）贴着谱线走的那段连游程去线也去掉了，弧断成两截、各自不到 `MIN_W`（宁静 p8 m102、p4 m56 两个八分上下那条）。
- * 拼起来的盒照样过弧线那几道闸，中间空着的列不算。
+ * 拼起来的盒照样过弧线那几道闸，中间空着的列不算；给了 `gapY`（两截相向的头压着的那条线的 y）的，空着的列按弧走在线上算拱
+ * （弧顶整段去掉了，两条腿自己只拱 0.19 格，破碎扫描 p3 m30 第五线上那条）。
  */
-export function judgeArcUnion(map: ContourMap, parts: readonly Contour[], unit: RasterUnit, id: number): SlurArc | null {
+export function judgeArcUnion(map: ContourMap, parts: readonly Contour[], unit: RasterUnit, id: number, gapY?: number): SlurArc | null {
   const ids = new Set(parts.map((c) => c.id));
   const x0 = Math.min(...parts.map((c) => c.bbox.x)), y0 = Math.min(...parts.map((c) => c.bbox.y));
   const x1 = Math.max(...parts.map((c) => c.bbox.x + c.bbox.w)), y1 = Math.max(...parts.map((c) => c.bbox.y + c.bbox.h));
   if (x1 - x0 < unit.space * MIN_W) return null;
-  return judgeArcBox({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, (x, y) => ids.has(map.labels[y * map.w + x]!), unit, id);
+  return judgeArcBox({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, (x, y) => ids.has(map.labels[y * map.w + x]!), unit, id, BOW_MIN, ONE_RUN_FRAC, gapY);
 }
 
 /** `mask`：只认这张图上也有墨的像素（去线图上的块按修补图判：去线时留下的谱线残段在修补图上清掉了）。 */
@@ -175,7 +176,7 @@ function judgeArc(map: ContourMap, c: Contour, unit: RasterUnit, id: number, mas
   return judgeArcBox(c.bbox, (x, y) => map.labels[y * map.w + x] === c.id && (!mask || mask.data[y * mask.w + x] === 1), unit, id, bowMin, oneRun);
 }
 
-function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: RasterUnit, id: number, bowMin = BOW_MIN, oneRun = ONE_RUN_FRAC): SlurArc | null {
+function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: RasterUnit, id: number, bowMin = BOW_MIN, oneRun = ONE_RUN_FRAC, gapY?: number): SlurArc | null {
   const ys: number[] = [];
   let one = 0;
   let cols = 0;
@@ -199,7 +200,7 @@ function judgeArcBox(b: Rect, ink: (x: number, y: number) => boolean, unit: Rast
       prev = on;
     }
     if (n === 0) {
-      ys.push(NaN);
+      ys.push(gapY ?? NaN);
       continue;
     }
     cols++;

@@ -34,7 +34,7 @@ import { lastKey } from "./keysig";
 import type { ContourLedger } from "./ledger";
 import { attachJumpMarks, type HarmonyStrip, type HarmonyToken } from "./harmony";
 import type { RasterPage } from "./rasterpage";
-import { liftOf, type LineGrid, type RasterUnit, type StaffGroup, type StaffLineRun } from "./staffline";
+import { liftOf, lineYAt, type LineGrid, type RasterUnit, type StaffGroup, type StaffLineRun } from "./staffline";
 import type { TimeStrip } from "./timesig";
 import type { ClefTally, PageCarry, PageSource, RasterLiveOcr, RasterPageOpts, RasterPageResult } from "./recognize";
 
@@ -152,6 +152,14 @@ const BAR_TIE_CROSS = 0.3;
 /** 按游程去线图上拼弧：两截之间的空隙上限、每截的高度上限（格）。弧顶贴线那段实测 0.3~1.1 格。 */
 const RUN_BRIDGE = 1.2;
 const RUN_PIECE_H = 1;
+/** 拼弧时空列按线的对边补拱，两截各自的宽度下限（格）：真弧两条腿实测 0.53 格起，扫描噪点拼出来的有一截只有 2~4 像素。 */
+const RUN_LEG_W = 0.4;
+/** 同上，各自的高度下限（格）：腿斜着伸进线里，实测 7 像素（0.37 格）起；贴着线的残段 5 像素。 */
+const RUN_LEG_H = 0.35;
+/** 拼弧的块又窄又竖、高过这么多（格）的是笔画（降号竖笔 0.77 格），真弧伸进线的窄腿 0.58 格。 */
+const RUN_STROKE_H = 0.7;
+/** 竖段穿过按游程去线图上的块：块的高度里那一列（左右各一像素）有墨的行要占块高这么多。 */
+const RUN_VSEG_FILL = 0.7;
 /** 按游程去线图上的块，逐列平均墨厚的上限（格）放宽到这么多：弧顶压线那段连着线一起留下，块比去线图上的厚（破碎 p2 m4 两个八分下方那条）。 */
 const RUN_THIN_MEAN = 0.3;
 /** 按游程补出来的短弧（不到 `RUN_FLAT_W` 格宽）高宽比上限：上沿并进谱线的空心头剩下下半个碗（1.3 格宽、高宽比 0.8，望十架 p1 m10），
@@ -1074,8 +1082,31 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       // 延长记号的弧（点认成了记号、弧在去线图上没留下）：弧下 1 格内有延长记号的不要（赞美一神）
       if (fermatas.some((f) => f.x + f.w > b.x - sp * 0.5 && f.x < b.x + b.w + sp * 0.5 && f.y + f.h > b.y - sp && f.y < b.y + b.h + sp)) return false;
       if (heads.some((hb) => (hb.left + hb.right) / 2 > b.x && (hb.left + hb.right) / 2 < b.x + b.w && (hb.top + hb.bottom) / 2 > b.y && (hb.top + hb.bottom) / 2 < b.y + b.h)) return false;
-      // 块里竖着穿过一根竖段的（干、小节线穿线那段游程长、留了下来，与两旁残留的线连成一块，善牧恩慈歌）
-      if ([...prims.vSegs, ...stemSegs].some((v) => { const vx = (v.x0 + v.x1) / 2; return vx > b.x && vx < b.x + b.w && Math.min(v.y0, v.y1) <= b.y + b.h * 0.3 && Math.max(v.y0, v.y1) >= b.y + b.h * 0.7; })) return false;
+      // 块里竖着穿过一根竖段的（干、小节线穿线那段游程长、留了下来，与两旁残留的线连成一块，善牧恩慈歌）。
+      // 那一列在块的高度里还要真有墨从上贯到下（`RUN_VSEG_FILL`，哪一块的墨都算：干在这张图上常自成一块，新编 274 m4 十六分的干穿过符旗那截）：
+      // 竖段图上手写简谱数字的竖笔隔着空白续到谱线，从压线弧的半条腿上横穿过去，腿那一列只有弧身两三个像素（破碎扫描 p3 m30 第五线上那条）
+      // 逐行按竖段那一行的 x 查（还原号的竖笔斜，两头差三个像素，新编 091 m21）
+      const fills = (v: { x0: number; y0: number; x1: number; y1: number }) => {
+        let n = 0;
+        for (let y = b.y; y < b.y + b.h; y++) {
+          const vx = Math.round(v.y1 === v.y0 ? v.x0 : v.x0 + ((v.x1 - v.x0) * (y - v.y0)) / (v.y1 - v.y0));
+          for (let x = vx - 1; x <= vx + 1; x++) if (runNl.data[y * runNl.w + x]) { n++; break; }
+        }
+        return n >= b.h * RUN_VSEG_FILL;
+      };
+      // 墨大半在去线图上认成了临时记号、调号、拍号、谱号的块里：还原号下半截的粗斜笔压在线上，按游程留下的那截像弧尾（新编 091 m21）；
+      // 拍号「4」的下半截与降号尾巴的碎点拼成延音线（新编 264 m4）
+      let all = 0, acc = 0;
+      for (let y = b.y; y < b.y + b.h; y++)
+        for (let x = b.x; x < b.x + b.w; x++) {
+          const k = y * runMap.w + x;
+          if (runMap.labels[k] !== c.id) continue;
+          all++;
+          const id = cmap.labels[k];
+          if (id && ledger.claimsOf(id).some((q) => /^(acc|accid|accpair|key|time|clef):/.test(q.by))) acc++;
+        }
+      if (acc > all * 0.5) return false;
+      if ([...prims.vSegs, ...stemSegs].some((v) => { const vx = (v.x0 + v.x1) / 2; return vx > b.x && vx < b.x + b.w && Math.min(v.y0, v.y1) <= b.y + b.h * 0.3 && Math.max(v.y0, v.y1) >= b.y + b.h * 0.7 && fills(v); })) return false;
       // 整块落在一条谱线的线带里的是线本身（扫描件谱线局部厚一像素，按线宽去不掉，两个头之间留下一截微弯的线）
       const band = unit.lineThick + 1;
       if (staffLines.some((l) => b.y >= l.y - band && b.y + b.h <= l.y + band + 1)) return false;
@@ -1142,18 +1173,28 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       return n ? sum / n : NaN;
     };
     const used = (c: Contour) => slurs.some((sl) => c.bbox.x < sl.obj.box.right && c.bbox.x + c.bbox.w > sl.obj.box.left && c.bbox.y < sl.obj.box.bottom && c.bbox.y + c.bbox.h > sl.obj.box.top);
-    const pieces = cands.filter((c) => c.h <= RUN_PIECE_H && !used(c)).sort((a, b) => a.bbox.x - b.bbox.x);
+    // 窄而竖的（高过宽两倍、不到 `RUN_LEG_W` 格宽、高过 `RUN_STROKE_H` 格）是笔画不是弧腿：没认出的降号竖笔拼上线残段成了延音线（新编 264 m4，5×17 像素）；
+    // 真弧斜着伸进线的腿也窄，但矮（破碎干净版 p2 m5 那条腿 3×10 像素、0.58 格）
+    const pieces = cands.filter((c) => c.h <= RUN_PIECE_H && !used(c) && !(c.bbox.h > c.bbox.w * 2 && c.bbox.w < sp * RUN_LEG_W && c.bbox.h >= sp * RUN_STROKE_H)).sort((a, b) => a.bbox.x - b.bbox.x);
     const lineBand = unit.lineThick + 1;
     for (const a of pieces) {
       if (used(a)) continue;
       const ay = endY(a, true);
-      const line = staffLines.find((l) => Math.abs(l.y - ay) <= lineBand);
+      // 线按端点那一列的 y 比（扫描件谱线斜，名义 y 在行中间差出半格，破碎扫描 p3 m30）
+      const ax = a.bbox.x + a.bbox.w - 1;
+      const line = staffLines.find((l) => Math.abs(lineYAt(l, ax) - ay) <= lineBand);
       if (!line) continue;
       for (const b of pieces) {
         const gap = b.bbox.x - (a.bbox.x + a.bbox.w);
         if (b === a || gap < 0 || gap > sp * RUN_BRIDGE || used(b)) continue;
-        if (Math.abs(endY(b, false) - line.y) > lineBand) continue;
-        const sl = judgeArcUnion(runMap, [a, b], unit, pg.objs.length + pg.segs.length + 1000 + slurs.length);
+        if (Math.abs(endY(b, false) - lineYAt(line, b.bbox.x)) > lineBand) continue;
+        // 拱不够的，两条腿各自够宽、够高（`RUN_LEG_W`、`RUN_LEG_H`）就把空着的那几列按弧走在线的对边再判一次：
+        // 弧顶整段随线去掉了，两条腿从线下伸进线里，弧顶压着线的上沿（破碎扫描 p3 m30、m31 第五线上那两条，两条腿自己只拱 0.19、0.21 格）；
+        // 碎点拼出来的、一截扁平贴着线的不给（扫描噪点里的符杠残块，破碎扫描 p10 m97）
+        const id = pg.objs.length + pg.segs.length + 1000 + slurs.length;
+        const ly = lineYAt(line, (ax + b.bbox.x) / 2);
+        const legs = Math.min(a.bbox.w, b.bbox.w) >= sp * RUN_LEG_W && Math.min(a.bbox.h, b.bbox.h) >= sp * RUN_LEG_H;
+        const sl = judgeArcUnion(runMap, [a, b], unit, id) ?? (legs ? judgeArcUnion(runMap, [a, b], unit, id, ay > ly ? ly - unit.lineThick / 2 : ly + unit.lineThick / 2) : null);
         if (!sl || dotUnder(sl) || !flat(sl)) continue;
         slurs.push(sl);
         runArcs.add(sl);
