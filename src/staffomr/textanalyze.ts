@@ -1104,7 +1104,8 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
     let staffD = Infinity;
     for (const st of pg.staves) {
       const d = st.box.top - g.box.bottom;
-      if (d < 0 || d >= staffD) continue;
+      // 下沿压进顶线半格以内的也算这一行（是爱扫描件和弦写得低，C7 的下沿压进顶线一两个像素，挂到了下一行谱）
+      if (d < -sp * 0.5 || d >= staffD) continue;
       staffD = d;
       staff = st;
     }

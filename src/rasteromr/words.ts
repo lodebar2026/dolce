@@ -466,7 +466,7 @@ export function spaceHeaderText(text: string, chars: { text: string; cx: number 
 const DYNAMIC_RE = /^(ppp|pp|p|mp|mf|fff|ff|f|sfz|sf|fz|fp)(?![a-z])/;
 /** 文字指示的术语：歌词行里夹着的字行，含这些词的才留。 */
 /** 文字指示里常见的词：粘成一个词的（rec 不出空格，`spaceWordText` 按空白补，词距窄的补不上）按它们切开。 */
-const TERM_WORDS = new Set(["a", "al", "tempo", "poco", "rit", "rall", "dim", "cresc", "molto", "piu", "meno", "mosso", "con", "moto", "sempre", "fine", "coda", "more", "broadly", "stagger", "breathing", "unis", "solo", "voice", "tutti", "only", "opt", "ten"]);
+const TERM_WORDS = new Set(["a", "al", "tempo", "poco", "rit", "rall", "dim", "cresc", "molto", "piu", "meno", "mosso", "con", "moto", "sempre", "fine", "coda", "more", "broadly", "stagger", "breathing", "unis", "unison", "solo", "voice", "tutti", "only", "opt", "ten", "dolce"]);
 
 /** 一个词能否整个切成 `TERM_WORDS` 里两个以上的词：能就返回切开的样子 */
 function splitTermWord(w: string): string | null {
@@ -486,6 +486,18 @@ function splitTermWord(w: string): string | null {
  *   - 小写 `tempo` 前头没有 `a` 的补成 `a tempo`：斜体小 a 印得小，rec 常丢（GT 三本里带 tempo 的文字全是「a tempo」，没有单独的）。
  */
 export function respellTerms(text: string): string {
+  // 一个术语词被拆成几段（是爱「Tutt i」「Tut t i」）：相邻两三段拼起来正好是术语词、其中有一两个字母的碎段，拼回去
+  const toks = text.split(" ");
+  for (let i = 0; i < toks.length; i++)
+    for (const n of [3, 2]) {
+      const seg = toks.slice(i, i + n);
+      if (seg.length < n || !seg.some((t) => t.length <= 2 && t !== "a")) continue;
+      const joined = seg.join("");
+      if (!TERM_WORDS.has(joined.toLowerCase().replace(/[.,]$/, ""))) continue;
+      toks.splice(i, n, joined);
+      break;
+    }
+  text = toks.join(" ");
   return text.replace(/[A-Za-z]+/g, (w) => splitTermWord(w) ?? w).replace(/(?<![A-Za-z]|\ba\s)tempo\b/g, "a tempo");
 }
 
@@ -686,7 +698,8 @@ export function attachWordLines(
     const j = lines.findIndex((b, k) => k > i && Math.abs(b.box.x - a.box.x) <= sp * STACK_X && b.box.y - (a.box.y + a.box.h) <= a.box.h * STACK_GAP && b.box.y > a.box.y + a.box.h * 0.5);
     if (j < 0) continue;
     const b = lines[j];
-    if (DYNAMIC_RE.test(a.text) || DYNAMIC_RE.test(b.text)) continue;
+    // 节拍器下面紧挨着的和弦字母不并（是爱 m1「♩=94」下的 F）
+    if (DYNAMIC_RE.test(a.text) || DYNAMIC_RE.test(b.text) || METRO_RE.test(a.text) || METRO_RE.test(b.text)) continue;
     const r = Math.max(a.box.x + a.box.w, b.box.x + b.box.w);
     a.text += "\n" + b.text;
     a.box = { x: Math.min(a.box.x, b.box.x), y: a.box.y, w: r - Math.min(a.box.x, b.box.x), h: b.box.y + b.box.h - a.box.y };
@@ -734,6 +747,13 @@ export function attachWordLines(
       // 带后缀的才算（`A tempo` 的 `A` 不是和弦）
       const isChord = (t: string) => t.length > 1 && isWholeChord(t);
       if (!whole) while (n < toks.length - 1 && isChord(toks[n])) n++;
+      // 文字后面跟着一个和弦（是爱 m6–7「dolce. F」）：带术语的文字在前、末一个词整个是和弦，把它摘出来
+      const lastTok = toks[toks.length - 1] ?? "";
+      if (!whole && n === 0 && toks.length > 1 && isWholeChord(lastTok) && DIRECTION_RE.test(toks.slice(0, -1).join(" "))) {
+        const span = box.w * (lastTok.length / text.length);
+        chords.push({ text: lastTok, box: { x: box.x + box.w - span, y: box.y, w: span, h: box.h } });
+        text = toks.slice(0, -1).join(" ");
+      }
       if (n > 0) {
         const parts = whole ?? toks.slice(0, n);
         const span = whole ? box.w : box.w * (toks.slice(0, n).join(" ").length / text.length);
