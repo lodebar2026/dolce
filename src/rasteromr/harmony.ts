@@ -213,7 +213,7 @@ function staffStrips(bin: Binary, st: HarmonyStaff, unit: RasterUnit): HarmonySt
         s = -1;
       }
     }
-    for (const [a, b] of runs) {
+    for (let [a, b] of runs) {
       if (b - a + 1 < sp * MIN_W) continue;
       // 纵向也裁紧：条越紧，rec 越准
       let ya = y1;
@@ -250,6 +250,17 @@ function staffStrips(bin: Binary, st: HarmonyStaff, unit: RasterUnit): HarmonySt
           grown++;
           top = Math.min(top, ya);
         }
+      }
+      // **往上长过带顶的，左右也跟着长**：列投影只看带里的墨，字露在带顶以上的部分算不进左右边界
+      //（天父世界歌伴奏第二行和弦比带顶高出一格，E♭、B♭ 的 ♭ 只有竖笔的脚伸进带里，肚子在带外被切掉，OCR 读成 E7、B）。
+      // 只沿着连续有墨的列往外扩，不跨空白列，挨着的下一个和弦并不进来
+      if (ya < y0) {
+        const colInk = (x: number) => {
+          for (let y = ya; y <= yb; y++) if (y >= y0 ? at(x, y) : bin.data[y * bin.w + x]) return true;
+          return false;
+        };
+        while (x0 + b + 1 < x1 && colInk(x0 + b + 1)) b++;
+        while (a > 0 && colInk(x0 + a - 1)) a--;
       }
       const box = { x: x0 + a, y: ya, w: b - a + 1, h: yb - ya + 1 };
       const data = new Uint8Array(box.w * box.h);

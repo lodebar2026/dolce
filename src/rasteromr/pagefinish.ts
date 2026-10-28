@@ -897,6 +897,16 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       else if (wedges[i].box && wedges[i].type === w.type && w.x1 - w.x0 > wedges[i].x1 - wedges[i].x0 + unit.space) wedges[i] = w;
     }
   }
+  // **压在和弦记号上的不是松叶**：「Gm/B♭」的 m 与斜杠逐列也是两段墨、往一头张开（天父世界歌伴奏 m14，切条把 ♭ 收全之后冒出来）。
+  // 只按认出来的和弦记号挡，合唱谱没有和弦，谱表上方的松叶不受影响
+  {
+    const pad = unit.space * 0.5;
+    for (let i = wedges.length - 1; i >= 0; i--) {
+      const w = wedges[i];
+      const cx = (w.x0 + w.x1) / 2;
+      if (harmonies.some((h) => cx > h.box.x - pad && cx < h.box.x + h.box.w + pad && w.cy > h.box.y - pad && w.cy < h.box.y + h.box.h + pad)) wedges.splice(i, 1);
+    }
+  }
   // **压在力度字上的不是松叶**：斜体 p 的竖笔与圆肚子逐列看也是两段墨、往右张开（破碎 p2 m8 钢琴那个 p 认成了一条 2 格宽的渐强）
   {
     const sp = unit.space;
