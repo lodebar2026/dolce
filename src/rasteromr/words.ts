@@ -465,6 +465,30 @@ export function spaceHeaderText(text: string, chars: { text: string; cx: number 
 /** 力度（另有一路按字形认，`dynamics.ts`；它漏掉的由这里读出来的补）。字行以力度字母起头、后面跟着别的（歌词的头一个字）也算。 */
 const DYNAMIC_RE = /^(ppp|pp|p|mp|mf|fff|ff|f|sfz|sf|fz|fp)(?![a-z])/;
 /** 文字指示的术语：歌词行里夹着的字行，含这些词的才留。 */
+/** 文字指示里常见的词：粘成一个词的（rec 不出空格，`spaceWordText` 按空白补，词距窄的补不上）按它们切开。 */
+const TERM_WORDS = new Set(["a", "al", "tempo", "poco", "rit", "rall", "dim", "cresc", "molto", "piu", "meno", "mosso", "con", "moto", "sempre", "fine", "coda", "more", "broadly", "stagger", "breathing", "unis", "solo", "voice", "tutti", "only", "opt", "ten"]);
+
+/** 一个词能否整个切成 `TERM_WORDS` 里两个以上的词：能就返回切开的样子 */
+function splitTermWord(w: string): string | null {
+  const lw = w.toLowerCase();
+  const best: (string[] | null)[] = [[]];
+  for (let i = 1; i <= lw.length; i++) {
+    best[i] = null;
+    for (let j = 0; j < i; j++) if (best[j] && TERM_WORDS.has(lw.slice(j, i))) { best[i] = [...best[j]!, w.slice(j, i)]; break; }
+  }
+  const parts = best[lw.length];
+  return parts && parts.length >= 2 ? parts.join(" ") : null;
+}
+
+/**
+ * 文字指示的拼写规整（望十架）：
+ *   - 粘连的术语词切开：`atempo`、`apoco`、`pocorit`、`staggerbreathing`（只在每段都是 `TERM_WORDS` 里的词时切，`unison` 不会切成 unis on）；
+ *   - 小写 `tempo` 前头没有 `a` 的补成 `a tempo`：斜体小 a 印得小，rec 常丢（GT 三本里带 tempo 的文字全是「a tempo」，没有单独的）。
+ */
+export function respellTerms(text: string): string {
+  return text.replace(/[A-Za-z]+/g, (w) => splitTermWord(w) ?? w).replace(/(?<![A-Za-z]|\ba\s)tempo\b/g, "a tempo");
+}
+
 const DIRECTION_RE = /\b(rit|rall|riten|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|d\. ?[sc])\b/i;
 /** 同一高度上有这么多段拉丁文就是一行歌词（歌词带里的门槛低一档）。 */
 const LYRIC_ROW = 3;
@@ -724,6 +748,7 @@ export function attachWordLines(
     const crowded = peers >= (lyricZones.some((q) => inside(q, cx, cy)) ? LYRIC_ROW_IN_ZONE : LYRIC_ROW);
     // rec 偶尔给元音添上重音符（`póco`、`dím.`），术语里没有这种写法，一律去掉
     text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    text = respellTerms(text);
     // 框字的方框边读成了括号、竖线（`[Interelude`）
     text = text.replace(/^[[|【]+\s*/, "").replace(/\s*[\]|】]+$/, "");
     // 词后单独一个小写 l 是读错的 1（破碎扫描版「Soprano l」）；大写 I 是罗马数字，不动
