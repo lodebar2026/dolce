@@ -641,6 +641,41 @@ function dropVerseNumber(chars: OcrChar[]): OcrChar[] {
   return s.slice(k);
 }
 
+/**
+ * **按连号认段号**：同一谱行下同一文种的几行歌词，行首各是一位数、从上到下连着（1、2、3、4），就都是段号——
+ * 不管数字后面跟的是什么。OCR 常把「1.」的点吃掉（信心使我得胜「1擋群敵」，同组别行读出了「2.風」），
+ * 英文段号后面又常跟小写（「1press」「2tread」：下半句接续的行首是小写字母）；单看一行分不出这是段号还是首字「I」读成的「1」
+ * （求主同住「1need」），连号才说得准。读出数字的行要占这一组的一半以上、至少两行。
+ * 汉字行照同组别行补上数字后的点（谱面同一列的段号同一个写法）。返回 条 → 段号文本。
+ */
+export function verseLabelsBySequence(
+  strips: readonly LyricStrip[],
+  charsOf: (st: LyricStrip) => readonly OcrChar[] | undefined,
+  rowOf: (st: LyricStrip) => LyricRow,
+  latin: ReadonlySet<LyricStrip>,
+): Map<LyricStrip, string> {
+  const groups = new Map<string, { st: LyricStrip; lead: string }[]>();
+  for (const st of strips) {
+    const chars = charsOf(st);
+    if (!chars?.length) continue;
+    const isLatin = latin.has(st);
+    if (!isLatin && !chars.some((c) => /\p{Script=Han}/u.test(c.ch))) continue;
+    const key = `${rowOf(st).staffIndex}:${isLatin ? "la" : "zh"}`;
+    const lead = [...chars].sort((a, b) => a.xFrac - b.xFrac).map((c) => c.ch).join("");
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push({ st, lead });
+  }
+  const out = new Map<LyricStrip, string>();
+  for (const [key, rows] of groups) {
+    rows.sort((a, b) => a.st.box.y - b.st.box.y);
+    const led = rows.map((r) => ({ ...r, m: /^([1-9])([.．、]?)(?![0-9])/.exec(r.lead) })).filter((r) => r.m);
+    if (led.length < 2 || led.length * 2 <= rows.length) continue;
+    if (!led.every((r, i) => i === 0 || Number(r.m![1]) === Number(led[i - 1].m![1]) + 1)) continue;
+    const dot = key.endsWith("zh") ? led.find((r) => r.m![2])?.m![2] ?? "" : "";
+    for (const r of led) out.set(r.st, r.m![1] + (r.m![2] || dot));
+  }
+  return out;
+}
+
 export function foldLyricChars(chars: OcrChar[]): OcrChar[] {
   chars = dropSectionLabel(dropVerseNumber(chars)).filter((c) => LYRIC_CH.test(c.ch));
   const out: OcrChar[] = [];
@@ -849,6 +884,53 @@ const SPACE_GAP = 0.7;
 /** 超长的词（这么多个字母以上，英文词极少）里再按小一档的空白切。 */
 const LONG_WORD = 7;
 const SPACE_GAP_TIGHT = 0.22;
+/** 斜体条（量得出斜度的）扣斜之后的词界：斜体排得紧，词缝只有 0.5~0.75 个字号，扣斜后字母之间不过 0.35（信心使我得胜第 2、4 段）。 */
+const SPACE_GAP_ITALIC = 0.4;
+
+/** 斜体的斜度（每纵一像素的横移）在 0~`SLANT_MAX` 里按 `SLANT_STEP` 试；空白列要比不扣时多出 `SLANT_GAIN` 倍以上才认。 */
+const SLANT_MAX = 0.4;
+const SLANT_STEP = 0.025;
+const SLANT_GAIN = 1.03;
+
+/** 条子按斜度 `k` 扣回后的列投影（以条子正中那一横为准：x' = x + k·(y − 中线)），越界的列不计。 */
+function slantedColumns(strip: LyricStrip, k: number): Int32Array {
+  const col = new Int32Array(strip.w);
+  const yc = strip.h / 2;
+  for (let y = 0; y < strip.h; y++) {
+    const dx = k * (y - yc);
+    for (let x = 0; x < strip.w; x++) {
+      if (!strip.data[y * strip.w + x]) continue;
+      const xx = Math.round(x + dx);
+      if (xx >= 0 && xx < strip.w) col[xx]++;
+    }
+  }
+  return col;
+}
+
+/** 条子里字的斜度：扣回后墨迹首末之间的空白列最多的那个斜率；比不扣多不出 `SLANT_GAIN` 倍就当正体（0）。 */
+function italicSlant(strip: LyricStrip): number {
+  const blanks = (k: number) => {
+    const col = slantedColumns(strip, k);
+    let a = 0;
+    while (a < col.length && !col[a]) a++;
+    let b = col.length - 1;
+    while (b > a && !col[b]) b--;
+    let n = 0;
+    for (let x = a; x <= b; x++) if (!col[x]) n++;
+    return n;
+  };
+  const base = blanks(0);
+  let best = 0;
+  let bs = base;
+  for (let i = 1; i <= Math.round(SLANT_MAX / SLANT_STEP); i++) {
+    const v = blanks(i * SLANT_STEP);
+    if (v > bs) {
+      bs = v;
+      best = i * SLANT_STEP;
+    }
+  }
+  return bs >= base * SLANT_GAIN ? best : 0;
+}
 
 /** 这一行是拉丁歌词吗。 */
 export function isLatinRow(chars: OcrChar[], needHyphen = true, minLatin = LATIN_MIN): boolean {
@@ -971,10 +1053,9 @@ export function latinCells(strip: LyricStrip, chars: OcrChar[], spaceGap = SPACE
   const keep = dropVerseNumber(chars).filter((c) => LATIN_CH.test(c.ch)).sort((a, b) => a.xFrac - b.xFrac);
   if (!keep.length) return [];
   // 条内的**空白列区间**（分数坐标），按 x 排：词界就在这些区间里
-  const col = new Int32Array(strip.w);
-  for (let y = 0; y < strip.h; y++)
-    for (let x = 0; x < strip.w; x++) if (strip.data[y * strip.w + x]) col[x]++;
-  const minGap = Math.max(2, strip.charH * spaceGap);
+  const slant = italicSlant(strip);
+  const col = slantedColumns(strip, slant);
+  const minGap = Math.max(2, strip.charH * (slant > 0 ? Math.min(spaceGap, SPACE_GAP_ITALIC) : spaceGap));
   const blanksOf = (min: number): [number, number][] => {
     const out: [number, number][] = [];
     let run = 0;

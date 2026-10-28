@@ -9,7 +9,7 @@ import { findStaffLabels, labelKey, normalizeLabel } from "./stafflabel";
 import { makeTextObj, makeSymObj } from "./adapt";
 import { attachHarmonies, type LyricLine, buildLyricLines, attachLyrics, lyricObjLabel } from "../staffomr/textanalyze";
 import { liftHarmonies, lyricsBelongBelow, keepGapRowOrder, foldBilingualLyrics, splitSmallEchoes, moveEchoLines, splitVoiceLyrics, numberVersesByScript, liftLyrics } from "./lyricpost";
-import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, mapCharsToCells, stripWithout, jumpTail } from "./lyric";
+import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, verseLabelsBySequence, mapCharsToCells, stripWithout, jumpTail } from "./lyric";
 import type { Staff, PObj, SPage, Sym } from "../staffomr/model";
 import type { Component, Rect, Binary } from "../omrkit/types";
 import { type StaffNote, keyFifths, checkBars, lastTimeSignature, type BeamShape, type StaffContext } from "../staffomr/notedata";
@@ -518,6 +518,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     }
     /** 行首印着段号的歌词对象。 */
     const verseObjs = new Set<PObj>();
+    const seqLabels = ocr ? verseLabelsBySequence(lyricStrips, (st) => charsFix.get(st) ?? ocr.get(stripKey(st)), (st) => stripRow.get(st)!, latinStrips) : new Map<LyricStrip, string>();
     for (const strip of ocr ? lyricStrips : []) {
       let chars = charsFix.get(strip) ?? ocr!.get(stripKey(strip));
       if (!chars) continue; // 缓存没命中：这一条没跑过 OCR，宁可留空不编造
@@ -579,7 +580,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       const verseNo = /^[1-9][.．、]/.exec(lead)?.[0];
       // 英文段常印不带点的「1 Be」：拉丁行数字后面跟着大写字母的也是段号（只记下来，不当歌词归属的判据）。
       // 跟小写的不算：那多半是首字「I」读成了「1」（求主同住「1need」、更亲近恩主「1am」）
-      const label = verseNo ?? (latin && !mix ? /^[1-9](?=\s*[A-Z‘’'"“])/.exec(lead)?.[0] : undefined);
+      const label = verseNo ?? (latin && !mix ? /^[1-9](?=\s*[A-Z‘’'"“])/.exec(lead)?.[0] : undefined) ?? (mix ? undefined : seqLabels.get(strip));
       const made: PObj[] = [];
       for (const cells of parts) {
         if (!cells.some((c) => c.ch)) continue;
