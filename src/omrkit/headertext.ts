@@ -93,6 +93,19 @@ export function keepHeaderLine(text: string): boolean {
   return /[\u3400-\u9fff]/.test(text) || (text.match(/[A-Za-z]/g)?.length ?? 0) >= 2 || /\d{4}\s*[-–—]\s*\d{4}/.test(text);
 }
 
+/** 节拍器记号行（`♩ = 72`、`J=c.78`：音符字形读成一两个字母）。同 `rasteromr/words.ts` 的 `METRO_RE` */
+export function isMetroText(text: string): boolean {
+  return /=\s*(c(?:a|irca)?\.?\s*)?\d ?\d ?\d?(?!\d)/.test(text) && !/[\u3400-\u9fff]/.test(text);
+}
+
+/**
+ * 页眉带 OCR 存哪些行：页眉要的（`keepHeaderLine`），外加节拍器行——首行谱上方印得高的「♩=c.78」落在页眉带里，
+ * 文字指示带够不着或拦腰切断（恩友歌伴奏、是谁），由调用方挑出来按文字指示挂（`pagefinish.ts`），不进页眉
+ */
+export function keepHeaderOcrLine(text: string): boolean {
+  return keepHeaderLine(text) || isMetroText(text);
+}
+
 /** 页眉的一行（页面坐标）与它的角色（MusicXML `<credit-type>`）、对齐。 */
 export interface HeaderCredit {
   text: string;

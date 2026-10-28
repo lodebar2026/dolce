@@ -19,7 +19,7 @@ import { fuseJianpu } from "./jianpufuse";
 import { jianpuKey, type JianpuStrip } from "./jianpuband";
 import { findRasterTuplets } from "./tuplet";
 import { findWordStrips, findFrameStrips, findNameStrips, partNameLines, type HeaderStrip, findHeaderStrip, wordKey, headerZoneLines, attachWordLines } from "./words";
-import { type WordLine, headerCredits } from "../omrkit/headertext";
+import { type WordLine, headerCredits, isMetroText } from "../omrkit/headertext";
 import { smallCapsCase, inkTextSize } from "./textsize";
 import { type Contour, candidateMap, traceContours, type ContourMap, type ContourStaff, type RepairedLayer } from "./contour";
 import { findRasterArticulations } from "./artic";
@@ -758,7 +758,9 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       const iy = Math.min(y + l.h, t.box.y + t.box.h) - Math.max(y, t.box.y);
       return ix > 0 && iy > 0 && ix * iy > l.w * l.h * 0.5;
     });
-  const headRows = ocrLines || layerLines.length ? mergeLayerLines((ocrLines ?? []).filter((l) => !onChord(l)), layerLines) : undefined;
+  // 页眉带里的节拍器行（首行谱上方印得高的「♩=c.78」）不是页眉，交给下面文字指示那一路挂
+  const headMetro = (ocrLines ?? []).filter((l) => isMetroText(l.t));
+  const headRows = ocrLines || layerLines.length ? mergeLayerLines((ocrLines ?? []).filter((l) => !onChord(l) && !isMetroText(l.t)), layerLines) : undefined;
   const headerLines = headRows && headerStrip?.creditFrom !== undefined ? headerZoneLines(headRows, headerStrip.creditFrom, headerStrip.w) : headRows;
   const headerZone: Rect[] =
     headerLines && headerStrip?.creditFrom !== undefined
@@ -782,6 +784,8 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         return { x: l - unit.space, y: ln.top - unit.space * 0.5, w: r - l + unit.space * 2, h: unit.space * 3 };
       }),
       ...harmonies.map((t) => ({ x: t.box.x, y: t.box.y, w: t.box.w, h: t.box.h })),
+      // 和弦带那一路已经挂上的跳转记号词（`attachJumpMarks`）：文字带再读一遍就成了两个「Fine」（颂赞与尊贵）
+      ...harmonyTexts.filter((t) => t.kind === "mark").map((t) => ({ x: t.box.x, y: t.box.y, w: t.box.w, h: t.box.h })),
       ...headerZone,
     ];
     // **文字指示里的字母收成了音**：谱表上方的「Unison」「coda」，字母的圈被认成头、没有干读成全音符（是爱 p4 m55 三个 B♭5）。
@@ -806,7 +810,8 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
         notes.splice(i, 1);
       }
     }
-    const placed = attachWordLines(pg, notes, wordStrips, wordOcr, unit, skip, lyricStrips.map((st) => st.box));
+    const withHead = headerStrip && headMetro.length > 0;
+    const placed = attachWordLines(pg, notes, withHead ? [...wordStrips, headerStrip!] : wordStrips, withHead ? new Map(wordOcr).set(wordKey(headerStrip!), headMetro) : wordOcr, unit, skip, lyricStrips.map((st) => st.box));
     ocrDynamics.push(...placed.dynamics);
     // 文字带里读出来的和弦记号：和弦带那一路（要自己的 OCR 缓存，合唱谱没生成）没认到和弦时才用
     if (!harmonies.length && placed.chords.length) {

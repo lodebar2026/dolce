@@ -14,7 +14,7 @@ import { labelKey, normalizeLabel, type LabelStrip } from "./stafflabel";
 import { jianpuKey, type JianpuStrip } from "./jianpuband";
 import { timeKey, type TimeStrip } from "./timesig";
 import { keepStripLine, spaceHeaderText, spaceWordText, wordKey, type WordStrip } from "./words";
-import { keepHeaderLine, type WordLine } from "../omrkit/headertext";
+import { keepHeaderOcrLine, type WordLine } from "../omrkit/headertext";
 import type { JianpuRow } from "./jianpufuse";
 import { surfaceFromGray, surfaceFromInk, type Surface } from "../omrkit/surface";
 
@@ -101,9 +101,9 @@ export function ocrWordStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Pr
   return ocrLineStrips(ocr, strips, keepStripLine, spaceWordText);
 }
 
-/** 页眉带：同文字指示带，但中文行也留（`keepHeaderLine`），词间空格按 `spaceHeaderText` 补。 */
+/** 页眉带：同文字指示带，但中文行也留（`keepHeaderOcrLine`），词间空格按 `spaceHeaderText` 补。 */
 export function ocrHeaderStrips(ocr: OcrBackend, strips: readonly WordStrip[]): Promise<Map<string, WordLine[]>> {
-  return ocrLineStrips(ocr, strips, (_, t) => keepHeaderLine(t), spaceHeaderText);
+  return ocrLineStrips(ocr, strips, (_, t) => keepHeaderOcrLine(t), spaceHeaderText);
 }
 
 /** 文字带（文字指示 / 页眉）：DBNet 找行、逐行 rec，留 `keep` 认的行，词界按 `space` 补空格。 */

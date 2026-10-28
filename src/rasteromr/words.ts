@@ -491,6 +491,23 @@ const TEMPO_JOIN_GAP = 3;
 const DYNAMIC_ONLY_RE = /^(ppp|pp|p|mp|mf|fff|ff|f|sfz|sf|fz|fp)$/;
 /** 一行字离它那行谱的距离上限（格）。 */
 const REACH = 7;
+
+/** 音的符头中心落在框里（框外扩 0.2 格） */
+function headIn(n: StaffNote, box: Rect, sp: number): boolean {
+  const b = n.sym.box;
+  const cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
+  return cx >= box.x - sp * 0.2 && cx <= box.x + box.w + sp * 0.2 && cy >= box.y - sp * 0.2 && cy <= box.y + box.h + sp * 0.2;
+}
+
+/** 音的符干（头的左缘或右缘那一竖，从头心到干端）穿过框 */
+function stemCrosses(n: StaffNote, box: Rect, sp: number): boolean {
+  if (n.rest || n.stemUp === null || n.stemTip === undefined) return false;
+  const b = n.sym.box;
+  const sx = n.stemUp ? b.right : b.left;
+  if (sx < box.x - sp * 0.2 || sx > box.x + box.w + sp * 0.2) return false;
+  const y0 = Math.min((b.top + b.bottom) / 2, n.stemTip), y1 = Math.max((b.top + b.bottom) / 2, n.stemTip);
+  return y1 > box.y && y0 < box.y + box.h;
+}
 /** 系统之间的字：离下一系统首行不超过离上一系统末行的这么多倍就归下一系统。 */
 const INTER_SYS_BIAS = 1.6;
 
@@ -675,6 +692,8 @@ export function attachWordLines(
     const dyn = DYNAMIC_RE.exec(text);
     const rest = dyn ? text.slice(dyn[0].length).trimStart() : "";
     if (dyn && (!rest || /^[\u4e00-\u9fff]/.test(rest))) {
+      // 单个 `p` / `f` 框里正压着一个识别出的符头：加线上的二分音符（空心头带下干）读成了 `p`（父恩广大、耶和华是我的牧者）
+      if (!rest && dyn[0].length === 1 && notes.some((n) => !n.rest && headIn(n, box, sp))) continue;
       const w = Math.min(box.w, box.h * 0.6 * dyn[0].length);
       // `srcBox`：字行起头那几个字母的大致范围，只给识别对照画框（不当墨迹框用：挂音、写出照旧按没量到框走）
       dynamics.push({ px: box.x + w / 2, py: cy, text: dyn[0], srcBox: { left: box.x, right: box.x + w, top: box.y, bottom: box.y + box.h } });
@@ -723,6 +742,15 @@ export function attachWordLines(
     const letters = (text.match(/[A-Za-z]/g) ?? []).length;
     // 方框里的一个大写字母是排练号（宁静 `[A]` `[B]`）：字只有一格来高，不受下面短标记那两道闸
     const rehearsal = /^[A-Z]$/.test(text) && (!!l.strip.frame || framed(l.strip, box, sp));
+    // 歌词带里不到三个字母、不带术语的：段号「1.」读成的 `T`（当我们回到天家、耶和华是我的牧者）。
+    // 字母多的不能这么剔——合唱谱的分部提示「Women」「a few sopranos」就印在歌词带里
+    if (!term && !metro && !rehearsal && letters < 3 && lyricZones.some((q) => inside(q, cx, cy))) continue;
+    // 不带术语、按和弦行的口径看整行是和弦（`isChordLineCoverage`）：和弦那一路没收下的和弦行（独唱谱的「Dm F/C」、
+    // 和弦字母间夹着延长记号读成的「DA G」、前头多读一道斜线的「/D F/C」），不是文字指示
+    const cc = chordCoverage(text.replace(/\s+/g, "").replace(/^[^A-Za-z]+/, ""));
+    if (!term && !metro && !rehearsal && !SHORT_RE.test(text) && isChordLineCoverage(cc.cov, cc.count)) continue;
+    // 不带术语的行横跨两根以上符干：一排符杠读成了字（耶和华是我的牧者 `bead`、`Tdd`）
+    if (!term && !metro && notes.filter((n) => stemCrosses(n, box, sp)).length >= 2) continue;
     // 整行都是拆开的单个字母（`e E R`）：汉字歌词、符头读成的碎字
     if (!rehearsal && /^[A-Za-z](?: [A-Za-z])+$/.test(text)) continue;
     // 英文歌词的头一个音节、后面拖着连字短横（宁静 p8 `Glo - - -`），歌词那一路没认下来也不是文字指示
@@ -750,6 +778,11 @@ export function attachWordLines(
         stf = st;
         above = cy < (t + b) / 2;
       }
+    }
+    // 节拍器印得高、够不着（页眉带里读出来的曲首「♩=c.78」离首行谱七八格）：在页上所有谱行之上的归最上面那行
+    if (!stf && metro) {
+      const top = pg.staves.filter((st) => cx >= st.box.left - sp * SIDE && cx <= st.box.right + sp * SIDE).sort((a, b) => a.box.top - b.box.top)[0];
+      if (top && cy < top.topAt(cx)) (stf = top), (above = true);
     }
     if (!stf) continue;
     // 两个系统之间的空当：文字指示、排练号、段落名都印在它管的那个系统**上方**，挂在上一系统末行下方的少（`rit.` 印在谱表下也贴着谱表）。
