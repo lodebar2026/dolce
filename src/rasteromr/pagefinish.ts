@@ -156,8 +156,6 @@ const RUN_PIECE_H = 1;
 const RUN_LEG_W = 0.4;
 /** 同上，各自的高度下限（格）：腿斜着伸进线里，实测 7 像素（0.37 格）起；贴着线的残段 5 像素。 */
 const RUN_LEG_H = 0.35;
-/** 拼弧的块又窄又竖、高过这么多（格）的是笔画（降号竖笔 0.77 格），真弧伸进线的窄腿 0.58 格。 */
-const RUN_STROKE_H = 0.7;
 /** 竖段穿过按游程去线图上的块：块的高度里那一列（左右各一像素）有墨的行要占块高这么多。 */
 const RUN_VSEG_FILL = 0.7;
 /** 按游程去线图上的块，逐列平均墨厚的上限（格）放宽到这么多：弧顶压线那段连着线一起留下，块比去线图上的厚（破碎 p2 m4 两个八分下方那条）。 */
@@ -1193,9 +1191,20 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       return n ? sum / n : NaN;
     };
     const used = (c: Contour) => slurs.some((sl) => c.bbox.x < sl.obj.box.right && c.bbox.x + c.bbox.w > sl.obj.box.left && c.bbox.y < sl.obj.box.bottom && c.bbox.y + c.bbox.h > sl.obj.box.top);
-    // 窄而竖的（高过宽两倍、不到 `RUN_LEG_W` 格宽、高过 `RUN_STROKE_H` 格）是笔画不是弧腿：没认出的降号竖笔拼上线残段成了延音线（新编 264 m4，5×17 像素）；
-    // 真弧斜着伸进线的腿也窄，但矮（破碎干净版 p2 m5 那条腿 3×10 像素、0.58 格）
-    const pieces = cands.filter((c) => c.h <= RUN_PIECE_H && !used(c) && !(c.bbox.h > c.bbox.w * 2 && c.bbox.w < sp * RUN_LEG_W && c.bbox.h >= sp * RUN_STROKE_H)).sort((a, b) => a.bbox.x - b.bbox.x);
+    // 窄而竖（高过宽两倍、不到 `RUN_LEG_W` 格宽）、**从上到下墨心不偏**的是竖直笔画，不是弧腿：没认出的降号竖笔拼上线残段成了延音线（新编 264 m4）；
+    // 真弧伸进线的腿也窄，但斜着走（破碎干净版 p2 m5 那条腿）
+    const straight = (c: Contour) => {
+      const cxs: number[] = [];
+      for (let y = c.bbox.y; y < c.bbox.y + c.bbox.h; y++) {
+        let sx = 0, n = 0;
+        for (let x = c.bbox.x; x < c.bbox.x + c.bbox.w; x++) if (runMap.labels[y * runMap.w + x] === c.id) (sx += x), n++;
+        if (n) cxs.push(sx / n);
+      }
+      const k = Math.max(1, Math.floor(cxs.length / 4));
+      const avg = (a: number[]) => a.reduce((p, q) => p + q, 0) / a.length;
+      return Math.abs(avg(cxs.slice(0, k)) - avg(cxs.slice(-k))) <= Math.max(1, c.bbox.w * 0.3);
+    };
+    const pieces = cands.filter((c) => c.h <= RUN_PIECE_H && !used(c) && !(c.bbox.h > c.bbox.w * 2 && c.bbox.w < sp * RUN_LEG_W && straight(c))).sort((a, b) => a.bbox.x - b.bbox.x);
     const lineBand = unit.lineThick + 1;
     for (const a of pieces) {
       if (used(a)) continue;
