@@ -251,6 +251,15 @@ function assignSlots(rows: StaffToken[][]): number[][] | null {
     const lb = labelOf[k];
     if (lb && voteOf[k] && labelOf.some((o, j) => j !== k && o === lb && (voteOf[j] === 0 || voteOf[j]! > voteOf[k]!))) labelOf[k] = null;
   }
+  // **没读出分部号的槽位，按紧挨着的同声部分部补上号**：分部号是框外的孤立窄块，常读丢（破碎干净版 7 行系统第 0 行
+  // 「Soprano 1」只读成 `S`，与第 2 行合唱女高的 `S` 同名，3 行系统的 `S1` 两边都对不上，按音域落进了第 2 槽）。
+  // 分部从上往下排：正下方是 `S2` 的那个 `S` 是 `S1`，正上方是 `S1` 的那个 `S` 是 `S2`
+  for (let k = 0; k < n; k++) {
+    const lb = labelOf[k];
+    if (!lb || /\d$/.test(lb)) continue;
+    if (labelOf[k + 1] === `${lb}2` && !labelOf.includes(`${lb}1`)) labelOf[k] = `${lb}1`;
+    else if (labelOf[k - 1] === `${lb}1` && !labelOf.includes(`${lb}2`)) labelOf[k] = `${lb}2`;
+  }
   // **标签少到区分不了任何东西时就别让它表态。** 标签只在声部进入处印，
   // 认出来的更少（实测全语料 59 条标签条只读出 8 个声部名）；只有一个槽位有名字、
   // 或几个槽位重名时，这一项不带信息，只会扰动本来就对的指派

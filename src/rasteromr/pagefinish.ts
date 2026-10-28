@@ -823,6 +823,13 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     const withHead = headerStrip && headMetro.length > 0;
     const placed = attachWordLines(pg, notes, withHead ? [...wordStrips, headerStrip!] : wordStrips, withHead ? new Map(wordOcr).set(wordKey(headerStrip!), headMetro) : wordOcr, unit, skip, lyricStrips.map((st) => st.box));
     ocrDynamics.push(...placed.dynamics);
+    // **声部进入处印在系统中间的声部名**（破碎 p3 m25「Soprano 1」「Soprano 2」）：标签带只看谱行左端，读不到；
+    // 文字指示那一路读到了、挂在那行谱的音上。左端没读出标签的谱行拿它当标签（只认人声名，`Solo`、`Unison` 不算）
+    for (const w of placed.words) {
+      if (!w.above || !w.note || staffLabels.has(w.note.staff.index)) continue;
+      const name = normalizeLabel(w.text);
+      if (name && /^[SATBWM]\d?$/.test(name)) staffLabels.set(w.note.staff.index, name);
+    }
     // 文字带里读出来的和弦记号：和弦带那一路（要自己的 OCR 缓存，合唱谱没生成）没认到和弦时才用
     if (!harmonies.length && placed.chords.length) {
       const objs = placed.chords.map((t, i) => withTextSize(makeTextObj(pg.objs.length + i, { cells: [{ box: t.box, ch: t.text }], sizeDev: t.box.h }), pg, t));
