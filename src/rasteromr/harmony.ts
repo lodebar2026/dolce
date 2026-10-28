@@ -283,9 +283,11 @@ function staffStrips(bin: Binary, st: HarmonyStaff, unit: RasterUnit): HarmonySt
   // **带里几乎切不出条**：钢琴伴奏右手音符用到 C6、D6，和弦行被顶到顶线上方 3.3 格开外
   //（《恩友歌伴奏》35 个和弦一个都没切出来，带里只剩符头与小节号的碎块）。
   // 把带顶提到 `BAND_TOP_HIGH` 再切一遍，条多出一倍以上才用它。
-  if (!jp && r.strips.length < 3) {
+  // 行首的小节号不算（流血歌伴奏末行：小节号「15」、琶音顶、延长记号凑满三条，没触发重切，七个和弦全丢）
+  const counted = (q: HarmonyStrip[]) => q.filter((x) => x.box.x > st.box.left + sp * 2).length;
+  if (!jp && counted(r.strips) < 3) {
     const r2 = cut(Math.max(0, Math.round(st.box.top - sp * BAND_TOP_HIGH)));
-    if (r2.strips.length >= 3 && r2.strips.length >= r.strips.length * 2) r = r2;
+    if (counted(r2.strips) >= 3 && counted(r2.strips) >= counted(r.strips) * 2) r = r2;
   }
   return r.strips;
 }
