@@ -563,6 +563,10 @@ export function fixNotes(c: {
   // **谱表里读成四分休止的降号**：扫描件上降号的肚子与竖笔连得细，字典常认成四分休止（望十架 p7 m55 B♭5 前的降号，
   // 那一小节的升降全按调号读）。四分休止是折线，没有一根贯通的直竖笔；降号有一根、肚子在下面。
   // 右边一格半以内有个头、头心落在这一块的下半截（肚子那里），块里只数出一根通高竖笔的，改成降号交给临时记号那一路。
+  // 那根竖笔（最长竖墨那一列）还要么贯通盒高 `FLAT_SPINE_RUN` 以上、要么落在盒的左边 `FLAT_SPINE_X` 以内：扫描件粗笔的四分休止，
+  // 中段那一折近乎竖直，也只数出一根，后面紧跟低位八分的就被改走（破碎扫描 p3 m41、p4 m49、m57 三个四分休止：占盒高 0.55~0.63、
+  // 在盒宽 0.48~0.52 处）。真降号两样总占一样：新编十处占盒高 0.8~1（盒把左边留白也框进来，位置在 0.65~0.71），
+  // 齐来谢主歌 m17 只占 0.71、但在 0.32 处
   for (let i = notes.length - 1; i >= 0; i--) {
     const r = notes[i];
     if (!r.rest || r.sym.code !== "restQuarter") continue;
@@ -577,6 +581,16 @@ export function fixNotes(c: {
     if (!owner) continue;
     const pad = Math.round(unit.space * 0.3);
     if (tallStrokes(raster.bin, { x: rb.left - pad, y: rb.top, w: rb.right - rb.left + pad * 2, h: hgt }) !== 1) continue;
+    // 降号的竖笔通高、在左，肚子在右；休止那一折在中间、只占一半多
+    {
+      let bx = 0, bb = 0;
+      for (let x = Math.max(0, Math.floor(rb.left - pad)); x < Math.min(raster.bin.w, Math.ceil(rb.right + pad)); x++) {
+        let run = 0, best = 0;
+        for (let y = Math.max(0, Math.floor(rb.top)); y < Math.min(raster.bin.h, Math.ceil(rb.bottom)); y++) (run = raster.bin.data[y * raster.bin.w + x] ? run + 1 : 0), (best = Math.max(best, run));
+        if (best > bb) (bb = best), (bx = x);
+      }
+      if (bb < hgt * FLAT_SPINE_RUN && bx - rb.left > (rb.right - rb.left) * FLAT_SPINE_X) continue;
+    }
     r.sym.code = "accidentalFlat";
     // 盒收到肚子上（`py` 跟着落到肚子中心），同字典认出的降号
     r.sym.box = { ...rb, top: rb.top + hgt * 0.45 };
@@ -873,6 +887,9 @@ function blobsIn(bin: Binary, x0: number, y0: number, x1: number, y1: number): {
 const REST_BLOCK_W: [number, number] = [0.9, 2.2];
 const REST_BLOCK_H: [number, number] = [0.3, 0.8];
 const REST_BLOCK_FILL = 0.8;
+/** 认成四分休止的降号：最长竖墨至少占盒高的这么多，或那一列离盒左缘至多盒宽的这么多（见上） */
+const FLAT_SPINE_RUN = 0.75;
+const FLAT_SPINE_X = 0.4;
 /** 降号被认成头 + 朝上短干：干短于几格（见上） */
 const FLAT_STEM = 1.5;
 /** 无干单个黑头：宽不到本页带干黑头中位宽的这么多倍的剔掉 */
