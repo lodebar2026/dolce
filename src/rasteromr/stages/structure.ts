@@ -713,6 +713,10 @@ export function fixNotes(c: {
 }
 
 /** 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空 */
+/** 按上下文补四分休止（`crossStaffProbes`）的块下限：宽（格，`CTX_REST_W[0]`）、高（格）。小号四分休止 0.64×1.5 格起；上限同按块认的那一档。 */
+const CTX_REST_W = [0.5] as const;
+const CTX_REST_H = 1.4;
+
 export function crossStaffProbes(c: {
   masks: HeadMask[];
   unit: RasterUnit;
@@ -726,9 +730,10 @@ export function crossStaffProbes(c: {
   pg: SPage;
   ctx: Map<Staff, StaffContext>;
   carry: PageCarry;
+  ledger: ContourLedger;
   probe?: RasterProbe;
 }): void {
-  const { masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry } = c;
+  const { masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry, ledger } = c;
   const at = (step: string) => c.probe?.(step, { pg, notes });
   // ── 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空
   // 补漏音的探针：同系统别的行在这一拍有音、本行这里空着时，回原图在那个 x 上拿本页自举的模板找头（见 `crossalign.ts`）。
@@ -777,6 +782,22 @@ export function crossStaffProbes(c: {
         sym.ownerStaff = stf;
         return sym;
       }
+      // **按上下文补四分休止**：缺的正好是一个四分拍、拍位一格内谱表中段有一块没人认领、休止那么大的墨，形状字典认不出
+      //（新编 f32 低音谱表的小号四分休止糊成一团，离任何模板都远）。补上之后整小节要凑满、各列要落在别的谱行定的拍位上，
+      // 由 `fixByCrossStaff` 验，验不过就退回
+      if (Math.abs(dur - 1 / 4) < 1e-6)
+        for (const c of cmap.contours) {
+          const b = c.bbox;
+          const cx = b.x + b.w / 2;
+          const cy = b.y + b.h / 2;
+          if (Math.abs(cx - x) > sp || cy < f.top + sp || cy > f.bottom - sp || ledger.claimsOf(c.id).length) continue;
+          if (b.w < sp * CTX_REST_W[0] || b.w > sp * QREST_SPINE_W || b.h < sp * CTX_REST_H || b.h > sp * QREST_H[1]) continue;
+          if (notes.some((n) => n.staff === stf && n.sym.box.left < b.x + b.w && n.sym.box.right > b.x && n.sym.box.top < b.y + b.h && n.sym.box.bottom > b.y)) continue;
+          const { sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box: b, code: "restQuarter" } as RasterSym, unit.height);
+          sym.addTag("Note");
+          sym.ownerStaff = stf;
+          return sym;
+        }
       if (!floors.has(hollow)) floors.set(hollow, floorOf(hollow));
       const ys = f.at(x);
       let best: { x: number; y: number; s: number } | null = null;

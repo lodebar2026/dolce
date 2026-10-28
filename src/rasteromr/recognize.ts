@@ -566,7 +566,7 @@ export async function recognizeRasterPage(
   // ── 音符修正：被认成音的升降号与休止、按音高配临时记号、同音、跨谱表、附点对、连音
   fixNotes({ notes, unit, raster, pg, nl, ctx, stems, beams, carry, probe: opts.probe });
   // ── 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空
-  crossStaffProbes({ masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry, probe: opts.probe });
+  crossStaffProbes({ masks, unit, frames, hollowMasks, notes, raster, cmap, look, nl, pg, ctx, carry, ledger, probe: opts.probe });
 
   // ── 交出整页结果
   return finishRasterPage({ index, opts, source, raster, unit, live, textKey, textBoxes, textBin, groups, nl, staffLines, grid, prims, jianpuStrips, blobs, repaired, titleIds, harmonyStrips, harmonies, harmonyTexts, harmonyIds, contourStaves, cmap, ledger, rlayer, onGrid, restIds, claimed, dictClaimed, arpeggios, timeStrips, stemSegs, pg, ctx, carry, clefTally, beams, notes });
