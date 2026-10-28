@@ -1064,6 +1064,11 @@ const RING_THICK_MAX = 0.75;
  *  间位的头只打到 0.26~0.33 分（线位 0.5~0.7）。扫过整窗 / 1.2 / 1.1 / **1.0** / 0.9 / 0.8：
  *  九首合计 92.39 / 92.86 / 93.41 / **93.41** / 93.41 / 92.76%，1.0 这一档对下面的门槛最不敏感。 */
 const PITCH_CORE = 1.0;
+/** 加线上的内腔佐证只认不高过这么多格的原始孔：两行谱之间被小节线围起来的整片空白（破碎扫描 p9 1088×173，9 格高）
+ *  外接框盖住半行谱，框里的白全算成「内腔」，加线上、干旁的空白就读出空心头（m90、m91 一串 D4）。
+ *  只给加线那一路：扫描件上真头的圈常断口、内腔漏进谱间整条白或两行谱之间的空白里（是爱 p2 m30 G4、新编 098），
+ *  按内腔找叠头、沿干那几路照旧认整个孔，按高按宽卡都丢真头 */
+const LEDGER_HOLE_H_MAX = 4;
 /** 模板得分门槛。核心窗下扫过 0.27 / **0.30** / 0.33 / 0.40：93.51 / 93.41 / 93.41 / 92.11%。 */
 const PITCH_SCORE = 0.3;
 /** 内腔佐证：该位置的内腔椭圆里落在原始孔里的白像素占比。扫过 0.35 / 0.40 / 0.45 / **0.50** / 0.55：
@@ -1107,8 +1112,9 @@ function pitchScorer(bin: Binary, nl: Binary, rawHoles: Rect[], allMasks: HeadMa
     for (let x = Math.round(cx - r); x <= Math.round(cx + r); x++) if (x < 0 || x >= bin.w || !bin.data[y * bin.w + x]) return false;
     return true;
   };
-  /** 该位置的内腔椭圆里，落在原始孔里的白像素占比。`skipLines`：横穿椭圆的整行墨不计（骑线头的内腔被线占掉一截）。 */
-  const cavity = (cx: number, cy: number, skipLines = false): number => {
+  /** 该位置的内腔椭圆里，落在原始孔里的白像素占比。`skipLines`：横穿椭圆的整行墨不计（骑线头的内腔被线占掉一截）。
+   *  `holes`：只认这几个孔（缺省全部原始孔） */
+  const cavity = (cx: number, cy: number, skipLines = false, holes: Rect[] = rawHoles): number => {
     let n = 0;
     let hit = 0;
     for (let y = Math.round(cy - ry); y <= Math.round(cy + ry); y++) {
@@ -1117,7 +1123,7 @@ function pitchScorer(bin: Binary, nl: Binary, rawHoles: Rect[], allMasks: HeadMa
         if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 > 1) continue;
         n++;
         if (x < 0 || y < 0 || x >= bin.w || y >= bin.h || bin.data[y * bin.w + x]) continue;
-        if (rawHoles.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)) hit++;
+        if (holes.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)) hit++;
       }
     }
     return n ? hit / n : 0;
@@ -1756,6 +1762,7 @@ export function hollowHeadsOnLedgers(
   const sp = unit.space;
   if (!allMasks.length) return [];
   const { cavity, best, codeOf } = pitchScorer(bin, nl, rawHoles, allMasks, unit, stems);
+  const lowHoles = rawHoles.filter((r) => r.h <= sp * LEDGER_HOLE_H_MAX);
   const out: { box: Rect; code: SmuflName; weak?: boolean }[] = [];
   const bw = Math.round(sp * 1.3);
   const headH = Math.round(sp * 1.1);
@@ -1767,7 +1774,7 @@ export function hollowHeadsOnLedgers(
     for (const st of stepsIn(l.y - sp * 0.7, l.y + sp * 0.7, (l.x0 + l.x1) / 2)) {
       const b = best(st, l.x0 + sp * 0.4, l.x1 - sp * 0.4);
       if (!b || b.s < LEDGER_SCORE) continue;
-      const cv = cavity(b.x, st.y);
+      const cv = cavity(b.x, st.y, false, lowHoles);
       if (cv < LEDGER_CAVITY) continue;
       cands.push({ x: b.x, y: st.y, s: b.s });
     }

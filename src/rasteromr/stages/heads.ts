@@ -165,6 +165,9 @@ function flagLoop(bin: Binary, b: Rect, onLine: (y: number, x?: number) => boole
   return rows >= 3 && inked >= rows * 0.8;
 }
 
+/** 按「两根同向伸出的干围出的格子」剔的孔至少这么高（格），见 `sameWayCell` */
+const SAME_WAY_H = 0.4;
+
 /** 空心符头：按**内腔（洞）**再找一遍 */
 export function hollowHeadsByCavity(c: {
   onGrid: (y: number, x?: number) => boolean;
@@ -235,20 +238,31 @@ export function hollowHeadsByCavity(c: {
     });
   // **左右两侧都贴着贯通上下的竖墨**的格子：两根相邻的干与上下两条谱线围出的长方空当，不是内腔
   //（破碎 p3 m29 钢琴右手两个十六分的干之间，读成一个 1.7 格宽的二分 D5）。真内腔是椭圆，两侧是圈的弧
-  const walledBy = (b: Rect, left: boolean) => {
+  /** 贴着孔左（右）侧的竖墨往上、往下各伸出孔外半格以上没有（`[上, 下]`）。
+   *  `thin`：只认干那样的细竖墨（横向墨宽不过 0.3 格），从孔的上、中、下三行里贴墙最细的那行起量——中线那行常接着旁边的头 */
+  const wallReach = (b: Rect, left: boolean, thin = false): [boolean, boolean] => {
     const B = raster.bin;
     const ink = (x: number, y: number) => x >= 0 && x < B.w && y >= 0 && y < B.h && !!B.data[y * B.w + x];
-    const cy = Math.round(b.y + b.h / 2);
-    for (const x of left ? [b.x - 1, b.x - 2] : [b.x + b.w, b.x + b.w + 1]) {
-      if (!ink(x, cy)) continue;
-      let y0 = cy, y1 = cy;
-      while (ink(x, y0 - 1)) y0--;
-      while (ink(x, y1 + 1)) y1++;
-      // 竖墨比格子高出一个线距以上：是干；内腔外的圈只比内腔高出一圈
-      if (y0 <= b.y - unit.space * 0.5 && y1 >= b.y + b.h + unit.space * 0.5) return true;
-    }
-    return false;
+    const reach: [boolean, boolean] = [false, false];
+    for (const cy of thin ? [0.25, 0.5, 0.75].map((f) => Math.round(b.y + b.h * f)) : [Math.round(b.y + b.h / 2)])
+      for (const x of left ? [b.x - 1, b.x - 2] : [b.x + b.w, b.x + b.w + 1]) {
+        if (!ink(x, cy)) continue;
+        if (thin) {
+          let a = x, z = x;
+          while (ink(a - 1, cy)) a--;
+          while (ink(z + 1, cy)) z++;
+          if (z - a + 1 > unit.space * 0.3) continue;
+        }
+        let y0 = cy, y1 = cy;
+        while (ink(x, y0 - 1)) y0--;
+        while (ink(x, y1 + 1)) y1++;
+        // 竖墨比格子高出一个线距以上：是干；内腔外的圈只比内腔高出一圈
+        if (y0 <= b.y - unit.space * 0.5) reach[0] = true;
+        if (y1 >= b.y + b.h + unit.space * 0.5) reach[1] = true;
+      }
+    return reach;
   };
+  const walledBy = (b: Rect, left: boolean) => wallReach(b, left).every(Boolean);
   // 还要是方的：孔的外接框里白占九成以上。空心和弦的内腔两侧是圈，圈边接着别的头或干也成通长竖墨，但椭圆内腔四角是圈的墨
   //（我一生要赞美你、恩友歌伴奏的二分和弦，不卡方的各丢两三个头）
   const boxWhite = (b: Rect) => {
@@ -270,6 +284,27 @@ export function hollowHeadsByCavity(c: {
       return z - a + 1 <= unit.space * 0.25;
     });
   };
+  // 孔的左（右）边是直的：中间八成的行上，从这一侧数第一个白像素的位置前后差不过 0.15 格（扫描件的干边有一两像素毛刺）。干是直的；
+  // 椭圆、斜缝内腔的边逐行往里收（21×16 的内腔在这几行两端要收 4 像素以上）
+  const straightSide = (b: Rect, left: boolean) => {
+    const B = raster.bin;
+    let lo = Infinity, hi = -Infinity;
+    for (let y = Math.round(b.y + b.h * 0.1); y <= Math.round(b.y + b.h * 0.9); y++) {
+      let d = 0;
+      while (d < b.w && B.data[y * B.w + (left ? b.x + d : b.x + b.w - 1 - d)]) d++;
+      lo = Math.min(lo, d);
+      hi = Math.max(hi, d);
+    }
+    return hi - lo <= Math.max(2, Math.round(unit.space * 0.15));
+  };
+  // 相邻两根干只朝一头伸出去、另一头接着头（十六分一组里相邻两个音的干、下面是实心头）：谱线与两根干围出的格子，
+  // 两侧墙只在同一头伸出孔外。只认两侧都是细竖墨、边又直的（破碎扫描 p6 m70、m71，p7 m80，新编 315 m12、m13 读出二分头）。
+  // 不过半格高的孔不判：全音符和弦的内腔被谱线切下的半截（新编 391 m9，12×8），两侧是叠头的圈边，也细、也直、也同向连出去
+  const sameWayCell = (b: Rect) => {
+    if (b.h < unit.space * SAME_WAY_H) return false;
+    const l = wallReach(b, true, true), r = wallReach(b, false, true);
+    return ((l[0] && r[0]) || (l[1] && r[1])) && straightSide(b, true) && straightSide(b, false);
+  };
   const stemCell = (b: Rect) => walledBy(b, true) && walledBy(b, false) && (boxWhite(b) >= 0.9 || (thinWall(b, true) && thinWall(b, false)));
   // 隔一条谱线紧挨着一个剔掉的格子、两侧也贴着贯通竖墨的孔一并剔：杠与谱线之间那截白，留下来就单独成孔读出空心头（有一位神 m1 E5）
   const cellSet = rawHoles.filter(stemCell);
@@ -277,7 +312,8 @@ export function hollowHeadsByCavity(c: {
     walledBy(b, true) &&
     walledBy(b, false) &&
     cellSet.some((c) => c !== b && Math.abs(c.x - b.x) <= 2 && Math.abs(c.x + c.w - (b.x + b.w)) <= 2 && (Math.abs(c.y - (b.y + b.h)) <= unit.lineThick + 2 || Math.abs(b.y - (c.y + c.h)) <= unit.lineThick + 2));
-  const holes = mergeHoles(rawHoles.filter((b) => !stackedCell(b) && !cellSet.includes(b) && !besideCell(b)), unit, onLineOrGrid);
+  // 同向伸出的干格（`sameWayCell`）并完再剔：先剔的话，它上面原本跟它并成超高孔、被尺寸闸挡掉的那格（杠、干、谱线围的）就单独过了闸
+  const holes = mergeHoles(rawHoles.filter((b) => !stackedCell(b) && !cellSet.includes(b) && !besideCell(b)), unit, onLineOrGrid).filter((b) => !sameWayCell(b));
   // 和弦字母的**内腔**也是洞（`D`/`G`/`B`/`A` 都有），不挡住就从这一路漏回来
   // ——检测框一并算「已被占」。
   // 判头那一路因「没有被围住的白」剔掉的块也算占着：剔它之前它就挡着按内腔找头的几路（是爱 p5 m67 符杠斜端与谱线夹出的尖白）
@@ -1847,3 +1883,4 @@ export function dedupeHeads(c: {
 }
 /** 本页空心头内腔宽（格，下四分位）低于这个才算「内腔窄」的手写粗圈页，叠头那几条按它缩放（`notehead.ts::hollowHeadsByPitch`）。 */
 const CAV_NARROW = 0.85;
+
