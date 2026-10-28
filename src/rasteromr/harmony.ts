@@ -323,7 +323,9 @@ function normalizeChordText(s: string): string {
     .replace(/[♭]/g, "b")
     .replace(/[／∕丨|]/g, "/")
     .replace(/[（）()]/g, "")
-    .replace(/[卜ト下尸]/g, "F");
+    .replace(/[卜ト下尸]/g, "F")
+    // 小号的 ♭ 读成撇号（敬拜万世之王「B♭/F」读成 `B'/F`）：紧跟根音的撇号只能是降号
+    .replace(/(?<=[A-G])['’‘`]/g, "b");
 }
 
 /** 整条拼完之后再做的**结尾**形近纠正（见 `normalizeChordText` 的第二条）。

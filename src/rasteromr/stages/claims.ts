@@ -220,6 +220,23 @@ export async function claimChordBand(c: {
     // 一行谱一行：先逐条读，再按整行判是和弦行还是文本行（`harmonyLine`）
     const lines = new Map<number, { strip: HarmonyStrip; chords: HarmonyToken[] }[]>();
     const lineTexts = new Map<number, HarmonyToken[]>();
+    const bin = raster.bin;
+    /** 两条之间是一笔斜杠：空隙不到 1.5 个字高，空隙里的墨上下够字高七成，上头比下头偏右 */
+    const slashBetween = (a: Rect, b: Rect): boolean => {
+      const x0 = a.x + a.w, x1 = b.x, cap = Math.max(a.h, b.h);
+      if (x1 - x0 < 2 || x1 - x0 > cap * 1.5) return false;
+      const y0 = Math.min(a.y, b.y), y1 = Math.min(bin.h, Math.round(Math.max(a.y + a.h, b.y + b.h) + cap * 0.5));
+      const rows: number[] = [];
+      for (let y = y0; y < y1; y++) {
+        let sx = 0, n = 0;
+        for (let x = x0; x < x1; x++) if (bin.data[y * bin.w + x]) (sx += x), n++;
+        rows[y - y0] = n ? sx / n : NaN;
+      }
+      const ys = rows.map((v, k) => (Number.isNaN(v) ? -1 : k)).filter((k) => k >= 0);
+      if (ys.length < cap * 0.7) return false;
+      const top = rows[ys[0]], bot = rows[ys[ys.length - 1]];
+      return ys[ys.length - 1] - ys[0] >= cap * 0.7 && top - bot >= cap * 0.15;
+    };
     const read: { strip: HarmonyStrip; chars: OcrChar[] }[] = [];
     for (const strip of harmonyStrips) {
       // 条的上沿够到上一行谱第五线下一格半以内的，是上一行挂下来的符杠与头（当我们回到天家第三系统低音谱表下的
@@ -231,12 +248,17 @@ export async function claimChordBand(c: {
       // **字距宽的和弦被切成两条**（天父世界歌伴奏「G 7/B」「F m7」「B♭ 7」）：后一条开头不是根音字母（小写、数字、斜杠、升降号）、
       // 离前一条不到 `HARMONY_JOIN` 格的，读出的字接到前一条后面再解析——单读「7/B」只剩一个 B 和弦、「m/」一个也不剩
       const last = read[read.length - 1];
-      if (last && last.strip.staff === strip.staff && /^[a-z0-9/♭♯#]/.test(chars[0].ch) &&
-        strip.box.x - (last.strip.box.x + last.strip.box.w) < unit.space * HARMONY_JOIN && strip.box.x > last.strip.box.x) {
+      // **斜杠和弦的斜杠被当成伸上来的符干抹了**（敬拜万世之王「C/E」「Dm/B♭」：斜杠往下伸出字母基线，够到带底），
+      // 两边各成一条、读成两个和弦。两条之间原图里有一笔右上到左下、高过字高七成的墨，就是斜杠，拼成「前/后」
+      const slash = !!last && last.strip.staff === strip.staff && /^[A-G]/.test(chars[0].ch) && slashBetween(last.strip.box, strip.box);
+      const tail = !!last && last.strip.staff === strip.staff && /^[a-z0-9/♭♯#]/.test(chars[0].ch) &&
+        strip.box.x > last.strip.box.x && strip.box.x - (last.strip.box.x + last.strip.box.w) < unit.space * HARMONY_JOIN;
+      if (last && (slash || tail)) {
         const a = last.strip.box, b = strip.box;
         const box = { x: a.x, y: Math.min(a.y, b.y), w: b.x + b.w - a.x, h: Math.max(a.y + a.h, b.y + b.h) - Math.min(a.y, b.y) };
         const re = (c: OcrChar, r: Rect) => ({ ch: c.ch, xFrac: (r.x + c.xFrac * r.w - box.x) / box.w });
-        last.chars = [...last.chars.map((c) => re(c, a)), ...chars.map((c) => re(c, b))];
+        const mid = { ch: "/", xFrac: (a.x + a.w + (b.x - a.x - a.w) / 2 - box.x) / box.w };
+        last.chars = [...last.chars.map((c) => re(c, a)), ...(slash ? [mid] : []), ...chars.map((c) => re(c, b))];
         last.strip = { ...last.strip, box, w: box.w, h: box.h };
         continue;
       }
