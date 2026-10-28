@@ -26,6 +26,8 @@ export const FEATURE_TOPICS_EN: { title: string; body: string[] }[] = [
       "**Pages**: the previous / next buttons in the status bar at the bottom, or `PageUp` / `PageDown`; `Ctrl/⌘+Home` goes to the first page and `Ctrl/⌘+End` to the last.",
       "**Zoom**: the `−` / `100%` / `＋` buttons in the status bar, `Ctrl/⌘ +` / `-` / `0`, or scroll while holding `Ctrl/⌘`.",
       "The **macOS desktop app** also supports trackpad pinch-to-zoom.",
+      "With the **side-by-side original**, the image column zooms on its own (scroll while holding `Ctrl/⌘`, or pinch); drag with the mouse to pan, and double-click an empty spot to fit it back to the column width.",
+      "**Column widths**: drag the dividers between the source, the original and the score to resize them; double-click a divider to reset. Widths are remembered.",
     ],
   },
   {

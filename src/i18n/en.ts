@@ -67,6 +67,7 @@ export const en: Record<MsgKey, string> = {
   "pane.docFormat": "Source format",
   "pane.docFormat.title": "Switch source format (recognition is not re-run; switch back to “Original” to restore an opened file)",
   "pane.score": "Score",
+  "pane.splitter.title": "Drag to resize; double-click to reset",
   "pane.visualMode.title": "Visual editing: Edit mode (block cursor) changes the selected element, Insert mode (bar cursor) inserts at the cursor; toggle with Insert / Esc",
   "pane.beatCount.title": "Click to jump to the next one",
   "pane.palette": "Palette",

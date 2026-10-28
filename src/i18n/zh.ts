@@ -66,6 +66,7 @@ export const zh = {
   "pane.docFormat": "源码格式",
   "pane.docFormat.title": "切换源码格式（识别结果不重新识别；打开的文件切回「原文」可还原）",
   "pane.score": "排版",
+  "pane.splitter.title": "拖动调整宽度，双击复位",
   "pane.visualMode.title": "可视化编辑：编辑模式（方块光标）改选中的元素，插入模式（竖线光标）在光标处插入；Insert / Esc 切换",
   "pane.beatCount.title": "点一下跳到下一处",
   "pane.palette": "面板",

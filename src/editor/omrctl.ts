@@ -35,6 +35,7 @@ import { isPdf } from "../omrkit/pdf";
 import type { StaffReviewResult } from "../staffomr/review";
 import { carryIds, COVERED, markEntryKey, pitchAt, stampXmlIds, StaffLinks, staffMarksOf, surfaceIds, textView, xmlShape, type StaffView } from "./omrlinks";
 import type { PendingPage } from "../rasteromr/browser";
+import { attachPinchZoom } from "./pinchzoom";
 
 /** 一份识别输入（拖进来、选进来的图片或 PDF）。 */
 /** 并排原图一页的整页底图：图的地址与它在识别位图坐标里的位置（见 `placePageView`） */
@@ -742,11 +743,63 @@ export class OmrController implements FormatSource {
       this.host.saveSettings();
       this.syncSide(null);
     });
-    box?.addEventListener("click", (e) => {
+    if (!box) return;
+    // 鼠标拖动平移的状态（见下面 pointer* 三个监听）
+    let drag: { id: number; x: number; y: number; left: number; top: number } | null = null;
+    let dragged = false;
+    box.addEventListener("click", (e) => {
+      if (dragged) return void (dragged = false); // 刚拖过：这次不当点选
       const r = e.target instanceof Element ? e.target.closest<SVGRectElement>("rect.omr-side-hit") : null;
       const id = r ? Number(r.dataset.id) : NaN;
       if (Number.isFinite(id)) this.host.selectNote(id);
     });
+    // 捏合 / Ctrl·⌘+滚轮缩放：1 = 铺满栏宽
+    attachPinchZoom(box, {
+      get: () => this.sideZoom,
+      set: (z) => this.setSideZoom(z),
+      pages: () => box.querySelectorAll(".omr-side-page"),
+      touch: true,
+    });
+    // 双击空白处回到铺满栏宽
+    box.addEventListener("dblclick", (e) => {
+      if (e.target instanceof Element && e.target.closest("rect.omr-side-hit")) return;
+      this.setSideZoom(1);
+    });
+    // 鼠标按住拖动 = 滚动（触屏单指本来就原生滚动）；动过 4px 才算拖，随后的 click 不选音
+    box.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch" || e.button !== 0) return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: box.scrollLeft, top: box.scrollTop };
+      dragged = false;
+    });
+    box.addEventListener("pointermove", (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!dragged && Math.hypot(dx, dy) < 4) return;
+      if (!dragged) {
+        dragged = true;
+        box.setPointerCapture(e.pointerId);
+        box.classList.add("dragging");
+      }
+      box.scrollLeft = drag.left - dx;
+      box.scrollTop = drag.top - dy;
+    });
+    const endDrag = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = null;
+      box.classList.remove("dragging");
+    };
+    box.addEventListener("pointerup", endDrag);
+    box.addEventListener("pointercancel", (e) => {
+      endDrag(e);
+      dragged = false;
+    });
+  }
+
+  /** 并排原图的缩放（1 = 铺满栏宽，至多 8 倍）：写进 `#omr-side` 的 `--side-zoom`。不持久化，换一份识别结果复位 */
+  private sideZoom = 1;
+  private setSideZoom(z: number): void {
+    this.sideZoom = Math.min(8, Math.max(1, z));
+    this.sideEl?.style.setProperty("--side-zoom", String(this.sideZoom));
   }
 
   /** 并排面板：开关、底图、框出 `id`。排版稿选区一变就调（`followSelection` 顺带调）。 */
@@ -758,13 +811,19 @@ export class OmrController implements FormatSource {
     const on = this.side && this.host.mode !== "recognize" && (this.bin !== null && this.score !== null || this.staffResult !== null || this.sessionKind === "staff" || this.sessionKind === "vector" || this.pending !== null);
     box.hidden = !on;
     document.getElementById("score-pane")?.classList.toggle("with-omr-side", on);
+    // 原图｜排版之间的分隔条（editor/splitters.ts）跟着原图栏显隐
+    const split = document.getElementById("split-side");
+    if (split) split.hidden = !on;
     if (!on) {
       box.replaceChildren();
       this.sideKey = null;
       return;
     }
     const pane = document.getElementById("score-pane");
-    if (pane) box.style.top = `${pane.offsetTop}px`;
+    if (pane) {
+      box.style.top = `${pane.offsetTop}px`;
+      if (split) split.style.top = box.style.top;
+    }
     void this.drawSide(id);
   }
 
@@ -792,6 +851,9 @@ export class OmrController implements FormatSource {
     const key = [this.score, this.staffResult, doc];
     const fresh = !Array.isArray(this.sideKey) || (this.sideKey as unknown[]).some((x, i) => x !== key[i]);
     if (fresh) {
+      // 换了一份识别结果才复位缩放；同一份里改谱重画不动
+      const prev = this.sideKey;
+      if (!Array.isArray(prev) || prev[0] !== key[0] || prev[1] !== key[1]) this.setSideZoom(1);
       this.sideKey = key;
       box.replaceChildren(...(await this.sidePages(doc)));
     }

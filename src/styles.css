@@ -343,7 +343,16 @@ button:focus-visible, select:focus-visible {
 
 #body { flex: 1 1 auto; min-height: 0; position: relative; display: flex; background: var(--canvas); }
 .workspace-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-#code-pane-shell { flex: 0 0 38%; border-right: 1px solid var(--border); background: var(--panel); }
+#code-pane-shell { flex: 0 0 var(--code-w, 38%); background: var(--panel); }
+/* 三栏分隔条（editor/splitters.ts）：6px 可点区、中间一道 1px 线，悬停/拖动变蓝 */
+.pane-splitter { flex: 0 0 6px; margin: 0 -3px; position: relative; z-index: 16; cursor: col-resize; touch-action: none; }
+.pane-splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); background: var(--border); }
+.pane-splitter:hover::after, .pane-splitter.active::after { width: 3px; background: #1565ff; }
+.pane-splitter[hidden] { display: none; }
+.pane-splitter-abs { position: absolute; bottom: 0; left: var(--side-w, 45%); width: 6px; margin: 0; transform: translateX(-3px); }
+#body.resizing { cursor: col-resize; user-select: none; }
+#body.resizing #code-pane, #body.resizing #score-pane, #body.resizing .omr-side { pointer-events: none; }
+#body.no-code #split-code { display: none; }
 /* 没有代码区的格式（.musicxml）：只看谱面，要编辑先转成文本格式 */
 #body.no-code #code-pane-shell { display: none !important; }
 /* 这里要 flex 不要 block：`.workspace-pane` 的列向 flex 一关掉，#score-pane 的
@@ -570,9 +579,11 @@ button:focus-visible, select:focus-visible {
   background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); pointer-events: none; }
 .omr-follow[hidden] { display: none; }
 /* 并排原图：排版稿左边铺整页原图（omrctl.ts::syncSide），谱面让出这一块 */
-.omr-side { position: absolute; left: 0; bottom: 0; width: 45%; overflow: auto; z-index: 15; background: var(--canvas); border-right: 1px solid var(--border, #ddd); padding: 8px; box-sizing: border-box; }
+.omr-side { position: absolute; left: 0; bottom: 0; width: var(--side-w, 45%); cursor: grab; overflow: auto; z-index: 15; background: var(--canvas); border-right: 1px solid var(--border, #ddd); padding: 8px; box-sizing: border-box; }
 .omr-side[hidden] { display: none; }
-.omr-side-page { width: 100%; height: auto; display: block; margin-bottom: 8px; background: #fff; }
+.omr-side.dragging { cursor: grabbing; user-select: none; }
+.omr-side.dragging .omr-side-hit { cursor: grabbing; }
+.omr-side-page { width: calc(100% * var(--side-zoom, 1)); height: auto; display: block; margin-bottom: 8px; background: #fff; }
 /* 识别途中代码区还是上一份文档：盖住，换成一句说明（omrctl.ts::showPending） */
 #code-pane.omr-pending { position: relative; }
 #code-pane.omr-pending > * { visibility: hidden; }
@@ -584,13 +595,14 @@ button:focus-visible, select:focus-visible {
 .omr-side-hit { fill: transparent; stroke: none; cursor: pointer; }
 .omr-side-hit:hover { fill: rgba(21, 101, 255, 0.08); }
 .omr-side-hit.on { fill: rgba(21, 101, 255, 0.12); stroke: #1565ff; stroke-width: 3; }
-#score-pane.with-omr-side { margin-left: 45%; }
+#score-pane.with-omr-side { margin-left: var(--side-w, 45%); }
 /* 收起代码区（状态栏「源码」复选框，任何模式）：并排时原图与排版稿各占一半。
    不复用格式驱动的 no-code，两者会互相覆盖；手机宽度有自己的源码 / 预览切换，不受它管 */
 @media (min-width: 681px) {
-  #body.hide-code #code-pane-shell { display: none !important; }
-  #body.hide-code .omr-side { width: 50%; }
-  #body.hide-code #score-pane.with-omr-side { margin-left: 50%; }
+  #body.hide-code #code-pane-shell, #body.hide-code #split-code { display: none !important; }
+  #body.hide-code .omr-side { width: var(--side-w, 50%); }
+  #body.hide-code #score-pane.with-omr-side { margin-left: var(--side-w, 50%); }
+  #body.hide-code .pane-splitter-abs { left: var(--side-w, 50%); }
 }
 .omr-follow svg { width: 100%; height: auto; display: block; }
 .omr-follow .omr-follow-hit { fill: rgba(21, 101, 255, 0.12); stroke: #1565ff; stroke-width: 3; }
@@ -954,7 +966,7 @@ button:focus-visible, select:focus-visible {
 
 @media (max-width: 900px) {
   .brand-subtitle, .tool-label { display: none; }
-  #code-pane-shell { flex-basis: 42%; }
+  #code-pane-shell { flex-basis: var(--code-w, 42%); }
   .header-actions .button-quiet { display: none; }
 }
 
@@ -980,6 +992,7 @@ button:focus-visible, select:focus-visible {
   #body { display: block; }
   #code-pane-shell, #score-pane-shell { position: absolute; inset: 0; }
   #code-pane-shell { display: none; }
+  .pane-splitter { display: none !important; }
   #body.mobile-code #code-pane-shell { display: flex; }
   #body.mobile-code #score-pane-shell { display: none; }
   .start-modes { grid-template-columns: 1fr; }
