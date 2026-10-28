@@ -2,6 +2,7 @@ import { type StaffNote } from "../staffomr/notedata";
 import type { PObj, SPage, Staff } from "../staffomr/model";
 import { type LyricLine, type LyricRowInfo } from "../staffomr/textanalyze";
 import { median, quantile } from "../omrkit/geom";
+import { splitEnglishWord } from "../omr/ensyllable";
 
 /** 不管「下方那行谱下面已有词」那道互斥的证据：只对得上下方的至少这么多个（上方一个没有）。 */
 const LYRIC_ONLY_DECISIVE = 6;
@@ -474,5 +475,95 @@ export function alignLatinToHan(notes: StaffNote[], lines: LyricLine[]): void {
     for (const { n, q } of latAt) n.lyrics = n.lyrics!.filter((o) => o !== q);
     latAt.forEach(({ q }, k) => (hanAt[k].lyrics ??= []).push(q));
     for (const n of row) if (n.lyrics && !n.lyrics.length) n.lyrics = undefined;
+  }
+}
+
+/** 粘成一个词的两个词，先在这些常用虚词处切（`onthe`、`peaceis`、`whenwe`：词距窄，按空白断词没断开）。
+ *  词尾只认 `TAIL_FUNCTION_WORDS`：`me`、`be`、`are` 一类常是词本身的结尾（`flame`、`lame`、`share`）。 */
+const TAIL_FUNCTION_WORDS = ["is", "we", "for"];
+/** 词头只认这些：`he`、`to`、`be` 一类常是词本身的开头（`health`、`tongues`）。 */
+const FUNCTION_WORDS = ["the", "of", "on", "in", "for", "you", "and", "when", "with", "all", "our", "thy", "his"];
+const hasVowelGroup = (s: string) => /[aeiouy]/i.test(s);
+/** 词能这样起头：元音、单辅音接元音、常见辅音组接元音（`to|ngues` 的 ng 起不了头，tongues 不在 to 处切）。 */
+const WORD_ONSET = /^(?:[aeiouy]|[b-df-hj-np-tv-z][aeiouy]|(?:th|wh|sh|ch|ph|st|sp|sc|sk|sm|sn|sw|tw|br|cr|dr|fr|gr|pr|tr|bl|cl|fl|gl|pl|sl)[aeiouy]|str|spr|scr|thr|shr)/i;
+
+/** 切成两段：前一段或后一段是虚词、另一段有元音的，在那里切；切不出返回 null。 */
+function splitAtFunctionWord(token: string): string[] | null {
+  const m = /^([^A-Za-z]*)([A-Za-z]+)([^A-Za-z]*)$/.exec(token);
+  if (!m) return null;
+  const [, lead, w, tail] = m as unknown as [string, string, string, string];
+  const lower = w.toLowerCase();
+  const byLen = [...FUNCTION_WORDS].sort((a, b) => b.length - a.length);
+  for (const fw of byLen) if (lower.length > fw.length + 1 && lower.startsWith(fw) && WORD_ONSET.test(lower.slice(fw.length)) && !/^[^aeiou]e[sd]?$/.test(lower.slice(fw.length))) return [lead + w.slice(0, fw.length), w.slice(fw.length) + tail];
+  for (const fw of TAIL_FUNCTION_WORDS) if (lower.length > fw.length + 1 && lower.endsWith(fw) && hasVowelGroup(lower.slice(0, -fw.length)) && WORD_ONSET.test(fw)) return [lead + w.slice(0, -fw.length), w.slice(-fw.length) + tail];
+  return null;
+}
+
+/**
+ * **一个英文词底下罩着几个没挂这段字的音，按音节切开**（同简谱那路 `omr/lyrics.ts::splitSpanningWords`）：
+ * 印着连字符的多音节词，连字符淡、OCR 没读出来（`whirlwind`、`pasture`、`everything`），
+ * 或两个词距窄、按空白没断开（`onthe`、`peaceis`），整个只占一个音，后面那个音空着，整行往后错。
+ * 罩住 = 音的 x 落在词的字迹里（右缘让掉 0.3 个行高）、在挂着的那个音右边另一列；只往右数连着的、没挂这段字的非休止音。
+ * 切两段先试虚词（`FUNCTION_WORDS`），再按拼写（`splitEnglishWord`）；罩着的音比切得出的段多的，多出的当 melisma。
+ * 信心使我得胜 `flame` 切成「fla me」、`hurled` 切成「hur led」那种，见 `TAIL_FUNCTION_WORDS` 与 -ed 那条。
+ */
+export function splitSpanningLatin(notes: StaffNote[], lines: LyricLine[], sameCol: number): void {
+  for (const line of lines) {
+    if (!isLatinLine(line)) continue;
+    // 有同号汉字段的，英文音节切到与它一样多为止（大地风光第 4 段「Off-ering」GT 记省音的「'ring」，两边已经一样多，不切）
+    const han = lines.find((l) => l !== line && l.staff === line.staff && l.voice === line.voice && l.verse === line.verse - LATIN_VERSE && !isLatinLine(l));
+    let budget = han ? han.syllables.length - line.syllables.length : Infinity;
+    const row = notes.filter((n) => n.staff === line.staff && !n.rest && (!line.voice || (line.voice === 1) === (n.voice === 1))).sort((a, b) => a.x - b.x);
+    for (let i = row.length - 1; i >= 0 && budget > 0; i--) {
+      const own = row[i].lyrics?.filter((q) => q.verse === line.verse) ?? [];
+      if (own.length !== 1 || !own[0].box) continue;
+      const q = own[0];
+      const box = q.box!;
+      // 词中间带撇号的是省音写法（`heav'nly` 正是为了少唱一个音节），不切
+      if (!/^[^A-Za-z]*[A-Za-z]+[^A-Za-z]*$/.test(q.text)) continue;
+      const inset = (box.bottom - box.top) * 0.3;
+      // 挂着的那个音本身也要在词底下（`ery` 字迹右边才是它挂的音，左边罩着的空音是前一个词的 melisma）
+      if (row[i].x < box.left || row[i].x > box.right) continue;
+      // 前一个音节是没元音的 OCR 碎片（「h」「eaven」）：这个词本身就是碎的，不切
+      const prev = row.slice(0, i).reverse().flatMap((n) => n.lyrics?.filter((o) => o.verse === line.verse) ?? [])[0];
+      if (prev && !/[aeiouy]/i.test(prev.text)) continue;
+      const span = [row[i]];
+      for (let j = i + 1; j < row.length && row[j].x < box.right - inset; j++) {
+        if (Math.abs(row[j].x - span[span.length - 1].x) < sameCol) continue;
+        if (row[j].lyrics?.some((o) => o.verse === line.verse)) break;
+        span.push(row[j]);
+      }
+      // 挂在后一个音上的（粘连词的字心偏右，`ragewe` 挂在 we 的音上）：左边罩着的空音也算
+      for (let j = i - 1; j >= 0 && row[j].x > box.left + inset; j--) {
+        if (Math.abs(row[j].x - span[0].x) < sameCol) continue;
+        if (row[j].lyrics?.some((o) => o.verse === line.verse)) break;
+        span.unshift(row[j]);
+      }
+      if (span.length < 2) continue;
+      let parts: string[] | null = null;
+      let merged = false;
+      while (span.length > budget + 1) span.pop();
+      while (span.length >= 2) {
+        if (span.length === 2 && (parts = splitAtFunctionWord(q.text))) { merged = true; break; }
+        // 词尾不发音的 -ed / -es / -ue(s) 单成一段的不切（`hurled`、`rayed`、`tongues` 是一个音节）
+        if ((parts = splitEnglishWord(q.text, span.length)) && !/^[^aeiou]*(?:e[ds]|ues?)\W*$/i.test(parts[parts.length - 1])) break;
+        parts = null;
+        span.pop();
+      }
+      if (!parts) continue;
+      row[i].lyrics = row[i].lyrics!.filter((o) => o !== q);
+      budget -= parts.length - 1;
+      // 行里的音节一并拆开（`alignLatinToHan` 按音节数配对）
+      const si = line.syllables.findIndex((y) => y.left === box.left && y.right === box.right && y.text === q.text);
+      if (si >= 0) {
+        const y = line.syllables[si];
+        line.syllables.splice(si, 1, ...parts.map((text, k) => ({ ...y, text, cx: span[k].x, hyphen: k === parts!.length - 1 ? y.hyphen : !merged })));
+      }
+      const { label, ...rest } = q;
+      parts.forEach((text, k) => {
+        const last = k === parts!.length - 1;
+        (span[k].lyrics ??= []).push({ ...rest, text, hyphen: last ? q.hyphen : !merged, cont: k === 0 ? q.cont : !merged, ...(k === 0 && label !== undefined ? { label } : {}) });
+      });
+    }
   }
 }
