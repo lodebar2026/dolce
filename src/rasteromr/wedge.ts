@@ -110,6 +110,36 @@ export function findRasterWedges(map: ContourMap, unit: RasterUnit, only?: Conto
     }
   }
   for (const w of pairArms(pool.filter((c) => !taken.has(c.id)), map, unit, atRowEdge)) out.push(w);
+  // **断成上下贴着的两块**：扫描件细笔的松叶，上臂连着尖端一块、下臂开口那半截另成一块（破碎扫描 p7 m77 歌词下的渐弱，
+  // 223×25 与 87×9 两块上下只隔一两行），单看哪块都不是整个松叶，臂也配不上（一块里已有两臂的尖端）。
+  // 横向大半相叠、上下缝不过 2 像素的两块无主块，临时把后一块改记成前一块的号，按整团判据再判一次，判据本身不放宽
+  const used = new Set<number>([...taken, ...out.flatMap((w) => [w.contourId, w.pairedId].filter((v): v is number => v !== undefined))]);
+  const free = pool.filter((c) => !used.has(c.id) && c.compact <= MAX_COMPACT && c.h <= MAX_H);
+  for (const a of free)
+    for (const b of free) {
+      if (a === b || used.has(a.id) || used.has(b.id) || a.bbox.w < b.bbox.w) continue;
+      const A = a.bbox, B = b.bbox;
+      const ov = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x);
+      if (ov < Math.min(A.w, B.w) * 0.6) continue;
+      const gap = Math.max(A.y, B.y) - Math.min(A.y + A.h, B.y + B.h);
+      if (gap > 2) continue;
+      // 并进来的那块自己要是一条直的细臂（另一条臂开口那半截），不是随便一块墨
+      if (!armOf(map, b, unit)) continue;
+      const box = { x: Math.min(A.x, B.x), y: Math.min(A.y, B.y), w: Math.max(A.x + A.w, B.x + B.w) - Math.min(A.x, B.x), h: Math.max(A.y + A.h, B.y + B.h) - Math.min(A.y, B.y) };
+      if (box.w < unit.space * MIN_W || box.h > unit.space * MAX_H || box.h < unit.space * MIN_H) continue;
+      const moved: number[] = [];
+      for (let y = B.y; y < B.y + B.h; y++)
+        for (let x = B.x; x < B.x + B.w; x++) {
+          const k = y * map.w + x;
+          if (map.labels[k] === b.id) (map.labels[k] = a.id), moved.push(k);
+        }
+      const w = judge(map, { ...a, bbox: box, w: box.w / unit.space, h: box.h / unit.space, area: a.area + b.area }, unit, box.x, box.x + box.w);
+      for (const k of moved) map.labels[k] = b.id;
+      if (!w) continue;
+      out.push({ ...w, pairedId: b.id });
+      used.add(a.id);
+      used.add(b.id);
+    }
   return out;
 }
 
