@@ -773,7 +773,7 @@ export function matchUnclaimedAccidentals(c: {
       // 模板配不上的再按**结构**认升号：两根通高的竖笔（上下两端各一成半高度里都有它们的墨——还原号的左竖只在上半、右竖只在下半）
       // 加两道横贯的横笔。低分辨率的小号升号（新编赞美诗 359 谱表下方 D♯4 的升号 22×58px、线距 22）签名离模板远过门槛，整块没人认，
       // 一首漏五个升号。位置先验（右边紧挨着同高的符头）照旧要过。
-      const m = matchTemplate(binSig(nl, b), w, h, accTpl, LOOSE_ACC_DIST) ??
+      const m = matchTemplate(binSig(nl, b), w, h, accTpl, w >= ACC_FULL_W && h >= 2.2 ? LOOSE_ACC_DIST_FULL : LOOSE_ACC_DIST) ??
         (w >= 0.6 && h >= 2.2 && h <= 3.2 && sharpShape(raster.bin, b) ? { smufl: "accidentalSharp" as SmuflName, dist: LOOSE_ACC_DIST } : null);
       if (!m) continue;
       const py = m.smufl === "accidentalFlat" ? b.y + (b.h * (1 + FLAT_BOWL_TOP)) / 2 : b.y + b.h / 2;
@@ -992,3 +992,9 @@ export function accidentalsLeftOfHeads(c: {
  * 的一截竖笔），再往上是 102~180 一大片；拍号那一档 180 太松，通用的 90 也挡不住 87。
  */
 const LOOSE_ACC_DIST = 80;
+/** 够宽够高（宽 ≥`ACC_FULL_W`、高 ≥2.2 格，像个完整的升降号）的块放到这么多：扫描件粗笔升号签名离模板远一点（是爱 p3 m33 低音 ♯ 90）；
+ *  误配的那截竖笔（87）窄，不受这一档。 */
+const LOOSE_ACC_DIST_FULL = 95;
+/** 放宽那一档的宽度下限（格）：还原号窄（新编 080/233/281/f29 的 ♮ 0.68~0.73 格，在这一档被配成了 ♯），
+ *  是爱扫描件的真升降号 0.79~0.89 格。 */
+const ACC_FULL_W = 0.75;
