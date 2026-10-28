@@ -298,7 +298,7 @@ export interface RasterPageOpts {
 }
 
 /** `RasterPageOpts.probe`：步名 + 当时手里有的那几样（建页前只有符号，建页后有谱面，拼音后有音，挂弧后有弧）。 */
-export type RasterProbe = (step: string, view: { syms?: RasterSym[]; pg?: SPage; notes?: StaffNote[]; slurs?: SlurArc[] }) => void;
+export type RasterProbe = (step: string, view: { syms?: RasterSym[]; pg?: SPage; notes?: StaffNote[]; slurs?: SlurArc[]; sources?: Record<string, readonly { box: Rect }[]> }) => void;
 
 /**
  * 一页识别的几个阶段（回归测试的阶段快照按它分，见 `opts.trace`）：
@@ -405,7 +405,8 @@ export async function recognizeRasterPage(
   const { masks, noBeam, masksNB, pitchGrid, onLineY, split, splitIds, dropHead, restTpl } = splitMergedSolidHeads({ raster, heads, stacked, unit, staffLines, nl, prims, onGrid, groups, grid, look, blobs, claimed, repaired });
   // ── **光杆符干端头的无主墨**（`notehead.ts::headsOnBareStems`）
   const { syms, dictClaimed, flatPieces, metIds } = headsOnBareStemEnds({ heads, dropHead, stacked, split, restSyms, blobs, claimed, inBand, staffGeoms, unit, prims, pitchGrid, raster, grid, notHollow, barSegs, takenBoxes, nl, beamStump, inBeamBody, ledgerOnly, ledger, look, groups, staffLines, besideStem });
-  at("headsOnBareStemEnds");
+  // 头一回交符号表：一并交出前面几路各认了哪些（按对象认；`findRasterHeads` 那一路按框对象认）
+  opts.probe?.("headsOnBareStemEnds", { syms, sources: { findRasterHeads: heads, hollowHeadsByCavity: stacked, splitMergedSolidHeads: split, findWholeRests: restSyms } });
   // ── **并排粘成一块的两个临时记号**：按竖笔之间的缝切开，两半各查一次字典
   splitPairedAccidentals({ blobs, claimed, dictClaimed, unit, nl, look, syms, ledger, groups, raster });
   at("splitPairedAccidentals");
