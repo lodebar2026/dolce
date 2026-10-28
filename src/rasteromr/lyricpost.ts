@@ -447,3 +447,32 @@ export function lyricsBelongBelow(row: LyricRowInfo, verseObjs: Set<PObj>, notes
   if (row.aboveHasOwn) return undefined;
   return onlyB >= LYRIC_ONLY_MIN && onlyB >= onlyA * LYRIC_ONLY_RATIO && onlyB >= cxs.length * LYRIC_ONLY_FRAC ? below : undefined;
 }
+
+/** 见 `alignLatinToHan`：耶和华是我的牧者对着音印的英文三行，汉字那串的偏离是就近挂法的 3.4~3.8 倍；
+ *  该改的（父恩广大、坚固保障、万口欢唱）在 1.2~1.45 倍；1.3 倍万口欢唱少收两步，到 2.2 倍读数都不变。 */
+const ALIGN_HAN_RATIO = 1.6;
+
+/**
+ * **中英对照：拉丁段照同号汉字段的音挂**。独唱谱的英文词按句子松排，词与音不逐列对齐（父恩广大印在低音谱表下、
+ * 「Take no more thought o'er what you must wear」整句挤在前半），按 x 就近挂整串错位；汉字按字格印在音下，挂得准。
+ * 同一行谱、同一声部，第 k 段汉字行与第 k 段拉丁行音节数相同、汉字行一字一音的，拉丁行逐个音节改挂到汉字那串音上。
+ * 英文本来对着音印的不改：两边一字多音落的地方不同，音节数却碰巧相同（耶和华是我的牧者，改了 +11 步）。
+ * 按各音节「字心离所挂音的距离 / 字宽」的总和比，汉字那串不到就近挂法的 `ALIGN_HAN_RATIO` 倍才改。
+ */
+export function alignLatinToHan(notes: StaffNote[], lines: LyricLine[]): void {
+  for (const lat of lines) {
+    if (lat.verse <= LATIN_VERSE) continue;
+    const han = lines.find((l) => l !== lat && l.staff === lat.staff && l.voice === lat.voice && l.verse === lat.verse - LATIN_VERSE && !isLatinLine(l));
+    if (!han || han.syllables.length !== lat.syllables.length) continue;
+    const row = notes.filter((n) => n.staff === lat.staff).sort((a, b) => a.x - b.x);
+    const hanAt = row.filter((n) => n.lyrics?.some((q) => q.verse === han.verse));
+    if (hanAt.length !== han.syllables.length || hanAt.some((n) => n.lyrics!.filter((q) => q.verse === han.verse).length !== 1)) continue;
+    const latAt = row.flatMap((n) => (n.lyrics ?? []).filter((q) => q.verse === lat.verse).map((q) => ({ n, q })));
+    if (latAt.length !== lat.syllables.length) continue;
+    const off = (at: StaffNote[]) => at.reduce((t, n, k) => t + Math.abs(lat.syllables[k].cx - n.x) / Math.max(1, lat.syllables[k].right - lat.syllables[k].left), 0);
+    if (off(hanAt) >= off(latAt.map((o) => o.n)) * ALIGN_HAN_RATIO) continue;
+    for (const { n, q } of latAt) n.lyrics = n.lyrics!.filter((o) => o !== q);
+    latAt.forEach(({ q }, k) => (hanAt[k].lyrics ??= []).push(q));
+    for (const n of row) if (n.lyrics && !n.lyrics.length) n.lyrics = undefined;
+  }
+}

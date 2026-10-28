@@ -8,7 +8,7 @@ import { groupDynamics, findGluedDynamics } from "./dynamics";
 import { findStaffLabels, labelKey, normalizeLabel } from "./stafflabel";
 import { makeTextObj, makeSymObj } from "./adapt";
 import { attachHarmonies, type LyricLine, buildLyricLines, attachLyrics, lyricObjLabel } from "../staffomr/textanalyze";
-import { liftHarmonies, lyricsBelongBelow, keepGapRowOrder, foldBilingualLyrics, splitSmallEchoes, moveEchoLines, splitVoiceLyrics, numberVersesByScript, liftLyrics } from "./lyricpost";
+import { alignLatinToHan, liftHarmonies, lyricsBelongBelow, keepGapRowOrder, foldBilingualLyrics, splitSmallEchoes, moveEchoLines, splitVoiceLyrics, numberVersesByScript, liftLyrics } from "./lyricpost";
 import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, verseLabelsBySequence, mapCharsToCells, stripWithout, jumpTail } from "./lyric";
 import type { Staff, PObj, SPage, Sym } from "../staffomr/model";
 import type { Component, Rect, Binary } from "../omrkit/types";
@@ -664,6 +664,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     splitVoiceLyrics(pg, lyricLines, notes, unit.space);
     numberVersesByScript(pg, lyricLines);
     attachLyrics(notes, lyricLines, unit.space * 0.3);
+    alignLatinToHan(notes, lyricLines);
     at("attachLyrics");
     liftLyrics(pg, notes, unit.space);
   }
