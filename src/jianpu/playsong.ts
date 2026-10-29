@@ -54,7 +54,7 @@ export function playSourceOf(doc: ScoreDoc, songIdx = 0, options: PlaySongOption
 }
 
 /** 演唱顺序（`measures` / `isSimpple` / `hasRepeat` 与跳转表；速度不在这里）。这首没有曲行时返回 null。
- *  在共用时间轴上推，小节下标折回第一份声部（`forExpanded` 时是带歌词的那个）自己的小节序：展开档、`.jpwabc` 只排它。 */
+ *  在共用时间轴上推，小节下标折回第一份声部（`forExpanded` 时是带歌词的那个）自己的小节序：投影档、`.jpwabc` 只排它。 */
 export function playDataOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlayData | null {
   const built = songMeasures(doc, songIdx, options, false);
   return built && foldToFirstPart(playDataOf(doc, songIdx, built), built);
@@ -373,7 +373,7 @@ function applyJumps(pd: PlayData, measures: readonly MeasureOut[], jumps: readon
   }
 }
 
-/** `.jpwabc` 写出端的输入（`model/tojpw.ts::JpwScoreIn`），**口径同 `jianpuInputOfDoc`**（非展开档那一份）：
+/** `.jpwabc` 写出端的输入（`model/tojpw.ts::JpwScoreIn`），**口径同 `jianpuInputOfDoc`**（非投影档那一份）：
  *  第一个有曲行的声部；小节线条目与行末换行按原次序；标题/credit 同 `songToScore`。这首没有曲行时返回 null。 */
 export function jpwInputOfSong(doc: ScoreDoc, songIdx = 0): JpwScoreIn | null {
   const built = songMeasures(doc, songIdx, {}, false);

@@ -1,4 +1,4 @@
-// 唯一的排版器 `ScorePainter`：按请求排版（简谱原样 / 展开、五线谱 / 混排），持有提交后的结果、
+// 唯一的排版器 `ScorePainter`：按请求排版（简谱 / 投影、五线谱 / 混排），持有提交后的结果、
 // 页面渲染（DOM 映射）、点选与播放高亮索引。排页算法在各自模块（`original/compose/`、
 // `mixed/staffpages.ts`），SVG 出口在 `render.ts`，这里只管请求版本、结果提交与交互状态。
 // 设计与迁移记录见 docs/实现/PuPainter退役.md。
@@ -49,18 +49,18 @@ export interface StaffPaintRequest {
   readonly sourceBreaks?: boolean;
 }
 
-/** 原样文档这一路（文本谱与多声部 123/ABC、MusicXML 的原样档）：整份 `ScoreDoc` 按源行排，印刷原版观感。
- *  `expanded`：展开档（反复逐遍展开、一遍一页、投影片纸），开发开关下才发（子计划 5）。 */
+/** 原样文档这一路（文本谱与多声部 123/ABC、MusicXML 的简谱档）：整份 `ScoreDoc` 按源行排，印刷原版观感。
+ *  `expanded`：投影档（反复逐遍展开、一遍一页、投影片纸），开发开关下才发（子计划 5）。 */
 export interface JianpuPaintRequest {
   readonly view: "original" | "expanded";
   readonly doc: ScoreDoc;
-  /** computed 样式表（原样档那份，与旧简谱引擎同一份）。null = print 主题出厂。 */
+  /** computed 样式表（简谱档那份，与旧简谱引擎同一份）。null = print 主题出厂。 */
   readonly style: StyleSheet | null;
   /** 照文档里的换行排，不按窄纸重新断行（断点已由调用方写进文档时用）。 */
   readonly noReflow?: boolean;
-  /** 展开档：`.jpwabc` 的 `.Layout` 分页描述（其他格式没有） */
+  /** 投影档：`.jpwabc` 的 `.Layout` 分页描述（其他格式没有） */
   readonly breakDesc?: string | null;
-  /** 原样档的纸（pt），不给按样式表的纸。`snippet` 时只取宽、高随内容 */
+  /** 简谱档的纸（pt），不给按样式表的纸。`snippet` 时只取宽、高随内容 */
   readonly page?: { w: number; h: number };
   /** 只排谱行、不放页眉页脚（帮助页的谱例片段） */
   readonly snippet?: boolean;
@@ -114,7 +114,7 @@ export class PaintResources {
 }
 
 /** 自然量宽（简谱引擎，乐句重排用）：清掉换行、整首不折，量第 `song` 首旋律声部每个音（键为元素 id）的自然横向区间与版心宽。
- *  `slide`：按展开档的画法量（数字共基线、增时线「-」字）。不改 `doc`。 */
+ *  `slide`：按投影档的画法量（数字共基线、增时线「-」字）。不改 `doc`。 */
 export function measureDocument(
   doc: ScoreDoc, sheet: StyleSheet, width: number, slide = false, song = 0,
 ): { width: number; spans: Map<string | number, { x0: number; x1: number; x1b?: number }> } {
@@ -184,7 +184,7 @@ export class ScorePainter {
 
   constructor(readonly resources: PaintResources = PaintResources.shared()) {}
 
-  /** 简谱展开档：各首实际走的演唱顺序（`page-check` 的 P5 按它数遍数）；别的结果为 null */
+  /** 投影档：各首实际走的演唱顺序（`page-check` 的 P5 按它数遍数）；别的结果为 null */
   get expandPlans(): ReadonlyArray<readonly PlayItem[] | null> | null {
     return this.original?.plans ?? null;
   }
@@ -241,11 +241,11 @@ export class ScorePainter {
     this.original = null;
   }
 
-  /** 简谱这一路（原样 / 展开档）：整份文档排好（不等资源，`Font` 同步量字），返回提交动作。 */
+  /** 简谱这一路（简谱 / 投影档）：整份文档排好（不等资源，`Font` 同步量字），返回提交动作。 */
   private _jianpuCommit(req: JianpuPaintRequest): () => void {
     const sheet = req.style ?? computeStyleForPaper([THEMES.print], { mode: "original", engine: "jianpu" });
     const paper = resolvePaper(sheet.page);
-    // 展开档：投影片纸（展开档样式的 `page.size`）
+    // 投影档：投影片纸（投影档样式的 `page.size`）
     const slide = req.view === "expanded" ? { width: sheet.page.size?.[0] ?? 960, height: sheet.page.size?.[1] ?? 540, continuous: false } : null;
     const r = layoutJianpu(req.doc, {
       style: jianpuStyleOf(sheet),
@@ -385,7 +385,7 @@ export class ScorePainter {
 
   /** 试听光标挪到元素 `id` 第 `pass` 遍的音（null = 撤掉）。返回所在页。
    *  各视图统一放竖直播放线（`playhead.ts`），不给音符着色；播放器跟各声部起音走，多声部时
-   *  女高休止、别的声部在唱也照走。这一视图里没画的音（展开档只排带歌词的那个声部）不挪，留在上一处。
+   *  女高休止、别的声部在唱也照走。这一视图里没画的音（投影档只排带歌词的那个声部）不挪，留在上一处。
    *  纵向：五线谱 / 混排取谱表带；简谱两条路取音符所在那一行（`system` 标签，多声部是连谱号括起的整组）。 */
   highlight(id: ElementId | null, pass = 0, occ = 0): number | null {
     if (id === null) {
@@ -419,7 +419,7 @@ export class ScorePainter {
     return null;
   }
 
-  /** 元素 `id` 画出来的各个音符格（混排里五线谱层、简谱叠层各一个；简谱展开档每遍一个）。 */
+  /** 元素 `id` 画出来的各个音符格（混排里五线谱层、简谱叠层各一个；投影档每遍一个）。 */
   noteEls(id: ElementId): SVGGElement[] {
     return this.elsOf(this.index.notes(id).map((h) => h.item));
   }

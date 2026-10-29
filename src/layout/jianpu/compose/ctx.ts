@@ -29,9 +29,9 @@ export interface OriginalCtx {
   /** 墨色（`style.page.color`）。歌词同色。 */
   ink: number;
   lyricInk: number;
-  /** 展开档（投影片，导出 PPTX）：数字落在同一条基线上、增时线是数字字体的「-」字（同旧简谱引擎；PPTX 换目标字体时按它们对位，见 `editor/pptx.ts`） */
+  /** 投影档（投影片，导出 PPTX）：数字落在同一条基线上、增时线是数字字体的「-」字（同旧简谱引擎；PPTX 换目标字体时按它们对位，见 `editor/pptx.ts`） */
   slide?: boolean;
-  /** 展开档：正在画的那个符号所在那一遍的遍号（`place/expand.ts::passesOfRow`，`page.ts::paintVoice` 逐个设）；原样档不设 */
+  /** 投影档：正在画的那个符号所在那一遍的遍号（`place/expand.ts::passesOfRow`，`page.ts::paintVoice` 逐个设）；简谱档不设 */
   pass?: number;
   /** 各首的页眉定位（place/header.ts::placeHeader；`compose/index.ts` 排版前填） */
   heads?: readonly PlacedHeader[];
@@ -75,7 +75,7 @@ export function octaveDot(color: number, cx: number, cy: number, r: number): JpO
 /** 数字按墨迹居中于锚点：返回该把文字画在哪个 x/y，并附带墨迹盒。 */
 export function digitOrigin(c: OriginalCtx, ch: string): { dx: number; dy: number; b: Rect } {
   const b = c.digitFont.charBound(ch);
-  // 展开档：各数字共一条基线（按「1」的墨迹中线定，同旧简谱引擎），PPTX 换成目标字体时框底才齐
+  // 投影档：各数字共一条基线（按「1」的墨迹中线定，同旧简谱引擎），PPTX 换成目标字体时框底才齐
   const v = c.slide ? c.digitFont.charBound("1") : b;
   return {
     dx: -(b.left + b.right) / 2,

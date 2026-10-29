@@ -38,7 +38,7 @@ export interface JianpuStyle {
     chord: number;
     keyMeter: number;
     verseNum: number;
-    /** 房号字号。0 = 不画房号（展开档） */
+    /** 房号字号。0 = 不画房号（投影档） */
     ending: number;
     /** 段落词。0 = 不排 */
     sectionWord: number;

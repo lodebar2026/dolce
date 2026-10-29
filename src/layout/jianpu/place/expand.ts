@@ -1,6 +1,6 @@
-// 展开档（反复与多段歌词逐遍展开、一遍一页）：按演唱顺序（`PlayItem[]`）把行视图里的小节逐遍切出来，
+// 投影档（反复与多段歌词逐遍展开、一遍一页）：按演唱顺序（`PlayItem[]`）把行视图里的小节逐遍切出来，
 // 每遍接成一长行、只挂这一遍的歌词，再按版心宽逐行装满（同旧简谱引擎 `layout.ts::Line.doLineBreak`），
-// 拼成一份「展开后的」行视图交给 `layoutSong` 照常排——横向、纵向、上方带全是原样档那一套。
+// 拼成一份「展开后的」行视图交给 `layoutSong` 照常排——横向、纵向、上方带全是简谱档那一套。
 //
 // 逐遍怎么走（首尾裁切、遍末与往回跳换页）复用 `jianpu/expand.ts::walkPlay`；小节的切法同 `jianpu/phrasesong.ts::buildMeasures`
 // （演唱顺序的 `mid` 就是按它数的），只排一个声部：带歌词的那个（同 `songMeasures` 的 `forExpanded`）。
@@ -94,7 +94,7 @@ function sourceBreaks(
 }
 
 /** 一个小节在这一遍里取哪些符号：`skip` 去掉开头几个音（连同其前的符号），`limit` 只留前几个音（截断处不要小节线）；
- *  临时伴奏 / 并排块不画（旧简谱引擎展开档的投影也跳过它） */
+ *  临时伴奏 / 并排块不画（旧简谱引擎投影档的投影也跳过它） */
 function cutSlots(slots: readonly Slot[], rows: readonly RowView[], cut: { skip: number; limit: number }): Slot[] {
   const isNote = (s: Slot): boolean => rows[s.row]!.elements[s.idx]!.kind === "note";
   let out = [...slots];
@@ -151,7 +151,7 @@ interface LogicalMark {
   end: Slot;
 }
 
-/** 展开声部各行的记号连成整条（跨行的弧按 `continuationToNext` / `continuationFromPrevious` 接起来）。房号不要（展开档不画房号）。 */
+/** 展开声部各行的记号连成整条（跨行的弧按 `continuationToNext` / `continuationFromPrevious` 接起来）。房号不要（投影档不画房号）。 */
 function logicalMarks(rows: readonly RowView[]): LogicalMark[] {
   const out: LogicalMark[] = [];
   const open = new Map<Mark["type"], LogicalMark[]>();
@@ -172,8 +172,8 @@ function logicalMarks(rows: readonly RowView[]): LogicalMark[] {
 }
 
 /**
- * 展开档只要旋律与词（投影片）：和弦、段落词、奏法、力度/术语、小节线上的跳转字与 segno、松叶、临时伴奏都不画，
- * 延长记号与倚音留着（倚音用户定保留；同旧简谱引擎展开档的投影 `jianpuinput.ts::rowsPart`），上 / 下滑音也留着（用户定）。换下来的符号记同一个 id。
+ * 投影档只要旋律与词（投影片）：和弦、段落词、奏法、力度/术语、小节线上的跳转字与 segno、松叶、临时伴奏都不画，
+ * 延长记号与倚音留着（倚音用户定保留；同旧简谱引擎投影档的投影 `jianpuinput.ts::rowsPart`），上 / 下滑音也留着（用户定）。换下来的符号记同一个 id。
  */
 function bare(el: MusicElement): MusicElement {
   if (el.kind === "note") {
@@ -387,7 +387,7 @@ export function fillLines(
   return out;
 }
 
-/** 展开档每页最多几行（没有 `.Layout` 时；用户定 2026-10-14） */
+/** 投影档每页最多几行（没有 `.Layout` 时；用户定 2026-10-14） */
 const MAX_ROWS = 4;
 
 /** 把一遍的各行按页分：源里已定的换页之间每段最多 `MAX_ROWS` 行；要断时优先断在副歌起头那行之前（至少留两行），
@@ -528,7 +528,7 @@ function passesByDur(
   return out.slots.length ? [out] : [];
 }
 
-/** 展开档：一首曲子 → 逐遍展开、逐行装满的行视图（每遍一页起头） */
+/** 投影档：一首曲子 → 逐遍展开、逐行装满的行视图（每遍一页起头） */
 export function expandSong(
   song: SongView, plan: readonly PlayItem[], m: JianpuGrid, ink: InkMeasurer, idOf: Map<MusicElement, unknown>,
   owners: Map<LyricSyllable, unknown>,
@@ -682,7 +682,7 @@ export function expandSong(
   return { ...song, pages };
 }
 
-/** 整份文档的展开档行视图（各首各按自己的演唱顺序逐首排；推不出演唱顺序的那首照原样） */
+/** 整份文档的投影档行视图（各首各按自己的演唱顺序逐首排；推不出演唱顺序的那首照原样） */
 export function expandView(
   view: DocView, plans: readonly ({ measures: readonly PlayItem[]; isSimpple: boolean } | null)[], m: JianpuGrid, ink: InkMeasurer,
   /** `.jpwabc` 的 `.Layout` 分页描述（只管第一首） */

@@ -121,8 +121,8 @@ export async function exportMidi(app: App): Promise<void> {
 }
 
 export async function exportPptx(app: App): Promise<void> {
-  // 一律按**展开档**出片（两种格式同一条展开档排版）：屏幕在原样档也导得出 PPT 观感，
-  // 切到展开档预览则是所见即所得。字号/纸张取展开档那一套设置。
+  // 一律按**投影档**出片（两种格式同一条投影档排版）：屏幕在简谱档也导得出 PPT 观感，
+  // 切到投影档预览则是所见即所得。字号/纸张取投影档那一套设置。
   const bytes = await buildPptx(pptxPainter(app).pptxSource, app.style.colorsOf("expanded").bg);
   await saveBytes(
     bytes,
@@ -131,9 +131,9 @@ export async function exportPptx(app: App): Promise<void> {
   );
 }
 
-/** 按展开档另排一份。屏幕已在展开档时直接用屏幕那个，省一次排版。
- *  **设置取展开档那一套**（`app.style.styleOf("expanded")`），不是屏幕上原样档的那套——
- *  否则导出的投影片会带着原样档的字号与颜色。 */
+/** 按投影档另排一份。屏幕已在投影档时直接用屏幕那个，省一次排版。
+ *  **设置取投影档那一套**（`app.style.styleOf("expanded")`），不是屏幕上简谱档的那套——
+ *  否则导出的投影片会带着简谱档的字号与颜色。 */
 export function pptxPainter(app: App): ScorePainter {
   const cur = app.painter;
   // 识别模式里屏幕上那个排版器不随改动重排（谱面区是核对视图），只有简谱档的才能直接用
@@ -221,12 +221,12 @@ export async function exportFanqieMusicXml(app: App): Promise<void> {
 /** 五线谱这一路的会话：五线谱 / 混排档，或五线谱识别（`.musicxml`）的核对视图。导出图按五线谱排版出。 */
 // 五线谱识别的对照视图，原文换成了 ABC / 123 也是五线谱会话
 const isStaffSession = (app: App): boolean => app.mode === "mixed" || (app.mode === "recognize" && app.omr.staffSession);
-/** 简谱展开档（含简谱识别的核对视图停在展开档）：出 PPTX，不出 PNG/PDF。 */
+/** 投影档（含简谱识别的核对视图停在投影档）：出 PPTX，不出 PNG/PDF。 */
 const isExpanded = (app: App): boolean => !isStaffSession(app) && app.layoutMode === "expanded";
 /** 当前那一档排出来是不是长图（不分页）：长图出一张 PNG，分页纸出 PDF。 */
 const isLongImage = (app: App): boolean => (isStaffSession(app) ? app.staffPage.heightPt === null : app.jpLongImage);
 
-/** 简谱原样档排版器。屏幕上已是原样档就直接用；识别模式（谱面区是核对视图、不随改动重排）与别的档另排一份。 */
+/** 简谱档排版器。屏幕上已是简谱档就直接用；识别模式（谱面区是核对视图、不随改动重排）与别的档另排一份。 */
 function originalPainter(app: App): ScorePainter {
   const cur = app.painter;
   if (app.mode === "jp" && cur.renderer === "jianpu" && cur.jianpuView === "original") return cur;
@@ -322,7 +322,7 @@ const canJly = (app: App): boolean => !isMixed(app);
 /** 顺序即对话框里的顺序。**导出只出别的媒介**（图片、PPT、音频、给第三方软件的 MusicXML）；
  *  换源格式（123 / JPWABC / ABC / 文本谱）走「另存为」（`showSaveAsDialog`），
  *  `.musicxml` 转成简谱编辑在打开时选（`App._importBytes`）。
- *  **谱面出图按档分**：展开档只出 PPTX；其余各档（简谱原样档、五线谱 / 混排、识别模式）按排版效果出图，
+ *  **谱面出图按档分**：投影档只出 PPTX；其余各档（简谱档、五线谱 / 混排、识别模式）按排版效果出图，
  *  长图出 PNG、分页纸出 PDF，二选一。识别模式出的是排版稿，不是核对视图那张叠加图。 */
 const EXPORT_ITEMS: readonly ExportItem[] = [
   { label: "PPTX", available: isExpanded, run: exportPptx },

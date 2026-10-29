@@ -40,7 +40,7 @@ export interface LayoutResult {
   readonly pages: readonly LayoutPage[];
   readonly diagnostics: readonly LayoutDiagnostic[];
   readonly staffPlacements: readonly StaffPlacement[];
-  /** `Layout.lineStarts` 原值（行序，展开档可能重复）；null = 此视图按源行分行，不给建议。 */
+  /** `Layout.lineStarts` 原值（行序，投影档可能重复）；null = 此视图按源行分行，不给建议。 */
   readonly jianpuLineStarts: readonly ElementId[] | null;
 }
 

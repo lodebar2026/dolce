@@ -249,7 +249,7 @@ export function paintVoice(c: OriginalCtx,
     if (it.element.kind === "sustain") {
       // 增时线：数字字体的「-」（engrave/dash.ts，与混排、旧简谱引擎同一个字形）。
       // 数字是按墨迹居中于 baseline 画的，增时线的墨心也落在同一条中线上
-      // 展开档画成数字字体的「-」字（同旧简谱引擎 `JpNumber("-")`；PPTX 里换目标字体的「-」）
+      // 投影档画成数字字体的「-」字（同旧简谱引擎 `JpNumber("-")`；PPTX 里换目标字体的「-」）
       const line = c.slide ? dashDigit(c, x, base) : sustainDash(x, base, { font: c.digitFont, color: c.ink });
       root.add(line);
       // 增时线有自己的 id（`Chord.sustains[]` 各带一个），可视化编辑按它点选这一条
@@ -283,7 +283,7 @@ export function paintVoice(c: OriginalCtx,
   for (const layer of voice.layers) paintLayer(c, root, layer, left, baseline, pageIndex);
 }
 
-/** 展开档的增时线：数字字体的「-」，按墨迹横向居中、与数字同一条基线（`digitOrigin`）。 */
+/** 投影档的增时线：数字字体的「-」，按墨迹横向居中、与数字同一条基线（`digitOrigin`）。 */
 function dashDigit(c: OriginalCtx, x: number, base: number): JpNumber {
   const { dx, dy } = digitOrigin(c, "-");
   return digitItem("-", x + dx, base + dy, c.digitFont, c.ink);

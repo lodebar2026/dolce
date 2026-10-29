@@ -1,8 +1,8 @@
-// `ScoreDoc` → **排版行视图**：文本谱排版器、简谱输入模型（展开档）、双向定位共用的那一份铺排。
+// `ScoreDoc` → **排版行视图**：文本谱排版器、简谱输入模型（投影档）、双向定位共用的那一份铺排。
 //
 // ## 为什么要有这一层
 //
-// 文本谱「原样」档不自动断行：一个系统就是一行，行内按符号逐个步进、记号按行内区间画。
+// 文本谱「简谱」档不自动断行：一个系统就是一行，行内按符号逐个步进、记号按行内区间画。
 // 所以排版必须先把 `ScoreDoc`（声部 → 小节 → 元素，id 配对）**线性化成一行一行的符号流**——
 // 这是排版的事，不是模型的事，任何记谱排版器都要做这一步。以前这一步混在文本谱 AST 里
 // （`FanqieDoc` 本身就是扁平流），现在 `ScoreDoc` 是唯一语义模型，线性化规则就收在这里，**只写一次**：
@@ -704,7 +704,7 @@ function beatChar(b: { num: number; den: number }): string {
   return ({ "1/4": "♩", "1/2": "𝅗𝅥", "1/8": "♪", "3/8": "♩.", "3/4": "𝅗𝅥.", "1/1": "𝅝" } as Record<string, string>)[key] ?? "♩";
 }
 
-/** `printTempo`：把速度数字印出来（`♩=144`）。文本谱的 `J:`、`.jpwabc` 的速度数字原样档不印，只给别的来源。 */
+/** `printTempo`：把速度数字印出来（`♩=144`）。文本谱的 `J:`、`.jpwabc` 的速度数字简谱档不印，只给别的来源。 */
 function toMetadata(song: Song, printTempo: boolean): Metadata {
   const meta: Metadata = {
     titles: [],
@@ -1003,7 +1003,7 @@ export function docView(doc: ScoreDoc): DocView {
     doc,
     // MusicXML 读进来的先投成简谱形状（长音拆增时线、减时线按 `<type>` 算、和弦补原文）
     songs: doc.songs.map((s, i) => toFanqieSong(compressMultiRests(projectForJianpu(s)), i, rawLines, doc.sourceFormat === "123" || doc.sourceFormat === "abc",
-      // 速度数字只给 123 / ABC / MusicXML 这类来源印；文本谱的 `J:`、JP-Word 的 `Expression` 原样档本来不印
+      // 速度数字只给 123 / ABC / MusicXML 这类来源印；文本谱的 `J:`、JP-Word 的 `Expression` 简谱档本来不印
       doc.sourceFormat !== "fanqie" && doc.sourceFormat !== "jpwabc")),
     idOf: new Map(),
     elementOf: new Map(),

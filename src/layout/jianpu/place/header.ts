@@ -9,7 +9,7 @@ import type { Rect } from "../../../common/geom";
 
 /** 页眉各行的角色（字体与字号由绘制端定，`compose/header.ts::headerRoleFont`） */
 export type HeaderTextRole = "title" | "subtitle" | "scripture" | "credit" | "top" | "index" | "tempo"
-  // 展开档的标题页与页脚（`placeTitlePage` / `placeSlideFooter`）：字体沿用歌词字（同旧简谱引擎 `titlePage` / `addFooters`），标题不加粗
+  // 投影档的标题页与页脚（`placeTitlePage` / `placeSlideFooter`）：字体沿用歌词字（同旧简谱引擎 `titlePage` / `addFooters`），标题不加粗
   | "slide-title" | "slide-subtitle" | "slide-scripture" | "slide-credit" | "slide-footer";
 
 /** 页眉量具（`compose/index.ts` 注入）：角色字的字面宽与墨迹盒（相对落笔原点、基线 y = 0）；调号拍号行的墨迹上下缘 */
@@ -166,7 +166,7 @@ export function placeHeader(meta: Metadata, m: JianpuGrid, ink: HeaderMeasurer):
 }
 
 /**
- * 展开档的标题页：标题 → 副标题 → 经文 → 词曲逐行居中，
+ * 投影档的标题页：标题 → 副标题 → 经文 → 词曲逐行居中，
  * 首行基线在页高 0.3 处，往下每行下移本行的字号。
  */
 export function placeTitlePage(meta: Metadata, m: JianpuGrid, ink: HeaderMeasurer): PlacedHeaderLine[] {
@@ -184,7 +184,7 @@ export function placeTitlePage(meta: Metadata, m: JianpuGrid, ink: HeaderMeasure
 }
 
 /**
- * 展开档每个谱页的页脚（同旧简谱引擎 `addFooters`）：曲名在版心里居中，「i/n」页码左缘落在 左边距 + 0.8 × 纸宽、
+ * 投影档每个谱页的页脚（同旧简谱引擎 `addFooters`）：曲名在版心里居中，「i/n」页码左缘落在 左边距 + 0.8 × 纸宽、
  * 放不下时收回到版心右缘以内；基线在下边距的一半处。`x` 以页面左缘为原点（锚点 left = 0）。
  */
 export function placeSlideFooter(title: string, page: number, pages: number, m: JianpuGrid, ink: HeaderMeasurer): PlacedHeaderLine[] {

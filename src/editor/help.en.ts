@@ -7,7 +7,7 @@ export const FEATURE_TOPICS_EN: { title: string; body: string[] }[] = [
     title: "Open, save and save as",
     body: [
       "Use **Open score** on the start page, or drag a file onto the window: 123 (`.123`, the main jianpu format — see the 123 format tab), `.jpwabc` (JP-Word), jianpu-ly (`.jly`, Silas S. Brown's upstream jianpu-ly text scores — typesettable as LilyPond), text jianpu (Fanqie / Shigeben, `.pu` `.fq` `.jps` `.txt`), MusicXML (`.xml` / `.musicxml`), ABC (`.abc`), Muse (`.jcx`), and recognition projects `.dolce` (see Recognition projects).",
-      "**Save** (top right) writes back in the original format (`.jpwabc` stays JP-Word compatible). **Save As** converts to 123, JPWABC, ABC, Fanqie or Shigeben text jianpu, jianpu-ly, or Muse jianpu (`.jcx`, opens in both old and new Muse versions) — before converting it lists anything the target format can't hold and asks you to confirm. **Export** produces the score as an image (PPTX in the Expanded view; elsewhere PNG for long-image paper, PDF for paged paper), MIDI, MusicXML and jianpu-ly (`.jly`, ready to hand to upstream `jianpu-ly` for LilyPond).",
+      "**Save** (top right) writes back in the original format (`.jpwabc` stays JP-Word compatible). **Save As** converts to 123, JPWABC, ABC, Fanqie or Shigeben text jianpu, jianpu-ly, or Muse jianpu (`.jcx`, opens in both old and new Muse versions) — before converting it lists anything the target format can't hold and asks you to confirm. **Export** produces the score as an image (PPTX in the Projection view; elsewhere PNG for long-image paper, PDF for paged paper), MIDI, MusicXML and jianpu-ly (`.jly`, ready to hand to upstream `jianpu-ly` for LilyPond).",
       "The format drop-down in the source pane header switches a recognition result or a freshly opened file to another format for editing; switch back to “original” to restore it.",
       "**Desktop**: native open/save dialogs write straight to disk, and the last file reopens on startup. **Browser**: files are opened with the web file picker and saved as downloads.",
     ],
@@ -67,7 +67,7 @@ export const FEATURE_TOPICS_EN: { title: string; body: string[] }[] = [
   {
     title: "Score views",
     body: [
-      "Four views sit above the score: **Expanded** (repeats and verses unrolled, one verse per page — for projection), **As printed** (laid out once like the original, verses stacked), **Staff**, and **Mixed** (staff notation with a jianpu layer). For text formats the staff notation is generated from the source.",
+      "Four views sit above the score: **Projection** (repeats and verses unrolled, one verse per page — for projection), **Jianpu** (laid out once like the original, verses stacked), **Staff**, and **Mixed** (staff notation with a jianpu layer). For text formats the staff notation is generated from the source.",
       "**Line breaking**: “Original” keeps the line structure from import or recognition; “By phrase” re-breaks lines by lyric and musical phrases; “Every N bars” (pick N in the drop-down next to it) puts a fixed number of bars on each line — the pickup bar is not counted, existing page breaks are kept, and the status bar warns if a line does not fit the paper. Text jianpu is supported too — the source itself is re-broken; click “Original” to restore it exactly (or undo with Ctrl+Z).",
       "These tools only appear when the current file supports them.",
     ],
@@ -86,14 +86,14 @@ export const FEATURE_TOPICS_EN: { title: string; body: string[] }[] = [
   {
     title: "Export",
     body: [
-      "**Export** in the header. The score is exported as laid out in the current view: the **Expanded** view gives **PPTX** (vector, one slide per page); **every other view** (jianpu Original, Staff / Mixed, the recognition proofing view) gives one whole **PNG** when the paper is Long image, or a **PDF** of all pages on paged paper. **MIDI** (with repeats, dynamics and part volumes) and **MusicXML** are also available.",
-      "Exports match the current preview (with or without the jianpu layer). In the recognition proofing view the export is the recognized, typeset score (jianpu per the Original / Expanded view, staff per the Staff / Mixed settings), not the source-image overlay. To change the source format, use **Save As**.",
+      "**Export** in the header. The score is exported as laid out in the current view: the **Projection** view gives **PPTX** (vector, one slide per page); **every other view** (Jianpu, Staff / Mixed, the recognition proofing view) gives one whole **PNG** when the paper is Long image, or a **PDF** of all pages on paged paper. **MIDI** (with repeats, dynamics and part volumes) and **MusicXML** are also available.",
+      "Exports match the current preview (with or without the jianpu layer). In the recognition proofing view the export is the recognized, typeset score (jianpu per the Jianpu / Projection view, staff per the Staff / Mixed settings), not the source-image overlay. To change the source format, use **Save As**.",
     ],
   },
   {
     title: "Parts (choral scores)",
     body: [
-      "**Parts** in the header opens the parts panel, one row per part: **name / short name** (press Enter after editing), **clef** (treble, tenor's octave-down treble, bass, alto, tenor), **transposition** (B♭ for clarinet and trumpet, F for horn, E♭ for alto sax, octave transpositions; written pitch is shown and playback uses concert pitch; MusicXML only), **staves** (number of staves, 2 for a piano grand staff; display only), **visible** (whether the part shows in Staff / Mixed; display only, not saved, and it still plays), playback **mute / solo / volume**, **jianpu** (which part supplies the melody for the Mixed jianpu layer and MusicXML jianpu views), and **lyrics** (which part's lyrics the MusicXML Expanded jianpu view uses, matched to the melody by time — choral scores often print the words under the alto; none checked = automatic, the part that has words).",
+      "**Parts** in the header opens the parts panel, one row per part: **name / short name** (press Enter after editing), **clef** (treble, tenor's octave-down treble, bass, alto, tenor), **transposition** (B♭ for clarinet and trumpet, F for horn, E♭ for alto sax, octave transpositions; written pitch is shown and playback uses concert pitch; MusicXML only), **staves** (number of staves, 2 for a piano grand staff; display only), **visible** (whether the part shows in Staff / Mixed; display only, not saved, and it still plays), playback **mute / solo / volume**, **jianpu** (which part supplies the melody for the Mixed jianpu layer and MusicXML jianpu views), and **lyrics** (which part's lyrics the MusicXML Projection view uses, matched to the melody by time — choral scores often print the words under the alto; none checked = automatic, the part that has words).",
       "Buttons on the right: **↑ ↓** reorder, **duplicate**, **split by voice** (two lines on one staff become two parts, e.g. an S/A shared staff into open score), **split by chord** (the lowest chord note moves to a new part below; unisons go to both), **merge into previous** (back into a shared staff), **delete**.",
       "**New part** at the bottom appends one (whole-measure rests, measures copied from the first part; choose the clef first). **Copy lyrics from … to …** copies lyrics to another part by time (an existing verse in the target isn't overwritten) — for choral scores with one lyric line shared by several parts.",
       "Every step takes effect immediately and `Ctrl/⌘+Z` undoes it. In 123 / ABC renaming and changing the clef only edit the `V:` line; adding, removing, reordering, splitting and merging rewrite the whole source in the standard form (`%` comments are lost; you're asked first). In MusicXML, changing the part structure switches the piece to automatic layout.",
@@ -381,7 +381,7 @@ export const NOTATION_TEXT_EN: { title: string; body: string[] }[] = [
     body: [
       "Repeat signs make a passage play twice: `|:` starts the repeat and `:|` ends it.",
       "`||` is a double barline (section end) and `|]` is the final barline.",
-      "`.jpwabc` follows JP-Word's look: repeat signs and barline styles **aren't drawn** on the score, but playback and the Expanded view still repeat by them.",
+      "`.jpwabc` follows JP-Word's look: repeat signs and barline styles **aren't drawn** on the score, but playback and the Projection view still repeat by them.",
     ],
   },
   {

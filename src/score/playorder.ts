@@ -3,7 +3,7 @@
 // 演唱顺序的唯一实现（判据从 mp/score 移植）。只经下面这组接口读谱，`ScoreDoc` 两侧拼出满足接口的纯对象：
 // MusicXML 形状 `model/playdoc.ts`、简谱形状 `jianpu/playsong.ts`。
 //
-// 产物 `PlayItem[]` 的消费者：试听/MIDI（`timeline.ts`）、展开档（`jianpu/expand.ts::walkPlay`）、断句。
+// 产物 `PlayItem[]` 的消费者：试听/MIDI（`timeline.ts`）、投影档（`jianpu/expand.ts::walkPlay`）、断句。
 
 import { Fraction } from "../common/fraction";
 import { BarStyle, StartStopDiscontinue } from "./enums";

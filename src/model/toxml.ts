@@ -863,7 +863,7 @@ function partXml(o: Out, part: Part, song: Song, cx: Ctx, axis?: TimeAxis): void
 
 /** 按各声部共用的时间轴（`timeaxis.ts`）逐格写：MusicXML 各 part 小节数须一致，这个声部在某格没有小节（文本谱一组没写它、
  *  或这组里它短几小节）就写一个只有 `<forward>`（整小节时长）的空小节——不带音、小节线、房号、跳转，只在这里写、模型里没有。
- *  整组缺席的那几组把谱表藏起来（`<staff-details print-object="no">`，同原样档一组不印这个声部），回到有它的组再显示。 */
+ *  整组缺席的那几组把谱表藏起来（`<staff-details print-object="no">`，同简谱档一组不印这个声部），回到有它的组再显示。 */
 function axisMeasuresXml(
   o: Out, part: Part, song: Song, axis: TimeAxis,
   byStart: Map<number, Mark[]>, byEnd: Map<number, Mark[]>, cx: Ctx,

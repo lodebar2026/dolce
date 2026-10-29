@@ -3,7 +3,7 @@
 //   反复顺序对不上）只报告，不擅改。
 //
 // **参照是按演唱顺序写全的**：反复段、每段后的副歌都照唱写一遍，谱面却只印一遍、多段叠在下面。
-// 所以先把识别结果按演唱顺序展开（与展开档排版、试听同一条路：recognizedToDoc → jianpuInputOfDoc
+// 所以先把识别结果按演唱顺序展开（与投影档排版、试听同一条路：recognizedToDoc → jianpuInputOfDoc
 // → walkPlay），再与参照整篇对齐；展开不出来或展开后反而对不上时，退回谱面印的顺序（逐段串起各谱行）。
 //
 // 挂在 jianpu.ts 的歌词落位之后、弧裁决与「有词的 0」复原之前：补上的字要喂给那几步（都看音符有没有词）。
@@ -146,7 +146,7 @@ function itemBuilder(locs: Map<JpNum, NoteLoc>, held: Set<JpNum>) {
   return { out, push };
 }
 
-/** 按演唱顺序展开（与展开档同口径：第 pass 遍唱第 pass 段、副歌每遍都唱）。展开不出来返回 null。 */
+/** 按演唱顺序展开（与投影档同口径：第 pass 遍唱第 pass 段、副歌每遍都唱）。展开不出来返回 null。 */
 function expandedItems(score: RecognizedScore, locs: Map<JpNum, NoteLoc>, held: Set<JpNum>): Item[] | null {
   const numOf = new Map<ElementId, JpNum>();
   let js;

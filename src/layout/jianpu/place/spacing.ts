@@ -531,7 +531,7 @@ export function naturalColumns(
   const cols = columnsOf(lines, m, ink);
   const { X, lyricRight, lyricLeft } = packColumns(cols, lines.length, m, ink);
   const xOf = new Map<PlacedItem, number>();
-  // 各列占到的最左 / 最右处（占位与歌词字取并集，同旧简谱引擎条目的 `entryBounds`）：展开档逐行装满按它判放不放得下（place/expand.ts::fillLines）
+  // 各列占到的最左 / 最右处（占位与歌词字取并集，同旧简谱引擎条目的 `entryBounds`）：投影档逐行装满按它判放不放得下（place/expand.ts::fillLines）
   const leftOf = new Map<PlacedItem, number>();
   const rightOf = new Map<PlacedItem, number>();
   let width = 0;

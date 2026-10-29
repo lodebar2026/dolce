@@ -103,8 +103,8 @@ The interface is available in **English and Chinese**: it follows your browser l
 
 **Typesetting**
 - **Four views:**
-  - *Expanded*: repeats and verses are unrolled pass by pass, one verse per slide, for projection.
-  - *Original*: laid out as printed, with verses stacked under the notes, for print.
+  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection.
+  - *Jianpu*: laid out as printed, with verses stacked under the notes, for print.
   - *Staff*: Western staff notation.
   - *Mixed*: staff notation with a jianpu layer on top.
 - **Phrase-aware re-layout.** Lines are re-broken using lyric punctuation and musical cues (fermatas, final
@@ -129,7 +129,7 @@ The interface is available in **English and Chinese**: it follows your browser l
   you are offered to restore it. With unsaved changes, opening another file, loading the sample, recognizing a new image
   or closing the window asks first.
 - **Export** depends on the view:
-  - Score image as laid out: **vector PPTX** in the Expanded view; every other view (jianpu Original, Staff / Mixed, recognition proofing) gives **PNG** on long-image paper or **PDF** on paged paper.
+  - Score image as laid out: **vector PPTX** in the Projection view; every other view (Jianpu, Staff / Mixed, recognition proofing) gives **PNG** on long-image paper or **PDF** on paged paper.
   - Also **MIDI**, **MusicXML** and (outside Staff / Mixed) **jianpu-ly text** (`.jly`).
   - Exported MIDI carries the lyrics, verse by verse in singing order, so it can go straight into a
     singing-voice synthesizer (e.g. X Studio).

@@ -10,7 +10,7 @@ export interface Hit {
   item: PageItem;
 }
 
-/** 同一元素的音符格与增时线格（展开档每遍各一组），按页面树顺序。 */
+/** 同一元素的音符格与增时线格（投影档每遍各一组），按页面树顺序。 */
 interface CellHit extends Hit {
   pass: number;
 }
@@ -175,7 +175,7 @@ export class ScoreIndex {
 
   /** 元素 `id` 第 `verse` 段歌词那个字（简谱：行内段序 0 起；五线谱 / 混排：源段号 1 起）。 */
   syllable(id: ElementId, verse = 0): Hit | null {
-    // 展开档同一个字每遍各画一次：取最后画的那个（索引一直是后来的盖前面的）
+    // 投影档同一个字每遍各画一次：取最后画的那个（索引一直是后来的盖前面的）
     const list = this.syllables.get(`${id}:${verse}`);
     return list?.[list.length - 1] ?? null;
   }

@@ -121,7 +121,7 @@ export function xmlTitleOf(song: Song): string {
 export interface JianpuInputOptions {
   /** 取第几首（`-----` 分出的多唱法）。默认第一首。 */
   song?: number;
-  /** 给展开档排版用（一遍一行词、只排 `parts[0]` 一条旋律）：
+  /** 给投影档排版用（一遍一行词、只排 `parts[0]` 一条旋律）：
    *  带歌词的声部排到 `parts[0]`；同一条曲行下段号重复的歌词行顺延成下一段（见 `distinctVerses`）。 */
   forExpanded?: boolean;
 }
@@ -399,7 +399,7 @@ function rowsPart(
       }
       for (const orn of el.ornaments) if (orn.name === "yc" || orn.name === "ycy") ch.fermata = true;
       if (decorate) decorateChord(ch, el);
-      // 倚音两档都画（用户定：展开档也保留倚音；`.jpwabc` 那一路本来就留着）
+      // 倚音两档都画（用户定：投影档也保留倚音；`.jpwabc` 那一路本来就留着）
       ch.graceNotes = graceNotesOf(el);
 
       ch.duration = nominal(ch);
@@ -421,7 +421,7 @@ function rowsPart(
 const ARTIC_OF_ORNAMENT: Readonly<Record<string, string>> = { zy: "accent", dy: "staccato", bc: "tenuto", hx: "breath" };
 
 /**
- * 原样档（`decorate`）才要的那几样：和弦、段落词、重音、力度/术语。展开档不画它们（投影片只要旋律与词）；倚音两档都画（见 `rowsPart`）。
+ * 简谱档（`decorate`）才要的那几样：和弦、段落词、重音、力度/术语。投影档不画它们（投影片只要旋律与词）；倚音两档都画（见 `rowsPart`）。
  * 只收引擎画得出的：奏法记号是重音、顿音、保持音、换气，其余 `&xx` 暂不出现。
  */
 function decorateChord(ch: JChord, el: NoteElement): void {
@@ -475,7 +475,7 @@ function attachLyrics(lyrics: readonly LyricLine[], cursors: number[], ch: JChor
 // ───────────────────────── `.jpwabc` ─────────────────────────
 //
 // 直接按模型小节建（`model/fromjpw.ts::jpwToScoreDoc` 已按原文小节切好）。口径：
-//   - 小节线一律不带样式（谱面画细线，曲末由 `final` 补粗）；反复、房号不画——展开档按演唱顺序逐遍铺开
+//   - 小节线一律不带样式（谱面画细线，曲末由 `final` 补粗）；反复、房号不画——投影档按演唱顺序逐遍铺开
 //   - 换行照原文位置：小节之间的记在下一小节的 `print` 上，小节中间的记在前一个和弦的 `lineBreakAfter` 上
 //   - 倚音挂到它后面那个音符上；没有和弦符号、力度、段落词
 //   - 曲首 `|:|` 连写不开空小节（`jpwToScoreDoc` 并进下一小节左线）

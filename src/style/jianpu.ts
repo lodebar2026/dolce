@@ -17,7 +17,7 @@ import { headerFontsOf } from "./header";
 import { resolveLength } from "./units";
 
 /** 标题/词曲字号 ÷ 音符字号（那两档不单独设标题与词曲，字号一改整块跟着缩放）。
- *  展开档取投影片出厂那三个数的比（48/28、36/28）；原样档照 500 首成书实测（标题 22.03、署名 10.98、音符 12.08）。 */
+ *  投影档取投影片出厂那三个数的比（48/28、36/28）；简谱档照 500 首成书实测（标题 22.03、署名 10.98、音符 12.08）。 */
 const HEAD_RATIOS = {
   pptx: { title: PPTX_PAGE.titleSize / PPTX_PAGE.fontSize, credit: PPTX_PAGE.creditSize / PPTX_PAGE.fontSize },
   original: { title: 22.03 / 12.08, credit: 10.98 / 12.08 },
@@ -42,7 +42,7 @@ function headRatios(sheet: StyleSheet): { title: number; credit: number } {
   return sheet.jianpu.preset === "original" ? HEAD_RATIOS.original : HEAD_RATIOS.pptx;
 }
 
-/** 字号标题、词曲的实际值：给了就用；原样档没给就按出厂比例派生。 */
+/** 字号标题、词曲的实际值：给了就用；简谱档没给就按出厂比例派生。 */
 export function jianpuSizes(sheet: StyleSheet): { fontSize: number; titleSize: number; creditSize: number } {
   const fontSize = jianpuFontSize(sheet);
   return {
@@ -78,7 +78,7 @@ export function jianpuStyleOf(sheet: StyleSheet): JianpuStyle {
       if (f.size !== undefined && (role === "subtitle" || role === "scripture")) st.header[role].size = f.size;
     }
     if (preset === "original") {
-      // 原样档的出厂值都在样式表里（`themes.ts` 的 print 主题，照 500 首、em 口径）：这里只把角色字号落进尺子。
+      // 简谱档的出厂值都在样式表里（`themes.ts` 的 print 主题，照 500 首、em 口径）：这里只把角色字号落进尺子。
       // 面板或谱里给了边距就用给的；没给仍是字号派生的那套（`defaultJianpuStyle`）
       const mg = pageMargins(sheet.page);
       if (mg) st.page.margin = { top: mg[0], right: mg[1], bottom: mg[2], left: mg[3] };
@@ -88,7 +88,7 @@ export function jianpuStyleOf(sheet: StyleSheet): JianpuStyle {
       st.size.verseNum = role("verseNum", st.size.verseNum);
       st.size.keyMeter = role("keyMeter", st.size.keyMeter);
       st.size.chord = role("chord", em * 0.6);
-      // 房号（一房、二房的括线与数字）：原样档按原谱排一遍，房号要印出来（展开档逐遍展开、不画）。字号同三连音数字（`tuplet` 角色）
+      // 房号（一房、二房的括线与数字）：简谱档按原谱排一遍，房号要印出来（投影档逐遍展开、不画）。字号同三连音数字（`tuplet` 角色）
       st.size.ending = role("tuplet", em * 0.65);
       st.size.sectionWord = role("sectionWord", st.size.chord);
       // 页眉 TL/TR 与页脚
@@ -151,15 +151,15 @@ function applyOverrides(st: JianpuStyle, sheet: StyleSheet): void {
 // 「PPT 版面」档：投影/导出 .pptx 用的那一档，编辑器的**默认档**。
 //
 // 底子是 2026-08 那次排版重构**之前**的观感（下面 `2a8aa85` 那一段），
-// 但已有几处**刻意背离**，都写在各自的赋值旁边：小节线的上下缘改用原样档那一份
+// 但已有几处**刻意背离**，都写在各自的赋值旁边：小节线的上下缘改用简谱档那一份
 // （老档矮三分之一，投影上看不出是小节线）、拍号比例跟着回默认、
 // 附点/高音点/低音点三种点统一成同一个半径。回归在 `scripts/pptx-check.mjs`。
 //
 // 为什么要有这一档：`editor/pptx.ts` 只是序列化器——它把排版好的页面树 1:1 翻成 OOXML
 // （1 排版单位 = 1pt），本身没有任何排版参数。于是谱面观感一改，导出的 .pptx 跟着改。
 //
-// 与「原样」档的另一处分工在 `editor/app.ts::_jianpuRequest`（按档取样式）：
-// **展开档逐段展开**（一段歌词一遍谱、一屏一段），原样档 `lyricStack > 0`
+// 与「简谱」档的另一处分工在 `editor/app.ts::_jianpuRequest`（按档取样式）：
+// **投影档逐段展开**（一段歌词一遍谱、一屏一段），简谱档 `lyricStack > 0`
 // **按原谱排一遍**、多段歌词叠在同一条谱行下。
 //
 // 基准是 `2a8aa85`（「新增 MusicXML 导出」，即观感大改 `29ae9dd` 的父提交）。
@@ -173,11 +173,11 @@ function applyOverrides(st: JianpuStyle, sheet: StyleSheet): void {
 function applyPptxPreset(st: JianpuStyle): void {
   const em = st.size.note;
 
-  // 音符数字**不加粗**：投影那一档的观感是既有的，原样档才照印刷谱加粗。
+  // 音符数字**不加粗**：投影那一档的观感是既有的，简谱档才照印刷谱加粗。
   st.look.noteBold = false;
 
   // **小节线的上下缘不再覆写**（用户口径：「PPT 模式的小节线有点短，用简谱模式的高度」）。
-  // 老展开档是 −23/28 em 与 +5/28 em（合起来正好 1 em），比今天的 −1 em / +1/3 em
+  // 老投影档是 −23/28 em 与 +5/28 em（合起来正好 1 em），比今天的 −1 em / +1/3 em
   // （合起来 4/3 em）矮三分之一；投影上那截线短得不像小节线。于是 H 回到 4/3 em，
   // 下面的拍号比例也跟着**回默认**——`TIME_SIG_DEFAULTS` 正好是老那四个数的 3/4
   // （0.75/0.1/0.625/0.375 × 3/4 = 0.5625/0.075/0.46875/0.28125），
@@ -188,10 +188,10 @@ function applyPptxPreset(st: JianpuStyle): void {
   st.stroke.finalBarline = 3.5;
 
   // 减时线：线宽 1.4（= em/20，量自 2019 年那批成品 .pptx；老档 1.25、今默认 1.5）。
-  // 落点与各引擎同一套等距叠层（engrave/stack.ts，用户定：展开档也不留旧式阶梯）。
+  // 落点与各引擎同一套等距叠层（engrave/stack.ts，用户定：投影档也不留旧式阶梯）。
   st.stroke.beam = em / 20;
 
-  // 临时记号小一号（用户口径：「展开档的升号偏大」）——投影的数字不加粗、字号大，照混排那个比例显得压过数字。
+  // 临时记号小一号（用户口径：「投影档的升号偏大」）——投影的数字不加粗、字号大，照混排那个比例显得压过数字。
   st.look.accidentalScale = 0.75;
 
   // 拍号只留分数线粗细（比例走默认，见上面小节线那一段）。

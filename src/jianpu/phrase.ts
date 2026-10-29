@@ -120,7 +120,7 @@ function indexAtTick(st: VoiceStream, tick: Fraction): number {
 }
 
 /** 量行长的尺子：量这份文档第 `song` 首各音的自然跨度（键是元素 id，按 id 对回断句输入）。
- *  `noPairs`：只用来判「放不放得下」、不许两句并一行（原样档：要的是一句一行，见 `App._fanqiePhraseMeasure`）。 */
+ *  `noPairs`：只用来判「放不放得下」、不许两句并一行（简谱档：要的是一句一行，见 `App._fanqiePhraseMeasure`）。 */
 export type FitMeasure = (doc: ScoreDoc, song: number) => {
   width: number; spans: ReadonlyMap<string | number, { x0: number; x1: number; x1b?: number }>; noPairs?: boolean;
 } | null;

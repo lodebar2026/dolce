@@ -69,7 +69,7 @@ export type LineMode = "original" | "phrase" | "bars";
 /** 文本谱的扩展名。`.txt` 太泛，靠 sniffDialect 兜底，认不出就不动。 */
 
 export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost, FileSwitchHost, VisualHost {
-  /** 预览排版器（唯一的 `ScorePainter`）：简谱原样 / 展开档、原样文档（文本谱与多声部）、五线谱 / 混排档
+  /** 预览排版器（唯一的 `ScorePainter`）：简谱 / 投影档、原样文档（文本谱与多声部）、五线谱 / 混排档
    *  都由它排、铺页、高亮。 */
   painter: ScorePainter;
   view!: EditorView;
@@ -85,7 +85,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   originalProfile: "print" | "slide" = "slide";
   /** 简谱版面档：`normal` = 当前观感；`pptx` = 排版重构之前的笔画（导出 PPTX 用的那一档）。 */
   jpProfile: JpProfileName = "pptx";
-  /** 最近一次排版用的 `.Layout` 分页描述（导出 PPTX 按展开档另排一遍时要用同一份）。 */
+  /** 最近一次排版用的 `.Layout` 分页描述（导出 PPTX 按投影档另排一遍时要用同一份）。 */
   private _breakDesc: string | null = null;
   /** 已解析出的文本谱方言，用于代码区标签（解析前未知）。 */
   private _fanqieDialect: Dialect | null = null;
@@ -116,7 +116,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
   /** 在途的五线谱 / 混排排版（异步），`whenIdle` 等它。 */
   private _pendingStaff: Promise<void> | null = null;
-  /** 排版模式切换（展开 / 原样 / 五线谱 / 混排）的四个按钮，见 `ViewMode`。 */
+  /** 排版模式切换（投影 / 简谱 / 五线谱 / 混排）的四个按钮，见 `ViewMode`。 */
   private _viewBtns = new Map<ViewMode, HTMLButtonElement>();
   private _viewSwitchEl: HTMLElement | null = null;
   /** `.musicxml` 读不出来时五线谱/混排两档置灰；文本格式一律可点（派生失败在点的时候报）。 */
@@ -154,7 +154,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     await this.promptMusicXmlImport();
   }
 
-  /** 原样档换纸（「长图」也是其中一档）。 */
+  /** 简谱档换纸（「长图」也是其中一档）。 */
   setJpPaper(paper: string): void {
     this.applyRenderSettings({ jpPaper: paper });
   }
@@ -188,7 +188,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.scorePane = scorePane;
   }
 
-  /** 简谱版面切换（原版 / PPT）。展开档 = 2026-08 排版重构之前的笔画观感，
+  /** 简谱版面切换（原版 / PPT）。投影档 = 2026-08 排版重构之前的笔画观感，
    *  也是「导出 PPTX」用的那一档，见 style/jianpu.ts 的 `pptx` 预设。 */
   setJpProfile(profile: JpProfileName): void {
     if (this.jpProfile === profile) return;
@@ -412,7 +412,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 简谱视图此刻会排出的各行首音（和弦 id），五线谱自动铺排拿它当优选断点（`xmlproject.ts::applyLineStarts`）。
    *  另造一个排版器按当前档与纸排一遍，不动屏幕上那个（混排档里屏幕上那个可能还是旧文本排的）。
-   *  文本谱、MusicXML 与多声部的原样档返回 null：那一路一行就是 `ScoreDoc` 里的一行，不用另给。 */
+   *  文本谱、MusicXML 与多声部的简谱档返回 null：那一路一行就是 `ScoreDoc` 里的一行，不用另给。 */
   jianpuLineStarts(): ReadonlySet<number> | null {
     try {
       let req: SyncPaintRequest | null;
@@ -535,7 +535,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return true;
   }
 
-  /** 展开档的排版请求（导出 PPTX 在别的档另排一份用，`export.ts::pptxPainter`）。没有曲行时返回 null。 */
+  /** 投影档的排版请求（导出 PPTX 在别的档另排一份用，`export.ts::pptxPainter`）。没有曲行时返回 null。 */
   expandedRequest(): SyncPaintRequest | null {
     const style = this.style.styleOf("expanded");
     const src = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
@@ -544,7 +544,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return { view: "expanded", doc: this._expandedDoc(src), style };
   }
 
-  /** 原样档的排版请求（导出 PNG/PDF 在别的档——识别模式、混排——另排一份用，`export.ts::originalPainter`）。没有文档时返回 null。 */
+  /** 简谱档的排版请求（导出 PNG/PDF 在别的档——识别模式、混排——另排一份用，`export.ts::originalPainter`）。没有文档时返回 null。 */
   originalRequest(): SyncPaintRequest | null {
     const style = this.style.styleOf("original");
     if (this.docFormat === "jpwabc") return this._jpwDoc ? { view: "original", doc: this._jpwDoc, style, breakDesc: this._breakDesc } : null;
@@ -552,12 +552,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return doc ? { view: "original", doc, style } : null;
   }
 
-  /** 原样档的纸是不是长图（导出给 PNG 还是 PDF 按它分）。 */
+  /** 简谱档的纸是不是长图（导出给 PNG 还是 PDF 按它分）。 */
   get jpLongImage(): boolean {
     return resolvePaper(this.style.styleOf("original").page) === null;
   }
 
-  /** 展开档排的那份文档：MusicXML 按声部面板换旋律声部与歌词来源（元素 id 不变）。 */
+  /** 投影档排的那份文档：MusicXML 按声部面板换旋律声部与歌词来源（元素 id 不变）。 */
   private _expandedDoc(doc: ScoreDoc): ScoreDoc {
     if (this.docFormat !== "musicxml") return doc;
     const lyr = this.lyricPart !== null ? withLyricsFrom(doc, this.lyricPart, this.melodyPart) : doc;
@@ -782,7 +782,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.adapter.profileKnob === "original") this.reload(this.getText());
   }
 
-  /** 当前档下切「展开」/「原样」该做什么——按文档格式分派：文本谱换整套 metrics
+  /** 当前档下切「投影」/「简谱」该做什么——按文档格式分派：文本谱换整套 metrics
    *  （print/slide），简谱只换笔画常量（normal/pptx）。 */
   setProfile(slide: boolean): void {
     if (this.adapter.profileKnob === "original") this.setOriginalProfile(slide ? "slide" : "print");
@@ -1021,7 +1021,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** PlaybackHost：当前该播的谱，由 ScoreDoc 拼。试听与导出 MIDI 都读它。
    *  MusicXML 形状（`.musicxml`、ABC 回落）带全部声部、voice 与力度；简谱形状（文本谱/123/ABC/`.jpwabc`）
-   *  **不论屏幕在哪一档都按展开档的口径**（`forExpanded`：带歌词的声部当主旋律、同号歌词顺延）——
+   *  **不论屏幕在哪一档都按投影档的口径**（`forExpanded`：带歌词的声部当主旋律、同号歌词顺延）——
    *  唱几遍、每遍唱哪段词不随视图变，导出的 MIDI 在哪一档导都一样。 */
   playable(): PlaySource | null {
     // 五线谱 / 混排播画出来的那份（`mixedDoc`），元素 id 与五线谱上的和弦组对得上
@@ -1377,7 +1377,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._documentLoaded();
     const losses = planSave(doc, "123");
     this.mixed._dropMixedDoc();
-    this._setMode("jp"); // omrctl 接着切原样档、按用户选过的核对方式进（没选过就并排原图，`enterAfterRecognize`）
+    this._setMode("jp"); // omrctl 接着切简谱档、按用户选过的核对方式进（没选过就并排原图，`enterAfterRecognize`）
     this._setDocFormat("123");
     this.filePath = null;
     this.setText(text);
@@ -1465,8 +1465,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 每次重排/重渲染后同步乐句重排的基准文本与按钮可用性。
    *
-   *  **用户手改过的文本就是新的「原样」基准**（切回按钮要还原到它）。重排后又手改的，
-   *  也按「这就是新的原样」算——否则一按「原样」就把用户后来的编辑抹了。 */
+   *  **用户手改过的文本就是新的「原始排版」基准**（切回按钮要还原到它）。重排后又手改的，
+   *  也按「这就是新的原始排版」算——否则一按「原始排版」就把用户后来的编辑抹了。 */
   private _syncPhraseBase(text: string): void {
     if (!this.adapter.caps.phraseRelayout) {
       this._disablePhrase();
@@ -1547,10 +1547,10 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /**
    * 「按乐句重排」「每行 N 小节」：**重排的是原文本身**，两档因此同时就位——文本谱一行 `Q:`（123 一个 `$`）
-   * 就是谱面一行，展开档的行边界由 `jianpu/jianpuinput.ts` 转成换行条目。怎么写回原文由各格式
+   * 就是谱面一行，投影档的行边界由 `jianpu/jianpuinput.ts` 转成换行条目。怎么写回原文由各格式
    * 的适配器给（`editor/formats.ts::relayoutText`）。
    * 两种重排都从**重排前那份原文**起算（互切、改 N 都不在重排结果上再排）；
-   * 切回「原样」= 把那份原文放回去（逐字相同，Ctrl+Z 也能整体撤销）。
+   * 切回「原始排版」= 把那份原文放回去（逐字相同，Ctrl+Z 也能整体撤销）。
    */
   private _setLineMode(mode: LineMode, n?: number): void {
     const bars = n ?? this._barsN;
@@ -1601,11 +1601,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /**
    * 乐句重排的行长尺子：按当前档的纸、字号与样式量自然宽（`painter.ts::measureDocument`，与真正排版同一个引擎）。
-   * 各格式同一把（`.jpwabc`、文本谱也量）——不量的那份乐句行在原样档放不下，排版器整首按宽度重断，乐句全丢，
+   * 各格式同一把（`.jpwabc`、文本谱也量）——不量的那份乐句行在简谱档放不下，排版器整首按宽度重断，乐句全丢，
    * 几种格式就排得不一样了（「脚步」）。
    *
-   * 原样档的尺子**只判放不放得下**（`noPairs`）：要的是一句一行，印刷原版就这样；让它并两句的话
-   * 会以为「两句并一行还宽绰」，73《我主耶稣是生命源》一行排了 8 小节。多声部的原样档不给尺子（文本谱多声部不重断）。
+   * 简谱档的尺子**只判放不放得下**（`noPairs`）：要的是一句一行，印刷原版就这样；让它并两句的话
+   * 会以为「两句并一行还宽绰」，73《我主耶稣是生命源》一行排了 8 小节。多声部的简谱档不给尺子（文本谱多声部不重断）。
    */
   private _fanqiePhraseMeasure(): FitMeasure | null {
     const view = this.layoutMode;
@@ -1689,7 +1689,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
   }
 
-  /** 注册「展开 / 原样 / 五线谱 / 混排」四档排版模式按钮。
+  /** 注册「投影 / 简谱 / 五线谱 / 混排」四档排版模式按钮。
    *
    *  这四档是**两组正交状态的组合**，不是四个独立视图：
    *  前两档走简谱/文本谱排版器（`mode = "jp"`），差别只在版面档（`setProfile`）；

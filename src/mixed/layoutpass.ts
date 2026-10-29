@@ -1214,7 +1214,7 @@ function autoLayoutHeader(score: StaffLayout): void {
     yTop += tenths(titleFs) * 0.4;
   }
   // 标题下依次：副标题 → 题下经文（居中小字）→ 其余 credit（作词/作曲…，**靠右**，右缘对版心右缘），各自按原顺序。
-  // 署名靠右与简谱原样档的页眉同一个排法（`layout/jianpu/place/header.ts::placeHeader`，照 500 首）
+  // 署名靠右与简谱档的页眉同一个排法（`layout/jianpu/place/header.ts::placeHeader`，照 500 首）
   const push = (text: string, type: string | null, fs: number, right = false): void => {
     yTop += tenths(fs) * 1.3;
     creds.push({

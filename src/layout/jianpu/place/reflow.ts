@@ -7,7 +7,7 @@ import type { InkMeasurer, PlacedItem } from "./model";
 import { assignLyrics, layoutVoiceLine } from "./voice";
 
 /**
- * **窄纸整首重新断行的断点**（原样档放不下时用，见 `compose/index.ts::layoutJianpu`）。
+ * **窄纸整首重新断行的断点**（简谱档放不下时用，见 `compose/index.ts::layoutJianpu`）。
  *
  * 原样文档照源里的行排（「原版」的意义），版心够宽时不动：每组按**自然宽**（紧排 + 歌词避让，不两端对齐，
  * 与排版同一个 `spacing.ts`）量出所需宽度，全都放得进版心就返回 null。有一组放不下（500 首那张 150×216mm 纸上，原版按 1000 宽长图写的行），

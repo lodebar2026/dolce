@@ -112,11 +112,11 @@ export interface RoleDecl {
 
 /** 纸：`.ss` 的 `@page`，键一套（`paper orientation size margin mirror ink background`），各排版器各取所需。 */
 export interface PageDecl {
-  /** 实际纸张（原样档、五线谱/混排）。`style/paper.ts::CUSTOM_PAPER`（「自定义」）时尺寸在 `size`（谱里自带的非标准纸）。 */
+  /** 实际纸张（简谱档、五线谱/混排）。`style/paper.ts::CUSTOM_PAPER`（「自定义」）时尺寸在 `size`（谱里自带的非标准纸）。 */
   paper?: string;
   /** 纸的方向。缺省竖放；横放 = 宽高对调（`style/paper.ts::resolvePaper`）。 */
   orientation?: "portrait" | "landscape";
-  /** 尺寸 `宽 高`：展开档的投影片（pt）、自定义纸（pt）、歌本的纸（混排歌本是 tenths，成书是 pt）。 */
+  /** 尺寸 `宽 高`：投影档的投影片（pt）、自定义纸（pt）、歌本的纸（混排歌本是 tenths，成书是 pt）。 */
   size?: [number, number];
   /** 前景色（谱面笔画与文字），ARGB。 */
   ink?: number;

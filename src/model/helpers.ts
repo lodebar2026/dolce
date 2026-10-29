@@ -146,10 +146,10 @@ export function sectionWordOf(text: string | undefined): string | null {
 
 /**
  * 这一小节的段落标记（Intro/Verse/Chorus…），没有返回 null。**各格式同一个判据**，按乐句排版的段界、
- * 展开档副歌前换页都从这里读：MusicXML 的 `<rehearsal>` / 段落词 `<words>` 在 `Measure.directions` 上，
+ * 投影档副歌前换页都从这里读：MusicXML 的 `<rehearsal>` / 段落词 `<words>` 在 `Measure.directions` 上，
  * 123/ABC（`"^Chorus"`）与文本谱的段落注记在和弦（或增时线）的 `sectionWord` 上。
  * 标记具体挂在哪个音上不作数（常挂在下一段的弱起、甚至上一句收尾那个音上）：消费者只把它当大致位置，
- * 真正的段界由断句按乐句定（`phrase.ts::aroundSectionPickup`）、展开档就近对到行首。
+ * 真正的段界由断句按乐句定（`phrase.ts::aroundSectionPickup`）、投影档就近对到行首。
  *
  * 给了 `prev`（上一小节）时按小节分清：**写在小节所有音之后**的 `<direction>`（`afterElements` 到了小节末）
  * 标的是下一小节——433《福杯满溢》的「（副歌）」写在主歌末小节「福 无 边。」之后，算在那一小节上，

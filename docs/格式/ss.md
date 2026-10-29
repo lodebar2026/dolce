@@ -57,7 +57,7 @@
 
 | 块 | 管什么 | 各模式落到 |
 |---|---|---|
-| `@jianpu` | **简谱内容**：减时线、八度点、附点、简谱调号拍号、歌词开关 | 展开 / 原样 / 成书 → `JianpuStyle`；混排 → `MixedOptions` 的简谱层 |
+| `@jianpu` | **简谱内容**：减时线、八度点、附点、简谱调号拍号、歌词开关 | 投影 / 简谱 / 成书 → `JianpuStyle`；混排 → `MixedOptions` 的简谱层 |
 | `@staff` | **五线谱内容**：谱表、符干符杠、小节线、和弦、SMuFL 记号 | 五线谱 / 混排 → `MixedOptions` |
 
 混排里的那层简谱也归 `@jianpu`——写样式表不必知道内部是哪个排版器在跑。模式差异用 `@media (mode: …)` 限定。
@@ -75,7 +75,7 @@
 - 长度可以写常量四则，常见分数照写：`barline: 1em / 14;`（解析时折成一个长度）。
 - 长度：`@staff` 与混排下的 `@jianpu` 裸数字是 tenths，带单位只收 `em`（= `smufl` 字号，出厂 40 tenths）/ `sp`（= 10 tenths）；
   纯简谱下 `em` = 音符字号，`sp` = 名义谱高 / 4。纯简谱的角色字号（`lyric` `chord` `title` `credit` `tuplet` `sectionWord`…）也可以写 `em`，
-  同样是音符字号的几倍，折成 pt 落到整数或 .5（原样档的出厂值就这么写，见 `style/themes.ts` 的 print 主题）。
+  同样是音符字号的几倍，折成 pt 落到整数或 .5（简谱档的出厂值就这么写，见 `style/themes.ts` 的 print 主题）。
 - 名字相近、意思不同的几对：`lyric-gap` 是相邻歌词字的**横向**最小间隙，`lyric-baseline` 是音符基线到第一行歌词基线的**竖向**距离；
   `system-spread` 是按纸均分谱行时行距的上限（简谱引擎、成书），`system-gap` 是末行歌词基线到下一组音符基线（原样文档）。
   弧高上下限 `slur-max-arc` / `slur-min-arc` 写**弧顶**高。
@@ -120,9 +120,9 @@
 
 | 键 | 值 | 谁读 |
 |---|---|---|
-| `paper` | 纸名（`themes.ts::PAPER_SIZES` 的键，「长图」「自定义」也在内） | 编辑器三档（原样、五线谱/混排） |
+| `paper` | 纸名（`themes.ts::PAPER_SIZES` 的键，「长图」「自定义」也在内） | 编辑器三档（简谱、五线谱/混排） |
 | `orientation` | `portrait` \| `landscape` | 同上，横放 = 宽高对调 |
-| `size` | `宽 高` | 展开档的投影片、`paper: 自定义` 的尺寸（pt）；歌本的纸（混排歌本 tenths、成书 pt） |
+| `size` | `宽 高` | 投影档的投影片、`paper: 自定义` 的尺寸（pt）；歌本的纸（混排歌本 tenths、成书 pt） |
 | `margin` | 一个数 \| `上 外 下 内` | 编辑器按 `上 右 下 左`；成书按 `上 外 下 内` 配 `mirror` |
 | `mirror` | `true` \| `false` | 成书：对开页镜像，奇数页内侧（装订边）在左 |
 | `ink` / `background` | 颜色 | 前景（谱面笔画与文字）/ 纸色 |
@@ -146,7 +146,7 @@ credit, rights { font: hei-light; size: 8pt; features: hwid; }
 **排版器自带的那几支字也由角色换**（对照表 `src/style/keys.ts::ROLE_FONTS`）。`font` / `family` / `weight` 在各模式都生效；
 字号在纯简谱下仍走 `note { size }` 那一路（由它派生间距），混排里 `note { size }` 改简谱层字号、谱表上缩小的那支随谱高派生：
 
-| 角色 | 纯简谱（展开 / 原样） | 五线谱 / 混排 |
+| 角色 | 纯简谱（投影 / 简谱） | 五线谱 / 混排 |
 |---|---|---|
 | `note` | 音符数字 | 简谱层数字（谱表上那层按 `staff-height / 40` 缩小，自动跟随） |
 | `lyric` | 歌词 | —（混排歌词字体由 MusicXML `<defaults>` 给） |
@@ -317,7 +317,7 @@ block 用 `line-height`（倍数）那两套已经合并——同一件事分两
 
 ## 9. 示例
 
-原样档的出厂数值与页脚区域都写在 `style/themes.ts` 的 print 主题里。三份歌本样式在本地私有仓库（都能被 `../dev/scripts/ss-roundtrip.mjs` 解析、写出、再解析）：
+简谱档的出厂数值与页脚区域都写在 `style/themes.ts` 的 print 主题里。三份歌本样式在本地私有仓库（都能被 `../dev/scripts/ss-roundtrip.mjs` 解析、写出、再解析）：
 
 - `hymn500-measured.ss`：统计生成的实测部分（纸、字体、角色、`@jianpu` / `@break` / `@flow`、`@toc` 目录几何）。
 - `hymn500.ss`：fixed 区域（基线写实测数）+ `key-meter()` 组件（避让首行和弦）。

@@ -1482,7 +1482,7 @@ export function parseAbcFamily(
     for (const part of song.parts) applyTupletTimeMods(marks, part.measures.flatMap((m) => m.elements));
     if (rawPlay.length) song.playOrder = resolvePlayOrder(song, rawPlay);
     // `%%score [1 2]` / `{1 2}`（ABC §11.1）：声部分组的括号。原文仍留在 `style.raw` 里（写回照原样），
-    // 这里只把最外层的 `[…]`（bracket）`{…}`（brace）落成 `partGroups`，五线谱、原样档据此画括号
+    // 这里只把最外层的 `[…]`（bracket）`{…}`（brace）落成 `partGroups`，五线谱、简谱档据此画括号
     const sc = song.style?.raw?.find((r) => r.key === "score");
     if (sc) {
       const groups = scorePartGroups(sc.value, (id) => {

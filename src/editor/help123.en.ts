@@ -63,7 +63,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
   {
     title: "First and second endings",
     body: [
-      "`[1` marks the first-time ending and `[2` the second (as in ABC). Multiple passes are written `[1,3` or `[1-3`. The As-printed view draws volta brackets; the Expanded view unrolls each pass instead.",
+      "`[1` marks the first-time ending and `[2` the second (as in ABC). Multiple passes are written `[1,3` or `[1-3`. The Jianpu view draws volta brackets; the Projection view unrolls each pass instead.",
       "Note that `|1` is also a first ending in ABC, so leave a space when a digit follows a barline: `| 1`.",
     ],
   },

@@ -12,7 +12,7 @@ export interface SystemBlock {
   top: number;
   /** 占位盒下缘 */
   bottom: number;
-  /** 本块必须另起一页（展开档逐遍换页、源里的 `[fenye]`、`.Layout` 的强制分页） */
+  /** 本块必须另起一页（投影档逐遍换页、源里的 `[fenye]`、`.Layout` 的强制分页） */
   breakBefore?: boolean;
 }
 

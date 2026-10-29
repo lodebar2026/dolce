@@ -150,9 +150,9 @@ export interface PlacedPage {
   firstOfSong: boolean;
   /** 连续长图把多首接成一页时，后面各首的页眉整块下移多少（`place/song.ts::layoutDocument`）；首曲的页眉照 firstOfSong 画 */
   headers?: Array<{ song: number; dy: number }>;
-  /** 展开档的标题页（没有谱行，`compose` 按 `placeTitlePage` 画） */
+  /** 投影档的标题页（没有谱行，`compose` 按 `placeTitlePage` 画） */
   titlePage?: true;
-  /** 展开档、成书：本页各谱行占位盒高之和 + 行距下限（不摊开时的自然高） */
+  /** 投影档、成书：本页各谱行占位盒高之和 + 行距下限（不摊开时的自然高） */
   natural?: number;
 }
 
@@ -194,7 +194,7 @@ export interface InkMeasurer {
   text(str: string, role: InkTextRole): { advance: number; ink: Rect };
   /** 段落词（歌词字、段落词字号，标点挤压同 `sectionWordRun`）：量宽、逐字笔位与墨迹盒（相对落笔原点、基线 y = 0） */
   sectionWord(str: string): { advance: number; xs: number[] | null; ink: Rect };
-  /** 数字 / 歌词字体的字体盒上下缘（相对基线，上为负）：展开档照旧简谱引擎谱行包围盒码页用（`song.ts::slideBlock`） */
+  /** 数字 / 歌词字体的字体盒上下缘（相对基线，上为负）：投影档照旧简谱引擎谱行包围盒码页用（`song.ts::slideBlock`） */
   fontBox(face: "note" | "lyric"): { top: number; bottom: number };
   /** SMuFL 字形的墨迹盒（相对落笔原点、基线 y = 0）：按字形量，不用 4 em 的字体盒 */
   smufl(glyph: string, size: number): Rect;

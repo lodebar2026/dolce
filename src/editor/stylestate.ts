@@ -1,7 +1,7 @@
 // 渲染设置（应用级，不属于文档）：一律经样式层（`src/style/`）。
 //
 // 级联：内置主题 → 诗集样式表（歌本 `.ss`）→ 曲内层（谱里自带的纸与页眉字体）→ 用户层（设置面板）。
-// 用户层每个主题一层规则，展开 / 原样 / 五线谱各记一套，页眉四项各档共用一层。
+// 用户层每个主题一层规则，投影 / 简谱 / 五线谱各记一套，页眉四项各档共用一层。
 // 这里只管「样式表怎么算、面板的值落到哪条规则」；重排、持久化、纸底色这些副作用在 App（`applyRenderSettings` 等）。
 
 import type { ScoreDoc } from "../model/doc";
@@ -21,7 +21,7 @@ import { dirOf, editorRules, findBookSheet, registerFontFaces, relativePath, typ
 import { isTauriRuntime } from "./fileio";
 import type { DocFormatId, FormatAdapter } from "./formats";
 
-/** 有纸张设置的两把尺子：简谱原样档、五线谱/混排。 */
+/** 有纸张设置的两把尺子：简谱档、五线谱/混排。 */
 export type PaperEngine = "jianpu" | "staff";
 /** 纸张栏的一次选择：纸名 + 方向 + 边距（`[上, 右, 下, 左]` pt，null = 自动），或跟随文件。 */
 export type PaperChoice = "follow" | { paper: string; orientation: "portrait" | "landscape"; margin: number[] | null };
@@ -34,7 +34,7 @@ export interface RenderSettings {
   /** 五线谱/混排的谱表大小（mm）与歌词字号（pt）；null = 跟随文件 / 出厂。 */
   staffSize?: { mm?: number | null; lyricPt?: number | null };
   fontSize?: number; titleSize?: number; creditSize?: number; color?: number; bgColor?: number;
-  /** 原样档的音符字体（`NOTE_FONTS` 的 id，空串 = 默认）、和弦升降号写在前后（空串 = 照原文）。 */
+  /** 简谱档的音符字体（`NOTE_FONTS` 的 id，空串 = 默认）、和弦升降号写在前后（空串 = 照原文）。 */
   noteFont?: string; chordAccidental?: "" | "before" | "after";
 }
 
@@ -57,13 +57,13 @@ export interface StyleStateHost {
 export class StyleState {
   constructor(private readonly host: StyleStateHost) {}
 
-  /** 用户层：每个主题一层规则，**两档各记一套**（用户口径：「区分 展开/原样的字号设置」）。
+  /** 用户层：每个主题一层规则，**两档各记一套**（用户口径：「区分 投影/简谱的字号设置」）。
    *  同一档里各格式共用一套（字号、纸、配色），规则不带限定。 */
   layers: Record<"projection" | "print" | "staff" | "header", StyleRule[]> = { projection: [], print: [], staff: [], header: [] };
   // `header`：页眉四项（标题/副标题/经文/词曲作者）的字体字号，**各档共用一份**，叠在各档用户层之上（`style/header.ts`）
 
   /** 某一档、某把尺子看到的 computed 样式表（内置主题 → 曲内层 → 用户层）。
-   *  曲内层（谱里自带的纸，`style/paper.ts`）只垫在原样档下面：展开档是投影片，不认纸。 */
+   *  曲内层（谱里自带的纸，`style/paper.ts`）只垫在简谱档下面：投影档是投影片，不认纸。 */
   styleOf(mode: JianpuLayoutMode): StyleSheet {
     const theme = themeOfMode(mode);
     const page = theme === "print" && !this.userSetsPaper("jianpu") ? this._docLayer() : [];
@@ -74,7 +74,7 @@ export class StyleState {
   }
 
   /** 五线谱/混排看到的 computed 样式表（主题 staff → 曲内层 → 它自己那层用户规则）。
-   *  **纸不借简谱原样档的**：那边出厂是长图，五线谱排成长图就是一张 1000pt 宽的扁图。 */
+   *  **纸不借简谱档的**：那边出厂是长图，五线谱排成长图就是一张 1000pt 宽的扁图。 */
   staffStyle(): StyleSheet {
     const page = this.userSetsPaper("staff") ? [] : this._docLayer();
     return computeStyleForPaper(
@@ -191,7 +191,7 @@ export class StyleState {
 
   /** 页眉四项现在的字体：谱里自带的（「跟随文件」显示用）、用户设的、算出来实际用的（当前档）。 */
   headerState(): { doc: HeaderFonts; user: HeaderFonts } {
-    // 按当前档看：转换带来的字号只记在原样与五线谱两档（见 `carryHeaderFonts`），展开档看不到
+    // 按当前档看：转换带来的字号只记在原样与五线谱两档（见 `carryHeaderFonts`），投影档看不到
     const mode = this.host.mode === "mixed" ? "staff" : this.host.layoutMode;
     const doc = this._docHeaderLayer(mode !== "expanded");
     return {
@@ -201,7 +201,7 @@ export class StyleState {
   }
 
   /** 转成 `.jpwabc` / 文本谱（没有页眉字体字段）时把谱里的页眉字体记进设置：族各档共用；
-   *  字号只记原样与五线谱两档——印刷纸上的字号搬到展开档的投影片上太小（与「跟随文件」同一口径）。 */
+   *  字号只记简谱与五线谱两档——印刷纸上的字号搬到投影档的投影片上太小（与「跟随文件」同一口径）。 */
   carryHeaderFonts(fonts: Partial<Record<HeaderRole, { family?: string; size?: number; bold?: boolean }>>): void {
     const roles = Object.entries(fonts) as [HeaderRole, { family?: string; size?: number; bold?: boolean }][];
     if (!roles.length) return;
@@ -304,13 +304,13 @@ export class StyleState {
     }
   }
 
-  /** 原样档用户层里的音符字体（`NOTE_FONTS` 的 id；空串 = 没设、按主题默认）。 */
+  /** 简谱档用户层里的音符字体（`NOTE_FONTS` 的 id；空串 = 没设、按主题默认）。 */
   get noteFont(): string {
     const fam = computeStyle([this.layers.print], { mode: "original", engine: "jianpu" }).roles.note?.family;
     return NOTE_FONTS.find((f) => f.family === fam)?.id ?? "";
   }
 
-  /** 原样档用户层里和弦升降号的写法（空串 = 没设、照原文）。 */
+  /** 简谱档用户层里和弦升降号的写法（空串 = 没设、照原文）。 */
   get chordAccidental(): "" | "before" | "after" {
     const v: unknown = computeStyle([this.layers.print], { mode: "original", engine: "jianpu" }).jianpu.overrides?.["accidental-side"];
     return v === "before" || v === "after" ? v : "";
@@ -330,7 +330,7 @@ export class StyleState {
     if (f) this._setStyle("original", { roles: { note: { family: f.family } } });
   }
 
-  /** 原样档用户层的一个 `@jianpu` 键：给值就写，`undefined` 就从各条规则里删掉。 */
+  /** 简谱档用户层的一个 `@jianpu` 键：给值就写，`undefined` 就从各条规则里删掉。 */
   private _setPrintOverride(key: string, v: string | boolean | undefined): void {
     this.layers.print = this.layers.print.map((r) => {
       const ov = r.set.jianpu?.overrides;
@@ -348,14 +348,14 @@ export class StyleState {
     this.layers[theme] = upsertRule(this.layers[theme], undefined, set);
   }
 
-  /** 展开档的投影片尺寸（`PAGE_RATIOS` 那几张）。 */
+  /** 投影档的投影片尺寸（`PAGE_RATIOS` 那几张）。 */
   get pageW(): number {
     return this.styleOf("expanded").page.size?.[0] ?? PAGE_RATIOS["16:9"][0];
   }
   get pageH(): number {
     return this.styleOf("expanded").page.size?.[1] ?? PAGE_RATIOS["16:9"][1];
   }
-  /** 当前档的简谱字号（展开档三个都能调；原样档**只调基础字号**，标题与词曲按出厂比例派生，见 `style/jianpu.ts`）。
+  /** 当前档的简谱字号（投影档三个都能调；简谱档**只调基础字号**，标题与词曲按出厂比例派生，见 `style/jianpu.ts`）。
    *  排版器、设置面板、帮助示例都只认「当前档」。 */
   get fontSize(): number {
     return jianpuSizes(this.styleOf(this.host.layoutMode)).fontSize;
@@ -366,8 +366,8 @@ export class StyleState {
   get creditSize(): number {
     return jianpuSizes(this.styleOf(this.host.layoutMode)).creditSize;
   }
-  /** 当前档实际排版用的那张纸。展开档就是 `pageW`/`pageH` 那张投影片；原样档宽度锁定、
-   *  原样档取 `PAPER_SIZES` 里那张实际纸（长图那一档不分页，返回的高度只是个占位）。
+  /** 当前档实际排版用的那张纸。投影档就是 `pageW`/`pageH` 那张投影片；简谱档宽度锁定、
+   *  简谱档取 `PAPER_SIZES` 里那张实际纸（长图那一档不分页，返回的高度只是个占位）。
    *  排版、分行度量（`_phraseFit`）都认它——两处若各用各的纸，行长会按 A 张纸算、
    *  按 B 张纸排。 */
   get layoutPage(): { w: number; h: number } {
@@ -378,7 +378,7 @@ export class StyleState {
     return paper;
   }
 
-  /** 前景色（谱面笔画/文字）与背景色（纸张）。档指的是「展开 / 原样」那一对排版方式，
+  /** 前景色（谱面笔画/文字）与背景色（纸张）。档指的是「投影 / 简谱」那一对排版方式，
    *  跨文档格式——`.jpwabc` 与文本谱在同一档下共用同一份色。
    *  背景色只作用于「纸」（预览页的底、导出 PNG 的底、PPTX 的幻灯片底），排版器不认识它。 */
   get color(): number {
@@ -387,16 +387,16 @@ export class StyleState {
   get bgColor(): number {
     return this.colorsOf(this.host.layoutMode).bg;
   }
-  /** 某一档的配色。导出 PPTX 要按 **展开档**另排一遍，用的就得是那一档的色。 */
+  /** 某一档的配色。导出 PPTX 要按 **投影档**另排一遍，用的就得是那一档的色。 */
   colorsOf(mode: JianpuLayoutMode): { fg: number; bg: number } {
     const page = this.styleOf(mode).page;
     return { fg: page.ink ?? 0xff000000, bg: page.background ?? 0xffffffff };
   }
-  /** 原样档的纸（键取自 `PAPER_SIZES`，「长图」是其中一档）。 */
+  /** 简谱档的纸（键取自 `PAPER_SIZES`，「长图」是其中一档）。 */
   get jpPaper(): string {
     return this.styleOf("original").page.paper ?? "长图";
   }
-  /** 字号落到**当前档**那一套里。原样档只收基础字号——那一档的标题/词曲是派生的，
+  /** 字号落到**当前档**那一套里。简谱档只收基础字号——那一档的标题/词曲是派生的，
    *  面板上根本不显示（见 editor/dialogs.ts），收了也只会被下一次派生覆盖掉。 */
   private _applySizes(mode: JianpuLayoutMode, opts: { fontSize?: number; titleSize?: number; creditSize?: number }): void {
     if (mode === "original") {
@@ -411,13 +411,13 @@ export class StyleState {
   }
 
   /** 面板那几项设置落进**样式层的用户层**（重排、持久化由 `App.applyRenderSettings` 接着做）。
-   *  纸与字号按档、按格式分开记；配色按档记；投影片比例只归展开档。 */
+   *  纸与字号按档、按格式分开记；配色按档记；投影片比例只归投影档。 */
   apply(opts: RenderSettings): void {
     const mode = this.host.layoutMode;
     if (opts.pageW || opts.pageH) {
       this._setStyle("expanded", { page: { size: [opts.pageW || this.pageW, opts.pageH || this.pageH] } });
     }
-    // 原样档的纸要在重排之前定好——排版时按长图灌 continuousPage
+    // 简谱档的纸要在重排之前定好——排版时按长图灌 continuousPage
     if (opts.jpPaper && isPaper(opts.jpPaper)) this._setStyle("original", { page: { paper: opts.jpPaper } });
     if (opts.staffPaper && isPaper(opts.staffPaper)) this.layers.staff = upsertRule(this.layers.staff, undefined, { page: { paper: opts.staffPaper } });
     for (const [engine, choice] of Object.entries(opts.paper ?? {}) as [PaperEngine, PaperChoice][]) this.setPaper(engine, choice);

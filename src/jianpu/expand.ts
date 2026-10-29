@@ -3,11 +3,11 @@
 // 「这首歌该唱成什么样」由 `score/playorder.ts` 从 `ScoreDoc` 推（反复与跳转 / `.Repeat` 段），
 // 两种格式都拿到同一种 `PlayItem[]`；这里只负责**怎么走**——逐遍、逐小节、首尾小节的裁切、
 // 遍末换页。「怎么放一个小节」由 sink 决定：排版往 Line 里装小节（layout.ts::buildLine）。
-// 展开档各格式投影成同一种引擎输入，走的是同一条路（jianpu/expanded.ts）。
+// 投影档各格式投影成同一种引擎输入，走的是同一条路（jianpu/expanded.ts）。
 
 import { PlayItem } from "../score/playorder";
 
-/** 原样档：按原谱排一遍——一小节一项、pass = 0（多段歌词叠排、不展开任何反复）。 */
+/** 简谱档：按原谱排一遍——一小节一项、pass = 0（多段歌词叠排、不展开任何反复）。 */
 export function identityPlan(measureCount: number): PlayItem[] {
   const out: PlayItem[] = [];
   for (let i = 0; i < measureCount; i++) {
@@ -37,7 +37,7 @@ export interface MeasureCut {
 
 export interface PlaySink {
   measure(mid: number, pass: number, cut: MeasureCut): void;
-  /** 一遍唱完（`endOfPass`）：展开档据此换页 */
+  /** 一遍唱完（`endOfPass`）：投影档据此换页 */
   passEnd(): void;
   /** 往回跳、但还是同一段词（反复只有一段、D.S./D.C. 回去唱到 Fine）：给了它就只另起一行、不换页 */
   jumpBack?(): void;
@@ -45,7 +45,7 @@ export interface PlaySink {
 
 /**
  * 逐遍逐小节回调。换页（`passEnd`）有两处：`endOfPass`，以及**往回跳**（反复、D.C./D.S.）——
- * 那是新的一遍；往回跳还唱同一段词的，sink 给了 `jumpBack` 就只换行（展开档：一页一行的碎页，250《主，差遣我》）。遍号变了但往前接着唱的（二房之后 pass 归 1 的尾段、跳过一房）不换页，
+ * 那是新的一遍；往回跳还唱同一段词的，sink 给了 `jumpBack` 就只换行（投影档：一页一行的碎页，250《主，差遣我》）。遍号变了但往前接着唱的（二房之后 pass 归 1 的尾段、跳过一房）不换页，
  * 否则前一页常只剩一行半（同一首歌）。同一小节被 limit/skip 切成前后两截的，后一截也是接着唱。
  */
 export function walkPlay(items: readonly PlayItem[], sink: PlaySink): void {
@@ -75,7 +75,7 @@ export function walkPlay(items: readonly PlayItem[], sink: PlaySink): void {
   });
 }
 
-/** 展开档应有几遍——按 walkPlay 的换页切出来、确有小节的段数。page-check 的 P5 拿它对页面结构。 */
+/** 投影档应有几遍——按 walkPlay 的换页切出来、确有小节的段数。page-check 的 P5 拿它对页面结构。 */
 export function countPasses(items: readonly PlayItem[]): number {
   let n = 0;
   let open = false;

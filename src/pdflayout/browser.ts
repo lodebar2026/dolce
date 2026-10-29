@@ -273,7 +273,7 @@ export function bookDocOf(xml: string): ScoreDoc {
         if (at > 0) l.text = l.text.slice(at);
       }
     }
-    // 房号规整成 `1.2`（原书口径，同旧简谱引擎；原样档照原文印）
+    // 房号规整成 `1.2`（原书口径，同旧简谱引擎；简谱档照原文印）
     for (const part of song.parts) for (const m of part.measures) for (const b of m.barlines ?? []) if (b.ending?.text) b.ending.text = normEndingText(b.ending.text);
   }
   return doc;

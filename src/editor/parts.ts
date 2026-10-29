@@ -299,7 +299,7 @@ export function showPartsPanel(app: App): void {
       const lyr = el("input");
       lyr.type = "radio";
       lyr.name = "parts-lyric";
-      // 缺省（都不勾）= 自动：展开档挑带词的那个声部排在最前
+      // 缺省（都不勾）= 自动：投影档挑带词的那个声部排在最前
       lyr.checked = app.lyricPart === pi;
       lyr.disabled = app.docFormat !== "musicxml";
       lyr.title = lyr.disabled ? t("parts.lyric.textFmt") : t("parts.lyric.title");

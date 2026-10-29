@@ -88,7 +88,7 @@ export interface FormatCaps {
   /** 有没有代码区。`.musicxml` 没有：打开只进谱面视图（五线谱编辑那一路），要编辑先转成文本格式（新文档）。 */
   textEditor: boolean;
   /** 源文怎么变成 `ScoreDoc`：`scoredoc` = 适配器的 `toScoreDoc` 解析（文本谱、123、ABC、jcx、jianpu-ly、MusicXML）；
-   *  `jpwabc` = `.jpwabc` 分节文件经 `jpwToScoreDoc`，另带 `.Layout` 分页描述（只管展开档）。排版都是同一个旧简谱引擎。 */
+   *  `jpwabc` = `.jpwabc` 分节文件经 `jpwToScoreDoc`，另带 `.Layout` 分页描述（只管投影档）。排版都是同一个旧简谱引擎。 */
   layout: "scoredoc" | "jpwabc";
   /** 有没有「按乐句重排」（要有 `FormatAdapter.relayoutText`）。`.musicxml` 没有代码区，不给。 */
   phraseRelayout: boolean;
@@ -110,7 +110,7 @@ interface FormatAdapterBase {
   label(host: FormatHost): string;
   /** 文档标题（另存为的默认文件名）。 */
   title(host: FormatHost): string;
-  /** 用哪个档位旋钮记「展开/原样」：`jp` = `jpProfile`(normal/pptx)、`original` = `originalProfile`(print/slide)。
+  /** 用哪个档位旋钮记「投影/简谱」：`jp` = `jpProfile`(normal/pptx)、`original` = `originalProfile`(print/slide)。
    *  两种格式各记各的档，换格式可能就换了档。 */
   profileKnob: "jp" | "original";
   /** 可视化编辑怎么改这种格式的原文（`editor/visual/dialect.ts`）。**给了就能在谱面上改谱**；
@@ -145,7 +145,7 @@ type RelayoutPart =
      * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`fanqie/relayout.ts`），
      * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `jianpu/docrelayout.ts`）。
      *
-     * @param plan 新行怎么分（`jianpu/phrase.ts::LinePlan`）。按乐句时带行长尺子（文本谱与多声部的原样档不给，
+     * @param plan 新行怎么分（`jianpu/phrase.ts::LinePlan`）。按乐句时带行长尺子（文本谱与多声部的简谱档不给，
      *             见 `App._fanqiePhraseMeasure`；没有就按出厂的小节数目标断，也就是一句一行）
      * @returns 新原文；没有可重排的曲行时原样返回 `text`
      */
@@ -189,7 +189,7 @@ const JPWABC: FormatAdapter = {
   caps: { textEditor: true, layout: "jpwabc", phraseRelayout: true },
   reload: (host, text) => host.reloadJpwabc(text),
   // `.jpwabc` 是分节文件：只重切 `.Voice` 的行，别的节（样式、歌词、分页描述）一个字不动。
-  // 尺子与 123/ABC 同一把：不量的话乐句行在原样档放不下，引擎整首按宽度重断，两种格式排出来就不一样了
+  // 尺子与 123/ABC 同一把：不量的话乐句行在简谱档放不下，引擎整首按宽度重断，两种格式排出来就不一样了
   relayoutText: (text, plan) => {
     const f = JpwFile.fromString(text);
     if (!f) return text;
@@ -219,7 +219,7 @@ const FANQIE: FormatAdapter = {
   profileKnob: "original",
   caps: { textEditor: true, layout: "scoredoc", phraseRelayout: true },
   toScoreDoc: (text) => parseFanqie(text),
-  // 原样档走原样文档布局（印刷原版的观感），展开档投影成简谱输入模型
+  // 简谱档走原样文档布局（印刷原版的观感），投影档投影成简谱输入模型
   reloadSpec: {
     what: () => t("fmt.textScore"),
     reject: rejectFatal((d) => t("status.fanqieFatal", { error: diagText(d) })),
@@ -231,7 +231,7 @@ const FANQIE: FormatAdapter = {
 };
 
 /** 123 —— 简谱主格式。原生解析直出 `ScoreDoc`；排版直接吃 `ScoreDoc`。
- *  档位旋钮跟文本谱同一个（`originalProfile`）：两者的原样档都可走原样文档布局、展开档都投影成简谱输入模型。 */
+ *  档位旋钮跟文本谱同一个（`originalProfile`）：两者的简谱档都可走原样文档布局、投影档都投影成简谱输入模型。 */
 const J123: FormatAdapter = {
   id: "123",
   defaultExt: ".123",

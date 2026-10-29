@@ -30,7 +30,7 @@ export function headerRoleFont(m: JianpuGrid, role: HeaderTextRole, scale = 1): 
   }
 }
 
-/** 展开档标题页的字：设置里给了族 / 粗体就用，否则歌词字、不加粗（同旧简谱引擎 `headerRoleFont(…, lrcFont)`） */
+/** 投影档标题页的字：设置里给了族 / 粗体就用，否则歌词字、不加粗（同旧简谱引擎 `headerRoleFont(…, lrcFont)`） */
 function slideFont(m: JianpuGrid, face: { family?: string; bold?: boolean }, size: number): Font {
   return new Font(face.family ?? m.style.font.lyric.family, size, face.bold ?? false);
 }
@@ -61,7 +61,7 @@ export function headerMeasurer(m: JianpuGrid): HeaderMeasurer {
   };
 }
 
-/** 展开档的标题页、页脚各行（`placeTitlePage` / `placeSlideFooter` 定好的位置；居中按页宽）。文字标 `hdr`（标题页，可视化编辑认页眉）。 */
+/** 投影档的标题页、页脚各行（`placeTitlePage` / `placeSlideFooter` 定好的位置；居中按页宽）。文字标 `hdr`（标题页，可视化编辑认页眉）。 */
 export function paintSlideLines(c: OriginalCtx, root: Group, lines: readonly PlacedHeaderLine[], tag: boolean): void {
   const anchor = { left: 0, center: c.pageWidth / 2, right: c.pageWidth };
   for (const l of lines) {

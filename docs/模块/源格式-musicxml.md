@@ -51,7 +51,7 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
   `<part-name>` 留空并 `print-object="no"`。
 
 - **简谱档的普通小节线由投影补**（`jianpuproject.ts::projectForJianpu`）：MusicXML 的普通小节不写 `<barline>`，模型里没有右线；
-  简谱这边「没有右线」是行末开口的小节，行视图（`jianpu/slots.ts::buildRow`）不出小节线元素。不补的话展开档与原样档都整行并成
+  简谱这边「没有右线」是行末开口的小节，行视图（`jianpu/slots.ts::buildRow`）不出小节线元素。不补的话投影档与简谱档都整行并成
   一两个大小节、只在双线/终止线处有线，曲中转调也只在这类线上才画得出来。投影在克隆上给每个没有右线的小节补一根普通线
   （有右线对象而样式未定的填普通线），原模型不动。
 - **节奏音符（`<unpitched>`）也留着音**（`fromxml.ts`）：显示位置记 `Note.unpitched`，它的 `<tie>`、和弦里叠的第二个（钹与鼓同时）都挂在音上；

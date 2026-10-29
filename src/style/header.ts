@@ -39,8 +39,8 @@ export function headerFontsOf(sheet: StyleSheet): HeaderFonts {
 
 /** 曲内层：谱里写的页眉字体——MusicXML `<credit-words>`（同一角色取第一条，没写族退到 `<word-font>`），
  *  或 123/ABC 的 `I:meta font-<角色>`（`model/pagemeta.ts`）。
- *  `sizes: false`：只要族与字重（展开档是投影片，印刷纸上的字号搬过去就太小了）。
- *  `titleFamily: false`：标题不跟谱里的字体族（原样档标题一律粗体，用户定；500 首 MusicXML 写的魏碑只有一种字重，加粗看不出来）。 */
+ *  `sizes: false`：只要族与字重（投影档是投影片，印刷纸上的字号搬过去就太小了）。
+ *  `titleFamily: false`：标题不跟谱里的字体族（简谱档标题一律粗体，用户定；500 首 MusicXML 写的魏碑只有一种字重，加粗看不出来）。 */
 export function headerLayerOfSong(song: Song | undefined, { sizes = true, titleFamily = true }: { sizes?: boolean; titleFamily?: boolean } = {}): StyleRule[] {
   if (!song) return [];
   const roles: Partial<Record<HeaderRole, RoleDecl>> = {};

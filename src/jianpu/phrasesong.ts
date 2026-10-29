@@ -1,7 +1,7 @@
 // 简谱形状的 `ScoreDoc`（文本谱 / 123 / ABC）→ 断句输入（`score/phraseinput.ts`）；试听输入与演唱顺序也用这份小节序列。
 //
 // 与 `model/phrasedoc.ts`（MusicXML 形状）分工同 `jianpu/slots.ts::docView` 与 `jianpuproject.ts`：
-// 这里经排版行视图 `docView` 读，和原样档谱面、简谱输入模型（`jianpuInputOfDoc`）是同一批对象。
+// 这里经排版行视图 `docView` 读，和简谱档谱面、简谱输入模型（`jianpuInputOfDoc`）是同一批对象。
 // **口径逐条同 `jianpuinput.ts::rowsPart`**（`forExpanded` 那一份：带歌词的声部当主旋律、同号歌词顺延），
 // 本轮只换输入、不动判据，靠 `../dev/scripts/phrase-dual-check.mjs` 双跑逐项一致。
 // 断点集合以这里拼出的对象为键，`idOf` 把它们换回元素 id。
@@ -98,8 +98,8 @@ export function phrasePartOfSong(doc: ScoreDoc, songIdx = 0): PhraseSongView | n
 }
 
 /**
- * 同一条曲行下**段号重复**的歌词行，依次顺延到下一个空闲段号（展开档用，见 `ToScoreOptions.forExpanded`）。
- * 《同一首歌》同一段曲下写了两行 `C1:`，内容其实是第 1、2 段：展开档一遍只挂一行词，
+ * 同一条曲行下**段号重复**的歌词行，依次顺延到下一个空闲段号（投影档用，见 `ToScoreOptions.forExpanded`）。
+ * 《同一首歌》同一段曲下写了两行 `C1:`，内容其实是第 1、2 段：投影档一遍只挂一行词，
  * 两行同号就会画在同一位置相压，顺延之后各成一遍。段号不重复的行原样返回。
  */
 export function distinctVerses(lyrics: readonly LyricLine[]): readonly LyricLine[] {
@@ -149,7 +149,7 @@ function chordDuration(ch: ChordOut): Fraction {
   return dur.divInt(1 << ch.beams);
 }
 
-/** 一个声部的曲行 → 小节序列。`renumberVerses` 同 `jianpuinput.ts::rowsPart`（展开档那一份才顺延同号歌词）。 */
+/** 一个声部的曲行 → 小节序列。`renumberVerses` 同 `jianpuinput.ts::rowsPart`（投影档那一份才顺延同号歌词）。 */
 export function buildMeasures(
   lines: readonly ScoreLine[],
   onChord: (ch: ChordOut, el: NoteElement) => void,

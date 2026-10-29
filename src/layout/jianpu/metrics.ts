@@ -1,4 +1,4 @@
-// 简谱引擎（文本谱、MusicXML、多声部 123/ABC 的原样档）的栅格与谱面自带的版面指令。
+// 简谱引擎（文本谱、MusicXML、多声部 123/ABC 的简谱档）的栅格与谱面自带的版面指令。
 //
 // 样式值只有一把尺子 `JianpuStyle`（`style/jianpu.ts::jianpuStyleOf` 折算，与旧简谱引擎同一份）；
 // 这里只剩原版（番茄）量来的那套栅格，按音符字号等比缩放：
@@ -139,7 +139,7 @@ export function barlineSpan(m: JianpuGrid): { top: number; bottom: number } {
   return { top: base - h * 0.75, bottom: base + h * 0.25 };
 }
 
-/** 转调标签（「转1=D」）的字号：同和弦；不排和弦的档（展开档 `chord` = 0）取歌词字号的 0.6（同旧简谱引擎 `KeySig`）。 */
+/** 转调标签（「转1=D」）的字号：同和弦；不排和弦的档（投影档 `chord` = 0）取歌词字号的 0.6（同旧简谱引擎 `KeySig`）。 */
 export function keyLabelSize(m: JianpuGrid): number {
   return m.style.size.chord > 0 ? m.style.size.chord : m.style.size.lyric * 0.6;
 }

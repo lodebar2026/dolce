@@ -29,7 +29,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
   → JpwFile（TitleSection / VoiceSection / WordsSection / RepeatSection / LayoutSection）
   → .Voice token 序列（lex.ts）
   → ScoreDoc（fromjpw.ts：先切「源文小节」、歌词按它落点，再落成模型小节）
-  ├→ jianpuInputOfJpw → ScorePainter（原样 / 展开），和弦带元素 id
+  ├→ jianpuInputOfJpw → ScorePainter（简谱 / 投影），和弦带元素 id
   ├→ playSourceOfSong → 试听 / MIDI
   └→ emit123 / emitAbc / scoreDocToMusicXml / emitJpwabc
 ```
@@ -46,12 +46,12 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
   **转调**写 `"1=G"`（同步更新调号状态，否则转调后半首音高全错）、**倚音**写 `{6,}`。
 - **演唱顺序**：有 `.Repeat` 照它；没有时谱里有 `|: :|` 的照反复记号推（`playsong.ts::playDataOf`，用户定 2026-10-14：
   020《向主歌唱》的 `.Layout` 时值总长对得上「走反复」），没有反复记号的整曲按段数逐遍（JP-Word 本来就这么唱）。
-  推出来的顺序不置 `hasRepeat`，写出端不另补 `.Repeat`（重读照样推得出，往返定点）。原样档照画 `|: :|`。
+  推出来的顺序不置 `hasRepeat`，写出端不另补 `.Repeat`（重读照样推得出，往返定点）。简谱档照画 `|: :|`。
 - **一房二房没有写法，读入时推**（`fromjpw.ts::inferEndings`，没有 `.Repeat` 时）：`:|` 那一小节与紧跟的一小节**节奏逐音相同、
   首个音的第 1 段词（去标点）也相同**，前者记一房、后者记二房（右端敞口）。命中 009、020、116、144、164；
   447《我灵之光》`1-- :|1--` 底下是「阿/们」，是结尾的阿们、不算。只等长不算（`|1 2 3 4 :| 5- 6 7|` 是照常往下唱）。
 - **词曲一条写了多行**（`作词：…\n作曲：…`）：作者条为写 123 的 `C:` 拼成一行，行视图取 credit 原文照分行（`jianpu/slots.ts::toMetadata`），
-  展开档标题页、原样档页眉都分行。
+  投影档标题页、简谱档页眉都分行。
 - `fromjpw` **不填绝对音高**（`.jpwabc` 只有度数），导出 MusicXML 由投影层按度数 + 调号推。
 - **歌词段锚点 `W2@m,n` 的小节序号**：只有小节**中间**的换行才算开出一个小节，小节末的不算——读入端（`assignLyrics`）
   与写出端（`tojpw.ts::LyricProcessor`）必须同口径，否则多段歌词起点在第一行之后错位。
@@ -68,8 +68,8 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 - `jpwToScoreDoc` 不读 `SubTitle` 与文字型 `Expression`（「热烈欢快地」），多于音符数的歌词音节在 `assignLyrics` 截掉：
   这些不进模型，谱面不画、简繁转换也不转（语料里 3 首有 `SubTitle`，2 首有多出的歌词行）
 - **没有段落词**（Chorus / 副歌…，规范 §9）：别的格式转成 `.jpwabc` 时段落标记丢掉，读进来的 `ScoreDoc` 也没有
-  `sectionMarkOf` 可读。于是按乐句重排不按段落分段、展开档不按标记在副歌前换页，只剩「这一小节起只剩一行词」
-  那条多段歌词判据——单段词的曲子认不出副歌（「脚步」123/ABC/文本谱展开档是主歌 2 行 + 副歌 4 行，`.jpwabc` 是 4+2）。
+  `sectionMarkOf` 可读。于是按乐句重排不按段落分段、投影档不按标记在副歌前换页，只剩「这一小节起只剩一行词」
+  那条多段歌词判据——单段词的曲子认不出副歌（「脚步」123/ABC/文本谱投影档是主歌 2 行 + 副歌 4 行，`.jpwabc` 是 4+2）。
   见 [乐句排版](../实现/乐句排版.md)「段落分段」
 
 ## 词法器

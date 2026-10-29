@@ -94,7 +94,7 @@ export interface OmrHost {
   importOmrDoc(doc: ScoreDoc, text: string): void;
   /** 识别产物有无变了：同步排版档按钮（简谱识别期间不露「五线谱」「混排」两档）。 */
   syncViewModes(): void;
-  /** 切排版档（展开 / 原样 / 五线谱 / 混排），`App.setViewMode` */
+  /** 切排版档（投影 / 简谱 / 五线谱 / 混排），`App.setViewMode` */
   setViewMode(mode: "expanded" | "original" | "staff" | "mixed"): Promise<void>;
 
   /** 清空 #score-pane 与翻页状态（各预览铺页前都要做）。 */
@@ -685,7 +685,7 @@ export class OmrController implements FormatSource {
   }
 
   /**
-   * 识别完（含重开识别项目）进视图：先切档——简谱进**原样**、五线谱进**五线谱**、简线混排谱进**混排**；
+   * 识别完（含重开识别项目）进视图：先切档——简谱进**简谱**档、五线谱进**五线谱**、简线混排谱进**混排**；
    * 再按用户在「核对」下拉里选过的方式进核对（没选过就并排原图）。`tier` 为 null 不切档。
    */
   private async enterAfterRecognize(tier: "original" | "staff" | "mixed" | null): Promise<void> {
@@ -1142,7 +1142,7 @@ export class OmrController implements FormatSource {
 
   // ---------------- 识别 ----------------
   /** 已取得图片字节后的识别核心（供拖拽识别复用）。
-   *  保留二值图+识别结果，完成后进原样档，核对方式按用户在「核对」下拉里选过的（没选过就并排原图，`enterAfterRecognize`）。 */
+   *  保留二值图+识别结果，完成后进简谱档，核对方式按用户在「核对」下拉里选过的（没选过就并排原图，`enterAfterRecognize`）。 */
   async recognizeBytes(picked: { bytes: Uint8Array; mime?: string }, jianpuOnly = false): Promise<boolean> {
     // 外部直接调（回归脚本、旧入口）走完整分流
     if (!jianpuOnly) return this.recognizeFiles([picked]);
@@ -1163,7 +1163,7 @@ export class OmrController implements FormatSource {
       this.endPending(true);
       this.emit(score, bin);
       this.host.setContextControl(this.kindField(), true);
-      await this.enterAfterRecognize("original"); // 简谱进原样档，对照方式按用户上次的选择（没选过就并排）
+      await this.enterAfterRecognize("original"); // 简谱进简谱档，对照方式按用户上次的选择（没选过就并排）
       const n = this.beatMarks.length;
       this.host.setStatus(t("omr.done", { sec: ((performance.now() - t0) / 1000).toFixed(1) })
         + (n ? t("omr.beatIssues", { n }) : ""));

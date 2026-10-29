@@ -50,11 +50,11 @@ export interface JianpuLayoutConfig {
   readonly leftIndent?: number;
   /** 内部用：重断行之前的那份文档（缩进那一遍要从它重新断行） */
   readonly reflowSource?: ScoreDoc;
-  /** 展开档：反复与多段歌词逐遍展开、一遍一页起头、逐行装满（`place/expand.ts`），只排带歌词的声部；不叠页眉、不按窄纸重断 */
+  /** 投影档：反复与多段歌词逐遍展开、一遍一页起头、逐行装满（`place/expand.ts`），只排带歌词的声部；不叠页眉、不按窄纸重断 */
   readonly expanded?: boolean;
-  /** 展开档：`.jpwabc` 的 `.Layout` 分页描述 */
+  /** 投影档：`.jpwabc` 的 `.Layout` 分页描述 */
   readonly breakDesc?: string | null;
-  /** 成书（`pdflayout/browser.ts::layoutBookDoc`）：原样档的内容，成行与纵向同展开档——照源断点成行、单行放不下才折（`foldLineStarts`），
+  /** 成书（`pdflayout/browser.ts::layoutBookDoc`）：简谱档的内容，成行与纵向同投影档——照源断点成行、单行放不下才折（`foldLineStarts`），
    *  谱行占位盒紧挨着码、放不满摊开，数字共基线、增时线「-」字；不放页眉、页脚、标题页（书级装饰由整本那一层加） */
   readonly book?: boolean;
   /** 成书量宽：不折行，另给第一首的自然横向区间（`JianpuLayout.spans`，调用方先清掉换行） */
@@ -76,9 +76,9 @@ export interface JianpuLayout {
   readonly digitFontSize: number;
   readonly view: DocView;
   readonly placed: PlacedScore;
-  /** 展开档各首实际走的演唱顺序（`page-check` 的 P5 按它数遍数）；原样档为 null */
+  /** 投影档各首实际走的演唱顺序（`page-check` 的 P5 按它数遍数）；简谱档为 null */
   readonly plans: ReadonlyArray<readonly PlayItem[] | null> | null;
-  /** 各行（每组第一个声部）首个音符的元素 id，按排出来的行序（展开档一个音每遍各出现一次，用的人自己去重）。
+  /** 各行（每组第一个声部）首个音符的元素 id，按排出来的行序（投影档一个音每遍各出现一次，用的人自己去重）。
    *  五线谱自动铺排拿它当优选断点（`App.jianpuLineStarts`） */
   readonly lineStarts: ElementId[];
   /** `measure` 时：第一首各音（键为元素 id）的自然横向区间与版心宽 */
@@ -93,10 +93,10 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
   const style = applyDocOptions(cfg.style, meta0?.fontSizes ?? [], meta0?.margins ?? [], cfg.userMargins);
   const m = gridOf(style, cfg.page);
   if (cfg.leftIndent) m.page.margin.left += cfg.leftIndent;
-  // 展开档、成书的谱页不叠页眉：首组贴着上边距起（同旧简谱引擎 `fromScore`）
+  // 投影档、成书的谱页不叠页眉：首组贴着上边距起（同旧简谱引擎 `fromScore`）
   const slide = !!(cfg.expanded || cfg.book);
   if (slide || cfg.snippet) m.page.firstSystemTop = 0;
-  // 展开档的演唱顺序：同旧简谱引擎展开档那一份（`forExpanded`：带歌词的声部在前、同号歌词顺延）
+  // 投影档的演唱顺序：同旧简谱引擎投影档那一份（`forExpanded`：带歌词的声部在前、同号歌词顺延）
   const plays = cfg.expanded ? source.songs.map((_, i) => playDataOfSong(source, i, { forExpanded: true })) : null;
   const plans = plays ? plays.map((pd) => pd?.measures ?? null) : null;
   const c: OriginalCtx = {
@@ -112,7 +112,7 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
     foot: cfg.snippet ? null : cfg.foot,
     ...(slide ? { slide: true } : {}),
   };
-  // 展开档的谱页不叠页眉（标题另起一页）
+  // 投影档的谱页不叠页眉（标题另起一页）
   const headMeasure = headerMeasurer(m);
   c.heads = slide || cfg.snippet ? [] : input.songs.map((song) => placeHeader(song.metadata, m, headMeasure));
   const headerBottoms = c.heads.map((h) => h.bottom);
@@ -176,9 +176,9 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
     },
     smufl: (glyph, size) => new Font("Bravura", size).charBound(glyph),
   };
-  // **源里的行放不下就整首重新断行**（用户定：原样档按排得下的位置断、中间不要短行）：断点写进文档克隆的换行位、
+  // **源里的行放不下就整首重新断行**（用户定：简谱档按排得下的位置断、中间不要短行）：断点写进文档克隆的换行位、
   // 整份重排一遍。元素 id 不变，编辑器的点选、高亮照旧对得上。多声部文本谱（各声部小节对不齐）`applyBreaks` 不重断
-  // 展开档：按演唱顺序逐遍切出、逐行装满（已按版心宽断好，不再走窄纸重断）
+  // 投影档：按演唱顺序逐遍切出、逐行装满（已按版心宽断好，不再走窄纸重断）
   const doc = plays ? expandView(input, plays, m, ink, cfg.breakDesc ?? null) : input;
   c.doc = doc;
   // 成书：只折放不下的那几行，折点原位记（小节中间折的是一行里一条小节线都没有的长行）
@@ -195,7 +195,7 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
     }
   }
   const placed = layoutDocument(doc.songs, m, headerBottoms, ink, doc.songs.map((_, i) => footerSpan(c, i)), slide);
-  // 展开档：每首前面一页标题页（谱页从它后面起，页码不含它；一份多首的各首各自起标题页、各自计页）
+  // 投影档：每首前面一页标题页（谱页从它后面起，页码不含它；一份多首的各首各自起标题页、各自计页）
   if (plans) {
     const withTitles: PlacedPage[] = [];
     for (const pg of placed.pages) {
@@ -241,7 +241,7 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
     c._pageShiftX = (c.pageWidth - span) / 2 - inkLeft;
   }
   const footerItems = layoutFooters(c, c._pageShiftX);
-  // 展开档各首的标题页在第几页、谱页共几页（页脚的「i/n」按各首自己计）
+  // 投影档各首的标题页在第几页、谱页共几页（页脚的「i/n」按各首自己计）
   const titleAt = new Map<number, number>();
   const pagesOf = new Map<number, number>();
   placed.pages.forEach((pg, i) => {
@@ -257,7 +257,7 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
     }
     const g = paintPage(c, pg, i);
     for (const f of footerItems) if (f.page === i) for (const it of f.items) g.add(it);
-    // 展开档每个谱页的页脚：曲名 + 「i/n」
+    // 投影档每个谱页的页脚：曲名 + 「i/n」
     if (plans) {
       const title = (meta?.titles[0] ?? "").split("\n")[0] ?? "";
       paintSlideLines(c, g, placeSlideFooter(title, i - (titleAt.get(pg.song) ?? -1), pagesOf.get(pg.song) ?? 0, m, headMeasure), false);

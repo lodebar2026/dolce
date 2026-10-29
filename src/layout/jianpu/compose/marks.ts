@@ -78,7 +78,7 @@ export function paintMark(c: OriginalCtx, root: Group, mk: PlacedMark, left: num
       const size = m.style.size.ending;
       const foot = m.style.vertical.bracketFoot;
       const lw = bracketLineWidth(m);
-      // 房号照原文印（`1,2` 就是 `1,2`，用户定：原样档不规整；旧简谱引擎才按 `normEndingText` 统一成 `1.2`）。跨行续过来的房子不再重复房号
+      // 房号照原文印（`1,2` 就是 `1,2`，用户定：简谱档不规整；旧简谱引擎才按 `normEndingText` 统一成 `1.2`）。跨行续过来的房子不再重复房号
       const showLabel = !!mk.mark.caption && !mk.openLeft;
       addEndingBracket(root, {
         x0, x1, top: y, drop: endingDrop(foot, size),

@@ -116,7 +116,7 @@ export class SyncView {
       this._elOf.set(entry, el);
       // 和弦名的组标上类名：点亮、方块都按它把和弦从音符里剔出去（`styles.css`、`overlay.ts::musicBox`；SVG 输出本身不带类名）
       if (entry.kind === "mark" && entry.markKind === "harmony" && el !== host.painter.entryEl(entry.id, 0)) el.classList.add("vis-chord");
-      // 展开档里音符与它的歌词共用一个 `<g>`，先来的音符条目占住它（`all()` 已排好序）
+      // 投影档里音符与它的歌词共用一个 `<g>`，先来的音符条目占住它（`all()` 已排好序）
       if (!this._els.has(el)) this._els.set(el, entry);
     }
     // 兜底第二趟：`.jpwabc` 的增时线写在音符 token 里、没有自己的条目，它那几个「-」格于是谁也不指——

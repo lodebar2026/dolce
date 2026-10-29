@@ -28,7 +28,7 @@ export type IdentityKind =
 export interface ItemIdentity {
   kind: IdentityKind;
   id?: ElementId;
-  /** 第几遍（展开档同一个音每遍各画一次）；原样档恒为 0 */
+  /** 第几遍（投影档同一个音每遍各画一次）；简谱档恒为 0 */
   pass?: number;
   /** 歌词：简谱是行内段序（0 起）；五线谱 / 混排是源段号（1 起） */
   verse?: number;

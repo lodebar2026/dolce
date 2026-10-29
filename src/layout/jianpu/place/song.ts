@@ -66,7 +66,7 @@ export function layoutSong(
   songIndex = 0,
   headerBottom = 0,
   ink: InkMeasurer,
-  /** 展开档（`place/expand.ts` 展开过的行视图）与成书：谱行按旧简谱引擎展开档的口径码页，见下面的 `slideBlock` */
+  /** 投影档（`place/expand.ts` 展开过的行视图）与成书：谱行按旧简谱引擎投影档的口径码页，见下面的 `slideBlock` */
   expanded = false,
 ): PlacedPage[] {
   // 行占满版心：行首最左的内容（数字落笔原点、升降号、歌词左缘）贴左缘，两端对齐后行末的占位右缘
@@ -91,7 +91,7 @@ export function layoutSong(
   // 每组先按**自己的原点**排（光标从 0 起），占位 = 光标推进的那一段（头顶让位 + 声部 + 歌词
   // + 组间距都在里面）；排完交给公共分页器定页与 y（`jianpu/vertical.ts::paginate`，`.jpwabc` 也走它）。
   // 从前这里自己分页：整组挪下页时先把光标重置到页顶、再减位移，下一组被排到页顶之上
-  //（日光之下展开档第 2 页第二组 y = −515），挪过去的那组也丢了头顶的让位。
+  //（日光之下投影档第 2 页第二组 y = −515），挪过去的那组也丢了头顶的让位。
   const blocks: Array<SystemBlock & { group: PlacedGroup }> = [];
   // 各声部上一行是否以反复起点收尾：本行行首补 `|:`（见 voice.ts::layoutVoiceLine）
   let leadRepeat: boolean[] = [];
@@ -237,8 +237,8 @@ export function layoutSong(
   }
   // 连谱号的上下花头各伸出首/末声部 ≈1.5 个墨迹高（粗线探出 0.85，花头字形高 1.18 线距 =
   // 1.18/4 em × 字号 2.2 墨迹高，见 compose/brace.ts::paintBrace）。末声部底下有歌词时歌词块早把它盖住；
-  // 展开档里末声部这一遍没词（同一首歌的 Q2）时，上一组的下花头会压到下一组的上花头。
-  // 只在真会相压时把上一块往下撑——不压的一点不动，原样档的行距是对过原书的。
+  // 投影档里末声部这一遍没词（同一首歌的 Q2）时，上一组的下花头会压到下一组的上花头。
+  // 只在真会相压时把上一块往下撑——不压的一点不动，简谱档的行距是对过原书的。
   const reach = braceReach(m);
   for (let i = 0; i + 1 < blocks.length; i++) {
     const a = blocks[i]!;
@@ -262,7 +262,7 @@ export function layoutSong(
     firstTop = headerBottom + m.style.size.lyric - inkTop;
   }
   const otherTop = m.page.margin.top + m.page.firstSystemTop * 0.35;
-  // 展开档、成书：同旧简谱引擎 `Layout.layoutVertically`——块按占位盒紧挨着码（块间 `staffDist`），放不满的页把行距摊开到 `systemSpread`，
+  // 投影档、成书：同旧简谱引擎 `Layout.layoutVertically`——块按占位盒紧挨着码（块间 `staffDist`），放不满的页把行距摊开到 `systemSpread`，
   // 剩下的空白留在页底（从页顶排下来，不竖向居中，issue 22）
   const laid = expanded ? paginate(blocks, {
     pageTop: () => m.page.margin.top,
@@ -289,8 +289,8 @@ export function layoutSong(
 }
 
 /**
- * 展开档的谱行占位盒（相对组原点）：照旧简谱引擎谱行 Group 的包围盒——数字、歌词按**字体盒**（ascent / descent）算，
- * 弧、高八度点、低音点等按墨迹，取并集。页数、每页行数要与旧简谱引擎展开档一致（用户定）。
+ * 投影档的谱行占位盒（相对组原点）：照旧简谱引擎谱行 Group 的包围盒——数字、歌词按**字体盒**（ascent / descent）算，
+ * 弧、高八度点、低音点等按墨迹，取并集。页数、每页行数要与旧简谱引擎投影档一致（用户定）。
  */
 function slideBlock(voices: ReadonlyArray<{ pv: PlacedVoice; inkBottom: number }>, ink: InkMeasurer): { top: number; bottom: number } {
   const d = ink.digit("1").ink;
@@ -315,7 +315,7 @@ export function layoutDocument(
   ink: InkMeasurer,
   /** 各首页脚（BL/BC/BR）从本曲最低一行往下占多高（compose/footer.ts::footerSpan）；连续长图接下一首时要让开 */
   footerSpans: readonly number[] = [],
-  /** 展开档（见 `layoutSong`） */
+  /** 投影档（见 `layoutSong`） */
   expanded = false,
 ): PlacedScore {
   let pages: PlacedPage[] = [];

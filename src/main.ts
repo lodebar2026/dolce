@@ -105,7 +105,7 @@ async function boot() {
   win.__project = Promise.all([import("./editor/omrproject"), import("./editor/autosave")]).then(([p, a]) => ({ ...p, ...a }));
   // 文本谱（番茄 / 有谱）解析与排版暴露，供 fanqie-*.mjs 回归。
   win.__fanqie = import("./fanqie");
-  // PPTX 导出（序列化器 + 展开档另排一遍那个 painter）暴露，供 scripts/pptx-export.mjs 批量转出用。
+  // PPTX 导出（序列化器 + 投影档另排一遍那个 painter）暴露，供 scripts/pptx-export.mjs 批量转出用。
   win.__pptx = Promise.all([import("./editor/pptx"), import("./editor/export")])
     .then(([pptx, exp]) => ({ ...pptx, pptxPainter: exp.pptxPainter }));
   // 成书重排（BookStyle 注入 + 页面树 → DrawList）暴露，供 scripts/rebuild.mjs 用。
@@ -243,7 +243,7 @@ async function boot() {
   const headerMore = document.getElementById("btn-header-more") as HTMLButtonElement | null;
   const headerTools = document.getElementById("header-tools");
   if (headerMore && headerTools) setupPopover(headerMore, headerTools);
-  // 排版模式（展开 / 原样 / 五线谱 / 混排）。四档 = 「哪个排版器」×「哪一档版面」的组合，
+  // 排版模式（投影 / 简谱 / 五线谱 / 混排）。四档 = 「哪个排版器」×「哪一档版面」的组合，
   // 配法由 App.setViewMode 说了算，这里只负责接线。
   const viewSwitch = document.getElementById("view-mode-switch");
   const viewBtns = new Map<ViewMode, HTMLButtonElement>();

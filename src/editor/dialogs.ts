@@ -235,7 +235,7 @@ function colorValue(el: HTMLInputElement, fallback: number): number {
   return (0xff000000 | (rgb & 0xffffff)) >>> 0;
 }
 
-/** 选项。**只摆当前模式下真正生效的项**——面板是全局的，但四档视图（展开 / 原样 /
+/** 选项。**只摆当前模式下真正生效的项**——面板是全局的，但四档视图（投影 / 简谱 /
  *  五线谱 / 混排）各走各的排版器，参数并不通用：字号与颜色只有简谱排版器那条路吃
  *  （文本谱有自己的整套 metrics、混排有自己的一套色），纸张两档各记各的，
  *  「每页行数」只对分页的那一档有意义。摆出无效项等于骗人——改了没反应。
@@ -446,9 +446,9 @@ export function showOptionsDialog(app: App): void {
 
   const view = app.viewMode;
   const isMixed = app.mode === "mixed"; // 五线谱 / 混排
-  /** 展开档：两种格式同一条展开档排版，摆同一组设置。 */
+  /** 投影档：两种格式同一条投影档排版，摆同一组设置。 */
   const isPpt = !isMixed && view === "expanded";
-  /** 简谱（展开档或原样档，各格式同一组设置） */
+  /** 简谱（投影档或简谱档，各格式同一组设置） */
   const isJp = !isMixed;
   const isJianpu = isJp && view === "original";
   /** 「每页行数」写进 `.jpwabc` 的 `.Layout` 段，文本谱与 123 没有这个段
@@ -471,10 +471,10 @@ export function showOptionsDialog(app: App): void {
   };
 
   // ---- 纸张 ----
-  // 展开档取 PAGE_RATIOS 的**绝对尺寸**（导出 PPTX 就是这个纸）；原样档只取**比例**，
+  // 投影档取 PAGE_RATIOS 的**绝对尺寸**（导出 PPTX 就是这个纸）；简谱档只取**比例**，
   // 纸宽锁定（见 App.layoutPage），所以两档虽然共用这张表，选中项各按各的算。
-  /** 纸张下拉。`withSize` 时把实际尺寸写进选项文字——原样档选的是**纸**（「A4」不该还要人
-   *  去猜多大）；展开档选的是**比例**（「16:9」本身就说清楚了），照旧只写键名。
+  /** 纸张下拉。`withSize` 时把实际尺寸写进选项文字——简谱档选的是**纸**（「A4」不该还要人
+   *  去猜多大）；投影档选的是**比例**（「16:9」本身就说清楚了），照旧只写键名。
    *  值为 null 的那一档是「长图」：不是纸，宽固定、高由内容定。 */
   const paperSelect = (
     keys: readonly string[],
@@ -494,15 +494,15 @@ export function showOptionsDialog(app: App): void {
     return el;
   };
 
-  // 展开档是投影片，选的是 16:9 / 4:3 那几个比例；原样档选的是实际纸张，外加一档长图。
+  // 投影档是投影片，选的是 16:9 / 4:3 那几个比例；简谱档选的是实际纸张，外加一档长图。
   const ratio = paperSelect(
     Object.keys(PAGE_RATIOS),
     (k) => PAGE_RATIOS[k],
     (k) => PAGE_RATIOS[k][0] === app.style.pageW && PAGE_RATIOS[k][1] === app.style.pageH,
     false,
   );
-  // 纸张栏（纸 + 方向 + 边距）：简谱原样档、五线谱/混排两档各记各的；
-  // 五线谱/混排自己一张纸（出厂 155×240mm），不借原样档那张长图
+  // 纸张栏（纸 + 方向 + 边距）：简谱档、五线谱/混排两档各记各的；
+  // 五线谱/混排自己一张纸（出厂 155×240mm），不借简谱档那张长图
   const paperEngine: PaperEngine | null = isMixed ? "staff" : isJianpu ? "jianpu" : null;
   const paperUi = paperEngine ? paperGroup(app, paperEngine) : null;
 
@@ -511,8 +511,8 @@ export function showOptionsDialog(app: App): void {
   lines.type = "text";
   lines.placeholder = t("settings.linesPlaceholder");
   lines.value = hasLayoutSection ? app.getLinesPerPage() : "";
-  // 「每页行数」只归展开档：那一档是逐段展开、一屏一段，每页放几行是版面决定；
-  // 原样档按原谱排一遍，行数由内容与纸说了算，人为定死只会把谱挤坏。
+  // 「每页行数」只归投影档：那一档是逐段展开、一屏一段，每页放几行是版面决定；
+  // 简谱档按原谱排一遍，行数由内容与纸说了算，人为定死只会把谱挤坏。
   const linesRow = labeled(t("settings.linesPerPage"), lines);
 
   // ---- 字号 ----
@@ -529,8 +529,8 @@ export function showOptionsDialog(app: App): void {
   if (hasLayoutSection) pLayout.append(linesRow);
   if (isJp) {
     pLayout.append(labeled(t("settings.fontSize"), fs));
-    // 原样档只调基础字号：那一档的标题与词曲字号是按比例派生的（`style/jianpu.ts::jianpuSizes`），
-    // 摆出来只会让人以为能单独调。展开档三个都是独立设置，照旧全给。
+    // 简谱档只调基础字号：那一档的标题与词曲字号是按比例派生的（`style/jianpu.ts::jianpuSizes`），
+    // 摆出来只会让人以为能单独调。投影档三个都是独立设置，照旧全给。
     pLayout.append(labeled(t("settings.color"), color));
   }
   pLayout.append(labeled(t("settings.bgColor"), bgColor));
@@ -601,7 +601,7 @@ export function showOptionsDialog(app: App): void {
   }
   pHeader.append(labeled(t("settings.bookSheet"), bsBox));
 
-  // 原样档的音符字体、和弦升降号写法：各格式共用一套
+  // 简谱档的音符字体、和弦升降号写法：各格式共用一套
   const choice = (opts: readonly (readonly [string, MsgKey])[], value: string): HTMLSelectElement => {
     const el = document.createElement("select");
     for (const [v, label] of opts) {
@@ -619,7 +619,7 @@ export function showOptionsDialog(app: App): void {
     pHeader.append(labeled(t("settings.noteFont"), noteFontSel), labeled(t("settings.chordAccidental"), chordAccSel));
   }
 
-  // 页眉四项的字体字号：各档共用（展开档原来单列的标题 / 词曲字号也并在这里）
+  // 页眉四项的字体字号：各档共用（投影档原来单列的标题 / 词曲字号也并在这里）
   const header = headerGroup(app);
   pHeader.append(...header.rows);
 
@@ -685,7 +685,7 @@ export function showOptionsDialog(app: App): void {
     if (showNoteSound && noteSound.checked !== app.visual.noteSound) app.visual.setNoteSound(noteSound.checked);
     if (langSel.value !== getLangPref()) setLangPref(langSel.value as LangPref);
   }, undefined, isMixed ? undefined : {
-    // 清掉当前档（展开 / 原样）的用户层，回到内置主题；另一档与声部音量不动
+    // 清掉当前档（投影 / 简谱）的用户层，回到内置主题；另一档与声部音量不动
     label: t("settings.reset"),
     onClick: () => app.resetRenderSettings(),
   });

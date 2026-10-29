@@ -128,7 +128,7 @@ export interface TimedNote {
 const VERSE_PREFIX = /^\d+\.(?=.)/;
 
 /** 第 `pass` 遍唱的字：段号对上的那段，没有就取副歌。`borrow`：这一格在第 `pass` 段整首最后一个字之后
- *  （这一段的词唱完了，副歌只写在第 1 段），借段号最小的、这一格写了字的那段——与展开档同一判据（`place/expand.ts::afterVerseEnd`）。 */
+ *  （这一段的词唱完了，副歌只写在第 1 段），借段号最小的、这一格写了字的那段——与投影档同一判据（`place/expand.ts::afterVerseEnd`）。 */
 function lyricOfPass(note: TimelineNote | undefined, pass: number, borrow = false): { text: string; extend: boolean } | undefined {
   const lyrics = note?.lyrics;
   if (!lyrics?.length) return undefined;
@@ -144,7 +144,7 @@ export interface Anchor {
   chord: TimelineChord;
   pass: number; // repeat pass / lyric verse (matches NoteEntry.verse in layout)
   /** 同一个和弦、同一个 `pass` 在这份锚点表里第几次出现（0 起）：只有一段词的反复两遍同段号，
-   *  展开档按它认第几次画的那一格（`ScoreIndex.note` 的 `occ`） */
+   *  投影档按它认第几次画的那一格（`ScoreIndex.note` 的 `occ`） */
   occ?: number;
 }
 
@@ -240,7 +240,7 @@ export function buildTimeline(src: PlaySource): Timeline {
   });
   const afterVerseEnd = (pi: number, verse: number, mid: number, i: number): boolean => {
     const e = verseEnd[pi]!.get(verse);
-    return e === undefined || mid > e[0] || (mid === e[0] && i > e[1]); // 整首没这一段的词：一律借（同展开档）
+    return e === undefined || mid > e[0] || (mid === e[0] && i > e[1]); // 整首没这一段的词：一律借（同投影档）
   };
   /** 各声部各遍最后一个有字的音的起点 */
   const lastWord = new Map<string, number>();
@@ -320,7 +320,7 @@ export function buildTimeline(src: PlaySource): Timeline {
     if (note.t0 > (lastWord.get(`${note.part}:${pass}`) ?? Number.NEGATIVE_INFINITY)) delete note.lyric;
   }
   anchors.sort((a, b) => a.t0 - b.t0);
-  // 稳定排序：同刻的主旋律在前（播放线同刻只停一处，停在它上面——展开档只画它），其余按声部序
+  // 稳定排序：同刻的主旋律在前（播放线同刻只停一处，停在它上面——投影档只画它），其余按声部序
   const rank = (a: Anchor): number => (allAnchorPart.get(a) === lead ? 0 : 1);
   allAnchors.sort((a, b) => a.t0 - b.t0 || rank(a) - rank(b));
   for (const list of [anchors, allAnchors]) {

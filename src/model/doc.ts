@@ -837,7 +837,7 @@ export interface PlayPass {
   /** 这一遍配第几段歌词。**可以不等于遍序**——语料里 6 首是非顺序映射，
    *  ABC 的「相邻 w: 依次对应」表达不了，这是 `I:playorder` 存在的硬理由 */
   verse?: number;
-  /** 这一遍唱完换页（`.Repeat` 的 `P` 后缀）。展开档逐遍成页时用 */
+  /** 这一遍唱完换页（`.Repeat` 的 `P` 后缀）。投影档逐遍成页时用 */
   pageBreakAfter?: boolean;
 }
 
@@ -905,7 +905,7 @@ export interface Song {
   museDirectives?: string[];
   /** 扩展 meta（英文标题、经文、标签、分类…）。键见 `model/metakeys.ts`，读写走那里的 `getMeta`/`setMeta`。 */
   meta?: SongMeta;
-  /** 每页谱行数（`.jpwabc` 的 `.Layout LinesPerPage`，只对展开档有意义） */
+  /** 每页谱行数（`.jpwabc` 的 `.Layout LinesPerPage`，只对投影档有意义） */
   linesPerPage?: number;
   source?: SourceSpan;
 }

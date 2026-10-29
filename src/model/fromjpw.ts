@@ -53,7 +53,7 @@ export function convertRepeat(rows: readonly string[], part: Part | undefined): 
   const parsed = rows.flatMap((r) => r.split(",")).map((raw) => REPEAT_ROW.exec(raw.trim())).filter((m) => m !== null);
   // **小节号有 0 起与 1 起两种写法**：500 首里带 `.Repeat` 的 7 份 JP-Word 文件一律 0 起（`0-22V1`，最大号 = 小节数 − 1），
   // 本仓库测试语料与写出端（`tojpw.ts`）是 1 起。0 在 1 起的写法里不可能出现，而第一遍总从头唱、0 起的写法必有 `0-`，
-  // 故「出现 0 就整份按 0 起」。按 1 起硬读 0 起的文件，演唱顺序里会有第 −1 小节，原样档排版直接抛错（伟大的主等 7 首）。
+  // 故「出现 0 就整份按 0 起」。按 1 起硬读 0 起的文件，演唱顺序里会有第 −1 小节，简谱档排版直接抛错（伟大的主等 7 首）。
   const base = parsed.some((m) => Number(m[1]) === 0) ? 1 : 0;
   for (const m of parsed) {
     const p: PlayPass = { fromMeasure: Number(m[1]) + base, toMeasure: Number(m[3]) + base, verse: Number(m[5]) };

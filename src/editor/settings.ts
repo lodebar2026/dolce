@@ -37,7 +37,7 @@ export interface PersistedSettings {
   omrAdjust?: unknown;
   /** 识别为：自动 / 简谱 / 五线谱（同上） */
   omrKind?: unknown;
-  /** 当前排版输出（展开 / 原样），两种格式各记一个：简谱 normal|pptx、文本谱 print|slide（slide = 展开）。 */
+  /** 当前排版输出（投影 / 简谱），两种格式各记一个：简谱 normal|pptx、文本谱 print|slide（slide = 投影）。 */
   jpProfile?: "normal" | "pptx";
   originalProfile?: "print" | "slide";
   /** 谱面上显示换行/换页符号（可视化编辑，交 VisualEditController 自己校验） */
