@@ -32,6 +32,8 @@ const THIN_MEAN = 0.2;
 const ONE_RUN_FRAC = 0.8;
 /** **拱**：离两端连线最远处的下限（线距）。直的那些是松叶的臂、加线、连音线的一截。 */
 const BOW_MIN = 0.25;
+/** 低拱那一档（`pagefinish.ts` 第二遍）的拱高下限（格）：一头平、一头往下的短弧（连两个八分）拱只有 0.2 格上下 */
+export const LOW_BOW_MIN = 0.15;
 /** 弧线细：逐列的墨迹跨度不该超过这么多（线距）。跨度大的是松叶或实心块。 */
 const SPREAD_MAX = 0.6;
 
@@ -44,14 +46,14 @@ const SPREAD_MAX = 0.6;
 /** `forkWin`：拆分叉（`splitFork`）拆出来的那一截要整个落在这里（行首行尾的窗口）；不给就不拆 */
 export function findRasterSlurs(
   map: ContourMap, unit: RasterUnit, only: Contour[], nextId: number, mask?: Binary, thinMean = THIN_MEAN,
-  forkWin?: (r: Rect) => boolean,
+  forkWin?: (r: Rect) => boolean, bowMin = BOW_MIN,
 ): SlurArc[] {
   const out: SlurArc[] = [];
   for (const c of only) {
     if (c.w < MIN_W || c.w > MAX_W || c.h > MAX_H) continue;
     if (c.compact > MAX_COMPACT && c.area > c.bbox.w * unit.space * thinMean) continue;
     const ink = (x: number, y: number) => map.labels[y * map.w + x] === c.id && (!mask || mask.data[y * mask.w + x] === 1);
-    const arc = judgeArcBox(c.bbox, ink, unit, nextId + out.length);
+    const arc = judgeArcBox(c.bbox, ink, unit, nextId + out.length, bowMin);
     if (!arc) continue;
     const two = forkWin ? splitFork(c.bbox, ink, unit, arc, nextId + out.length, forkWin) : null;
     if (two) out.push(...two);

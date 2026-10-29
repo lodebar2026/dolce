@@ -24,7 +24,7 @@ import { smallCapsCase, inkTextSize } from "./textsize";
 import { type Contour, candidateMap, traceContours, type ContourMap, type ContourStaff, type RepairedLayer } from "./contour";
 import { findRasterArticulations } from "./artic";
 import { findRasterWedges, findFusedWedges, findStrippedWedges } from "./wedge";
-import { findRasterSlurs, findStubSlurs, findRasterDashedSlurs, findFusedSlurs, judgeArcUnion, extendArcEnds, traceSteepArcEnds, traceLongArcTails } from "./slur";
+import { LOW_BOW_MIN, findRasterSlurs, findStubSlurs, findRasterDashedSlurs, findFusedSlurs, judgeArcUnion, extendArcEnds, traceSteepArcEnds, traceLongArcTails } from "./slur";
 import { type SlurArc, attachSlurs, reconnectSlurs, markSlurNotes, orphanEdge, notTie } from "../staffomr/slur";
 import { removeStaffLinesByRun, blobImage, type LineSeg, type RasterPrims } from "./prims";
 import { mergeArcPieces, bridgeArcPieces, attachSlursByStem, attachWideSlurs, attachEdgeSlurEnds, attachEdgeSlurStarts, snapSlurEndsToStems, completeSlurEnds, tieChords } from "./slurattach";
@@ -156,6 +156,8 @@ const RUN_PIECE_H = 1;
 const RUN_LEG_W = 0.4;
 /** 按游程拼弧：量端头走向取末这么宽（格）、顺走向往空当里至多外推这么远（格），见 `onLineEnd` */
 const RUN_END_SPAN = 0.3;
+/** 低拱那一档的短弧：弧端这么多格（横、竖）内有竖段端点的不收（符尾长在干端），见 `LOW_BOW_MIN` 那一遍 */
+const LOW_BOW_STEM = 0.5;
 const RUN_END_REACH = 0.3;
 /** 同上，各自的高度下限（格）：腿斜着伸进线里，实测 7 像素（0.37 格）起；贴着线的残段 5 像素。 */
 const RUN_LEG_H = 0.35;
@@ -1005,6 +1007,19 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     const free = (b: Rect) => !taken.some((t) => b.x < t.right && b.x + b.w > t.left && b.y < t.bottom && b.y + b.h > t.top);
     const cands = [...ledger.unclaimed(), ...beamOnly].filter((c) => inEdgeWin(c.bbox) && free(c.bbox));
     slurs.push(...findStubSlurs(cmap, unit, cands, pg.objs.length + pg.segs.length + 1000 + slurs.length, repaired));
+  }
+  // **拱低一档的短弧**：连两个八分的小弧一头平、一头往下，按两端连线量拱只有 0.2 格上下（`BOW_MIN` 0.25 挡掉：破碎扫描 p4 m43、m45，
+  // 新编 017 m7）。降门槛会放进符尾——同样一笔弯下去，可符尾长在干的顶端。这一遍只给无主的单块，弧两端各 `LOW_BOW_STEM` 格内
+  // 都不碰任何竖段（干、符尾所在的干）的端点，才按 `LOW_BOW_MIN` 收
+  {
+    const taken = slurs.map((sl) => sl.obj.box);
+    const free = (b: Rect) => !taken.some((t) => b.x < t.right && b.x + b.w > t.left && b.y < t.bottom && b.y + b.h > t.top);
+    const segs = [...prims.vSegs, ...stemSegs];
+    const nearStemEnd = (x: number, y: number) =>
+      segs.some((v) => Math.abs((v.x0 + v.x1) / 2 - x) <= unit.space * LOW_BOW_STEM && [v.y0, v.y1].some((vy) => Math.abs(vy - y) <= unit.space * LOW_BOW_STEM));
+    const cands = [...ledger.unclaimed()].filter((c) => free(c.bbox));
+    for (const sl of findRasterSlurs(cmap, unit, cands, pg.objs.length + pg.segs.length + 1000 + slurs.length, repaired, undefined, undefined, LOW_BOW_MIN))
+      if (!nearStemEnd(sl.lx, sl.ly) && !nearStemEnd(sl.rx, sl.ry)) slurs.push(sl);
   }
   for (const sl of slurs) ledger.claim({ x: sl.obj.box.left, y: sl.obj.box.top, w: sl.obj.box.right - sl.obj.box.left, h: sl.obj.box.bottom - sl.obj.box.top }, "slur");
   // 虚线弧（`slur.ts::findRasterDashedSlurs`）：无主块之外，只被歌词字格认过的短划也算（弧两头那截常落在歌词带上沿，
