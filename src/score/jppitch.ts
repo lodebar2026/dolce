@@ -160,12 +160,6 @@ export class MusicCommon {
 export class Key {
   fifths = 0;
   get name(): string {
-    const wr = "CDEFGAB";
-    const b = (4 * this.fifths + 28) % 7;
-    let res = "";
-    if (this.fifths < -1) res += "b";
-    else if (this.fifths === 7) res += "#";
-    res += wr[b];
-    return res;
+    return MusicCommon.keys[this.fifths + 7]!;
   }
 }
