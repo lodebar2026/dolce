@@ -230,6 +230,16 @@ function convertLine(
         const b = fromFanqieBarline(el);
         takePending(b);
         measureAt.set(i, measures.length);
+        // 无音符的前导线是下一小节的左边界，不是一个独立空小节。
+        if (!mea.elements.length) {
+          b.location = "left";
+          (mea.barlines ??= []).push(b);
+          if (el.temporaryKey !== undefined) {
+            carry.key = keyOfDegree(carry.home, el.temporaryKey);
+            mea.attrs = { ...mea.attrs, key: carry.key };
+          }
+          break;
+        }
         flush(b, el.temporaryKey);
         break;
       }

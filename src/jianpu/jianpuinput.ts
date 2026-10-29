@@ -301,6 +301,8 @@ function rowsPart(
       }
 
       if (el.kind === "barline") {
+        // 显式前导线只用于原样显示；其反复与属性已由 open 从所属模型小节读取。
+        if (refs?.[index]?.barline?.location === "left") return;
         const mea = measure ?? open(refs?.[index]?.measure);
         closeVolta(mea);
         // 反复起点 `|:` 挂到**下一小节**的 repeatForward 上

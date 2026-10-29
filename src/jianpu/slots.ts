@@ -274,9 +274,13 @@ function buildRow(measures: readonly Measure[], ranges?: ReadonlyMap<Measure, re
       row.elements.push(innerVoiceLayer(measures.slice(mi, end + 1), marks, nextPadId));
       row.refs.push({ measure: mea });
     }
-    // **左小节线不输出为元素**：`FanqieDoc` 里 barline 元素就是小节分隔，行首再来一根会凭空
-    // 多出一个空小节（引擎输入随即 `measure has no chord` 抛错）。
-    // 它携带的信息已由「前一小节的右线」与房号的 volta mark 承载。
+    // 文本谱显式写出的左边界保留原文位置；合成的房号左线不另画小节线。
+    if (from === 0) for (const b of mea.barlines ?? []) {
+      if (b.location !== "left" || !b.source || b.style === undefined) continue;
+      pushInline(row, b.before, mea);
+      row.elements.push(fanqieBar(b));
+      row.refs.push({ barline: b, measure: mea });
+    }
     let pendingGrace: NoteElement[] = [];
     let lastNote: NoteElement | null = null;
     /** 小节元素下标 → 落成的那个符号（方向记号按下标挂，见 `directionmarks.ts`） */
@@ -574,7 +578,7 @@ function carryToPrevBarline(measures: readonly Measure[], rows: readonly RowBuil
   const prevBar = (i: number): BarlineElement | undefined => {
     const prev = measures[i - 1];
     for (const row of rows) {
-      const k = row.refs.findIndex((r) => r.barline && r.measure === prev);
+      const k = row.refs.findIndex((r) => r.barline?.location === "right" && r.measure === prev);
       if (k < 0) continue;
       const el = row.elements[k];
       return el?.kind === "barline" ? el : undefined;
@@ -582,7 +586,8 @@ function carryToPrevBarline(measures: readonly Measure[], rows: readonly RowBuil
     return undefined;
   };
   measures.forEach((mea, i) => {
-    if (i > 0 && mea.barlines?.some((b) => b.location === "left" && b.repeat === "forward")) {
+    // 显式左线已在行视图中占有一个元素，不能再在前一右线上合成同一个反复起点。
+    if (i > 0 && mea.barlines?.some((b) => b.location === "left" && b.repeat === "forward" && !b.source)) {
       const el = prevBar(i);
       if (el) el.repeatForwardAfter = true;
     }

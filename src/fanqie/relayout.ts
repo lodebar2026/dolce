@@ -118,7 +118,19 @@ function pieceText(p: Piece): string {
 
 /** 把若干片段拼成一行 `Q` 的正文。 */
 function musicText(pieces: readonly Piece[]): string {
-  return pieces.map(pieceText).filter((s) => s.length > 0).join(" ");
+  return pieces.map((p, i) => {
+    const text = pieceText(p);
+    const first = p.line.elements[p.from];
+    const prev = pieces[i - 1];
+    const last = prev?.line.elements[prev.to - 1];
+    // 拼接源行时，前一片段已收线，下一片段的普通前导线不能再造一个分隔。
+    // 带反复、临时拍号或注记的线仍按原文保留。
+    if (last?.kind === "barline" && first?.kind === "barline" && first.type === "normal"
+      && !first.ornaments.length && !first.annotation && !first.temporaryMeter && !first.temporaryKey) {
+      return text.replace(/^\|(?![|:/*])\s*/, "");
+    }
+    return text;
+  }).filter((s) => s.length > 0).join(" ");
 }
 
 /** 一条歌词行在 [s0,s1) 这几个音节上的原文切片，以及它实际给出了几个音节。
