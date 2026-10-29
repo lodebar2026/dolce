@@ -23,7 +23,7 @@ import { projectForJianpu } from "../model/jianpuproject";
 import { melodyLane } from "../model/jianpu";
 import { hasCrossStaff } from "../model/staves";
 import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
-import { fanqieArcLosses } from "../fanqie/tofanqie";
+import { fanqieArcLosses, shortOpenVoltas } from "../fanqie/tofanqie";
 import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "../model/deconames";
 import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "../model/pagemeta";
 import { getLang, t } from "../i18n";
@@ -51,6 +51,7 @@ export type Feature =
   | "tonicDegree"    // 主音唱名不是 1（首调 `6=E`、`K:Em`）
   | "multiVerse"     // 多段歌词
   | "volta"          // 房号
+  | "shortOpenVolta" // 只罩一小节、右端不封口的房号（番茄单小节的 `]/` 照样封口）
   | "grace"          // 倚音
   | "slur"           // 圆滑线
   | "textLine"       // 文字行（段落词、注记）
@@ -97,6 +98,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   tonicDegree: "主音唱名（6=E 这类写法，会改写成同调号的 1= 大调）",
   multiVerse: "多段歌词",
   volta: "房号",
+  shortOpenVolta: "只罩一小节的不封口房号（会画成封口）",
   grace: "倚音",
   slur: "圆滑线",
   textLine: "段落词与注记",
@@ -182,7 +184,8 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `fanqie/dialect.ts::EmitStyle.pageFields`）
   // 番茄的调号字段 `D:` 只有音名、没有主音唱名（诗歌本的 `6=E4/4` 写得出）
-  tomato: allBut(...FANQIE_GONE, "pageText", "layoutDirectives", "tonicDegree"),
+  // 只罩一小节的房 `]/` 不生效、照样封口（番茄官方，`fanqie/dialect.ts::openVoltaNeedsTwoMeasures`）
+  tomato: allBut(...FANQIE_GONE, "pageText", "layoutDirectives", "tonicDegree", "shortOpenVolta"),
   shige: allBut(...FANQIE_GONE),
   // jianpu-ly 装不下什么，依据 `docs/格式/jianpu-ly.md` 与 `tojly.ts` 的 `warnings`：
   //   · 多声部/多曲只写第一路（`NextScore` 本版不写）；扩展 meta、纸、样式表、页面文字没有字段；
@@ -331,6 +334,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
       const nest = nestArcsInTuplets(part, marks, isArc);
       if (nest.crossedMarks.size > arcsToNextNote(part, marks, isArc).size) used.add("slurCrossTuplet");
     }
+    if (song.parts.some((part) => shortOpenVoltas(part).size)) used.add("shortOpenVolta");
     const arcs = fanqieArcLosses(song);
     if (arcs.nested) used.add("nestedArc");
     if (arcs.oddTuplet) used.add("oddTuplet");

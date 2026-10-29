@@ -587,6 +587,7 @@ export const en: Record<MsgKey, string> = {
   "feat.tonicDegree": "Tonic degree (6=E style keys become the 1= major key with the same signature)",
   "feat.multiVerse": "Multiple verses",
   "feat.volta": "Volta brackets",
+  "feat.shortOpenVolta": "Open-ended volta over a single bar (will be closed)",
   "feat.grace": "Grace notes",
   "feat.slur": "Slurs",
   "feat.textLine": "Section words and annotations",

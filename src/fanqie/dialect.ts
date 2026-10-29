@@ -39,6 +39,8 @@ export interface DialectSpec {
   wordSeparator: string;
   /** 并字连接号：把本字并到前一个音节。没有这种写法就留空 */
   joinToken?: string;
+  /** 跳房子不封口（`]/`）只在罩两小节以上时生效、单小节的照样封口（番茄官方；诗歌本二房后单小节不封口是常用写法） */
+  openVoltaNeedsTwoMeasures: boolean;
   /** 头部字段的写法。**只有 emitter 用**——解析侧两边字段都认，不需要分方言。 */
   header: HeaderStyle;
   /** 曲行/歌词行的写法。**只有 emitter 用**（`fanqie/tofanqie.ts`）。 */
@@ -114,6 +116,7 @@ const TOMATO: DialectSpec = {
   ],
   wordSeparator: "/",
   joinToken: "~",
+  openVoltaNeedsTwoMeasures: true,
   header: {
     versionLine: "V:1.0", // 与 D:/P: 一同构成 sniffDialect 的番茄特征
     titleField: "B",
@@ -169,6 +172,7 @@ const SHIGE: DialectSpec = {
     ["|", "normal"],
   ],
   wordSeparator: " ",
+  openVoltaNeedsTwoMeasures: false,
   header: {
     titleField: "T",
     indexFields: { left: "XL", right: "XR" },

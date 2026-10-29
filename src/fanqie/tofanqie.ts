@@ -350,6 +350,8 @@ interface PartState {
   pos: Map<ElementId, number>;
   /** 已开未收的房号 */
   openVoltas: number;
+  /** 只罩一小节的不封口房号的收尾：方言写不出（`openVoltaNeedsTwoMeasures`）时照封口写 */
+  shortOpen: ReadonlySet<NonNullable<Barline["ending"]>>;
   /** 当前生效的拍号（曲中转拍写 `"p:3/4"`；减时线连断的拍位也按它算） */
   time: Time | undefined;
   /** 首调号与当前调号的 fifths（曲中转调写 `"k:2"`，级数相对首调） */
@@ -660,7 +662,7 @@ function writeRightBarline(measures: readonly Measure[], mi: number, line: Line,
   for (const b of stops) {
     if (st.openVoltas <= 0) break;
     st.openVoltas--;
-    closeText += "]" + (b.ending!.type === "discontinue" ? "/" : "");
+    closeText += "]" + (b.ending!.type === "discontinue" && !st.shortOpen.has(b.ending!) ? "/" : "");
   }
   if (closeText && !d.emit.voltaCloseAfterBarline) {
     line.push(closeText);
@@ -950,6 +952,25 @@ function writableMarks(song: Song, part: Part, own: ReadonlySet<ElementId>): { m
   return { marks: out.filter((mk) => mk.type !== "slur" || !tied.has(`${mk.start}:${mk.end}`)), graceArc };
 }
 
+/** 只罩一小节的不封口房号的收尾（`discontinue`）。番茄写不出：单小节的 `]/` 官方照样封口（`DialectSpec.openVoltaNeedsTwoMeasures`）。 */
+export function shortOpenVoltas(part: Part): Set<NonNullable<Barline["ending"]>> {
+  const out = new Set<NonNullable<Barline["ending"]>>();
+  const open: { e: NonNullable<Barline["ending"]>; mi: number }[] = [];
+  part.measures.forEach((mea, mi) => {
+    // 同小节先起后收（`.jpwabc` 读进来左线排在右线后）
+    const ends = (mea.barlines ?? []).flatMap((b) => (b.ending ? [b.ending] : []));
+    for (const e of ends) if (e.type === "start") open.push({ e, mi });
+    for (const e of ends) {
+      if (e.type === "start") continue;
+      const at = e.pair !== undefined ? open.findIndex((s) => s.e.pair === e.pair) : open.length - 1;
+      if (at < 0) continue;
+      if (e.type === "discontinue" && open[at]!.mi === mi) out.add(e);
+      open.splice(at, 1);
+    }
+  });
+  return out;
+}
+
 /** 这首歌转成文本谱时写不出来的弧线与多连音（给丢失清单用，判据与写出时同一份）。 */
 export function fanqieArcLosses(src: Song): { nested: number; oddTuplet: number; graceArc: number } {
   const song = projectForJianpu(src);
@@ -999,7 +1020,7 @@ export function emitFanqieSong(src: Song, dialect: Dialect, opts: EmitFanqieOpti
     const own = ownIds(part, (el, mi) => isStreamElement(el, part.measures[mi]!));
     const pos = positions(part);
     return {
-      d, plan: planArcs(writableMarks(song, part, own).marks, pos), pos, openVoltas: 0,
+      d, plan: planArcs(writableMarks(song, part, own).marks, pos), pos, openVoltas: 0, shortOpen: d.openVoltaNeedsTwoMeasures ? shortOpenVoltas(part) : new Set(),
       time: song.time, home, key: home, autoBoundaries: !hasBoundaries, consumedLeft: new Set(), closeOpenVoltas: !opts.fromFanqie, carryBeat: 0,
     };
   });

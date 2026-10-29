@@ -281,6 +281,21 @@ function makeMark(open: OpenMark, end: number, ctx: Ctx, toNext = false): Mark {
   return mark;
 }
 
+/** 下标闭区间 [from, to] 里有音的小节数（被小节线隔开的音符/增时线段数）。 */
+function measuresIn(elements: MusicElement[], from: number, to: number): number {
+  let n = 0;
+  let inside = false;
+  for (let i = from; i <= to && i < elements.length; i += 1) {
+    const kind = elements[i]!.kind;
+    if (kind === "barline") inside = false;
+    else if ((kind === "note" || kind === "sustain") && !inside) {
+      n += 1;
+      inside = true;
+    }
+  }
+  return n;
+}
+
 /** 最后一个可挂记号的元素（音符/增时线/小节线）。 */
 function lastAttachable(elements: MusicElement[]): Attachable | undefined {
   for (let i = elements.length - 1; i >= 0; i -= 1) {
@@ -510,8 +525,11 @@ export function parseMusicLine(
       if (open === undefined) {
         report(ctx, "unmatched-volta-end", tr("diag.fanqie.extraBracket"), i);
       } else {
+        const end = Math.max(0, elements.length - 1);
         if (openEnd) open.openEnd = true;
-        marks.push(makeMark(open, Math.max(0, elements.length - 1), ctx));
+        // 番茄：只罩一小节的房 `/` 不生效（跨行来的至少两小节）
+        if (ctx.dialect.openVoltaNeedsTwoMeasures && !open.fromPrevious && measuresIn(elements, open.start, end) < 2) delete open.openEnd;
+        marks.push(makeMark(open, end, ctx));
       }
       i = cursor;
       continue;

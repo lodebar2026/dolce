@@ -586,6 +586,7 @@ export const zh = {
   "feat.tonicDegree": "主音唱名（6=E 这类写法，会改写成同调号的 1= 大调）",
   "feat.multiVerse": "多段歌词",
   "feat.volta": "房号",
+  "feat.shortOpenVolta": "只罩一小节的不封口房号（会画成封口）",
   "feat.grace": "倚音",
   "feat.slur": "圆滑线",
   "feat.textLine": "段落词与注记",
