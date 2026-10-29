@@ -154,6 +154,9 @@ const RUN_BRIDGE = 1.2;
 const RUN_PIECE_H = 1;
 /** 拼弧时空列按线的对边补拱，两截各自的宽度下限（格）：真弧两条腿实测 0.53 格起，扫描噪点拼出来的有一截只有 2~4 像素。 */
 const RUN_LEG_W = 0.4;
+/** 按游程拼弧：量端头走向取末这么宽（格）、顺走向往空当里至多外推这么远（格），见 `onLineEnd` */
+const RUN_END_SPAN = 0.3;
+const RUN_END_REACH = 0.3;
 /** 同上，各自的高度下限（格）：腿斜着伸进线里，实测 7 像素（0.37 格）起；贴着线的残段 5 像素。 */
 const RUN_LEG_H = 0.35;
 /** 竖段穿过按游程去线图上的块：块的高度里那一列（左右各一像素）有墨的行要占块高这么多。 */
@@ -1206,17 +1209,36 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     };
     const pieces = cands.filter((c) => c.h <= RUN_PIECE_H && !used(c) && !(c.bbox.h > c.bbox.w * 2 && c.bbox.w < sp * RUN_LEG_W && straight(c))).sort((a, b) => a.bbox.x - b.bbox.x);
     const lineBand = unit.lineThick + 1;
+    // 端头那段（末 `RUN_END_SPAN` 格）墨心的斜率：斜伸进线的弧腿贴线那几行随线去掉了，端点停在线外（新编 017 m7 离线心 6 像素、线宽 3），
+    // 顺着这个走向往空当里外推（至多 `RUN_END_REACH` 格），推得进线带的也算落在线上；扁残块走向平，外推不动
+    const endSlope = (c: Contour, right: boolean) => {
+      const span = Math.max(2, Math.round(sp * RUN_END_SPAN));
+      const x1 = right ? c.bbox.x + c.bbox.w - 1 : c.bbox.x, x0 = right ? Math.max(c.bbox.x, x1 - span) : Math.min(c.bbox.x + c.bbox.w - 1, x1 + span);
+      if (x0 === x1) return 0;
+      const y0 = endY({ ...c, bbox: { ...c.bbox, x: x0, w: 1 } } as Contour, false);
+      const y1 = endY(c, right);
+      return Number.isFinite(y0) && Number.isFinite(y1) ? (y1 - y0) / Math.abs(x1 - x0) : 0;
+    };
+    const onLineEnd = (c: Contour, right: boolean, l: StaffLineRun) => {
+      const x = right ? c.bbox.x + c.bbox.w - 1 : c.bbox.x;
+      const y = endY(c, right), k = endSlope(c, right);
+      for (let d = 0; d <= sp * RUN_END_REACH; d++) {
+        const xx = right ? x + d : x - d;
+        if (Math.abs(y + k * d - lineYAt(l, xx)) <= lineBand) return true;
+      }
+      return false;
+    };
     for (const a of pieces) {
       if (used(a)) continue;
       const ay = endY(a, true);
       // 线按端点那一列的 y 比（扫描件谱线斜，名义 y 在行中间差出半格，破碎扫描 p3 m30）
       const ax = a.bbox.x + a.bbox.w - 1;
-      const line = staffLines.find((l) => Math.abs(lineYAt(l, ax) - ay) <= lineBand);
+      const line = staffLines.find((l) => onLineEnd(a, true, l));
       if (!line) continue;
       for (const b of pieces) {
         const gap = b.bbox.x - (a.bbox.x + a.bbox.w);
         if (b === a || gap < 0 || gap > sp * RUN_BRIDGE || used(b)) continue;
-        if (Math.abs(endY(b, false) - lineYAt(line, b.bbox.x)) > lineBand) continue;
+        if (!onLineEnd(b, false, line)) continue;
         // 拱不够的，两条腿各自够宽、够高（`RUN_LEG_W`、`RUN_LEG_H`）就把空着的那几列按弧走在线的对边再判一次：
         // 弧顶整段随线去掉了，两条腿从线下伸进线里，弧顶压着线的上沿（破碎扫描 p3 m30、m31 第五线上那两条，两条腿自己只拱 0.19、0.21 格）；
         // 碎点拼出来的、一截扁平贴着线的不给（扫描噪点里的符杠残块，破碎扫描 p10 m97）

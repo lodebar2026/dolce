@@ -12,7 +12,7 @@ import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature
 import type { HarmonyToken } from "../harmony";
 import type { ContourMap } from "../contour";
 import type { JianpuBand } from "../jianpuband";
-import { type StaffContext, findClefKeyTime, type BeamShape, type StemInfo, type StaffNote } from "../../staffomr/notedata";
+import { type StaffContext, findClefKeyTime, checkBars, type BeamShape, type StemInfo, type StaffNote, type StaffChord } from "../../staffomr/notedata";
 import { findNoteheads, tagSystemBarlines, findStems, findTails, findBarlines, makeSystems, makeBars } from "../../staffomr/page";
 import { inkSystemBarlines, bridgeFaintSysLines, dropLoneBarlines, voteSystemBarlines } from "../barvote";
 import { tagLooseStems, mergeSplitStems, splitUnisons, doubleUnisonWholes, markCrossStaff } from "../stems";
@@ -22,7 +22,7 @@ import { dropCourtesyKeys, demoteMidKeys, extendKeyChains, dropHeadsInKey, prune
 import { markRepeatsAndVoltas } from "../repeats";
 import type { PageCarry, ClefTally, RasterProbe } from "../recognize";
 import { RasterGlyphLookup, matchTemplate } from "../rasterglyphs";
-import { enclosedWhite, longestVRun, tallStrokes } from "../restshape";
+import { enclosedWhite, isEighthRest, longestVRun, tallStrokes } from "../restshape";
 import { stemWalledCavity } from "../notehead";
 import { fixDottedPairs, fixQuartersByBarSum, dropBorrowedBeams, tupletsByBarSum } from "../rhythmfix";
 import { findTuplets } from "../../staffomr/notations";
@@ -65,13 +65,15 @@ export async function buildPageStructure(c: {
   harmonies: HarmonyToken[];
   cmap: ContourMap;
   jianpuBands: JianpuBand[];
+  /** 整页文字检测框（`pagetext.ts`）：符尾自举时避开（歌词字的上伸笔碰着朝下的干端） */
+  textBoxes?: Rect[];
   probe?: RasterProbe;
 }): Promise<{
   ctx: Map<Staff, StaffContext>;
   carry: PageCarry;
   clefTally: ClefTally;
 }> {
-  const { pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands } = c;
+  const { pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands, textBoxes = [] } = c;
   const at = (step: string) => c.probe?.(step, { pg });
   // ── 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节
   // 读音高按该处实测的五线、相邻两线间的相对位置（`Staff.middleStep`）
@@ -94,7 +96,8 @@ export async function buildPageStructure(c: {
   mergeSplitStems(pg);
   at("mergeSplitStems");
   // 符尾**按位置自举**，不查字典（见 `bootstrapFlags`）
-  for (const f of bootstrapFlags(nl, pg, prims.beams, unit, harmonyMasks)) {
+  // 整页文字框另传：朝下的干端正碰着下面歌词的上伸笔，那一笔会被自举成符尾（晨曦破晓 m0 低音和弦碰着「has」的 h，四分读成八分）
+  for (const f of bootstrapFlags(nl, pg, prims.beams, unit, harmonyMasks, textBoxes)) {
     ledger.claim(f.box, `flag:${f.code}`);
     const { obj, sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, f, unit.height);
     pg.objs.push(obj);
@@ -714,9 +717,12 @@ export function fixNotes(c: {
 }
 
 /** 跨谱表补漏：补漏音的探针、补附点的验点、不验点补附点的验空 */
-/** 按上下文补四分休止（`crossStaffProbes`）的块下限：宽（格，`CTX_REST_W[0]`）、高（格）。小号四分休止 0.64×1.5 格起；上限同按块认的那一档。 */
+/** 按上下文补四分休止（`crossStaffProbes`、`restByBarSum`）的块下限：宽（格，`CTX_REST_W[0]`）、高（格，比一个线距高；点、碎块都比这小）。
+ *  上限同按块认的那一档。真正挡假的是上下文：缺的正好是一个四分拍、补完凑满（新编 f32 小号四分休止 0.64×1.36~1.59 格） */
 const CTX_REST_W = [0.5] as const;
-const CTX_REST_H = 1.4;
+const CTX_REST_H = 1;
+/** 同上，宽高比上限：四分休止 0.24~0.5，八分休止更宽。 */
+const CTX_REST_ASPECT = 0.55;
 
 export function crossStaffProbes(c: {
   masks: HeadMask[];
@@ -793,6 +799,7 @@ export function crossStaffProbes(c: {
           const cy = b.y + b.h / 2;
           if (Math.abs(cx - x) > sp || cy < f.top + sp || cy > f.bottom - sp || ledger.claimsOf(c.id).length) continue;
           if (b.w < sp * CTX_REST_W[0] || b.w > sp * QREST_SPINE_W || b.h < sp * CTX_REST_H || b.h > sp * QREST_H[1]) continue;
+          if (isEighthRest(nl, b, c.area, unit) || b.w > b.h * CTX_REST_ASPECT) continue;
           if (notes.some((n) => n.staff === stf && n.sym.box.left < b.x + b.w && n.sym.box.right > b.x && n.sym.box.top < b.y + b.h && n.sym.box.bottom > b.y)) continue;
           const { sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box: b, code: "restQuarter" } as RasterSym, unit.height);
           sym.addTag("Note");
@@ -851,6 +858,90 @@ export function crossStaffProbes(c: {
   };
   fixByCrossStaff(pg, ctx, notes, carry.carryTime, unit.space, headSearch, dotProbe, gapProbe);
   at("fixByCrossStaff");
+  restByBarSum();
+  at("restByBarSum");
+
+  // **单行谱缺正好一个四分拍，按上下文补四分休止**（跨谱表那一路给不出拍位时：同系统几行都不满、没有锚）：
+  // 这一小节的时值和正好比应有的少一个四分、小节里**恰好一块**没人认领、在谱表中段、休止大小、不压着本行已有的音的墨，补成四分休止，
+  // 按 x 插进去；补完重查这一小节，凑不满就撤回（新编 f32 低音谱表的小号四分休止，系统末小节两行都不满）。候选不止一块的不补。
+  // 应有时值：整小节按拍号；弱起、断开的半截小节（`split`）与一个音都没有的小节（`checkBars` 不出条目）按同系统别的谱行
+  // 这一小节的时值和，各行一致才用（f32 低音谱表弱起小节只印一个四分休止，高音谱表那一拍是附点八分加十六分）
+  function restByBarSum(): void {
+    const sp = unit.space;
+    const checks = checkBars(pg, ctx, notes, carry.carryTime);
+    const checkOf = (stf: Staff, i: number) => checks.find((q) => q.staff === stf && q.index === i);
+    /** 本行谱头（谱号、调号、拍号）的右沿，只算落在这一小节里的 */
+    const headEnd = (stf: Staff, bar: { right: number }) => {
+      const c0 = ctx.get(stf);
+      return Math.max(-Infinity, ...[c0?.clef, ...(c0?.key ?? []), ...(c0?.time ?? [])].filter((q): q is Sym => !!q && q.box.left < bar.right).map((q) => q.box.right));
+    };
+    // 别的谱行这一小节的时间跨度：x 上叠着的和弦（同一拍两根干各挂一半头）算同一个起点、取长的那个，不像 `sum` 那样各算一遍
+    const spanOf = (stf: Staff, i: number): number | undefined => {
+      const bar = stf.bars[i];
+      if (!bar) return undefined;
+      // 谱头（谱号、调号、拍号）左边的不算：这一步调号的升号还可能被读成一个音（f32 第一行读出个 G5，后面才删）
+      const head = headEnd(stf, bar);
+      const gs = [...new Set(notes.filter((n) => n.staff === stf && !n.crossStaff && n.x >= bar.left && n.x < bar.right && n.sym.box.left > head).map((n) => n.group))].filter((g): g is StaffChord => !!g && !g.grace);
+      if (!gs.length) return undefined;
+      gs.sort((p, q) => p.left - q.left);
+      // 和弦的 `dur` 定了拍位才有，这里按它各音的时值取：同一根干上的音时值相同，取各音里最多的那个（并列取短的），
+      // 一个读错的头带不偏（f32 第二行首小节的十六分和弦里混进一个内腔假头读成的全音符 E5）
+      const durOf = (g: StaffChord) => {
+        const ds = g.notes.map((n) => n.duration);
+        const cnt = (d: number) => ds.filter((v) => Math.abs(v - d) < 1e-9).length;
+        return ds.reduce((best, d) => (cnt(d) > cnt(best) || (cnt(d) === cnt(best) && d < best) ? d : best), ds[0]);
+      };
+      let tot = 0, right = -Infinity, dur = 0;
+      for (const g of gs) {
+        if (g.left <= right) dur = Math.max(dur, durOf(g));
+        else (tot += dur), (dur = durOf(g));
+        right = Math.max(right, g.right);
+      }
+      return tot + dur;
+    };
+    const targetOf = (stf: Staff, i: number): number | undefined => {
+      const own = checkOf(stf, i);
+      if (own && !own.split) return own.expect;
+      const sys = pg.systems.find((sy) => sy.staves.includes(stf));
+      const spans = (sys?.staves ?? []).filter((s0) => s0 !== stf).map((s0) => spanOf(s0, i));
+      if (!spans.length || spans.some((v) => v === undefined)) return undefined;
+      return spans.every((v) => Math.abs(v! - spans[0]!) < 1e-6) && spans[0]! > 0 ? spans[0] : undefined;
+    };
+    for (const stf of pg.staves)
+      stf.bars.forEach((bar, i) => {
+        const own = checkOf(stf, i);
+        if (own?.full) return;
+        const target = targetOf(stf, i);
+        if (target === undefined || Math.abs(target - (own?.sum ?? 0) - 1 / 4) > 1e-6) return;
+        const mine = notes.filter((n) => n.staff === stf);
+        const cands = cmap.contours.filter((c) => {
+          const r = c.bbox;
+          const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          if (cx <= bar.left || cx >= bar.right || cy < stf.box.top + sp || cy > stf.box.bottom - sp || ledger.claimsOf(c.id).length) return false;
+          if (r.w < sp * CTX_REST_W[0] || r.w > sp * QREST_SPINE_W || r.h < sp * CTX_REST_H || r.h > sp * QREST_H[1]) return false;
+          // 形状是八分休止的不当四分补（新编 250 m13：缺的是一个八分休止加别处一处时值错，凑满了反把别的音带错）：
+          // 四分休止又瘦又高（宽高比 0.24~0.5），八分休止宽（那块 1.0×1.5 格、0.67）
+          if (isEighthRest(nl, r, c.area, unit) || r.w > r.h * CTX_REST_ASPECT) return false;
+          return !mine.some((n) => n.sym.box.left < r.x + r.w && n.sym.box.right > r.x && n.sym.box.top < r.y + r.h && n.sym.box.bottom > r.y);
+        });
+        if (cands.length !== 1) return;
+        const { sym } = makeSymObj(pg.objs.length + pg.segs.length + 1, { box: cands[0].bbox, code: "restQuarter" } as RasterSym, unit.height);
+        sym.addTag("Note");
+        sym.ownerStaff = stf;
+        const n: StaffNote = { sym, staff: stf, rest: true, diatonic: -1, step: "", octave: 0, alter: 0, accidental: null, duration: 1 / 4, base: 1 / 4, dots: 0, stemUp: null, beams: 0, x: sym.px, voice: 1 };
+        const chord: StaffChord = { staff: stf, notes: [n], stem: null, left: sym.box.left, right: sym.box.right, top: sym.box.top, offset: 0, dur: 1 / 4, grace: false, timed: false, voice: 1 };
+        n.group = chord;
+        const at0 = notes.findIndex((m) => m.staff.box.top > n.staff.box.top || (m.staff === n.staff && m.x > n.x));
+        notes.splice(at0 < 0 ? notes.length : at0, 0, n);
+        const after = checkBars(pg, ctx, notes, carry.carryTime).find((q) => q.staff === stf && q.index === i);
+        if (!after || !(after.full || ((after.split || !own) && Math.abs(after.sum - target) < 1e-6))) {
+          notes.splice(notes.indexOf(n), 1);
+          return;
+        }
+        pg.symbols.push(sym);
+        pg.objs.push(sym.parent);
+      });
+  }
 }
 
 /** 补漏音找头的得分下限至少是本页已认出的头中位得分的这么多（见 `headSearch`）。0.5 会挡掉扫描档一个补对的低分头（0.11，中位约 0.27）。 */

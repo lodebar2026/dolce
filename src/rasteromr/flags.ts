@@ -26,9 +26,13 @@ import { overlapFrac } from "../omrkit/geom";
  * 已经把层数算进时值了（`calcBeamLevels`），再补个符尾反而把十六分压回八分
  *（`buildStems` 里「有符尾的符干不接符杠」）。
  */
-export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: RasterUnit, avoid: Rect[] = []): RasterSym[] {
+export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: RasterUnit, avoid: Rect[] = [], textBoxes: Rect[] = []): RasterSym[] {
   const sp = unit.space;
   const out: RasterSym[] = [];
+  // 文字行：一行字高（不过 `TEXT_LINE_H` 格），又不压在谱表上（谱表上下各放半格）——DBNet 在谱表上会把一组八分音框进去，
+  // 那框也只一两格高（新编 201、259、371 一串真符尾被挡掉）；要避开的是谱表外的歌词（晨曦破晓低音干端碰着的「has」）
+  const onStaff = (m: Rect) => pg.staves.some((st) => m.x < st.box.right && m.x + m.w > st.box.left && m.y < st.box.bottom + sp * 0.5 && m.y + m.h > st.box.top - sp * 0.5);
+  const textLines = textBoxes.filter((m) => m.h <= sp * TEXT_LINE_H && !onStaff(m));
   // **只看实心符头**：空心符头（二分/全音符）本来就不带符尾，
   // 给它安一个会把二分读成八分。
   const heads = pg.symbols.filter((s) => s.hasTag("Note") && s.code === "noteheadBlack");
@@ -287,6 +291,10 @@ export function bootstrapFlags(bin: Binary, pg: SPage, beams: BeamQuad[], unit: 
     // **和弦字母不是符尾**：符干朝上顶到和弦行时，窗口里那点墨是「C/E」的 E、「Csus4」的 sus
     //（《主我敬拜你》三处，八分附点、附点二分都读成了带尾的八分）
     if (avoid.some((m) => overlapFrac(fbox, m) > FLAG_AVOID)) continue;
+    // **歌词字的上伸笔不是符尾**：朝下的干端碰着下面歌词（晨曦破晓 m0 低音和弦碰着「has」的 h）。整页文字框会把贴着歌词的音也框进去，
+    // 只在出块几乎整个落在文字框里（`FLAG_IN_TEXT`）时避开（按 0.2 那档避，新编 373 一串真符尾被挡掉）；
+    // 只认谱表外一行字高的框（`textLines`）：密排页上 DBNet 会把整片谱表连着歌词框成一块（新编 075 那几框高十几格），一串真符尾全被挡掉
+    if (textLines.some((m) => overlapFrac(fbox, m) > FLAG_IN_TEXT)) continue;
     // **窗口里那团墨是别的头**：两个头左缘连成的竖墨被当成干，下面那个头（吊在加线下的 B3）左缘离这根「干」稍远、没算作它的头，
     // 干尖于是成了自由端、头的墨当了符尾（耶和华是我的牧者 m9 E4/B3 读成八分）。已认的实心头大半落在出块里、又贴着加线的不出尾。
     // 要贴着加线：符尾那团墨自己也常被收成假头（我一生要赞美你 m18 E4 的尾），光看「盖住已认头」会把真尾剔掉
@@ -403,6 +411,10 @@ const HOOK_PROM = 0.15;
 
 /** 符尾窗口与和弦字母条交叠超过这一成就不认。 */
 const FLAG_AVOID = 0.2;
+/** 符尾出块落在整页文字框里超过这么多才避开（`bootstrapFlags` 的 `textBoxes`）。 */
+const FLAG_IN_TEXT = 0.8;
+/** 一行字的文字框最高这么多格（再高是整片谱表连着歌词被框成一块）。 */
+const TEXT_LINE_H = 2.5;
 /** 出块盖住一个已认实心头的比例上限（见用处）。 */
 const FLAG_ON_HEAD = 0.5;
 /** 盖住的是另挂着自己干的头时，比例下限放到这么多。 */

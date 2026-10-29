@@ -169,6 +169,10 @@ function flagLoop(bin: Binary, b: Rect, onLine: (y: number, x?: number) => boole
 const RESCUE_STEM = 2.5;
 /** 按「两根同向伸出的干围出的格子」剔的孔至少这么高（格），见 `sameWayCell` */
 const SAME_WAY_H = 0.4;
+/** 孔一侧连着的墨宽到本页实心头中位宽的这么多倍算实心墨块，见 `solidWalls` */
+const SOLID_WALL = 0.6;
+/** 实心墙宽加孔宽至少是本页实心头中位宽的这么多倍（装不进一个头），见 `solidWalls` */
+const SOLID_WALL_SPAN = 1.2;
 
 /** 空心符头：按**内腔（洞）**再找一遍 */
 export function hollowHeadsByCavity(c: {
@@ -216,6 +220,36 @@ export function hollowHeadsByCavity(c: {
   const halfLine = unit.lineThick / 2;
   const pinched = (b: Rect) =>
     b.w >= unit.space * PINCHED_W && onLineOrGrid(b.y - halfLine - 0.5, b.x + b.w / 2) && onLineOrGrid(b.y + b.h + halfLine - 0.5, b.x + b.w / 2) && holeSolidity(raster.bin, b) < HOLE_CONVEX_MIN;
+  // **墙是实心墨块的白不是内腔**：同一谱间里两个实心头之间、或干/符尾与实心头之间，上下两条谱线夹出的那段白（新编 349 m5 两个 F4 八分之间，
+  // m11 干、符尾、C5 头之间，读出全音符）。孔中间那行往两侧量连着的墨，任一侧够一个实心头宽就剔（见下）；空心头的墙只是圈边。
+  // 与 `sameWayCell` 一样在 `mergeHoles` 之后剔：先剔的话，原本跟它并成超高孔、被尺寸闸挡掉的那格单独过了闸，成了假头（主使我喜乐 m1、Holy Holy Holy P2 m6）
+  // 量孔心附近四成、五成、六成高那三行连着的墨，压在谱线、加线上的行不算（骑线空心头的内腔被线切开再并回来，中线正压着线，
+  // 顺着线量出去全是墨：新编 218 m4 下加一线 A3 全音符被剔）。一侧三行都满足才算实心墙：
+  // - 墨宽过本页实心头中位宽的 `SOLID_WALL` 倍；
+  // - 墙加孔宽装不进一个头（过 `SOLID_WALL_SPAN` 倍）：印得一边粗一边细的空心头，内腔只剩一道缝，粗的那边也有大半个头宽
+  //  （309 m3，墙 20、缝 6、头宽 30），可墙连孔还在一个头里；
+  // - 墨走完不是又进了一个内腔大小的孔：两声部同音并排贴着的两个全音符，圈边连着邻头的圈边（218 m11，17 像素），
+  //   宽度与 349 那种扫描小实心头（18~24）分不开，可走完就是邻头的内腔。
+  // 「那段墨落在已认成实心头的盒里」更直接，可这一步 349 那几个连着干的头还没拆出来，用不上
+  const blackW = median(heads.filter((h) => h.code === "noteheadBlack").map((h) => h.box.w));
+  // 只认内腔大小的孔（不过一个头宽、一格半高）：整片谱间空白也是孔，外接框盖住半行谱
+  const cavities = allHoles.filter((o) => o.w <= blackW * 1.2 && o.h <= unit.space * 1.5);
+  const inHole = (x: number, y: number) => cavities.some((o) => x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h);
+  const solidWalls = (b: Rect) => {
+    // 只判上下边都贴着谱线（加线）的孔，即两条线夹出的整格白（同 `cellLike`）：手写二分头扁扁一道内腔缝、一侧圈画得厚，
+    // 也够得上下面几条（是爱 p1 一处 18×8），剔了真内腔，本页空心头的统计跟着变，隔一个系统配出一个假全音符（m12 B4）；
+    // 谱号圈里的白高两格多，墙是谱号的粗笔
+    if (!Number.isFinite(blackW) || blackW <= 0 || !onLineOrGrid(b.y - halfLine - 0.5, b.x + b.w / 2) || !onLineOrGrid(b.y + b.h + halfLine - 0.5, b.x + b.w / 2)) return false;
+    const B = raster.bin;
+    const ys = [0.4, 0.5, 0.6].map((f) => Math.round(b.y + b.h * f)).filter((y) => !onLineOrGrid(y, b.x + b.w / 2));
+    if (!ys.length) return false;
+    const wall = (x: number, y: number, dx: number) => {
+      let n = 0;
+      for (; x >= 0 && x < B.w && B.data[y * B.w + x]; x += dx) n++;
+      return n >= blackW * SOLID_WALL && n + b.w > blackW * SOLID_WALL_SPAN && !inHole(x, y);
+    };
+    return [-1, 1].some((dx) => ys.every((y) => wall(dx < 0 ? b.x - 1 : b.x + b.w, y, dx)));
+  };
   const rawHoles = allHoles.filter((b) => !pinched(b));
   // **成摞的整格谱间白**（小节线与贴着它的符干夹出来、隔着谱线一格摞一格）先剔掉：它们纵向相接，
   // 会顺着链把旁边头的内腔并成一个高孔（我一生要赞美你第六行，小节线右边紧贴的 A4 二分头
@@ -316,7 +350,7 @@ export function hollowHeadsByCavity(c: {
     walledBy(b, false) &&
     cellSet.some((c) => c !== b && Math.abs(c.x - b.x) <= 2 && Math.abs(c.x + c.w - (b.x + b.w)) <= 2 && (Math.abs(c.y - (b.y + b.h)) <= unit.lineThick + 2 || Math.abs(b.y - (c.y + c.h)) <= unit.lineThick + 2));
   // 同向伸出的干格（`sameWayCell`）并完再剔：先剔的话，它上面原本跟它并成超高孔、被尺寸闸挡掉的那格（杠、干、谱线围的）就单独过了闸
-  const holes = mergeHoles(rawHoles.filter((b) => !stackedCell(b) && !cellSet.includes(b) && !besideCell(b)), unit, onLineOrGrid).filter((b) => !sameWayCell(b));
+  const holes = mergeHoles(rawHoles.filter((b) => !stackedCell(b) && !cellSet.includes(b) && !besideCell(b)), unit, onLineOrGrid).filter((b) => !sameWayCell(b) && !solidWalls(b));
   // 和弦字母的**内腔**也是洞（`D`/`G`/`B`/`A` 都有），不挡住就从这一路漏回来
   // ——检测框一并算「已被占」。
   // 判头那一路因「没有被围住的白」剔掉的块也算占着：剔它之前它就挡着按内腔找头的几路（是爱 p5 m67 符杠斜端与谱线夹出的尖白）
@@ -551,6 +585,26 @@ export function headsOnBareStemEnds(c: {
     const halves = [...heads.map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((q) => q.code === "noteheadHalf" && !(q as { weak?: boolean }).weak);
     const size = halves.length ? { w: median(halves.map((q) => q.box.w)), h: median(halves.map((q) => q.box.h)) } : { w: Math.round(unit.space * 1.3), h: Math.round(unit.space * 1.1) };
     for (const hd of headsOnBareStems(probes, unit, pitchGrid, size, raster.bin, (y: number, x?: number) => grid.onLine(y, unit.lineThick, x))) {
+      // 头盒按本页二分头的中位尺寸出，头小（扫描件、手写）时盒的远干一侧会骑到邻音的干上，挂干时抢了那根（破碎扫描 p7 m85 十六分 E4 的盒压着 D4 的干）。
+      // 头不会骑在别的干上：盒里横着另一根竖段（纵向跟盒叠过四分之一盒高）、又在收拢来的墨外面（是盒按中位尺寸铺过去才压上的），
+      // 盒收到它内侧。竖段落在收拢来的墨里的不收：盒一窄，空出来那片又让按内腔找头配出一个全音符（是爱 p1 m12 B4）
+      const probe = probes.find((q) => q.ids.some((id) => hd.ids.includes(id)));
+      const own = probe?.stem;
+      const cx = hd.box.x + hd.box.w / 2;
+      for (const v of prims.vSegs) {
+        const vx = (v.x0 + v.x1) / 2, half = Math.max(1, v.lw / 2);
+        if (v === own || (own && Math.abs(vx - (own.x0 + own.x1) / 2) <= half + 1) || Math.min(Math.max(v.y0, v.y1), hd.box.y + hd.box.h) - Math.max(Math.min(v.y0, v.y1), hd.box.y) < hd.box.h * 0.25) continue;
+        if (vx - half <= hd.box.x || vx + half >= hd.box.x + hd.box.w) continue;
+        if (probe && vx + half >= probe.box.x && vx - half <= probe.box.x + probe.box.w) continue;
+        // 位置合法、本就可能是这个头自己的干的不收：右沿往上伸（干朝上）、左沿往下伸（干朝下）。两声部共用一个头时，
+        // 一根朝下是这根光杆干、一根朝上挂在右沿（新编 255 低音 m2、m6 的 Ab3 二分，收窄了朝上那根挂不上，头丢了）
+        if (vx > cx ? Math.min(v.y0, v.y1) < hd.box.y : Math.max(v.y0, v.y1) > hd.box.y + hd.box.h) continue;
+        if (vx < cx) {
+          const r = hd.box.x + hd.box.w;
+          hd.box.x = Math.ceil(vx + half);
+          hd.box.w = r - hd.box.x;
+        } else hd.box.w = Math.floor(vx - half) - hd.box.x;
+      }
       for (const id of hd.ids) claimed.add(id);
       stacked.push(hd);
       const sp = shortProbes.find((q) => q.ids.some((id) => hd.ids.includes(id)));

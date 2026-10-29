@@ -1100,6 +1100,20 @@ export function latinCells(strip: LyricStrip, chars: OcrChar[], spaceGap = SPACE
       for (let k = i; k < j; k++) if (between(tight, keep[k].xFrac, keep[k + 1].xFrac)) brk[k] = true;
     i = j + 1;
   }
+  // 英文音节必有元音：空白列劈出来的**没元音的拉丁碎片**（「wh en」「thi nk」，扁笔画跨字的字距比词距还宽）
+  // 不是一个词，并回空白窄的那一侧（两侧都断时）
+  for (let i = 0; i < keep.length; ) {
+    let j = i;
+    while (j < keep.length - 1 && !brk[j]) j++;
+    const letters = keep.slice(i, j + 1).map((c) => c.ch).join("").replace(/[^A-Za-z]/g, "");
+    if (letters && !/[aeiouy]/i.test(letters)) {
+      const left = i > 0 && brk[i - 1] ? keep[i].xFrac - keep[i - 1].xFrac : Infinity;
+      const right = j < keep.length - 1 && brk[j] ? keep[j + 1].xFrac - keep[j].xFrac : Infinity;
+      if (left <= right && left < Infinity) brk[i - 1] = false;
+      else if (right < Infinity) brk[j] = false;
+    }
+    i = j + 1;
+  }
   keep.forEach((c, i) => {
     const next = keep[i + 1];
     const end = next ? Math.min(c.xFrac + pitch, next.xFrac) : Math.min(1, c.xFrac + pitch);

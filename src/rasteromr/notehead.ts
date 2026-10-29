@@ -1908,6 +1908,15 @@ function barPiece(s: LineSeg, stems: LineSeg[], isBar: (s: LineSeg) => boolean, 
   return (top < Math.min(s.y0, s.y1) || bot > Math.max(s.y0, s.y1)) && isBar({ ...s, y0: top, y1: bot });
 }
 
+/** 头盒左沿或右沿贴着一根（`self` 以外的）竖段，竖段与头盒纵向交叠（干常停在头顶、不跨过头心） */
+function hasOwnStem(h: Rect, stems: readonly LineSeg[], self: LineSeg, lineThick: number): boolean {
+  return stems.some((t) => {
+    if (t === self) return false;
+    const tx = (t.x0 + t.x1) / 2;
+    return Math.min(t.y0, t.y1) <= h.y + h.h && Math.max(t.y0, t.y1) >= h.y && (Math.abs(tx - h.x) <= lineThick + 2 || Math.abs(tx - (h.x + h.w)) <= lineThick + 2);
+  });
+}
+
 export function probeBareStems(
   stems: LineSeg[],
   heads: Rect[],
@@ -1928,13 +1937,25 @@ export function probeBareStems(
     const barLike = isBar(s);
     if (!barLike && barPiece(s, stems, isBar, unit)) continue;
     const sx = (s.x0 + s.x1) / 2;
-    /** 端头挂着头。只看两端不看中段：干朝下的和弦，中段的头照常认得出、只有端头那个漏了。 */
-    const headAt = (e: number) =>
-      heads.some((h) => Math.abs(h.x + h.w / 2 - sx) < sp * 1.6 && Math.abs(h.y + h.h / 2 - e) < sp * 1.2);
+    const ownStem = (h: Rect, self: LineSeg) => hasOwnStem(h, stems, self, unit.lineThick);
+    /** 端头挂着头。只看两端不看中段：干朝下的和弦，中段的头照常认得出、只有端头那个漏了。
+     *  分边看：干朝上时最低的头一定在干左、干朝下时最高的头一定在干右（二度错开只挪另一个头），
+     *  干端旁另一侧的头是邻干的（破碎扫描 p7 m85 十六分 E4 的干下端右边贴着下一个 F4，当成已挂头、E4 漏了） */
+    const headAt = (end: "top" | "bottom", sided: boolean) => {
+      const e = end === "top" ? top : bot;
+      return heads.some((h) => {
+        const dx = h.x + h.w / 2 - sx;
+        if (Math.abs(dx) >= sp * 1.6 || Math.abs(h.y + h.h / 2 - e) >= sp * 1.2) return false;
+        if (!sided || (end === "top" ? dx > -unit.lineThick : dx < unit.lineThick)) return true;
+        // 贴在错的一侧的头，自己另挂着一根干才是邻音的（m85 的 F4 右沿就有它自己的干）；没有的照旧算挂在这根干上
+        //（新编 089、192 干朝下、干顶左边贴着一个头，不算的话干顶右边那窗墨补出一个假头）
+        return !ownStem(h, s);
+      });
+    };
     for (const end of ["top", "bottom"] as const) {
       const e = end === "top" ? top : bot;
       // 另一端挂着头的，这一端是干的自由端（符尾就挂在这里，别当成头）
-      if (headAt(e) || headAt(end === "top" ? bot : top)) continue;
+      if (headAt(end, true) || headAt(end === "top" ? "bottom" : "top", true)) continue;
       const y0 = end === "top" ? e - sp * 0.9 : e - sp * 2.0;
       const y1 = end === "top" ? e + sp * 2.0 : e + sp * 0.9;
       // 干朝上（光杆的是下端）头在干左，干朝下头在干右；另一侧的附点、邻音不收

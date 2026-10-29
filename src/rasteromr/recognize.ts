@@ -555,7 +555,7 @@ export async function recognizeRasterPage(
   pg.inkTextSize = inkTextSizeOn(raster.bin);
   if (!findStaves(pg)) return withText(await emptyPage(pg, raster, unit));
   // ── 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节
-  const { ctx, carry, clefTally } = await buildPageStructure({ pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands, probe: opts.probe });
+  const { ctx, carry, clefTally } = await buildPageStructure({ pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands, textBoxes, probe: opts.probe });
   // ── 符杠与符头：杠的层数、实心其实空心、细杠起头、贴头的四分休止、符尾盒里的头、谱表外的头按加线定音高
   const { beams, stems, hollowish } = fixBeamsAndHeads({ pg, unit, onGrid, grid, nl, prims, raster, look, probe: opts.probe });
   // ── 拼音符

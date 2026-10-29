@@ -1155,7 +1155,7 @@ function partialBeams(bin: Binary, beams: BeamQuad[], unit: RasterUnit, vSegs: L
       }
     for (const side of [-1, 1])
       for (const [end, dir] of starts) {
-        const cols: { x: number; y0: number; y1: number }[] = [];
+        let cols: { x: number; y0: number; y1: number }[] = [];
         // 已收了几列后容断几列：杠里的白洞（网点扫描）让个别列读不出（当我们回到天家 m11 只收到 7 列）
         let skip = 0;
         const skipTol = sp * 0.25;
@@ -1194,6 +1194,13 @@ function partialBeams(bin: Binary, beams: BeamQuad[], unit: RasterUnit, vSegs: L
             continue;
           }
           cols.push({ x, y0: Math.min(s0, s0 + side * (r - 1)), y1: Math.max(s0, s0 + side * (r - 1)) });
+        }
+        // 半截杠与主杠平行：各列墨心扣掉主杠走向后，偏离中位数超过一个杠厚的列不是这截杠。起点贴着干时，那一列顺着干量下去、
+        // 墨心落到头那里，端点 y 取了它，水平的半截杠就拟成陡杠、挂到邻干上多算一层（破碎扫描 p7 m80 C4 十六分读成三十二分）
+        {
+          const offs = cols.map((c) => (c.y0 + c.y1) / 2 - yAt(c.x));
+          const mo = median(offs), mt = median(cols.map((c) => c.y1 - c.y0 + 1));
+          cols = cols.filter((_, i) => Math.abs(offs[i] - mo) <= mt);
         }
         if (cols.length < sp * 0.5) continue;
         const xs = cols.map((c) => c.x);
