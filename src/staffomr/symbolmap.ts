@@ -175,6 +175,23 @@ const SONATA: Record<number, SmuflName> = {
   0x6b: "flag16thUp", // 'k'
 };
 
+/** Doremi（Overture 一系；God is Our Refuge、I will follow him 两份 macOS 打印的 PDF）。码位大体照 Sonata（同 Opus 那张：0xCF 实心符头、
+ *  0xFA 空心、0xCE 四分休止、0xB7 / 0xEE 全 / 二分休止），**谱号是 'G' / 'F'**（不是 '&' / '?'；Maestro 的 'F' 是 mf，所以不能并进 Maestro），
+ *  八分休止在 0xAB，力度字母与音符同一个字体。逐码位对着轮廓认过（`G`/`F`/`«`/`;`/`'`/`>`/`%`/`Þ`）；'[' ']' '{' '}' '_' 'Ð' 'Ç' 'È' 没认，不收。 */
+const DOREMI: Record<number, SmuflName> = {
+  0x47: "gClef", // 'G'
+  0x46: "fClef", // 'F'
+  0xab: "rest8th", // '«'
+  0x3b: "fermataAbove", // ';'
+  0x27: "articStaccatoAbove", // '\''
+  0x3e: "articAccentAbove", // '>'
+  0x25: "segno", // '%'
+  0xde: "coda", // 'Þ'
+  0x66: "dynamicForte", // 'f'
+  0x6d: "dynamicMezzo", // 'm'
+  0x70: "dynamicPiano", // 'p'
+};
+
 /** 这些字体名当作音乐符号字体处理。`EngraverTextT` 照 musicpp **不收**
  *  （那是刻谱文字字体：力度、速度术语，走文本那条路）。 */
 export type MusicFontFamily =
@@ -187,6 +204,7 @@ export type MusicFontFamily =
   | "OpusText"
   | "Petrucci"
   | "Sonata"
+  | "Doremi"
   | "Anastasia";
 
 /** 字体名（已去子集前缀）→ 家族；不是音乐字体返回 null。 */
@@ -204,6 +222,7 @@ export function musicFamily(font: string): MusicFontFamily | null {
   if (font.startsWith("Sonata")) return "Sonata";
   if (font.startsWith("EngraverFontSet")) return "Petrucci";
   if (font.startsWith("Anastasia")) return "Anastasia";
+  if (font.startsWith("Doremi")) return "Doremi";
   return null;
 }
 
@@ -227,6 +246,8 @@ function tableOf(family: MusicFontFamily): Record<number, SmuflName>[] {
       return [PETRUCCI, COMMON];
     case "Sonata":
       return [SONATA, PETRUCCI, COMMON];
+    case "Doremi":
+      return [DOREMI, OPUS, COMMON];
     case "Anastasia":
       // Sibelius 的手写体。musicpp 全仓没有它的表——本书 115 页用的是它，
       // 只能靠轮廓聚类 + 人工确认建（见 staffglyphs.ts / glyphmap.json）。
