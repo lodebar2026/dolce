@@ -26,7 +26,7 @@ import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, H
 import { lineYAt, type StaffGroup } from "./staffline";
 import { median } from "../omrkit/geom";
 import { sauvola as sauvolaInto, toGray } from "../omrkit/preprocess";
-import { largestPageImageAt } from "../omrkit/pdf";
+import { largestPageImageAt, orientPixels, uprightCtm } from "../omrkit/pdf";
 
 /** 一页取到的位图，连同它在页面坐标里的位置（识别坐标 ↔ 页面坐标要用）。 */
 export interface RasterPage {
@@ -98,8 +98,10 @@ export async function pageImageOf(page: any, OPS: any): Promise<PageImage | null
   const found = await largestPageImageAt(page, OPS, (o) => (o.data && o.width && o.height ? o.width * o.height : null));
   if (!found) return null;
   const vp = page.getViewport({ scale: 1 });
-  const { width, height, data, kind } = found.obj;
-  return { width, height, data, kind, ctm: [...found.ctm], view: page.view ? [...page.view] : undefined, pageWidth: vp.width, pageHeight: vp.height };
+  // 靠矩阵转正的图（手机竖拍横着存的照片、倒着贴的扫描页）：像素按页面方向摆正，矩阵换成轴对齐的那一块
+  const { width, height, data } = orientPixels(found.obj.data, found.obj.width, found.obj.height, found.ctm);
+  const ctm = data !== found.obj.data ? uprightCtm(found.ctm)! : [...found.ctm];
+  return { width, height, data, kind: found.obj.kind, ctm, view: page.view ? [...page.view] : undefined, pageWidth: vp.width, pageHeight: vp.height };
 }
 
 /** 位图 → 识别用的二值图（解码、二值化、去网、补线……，不做几何变换）：`rasterizePage` 不碰 pdf.js 的那一半。 */

@@ -13,7 +13,7 @@ import { staffGroupCount } from "./detect";
 import { recognizeRasterSong, type RasterSongResult } from "./song";
 import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips, detectPageTexts } from "./ocrlive";
 import type { TimeStrip } from "./timesig";
-import { isPdf, largestPageImageAt } from "../omrkit/pdf";
+import { isPdf, largestPageImageAt, uprightCtm } from "../omrkit/pdf";
 import { PagePool, type FromWorker, type PagePort } from "./pagepool";
 
 // 在线 OCR 要推理运行时：自己装上，不靠编辑器先 import 了 `omr/index`
@@ -46,19 +46,65 @@ function jpegInfo(b: Uint8Array): { w: number; h: number; comps: number } | null
   return null;
 }
 
-/** JPEG → 单页 PDF（图像**原样**作 `DCTDecode` 流，不解码不重编码）。 */
+/** JPEG 的 EXIF 方向（APP1 里 0x0112 那一项，1~8）；没有记 1。 */
+export function jpegOrientation(b: Uint8Array): number {
+  for (let i = 2; i + 4 < b.length; ) {
+    if (b[i] !== 0xff) return 1;
+    const m = b[i + 1]!;
+    const len = (b[i + 2]! << 8) | b[i + 3]!;
+    if (m === 0xda || m === 0xd9) return 1;
+    if (m === 0xe1 && b[i + 4] === 0x45 && b[i + 5] === 0x78 && b[i + 6] === 0x69 && b[i + 7] === 0x66) {
+      const t = i + 10; // TIFF 头
+      const le = b[t] === 0x49;
+      const u16 = (o: number) => (le ? b[o]! | (b[o + 1]! << 8) : (b[o]! << 8) | b[o + 1]!);
+      const u32 = (o: number) => (le ? u16(o) + u16(o + 2) * 65536 : u16(o) * 65536 + u16(o + 2));
+      const ifd = t + u32(t + 4);
+      if (ifd + 2 > b.length) return 1;
+      for (let k = 0, n = u16(ifd); k < n && ifd + 14 + k * 12 <= b.length; k++) {
+        const e = ifd + 2 + k * 12;
+        if (u16(e) === 0x0112) {
+          const v = u16(e + 8);
+          return v >= 1 && v <= 8 ? v : 1;
+        }
+      }
+      return 1;
+    }
+    i += 2 + len;
+  }
+  return 1;
+}
+
+/** EXIF 方向 → 图的单位正方形落到页面（W×H 为转正后的尺寸）的矩阵：照片按显示的方向摆，像素不动。 */
+export function exifCtm(o: number, W: number, H: number): number[] {
+  return (
+    {
+      2: [-W, 0, 0, H, W, 0],
+      3: [-W, 0, 0, -H, W, H],
+      4: [W, 0, 0, -H, 0, H],
+      5: [0, -H, -W, 0, W, H],
+      6: [0, -H, W, 0, 0, H],
+      7: [0, H, W, 0, 0, 0],
+      8: [0, H, -W, 0, W, 0],
+    }[o] ?? [W, 0, 0, H, 0, 0]
+  );
+}
+
+/** JPEG → 单页 PDF（图像**原样**作 `DCTDecode` 流，不解码不重编码）。
+ *  带 EXIF 方向的（手机竖拍、横着存）页面按转正后的尺寸开，靠画图矩阵转正（pdf.js 不读 EXIF）；识别取图时按矩阵摆正像素。 */
 export function jpegToPdf(jpg: Uint8Array): Uint8Array {
   const info = jpegInfo(jpg);
   if (!info) throw new Error("读不出 JPEG 尺寸");
   const { w, h, comps } = info;
+  const o = jpegOrientation(jpg);
+  const [W, H] = o >= 5 ? [h, w] : [w, h];
   const cs = comps === 1 ? "/DeviceGray" : comps === 4 ? "/DeviceCMYK" : "/DeviceRGB";
   const enc = new TextEncoder();
   const objs: (string | { dict: string | null; stream: Uint8Array })[] = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
     { dict: `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace ${cs} /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>`, stream: jpg },
-    { dict: null, stream: enc.encode(`q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`) },
+    { dict: null, stream: enc.encode(`q ${exifCtm(o, W, H).join(" ")} cm /Im0 Do Q`) },
   ];
   const parts: Uint8Array[] = [enc.encode("%PDF-1.4\n")];
   const offs: number[] = [];
@@ -210,7 +256,7 @@ export async function recognizeRasterPdfs(
 const PAGE_VIEW_MAX_PX = 12e6;
 
 /** 原样画好的一页 PDF（`renderPdfPages`）：整页 PNG，连同谱图（页上最大那张图）在页面上的变换与页面范围，摆放时用（`placePageView`）。
- *  页上没有图（矢量谱、文字页）或谱图带旋转/错切的，`ctm` 为 null：整页照画，只是不能按位图路的框摆。 */
+ *  `ctm` 是谱图在页面上那一块的轴对齐矩阵（带 90° 旋转、翻转的已换算）；页上没有图（矢量谱、文字页）或谱图带错切的为 null：整页照画，只是不能按位图路的框摆。 */
 export interface RenderedPage {
   url: string;
   ctm: number[] | null;
@@ -257,11 +303,12 @@ async function renderOne(pdf: any, OPS: any, pn: number, dpi?: number): Promise<
   const page = await pdf.getPage(pn);
   try {
     const found = await largestPageImageAt(page, OPS, (o) => (o.data && o.width && o.height ? o.width * o.height : null));
-    const [a, b, c, d] = found?.ctm ?? [0, 0, 0, 0];
-    const ctm = found && !b && !c && a > 0 && d > 0 ? [...found.ctm] : null;
+    // 谱图靠矩阵转正的（竖拍照片）按它在页面上那一块摆：识别的位图已按同一矩阵摆正（`rasterpage.ts::pageImageOf`）
+    const ctm = found ? uprightCtm(found.ctm) : null;
+    const turned = !!found && Math.abs(found.ctm[0]!) < 1e-3;
     const [x0, y0, x1, y1] = page.view as number[];
-    // 给了 dpi 按它画；否则按谱图的原分辨率（像素/点 = 图宽 / 图在页面上的宽）。太大的降下来
-    const want = dpi && dpi > 0 ? dpi / 72 : ctm && found ? found.obj.width / a : PAGE_VIEW_PLAIN_SCALE;
+    // 给了 dpi 按它画；否则按谱图的原分辨率（像素/点 = 摆正后的图宽 / 图在页面上的宽）。太大的降下来
+    const want = dpi && dpi > 0 ? dpi / 72 : ctm && found ? (turned ? found.obj.height : found.obj.width) / ctm[0] : PAGE_VIEW_PLAIN_SCALE;
     const r = Math.min(want, Math.sqrt(PAGE_VIEW_MAX_PX / ((x1 - x0) * (y1 - y0))));
     const vp = page.getViewport({ scale: r });
     const cv = document.createElement("canvas");

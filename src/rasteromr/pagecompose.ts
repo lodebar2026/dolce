@@ -11,7 +11,7 @@ import type { WordLine } from "../omrkit/headertext";
 import type { WordStrip } from "./words";
 import { TEXT_INK_EM } from "./textsize";
 import { decodeImage } from "./rasterpage";
-import { pageImageOps, pageImageObj } from "../omrkit/pdf";
+import { pageImageOps, pageImageObj, uprightCtm } from "../omrkit/pdf";
 import type { Mat } from "../omrkit/vector";
 
 /** 谱图上沿离页顶不到这么多（PDF 点）就不拼：整页扫描件、或页眉本就在谱图里。 */
@@ -42,8 +42,10 @@ export async function composeHeaderStrip(page: any, OPS: any, binW: number): Pro
   }
   if (!objs.length) return null;
   const main = objs.reduce((a, b) => (b.obj.width * b.obj.height > a.obj.width * a.obj.height ? b : a));
-  const [a0, b0, c0, d0, e0, f0] = main.ctm;
-  if (b0 || c0 || a0 <= 0 || d0 <= 0) return null;
+  // 谱图靠矩阵转正的（竖拍照片）按它在页面上那一块算；带错切的不拼
+  const up = uprightCtm(main.ctm);
+  if (!up) return null;
+  const [a0, , , d0, e0, f0] = up;
   const [, , pageW, pageTop] = page.view as number[];
   const mainTop = f0 + d0;
   if (pageTop - mainTop < MIN_GAP_PT) return null;

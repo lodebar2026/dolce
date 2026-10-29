@@ -9,7 +9,7 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { largestPageImageAt } from "./pdf";
+import { largestPageImageAt, orientPixels } from "./pdf";
 import type { RgbaImage } from "./decode";
 
 /**
@@ -135,25 +135,7 @@ function toRgba(o: any): RgbaImage {
   return { data: out, width: w, height: h };
 }
 
-/** 按画图时的变换矩阵摆正：图的单位正方形（u 向右、v 向上；图像第 0 行在 v=1）→ 页面（y 向上）。
- *  只做翻转与 90° 倍数旋转，不缩放；正常摆放（a>0、d>0、b=c=0）原样返回。 */
+/** 按画图时的变换矩阵摆正（翻转与 90° 倍数旋转，见 `pdf.ts::orientPixels`）；正常摆放原样返回。 */
 function orient(img: RgbaImage, m: number[]): RgbaImage {
-  const sgn = (v: number) => Math.sign(Math.round(v * 1000));
-  const [sa, sb, sc, sd] = m.slice(0, 4).map(sgn);
-  if (sa > 0 && sd > 0 && !sb && !sc) return img;
-  const { width: w, height: h, data } = img;
-  const xByU = sa !== 0; // 页面 x 随 u 变（否则随 v 变，即转了 90°）
-  const W = xByU ? w : h, H = xByU ? h : w;
-  const out = new Uint8ClampedArray(W * H * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const u = (x + 0.5) / w, v = 1 - (y + 0.5) / h;
-      const fx = xByU ? (sa > 0 ? u : 1 - u) : (sc > 0 ? v : 1 - v);
-      const fyUp = xByU ? (sd > 0 ? v : 1 - v) : (sb > 0 ? u : 1 - u);
-      const X = Math.min(W - 1, Math.floor(fx * W)), Y = Math.min(H - 1, Math.floor((1 - fyUp) * H));
-      const s = (y * w + x) * 4, t = (Y * W + X) * 4;
-      out[t] = data[s]; out[t + 1] = data[s + 1]; out[t + 2] = data[s + 2]; out[t + 3] = data[s + 3];
-    }
-  }
-  return { data: out, width: W, height: H };
+  return orientPixels(img.data, img.width, img.height, m);
 }
