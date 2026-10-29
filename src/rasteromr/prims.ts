@@ -1043,6 +1043,10 @@ const STEEP_RUN = 1.5;
 const STEEP_STEM_RUN = 1.5;
 /** 陡斜杠中心线的斜率下限：再平的上面那一路收得到。 */
 const STEEP_MIN = 0.25;
+/** 两音短陡杠（见 `steepBeams` 末段）：斜向游程下限、块宽下限与厚度上限（格，厚垂直杠向量）。 */
+const STEEP_SHORT_RUN = 1.0;
+const STEEP_SHORT_W = 1.3;
+const STEEP_SHORT_THICK = 0.6;
 
 /**
  * **陡斜的杠**（手写刻谱：是爱 p5 m69 钢琴右手八度双音，上下两组杠斜率 0.35~0.4、厚 0.4 格）：
@@ -1058,7 +1062,10 @@ function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: num
   const cand = new Uint8Array(w * h);
   for (let i = 0; i < cand.length; i++) if (vr[i] >= bLo && vr[i] <= bHi) cand[i] = 1;
   const mask = new Uint8Array(w * h);
+  /** 只够 `STEEP_SHORT_RUN` 格的斜向游程（两根干挨着的两音陡杠，见下） */
+  const shortMask = new Uint8Array(w * h);
   const minRun = sp * STEEP_RUN;
+  const shortRun = sp * STEEP_SHORT_RUN;
   const xs = new Int32Array(w);
   const ys = new Int32Array(w);
   for (const s of STEEP_SLOPES)
@@ -1075,7 +1082,9 @@ function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: num
             n++;
             continue;
           }
-          if (n && xs[n - 1] - xs[0] + 1 >= minRun) for (let i = 0; i < n; i++) mask[ys[i] * w + xs[i]] = 1;
+          const len = n ? xs[n - 1] - xs[0] + 1 : 0;
+          if (len >= minRun) for (let i = 0; i < n; i++) mask[ys[i] * w + xs[i]] = 1;
+          else if (len >= shortRun) for (let i = 0; i < n; i++) shortMask[ys[i] * w + xs[i]] = 1;
           n = 0;
         }
       }
@@ -1114,6 +1123,32 @@ function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: num
     }
     const box = x0 === line.x0 && x1 === line.x1 ? b : { ...b, x: Math.round(x0), w: Math.round(x1 - x0) + 1 };
     beams.push({ ...line, x0, y0: yAt(x0), x1, y1: yAt(x1), box });
+  }
+  // **两根干挨着的两音陡杠**：干距不到一格半（永恒的主 p5 m65 钢琴右手两两一组的八分，杠斜 0.6、干距 1.45 格），
+  // 干那一列竖游程长、不是杠厚，斜向游程被两头的干截成一格多，过不了 `STEEP_RUN`，杠漏掉、两个音各读成带尾的八分。
+  // 只够 `STEEP_SHORT_RUN` 格的另走一遍：宽 `STEEP_SHORT_W` 格以上（实心头斜着量也拼得出一块、两端还常碰着干，
+  // 但宽不过一格一成多）、两端都搭着干、厚不过 `STEEP_SHORT_THICK` 格，也不压着已收的杠
+  for (let i = 0; i < shortMask.length; i++) if (mask[i]) shortMask[i] = 0;
+  for (const c of comps(shortMask, w, h, Math.round(sp * sp * 0.2))) {
+    const b = c.bbox;
+    if (b.w < sp * STEEP_SHORT_W || b.w >= sp * 1.5 || b.h > sp * 1.5) continue;
+    const line = centerLine(shortMask, w, c, true);
+    const slope = (line.y1 - line.y0) / Math.max(1, line.x1 - line.x0);
+    if (Math.abs(slope - staffSlope((line.x0 + line.x1) / 2, (line.y0 + line.y1) / 2)) < STEEP_MIN) continue;
+    const thick = (c.area / b.w) / Math.sqrt(1 + slope * slope);
+    if (thick < bLo * 0.8 || thick > sp * STEEP_SHORT_THICK) continue;
+    if (!stemAt(line.x0, line.y0) || !stemAt(line.x1, line.y1)) continue;
+    if (beams.some((q) => q.box.x < b.x + b.w && b.x < q.box.x + q.box.w && q.box.y < b.y + b.h && b.y < q.box.y + q.box.h)) continue;
+    // 沿中心线两干之间九成的列有墨：杠是一路连着的；两干之间夹一个实心头，头的几截斜游程也拼得出这么一块，
+    // 头与干之间却是白的（破碎 p2 m3 高音 C5，夹在 A3 的上干与自己的下干之间）
+    let on = 0, all = 0;
+    for (let x = Math.ceil(line.x0); x <= Math.floor(line.x1); x++) {
+      const y = Math.round(line.y0 + slope * (x - line.x0));
+      all++;
+      for (let dy = -1; dy <= 1; dy++) if (y + dy >= 0 && y + dy < h && vr[(y + dy) * w + x]) { on++; break; }
+    }
+    if (on < all * 0.9) continue;
+    beams.push({ ...line, box: b });
   }
 }
 

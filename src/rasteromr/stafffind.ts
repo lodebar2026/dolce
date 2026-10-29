@@ -172,9 +172,27 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
     };
     // 点状虚线（新编 f07 第二系统高音行，谱号到第一个音之间点距过半格）：半格窗只见三条线，再放到一格窗走一遍，同样退过竖笔与空列
     const dotted = present(Math.max(1, Math.round(space)));
+    /** x 处五条线一条墨都没有 */
+    const blank = (x: number) => {
+      for (let k = 0; k < 5; k++) {
+        const yc = Math.round(yAt(k, x));
+        for (let y = Math.max(0, yc - r); y <= Math.min(bin.h - 1, yc + r); y++) if (bin.data[y * bin.w + x]) return false;
+      }
+      return true;
+    };
     const walkEnd = (from: number, dir: -1 | 1) => {
       const a = walk(from, dir, strict);
       const back = (b: number) => {
+        // 半格窗跨过了一段**五条线都没墨**、过半格宽的空白：虚线的断口各条线错开，不会整列全空；空白外面那块墨
+        // 是括号（永恒的主 p2/p6 钢琴两行左边只有花括号、隔着十几列空白，左端被延到括号上，系统线窗口与花括号判据全落空）
+        let run = 0;
+        for (let x = a; (b - x) * dir > 0; x += dir) {
+          run = blank(x) ? run + 1 : 0;
+          if (run > space * 0.5) {
+            b = x - dir * run;
+            break;
+          }
+        }
         while ((b - a) * dir > 0 && (vertical(b) || !near(b))) b -= dir;
         return b;
       };
