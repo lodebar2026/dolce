@@ -649,7 +649,7 @@ class RepeatProcessor {
       const nums = mif.endingNum;
       if (!nums) continue;
       for (const n of nums) if (n > res) res = n;
-      if (mif.endingRight === StartStopDiscontinue.DISCONTINUE) break;
+      if (mif.endingRight === StartStopDiscontinue.DISCONTINUE && !mif.repeatBackward) break;
     }
     return res;
   }
@@ -741,7 +741,7 @@ class RepeatProcessor {
       // 即收组」会在半途把 pass 归 1，剩下的房永远唱不到、并陷入死循环。
       const lastVolta = !mif.endingNum || Math.max(...mif.endingNum) >= this.passCount;
       const closesRepeatGroup = !mif.repeatBackward && lastVolta;
-      this.onRightEnding(m, mif.endingRight === StartStopDiscontinue.DISCONTINUE || closesRepeatGroup);
+      this.onRightEnding(m, closesRepeatGroup);
     }
     if (!this.inJump && mif.repeatBackward && !skippedEnding) {
       if (this.passCount < 0) {
