@@ -50,7 +50,14 @@ export function layoutVoiceLine(
   // 只有音符/增时线/小节线占位；`~`/`^` 与内联层不进步进序列。
   const flat: MusicElement[] = voice.elements.filter(
     (el) => el.kind === "note" || el.kind === "sustain" || el.kind === "barline",
-  );
+  ).filter((el, i, elements) => {
+    const next = elements[i + 1];
+    // 同一行中相邻的结束线与起始反复号共用一个音乐边界；反复号取代普通线形。
+    // 跨行时两端分别显示，带附加信息的线也不能在这里丢掉。
+    return !(el.kind === "barline" && next?.kind === "barline" && next.type === "repeat-start"
+      && (el.type === "normal" || el.type === "double" || el.type === "end")
+      && !el.ornaments.length && !el.annotation && !el.temporaryMeter && !el.temporaryKey);
+  });
   // 换了样子的小节线（反复起点挪行）不在 voice.elements 里，记号坐标仍按原来那条算
   const srcMap = new Map<MusicElement, number>();
   const srcOf = (el: MusicElement): number => srcMap.get(el) ?? voice.elements.indexOf(el);

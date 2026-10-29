@@ -227,6 +227,10 @@ export function buildMeasures(
         return;
       }
       if (el.kind === "barline") {
+        if (refs?.[index]?.barline?.location === "left" && el.type !== "repeat-end" && el.type !== "repeat-both") {
+          if (el.type === "repeat-start" || el.repeatForwardAfter) pendingRepeatForward = true;
+          return;
+        }
         if (measure === null && el.type === "repeat-start") {
           // 曲首的 `|:`：不造空小节（空小节会让反复推理抛「measure has no chord」、整首退回不展开反复），
           // 只给紧跟着的那个小节记「反复起点」
