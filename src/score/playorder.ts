@@ -739,9 +739,12 @@ class RepeatProcessor {
       // 否则紧随其后的下一组 ||: 会因 pass>1 被 onForward 忽略、错误跳回上一组反复起点。
       // 「最后一房」须按房号判：多房谱中间的房（如「4.」）右边界同样没有 backward，按「无 backward
       // 即收组」会在半途把 pass 归 1，剩下的房永远唱不到、并陷入死循环。
+      // 不封口的房也收组（passCount 可能是前一组按词数定的、大于本组房号，单按房号判收不了组），
+      // 但带 :|| 的不封口房（番茄 `["1." … :|]/`）是一房，照常回头唱下一房（#30）。
       const lastVolta = !mif.endingNum || Math.max(...mif.endingNum) >= this.passCount;
+      const openEnd = mif.endingRight === StartStopDiscontinue.DISCONTINUE && !mif.repeatBackward;
       const closesRepeatGroup = !mif.repeatBackward && lastVolta;
-      this.onRightEnding(m, closesRepeatGroup);
+      this.onRightEnding(m, openEnd || closesRepeatGroup);
     }
     if (!this.inJump && mif.repeatBackward && !skippedEnding) {
       if (this.passCount < 0) {
