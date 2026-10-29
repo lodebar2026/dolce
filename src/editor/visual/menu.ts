@@ -95,6 +95,7 @@ const SHORT: Record<string, string> = {
   "view.formatMarks": "\u00B6", // ¶
   "nav.gotoMeasure": "\u2192\u2116", // →№
   "edit.transpose": "\u21C5", // ⇅
+  "edit.transcribe": "1=?",
   "edit.undo": "\u21B6", // ↶
   "edit.redo": "\u21B7", // ↷
 };

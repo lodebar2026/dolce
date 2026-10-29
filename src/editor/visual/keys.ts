@@ -191,6 +191,7 @@ const RAW_ACTIONS: readonly Omit<VisualAction, "label" | "help">[] = [
   { id: "dyn.entry", group: "edit", keys: [{ key: "e", mod: true }], keyText: "Ctrl/⌘+E",
     web: { keys: [{ key: "e", code: "KeyE", alt: true }], keyText: "Alt+E" } },
   { id: "edit.transpose", group: "edit", keys: [], keyText: "" },
+  { id: "edit.transcribe", group: "edit", keys: [], keyText: "" },
   { id: "edit.undo", group: "edit", keys: [{ key: "z", mod: true }], keyText: "Ctrl/⌘+Z" },
   { id: "edit.redo", group: "edit", keys: [{ key: "z", mod: true, shift: true }, { key: "y", mod: true }], keyText: "Ctrl/⌘+Shift+Z" },
 ];
