@@ -80,6 +80,24 @@ export const DIALECT_FANQIE: EditDialect = {
     T: "text", B: "text", Z: "text", V: "text", J: "text", XL: "text", XR: "text",
     TL: "text", TR: "text", BL: "text", BC: "text", BR: "text", D: "key", P: "time",
   }, /^\s*[1-7]\s*=\s*\S/),
+  // 相对转调 `"k:#4"`（`;` 后可带标签，`fanqie/parse.ts::interpretQuoted`），歌词行 `C:` 里的不算；
+  // 前后都是空白时连后面的一个空白一起删，不留双空格
+  keyChangeMarks: (text) => {
+    const out: { from: number; to: number }[] = [];
+    let at = 0;
+    for (const line of text.split("\n")) {
+      if (!/^\s*C\d*\s*[:：]/i.test(line)) {
+        for (const m of line.matchAll(/"k:\s*[#b]?[1-7]\s*(?:;[^"]*)?"/gi)) {
+          const from = at + m.index!;
+          let to = from + m[0].length;
+          if ((m.index === 0 || /\s/.test(line[m.index! - 1]!)) && /[ \t]/.test(line[m.index! + m[0].length] ?? "")) to++;
+          out.push({ from, to });
+        }
+      }
+      at += line.length + 1;
+    }
+    return out;
+  },
   sustain: "token",
   sep: " ",
   barline: "|",

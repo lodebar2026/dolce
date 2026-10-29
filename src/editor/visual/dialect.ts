@@ -131,6 +131,8 @@ export interface EditDialect {
   slurInToken: boolean;
   /** 页眉字段（标题、署名、调号拍号…）在原文里的位置（`header.ts`）：谱面上点页眉跳到原文、原文光标点亮页眉 */
   headerFields?(text: string): HeaderField[];
+  /** 不在调号字段里的曲中转调记号（文本谱相对转调 `"k:2"`）的原文区间：转记把全曲收到一个调号时连同它删掉。缺省 = 没有 */
+  keyChangeMarks?(text: string): { from: number; to: number }[];
   /** 小节操作的写法表（插删小节、换调换拍、小节线样式、房号、跳转，`measureops.ts`）；没有 = 这种格式请去源码改 */
   measure?: MeasureSyntax;
   /** 换行不是符号的格式：给出「在 `afterId` 之后加 / 去掉一处换行」后的整份新原文。 */

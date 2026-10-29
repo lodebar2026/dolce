@@ -249,6 +249,8 @@ export function patchTranscribedSource(ctx: EditCtx, oldDoc: ScoreDoc, doc: Scor
     if (nv === null) return null;
     if (nv !== v) changes.push({ from: f.from, to: f.to, insert: nv });
   }
+  // 不在调号字段里的转调记号（文本谱 `"k:2"`）删掉：全曲已收到目标调号
+  for (const m of ctx.dialect.keyChangeMarks?.(text) ?? []) changes.push({ from: m.from, to: m.to, insert: "" });
   const groups = sourceGroups(oldDoc, doc);
   if (!groups) return null;
   const { dialect } = ctx;
