@@ -16,6 +16,8 @@ installNodeDecoder();
 export { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter, omrProfile, omrProfileReset, threadInfo };
 // 整页文字检测（位图五线谱的文字区缓存 `gen-rastertext.mjs` 在 Node 里直接跑 DBNet）
 export { paddleOcrBackend };
+// 位图五线谱的条子 OCR（与编辑器在线识别同一份实现）：回归缺条当场补、`gen-raster*` 生成离线缓存都在 Node 里跑
+export { ocrHarmonyStrips, ocrLyricStrips, ocrLabelStrips, ocrWordStrips, ocrHeaderStrips, ocrJianpuStrips, ocrTimeStrips, detectPageTexts } from "../rasteromr/ocrlive";
 export type { OmrFormat, EmittedScore };
 export { recognizeMusicppDetailed };
 // 换解码器用（默认 sharp；要接别的解码库从这里换）。

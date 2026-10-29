@@ -1,5 +1,5 @@
 // 字节 → 灰度二值图（Binary）。**本文件不碰浏览器 API**：真正的解码交给注入的解码器
-// （浏览器=`decode.browser.ts` 的 createImageBitmap/pdf.js；Node=`cli/omr.ts` 装的纯 JS 解码），
+// （浏览器=`decode.browser.ts` 的 createImageBitmap/pdf.js；Node=`decode.node.ts` 的 sharp 与 `pdf.node.ts` 取源图），
 // 这里只管「超宽缩图 + 二值化」这两件与后端无关的事。
 import { rgbaToBinary } from "./preprocess";
 import { blit, createSurface } from "./surface";
@@ -16,7 +16,7 @@ export interface RgbaImage {
 }
 
 export type ImageDecoder = (bytes: Uint8Array, mime?: string) => Promise<RgbaImage>;
-/** PDF → 整册竖向拼接的一张白底长图。Node 侧不提供（CLI 只吃位图）。 */
+/** PDF → 整册竖向拼接的一张白底长图（每页取内嵌源图；浏览器侧纯矢量页才渲染）。 */
 export type PdfRasterizer = (bytes: Uint8Array) => Promise<RgbaImage>;
 
 let _decodeImage: ImageDecoder | null = null;
@@ -43,7 +43,8 @@ function fitWidth(img: RgbaImage): RgbaImage {
 export async function decodeToBinary(bytes: Uint8Array, mime?: string): Promise<Binary> {
   if (isPdf(bytes, mime)) {
     if (!_rasterizePdf) throw new Error("此环境不支持 PDF 输入（只装了位图解码器）");
-    const img = await _rasterizePdf(bytes);
+    // 内嵌位图取的是源图（不渲染、不缩放），过宽的跟图片一样在这里统一缩
+    const img = fitWidth(await _rasterizePdf(bytes));
     return rgbaToBinary(img.data, img.width, img.height);
   }
   if (!_decodeImage) throw new Error("未装配图片解码器：浏览器侧应先 installBrowserOmr()，Node 侧见 cli/omr.ts");

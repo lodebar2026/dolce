@@ -5,7 +5,7 @@ import { setImageDecoder, type RgbaImage } from "./decode";
 import { largestPageImage } from "./pdf";
 import { openPdf } from "./pdf.browser";
 
-const PDF_W = 2000; // PDF 光栅化目标宽度（矢量图放大到此宽度取墨迹）
+const PDF_W = 2000; // 纯矢量页渲染的目标宽度（放大到此宽度取墨迹）；内嵌位图取源图，不用它
 
 /** 图片字节 → RGBA（原尺寸；超宽缩图交给 decode.ts 统一做）。 */
 async function decodeImage(bytes: Uint8Array, mime?: string): Promise<RgbaImage> {
@@ -39,13 +39,13 @@ async function largestPageBitmap(page: any, OPS: any): Promise<ImageBitmap | nul
 async function pdfPageToCanvas(page: any, OPS: any): Promise<OffscreenCanvas> {
   const bmp = await largestPageBitmap(page, OPS);
   if (bmp) {
-    const scale = bmp.width > PDF_W ? PDF_W / bmp.width : 1;
-    const w = Math.round(bmp.width * scale);
-    const h = Math.round(bmp.height * scale);
+    // **源图原尺寸**，不在画布上缩放（缩放是浏览器的插值，Node 那份复现不了）；过宽的交 decode.ts 的 `fitWidth` 统一缩
+    const w = bmp.width;
+    const h = bmp.height;
     const { canvas, ctx } = newCanvas(w, h);
     ctx.fillStyle = "#fff"; // ImageMask 只有墨迹为不透明黑、其余透明 → 铺白底
     ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(bmp, 0, 0, w, h);
+    ctx.drawImage(bmp, 0, 0);
     return canvas;
   }
   const viewport = page.getViewport({ scale: PDF_W / page.getViewport({ scale: 1 }).width });

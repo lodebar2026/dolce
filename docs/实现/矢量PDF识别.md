@@ -35,7 +35,7 @@ node ../dev/scripts/vector-shot.mjs 60            # 矢量重绘 vs pdfjs 光栅
 node ../dev/scripts/gen-pagemap.mjs               # 页 → 曲 映射 → testdata/500/pagemap.json
 node ../dev/scripts/gen-glyphdict.mjs             # 字形字典自举 → testdata/500/glyphdict.json
 node ../dev/scripts/pdf-diff.mjs                  # 全书对比 → out/pdf-diff.csv + out/pdf-diff/<曲号>.txt
-node ../dev/scripts/gen-glyphocr.mjs              # 字典的 OCR 兜底（唯一要起浏览器的建库步骤）
+node ../dev/scripts/gen-glyphocr.mjs              # 字典的 OCR 兜底（Node 里跑，不起浏览器）
 node ../dev/scripts/page-report.mjs               # 逐页排版信息 → out/pdf-layout.json + out/pdf-pages.csv + out/pdf-pages/
 node ../dev/scripts/relayout.mjs --mode=outline   # 保真复现 + 对象级核对（验收）
 node ../dev/scripts/relayout.mjs --mode=text      # 出 666 页文字版 PDF（可选中/可搜索）
@@ -251,7 +251,7 @@ p2 / p665 / p666 空白；p6 是整页内嵌位图。
 
 自举只能标出 GT 里出现过的字。目录页的曲名、首句索引、花边框里的注解正文都没有 GT，
 字典盖不到。这些类**每类送一次 OCR**：两万个实例只要跑两千多次推理，全书 11795 个未定类
-用时 213 秒。这是矢量路里唯一要起浏览器的建库步骤（PaddleOCR 走 onnxruntime-web），
+用时 213 秒（当时在浏览器里跑）。现在在 Node 里跑（onnxruntime-node，字形轮廓经 SVG 交 sharp 画，不起浏览器），
 跑完产物落盘，之后的识别与对比仍是纯查表。
 
 字典最终 16233 类、已定 12776、**覆盖 95.28% 的字形实例**。

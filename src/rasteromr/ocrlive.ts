@@ -3,7 +3,7 @@
 //
 // 编辑器里在线识别用它；私有仓库生成离线缓存的脚本（`gen-raster*.mjs`）也调这一份——**两边必须是同一个实现**：
 // 条怎么垫边、送哪种接口、结果怎么挑，差一点指纹相同而内容不同，读数就会两样（那几个脚本里都记着这样踩过的坑）。
-// 只在浏览器里跑（PP-OCR 走 onnxruntime-web）。
+// 浏览器里走 onnxruntime-web；Node 里（`cli/omr.ts` 导出，onnxruntime-node）回归补缓存、生成缓存也调它，不起浏览器。
 
 import type { OcrBackend } from "../omrkit/ocr";
 import type { Binary, Rect } from "../omrkit/types";

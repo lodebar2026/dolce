@@ -6,8 +6,24 @@
 // 不用 pdf.js 自带的 JPEG 解码：两者 IDCT/上采样不同，解出的像素差一两个灰度，识别判据是按 libjpeg 的像素标定的
 // （见 decode.node.ts），实测《哈利路亚》有曲名因此两路读得不同。取不到（对象流里、带别的滤镜、CMYK、带蒙版、
 // 尺寸对不上）就退回 pdf.js 解出的像素。
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { largestPageImageAt } from "./pdf";
 import type { RgbaImage } from "./decode";
+
+/**
+ * pdf.js 位图解码器（JBIG2 / CCITT、JPEG2000）的 wasm 目录。**不给就整张图被静默丢掉**：1-bit 扫描本多是 CCITT G4 的 ImageMask
+ *（耶稣普治），没有它 pdf.js 连纯 JS 的退路（`jbig2_nowasm_fallback`）都不走，页上就「没有内嵌图片」。
+ * 按 `pdfjs-dist` 的安装位置找；找不到（打包分发时）就不给。
+ */
+function pdfjsWasmUrl(): string | undefined {
+  try {
+    return pathToFileURL(join(dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json")), "wasm/")).href;
+  } catch {
+    return undefined;
+  }
+}
 
 // pdf.js 图对象的 kind（ImageKind）
 const GRAYSCALE_1BPP = 1, RGB_24BPP = 2, RGBA_32BPP = 3;
@@ -26,7 +42,7 @@ export async function openPdfPages(bytes: Uint8Array, decodeJpeg?: (jpeg: Uint8A
   const raw = decodeJpeg ? rawJpegs(bytes) : null;
   const task = pdfjs.getDocument({
     data: decodeJpeg ? bytes.slice() : bytes, isEvalSupported: false, isOffscreenCanvasSupported: false, isImageDecoderSupported: false,
-    disableFontFace: true, verbosity: 0,
+    disableFontFace: true, verbosity: 0, wasmUrl: pdfjsWasmUrl(),
   });
   const doc = await task.promise;
   return {
@@ -99,14 +115,20 @@ function toRgba(o: any): RgbaImage {
     for (let i = 0, j = 0; i < w * h; i++, j += 3) {
       out[i * 4] = data[j]; out[i * 4 + 1] = data[j + 1]; out[i * 4 + 2] = data[j + 2]; out[i * 4 + 3] = 255;
     }
-  } else if (kind === GRAYSCALE_1BPP) {
-    // 1 位：每行按字节对齐，1 = 白
+  } else if (data.length === ((w + 7) >> 3) * h) {
+    // 1 位、每行按字节对齐：`kind: 1`（GRAYSCALE_1BPP）置位 = 白；ImageMask（没有 kind，按数据长度认）置位 = 盖住 = 墨。
+    // `/Decode` 还能把两者都翻过来，翻没翻量了才知道：整页的墨不会过半，过半整幅取反（同 `rasteromr/rasterpage.ts` 的极性自检）
     const stride = (w + 7) >> 3;
+    const setIsInk = kind !== GRAYSCALE_1BPP;
+    let ink = 0;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) if ((((data[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1) === 1) === setIsInk) ink++;
+    const flip = ink > (w * h) / 2;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const v = (data[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1 ? 255 : 0;
+        const isInk = ((((data[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1) === 1) === setIsInk) !== flip;
         const p = (y * w + x) * 4;
-        out[p] = out[p + 1] = out[p + 2] = v; out[p + 3] = 255;
+        out[p] = out[p + 1] = out[p + 2] = isInk ? 0 : 255; out[p + 3] = 255;
       }
     }
   } else throw new Error(`不认识的 PDF 图像格式 kind=${kind}`);

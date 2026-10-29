@@ -12,13 +12,35 @@
 //   npm i --cpu=wasm32 sharp    纯 wasm（~11MB），跨平台一份，可打进单文件分发
 import sharp from "sharp";
 import { setImageDecoder, type RgbaImage } from "./decode";
+import { openPdfPages } from "./pdf.node";
 
 async function decodeImage(bytes: Uint8Array): Promise<RgbaImage> {
   const { data, info } = await sharp(Buffer.from(bytes)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return { data: new Uint8ClampedArray(data), width: info.width, height: info.height };
 }
 
-/** 装配 Node 解码器。无 PDF 光栅化器 → 喂 PDF 会明确报错（矢量那条路仍只在浏览器侧）。 */
+/** PDF → 逐页**源图**（页里最大的内嵌位图，原生像素、不渲染不重采样，见 `pdf.node.ts`）竖向拼成一张白底长图，靠左摆（同浏览器那份）。
+ *  纯矢量页（没有内嵌位图）报错：Node 里没有渲染器，矢量谱走矢量那条路。 */
+async function rasterizePdf(bytes: Uint8Array): Promise<RgbaImage> {
+  const doc = await openPdfPages(bytes, decodeImage);
+  try {
+    const pages: RgbaImage[] = [];
+    for (let i = 0; i < doc.count; i++) pages.push(await doc.page(i));
+    const W = Math.max(1, ...pages.map((p) => p.width));
+    const H = Math.max(1, pages.reduce((n, p) => n + p.height, 0));
+    const out = new Uint8ClampedArray(W * H * 4).fill(255);
+    let y0 = 0;
+    for (const p of pages) {
+      for (let y = 0; y < p.height; y++) out.set(p.data.subarray(y * p.width * 4, (y + 1) * p.width * 4), ((y0 + y) * W) * 4);
+      y0 += p.height;
+    }
+    return { data: out, width: W, height: H };
+  } finally {
+    await doc.close();
+  }
+}
+
+/** 装配 Node 解码器：图片走 sharp，PDF 取每页的内嵌源图（`rasterizePdf`）。 */
 export function installNodeDecoder(): void {
-  setImageDecoder(decodeImage);
+  setImageDecoder(decodeImage, rasterizePdf);
 }

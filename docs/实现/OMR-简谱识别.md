@@ -11,6 +11,9 @@
 内嵌位图**（`largestPageBitmap`：`getOperatorList` 找 `paintImage(Mask)XObject` → `objs.get(id)` 拿解码好的
 `ImageBitmap`）而非整页渲染——源本就是二值扫描图，直接贴白底即可（顺带甩掉赞美诗页码/栏目标题等叠加矢量文字，
 如「耶稣普治」PDF 顶部的 `055/圣子耶稣`）；纯矢量 PDF（无内嵌图）退回 `page.render` 整页光栅化。多页竖向拼接。
+**内嵌位图取源图原尺寸**，不在画布上缩放（2026-10-29 起；原先缩到 2000 宽，那是浏览器的插值，Node 复现不了），过宽的与图片一样交
+`decode.ts::fitWidth` 统一缩到 2200。Node 那一端（`decode.node.ts` 装的 `rasterizePdf`）用 `pdf.node.ts` 取每页最大的内嵌图
+（原生像素；JPEG 按原始字节交 sharp 解；ImageMask 与 1 位灰度图按数据长度认、整页墨过半就翻极性），同样竖向拼接，两端口径一致。
 
 识别只有**一条路**：**完全本地**，浏览器/桌面均可、可离线。`decode.ts`(图→二值) → `jianpu.ts`
   (连通域/几何启发式：数字块拆分、下划线 div、八度点、增时线) → `todoc.ts`(→简谱形状的 `ScoreDoc`)；
@@ -2074,7 +2077,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 会被拖进网页产物。Tauri 那条原生 OCR（`paddleocr.ts::nativeOcr`，张量经 IPC 交给 Rust `ort`）
 不走 `runtime.ts`，是并列的第三个后端。
 
-CLI 识别不吃 PDF：`decode.node.ts` 没装光栅化器，喂 PDF 直接报错（歌本切分 `split` 例外，它只取 PDF 每页内嵌的源图，见下文）。矢量那一摊
+CLI 识别吃带内嵌位图的 PDF（每页取源图，同上；歌本切分 `split` 用的是同一份 `pdf.node.ts`）；纯矢量 PDF 在 Node 里没有渲染器，直接报错。矢量那一摊
 （`vector.ts`/`vectext.ts`/`inventory.ts` + `pdflayout/`）仍只在浏览器与 `cli/index.ts` 那条链上。
 
 ### 歌本切分（`omr-cli.mjs split`，`src/omr/booksplit/`）
