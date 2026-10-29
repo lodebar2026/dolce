@@ -270,6 +270,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       beatCheck: this.visual.beatCheck,
       noteSound: this.visual.noteSound,
       showPalette: this.visual.showPalette,
+      transcriptionPresets: this.visual.transcriptionPresets,
+      transcriptionPreset: this.visual.transcriptionPreset,
     });
   }
 

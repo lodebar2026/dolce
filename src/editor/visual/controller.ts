@@ -40,12 +40,15 @@ import {
   sameRow, setBeatIssues, textCaretInPage,
 } from "./overlay";
 import { t as tr } from "../../i18n";
+import { FIXED_C_PRESET_ID, loadTranscriptionSettings, runTranscription, type TranscriptionPreset } from "../transcription";
+import type { DocFormatId } from "../formats";
 
 /** 键盘上这几样交给浏览器的剪贴板事件（`onClipboardEvent`）：那里拿得到系统剪贴板的字 */
 const CLIPBOARD_ACTIONS = new Set(["edit.copy", "edit.cut", "edit.paste"]);
 const actionById = (id: string): VisualAction => VISUAL_ACTIONS.find((a) => a.id === id)!;
 
 export interface VisualHost {
+  readonly docFormat: DocFormatId;
   readonly view: EditorView;
   /** 当前的双向定位索引（每次重排后重建） */
   readonly sync: SyncIndex;
@@ -153,6 +156,9 @@ export class VisualEditController {
   private beatCursor = -1;
   /** 记号面板：显示与否持久化 */
   showPalette = false;
+  /** “转记…”里的用户预设与上次使用项。 */
+  transcriptionPresets: TranscriptionPreset[] = [];
+  transcriptionPreset = FIXED_C_PRESET_ID;
   private paletteEl: HTMLElement | null = null;
   private paletteBtn: HTMLButtonElement | null = null;
   private paletteRefresh: (() => void) | null = null;
@@ -252,6 +258,7 @@ export class VisualEditController {
     if (typeof s.showFormatMarks === "boolean") this.showFormatMarks = s.showFormatMarks;
     if (typeof s.noteSound === "boolean") this.noteSound = s.noteSound;
     if (typeof s.beatCheck === "boolean") this.beatCheck = s.beatCheck;
+    Object.assign(this, loadTranscriptionSettings(s));
     this.syncButtons();
   }
 
@@ -1673,6 +1680,7 @@ export class VisualEditController {
       case "edit.paste": return this.paste(clipFor(null), null);
       case "edit.repeat": return this.repeat();
       case "edit.transpose": return this.transpose();
+      case "edit.transcribe": return runTranscription(this.host, this);
       case "lyric.entry": return this.startLyrics();
       case "chord.entry": return this.startChords();
       case "text.entry": return this.startAttached("annotation");

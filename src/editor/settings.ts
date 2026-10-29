@@ -48,6 +48,9 @@ export interface PersistedSettings {
   noteSound?: unknown;
   /** 可视化编辑的记号面板显示与否（同上） */
   showPalette?: unknown;
+  /** “转记…”的用户预设与上次使用项（由 VisualEditController 校验）。 */
+  transcriptionPresets?: unknown;
+  transcriptionPreset?: unknown;
 }
 
 export function loadPersistedSettings(): PersistedSettings | null {
