@@ -412,8 +412,10 @@ function joinSpacedTitleChars(ls: readonly HLine[]): HLine[] {
 
 /** 破折号连着的两截标题（青年诗歌 60「经历基督——作牧人」）：det 切成「经历基督」|「——作牧人」两框、还交叠半个字高，
  *  标题只取得到一截（宽的那截），副标题也因标题中心偏了过不了居中那道门。**同一排、字号都是页上最大一号**的两框，
- *  交界处有破折号（前框以它收尾或后框以它起头）、其余全是汉字的才并：书眉「060—青年诗歌」带数字，不动。 */
-function joinDashTitle(ls: readonly HLine[]): HLine[] {
+ *  交界处有破折号（前框以它收尾或后框以它起头）、其余全是汉字的才并：书眉「060—青年诗歌」带数字，不动。
+ *  破折号 det 整个没框进去（青年诗歌 73「经历神——祂的分赐」读成「经历神」|「祂的分赐」，两框间空着近两个字高）：
+ *  文字里没有破折号时量两框之间的墨（`dashInk`），是一道贯穿空当、居中的细横线才并，空当放到 3 个字高（「——」两字宽）。 */
+function joinDashTitle(ls: readonly HLine[], bin: Binary): HLine[] {
   const maxH = Math.max(0, ...ls.filter((l) => /^[一-鿿]+$/.test(l.text.trim())).map((l) => l.charH));
   const piece = (l: HLine) => /^[—–－-]*[一-鿿]+[—–－-]*$/.test(l.text.trim()) && l.charH >= maxH * 0.8;
   const sorted = ls.filter(piece).sort((a, b) => a.bbox.x - b.bbox.x);
@@ -422,17 +424,36 @@ function joinDashTitle(ls: readonly HLine[]): HLine[] {
     const ta = a.text.trim(), tb = b.text.trim();
     const h = Math.max(a.charH, b.charH);
     const gap = b.bbox.x - (a.bbox.x + a.bbox.w);
-    if (Math.abs(b.cy - a.cy) > h * 0.3 || h > Math.min(a.charH, b.charH) * 1.25 || gap < -h || gap > h * 1.5) continue;
-    if (!/[—–－-]$/.test(ta) && !/^[—–－-]/.test(tb)) continue;
+    if (Math.abs(b.cy - a.cy) > h * 0.3 || h > Math.min(a.charH, b.charH) * 1.25 || gap < -h || gap > h * 3) continue;
     if (/^[—–－-]/.test(ta) || /[—–－-]$/.test(tb)) continue;
-    probe("header.dashTitle");
+    const textDash = /[—–－-]$/.test(ta) || /^[—–－-]/.test(tb);
+    if (textDash ? gap > h * 1.5 : !dashInk(bin, a.bbox, b.bbox, h)) continue;
+    probe(textDash ? "header.dashTitle" : "header.dashTitleInk");
     const bbox = unionRect(a.bbox, b.bbox);
-    const text = (ta + tb).replace(/[—–－-]+/, "——");
+    const text = textDash ? (ta + tb).replace(/[—–－-]+/, "——") : ta + "——" + tb;
     const chars = a.chars && b.chars ? [...a.chars, ...b.chars] : undefined;
     const joined: HLine = { text, charH: h, cx: bbox.x + bbox.w / 2, cy: bbox.y + bbox.h / 2, n: a.n + b.n, bbox, chars };
     return [...ls.filter((l) => l !== a && l !== b), joined];
   }
   return [...ls];
+}
+
+/** 两个框之间的空当里是不是一道破折号：空当（左右各让 0.1 字高）里九成以上的列有墨，墨全落在一条不过 0.2 字高的横带里，
+ *  横带中心在两框共同的纵向范围中段（0.3~0.7）。空当不到半个字高（只是字距）不算。 */
+function dashInk(bin: Binary, a: Rect, b: Rect, h: number): boolean {
+  const m = Math.round(h * 0.1);
+  const x0 = Math.round(a.x + a.w) + m, x1 = Math.round(b.x) - m;
+  if (x1 - x0 < h * 0.5) return false;
+  const y0 = Math.max(0, Math.round(Math.min(a.y, b.y))), y1 = Math.min(bin.h - 1, Math.round(Math.max(a.y + a.h, b.y + b.h)));
+  let cols = 0, top = Infinity, bot = -Infinity;
+  for (let x = x0; x < x1; x++) {
+    let hit = false;
+    for (let y = y0; y <= y1; y++) if (bin.data[y * bin.w + x]) { hit = true; top = Math.min(top, y); bot = Math.max(bot, y); }
+    if (hit) cols++;
+  }
+  if (cols < (x1 - x0) * 0.9 || bot - top + 1 > h * 0.2) return false;
+  const mid = ((top + bot) / 2 - y0) / (y1 - y0 + 1);
+  return mid >= 0.3 && mid <= 0.7;
 }
 
 function mergeStackedColumns(comps: Component[], numH: number): Component[] {
@@ -1029,7 +1050,7 @@ export async function recognizeHeader(
   }
 
   async function classify(lines: HLine[]) {
-    const ls = joinDashTitle(joinSpacedTitleChars(lines));
+    const ls = joinDashTitle(joinSpacedTitleChars(lines), bin);
     const creditRe = CREDIT_PREFIX_RE;
     const creditSuffixRe = CREDIT_SUFFIX_RE;
     const creditRoleTailRe = CREDIT_ROLE_TAIL_RE;
@@ -1153,6 +1174,9 @@ export async function recognizeHeader(
       // 曲号前缀只用「.」「、」或紧贴（见下）。拉开字距的真标题「真　　爱」框宽反比它窄，按宽度会输。
       // 书名末字读错（青年诗歌 15 右上「青年诗歌—015」读成「青年诗8-015」）：汉字与破折号之间容一个别的字符
       if (/^\d{1,4}\s*[—–－-]{1,2}\s*[一-鿿]|[一-鿿][^\s—–－-]?\s*[—–－-]{1,2}\s*\d{1,4}$/.test(txt)) { probe("header.runningHead"); continue; }
+      // 破折号也读丢了（青年诗歌 74 左上「074—青年诗歌」读成「074青年诗改」，大号斜体页码把框撑得比标题高，按字号就顶掉了真标题）：
+      // 页码紧贴汉字的形与「277从前所珍爱」这种曲号前缀同形，靠位置分——书眉整框缩在页面一侧，标题居中、跨过页面中线
+      if (/^\d{1,4}\s*[一-鿿]|[一-鿿]\s*\d{1,4}$/.test(txt) && (ln.bbox.x + ln.bbox.w < bin.w / 2 || ln.bbox.x > bin.w / 2)) { probe("header.runningHeadNoDash"); continue; }
       // 标题 = 最大字号的中文行；**字号差不多（15% 以内）时取更宽的那一行**。det 给的框高
       // 只是个近似，同一本书里印在右上角的出版方（迦南诗选每页都印着「迦南诗歌」）会因框
       // 松紧不同，忽而比标题矮（2157：61 vs 77）、忽而比它高（2156：79 vs 68）——单看框高，

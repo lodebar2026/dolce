@@ -584,8 +584,9 @@ export function buildJpNums(
         if (prev.x - kb.x > tol || rright(kb) - rright(prev) > tol) { probe("underline.misaligned"); break; }
         // 下一道不能是**字框的顶边**：歌词字的顶横底下连着字身，在这道线的横向范围里往下量，墨不断档、一口气延伸大半个字高
         //（青年诗歌 22 `4̲` 下「远」的顶横：层距 0.38 字高、两端都缩在上一道里，往下连着 0.83 字高的墨）。
-        // 真减时线底下是空的，或隔着一道空白才到歌词
-        if (glyphBelow(bin, kb, numH) >= numH * 0.55) { probe("underline.glyphTop"); break; }
+        // 真减时线底下是空的，或隔着一道空白才到歌词。本音符自己的低八度点不算墨：点贴着下一道线、点下又紧挨歌词时，
+        // 一路量穿点进了字身（青年诗歌 73 `6·6̳̣`：第二道线底下 1px 就是点，点底到歌词字顶不到 0.1 字号）
+        if (glyphBelow(bin, kb, numH, downDots) >= numH * 0.55) { probe("underline.glyphTop"); break; }
       }
       div++;
       prev = kb;
@@ -611,15 +612,17 @@ export function buildJpNums(
 }
 
 /** 从横线 `r` 的顶往下、在它的横向范围（两边各放 0.15 字号：字的竖笔常从顶横端头外侧下来）里量墨连续延伸多高，
- *  容 0.1 字号以内的断档（字身里笔画间的空；减时线到下面歌词的空白要宽得多，该书 0.18 字号）。 */
-function glyphBelow(bin: Binary, r: Rect, numH: number): number {
+ *  容 0.1 字号以内的断档（字身里笔画间的空；减时线到下面歌词的空白要宽得多，该书 0.18 字号）。`skip` 里的墨当白（本音符的低八度点）。 */
+function glyphBelow(bin: Binary, r: Rect, numH: number, skip: readonly Rect[] = []): number {
   const pad = Math.round(numH * 0.15);
   const x0 = Math.max(0, Math.round(r.x) - pad), x1 = Math.min(bin.w - 1, Math.round(rright(r)) + pad);
   const y0 = Math.max(0, Math.round(r.y)), yMax = Math.min(bin.h - 1, Math.round(r.y + numH * 1.2));
   const maxGap = Math.max(1, Math.round(numH * 0.1));
   let last = y0;
   for (let y = y0; y <= yMax && y - last <= maxGap; y++) {
-    for (let x = x0; x <= x1; x++) if (bin.data[y * bin.w + x]) { last = y; break; }
+    for (let x = x0; x <= x1; x++) {
+      if (bin.data[y * bin.w + x] && !skip.some((o) => x >= o.x - 1 && x <= rright(o) && y >= o.y - 1 && y <= rbottom(o))) { last = y; break; }
+    }
   }
   return last - y0 + 1;
 }

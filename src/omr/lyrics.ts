@@ -556,9 +556,12 @@ async function simplifyStrayTraditional(
  * 页眉的标题、副标题里读成繁体的字（青年诗歌 2《真爱》读出「真愛」）：歌词判定整页是简体时（`recognizeLyrics` 的
  * `simplifiedPage`）按同一口径改判——裁出它在源图上的框重跑候选，**简体形在该字候选里**才换。署名不走这里
  * （可能真是繁体，76「詞曲：巧兒」）。候选的字序与原文对不上（补过空格、剥过曲号以外的字）就整条不动。
+ * 繁体形有两个以上的是整行印的繁体（青年诗歌 74「為神永遠經綸」、49「祂來過」）、不是零星误读，也不动——
+ * 按候选只改得动其中几个，反倒繁简混杂。
  */
 export async function simplifyHeaderLine(bin: Binary, ocr: OcrBackend, text: string, bbox: Rect): Promise<string> {
-  if (!ocr.rankTextChars || ![...text].some((ch) => simplifiedOf(ch))) return text;
+  const trad = [...text].filter((ch) => simplifiedOf(ch)).length;
+  if (!ocr.rankTextChars || !trad || trad >= 2) return text;
   const [line] = await ocr.rankTextChars([buildStrip(surfaceFromBinary(bin), [bbox])]);
   if (!line) return text;
   const chars = [...text];
