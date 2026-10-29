@@ -70,6 +70,7 @@ export function findWholeRests(c: {
   allHoles: Rect[];
   heads: RasterHead[];
   claimed: Set<number>;
+  strokeRejects: Rect[];
 } {
   const { prims, unit, blobs, staffLines, grid, groups, staffLefts, yAt, raster, inBand, nl, cmap, rlayer, ledger, repaired, harmonyIds, titleIds, onGrid, matchHollow, offStaff } = c;
   // ── 整小节休止：**先摘出来，别让符头那一路吃掉** ─────────────────────
@@ -308,15 +309,16 @@ export function findWholeRests(c: {
   // 刚好卡过实心头的尺寸下限，出了个 F5。只剔**矮**的（不到 0.65 格）：贴着符杠、又被去线
   // 削扁的真头中心也会落在杠的中线上（宁静的伯利恒三个 1.1×0.72 格的，门槛 0.75 时被剔掉）。
   const notHollow = new Map<number, Rect>();
+  const strokeRejects: Rect[] = [];
   const allHoles = findHoles(raster.bin, Math.max(4, Math.round(unit.space * unit.space * 0.06)));
-  const rawHeads = findRasterHeads(nl, blobs.filter((c) => !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id)), prims.vSegs, unit, onGrid, inBand, matchHollow, offStaff, notHollow, allHoles.filter((h) => cavityLike(raster.bin, h, unit.space)));
+  const rawHeads = findRasterHeads(nl, blobs.filter((c) => !restIds.has(c.id) && !harmonyIds.has(c.id) && !titleIds.has(c.id)), prims.vSegs, unit, onGrid, inBand, matchHollow, offStaff, notHollow, allHoles.filter((h) => cavityLike(raster.bin, h, unit.space)), strokeRejects);
   const heads = rawHeads.filter((hd) => {
     if (hd.code !== "noteheadBlack") return true;
     if (beamStump(hd.box, rawHeads.map((o) => o.box))) return false;
     return hd.box.h >= unit.space * BEAM_STUMP_H || !onBeamLine(hd.box);
   });
   const claimed = new Set([...heads.map((h) => h.comp.id), ...restIds, ...harmonyIds, ...titleIds]);
-  return { besideStem, restIds, restSyms, restStrokes, onBeamLine, beamsThrough, inBeamBody, beamStump, notHollow, allHoles, heads, claimed };
+  return { besideStem, restIds, restSyms, restStrokes, onBeamLine, beamsThrough, inBeamBody, beamStump, notHollow, allHoles, heads, claimed, strokeRejects };
 }
 
 /** 四分休止：**位置 + 形状自举**，字典兜不住 */

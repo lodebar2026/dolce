@@ -398,9 +398,9 @@ export async function recognizeRasterPage(
   // ── contour 层与认领账本
   const { contourStaves, cmap, ledger, rlayer, onGrid, inBand, offStaff, matchHollow } = buildClaimLedger({ groups, nl, unit, repaired, prims, onLedger, raster, yAt, look });
   // ── 整小节休止：**先摘出来，别让符头那一路吃掉**
-  const { besideStem, restIds, restSyms, restStrokes, onBeamLine, beamsThrough, inBeamBody, beamStump, notHollow, allHoles, heads, claimed } = findWholeRests({ prims, unit, blobs, staffLines, grid, groups, staffLefts, yAt, raster, inBand, nl, cmap, rlayer, ledger, repaired, harmonyIds, titleIds, onGrid, matchHollow, offStaff });
+  const { besideStem, restIds, restSyms, restStrokes, onBeamLine, beamsThrough, inBeamBody, beamStump, notHollow, allHoles, heads, claimed, strokeRejects } = findWholeRests({ prims, unit, blobs, staffLines, grid, groups, staffLefts, yAt, raster, inBand, nl, cmap, rlayer, ledger, repaired, harmonyIds, titleIds, onGrid, matchHollow, offStaff });
   // ── 空心符头：按**内腔（洞）**再找一遍
-  const { onLineOrGrid, rawHoles, holes, takenBoxes, barSegs, stacked, ledgerOnly, hollowMasks, inkStems } = hollowHeadsByCavity({ onGrid, grid, unit, raster, allHoles, heads, harmonyMasks, notHollow, prims, staffGeoms, nl, inBand, restStrokes, staffLines, groups });
+  const { onLineOrGrid, rawHoles, holes, takenBoxes, barSegs, stacked, ledgerOnly, hollowMasks, inkStems } = hollowHeadsByCavity({ onGrid, grid, unit, raster, allHoles, heads, harmonyMasks, notHollow, prims, staffGeoms, nl, inBand, restStrokes, staffLines, groups, strokeRejects });
   // ── 几个实心符头并成一块：按**谱内自举的 mask** 拆开
   const { masks, noBeam, masksNB, pitchGrid, onLineY, split, splitIds, dropHead, restTpl } = splitMergedSolidHeads({ raster, heads, stacked, unit, staffLines, nl, prims, onGrid, groups, grid, look, blobs, claimed, repaired });
   // ── **光杆符干端头的无主墨**（`notehead.ts::headsOnBareStems`）

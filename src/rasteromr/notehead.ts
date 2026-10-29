@@ -150,6 +150,8 @@ export function findRasterHeads(
   notHollow?: Map<number, Rect>,
   /** 原图上像内腔的孔（`contour.ts::cavityLike`）：窄块借干那一档用。 */
   cavities: Rect[] = [],
+  /** 「没挂干、全是笔画、白不居中」剔掉的块交出来：本页空心头模板建好后再按模板与干验一遍（`hollowHeadsByCavity` 的 `strokeRejects`）。 */
+  strokeRejects?: Rect[],
 ): RasterHead[] {
   const sp = unit.space;
   const out: RasterHead[] = [];
@@ -203,7 +205,10 @@ export function findRasterHeads(
     // 圈里正中围着白的不剔：粗笔印的空心头墨多到过了实心线、又不挂干（是爱的全音符「e」形一圈；
     // 新编 059 加线上的全音符，内腔被没去净的线切成上下两小块，只围着 0.05~0.12 格²），也没有芯。
     // 单按白的多少分不开（门槛 0.15 时手写数字剔得干净、059 的全音符跟着丢 12 步），要看白在不在正中
-    if (fill >= FILL_SOLID && !stem && strokeOnly(bin, t.box, sp) && !ringWhite(bin, t.box, sp)) continue;
+    if (fill >= FILL_SOLID && !stem && strokeOnly(bin, t.box, sp) && !ringWhite(bin, t.box, sp)) {
+      strokeRejects?.push(t.box);
+      continue;
+    }
     // 剪掉了列，且高度落在谱线网格的延长线上 → 那两截细横笔是加线
     const ledger: LineSeg | null =
       t.trimmed && t.ledgerY != null && onLedgerGrid(t.ledgerY, c.bbox.x + c.bbox.w / 2)

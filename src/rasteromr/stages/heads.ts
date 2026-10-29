@@ -165,6 +165,8 @@ function flagLoop(bin: Binary, b: Rect, onLine: (y: number, x?: number) => boole
   return rows >= 3 && inked >= rows * 0.8;
 }
 
+/** 形状找头剔掉、按模板放回的二分头（`hollowHeadsByCavity`）：头的一侧伸出的干至少这么长（格）。 */
+const RESCUE_STEM = 2.5;
 /** 按「两根同向伸出的干围出的格子」剔的孔至少这么高（格），见 `sameWayCell` */
 const SAME_WAY_H = 0.4;
 
@@ -185,6 +187,7 @@ export function hollowHeadsByCavity(c: {
   restStrokes: Set<LineSeg>;
   staffLines: StaffLineRun[];
   groups: StaffGroup[];
+  strokeRejects?: Rect[];
 }): {
   onLineOrGrid: (y: number, x?: number) => boolean;
   rawHoles: Rect[];
@@ -196,7 +199,7 @@ export function hollowHeadsByCavity(c: {
   hollowMasks: HeadMask[];
   inkStems: LineSeg[];
 } {
-  const { onGrid, grid, unit, raster, allHoles, heads, harmonyMasks, notHollow, prims, staffGeoms, nl, inBand, restStrokes, staffLines, groups } = c;
+  const { onGrid, grid, unit, raster, allHoles, heads, harmonyMasks, notHollow, prims, staffGeoms, nl, inBand, restStrokes, staffLines, groups, strokeRejects = [] } = c;
   // ── 空心符头：按**内腔（洞）**再找一遍 ───────────────────────────────────
   //
   // 空心符头被去谱线切碎之后一块都判不成符头（实测宁静 p2 钢琴右手那个二分和弦
@@ -334,6 +337,36 @@ export function hollowHeadsByCavity(c: {
   const ledgerOnly = (b: Rect) => !inBand(b.y + b.h / 2);
   const hollowSamples = [...heads.filter((h) => !ledgerOnly(h.box)).map((h) => ({ box: h.box, code: h.code })), ...stacked].filter((s0) => !(s0 as { weak?: boolean }).weak);
   const hollowMasks = buildHollowMasks(raster.bin, hollowSamples, unit, staffLines);
+  // **形状找头剔掉的「没芯、白不居中」块，按本页空心头模板再验一遍**（`notehead.ts::ringWhite` 那道闸的另一面）：
+  // 墨粗、骑线的二分头下半个内腔被线切掉，白只剩一点、重心偏上，又没挂上干，被当成手写数字剔掉（耶和华是我的牧者 p2 m2、m8 低音 D3）。
+  // 按特性与上下文放回：在它的位置用本页空心头模板（骑线、在间两张取高的）打分，过本页已认空心头自己位置得分的下 10% 分位，
+  // 头的一侧还要量得到伸出 `RESCUE_STEM` 格、远端不接杠的干，才收成二分头；手写数字的笔画配不上空心头的圈
+  if (strokeRejects.length && hollowMasks.length) {
+    const best = (b: Rect) => Math.max(...hollowMasks.map((m) => scoreAtMasked(raster.bin, m, b.x + b.w / 2, b.y + b.h / 2)));
+    const own = hollowSamples.filter((h) => h.code !== "noteheadBlack").map((h) => best(h.box)).sort((a, b) => a - b);
+    if (own.length >= 5) {
+      const floor = own[Math.floor(own.length * 0.1)];
+      for (const b of strokeRejects) {
+        if (best(b) < floor) continue;
+        const col = inkColumn(nl, b, unit, true);
+        const cy = b.y + b.h / 2;
+        if (!col || Math.max(cy - col[0], col[1] - cy) < unit.space * RESCUE_STEM) continue;
+        // 二分头的干远端不接杠：远端上下两个线粗内，有一行墨从干往左或往右连出一格以上的，是一组八分的干（新编 204 m5 低音）
+        const end = col[1] - cy > cy - col[0] ? col[1] : col[0];
+        const t = Math.max(2, Math.round(unit.lineThick * 2));
+        let beamed = false;
+        for (let y = end - t; y <= end + t && !beamed; y++)
+          for (const dir of [-1, 1]) {
+            let n = 0;
+            for (let x = col[2] + dir; x >= 0 && x < nl.w && y >= 0 && y < nl.h && nl.data[y * nl.w + x]; x += dir) n++;
+            if (n >= unit.space) beamed = true;
+          }
+        if (beamed) continue;
+        if (heads.some((h) => overlapFrac(h.box, b) > 0.3) || stacked.some((h) => overlapFrac(h.box, b) > 0.3)) continue;
+        stacked.push({ box: b, code: "noteheadHalf" });
+      }
+    }
+  }
   // 本页空心头内腔的宽（格，下四分位）：手写体扫描件的二分头内腔窄到 0.7 格，叠头判据的宽度与内腔椭圆照它缩（`hollowHeadsByPitch`）
   const cavWs = holes
     .filter((h) => h.h <= unit.space && hollowSamples.some((s0) => s0.code !== "noteheadBlack" && h.x + h.w / 2 > s0.box.x && h.x + h.w / 2 < s0.box.x + s0.box.w && h.y + h.h / 2 > s0.box.y && h.y + h.h / 2 < s0.box.y + s0.box.h))
