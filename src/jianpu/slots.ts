@@ -957,8 +957,9 @@ function toFanqieSong(song: Song, index: number, rawLines: readonly string[], ha
         textSources = p.textSources ?? [];
       }
       const segs = segmentMarks(marksOfPart(pi), builds[pi]!, r);
-      // 123/ABC 的解析器同时写了连音标记，按 `timeMod` 补出来的同一段就不再要（否则同一个连音画两遍）
-      const extra = tuplets[pi]![r]!.filter((t) => !segs.some((s) => s.type === "tuplet" && s.start === t.start && s.end === t.end));
+      // 123/ABC/文本谱的解析器同时写了连音标记，按 `timeMod` 补出来的与之重叠的就不再要（否则同一个连音画两遍；
+      // 相邻两组按 `timeMod` 会连成一段——`(y1 2 3) (y3 4 5 6)`——起止对不上也得剔）
+      const extra = tuplets[pi]![r]!.filter((t) => !segs.some((s) => s.type === "tuplet" && s.start <= t.end && t.start <= s.end));
       const line: RowView = {
         part,
         measures: perPart[pi]![r]!.measures,
