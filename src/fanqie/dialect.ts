@@ -55,8 +55,6 @@ export interface EmitStyle {
   voltaCloseAfterBarline: boolean;
   /** 房号起头落在行首时先补一条虚拟小节线 `|/` 把左端立住（诗歌本谱本的写法） */
   voltaLeadBarline: boolean;
-  /** 房号不封口写在哪一头：番茄 `["2"/`、诗歌本 `]/` */
-  voltaOpenEnd: "start" | "end";
   /** 声部名与歌词行说明的括号：番茄 `"女高"`、诗歌本 `<女高>` */
   labelWrap: readonly [string, string];
   /** 不跟词的隐藏休止怎么写（诗歌本 `9`）。没有这种写法的方言只能写成显形休止 `0`——
@@ -131,7 +129,6 @@ const TOMATO: DialectSpec = {
     blankBetweenGroups: true,
     voltaCloseAfterBarline: false,
     voltaLeadBarline: false,
-    voltaOpenEnd: "start",
     labelWrap: ['"', '"'],
     pageFields: false,
   },
@@ -185,7 +182,6 @@ const SHIGE: DialectSpec = {
     blankBetweenGroups: false,
     voltaCloseAfterBarline: true,
     voltaLeadBarline: true,
-    voltaOpenEnd: "end",
     labelWrap: ["<", ">"],
     hiddenRestNoLyric: "9",
     pageFields: true,

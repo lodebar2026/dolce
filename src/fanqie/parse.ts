@@ -481,19 +481,15 @@ export function parseMusicLine(
 
     // 跳房子：`[` 起（可跟 `+` 抬高与 `"房号"`），`]` 止（`]/` 不封口）
     if (ch === "[") {
-      const { level, next } = countPluses(src, i + 1);
+      // 番茄规范文字说「`[` 后加 `/`」不封口（图例却写 `]/`）：`/` 紧跟 `[`（`[/+"2."`）也认，写出只用 `]/`
+      const openEnd = src[i + 1] === "/";
+      const { level, next } = countPluses(src, i + (openEnd ? 2 : 1));
       let cursor = next;
       let caption: string | undefined;
       const quoted = readQuotedRun(src, cursor);
       if (quoted) {
         caption = quoted.body;
         cursor = quoted.next;
-      }
-      // 番茄：`[…/` 表示右侧不封口，`/` 紧跟在房号之后
-      let openEnd = false;
-      if (src[cursor] === "/") {
-        openEnd = true;
-        cursor += 1;
       }
       const open: OpenMark = { type: "volta", start: elements.length, level, column: i };
       if (caption !== undefined) open.caption = caption;

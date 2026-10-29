@@ -348,8 +348,6 @@ interface PartState {
   plan: ArcPlan;
   /** 元素 id → 全声部写出位次（弧的规划与「落在多连音里」要它） */
   pos: Map<ElementId, number>;
-  /** 房号起头 → 它的收尾是不是不封口（番茄的 `/` 写在起头那一端） */
-  voltaOpenEnd: WeakMap<NonNullable<Barline["ending"]>, boolean>;
   /** 已开未收的房号 */
   openVoltas: number;
   /** 当前生效的拍号（曲中转拍写 `"p:3/4"`；减时线连断的拍位也按它算） */
@@ -589,11 +587,10 @@ function writeSustain(su: Sustain, line: Line, st: PartState, slots: Slot[]): vo
   writeTail(su.id, su, line, st, { at: anchored });
 }
 
-/** 房号起头的写法：`["1."`（`+` 抬高），番茄不封口的 `/` 也写在这一头。 */
-function voltaOpenText(e: NonNullable<Barline["ending"]>, st: PartState): string {
+/** 房号起头的写法：`["1."`（`+` 抬高）。不封口两家都写在收尾 `]/`。 */
+function voltaOpenText(e: NonNullable<Barline["ending"]>): string {
   let s = "[" + "+".repeat(e.level ?? 0);
   if (!e.captionless) s += quoted(e.text ?? e.numbers.join(","));
-  if (st.d.emit.voltaOpenEnd === "start" && st.voltaOpenEnd.get(e)) s += "/";
   return s;
 }
 
@@ -619,7 +616,7 @@ function writeLeft(mea: Measure, line: Line, st: PartState): void {
     // 新房号起头就是上一个房号的尽头（ABC 的 `[1 … [2`，前一个没有结束线收）：先收掉，别叠成嵌套
     closeVoltas(line, st);
     if (st.d.emit.voltaLeadBarline && line.empty) line.push(barlineCode(st.d, "hidden"));
-    line.push(voltaOpenText(e, st));
+    line.push(voltaOpenText(e));
     st.openVoltas++;
   }
 }
@@ -663,7 +660,7 @@ function writeRightBarline(measures: readonly Measure[], mi: number, line: Line,
   for (const b of stops) {
     if (st.openVoltas <= 0) break;
     st.openVoltas--;
-    closeText += "]" + (b.ending!.type === "discontinue" && d.emit.voltaOpenEnd === "end" ? "/" : "");
+    closeText += "]" + (b.ending!.type === "discontinue" ? "/" : "");
   }
   if (closeText && !d.emit.voltaCloseAfterBarline) {
     line.push(closeText);
@@ -852,26 +849,6 @@ function positions(part: Part): Map<ElementId, number> {
 }
 
 /** 房号起头 → 收尾是不是不封口。按 `pair` 配；没有配对号的按先后（后开的先收，同解析端的栈）。 */
-function voltaEnds(part: Part): WeakMap<NonNullable<Barline["ending"]>, boolean> {
-  const out = new WeakMap<NonNullable<Barline["ending"]>, boolean>();
-  const open: NonNullable<Barline["ending"]>[] = [];
-  for (const mea of part.measures) {
-    for (const b of mea.barlines ?? []) {
-      const e = b.ending;
-      if (!e) continue;
-      if (e.type === "start") {
-        open.push(e);
-        continue;
-      }
-      const at = e.pair !== undefined ? open.findIndex((s) => s.pair === e.pair) : open.length - 1;
-      if (at < 0) continue;
-      out.set(open[at]!, e.type === "discontinue");
-      open.splice(at, 1);
-    }
-  }
-  return out;
-}
-
 /** 兜底断行：按乐句断不出来时每几小节一行（简谱里一句最常见的长度）。 */
 const FALLBACK_MEASURES_PER_LINE = 4;
 
@@ -1022,7 +999,7 @@ export function emitFanqieSong(src: Song, dialect: Dialect, opts: EmitFanqieOpti
     const own = ownIds(part, (el, mi) => isStreamElement(el, part.measures[mi]!));
     const pos = positions(part);
     return {
-      d, plan: planArcs(writableMarks(song, part, own).marks, pos), pos, voltaOpenEnd: voltaEnds(part), openVoltas: 0,
+      d, plan: planArcs(writableMarks(song, part, own).marks, pos), pos, openVoltas: 0,
       time: song.time, home, key: home, autoBoundaries: !hasBoundaries, consumedLeft: new Set(), closeOpenVoltas: !opts.fromFanqie, carryBeat: 0,
     };
   });
