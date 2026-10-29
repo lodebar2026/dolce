@@ -263,6 +263,11 @@ function ringWhite(bin: Binary, b: Rect, sp: number): boolean {
   return Math.abs(sx / k - (b.x + (b.w - 1) / 2)) <= b.w * RING_OFF_X && Math.abs(sy / k - (b.y + (b.h - 1) / 2)) <= b.h * RING_OFF_Y;
 }
 
+/** 盒里围着够 `RING_WHITE` 格²的白，不管在不在正中（`stages/heads.ts` 放回挂着干的块时用：骑线头下半个内腔被线切掉，白偏上） */
+export function enclosesWhite(bin: Binary, b: Rect, sp: number): boolean {
+  return enclosedArea(bin, b, sp) >= sp * sp * RING_WHITE;
+}
+
 /** 盒里被围住的白一共多少像素（判据同 `rayEnclosed`，不提前收手）；给了 `at` 就把这些像素的 x、y 依次记进去 */
 function enclosedArea(bin: Binary, b: Rect, sp: number, at?: number[]): number {
   const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < bin.w && y < bin.h && !!bin.data[y * bin.w + x];

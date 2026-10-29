@@ -16,7 +16,7 @@ import { type StaffContext, findClefKeyTime, type BeamShape, type StemInfo, type
 import { findNoteheads, tagSystemBarlines, findStems, findTails, findBarlines, makeSystems, makeBars } from "../../staffomr/page";
 import { inkSystemBarlines, bridgeFaintSysLines, dropLoneBarlines, voteSystemBarlines } from "../barvote";
 import { tagLooseStems, mergeSplitStems, splitUnisons, doubleUnisonWholes, markCrossStaff } from "../stems";
-import { bootstrapFlags, toBeamShapes, snapBeamEnds } from "../flags";
+import { bootstrapFlags, toBeamShapes, mergeSplitBeams, snapBeamEnds } from "../flags";
 import { makeSymObj, type RasterSym } from "../adapt";
 import { dropCourtesyKeys, demoteMidKeys, extendKeyChains, dropHeadsInKey, pruneMidKeys, fixKeyNaturals, keySections, extendKeyByStrokes, shareSystemKeys, shareKeySignature, carrySystemKeys, extendKeyByCarry, findMidKeysByTemplate, shareMidKeys, dropBarsInKey, keyFromChords, fixFlatReadAsSix, attachAccidentalsByPitch, naturalsByStrokes } from "../keysig";
 import { markRepeatsAndVoltas } from "../repeats";
@@ -246,6 +246,7 @@ export function fixBeamsAndHeads(c: {
     return !stemSegs0.some((s0) => inside(s0.cx, s0.top) || inside(s0.cx, s0.bottom));
   };
   const beams = toBeamShapes(prims.beams.filter((b) => !thinOnLine(b) && !textStroke(b)));
+  mergeSplitBeams(beams, raster.bin, unit.space);
   snapBeamEnds(beams, pg.segs.filter((sg) => sg.isV && sg.hasTag("Stem")), raster.bin, unit.space, unit.lineThick, noteHeads.map((s0) => s0.box));
   at("snapBeamEnds");
   const stems: StemInfo[] = [];

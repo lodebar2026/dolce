@@ -438,6 +438,54 @@ export function toBeamShapes(beams: BeamQuad[]): BeamShape[] {
   });
 }
 
+/**
+ * **一条粗杠被拆成上下两截**：网点印的粗杠中间色淡，横段抽取拆成上下贴着的两条（耶和华是我的牧者 p1 m2：1047–1092 与 1058–1127，
+ * 上下只隔一行），数杠层时算成两层，八分读成十六分。真的两层杠之间总隔着一道白缝。
+ * 横向相叠 `BEAM_SPLIT_OV` 格以上的两条，相叠那段里从上一条中线到下一条中线、带一段连着两行以上的白的列不过两成，
+ * 并成一条：走向取长的那条，盒取并集。网点粗杠里的白是零星的一两个像素（耶和华那处只有 62% 的列一路连墨）
+ */
+export function mergeSplitBeams(beams: BeamShape[], bin: Binary, sp: number): void {
+  const yAt = (b: BeamShape, x: number) => (b.x1 === b.x0 ? b.y0 : b.y0 + ((b.y1 - b.y0) * (x - b.x0)) / (b.x1 - b.x0));
+  for (let again = true; again; ) {
+    again = false;
+    for (let i = 0; i < beams.length && !again; i++)
+      for (let j = 0; j < beams.length && !again; j++) {
+        const a = beams[i], b = beams[j];
+        if (i === j) continue;
+        const xa = Math.max(a.x0, b.x0), xb = Math.min(a.x1, b.x1);
+        if (xb - xa < sp * BEAM_SPLIT_OV) continue;
+        const mx = (xa + xb) / 2;
+        if (yAt(a, mx) >= yAt(b, mx)) continue; // a 在上
+        // 两层之间的白缝是整道的（几个像素厚）；网点粗杠里的白是零星的一两个像素。数相叠那段里带一段够厚白的列
+        const gapMin = 2;
+        let n = 0, gaps = 0;
+        for (let x = Math.round(xa); x <= Math.round(xb); x++, n++) {
+          const y0 = Math.round(yAt(a, x)), y1 = Math.round(yAt(b, x));
+          let run = 0, gap = y1 <= y0;
+          for (let y = y0; y <= y1 && !gap; y++) {
+            run = y >= 0 && y < bin.h && !bin.data[y * bin.w + x] ? run + 1 : 0;
+            if (run >= gapMin) gap = true;
+          }
+          if (gap) gaps++;
+        }
+        if (!n || gaps > n * 0.2) continue;
+        const [keep, drop] = a.x1 - a.x0 >= b.x1 - b.x0 ? [a, b] : [b, a];
+        const x0 = Math.min(a.x0, b.x0), x1 = Math.max(a.x1, b.x1);
+        const y0 = yAt(keep, x0), y1 = yAt(keep, x1);
+        keep.x0 = x0;
+        keep.y0 = y0;
+        keep.x1 = x1;
+        keep.y1 = y1;
+        keep.box = { left: Math.min(a.box.left, b.box.left), right: Math.max(a.box.right, b.box.right), top: Math.min(a.box.top, b.box.top), bottom: Math.max(a.box.bottom, b.box.bottom) };
+        beams.splice(beams.indexOf(drop), 1);
+        again = true;
+      }
+  }
+}
+
+/** 并拆开的粗杠：两截横向相叠至少这么多格（`mergeSplitBeams`）。 */
+const BEAM_SPLIT_OV = 0.3;
+
 /** 杠端续到干：干在杠端外这个范围（格）里；过了 `BEAM_SNAP_FAR` 格的另加两道（见下）。 */
 const BEAM_SNAP = [0.2, 1.5] as const;
 

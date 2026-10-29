@@ -4,7 +4,7 @@
 import type { Binary, Rect, Component } from "../../omrkit/types";
 import { LineGrid, type RasterUnit, type StaffLineRun, type StaffGroup, pitchPos, pitchY } from "../staffline";
 import type { RasterPage } from "../rasterpage";
-import { type RasterHead, mergeHoles, hollowHeadsFromHoles, hollowHeadsFromStackedHoles, hollowHeadsByPitch, hollowHeadsOnLedgers, probeBareStems, headsOnBareStems, headsBetweenStemPairs, archCavity, hollowHeadsFromCavities, hollowSlit, inkColumn, reseatHollowHeads, hollowHeadsOnStemSeeds, hollowHeadsAlongStems, stemOf } from "../notehead";
+import { type RasterHead, enclosesWhite, mergeHoles, hollowHeadsFromHoles, hollowHeadsFromStackedHoles, hollowHeadsByPitch, hollowHeadsOnLedgers, probeBareStems, headsOnBareStems, headsBetweenStemPairs, archCavity, hollowHeadsFromCavities, hollowSlit, inkColumn, reseatHollowHeads, hollowHeadsOnStemSeeds, hollowHeadsAlongStems, stemOf } from "../notehead";
 import { type RasterPrims, type LineSeg, blobImage, binSig } from "../prims";
 import type { RasterSym } from "../adapt";
 import { type HeadMask, buildHollowMasks, buildHeadMasks, splitHeadCluster, headFromStemBlock, solidHeadsAlongStems, scoreAt, scoreAtMasked } from "../headmask";
@@ -347,7 +347,9 @@ export function hollowHeadsByCavity(c: {
     if (own.length >= 5) {
       const floor = own[Math.floor(own.length * 0.1)];
       for (const b of strokeRejects) {
-        if (best(b) < floor) continue;
+        // 模板分不够的，块里确实围着白（不论在不在正中）也算圈：墨粗、骑线的二分头下半个内腔被线切掉，模板分只有 0.1~0.3（耶和华 p2 D3），
+        // 后面那两道干的条件照旧要过
+        if (best(b) < floor && !enclosesWhite(raster.bin, b, unit.space)) continue;
         const col = inkColumn(nl, b, unit, true);
         const cy = b.y + b.h / 2;
         if (!col || Math.max(cy - col[0], col[1] - cy) < unit.space * RESCUE_STEM) continue;
