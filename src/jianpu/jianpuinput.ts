@@ -302,7 +302,11 @@ function rowsPart(
 
       if (el.kind === "barline") {
         // 显式前导线只用于原样显示；其反复与属性已由 open 从所属模型小节读取。
-        if (refs?.[index]?.barline?.location === "left") return;
+        // 它仍是小节分界：前一小节在行末没写右线（重排把换行切在 `|:` 前）时，不能让两小节粘成一个
+        if (refs?.[index]?.barline?.location === "left") {
+          newMeasureNeeded = true;
+          return;
+        }
         const mea = measure ?? open(refs?.[index]?.measure);
         closeVolta(mea);
         // 反复起点 `|:` 挂到**下一小节**的 repeatForward 上

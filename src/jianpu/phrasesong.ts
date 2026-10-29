@@ -229,6 +229,7 @@ export function buildMeasures(
       if (el.kind === "barline") {
         if (refs?.[index]?.barline?.location === "left" && el.type !== "repeat-end" && el.type !== "repeat-both") {
           if (el.type === "repeat-start" || el.repeatForwardAfter) pendingRepeatForward = true;
+          newMeasureNeeded = true;
           return;
         }
         if (measure === null && el.type === "repeat-start") {

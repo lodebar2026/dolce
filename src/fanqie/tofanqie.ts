@@ -648,7 +648,8 @@ function writeRightBarline(measures: readonly Measure[], mi: number, line: Line,
   const rights = (mea.barlines ?? []).filter((b) => b.location === "right");
   const bar = rights.find((b) => barlineType(b) !== null);
   const next = measures[mi + 1];
-  const nextLeft = next?.barlines?.find((b) => b.location === "left" && barlineType(b) !== null);
+  // 文本谱原文行首写出的左线（带 `source`）在换行处不并：留给下一行的 `writeLeft` 原位写，否则 `||/` ⏎ `|:` 会并成行末的 `|:`
+  const nextLeft = next?.barlines?.find((b) => b.location === "left" && barlineType(b) !== null && !(lineEnd && b.source));
   let type = bar ? barlineType(bar) : null;
   if (nextLeft) {
     const lt = barlineType(nextLeft)!;
