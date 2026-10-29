@@ -1680,7 +1680,7 @@ export class VisualEditController {
       case "edit.paste": return this.paste(clipFor(null), null);
       case "edit.repeat": return this.repeat();
       case "edit.transpose": return this.transpose();
-      case "edit.transcribe": return runTranscription(this.host, this);
+      case "edit.transcribe": return runTranscription(this.host, this, () => this.editCtx(true));
       case "lyric.entry": return this.startLyrics();
       case "chord.entry": return this.startChords();
       case "text.entry": return this.startAttached("annotation");

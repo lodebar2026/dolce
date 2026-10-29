@@ -1,17 +1,18 @@
 // 转记：实际音高不动，只把全曲统一到目标首调，并按指定规则重算唱名与升降号。
 
 import type { Key, Pitch, ScoreDoc, Song } from "./doc";
-import { type EditHooks, midiOfPitch, respellMeasure } from "./edit";
+import { type EditHooks, keyAlter as keyAlterOf, midiOfPitch, respellMeasure } from "./edit";
 import { keyFifths, songFifths } from "./keyshift";
 import { keyAlter } from "../score/jppitch";
 import { AccidentalCarry, assignDegrees, continuesMeasure, keySpelling } from "./jianpu";
 
-export type TranscriptionSpelling = "key" | "sharp" | "flat";
+export type TranscriptionSpelling = "keep" | "key" | "sharp" | "flat";
 
 export interface TranscriptionOptions {
   /** 目标调号的五度圈位置（-7..7）；界面写作 `1=?`。 */
   fifths: number;
-  /** 临时半音按目标调号、统一升号或统一降号拼写。 */
+  /** 临时半音的拼写：`keep` 照原谱的方向（原来写升号仍写升号、写降号仍写降号；原来是调内音的按两调号谁升号多），
+   *  `key` 按目标调号（降号调写降号，升号调与 C 调写升号），或统一升号、降号。 */
   spelling: TranscriptionSpelling;
   /** 每个临时升降音都写记号，不省略同小节内重复的记号。 */
   repeatAccidentals?: boolean;
@@ -25,14 +26,18 @@ export interface TranscriptionResult {
  * 简谱来源通常只有 degree。先按原调号把绝对音高补齐，后面换调号时才不会改变实际音高。
  * 规则与 `xmlproject.ts` 导出 MusicXML 时一致：临时记号在小节内延续，八度谱号还原为实际八度。
  */
-function fillPitches(song: Song): void {
+function fillPitches(song: Song): number[][] {
   const initialKey = { ...song.key, fifths: songFifths(song) };
+  const keys: number[][] = [];
   for (const part of song.parts) {
+    const perMeasure: number[] = [];
+    keys.push(perMeasure);
     let key = initialKey;
     const clefOctaves = new Map<number, number>();
     let carries = new Map<number, AccidentalCarry>();
     part.measures.forEach((measure, mi) => {
       if (measure.attrs?.key) key = { ...measure.attrs.key, fifths: keyFifths(measure.attrs.key) };
+      perMeasure.push(key.fifths);
       for (const clef of measure.attrs?.clefs ?? []) clefOctaves.set(clef.staff ?? 1, clef.octaveChange ?? 0);
       if (!continuesMeasure(part.measures[mi - 1], measure)) carries = new Map();
       for (const element of measure.elements) {
@@ -48,6 +53,21 @@ function fillPitches(song: Song): void {
       }
     });
   }
+  return keys;
+}
+
+/** 调外音往哪边拼（+1 升号、-1 降号）。`from` 是这个音在原调里的五度圈位置。 */
+function spellSign(pitch: Pitch, from: number, to: number, spelling: TranscriptionSpelling): number {
+  if (spelling === "sharp") return 1;
+  if (spelling === "flat") return -1;
+  if (spelling === "keep") {
+    // 原谱的方向：相对原调号升了还是降了（G 调的 b7 是 F♮，转到哪个调都还写降号）
+    const offset = pitch.alter - keyAlterOf(pitch.step, from);
+    if (offset !== 0) return Math.sign(offset);
+    // 原来是调内音、换了调才成调外音：原调升号多（D→C 的 F♯）写升号，降号多（F→C 的 B♭）写降号
+    if (from !== to) return Math.sign(from - to);
+  }
+  return Math.sign(to) || 1;
 }
 
 /** 升降策略相对于目标调的唱名，而不是绝对音名的升降号。 */
@@ -96,10 +116,11 @@ export function transcribeScore(doc: ScoreDoc, options: TranscriptionOptions, ho
   const key = targetKey(fifths);
   let notes = 0;
   for (const song of doc.songs) {
-    fillPitches(song);
+    const sourceKeys = fillPitches(song);
     clearLaterKeys(song, key);
-    for (const part of song.parts) {
-      for (const measure of part.measures) {
+    song.parts.forEach((part, pi) => {
+      part.measures.forEach((measure, mi) => {
+        const from = sourceKeys[pi]![mi]!;
         for (const element of measure.elements) {
           if (element.kind !== "chord") continue;
           let pitched = false;
@@ -107,13 +128,13 @@ export function transcribeScore(doc: ScoreDoc, options: TranscriptionOptions, ho
             if (!note.pitch) continue;
             notes++;
             pitched = true;
-            const sign = options.spelling === "sharp" ? 1 : options.spelling === "flat" ? -1 : Math.sign(fifths);
-            note.pitch = spellTranscribedMidi(midiOfPitch(note.pitch), fifths, sign || 1);
+            const sign = spellSign(note.pitch, from, fifths, options.spelling);
+            note.pitch = spellTranscribedMidi(midiOfPitch(note.pitch), fifths, sign);
           }
           if (pitched) hooks.forgetStem?.(element);
         }
         respellMeasure(measure, key);
-      }
+      });
       assignDegrees(part, key);
       if (options.repeatAccidentals) {
         for (const measure of part.measures) for (const element of measure.elements) {
@@ -130,7 +151,7 @@ export function transcribeScore(doc: ScoreDoc, options: TranscriptionOptions, ho
           }
         }
       }
-    }
+    });
     hooks.forgetLayout?.(song);
   }
   return { notes };

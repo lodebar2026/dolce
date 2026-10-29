@@ -17,11 +17,12 @@ const MINOR_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "Bb",
 
 /** 调号的写法里把主音移 `n` 个半音：简谱式 `1=bB`（升降号在前）、ABC 式 `Bb`/`F#m`（在后）。认不出主音返回 null。 */
 export function retonic(value: string, n: number): string | null {
-  const jp = /(1\s*=\s*)([#b♯♭]?)([A-G])/.exec(value);
+  // 升降号在前（`1=bB`）或在后（文本谱 `1=Eb`），照原来的位置写
+  const jp = /(1\s*=\s*)([#b♯♭]?)([A-G])([#b♯♭]?)/.exec(value);
   if (jp) {
-    const pc = (((LETTER_PC[jp[3]!]! + ACC_OF[jp[2]!]! + n) % 12) + 12) % 12;
+    const pc = (((LETTER_PC[jp[3]!]! + ACC_OF[jp[2] || jp[4]!]! + n) % 12) + 12) % 12;
     const name = MAJOR_NAMES[pc]!;
-    const tonic = name.length > 1 ? name[1] + name[0]! : name;
+    const tonic = name.length > 1 && !jp[4] ? name[1] + name[0]! : name;
     return value.slice(0, jp.index) + jp[1] + tonic + value.slice(jp.index + jp[0].length);
   }
   const abc = /^(\s*)([A-G])([#b]?)/.exec(value);
@@ -49,12 +50,17 @@ function abcKeyFields(text: string): { from: number; to: number }[] {
   return out;
 }
 
+/** 原文里每处写调号的值（ABC 家族的 `K:` 与 `[K:…]`，其余格式取文件头里的调号字段）。转记（`transcription.ts`）也用。 */
+export function keyFields(ctx: EditCtx, text: string): { from: number; to: number }[] {
+  return ctx.dialect.measure
+    ? abcKeyFields(text)
+    : (ctx.dialect.headerFields?.(text) ?? []).filter((f) => f.role === "key" || f.role === "keytime");
+}
+
 /** 全曲移 `n` 个半音（文本格式）：每处调号换主音；音名是绝对的格式（ABC）按新调号重写每个音。 */
 export function transposeText(ctx: EditCtx, n: number): EditOutcome {
   const text = ctx.state.doc.toString();
-  const fields = ctx.dialect.measure
-    ? abcKeyFields(text)
-    : (ctx.dialect.headerFields?.(text) ?? []).filter((f) => f.role === "key" || f.role === "keytime");
+  const fields = keyFields(ctx, text);
   const changes: { from: number; to: number; insert: string }[] = [];
   let keys = 0;
   for (const f of fields) {
