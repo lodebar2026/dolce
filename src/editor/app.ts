@@ -372,6 +372,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** parse -> import -> layout -> render. Returns false on parse failure (text kept). */
   reload(text: string): boolean {
+    const ok = this._reload(text);
+    this.playback.sourceChanged(); // 识别核对视图不重排、不停试听：旧谱的会话在这里作废
+    return ok;
+  }
+
+  private _reload(text: string): boolean {
     this.formats.refreshNote(); // 改过没有：下拉旁「回到原稿」的提示跟着变
     // 识别模式：谱面区是核对视图，不重排成排版稿；但索引跟着原文重建、叠加层按当前模型重画（改过的标出来）
     if (this.mode === "recognize") {

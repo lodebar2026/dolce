@@ -327,6 +327,17 @@ export class PlaybackController {
     }
   }
 
+  /** 源文改过（`App.reload` 之后）：播放 / 暂停中的会话还是旧谱就停掉，下次播放按新谱从头拼；
+   *  否则暂停后点「继续」播的仍是改之前那份。简谱档、混排重排时本来就会停，识别核对视图不重排，靠这里。 */
+  sourceChanged(): void {
+    const p = this.player;
+    if (!p || !this.active) {
+      this.refreshProgress();
+      return;
+    }
+    if (this.host.playable() !== p.source) this.stop();
+  }
+
   /** 停止：清高亮、回到曲首（起播点仍按选中的音）。 */
   stop(): void {
     this.cueSec = null;

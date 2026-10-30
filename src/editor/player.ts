@@ -143,6 +143,11 @@ export class ScorePlayer {
     return this.session?.duration ?? 0;
   }
 
+  /** 当前会话播的那份谱；没有会话为 null。 */
+  get source(): PlaySource | null {
+    return this.session?.src ?? null;
+  }
+
   /** 当前位置（秒）：播放中取时钟，暂停取停下那一刻；没有会话为 0。 */
   get position(): number {
     if (this.state === "paused") return this.pausedAt;
