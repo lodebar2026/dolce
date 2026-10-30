@@ -1096,8 +1096,11 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
   // 只管低分辨率的页：线距够大的粗体铅字本（主使我喜乐，线距 14.5px）升号的两根竖笔抹宽后并成一根粗的，
   // 放宽了宽度闸就被数成降号（四个升号读成两个降号）
   const coarse = isCoarseKey(sp, thick);
-  // 竖笔本身也粗（三像素的笔抹宽后五像素，连着肚子的弧有八九像素），宽度那道闸跟着放到一格
-  const z = keyZoneStrokes(bin, lineYs, clef, sp, sp * (coarse ? 1 + 2 * r + 0.25 : 1.2), coarse ? 1.0 : 0.5);
+  // 竖笔本身也粗（三像素的笔抹宽后五像素，连着肚子的弧有八九像素），宽度那道闸跟着放到一格。
+  // 高度闸只看线粗：线距大的粗线页一样是肚子连两条线过了 1.2 格、并进竖笔被宽度闸滤光（荣耀进城线距 16.5px、线宽 4px，
+  // 四个降号各行数出 0~2 个，全曲读成两个升号）；宽度闸仍只放低分辨率页（上面主使我喜乐那条）
+  const thickLine = r > KEY_THICK_LINE;
+  const z = keyZoneStrokes(bin, lineYs, clef, sp, sp * (thickLine ? 1 + 2 * r + 0.25 : 1.2), coarse ? 1.0 : 0.5);
   if (!z) return [];
   const { x0, strokes, ink } = z;
   // 各降号**肚子中心**相对头一个（B）的高低（格，向上为负）
@@ -1127,8 +1130,9 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
   let skipAt = -1;
   const boxAt = (x: number, cy: number): Rect => ({ x: Math.round(x) - 1, y: Math.round(cy - sp * FLAT_STEM), w: Math.round(sp * 0.8), h: Math.round(sp * (FLAT_STEM + 0.5)) });
   for (const [i, k] of strokes.entries()) {
-    // 粗线页竖笔两端顺着粗谱线各多接一截（量得 3.3~3.6 格），高度上限跟着放
-    if (out.length >= 7 || k.h > sp * (coarse ? 4.2 : 3.2)) break;
+    // 粗线页竖笔两端顺着粗谱线各多接一截（量得 3.3~3.6 格），高度上限跟着放；线距大的粗线页（不算 `coarse`）也一样多接，按两个线宽放
+    //（荣耀进城线距 16.5px、线宽 4px，四个降号竖笔量得 3.3~3.6 格，一根都过不了 3.2）
+    if (out.length >= 7 || k.h > sp * (coarse ? 4.2 : 3.2 + (thickLine ? 2 * r : 0))) break;
     // 紧跟着一根差不多高的竖笔：那是升号的两根竖笔（赞美三一歌两个升号的头一根落在 B 的位置上，被数成一个降号）
     const nx = strokes[i + 1];
     // 粗线页的竖笔宽（一根占大半格），相邻两个降号的笔缘只隔两三像素：间距改按**笔心**量（升号的两根笔心隔不到半格，降号隔一格）
