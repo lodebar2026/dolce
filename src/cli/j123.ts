@@ -47,3 +47,10 @@ export * as modelEdit from "../model/edit";
 export { playSourceOf } from "../jianpu/playsong";
 export { buildTimeline } from "../score/timeline";
 export { toMidi } from "../score/midi";
+// 只读写模型的回归脚本（`playorder-check.mjs`、`jianpu-shape-check.mjs`、`phrase-dual-check.mjs` 等）在 Node 下直接跑用
+export { playSourceOfDoc } from "../model/playdoc";
+export { jianpuInputOfDoc } from "../jianpu/jianpuinput";
+export { phrasePartOfSong } from "../jianpu/phrasesong";
+export { fillDegreesFromPitch } from "../model/jianpu";
+// 自有 XML 树：脚本里数 MusicXML 元素用（不靠浏览器 DOM）
+export { parseXml } from "../score/xmltree";
