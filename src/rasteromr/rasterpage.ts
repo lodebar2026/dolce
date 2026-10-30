@@ -26,7 +26,7 @@ import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, H
 import { lineYAt, type StaffGroup } from "./staffline";
 import { median } from "../omrkit/geom";
 import { sauvola as sauvolaInto, toGray } from "../omrkit/preprocess";
-import { largestPageImageAt, orientPixels, uprightCtm } from "../omrkit/pdf";
+import { largestPageImageAt, orientPixels, pageImageObj, pageImageOps, uprightCtm } from "../omrkit/pdf";
 
 /** 一页取到的位图，连同它在页面坐标里的位置（识别坐标 ↔ 页面坐标要用）。 */
 export interface RasterPage {
@@ -95,6 +95,8 @@ export interface PageImage {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function pageImageOf(page: any, OPS: any): Promise<PageImage | null> {
+  const mosaic = await mosaicPageImage(page, OPS);
+  if (mosaic) return mosaic;
   const found = await largestPageImageAt(page, OPS, (o) => (o.data && o.width && o.height ? o.width * o.height : null));
   if (!found) return null;
   const vp = page.getViewport({ scale: 1 });
@@ -102,6 +104,87 @@ export async function pageImageOf(page: any, OPS: any): Promise<PageImage | null
   const { width, height, data } = orientPixels(found.obj.data, found.obj.width, found.obj.height, found.ctm);
   const ctm = data !== found.obj.data ? uprightCtm(found.ctm)! : [...found.ctm];
   return { width, height, data, kind: found.obj.kind, ctm, view: page.view ? [...page.view] : undefined, pageWidth: vp.width, pageHeight: vp.height };
+}
+
+/** 拼图页：最大的一块图占不到页面的这个比例，才看是不是好几块拼的（`mosaicPageImage`）。 */
+const MOSAIC_COVER = 0.5;
+/** 拼图页：其余各块合起来至少有最大那块的这么大。 */
+const MOSAIC_REST = 0.5;
+
+/**
+ * **一页是好几块图拼起来的**（Acrobat 裁改过的扫描件：星空下的祝福每页十几块，一个系统、一条线各是一块），
+ * 只取最大那块就只剩一个系统（四页认出四个系统）。最大那块不到半页、其余各块合起来又够大时，按各块的画图矩阵把它们拼回一张：
+ * 分辨率取最大那块的，各块转灰度、最近邻取样（不插值），重叠处取深的；范围是各块的并。只认轴对齐（含翻转、90° 倍数旋转）的块。
+ * 不是拼图页返回 null，照旧取最大那块。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function mosaicPageImage(page: any, OPS: any): Promise<PageImage | null> {
+  const vp = page.getViewport({ scale: 1 });
+  // 先只看各块在页面上的矩形，判定是拼图页了才转灰度（单图页不多花一趟）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const found: { obj: any; ctm: number[]; r: number[] }[] = [];
+  for (const { arg, ctm } of await pageImageOps(page, OPS)) {
+    const obj = await pageImageObj(page, arg);
+    if (!obj?.data || !obj.width || !obj.height) continue;
+    const r = uprightCtm(ctm);
+    if (r) found.push({ obj, ctm, r });
+  }
+  if (found.length < 2) return null;
+  const area = (t: { r: number[] }) => t.r[0]! * t.r[3]!;
+  const bigF = found.reduce((a, t) => (area(t) > area(a) ? t : a));
+  const rest = found.reduce((a, t) => a + (t === bigF ? 0 : area(t)), 0);
+  if (area(bigF) >= vp.width * vp.height * MOSAIC_COVER || rest < area(bigF) * MOSAIC_REST) return null;
+  const tiles: { gray: Uint8Array; w: number; h: number; r: number[] }[] = [];
+  let big: (typeof tiles)[number] | null = null;
+  for (const { obj, ctm, r } of found) {
+    const { width: w, height: h, data } = orientPixels(obj.data, obj.width, obj.height, ctm);
+    const gray = new Uint8Array(w * h);
+    const stride = (w + 7) >> 3;
+    if (data.length === stride * h && data.length !== w * h) {
+      // 1-bit：GRAYSCALE_1BPP（kind 1）置位是白，ImageMask 置位是墨
+      const setIsWhite = obj.kind === 1;
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          const bit = (data[y * stride + (x >> 3)]! >> (7 - (x & 7))) & 1;
+          gray[y * w + x] = bit === (setIsWhite ? 1 : 0) ? 255 : 0;
+        }
+    } else {
+      const bpp = data.length / (w * h);
+      if (bpp !== 1 && bpp !== 3 && bpp !== 4) continue;
+      for (let i = 0; i < w * h; i++) gray[i] = bpp === 1 ? data[i]! : Math.round((data[i * bpp]! * 299 + data[i * bpp + 1]! * 587 + data[i * bpp + 2]! * 114) / 1000);
+    }
+    const t = { gray, w, h, r };
+    tiles.push(t);
+    if (obj === bigF.obj) big = t;
+  }
+  if (!big) return null;
+  const s = big.w / big.r[0]!;
+  const x0 = Math.min(...tiles.map((t) => t.r[4]!));
+  const y0 = Math.min(...tiles.map((t) => t.r[5]!));
+  const x1 = Math.max(...tiles.map((t) => t.r[4]! + t.r[0]!));
+  const y1 = Math.max(...tiles.map((t) => t.r[5]! + t.r[3]!));
+  const W = Math.ceil((x1 - x0) * s);
+  const H = Math.ceil((y1 - y0) * s);
+  const out = new Uint8Array(W * H).fill(255);
+  for (const t of tiles) {
+    const [rw, , , rh, rx, ry] = t.r as [number, number, number, number, number, number];
+    const X0 = Math.max(0, Math.floor((rx - x0) * s));
+    const X1 = Math.min(W, Math.ceil((rx + rw - x0) * s));
+    const Y0 = Math.max(0, Math.floor((y1 - (ry + rh)) * s));
+    const Y1 = Math.min(H, Math.ceil((y1 - ry) * s));
+    for (let Y = Y0; Y < Y1; Y++) {
+      // 页面坐标（y 向上）→ 这块图的行（第 0 行在上沿）
+      const sy = Math.floor((ry + rh - (y1 - (Y + 0.5) / s)) / rh * t.h);
+      if (sy < 0 || sy >= t.h) continue;
+      for (let X = X0; X < X1; X++) {
+        const sx = Math.floor(((X + 0.5) / s + x0 - rx) / rw * t.w);
+        if (sx < 0 || sx >= t.w) continue;
+        const v = t.gray[sy * t.w + sx]!;
+        if (v < out[Y * W + X]!) out[Y * W + X] = v;
+      }
+    }
+  }
+  return { width: W, height: H, data: out, ctm: [x1 - x0, 0, 0, y1 - y0, x0, y0], view: page.view ? [...page.view] : undefined, pageWidth: vp.width, pageHeight: vp.height };
 }
 
 /** 位图 → 识别用的二值图（解码、二值化、去网、补线……，不做几何变换）：`rasterizePage` 不碰 pdf.js 的那一半。 */
