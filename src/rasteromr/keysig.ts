@@ -1137,7 +1137,12 @@ function flatsByStrokes(bin: Binary, lineYs: number[], clef: Rect, bass: boolean
     const nx = strokes[i + 1];
     // 粗线页的竖笔宽（一根占大半格），相邻两个降号的笔缘只隔两三像素：间距改按**笔心**量（升号的两根笔心隔不到半格，降号隔一格）
     const mid = (q: { x0: number; x1: number }) => (q.x0 + q.x1) / 2;
-    if (nx && (coarse ? (mid(nx) - mid(k)) / sp < 0.6 : (nx.x0 - k.x1) / sp < 0.5) && nx.h >= sp * 1.8 && k.h >= sp * 1.8) break;
+    // 粗线页还要**两根一样长**：降号肚子的右缘连着上下两条粗线也有两格多高、紧贴竖笔，被当成升号的第二根就整串停掉
+    //（天父世界线宽 4px、线距 16.6px，竖笔 3.2 格、肚子右缘 2.2 格，三个降号各行多数一个都数不出）；升号两根竖笔等长
+    // 两根都在谱号盒里的是谱号右缘的边角，不是升号（天父世界谱号盒宽 3.3 格、调号区从 2.4 格起，右缘两截 2.1~2.2 格紧挨着，
+    // 被当成升号整串停掉；下面「头一个之前的杂笔跳过」本来就管它）
+    const pairLike = (!thickLine || Math.min(nx?.h ?? 0, k.h) >= Math.max(nx?.h ?? 0, k.h) * 0.75) && (nx?.x1 ?? 0) > clef.x + clef.w;
+    if (nx && (coarse ? (mid(nx) - mid(k)) / sp < 0.6 : (nx.x0 - k.x1) / sp < 0.5) && nx.h >= sp * 1.8 && k.h >= sp * 1.8 && pairLike) break;
     const gap = coarse ? (mid(k) - lastX) / sp - (out.length ? 0.5 : 0) : (k.x0 - lastX) / sp;
     if (gap > (out.length ? 2.6 : 4.2)) break;
     // 紧挨着上一根的短笔是它肚子的右缘，跳过
