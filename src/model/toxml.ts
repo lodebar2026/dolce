@@ -664,7 +664,10 @@ function barlineXml(o: Out, b: Barline): void {
   if (b.ending) {
     const t = b.ending.type;
     const nums = b.ending.numbers.join(",");
-    o.text("ending", b.ending.text ?? nums, { number: nums, type: t, "print-object": b.ending.printObject === false ? "no" : undefined });
+    const ea: Attrs = { number: nums, type: t, "print-object": b.ending.printObject === false ? "no" : undefined };
+    // 读进来的原文是空的 `<ending/>` 就照写空的（房号文字由读入端按 number 补）；文本格式投影来的照旧写房号
+    if (b.ending.text === undefined && surfaceOf(b)) o.leaf("ending", ea);
+    else o.text("ending", b.ending.text ?? nums, ea);
   }
   if (b.repeat) {
     o.leaf("repeat", { direction: b.repeat, times: b.repeatTimes && b.repeatTimes > 2 ? b.repeatTimes : undefined });

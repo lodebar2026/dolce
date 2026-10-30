@@ -8,8 +8,10 @@
 // - 每个读进来的元素记下它在原文里的区间 `start`/`end`（开标签的 `<` 到闭标签的 `>` 之后），`editor/sync.ts` 按它对原文位置；
 //   新建、克隆的元素没有区间（-1）。
 //
-// 序列化 `serializeXml`：转义口径同浏览器的 `XMLSerializer`（文字转 `& < >`，属性再转 `"`），空元素写 `<x/>`；
+// 序列化 `serializeXml`：转义口径同浏览器的 `XMLSerializer`（文字转 `& < >`，属性再转 `"`；另剔掉 XML 1.0 不许的控制字符），空元素写 `<x/>`；
 // 整份文档把根前根后的原文（声明、DOCTYPE、注释）原样带上。
+//
+// 建树用 `h(标签, 属性, ...子节点)`（五线谱识别的写出就这么建，不拼字符串）。
 
 export class XmlError extends Error {
   constructor(message: string, readonly at: number) {
@@ -32,6 +34,8 @@ export type XmlNode = XmlEl | XmlText;
 
 export class XmlEl {
   parentElement: XmlEl | null = null;
+  /** 根元素所属的文档（只记在根上，`ownerDocument` 往上找） */
+  private doc: XmlDoc | null = null;
   /** 原文区间（读进来的才有；新建、克隆的为 -1） */
   start = -1;
   end = -1;
@@ -40,7 +44,19 @@ export class XmlEl {
   /** 全部子节点（元素与文字等），按文档序 */
   readonly childNodes: XmlNode[] = [];
 
-  constructor(readonly tagName: string, readonly ownerDocument: XmlDoc) {}
+  constructor(readonly tagName: string) {}
+
+  /** 所在文档：往上找到根，根挂在哪份文档上（建出来还没挂的为 null） */
+  get ownerDocument(): XmlDoc | null {
+    let e: XmlEl = this;
+    while (e.parentElement) e = e.parentElement;
+    return e.doc;
+  }
+
+  /** `XmlDoc.documentElement` 设根时用 */
+  static adopt(root: XmlEl, doc: XmlDoc): void {
+    root.doc = doc;
+  }
 
   /** 子元素（只含元素），按文档序 */
   get children(): readonly XmlEl[] {
@@ -108,14 +124,29 @@ export class XmlEl {
     return node;
   }
 
+  /** 插到 `ref` 之前（`ref` 为 null 接到最后）；原先挂在别处的先摘下来 */
+  insertBefore<T extends XmlNode>(node: T, ref: XmlNode | null): T {
+    if (!ref) return this.appendChild(node);
+    if (node.parentElement) detach(node);
+    node.parentElement = this;
+    this.childNodes.splice(this.childNodes.indexOf(ref), 0, node);
+    if (node instanceof XmlEl) {
+      // 元素表里排在 ref 之后第一个元素之前
+      const at = this.childNodes.indexOf(node);
+      const next = this.childNodes.slice(at + 1).find((n): n is XmlEl => n instanceof XmlEl);
+      this.kids.splice(next ? this.kids.indexOf(next) : this.kids.length, 0, node);
+    }
+    return node;
+  }
+
   /** 从父元素上摘下来 */
   remove(): void {
     if (this.parentElement) detach(this);
   }
 
-  /** 深拷贝（同一份文档，不带原文区间） */
+  /** 深拷贝（不带原文区间） */
   cloneNode(): XmlEl {
-    const el = new XmlEl(this.tagName, this.ownerDocument);
+    const el = new XmlEl(this.tagName);
     for (const a of this.attrs) el.attrs.push({ ...a });
     for (const n of this.childNodes) el.appendChild(n instanceof XmlEl ? n.cloneNode() : new XmlText(n.type, n.data));
     return el;
@@ -130,11 +161,20 @@ function detach(node: XmlNode): void {
 }
 
 export class XmlDoc {
-  documentElement!: XmlEl;
+  private root!: XmlEl;
   /** 根元素之前的原文（`<?xml …?>`、`<!DOCTYPE …>`、注释、空白），序列化原样写回 */
   prolog = "";
   /** 根元素之后的原文 */
   epilog = "";
+
+  get documentElement(): XmlEl {
+    return this.root;
+  }
+
+  set documentElement(el: XmlEl) {
+    this.root = el;
+    XmlEl.adopt(el, this);
+  }
 
   /** 全文档里的 `tag` 元素（含根），按文档序 */
   getElementsByTagName(tag: string): XmlEl[] {
@@ -284,7 +324,7 @@ export function parseXml(text: string): XmlDoc {
     }
     if (!stack.length && doc.documentElement) fail("不止一个根元素");
     const start = i;
-    const el = new XmlEl(nameAt(i + 1), doc);
+    const el = new XmlEl(nameAt(i + 1));
     el.start = start;
     i += 1 + el.tagName.length;
     for (;;) {
@@ -327,9 +367,31 @@ export function parseXml(text: string): XmlDoc {
   return doc;
 }
 
+// ───────────────────────── 建树 ─────────────────────────
+
+/** 属性值：`undefined` / `null` / `false` 不写 */
+export type XmlAttrs = Readonly<Record<string, string | number | null | undefined | false>>;
+/** 子节点：字符串与数字成文字节点，空值不写，数组摊开 */
+export type XmlKid = XmlNode | string | number | null | undefined | false | readonly XmlKid[];
+
+/** 建一个元素：`h("note", { id }, h("pitch", null, h("step", null, "C")), …)` */
+export function h(tag: string, attrs?: XmlAttrs | null, ...kids: XmlKid[]): XmlEl {
+  const el = new XmlEl(tag);
+  for (const [k, v] of Object.entries(attrs ?? {})) if (v !== undefined && v !== null && v !== false) el.setAttribute(k, String(v));
+  const add = (k: XmlKid): void => {
+    if (k === undefined || k === null || k === false) return;
+    if (Array.isArray(k)) for (const x of k as readonly XmlKid[]) add(x);
+    else if (typeof k === "string" || typeof k === "number") el.appendChild(new XmlText("text", String(k)));
+    else el.appendChild(k as XmlNode);
+  };
+  for (const k of kids) add(k);
+  return el;
+}
+
 // ───────────────────────── 序列化 ─────────────────────────
 
-const escText = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// XML 1.0 不许出现的控制字符剔掉（同 `xmlutil.ts::escapeXml`）：识别从音乐字体里取到的文字会带，写进去整份文件读不开
+const escText = (s: string) => s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escAttr = (s: string) => escText(s).replace(/"/g, "&quot;");
 
 function writeNode(node: XmlNode, out: string[]): void {

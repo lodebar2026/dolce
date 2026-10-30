@@ -1,8 +1,5 @@
-// MusicXML **字符串生成**的公共件。五线谱识别的直出（staffomr/toxml.ts）
-// 与唯一写出端的投影（model/xmlproject.ts 用 typeOfDuration）共用。
-// 抽到这里的都是「几处各写一份、且已经或即将漂移」的东西——尤其是 <barline> 的子元素顺序
-// （bar-style → ending → repeat，MusicXML DTD 强制），以前由几处各自记着，改一处漏一处。
-// DOM 后处理那一路的工具在 ./xmldom.ts。
+// MusicXML 写出端（model/toxml.ts）的转义，与投影（model/xmlproject.ts）用的 `<type>` 反推。
+// 建树、解析、序列化在 ./xmltree.ts，读树的小工具在 ./xmldom.ts。
 import { Fraction } from "../common/fraction";
 
 // XML 1.0 不许出现的控制字符一并剔掉：矢量识别从没有 ToUnicode 的音乐字体里取文字，
@@ -33,62 +30,4 @@ export function typeOfDuration(duration: Fraction): { type: string; dots: number
   }
   for (const [type, val] of BASES) if (q.compareTo(frac(val)) >= 0) return { type, dots: 0 };
   return { type: "64th", dots: 0 };
-}
-
-export interface BarlineParts {
-  /** `<bar-style>` 内容，null/undefined 则不写。 */
-  style?: string | null;
-  /** `<ending number>` 的值，null/undefined 则不写 `<ending>`。 */
-  ending?: string | null;
-  /** `<ending type>`；left 侧恒为 "start"，right 侧可为 stop/discontinue。 */
-  endingType?: string;
-  /** `<ending>` 的元素文本（给人看的房号，如 "1.2.3."）。空则写成自闭合元素。 */
-  endingText?: string | null;
-  repeat?: boolean;
-}
-
-/** `<barline>`，**子元素顺序由这里唯一保证**：bar-style → ending → repeat。
- *  repeat 方向按 location 定（left=forward、right=backward）。三项皆空则返回 ""。 */
-export function barlineXml(location: "left" | "right", p: BarlineParts): string {
-  const hasEnding = p.ending !== null && p.ending !== undefined;
-  if (!p.style && !hasEnding && !p.repeat) return "";
-  const type = p.endingType ?? (location === "left" ? "start" : "stop");
-  return `<barline location="${location}">` +
-    (p.style ? `<bar-style>${p.style}</bar-style>` : "") +
-    (hasEnding
-      ? `<ending number="${escapeAttr(p.ending!)}" type="${type}"` +
-        (p.endingText ? `>${escapeXml(p.endingText)}</ending>` : "/>")
-      : "") +
-    (p.repeat ? `<repeat direction="${location === "left" ? "forward" : "backward"}"/>` : "") +
-    `</barline>`;
-}
-
-/** `<work>`，标题为空则返回 ""。 */
-export function workXml(title: string | undefined | null): string {
-  return title ? `<work><work-title>${escapeXml(title)}</work-title></work>` : "";
-}
-
-/** score-partwise 文档外壳：XML 声明 + DOCTYPE + 根元素。 */
-export function wrapPartwise(parts: {
-  work?: string;
-  identification?: string;
-  defaults?: string;
-  credits?: string;
-  partList: string;
-  body: string;
-}): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
-<score-partwise version="3.0">
-${parts.work ?? ""}${parts.identification ?? ""}${parts.defaults ?? ""}${parts.credits ?? ""}<part-list>${parts.partList}</part-list>
-${parts.body}
-</score-partwise>`;
-}
-
-/** `<score-part>`：不给乐器名——Dorico/MuseScore 会把 `<part-name>` 当乐器名显示在谱前，
- *  简谱没有这个概念。空内容 + print-object="no"，两种软件都不显示。 */
-export function scorePartXml(id: string, name?: string, abbr?: string, nameSize?: number): string {
-  const n = name ? `<part-name${nameSize ? ` font-size="${nameSize}"` : ""}>${escapeXml(name)}</part-name>` : `<part-name print-object="no"></part-name>`;
-  const a = abbr ? `<part-abbreviation>${escapeXml(abbr)}</part-abbreviation>` : "";
-  return `<score-part id="${escapeAttr(id)}">${n}${a}</score-part>`;
 }
