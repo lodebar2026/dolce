@@ -545,7 +545,7 @@ export async function recognizeRasterPage(
     ).concat(barStems), headBoxes.map((h) => h.box), unit), syms, unit), unit),
     syms,
     braces: findBraces(nl, prims, unit, staffLefts, leftEdges).map((c) => c.bbox),
-    sysBrackets: groupByLeftInk(raster.bin, leftEdges, unit),
+    sysBrackets: groupByLeftInk(raster.bin, leftEdges, unit, raster.soft),
     partBrackets: findPartBrackets(raster.bin, leftEdges, unit),
   });
   pg.ptPerUnit = raster.imageRect.w / raster.bin.w;

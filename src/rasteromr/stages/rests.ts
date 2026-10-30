@@ -375,7 +375,7 @@ export function findQuarterRests(c: {
   };
   // 让位到谱表外的休止只在**两行的大谱表**里收：合唱谱一个声部一行，休止不出谱表，谱表外那一带是歌词与表情记号
   //（不分的话合唱谱扫描档音符 80.59 → 80.42、歌词 65.81 → 65.46）。系统按左端的墨分（与建页时同一个函数）。
-  const sysBoxes = groupByLeftInk(raster.bin, leftEdges, unit);
+  const sysBoxes = groupByLeftInk(raster.bin, leftEdges, unit, raster.soft);
   /** 块所在的系统是两行的大谱表；`many` 时三行以上的系统也算。 */
   const inGrandStaff = (b: Rect, many = false) => {
     const cy = b.y + b.h / 2;

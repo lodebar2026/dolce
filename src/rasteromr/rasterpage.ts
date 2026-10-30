@@ -56,6 +56,11 @@ export interface RasterPage {
    * 与 `gray` 分开放：那一个一有就触发 `bridgeFaintBars`（细线页两个都有时歌词用 `gray`）。
    */
   lyricGray?: Uint8Array;
+  /**
+   * 彩色页的松阈值二值图（`SAUVOLA_K_FAINT`，与 `bin` 同尺寸、同一几何；补淡谱线那一步本来就算），别的页没有。
+   * 分系统看左端系统线用（`prims.ts::groupByLeftInk`）：手机翻拍的系统线又细又浅，标准阈值切成一串点。
+   */
+  soft?: Binary;
   /** 位图像素 → PDF 页面点的缩放（页宽 / 位图宽）。 */
   scale: number;
   /** 页面尺寸（PDF 点）。 */
@@ -296,7 +301,7 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   //（歌词 75% → 45%），而它本来就不是网点印刷。
   if (halftone == null) halftone = cleanTexture(bin, false);
 
-  return { bin, kind, halftone: halftone ?? 0, faint, gray, lyricGray, scale: img.pageWidth / bin.w, pageWidth: img.pageWidth, pageHeight: img.pageHeight, imageRect: imageRectOf(img.ctm, img.view, img.pageWidth, img.pageHeight) };
+  return { bin, kind, halftone: halftone ?? 0, faint, gray, lyricGray, ...(lineSoft ? { soft: lineSoft } : {}), scale: img.pageWidth / bin.w, pageWidth: img.pageWidth, pageHeight: img.pageHeight, imageRect: imageRectOf(img.ctm, img.view, img.pageWidth, img.pageHeight) };
 }
 
 /** 补线之后一行谱沿曲线有墨的列的占比至少涨这么多，才把这一行的谱表带换成补过线的像素（见 `mergeFaintStaves`）。 */

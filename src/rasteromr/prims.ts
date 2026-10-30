@@ -48,6 +48,9 @@ const LEFTINK_FRAC = 0.9;
  *  系统线在这段上常断（成爲我異象 p6 钢琴到三角铁之间断了 1.7 格，缝里七成五有墨）；曲首单独一行的三角铁缩进排，左端对不齐，照九成。 */
 const LEFTINK_FRAC_ONE = 0.6;
 const LEFTINK_ALIGN = 1;
+/** 松阈值图（`RasterPage.soft`）上连着要占缝里的几成行。手机翻拍的系统线又细又浅（榮耀之主），标准阈值切成一串点，
+ *  同一系统内的缝只有 0.10~0.84；松图上涨到 0.65~1.00。不同系统之间的缝两张图读数几乎一样（抽样五首扫描合唱谱最高 0.37），抬不上来。 */
+const LEFTINK_FRAC_SOFT = 0.6;
 /**
  * 竖笔画的**长度**下限（线距的倍数）。
  *
@@ -1853,6 +1856,7 @@ export function groupByLeftInk(
   bin: Binary,
   staves: { top: number; bottom: number; left: number; oneLine?: boolean }[],
   unit: RasterUnit,
+  soft?: Binary,
 ): { x: number; y: number; w: number; h: number }[] {
   if (!staves.length) return [];
   const ss = [...staves].sort((a, b) => a.top - b.top);
@@ -1868,19 +1872,23 @@ export function groupByLeftInk(
     const left = Math.min(a.left, b.left);
     const x0 = Math.max(0, Math.round(Math.min(left, medLeft) - unit.space * LEFTINK_OUT));
     const x1 = Math.min(bin.w - 1, Math.round(left + unit.space * LEFTINK_IN));
-    let rows = 0;
-    let hit = 0;
-    for (let y = y0; y <= y1; y++) {
-      if (y < 0 || y >= bin.h) continue;
-      rows++;
-      for (let x = x0; x <= x1; x++)
-        if (bin.data[y * bin.w + x]) {
-          hit++;
-          break;
-        }
-    }
+    /** 缝里左端窗口有墨的行占几成 */
+    const fracOn = (img: Binary) => {
+      let rows = 0;
+      let hit = 0;
+      for (let y = y0; y <= y1; y++) {
+        if (y < 0 || y >= img.h) continue;
+        rows++;
+        for (let x = x0; x <= x1; x++)
+          if (img.data[y * img.w + x]) {
+            hit++;
+            break;
+          }
+      }
+      return rows > 0 ? hit / rows : 1;
+    };
     const frac = (a.oneLine || b.oneLine) && Math.abs(a.left - b.left) <= unit.space * LEFTINK_ALIGN ? LEFTINK_FRAC_ONE : LEFTINK_FRAC;
-    if (rows <= 0 || hit >= rows * frac) groups[groups.length - 1].push(b);
+    if (fracOn(bin) >= frac || (soft && soft.w === bin.w && soft.h === bin.h && fracOn(soft) >= Math.min(frac, LEFTINK_FRAC_SOFT))) groups[groups.length - 1].push(b);
     else groups.push([b]);
   }
   return groups
