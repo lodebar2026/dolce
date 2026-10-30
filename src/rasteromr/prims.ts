@@ -48,9 +48,14 @@ const LEFTINK_FRAC = 0.9;
  *  系统线在这段上常断（成爲我異象 p6 钢琴到三角铁之间断了 1.7 格，缝里七成五有墨）；曲首单独一行的三角铁缩进排，左端对不齐，照九成。 */
 const LEFTINK_FRAC_ONE = 0.6;
 const LEFTINK_ALIGN = 1;
-/** 松阈值图（`RasterPage.soft`）上连着要占缝里的几成行。手机翻拍的系统线又细又浅（榮耀之主），标准阈值切成一串点，
- *  同一系统内的缝只有 0.10~0.84；松图上涨到 0.65~1.00。不同系统之间的缝两张图读数几乎一样（抽样五首扫描合唱谱最高 0.37），抬不上来。 */
+/** 松阈值图（`RasterPage.soft`）：手机翻拍的系统线又细又浅（榮耀之主），标准阈值切成一串点，同一系统内的缝只有 0.10~0.84 的行有墨。
+ *  松图上看**贴着谱行左端的那一根竖笔**：左端往外 `LEFTINK_SOFT_OUT` 格、往里 `LEFTINK_IN` 格里最强的一列（左右各宽一列）逐行有墨的成数，
+ *  够 `frac` 照算；只到 `LEFTINK_FRAC_SOFT` 的，要比标准图多出 `LEFTINK_SOFT_GAIN`（淡线确实在松图上接上了）。榮耀之主那几道缝这一列 0.65~1.00、
+ *  离左端不到一格。窄窗是要的：爱，我愿意 p10 两个系统之间页边一道竖线（离左端 3.5 格）松图上也是 0.69 的一列，按宽窗就并错；
+ *  不要求多出墨的话，两张图一样的缝等于降了门槛（Lord, Tune p4 两张都是 0.77）。 */
 const LEFTINK_FRAC_SOFT = 0.6;
+const LEFTINK_SOFT_GAIN = 0.3;
+const LEFTINK_SOFT_OUT = 1;
 /**
  * 竖笔画的**长度**下限（线距的倍数）。
  *
@@ -1888,7 +1893,27 @@ export function groupByLeftInk(
       return rows > 0 ? hit / rows : 1;
     };
     const frac = (a.oneLine || b.oneLine) && Math.abs(a.left - b.left) <= unit.space * LEFTINK_ALIGN ? LEFTINK_FRAC_ONE : LEFTINK_FRAC;
-    if (fracOn(bin) >= frac || (soft && soft.w === bin.w && soft.h === bin.h && fracOn(soft) >= Math.min(frac, LEFTINK_FRAC_SOFT))) groups[groups.length - 1].push(b);
+    const fStd = fracOn(bin);
+    /** 松图上贴着左端的最强一列（左右各宽一列）逐行有墨的成数 */
+    const lineOn = (img: Binary) => {
+      const c0 = Math.max(1, Math.round(left - unit.space * LEFTINK_SOFT_OUT));
+      const c1 = Math.min(img.w - 2, x1);
+      let best = 0;
+      let rows = 0;
+      for (let y = y0; y <= y1; y++) if (y >= 0 && y < img.h) rows++;
+      if (!rows) return 0;
+      for (let x = c0; x <= c1; x++) {
+        let n = 0;
+        for (let y = Math.max(0, y0); y <= Math.min(img.h - 1, y1); y++) {
+          const o = y * img.w + x;
+          if (img.data[o] || img.data[o - 1] || img.data[o + 1]) n++;
+        }
+        best = Math.max(best, n);
+      }
+      return best / rows;
+    };
+    const fSoft = fStd < frac && soft && soft.w === bin.w && soft.h === bin.h ? lineOn(soft) : 0;
+    if (fStd >= frac || fSoft >= frac || (fSoft >= Math.min(frac, LEFTINK_FRAC_SOFT) && fSoft - fStd >= LEFTINK_SOFT_GAIN)) groups[groups.length - 1].push(b);
     else groups.push([b]);
   }
   return groups

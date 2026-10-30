@@ -300,10 +300,14 @@ export function timeSignatures(time: Sym[], sp?: number): TimeSig[] {
       const midY = (Math.min(...cluster.map((d) => d.py)) + Math.max(...cluster.map((d) => d.py))) / 2;
       const top = cluster.filter((d) => d.py <= midY).sort((a, b) => a.px - b.px);
       const bot = cluster.filter((d) => d.py > midY).sort((a, b) => a.px - b.px);
-      const num = (a: Sym[]) => Number(a.map((s) => timeSigDigit(s.code)).join("")) || 0;
+      // 同一半里盒子横向重叠过半的是同一个字认了两次（位图路行首、行中两趟各认一回），只留一个；不然拼成「44」
+      const uniq = (a: Sym[]) =>
+        a.filter((d, i) => !a.slice(0, i).some((e) => Math.min(d.box.right, e.box.right) - Math.max(d.box.left, e.box.left) > (d.box.right - d.box.left) * 0.5));
+      const num = (a: Sym[]) => Number(uniq(a).map((s) => timeSigDigit(s.code)).join("")) || 0;
       const beats = num(top);
       const beatType = num(bot);
-      if (beats && beatType) out.push({ x: cluster[0].px, beats, beatType });
+      // 分母只能是 2 的幂（1、2、4、8、16、32）；拼出别的数的是认错了，这处拍号不要
+      if (beats && beatType && (beatType & (beatType - 1)) === 0) out.push({ x: cluster[0].px, beats, beatType });
     }
   }
   return out.sort((a, b) => a.x - b.x);

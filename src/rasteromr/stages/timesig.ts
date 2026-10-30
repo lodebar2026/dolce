@@ -6,7 +6,7 @@ import type { Binary, Component, Rect } from "../../omrkit/types";
 import type { RasterSym } from "../adapt";
 import type { RasterPage } from "../rasterpage";
 import { ContourLedger } from "../ledger";
-import { type TimeStrip, timeStripOf, timeDigit, timeKey, closedHoles } from "../timesig";
+import { type TimeStrip, timeStripOf, timeDigit, timeKey } from "../timesig";
 import type { TimeColumn } from "../clefmeter";
 import { timeSigDigit, type SmuflName, isClef, isAccidental } from "../../staffomr/glyphs";
 import { binSig } from "../prims";
@@ -16,10 +16,10 @@ import { TIME_TEMPLATE_DIST } from "./shared";
 
 /** 压着一个全音符的 C 拍号列用的距离上限（见拍号那一段）。 */
 const TIME_C_WHOLE_DIST = 240;
-/** 按角色限定认拍号数字（见拍号那一段）：分子只在 2~9 里挑，分母只在 2、4、8 里挑。
+/** 按角色限定认拍号数字（见拍号那一段）：分子只在 2~9 里挑（8 除外：8/x 谱面上几乎没有，认成 8 的多是糊了的 3），分母只在 2、4、8 里挑。
  *  距离上限：万古磐石歌的铅字「3」到 `timeSig3` 186/214，齐来谢主歌分母「4」181/230，
  *  万古磐石歌分母「4」246/275（去线切得最狠）。 */
-const NUM_DIGITS = [2, 3, 4, 5, 6, 7, 8, 9] as const;
+const NUM_DIGITS = [2, 3, 4, 5, 6, 7, 9] as const;
 const DEN_DIGITS = [2, 4, 8] as const;
 const TIME_NUM_DIST = 230;
 const TIME_DEN_DIST = 300;
@@ -101,6 +101,37 @@ export async function findTimeSigs(c: {
   //（有一位神第一行，C 读成 C♯5 全音符）。这样的列 C 模板的距离上限放宽一档（那个 C 到模板 225）：
   // 两格多高、骑在中线上、里头又压着个全音符的，行首只有 C 拍号
   const wholes = syms.filter((s0) => s0.code === "noteheadWhole").map((s0) => s0.box);
+  /** 这一段 x 上的墨是不是「上下正好撑满谱表」：顶到第五线、底到第一线，又不探出谱表（带干的和弦、谱号都探出去）。 */
+  const fillsStaffOf = (g: StaffGroup, top: number, bottom: number, mid: number) => (b: Rect): boolean => {
+    const xa = Math.max(0, Math.round(b.x)), xb = Math.min(nl.w, Math.round(b.x + b.w));
+    const ya = Math.max(0, Math.round(top - unit.space * 1.5)), yb = Math.min(nl.h, Math.round(bottom + unit.space * 1.5));
+    // 只量**与中线连着的那一段**墨：去线留下的缝（一个线宽加两像素）算连着，隔开更远的不算——
+    // 拍号正上方挨着速度术语（美哉主耶稣「Moderately」压在 12/8 上方不到一格），一并量进来就判成探出谱表
+    const inkRow = (y: number) => {
+      let n = 0;
+      for (let x = xa; x < xb; x++) if (nl.data[y * nl.w + x]) n++;
+      return n >= 2;
+    };
+    // 内侧三条线那几行（按 x 取线位）不算缝：去线的缝正落在线上，宽度跟着去线的口径走，只容「线宽 + 2」时
+    // 线宽量成 3 的页上两个数字在中线处就断开（新编 257 低音行 2/2，整首拍号读成 2/4）。
+    // 外线不放：跨过外线就连上谱表外的墨，判成探出谱表（353 首行 4/4 没了）
+    const gapMax = Math.ceil(unit.lineThick) + 2;
+    const lys = g.lines.slice(1, 4).map((l) => lineYAt(l, b.x + b.w / 2));
+    const lineRow = (y: number) => lys.some((ly) => Math.abs(ly - y) <= unit.lineThick + 1);
+    const walk = (from: number, step: 1 | -1, end: number) => {
+      let last = -1;
+      for (let y = from, gap = 0; step > 0 ? y < end : y >= end; y += step) {
+        if (inkRow(y)) (last = y), (gap = 0);
+        else if (lineRow(y)) continue;
+        else if (last >= 0 && ++gap > gapMax) break;
+      }
+      return last;
+    };
+    const m0 = Math.round(mid);
+    const lo = walk(m0, -1, ya), hi = walk(m0, 1, yb);
+    if (lo < 0 || hi < 0) return false;
+    return lo >= top - unit.space * 0.4 && hi <= bottom + unit.space * 0.4 && lo <= top + unit.space * 0.6 && hi >= bottom - unit.space * 0.6;
+  };
   for (const pass of [0, 1])
   for (const g of groups) {
     if (timeDone.has(g) || (pass === 1 && !timeFound.length)) continue;
@@ -182,37 +213,7 @@ export async function findTimeSigs(c: {
       const aligned = (c: (typeof cols)[number]) => (timeFound.some((t) => Math.abs(t.x - c.box.x) <= unit.space * 1.5) ? 1 : 0);
       cols.sort((a, b) => aligned(b) - aligned(a) || a.box.x - b.box.x);
     }
-    /** 这一段 x 上的墨是不是「上下正好撑满谱表」：顶到第五线、底到第一线，又不探出谱表（带干的和弦、谱号都探出去）。 */
-    const fillsStaff = (b: Rect): boolean => {
-      const xa = Math.max(0, Math.round(b.x)), xb = Math.min(nl.w, Math.round(b.x + b.w));
-      const ya = Math.max(0, Math.round(top - unit.space * 1.5)), yb = Math.min(nl.h, Math.round(bottom + unit.space * 1.5));
-      // 只量**与中线连着的那一段**墨：去线留下的缝（一个线宽加两像素）算连着，隔开更远的不算——
-      // 拍号正上方挨着速度术语（美哉主耶稣「Moderately」压在 12/8 上方不到一格），一并量进来就判成探出谱表
-      const inkRow = (y: number) => {
-        let n = 0;
-        for (let x = xa; x < xb; x++) if (nl.data[y * nl.w + x]) n++;
-        return n >= 2;
-      };
-      // 内侧三条线那几行（按 x 取线位）不算缝：去线的缝正落在线上，宽度跟着去线的口径走，只容「线宽 + 2」时
-      // 线宽量成 3 的页上两个数字在中线处就断开（新编 257 低音行 2/2，整首拍号读成 2/4）。
-      // 外线不放：跨过外线就连上谱表外的墨，判成探出谱表（353 首行 4/4 没了）
-      const gapMax = Math.ceil(unit.lineThick) + 2;
-      const lys = g.lines.slice(1, 4).map((l) => lineYAt(l, b.x + b.w / 2));
-      const lineRow = (y: number) => lys.some((ly) => Math.abs(ly - y) <= unit.lineThick + 1);
-      const walk = (from: number, step: 1 | -1, end: number) => {
-        let last = -1;
-        for (let y = from, gap = 0; step > 0 ? y < end : y >= end; y += step) {
-          if (inkRow(y)) (last = y), (gap = 0);
-          else if (lineRow(y)) continue;
-          else if (last >= 0 && ++gap > gapMax) break;
-        }
-        return last;
-      };
-      const m0 = Math.round(mid);
-      const lo = walk(m0, -1, ya), hi = walk(m0, 1, yb);
-      if (lo < 0 || hi < 0) return false;
-      return lo >= top - unit.space * 0.4 && hi <= bottom + unit.space * 0.4 && lo <= top + unit.space * 0.6 && hi >= bottom - unit.space * 0.6;
-    };
+    const fillsStaff = fillsStaffOf(g, top, bottom, mid);
     for (const col of cols) {
       const box = col.box;
       // 两位数的分子（12/8）一列宽近三格：放到 `TIME_WIDE` 格，但超过 2.5 格的只认 OCR 读出两位数分子的（美哉主耶稣 12/8 宽 2.87 格，
@@ -266,9 +267,10 @@ export async function findTimeSigs(c: {
         const fUp = timeStripOf(nl, up, groups.indexOf(g), "num", raster.bin, reach);
         const fDn = timeStripOf(nl, dn, groups.indexOf(g), "den", raster.bin, reach);
         if (pass === 0 && !inClef && !opts.timeOcr && live?.time && timeOcr) for (const [k, v] of await live.time([sUp, sDn, fUp, fDn])) timeOcr.set(k, v);
-        // 分子 3 与 8 OCR 分不开（低清图上 3 左侧的开口被糊墨封上读成 8），按有没有封闭孔定（`closedHoles`）
+        // **分子读成 8 一律按 3**：8/x 的拍号谱面上几乎没有，OCR 读出 8 的是低清图上左侧开口被糊墨封上的 3（S018 球形笔端的粗体铅字、
+        // 當預備耶和華的路的传真扫描）。原先按封闭孔分 3/8，噪点多的扫描件墨里满是小白点，一个「3」数出好几个孔，照样判成 8
         const ocrNum = inClef ? null : timeDigit(timeOcr?.get(timeKey(sUp)), "num");
-        let oNum = ocrNum === 3 || ocrNum === 8 ? (closedHoles(sUp) > 0 ? 8 : 3) : ocrNum;
+        let oNum = ocrNum === 8 ? 3 : ocrNum;
         // 两位数分子 OCR 读成「1?」却不是合法拍号（美哉主耶稣的 12 读成 19：低清的 2 像 9）：右半个数字按模板在 0、2、5、6 里认
         const rawNum = timeOcr?.get(timeKey(sUp));
         if (wide && oNum === null && !inClef && rawNum && /^1\d$/.test(rawNum)) {
@@ -276,7 +278,8 @@ export async function findTimeSigs(c: {
           if (d) oNum = timeDigit(String(10 + timeSigDigit(d.code)), "num");
         }
         const oDen = inClef ? null : timeDigit(timeOcr?.get(timeKey(sDn)), "den");
-        const fNum = inClef ? null : oNum ?? timeDigit(timeOcr?.get(timeKey(fUp)), "num");
+        const fRaw = inClef ? null : oNum ?? timeDigit(timeOcr?.get(timeKey(fUp)), "num");
+        const fNum = fRaw === 8 ? 3 : fRaw;
         const fDen = inClef ? null : oDen ?? timeDigit(timeOcr?.get(timeKey(fDn)), "den");
         if (pass === 0 && !inClef) {
           timeStrips.push(sUp, sDn, fUp, fDn);
@@ -302,7 +305,7 @@ export async function findTimeSigs(c: {
         // 模板的宽度闸，却以 141/166 的距离过了放宽到 180 的 `timeSig1`，整首读成 1/1。
         // 拒掉之后下游按缺省拍号办，比错成 1/1 强得多（1/1 让每个四分音符都「满小节」）。
         // 分母同理只认 2、4、8：齐来谢主歌放大后分母「4」到 `timeSig1` 170、到 `timeSig4` 181，读成 4/1。
-        if (two[0] && two[1] && timeSigDigit(two[0].code) >= 2 && (DEN_DIGITS as readonly number[]).includes(timeSigDigit(two[1].code))) hits.push(two[0], two[1]);
+        if (two[0] && two[1] && timeSigDigit(two[0].code) >= 2 && timeSigDigit(two[0].code) !== 8 && (DEN_DIGITS as readonly number[]).includes(timeSigDigit(two[1].code))) hits.push(two[0], two[1]);
         else {
           // **按角色限定再认一次**：别的书的数字字形与 Maestro 差得远（万古磐石歌、齐来谢主歌的
           // 铅字「3」「4」只有 1.1~1.2 格宽，模板 1.5~1.6 格），过不了尺寸闸，最近的又总是
@@ -343,6 +346,98 @@ export async function findTimeSigs(c: {
       timeDone.add(g);
       break; // 一行谱只有一个拍号
     }
+  }
+  // ── 行中变拍：紧跟小节线、上下撑满谱表、两半 OCR 都读出合法数字的一列 ────────────────────────
+  // 行首那一路只看左端往右十四格；混合拍子的曲子（當預備耶和華的路 5/4、3/4、4/4、2/4 逐小节换）行中的拍号一个都不认，
+  // 每个系统记几步「改拍号」，小节长度跟着错。位置先验：前面紧挨一根贯穿整个谱表的竖笔（小节线），一格以内起墨，宽 0.8~2.5 格，
+  // 上下正好撑满谱表（`fillsStaffOf`，带干的和弦、谱号都探出去）。只认 OCR 两半都读出合法数字的（不走模板：行中的符头、升降号
+  // 硬凑得出数字）。不进 `timeCols`：那是行首拍号按系统互证用的，行中的混进去会投错票。
+  // **要有别的谱行作证**：变拍对整个系统，同一系统各行在同一 x 上都印。另一行谱上 x 差 1.5 格内有读数相同的候选才认
+  //（Come Share p5 一行里读出个假 3/4，后面几个系统全按 3/4 配时值）。只有一行谱的谱子因此认不出行中变拍。
+  const midCands: { g: StaffGroup; box: Rect; hits: RasterSym[]; key: string }[] = [];
+  for (const g of groups) {
+    if (g.oneLine) continue;
+    const left = Math.max(...g.lines.map((l) => l.left));
+    const right = Math.min(...g.lines.map((l) => l.right));
+    const topAt = (x: number) => lineYAt(g.lines[0], x);
+    const botAt = (x: number) => lineYAt(g.lines[4], x);
+    /** x 这一列在谱表里（首线到末线）去线图上有墨的行占几成 */
+    const fullAt = (x: number) => {
+      const y0 = Math.round(topAt(x)), y1 = Math.round(botAt(x));
+      let n = 0;
+      for (let y = y0; y <= y1; y++) if (nl.data[y * nl.w + x]) n++;
+      return n / Math.max(1, y1 - y0 + 1);
+    };
+    /** x 这一列在谱表带里有没有墨（两个像素以上） */
+    const inkAt = (x: number) => {
+      const y0 = Math.max(0, Math.round(topAt(x) - unit.space * 0.25)), y1 = Math.min(nl.h - 1, Math.round(botAt(x) + unit.space * 0.25));
+      let n = 0;
+      for (let y = y0; y <= y1; y++) if (nl.data[y * nl.w + x]) n++;
+      return n >= 2;
+    };
+    const gap = Math.max(2, Math.round(unit.space * 0.2));
+    for (let x = Math.round(left + unit.space); x < right - unit.space; x++) {
+      if (fullAt(x) < 0.9) continue;
+      // 一根竖笔（连着的几列）走到头
+      const bx0 = x;
+      let bx = x;
+      // 往右走到头时放到七成：扫描件的小节线有几列断开，停在半截上的话数字条把小节线框进去、读成「15」「14」
+      while (bx + 1 < right && fullAt(bx + 1) >= 0.7) bx++;
+      x = bx;
+      if (bx - bx0 > unit.space * 0.6) continue;
+      // 竖笔右边一格以内起墨，连续（断口不过 0.2 格）的一段
+      let x0 = -1;
+      for (let xx = bx + 1; xx <= bx + unit.space && xx < right; xx++)
+        if (inkAt(xx) && fullAt(xx) < 0.9) {
+          x0 = xx;
+          break;
+        }
+      if (x0 < 0) continue;
+      let last = x0;
+      for (let xx = x0 + 1; xx < right && xx - last <= gap; xx++) if (inkAt(xx)) last = xx;
+      const w = last - x0 + 1;
+      if (w < unit.space * 0.8 || w > unit.space * 2.5) continue;
+      const cx = (x0 + last) / 2;
+      const top = topAt(cx), bottom = botAt(cx), mid = lineYAt(g.lines[2], cx);
+      const y0 = Math.round(top - unit.space * 0.25), y1 = Math.round(bottom + unit.space * 0.25);
+      const box: Rect = { x: x0, y: y0, w, h: y1 - y0 };
+      if (syms.some((s0) => timeSigDigit(s0.code) >= 0 && s0.box.x < box.x + box.w && s0.box.x + s0.box.w > box.x && s0.box.y < y1 && s0.box.y + s0.box.h > y0)) continue;
+      if (!fillsStaffOf(g, top, bottom, mid)(box)) continue;
+      const up: Rect = { x: box.x, y: y0, w, h: Math.round(mid) - y0 };
+      const dn: Rect = { x: box.x, y: Math.round(mid), w, h: y1 - Math.round(mid) };
+      const sUp = timeStripOf(nl, up, groups.indexOf(g), "num");
+      const sDn = timeStripOf(nl, dn, groups.indexOf(g), "den");
+      if (!opts.timeOcr && live?.time && timeOcr) for (const [k, v] of await live.time([sUp, sDn])) timeOcr.set(k, v);
+      timeStrips.push(sUp, sDn);
+      // 还是框进了小节线的：读成「1」加一位数又不是合法拍号的，去掉打头的 1
+      const read = (k: TimeStrip, role: TimeStrip["role"]) => {
+        const t = timeOcr?.get(timeKey(k));
+        const v = timeDigit(t, role);
+        return v === null && t && /^1\d$/.test(t) ? timeDigit(t.slice(1), role) : v;
+      };
+      const n0 = read(sUp, "num");
+      const num = n0 === 8 ? 3 : n0;
+      const den = read(sDn, "den");
+      if (num === null || den === null) continue;
+      const digits = (n: number, b: Rect): RasterSym[] => {
+        const ds = String(n).split("");
+        const dw = b.w / ds.length;
+        return ds.map((d, k) => ({ box: { x: Math.round(b.x + k * dw), y: b.y, w: Math.round(dw), h: b.h }, code: `timeSig${d}` as SmuflName }));
+      };
+      midCands.push({ g, box, hits: [...digits(num, up), ...digits(den, dn)], key: `${num}/${den}` });
+      x = last;
+    }
+  }
+  for (const c0 of midCands) {
+    if (!midCands.some((c1) => c1.g !== c0.g && c1.key === c0.key && Math.abs(c1.box.x - c0.box.x) <= unit.space * 1.5)) continue;
+    const box = c0.box;
+    for (let k = syms.length - 1; k >= 0; k--) {
+      const s0 = syms[k].box;
+      const sx = s0.x + s0.w / 2, sy = s0.y + s0.h / 2;
+      if (sx >= box.x && sx <= box.x + box.w && sy >= box.y && sy <= box.y + box.h) syms.splice(k, 1);
+    }
+    syms.push(...c0.hits);
+    for (const hit of c0.hits) ledger.claim(hit.box, `time:${hit.code}`);
   }
   return { timeStrips, timeCols };
 }
