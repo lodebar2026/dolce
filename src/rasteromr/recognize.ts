@@ -37,7 +37,7 @@ import type { SlurArc } from "../staffomr/slur";
 import { composeHeaderStrip } from "./pagecompose";
 import { isTextStaff, pageTextKey, textDetScale } from "./pagetext";
 import { LineGrid, lineYAt, type RasterUnit } from "./staffline";
-import { findRasterStaves } from "./stafffind";
+import { findRasterStaves, findSingleLineStaves } from "./stafffind";
 import { rasterizePage, type RasterPage } from "./rasterpage";
 import { sharedLegers, ownLegers } from "./pitchgrid";
 import { joinThroughBars } from "./barvote";
@@ -350,7 +350,9 @@ export async function recognizeRasterPage(
   const withText = (r: RasterPageResult): RasterPageResult => Object.assign(r, { textKey, textBin, textBoxes });
   // **落在文字里的「谱表」不要**（密排的中文段落凑出的五条等距横笔，见 `pagetext.ts`），它的线也不当谱线去抹
   const textStaves = textBoxes ? found.groups.filter((g) => isTextStaff(g, textBoxes)) : [];
-  const groups = found.groups.filter((g) => !textStaves.includes(g));
+  const staves5 = found.groups.filter((g) => !textStaves.includes(g));
+  // 单线谱（打击乐）照五线组补进来（`stafffind.ts::findSingleLineStaves`），按上下排进去
+  const groups = [...staves5, ...findSingleLineStaves(raster.bin, staves5, unit)].sort((a, b) => a.lines[0].y - b.lines[0].y);
   if (!groups.length) return withText(await emptyPage(blank, raster, unit));
   opts.trace?.("staves", { unit, staves: groups.map((g) => g.lines) });
 
@@ -380,7 +382,7 @@ export async function recognizeRasterPage(
   const nl = removeStaffLines(raster.bin, staffLines, unit);
   const staffLefts = groups.map((g) => Math.max(...g.lines.map((l) => l.left)));
   /** 各行谱左端的首末线（系统括号、花括号、按左端的墨分系统都看这一处；弯、斜的谱线按曲线取） */
-  const leftEdges = groups.map((g, i) => ({ top: yAt(g, 0, staffLefts[i]), bottom: yAt(g, 4, staffLefts[i]), left: staffLefts[i] }));
+  const leftEdges = groups.map((g, i) => ({ top: yAt(g, 0, staffLefts[i]), bottom: yAt(g, 4, staffLefts[i]), left: staffLefts[i], ...(g.oneLine ? { oneLine: true } : {}) }));
   // **加线网格**（`staffline.ts::LineGrid`，按 x 取弯、斜谱线该处的线位）：加线位置按每行谱的首末线往外推。
   // 谱表外的符头**要有加线撑着才归得了谱行**（实测宁静 p5 八度跑动上方那七个符头，认出来了却一个都没归属，窗口里一条横段都没有）。
   const grid = new LineGrid(groups, unit);
@@ -554,6 +556,7 @@ export async function recognizeRasterPage(
   pg.textEm = 1 / TEXT_INK_EM;
   pg.inkTextSize = inkTextSizeOn(raster.bin);
   if (!findStaves(pg)) return withText(await emptyPage(pg, raster, unit));
+  for (const stf of pg.staves) if (groups.some((g) => g.oneLine && Math.abs(g.lines[2].y - stf.lineYs[2]) < unit.space * 0.5)) stf.oneLine = true;
   // ── 谱面结构：符头、符干、符尾、小节线，谱号调号拍号（从这里起等上一页的沿用），系统与小节
   const { ctx, carry, clefTally } = await buildPageStructure({ pg, frames, unit, raster, nl, prims, harmonyMasks, ledger, carryOf, timeCols, harmonies, cmap, jianpuBands, textBoxes, probe: opts.probe });
   // ── 符杠与符头：杠的层数、实心其实空心、细杠起头、贴头的四分休止、符尾盒里的头、谱表外的头按加线定音高

@@ -328,7 +328,7 @@ export function findQuarterRests(c: {
   unit: RasterUnit;
   syms: RasterSym[];
   raster: RasterPage;
-  leftEdges: { top: number; bottom: number; left: number; }[];
+  leftEdges: { top: number; bottom: number; left: number; oneLine?: boolean }[];
   blobs: Component[];
   claimed: Set<number>;
   dictClaimed: Set<number>;

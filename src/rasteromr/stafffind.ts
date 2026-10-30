@@ -106,33 +106,7 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
     // 逐列五条线的共同偏移
     const per: number[][] = Array.from({ length: cols }, () => []);
     for (const h of st.hits) per[colOf(h.x)].push(median(h.ys.map((y, k) => y - ys[k])));
-    const raw = per.map((a) => (a.length ? median(a) : NaN));
-    const known = raw.map((v, i) => (Number.isNaN(v) ? -1 : i)).filter((i) => i >= 0);
-    const pick = known.filter((_, i) => i % Math.max(1, Math.floor(known.length / 60)) === 0);
-    const slopes: number[] = [];
-    for (let a = 0; a < pick.length; a++) for (let b = a + 1; b < pick.length; b++) slopes.push((raw[pick[b]] - raw[pick[a]]) / (pick[b] - pick[a]));
-    const slope = slopes.length ? median(slopes) : 0;
-    const first = known[0];
-    const last = known[known.length - 1];
-    const filled = new Array<number>(cols);
-    let prev = first;
-    for (let c = 0; c < cols; c++) {
-      if (c < first) filled[c] = raw[first] + slope * (c - first);
-      else if (c > last) filled[c] = raw[last] + slope * (c - last);
-      else if (!Number.isNaN(raw[c])) (filled[c] = raw[c]), (prev = c);
-      else {
-        let next = c + 1;
-        while (Number.isNaN(raw[next])) next++;
-        filled[c] = raw[prev] + ((raw[next] - raw[prev]) * (c - prev)) / (next - prev);
-      }
-    }
-    const half = SMOOTH >> 1;
-    const d = new Float32Array(cols);
-    for (let c = 0; c < cols; c++) {
-      const a: number[] = [];
-      for (let k = -half; k <= half; k++) if (c + k >= 0 && c + k < cols) a.push(filled[c + k]);
-      d[c] = median(a);
-    }
+    const d = fillCurve(per.map((a) => (a.length ? median(a) : NaN)));
     const curve: LineCurve = { step: COL_STEP, d };
     const yAt = (k: number, x: number) => ys[k] + d[colOf(Math.max(0, x))];
     // 左右端：沿曲线往外验墨
@@ -244,6 +218,197 @@ export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: Staff
   bands.sort((a, b) => a - b);
   const lineThick = bands.length ? bands[bands.length >> 1] : Math.max(1, Math.round(median(thicks)));
   return { unit: { lineThick, space: median(groups.map((g) => g.space)), height: median(groups.map((g) => g.space)) * 4 }, groups };
+}
+
+/**
+ * 逐取样列的偏移（量不到的是 NaN）补成整页一条：量到的列之间线性插值，两头按整段的斜率（两两连线斜率的中位数）外推，
+ * 再滑动中位数（`SMOOTH` 列）压掉单列的跳变。
+ */
+function fillCurve(raw: number[]): Float32Array {
+  const cols = raw.length;
+  const known = raw.map((v, i) => (Number.isNaN(v) ? -1 : i)).filter((i) => i >= 0);
+  const pick = known.filter((_, i) => i % Math.max(1, Math.floor(known.length / 60)) === 0);
+  const slopes: number[] = [];
+  for (let a = 0; a < pick.length; a++) for (let b = a + 1; b < pick.length; b++) slopes.push((raw[pick[b]] - raw[pick[a]]) / (pick[b] - pick[a]));
+  const slope = slopes.length ? median(slopes) : 0;
+  const first = known[0];
+  const last = known[known.length - 1];
+  const filled = new Array<number>(cols);
+  let prev = first;
+  for (let c = 0; c < cols; c++) {
+    if (c < first) filled[c] = raw[first] + slope * (c - first);
+    else if (c > last) filled[c] = raw[last] + slope * (c - last);
+    else if (!Number.isNaN(raw[c])) (filled[c] = raw[c]), (prev = c);
+    else {
+      let next = c + 1;
+      while (Number.isNaN(raw[next])) next++;
+      filled[c] = raw[prev] + ((raw[next] - raw[prev]) * (c - prev)) / (next - prev);
+    }
+  }
+  const half = SMOOTH >> 1;
+  const d = new Float32Array(cols);
+  for (let c = 0; c < cols; c++) {
+    const a: number[] = [];
+    for (let k = -half; k <= half; k++) if (c + k >= 0 && c + k < cols) a.push(filled[c + k]);
+    d[c] = median(a);
+  }
+  return d;
+}
+
+/** 单线谱：横线够长（不短过本页五线谱表宽的这个比例）。 */
+const ONE_LINE_LEN = 0.35;
+/** 单线谱：沿线每一列线带里都有墨的占比下限（实线连着；歌词延长的虚线一半是空，靠这条剔）。 */
+const ONE_LINE_FILL = 0.85;
+/** 单线谱：小节线上下各伸出至少这么多格（照五线谱表的高度印，上下各两格；符干只伸一边），至多这么多格（再长是穿过两行之间的贯穿小节线）。 */
+const ONE_LINE_BAR = 1.2;
+const ONE_LINE_BAR_MAX = 3;
+/** 单线谱：上下各一格、两格处平行走着的线，沿线有墨的列占这么多以上就是没认出来的五线谱行（点划线谱、密杠压着的谱行）里的一条。 */
+const ONE_LINE_SIBLING = 0.4;
+
+/**
+ * **单线谱（打击乐）**：五线谱表之外、一道细实横线，带几根上下对称穿过它的小节线（成爲我異象每个系统底下的三角铁）。
+ * 判据全是结构：逐列细游程且上下各 0.4 格内空（不是笔画、符头里的横）、串成够长的一道（`ONE_LINE_LEN`）、
+ * 沿线逐列有墨（`ONE_LINE_FILL`，歌词延长虚线过不了）、上下一格两格处没有平行的线（`ONE_LINE_SIBLING`，漏检的五线谱行）、
+ * 两根以上上下各伸 `ONE_LINE_BAR`~`ONE_LINE_BAR_MAX` 格的竖笔穿过（小节线；符干只往一边伸，页框、标题下划线没有；
+ * 钢琴两行之间的长渐强、渐弱线也有贯穿小节线穿过，但那种小节线伸得更远）。
+ * 试过要求与最近的五线谱行平行（两端高差不过 0.3 格）拦渐强线：扫描件谱行之间本身就差到 0.35 格（成爲我異象 p1、p4），伤真线。
+ *
+ * 建模成五线组：实线当第三线，上下四条按本页线距补出、标 `virtual`（去线、补线跳过）。
+ * 这种谱的小节线、谱号照五线谱表的高度印，音高网格、挂干、休止的判据照五线走就对得上；符头骑第三线，读出来按打击乐谱号出 `<unpitched>`。
+ */
+export function findSingleLineStaves(bin: Binary, groups: readonly StaffGroup[], unit: RasterUnit): StaffGroup[] {
+  const { w, h, data } = bin;
+  const space = unit.space;
+  if (!groups.length || !(space > 0)) return [];
+  const cols = Math.ceil(w / COL_STEP);
+  const colOf = (x: number) => Math.min(cols - 1, Math.round(x / COL_STEP));
+  const maxThick = Math.max(2, unit.lineThick * 2, Math.round(space * 0.25));
+  const iso = Math.max(2, Math.round(space * 0.4));
+  /** x 处落在哪一行五线谱表里（上下各让一格半：加线、符杠、紧挨着的歌词横笔都不算） */
+  const inStaff = (x: number, y: number) => groups.some((g) => y > lineYAt(g.lines[0], x) - space * 1.5 && y < lineYAt(g.lines[4], x) + space * 1.5);
+  // 逐列：细游程、上下各 `iso` 内空
+  const hits: { x: number; y: number }[] = [];
+  for (let x = 0; x < w; x += COL_STEP) {
+    let y = 0;
+    while (y < h) {
+      if (!data[y * w + x]) {
+        y++;
+        continue;
+      }
+      const a = y;
+      while (y < h && data[y * w + x]) y++;
+      const len = y - a;
+      if (len > maxThick) continue;
+      let clear = true;
+      for (let yy = Math.max(0, a - iso); yy < a - 1 && clear; yy++) if (data[yy * w + x]) clear = false;
+      for (let yy = y + 1; yy < Math.min(h, y + iso) && clear; yy++) if (data[yy * w + x]) clear = false;
+      const c = a + (len - 1) / 2;
+      if (clear && !inStaff(x, c)) hits.push({ x, y: c });
+    }
+  }
+  // 串成轨迹：中心差不过一个线宽（至少 1.5 像素），横向空档不过两格（符头、谱号压断的那几列）
+  const dy = Math.max(1.5, unit.lineThick);
+  const jump = space * 2;
+  const open: { pts: { x: number; y: number }[]; lastX: number; lastY: number }[] = [];
+  const tracks: { x: number; y: number }[][] = [];
+  for (const p of hits) {
+    for (let i = open.length - 1; i >= 0; i--) if (p.x - open[i].lastX > jump) tracks.push(open.splice(i, 1)[0].pts);
+    let best: (typeof open)[number] | null = null;
+    for (const o of open) if (o.lastX < p.x && Math.abs(o.lastY - p.y) <= dy && (!best || Math.abs(o.lastY - p.y) < Math.abs(best.lastY - p.y))) best = o;
+    if (best) {
+      best.pts.push(p);
+      best.lastX = p.x;
+      best.lastY = p.y;
+    } else open.push({ pts: [p], lastX: p.x, lastY: p.y });
+  }
+  for (const o of open) tracks.push(o.pts);
+  const staffW = median(groups.map((g) => g.lines[2].right - g.lines[2].left));
+  const minLen = Math.max(space * 8, staffW * ONE_LINE_LEN);
+  const out: StaffGroup[] = [];
+  for (const pts of tracks.sort((a, b) => b.length - a.length)) {
+    if (pts.length < 8 || pts[pts.length - 1].x - pts[0].x < minLen * 0.6) continue;
+    const y = median(pts.map((p) => p.y));
+    if (out.some((g) => Math.abs(g.lines[2].y - y) < space * 4 && pts[0].x <= g.lines[2].right && pts[pts.length - 1].x >= g.lines[2].left)) continue;
+    const per: number[][] = Array.from({ length: cols }, () => []);
+    for (const p of pts) per[colOf(p.x)].push(p.y - y);
+    const d = fillCurve(per.map((a) => (a.length ? median(a) : NaN)));
+    const yAt = (x: number) => y + d[colOf(Math.max(0, x))];
+    const r = Math.ceil(unit.lineThick / 2) + 1;
+    const inkAt = (x: number, k = 0) => {
+      const yc = Math.round(yAt(x) + k * space);
+      for (let yy = Math.max(0, yc - r); yy <= Math.min(h - 1, yc + r); yy++) if (data[yy * w + x]) return true;
+      return false;
+    };
+    // 左右端：从轨迹两头沿线逐列往外走，断口容一格（扫描件淡线成串点，成爲我異象 p4 末系统谱号到第一个音之间断口过半格）
+    const gapMax = Math.max(2, Math.round(space));
+    const walk = (from: number, dir: -1 | 1) => {
+      let end = from;
+      let gap = 0;
+      for (let x = from; x >= 0 && x < w; x += dir) {
+        if (inkAt(x)) (end = x), (gap = 0);
+        else if (++gap > gapMax) break;
+      }
+      return end;
+    };
+    const left = walk(pts[0].x, -1);
+    const right = walk(pts[pts.length - 1].x, 1);
+    let fill = 0;
+    for (let x = left; x <= right; x++) if (inkAt(x)) fill++;
+    if (right - left < minLen) continue;
+    if (fill / (right - left + 1) < ONE_LINE_FILL) continue;
+    const sibling = [-2, -1, 1, 2].some((k) => {
+      let n = 0;
+      for (let x = left; x <= right; x++) if (inkAt(x, k)) n++;
+      return n / (right - left + 1) >= ONE_LINE_SIBLING;
+    });
+    if (sibling) continue;
+    // 上下对称穿过的竖笔（小节线）：线心上下各 `ONE_LINE_BAR` 格逐行有墨（扫描件的竖笔断成几截，容 0.2 格的断口）、
+    // 又不连过 `ONE_LINE_BAR_MAX` 格；相邻几列算一根
+    const reach = Math.round(space * ONE_LINE_BAR);
+    const reachMax = Math.round(space * ONE_LINE_BAR_MAX);
+    const vGap = Math.max(1, Math.round(space * 0.2));
+    /** 从 y 起往 dir 方向连着有墨（断口不过 `vGap`）走多远 */
+    const extent = (x: number, y: number, dir: -1 | 1) => {
+      let e = 0;
+      let gap = 0;
+      for (let k = 1; k <= reachMax + vGap + 1; k++) {
+        const yy = y + dir * k;
+        if (yy >= 0 && yy < h && data[yy * w + x]) (e = k), (gap = 0);
+        else if (++gap > vGap) break;
+      }
+      return e;
+    };
+    const solid = (x: number, y0: number, y1: number) => {
+      let gap = 0;
+      for (let yy = y0; yy <= y1; yy++) {
+        if (yy < 0 || yy >= h || !data[yy * w + x]) {
+          if (++gap > vGap) return false;
+        } else gap = 0;
+      }
+      return true;
+    };
+    let bars = 0;
+    let lastBar = -Infinity;
+    for (let x = left; x <= right; x++) {
+      const yc = Math.round(yAt(x));
+      if (!solid(x, yc - reach, yc + reach) || extent(x, yc, -1) > reachMax || extent(x, yc, 1) > reachMax) continue;
+      if (x - lastBar > space * 0.5) bars++;
+      lastBar = x;
+    }
+    if (bars < 2) continue;
+    const curve: LineCurve = { step: COL_STEP, d };
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let c = colOf(left); c <= colOf(right); c++) (lo = Math.min(lo, d[c])), (hi = Math.max(hi, d[c]));
+    const flat = hi - lo <= FLAT_SPREAD && Math.abs((hi + lo) / 2) <= 1;
+    const t = (unit.lineThick - 1) / 2;
+    const lines: StaffLineRun[] = [-2, -1, 0, 1, 2].map((k) => {
+      const ly = y + k * space;
+      return { y: ly, y0: ly - t, y1: ly + t, left, right, curve: flat ? undefined : curve, ...(k ? { virtual: true } : {}) };
+    });
+    out.push({ lines, space, oneLine: true });
+  }
+  return out;
 }
 
 /** 横带取墨量过页宽这个比例的行（同推平时代的行投影找线）。 */

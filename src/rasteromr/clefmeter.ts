@@ -237,3 +237,28 @@ export function shareSystemClefs(pg: SPage, ctx: Map<Staff, StaffContext>, unit:
     }
   }
 }
+
+/**
+ * **单线谱一律打击乐谱号**（`Staff.oneLine`）：谱面上那个空心竖框按五线的谱号字典认不出、或认成别的谱号，
+ * 系统内、上一系统同位置继承来的也不对（`clefFor`）。行首已有谱号符号的改成打击乐谱号，没有的在左缘补一个；行中换谱号不要。
+ */
+export function percussionClefs(pg: SPage, ctx: Map<Staff, StaffContext>, unit: { space: number; height: number }): void {
+  for (const st of pg.staves) {
+    if (!st.oneLine) continue;
+    const c = ctx.get(st);
+    if (!c) continue;
+    let sym = c.clef;
+    if (!sym) {
+      const box = { x: st.box.left + unit.space * 0.3, y: st.lineYs[1], w: unit.space * 0.6, h: unit.space * 2 };
+      const made = makeSymObj(pg.objs.length + pg.segs.length + 1, { code: "unpitchedPercussionClef1", box }, unit.height);
+      pg.objs.push(made.obj);
+      pg.symbols.push(made.sym);
+      made.sym.ownerStaff = st;
+      made.sym.addTag("Clef");
+      sym = made.sym;
+    }
+    sym.code = "unpitchedPercussionClef1";
+    c.clef = sym;
+    c.clefs = [sym];
+  }
+}

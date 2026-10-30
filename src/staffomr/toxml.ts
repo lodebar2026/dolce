@@ -976,6 +976,8 @@ function scoreTree(
         shown[k] = v;
         return [h("staff-details", { number: nStaves > 1 ? k + 1 : undefined, "print-object": v ? "yes" : "no" })];
       });
+    /** 写过 `<staff-lines>1` 的谱表（下标） */
+    const oneLineDone = new Set<number>();
     /** 多谱表声部的 `<clef number>`：单谱表不带 number */
     const clefOf = (code: string, k: number) => clefEl(code, nStaves > 1 ? k + 1 : undefined);
 
@@ -1030,7 +1032,8 @@ function scoreTree(
       const out: XmlEl[] = [];
       if (measureNo === 1) out.push(h("divisions", null, divisions));
       // 行中转调（`keyChanges`）：小节里有新调号的从这一小节起写
-      const fifths = ctx ? fifthsAt(ctx, bar0 ? bar0.right - 1 : -Infinity) : 0;
+      // 单线谱（打击乐）不印调号，系统里共享来的调号不作数
+      const fifths = ctx && !ctx.staff.oneLine ? fifthsAt(ctx, bar0 ? bar0.right - 1 : -Infinity) : 0;
       if (ctx && fifths !== prevFifths) {
         out.push(h("key", null, h("fifths", null, fifths)));
         prevFifths = fifths;
@@ -1107,6 +1110,12 @@ function scoreTree(
             codes.forEach((c, k) => c && attrs.push(clefOf(c, k)));
             prevClef = keys;
           }
+          // 单线谱（打击乐，位图路 `Staff.oneLine`）：头一回露面写 `<staff-lines>1`
+          staves.forEach((st, k) => {
+            if (!st?.oneLine || oneLineDone.has(k)) return;
+            oneLineDone.add(k);
+            attrs.push(h("staff-details", { number: nStaves > 1 ? k + 1 : undefined }, h("staff-lines", null, 1)));
+          });
           // 隐藏了一段之后重新露面；多谱表声部只印了其中几行的（望十架第三页长笛那行没印、钢琴右手照印），没印的那行单独藏
           attrs.push(...staffDetails(staves.map((st) => !!st)));
         }

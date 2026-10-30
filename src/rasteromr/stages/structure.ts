@@ -8,7 +8,7 @@ import type { RasterPage } from "../rasterpage";
 import type { Binary, Rect } from "../../omrkit/types";
 import { type RasterPrims, type BeamQuad, binSig } from "../prims";
 import { ContourLedger } from "../ledger";
-import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature } from "../clefmeter";
+import { type TimeColumn, shareSystemClefs, shareOctaveClefs, shareTimeSignature, percussionClefs } from "../clefmeter";
 import type { HarmonyToken } from "../harmony";
 import type { ContourMap } from "../contour";
 import type { JianpuBand } from "../jianpuband";
@@ -124,6 +124,8 @@ export async function buildPageStructure(c: {
   const carry = await carryOf();
   const clefTally = shareOctaveClefs(pg, ctx, carry.carryKey?.clefs);
   at("shareOctaveClefs");
+  percussionClefs(pg, ctx, unit);
+  at("percussionClefs");
   dropCourtesyKeys(pg, ctx, unit.space);
   at("dropCourtesyKeys");
   demoteMidKeys(pg, ctx);

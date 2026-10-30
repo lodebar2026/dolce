@@ -44,6 +44,10 @@ const PAD_LW = 2;
 const LEFTINK_OUT = 3.5;
 const LEFTINK_IN = 0.5;
 const LEFTINK_FRAC = 0.9;
+/** 挨着单线谱（打击乐）的缝：两行左端对齐（不过 `LEFTINK_ALIGN` 格）时连着只要这几成行。单线谱上沿按补出的第一线算，
+ *  系统线在这段上常断（成爲我異象 p6 钢琴到三角铁之间断了 1.7 格，缝里七成五有墨）；曲首单独一行的三角铁缩进排，左端对不齐，照九成。 */
+const LEFTINK_FRAC_ONE = 0.6;
+const LEFTINK_ALIGN = 1;
 /**
  * 竖笔画的**长度**下限（线距的倍数）。
  *
@@ -1547,6 +1551,7 @@ const REPAIR_CAP_NARROW = 1;
  * 这两种列上原图有墨的线带像素补回。和谱线完全重合、一点没加厚的笔画（平躺在线上的延音线、还原号横笔）补不回来。
  */
 export function repairLineCuts(bin: Binary, nl: Binary, lines: LineRef[], unit: RasterUnit): Binary {
+  lines = lines.filter((l) => !l.virtual); // 单线谱补出来的线谱面上没墨
   const { w, h, data } = bin;
   const out: Binary = { w, h, data: new Uint8Array(nl.data) };
   const runs = vRuns(bin);
@@ -1653,6 +1658,7 @@ const SHORT_BEAM_INK_STEM = 1.5;
  * 线局部厚一像素留下的残段由认弧那边按线带剔掉。
  */
 export function removeStaffLinesByRun(bin: Binary, lines: LineRef[], unit: RasterUnit): Binary {
+  lines = lines.filter((l) => !l.virtual); // 单线谱补出来的线谱面上没墨
   const { w, h, data } = bin;
   const out: Binary = { w, h, data: new Uint8Array(data) };
   const runs = vRuns(bin);
@@ -1684,6 +1690,7 @@ export function removeStaffLinesByRun(bin: Binary, lines: LineRef[], unit: Raste
 }
 
 export function removeStaffLines(bin: Binary, lines: LineRef[], unit: RasterUnit, thinOnly: Set<LineRef> = new Set()): Binary {
+  lines = lines.filter((l) => !l.virtual); // 单线谱补出来的线谱面上没墨
   const { w, h, data } = bin;
   const out: Binary = { w, h, data: new Uint8Array(data) };
   const half = unit.lineThick / 2 + 1;
@@ -1844,7 +1851,7 @@ export function findBraces(
  */
 export function groupByLeftInk(
   bin: Binary,
-  staves: { top: number; bottom: number; left: number }[],
+  staves: { top: number; bottom: number; left: number; oneLine?: boolean }[],
   unit: RasterUnit,
 ): { x: number; y: number; w: number; h: number }[] {
   if (!staves.length) return [];
@@ -1872,7 +1879,8 @@ export function groupByLeftInk(
           break;
         }
     }
-    if (rows <= 0 || hit >= rows * LEFTINK_FRAC) groups[groups.length - 1].push(b);
+    const frac = (a.oneLine || b.oneLine) && Math.abs(a.left - b.left) <= unit.space * LEFTINK_ALIGN ? LEFTINK_FRAC_ONE : LEFTINK_FRAC;
+    if (rows <= 0 || hit >= rows * frac) groups[groups.length - 1].push(b);
     else groups.push([b]);
   }
   return groups

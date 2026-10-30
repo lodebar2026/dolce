@@ -332,6 +332,8 @@ export class Staff {
    * 有它时 `middleStep(y, x)` 按该处实测的五线、相邻两线间的相对位置算，没有（矢量路）就用整行的 `lineYs`。
    */
   lineYsAt?: (x: number) => number[];
+  /** 位图路的单线谱（打击乐）：五条线里只有第三线是谱面上的（`rasteromr/staffline.ts::StaffGroup.oneLine`），写出端出 `<staff-lines>1`。 */
+  oneLine?: boolean;
 
   /** `Staff::init`：包围盒纵向取首尾两条线，横向取所有线的并集。 */
   init(left?: number, right?: number): void {

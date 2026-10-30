@@ -65,6 +65,8 @@ export function levelRows(bin: Binary, y0: number, y1: number, lift: (x: number)
 export interface LineRef {
   y: number;
   curve?: LineCurve;
+  /** 单线谱补出来的线（`StaffLineRun.virtual`）：谱面上没墨，去线、补线跳过。 */
+  virtual?: boolean;
 }
 
 /** 曲线在 x 处的偏移。 */
@@ -90,6 +92,8 @@ export interface StaffLineRun {
   y1: number;
   left: number;
   right: number;
+  /** 单线谱补出来的线（谱面上没有，见 `stafffind.ts::findSingleLineStaves`）：去线、补线不碰它。 */
+  virtual?: boolean;
 }
 
 /** 一行谱：五条线加它们定出来的线距。 */
@@ -97,6 +101,8 @@ export interface StaffGroup {
   lines: StaffLineRun[];
   /** 组内相邻线的平均间距。 */
   space: number;
+  /** 单线谱（打击乐）：只有第三线是真的，上下四条按本页线距补出（`virtual`）。 */
+  oneLine?: boolean;
 }
 
 /**
