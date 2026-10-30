@@ -571,6 +571,12 @@ export function buildJpNums(
     for (const kb of belowLines) {
       if (prev === null) {
         if (kb.y - rbottom(d) > numH * 0.45) break; // 第一条离得太远：不是本音符的减时线
+      } else if (kb.y + 1 < rbottom(prev)) {
+        // 跟上一道纵向重叠的是同一道线的碎片：扫描件线边上剥出来的 1px 细丝自成一块（青年诗歌 83《你和别人不一样》
+        // 7px 的线顶上并排一条 39×1，同顶），叠着的两道减时线中间总隔着空白
+        probe("underline.sameLayer");
+        prev = { x: Math.min(prev.x, kb.x), y: prev.y, w: Math.max(rright(prev), rright(kb)) - Math.min(prev.x, kb.x), h: Math.max(rbottom(prev), rbottom(kb)) - prev.y };
+        continue;
       } else {
         // 两条判据取交集，单用哪一条都分不开（实测：小图《沧海一声笑》numH=11 的真双减时线
         // 层距 0.27~0.36 字高、比值 2~4 倍线厚；大图《主祢真伟大》numH=22 的真双减时线

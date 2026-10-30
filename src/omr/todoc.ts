@@ -501,6 +501,9 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
       // 复纵线与房尾**可以同时出现**（76《天上有粮》一房末就是 `[1 … ||`，图上没画反复冒号），
       // 故不像终止线那样给 endingStop 让位。
       // 下一小节以反复起始 `‖:` 开头：那对粗细线就是反复线本身（青年诗歌 5《第一声呼求》`5 ‖: 3̇`），不另记复纵线
+      // 全曲末小节的细细双线同「末行行末两根并排」一个口径，是终止线：识别时末谱行之后还排着歌词凑成的伪行
+      //（青年诗歌 79 末段英文「I' l l walk」的 l 读成小节线），那道 ‖ 就被当成了曲中的复纵线
+      else if (doubleIdx.has(idx) && idx === allMeasures.length - 1 && !jumps.some((j) => j === "D.C." || j === "D.S.")) b.style = "light-heavy";
       else if (doubleIdx.has(idx) && !allMeasures[idx + 1]?.some((n) => n.repeatForward)) b.style = "light-light";
       else if (hiddenIdx.has(idx)) b.style = "none";
       else if (closed) b.style = "regular";

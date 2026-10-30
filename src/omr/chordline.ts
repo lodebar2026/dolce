@@ -21,6 +21,7 @@ export type ChordCand = { tok: string; x: number; bbox: Rect; /** 块首括号�
 export function chordCandidates(
   rawText: string, srcX: (charIndex: number) => number, mkBbox: (x0: number, x1: number) => Rect,
 ): ChordCand[] {
+  rawText = trailingSharpMinor(rawText, srcX);
   return splitChordTokens(blankNonChord(blankAltChords(splitFarJump(rawText, srcX, mkBbox(0, 1).h))), srcX)
     .map(({ tok, index }) => {
       const x0 = srcX(index), x1 = srcX(index + tok.length);
@@ -29,6 +30,19 @@ export function chordCandidates(
     })
     // 归一后仍须是合法根音开头（可带前置升降号，`chordTextSegs`/`harmonyXml` 的最低要求），否则下游只能整段原样排字。
     .filter((c) => /^[#b]?[A-G]/.test(c.tok));
+}
+
+/** 升号印在小写 m 后面的小调和弦（青年诗歌 77《永远的锡安山》「Fm♯」= F♯m）：读成 `Fm#G` 就切成 `Fm` 与前置升号的 `#G`。
+ *  ♯ 紧挨着 m（字距不过根音到 m 的 1.5 倍）、离后面的字远（3 倍以上，或在行末）才算后置，原地换成 `#m`（下标不动）。 */
+function trailingSharpMinor(s: string, srcX: (charIndex: number) => number): string {
+  // i 指向 m：根音 i-1、♯ i+1、后面的字 i+2（srcX 取各字起点）
+  return s.replace(/(?<=[A-G])m[#♯]/g, (m, i: number) => {
+    const pitch = srcX(i) - srcX(i - 1), toSharp = srcX(i + 1) - srcX(i);
+    const after = i + 2 >= s.length ? Infinity : srcX(i + 2) - srcX(i + 1);
+    if (pitch <= 0 || toSharp > pitch * 1.5 || after < pitch * 3) return m;
+    probe("chord.trailingSharpMinor");
+    return "#m";
+  });
 }
 
 /** 紧跟在和弦后面、括号里的**备选和弦**（青年诗歌 5《第一声呼求》`C(A)` `G7(E7)` `Am(F#m)`：页眉 `C/A4/4`，括号里是移到 A 调的

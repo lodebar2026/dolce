@@ -2,6 +2,7 @@
 // 复用歌词的"自然区域分块 rec"（lyrics.ts）：取页眉区连通块 → 按 y 分行 → 每行整体 rec →
 // 按内容/字号归类：含 作/词/曲/编/译 → 著作者 credit；最大字号且较居中的中文行 → 标题。
 import type { Binary, Component, Rect, TextRegion } from "../omrkit/types";
+import { rbottom } from "../omrkit/types";
 import type { OcrBackend } from "../omrkit/ocr";
 import { chunkCells, buildStrip } from "./lyrics";
 import { mergeToChars } from "../omrkit/charcells";
@@ -161,6 +162,28 @@ function parseMeta(lines: HLine[]): MetaInfo {
       const f = f0 !== undefined && m[3] ? f0 - 3 : f0;
       if (f === undefined || f < -7) continue;
       probe(m[3] ? "key.bareNote.minor" : "key.bareNote");
+      res.fifths = f;
+      if (m[3]) res.minor = true;
+      res.fifthsLine = l;
+      break;
+    }
+  }
+  // 调号与拍号分印在标题两头（青年诗歌 79《我听见了主耶稣说》左 `Em/Bm`、右 `4/4`）：整片只有「音名/备选调」，
+  // 同一排（纵向重叠过半）另有一片只是斜杠拍号的才认——斜杠和弦（`G/B`）那一排不会单独印个拍号
+  if (res.fifths === undefined) {
+    for (const l of lines) {
+      const m = l.text.replace(/\s+/g, "").match(/^([A-G])([b#♭♯]?)(m?)[/／][b#♭♯]?[A-G][b#♭♯]?m?$/);
+      if (!m || !(m[1] in NAT_FIFTHS)) continue;
+      const meterBeside = lines.some((o) => {
+        const t = o.text.replace(/\s+/g, "").match(/^(\d{1,2})[/／](\d{1,2})$/);
+        const ov = Math.min(rbottom(o.bbox), rbottom(l.bbox)) - Math.max(o.bbox.y, l.bbox.y);
+        return o !== l && t && validBeats(Number(t[1])) && validBeatType(Number(t[2])) && ov >= Math.min(o.bbox.h, l.bbox.h) * 0.5;
+      });
+      if (!meterBeside) continue;
+      const f0 = m[2] ? toFifths(m[1], m[2]) : NAT_FIFTHS[m[1]];
+      const f = f0 !== undefined && m[3] ? f0 - 3 : f0;
+      if (f === undefined || f < -7) continue;
+      probe("key.slashAlone");
       res.fifths = f;
       if (m[3]) res.minor = true;
       res.fifthsLine = l;
@@ -1164,6 +1187,9 @@ export async function recognizeHeader(
         out.regions.push({ text: credit, bbox: ln.bbox, chars: charsForText(credit, ln.chars) });
         continue;
       }
+      // 空心花体的英文标题（青年诗歌 79「I HEARD THE VOICE OF JESUS SAY」）rec 读成汉字与字母来回交错的乱码
+      //（「是瑟認感麗需富張認V香長CE需灵夏認SU3S感Y」），比真标题宽、按宽度就顶掉了它：汉字与字母切换四次以上的行整行不要
+      if ((txt.match(/[一-鿿](?=[A-Za-z0-9])|[A-Za-z0-9](?=[一-鿿])/g) ?? []).length >= 4) { probe("header.garbledLatin"); continue; }
       rest.push(ln);                                // 非著作者行：标题、副标题、调号、页码…
       if (hanziCount(txt) < 2) continue;            // 跳过页码/调号/速度等（数字/符号为主）
       // 调号行也不当标题：`1=C 3/4 4/4 5/4 混合拍` 带着「混合拍」三个汉字能过上一道门，
@@ -1305,6 +1331,8 @@ export async function recognizeHeader(
     if (g?.viaMeter && textFifths !== undefined && textFifths !== g.fifths && /调/.test(meta.fifthsLine?.text ?? "")) {
       probe("key.textOverMeterGlyph"); g = undefined;
     }
+    // 小调印成和弦名式（青年诗歌 79 `Em/Bm`）：字形路只读音名、读出 E 就顶掉了文本路的 E 小调。读出的正是这个小调的主音字母时以文本路为准
+    if (g && meta.minor && textFifths !== undefined && g.fifths === textFifths + 3) { probe("key.textMinorOverGlyph"); g = undefined; }
     const glyphKeyBox = g?.bbox;
     if (g) { probe("key.glyphs"); meta.fifths = g.fifths; }
     else if (meta.fifths !== undefined) {

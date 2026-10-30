@@ -1028,7 +1028,9 @@ export async function recognizeLyrics(
         const skip = (ch: string) => !ch.trim() || /[.,·•'`]/.test(ch);
         const t = [...rawText].filter((ch) => !skip(ch)).join("");
         const toks = [...t.matchAll(DYN_TOKEN_RE)];
-        if (t && toks.length && toks.reduce((a, m) => a + m[0].length, 0) === t.length) {
+        // 块宽得配得上读出的字母数：力度字母与字高差不多宽，一条长弧（「哦，愿我有千万舌头」首行 111×29）rec 也会读成一个「F」
+        const inkW = cells.reduce((a, c) => a + c.w, 0), inkH = Math.max(...cells.map((c) => c.h));
+        if (t && toks.length && toks.reduce((a, m) => a + m[0].length, 0) === t.length && inkW <= t.length * inkH * 1.6) {
           for (const m of toks) {
             let acc = 0, xf = 0;
             if (textsPos) for (const c of textsPos[s]) { if (skip(c.ch)) continue; if (acc >= m.index!) { xf = c.xFrac; break; } acc += c.ch.length; }
@@ -1445,6 +1447,29 @@ export async function recognizeLyrics(
     const ok = verseLabels.size >= 2 && verseLabels.get(0)?.[0] === 1 &&
       new Set(all).size === all.length;
     if (!ok) verseLabels.clear();
+    // 中英对照逐段交替（青年诗歌 79《我听见了主耶稣说》：`一、` 中文 / `1.` 英文 / `二、` / `2.` …）：英文行的号后面没有汉字，
+    // parseVerseLabel 不认，英文行按行序取号就跟下一段中文撞号（英文第 1 段与中文第 2 段揉进同一段）。
+    // 标号那一谱行上偶数行是中文号 1..k、奇数行以同号的「N.」领起拉丁字母：段号一律按行序，号照印各记各的
+    if (verseLabels.size >= 2) {
+      const labelRow = [...rawByKey.keys()].map((k) => k.split(":").map(Number)).find(([r, v]) => r >= 0 && verseLabels.has(v))?.[0];
+      const vis = [...rawByKey.keys()].filter((k) => !chordKeys.has(k)).map((k) => k.split(":").map(Number))
+        .filter(([r]) => r === labelRow).map(([, v]) => v!).sort((a, b) => a - b);
+      const cnOf = (v: number): string | undefined => {
+        const cn = CN_LABEL_RE.exec(rawByKey.get(`${labelRow}:${v}`) ?? "");
+        return cn ? cn[1] + cn[2] : marginLabel.get(`${labelRow}:${v}`);
+      };
+      const latinNum = (v: number) => /^\s*(\d)\s*[.．]\s*[A-Za-z]/.exec(rawByKey.get(`${labelRow}:${v}`) ?? "")?.[1];
+      const alt = vis.length >= 4 && vis.length % 2 === 0 && vis.every((v, i) => v === i) &&
+        vis.every((v) => v % 2 === 0
+          ? verseLabels.get(v)?.length === 1 && verseLabels.get(v)![0] === v / 2 + 1 && !!cnOf(v)
+          : Number(latinNum(v)) === (v + 1) / 2);
+      if (alt) {
+        probe("lyrics.bilingualLabels");
+        const row = staff[labelRow!]!;
+        for (const v of vis) (row.lyricLabels ??= [])[v] = v % 2 === 0 ? cnOf(v)! : `${latinNum(v)}.`;
+        verseLabels.clear();
+      }
+    }
     if ((globalThis as { __omrDebug?: boolean }).__omrDebug) {
       console.log("[lyrics/verse-label]", ok ? "apply" : "ignore",
         [...verseLabels].map(([v, ns]) => `${v}->${ns.join(",")}`).join(" "));

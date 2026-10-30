@@ -66,8 +66,11 @@ export interface EmitStyle {
    *  番茄没有这些字段，写了会被 `sniffDialect` 判成诗歌本 */
   pageFields: boolean;
   /** 中英对照谱（第 1 段汉字、其余几段全是拉丁字母的译词）各行都写不带段号的 `C:`：诗歌本把译词与中文同算第一段。
-   *  解析端裸 `C:` 按出现顺序编段，读回来段号不变 */
+   *  解析端裸 `C:` 按出现顺序编段，读回来段号不变。
+   *  逐段中英交替的（第 1、3、5… 段汉字，紧跟的第 2、4、6… 段是它的英译）两两写同一个段号：`C1:` `C1:` `C2:` `C2:`… */
   bareTranslationVerses?: boolean;
+  /** 不补切分处的断线记号 `^`（诗歌本谱本按拍断线，用不着写；原文就有的照写） */
+  noAutoBreak?: boolean;
 }
 
 /** 头部字段怎么写。加第三种方言时补一份数据，而不是在 emitter 里再写一个 if。 */
@@ -190,6 +193,7 @@ const SHIGE: DialectSpec = {
     hiddenRestNoLyric: "9",
     pageFields: true,
     bareTranslationVerses: true,
+    noAutoBreak: true,
   },
 };
 

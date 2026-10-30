@@ -379,17 +379,19 @@ function estimateNumH(comps: Component[]): number {
     b.bbox.h >= k.bbox.h * 1.2 && Math.abs(b.bbox.x - k.bbox.x) <= b.bbox.h * 6 &&
     Math.abs(rcy(b.bbox) - rcy(k.bbox)) < b.bbox.h * 0.3)) : [];
   // 锚上的得占瘦高块的两成、且不小于原估计的 0.6：没几根真小节线的页（迦南诗选 1677《祷告》，16/385 块、中位 12 对数字 48）
-  // 凑上来的是碎笔
-  const est3 = anchored.length >= 15 && anchored.length >= tall.length * 0.2 ? median(anchored.map((k) => k.bbox.h)) : 0;
+  // 凑上来的是碎笔。锚上的块九成挤在中位 ±6% 以内（`tight`）的不看占比：中英三段对照（青年诗歌 79《我听见了主耶稣说》）
+  // 一谱行下六行词，英文小写字母凑出 390 个瘦高块，锚上的 65 块全是 43±6% 的数字
+  const raw3 = anchored.length >= 15 ? median(anchored.map((k) => k.bbox.h)) : 0;
+  const tight = raw3 > 0 && anchored.filter((k) => Math.abs(k.bbox.h - raw3) <= raw3 * 0.06).length >= anchored.length * 0.85;
+  const est3 = raw3 && (anchored.length >= tall.length * 0.2 || tight) ? raw3 : 0;
   if (est3 && est > est3 * 1.15 && est3 >= est * 0.6) { probe("numH.barAnchored"); return est3; }
   // 估小方向同理：补充本七十来页字号估 27~30、数字实高 36~37（汉字碎块压低了中位，est2 的 1.3 倍门又够不着）。
   // 门开在 1.2：差一成多的页照旧。还得跟瘦高块的估计 est2 对得上（差不到一成）：四声部的小节线跨两个声部，锚上的瘦高块混进
   // 别的东西（四声部 f1 数字 25、锚定估出 31 多，一整行丢了）；补充本那些页两者都在 36 上下
   if (est3 && est3 > est * 1.2 && est2 && Math.abs(est3 - est2) <= est3 * 0.1) { probe("numH.barAnchoredUp"); return est3; }
-  // 英文/俄文歌词的小写字母把瘦高块也压低了（青年诗歌 22《将一生奉献》：est 24、est2 28，数字实高 60），est2 对不上。
-  // 锚上的块差一倍多、且九成挤在估计值 ±6% 以内时照样信锚定估计：四声部那种混进别的东西的锚定样本是散的
-  if (est3 && est3 > est * 1.8 &&
-    anchored.filter((k) => Math.abs(k.bbox.h - est3) <= est3 * 0.06).length >= anchored.length * 0.85) { probe("numH.barAnchoredTight"); return est3; }
+  // 英文/俄文歌词的小写字母把瘦高块也压低了（青年诗歌 22《将一生奉献》：est 24、est2 28，数字实高 60；79：est 30、est2 37，数字 43），est2 对不上。
+  // 锚上的块大出两成以上、且九成挤在估计值 ±6% 以内时照样信锚定估计：四声部那种混进别的东西的锚定样本是散的
+  if (est3 && est3 > est * 1.2 && tight) { probe("numH.barAnchoredTight"); return est3; }
   return est2 > est * 1.3 ? est2 : est;
 }
 
@@ -428,8 +430,9 @@ function classify(comps: Component[], bin: Binary): { c: Classified; numH: numbe
   const c: Classified = { blocks: [], barlines: [], longBarlines: [], hlines: [], dots: [], dashLike: [], clean: pageClean, lineH };
   // 高瘦竖块可能是"八度点 + 窄数字"粘连体（数字不含点）：优先切开、把点与数字笔各归其类，
   // 否则会被下面的小节线判据整块吞掉而丢音（实测高八度 "1̇" 在单行简谱里 h 恰同真小节线）。
+  // 第二支的高度门 1.2 字号：字号估对了（耶稣普治 54）的页上，点贴得近的「1̇」粘连块只有 1.26 字号（20×68），原 1.3 是按估低的字号定的
   const barCand = (w: number, h: number) =>
-    (h >= numH * 0.85 && w <= Math.max(2, numH * 0.35)) || (h >= numH * 1.3 && w <= numH * 0.6 && h / w >= 2.2);
+    (h >= numH * 0.85 && w <= Math.max(2, numH * 0.35)) || (h >= numH * 1.2 && w <= numH * 0.6 && h / w >= 2.2);
   // 点贴得近时整块只高 1.25 字号、够不上小节线候选（《祭司的国度》末行「权」的 1̇，点与竖笔只隔
   // 一个像素粘连，7×20 / numH 16），直接当数字块就把点裹进数字里、丢了八度。这类「窄而略高」的块
   // 也试切，但走严格判据（strict）：3、5 的顶横与竖笔之间也有细腰，宽松判据会把顶横当点切下来。
@@ -1257,8 +1260,11 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       // 过不了下面的高度门，当音符读成了 0。单声部行上整个悬在右邻数字上方的（顶高出 0.5、底高出 0.3 字高）按形状再认。
       // 下限接到 hungBoth 的 1.1 字高：青年诗歌 52《清晨的日光》`3· ♯2̲` 的 ♯ 26×58 对数字 29×49（1.18 字高、离数字 0.6 字号），
       // 卡在两道门之间，读成了 0
-      const tallHung = !voicedPage && k.bbox.h > medH * 1.1 &&k.bbox.h <= medH * 1.45 && k.bbox.w <= medW * 1.2 &&
-        nx.bbox.h >= medH * 0.85 && nx.bbox.y - k.bbox.y >= medH * 0.5 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3 &&
+      // 与数字差不多高（1.0~1.1 字高）的高悬 ♯ 同理（青年诗歌 77《永远的锡安山》`♯4` 24×53 对数字 30×48，顶高出 0.48 字高，
+      // 宽过不了 0.85 倍数字宽那道门；78《恩典够我用》`♯4` 24×50 对 31×48，离数字 0.76 字号）：顶高出 0.25 字高就够（底高出 0.3 字高，比数字高的顶自然高出更多）
+      const tallHung = !voicedPage && k.bbox.h >= medH * 0.95 && k.bbox.h <= medH * 1.45 && k.bbox.w <= medW * 1.2 &&
+        nx.bbox.h >= medH * 0.85 && nx.bbox.y - k.bbox.y >= medH * 0.25 &&
+        rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3 &&
         nx.bbox.x - rright(k.bbox) >= 0 && nx.bbox.x - rright(k.bbox) <= numH * 1.0;
       if (k.bbox.h > medH * 1.25 && !tallHung) continue;
       // 「矮」不能只看块高：同书的 ♯ 也有印得和数字差不多高的（97《受难歌》28×32、26×30 对数字 37；101《我有主耶稣歌》`6 ♯5`

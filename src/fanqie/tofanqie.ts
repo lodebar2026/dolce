@@ -521,11 +521,11 @@ function writeMeasureBody(
       if (groupBeats !== 1) {
         const g = Math.floor(beat / groupBeats + 1e-9);
         if (Math.floor(prev.beat / groupBeats + 1e-9) !== g) {
-          if (sameBeat) line.push("^");
+          if (sameBeat && !d.emit.noAutoBreak) line.push("^");
         } else if (Math.floor(prev.beat - g * groupBeats + 1e-9) !== Math.floor(beat - g * groupBeats + 1e-9)) {
           line.push("~");
         }
-      } else if (syncopated && prev.beams !== beams && !sameBeat) {
+      } else if (syncopated && prev.beams !== beams && !sameBeat && !d.emit.noAutoBreak) {
         line.push("^");
       }
     }
@@ -791,8 +791,16 @@ function isTranslationSet(slots: readonly Slot[], specs: readonly LyricSpec[]): 
   return /\p{Script=Han}/u.test(texts[0]!) && texts.slice(1).every((t) => /[A-Za-z]/.test(t) && !/\p{Script=Han}/u.test(t));
 }
 
-/** `bare`：写不带段号的 `C:`（解析端按出现顺序编段，调用方保证读回来段号不变） */
-function lyricLine(slots: readonly Slot[], spec: LyricSpec, bare: boolean, d: DialectSpec): string | null {
+/** 逐段中英交替：第 1、3、5… 段是汉字，第 2、4、6… 段字全是拉丁字母（前一段的英译），段号连续、没有区间与同号多行。 */
+function isBilingualPairs(slots: readonly Slot[], specs: readonly LyricSpec[]): boolean {
+  if (specs.length < 4 || specs.length % 2) return false;
+  if (specs.some((s, i) => s.from !== i + 1 || s.to !== s.from || s.nth || s.lineIndex !== undefined)) return false;
+  const texts = specs.map((s) => specTexts(slots, s).join(""));
+  return texts.every((t, i) => (i % 2 === 0 ? /\p{Script=Han}/u.test(t) : /[A-Za-z]/.test(t) && !/\p{Script=Han}/u.test(t)));
+}
+
+/** `bare`：写不带段号的 `C:`（解析端按出现顺序编段，调用方保证读回来段号不变）；`as`：照这个段号写（中英两两同号） */
+function lyricLine(slots: readonly Slot[], spec: LyricSpec, bare: boolean, d: DialectSpec, as?: number): string | null {
   const skip = d.lyricSkip[0] ?? "@";
   const pieces: string[] = [];
   let pendingSkips = 0;
@@ -824,7 +832,7 @@ function lyricLine(slots: readonly Slot[], spec: LyricSpec, bare: boolean, d: Di
   // 行末的 `}` 会被读成联合括号：真要的照写，不要的补一个跳字符隔开
   if (spec.joinBrace) body += "}";
   else if (body.endsWith("}")) body += skip;
-  const num = bare ? "" : `${spec.from}${spec.to !== spec.from ? `-${spec.to}` : ""}`;
+  const num = bare ? "" : as !== undefined ? `${as}` : `${spec.from}${spec.to !== spec.from ? `-${spec.to}` : ""}`;
   let label = "";
   if (spec.label !== undefined) {
     const [open, close] = d.emit.labelWrap;
@@ -1061,8 +1069,10 @@ export function emitFanqieSong(src: Song, dialect: Dialect, opts: EmitFanqieOpti
       const infos = sys.fromEl === 0 && song.parts.length && first?.print?.lyricLines;
       const specs = lyricSpecs(slots, infos || undefined);
       const translation = !!d.emit.bareTranslationVerses && isTranslationSet(slots, specs);
+      const pairs = !translation && !!d.emit.bareTranslationVerses && isBilingualPairs(slots, specs);
       for (const spec of specs) {
-        const text = lyricLine(slots, spec, translation || (specs.length === 1 && spec.from === 1 && spec.to === 1), d);
+        const text = lyricLine(slots, spec, translation || (specs.length === 1 && spec.from === 1 && spec.to === 1), d,
+          pairs ? Math.ceil(spec.from / 2) : undefined);
         if (text !== null) group.push(text);
       }
     });
