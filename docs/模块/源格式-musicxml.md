@@ -18,7 +18,8 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
 | `projectForJianpu(song)` | `src/model/jianpuproject.ts` | MusicXML 形状 → 简谱形状（简谱档排版、转 123 之前） |
 | `engraveScoreDoc(doc, page)` | `src/editor/xmllayout.ts` | 导出的版面坐标：五线谱引擎排一遍（与屏幕同一套），坐标装进 `EngravedLayout` 交给写出端，不写进模型 |
 
-`src/score/xmldom.ts` 是 DOM 读取小工具（`child`/`children`/`childText`），`fromxml.ts` 用。
+`src/score/xmltree.ts` 是自有的 XML 树（解析、序列化，浏览器与 Node 同一份，不用浏览器 `DOMParser`；每个元素记原文区间）；
+`src/score/xmldom.ts` 是它上面的读取小工具（`child`/`children`/`childText`），`fromxml.ts` 用。
 
 ## 吃什么吐什么
 
@@ -75,7 +76,7 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
 
 ## 在谱面上编辑
 
-没有代码区，谱面上改的是模型（`model/edit.ts`），改完经 `toxml.ts` 整份重写；索引按 DOM 节点的文档序对到隐藏代码区里的原文
+没有代码区，谱面上改的是模型（`model/edit.ts`），改完经 `toxml.ts` 整份重写；索引取原节点记的原文区间、对到隐藏代码区里的原文
 （`editor/sync.ts::buildXml`）。判据见 [实现/可视化编辑](../实现/可视化编辑.md)「MusicXML：改模型」。增删音、改时值、拆并小节后整曲的版面坐标作废，改由五线谱引擎自动铺排。
 
 ## 已知限制

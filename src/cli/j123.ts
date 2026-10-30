@@ -23,7 +23,6 @@ export { fanqieToScoreDoc } from "../fanqie/fromfanqie";
 export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
 export { slursAsTies } from "../model/xmlproject";
-// MusicXML 读入要 `DOMParser`：Node 侧的脚本先装私有仓库 `scripts/xml-dom.mjs` 的极简实现
 export { loadScoreDoc } from "../model/fromxml";
 export { writeJpwabc } from "../model/tojpw";
 export { emitJpwabc } from "../convert/jpwabc";

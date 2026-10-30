@@ -7,7 +7,7 @@
 // 以前逐项往模型里加字段，加一项丢一项（`layout-attr-check` 的「仍丢」表就是这么来的）。
 // 现在与简谱那套同理——**不存进模型、经查询层取**（简谱的是 `jianpu.ts`，那边是由语义派生，这边是从原文现读）：
 //
-// - `fromxml.ts` 读语义进模型，同时把每个模型对象**绑**到它的原始 DOM 节点（本文件的 WeakMap，不在模型里）；
+// - `fromxml.ts` 读语义进模型，同时把每个模型对象**绑**到它的原始节点（`score/xmltree.ts` 的树，本文件的 WeakMap，不在模型里）；
 // - 五线谱引擎要的坐标、符干、对齐、字体经下面的查询函数从原节点现读；
 // - 写出端 `toxml.ts` 按「写出端认得的属性/子节点」之外，把原节点其余的属性与子节点**通用回填**。
 //
@@ -16,6 +16,7 @@
 
 import type { FontSpec, HAlign, Measure, MeasureAttrs, Note, Print, Song } from "./doc";
 import { child, children } from "../score/xmldom";
+import type { XmlEl } from "../score/xmltree";
 
 /** 版面坐标（tenths，口径同 MusicXML 的 `default-x/-y`、`relative-x/-y`）。 */
 export interface Position {
@@ -38,28 +39,28 @@ export type StemDir = "up" | "down" | "none" | "double";
 
 /** 对象 → 槽位 → 原节点。槽位：缺省 `""`；`Part` 另有 `"score-part"`；`Mark` 有 `"start"` / `"stop"`；
  *  `Direction` 另有 `"part"`（它自己那条 `<direction-type>` 子元素，`more` 里的各绑各的缺省槽）。 */
-const SURFACE = new WeakMap<object, Map<string, Element>>();
+const SURFACE = new WeakMap<object, Map<string, XmlEl>>();
 
-export function bindSurface(obj: object, el: Element, slot = ""): void {
+export function bindSurface(obj: object, el: XmlEl, slot = ""): void {
   let m = SURFACE.get(obj);
   if (!m) SURFACE.set(obj, (m = new Map()));
   if (!m.has(slot)) m.set(slot, el);
 }
 
-export function surfaceOf(obj: object | null | undefined, slot = ""): Element | undefined {
+export function surfaceOf(obj: object | null | undefined, slot = ""): XmlEl | undefined {
   return obj ? SURFACE.get(obj)?.get(slot) : undefined;
 }
 
 // ───────────────────────── 查询层 ─────────────────────────
 
-const attrNum = (el: Element | null | undefined, name: string): number | undefined => {
+const attrNum = (el: XmlEl | null | undefined, name: string): number | undefined => {
   const t = el?.getAttribute(name);
   if (t === null || t === undefined || t === "") return undefined;
   const v = Number(t);
   return Number.isFinite(v) ? v : undefined;
 };
 
-const childNum = (el: Element | null, tag: string): number | undefined => {
+const childNum = (el: XmlEl | null, tag: string): number | undefined => {
   const t = el ? child(el, tag)?.textContent : undefined;
   if (t === undefined || t === null) return undefined;
   const v = Number(t);
@@ -67,9 +68,9 @@ const childNum = (el: Element | null, tag: string): number | undefined => {
 };
 
 /** 版面坐标元素：`DirectionPart` 取它那条 direction-type 子元素，其余取绑定的节点本身。 */
-const posHost = (obj: object): Element | undefined => surfaceOf(obj, "part") ?? surfaceOf(obj);
+const posHost = (obj: object): XmlEl | undefined => surfaceOf(obj, "part") ?? surfaceOf(obj);
 
-function readPos(el: Element | undefined): Position | undefined {
+function readPos(el: XmlEl | undefined): Position | undefined {
   if (!el) return undefined;
   const p: Position = {};
   const dx = attrNum(el, "default-x");
@@ -108,7 +109,7 @@ export function noteStem(note: Note | null | undefined): { dir: StemDir; y?: num
   return y === undefined ? { dir } : { dir, y };
 }
 
-const align = (el: Element | undefined, name: string): HAlign | undefined => {
+const align = (el: XmlEl | undefined, name: string): HAlign | undefined => {
   const v = el?.getAttribute(name);
   return v === "left" || v === "center" || v === "right" ? v : undefined;
 };
@@ -126,7 +127,7 @@ export function xmlAlign(obj: object): { justify?: HAlign; halign?: HAlign; vali
   return out;
 }
 
-function readFont(el: Element | null | undefined): FontSpec | undefined {
+function readFont(el: XmlEl | null | undefined): FontSpec | undefined {
   if (!el) return undefined;
   const f: FontSpec = {};
   const fam = el.getAttribute("font-family");
@@ -246,7 +247,7 @@ export function hasEmbeddedLayout(song: Song): boolean {
 
 /** 音高变了：这个和弦各音原文的符干方向（`<stem>`）与纵坐标（`default-y`）作废，交给五线谱引擎按新音高推。 */
 export function forgetNoteLayout(chord: { notes: readonly Note[] }): void {
-  const nodes = new Set<Element>();
+  const nodes = new Set<XmlEl>();
   const own = surfaceOf(chord);
   if (own) nodes.add(own);
   for (const n of chord.notes) {

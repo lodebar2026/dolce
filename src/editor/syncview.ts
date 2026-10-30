@@ -76,7 +76,7 @@ export class SyncView {
     this._doc = doc;
     this._text = host.getText();
     if (host.docFormat === "musicxml") {
-      // 模型不记原文位置：按 DOM 节点的文档序对到隐藏代码区里的 XML 原文（`SyncIndex.buildXml`）
+      // 模型不记原文位置：取原节点记的原文区间（`SyncIndex.buildXml`）
       if (!this.index.buildXml(doc, this._text)) host.setStatus(t("status.xmlUnaligned"));
     } else {
       this.index.build(doc);

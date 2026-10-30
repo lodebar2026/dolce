@@ -12,6 +12,7 @@
 import type { Chord, ElementId, Measure, ScoreDoc, Song } from "../model/doc";
 import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
 import { surfaceOf } from "../model/xmlsurface";
+import { serializeXml, type XmlDoc } from "../score/xmltree";
 
 /** 接着前一个识别休止的一段（简谱拆开的休止）：不对应识别框，也不算新插的 */
 export const COVERED = "";
@@ -212,7 +213,7 @@ export function stampXmlIds(xml: string, from: StaffView, load: (xml: string) =>
   const song = doc.songs[0];
   if (!song) return xml;
   const ids = carryIds(from, song);
-  let root: Document | null = null;
+  let root: XmlDoc | null = null;
   for (const part of song.parts) {
     for (const m of part.measures) {
       for (const el of m.elements) {
@@ -229,7 +230,7 @@ export function stampXmlIds(xml: string, from: StaffView, load: (xml: string) =>
       }
     }
   }
-  return root ? new XMLSerializer().serializeToString(root) : xml;
+  return root ? serializeXml(root) : xml;
 }
 
 /**

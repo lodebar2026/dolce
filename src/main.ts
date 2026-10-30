@@ -122,8 +122,7 @@ async function boot() {
   // 混排歌本（清单 + .ss → DrawPage[]）暴露，供 scripts/kl2020-book.mjs 用。
   win.__songbook = Promise.all([import("./pdflayout/songbook"), import("./style/ss")])
     .then(([songbook, ss]) => ({ ...songbook, ...ss }));
-  // 123 格式与语义模型暴露，供 scripts/j123-migrate.mjs 跑 MusicXML 那一路——
-  // `loadScoreDoc` 要 DOMParser，Node 侧没有，所以这条必须在浏览器里走（同 __book 的路子）。
+  // 123 格式与语义模型暴露，供要在页面里排版出图的回归脚本用（只读写模型的走 Node 侧的 `out/cli/j123.js`）。
   win.__j123 = Promise.all([
     import("./abcfamily/parse"), import("./abcfamily/emit123.entry"),
     import("./model/fromjpw"), import("./fanqie/fromfanqie"), import("./model/helpers"),

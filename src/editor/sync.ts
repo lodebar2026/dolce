@@ -30,9 +30,9 @@
 //
 // ## `.musicxml` 另一种建法（`buildXml`）
 //
-// MusicXML 的模型不记原文位置，但编辑器里存的就是 XML 原文，`fromxml.ts` 又把每个模型对象绑在它的原 DOM 节点上
-// （`model/xmlsurface.ts`）。DOM 的文档序与原文里标签出现的先后一致：第 k 个 `<note>` 节点就是原文里第 k 个 `<note[ >]`。
-// 于是按标签数一遍就对上了，`fromxml` 不必为编辑记偏移。条目区间是整个元素（`<note>…</note>`），歌词取 `<text>` 里那几个字，
+// MusicXML 的模型不记原文位置，但编辑器里存的就是 XML 原文，`fromxml.ts` 又把每个模型对象绑在它的原节点上
+// （`model/xmlsurface.ts`），而原节点记着自己在原文里的区间（`score/xmltree.ts` 的 `start`/`end`），直接取就是。
+// 条目区间是整个元素（`<note>…</note>`），歌词取 `<text>` 里那几个字，
 // 小节线取 `</measure>`（MusicXML 里普通小节线没有元素，小节边界就是它），弧取 `<slur type="start">`。
 // 选区仍只存一份（代码区选区，只是代码区不显示），撤销还原选区也是代码区自带。
 
@@ -44,6 +44,7 @@
 import type { AttachedSource, Chord, ElementId, Measure, Part, ScoreDoc, SourceSpan } from "../model/doc";
 import { breakAfter } from "../model/helpers";
 import { surfaceOf } from "../model/xmlsurface";
+import type { XmlEl } from "../score/xmltree";
 import { docView } from "../jianpu/slots";
 
 export type SyncKind = "note" | "lyric" | "sustain" | "barline" | "mark" | "break" | "header";
@@ -168,37 +169,18 @@ export class SyncIndex {
   }
 
   /**
-   * `.musicxml`：条目的原文区间按 DOM 节点在文档里的次序对到原文里同名标签的位置（见文件头）。
-   * 数不齐（注释里写了 `<note ` 之类）就不建，返回 false——宁可不能编辑，也不按错位的偏移改。
+   * `.musicxml`：条目的原文区间取原节点记的区间（见文件头）。
+   * 原节点不是从这份原文读出来的（区间对不上原文）就不建，返回 false——宁可不能编辑，也不按错位的偏移改。
    */
   buildXml(doc: ScoreDoc, text: string): boolean {
     this.entries = [];
     this.byNote.clear();
     this.breakList = [];
-    const dom = surfaceOf(doc.songs[0])?.ownerDocument;
-    if (!dom) return false;
-    const tables = new Map<string, { idx: Map<Element, number>; at: number[] } | null>();
-    const table = (tag: string): { idx: Map<Element, number>; at: number[] } | null => {
-      if (tables.has(tag)) return tables.get(tag)!;
-      const els = [...dom.getElementsByTagName(tag)];
-      const at = [...text.matchAll(new RegExp(`<${tag}[\\s>/]`, "g"))].map((m) => m.index!);
-      const t = els.length === at.length ? { idx: new Map(els.map((e, i) => [e, i])), at } : null;
-      tables.set(tag, t);
-      return t;
-    };
-    /** 节点在原文里的区间：开标签起，到配对的闭标签止（自闭合的到 `/>`）。 */
-    const spanOf = (el: Element | undefined, tag: string): { from: number; to: number } | null => {
-      const t = el ? table(tag) : null;
-      const k = el && t ? t.idx.get(el) : undefined;
-      if (!t || k === undefined) return null;
-      const from = t.at[k]!;
-      const gt = text.indexOf(">", from);
-      if (gt < 0) return null;
-      if (text[gt - 1] === "/") return { from, to: gt + 1 };
-      const close = text.indexOf(`</${tag}>`, gt);
-      return close < 0 ? null : { from, to: close + tag.length + 3 };
-    };
-    if (!table("note") || !table("measure")) return false;
+    const root = surfaceOf(doc.songs[0]);
+    if (!root || root.start < 0 || root.end > text.length || text[root.end - 1] !== ">" || !text.startsWith(`<${root.tagName}`, root.start)) return false;
+    /** 节点在原文里的区间：开标签起，到配对的闭标签止（自闭合的到 `/>`）。新建、克隆的节点没有 */
+    const spanOf = (el: XmlEl | undefined, tag: string): { from: number; to: number } | null =>
+      el && el.start >= 0 && el.tagName === tag && text.startsWith(`<${tag}`, el.start) ? { from: el.start, to: el.end } : null;
     const out: SyncEntry[] = [];
     for (const song of doc.songs) {
       for (const [pi, part] of song.parts.entries()) {

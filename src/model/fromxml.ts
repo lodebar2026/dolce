@@ -8,12 +8,12 @@
 // ## 表层不进模型：绑到原节点
 //
 // 保存策略是「模型未改动 → 原样写回；改动过 → **全量重写**」。全量重写不丢东西，靠的不是 patch：
-// 这里只读**语义**进模型，同时把每个模型对象绑到它的原始 DOM 节点（`xmlsurface.ts::bindSurface`）。
+// 这里只读**语义**进模型，同时把每个模型对象绑到它的原始节点（`xmlsurface.ts::bindSurface`）。
 // 版面坐标、符干、对齐、字体、读不懂的属性与子节点都留在原节点上——五线谱引擎经 `xmlsurface.ts` 的查询函数现读，
 // 写出端 `toxml.ts` 把写出端不管的那些通用回填。**新读一个语义字段时，记得在 `toxml.ts::OWNS` 里认领它**，
 // 否则原节点上的那份会被回填、与模型打架。
 //
-// **要 DOM**（`DOMParser`），所以只能在浏览器里跑；Node 侧的脚本走 `harness.mjs` 起页面。
+// 树用自有的 `score/xmltree.ts`（不用浏览器 DOM），浏览器与 Node 同一份。
 
 import type {
   Barline,
@@ -50,24 +50,25 @@ import { IdGen, SOURCE_ID_PREFIX, emptyDoc, emptySong } from "./helpers";
 import { assignDegrees } from "./jianpu";
 import { addMeta } from "./metakeys";
 import { child, childText, children } from "../score/xmldom";
+import { XmlError, parseXml, type XmlEl } from "../score/xmltree";
 import { bindSurface } from "./xmlsurface";
 import { ModelError, msg } from "./msg";
 
-const num = (el: Element | null, tag: string): number | undefined => {
+const num = (el: XmlEl | null, tag: string): number | undefined => {
   const t = el ? childText(el, tag) : null;
   if (t === null) return undefined;
   const v = Number(t);
   return Number.isFinite(v) ? v : undefined;
 };
 
-const attrNum = (el: Element, name: string): number | undefined => {
+const attrNum = (el: XmlEl, name: string): number | undefined => {
   const t = el.getAttribute(name);
   if (t === null || t === "") return undefined;
   const v = Number(t);
   return Number.isFinite(v) ? v : undefined;
 };
 
-const readAlign = (el: Element, name: string): HAlign | undefined => {
+const readAlign = (el: XmlEl, name: string): HAlign | undefined => {
   const v = el.getAttribute(name);
   return v === "left" || v === "center" || v === "right" ? v : undefined;
 };
@@ -76,7 +77,7 @@ const readAlign = (el: Element, name: string): HAlign | undefined => {
 
 const KNOWN_KEY = ["fifths", "mode", "cancel", "key-step", "key-alter", "key-accidental"];
 
-function readKey(el: Element): Key {
+function readKey(el: XmlEl): Key {
   const k: Key = { fifths: num(el, "fifths") ?? 0 };
   const cancel = num(el, "cancel");
   if (cancel !== undefined) k.cancel = cancel;
@@ -94,7 +95,7 @@ function readKey(el: Element): Key {
   return k;
 }
 
-function readTime(el: Element): Time {
+function readTime(el: XmlEl): Time {
   const t: Time = {
     beats: num(el, "beats") ?? 4,
     beatType: num(el, "beat-type") ?? 4,
@@ -104,7 +105,7 @@ function readTime(el: Element): Time {
   return t;
 }
 
-function readClef(el: Element): Clef {
+function readClef(el: XmlEl): Clef {
   const c: Clef = { sign: (childText(el, "sign") ?? "G") as Clef["sign"] };
   const line = num(el, "line");
   if (line !== undefined) c.line = line;
@@ -115,7 +116,7 @@ function readClef(el: Element): Clef {
   return c;
 }
 
-function readTranspose(el: Element): Transpose {
+function readTranspose(el: XmlEl): Transpose {
   const t: Transpose = { chromatic: num(el, "chromatic") ?? 0 };
   const d = num(el, "diatonic");
   if (d !== undefined) t.diatonic = d;
@@ -124,7 +125,7 @@ function readTranspose(el: Element): Transpose {
   return t;
 }
 
-function readDefaults(el: Element): Defaults {
+function readDefaults(el: XmlEl): Defaults {
   const d: Defaults = {};
   const sc = child(el, "scaling");
   if (sc) {
@@ -160,7 +161,7 @@ function readDefaults(el: Element): Defaults {
 }
 
 /** `font-family` / `font-size` / `font-weight` 三个属性；一个都没有时也返回空对象（元素本身在就要留） */
-function readFont(el: Element): FontSpec {
+function readFont(el: XmlEl): FontSpec {
   const f: FontSpec = {};
   const fam = el.getAttribute("font-family");
   if (fam !== null) f.family = fam;
@@ -173,7 +174,7 @@ function readFont(el: Element): FontSpec {
   return f;
 }
 
-function readCredits(root: Element): Credit[] {
+function readCredits(root: XmlEl): Credit[] {
   const out: Credit[] = [];
   for (const c of children(root, "credit")) {
     const words = children(c, "credit-words");
@@ -207,7 +208,7 @@ function readCredits(root: Element): Credit[] {
   return out;
 }
 
-function readPartGroups(partList: Element): { groups: PartGroup[]; names: Map<string, { name?: string; abbrev?: string; size?: number }> } {
+function readPartGroups(partList: XmlEl): { groups: PartGroup[]; names: Map<string, { name?: string; abbrev?: string; size?: number }> } {
   const groups: PartGroup[] = [];
   const names = new Map<string, { name?: string; abbrev?: string; size?: number }>();
   const open: PartGroup[] = [];
@@ -244,7 +245,7 @@ function readPartGroups(partList: Element): { groups: PartGroup[]; names: Map<st
 
 // ───────────────────────── 音符 ─────────────────────────
 
-function readPitch(el: Element): Pitch {
+function readPitch(el: XmlEl): Pitch {
   return {
     step: (childText(el, "step") ?? "C") as Pitch["step"],
     alter: num(el, "alter") ?? 0,
@@ -253,9 +254,9 @@ function readPitch(el: Element): Pitch {
 }
 
 /** `<root-alter location="left">`：升降号印在字母前面（`#Fm`）。 */
-const alterLeft = (parent: Element, tag: string): boolean => child(parent, tag)?.getAttribute("location") === "left";
+const alterLeft = (parent: XmlEl, tag: string): boolean => child(parent, tag)?.getAttribute("location") === "left";
 
-function readHarmony(el: Element): Harmony {
+function readHarmony(el: XmlEl): Harmony {
   const rootEl = child(el, "root");
   const kindEl = child(el, "kind");
   const h: Harmony = {
@@ -297,7 +298,7 @@ function readHarmony(el: Element): Harmony {
   return h;
 }
 
-function readLyrics(noteEl: Element): Lyric[] {
+function readLyrics(noteEl: XmlEl): Lyric[] {
   const out: Lyric[] = [];
   for (const l of children(noteEl, "lyric")) {
     const texts = children(l, "text");
@@ -331,7 +332,7 @@ function readLyrics(noteEl: Element): Lyric[] {
 }
 
 /** `<notations>` 读进 `into`（和弦音的记号并进同一个 `Chord`：语料 14 份的 slur 起止写在和弦音上）。 */
-function readNotations(noteEl: Element, marks: MarkSink, id: number, into: Notations | undefined, noteIndex = 0): Notations | undefined {
+function readNotations(noteEl: XmlEl, marks: MarkSink, id: number, into: Notations | undefined, noteIndex = 0): Notations | undefined {
   const nots = child(noteEl, "notations");
   if (!nots) return into;
   const n: Notations = into ?? {};
@@ -388,12 +389,12 @@ function readNotations(noteEl: Element, marks: MarkSink, id: number, into: Notat
  *  tied 仍按栈配：和弦里几个音同时 `<tied type="start"/>`（编号都缺省 1）是正常写法。 */
 class MarkSink {
   readonly marks: Mark[] = [];
-  private open_ = new Map<string, { id: number; el: Element; note: number; staff: number; voice: number }[]>();
+  private open_ = new Map<string, { id: number; el: XmlEl; note: number; staff: number; voice: number }[]>();
   /** 当前音的时刻（小节内 divisions）与谱表，`readMeasure` 读每个音的记号前设 */
   at = 0;
   staff = 1;
   voice = 1;
-  private pending: { t: number; staff: number; voice: number; type: "start" | "stop"; kind: Mark["type"]; number: number; id: number; el: Element; note: number }[] = [];
+  private pending: { t: number; staff: number; voice: number; type: "start" | "stop"; kind: Mark["type"]; number: number; id: number; el: XmlEl; note: number }[] = [];
 
   nextPart(): void {
     this.open_.clear();
@@ -402,7 +403,7 @@ class MarkSink {
   /** slur 的起止先攒着，小节读完按**时刻**配（`flush`）：一小节里先写谱表 1 再 `<backup>` 写谱表 2，跨谱表弧的止端（谱表 1 小节后半的和弦）
    *  在文档里排在起端（谱表 2 小节头的音）前面，按文档序配会把这个止端配给上一条、起端留给下一条的止端（宁静的伯利恒钢琴每小节一条）。
    *  同一时刻的保持文档序（倚音的弧起在倚音、止在同一时刻的主音上） */
-  push(type: "start" | "stop", kind: Mark["type"], number: number, id: number, el: Element, note: number): void {
+  push(type: "start" | "stop", kind: Mark["type"], number: number, id: number, el: XmlEl, note: number): void {
     this.pending.push({ t: this.at, staff: this.staff, voice: this.voice, type, kind, number, id, el, note });
   }
 
@@ -416,14 +417,14 @@ class MarkSink {
     for (const e of evs) (e.type === "start" ? this.open(e.kind, e.number, e.id, e.el, e.note, e.staff, e.voice) : this.close(e.kind, e.number, e.id, e.el, e.note, e.staff, e.voice));
   }
 
-  private open(type: Mark["type"], number: number, id: number, el: Element, note: number, staff: number, voice: number): void {
+  private open(type: Mark["type"], number: number, id: number, el: XmlEl, note: number, staff: number, voice: number): void {
     const k = `${type}#${number}`;
     const list = type === "tied" ? this.open_.get(k) ?? [] : type === "slur" ? (this.open_.get(k) ?? []).filter((o) => o.staff !== staff || o.voice !== voice) : [];
     list.push({ id, el, note, staff, voice });
     this.open_.set(k, list);
   }
 
-  private close(type: Mark["type"], number: number, id: number, el: Element, note: number, staff: number, voice: number): void {
+  private close(type: Mark["type"], number: number, id: number, el: XmlEl, note: number, staff: number, voice: number): void {
     const k = `${type}#${number}`;
     const list = this.open_.get(k);
     let at = list ? list.length - 1 : -1;
@@ -481,7 +482,7 @@ const BAR_STYLE_MAP: Readonly<Record<string, string>> = {
   none: "none",
 };
 
-function readBarline(el: Element, elementCount: number): Barline {
+function readBarline(el: XmlEl, elementCount: number): Barline {
   const loc = el.getAttribute("location");
   const b: Barline = {
     location: loc === "left" ? "left" : loc === "middle" ? "middle" : "right",
@@ -513,7 +514,7 @@ function readBarline(el: Element, elementCount: number): Barline {
   return b;
 }
 
-function readDirection(el: Element): Direction | null {
+function readDirection(el: XmlEl): Direction | null {
   const items = children(el, "direction-type").flatMap((dt) => Array.from(dt.children));
   const first = items[0];
   if (!first) return null;
@@ -542,7 +543,7 @@ function readDirection(el: Element): Direction | null {
 }
 
 /** `<direction-type>` 下的一个子元素（words / dynamics / wedge…）。 */
-function readDirectionPart(first: Element): DirectionPart {
+function readDirectionPart(first: XmlEl): DirectionPart {
   const d: DirectionPart = { type: first.tagName };
   switch (first.tagName) {
     case "dynamics":
@@ -585,7 +586,7 @@ function readDirectionPart(first: Element): DirectionPart {
 }
 
 /** `<sound>` 的播放语义（`<direction>` 里的与小节级的同一套）。 */
-function readSound(sound: Element): Direction["sound"] {
+function readSound(sound: XmlEl): Direction["sound"] {
   {
     const s: NonNullable<Direction["sound"]> = {};
     if (sound.getAttribute("dacapo") === "yes") s.dacapo = true;
@@ -605,7 +606,7 @@ function readSound(sound: Element): Direction["sound"] {
 }
 
 /** 元素在就给一个 `Print`（哪怕只有版式、模型里是空对象）：它的表层（`<system-layout>` 等）挂在上面 */
-function readPrint(el: Element): Print {
+function readPrint(el: XmlEl): Print {
   const p: Print = {};
   if (el.getAttribute("new-system") === "yes") p.newSystem = true;
   if (el.getAttribute("new-page") === "yes") p.newPage = true;
@@ -614,7 +615,7 @@ function readPrint(el: Element): Print {
 
 /** 一个 `<measure>` → `Measure`。`<backup>`/`<forward>` 按声部分轨，解析后消失。 */
 function readMeasure(
-  el: Element,
+  el: XmlEl,
   ids: IdGen,
   marks: MarkSink,
 ): Measure {
@@ -622,7 +623,7 @@ function readMeasure(
   bindSurface(m, el);
   if (el.getAttribute("implicit") === "yes") m.implicit = true;
   /** 首个元素之前的 `<attributes>` 合并成一份 `m.attrs`，表层也并进第一个节点（后面几个的子节点挪过去） */
-  let firstAttrs: Element | null = null;
+  let firstAttrs: XmlEl | null = null;
   /** 和弦符号先攒着，挂到它后面第一个元素上（MusicXML 的 `<harmony>` 在音符之前）。
    *  一个长音中途换和弦时音符前会连着好几个（后面的带 offset），**全留着**——只留最后一个会丢和弦 */
   let pendingHarmonies: Harmony[] = [];
@@ -671,7 +672,7 @@ function readMeasure(
         if (m.elements.length === 0) {
           m.attrs = { ...(m.attrs ?? {}), ...a };
           if (!firstAttrs) firstAttrs = c;
-          else for (const k of Array.from(c.children)) firstAttrs.appendChild(k.cloneNode(true));
+          else for (const k of c.children) firstAttrs.appendChild(k.cloneNode());
         } else {
           bindSurface(a, c);
           const later: NonNullable<Measure["laterAttrs"]>[number] = { afterElements: m.elements.length, attrs: a };
@@ -876,9 +877,13 @@ function readMeasure(
 /** MusicXML 文本 → `ScoreDoc`。**读得全**是全量重写不丢东西的前提，
  *  读不懂的子节点挂在最近的 `raw` 上，由 `toxml.ts` 原位吐回去。 */
 export function loadScoreDoc(xmlText: string): ScoreDoc {
-  const dom = new DOMParser().parseFromString(xmlText, "application/xml");
-  if (dom.querySelector("parsererror")) throw new ModelError(msg("err.xmlParse"));
-  const root = dom.documentElement;
+  let root: XmlEl;
+  try {
+    root = parseXml(xmlText).documentElement;
+  } catch (e) {
+    if (e instanceof XmlError) throw new ModelError(msg("err.xmlParse"));
+    throw e;
+  }
   const doc = emptyDoc("musicxml");
   doc.source = xmlText;
   const song: Song = emptySong();
@@ -976,10 +981,9 @@ function sourceIdOf(attr: string | null): ElementId | null {
 }
 
 /** `<tied>`/`<slur>` 所在那个 `<note>` 的音高（step + alter + octave）；没有音高（休止、节奏音符）为 undefined */
-function pitchKeyOf(notation: Element): string | undefined {
-  // 不用 `closest`：Node 端（测试、CLI）的 DOM 实现没有它
-  let note: Element | null = notation;
-  while (note && note.nodeName !== "note") note = note.parentNode as Element | null;
+function pitchKeyOf(notation: XmlEl): string | undefined {
+  let note: XmlEl | null = notation;
+  while (note && note.tagName !== "note") note = note.parentElement;
   const p = note ? child(note, "pitch") : null;
   if (!p) return undefined;
   return `${childText(p, "step")}${childText(p, "alter") ?? ""}${childText(p, "octave")}`;

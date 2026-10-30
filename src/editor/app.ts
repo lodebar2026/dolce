@@ -35,6 +35,7 @@ import { planSave } from "../convert/capability";
 import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/parts";
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
+import { parseXml } from "../score/xmltree";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../convert/targets";
 import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
 import { assignDegrees } from "../model/jianpu";
@@ -2098,15 +2099,14 @@ function upsertLayoutLines(doc: string, value: string): string {
 /** 判断 MusicXML 是否多声部（≥2 part、单 part 多谱表、或 ≥2 voice）→ 默认混排。 */
 function isMultiPartXml(xml: string): boolean {
   try {
-    const doc = new DOMParser().parseFromString(xml, "application/xml");
-    if (doc.getElementsByTagName("parsererror").length > 0) return false;
+    const doc = parseXml(xml);
     if (doc.getElementsByTagName("score-part").length >= 2) return true;
-    for (const s of Array.from(doc.getElementsByTagName("staves"))) {
+    for (const s of doc.getElementsByTagName("staves")) {
       if (parseInt(s.textContent ?? "1", 10) >= 2) return true;
     }
     const voices = new Set<string>();
-    for (const v of Array.from(doc.getElementsByTagName("voice"))) {
-      const t = v.textContent?.trim();
+    for (const v of doc.getElementsByTagName("voice")) {
+      const t = v.textContent.trim();
       if (t) voices.add(t);
     }
     return voices.size >= 2;
