@@ -48,6 +48,7 @@ import { PlaybackController, type PlaybackHost } from "./playback";
 import type { PlayPoint } from "./player";
 import type { PlaySource } from "../score/timeline";
 import { playSourceOf } from "../jianpu/playsong";
+import { unplayedMeasures } from "../score/playorder";
 import { OmrController, type OmrHost } from "./omrctl";
 import { FileSession } from "./filesession";
 import { MixedSession } from "./mixedsession";
@@ -100,6 +101,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _jpwDoc: ScoreDoc | null = null;
   /** 试听输入的缓存：同一份模型、同一档只拼一次（`refreshSpeedUi` 每次重排都要取速度） */
   private _playCache: { doc: ScoreDoc; src: PlaySource | null } | null = null;
+  /** 状态栏上那句 `_playHint`：改好了要撤掉，别的文字不动 */
+  private _shownPlayHint: string | null = null;
 
   /** 五线谱/混排档的模型与它的派生（`mixedsession.ts`）。 */
   readonly mixed: MixedSession = new MixedSession(this);
@@ -374,7 +377,33 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   reload(text: string): boolean {
     const ok = this._reload(text);
     this.playback.sourceChanged(); // 识别核对视图不重排、不停试听：旧谱的会话在这里作废
+    if (ok) this._reportPlayHint();
     return ok;
+  }
+
+  /** 状态栏说一声：谱面有、试听和导出没有的小节，或按漏写 `:|` 处理的房。解析告警优先；识别核对视图不报解析告警，只报这个。 */
+  private _reportPlayHint(): void {
+    const hint = this._playHint();
+    const doc = this._playDoc();
+    if (hint) {
+      if (this.mode === "recognize" || !doc?.diagnostics.length) this.setStatus(hint);
+    } else if (this._shownPlayHint && this.status === this._shownPlayHint) {
+      this.setStatus("");
+    }
+    this._shownPlayHint = hint;
+  }
+
+  private _playHint(): string | null {
+    if (this.mode === "mixed") return null; // 混排的 `mixedDoc` 异步排，这时还是上一份
+    const src = this.playable();
+    if (!src || this._playDoc()?.songs[0]?.playOrder?.length) return null; // 写明了演唱顺序：不唱哪几小节是作者定的
+    const gaps = unplayedMeasures(src.playData.measures, src.parts[0]?.measures.length ?? 0);
+    if (gaps.length) {
+      let last = gaps[0]!;
+      while (gaps.includes(last + 1)) last++;
+      return t("status.playUnplayed", { from: gaps[0]! + 1, to: last + 1 });
+    }
+    return src.playData.impliedRepeat >= 0 ? t("status.playImpliedRepeat", { n: src.playData.impliedRepeat + 1 }) : null;
   }
 
   private _reload(text: string): boolean {
@@ -1031,10 +1060,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    *  **不论屏幕在哪一档都按投影档的口径**（`forExpanded`：带歌词的声部当主旋律、同号歌词顺延）——
    *  唱几遍、每遍唱哪段词不随视图变，导出的 MIDI 在哪一档导都一样。 */
   playable(): PlaySource | null {
-    // 五线谱 / 混排播画出来的那份（`mixedDoc`），元素 id 与五线谱上的和弦组对得上
     const staff = this.mode === "mixed";
     const jpw = !staff && this.adapter.caps.layout === "jpwabc";
-    const doc = staff ? this.mixedDoc : jpw ? this._jpwDoc : this.currentScoreDoc();
+    const doc = this._playDoc();
     if (!doc) return null;
     const c = this._playCache;
     if (c && c.doc === doc) return c.src;
@@ -1046,6 +1074,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
     this._playCache = { doc, src };
     return src;
+  }
+
+  /** 试听读的那份模型。五线谱 / 混排播画出来的那份（`mixedDoc`），元素 id 与五线谱上的和弦组对得上 */
+  private _playDoc(): ScoreDoc | null {
+    if (this.mode === "mixed") return this.mixedDoc;
+    return this.adapter.caps.layout === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
   }
 
   /** OmrHost：并排原图上点了某个音 → 排版稿里选中它（可视化编辑的选区；没有就只记起播点并点亮） */

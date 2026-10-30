@@ -41,6 +41,7 @@ export function playDataOfDoc(song: Song, { lead = 0, distinct = false }: { lead
   pd.isSimpple = order.isSimple;
   pd.measures = order.measures;
   pd.hasRepeat = order.hasRepeat;
+  pd.impliedRepeat = order.impliedRepeat;
   return pd;
 }
 

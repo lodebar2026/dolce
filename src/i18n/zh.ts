@@ -119,6 +119,8 @@ export const zh = {
   "status.noLines": "这份{what}里没有可排的曲行",
   "status.layoutFailed": "{what}排版失败：{error}",
   "status.diagnostics": "{what}：{n} 处需要留意（第 {line} 行 {message}）",
+  "status.playUnplayed": "第 {from}–{to} 小节不在演唱顺序里，试听和导出 MIDI、PPTX 都不会有（房号或反复记号对不上）",
+  "status.playImpliedRepeat": "第 {n} 小节的房后面接着下一房，却没写 :|，试听和导出按反复回头处理",
   "status.notFanqie": "这不像文本谱：{reason}",
   "status.omrLosses": "识别结果已转成 123 核对文本；有 {n} 样 123 表达不了，已略去",
   "status.xmlReadFailed": "MusicXML 读取失败：{error}",

@@ -120,6 +120,8 @@ export const en: Record<MsgKey, string> = {
   "status.noLines": "This {what} has no music lines to lay out",
   "status.layoutFailed": "Layout of {what} failed: {error}",
   "status.diagnostics": "{what}: {n} issue(s) to check (line {line}: {message})",
+  "status.playUnplayed": "Bars {from}–{to} are not in the play order, so playback, MIDI and PPTX leave them out (check the endings and repeat signs)",
+  "status.playImpliedRepeat": "The ending at bar {n} is followed by the next ending but has no :|; playback and export treat it as a repeat",
   "status.notFanqie": "This doesn't look like text jianpu: {reason}",
   "status.omrLosses": "Recognition result converted to 123 for proofing; {n} item(s) 123 can't express were dropped",
   "status.xmlReadFailed": "Couldn't read MusicXML: {error}",

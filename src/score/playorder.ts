@@ -70,6 +70,8 @@ export class PlayData {
   measures: PlayItem[] = [];
   hasRepeat = false;
   isSimpple = false; // no repeat, only multiple verse
+  /** 第一处漏写 `:|` 的房（小节下标，见 `PlayOrder.impliedRepeat`）；没有为 -1 */
+  impliedRepeat = -1;
   /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用 timeline.ts 的默认值。
    *  来源：MusicXML `<sound tempo>` / OMR 页眉的 `♩=76` / .jpwabc `.Title` 的 `Tempo`。 */
   tempo = 0;
@@ -141,6 +143,8 @@ export interface PlayOrder {
   isSimple: boolean;
   /** 谱面有 `:|` */
   hasRepeat: boolean;
+  /** 第一处封口却没写 `:|`、紧跟着下一房的房（小节下标），按反复回头唱；没有为 -1 */
+  impliedRepeat: number;
 }
 
 // ───────────────────────── 推理 ─────────────────────────
@@ -178,7 +182,7 @@ export function playOrderOf(parts: readonly PlayPart[], jumps: PlayJumps): PlayO
   // 回头唱到 Fine 为止，两遍正好配两段词），再按歌词段数整体乘一遍就成了四遍。
   const hasJump = jumps.jumpTo.size > 0;
   const byVerse = jumpByVerse(parts, jumps);
-  if (byVerse) return { measures: byVerse, isSimple: false, hasRepeat: false };
+  if (byVerse) return { measures: byVerse, isSimple: false, hasRepeat: false, impliedRepeat: -1 };
   const isSimple = rep.result.length === 1;
   if (repeatByVerse && !hasVolta && !hasJump) rep.repeatByLyric();
   const out = hasJump ? perVerse(rep.result, rep.getPassCountByLrc(0, measures.length)) : expandVoltaByVerse(parts[0]!, rep.result) ?? rep.result;
@@ -186,7 +190,7 @@ export function playOrderOf(parts: readonly PlayPart[], jumps: PlayJumps): PlayO
   if (!hasVolta && !hasJump) implicitVoltas(parts, out);
   if (!hasJump) lastVerseTail(parts, out);
   if (!hasJump) glueCoda(parts, out);
-  return { measures: out, isSimple, hasRepeat: measures.some((m) => m?.repeatBackward) };
+  return { measures: out, isSimple, hasRepeat: measures.some((m) => m?.repeatBackward), impliedRepeat: rep.impliedRepeat };
 }
 
 /** 接到末行的结尾最多几小节（「阿们」一两小节） */
@@ -400,6 +404,13 @@ function labelPasses(parts: readonly PlayPart[], items: PlayItem[]): void {
   for (const it of items) it.pass = lineOf.get(it.pass) ?? it.pass;
 }
 
+/** 演唱顺序里一遍都没有的小节（下标升序）。 */
+export function unplayedMeasures(items: readonly PlayItem[], measureCount: number): number[] {
+  const played = new Array<boolean>(measureCount).fill(false);
+  for (const it of items) for (let mid = it.mid; mid < it.end && mid < measureCount; mid++) played[mid] = true;
+  return played.flatMap((p, mid) => (p ? [] : [mid]));
+}
+
 /** 不推、按段数整曲逐遍（没有反复信息时的退路）。`passes` 为 0 时返回空表。 */
 export function playOrderByVerses(measureCount: number, passes: number): PlayItem[] {
   const out: PlayItem[] = [];
@@ -507,8 +518,8 @@ function expandVoltaByVerse(part: PlayPart, items: readonly PlayItem[]): PlayIte
     p.skip = lead;
     if (lead > 0) p.offset = skipOffset(measures[tailBeg]!, lead);
   };
-  // 第 1 遍：A 段 + 一房（连续，合成一项），唱完回头、不进副歌。
-  push(repStart, volta1End, 1).endOfPass = true;
+  // 第 1 遍：反复前的小节 + A 段 + 一房（连续，合成一项），唱完回头、不进副歌。
+  push(0, volta1End, 1).endOfPass = true;
   // 第 2..V 遍：A 段用第 k 行，二房+副歌用第 k-1 行（整体上移一行）。
   for (let k = 2; k <= verses; k++) {
     push(repStart, volta1Beg, k);
@@ -540,6 +551,7 @@ class RepeatProcessor {
   /** 本小节的 D.C./D.S. 被当作「房内回头记号」处理过（见 play()）：外层据此跳过收房/反复判定。 */
   loopedBack = false;
   result: PlayItem[] = [];
+  impliedRepeat = -1;
 
   constructor(private readonly parts: readonly PlayPart[], private readonly jumps: PlayJumps) {}
 
@@ -733,6 +745,11 @@ class RepeatProcessor {
       m.mid++;
       return m.mid === p0.measures.length;
     }
+    // 封口的房没写 `:|`、下一小节就是下一遍的房（`[2 … |] [3`）：那一房只有回头才进得去，当漏写了 `:|`
+    const next = p0.measures[m.mid + 1];
+    const implied = !this.inJump && !skippedEnding && !mif.repeatBackward && mif.endingRight === StartStopDiscontinue.STOP
+      && !!next?.endingLeft && next.endingNum?.has(m.pass + 1) === true;
+    if (implied && this.impliedRepeat < 0) this.impliedRepeat = m.mid;
     if (mif.endingRight !== null) {
       // 第一房通常在右边界同时带 backward repeat，必须保留当前 pass 让 onBackward 进入下一遍；
       // 最后一房右边界没有 backward repeat，它结束了这一组独立反复，此处要把 pass/passCount 重置，
@@ -743,10 +760,11 @@ class RepeatProcessor {
       // 但带 :|| 的不封口房（番茄 `["1." … :|]/`）是一房，照常回头唱下一房（#30）。
       const lastVolta = !mif.endingNum || Math.max(...mif.endingNum) >= this.passCount;
       const openEnd = mif.endingRight === StartStopDiscontinue.DISCONTINUE && !mif.repeatBackward;
-      const closesRepeatGroup = !mif.repeatBackward && lastVolta;
+      // 下一小节还有这一遍要唱的房（第三遍跳过 `[2 … |] [3` 的二房）：组还没收
+      const closesRepeatGroup = !mif.repeatBackward && lastVolta && !implied && !(next?.endingLeft && next.endingNum?.has(m.pass));
       this.onRightEnding(m, openEnd || closesRepeatGroup);
     }
-    if (!this.inJump && mif.repeatBackward && !skippedEnding) {
+    if (implied || (!this.inJump && mif.repeatBackward && !skippedEnding)) {
       if (this.passCount < 0) {
         const beg = this.result[this.result.length - 1]!.mid;
         this.passCount = this.getPassCountByLrc(beg, m.mid + 1);

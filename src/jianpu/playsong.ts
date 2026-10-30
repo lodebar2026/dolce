@@ -310,6 +310,7 @@ function playDataOf(doc: ScoreDoc, songIdx: number, built: SongMeasures): PlayDa
     // `.jpwabc` 读进来按反复记号推的顺序，重读时照样推得出来：不算「有反复」，写出端就不另补 `.Repeat`（往返定点）
     pd.hasRepeat = order.hasRepeat && doc.sourceFormat !== "jpwabc";
     pd.measures = order.measures;
+    pd.impliedRepeat = order.impliedRepeat;
     if (pd.measures.length > 0) return pd;
   } catch (e) {
     console.warn("文本谱反复推理失败，按段数逐遍", e);

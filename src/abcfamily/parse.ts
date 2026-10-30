@@ -1035,6 +1035,13 @@ function buildMusicLine(
           pending.chord = undefined;
           pending.srcs = pending.srcs.filter((a) => a.kind !== "harmony");
         }
+        // 上一房没碰到结束线就起了下一房（`[1 … | [2 …`）：ABC §4.9 房号止于下一房的开始，收在前一小节
+        const prevVolta = openEnding[openEnding.length - 1];
+        const prevLine = pb.part.measures[pb.part.measures.length - 1]?.barlines?.find((b) => b.location === "right");
+        if (prevVolta && prevVolta.measureNo < pb.measureNo && prevLine) {
+          openEnding.pop();
+          prevLine.ending = { numbers: prevVolta.nums, type: "stop", text: prevVolta.nums.join(",") };
+        }
         const ending = { numbers: nums, type: "start" as const, text };
         // `|1` 会先产生一根左线，房号挂到它上面；行首直接写 `[1` 时才新建
         const existingLeft = (pb.measure.barlines ?? []).find((b) => b.location === "left");
@@ -1191,12 +1198,46 @@ function buildMusicLine(
  */
 function markLastEndings(part: Part): void {
   const ms = part.measures;
+  extendVoltas(ms);
   ms.forEach((m, i) => {
     for (const b of m.barlines ?? []) {
       if (b.location !== "right" || b.ending?.type !== "stop") continue;
       const next = ms[i + 1];
       if (!next?.barlines?.some((x) => x.location === "left" && x.ending?.type === "start")) b.ending.type = "discontinue";
     }
+  });
+}
+
+/**
+ * `:|` 后面的房读的时候只罩了一小节（见 `case "barline"`），这里看后文改回来：后面先碰到 `:|`，或紧跟着同号、号更大的房，
+ * 这些小节就都是这一房的（`[2 … | … :| [3`、`[2 … | … |] [3`）。两样都没有的（曲末的二房、后面接别的段落）照旧只罩一小节。
+ */
+function extendVoltas(ms: readonly Measure[]): void {
+  const rightOf = (m: Measure): Barline | undefined => m.barlines?.find((b) => b.location === "right");
+  const opensVolta = (m: Measure | undefined, above: number): boolean =>
+    !!m?.barlines?.some((b) => b.location === "left" && b.ending?.type === "start" && Math.min(...b.ending.numbers) >= above);
+  ms.forEach((m, i) => {
+    const line = rightOf(m);
+    const ending = line?.ending;
+    if (!line || ending?.type !== "discontinue") return;
+    const top = Math.max(...ending.numbers);
+    let end = -1;
+    for (let j = i; j < ms.length; j++) {
+      const right = rightOf(ms[j]!);
+      if (j > i && ms[j]!.barlines?.some((b) => b.location === "left" && (b.ending || b.repeat === "forward"))) break;
+      if (j > i && right?.repeat === "backward") {
+        end = j;
+        break;
+      }
+      if (opensVolta(ms[j + 1], top)) {
+        end = j;
+        break;
+      }
+      if (right?.style && right.style !== "regular") break;
+    }
+    if (end < 0) return;
+    delete line.ending;
+    rightOf(ms[end]!)!.ending = { ...ending, type: "stop" };
   });
 }
 
