@@ -833,12 +833,25 @@ export function buildLyricLines(
   const chainGap = maxGap / 3 * 0.8;
   // 改挂到下方那行谱的汉字行（`pickBelow` 判的）：同一夹缝里紧挨着它下面的拉丁行跟着走
   const movedBelow = new Map<(typeof rows)[number], Staff>();
+  // **逐字在各自的 x 处量到谱行的距离**：拍歪的页上一行词从左到右斜下去二十几像素，行盒把斜度全包进去，
+  // 拿行盒上沿（左端最高）比谱表末线（`box` 只是一组代表线位）就把正上方那行谱算成「压在词上」、挂到再上一行谱
+  //（纪念我 p2 男高、男低两行词各挂高一行，男低的中文整行丢、英文挂到男高）。字形盒逐个比该 x 处的末线 / 首线取最小；
+  // 不斜的页与行盒上沿比末线相同
+  const glyphsOf = (r: (typeof rows)[number]) => r.objs.flatMap((o) => o.run?.glyphs ?? []);
+  const gapBelowStaff = (r: (typeof rows)[number], st: Staff) => {
+    const gs = glyphsOf(r);
+    return gs.length ? Math.min(...gs.map((g) => g.bbox.y - st.bottomAt(g.bbox.x + g.bbox.w / 2))) : r.top - st.box.bottom;
+  };
+  const gapAboveStaff = (r: (typeof rows)[number], st: Staff) => {
+    const gs = glyphsOf(r);
+    return gs.length ? Math.min(...gs.map((g) => st.topAt(g.bbox.x + g.bbox.w / 2) - (g.bbox.y + g.bbox.h))) : st.box.top - r.bottom;
+  };
   for (const r of rows) {
     // 上方最近的那行谱
     let best: Staff | null = null;
     let bestD = Infinity;
     for (const st of pg.staves) {
-      const d = r.top - st.box.bottom;
+      const d = gapBelowStaff(r, st);
       if (d < 0) continue;
       if (d < bestD) {
         bestD = d;
@@ -849,7 +862,7 @@ export function buildLyricLines(
       let below: Staff | null = null;
       let belowD = Infinity;
       for (const st of pg.staves) {
-        const d = st.box.top - r.bottom;
+        const d = gapAboveStaff(r, st);
         if (d >= 0 && d < belowD) (belowD = d), (below = st);
       }
       // 只判汉字行：一字一音，音节中心与符头对得齐；拉丁行按词切，词中心落在几个音中间，对位比不出来

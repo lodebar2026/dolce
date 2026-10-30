@@ -833,7 +833,13 @@ export function extendKeyByStrokes(pg: SPage, ctx: Map<Staff, StaffContext>, bin
       const sig = `${h[0].code}${h.length}`;
       count.set(sig, (count.get(sig) ?? 0) + 1);
     }
-    if ([...count.values()].some((v) => v >= 2)) for (const c of cs) own.add(c);
+    // 竖笔在这个系统里已有两行数满 k 个、且 k 多于按块读出的个数的不算：按块分类在糊的扫描件上升降号常混
+    //（纪念我各行按块读出「♯」「♯♭」「♭♭♭」夹杂），两行碰巧都读成一个升号就把整个系统护住、四个降号盖不进去；
+    // 望十架那种真转调的系统竖笔数不出全页那种记号。个数要比：齐来颂主降生两个升号按块认得齐，全页竖笔只数出一个「降号」（升号的竖笔），
+    // 主！我要遇見祢一个升号对竖笔数出的一个「降号」，个数持平也不推翻
+    const strokeFull = rows.filter((r) => cs.includes(r.c) && strokesOf(r).length >= k).length;
+    const protect = [...count].some(([sig, v]) => v >= 2 && (strokeFull < 2 || Number(sig.replace(/\D/g, "")) >= k));
+    if (protect) for (const c of cs) own.add(c);
     // 同种记号、个数比 k 少，但按块与竖笔两路数得一样、系统里也没有哪行竖笔数得更多的，同样是这个系统自己的调
     //（望十架 p1：上一个系统行中转一个降号，下一个系统四行按块、按竖笔都是一个降号，被全页过半的五个降号盖掉）
     const rs = rows.filter((r) => cs.includes(r.c));
