@@ -70,6 +70,8 @@ interface Pass {
   glue?: Set<number>;
   /** 这一遍是从只回头一次的 `:|` 进来的（只唱两遍，放得下就接在上一遍那页，`expandSong`） */
   afterRepeat?: boolean;
+  /** 这一遍唱的是中段词（`midVerses`）：第一个字之前也借别段 */
+  midVerse?: boolean;
 }
 
 /**
@@ -264,6 +266,16 @@ function afterVerseEnd(lyricsOf: readonly (readonly LyricLine[])[], v: number, r
   return row > end[0] || (row === end[0] && k > end[1]);
 }
 
+/** (`row`, `k`) 这一格在第 `v` 段整首第一个字之前 */
+function beforeVerseStart(lyricsOf: readonly (readonly LyricLine[])[], v: number, row: number, k: number): boolean {
+  for (let r = 0; r <= row; r++) {
+    const l = lyricsOf[r]!.find((x) => x.verseFrom <= v && v <= x.verseTo);
+    const at = l ? l.syllables.findIndex((x) => x.text) : -1;
+    if (at >= 0) return r === row && k < at;
+  }
+  return true;
+}
+
 /** 一遍里的符号区间 [a, b) 拼成一行行视图：记号截到行内（跨行的标续接），歌词只挂这一遍的那一行 */
 function rowOf(
   pass: Pass, a: number, b: number, rows: readonly RowView[], lyricsOf: readonly (readonly LyricLine[])[],
@@ -337,7 +349,7 @@ function rowOf(
     // 020《向主歌唱》第 2 段「庆贺。」之后的哈利路亚）：借最前面在这一格写了字的那一段。段中间用 `/` 留空的拖腔格后面还有字，不借
     const scope = pass.scopes?.[i];
     const done = scope ? afterVerseEndIn(scope, slices, cursorOf, lyricsOf, v, s.row, k) : afterVerseEnd(lyricsOf, v, s.row, k);
-    const line = !done ? own : lyricsOf[s.row]!.find((l) => !!l.syllables[k]?.text) ?? own;
+    const line = !done && !(pass.midVerse && beforeVerseStart(lyricsOf, v, s.row, k)) ? own : lyricsOf[s.row]!.find((l) => !!l.syllables[k]?.text) ?? own;
     const syl = line?.syllables[k];
     if (syl && syl.text) any = true;
     syllables.push(syl ? bareSyllable(syl, owners) : { text: "", source: first.source });
@@ -646,6 +658,27 @@ export function expandSong(
   slices.forEach((sl, k) => { for (const x of sl) measureOf.set(slotKey(x), k); });
   const refrainStart = new Set<number>();
   const refrainMark = new Set<number>();
+  // 中段词：不从第一处有词的小节起、也不唱到最后一处有词的小节的那段词（J17 第二遍只换中间一句）。
+  // 它不是一段完整的词：前后都借别段，不算副歌判据里的「几行词」，这一遍也不必另起一页
+  const midVerses = new Set<number>();
+  {
+    const span = new Map<number, [number, number]>();
+    slices.forEach((sl, k) => {
+      for (const x of sl) {
+        const c = cursorOf[x.row]![x.idx]!;
+        if (c < 0) continue;
+        for (const l of lyricsOf[x.row]!) {
+          if (!l.syllables[c]?.text) continue;
+          const had = span.get(l.verseFrom);
+          span.set(l.verseFrom, had ? [had[0], k] : [k, k]);
+        }
+      }
+    });
+    const spans = [...span.values()];
+    const head = Math.min(...spans.map((sp) => sp[0]));
+    const tail = Math.max(...spans.map((sp) => sp[1]));
+    for (const [v, [a, b]] of span) if (a > head && b < tail) midVerses.add(v);
+  }
   {
     // 源里各行起头落在哪个小节（行的第一个符号所在的那一小节）
     const rowStartMeasures = new Set<number>();
@@ -666,7 +699,7 @@ export function expandSong(
           }
         }
         const c = cursorOf[x.row]![x.idx]!;
-        if (c >= 0) for (const l of lyricsOf[x.row]!) if (l.syllables[c]?.text) withText.add(l);
+        if (c >= 0) for (const l of lyricsOf[x.row]!) if (l.syllables[c]?.text && !midVerses.has(l.verseFrom)) withText.add(l);
       }
       if (marked || (withText.size === 1 && prevLines > 1)) refrainStart.add(k);
       if (withText.size > 0) prevLines = withText.size;
@@ -684,6 +717,10 @@ export function expandSong(
     return { plain: exactBreaks, finalAt: tail && rows[tail.row]!.elements[tail.idx]!.kind === "barline" ? end : -1 };
   };
   for (const pass of passes) {
+    if (!layout && midVerses.has(pass.verses[0]!)) {
+      pass.afterRepeat = true;
+      pass.midVerse = true;
+    }
     const posOf = new Map<string, number[]>();
     pass.slots.forEach((s, i) => {
       const k = `${s.row}:${s.idx}`;
@@ -724,7 +761,7 @@ export function expandSong(
       }
       pageByRows(lines, (n) => markHeads.has(n) || refrainStart.has(startMeasure(n)));
     }
-    // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的，第二遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
+    // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的、只换一句中段词的，这一遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
     // 整首从头再来、或反复三遍以上的仍一段一页——500 首成品里 044 这样每段 2 行、4 段的一律分页）
     const firstPageRows = lines.findIndex((l, n) => n > 0 && l.page);
     const joinable = pass.afterRepeat && groups.length + (firstPageRows < 0 ? lines.length : firstPageRows) <= MAX_ROWS;
