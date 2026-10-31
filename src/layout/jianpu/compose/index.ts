@@ -12,12 +12,13 @@
 //
 // 播放逐字高亮与双向定位：绘制时把每个音符与每个歌词音节的 PageItem 按**元素 id** 记进索引，
 // 由 ScorePainter 直接按 id 取用，不必反查 SVG，也不依赖对象身份（重新解析一遍 id 不变）。
+import { Rect } from "../../../common/geom";
+import { YAHEI_ADVANCE } from "../../../common/yahei";
 import { applyDocOptions, contentWidth, gridOf, keyLabelSize, type GridPage, type JianpuGrid } from "../metrics";
 import { Font } from "../../../pagetree/font";
 import { Group } from "../../../pagetree/pageitem";
 import { syllableRun } from "../../../engrave/syllable";
 import { sectionWordRun } from "../../../engrave/sectionword";
-import { Rect } from "../../../common/geom";
 import { chordTextSegs, harmonyInk, harmonyWidth } from "../../../engrave/chord";
 import type { Region } from "../../../style/ss";
 import type { JianpuStyle } from "../../../engrave/jianpustyle";
@@ -148,7 +149,15 @@ export function layoutJianpu(source: ScoreDoc, cfg: JianpuLayoutConfig): JianpuL
       };
     },
     lyricSpace: lyricFont.measureText(" "),
-    digit: (ch) => ({ advance: c.digitFont.measureText(ch), ink: c.digitFont.charBound(ch) }),
+    digit(ch) {
+      const ink = c.digitFont.charBound(ch);
+      const em = cfg.expanded ? YAHEI_ADVANCE[ch] : undefined;
+      if (em === undefined) return { advance: c.digitFont.measureText(ch), ink };
+      // 投影档横向按投影片的字体（雅黑）算：本机量到的「-」比它宽四成，密的行就折了（252）。墨迹挪到字面宽正中，数字照旧按墨迹中心落笔
+      const advance = em * c.digitFont.size;
+      const dx = advance / 2 - (ink.left + ink.right) / 2;
+      return { advance, ink: new Rect(ink.left + dx, ink.top, ink.right + dx, ink.bottom) };
+    },
     chord(text) {
       const segs = chordTextSegs(text, m.style.look.chordPlain, m.style.look.accidentalSide);
       return { advance: harmonyWidth(segs, chordWord, chordMusic), ink: harmonyInk(segs, chordWord, chordMusic) };

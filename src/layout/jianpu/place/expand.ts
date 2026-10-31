@@ -165,7 +165,13 @@ function passesOf(
       if (cur) (cur.hard ??= new Set()).add(cur.slots.length);
     },
   });
-  for (const [pass, key] of repeatOf) if (backCount.get(key) === 1) pass.afterRepeat = true;
+  // 反复之后紧接着转调的（137 唱两遍后转调再唱）：每遍是完整的一段，各占一页，不并
+  const keyChangesAfter = (key: string, pass: Pass): boolean => {
+    const at = pass.slots.findIndex((sl) => `${sl.row}:${sl.idx}` === key);
+    const next = at < 0 ? undefined : pass.slots.slice(at + 1).find((sl) => rows[sl.row]!.elements[sl.idx]!.kind === "note");
+    return !!next && !!rows[next.row]!.refs[next.idx]?.measure.attrs?.key;
+  };
+  for (const [pass, key] of repeatOf) if (backCount.get(key) === 1 && !keyChangesAfter(key, pass)) pass.afterRepeat = true;
   // `:|` 前休止之后的弱起是引出下一遍的（与曲首弱起同音：158 一房末尾的「亲爱的」）：跟着下一遍起头，上一遍在它前面收，词跟着音走
   for (const [next] of repeatOf) {
     const prev = passes[passes.indexOf(next) - 1];
