@@ -200,35 +200,41 @@ function passesOf(
     return !!next && !!rows[next.row]!.refs[next.idx]?.measure.attrs?.key;
   };
   for (const [pass, key] of repeatOf) if (backCount.get(key) === 1 && !keyChangesAfter(key, pass)) pass.afterRepeat = true;
-  // `:|` 前休止之后的弱起是引出下一遍的（与曲首弱起同音：158 一房末尾的「亲爱的」）：跟着下一遍起头，上一遍在它前面收，词跟着音走
+  // `:|` 前的弱起是引出下一遍的：`:|` 所在小节末尾几个音，与回到的 `|:` 前紧贴的几个音同音（158 一房末尾的「亲爱的」、
+  // 我是祢所造 `7,-- 3,_ 3,_ :|`，曲首 `0 0 0 3,_ 3,_ | |:`）。换页落在这几个音之前，它们连同词排到下一遍页首
   for (const [next] of repeatOf) {
     const prev = passes[passes.indexOf(next) - 1];
     if (!prev) continue;
+    const elOf = (sl: Slot): MusicElement => rows[sl.row]!.elements[sl.idx]!;
+    const isNote = (sl: Slot): boolean => elOf(sl).kind === "note";
     const noteOf = (sl: Slot): string | null => {
       const n = rows[sl.row]!.refs[sl.idx]?.chord?.notes[0]?.degree;
-      return rows[sl.row]!.elements[sl.idx]!.kind === "note" && n ? `${n.number}:${n.octaveShift}` : null;
+      return n ? `${n.number}:${n.octaveShift}` : null;
     };
-    const isNote = (sl: Slot): boolean => rows[sl.row]!.elements[sl.idx]!.kind === "note";
-    const tail: string[] = [];
-    let cut = prev.slots.length;
-    let closed = false;
-    for (let k = prev.slots.length - 1; k >= 0; k--) {
-      const sl = prev.slots[k]!;
-      if (!isNote(sl)) continue;
-      const key = noteOf(sl);
-      if (key === null) {
-        closed = true;
-        break;
-      }
-      tail.unshift(key);
-      cut = k;
-    }
-    const head = prev.slots.filter(isNote).slice(0, tail.length).map(noteOf);
-    // 曲首那几个音之后接的就是下一遍起头的 `|:`
     const nextAt = next.slots.find(isNote);
-    const headEnd = prev.slots.filter(isNote)[tail.length];
-    const sameTarget = !!nextAt && !!headEnd && nextAt.row === headEnd.row && nextAt.idx === headEnd.idx;
-    if (!closed || !tail.length || !sameTarget || tail.join() !== head.join()) continue;
+    if (!nextAt) continue;
+    const headAt = prev.slots.findIndex((sl) => sl.row === nextAt.row && sl.idx === nextAt.idx);
+    if (headAt <= 0) continue;
+    const head = prev.slots.slice(0, headAt).filter(isNote);
+    // `:|` 所在小节里的音（往回找到小节线为止，`:|` 本身不算）
+    const bar: number[] = [];
+    let seenNote = false;
+    for (let k = prev.slots.length - 1; k >= 0; k--) {
+      const el = elOf(prev.slots[k]!);
+      if (el.kind === "note") {
+        seenNote = true;
+        bar.unshift(k);
+      } else if (el.kind === "barline" && seenNote) break;
+    }
+    let same = 0;
+    while (same < bar.length && same < head.length) {
+      const a = noteOf(prev.slots[bar[bar.length - 1 - same]!]!);
+      if (a === null || a !== noteOf(head[head.length - 1 - same]!)) break;
+      same++;
+    }
+    // 整小节都同音的不是弱起（曲中重复的乐句）
+    if (same === 0 || same === bar.length) continue;
+    const cut = bar[bar.length - same]!;
     const n = prev.slots.length - cut;
     if (cut === prev.slots.length || cut === 0) continue;
     const moved = prev.slots.splice(cut);

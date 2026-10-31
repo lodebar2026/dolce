@@ -308,7 +308,7 @@ function readLyrics(noteEl: XmlEl): Lyric[] {
     // 拆成 `verseLabel`，不算字（写出端 `toxml.ts::lyricXml` 并回去）
     const syl0 = childText(l, "syllabic");
     const lm = !syl0 || syl0 === "single" || syl0 === "begin" ? /^(\d+[.．、]|\d+(?=\s))\s*(\S.*)$/su.exec(text) : null;
-    const lr: Lyric = { number: n ? Number(n.replace(/[^\d]/g, "")) || 1 : 1, text: lm ? lm[2]! : text };
+    const lr: Lyric = { number: n ? Number(/\d+(?=\D*$)/.exec(n)?.[0]) || 1 : 1, text: lm ? lm[2]! : text };
     if (lm) lr.verseLabel = lm[1]!;
     if (n !== null && !/^\d+$/.test(n)) lr.numberText = n;
     const name = l.getAttribute("name");
