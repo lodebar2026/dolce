@@ -262,9 +262,14 @@ function passesOf(
     if (!prev) continue;
     const nextAt = next.slots.find(isNote);
     if (!nextAt) continue;
-    const headAt = indexOfSlot(prev.slots, nextAt);
-    if (headAt <= 0) continue;
-    const cut = pickupAt(prev.slots, prev.slots.slice(0, headAt));
+    const headAt = Math.max(0, indexOfSlot(prev.slots, nextAt));
+    let cut = pickupAt(prev.slots, prev.slots.slice(0, headAt));
+    // 曲首没有弱起、但换行换页之后只剩不到一小节就 `:|`（安静 `1--) $ 0_ 3_ :|`）：这几个音也归下一遍
+    if (cut <= 0) {
+      const lineAt = Math.max(0, ...[...prev.breaks.keys()]);
+      const line = prev.slots.slice(lineAt);
+      if (lineAt > 0 && line.some(isNote) && !line.some((sl) => { const el = elOf(sl); return el.kind === "barline" && el.type !== "repeat-end"; })) cut = lineAt;
+    }
     if (cut <= 0) continue;
     const n = prev.slots.length - cut;
     const moved = prev.slots.splice(cut);

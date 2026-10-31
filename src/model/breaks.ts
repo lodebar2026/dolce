@@ -72,7 +72,8 @@ function graceHead(mea: Measure, ei: number): number {
 function atMeasureStart(mea: Measure, ei: number): boolean {
   for (let i = 0; i < ei; i++) {
     const el = mea.elements[i]!;
-    if (el.kind === "chord" && !el.grace) return false;
+    // 隐藏的占位（`x`，整小节分两截时垫在后半截开头）不占谱面：断在它后面就是断在小节头
+    if (el.kind === "chord" && !el.grace && el.printObject !== false) return false;
   }
   return true;
 }
