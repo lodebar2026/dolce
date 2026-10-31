@@ -337,8 +337,9 @@ function rowOf(
 export function fillLines(
   row: ScoreLine, forced: ReadonlyMap<number, boolean>, m: JianpuGrid, ink: InkMeasurer, width: number,
   meter: SongView["metadata"]["meters"][number] | undefined,
-  /** 必断的行（往回跳处）；`skipShort`：源里的换行会留下不到三分之一宽的短行就不照断（跳进源行中间、接着就碰上源换行，094） */
-  opts: { hard?: ReadonlySet<number>; skipShort?: boolean; glue?: ReadonlySet<number> } = {},
+  /** 必断的行（往回跳处）；`jumpIn`：这一遍从哪些符号跳进了源行中间。从那里起的行碰上源里的换行、会留下不到三分之一宽的短行就不照断（接着就碰上源换行，094）；
+   *  从源行行首起的短行是源里写明的，照断（007 首行）。`soft`：不是源里写的、是推出来的换行（副歌起头），留下短行就不断 */
+  opts: { hard?: ReadonlySet<number>; jumpIn?: ReadonlySet<number>; soft?: ReadonlySet<number>; glue?: ReadonlySet<number> } = {},
 ): Array<{ start: number; page: boolean }> {
   const laid = layoutVoiceLine(row, m, { meter });
   for (const it of laid.items) it.syllables = new Array(row.lyrics.length).fill(null);
@@ -361,6 +362,13 @@ export function fillLines(
     const k = items.findIndex((it) => it.srcIndex >= at);
     if (k > 0) glueAt.add(k);
   }
+  const jumpInAt = new Set<number>();
+  for (const at of opts.jumpIn ?? []) jumpInAt.add(Math.max(0, items.findIndex((it) => it.srcIndex >= at)));
+  const softAt = new Set<number>();
+  for (const at of opts.soft ?? []) {
+    const k = items.findIndex((it) => it.srcIndex >= at);
+    if (k > 0) softAt.add(k);
+  }
   const starts: number[] = [0];
   const pageAt = new Set<number>();
   let i = 0;
@@ -372,7 +380,10 @@ export function fillLines(
       if (last > i && forcedAt.has(last) && !glueAt.has(last)) {
         const page = forcedAt.get(last)!;
         const short = (nat.rightOf.get(items[last - 1]!) ?? 0) - left < width / 3;
-        if (page || !opts.skipShort || !short) {
+        // 推出来的换行离后面最近的源换行太近，同样留下短行（副歌判据落在行末那半句上：059）
+        const nextAt = softAt.has(last) ? [...forcedAt.keys()].filter((k) => k > last && !softAt.has(k)).sort((a, b) => a - b)[0] : undefined;
+        const shortAfter = nextAt !== undefined && (nat.rightOf.get(items[nextAt - 1]!) ?? 0) - (nat.leftOf.get(items[last]!) ?? 0) < width / 3;
+        if (page || !(softAt.has(last) ? short || shortAfter : short && jumpInAt.has(i))) {
           if (page) pageAt.add(last);
           break;
         }
@@ -578,19 +589,17 @@ export function expandSong(
       if (pi < song.pages.length - 1 && r > 0) pageEndRows.add(r - 1);
     });
   }
-  // `.jpwabc` 的换页记在模型上（同 `jianpuInputOfJpw`）：小节中间换页是行末那个和弦（或它的增时线）的 `lineBreakAfter`，
-  // 小节处换页是下一行首小节的 `print.newPage`
-  if (exactBreaks) {
-    rows.forEach((row, r) => {
-      const next = rows[r + 1];
-      if (!next) return;
-      const chord = [...row.refs].reverse().find((ref) => ref.chord)?.chord;
-      const inline = chord && (chord.lineBreakAfter === "page" || (chord.sustains ?? []).some((su) => su.lineBreakAfter === "page"));
-      const head = next.measures[0];
-      const atMeasure = head !== undefined && head !== row.refs[row.refs.length - 1]?.measure && head.print?.newPage === true;
-      if (inline || atMeasure) pageEndRows.add(r);
-    });
-  }
+  // 小节中间换页记在行末那个和弦（或它的增时线）的 `lineBreakAfter` 上（`.jpwabc`、123/ABC `$` 后的 `%%newpage`）；
+  // `.jpwabc` 小节处换页记在下一行首小节的 `print.newPage` 上（同 `jianpuInputOfJpw`），其余格式已分进行视图的页
+  rows.forEach((row, r) => {
+    const next = rows[r + 1];
+    if (!next) return;
+    const chord = [...row.refs].reverse().find((ref) => ref.chord)?.chord;
+    const inline = chord && (chord.lineBreakAfter === "page" || (chord.sustains ?? []).some((su) => su.lineBreakAfter === "page"));
+    const head = next.measures[0];
+    const atMeasure = exactBreaks && head !== undefined && head !== row.refs[row.refs.length - 1]?.measure && head.print?.newPage === true;
+    if (inline || atMeasure) pageEndRows.add(r);
+  });
   // 行在小节中间收尾的：`.jpwabc` 与文本谱（一行 `Q:` 就是谱面一行）一律原位断；其余格式只在源文写明了小节中间换行
   //（行末那个和弦带 `lineBreakAfter`，123/ABC 小节中间的 `$`、按乐句重排写回的断点）时原位断，否则顺延到小节末
   const inlineEnd = (r: number): boolean => {
@@ -662,16 +671,28 @@ export function expandSong(
       else posOf.set(k, [i]);
     });
     // 副歌起头也换行（短行照样不断），换页才有地方落在副歌前
+    const soft = new Set<number>();
     if (!layout) {
       let prev = -1;
       pass.slots.forEach((sl, i) => {
         const k = measureOf.get(slotKey(sl)) ?? -1;
-        if (i > 0 && k !== prev && refrainStart.has(k) && !pass.breaks.has(i)) pass.breaks.set(i, false);
+        if (i > 0 && k !== prev && refrainStart.has(k) && !pass.breaks.has(i)) {
+          pass.breaks.set(i, false);
+          soft.add(i);
+        }
         prev = k;
       });
     }
     const whole = rowOf(pass, 0, pass.slots.length, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars(pass), slices);
-    const lines = fillLines(whole, pass.breaks, m, ink, width, meter, { hard: pass.hard, skipShort: !layout, glue: pass.glue });
+    // 这一遍从哪些符号跳进了源行中间（遍首、往回跳处）
+    const jumpIn = new Set<number>();
+    if (!layout) {
+      for (const at of [0, ...(pass.hard ?? [])]) {
+        const s = pass.slots[at];
+        if (s && rows[s.row]!.elements.slice(0, s.idx).some((el) => el.kind === "note")) jumpIn.add(at);
+      }
+    }
+    const lines = fillLines(whole, pass.breaks, m, ink, width, meter, { hard: pass.hard, jumpIn, soft, glue: pass.glue });
     // 没有 `.Layout` 的：一页最多 4 行，优先在副歌起头处换页，否则按行数均分（不留一页一行）
     if (!layout) {
       const startMeasure = (n: number): number => measureOf.get(slotKey(pass.slots[lines[n]!.start]!)) ?? -1;
