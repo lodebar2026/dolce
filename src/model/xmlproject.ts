@@ -24,6 +24,7 @@ import type {
 import { SIMPLE_DIVISIONS } from "./doc";
 import { Fraction, lcm } from "../common/fraction";
 import { AccidentalCarry, StaffAccidentalCarry, quarterTempos } from "./jianpu";
+import { anchorPlayOrder } from "./sections";
 import { typeOfDuration } from "../score/xmlutil";
 import { TERMS, isDynamicName } from "./marknames";
 import { applyPageMetaToDefaults } from "./pagemeta";
@@ -87,6 +88,8 @@ export function projectForMusicXml(src: Song, options: ProjectOptions = {}): Son
   if (isXmlShaped(src)) return src;
   // 文本谱的 `{dsb…}` 并排块写成同一谱表的第二个 `<voice>`（以前整块丢掉）
   const song: Song = structuredClone(layersToVoices(src));
+  // 后面小节会拆会并：演唱顺序趁小节号还对得上定好首尾和弦
+  if (song.playOrder?.length) song.playOrder = anchorPlayOrder(song);
   // 123/ABC 里 `I:meta page …` 写的纸还原成 `<page-layout>`
   applyPageMetaToDefaults(song);
   // 多声部不对齐、不补小节：一组不一定含全部声部，写出端按共用时间轴逐格写（`toxml.ts::axisMeasuresXml`，issue 11）

@@ -839,6 +839,9 @@ export interface PlayPass {
   verse?: number;
   /** 这一遍唱完换页（`.Repeat` 的 `P` 后缀）。投影档逐遍成页时用 */
   pageBreakAfter?: boolean;
+  /** 这一项第一个、最后一个和弦。投影与读回 MusicXML 后小节会拆会并，小节号对不上，那条路靠它们定位（`sections.ts::anchorPlayOrder`） */
+  fromAnchor?: ElementId;
+  toAnchor?: ElementId;
 }
 
 /** 样式引用。← 123 的 `I:style` 与 inline `[I:style …]`。

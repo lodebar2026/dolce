@@ -1,8 +1,9 @@
-// ABC §3.1.9 的段落：头部 `P:` 的顺序串展开，以及把顺序与标记搬到另一份模型（五线谱档读回的 `mixedDoc`）。
+// ABC §3.1.9 的段落：头部 `P:` 的顺序串展开；写明的演唱顺序（`P:`、`I:playorder`）搬到另一份模型（五线谱档读回的 `mixedDoc`）。
 //
-// 语义见 `docs/格式/123格式.md` §6.1。
+// 语义见 `docs/格式/123格式.md` §6。
 
-import type { ElementId, ScoreDoc, Song } from "./doc";
+import type { Chord, ElementId, PlayPass, ScoreDoc, Song } from "./doc";
+import { melodyChords } from "./jianpu";
 
 /** 展开上限：`P:((((A9)9)9)9)9` 这种写错的别把内存吃光 */
 const MAX_SEQ = 2000;
@@ -57,14 +58,43 @@ export function locateSectionMarks(
   return found.filter((m) => m.rank === rank).map(({ name, mid, skip }) => ({ name, mid, skip }));
 }
 
-/** 段落顺序与标记搬到读回的那份模型上：MusicXML 写不下 `P:`、元素 id 也换了，按 `Chord.srcId` 对回去。
- *  `I:playorder` 优先于 `P:`，有它的不搬。 */
-export function carrySections(from: ScoreDoc, to: ScoreDoc): void {
+/** 给 `I:playorder` / `.Repeat` 的每一项定首尾和弦（已定的不动）：写了音符级端点的就是它，否则取那一小节第一声部的第一个、最后一个音；
+ *  那一小节没有音就往段内挪。一个音都没有的项没有锚点。 */
+export function anchorPlayOrder(song: Song): PlayPass[] {
+  const measures = song.parts[0]?.measures ?? [];
+  const sounding = (i: number): Chord[] => {
+    const m = measures[i];
+    return m ? melodyChords(m).filter((c) => !c.grace) : [];
+  };
+  return (song.playOrder ?? []).map((p) => {
+    const out = { ...p };
+    for (let i = p.fromMeasure - 1; out.fromAnchor === undefined && i < p.toMeasure; i++) out.fromAnchor = p.fromElement ?? sounding(i)[0]?.id;
+    for (let i = p.toMeasure - 1; out.toAnchor === undefined && i >= p.fromMeasure - 1; i--) out.toAnchor = p.toElement ?? sounding(i).slice(-1)[0]?.id;
+    return out;
+  });
+}
+
+/** 写明的演唱顺序搬到读回的那份模型上：MusicXML 写不下 `I:playorder` 与 `P:`、小节会拆、元素 id 也换了，按 `Chord.srcId` 对回去。
+ *  `I:playorder` 优先于 `P:`，有它的不搬 `P:`。 */
+export function carryPlayOrder(from: ScoreDoc, to: ScoreDoc): void {
   from.songs.forEach((src, i) => {
     const dst = to.songs[i];
-    if (!dst || !src.sectionOrder || src.playOrder?.length) return;
+    if (!dst) return;
+    if (src.playOrder?.length) {
+      const { first, last } = chordsBySrc(dst);
+      const passes = anchorPlayOrder(src).flatMap((p): PlayPass[] => {
+        const fromAnchor = p.fromAnchor === undefined ? undefined : first.get(p.fromAnchor);
+        const toAnchor = p.toAnchor === undefined ? undefined : last.get(p.toAnchor);
+        if (fromAnchor === undefined || toAnchor === undefined) return [];
+        const { fromElement: _f, toElement: _t, ...rest } = p;
+        return [{ ...rest, fromAnchor, toAnchor }];
+      });
+      if (passes.length) dst.playOrder = passes;
+      return;
+    }
+    if (!src.sectionOrder) return;
     dst.sectionOrder = src.sectionOrder;
-    const bySrc = firstChordBySrc(dst);
+    const bySrc = chordsBySrc(dst).first;
     const marks = (src.sectionMarks ?? []).flatMap((m) => {
       const before = bySrc.get(m.before);
       return before === undefined ? [] : [{ name: m.name, before }];
@@ -73,12 +103,18 @@ export function carrySections(from: ScoreDoc, to: ScoreDoc): void {
   });
 }
 
-function firstChordBySrc(song: Song): Map<ElementId, ElementId> {
-  const out = new Map<ElementId, ElementId>();
+/** 源 id → 读回那份里第一个、最后一个对应的和弦（跨小节的音读回是几个） */
+function chordsBySrc(song: Song): { first: Map<ElementId, ElementId>; last: Map<ElementId, ElementId> } {
+  const first = new Map<ElementId, ElementId>();
+  const last = new Map<ElementId, ElementId>();
   for (const part of song.parts) {
     for (const m of part.measures) {
-      for (const el of m.elements) if (el.kind === "chord" && el.srcId !== undefined && !out.has(el.srcId)) out.set(el.srcId, el.id);
+      for (const el of m.elements) {
+        if (el.kind !== "chord" || el.srcId === undefined) continue;
+        if (!first.has(el.srcId)) first.set(el.srcId, el.id);
+        last.set(el.srcId, el.id);
+      }
     }
   }
-  return out;
+  return { first, last };
 }

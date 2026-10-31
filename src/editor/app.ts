@@ -118,6 +118,10 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   mixedSourceXml(): string {
     return sourceMusicXmlBare(this, { sourceIds: true });
   }
+  /** MixedHost：投成 MusicXML 的那份源模型（`.jpwabc` 用排版器那份，与 `sourceMusicXmlBare` 同一份，元素 id 才对得上）。 */
+  mixedSourceDoc(): ScoreDoc | null {
+    return this.docFormat === "jpwabc" ? this.jpwDoc : this.currentScoreDoc();
+  }
   /** 在途的五线谱 / 混排排版（异步），`whenIdle` 等它。 */
   private _pendingStaff: Promise<void> | null = null;
   /** 排版模式切换（投影 / 简谱 / 五线谱 / 混排）的四个按钮，见 `ViewMode`。 */

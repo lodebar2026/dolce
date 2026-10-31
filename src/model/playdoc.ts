@@ -7,7 +7,7 @@
 // 简谱形状（文本谱 / 123 / ABC / `.jpwabc`）在 `jianpu/playsong.ts`。
 
 import { Fraction } from "../common/fraction";
-import { JumpSpec, PlayData, PlaySpecKind, TimePosition, playOrderOf, sectionPlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
+import { JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition, playOrderFromSpec, playOrderOf, sectionPlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
 import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart } from "../score/timeline";
 import type { Accidental, Barline, Chord, Direction, ElementId, Measure, Note, Part, Song } from "./doc";
 import { midiPitch, topNote } from "./jianpu";
@@ -16,7 +16,7 @@ import { BarStyle } from "../score/enums";
 import { Key } from "../score/jppitch";
 import { distinctNumbers, mainVoiceOf, phrasePartOfDoc } from "./phrasedoc";
 import type { PhraseChord } from "../score/phraseinput";
-import { locateSectionMarks } from "./sections";
+import { anchorPlayOrder, locateSectionMarks } from "./sections";
 
 /** 主旋律声部：第一个带歌词的声部，都没词取第一声部（同简谱形状 `forExpanded` 的口径）。
  *  歌词段数决定唱几遍，第一声部是伴奏、词在后面声部时按第一声部推就少唱了。 */
@@ -30,7 +30,7 @@ export function leadPartOf(song: Song): number {
  *  - `lead`：段数按哪个声部的歌词推、`PlayItem.limit` 数哪个声部的和弦。缺省第一声部——引擎输入与 `.jpwabc` 写出端
  *    画的、写的都是第一声部，必须同一个；只有试听（`playSourceOfDoc`）传主旋律声部（`leadPartOf`）
  *  - `distinct`：同音同号的词顺延（试听那份，见 `phrasedoc.ts::distinctNumbers`）
- *  - `useSections`：按头部 `P:` 排（`I:playorder` 优先，这一路不认它，有它时也不用 `P:`） */
+ *  - `useSections`：按头部 `P:` 排（写明的 `I:playorder` / `.Repeat` 优先） */
 export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSections = true }: { lead?: number; distinct?: boolean; useSections?: boolean } = {}): PlayData {
   const pd = new PlayData();
   const part = song.parts[0];
@@ -40,7 +40,12 @@ export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSecti
     for (const d of m.directions ?? []) if (d.sound) addSound(pd, d, new TimePosition(mid, cursorAt(m, d).divInt(div)));
   });
   const view = phrasePartOfDoc(song, lead, distinct);
-  const seq = useSections && !song.playOrder?.length ? song.sectionOrder?.seq ?? [] : [];
+  const written = playOrderOfDoc(song, lead, view);
+  if (written) {
+    pd.measures = written;
+    return pd;
+  }
+  const seq = useSections ? song.sectionOrder?.seq ?? [] : [];
   const bySections = seq.length ? sectionPlayOrder([view.part], pd, seq, sectionMarksOfDoc(song, lead, view)) : null;
   pd.fromSections = bySections !== null;
   const order: PlayOrder = bySections ?? playOrderOf([view.part], pd);
@@ -51,17 +56,40 @@ export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSecti
   return pd;
 }
 
-/** 段落标记 → (小节, 第几个和弦)。写在主旋律以外声部的小节中间时贴到小节头：`skip` 数的是主旋律的和弦。 */
-function sectionMarksOfDoc(song: Song, lead: number, view: ReturnType<typeof phrasePartOfDoc>): SectionMark[] {
-  const where = new Map<ElementId, { rank: number; mid: number; skip: number }>();
+/** 元素 id → (声部, 小节, 第几个和弦)。主旋律以外声部的音 `skip` 恒 0、`inLead` 为假：`skip` 与 `limit` 数的是主旋律的和弦。 */
+function locatorOfDoc(song: Song, lead: number, view: ReturnType<typeof phrasePartOfDoc>): Map<ElementId, { rank: number; mid: number; skip: number; inLead: boolean }> {
+  const where = new Map<ElementId, { rank: number; mid: number; skip: number; inLead: boolean }>();
   song.parts.forEach((p, rank) => p.measures.forEach((m, mid) => {
-    for (const el of m.elements) where.set(el.id, { rank, mid, skip: 0 });
+    for (const el of m.elements) where.set(el.id, { rank, mid, skip: 0, inLead: false });
   }));
   view.part.measures.forEach((m, mid) => (m.entries as readonly PhraseChord[]).forEach((ch, index) => {
     const id = view.idOf.get(ch);
-    if (id !== undefined) where.set(id, { rank: lead, mid, skip: index });
+    if (id !== undefined) where.set(id, { rank: lead, mid, skip: index, inLead: true });
   }));
+  return where;
+}
+
+/** 段落标记 → (小节, 第几个和弦)。写在主旋律以外声部的小节中间时贴到小节头。 */
+function sectionMarksOfDoc(song: Song, lead: number, view: ReturnType<typeof phrasePartOfDoc>): SectionMark[] {
+  const where = locatorOfDoc(song, lead, view);
   return locateSectionMarks(song, (id) => where.get(id));
+}
+
+/** 写明的演唱顺序（`I:playorder`、`.Repeat`）。投影、读回后小节会拆会并，按首尾和弦找小节；一项的音都找不到就丢掉这一项，
+ *  一项都不剩返回 null（交回按记号推）。 */
+function playOrderOfDoc(song: Song, lead: number, view: ReturnType<typeof phrasePartOfDoc>): PlayData["measures"] | null {
+  if (!song.playOrder?.length) return null;
+  const where = locatorOfDoc(song, lead, view);
+  const items = anchorPlayOrder(song).flatMap((p) => {
+    const from = p.fromAnchor === undefined ? undefined : where.get(p.fromAnchor);
+    const to = p.toAnchor === undefined ? undefined : where.get(p.toAnchor);
+    if (!from || !to) return [];
+    // 小节被拆开时最后一个音不一定在小节尾，并起来时第一个音不一定在小节头：`skip` / `limit` 照音算
+    const count = view.part.measures[to.mid]?.entries.length ?? 0;
+    const limit = to.inLead && to.skip + 1 < count ? to.skip + 1 : -1;
+    return [new RepeatSpecItem(from.mid, to.mid, p.verse ?? 0, from.skip, p.pageBreakAfter ?? false, limit)];
+  });
+  return items.length ? playOrderFromSpec({ items }, view.part) : null;
 }
 
 /** `<direction>` 处的游标（divisions）：它前面最后一个非倚音和弦的终点，各声部各自累计。 */
