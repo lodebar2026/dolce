@@ -541,7 +541,9 @@ function chordXml(o: Out, ch: Chord, starts: Mark[], stops: Mark[], cx: Ctx): vo
     }
     o.text("voice", ch.voice);
     if (ch.duration.type) {
-      const size = isChordNote ? note?.typeSize : (ch.typeSize ?? note?.typeSize);
+      const rawSize = isChordNote ? note?.typeSize : (ch.typeSize ?? note?.typeSize);
+    // `<cue/>` 读进来也记作画小的（和音里不算它），写回时有 `<cue/>` 就不另写 size
+    const size = ch.cue && rawSize === "cue" ? undefined : rawSize;
       o.text("type", ch.duration.type, { size: size || undefined });
     }
     for (let i = 0; i < ch.duration.dots; i++) o.leaf("dot");

@@ -747,7 +747,8 @@ function readMeasure(
           }
         }
         if (pitchEl || unpEl) bindSurface(note, c);
-        const noteSize = child(c, "type")?.getAttribute("size");
+        // `<cue/>` 也是画小的：和音里不算它（`chordDegrees`、`chordNotes`），整个和弦都小的照旧
+        const noteSize = child(c, "type")?.getAttribute("size") ?? (child(c, "cue") ? "cue" : null);
         if (noteSize) note.typeSize = noteSize;
         if (isChordNote && last) {
           for (const d of dirsSinceLast) {
