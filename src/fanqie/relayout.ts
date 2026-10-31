@@ -118,8 +118,20 @@ function pieceText(p: Piece): string {
 
 /** 把若干片段拼成一行 `Q` 的正文。 */
 function musicText(pieces: readonly Piece[]): string {
+  const texts = pieces.map(pieceText);
+  for (let i = 1; i < pieces.length; i++) {
+    const first = pieces[i]!.line.elements[pieces[i]!.from];
+    const prev = pieces[i - 1]!;
+    const last = prev.line.elements[prev.to - 1];
+    // 反复起点已表示这处边界，拼进同一行时不再保留前面的普通收线。
+    if (first?.kind === "barline" && first.type === "repeat-start"
+      && last?.kind === "barline" && last.type === "normal" && !last.repeatForwardAfter
+      && !last.ornaments.length && !last.annotation && !last.temporaryMeter && !last.temporaryKey) {
+      texts[i - 1] = texts[i - 1]!.replace(/(?<![|:])\|\s*$/, "").trimEnd();
+    }
+  }
   return pieces.map((p, i) => {
-    const text = pieceText(p);
+    const text = texts[i]!;
     const first = p.line.elements[p.from];
     const prev = pieces[i - 1];
     const last = prev?.line.elements[prev.to - 1];
