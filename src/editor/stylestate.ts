@@ -35,7 +35,7 @@ export interface RenderSettings {
   staffSize?: { mm?: number | null; lyricPt?: number | null };
   fontSize?: number; titleSize?: number; creditSize?: number; color?: number; bgColor?: number;
   /** 简谱档的音符字体（`NOTE_FONTS` 的 id，空串 = 默认）、和弦升降号写在前后（空串 = 照原文）。 */
-  noteFont?: string; chordAccidental?: "" | "before" | "after";
+  noteFont?: string; chordAccidental?: "" | "before" | "after"; pairPages?: boolean;
 }
 
 /** StyleState 向 App 要的东西。 */
@@ -316,6 +316,11 @@ export class StyleState {
     return v === "before" || v === "after" ? v : "";
   }
 
+  /** 投影档多段两两并页（样式键 `pair-pages`）。 */
+  get pairPages(): boolean {
+    return computeStyle([this.layers[themeOfMode("expanded")]], { mode: "expanded", engine: "jianpu" }).jianpu.overrides?.["pair-pages"] === true;
+  }
+
   /** 设音符字体：字体族写在 `note` 角色上，加不加粗写 `note-bold`；空串 = 两样都清掉。 */
   private _setNoteFont(id: string): void {
     const f = NOTE_FONTS.find((x) => x.id === id);
@@ -423,6 +428,7 @@ export class StyleState {
     for (const [engine, choice] of Object.entries(opts.paper ?? {}) as [PaperEngine, PaperChoice][]) this.setPaper(engine, choice);
     if (opts.staffSize) this.setStaffSize(opts.staffSize);
     if (opts.noteFont !== undefined) this._setNoteFont(opts.noteFont);
+    if (opts.pairPages !== undefined) this._setStyle("expanded", { jianpu: { overrides: { "pair-pages": opts.pairPages } } });
     if (opts.chordAccidental !== undefined) this._setPrintOverride("accidental-side", opts.chordAccidental || undefined);
     if (opts.color !== undefined) this._setStyle(mode, { page: { ink: opts.color } });
     if (opts.bgColor !== undefined) this._setStyle(mode, { page: { background: opts.bgColor } });

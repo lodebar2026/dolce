@@ -524,7 +524,7 @@ function pageByRows(lines: Array<{ start: number; page: boolean }>, refrainAt: (
 }
 
 /**
- * 多段两两并页（用户定 2026-10-31）：每段一页、页数成双、相邻两段放得下（合计不超过 `MAX_ROWS` 行）的，两页并一页。
+ * 多段两两并页（样式键 `pair-pages`，默认不并，用户定 2026-10-31）：每段一页、页数成双、相邻两段放得下（合计不超过 `MAX_ROWS` 行）的，两页并一页。
  * 排满的页（3 行以上）单独算一组；两两配不齐（单出一页，如三段各 2 行）或某一对放不下的整首不并。只并换遍处自动起的页，`%%newpage` 写明的不动。
  */
 function pairPages(pages: readonly PageView[], passStarts: ReadonlySet<number>): PageView[] {
@@ -856,7 +856,7 @@ export function expandSong(
     });
   }
   if (groups.length > 0) pages.push({ index: pages.length, groups });
-  return { ...song, pages: layout ? pages : pairPages(pages, passStarts) };
+  return { ...song, pages: !layout && m.style.look.pairPages ? pairPages(pages, passStarts) : pages };
 }
 
 /** 整份文档的投影档行视图（各首各按自己的演唱顺序逐首排；推不出演唱顺序的那首照原样） */

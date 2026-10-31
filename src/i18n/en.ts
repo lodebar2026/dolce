@@ -218,6 +218,7 @@ export const en: Record<MsgKey, string> = {
   "settings.bookSheet.auto": "Auto-find",
   "settings.bookSheet.write": "Write to file",
   "settings.bookSheet": "Songbook style",
+  "settings.pairPages": "Merge verses two to a page",
   "settings.noteFont": "Note font",
   "settings.noteFont.follow": "Default",
   "settings.noteFont.pingfang": "PingFang Bold",

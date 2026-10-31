@@ -60,6 +60,7 @@ export function defaultJianpuStyle(fontSize: number): JianpuStyle {
     spacing: { lyricGap: 0, maxHorizontalScale: 2.0 },
     look: {
       noteBold: true,
+      pairPages: false,
       chordPlain: false,
       accidentalStyle: "csym",
       accidentalScale: 1,

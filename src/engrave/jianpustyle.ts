@@ -118,6 +118,8 @@ export interface JianpuStyle {
   look: {
     /** 音符数字（与倚音）加粗。只管数字，和弦、房号那些用 `font.note` 不跟着粗 */
     noteBold: boolean;
+    /** 投影档多段两两并页（`place/expand.ts::pairPages`），默认不并 */
+    pairPages: boolean;
     chordPlain: boolean;
     accidentalSide?: AccidentalSide;
     accidentalStyle: AccidentalStyleKind;

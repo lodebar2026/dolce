@@ -617,6 +617,10 @@ export function showOptionsDialog(app: App): void {
   if (isJianpu) {
     pHeader.append(labeled(t("settings.noteFont"), noteFontSel), labeled(t("settings.chordAccidental"), chordAccSel));
   }
+  const pairPages = document.createElement("input");
+  pairPages.type = "checkbox";
+  pairPages.checked = app.style.pairPages;
+  if (isJp && view === "expanded") pLayout.append(labeled(t("settings.pairPages"), pairPages));
 
   // 页眉四项的字体字号：各档共用（投影档原来单列的标题 / 词曲字号也并在这里）
   const header = headerGroup(app);
@@ -671,6 +675,7 @@ export function showOptionsDialog(app: App): void {
         ? { mm: parseFloat(staffMm.value) || null, lyricPt: parseFloat(lyricPt.value) || null }
         : undefined,
       color: argb, bgColor: colorValue(bgColor, app.style.bgColor),
+      ...(isJp && view === "expanded" && pairPages.checked !== app.style.pairPages ? { pairPages: pairPages.checked } : {}),
       ...(isJianpu ? {
         ...(noteFontSel.value !== app.style.noteFont ? { noteFont: noteFontSel.value } : {}),
         ...(chordAccSel.value !== app.style.chordAccidental ? { chordAccidental: chordAccSel.value as "" | "before" | "after" } : {}),
