@@ -87,10 +87,13 @@ function sourceBreaks(
   const out = new Map<string, boolean>();
   rows.forEach((row, r) => {
     if (r === rows.length - 1 || row.elements.length === 0) return;
-    let key = `${r}:${row.elements.length - 1}`;
+    // 内联层不排（`cutSlots`）：断点要落在排出来的符号上，否则行末带 `&` 第二声部的换行就丢了
+    const shown = (s: Slot): boolean => rows[s.row]!.elements[s.idx]!.kind !== "inline-layer";
+    const tail = row.elements.map((_, idx) => ({ row: r, idx })).filter(shown).pop();
+    if (!tail) return;
+    let key = `${r}:${tail.idx}`;
     if (!exact(r)) {
-      const sl = slices[measureOf.get(key) ?? -1];
-      const last = sl?.[sl.length - 1];
+      const last = slices[measureOf.get(key) ?? -1]?.filter(shown).pop();
       if (!last) return;
       key = `${last.row}:${last.idx}`;
     }
@@ -279,13 +282,16 @@ function logicalMarks(rows: readonly RowView[]): LogicalMark[] {
 
 /**
  * 投影档只要旋律与词（投影片）：和弦、段落词、奏法、力度/术语、小节线上的跳转字与 segno、松叶、临时伴奏都不画，
- * 延长记号与倚音留着（倚音用户定保留；同旧简谱引擎投影档的投影 `jianpuinput.ts::rowsPart`），上 / 下滑音也留着（用户定）。换下来的符号记同一个 id。
+ * 延长记号与倚音留着（倚音用户定保留；同旧简谱引擎投影档的投影 `jianpuinput.ts::rowsPart`），上 / 下滑音也留着（用户定）。
+ * 和音（`[13]`、合唱谱的两个声部）只留最高音，旋律在它上面。换下来的符号记同一个 id。
  */
 function bare(el: MusicElement): MusicElement {
   if (el.kind === "note") {
     const ornaments = el.ornaments.filter((o) => o.name === "yc" || o.name === "ycy" || o.name === "shy" || o.name === "xhy");
-    if (!el.chord && !el.annotation && ornaments.length === el.ornaments.length) return el;
-    return { ...el, ornaments, chord: undefined, annotation: undefined };
+    if (!el.chord && !el.annotation && !el.stack?.length && ornaments.length === el.ornaments.length) return el;
+    const top = el.stack?.[el.stack.length - 1];
+    const melody = top ? { pitch: top.pitch, octave: top.octave, accidental: top.accidental, stack: undefined } : {};
+    return { ...el, ...melody, ornaments, chord: undefined, annotation: undefined };
   }
   if (el.kind === "sustain") {
     if (!el.chord && !el.annotation && el.ornaments.length === 0) return el;
