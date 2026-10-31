@@ -728,7 +728,7 @@ export function expandSong(
   const refrainStart = new Set<number>();
   const refrainMark = new Set<number>();
   // 中段词：不从第一处有词的小节起、也不唱到最后一处有词的小节的那段词（J17 第二遍只换中间一句）。
-  // 它不是一段完整的词：前后都借别段，不算副歌判据里的「几行词」，这一遍也不必另起一页
+  // 它不是一段完整的词：前后都借别段，不算副歌判据里的「几行词」；开了 `pair-pages` 时这一遍放得下就接在上一遍那页
   const midVerses = new Set<number>();
   {
     const span = new Map<number, [number, number]>();
@@ -789,7 +789,7 @@ export function expandSong(
   };
   for (const pass of passes) {
     if (!layout && midVerses.has(pass.verses[0]!)) {
-      pass.afterRepeat = true;
+      if (m.style.look.pairPages) pass.afterRepeat = true;
       pass.midVerse = true;
     }
     const posOf = new Map<string, number[]>();
@@ -832,7 +832,7 @@ export function expandSong(
       }
       pageByRows(lines, (n) => markHeads.has(n) || refrainStart.has(startMeasure(n)));
     }
-    // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的、只换一句中段词的，这一遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
+    // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的（开了 `pair-pages` 时还有只换一句中段词的），这一遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
     // 整首从头再来、或反复三遍以上的仍一段一页——500 首成品里 044 这样每段 2 行、4 段的一律分页）
     const firstPageRows = lines.findIndex((l, n) => n > 0 && l.page);
     const joinable = pass.afterRepeat && groups.length + (firstPageRows < 0 ? lines.length : firstPageRows) <= MAX_ROWS;
