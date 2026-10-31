@@ -47,6 +47,7 @@ import { SIMPLE_DIVISIONS } from "../model/doc";
 import { IdGen, breaksAfterToStart, emptyDoc, emptySong } from "../model/helpers";
 import { resolveAbcPitches } from "./abcpitch";
 import { addMeta, creatorOf, isMetaKey } from "../model/metakeys";
+import { expandSectionOrder, looksLikeOrder } from "../model/sections";
 import type { BreakKind } from "../model/helpers";
 import {
   CJK_INSTRUCTION_ALIAS,
@@ -213,6 +214,10 @@ interface Ctx {
   time: { beats: number; beatType: number } | null;
   /** `$` 记在哪一小节**之后**。一首收尾时经 `breaksAfterToStart` 翻成模型口径（`doc.ts::Print`） */
   breakAfter: Map<Measure, BreakKind>;
+  /** 曲内 `P:A` / `[P:A]` 还没等到音的段落名（下一个非倚音和弦上落位） */
+  pendingSections: string[];
+  /** 本曲已落位的段落标记 */
+  sectionMarks: NonNullable<Song["sectionMarks"]>;
 }
 
 function report(ctx: Ctx, code: string, message: string, source: SourceSpan): void {
@@ -583,6 +588,10 @@ function buildMusicLine(
       pb.block.end = at;
       pb.block = { start: at, cursor: new Map(), verses: 0, broken: false };
       pb.afterLyrics = false;
+    }
+    if (el.kind === "chord" && ctx.pendingSections.length) {
+      for (const name of ctx.pendingSections) ctx.sectionMarks.push({ name, before: el.id });
+      ctx.pendingSections = [];
     }
     pb.measure.elements.push(el);
     cur.last = el;
@@ -1148,6 +1157,11 @@ function buildMusicLine(
         if (!m) break;
         const name = m[1]!.toUpperCase();
         const val = m[2] ?? "";
+        // 行内段落标记 `[P:A]`（ABC §3.1.9）。Muse 的 `P:` 不接这层语义
+        if (name === "P") {
+          if (ctx.d.id !== "jcx" && val.trim()) ctx.pendingSections.push(val.trim());
+          break;
+        }
         // 曲中换谱号 `[K:clef=tenor]`（只换谱号、不换调）：123 的写出端这么写
         const clefOnly = name === "K" && (ctx.d.id === "123" || ctx.d.id === "abc") ? /^\s*clef\s*=\s*(\S+)\s*$/i.exec(val) : null;
         // ABC 的行内字段可以写在小节中间（钢琴下谱表半小节处换谱号）：记成 `laterAttrs`，挂在第一支同一时刻的音之后。123 只有小节级的谱号
@@ -1454,6 +1468,8 @@ export function parseAbcFamily(
     sawL: false,
     time: null,
     breakAfter: new Map(),
+    pendingSections: [],
+    sectionMarks: [],
   };
 
   const lines = text.split(/\r?\n/);
@@ -1467,9 +1483,41 @@ export function parseAbcFamily(
   let marks: Mark[] = [];
   /** 待挂的歌词行：整首读完、小节都收尾后才挂 */
   let pendingLyrics: PendingLyric[] = [];
+  /** 本曲见过音乐没有：之后的 `P:` 一律是段落标记 */
+  let musicSeen = false;
+  /** 见过 `K:` 没有：ABC 的头部到它为止（§3.1.9 的曲内标记可以紧跟在它后面） */
+  let sawKey = false;
+  /** 音乐之前的 `P:`，等看到它后面是什么才定是顺序还是第一个标记 */
+  let headSection: FieldLine | null = null;
+  /** 顺序写在哪一行（报「引用了不存在的段落」用） */
+  let orderSource: SourceSpan | null = null;
+  const settleHeadSection = (lastBeforeMusic: boolean): void => {
+    const f = headSection;
+    if (!f) return;
+    headSection = null;
+    if ((lastBeforeMusic || (ctx.d.id === "abc" && sawKey)) && !looksLikeOrder(f.value)) {
+      ctx.pendingSections.push(f.value);
+      return;
+    }
+    const seq = expandSectionOrder(f.value);
+    if (!seq) report(ctx, "bad-section-order", tr("diag.part.badOrder", { v: f.value }), f.source);
+    ensureSong().sectionOrder = { text: f.value, seq: seq ?? [] };
+    orderSource = f.source;
+  };
 
   const finishSong = (): void => {
     if (!song) return;
+    settleHeadSection(false);
+    if (ctx.sectionMarks.length) song.sectionMarks = ctx.sectionMarks;
+    const known = new Set(ctx.sectionMarks.map((m) => m.name));
+    for (const name of new Set(song.sectionOrder?.seq ?? [])) {
+      if (!known.has(name)) report(ctx, "missing-section", tr("diag.part.missing", { v: name }), orderSource!);
+    }
+    ctx.pendingSections = [];
+    ctx.sectionMarks = [];
+    musicSeen = false;
+    sawKey = false;
+    orderSource = null;
     for (const b of builds.values()) {
       if (ctx.d.tupletClose === "paren") {
         for (const tp of b.openTuplets) report(ctx, "unclosed-tuplet", tr("diag.j123.tupletOpen"), tp.openSource!);
@@ -1662,6 +1710,17 @@ export function parseAbcFamily(
         s.work.number = f.value;
         continue;
       }
+      if (f.name === "P" && ctx.d.id !== "jcx") {
+        if (!f.value) continue;
+        if (musicSeen) ctx.pendingSections.push(f.value);
+        else {
+          settleHeadSection(false);
+          headSection = f;
+        }
+        continue;
+      }
+      if (f.name !== "V") settleHeadSection(false);
+      if (f.name === "K") sawKey = true;
       if (f.name === "w") {
         const lp = ensurePart();
         if (lp.museStyle !== "skip") addLyricLine(ctx, lp, f, pendingLyrics);
@@ -1675,6 +1734,8 @@ export function parseAbcFamily(
     lastField = undefined;
     const s = ensureSong();
     void s;
+    settleHeadSection(true);
+    musicSeen = true;
     const p = ensurePart();
     // Muse 的吉他谱、尤克里里谱轨（`style=tab`/`ukulele`）不读：报过一次，这里静默跳过
     if (p.museStyle === "skip") continue;
@@ -1858,7 +1919,7 @@ function applyField(
       if (ctx.d.id === "jcx" && f.value) addMeta(song, "source", f.value);
       break;
     case "P":
-      // ABC 的段落顺序串（`P:A2`）。**本轮只存原文**，展开语义归后续
+      // 只有 Muse 走到这里（123/ABC 在 `parseAbcFamily` 里按段落读）：原文留着
       (song.remarks ??= []).push(`P:${f.value}`);
       break;
     default:

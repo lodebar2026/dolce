@@ -45,6 +45,7 @@ export type Feature =
   | "graceArc"       // 倚音连到自己主音的弧（文本谱的倚音是音符属性，弧落不到倚音上）
   | "dynamics"       // 力度与渐强渐弱
   | "playOrder"      // 演唱顺序（含 skip/limit）
+  | "sectionOrder"   // 段落顺序（ABC §3.1.9 的 `P:` 与曲内标记）
   | "style"          // 样式表引用
   | "layoutDirectives" // 文档内的版面指令（文本谱的 `FontSize:` / `Margin:` / `Space:` / `Off:`）
   | "keyChange"      // 曲中转调
@@ -92,6 +93,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   graceArc: "倚音连到主音的弧（别的弧改挂到主音上）",
   dynamics: "力度与渐强渐弱",
   playOrder: "演唱顺序（房号跳转、第几遍配第几段词）",
+  sectionOrder: "段落顺序（P:，会改成按谱面的反复记号唱）",
   style: "样式表引用",
   layoutDirectives: "版面指令（字号、页边距等）",
   keyChange: "曲中转调",
@@ -144,7 +146,7 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
 const FANQIE_GONE: Feature[] = [
   // `{dsb…}` 并排块里不跟词（`tofanqie.ts`）
   "innerVoiceLyrics",
-  "beamGroup", "octaveShift", "style", "playOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
+  "beamGroup", "octaveShift", "style", "playOrder", "sectionOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
   // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
   "tremolo", "bowing", "rehearsal", "multiRest", "arpeggio", "notehead",
   // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
@@ -179,7 +181,8 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   abc: allBut("style", "playOrder", "innerVoiceLyrics", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "octaveShift", "harmonyOffset", "lyricOnRest", "rehearsal", "multiRest"),
   // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
   // 音符堆：写出端只留最高音、删 voice > 1
-  jpwabc: allBut("beamGroup", "octaveShift", "tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
+  // `P:` 不展开进 `.Repeat`（用户定 2026-10-31：`.Repeat` 是旧私有扩展，只读不写新东西）
+  jpwabc: allBut("sectionOrder", "beamGroup", "octaveShift", "tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
   // 文本谱：投影档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
   // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
   // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `fanqie/dialect.ts::EmitStyle.pageFields`）
@@ -193,17 +196,17 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   //   · 演奏法（`articulations` 里不是力度名的那批）、拉丁歌词的连字符（`syllabic`）写不出；
   //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
   //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
-  jly: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder",
+  jly: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder", "sectionOrder",
     "layoutDirectives", "dynamics", "verseLabel", "tonicDegree", ...EXT_123),
   // Muse `.jcx`（`emitjcx.ts`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
   // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
   // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
-  jcx: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiSong", "style", "playOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
+  jcx: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiSong", "style", "playOrder", "sectionOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
     "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak", "tonicDegree", ...EXT_123),
   // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
   // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
   // jianpu-ly、Muse、`.jpwabc` 的调号也只写 `1=` 大调 / 调号，主音唱名同样写不出。
-  musicxml: allBut("playOrder", "style", "layoutDirectives", "nestedArc", "oddTuplet", "tonicDegree"),
+  musicxml: allBut("playOrder", "sectionOrder", "style", "layoutDirectives", "nestedArc", "oddTuplet", "tonicDegree"),
 };
 
 /** 文本谱认的版面指令（`fanqie/parse.ts` 的头部字段）。123/ABC 读进来是小写（`I:fontsize`）。 */
@@ -260,6 +263,7 @@ export function featuresUsed(doc: ScoreDoc): Set<Feature> {
   for (const song of doc.songs) {
     if (song.parts.length > 1) used.add("multiVoice");
     if (song.playOrder?.length) used.add("playOrder");
+    if (song.sectionOrder) used.add("sectionOrder");
     if (song.style?.sheetRef || song.style?.inline?.length) used.add("style");
     for (const r of song.style?.raw ?? []) used.add(LAYOUT_DIRECTIVE.test(r.key) ? "layoutDirectives" : "style");
     // MusicXML 的页脚只写在 `<credit>` 里：转简谱文本时才落成页面文字（`jianpuproject.ts::headerFromCredits`），照转出的算

@@ -332,6 +332,9 @@ export abstract class AbcFamilyEmitter {
   /** 时值怎么写（跟在音后面）。123 是 `_`/`.`，ABC 是分数。 */
   protected abstract durationText(el: Element): string;
 
+  /** 当前这首：元素 id → 写在它前面的段落标记（Muse 自己写 `emitSong`，这里恒空：它没有 `P:`） */
+  private sectionsBefore = new Map<ElementId, string[]>();
+
   /** 调号怎么写。123 是首调 `1=F`，ABC 是音名 `F` / `Em`。头部 `K:` 与曲中转调 `[K:]` 共用。 */
   protected abstract keyValue(k: Key): string;
 
@@ -944,6 +947,7 @@ export abstract class AbcFamilyEmitter {
       }
       prevGrace = undefined;
       let s = "";
+      for (const name of this.sectionsBefore.get(el.id) ?? []) s += `[P:${name}]`;
       // 和弦符号前置（规范 §8.1）
       // 从 MusicXML 读进来的和弦是结构化的（根音 + kind），没有原文就按结构拼出来
       const chordText = el.harmony ? harmonyText(el.harmony) : "";
@@ -1034,6 +1038,10 @@ export abstract class AbcFamilyEmitter {
     if (song.work.title !== undefined) pushLines(L, "T", song.work.title);
     for (const st of song.work.subtitles) pushLines(L, "T", st);
     for (const c of song.identification?.creators ?? []) pushLines(L, "C", c.text);
+    // 段落顺序写在 `K:` 前（ABC 的头部到 `K:` 为止），读回才还是顺序
+    if (song.sectionOrder) L.push(`P:${song.sectionOrder.text}`);
+    this.sectionsBefore = new Map();
+    for (const m of song.sectionMarks ?? []) this.sectionsBefore.set(m.before, [...(this.sectionsBefore.get(m.before) ?? []), m.name]);
     const k = this.keyText(song);
     if (k) L.push(`K:${k}`);
     const mt = this.timeValue(song);
@@ -1072,7 +1080,7 @@ export abstract class AbcFamilyEmitter {
     }
     if (song.playOrder?.length) L.push(`I:playorder ${playOrderText(song)}`);
     for (const r of song.remarks ?? []) {
-      // `P:` 原文在解析期被塞进 remarks，原样还回去
+      // Muse 读进来的 `P:` 原文（123/ABC 的在 `sectionOrder`），原样还回去
       if (r.startsWith("P:")) L.push(r);
       else pushLines(L, "N", r);
     }

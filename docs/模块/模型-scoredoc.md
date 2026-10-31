@@ -49,7 +49,7 @@
 | `src/omr/todoc.ts` | ← 简谱识别结果（`RecognizedScore` 直出简谱形状，与 `abcfamily/parse.ts` 同口径；不经 MusicXML） |
 | `src/model/tojpw.ts` | → `.jpwabc`（`emitJpwabc`；写出端只经输入接口读谱，两侧输入由 `playdoc.ts::jpwInputOfDoc` / `playsong.ts::jpwInputOfSong` 拼） |
 | `src/model/phrasedoc.ts` / `src/jianpu/phrasesong.ts` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
-| `src/model/playdoc.ts` / `src/jianpu/playsong.ts` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`；推理本体在 `score/playorder.ts`。回归 `playorder-check --cmp` |
+| `src/model/playdoc.ts` / `src/jianpu/playsong.ts` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `score/playorder.ts`。回归 `playorder-check --cmp` |
 | `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么） |
 | `src/model/hanconv.ts` | **简繁转换**（五种格式通用）：`textGroups` 枚举人读的文字、`convertScoreDoc` 改模型、`convertSourceText` 只改原文里的字；词表加载在 `src/common/hanconv.ts`（opencc-js 按方向动态 import） |
 

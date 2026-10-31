@@ -49,6 +49,8 @@ export class PlayItem extends TimePosition {
   limit = -1;
   /** 从这一小节起接在前面同一行末尾、不另起一行（只在最后一遍唱的「阿们」结尾，`lastVerseTail`） */
   glueFrom = -1;
+  /** 按 `P:` 排的：这一项所在段落的小节。`pass` 是段内第几行词，「这一行词唱完了」只在这些小节里判（`timeline.ts`、`place/expand.ts`） */
+  scope?: ReadonlySet<number>;
   clone(): PlayItem {
     const p = new PlayItem();
     p.mid = this.mid;
@@ -59,6 +61,7 @@ export class PlayItem extends TimePosition {
     p.skip = this.skip;
     p.glueFrom = this.glueFrom;
     p.limit = this.limit;
+    p.scope = this.scope;
     return p;
   }
 }
@@ -72,6 +75,8 @@ export class PlayData {
   isSimpple = false; // no repeat, only multiple verse
   /** 第一处漏写 `:|` 的房（小节下标，见 `PlayOrder.impliedRepeat`）；没有为 -1 */
   impliedRepeat = -1;
+  /** 顺序来自头部 `P:`：没唱的小节是作者定的 */
+  fromSections = false;
   /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用 timeline.ts 的默认值。
    *  来源：MusicXML `<sound tempo>` / OMR 页眉的 `♩=76` / .jpwabc `.Title` 的 `Tempo`。 */
   tempo = 0;
@@ -191,6 +196,147 @@ export function playOrderOf(parts: readonly PlayPart[], jumps: PlayJumps): PlayO
   if (!hasJump) lastVerseTail(parts, out);
   if (!hasJump) glueCoda(parts, out);
   return { measures: out, isSimple, hasRepeat: measures.some((m) => m?.repeatBackward), impliedRepeat: rep.impliedRepeat };
+}
+
+/** 曲内段落标记：从第 `mid` 小节第 `skip` 个和弦起（`skip` 大于 0 = 写在小节中间） */
+export interface SectionMark {
+  readonly name: string;
+  readonly mid: number;
+  readonly skip: number;
+}
+
+/** 一段：按谱面先后的小节（同名多处拼成一段），首尾可能是被标记切开的半小节 */
+interface Section {
+  mids: number[];
+  /** 被标记切开的小节：小节下标 → 从第几个和弦起 / 到第几个和弦 */
+  skips: Map<number, number>;
+  limits: Map<number, number>;
+  used: number;
+  scope: Set<number>;
+}
+
+/** 按头部 `P:` 排的演唱顺序（ABC §3.1.9）。每次进入一段都**新跑一遍** `RepeatProcessor`：段内的反复、房号、D.C./D.S. 从头算，
+ *  它的遍号只用来挑房；交出去的 `pass` 是这一段的第几行词（§5.2 按段落各自计遍，段内反复也算行，下一次进入接着往下）。
+ *  第一个标记之前的小节在最前面唱一次（标准没规定，不丢内容）。`seq` 里的段落一个都不存在时返回 null，交回 `playOrderOf`。 */
+export function sectionPlayOrder(parts: readonly PlayPart[], jumps: PlayJumps, seq: readonly string[], marks: readonly SectionMark[]): PlayOrder | null {
+  const count = parts[0]!.measures.length;
+  const sorted = [...marks].sort((a, b) => a.mid - b.mid || a.skip - b.skip);
+  const byName = new Map<string, Section>();
+  const add = (name: string, from: { mid: number; skip: number }, to: { mid: number; skip: number }): void => {
+    const end = to.skip > 0 ? to.mid + 1 : to.mid;
+    if (from.mid >= end) return;
+    let s = byName.get(name);
+    if (!s) byName.set(name, (s = { mids: [], skips: new Map(), limits: new Map(), used: 0, scope: new Set() }));
+    for (let mid = from.mid; mid < end; mid++) {
+      s.mids.push(mid);
+      s.scope.add(mid);
+    }
+    if (from.skip > 0) s.skips.set(from.mid, from.skip);
+    if (to.skip > 0) s.limits.set(to.mid, to.skip);
+  };
+  // 空串是第一个标记之前的那几小节，排不进 `seq`（段落名不会是空的）
+  const first = sorted[0] ?? { mid: count, skip: 0 };
+  add("", { mid: 0, skip: 0 }, first);
+  sorted.forEach((m, i) => add(m.name, m, sorted[i + 1] ?? { mid: count, skip: 0 }));
+  const names = seq.filter((n) => byName.has(n));
+  if (names.length === 0) return null;
+
+  const out: PlayItem[] = [];
+  let implied = -1;
+  for (const name of byName.has("") ? ["", ...names] : names) {
+    const s = byName.get(name)!;
+    const { items, impliedRepeat } = sectionRun(parts, jumps, s);
+    if (implied < 0) implied = impliedRepeat;
+    let top = 0;
+    for (const it of items) {
+      top = Math.max(top, it.pass);
+      it.pass += s.used;
+      it.scope = s.scope;
+    }
+    s.used += top;
+    if (items.length) items[items.length - 1]!.endOfPass = true;
+    out.push(...items);
+  }
+  if (out.length) out[out.length - 1]!.endOfPass = false;
+  return { measures: out, isSimple: false, hasRepeat: parts[0]!.measures.some((m) => m?.repeatBackward), impliedRepeat: implied };
+}
+
+/** 一段走一遍：把这一段切成一份只有这几小节的谱交给 `RepeatProcessor`，产物的小节下标换回全曲。 */
+function sectionRun(parts: readonly PlayPart[], jumps: PlayJumps, s: Section): { items: PlayItem[]; impliedRepeat: number } {
+  const local = new Map<number, number>();
+  s.mids.forEach((mid, i) => local.set(mid, i));
+  // 被标记切开的小节：反复起、房头算前半截的，`:|`、收房算后半截的
+  const slice = (m: PlayMeasure | undefined, mid: number): PlayMeasure | undefined => {
+    if (!m) return m;
+    const tail = s.limits.has(mid);
+    const head = s.skips.has(mid);
+    if (!tail && !head) return m;
+    return new Proxy(m, {
+      get(target, key) {
+        if (tail && key === "repeatBackward") return false;
+        if (tail && key === "endingRight") return null;
+        if (head && key === "repeatForward") return false;
+        return Reflect.get(target, key, target) as unknown;
+      },
+    });
+  };
+  const cut = parts.map((p) => ({ measures: s.mids.map((mid) => slice(p.measures[mid], mid)) }));
+  const rep = new RepeatProcessor(cut, localJumps(jumps, local), true);
+  const pos = new TimePosition();
+  pos.pass = 1;
+  while (pos.mid < s.mids.length) {
+    if (rep.process(pos) || pos.pass > 10 || rep.result.length > 20) break;
+  }
+  const items: PlayItem[] = [];
+  for (const r of rep.result) {
+    // 同名多处拼起来的段：下标连续的才是一项
+    let from = r.mid;
+    for (let i = r.mid; i < r.end; i++) {
+      if (i + 1 < r.end && s.mids[i + 1] === s.mids[i]! + 1) continue;
+      const it = r.clone();
+      it.mid = s.mids[from]!;
+      it.end = s.mids[i]! + 1;
+      if (from !== r.mid) it.offset = new Fraction(0);
+      const skip = s.skips.get(it.mid);
+      const m = parts[0]!.measures[it.mid];
+      if (skip !== undefined && m) {
+        it.skip = skip;
+        it.offset = skipOffset(m, skip);
+      }
+      const limit = s.limits.get(it.end - 1);
+      if (limit !== undefined) it.limit = limit;
+      items.push(it);
+      from = i + 1;
+    }
+  }
+  return { items, impliedRepeat: rep.impliedRepeat < 0 ? -1 : s.mids[rep.impliedRepeat]! };
+}
+
+/** 跳转表换成段内下标。落点不在这一段的 D.S. / To Coda 不算（跨段跳转没有定义），D.C. 回段首。 */
+function localJumps(jumps: PlayJumps, local: ReadonlyMap<number, number>): PlayJumps {
+  const inside = (t: TimePosition): TimePosition | null => {
+    const mid = local.get(t.mid);
+    return mid === undefined ? null : new TimePosition(mid, t.offset);
+  };
+  const marks = (from: ReadonlyMap<string, TimePosition>): Map<string, TimePosition> => {
+    const out = new Map<string, TimePosition>();
+    for (const [k, t] of from) {
+      const at = inside(t);
+      if (at) out.set(k, at);
+    }
+    return out;
+  };
+  const segno = marks(jumps.segno);
+  const coda = marks(jumps.coda);
+  const jumpTo = new Map<TimePosition, JumpSpec>();
+  for (const [t, v] of jumps.jumpTo) {
+    const at = inside(t);
+    if (!at) continue;
+    if (v.kind === PlaySpecKind.DalSegno && !segno.has(v.value as string)) continue;
+    if (v.kind === PlaySpecKind.ToCoda && !coda.has(v.value as string)) continue;
+    jumpTo.set(at, v);
+  }
+  return { segno, coda, jumpTo };
 }
 
 /** 接到末行的结尾最多几小节（「阿们」一两小节） */
@@ -553,7 +699,8 @@ class RepeatProcessor {
   result: PlayItem[] = [];
   impliedRepeat = -1;
 
-  constructor(private readonly parts: readonly PlayPart[], private readonly jumps: PlayJumps) {}
+  /** `structureOnly`：只看谱面记号、不看歌词（按 `P:` 排时遍数由记号定，`|: :|` 恒两遍；行数另算） */
+  constructor(private readonly parts: readonly PlayPart[], private readonly jumps: PlayJumps, private readonly structureOnly = false) {}
 
   private doJump(m: TimePosition, t: TimePosition): void {
     this.inJump = true;
@@ -684,7 +831,7 @@ class RepeatProcessor {
   }
 
   private tailKeepsPass(m: TimePosition): boolean {
-    if (m.pass <= 1) return false;
+    if (m.pass <= 1 || this.structureOnly) return false;
     const nums = new Set<number>();
     for (const p of this.parts) for (const n of verseNumbers(p, m.mid + 1, p.measures.length)) nums.add(n);
     return !nums.has(1) && nums.has(m.pass);
@@ -721,6 +868,7 @@ class RepeatProcessor {
 
   /** 段数取各声部的最大值：合唱谱的歌词常只挂在某一个声部上（圣哉三一歌挂在 Q2）。 */
   getPassCountByLrc(beg: number, end: number): number {
+    if (this.structureOnly) return 0;
     return Math.max(0, ...this.parts.map((p) => verseCount(p, beg, end)));
   }
 

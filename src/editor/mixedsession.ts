@@ -11,6 +11,7 @@ import { phraseCuts, type FitMeasure } from "../jianpu/phrase";
 import { layoutStaff } from "../mixed/layout";
 import { staffChordSpans } from "../mixed/layoutpass";
 import { scoreDocToMusicXml } from "../model/toxml";
+import { carrySections } from "../model/sections";
 import { musicXmlFormat, type DocFormatId } from "./formats";
 import type { StyleState } from "./stylestate";
 import { t } from "../i18n";
@@ -33,6 +34,8 @@ export interface MixedHost {
   _setMixedAvailable(available: boolean): void;
   /** 当前源文投成不带版面坐标的 MusicXML，带源元素 id */
   mixedSourceXml(): string;
+  /** 文本格式的源模型（段落顺序 `P:` 写不进 MusicXML，从它搬） */
+  currentScoreDoc(): ScoreDoc | null;
 }
 
 export class MixedSession {
@@ -91,6 +94,8 @@ export class MixedSession {
     if (this.mixedDoc && this._mixedDerivedText === key) return true;
     try {
       this.mixedDoc = musicXmlFormat.toScoreDoc(this.host.mixedSourceXml());
+      const src = this.host.currentScoreDoc();
+      if (src) carrySections(src, this.mixedDoc);
       this._mixedDerivedText = key;
       this._indexMixedSrcIds(this.mixedDoc);
       return true;

@@ -78,6 +78,7 @@ export const FEATURE_TOPICS_EN: { title: string; body: string[] }[] = [
       "The **Playback** button shows Play / Pause / Resume; ■ stops and returns to the beginning. Jianpu, Staff, Mixed and the Compare view all show a vertical playhead across the line (the whole system for multiple parts) that follows every part's note onsets.",
       "Drag the **progress bar** to seek; the time shows elapsed / total (click to show remaining). While playing or paused, clicking a note continues from it; when stopped, clicking a note or dragging the bar sets where the next play starts.",
       "Playback follows the tempo marked in the score, and the speed drop-down scales it from ×0.5 to ×2; changing speed while playing continues from the current position.",
+      "The singing order follows the printed repeats and endings; 123 and ABC scores with `P:` follow the part order instead (see \"Part order P:\" on the 123 format tab).",
       "**Loop** (toolbar): with a range selected on the score (the visual-editing selection) that range repeats; with nothing selected the whole piece loops — handy for practising a few measures. **Click**: a metronome ticks every beat during playback, higher on the downbeat; compound meters like 6/8 tick in dotted quarters.",
       "For multi-part scores, the **Parts** panel in the header sets each part's volume and can mute a part or play only one (solo, for part practice); changes during playback continue from the current position.",
       "The **macOS desktop app** can use the system's native instruments for better sound.",

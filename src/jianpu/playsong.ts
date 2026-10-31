@@ -18,7 +18,7 @@ import { writtenOctaveOf } from "../model/jianpu";
 import { Fraction } from "../common/fraction";
 import {
   JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
-  playOrderByVerses, playOrderFromSpec, playOrderOf,
+  playOrderByVerses, playOrderFromSpec, playOrderOf, sectionPlayOrder, type SectionMark,
 } from "../score/playorder";
 import { linesOfVoice, voiceNumbers, type MusicElement, type FanqieSong } from "./ast";
 import { Key, MusicCommon } from "../score/jppitch";
@@ -31,6 +31,7 @@ import { playSourceOfDoc } from "../model/playdoc";
 import { hasTieSyntax, hasVoiceOverlay, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
 import { axisOfSong, spreadOnAxis } from "../model/timeaxis";
 import { breaksOf } from "../model/breaks";
+import { locateSectionMarks } from "../model/sections";
 
 export interface PlaySongOptions {
   /** 见 `ToScoreOptions.forExpanded` */
@@ -252,6 +253,7 @@ function foldToFirstPart(pd: PlayData, { slots, length }: SongMeasures): PlayDat
   out.hasRepeat = pd.hasRepeat;
   out.isSimpple = pd.isSimpple;
   out.tempo = pd.tempo;
+  out.fromSections = pd.fromSections;
   for (const it of pd.measures) {
     const have: number[] = [];
     for (let g = it.mid; g < it.end; g++) if (local[g]! >= 0) have.push(g);
@@ -269,6 +271,7 @@ function foldToFirstPart(pd: PlayData, { slots, length }: SongMeasures): PlayDat
     }
     if (have[have.length - 1] !== it.end - 1) c.limit = -1;
     if (it.glueFrom >= 0) c.glueFrom = Math.min(nextLocal(it.glueFrom), c.end);
+    if (it.scope) c.scope = new Set([...it.scope].flatMap((g) => (local[g]! >= 0 ? [local[g]!] : [])));
     out.measures.push(c);
   }
   const move = (t: TimePosition): TimePosition => {
@@ -281,7 +284,16 @@ function foldToFirstPart(pd: PlayData, { slots, length }: SongMeasures): PlayDat
   return out;
 }
 
-function playDataOf(doc: ScoreDoc, songIdx: number, built: SongMeasures): PlayData {
+/** 段落标记 → 轴上的格。写在主旋律以外声部的小节中间时贴到小节头：`skip` 数的是主旋律的和弦。 */
+function sectionMarksOf(song: Song, { parts, slots, docRank }: SongMeasures): SectionMark[] {
+  const where = new Map<ElementId, { rank: number; mid: number; skip: number }>();
+  parts.forEach((ms, k) => ms.forEach((m, i) => m.entries.forEach((ch, index) => {
+    if (ch.id !== undefined) where.set(ch.id, { rank: docRank[k]!, mid: slots[k]![i]!, skip: k === 0 ? index : 0 });
+  })));
+  return locateSectionMarks(song, (id) => where.get(id));
+}
+
+function playDataOf(doc: ScoreDoc, songIdx: number, built: SongMeasures, useSections = true): PlayData {
   const { song, voices, parts, jumps, idToChord, slots, length } = built;
   const main = leadOnAxis(built);
   const pd = new PlayData();
@@ -305,7 +317,11 @@ function playDataOf(doc: ScoreDoc, songIdx: number, built: SongMeasures): PlayDa
 
   applyJumps(pd, main, jumps.map((j) => ({ ...j, measure: slots[0]![j.measure]! })));
   try {
-    const order = playOrderOf([{ measures: main }, ...parts.slice(1).map((ms, k) => ({ measures: spreadOnAxis(ms, slots[k + 1]!, length) }))], pd);
+    const playParts = [{ measures: main }, ...parts.slice(1).map((ms, k) => ({ measures: spreadOnAxis(ms, slots[k + 1]!, length) }))];
+    const seq = useSections ? docSong.sectionOrder?.seq ?? [] : [];
+    const bySections = seq.length ? sectionPlayOrder(playParts, pd, seq, sectionMarksOf(docSong, built)) : null;
+    pd.fromSections = bySections !== null;
+    const order = bySections ?? playOrderOf(playParts, pd);
     pd.isSimpple = order.isSimple;
     // `.jpwabc` 读进来按反复记号推的顺序，重读时照样推得出来：不算「有反复」，写出端就不另补 `.Repeat`（往返定点）
     pd.hasRepeat = order.hasRepeat && doc.sourceFormat !== "jpwabc";
@@ -379,7 +395,8 @@ function applyJumps(pd: PlayData, measures: readonly MeasureOut[], jumps: readon
 export function jpwInputOfSong(doc: ScoreDoc, songIdx = 0): JpwScoreIn | null {
   const built = songMeasures(doc, songIdx, {}, false);
   if (!built) return null;
-  const playData = foldToFirstPart(playDataOf(doc, songIdx, built), built);
+  // `P:` 不展开进 `.Repeat`（只读的旧扩展）：存 `.jpwabc` 时走丢失提示，顺序按谱面记号推
+  const playData = foldToFirstPart(playDataOf(doc, songIdx, built, false), built);
   const meta = built.song.metadata;
   for (const tempo of meta.tempos) {
     if (typeof tempo === "number" && tempo >= 20 && tempo <= 400) {

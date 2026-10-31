@@ -896,6 +896,10 @@ export interface Song {
   parts: Part[];
   marks: Mark[];
   playOrder?: PlayPass[];
+  /** 头部 `P:` 的段落顺序（ABC §3.1.9）：`text` 原文照写回，`seq` 展开后的段落名（写错了为空，退回按谱面推） */
+  sectionOrder?: { text: string; seq: string[] };
+  /** 曲内 `P:A` / `[P:A]` 的段落标记：`before` 是标记后第一个非倚音和弦 */
+  sectionMarks?: { name: string; before: ElementId }[];
   style?: StyleRef;
   pageText?: PageText;
   /** 无前缀的自由文字行（注记、勘误、版权说明） */

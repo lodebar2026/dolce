@@ -33,6 +33,8 @@ export interface MeasureCut {
   final: boolean;
   /** 接在前一小节同一行、不在它前面换行（`PlayItem.glueFrom`） */
   glue?: boolean;
+  /** 按 `P:` 排的：这一遍的词只在这些小节里算（`PlayItem.scope`） */
+  scope?: ReadonlySet<number>;
 }
 
 export interface PlaySink {
@@ -66,6 +68,7 @@ export function walkPlay(items: readonly PlayItem[], sink: PlaySink): void {
         limit: mid === it.end - 1 ? it.limit : -1,
         final: mid === it.end - 1 && idx === items.length - 1,
         ...(it.glueFrom >= 0 && mid >= it.glueFrom ? { glue: true } : {}),
+        ...(it.scope ? { scope: it.scope } : {}),
       });
     }
     if (it.endOfPass) {

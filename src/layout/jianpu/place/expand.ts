@@ -61,6 +61,8 @@ export function measureSlices(rows: readonly RowView[]): Slot[][] {
 interface Pass {
   slots: Slot[];
   verses: number[];
+  /** 与 `verses` 平行：按 `P:` 排时这个符号的词在哪些小节里算（`PlayItem.scope`） */
+  scopes?: (ReadonlySet<number> | undefined)[];
   breaks: Map<number, boolean>;
   /** 往回跳（同一段词）处必断的行：落在第几个符号之前 */
   hard?: Set<number>;
@@ -130,6 +132,7 @@ function passesOf(
       for (const s of slots) {
         cur.slots.push(s);
         cur.verses.push(pass);
+        if (cut.scope) (cur.scopes ??= [])[cur.slots.length - 1] = cut.scope;
         const br = breaks.get(`${s.row}:${s.idx}`);
         if (br !== undefined) cur.breaks.set(cur.slots.length, br);
       }
@@ -207,6 +210,21 @@ function plainBarline(el: BarlineElement): BarlineElement {
   return { ...el, type: repeat ? "normal" : el.type, repeatForwardAfter: false };
 }
 
+/** 第 `v` 段在段落 `scope` 里最后一个字之后（判据同 `afterVerseEnd`，只数这一段的小节，同 `timeline.ts`） */
+function afterVerseEndIn(
+  scope: ReadonlySet<number>, slices: readonly Slot[][], cursorOf: readonly (readonly number[])[],
+  lyricsOf: readonly (readonly LyricLine[])[], v: number, row: number, k: number,
+): boolean {
+  let end: [number, number] = [-1, -1];
+  for (const mid of [...scope].sort((a, b) => a - b)) {
+    for (const s of slices[mid] ?? []) {
+      const c = cursorOf[s.row]![s.idx]!;
+      if (c >= 0 && lyricsOf[s.row]!.find((x) => x.verseFrom <= v && v <= x.verseTo)?.syllables[c]?.text) end = [s.row, c];
+    }
+  }
+  return row > end[0] || (row === end[0] && k > end[1]);
+}
+
 /** 第 `v` 段整首最后一个字落在哪（源行序、行内第几个字）；按 `lyricsOf` 缓存 */
 const verseEnds = new WeakMap<readonly (readonly LyricLine[])[], Map<number, [number, number]>>();
 
@@ -232,6 +250,7 @@ function rowOf(
   cursorOf: readonly (readonly number[])[], marks: readonly LogicalMark[], posOf: ReadonlyMap<string, readonly number[]>,
   unrolled: boolean, idOf: Map<MusicElement, unknown>, owners: Map<LyricSyllable, unknown>,
   bars: { plain: boolean; finalAt: number },
+  slices: readonly Slot[][],
 ): RowView {
   const first = rows[pass.slots[a]!.row]!;
   const elements: MusicElement[] = [];
@@ -296,7 +315,8 @@ function rowOf(
     const own = lyricsOf[s.row]!.find((l) => l.verseFrom <= v && v <= l.verseTo);
     // 这一段的词已经唱完（整首里这一段最后一个字之后：副歌只在第 1 段写了，190《凡愿意者可来》、395《十架归路》、
     // 020《向主歌唱》第 2 段「庆贺。」之后的哈利路亚）：借最前面在这一格写了字的那一段。段中间用 `/` 留空的拖腔格后面还有字，不借
-    const done = afterVerseEnd(lyricsOf, v, s.row, k);
+    const scope = pass.scopes?.[i];
+    const done = scope ? afterVerseEndIn(scope, slices, cursorOf, lyricsOf, v, s.row, k) : afterVerseEnd(lyricsOf, v, s.row, k);
     const line = !done ? own : lyricsOf[s.row]!.find((l) => !!l.syllables[k]?.text) ?? own;
     const syl = line?.syllables[k];
     if (syl && syl.text) any = true;
@@ -650,7 +670,7 @@ export function expandSong(
         prev = k;
       });
     }
-    const whole = rowOf(pass, 0, pass.slots.length, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars(pass));
+    const whole = rowOf(pass, 0, pass.slots.length, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars(pass), slices);
     const lines = fillLines(whole, pass.breaks, m, ink, width, meter, { hard: pass.hard, skipShort: !layout, glue: pass.glue });
     // 没有 `.Layout` 的：一页最多 4 行，优先在副歌起头处换页，否则按行数均分（不留一页一行）
     if (!layout) {
@@ -674,7 +694,7 @@ export function expandSong(
         index: groups.length,
         texts: [],
         system: system++,
-        voices: [rowOf(pass, l.start, end, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars(pass))],
+        voices: [rowOf(pass, l.start, end, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars(pass), slices)],
       });
     });
     if (groups.length > 0) pages.push({ index: pages.length, groups });

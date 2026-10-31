@@ -397,7 +397,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.mode === "mixed") return null; // 混排的 `mixedDoc` 异步排，这时还是上一份
     const src = this.playable();
     if (!src || this._playDoc()?.songs[0]?.playOrder?.length) return null; // 写明了演唱顺序：不唱哪几小节是作者定的
-    const gaps = unplayedMeasures(src.playData.measures, src.parts[0]?.measures.length ?? 0);
+    // `P:` 没排进去的段落也是作者定的
+    const gaps = src.playData.fromSections ? [] : unplayedMeasures(src.playData.measures, src.parts[0]?.measures.length ?? 0);
     if (gaps.length) {
       let last = gaps[0]!;
       while (gaps.includes(last + 1)) last++;

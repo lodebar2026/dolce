@@ -7,7 +7,7 @@
 // 简谱形状（文本谱 / 123 / ABC / `.jpwabc`）在 `jianpu/playsong.ts`。
 
 import { Fraction } from "../common/fraction";
-import { JumpSpec, PlayData, PlaySpecKind, TimePosition, playOrderOf } from "../score/playorder";
+import { JumpSpec, PlayData, PlaySpecKind, TimePosition, playOrderOf, sectionPlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
 import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart } from "../score/timeline";
 import type { Accidental, Barline, Chord, Direction, ElementId, Measure, Note, Part, Song } from "./doc";
 import { midiPitch, topNote } from "./jianpu";
@@ -16,6 +16,7 @@ import { BarStyle } from "../score/enums";
 import { Key } from "../score/jppitch";
 import { distinctNumbers, mainVoiceOf, phrasePartOfDoc } from "./phrasedoc";
 import type { PhraseChord } from "../score/phraseinput";
+import { locateSectionMarks } from "./sections";
 
 /** 主旋律声部：第一个带歌词的声部，都没词取第一声部（同简谱形状 `forExpanded` 的口径）。
  *  歌词段数决定唱几遍，第一声部是伴奏、词在后面声部时按第一声部推就少唱了。 */
@@ -28,8 +29,9 @@ export function leadPartOf(song: Song): number {
  *  推理抛错照样抛出。
  *  - `lead`：段数按哪个声部的歌词推、`PlayItem.limit` 数哪个声部的和弦。缺省第一声部——引擎输入与 `.jpwabc` 写出端
  *    画的、写的都是第一声部，必须同一个；只有试听（`playSourceOfDoc`）传主旋律声部（`leadPartOf`）
- *  - `distinct`：同音同号的词顺延（试听那份，见 `phrasedoc.ts::distinctNumbers`） */
-export function playDataOfDoc(song: Song, { lead = 0, distinct = false }: { lead?: number; distinct?: boolean } = {}): PlayData {
+ *  - `distinct`：同音同号的词顺延（试听那份，见 `phrasedoc.ts::distinctNumbers`）
+ *  - `useSections`：按头部 `P:` 排（`I:playorder` 优先，这一路不认它，有它时也不用 `P:`） */
+export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSections = true }: { lead?: number; distinct?: boolean; useSections?: boolean } = {}): PlayData {
   const pd = new PlayData();
   const part = song.parts[0];
   if (!part) throw new Error("no part");
@@ -37,12 +39,29 @@ export function playDataOfDoc(song: Song, { lead = 0, distinct = false }: { lead
   part.measures.forEach((m, mid) => {
     for (const d of m.directions ?? []) if (d.sound) addSound(pd, d, new TimePosition(mid, cursorAt(m, d).divInt(div)));
   });
-  const order = playOrderOf([phrasePartOfDoc(song, lead, distinct).part], pd);
+  const view = phrasePartOfDoc(song, lead, distinct);
+  const seq = useSections && !song.playOrder?.length ? song.sectionOrder?.seq ?? [] : [];
+  const bySections = seq.length ? sectionPlayOrder([view.part], pd, seq, sectionMarksOfDoc(song, lead, view)) : null;
+  pd.fromSections = bySections !== null;
+  const order: PlayOrder = bySections ?? playOrderOf([view.part], pd);
   pd.isSimpple = order.isSimple;
   pd.measures = order.measures;
   pd.hasRepeat = order.hasRepeat;
   pd.impliedRepeat = order.impliedRepeat;
   return pd;
+}
+
+/** 段落标记 → (小节, 第几个和弦)。写在主旋律以外声部的小节中间时贴到小节头：`skip` 数的是主旋律的和弦。 */
+function sectionMarksOfDoc(song: Song, lead: number, view: ReturnType<typeof phrasePartOfDoc>): SectionMark[] {
+  const where = new Map<ElementId, { rank: number; mid: number; skip: number }>();
+  song.parts.forEach((p, rank) => p.measures.forEach((m, mid) => {
+    for (const el of m.elements) where.set(el.id, { rank, mid, skip: 0 });
+  }));
+  view.part.measures.forEach((m, mid) => (m.entries as readonly PhraseChord[]).forEach((ch, index) => {
+    const id = view.idOf.get(ch);
+    if (id !== undefined) where.set(id, { rank: lead, mid, skip: index });
+  }));
+  return locateSectionMarks(song, (id) => where.get(id));
 }
 
 /** `<direction>` 处的游标（divisions）：它前面最后一个非倚音和弦的终点，各声部各自累计。 */
@@ -256,7 +275,7 @@ const pitchIn = (n: Note | undefined, rest: boolean): JpwPitchIn => ({
  *  第一声部 voice ≤ 1、和弦取最高音（与断句同一份 `phrasePartOfDoc`）；标题/credit 照 `extractScoreTitle` 与 `<credit>` 的读法；
  *  倚音挂到它后面第一个新和弦上（跨小节也挂）；小节线条目按游标位置（只看是不是在小节开头）。 */
 export function jpwInputOfDoc(song: Song): JpwScoreIn {
-  const playData = playDataOfDoc(song);
+  const playData = playDataOfDoc(song, { useSections: false }); // `P:` 不展开进 `.Repeat`（只读的旧扩展）
   playData.tempo = tempoOfDoc(song);
   const part = song.parts[0]!;
   const view = phrasePartOfDoc(song);

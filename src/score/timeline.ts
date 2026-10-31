@@ -183,7 +183,7 @@ function measureLen(src: PlaySource, mid: number): number {
  *  `until` clips the last measure (PlayItem.limit：只唱到该小节第 n 个音符为止)。 */
 function playRanges(
   src: PlaySource,
-): { mid: number; end: number; offset: number; pass: number; until: number }[] {
+): { mid: number; end: number; offset: number; pass: number; until: number; scope?: ReadonlySet<number> }[] {
   const items = src.playData.measures;
   if (items.length > 0) {
     return items.map((p) => ({
@@ -192,6 +192,7 @@ function playRanges(
       offset: p.offset.toFloat(),
       pass: p.pass,
       until: p.limit >= 0 ? chordEnd(src, p.end - 1, p.limit) : Number.POSITIVE_INFINITY,
+      scope: p.scope,
     }));
   }
   // No expansion computed: linear single pass over all measures.
@@ -229,17 +230,28 @@ export function buildTimeline(src: PlaySource): Timeline {
   const slurDepth = new Map<number, number>();
   /** 记了 `-` 但不在弧里的音（行中间的 `_`）：这一遍后面要是再没有字，说明词已唱完，撤掉 */
   const looseDash: { note: TimedNote; pass: number }[] = [];
-  /** 各声部各段整首最后一个字落在哪（小节、条目下标），借词判「这一段唱完了」用 */
-  const verseEnd = src.parts.map((part) => {
-    const end = new Map<number, [number, number]>();
-    part.measures.forEach((m, mid) => m?.entries.forEach((ent, i) => {
-      if (!isTimelineChord(ent)) return;
-      for (const l of ent.notes[0]?.lyrics ?? []) if (l.text.replace(VERSE_PREFIX, "").trim()) end.set(l.number, [mid, i]);
-    }));
-    return end;
-  });
-  const afterVerseEnd = (pi: number, verse: number, mid: number, i: number): boolean => {
-    const e = verseEnd[pi]!.get(verse);
+  /** 各声部各段最后一个字落在哪（小节、条目下标），借词判「这一段唱完了」用。按 `P:` 排的只在本段落里数（`PlayItem.scope`），否则数整首 */
+  const verseEnds = new Map<ReadonlySet<number> | undefined, Map<number, [number, number]>[]>();
+  const verseEndsIn = (scope: ReadonlySet<number> | undefined): Map<number, [number, number]>[] => {
+    let ends = verseEnds.get(scope);
+    if (!ends) {
+      ends = src.parts.map((part) => {
+        const end = new Map<number, [number, number]>();
+        part.measures.forEach((m, mid) => {
+          if (scope && !scope.has(mid)) return;
+          m?.entries.forEach((ent, i) => {
+            if (!isTimelineChord(ent)) return;
+            for (const l of ent.notes[0]?.lyrics ?? []) if (l.text.replace(VERSE_PREFIX, "").trim()) end.set(l.number, [mid, i]);
+          });
+        });
+        return end;
+      });
+      verseEnds.set(scope, ends);
+    }
+    return ends;
+  };
+  const afterVerseEnd = (pi: number, verse: number, mid: number, i: number, scope: ReadonlySet<number> | undefined): boolean => {
+    const e = verseEndsIn(scope)[pi]!.get(verse);
     return e === undefined || mid > e[0] || (mid === e[0] && i > e[1]); // 整首没这一段的词：一律借（同投影档）
   };
   /** 各声部各遍最后一个有字的音的起点 */
@@ -285,7 +297,7 @@ export function buildTimeline(src: PlaySource): Timeline {
               // 起头的字带续记号的是谱上写明的；没写的，在弧里、或这一遍后面还有字才算（否则是这一遍的词唱完了，见 `looseDash`）
               const before = lastSung.get(pi);
               const follows = before !== undefined && before.pass === range.pass && Math.abs(before.note.t1 - t0) < 1e-6;
-              const word = lyricOfPass(nt, range.pass, afterVerseEnd(pi, range.pass, mid, ei));
+              const word = lyricOfPass(nt, range.pass, afterVerseEnd(pi, range.pass, mid, ei, range.scope));
               tn.lyric = word?.text ?? (follows && before.note.lyric !== undefined ? "-" : undefined);
               const held = word ? word.extend : tn.lyric !== undefined && before!.held;
               if (word !== undefined) lastWord.set(`${pi}:${range.pass}`, t0);
