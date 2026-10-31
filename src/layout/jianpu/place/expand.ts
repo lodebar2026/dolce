@@ -485,8 +485,8 @@ function rowOf(
   return row;
 }
 
-/** 源里写明的一行超出版心不到右边距的这个比例就不折，伸进边距 */
-const OVERHANG_MARGIN = 0.8;
+/** 压到底后还允许超版心多少（相对版心宽）：投影档右边距约 6%，伸进去一半不到 */
+const SQUEEZE_OVERHANG = 0.03;
 
 /**
  * 逐行装满（同 `Line.doLineBreak`）：按自然宽（紧排 + 歌词避让，不两端对齐）往行里收，放不下就退回到本行最后一条小节线之后断
@@ -503,6 +503,7 @@ export function fillLines(
   for (const it of laid.items) it.syllables = new Array(row.lyrics.length).fill(null);
   assignLyrics(laid.items, row.lyrics);
   const nat = naturalColumns([laid], m, ink);
+  let tight: ReturnType<typeof naturalColumns> | null = null;
   const items = laid.items;
   // 源里的换行落在第几个占位符号之前（元素下标 → 占位序号：落在它后面第一个占位符号上）
   const forcedAt = new Map<number, boolean>();
@@ -533,7 +534,7 @@ export function fillLines(
   while (i < items.length) {
     const left = nat.leftOf.get(items[i]!) ?? 0;
     let last = i;
-    let room = width;
+    let keepTo = 0;
     while (last < items.length) {
       if (last > i && hardAt.has(last)) {
         // 往回跳处源里写了换页（`P:` 上一段末尾的 `%%newpage`）
@@ -552,20 +553,18 @@ export function fillLines(
         }
       }
       const r = nat.rightOf.get(items[last]!) ?? 0;
-      if (r - left < room || last === i) {
+      if (r - left < width || last === i || last < keepTo) {
         last++;
         continue;
       }
-      // 源里写明的一行只超一点：折下去只剩一小截（行尾一两个音），不折，伸进右边距（放不下不压缩，`spacing.ts`）
-      if (room === width) {
-        let end = last + 1;
-        while (end < items.length && !forcedAt.has(end) && !hardAt.has(end)) end++;
-        const overhung = width + m.page.margin.right * OVERHANG_MARGIN;
-        if ((nat.rightOf.get(items[end - 1]!) ?? 0) - left < overhung) {
-          room = overhung;
-          last++;
-          continue;
-        }
+      // 源里写明的一行超了宽：压字距放得下就不折（`spacing.ts::placeColumns` 压），压到底还差一点就伸进右边距；不然折下去常只剩行尾几个音
+      let end = last + 1;
+      while (end < items.length && !forcedAt.has(end) && !hardAt.has(end)) end++;
+      tight ??= naturalColumns([laid], m, ink, 1);
+      if ((tight.rightOf.get(items[end - 1]!) ?? 0) - (tight.leftOf.get(items[i]!) ?? 0) < width * (1 + SQUEEZE_OVERHANG)) {
+        keepTo = end;
+        last++;
+        continue;
       }
       for (let k = last; k > i + 1; k--) {
         const bar = items[k - 1]!.element;

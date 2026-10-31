@@ -187,9 +187,19 @@ function columnsOf(lines: ReadonlyArray<SpacedLine>, m: JianpuGrid, ink: InkMeas
     .map((e) => e.col);
 }
 
-/** 紧排 + 歌词避让后的列锚点（还没两端对齐），以及每列歌词伸到的最右处。 */
-function packColumns(cols: readonly Column[], voices: number, m: JianpuGrid, ink: InkMeasurer): { X: number[]; lyricRight: number[]; lyricLeft: number[] } {
-  const gap = m.style.spacing.lyricGap;
+/** 放不下时压到底（`squeeze` = 1）数字占位缩到这个比例：字面宽里墨迹外的留白，再紧数字就挨上了 */
+const SQUEEZED_DIGIT = 0.75;
+
+/** 压 `squeeze`（0～1）后的列：数字占位变窄，小节线不动 */
+function squeezedCols(cols: readonly Column[], squeeze: number): Column[] {
+  const k = 1 - (1 - SQUEEZED_DIGIT) * squeeze;
+  return cols.map((c) => (c.bar ? c : { ...c, right: c.right * k }));
+}
+
+/** 紧排 + 歌词避让后的列锚点（还没两端对齐），以及每列歌词伸到的最右处。
+ *  `squeeze`（0～1）：放不下时压歌词，字间那道呼吸收掉、下一个字可以压进上一个字的尾部留白（`，` 右半边是空的，标点挤压）、西文词距压一半。 */
+function packColumns(cols: readonly Column[], voices: number, m: JianpuGrid, ink: InkMeasurer, squeeze = 0): { X: number[]; lyricRight: number[]; lyricLeft: number[] } {
+  const gap = m.style.spacing.lyricGap * (1 - squeeze);
   // 紧排：落笔原点挨着上一列的占位右缘（+ 硬让位）；行首那一列的倚音、临时记号整个让出来
   const N: number[] = [];
   let cur = 0;
@@ -224,7 +234,7 @@ function packColumns(cols: readonly Column[], voices: number, m: JianpuGrid, ink
       const hang = Math.max(0, Math.min(Math.min(...rs.map((r) => r.lead)), room, gap));
       const leftMost = Math.min(...rs.map((r) => -(r.lead + r.body / 2))) + hang;
       // 西文的词与词之间要留一个空格（`love, and joy?` 照中文挨排就成了 `love,andjoy?`）
-      const wordGap = rs.some((r, k) => latinWordBreak(st.prevLatin[k] ?? st.prevLatin[0] ?? "", r.text)) ? ink.lyricSpace : 0;
+      const wordGap = rs.some((r, k) => latinWordBreak(st.prevLatin[k] ?? st.prevLatin[0] ?? "", r.text)) ? ink.lyricSpace * (1 - squeeze / 2) : 0;
       x = Math.max(x, st.curX + wordGap - leftMost);
     }
     offset = x - N[ci]!;
@@ -232,9 +242,10 @@ function packColumns(cols: readonly Column[], voices: number, m: JianpuGrid, ink
     for (const [v, rs] of runs) {
       const st = state[v]!;
       const rightMost = Math.max(...rs.map((r) => r.width - r.lead - r.body / 2));
-      st.curX = x + rightMost + gap;
       // 各段里**留白最少**的那一段说了算（有一段挤不下就是挤不下）
-      st.prevBlank = Math.min(...rs.map((r) => r.tailBlank));
+      const tail = Math.min(...rs.map((r) => r.tailBlank));
+      st.curX = x + rightMost + gap - tail * squeeze;
+      st.prevBlank = tail * (1 - squeeze);
       st.prevLatin = rs.map((r) => r.text);
       lyricRight[ci] = Math.max(lyricRight[ci]!, x + rightMost);
       lyricLeft[ci] = Math.min(lyricLeft[ci]!, x + Math.min(...rs.map((r) => -(r.lead + r.body / 2))));
@@ -287,8 +298,8 @@ function justify(cols: readonly Column[], X: number[], extra: number): void {
  * 一组（system）各声部的横向排列：归列 → 紧排 → 歌词避让 → 两端对齐，写回每个符号的 `x` 与 `advance`。
  *
  * `width` 是这一行能用的宽（占位右缘最多到这里）。每行都两端对齐，末行也一样；往空档里加的总量最多是
- * 自然宽的 `maxHorizontalScale` 倍（同旧简谱引擎，短行因此不会被扯得满行都是）。放不下不压缩（紧排已是最紧），
- * 由窄纸重断行（`reflow.ts`）保证放得下。
+ * 自然宽的 `maxHorizontalScale` 倍（同旧简谱引擎，短行因此不会被扯得满行都是）。放不下先由窄纸重断行（`reflow.ts`）折；
+ * 到这里还放不下（投影档 `fillLines` 判过压得下的源行）就压字距，刚好放下为止。
  * 返回自然宽（占位右缘，含歌词）。
  */
 export function placeColumns(
@@ -297,9 +308,9 @@ export function placeColumns(
   ink: InkMeasurer,
   width: number,
 ): number {
-  const cols = columnsOf(lines, m, ink);
+  let cols = columnsOf(lines, m, ink);
   if (cols.length === 0) return 0;
-  const { X, lyricRight } = packColumns(cols, lines.length, m, ink);
+  let { X, lyricRight } = packColumns(cols, lines.length, m, ink);
   // 行右缘：从末列往回，到最后一个带歌词的列为止，取占位与歌词右缘里最靠右的（同 `Line.adjust`）
   const rightOf = (): number => {
     let r = 0;
@@ -309,6 +320,26 @@ export function placeColumns(
     }
     return r;
   };
+  // 放不下：二分求刚好放下的压缩量（压到底还放不下就压到底）
+  if (rightOf() > width) {
+    const base = cols;
+    const at = (q: number): void => {
+      cols = squeezedCols(base, q);
+      ({ X, lyricRight } = packColumns(cols, lines.length, m, ink, q));
+    };
+    let lo = 0;
+    let hi = 1;
+    at(hi);
+    if (rightOf() <= width) {
+      for (let k = 0; k < 8; k++) {
+        const mid = (lo + hi) / 2;
+        at(mid);
+        if (rightOf() > width) lo = mid;
+        else hi = mid;
+      }
+      at(hi);
+    }
+  }
   // 往空档里加的总量最多是自然宽的 `maxHorizontalScale` 倍
   const extraOf = (r: number): { extra: number; capped: boolean } => {
     const cap = m.style.spacing.maxHorizontalScale * r;
@@ -527,9 +558,11 @@ export function naturalColumns(
   lines: ReadonlyArray<SpacedLine>,
   m: JianpuGrid,
   ink: InkMeasurer,
+  /** 压到什么程度量（1 = 压到底，投影档判「压一压放不放得下」） */
+  squeeze = 0,
 ): { xOf: Map<PlacedItem, number>; leftOf: Map<PlacedItem, number>; rightOf: Map<PlacedItem, number>; width: number } {
-  const cols = columnsOf(lines, m, ink);
-  const { X, lyricRight, lyricLeft } = packColumns(cols, lines.length, m, ink);
+  const cols = squeezedCols(columnsOf(lines, m, ink), squeeze);
+  const { X, lyricRight, lyricLeft } = packColumns(cols, lines.length, m, ink, squeeze);
   const xOf = new Map<PlacedItem, number>();
   // 各列占到的最左 / 最右处（占位与歌词字取并集，同旧简谱引擎条目的 `entryBounds`）：投影档逐行装满按它判放不放得下（place/expand.ts::fillLines）
   const leftOf = new Map<PlacedItem, number>();
