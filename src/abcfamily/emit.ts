@@ -571,10 +571,10 @@ export abstract class AbcFamilyEmitter {
     return "";
   }
 
-  /** 换行/换页怎么写。123 用显式的 `$`/`$$`；ABC 默认是**代码换行即谱面换行**
-   *  （§6.1 的 `I:linebreak <EOL>`），所以那一档写真换行。 */
-  protected breakText(newPage: boolean): string {
-    return newPage ? "$$" : "$";
+  /** 换行怎么写。123 用显式的 `$`；ABC 默认是**代码换行即谱面换行**
+   *  （§6.1 的 `I:linebreak <EOL>`），所以那一档写真换行。换页见 `pageBreakLine`。 */
+  protected breakText(): string {
+    return "$";
   }
 
   /** 和弦符号怎么写。ABC 只有引号形 `"Am7"`；123 能省就省（见 `emit123.ts`）。
@@ -588,7 +588,7 @@ export abstract class AbcFamilyEmitter {
    *  后面的 `w:` 歌词行就成了孤儿。 */
   protected readonly trailingBreak: boolean = true;
 
-  /** 换页单独占一行写在两个系统之间（ABC 的 `%%newpage`）；null = 换页由 `breakText` 写在行内（123 的 `$$`） */
+  /** 换页单独占一行写在两个系统之间（ABC §11.4.7 的 `%%newpage`，123 同）；null = 这种方言写不出换页 */
   protected readonly pageBreakLine: string | null = null;
 
   /** 渐强渐弱的起止怎么写：缺省是 ABC 的装饰 `!crescendo(!` … `!crescendo)!`（123 同）；Muse 写 `(<` … `<)`。
@@ -783,7 +783,7 @@ export abstract class AbcFamilyEmitter {
       let el0 = 0;
       for (const cut of cuts) {
         out.push(this.measureBody(mea, { slurStart, slurEnd, tupletStart, tupletEnd, arcNext, wedgeStart, wedgeEnd }, el0, cut.at));
-        out.push(this.breakText(cut.kind === "page"));
+        out.push(this.breakText());
         flush();
         ri++;
         el0 = cut.at;
@@ -805,7 +805,7 @@ export abstract class AbcFamilyEmitter {
       // 模型记「下一小节起新系统」（`doc.ts::Print`），源码的 `$` 写在本小节之后
       // 原位换行过的小节，下一小节上那份小节级 `print` 是同一处换行，不再写第二个 `$`
       const brk = cuts.length ? null : breakAfter(part, i);
-      if (brk && (!last || this.trailingBreak)) out.push(this.breakText(brk === "page"));
+      if (brk && (!last || this.trailingBreak)) out.push(this.breakText());
     }
     flush();
     while (texts.length < ranges.length) texts.push("");
@@ -1041,7 +1041,6 @@ export abstract class AbcFamilyEmitter {
       for (const v of vals) for (const line of v.split(LINE_END)) L.push(`I:meta ${key} ${line}`.trimEnd());
     }
     if (song.style?.sheetRef) L.push(`I:style ${song.style.sheetRef}`);
-    if (song.linesPerPage) L.push(`I:linesperpage ${song.linesPerPage}`);
     // 指令名**一律小写输出**：`parseInstruction` 读入时会归一成小写（ABC 的 `I:` 不区分大小写），
     // 这里若保留原样大小写，往返一轮就会从 `I:FontSize` 变成 `I:fontsize`
     for (const r of song.style?.raw ?? []) L.push(`I:${r.key.toLowerCase()} ${r.value.split(LINE_END).join(" ")}`);
@@ -1101,6 +1100,11 @@ export abstract class AbcFamilyEmitter {
         for (const line of lyricLines(song.parts[i]!, this.lyricSeparator, this.lyricSkip, sys, this.lyricSlotRule, this.lyricStyle, (el) => this.extraSlots(el))) L.push(line);
       }
     }
+    // 末尾的换页：123 连最后一个换行都写（`trailingBreak`），它也要写才幂等；
+    // 末小节中间换过页的，小节级那一份是同一处（`partSystems` 同样不写第二个 `$`）
+    const end = ranges[ranges.length - 1];
+    const cutInLast = !!end && end.fromEl > 0 && end.from === song.parts[0]!.measures.length - 1;
+    if (end && this.pageBreakLine && this.trailingBreak && !cutInLast && breakAfter(song.parts[0]!, end.to) === "page") L.push(this.pageBreakLine);
     return L;
   }
 

@@ -184,7 +184,7 @@ function songInput(song: FanqieSong, idOf: (el: NoteElement) => ElementId | null
     const lines = linesOfVoice(song, v);
     if (lines.length === 0) continue;
     // ⚠ 页末（`pageEnds`）**两种视图都要给**：原来只在展开视图里给，于是换页在另一条路上被降级成换行 ——
-    //   实测：123 的 `$$` 与 jianpu-ly 的 `\pageBreak` 导出去都只剩 `\break`（写出端拿不到"这是换页"）。
+    //   实测：123 的 `%%newpage` 与 jianpu-ly 的 `\pageBreak` 导出去都只剩 `\break`（写出端拿不到"这是换页"）。
     parts.push({ measures: rowsPart(lines, time, key, idOf, forExpanded, pageEnds(song, v), !forExpanded) });
   }
   if (parts.length === 0) return null;

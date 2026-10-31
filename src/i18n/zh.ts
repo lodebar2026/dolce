@@ -697,6 +697,7 @@ export const zh = {
   "diag.badKey": "看不懂的调号：{v}",
   "diag.noSuchKey": "没有这个调：{v}（已保留原文）",
   "diag.badTime": "看不懂的拍号：{v}",
+  "diag.pageBreakRemoved": "$$ 已去掉，这里只按换行读；换页请在这一行曲的歌词之后单独写一行 %%newpage",
   "diag.playOrderRemoved": "I:playorder 已去掉，这一行不生效；要分段跳着唱请用 P:",
   "diag.part.badOrder": "看不懂的段落顺序 P:{v}，按谱面的反复记号唱",
   "diag.part.missing": "段落顺序 P: 里的段落 {v} 在曲内没有标记（P:{v}），唱的时候跳过",

@@ -950,7 +950,7 @@ function toFanqieSong(song: Song, index: number, rawLines: readonly string[], ha
       const build = builds[pi]![r]!;
       const sr = perPart[pi]![r]!;
       const p = sr.cont ? undefined : sr.measures[0]?.print;
-      // 换页：文本谱的 `[fenye]`、123 / ABC 手写的 `$$`。MusicXML 的 `new-page` 是原排版软件按它那张纸断的，不照搬
+      // 换页：文本谱的 `[fenye]`、123 / ABC 手写的 `%%newpage`。MusicXML 的 `new-page` 是原排版软件按它那张纸断的，不照搬
       if ((bySystem || handPages) && p?.newPage) newPage = true;
       if (p?.texts) {
         texts = p.texts;

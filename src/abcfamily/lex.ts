@@ -211,15 +211,11 @@ export abstract class AbcFamilyLexer {
         continue;
       }
 
-      // 换行 / 换页
+      // 换行（换页是单独一行 `%%newpage`，ABC §11.4.7；`$$` 已去掉，解析时报诊断、按换行读）
       if (ch === "$") {
-        if (line[i + 1] === "$") {
-          i += 2;
-          push({ kind: "break", text: "$$", value: "page" }, start, 2);
-        } else {
-          i++;
-          push({ kind: "break", text: "$", value: "line" }, start, 1);
-        }
+        const n = line[i + 1] === "$" ? 2 : 1;
+        i += n;
+        push({ kind: "break", text: line.slice(start, start + n) }, start, n);
         continue;
       }
 

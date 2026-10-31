@@ -372,7 +372,7 @@ export interface AttachedSource {
   source: SourceSpan;
 }
 
-/** 换行/换页符号在原文里的位置（123/ABC 的 `$` `$$`、`.jpwabc` 的 `$(…)`、文本谱的 `[fenye]`）。
+/** 换行/换页符号在原文里的位置（123/ABC 的 `$`、123 没写 `$` 的 `%%newpage`、`.jpwabc` 的 `$(…)`、文本谱的 `[fenye]`）。
  *  只给编辑用（可视化编辑显示、选中、删除换行符）；换行的语义仍在 `Print` / `lineBreakAfter` / `Part.endBreak`。 */
 export interface BreakSource {
   page: boolean;
@@ -673,7 +673,7 @@ export type DirectionPart = Pick<
   "type" | "text" | "tempo" | "spanType" | "wedgeType" | "line" | "shift"
 >;
 
-/** `<print>`：版面指示。123 的 `$`（换行）/ `$$`（换页）落在这里。
+/** `<print>`：版面指示。123 的 `$`（换行）/ `%%newpage`（换页）落在这里。
  *
  *  **口径与 MusicXML 一致：`newSystem`/`newPage` 表示「本小节起新系统/新页」**。
  *  源码里的 `$` 写在小节**之后**，解析器按「之后」收集、收尾时经
@@ -909,8 +909,6 @@ export interface Song {
   museDirectives?: string[];
   /** 扩展 meta（英文标题、经文、标签、分类…）。键见 `model/metakeys.ts`，读写走那里的 `getMeta`/`setMeta`。 */
   meta?: SongMeta;
-  /** 每页谱行数（`.jpwabc` 的 `.Layout LinesPerPage`，只对投影档有意义） */
-  linesPerPage?: number;
   source?: SourceSpan;
 }
 

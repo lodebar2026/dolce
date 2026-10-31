@@ -139,9 +139,11 @@ export class Emitter123 extends AbcFamilyEmitter {
   }
 
   /** `$` 后换行：一行曲一行源码，方便与源图逐行对照。123 的代码换行不是谱面换行，读回不变。 */
-  protected override breakText(newPage: boolean): string {
-    return newPage ? "$$\n" : "$\n";
+  protected override breakText(): string {
+    return "$\n";
   }
+
+  protected override readonly pageBreakLine = "%%newpage";
 
   /** 混合拍：页眉并排印着的几个拍号都写进 `M:`（`M:3/4 4/4 混合拍`，见规范 §3）。
    *  辅助拍号写在括号里的（文本谱 `P: 4/4 ( 2/4 )`）照原样带括号写出。 */

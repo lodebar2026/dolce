@@ -341,7 +341,7 @@ export function layoutDocument(
           if (g0 && g0.group.texts.length > 0) top = Math.min(top, g0.textY - m.style.size.words);
           offset = low + m.style.vertical.systemGap * 1.4 - top;
           // 首组头顶（房号、和弦、弧）也得让开上一页末行：至少留组间那道空（GROUP_CLEAR，同 layoutSong 组间），
-          // 只按基线留会压上去（123 的 `$$` 换页后首行带房号，064《啊！圣善夜》）
+          // 只按基线留会压上去（123 的 `%%newpage` 换页后首行带房号，064《啊！圣善夜》）
           if (g0) offset = Math.max(offset, low + GROUP_CLEAR * m.style.size.lyric - Math.min(...g0.voices.map((v) => v.y + v.top)));
         }
         for (const g of pg.groups) shiftGroup(g, offset);

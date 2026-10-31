@@ -698,6 +698,7 @@ export const en: Record<MsgKey, string> = {
   "diag.badKey": "Can't understand the key: {v}",
   "diag.noSuchKey": "No such key: {v} (original text kept)",
   "diag.badTime": "Can't understand the time signature: {v}",
+  "diag.pageBreakRemoved": "$$ has been removed and is read as a line break here; for a page break, write %%newpage on its own line after this music line's lyrics",
   "diag.playOrderRemoved": "I:playorder has been removed, so this line has no effect; use P: for sections sung out of order",
   "diag.part.badOrder": "Can't understand the part order P:{v}; following the repeat signs instead",
   "diag.part.missing": "Part {v} in the P: order is not marked in the tune (P:{v}), so it is skipped",

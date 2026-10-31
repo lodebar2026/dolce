@@ -121,9 +121,9 @@ function scanMusic(src: string, from: number, out: Span[]): void {
       push(i + 1, "note");
       continue;
     }
-    // 换行 `$` / 换页 `$$`
+    // 换行 `$`
     if (ch === "$") {
-      push(i + (rest.startsWith("$$") ? 2 : 1), "section");
+      push(i + 1, "section");
       continue;
     }
     push(i + 1, "unknown");

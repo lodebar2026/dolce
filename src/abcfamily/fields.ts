@@ -40,7 +40,6 @@ export const CJK_FIELD_ALIAS: Readonly<Record<string, FieldName>> = {
 export const CJK_INSTRUCTION_ALIAS: Readonly<Record<string, string>> = {
   样式: "style",
   断行: "linebreak",
-  每页行数: "linesperpage",
 };
 
 /** 一行头部字段的解析结果。 */

@@ -37,7 +37,7 @@
 | `R4{ … }` | 小节反复：读进来按 `\repeat percent N` 的语义**展开成 N 遍真实小节**（歌词一起复制、副本换新 id）；写出一律按真实小节写 |
 | `R*8` | 读：展开成 8 个整小节休止（模型里没有「N 小节休止」字段，但小节数是真实的）；写：一律写成 N 个休止小节 |
 | `R{ … } A{ … }` | 反复开始/收尾 → `Barline.repeat`（`forward`/`backward`）、第二房 → `Barline.ending`（`numbers: [2]`，与 123 的 `|2 … :|` 同一个落点） |
-| `\break` / `\pageBreak` | 换行/换页 → 小节末的记在**下一小节**的 `Measure.print`（`newSystem`/`newPage`）、小节中间的记在前一个和弦的 `lineBreakAfter`（与 123 的 `$`/`$$` 同一套口径） |
+| `\break` / `\pageBreak` | 换行/换页 → 小节末的记在**下一小节**的 `Measure.print`（`newSystem`/`newPage`）、小节中间的记在前一个和弦的 `lineBreakAfter`（与 123 的 `$`/`%%newpage` 同一套口径） |
 | `\bar ".|:"` / `\bar ":|."` | `Barline.repeat`（`forward`/`backward`）+ 小节线样式（123 的 `\|:` `:\|` 同落点） |
 | `chords=c2. g:7 c` | `Chord.harmony`（`{ root, kind: "", text }`）—— 与 123 的 `"Am7"` 同一个落点；读的时候 token 的**时值**是一条时间线，落到"起点 ≤ 该时刻"的最后一个音上 |
 | 页头 / `1=X` / `4/4` / `4=85` | `Song.work` / `Song.key` / `Song.time` / `Song.tempos` |
@@ -67,7 +67,7 @@
 - 词法**认得出但不当记号读**的写法见格式页「本版不收」；写不出的（和弦符号、多声部、
   多乐章、拉丁连字符）以 `%` 注释写进导出文件。
 - 跳转裸词按**小节线**收（`Barline.ornaments`），写在小节中间的裸词位置会挪到小节线。
-- `\pageBreak` 能读进模型、导到 123 是 `$$`，但**导出到 `.jly` 时会降级成 `\break`**：页末那一跳在共享的引擎输入里没带过来（`jianpu/slots.ts` 的页面切分按 `bySystem` 走；`jianpuinput.ts` 里已把 `pageEnds` 在两种视图都传上）。
+- `\pageBreak` 能读进模型、导到 123 是 `%%newpage`，但**导出到 `.jly` 时会降级成 `\break`**：页末那一跳在共享的引擎输入里没带过来（`jianpu/slots.ts` 的页面切分按 `bySystem` 走；`jianpuinput.ts` 里已把 `pageEnds` 在两种视图都传上）。
 - 可视化编辑方言没给 `measure`：谱面上不能插删小节（和弦名能改，见 `chordEdit`）。
 - 「按乐句重排」用的是**出厂值**（每 4 小节一行），还没接排版尺子（`FitMeasure`）。
 - `(` 与 `\(` **交叠**（`1 ( 2 \( 3 ) 4 \)`）读得进，写出时配对会乱（引擎输入里一个音只有一个弧终点）。

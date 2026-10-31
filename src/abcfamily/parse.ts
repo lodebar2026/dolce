@@ -186,6 +186,31 @@ function lastElementId(pb: PartBuild): ElementId | null {
   return null;
 }
 
+/** `$` 的语义是「**这一小节之后**换行」。小节线通常先到、当前小节已被推进 `measures`，
+ *  所以要赋给刚收尾的那一个；否则每次往返都会把换行往后挪一格。 */
+function breakTarget(pb: PartBuild): Measure {
+  return pb.measure.elements.length > 0 ? pb.measure : pb.part.measures[pb.part.measures.length - 1] ?? pb.measure;
+}
+
+/** 123 在这里记一处换行或换页（`$` 与没写 `$` 的 `%%newpage`）。 */
+function markBreak(ctx: Ctx, pb: PartBuild, kind: BreakKind, source: SourceSpan): void {
+  ctx.breakAfter.set(breakTarget(pb), kind);
+  (pb.part.breakSources ??= []).push({ page: kind === "page", after: lastElementId(pb), source });
+  noteInlineBreak(pb, kind);
+  if (pb.block) pb.block.broken = true;
+}
+
+/** 123 的 `%%newpage`：紧跟 `$`（中间只隔歌词行）就把那处换行升成换页。
+ *  123 的代码行末不是换行，不能像 ABC 那样升「最近一处」：更早的 `$` 与这里隔着音符，那不是同一处。 */
+function upgradeBreakToPage(ctx: Ctx, pb: PartBuild): boolean {
+  const src = pb.part.breakSources?.[pb.part.breakSources.length - 1];
+  if (!src || src.after !== lastElementId(pb)) return false;
+  src.page = true;
+  ctx.breakAfter.set(breakTarget(pb), "page");
+  if (pb.inlineBreak) pb.inlineBreak.kind = "page";
+  return true;
+}
+
 /** 声部里到目前为止的对位格数（含还没收尾的小节）。 */
 function slotCount(pb: PartBuild, rule: LyricSlotRule): number {
   let n = 0;
@@ -1130,15 +1155,8 @@ function buildMusicLine(
       }
 
       case "break": {
-        // `$` 的语义是「**这一小节之后**换行」。小节线通常先到、当前小节已被推进 `measures`，
-        // 所以要赋给刚收尾的那一个；否则每次往返都会把换行往后挪一格。
-        const target = pb.measure.elements.length > 0
-          ? pb.measure
-          : pb.part.measures[pb.part.measures.length - 1] ?? pb.measure;
-        ctx.breakAfter.set(target, t.value === "page" ? "page" : "system");
-        (pb.part.breakSources ??= []).push({ page: t.value === "page", after: lastElementId(pb), source: t.source });
-        noteInlineBreak(pb, t.value === "page" ? "page" : "system");
-        if (pb.block) pb.block.broken = true;
+        if (t.text === "$$") report(ctx, "page-break-removed", tr("diag.pageBreakRemoved"), t.source);
+        markBreak(ctx, pb, "system", t.source);
         break;
       }
 
@@ -1623,6 +1641,14 @@ export function parseAbcFamily(
         for (const b of builds.values()) breakToPage(ctx, b);
         continue;
       }
+      // 123 同一条指令：当前声部没写 `$` 也在这里换页（曲体第一个音之前的不算）；别的声部只升已有的换行
+      if (ctx.d.id === "123" && /^%%\s*newpage\b/i.test(line)) {
+        for (const b of builds.values()) {
+          if (upgradeBreakToPage(ctx, b) || b !== pb || lastElementId(b) === null) continue;
+          markBreak(ctx, b, "page", { line: ln, column: 0, offset: lineOffset, length: raw.length });
+        }
+        continue;
+      }
       // `%%directive` 等价 `I:directive`（ABC §11.0.2）
       if (line.startsWith("%%")) {
         applyInstruction(ctx, ensureSong(), parseInstruction(line.slice(2)), { line: ln, column: 0, offset: lineOffset, length: raw.length });
@@ -1923,11 +1949,6 @@ function applyInstruction(
     case "bottomleft": (song.pageText ??= emptyPageText()).bottomLeft.push(ins.value); break;
     case "bottomcenter": (song.pageText ??= emptyPageText()).bottomCenter.push(ins.value); break;
     case "bottomright": (song.pageText ??= emptyPageText()).bottomRight.push(ins.value); break;
-    case "linesperpage": {
-      const n = Number(ins.value.trim());
-      if (Number.isFinite(n) && n > 0) song.linesPerPage = n;
-      break;
-    }
     case "linebreak":
       (song.style ??= {}).raw = [...(song.style.raw ?? []), { key: "linebreak", value: parseLinebreak(ins.value) }];
       break;

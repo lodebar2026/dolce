@@ -493,7 +493,7 @@ export function emitJlyOfScore(score: JScore, warnings: Set<string> = new Set())
         tokens.push(ornamentsBefore(c, tupletSize, warnings) + chordBody(c, BEAM_LETTER[c.beams] ?? "", dots) + sustainOf(c) + ornamentsAfter(c, plan, warnings));
         if (plan.tieAfter.has(c)) tokens.push("~");                  // 延音线写在两音之间
       } else if (e.kind === "break") {
-        // ⚠ 模型里的换行（`JBreak`）**都是显式的**（123 的 `$`/`$$`、MusicXML 的 `<print new-system>`、
+        // ⚠ 模型里的换行（`JBreak`）**都是显式的**（123 的 `$`/`%%newpage`、MusicXML 的 `<print new-system>`、
         //   `.jly` 的 `\break`），所以除了收一行，还得把指令写出去 —— 只收一行的话上游根本不看行，
         //   "换系统"这个语义就丢了（实测：`\break` 的效果是真换行）。我们自己的 4 小节折行不走这里。
         // 写的位置要能**原样读回来**，不然来回一趟表示法就变了（实测：第二次导出把 `\break` 丢了）：

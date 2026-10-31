@@ -124,6 +124,8 @@ export interface EditDialect {
   /** 换行 / 换页符号；null = 这种格式的换行不是一个符号（文本谱另起一行 `Q:`），走 `relayoutBreaks` */
   lineBreak: string | null;
   pageBreak: string | null;
+  /** 换页除了 `pageBreak` 符号，还要在这一行曲的词后面另起一行写这条指令（123 的 `%%newpage`） */
+  pageBreakLine?: string;
   /** 圆滑线的起止符号 */
   slurOpen: string;
   slurClose: string;

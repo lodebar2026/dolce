@@ -451,8 +451,7 @@ export function showOptionsDialog(app: App): void {
   /** 简谱（投影档或简谱档，各格式同一组设置） */
   const isJp = !isMixed;
   const isJianpu = isJp && view === "original";
-  /** 「每页行数」写进 `.jpwabc` 的 `.Layout` 段，文本谱与 123 没有这个段
-   *  （123 是 `I:linesperpage`，尚未接）。 */
+  /** 「每页行数」写进 `.jpwabc` 的 `.Layout` 段，文本谱与 123 没有这个段。 */
   const hasLayoutSection = isPpt && app.docFormat === "jpwabc";
 
   const num = (value: number, min: number, max: number): HTMLInputElement => {

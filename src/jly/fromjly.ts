@@ -823,7 +823,7 @@ export function parseJly(text: string): JlyParse {
         }
         case "jump": addJump(JUMP_SHORT[tk.text] ?? "fine"); break;
         case "break": {
-          // `\break` / `\pageBreak` 的语义是「**这里之后**换系统/换页」（与 123 的 `$` / `$$` 同一套口径）：
+          // `\break` / `\pageBreak` 的语义是「**这里之后**换系统/换页」（与 123 的 `$` / `%%newpage` 同一套口径）：
           //   本小节里已经有音 = 小节中间换行，记在那个和弦的 `lineBreakAfter` 上；
           //   没有 = 刚收尾的那一小节之后换，记在**下一小节**的 `print` 上（模型的口径与 MusicXML 一致：
           //   `newSystem`/`newPage` 表示「本小节起新系统/新页」）。

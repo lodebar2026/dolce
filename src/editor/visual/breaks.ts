@@ -1,4 +1,4 @@
-// 可视化编辑的**换行/换页**：123（`$` / `$$`）的增删，连带拆、并歌词行。
+// 可视化编辑的**换行/换页**：123（`$`，换页再加一行 `%%newpage`）的增删，连带拆、并歌词行。
 //
 // ## 为什么不能只插一个 `$`
 //
@@ -26,6 +26,8 @@ export const LYRIC_RE = /^\s*w\s*:/;
 const CONT_RE = /^\s*\+\s*:/;
 /** 字段行（`K:`、`V:`、`I:`…）与注释：不是音乐行 */
 const FIELD_RE = /^\s*(?:[A-Za-z]\s*:|%)/;
+
+const NEWPAGE_RE = /^\s*%%\s*newpage\b/i;
 
 const isMusic = (text: string): boolean => text.trim() !== "" && !FIELD_RE.test(text);
 
@@ -132,10 +134,12 @@ export function insertBreak(ctx: EditCtx, pos: number, page: boolean): EditOutco
 
   // 换行就是代码行末（ABC）时不写符号
   const head = tok ? `${left} ${tok}` : left;
+  // 换页另占一行（ABC §11.4.7 的 `%%newpage`），写在前一行曲的词后面
+  const pageLine = page && ctx.dialect.pageBreakLine ? [ctx.dialect.pageBreakLine] : [];
   // 没有歌词：就地拆行
   // 换行不是符号（ABC）：光标落到新起那一行的行首，紧接着退格撤掉的就是这处换行（123 的光标在 `$` 后，同理）
   if (lyr.length === 0) {
-    const insert = right ? `${head}\n${right}` : head;
+    const insert = [head, ...pageLine, ...(right ? [right] : [])].join("\n");
     const caret = line.from + (right && !tok ? head.length + 1 : head.length);
     return { changes: [{ from: line.from, to: line.to, insert }], anchor: caret, head: caret };
   }
@@ -160,7 +164,7 @@ export function insertBreak(ctx: EditCtx, pos: number, page: boolean): EditOutco
   const b = trimEmpty(secondHalf);
   // 光标行之后到最后一条音乐行之间的代码行原样保留
   const middle = line.number < last.number ? state.doc.sliceString(state.doc.line(line.number + 1).from, last.to) : "";
-  const parts = [head, ...a];
+  const parts = [head, ...a, ...pageLine];
   const rest = [right, middle].filter((s) => s !== "");
   const tail = [...rest, ...b];
   const insert = [...parts, ...tail].join("\n");
@@ -182,6 +186,11 @@ export function deleteBreak(ctx: EditCtx, entry: SyncEntry): EditOutcome {
   const breaks = ctx.sync.ordered().filter((e) => e.kind === "break");
   // ABC：`entry` 是代码行末的换行符本身
   const line = state.doc.lineAt(entry.from);
+  // 没写 `$` 的 `%%newpage`：符号就是这一整行
+  if (NEWPAGE_RE.test(line.text)) {
+    const from = Math.max(0, line.from - 1);
+    return { changes: [{ from, to: line.to, insert: "" }], anchor: from, head: from };
+  }
   const before = state.doc.sliceString(line.from, entry.from).trimEnd();
   const after = entry.to <= line.to ? state.doc.sliceString(entry.to, line.to).trim() : "";
   // 前一行曲的格数（`$` 之前）
@@ -208,10 +217,15 @@ export function deleteBreak(ctx: EditCtx, entry: SyncEntry): EditOutcome {
   // 行末的 `$`：下面先是前一行曲的词，再是后一行曲的代码行与词
   const lyrA = lyricLinesAfter(state, line.number);
   if (typeof lyrA === "string") return { error: lyrA };
-  const nextN = (lyrA.length ? lyrA[lyrA.length - 1]! : line).number + 1;
+  let nextN = (lyrA.length ? lyrA[lyrA.length - 1]! : line).number + 1;
+  // 这处换行是换页：`%%newpage` 那一行一起删
+  const pageLine = nextN <= state.doc.lines && NEWPAGE_RE.test(state.doc.line(nextN).text) ? state.doc.line(nextN) : null;
+  if (pageLine) nextN++;
   if (nextN > state.doc.lines || !isMusic(state.doc.line(nextN).text)) {
     // 后面没有音乐了：直接删符号
-    return { changes: [{ from: line.from, to: line.to, insert: before }], anchor: line.from + before.length, head: line.from + before.length };
+    const changes = [{ from: line.from, to: line.to, insert: before }];
+    if (pageLine) changes.push({ from: pageLine.from - 1, to: pageLine.to, insert: "" });
+    return { changes, anchor: line.from + before.length, head: line.from + before.length };
   }
   const lastB = lastMusicLine(state, nextN, breaks, byLine);
   const lyrB = lyricLinesAfter(state, lastB.number);

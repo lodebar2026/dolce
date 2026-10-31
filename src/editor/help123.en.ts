@@ -10,7 +10,7 @@ export const GLOSSARY_123_EN: [string, string][] = [
   ["Field", "A line such as `K:1=G`; the part before the colon is the field name. Chinese names and full-width colons work too: `调：1=G`, `标题：奇异恩典`."],
   ["Music body", "Lines that aren't fields: notes, barlines, slurs and marks. Spaces are only for readability and don't affect the score."],
   ["Lyric slot", "When lyrics are aligned syllable by syllable, each note takes one slot; visible rests `0` and grace notes don't."],
-  ["`$` and `$$`", "`$` is a line break on the score and `$$` a page break; a music line is followed by its lyric lines."],
+  ["`$` and `%%newpage`", "`$` is a line break on the score; for a page break, write `%%newpage` on its own line after the music line's lyrics. A music line is followed by its lyric lines."],
   ["`%` comments", "From `%` at the start of a line to its end is a comment and doesn't appear on the score."],
 ];
 
@@ -123,7 +123,7 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
   {
     title: "Line and page breaks",
     body: [
-      "`$` is a line break on the score and `$$` a page break; ordinary line breaks in the code don't affect the score. If the original line ends without a barline, put `$` right after that note.",
+      "`$` is a line break on the score; for a page break, write `%%newpage` (a standard ABC layout directive) on its own line after the music line's lyrics; ordinary line breaks in the code don't affect the score. If the original line ends without a barline, put `$` right after that note.",
       "`I:linebreak <none>` ignores `$` and leaves line breaking to “By phrase”.",
     ],
   },

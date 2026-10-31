@@ -30,7 +30,7 @@ export type TokenKind =
   | "chord"       // "Am7"
   | "annotation"  // "^rit." / "_text"
   | "inlineField" // [K:G] / [M:3/4] / [I:style …]
-  | "break"       // $ 换行 / $$ 换页
+  | "break"       // $ 换行
   | "overlay"     // ABC 的 `&`：小节内临时多声部分隔（§7.4 voice overlay）
   | "wedge"       // Muse 的 `(<` `<)` `(>` `>)`：渐强渐弱起止（value = "crescendo start" 这类）
   | "space"       // 空白（符杠分组的依据，**不能丢**）

@@ -1,5 +1,5 @@
 // 123 的音符 token：`[#b n ## bb]数字[',]*[_.]*`（`abcfamily/dialect123.ts::scanNote` 的写法），
-// 增时线 `-`、小节线 `|`、换行 `$` / `$$`、圆滑线 `( )` 都是独立 token。
+// 增时线 `-`、小节线 `|`、换行 `$`、圆滑线 `( )` 都是独立 token。
 
 import { BARE_CHORD_RE } from "../../../abcfamily/dialect123";
 import type { Accidental } from "../../../model/doc";
@@ -56,7 +56,8 @@ export const DIALECT_123: EditDialect = {
   sep: " ",
   barline: "|",
   lineBreak: "$",
-  pageBreak: "$$",
+  pageBreak: "$",
+  pageBreakLine: "%%newpage",
   slurOpen: "(",
   slurClose: ")",
   slurInToken: false,

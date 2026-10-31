@@ -282,7 +282,7 @@ export const VISUAL_TOPICS_EN: { title: string; body: string[] }[] = [
   {
     title: "Formatting marks (line and page breaks)",
     body: [
-      "The **¶** button at the top right of the score pane (or `Ctrl/⌘+Shift+M`) toggles formatting marks: a line break `↵` at the end of each line and `⤓` at page breaks; the matching `$`, `$$`, `$(…)` and `[fenye]` in the source are dimmed.",
+      "The **¶** button at the top right of the score pane (or `Ctrl/⌘+Shift+M`) toggles formatting marks: a line break `↵` at the end of each line and `⤓` at page breaks; the matching `$`, `$(…)` and `[fenye]` in the source are dimmed.",
       "Click a line break to select it. In text jianpu (Fanqie / Shigeben) a line break simply starts a new `Q:` line, so there's no separate symbol in the source.",
     ],
   },
