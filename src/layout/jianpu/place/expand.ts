@@ -166,6 +166,47 @@ function passesOf(
     },
   });
   for (const [pass, key] of repeatOf) if (backCount.get(key) === 1) pass.afterRepeat = true;
+  // `:|` 前休止之后的弱起是引出下一遍的（与曲首弱起同音：158 一房末尾的「亲爱的」）：跟着下一遍起头，上一遍在它前面收，词跟着音走
+  for (const [next] of repeatOf) {
+    const prev = passes[passes.indexOf(next) - 1];
+    if (!prev) continue;
+    const noteOf = (sl: Slot): string | null => {
+      const n = rows[sl.row]!.refs[sl.idx]?.chord?.notes[0]?.degree;
+      return rows[sl.row]!.elements[sl.idx]!.kind === "note" && n ? `${n.number}:${n.octaveShift}` : null;
+    };
+    const isNote = (sl: Slot): boolean => rows[sl.row]!.elements[sl.idx]!.kind === "note";
+    const tail: string[] = [];
+    let cut = prev.slots.length;
+    let closed = false;
+    for (let k = prev.slots.length - 1; k >= 0; k--) {
+      const sl = prev.slots[k]!;
+      if (!isNote(sl)) continue;
+      const key = noteOf(sl);
+      if (key === null) {
+        closed = true;
+        break;
+      }
+      tail.unshift(key);
+      cut = k;
+    }
+    const head = prev.slots.filter(isNote).slice(0, tail.length).map(noteOf);
+    // 曲首那几个音之后接的就是下一遍起头的 `|:`
+    const nextAt = next.slots.find(isNote);
+    const headEnd = prev.slots.filter(isNote)[tail.length];
+    const sameTarget = !!nextAt && !!headEnd && nextAt.row === headEnd.row && nextAt.idx === headEnd.idx;
+    if (!closed || !tail.length || !sameTarget || tail.join() !== head.join()) continue;
+    const n = prev.slots.length - cut;
+    if (cut === prev.slots.length || cut === 0) continue;
+    const moved = prev.slots.splice(cut);
+    const movedVerses = prev.verses.splice(cut);
+    for (const at of [...prev.breaks.keys()]) if (at >= cut) prev.breaks.delete(at);
+    next.slots.unshift(...moved);
+    next.verses.unshift(...movedVerses);
+    if (prev.scopes || next.scopes) next.scopes = [...(prev.scopes?.splice(cut) ?? new Array<undefined>(n).fill(undefined)), ...(next.scopes ?? [])];
+    next.breaks = new Map([...next.breaks].map(([at, page]) => [at + n, page]));
+    if (next.hard) next.hard = new Set([...next.hard].map((at) => at + n));
+    if (next.glue) next.glue = new Set([...next.glue].map((at) => at + n));
+  }
   return passes;
 }
 
