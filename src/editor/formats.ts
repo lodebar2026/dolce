@@ -200,7 +200,7 @@ const JPWABC: FormatAdapter = {
 
 const FANQIE: FormatAdapter = {
   id: "fanqie",
-  defaultExt: ".pu",
+  defaultExt: ".jps",
   highlighter: fanqieHighlighter,
   // 文本谱是纯文本源格式：UTF-8 原文进、UTF-8 原文出。
   decode: (bytes) =>

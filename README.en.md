@@ -169,7 +169,7 @@ In the lyrics, CJK characters take one note each and need no spaces. Latin words
 | --- | --- | :-: | :-: | :-: | --- |
 | 123 | `.123` | ✅ | ✅ | ✅ | Primary jianpu format |
 | JP-Word | `.jpwabc` | ✅ | ✅ | ✅ | Opens and saves files JP-Word can read |
-| Plain-text jianpu | `.pu` `.fq` `.jps` `.txt` | ✅ | ✅ | ✅ | Fanqie and Shigeben dialects, detected automatically |
+| Plain-text jianpu | `.jps` `.pu` `.fq` `.txt` | ✅ | ✅ | ✅ | Fanqie and Shigeben dialects, detected automatically |
 | ABC | `.abc` | ✅ | ✅ | ✅ | Voices, repeats, endings, chords, ornaments… |
 | MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; opened as ABC source by default (Settings can pick 123 etc. or keep MusicXML), and the format menu switches back to the original |
 | Image / PDF | `.png` `.jpg` `.webp` `.pdf` | OMR | — | — | Jianpu images and scanned PDFs; staff PDFs, scanned or photographed staff notation |

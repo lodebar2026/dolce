@@ -2,8 +2,8 @@
 // main.ts 的 RECOG_EXT_RE、拖放分支里的内联正则、文件对话框的 accept 串），
 // 而且已经不一致：浏览器拖放分支根本不做白名单，Tauri 分支做。
 
-/** 文本谱（番茄 / 诗歌本）。`.txt` 太泛，进来后还要靠 sniffDialect 二次确认。 */
-export const FANQIE_EXT = ["pu", "fq", "jps", "txt"] as const;
+/** 文本谱（番茄 / 诗歌本）。保存用 `.jps`（`formats.ts::defaultExt`），其余只为打开旧文件。`.txt` 太泛，进来后还要靠 sniffDialect 二次确认。 */
+export const FANQIE_EXT = ["jps", "pu", "fq", "txt"] as const;
 /** 123 格式（简谱主格式，ABC 方言）。UTF-8，一首一文件。 */
 export const J123_EXT = ["123"] as const;
 /** jianpu-ly 的输入文本。**扩展名是它自己 `--export-jly` 写出来的**（上游 README 命令行选项），
