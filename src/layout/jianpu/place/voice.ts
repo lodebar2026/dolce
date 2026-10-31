@@ -58,7 +58,9 @@ export function layoutVoiceLine(
   ).filter((el, i, elements) => {
     const prev = elements[i - 1];
     // 原行的普通左线在重断行后可能落到行中，与前面的右线仍是同一个边界。
-    if (prev?.kind === "barline" && plainBarline(el) && el.type === "normal") return false;
+    // 前面那条不显形（`|*`、`|/`）时这条是唯一看得见的线，不并。
+    if (prev?.kind === "barline" && prev.type !== "invisible" && prev.type !== "hidden"
+      && plainBarline(el) && el.type === "normal") return false;
     // 同一行中相邻的结束线与起始反复号共用一个音乐边界；反复号取代普通线形。
     // 跨行时两端分别显示，带附加信息的线也不能在这里丢掉。
     let j = i + 1;

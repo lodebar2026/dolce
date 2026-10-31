@@ -580,7 +580,15 @@ export function fillLines(
     i = last;
   }
   // 行首按符号算的下标 → 元素下标：行首之前不占位的符号（`~`、内联层）跟着下一行
-  const at = starts.map((k, n) => ({ start: n === 0 ? 0 : items[k - 1]!.srcIndex + 1, page: pageAt.has(k) }));
+  const at = starts.map((k, n) => {
+    if (n === 0) return { start: 0, page: pageAt.has(k) };
+    let start = items[k - 1]!.srcIndex + 1;
+    // 并进行末那条线的小节线（`layoutVoiceLine` 不给它占位）是同一个边界，留在上一行，不落到下一行行首
+    if (items[k - 1]!.element.kind === "barline") {
+      while (start < items[k]!.srcIndex && row.elements[start]!.kind === "barline") start++;
+    }
+    return { start, page: pageAt.has(k) };
+  });
   // 只剩小节线的行并回上一行；只有休止的行（前奏不排后留下的、行末孤零零的 0）并到下一行，不占一行一页（全能的创造主）
   const out: Array<{ start: number; page: boolean }> = [];
   let carry: { start: number; page: boolean } | null = null;
