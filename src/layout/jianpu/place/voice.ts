@@ -20,6 +20,11 @@ function isBeamed(el: MusicElement): boolean {
   return el.kind === "note" && el.duration > 4;
 }
 
+function plainBarline(el: MusicElement): el is BarlineElement {
+  return el.kind === "barline" && !el.ornaments.length && !el.annotation
+    && !el.temporaryMeter && !el.temporaryKey && !el.repeatForwardAfter;
+}
+
 /**
  * 把一行歌词的音节按顺序发给该行「跟词」的符号。
  * 空音节（源码里的 `@` / `/`）本身就代表跳过一个音符，所以照序发即可。
@@ -51,12 +56,16 @@ export function layoutVoiceLine(
   const flat: MusicElement[] = voice.elements.filter(
     (el) => el.kind === "note" || el.kind === "sustain" || el.kind === "barline",
   ).filter((el, i, elements) => {
-    const next = elements[i + 1];
+    const prev = elements[i - 1];
+    // 原行的普通左线在重断行后可能落到行中，与前面的右线仍是同一个边界。
+    if (prev?.kind === "barline" && plainBarline(el) && el.type === "normal") return false;
     // 同一行中相邻的结束线与起始反复号共用一个音乐边界；反复号取代普通线形。
     // 跨行时两端分别显示，带附加信息的线也不能在这里丢掉。
-    return !(el.kind === "barline" && next?.kind === "barline" && next.type === "repeat-start"
-      && (el.type === "normal" || el.type === "double" || el.type === "end")
-      && !el.ornaments.length && !el.annotation && !el.temporaryMeter && !el.temporaryKey);
+    let j = i + 1;
+    let next = elements[j];
+    while (next && plainBarline(next) && next.type === "normal") next = elements[++j];
+    return !(plainBarline(el) && next?.kind === "barline" && next.type === "repeat-start"
+      && (el.type === "normal" || el.type === "double" || el.type === "end"));
   });
   // 换了样子的小节线（反复起点挪行）不在 voice.elements 里，记号坐标仍按原来那条算
   const srcMap = new Map<MusicElement, number>();

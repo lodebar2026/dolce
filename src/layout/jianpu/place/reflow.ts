@@ -44,6 +44,7 @@ export function reflowLineStarts(
         if (nat.width > width) overflow = true;
         let start = 0;
         let first: string | number | null = null;
+        let hasContent = false;
         const flush = (end: number): void => {
           const w = Math.max(0, end - start);
           if (open) {
@@ -58,13 +59,16 @@ export function reflowLineStarts(
           if (it.element.kind === "barline") {
             if (first !== null || open) flush(X(it));
             start = X(it);
+            hasContent = false;
             continue;
           }
+          hasContent = true;
           if (first === null && it.element.kind === "note") first = idOf.get(it.element) ?? null;
         }
         // 组尾没收口（小节中间换行）：留到下一组接着量
         const end = nat.width;
-        if (end - start > 1e-6 || first !== null) open = { w: end - start, first };
+        // 末线锚点右侧仍有半个线宽，那是线的墨迹，不是尚未结束的小节。
+        if (hasContent) open = { w: end - start, first };
       }
     }
     if (open) bars.push(open);
