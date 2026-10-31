@@ -582,12 +582,21 @@ export function fillLines(
   }
   // 行首按符号算的下标 → 元素下标：行首之前不占位的符号（`~`、内联层）跟着下一行
   const at = starts.map((k, n) => ({ start: n === 0 ? 0 : items[k - 1]!.srcIndex + 1, page: pageAt.has(k) }));
-  // 只剩小节线的行并回上一行
+  // 只剩小节线的行并回上一行；只有休止的行（前奏不排后留下的、行末孤零零的 0）并到下一行，不占一行一页（全能的创造主）
   const out: Array<{ start: number; page: boolean }> = [];
+  let carry: { start: number; page: boolean } | null = null;
   at.forEach((s, n) => {
     const e = at[n + 1]?.start ?? row.elements.length;
-    const hasNote = row.elements.slice(s.start, e).some((el) => el.kind === "note");
-    if (n === 0 || hasNote) out.push(s);
+    const els = row.elements.slice(s.start, e);
+    const hasNote = els.some((el) => el.kind === "note");
+    const sung = els.some((el) => el.kind === "note" && el.sound !== "rest");
+    if (n > 0 && !hasNote) return;
+    if (hasNote && !sung && n < at.length - 1) {
+      carry ??= s;
+      return;
+    }
+    out.push(carry ? { start: carry.start, page: carry.page || s.page } : s);
+    carry = null;
   });
   return out;
 }
@@ -939,7 +948,12 @@ export function expandSong(
     // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的（开了 `pair-pages` 时还有只换一句中段词的），这一遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
     // 整首从头再来、或反复三遍以上的仍一段一页——500 首成品里 044 这样每段 2 行、4 段的一律分页）
     const firstPageRows = lines.findIndex((l, n) => n > 0 && l.page);
-    const joinable = pass.afterRepeat && groups.length + (firstPageRows < 0 ? lines.length : firstPageRows) <= MAX_ROWS;
+    // 上一遍末尾写明了换页（一房 `:| $` 后的 `%%newpage`）就不接；后面还会走过这里的（237 没有房号的 `:|`），那个换页是走过时才换的
+    const prevPass = passes[passes.indexOf(pass) - 1];
+    const prevTail = prevPass?.slots[prevPass.slots.length - 1];
+    const pageWritten = !!prevPass && prevPass.breaks.get(prevPass.slots.length) === true
+      && !pass.slots.some((sl) => sl.row === prevTail!.row && sl.idx === prevTail!.idx);
+    const joinable = pass.afterRepeat && !pageWritten && groups.length + (firstPageRows < 0 ? lines.length : firstPageRows) <= MAX_ROWS;
     if (!joinable && groups.length > 0) {
       pages.push({ index: pages.length, groups });
       groups = [];
