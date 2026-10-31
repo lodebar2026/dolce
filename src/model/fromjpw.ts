@@ -339,31 +339,51 @@ function readVoice(sec: VoiceSectionLike, fifths: number, time: { beats: number;
 
 type VoiceSectionLike = Section & { voiceData: JpwToken[] };
 
-/** 歌词落点：按源文小节线数小节，**小节中间的换行不算**（JP-Word 原生的 013 有福的确据：行末 `(5. 5.)` 与下行
- *  `3_ 2_ 1_ |` 是一个 9/8 小节，副歌 `W1-3@9,3` 照这样数才落在副歌第一个音上；按换行再加一就早一小节、压进主歌）。
- *  没有音的小节不算：曲首 `|:|` 词法成 `|:` `|` 两根线，`readVoice` 为收它们开出一个空小节，
- *  数进去的话 `W1@1,2` 就落空、词整体早一格（`J14.你们要专心` 第一个字挂到了休止上）。 */
+/**
+ * 歌词落点 `@m,n`：**行末 `$` 算一个小节收尾**，没有音的小节不算（曲首 `|:|` 词法成 `|:` `|` 两根线，`readVoice` 为收它们开出一个空小节，
+ * 数进去的话 `W1@1,2` 就落空、词整体早一格：`J14.你们要专心` 第一个字挂到了休止上）。行末不带小节线的谱（弱起接在下一行）成品都这样数：
+ * 《一日当你》每行 8 条线加行末 `$`，副歌 `W1-4@37,1` 正落在第 5 行首音。
+ * 这样数会落进同一段前面已写的词里的，小节中间的 `$` 就不算（013 有福的确据：行末 `(5. 5.)` 与下行 `3_ 2_ 1_ |` 是一个 9/8 小节，副歌 `W1-3@9,3`
+ * 只有这样数才落在副歌第一个音上，否则压进主歌）。
+ */
 function assignLyrics(measures: readonly SrcMeasure[], f: JpwFile): void {
-  for (const seg of f.getLyric()?.segments ?? []) {
-    const notes: SrcNote[] = [];
-    let mid = 0;
-    for (const m of measures) {
-      if (!m.entries.some((e) => e.kind === "note")) continue;
-      mid++;
-      let nid = 0;
-      for (const ent of m.entries) {
-        if (ent.kind !== "note") continue;
-        nid++;
-        if (mid < seg.measure) continue;
-        if (mid === seg.measure && nid < seg.noteIndex) continue;
-        notes.push(ent);
+  /** 每个音两种数法下的（第几小节、第几个音）：`line` 行末 `$` 算收尾，`bar` 只认小节线 */
+  const seats: { note: SrcNote; line: [number, number]; bar: [number, number] }[] = [];
+  let lineMid = 0;
+  let barMid = 0;
+  for (const m of measures) {
+    if (!m.entries.some((e) => e.kind === "note")) continue;
+    lineMid++;
+    barMid++;
+    let lineNid = 0;
+    let barNid = 0;
+    m.entries.forEach((ent, i) => {
+      if (ent.kind === "break" && lineNid > 0 && m.entries.slice(i + 1).some((e) => e.kind === "note")) {
+        lineMid++;
+        lineNid = 0;
       }
-    }
-    let idx = 0;
+      if (ent.kind !== "note") return;
+      seats.push({ note: ent, line: [lineMid, ++lineNid], bar: [barMid, ++barNid] });
+    });
+  }
+  /** 各段词最后一个字落在第几个音 */
+  const verseEnd = new Map<number, number>();
+  for (const seg of f.getLyric()?.segments ?? []) {
+    const startBy = (k: "line" | "bar"): number => {
+      const at = seats.findIndex((s) => s[k][0] > seg.measure || (s[k][0] === seg.measure && s[k][1] >= seg.noteIndex));
+      return at < 0 ? seats.length : at;
+    };
+    let end = -1;
+    for (let pass = seg.passFirst; pass <= seg.passLast; pass++) end = Math.max(end, verseEnd.get(pass) ?? -1);
+    let idx = startBy("line");
+    if (idx <= end) idx = startBy("bar");
     for (const it of seg.data) {
-      if (idx >= notes.length) break;
-      for (let pass = seg.passFirst; pass <= seg.passLast; pass++) {
-        if (it.text.length > 0) notes[idx]!.lyrics.push({ number: pass, text: it.text, ...(it.source ? { source: { ...it.source } } : {}) });
+      if (idx >= seats.length) break;
+      if (it.text.length > 0) {
+        for (let pass = seg.passFirst; pass <= seg.passLast; pass++) {
+          seats[idx]!.note.lyrics.push({ number: pass, text: it.text, ...(it.source ? { source: { ...it.source } } : {}) });
+          verseEnd.set(pass, idx);
+        }
       }
       idx++;
     }
