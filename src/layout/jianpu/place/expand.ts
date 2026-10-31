@@ -68,6 +68,8 @@ interface Pass {
   hard?: Set<number>;
   /** 不许在它前面换行的符号（落在第几个符号之前；「阿们」结尾整段接在末行） */
   glue?: Set<number>;
+  /** 这一遍是从只回头一次的 `:|` 进来的（只唱两遍，放得下就接在上一遍那页，`expandSong`） */
+  afterRepeat?: boolean;
 }
 
 /**
@@ -119,11 +121,19 @@ function passesOf(
 ): Pass[] {
   const passes: Pass[] = [];
   let cur: Pass | null = null;
+  /** 上一遍收尾的那条 `:|` */
+  let endedOnRepeat: string | null = null;
+  const repeatOf = new Map<Pass, string>();
+  const backCount = new Map<string, number>();
   walkPlay(plan, {
     measure: (mid, pass, cut) => {
       const slots = cutSlots(slices[mid] ?? [], rows, cut);
       if (slots.length === 0) return;
-      cur ??= { slots: [], verses: [], breaks: new Map() };
+      if (!cur) {
+        cur = { slots: [], verses: [], breaks: new Map() };
+        if (endedOnRepeat) repeatOf.set(cur, endedOnRepeat);
+        endedOnRepeat = null;
+      }
       if (cur.slots.length === 0) passes.push(cur);
       if (cut.glue && cur.slots.length > 0) {
         cur.glue ??= new Set();
@@ -138,12 +148,22 @@ function passesOf(
       }
     },
     passEnd: () => {
+      // 小节线后面到下一个音之前的符号都归这一小节（`:|` 后面可能还跟着下一段的 `|:`）：往回找到音为止
+      endedOnRepeat = null;
+      for (let k = (cur?.slots.length ?? 0) - 1; k >= 0 && !endedOnRepeat; k--) {
+        const sl = cur!.slots[k]!;
+        const el = rows[sl.row]!.elements[sl.idx]!;
+        if (el.kind === "note") break;
+        if (el.kind === "barline" && el.type === "repeat-end") endedOnRepeat = `${sl.row}:${sl.idx}`;
+      }
+      if (endedOnRepeat) backCount.set(endedOnRepeat, (backCount.get(endedOnRepeat) ?? 0) + 1);
       cur = null;
     },
     jumpBack: () => {
       if (cur) (cur.hard ??= new Set()).add(cur.slots.length);
     },
   });
+  for (const [pass, key] of repeatOf) if (backCount.get(key) === 1) pass.afterRepeat = true;
   return passes;
 }
 
@@ -654,6 +674,7 @@ export function expandSong(
   }
   const pages: PageView[] = [];
   let system = 0;
+  let groups: SystemView[] = [];
   const passes = layout ? passesByDur(slices, rows, plan, layout.desc, layout.simple) : passesOf(slices, rows, plan, breaks);
   // 整首最后一条小节线（末遍末个符号是小节线时）：画终止线
   const lastPass = passes[passes.length - 1];
@@ -703,8 +724,14 @@ export function expandSong(
       }
       pageByRows(lines, (n) => markHeads.has(n) || refrainStart.has(startMeasure(n)));
     }
-    // 一遍一页起头；遍内源里的换页另起一页
-    let groups: SystemView[] = [];
+    // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的，第二遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
+    // 整首从头再来、或反复三遍以上的仍一段一页——500 首成品里 044 这样每段 2 行、4 段的一律分页）
+    const firstPageRows = lines.findIndex((l, n) => n > 0 && l.page);
+    const joinable = pass.afterRepeat && groups.length + (firstPageRows < 0 ? lines.length : firstPageRows) <= MAX_ROWS;
+    if (!joinable && groups.length > 0) {
+      pages.push({ index: pages.length, groups });
+      groups = [];
+    }
     lines.forEach((l, n) => {
       if (l.page && groups.length > 0) {
         pages.push({ index: pages.length, groups });
@@ -718,8 +745,8 @@ export function expandSong(
         voices: [rowOf(pass, l.start, end, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars(pass), slices)],
       });
     });
-    if (groups.length > 0) pages.push({ index: pages.length, groups });
   }
+  if (groups.length > 0) pages.push({ index: pages.length, groups });
   return { ...song, pages };
 }
 
