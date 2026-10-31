@@ -728,9 +728,9 @@ export function expandSong(
       if (list) list.push(i);
       else posOf.set(k, [i]);
     });
-    // 副歌起头也换行（短行照样不断），换页才有地方落在副歌前
+    // 副歌起头也换行（短行照样不断），换页才有地方落在副歌前。源里写了分行的以源为准，不在行中间另断（498 副歌从第 2 行半中间起，成品不在这里断）
     const soft = new Set<number>();
-    if (!layout) {
+    if (!layout && rows.length === 1) {
       let prev = -1;
       pass.slots.forEach((sl, i) => {
         const k = measureOf.get(slotKey(sl)) ?? -1;
