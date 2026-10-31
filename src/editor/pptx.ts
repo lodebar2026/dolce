@@ -3,7 +3,6 @@
 // minimal valid .pptx deck, and zips with fflate. SMuFL glyphs become outline
 // freeforms via opentype.js (Bravura.otf).
 
-import { YAHEI_ADVANCE } from "../common/yahei";
 import { zipSync, type Zippable } from "fflate";
 import * as opentype from "opentype.js";
 import { asset } from "../common/asset";
@@ -60,7 +59,12 @@ const TARGET_UPM = 2048;
 const TARGET_DESCENT = 536 / TARGET_UPM;
 /** 目标字体里这几个字的 advance（em 比例）。**表外的字一律照排版量到的宽度走**：
  *  汉字两套字都是 1 em，本来就对得上，只有西文数字/连字符这类比例字形对不上。 */
-const TARGET_ADVANCE = YAHEI_ADVANCE;
+const TARGET_ADVANCE: Record<string, number> = {
+  "-": 886 / TARGET_UPM,
+  ".": 493 / TARGET_UPM,
+  "\u00b7": 493 / TARGET_UPM,
+  ...Object.fromEntries([..."0123456789"].map((d) => [d, 1201 / TARGET_UPM])),
+};
 
 /** 目标字体里数字的**墨迹右缘**（em 比例，advance 的起点算 0）。0–9 落在
  *  0.512~0.551 之间（YaHei 是等宽数字），取中间值——附点要按它摆，见 augDotX。 */

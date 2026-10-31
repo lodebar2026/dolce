@@ -523,6 +523,28 @@ function pageByRows(lines: Array<{ start: number; page: boolean }>, refrainAt: (
   }
 }
 
+/**
+ * 多段两两并页（用户定 2026-10-31）：每段一页、页数成双、相邻两段放得下（合计不超过 `MAX_ROWS` 行）的，两页并一页。
+ * 排满的页（3 行以上）单独算一组；两两配不齐（单出一页，如三段各 2 行）或某一对放不下的整首不并。只并换遍处自动起的页，`%%newpage` 写明的不动。
+ */
+function pairPages(pages: readonly PageView[], passStarts: ReadonlySet<number>): PageView[] {
+  const merged: PageView[] = [];
+  let paired = false;
+  for (let i = 0; i < pages.length; i++) {
+    const a = pages[i]!;
+    if (a.groups.length > 2) {
+      merged.push({ ...a, index: merged.length });
+      continue;
+    }
+    const b = pages[i + 1];
+    if (!b || !passStarts.has(i + 1) || a.groups.length + b.groups.length > MAX_ROWS) return [...pages];
+    merged.push({ index: merged.length, groups: [...a.groups, ...b.groups.map((g, k) => ({ ...g, index: a.groups.length + k }))] });
+    paired = true;
+    i++;
+  }
+  return paired ? merged : [...pages];
+}
+
 /** `.Layout` 的 `BreakPoints = …`：时值串（`|` 分页、`.` 或空格分行，`{x}` 那一段不排），累计时值 → 0 丢弃 / 1 换行 / 2 换页（同 `Layout.parseBreakDur`） */
 function parseBreakDur(s: string): Map<string, number> {
   const res = new Map<string, number>();
@@ -753,6 +775,8 @@ export function expandSong(
     });
   }
   const pages: PageView[] = [];
+  /** 换遍处自动起的页（第几页）；`%%newpage` 写明的不在内 */
+  const passStarts = new Set<number>();
   let system = 0;
   let groups: SystemView[] = [];
   const passes = layout ? passesByDur(slices, rows, plan, layout.desc, layout.simple) : passesOf(slices, rows, plan, breaks);
@@ -815,6 +839,7 @@ export function expandSong(
     if (!joinable && groups.length > 0) {
       pages.push({ index: pages.length, groups });
       groups = [];
+      passStarts.add(pages.length);
     }
     lines.forEach((l, n) => {
       if (l.page && groups.length > 0) {
@@ -831,7 +856,7 @@ export function expandSong(
     });
   }
   if (groups.length > 0) pages.push({ index: pages.length, groups });
-  return { ...song, pages };
+  return { ...song, pages: layout ? pages : pairPages(pages, passStarts) };
 }
 
 /** 整份文档的投影档行视图（各首各按自己的演唱顺序逐首排；推不出演唱顺序的那首照原样） */
