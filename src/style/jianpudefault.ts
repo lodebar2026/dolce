@@ -61,6 +61,7 @@ export function defaultJianpuStyle(fontSize: number): JianpuStyle {
     look: {
       noteBold: true,
       pairPages: false,
+      noIntro: false,
       chordPlain: false,
       accidentalStyle: "csym",
       accidentalScale: 1,

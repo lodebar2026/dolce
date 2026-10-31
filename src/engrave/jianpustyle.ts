@@ -120,6 +120,7 @@ export interface JianpuStyle {
     noteBold: boolean;
     /** 投影档多段两两并页（`place/expand.ts::pairPages`），默认不并 */
     pairPages: boolean;
+    noIntro: boolean;
     chordPlain: boolean;
     accidentalSide?: AccidentalSide;
     accidentalStyle: AccidentalStyleKind;

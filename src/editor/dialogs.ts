@@ -621,6 +621,10 @@ export function showOptionsDialog(app: App): void {
   pairPages.type = "checkbox";
   pairPages.checked = app.style.pairPages;
   if (isJp && view === "expanded") pLayout.append(labeled(t("settings.pairPages"), pairPages));
+  const noIntro = document.createElement("input");
+  noIntro.type = "checkbox";
+  noIntro.checked = app.style.noIntro;
+  if (isJp && view === "expanded") pLayout.append(labeled(t("settings.noIntro"), noIntro));
 
   // 页眉四项的字体字号：各档共用（投影档原来单列的标题 / 词曲字号也并在这里）
   const header = headerGroup(app);
@@ -676,6 +680,7 @@ export function showOptionsDialog(app: App): void {
         : undefined,
       color: argb, bgColor: colorValue(bgColor, app.style.bgColor),
       ...(isJp && view === "expanded" && pairPages.checked !== app.style.pairPages ? { pairPages: pairPages.checked } : {}),
+      ...(isJp && view === "expanded" && noIntro.checked !== app.style.noIntro ? { noIntro: noIntro.checked } : {}),
       ...(isJianpu ? {
         ...(noteFontSel.value !== app.style.noteFont ? { noteFont: noteFontSel.value } : {}),
         ...(chordAccSel.value !== app.style.chordAccidental ? { chordAccidental: chordAccSel.value as "" | "before" | "after" } : {}),

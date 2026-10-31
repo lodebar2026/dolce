@@ -117,9 +117,37 @@ function cutSlots(slots: readonly Slot[], rows: readonly RowView[], cut: { skip:
   return out.filter((s) => rows[s.row]!.elements[s.idx]!.kind !== "inline-layer");
 }
 
-/** 按演唱顺序逐遍取符号。`skip` 去掉小节开头几个音（连同其前的符号），`limit` 只留前几个音（截断处不要小节线）。 */
+/**
+ * 前奏（样式键 `no-intro`）：曲首第一个字之前的符号。紧贴第一个字的休止与 `|:` 不算（028 `1-- 0_ 5,_` 的 `0_` 留着）；
+ * 不跨小节线（弱起没填词）或没有一个实音（起头空拍）的不是前奏。返回 `行:下标`。
+ */
+function introSlots(
+  slices: readonly Slot[][], rows: readonly RowView[], cursorOf: readonly (readonly number[])[], lyricsOf: readonly (readonly LyricLine[])[],
+): Set<string> {
+  const all = slices.flat();
+  const elOf = (s: Slot): MusicElement => rows[s.row]!.elements[s.idx]!;
+  const first = all.findIndex((s) => {
+    const c = cursorOf[s.row]![s.idx]!;
+    return c >= 0 && lyricsOf[s.row]!.some((l) => !!l.syllables[c]?.text);
+  });
+  let at = first;
+  while (at > 0) {
+    const el = elOf(all[at - 1]!);
+    if (!(el.kind === "note" && el.sound === "rest") && !(el.kind === "barline" && el.type === "repeat-start")) break;
+    at--;
+  }
+  const cut = at > 0 ? all.slice(0, at) : [];
+  const isIntro = cut.some((s) => elOf(s).kind === "barline") && cut.some((s) => {
+    const el = elOf(s);
+    return el.kind === "note" && el.sound !== "rest";
+  });
+  return new Set(isIntro ? cut.map((s) => `${s.row}:${s.idx}`) : []);
+}
+
+/** 按演唱顺序逐遍取符号。`skip` 去掉小节开头几个音（连同其前的符号），`limit` 只留前几个音（截断处不要小节线）；`drop` 里的符号不排。 */
 function passesOf(
   slices: readonly Slot[][], rows: readonly RowView[], plan: readonly PlayItem[], breaks: ReadonlyMap<string, boolean>,
+  drop: ReadonlySet<string>,
 ): Pass[] {
   const passes: Pass[] = [];
   let cur: Pass | null = null;
@@ -129,7 +157,7 @@ function passesOf(
   const backCount = new Map<string, number>();
   walkPlay(plan, {
     measure: (mid, pass, cut) => {
-      const slots = cutSlots(slices[mid] ?? [], rows, cut);
+      const slots = cutSlots(slices[mid] ?? [], rows, cut).filter((s) => !drop.has(`${s.row}:${s.idx}`));
       if (slots.length === 0) return;
       if (!cur) {
         cur = { slots: [], verses: [], breaks: new Map() };
@@ -779,7 +807,8 @@ export function expandSong(
   const passStarts = new Set<number>();
   let system = 0;
   let groups: SystemView[] = [];
-  const passes = layout ? passesByDur(slices, rows, plan, layout.desc, layout.simple) : passesOf(slices, rows, plan, breaks);
+  const intro = !layout && m.style.look.noIntro ? introSlots(slices, rows, cursorOf, lyricsOf) : new Set<string>();
+  const passes = layout ? passesByDur(slices, rows, plan, layout.desc, layout.simple) : passesOf(slices, rows, plan, breaks, intro);
   // 整首最后一条小节线（末遍末个符号是小节线时）：画终止线
   const lastPass = passes[passes.length - 1];
   const bars = (pass: Pass): { plain: boolean; finalAt: number } => {
@@ -818,7 +847,7 @@ export function expandSong(
     if (!layout) {
       for (const at of [0, ...(pass.hard ?? [])]) {
         const s = pass.slots[at];
-        if (s && rows[s.row]!.elements.slice(0, s.idx).some((el) => el.kind === "note")) jumpIn.add(at);
+        if (s && rows[s.row]!.elements.slice(0, s.idx).some((el, k) => el.kind === "note" && !intro.has(`${s.row}:${k}`))) jumpIn.add(at);
       }
     }
     const lines = fillLines(whole, pass.breaks, m, ink, width, meter, { hard: pass.hard, jumpIn, soft, glue: pass.glue });

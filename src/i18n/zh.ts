@@ -218,6 +218,7 @@ export const zh = {
   "settings.bookSheet.write": "写入文件",
   "settings.bookSheet": "诗集样式",
   "settings.pairPages": "多段两两并页",
+  "settings.noIntro": "不排前奏",
   "settings.noteFont": "音符字体",
   "settings.noteFont.follow": "默认",
   "settings.noteFont.pingfang": "苹方粗体",
