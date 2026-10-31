@@ -326,6 +326,8 @@ function readLyrics(noteEl: XmlEl): Lyric[] {
     const el2 = childText(l, "elision");
     if (el2 !== null) lr.elision = el2;
     bindSurface(lr, l);
+    // 同一个音上段号重复（编号被删过，几段词都写成 number="1"）：按出现次序往后排，否则只留得下第一段
+    while (out.some((x) => x.number === lr.number)) lr.number++;
     out.push(lr);
   }
   return out;
