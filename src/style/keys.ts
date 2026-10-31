@@ -46,6 +46,7 @@ export const JIANPU_KEYS: Record<string, KeyDef> = {
   "note-bold": { kind: "bool", jianpu: "look.noteBold", note: "混排的简谱数字不单独加粗" },
   "pair-pages": { kind: "bool", jianpu: "look.pairPages", note: "只投影档读：多段两两并页，默认不并" },
   "no-intro": { kind: "bool", jianpu: "look.noIntro", note: "只投影档读：不排第一个字之前的前奏，默认照排" },
+  "even-justify": { kind: "bool", jianpu: "look.evenJustify", note: "两端对齐把余量等量加到各个空档（旧投影片的排法），默认水位法灌平" },
   "beam-width": { kind: "len", jianpu: "stroke.beam", mixed: "lineWidths.jpBeam" },
   // 数字上下那一摞（八度点、减时线、低音点）墨迹到墨迹的空 ÷ 数字墨迹高（engrave/stack.ts）
   "stack-gap": { kind: "num", jianpu: "vertical.stackGap", mixed: "stackGap", book: "metrics.stackGap" },

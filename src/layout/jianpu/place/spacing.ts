@@ -258,13 +258,27 @@ function packColumns(cols: readonly Column[], voices: number, m: JianpuGrid, ink
  * 水位法两端对齐（`Line.adjust`）：把 `extra` 摊进各列之间的空档，空档按「已有宽 ÷ 权重」从窄到宽依次灌平。
  * 权重：音符到音符 2，挨着小节线的 1。临时记号的让位已在紧排里硬留（packColumns），这里不再另算。
  */
-function justify(cols: readonly Column[], X: number[], extra: number): void {
+function justify(cols: readonly Column[], X: number[], extra: number, even = false): void {
   const infos: Array<{ i: number; dist: number; rate: number }> = [];
   for (let i = 0; i + 1 < cols.length; i++) {
     const a = cols[i]!;
     const b = cols[i + 1]!;
     const dist = X[i + 1]! - b.left - (X[i]! + a.right);
     infos.push({ i, dist, rate: !a.bar && !b.bar ? 2 : 1 });
+  }
+  // 等量分配（`even-justify`）：按权重往每个空档加同样多，已有的宽差保留（带词的音比拖腔的音宽）
+  if (even) {
+    // 行末那条小节线前不加（它由 `adjustLastBarline` 那段贴到版心右缘）
+    const lastBar = cols[cols.length - 1]!.bar ? infos.length - 1 : -1;
+    const sum = infos.reduce((n, it, k) => n + (k === lastBar ? 0 : it.rate), 0);
+    if (sum === 0) return;
+    let moved = 0;
+    infos.forEach((it, k) => {
+      X[k] = X[k]! + moved;
+      if (k !== lastBar) moved += (extra * it.rate) / sum;
+    });
+    X[infos.length] = X[infos.length]! + moved;
+    return;
   }
   infos.sort((p, q) => {
     const diff = p.dist * q.rate - q.dist * p.rate;
@@ -347,7 +361,7 @@ export function placeColumns(
   };
   const justified = (xs: number[]): void => {
     const r = rightOf();
-    if (width > r) justify(cols, xs, extraOf(r).extra);
+    if (width > r) justify(cols, xs, extraOf(r).extra, m.style.look.evenJustify);
   };
   const words = new SectionWordRoom(lines, cols, m, ink, width);
   words.spread(X, lyricRight, rightOf, justified);
@@ -355,7 +369,7 @@ export function placeColumns(
   const right = rightOf();
   if (width > right) {
     const { extra, capped } = extraOf(right);
-    justify(cols, X, extra);
+    justify(cols, X, extra, m.style.look.evenJustify);
     // 末一条小节线贴到版心右缘（`Line.adjustLastBarline`）：离前一个音最多三个字号
     const n = cols.length;
     if (!capped && n >= 2 && cols[n - 1]!.bar && !cols[n - 2]!.bar) {

@@ -120,6 +120,8 @@ export interface JianpuStyle {
     noteBold: boolean;
     /** 投影档多段两两并页（`place/expand.ts::pairPages`），默认不并 */
     pairPages: boolean;
+    /** 两端对齐把余量等量加到各个空档（旧投影片的排法：一个字唱的几个音聚在一起），缺省水位法灌平 */
+    evenJustify?: boolean;
     noIntro: boolean;
     chordPlain: boolean;
     accidentalSide?: AccidentalSide;

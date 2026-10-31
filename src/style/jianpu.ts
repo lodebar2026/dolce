@@ -93,7 +93,11 @@ export function jianpuStyleOf(sheet: StyleSheet): JianpuStyle {
       st.size.sectionWord = role("sectionWord", st.size.chord);
       // 页眉 TL/TR 与页脚
       st.size.header = role("header", st.size.header);
-    } else if (preset === "pptx") applyPptxPreset(st);
+    } else if (preset === "pptx") {
+      applyPptxPreset(st);
+      // 投影档的歌词缺省同音符字号；样式表写了 `lyric { size }` 就用它（旧投影片歌词比音符大：500 首 32 对 28）
+      st.size.lyric = sheet.roles?.lyric?.size !== undefined ? (rolePt(sheet, "lyric", st.size.note) ?? st.size.lyric) : st.size.lyric;
+    }
   }
   applyFonts(st, sheet);
   applyOverrides(st, sheet);
