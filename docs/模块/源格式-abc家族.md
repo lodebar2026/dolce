@@ -29,13 +29,13 @@
 | `src/abcfamily/dialect123.ts` | 123 的音乐体：度数 `1-7`/`0`、前置 `#b n`、`'`/`,` 八度点、`_` 减时线、`.` 附点 |
 | `src/abcfamily/dialectabc.ts` | ABC 的音乐体：音名 `A-G`/`a-g`、前置 `^_=`、分数时值、`z`/`Z` 休止、`[CEG]` 和弦、`>`/`<` 破碎节奏、单字符装饰 |
 | `src/abcfamily/parsedialect.ts` | **组装期钩子**：时值换算、token→`Note`、`K:` 解析、`-` 的语义、默认音长、代码换行算不算谱面换行 |
-| `src/abcfamily/emit.ts` | **写出基类** `AbcFamilyEmitter`：字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展、`I:playorder` |
+| `src/abcfamily/emit.ts` | **写出基类** `AbcFamilyEmitter`：字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展 |
 | `src/abcfamily/dialectjcx.ts` | Muse 的音乐体（ABC 词法的子类：`@` 隐形休止、`x`/`X` 节奏音符、`(<` `<)` 渐强渐弱、`{@…}` 后倚音）、字母 ↔ 度数表、`K:` 读法 |
 | `src/abcfamily/emit123.ts` / `emitabc.ts` / `emitjcx.ts` | 三个方言的写出 |
 | `src/common/jcxcodec.ts` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF |
 | `src/abcfamily/abcpitch.ts` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolveAbcPitches` / 写 `withAbcPitches`），见下「关键判据」 |
 | `src/abcfamily/lex123.ts` / `emit123.entry.ts` | **入口**，保留 `lexMusicLine` / `emit123` / `emitSong` 的函数形态给既有调用方 |
-| `src/abcfamily/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位、`I:playorder` 回填。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |
+| `src/abcfamily/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |
 
 ## 方言差在哪（**只有这张表里的**）
 

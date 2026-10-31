@@ -1,8 +1,8 @@
 // ABC 家族的写出端**基类**：`ScoreDoc` → 文本。往返校验与语料迁移都靠它。
 //
 // 123 与标准 ABC **只有音乐体不同**，所以这里装的是同源的部分：字段头、声部、歌词对位、
-// 小节线与房号、Mark（弧与多连音）索引、符杠分组的连写规则、页眉页脚的 `I:` 扩展、
-// `I:playorder`。方言子类只需回答四个问题：一个音怎么写、休止怎么写、时值怎么写、调号怎么写。
+// 小节线与房号、Mark（弧与多连音）索引、符杠分组的连写规则、页眉页脚的 `I:` 扩展。
+// 方言子类只需回答四个问题：一个音怎么写、休止怎么写、时值怎么写、调号怎么写。
 //
 // 输出风格固定（**幂等的前提**）：
 //   - 字段用 ASCII 规范形（中文别名只在读入端认，不往外写）
@@ -229,34 +229,6 @@ function pushLines(L: string[], name: string, value: string): void {
     const t = line.trim();
     if (t) L.push(`${name}:${t}`);
   }
-}
-
-function playOrderText(song: Song): string {
-  // skip/limit 的元素 id → 该小节第几个音符
-  const noteIndex = new Map<number, { measure: number; index: number }>();
-  const part = song.parts[0];
-  if (part) {
-    for (let mi = 0; mi < part.measures.length; mi++) {
-      let k = 0;
-      for (const el of part.measures[mi]!.elements) {
-        if (el.kind === "chord" && !el.grace) {
-          k++;
-          noteIndex.set(el.id, { measure: mi + 1, index: k });
-        }
-      }
-    }
-  }
-  return (song.playOrder ?? [])
-    .map((p) => {
-      const from = p.fromElement !== undefined ? noteIndex.get(p.fromElement) : undefined;
-      const to = p.toElement !== undefined ? noteIndex.get(p.toElement) : undefined;
-      let s = `${p.fromMeasure}${from && from.index > 1 ? `.${from.index}` : ""}`;
-      s += `-${p.toMeasure}${to ? `.${to.index}` : ""}`;
-      if (p.verse !== undefined) s += ` v${p.verse}`;
-      if (p.pageBreakAfter) s += " page";
-      return s;
-    })
-    .join(" | ");
 }
 
 
@@ -1078,7 +1050,6 @@ export abstract class AbcFamilyEmitter {
       const sc = scoreDirective(song);
       if (sc) L.push(`I:score ${sc}`);
     }
-    if (song.playOrder?.length) L.push(`I:playorder ${playOrderText(song)}`);
     for (const r of song.remarks ?? []) {
       // Muse 读进来的 `P:` 原文（123/ABC 的在 `sectionOrder`），原样还回去
       if (r.startsWith("P:")) L.push(r);

@@ -34,7 +34,7 @@ export interface MixedHost {
   _setMixedAvailable(available: boolean): void;
   /** 当前源文投成不带版面坐标的 MusicXML，带源元素 id */
   mixedSourceXml(): string;
-  /** 投成 MusicXML 的那份源模型（`I:playorder`、`.Repeat`、`P:` 写不进 MusicXML，从它搬） */
+  /** 投成 MusicXML 的那份源模型（`.Repeat`、`P:` 写不进 MusicXML，从它搬） */
   mixedSourceDoc(): ScoreDoc | null;
 }
 

@@ -1,7 +1,7 @@
 // `.123` 文本 → `ScoreDoc`。规范见 `docs/格式/123格式.md`。
 //
 // 分工：词法（切 token）在 `lex.ts`，字段与指令在 `fields.ts`，**本文件只做组装**——
-// 小节切分、时值累计、符杠分组、Mark 配对、歌词对位、`I:playorder` 的音符级端点回填。
+// 小节切分、时值累计、符杠分组、Mark 配对、歌词对位。
 //
 // 几条判据（改之前先读）：
 //   - **123 的空白不表示符杠分组**：符杠按拍自动算（排版 `beamGroupsOf`），空格只为好读。
@@ -35,7 +35,6 @@ import type {
   NoteType,
   Part,
   PartGroup,
-  PlayPass,
   ScoreDoc,
   Song,
   SourceSpan,
@@ -54,7 +53,6 @@ import {
   parseFieldLine,
   parseInstruction,
   parseLinebreak,
-  parsePlayOrder,
   parseTempo,
   parseTempoBeat,
   parseTime,
@@ -62,7 +60,6 @@ import {
   parseVoiceClef,
   type FieldLine,
   type FieldName,
-  type RawPlayPass,
 } from "./fields";
 import type { Token } from "./types";
 import { isLyricSlot, lyricSlots, type LyricSlotRule } from "./lyricslot";
@@ -97,8 +94,6 @@ interface PartBuild {
   part: Part;
   /** 当前小节（还没收尾） */
   measure: Measure;
-  /** 本小节内已出现的音符数（`I:playorder` 的 skip/limit 按它定位） */
-  noteCount: number;
   /** 小节号计数 */
   measureNo: number;
   /** 本小节里当前写到第几个临时声部（ABC `&`，§7.4）。主分支 1，每个 `&` 切到下一个；
@@ -663,7 +658,6 @@ function buildMusicLine(
         applyTieAndBroken(ch);
         attach(ch);
         cur.sustainHost = ch;
-        if (pb.voice === 1) pb.noteCount++;
         // ABC：多连音按音符计数收尾（组内各音的 `timeMod` 收尾时统一按 Mark 补，见 model/tuplets.ts）
         if (ctx.d.tupletClose === "count") for (let k = openTuplets.length - 1; k >= 0; k--) {
           const tp = openTuplets[k]!;
@@ -732,7 +726,6 @@ function buildMusicLine(
         applyTieAndBroken(ch);
         attach(ch);
         cur.sustainHost = ch;
-        if (pb.voice === 1) pb.noteCount++;
         break;
       }
 
@@ -763,7 +756,6 @@ function buildMusicLine(
         (t.notes ?? []).forEach((g, k) => {
           if (g.tieNext) pb.noteTies.push({ from: ch, note: k, source: g.source });
         });
-        if (pb.voice === 1) pb.noteCount++;
         break;
       }
 
@@ -808,7 +800,6 @@ function buildMusicLine(
         if ((t.beams ?? 0) > 0) ch.beams = Array.from({ length: t.beams! }, () => "continue" as const);
         attach(ch);
         cur.sustainHost = ch;
-        if (pb.voice === 1) pb.noteCount++;
         break;
       }
 
@@ -832,7 +823,6 @@ function buildMusicLine(
           if ((t.beams ?? 0) > 0) ch.beams = Array.from({ length: t.beams! }, () => "continue" as const);
           attach(ch);
           cur.sustainHost = ch;
-          if (pb.voice === 1) pb.noteCount++;
           break;
         }
         const sp: Space = {
@@ -1292,47 +1282,9 @@ function closeMeasure(ctx: Ctx, pb: PartBuild): void {
     }
   }
   pb.measure = { number: String(pb.measureNo), elements: [] };
-  pb.noteCount = 0;
   // `&` 的临时声部只活到小节线（ABC §7.4），下一小节从主声部重新开始
   switchBranch(pb, 1);
   pb.voice = 1;
-}
-
-/** 把 `I:playorder` 的「第几个音符」换成元素 id。 */
-function resolvePlayOrder(song: Song, raw: readonly RawPlayPass[]): PlayPass[] {
-  const out: PlayPass[] = [];
-  const part = song.parts[0];
-  for (const r of raw) {
-    const p: PlayPass = { fromMeasure: r.fromMeasure, toMeasure: r.toMeasure };
-    if (r.verse !== undefined) p.verse = r.verse;
-    if (r.pageBreakAfter) p.pageBreakAfter = true;
-    if (part) {
-      if (r.fromNoteIndex !== undefined) {
-        const id = nthNoteId(part, r.fromMeasure, r.fromNoteIndex);
-        if (id !== undefined) p.fromElement = id;
-      }
-      if (r.toNoteIndex !== undefined) {
-        const id = nthNoteId(part, r.toMeasure, r.toNoteIndex);
-        if (id !== undefined) p.toElement = id;
-      }
-    }
-    out.push(p);
-  }
-  return out;
-}
-
-/** 第 `measureNo` 小节（1 基）里第 `n` 个音符（1 基）的元素 id。 */
-function nthNoteId(part: Part, measureNo: number, n: number): ElementId | undefined {
-  const m = part.measures[measureNo - 1];
-  if (!m) return undefined;
-  let k = 0;
-  for (const el of m.elements) {
-    if (el.kind === "chord" && !el.grace) {
-      k++;
-      if (k === n) return el.id;
-    }
-  }
-  return undefined;
 }
 
 /** 歌词挂到对位格上：从 `start` 格起、到 `end` 格为止（歌词块的范围，规范 §5.1）。
@@ -1479,7 +1431,6 @@ export function parseAbcFamily(
   let pb: PartBuild | null = null;
   /** 本曲各声部，按首次出现的顺序。`V:n` 再次出现是**续写**该声部（ABC 语义，交错写法靠它） */
   let builds = new Map<number, PartBuild>();
-  let rawPlay: RawPlayPass[] = [];
   let marks: Mark[] = [];
   /** 待挂的歌词行：整首读完、小节都收尾后才挂 */
   let pendingLyrics: PendingLyric[] = [];
@@ -1569,7 +1520,6 @@ export function parseAbcFamily(
     song.marks = marks;
     // 多连音组内各音的 `timeMod`：与文本谱同一份（model/tuplets.ts）
     for (const part of song.parts) applyTupletTimeMods(marks, part.measures.flatMap((m) => m.elements));
-    if (rawPlay.length) song.playOrder = resolvePlayOrder(song, rawPlay);
     // `%%score [1 2]` / `{1 2}`（ABC §11.1）：声部分组的括号。原文仍留在 `style.raw` 里（写回照原样），
     // 这里只把最外层的 `[…]`（bracket）`{…}`（brace）落成 `partGroups`，五线谱、简谱档据此画括号
     const sc = song.style?.raw?.find((r) => r.key === "score");
@@ -1587,7 +1537,6 @@ export function parseAbcFamily(
     builds = new Map();
     voiceIds = new Map();
     marks = [];
-    rawPlay = [];
   };
 
   const ensureSong = (): Song => {
@@ -1597,7 +1546,6 @@ export function parseAbcFamily(
   const newPart = (voice: number): PartBuild => ({
     part: { id: `P${voice}`, measures: [] },
     measure: { number: "1", elements: [] },
-    noteCount: 0,
     measureNo: 1,
     voice: 1,
     openSlurs: [],
@@ -1677,7 +1625,7 @@ export function parseAbcFamily(
       }
       // `%%directive` 等价 `I:directive`（ABC §11.0.2）
       if (line.startsWith("%%")) {
-        applyInstruction(ctx, ensureSong(), parseInstruction(line.slice(2)), { line: ln, column: 0, offset: lineOffset, length: raw.length }, (r) => { rawPlay = rawPlay.concat(r); });
+        applyInstruction(ctx, ensureSong(), parseInstruction(line.slice(2)), { line: ln, column: 0, offset: lineOffset, length: raw.length });
       }
       continue;
     }
@@ -1726,7 +1674,7 @@ export function parseAbcFamily(
         if (lp.museStyle !== "skip") addLyricLine(ctx, lp, f, pendingLyrics);
         continue;
       }
-      applyField(ctx, ensureSong(), f, startPart, (r) => { rawPlay = rawPlay.concat(r); });
+      applyField(ctx, ensureSong(), f, startPart);
       continue;
     }
 
@@ -1833,7 +1781,6 @@ function applyField(
   song: Song,
   f: FieldLine,
   startPart: (voice: number) => PartBuild,
-  addPlay: (r: RawPlayPass[]) => void,
 ): void {
   switch (f.name) {
     case "T":
@@ -1912,7 +1859,7 @@ function applyField(
     case "I":
       // Muse 的 `I:` 是写在谱左上角的文字（说明书 §3.2.2「I:提示词」），不是 ABC 指令
       if (ctx.d.id === "jcx") (song.pageText ??= emptyPageText()).topLeft.push(f.value);
-      else applyInstruction(ctx, song, parseInstruction(f.value), f.source, addPlay);
+      else applyInstruction(ctx, song, parseInstruction(f.value), f.source);
       break;
     case "S":
       // ABC 与 Muse 都是「来源」；123 照旧不读（以前就丢），只有 Muse 那一档留着写回
@@ -1951,12 +1898,12 @@ function applyInstruction(
   song: Song,
   ins: { name: string; value: string },
   source: SourceSpan,
-  addPlay: (r: RawPlayPass[]) => void,
 ): void {
   const name = CJK_INSTRUCTION_ALIAS[ins.name] ?? ins.name;
   switch (name) {
     case "playorder":
-      addPlay(parsePlayOrder(ins.value, source, ctx.diagnostics));
+      // 已去掉（用户定 2026-10-31）。不留进 `style.raw`：留着是静默失效，写回还带着
+      report(ctx, "playorder-removed", tr("diag.playOrderRemoved"), source);
       break;
     case "style":
       (song.style ??= {}).sheetRef = ins.value.trim();

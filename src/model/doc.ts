@@ -821,11 +821,9 @@ export interface Mark {
   closeSource?: SourceSpan;
 }
 
-/** 演唱顺序的一遍。← 123 的 `I:playorder`
+/** 演唱顺序的一遍。← `.jpwabc` 的 `.Repeat` 段（只读的旧扩展）。
  *
- *  **MusicXML 装不下这个**：`<ending>` 只能整小节，表达不了「从第 11 小节第 2 个音符接入」
- *  （`docs/实现/MusicXML-导出.md` 记了这条损失）。所以它只在 `ScoreDoc` 与 `.123` 里活着，
- *  这正是 123 当简谱主格式的价值所在。语义对照 `.jpwabc` 的 `.Repeat` 段。 */
+ *  别的格式都装不下：MusicXML 的 `<ending>` 只能整小节，123 / ABC 只有段落顺序 `P:`，转过去走保存前丢失提示。 */
 export interface PlayPass {
   /** 起止小节（1 基，与 `.Repeat` 原文一致） */
   fromMeasure: number;
@@ -834,8 +832,7 @@ export interface PlayPass {
   fromElement?: ElementId;
   /** limit：只唱到该小节第 n 个音符（`.Repeat` 的 `-20.1`） */
   toElement?: ElementId;
-  /** 这一遍配第几段歌词。**可以不等于遍序**——语料里 6 首是非顺序映射，
-   *  ABC 的「相邻 w: 依次对应」表达不了，这是 `I:playorder` 存在的硬理由 */
+  /** 这一遍配第几段歌词。**可以不等于遍序**——语料里 6 首是非顺序映射 */
   verse?: number;
   /** 这一遍唱完换页（`.Repeat` 的 `P` 后缀）。投影档逐遍成页时用 */
   pageBreakAfter?: boolean;

@@ -1,12 +1,12 @@
 // 123 格式的字段表、中文别名与 `I:` 指令解析。
 //
-// 规范见 `docs/格式/123格式.md` §2（中文支持）、§3（头部字段）、§6.2（`I:playorder`）、
+// 规范见 `docs/格式/123格式.md` §2（中文支持）、§3（头部字段）、
 // §9（`I:linebreak`）、§10（`I:style`）。
 //
 // **字段名一律归一成 ASCII 规范形**再往下走——中文别名只是入口，不进模型。
 // 这与 `fanqie/dialect.ts` 的取向一致：差异收在一张表里，不在下游写 if。
 
-import type { Clef, Diagnostic, Key, PlayPass, SourceSpan, Time } from "../model/doc";
+import type { Clef, Key, SourceSpan, Time } from "../model/doc";
 import { clefFromName } from "../model/jianpu";
 import { fifthsOfSpelling } from "../model/keyshift";
 import { t as tr } from "../i18n";
@@ -39,7 +39,6 @@ export const CJK_FIELD_ALIAS: Readonly<Record<string, FieldName>> = {
 /** 中文别名 → `I:` 子指令（`样式：x` 等价 `I:style x`）。 */
 export const CJK_INSTRUCTION_ALIAS: Readonly<Record<string, string>> = {
   样式: "style",
-  演唱: "playorder",
   断行: "linebreak",
   每页行数: "linesperpage",
 };
@@ -298,52 +297,4 @@ export function parseLinebreak(value: string): "explicit" | "auto" {
   const v = value.trim().toLowerCase();
   if (v === "<none>" || v === "!" ) return "auto";
   return "explicit";
-}
-
-/**
- * `I:playorder` —— `.jpwabc` 的 `.Repeat` 段的等价物（规范 §6.2）。
- *
- *     I:playorder 1-4 v1 | 1-4 v2 page | 11.2-20 v4 | 11-20.1 v5
- *
- * 一遍一项，`|` 分隔。每项：`<起>[.<音符>]-<止>[.<音符>] [v<段号>] [page]`
- *
- * `fromElement`/`toElement`（skip/limit 的音符级端点）此处只记下**第几个音符**，
- * 解析完音乐体后才能换成元素 id——由 `parse.ts` 回填。
- */
-export interface RawPlayPass extends Omit<PlayPass, "fromElement" | "toElement"> {
-  /** 起点在该小节里的第几个音符（1 基）；无则从小节头 */
-  fromNoteIndex?: number;
-  /** 终点在该小节里的第几个音符（1 基）；无则到小节尾 */
-  toNoteIndex?: number;
-}
-
-export function parsePlayOrder(
-  value: string,
-  source: SourceSpan,
-  diagnostics: Diagnostic[],
-): RawPlayPass[] {
-  const out: RawPlayPass[] = [];
-  for (const seg of value.split("|")) {
-    const s = seg.trim();
-    if (!s) continue;
-    const m = /^(\d+)(?:\.(\d+))?\s*-\s*(\d+)(?:\.(\d+))?(.*)$/.exec(s);
-    if (!m) {
-      diagnostics.push({
-        severity: "warning",
-        code: "bad-playorder",
-        message: tr("diag.badPlayOrder", { v: s }),
-        source,
-      });
-      continue;
-    }
-    const pass: RawPlayPass = { fromMeasure: Number(m[1]), toMeasure: Number(m[3]) };
-    if (m[2]) pass.fromNoteIndex = Number(m[2]);
-    if (m[4]) pass.toNoteIndex = Number(m[4]);
-    const rest = (m[5] ?? "").trim();
-    const verse = /\bv(\d+)\b/i.exec(rest);
-    if (verse) pass.verse = Number(verse[1]);
-    if (/\bpage\b/i.test(rest)) pass.pageBreakAfter = true;
-    out.push(pass);
-  }
-  return out;
 }

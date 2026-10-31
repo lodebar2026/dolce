@@ -10,7 +10,7 @@
 // | 来源 | 得到的条目 |
 // |---|---|
 // | `../dev/docs/待办/格式与语料迁移.md`（私有仓库）「无法表达」的全语料实测 | 文字行 `W:` / 圆滑线 / 多段歌词 / 印刷段号 / 多声部 / 分曲 / 倚音 / 房号 |
-// | `docs/模块/模型-scoredoc.md` | `playOrder` 与 `style` 是 **MusicXML 装不下的两样**（`<ending>` 只能整小节） |
+// | `docs/模块/模型-scoredoc.md` | `playOrder`（`.Repeat`）只有 `.jpwabc` 装得下（`<ending>` 只能整小节），`style` MusicXML 装不下 |
 // | `docs/模块/源格式-abc家族.md` | ABC 那一档的 clef/修饰、`Q:` 参照音符长度 |
 // | `break-roundtrip-check`（断点写回 → 各写出端 → 读回） | 换页（ABC 装不下）；换行含小节中间的，六种都装得下，不列 |
 //
@@ -92,7 +92,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   rhythmPosition: "节奏音符在谱表上的位置（五线谱一律画在中线）",
   graceArc: "倚音连到主音的弧（别的弧改挂到主音上）",
   dynamics: "力度与渐强渐弱",
-  playOrder: "演唱顺序（房号跳转、第几遍配第几段词）",
+  playOrder: "演唱顺序 .Repeat（会改成按谱面的反复记号唱）",
   sectionOrder: "段落顺序（P:，会改成按谱面的反复记号唱）",
   style: "样式表引用",
   layoutDirectives: "版面指令（字号、页边距等）",
@@ -171,9 +171,10 @@ export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> =
   // 八度线（8va）两种格式都没有写法（abc2svg 的 `!8va(!` 是扩展，用户定不扩），音照实际音高写
   // 符杠一律按拍自动连（§11「语料高频但刻意不做」），写明的跨拍连杠写不出
   // `w:` 只跟 `&` 的第一支（§7.4），第二支自己的歌词写不出
-  "123": allBut("harmonyOffset", "crossStaff", "innerVoiceLyrics", "slurCrossTuplet", "lyricOnRest", "octaveShift", "beamGroup"),
+  // `.Repeat` 的演唱顺序写不出（`I:playorder` 用户定 2026-10-31 去掉）；分段跳着唱写 `P:`
+  "123": allBut("playOrder", "harmonyOffset", "crossStaff", "innerVoiceLyrics", "slurCrossTuplet", "lyricOnRest", "octaveShift", "beamGroup"),
   // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
-  // 另走样式表；`I:playorder` 是 123 的扩展，标准 ABC 读不懂（虽然会忽略，等于丢）。
+  // 另走样式表；`.Repeat` 的演唱顺序同 123 写不出。
   // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
   // 换页写 `%%newpage`（§11.4.7 排版指令，`emitabc.ts::pageBreakLine`）；换行本身含小节中间的都装得下（`break-roundtrip-check` 实测）
   // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123

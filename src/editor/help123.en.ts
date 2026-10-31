@@ -70,19 +70,12 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
   {
     title: "Part order P:",
     body: [
-      "When a song is split into sections sung out of order (verse, chorus, verse again), use ABC's `P:`: mark where each part starts with `P:A` on its own line or inline `[P:B]`, and list the order in the header as `P:ABA`. Playback, MIDI and the Projection view all follow it.",
+      "The singing order follows the printed `|: :|` and endings by default. When a song is split into sections sung out of order (verse, chorus, verse again), use ABC's `P:`: mark where each part starts with `P:A` on its own line or inline `[P:B]`, and list the order in the header as `P:ABA`. Playback, MIDI and the Projection view all follow it.",
       "`P:A2` = AA, `P:(AB)3` = ABABAB, and they can nest; dots only separate, so the dots in `P:((AB)3.(CD)3)2` mean nothing. Without a header `P:`, the marks in the tune are just labels and the song plays straight through.",
       "**Every entry into a part starts over**: `|: :|`, endings and D.C./D.S. inside it are worked out afresh, so the second A starts from the first ending again. (The ABC standard also shows `P:A4` with four endings, one per entry. Dolce does not read it that way: all four endings play, four times over.)",
       "**Lyrics count per part**: the Nth time a part is sung it takes that part's Nth `w:` line, and repeats inside the part use up lines too. If A contains `|: :|`, one entry uses 2 lines and the next A continues from line 3. A missing line borrows the earliest line with text at that spot.",
       "`[P:B]` may sit mid-measure: from that note on, the measure belongs to the next part. Measures before the first mark play once at the start; a part left out of the order is not sung; a part named in the order but not marked in the tune is skipped with a note in the status bar. The Projection view starts a new page for each part.",
       "**Save as** MusicXML, Muse, jianpu-ly, plain-text jianpu or `.jpwabc` cannot hold `P:`: you get a warning before saving, and the saved file follows the repeat signs. 123 and ABC keep it as written.",
-    ],
-  },
-  {
-    title: "Singing order I:playorder",
-    body: [
-      "Printed `|: :|` and endings are just marks, and the default singing order follows them; use `P:` above for sections sung out of order, and the extension `I:playorder` to pick exact verses and notes. It takes priority over `P:`.",
-      "Each `I:playorder` entry is a measure range plus a verse number; `page` turns the page after that pass. Endpoints can point at notes (`11.2` = the 2nd note of measure 11).",
     ],
   },
   {

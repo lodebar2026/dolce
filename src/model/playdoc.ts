@@ -30,7 +30,7 @@ export function leadPartOf(song: Song): number {
  *  - `lead`：段数按哪个声部的歌词推、`PlayItem.limit` 数哪个声部的和弦。缺省第一声部——引擎输入与 `.jpwabc` 写出端
  *    画的、写的都是第一声部，必须同一个；只有试听（`playSourceOfDoc`）传主旋律声部（`leadPartOf`）
  *  - `distinct`：同音同号的词顺延（试听那份，见 `phrasedoc.ts::distinctNumbers`）
- *  - `useSections`：按头部 `P:` 排（写明的 `I:playorder` / `.Repeat` 优先） */
+ *  - `useSections`：按头部 `P:` 排（`.Repeat` 优先） */
 export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSections = true }: { lead?: number; distinct?: boolean; useSections?: boolean } = {}): PlayData {
   const pd = new PlayData();
   const part = song.parts[0];
@@ -75,7 +75,7 @@ function sectionMarksOfDoc(song: Song, lead: number, view: ReturnType<typeof phr
   return locateSectionMarks(song, (id) => where.get(id));
 }
 
-/** 写明的演唱顺序（`I:playorder`、`.Repeat`）。投影、读回后小节会拆会并，按首尾和弦找小节；一项的音都找不到就丢掉这一项，
+/** 写明的演唱顺序（`.Repeat`）。投影、读回后小节会拆会并，按首尾和弦找小节；一项的音都找不到就丢掉这一项，
  *  一项都不剩返回 null（交回按记号推）。 */
 function playOrderOfDoc(song: Song, lead: number, view: ReturnType<typeof phrasePartOfDoc>): PlayData["measures"] | null {
   if (!song.playOrder?.length) return null;

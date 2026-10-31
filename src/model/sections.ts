@@ -1,4 +1,4 @@
-// ABC §3.1.9 的段落：头部 `P:` 的顺序串展开；写明的演唱顺序（`P:`、`I:playorder`）搬到另一份模型（五线谱档读回的 `mixedDoc`）。
+// ABC §3.1.9 的段落：头部 `P:` 的顺序串展开；写明的演唱顺序（`P:`、`.Repeat`）搬到另一份模型（五线谱档读回的 `mixedDoc`）。
 //
 // 语义见 `docs/格式/123格式.md` §6。
 
@@ -58,7 +58,7 @@ export function locateSectionMarks(
   return found.filter((m) => m.rank === rank).map(({ name, mid, skip }) => ({ name, mid, skip }));
 }
 
-/** 给 `I:playorder` / `.Repeat` 的每一项定首尾和弦（已定的不动）：写了音符级端点的就是它，否则取那一小节第一声部的第一个、最后一个音；
+/** 给 `.Repeat` 的每一项定首尾和弦（已定的不动）：写了音符级端点的就是它，否则取那一小节第一声部的第一个、最后一个音；
  *  那一小节没有音就往段内挪。一个音都没有的项没有锚点。 */
 export function anchorPlayOrder(song: Song): PlayPass[] {
   const measures = song.parts[0]?.measures ?? [];
@@ -74,8 +74,7 @@ export function anchorPlayOrder(song: Song): PlayPass[] {
   });
 }
 
-/** 写明的演唱顺序搬到读回的那份模型上：MusicXML 写不下 `I:playorder` 与 `P:`、小节会拆、元素 id 也换了，按 `Chord.srcId` 对回去。
- *  `I:playorder` 优先于 `P:`，有它的不搬 `P:`。 */
+/** 写明的演唱顺序搬到读回的那份模型上：MusicXML 写不下 `.Repeat` 与 `P:`、小节会拆、元素 id 也换了，按 `Chord.srcId` 对回去。 */
 export function carryPlayOrder(from: ScoreDoc, to: ScoreDoc): void {
   from.songs.forEach((src, i) => {
     const dst = to.songs[i];
