@@ -302,7 +302,10 @@ function readLyrics(noteEl: XmlEl): Lyric[] {
   const out: Lyric[] = [];
   for (const l of children(noteEl, "lyric")) {
     const texts = children(l, "text");
-    const text = texts.map((t) => t.textContent ?? "").join("");
+    const raw = texts.map((t) => t.textContent ?? "").join("");
+    // 软连字符（`Glo\u00ad`）是词内分音节，有的导出把它写进字里、`syllabic` 仍是 single：不当字
+    const shy = raw.endsWith("\u00ad");
+    const text = raw.replace(/\u00ad/g, "");
     const n = l.getAttribute("number");
     // 首字前的印刷段号（`1.道`、`<text>1.</text><elision/><text>道</text>`；不带点的英文段号要隔空格 `1 Be`）
     // 拆成 `verseLabel`，不算字（写出端 `toxml.ts::lyricXml` 并回去）
@@ -317,6 +320,7 @@ function readLyrics(noteEl: XmlEl): Lyric[] {
     if (pl === "above" || pl === "below") lr.placement = pl;
     const syl = childText(l, "syllabic");
     if (syl) lr.syllabic = syl as Lyric["syllabic"];
+    if (shy) lr.syllabic = syl === "middle" || syl === "end" ? "middle" : "begin";
     const ext = child(l, "extend");
     if (ext) {
       lr.extend = true;
