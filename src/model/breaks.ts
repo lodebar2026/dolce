@@ -25,6 +25,8 @@ export interface LineStart {
 }
 
 export interface ApplyBreaksOptions {
+  /** 多声部也在小节中间断（只断旋律那一路；其余声部在下一小节断）。缺省挪到下一根小节线 */
+  midInAnyPart?: boolean;
   /** 小节中间的行首：`inline` 原位记 `lineBreakAfter`；`snap` 挪到下一根小节线；
    *  `source` 只留源文本来就在那里换行的（原位），其余挪到下一根小节线。 */
   mid: "inline" | "snap" | "source";
@@ -150,7 +152,7 @@ export function applyBreaks(song: Song, starts: Iterable<LineStart>, opt: ApplyB
     const mea = song.parts[pi]!.measures[spot.measure]!;
     let mi = spot.measure;
     if (spot.sustain !== null || !atMeasureStart(mea, spot.index)) {
-      const h = opt.mid === "snap" || !single ? null : hostBefore(mea, spot);
+      const h = opt.mid === "snap" || (!single && !opt.midInAnyPart) ? null : hostBefore(mea, spot);
       const kind = !h ? null
         : opt.mid === "source" ? h.was
         : opt.pages === "write" ? (page ? "page" : "system")

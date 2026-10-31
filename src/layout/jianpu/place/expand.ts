@@ -203,43 +203,70 @@ function passesOf(
     return !!next && !!rows[next.row]!.refs[next.idx]?.measure.attrs?.key;
   };
   for (const [pass, key] of repeatOf) if (backCount.get(key) === 1 && !keyChangesAfter(key, pass)) pass.afterRepeat = true;
-  // `:|` 前的弱起是引出下一遍的：`:|` 所在小节末尾几个音，与回到的 `|:` 前紧贴的几个音同音（158 一房末尾的「亲爱的」、
-  // 我是祢所造 `7,-- 3,_ 3,_ :|`，曲首 `0 0 0 3,_ 3,_ | |:`）。换页落在这几个音之前，它们连同词排到下一遍页首
-  for (const [next] of repeatOf) {
-    const prev = passes[passes.indexOf(next) - 1];
-    if (!prev) continue;
-    const elOf = (sl: Slot): MusicElement => rows[sl.row]!.elements[sl.idx]!;
-    const isNote = (sl: Slot): boolean => elOf(sl).kind === "note";
-    const noteOf = (sl: Slot): string | null => {
-      const n = rows[sl.row]!.refs[sl.idx]?.chord?.notes[0]?.degree;
-      return n ? `${n.number}:${n.octaveShift}` : null;
-    };
-    const nextAt = next.slots.find(isNote);
-    if (!nextAt) continue;
-    const headAt = prev.slots.findIndex((sl) => sl.row === nextAt.row && sl.idx === nextAt.idx);
-    if (headAt <= 0) continue;
-    const head = prev.slots.slice(0, headAt).filter(isNote);
-    // `:|` 所在小节里的音（往回找到小节线为止，`:|` 本身不算）
+  // `:|` 前的弱起是引出下一遍的：`:|` 所在小节末尾几个音（可带休止，至少一个实音），与回到的 `|:` 前紧贴的几个音同音（158 一房末尾的「亲爱的」、
+  // 我是祢所造 `7,-- 3,_ 3,_ :|`，曲首 `0 0 0 3,_ 3,_ | |:`）。换行换页落在这几个音之前。整小节都同音的不是弱起（曲中重复的乐句）
+  const elOf = (sl: Slot): MusicElement => rows[sl.row]!.elements[sl.idx]!;
+  const isNote = (sl: Slot): boolean => elOf(sl).kind === "note";
+  const noteOf = (sl: Slot): string | null => {
+    const el = elOf(sl);
+    if (el.kind === "note" && el.sound === "rest") return "rest";
+    const n = rows[sl.row]!.refs[sl.idx]?.chord?.notes[0]?.degree;
+    return n ? `${n.number}:${n.octaveShift}` : null;
+  };
+  /** `tailSlots`（`:|` 那一处之前的符号）里弱起从第几个符号起，`headSlots` 是回到的那个音之前的符号；没有弱起返回 -1 */
+  const pickupAt = (tailSlots: readonly Slot[], headSlots: readonly Slot[]): number => {
+    const head = headSlots.filter(isNote);
     const bar: number[] = [];
     let seenNote = false;
-    for (let k = prev.slots.length - 1; k >= 0; k--) {
-      const el = elOf(prev.slots[k]!);
+    for (let k = tailSlots.length - 1; k >= 0; k--) {
+      const el = elOf(tailSlots[k]!);
       if (el.kind === "note") {
         seenNote = true;
         bar.unshift(k);
-      } else if (el.kind === "barline" && seenNote) break;
+      } else if (el.kind === "barline" && el.type !== "invisible" && seenNote) break;
     }
     let same = 0;
     while (same < bar.length && same < head.length) {
-      const a = noteOf(prev.slots[bar[bar.length - 1 - same]!]!);
+      const a = noteOf(tailSlots[bar[bar.length - 1 - same]!]!);
       if (a === null || a !== noteOf(head[head.length - 1 - same]!)) break;
       same++;
     }
-    // 整小节都同音的不是弱起（曲中重复的乐句）
-    if (same === 0 || same === bar.length) continue;
-    const cut = bar[bar.length - same]!;
+    if (same === 0 || same === bar.length) return -1;
+    const at = bar.slice(bar.length - same);
+    return at.some((k) => noteOf(tailSlots[k]!) !== "rest") ? at[0]! : -1;
+  };
+  const indexOfSlot = (list: readonly Slot[], sl: Slot): number => list.findIndex((x) => x.row === sl.row && x.idx === sl.idx);
+  // 同一段词往回跳（只另起一行）：换行挪到弱起之前（一生一世）
+  for (const pass of passes) {
+    for (const at of [...(pass.hard ?? [])]) {
+      // 换行之后只剩不到一小节就往回跳（安静 `1--) $ 0_ 3_ :|`）：这几个音是弱起，接着回到的音排，不另起行
+      const lineAt = Math.max(0, ...[...pass.breaks.keys()].filter((k) => k < at));
+      const line = pass.slots.slice(lineAt, at);
+      if (lineAt > 0 && line.some(isNote) && !line.some((sl) => { const el = elOf(sl); return el.kind === "barline" && el.type !== "repeat-end"; })) {
+        pass.hard!.delete(at);
+        continue;
+      }
+      const target = pass.slots[at];
+      if (!target) continue;
+      const headAt = indexOfSlot(pass.slots, target);
+      if (headAt <= 0 || headAt >= at) continue;
+      const cut = pickupAt(pass.slots.slice(0, at), pass.slots.slice(0, headAt));
+      if (cut <= 0) continue;
+      pass.hard!.delete(at);
+      pass.hard!.add(cut);
+      for (const k of [...pass.breaks.keys()]) if (k > cut && k < at) pass.breaks.delete(k);
+    }
+  }
+  for (const [next] of repeatOf) {
+    const prev = passes[passes.indexOf(next) - 1];
+    if (!prev) continue;
+    const nextAt = next.slots.find(isNote);
+    if (!nextAt) continue;
+    const headAt = indexOfSlot(prev.slots, nextAt);
+    if (headAt <= 0) continue;
+    const cut = pickupAt(prev.slots, prev.slots.slice(0, headAt));
+    if (cut <= 0) continue;
     const n = prev.slots.length - cut;
-    if (cut === prev.slots.length || cut === 0) continue;
     const moved = prev.slots.splice(cut);
     const movedVerses = prev.verses.splice(cut);
     for (const at of [...prev.breaks.keys()]) if (at >= cut) prev.breaks.delete(at);
