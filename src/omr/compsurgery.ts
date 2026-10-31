@@ -642,6 +642,13 @@ export function splitLineOverArc(bin: Binary, comps: Component[], numH: number):
  *  判据：块的**下包络**（每列最低墨点）切成平滑段（相邻列落差 ≤ max(2, 0.06 字号)），最长那段 ≥1.2 字号宽、
  *  最低那段墨中位厚 ≤0.15 字号、两端比最高处低 ≥0.15 字号（拱形）就是弧——伸出弧外的字母（A 的脚、横笔）在别的高度上断开。
  *  剩下的墨得整个在弧顶以上 0.3 字号起笔（字立在弧上）。拆成「弧 + 上面的字」两块。 */
+export const isUnderGlyphArc = (c: Component) => underGlyphArcs.has(c);
+/** 拆出来的弧逐像素的墨（整图下标）：字脚连着它，按连通抹会把字一起抹掉 */
+export const underGlyphArcInk = (c: Component): number[] | undefined => underGlyphArcs.get(c);
+const underGlyphArcs = new WeakMap<Component, number[]>();
+/** 同一次拆出来的字：框又扁又宽时过得了弧的尺寸门（青年诗歌 91 `G(Dm)` 的 `(Dm)`），不算弧 */
+export const isArcGlyphPiece = (c: Component) => arcGlyphPieces.has(c);
+const arcGlyphPieces = new WeakSet<Component>();
 export function splitArcUnderGlyph(bin: Binary, comps: Component[], numH: number): Component[] {
   const out: Component[] = [];
   let nextId = 7_100_000;
@@ -717,10 +724,15 @@ export function splitArcUnderGlyph(bin: Binary, comps: Component[], numH: number
       } else { groups.push({ ...p.bbox }); areas.push(p.area); }
     }
     out.push(arc);
-    if (groups.length <= 1) out.push(glyph);
+    const ink: number[] = [];
+    for (let yy = 0; yy < b.h; yy++) for (let xx = 0; xx < b.w; xx++) if (own(xx, yy) && arcPx(xx, yy)) ink.push((b.y + yy) * bin.w + b.x + xx);
+    underGlyphArcs.set(arc, ink);
+    // 只一组也按组取框：glyph 的框算上了弧边碎屑，会横跨整条弧（青年诗歌 91 `C(G)` 的 `(G)` 框成 91×38，又被当第二条弧、或当压在弧上的汉字把真弧否掉）
+    if (!groups.length) { out.push(glyph); arcGlyphPieces.add(glyph); }
     else groups.forEach((g, i) => {
       const r = { x: b.x + g.x, y: b.y + g.y, w: g.w, h: g.h };
-      out.push({ id: nextId++, bbox: r, area: areas[i]!, cx: rcx(r), cy: rcy(r) });
+      const piece = { id: nextId++, bbox: r, area: areas[i]!, cx: rcx(r), cy: rcy(r) };
+      out.push(piece); arcGlyphPieces.add(piece);
     });
   }
   return out;

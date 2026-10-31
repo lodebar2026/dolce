@@ -46,7 +46,8 @@ function resolveDashLike(cls: Classified, rowCores: DigitCore[], numH: number): 
     const d = rowCores.map((c) => c.bbox)
       .filter((b) => kb.x >= rright(b) - 1 && kb.y < rbottom(b) + numH * 0.5 && rbottom(kb) > b.y - numH * 0.5)
       .sort((a, b) => rright(b) - rright(a))[0];
-    const onMid = !!d && kb.y < rbottom(d) && rbottom(kb) > d.y && Math.abs(rcy(kb) - rcy(d)) <= numH * 0.25;
+    const clear = !rowCores.some((c) => overlapX(c.bbox, kb) > 0);
+    const onMid = !!d && kb.y < rbottom(d) && rbottom(kb) > d.y && rcy(kb) - rcy(d) >= -numH * 0.25 && rcy(kb) - rcy(d) <= numH * (clear ? 0.35 : 0.25);
     if (!onMid) continue;
     probe("hline.shortDashThick");
     cls.dots.splice(cls.dots.indexOf(k), 1);
@@ -490,7 +491,9 @@ export function buildJpNums(
       // 声部行往**下**放到 0.35：新编赞美诗·四声部 f13 的增时线印得偏低（线心比数字中线低 9px、字号 36，正卡在 0.25 上，一首漏二三十道）；
       // 往下离「下一组音符的减时线」（+0.58）还有余量，往上（倚音减时线 −0.27）不动。
       const dcy0 = rcy(kb) - rcy(d);
-      const centered = dcy0 >= -numH * 0.25 && dcy0 <= numH * (voiceMates.length ? 0.35 : 0.25);
+      // 单声部行上不压任何数字的短横（青年诗歌 91 末行三根都比中线低 0.3 字号）也放到 0.35：下一组的减时线从数字底下伸出来，压得着数字
+      const lowOk = voiceMates.length > 0 || (kb.w <= numH * 0.8 && !rowCores.some((c) => overlapX(c.bbox, kb) > 0));
+      const centered = dcy0 >= -numH * 0.25 && dcy0 <= numH * (lowOk ? 0.35 : 0.25);
       if (kb.x >= rright(d) - 1 && kb.x < augR && yOverlap && centered &&
           !stackedHline(cls.hlines, kb, numH) &&
           overlapX(kb, d) < kb.w * 0.4) {

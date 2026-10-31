@@ -43,7 +43,8 @@ export const CHORD_TOKEN_RE = /^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|su
 // 记号之间的分隔/标点：不计入覆盖率分母，也不产生 token。句点在其列——和弦之间的点多半是
 // OCR 把字距读成的噪声（`Em F C/E G` 读成 `EmF.C/EG`），一律当未覆盖会把整条和弦行判没。
 // 真含点的 `D.C.`/`D.S.` 另由 JUMP_RE 在切词前整段抹掉，不靠点这一条挡。
-const CHORD_SEP_RE = /[\s()\-–—_,.·、|]/;
+// 冒号（青年诗歌 85 `B:` 是拆开的 Bm 块边）、全角括号（弧穿过字读成 `）((G)）`，青年诗歌 91）同样是噪声。
+const CHORD_SEP_RE = /[\s()（）:：\-–—_,.·、|]/;
 // 跳转记号：`D.C.` / `D.S.`（含 `al Fine`/`al Coda` 后缀）/ `Fine` / `To Coda`。它们的字母恰好
 // 都是合法根音，不先抹掉就会被贪心吃成 D、C 两个凭空的和弦（「沧海一声笑」的 D.C. 曾这么变出两个）。
 const JUMP_RE = /D\s*[.,·]\s*[CS]\s*[.,·]?(?:\s*al\s*[.,·]?\s*(?:Fine|Coda))?|\bFine\b|\bTo\s*Coda\b/gi;

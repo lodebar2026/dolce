@@ -8,6 +8,7 @@
 //   - 数字块 h ≥ 0.55×字号 才算，弧线更矮 → 不会被当成假音符（classify 里已落到 hlines 或被丢弃）。
 import type { Binary, Component, JpNum, Rect, StaffRow } from "../omrkit/types";
 import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, isRejoinedArc } from "../omrkit/types";
+import { isArcGlyphPiece, isUnderGlyphArc } from "./compsurgery";
 import { median, overlapX } from "../omrkit/geom";
 import { probe } from "./probe";
 
@@ -57,6 +58,29 @@ function hookedEnd(bin: Binary, b: Rect): boolean {
  * 长度门（≥0.8 字号）看的是**延伸之后**的内弧：1777《福音传到你那里》`2 3 3` 的内弧 `3⌒3` 双段区间
  * 只有 25 列（字号 35），并进外弧右端后实为 51px；1782 的两条内弧双段只有 18、11 列。
  */
+/** 两条弧脚碰脚连成一块、上面没有外弧（青年诗歌 91 `3̲ 3 - | 3` 两条连音线 164×27，字号 39）：上包络是 M 形，
+ *  中部的谷一直落到块底（单条弧的中段悬在上面），谷两侧的拱顶各比谷高 0.2 字号以上、拱宽各够 0.7 字号。返回谷所在列。 */
+function chainCusp(bin: Binary, a: Rect, numH: number, masked: (x: number, y: number) => boolean): number | null {
+  const x1 = a.x + a.w, y1 = a.y + a.h;
+  const topAt = (x: number): number | null => {
+    for (let y = a.y; y < y1; y++) if (bin.data[y * bin.w + x] && !masked(x, y)) return y;
+    return null;
+  };
+  let cx = -1, cy = -1;
+  for (let x = a.x + Math.ceil(numH * 0.7); x < x1 - Math.ceil(numH * 0.7); x++) {
+    const t = topAt(x);
+    if (t !== null && t > cy) { cy = t; cx = x; }
+  }
+  if (cx < 0 || y1 - cy > Math.max(4, numH * 0.2)) return null;
+  const peak = (l: number, h: number) => {
+    let m = Infinity;
+    for (let x = l; x < h; x++) { const t = topAt(x); if (t !== null && t < m) m = t; }
+    return m;
+  };
+  const need = Math.max(3, numH * 0.2);
+  return cy - peak(a.x, cx) >= need && cy - peak(cx + 1, x1) >= need ? cx : null;
+}
+
 function splitNestedArcs(bin: Binary, a: Rect, numH: number, mask: Rect[] = []): Rect[] {
   const x1 = a.x + a.w, y1 = a.y + a.h;
   const masked = (x: number, y: number) => mask.some((m) => x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h);
@@ -159,6 +183,13 @@ function splitNestedArcs(bin: Binary, a: Rect, numH: number, mask: Rect[] = []):
     return [innerOf(l, cx), innerOf(cx, h)];
   }).filter((r): r is Rect => r !== null);
   for (let i = 0; i < inners.length; i++) probe(inners.length > 1 ? "nestedArc.multi" : "nestedArc");
+  if (!inners.length) {
+    const cut = chainCusp(bin, a, numH, masked);
+    if (cut !== null) {
+      probe("nestedArc.chain");
+      return [{ ...a, w: cut - a.x + 1 }, { ...a, x: cut, w: x1 - cut }];
+    }
+  }
   return [a, ...inners];
 }
 
@@ -401,6 +432,7 @@ export function detectSlurs(bin: Binary, comps0: Component[], rows: StaffRow[], 
     // 候选弧线：宽而薄、底边贴近数字顶且不深入数字行。
     const arcs = comps.filter((c) => {
       const b = c.bbox;
+      if (isArcGlyphPiece(c)) return false;
       // 一房/二房（volta ending）的顶括线同样是「宽而薄」的连通块，但它几乎是一条横贯谱行的直线，
       // 两端只有很短的竖钩，bbox 宽高比通常远大于圆弧。若把它交给下面的覆盖音符逻辑，会给整行
       // 错加一组 slur。真长弧即使跨度很大也有明显拱高（现有样本 w/h≈7.3），这里用很保守的
@@ -452,7 +484,9 @@ export function detectSlurs(bin: Binary, comps0: Component[], rows: StaffRow[], 
       // 底边压到或贴近它的顶。
       // 「紧贴」收在 0.1 字号：部件与字身总是压着或贴着（1790 两处实测 −6、−2px）；四声部谱第 3 声部头顶就是歌词，
       // `4⌒5` 这条弧（《圣哉三一歌》58×11）离「权」字底 7px（0.19 字号），按 0.2 字号会被当成字的部件。
-      const hanzi = comps.some((o) => o !== c && o.bbox.h >= numH * 0.5 && o.bbox.w < o.bbox.h * 1.8 && o.bbox.y < b.y &&
+      // 从「弧 + 上面的字」里拆出来的弧（splitArcUnderGlyph）头上那个字正是拆它的字，比数字矮的和弦字不算（青年诗歌 91 `C(G)` 的 `(G)`，字号 39 高 34）；
+      // 够数字高的还是汉字（16《爱心的功课》字底的笔画）
+      const hanzi = comps.some((o) => o !== c && o.bbox.h >= (isUnderGlyphArc(c) ? numH : numH * 0.5) && o.bbox.w < o.bbox.h * 1.8 && o.bbox.y < b.y &&
         rbottom(o.bbox) >= b.y - numH * 0.1 && overlapX(o.bbox, b) >= b.w * 0.5);
       if (hanzi) probe("arc.hanziReject");
       return !hanzi;
@@ -482,7 +516,14 @@ export function detectSlurs(bin: Binary, comps0: Component[], rows: StaffRow[], 
     const open = perRow[i].find((c) => rright(c.bbox) >= rowRight - numH * 0.3 && coveredBy(row, c.bbox).length);
     const head = perRow[i + 1].find((c) => c.bbox.x <= next.nums[0].bbox.x && coveredBy(next, c.bbox).length);
     if (!open || !head) continue;
-    const start = coveredBy(row, open.bbox)[0];
+    // 拖向下一行的弧左端还接着一条行内弧（脚碰脚，「万国的盼望」`2̇ 2̇ 2̇ -`）：前一条按行内记，跨行那条从交脚的音起
+    const cut = chainCusp(bin, open.bbox, numH, () => false);
+    if (cut !== null) {
+      const left = { ...open.bbox, w: cut - open.bbox.x + 1 };
+      const lc = row.nums.filter((n) => between(rcx(n.bbox), left.x - numH * 0.5, rright(left) + numH * 0.5));
+      if (lc.length >= 2) { probe("slur.crossRowChain"); markArc(row.nums, lc, 1); }
+    }
+    const start = cut !== null ? coveredBy(row, { ...open.bbox, x: cut, w: rright(open.bbox) - cut })[0] : coveredBy(row, open.bbox)[0];
     const stopList = coveredBy(next, head.bbox);
     probe("slur.crossRow");
     start.slurStart = (start.slurStart ?? 0) + 1;

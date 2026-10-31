@@ -241,13 +241,14 @@ export function recognizedToDoc(score: RecognizedScore, numOf?: Map<ElementId, J
   }
   const title = score.title;
   const song: Song = {
-    work: { subtitles: score.subtitle ? [score.subtitle] : [] },
+    work: { subtitles: score.subtitle ? [score.subtitle, ...(score.subtitlesMore ?? [])] : [] },
     key: score.minor ? { fifths: score.fifths, mode: "minor", tonicDegree: "6" } : { fifths: score.fifths },
     time: { beats: score.beats, beatType: score.beatType },
     parts,
     marks,
   };
   if (title !== undefined) song.work.title = title;
+  if (score.headerNotes?.length) song.remarks = [...score.headerNotes];
   if (score.number) song.work.number = score.number;
   // 印在标题右侧的曲号（新编赞美诗·四声部「圣哉三一歌 … 1」）：文本谱写 `XR:`、123 另记 `I:indexright`；
   // 左侧的不用另记（写出端缺省就写 `XL:`）。

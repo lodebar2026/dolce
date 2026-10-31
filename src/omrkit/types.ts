@@ -179,6 +179,10 @@ export interface RecognizedScore {
   // 副标题（多是曲名英译）：→ `Work.subtitles`（123 第二条 `T:`）、文本谱的第二条
   // 标题行。`.jpwabc` 的 `.Title` 段没有这个字段（既定，不扩语法），走那一路会丢。
   subtitle?: string;
+  /** 副标题下面紧接的几行：123 第三条 `T:` 起 */
+  subtitlesMore?: string[];
+  /** 页眉的方括号说明 → `Song.remarks`（123 `N:`） */
+  headerNotes?: string[];
   credits?: string[]; // 著作者整行文本（作词/作曲…），→ `identification.creators`（123 `C:`）
   creditsTopLeft?: string[]; // 印在标题左边（左上角）的署名，→ `pageText.topLeft`（诗歌本 `TL:`、123 `I:topleft`）
   tempo?: number; // 速度 ♩=NN → `Song.tempos`（123 `Q:1/4=NN`）

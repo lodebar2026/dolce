@@ -24,6 +24,10 @@ export interface HeaderInfo {
    *  如「2146 奉献的心志在燃烧」下的 "The spirit of devotion is burning"）。
    *  → `Work.subtitles`（123 第二条 `T:`）、文本谱第二条标题行；.jpwabc 装不下，那一路会丢。 */
   subtitle?: string;
+  /** 紧接副标题再印一行（青年诗歌外的现代诗歌：「Hope of the Nations」下面「生命河灵粮堂《…》（2004）」）：第三条 `T:` 起 */
+  subtitlesMore?: string[];
+  /** 页眉印的方括号说明（「[ 共2张：A（原调）、G调 ]」）→ 123 `N:` */
+  notes?: string[];
   /** 曲号：内联在标题前（「277 从前所珍爱」「557. …」）或单独印在标题同一排的一侧（旷野人声
    *  「不失足 … 17」、赞美诗歌 1717「1 … 圣哉三一」）。→ `Work.number`（123 `X:`）、诗歌本 `XL:`/`XR:`。 */
   number?: string;
@@ -1270,6 +1274,17 @@ export async function recognizeHeader(
     //    出版方「迦南诗歌」）与标题中心差得远，靠它一并挡掉。
     //  - 调号/速度/拍号即使居中也不能当副标题，故连同 parseMeta 认下的那两行一起排除。
     // 英文副标题按字距补回词间空格（det/CTC 不吐空格，"Thespiritof…" → "The spirit of…"）。
+    // 英文名与括号年份之间 CTC 不吐空格（`Brian Doerksen(2002) 词曲`）
+    out.credits = out.credits.map((c) => c.replace(/([A-Za-z])\((\d{4})\)/, "$1 ($2)"));
+    // 整行包在方括号里的是谱面说明，不是标题、副标题
+    for (const l of rest) {
+      const t = l.text.trim();
+      if (l === titleLine || l.cy >= firstStaffTopY || !/^[[［【].*[一-鿿].*[\]］】]$/.test(t)) continue;
+      probe("header.bracketNote");
+      const note = t.replace(/^([[［])\s*/, "$1 ").replace(/\s*([\]］])$/, " $1");
+      (out.notes ??= []).push(note);
+      out.regions.push({ text: note, bbox: l.bbox });
+    }
     let subtitleLine: HLine | undefined;
     if (titleLine) {
       const tl = titleLine;
@@ -1283,7 +1298,7 @@ export async function recognizeHeader(
       const chordRe = /^[A-G][#b♯♭]?(?:m|maj|min|dim|aug|sus|add)?\d*(?:\s*\/\s*[A-G][#b♯♭]?)?$/;
       // 副标题**贴着标题**印（多在其下，也有印在标题上方的）；和弦则贴着谱行。离谁近就归谁。
       const gapTitle = (l: HLine) => (l.cy < tl.cy ? tl.bbox.y - l.cy : l.cy - (tl.bbox.y + tl.bbox.h));
-      const cand = joinRowPieces(rest.filter((l) => l !== tl && l !== meta.fifthsLine && l !== meta.tempoLine))
+      const cands = joinRowPieces(rest.filter((l) => l !== tl && l !== meta.fifthsLine && l !== meta.tempoLine && !/^[[［【]/.test(l.text.trim())))
         // 纯拉丁文的行放宽到 1.3 倍：det 框要把上伸/下伸部都包进去（`Pray` 的 P 顶到大写线、y 垂到
         // 基线下），同样字号的框比汉字高一截。1677《祷告》的「Pray」框 73px、标题「1677 祷 告」才 67px，
         // 1.05 一卡副标题就没了。
@@ -1291,12 +1306,21 @@ export async function recognizeHeader(
         .filter((l) => Math.abs(l.cx - titleCx) <= titleBox.w * 0.35)
         .filter((l) => gapTitle(l) < firstStaffTopY - l.cy)
         .filter((l) => { const t = l.text.trim(); return t.length >= 2 && !metaRe.test(t) && !chordRe.test(t) && /[^\d\s.,:：、·]/.test(t); })
-        .sort((a, b) => gapTitle(a) - gapTitle(b))[0];
+        .sort((a, b) => gapTitle(a) - gapTitle(b));
+      const cand = cands[0];
       if (cand) {
         subtitleLine = cand;
         probe("subtitle");
         out.subtitle = recoverSpacesByInk(bin, cand.text.trim(), cand.bbox, cand.chars);
         out.regions.push({ text: out.subtitle, bbox: cand.bbox, chars: charsForText(out.subtitle, cand.chars) });
+        // 第二行紧贴第一行（心距不过一个半行高），同样居中、同样在标题下方
+        const next = cands[1];
+        if (next && next.cy > cand.cy && cand.cy > tl.cy && next.cy - cand.cy <= Math.max(cand.charH, next.charH) * 1.5) {
+          probe("subtitle.second");
+          const t = recoverSpacesByInk(bin, next.text.trim(), next.bbox, next.chars);
+          out.subtitlesMore = [t];
+          out.regions.push({ text: t, bbox: next.bbox, chars: charsForText(t, next.chars) });
+        }
       }
     }
     // 调号**按单字符 + 位置为主**（keyByGlyphs：`1=` 或拍号当锚点，字符集封闭、语义全在几何）；

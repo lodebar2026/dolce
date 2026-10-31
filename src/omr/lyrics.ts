@@ -948,6 +948,28 @@ export async function recognizeLyrics(
   // 记号（和弦行连写成 `G/D C` → 读出一个 `DC`）也不必再事后撤销。判据与阈值一字未改。
   const chordKeys = new Set([...rawByKey.keys()].filter((k) => isAnnotationLine(rawByKey.get(k)!) ||
     (bareByKey.has(k) && bareByKey.get(k) !== rawByKey.get(k) && isAnnotationLine(bareByKey.get(k)!))));
+  // 房号括线的小号「2」与紧挨的和弦读成一条（`2A`，「万国的盼望」末行）：同一谱行另有和弦行、去掉行首那一位数字整条是和弦，
+  // 数字正上方还真有括线（一根 3 字号以上的扁长条左端压在数字那儿）才算和弦行。弧的碎块也读得出 `2C`（5915《切慕》），它头上没有这根线
+  for (const k of [...rawByKey.keys()]) {
+    const [r] = k.split(":");
+    const m = /^\s*[1-9][.．]?\s*(\S.*)$/.exec(rawByKey.get(k)!);
+    if (chordKeys.has(k) || !m || !isAnnotationLine(m[1]!)) continue;
+    if (![...chordKeys].some((o) => o !== k && o.split(":")[0] === r)) continue;
+    const u = chunks.findIndex((c) => `${c.rowIdx}:${c.verse}` === k);
+    const ps = u >= 0 ? textsPos?.[u] : undefined;
+    if (!ps?.[0]) continue;
+    const c0 = chunks[u]!, dx = fracToSrcXOf(c0.cells, c0.maxGap)(ps[0].xFrac);
+    const y0 = Math.min(...c0.cells.map((c) => c.y)), y1 = Math.max(...c0.cells.map((c) => rbottom(c)));
+    if (comps.some((c) => c.bbox.w >= numH * 3 && c.bbox.h <= numH * 0.6 && Math.abs(c.bbox.x - dx) <= numH && c.bbox.y >= y0 - numH * 0.5 && c.bbox.y <= y1)) {
+      probe("chord.voltaDigit"); chordKeys.add(k);
+    }
+  }
+  // 通页和弦都印成 `主(备选)` 的页上，个别 `Bbm/F` 是括号被弧切坏读成了斜杠（青年诗歌 91 第 5 行 `Bb m(F)` 弧顶压着括号）：
+  // 斜杠不到括号写法的一成才这么认，真有转位的页不动。备选和弦本来就不记，只留斜杠前面的主和弦
+  const chordLines = [...rawByKey].filter(([k]) => chordKeys.has(k)).map(([, t]) => t);
+  const parenN = chordLines.reduce((a, t) => a + (t.match(/[A-G][#♯b♭]?m?\d*[(（][A-G]/g)?.length ?? 0), 0);
+  const slashN = chordLines.reduce((a, t) => a + (t.match(/\/[#♯b♭]?[A-G]/g)?.length ?? 0), 0);
+  const altPage = parenN >= 8 && slashN * 10 <= parenN;
   // 和弦行里衬线体的 `D.C.` / `D.S.` 被检测切成两块（青年诗歌 48《祂是耶稣》末行 `CG7CD.` | `C.`）：单看哪块都凑不成
   // 两个点俱全的严格写法，D、C 就成了两个和弦。前块以 `D.` 收尾、同一行紧挨着（缝 < 一个半字高）的后块以 `C.`/`S.` 起头的，
   // 拼起来认：s → 记号在前块原文里的起点，后块记下要抹掉的开头长度
@@ -969,6 +991,34 @@ export async function recognizeLyrics(
     probe("lyrics.splitJump");
     splitJumpHead.set(s, { at: head.index, word: `D.${tail[1]}.` });
     splitJumpTail.set(t, tail[0].length);
+  }
+
+  // 和弦 `Bm` 被检测切成两块（青年诗歌 85 第 2 行上方 `B:` | `mDAF#EGBm`，「万国的盼望」`F#` | `mE`）：后块开头的性质符挪回前块，否则前块成了 B、后块的 m 没人要。
+  // 归谁先看距离：m 离前块（缝不到一个字高）比离它后面那个字近才挪。前块末尾的杂点（`:`）让位，保持字符下标
+  for (let s = 0; s < chunks.length; s++) {
+    const a = chunks[s], key = `${a.rowIdx}:${a.verse}`;
+    if (a.above || a.mark || !chordKeys.has(key)) continue;
+    const head = /[A-G][#♯b♭]?([:：.·]?)$/.exec(rawTexts[s]?.trimEnd() ?? "");
+    if (!head) continue;
+    const ax1 = Math.max(...a.cells.map((c) => rright(c))), ah = Math.max(...a.cells.map((c) => c.h));
+    const t = chunks.findIndex((b, u) => {
+      if (u === s || b.rowIdx !== a.rowIdx || b.verse !== a.verse || b.above || b.mark || b.cells[0].x < ax1 - 1 || !/^m(?![a-z])/.test(rawTexts[u] ?? "")) return false;
+      const toSrc = fracToSrcXOf(b.cells, b.maxGap), ps = textsPos?.[u];
+      const mx = ps?.[0] ? toSrc(ps[0].xFrac) : b.cells[0].x;
+      const gapHead = mx - ax1, gapNext = ps?.[1] ? toSrc(ps[1].xFrac) - mx : Infinity;
+      return gapHead < ah && gapNext > gapHead;
+    });
+    if (t < 0) continue;
+    probe("chord.splitQuality");
+    const body = rawTexts[s]!.trimEnd();
+    rawTexts[s] = head[1] ? body.slice(0, -head[1].length) + "m" : body + "m";
+    rawTexts[t] = " " + rawTexts[t]!.slice(1);
+    if (textsPos) {
+      const ps = textsPos[s]!, last = ps[ps.length - 1];
+      if (last && head[1]) last.ch = "m"; else if (last) ps.push({ ...last, ch: "m" });
+      const pt = textsPos[t]![0];
+      if (pt) pt.ch = " ";
+    }
   }
 
   // ── 趟 2：段落标记/跳转记号就地捞取 + 歌词装配 ──
@@ -1044,7 +1094,10 @@ export async function recognizeLyrics(
       if (hit) {
         let acc = 0, xf = 0;
         if (textsPos) for (const c of textsPos[s]) { if (acc >= hit.index) { xf = c.xFrac; break; } acc += c.ch.length; }
-        const word = cnHit ? "(副歌)" : hit[0][0].toUpperCase() + hit[0].slice(1).toLowerCase();
+        // 英文段落词照谱面（大小写、方头括号）：`【Pre-Chorus】` 不折成 `Pre-chorus`。OCR 读成全小写的才补句首大写
+        const before = rawText[hit.index - 1] ?? "", after = rawText[hit.index + hit[0].length] ?? "";
+        const body = /[A-Z]/.test(hit[0]) ? hit[0] : hit[0][0].toUpperCase() + hit[0].slice(1);
+        const word = cnHit ? "(副歌)" : /[【[［]/.test(before) && /[】\]］]/.test(after) ? `${before}${body}${after}` : body;
         marks.push({ rowIdx, word, x: textsPos ? fracToSrcX(xf) : cells[0].x });
       }
     }
@@ -1338,6 +1391,7 @@ export async function recognizeLyrics(
   for (const [rowIdx, cands] of chordCands) {
     const row = staff[rowIdx + 1];
     if (row) {
+      if (altPage) for (const c of cands) if (c.tok.includes("/")) { probe("chord.slashIsAlt"); c.tok = c.tok.split("/")[0]!; }
       const kept = dropAltChords(cands);
       if (kept.length < cands.length) probe("chord.altSplit");
       placeChords(row, kept, chordRegions);

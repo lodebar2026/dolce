@@ -21,7 +21,7 @@ import { detectSegno } from "./segno";
 import { median, overlapX, unionRect } from "../omrkit/geom";
 import { accidentalOf } from "./accidental";
 import { probe } from "./probe";
-import { mergeBrokenHlines, untangleBridged, splitBarDash, splitBarCap, splitDigitDash, splitArcTail, splitArcFootDigit, splitLineOverArc, splitArcUnderGlyph, splitLineDot, splitArcEndDots, splitArcInnerDots, splitMordentDot } from "./compsurgery";
+import { mergeBrokenHlines, untangleBridged, splitBarDash, splitBarCap, splitDigitDash, splitArcTail, splitArcFootDigit, splitLineOverArc, splitArcUnderGlyph, underGlyphArcInk, splitLineDot, splitArcEndDots, splitArcInnerDots, splitMordentDot } from "./compsurgery";
 import { splitGluedSharp, splitBlock, meterCandidates, groupRows } from "./digitcores";
 import { buildJpNums, promoteGluedUpDots, resolvePairOctaveDots } from "./jpnums";
 import { rowInk, tightBox, columnInk, isSlashInk } from "./inkprobe";
@@ -545,6 +545,11 @@ function classify(comps: Component[], bin: Binary): { c: Classified; numH: numbe
     if (w >= numH * 0.28 && w >= (k.area / w) * 1.8 && h <= numH * 0.2) {
       probe("hline.shortDash"); c.hlines.push(k); continue;
     }
+    // 更窄的 '-'：青年诗歌 91 末行密排，`3 - - -` 三根都是 10×4（字号 39，0.26 字号宽），差一点够不着上面 0.28 那道门，同页真点 10×10。
+    // 窄到这份上只看扁度（≥2.2）和薄（≤0.13 字号），先当点，到 buildJpNums 按「在数字右边、中线对齐」裁决（resolveDashLike）
+    if (w >= numH * 0.2 && w >= (k.area / w) * 2.2 && h <= numH * 0.13 && k.area >= w * h * 0.75) {
+      c.dots.push(k); c.dashLike.push(k); continue;
+    }
     // 再厚一点的：雅歌通本的 '-' 实测 13×7（字号 33，高 0.21、扁度 2.0），同页真附点 7×8（扁度 1.1），
     // 卡在上面 0.2 那道门外，全本 `5 - -` 读成 `5.`。但尺寸上它和小号粗印本里压扁的八度点、短波音分不开
     //（一概收成横线，1940、714、我今来就你 的八度点成了第三道减时线）——那两种不在数字中线上，增时线在。
@@ -1048,7 +1053,11 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     }
   }
   // 系统通长线不算：它比普通小节线长好几倍，算进来就把中位数抬上去，只有短线的行过不了下面 withBars 的门（343）
-  const medBarH = median(rowMeta.flatMap((m) => m.bars.filter((b) => !m.long.has(b)).map((b) => b.bbox.h)));
+  // 只数直的线：和弦印成 `Dm(Am)` 的页，括号也是细高竖块（青年诗歌 91 每行 16 根，宽 11、高 35、墨只占框的四成；真线 5×57 占九成），比真线还多，
+  // 中位数落在括号上，门低到连歌词「们」的竖笔（39px）都过得去，那行歌词成了谱行。直线不到一半（断线、斜扫）就都算
+  const barsH = rowMeta.flatMap((m) => m.bars.filter((b) => !m.long.has(b)));
+  const straightBars = barsH.filter((b) => b.area >= b.bbox.w * b.bbox.h * 0.65);
+  const medBarH = median((straightBars.length * 2 >= barsH.length || straightBars.length >= 8 ? straightBars : barsH).map((b) => b.bbox.h));
   if (medBarH > 0) {
     // 「之下」要跟**正经谱行**比，不能跟 rowMeta 里的歌词行/页脚比（歌词行也有三个以上的核，
     // 页脚更在末行下方一大截，拿它当界，末行永远进不来）。
@@ -1614,6 +1623,18 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     const peak = Math.min(...top);
     return top[0] - peak >= numH * 0.12 && top[top.length - 1] - peak >= numH * 0.12;
   };
+  // 下包络（每列最低墨点）中段连续拱起：中段比块底高 0.25 字号以上、相邻列落差不过 2 像素，两端落到块底。立在基线上的字母中段总有脚着底
+  const lowerArched = (b: Rect): boolean => {
+    const low: number[] = [];
+    for (let x = b.x; x < rright(b); x++) {
+      let y = rbottom(b) - 1;
+      while (y >= b.y && !bin.data[y * bin.w + x]) y--;
+      low.push(y);
+    }
+    const n = low.length, mid = low.slice(Math.floor(n * 0.25), Math.ceil(n * 0.75));
+    return Math.max(...mid) <= rbottom(b) - 1 - numH * 0.25 && mid.every((v, i) => i === 0 || Math.abs(v - mid[i - 1]!) <= 2) &&
+      Math.max(low[0]!, low[1]!) >= rbottom(b) - 1 - numH * 0.12 && Math.max(low[n - 1]!, low[n - 2]!) >= rbottom(b) - 1 - numH * 0.12;
+  };
   for (const m of staff) {
     const medH = median(m.rd.map((k) => k.bbox.h)) || numH;
     for (const arc of comps) {
@@ -1621,7 +1642,9 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       // 四声部页放到 2 字号：新编赞美诗·四声部的延长记号弧大一号（10《齐来谢主歌》70×17、字号 38，1.84），四个声部各印一个
       if (ab.w < numH * 0.5 || ab.w > numH * (voicedPage ? 2 : 1.6)) continue;
       // 宽高比门 1.5（原 1.8）：新编赞美诗 250 的弧高一号（39×22、字号 32，1.77），点扣在弧里；点居中、正下方紧跟数字、弧拱得起来这几道门够严
-      if (ab.h < numH * 0.15 || ab.h > numH * 0.7 || ab.w / ab.h < 1.5) continue;
+      // 弧顶立着和弦字母（青年诗歌 91 末音 `Dm` 的 m 脚站在弧上，块 46×37）：块高过了门，改看下包络是不是拱。墨留给和弦，不进 fermataArcs
+      const gluedTop = ab.h > numH * 0.7 && ab.h <= numH * 1.1 && lowerArched(ab);
+      if (ab.h < numH * 0.15 || (!gluedTop && (ab.h > numH * 0.7 || ab.w / ab.h < 1.5))) continue;
       const dotC = c.dots.find((o) => {
         const ob = o.bbox;
         return Math.abs(rcx(ob) - rcx(ab)) <= numH * 0.25 && ob.y >= ab.y &&
@@ -1640,7 +1663,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       probe("fermata.arc");
       fermataOf.set(owner, true);
       fermataDots.add(dotC);
-      fermataArcs.add(arc);
+      if (!gluedTop) fermataArcs.add(arc);
     }
   }
   // 弧下那个点不是八度点，别让 buildJpNums 收走。
@@ -2429,6 +2452,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   // 恰好是合法的「根音 + 数字」和弦，「为基督赢得城市」就凭空多出一个 C4）。
   // 拿 header **已采纳**的字段区域当禁区交给 recognizeLyrics 剔，比在文法上猜可靠得多——
   // det 框里那个真和弦 `Am` 不会被 header 采纳，故不在禁区里。
+  let subtitlesMore: string[] | undefined, headerNotes: string[] | undefined;
   let title: string | undefined, subtitle: string | undefined, credits: string[] | undefined, creditsTopLeft: string[] | undefined;
   let number: string | undefined, numberSide: RecognizedScore["numberSide"];
   let fifths = 0, minor: boolean | undefined, tempo: number | undefined, tempoBeat: RecognizedScore["tempoBeat"];
@@ -2438,7 +2462,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   if (ocr.recognizeTexts && useRows.length) {
     const h = await recognizeHeader(bin, comps, useRows[0].topY, numH, ocr,
       headerMeters.sort((a, b) => a.bbox.x - b.bbox.x), headExtra);
-    title = h.title; subtitle = h.subtitle; number = h.number; numberSide = h.numberSide; credits = h.credits.length ? h.credits : undefined; creditsTopLeft = h.creditsTopLeft;
+    title = h.title; subtitle = h.subtitle; subtitlesMore = h.subtitlesMore; headerNotes = h.notes; number = h.number; numberSide = h.numberSide; credits = h.credits.length ? h.credits : undefined; creditsTopLeft = h.creditsTopLeft;
     if (h.fifths !== undefined) fifths = h.fifths;
     if (h.minor) minor = true;
     if (h.beats !== undefined && h.beatType !== undefined) { beats = h.beats; beatType = h.beatType; }
@@ -2522,8 +2546,15 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
     const eraseArcs = slurArcs.filter((a) => !glyphSplit.has(a) && letterOnEnd(a) && thinArc(a));
     const fermataInk = [...fermataArcs, ...fermataDots, ...segnoInk, ...comps.filter((o) => accBoxes.some((b) =>
       o.bbox.x >= b.x - 2 && rright(o.bbox) <= rright(b) + 2 && o.bbox.y >= b.y - 2 && rbottom(o.bbox) <= rbottom(b) + 2))];
-    if (fermataInk.length || eraseArcs.length) {
+    // 粘着字的弧逐像素抹（青年诗歌 91 弧尾穿过 `C(G)` 的 C、弧顶擦着 `Dm` 的 D，读成 `）((G)）`、`Qm(Am)`）。
+    // 只在通页和弦都印成 `主(备选)` 的页（括号竖块成批，见 medBarH）上抹：别的页上面那条说的 `F#m⌒` 抹了弧，上标小 ♯ 读丢（59 又验了一遍）
+    const crossLetter = barsH.length - straightBars.length >= 8 ? slurArcs.filter((a) => glyphSplit.has(a) && letterOnEnd(a) && underGlyphArcInk(a)) : [];
+    if (crossLetter.length) {
       lyricBin = { ...bin, data: bin.data.slice() };
+      for (const a of crossLetter) for (const i of underGlyphArcInk(a)!) lyricBin.data[i] = 0;
+    }
+    if (fermataInk.length || eraseArcs.length) {
+      if (lyricBin === bin) lyricBin = { ...bin, data: bin.data.slice() };
       const inkSet = new Set([...fermataInk, ...eraseArcs]);
       const others = comps.filter((o) => !inkSet.has(o));
       const nearOf = (b: Rect) => others.filter((o) => overlapX(o.bbox, b) > 0 && o.bbox.y < rbottom(b) && rbottom(o.bbox) > b.y);
@@ -2701,6 +2732,6 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
 
   const dotDiam = dotSizes.length ? median(dotSizes) : undefined;
 
-  return { key: "C", fifths, minor, beats, beatType, meters, meterNote, rows: useRows, number, numberSide, title, subtitle, credits, creditsTopLeft, tempo, tempoBeat, headerRegions, lyricRegions, chordRegions, stanzaRegions, footnotes, dotDiam, lyricCheck };
+  return { key: "C", fifths, minor, beats, beatType, meters, meterNote, rows: useRows, number, numberSide, title, subtitlesMore, headerNotes, subtitle, credits, creditsTopLeft, tempo, tempoBeat, headerRegions, lyricRegions, chordRegions, stanzaRegions, footnotes, dotDiam, lyricCheck };
 }
 
