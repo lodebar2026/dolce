@@ -51,6 +51,8 @@ export class PlayItem extends TimePosition {
   glueFrom = -1;
   /** 按 `P:` 排的：这一项所在段落的小节。`pass` 是段内第几行词，「这一行词唱完了」只在这些小节里判（`timeline.ts`、`place/expand.ts`） */
   scope?: ReadonlySet<number>;
+  /** 按 `P:` 排的：这一项是进入一个段落（投影档进段不换页，`walkPlay`） */
+  sectionEntry?: boolean;
   clone(): PlayItem {
     const p = new PlayItem();
     p.mid = this.mid;
@@ -60,6 +62,7 @@ export class PlayItem extends TimePosition {
     p.endOfPass = this.endOfPass;
     p.skip = this.skip;
     p.glueFrom = this.glueFrom;
+    if (this.sectionEntry) p.sectionEntry = true;
     p.limit = this.limit;
     p.scope = this.scope;
     return p;
@@ -254,10 +257,10 @@ export function sectionPlayOrder(parts: readonly PlayPart[], jumps: PlayJumps, s
       it.scope = s.scope;
     }
     s.used += top;
-    if (items.length) items[items.length - 1]!.endOfPass = true;
+    if (items.length) items[0]!.sectionEntry = true;
+    if (items.length) items[items.length - 1]!.endOfPass = false;
     out.push(...items);
   }
-  if (out.length) out[out.length - 1]!.endOfPass = false;
   return { measures: out, isSimple: false, hasRepeat: parts[0]!.measures.some((m) => m?.repeatBackward), impliedRepeat: implied };
 }
 

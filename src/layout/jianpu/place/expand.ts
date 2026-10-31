@@ -86,7 +86,8 @@ function sourceBreaks(
   slices.forEach((sl, k) => { for (const s of sl) measureOf.set(`${s.row}:${s.idx}`, k); });
   const out = new Map<string, boolean>();
   rows.forEach((row, r) => {
-    if (r === rows.length - 1 || row.elements.length === 0) return;
+    // 末行后面没有下一行，只有写明换页的才算（`P:` 从曲末跳回前面的段落时换页）
+    if ((r === rows.length - 1 && !pageEndRows.has(r)) || row.elements.length === 0) return;
     // 内联层不排（`cutSlots`）：断点要落在排出来的符号上，否则行末带 `&` 第二声部的换行就丢了
     const shown = (s: Slot): boolean => rows[s.row]!.elements[s.idx]!.kind !== "inline-layer";
     const tail = row.elements.map((_, idx) => ({ row: r, idx })).filter(shown).pop();
@@ -481,6 +482,9 @@ function rowOf(
   return row;
 }
 
+/** 源里写明的一行超出版心不到右边距的这个比例就不折，伸进边距 */
+const OVERHANG_MARGIN = 0.5;
+
 /**
  * 逐行装满（同 `Line.doLineBreak`）：按自然宽（紧排 + 歌词避让，不两端对齐）往行里收，放不下就退回到本行最后一条小节线之后断
  * （`‖:` 断在它前面）；本行一条小节线都没有才在小节中间断。只剩小节线的行并回上一行。返回各行在这一遍里的起点。
@@ -526,8 +530,13 @@ export function fillLines(
   while (i < items.length) {
     const left = nat.leftOf.get(items[i]!) ?? 0;
     let last = i;
+    let room = width;
     while (last < items.length) {
-      if (last > i && hardAt.has(last)) break;
+      if (last > i && hardAt.has(last)) {
+        // 往回跳处源里写了换页（`P:` 上一段末尾的 `%%newpage`）
+        if (forcedAt.get(last)) pageAt.add(last);
+        break;
+      }
       if (last > i && forcedAt.has(last) && !glueAt.has(last)) {
         const page = forcedAt.get(last)!;
         const short = (nat.rightOf.get(items[last - 1]!) ?? 0) - left < width / 3;
@@ -540,9 +549,20 @@ export function fillLines(
         }
       }
       const r = nat.rightOf.get(items[last]!) ?? 0;
-      if (r - left < width || last === i) {
+      if (r - left < room || last === i) {
         last++;
         continue;
+      }
+      // 源里写明的一行只超一点：折下去只剩一小截（行尾一两个音），不折，伸进右边距（放不下不压缩，`spacing.ts`）
+      if (room === width) {
+        let end = last + 1;
+        while (end < items.length && !forcedAt.has(end) && !hardAt.has(end)) end++;
+        const overhung = width + m.page.margin.right * OVERHANG_MARGIN;
+        if ((nat.rightOf.get(items[end - 1]!) ?? 0) - left < overhung) {
+          room = overhung;
+          last++;
+          continue;
+        }
       }
       for (let k = last; k > i + 1; k--) {
         const bar = items[k - 1]!.element;
@@ -741,6 +761,8 @@ export function expandSong(
   exactBreaks = false,
   /** 源里一行就是谱面一行（文本谱的 `Q:` 行）：行在小节中间收尾也是写明的换行，原位断 */
   rowIsLine = false,
+  /** 曲末写了换页（`Part.endBreak`）：`P:` 从曲末跳回前面的段落时换页 */
+  endPage = false,
 ): SongView {
   // 只排一个声部：带歌词的那个（同 `playsong.ts::songMeasures` 的 forExpanded），没有就第一个
   const voices = voiceNumbers(song);
@@ -779,6 +801,7 @@ export function expandSong(
     const chord = [...rows[r]!.refs].reverse().find((ref) => ref.chord)?.chord;
     return !!chord && (chord.lineBreakAfter !== undefined || (chord.sustains ?? []).some((su) => su.lineBreakAfter !== undefined));
   };
+  if (endPage && rows.length > 0) pageEndRows.add(rows.length - 1);
   const breaks = sourceBreaks(slices, rows, pageEndRows, (r) => exactBreaks || rowIsLine || inlineEnd(r));
   const marks = logicalMarks(rows);
   const seen = new Set<number>();
@@ -944,7 +967,7 @@ export function expandView(
     const pd = plans[i];
     if (!pd) return song;
     const layout = breakDesc && i === 0 ? { desc: breakDesc, simple: pd.isSimpple } : null;
-    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie");
+    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts.some((pt) => pt.endBreak === "page"));
   });
   return { ...view, songs };
 }
