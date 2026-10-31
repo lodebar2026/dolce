@@ -55,11 +55,8 @@ export function walkPlay(items: readonly PlayItem[], sink: PlaySink): void {
   let lastPass = -1;
   let broke = true; // 刚换过页，不必再换
   items.forEach((it, idx) => {
-    if (lastMid >= 0 && !broke && it.sectionEntry) {
-      // 进 `P:` 的段落不换页：跳着走的只另起一行（往前接着唱的连行都不换），换不换页看源里写的
-      const onward = (it.mid === lastMid + 1 && it.skip === 0) || (it.mid === lastMid && it.skip > 0);
-      if (sink.jumpBack && !onward) sink.jumpBack();
-    } else if (lastMid >= 0 && !broke && (it.mid < lastMid || (it.mid === lastMid && it.skip === 0))) {
+    // 进 `P:` 的段落不换页也不换行，换行换页看源里写的（上一段末尾的 `$`、`%%newpage`）
+    if (lastMid >= 0 && !broke && !it.sectionEntry && (it.mid < lastMid || (it.mid === lastMid && it.skip === 0))) {
       if (sink.jumpBack && it.pass === lastPass) sink.jumpBack();
       else sink.passEnd();
     }

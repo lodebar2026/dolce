@@ -80,14 +80,14 @@ interface Pass {
  * （同 `rowsPart` 的 `breakAtMeasureEnd`，行在小节中间结束就断在小节末）。小节被 `limit` 截掉尾巴时，断点随尾巴一起不要（同 `Line.load`）。
  */
 function sourceBreaks(
-  slices: readonly Slot[][], rows: readonly RowView[], pageEndRows: ReadonlySet<number>, exact: (r: number) => boolean,
+  slices: readonly Slot[][], rows: readonly RowView[], pageEndRows: ReadonlySet<number>, endBreak: boolean, exact: (r: number) => boolean,
 ): Map<string, boolean> {
   const measureOf = new Map<string, number>();
   slices.forEach((sl, k) => { for (const s of sl) measureOf.set(`${s.row}:${s.idx}`, k); });
   const out = new Map<string, boolean>();
   rows.forEach((row, r) => {
-    // 末行后面没有下一行，只有写明换页的才算（`P:` 从曲末跳回前面的段落时换页）
-    if ((r === rows.length - 1 && !pageEndRows.has(r)) || row.elements.length === 0) return;
+    // 末行后面没有下一行，只有曲末写了的才算（`P:` 从曲末跳回前面的段落）
+    if ((r === rows.length - 1 && !endBreak) || row.elements.length === 0) return;
     // 内联层不排（`cutSlots`）：断点要落在排出来的符号上，否则行末带 `&` 第二声部的换行就丢了
     const shown = (s: Slot): boolean => rows[s.row]!.elements[s.idx]!.kind !== "inline-layer";
     const tail = row.elements.map((_, idx) => ({ row: r, idx })).filter(shown).pop();
@@ -272,6 +272,9 @@ function passesOf(
       if (lineAt > 0 && line.some(isNote) && !line.some((sl) => { const el = elOf(sl); return el.kind === "barline" && el.type !== "repeat-end"; })) cut = lineAt;
     }
     if (cut <= 0) continue;
+    // 换行之后到弱起之间只有休止（037 `$ 0_ 5,_ 1 3 :|`，曲首只有 `5,_ 1 3`）：跟着弱起走，不留一行休止
+    const lineStart = Math.max(0, ...[...prev.breaks.keys()].filter((k) => k <= cut));
+    if (lineStart > 0 && prev.slots.slice(lineStart, cut).every((sl) => noteOf(sl) === "rest" || !isNote(sl))) cut = lineStart;
     const n = prev.slots.length - cut;
     const moved = prev.slots.splice(cut);
     const movedVerses = prev.verses.splice(cut);
@@ -483,7 +486,7 @@ function rowOf(
 }
 
 /** 源里写明的一行超出版心不到右边距的这个比例就不折，伸进边距 */
-const OVERHANG_MARGIN = 0.5;
+const OVERHANG_MARGIN = 0.8;
 
 /**
  * 逐行装满（同 `Line.doLineBreak`）：按自然宽（紧排 + 歌词避让，不两端对齐）往行里收，放不下就退回到本行最后一条小节线之后断
@@ -761,8 +764,8 @@ export function expandSong(
   exactBreaks = false,
   /** 源里一行就是谱面一行（文本谱的 `Q:` 行）：行在小节中间收尾也是写明的换行，原位断 */
   rowIsLine = false,
-  /** 曲末写了换页（`Part.endBreak`）：`P:` 从曲末跳回前面的段落时换页 */
-  endPage = false,
+  /** 曲末写的换行换页（`Part.endBreak`）：`P:` 从曲末跳回前面的段落时算 */
+  endBreak: "page" | "system" | null = null,
 ): SongView {
   // 只排一个声部：带歌词的那个（同 `playsong.ts::songMeasures` 的 forExpanded），没有就第一个
   const voices = voiceNumbers(song);
@@ -801,8 +804,8 @@ export function expandSong(
     const chord = [...rows[r]!.refs].reverse().find((ref) => ref.chord)?.chord;
     return !!chord && (chord.lineBreakAfter !== undefined || (chord.sustains ?? []).some((su) => su.lineBreakAfter !== undefined));
   };
-  if (endPage && rows.length > 0) pageEndRows.add(rows.length - 1);
-  const breaks = sourceBreaks(slices, rows, pageEndRows, (r) => exactBreaks || rowIsLine || inlineEnd(r));
+  if (endBreak === "page" && rows.length > 0) pageEndRows.add(rows.length - 1);
+  const breaks = sourceBreaks(slices, rows, pageEndRows, endBreak !== null, (r) => exactBreaks || rowIsLine || inlineEnd(r));
   const marks = logicalMarks(rows);
   const seen = new Set<number>();
   let unrolled = false;
@@ -926,7 +929,12 @@ export function expandSong(
         const n = lines.findIndex((_, n) => startMeasure(n) >= k);
         if (n > 0 && startMeasure(n) <= k + 1) markHeads.add(n);
       }
-      pageByRows(lines, (n) => markHeads.has(n) || refrainStart.has(startMeasure(n)));
+      // `P:` 回到前面的段落处和副歌起头一样，是换页的好地方（250 ABCB 每次回 A 一页，不断在副歌前留下两行）
+      const backHead = (n: number): boolean => {
+        const prev = pass.slots[lines[n]!.start - 1];
+        return n > 0 && !!prev && (measureOf.get(slotKey(prev)) ?? -1) > startMeasure(n);
+      };
+      pageByRows(lines, (n) => markHeads.has(n) || refrainStart.has(startMeasure(n)) || backHead(n));
     }
     // 一遍一页起头；遍内源里的换页另起一页。一处 `:|` 只回头一次（唱两遍）的（开了 `pair-pages` 时还有只换一句中段词的），这一遍首页放得下就接在上一遍那页（用户定：两段放得下一页就一页；
     // 整首从头再来、或反复三遍以上的仍一段一页——500 首成品里 044 这样每段 2 行、4 段的一律分页）
@@ -967,7 +975,7 @@ export function expandView(
     const pd = plans[i];
     if (!pd) return song;
     const layout = breakDesc && i === 0 ? { desc: breakDesc, simple: pd.isSimpple } : null;
-    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts.some((pt) => pt.endBreak === "page"));
+    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts[0]?.endBreak ?? null);
   });
   return { ...view, songs };
 }
