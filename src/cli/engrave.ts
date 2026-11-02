@@ -85,4 +85,5 @@ export { HeadlessSession, type HeadlessView } from "../editor/headless";
 export { ScorePainter, PaintResources, staffOptionsOf } from "../layout/painter";
 export { SvgNode } from "../layout/svgnode";
 export { outlinedSvg } from "./outline.node";
+export { SAMPLE } from "../editor/sample";
 export * from "./j123";

@@ -18,30 +18,11 @@ import { setupPopover } from "./editor/toolpop";
 import { setupCompareSelect } from "./editor/comparemode";
 import { attachPinchZoom } from "./editor/pinchzoom";
 import { setupSplitters } from "./editor/splitters";
+import { SAMPLE } from "./editor/sample";
 
 /** 工具栏「每行 N 小节」上次选的 N */
 const BARS_PER_LINE_KEY = "dolce-bars-per-line";
 
-// Built-in sample (圣哉，圣哉，圣哉) — same content as CodeEditor.kt `scr`.
-const SAMPLE = `// ************** JPW-ABC File Ver 1.0 (for JP-Word v5.50m) **************
-.Title
-Title = {圣哉，圣哉，圣哉}
-KeyAndMeters = {1=D,4/4}
-.Voice
-1 1 3 3 |5- 5- |6- 6 6 |5- 3- |$(true)
-5. 5_ 5 5 |1'- 7 5 |2 5 6. 5_ |5--- |$(true)
-1 1 3 3 |5- 5- |6. 6_ 6 6 |5- 5- |$(true)
-1'- 5 5 |6- 3- |4 2 2. 1_ |1--- |]$(true,0,0,true)
-.Words
-W1@1,1:
-{1.[圣]}哉，圣哉，圣哉！全能大主宰！清晨欢悦歌咏高声颂主圣恩，圣哉，圣哉，圣哉！恩慈永无更改，荣耀与赞美，归三一真神。
-W2@1,1:
-{2.[圣]}哉，圣哉，圣哉！群圣虔拜俯，各以华丽金冠奉呈宝座之前，千万天军、天使，虔敬崇拜上主，昔在而今在，永在亿万年。
-W3@1,1:
-{3.[圣]}哉，圣哉，圣哉！主藏黑云里，罪人焉得瞻望真主威赫荣光，耶和华惟圣哉，谁与上主堪比，权能至完备，大哉天地王。
-W4@1,1:
-{4.[圣]}哉，圣哉，圣哉！全能大主宰！天上地下海中万物颂主尊称，圣哉，圣哉，圣哉！恩慈永无更改，荣耀与赞美，归三一真神。
-`;
 
 // 注册 Bravura 与 Bravura Text @font-face（替代 styles.css 里的静态声明），按 Vite base
 // 解析字体 URL。和弦内的 csym 字形必须走真实 Text 变体，不能用普通 Bravura 等比模拟。

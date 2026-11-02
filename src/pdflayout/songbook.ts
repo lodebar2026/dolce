@@ -273,7 +273,7 @@ function placedToTextFrames(page: Group, placed: readonly Placed[], sheet: Style
 // ───────────────────────── 入口 ─────────────────────────
 
 export async function layoutMixedSongbook(input: SongbookInput): Promise<SongbookResult> {
-  const meta = await MetaData.load();
+  const meta = await MetaData.shared();
   const families = input.families ?? {};
   const songs: SongLayout[] = [];
   const errors: SongbookResult["errors"] = [];

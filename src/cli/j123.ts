@@ -22,7 +22,7 @@ export { docView } from "../jianpu/slots";
 export { fanqieToScoreDoc } from "../fanqie/fromfanqie";
 export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
-export { slursAsTies } from "../model/xmlproject";
+export { slursAsTies, voltasOfPlayOrder } from "../model/xmlproject";
 export { loadScoreDoc } from "../model/fromxml";
 export { writeJpwabc } from "../model/tojpw";
 export { emitJpwabc } from "../convert/jpwabc";
