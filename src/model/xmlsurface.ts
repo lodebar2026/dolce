@@ -127,6 +127,32 @@ export function xmlAlign(obj: object): { justify?: HAlign; halign?: HAlign; vali
   return out;
 }
 
+/** 中文字面名结尾词 → 字重 / 字形；常规体只去掉不记。
+ *  西文不拆：`Times New Roman`、`Arial Black`、`Segoe UI Light` 本身就是族名。 */
+const FACE_WORDS: Record<string, { weight?: string; style?: string }> = {
+  常规体: {}, 常规: {}, 标准: {},
+  细体: { weight: "300" }, 中等: { weight: "500" }, 中黑: { weight: "500" }, 半粗体: { weight: "600" },
+  粗体: { weight: "bold" }, 特粗: { weight: "900" }, 斜体: { style: "italic" },
+};
+
+/** 把「族名 + 字面名」的全名（Finale 写出的 `宋体-简 常规体`、`楷体-简 粗体`）拆回族名与字重/字形。
+ *  浏览器与系统文字引擎都只按族名匹配，全名一个都认不出、落到回退字体。逗号分开的每一项各拆；
+ *  属性里已写的字重/字形优先；只有一个词（`黑体`）不拆。 */
+export function splitFaceName(f: FontSpec): FontSpec {
+  if (!f.family) return f;
+  const out = { ...f };
+  out.family = f.family.split(",").map((item) => {
+    const name = item.trim();
+    const sp = name.lastIndexOf(" ");
+    const face = sp > 0 ? FACE_WORDS[name.slice(sp + 1)] : undefined;
+    if (!face) return name;
+    if (face.weight && out.weight === undefined) out.weight = face.weight;
+    if (face.style && out.style === undefined) out.style = face.style;
+    return name.slice(0, sp).trim();
+  }).join(",");
+  return out;
+}
+
 function readFont(el: XmlEl | null | undefined): FontSpec | undefined {
   if (!el) return undefined;
   const f: FontSpec = {};
@@ -138,7 +164,7 @@ function readFont(el: XmlEl | null | undefined): FontSpec | undefined {
   if (w !== null) f.weight = w;
   const st = el.getAttribute("font-style");
   if (st !== null) f.style = st;
-  return Object.keys(f).length ? f : undefined;
+  return Object.keys(f).length ? splitFaceName(f) : undefined;
 }
 
 /** 文字的字体属性：`Lyric` 取首个 `<text>`，`DirectionPart` 取它那条子元素。 */

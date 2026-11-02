@@ -51,7 +51,7 @@ import { assignDegrees } from "./jianpu";
 import { addMeta } from "./metakeys";
 import { child, childText, children } from "../score/xmldom";
 import { XmlError, parseXml, type XmlEl } from "../score/xmltree";
-import { bindSurface } from "./xmlsurface";
+import { bindSurface, splitFaceName } from "./xmlsurface";
 import { ModelError, msg } from "./msg";
 
 const num = (el: XmlEl | null, tag: string): number | undefined => {
@@ -171,7 +171,7 @@ function readFont(el: XmlEl): FontSpec {
   if (w !== null) f.weight = w;
   const st = el.getAttribute("font-style");
   if (st !== null) f.style = st;
-  return f;
+  return splitFaceName(f);
 }
 
 function readCredits(root: XmlEl): Credit[] {
@@ -190,10 +190,9 @@ function readCredits(root: XmlEl): Credit[] {
     if (x) cr.x = Number(x);
     if (y) cr.y = Number(y);
     if (fs) cr.fontSize = Number(fs);
-    const ff = first.getAttribute("font-family");
-    if (ff) cr.fontFamily = ff;
-    const fw = first.getAttribute("font-weight");
-    if (fw) cr.fontWeight = fw;
+    const font = splitFaceName({ family: first.getAttribute("font-family") || undefined, weight: first.getAttribute("font-weight") || undefined });
+    if (font.family) cr.fontFamily = font.family;
+    if (font.weight) cr.fontWeight = font.weight;
     const just = readAlign(first, "justify");
     if (just) cr.justify = just;
     const ha = readAlign(first, "halign");
