@@ -1,0 +1,54 @@
+name: Native textmeasure
+
+# Node 侧排版量字的原生模块（native/textmeasure：macOS CoreText / Windows DirectWrite）。
+# 本机只有 macOS，Windows 那份靠这里编译并跑冒烟测试（native/textmeasure/smoke.mjs）。
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "native/textmeasure/**"
+      - "src/cli/textmeasure.node.ts"
+      - "src/cli/engrave.ts"
+      - ".github/workflows/native.yml"
+  pull_request:
+    paths:
+      - "native/textmeasure/**"
+      - "src/cli/textmeasure.node.ts"
+      - "src/cli/engrave.ts"
+      - ".github/workflows/native.yml"
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native/textmeasure
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native module
+        run: npm run build:native
+
+      - name: Build CLI
+        run: npm run build:cli
+
+      - name: Smoke test
+        run: node native/textmeasure/smoke.mjs

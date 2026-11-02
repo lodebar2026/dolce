@@ -36,6 +36,7 @@
     "tauri": "tauri",
     "release": "bash scripts/release.sh",
     "build:cli": "vite build --config vite.cli.config.ts",
+    "build:native": "cargo build --release --manifest-path native/textmeasure/Cargo.toml && node native/textmeasure/install.mjs",
     "pack:omr": "node scripts/pack-omr.mjs",
     "test": "node -e \"require('fs').existsSync('../dev/vitest.config.ts')||(console.error('识别回归用例在同级的本地私有仓库 ../dev（语料有版权，不随公开仓库分发），没有它就没有可跑的测试'),process.exit(1))\" && vitest run --config ../dev/vitest.config.ts"
   },

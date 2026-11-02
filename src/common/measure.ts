@@ -31,6 +31,16 @@ export interface MeasureBackend {
   pathBounds(d: string): Rect;
 }
 
+/**
+ * SVG `<text>` 缺省折叠空白：ASCII 空格、制表符、换行连成一段折成一个空格，串首串尾的去掉
+ *（不换行空格、全角空格不折）。浏览器量 advance 用的就是 `<text>`，画出来也是这样——
+ * 不靠浏览器的后端量**宽度**前先过一遍（墨迹照原串量，同浏览器的 canvas）。整串都是空白的不折（浏览器那时改用 canvas 的宽）。
+ */
+export function svgCollapsedText(text: string): string {
+  if (/^\s+$/.test(text)) return text;
+  return text.replace(/[ \t\n\r]+/g, " ").replace(/^ | $/g, "");
+}
+
 let backend: MeasureBackend | null = null;
 
 /** 装配测量后端（app 启动时、CLI 入口各调一次）。换后端会清掉已有缓存。 */

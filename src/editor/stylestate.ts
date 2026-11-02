@@ -9,11 +9,11 @@ import { songLyricSize, songStaffSize } from "../model/pagemeta";
 import { computeStyle, sanitizeLayer, upsertRule, type StyleRule } from "../style/cascade";
 import type { Length } from "../style/units";
 import { NOTE_FONTS } from "../style/fonts";
-import { docPageLayer, resolvePaper, songPageDecl } from "../style/paper";
+import { docPageLayer, pageMargins, resolvePaper, songPageDecl } from "../style/paper";
 import { headerFontsOf, headerLayerOfSong, type HeaderFonts, type HeaderRole } from "../style/header";
 import type { DeepPartial, PageDecl, StyleSheet } from "../style/sheet";
 import { jianpuSizes } from "../style/jianpu";
-import { LONG_IMAGE_WIDTH, PAGE_RATIOS, THEMES, computeStyleForPaper, isPaper, themeOfMode } from "../style/themes";
+import { LONG_IMAGE_WIDTH, PAGE_RATIOS, STAFF_LONG_IMAGE_WIDTH, THEMES, computeStyleForPaper, isPaper, themeOfMode } from "../style/themes";
 import { replaceStyleRef } from "../abcfamily/metaedit";
 import type { JianpuLayoutMode } from "../jianpu/profile";
 import { t } from "../i18n";
@@ -75,6 +75,18 @@ export class StyleState {
 
   /** 五线谱/混排看到的 computed 样式表（主题 staff → 曲内层 → 它自己那层用户规则）。
    *  **纸不借简谱档的**：那边出厂是长图，五线谱排成长图就是一张 1000pt 宽的扁图。 */
+  /** 五线谱/混排档的纸：设置里五线谱那张（谱里写了纸就是谱里那张，见曲内层）；长图按出厂纸宽、`heightPt = null`。
+   *  `override`：用户明确选过纸——谱里的 `<page-layout>` 连同版面坐标都不用了，按这张纸重新铺排。 */
+  get staffPage(): { widthPt: number; heightPt: number | null; marginsPt?: number[]; override: boolean } {
+    const pg = this.staffStyle().page;
+    const paper = resolvePaper(pg);
+    const marginsPt = pageMargins(pg);
+    const override = this.userSetsPaper("staff");
+    return paper
+      ? { widthPt: paper.w, heightPt: paper.h, marginsPt, override }
+      : { widthPt: STAFF_LONG_IMAGE_WIDTH, heightPt: null, marginsPt, override };
+  }
+
   staffStyle(): StyleSheet {
     const page = this.userSetsPaper("staff") ? [] : this._docLayer();
     return computeStyleForPaper(

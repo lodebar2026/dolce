@@ -130,10 +130,19 @@ function augDotX(num: JpNumber, index: number, r: number, stackGap: number): num
 }
 
 let bravuraFont: opentype.Font | null = null;
+// Node（cli/engrave.ts）里 opentype.js 走 CJS 入口，东西都挂在 default 上
+const otParse = (buf: ArrayBuffer): opentype.Font =>
+  ((opentype as unknown as { default?: typeof opentype }).default ?? opentype).parse(buf);
+
+/** 直接装入 Bravura.otf 的字节（Node 侧不走 fetch，`cli/engrave.ts` 读 public/redist 后给进来）。 */
+export function provideBravuraOtf(buf: ArrayBuffer): void {
+  bravuraFont = otParse(buf);
+}
+
 async function loadBravura(): Promise<opentype.Font> {
   if (!bravuraFont) {
     const buf = await fetch(asset("redist/Bravura.otf")).then((r) => r.arrayBuffer());
-    bravuraFont = opentype.parse(buf);
+    bravuraFont = otParse(buf);
   }
   return bravuraFont;
 }

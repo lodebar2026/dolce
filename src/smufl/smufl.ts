@@ -298,6 +298,11 @@ export class MetaData {
     }));
   }
 
+  /** 直接装入缺省那份（Node 侧读 `public/redist/bravura_metadata.json` 后给进来，不走 fetch）。 */
+  static provide(md: MetaData): void {
+    MetaData._shared = Promise.resolve(md);
+  }
+
   static async load(url = asset("redist/bravura_metadata.json")): Promise<MetaData> {
     const resp = await fetch(url);
     const raw = (await resp.json()) as RawMetadata;

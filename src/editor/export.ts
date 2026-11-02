@@ -2,6 +2,7 @@
 import type { App } from "./app";
 import { toMidi } from "../score/midi";
 import { buildPptx } from "./pptx";
+import { pptxPainter } from "./paintreq";
 import { ScorePainter } from "../layout/painter";
 import { isTauriRuntime, saveBytes } from "./fileio";
 import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../convert/targets";
@@ -131,19 +132,8 @@ export async function exportPptx(app: App): Promise<void> {
   );
 }
 
-/** 按投影档另排一份。屏幕已在投影档时直接用屏幕那个，省一次排版。
- *  **设置取投影档那一套**（`app.style.styleOf("expanded")`），不是屏幕上简谱档的那套——
- *  否则导出的投影片会带着简谱档的字号与颜色。 */
-export function pptxPainter(app: App): ScorePainter {
-  const cur = app.painter;
-  // 识别模式里屏幕上那个排版器不随改动重排（谱面区是核对视图），只有简谱档的才能直接用
-  if (app.mode === "jp" && cur.renderer === "jianpu" && cur.jianpuView === "expanded") return cur;
-  const req = app.expandedRequest();
-  if (!req) throw new Error(t("export.noFanqieLines"));
-  const p = new ScorePainter(cur.resources);
-  p.loadSync(req);
-  return p;
-}
+/** 投影档那份排版器，见 `paintreq.ts::pptxPainter`（无头排版会话也用它）。 */
+export { pptxPainter };
 
 const MUSICXML_MIME = "application/vnd.recordare.musicxml+xml";
 

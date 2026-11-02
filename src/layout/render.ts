@@ -7,6 +7,21 @@ import { walkPageItem, type ItemVisitor } from "../pagetree/walk";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/** 造 SVG 元素的那个「文档」。缺省是浏览器的 `document`；Node 侧（`cli/engrave.ts`）换成
+ *  `layout/svgnode.ts` 的轻量节点，`outerHTML` 照浏览器的序列化写，指纹两边可比。 */
+export interface SvgDocument {
+  createElementNS(ns: string, tag: string): Element;
+}
+let svgDocument: SvgDocument | null = null;
+
+export function setSvgDocument(doc: SvgDocument): void {
+  svgDocument = doc;
+}
+
+function svgEl<K extends keyof SVGElementTagNameMap>(tag: K): SVGElementTagNameMap[K] {
+  return (svgDocument ?? document).createElementNS(SVG_NS, tag) as SVGElementTagNameMap[K];
+}
+
 /** `renderPageSvg` 的可选项。第四个参数直接给 WeakMap 是老写法，保留不动。 */
 export interface PageSvgOptions {
   nodeMap?: WeakMap<PageItem, SVGGElement>;
@@ -26,11 +41,11 @@ export function renderPageSvg(
   opts?: WeakMap<PageItem, SVGGElement> | PageSvgOptions,
 ): SVGSVGElement {
   const o: PageSvgOptions = opts instanceof WeakMap ? { nodeMap: opts } : (opts ?? {});
-  const svg = document.createElementNS(SVG_NS, "svg");
+  const svg = svgEl("svg");
   svg.setAttribute("class", o.cls ?? "score-page");
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   if (root) {
-    const holder = document.createElementNS(SVG_NS, "g");
+    const holder = svgEl("g");
     walkPageItem(root, holder, o.visitor ?? svgVisitor(o.nodeMap));
     // visitor 可能不为根产生 <g>（混排那份只给 Group 造），所以整批搬过去
     while (holder.firstChild) svg.appendChild(holder.firstChild);
@@ -67,7 +82,7 @@ export function headerPartsOf(pages: readonly PageItem[], nodeMap: WeakMap<PageI
  */
 export function svgVisitor(nodeMap?: WeakMap<PageItem, SVGGElement>): ItemVisitor<SVGGElement> {
   const enter = (item: PageItem, parent: SVGGElement): SVGGElement => {
-    const g = document.createElementNS(SVG_NS, "g");
+    const g = svgEl("g");
     if (!item.matrix.isIdentity) g.setAttribute("transform", item.matrix.toSvg());
     parent.appendChild(g);
     nodeMap?.set(item, g);
@@ -76,7 +91,7 @@ export function svgVisitor(nodeMap?: WeakMap<PageItem, SVGGElement>): ItemVisito
   return {
     descend: enter,
     path: (item, g) => {
-      const p = document.createElementNS(SVG_NS, "path");
+      const p = svgEl("path");
       p.setAttribute("d", item.d);
       if (item.fill) p.setAttribute("fill", colorToCss(item.fillColor));
       else p.setAttribute("fill", "none");
@@ -87,7 +102,7 @@ export function svgVisitor(nodeMap?: WeakMap<PageItem, SVGGElement>): ItemVisito
       g.appendChild(p);
     },
     line: (item, g) => {
-      const l = document.createElementNS(SVG_NS, "line");
+      const l = svgEl("line");
       l.setAttribute("x1", String(item.p0.x));
       l.setAttribute("y1", String(item.p0.y));
       l.setAttribute("x2", String(item.p1.x));
@@ -98,7 +113,7 @@ export function svgVisitor(nodeMap?: WeakMap<PageItem, SVGGElement>): ItemVisito
       g.appendChild(l);
     },
     text: (item, g) => {
-      const t = document.createElementNS(SVG_NS, "text");
+      const t = svgEl("text");
       t.setAttribute("x", "0");
       t.setAttribute("y", "0");
       const family = item instanceof SmuflText ? "Bravura" : item.font.family;
@@ -144,7 +159,7 @@ export function mixedVisitor(
     descend: (item, parent) => {
       // 只有 Group 产生新的 <g>；叶子直接落在父级的 <g> 里，自带 transform
       if (!(item instanceof Group)) return parent;
-      const g = document.createElementNS(SVG_NS, "g") as SVGGElement;
+      const g = svgEl("g");
       if (!item.matrix.isIdentity) g.setAttribute("transform", item.matrix.toSvg());
       if (item.classes.size > 0) g.setAttribute("class", [...item.classes].join(" ")); // staff-chord / staff-system
       parent.appendChild(g);
@@ -154,7 +169,7 @@ export function mixedVisitor(
     },
     descendChildren: (item) => item instanceof Group,
     line: (item, g) => {
-      const el = document.createElementNS(SVG_NS, "line") as SVGLineElement;
+      const el = svgEl("line");
       el.setAttribute("x1", String(item.p0.x));
       el.setAttribute("y1", String(item.p0.y));
       el.setAttribute("x2", String(item.p1.x));
@@ -167,7 +182,7 @@ export function mixedVisitor(
       leaf(item, el);
     },
     text: (item, g) => {
-      const el = document.createElementNS(SVG_NS, "text") as SVGTextElement;
+      const el = svgEl("text");
       el.setAttribute("x", "0");
       el.setAttribute("y", "0");
       el.setAttribute("font-family", item.font.family);
@@ -184,7 +199,7 @@ export function mixedVisitor(
       leaf(item, el);
     },
     path: (item, g) => {
-      const el = document.createElementNS(SVG_NS, "path") as SVGPathElement;
+      const el = svgEl("path");
       el.setAttribute("d", item.d);
       if (item.fill) el.setAttribute("fill", colorToCss(item.fillColor));
       else el.setAttribute("fill", "none");

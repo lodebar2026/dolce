@@ -15,7 +15,7 @@ export default defineConfig({
     target: "node20",
     minify: false,
     rollupOptions: {
-      input: { index: "src/cli/index.ts", omr: "src/cli/omr.ts", j123: "src/cli/j123.ts", rasterworker: "src/cli/rasterworker.ts" },
+      input: { index: "src/cli/index.ts", omr: "src/cli/omr.ts", j123: "src/cli/j123.ts", rasterworker: "src/cli/rasterworker.ts", engrave: "src/cli/engrave.ts" },
       output: { entryFileNames: "[name].js", chunkFileNames: "[name].js" },
     },
   },
