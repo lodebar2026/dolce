@@ -87,6 +87,9 @@ export function sectionWordRun(font: Font, text: string, mode: CompressMode): { 
   return { width: width - lead, xs: xs.length > 1 ? xs.map((v) => v - lead) : null };
 }
 
+/** 判撞的浮点余量（pt）：候选落点由「挡路者边缘 ± 宽 ± gap」算出，恰好贴住时不能靠末位舍入定撞不撞 */
+const EDGE_EPS = 1e-6;
+
 export function placeSectionWord(g: SectionWordGeom): SectionWordSlot {
   // 与和弦之间要留的净空。**半身档下末字是收口括号**，它的墨迹一直顶到 advance 的右边缘，
   // 原来那 0.3 个字身量到纸上只剩一线（173 的「（副歌）」右括号与后面的 G 描边挨着）。
@@ -99,8 +102,10 @@ export function placeSectionWord(g: SectionWordGeom): SectionWordSlot {
   // 纵向那一档取 1.5 个字身：和弦记的是**框顶**、段落词记的是**基线**，两者同带时差
   // 恰好一个字身上下——照 `< size` 判会**整整差一线**地判成「不同带、不算撞」，
   // 于是词就直接印在和弦上（020 行首的 B）。
+  // 横向留 `EDGE_EPS` 的余量：左让的候选 `挡路者.x0 − 宽 − gap` 按算术恰好贴住，浮点上多出一丁点就又判成撞上、
+  // 整条抬到和弦之上（377 的「（副歌）」浏览器摆进去、Node 抬上去，只差末位舍入）
   const hit = (x: number): { x0: number; x1: number } | undefined =>
-    g.chords.find((c) => Math.abs(c.y - g.baseY) < g.size * 1.5 && x - gap < c.x1 && c.x0 < x + g.width + gap);
+    g.chords.find((c) => Math.abs(c.y - g.baseY) < g.size * 1.5 && x - gap < c.x1 - EDGE_EPS && c.x0 + EDGE_EPS < x + g.width + gap);
   // 行首那一条先试「跨在锚点上」：谱面已经为它缩进过半个词（`sectionWordIndent`），
   // 左边那点地方就是给左括号留的。整个躲到音符左边没必要，就地从锚点起排又会把
   // 音符与小节线之间豁开一道口子——摆中间，两头都只让半个词。

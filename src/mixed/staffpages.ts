@@ -117,6 +117,8 @@ const AFTER_REHEARSAL = 6;
 const WORDS_GAP = 4;
 /** segno / coda 墨迹底到下面谱面内容（或顶线）的空（tenths） */
 const SIGN_CLEAR = 8;
+/** 文字记号横向判撞的余量（tenths）：留空只差这么多不算撞，量字的亚像素差不该把整块抬一档 */
+const TOUCH_TOL = 0.5;
 /** 行首 segno / coda 离小节号右缘（tenths） */
 const AFTER_BAR_NUMBER = 3;
 
@@ -305,7 +307,8 @@ function placePartAboveStaff(score: StaffLayout, p: PartLayout, mixed: boolean, 
         for (let again = true; again; ) {
           again = false;
           for (const b of placed) {
-            if (b.x1 + MIXED_TEXT_CLEAR / 2 <= x0 || b.x0 >= x1 + MIXED_TEXT_CLEAR / 2) continue;
+            // 留空差零点几（两种量字后端取整不同，J09 的 Fine 离和弦 7.996 / 8）不算撞上
+            if (b.x1 + MIXED_TEXT_CLEAR / 2 - TOUCH_TOL <= x0 || b.x0 + TOUCH_TOL >= x1 + MIXED_TEXT_CLEAR / 2) continue;
             if (t.y + h <= b.y0 || t.y >= b.y1) continue;
             t.y = b.y1 + MIXED_TEXT_CLEAR / 2;
             again = true;
