@@ -8,7 +8,7 @@
 //   SongBook::genTOC（:289）                         → `tocPage`：A4 pt 口径，点线填到页码前
 // 逐曲的特殊处理（:682 fixPaoScore）不在排版里：由 scripts/kl2020-prep.mjs 事先写进 MusicXML（.fixed.xml），这里只按数据排。
 //
-// **浏览器侧**（混排引擎要 DOM 量字）。Node 侧的 scripts/kl2020-book.mjs 经 window.__songbook 调它，
+// 要量字（混排引擎），只经 out/cli/engrave.js 进 Node：scripts/kl2020-book.mjs 调 `E.songbook.layoutMixedSongbook`，
 // 拿回纯数据的 DrawPage[] 再交 scripts/pdfwrite.mjs。
 import { Matrix33 } from "../common/geom";
 import { punctClass } from "../common/cjkpunct";

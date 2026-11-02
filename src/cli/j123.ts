@@ -4,8 +4,8 @@
 // 与另两个入口的分工：`cli/index.ts` 是矢量 PDF 版面那一摊、`cli/omr.ts` 是位图简谱识别，
 // 这个是**格式与语义模型**这一条。
 //
-// **只能汇出不碰 DOM 的模块**——排版件（依赖 common/measure.ts 的那些）一律不许进这条链，
-// 所以这里没有排版器 / layout。需要排版的回归走 scripts/harness.mjs 起浏览器那条路。
+// **只能汇出不碰 DOM 的模块**——排版件（依赖 common/measure.ts 的那些）不进这条链，
+// 所以这里没有排版器 / layout。需要排版的走 `cli/engrave.ts`（它装测量后端，并把这里的导出一并转出）。
 export * from "../model/doc";
 export * from "../abcfamily/lex123";
 export * from "../abcfamily/parse";

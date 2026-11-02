@@ -1,11 +1,11 @@
 // DrawList：**两条重排路与 PDF 输出之间的唯一契约**。
 //
 //   A 路 relayout（原位替换）：PageSpec + BookStyle → specToDrawPage → DrawPage
-//   B 路 rebuild（数据重排）  ：PageItem 树 + BookStyle → pageItemsToDrawPage（浏览器侧）→ DrawPage
+//   B 路 rebuild（数据重排）  ：PageItem 树 + BookStyle → pageItemsToDrawPage → DrawPage
 //   两路汇合 → scripts/pdfwrite.mjs 写 PDF
 //
-// 为什么不是 SVG 字符串：排版引擎必须在浏览器里跑（common/measure.ts 的 getBBox），
-// pdf-lib 只能在 Node。SVG 要在 Node 侧反解 transform 嵌套与字体度量，等于把 painter 再写一遍；
+// 为什么不是 SVG 字符串（当初排版只能在浏览器里跑，现在 Node 也能排，契约照旧）：
+// SVG 要在 Node 侧反解 transform 嵌套与字体度量，等于把 painter 再写一遍；
 // 而页面树本来就只有三种叶子，扁平化一次就完事。
 //
 // 坐标一律 **SVG 系**（左上原点、y 向下、单位 pt），y 轴翻转只在 pdfwrite 里做一次。

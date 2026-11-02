@@ -35,7 +35,7 @@
 - **Bravura（SMuFL）的字体盒不能当墨迹盒用**：它的全局 ascent−descent 约 4 em，按字体度量算高度、
   或对 `<text>` 调 `getBBox()`（得到的是整行字体盒），一个升降号、三连音数字、力度字形就把行高/裁剪框撑出几个字号的空白。
   排版期用紧包围盒——`SmuflText` 自带 bound、音乐段 `TextFrame.inkBound`、字形盒走 `smuflMeta.getBBox(glyph)`；
-  DOM 侧量墨迹一律走 `common/measure.ts::inkOf`（canvas `measureText` 的 `actualBoundingBox*`，文字基线在本地 y=0）。
+  DOM 侧量墨迹一律走 `common/measure.browser.ts::inkOf`（canvas `measureText` 的 `actualBoundingBox*`，文字基线在本地 y=0）。
   **WebKit（桌面版 WKWebView、Safari）的 `actualBoundingBox*` 不是墨迹**（左恒 0、右是前进宽、上下沿截到基线，「-」量成 0.29 em 高），
   `inkOf` 探到这种实现就改成离屏画布逐像素量；别再直接调 `measureText` 取墨迹。
 - `window.__app` / `window.__book` 运行时暴露（`src/main.ts`）供无头校验用。

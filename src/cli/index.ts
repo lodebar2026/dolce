@@ -2,8 +2,8 @@
 // out/cli/index.js 供仓库根的 .mjs 脚本 import。
 //
 // **这里只能汇出不碰 DOM 的模块**——scripts/page-report.mjs / scripts/pdf-diff.mjs 不起浏览器。
-// 碰 canvas/OffscreenCanvas/document 的（decode.ts、paddleocr.ts、lyrics.ts 的 buildStrip、
-// common/measure.ts 及一切依赖它的排版件）一律不许进这条 import 链。
+// 碰 canvas/OffscreenCanvas/document 的（decode.ts、paddleocr.ts、lyrics.ts 的 buildStrip）一律不许进这条 import 链；
+// 排版件（依赖 common/measure.ts 的）走 `cli/engrave.ts`（它装测量后端），也不进这里。
 export * from "../common/cjkpunct";
 export * from "../omrkit/vector";
 export * from "../omrkit/vectext";

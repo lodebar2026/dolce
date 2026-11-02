@@ -1,7 +1,7 @@
 // B 路（从乐谱数据重排）的浏览器侧：样式注入 + 页面树 → DrawList。
 //
-// **这是唯一碰 measure/DOM 的重排件**，所以不能进 out/cli（见 src/cli/index.ts 的头注释）。
-// Node 侧的 scripts/rebuild.mjs 通过 window.__book 调它，拿回纯数据的 DrawPage[]，再交
+// （文件名是历史：当初排版只能在浏览器里跑。）**这是要量字的重排件**，只经 out/cli/engrave.js 进 Node
+//（它装测量后端，见 src/cli/engrave.ts）：scripts/rebuild.mjs 调 `E.book.*` 拿纯数据的 DrawPage[]，再交
 // scripts/pdfwrite.mjs 出 PDF。
 //
 // 为什么导出 DrawList 而不是 SVG 字符串：SVG 要在 Node 侧反解嵌套 transform 与字体度量，

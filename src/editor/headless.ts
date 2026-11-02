@@ -40,6 +40,8 @@ export class HeadlessSession implements StyleStateHost {
   /** 五线谱档叠不叠简谱层（混排 / 五线谱） */
   jianpuLayer = true;
   hideBarNumber = false;
+  /** 当前排着的档（还没排过为 null）；改设置后按它重排，同 App */
+  viewMode: HeadlessView | null = null;
   /** 最近一条状态栏提示（读入、排版失败时看它） */
   status = "";
   private text = "";
@@ -103,9 +105,42 @@ export class HeadlessSession implements StyleStateHost {
     }
   }
 
-  applyRenderSettings(opts: RenderSettings): void {
-    this.style.apply(opts);
+  /** 同 `App.importBytes`：打开以后按当前档重排（还没切过档就不排）。 */
+  async importBytes(bytes: Uint8Array, name: string): Promise<void> {
+    this.load(bytes, name);
+    if (this.viewMode) await this.setViewMode(this.viewMode);
   }
+
+  /** 同 `App.applyRenderSettings`：设置落进样式层的用户层，按当前档重排。 */
+  async applyRenderSettings(opts: RenderSettings): Promise<void> {
+    this.style.apply(opts);
+    if (this.viewMode) await this.setViewMode(this.viewMode);
+  }
+
+  /** 同 `App.setProfile`：简谱两档之间切（在五线谱档时只记下，回简谱档时用）。 */
+  async setProfile(slide: boolean): Promise<void> {
+    const view = slide ? "expanded" : "original";
+    if (this.mode === "jp" && this.viewMode) await this.setViewMode(view);
+    else this.layoutMode = view;
+  }
+  setJpProfile(profile: "normal" | "pptx"): Promise<void> {
+    return this.setProfile(profile === "pptx");
+  }
+
+  /** 前景色与纸色（当前档），同 `App.color` / `App.bgColor`。 */
+  get color(): number {
+    return this.style.color;
+  }
+  get bgColor(): number {
+    return this.style.bgColor;
+  }
+  /** 五线谱/混排档的纸，同 `App.staffPage`。 */
+  get staffPage(): StyleState["staffPage"] {
+    return this.style.staffPage;
+  }
+
+  /** 同 `App.whenIdle`：这里排版都在 `setViewMode` 里等完了，留着给照搬过来的调用。 */
+  async whenIdle(): Promise<void> {}
 
   /** `.jpwabc` 那份排版用的模型与分页描述（同 `App.reloadJpwabc`）。 */
   private jpwSource(): { doc: ScoreDoc; breakDesc: string | null } | null {
@@ -154,6 +189,7 @@ export class HeadlessSession implements StyleStateHost {
 
   /** 切档并排好（同 `App.setViewMode`）。 */
   async setViewMode(view: HeadlessView): Promise<void> {
+    this.viewMode = view;
     if (view === "staff" || view === "mixed") {
       this.mode = "mixed";
       this.jianpuLayer = view === "mixed";
