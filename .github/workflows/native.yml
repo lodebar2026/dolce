@@ -2,20 +2,9 @@ name: Native textmeasure
 
 # Node 侧排版量字的原生模块（native/textmeasure：macOS CoreText / Windows DirectWrite）。
 # 本机只有 macOS，Windows 那份靠这里编译并跑冒烟测试（native/textmeasure/smoke.mjs）。
+# 只手动触发：Actions 页面选这个工作流点 Run workflow，或 gh workflow run native.yml。
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "native/textmeasure/**"
-      - "src/cli/textmeasure.node.ts"
-      - "src/cli/engrave.ts"
-      - ".github/workflows/native.yml"
-  pull_request:
-    paths:
-      - "native/textmeasure/**"
-      - "src/cli/textmeasure.node.ts"
-      - "src/cli/engrave.ts"
-      - ".github/workflows/native.yml"
 
 jobs:
   smoke:
