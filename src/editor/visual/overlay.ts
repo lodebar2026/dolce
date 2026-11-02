@@ -3,7 +3,7 @@
 // **不重排版**：只在已渲染好的页面上按元素 `<g>` 的包围盒另画一层，高亮沿用 `.cursor-at` 的 CSS 类。
 // 每次重排页面节点全换，叠加层跟着 `VisualEditController.refresh()` 重画。
 
-import { inkOf } from "../../common/measure";
+import { inkOf } from "../../common/measure.browser";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const LAYER_CLASS = "vis-overlay";

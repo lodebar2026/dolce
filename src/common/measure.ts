@@ -1,35 +1,13 @@
-// SVG-based text/path measurement — replaces Skija's
-//   font.measureText / font.metrics / Path.computeTightBounds / font.getPath bounds.
-// "Measure where you draw": getBBox/getComputedTextLength use the same browser
-// engine that renders the live score SVG, so measurement and rendering agree.
+// 排版期的文字/路径测量——替代 Skija 的
+//   font.measureText / font.metrics / Path.computeTightBounds / font.getPath bounds。
+//
+// 量字本身交给注入的**测量后端**（`setMeasureBackend`），这里只留缓存与和后端无关的规则（标点挤压）：
+//   - `measure.browser.ts`  浏览器：SVG getComputedTextLength + canvas 墨迹（app 缺省，「在哪测量就在哪绘制」）；
+//   - `measure.font.ts`     字体文件（fontkit）：Node 回归与出图（`cli/engrave.ts` 装配），桌面版拿得到系统字体字节时也用它。
+// 本文件**无 DOM 依赖**，Node 侧可以 import。
 
 import { Rect } from "./geom";
 import { compressRun, pairTrimPx, trimLeft, type CompressMode, type Slack } from "./cjkpunct";
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-let measureSvg: SVGSVGElement | null = null;
-let measureText: SVGTextElement | null = null;
-let measurePath: SVGPathElement | null = null;
-
-function ensureMeasureSvg(): SVGSVGElement {
-  if (measureSvg && measureSvg.isConnected) return measureSvg;
-  measureSvg =
-    (document.getElementById("measure-svg") as SVGSVGElement | null) ?? null;
-  if (!measureSvg) {
-    measureSvg = document.createElementNS(SVG_NS, "svg");
-    measureSvg.id = "measure-svg";
-    measureSvg.setAttribute("width", "0");
-    measureSvg.setAttribute("height", "0");
-    measureSvg.style.position = "absolute";
-    measureSvg.style.left = "-9999px";
-    measureSvg.style.top = "-9999px";
-    document.body.appendChild(measureSvg);
-  }
-  measureText = null;
-  measurePath = null;
-  return measureSvg;
-}
 
 export interface TextMetrics {
   width: number;
@@ -37,104 +15,55 @@ export interface TextMetrics {
   bbox: Rect;
 }
 
+export type FontStyle = "normal" | "italic";
+export type FontWeight = "normal" | "bold";
+export type FeatureList = readonly string[];
+
+/** 测量后端：只管「这串字在这个字体下多宽、墨在哪」，不缓存（缓存在本文件）。 */
+export interface MeasureBackend {
+  /** 一串字的 advance 与墨迹盒（相对落笔点，基线 y = 0，向下为正）。`features` 开 OpenType 特性（`chws`/`halt`）。 */
+  glyph(text: string, family: string, size: number, weight: FontWeight, features: FeatureList | undefined, style: FontStyle): TextMetrics;
+  /** 开着 `features` 排这串字的逐**码点**落笔点与总宽（shaping/GPOS 之后）。 */
+  positions(text: string, family: string, size: number, weight: FontWeight, features: FeatureList): { xs: number[]; width: number };
+  /** 字体全局 ascent（负，基线以上）/ descent（正）。 */
+  fontMetrics(family: string, size: number, weight: FontWeight, style: FontStyle): { ascent: number; descent: number };
+  /** SVG path `d` 的紧包围盒。 */
+  pathBounds(d: string): Rect;
+}
+
+let backend: MeasureBackend | null = null;
+
+/** 装配测量后端（app 启动时、CLI 入口各调一次）。换后端会清掉已有缓存。 */
+export function setMeasureBackend(b: MeasureBackend): void {
+  backend = b;
+  clearMeasureCache();
+}
+
+function be(): MeasureBackend {
+  if (!backend) throw new Error("测量后端未装配：浏览器侧应先 setMeasureBackend(browserMeasure)，Node 侧走 cli/engrave");
+  return backend;
+}
+
 // Cache measurements keyed by (text, family, size, weight). Layout measures the
 // same glyphs/sizes thousands of times; caching avoids repeated reflows.
 const textCache = new Map<string, TextMetrics>();
+const pathCache = new Map<string, Rect>();
+const metricsCache = new Map<string, { ascent: number; descent: number }>();
+const featureCache = new Map<string, boolean>();
 
-export type FontStyle = "normal" | "italic";
-
-// Canvas context used for tight glyph bounds via actualBoundingBox*.
-// SVG getBBox() returns the full line box for CJK fonts, not the tight glyph
-// outline. Canvas actualBoundingBoxAscent/Descent matches Skija getPath bounds.
-let glyphCtx: CanvasRenderingContext2D | null = null;
-
-/** Build a Canvas/FontFaceSet font shorthand without turning an entire CSS
- * fallback list into one (non-existent) quoted family name. */
-function cssFontShorthand(fontFamily: string, fontSizePx: number, fontWeight: "normal" | "bold", fontStyle: FontStyle = "normal"): string {
-  const family = fontFamily.split(",").map((part) => {
-    const name = part.trim().replace(/^(['"])(.*)\1$/, "$2");
-    return /^(?:sans-serif|serif|monospace|system-ui)$/i.test(name)
-      ? name
-      : `"${name.replace(/(["\\])/g, "\\$1")}"`;
-  }).join(", ");
-  return `${fontStyle === "italic" ? "italic " : ""}${fontWeight} ${fontSizePx}px ${family}`;
-}
-
-/** 一串字的墨迹盒（相对落笔点，基线 y = 0，向下为正）。`ctx.font` 由调用方设好。 */
-export interface InkBox {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-/**
- * WebKit（macOS 桌面版的 WKWebView、Safari）的 `measureText` 不给真墨迹：`actualBoundingBoxLeft` 恒 0、`Right` 是前进宽度，
- * 上下沿截到基线（「-」的下沿报 0 而不是 −0.22 em）——增时线按「-」的墨迹高画就粗了好几倍，数字、标点的横向墨迹也全错。
- * 首次用到时拿「-」探一下，是这种实现就改成**画到离屏画布上逐像素量**（按字体与字缓存）。Chromium 照用 `measureText`。
- */
-let inkByPixels: boolean | null = null;
-const pixelInkCache = new Map<string, InkBox>();
-let pixelCanvas: HTMLCanvasElement | null = null;
-
-function needsPixelInk(ctx: CanvasRenderingContext2D): boolean {
-  if (inkByPixels !== null) return inkByPixels;
-  const saved = ctx.font;
-  ctx.font = "100px sans-serif";
-  const m = ctx.measureText("-");
-  ctx.font = saved;
-  inkByPixels = m.actualBoundingBoxDescent >= 0 && m.actualBoundingBoxLeft === 0;
-  return inkByPixels;
-}
-
-/** 量墨迹：`measureText` 可信就用它，否则逐像素（见 `needsPixelInk`）。`ctx.font` 是要量的那种字。 */
-export function inkOf(ctx: CanvasRenderingContext2D, text: string): InkBox {
-  const m = ctx.measureText(text);
-  if (!needsPixelInk(ctx)) {
-    return { left: -m.actualBoundingBoxLeft, right: m.actualBoundingBoxRight, top: -m.actualBoundingBoxAscent, bottom: m.actualBoundingBoxDescent };
-  }
-  const key = `${ctx.font}\x01${text}`;
-  const hit = pixelInkCache.get(key);
-  if (hit) return hit;
-  // 放大到约 200px 画（边缘误差 < 0.5%），量完按比例折回
-  const px = Number(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? 16);
-  const k = 200 / Math.max(1, px);
-  const pad = 200;
-  const w = Math.ceil(m.width * k) + pad * 2;
-  const h = pad * 3;
-  pixelCanvas ??= document.createElement("canvas");
-  pixelCanvas.width = w;
-  pixelCanvas.height = h;
-  const c = pixelCanvas.getContext("2d", { willReadFrequently: true })!;
-  c.clearRect(0, 0, w, h);
-  c.font = ctx.font.replace(/(\d+(?:\.\d+)?)px/, `${px * k}px`);
-  c.fillStyle = "#000";
-  c.textBaseline = "alphabetic";
-  const ox = pad, oy = pad * 2;
-  c.fillText(text, ox, oy);
-  const data = c.getImageData(0, 0, w, h).data;
-  let x0 = w, x1 = -1, y0 = h, y1 = -1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3]! < 128) continue;
-      if (x < x0) x0 = x;
-      if (x > x1) x1 = x;
-      if (y < y0) y0 = y;
-      if (y > y1) y1 = y;
-    }
-  }
-  const box: InkBox = x1 < 0
-    ? { left: 0, right: 0, top: 0, bottom: 0 }
-    : { left: (x0 - ox) / k, right: (x1 + 1 - ox) / k, top: (y0 - oy) / k, bottom: (y1 + 1 - oy) / k };
-  pixelInkCache.set(key, box);
-  return box;
+/** 字体变了（加载完成、换后端）以后，之前量的数作废。 */
+export function clearMeasureCache(): void {
+  textCache.clear();
+  pathCache.clear();
+  metricsCache.clear();
+  featureCache.clear();
 }
 
 export function measureGlyphText(
   text: string,
   fontFamily: string,
   fontSizePx: number,
-  fontWeight: "normal" | "bold" = "normal",
+  fontWeight: FontWeight = "normal",
   features?: FeatureList,
   fontStyle: FontStyle = "normal",
 ): TextMetrics {
@@ -144,156 +73,52 @@ export function measureGlyphText(
   const key = `${fontFamily}${sep}${fontWeight}${sep}${fontStyle}${sep}${fontSizePx}${sep}${feat}${sep}${text}`;
   const cached = textCache.get(key);
   if (cached) return cached;
-
-  const svg = ensureMeasureSvg();
-  if (!measureText || !measureText.isConnected) {
-    measureText = document.createElementNS(SVG_NS, "text");
-    svg.appendChild(measureText);
-  }
-  const t = measureText;
-  t.setAttribute("x", "0");
-  t.setAttribute("y", "0");
-  t.setAttribute("font-family", fontFamily);
-  t.setAttribute("font-size", String(fontSizePx));
-  t.setAttribute("font-weight", fontWeight);
-  t.setAttribute("font-style", fontStyle);
-  // font-feature-settings 在 SVG 1.1 里不是 presentation attribute，只能走 style。
-  t.style.fontFeatureSettings = feat;
-  t.textContent = text;
-
-  let width = t.getComputedTextLength();
-
-  // Use Canvas actualBoundingBox* for tight glyph bounds.
-  // getBBox() on SVG <text> returns the full em/line box for CJK fonts (e.g.
-  // "." in PingFang SC measures the same height as "1"), causing octave dots
-  // to be placed far above their correct position.
-  // Horizontally the ink box is NOT 0..advance: PingFang SC's "1" is a narrow
-  // proportional glyph whose ink centre sits 3.1% of an em left of its advance
-  // centre, which visibly offsets anything centred on it (octave dots, slur
-  // ends, tuplet brackets). actualBoundingBoxLeft/Right come free from the same
-  // measureText() call, so keep them.
-  let bboxTop: number;
-  let bboxBottom: number;
-  let inkLeft = 0;
-  let inkRight = width;
-  if (!glyphCtx) {
-    const c = document.createElement("canvas");
-    glyphCtx = c.getContext("2d");
-  }
-  if (glyphCtx) {
-    glyphCtx.font = cssFontShorthand(fontFamily, fontSizePx, fontWeight, fontStyle);
-    const cm = glyphCtx.measureText(text);
-    const ink = inkOf(glyphCtx, text);
-    // **整串都是空白时 `getComputedTextLength()` 恒为 0**（浏览器把纯空白的文本节点当空的，
-    // 加 `xml:space="preserve"` 也一样）。于是「空格」这个字的 advance 被量成 0，逐字量
-    // advance 的那条路（`compressRun`，字体没有 chws 之类特性时走它）就把
-    // 「John Laudon 词曲」排成「JohnLaudon词曲」。canvas 的 measureText 对空白是准的，拿它兜底。
-    if (/^\s+$/.test(text)) width = cm.width;
-    bboxTop = ink.top;
-    bboxBottom = ink.bottom;
-    inkLeft = ink.left;
-    inkRight = ink.right;
-  } else {
-    const b = t.getBBox();
-    bboxTop = b.y;
-    bboxBottom = b.y + b.height;
-  }
-
-  const m: TextMetrics = {
-    width,
-    bbox: new Rect(inkLeft, bboxTop, inkRight, bboxBottom),
-  };
+  const m = be().glyph(text, fontFamily, fontSizePx, fontWeight, features, fontStyle);
   textCache.set(key, m);
   return m;
 }
-
-const pathCache = new Map<string, Rect>();
 
 /** Tight bounds of an SVG path "d" string (replaces Path.computeTightBounds). */
 export function pathTightBounds(d: string): Rect {
   const cached = pathCache.get(d);
   if (cached) return cached;
-
-  const svg = ensureMeasureSvg();
-  if (!measurePath || !measurePath.isConnected) {
-    measurePath = document.createElementNS(SVG_NS, "path");
-    svg.appendChild(measurePath);
-  }
-  measurePath.setAttribute("d", d);
-  const b = measurePath.getBBox();
-  const r = new Rect(b.x, b.y, b.x + b.width, b.y + b.height);
+  const r = be().pathBounds(d);
   pathCache.set(d, r);
   return r;
 }
 
 // --- font-global metrics (ascent/descent), Skija FontMetrics convention:
 //     ascent is negative (above baseline), descent positive (below) ---
-let metricsCtx: CanvasRenderingContext2D | null = null;
-const metricsCache = new Map<string, { ascent: number; descent: number }>();
-
 export function measureFontMetrics(
   fontFamily: string,
   fontSizePx: number,
-  fontWeight: "normal" | "bold" = "normal",
+  fontWeight: FontWeight = "normal",
   fontStyle: FontStyle = "normal",
 ): { ascent: number; descent: number } {
   const sep = "\x01";
   const key = `${fontFamily}${sep}${fontWeight}${sep}${fontStyle}${sep}${fontSizePx}`;
   const cached = metricsCache.get(key);
   if (cached) return cached;
-  if (!metricsCtx) {
-    const c = document.createElement("canvas");
-    metricsCtx = c.getContext("2d");
-  }
-  let res = { ascent: -fontSizePx * 0.8, descent: fontSizePx * 0.2 };
-  if (metricsCtx) {
-    metricsCtx.font = cssFontShorthand(fontFamily, fontSizePx, fontWeight, fontStyle);
-    const m = metricsCtx.measureText("Mg");
-    const asc = m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent;
-    const desc = m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent;
-    if (asc !== undefined && desc !== undefined) {
-      res = { ascent: -asc, descent: desc };
-    }
-  }
+  const res = be().fontMetrics(fontFamily, fontSizePx, fontWeight, fontStyle);
   metricsCache.set(key, res);
   return res;
-}
-
-/** Resolve when the given font families are loaded so measurement is accurate. */
-export async function ensureFontsReady(
-  families: Array<{ family: string; size: number }>,
-): Promise<void> {
-  if (!("fonts" in document)) return;
-  try {
-    await Promise.all(
-      families.map((f) => document.fonts.load(cssFontShorthand(f.family, f.size, "normal"))),
-    );
-    await document.fonts.ready;
-  } catch {
-    /* font load failures fall back to whatever the engine substitutes */
-  }
-  // Fonts changing invalidates earlier measurements.
-  textCache.clear();
-  pathCache.clear();
 }
 
 
 // ─────────────────────────────────────────── OpenType 特性
 //
 // 标点挤压有现成的 OpenType 特性（`chws` = CJK Contextual Half-width Spacing，
-// 相邻标点自动取半角）。字体有就交给它——**在哪测量就在哪绘制**，shaping 与渲染同一个引擎；
+// 相邻标点自动取半角）。字体有就交给它——shaping 与渲染同一份字体；
 // 没有就退回 common/cjkpunct.ts 的等效实现。两条路由 `punctTrim` 统一出口，下游只认一个数。
 //
-// **注意**：带 features 量多字串时，返回的 `width` 是挤压后的（SVG shaping 说了算），
+// **注意**：浏览器后端带 features 量多字串时，返回的 `width` 是挤压后的（SVG shaping 说了算），
 // 而 `bbox` 来自 canvas（设不了 feature，量的是未挤压的连排）。要墨迹一律**逐字量**。
-
-export type FeatureList = readonly string[];
 
 /** 一个字两侧的实际留白（advance 减墨迹）。挤压量拿它封顶——只压空白，绝不压墨。 */
 export function slackOf(
   fontFamily: string,
   fontSizePx: number,
-  fontWeight: "normal" | "bold" = "normal",
+  fontWeight: FontWeight = "normal",
 ): Slack {
   return (ch: string) => {
     const m = measureGlyphText(ch, fontFamily, fontSizePx, fontWeight);
@@ -312,12 +137,11 @@ export function featuresFor(mode: CompressMode): FeatureList {
   return mode === "halfwidth" ? HALT : mode === "clreq" ? CHWS : [];
 }
 
-function featureSettings(features?: FeatureList): string {
+/** CSS `font-feature-settings` 写法（浏览器后端直接用；也当缓存 key）。 */
+export function featureSettings(features?: FeatureList): string {
   if (!features || !features.length) return "";
   return features.map((f) => `"${f}" 1`).join(", ");
 }
-
-const featureCache = new Map<string, boolean>();
 
 /**
  * 这个字体支不支持某个特性。开/关同一样本串比 advance——变了就是支持。
@@ -327,7 +151,7 @@ export function hasFontFeature(
   fontFamily: string,
   feature: string,
   fontSizePx = 100,
-  sample = "\uff1a\u201c",
+  sample = "：“",
 ): boolean {
   const key = `${fontFamily}\x01${feature}`;
   const cached = featureCache.get(key);
@@ -342,15 +166,14 @@ export function hasFontFeature(
 /**
  * 一串字的逐字笔位与总宽（`xs[i]` = 第 i 个**码点**的落笔点，相对串首 0）。
  *
- * 走 SVG 的 `getStartPositionOfChar`，拿到的是 shaping/GPOS 之后的真实笔位——
- * 字体带 `chws` 时挤压已经含在里面，不带时由 `compressRun` 按 CLREQ 自算。
+ * 字体带 `chws` 时取后端 shaping/GPOS 之后的真实笔位，挤压已经含在里面；不带时由 `compressRun` 按 CLREQ 自算。
  * 渲染端把这串 `xs` 原样交给 `<text>` 的 `x`，测量与绘制就一定一致。
  */
 export function measureGlyphRun(
   text: string,
   fontFamily: string,
   fontSizePx: number,
-  fontWeight: "normal" | "bold" = "normal",
+  fontWeight: FontWeight = "normal",
   mode: CompressMode = "clreq",
 ): { xs: number[]; width: number } {
   const chars = [...text];
@@ -361,34 +184,7 @@ export function measureGlyphRun(
     const adv = (ch: string) => measureGlyphText(ch, fontFamily, fontSizePx, fontWeight).width;
     return compressRun(chars, adv, fontSizePx, mode, slackOf(fontFamily, fontSizePx, fontWeight));
   }
-  const svg = ensureMeasureSvg();
-  if (!measureText || !measureText.isConnected) {
-    measureText = document.createElementNS(SVG_NS, "text");
-    svg.appendChild(measureText);
-  }
-  const t = measureText;
-  t.setAttribute("x", "0");
-  t.setAttribute("y", "0");
-  t.setAttribute("font-family", fontFamily);
-  t.setAttribute("font-size", String(fontSizePx));
-  t.setAttribute("font-weight", fontWeight);
-  t.style.fontFeatureSettings = featureSettings(features);
-  // **不能让浏览器折叠空白**：默认 `white-space` 下「十架 归」里的空格不成字，
-  // 逐字取笔位时 `getStartPositionOfChar` 的下标就越界（IndexSizeError），
-  // 且其后每个字的笔位都错位一格。
-  t.style.whiteSpace = "pre";
-  t.textContent = text;
-  const xs: number[] = [];
-  const n = t.getNumberOfChars();
-  let u16 = 0;
-  for (const ch of chars) {
-    // 仍越界（浏览器把某几个码元合成一个字位）时按上一笔位顺延，不抛
-    xs.push(u16 < n ? t.getStartPositionOfChar(u16).x : (xs[xs.length - 1] ?? 0));
-    u16 += ch.length;
-  }
-  const width = t.getComputedTextLength();
-  t.style.fontFeatureSettings = "";
-  t.style.whiteSpace = "";
+  const { xs, width } = be().positions(text, fontFamily, fontSizePx, fontWeight, features);
   // **起始类标点要把笔位往左挪回压掉的那截**：特性换的是半宽字形（墨已挪进半格里），
   // 而绘制端的 `<text>` 不叠特性、画的是全宽字形——它的墨在方框右半边，照特性笔位落笔就压到下一个字上
   //（`（副`、`「面` 的括号骑在字上）。收尾类与点号的墨本来就在左半边，不用挪。
@@ -415,7 +211,7 @@ export function punctTrim(
   next: string,
   fontFamily: string,
   fontSizePx: number,
-  fontWeight: "normal" | "bold" = "normal",
+  fontWeight: FontWeight = "normal",
   mode: CompressMode = "clreq",
 ): number {
   if (!prev || !next || mode === "none") return 0;

@@ -1,6 +1,7 @@
 import "./styles.css";
 import { MetaData } from "./smufl/smufl";
-import { ensureFontsReady } from "./common/measure";
+import { setMeasureBackend } from "./common/measure";
+import { browserMeasure, ensureFontsReady } from "./common/measure.browser";
 import { asset } from "./common/asset";
 import { App, type ViewMode } from "./editor/app";
 import { IMAGE_EXT, IMAGE_ACCEPT, isDocFile, isImageFile } from "./common/filetypes";
@@ -61,6 +62,7 @@ async function registerBravura() {
 async function boot() {
   // 界面语言最先定：之后建的对话框、状态栏文字都按它走。
   initLang();
+  setMeasureBackend(browserMeasure);
   await registerBravura();
   await ensureFontsReady([
     { family: "Bravura", size: 40 },

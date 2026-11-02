@@ -1,7 +1,7 @@
 // 帮助对话框：四个标签页（功能帮助、可视化编辑、记谱法、关于）。只读，外框走 dialogs.ts 的
 // openModal（遮罩、Esc、点遮罩关闭），内容用本文件专属的 .help-* 样式。
 // 功能帮助 = 可展开主题列表（<details>）；记谱法 = 分节说明 + 实时渲染的 SVG 示例。
-import { inkOf } from "../common/measure";
+import { inkOf } from "../common/measure.browser";
 import type { App } from "./app";
 import { PaintResources, ScorePainter } from "../layout/painter";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
