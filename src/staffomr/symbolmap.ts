@@ -141,6 +141,7 @@ const OPUS_STD: Record<number, SmuflName> = {
   0x2211: "restHBar",
   0xbf: "noteheadXBlack",
   0x178: "ornamentTrill", // 'Ÿ'（水乡情韵曲笛 m110–m118 的 tr）
+  0x2f: "unpitchedPercussionClef1", // '/'：两道粗竖的打击乐谱号（水乡情韵打击乐器每行行首）
 };
 
 const OPUS_SPECIAL: Record<number, SmuflName> = {

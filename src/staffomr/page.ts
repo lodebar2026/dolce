@@ -1247,7 +1247,9 @@ function joinByGap(groups: Staff[][]): Staff[][] {
  * **描边加粗的字**：八段锦（Sibelius 打谱、经 XPS 转出的 PDF）每个宋体/楷体字（含「【】」）除了文字层那一次，
  * 还拿字的轮廓**另描一遍边**（只描不填的路径，外框与那段字重合），整页的中文都是这样。
  * 不收走的话楷体字的弯笔被当成圆滑线（「欢快」两个字读成两条弧）、直笔进了线段池。
- * 判据：只描边、外框整个落在某段**正文字体**文字的外框里（容半点）。收走：打 `TextInk`，线段一并撤出线段池。
+ * 判据：只描边、外框整个落在某段**正文字体**文字的外框里（容半点）。字形没轮廓、一整行墨迹另画成一条路径的，铺满并落进相交几段字的并框里也算
+ * （见下）。
+ * 收走：打 `TextInk`，线段一并撤出线段池。
  */
 export function markTextInk(pg: SPage): void {
   const texts = pg.objs.filter((o) => o.run && !musicFamily(o.run.font) && objTextLen(o) > 0);
@@ -1255,9 +1257,22 @@ export function markTextInk(pg: SPage): void {
   const ink = new Set<PObj>();
   for (const o of pg.objs) {
     const p = o.path;
-    if (!p || o.hasAnyTag() || /fill/i.test(p.paint) || !/stroke/i.test(p.paint)) continue;
+    if (!p || o.hasAnyTag()) continue;
     const b = o.box;
-    if (texts.some((t) => b.left >= t.box.left - 0.5 && b.right <= t.box.right + 0.5 && b.top >= t.box.top - 0.5 && b.bottom <= t.box.bottom + 0.5)) ink.add(o);
+    const strokeOnly = !/fill/i.test(p.paint) && /stroke/i.test(p.paint);
+    if (strokeOnly && texts.some((t) => b.left >= t.box.left - 0.5 && b.right <= t.box.right + 0.5 && b.top >= t.box.top - 0.5 && b.bottom <= t.box.bottom + 0.5)) ink.add(o);
+    else if (!isWhite(p)) {
+      // 字形取不到轮廓（字框是按步进与字体盒估的），一整行的墨迹另画成一条填充路径的（水乡情韵标题「水乡情韵」，一字一段）：
+      // 文字层本身没墨迹，这条路径才是字。要相交的几段字**都是估的框**，路径铺满它们的并框（宽八成、高一半）、
+      // 落在并框里——估的框纵向不准（标题上沿差 1.9 点），容差取并框高的 15%
+      const hit = texts.filter((t) => t.box.left < b.right && t.box.right > b.left && t.box.top < b.bottom && t.box.bottom > b.top);
+      if (hit.length < 2 || !hit.every((t) => t.run!.glyphs.every((g) => g.bboxEstimated || !g.unicode.trim()))) continue;
+      const u = { left: Math.min(...hit.map((t) => t.box.left)), right: Math.max(...hit.map((t) => t.box.right)), top: Math.min(...hit.map((t) => t.box.top)), bottom: Math.max(...hit.map((t) => t.box.bottom)) };
+      const tol = (u.bottom - u.top) * 0.15;
+      const inside = b.left >= u.left - tol && b.right <= u.right + tol && b.top >= u.top - tol && b.bottom <= u.bottom + tol;
+      const covers = b.right - b.left >= (u.right - u.left) * 0.8 && b.bottom - b.top >= (u.bottom - u.top) * 0.5;
+      if (inside && covers) ink.add(o);
+    }
   }
   for (const o of ink) o.addTag("TextInk");
   if (ink.size) pg.segs = pg.segs.filter((s) => !ink.has(s.obj));
