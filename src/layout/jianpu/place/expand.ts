@@ -899,12 +899,41 @@ export function expandSong(
   let groups: SystemView[] = [];
   const intro = !layout && m.style.look.noIntro ? introSlots(slices, rows, cursorOf, lyricsOf) : new Set<string>();
   const passes = layout ? passesByDur(slices, rows, plan, layout.desc, layout.simple) : passesOf(slices, rows, plan, breaks, intro);
-  // 曲中转调另起一页（用户定 2026-11-03，真神所造万象生灵）：新调的第一个音（带 `keyLabel`）落在一遍中间的，在它前面换页，转调标记跟着到新页首行
+  // 曲中转调另起一页（用户定 2026-11-03，真神所造万象生灵）：新调的第一个音（带 `keyLabel`）落在一遍中间的，在它前面换页，转调标记跟着到新页首行。
+  // 临时离调不换（用户提醒 2026-11-03）：这一遍里转走之后又转回原调的，转走、转回两处都不换；紧跟在段落线 `||` `|]` `:|` 后面的照换（分段处的正式转调）
   if (!layout) {
+    const SECTION_BARS = new Set(["double", "end", "repeat-end", "repeat-both"]);
+    // 每个小节唱的是哪个调（按谱面先后接着算，小节上写了调号就换）
+    const keyAt: string[] = [];
+    const keyText = (key: { fifths: number; mode?: string; tonicDegree?: string } | undefined): string => (key ? `${key.fifths}:${key.mode ?? ""}:${key.tonicDegree ?? ""}` : "");
+    // 头部的调记在曲子上（`Song.key`），第一小节常不再写
+    let cur = keyText(song.song.key);
+    slices.forEach((sl, k) => {
+      const key = sl.map((x) => rows[x.row]!.refs[x.idx]?.measure.attrs?.key).find((v) => v !== undefined);
+      if (key) cur = keyText(key);
+      keyAt[k] = cur;
+    });
+    const sliceOf = new Map<string, number>();
+    slices.forEach((sl, k) => { for (const x of sl) sliceOf.set(`${x.row}:${x.idx}`, k); });
+    const elOf = (sl: Slot): MusicElement => rows[sl.row]!.elements[sl.idx]!;
     for (const pass of passes) {
-      pass.slots.forEach((sl, i) => {
-        const el = rows[sl.row]!.elements[sl.idx]!;
-        if (i > 0 && el.kind === "note" && el.keyLabel) pass.breaks.set(i, true);
+      const keyOf = (i: number): string => keyAt[sliceOf.get(`${pass.slots[i]!.row}:${pass.slots[i]!.idx}`) ?? -1] ?? "";
+      const changes = pass.slots.flatMap((sl, i) => {
+        const el = elOf(sl);
+        if (i === 0 || el.kind !== "note" || !el.keyLabel) return [];
+        let k = i - 1;
+        while (k > 0 && elOf(pass.slots[k]!).kind !== "note" && elOf(pass.slots[k]!).kind !== "barline") k--;
+        const prev = elOf(pass.slots[k]!);
+        return [{ i, from: keyOf(i - 1), to: keyOf(i), afterSection: prev.kind === "barline" && SECTION_BARS.has(prev.type) }];
+      });
+      const passing = new Set<number>();
+      changes.forEach((c, n) => {
+        const back = changes.findIndex((d, m) => m > n && d.to === c.from);
+        if (back < 0) return;
+        for (let m = n; m <= back; m++) passing.add(m);
+      });
+      changes.forEach((c, n) => {
+        if (c.afterSection || !passing.has(n)) pass.breaks.set(c.i, true);
       });
     }
   }
