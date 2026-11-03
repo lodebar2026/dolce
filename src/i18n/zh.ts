@@ -127,6 +127,7 @@ export const zh = {
   "status.xmlNoNotes": "这份 MusicXML 里没有音符",
   "status.xmlUnreadable": "这份 MusicXML 读不出来，无法转换",
   "status.phraseSame": "行结构没变：乐句断点与现在的分行一致",
+  "status.phraseKeep": "按乐句排版有行放不下，保留原排版",
   "status.barsSame": "行结构没变：现在已经是每行 {n} 小节",
   "status.barsOverflow": "每行 {n} 小节放不下（第 {line} 行），排版时会按纸宽重新断行；可改小每行小节数或换纸",
   "status.barsOverflowSong": "每行 {n} 小节放不下（第 {song} 首第 {line} 行），排版时会按纸宽重新断行；可改小每行小节数或换纸",

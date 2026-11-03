@@ -1588,9 +1588,10 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (!relayout) return;
     try {
       let overflow: BarsOverflow | null = null;
+      let kept = false;
       const measure = this._fanqiePhraseMeasure();
       const out = relayout(base, mode === "phrase"
-        ? { kind: "phrase", measure }
+        ? { kind: "phrase", measure, onKeep: () => { kept = true; } }
         : { kind: "bars", n: bars, measure, onOverflow: (at) => { overflow ??= at; } });
       // 放不下比「没变」要紧：原文本来就是每行 N 小节、纸却放不下时也得说
       const overflowText = (at: BarsOverflow): string => at.songs > 1
@@ -1598,6 +1599,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
         : t("status.barsOverflow", { n: bars, line: at.line });
       if (out === base && this._lineMode === "original") {
         this.setStatus(overflow !== null ? overflowText(overflow)
+          : kept ? t("status.phraseKeep")
           : t(mode === "phrase" ? "status.phraseSame" : "status.barsSame", { n: bars }));
         return;
       }
@@ -1625,7 +1627,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    * 各格式同一把（`.jpwabc`、文本谱也量）——不量的那份乐句行在简谱档放不下，排版器整首按宽度重断，乐句全丢，
    * 几种格式就排得不一样了（「脚步」）。
    *
-   * 尺子只在断句之后用：决定两两合并还是保持断句结果，放不下的行在行内补刀（两档都许合并，见 `jianpu/phrase.ts::contentBreaks`）。
+   * 尺子只在断句之后用：决定两两合并还是保持断句结果，有行放不下就整个放弃、保持原排版或均匀排版（两档都许合并，见 `jianpu/phrase.ts::contentBreaks`）。
    * 多声部的简谱档不给尺子（文本谱多声部不重断）。
    */
   private _fanqiePhraseMeasure(): FitMeasure | null {

@@ -956,7 +956,7 @@ export function chooseLineLayout(
   part: PhrasePart,
   breaks: PhraseBreaks,
   cells: number,
-  opt: { useMidBreaks?: boolean; allowPairs?: boolean; fit?: FitMetric; even?: boolean } = {},
+  opt: { useMidBreaks?: boolean; allowPairs?: boolean; fit?: FitMetric } = {},
 ): "pairs" | "phrase" | "even" {
   const useMidBreaks = opt.useMidBreaks ?? true;
   const allowPairs = opt.allowPairs ?? true;
@@ -993,9 +993,7 @@ export function chooseLineLayout(
       return "pairs";
     }
   }
-  // `even: false`（编辑器那条路）：放不下也保持断句结果，个别放不下的行由调用方在行内按乐句凭据补刀
-  //（`enforceLineCapacity`），不整首换成均匀排版——那会按格数等分，把一句话切在词中间
-  if (opt.even === false || linesAreOk(phraseLines, f)) return "phrase";
+  if (linesAreOk(phraseLines, f)) return "phrase";
   write(evenLayout(part, phrase, cells, opt.fit));
   return "even";
 }

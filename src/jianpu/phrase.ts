@@ -16,7 +16,7 @@
 // 无 DOM 依赖。
 
 import { Fraction } from "../common/fraction";
-import { chooseLineLayout, enforceLineCapacity, fitForIds, mergeSliverLines, pageBreakLines, tidyLineHeads, tidyLineTails } from "./applybreaks";
+import { chooseLineLayout, fitForIds, mergeSliverLines, pageBreakLines, tidyLineHeads, tidyLineTails } from "./applybreaks";
 import { computePhraseBreaks, type FitMetric, type PhraseBreaks } from "../score/phrase";
 import type { PhrasePart } from "../score/phraseinput";
 import { phraseJumpMeasures } from "../model/phrasedoc";
@@ -170,12 +170,13 @@ export interface BarsOverflow {
 /** 新的行怎么分：按乐句（`measure` 是行长尺子）、或每行固定 `n` 小节。
  *  `onOverflow`：每行 n 小节时，有一行在 `measure` 量出的版心里放不下就报（每首报第一处）。 */
 export type LinePlan =
-  | { kind: "phrase"; measure: FitMeasure | null }
+  /** `onKeep`：乐句方案有行放不下、原始排版放得下，于是保持原排版（不重排）时调一次 */
+  | { kind: "phrase"; measure: FitMeasure | null; onKeep?: () => void }
   | { kind: "bars"; n: number; measure?: FitMeasure | null; onOverflow?: (at: BarsOverflow) => void };
 
 /** 按 `plan` 分出这一首的新行。 */
 export function planLines(sdoc: ScoreDoc, songIdx: number, plan: LinePlan): FanqieNewLine[] | null {
-  if (plan.kind === "phrase") return fanqiePhraseLines(sdoc, songIdx, { measure: plan.measure });
+  if (plan.kind === "phrase") return fanqiePhraseLines(sdoc, songIdx, { measure: plan.measure, onKeep: plan.onKeep });
   const ctx = leadOf(sdoc, songIdx);
   if (!ctx) return null;
   const lines = barLinesOf(ctx, plan.n);
@@ -291,7 +292,7 @@ function barLinesOverflow(
  * @returns 新的行划分；这份文档没有可排的曲行时返回 null。
  */
 export function fanqiePhraseLines(
-  sdoc: ScoreDoc, songIdx = 0, opt: { measure?: FitMeasure | null } = {},
+  sdoc: ScoreDoc, songIdx = 0, opt: { measure?: FitMeasure | null; onKeep?: () => void } = {},
 ): FanqieNewLine[] | null {
   const ctx = leadOf(sdoc, songIdx);
   if (!ctx) return null;
@@ -299,9 +300,18 @@ export function fanqiePhraseLines(
   const part = input.part;
 
   const measured = opt.measure ? opt.measure(sdoc, songIdx) : null;
-  const breaks = measured
-    ? contentBreaks(part, fitForIds(measured, input.idOf), phraseJumpMeasures(sdoc.songs[songIdx]!))
-    : computePhraseBreaks(part, { pageLines: PAGE_LINES });
+  let breaks: PhraseBreaks;
+  if (measured) {
+    const got = contentBreaks(part, fitForIds(measured, input.idOf), phraseJumpMeasures(sdoc.songs[songIdx]!));
+    // 乐句方案有行放不下 → 整个放弃：原始排版每行放得下就保持原样，否则用均匀排版（`got.breaks` 已是那一档）
+    if (!got.ok && barLinesOverflow(ctx, sourceLines(lead), measured) === null) {
+      opt.onKeep?.();
+      return null;
+    }
+    breaks = got.breaks;
+  } else {
+    breaks = computePhraseBreaks(part, { pageLines: PAGE_LINES });
+  }
 
   // 断点 → 主旋律元素流下标（「在此元素之前起新行」）。
   const idxOf = (ch: PhraseChord): number | null => {
@@ -361,13 +371,14 @@ export function fanqiePhraseLines(
 /**
  * 有尺子时的断句：**与成书同一套**。断句只看内容（`contentOnly`：标点、长音、重复、平行句，
  * 参数取成书出厂值 `defaultBookStyle().layout`），与纸宽、格数无关；行长只在最后一步用——
- * 按真实宽度决定两两合并还是保持断句结果（`chooseLineLayout`，不走均匀排版那一档），
- * 再照成书补刀、收拾行首行尾休止、并碎行。
+ * 按真实宽度决定两两合并还是保持断句结果（`chooseLineLayout`），再收拾行首行尾休止、并碎行。
+ * **不给个别行补刀**（用户定：只切开放不下的那几行，行长就不匀了）：有行放不下就整个放弃，
+ * `ok` 为 false，`breaks` 是均匀排版那一档；调用方先看原始排版放不放得下。
  *
  * 原来编辑器这条路断句里带着按格数估的行长罚（一行 25 格），十六分音符密的小节被高估、
  * 盖过标点与长音的断点分（「…我所有重担，」那一刀被挪到前一小节），用户定不用格数罚。
  */
-function contentBreaks(part: PhrasePart, fit: FitMetric, jumpMeasures: Set<number>): PhraseBreaks {
+function contentBreaks(part: PhrasePart, fit: FitMetric, jumpMeasures: Set<number>): { breaks: PhraseBreaks; ok: boolean } {
   const L = defaultBookStyle().layout;
   const mid = L.phraseMidBreak;
   // 尺子不进断句：`contentOnly` 下方案选优还会拿真实宽度当平局裁判、数放不下几行，断句就随纸变了
@@ -386,12 +397,23 @@ function contentBreaks(part: PhrasePart, fit: FitMetric, jumpMeasures: Set<numbe
     moreRowsSlack: L.phraseMoreRowsSlack ?? 0,
   });
   // 两档都许两两合并（用户定 2026-11-03：简谱档的按乐句排版也允许合并）
-  chooseLineLayout(part, breaks, 0, { useMidBreaks: mid, allowPairs: true, fit, even: false });
-  enforceLineCapacity(part, breaks, 0, 4, mid, fit);
+  const mode = chooseLineLayout(part, breaks, 0, { useMidBreaks: mid, allowPairs: true, fit });
   tidyLineHeads(part, breaks, { useMidBreaks: mid, fit });
   tidyLineTails(part, breaks, { useMidBreaks: mid, fit });
   mergeSliverLines(part, breaks, mid, 0, fit);
-  return breaks;
+  return { breaks, ok: mode !== "even" };
+}
+
+/** 原文现有的行（主旋律那一路，按源行切）：判「原始排版放不放得下」用。 */
+function sourceLines(lead: VoiceStream): FanqieNewLine[] {
+  const lines: FanqieNewLine[] = [];
+  let from = 0;
+  for (let i = 1; i <= lead.origin.length; i++) {
+    if (i < lead.origin.length && lead.origin[i]!.lineIdx === lead.origin[i - 1]!.lineIdx) continue;
+    lines.push({ segs: [{ voice: lead.voice, from, to: i }], pageAfter: false });
+    from = i;
+  }
+  return lines;
 }
 
 /** 主旋律元素流 `[from, to)` 这一行 → 各声部同拍位的那一段。 */

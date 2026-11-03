@@ -128,6 +128,7 @@ export const en: Record<MsgKey, string> = {
   "status.xmlNoNotes": "This MusicXML has no notes",
   "status.xmlUnreadable": "This MusicXML can't be read, so it can't be converted",
   "status.phraseSame": "No change: phrase breaks already match the current lines",
+  "status.phraseKeep": "Some phrase lines would not fit, so the original layout is kept",
   "status.barsSame": "No change: the score already has {n} bars per line",
   "status.barsOverflow": "{n} bars per line do not fit (line {line}); layout will re-break by paper width. Try fewer bars per line or a wider paper",
   "status.barsOverflowSong": "{n} bars per line do not fit (song {song}, line {line}); layout will re-break by paper width. Try fewer bars per line or a wider paper",
