@@ -169,7 +169,11 @@ function pageTextLines(objs: PObj[]): { t: string; box: { left: number; right: n
     if (!s.trim()) continue;
     const h = o.box.bottom - o.box.top;
     const cy = (o.box.top + o.box.bottom) / 2;
-    const l = lines.find((q) => Math.abs((q.box.top + q.box.bottom) / 2 - cy) <= h * 0.5 && o.box.left - q.box.right <= h && o.box.left >= q.box.left);
+    // 字高取两边大的：句点只有一点高，按它自己的字高比，「V.S.」的「.」与「V」中线差过了半个字高，拆成三条（水乡情韵页脚）
+    const l = lines.find((q) => {
+      const hh = Math.max(h, q.box.bottom - q.box.top);
+      return Math.abs((q.box.top + q.box.bottom) / 2 - cy) <= hh * 0.5 && o.box.left - q.box.right <= hh && o.box.left >= q.box.left;
+    });
     if (l) {
       l.t += s;
       l.size = Math.max(l.size, o.run!.sizeDev);

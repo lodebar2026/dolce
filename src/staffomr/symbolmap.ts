@@ -140,6 +140,7 @@ const OPUS_STD: Record<number, SmuflName> = {
   0x25: "segno", // '%'
   0x2211: "restHBar",
   0xbf: "noteheadXBlack",
+  0x178: "ornamentTrill", // 'Ÿ'（水乡情韵曲笛 m110–m118 的 tr）
 };
 
 const OPUS_SPECIAL: Record<number, SmuflName> = {
