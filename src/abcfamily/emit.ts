@@ -430,7 +430,7 @@ export abstract class AbcFamilyEmitter {
     let s = "";
     for (const el of mea.elements) {
       if (el.kind !== "chord") continue;
-      // 段落标记落在整小节休止上（投影排法的切点）：写在 `Z` 前面，读回还在这一小节头
+      // 段落标记落在整小节休止上（逐遍演唱顺序的切点）：写在 `Z` 前面，读回还在这一小节头
       for (const name of this.sectionsBefore.get(el.id) ?? []) s += `[P:${name}]`;
       if (el.sectionWord) s += this.annotationText(el.sectionWord);
       for (const a of el.notations?.articulations ?? []) if (this.rehearsalMarks || rehearsalOf(a) === undefined) s += `!${a}!`;
@@ -1070,7 +1070,7 @@ export abstract class AbcFamilyEmitter {
     return L.join("\n");
   }
 
-  /** 曲体之后的行（123 的投影排法 `%%slide`，要数小节，写在音乐后面） */
+  /** 曲体之后的行（123 的逐遍演唱顺序 `%%sing`，要数小节，写在音乐后面） */
   protected tailLines(song: Song): string[] {
     void song;
     return [];

@@ -783,8 +783,8 @@ export function expandSong(
   rowIsLine = false,
   /** 曲末写的换行换页（`Part.endBreak`）：`P:` 从曲末跳回前面的段落时算 */
   endBreak: "page" | "system" | null = null,
-  /** 演唱顺序来自投影排法（123 `%%slide`）：逐页逐行照写的排，源里的换行换页与推断都不用（`slideSong`） */
-  slides = false,
+  /** 演唱顺序是写定的逐遍演唱顺序（123 `%%sing`）：逐页逐行照写的排，源里的换行换页与推断都不用（`singSong`） */
+  sing = false,
 ): SongView {
   // 只排一个声部：带歌词的那个（同 `playsong.ts::songMeasures` 的 forExpanded），没有就第一个
   const voices = voiceNumbers(song);
@@ -834,7 +834,7 @@ export function expandSong(
   }
   const width = contentWidth(m);
   const meter = song.metadata.meters[0];
-  if (slides) return slideSong(song, plan, { rows, slices, lyricsOf, cursorOf, marks, unrolled, idOf, owners }, m, ink, width, meter);
+  if (sing) return singSong(song, plan, { rows, slices, lyricsOf, cursorOf, marks, unrolled, idOf, owners }, m, ink, width, meter);
   // 副歌起头的小节：这一小节起只剩一行词、前面有字的小节不止一行（250《主，差遣我》），在它前面断行、换页。
   // 标了副歌的（模型小节上的段落标记 `sectionMarkOf`，各格式同一个判据：123 的 `"^Chorus"`、文本谱的「(副歌)」、
   // MusicXML 的段落词）**只当大致位置**：标记常挂在副歌弱起上、甚至上一句收尾的那个小节里（「脚步」的【Chorus】
@@ -988,7 +988,7 @@ export function expandSong(
   return { ...song, pages: !layout && m.style.look.pairPages ? pairPages(pages, passStarts) : pages };
 }
 
-/** `expandSong` 已备好的源行视图，投影排法那条路照用 */
+/** `expandSong` 已备好的源行视图，逐遍演唱顺序那条路照用 */
 interface SongRows {
   rows: RowView[];
   slices: Slot[][];
@@ -1001,16 +1001,16 @@ interface SongRows {
 }
 
 /**
- * 投影排法（123 `%%slide`，`abcfamily/slides.ts`）：一页就是写的那一行，`/` 处必换行，其余照版心宽逐行装满；
+ * 逐遍演唱顺序（123 `%%sing`，`abcfamily/sing.ts`）：一页就是写的那一行，`/` 处必换行，其余照版心宽逐行装满；
  * 一页超过 `rows`（缺省 `MAX_ROWS`）行才另起一页。项内的反复、房号、跳转都不走（项写的是哪几小节就排哪几小节），
  * 源里的 `$`、`%%newpage`、副歌判据、弱起挪页、前奏、并页一概不用——要什么样写什么样。
  */
-function slideSong(
+function singSong(
   song: SongView, plan: readonly PlayItem[], src: SongRows, m: JianpuGrid, ink: InkMeasurer, width: number,
   meter: SongView["metadata"]["meters"][number] | undefined,
 ): SongView {
   const { rows, slices, lyricsOf, cursorOf, marks, unrolled, idOf, owners } = src;
-  const slides: { pass: Pass; rows: number }[] = [];
+  const pages: { pass: Pass; rows: number }[] = [];
   let cur: { pass: Pass; rows: number } | null = null;
   plan.forEach((it, n) => {
     cur ??= { pass: { slots: [], verses: [], breaks: new Map(), hard: new Set() }, rows: it.page?.rows ?? MAX_ROWS };
@@ -1022,14 +1022,14 @@ function slideSong(
     }
     if (it.lineAfter) cur.pass.hard!.add(cur.pass.slots.length);
     if (it.endOfPass || n === plan.length - 1) {
-      if (cur.pass.slots.length) slides.push(cur);
+      if (cur.pass.slots.length) pages.push(cur);
       cur = null;
     }
   });
-  const last = slides[slides.length - 1]?.pass;
-  const pages: PageView[] = [];
+  const last = pages[pages.length - 1]?.pass;
+  const out: PageView[] = [];
   let system = 0;
-  for (const { pass, rows: maxRows } of slides) {
+  for (const { pass, rows: maxRows } of pages) {
     const posOf = new Map<string, number[]>();
     pass.slots.forEach((sl, i) => {
       const k = `${sl.row}:${sl.idx}`;
@@ -1045,20 +1045,20 @@ function slideSong(
     let groups: SystemView[] = [];
     lines.forEach((l, n) => {
       if (l.page && groups.length > 0) {
-        pages.push({ index: pages.length, groups });
+        out.push({ index: out.length, groups });
         groups = [];
       }
       const end = lines[n + 1]?.start ?? pass.slots.length;
       groups.push({ index: groups.length, texts: [], system: system++, voices: [rowOf(pass, l.start, end, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars, slices)] });
     });
-    if (groups.length > 0) pages.push({ index: pages.length, groups });
+    if (groups.length > 0) out.push({ index: out.length, groups });
   }
-  return { ...song, pages };
+  return { ...song, pages: out };
 }
 
 /** 整份文档的投影档行视图（各首各按自己的演唱顺序逐首排；推不出演唱顺序的那首照原样） */
 export function expandView(
-  view: DocView, plans: readonly ({ measures: readonly PlayItem[]; isSimpple: boolean; slides?: boolean } | null)[], m: JianpuGrid, ink: InkMeasurer,
+  view: DocView, plans: readonly ({ measures: readonly PlayItem[]; isSimpple: boolean; fromSing?: boolean } | null)[], m: JianpuGrid, ink: InkMeasurer,
   /** `.jpwabc` 的 `.Layout` 分页描述（只管第一首） */
   breakDesc: string | null = null,
 ): DocView {
@@ -1068,7 +1068,7 @@ export function expandView(
     const pd = plans[i];
     if (!pd) return song;
     const layout = breakDesc && i === 0 ? { desc: breakDesc, simple: pd.isSimpple } : null;
-    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts[0]?.endBreak ?? null, !!pd.slides);
+    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts[0]?.endBreak ?? null, !!pd.fromSing);
   });
   return { ...view, songs };
 }

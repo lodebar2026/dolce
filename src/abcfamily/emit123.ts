@@ -10,7 +10,7 @@ import { AccidentalCarry, clefName, continuesMeasure, harmonyText, melodyLane, n
 import { keyFifths, tonicSpelling } from "../model/keyshift";
 import { fillEmptyMeasures, splitStaves } from "../model/staves";
 import { fillAbsentGroups } from "../model/timeaxis";
-import { slideLines } from "./slides";
+import { singLines } from "./sing";
 
 /** 倚音时值相对八分：下标 = `_` 个数（八分不写，`{2_}` 十六分）。四分倚音写不出，按八分 */
 const GRACE_TYPES = ["eighth", "16th", "32nd", "64th"];
@@ -147,7 +147,7 @@ export class Emitter123 extends AbcFamilyEmitter {
   protected override readonly pageBreakLine = "%%newpage";
 
   protected override tailLines(song: Song): string[] {
-    return slideLines(song);
+    return singLines(song);
   }
 
   /** 混合拍：页眉并排印着的几个拍号都写进 `M:`（`M:3/4 4/4 混合拍`，见规范 §3）。

@@ -7,7 +7,7 @@
 // 简谱形状（文本谱 / 123 / ABC / `.jpwabc`）在 `jianpu/playsong.ts`。
 
 import { Fraction } from "../common/fraction";
-import { JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition, playOrderFromSpec, playOrderOf, sectionPlayOrder, slidePlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
+import { JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition, playOrderFromSpec, playOrderOf, sectionPlayOrder, singPlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
 import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart } from "../score/timeline";
 import type { Accidental, Barline, Chord, Direction, ElementId, Measure, Note, Part, Song } from "./doc";
 import { midiPitch, topNote } from "./jianpu";
@@ -30,7 +30,7 @@ export function leadPartOf(song: Song): number {
  *  - `lead`：段数按哪个声部的歌词推、`PlayItem.limit` 数哪个声部的和弦。缺省第一声部——引擎输入与 `.jpwabc` 写出端
  *    画的、写的都是第一声部，必须同一个；只有试听（`playSourceOfDoc`）传主旋律声部（`leadPartOf`）
  *  - `distinct`：同音同号的词顺延（试听那份，见 `phrasedoc.ts::distinctNumbers`）
- *  - `useSections`：按头部 `P:` 排（投影排法、`.Repeat` 优先） */
+ *  - `useSections`：按头部 `P:` 排（逐遍演唱顺序、`.Repeat` 优先） */
 export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSections = true }: { lead?: number; distinct?: boolean; useSections?: boolean } = {}): PlayData {
   const pd = new PlayData();
   const part = song.parts[0];
@@ -40,11 +40,11 @@ export function playDataOfDoc(song: Song, { lead = 0, distinct = false, useSecti
     for (const d of m.directions ?? []) if (d.sound) addSound(pd, d, new TimePosition(mid, cursorAt(m, d).divInt(div)));
   });
   const view = phrasePartOfDoc(song, lead, distinct);
-  // 投影排法（123 `%%slide`）：逐页逐行写定的，优先于 `.Repeat`、`P:` 与谱面记号
-  const slid = song.slides?.length ? slidePlayOrder([view.part], sectionMarksOfDoc(song, lead, view), song.slides) : [];
+  // 逐遍演唱顺序（123 `%%sing`）：逐页逐行写定的，优先于 `.Repeat`、`P:` 与谱面记号
+  const slid = song.singOrder?.length ? singPlayOrder([view.part], sectionMarksOfDoc(song, lead, view), song.singOrder) : [];
   if (slid.length) {
     pd.measures = slid;
-    pd.slides = true;
+    pd.fromSing = true;
     pd.fromSections = true;
     return pd;
   }

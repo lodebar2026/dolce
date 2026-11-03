@@ -74,7 +74,7 @@ export function anchorPlayOrder(song: Song): PlayPass[] {
   });
 }
 
-/** 写明的演唱顺序搬到读回的那份模型上：MusicXML 写不下 `.Repeat`、`P:` 与投影排法，小节会拆、元素 id 也换了，按 `Chord.srcId` 对回去。 */
+/** 写明的演唱顺序搬到读回的那份模型上：MusicXML 写不下 `.Repeat`、`P:` 与逐遍演唱顺序，小节会拆、元素 id 也换了，按 `Chord.srcId` 对回去。 */
 export function carryPlayOrder(from: ScoreDoc, to: ScoreDoc): void {
   from.songs.forEach((src, i) => {
     const dst = to.songs[i];
@@ -91,9 +91,9 @@ export function carryPlayOrder(from: ScoreDoc, to: ScoreDoc): void {
       if (passes.length) dst.playOrder = passes;
       return;
     }
-    if (!src.sectionOrder && !src.slides?.length) return;
+    if (!src.sectionOrder && !src.singOrder?.length) return;
     if (src.sectionOrder) dst.sectionOrder = src.sectionOrder;
-    if (src.slides?.length) dst.slides = src.slides;
+    if (src.singOrder?.length) dst.singOrder = src.singOrder;
     const bySrc = chordsBySrc(dst).first;
     const marks = (src.sectionMarks ?? []).flatMap((m) => {
       const before = bySrc.get(m.before);

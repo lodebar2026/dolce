@@ -53,9 +53,9 @@ export class PlayItem extends TimePosition {
   scope?: ReadonlySet<number>;
   /** 按 `P:` 排的：这一项是进入一个段落（投影档进段不换页，`walkPlay`） */
   sectionEntry?: boolean;
-  /** 投影排法（123 `%%slide` 的 `/`）：这一项之后换行 */
+  /** 逐遍演唱顺序（123 `%%sing` 的 `/`）：这一项之后换行 */
   lineAfter?: boolean;
-  /** 投影排法：一页的第一项带这一页单独改的参数（`[rows=5]`） */
+  /** 逐遍演唱顺序：一遍的第一项带这一遍单独改的参数（`[rows=5]`） */
   page?: { rows?: number };
   clone(): PlayItem {
     const p = new PlayItem();
@@ -86,8 +86,8 @@ export class PlayData {
   impliedRepeat = -1;
   /** 顺序来自头部 `P:`：没唱的小节是作者定的 */
   fromSections = false;
-  /** 顺序来自投影排法（123 `%%slide`）：投影档照 `endOfPass` / `lineAfter` 逐页逐行排，不再推断 */
-  slides = false;
+  /** 顺序来自逐遍演唱顺序（123 `%%sing`）：投影档照 `endOfPass` / `lineAfter` 逐页逐行排，不再推断 */
+  fromSing = false;
   /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用 timeline.ts 的默认值。
    *  来源：MusicXML `<sound tempo>` / OMR 页眉的 `♩=76` / .jpwabc `.Title` 的 `Tempo`。 */
   tempo = 0;
@@ -254,15 +254,15 @@ export function sectionPlayOrder(parts: readonly PlayPart[], jumps: PlayJumps, s
   return { measures: out, isSimple: false, hasRepeat: parts[0]!.measures.some((m) => m?.repeatBackward), impliedRepeat: implied };
 }
 
-/** 投影排法的一页（`model/doc.ts::SlidePage` 的形状）：段落名、配第几行词、之后换行 */
-export interface SlidePageSpec {
+/** 逐遍演唱顺序的一遍（`model/doc.ts::SingPass` 的形状）：段落名、配第几行词、之后换行 */
+export interface SingPassSpec {
   readonly items: readonly { readonly section: string; readonly verse?: number; readonly lineAfter?: boolean }[];
   readonly rows?: number;
 }
 
-/** 按投影排法（123 `%%slide`）排的演唱顺序：每项是一段（`[P:x]` 切出来的，同 `P:`）**直着唱**——段内的反复、房号、跳转都不走；
+/** 按逐遍演唱顺序（123 `%%sing`）排的演唱顺序：每项是一段（`[P:x]` 切出来的，同 `P:`）**直着唱**——段内的反复、房号、跳转都不走；
  *  `pass` 是这一段的第几行词（`@段`）。项末 `lineAfter`、页末 `endOfPass`、页首带 `page`。不存在的段跳过（读入时已报诊断）。 */
-export function slidePlayOrder(parts: readonly PlayPart[], marks: readonly SectionMark[], pages: readonly SlidePageSpec[]): PlayItem[] {
+export function singPlayOrder(parts: readonly PlayPart[], marks: readonly SectionMark[], pages: readonly SingPassSpec[]): PlayItem[] {
   const byName = sectionsOf(marks, parts[0]!.measures.length);
   const out: PlayItem[] = [];
   for (const pg of pages) {

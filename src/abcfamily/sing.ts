@@ -1,19 +1,19 @@
-// 投影排法（123 `%%slide`，格式见 docs/格式/123格式.md §6.3）：一行一页，`/` 页内换行，每项是一个段落名配第几段词。
+// 逐遍演唱顺序（123 `%%sing`，格式见 docs/格式/123格式.md §6.3）：一行一遍（投影一页），`/` 换行，每项是一个段落名配第几段词。
 //
-//   %%slide A / B@2
-//   %%slide [rows=5] C D / A@3
+//   %%sing A / B@2
+//   %%sing [rows=5] C D / A@3
 //
-// 段落就是曲内 `[P:x]` 标记切出来的那些（同 `P:`），切点写在谱面上；`@段` 是这一段的第几条 `w:`，缺省 1。读成 `Song.slides`，写出端反过来。
+// 段落就是曲内 `[P:x]` 标记切出来的那些（同 `P:`），切点写在谱面上；`@段` 是这一段的第几条 `w:`，缺省 1。读成 `Song.singOrder`，写出端反过来。
 
-import type { SlidePage, Song } from "../model/doc";
+import type { SingPass, Song } from "../model/doc";
 
 const ITEM = /^([^@\s/[\]]+)(?:@(\d+))?$/;
 const OPTS = /^\[([^\]]*)\]\s*/;
 
-/** 一行 `%%slide` 的正文 → 一页。写错的项、参数报给 `bad` 并跳过；一项都没有返回 null */
-export function parseSlide(body: string, bad: (v: string) => void): SlidePage | null {
+/** 一行 `%%sing` 的正文 → 一遍。写错的项、参数报给 `bad` 并跳过；一项都没有返回 null */
+export function parseSing(body: string, bad: (v: string) => void): SingPass | null {
   let rest = body.trim();
-  const page: SlidePage = { items: [] };
+  const page: SingPass = { items: [] };
   const opts = OPTS.exec(rest);
   if (opts) {
     rest = rest.slice(opts[0].length);
@@ -42,14 +42,14 @@ export function parseSlide(body: string, bad: (v: string) => void): SlidePage | 
   return page;
 }
 
-/** `Song.slides` → `%%slide` 行 */
-export function slideLines(song: Song): string[] {
-  return (song.slides ?? []).map((pg) => {
+/** `Song.singOrder` → `%%sing` 行 */
+export function singLines(song: Song): string[] {
+  return (song.singOrder ?? []).map((pg) => {
     const toks = pg.rows ? [`[rows=${pg.rows}]`] : [];
     pg.items.forEach((it, i) => {
       toks.push(`${it.section}${(it.verse ?? 1) !== 1 ? `@${it.verse}` : ""}`);
       if (it.lineAfter && i < pg.items.length - 1) toks.push("/");
     });
-    return `%%slide ${toks.join(" ")}`;
+    return `%%sing ${toks.join(" ")}`;
   });
 }
