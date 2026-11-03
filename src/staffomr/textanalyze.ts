@@ -537,9 +537,11 @@ export function analyzeText(pg: SPage): TextAnalysis {
   for (const o of pg.objs) {
     if (o.hasAnyTag() || !o.path) continue;
     if (o.path.curves || !axisAligned(o)) continue;
-    const inside = texts.filter((t) => !kind.has(t) && o.box.left <= t.box.left && o.box.right >= t.box.right && o.box.top <= t.box.top && o.box.bottom >= t.box.bottom);
+    const inside = texts.filter((t) => o.box.left <= t.box.left && o.box.right >= t.box.right && o.box.top <= t.box.top && o.box.bottom >= t.box.bottom);
     if (!inside.length) continue;
-    for (const t of inside) kind.set(t, "boxed");
+    for (const t of inside) if (!kind.has(t)) kind.set(t, "boxed");
+    // 框本身也有主（水乡情韵方框小节号的框原来留在未识别里；行首框里的数先认成了小节号，框照样收）
+    o.addTag("Boxed");
   }
 
   // ── 谱表正上方的其余文字：演奏指示（`sul G`）、音色名（`Roland PE20 Morning Lite`）──────────────
