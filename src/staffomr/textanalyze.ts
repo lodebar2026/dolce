@@ -9,6 +9,7 @@ import type { TextGlyphLookup } from "./textglyphs";
 import type { StaffNote } from "./notedata";
 import { isWholeChord } from "../omrkit/chordgrammar";
 import { type Box, PObj, SPage, Staff, between, overlapX, overlapY, xSpace, ySpace } from "./model";
+import { subPaths } from "./vecgeom";
 
 /** 一段文本的纯文字内容（ToUnicode 的结果，可能是乱码，见文档「坏 ToUnicode」一节）。
  *  名字带 `objText` 前缀是为了不与 `pdflayout/bookmeta.ts::runText` 撞——那份收的是
@@ -144,7 +145,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // 贴身描边框圈住的字是排练号（`[A]` `[B]`），单个大写字母合和弦文法，不挡掉就被收成和弦
   // （牵我的手 Violin 上三个）。只认框比字大不出两格的：大框（整段文字框、版面边框）里的和弦照收；
   // 框里的字留给后面 findBoxedText 打标。这本的框是**填充**画的（外矩形套内矩形的一圈），不限描边
-  const frames = pg.objs.filter((o) => !o.hasAnyTag() && o.path && !o.path.curves);
+  const frames = pg.objs.filter((o) => !o.hasAnyTag() && o.path && !o.path.curves && axisAligned(o));
   const framed = (t: PObj) =>
     frames.some(
       (f) =>
@@ -420,6 +421,10 @@ export function analyzeText(pg: SPage): TextAnalysis {
     }
   }
 
+  // 贴身框里的字不是歌词（水乡情韵系统中间每五小节一个的方框小节号：框的上下边是横线、对着符头成排，几路都会收进来，
+  // 收成歌词后纯数字被当小节号丢掉，「70」只剩「7」）。上面几路都收完再统一退回，留给后面的框字
+  for (const [t, k] of kind) if (k === "lyric" && framed(t)) kind.delete(t);
+
   // 延长线那一路（水平线以下都算歌词）会把印在歌词带与下一行谱之间的表情术语也收进来（宣主荣耀 p2 钢琴的 `rit.`
   // 唱进了男声歌词）。改归表情只认这一种：斜体、整段是术语、**离下面那行谱比离上面那行谱近**（是给下面那行的）。
   // 放宽到「斜体术语一律退回」，赞美之泉的配对会连锁变（歌词里少一个拉丁词，汉字占比跨过歌词否决的门槛，少配上一首）
@@ -513,7 +518,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // 要整个圈住字：原来只要盒相交，压在谱线上的乐器音色名（牵我的手 Syn「Roland PE20 Morning Lite」）也被当成了框里的字
   for (const o of pg.objs) {
     if (o.hasAnyTag() || !o.path) continue;
-    if (o.path.curves) continue;
+    if (o.path.curves || !axisAligned(o)) continue;
     const inside = texts.filter((t) => !kind.has(t) && o.box.left <= t.box.left && o.box.right >= t.box.right && o.box.top <= t.box.top && o.box.bottom >= t.box.bottom);
     if (!inside.length) continue;
     for (const t of inside) kind.set(t, "boxed");
@@ -1186,8 +1191,33 @@ function boxedItems(objs: PObj[]): PObj[][] {
       if (s.endsWith("】")) open.splice(k, 1);
       continue;
     }
+    // 一个框里的几位数逐字印的（水乡情韵方框小节号「15」是「1」「5」两次 showText）：同一行、紧挨着的接上。
+    // 斜体数字的字框左右交叠（「9」「5」叠 1.1 点），间隙按字高比例两头放
+    const h = o.box.bottom - o.box.top;
+    const prev = out.find((g) => {
+      const last = g[g.length - 1];
+      return !open.includes(g) && overlapY(last.box, o.box) && Math.abs(o.box.left - last.box.right) < h * 0.3;
+    });
+    if (prev && s !== "【") {
+      prev.push(o);
+      continue;
+    }
     out.push([o]);
     if (s === "【") open.push(out[out.length - 1]);
+  }
+  return out;
+}
+
+/**
+ * 重印加粗的字只留一份：同一个字、同字体，错开不到十分之一字高再印一遍（水乡情韵「♩=122」的「=122」逐字印两遍、错开 0.31 点，
+ * 不去掉拼出来是「==1122 22」，读成速度 11）。
+ */
+function dropOverprint(objs: PObj[]): PObj[] {
+  const out: PObj[] = [];
+  for (const o of objs) {
+    const h = o.box.bottom - o.box.top;
+    const dup = o.run && out.some((u) => u.run && u.run.font === o.run!.font && objText(u) === objText(o) && Math.abs(u.box.left - o.box.left) < h * 0.1 && Math.abs(u.box.top - o.box.top) < h * 0.1);
+    if (!dup) out.push(o);
   }
   return out;
 }
@@ -1214,7 +1244,7 @@ export function attachDirectionTexts(
   text: TextAnalysis,
 ): void {
   const sp = pg.normalStaffSpace || pg.space;
-  const tempo = [...text.tempo].filter((o) => objText(o).trim() || o.symbols.some((y) => METRO_GLYPH[y.code])).sort((a, b) => a.box.left - b.box.left);
+  const tempo = dropOverprint(text.tempo).filter((o) => objText(o).trim() || o.symbols.some((y) => METRO_GLYPH[y.code])).sort((a, b) => a.box.left - b.box.left);
   const lines: PObj[][] = [];
   for (const o of tempo) {
     const line = lines.find((l) => {
@@ -1240,8 +1270,8 @@ export function attachDirectionTexts(
   }
   const items = [
     ...lines.map((l) => ({ objs: l, tempo: true, boxed: false })),
-    ...exprLines(text.expression).map((l) => ({ objs: l, tempo: false, boxed: false })),
-    ...boxedItems(text.boxed).map((objs) => ({ objs, tempo: false, boxed: true })),
+    ...exprLines(dropOverprint(text.expression)).map((l) => ({ objs: l, tempo: false, boxed: false })),
+    ...boxedItems(dropOverprint(text.boxed)).map((objs) => ({ objs, tempo: false, boxed: true })),
   ];
   for (const { objs, tempo: isTempo, boxed } of items) {
     // 没有 ToUnicode 的字体抽出来是控制字符（牵我的手 `= 60` 的数字读成 `\u0018\u0012`）：剥掉，解不出数的等号也不留
@@ -1252,7 +1282,16 @@ export function attachDirectionTexts(
     const bracket = boxed && /^【.+】$/.test(parts.join(""));
     if (boxed && !bracket && !parts.join("").replace(/[【】]/g, "")) continue;
     // 一个词断成几段印的（`p` + `izz`）段与段之间不加空格
-    const glue = (i: number) => (i && objs[i].box.left - objs[i - 1].box.right < (objs[i].box.bottom - objs[i].box.top) * 0.3 ? "" : " ");
+    // 逐字印的（水乡情韵「=」「1」「2」「2」各一段）按笔位比：上一段末字原点 + 步进就是下一字该落的位置。按墨迹比的话「1」窄，
+    // 与「2」的墨迹空隙过了门槛，读成「1 22」
+    const pen = (a: PObj, b: PObj) => {
+      const g = a.run?.glyphs[a.run.glyphs.length - 1];
+      const n = b.run?.glyphs[0];
+      // 末字是空格的笔位正好接上，可那是词间空格
+      // 门槛要紧：连排的字笔位只差取整（水乡情韵 0.1 点）；八段锦「欢快」「热烈地」隔 3.1 点（四分之一字）是有意的空
+      return g && n && g.advance > 0 && g.unicode.trim() ? Math.abs(n.ox - (g.ox + g.advance)) < (b.box.bottom - b.box.top) * 0.1 : false;
+    };
+    const glue = (i: number) => (i && (pen(objs[i - 1], objs[i]) || objs[i].box.left - objs[i - 1].box.right < (objs[i].box.bottom - objs[i].box.top) * 0.3) ? "" : " ");
     const box = {
       left: Math.min(...objs.map((o) => o.box.left)),
       right: Math.max(...objs.map((o) => o.box.right)),
@@ -1296,4 +1335,9 @@ export function attachDirectionTexts(
     if (!plain) continue;
     (note.words ??= []).push({ text: plain, above: cy < (stf.box.top + stf.box.bottom) / 2, ...(size > 0 ? { size } : {}), ...(boxed ? { rehearsal: true } : {}), ...(bracket ? { bracket: true } : {}), box });
   }
+}
+
+/** 路径每一段都横平竖直（框）。斜线的外接盒也会「圈住」旁边的字：古筝刮奏的 V 形线沿线斜排着「gliss.」，被收成了框字（水乡情韵） */
+function axisAligned(o: PObj): boolean {
+  return subPaths(o.path!).every((sp) => sp.pts.every((q, i) => !i || Math.abs(q.x - sp.pts[i - 1].x) < 0.3 || Math.abs(q.y - sp.pts[i - 1].y) < 0.3));
 }

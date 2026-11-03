@@ -1157,6 +1157,11 @@ function scoreTree(
             if (k < staves.length - 1) m.appendChild(backupEl(dur));
             return;
           }
+          // 方框里的数正是本小节号：那是小节号（水乡情韵每五小节印一个），不是排练号。
+          // 框骑在小节线上、左缘在线前的，挂到了上一小节末一个音上（二胡「100」）：框中心过了本小节右界就比下一小节的号
+          const barNo = (w: NonNullable<StaffNote["words"]>[number]) =>
+            w.rehearsal && !w.bracket && /^\d+$/.test(w.text) && Number(w.text) === (w.box && (w.box.left + w.box.right) / 2 > bar.right ? measureNo + 1 : measureNo);
+          for (const n of inBar) if (n.words?.some(barNo)) n.words = n.words.filter((w) => !barNo(w));
           for (const x of emitVoices(inBar, ticks, staves.length > 1 ? k + 1 : 0, midEls, bar.right)) m.appendChild(x);
           const used = voiceTicks(inBar, ticks);
           // 换到下一行谱之前要把时间**倒回**小节头（MusicXML 的 `<backup>`）
