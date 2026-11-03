@@ -84,7 +84,12 @@ function collectTexts(pg: SPage): { texts: PObj[]; hlines: Box[] } {
   }
   // 歌词延长线是细线：厚过 0.3 格的是符杠（八段锦小钗 p2：系统 9 一截十六分副杠与下一行谱上方的「大鼓」同高，被当锚收成了歌词）
   const sp = pg.normalStaffSpace || pg.space;
-  const hlines = pg.segs.filter((s) => s.isH && !s.hasAnyTag() && s.lw < sp * 0.3).map((s) => s.box);
+  // 方框（贴身圈着字的横平竖直路径）的上下边也不是：锚线只比纵向，框边同高、隔着半页的字也被收成歌词
+  //（水乡情韵琵琶「扫」与方框小节号「5」「125」的框边同高）
+  const frame = (o: PObj) =>
+    !!o.path && !o.path.curves && axisAligned(o) &&
+    texts.some((t) => o.box.left <= t.box.left && o.box.right >= t.box.right && o.box.top <= t.box.top && o.box.bottom >= t.box.bottom && o.box.right - o.box.left < t.box.right - t.box.left + 4 * sp && o.box.bottom - o.box.top < t.box.bottom - t.box.top + 4 * sp);
+  const hlines = pg.segs.filter((s) => s.isH && !s.hasAnyTag() && s.lw < sp * 0.3 && !frame(s.obj)).map((s) => s.box);
   return { texts, hlines };
 }
 
@@ -341,7 +346,8 @@ export function analyzeText(pg: SPage): TextAnalysis {
       }
       return best && !pg.staves.some((q) => q.box.top > best!.box.bottom && q.box.top < t.box.bottom) ? best : null;
     };
-    const cand = texts.filter((t) => !kind.has(t) && t.run && !notLyric(t) && objText(t).trim());
+    // 框里的字不进来：方框小节号的几位数与旁边的「扫」同字体同基线，凑成一排、过半对着上一行谱的符头（水乡情韵琵琶 m121）
+    const cand = texts.filter((t) => !kind.has(t) && t.run && !notLyric(t) && !framed(t) && objText(t).trim());
     const above = new Map(cand.map((t) => [t, staffAbove(t)] as const));
     for (const t of cand) {
       const st = above.get(t);
@@ -541,7 +547,8 @@ export function analyzeText(pg: SPage): TextAnalysis {
     if (kind.has(t)) continue;
     const s0 = objText(t).trim();
     // 中文的也算（八段锦钢片琴首行上方「欢快 热烈地」，没印节拍器、也没有排练号领着）
-    if (s0.length < 2 || /^[\d\s-]+$/.test(s0) || !/[A-Za-z\u3400-\u9fff]/.test(s0)) continue;
+    // 一个汉字的也算：民乐分谱的演奏法提示（水乡情韵琵琶「扫」）；单个拉丁字母不算（零散的记号字母）
+    if ((s0.length < 2 && !/^[\u3400-\u9fff]$/.test(s0)) || /^[\d\s-]+$/.test(s0) || !/[A-Za-z\u3400-\u9fff]/.test(s0)) continue;
     const cy = (t.box.top + t.box.bottom) / 2;
     if (pg.staves.some((st) => t.box.left >= st.box.left && t.box.right <= st.box.right && cy >= st.box.top - sp * 5 && cy <= st.box.top + sp)) kind.set(t, "expression");
   }
