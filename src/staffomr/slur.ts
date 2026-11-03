@@ -811,7 +811,14 @@ export function markSlurNotes(arcs: SlurArc[], newId: () => string = () => Strin
     const n = a.from && a.to ? undefined : (a.from ?? a.to);
     // 两端都挂上的也要朝向相同：和弦上下各一条（新笛 m45 上面 F♯4→G4、下面 D4→E4），两端同处却是两条。
     // 只矢量路开（`byDirection`）：位图路的弧向不总可靠，同一条弧的两份朝向判得不一，破碎干净档多出五六处「挪连线」
-    if (!n) return !byDirection || a.above === b.above;
+    // 矢量路两端都挂上的还要外框上下沿重合（差不到半个符头宽）：同一条画两份差零点几点，
+    // 上下套着印的两条（水乡情韵中胡 m22 D→E 下方）同一对音、同朝向，上下差一格多，是两条
+    if (!n) {
+      if (!byDirection) return true;
+      if (!a.from) return a.above === b.above;
+      const w = (a.from.sym.box.right - a.from.sym.box.left) * 0.5;
+      return a.above === b.above && Math.abs(a.obj.box.top - b.obj.box.top) < w && Math.abs(a.obj.box.bottom - b.obj.box.bottom) < w;
+    }
     const w = n.sym.box.right - n.sym.box.left;
     return a.above === b.above && Math.abs(a.lx - b.lx) < w * 0.15 && Math.abs(a.rx - b.rx) < w * 0.15;
   };
