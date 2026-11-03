@@ -124,6 +124,17 @@ export function analyzeText(pg: SPage): TextAnalysis {
   // 被「一字一段排成一排」收成歌词锚，`(www…/copyright)` 带 `/` 还会被当和弦。先挑出来归文本框。
   // 判据：最后一行谱以下、**整行连排**（相邻两段间隙不到一个字号）、**行中心在页面中线上**（两格内）。
   // 歌词对着音符散开排，整行连在一起的只有成段文字；居中这一条再挡住偶然连排的短歌词行
+  // 印在页角的页脚（水乡情韵左下 / 右下的「水乡情韵」，一字一段）不居中：两个以上一字一段的汉字**逐字笔位相接**
+  //（上一字原点 + 步进 = 下一字原点，差不到十分之一字高）——那是一个词逐字排的；一字一音的歌词字距跟着音符走，碰不上步进。
+  // 不挡的话中文歌词起锚把它当成末行的一排歌词。比「对不对得上符头」可靠：右下角上方的十六分音密，四个字有两个碰巧对上。
+  // 一段里排好几个字的不算（天然相接，末行谱下成段印的歌词「耀、尊」会被当成页脚）；重叠的同一字形原点相同、也接不上
+  //（赞美之泉 p175 页角叠了五个「祢」）
+  const cornerFooter = (row: PObj[]): boolean => {
+    if (row.length < 2 || row.some((t) => t.run?.glyphs.length !== 1 || !/[\u3400-\u9fff]/.test(objText(t)))) return false;
+    const gs = row.map((t) => t.run!.glyphs[0]);
+    const h = row[0].box.bottom - row[0].box.top;
+    return gs.every((g, i) => !i || (gs[i - 1].advance > 0 && Math.abs(g.ox - (gs[i - 1].ox + gs[i - 1].advance)) < h * 0.1));
+  };
   const lastStaff = pg.staves.reduce<Staff | null>((m, st) => (!m || st.box.bottom > m.box.bottom ? st : m), null);
   if (lastStaff) {
     const rows: PObj[][] = [];
@@ -137,7 +148,7 @@ export function analyzeText(pg: SPage): TextAnalysis {
       const em = Math.max(...row.map((t) => t.run!.sizeDev));
       if (row.some((t, i) => i > 0 && t.box.left - row[i - 1].box.right > em)) continue;
       const cx = (row[0].box.left + Math.max(...row.map((t) => t.box.right))) / 2;
-      if (Math.abs(cx - pg.width / 2) > sp * 2) continue;
+      if (Math.abs(cx - pg.width / 2) > sp * 2 && !cornerFooter(row)) continue;
       for (const t of row) kind.set(t, "textFrame");
     }
   }

@@ -148,14 +148,21 @@ export function makeLookup(dict: StaffGlyphDict): StaffGlyphLookup {
  * 页脚 → `<credit>`：最后一行谱以下、文本层认作文本框的字（`TextFrame`：版权声明几行、页码），同一行拼起来；
  * 纯数字的一行是页码（`page number`），其余是版权（`rights`），都居中。与 GT 的写法一致，读入端不把这两类当页眉角色。
  */
-export function vectorPageFooters(pg: SPage, page: number): { text: string; type: "rights" | "page number"; justify: "center"; size: number; box: { x: number; y: number; w: number; h: number }; page: number }[] {
+export function vectorPageFooters(pg: SPage, page: number): { text: string; type: "rights" | "page number"; justify: "left" | "center" | "right"; size: number; box: { x: number; y: number; w: number; h: number }; page: number }[] {
   if (!pg.staves.length) return [];
   const bottom = Math.max(...pg.staves.map((st) => st.box.bottom));
   const objs = pg.objs.filter((o) => o.run && o.hasTag("TextFrame") && o.box.top >= bottom);
   return pageTextLines(objs).sort((a, b) => a.box.top - b.box.top).map((l) => {
     const t = foldRadicals(l.t).replace(/\s+/g, " ").trim();
-    return { text: t, type: /^\d+$/.test(t) ? ("page number" as const) : ("rights" as const), justify: "center" as const, size: l.size, box: { x: l.box.left, y: l.box.top, w: l.box.right - l.box.left, h: l.box.bottom - l.box.top }, page };
+    return { text: t, type: /^\d+$/.test(t) ? ("page number" as const) : ("rights" as const), justify: footJustify(pg, l.box), size: l.size, box: { x: l.box.left, y: l.box.top, w: l.box.right - l.box.left, h: l.box.bottom - l.box.top }, page };
   }).filter((c) => c.text);
+}
+
+/** 页角的页眉页脚按位置定对齐（水乡情韵左下 / 右下）：离页面中线不到一个字高的算居中 */
+function footJustify(pg: SPage, b: { left: number; right: number; top: number; bottom: number }): "left" | "center" | "right" {
+  const c = (b.left + b.right) / 2;
+  if (Math.abs(c - pg.width / 2) <= b.bottom - b.top) return "center";
+  return c < pg.width / 2 ? "left" : "right";
 }
 
 /** ToUnicode 常把汉字映到**康熙部首 / 部首补充**区（「第448⾸」「⽼师」「使⽤」，U+2E80–U+2FDF），只把这一段折回正常汉字（NFKC），全角括号之类别的字符不动 */
