@@ -1625,8 +1625,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    * 各格式同一把（`.jpwabc`、文本谱也量）——不量的那份乐句行在简谱档放不下，排版器整首按宽度重断，乐句全丢，
    * 几种格式就排得不一样了（「脚步」）。
    *
-   * 简谱档的尺子**只判放不放得下**（`noPairs`）：要的是一句一行，印刷原版就这样；让它并两句的话
-   * 会以为「两句并一行还宽绰」，73《我主耶稣是生命源》一行排了 8 小节。多声部的简谱档不给尺子（文本谱多声部不重断）。
+   * 尺子只在断句之后用：决定两两合并还是保持断句结果，放不下的行在行内补刀（两档都许合并，见 `jianpu/phrase.ts::contentBreaks`）。
+   * 多声部的简谱档不给尺子（文本谱多声部不重断）。
    */
   private _fanqiePhraseMeasure(): FitMeasure | null {
     const view = this.layoutMode;
@@ -1636,8 +1636,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
     const sheet = this.style.styleOf(view);
     const width = this.style.layoutPage.w;
-    const noPairs = view === "original";
-    return (doc, song) => ({ ...measureDocument(doc, sheet, width, view === "expanded", song), noPairs });
+    return (doc, song) => measureDocument(doc, sheet, width, view === "expanded", song);
   }
 
   /** 注册工具栏「简繁」按钮，供转换期间切换加载中状态。 */

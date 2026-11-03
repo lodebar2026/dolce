@@ -16,8 +16,11 @@
 // 无 DOM 依赖。
 
 import { Fraction } from "../common/fraction";
-import { chooseLineLayout, fitForIds, pageBreakLines } from "./applybreaks";
-import { computePhraseBreaks } from "../score/phrase";
+import { chooseLineLayout, enforceLineCapacity, fitForIds, mergeSliverLines, pageBreakLines, tidyLineHeads, tidyLineTails } from "./applybreaks";
+import { computePhraseBreaks, type FitMetric, type PhraseBreaks } from "../score/phrase";
+import type { PhrasePart } from "../score/phraseinput";
+import { phraseJumpMeasures } from "../model/phrasedoc";
+import { defaultBookStyle } from "../style/bookstyle";
 import { chordsOf, type PhraseChord } from "../score/phraseinput";
 import { elementQuarters, linesOfVoice, tupletRatios, voiceNumbers } from "./ast";
 import type { MusicElement, NoteElement, FanqieSong, ScoreLine, SourceSpan } from "./ast";
@@ -119,10 +122,9 @@ function indexAtTick(st: VoiceStream, tick: Fraction): number {
   return st.elements.length;
 }
 
-/** 量行长的尺子：量这份文档第 `song` 首各音的自然跨度（键是元素 id，按 id 对回断句输入）。
- *  `noPairs`：只用来判「放不放得下」、不许两句并一行（简谱档：要的是一句一行，见 `App._fanqiePhraseMeasure`）。 */
+/** 量行长的尺子：量这份文档第 `song` 首各音的自然跨度（键是元素 id，按 id 对回断句输入）。 */
 export type FitMeasure = (doc: ScoreDoc, song: number) => {
-  width: number; spans: ReadonlyMap<string | number, { x0: number; x1: number; x1b?: number }>; noPairs?: boolean;
+  width: number; spans: ReadonlyMap<string | number, { x0: number; x1: number; x1b?: number }>
 } | null;
 
 /** 这一首的断句输入、各声部元素流，以及断点落在哪个声部（主旋律）上。没有可排的曲行时返回 null。 */
@@ -296,11 +298,10 @@ export function fanqiePhraseLines(
   const { input, noteMap, where, voices, streams, lead } = ctx;
   const part = input.part;
 
-  const breaks = computePhraseBreaks(part, { pageLines: PAGE_LINES });
-  if (opt.measure) {
-    const measured = opt.measure(sdoc, songIdx);
-    if (measured) chooseLineLayout(part, breaks, 0, { fit: fitForIds(measured, input.idOf), allowPairs: !measured.noPairs });
-  }
+  const measured = opt.measure ? opt.measure(sdoc, songIdx) : null;
+  const breaks = measured
+    ? contentBreaks(part, fitForIds(measured, input.idOf), phraseJumpMeasures(sdoc.songs[songIdx]!))
+    : computePhraseBreaks(part, { pageLines: PAGE_LINES });
 
   // 断点 → 主旋律元素流下标（「在此元素之前起新行」）。
   const idxOf = (ch: PhraseChord): number | null => {
@@ -355,6 +356,42 @@ export function fanqiePhraseLines(
     l.pageAfter = pageAt.has(i + 1) && i + 1 < lines.length;
   });
   return lines;
+}
+
+/**
+ * 有尺子时的断句：**与成书同一套**。断句只看内容（`contentOnly`：标点、长音、重复、平行句，
+ * 参数取成书出厂值 `defaultBookStyle().layout`），与纸宽、格数无关；行长只在最后一步用——
+ * 按真实宽度决定两两合并还是保持断句结果（`chooseLineLayout`，不走均匀排版那一档），
+ * 再照成书补刀、收拾行首行尾休止、并碎行。
+ *
+ * 原来编辑器这条路断句里带着按格数估的行长罚（一行 25 格），十六分音符密的小节被高估、
+ * 盖过标点与长音的断点分（「…我所有重担，」那一刀被挪到前一小节），用户定不用格数罚。
+ */
+function contentBreaks(part: PhrasePart, fit: FitMetric, jumpMeasures: Set<number>): PhraseBreaks {
+  const L = defaultBookStyle().layout;
+  const mid = L.phraseMidBreak;
+  // 尺子不进断句：`contentOnly` 下方案选优还会拿真实宽度当平局裁判、数放不下几行，断句就随纸变了
+  const breaks = computePhraseBreaks(part, {
+    contentOnly: true,
+    jumpMeasures,
+    lenWeight: L.phraseLenWeight,
+    breakWeight: L.phraseBreakWeight,
+    parallelWeight: L.phraseParallelWeight ?? 6,
+    tailLongWeight: L.phraseTailLongWeight ?? 0,
+    shortSentenceWords: 4,
+    repeatLenBonus: true,
+    evenWeight: L.phraseEvenWeight ?? 0,
+    tailWeight: L.phraseTailWeight ?? 0,
+    fitSlack: L.phraseFitSlack ?? 0,
+    moreRowsSlack: L.phraseMoreRowsSlack ?? 0,
+  });
+  // 两档都许两两合并（用户定 2026-11-03：简谱档的按乐句排版也允许合并）
+  chooseLineLayout(part, breaks, 0, { useMidBreaks: mid, allowPairs: true, fit, even: false });
+  enforceLineCapacity(part, breaks, 0, 4, mid, fit);
+  tidyLineHeads(part, breaks, { useMidBreaks: mid, fit });
+  tidyLineTails(part, breaks, { useMidBreaks: mid, fit });
+  mergeSliverLines(part, breaks, mid, 0, fit);
+  return breaks;
 }
 
 /** 主旋律元素流 `[from, to)` 这一行 → 各声部同拍位的那一段。 */
