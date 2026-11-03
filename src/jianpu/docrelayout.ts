@@ -36,6 +36,10 @@ export interface DocRelayoutOptions {
 /**
  * 把重排（按乐句 / 每行 n 小节）的断点写进 `ScoreDoc` 的换行位。逐首处理，**改的是传进来的这份文档**。
  *
+ * **只改换行，不造换页**：源里原有的 `%%newpage` 照留，乐句断句按「一页 4 行 + 段界」算出的换页
+ * （`PhraseCut.page`）不写进源文——那是投影片的分页，投影档自己会分（`place/expand.ts`），
+ * 写进 123 反倒让简谱档多出分页。
+ *
  * @returns 有没有排出新的行结构（没有可排的曲行时 false）
  */
 export function relayoutDocBreaks(sdoc: ScoreDoc, opt: DocRelayoutOptions): boolean {
@@ -44,8 +48,8 @@ export function relayoutDocBreaks(sdoc: ScoreDoc, opt: DocRelayoutOptions): bool
     const cuts = phraseCuts(sdoc, si, opt.plan ?? PHRASE);
     if (!cuts || cuts.length === 0) return;
     const starts: LineStart[] = [];
-    for (const cut of cuts) if (cut.id !== null) starts.push({ id: cut.id, page: cut.page });
-    if (applyBreaks(song, starts, { mid: opt.midBreaks, pages: "write" })) changed = true;
+    for (const cut of cuts) if (cut.id !== null) starts.push({ id: cut.id });
+    if (applyBreaks(song, starts, { mid: opt.midBreaks, pages: "keep" })) changed = true;
   });
   return changed;
 }
