@@ -69,6 +69,7 @@ import {
 import { LETTER_OF_DEGREE } from "./dialectjcx";
 import { t as tr } from "../i18n";
 import { clefFromName } from "../model/jianpu";
+import { parseSlide } from "./slides";
 
 /** 歌词块：一行曲（到 `$` 换行为止的连续音乐行），紧跟其后的 `w` 行从块的第一个对位格起对位
  *  （规范 §5.1，同 ABC §5.1、文本谱 `Q:` 后跟 `C1:`）。
@@ -1460,6 +1461,8 @@ export function parseAbcFamily(
   let headSection: FieldLine | null = null;
   /** 顺序写在哪一行（报「引用了不存在的段落」用） */
   let orderSource: SourceSpan | null = null;
+  /** 本曲的 `%%slide`（投影排法）：小节要整首读完才数得清，`finishSong` 里落成 `playOrder` */
+  let slideRows: { body: string; source: SourceSpan }[] = [];
   const settleHeadSection = (lastBeforeMusic: boolean): void => {
     const f = headSection;
     if (!f) return;
@@ -1529,6 +1532,18 @@ export function parseAbcFamily(
       }
     }
     pendingLyrics = [];
+    if (slideRows.length) {
+      const known = new Set((song.sectionMarks ?? []).map((m) => m.name));
+      const pages = slideRows.flatMap((r) => {
+        const bad = (v: string): void => report(ctx, "bad-slide", tr("diag.j123.badSlide", { v }), r.source);
+        const pg = parseSlide(r.body, bad);
+        if (!pg) return [];
+        for (const it of pg.items) if (!known.has(it.section)) report(ctx, "missing-section", tr("diag.j123.slideMissing", { v: it.section }), r.source);
+        return [pg];
+      });
+      if (pages.length) song.slides = pages;
+      slideRows = [];
+    }
     // **ABC 只给音名，简谱那一侧要度数**（排版、`emit123`、播放都按度数走）。
     // 先按调号与小节内延续把音名换成实际音高，度数再从音高推（`abcpitch.ts`，写出端同一份规则）。
     // Muse 的五线谱轨同此（`museStaffPitches` 已把字母落成音名）；简谱轨的音没有音高，这一步不碰它们
@@ -1647,6 +1662,12 @@ export function parseAbcFamily(
           if (upgradeBreakToPage(ctx, b) || b !== pb || lastElementId(b) === null) continue;
           markBreak(ctx, b, "page", { line: ln, column: 0, offset: lineOffset, length: raw.length });
         }
+        continue;
+      }
+      // 投影排法（`slides.ts`）：一行一页
+      if (ctx.d.id === "123" && /^%%\s*slide\b/i.test(line)) {
+        ensureSong();
+        slideRows.push({ body: line.replace(/^%%\s*slide/i, ""), source: { line: ln, column: 0, offset: lineOffset, length: raw.length } });
         continue;
       }
       // `%%directive` 等价 `I:directive`（ABC §11.0.2）

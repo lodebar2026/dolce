@@ -53,6 +53,10 @@ export class PlayItem extends TimePosition {
   scope?: ReadonlySet<number>;
   /** 按 `P:` 排的：这一项是进入一个段落（投影档进段不换页，`walkPlay`） */
   sectionEntry?: boolean;
+  /** 投影排法（123 `%%slide` 的 `/`）：这一项之后换行 */
+  lineAfter?: boolean;
+  /** 投影排法：一页的第一项带这一页单独改的参数（`[rows=5]`） */
+  page?: { rows?: number };
   clone(): PlayItem {
     const p = new PlayItem();
     p.mid = this.mid;
@@ -63,6 +67,8 @@ export class PlayItem extends TimePosition {
     p.skip = this.skip;
     p.glueFrom = this.glueFrom;
     if (this.sectionEntry) p.sectionEntry = true;
+    if (this.lineAfter) p.lineAfter = true;
+    if (this.page) p.page = this.page;
     p.limit = this.limit;
     p.scope = this.scope;
     return p;
@@ -80,6 +86,8 @@ export class PlayData {
   impliedRepeat = -1;
   /** 顺序来自头部 `P:`：没唱的小节是作者定的 */
   fromSections = false;
+  /** 顺序来自投影排法（123 `%%slide`）：投影档照 `endOfPass` / `lineAfter` 逐页逐行排，不再推断 */
+  slides = false;
   /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用 timeline.ts 的默认值。
    *  来源：MusicXML `<sound tempo>` / OMR 页眉的 `♩=76` / .jpwabc `.Title` 的 `Tempo`。 */
   tempo = 0;
@@ -222,25 +230,7 @@ interface Section {
  *  它的遍号只用来挑房；交出去的 `pass` 是这一段的第几行词（§5.2 按段落各自计遍，段内反复也算行，下一次进入接着往下）。
  *  第一个标记之前的小节在最前面唱一次（标准没规定，不丢内容）。`seq` 里的段落一个都不存在时返回 null，交回 `playOrderOf`。 */
 export function sectionPlayOrder(parts: readonly PlayPart[], jumps: PlayJumps, seq: readonly string[], marks: readonly SectionMark[]): PlayOrder | null {
-  const count = parts[0]!.measures.length;
-  const sorted = [...marks].sort((a, b) => a.mid - b.mid || a.skip - b.skip);
-  const byName = new Map<string, Section>();
-  const add = (name: string, from: { mid: number; skip: number }, to: { mid: number; skip: number }): void => {
-    const end = to.skip > 0 ? to.mid + 1 : to.mid;
-    if (from.mid >= end) return;
-    let s = byName.get(name);
-    if (!s) byName.set(name, (s = { mids: [], skips: new Map(), limits: new Map(), used: 0, scope: new Set() }));
-    for (let mid = from.mid; mid < end; mid++) {
-      s.mids.push(mid);
-      s.scope.add(mid);
-    }
-    if (from.skip > 0) s.skips.set(from.mid, from.skip);
-    if (to.skip > 0) s.limits.set(to.mid, to.skip);
-  };
-  // 空串是第一个标记之前的那几小节，排不进 `seq`（段落名不会是空的）
-  const first = sorted[0] ?? { mid: count, skip: 0 };
-  add("", { mid: 0, skip: 0 }, first);
-  sorted.forEach((m, i) => add(m.name, m, sorted[i + 1] ?? { mid: count, skip: 0 }));
+  const byName = sectionsOf(marks, parts[0]!.measures.length);
   const names = seq.filter((n) => byName.has(n));
   if (names.length === 0) return null;
 
@@ -262,6 +252,76 @@ export function sectionPlayOrder(parts: readonly PlayPart[], jumps: PlayJumps, s
     out.push(...items);
   }
   return { measures: out, isSimple: false, hasRepeat: parts[0]!.measures.some((m) => m?.repeatBackward), impliedRepeat: implied };
+}
+
+/** 投影排法的一页（`model/doc.ts::SlidePage` 的形状）：段落名、配第几行词、之后换行 */
+export interface SlidePageSpec {
+  readonly items: readonly { readonly section: string; readonly verse?: number; readonly lineAfter?: boolean }[];
+  readonly rows?: number;
+}
+
+/** 按投影排法（123 `%%slide`）排的演唱顺序：每项是一段（`[P:x]` 切出来的，同 `P:`）**直着唱**——段内的反复、房号、跳转都不走；
+ *  `pass` 是这一段的第几行词（`@段`）。项末 `lineAfter`、页末 `endOfPass`、页首带 `page`。不存在的段跳过（读入时已报诊断）。 */
+export function slidePlayOrder(parts: readonly PlayPart[], marks: readonly SectionMark[], pages: readonly SlidePageSpec[]): PlayItem[] {
+  const byName = sectionsOf(marks, parts[0]!.measures.length);
+  const out: PlayItem[] = [];
+  for (const pg of pages) {
+    const head = out.length;
+    for (const it of pg.items) {
+      const s = byName.get(it.section);
+      if (!s) continue;
+      // 同名多处拼成的段：下标连续的才是一项
+      let from = 0;
+      const start = out.length;
+      s.mids.forEach((mid, i) => {
+        if (i + 1 < s.mids.length && s.mids[i + 1] === mid + 1) return;
+        const p = new PlayItem();
+        p.mid = s.mids[from]!;
+        p.end = mid + 1;
+        p.pass = it.verse ?? 1;
+        const skip = s.skips.get(p.mid);
+        const m = parts[0]!.measures[p.mid];
+        if (skip !== undefined && m) {
+          p.skip = skip;
+          p.offset = skipOffset(m, skip);
+        }
+        const limit = s.limits.get(mid);
+        if (limit !== undefined) p.limit = limit;
+        out.push(p);
+        from = i + 1;
+      });
+      if (it.lineAfter && out.length > start) out[out.length - 1]!.lineAfter = true;
+    }
+    if (out.length > head) {
+      const last = out[out.length - 1]!;
+      delete last.lineAfter;
+      last.endOfPass = true;
+      if (pg.rows) out[head]!.page = { rows: pg.rows };
+    }
+  }
+  return out;
+}
+
+/** 曲内段落标记切出各段：段名 → 按谱面先后的小节（同名多处拼成一段）。空串是第一个标记之前的那几小节（段落名不会是空的） */
+function sectionsOf(marks: readonly SectionMark[], count: number): Map<string, Section> {
+  const sorted = [...marks].sort((a, b) => a.mid - b.mid || a.skip - b.skip);
+  const byName = new Map<string, Section>();
+  const add = (name: string, from: { mid: number; skip: number }, to: { mid: number; skip: number }): void => {
+    const end = to.skip > 0 ? to.mid + 1 : to.mid;
+    if (from.mid >= end) return;
+    let s = byName.get(name);
+    if (!s) byName.set(name, (s = { mids: [], skips: new Map(), limits: new Map(), used: 0, scope: new Set() }));
+    for (let mid = from.mid; mid < end; mid++) {
+      s.mids.push(mid);
+      s.scope.add(mid);
+    }
+    if (from.skip > 0) s.skips.set(from.mid, from.skip);
+    if (to.skip > 0) s.limits.set(to.mid, to.skip);
+  };
+  const first = sorted[0] ?? { mid: count, skip: 0 };
+  add("", { mid: 0, skip: 0 }, first);
+  sorted.forEach((m, i) => add(m.name, m, sorted[i + 1] ?? { mid: count, skip: 0 }));
+  return byName;
 }
 
 /** 一段走一遍：把这一段切成一份只有这几小节的谱交给 `RepeatProcessor`，产物的小节下标换回全曲。 */

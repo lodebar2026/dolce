@@ -18,7 +18,7 @@ import { writtenOctaveOf } from "../model/jianpu";
 import { Fraction } from "../common/fraction";
 import {
   JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
-  playOrderByVerses, playOrderFromSpec, playOrderOf, sectionPlayOrder, type SectionMark,
+  playOrderByVerses, playOrderFromSpec, playOrderOf, sectionPlayOrder, slidePlayOrder, type SectionMark,
 } from "../score/playorder";
 import { linesOfVoice, voiceNumbers, type MusicElement, type FanqieSong } from "./ast";
 import { Key, MusicCommon } from "../score/jppitch";
@@ -298,6 +298,16 @@ function playDataOf(doc: ScoreDoc, songIdx: number, built: SongMeasures, useSect
   const main = leadOnAxis(built);
   const pd = new PlayData();
   const docSong = doc.songs[songIdx]!;
+  // 投影排法（123 `%%slide`）：逐页逐行写定的，优先于 `P:` 与谱面记号
+  if (docSong.slides?.length) {
+    const order = slidePlayOrder([{ measures: main }], sectionMarksOf(docSong, built), docSong.slides);
+    if (order.length) {
+      pd.measures = order;
+      pd.slides = true;
+      pd.fromSections = true;
+      return pd;
+    }
+  }
   if (docSong.playOrder?.length) {
     pd.measures = playOrderFromSpec({ items: docSong.playOrder.map((p) => specItem(p, idToChord)) }, { measures: main });
     return pd;

@@ -103,7 +103,7 @@ The interface is available in **English and Chinese**: it follows your browser l
 
 **Typesetting**
 - **Four views:**
-  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection.
+  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%slide` layout can pin down, slide by slide and line by line, which sections appear and with which verse.
   - *Jianpu*: laid out as printed, with verses stacked under the notes, for print.
   - *Staff*: Western staff notation.
   - *Mixed*: staff notation with a jianpu layer on top.

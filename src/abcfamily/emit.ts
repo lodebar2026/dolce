@@ -417,7 +417,7 @@ export abstract class AbcFamilyEmitter {
       const plainNotations = (el: Chord): boolean => !el.notations
         || (j === i && Object.keys(el.notations).every((k) => k === "articulations"));
       const clean = m.elements.length > 0 && m.elements.every((el) => el.kind === "chord" && !!el.rest && !el.grace
-        && plainNotations(el) && !el.ornaments?.length && (j === i || !el.sectionWord) && !el.harmony && !el.lyrics?.length);
+        && plainNotations(el) && !el.ornaments?.length && (j === i || (!el.sectionWord && !this.sectionsBefore.has(el.id))) && !el.harmony && !el.lyrics?.length);
       if (!clean || m.directions?.length || m.laterAttrs?.length) return 0;
       if (j > i && (m.attrs || m.barlines?.some((b) => b.location === "left"))) return 0;
       if (j < i + n - 1 && (breakAfter(part, j) || m.barlines?.some((b) => b.location === "right" && (b.style !== "regular" || b.repeat || b.ending || b.ornaments?.length)))) return 0;
@@ -425,11 +425,13 @@ export abstract class AbcFamilyEmitter {
     return n;
   }
 
-  /** `Zn` 连同头一个小节休止上挂的记号与文字（`"^pizz"!rehearsal=B!Z3`）。 */
+  /** `Zn` 连同头一个小节休止上挂的段落标记、记号与文字（`[P:B]"^pizz"!rehearsal=B!Z3`）。 */
   private multiRestText(mea: Measure, n: number): string {
     let s = "";
     for (const el of mea.elements) {
       if (el.kind !== "chord") continue;
+      // 段落标记落在整小节休止上（投影排法的切点）：写在 `Z` 前面，读回还在这一小节头
+      for (const name of this.sectionsBefore.get(el.id) ?? []) s += `[P:${name}]`;
       if (el.sectionWord) s += this.annotationText(el.sectionWord);
       for (const a of el.notations?.articulations ?? []) if (this.rehearsalMarks || rehearsalOf(a) === undefined) s += `!${a}!`;
     }
@@ -1064,7 +1066,14 @@ export abstract class AbcFamilyEmitter {
     for (const t of texts.sort((a, b) => a.system - b.system)) if (t.text) pushLines(L, "N", t.text);
 
     L.push(...this.bodyLines(song));
+    L.push(...this.tailLines(song));
     return L.join("\n");
+  }
+
+  /** 曲体之后的行（123 的投影排法 `%%slide`，要数小节，写在音乐后面） */
+  protected tailLines(song: Song): string[] {
+    void song;
+    return [];
   }
 
   /** 声部切换行：声部 `i` 的一行音乐前面写什么（`first`：这个声部第一次出现）。null = 不写。

@@ -841,6 +841,15 @@ export interface PlayPass {
   toAnchor?: ElementId;
 }
 
+/** 投影排法的一页（123 `%%slide`，一行一页）：按次序排哪几段、配第几段词、哪里换行，外加这一页单独改的参数。
+ *  段是曲内段落标记 `[P:x]` 切出来的（`sectionMarks`，同名多处拼成一段），演唱顺序用到时才按标记位置展开（`score/playorder.ts::slidePlayOrder`），
+ *  所以改了谱面也不失效。 */
+export interface SlidePage {
+  items: { section: string; /** 配第几条 `w:`（段内计，同 `P:`），缺省 1 */ verse?: number; /** 这一项之后换行（`/`） */ lineAfter?: boolean }[];
+  /** 这一页最多几行（缺省 4）：多出来的才另起一页（`[rows=5]`） */
+  rows?: number;
+}
+
 /** 样式引用。← 123 的 `I:style` 与 inline `[I:style …]`。
  *  样式**本体**在独立样式表里，见 `docs/样式机制.md`；这里只存引用与局部覆盖。 */
 export interface StyleRef {
@@ -896,6 +905,8 @@ export interface Song {
   parts: Part[];
   marks: Mark[];
   playOrder?: PlayPass[];
+  /** 投影排法（123 `%%slide`）：写了就投影档、试听都照它逐页逐行走，不再按反复与遍次推断（优先于 `sectionOrder`） */
+  slides?: SlidePage[];
   /** 头部 `P:` 的段落顺序（ABC §3.1.9）：`text` 原文照写回，`seq` 展开后的段落名（写错了为空，退回按谱面推） */
   sectionOrder?: { text: string; seq: string[] };
   /** 曲内 `P:A` / `[P:A]` 的段落标记：`before` 是标记后第一个非倚音和弦 */

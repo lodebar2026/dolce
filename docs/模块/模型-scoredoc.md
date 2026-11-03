@@ -84,7 +84,9 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   分支的元素照原文顺序留在同一个 `Measure` 里、只是 `voice` 不同，小节内的实际起点由投影写进
   `Chord/Space.onset`（缺省是「前一个元素的终点」，`toxml.ts` 据此补 `<backup>`）。
   读这个模型的地方要按 `voice` 分轨算时间，别把一小节的时值一路加下去（见 [源格式-abc家族](源格式-abc家族.md)）。
-- **`playOrder` 只来自 `.jpwabc` 的 `.Repeat`**（只读的旧扩展）：MusicXML 的 `<ending>` 只能整小节，123 / ABC 只有段落顺序 `P:`，转过去走保存前丢失提示。`style` 也是 MusicXML 装不下。
+- **`playOrder` 只来自 `.jpwabc` 的 `.Repeat`**（只读的旧扩展）：MusicXML 的 `<ending>` 只能整小节，123 / ABC 只有段落顺序 `P:`，转过去走保存前丢失提示。
+- **投影排法 `Song.slides`**（123 `%%slide`，[123格式](../格式/123格式.md) §6.3）：逐页列段落名、配第几行词、哪里换行与本页参数，段由 `sectionMarks` 切出；
+  演唱顺序在用到时才展开（`playsong.ts::playDataOf` → `playorder.ts::slidePlayOrder`），优先于 `playOrder` 与 `sectionOrder`。只有 123 装得下（能力表 `slides`）。`style` 也是 MusicXML 装不下。
 - 五线谱侧字段（`clef`/`staves`/`transpose`/`pedal`/`octaveShift`/`partGroups`/`defaults`/`technical`）
   **已由 `fromxml.ts` 填充**（`../dev/scripts/staff-fields-check.mjs` 的合成夹具逐样断言过，
   真实语料的填充率也在那里）。

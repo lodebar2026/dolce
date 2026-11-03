@@ -104,19 +104,20 @@ function sourceBreaks(
 }
 
 /** 一个小节在这一遍里取哪些符号：`skip` 去掉开头几个音（连同其前的符号），`limit` 只留前几个音（截断处不要小节线）；
+ *  两个都按整小节数（同一小节 `14.2-14.3` 取第 2、3 个音），所以先截尾再去头。
  *  临时伴奏 / 并排块不画（旧简谱引擎投影档的投影也跳过它） */
 function cutSlots(slots: readonly Slot[], rows: readonly RowView[], cut: { skip: number; limit: number }): Slot[] {
   const isNote = (s: Slot): boolean => rows[s.row]!.elements[s.idx]!.kind === "note";
   let out = [...slots];
-  if (cut.skip > 0) {
-    let n = 0;
-    const at = out.findIndex((s) => isNote(s) && n++ === cut.skip);
-    out = at < 0 ? [] : out.slice(at);
-  }
   if (cut.limit >= 0) {
     let n = 0;
     const at = out.findIndex((s) => isNote(s) && n++ === cut.limit);
     if (at >= 0) out = out.slice(0, at);
+  }
+  if (cut.skip > 0) {
+    let n = 0;
+    const at = out.findIndex((s) => isNote(s) && n++ === cut.skip);
+    out = at < 0 ? [] : out.slice(at);
   }
   return out.filter((s) => rows[s.row]!.elements[s.idx]!.kind !== "inline-layer");
 }
@@ -613,18 +614,18 @@ const MAX_ROWS = 4;
 
 /** 把一遍的各行按页分：源里已定的换页之间每段最多 `MAX_ROWS` 行；要断时优先断在副歌起头那行之前（至少留两行），
  *  没有就按行数均分（5 行分 3 + 2，不分 4 + 1）。就地改 `page`。 */
-function pageByRows(lines: Array<{ start: number; page: boolean }>, refrainAt: (n: number) => boolean): void {
+function pageByRows(lines: Array<{ start: number; page: boolean }>, refrainAt: (n: number) => boolean, maxRows = MAX_ROWS): void {
   let s = 0;
   while (s < lines.length) {
     let e = s + 1;
     while (e < lines.length && !lines[e]!.page) e++;
     let a = s;
-    while (e - a > MAX_ROWS) {
+    while (e - a > maxRows) {
       let b = -1;
       // 副歌前换页：前后两页都至少 2 行（爱是不保留 5 行原先断成 4 + 1）
-      for (let k = Math.min(a + MAX_ROWS, e - 2); k >= a + 2; k--) if (refrainAt(k)) { b = k; break; }
+      for (let k = Math.min(a + maxRows, e - 2); k >= a + 2; k--) if (refrainAt(k)) { b = k; break; }
       if (b < 0) {
-        const pages = Math.ceil((e - a) / MAX_ROWS);
+        const pages = Math.ceil((e - a) / maxRows);
         b = a + Math.ceil((e - a) / pages);
       }
       lines[b]!.page = true;
@@ -782,6 +783,8 @@ export function expandSong(
   rowIsLine = false,
   /** 曲末写的换行换页（`Part.endBreak`）：`P:` 从曲末跳回前面的段落时算 */
   endBreak: "page" | "system" | null = null,
+  /** 演唱顺序来自投影排法（123 `%%slide`）：逐页逐行照写的排，源里的换行换页与推断都不用（`slideSong`） */
+  slides = false,
 ): SongView {
   // 只排一个声部：带歌词的那个（同 `playsong.ts::songMeasures` 的 forExpanded），没有就第一个
   const voices = voiceNumbers(song);
@@ -831,6 +834,7 @@ export function expandSong(
   }
   const width = contentWidth(m);
   const meter = song.metadata.meters[0];
+  if (slides) return slideSong(song, plan, { rows, slices, lyricsOf, cursorOf, marks, unrolled, idOf, owners }, m, ink, width, meter);
   // 副歌起头的小节：这一小节起只剩一行词、前面有字的小节不止一行（250《主，差遣我》），在它前面断行、换页。
   // 标了副歌的（模型小节上的段落标记 `sectionMarkOf`，各格式同一个判据：123 的 `"^Chorus"`、文本谱的「(副歌)」、
   // MusicXML 的段落词）**只当大致位置**：标记常挂在副歌弱起上、甚至上一句收尾的那个小节里（「脚步」的【Chorus】
@@ -984,9 +988,77 @@ export function expandSong(
   return { ...song, pages: !layout && m.style.look.pairPages ? pairPages(pages, passStarts) : pages };
 }
 
+/** `expandSong` 已备好的源行视图，投影排法那条路照用 */
+interface SongRows {
+  rows: RowView[];
+  slices: Slot[][];
+  lyricsOf: (readonly LyricLine[])[];
+  cursorOf: number[][];
+  marks: LogicalMark[];
+  unrolled: boolean;
+  idOf: Map<MusicElement, unknown>;
+  owners: Map<LyricSyllable, unknown>;
+}
+
+/**
+ * 投影排法（123 `%%slide`，`abcfamily/slides.ts`）：一页就是写的那一行，`/` 处必换行，其余照版心宽逐行装满；
+ * 一页超过 `rows`（缺省 `MAX_ROWS`）行才另起一页。项内的反复、房号、跳转都不走（项写的是哪几小节就排哪几小节），
+ * 源里的 `$`、`%%newpage`、副歌判据、弱起挪页、前奏、并页一概不用——要什么样写什么样。
+ */
+function slideSong(
+  song: SongView, plan: readonly PlayItem[], src: SongRows, m: JianpuGrid, ink: InkMeasurer, width: number,
+  meter: SongView["metadata"]["meters"][number] | undefined,
+): SongView {
+  const { rows, slices, lyricsOf, cursorOf, marks, unrolled, idOf, owners } = src;
+  const slides: { pass: Pass; rows: number }[] = [];
+  let cur: { pass: Pass; rows: number } | null = null;
+  plan.forEach((it, n) => {
+    cur ??= { pass: { slots: [], verses: [], breaks: new Map(), hard: new Set() }, rows: it.page?.rows ?? MAX_ROWS };
+    for (let mid = it.mid; mid < it.end; mid++) {
+      for (const sl of cutSlots(slices[mid] ?? [], rows, { skip: mid === it.mid ? it.skip : 0, limit: mid === it.end - 1 ? it.limit : -1 })) {
+        cur.pass.slots.push(sl);
+        cur.pass.verses.push(it.pass);
+      }
+    }
+    if (it.lineAfter) cur.pass.hard!.add(cur.pass.slots.length);
+    if (it.endOfPass || n === plan.length - 1) {
+      if (cur.pass.slots.length) slides.push(cur);
+      cur = null;
+    }
+  });
+  const last = slides[slides.length - 1]?.pass;
+  const pages: PageView[] = [];
+  let system = 0;
+  for (const { pass, rows: maxRows } of slides) {
+    const posOf = new Map<string, number[]>();
+    pass.slots.forEach((sl, i) => {
+      const k = `${sl.row}:${sl.idx}`;
+      const list = posOf.get(k);
+      if (list) list.push(i);
+      else posOf.set(k, [i]);
+    });
+    const tail = pass === last ? pass.slots[pass.slots.length - 1] : undefined;
+    const bars = { plain: false, finalAt: tail && rows[tail.row]!.elements[tail.idx]!.kind === "barline" ? pass.slots.length - 1 : -1 };
+    const whole = rowOf(pass, 0, pass.slots.length, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars, slices);
+    const lines = fillLines(whole, new Map(), m, ink, width, meter, { hard: pass.hard });
+    pageByRows(lines, () => false, maxRows);
+    let groups: SystemView[] = [];
+    lines.forEach((l, n) => {
+      if (l.page && groups.length > 0) {
+        pages.push({ index: pages.length, groups });
+        groups = [];
+      }
+      const end = lines[n + 1]?.start ?? pass.slots.length;
+      groups.push({ index: groups.length, texts: [], system: system++, voices: [rowOf(pass, l.start, end, rows, lyricsOf, cursorOf, marks, posOf, unrolled, idOf, owners, bars, slices)] });
+    });
+    if (groups.length > 0) pages.push({ index: pages.length, groups });
+  }
+  return { ...song, pages };
+}
+
 /** 整份文档的投影档行视图（各首各按自己的演唱顺序逐首排；推不出演唱顺序的那首照原样） */
 export function expandView(
-  view: DocView, plans: readonly ({ measures: readonly PlayItem[]; isSimpple: boolean } | null)[], m: JianpuGrid, ink: InkMeasurer,
+  view: DocView, plans: readonly ({ measures: readonly PlayItem[]; isSimpple: boolean; slides?: boolean } | null)[], m: JianpuGrid, ink: InkMeasurer,
   /** `.jpwabc` 的 `.Layout` 分页描述（只管第一首） */
   breakDesc: string | null = null,
 ): DocView {
@@ -996,7 +1068,7 @@ export function expandView(
     const pd = plans[i];
     if (!pd) return song;
     const layout = breakDesc && i === 0 ? { desc: breakDesc, simple: pd.isSimpple } : null;
-    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts[0]?.endBreak ?? null);
+    return expandSong(song, pd.measures, m, ink, idOf, owners, layout, view.doc.sourceFormat === "jpwabc", view.doc.sourceFormat === "fanqie", view.doc.songs[i]?.parts[0]?.endBreak ?? null, !!pd.slides);
   });
   return { ...view, songs };
 }
