@@ -186,7 +186,6 @@ function pageTextLines(objs: PObj[]): { t: string; box: { left: number; right: n
   const lines: { t: string; box: { left: number; right: number; top: number; bottom: number }; size: number }[] = [];
   for (const o of [...objs].sort((a, b) => a.box.left - b.box.left)) {
     const s = o.run!.glyphs.map((g) => g.unicode).join("");
-    if (!s.trim()) continue;
     const h = o.box.bottom - o.box.top;
     const cy = (o.box.top + o.box.bottom) / 2;
     // 字高取两边大的：句点只有一点高，按它自己的字高比，「V.S.」的「.」与「V」中线差过了半个字高，拆成三条（水乡情韵页脚）
@@ -194,6 +193,11 @@ function pageTextLines(objs: PObj[]): { t: string; box: { left: number; right: n
       const hh = Math.max(h, q.box.bottom - q.box.top);
       return Math.abs((q.box.top + q.box.bottom) / 2 - cy) <= hh * 0.5 && o.box.left - q.box.right <= hh && o.box.left >= q.box.left;
     });
+    // 空格单独一段印的（「杨春林」「 」「编配」）：拼进行里当词界，自己不起行
+    if (!s.trim()) {
+      if (l) l.t += " ";
+      continue;
+    }
     if (l) {
       l.t += s;
       l.size = Math.max(l.size, o.run!.sizeDev);
@@ -215,6 +219,6 @@ export function vectorPageCredits(pg: SPage): HeaderCredit[] {
   const toLine = (l: (typeof lines)[number], x0: number, y0: number): WordLine => ({ t: foldRadicals(l.t).replace(/\s+/g, " ").trim(), x: l.box.left - x0, y: l.box.top - y0, w: l.box.right - l.box.left, h: l.box.bottom - l.box.top, size: l.size });
   const head = lines.filter((l) => l.box.bottom <= top);
   const strip = { w: pg.width, h: top, data: new Uint8Array(0), box: { x: 0, y: 0, w: pg.width, h: top } };
-  const out = headerCredits(head.map((l) => toLine(l, 0, 0)), strip);
+  const out = headerCredits(head.map((l) => toLine(l, 0, 0)), strip, { realSpaces: true });
   return out;
 }

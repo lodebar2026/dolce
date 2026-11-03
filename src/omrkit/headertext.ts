@@ -122,7 +122,7 @@ export interface HeaderCredit {
  * 居中且有标题八成高的也算标题（中英两个标题上下排）；其余居中的是副标题；靠左的是作词 / 译者、靠右的是作曲（诗歌本、合唱谱的通行排法）。
  * 居中 = 行心离页心不过页宽一成半。标题上方靠两边的行是书眉，成段的文字是序言，这两样照收、不给角色；版权声明标 `rights`。
  */
-export function headerCredits(lines: readonly WordLine[], strip: { box: Rect }): HeaderCredit[] {
+export function headerCredits(lines: readonly WordLine[], strip: { box: Rect }, opts: { realSpaces?: boolean } = {}): HeaderCredit[] {
   const ls = lines.filter((l) => keepHeaderLine(l.t)).sort((a, b) => a.y - b.y || a.x - b.x);
   if (!ls.length) return [];
   const effH = (l: WordLine) => effectiveCharH(l.t, l, l.h);
@@ -157,7 +157,7 @@ export function headerCredits(lines: readonly WordLine[], strip: { box: Rect }):
                 : "composer";
     const box = { x: strip.box.x + l.x, y: strip.box.y + l.y, w: l.w, h: l.h };
     const size = l.size ?? effH(l);
-    return splitHeaderText(l.t).map((text) => ({ text, type, justify, box, size }));
+    return splitHeaderText(l.t, opts.realSpaces).map((text) => ({ text, type, justify, box, size }));
   });
 }
 /** 版权声明（「copyright: public domain …」「© 1923 …」「版权所有」）：`<credit-type>rights</credit-type>`。 */
@@ -169,9 +169,12 @@ const PROSE_UNITS = 16;
  * 页眉一行的字 → 一条或几条：标题字距拉得开（「望 十 架」），按列投影补出来的、夹在两个汉字之间的空格不要；
  * 标题行行首的诗歌编号（「1 9 數算主恩」「8 奇異恩典」「23.有一位神」，编号字距也拉得开）不要；字距拉开的小型大写字母并回一个词；
  * 中文标题与英文标题印在同一行的（「數算主恩 Count Your Blessings」）拆成两条——中英标题本是两个页眉元素。
+ * `realSpaces`：空格是文字层里真印的空格字形（矢量路），汉字间的照留（水乡情韵「杨春林 编配」、八段锦「朱昌耀 王爱康 曲」）；
+ * 只有整行都是单个汉字隔着空格的是拉开字距（八段锦标题「八 段 锦」），照样去掉。
  */
-export function splitHeaderText(t: string): string[] {
-  let text = t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
+export function splitHeaderText(t: string, realSpaces = false): string[] {
+  const spaced = /^[\u3400-\u9fff](\s+[\u3400-\u9fff])+$/.test(t.trim());
+  let text = realSpaces && !spaced ? t.trim() : t.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "");
   const num = /^(\d\s?){1,3}\s*[.．、]?\s*(?=[\u3400-\u9fff])/.exec(text);
   if (num) text = text.slice(num[0].length);
   // 字距拉开的小型大写（破碎扫描版「B RO K E N」）：整行都是一两个大写字母的碎块，按列投影补的空格不是词界，并回一个词
