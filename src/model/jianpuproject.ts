@@ -132,16 +132,17 @@ function fillVoiceGaps(part: Song["parts"][number], newId: () => ElementId): voi
 }
 
 /** 123 的 `C:` 取自 `identification`。识别出的与不少排版软件导出的 MusicXML 把词曲只写在 `<credit>` 里：
- *  没有 creator 时，把标题、副标题、版权以外的 credit 当作者行（`.jpwabc` 那一路的 `WordsByAndMusicBy` 同口径） */
+ *  没有 creator 时，把第一页上标题、副标题、版权、页码、声部名以外的 credit 当作者行（`.jpwabc` 那一路的 `WordsByAndMusicBy` 同口径）。
+ *  续页页眉（识别稿每页顶上的页码、声部名，水乡情韵）不算 */
 export function creatorsFromCredits(song: Song): void {
   if (song.identification?.creators.length) {
     printedCreators(song);
     return;
   }
-  const skip = new Set(["title", "subtitle", "rights", "page-number"]);
+  const skip = new Set(["title", "subtitle", "rights", "page number", "page-number", "part name"]);
   const title = song.work.title?.trim();
   const creators = (song.credits ?? [])
-    .filter((c) => !(c.type && skip.has(c.type)) && c.text.trim() && c.text.trim() !== title)
+    .filter((c) => (c.page ?? 1) === 1 && !(c.type && skip.has(c.type)) && c.text.trim() && c.text.trim() !== title)
     .map((c) => ({ type: c.type ?? "composer", text: c.text.replace(/\n/g, " ").trim() }));
   if (creators.length) song.identification = { ...(song.identification ?? {}), creators };
 }
@@ -162,7 +163,8 @@ export function headerFromCredits(song: Song): void {
   if (pt && (pt.bottomLeft.length || pt.bottomCenter.length || pt.bottomRight.length)) return;
   const h = song.defaults?.pageLayout?.pageHeight;
   const head = new Set(["title", "subtitle", "composer", "lyricist", "arranger", "poet"]);
-  const feet = credits.filter((c) => c.text.trim() && !(c.type && head.has(c.type)) && h !== undefined && c.y !== undefined && c.y < h / 4);
+  // 翻页提示「V.S.」（水乡情韵分谱页脚）是原谱翻页处的，简谱不印
+  const feet = credits.filter((c) => c.text.trim() && !/^V\.\s*S\.?$/i.test(c.text.trim()) && !(c.type && head.has(c.type)) && h !== undefined && c.y !== undefined && c.y < h / 4);
   if (!feet.length) return;
   const strip = (t: string): string => t.trim().replace(/\s*\d+$/, "");
   const side = (c: (typeof feet)[number]): "bottomLeft" | "bottomCenter" | "bottomRight" =>
@@ -174,7 +176,8 @@ export function headerFromCredits(song: Song): void {
     const pageNo = /(\d+)$/.exec(c.text.trim())?.[1];
     const many = feet.filter((o) => strip(o.text) === strip(c.text)).length > 1;
     const text = many || (pageNo !== undefined && Number(pageNo) === (c.page ?? 1)) ? strip(c.text) : c.text.trim();
-    if (text && !out[side(c)].includes(text)) out[side(c)].push(text);
+    // 单双页左右交替印的同一条（水乡情韵左下 / 右下的「水乡情韵」）只记头一次那一侧
+    if (text && ![...out.bottomLeft, ...out.bottomCenter, ...out.bottomRight].includes(text)) out[side(c)].push(text);
   }
   song.pageText = out;
 }
