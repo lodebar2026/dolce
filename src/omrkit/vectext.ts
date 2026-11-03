@@ -33,6 +33,9 @@ import {
   matScale,
   opsNames,
   pathBoundsRaw,
+  DRAW_MOVE,
+  DRAW_LINE,
+  DRAW_CLOSE,
   intersectRect,
   rectsOverlap,
 } from "./vector";
@@ -396,11 +399,19 @@ export async function extractTextPage(
           let estimated = true;
           if (withOutlines) {
             const o = getOutline(loadedName, gg.fontChar);
-            outline = o.data;
-            if (o.box && o.box.w > 0 && o.box.h > 0) {
+            const fb = fontEmBox(font, st.fontMatrix);
+            if (o.box && o.data && fb && isBareRect(o.data) && !boxWithin(o.box, fb, 0.5)) {
+              // 轮廓只是**一个光矩形、又远出字体自报的 FontBBox**：pdfjs 没解出字形、交回的占位方块（水乡情韵的方正行楷
+              // 每个字都是 (0,0)–(3.906,−3.906)，1000/256 em 见方、从基线往下伸），拿它当字框会盖住下面一整片谱。
+              // 只看「出 FontBBox」不够：子集字体自报的 FontBBox 不可靠（同一份 OpusStd 的高音谱号 1.88 em 高，
+              // FontBBox 才 0.99 em），真字形有曲线、不是光矩形。轮廓不要，框按 advance × FontBBox 的上下沿估
+              bbox = boxThrough(gm, 0, fb.y, gg.width * st.fontMatrix[0] || 0.5, fb.y + fb.h);
+            } else if (o.box && o.box.w > 0 && o.box.h > 0) {
+              outline = o.data;
               bbox = boxThrough(gm, o.box.x, o.box.y, o.box.x + o.box.w, o.box.y + o.box.h);
               estimated = false;
             } else {
+              outline = o.data;
               bbox = estimateBox(gm, gg.width * st.fontMatrix[0], font);
             }
           } else {
@@ -558,6 +569,38 @@ function estimateBox(gm: Mat, widthEm: number, font: any): Rect {
   const asc = typeof font?.ascent === "number" && font.ascent ? font.ascent : 0.75;
   const desc = typeof font?.descent === "number" && font.descent ? font.descent : -0.25;
   return boxThrough(gm, 0, desc, widthEm || 0.5, asc);
+}
+
+/** 字体自报的 FontBBox 换到 em（轮廓的单位）；没有或退化时 null。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fontEmBox(font: any, fm: Mat): Rect | null {
+  const b = font?.bbox;
+  if (!b || b.length < 4 || !(b[2] > b[0]) || !(b[3] > b[1])) return null;
+  const k = Math.abs(fm[0]) || 0.001;
+  return { x: b[0] * k, y: b[1] * k, w: (b[2] - b[0]) * k, h: (b[3] - b[1]) * k };
+}
+
+/** 路径只是一个轴对齐矩形：一个子路径、全是直线、各点都落在包围盒的角上。 */
+function isBareRect(data: Float32Array): boolean {
+  const b = pathBoundsRaw(data);
+  if (!b) return false;
+  let moves = 0;
+  let pts = 0;
+  for (let i = 0; i < data.length; ) {
+    const c = data[i++];
+    if (c === DRAW_CLOSE) continue;
+    if (c !== DRAW_MOVE && c !== DRAW_LINE) return false;
+    if (c === DRAW_MOVE && ++moves > 1) return false;
+    const x = data[i++];
+    const y = data[i++];
+    if ((x !== b.x0 && x !== b.x1) || (y !== b.y0 && y !== b.y1) || ++pts > 5) return false;
+  }
+  return true;
+}
+
+/** `a` 落在 `b` 里（各边容 `tol`）。 */
+function boxWithin(a: Rect, b: Rect, tol: number): boolean {
+  return a.x >= b.x - tol && a.y >= b.y - tol && a.x + a.w <= b.x + b.w + tol && a.y + a.h <= b.y + b.h + tol;
 }
 
 // ── 便利查询 ────────────────────────────────────────────────────────────────
