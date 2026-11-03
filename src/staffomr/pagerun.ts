@@ -158,6 +158,18 @@ export function vectorPageFooters(pg: SPage, page: number): { text: string; type
   }).filter((c) => c.text);
 }
 
+/** 续页页眉（水乡情韵「2　二胡」「二胡　3」）：首行谱表以上、没归别类的文字逐行记一条；纯数字是页码，与首页标题同文的记标题，其余记声部名 */
+export function vectorPageHeaders(pg: SPage, page: number, title?: string): { text: string; type: "page number" | "title" | "part name"; justify: "left" | "center" | "right"; size: number; box: { x: number; y: number; w: number; h: number }; page: number }[] {
+  if (!pg.staves.length) return [];
+  const sp = pg.normalStaffSpace || pg.space;
+  const top = Math.min(...pg.staves.map((st) => st.box.top));
+  const objs = pg.objs.filter((o) => o.run && !o.symbols.length && !HEAD_SKIP.some((t) => o.hasTag(t)) && o.box.bottom <= top - sp);
+  return pageTextLines(objs).sort((a, b) => a.box.left - b.box.left).map((l) => {
+    const t = foldRadicals(l.t).replace(/\s+/g, " ").trim();
+    return { text: t, type: /^\d+$/.test(t) ? ("page number" as const) : t === title ? ("title" as const) : ("part name" as const), justify: footJustify(pg, l.box), size: l.size, box: { x: l.box.left, y: l.box.top, w: l.box.right - l.box.left, h: l.box.bottom - l.box.top }, page };
+  }).filter((c) => c.text);
+}
+
 /** 页角的页眉页脚按位置定对齐（水乡情韵左下 / 右下）：离页面中线不到一个字高的算居中 */
 function footJustify(pg: SPage, b: { left: number; right: number; top: number; bottom: number }): "left" | "center" | "right" {
   const c = (b.left + b.right) / 2;
@@ -190,12 +202,14 @@ function pageTextLines(objs: PObj[]): { t: string; box: { left: number; right: n
   return lines;
 }
 
+/** 页眉不收的文字类（歌词、速度、乐器名、表情、小节号、框字） */
+const HEAD_SKIP = ["Lyric", "Tempo", "Instrument", "Expression", "MeasureNumber", "Boxed"] as const;
+
 export function vectorPageCredits(pg: SPage): HeaderCredit[] {
   if (!pg.staves.length) return [];
   const sp = pg.normalStaffSpace || pg.space;
   const top = Math.min(...pg.staves.map((st) => st.box.top));
-  const SKIP = ["Lyric", "Tempo", "Instrument", "Expression", "MeasureNumber", "Boxed"] as const;
-  const objs = pg.objs.filter((o) => o.run && !o.symbols.length && !SKIP.some((t) => o.hasTag(t)) && o.box.bottom <= top - sp);
+  const objs = pg.objs.filter((o) => o.run && !o.symbols.length && !HEAD_SKIP.some((t) => o.hasTag(t)) && o.box.bottom <= top - sp);
   const lines = pageTextLines(objs);
   const toLine = (l: (typeof lines)[number], x0: number, y0: number): WordLine => ({ t: foldRadicals(l.t).replace(/\s+/g, " ").trim(), x: l.box.left - x0, y: l.box.top - y0, w: l.box.right - l.box.left, h: l.box.bottom - l.box.top, size: l.size });
   const head = lines.filter((l) => l.box.bottom <= top);

@@ -552,6 +552,16 @@ export function analyzeText(pg: SPage): TextAnalysis {
     const cy = (t.box.top + t.box.bottom) / 2;
     if (pg.staves.some((st) => t.box.left >= st.box.left && t.box.right <= st.box.right && cy >= st.box.top - sp * 5 && cy <= st.box.top + sp)) kind.set(t, "expression");
   }
+  // 逐字印、带字偶间距的词（God is Our Refuge「To Coda」的「T」「o」各一段，一个字母过不了上面那条）：
+  // 同字体同字号、同一行、与已认的指示隔不到半个字号（一个词距）的零散字段，跟着并进去
+  for (let grown = true; grown; ) {
+    grown = false;
+    for (const t of texts) {
+      if (kind.has(t) || !t.run || !objText(t).trim()) continue;
+      const e = texts.find((u) => kind.get(u) === "expression" && u.run && u.run.font === t.run!.font && Math.abs(u.run.sizeDev - t.run!.sizeDev) < sp / 10 && overlapY(u.box, t.box) && xSpace(u.box, t.box) < u.run.sizeDev * 0.5);
+      if (e) kind.set(t, "expression"), (grown = true);
+    }
+  }
 
   // ── findTextFrames ────────────────────────────────────────────────────────
   // 同字体同字号、上下相接、左/右/中任一对齐的若干行 = 一个文本框（版权声明之类）。
@@ -1188,7 +1198,12 @@ function exprLines(objs: PObj[]): PObj[][] {
   for (const o of [...objs].sort((a, b) => a.box.left - b.box.left)) {
     const line = out.find((l) => {
       const last = l[l.length - 1];
-      return overlapY(last.box, o.box) && o.box.left >= last.box.right - 1 && o.box.left - last.box.right < (o.box.bottom - o.box.top) * 0.3;
+      if (!overlapY(last.box, o.box)) return false;
+      if (o.box.left >= last.box.right - 1 && o.box.left - last.box.right < (o.box.bottom - o.box.top) * 0.3) return true;
+      // 同字体同字号的一句（God is Our Refuge「To Coda」）：字偶间距让「o」压进「T」的墨迹，词间隔一个空格（不到半个字号）
+      const h = Math.max(o.box.bottom - o.box.top, last.box.bottom - last.box.top);
+      const size = last.run?.sizeDev ?? 0;
+      return !!o.run && o.run.font === last.run?.font && Math.abs(o.run.sizeDev - size) < size * 0.05 && o.box.left - last.box.right >= -h * 0.3 && o.box.left - last.box.right < size * 0.5;
     });
     if (line) line.push(o);
     else out.push([o]);

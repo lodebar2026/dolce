@@ -7,7 +7,7 @@ import { extractTextPage } from "../omrkit/vectext";
 import { musicFamily } from "./symbolmap";
 import type { StaffGlyphLookup } from "./staffglyphs";
 import type { TextGlyphLookup } from "./textglyphs";
-import { recognizeStaffPage, vectorPageCredits, vectorPageFooters } from "./pagerun";
+import { recognizeStaffPage, vectorPageCredits, vectorPageFooters, vectorPageHeaders } from "./pagerun";
 import { buildScore, measureNumbering, restructureSystems, type StaffProfile, type SystemOp } from "./score";
 import { pageTextPt, scoreToMusicXml, type StaffXmlOptions } from "./toxml";
 import type { StaffNote } from "./notedata";
@@ -105,8 +105,10 @@ export async function recognizeStaffDoc(
   const notesOf = (st: Staff): StaffNote[] => notesByStaff.get(st) ?? [];
   // 页眉页脚只取曲首那一页（同位图路 `rasteromr/song.ts`）
   const credits: NonNullable<StaffXmlOptions["credits"]> = entries.length ? vectorPageCredits(entries[0].page).map(({ text, type, justify, size, box }) => ({ text, type, justify, box, size: pageTextPt(entries[0]!.page, size) })) : [];
-  // 页脚每页一份（版权、页码），页号按曲内第几页
+  // 续页页眉（页码、声部名）与页脚（版权、页码）每页一份，页号按曲内第几页
+  const head = credits.find((c) => c.type === "title")?.text;
   detailPages.forEach(({ page }, i) => {
+    if (i > 0) for (const { text, type, justify, size, box } of vectorPageHeaders(page, i + 1, head)) credits.push({ text, type, justify, box, size: pageTextPt(page, size), page: i + 1 });
     for (const { text, type, justify, size, box } of vectorPageFooters(page, i + 1)) credits.push({ text, type, justify, box, size: pageTextPt(page, size), page: i + 1 });
   });
   const title = opts.title ?? credits.find((c) => c.type === "title")?.text;
