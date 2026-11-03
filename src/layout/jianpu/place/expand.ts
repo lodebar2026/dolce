@@ -899,6 +899,15 @@ export function expandSong(
   let groups: SystemView[] = [];
   const intro = !layout && m.style.look.noIntro ? introSlots(slices, rows, cursorOf, lyricsOf) : new Set<string>();
   const passes = layout ? passesByDur(slices, rows, plan, layout.desc, layout.simple) : passesOf(slices, rows, plan, breaks, intro);
+  // 曲中转调另起一页（用户定 2026-11-03，真神所造万象生灵）：新调的第一个音（带 `keyLabel`）落在一遍中间的，在它前面换页，转调标记跟着到新页首行
+  if (!layout) {
+    for (const pass of passes) {
+      pass.slots.forEach((sl, i) => {
+        const el = rows[sl.row]!.elements[sl.idx]!;
+        if (i > 0 && el.kind === "note" && el.keyLabel) pass.breaks.set(i, true);
+      });
+    }
+  }
   // 整首最后一条小节线（末遍末个符号是小节线时）：画终止线
   const lastPass = passes[passes.length - 1];
   const bars = (pass: Pass): { plain: boolean; finalAt: number } => {
