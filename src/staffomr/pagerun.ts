@@ -126,6 +126,11 @@ export function recognizeBuiltPage(pg: SPage, opts: { textLookup?: TextGlyphLook
   const bars = checkBars(pg, ctx, notes, opts.carryTime);
   // 延音线要时间上紧挨着：各音的起点要等小节自检定下来（见 `retimeTies`）
   retimeTies(slurs, notes);
+  // 挂上了符干的符杠，画它的对象有主了（认的过程中不打：前面各步按「没主」挑对象的口径不变）
+  for (const st of stems) for (const b of st.beams) for (const o of b.objs ?? []) o.addTag("Beam");
+  // 页眉（首行谱表一格以上、没归别类的正文字）写成 credit 了（`vectorPageCredits` / `vectorPageHeaders`，取字不看这个标签），也算有主
+  const headTop = Math.min(...pg.staves.map((st) => st.box.top)) - (pg.normalStaffSpace || pg.space);
+  for (const o of pg.objs) if (o.run && !o.symbols.length && !o.hasAnyTag() && o.box.bottom <= headTop) o.addTag("TextFrame");
   return { page: pg, hasStaff: true, unknown: unknownObjs(pg).length, ctx, beams, notes, text, lyricLines, slurs, octaves, voltas, bars, carryTime: lastTimeSignature(pg, ctx, opts.carryTime) };
 }
 

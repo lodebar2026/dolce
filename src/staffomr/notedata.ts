@@ -5,6 +5,7 @@
 // 坐标一律设备坐标、y 向下。
 import {
   type Box,
+  type PObj,
   SPage,
   Seg,
   Staff,
@@ -325,6 +326,8 @@ export interface BeamShape {
   y1: number;
   /** 第几层（1 = 离符头最远、在干尖上的那条主杠 = 八分；往符头方向叠的副杠依次 2、3）。由 `calcBeamLevels` 填。 */
   level: number;
+  /** 画出它的页面对象（同一条认了几遍的，去重时并到留下那条上）：挂上符干的，认完整页打 `Beam`（`pagerun.ts`），不算未识别 */
+  objs?: PObj[];
 }
 
 /** `Beam::calcY`：符杠在某个 x 处的中心 y。 */
@@ -369,7 +372,7 @@ export function findBeams(pg: SPage): BeamShape[] {
       const left = pts.filter((q) => q.x < Math.min(...xs) + w * 0.25).map((q) => q.y);
       const thick = left.length >= 2 ? Math.max(...left) - Math.min(...left) : h;
       if (thick < sp * 0.25) continue;
-      out.push(beamFromPts(pts));
+      out.push({ ...beamFromPts(pts), objs: [o] });
     }
   }
   // **斜符杠是一叠平行细线**（这一批 PDF 连填充也拿密排细线画，见 `model.ts` 的 `Seg` 注释）。
@@ -383,7 +386,7 @@ export function findBeams(pg: SPage): BeamShape[] {
     if (!s.isH || s.hasAnyTag()) continue;
     if (s.lw < sp * 0.3 || s.lw > sp * 1.2) continue;
     if (s.len < sp * 0.8 || s.len > sp * 20) continue;
-    out.push({ box: s.box, x0: s.left, y0: s.cy, x1: s.right, y1: s.cy, level: 0 });
+    out.push({ box: s.box, x0: s.left, y0: s.cy, x1: s.right, y1: s.cy, level: 0, objs: [s.obj] });
   }
   return dedupeBeams(out, sp / 2);
 }
@@ -392,13 +395,17 @@ export function findBeams(pg: SPage): BeamShape[] {
  *  不去重的话时值每多算一条就减半——实测 p100 因此出了一堆 1/64。
  *  合并粒度按页面单位取比例（四分之一格），不写绝对点值。 */
 function dedupeBeams(list: BeamShape[], unit: number): BeamShape[] {
-  const seen = new Set<string>();
+  const seen = new Map<string, BeamShape>();
   const out: BeamShape[] = [];
   const q = Math.max(unit / 4, 1e-3);
   for (const b of list) {
     const k = [b.x0, b.x1, b.y0, b.y1].map((v) => Math.round(v / q)).join(",");
-    if (seen.has(k)) continue;
-    seen.add(k);
+    const kept = seen.get(k);
+    if (kept) {
+      for (const o of b.objs ?? []) if (!kept.objs?.includes(o)) (kept.objs ??= []).push(o);
+      continue;
+    }
+    seen.set(k, b);
     out.push(b);
   }
   return out;
@@ -452,7 +459,7 @@ function slantedBeams(pg: SPage, sp: number): BeamShape[] {
                 top: Math.min(run[0].a.y, run[0].b.y),
                 bottom: Math.max(run[run.length - 1].a.y, run[run.length - 1].b.y),
               },
-              x0, y0, x1, y1, level: 0,
+              x0, y0, x1, y1, level: 0, objs: [o],
             });
           }
         }
