@@ -157,6 +157,8 @@ const OPUS_SPECIAL_STD: Record<number, SmuflName> = {
   0x220f: "wiggleTrill",
   0x2039: "clef8",
   0x7b: "brace",
+  // 单道震音斜线，三道是同 x 上下叠三个（水乡情韵扬琴、琵琶；`notations.ts::stackTremolos` 并成一个）
+  0xe6: "tremolo1", // 'æ'
 };
 
 const OPUS_TEXT: Record<number, SmuflName> = {

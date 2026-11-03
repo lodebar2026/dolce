@@ -3,6 +3,7 @@
 // musicpp 到「打标」为止就结束了（它的 toxml.cpp 不导出这些）；
 // 「挂到音符上、写进 MusicXML」是本仓新加的。
 import { SPage, Seg, Sym, type PObj, type Staff } from "./model";
+import type { SmuflName } from "./glyphs";
 import type { BeamShape, StaffNote, StemInfo } from "./notedata";
 import { objText } from "./textanalyze";
 import { isFill, subPaths } from "./vecgeom";
@@ -50,7 +51,36 @@ export function findNotations(pg: SPage): { marks: Sym[]; dynamics: Sym[] } {
       dynamics.push(s);
     }
   }
-  return { marks, dynamics };
+  return { marks: stackTremolos(pg, marks), dynamics };
+}
+
+/**
+ * 一道一个字形的震音斜线（Opus Special Std 的 'æ'）：同 x、上下一道接一道的几个并成一个 `tremoloN`，
+ * 留居中那一道（全音符的 `tremoloAt` 按它的中心记），其余从记号里拿掉。
+ */
+function stackTremolos(pg: SPage, marks: Sym[]): Sym[] {
+  const sp = pg.normalStaffSpace || pg.space;
+  // 按 top 自上而下串：接到同一列（左缘差不到 0.3 格）、上一道在它上方一格以内的那一串后面。
+  // 不能按 x 排序再顺序切：相邻两列的左缘只差零点几点（扬琴 m55 两个和弦），会被串成一列
+  const ones = marks.filter((m) => m.code === "tremolo1").sort((a, b) => a.box.top - b.box.top);
+  const chains: Sym[][] = [];
+  for (const m of ones) {
+    const c = chains.find((c) => {
+      const last = c[c.length - 1];
+      const dy = m.box.top - last.box.top;
+      return Math.abs(m.box.left - last.box.left) < sp * 0.3 && dy > 0 && dy < sp;
+    });
+    if (c) c.push(m);
+    else chains.push([m]);
+  }
+  const drop = new Set<Sym>();
+  for (const grp of chains) {
+    if (grp.length < 2) continue;
+    const keep = grp[(grp.length - 1) >> 1];
+    keep.code = `tremolo${Math.min(grp.length, 3)}` as SmuflName;
+    for (const m of grp) if (m !== keep) drop.add(m);
+  }
+  return drop.size ? marks.filter((m) => !drop.has(m)) : marks;
 }
 
 /** 琶音挂到线右边多少格以内的和弦（与位图路 `rasteromr/recognize.ts` 的 `ARP_REACH` 同值）。 */

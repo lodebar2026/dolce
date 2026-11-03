@@ -492,11 +492,23 @@ export function findMultiRests(pg: SPage): void {
       if (!/^\d{1,3}$/.test(txt)) return false;
       return Math.abs((t.box.left + t.box.right) / 2 - cx) < sp * 2 && t.box.bottom <= top + sp * 0.5 && t.box.bottom > top - sp * 4;
     });
-    if (!num) continue;
-    const n = Number(num.run!.glyphs.map((g) => g.unicode).join("").trim());
+    if (num) {
+      const n = Number(num.run!.glyphs.map((g) => g.unicode).join("").trim());
+      if (n < 2) continue;
+      s.multiRest = n;
+      num.addTag("MultiRest");
+      continue;
+    }
+    // 数字也可能是音乐字体的拍号数字（水乡情韵，Sibelius 7 的 OpusStd：横条上方一个个 `timeSigN`）。
+    // 拍号只认谱表以内的（`findClefKeyTime`），这里收横条上方、横向落在横条里的，按 x 拼成几位数
+    const digits = pg.symbols
+      .filter((d) => /^timeSig\d$/.test(d.code) && !d.hasAnyTag() && d.box.right > s.box.left && d.box.left < s.box.right && d.box.bottom <= top + sp * 0.5 && d.box.bottom > top - sp * 4)
+      .sort((a, b) => a.box.left - b.box.left);
+    if (!digits.length || digits.some((d, i) => i && d.box.left - digits[i - 1].box.right > sp)) continue;
+    const n = Number(digits.map((d) => d.code.slice(7)).join(""));
     if (n < 2) continue;
     s.multiRest = n;
-    num.addTag("MultiRest");
+    for (const d of digits) d.addTag("MultiRest");
   }
 }
 
