@@ -5,6 +5,7 @@
 import { type Box, PObj, SPage, Seg, type Staff, overlapX, ySpace } from "./model";
 import { pathPoints, subPaths } from "./vecgeom";
 import type { StaffNote } from "./notedata";
+import { musicFamily } from "./symbolmap";
 
 /** 一条弧。 */
 export interface SlurArc {
@@ -135,6 +136,9 @@ export function wedgeSpans(objs: PObj[], sp = Infinity): import("./notations").W
 export function findSlurs(pg: SPage): SlurArc[] {
   const syslines: Seg[] = pg.segsWithTag("SysLine");
   const stems: Seg[] = pg.segsWithTag("Stem");
+  // 符干连着符头的那一端（`steep` 只防符尾：符尾长在干尖，不在头端）
+  const heads = pg.symbols.filter((y) => y.code.startsWith("notehead"));
+  const atHead = (x: number, y: number) => heads.some((hd) => x >= hd.box.left - sp * 0.3 && x <= hd.box.right + sp * 0.3 && y >= hd.box.top - sp * 0.3 && y <= hd.box.bottom + sp * 0.3);
   const sp = pg.normalStaffSpace || pg.space;
   const out: SlurArc[] = [];
   // **一截弧画三遍**（八段锦：Sibelius 打的谱经 XPS 转出的 PDF）：上下两沿各一条描边贝塞尔（或一条闭合的描边轮廓）、中间一块压平的填充月牙，
@@ -230,8 +234,10 @@ export function findSlurs(pg: SPage): SlurArc[] {
     const steep = () =>
       w > sp * 1.5 &&
       w >= h &&
-      !pg.objs.some((t) => t.run && t.box.left >= o.box.left && t.box.right <= o.box.right && t.box.top >= o.box.top && t.box.bottom <= o.box.bottom) &&
-      !stems.some((sg) => sg.cx >= o.box.left - sp * 0.5 && sg.cx <= o.box.right + sp * 0.5 && [sg.top, sg.bottom].some((y) => y >= o.box.top - sp * 0.5 && y <= o.box.bottom + sp * 0.5));
+      // 圈着的是正文字（排练号）才算框；音乐字体的附点落在陡弧底下的不算（水乡情韵二胡 m21 附点 D5→A4）
+      !pg.objs.some((t) => t.run && !musicFamily(t.run.font) && t.box.left >= o.box.left && t.box.right <= o.box.right && t.box.top >= o.box.top && t.box.bottom <= o.box.bottom) &&
+      // 只看干尖：头端挨着弧的不算（水乡情韵二胡 m21 附点 D5→A4 的陡弧从 D 头上起笔，D 的干从头下伸，头端落在弧的外框里）
+      !stems.some((sg) => sg.cx >= o.box.left - sp * 0.5 && sg.cx <= o.box.right + sp * 0.5 && [sg.top, sg.bottom].some((y) => y >= o.box.top - sp * 0.5 && y <= o.box.bottom + sp * 0.5 && !atHead(sg.cx, y)));
     // 成套的按长边量：短弧陡的那半截只有两点多宽、五点高（二胡 p1 m3 十六分上的小弧右半），最短的左半截 2.4×2.4 点（二胡 p1 m5）
     if (layered.has(o) ? Math.max(w, h) < sp * 0.3 : w < sp * 0.9 || (w < h * 1.5 && !steep())) continue;
     let isBracket = false;
@@ -325,9 +331,12 @@ function arcBox(o: PObj): Box {
 function arcOf(o: PObj): SlurArc | null {
   const pts = arcPoints(o);
   if (pts.length < 4) return null;
-  let li = 0;
-  let ri = 0;
-  for (let i = 1; i < pts.length; i++) {
+  // 两端只在曲线上的点里取：控制点不在弧上，起笔竖着往下拐的短弧（水乡情韵二胡 m16 A4→D4 的 ∪ 弧）控制点比起点还靠左，
+  // 拿它当左端，端点落到弧底、朝向也判反，两份描摹都挂不上
+  const onCurve = pts.some((p) => !p.ctrl) ? pts.map((p, i) => [p, i] as const).filter(([p]) => !p.ctrl).map(([, i]) => i) : pts.map((_, i) => i);
+  let li = onCurve[0];
+  let ri = onCurve[0];
+  for (const i of onCurve) {
     if (pts[i].x < pts[li].x) li = i;
     if (pts[i].x > pts[ri].x) ri = i;
   }

@@ -24,6 +24,8 @@ export interface Pt {
   y: number;
   /** 该点是不是曲线控制点/终点（`CFX_Path::Point::Type::kBezier`）。 */
   curve: boolean;
+  /** 曲线的**控制点**（不在曲线上）。取弧的两端要跳过它：起笔竖着拐弯的短弧，控制点比起点还靠外（`slur.ts::arcOf`） */
+  ctrl?: boolean;
 }
 
 /** 摊平成设备坐标的点列（曲线控制点也在内，与 pdfium 的 GetPoints 一致）。 */
@@ -39,7 +41,7 @@ export function pathPoints(o: VecObj): Pt[] {
     if (c === DRAW_CLOSE) continue;
     const curve = c === DRAW_CUBIC || c === DRAW_QUAD;
     for (let k = 0; k < n; k += 2) {
-      out.push({ x: matApplyX(m, d[i + k], d[i + k + 1]), y: matApplyY(m, d[i + k], d[i + k + 1]), curve });
+      out.push({ x: matApplyX(m, d[i + k], d[i + k + 1]), y: matApplyY(m, d[i + k], d[i + k + 1]), curve, ...(curve && k < n - 2 ? { ctrl: true } : {}) });
     }
     i += n;
   }
@@ -77,7 +79,7 @@ export function subPaths(o: VecObj): SubPath[] {
     }
     const curve = c === DRAW_CUBIC || c === DRAW_QUAD;
     for (let k = 0; k < n; k += 2) {
-      cur.pts.push({ x: matApplyX(m, d[i + k], d[i + k + 1]), y: matApplyY(m, d[i + k], d[i + k + 1]), curve });
+      cur.pts.push({ x: matApplyX(m, d[i + k], d[i + k + 1]), y: matApplyY(m, d[i + k], d[i + k + 1]), curve, ...(curve && k < n - 2 ? { ctrl: true } : {}) });
     }
     i += n;
   }
