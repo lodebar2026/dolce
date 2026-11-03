@@ -68,6 +68,7 @@ function collectTexts(pg: SPage): { texts: PObj[]; hlines: Box[] } {
     if (!o.run) continue;
     if (o.symbols.length) continue; // 音乐字体的对象归 findSymbols
     if (o.hasTag("MultiRest")) continue; // 多小节休止的小节数（`findMultiRests`）
+    if (o.hasTag("Glissando")) continue; // 刮奏线上斜排的字（`findGlissandi`）
     let inStaff = false;
     const cy = (o.box.top + o.box.bottom) / 2;
     for (const st of pg.staves) {
@@ -1302,11 +1303,12 @@ export function attachDirectionTexts(
     if (j < i) i--;
   }
   const items = [
-    ...lines.map((l) => ({ objs: l, tempo: true, boxed: false })),
-    ...exprLines(dropOverprint(text.expression)).map((l) => ({ objs: l, tempo: false, boxed: false })),
-    ...boxedItems(dropOverprint(text.boxed)).map((objs) => ({ objs, tempo: false, boxed: true })),
+    ...lines.map((l) => ({ objs: l, tempo: true, boxed: false, gliss: false })),
+    ...exprLines(dropOverprint(text.expression)).map((l) => ({ objs: l, tempo: false, boxed: false, gliss: false })),
+    ...boxedItems(dropOverprint(text.boxed)).map((objs) => ({ objs, tempo: false, boxed: true, gliss: false })),
+    ...pg.glissandi.map((g) => ({ objs: g.text, tempo: false, boxed: false, gliss: true })),
   ];
-  for (const { objs, tempo: isTempo, boxed } of items) {
+  for (const { objs, tempo: isTempo, boxed, gliss } of items) {
     // 没有 ToUnicode 的字体抽出来是控制字符（牵我的手 `= 60` 的数字读成 `\u0018\u0012`）：剥掉，解不出数的等号也不留
     // 节拍器的音符是乐谱字体的字形（Anastasia 的 `metNoteQuarterUp`），文字层里是空串：换回 `♩`，好让下面认出单位
     const parts = objs.map((o) => (o.symbols.length ? o.symbols.map((y) => METRO_GLYPH[y.code] ?? "").join("") : objText(o).replace(/[\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim())).filter(Boolean);
@@ -1347,9 +1349,14 @@ export function attachDirectionTexts(
     const row = notes.filter((n) => n.staff === stf && !n.chordExtra && !n.grace).sort((a, b) => a.x - b.x);
     // 分段印的「【」不算挂音的左端（照括号挂会落到前一个音上，琵琶 m49）
     const anchor = bracket && objs.length > 1 && objText(objs[0]).trim() === "【" ? objs[1].box.left : box.left;
-    const note = row.find((n) => n.x >= anchor - sp) ?? row[row.length - 1];
+    // 刮奏挂在起笔处所在小节、起笔左边最后一个音 / 休止上（V 字第二笔从小节中部起，照「右边第一个」会挂到下一小节；
+    // 第一笔从小节线后、休止之前起，那就挂小节里第一个）
+    const bar = gliss ? stf.bars.find((b) => box.left >= b.left && box.left < b.right) : undefined;
+    const inBar = bar ? row.filter((n) => n.x >= bar.left && n.x < bar.right) : row;
+    const note = gliss ? (inBar.filter((n) => n.x <= box.left + sp).pop() ?? inBar[0] ?? row[0]) : (row.find((n) => n.x >= anchor - sp) ?? row[row.length - 1]);
     if (!note) continue;
-    const s = bracket ? parts.join("") : objs.length === parts.length ? parts.map((p, i) => glue(i) + p).join("").trim() : parts.join(" ");
+    // 刮奏线上斜排的字逐字连写（墨迹盒斜着错开，按横向间隙判词距不成）
+    const s = bracket || gliss ? parts.join("") : objs.length === parts.length ? parts.map((p, i) => glue(i) + p).join("").trim() : parts.join(" ");
     const metro = isTempo && s.includes("=") ? METRO_TEXT_RE.exec(s) : null;
     if (metro) {
       const bpm = Number(metro[3]);

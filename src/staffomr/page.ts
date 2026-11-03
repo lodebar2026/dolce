@@ -512,6 +512,60 @@ export function findMultiRests(pg: SPage): void {
   }
 }
 
+// ── findGlissandi ───────────────────────────────────────────────────────────
+
+/**
+ * **刮奏线**：一笔斜的直线，沿线斜排着「gliss.」（水乡情韵古筝：休止小节里 V 字两笔、从休止斜到下一小节的和弦前）。
+ * 字是一字一段、整段旋转的（字形矩阵的基线方向与线平行）：按基线方向与笔位（上一字原点 + 步进 ≈ 下一字原点）连成词，
+ * 拼出「gliss」的，找一笔与它平行、字原点离线不到一个字号、沿线落在线段范围里的描边直线配上。
+ * 线与字都打 `Glissando`（不再算未识别、字不进文字分类），成组记在 `pg.glissandi`，写出成该处的文字指示。
+ */
+export function findGlissandi(pg: SPage): void {
+  const dirOf = (o: PObj) => {
+    const m = o.run!.glyphs[0].ctm;
+    const len = Math.hypot(m[0], m[1]);
+    return len ? { x: m[0] / len, y: m[1] / len } : null;
+  };
+  // 基线不水平（偏过 10°）的字段
+  const rotated = pg.objs.filter((o) => o.run && !o.symbols.length && !o.hasAnyTag() && o.run.glyphs.length && Math.abs(dirOf(o)?.y ?? 0) > 0.17).sort((a, b) => a.id - b.id);
+  const used = new Set<PObj>();
+  const lines = pg.objs.filter((o) => o.path && !o.path.curves && !o.hasAnyTag() && isStroke(o.path));
+  for (const head of rotated) {
+    if (used.has(head)) continue;
+    const d = dirOf(head)!;
+    const word = [head];
+    for (const o of rotated) {
+      if (used.has(o) || word.includes(o)) continue;
+      const a = word[word.length - 1].run!.glyphs[word[word.length - 1].run!.glyphs.length - 1];
+      const b = o.run!.glyphs[0];
+      const e = dirOf(o)!;
+      if (Math.abs(e.x * d.y - e.y * d.x) > 0.1 || e.x * d.x + e.y * d.y < 0) continue;
+      const size = head.run!.sizeDev;
+      if (Math.hypot(b.ox - (a.ox + a.advance * d.x), b.oy - (a.oy + a.advance * d.y)) < size * 0.3) word.push(o);
+    }
+    if (!/^gliss/i.test(word.map((o) => o.run!.glyphs.map((g) => g.unicode).join("")).join("").trim())) continue;
+    const size = head.run!.sizeDev;
+    const origins = word.flatMap((o) => o.run!.glyphs.map((g) => ({ x: g.ox, y: g.oy })));
+    const line = lines.find((l) => {
+      const segs = subPaths(l.path!);
+      if (segs.length !== 1 || segs[0].pts.length !== 2) return false;
+      const [p, q] = segs[0].pts;
+      const len = Math.hypot(q.x - p.x, q.y - p.y);
+      if (len < size) return false;
+      const u = { x: (q.x - p.x) / len, y: (q.y - p.y) / len };
+      if (Math.abs(u.x * d.y - u.y * d.x) > 0.1) return false;
+      return origins.every((g) => {
+        const t = (g.x - p.x) * u.x + (g.y - p.y) * u.y;
+        return t >= -size && t <= len + size && Math.abs((g.x - p.x) * u.y - (g.y - p.y) * u.x) < size;
+      });
+    });
+    if (!line) continue;
+    for (const o of word) used.add(o), o.addTag("Glissando");
+    line.addTag("Glissando");
+    pg.glissandi.push({ line, text: word });
+  }
+}
+
 // ── findNoteheads ───────────────────────────────────────────────────────────
 
 /** `Page::findNoteheads`：给每个符头/休止找它属于哪一行谱。 */

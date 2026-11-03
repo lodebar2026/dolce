@@ -3,7 +3,7 @@ import { extractVectorPage } from "../omrkit/vector";
 import type { OpsEnum } from "../omrkit/vector";
 import { extractTextPage } from "../omrkit/vectext";
 import { StaffGlyphLookup, type StaffGlyphDict } from "./staffglyphs";
-import { buildPage, findBarlines, findMultiRests, findNoteheads, findStaves, findStems, findSymbols, findTails, makeBars, makeSystems, markTextInk, removeWhite, unknownObjs } from "./page";
+import { buildPage, findBarlines, findGlissandi, findMultiRests, findNoteheads, findStaves, findStems, findSymbols, findTails, makeBars, makeSystems, markTextInk, removeWhite, unknownObjs } from "./page";
 import type { PObj, SPage, Staff } from "./model";
 import { buildNotes, checkBars, findBeams, findClefKeyTime, lastTimeSignature, staffOmrOptions, type BarCheck, type BeamShape, type StaffContext, type StaffNote, type StemInfo } from "./notedata";
 import { analyzeText, attachDirectionTexts, attachHarmonies, attachLyrics, buildLyricLines, type LyricLine, type TextAnalysis } from "./textanalyze";
@@ -71,6 +71,7 @@ export function recognizeBuiltPage(pg: SPage, opts: { textLookup?: TextGlyphLook
     return { page: pg, hasStaff: false, unknown: unknownObjs(pg).length, ctx: new Map(), beams: [], notes: [], text: emptyText(), lyricLines: [], slurs: [], octaves: [], voltas: [], bars: [], carryTime: opts.carryTime };
   }
   findMultiRests(pg);
+  findGlissandi(pg);
   findNoteheads(pg);
   findStems(pg);
   findTails(pg);

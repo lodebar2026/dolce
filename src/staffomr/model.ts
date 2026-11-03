@@ -118,7 +118,9 @@ export type Tag =
   /** 文字另描一遍的轮廓（描边加粗，`page.ts::markTextInk`）：墨迹算在文字头上。 */
   | "TextInk"
   | "Boxed"
-  | "MeasureNumber";
+  | "MeasureNumber"
+  /** 刮奏的斜线与沿线斜排的「gliss.」（`page.ts::findGlissandi`） */
+  | "Glissando";
 
 // ── 页面对象 ────────────────────────────────────────────────────────────────
 
@@ -513,6 +515,8 @@ export class SPage {
   objs: PObj[] = [];
   /** 位图路读出的声部名块（行首缩进与页边，`rasteromr/words.ts::partNameLines`）；矢量路的声部名是 `objs` 里打了 `Instrument` 的 */
   partNames: { text: string; box: Box; size: number }[] = [];
+  /** 刮奏：一笔斜线与沿线斜排的那几段字（`page.ts::findGlissandi`）。 */
+  glissandi: { line: PObj; text: PObj[] }[] = [];
   /** 全页从路径里抽出来的直线段（谱线/符干/小节线/加线都在里面）。 */
   segs: Seg[] = [];
   symbols: Sym[] = [];
