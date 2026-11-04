@@ -8,7 +8,7 @@
 // 尺寸按「音乐字体 1 em = 谱表高 = 4 线距」归一后也相当（祢話如甘霖：符头 15~28、符尾 5~11、谱号 26，文字 90 开外）。
 //
 // 无 DOM 依赖（Node CLI 要 import）。
-import { DRAW_CLOSE, DRAW_MOVE, drawOpArity, matApplyX, matApplyY, type VecObj } from "../omrkit/vector";
+import { DRAW_CLOSE, DRAW_CUBIC, DRAW_MOVE, DRAW_QUAD, drawOpArity, matApplyX, matApplyY, type VecObj } from "../omrkit/vector";
 import { decodeSig, shapeSig, sigDistance } from "../omrkit/glyphdict";
 import { isSmuflName, type SmuflName } from "../staffomr/glyphs";
 import type { StaffGlyphDict } from "../staffomr/staffglyphs";
@@ -143,7 +143,7 @@ export class OutlineGlyphLookup {
     const em = sp * 4;
     const w = o.bbox.w / em;
     const h = o.bbox.h / em;
-    const sig = shapeSig(o.data);
+    const sig = shapeSig(sigData(o.data));
     let best: SmuflName | null = null;
     let bd = Infinity;
     let loose: SmuflName | null = null;
@@ -165,6 +165,85 @@ export class OutlineGlyphLookup {
     if (best === "augmentationDot" && bd <= DOT_SIG_MAX && round) return { code: best, d: bd };
     return null;
   }
+}
+
+/**
+ * 算签名用的路径数据。签名的外框按控制点取（`glyphdict.ts::shapeSig`），字体里的字形曲线段短、控制点贴着曲线，无所谓；
+ * 有的排版软件转曲后一个符头只用两段三次曲线画椭圆（裴克经文诗歌：CorelDRAW），控制点远在曲线外，外框大出一圈、签名里的形状
+ * 被压小，跟字典对不上。控制点外框比曲线外框大出 `CTRL_SLACK` 以上时，把曲线各细分成 `SUBDIV` 段（控制点随之贴近曲线）再算。
+ */
+function sigData(d: Float32Array): Float32Array {
+  const fine = subdivide(d, SUBDIV);
+  const a = ptBounds(d);
+  const b = ptBounds(fine);
+  if (!a || !b) return d;
+  const bw = b.x1 - b.x0 || 1;
+  const bh = b.y1 - b.y0 || 1;
+  return (a.x1 - a.x0) / bw > 1 + CTRL_SLACK || (a.y1 - a.y0) / bh > 1 + CTRL_SLACK ? fine : d;
+}
+const SUBDIV = 8;
+const CTRL_SLACK = 0.05;
+
+/** 路径各点（含控制点）的外框。 */
+function ptBounds(d: Float32Array): { x0: number; y0: number; x1: number; y1: number } | null {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let i = 0;
+  while (i < d.length) {
+    const n = drawOpArity(d[i++]);
+    if (n < 0) break;
+    for (let k = 0; k < n; k += 2) {
+      x0 = Math.min(x0, d[i + k]); x1 = Math.max(x1, d[i + k]);
+      y0 = Math.min(y0, d[i + k + 1]); y1 = Math.max(y1, d[i + k + 1]);
+    }
+    i += n;
+  }
+  return Number.isFinite(x0) ? { x0, y0, x1, y1 } : null;
+}
+
+/** 每段三次 / 二次曲线按参数等分成 n 段（de Casteljau），其余命令照抄。 */
+function subdivide(d: Float32Array, n: number): Float32Array {
+  const out: number[] = [];
+  let px = 0, py = 0, sx = 0, sy = 0;
+  let i = 0;
+  while (i < d.length) {
+    const c = d[i++];
+    const ar = drawOpArity(c);
+    if (ar < 0) break;
+    if (c === DRAW_CUBIC || c === DRAW_QUAD) {
+      // 二次升成三次再分
+      const [c1x, c1y, c2x, c2y, ex, ey] = c === DRAW_CUBIC
+        ? [d[i], d[i + 1], d[i + 2], d[i + 3], d[i + 4], d[i + 5]]
+        : [px + (2 / 3) * (d[i] - px), py + (2 / 3) * (d[i + 1] - py), d[i + 2] + (2 / 3) * (d[i] - d[i + 2]), d[i + 3] + (2 / 3) * (d[i + 1] - d[i + 3]), d[i + 2], d[i + 3]];
+      const pt = (t: number, a: number, b: number, e: number, f: number) => {
+        const u = 1 - t;
+        return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * e + t * t * t * f;
+      };
+      const dt = (t: number, a: number, b: number, e: number, f: number) => {
+        const u = 1 - t;
+        return 3 * u * u * (b - a) + 6 * u * t * (e - b) + 3 * t * t * (f - e);
+      };
+      const h = 1 / n;
+      for (let k = 0; k < n; k++) {
+        const t0 = k * h, t1 = (k + 1) * h;
+        const x0 = pt(t0, px, c1x, c2x, ex), y0 = pt(t0, py, c1y, c2y, ey);
+        const x3 = pt(t1, px, c1x, c2x, ex), y3 = pt(t1, py, c1y, c2y, ey);
+        // 子段的控制点：端点沿切向走 1/3 段长（三次曲线在子区间上的精确重参数化）
+        out.push(DRAW_CUBIC,
+          x0 + (h / 3) * dt(t0, px, c1x, c2x, ex), y0 + (h / 3) * dt(t0, py, c1y, c2y, ey),
+          x3 - (h / 3) * dt(t1, px, c1x, c2x, ex), y3 - (h / 3) * dt(t1, py, c1y, c2y, ey),
+          x3, y3);
+      }
+      px = ex; py = ey;
+    } else {
+      out.push(c);
+      for (let k = 0; k < ar; k++) out.push(d[i + k]);
+      if (c === DRAW_MOVE) { px = sx = d[i]; py = sy = d[i + 1]; }
+      else if (c === DRAW_CLOSE) { px = sx; py = sy; }
+      else if (ar >= 2) { px = d[i + ar - 2]; py = d[i + ar - 1]; }
+    }
+    i += ar;
+  }
+  return Float32Array.from(out);
 }
 
 /** 对象外框（设备坐标）→ `Rect`。 */

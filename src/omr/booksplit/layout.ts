@@ -13,7 +13,7 @@ export interface Band {
   x1: number;
   /** 方正且高 ≥ TITLE_H × 字高的块数（标题大字）。 */
   tall: number;
-  /** 竖细长、高 ≥ BAR_H × 字高的块数（小节线）。 */
+  /** 竖细长、高 ≥ BAR_H × 字高的块数（小节线；大字带里不算整个落在大字那一排以内的）。 */
   bars: number;
   /** 全是扁块（弧线、减时线）。 */
   flat: boolean;
@@ -33,6 +33,8 @@ export interface PageLayout {
   /** 本页字行（非谱行、非大字行）的字高：各字行方正块中位高的 0.9 分位。有的本子一页里某首的歌词字比别的大，
    *  标题要比最大的那种字行还大才算。 */
   textH: number;
+  /** 铺开的大字歌词行的大字中位高；没有这种行为 0。没读出调号的标题字要比它大（简线混排谱的歌词比数字大一圈）。 */
+  lyricH: number;
   bands: Band[];
   /** 纸色（背景像素的中位 RGB）。 */
   paper: [number, number, number];
@@ -42,6 +44,13 @@ export interface PageLayout {
 export const TITLE_H = 1.22;
 /** 小节线：竖细块高 ≥ 字高 × 此值。 */
 const BAR_H = 1.15;
+/** 没有小节线的标题候选带最高几个字高（标题旁的作者、出处常排两行） */
+const TITLE_BAND_H = 4.5;
+/** 标题带里像小节线的笔画最多几道 */
+const TITLE_STROKES = 2;
+/** 歌词行：大字行铺开占版心宽的这么多，一页至少几行 */
+const LYRIC_SPAN = 0.6;
+const LYRIC_ROWS = 3;
 /** 上下两块间隙 ≤ 字高 × 此值就并进同一带（谱行与其弧线、八度点隔得很近）。 */
 const MERGE_GAP = 0.12;
 
@@ -68,7 +77,13 @@ export function analyzePage(pc: PageComps, bin: Binary, rgba: Uint8ClampedArray,
     .filter((b) => b.y1 - b.y0 >= charH * 0.45 || b.x1 - b.x0 >= charH);
   const textHs = bands.filter((b) => !b.bars && !b.flat && b.sqH > 0 && b.tall < 2).map((b) => b.sqH);
   const textH = Math.max(charH, textHs.length ? quantile(textHs, 0.9) : 0);
-  return { w, h, charH, textH, bands, paper: paperColor(bin, rgba) };
+  // 歌词字比数字大一圈的本子（简线混排谱的歌词行）：歌词行的块也够「大」（tall ≥ 2），上面不收它们，字行字高只剩出处、署名
+  // 那几行小字。铺满版心六成以上宽的大字带（歌词行常与上面的谱行粘成一带、带着小节线，照收）有 `LYRIC_ROWS` 条以上时，
+  // 取它们大字高的中位作歌词字高（一页排两首、带着调号拍号的标题行也铺得开，只有两条时不算）
+  const x0 = Math.min(...bands.map((b) => b.x0)), x1 = Math.max(...bands.map((b) => b.x1));
+  const wide = bands.filter((b) => b.tall >= 2 && b.bigH > 0 && b.x1 - b.x0 >= (x1 - x0) * LYRIC_SPAN).map((b) => b.bigH);
+  const lyricH = wide.length >= LYRIC_ROWS ? median(wide, 0) : 0;
+  return { w, h, charH, textH, lyricH, bands, paper: paperColor(bin, rgba) };
 }
 
 /**
@@ -163,24 +178,35 @@ function buildBands(comps: Component[], charH: number): Band[] {
       if (!(b.w >= b.h * 1.8 && b.h < charH * 0.7)) flat = false;
       if (b.h >= charH * 0.6 && b.w >= b.h * 0.6 && b.w <= b.h * 1.6) sq.push(b.h);
     }
+    // 大字带里整个落在大字那一排高度以内的竖细块是字的笔画（「惧」的竖心旁）或细体数字「1」（曲号「170」），不是小节线。
+    // 标题里这种块最多一两个；带大字的谱行（「和：」）小节线有好几道，也都落在那一排里，不折算
+    if (tall >= 2 && bars <= TITLE_STROKES) {
+      const tb = g.filter((c) => isTall(c.bbox, charH));
+      const t0 = Math.min(...tb.map((c) => c.bbox.y)) - charH * 0.2, t1 = Math.max(...tb.map((c) => c.bbox.y + c.bbox.h)) + charH * 0.2;
+      bars = g.filter((c) => isBar(c.bbox, charH) && (c.bbox.y < t0 || c.bbox.y + c.bbox.h > t1)).length;
+    }
     return { y0, y1, x0, x1, tall, bars, flat, sqH: median(sq, 0), bigH: median(big, 0), boxes: g.map((c) => c.bbox) };
   });
 }
 
 /**
- * 标题行与下面的谱行粘成一带（谱行上的升降号、弧线顶到了标题行底）时，在标题大字的底边处切开。
+ * 标题行与下面的谱行粘成一带（谱行上的升降号、弧线顶到了标题行底）、或与下面几行页眉粘成一带时，在标题大字的底边处切开。
  * 只看最上面一排大字，且小节线的中心全在它底边之下才切，免得把谱行里「和：」这类大字当标题行切出去。
  */
 function splitTitle(g: Component[], charH: number): Component[][] {
   const tall = g.filter((c) => isTall(c.bbox, charH));
   const bars = g.filter((c) => isBar(c.bbox, charH));
-  if (tall.length < 2 || !bars.length) return [g];
+  if (tall.length < 2) return [g];
   // 只看最上面一排大字（谱行里连着减时线的数字也够「大」，不能算进标题行）
   const top0 = Math.min(...tall.map((c) => c.bbox.y));
   const row = tall.filter((c) => c.bbox.y <= top0 + charH * 0.6);
   if (row.length < 2) return [g];
   const ty1 = Math.max(...row.map((c) => c.bbox.y + c.bbox.h));
-  if (Math.min(...bars.map((c) => c.cy)) < ty1) return [g]; // 小节线顶可能挨上标题底，按中心比
+  // 整个落在大字那一排里的「小节线」是曲号里笔画细的「1」（「139」），不算
+  const lowBars = bars.filter((c) => c.bbox.y < top0 - charH * 0.2 || c.bbox.y + c.bbox.h > ty1 + charH * 0.2);
+  // 没有小节线：标题行与下面几行页眉（出处、调号、速度）挨得紧粘成了一带——有块整个落在大字底边以下才切
+  if (!lowBars.length && !g.some((c) => c.bbox.y >= ty1)) return [g];
+  if (lowBars.length && Math.min(...lowBars.map((c) => c.cy)) < ty1) return [g]; // 小节线顶可能挨上标题底，按中心比
   const top = g.filter((c) => c.cy <= ty1), rest = g.filter((c) => c.cy > ty1);
   return top.length && rest.length ? [top, rest] : [g];
 }
@@ -205,7 +231,7 @@ function paperColor(bin: Binary, rgba: Uint8ClampedArray): [number, number, numb
  */
 export function isTitleCandidate(b: Band, p: PageLayout): boolean {
   // 没有小节线的带可以高些：标题旁的作者、出处常排两行
-  return b.tall >= 2 && b.bars <= 1 && b.y1 - b.y0 <= p.charH * (b.bars ? 3 : 4.5);
+  return b.tall >= 2 && b.bars <= 1 && b.y1 - b.y0 <= p.charH * (b.bars ? 3 : TITLE_BAND_H);
 }
 
 /** 谱行：有小节线。 */

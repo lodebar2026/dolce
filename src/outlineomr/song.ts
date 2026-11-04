@@ -11,7 +11,7 @@ import { numberOmrIds } from "../staffomr/review";
 import type { RasterLiveOcr } from "../rasteromr/recognize";
 import type { FuseStats } from "../rasteromr/jianpufuse";
 import type { OutlineGlyphLookup } from "./glyphs";
-import { recognizeOutlinedPage, staffGroups } from "./page";
+import { recognizeOutlinedPage, staffGroups, type PageClip } from "./page";
 
 /**
  * 这份 PDF 是不是**转曲的五线谱**：取样几页，没有文字层，路径里有五条一组的等距长横线。
@@ -53,9 +53,14 @@ export async function recognizeOutlinedDoc(
   pdf: any,
   OPS: OpsEnum,
   look: OutlineGlyphLookup,
-  opts: { title?: string; live?: RasterLiveOcr; onProgress?: (done: number, total: number) => void; noteIds?: boolean } = {},
+  opts: {
+    title?: string; live?: RasterLiveOcr; onProgress?: (done: number, total: number) => void; noteIds?: boolean;
+    /** 只认这几段、按此次序当连续页（歌本里的一首：页号 1 起，`clip` 是页内范围）；不给认全部页 */
+    segments?: { pn: number; clip?: PageClip }[];
+  } = {},
 ): Promise<OutlinedPdfResult> {
-  const list = Array.from({ length: pdf.numPages as number }, (_, i) => i + 1);
+  const segs: { pn: number; clip?: PageClip }[] = opts.segments ?? Array.from({ length: pdf.numPages as number }, (_, i) => ({ pn: i + 1 }));
+  const list = segs.map((g) => g.pn);
   const entries: Parameters<typeof buildScore>[0] = [];
   const notesByStaff = new Map<Staff, StaffNote[]>();
   const detailPages: NonNullable<StaffPdfResult["detail"]>["pages"] = [];
@@ -65,9 +70,9 @@ export async function recognizeOutlinedDoc(
   let header: Awaited<ReturnType<typeof recognizeOutlinedPage>>["header"] = [];
   let jianpu = false;
   let done = 0;
-  for (const pn of list) {
+  for (const { pn, clip } of segs) {
     const page = await pdf.getPage(pn);
-    const r = await recognizeOutlinedPage(page, OPS, look, pn, { live: opts.live, carryTime, wantHeader: !entries.length });
+    const r = await recognizeOutlinedPage(page, OPS, look, pn, { live: opts.live, carryTime, wantHeader: !entries.length, clip });
     page.cleanup?.();
     carryTime = r.carryTime;
     if (r.hasStaff) {

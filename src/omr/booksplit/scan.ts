@@ -32,10 +32,19 @@ export async function scanPage(index: number, img: RgbaImage, ocr: OcrBackend, t
   const info: PageInfo = { index, layout, body: layout.bands, titles: [], toc: [] };
   if (footer) { info.printed = footer.n; info.footer = boxOf(footer.comps); }
 
-  for (const b of info.body) {
-    if (!isTitleCandidate(b, layout)) continue;
-    const hit = parseTitle(await ocr.recognizeRegion(bin, pad(b, layout, layout.charH * 0.3)), b, layout, (r) => inkHeight(bin, r));
+  // 刚认出标题、还没到谱行（两道小节线以上的带）：这一段是本首的页眉，里面的大字（出处「希伯来书13:1-2节」与调号同排）不是下一首的标题
+  let inHeader = false;
+  for (let k = 0; k < info.body.length; k++) {
+    const b = info.body[k];
+    if (b.bars >= 2) inHeader = false;
+    if (inHeader || !isTitleCandidate(b, layout)) continue;
+    const lines = await ocr.recognizeRegion(bin, pad(b, layout, layout.charH * 0.3));
+    const inkH = (r: Rect) => inkHeight(bin, r);
+    let hit = parseTitle(lines, b, layout, inkH);
+    // 调号不与曲名同排、印在下面的页眉行里（简线混排谱：曲名、出处、「1=F 4/4」各占一行）：往下到谱行之前找调号
+    if (!hit && lines.some((l) => CJK.test(l.text)) && await keyBelow(bin, info.body, k, layout, ocr)) hit = parseTitle(lines, b, layout, inkH, true);
     if (!hit) continue;
+    inHeader = true;
     if (hit.titleBox) {
       const t = await rereadTitle(bin, hit.titleBox, ocr);
       if (t && t.length >= [...hit.title].filter((c) => CJK.test(c)).length) hit.title = t;
@@ -49,6 +58,22 @@ export async function scanPage(index: number, img: RgbaImage, ocr: OcrBackend, t
   if (toc ?? looksLikeToc(info.body, layout.h)) info.toc = parseToc(await ocr.recognizeRegion(bin, fullRect(bin)));
   for (const b of layout.bands) b.boxes = [];
   return info;
+}
+
+/** 页眉行最多看几带 */
+const HEADER_BANDS = 3;
+
+/** 第 k 带（标题候选）之下、谱行与下一个（读不出调号的）标题候选之前的几带里读得出调号「1=」。 */
+async function keyBelow(bin: Binary, body: readonly Band[], k: number, p: PageLayout, ocr: OcrBackend): Promise<boolean> {
+  for (let j = k + 1; j < body.length && j <= k + HEADER_BANDS; j++) {
+    const b = body[j];
+    if (b.bars >= 2) return false;
+    const lines = await ocr.recognizeRegion!(bin, pad(b, p, p.charH * 0.3));
+    if (KEY_RE.test([...lines].sort((a, c) => a.bbox.x - c.bbox.x).map((l) => l.text).join(" "))) return true;
+    // 读不出调号的下一个标题候选就是下一首了（调号与出处同排的页眉行也像候选，先读再停）
+    if (isTitleCandidate(b, p)) return false;
+  }
+  return false;
 }
 
 /**
@@ -143,9 +168,10 @@ function pad(b: Band, p: PageLayout, d: number): Rect {
 function fullRect(bin: Binary): Rect { return { x: 0, y: 0, w: bin.w, h: bin.h }; }
 
 /** 像目录的页：没有谱行、字占了页高的四分之一以上（两栏错行时多行会并成一带，不能按带数算）。
- *  前言之类的文字页也会过，整页 OCR 后按「文字 + 两个数」认不出条目，不碍事。 */
+ *  前言之类的文字页也会过，整页 OCR 后按「文字 + 两个数」认不出条目，不碍事。
+ *  谱行至少有两道小节线：笔画细的字体里曲号的「1」也够得上「竖细长」，一行里一道不算谱行。 */
 function looksLikeToc(body: readonly Band[], h: number): boolean {
-  return body.length >= 3 && !body.some(isMusicBand) && body.reduce((a, b) => a + b.y1 - b.y0, 0) >= h * 0.25;
+  return body.length >= 3 && !body.some((b) => isMusicBand(b) && b.bars >= 2) && body.reduce((a, b) => a + b.y1 - b.y0, 0) >= h * 0.25;
 }
 
 /** 调号「1=C」「1=♭E」：标题行的标志（调名字母常读错，只认「1=」）。 */
@@ -161,12 +187,13 @@ const CJK_RUN = /[\u3400-\u9fff\uf900-\ufaff·、，！？]+/g;
  * 曲号紧挨调号读成一串（「115 1=C」→「1151=C」）时去掉末位的 1。
  */
 export function parseTitle(
-  lines: OcrLine[], band: Band, p: PageLayout, inkH: (r: Rect) => number = (r) => r.h,
+  lines: OcrLine[], band: Band, p: PageLayout, inkH: (r: Rect) => number = (r) => r.h, keyBelow = false,
 ): TitleHit | null {
   const cjkLines = lines.filter((l) => CJK.test(l.text));
   if (!cjkLines.length) return null;
   // 调号常被检测切成几框（「1=」「E」），按横向次序拼起来再认
-  const hasKey = KEY_RE.test([...lines].sort((a, b) => a.bbox.x - b.bbox.x).map((l) => l.text).join(" "));
+  // `keyBelow`：调号印在下面的页眉行里（调用方已查过），与同排读出调号同等对待
+  const hasKey = keyBelow || KEY_RE.test([...lines].sort((a, b) => a.bbox.x - b.bbox.x).map((l) => l.text).join(" "));
   // 字高按框里墨迹的实际高度比：检测框高带着外扩的边，旁边小一号的分类字（「教会」）框高也差不多
   const ink = new Map(cjkLines.map((l) => [l, inkH(l.bbox)]));
   const main = cjkLines.reduce((a, b) => (ink.get(b)! > ink.get(a)! ? b : a));
@@ -220,7 +247,8 @@ export function parseTitle(
   const pick = left && right ? (left.x - band.x0 <= band.x1 - right.x ? left : right) : left ?? right;
   const number = pick?.v;
   // 没读出调号的，要字比本页字行大、且读得到曲号才算（防大字号歌词行）
-  if (!hasKey && (band.bigH < p.textH * 1.15 || number === undefined)) return null;
+  // 本页有铺开的大字歌词行时，大字还要比歌词字大 15%
+  if (!hasKey && (band.bigH < Math.max(p.textH, p.lyricH) * 1.15 || number === undefined)) return null;
   // 整段重认的范围：往左并上拍号（含「/」或「=」的框）之后、紧挨着曲名的框——疏排的「二」会被单独读成「1」、不算汉字
   const fence = Math.max(-Infinity, ...lines.filter((l) => /[=＝/／]/.test(l.text)).map((l) => l.bbox.x + l.bbox.w));
   const extra = lines.filter((l) => !parts.includes(l) && l.bbox.x >= fence && l.bbox.x + l.bbox.w <= parts[0].bbox.x
@@ -325,6 +353,27 @@ export function parseToc(lines: OcrLine[]): TocEntry[] {
       }
     }
     flush();
+  }
+  // 只列「曲号 曲名」、不带页码的目录（两栏排：「1 至于我　29 神啊我心坚定」）：曲号在前、紧跟汉字。
+  // 按「文字 + 两个数」认出的条目不到它的一半才改用它（那种目录里每条也是「数 + 字」开头的，别抢）
+  const lead = numberFirstToc(rows);
+  return lead.length > out.length * 2 ? lead : out;
+}
+
+/** 「曲号 曲名」式目录行：数字框后接汉字框，或一个框里数在前、字在后。 */
+function numberFirstToc(rows: readonly OcrLine[][]): TocEntry[] {
+  const out: TocEntry[] = [];
+  for (const row of rows) {
+    let num: number | undefined;
+    for (const l of row) {
+      const t = l.text.trim();
+      if (/^\d{1,4}$/.test(t)) { num = Number(t); continue; }
+      const m = /^(\d{1,4})\s*(\D.*)$/.exec(t);
+      const [n, text] = m ? [Number(m[1]), m[2]] : [num, t];
+      num = undefined;
+      const name = text.replace(/[\s*＊—–\-.…·]+/g, "").replace(/\d+$/, "");
+      if (n !== undefined && CJK.test(name)) out.push({ text: name, number: n });
+    }
   }
   return out;
 }

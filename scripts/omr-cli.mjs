@@ -9,6 +9,7 @@
 //   node scripts/omr-cli.mjs 图.jpg --lyrics 歌词.txt        # 参照歌词互证：形近字按歌词选字、补漏字，不一致处报到 stderr
 //   node scripts/omr-cli.mjs 图.jpg -l 歌词.lrc --lyrics-report 核对.json   # 核对结果另落 JSON
 //   node scripts/omr-cli.mjs split 歌本.pdf -o 歌谱/       # 歌本切分：整本 PDF 或页图目录 → 一首一张图 + 目录核对
+//   node scripts/omr-cli.mjs split 矢量歌本.pdf -o 歌谱/ --dpi 200 --recognize -f 123   # 转曲矢量歌本：出 PNG，逐首按矢量识别
 // 格式清单取自 src/omr/emit.ts::OMR_EMITTERS，加格式不用改本脚本。
 //
 // 参照歌词（--lyrics）只配**单张图**：一份歌词文件对一首歌（.txt / .lrc，编码 UTF-8/GBK/UTF-16 自动认）。
@@ -171,17 +172,22 @@ process.exit(failed ? 1 : 0);
 // ───────────────────────── split：歌本切分 ─────────────────────────
 // 整本分页简谱（PDF 取每页内嵌源图，或页图文件夹按文件名自然序）→ 输出目录里一首一张 `曲号 曲名.jpg`：
 // 一页多首按标题切开、一首跨页按序拼接，去页码，拼缝处用本首的系统间距，边距照源图、切口补纸色；
-// 再自动认书内目录页（「首句 曲号 页码」）核对缺漏，报告写到 `输出目录/切分报告.txt`（及 --report JSON）。
-// 有缺号或重号时退出码 1。
+// 再自动认书内目录页（「首句 曲号 页码」或只有「曲号 曲名」）核对缺漏，报告写到 `输出目录/切分报告.txt`（及 --report JSON）。
+// 转曲矢量 PDF（页上没有内嵌位图）整页渲成图来扫描，出 `曲号 曲名.png`（--dpi，缺省 300）；
+// --recognize 切完逐首识别，回原书取矢量对象（不认渲出来的图），-f 选格式（缺省 musicxml），与图片同名放在一起。
+// 有缺号、重号或识别失败时退出码 1。
 async function runSplit(args) {
-  const o = { input: null, out: null, report: null, quality: 92, tocPages: null, dryRun: false };
+  const o = { input: null, out: null, report: null, quality: 92, dpi: null, tocPages: null, dryRun: false, recognize: false, format: "musicxml" };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "-o" || a === "--out") o.out = args[++i];
     else if (a === "--report") o.report = args[++i];
     else if (a === "--quality") o.quality = Number(args[++i]);
+    else if (a === "--dpi") o.dpi = Number(args[++i]);
     else if (a === "--toc-pages") o.tocPages = args[++i];
     else if (a === "--dry-run") o.dryRun = true;
+    else if (a === "--recognize") o.recognize = true;
+    else if (a === "-f" || a === "--format") o.format = args[++i];
     else if (a.startsWith("--threads=")) process.env.OMR_THREADS = a.slice(10);
     else if (a.startsWith("--thread-mode=")) process.env.OMR_THREAD_MODE = a.slice(14);
     else if (a === "-h" || a === "--help") o.input = null, o.out = null, i = args.length;
@@ -189,12 +195,18 @@ async function runSplit(args) {
   }
   if (!o.input || (!o.out && !o.dryRun)) {
     console.error(`用法: omr-cli.mjs split <歌本.pdf | 页图目录> -o <输出目录>
-              [--report 报告.json] [--quality 92] [--toc-pages 3-15] [--dry-run]
+              [--report 报告.json] [--quality 92] [--dpi 300] [--toc-pages 3-15] [--dry-run]
+              [--recognize [-f musicxml]]
   --toc-pages  目录页（按源页序，1 起；如 3-15 或 3,5,7-9）；不给则自动认歌谱区之前全是字行的页
-  --dry-run    只扫描、核对并打印报告，不写图片`);
+  --dry-run    只扫描、核对并打印报告，不写图片
+  --quality    位图歌本出 JPEG 的质量
+  --dpi        转曲矢量歌本出 PNG 的分辨率
+  --recognize  切完逐首识别（只收转曲矢量歌本，取原书矢量对象）；-f 选格式：musicxml（缺省）/ 123 / jpwabc / abc / shige / tomato / jly / jcx`);
     process.exit(o.input ? 1 : 0);
   }
+  if (o.recognize && o.dryRun) { console.error("--recognize 要写文件，不能与 --dry-run 一起用"); process.exit(1); }
   if (!(o.quality >= 1 && o.quality <= 100)) { console.error("--quality 要在 1–100"); process.exit(1); }
+  if (o.dpi !== null && !(o.dpi >= 36 && o.dpi <= 1200)) { console.error("--dpi 要在 36–1200"); process.exit(1); }
   const tocPages = o.tocPages ? parseRanges(o.tocPages).map((n) => n - 1) : undefined;
 
   const url = ["./omr.js", "../out/cli/omr.js"].map((r) => new URL(r, import.meta.url)).find((u) => existsSync(fileURLToPath(u)));
@@ -202,23 +214,33 @@ async function runSplit(args) {
   const cli = await import(url.href);
 
   const t0 = performance.now();
+  if (o.recognize && !cli.isBookFormat(o.format)) { console.error(`未知格式 ${o.format}，可选：${cli.BOOK_FORMATS.join(" / ")}`); process.exit(1); }
   const src = await cli.openBookSource(o.input);
+  if (o.recognize && !src.vector) {
+    console.error("--recognize 只收转曲矢量歌本；位图歌本请先 split 出图，再用 omr-cli 批量识别图片目录");
+    process.exit(1);
+  }
+  if (src.vector) console.error(`转曲矢量 PDF：出 PNG（${o.dpi ?? 300} dpi）`);
+  else if (o.dpi !== null) console.error("--dpi 只对转曲矢量 PDF 有效，位图歌本照源图原分辨率出 JPEG，已忽略");
   const tick = (label) => (d, n) => { if (process.stderr.isTTY) process.stderr.write(`\r${label} ${d}/${n}`); if (d === n) process.stderr.write(process.stderr.isTTY ? "\n" : `${label} ${n}/${n}\n`); };
   const plan = await cli.planBook(src, cli.paddleOcrBackend(), { tocPages, onProgress: tick("扫描") });
   const names = cli.songFileNames(plan.songs);
   const rep = cli.checkAgainstToc(plan, names, (i) => src.name(i));
+  let recRep = null;
   if (!o.dryRun) {
-    await cli.writeSongs(src, plan.layouts, names, o.out, { quality: o.quality, onProgress: tick("写出") });
-    await writeFile(join(o.out, "切分报告.txt"), rep.text);
+    await cli.writeSongs(src, plan.layouts, names, o.out, { quality: o.quality, dpi: o.dpi ?? undefined, onProgress: tick("写出") });
+    if (o.recognize) recRep = await cli.recognizeBookSongs(src, plan, names, o.out, cli.paddleOcrBackend(), { format: o.format, onProgress: tick("识别") });
+    await writeFile(join(o.out, "切分报告.txt"), rep.text + (recRep ? "\n" + recRep.text : ""));
   }
   if (o.report) {
     const { text, ...rest } = rep;
-    await writeFile(o.report, JSON.stringify({ ...rest, songs: plan.songs.map((s, k) => ({ file: names[k] + ".jpg", ...s })) }, null, 2));
+    await writeFile(o.report, JSON.stringify({ ...rest, songs: plan.songs.map((s, k) => ({ file: names[k] + cli.songImageExt(src), ...s })), ...(recRep ? { recognize: { ok: recRep.ok, failed: recRep.failed } } : {}) }, null, 2));
   }
   await src.close();
   console.error(rep.text);
+  if (recRep) console.error(recRep.text);
   console.error(`用时 ${((performance.now() - t0) / 1000).toFixed(1)}s` + (o.dryRun ? "" : `，已写入 ${o.out}`));
-  process.exit(rep.missing.length || rep.duplicate.length ? 1 : 0);
+  process.exit(rep.missing.length || rep.duplicate.length || recRep?.failed.length ? 1 : 0);
 }
 
 /** 「3-15」「3,5,7-9」→ 数组。 */

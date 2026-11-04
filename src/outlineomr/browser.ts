@@ -3,9 +3,9 @@
 import { paddleOcrBackend } from "../omrkit/paddleocr";
 import type { StaffGlyphDict } from "../staffomr/staffglyphs";
 import type { StaffPdfDoc } from "../staffomr/browser";
-import { ocrHarmonyStrips, ocrHeaderStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips } from "../rasteromr/ocrlive";
 import { OutlineGlyphLookup } from "./glyphs";
 import { recognizeOutlinedDoc, type OutlinedPdfResult } from "./song";
+import { outlinedLive } from "./live";
 
 export { isOutlinedStaffPdf, type OutlinedPdfResult } from "./song";
 
@@ -21,17 +21,5 @@ export async function recognizeOutlinedPdf(
   opts: { title?: string; onProgress?: (done: number, total: number) => void; noteIds?: boolean } = {},
 ): Promise<OutlinedPdfResult> {
   const look = await lookup();
-  const ocr = paddleOcrBackend();
-  return recognizeOutlinedDoc(doc.pdf, doc.OPS, look, {
-    ...opts,
-    live: {
-      harmony: (s) => ocrHarmonyStrips(ocr, s),
-      lyric: (s) => ocrLyricStrips(ocr, s),
-      label: (s) => ocrLabelStrips(ocr, s),
-      time: (s) => ocrTimeStrips(ocr, s),
-      jianpu: (s) => ocrJianpuStrips(ocr, s),
-      word: (s) => ocrWordStrips(ocr, s),
-      header: (s) => ocrHeaderStrips(ocr, s),
-    },
-  });
+  return recognizeOutlinedDoc(doc.pdf, doc.OPS, look, { ...opts, live: outlinedLive(paddleOcrBackend()) });
 }

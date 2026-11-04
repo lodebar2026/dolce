@@ -38,6 +38,22 @@ export async function planBook(src: PageSource, ocr: OcrBackend, opts: PlanOptio
     opts.onProgress?.(i + 1, src.count);
   }
   const region = findRegion(pages);
+  // 目录页成片排：与已认出的目录页相邻、在歌谱区外、没有标题的页也整页 OCR 一遍（三位曲号全以「1」打头时，
+  // 笔画细的「1」一行好几个都像小节线，`looksLikeToc` 当它是谱行，漏认）
+  if (!forced) {
+    const outside = (i: number) => i < region.first || i > region.last;
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const p of pages) {
+        if (p.toc.length || p.titles.length || !outside(p.index)) continue;
+        if (!pages[p.index - 1]?.toc.length && !pages[p.index + 1]?.toc.length) continue;
+        const again = await scanPage(p.index, await src.page(p.index), ocr, true, p.printed);
+        if (!again.toc.length) continue;
+        pages[p.index] = again;
+        grew = true;
+      }
+    }
+  }
   // 目录只取歌谱区之外的页（区内纯歌词页也可能像目录）
   const tocPages = pages.filter((p) => p.toc.length && (forced ? forced.has(p.index) : p.index < region.first || p.index > region.last)).map((p) => p.index);
   const maxPage = region.offset !== undefined ? region.last - region.offset : undefined;
@@ -86,10 +102,10 @@ export function checkAgainstToc(plan: BookPlan, names: readonly string[], srcNam
   const { toc, songs, region } = plan;
   const counts = new Map<number, number>();
   for (const s of songs) if (s.number !== undefined) counts.set(s.number, (counts.get(s.number) ?? 0) + 1);
-  const maxN = Math.max(0, ...toc.pages.keys());
+  const maxN = Math.max(0, ...toc.numbers);
   const missing: SplitReport["missing"] = [];
   for (let n = 1; n <= maxN; n++) if (!counts.has(n)) missing.push({ number: n, text: toc.texts.get(n), page: toc.pages.get(n) });
-  const extra = [...counts.keys()].filter((n) => toc.pages.size && !toc.pages.has(n)).sort((a, b) => a - b);
+  const extra = [...counts.keys()].filter((n) => toc.numbers.size && !toc.numbers.has(n)).sort((a, b) => a - b);
   const duplicate = [...counts].filter(([, c]) => c > 1).map(([n]) => n).sort((a, b) => a - b);
   const pageMismatch: [number, number, number][] = [];
   if (region.offset !== undefined) {
@@ -104,7 +120,7 @@ export function checkAgainstToc(plan: BookPlan, names: readonly string[], srcNam
   const L: string[] = [];
   const pageLabel = (i: number) => (region.offset !== undefined ? `${srcName(i)}（印页 ${i - region.offset}）` : srcName(i));
   L.push(`歌谱区：${pageLabel(region.first)} – ${pageLabel(region.last)}，共 ${region.last - region.first + 1} 页`);
-  L.push(`目录：读自 ${plan.tocPages.length} 页，得 ${toc.pages.size} 条（曲号 1–${maxN}）` + (toc.dropped.length ? `，${toc.dropped.length} 条与前后页码不单调已剔除` : ""));
+  L.push(`目录：读自 ${plan.tocPages.length} 页，得 ${toc.numbers.size} 条（曲号 1–${maxN}）` + (toc.dropped.length ? `，${toc.dropped.length} 条与前后页码不单调已剔除` : ""));
   L.push(`切出：${songs.length} 首`);
   L.push(`缺：${missing.length} 首` + (missing.length ? "" : " ✓"));
   for (const m of missing) L.push(`  ${m.number}${m.text ? ` ${m.text}` : "（目录也没读到）"}${m.page !== undefined ? ` 目录页 ${m.page}` : ""}`);
@@ -125,7 +141,7 @@ export function checkAgainstToc(plan: BookPlan, names: readonly string[], srcNam
   if (badFooter.length) L.push(`页码与前后不连贯（可能把别的数当成页码、或真页码没去掉）：${badFooter.map((i) => `${srcName(i)} 读作 ${plan.pages[i].printed}`).join("、")}`);
   if (noFooter.length) L.push(`没认出页码的页（页码可能留在图里，请抽查）：${noFooter.map(srcName).join("、")}`);
   if (plan.orphans.length) L.push(`第一个标题之前、未归属的页：${plan.orphans.map(srcName).join("、")}`);
-  if (toc.dropped.length) L.push(`剔除的目录条目：${toc.dropped.map((e) => `${e.text} ${e.number}/${e.page}`).join("；")}`);
+  if (toc.dropped.length) L.push(`剔除的目录条目：${toc.dropped.map((e) => `${e.text} ${e.number}/${e.page ?? ""}`).join("；")}`);
   const withIssues = songs.map((s, k) => ({ s, k })).filter(({ s }) => s.issues.length);
   if (withIssues.length) {
     L.push(`逐首提示：`);

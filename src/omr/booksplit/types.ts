@@ -10,6 +10,19 @@ export interface PageSource {
   name(i: number): string;
   page(i: number): Promise<RgbaImage>;
   close(): Promise<void>;
+  /** 转曲矢量歌本（`vector.node.ts`）：`page()` 是按 `scale`（像素 / PDF 点）渲的扫描图，`render` 按别的分辨率重渲，
+   *  识别回 `pdf` 取对象。位图歌本没有。 */
+  vector?: VectorBook;
+}
+
+export interface VectorBook {
+  /** pdf.js 的 PDFDocumentProxy */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdf: any;
+  OPS: Record<string, number>;
+  /** 扫描图每 PDF 点几个像素 */
+  scale: number;
+  render(i: number, scale: number): Promise<RgbaImage>;
 }
 
 /** 一页上认出的标题。 */
@@ -44,8 +57,8 @@ export interface TocEntry {
   /** 首句 / 经文等（只作报告用）。 */
   text: string;
   number: number;
-  /** 印的页码。 */
-  page: number;
+  /** 印的页码；只列「曲号 曲名」的目录没有。 */
+  page?: number;
 }
 
 /** 一首歌在某一页上的一段。 */

@@ -5,7 +5,7 @@
 // （`staffomr/pagerun.ts::recognizeBuiltPage`：找谱表 → 符头符干 → 小节 → 音符 → 记号 → 自检）。
 // 文字部分照位图路 `pagefinish.ts` 的做法造文本对象挂音（歌词不走 `analyzeText`：中文逐字一个音节，没有锚点）。
 // 不碰 DOM。
-import { extractVectorPage, type OpsEnum, type VecObj } from "../omrkit/vector";
+import { DRAW_MOVE, drawOpArity, extractVectorPage, type OpsEnum, type VecObj } from "../omrkit/vector";
 import type { Rect } from "../omrkit/types";
 import { buildPage } from "../staffomr/page";
 import { recognizeBuiltPage, type StaffPageResult } from "../staffomr/pagerun";
@@ -39,14 +39,19 @@ const NOTE_RUN = 5;
 const NOTE_GAP = 0.35;
 /** 形状简单（一道横、一点、一竖）的符号：从一个对象拆出来的块认成它们不算数 */
 const PLAIN_SHAPES = new Set<string>(["articTenutoAbove", "articTenutoBelow", "legerLine", "stem", "augmentationDot", "articStaccatoAbove", "articStaccatoBelow", "barlineSingle", "restHBar"]);
+/** 按实心符头认空心符头：本页至少认出几个实心符头、外框差多少以内；全音符比实心符头宽这么多倍 */
+const HEAD_MIN = 3;
+const HEAD_TOL = 0.15;
+const WHOLE_W = 1.4;
 /** 和弦带：简谱行（没有简谱行时谱表顶线）以上这么多线距 */
 const CHORD_ZONE = 4.5;
 /** 和弦带里横向隔开过这么多线距就是下一个记号 */
 const CHORD_GAP = 0.9;
 /** 歌词行：字高至少这么多线距（拍号、减时线、小附点不算） */
 const LYRIC_MIN_H = 1.2;
-/** 歌词行比这个（`LYRIC_MIN_H` 的倍数）还矮的是页脚小字：歌词字高 3.3 格、版权行 2.1 格 */
-const LYRIC_FOOT = 2;
+/** 字行比本页字行行高的中位矮过这个比例的是页脚小字：祢話如甘霖歌词字高 3.3 格、版权行 2.1 格（0.64）；
+ *  裴克经文诗歌歌词才 2.2 格，按线距定的下限会把歌词整行丢掉 */
+const LYRIC_FOOT = 0.8;
 /** 歌词行至少几个字块 */
 const LYRIC_MIN_ITEMS = 3;
 
@@ -58,6 +63,12 @@ export interface OutlinedPageResult extends StaffPageResult {
   lyricRows: number;
   /** 曲首页的页眉（标题、词曲）；不是曲首页为空 */
   header: HeaderCredit[];
+}
+
+/** 页内的一段（PDF 点，y 向下）：`rect` 外与 `drop` 里的对象不认。 */
+export interface PageClip {
+  rect: Rect;
+  drop?: Rect[];
 }
 
 interface Group5 {
@@ -100,6 +111,19 @@ function unionBox(objs: readonly VecObj[]): Rect {
   const x1 = Math.max(...objs.map((o) => o.bbox.x + o.bbox.w));
   const y1 = Math.max(...objs.map((o) => o.bbox.y + o.bbox.h));
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+const median = (xs: readonly number[]): number => [...xs].sort((a, b) => a - b)[xs.length >> 1];
+/** 路径里有几道子路径（moveTo 数） */
+function subpathCount(o: VecObj): number {
+  let n = 0;
+  for (let i = 0; i < o.data.length; ) {
+    const c = o.data[i++];
+    const ar = drawOpArity(c);
+    if (ar < 0) break;
+    if (c === DRAW_MOVE) n++;
+    i += ar;
+  }
+  return n;
 }
 const pad = (r: Rect, p: number): Rect => ({ x: r.x - p, y: r.y - p, w: r.w + p * 2, h: r.h + p * 2 });
 
@@ -154,9 +178,13 @@ export async function recognizeOutlinedPage(
   OPS: OpsEnum,
   look: OutlineGlyphLookup,
   index: number,
-  opts: { live?: RasterLiveOcr; carryTime?: { beats: number; beatType: number }; wantHeader?: boolean } = {},
+  opts: { live?: RasterLiveOcr; carryTime?: { beats: number; beatType: number }; wantHeader?: boolean; clip?: PageClip } = {},
 ): Promise<OutlinedPageResult> {
   const vec = await extractVectorPage(pdfPage, OPS, { scale: 1 });
+  // 只认页上的一段（歌本一页排两首、页脚页码）：中心落在段里、不落在剔除框里的对象才留下
+  const clip = opts.clip;
+  if (clip) vec.objs = vec.objs.filter((o) => inside(clip.rect, cx(o), cy(o)) && !clip.drop?.some((r) => inside(r, cx(o), cy(o))));
+  const pageBottom = clip ? clip.rect.y + clip.rect.h : vec.height;
   const st5 = staffGroups(vec.objs, vec.width);
   const empty = (): OutlinedPageResult => {
     const pg = buildPage(index, vec.width, vec.height, [], [], 20);
@@ -203,6 +231,23 @@ export async function recognizeOutlinedPage(
       continue;
     }
     pieces.forEach((p, i) => (got[i] ? syms.push({ box: objRect(p), code: got[i]!.code }) : texts.push(p)));
+  }
+
+  // 空心符头：字典里各字体的二分符头内腔斜着、这里画成同心两个椭圆（裴克经文诗歌），签名对不上。按本页已认出的实心符头比：
+  // 外框与实心符头中位相当、两道子路径套在一起（外圈与内腔）的就是空心符头，宽出一截的是全音符
+  const heads = syms.filter((q) => q.code === "noteheadBlack");
+  if (heads.length >= HEAD_MIN) {
+    const mw = median(heads.map((q) => q.box.w));
+    const mh = median(heads.map((q) => q.box.h));
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const o = texts[i];
+      if (inBand(o) || !inStaffZone(o) || subpathCount(o) !== 2 || splitPieces(o).length !== 1) continue;
+      const rw = o.bbox.w / mw;
+      const rh = o.bbox.h / mh;
+      if (Math.abs(rh - 1) > HEAD_TOL || rw < 1 - HEAD_TOL || rw > WHOLE_W + HEAD_TOL) continue;
+      syms.push({ box: objRect(o), code: rw > WHOLE_W - HEAD_TOL ? "noteheadWhole" : "noteheadHalf" });
+      texts.splice(i, 1);
+    }
   }
 
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
@@ -283,40 +328,46 @@ export async function recognizeOutlinedPage(
   // ── 歌词：谱表下方的字行 ─────────────────────────────────────────────────
   const lyricStrips: LyricStrip[] = [];
   const stripStaff = new Map<LyricStrip, Staff>();
+  const lyricRows: { row: VecObj[]; box0: Rect; st: Staff }[] = [];
   staffBoxes.forEach((s, k) => {
     const st = staffOfBox(k);
     if (!st) return;
     // 下一行谱（连同它上方的简谱行、和弦带）之前
     const next = staffBoxes[k + 1];
-    const nextTop = next ? Math.min(next.top, ...bands.filter((b) => b.staff === k + 1).map((b) => b.box.y)) - sp * (bands.some((b) => b.staff === k + 1) ? CHORD_ZONE : 0.5) : vec.height;
+    const nextTop = next ? Math.min(next.top, ...bands.filter((b) => b.staff === k + 1).map((b) => b.box.y)) - sp * (bands.some((b) => b.staff === k + 1) ? CHORD_ZONE : 0.5) : pageBottom;
     const zone: Rect = { x: s.left - sp * 2, y: s.bottom + sp * 0.5, w: s.right - s.left + sp * 4, h: nextTop - s.bottom - sp * 0.5 };
     if (zone.h <= 0) return;
     const items = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o)));
     for (const row of rowsOf(items)) {
       const box0 = unionBox(row);
       if (box0.h < sp * LYRIC_MIN_H || row.length < LYRIC_MIN_ITEMS) continue;
-      // 页脚的版权小字（「© 2024 劉安淑/小羊詩歌版權所有」，字高只有歌词的六成）
-      if (box0.h < sp * LYRIC_MIN_H * LYRIC_FOOT) continue;
-      for (const o of row) used.add(o);
-      const rowH = box0.h;
-      const cells = charCells(row, rowH);
-      const box = pad(box0, rowH * 0.15);
-      const bin = rasterizeObjs(row, box, OCR_SCALE);
-      const strip: LyricStrip = {
-        w: bin.w,
-        h: bin.h,
-        data: bin.data,
-        box,
-        charH: [...cells.map((c) => unionBox(c).h)].sort((a, b) => a - b)[cells.length >> 1],
-        cells: cells.map((c) => {
-          const b = unionBox(c);
-          return { x0: (b.x - box.x) / box.w, x1: (b.x + b.w - box.x) / box.w, box: b };
-        }),
-      };
-      lyricStrips.push(strip);
-      stripStaff.set(strip, st);
+      lyricRows.push({ row, box0, st });
     }
   });
+  // 页脚的版权小字（「© 2024 劉安淑/小羊詩歌版權所有」，字高只有歌词的六成）：比本页字行行高的中位矮过 `LYRIC_FOOT` 的不收
+  const rowHs = lyricRows.map((r) => r.box0.h).sort((a, b) => a - b);
+  const rowH0 = rowHs.length ? rowHs[rowHs.length >> 1] : 0;
+  for (const { row, box0, st } of lyricRows) {
+    if (box0.h < rowH0 * LYRIC_FOOT) continue;
+    for (const o of row) used.add(o);
+    const rowH = box0.h;
+    const cells = charCells(row, rowH);
+    const box = pad(box0, rowH * 0.15);
+    const bin = rasterizeObjs(row, box, OCR_SCALE);
+    const strip: LyricStrip = {
+      w: bin.w,
+      h: bin.h,
+      data: bin.data,
+      box,
+      charH: [...cells.map((c) => unionBox(c).h)].sort((a, b) => a - b)[cells.length >> 1],
+      cells: cells.map((c) => {
+        const b = unionBox(c);
+        return { x0: (b.x - box.x) / box.w, x1: (b.x + b.w - box.x) / box.w, box: b };
+      }),
+    };
+    lyricStrips.push(strip);
+    stripStaff.set(strip, st);
+  }
   if (lyricStrips.length) {
     const ocr = await live.lyric(lyricStrips);
     const objs: PObj[] = [];

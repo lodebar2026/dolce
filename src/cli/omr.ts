@@ -2,7 +2,7 @@
 // 由 `npm run build:cli` 打成 out/cli/omr.js，供 scripts/omr-cli.mjs 与 OMR 回归脚本 import。
 //
 // 与 cli/index.ts 的分工：那个是**矢量 PDF 版面**那一摊（vector/inventory/pdflayout），
-// 这个是**位图简谱识别**这一条（decode → jianpu → emit）。PDF 输入不走这里。
+// 这个是**位图简谱识别**这一条（decode → jianpu → emit），外加歌本切分（含转曲矢量歌本的逐首识别）。
 import { installNodeDecoder } from "../omrkit/decode.node";
 import { setOmrRuntime } from "../omrkit/runtime";
 import { installNodeKernels } from "./omrkernels.node";
@@ -73,4 +73,7 @@ export { planBook, songFileNames, checkAgainstToc } from "../omr/booksplit";
 export { scanPage, pageBinary } from "../omr/booksplit/scan";
 export type { BookPlan, SplitReport } from "../omr/booksplit";
 export { openBookSource } from "../omr/booksplit/source.node";
-export { writeSongs } from "../omr/booksplit/write.node";
+export { writeSongs, songImageExt } from "../omr/booksplit/write.node";
+// 转曲矢量歌本逐首识别（回原书取矢量对象，`outlineomr`）
+export { recognizeBookSongs, BOOK_FORMATS, isBookFormat } from "../omr/booksplit/recognize";
+export type { BookFormat, BookRecognizeReport } from "../omr/booksplit/recognize";

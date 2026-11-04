@@ -100,6 +100,8 @@ The interface is available in **English and Chinese**: it follows your browser l
   folder of page images) into one `number title.jpg` per song: pages holding several songs are cut at the titles,
   songs running over pages are joined into one image with page numbers removed and system spacing kept even, and
   the result is checked against the book's own table of contents for missing or duplicate numbers.
+  Outlined vector PDFs come out as PNG (`--dpi` sets the resolution), and `--recognize` then recognizes each song
+  from the book's vector objects (`-f` picks the format, MusicXML by default).
 
 **Typesetting**
 - **Four views:**

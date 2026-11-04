@@ -31,6 +31,8 @@ export interface Toc {
   pages: Map<number, number>;
   /** 首句等文字（报告用）。 */
   texts: Map<number, string>;
+  /** 目录里有的全部曲号（含不带页码的条目、不含剔掉的）。 */
+  numbers: Set<number>;
   /** 读到了但与前后不单调、被剔掉的条目。 */
   dropped: TocEntry[];
 }
@@ -42,8 +44,18 @@ export interface Toc {
 export function buildToc(entries: readonly TocEntry[], maxPage?: number): Toc {
   const votes = new Map<number, Map<number, number>>();
   const texts = new Map<number, string>();
+  const bare = new Set<number>();
+  // 一本书的目录要么都带页码、要么都不带：有带页码的条目时，不带的（前言、索引页上按「数 + 字」误认出来的）不收
+  const paged = entries.some((e) => e.page !== undefined);
   for (const e of entries) {
-    if (e.number < 1 || e.page < 1 || (maxPage !== undefined && e.page > maxPage)) continue;
+    if (e.number >= 1 && e.page === undefined) {
+      if (paged) continue;
+      // 不带页码的条目（只列「曲号 曲名」的目录）：只记号与文字
+      bare.add(e.number);
+      if (!texts.has(e.number)) texts.set(e.number, e.text);
+      continue;
+    }
+    if (e.page === undefined || e.number < 1 || e.page < 1 || (maxPage !== undefined && e.page > maxPage)) continue;
     const m = votes.get(e.number) ?? new Map<number, number>();
     m.set(e.page, (m.get(e.page) ?? 0) + 1);
     votes.set(e.number, m);
@@ -61,7 +73,9 @@ export function buildToc(entries: readonly TocEntry[], maxPage?: number): Toc {
     if (keep.has(i)) pages.set(c.n, c.page);
     else dropped.push({ text: texts.get(c.n) ?? "", number: c.n, page: c.page });
   });
-  return { pages, texts, dropped };
+  const dropNums = new Set(dropped.map((e) => e.number));
+  const numbers = new Set([...pages.keys(), ...[...bare].filter((n) => !dropNums.has(n))]);
+  return { pages, texts, numbers, dropped };
 }
 
 /** 最长不减子序列的下标集合（O(n log n)）。 */

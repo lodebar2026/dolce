@@ -239,7 +239,7 @@ async function build(target) {
     dependencies: {
       "onnxruntime-node": pkg.devDependencies["onnxruntime-node"],
       sharp: pkg.dependencies.sharp,
-      // 只有 split 读 PDF 时才动态加载（Node ≥ 22.13）；识别单张图用不到
+      // 只有 split 读 PDF 时才动态加载（Node ≥ 22.13，含转曲矢量歌本的渲染与逐首识别）；识别单张图用不到
       "pdfjs-dist": pkg.dependencies["pdfjs-dist"],
     },
   }, null, 2) + "\n");
@@ -322,8 +322,11 @@ Win10/11 多半已装过，报「找不到 VCRUNTIME140.dll」时到微软官网
 
 歌本切分（\`split\`）：分页的简谱诗歌集切成一首一张 \`曲号 曲名.jpg\`——一页多首按标题切开、一首跨页按序拼接，
 去掉页码，拼缝处用本首的系统间距，边距照源图。输入是扫描 PDF（取每页内嵌的原图，不重新渲染；需 Node ≥ 22.13）
-或页图目录（按文件名自然序）。自动认书内目录页（「首句 曲号 页码」）核对缺号、重号、起始页，报告写到输出目录的
+或页图目录（按文件名自然序）。自动认书内目录页（「首句 曲号 页码」或只列「曲号 曲名」）核对缺号、重号、起始页，报告写到输出目录的
 \`切分报告.txt\`；认错目录页时用 \`--toc-pages 3-15\` 指定（按源页序，1 起），\`--dry-run\` 只出报告不写图。
+转曲矢量 PDF（字与谱都转成了路径、没有内嵌图）出 \`曲号 曲名.png\`，\`--dpi 200\` 定分辨率（缺省 300）；
+加 \`--recognize\` 切完逐首识别（回原书取矢量对象，五线谱与简线混排谱），\`-f\` 选格式（缺省 \`musicxml\`，
+另有 \`123\` / \`jpwabc\` / \`abc\` / \`shige\` / \`tomato\` / \`jly\` / \`jcx\`），与图片同名放在一起。
 
 当库用：
 
