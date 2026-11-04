@@ -145,8 +145,31 @@ fn export_pdf_cmd(
 //   响应体: [ndims u8][dims i32×ndims (LE)][f32 data (LE)]
 use std::sync::Mutex;
 
-static REC_SESS: Mutex<Option<ort::session::Session>> = Mutex::new(None);
-static DET_SESS: Mutex<Option<ort::session::Session>> = Mutex::new(None);
+/// 每个模型一个**会话池**：前端多页并行时各页的 OCR 同时到来，一把锁会让它们排队。
+/// 池大小 `DOLCE_OCR_SESS`（缺省 3）、每个会话的算子线程数 `DOLCE_OCR_THREADS`（缺省 3）可调。
+/// 实测（10 核 Mac，现跑合唱谱）1×4 → 3×3：宁静 19.2→17.1 s、破碎扫描 37.8→32.1 s；2×4、2×2 介于其间。会话按需建（没争用不建第二个）。
+/// 同一模型、同样的线程数，换哪个会话推理结果都一样（各会话独立、不共享状态）。
+type SessPool = Vec<Mutex<Option<ort::session::Session>>>;
+static REC_SESS: std::sync::OnceLock<SessPool> = std::sync::OnceLock::new();
+static DET_SESS: std::sync::OnceLock<SessPool> = std::sync::OnceLock::new();
+static POOL_NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn env_usize(name: &str, def: usize) -> usize {
+    std::env::var(name).ok().and_then(|v| v.parse().ok()).filter(|&v| v > 0).unwrap_or(def)
+}
+fn sess_pool(slot: &'static std::sync::OnceLock<SessPool>) -> &'static SessPool {
+    slot.get_or_init(|| (0..env_usize("DOLCE_OCR_SESS", 3)).map(|_| Mutex::new(None)).collect())
+}
+/// 取一个空闲会话（都忙就按轮转排到其中一个上等）。
+fn lock_sess(pool: &'static SessPool) -> Result<std::sync::MutexGuard<'static, Option<ort::session::Session>>, String> {
+    for m in pool {
+        if let Ok(g) = m.try_lock() {
+            return Ok(g);
+        }
+    }
+    let i = POOL_NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % pool.len();
+    pool[i].lock().map_err(|e| e.to_string())
+}
 static ORT_ENV: std::sync::OnceLock<ort::environment::Environment> = std::sync::OnceLock::new();
 
 fn ort_env() -> Result<&'static ort::environment::Environment, String> {
@@ -171,7 +194,7 @@ fn ensure_ocr_session(
         let path = ocr_model_path(app, file)?;
         let sess = ort::session::Session::builder(ort_env()?)
             .map_err(|e| e.to_string())?
-            .with_intra_threads(4)
+            .with_intra_threads(env_usize("DOLCE_OCR_THREADS", 3))
             .map_err(|e| e.to_string())?
             .commit_from_file(&path)
             .map_err(|e| format!("加载模型 {} 失败: {}", path.display(), e))?;
@@ -194,12 +217,12 @@ fn infer_one(
     dims: Vec<i64>,
     data: Vec<f32>,
 ) -> Result<(Vec<i32>, Vec<u8>), String> {
-    let (slot_mutex, file) = if model == 0 {
-        (&REC_SESS, "rec.onnx")
+    let (pool, file) = if model == 0 {
+        (sess_pool(&REC_SESS), "rec.onnx")
     } else {
-        (&DET_SESS, "det.onnx")
+        (sess_pool(&DET_SESS), "det.onnx")
     };
-    let mut guard = slot_mutex.lock().map_err(|e| e.to_string())?;
+    let mut guard = lock_sess(pool)?;
     ensure_ocr_session(&mut guard, app, file)?;
     let sess = guard.as_mut().unwrap();
     let iname = sess.inputs()[0].name().to_string();
@@ -416,25 +439,16 @@ fn write_result(resp: &mut Vec<u8>, out_dims: &[i32], out_bytes: &[u8]) {
     resp.extend_from_slice(out_bytes);
 }
 
-/// 单张量推理。请求 int32[model,mode,ndims,dims...]+f32[data]；响应 int32[ndims,dims...]+data。
-#[tauri::command]
-fn omr_onnx(
-    app: tauri::AppHandle,
-    request: tauri::ipc::Request,
-) -> Result<tauri::ipc::Response, String> {
-    let body = match request.body() {
-        tauri::ipc::InvokeBody::Raw(v) => v.as_slice(),
-        _ => return Err("omr_onnx 需要原始字节请求体".into()),
-    };
+fn omr_onnx_impl(app: &tauri::AppHandle, body: &[u8]) -> Result<Vec<u8>, String> {
     #[cfg(feature = "bench")]
     let t_cmd = std::time::Instant::now();
     let (model, mode, dims, data, _) = parse_req(body, 0)?;
-    let (out_dims, out_bytes) = infer_one(&app, model, mode, dims, data)?;
+    let (out_dims, out_bytes) = infer_one(app, model, mode, dims, data)?;
     let mut resp: Vec<u8> = Vec::with_capacity((1 + out_dims.len()) * 4 + out_bytes.len());
     write_result(&mut resp, &out_dims, &out_bytes);
     #[cfg(feature = "bench")]
     bench::add_cmd(t_cmd.elapsed(), body.len() + resp.len());
-    Ok(tauri::ipc::Response::new(resp))
+    Ok(resp)
 }
 
 /// DBNet 检测的输入归一化：RGBA 字节 → CHW f32（ImageNet mean/std）。算式照 `paddleocr.ts::detectRegion`：先按 f64 算、再存成 f32，逐位相同。
@@ -504,12 +518,7 @@ fn det_components(prob: &[f32], w: usize, h: usize, out: &mut Vec<u8>) -> u32 {
 
 /// **DBNet 检测（只回连通块）**：请求 int32[W,H] + RGBA 字节（W×H×4，已缩到检测尺寸）；
 /// 响应 int32[块数] + 逐块 (int32×5 + f64)。归一化与阈值连通域都在这边做，不再整张回传 f32 概率图。
-#[tauri::command]
-fn omr_det(app: tauri::AppHandle, request: tauri::ipc::Request) -> Result<tauri::ipc::Response, String> {
-    let body = match request.body() {
-        tauri::ipc::InvokeBody::Raw(v) => v.as_slice(),
-        _ => return Err("omr_det 需要原始字节请求体".into()),
-    };
+fn omr_det_impl(app: &tauri::AppHandle, body: &[u8]) -> Result<Vec<u8>, String> {
     if body.len() < 8 {
         return Err("omr_det 请求体过短".into());
     }
@@ -520,7 +529,7 @@ fn omr_det(app: tauri::AppHandle, request: tauri::ipc::Request) -> Result<tauri:
         return Err("omr_det 像素越界".into());
     }
     let chw = det_normalize(&body[8..8 + w * h * 4], w, h);
-    let (_, bytes) = infer_one(&app, 1, 0, vec![1, 3, h as i64, w as i64], chw)?;
+    let (_, bytes) = infer_one(app, 1, 0, vec![1, 3, h as i64, w as i64], chw)?;
     // Vec<u8> 不保证按 f32 对齐，逐个拼回（cast_slice 遇到不对齐会 panic）
     let prob: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
     let mut comps: Vec<u8> = Vec::new();
@@ -530,21 +539,13 @@ fn omr_det(app: tauri::AppHandle, request: tauri::ipc::Request) -> Result<tauri:
     resp.extend_from_slice(&comps);
     #[cfg(feature = "bench")]
     bench::add_cmd(t_cmd.elapsed(), body.len() + resp.len());
-    Ok(tauri::ipc::Response::new(resp))
+    Ok(resp)
 }
 
 /// 多张量批量推理（一次 IPC 携带 N 个子请求，内部逐个 session.run）——把 Tauri 每次 ~数 ms 的往返开销
 /// 从 N 次压到 1 次，同时保持逐个推理的算力最优。请求 int32[count] + count×子请求；
 /// 响应 int32[count] + count×(int32[ndims,dims...]+data)。
-#[tauri::command]
-fn omr_onnx_batch(
-    app: tauri::AppHandle,
-    request: tauri::ipc::Request,
-) -> Result<tauri::ipc::Response, String> {
-    let body = match request.body() {
-        tauri::ipc::InvokeBody::Raw(v) => v.as_slice(),
-        _ => return Err("omr_onnx_batch 需要原始字节请求体".into()),
-    };
+fn omr_onnx_batch_impl(app: &tauri::AppHandle, body: &[u8]) -> Result<Vec<u8>, String> {
     if body.len() < 4 {
         return Err("omr_onnx_batch 请求体过短".into());
     }
@@ -557,12 +558,45 @@ fn omr_onnx_batch(
     for _ in 0..count {
         let (model, mode, dims, data, next) = parse_req(body, off)?;
         off = next;
-        let (out_dims, out_bytes) = infer_one(&app, model, mode, dims, data)?;
+        let (out_dims, out_bytes) = infer_one(app, model, mode, dims, data)?;
         write_result(&mut resp, &out_dims, &out_bytes);
     }
     #[cfg(feature = "bench")]
     bench::add_cmd(t_cmd.elapsed(), body.len() + resp.len());
+    Ok(resp)
+}
+
+/// 原始字节请求体（推理命令都走二进制 IPC）。拷一份出来：推理挪到阻塞线程池里跑，借用带不过去。
+fn raw_body(request: &tauri::ipc::Request<'_>, cmd: &str) -> Result<Vec<u8>, String> {
+    match request.body() {
+        tauri::ipc::InvokeBody::Raw(v) => Ok(v.clone()),
+        _ => Err(format!("{cmd} 需要原始字节请求体")),
+    }
+}
+
+/// 推理命令一律 **async + 阻塞线程池**：同步命令跑在主线程上、一个接一个，前端多页并行时各页的 OCR 只能排队；
+/// 挪到 `spawn_blocking` 后几条推理可以同时进行（会话池见 `REC_SESS`）。
+async fn run_blocking(app: tauri::AppHandle, body: Vec<u8>, f: fn(&tauri::AppHandle, &[u8]) -> Result<Vec<u8>, String>) -> Result<tauri::ipc::Response, String> {
+    let resp = tauri::async_runtime::spawn_blocking(move || f(&app, &body)).await.map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(resp))
+}
+
+/// 单张量推理。请求 int32[model,mode,ndims,dims...]+f32[data]；响应 int32[ndims,dims...]+data。
+#[tauri::command]
+async fn omr_onnx(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::Response, String> {
+    run_blocking(app, raw_body(&request, "omr_onnx")?, omr_onnx_impl).await
+}
+
+/// DBNet 检测（只回连通块），见 `omr_det_impl`。
+#[tauri::command]
+async fn omr_det(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::Response, String> {
+    run_blocking(app, raw_body(&request, "omr_det")?, omr_det_impl).await
+}
+
+/// 多张量批量推理，见 `omr_onnx_batch_impl`。
+#[tauri::command]
+async fn omr_onnx_batch(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::Response, String> {
+    run_blocking(app, raw_body(&request, "omr_onnx_batch")?, omr_onnx_batch_impl).await
 }
 
 // ---------------- 测速构建（cargo feature `bench`，正式构建不编） ----------------
