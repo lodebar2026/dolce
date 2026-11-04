@@ -873,18 +873,30 @@ export function accidentalsLeftOfHeads(c: {
       const ry0 = Math.max(0, Math.round(hcy - sp * ACC_PROBE_UP)), ry1 = Math.min(nl.h - 1, Math.round(hcy + sp * ACC_PROBE_H));
       if (rx1 - rx0 < 3) continue;
       const W = rx1 - rx0 + 1, H = ry1 - ry0 + 1;
+      // 窗里哪些像素落在头盒里（逐点查全页的头太慢：临时记号这一步曾占识别耗时 5%），与窗横向相交的竖段（原次序）
+      const inHead = new Uint8Array(W * H);
+      for (const o of heads) {
+        if (o.box.x > rx1 || o.box.x + o.box.w <= rx0 || o.box.y > ry1 || o.box.y + o.box.h <= ry0) continue;
+        for (let y = ry0; y <= ry1; y++) {
+          if (!(y >= o.box.y && y < o.box.y + o.box.h)) continue;
+          for (let x = rx0; x <= rx1; x++) if (x >= o.box.x && x < o.box.x + o.box.w) inHead[(y - ry0) * W + (x - rx0)] = 1;
+        }
+      }
+      const winSegs = prims.vSegs.filter((v) => {
+        const vx = (v.x0 + v.x1) / 2, half = Math.max(1, v.maxLw / 2);
+        return !(vx + half < rx0 || vx - half > rx1);
+      });
       const fromNl = ((): { box: Rect; code: SmuflName } | null => {
         const local = { w: W, h: H, data: new Uint8Array(W * H) } as Binary;
         for (let y = ry0; y <= ry1; y++)
           for (let x = rx0; x <= rx1; x++) {
             if (!nl.data[y * nl.w + x]) continue;
-            if (heads.some((o) => x >= o.box.x && x < o.box.x + o.box.w && y >= o.box.y && y < o.box.y + o.box.h)) continue;
+            if (inHead[(y - ry0) * W + (x - rx0)]) continue;
             local.data[(y - ry0) * W + (x - rx0)] = 1;
           }
         // 窗里的干先抹掉：升号左竖连着邻音朝上的干和头，整块碰到窗左边、被当成邻音扣掉（破碎 p8 m84 C♯5）
-        for (const v of prims.vSegs) {
+        for (const v of winSegs) {
           const vx = (v.x0 + v.x1) / 2, half = Math.max(1, v.maxLw / 2);
-          if (vx + half < rx0 || vx - half > rx1) continue;
           // 只抹比窗还高出去的长竖段：临时记号自己的竖笔也可能被抽成竖段
           const top = Math.min(v.y0, v.y1), bot = Math.max(v.y0, v.y1);
           if (top > ry0 && bot < ry1) continue;
@@ -923,7 +935,7 @@ export function accidentalsLeftOfHeads(c: {
             for (let y = box.y; y < box.y + box.h; y++)
               for (let x = box.x; x < box.x + box.w; x++) {
                 if (!repaired.data[y * repaired.w + x] || nl.data[y * nl.w + x]) continue;
-                if (heads.some((o) => x >= o.box.x && x < o.box.x + o.box.w && y >= o.box.y && y < o.box.y + o.box.h)) continue;
+                if (inHead[(y - ry0) * W + (x - rx0)]) continue;
                 patched.data[(y - ry0) * W + (x - rx0)] = 1;
               }
             code = isSharp(patched) ? "accidentalSharp" : null;
@@ -945,13 +957,13 @@ export function accidentalsLeftOfHeads(c: {
         for (let y = ry0; y <= ry1; y++)
           for (let x = rx0; x <= rx1; x++) {
             if (!src.data[y * src.w + x]) continue;
-            if (heads.some((o) => x >= o.box.x && x < o.box.x + o.box.w && y >= o.box.y && y < o.box.y + o.box.h)) continue;
+            if (inHead[(y - ry0) * W + (x - rx0)]) continue;
             img.data[(y - ry0) * W + (x - rx0)] = 1;
           }
-        for (const v of prims.vSegs) {
+        for (const v of winSegs) {
           const vx = (v.x0 + v.x1) / 2, half = Math.max(1, v.maxLw / 2);
           const top = Math.min(v.y0, v.y1), bot = Math.max(v.y0, v.y1);
-          if (vx + half < rx0 || vx - half > rx1 || (top > ry0 && bot < ry1)) continue;
+          if (top > ry0 && bot < ry1) continue;
           for (let y = Math.max(ry0, Math.round(top)); y <= Math.min(ry1, Math.round(bot)); y++)
             for (let x = Math.max(rx0, Math.round(vx - half)); x <= Math.min(rx1, Math.round(vx + half)); x++) img.data[(y - ry0) * W + (x - rx0)] = 0;
         }

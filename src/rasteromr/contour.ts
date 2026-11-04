@@ -121,6 +121,29 @@ export function repairedLayer(cmap: ContourMap, repaired: Binary, unit: RasterUn
   return { rmap, parts: new Map([...sets].map(([r, s]) => [r, [...s]])) };
 }
 
+/** 标号图里每个标号的包围盒 [x0, y0, x1, y1]（含面积不到下限、没进 `contours` 的小块）；同一张标号图只扫一次。
+ *  标号图建好后不再改（`wedge.ts` 临时挪了也当场还原）。 */
+const labelBoxCache = new WeakMap<Int32Array, Map<number, [number, number, number, number]>>();
+function labelBoxes(labels: Int32Array, w: number): Map<number, [number, number, number, number]> {
+  let m = labelBoxCache.get(labels);
+  if (m) return m;
+  m = new Map();
+  for (let i = 0; i < labels.length; i++) {
+    const id = labels[i];
+    if (!id) continue;
+    const x = i % w, y = (i / w) | 0;
+    const q = m.get(id);
+    if (!q) m.set(id, [x, y, x, y]);
+    else {
+      if (x < q[0]) q[0] = x;
+      if (x > q[2]) q[2] = x;
+      if (y > q[3]) q[3] = y;
+    }
+  }
+  labelBoxCache.set(labels, m);
+  return m;
+}
+
 /** 候选 contour 图：整块换进来的修补块（`merged`）与它们各自的碎块（`parts`，按新 id）。 */
 export interface CandidateMap {
   map: ContourMap;
@@ -149,11 +172,19 @@ export function candidateMap(cmap: ContourMap, layer: RepairedLayer, isCand: (id
     whole.add(r);
     for (const id of ps) covered.add(id);
   }
+  // 只碰相关的盒：先把换掉的碎块清掉，再写修补块（修补块的像素不管原先归谁都写新号）。整页逐像素扫曾占识别耗时 3%
   const labels = new Int32Array(cmap.labels);
-  for (let i = 0; i < labels.length; i++) {
-    const r = rmap.labels[i];
-    if (r && whole.has(r)) labels[i] = r + offset;
-    else if (labels[i] && covered.has(labels[i])) labels[i] = 0;
+  const boxes = labelBoxes(cmap.labels, cmap.w);
+  for (const id of covered) {
+    const q = boxes.get(id);
+    if (!q) continue;
+    for (let y = q[1]; y <= q[3]; y++)
+      for (let i = y * cmap.w + q[0], e = y * cmap.w + q[2]; i <= e; i++) if (cmap.labels[i] === id) labels[i] = 0;
+  }
+  for (const r of whole) {
+    const q = rmap.byId.get(r)!.bbox;
+    for (let y = q.y; y < q.y + q.h; y++)
+      for (let i = y * cmap.w + q.x, e = y * cmap.w + q.x + q.w; i < e; i++) if (rmap.labels[i] === r) labels[i] = r + offset;
   }
   const merged = rmap.contours.filter((rc) => whole.has(rc.id)).map((rc) => ({ ...rc, id: rc.id + offset }));
   const contours = [...cmap.contours.filter((c) => !covered.has(c.id)), ...merged];
@@ -193,56 +224,41 @@ function countHoles(labels: Int32Array, w: number, c: Component): { holes: numbe
   const b = c.bbox;
   const bw = b.w + 2;
   const bh = b.h + 2;
-  const seen = new Uint8Array(bw * bh);
-  const isInk = (x: number, y: number) => {
-    const gx = b.x + x - 1;
-    const gy = b.y + y - 1;
-    if (x <= 0 || y <= 0 || x >= bw - 1 || y >= bh - 1) return false;
-    return labels[gy * w + gx] === c.id;
-  };
-  // 先从留白那一圈往里 flood，够得着的背景全标上
-  const stack = [0];
-  seen[0] = 1;
-  while (stack.length) {
-    const cur = stack.pop()!;
-    const y = (cur / bw) | 0;
-    const x = cur - y * bw;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
-      const ni = ny * bw + nx;
-      if (seen[ni] || isInk(nx, ny)) continue;
-      seen[ni] = 1;
-      stack.push(ni);
-    }
+  // 盒 + 一圈留白里的本块墨；留白那一圈恒为背景。洪泛按 TypedArray 栈、四邻展开（逐块都要算，常数要小）
+  const blocked = new Uint8Array(bw * bh);
+  for (let y = 1; y < bh - 1; y++) {
+    const row = (b.y + y - 1) * w + b.x - 1;
+    for (let x = 1; x < bw - 1; x++) if (labels[row + x] === c.id) blocked[y * bw + x] = 1;
   }
-  // 剩下的背景团 = 孔
+  const stack = new Int32Array(bw * bh);
+  /** 从 i 起洪泛背景（已看过、墨都算挡住），返回这一团的像素数 */
+  const flood = (i: number): number => {
+    let n = 0;
+    let size = 0;
+    blocked[i] = 1;
+    stack[n++] = i;
+    while (n) {
+      const cur = stack[--n];
+      size++;
+      const y = (cur / bw) | 0;
+      const x = cur - y * bw;
+      if (x + 1 < bw && !blocked[cur + 1]) (blocked[cur + 1] = 1), (stack[n++] = cur + 1);
+      if (x > 0 && !blocked[cur - 1]) (blocked[cur - 1] = 1), (stack[n++] = cur - 1);
+      if (y + 1 < bh && !blocked[cur + bw]) (blocked[cur + bw] = 1), (stack[n++] = cur + bw);
+      if (y > 0 && !blocked[cur - bw]) (blocked[cur - bw] = 1), (stack[n++] = cur - bw);
+    }
+    return size;
+  };
+  // 从盒外那一圈把够得着边界的背景全标掉
+  flood(0);
+  // 剩下的背景团就是孔（小于 3 像素的是噪点）
   let holes = 0;
   let biggest = 0;
   for (let y = 1; y < bh - 1; y++)
     for (let x = 1; x < bw - 1; x++) {
       const i = y * bw + x;
-      if (seen[i] || isInk(x, y)) continue;
-      let size = 0;
-      const st = [i];
-      seen[i] = 1;
-      while (st.length) {
-        const cur = st.pop()!;
-        size++;
-        const cy = (cur / bw) | 0;
-        const cx = cur - cy * bw;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-          const nx = cx + dx;
-          const ny = cy + dy;
-          if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
-          const ni = ny * bw + nx;
-          if (seen[ni] || isInk(nx, ny)) continue;
-          seen[ni] = 1;
-          st.push(ni);
-        }
-      }
-      // 一两个像素的洞是栅格化的毛刺，不算
+      if (blocked[i]) continue;
+      const size = flood(i);
       if (size < 3) continue;
       holes++;
       if (size > biggest) biggest = size;
@@ -306,15 +322,15 @@ function placeOf(c: Component, staves: ContourStaff[], unit: RasterUnit): Contou
  */
 export function findHoles(bin: Binary, minArea = 4): Rect[] {
   const { w, h, data } = bin;
-  const seen = new Uint8Array(w * h);
-  const stack: number[] = [];
-  // 先从四边把「通到页外」的背景全标掉
+  // 墨与已看过的背景都算挡住；洪泛按 TypedArray 栈、四邻展开（整页洪泛，常数要小）
+  const blocked = new Uint8Array(w * h);
+  for (let i = 0; i < blocked.length; i++) if (data[i]) blocked[i] = 1;
+  const stack = new Int32Array(w * h);
+  let n = 0;
   const push = (i: number) => {
-    if (!seen[i] && !data[i]) {
-      seen[i] = 1;
-      stack.push(i);
-    }
+    if (!blocked[i]) (blocked[i] = 1), (stack[n++] = i);
   };
+  // 先从四边把「通到页外」的背景全标掉
   for (let x = 0; x < w; x++) {
     push(x);
     push((h - 1) * w + x);
@@ -323,31 +339,30 @@ export function findHoles(bin: Binary, minArea = 4): Rect[] {
     push(y * w);
     push(y * w + w - 1);
   }
-  while (stack.length) {
-    const cur = stack.pop()!;
+  while (n) {
+    const cur = stack[--n];
     const y = (cur / w) | 0;
     const x = cur - y * w;
-    if (x > 0) push(cur - 1);
-    if (x + 1 < w) push(cur + 1);
-    if (y > 0) push(cur - w);
-    if (y + 1 < h) push(cur + w);
+    if (x > 0 && !blocked[cur - 1]) (blocked[cur - 1] = 1), (stack[n++] = cur - 1);
+    if (x + 1 < w && !blocked[cur + 1]) (blocked[cur + 1] = 1), (stack[n++] = cur + 1);
+    if (y > 0 && !blocked[cur - w]) (blocked[cur - w] = 1), (stack[n++] = cur - w);
+    if (y + 1 < h && !blocked[cur + w]) (blocked[cur + w] = 1), (stack[n++] = cur + w);
   }
   // 剩下的背景团就是孔
   const out: Rect[] = [];
   for (let y0 = 0; y0 < h; y0++)
     for (let x0 = 0; x0 < w; x0++) {
       const i = y0 * w + x0;
-      if (seen[i] || data[i]) continue;
+      if (blocked[i]) continue;
       let minX = x0;
       let maxX = x0;
       let minY = y0;
       let maxY = y0;
       let area = 0;
-      stack.length = 0;
-      seen[i] = 1;
-      stack.push(i);
-      while (stack.length) {
-        const cur = stack.pop()!;
+      blocked[i] = 1;
+      stack[n++] = i;
+      while (n) {
+        const cur = stack[--n];
         const y = (cur / w) | 0;
         const x = cur - y * w;
         area++;
@@ -355,10 +370,10 @@ export function findHoles(bin: Binary, minArea = 4): Rect[] {
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
-        if (x > 0) push(cur - 1);
-        if (x + 1 < w) push(cur + 1);
-        if (y > 0) push(cur - w);
-        if (y + 1 < h) push(cur + w);
+        if (x > 0 && !blocked[cur - 1]) (blocked[cur - 1] = 1), (stack[n++] = cur - 1);
+        if (x + 1 < w && !blocked[cur + 1]) (blocked[cur + 1] = 1), (stack[n++] = cur + 1);
+        if (y > 0 && !blocked[cur - w]) (blocked[cur - w] = 1), (stack[n++] = cur - w);
+        if (y + 1 < h && !blocked[cur + w]) (blocked[cur + w] = 1), (stack[n++] = cur + w);
       }
       if (area >= minArea) out.push({ x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 });
     }
@@ -392,23 +407,22 @@ export function holeSolidity(bin: Binary, b: Rect): number {
       if (d < bd) (bd = d), (seed = (y - b.y) * b.w + x - b.x);
     }
   if (seed < 0) return 0;
-  const stack = [seed];
+  // 洪泛按 TypedArray 栈、四邻展开
+  const stack = new Int32Array(b.w * b.h);
+  let n = 0;
+  stack[n++] = seed;
   inn[seed] = 1;
   let area = 0;
-  while (stack.length) {
-    const k = stack.pop()!;
+  const open = (q: number, X: number, Y: number) => !inn[q] && !bin.data[(Y + b.y) * bin.w + X + b.x];
+  while (n) {
+    const k = stack[--n];
     area++;
     const x = k % b.w;
     const y = (k / b.w) | 0;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const X = x + dx;
-      const Y = y + dy;
-      if (X < 0 || Y < 0 || X >= b.w || Y >= b.h) continue;
-      const q = Y * b.w + X;
-      if (inn[q] || bin.data[(Y + b.y) * bin.w + X + b.x]) continue;
-      inn[q] = 1;
-      stack.push(q);
-    }
+    if (x + 1 < b.w && open(k + 1, x + 1, y)) (inn[k + 1] = 1), (stack[n++] = k + 1);
+    if (x > 0 && open(k - 1, x - 1, y)) (inn[k - 1] = 1), (stack[n++] = k - 1);
+    if (y + 1 < b.h && open(k + b.w, x, y + 1)) (inn[k + b.w] = 1), (stack[n++] = k + b.w);
+    if (y > 0 && open(k - b.w, x, y - 1)) (inn[k - b.w] = 1), (stack[n++] = k - b.w);
   }
   const pts: [number, number][] = [];
   for (let y = 0; y < b.h; y++) {

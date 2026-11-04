@@ -314,8 +314,28 @@ export function voteSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
 /** 原图上验「这一行在某个 x 附近有没有一根小节线模样的竖墨」（`inkSystemBarlines` / `dropLoneBarlines` 共用）。 */
 function makeBarAt(bin: Binary, sp: number): (st: Staff, cx: number, range: number, strict?: boolean, through?: boolean) => number | null {
   const ink = (x: number, y: number) => x >= 0 && x < bin.w && y >= 0 && y < bin.h && bin.data[y * bin.w + x] === 1;
+  /** 各行墨点所在横向连续墨的宽度，用到哪行算哪行（逐列验墨时同一行被反复量） */
+  const rowRuns: (Uint16Array | undefined)[] = new Array(bin.h);
+  const rowOf = (y: number): Uint16Array => {
+    let r = rowRuns[y];
+    if (r) return r;
+    r = rowRuns[y] = new Uint16Array(bin.w);
+    const o = y * bin.w;
+    for (let x = 0; x < bin.w; ) {
+      if (bin.data[o + x] !== 1) {
+        x++;
+        continue;
+      }
+      let e = x;
+      while (e + 1 < bin.w && bin.data[o + e + 1] === 1) e++;
+      r.fill(e - x + 1, x, e + 1);
+      x = e + 1;
+    }
+    return r;
+  };
   /** 这一行里含 x 的那段横向连续墨的宽度 */
   const runW = (x: number, y: number) => {
+    if (ink(x, y)) return rowOf(y)[x];
     let a = x;
     let b = x;
     while (ink(a - 1, y)) a--;
