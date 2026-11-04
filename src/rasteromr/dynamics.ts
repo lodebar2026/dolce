@@ -183,18 +183,31 @@ function placeTemplate(map: ContourMap, c: { id: number; bbox: { x: number; y: n
   const hits: { x: number; y: number; miss: number }[] = [];
   // 窗可以探出块盒几个像素（块的字号与模板差一两个像素，盒正好比模板矮一点）
   const pad = 3;
-  for (let y = Math.max(0, b.y - pad); y + t.h <= Math.min(map.h, b.y + b.h + pad); y++)
-    for (let x = Math.max(0, b.x - pad); x + t.w <= Math.min(map.w, b.x + b.w + pad); x++) {
-      let miss = 0;
-      for (const o of t.on) {
-        const k = (y + Math.floor(o / t.w)) * map.w + x + (o % t.w);
-        if (map.labels[k] === c.id) continue;
-        // 差一个像素的笔画不算漏（同一字形印两次，边缘常差一像素；`p` 模板还是从 `mp` 里切出来的）
-        if (map.labels[k - 1] === c.id || map.labels[k + 1] === c.id || map.labels[k - map.w] === c.id || map.labels[k + map.w] === c.id) continue;
-        if (++miss > maxMiss) break;
+  const x0 = Math.max(0, b.x - pad), y0 = Math.max(0, b.y - pad);
+  const xEnd = Math.min(map.w, b.x + b.w + pad), yEnd = Math.min(map.h, b.y + b.h + pad);
+  if (xEnd - x0 >= t.w && yEnd - y0 >= t.h) {
+    // 窗能落到的像素先算好「本块或四邻是本块」：差一个像素的笔画不算漏（同一字形印两次，边缘常差一像素；
+    // `p` 模板还是从 `mp` 里切出来的）。逐窗逐点查五次 labels 曾占识别耗时近一成
+    const rw = xEnd - x0, rh = yEnd - y0;
+    const ok = new Uint8Array(rw * rh);
+    for (let yy = 0; yy < rh; yy++)
+      for (let xx = 0; xx < rw; xx++) {
+        const k = (y0 + yy) * map.w + x0 + xx;
+        ok[yy * rw + xx] = map.labels[k] === c.id || map.labels[k - 1] === c.id || map.labels[k + 1] === c.id || map.labels[k - map.w] === c.id || map.labels[k + map.w] === c.id ? 1 : 0;
       }
-      if (miss <= maxMiss) hits.push({ x, y, miss });
-    }
+    const offs = new Int32Array(t.on.length);
+    for (let i = 0; i < t.on.length; i++) offs[i] = Math.floor(t.on[i] / t.w) * rw + (t.on[i] % t.w);
+    for (let y = y0; y + t.h <= yEnd; y++)
+      for (let x = x0; x + t.w <= xEnd; x++) {
+        const at = (y - y0) * rw + x - x0;
+        let miss = 0;
+        for (let i = 0; i < offs.length; i++) {
+          if (ok[at + offs[i]]) continue;
+          if (++miss > maxMiss) break;
+        }
+        if (miss <= maxMiss) hits.push({ x, y, miss });
+      }
+  }
   // 非极大抑制：同一处附近一两个像素都中，留漏得最少的
   hits.sort((p, q) => p.miss - q.miss);
   const peaks: { x: number; y: number }[] = [];

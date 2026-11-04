@@ -133,9 +133,18 @@ export function inkSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
     const lands = (y: number, x: number) => g.some((st) => Math.abs(y - st.topAt(x)) <= tol || Math.abs(y - st.bottomAt(x)) <= tol);
     const barOn = (l: Seg, st: Staff) =>
       l.isV && (!l.hasAnyTag() || l.hasTag("BarLine")) && l.top <= st.topAt(l.cx) + tol && l.bottom >= st.bottomAt(l.cx) - tol && lands(l.top, l.cx) && lands(l.bottom, l.cx) && Math.abs(st.box.left - l.cx) >= sp;
+    // 各行 `barOn` 的竖段表，按 `pg.segs` 次序；`pushSeg` 只往末尾追加、不改已有段的标签，表跟着增量补。
+    // 下面逐列 `have` 每次都把整页竖段过一遍 `barOn`（每条还要按 x 取谱线），曾占干净页一成多的识别耗时
+    const barCache = new Map<Staff, { n: number; segs: Seg[] }>();
+    const barsOn = (st: Staff): Seg[] => {
+      let c = barCache.get(st);
+      if (!c) barCache.set(st, (c = { n: 0, segs: [] }));
+      for (; c.n < pg.segs.length; c.n++) if (barOn(pg.segs[c.n], st)) c.segs.push(pg.segs[c.n]);
+      return c.segs;
+    };
     for (const a of g)
-      for (const l of pg.segs.filter((q) => barOn(q, a))) {
-        const lack = g.filter((b) => b !== a && !pg.segs.some((m) => barOn(m, b) && Math.abs(m.cx - l.cx) <= xTol));
+      for (const l of barsOn(a).slice()) {
+        const lack = g.filter((b) => b !== a && !barsOn(b).some((m) => Math.abs(m.cx - l.cx) <= xTol));
         if (!lack.length) continue;
         // 作准的那一根自己也得过验墨：被谱线切出来、恰好两端压在外线上的一截符干不算
         if (barAt(a, l.cx, 2) === null) continue;
@@ -149,7 +158,7 @@ export function inkSystemBarlines(pg: SPage, bin: Binary, sp: number): void {
     // **各行都没抽出竖段的小节线**：淡印的页上下两行同时漏（助我进深歌每个系统漏一两条，上面那一趟要有一行抽得出才补得了）。
     // 沿头一行逐列验墨，过了的再到别的行左右 `xTol` 内验；行行都是「盖满谱行的细线、上下不外伸」才补，
     // 离已有的小节线、系统线一格以内的不重复补。两行的干同时正好盖满各自的谱行、又同 x，几乎碰不上。
-    const have = (st: Staff, x: number) => pg.segs.some((m) => barOn(m, st) && Math.abs(m.cx - x) <= sp);
+    const have = (st: Staff, x: number) => barsOn(st).some((m) => Math.abs(m.cx - x) <= sp);
     const first = g[0];
     for (let x = Math.round(first.box.left + sp * 3); x < first.box.right - sp; x++) {
       if (have(first, x) || barAt(first, x, 0, true) === null) continue;

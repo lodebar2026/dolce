@@ -1071,34 +1071,48 @@ const STEEP_SHORT_THICK = 0.6;
  */
 function steepBeams(vr: Uint16Array, bLo: number, bHi: number, w: number, h: number, beams: BeamQuad[], unit: RasterUnit, staffSlope: (x: number, y: number) => number, stemAt: (x: number, y: number) => boolean): void {
   const sp = unit.space;
-  const cand = new Uint8Array(w * h);
-  for (let i = 0; i < cand.length; i++) if (vr[i] >= bLo && vr[i] <= bHi) cand[i] = 1;
   const mask = new Uint8Array(w * h);
   /** 只够 `STEEP_SHORT_RUN` 格的斜向游程（两根干挨着的两音陡杠，见下） */
   const shortMask = new Uint8Array(w * h);
   const minRun = sp * STEEP_RUN;
   const shortRun = sp * STEEP_SHORT_RUN;
-  const xs = new Int32Array(w);
-  const ys = new Int32Array(w);
+  // 斜线 y = r0 + round(k·x)：每个候选像素恰在一条斜线上（r0 = y − round(k·x)）。不逐条斜线扫整页，
+  // 候选像素按 r0 分桶、桶内按 x 递增，连续 x 的一段就是一条斜向游程（整页扫曾占识别耗时近一成）
+  let nc = 0;
+  for (let i = 0; i < w * h; i++) if (vr[i] >= bLo && vr[i] <= bHi) nc++;
+  const px = new Int32Array(nc);
+  const py = new Int32Array(nc);
+  // 列优先收：同一桶里的点自然按 x 递增
+  for (let x = 0, n = 0; x < w; x++)
+    for (let y = 0; y < h; y++) {
+      const v = vr[y * w + x];
+      if (v >= bLo && v <= bHi) (px[n] = x), (py[n] = y), n++;
+    }
+  const rx = new Int32Array(w);
+  const ord = new Int32Array(nc);
   for (const s of STEEP_SLOPES)
     for (const sign of [1, -1]) {
       const k = s * sign;
       const reach = Math.ceil(s * w);
-      for (let r0 = sign > 0 ? -reach : 0; r0 < (sign > 0 ? h : h + reach); r0++) {
-        let n = 0;
-        for (let x = 0; x <= w; x++) {
-          const y = x < w ? r0 + Math.round(k * x) : -1;
-          if (x < w && y >= 0 && y < h && cand[y * w + x]) {
-            xs[n] = x;
-            ys[n] = y;
-            n++;
-            continue;
-          }
-          const len = n ? xs[n - 1] - xs[0] + 1 : 0;
-          if (len >= minRun) for (let i = 0; i < n; i++) mask[ys[i] * w + xs[i]] = 1;
-          else if (len >= shortRun) for (let i = 0; i < n; i++) shortMask[ys[i] * w + xs[i]] = 1;
-          n = 0;
-        }
+      const base = sign > 0 ? reach : 0;
+      const nb = h + reach;
+      for (let x = 0; x < w; x++) rx[x] = Math.round(k * x);
+      const start = new Int32Array(nb + 1);
+      for (let i = 0; i < nc; i++) start[py[i] - rx[px[i]] + base + 1]++;
+      for (let b = 0; b < nb; b++) start[b + 1] += start[b];
+      const fill = start.slice(0, nb);
+      for (let i = 0; i < nc; i++) ord[fill[py[i] - rx[px[i]] + base]++] = i;
+      const mark = (a: number, e: number) => {
+        const len = px[ord[e - 1]] - px[ord[a]] + 1;
+        const m = len >= minRun ? mask : len >= shortRun ? shortMask : null;
+        if (m) for (let j = a; j < e; j++) m[py[ord[j]] * w + px[ord[j]]] = 1;
+      };
+      for (let b = 0; b < nb; b++) {
+        const e = start[b + 1];
+        let a = start[b];
+        for (let j = a + 1; j < e; j++)
+          if (px[ord[j]] !== px[ord[j - 1]] + 1) (mark(a, j), (a = j));
+        if (a < e) mark(a, e);
       }
     }
   for (const c of comps(mask, w, h, Math.round(sp * sp * 0.2))) {
