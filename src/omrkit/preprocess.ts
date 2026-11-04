@@ -50,6 +50,12 @@ const SAUVOLA_R = 128;
  * 两边各自定 `r`、`k`。
  */
 export function sauvola(gray: Uint8Array, w: number, h: number, r: number, k: number, out: Uint8Array = new Uint8Array(w * h)): Uint8Array {
+  sauvolaMulti(gray, w, h, r, [k], [out]);
+  return out;
+}
+
+/** 同一张灰度图按几档 `k` 各出一张（积分图与逐点均值、方差只算一遍；每档的算式与单档 `sauvola` 逐项相同）。 */
+export function sauvolaMulti(gray: Uint8Array, w: number, h: number, r: number, ks: readonly number[], outs: readonly Uint8Array[]): void {
   // 积分图（多一行一列的零边，省去边界判断）
   const sw = w + 1;
   const S1 = new Float64Array(sw * (h + 1));
@@ -67,6 +73,7 @@ export function sauvola(gray: Uint8Array, w: number, h: number, r: number, k: nu
   }
   const box = (S: Float64Array, x0: number, y0: number, x1: number, y1: number) =>
     S[y1 * sw + x1] - S[y0 * sw + x1] - S[y1 * sw + x0] + S[y0 * sw + x0];
+  const nk = ks.length;
   for (let y = 0; y < h; y++) {
     const y0 = Math.max(0, y - r);
     const y1 = Math.min(h, y + r + 1);
@@ -76,11 +83,11 @@ export function sauvola(gray: Uint8Array, w: number, h: number, r: number, k: nu
       const n = (x1 - x0) * (y1 - y0);
       const m = box(S1, x0, y0, x1, y1) / n;
       const v = Math.max(0, box(S2, x0, y0, x1, y1) / n - m * m);
-      const t = m * (1 + k * (Math.sqrt(v) / SAUVOLA_R - 1));
-      out[y * w + x] = gray[y * w + x] <= t ? 1 : 0; // 暗 = 墨
+      const sd = Math.sqrt(v) / SAUVOLA_R - 1;
+      const g = gray[y * w + x];
+      for (let j = 0; j < nk; j++) outs[j][y * w + x] = g <= m * (1 + ks[j] * sd) ? 1 : 0; // 暗 = 墨
     }
   }
-  return out;
 }
 
 /**

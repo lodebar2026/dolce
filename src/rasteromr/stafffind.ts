@@ -69,6 +69,47 @@ interface Track {
  * 一行谱都凑不出返回 null（封面、歌词页、简谱页）。
  */
 export function findRasterStaves(bin: Binary): { unit: RasterUnit; groups: StaffGroup[] } | null {
+  // 同一页取图时要数好几遍谱行（估线距、判网点、补淡谱线前后各一遍），识别里再找一遍，像素多半没变：
+  // 按像素内容（宽高 + 两路 32 位哈希）记最近几次的结果，命中给副本（调用方可以随意改）
+  const [h1, h2] = binHash(bin);
+  const i = staffMemo.findIndex((m) => m.w === bin.w && m.h === bin.h && m.h1 === h1 && m.h2 === h2);
+  if (i >= 0) {
+    const m = staffMemo[i];
+    staffMemo.splice(i, 1);
+    staffMemo.unshift(m);
+    return m.found && structuredClone(m.found);
+  }
+  const found = findRasterStavesOf(bin);
+  staffMemo.unshift({ w: bin.w, h: bin.h, h1, h2, found: found && structuredClone(found) });
+  if (staffMemo.length > STAFF_MEMO) staffMemo.pop();
+  return found;
+}
+
+const STAFF_MEMO = 4;
+const staffMemo: { w: number; h: number; h1: number; h2: number; found: { unit: RasterUnit; groups: StaffGroup[] } | null }[] = [];
+
+/** 像素内容的两路 32 位哈希（按 4 字节一块，尾巴逐字节）。 */
+function binHash(bin: Binary): [number, number] {
+  const d = bin.data;
+  let a = 0x811c9dc5 | 0;
+  let b = 0x01000193 | 0;
+  const n4 = d.byteOffset % 4 === 0 ? d.length >> 2 : 0;
+  if (n4) {
+    const u = new Uint32Array(d.buffer, d.byteOffset, n4);
+    for (let i = 0; i < n4; i++) {
+      const v = u[i];
+      a = Math.imul(a ^ v, 0x01000193);
+      b = Math.imul(b + v, 0x5bd1e995) ^ (b >>> 15);
+    }
+  }
+  for (let i = n4 << 2; i < d.length; i++) {
+    a = Math.imul(a ^ d[i], 0x01000193);
+    b = Math.imul(b + d[i], 0x5bd1e995) ^ (b >>> 15);
+  }
+  return [a, b];
+}
+
+function findRasterStavesOf(bin: Binary): { unit: RasterUnit; groups: StaffGroup[] } | null {
   const hits = columnHits(bin);
   if (hits.length < 20) return null;
   const space = median(hits.map((h) => h.space));

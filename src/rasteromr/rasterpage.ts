@@ -25,7 +25,7 @@ import { estimateUnit, findRasterStaves } from "./stafffind";
 import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, HALFTONE_BAND, HALFTONE_RATIO, PINHOLE_RATIO } from "./descreen";
 import { lineYAt, type StaffGroup } from "./staffline";
 import { median } from "../omrkit/geom";
-import { sauvola as sauvolaInto, toGray } from "../omrkit/preprocess";
+import { sauvolaMulti, toGray } from "../omrkit/preprocess";
 import { largestPageImageAt, orientPixels, pageImageObj, pageImageOps, uprightCtm } from "../omrkit/pdf";
 
 /** 一页取到的位图，连同它在页面坐标里的位置（识别坐标 ↔ 页面坐标要用）。 */
@@ -199,8 +199,9 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   const w: number = best.width;
   const h: number = best.height;
   const packed = Math.ceil(w / 8) * h;
+  const dec = pageDecoder(best, w, h);
   const kind: RasterPage["kind"] = best.data.length === packed ? (best.kind === 1 ? "gray1" : "mask") : "rgb";
-  let bin = decodeImage(best, w, h);
+  let bin = dec.decode();
   if (!bin) return null;
   // **线距太小的彩色底本先放大一倍再二值化**。手机拍/低分辨率扫描的诗歌本（齐来谢主歌、
   // 万古磐石歌整页 1100px 宽，线距 11px、线宽 2px）去谱线之后，调号降号与低音谱号碎成
@@ -211,17 +212,17 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   if (kind === "rgb") {
     /** 按阈值档 k 取图（线距小、线又细的先放大一倍，见上） */
     const build = (k: number, first: Binary | null): { bin: Binary; up: number } | null => {
-      const b = first ?? decodeImage(best, w, h, k);
+      const b = first ?? dec.decode(k);
       if (!b) return null;
       const u0 = estimateUnit(b);
       if (u0 && u0.space < UPSCALE_SPACE && u0.lineThick / u0.space < UPSCALE_THIN) {
-        const big = decodeImage(best, w, h, k, 2);
+        const big = dec.decode(k, 2);
         if (big) return { bin: big, up: 2 };
       }
       // 原分辨率上线宽量不准：浅灰底上 Sauvola 把淡谱线两侧的灰边也算成墨，两像素的线量成三像素、线宽比过闸
       //（046 赞美不尽歌 3/11）。放大一倍再量一次线宽（线距按原图的两倍），闸用更严的 `UPSCALE_RECHECK`
       if (u0 && u0.space < UPSCALE_SPACE) {
-        const big = decodeImage(best, w, h, k, 2);
+        const big = dec.decode(k, 2);
         if (big) {
           const t2 = estimateUnit(big)?.lineThick ?? Infinity;
           if (t2 / (u0.space * 2) < UPSCALE_RECHECK) return { bin: big, up: 2 };
@@ -258,8 +259,8 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   let soft: Binary | null = null;
   if (kind === "rgb") {
     const u = estimateUnit(bin);
-    soft = u && u.lineThick / u.space < FAINT_RATIO ? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
-    if (soft && u) mergeVertical(bin, soft, Math.round(u.space * VERT_RUN)), (faint = true), (gray = grayOf(best, w, h, up) ?? undefined);
+    soft = u && u.lineThick / u.space < FAINT_RATIO ? dec.decode(SAUVOLA_K_FAINT, up) : null;
+    if (soft && u) mergeVertical(bin, soft, Math.round(u.space * VERT_RUN)), (faint = true), (gray = dec.gray(up) ?? undefined);
   }
 
   // **极性自检**：ImageMask 里置位的是墨，`kind: 1`（GRAYSCALE_1BPP）里置位的是白，
@@ -275,12 +276,12 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   // 做一遍只是把细节磨掉（门槛与两档的实测值见 `HALFTONE_RATIO`）。
   // 一行谱都没找到的页面（封面、歌词页）不做：没有尺子定窗口，也没有东西要认。
   let halftone = cleanTexture(bin, true);
-  const lyricGray = kind === "rgb" && !gray ? grayOf(best, w, h, up) ?? undefined : undefined;
+  const lyricGray = kind === "rgb" && !gray ? dec.gray(up) ?? undefined : undefined;
 
   // **不做几何变换**：不推平、不纠斜，原图像素原样交给识别；弯、斜的谱线由下游按曲线谱线处理（`staffline.ts`）。
   // 整像素的推平与错切会给横笔造台阶、在行间重复或跳过行，细加线、附点、窄内腔跟着变形，交出的坐标也对不回原页面。
   // 淡谱线补回用的松阈值副本
-  const lineSoft = kind === "rgb" ? soft ?? decodeImage(best, w, h, SAUVOLA_K_FAINT, up) : null;
+  const lineSoft = kind === "rgb" ? soft ?? dec.decode(SAUVOLA_K_FAINT, up) : null;
   // **淡谱线补回**：个别谱行的线印得浅（新编赞美诗 297 头两个系统的低音谱表，线的灰度 130~175，别的行 100 上下），
   // `SAUVOLA_K` 那一档把它切成断续的几截，行投影与逐列游程都凑不成行，十行谱只找出八行。整页换松阈值会把别的笔画也弄糊
   //（见上），所以同补竖笔一样只取一部分：松阈值图里**细而长的横向游程**（纵向厚不过两倍线宽、横向三格以上）——谱线、加线——
@@ -408,28 +409,66 @@ function cleanTexture(bin: Binary, allowDescreen: boolean): number | null {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function decodeImage(obj: any, w: number, h: number, k = SAUVOLA_K, up = 1): Binary | null {
-  const src: Uint8Array | Uint8ClampedArray = obj.data;
-  const data = new Uint8Array(w * h);
-  const packed = Math.ceil(w / 8) * h;
-  if (src.length === packed) {
-    // 逐行 1-bit 打包。**行首字节对齐**：行末不足 8 位的那几位是填充，不能顺着读下去。
-    const stride = Math.ceil(w / 8);
-    for (let y = 0; y < h; y++) {
-      const row = y * stride;
-      const out = y * w;
-      for (let x = 0; x < w; x++) data[out + x] = (src[row + (x >> 3)] >> (7 - (x & 7))) & 1;
+  return pageDecoder(obj, w, h).decode(k, up);
+}
+
+/**
+ * **Sauvola 局部阈值**（`T = m · (1 + k · (s/R − 1))`，内核在 `omrkit/preprocess.ts::sauvolaMulti`），窗口半径取页宽的 `SAUVOLA_WIN`。
+ *
+ * 全局 Otsu 在这批扫描件上不够：一页里墨色深浅不匀（装订侧偏暗、页心偏淡），
+ * 一个阈值要么把淡处的细线切断、要么把暗处的笔画糊粗。望十架那份线距只有 11.5px，
+ * 符头才 8px 宽，粗一两个像素就并进谱线里。
+ *
+ * 只走 RGB / 灰度那一档——**位图路的干净底本是 1-bit 的 `mask` / `gray1`**，
+ * 那两档本来就没有灰度可分（`rasterizePage` 上面那两个分支直接取位）。
+ *
+ * 一页的解码器：灰度（各放大倍数）只转一次；彩色页按某档阈值二值化时顺带出松档（`SAUVOLA_K_FAINT`）那一张——
+ * 标准档与松档（补竖笔、补淡谱线）总要各解一遍，积分图与逐点均值、方差共用（`sauvolaMulti`）。
+ * 顺带出的那张只交出一次（二值图交出去会被就地改），灰度图在页内只读、可共用。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pageDecoder(obj: any, w: number, h: number): { decode: (k?: number, up?: number) => Binary | null; gray: (up: number) => Uint8Array | null } {
+  const grays = new Map<number, Uint8Array | null>();
+  const gray = (up: number): Uint8Array | null => {
+    if (!grays.has(up)) {
+      const g1 = up === 1 ? grayOf(obj, w, h, 1) : gray(1);
+      grays.set(up, up === 1 || !g1 ? g1 : upsample(g1, w, h, up));
     }
-    return { w, h, data };
-  }
-  const gray = grayOf(obj, w, h, up);
-  if (!gray) return null;
-  if (up > 1) {
-    const out = new Uint8Array(w * up * h * up);
-    sauvola(gray, w * up, h * up, out, k);
-    return { w: w * up, h: h * up, data: out };
-  }
-  sauvola(gray, w, h, data, k);
-  return { w, h, data };
+    return grays.get(up)!;
+  };
+  const spare = new Map<string, Binary>();
+  const decode = (k = SAUVOLA_K, up = 1): Binary | null => {
+    const src: Uint8Array | Uint8ClampedArray = obj.data;
+    const packed = Math.ceil(w / 8) * h;
+    if (src.length === packed) {
+      // 逐行 1-bit 打包。**行首字节对齐**：行末不足 8 位的那几位是填充，不能顺着读下去。
+      const data = new Uint8Array(w * h);
+      const stride = Math.ceil(w / 8);
+      for (let y = 0; y < h; y++) {
+        const row = y * stride;
+        const out = y * w;
+        for (let x = 0; x < w; x++) data[out + x] = (src[row + (x >> 3)] >> (7 - (x & 7))) & 1;
+      }
+      return { w, h, data };
+    }
+    const key = `${k}@${up}`;
+    const got = spare.get(key);
+    if (got) {
+      spare.delete(key);
+      return got;
+    }
+    const g = gray(up);
+    if (!g) return null;
+    const W = w * up, H = h * up;
+    const fKey = `${SAUVOLA_K_FAINT}@${up}`;
+    const withFaint = k !== SAUVOLA_K_FAINT && !spare.has(fKey);
+    const out = new Uint8Array(W * H);
+    const faint = withFaint ? new Uint8Array(W * H) : null;
+    sauvolaMulti(g, W, H, Math.max(8, Math.round(W * SAUVOLA_WIN)), faint ? [k, SAUVOLA_K_FAINT] : [k], faint ? [out, faint] : [out]);
+    if (faint) spare.set(fKey, { w: W, h: H, data: faint });
+    return { w: W, h: H, data: out };
+  };
+  return { decode, gray };
 }
 
 /** 彩色/灰度图转灰度（放大 `up` 倍）；1-bit 打包的返回 null。 */
@@ -542,21 +581,6 @@ function mergeHorizontal(bin: Binary, soft: Binary, minRun: number, maxThick: nu
 }
 /** 并回的横向游程至少几格长。 */
 const LINE_RUN = 3;
-
-
-/**
- * **Sauvola 局部阈值**（`T = m · (1 + k · (s/R − 1))`，内核在 `omrkit/preprocess.ts`），窗口半径取页宽的 `SAUVOLA_WIN`。
- *
- * 全局 Otsu 在这批扫描件上不够：一页里墨色深浅不匀（装订侧偏暗、页心偏淡），
- * 一个阈值要么把淡处的细线切断、要么把暗处的笔画糊粗。望十架那份线距只有 11.5px，
- * 符头才 8px 宽，粗一两个像素就并进谱线里。
- *
- * 只走 RGB / 灰度那一档——**位图路的干净底本是 1-bit 的 `mask` / `gray1`**，
- * 那两档本来就没有灰度可分（`rasterizePage` 上面那两个分支直接取位）。
- */
-function sauvola(gray: Uint8Array, w: number, h: number, out: Uint8Array, k = SAUVOLA_K): void {
-  sauvolaInto(gray, w, h, Math.max(8, Math.round(w * SAUVOLA_WIN)), k, out);
-}
 
 /** 墨迹占比。取完图自检、判「这一页是不是空页」都用它。 */
 export function inkRatio(bin: Binary): number {
