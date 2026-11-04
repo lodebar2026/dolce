@@ -232,6 +232,63 @@ async function ensureDetSession(): Promise<void> {
   await omrRuntime().prepare("det");
 }
 
+/** DBNet 概率图的一个连通块（`> 0.3` 为前景、4 邻接）：外包框、像素数、概率和（f64 依次累加）。 */
+type DetComp = { minX: number; minY: number; maxX: number; maxY: number; n: number; probSum: number };
+
+/**
+ * 缩好的检测输入（RGBA）→ 概率图的连通块，块的次序按块首像素光栅序。
+ * 桌面原生走 `omr_det`：归一化、推理、阈值连通域都在 Rust（`lib.rs::det_components`，遍历次序与累加同这里），
+ * 只回传块表，不再整张回传 f32 概率图；本地（Node / 浏览器）照旧在这里算。
+ */
+async function detComponents(px: Uint8ClampedArray, W: number, H: number): Promise<DetComp[]> {
+  if (nativeOcr()) {
+    const t = performance.now(); _prof.detCalls++;
+    const req = new ArrayBuffer(8 + px.byteLength);
+    const iv = new Int32Array(req, 0, 2);
+    iv[0] = W; iv[1] = H;
+    new Uint8Array(req, 8).set(px);
+    const resp = await tauriInvokeRaw("omr_det", req);
+    _prof.det += performance.now() - t;
+    const dv = new DataView(resp);
+    const count = dv.getInt32(0, true);
+    const out: DetComp[] = [];
+    for (let i = 0, o = 4; i < count; i++, o += 28) {
+      out.push({ minX: dv.getInt32(o, true), minY: dv.getInt32(o + 4, true), maxX: dv.getInt32(o + 8, true), maxY: dv.getInt32(o + 12, true), n: dv.getInt32(o + 16, true), probSum: dv.getFloat64(o + 20, true) });
+    }
+    return out;
+  }
+  // 归一化（ImageNet mean/std, RGB, CHW）。
+  const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225];
+  const chw = new Float32Array(3 * H * W);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = (y * W + x) * 4;
+    for (let c = 0; c < 3; c++) chw[c * H * W + y * W + x] = (px[p + c] / 255 - mean[c]) / std[c];
+  }
+  const prob = (await runDet(chw, [1, 3, H, W])).data; // [1,1,H,W]
+  const THRESH = 0.3;
+  const bm = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) bm[i] = prob[i] > THRESH ? 1 : 0;
+  const seen = new Uint8Array(W * H);
+  const out: DetComp[] = [];
+  const stack: number[] = [];
+  for (let i0 = 0; i0 < W * H; i0++) {
+    if (!bm[i0] || seen[i0]) continue;
+    stack.length = 0; stack.push(i0); seen[i0] = 1;
+    let minX = W, minY = H, maxX = 0, maxY = 0, n = 0, probSum = 0;
+    while (stack.length) {
+      const idx = stack.pop()!; const x = idx % W, y = (idx / W) | 0;
+      n++; probSum += prob[idx];
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x > 0 && bm[idx - 1] && !seen[idx - 1]) { seen[idx - 1] = 1; stack.push(idx - 1); }
+      if (x < W - 1 && bm[idx + 1] && !seen[idx + 1]) { seen[idx + 1] = 1; stack.push(idx + 1); }
+      if (y > 0 && bm[idx - W] && !seen[idx - W]) { seen[idx - W] = 1; stack.push(idx - W); }
+      if (y < H - 1 && bm[idx + W] && !seen[idx + W]) { seen[idx + W] = 1; stack.push(idx + W); }
+    }
+    out.push({ minX, minY, maxX, maxY, n, probSum });
+  }
+  return out;
+}
+
 /** DBNet 文本检测：在源画布的 region 子图内找文本行框，返回**原图坐标**的 Rect[]（已 unclip 外扩、
  *  按阅读序排好）。det 在干净二值图上同样有效（高对比）。仅供页眉(标题/著作者)整片识别用。 */
 async function detectRegion(src: Surface, region: Rect): Promise<Rect[]> {
@@ -249,42 +306,16 @@ async function detectRegion(src: Surface, region: Rect): Promise<Rect[]> {
 
   const tmp = createSurface(W, H);
   blit(tmp, src, { x: rx, y: ry, w: rw, h: rh }, { x: 0, y: 0, w: W, h: H });
-  const px = tmp.data;
 
-  // 归一化（ImageNet mean/std, RGB, CHW）。
-  const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225];
-  const chw = new Float32Array(3 * H * W);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const p = (y * W + x) * 4;
-    for (let c = 0; c < 3; c++) chw[c * H * W + y * W + x] = (px[p + c] / 255 - mean[c]) / std[c];
-  }
-  const prob = (await runDet(chw, [1, 3, H, W])).data; // [1,1,H,W]
-
-  // 阈值二值化 → 连通域（4-邻接 BFS）→ 行框；按 DBNet 习惯外扩(unclip)。
-  const THRESH = 0.3, BOX_THRESH = 0.5;
-  const bm = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) bm[i] = prob[i] > THRESH ? 1 : 0;
-  const seen = new Uint8Array(W * H);
+  // 阈值二值化 → 连通域 → 行框；按 DBNet 习惯外扩(unclip)。
+  const BOX_THRESH = 0.5;
   const boxes: Rect[] = [];
-  const stack: number[] = [];
-  for (let i0 = 0; i0 < W * H; i0++) {
-    if (!bm[i0] || seen[i0]) continue;
-    stack.length = 0; stack.push(i0); seen[i0] = 1;
-    let minX = W, minY = H, maxX = 0, maxY = 0, n = 0, probSum = 0;
-    while (stack.length) {
-      const idx = stack.pop()!; const x = idx % W, y = (idx / W) | 0;
-      n++; probSum += prob[idx];
-      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
-      if (x > 0 && bm[idx - 1] && !seen[idx - 1]) { seen[idx - 1] = 1; stack.push(idx - 1); }
-      if (x < W - 1 && bm[idx + 1] && !seen[idx + 1]) { seen[idx + 1] = 1; stack.push(idx + 1); }
-      if (y > 0 && bm[idx - W] && !seen[idx - W]) { seen[idx - W] = 1; stack.push(idx - W); }
-      if (y < H - 1 && bm[idx + W] && !seen[idx + W]) { seen[idx + W] = 1; stack.push(idx + W); }
-    }
-    const bw = maxX - minX + 1, bh = maxY - minY + 1;
-    if (bw < 4 || bh < 4 || probSum / n < BOX_THRESH) continue;
+  for (const k of await detComponents(tmp.data, W, H)) {
+    const bw = k.maxX - k.minX + 1, bh = k.maxY - k.minY + 1;
+    if (bw < 4 || bh < 4 || k.probSum / k.n < BOX_THRESH) continue;
     // unclip：按 dist = area*ratio/perimeter 外扩（DBNet 收缩了文字框，需还原）。
     const ratio = 1.6, dist = (bw * bh * ratio) / (2 * (bw + bh));
-    const ex0 = minX - dist, ey0 = minY - dist, ex1 = maxX + dist, ey1 = maxY + dist;
+    const ex0 = k.minX - dist, ey0 = k.minY - dist, ex1 = k.maxX + dist, ey1 = k.maxY + dist;
     boxes.push({
       x: rx + ex0 / sxScale, y: ry + ey0 / syScale,
       w: (ex1 - ex0) / sxScale, h: (ey1 - ey0) / syScale,

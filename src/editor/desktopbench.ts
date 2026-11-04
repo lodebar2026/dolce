@@ -72,6 +72,7 @@ export async function maybeRunDesktopBench(): Promise<void> {
         },
       });
       const liveMs = performance.now() - t1;
+      if (cfg.dump) await invoke("bench_write", { path: `${cfg.dump}/${tag}_${path.split("/").pop()}.xml`, text: (r.xml ?? "").replace(/ id="omr[A-Za-z]*\d+"/g, "") });
       const row = { path, tag, pages: r.pages.length, liveMs, ocrMs, ocrCalls, tsProfile: omrProfile(), ort: await invoke("bench_ort_stats"), hidden: document.hidden, focus: document.hasFocus() };
       await step(`${tag} 现跑完 ${(liveMs / 1000).toFixed(1)}s ${JSON.stringify(row.ort)}`);
       return row;

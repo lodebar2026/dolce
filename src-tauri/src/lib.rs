@@ -437,6 +437,102 @@ fn omr_onnx(
     Ok(tauri::ipc::Response::new(resp))
 }
 
+/// DBNet 检测的输入归一化：RGBA 字节 → CHW f32（ImageNet mean/std）。算式照 `paddleocr.ts::detectRegion`：先按 f64 算、再存成 f32，逐位相同。
+fn det_normalize(rgba: &[u8], w: usize, h: usize) -> Vec<f32> {
+    const MEAN: [f64; 3] = [0.485, 0.456, 0.406];
+    const STD: [f64; 3] = [0.229, 0.224, 0.225];
+    let mut chw = vec![0f32; 3 * w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let p = (y * w + x) * 4;
+            for c in 0..3 {
+                chw[c * h * w + y * w + x] = ((rgba[p + c] as f64 / 255.0 - MEAN[c]) / STD[c]) as f32;
+            }
+        }
+    }
+    chw
+}
+
+/// 概率图 → 连通块（`> 0.3` 为前景、4 邻接，栈式遍历次序与 `paddleocr.ts::detectRegion` 相同，概率按 f64 依次累加）。
+/// 每块写出 int32[minX,minY,maxX,maxY,n] + f64 概率和；筛框、外扩、排序留在 TS。
+fn det_components(prob: &[f32], w: usize, h: usize, out: &mut Vec<u8>) -> u32 {
+    let bm: Vec<bool> = prob.iter().map(|&v| v > 0.3).collect();
+    let mut seen = vec![false; w * h];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut count = 0u32;
+    for i0 in 0..w * h {
+        if !bm[i0] || seen[i0] {
+            continue;
+        }
+        stack.clear();
+        stack.push(i0);
+        seen[i0] = true;
+        let (mut min_x, mut min_y, mut max_x, mut max_y, mut n, mut sum) = (w, h, 0usize, 0usize, 0i32, 0f64);
+        while let Some(idx) = stack.pop() {
+            let (x, y) = (idx % w, idx / w);
+            n += 1;
+            sum += prob[idx] as f64;
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
+            if x > 0 && bm[idx - 1] && !seen[idx - 1] {
+                seen[idx - 1] = true;
+                stack.push(idx - 1);
+            }
+            if x < w - 1 && bm[idx + 1] && !seen[idx + 1] {
+                seen[idx + 1] = true;
+                stack.push(idx + 1);
+            }
+            if y > 0 && bm[idx - w] && !seen[idx - w] {
+                seen[idx - w] = true;
+                stack.push(idx - w);
+            }
+            if y < h - 1 && bm[idx + w] && !seen[idx + w] {
+                seen[idx + w] = true;
+                stack.push(idx + w);
+            }
+        }
+        for v in [min_x as i32, min_y as i32, max_x as i32, max_y as i32, n] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out.extend_from_slice(&sum.to_le_bytes());
+        count += 1;
+    }
+    count
+}
+
+/// **DBNet 检测（只回连通块）**：请求 int32[W,H] + RGBA 字节（W×H×4，已缩到检测尺寸）；
+/// 响应 int32[块数] + 逐块 (int32×5 + f64)。归一化与阈值连通域都在这边做，不再整张回传 f32 概率图。
+#[tauri::command]
+fn omr_det(app: tauri::AppHandle, request: tauri::ipc::Request) -> Result<tauri::ipc::Response, String> {
+    let body = match request.body() {
+        tauri::ipc::InvokeBody::Raw(v) => v.as_slice(),
+        _ => return Err("omr_det 需要原始字节请求体".into()),
+    };
+    if body.len() < 8 {
+        return Err("omr_det 请求体过短".into());
+    }
+    #[cfg(feature = "bench")]
+    let t_cmd = std::time::Instant::now();
+    let (w, h) = (ri32(body, 0) as usize, ri32(body, 4) as usize);
+    if body.len() < 8 + w * h * 4 {
+        return Err("omr_det 像素越界".into());
+    }
+    let chw = det_normalize(&body[8..8 + w * h * 4], w, h);
+    let (_, bytes) = infer_one(&app, 1, 0, vec![1, 3, h as i64, w as i64], chw)?;
+    // Vec<u8> 不保证按 f32 对齐，逐个拼回（cast_slice 遇到不对齐会 panic）
+    let prob: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let mut comps: Vec<u8> = Vec::new();
+    let n = det_components(&prob, w, h, &mut comps);
+    let mut resp = Vec::with_capacity(4 + comps.len());
+    resp.extend_from_slice(&n.to_le_bytes());
+    resp.extend_from_slice(&comps);
+    #[cfg(feature = "bench")]
+    bench::add_cmd(t_cmd.elapsed(), body.len() + resp.len());
+    Ok(tauri::ipc::Response::new(resp))
+}
+
 /// 多张量批量推理（一次 IPC 携带 N 个子请求，内部逐个 session.run）——把 Tauri 每次 ~数 ms 的往返开销
 /// 从 N 次压到 1 次，同时保持逐个推理的算力最优。请求 int32[count] + count×子请求；
 /// 响应 int32[count] + count×(int32[ndims,dims...]+data)。
@@ -599,6 +695,7 @@ pub fn run() {
         export_pdf_cmd,
         omr_onnx,
         omr_onnx_batch,
+        omr_det,
         midi_play_cmd,
         midi_stop_cmd
     ]);
@@ -607,6 +704,7 @@ pub fn run() {
         export_pdf_cmd,
         omr_onnx,
         omr_onnx_batch,
+        omr_det,
         midi_play_cmd,
         midi_stop_cmd,
         bench::bench_config,
