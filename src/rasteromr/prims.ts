@@ -134,6 +134,26 @@ export function runLengths(bin: Binary, vertical: boolean): Uint16Array {
 
 /** 逐像素的纵向游程长度。 */
 const vRuns = (bin: Binary): Uint16Array => runLengths(bin, true);
+/**
+ * 去线（原图）、找原语（去线图）各自算过的竖游程留给 `repairLineCuts` 再用，省两遍整页游程。
+ * 按图对象记；那之间改了像素（抹简谱带）要 `forgetRuns` 作废。
+ */
+const keptRuns = new WeakMap<Binary, Uint16Array>();
+const keepRuns = (bin: Binary): Uint16Array => {
+  const r = vRuns(bin);
+  keptRuns.set(bin, r);
+  return r;
+};
+/** 取走 `keepRuns` 留下的竖游程（取一次就删），没有就现算。 */
+const takeRuns = (bin: Binary): Uint16Array => {
+  const r = keptRuns.get(bin);
+  keptRuns.delete(bin);
+  return r ?? vRuns(bin);
+};
+/** 改了像素的图：留下的竖游程作废。 */
+export function forgetRuns(...bins: Binary[]): void {
+  for (const b of bins) keptRuns.delete(b);
+}
 /** 竖段放宽横宽的竖向游程下限（格，见「又长又直的墨按 0.3 格收」）：谱表高 4 格，留点断口余量。 */
 const VBAR_LEN = 3.8;
 
@@ -730,7 +750,7 @@ export function findPrimitives(
     const b = Math.max(sg.y0, sg.y1);
     return bandsAt(x).some(([top, bot]) => Math.abs(t - top) <= unit.space * 0.5 && Math.abs(b - bot) <= unit.space * 0.5);
   };
-  const vr = vRuns(bin);
+  const vr = keepRuns(bin);
   const hr = hRuns(bin);
   // 「细」的上限**要卡在谱线与符杠之间**：谱线约 0.15 个线距厚，符杠约 0.5 个。
   // 一度写成 `lineThick * 3`，那正好撞上符杠的厚度——符杠混进横笔画，
@@ -1579,8 +1599,8 @@ export function repairLineCuts(bin: Binary, nl: Binary, lines: LineRef[], unit: 
   lines = lines.filter((l) => !l.virtual); // 单线谱补出来的线谱面上没墨
   const { w, h, data } = bin;
   const out: Binary = { w, h, data: new Uint8Array(nl.data) };
-  const runs = vRuns(bin);
-  const nlRuns = vRuns(nl);
+  const runs = takeRuns(bin);
+  const nlRuns = takeRuns(nl);
   const half = unit.lineThick / 2 + 1;
   const look = Math.max(1, Math.round(unit.lineThick));
   const lineT = Math.max(unit.lineThick, measuredLineThick(bin, runs, lines, unit));
@@ -1722,7 +1742,7 @@ export function removeStaffLines(bin: Binary, lines: LineRef[], unit: RasterUnit
   // 往外看多远算「紧邻」：一个线宽足矣。看太远会把间距里的符头也算成「连着」，
   // 谱线就抹不掉了。
   const look = Math.max(1, Math.round(unit.lineThick));
-  const runs = vRuns(bin);
+  const runs = keepRuns(bin);
   const maxRun = unit.lineThick * THIN_ONLY_RUN;
   // **比一根线厚得多、又横着连成一段的不抹**：压在谱线上的薄符杠，杠连线整段落在线带里、上下又不连墨，照「上下没墨」抹就连杠一起没了
   //（望十架 p7 长笛一串八分的杠贴着第四线，原图 5~6 像素、线 3 像素；钢琴右手贴第五线的两条杠同样，二十来个八分读成四分）。

@@ -3,7 +3,7 @@
 
 import { type StaffGroup, type RasterUnit, type StaffLineRun, lineYAt, liftOf, localLineModel } from "../staffline";
 import type { RasterPage } from "../rasterpage";
-import { type RasterPrims, findBlobs, repairLineCuts, binSig } from "../prims";
+import { type RasterPrims, findBlobs, repairLineCuts, binSig, forgetRuns } from "../prims";
 import type { Binary, Component, Rect } from "../../omrkit/types";
 import type { LineFrame } from "../pitchgrid";
 import { type JianpuBand, type JianpuStrip, findJianpuBands, completeStaffBars, cutJianpuStrip, eraseInBand } from "../jianpuband";
@@ -82,6 +82,7 @@ export function claimJianpuRows(c: {
   const jianpuStrips = jianpuBands.map((b) => cutJianpuStrip(raster.bin, b));
   if (jianpuBands.length) {
     for (const b of jianpuBands) eraseInBand([raster.bin, nl], b.box, b.lift);
+    forgetRuns(raster.bin, nl);
     const inJp = (x: number, y: number) =>
       jianpuBands.some((b) => {
         const d = b.lift ? b.lift(x) : 0;
