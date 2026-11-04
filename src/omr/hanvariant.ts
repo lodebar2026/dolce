@@ -106,13 +106,35 @@ const PAIRS =
   "黽黾黿鼋鼉鼍鼕冬鼴鼹齊齐齋斋齎赍齏齑齒齿齔龀齕龁齗龂齙龅齜龇齟龃齠龆齡龄齣出齦龈齧啮齪龊齬龉齲龋齶腭齷龌龍龙龐庞龑䶮龔龚" +
   "龕龛龜龟";
 
-let _map: Map<string, string> | null = null;
+// 日文新字体 → 简体（98《唯一的爱》「觉」读成「覚」）：PP-OCR 字典里也收日文字形，与简体形近时同样会被读错一边。
+// 生成法同上，换 opencc `{from:"jp",to:"cn"}`，另要原字**不在** GB2312、结果在 GB2312（筛掉「予→豫」「欠→缺」这类
+// 原字本身就是常用简体字的），且不与上表重复。191 对。
+const JP_PAIRS =
+  "両两乗乘亀龟亜亚仏佛仮假伝传価价倹俭児儿円圆処处剣剑剤剂剰剩労劳効效勅敕勧劝勲勋単单厳严収收唖哑営营噛啮団团囲围図图圏圈圧压塁垒塩盐増增壊坏壌壤壱壹売卖変变奨奖嬢娘実实寛宽対对専专尭尧巌岩巣巢巻卷帯带帰归庁厅広广廃废弐贰弾弹従从徳德徴征応应恵惠悩恼悪恶懐怀戦战戯戏戻戾払拂抜拔択择拝拜拠据拡扩挿插捜搜掲揭掻搔揺摇摂摄撃击撹搅斉齐斎斋晩晚暁晓暦历曽曾栄荣桜樱桟栈検检楽乐様样権权歓欢歩步歯齿歳岁歴历毎每気气沢泽浄净涙泪渇渴済济渉涉渓溪満满滝泷瀬濑焼烧犠牺猟猎獣兽畳叠痩瘦発发県县砕碎稲稻穂穗穏稳穣穰竜龙粋粹粛肃経经絵绘継继続续総总縁缘縄绳縦纵繊纤繍绣聴听脳脑臓脏艶艳荘庄蔵藏薫薰薬药蛍萤蝋蜡覇霸覚觉覧览観观訳译読读譲让豊丰賛赞転转軽轻辺边逓递遅迟酔醉醤酱醸酿釈释鉄铁銭钱鋳铸錬炼関关陥陷険险隠隐雑杂霊灵頼赖顕显駅驿駆驱騒骚験验髄髓髪发鴎鸥鶏鸡鹸碱麹曲麺面黒黑黙默齢龄";
 
-/** 该字若是繁体，返回它的简体形；否则 undefined。 */
-export function simplifiedOf(ch: string): string | undefined {
+let _map: Map<string, string> | null = null;
+let _simp: Set<string> | null = null;
+
+function build(): Map<string, string> {
   if (!_map) {
     _map = new Map();
-    for (let i = 0; i + 1 < PAIRS.length; i += 2) _map.set(PAIRS[i]!, PAIRS[i + 1]!);
+    _simp = new Set();
+    for (const t of [PAIRS, JP_PAIRS]) for (let i = 0; i + 1 < t.length; i += 2) _map.set(t[i]!, t[i + 1]!);
+    // 简体专用形只认一对一的：「干」（乾/幹）「后」（後）「里」（裡/裏）这类多对一的简体形在繁体文本里本身也常用，不算
+    const n = new Map<string, number>();
+    for (let i = 0; i + 1 < PAIRS.length; i += 2) n.set(PAIRS[i + 1]!, (n.get(PAIRS[i + 1]!) ?? 0) + 1);
+    for (const [v, k] of n) if (k === 1 && !_map.has(v)) _simp.add(v);
   }
-  return _map.get(ch);
+  return _map;
+}
+
+/** 该字若是繁体（或日文新字体），返回它的简体形；否则 undefined。 */
+export function simplifiedOf(ch: string): string | undefined {
+  return build().get(ch);
+}
+
+/** 该字是简体专用形（表里恰好一个繁体对应它、且自身不是繁体）：「见」「们」是，「我」「的」「干」不是。 */
+export function isSimplifiedForm(ch: string): boolean {
+  build();
+  return _simp!.has(ch);
 }

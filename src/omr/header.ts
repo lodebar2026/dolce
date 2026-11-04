@@ -16,6 +16,8 @@ import { CREDIT_PREFIX_RE, CREDIT_SUFFIX_RE, CREDIT_ROLE_TAIL_RE, LATIN_NAME_RE,
 import { charsForText, gapWideAt, recoverHanziGaps, recoverSpacesByInk } from "../omrkit/textspace";
 
 const rcyOf = (r: Rect) => r.y + r.h / 2;
+/** 括号里单个和弦名：备选和弦「(Em)」「(G7)」「(F#m)」 */
+const PAREN_CHORD_RE = /^\s*[(（][A-G][#b♯♭]?(?:m|maj|min|dim|aug|sus|add)?\d*(?:\/[A-G][#b♯♭]?)?[)）]\s*$/;
 const hanziCount = (s: string) => (s.match(/[一-鿿]/g) || []).length;
 
 export interface HeaderInfo {
@@ -574,7 +576,7 @@ export async function recognizeHeader(
       const lines: HLine[] = await splitMixedRows(splitInlineKey(dets.map((d) => ({ text: d.text, charH: d.bbox.h, cx: d.bbox.x + d.bbox.w / 2, cy: d.bbox.y + d.bbox.h / 2, n: 1, bbox: d.bbox, chars: d.chars }))));
       if ((globalThis as { __omrDebug?: boolean }).__omrDebug) console.log("[header/det]", lines.map((l) => `${Math.round(l.charH)}px@${Math.round(l.cx)},${Math.round(l.cy)}w${Math.round(l.bbox.w)}=${JSON.stringify(l.text)}`).join("  "));
       probe("header.det");
-      await classify(lines);
+      await classify(await extendSpacedTitle(lines));
       return out;
     }
   }
@@ -637,6 +639,49 @@ export async function recognizeHeader(
 
   await classify(lines);
   return out;
+
+  /**
+   * 拉开字距排的书法体标题，det 只框到其中几个字（青年诗歌 98「唯　一　的　愛」只框到「的愛」：「唯」整个漏、「一」只是一道扁横）。
+   * 页上最大一号的纯汉字框，两侧同一排上**不落在任何 det 框里**的墨按横向交叠并成字列，从框边往外逐列收：
+   * 列中线在框的纵向范围里、上下不出框三成字高、不高过一点二字高，宽或高够得上四成字高（挡掉碎点），
+   * 与当前边缘的空当不过四个字高（同 `joinSpacedTitleChars`）。收到了就把所有字连同原框重新 rec，
+   * 读出的汉字数正好是原来的加上新收的列数才换——读不齐宁可不动。
+   */
+  async function extendSpacedTitle(ls: HLine[]): Promise<HLine[]> {
+    const han = ls.filter((l) => /^[一-鿿]+$/.test(l.text.trim()));
+    const t = han.sort((a, b) => b.charH - a.charH)[0];
+    if (!t || t.charH < numH * 1.3) return ls;
+    const h = t.charH, b = t.bbox;
+    const inAny = (c: Component) => ls.some((l) => c.cx >= l.bbox.x && c.cx <= l.bbox.x + l.bbox.w && c.cy >= l.bbox.y && c.cy <= l.bbox.y + l.bbox.h);
+    const pool = comps.filter((c) => !inAny(c) && c.cy >= b.y && c.cy <= b.y + b.h &&
+      c.bbox.y >= b.y - h * 0.3 && rbottom(c.bbox) <= b.y + b.h + h * 0.3 && c.bbox.h <= h * 1.2)
+      .sort((p, q) => p.bbox.x - q.bbox.x);
+    const cols: Rect[] = [];
+    for (const c of pool) {
+      const last = cols[cols.length - 1];
+      if (last && c.bbox.x <= last.x + last.w) cols[cols.length - 1] = unionRect(last, c.bbox);
+      else cols.push({ ...c.bbox });
+    }
+    const big = cols.filter((r) => (r.w >= h * 0.4 || r.h >= h * 0.4) && r.h <= h * 1.2);
+    const add: Rect[] = [];
+    let lx = b.x, rx = b.x + b.w;
+    for (const r of [...big].filter((r) => r.x + r.w <= b.x).reverse()) {
+      if (lx - (r.x + r.w) > h * 4) break;
+      add.push(r); lx = r.x;
+    }
+    for (const r of big.filter((r) => r.x >= b.x + b.w)) {
+      if (r.x - rx > h * 4) break;
+      add.push(r); rx = r.x + r.w;
+    }
+    if (!add.length) return ls;
+    const cells = [...add, b].sort((p, q) => p.x - q.x);
+    const [text] = await recognizeTexts([buildStrip(surfaceFromBinary(bin), cells)]);
+    const txt = (text ?? "").trim();
+    if (!/^[一-鿿]+$/.test(txt) || [...txt].length !== [...t.text.trim()].length + add.length) return ls;
+    probe("header.spacedTitleInk");
+    const bbox = unionRects(cells);
+    return ls.map((l) => (l === t ? { text: txt, charH: h, cx: bbox.x + bbox.w / 2, cy: bbox.y + bbox.h / 2, n: t.n + add.length, bbox } : l));
+  }
 
   /**
    * det 把一排高矮悬殊的几段并成一框（赞美诗歌1384 942《万古磐石》：左上两行小字署名的头一行、`1=♭B`、竖排 3/4、
@@ -1172,7 +1217,8 @@ export async function recognizeHeader(
         out.regions.push({ text: cr, bbox: ln.bbox, chars: charsForText(cr, ln.chars) });
         continue;
       }
-      if (ln.charH < maxCharH && latinParenRe.test(txt)) {
+      // 括号里只是一个和弦名的（青年诗歌 98「#Fm」上方另起一排的备选和弦「(Em)」）不是原文名
+      if (ln.charH < maxCharH && latinParenRe.test(txt) && !PAREN_CHORD_RE.test(txt)) {
         const cr = recoverSpacesByInk(bin, txt, ln.bbox, ln.chars);
         probe("header.creditLatinParen");
         out.credits.push(cr); creditAt.push(ln.bbox);

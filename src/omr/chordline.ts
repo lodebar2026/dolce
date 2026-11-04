@@ -12,7 +12,8 @@ import { rright } from "../omrkit/types";
 import { probe } from "./probe";
 
 /** 一个待落位的和弦记号：归一后的文本 + 源图起始 x + 源图框。 */
-export type ChordCand = { tok: string; x: number; bbox: Rect; /** 块首括号里的（`(C)3`）：可能是与前一块主和弦拆开的备选，见 dropAltChords */ paren?: boolean };
+export type ChordCand = { tok: string; x: number; bbox: Rect; /** 块首括号里的（`(C)3`）：可能是与前一块主和弦拆开的备选，见 dropAltChords */ paren?: boolean;
+  /** 块末孤零零的升降号（`Bm(Am)#`）：是下一块和弦的前置升降号被 rec 分块切了过来，见 joinLoneAccidentals */ lone?: boolean };
 
 /** 从一行和弦文本里切出记号并换算源图坐标。
  *  `srcX(charIndex)` 把原串字符下标映到源图 x（下标可越界，返回该行右缘）；
@@ -22,7 +23,7 @@ export function chordCandidates(
   rawText: string, srcX: (charIndex: number) => number, mkBbox: (x0: number, x1: number) => Rect,
 ): ChordCand[] {
   rawText = trailingSharpMinor(rawText, srcX);
-  return splitChordTokens(blankNonChord(blankAltChords(splitFarJump(rawText, srcX, mkBbox(0, 1).h))), srcX)
+  const out: ChordCand[] = splitChordTokens(blankNonChord(blankAltChords(splitFarJump(rawText, srcX, mkBbox(0, 1).h))), srcX)
     .map(({ tok, index }) => {
       const x0 = srcX(index), x1 = srcX(index + tok.length);
       const paren = /^\s*[(（]\s*$/.test(rawText.slice(0, index));
@@ -30,6 +31,32 @@ export function chordCandidates(
     })
     // 归一后仍须是合法根音开头（可带前置升降号，`chordTextSegs`/`harmonyXml` 的最低要求），否则下游只能整段原样排字。
     .filter((c) => /^[#b]?[A-G]/.test(c.tok));
+  // 块末单独一个升降号（前面隔着空白或括号收尾，不是 `Fm#` 那种后置）：留着等下一块认领
+  const lone = /(?<=[)）\s]|^)[#♯]\s*$/.exec(rawText);
+  if (lone) {
+    const x0 = srcX(lone.index);
+    out.push({ tok: "#", x: x0, bbox: mkBbox(x0, srcX(lone.index + 1)), lone: true });
+  }
+  return out;
+}
+
+/** 前置升降号被 rec 分块切进了前一块的末尾（青年诗歌 98《唯一的爱》「♯ Fm(Em)」读成 `Bm(Am)#` | `Fm(Em)`）：
+ *  同一行里右边紧挨着（缝不过一个半字高）、本身不带升降号的和弦认领它；没人认领就丢掉。落位点不动（仍是根音的 x）。 */
+export function joinLoneAccidentals(cands: ChordCand[]): ChordCand[] {
+  const lone = cands.filter((c) => c.lone);
+  if (!lone.length) return cands;
+  const rest = cands.filter((c) => !c.lone);
+  for (const a of lone) {
+    const next = rest.filter((c) => c.x >= rright(a.bbox) - 1 && c.x - rright(a.bbox) <= a.bbox.h * 1.5 && /^[A-G]/.test(c.tok) &&
+      Math.min(a.bbox.y + a.bbox.h, c.bbox.y + c.bbox.h) > Math.max(a.bbox.y, c.bbox.y))
+      .sort((p, q) => p.x - q.x)[0];
+    if (!next) continue;
+    probe("chord.loneAccidental");
+    // 落位仍按根音字母的 x：♯ 常悬在小节线左边（98 第 9 行「6 5 6 | ♯Fm 7」的 ♯ 压在小节线前），按它落就挂到上一小节末音
+    next.tok = a.tok + next.tok;
+    next.bbox = { ...next.bbox, x: a.bbox.x, w: rright(next.bbox) - a.bbox.x };
+  }
+  return rest;
 }
 
 /** 升号印在小写 m 后面的小调和弦（青年诗歌 77《永远的锡安山》「Fm♯」= F♯m）：读成 `Fm#G` 就切成 `Fm` 与前置升号的 `#G`。

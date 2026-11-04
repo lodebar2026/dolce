@@ -9,13 +9,13 @@ import type { Binary, Component, JpNum, Rect, StaffRow, TextRegion } from "../om
 import { rright, rbottom, rcx, rcy } from "../omrkit/types";
 import type { OcrBackend } from "../omrkit/ocr";
 import type { ChordCand } from "./chordline";
-import { chordCandidates, dropAltChords, placeChords } from "./chordline";
+import { chordCandidates, dropAltChords, joinLoneAccidentals, placeChords } from "./chordline";
 import { isAnnotationLine } from "../omrkit/chordgrammar";
 import { clusterByY, findLineByY, median } from "../omrkit/geom";
 import { blit, createSurface, surfaceFromBinary, type Surface } from "../omrkit/surface";
 import { probe } from "./probe";
 import { splitEnglishWord } from "./ensyllable";
-import { simplifiedOf } from "./hanvariant";
+import { isSimplifiedForm, simplifiedOf } from "./hanvariant";
 import { LYRIC_PUNCT, LYRIC_QUOTE_CLOSE, LYRIC_QUOTE_OPEN, normPunct, punctAfter } from "../omrkit/lyrictext";
 
 const isHanzi = (c: string) => /[一-鿿]/.test(c);
@@ -524,18 +524,20 @@ async function simplifyStrayTraditional(
   textOf: (s: number) => string, setChar: (s: number, k: number, ch: string) => void,
 ): Promise<boolean> {
   if (!ocr.rankTextChars) return false;
-  let trad = 0, simp = 0;
+  let trad = 0, simp = 0, simpForm = 0;
   const hits: number[] = []; // 含繁体字的条
   for (const s of mainIdx) {
     let any = false;
     for (const ch of textOf(s)) {
       if (!/[\u3400-\u4dbf\u4e00-\u9fff]/.test(ch)) continue;
-      if (simplifiedOf(ch)) { trad++; any = true; } else simp++;
+      if (simplifiedOf(ch)) { trad++; any = true; } else { simp++; if (isSimplifiedForm(ch)) simpForm++; }
     }
     if (any) hits.push(s);
   }
-  // 孤立才算误判：整页至多两个繁体字、且简体字是它的十倍以上（繁体谱面一整页都是繁体，碰不到这条）
-  const simplifiedPage = trad <= 2 && simp >= Math.max(10, trad * 10);
+  // 孤立才算误判：繁体字不到简体字的十分之一，且要么整页至多两个，要么简体专用形（见/们/觉）是繁体字的三倍以上。
+  // 繁体谱面一整页都是繁体，简体专用形几乎读不出来，碰不到后一条；98《唯一的爱》两段词读出 見×2 頻×2 順 覚 六个，
+  // 同页简体专用形三十多个——只看个数上限会整页放过。
+  const simplifiedPage = simp >= Math.max(10, trad * 10) && (trad <= 2 || simpForm >= trad * 3);
   if (!trad || !simplifiedPage) return simplifiedPage;
   const ranked = await ocr.rankTextChars(hits.map((s) => strips[s]!));
   hits.forEach((s, i) => {
@@ -577,6 +579,64 @@ export async function simplifyHeaderLine(bin: Binary, ocr: OcrBackend, text: str
     probe("header.tradToSimp");
     chars[c.i] = sc;
   });
+  return chars.join("");
+}
+
+/**
+ * 标题按歌词改形近误读（青年诗歌 100《我已寻得一生命源》书法体标题「已」读成「巴」，第一段首句「我已寻得一生命泉源」）。
+ * 标题多取自歌词某句：标题（只看汉字）与各段歌词做半全局对齐（歌词两端随便跳，中间多一字少一字都记一步），
+ * 总步数不过标题字数的四分之一（至少容一步）、其中换字一到两处，才回源图重跑该行候选——**歌词那个字在该标题字的候选里、
+ * 且分数有首选的一成以上**才换。标题本就与歌词措辞不同的（59「主到我这里来」对歌词「今生到我这里来过」），模型对标题字很笃定，换不动。
+ */
+export async function fixTitleByLyrics(bin: Binary, ocr: OcrBackend, text: string, bbox: Rect, verses: string[]): Promise<string> {
+  const chars = [...text];
+  const han = chars.map((ch, i) => ({ ch, i })).filter((c) => /[一-鿿]/.test(c.ch));
+  const n = han.length;
+  if (!ocr.rankTextChars || n < 4) return text;
+  const maxCost = Math.max(1, Math.floor(n / 4));
+  let best: { cost: number; subs: [number, string][] } | undefined;
+  for (const verse of verses) {
+    const L = [...verse].filter((ch) => /[一-鿿]/.test(ch));
+    const m = L.length;
+    if (m < n - maxCost) continue;
+    // dp[i][j]：标题前 i 字对齐到以歌词第 j 字收尾的一段的最少步数；歌词起点自由（dp[0][j] = 0）
+    const dp: number[][] = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, () => (i === 0 ? 0 : Infinity)));
+    for (let i = 1; i <= n; i++) {
+      dp[i]![0] = i;
+      for (let j = 1; j <= m; j++) {
+        dp[i]![j] = Math.min(dp[i - 1]![j - 1]! + (han[i - 1]!.ch === L[j - 1] ? 0 : 1), dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1);
+      }
+    }
+    let j = 0;
+    for (let k = 1; k <= m; k++) if (dp[n]![k]! < dp[n]![j]!) j = k;
+    const cost = dp[n]![j]!;
+    if (cost > maxCost || (best && best.cost <= cost)) continue;
+    const subs: [number, string][] = [];
+    for (let i = n; i > 0 && j > 0;) {
+      const same = han[i - 1]!.ch === L[j - 1];
+      if (dp[i]![j] === dp[i - 1]![j - 1]! + (same ? 0 : 1)) { if (!same) subs.push([i - 1, L[j - 1]!]); i--; j--; }
+      else if (dp[i]![j] === dp[i - 1]![j]! + 1) i--;
+      else j--;
+    }
+    best = { cost, subs };
+  }
+  if (!best || !best.subs.length || best.subs.length > 2) return text;
+  const [line] = await ocr.rankTextChars([buildStrip(surfaceFromBinary(bin), [bbox])], 10);
+  if (!line) return text;
+  const got = line.filter((c) => /[一-鿿]/.test(c.ch));
+  // 候选首选串里与标题汉字同序的那一段
+  let off = -1;
+  for (let o = 0; o + n <= got.length && off < 0; o++) if (han.every((c, k) => got[o + k]!.ch === c.ch)) off = o;
+  if (off < 0) return text;
+  for (const [k, ch] of best.subs) {
+    // 光在候选里不够：59《主到我这里来》歌词是「今生到我这里来过」，「生」也在「主」的候选里（0.0000016 对 0.99995）。
+    // 要模型本身就在两字间拿不准——歌词那个字的分数有首选的一成以上（100「已」0.40 对「巴」0.57）。
+    const c = got[off + k]!;
+    const at = c.alts.indexOf(ch);
+    if (at < 0 || !c.scores || !((c.scores[at] ?? 0) >= (c.scores[0] ?? 1) * 0.1)) continue;
+    probe("header.titleByLyrics");
+    chars[han[k]!.i] = ch;
+  }
   return chars.join("");
 }
 
@@ -1388,7 +1448,8 @@ export async function recognizeLyrics(
   // 和弦落位：和弦印在**下一谱行**音符的上方（与段落方框同理）。上方带的 rowIdx=-1 自然落到
   // 第 0 行——「第一谱行不做特例」正是这么兑现的。归到哪个音符/拍位见 chordline.placeChords。
   const chordRegions: TextRegion[] = [];
-  for (const [rowIdx, cands] of chordCands) {
+  for (const [rowIdx, cands0] of chordCands) {
+    const cands = joinLoneAccidentals(cands0);
     const row = staff[rowIdx + 1];
     if (row) {
       if (altPage) for (const c of cands) if (c.tok.includes("/")) { probe("chord.slashIsAlt"); c.tok = c.tok.split("/")[0]!; }

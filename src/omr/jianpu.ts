@@ -11,7 +11,7 @@ import type { Binary, Component, JpNum, Rect, StaffRow, RecognizedScore } from "
 import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, isRejoinedArc } from "../omrkit/types";
 import { connectedComponents } from "../omrkit/ccl";
 import type { OcrBackend } from "../omrkit/ocr";
-import { recognizeLyrics, simplifyHeaderLine, type LyricCharRef, type LyricHooks } from "./lyrics";
+import { fixTitleByLyrics, recognizeLyrics, simplifyHeaderLine, type LyricCharRef, type LyricHooks } from "./lyrics";
 import { applyRefLyrics } from "./reflyrics";
 import { recognizeHeader } from "./header";
 import { recognizeTrailingStanzas } from "./stanzas";
@@ -940,10 +940,14 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   // 只在第一谱行**之上**动：「1=」的形在分类小字里也凑得出来（151「信徒灵修」的「信」竖笔 +「徒」两横），
   // 放到全页去找，歌词里碰上一处就会把上面的真谱行整片删掉。
   const squareCore = (k: DigitCore) => k.bbox.w > k.bbox.h * 0.8 && k.bbox.h >= numH * 0.6;
-  const firstMusicTop = Math.min(...rowMetaAll
-    .filter((m) => m.rd.length >= 3 && m.barlineXs.length >= 2 && m.rd.filter((k) => !squareCore(k)).length >= m.rd.length * 0.7)
-    .map((m) => m.topY));
   const musicRowH = median(rowMetaAll.filter((m) => m.rd.length >= 3 && m.barlineXs.length >= 2).map((m) => median(m.rd.map((k) => k.bbox.h)))) || numH;
+  // 核高还得与谱行字号相当（不矮过八成）：书法体大标题的笔画碎块也凑得出三四个瘦核、两道竖笔当小节线
+  //（青年诗歌 100《我已寻得一生命源》标题一排 29×98、17×29、15×21、15×23，谱行字号 39），被当成第一谱行，
+  // 页眉 ROI 只剩书眉，标题、调号拍号全丢，标题自己还读成一行 `1 | 1 1 1`。
+  const firstMusicTop = Math.min(...rowMetaAll
+    .filter((m) => m.rd.length >= 3 && m.barlineXs.length >= 2 && m.rd.filter((k) => !squareCore(k)).length >= m.rd.length * 0.7 &&
+      median(m.rd.map((k) => k.bbox.h)) >= musicRowH * 0.8)
+    .map((m) => m.topY));
   const keyLineBot = Math.max(-Infinity, ...rowMetaAll.filter((m) => m.botY < firstMusicTop && keyLineRow(m.rd)).map((m) => m.botY));
   const pageRowH = median(rowMetaAll.filter((m) => m.rd.length >= 3).map((m) => median(m.rd.map((k) => k.bbox.h))));
   // **通栏横线以下是注释**：选本诗歌712 通本谱后隔一道过半页宽的细线印词语注释（「(11)1.昏沉若病：…」），
@@ -1563,6 +1567,17 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
         const braced = sysOf.has(m);
         // 下限按字号放到 0.15（至少 4px）：擦小节线接弧时同一根线会剩两截、中心只差 2px（78《马槽歌》下两声部
         // 行首读成 `||`）；真复纵线两根中心距 9px 起（76《天上有粮》，字号 44 即 0.2）。
+        // 末行行末两根离得开（青年诗歌 98《唯一的爱》曲末两道细线隔了 1.2 个字号）、中间又一个音都没有、两根一般高：
+        // 也是终止线——空小节不会印在曲末。
+        const lastRowEnd = m === staff[staff.length - 1] && i === m.bars.length - 1 && !braced && gap <= numH * 1.5 &&
+          Math.abs(cur.bbox.h - prev.bbox.h) <= Math.max(cur.bbox.h, prev.bbox.h) * 0.25 &&
+          !m.rd.some((k) => rcx(k.bbox) > rcx(prev.bbox) && rcx(k.bbox) < rcx(cur.bbox));
+        if (lastRowEnd && gap > numH * 0.5) {
+          probe("barline.finalWide");
+          (m as { finalBarline?: "end" }).finalBarline = "end";
+          (m as { finalBarlineThin?: boolean }).finalBarlineThin = true;
+          continue;
+        }
         if (gap > numH * (braced ? 0.7 : 0.5) || gap < Math.max(4, numH * 0.15)) continue;   // 不是并排的两根 / 同一根被切成两截
         const thick = Math.max(cur.bbox.w, prev.bbox.w) >= medW * 1.5 ||
           (braced && Math.max(cur.bbox.w, prev.bbox.w) >= Math.min(cur.bbox.w, prev.bbox.w) * 1.3);
@@ -2603,6 +2618,16 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
         region.text = fixed;
         if (field === "title") title = fixed;
         else subtitle = fixed;
+      }
+    }
+    // 标题里的形近误读按歌词改（见 `fixTitleByLyrics`）：各段歌词按谱行顺序连起来比
+    {
+      const region = title ? headerRegions?.find((r) => r.text === title) : undefined;
+      if (title && region) {
+        const verses: string[] = [];
+        for (const r of useRows) for (const nm of r.nums) (nm.lyrics ?? []).forEach((t, v) => { verses[v] = (verses[v] ?? "") + (t ?? ""); });
+        const fixed = await fixTitleByLyrics(bin, ocr, title, region.bbox, verses.filter(Boolean));
+        if (fixed !== title) { region.text = fixed; title = fixed; }
       }
     }
     // 谱后单独排版的附段（第 2…N 段印成诗行、不跟音符对齐）：照第 1 段的音位骨架填进去。
