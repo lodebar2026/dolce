@@ -272,7 +272,10 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     return { box: st.box, index: st.index, ...(lift ? { lift } : {}) };
   });
   const labelStrips = findStaffLabels(raster.bin, lifted, unit);
-  const labelOcr = opts.labelOcr ?? (live ? await live.label(labelStrips) : undefined);
+  // 在线识别不在这里认标签：标签只在整曲有多行谱的系统时才起作用（`score.ts::buildScore` 全是单行谱的系统直接归第一声部），
+  // 留给 `song.ts` 认完各页、知道用不用得上时再统一送（`labelPending`）。离线缓存照旧当场查
+  const labelPending = !opts.labelOcr && !!live && labelStrips.length > 0;
+  const labelOcr = opts.labelOcr;
   const staffLabels = new Map<number, string>();
   for (const st of labelStrips) {
     const txt = labelOcr?.get(labelKey(st));
@@ -1430,6 +1433,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
     harmonies,
     harmonyTexts,
     labelStrips,
+    ...(labelPending ? { labelPending } : {}),
     timeStrips,
     wordStrips: opts.wantWordStrips ? [...wordStrips, ...nameStrips] : [],
     headerStrips: headerStrip ? [headerStrip] : [],

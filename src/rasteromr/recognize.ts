@@ -92,6 +92,8 @@ export interface RasterPageResult {
    * 与歌词条同一套架构：这里只切条，认字靠离线缓存。见 `stafflabel.ts`。
    */
   labelStrips: LabelStrip[];
+  /** 在线识别时标签条还没认（留给整曲层面按需送，见 `song.ts`）。 */
+  labelPending?: boolean;
   /** 行首拍号候选列的上下半条（`gen-rastertime.mjs` 拿它送 OCR）。见 `timesig.ts`。 */
   timeStrips: TimeStrip[];
   /** 文字指示带（`words.ts`）。**只在 `opts.wantWordStrips` 时带出来**（生成缓存的脚本、在线识别送 OCR 的那一趟）：

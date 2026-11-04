@@ -6,6 +6,7 @@
 
 import type { RasterGlyphLookup } from "./rasterglyphs";
 import type { RasterPage } from "./rasterpage";
+import { labelKey, normalizeLabel } from "./stafflabel";
 import { recognizeRasterPage, type RasterStage, type RasterProbe, type CarryKey, type PageCarry, type RasterLiveOcr, type RasterPageResult } from "./recognize";
 import { pageImageOf, type PageImage } from "./rasterpage";
 import { composeHeaderStrip } from "./pagecompose";
@@ -229,6 +230,23 @@ export async function recognizeRasterSong(
   if (!entries.length) return { xml: null, score: null, stats, pages, noteBoxes, markBoxes, assignment: emptyAssign, rebuild: () => { throw new Error("没有谱表"); } };
   // 拉丁段挪到全曲中文段后面（页内先占位，见 `lyricpost.ts::settleLyricVerses`）
   settleLyricVerses([...notesByStaff.values()].flat());
+  // 声部标签（在线识别时各页留着没认的）：整曲有多行谱的系统才用得上（全是单行谱时 `buildScore` 直接归第一声部、不看剖面），
+  // 用得上才送 OCR。认出的覆盖页内从文字带补的标签——同页内的老次序就是「标签条读出的优先、没读出才用文字带的」
+  if (opts.live && entries.some((e) => e.page.systems.some((sy) => sy.staves.length >= 2))) {
+    for (const { result: r } of pages) {
+      if (!r.labelPending) continue;
+      const got = await opts.live.label(r.labelStrips);
+      for (const ls of r.labelStrips) {
+        const txt = got.get(labelKey(ls));
+        const name = txt ? normalizeLabel(txt) : null;
+        if (!name) continue;
+        r.staffLabels.set(ls.staff, name);
+        const st = r.page.staves.find((s0) => s0.index === ls.staff);
+        if (st) labelOf.set(st, name);
+      }
+      r.labelPending = false;
+    }
+  }
   // 内容剖面（有没有词、音域中位数、谱面标签）交给 `buildScore` 做全局指派，见 `score.ts::assignSlots`
   const profileOf = (st: Staff): StaffProfile => {
     const ns = notesOf(st);
