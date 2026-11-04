@@ -72,3 +72,29 @@ pub fn score_at(data: Uint8Array, w: u32, h: u32, p: Float32Array, mw: u32, mh: 
 pub fn score_at_masked(data: Uint8Array, w: u32, h: u32, p: Float32Array, mw: u32, mh: u32, cx: f64, cy: f64, stem_x: f64, stem_half: f64) -> f64 {
     core::headmask::score_at_masked(&data, w as usize, h as usize, &p, mw as usize, mh as usize, cx, cy, stem_x, stem_half)
 }
+
+/// `[墨点数, 孤立点数]`（`rows` / `on_line` 传空数组表示不限）。
+#[napi]
+pub fn halftone_counts(data: Uint8Array, w: u32, h: u32, rows: Uint8Array, on_line: Uint8Array) -> Float64Array {
+    let (ink, lone) = core::texture::halftone_counts(&data, w as usize, h as usize, &rows, &on_line);
+    Float64Array::new(vec![ink as f64, lone as f64])
+}
+
+/// `[墨点数, 针孔数]`。
+#[napi]
+pub fn pinhole_counts(data: Uint8Array, w: u32, h: u32, rows: Uint8Array) -> Float64Array {
+    let (ink, holes) = core::texture::pinhole_counts(&data, w as usize, h as usize, &rows);
+    Float64Array::new(vec![ink as f64, holes as f64])
+}
+
+#[napi]
+pub fn drop_specks(data: Uint8Array, w: u32, h: u32, min: u32, tile: u32) -> u32 {
+    let d = as_mut(data.as_ptr(), data.len());
+    core::texture::drop_specks(d, w as usize, h as usize, min, tile as usize)
+}
+
+#[napi]
+pub fn merge_horizontal(bin: Uint8Array, soft: Uint8Array, w: u32, h: u32, min_run: u32, max_thick: u32, gap_tol: u32) {
+    let d = as_mut(bin.as_ptr(), bin.len());
+    core::texture::merge_horizontal(d, &soft, w as usize, h as usize, min_run as usize, max_thick as usize, gap_tol as i64);
+}

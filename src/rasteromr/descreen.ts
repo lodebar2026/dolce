@@ -11,27 +11,35 @@ import type { Binary } from "../omrkit/types";
 import { areaClose, areaOpen, close, Integral } from "../omrkit/morph";
 import { components } from "../omrkit/ccl";
 import { quantile } from "../omrkit/geom";
+import { pixelKernels } from "../omrkit/kernels";
+
+const NONE = new Uint8Array(0);
 
 /**
  * 墨点里「孤立点」的占比：3×3 窗口内墨不过 3 个（含自己）算孤立。
  *
- * **只量谱表带之内**（`rows` 给出要量的行）。整页量会被空白页毁掉：
+ * **只量谱表带之内**（`rows` 长 h，非零 = 量这一行）。整页量会被空白页毁掉：
  * 实测封面那种几乎没墨的页面，几十个尘点个个孤立，量出来是 1.000；
  * 而谱表带里有谱线、符干这些必然成片的墨，空页与真网点页就分得开了。
- * `onLine` 给出压在谱线上的像素：那里的孤立点不计（细线扫描件的谱线断成一串点，会虚抬孤立点，见 `rasterpage.ts::cleanTexture`）；
+ * `onLine`（长 w×h，非零）给出压在谱线上的像素：那里的孤立点不计（细线扫描件的谱线断成一串点，会虚抬孤立点，见 `rasterpage.ts::cleanTexture`）；
  * 分母照算全部墨点——连墨一起剔掉，满页网点水印的页（求主同住）孤立点占比反而被抬过门槛。
  */
-export function halftoneRatio(bin: Binary, rows?: (y: number) => boolean, onLine?: (x: number, y: number) => boolean): number {
-  const it = new Integral(bin);
+export function halftoneRatio(bin: Binary, rows?: Uint8Array, onLine?: Uint8Array): number {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.halftoneCounts;
+  if (nk) {
+    const [ink, lone] = nk(data, w, h, rows ?? NONE, onLine ?? NONE);
+    return ink ? lone / ink : 0;
+  }
+  const it = new Integral(bin);
   let ink = 0;
   let lone = 0;
   for (let y = 0; y < h; y++) {
-    if (rows && !rows(y)) continue;
+    if (rows && !rows[y]) continue;
     for (let x = 0; x < w; x++) {
       if (!data[y * w + x]) continue;
       ink++;
-      if (it.box(x, y, 3, 3) <= 3 && !onLine?.(x, y)) lone++;
+      if (it.box(x, y, 3, 3) <= 3 && !onLine?.[y * w + x]) lone++;
     }
   }
   return ink ? lone / ink : 0;
@@ -44,12 +52,17 @@ export function halftoneRatio(bin: Binary, rows?: (y: number) => boolean, onLine
  * ——网纹里每个墨点斜对角都挨着墨，`halftoneRatio` 只有 0.069；可符头里满是
  * 被墨围住的白点，照直送识别，填充率那一档全不过（实测 151 个音只认出 17 个）。
  */
-export function pinholeRatio(bin: Binary, rows?: (y: number) => boolean): number {
+export function pinholeRatio(bin: Binary, rows?: Uint8Array): number {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.pinholeCounts;
+  if (nk) {
+    const [ink, holes] = nk(data, w, h, rows ?? NONE);
+    return ink ? holes / ink : 0;
+  }
   let ink = 0;
   let holes = 0;
   for (let y = 1; y < h - 1; y++) {
-    if (rows && !rows(y)) continue;
+    if (rows && !rows[y]) continue;
     for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
       if (data[i]) {
@@ -74,8 +87,9 @@ export function pinholeRatio(bin: Binary, rows?: (y: number) => boolean): number
  * 汉字笔画、升号糊成一团，空心符头也被填实（实测齐来称颂 151 个音认出 154 个、
  * 对上的只有 14.6%）。网纹的空隙只有一两个像素，逐点补就够，别的笔画分毫不动。
  */
-export function fillPinholes(bin: Binary): void {
+export function fillPinholes(bin: Binary): number {
   const { w, h, data } = bin;
+  let filled = 0;
   for (let pass = 0; pass < 2; pass++) {
     const add: number[] = [];
     for (let y = 1; y < h - 1; y++) {
@@ -89,7 +103,9 @@ export function fillPinholes(bin: Binary): void {
     }
     if (!add.length) break;
     for (const i of add) data[i] = 1;
+    filled += add.length;
   }
+  return filled;
 }
 
 /**
@@ -130,9 +146,12 @@ export function speckTiles(bin: Binary): { cols: number; rows: number; count: Ui
   return { cols, rows, count };
 }
 
-/** 只在孤点密度过 `min`（每块个数）的块里、连同它四邻的块，抹掉孤立的单像素墨点。附点、跳音点都有好几个像素宽，碰不到。 */
+/** 只在孤点密度过 `min`（每块个数）的块里、连同它四邻的块，抹掉孤立的单像素墨点。附点、跳音点都有好几个像素宽，碰不到。
+ *  返回孤点过密的块数（0 = 一个像素没动）。 */
 export function dropSpecks(bin: Binary, min: number): number {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.dropSpecks;
+  if (nk) return nk(data, w, h, min, SPECK_TILE);
   const t = speckTiles(bin);
   const hot = new Uint8Array(t.cols * t.rows);
   let n = 0;

@@ -194,8 +194,40 @@ async function mosaicPageImage(page: any, OPS: any): Promise<PageImage | null> {
 }
 
 /** 位图 → 识别用的二值图（解码、二值化、去网、补线……，不做几何变换）：`rasterizePage` 不碰 pdf.js 的那一半。 */
+/**
+ * 取图这一趟里**同一张二值图的找谱表、估线距只算一次**：数谱行、判网点、补淡谱线前后都要量，图多半没变，
+ * `findRasterStaves` 自带的按内容缓存每次还得把整页哈希一遍。这里按图对象记结果，改了像素的地方（`touched`）作废。
+ * 结果只读：`cleanTexture`、`mergeFaintStaves`、数谱行都不改它。
+ */
+class PassFacts {
+  private readonly m = new WeakMap<Binary, { staves?: ReturnType<typeof findRasterStaves>; unit?: ReturnType<typeof estimateUnit> }>();
+  private of(b: Binary) {
+    let f = this.m.get(b);
+    if (!f) this.m.set(b, (f = {}));
+    return f;
+  }
+  staves(b: Binary): ReturnType<typeof findRasterStaves> {
+    const f = this.of(b);
+    if (f.staves === undefined) f.staves = findRasterStaves(b);
+    return f.staves;
+  }
+  staffCount(b: Binary): number {
+    return this.staves(b)?.groups.length ?? 0;
+  }
+  unit(b: Binary): ReturnType<typeof estimateUnit> {
+    const f = this.of(b);
+    if (f.unit === undefined) f.unit = estimateUnit(b);
+    return f.unit;
+  }
+  /** 像素改过了：之前量的都不算数 */
+  touched(b: Binary): void {
+    this.m.delete(b);
+  }
+}
+
 export function rasterizeImage(img: PageImage): RasterPage | null {
   const best = img;
+  const facts = new PassFacts();
 
   const w: number = best.width;
   const h: number = best.height;
@@ -215,7 +247,7 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
     const build = (k: number, first: Binary | null): { bin: Binary; up: number } | null => {
       const b = first ?? dec.decode(k);
       if (!b) return null;
-      const u0 = estimateUnit(b);
+      const u0 = facts.unit(b);
       if (u0 && u0.space < UPSCALE_SPACE && u0.lineThick / u0.space < UPSCALE_THIN) {
         const big = dec.decode(k, 2);
         if (big) return { bin: big, up: 2 };
@@ -225,7 +257,7 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
       if (u0 && u0.space < UPSCALE_SPACE) {
         const big = dec.decode(k, 2);
         if (big) {
-          const t2 = estimateUnit(big)?.lineThick ?? Infinity;
+          const t2 = facts.unit(big)?.lineThick ?? Infinity;
           if (t2 / (u0.space * 2) < UPSCALE_RECHECK) return { bin: big, up: 2 };
         }
       }
@@ -238,10 +270,10 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
     // 逐档放松（`SAUVOLA_K_RETRY`），到找得出谱行为止；都找不出的照旧（封面、歌词页）。
     // **只在一行都找不出时才换**。「松一档能多找出谱行就换」试过：松阈值下歌词带、淡底纹里会多出假谱行，
     // 一大批本来好好的页被换成糊的那一档（全量 127 首下降，荣归天父歌 97.6 → 17.4），已撤。
-    if (got && !staffCount(got.bin))
+    if (got && !facts.staffCount(got.bin))
       for (const k2 of SAUVOLA_K_RETRY) {
         const g2 = build(k2, null);
-        if (g2 && staffCount(g2.bin)) {
+        if (g2 && facts.staffCount(g2.bin)) {
           got = g2;
           break;
         }
@@ -259,9 +291,9 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   /** 松阈值那一档（`SAUVOLA_K_FAINT`）的二值图：补竖笔与下面补淡谱线同一张，只解一次 */
   let soft: Binary | null = null;
   if (kind === "rgb") {
-    const u = estimateUnit(bin);
+    const u = facts.unit(bin);
     soft = u && u.lineThick / u.space < FAINT_RATIO ? dec.decode(SAUVOLA_K_FAINT, up) : null;
-    if (soft && u) mergeVertical(bin, soft, Math.round(u.space * VERT_RUN)), (faint = true), (gray = dec.gray(up) ?? undefined);
+    if (soft && u) mergeVertical(bin, soft, Math.round(u.space * VERT_RUN)), facts.touched(bin), (faint = true), (gray = dec.gray(up) ?? undefined);
   }
 
   // **极性自检**：ImageMask 里置位的是墨，`kind: 1`（GRAYSCALE_1BPP）里置位的是白，
@@ -269,14 +301,17 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   // 整页乐谱的墨不可能过半（实测约一成），过半就是反的，整幅取反。
   let ink = 0;
   for (let i = 0; i < bin.data.length; i++) ink += bin.data[i];
-  if (ink > bin.w * bin.h * INK_FLIP_RATIO) for (let i = 0; i < bin.data.length; i++) bin.data[i] ^= 1;
+  if (ink > bin.w * bin.h * INK_FLIP_RATIO) {
+    for (let i = 0; i < bin.data.length; i++) bin.data[i] ^= 1;
+    facts.touched(bin);
+  }
 
   // **半调网点的底本先去网**（`descreen.ts`）。整页抖动印刷的谱（心领那本）符头是
   // 打散的网点，填充率那一档全过不去——实测整页 83 个音符只认出 20 个。
   // **只对量出来是网点页的做**：干净位图与普通扫描件的笔画本来就是实心的，
   // 做一遍只是把细节磨掉（门槛与两档的实测值见 `HALFTONE_RATIO`）。
   // 一行谱都没找到的页面（封面、歌词页）不做：没有尺子定窗口，也没有东西要认。
-  let halftone = cleanTexture(bin, true);
+  let halftone = cleanTexture(bin, true, facts);
   const lyricGray = kind === "rgb" && !gray ? dec.gray(up) ?? undefined : undefined;
 
   // **不做几何变换**：不推平、不纠斜，原图像素原样交给识别；弯、斜的谱线由下游按曲线谱线处理（`staffline.ts`）。
@@ -288,12 +323,12 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   //（见上），所以同补竖笔一样只取一部分：松阈值图里**细而长的横向游程**（纵向厚不过两倍线宽、横向三格以上）——谱线、加线——
   // 只补原图上的断口。按识别那一路（`stafffind.ts::findRasterStaves`）数谱行，**多出来了才留**，否则整幅不动。
   if (lineSoft) {
-    const u = estimateUnit(bin);
+    const u = facts.unit(bin);
     if (u) {
       const trial = { ...bin, data: new Uint8Array(bin.data) };
       mergeHorizontal(trial, lineSoft, Math.round(u.space * LINE_RUN), Math.max(2, Math.round(u.lineThick * 2)), Math.max(1, Math.round(u.lineThick)));
-      if (staffCount(trial) > staffCount(bin)) bin.data.set(trial.data);
-      else mergeFaintStaves(bin, trial);
+      if (facts.staffCount(trial) > facts.staffCount(bin)) bin.data.set(trial.data), facts.touched(bin);
+      else if (mergeFaintStaves(bin, trial, facts)) facts.touched(bin);
     }
   }
   // 头一次一行谱都找不到的页（父恩广大那张扫描件谱线微弯，行投影一行都不成），网纹那一步就没做（网纹符头 166 个音只认出 15 个）；
@@ -301,7 +336,7 @@ export function rasterizeImage(img: PageImage): RasterPage | null {
   // 这一档是低分辨率扫描件（齐来谢主歌线距 11px），谱线细得断成点，孤立点把网点率
   // 虚抬到 0.263、刚过门槛；真去了网，调号降号与拍号糊成一团、汉字笔画粘死
   //（歌词 75% → 45%），而它本来就不是网点印刷。
-  if (halftone == null) halftone = cleanTexture(bin, false);
+  if (halftone == null) halftone = cleanTexture(bin, false, facts);
 
   return { bin, kind, halftone: halftone ?? 0, faint, gray, lyricGray, ...(lineSoft ? { soft: lineSoft } : {}), scale: img.pageWidth / bin.w, pageWidth: img.pageWidth, pageHeight: img.pageHeight, imageRect: imageRectOf(img.ctm, img.view, img.pageWidth, img.pageHeight) };
 }
@@ -315,9 +350,10 @@ const FAINT_GAIN = 0.15;
  * 逐行量补线前后沿曲线有墨的列占比（每两列量一次，五条线合算），涨过 `FAINT_GAIN` 的那几行只换它的谱表带（上下各让一格）。
  * 原先行投影在这种页上第一趟就凑不成行，补完行数变多，整幅都换了，碰巧没事。
  */
-function mergeFaintStaves(bin: Binary, trial: Binary): void {
-  const found = findRasterStaves(bin);
-  if (!found) return;
+function mergeFaintStaves(bin: Binary, trial: Binary, facts: PassFacts): boolean {
+  const found = facts.staves(bin);
+  if (!found) return false;
+  let changed = false;
   const tol = Math.max(1, Math.round(found.unit.lineThick / 2));
   const cover = (img: Binary, g: StaffGroup) => {
     let hit = 0;
@@ -338,6 +374,7 @@ function mergeFaintStaves(bin: Binary, trial: Binary): void {
     const before = cover(bin, g);
     const after = cover(trial, g);
     if (after - before < FAINT_GAIN) continue;
+    changed = true;
     const left = Math.max(0, Math.round(Math.min(...g.lines.map((l) => l.left)) - g.space));
     const right = Math.min(bin.w - 1, Math.round(Math.max(...g.lines.map((l) => l.right)) + g.space));
     for (let x = left; x <= right; x++) {
@@ -346,12 +383,9 @@ function mergeFaintStaves(bin: Binary, trial: Binary): void {
       for (let y = y0; y <= y1; y++) bin.data[y * bin.w + x] = trial.data[y * bin.w + x];
     }
   }
+  return changed;
 }
 
-/** 识别那一路数得出的谱行数（`stafffind.ts::findRasterStaves`）。 */
-function staffCount(bin: Binary): number {
-  return findRasterStaves(bin)?.groups.length ?? 0;
-}
 
 /**
  * 网点/网纹的底本就地清理（`descreen.ts`），返回量出来的网点率；
@@ -362,8 +396,8 @@ function staffCount(bin: Binary): number {
  *  取 40：向主唱新歌中文歌词 +3.0、坚固保障 +1.6（英文 −0.5），别的不动。按全页总数判不行——水印常只占一角。 */
 const SPECK_MIN = 40;
 
-function cleanTexture(bin: Binary, allowDescreen: boolean): number | null {
-  const groups = findRasterStaves(bin)?.groups ?? [];
+function cleanTexture(bin: Binary, allowDescreen: boolean, facts: PassFacts): number | null {
+  const groups = facts.staves(bin)?.groups ?? [];
   if (!groups.length) return null;
   const space = median(groups.map((g) => g.space));
   if (!(space > 0)) return null;
@@ -373,6 +407,8 @@ function cleanTexture(bin: Binary, allowDescreen: boolean): number | null {
     return [Math.min(...xs.map((x) => lineYAt(g.lines[0], x))) - g.space * HALFTONE_BAND, Math.max(...xs.map((x) => lineYAt(g.lines[4], x))) + g.space * HALFTONE_BAND];
   });
   const inBand = (y: number) => bands.some(([a, b]) => y > a && y < b);
+  const rows = new Uint8Array(bin.h);
+  for (let y = 0; y < bin.h; y++) rows[y] = inBand(y) ? 1 : 0;
   // **压在谱线上的像素不算**：低分辨率细线扫描件（数算主恩、齐来谢主歌，线距 11~14px）的谱线断成一串点，
   // 全算进来网点率虚抬到 0.263、刚过门槛，整页去网把汉字笔画磨掉（数算主恩歌词 94 → 9）。原先靠行投影在微弯页上
   // 第一趟找不着谱行碰巧躲过；按游程第一趟就找得着，得把线上那几行剔掉。真网点页的符头、笔画里满是网点，不受影响
@@ -384,14 +420,14 @@ function cleanTexture(bin: Binary, allowDescreen: boolean): number | null {
         const y0 = Math.round(lineYAt(l, x));
         for (let y = Math.max(0, y0 - tol); y <= Math.min(bin.h - 1, y0 + tol); y++) onLine[y * bin.w + x] = 1;
       }
-  const halftone = halftoneRatio(bin, inBand, (x, y) => onLine[y * bin.w + x] === 1);
-  if (halftone > HALFTONE_RATIO && allowDescreen) descreenMorph(bin, inBand);
+  const halftone = halftoneRatio(bin, rows, onLine);
+  if (halftone > HALFTONE_RATIO && allowDescreen) descreenMorph(bin, inBand), facts.touched(bin);
   // 网纹填充（符头、谱号里是细交叉网纹）不走去网，只补针孔（`fillPinholes`）
-  else if (pinholeRatio(bin, inBand) > PINHOLE_RATIO) fillPinholes(bin);
+  else if (pinholeRatio(bin, rows) > PINHOLE_RATIO && fillPinholes(bin)) facts.touched(bin);
   // **网点水印**：浅灰的底纹二值化后是满页的单像素孤点，把歌词行之间的空当填满，
   // 几行歌词并成一行、和弦行也被卷进歌词带（《求主同住》歌词 0%、和弦 43%）。
   // 按块看密度，只抹密的那几块（像素内容一变，那一页的 OCR 缓存都要重跑）。
-  dropSpecks(bin, SPECK_MIN);
+  if (dropSpecks(bin, SPECK_MIN)) facts.touched(bin);
   return halftone;
 }
 
@@ -554,8 +590,10 @@ function mergeVertical(bin: Binary, soft: Binary, minRun: number): void {
  * 把 `soft` 里**细而长的横向游程**并进 `bin`：横向连续至少 `minRun` 像素，且其中每一列在 `soft` 里的纵向墨厚不超过 `maxThick`
  *（谱线、加线；符杠、字的横笔连着竖向的墨，厚出去的那几列不并）。只补 `bin` 上 ±`gapTol` 行都没墨的那些像素（断口）。
  */
-function mergeHorizontal(bin: Binary, soft: Binary, minRun: number, maxThick: number, gapTol: number): void {
+export function mergeHorizontal(bin: Binary, soft: Binary, minRun: number, maxThick: number, gapTol: number): void {
   const { w, h } = bin;
+  const nk = pixelKernels()?.mergeHorizontal;
+  if (nk) return nk(bin.data, soft.data, w, h, minRun, maxThick, gapTol);
   const fill: number[] = [];
   const thin = (x: number, y: number) => {
     let a = y, b = y;

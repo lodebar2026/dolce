@@ -29,6 +29,14 @@ export interface PixelKernels {
   scoreAt?(data: Uint8Array, w: number, h: number, p: Float32Array, mw: number, mh: number, cx: number, cy: number): number;
   /** `rasteromr/headmask.ts::scoreAtMasked`（没给干传 NaN）。 */
   scoreAtMasked?(data: Uint8Array, w: number, h: number, p: Float32Array, mw: number, mh: number, cx: number, cy: number, stemX: number, stemHalf: number): number;
+  /** `rasteromr/descreen.ts::halftoneRatio` 的计数：返回 `[墨点数, 孤立点数]`；`rows`（长 h）、`onLine`（长 w×h）传空数组 = 不限。 */
+  halftoneCounts?(data: Uint8Array, w: number, h: number, rows: Uint8Array, onLine: Uint8Array): Float64Array;
+  /** `rasteromr/descreen.ts::pinholeRatio` 的计数：返回 `[墨点数, 针孔数]`。 */
+  pinholeCounts?(data: Uint8Array, w: number, h: number, rows: Uint8Array): Float64Array;
+  /** `rasteromr/descreen.ts::dropSpecks`：就地抹，返回孤点过密的块数。 */
+  dropSpecks?(data: Uint8Array, w: number, h: number, min: number, tile: number): number;
+  /** `rasteromr/rasterpage.ts::mergeHorizontal`：就地补 `bin`。 */
+  mergeHorizontal?(bin: Uint8Array, soft: Uint8Array, w: number, h: number, minRun: number, maxThick: number, gapTol: number): void;
 }
 
 let kernels: PixelKernels | null = null;
