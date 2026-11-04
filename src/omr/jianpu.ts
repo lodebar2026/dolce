@@ -11,7 +11,7 @@ import type { Binary, Component, JpNum, Rect, StaffRow, RecognizedScore } from "
 import { rright, rbottom, rcx, rcy, RHYTHM_DIGIT, isRejoinedArc } from "../omrkit/types";
 import { connectedComponents } from "../omrkit/ccl";
 import type { OcrBackend } from "../omrkit/ocr";
-import { fixTitleByLyrics, recognizeLyrics, simplifyHeaderLine, type LyricCharRef, type LyricHooks } from "./lyrics";
+import { fixTitleByLyrics, recognizeLyrics, type LyricCharRef, type LyricHooks } from "./lyrics";
 import { applyRefLyrics } from "./reflyrics";
 import { recognizeHeader } from "./header";
 import { recognizeTrailingStanzas } from "./stanzas";
@@ -2607,19 +2607,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
         probe("staccato.chordOwned"); n.articulation = undefined;
       }
     }
-    // 标题、副标题里读成繁体的字：歌词整页是简体才按候选改回（署名不动，见 `simplifyHeaderLine`）
-    if (lr.simplifiedPage) {
-      for (const field of ["title", "subtitle"] as const) {
-        const text = field === "title" ? title : subtitle;
-        const region = text ? headerRegions?.find((r) => r.text === text) : undefined;
-        if (!text || !region) continue;
-        const fixed = await simplifyHeaderLine(bin, ocr, text, region.bbox);
-        if (fixed === text) continue;
-        region.text = fixed;
-        if (field === "title") title = fixed;
-        else subtitle = fixed;
-      }
-    }
+    // 标题、副标题照原图，不做繁改简（用户定：98《唯一的爱》书法标题印的就是「愛」）
     // 标题里的形近误读按歌词改（见 `fixTitleByLyrics`）：各段歌词按谱行顺序连起来比
     {
       const region = title ? headerRegions?.find((r) => r.text === title) : undefined;

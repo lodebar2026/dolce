@@ -522,8 +522,8 @@ function fillLeadingVerses(staff: StaffRow[], copied?: (n: JpNum, from: number, 
 async function simplifyStrayTraditional(
   ocr: OcrBackend, strips: Surface[], mainIdx: number[],
   textOf: (s: number) => string, setChar: (s: number, k: number, ch: string) => void,
-): Promise<boolean> {
-  if (!ocr.rankTextChars) return false;
+): Promise<void> {
+  if (!ocr.rankTextChars) return;
   let trad = 0, simp = 0, simpForm = 0;
   const hits: number[] = []; // 含繁体字的条
   for (const s of mainIdx) {
@@ -538,7 +538,7 @@ async function simplifyStrayTraditional(
   // 繁体谱面一整页都是繁体，简体专用形几乎读不出来，碰不到后一条；98《唯一的爱》两段词读出 見×2 頻×2 順 覚 六个，
   // 同页简体专用形三十多个——只看个数上限会整页放过。
   const simplifiedPage = simp >= Math.max(10, trad * 10) && (trad <= 2 || simpForm >= trad * 3);
-  if (!trad || !simplifiedPage) return simplifiedPage;
+  if (!trad || !simplifiedPage) return;
   const ranked = await ocr.rankTextChars(hits.map((s) => strips[s]!));
   hits.forEach((s, i) => {
     const alt = ranked[i];
@@ -551,42 +551,13 @@ async function simplifyStrayTraditional(
       setChar(s, k, sc);
     });
   });
-  return true;
-}
-
-/**
- * 页眉的标题、副标题里读成繁体的字（青年诗歌 2《真爱》读出「真愛」）：歌词判定整页是简体时（`recognizeLyrics` 的
- * `simplifiedPage`）按同一口径改判——裁出它在源图上的框重跑候选，**简体形在该字候选里**才换。署名不走这里
- * （可能真是繁体，76「詞曲：巧兒」）。候选的字序与原文对不上（补过空格、剥过曲号以外的字）就整条不动。
- * 繁体形有两个以上的是整行印的繁体（青年诗歌 74「為神永遠經綸」、49「祂來過」）、不是零星误读，也不动——
- * 按候选只改得动其中几个，反倒繁简混杂。
- */
-export async function simplifyHeaderLine(bin: Binary, ocr: OcrBackend, text: string, bbox: Rect): Promise<string> {
-  const trad = [...text].filter((ch) => simplifiedOf(ch)).length;
-  if (!ocr.rankTextChars || !trad || trad >= 2) return text;
-  const [line] = await ocr.rankTextChars([buildStrip(surfaceFromBinary(bin), [bbox])]);
-  if (!line) return text;
-  const chars = [...text];
-  const keep = chars.map((ch, i) => ({ ch, i })).filter((c) => !/\s/.test(c.ch));
-  const got = line.filter((c) => !/\s/.test(c.ch));
-  // 原文（去空白）在候选首选串里的位置：标题行可能还带着被剥掉的曲号
-  let off = -1;
-  for (let o = 0; o + keep.length <= got.length && off < 0; o++) if (keep.every((c, k) => got[o + k]!.ch === c.ch)) off = o;
-  if (off < 0) return text;
-  keep.forEach((c, k) => {
-    const sc = simplifiedOf(c.ch);
-    if (!sc || !got[off + k]!.alts.includes(sc)) return;
-    probe("header.tradToSimp");
-    chars[c.i] = sc;
-  });
-  return chars.join("");
 }
 
 /**
  * 标题按歌词改形近误读（青年诗歌 100《我已寻得一生命源》书法体标题「已」读成「巴」，第一段首句「我已寻得一生命泉源」）。
  * 标题多取自歌词某句：标题（只看汉字）与各段歌词做半全局对齐（歌词两端随便跳，中间多一字少一字都记一步），
  * 总步数不过标题字数的四分之一（至少容一步）、其中换字一到两处，才回源图重跑该行候选——**歌词那个字在该标题字的候选里、
- * 且分数有首选的一成以上**才换。标题本就与歌词措辞不同的（59「主到我这里来」对歌词「今生到我这里来过」），模型对标题字很笃定，换不动。
+ * 且分数有首选的一成以上**才换。繁体换成对应简体的不换（标题照原图）。标题本就与歌词措辞不同的（59「主到我这里来」对歌词「今生到我这里来过」），模型对标题字很笃定，换不动。
  */
 export async function fixTitleByLyrics(bin: Binary, ocr: OcrBackend, text: string, bbox: Rect, verses: string[]): Promise<string> {
   const chars = [...text];
@@ -629,6 +600,7 @@ export async function fixTitleByLyrics(bin: Binary, ocr: OcrBackend, text: strin
   for (let o = 0; o + n <= got.length && off < 0; o++) if (han.every((c, k) => got[o + k]!.ch === c.ch)) off = o;
   if (off < 0) return text;
   for (const [k, ch] of best.subs) {
+    if (simplifiedOf(han[k]!.ch) === ch) continue; // 繁改简不做：标题照原图（用户定）
     // 光在候选里不够：59《主到我这里来》歌词是「今生到我这里来过」，「生」也在「主」的候选里（0.0000016 对 0.99995）。
     // 要模型本身就在两字间拿不准——歌词那个字的分数有首选的一成以上（100「已」0.40 对「巴」0.57）。
     const c = got[off + k]!;
@@ -663,7 +635,7 @@ export async function recognizeLyrics(
   /** 页眉里**已被采纳**的字段区域（标题/词曲/调号/速度/拍号）。第一谱行的上方带与页眉 ROI
    *  几何上重叠，落在这些框里的块一律不进和弦通道——见 jianpu.ts 那处说明。 */
   headerRegions?: TextRegion[],
-): Promise<{ lyrics: TextRegion[]; chords: TextRegion[]; hooks: LyricHooks; /** 歌词整页是简体（`simplifyHeaderLine` 用） */ simplifiedPage?: boolean }> {
+): Promise<{ lyrics: TextRegion[]; chords: TextRegion[]; hooks: LyricHooks }> {
   const regions: TextRegion[] = [];
   if (!ocr.recognizeTexts || !staff.length) return { lyrics: regions, chords: [], hooks: noHooks };
 
@@ -926,7 +898,7 @@ export async function recognizeLyrics(
     else { const r = await ocr.recognizeTexts(st); idxs.forEach((ci, k) => { texts![ci] = r[k]; }); }
   }
   // 整页简体里蹦出来的个别繁体字：形近误判，据候选改回简体（页眉不参与，只看歌词那批）
-  const simplifiedPage = await simplifyStrayTraditional(
+  await simplifyStrayTraditional(
     ocr, strips, mainIdx,
     (s) => (textsPos ? textsPos[s]!.map((c) => c.ch).join("") : texts![s]!),
     (s, k, ch) => {
@@ -1747,6 +1719,6 @@ export async function recognizeLyrics(
       return c ? { alts: c.alts, scores: c.scores ?? [] } : null;
     });
   };
-  return { lyrics: dropped.size ? regions.filter((r) => !dropped.has(r)) : regions, chords: chordRegions, simplifiedPage,
+  return { lyrics: dropped.size ? regions.filter((r) => !dropped.has(r)) : regions, chords: chordRegions,
     hooks: { rankAlts, regionOf: ({ n, verse, idx }) => charSrc.get(n)?.[verse]?.[idx]?.region } };
 }
