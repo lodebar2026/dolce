@@ -4,6 +4,7 @@
 // 用积分图做膨胀/腐蚀，与 r 无关地线性时间。
 import type { Binary } from "./types";
 import { components } from "./ccl";
+import { pixelKernels } from "./kernels";
 
 /** **面积开运算**：抹掉面积小于 `min` 的墨块（8 连通）。 */
 export function areaOpen(bin: Binary, min: number): void {
@@ -105,6 +106,8 @@ export class Integral {
 /** 方形结构元 (2r+1)² 的膨胀（`dilate`）或腐蚀，结果写回。 */
 function boxMorph(bin: Binary, r: number, dilate: boolean): void {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.boxMorph;
+  if (nk) return nk(data, w, h, r, dilate);
   const ii = new Integral(bin);
   const full = (2 * r + 1) * (2 * r + 1);
   for (let y = 0; y < h; y++) {
@@ -136,6 +139,8 @@ export function close(bin: Binary, r: number): void {
  */
 export function ellipseOpen(bin: Binary, rx: number, ry: number): Binary {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.ellipseOpen;
+  if (nk) return { w, h, data: nk(data, w, h, rx, ry) };
   const n = 2 * ry + 1;
   const dys = new Int32Array(n);
   const ks = new Int32Array(n);

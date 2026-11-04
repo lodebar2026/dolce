@@ -5,12 +5,14 @@
 // 这个是**位图简谱识别**这一条（decode → jianpu → emit）。PDF 输入不走这里。
 import { installNodeDecoder } from "../omrkit/decode.node";
 import { setOmrRuntime } from "../omrkit/runtime";
+import { installNodeKernels } from "./omrkernels.node";
 import { nodeRuntime, threadInfo } from "../omrkit/runtime.node";
 import { recognizeMusicppDetailed } from "../omr/recognize";
 import { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter, type OmrFormat, type EmittedScore } from "../omr/emit";
 import { omrProfile, omrProfileReset, paddleOcrBackend } from "../omrkit/paddleocr";
 
 setOmrRuntime(nodeRuntime);
+installNodeKernels();
 installNodeDecoder();
 
 export { OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter, omrProfile, omrProfileReset, threadInfo };

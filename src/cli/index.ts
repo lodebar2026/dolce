@@ -4,6 +4,7 @@
 // **这里只能汇出不碰 DOM 的模块**——scripts/page-report.mjs / scripts/pdf-diff.mjs 不起浏览器。
 // 碰 canvas/OffscreenCanvas/document 的（decode.ts、paddleocr.ts、lyrics.ts 的 buildStrip）一律不许进这条 import 链；
 // 排版件（依赖 common/measure.ts 的）走 `cli/engrave.ts`（它装测量后端），也不进这里。
+import { installNodeKernels } from "./omrkernels.node";
 export * from "../common/cjkpunct";
 export * from "../omrkit/vector";
 export * from "../omrkit/vectext";
@@ -33,3 +34,7 @@ export * from "../pdflayout/manifest";
 export { creatorOf, creatorTypeOf, META_KEYS } from "../model/metakeys";
 export type { Binary, Component, Rect, JpNum, StaffRow, RecognizedScore, TextRegion } from "../omrkit/types";
 export * from "../outlineomr/index";
+
+// 像素内核走 Rust 原生模块（有则用，没编就走 TS）
+installNodeKernels();
+export { installNodeKernels, nodeKernelsInfo } from "./omrkernels.node";

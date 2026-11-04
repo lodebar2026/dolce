@@ -15,6 +15,7 @@
 import type { Binary, Component, Rect } from "../omrkit/types";
 import { SIG_N } from "../omrkit/glyphdict";
 import { connectedComponents } from "../omrkit/ccl";
+import { pixelKernels } from "../omrkit/kernels";
 import { lineYAt, type LineGrid, type LineRef, type RasterUnit } from "./staffline";
 import { median } from "../omrkit/geom";
 
@@ -104,9 +105,11 @@ export interface RasterPrims {
   shortStems?: LineSeg[];
 }
 
-/** 逐像素的游程长度（该像素所在的那一条黑色游程有多长）：`vertical` 沿列量，否则沿行量。 */
-function runLengths(bin: Binary, vertical: boolean): Uint16Array {
+/** 逐像素的游程长度（该像素所在的那一条黑色游程有多长）：`vertical` 沿列量，否则沿行量。（导出给内核比对测试用） */
+export function runLengths(bin: Binary, vertical: boolean): Uint16Array {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.runLengths;
+  if (nk) return nk(data, w, h, vertical);
   const out = new Uint16Array(w * h);
   const lines = vertical ? w : h;
   const len = vertical ? h : w;

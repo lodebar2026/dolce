@@ -1,0 +1,24 @@
+[package]
+name = "dolce-omrkernels"
+version = "0.1.0"
+edition = "2021"
+description = "悦谱 Dolce：位图识别的像素内核（连通域、形态学等），与 TS 实现逐项相同；Node 回归经 napi 调用"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["napi"]
+napi = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi4"], optional = true }
+napi-derive = { version = "3", optional = true }
+
+[build-dependencies]
+napi-build = { version = "2", optional = true }
+
+[profile.release]
+lto = true
+strip = true

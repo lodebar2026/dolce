@@ -1,8 +1,11 @@
 // 灰度、Otsu、Sauvola 二值化（移植 preprocess.cpp 思路：自适应阈值得到墨迹前景）。简谱与位图五线谱共用。
 import type { Binary } from "./types";
+import { pixelKernels } from "./kernels";
 
 /** 彩色像素灰度化（Rec.601 luma，截断取整）。`step`：每像素几个字节——4 = RGBA（ImageData），3 = RGB，1 = 已是灰度（原样拷）。 */
 export function toGray(px: ArrayLike<number>, w: number, h: number, step = 4): Uint8Array {
+  const nk = pixelKernels()?.toGray;
+  if (nk && (px instanceof Uint8Array || px instanceof Uint8ClampedArray) && px.length >= w * h * step) return nk(new Uint8Array(px.buffer, px.byteOffset, px.length), w, h, step);
   const g = new Uint8Array(w * h);
   for (let i = 0, p = 0; i < g.length; i++, p += step) {
     g[i] = step === 1 ? px[p] : (px[p] * 0.299 + px[p + 1] * 0.587 + px[p + 2] * 0.114) | 0;
@@ -56,6 +59,14 @@ export function sauvola(gray: Uint8Array, w: number, h: number, r: number, k: nu
 
 /** 同一张灰度图按几档 `k` 各出一张（积分图与逐点均值、方差只算一遍；每档的算式与单档 `sauvola` 逐项相同）。 */
 export function sauvolaMulti(gray: Uint8Array, w: number, h: number, r: number, ks: readonly number[], outs: readonly Uint8Array[]): void {
+  const native = pixelKernels()?.sauvolaMulti;
+  if (native) {
+    const n = w * h;
+    const all = new Uint8Array(ks.length * n);
+    native(gray, w, h, r, Float64Array.from(ks), all);
+    outs.forEach((o, j) => o.set(all.subarray(j * n, (j + 1) * n)));
+    return;
+  }
   // 积分图（多一行一列的零边，省去边界判断）
   const sw = w + 1;
   const S1 = new Float64Array(sw * (h + 1));

@@ -12,6 +12,7 @@
 // **本文件不参与任何识别判据**：只描述，不裁决。
 import type { Binary, Component, Rect } from "../omrkit/types";
 import { connectedComponents } from "../omrkit/ccl";
+import { pixelKernels } from "../omrkit/kernels";
 import type { RasterUnit } from "./staffline";
 
 /** 一团墨的描述。尺寸一律**归一到线距**（同一页可能有两种谱表大小）。 */
@@ -92,7 +93,15 @@ export function traceContours(bin: Binary, unit: RasterUnit, staves: ContourStaf
   // 找种子会种到那种小块上，整团墨的标号就空了（实测有 35 个块的周长因此掉到个位数、
   // 团状度算出 480）。
   const comps = connectedComponents(bin, 4, labels);
-  const contours = comps.map((c) => describe(bin, labels, c, unit, staves));
+  // 逐块的孔数、周长：有原生内核就整页一次算完（逐块过边界太碎），没有就逐块现量
+  const nk = pixelKernels()?.contourFeatures;
+  let feats: Int32Array | null = null;
+  if (nk) {
+    const boxes = new Int32Array(comps.length * 5);
+    comps.forEach((c, i) => boxes.set([c.id, c.bbox.x, c.bbox.y, c.bbox.w, c.bbox.h], i * 5));
+    feats = nk(labels, w, h, boxes);
+  }
+  const contours = comps.map((c, i) => describe(bin, labels, c, unit, staves, feats && { holes: feats[i * 3], biggest: feats[i * 3 + 1], perim: feats[i * 3 + 2] }));
   const byId = new Map(contours.map((c) => [c.id, c]));
   return { contours, labels, w, h, ink, byId };
 }
@@ -193,10 +202,10 @@ export function candidateMap(cmap: ContourMap, layer: RepairedLayer, isCand: (id
 }
 
 /** 逐块量特征。 */
-function describe(bin: Binary, labels: Int32Array, c: Component, unit: RasterUnit, staves: ContourStaff[]): Contour {
+function describe(bin: Binary, labels: Int32Array, c: Component, unit: RasterUnit, staves: ContourStaff[], pre?: { holes: number; biggest: number; perim: number } | null): Contour {
   const b = c.bbox;
-  const { holes, holeFill } = countHoles(labels, bin.w, c);
-  const perim = countPerim(labels, bin.w, bin.h, c);
+  const { holes, holeFill } = pre ? { holes: pre.holes, holeFill: pre.biggest / Math.max(1, b.w * b.h) } : countHoles(labels, bin.w, c);
+  const perim = pre ? pre.perim : countPerim(labels, bin.w, bin.h, c);
   return {
     id: c.id,
     bbox: b,
@@ -322,6 +331,13 @@ function placeOf(c: Component, staves: ContourStaff[], unit: RasterUnit): Contou
  */
 export function findHoles(bin: Binary, minArea = 4): Rect[] {
   const { w, h, data } = bin;
+  const nk = pixelKernels()?.findHoles;
+  if (nk) {
+    const f = nk(data, w, h, minArea);
+    const out: Rect[] = [];
+    for (let i = 0; i < f.length; i += 4) out.push({ x: f[i], y: f[i + 1], w: f[i + 2], h: f[i + 3] });
+    return out;
+  }
   // 墨与已看过的背景都算挡住；洪泛按 TypedArray 栈、四邻展开（整页洪泛，常数要小）
   const blocked = new Uint8Array(w * h);
   for (let i = 0; i < blocked.length; i++) if (data[i]) blocked[i] = 1;
@@ -397,6 +413,9 @@ export function cavityLike(bin: Binary, r: Rect, sp: number): boolean {
  * 小孔逐像素量凸包天然偏低（低分辨率页 5~13px 的内腔 0.5~0.7），用的地方要自己卡尺寸。
  */
 export function holeSolidity(bin: Binary, b: Rect): number {
+  const nk = pixelKernels()?.holeSolidity;
+  // 原生版按整数盒取像素：盒有小数的（理论上没有）照旧走下面
+  if (nk && Number.isInteger(b.x) && Number.isInteger(b.y) && Number.isInteger(b.w) && Number.isInteger(b.h)) return nk(bin.data, bin.w, b.x, b.y, b.w, b.h);
   const inn = new Uint8Array(b.w * b.h);
   let seed = -1;
   let bd = Infinity;

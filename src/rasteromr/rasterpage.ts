@@ -26,6 +26,7 @@ import { descreenMorph, dropSpecks, fillPinholes, halftoneRatio, pinholeRatio, H
 import { lineYAt, type StaffGroup } from "./staffline";
 import { median } from "../omrkit/geom";
 import { sauvolaMulti, toGray } from "../omrkit/preprocess";
+import { pixelKernels } from "../omrkit/kernels";
 import { largestPageImageAt, orientPixels, pageImageObj, pageImageOps, uprightCtm } from "../omrkit/pdf";
 
 /** 一页取到的位图，连同它在页面坐标里的位置（识别坐标 ↔ 页面坐标要用）。 */
@@ -481,8 +482,10 @@ function grayOf(obj: any, w: number, h: number, up = 1): Uint8Array | null {
   return up > 1 ? upsample(gray, w, h, up) : gray;
 }
 
-/** 灰度图双线性放大 `up` 倍（像素中心对齐）。 */
-function upsample(gray: Uint8Array, w: number, h: number, up: number): Uint8Array {
+/** 灰度图双线性放大 `up` 倍（像素中心对齐；导出给内核比对测试用）。 */
+export function upsample(gray: Uint8Array, w: number, h: number, up: number): Uint8Array {
+  const nk = pixelKernels()?.upsample;
+  if (nk) return nk(gray, w, h, up);
   const W = w * up;
   const H = h * up;
   const out = new Uint8Array(W * H);

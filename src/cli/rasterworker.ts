@@ -2,6 +2,9 @@
 // 由 `rasterpool.ts` 起；`npm run build:cli` 打成 out/cli/rasterworker.js。
 import { parentPort } from "node:worker_threads";
 import { servePageWorker, type ToWorker } from "../rasteromr/pagepool";
+import { installNodeKernels } from "./omrkernels.node";
+
+installNodeKernels();
 
 const port = parentPort!;
 const handle = servePageWorker((msg) => port.postMessage(msg));

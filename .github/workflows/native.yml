@@ -1,7 +1,7 @@
-name: Native textmeasure
+name: Native modules
 
-# Node 侧排版量字的原生模块（native/textmeasure：macOS CoreText / Windows DirectWrite）。
-# 本机只有 macOS，Windows 那份靠这里编译并跑冒烟测试（native/textmeasure/smoke.mjs）。
+# Node 侧的原生模块：排版量字（native/textmeasure：macOS CoreText / Windows DirectWrite）与位图识别像素内核（native/omrkernels）。
+# 本机只有 macOS，Windows 那份靠这里编译并跑冒烟测试（各自的 smoke.mjs）。
 # 只手动触发：Actions 页面选这个工作流点 Run workflow，或 gh workflow run native.yml。
 on:
   workflow_dispatch:
@@ -28,7 +28,9 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: native/textmeasure
+          workspaces: |
+            native/textmeasure
+            native/omrkernels
 
       - name: Install dependencies
         run: npm ci
@@ -39,5 +41,8 @@ jobs:
       - name: Build CLI
         run: npm run build:cli
 
-      - name: Smoke test
+      - name: Smoke test (textmeasure)
         run: node native/textmeasure/smoke.mjs
+
+      - name: Smoke test (omrkernels)
+        run: node native/omrkernels/smoke.mjs

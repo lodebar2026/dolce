@@ -15,6 +15,7 @@
 // 同一页几百个已认出的实心符头一平均，才是这一页真实的长相；
 // 而且**分「骑线 / 在间」两类**，骑线那一类的模板里自然带着谱线，
 // 粘连于是不算「差异」。
+import { pixelKernels } from "../omrkit/kernels";
 import type { Binary, Rect } from "../omrkit/types";
 import { lineYAt, type LineRef, type RasterUnit } from "./staffline";
 import type { SmuflName } from "../staffomr/glyphs";
@@ -155,6 +156,8 @@ export function buildHollowMasks(bin: Binary, heads: { box: Rect; code: SmuflNam
 /** 比对得分：**该有墨的地方有多少墨**减去**不该有墨的地方漏出多少**。
  *  `headclass.ts` 拿它当判别器的头一维特征。 */
 export function scoreAt(bin: Binary, m: HeadMask, cx: number, cy: number): number {
+  const nk = pixelKernels()?.scoreAt;
+  if (nk) return nk(bin.data, bin.w, bin.h, m.p, m.w, m.h, cx, cy);
   const x0 = Math.round(cx - m.w / 2);
   const y0 = Math.round(cy - m.h / 2);
   let hit = 0;
@@ -185,6 +188,8 @@ export function scoreAt(bin: Binary, m: HeadMask, cx: number, cy: number): numbe
  * （新编赞美诗 001 m12 压第三线的 B♭4：干从头右缘穿过，`scoreAt` 只 0.19）。
  */
 export function scoreAtMasked(bin: Binary, m: HeadMask, cx: number, cy: number, stemX?: number, stemHalf = 1): number {
+  const nk = pixelKernels()?.scoreAtMasked;
+  if (nk) return nk(bin.data, bin.w, bin.h, m.p, m.w, m.h, cx, cy, stemX ?? NaN, stemHalf);
   const x0 = Math.round(cx - m.w / 2);
   const y0 = Math.round(cy - m.h / 2);
   let hit = 0;

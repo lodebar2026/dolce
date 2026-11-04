@@ -2,6 +2,7 @@
 //   - `connectedComponents`：墨的 8 邻接块，给包围盒、面积、质心，可出标号图（对应 musicpp 用 cv::findContours 得到的 contour 包围盒）；
 //   - `components`：墨或白、4 或 8 邻接，给像素表与碰没碰图边（面积开闭运算、找内腔用）。
 import type { Binary, Component, Rect } from "./types";
+import { pixelKernels } from "./kernels";
 
 /**
  * @param out 可选的**标号图**（长 `w*h`，0 = 背景）：传进来就把每个像素属于哪个块写进去。
@@ -11,6 +12,13 @@ import type { Binary, Component, Rect } from "./types";
 export function connectedComponents(bin: Binary, minArea = 4, out?: Int32Array): Component[] {
   const { w, h, data } = bin;
   const labels = out ?? new Int32Array(w * h);
+  const nk = pixelKernels()?.connectedComponents;
+  if (nk) {
+    const f = nk(data, w, h, minArea, labels);
+    const comps: Component[] = [];
+    for (let i = 0; i < f.length; i += 8) comps.push({ id: f[i], bbox: { x: f[i + 1], y: f[i + 2], w: f[i + 3], h: f[i + 4] }, area: f[i + 5], cx: f[i + 6], cy: f[i + 7] });
+    return comps;
+  }
   labels.fill(0);
   // 按行取墨游程，上下两行游程横向相接（含斜角，8 邻接）就并。游程按光栅序编号、并查集总挂到小号上，
   // 根就是块里光栅序最早的那段——块号照「块首像素的光栅序」发，与逐点 flood 的编号一致
