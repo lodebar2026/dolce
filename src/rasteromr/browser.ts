@@ -10,9 +10,15 @@ import { installBrowserOmr } from "../omrkit/browser";
 import { RasterGlyphLookup, outlineTemplates, type RasterGlyphDict } from "./rasterglyphs";
 import { rasterizePage, type RasterPage } from "./rasterpage";
 import { staffGroupCount } from "./detect";
-import { recognizeRasterSong, type RasterSongResult } from "./song";
+import { recognizeRasterSong, type RasterOcrCaches, type RasterSongResult } from "./song";
 import { ocrHarmonyStrips, ocrJianpuStrips, ocrLabelStrips, ocrLyricStrips, ocrTimeStrips, ocrWordStrips, ocrHeaderStrips, detectPageTexts } from "./ocrlive";
-import type { TimeStrip } from "./timesig";
+import { timeKey, type TimeStrip } from "./timesig";
+import { harmonyKey } from "./harmony";
+import { jianpuKey } from "./jianpuband";
+import { stripKey } from "./lyric";
+import { wordKey } from "./words";
+import { labelKey } from "./stafflabel";
+import type { RasterLiveOcr } from "./recognize";
 import { isPdf, largestPageImageAt, uprightCtm } from "../omrkit/pdf";
 import { PagePool, type FromWorker, type PagePort } from "./pagepool";
 
@@ -213,6 +219,8 @@ export async function recognizeRasterPdfs(
     firstPages?: Map<number, RasterPage | null>;
     /** 并行路数（缺省按核数，见 `pagePoolSize`；1 = 逐页串行） */
     workers?: number;
+    /** 按离线缓存认、不在线跑 OCR（测速与 Node 回归逐字对比用，同 `node-harness.mjs` 的缓存）；缓存里没有的条就当没认出 */
+    ocrCaches?: RasterOcrCaches;
   } = {},
 ): Promise<RasterSongResult> {
   const look = await glyphLookup();
@@ -235,7 +243,10 @@ export async function recognizeRasterPdfs(
         opts.firstPages.delete(pn);
         return r;
       },
-      live: {
+      // 离线缓存：整页文字框照旧当缓存给（Worker 里按页指纹查），其余各类条留在主线程、经 `live` 按条查——
+      // 与现跑 OCR 同一条路（Worker 回主线程要结果），也不用把几十 MB 的缓存复制给每个 Worker
+      ...(opts.ocrCaches ? { pageTexts: opts.ocrCaches.pageTexts } : {}),
+      live: opts.ocrCaches ? cachedLive(opts.ocrCaches) : {
         harmony: (s) => ocrHarmonyStrips(ocr, s),
         lyric: (s) => ocrLyricStrips(ocr, s),
         label: (s) => ocrLabelStrips(ocr, s),
@@ -250,6 +261,28 @@ export async function recognizeRasterPdfs(
     pool?.terminate();
     for (const s of sources) s.pdf.destroy?.();
   }
+}
+
+/** 按离线缓存给各类 OCR 条结果（同私有仓库测试的 `helpers/staff.ts::cachedLive`）：缓存里没有的条就不给。 */
+function cachedLive(c: RasterOcrCaches): RasterLiveOcr {
+  const pick = <S, V>(cache: Map<string, V> | undefined, key: (s: S) => string) => async (strips: readonly S[]) => {
+    const out = new Map<string, V>();
+    for (const s of strips) {
+      const k = key(s);
+      const v = cache?.get(k);
+      if (v !== undefined) out.set(k, v);
+    }
+    return out;
+  };
+  return {
+    jianpu: pick(c.jianpuOcr, jianpuKey),
+    harmony: pick(c.harmonyOcr, harmonyKey),
+    lyric: pick(c.lyricOcr, stripKey),
+    label: pick(c.labelOcr, labelKey),
+    word: pick(c.wordOcr, wordKey),
+    header: pick(c.headerOcr, wordKey),
+    time: pick(c.timeOcr, timeKey),
+  };
 }
 
 /** 并排原图整页画布的像素上限（WebKit 单张画布约 16.7M 像素封顶，留余量）。 */
