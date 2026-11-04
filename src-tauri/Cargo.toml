@@ -14,6 +14,10 @@ edition = "2021"
 name = "dolce_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# 测速构建：前端启动时按 DOLCE_BENCH 自动识别、量 OCR 各段（src-tauri/src/lib.rs 的 bench 模块）；正式构建不带
+bench = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

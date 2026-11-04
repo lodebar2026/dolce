@@ -205,9 +205,13 @@ fn infer_one(
     let iname = sess.inputs()[0].name().to_string();
     let oname = sess.outputs()[0].name().to_string();
     let tensor = ort::value::Tensor::from_array((dims, data)).map_err(|e| e.to_string())?;
+    #[cfg(feature = "bench")]
+    let t_run = std::time::Instant::now();
     let outputs = sess
         .run(ort::inputs![iname.as_str() => tensor])
         .map_err(|e| e.to_string())?;
+    #[cfg(feature = "bench")]
+    bench::add_run(model, t_run.elapsed());
     let (shape, out) = outputs[oname.as_str()]
         .try_extract_tensor::<f32>()
         .map_err(|e| e.to_string())?;
@@ -229,9 +233,148 @@ fn infer_one(
             idx.push(best as i32);
         }
         Ok((vec![bn as i32, t as i32], bytemuck::cast_slice(&idx).to_vec()))
+    } else if mode & 0xff == 2 {
+        // 2 | K<<8：argmax 索引 [N,T] 之外，再给每段连续非空标签（一个字）各类在段内最大分的前 K 名
+        // （`paddleocr.ts::runTops` 同一算式、同一并列次序），候选排序不必回传整份 logits。
+        // 输出维度 [N,T,附加字数]；数据 = int32 索引 + 逐行 int32[段数] + 逐段 int32[cls,i0,t1,kk] + kk×(int32 类,f32 分)。
+        let k = (mode >> 8) as usize;
+        let (bn, t, c) = (shape[0] as usize, shape[1] as usize, shape[2] as usize);
+        let mut idx: Vec<i32> = Vec::with_capacity(bn * t);
+        for i in 0..bn * t {
+            let base = i * c;
+            let mut best = 0usize;
+            let mut bv = f32::NEG_INFINITY;
+            for kk in 0..c {
+                let v = out[base + kk];
+                if v > bv {
+                    bv = v;
+                    best = kk;
+                }
+            }
+            idx.push(best as i32);
+        }
+        let mut extra: Vec<u32> = Vec::new();
+        for n in 0..bn {
+            run_tops(&out[n * t * c..(n + 1) * t * c], c, &idx[n * t..(n + 1) * t], k, &mut extra);
+        }
+        let mut bytes: Vec<u8> = bytemuck::cast_slice(&idx).to_vec();
+        bytes.extend_from_slice(bytemuck::cast_slice(&extra));
+        Ok((vec![bn as i32, t as i32, extra.len() as i32], bytes))
     } else {
         let out_dims: Vec<i32> = shape.iter().map(|&d| d as i32).collect();
         Ok((out_dims, bytemuck::cast_slice(out).to_vec()))
+    }
+}
+
+/// 一行 argmax `row`（长 T）按连续非空标签切段，每段取各类（1..C）段内最大分的前 `k` 名，追加到 `extra`：
+/// int32[段数] + 逐段 int32[cls,i0,t1,kk] + kk×(int32 类, f32 分的位)。与 `paddleocr.ts::runTops` 同一算式：
+/// 逐类插入、稳定排序（分降序）、超出弹掉末位——并列时类号小的在前。
+fn run_tops(logits: &[f32], c: usize, row: &[i32], k: usize, extra: &mut Vec<u32>) {
+    let t = row.len();
+    let cnt_pos = extra.len();
+    extra.push(0);
+    let mut runs = 0u32;
+    let (mut prev, mut i0) = (-1i32, 0usize);
+    for ti in 0..=t {
+        let best = if ti < t { row[ti] } else { -1 };
+        if best == prev {
+            continue;
+        }
+        if prev > 0 {
+            let mut top: Vec<(u32, f32)> = Vec::with_capacity(k + 1);
+            for cls in 1..c {
+                let mut mx = f32::NEG_INFINITY;
+                for tt in i0..ti {
+                    let v = logits[tt * c + cls];
+                    if v > mx {
+                        mx = v;
+                    }
+                }
+                if top.len() < k || mx > top[top.len() - 1].1 {
+                    top.push((cls as u32, mx));
+                    top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                    if top.len() > k {
+                        top.pop();
+                    }
+                }
+            }
+            extra.extend_from_slice(&[prev as u32, i0 as u32, ti as u32, top.len() as u32]);
+            for (cls, v) in top {
+                extra.push(cls);
+                extra.push(v.to_bits());
+            }
+            runs += 1;
+        }
+        i0 = ti;
+        prev = best;
+    }
+    extra[cnt_pos] = runs;
+}
+
+#[cfg(test)]
+mod run_tops_tests {
+    use super::run_tops;
+
+    /// 规范写法：段内各类最大分，按（分降序、类号升序）全排后取前 k
+    fn spec(logits: &[f32], c: usize, row: &[i32], k: usize) -> Vec<(i32, usize, usize, Vec<(u32, f32)>)> {
+        let mut out = Vec::new();
+        let (mut prev, mut i0) = (-1i32, 0usize);
+        for ti in 0..=row.len() {
+            let best = if ti < row.len() { row[ti] } else { -1 };
+            if best == prev {
+                continue;
+            }
+            if prev > 0 {
+                let mut all: Vec<(u32, f32)> = (1..c)
+                    .map(|cls| (cls as u32, (i0..ti).map(|tt| logits[tt * c + cls]).fold(f32::NEG_INFINITY, f32::max)))
+                    .collect();
+                all.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+                all.truncate(k);
+                out.push((prev, i0, ti, all));
+            }
+            i0 = ti;
+            prev = best;
+        }
+        out
+    }
+
+    #[test]
+    fn matches_spec_with_ties() {
+        // 伪随机 logits，分值只取少数几档，造大量并列
+        let (t, c, k) = (37usize, 53usize, 10usize);
+        let mut seed = 12345u32;
+        let mut rnd = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            (seed >> 16) % 7
+        };
+        let logits: Vec<f32> = (0..t * c).map(|_| rnd() as f32 * 0.5 - 1.0).collect();
+        let row: Vec<i32> = (0..t)
+            .map(|ti| {
+                let mut best = 0usize;
+                let mut bv = f32::NEG_INFINITY;
+                for cls in 0..c {
+                    if logits[ti * c + cls] > bv {
+                        bv = logits[ti * c + cls];
+                        best = cls;
+                    }
+                }
+                best as i32
+            })
+            .collect();
+        let mut extra = Vec::new();
+        run_tops(&logits, c, &row, k, &mut extra);
+        let want = spec(&logits, c, &row, k);
+        assert_eq!(extra[0] as usize, want.len());
+        let mut o = 1;
+        for (cls, i0, t1, top) in want {
+            assert_eq!((extra[o] as i32, extra[o + 1] as usize, extra[o + 2] as usize, extra[o + 3] as usize), (cls, i0, t1, top.len()));
+            o += 4;
+            for (cc, v) in top {
+                assert_eq!((extra[o], f32::from_bits(extra[o + 1])), (cc, v));
+                o += 2;
+            }
+        }
+        assert_eq!(o, extra.len());
     }
 }
 
@@ -283,10 +426,14 @@ fn omr_onnx(
         tauri::ipc::InvokeBody::Raw(v) => v.as_slice(),
         _ => return Err("omr_onnx 需要原始字节请求体".into()),
     };
+    #[cfg(feature = "bench")]
+    let t_cmd = std::time::Instant::now();
     let (model, mode, dims, data, _) = parse_req(body, 0)?;
     let (out_dims, out_bytes) = infer_one(&app, model, mode, dims, data)?;
     let mut resp: Vec<u8> = Vec::with_capacity((1 + out_dims.len()) * 4 + out_bytes.len());
     write_result(&mut resp, &out_dims, &out_bytes);
+    #[cfg(feature = "bench")]
+    bench::add_cmd(t_cmd.elapsed(), body.len() + resp.len());
     Ok(tauri::ipc::Response::new(resp))
 }
 
@@ -305,6 +452,8 @@ fn omr_onnx_batch(
     if body.len() < 4 {
         return Err("omr_onnx_batch 请求体过短".into());
     }
+    #[cfg(feature = "bench")]
+    let t_cmd = std::time::Instant::now();
     let count = ri32(body, 0) as usize;
     let mut off = 4usize;
     let mut resp: Vec<u8> = Vec::new();
@@ -315,7 +464,55 @@ fn omr_onnx_batch(
         let (out_dims, out_bytes) = infer_one(&app, model, mode, dims, data)?;
         write_result(&mut resp, &out_dims, &out_bytes);
     }
+    #[cfg(feature = "bench")]
+    bench::add_cmd(t_cmd.elapsed(), body.len() + resp.len());
     Ok(tauri::ipc::Response::new(resp))
+}
+
+// ---------------- 测速构建（cargo feature `bench`，正式构建不编） ----------------
+// 前端启动时试调 `bench_config`：拿到配置（环境变量 DOLCE_BENCH 指的 JSON 文件）就自动逐份识别、
+// 量 OCR 各段并把结果写回文件后退出（`src/editor/desktopbench.ts`）。这里给读写文件、推理计时与退出。
+#[cfg(feature = "bench")]
+mod bench {
+    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+    use std::time::Duration;
+    /// [rec 推理 ns, rec 次数, det 推理 ns, det 次数, 命令总 ns, 命令次数, IPC 字节]
+    static STATS: [AtomicU64; 7] = [const { AtomicU64::new(0) }; 7];
+    pub fn add_run(model: i32, d: Duration) {
+        let i = if model == 0 { 0 } else { 2 };
+        STATS[i].fetch_add(d.as_nanos() as u64, Relaxed);
+        STATS[i + 1].fetch_add(1, Relaxed);
+    }
+    pub fn add_cmd(d: Duration, bytes: usize) {
+        STATS[4].fetch_add(d.as_nanos() as u64, Relaxed);
+        STATS[5].fetch_add(1, Relaxed);
+        STATS[6].fetch_add(bytes as u64, Relaxed);
+    }
+
+    /// 测速配置（DOLCE_BENCH 指的 JSON 文件内容）；没设为 None。
+    #[tauri::command]
+    pub fn bench_config() -> Option<String> {
+        std::env::var("DOLCE_BENCH").ok().and_then(|p| std::fs::read_to_string(p).ok())
+    }
+    #[tauri::command]
+    pub fn bench_read(path: String) -> Result<tauri::ipc::Response, String> {
+        std::fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| format!("{path}: {e}"))
+    }
+    #[tauri::command]
+    pub fn bench_write(path: String, text: String) -> Result<(), String> {
+        std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))
+    }
+    /// 取并清零推理计时（毫秒）：rec / det 纯 session.run、命令整段（含解析请求与回包）、IPC 字节数。
+    #[tauri::command]
+    pub fn bench_ort_stats() -> serde_json::Value {
+        let v: Vec<u64> = STATS.iter().map(|a| a.swap(0, Relaxed)).collect();
+        let ms = |ns: u64| ns as f64 / 1e6;
+        serde_json::json!({ "recRunMs": ms(v[0]), "recRuns": v[1], "detRunMs": ms(v[2]), "detRuns": v[3], "cmdMs": ms(v[4]), "cmds": v[5], "ipcBytes": v[6] })
+    }
+    #[tauri::command]
+    pub fn bench_exit(app: tauri::AppHandle) {
+        app.exit(0);
+    }
 }
 
 // ---------------- MIDI playback (macOS AVMIDIPlayer) ----------------
@@ -397,14 +594,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init());
     #[cfg(target_os = "macos")]
     let builder = builder.manage(MidiState::default());
+    #[cfg(not(feature = "bench"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        export_pdf_cmd,
+        omr_onnx,
+        omr_onnx_batch,
+        midi_play_cmd,
+        midi_stop_cmd
+    ]);
+    #[cfg(feature = "bench")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        export_pdf_cmd,
+        omr_onnx,
+        omr_onnx_batch,
+        midi_play_cmd,
+        midi_stop_cmd,
+        bench::bench_config,
+        bench::bench_read,
+        bench::bench_write,
+        bench::bench_ort_stats,
+        bench::bench_exit
+    ]);
     builder
-        .invoke_handler(tauri::generate_handler![
-            export_pdf_cmd,
-            omr_onnx,
-            omr_onnx_batch,
-            midi_play_cmd,
-            midi_stop_cmd
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

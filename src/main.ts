@@ -84,6 +84,8 @@ async function boot() {
   win.__omr = import("./omr");
   // 位图五线谱的浏览器侧入口（在线 OCR）：回归脚本 `staff-measure-all.mjs --live` 拿它与离线缓存那条路比读数
   win.__raster = import("./rasteromr/browser");
+  // 桌面测速构建（VITE_DOLCE_BENCH=1）：按 DOLCE_BENCH 配置自动识别、量 OCR 各段后退出；正式构建整段剔除
+  if (import.meta.env.VITE_DOLCE_BENCH) void import("./editor/desktopbench").then((b) => b.maybeRunDesktopBench());
   // 识别项目打包 / 自动保存草稿：`omr-project-check.mjs` 拿字节做存—开往返
   win.__project = Promise.all([import("./editor/omrproject"), import("./editor/autosave")]).then(([p, a]) => ({ ...p, ...a }));
   // 文本谱（番茄 / 有谱）解析与排版暴露，供 fanqie-*.mjs 回归。

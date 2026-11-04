@@ -221,6 +221,8 @@ export async function recognizeRasterPdfs(
     workers?: number;
     /** 按离线缓存认、不在线跑 OCR（测速与 Node 回归逐字对比用，同 `node-harness.mjs` 的缓存）；缓存里没有的条就当没认出 */
     ocrCaches?: RasterOcrCaches;
+    /** 每次在线 OCR 调用（按种类）的耗时回调（测速用，`editor/desktopbench.ts`） */
+    onOcr?: (kind: string, ms: number) => void;
   } = {},
 ): Promise<RasterSongResult> {
   const look = await glyphLookup();
@@ -246,7 +248,7 @@ export async function recognizeRasterPdfs(
       // 离线缓存：整页文字框照旧当缓存给（Worker 里按页指纹查），其余各类条留在主线程、经 `live` 按条查——
       // 与现跑 OCR 同一条路（Worker 回主线程要结果），也不用把几十 MB 的缓存复制给每个 Worker
       ...(opts.ocrCaches ? { pageTexts: opts.ocrCaches.pageTexts } : {}),
-      live: opts.ocrCaches ? cachedLive(opts.ocrCaches) : {
+      live: opts.ocrCaches ? cachedLive(opts.ocrCaches) : timedLive({
         harmony: (s) => ocrHarmonyStrips(ocr, s),
         lyric: (s) => ocrLyricStrips(ocr, s),
         label: (s) => ocrLabelStrips(ocr, s),
@@ -255,12 +257,30 @@ export async function recognizeRasterPdfs(
         word: (s) => ocrWordStrips(ocr, s),
         header: (s) => ocrHeaderStrips(ocr, s),
         textDet: (bin, scale) => detectPageTexts(ocr, bin, scale),
-      },
+      }, opts.onOcr),
     });
   } finally {
     pool?.terminate();
     for (const s of sources) s.pdf.destroy?.();
   }
+}
+
+/** 给在线 OCR 的每类调用包一层计时（没给回调原样返回）。 */
+function timedLive(live: RasterLiveOcr, onOcr?: (kind: string, ms: number) => void): RasterLiveOcr {
+  if (!onOcr) return live;
+  const out: Record<string, unknown> = {};
+  for (const [k, f] of Object.entries(live)) {
+    if (typeof f !== "function") continue;
+    out[k] = async (...a: unknown[]) => {
+      const t = performance.now();
+      try {
+        return await (f as (...x: unknown[]) => Promise<unknown>)(...a);
+      } finally {
+        onOcr(k, performance.now() - t);
+      }
+    };
+  }
+  return out as unknown as RasterLiveOcr;
 }
 
 /** 按离线缓存给各类 OCR 条结果（同私有仓库测试的 `helpers/staff.ts::cachedLive`）：缓存里没有的条就不给。 */

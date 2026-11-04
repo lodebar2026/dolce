@@ -92,6 +92,16 @@ export async function findTimeSigs(c: {
   const timeStrips: TimeStrip[] = [];
   /** 在线时逐列现读（只读头一趟、谱号列以外的那几条，与离线缓存收的条一致）；第二趟只查已读的 */
   const timeOcr = opts.timeOcr ?? (live?.time ? new Map<string, string>() : undefined);
+  /** 在线现读几条：本页已读过的、同一批里指纹相同的不再送（读数只看像素，同指纹必同读数）。 */
+  const readTime = async (strips: TimeStrip[]): Promise<void> => {
+    if (opts.timeOcr || !live?.time || !timeOcr) return;
+    const need = new Map<string, TimeStrip>();
+    for (const s0 of strips) {
+      const k = timeKey(s0);
+      if (!timeOcr.has(k) && !need.has(k)) need.set(k, s0);
+    }
+    if (need.size) for (const [k, v] of await live.time([...need.values()])) timeOcr.set(k, v);
+  };
   /** 行首每个「两个数字摞起来」形状的候选列（谱号那一列除外）与 OCR 读出的上下半，留给 `shareTimeSignature` 按系统互证。 */
   const timeCols: TimeColumn[] = [];
   const clefBoxes = syms.filter((s0) => isClef(s0.code)).map((s0) => s0.box);
@@ -266,7 +276,7 @@ export async function findTimeSigs(c: {
         const sDn = timeStripOf(nl, dn, groups.indexOf(g), "den");
         const fUp = timeStripOf(nl, up, groups.indexOf(g), "num", raster.bin, reach);
         const fDn = timeStripOf(nl, dn, groups.indexOf(g), "den", raster.bin, reach);
-        if (pass === 0 && !inClef && !opts.timeOcr && live?.time && timeOcr) for (const [k, v] of await live.time([sUp, sDn, fUp, fDn])) timeOcr.set(k, v);
+        if (pass === 0 && !inClef) await readTime([sUp, sDn, fUp, fDn]);
         // **分子读成 8 一律按 3**：8/x 的拍号谱面上几乎没有，OCR 读出 8 的是低清图上左侧开口被糊墨封上的 3（S018 球形笔端的粗体铅字、
         // 當預備耶和華的路的传真扫描）。原先按封闭孔分 3/8，噪点多的扫描件墨里满是小白点，一个「3」数出好几个孔，照样判成 8
         const ocrNum = inClef ? null : timeDigit(timeOcr?.get(timeKey(sUp)), "num");
@@ -407,7 +417,7 @@ export async function findTimeSigs(c: {
       const dn: Rect = { x: box.x, y: Math.round(mid), w, h: y1 - Math.round(mid) };
       const sUp = timeStripOf(nl, up, groups.indexOf(g), "num");
       const sDn = timeStripOf(nl, dn, groups.indexOf(g), "den");
-      if (!opts.timeOcr && live?.time && timeOcr) for (const [k, v] of await live.time([sUp, sDn])) timeOcr.set(k, v);
+      await readTime([sUp, sDn]);
       timeStrips.push(sUp, sDn);
       // 还是框进了小节线的：读成「1」加一位数又不是合法拍号的，去掉打头的 1
       const read = (k: TimeStrip, role: TimeStrip["role"]) => {

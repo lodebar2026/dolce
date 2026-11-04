@@ -22,10 +22,12 @@ let _ready = false; // 字典(+ 非 Tauri 下 rec session)就绪
 
 type OnnxOut = { data: Float32Array; dims: number[] };
 
-// 分阶段计时（临时 profiling）：infer=IPC+推理，ctc=CTC 解码，其余在 backend 内即预处理(canvas+归一化)。
-const _prof = { infer: 0, ctc: 0, calls: 0 };
-export function omrProfile(): { infer: number; ctc: number; calls: number } { return { ..._prof }; }
-export function omrProfileReset(): void { _prof.infer = 0; _prof.ctc = 0; _prof.calls = 0; }
+// 分阶段计时（profiling）：infer=批量 rec 的 IPC+推理（calls 次），det=DBNet 检测（detCalls 次，含概率图回传），
+// logits=取整份 logits 的 rec（logitsCalls 次：候选排序、8/B 改判），ctc=CTC 解码；其余在 backend 内即预处理(canvas+归一化)。
+const _prof = { infer: 0, ctc: 0, calls: 0, det: 0, detCalls: 0, logits: 0, logitsCalls: 0 };
+export type OmrProfile = typeof _prof;
+export function omrProfile(): OmrProfile { return { ..._prof }; }
+export function omrProfileReset(): void { for (const k of Object.keys(_prof) as (keyof OmrProfile)[]) _prof[k] = 0; }
 
 // ── 原生 OCR（Tauri 桌面）：把张量交给 Rust ort 跑 session.run，比浏览器 wasm 多线程快 ~3×，
 //    且完全绕开 WebKit(WKWebView) 多线程 wasm worker 冷启动挂死的问题（桌面不再依赖浏览器推理）。──
@@ -38,7 +40,7 @@ function nativeOcr(): boolean {
   return typeof ov === "boolean" ? ov : isTauri();
 }
 
-type ArgmaxOut = { idx: Int32Array; N: number; T: number };
+type ArgmaxOut = { idx: Int32Array; N: number; T: number; tops?: RunTop[][] };
 
 /** 底层：Tauri 原始字节 IPC。withGlobalTauri=true → window.__TAURI__.core.invoke 全局可用。 */
 async function tauriInvokeRaw(cmd: string, req: ArrayBuffer): Promise<ArrayBuffer> {
@@ -78,16 +80,55 @@ async function nativeRun(model: number, chw: Float32Array, dims: number[]): Prom
   return { data, dims: outDims };
 }
 async function runRec(chw: Float32Array, dims: number[]): Promise<OnnxOut> {
-  if (nativeOcr()) return nativeRun(0, chw, dims);
-  return omrRuntime().run("rec", chw, dims);
+  const t = performance.now(); _prof.logitsCalls++;
+  try {
+    return nativeOcr() ? await nativeRun(0, chw, dims) : await omrRuntime().run("rec", chw, dims);
+  } finally {
+    _prof.logits += performance.now() - t;
+  }
 }
 async function runDet(chw: Float32Array, dims: number[]): Promise<OnnxOut> {
-  if (nativeOcr()) return nativeRun(1, chw, dims);
-  return omrRuntime().run("det", chw, dims);
+  const t = performance.now(); _prof.detCalls++;
+  try {
+    return nativeOcr() ? await nativeRun(1, chw, dims) : await omrRuntime().run("det", chw, dims);
+  } finally {
+    _prof.det += performance.now() - t;
+  }
 }
 
-/** 本地（非 Tauri）单张量 rec → 每时间步 argmax [N,T]（TS 内做 argmax，成本同原先 CTC 内层）。 */
-async function localRecArgmax(chw: Float32Array, dims: number[]): Promise<ArgmaxOut> {
+/** 一段连续非空标签（一个字）：标签 `cls`、时间步 `[i0,t1)`、各类在段内最大分的前 K 名（分降序，并列按类号先后）。 */
+type RunTop = { cls: number; i0: number; t1: number; c: number[]; v: number[] };
+
+/**
+ * logits `[T,C]`（`arr` 从 `at` 起）按 argmax 行 `idx` 切段，各段取前 `k` 名。**与 Rust `infer_one` mode 2 同一算式**：
+ * 逐类取段内最大分、插入后稳定排序、超出就弹掉末位——并列时先到（类号小）的在前，两边次序一致。
+ */
+function runTops(arr: Float32Array, at: number, C: number, idx: Int32Array, i: number, T: number, k: number): RunTop[] {
+  const out: RunTop[] = [];
+  let prev = -1, i0 = 0;
+  for (let t = 0; t <= T; t++) {
+    const best = t < T ? idx[i + t] : -1;
+    if (best === prev) continue;
+    if (prev > 0) {
+      const top: { c: number; v: number }[] = [];
+      for (let c = 1; c < C; c++) {
+        let mx = -Infinity;
+        for (let tt = i0; tt < t; tt++) { const v = arr[at + tt * C + c]; if (v > mx) mx = v; }
+        if (top.length < k || mx > top[top.length - 1]!.v) {
+          top.push({ c, v: mx });
+          top.sort((a, b) => b.v - a.v);
+          if (top.length > k) top.pop();
+        }
+      }
+      out.push({ cls: prev, i0, t1: t, c: top.map((x) => x.c), v: top.map((x) => x.v) });
+    }
+    i0 = t; prev = best;
+  }
+  return out;
+}
+
+/** 本地（非 Tauri）单张量 rec → 每时间步 argmax [N,T]（TS 内做 argmax，成本同原先 CTC 内层）；`topK` 给了再附每段前 K 名。 */
+async function localRecArgmax(chw: Float32Array, dims: number[], topK = 0): Promise<ArgmaxOut> {
   const o = await omrRuntime().run("rec", chw, dims);
   const [N, T, C] = o.dims;
   const arr = o.data;
@@ -97,13 +138,16 @@ async function localRecArgmax(chw: Float32Array, dims: number[]): Promise<Argmax
     for (let c = 0; c < C; c++) { const v = arr[base + c]; if (v > bv) { bv = v; best = c; } }
     idx[i] = best;
   }
-  return { idx, N, T };
+  if (!topK) return { idx, N, T };
+  const tops: RunTop[][] = [];
+  for (let n = 0; n < N; n++) tops.push(runTops(arr, n * T * C, C, idx, n * T, T, topK));
+  return { idx, N, T, tops };
 }
 
 /** **一次 IPC 跑多个 rec 输入**，各自返回 argmax [N,T]。原生：单次 omr_onnx_batch 携带全部张量，
  *  Rust 内部逐个 session.run（逐个=算力最优）→ 把 Tauri 每次往返(~数 ms)从 N 次压到 1 次；
  *  非 Tauri：本地逐个（无 IPC 成本）。这是原生下的关键优化（IPC 往返开销 >> 批量算力差异）。 */
-async function runRecArgmaxMany(inputs: { chw: Float32Array; dims: number[] }[]): Promise<ArgmaxOut[]> {
+async function runRecArgmaxMany(inputs: { chw: Float32Array; dims: number[] }[], topK = 0): Promise<ArgmaxOut[]> {
   if (!inputs.length) return [];
   const _t = performance.now(); _prof.calls++;
   if (nativeOcr()) {
@@ -117,7 +161,7 @@ async function runRecArgmaxMany(inputs: { chw: Float32Array; dims: number[] }[])
     dv.setInt32(off, inputs.length, true); off += 4;
     for (const inp of inputs) {
       dv.setInt32(off, 0, true); off += 4;                    // model=rec
-      dv.setInt32(off, 1, true); off += 4;                    // mode=argmax
+      dv.setInt32(off, topK ? 2 | (topK << 8) : 1, true); off += 4; // mode=argmax（带每段前 K 名为 2|K<<8）
       dv.setInt32(off, inp.dims.length, true); off += 4;
       for (const d of inp.dims) { dv.setInt32(off, d, true); off += 4; }
       u8.set(new Uint8Array(inp.chw.buffer, inp.chw.byteOffset, inp.chw.byteLength), off);
@@ -130,15 +174,34 @@ async function runRecArgmaxMany(inputs: { chw: Float32Array; dims: number[] }[])
     const out: ArgmaxOut[] = [];
     for (let i = 0; i < count; i++) {
       const nd = rv.getInt32(ro, true); ro += 4;
-      const N = rv.getInt32(ro, true), T = rv.getInt32(ro + 4, true); ro += nd * 4;
+      const N = rv.getInt32(ro, true), T = rv.getInt32(ro + 4, true);
+      const extra = nd > 2 ? rv.getInt32(ro + 8, true) : 0;
+      ro += nd * 4;
       const idx = new Int32Array(resp.slice(ro, ro + N * T * 4)); ro += N * T * 4;
-      out.push({ idx, N, T });
+      if (!topK) { out.push({ idx, N, T }); continue; }
+      // 每行：int32[段数]，逐段 int32[cls,i0,t1,kk] + kk×(int32 类, f32 分)（见 lib.rs `infer_one` mode 2）
+      const end = ro + extra * 4;
+      const tops: RunTop[][] = [];
+      for (let n = 0; n < N; n++) {
+        const runs: RunTop[] = [];
+        const nr = rv.getInt32(ro, true); ro += 4;
+        for (let r = 0; r < nr; r++) {
+          const cls = rv.getInt32(ro, true), i0 = rv.getInt32(ro + 4, true), t1 = rv.getInt32(ro + 8, true), kk = rv.getInt32(ro + 12, true);
+          ro += 16;
+          const c: number[] = [], v: number[] = [];
+          for (let j = 0; j < kk; j++) { c.push(rv.getInt32(ro, true)); v.push(rv.getFloat32(ro + 4, true)); ro += 8; }
+          runs.push({ cls, i0, t1, c, v });
+        }
+        tops.push(runs);
+      }
+      ro = end;
+      out.push({ idx, N, T, tops });
     }
     _prof.infer += performance.now() - _t;
     return out;
   }
   const out: ArgmaxOut[] = [];
-  for (const inp of inputs) out.push(await localRecArgmax(inp.chw, inp.dims));
+  for (const inp of inputs) out.push(await localRecArgmax(inp.chw, inp.dims, topK));
   _prof.infer += performance.now() - _t;
   return out;
 }
@@ -328,6 +391,28 @@ async function inferLogits(cell: Surface, maxW = REC_MAXW): Promise<{ arr: Float
   return { arr: o.data, T, C, w, tensorW };
 }
 
+/** 候选排序取前几名：用到的 k 是 5 与 10，存最多的那一份，少的取前缀（与按 k 现排的结果相同：前 k 名就是前 10 名的前 k 个）。 */
+const RANK_K = 10;
+/**
+ * 文本条的**每段前 K 名**，按送检张量的内容寻址：常规识别（`recognizeTexts` / `recognizeTextsPos`，宽上限 "auto"）顺带算好存下，
+ * 随后对同一条的候选排序（`rankTextChars`：歌词疑字、词谱互证、繁简复核）直接取，不再推理一遍。张量相同、推理就相同，所以结果不变。
+ */
+const _tops = new Map<string, RunTop[]>();
+const TOPS_MAX = 4096;
+function tensorKey(chw: Float32Array, dims: number[]): string {
+  const u = new Uint32Array(chw.buffer, chw.byteOffset, chw.length);
+  let a = 0x811c9dc5, b = 0x9e3779b9;
+  for (let i = 0; i < u.length; i++) {
+    a = Math.imul(a ^ u[i]!, 0x01000193);
+    b = Math.imul(b ^ u[i]!, 0x85ebca6b) ^ (b >>> 13);
+  }
+  return `${dims.join("x")}:${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}`;
+}
+function keepTops(key: string, tops: RunTop[]): void {
+  if (_tops.size >= TOPS_MAX) _tops.delete(_tops.keys().next().value!);
+  _tops.set(key, tops);
+}
+
 /** 批量 CTC 带位解码：多个画布 → 各自 [{ch,xFrac,x1Frac}]，**一次 IPC**。xFrac/x1Frac∈[0,1]：该字在
  *  输入内容宽度上的**左缘/右缘**（CTC 非空标签连续run 的起止时间步换算）。xFrac 沿用原「起点」语义
  *  (歌词按它对齐音符，勿动)；x1Frac 为新增右缘，供按**字符边界间隙**(右字左缘−左字右缘)判词间空格。
@@ -339,7 +424,10 @@ async function recognizeCharsPosMany(cells: Surface[], maxW: number | "auto" = R
   const maxWOf = (c: Surface) =>
     maxW === "auto" ? Math.min(REC_MAXW_LONG, Math.max(REC_MAXW, Math.ceil(REC_H * (c.width / c.height)))) : maxW;
   const preps = cells.map((c) => prepCell(c, maxWOf(c)));
-  const results = await runRecArgmaxMany(preps.map((p) => ({ chw: p.chw, dims: p.dims })));
+  // "auto" 宽的条（文本识别）顺带取每段前 K 名，供随后的候选排序复用（见 `_tops`）
+  const withTops = maxW === "auto";
+  const results = await runRecArgmaxMany(preps.map((p) => ({ chw: p.chw, dims: p.dims })), withTops ? RANK_K : 0);
+  if (withTops) preps.forEach((p, i) => { const t = results[i]!.tops?.[0]; if (t) keepTops(tensorKey(p.chw, p.dims), t); });
   const chars = _chars!;
   const _t0 = performance.now();
   const clamp = (v: number) => Math.min(1, Math.max(0, v));
@@ -377,44 +465,32 @@ function digitClassIdx(): number[] {
 /**
  * 一条文本画布 → 逐字候选（含 top1 本身，置信度降序）。
  *
- * 走的是 `inferLogits` 那条整张 `[T,C]` 的路（`rankDigits` 同款），不是常规识别的 argmax 通道：
- * 后者在原生侧就把 logits 压成了索引，TS 这边拿不到次优。字符的划分与 `recognizeCharsPosMany`
- * 同口径（一段连续非空标签 run = 一个字），每个 run 里对各类取该区间的最大 logit 排序。
- * 只给「疑似形近误判」的少数条重跑，故按条推理、不批量。
+ * 字符的划分与 `recognizeCharsPosMany` 同口径（一段连续非空标签 run = 一个字），每个 run 里对各类取该区间的最大 logit 排序。
+ * 前 K 名由推理那一侧算好（原生在 Rust 里、本地在 `runTops`），不回传整份 `[T,C]` logits；同一张量已由常规识别算过的，
+ * 直接取 `_tops` 里存的，不再推理。
  */
 async function rankCharsOf(cell: Surface, maxW: number, k: number): Promise<{ ch: string; alts: string[]; scores: number[] }[]> {
-  const { arr, T, C } = await inferLogits(cell, maxW);
+  const { chw, dims } = prepCell(cell, maxW);
+  const key = tensorKey(chw, dims);
+  let tops = k <= RANK_K ? _tops.get(key) : undefined;
+  if (!tops) {
+    const K = Math.max(k, RANK_K);
+    tops = (await runRecArgmaxMany([{ chw, dims }], K))[0]!.tops?.[0] ?? [];
+    if (K === RANK_K) keepTops(key, tops);
+  }
   const chars = _chars!;
   const out: { ch: string; alts: string[]; scores: number[] }[] = [];
-  const argmaxAt = (t: number): number => {
-    const base = t * C; let best = 0, bv = -Infinity;
-    for (let c = 0; c < C; c++) { const v = arr[base + c]; if (v > bv) { bv = v; best = c; } }
-    return best;
-  };
-  const flush = (cls: number, i0: number, t1: number): void => {
-    const ch = chars[cls] ?? "";
-    if (!ch) return;
-    // 该 run 的时间步里各类的最大分 → 前 k 名
-    const top: { c: number; v: number }[] = [];
-    for (let c = 1; c < C; c++) {
-      let mx = -Infinity;
-      for (let t = i0; t < t1; t++) { const v = arr[t * C + c]; if (v > mx) mx = v; }
-      if (top.length < k || mx > top[top.length - 1]!.v) {
-        top.push({ c, v: mx });
-        top.sort((a, b) => b.v - a.v);
-        if (top.length > k) top.pop();
-      }
+  for (const r of tops) {
+    const ch = chars[r.cls] ?? "";
+    if (!ch) continue;
+    const alts: string[] = [], scores: number[] = [];
+    for (let j = 0; j < Math.min(k, r.c.length); j++) {
+      const a = chars[r.c[j]!];
+      if (!a) continue;
+      alts.push(a);
+      scores.push(r.v[j]!);
     }
-    const kept = top.filter((x) => chars[x.c]);
-    out.push({ ch, alts: kept.map((x) => chars[x.c]!), scores: kept.map((x) => x.v) });
-  };
-  let prev = -1, i0 = 0;
-  for (let t = 0; t <= T; t++) {
-    const best = t < T ? argmaxAt(t) : -1;
-    if (best !== prev) {
-      if (prev > 0) flush(prev, i0, t);
-      i0 = t; prev = best;
-    }
+    out.push({ ch, alts, scores });
   }
   return out;
 }
