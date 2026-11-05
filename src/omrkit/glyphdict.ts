@@ -30,7 +30,7 @@ function hash2(s: string): string {
 }
 
 /** 路径的紧包围盒（路径自身坐标系）。 */
-function rawBounds(data: Float32Array): { x0: number; y0: number; x1: number; y1: number } | null {
+export function rawBounds(data: Float32Array): { x0: number; y0: number; x1: number; y1: number } | null {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;

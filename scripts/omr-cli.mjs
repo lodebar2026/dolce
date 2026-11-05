@@ -100,9 +100,8 @@ if (opts.lyrics) {
 // -o 是目录（多图，或路径本身就是已存在的目录）时逐个写文件，否则当单个输出文件。
 const outIsDir = opts.out != null && (imgs.length > 1 || (existsSync(opts.out) && (await stat(opts.out)).isDirectory()));
 if (outIsDir) await mkdir(opts.out, { recursive: true });
-const EXT = { "123": ".123", jpwabc: ".jpwabc" };
-// .jpwabc 按 JP-Word 的 UTF-16LE 带 BOM 落盘，其余 UTF-8
-const encodeOut = (r) => (r.format === "jpwabc" ? Buffer.from("\ufeff" + r.text, "utf16le") : Buffer.from(r.text, "utf-8"));
+// 扩展名与编码按产物的源格式（与编辑器存盘同一份：.jpwabc 存 UTF-16LE 带 BOM，文本谱存 .jps）
+const encodeOut = (r) => cli.encodeDocText(r.kind, r.text);
 
 let failed = 0;
 const t0all = performance.now();
@@ -122,7 +121,7 @@ for (const img of imgs) {
   const wall = performance.now() - t0;
 
   if (outIsDir) {
-    const dst = join(opts.out, basename(img, extname(img)) + (EXT[r.format] ?? ".txt"));
+    const dst = join(opts.out, basename(img, extname(img)) + cli.DOC_EXT[r.kind]);
     await writeFile(dst, encodeOut(r));
     console.error(`已写入 ${dst}`);
   } else if (opts.out) {

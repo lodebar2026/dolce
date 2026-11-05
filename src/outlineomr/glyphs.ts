@@ -9,7 +9,7 @@
 //
 // 无 DOM 依赖（Node CLI 要 import）。
 import { DRAW_CLOSE, DRAW_CUBIC, DRAW_MOVE, DRAW_QUAD, drawOpArity, matApplyX, matApplyY, type VecObj } from "../omrkit/vector";
-import { decodeSig, shapeSig, sigDistance } from "../omrkit/glyphdict";
+import { decodeSig, rawBounds, shapeSig, sigDistance } from "../omrkit/glyphdict";
 import { isSmuflName, type SmuflName } from "../staffomr/glyphs";
 import type { StaffGlyphDict } from "../staffomr/staffglyphs";
 import type { Rect } from "../omrkit/types";
@@ -79,6 +79,11 @@ function subPieces(o: VecObj): SubPiece[] {
   }
   if (cur && cur.end === d.length) cur.end = d.length;
   return out.filter((p) => Number.isFinite(p.box.x0));
+}
+
+/** 对象有几道子路径（外轮廓、内腔各一道）。 */
+export function subpathCount(o: VecObj): number {
+  return subPieces(o).length;
 }
 
 /**
@@ -174,8 +179,8 @@ export class OutlineGlyphLookup {
  */
 function sigData(d: Float32Array): Float32Array {
   const fine = subdivide(d, SUBDIV);
-  const a = ptBounds(d);
-  const b = ptBounds(fine);
+  const a = rawBounds(d);
+  const b = rawBounds(fine);
   if (!a || !b) return d;
   const bw = b.x1 - b.x0 || 1;
   const bh = b.y1 - b.y0 || 1;
@@ -183,22 +188,6 @@ function sigData(d: Float32Array): Float32Array {
 }
 const SUBDIV = 8;
 const CTRL_SLACK = 0.05;
-
-/** 路径各点（含控制点）的外框。 */
-function ptBounds(d: Float32Array): { x0: number; y0: number; x1: number; y1: number } | null {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  let i = 0;
-  while (i < d.length) {
-    const n = drawOpArity(d[i++]);
-    if (n < 0) break;
-    for (let k = 0; k < n; k += 2) {
-      x0 = Math.min(x0, d[i + k]); x1 = Math.max(x1, d[i + k]);
-      y0 = Math.min(y0, d[i + k + 1]); y1 = Math.max(y1, d[i + k + 1]);
-    }
-    i += n;
-  }
-  return Number.isFinite(x0) ? { x0, y0, x1, y1 } : null;
-}
 
 /** 每段三次 / 二次曲线按参数等分成 n 段（de Casteljau），其余命令照抄。 */
 function subdivide(d: Float32Array, n: number): Float32Array {

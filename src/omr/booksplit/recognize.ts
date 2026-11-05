@@ -9,7 +9,7 @@ import glyphmap from "../../staffomr/glyphmap.json";
 import type { OcrBackend } from "../../omrkit/ocr";
 import { loadScoreDoc } from "../../model/fromxml";
 import { CONVERT_TARGETS, type ConvertTarget } from "../../convert/targets";
-import { encodeJcx } from "../../common/jcxcodec";
+import { DOC_EXT, encodeDocText, utf8 } from "../../convert/docfile";
 import type { BookPlan } from "./index";
 import type { PageSource } from "./types";
 
@@ -18,16 +18,11 @@ export type BookFormat = "musicxml" | ConvertTarget;
 export const BOOK_FORMATS: readonly BookFormat[] = ["musicxml", ...CONVERT_TARGETS.map((t) => t.id)];
 export const isBookFormat = (v: unknown): v is BookFormat => BOOK_FORMATS.includes(v as BookFormat);
 
-const EXT: Record<string, string> = { "123": ".123", abc: ".abc", jpwabc: ".jpwabc", fanqie: ".jps", jly: ".jly", jcx: ".jcx" };
-
-/** 一种格式的扩展名与落盘字节（.jpwabc 照 JP-Word 存 UTF-16LE 带 BOM，.jcx 存 GBK，其余 UTF-8）。 */
+/** 一种格式的扩展名与落盘字节（与编辑器存盘同一份：`convert/docfile.ts`）。 */
 function encodeAs(format: BookFormat, xml: string): { ext: string; bytes: Uint8Array } {
-  if (format === "musicxml") return { ext: ".musicxml", bytes: new TextEncoder().encode(xml) };
+  if (format === "musicxml") return { ext: DOC_EXT.musicxml, bytes: utf8(xml) };
   const spec = CONVERT_TARGETS.find((t) => t.id === format)!;
-  const text = spec.emit(loadScoreDoc(xml));
-  if (spec.docFormat === "jpwabc") return { ext: EXT.jpwabc, bytes: new Uint8Array(Buffer.from("﻿" + text, "utf16le")) };
-  if (spec.docFormat === "jcx") return { ext: EXT.jcx, bytes: encodeJcx(text).bytes };
-  return { ext: EXT[spec.docFormat], bytes: new TextEncoder().encode(text) };
+  return { ext: DOC_EXT[spec.docFormat], bytes: encodeDocText(spec.docFormat, spec.emit(loadScoreDoc(xml))) };
 }
 
 export interface BookRecognizeReport {

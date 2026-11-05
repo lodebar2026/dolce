@@ -14,6 +14,7 @@ import { jpwHighlighter } from "./highlight";
 import { fanqieHighlighter } from "../fanqie/highlight";
 import { j123Highlighter } from "../abcfamily/highlight";
 import { decodeJpwabc, encodeJpwabc } from "./fileio";
+import { DOC_EXT, utf8, type DocFormatId } from "../convert/docfile";
 import { parseFanqie } from "../fanqie";
 import { t } from "../i18n";
 import { diagText, dialectLabel } from "../i18n/labels";
@@ -43,7 +44,7 @@ import { DIALECT_JPW } from "./visual/dialects/jpw";
 import { DIALECT_FANQIE } from "./visual/dialects/fanqie";
 
 /** 可打开的源格式。`musicxml` 没有代码区（`caps.textEditor === false`），只看谱面、转成文本格式再编辑。 */
-export type DocFormatId = "jpwabc" | "fanqie" | "123" | "abc" | "musicxml" | "jly" | "jcx";
+export type { DocFormatId } from "../convert/docfile";
 
 /** 适配器向 App 要的那些能力（**列全**，加一条就想想是不是该留在 App 里）。 */
 export interface FormatHost {
@@ -159,7 +160,6 @@ export type FormatAdapter = FormatAdapterBase & LayoutPart & RelayoutPart;
 /** 有 `toScoreDoc` 的那些适配器（`caps.layout === "scoredoc"`）。 */
 export type ScoreDocAdapter = FormatAdapter & { toScoreDoc(text: string): ScoreDoc; reloadSpec: ScoreDocReload };
 
-const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 /** 123 读取时忽略 BOM（规范 §1）。 */
 const stripBom = (bytes: Uint8Array): Uint8Array =>
@@ -179,7 +179,7 @@ function emitFrom(
 
 const JPWABC: FormatAdapter = {
   id: "jpwabc",
-  defaultExt: ".jpwabc",
+  defaultExt: DOC_EXT.jpwabc,
   highlighter: jpwHighlighter,
   decode: decodeJpwabc,
   encode: encodeJpwabc,
@@ -200,7 +200,7 @@ const JPWABC: FormatAdapter = {
 
 const FANQIE: FormatAdapter = {
   id: "fanqie",
-  defaultExt: ".jps",
+  defaultExt: DOC_EXT.fanqie,
   highlighter: fanqieHighlighter,
   // 文本谱是纯文本源格式：UTF-8 原文进、UTF-8 原文出。
   decode: (bytes) =>
@@ -234,7 +234,7 @@ const FANQIE: FormatAdapter = {
  *  档位旋钮跟文本谱同一个（`originalProfile`）：两者的简谱档都可走原样文档布局、投影档都投影成简谱输入模型。 */
 const J123: FormatAdapter = {
   id: "123",
-  defaultExt: ".123",
+  defaultExt: DOC_EXT["123"],
   highlighter: j123Highlighter,
   decode: (bytes) => new TextDecoder("utf-8").decode(stripBom(bytes)),
   encode: utf8,
@@ -264,7 +264,7 @@ const J123: FormatAdapter = {
  *  见 `docs/模块/源格式-abc家族.md`。 */
 const ABC: FormatAdapter = {
   id: "abc",
-  defaultExt: ".abc",
+  defaultExt: DOC_EXT.abc,
   // 高亮暂借 123 那一份：两者的字段头、小节线、歌词行完全同形，音乐体的音符会被当成
   // 「认不出」而不上色——比不上色好，等 ABC 专用的那份写出来再换。
   highlighter: j123Highlighter,
@@ -292,7 +292,7 @@ const ABC: FormatAdapter = {
  *  打开的是 `%MUSE3` 就照 UTF-8 存回。见 `docs/格式/jcx.md`。 */
 const JCX: FormatAdapter = {
   id: "jcx",
-  defaultExt: ".jcx",
+  defaultExt: DOC_EXT.jcx,
   // 高亮暂借 123 那一份（同 ABC）：字段头、小节线、歌词行同形，字母音符不上色
   highlighter: j123Highlighter,
   decode: decodeJcx,
@@ -331,7 +331,7 @@ const JCX: FormatAdapter = {
  *  装饰 `\fermata` 写在音后；**行结构不是语义，所以换行就写真换行，不写 123 那个 `$`**）。 */
 const JLY: FormatAdapter = {
   id: "jly",
-  defaultExt: ".jly",
+  defaultExt: DOC_EXT.jly,
   // 高亮暂借 123 那一份：字段头与小节线形状接近，音符那一层认不出就不上色（同 ABC 当初的做法）。
   highlighter: j123Highlighter,
   decode: (bytes) => new TextDecoder("utf-8").decode(stripBom(bytes)),
@@ -362,7 +362,7 @@ const JLY: FormatAdapter = {
  *  经 `App.editScoreDoc` 改过的已经整份重写成 `toxml.ts` 的产物。 */
 const MUSICXML: ScoreDocAdapter = {
   id: "musicxml",
-  defaultExt: ".musicxml",
+  defaultExt: DOC_EXT.musicxml,
   highlighter: [],
   decode: (bytes) =>
     new TextDecoder(bytes[0] === 0xff || bytes[0] === 0xfe ? "utf-16" : "utf-8").decode(stripBom(bytes)),

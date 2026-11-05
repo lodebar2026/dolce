@@ -69,7 +69,7 @@ async function keyBelow(bin: Binary, body: readonly Band[], k: number, p: PageLa
     const b = body[j];
     if (b.bars >= 2) return false;
     const lines = await ocr.recognizeRegion!(bin, pad(b, p, p.charH * 0.3));
-    if (KEY_RE.test([...lines].sort((a, c) => a.bbox.x - c.bbox.x).map((l) => l.text).join(" "))) return true;
+    if (readsKey(lines)) return true;
     // 读不出调号的下一个标题候选就是下一首了（调号与出处同排的页眉行也像候选，先读再停）
     if (isTitleCandidate(b, p)) return false;
   }
@@ -176,6 +176,10 @@ function looksLikeToc(body: readonly Band[], h: number): boolean {
 
 /** 调号「1=C」「1=♭E」：标题行的标志（调名字母常读错，只认「1=」）。 */
 const KEY_RE = /1\s*[=＝]/;
+/** 一带 OCR 里读出调号：按横向次序把框拼起来再认（「1=」「E」常被检测切成几框）。 */
+function readsKey(lines: readonly OcrLine[]): boolean {
+  return KEY_RE.test([...lines].sort((a, b) => a.bbox.x - b.bbox.x).map((l) => l.text).join(" "));
+}
 const CJK_RUN = /[\u3400-\u9fff\uf900-\ufaff·、，！？]+/g;
 
 /**
@@ -193,7 +197,7 @@ export function parseTitle(
   if (!cjkLines.length) return null;
   // 调号常被检测切成几框（「1=」「E」），按横向次序拼起来再认
   // `keyBelow`：调号印在下面的页眉行里（调用方已查过），与同排读出调号同等对待
-  const hasKey = keyBelow || KEY_RE.test([...lines].sort((a, b) => a.bbox.x - b.bbox.x).map((l) => l.text).join(" "));
+  const hasKey = keyBelow || readsKey(lines);
   // 字高按框里墨迹的实际高度比：检测框高带着外扩的边，旁边小一号的分类字（「教会」）框高也差不多
   const ink = new Map(cjkLines.map((l) => [l, inkH(l.bbox)]));
   const main = cjkLines.reduce((a, b) => (ink.get(b)! > ink.get(a)! ? b : a));

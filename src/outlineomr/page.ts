@@ -5,7 +5,8 @@
 // （`staffomr/pagerun.ts::recognizeBuiltPage`：找谱表 → 符头符干 → 小节 → 音符 → 记号 → 自检）。
 // 文字部分照位图路 `pagefinish.ts` 的做法造文本对象挂音（歌词不走 `analyzeText`：中文逐字一个音节，没有锚点）。
 // 不碰 DOM。
-import { DRAW_MOVE, drawOpArity, extractVectorPage, type OpsEnum, type VecObj } from "../omrkit/vector";
+import { extractVectorPage, type OpsEnum, type VecObj } from "../omrkit/vector";
+import { median } from "../omrkit/geom";
 import type { Rect } from "../omrkit/types";
 import { buildPage } from "../staffomr/page";
 import { recognizeBuiltPage, type StaffPageResult } from "../staffomr/pagerun";
@@ -25,7 +26,9 @@ import { timeKey, type TimeStrip } from "../rasteromr/timesig";
 import type { LineSeg } from "../rasteromr/prims";
 import type { RasterUnit } from "../rasteromr/staffline";
 import { headerCredits, type HeaderCredit, type WordLine } from "../omrkit/headertext";
-import { objRect, isGeometry, splitPieces, type OutlineGlyphLookup } from "./glyphs";
+import { objRect, isGeometry, splitPieces, subpathCount, type OutlineGlyphLookup } from "./glyphs";
+import { bootstrapClefs } from "../rasteromr/rasterglyphs";
+import { isClef } from "../staffomr/glyphs";
 import { rasterizeObjs } from "./raster";
 
 /** 送 OCR 的条按每设备单位（PDF 点）几个像素画：线距 4.8 点的谱上汉字约 70 像素高，与位图路的条相当 */
@@ -111,19 +114,6 @@ function unionBox(objs: readonly VecObj[]): Rect {
   const x1 = Math.max(...objs.map((o) => o.bbox.x + o.bbox.w));
   const y1 = Math.max(...objs.map((o) => o.bbox.y + o.bbox.h));
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-const median = (xs: readonly number[]): number => [...xs].sort((a, b) => a - b)[xs.length >> 1];
-/** 路径里有几道子路径（moveTo 数） */
-function subpathCount(o: VecObj): number {
-  let n = 0;
-  for (let i = 0; i < o.data.length; ) {
-    const c = o.data[i++];
-    const ar = drawOpArity(c);
-    if (ar < 0) break;
-    if (c === DRAW_MOVE) n++;
-    i += ar;
-  }
-  return n;
 }
 const pad = (r: Rect, p: number): Rect => ({ x: r.x - p, y: r.y - p, w: r.w + p * 2, h: r.h + p * 2 });
 
@@ -249,6 +239,8 @@ export async function recognizeOutlinedPage(
       texts.splice(i, 1);
     }
   }
+
+  bootstrapClefSyms(syms, texts, groups, sp, (o) => !inBand(o) && inStaffZone(o));
 
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
   const marks = geometry.filter((o) => o.bbox.w >= sp * 0.3 && o.bbox.h >= sp * 0.3 && Math.max(o.bbox.w, o.bbox.h) <= sp * 2.5);
@@ -498,6 +490,38 @@ export async function recognizeOutlinedPage(
   return res;
 }
 
+
+/**
+ * **字典认不出谱号时按位置补**（判据照位图路 `rasteromr/rasterglyphs.ts::bootstrapClefs`：行首最高块并碎块、
+ * 按高度与是否探出谱表分高低音）。它只看外框与线位、都按线距写，矢量对象的外框直接喂进去。
+ * 病例：裴克经文诗歌（CorelDRAW 转曲）的高音谱号 2.7×5.9 格，比字典各字体矮，签名对不上。
+ * 只管字典在这一行没认出谱号的谱行；补上的对象（连同并进谱号盒的碎块）从 `texts` 里拿走。
+ * 调号没接同一路的 `bootstrapKeyAccidentals`：这套字体的升号 0.87×1.69 格、降号 0.8×1.25 格，在它的尺寸闸（1.8~3.6 格）之外。
+ */
+function bootstrapClefSyms(
+  syms: { box: Rect; code: import("../staffomr/glyphs").SmuflName }[],
+  texts: VecObj[],
+  groups: readonly Group5[],
+  sp: number,
+  eligible: (o: VecObj) => boolean,
+): void {
+  const pool = texts.filter(eligible);
+  if (!pool.length) return;
+  const boxes = pool.map(objRect);
+  const drop = new Set<VecObj>();
+  for (const g of groups) {
+    if (syms.some((q) => isClef(q.code) && q.box.y < g.ys[4] && q.box.y + q.box.h > g.ys[0] && q.box.x < g.left + sp * 4)) continue;
+    const hit = bootstrapClefs(boxes, [{ left: g.left, right: g.right, lineYs: g.ys }], sp)[0];
+    if (!hit?.box) continue;
+    const b = hit.box;
+    syms.push({ box: b, code: hit.code });
+    for (const o of pool) {
+      const x = o.bbox.x + o.bbox.w / 2, y = o.bbox.y + o.bbox.h / 2;
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) drop.add(o);
+    }
+  }
+  for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
+}
 
 /** 房子的竖钩长度（线距） */
 const VOLTA_HOOK: [number, number] = [0.6, 5];

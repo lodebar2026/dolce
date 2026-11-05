@@ -26,6 +26,8 @@ export { recognizeMusicppDetailed };
 export { setImageDecoder, decodeToBinary } from "../omrkit/decode";
 export type { ImageDecoder, RgbaImage } from "../omrkit/decode";
 export { recognizedToDoc } from "../omr/todoc";
+// 落盘扩展名与编码（与编辑器存盘同一份）
+export { DOC_EXT, encodeDocText } from "../convert/docfile";
 export { recognizedBeatIssues } from "../omr/beats";
 export type { RecognizedBeatIssue } from "../omr/beats";
 export { metaFrom123, metaFromFanqie } from "../omr/meta";
