@@ -22,13 +22,13 @@ import { attachJumpMarks, harmonyKey, harmonyLine, readHarmonyStrip, type Harmon
 import { jumpTail, mapCharsToCells, stripKey, type LyricStrip } from "../rasteromr/lyric";
 import { liftHarmonies } from "../rasteromr/lyricpost";
 import { wordKey, type WordStrip } from "../rasteromr/words";
-import { timeKey, type TimeStrip } from "../rasteromr/timesig";
+import { timeDigit, timeKey, type TimeStrip } from "../rasteromr/timesig";
 import type { LineSeg } from "../rasteromr/prims";
 import type { RasterUnit } from "../rasteromr/staffline";
 import { headerCredits, type HeaderCredit, type WordLine } from "../omrkit/headertext";
 import { objRect, isGeometry, splitPieces, subpathCount, type OutlineGlyphLookup } from "./glyphs";
-import { bootstrapClefs } from "../rasteromr/rasterglyphs";
-import { isClef } from "../staffomr/glyphs";
+import { bootstrapClefs, bootstrapKeyAccidentals, type BootStaff } from "../rasteromr/rasterglyphs";
+import { isAccidental, isClef, type SmuflName } from "../staffomr/glyphs";
 import { rasterizeObjs } from "./raster";
 
 /** 送 OCR 的条按每设备单位（PDF 点）几个像素画：线距 4.8 点的谱上汉字约 70 像素高，与位图路的条相当 */
@@ -198,7 +198,7 @@ export async function recognizeOutlinedPage(
   const inBand = (o: VecObj) => bands.some((b) => inside(b.box, cx(o), cy(o)));
 
   // ── 音乐符号：谱表上下一带、不在简谱行里 ─────────────────────────────────
-  const syms: { box: Rect; code: import("../staffomr/glyphs").SmuflName }[] = [];
+  const syms: { box: Rect; code: SmuflName }[] = [];
   const texts: VecObj[] = [];
   const inStaffZone = (o: VecObj) =>
     staffBoxes.some((s) => cx(o) > s.left - sp && cx(o) < s.right + sp && cy(o) > s.top - sp * STAFF_ZONE_ABOVE && cy(o) < s.bottom + sp * STAFF_ZONE_BELOW);
@@ -240,7 +240,8 @@ export async function recognizeOutlinedPage(
     }
   }
 
-  bootstrapClefSyms(syms, texts, groups, sp, (o) => !inBand(o) && inStaffZone(o));
+  const timePairs = bootstrapHeadSyms(syms, texts, geometry, groups, sp, (o) => !inBand(o) && inStaffZone(o));
+  if (opts.live?.time && timePairs.length) await readTimeSigs(syms, texts, timePairs, opts.live.time, sp);
 
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
   const marks = geometry.filter((o) => o.bbox.w >= sp * 0.3 && o.bbox.h >= sp * 0.3 && Math.max(o.bbox.w, o.bbox.h) <= sp * 2.5);
@@ -456,9 +457,7 @@ export async function recognizeOutlinedPage(
     const tempo = findTempoMark(items, sp);
     let bpm: number | null = null;
     if (tempo && live.time) {
-      const box = pad(unionBox(tempo.digits), sp * 0.3);
-      const bin = rasterizeObjs(tempo.digits, box, OCR_SCALE);
-      const strip: TimeStrip = { w: bin.w, h: bin.h, data: bin.data, box, staff: 0, role: "num" };
+      const strip = timeStripOfObjs(tempo.digits, 0, "num", sp);
       const txt = (await live.time([strip])).get(timeKey(strip));
       if (txt && /^\d{2,3}$/.test(txt)) bpm = Number(txt);
     }
@@ -492,35 +491,143 @@ export async function recognizeOutlinedPage(
 
 
 /**
- * **字典认不出谱号时按位置补**（判据照位图路 `rasteromr/rasterglyphs.ts::bootstrapClefs`：行首最高块并碎块、
- * 按高度与是否探出谱表分高低音）。它只看外框与线位、都按线距写，矢量对象的外框直接喂进去。
- * 病例：裴克经文诗歌（CorelDRAW 转曲）的高音谱号 2.7×5.9 格，比字典各字体矮，签名对不上。
- * 只管字典在这一行没认出谱号的谱行；补上的对象（连同并进谱号盒的碎块）从 `texts` 里拿走。
- * 调号没接同一路的 `bootstrapKeyAccidentals`：这套字体的升号 0.87×1.69 格、降号 0.8×1.25 格，在它的尺寸闸（1.8~3.6 格）之外。
+ * **字典认不出谱号、调号时按位置补**，判据照位图路 `rasteromr/rasterglyphs.ts`：`bootstrapClefs`（行首最高块并碎块、按高度与
+ * 是否探出谱表分高低音）、`bootstrapKeyAccidentals`（谱号右边 6 格内 1.8~3.6 格高的块）。
+ * 两个判据只看外框与线位、都按线距写，矢量对象的外框直接喂进去。
+ * 病例：裴克经文诗歌（CorelDRAW 转曲）谱号比字典各字体矮、签名对不上，整首按 C 调读。
+ * 这套字体的升降号**拆成几个对象**：竖笔是单独的直线（已归进线），字形块只剩升号的两道横杠、降号的肚子——
+ * 同位图路 `rejoinAccidentalStrokes` 的病，先把左右相交、上下搭得上的细竖线并回去（并进去的竖线从 `geometry` 拿走，不当符干）。
+ * 拍号的两个数字上下叠在同一 x，也落在调号窗口里，先剔掉。升降按结构分（`accidentalByStrokes`）。只管字典在这一行没认出谱号 / 调号的谱行。
  */
-function bootstrapClefSyms(
-  syms: { box: Rect; code: import("../staffomr/glyphs").SmuflName }[],
+function bootstrapHeadSyms(
+  syms: { box: Rect; code: SmuflName }[],
   texts: VecObj[],
+  geometry: VecObj[],
   groups: readonly Group5[],
   sp: number,
   eligible: (o: VecObj) => boolean,
-): void {
+): TimePair[] {
   const pool = texts.filter(eligible);
-  if (!pool.length) return;
-  const boxes = pool.map(objRect);
+  if (!pool.length) return [];
   const drop = new Set<VecObj>();
-  for (const g of groups) {
-    if (syms.some((q) => isClef(q.code) && q.box.y < g.ys[4] && q.box.y + q.box.h > g.ys[0] && q.box.x < g.left + sp * 4)) continue;
-    const hit = bootstrapClefs(boxes, [{ left: g.left, right: g.right, lineYs: g.ys }], sp)[0];
-    if (!hit?.box) continue;
-    const b = hit.box;
-    syms.push({ box: b, code: hit.code });
-    for (const o of pool) {
-      const x = o.bbox.x + o.bbox.w / 2, y = o.bbox.y + o.bbox.h / 2;
-      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) drop.add(o);
+  const center = (r: Rect, o: VecObj) => {
+    const x = o.bbox.x + o.bbox.w / 2, y = o.bbox.y + o.bbox.h / 2;
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  };
+  const onStaff = (r: Rect, g: Group5) => r.y < g.ys[4] && r.y + r.h > g.ys[0];
+  // 字形块连同并回来的竖笔：外框与所含对象
+  const parts = pool.map((o) => {
+    const strokes = geometry.filter((q) => q.bbox.w < sp * 0.3 && q.bbox.h > sp * 0.5 && q.bbox.h < sp * 4
+      // 竖笔中线落在字形块左缘到右缘往里 0.1 格之间：降号的竖笔在肚子左缘，下一个降号的竖笔贴着这个肚子的右缘，不并
+      && q.bbox.x + q.bbox.w / 2 >= o.bbox.x - sp * 0.1 && q.bbox.x + q.bbox.w / 2 <= o.bbox.x + o.bbox.w - sp * 0.1
+      && q.bbox.y < o.bbox.y + o.bbox.h && q.bbox.y + q.bbox.h > o.bbox.y);
+    const objs = [o, ...strokes];
+    return { o, objs, box: unionBox(objs) };
+  });
+  const boxes = parts.map((q) => q.box);
+  const clefRight: number[] = groups.map(() => 0);
+  const clefEnd: number[] = groups.map(() => 0);
+  groups.forEach((g, k) => {
+    const st: BootStaff = { left: g.left, right: g.right, lineYs: g.ys };
+    let clef = syms.find((q) => isClef(q.code) && onStaff(q.box, g) && q.box.x < g.left + sp * 4)?.box;
+    if (!clef) {
+      const hit = bootstrapClefs(boxes, [st], sp)[0];
+      if (!hit?.box) return;
+      clef = hit.box;
+      syms.push({ box: clef, code: hit.code });
+      for (const o of pool) if (center(clef, o)) drop.add(o);
     }
+    const right = clef.x + clef.w;
+    clefEnd[k] = right;
+    if (!syms.some((q) => isAccidental(q.code) && onStaff(q.box, g) && q.box.x >= right - sp * 0.2 && q.box.x <= right + sp * 6)) clefRight[k] = right;
+  });
+  // 拍号：同一 x、上下紧挨着叠起来的两块（分子分母在中线处相接；别的谱行同一 x 上的调号隔着一整行，不算）
+  const stacked = (i: number) => {
+    const a = boxes[i];
+    return boxes.some((b, j) => j !== i && Math.abs(b.x - a.x) < sp * 0.5
+      && (Math.abs(b.y - (a.y + a.h)) < sp * 0.5 || Math.abs(a.y - (b.y + b.h)) < sp * 0.5));
+  };
+  const blobs = parts.map((q, i) => ({ ...q.box, cy: drop.has(q.o) || stacked(i) ? -Infinity : inkCy(q.objs, q.box) }));
+  for (const h of bootstrapKeyAccidentals(blobs, groups.map((g) => ({ left: g.left, right: g.right, lineYs: g.ys })), clefRight, sp)) {
+    const q = parts[h.index];
+    if (drop.has(q.o) || !Number.isFinite(blobs[h.index].cy)) continue;
+    syms.push({ box: q.box, code: accidentalByStrokes(q.o, q.objs.length - 1) ?? h.code });
+    for (const o of q.objs) drop.add(o);
   }
   for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
+  for (let i = geometry.length - 1; i >= 0; i--) if (drop.has(geometry[i])) geometry.splice(i, 1);
+  // 行首拍号：谱号右边（调号之后，`TIME_FROM` 格以内）上下叠着的一对，字典在这一行没认出拍号的才交出去现读
+  const pairs: TimePair[] = [];
+  groups.forEach((g, k) => {
+    if (!clefEnd[k] || syms.some((q) => q.code.startsWith("timeSig") && onStaff(q.box, g))) return;
+    const near = parts.filter((q, i) => stacked(i) && !drop.has(q.o) && q.box.x > clefEnd[k] && q.box.x < clefEnd[k] + sp * TIME_FROM && onStaff(q.box, g));
+    const mid = g.ys[2];
+    const num = near.find((q) => q.box.y + q.box.h / 2 < mid);
+    const den = num && near.find((q) => q.box.y + q.box.h / 2 > mid && Math.abs(q.box.x - num.box.x) < sp * 0.5);
+    if (num && den) pairs.push({ staff: k, num: num.objs, den: den.objs });
+  });
+  return pairs;
+}
+
+/** 行首拍号离谱号右缘最远几格（七个升降号之后那一格，同位图路 `HEAD_TIME_SP` 的口径减去谱号宽） */
+const TIME_FROM = 11;
+
+/** 一行谱行首的拍号：分子、分母各几个对象 */
+interface TimePair {
+  staff: number;
+  num: VecObj[];
+  den: VecObj[];
+}
+
+/** 几个对象画成一条拍号数字条（同位图路 `timesig.ts` 的条，送 `RasterLiveOcr.time`）。 */
+function timeStripOfObjs(objs: readonly VecObj[], staff: number, role: TimeStrip["role"], sp: number): TimeStrip {
+  const box = pad(unionBox(objs), sp * 0.3);
+  const bin = rasterizeObjs(objs, box, OCR_SCALE);
+  return { w: bin.w, h: bin.h, data: bin.data, box, staff, role };
+}
+
+/**
+ * 字典认不出的行首拍号：分子分母各画一条送拍号数字 OCR（与位图路同一个识别器），按 `timeDigit` 的合法值收
+ *（分子 2~9、分母 2/4/8/16；两位数的分子不收）。读成合法拍号的造成 `timeSigN` 符号，对象从 `texts` 拿走。
+ */
+async function readTimeSigs(
+  syms: { box: Rect; code: SmuflName }[],
+  texts: VecObj[],
+  pairs: readonly TimePair[],
+  time: NonNullable<RasterLiveOcr["time"]>,
+  sp: number,
+): Promise<void> {
+  const strips = pairs.map((p) => [timeStripOfObjs(p.num, p.staff, "num", sp), timeStripOfObjs(p.den, p.staff, "den", sp)] as const);
+  const got = await time(strips.flat());
+  const drop = new Set<VecObj>();
+  strips.forEach(([a, b], i) => {
+    const n = timeDigit(got.get(timeKey(a)), "num");
+    const d = timeDigit(got.get(timeKey(b)), "den");
+    if (n === null || d === null || n > 9 || d > 9) return;
+    syms.push({ box: unionBox(pairs[i].num), code: `timeSig${n}` as SmuflName });
+    syms.push({ box: unionBox(pairs[i].den), code: `timeSig${d}` as SmuflName });
+    for (const o of [...pairs[i].num, ...pairs[i].den]) drop.add(o);
+  });
+  for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
+}
+
+/**
+ * 升降号按**矢量结构**分：升号是两道竖笔 + 一块没有曲线的横杠，降号是一道竖笔 + 一个带曲线的肚子。
+ * 位图路按墨迹重心分（降号肚子实心、重心偏下）；转曲的降号肚子是细线空心的，重心偏不下去（裴克经文诗歌全被判成升号）。
+ * 分不出（结构不是这两种）返回 null，照位图路的判法。
+ */
+function accidentalByStrokes(glyph: VecObj, strokes: number): "accidentalSharp" | "accidentalFlat" | null {
+  if (strokes === 2 && glyph.curves === 0) return "accidentalSharp";
+  if (strokes === 1 && glyph.curves > 0) return "accidentalFlat";
+  return null;
+}
+
+/** 几个对象合起来的墨迹重心 y（画成小图量）。 */
+function inkCy(objs: readonly VecObj[], box: Rect): number {
+  const bin = rasterizeObjs(objs, box, OCR_SCALE);
+  let n = 0, sy = 0;
+  for (let y = 0; y < bin.h; y++) for (let x = 0; x < bin.w; x++) if (bin.data[y * bin.w + x]) (n++, (sy += y));
+  return n ? box.y + ((sy / n + 0.5) / bin.h) * box.h : box.y + box.h / 2;
 }
 
 /** 房子的竖钩长度（线距） */
