@@ -147,6 +147,9 @@ export function findClefKeyTime(pg: SPage): Map<Staff, StaffContext> {
   return ctx;
 }
 
+/** 调号相邻两个升降号最多压上前一个多少（按本记号宽） */
+const KEY_OVERLAP = 0.25;
+
 /** `Page::analyzeAccidental`。 */
 function analyzeAccidental(pg: SPage, accids: Sym[], clefs: Sym[]): void {
   const notes = pg.symbols.filter((s) => s.hasTag("Note"));
@@ -188,7 +191,9 @@ function analyzeAccidental(pg: SPage, accids: Sym[], clefs: Sym[]): void {
       for (const k of keyAccids) {
         if (!overlapY(k.box, acc.box)) continue;
         const dx = acc.box.left - k.box.right;
-        if (dx < 0 || dx > acc.box.right - acc.box.left) continue;
+        // 允许压上前一个四分之一宽：转曲矢量路升号框并回了竖笔，比字距宽一点（裴克经文诗歌五个升号的第五个压前一个 0.1 点）
+        const w = acc.box.right - acc.box.left;
+        if (dx < -w * KEY_OVERLAP || dx > w) continue;
         after = true;
         break;
       }

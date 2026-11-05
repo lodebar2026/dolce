@@ -24,8 +24,15 @@ export function isGeometry(o: VecObj, sp?: number): boolean {
   if (o.curves === 0 || splitPieces(o).length !== 1) return false;
   if (o.bbox.w >= o.bbox.h * ARC_ASPECT) return true;
   // 斜着走的弧（跨行延音线在行末的半截往右下拐，祢話如甘霖 15×13 点）：不扁，但细——墨只占外框一小块
-  return sp !== undefined && o.bbox.w >= sp * ARC_MIN_W && inkRatio(o) < ARC_INK;
+  if (sp === undefined) return false;
+  if (o.bbox.w >= sp * ARC_MIN_W && inkRatio(o) < ARC_INK) return true;
+  // 低音斜着连到高音的短弧（裴克经文诗歌 098 八分音符对之间，1.8×1.4~1.8 格）：不扁也不够两格宽，但结构就是一道月牙——
+  // 两条曲线首尾相接（曲线不过 `SHORT_ARC_CURVES` 段、总段数不过 6），细，宽一格以上、不比高窄太多（括号又窄又高）
+  return o.curves <= SHORT_ARC_CURVES && o.segs <= 6 && o.bbox.w >= sp && o.bbox.w >= o.bbox.h * SHORT_ARC_ASPECT && inkRatio(o) < ARC_INK;
 }
+/** 短斜弧：曲线段数上限、宽高比下限 */
+const SHORT_ARC_CURVES = 4;
+const SHORT_ARC_ASPECT = 0.6;
 /** 斜弧：至少这么宽（线距；括号这类细字形窄），墨占外框不到这么多 */
 const ARC_MIN_W = 2;
 const ARC_INK = 0.15;

@@ -1056,6 +1056,16 @@ export function attachLyrics(notes: NoteLike[], lines: LyricLine[], sameCol = 0)
     // 要出 `middle`/`end` 而不是 `single`（`a-bid-eth` 的中段）。
     let cont = false;
     syls.forEach((syl, k) => {
+      // 音不够了（行末最后一个音之后还印着字，裴克经文诗歌 008「帐幕的」的「的」在全音符小节右端）：`after` 原地不动，
+      // 两个音节落在同一个音上。同一段的并成一格（多字挤一个音，123 写成 `{幕的}`），不再挂成同一音上两条同段词——写出时被拆成新的一段
+      const prev = k > 0 && at[k] === at[k - 1] ? [...(cand[at[k]].lyrics ?? [])].reverse().find((l) => l.verse === line.verse) : undefined;
+      if (prev) {
+        prev.text += syl.text;
+        prev.hyphen = syl.hyphen;
+        if (prev.box) prev.box = { ...prev.box, right: syl.right };
+        cont = syl.hyphen;
+        return;
+      }
       (cand[at[k]].lyrics ??= []).push({ verse: line.verse, text: syl.text, hyphen: syl.hyphen, cont, ...(syl.label !== undefined ? { label: syl.label } : {}), ...(syl.sizeDev > 0 ? { size: syl.sizeDev } : {}), ...(above ? { above } : {}), ...(baseY !== undefined ? { baseY } : {}), box: { left: syl.left, right: syl.right, top: line.top, bottom: line.bottom ?? line.top + (syl.right - syl.left) } });
       cont = syl.hyphen;
     });

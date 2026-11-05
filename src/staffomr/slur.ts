@@ -133,6 +133,9 @@ export function wedgeSpans(objs: PObj[], sp = Infinity): import("./notations").W
  * 一处要害照原文：**落在系统线左边**、且与它纵向相交的曲线不是弧，是**谱表括号**
  * （钢琴谱的花括号）。不挡掉的话每个系统都会多出一条横跨整行的「圆滑线」。
  */
+/** 陡弧：宽至少是高的这么多倍 */
+const STEEP_ASPECT = 0.75;
+
 export function findSlurs(pg: SPage): SlurArc[] {
   const syslines: Seg[] = pg.segsWithTag("SysLine");
   const stems: Seg[] = pg.segsWithTag("Stem");
@@ -231,9 +234,10 @@ export function findSlurs(pg: SPage): SlurArc[] {
     // **陡弧**（宽过一格半、宽 ≥ 高）不贴着任何符干端头、也不圈着字的也收（符尾贴着干；排练号的框带圆角曲线、圈着字）：
     // 牵我的手 m53 / m89 钢琴左手八度下行两个八分之间那种，行首续过来的长弧尾巴（从上方一路落到首音，p2 钢琴左手 m13 那截 8.8×6.3 点）。
     // 赞美之泉弧线档 95.5% → 95.7%
+    // 宽不比高窄过四分之一也算（裴克经文诗歌 098 八分音符对之间低音斜连高音的短弧 1.78×1.79、1.79×2.26 格）
     const steep = () =>
       w > sp * 1.5 &&
-      w >= h &&
+      w >= h * STEEP_ASPECT &&
       // 圈着的是正文字（排练号）才算框；音乐字体的附点落在陡弧底下的不算（水乡情韵二胡 m21 附点 D5→A4）
       !pg.objs.some((t) => t.run && !musicFamily(t.run.font) && t.box.left >= o.box.left && t.box.right <= o.box.right && t.box.top >= o.box.top && t.box.bottom <= o.box.bottom) &&
       // 只看干尖：头端挨着弧的不算（水乡情韵二胡 m21 附点 D5→A4 的陡弧从 D 头上起笔，D 的干从头下伸，头端落在弧的外框里）

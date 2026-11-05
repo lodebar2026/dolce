@@ -92,7 +92,8 @@ export function fuseJianpu(
   strips: JianpuStrip[],
   staffOf: (strip: JianpuStrip) => Staff | undefined,
   rowsOf: (strip: JianpuStrip) => JianpuRow[] | undefined,
-  fifthsOf: (st: Staff) => number,
+  /** x 处生效的调号升降数（行中转调的那行前后不同） */
+  fifthsOf: (st: Staff, x: number) => number,
   unit: RasterUnit,
 ): FuseStats {
   const stats: FuseStats = { pairs: 0, pitch: 0, duration: 0, removed: 0, inserted: 0 };
@@ -119,16 +120,14 @@ export function fuseJianpu(
     return ds.length ? ds[ds.length >> 1] : 0;
   })();
   // 先把每条简谱行拆成小节、与五线谱的音配好对，八度等全页投完票再定
-  type Meas = { jn: { n: JianpuNum; x: number; q: number }[]; sn: StaffNote[]; pairs: [JianpuNum, StaffNote][] };
-  const all: { st: Staff; fifths: number; meas: Meas[]; poly: boolean }[] = [];
+  type Meas = { jn: { n: JianpuNum; x: number; q: number }[]; sn: StaffNote[]; pairs: [JianpuNum, StaffNote][]; fifths: number };
+  const all: { st: Staff; meas: Meas[]; poly: boolean }[] = [];
   const votes: number[] = [];
   for (const strip of strips) {
     const st = staffOf(strip);
     const rows = rowsOf(strip);
     if (!st || !rows?.length) continue;
     const row = rows.reduce((a, r) => (r.nums.length > a.nums.length ? r : a));
-    const fifths = fifthsOf(st);
-    const tonic = tonicOf(fifths);
     // 小节线：并掉复纵线那种挨着的两根
     const bars: number[] = [];
     for (const b of [...row.bars].sort((a, c) => a - c).map((b) => strip.box.x + b))
@@ -149,6 +148,9 @@ export function fuseJianpu(
       const jn = row.nums.map((n) => ({ n, x: strip.box.x + n.x, q: qOf(n) })).filter((j) => j.x > a && j.x < b);
       const sn = staffNotes.filter((n) => cx(n) > a && cx(n) < b);
       if (!jn.length && !sn.length) continue;
+      // 调号取本小节头一个音处生效的：行中转调（裴克经文诗歌 040 一房「♮♮ + 五个升号」）前后各按各的调换算
+      const fifths = fifthsOf(st, Math.min(...jn.map((j) => j.x), ...sn.map(cx)));
+      const tonic = tonicOf(fifths);
       // 一对一配对：按 x 距离从近到远贪心
       const cand: [number, number, number][] = [];
       jn.forEach((j, ji) => sn.forEach((n, si) => {
@@ -169,21 +171,67 @@ export function fuseJianpu(
         const j = jn[ji].n;
         if (j.d >= 1 && j.d <= 7 && !sn[si].rest) votes.push(sn[si].diatonic - (tonic + j.d - 1 + 7 * j.oct));
       }
-      meas.push({ jn, sn, pairs });
+      meas.push({ jn, sn, pairs, fifths });
     }
-    all.push({ st, fifths, meas, poly });
+    all.push({ st, meas, poly });
   }
   if (!all.length) return stats;
   // 八度基准：`1` 在全音阶序号上的位置 − 主音音级，取全页众数（配错的对各投各的，压不过众数）
   const base = mode(votes);
   const qSums = all.flatMap((r) => r.meas.map((m) => m.jn.reduce((s, j) => s + j.q, 0)));
   const full = mode(qSums.filter((q) => q > 0));
-  for (const { fifths, meas, poly } of all) {
-    const tonic = tonicOf(fifths);
+  for (const { meas, poly } of all) {
     for (const m of meas) {
+      const { fifths } = m;
+      const tonic = tonicOf(fifths);
       const jSum = m.jn.reduce((s, j) => s + j.q, 0);
-      if (Math.abs(jSum - full) > 1e-6) continue; // 简谱这一小节自己都不自洽：不拿它纠
       const sSum = () => m.sn.reduce((s, n) => s + n.duration * 4, 0);
+      const insert = (target: number, restsOnly: boolean) => {
+        // 五线谱缺拍、简谱不缺：没配上的简谱音正好补平缺口，就照简谱补进去
+        //（《是谁》首小节那个 E4：符头贴着圆滑线，并成一块没认出来）。
+        // 新音照最近那个已配对的音抄一份，改音高、时值、x；不挂和弦组（它的小节退回按顺序写）。
+        // 简谱的 `0` 照补成休止符（转曲矢量谱的休止符字形字典认不出：裴克经文诗歌首小节 `0 1 2 3` 只出了后三个音）
+        const paired = new Set(m.pairs.map((p) => p[0]));
+        const miss = m.jn.filter((j) => !paired.has(j.n) && (restsOnly ? j.n.d === 0 : j.n.d >= 0 && j.n.d <= 7));
+        const gap = target - sSum();
+        if (miss.length && gap > 1e-6 && Math.abs(miss.reduce((a, j) => a + j.q, 0) - gap) < 1e-6 && Number.isFinite(base) && m.pairs.length) {
+          for (const j of miss) {
+            const tpl = m.pairs.map((p) => p[1]).reduce((a, n) => (Math.abs(cx(n) - shift - j.x) < Math.abs(cx(a) - shift - j.x) ? n : a));
+            const bd = baseDots(j.q);
+            if (!bd) continue;
+            const dia = base + tonic + j.n.d - 1 + 7 * j.n.oct;
+            const si = ((dia % 7) + 7) % 7;
+            const step = STEPS[si];
+            const x = j.x + shift;
+            const n: StaffNote = {
+              ...tpl, rest: j.n.d === 0, diatonic: dia, step, octave: Math.floor(dia / 7) - 1,
+              alter: keyAlter(si, fifths), accidental: null, base: bd.base, dots: bd.dots, duration: bd.base * (2 - 1 / 2 ** bd.dots),
+              x: x - (cx(tpl) - tpl.x), chordExtra: undefined, group: undefined, lyrics: undefined, chord: undefined, chordSize: undefined, chordX: undefined,
+              slurStart: undefined, slurStop: undefined, tieStart: undefined, tieStop: undefined, marks: undefined,
+            };
+            if (tpl.group) tpl.group = undefined; // 同一小节里有了没分组的音，整小节退回按顺序写，别让它一半按拍位一半按顺序
+            const at = notes.findIndex((o) => o.staff === tpl.staff && o.x > n.x);
+            notes.splice(at < 0 ? notes.length : at, 0, n);
+            m.sn.push(n);
+            stats.inserted++;
+            // 和弦挂在补音之前，离和弦最近的那个音当时还不存在：左右紧邻的音上挂的和弦离新音更近就挪过来
+            for (const nb of [notes[notes.indexOf(n) - 1], notes[notes.indexOf(n) + 1]]) {
+              if (nb?.staff !== n.staff || !nb.chord || nb.chordX === undefined || n.chord) continue;
+              if (Math.abs(nb.chordX - n.x) < Math.abs(nb.chordX - nb.x)) moveChord(nb, n);
+            }
+          }
+        }
+      };
+      // 简谱这一小节不满拍（弱起小节、反复记号切开的半小节）：自洽与否核不了，只补五线谱上没认出来的 `0`——
+      // 其余数字都配上了、补上的 `0` 正好补到简谱这一小节的拍数（裴克经文诗歌 005 弱起 `0 6̣` 的八分休止）
+      if (jSum < full - 1e-6) {
+        const paired = new Set(m.pairs.map((p) => p[0]));
+        if (!poly && m.jn.every((j) => j.n.d === 0 || paired.has(j.n))) {
+          insert(jSum, true);
+        }
+        continue;
+      }
+      if (Math.abs(jSum - full) > 1e-6) continue; // 简谱这一小节自己都不自洽：不拿它纠
       const staffOk = Math.abs(sSum() - full) < 1e-6;
       for (const [j, n] of m.pairs) {
         stats.pairs++;
@@ -251,40 +299,7 @@ export function fuseJianpu(
           }
         }
       }
-      // 五线谱缺拍、简谱不缺：没配上的简谱音正好补平缺口，就照简谱补进去
-      //（《是谁》首小节那个 E4：符头贴着圆滑线，并成一块没认出来）。
-      // 新音照最近那个已配对的音抄一份，改音高、时值、x；不挂和弦组（它的小节退回按顺序写）。
-      // 简谱的 `0` 照补成休止符（转曲矢量谱的休止符字形字典认不出：裴克经文诗歌首小节 `0 1 2 3` 只出了后三个音）
-      const paired = new Set(m.pairs.map((p) => p[0]));
-      const miss = m.jn.filter((j) => !paired.has(j.n) && j.n.d >= 0 && j.n.d <= 7);
-      const gap = full - sSum();
-      if (miss.length && gap > 1e-6 && Math.abs(miss.reduce((a, j) => a + j.q, 0) - gap) < 1e-6 && Number.isFinite(base) && m.pairs.length) {
-        for (const j of miss) {
-          const tpl = m.pairs.map((p) => p[1]).reduce((a, n) => (Math.abs(cx(n) - shift - j.x) < Math.abs(cx(a) - shift - j.x) ? n : a));
-          const bd = baseDots(j.q);
-          if (!bd) continue;
-          const dia = base + tonic + j.n.d - 1 + 7 * j.n.oct;
-          const si = ((dia % 7) + 7) % 7;
-          const step = STEPS[si];
-          const x = j.x + shift;
-          const n: StaffNote = {
-            ...tpl, rest: j.n.d === 0, diatonic: dia, step, octave: Math.floor(dia / 7) - 1,
-            alter: keyAlter(si, fifths), accidental: null, base: bd.base, dots: bd.dots, duration: bd.base * (2 - 1 / 2 ** bd.dots),
-            x: x - (cx(tpl) - tpl.x), chordExtra: undefined, group: undefined, lyrics: undefined, chord: undefined, chordSize: undefined, chordX: undefined,
-            slurStart: undefined, slurStop: undefined, tieStart: undefined, tieStop: undefined, marks: undefined,
-          };
-          if (tpl.group) tpl.group = undefined; // 同一小节里有了没分组的音，整小节退回按顺序写，别让它一半按拍位一半按顺序
-          const at = notes.findIndex((o) => o.staff === tpl.staff && o.x > n.x);
-          notes.splice(at < 0 ? notes.length : at, 0, n);
-          m.sn.push(n);
-          stats.inserted++;
-          // 和弦挂在补音之前，离和弦最近的那个音当时还不存在：左右紧邻的音上挂的和弦离新音更近就挪过来
-          for (const nb of [notes[notes.indexOf(n) - 1], notes[notes.indexOf(n) + 1]]) {
-            if (nb?.staff !== n.staff || !nb.chord || nb.chordX === undefined || n.chord) continue;
-            if (Math.abs(nb.chordX - n.x) < Math.abs(nb.chordX - nb.x)) moveChord(nb, n);
-          }
-        }
-      }
+      insert(full, false);
     }
   }
   return stats;

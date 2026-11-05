@@ -12,7 +12,7 @@ import { alignLatinToHan, splitSpanningLatin, liftHarmonies, lyricsBelongBelow, 
 import { type LyricStrip, type LyricRow, findLyricRows, stripOf, stripKey, lyricLayoutVerdict, isLatinRow, LATIN_MIN_CHAINED, type OcrChar, foldLyricChars, splitMixedChars, latinCells, verseLabelsBySequence, mapCharsToCells, stripWithout, jumpTail } from "./lyric";
 import type { Staff, PObj, SPage, Sym } from "../staffomr/model";
 import type { Component, Rect, Binary } from "../omrkit/types";
-import { type StaffNote, keyFifths, checkBars, lastTimeSignature, type BeamShape, type StaffContext } from "../staffomr/notedata";
+import { type StaffNote, fifthsAt, checkBars, lastTimeSignature, type BeamShape, type StaffContext } from "../staffomr/notedata";
 import type { SmuflName } from "../staffomr/glyphs";
 import { fixQuartersByBarSum } from "./rhythmfix";
 import { fuseJianpu } from "./jianpufuse";
@@ -726,7 +726,7 @@ export async function finishRasterPage(s: PageFinishInput): Promise<RasterPageRe
       jianpuStrips,
       (strip) => pg.staves.find((st) => Math.abs(st.box.top - groups[strip.staff].lines[0].y) < unit.space),
       (strip) => jianpuOcr.get(jianpuKey(strip)),
-      (st) => keyFifths(ctx.get(st)?.key ?? []),
+      (st, x) => fifthsAt(ctx.get(st), x),
       unit,
     )
     : null;

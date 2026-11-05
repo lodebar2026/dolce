@@ -569,7 +569,8 @@ export function findGlissandi(pg: SPage): void {
 // ── findNoteheads ───────────────────────────────────────────────────────────
 
 /** `Page::findNoteheads`：给每个符头/休止找它属于哪一行谱。 */
-export function findNoteheads(pg: SPage): boolean {
+/** `opts.wholeByCenter`：全音符的加线按符头中心判横跨（只矢量路开，见 `findLegers`） */
+export function findNoteheads(pg: SPage, opts: { wholeByCenter?: boolean } = {}): boolean {
   if (!pg.staves.length) return false;
   // 加线候选：长度**下限**一个线距、上限六个。上限只是粗筛，真正的判据在
   // `findLegers` 里按**符头宽**量——加线是给符头垫的，不会比符头宽出几倍。
@@ -589,7 +590,7 @@ export function findNoteheads(pg: SPage): boolean {
   adoptCompositeNotes(pg);
   for (const s of pg.symbols) {
     if (!isNoteHead(s.code)) continue;
-    findStaffForNote(pg, s, hlines);
+    findStaffForNote(pg, s, hlines, opts.wholeByCenter);
   }
   return true;
 }
@@ -671,7 +672,7 @@ function adoptCompositeNotes(pg: SPage): void {
 
 /** `Page::findStaffForNote`。落在谱表纵向范围内（含上下各半格）的直接归属；
  *  否则休止取最近的一行，符头要靠**加线**确认（`findLegers`）。 */
-export function findStaffForNote(pg: SPage, nt: Sym, lines: Seg[]): boolean {
+export function findStaffForNote(pg: SPage, nt: Sym, lines: Seg[], wholeByCenter = false): boolean {
   const y = nt.py;
   // 照 musicpp：`stfA` = 音符**下方**没有的那一侧，也就是音符**挂在它下面**的那行谱
   // （y 向上时 `dist<0` 即「音符在谱表中线之下」）。y 向下要反过来判，**别照抄符号**。
@@ -721,14 +722,17 @@ export function findStaffForNote(pg: SPage, nt: Sym, lines: Seg[]): boolean {
   // 而下行反而多出一截时值。
   // 但离下面那行近一倍以上的先试下面：两行谱之间的歌词、简谱字的横笔也横跨符头、长短合格，
   // 挂在下行谱上方两条加线的头会被上行谱「数够」七条加线收走（所信有根基 m12 E♭4 读成 D♭2）
-  if (stfB && distB * 2 < distA && findLegers(nt, stfB, lines)) return true;
-  if (stfA && findLegers(nt, stfA, lines)) return true;
-  if (stfB && findLegers(nt, stfB, lines)) return true;
+  if (stfB && distB * 2 < distA && findLegers(nt, stfB, lines, wholeByCenter)) return true;
+  if (stfA && findLegers(nt, stfA, lines, wholeByCenter)) return true;
+  if (stfB && findLegers(nt, stfB, lines, wholeByCenter)) return true;
   return false;
 }
 
+/** 加线不比符头长：长不过符头宽的这么多倍（一般的加线两端都伸出符头一截） */
+const LEGER_SAME_W = 1.15;
+
 /** `Page::findLegers`：谱表外的符头要有足够多条加线撑着才认。 */
-export function findLegers(nt: Sym, stf: Staff, lines: Seg[]): boolean {
+export function findLegers(nt: Sym, stf: Staff, lines: Seg[], wholeByCenter = false): boolean {
   // 中线与音级按符头所在 x 取（位图路弯、斜的谱行；矢量路 `topAt` 就是盒的上下沿）：按整行名义中线算，
   // 谱行往右斜下几像素，挂在末线下的 D4 就数成 C4、要一条加线（望十架 p6 女低三个 D4 整串丢掉）
   const y2 = (stf.topAt(nt.px) + stf.bottomAt(nt.px)) / 2;
@@ -737,10 +741,16 @@ export function findLegers(nt: Sym, stf: Staff, lines: Seg[]): boolean {
   const y1 = nt.py > y2 ? nt.py + stepDist : nt.py - stepDist;
 
   const poss: Seg[] = [];
+  // 横跨按原点（左缘）量。矢量路（`wholeByCenter`）的全音符、加线又不比符头长（`LEGER_SAME_W`）的另按符头中心量：
+  // 裴克经文诗歌全音符的加线比符头还窄一点（墨迹起点比符头左缘右 0.46 点），按左缘量整个落选，下加一线的 C4 被删、整小节空掉。
+  // 位图路不开：按中心（一律、只全音符、只等宽的全音符、左缘让 0.1 格）都试过，合唱谱弥赛亚之歌等三首各多一步，加线墨迹量得不准
+  const whole = wholeByCenter && nt.code === "noteheadWhole";
+  const hx = (nt.box.left + nt.box.right) / 2;
   for (const l of lines) {
     // 加线要**横跨**符头（musicpp 只比左端点，那是因为它的加线对象与符头同起点；
     // 本书的加线两端都伸出符头，只比左端会把附近别的短横线也算进来）
-    if (nt.px < l.left || nt.px > l.right) continue;
+    const spans = (x: number) => x >= l.left && x <= l.right;
+    if (!spans(nt.px) && (!whole || !spans(hx) || l.len > (nt.box.right - nt.box.left) * LEGER_SAME_W)) continue;
     // 加线按**符头宽**量：黑符头一格出头、全音符两格，加线各自跟着长。
     // 按线距写死一个上限，全音符那一档就整批落选。
     if (l.len > (nt.box.right - nt.box.left) * 3) continue;

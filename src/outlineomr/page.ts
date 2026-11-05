@@ -11,7 +11,7 @@ import type { Rect } from "../omrkit/types";
 import { buildPage } from "../staffomr/page";
 import { recognizeBuiltPage, type StaffPageResult } from "../staffomr/pagerun";
 import { attachHarmonies, attachLyrics, buildLyricLines } from "../staffomr/textanalyze";
-import { keyFifths } from "../staffomr/notedata";
+import { fifthsAt } from "../staffomr/notedata";
 import type { PObj, SPage, Staff } from "../staffomr/model";
 import { attachVoltas, type Volta } from "../staffomr/octave";
 import { makeSymObj, makeTextObj } from "../rasteromr/adapt";
@@ -27,7 +27,7 @@ import type { LineSeg } from "../rasteromr/prims";
 import type { RasterUnit } from "../rasteromr/staffline";
 import { headerCredits, type HeaderCredit, type WordLine } from "../omrkit/headertext";
 import { objRect, isGeometry, splitPieces, subpathCount, type OutlineGlyphLookup } from "./glyphs";
-import { bootstrapClefs, bootstrapKeyAccidentals, type BootStaff } from "../rasteromr/rasterglyphs";
+import { bootstrapClefs, bootstrapKeyAccidentals, type BootHint, type BootStaff } from "../rasteromr/rasterglyphs";
 import { isAccidental, isClef, type SmuflName } from "../staffomr/glyphs";
 import { rasterizeObjs } from "./raster";
 
@@ -50,6 +50,11 @@ const HEAD_TOL = 0.15;
 const WHOLE_W = 1.5;
 /** 当文字收的扁填充块最长几格（歌词字宽 2.3 格上下） */
 const FLAT_TEXT_W = 3;
+/** 扁块找同行字：横向几格以内的字（相邻两字中心距约 3 格，「一」两边隔着音符拉开时更远） */
+const FLAT_ROW_DX = 8;
+/** 按同行字收的扁块：厚不过字高的这么多、宽不过字高的这么多倍（「一」约一字宽；破折号两字宽，不收） */
+const FLAT_THICK = 0.2;
+const FLAT_MATE_W = 1.3;
 /** 和弦带：简谱行（没有简谱行时谱表顶线）以上这么多线距 */
 const CHORD_ZONE = 4.5;
 /** 和弦带里横向隔开过这么多线距就是下一个记号 */
@@ -88,10 +93,13 @@ interface Group5 {
   right: number;
 }
 
-/** 谱线：页宽三成以上的细横线，五条等距一组。返回各组与线距；一组都没有为 null。 */
-export function staffGroups(objs: readonly VecObj[], pageW: number): { groups: Group5[]; sp: number } | null {
+/** 短谱表（末行只剩一两小节）的线至少这么多线距长：谱号调号加一小节约十来格 */
+const SHORT_STAFF_MIN = 12;
+
+/** 细横线按 y 排、重描并掉后五条等距一组（`sp` 给了就要求间距与之相当、左右端都齐） */
+function fiveGroups(objs: readonly VecObj[], minW: number, sp?: number): Group5[] {
   const lines = objs
-    .filter((o) => o.curves === 0 && o.bbox.w > pageW * 0.3 && o.bbox.h < 2)
+    .filter((o) => o.curves === 0 && o.bbox.w > minW && o.bbox.h < 2)
     .map((o) => ({ y: o.bbox.y + o.bbox.h / 2, left: o.bbox.x, right: o.bbox.x + o.bbox.w }))
     .sort((a, b) => a.y - b.y);
   // 同一条线描了几遍（重描）：y 差不到半点的并掉
@@ -102,14 +110,26 @@ export function staffGroups(objs: readonly VecObj[], pageW: number): { groups: G
     const five = uniq.slice(i, i + 5);
     const d = five.slice(1).map((l, k) => l.y - five[k].y);
     const mean = d.reduce((a, b) => a + b, 0) / 4;
-    if (d.every((x) => Math.abs(x - mean) <= mean * 0.15) && Math.abs(five[0].left - five[4].left) < mean) {
+    const even = d.every((x) => Math.abs(x - mean) <= mean * 0.15) && Math.abs(five[0].left - five[4].left) < mean;
+    const fit = sp === undefined || (Math.abs(mean - sp) <= sp * 0.15 && Math.max(...five.map((l) => l.right)) - Math.min(...five.map((l) => l.right)) < mean);
+    if (even && fit) {
       groups.push({ ys: five.map((l) => l.y), left: Math.max(...five.map((l) => l.left)), right: Math.min(...five.map((l) => l.right)) });
       i += 5;
     } else i++;
   }
+  return groups;
+}
+
+/** 谱线：页宽三成以上的细横线，五条等距一组；再按本页线距补认短谱表（末行只剩一两小节，左右端齐、间距同本页）。
+ *  返回各组与线距；一组都没有为 null。 */
+export function staffGroups(objs: readonly VecObj[], pageW: number): { groups: Group5[]; sp: number } | null {
+  const groups = fiveGroups(objs, pageW * 0.3);
   if (!groups.length) return null;
   const ds = groups.flatMap((g) => g.ys.slice(1).map((y, k) => y - g.ys[k])).sort((a, b) => a - b);
-  return { groups, sp: ds[ds.length >> 1] };
+  const sp = ds[ds.length >> 1];
+  const taken = (o: VecObj) => groups.some((g) => o.bbox.y + o.bbox.h > g.ys[0] - sp && o.bbox.y < g.ys[4] + sp);
+  const short = fiveGroups(objs.filter((o) => o.bbox.w <= pageW * 0.3 && !taken(o)), sp * SHORT_STAFF_MIN, sp);
+  return { groups: [...groups, ...short].sort((a, b) => a.ys[0] - b.ys[0]), sp };
 }
 
 const inside = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
@@ -258,9 +278,20 @@ export async function recognizeOutlinedPage(
   const marks = geometry.filter((o) => o.bbox.w >= sp * 0.3 && o.bbox.h >= sp * 0.3 && Math.max(o.bbox.w, o.bbox.h) <= sp * 2.5);
   texts.push(...marks);
   // 汉字「一」、连字符「-」转曲后是**填充**的扁矩形（裴克经文诗歌歌词里的「一」2.27×0.20 格，出处「1-5节」的「-」），也不是线：
-  // 谱表区与简谱行以外、填充（不是描边：加线、减时线、房子都是描的线）、不长过 `FLAT_TEXT_W` 格的扁块并进文字
-  texts.push(...geometry.filter((o) => !marks.includes(o) && /fill/i.test(o.paint) && !/stroke/i.test(o.paint) && o.bbox.h < sp * 0.3
-    && o.bbox.w >= sp * 0.3 && o.bbox.w <= sp * FLAT_TEXT_W && !inStaffZone(o) && !inBand(o)));
+  // 谱表区与简谱行以外、填充（不是描边：加线、减时线、房子都是描的线）、不长过 `FLAT_TEXT_W` 格的扁块并进文字。
+  // 大小按同一行的字量也收（横向 `FLAT_ROW_DX` 格内有个歌词字高以上的字、它纵向落在那个字的上下沿之间，厚、宽都按那个字高比）：
+  //  - 标题的「一」比歌词大一号（裴克经文诗歌 008「有一件事」3.3×0.37 格），按线距的上限收不进，OCR 就把标题切成两截；
+  //  - 紧贴谱表的第一行词落在谱表区里（同曲词里的「一」离底线 2.4 格）——要离开谱线一格以上，谱表区里的扁填充块是符杠，不夹在一行字的字身里
+  const rowMateH = (o: VecObj) => Math.max(0, ...texts.filter((t) => t.bbox.h >= sp * LYRIC_MIN_H && cy(o) > t.bbox.y && cy(o) < t.bbox.y + t.bbox.h
+    && Math.abs(cx(t) - cx(o)) < sp * FLAT_ROW_DX).map((t) => t.bbox.h));
+  const offLines = (o: VecObj) => staffBoxes.every((s) => cy(o) < s.top - sp || cy(o) > s.bottom + sp);
+  const flatText = (o: VecObj) => {
+    if (o.bbox.h < sp * 0.3 && o.bbox.w <= sp * FLAT_TEXT_W && !inStaffZone(o)) return true;
+    const h = rowMateH(o);
+    return h > 0 && offLines(o) && o.bbox.h < h * FLAT_THICK && o.bbox.w <= h * FLAT_MATE_W;
+  };
+  texts.push(...geometry.filter((o) => !marks.includes(o) && /fill/i.test(o.paint) && !/stroke/i.test(o.paint)
+    && o.bbox.w >= sp * 0.3 && !inBand(o) && flatText(o)));
 
   // ── 建页，接矢量路后半段 ─────────────────────────────────────────────────
   const pg = buildPage(index, vec.width, vec.height, geometry, [], sp * 4);
@@ -482,7 +513,7 @@ export async function recognizeOutlinedPage(
     const ocr = await live.jianpu(strips);
     const rows = (strip: JianpuStrip): JianpuRow[] | undefined =>
       ocr.get(jianpuKey(strip))?.map((row) => ({ bars: row.bars.map((x) => x / OCR_SCALE), nums: row.nums.map((n) => ({ ...n, x: n.x / OCR_SCALE })) }));
-    res.jianpuFix = fuseJianpu(notes, strips, (strip) => staffOfBox(strip.staff), rows, (st) => keyFifths(r.ctx.get(st)?.key ?? []), unit);
+    res.jianpuFix = fuseJianpu(notes, strips, (strip) => staffOfBox(strip.staff), rows, (st, x) => fifthsAt(r.ctx.get(st), x), unit);
   }
 
   // ── 页眉（曲首页）：首行谱的和弦带以上 ─────────────────────────────────────
@@ -553,11 +584,15 @@ function bootstrapHeadSyms(
   };
   const onStaff = (r: Rect, g: Group5) => r.y < g.ys[4] && r.y + r.h > g.ys[0];
   // 字形块连同并回来的竖笔：外框与所含对象
+  const vstrokes = geometry.filter((q) => q.bbox.w < sp * 0.3 && q.bbox.h > sp * 0.5 && q.bbox.h < sp * 4);
+  const crosses = (q: VecObj, o: VecObj) => q.bbox.y < o.bbox.y + o.bbox.h && q.bbox.y + q.bbox.h > o.bbox.y;
+  // 竖笔中线落在字形块左缘到右缘往里 0.1 格之间：降号的竖笔在肚子左缘，下一个降号的竖笔贴着这个肚子的右缘，不并
+  const within = (q: VecObj, o: VecObj) => cx(q) >= o.bbox.x - sp * 0.1 && cx(q) <= o.bbox.x + o.bbox.w - sp * 0.1 && crosses(q, o);
+  // 贴着右缘（往外 0.1 格以内）的只在没有别的字形按上一条收它时并：还原号的右笔就画在横杠右端
+  const atRight = (q: VecObj, o: VecObj) => cx(q) > o.bbox.x + o.bbox.w - sp * 0.1 && cx(q) <= o.bbox.x + o.bbox.w + sp * 0.1 && crosses(q, o);
+  const claimed = new Set(vstrokes.filter((q) => texts.some((o) => within(q, o))));
   const parts = texts.map((o) => {
-    const strokes = geometry.filter((q) => q.bbox.w < sp * 0.3 && q.bbox.h > sp * 0.5 && q.bbox.h < sp * 4
-      // 竖笔中线落在字形块左缘到右缘往里 0.1 格之间：降号的竖笔在肚子左缘，下一个降号的竖笔贴着这个肚子的右缘，不并
-      && q.bbox.x + q.bbox.w / 2 >= o.bbox.x - sp * 0.1 && q.bbox.x + q.bbox.w / 2 <= o.bbox.x + o.bbox.w - sp * 0.1
-      && q.bbox.y < o.bbox.y + o.bbox.h && q.bbox.y + q.bbox.h > o.bbox.y);
+    const strokes = vstrokes.filter((q) => within(q, o) || (!claimed.has(q) && atRight(q, o)));
     const objs = [o, ...strokes];
     return { o, objs, box: unionBox(objs) };
   }).filter((q) => eligible(q.o, q.box));
@@ -566,8 +601,10 @@ function bootstrapHeadSyms(
   const boxes = parts.map((q) => q.box);
   const clefRight: number[] = groups.map(() => 0);
   const clefEnd: number[] = groups.map(() => 0);
+  const bootStaff = (g: Group5): BootStaff => ({ left: g.left, right: g.right, lineYs: g.ys });
+  const accAfter = (g: Group5, x: number) => syms.some((q) => isAccidental(q.code) && onStaff(q.box, g) && q.box.x >= x - sp * 0.2 && q.box.x <= x + sp * KEY_SPAN);
   groups.forEach((g, k) => {
-    const st: BootStaff = { left: g.left, right: g.right, lineYs: g.ys };
+    const st = bootStaff(g);
     let clef = syms.find((q) => isClef(q.code) && onStaff(q.box, g) && q.box.x < g.left + sp * 4)?.box;
     if (!clef) {
       const hit = bootstrapClefs(boxes, [st], sp)[0];
@@ -578,7 +615,7 @@ function bootstrapHeadSyms(
     }
     const right = clef.x + clef.w;
     clefEnd[k] = right;
-    if (!syms.some((q) => isAccidental(q.code) && onStaff(q.box, g) && q.box.x >= right - sp * 0.2 && q.box.x <= right + sp * 6)) clefRight[k] = right;
+    if (!accAfter(g, right)) clefRight[k] = right;
   });
   // 拍号：同一 x、上下紧挨着叠起来的两块（分子分母在中线处相接；别的谱行同一 x 上的调号隔着一整行，不算）
   const stacked = (i: number) => {
@@ -587,26 +624,88 @@ function bootstrapHeadSyms(
       && (Math.abs(b.y - (a.y + a.h)) < sp * 0.5 || Math.abs(a.y - (b.y + b.h)) < sp * 0.5));
   };
   const blobs = parts.map((q, i) => ({ ...q.box, cy: drop.has(q.o) || stacked(i) ? -Infinity : inkCy(q.objs, q.box) }));
-  for (const h of bootstrapKeyAccidentals(blobs, groups.map((g) => ({ left: g.left, right: g.right, lineYs: g.ys })), clefRight, sp)) {
+  /** `strict`：只收按结构认得出的（行中那一路：同样高窄的八分休止字形字典也认不出，墨迹重心会把它猜成升号，065 整行读成 G 调） */
+  const take = (h: BootHint, strict = false): boolean => {
     const q = parts[h.index];
-    if (drop.has(q.o) || !Number.isFinite(blobs[h.index].cy)) continue;
-    syms.push({ box: q.box, code: accidentalByStrokes(q.o, q.objs.length - 1) ?? h.code });
+    if (drop.has(q.o) || !Number.isFinite(blobs[h.index].cy)) return false;
+    const code = accidentalByStrokes(q.o, q.objs.slice(1));
+    if (strict && !code) return false;
+    syms.push({ box: q.box, code: code ?? h.code });
     for (const o of q.objs) drop.add(o);
-  }
+    return true;
+  };
+  for (const h of bootstrapKeyAccidentals(blobs, groups.map(bootStaff), clefRight, sp)) take(h);
+  // 行中转调：小节线右边按行首同一判据补（「谱号右缘」换成小节线右缘；裴克经文诗歌 040 一房「♮♮ + 五个升号」转 B）。
+  // 小节线与这个记号之间隔着符头的是临时记号，不收；字典在那儿已认出升降号的不补
+  const mids: { k: number; x0: number; x1: number }[] = [];
+  groups.forEach((g, k) => {
+    if (!clefEnd[k]) return;
+    for (const bar of geometry) {
+      const r = bar.bbox.x + bar.bbox.w;
+      if (bar.bbox.w >= sp * 0.5 || bar.bbox.y > g.ys[0] + sp * 0.3 || bar.bbox.y + bar.bbox.h < g.ys[4] - sp * 0.3 || bar.bbox.h > sp * 6) continue;
+      if (r < clefEnd[k] + sp * KEY_SPAN) continue;
+      let from = r;
+      const m = { k, x0: r, x1: r };
+      mids.push(m);
+      if (accAfter(g, r)) continue;
+      // 带还原号的一串比行首长（♮♮ + 五个升号七个记号）：收下一批就从最右那个接着往右找，只接 `KEY_CHAIN` 格内挨着的
+      for (let last = -1, more = true; more; ) {
+        more = false;
+        for (const h of bootstrapKeyAccidentals(blobs, [bootStaff(g)], [from], sp)) {
+          const b = blobs[h.index];
+          if (last >= 0 && b.x - last > sp * KEY_CHAIN) continue;
+          if (syms.some((q) => q.code.startsWith("notehead") && onStaff(q.box, g) && q.box.x > r && q.box.x < b.x)) continue;
+          // 右边紧挨着一个同高的符头：是那个音的临时记号（字形块——升号的横杠、降号的肚子——中心与符头中心同高），整串到此为止。
+          // 调号最后一个记号离下一个音还隔着几格（040 隔 3.4 格）；不拦的话 C 调曲子小节线后的临时升号整行读成 G 调（065）
+          const accY = cy(parts[h.index].o);
+          if (syms.some((q) => q.code.startsWith("notehead") && onStaff(q.box, g) && q.box.x >= b.x + b.w - sp * 0.2 && q.box.x <= b.x + b.w + sp * TEMP_ACC_DX
+            && Math.abs(q.box.y + q.box.h / 2 - accY) < sp * 0.35)) {
+            more = false;
+            break;
+          }
+          if (!take(h, true)) continue;
+          from = Math.max(from, b.x);
+          m.x1 = Math.max(m.x1, b.x + b.w);
+          more = true;
+        }
+        last = from;
+      }
+    }
+  });
   for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
   for (let i = geometry.length - 1; i >= 0; i--) if (drop.has(geometry[i])) geometry.splice(i, 1);
-  // 行首拍号：谱号右边（调号之后，`TIME_FROM` 格以内）上下叠着的一对，字典在这一行没认出拍号的才交出去现读
+  // 拍号：横向窗口里上下叠着的一对，字典在那儿没认出拍号的才交出去现读
   const pairs: TimePair[] = [];
-  groups.forEach((g, k) => {
-    if (!clefEnd[k] || syms.some((q) => q.code.startsWith("timeSig") && onStaff(q.box, g))) return;
-    const near = parts.filter((q, i) => stacked(i) && !drop.has(q.o) && q.box.x > clefEnd[k] && q.box.x < clefEnd[k] + sp * TIME_FROM && onStaff(q.box, g));
+  const pairIn = (g: Group5, k: number, x0: number, x1: number) => {
+    if (syms.some((q) => q.code.startsWith("timeSig") && onStaff(q.box, g) && q.box.x > x0 && q.box.x < x1)) return;
+    const near = parts.filter((q, i) => stacked(i) && !drop.has(q.o) && q.box.x > x0 && q.box.x < x1 && onStaff(q.box, g));
     const mid = g.ys[2];
     const num = near.find((q) => q.box.y + q.box.h / 2 < mid);
     const den = num && near.find((q) => q.box.y + q.box.h / 2 > mid && Math.abs(q.box.x - num.box.x) < sp * 0.5);
     if (num && den) pairs.push({ staff: k, num: num.objs, den: den.objs });
+  };
+  // 行首：谱号右边（调号之后，`TIME_FROM` 格以内）；字典在这一行哪儿认出了拍号都不补
+  groups.forEach((g, k) => {
+    if (clefEnd[k] && !syms.some((q) => q.code.startsWith("timeSig") && onStaff(q.box, g))) pairIn(g, k, clefEnd[k], clefEnd[k] + sp * TIME_FROM);
   });
+  // 行中变拍：小节线（连同紧跟的转调记号）之后 `MID_TIME` 格以内、中间没隔着符头（裴克经文诗歌 040 二房行中 4/4）
+  for (const m of mids) {
+    const g = groups[m.k];
+    const head = syms.find((q) => q.code.startsWith("notehead") && onStaff(q.box, g) && q.box.x > m.x0 && q.box.x < m.x1 + sp * MID_TIME);
+    pairIn(g, m.k, m.x0, head ? head.box.x : m.x1 + sp * MID_TIME);
+  }
   return pairs;
 }
+
+/** 调号窗口：谱号 / 小节线右缘起几格（同位图路 `bootstrapKeyAccidentals`） */
+const KEY_SPAN = 6;
+/** 临时记号离它的符头最多几格（记号右缘到符头左缘） */
+const TEMP_ACC_DX = 1.2;
+/** 行中调号往右接链：下一个记号离上一批最右那个不过这么多格（同一处调号相邻记号间距不到一格） */
+const KEY_CHAIN = 2;
+
+/** 行中拍号离小节线（或紧跟的转调记号）最远几格：拍号数字宽约两格 */
+const MID_TIME = 2;
 
 /** 行首拍号离谱号右缘最远几格（七个升降号之后那一格，同位图路 `HEAD_TIME_SP` 的口径减去谱号宽） */
 const TIME_FROM = 11;
@@ -651,15 +750,24 @@ async function readTimeSigs(
 }
 
 /**
- * 升降号按**矢量结构**分：升号是两道竖笔 + 一块没有曲线的横杠，降号是一道竖笔 + 一个带曲线的肚子。
+ * 升降号按**矢量结构**分：升号是两道竖笔 + 一块没有曲线的横杠，降号是一道竖笔（在肚子左半边）+ 一个带曲线的肚子。
+ * 还原号也是两道竖笔 + 无曲线块，但两笔上下错开（左笔朝上伸、右笔朝下伸，错开约笔长三分之一）；升号两笔只因斜杠略错一点。
  * 位图路按墨迹重心分（降号肚子实心、重心偏下）；转曲的降号肚子是细线空心的，重心偏不下去（裴克经文诗歌全被判成升号）。
- * 分不出（结构不是这两种）返回 null，照位图路的判法。
+ * 分不出（结构不是这几种）返回 null，照位图路的判法。
  */
-function accidentalByStrokes(glyph: VecObj, strokes: number): "accidentalSharp" | "accidentalFlat" | null {
-  if (strokes === 2 && glyph.curves === 0) return "accidentalSharp";
-  if (strokes === 1 && glyph.curves > 0) return "accidentalFlat";
+function accidentalByStrokes(glyph: VecObj, strokes: readonly VecObj[]): "accidentalSharp" | "accidentalFlat" | "accidentalNatural" | null {
+  if (strokes.length === 2 && glyph.curves === 0) {
+    const [a, b] = [...strokes].sort((p, q) => p.bbox.x - q.bbox.x);
+    const h = Math.max(a.bbox.h, b.bbox.h);
+    return b.bbox.y - a.bbox.y > h * NATURAL_STAGGER ? "accidentalNatural" : "accidentalSharp";
+  }
+  // 降号的竖笔在肚子左缘；右缘挂着一根竖线的是带干的小符头（倚音，050「(2__」，贴右缘的竖笔也会并进来）
+  if (strokes.length === 1 && glyph.curves > 0 && cx(strokes[0]) < glyph.bbox.x + glyph.bbox.w / 2) return "accidentalFlat";
   return null;
 }
+
+/** 还原号两道竖笔上下错开至少笔长的这么多（裴克经文诗歌还原号 0.33、升号 0.07） */
+const NATURAL_STAGGER = 0.2;
 
 /** 几个对象合起来的墨迹重心 y（画成小图量）。 */
 function inkCy(objs: readonly VecObj[], box: Rect): number {

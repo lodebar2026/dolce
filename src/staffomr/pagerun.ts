@@ -72,7 +72,7 @@ export function recognizeBuiltPage(pg: SPage, opts: { textLookup?: TextGlyphLook
   }
   findMultiRests(pg);
   findGlissandi(pg);
-  findNoteheads(pg);
+  findNoteheads(pg, { wholeByCenter: true });
   findStems(pg);
   findTails(pg);
   findBarlines(pg);
