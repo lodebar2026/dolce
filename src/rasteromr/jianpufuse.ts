@@ -14,6 +14,7 @@
 //     简谱自洽、五线谱超拍，没配上的那几个五线谱音符删掉正好补平才删。
 //
 // 简谱行的识别结果来自离线缓存（`gen-rasterjianpu.mjs`），缓存没命中就不互证。
+import { moveChord } from "./lyricpost";
 import type { StaffNote } from "../staffomr/notedata";
 import type { Staff } from "../staffomr/model";
 import type { JianpuStrip } from "./jianpuband";
@@ -74,10 +75,7 @@ function adopt(to: StaffNote, from: StaffNote): void {
     if (to.lyrics?.some((m) => m.verse === l.verse)) continue;
     (to.lyrics ??= []).push(l);
   }
-  if (!to.chord && from.chord) {
-    to.chord = from.chord;
-    to.chordSize = from.chordSize;
-  }
+  if (!to.chord && from.chord) moveChord(from, to);
 }
 
 const mode = (xs: number[]) => {
@@ -256,8 +254,9 @@ export function fuseJianpu(
       // 五线谱缺拍、简谱不缺：没配上的简谱音正好补平缺口，就照简谱补进去
       //（《是谁》首小节那个 E4：符头贴着圆滑线，并成一块没认出来）。
       // 新音照最近那个已配对的音抄一份，改音高、时值、x；不挂和弦组（它的小节退回按顺序写）。
+      // 简谱的 `0` 照补成休止符（转曲矢量谱的休止符字形字典认不出：裴克经文诗歌首小节 `0 1 2 3` 只出了后三个音）
       const paired = new Set(m.pairs.map((p) => p[0]));
-      const miss = m.jn.filter((j) => !paired.has(j.n) && j.n.d >= 1 && j.n.d <= 7);
+      const miss = m.jn.filter((j) => !paired.has(j.n) && j.n.d >= 0 && j.n.d <= 7);
       const gap = full - sSum();
       if (miss.length && gap > 1e-6 && Math.abs(miss.reduce((a, j) => a + j.q, 0) - gap) < 1e-6 && Number.isFinite(base) && m.pairs.length) {
         for (const j of miss) {
@@ -269,9 +268,9 @@ export function fuseJianpu(
           const step = STEPS[si];
           const x = j.x + shift;
           const n: StaffNote = {
-            ...tpl, rest: false, diatonic: dia, step, octave: Math.floor(dia / 7) - 1,
+            ...tpl, rest: j.n.d === 0, diatonic: dia, step, octave: Math.floor(dia / 7) - 1,
             alter: keyAlter(si, fifths), accidental: null, base: bd.base, dots: bd.dots, duration: bd.base * (2 - 1 / 2 ** bd.dots),
-            x: x - (cx(tpl) - tpl.x), chordExtra: undefined, group: undefined, lyrics: undefined, chord: undefined,
+            x: x - (cx(tpl) - tpl.x), chordExtra: undefined, group: undefined, lyrics: undefined, chord: undefined, chordSize: undefined, chordX: undefined,
             slurStart: undefined, slurStop: undefined, tieStart: undefined, tieStop: undefined, marks: undefined,
           };
           if (tpl.group) tpl.group = undefined; // 同一小节里有了没分组的音，整小节退回按顺序写，别让它一半按拍位一半按顺序
@@ -279,6 +278,11 @@ export function fuseJianpu(
           notes.splice(at < 0 ? notes.length : at, 0, n);
           m.sn.push(n);
           stats.inserted++;
+          // 和弦挂在补音之前，离和弦最近的那个音当时还不存在：左右紧邻的音上挂的和弦离新音更近就挪过来
+          for (const nb of [notes[notes.indexOf(n) - 1], notes[notes.indexOf(n) + 1]]) {
+            if (nb?.staff !== n.staff || !nb.chord || nb.chordX === undefined || n.chord) continue;
+            if (Math.abs(nb.chordX - n.x) < Math.abs(nb.chordX - nb.x)) moveChord(nb, n);
+          }
         }
       }
     }

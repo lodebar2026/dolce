@@ -838,6 +838,8 @@ export interface StaffNote {
   chord?: string;
   /** 和弦的字号（页面单位，见 `SPage.textEm`）。和弦在后处理里挪来挪去时跟着 `chord` 走 */
   chordSize?: number;
+  /** 和弦记号左缘的 x（页面单位，挂音时按它找最近的音）。后处理补了音（`jianpufuse.ts` 按简谱补的休止）时按它重判该挂谁；跟着 `chord` 走 */
+  chordX?: number;
   /** 长音中途换的和弦：`frac` 是它落在这个音时值里的位置（0–1），写出成 `<harmony><offset>`。见 `attachHarmonies`。 */
   chordLater?: { text: string; frac: number; size?: number }[];
   /** 编辑器的识别对照用：写进 `<note id>` 的 id（`rasteromr/song.ts` 给）。记在音符上而不是旁表——写出前音符会被复制（`{...n}`） */

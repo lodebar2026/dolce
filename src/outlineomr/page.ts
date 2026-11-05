@@ -45,7 +45,10 @@ const PLAIN_SHAPES = new Set<string>(["articTenutoAbove", "articTenutoBelow", "l
 /** 按实心符头认空心符头：本页至少认出几个实心符头、外框差多少以内；全音符比实心符头宽这么多倍 */
 const HEAD_MIN = 3;
 const HEAD_TOL = 0.15;
-const WHOLE_W = 1.4;
+/** 裴克经文诗歌的全音符 1.99 格宽、实心符头 1.28 格（1.55 倍）；各字体在 1.4~1.6 倍之间 */
+const WHOLE_W = 1.5;
+/** 当文字收的扁填充块最长几格（歌词字宽 2.3 格上下） */
+const FLAT_TEXT_W = 3;
 /** 和弦带：简谱行（没有简谱行时谱表顶线）以上这么多线距 */
 const CHORD_ZONE = 4.5;
 /** 和弦带里横向隔开过这么多线距就是下一个记号 */
@@ -246,6 +249,10 @@ export async function recognizeOutlinedPage(
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
   const marks = geometry.filter((o) => o.bbox.w >= sp * 0.3 && o.bbox.h >= sp * 0.3 && Math.max(o.bbox.w, o.bbox.h) <= sp * 2.5);
   texts.push(...marks);
+  // 汉字「一」、连字符「-」转曲后是**填充**的扁矩形（裴克经文诗歌歌词里的「一」2.27×0.20 格，出处「1-5节」的「-」），也不是线：
+  // 谱表区与简谱行以外、填充（不是描边：加线、减时线、房子都是描的线）、不长过 `FLAT_TEXT_W` 格的扁块并进文字
+  texts.push(...geometry.filter((o) => !marks.includes(o) && /fill/i.test(o.paint) && !/stroke/i.test(o.paint) && o.bbox.h < sp * 0.3
+    && o.bbox.w >= sp * 0.3 && o.bbox.w <= sp * FLAT_TEXT_W && !inStaffZone(o) && !inBand(o)));
 
   // ── 建页，接矢量路后半段 ─────────────────────────────────────────────────
   const pg = buildPage(index, vec.width, vec.height, geometry, [], sp * 4);
@@ -265,16 +272,71 @@ export async function recognizeOutlinedPage(
   const live = opts.live;
   if (!live) return res;
 
-  // ── 简谱行之上的和弦带 ───────────────────────────────────────────────────
+  // ── 歌词：谱表下方的字行（先于和弦带收：段数多的歌词末行贴着下一行谱的简谱行，落进它的和弦带——
+  //    裴克经文诗歌第三段词被切成和弦条、与和弦字混成「尽♭E」「头Ccm」，和弦与那段词一起丢了）。
+  //    行按整行归：顶边在歌词带里的整行算歌词，整行落在和弦带里的留给和弦带 ──
   const used = new Set<VecObj>();
+  const lyricStrips: LyricStrip[] = [];
+  const stripStaff = new Map<LyricStrip, Staff>();
+  const lyricRows: { row: VecObj[]; box0: Rect; st: Staff }[] = [];
+  staffBoxes.forEach((s, k) => {
+    const st = staffOfBox(k);
+    if (!st) return;
+    // 下一行谱（连同它上方的简谱行、和弦带）之前
+    const next = staffBoxes[k + 1];
+    const nextTop = next ? Math.min(next.top, ...bands.filter((b) => b.staff === k + 1).map((b) => b.box.y)) - sp * (bands.some((b) => b.staff === k + 1) ? CHORD_ZONE : 0.5) : pageBottom;
+    // 行按整行归：中心落过边界、顶边还在带里的那行也是歌词（收对象时放宽到下一行谱的简谱行 / 谱表）
+    const reach = next ? Math.min(next.top, ...bands.filter((b) => b.staff === k + 1).map((b) => b.box.y)) - sp * 0.5 : pageBottom;
+    const zone: Rect = { x: s.left - sp * 2, y: s.bottom + sp * 0.5, w: s.right - s.left + sp * 4, h: reach - s.bottom - sp * 0.5 };
+    if (nextTop - s.bottom - sp * 0.5 <= 0) return;
+    const items = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o)));
+    for (const row of rowsOf(items)) {
+      const box0 = unionBox(row);
+      if (box0.y >= nextTop) continue;
+      if (box0.h < sp * LYRIC_MIN_H || row.length < LYRIC_MIN_ITEMS) continue;
+      lyricRows.push({ row, box0, st });
+    }
+  });
+  // 页脚的版权小字（「© 2024 劉安淑/小羊詩歌版權所有」，字高只有歌词的六成）：比本页字行行高的中位矮过 `LYRIC_FOOT` 的不收
+  const rowHs = lyricRows.map((r) => r.box0.h).sort((a, b) => a - b);
+  const rowH0 = rowHs.length ? rowHs[rowHs.length >> 1] : 0;
+  for (const { row, box0, st } of lyricRows) {
+    if (box0.h < rowH0 * LYRIC_FOOT) continue;
+    for (const o of row) used.add(o);
+    const rowH = box0.h;
+    const cells = charCells(row, rowH);
+    const box = pad(box0, rowH * 0.15);
+    const bin = rasterizeObjs(row, box, OCR_SCALE);
+    const strip: LyricStrip = {
+      w: bin.w,
+      h: bin.h,
+      data: bin.data,
+      box,
+      charH: [...cells.map((c) => unionBox(c).h)].sort((a, b) => a - b)[cells.length >> 1],
+      cells: cells.map((c) => {
+        const b = unionBox(c);
+        return { x0: (b.x - box.x) / box.w, x1: (b.x + b.w - box.x) / box.w, box: b };
+      }),
+    };
+    lyricStrips.push(strip);
+    stripStaff.set(strip, st);
+  }
+  // ── 简谱行之上的和弦带 ───────────────────────────────────────────────────
   const harmonyStrips: HarmonyStrip[] = [];
+  /** 首行和弦带里归页眉的那串字（见 `headOfLine`） */
+  let headLead = new Set<VecObj>();
   staffBoxes.forEach((s, k) => {
     const st = staffOfBox(k);
     if (!st) return;
     const own = bands.filter((b) => b.staff === k);
     const bottom = own.length ? Math.min(...own.map((b) => b.box.y)) : s.top - sp * 0.3;
     const zone: Rect = { x: s.left - sp * 2, y: bottom - sp * CHORD_ZONE, w: s.right - s.left + sp * 4, h: sp * CHORD_ZONE };
-    const items = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o))).sort((a, b) => a.bbox.x - b.bbox.x);
+    // 从谱号左边起头的那串字不收（`headOfLine`）：和弦记号不会印在谱号左边，那是页眉的速度记号、速度术语
+    //（裴克经文诗歌行首左上的「欢快地」落进首行的和弦带，整行一算汉字占了大半，判成文本行，这一行的和弦全丢）
+    const inZone = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o)));
+    const lead = headOfLine(inZone, r.ctx.get(st)?.clef?.box, sp);
+    if (k === 0) headLead = lead;
+    const items = inZone.filter((o) => !lead.has(o)).sort((a, b) => a.bbox.x - b.bbox.x);
     const toks: VecObj[][] = [];
     for (const o of items) {
       const last = toks[toks.length - 1];
@@ -318,49 +380,6 @@ export async function recognizeOutlinedPage(
     attachJumpMarks(pg, notes, marks, sp);
   }
 
-  // ── 歌词：谱表下方的字行 ─────────────────────────────────────────────────
-  const lyricStrips: LyricStrip[] = [];
-  const stripStaff = new Map<LyricStrip, Staff>();
-  const lyricRows: { row: VecObj[]; box0: Rect; st: Staff }[] = [];
-  staffBoxes.forEach((s, k) => {
-    const st = staffOfBox(k);
-    if (!st) return;
-    // 下一行谱（连同它上方的简谱行、和弦带）之前
-    const next = staffBoxes[k + 1];
-    const nextTop = next ? Math.min(next.top, ...bands.filter((b) => b.staff === k + 1).map((b) => b.box.y)) - sp * (bands.some((b) => b.staff === k + 1) ? CHORD_ZONE : 0.5) : pageBottom;
-    const zone: Rect = { x: s.left - sp * 2, y: s.bottom + sp * 0.5, w: s.right - s.left + sp * 4, h: nextTop - s.bottom - sp * 0.5 };
-    if (zone.h <= 0) return;
-    const items = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o)));
-    for (const row of rowsOf(items)) {
-      const box0 = unionBox(row);
-      if (box0.h < sp * LYRIC_MIN_H || row.length < LYRIC_MIN_ITEMS) continue;
-      lyricRows.push({ row, box0, st });
-    }
-  });
-  // 页脚的版权小字（「© 2024 劉安淑/小羊詩歌版權所有」，字高只有歌词的六成）：比本页字行行高的中位矮过 `LYRIC_FOOT` 的不收
-  const rowHs = lyricRows.map((r) => r.box0.h).sort((a, b) => a - b);
-  const rowH0 = rowHs.length ? rowHs[rowHs.length >> 1] : 0;
-  for (const { row, box0, st } of lyricRows) {
-    if (box0.h < rowH0 * LYRIC_FOOT) continue;
-    for (const o of row) used.add(o);
-    const rowH = box0.h;
-    const cells = charCells(row, rowH);
-    const box = pad(box0, rowH * 0.15);
-    const bin = rasterizeObjs(row, box, OCR_SCALE);
-    const strip: LyricStrip = {
-      w: bin.w,
-      h: bin.h,
-      data: bin.data,
-      box,
-      charH: [...cells.map((c) => unionBox(c).h)].sort((a, b) => a - b)[cells.length >> 1],
-      cells: cells.map((c) => {
-        const b = unionBox(c);
-        return { x0: (b.x - box.x) / box.w, x1: (b.x + b.w - box.x) / box.w, box: b };
-      }),
-    };
-    lyricStrips.push(strip);
-    stripStaff.set(strip, st);
-  }
   if (lyricStrips.length) {
     const ocr = await live.lyric(lyricStrips);
     const objs: PObj[] = [];
@@ -438,8 +457,13 @@ export async function recognizeOutlinedPage(
   if (bands.length && live.jianpu) {
     const strips: JianpuStrip[] = bands.map((b) => {
       const objs = vec.objs.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.w < b.box.w * 0.5 && !notes2.has(o));
-      const bin = rasterizeObjs(objs, b.box, OCR_SCALE);
-      return { staff: b.staff, box: b.box, w: bin.w, h: bin.h, data: bin.data, bars: b.bars };
+      // 条上下扩到把收进来的对象整个包住：简谱上方的连音弧顶常高出带框，按带框裁只剩弧的两头一小截，读成高音点
+      //（裴克经文诗歌弧下的音全多了高八度）。横向不动，OCR 读回的 x 照旧按带框左缘换算
+      const top = Math.min(b.box.y, ...objs.map((o) => o.bbox.y));
+      const bottom = Math.max(b.box.y + b.box.h, ...objs.map((o) => o.bbox.y + o.bbox.h));
+      const box = { x: b.box.x, y: top, w: b.box.w, h: bottom - top };
+      const bin = rasterizeObjs(objs, box, OCR_SCALE);
+      return { staff: b.staff, box, w: bin.w, h: bin.h, data: bin.data, bars: b.bars };
     });
     const ocr = await live.jianpu(strips);
     const rows = (strip: JianpuStrip): JianpuRow[] | undefined =>
@@ -452,9 +476,10 @@ export async function recognizeOutlinedPage(
     const s0 = staffBoxes[0];
     const own = bands.filter((b) => b.staff === 0);
     const limit = (own.length ? Math.min(...own.map((b) => b.box.y)) : s0.top) - sp * CHORD_ZONE;
-    const items = texts.filter((o) => !used.has(o) && cy(o) < limit);
+    // 首行和弦带里从谱号左边起头的那串字（和弦带不收，见上）也归页眉：速度记号、速度术语有时印得低，落在和弦那一高度
+    const items = texts.filter((o) => !used.has(o) && (cy(o) < limit || headLead.has(o)));
     // 速度记号先摘出来（页眉 OCR 读不出音符字形，连带把「=64」也丢了）
-    const tempo = findTempoMark(items, sp);
+    const tempo = findTempoMark(items, sp, geometry);
     let bpm: number | null = null;
     if (tempo && live.time) {
       const strip = timeStripOfObjs(tempo.digits, 0, "num", sp);
@@ -630,6 +655,25 @@ function inkCy(objs: readonly VecObj[], box: Rect): number {
   return n ? box.y + ((sy / n + 0.5) / bin.h) * box.h : box.y + box.h / 2;
 }
 
+/**
+ * 和弦带里从谱号左边起头的一串字：中心在谱号右缘以左的字，连同同一行（纵向交叠）、横向一个挨一个（缝不过 `HEAD_RUN_GAP` 格）
+ * 接下去的字。速度「♩=72」的「2」、速度术语的后几个字常伸过谱号右缘，只按中心切会拦腰截断。没有谱号时为空。
+ */
+function headOfLine(objs: readonly VecObj[], clef: { right: number } | undefined, sp: number): Set<VecObj> {
+  const out = new Set<VecObj>();
+  if (!clef) return out;
+  const sorted = [...objs].sort((a, b) => a.bbox.x - b.bbox.x);
+  for (const o of sorted) if (cx(o) < clef.right) out.add(o);
+  for (const o of sorted) {
+    if (out.has(o)) continue;
+    const prev = [...out].find((q) => o.bbox.x - (q.bbox.x + q.bbox.w) <= sp * HEAD_RUN_GAP && o.bbox.x >= q.bbox.x
+      && Math.min(o.bbox.y + o.bbox.h, q.bbox.y + q.bbox.h) - Math.max(o.bbox.y, q.bbox.y) > Math.min(o.bbox.h, q.bbox.h) * 0.5);
+    if (prev) out.add(o);
+  }
+  return out;
+}
+const HEAD_RUN_GAP = 1;
+
 /** 房子的竖钩长度（线距） */
 const VOLTA_HOOK: [number, number] = [0.6, 5];
 /** 房子横线被房号断开（钩后一小截、房号、空一段再接长线）：接续的长线起点离钩最远（线距），同位图路 `repeats.ts::VOLTA_BREAK` */
@@ -698,12 +742,16 @@ function markVoltas(pg: SPage, bands: readonly JianpuBand[], sp: number): void {
  * 页眉里的速度记号「♩=64」：音符字形（符头连符干一块，窄、两格多高）右边紧跟「=」（两条平行短横），再跟一串数字。
  * 返回数字那几块（送拍号数字的 OCR）与它们所属的对象（页眉 OCR 不再收）；找不到为 null。
  */
-function findTempoMark(objs: readonly VecObj[], sp: number): { digits: VecObj[]; parents: Set<VecObj> } | null {
+function findTempoMark(objs: readonly VecObj[], sp: number, lines: readonly VecObj[] = []): { digits: VecObj[]; parents: Set<VecObj> } | null {
   // 「♩=64」常是一个对象（一次 showText 转出来的），拆成块再找
   const parent = new Map<VecObj, VecObj>();
   const items: VecObj[] = [];
   for (const o of objs) for (const p of splitPieces(o)) (parent.set(p, o), items.push(p));
-  for (const n of items) {
+  for (const n0 of items) {
+    // 符头与符干分开画的（裴克经文诗歌：符干是一条直线、归进了线）：符头右缘搭着一根往上的竖线就合成一块音符
+    const stem = lines.find((q) => q.bbox.w < sp * 0.3 && q.bbox.h > sp * 1.2 && Math.abs(q.bbox.x - (n0.bbox.x + n0.bbox.w)) < sp * 0.3
+      && q.bbox.y < n0.bbox.y && q.bbox.y + q.bbox.h > n0.bbox.y);
+    const n = stem && n0.bbox.h < sp * 2 ? { ...n0, bbox: unionBox([n0, stem]) } : n0;
     const w = n.bbox.w / sp;
     const h = n.bbox.h / sp;
     if (w < 0.5 || w > 1.1 || h < 2 || h > 3) continue;
@@ -711,13 +759,15 @@ function findTempoMark(objs: readonly VecObj[], sp: number): { digits: VecObj[];
     const bars = items.filter((o) => o.bbox.h < sp * 0.3 && o.bbox.w > sp * 0.6 && o.bbox.w < sp * 1.6 && o.bbox.x > right && o.bbox.x - right < sp * 1.5 && cy(o) > n.bbox.y && cy(o) < n.bbox.y + n.bbox.h);
     if (bars.length !== 2) continue;
     let end = Math.max(...bars.map((b) => b.bbox.x + b.bbox.w));
+    // 数字与「=」、数字与数字之间隔不过 0.6 格或一个「=」宽（裴克经文诗歌「=」与「8」隔 0.69 格，「=」宽 0.81 格）
+    const gapMax = Math.max(sp * 0.6, ...bars.map((b) => b.bbox.w));
     const digits: VecObj[] = [];
     for (const o of [...items].sort((a, b) => a.bbox.x - b.bbox.x)) {
-      if (o.bbox.x < end - sp * 0.1 || o.bbox.x - end > sp * 0.6 || o.bbox.h < sp * 1.2 || o.bbox.h > sp * 2.2 || cy(o) < n.bbox.y || cy(o) > n.bbox.y + n.bbox.h) continue;
+      if (o.bbox.x < end - sp * 0.1 || o.bbox.x - end > gapMax || o.bbox.h < sp * 1.2 || o.bbox.h > sp * 2.2 || cy(o) < n.bbox.y || cy(o) > n.bbox.y + n.bbox.h) continue;
       digits.push(o);
       end = o.bbox.x + o.bbox.w;
     }
-    if (digits.length) return { digits, parents: new Set([n, ...bars, ...digits].map((p) => parent.get(p)!)) };
+    if (digits.length) return { digits, parents: new Set([n0, ...bars, ...digits].map((p) => parent.get(p)!)) };
   }
   return null;
 }

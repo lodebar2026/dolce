@@ -973,6 +973,7 @@ interface NoteLike {
   lyrics?: { verse: number; text: string; hyphen: boolean; cont: boolean; size?: number; baseY?: number; box?: Box; label?: string }[];
   chord?: string;
   chordSize?: number;
+  chordX?: number;
   chordLater?: { text: string; frac: number; size?: number }[];
 }
 
@@ -1168,6 +1169,7 @@ export function attachHarmonies(pg: SPage, notes: NoteLike[], harmonies: PObj[],
     const best = cands.find((n) => !n.chord);
     if (best) {
       best.chord = text;
+      best.chordX = g.box.left;
       if (g.size > 0) best.chordSize = g.size;
       continue;
     }

@@ -317,6 +317,16 @@ export function settleLyricVerses(notes: { lyrics?: { verse: number }[] }[]): vo
  * 和弦记号印在谱表上方，归上面那个音：同一谱行、x 差不到半格、位置更高又没挂和弦的音，挪过去。
  * 只补位图这一路，不动 `staffomr`。
  */
+/** 和弦（连同字号、横坐标）从 `from` 挪到 `to`。 */
+export function moveChord(from: StaffNote, to: StaffNote): void {
+  to.chord = from.chord;
+  to.chordSize = from.chordSize;
+  to.chordX = from.chordX;
+  from.chord = undefined;
+  from.chordSize = undefined;
+  from.chordX = undefined;
+}
+
 export function liftHarmonies(notes: StaffNote[], sp: number): void {
   for (const n of notes) {
     if (!n.chord || n.rest) continue;
@@ -327,10 +337,7 @@ export function liftHarmonies(notes: StaffNote[], sp: number): void {
       top = m;
     }
     if (!top) continue;
-    top.chord = n.chord;
-    top.chordSize = n.chordSize;
-    n.chord = undefined;
-    n.chordSize = undefined;
+    moveChord(n, top);
   }
 }
 

@@ -1380,7 +1380,12 @@ export function makeBars(pg: SPage, opts: { keepRoomyHead?: boolean } = {}): voi
     const headRoom = (stf: Staff) => {
       const b = stf.bars[0];
       const head = pg.symbols.filter((y) => (y.hasTag("Clef") || y.hasTag("Key") || y.hasTag("Time")) && overlapY(y.box, stf.box) && y.box.left >= b.left - sp && y.box.right <= b.right);
-      return b.right - Math.max(b.left, ...head.map((y) => y.box.right));
+      // 量到右端小节线组最左那一笔：`b.right` 是细线的位置，`|:` 的粗线在它左边将近一格（裴克经文诗歌行首 2.6 格空当量成 3.5 格，
+      // 拍号与 `|:` 之间那一条被当成真的空小节留下）
+      const h = stf.box.bottom - stf.box.top;
+      const lines = pg.segs.filter((q) => q.isV && q.len >= h * 0.9 && q.right <= b.right + 1 && q.left >= b.right - sp * 1.5 && overlapY(q.box, stf.box));
+      const end = Math.min(b.right, ...lines.map((q) => q.left));
+      return end - Math.max(b.left, ...head.map((y) => y.box.right));
     };
     for (;;) {
       const emptyHead = (stf: Staff) => stf.bars.length > 1 && !stf.bars[0].notes.length && !(opts.keepRoomyHead && headRoom(stf) >= sp * 3);
