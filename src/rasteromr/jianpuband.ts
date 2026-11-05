@@ -103,21 +103,26 @@ export function findJianpuBands(
       })
       .map(cx)
       .filter((x) => x > st.left + sp * 2 && x < st.right + sp);
+    // 压着别的谱行的是那一行自己的小节线（你的信实广大谱行只隔 5 格，上一行的小节线落进窗口）
+    const onOtherStaff = (v: LineSeg) => {
+      const [a, b] = span(v);
+      return staves.some((o) => o !== st && a < o.bottom + liftOf(o, cx(v)) - liftOf(st, cx(v)) && b > o.top + liftOf(o, cx(v)) - liftOf(st, cx(v)));
+    };
     // 简谱行小节线候选：悬在谱表上方的短竖线
     const cands = vSegs.filter((v) => {
       const [a, b] = span(v);
       const len = (b - a) / sp;
       return len >= BAR_LEN[0] && len <= BAR_LEN[1] && b <= st.top - sp * BAR_CLEAR && b >= st.top - sp * BAR_REACH && cx(v) >= st.left - sp && cx(v) <= st.right + sp &&
-        // 压着别的谱行的是那一行自己的小节线（你的信实广大谱行只隔 5 格，上一行的小节线落进窗口）
-        !staves.some((o) => o !== st && a < o.bottom + liftOf(o, cx(v)) - liftOf(st, cx(v)) && b > o.top + liftOf(o, cx(v)) - liftOf(st, cx(v))) && !hooked(v);
+        !onOtherStaff(v) && !hooked(v);
     });
-    /** `top`~`bot` 这行简谱上方紧挨着的另一行：同 x（对上这行的小节线）、长度相当的短竖线；返回它的纵向范围与小节线 x */
+    /** `top`~`bot` 这行简谱上方紧挨着的另一行：同 x（对上这行的小节线）、长度相当的短竖线；返回它的纵向范围与小节线 x。
+     *  上一行谱表自己的小节线也同 x、长度也够（裴克经文诗歌谱行隔 2.5 倍谱表高、这行简谱只有 4 条小节线，对上 3 条），同样剔掉 */
     const stackedRow = (top: number, bot: number, bars: number[]): [number, number, number[]] | null => {
       const minLen = (bot - top) * BAR_SIBLING;
       const ups = vSegs.filter((v) => {
         const [a, b] = span(v);
         return b - a >= minLen && b - a <= sp * BAR_LEN[1] && b <= top - sp * 0.3 && b >= top - (bot - top) - sp * 3 &&
-          bars.some((x) => Math.abs(cx(v) - x) <= sp * BAR_DX) && !hooked(v);
+          bars.some((x) => Math.abs(cx(v) - x) <= sp * BAR_DX) && !onOtherStaff(v) && !hooked(v);
       });
       const dg = ups.map((v) => ups.filter((o) => same(v, o)).length);
       const hb = ups[dg.indexOf(Math.max(...dg))];

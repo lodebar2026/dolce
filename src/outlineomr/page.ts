@@ -40,8 +40,9 @@ const STAFF_ZONE_BELOW = 4;
 /** 简谱行里的说明文字：至少几个字、字间缝不过字高的几成（简谱数字之间隔得开） */
 const NOTE_RUN = 5;
 const NOTE_GAP = 0.35;
-/** 形状简单（一道横、一点、一竖）的符号：从一个对象拆出来的块认成它们不算数 */
-const PLAIN_SHAPES = new Set<string>(["articTenutoAbove", "articTenutoBelow", "legerLine", "stem", "augmentationDot", "articStaccatoAbove", "articStaccatoBelow", "barlineSingle", "restHBar"]);
+/** 形状简单（一道横、一点、一竖、两竖）的符号：从一个对象拆出来的块认成它们不算数
+ *（「到」「判」的立刀两竖认成打击乐谱号被摘走，裴克经文诗歌「到」读成「至」八十多处） */
+const PLAIN_SHAPES = new Set<string>(["articTenutoAbove", "articTenutoBelow", "legerLine", "stem", "augmentationDot", "articStaccatoAbove", "articStaccatoBelow", "barlineSingle", "barlineDouble", "restHBar", "unpitchedPercussionClef1", "unpitchedPercussionClef2"]);
 /** 按实心符头认空心符头：本页至少认出几个实心符头、外框差多少以内；全音符比实心符头宽这么多倍 */
 const HEAD_MIN = 3;
 const HEAD_TOL = 0.15;
@@ -53,6 +54,10 @@ const FLAT_TEXT_W = 3;
 const CHORD_ZONE = 4.5;
 /** 和弦带里横向隔开过这么多线距就是下一个记号 */
 const CHORD_GAP = 0.9;
+/** 顶边进了和弦带的字行，底边离下一行简谱行至少空这么多线距才仍算歌词（和弦紧贴简谱行印，空不到半格） */
+const LYRIC_CLEAR = 1;
+/** 同上，上面已有歌词行时，行高至少是上一行词的这么多倍才算下一段词 */
+const LYRIC_SAME_H = 0.9;
 /** 歌词行：字高至少这么多线距（拍号、减时线、小附点不算） */
 const LYRIC_MIN_H = 1.2;
 /** 字行比本页字行行高的中位矮过这个比例的是页脚小字：祢話如甘霖歌词字高 3.3 格、版权行 2.1 格（0.64）；
@@ -243,7 +248,10 @@ export async function recognizeOutlinedPage(
     }
   }
 
-  const timePairs = bootstrapHeadSyms(syms, texts, geometry, groups, sp, (o) => !inBand(o) && inStaffZone(o));
+  // 伸进谱线半格以上的不是简谱行的字：调号里高悬在第五线上的升号（E 调的 ♯G）中心落进了贴得近的简谱带框，照样收
+  //（按并回竖笔后的外框量：这套字体升号的字形块只剩两道横杠）
+  const entersStaff = (r: Rect) => staffBoxes.some((st) => r.y < st.bottom && r.y + r.h > st.top + sp * 0.5);
+  const timePairs = bootstrapHeadSyms(syms, texts, geometry, groups, sp, (o, box) => inStaffZone(o) && (!inBand(o) || entersStaff(box)));
   if (opts.live?.time && timePairs.length) await readTimeSigs(syms, texts, timePairs, opts.live.time, sp);
 
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
@@ -290,11 +298,17 @@ export async function recognizeOutlinedPage(
     const zone: Rect = { x: s.left - sp * 2, y: s.bottom + sp * 0.5, w: s.right - s.left + sp * 4, h: reach - s.bottom - sp * 0.5 };
     if (nextTop - s.bottom - sp * 0.5 <= 0) return;
     const items = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o)));
+    // 和弦带按简谱行往上 `CHORD_ZONE` 格划，谱行排得紧时伸进了上一行歌词（裴克经文诗歌 106，歌词顶边过界 2pt，三行词连同下一行和弦一起丢）：
+    // 顶边过了界、底边离下一行简谱行（谱表）还空着 `LYRIC_CLEAR` 格以上的那行仍是歌词，贴着简谱行的才是和弦。
+    // 上面已经收过歌词的，还要与上一行词同字号（下一段词）：字小一号的是印在下一行上方的说明字（祢話如甘霖「桥段反復時…」）
+    const bandTop = reach + sp * 0.5;
+    let lastH = 0;
     for (const row of rowsOf(items)) {
       const box0 = unionBox(row);
-      if (box0.y >= nextTop) continue;
+      if (box0.y >= nextTop && (box0.h < lastH * LYRIC_SAME_H || box0.y + box0.h > bandTop - sp * LYRIC_CLEAR)) continue;
       if (box0.h < sp * LYRIC_MIN_H || row.length < LYRIC_MIN_ITEMS) continue;
       lyricRows.push({ row, box0, st });
+      lastH = box0.h;
     }
   });
   // 页脚的版权小字（「© 2024 劉安淑/小羊詩歌版權所有」，字高只有歌词的六成）：比本页字行行高的中位矮过 `LYRIC_FOOT` 的不收
@@ -530,10 +544,8 @@ function bootstrapHeadSyms(
   geometry: VecObj[],
   groups: readonly Group5[],
   sp: number,
-  eligible: (o: VecObj) => boolean,
+  eligible: (o: VecObj, box: Rect) => boolean,
 ): TimePair[] {
-  const pool = texts.filter(eligible);
-  if (!pool.length) return [];
   const drop = new Set<VecObj>();
   const center = (r: Rect, o: VecObj) => {
     const x = o.bbox.x + o.bbox.w / 2, y = o.bbox.y + o.bbox.h / 2;
@@ -541,14 +553,16 @@ function bootstrapHeadSyms(
   };
   const onStaff = (r: Rect, g: Group5) => r.y < g.ys[4] && r.y + r.h > g.ys[0];
   // 字形块连同并回来的竖笔：外框与所含对象
-  const parts = pool.map((o) => {
+  const parts = texts.map((o) => {
     const strokes = geometry.filter((q) => q.bbox.w < sp * 0.3 && q.bbox.h > sp * 0.5 && q.bbox.h < sp * 4
       // 竖笔中线落在字形块左缘到右缘往里 0.1 格之间：降号的竖笔在肚子左缘，下一个降号的竖笔贴着这个肚子的右缘，不并
       && q.bbox.x + q.bbox.w / 2 >= o.bbox.x - sp * 0.1 && q.bbox.x + q.bbox.w / 2 <= o.bbox.x + o.bbox.w - sp * 0.1
       && q.bbox.y < o.bbox.y + o.bbox.h && q.bbox.y + q.bbox.h > o.bbox.y);
     const objs = [o, ...strokes];
     return { o, objs, box: unionBox(objs) };
-  });
+  }).filter((q) => eligible(q.o, q.box));
+  if (!parts.length) return [];
+  const pool = parts.map((q) => q.o);
   const boxes = parts.map((q) => q.box);
   const clefRight: number[] = groups.map(() => 0);
   const clefEnd: number[] = groups.map(() => 0);
@@ -764,6 +778,8 @@ function findTempoMark(objs: readonly VecObj[], sp: number, lines: readonly VecO
     const digits: VecObj[] = [];
     for (const o of [...items].sort((a, b) => a.bbox.x - b.bbox.x)) {
       if (o.bbox.x < end - sp * 0.1 || o.bbox.x - end > gapMax || o.bbox.h < sp * 1.2 || o.bbox.h > sp * 2.2 || cy(o) < n.bbox.y || cy(o) > n.bbox.y + n.bbox.h) continue;
+      // 后面的数字与第一个同字号：紧跟着的速度术语（「♩=88 中速」的「中」）字身更高，到此为止
+      if (digits.length && Math.abs(o.bbox.h - digits[0].bbox.h) > digits[0].bbox.h * 0.15) break;
       digits.push(o);
       end = o.bbox.x + o.bbox.w;
     }

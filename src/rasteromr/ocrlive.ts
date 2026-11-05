@@ -169,7 +169,7 @@ export async function ocrJianpuStrips(ocr: OcrBackend, strips: readonly JianpuSt
   return out;
 }
 
-/** 拍号数字条：一条一个数字（12、16 是两位）。先走单字数字格那一路（居中放进方格，与简谱数字同一条；
+/** 拍号数字条：一条一个数字（12、16 是两位；转曲矢量路的速度数字也走这条，有三位的 110、120）。先走单字数字格那一路（居中放进方格，与简谱数字同一条；
  *  新编赞美诗 59 首试样 75 行读对、0 行读错）；没读出的再整条当一行字送 rec（多读出一成，两位数也靠它）。
  *  只存纯数字串，别的存空串；合不合法由 `timesig.ts::timeDigit` 判。 */
 export async function ocrTimeStrips(ocr: OcrBackend, strips: readonly TimeStrip[]): Promise<Map<string, string>> {
@@ -185,7 +185,7 @@ export async function ocrTimeStrips(ocr: OcrBackend, strips: readonly TimeStrip[
   if (miss.length && ocr.recognizeTexts) {
     const got = await ocr.recognizeTexts(miss.map((s) => surfaceFromInk(s.w, s.h, s.data, 6)));
     got.forEach((t, k) => {
-      if (/^\d{1,2}$/.test(t.trim())) out.set(timeKey(miss[k]!), t.trim());
+      if (/^\d{1,3}$/.test(t.trim())) out.set(timeKey(miss[k]!), t.trim());
     });
   }
   return out;
