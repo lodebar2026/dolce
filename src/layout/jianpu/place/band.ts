@@ -452,7 +452,8 @@ function placeDirections(
       if (!t) continue;
       group.push(t);
       pen = t.ink.right + size * 0.25;
-      level = Math.max(level, orn.level);
+      // 诗歌本写在下方的跳转字（`"ff++:D.C."`）的层数是往下偏的；下方还没排（照上方画），层数不往上抬
+      if (!orn.below) level = Math.max(level, orn.level);
     }
     if (group.length === 0) continue;
     const gw = Math.max(...group.map((t) => t.ink.right)) - Math.min(...group.map((t) => t.ink.left));

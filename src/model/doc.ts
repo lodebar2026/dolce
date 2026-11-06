@@ -350,6 +350,9 @@ export interface Notations {
 export interface SourceOrnament {
   name: string;
   level: number;
+  /** 跳转字（Fine / D.C. / D.S.）写在小节线**下方**（诗歌本 `"ff:Fine"`）；缺省在上方（`"ffs:Fine"`、番茄 `&fine`）。
+   *  此时 `level` 是往下再偏几层 */
+  below?: boolean;
 }
 
 /** 文本谱里**夹在符号之间**、自己不占时值的东西，挂在紧随其后的那个符号上（行末的挂 `Measure.trailing`）。

@@ -53,6 +53,12 @@ const NOTE_COMMANDS = new Set([
 /** 小节线上可跟的记号名。 */
 const BARLINE_COMMANDS = new Set(["fine", "dc", "ds", "ty", "hs", "sbf"]);
 
+/** 跳转字（`&fine` / `&dc` / `&ds`）。诗歌本不写成记号，写成小节线文字 `"ff:Fine"`（`DialectSpec.jumpWords`）。 */
+const JUMP_WORD_COMMANDS = new Set(["fine", "dc", "ds"]);
+
+/** 小节线文字 → 跳转记号名（诗歌本 `"ff:D.C."`；不分大小写，句点可省）。 */
+const JUMP_WORDS: Readonly<Record<string, string>> = { fine: "fine", "d.c.": "dc", "d.c": "dc", "d.s.": "ds", "d.s": "ds" };
+
 /** 两表合一，按长度降序——命令名匹配须最长优先。 */
 const ALL_COMMANDS = [...NOTE_COMMANDS, ...BARLINE_COMMANDS].sort((a, b) => b.length - a.length);
 
@@ -184,6 +190,8 @@ interface QuotedMeaning {
   graceBefore?: NoteElement[];
   graceAfter?: NoteElement[];
   annotation?: string;
+  /** 诗歌本小节线文字 `"ff:Fine"` / `"ffs++:D.C.|D.S."` 读成的跳转记号 */
+  jumps?: { name: string; level: number; below: boolean }[];
 }
 
 function parseMeter(raw: string, parenthesized = false): Meter | undefined {
@@ -210,6 +218,17 @@ function interpretQuoted(ctx: Ctx, body: string, columnBase: number): QuotedMean
   }
   const kc = /^k:\s*([#b]?[1-7])\s*(?:;(.*))?$/i.exec(body);
   if (kc) return { key: kc[1]!, keyLabel: kc[2]?.trim() || undefined };
+  // 诗歌本小节线文字：`ff:` 在下方、`ffs:` 在上方；冒号前 `+` 的个数或 `+6` 是再偏几层；`|` 分行。
+  // 只认 Fine / D.C. / D.S.，别的字照普通注释（`ffcs:2` 不是这一类：`ff` 后不是 `s`/`+`/`:`）
+  const ff = ctx.dialect.jumpWords ? /^ff(s?)(?:\+(\d+)|(\++))?:(.*)$/i.exec(body) : null;
+  if (ff) {
+    const level = ff[2] !== undefined ? Number(ff[2]) : (ff[3]?.length ?? 0);
+    const names = ff[4]!.split("|").map((w) => JUMP_WORDS[w.trim().toLowerCase()]);
+    if (names.length && names.every((n) => n !== undefined)) {
+      return { jumps: names.map((name) => ({ name: name!, level, below: ff[1] === "" })) };
+    }
+    return { annotation: body };
+  }
   const grace = /^(h?yy):\s*/i.exec(body);
   if (grace) {
     const notes = scanGraceNotes(ctx, body.slice(grace[0].length), columnBase + grace[0].length);
@@ -225,6 +244,9 @@ function applyQuoted(target: Attachable, q: QuotedMeaning, source: SourceSpan): 
   if (q.key !== undefined && target.kind === "barline") {
     target.temporaryKey = q.key;
     if (q.keyLabel) target.annotation = q.keyLabel;
+  }
+  for (const j of q.jumps ?? []) {
+    target.ornaments.push({ name: j.name, level: j.level, source, ...(j.below ? { below: true } : {}) });
   }
   if (q.annotation !== undefined) {
     target.annotation = q.annotation;
@@ -568,6 +590,9 @@ export function parseMusicLine(
       const orn: Ornament = { name, level, source: span(ctx, i, next - i) };
       if (target === undefined) {
         report(ctx, "orphan-command", tr("diag.fanqie.orphanCommand", { name: rawName }), i, next - i);
+      } else if (ctx.dialect.jumpWords && JUMP_WORD_COMMANDS.has(name)) {
+        // 诗歌本的跳转字只认小节线文字 `"ff:Fine"`，记号写法不认
+        report(ctx, "unknown-command", tr("diag.fanqie.unknownCommand", { name: rawName }), i, next - i);
       } else {
         if (!NOTE_COMMANDS.has(name) && !BARLINE_COMMANDS.has(name)) {
           report(ctx, "unknown-command", tr("diag.fanqie.unknownCommand", { name: rawName }), i, next - i);

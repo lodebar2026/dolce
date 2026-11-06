@@ -171,6 +171,30 @@ function commandText(o: SourceOrnament): string {
   return `&${o.name}${"+".repeat(Math.max(0, o.level))}`;
 }
 
+/** 跳转字（`DialectSpec.jumpWords` 时写成小节线文字）。 */
+const JUMP_TEXT: Readonly<Record<string, string>> = { fine: "Fine", dc: "D.C.", ds: "D.S." };
+
+/** 一串记号的写法。诗歌本的 Fine / D.C. / D.S. 写成 `"ff:Fine"`（下方）/ `"ffs:D.C."`（上方），
+ *  偏几层写 `+`（三层以上写 `+6`），同位置同层的几个并成一条、`|` 分行（`"ff:D.C.|D.S."`）；其余照记号 `&xx` 写。 */
+function commandsText(os: readonly SourceOrnament[], d: DialectSpec): string {
+  let s = "";
+  const words = new Map<string, string[]>();
+  for (const o of os) {
+    const text = d.jumpWords ? JUMP_TEXT[o.name] : undefined;
+    if (text === undefined) {
+      s += commandText(o);
+      continue;
+    }
+    const lv = Math.max(0, o.level);
+    const head = `ff${o.below ? "" : "s"}${lv > 2 ? `+${lv}` : "+".repeat(lv)}`;
+    const list = words.get(head) ?? [];
+    if (!list.includes(text)) list.push(text);
+    words.set(head, list);
+  }
+  for (const [head, list] of words) s += quoted(`${head}:${list.join("|")}`);
+  return s;
+}
+
 /** 元素上的记号：原名优先；没有原名时从 `notations` 反查。 */
 function ornamentsOf(el: { ornaments?: SourceOrnament[]; notations?: Chord["notations"] }): SourceOrnament[] {
   if (el.ornaments?.length) return el.ornaments.filter((o) => FANQIE_COMMANDS.has(o.name));
@@ -187,11 +211,12 @@ function ornamentsOf(el: { ornaments?: SourceOrnament[]; notations?: Chord["nota
 }
 
 /** 小节里的 `<direction>`（MusicXML / `.jpwabc` 来的力度与术语）→ 挂在第几个元素上的记号。
- *  拍位规则在 `directionmarks.ts`（与简谱排版视图同一份）；小节线上的 Fine/D.S. 写在本小节最后一个符号后面。 */
-function directionCommands(mea: Measure): Map<number, SourceOrnament[]> {
+ *  拍位规则在 `directionmarks.ts`（与简谱排版视图同一份）；小节线上的 Fine/D.S. 番茄写在本小节最后一个符号后面，诗歌本写成右线上的 `"ff:Fine"`。 */
+function directionCommands(mea: Measure, d: DialectSpec): Map<number, SourceOrnament[]> {
   const dm = directionMarks(mea);
   const out = new Map(dm.byElement);
-  if (dm.barEnd.length && mea.elements.length) {
+  // 诗歌本的跳转字写在右线上（`writeRightBarline`）
+  if (dm.barEnd.length && mea.elements.length && !d.jumpWords) {
     const last = mea.elements.length - 1;
     out.set(last, [...(out.get(last) ?? []), ...dm.barEnd]);
   }
@@ -452,7 +477,8 @@ function writeTail(
   opts: { at: boolean; extra?: readonly SourceOrnament[]; quotes?: readonly string[] },
 ): void {
   if (opts.at) line.glue("@");
-  for (const o of [...ornamentsOf(host), ...(opts.extra ?? [])]) line.glue(commandText(o));
+  const cmds = commandsText([...ornamentsOf(host), ...(opts.extra ?? [])], st.d);
+  if (cmds) line.glue(cmds);
   if (host.harmony) {
     const text = harmonyText(host.harmony);
     if (text) line.glue(quoted(`hx:${text}`));
@@ -473,7 +499,7 @@ function writeMeasureBody(
   mea: Measure, from: number, to: number, line: Line, st: PartState, slots: Slot[], startBeat = 0,
 ): number {
   const d = st.d;
-  const dirs = directionCommands(mea);
+  const dirs = directionCommands(mea, d);
   const mids = (mea.barlines ?? []).filter((b) => b.location === "middle");
   let midIdx = 0;
   /** 等着挂到下一个音上的前倚音、`y` 占位上的和弦 */
@@ -602,7 +628,7 @@ function writeLeft(mea: Measure, line: Line, st: PartState): void {
   for (const b of lefts) {
     if (st.consumedLeft.has(b)) continue;
     const t = barlineType(b);
-    const orns = (b.ornaments ?? []).map(commandText).join("");
+    const orns = commandsText(b.ornaments ?? [], st.d);
     if (t) {
       writeInline(b.before, line, st);
       line.push(barlineCode(st.d, t) + orns);
@@ -650,6 +676,8 @@ function writeRightBarline(measures: readonly Measure[], mi: number, line: Line,
   // 文本谱原文行首写出的左线（带 `source`）在换行处不并：留给下一行的 `writeLeft` 原位写，否则 `||/` ⏎ `|:` 会并成行末的 `|:`
   const nextLeft = next?.barlines?.find((b) => b.location === "left" && barlineType(b) !== null && !(lineEnd && b.source));
   let type = bar ? barlineType(bar) : null;
+  // MusicXML 等来源挂在小节末的 Fine / D.C. / D.S.：诗歌本写成小节线文字，挂到这根右线上（番茄写在最后一个符号后面，见 `directionCommands`）
+  const barEnd = d.jumpWords ? directionMarks(mea).barEnd : [];
   if (nextLeft) {
     const lt = barlineType(nextLeft)!;
     if (lt === "repeat-start") type = type === "repeat-end" || type === "repeat-both" ? "repeat-both" : "repeat-start";
@@ -680,13 +708,16 @@ function writeRightBarline(measures: readonly Measure[], mi: number, line: Line,
     if (bar) writeInline(bar.before, line, st);
     let s = barlineCode(d, type);
     s += closeText;
-    for (const o of [...(bar?.ornaments ?? []), ...(nextLeft?.ornaments ?? [])]) s += commandText(o);
+    s += commandsText([...(bar?.ornaments ?? []), ...(nextLeft?.ornaments ?? []), ...barEnd], d);
     if (meter) s += quoted(`p:${meter.beats}/${meter.beatType}`);
     if (keyCode) s += quoted(bar?.annotation ? `${keyCode};${bar.annotation}` : keyCode);
     else if (bar?.annotation) s += quoted(bar.annotation);
     line.push(s);
-  } else if (closeText) {
-    line.glue(closeText);
+  } else {
+    // 行末开口收尾没有线可挂：跟在本小节最后一个符号后面
+    if (closeText) line.glue(closeText);
+    const tail = commandsText(barEnd, d);
+    if (tail) line.glue(tail);
   }
   if (nextTime) st.time = nextTime;
   if (nextKey) st.key = nextKey.fifths;

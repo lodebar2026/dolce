@@ -79,7 +79,7 @@ function fromFanqieBarline(el: BarlineElement): Barline {
 }
 
 const ornamentsOf = (os: readonly Ornament[]): SourceOrnament[] =>
-  os.map((o) => ({ name: o.name, level: o.level }));
+  os.map((o) => ({ name: o.name, level: o.level, ...(o.below ? { below: true } : {}) }));
 
 /** 时值分母（4=四分）→ 减时线层数。 */
 function beamsOf(duration: number): number {

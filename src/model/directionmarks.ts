@@ -101,7 +101,8 @@ export function directionMarks(mea: Measure): DirectionMarks {
       }
       if (!name) continue;
       if (AT_BAR_END.has(name)) {
-        if (!out.barEnd.some((o) => o.name === name)) out.barEnd.push({ name, level: 0 });
+        const below = dir.placement === "below";
+        if (!out.barEnd.some((o) => o.name === name)) out.barEnd.push({ name, level: 0, ...(below ? { below } : {}) });
       } else push(atOrAfter(p), name);
     }
   }

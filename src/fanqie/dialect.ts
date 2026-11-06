@@ -39,6 +39,9 @@ export interface DialectSpec {
   wordSeparator: string;
   /** 并字连接号：把本字并到前一个音节。没有这种写法就留空 */
   joinToken?: string;
+  /** 跳转字 Fine / D.C. / D.S. 写成小节线上的文字（诗歌本 `|"ff:Fine"` 在下方、`"ffs:D.C."` 在上方、`"ff++:"` / `"ff+6:"` 再偏几层，
+   *  一条里 `|` 分行），`&fine` / `&dc` / `&ds` 不认；否则写成记号 `&fine`（番茄）。`&ty` / `&hs` 两家都是记号 */
+  jumpWords: boolean;
   /** 跳房子不封口（`]/`）只在罩两小节以上时生效、单小节的照样封口（番茄官方；诗歌本二房后单小节不封口是常用写法） */
   openVoltaNeedsTwoMeasures: boolean;
   /** 头部字段的写法。**只有 emitter 用**——解析侧两边字段都认，不需要分方言。 */
@@ -119,6 +122,7 @@ const TOMATO: DialectSpec = {
   ],
   wordSeparator: "/",
   joinToken: "~",
+  jumpWords: false,
   openVoltaNeedsTwoMeasures: true,
   header: {
     versionLine: "V:1.0", // 与 D:/P: 一同构成 sniffDialect 的番茄特征
@@ -175,6 +179,7 @@ const SHIGE: DialectSpec = {
     ["|", "normal"],
   ],
   wordSeparator: " ",
+  jumpWords: true,
   openVoltaNeedsTwoMeasures: false,
   header: {
     titleField: "T",

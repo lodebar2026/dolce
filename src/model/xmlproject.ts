@@ -1115,9 +1115,9 @@ function directionOf(o: SourceOrnament): Direction | null {
   if (isDynamicName(name)) return { type: "dynamics", placement: "below", text: name };
   if (TERMS[name]) return { type: "words", placement: "above", text: TERMS[name] };
   if (name === "zkh" || name === "ykh") return { type: "bracket", placement: "above", spanType: name === "zkh" ? "start" : "stop" };
-  if (name === "fine") return { type: "words", placement: "above", text: "Fine", sound: { fine: true } };
-  if (name === "dc") return { type: "words", placement: "above", text: "D.C.", sound: { dacapo: true } };
-  if (name === "ds") return { type: "words", placement: "above", text: "D.S.", sound: { dalsegno: "1" } };
+  if (name === "fine") return { type: "words", placement: o.below ? "below" : "above", text: "Fine", sound: { fine: true } };
+  if (name === "dc") return { type: "words", placement: o.below ? "below" : "above", text: "D.C.", sound: { dacapo: true } };
+  if (name === "ds") return { type: "words", placement: o.below ? "below" : "above", text: "D.S.", sound: { dalsegno: "1" } };
   if (name === "ty") return { type: "coda", placement: "above" };
   if (name === "hs") return { type: "segno", placement: "above" };
   return null;

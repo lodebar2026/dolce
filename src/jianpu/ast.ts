@@ -84,6 +84,8 @@ export interface Ornament {
   name: string;
   level: number;
   source: SourceSpan;
+  /** 同 `SourceOrnament.below` */
+  below?: boolean;
 }
 
 export interface NoteElement {

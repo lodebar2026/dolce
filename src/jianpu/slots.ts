@@ -80,7 +80,7 @@ function fanqieBarlineType(b: Barline): BarlineType {
 }
 
 const fanqieOrnaments = (os: readonly SourceOrnament[] | undefined): Ornament[] =>
-  (os ?? []).map((o) => ({ name: o.name, level: o.level, source: ZERO }));
+  (os ?? []).map((o) => ({ name: o.name, level: o.level, source: ZERO, ...(o.below ? { below: true } : {}) }));
 
 /** 和弦上的记号：有原名就照原名（文本谱来源），否则由语义投影推（123 / MusicXML 来源）。
  *  123 的记号几种记法都认（`!staccato!` `!dy!` `!顿音!`），按 `deconames.ts` 归一成字形表的短名；认不出的原样留着。 */
