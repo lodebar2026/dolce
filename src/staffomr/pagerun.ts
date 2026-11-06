@@ -64,7 +64,15 @@ export async function recognizeStaffPage(
  * 建好页、认完字形之后的那一整条（找谱表 → 符头符干 → 小节 → 音符 → 记号 → 文本层 → 自检）。
  * 转曲的矢量谱（`outlineomr/`）自己建页、自己认字形，从这里接上。
  */
-export function recognizeBuiltPage(pg: SPage, opts: { textLookup?: TextGlyphLookup; carryTime?: { beats: number; beatType: number } } = {}): StaffPageResult {
+export function recognizeBuiltPage(
+  pg: SPage,
+  opts: {
+    textLookup?: TextGlyphLookup;
+    carryTime?: { beats: number; beatType: number };
+    /** 音符建好、三连音之前再过一手（转曲路传位图路的 `attachAccidentalsByPitch`：那套字临时记号离符头比半格远） */
+    afterNotes?: (pg: SPage, ctx: Map<Staff, StaffContext>, notes: StaffNote[]) => void;
+  } = {},
+): StaffPageResult {
   markTextInk(pg);
   if (!findStaves(pg)) {
     removeWhite(pg);
@@ -82,6 +90,7 @@ export function recognizeBuiltPage(pg: SPage, opts: { textLookup?: TextGlyphLook
   const beams = findBeams(pg);
   const stems: StemInfo[] = [];
   const notes = buildNotes(pg, ctx, beams, stems, undefined, true);
+  opts.afterNotes?.(pg, ctx, notes);
   // 三连音要在时值算完之后改（它按比例缩短已算好的时值）
   findTuplets(pg, beams, stems, notes);
   findGraceSlashes(pg, notes);

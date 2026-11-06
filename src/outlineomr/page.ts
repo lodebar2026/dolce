@@ -28,6 +28,7 @@ import type { RasterUnit } from "../rasteromr/staffline";
 import { headerCredits, type HeaderCredit, type WordLine } from "../omrkit/headertext";
 import { objRect, isGeometry, splitPieces, subpathCount, type OutlineGlyphLookup } from "./glyphs";
 import { bootstrapClefs, bootstrapKeyAccidentals, type BootHint, type BootStaff } from "../rasteromr/rasterglyphs";
+import { attachAccidentalsByPitch } from "../rasteromr/keysig";
 import { isAccidental, isClef, type SmuflName } from "../staffomr/glyphs";
 import { rasterizeObjs } from "./raster";
 
@@ -43,6 +44,8 @@ const NOTE_GAP = 0.35;
 /** 形状简单（一道横、一点、一竖、两竖）的符号：从一个对象拆出来的块认成它们不算数
  *（「到」「判」的立刀两竖认成打击乐谱号被摘走，裴克经文诗歌「到」读成「至」八十多处） */
 const PLAIN_SHAPES = new Set<string>(["articTenutoAbove", "articTenutoBelow", "legerLine", "stem", "augmentationDot", "articStaccatoAbove", "articStaccatoBelow", "barlineSingle", "barlineDouble", "restHBar", "unpitchedPercussionClef1", "unpitchedPercussionClef2"]);
+/** 圆点组成的字形：没有曲线的对象不认成这些 */
+const DOT_SHAPES = new Set<string>(["repeatDots", "augmentationDot"]);
 /** 按实心符头认空心符头：本页至少认出几个实心符头、外框差多少以内；全音符比实心符头宽这么多倍 */
 const HEAD_MIN = 3;
 const HEAD_TOL = 0.15;
@@ -237,7 +240,8 @@ export async function recognizeOutlinedPage(
       continue;
     }
     const whole = look.classify(o, sp);
-    if (whole) {
+    // 点是圆的：认成反复记号两点 / 附点却一段曲线都没有的是别的字形（裴克经文诗歌还原号拆出来的两道横杠，150 末行小节线后读成「|:」）
+    if (whole && !(DOT_SHAPES.has(whole.code) && o.curves === 0)) {
       syms.push({ box: objRect(o), code: whole.code });
       continue;
     }
@@ -301,7 +305,8 @@ export async function recognizeOutlinedPage(
     pg.objs.push(obj);
     pg.symbols.push(sym);
   }
-  const r = recognizeBuiltPage(pg, { carryTime: opts.carryTime });
+  // 临时记号离符头 0.4~0.7 格（裴克经文诗歌），后段 `analyzeAccidental` 只收半格以内的：按同高重新找主人（位图路同一函数）
+  const r = recognizeBuiltPage(pg, { carryTime: opts.carryTime, afterNotes: attachAccidentalsByPitch });
   if (r.hasStaff) markVoltas(pg, bands, sp);
   const res: OutlinedPageResult = { ...r, jianpuBands: bands, jianpuFix: null, harmonies: 0, lyricRows: 0, header: [] };
   if (!r.hasStaff) return res;
@@ -625,16 +630,28 @@ function bootstrapHeadSyms(
   };
   const blobs = parts.map((q, i) => ({ ...q.box, cy: drop.has(q.o) || stacked(i) ? -Infinity : inkCy(q.objs, q.box) }));
   /** `strict`：只收按结构认得出的（行中那一路：同样高窄的八分休止字形字典也认不出，墨迹重心会把它猜成升号，065 整行读成 G 调） */
-  const take = (h: BootHint, strict = false): boolean => {
+  /** `bowl`：降号的盒纵向收到肚子上（临时记号按中心与符头同高找主人，同位图路） */
+  const take = (h: BootHint, strict = false, bowl = false): boolean => {
     const q = parts[h.index];
     if (drop.has(q.o) || !Number.isFinite(blobs[h.index].cy)) return false;
     const code = accidentalByStrokes(q.o, q.objs.slice(1));
     if (strict && !code) return false;
-    syms.push({ box: q.box, code: code ?? h.code });
+    const box = bowl && code === "accidentalFlat" ? { ...q.box, y: q.o.bbox.y, h: q.o.bbox.h } : q.box;
+    syms.push({ box, code: code ?? h.code });
     for (const o of q.objs) drop.add(o);
     return true;
   };
-  for (const h of bootstrapKeyAccidentals(blobs, groups.map(bootStaff), clefRight, sp)) take(h);
+  // 行首调号也按链收（同下面行中那一路）：从左往右，下一个离上一个收下的不过 `KEY_CHAIN` 格。
+  // 窗口六格里还会落进头一个音前面的倚音（178「⁴5」，调号之后隔三格半），它的符干、符尾按墨迹重心会被猜成升降号
+  groups.forEach((g, k) => {
+    const hs = bootstrapKeyAccidentals(blobs, [bootStaff(g)], [clefRight[k]], sp).sort((a, b) => blobs[a.index].x - blobs[b.index].x);
+    let last = -Infinity;
+    for (const h of hs) {
+      const x = blobs[h.index].x;
+      if (x - last > sp * KEY_CHAIN && last > -Infinity) break;
+      if (take(h)) last = x;
+    }
+  });
   // 行中转调：小节线右边按行首同一判据补（「谱号右缘」换成小节线右缘；裴克经文诗歌 040 一房「♮♮ + 五个升号」转 B）。
   // 小节线与这个记号之间隔着符头的是临时记号，不收；字典在那儿已认出升降号的不补
   const mids: { k: number; x0: number; x1: number }[] = [];
@@ -672,6 +689,21 @@ function bootstrapHeadSyms(
       }
     }
   });
+  // 临时记号：调号收完以后，剩下按结构认得出的升降还原号，右边 `TEMP_ACC_DX` 格内紧挨着一个同高的符头（判据同上面行中转调拦截那一条）。
+  // 大小照调号那一判据（`bootstrapKeyAccidentals` 的高宽窗，窗口起点放在符头左边）；裴克经文诗歌的临时记号同调号一样拆成竖笔与横杠
+  for (const head of syms.filter((q) => q.code.startsWith("notehead"))) {
+    const hy = head.box.y + head.box.h / 2;
+    const g = groups.find((s) => hy > s.ys[0] - sp * 3 && hy < s.ys[4] + sp * 3);
+    if (!g) continue;
+    // 纵向不按谱表卡、按符头上下一格卡：加线上的音，记号整个在谱表外（051 下加一线的还原 B）
+    const around: BootStaff = { ...bootStaff(g), lineYs: [hy - sp, hy + sp] };
+    for (const h of bootstrapKeyAccidentals(blobs, [around], [head.box.x - sp * (TEMP_ACC_DX + KEY_SPAN / 2)], sp)) {
+      const b = blobs[h.index];
+      if (b.x + b.w > head.box.x + sp * 0.2 || b.x + b.w < head.box.x - sp * TEMP_ACC_DX) continue;
+      if (Math.abs(cy(parts[h.index].o) - hy) >= sp * 0.35) continue;
+      take(h, true, true);
+    }
+  }
   for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
   for (let i = geometry.length - 1; i >= 0; i--) if (drop.has(geometry[i])) geometry.splice(i, 1);
   // 拍号：横向窗口里上下叠着的一对，字典在那儿没认出拍号的才交出去现读
@@ -761,11 +793,17 @@ function accidentalByStrokes(glyph: VecObj, strokes: readonly VecObj[]): "accide
     const h = Math.max(a.bbox.h, b.bbox.h);
     return b.bbox.y - a.bbox.y > h * NATURAL_STAGGER ? "accidentalNatural" : "accidentalSharp";
   }
-  // 降号的竖笔在肚子左缘；右缘挂着一根竖线的是带干的小符头（倚音，050「(2__」，贴右缘的竖笔也会并进来）
-  if (strokes.length === 1 && glyph.curves > 0 && cx(strokes[0]) < glyph.bbox.x + glyph.bbox.w / 2) return "accidentalFlat";
+  // 降号的竖笔在肚子左缘；右缘挂着一根竖线的是带干的小符头（倚音，050「(2__」，贴右缘的竖笔也会并进来）。
+  // 肚子坐在竖笔下端、竖笔往上伸出一大截：倚音的符尾挂在符干**上端**往下弯（084「⁴5」的倚音读成降号）
+  if (strokes.length === 1 && glyph.curves > 0 && cx(strokes[0]) < glyph.bbox.x + glyph.bbox.w / 2) {
+    const s = strokes[0].bbox, b = glyph.bbox;
+    if (Math.abs(b.y + b.h - (s.y + s.h)) < s.h * FLAT_FOOT && b.y - s.y > s.h * FLAT_FOOT) return "accidentalFlat";
+  }
   return null;
 }
 
+/** 降号肚子底与竖笔下端差不过笔长的这么多、竖笔上端高出肚子顶至少这么多（裴克经文诗歌：差 0.02、高出 0.45） */
+const FLAT_FOOT = 0.2;
 /** 还原号两道竖笔上下错开至少笔长的这么多（裴克经文诗歌还原号 0.33、升号 0.07） */
 const NATURAL_STAGGER = 0.2;
 
