@@ -74,8 +74,18 @@ export const EXAMPLES_123_TEXT_EN: { title: string; body: string[] }[] = [
       "`P:A2` = AA, `P:(AB)3` = ABABAB, and they can nest; dots only separate, so the dots in `P:((AB)3.(CD)3)2` mean nothing. Without a header `P:`, the marks in the tune are just labels and the song plays straight through.",
       "**Every entry into a part starts over**: `|: :|`, endings and D.C./D.S. inside it are worked out afresh, so the second A starts from the first ending again. (The ABC standard also shows `P:A4` with four endings, one per entry. Dolce does not read it that way: all four endings play, four times over.)",
       "**Lyrics count per part**: the Nth time a part is sung it takes that part's Nth `w:` line, and repeats inside the part use up lines too. If A contains `|: :|`, one entry uses 2 lines and the next A continues from line 3. A missing line borrows the earliest line with text at that spot.",
-      "`[P:B]` may sit mid-measure: from that note on, the measure belongs to the next part. Measures before the first mark play once at the start; a part left out of the order is not sung; a part named in the order but not marked in the tune is skipped with a note in the status bar. The Projection view starts a new page for each part.",
+      "`[P:B]` may sit mid-measure: from that note on, the measure belongs to the next part. Measures before the first mark play once at the start; a part left out of the order is not sung; a part named in the order but not marked in the tune is skipped with a note in the status bar. In the Projection view entering a part starts neither a new page nor a new line; to break there, end the previous part with `$` or `%%newpage`.",
       "**Save as** MusicXML, Muse, jianpu-ly, plain-text jianpu or `.jpwabc` cannot hold `P:`: you get a warning before saving, and the saved file follows the repeat signs. 123 and ABC keep it as written.",
+    ],
+  },
+  {
+    title: "Singing order %%sing",
+    body: [
+      "`P:` only orders the parts; repeats inside a part still apply and lyrics count per part. To fix each pass outright — which parts it sings, with which lyric line, and where lines break (to match existing slides, when the repeats don't match how it is really sung, or when the same spot breaks differently on each pass) — write `%%sing` after the music: the score stays as printed and the singing order is listed separately.",
+      "**One line per pass**, one Projection page per pass. Each item is a part name (the sections cut by `[P:x]` marks, same as `P:`); `name@N` sings that part with its Nth `w:` line, line 1 by default. `/` forces a line break; otherwise lines fill the page width, and a pass that doesn't fit continues on a new page.",
+      "**Items are sung straight through**: `|: :|`, endings and D.C./D.S. inside a part are ignored. With `%%sing`, the header `P:` no longer applies, and the Projection view ignores `$`, `%%newpage` and its own automatic breaks — you get exactly what you write. `$` and `%%newpage` still lay out the Jianpu view.",
+      "A leading `[rows=N]` applies to that pass only: at most N lines on its page (default 4). A song has one order, used by both the Projection view and playback.",
+      "Unreadable items and parts with no mark in the tune are skipped with a note in the status bar. Only 123 can hold `%%sing`; saving as another format warns you, and the saved file follows the repeat signs.",
     ],
   },
   {
