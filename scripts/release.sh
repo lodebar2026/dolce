@@ -44,7 +44,8 @@ echo "==> 等待 Build run 完成…"
 # release 触发的 run 略有延迟，轮询取回本 tag 的 run id
 RUN_ID=""
 for _ in $(seq 1 30); do
-  RUN_ID="$(gh run list --repo "${REPO}" --workflow Build --branch "${TAG}" \
+  # 按提交号找：同号重发时同一 tag 上还留着上回取消的 run，只按 tag 会抓错
+  RUN_ID="$(gh run list --repo "${REPO}" --workflow Build --branch "${TAG}" --commit "$(git rev-parse HEAD)" \
     --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
   [ -n "${RUN_ID}" ] && break
   sleep 5
