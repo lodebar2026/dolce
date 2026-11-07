@@ -26,7 +26,12 @@ sed -i '' "s/\"softwareVersion\": \"[0-9][0-9.]*\"/\"softwareVersion\": \"${VER}
 ( cd src-tauri && cargo update -p dolce --precise "${VER}" >/dev/null 2>&1 || true )
 
 git add package.json index.html seo/head.en.html src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-git commit -m "发布 ${TAG}"
+# 同一版本号重发（撤掉 release 后补改动再发）时版本文件没变，跳过版本提交，照常推送
+if git diff --cached --quiet; then
+  echo "   版本号已是 ${VER}，不另提交"
+else
+  git commit -m "发布 ${TAG}"
+fi
 git push origin main
 
 echo "==> 建 release ${TAG}（触发 Build）"
