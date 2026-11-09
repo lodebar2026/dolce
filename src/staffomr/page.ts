@@ -1361,7 +1361,9 @@ export function makeBars(pg: SPage, opts: { keepRoomyHead?: boolean } = {}): voi
     void pendingLeftRepeat;
     for (const s of pg.symbols) {
       if (!s.hasTag("Note") || s.ownerStaff !== stf) continue;
-      const b = stf.bars.find((x) => s.px >= x.left && s.px < x.right);
+      // 按符头盒的中点归：`px` 是盒左沿，排得紧的谱上全音符左沿能越过前面那根小节线（裴克经文诗歌 038 末行越 1.5pt，归进前一小节、本小节空着）
+      const cx = (s.box.left + s.box.right) / 2;
+      const b = stf.bars.find((x) => cx >= x.left && cx < x.right);
       if (b) b.notes.push(s);
     }
     // **一行的头尾若切出一个空条，那不是小节。**
@@ -1398,7 +1400,9 @@ export function makeBars(pg: SPage, opts: { keepRoomyHead?: boolean } = {}): voi
       return end - Math.max(b.left, ...head.map((y) => y.box.right));
     };
     for (;;) {
-      const emptyHead = (stf: Staff) => stf.bars.length > 1 && !stf.bars[0].notes.length && !(opts.keepRoomyHead && headRoom(stf) >= sp * 3);
+      // 右端是 `|:`（下一条左端起反复）的不算：行首的 `|:` 照例隔开谱号调号印，留白再宽也不是小节（裴克经文诗歌 044、198 量出 3.6~5.6 格）
+      const roomy = (stf: Staff) => opts.keepRoomyHead && !(stf.bars[1].leftRepeat && !stf.bars[0].rightRepeat) && headRoom(stf) >= sp * 3;
+      const emptyHead = (stf: Staff) => stf.bars.length > 1 && !stf.bars[0].notes.length && !roomy(stf);
       const cand = g.filter(emptyHead);
       if (!cand.length) break;
       const aligned = g.every((stf) => stf.bars.length > 1 && Math.abs(stf.bars[0].right - g[0].bars[0].right) <= sp);

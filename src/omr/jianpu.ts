@@ -362,6 +362,8 @@ function splitOrnamentDot(bin: Binary, b: Rect, numH: number): Component | null 
 /** 字号估计的小节线锚定一路，短条（样本凑不够 15 块）时至少几块、占瘦高块的几成 */
 const NUMH_FEW_MIN = 5;
 const NUMH_FEW_FRAC = 0.6;
+/** 字号锚定样本里窄块（「1」）最高是方块数字锚定中位的几倍：升降号高出一截 */
+const NUMH_NARROW_H = 1.15;
 /** 高窄 ♯ 最高多少字高（见 `tallNarrow`） */
 const TALL_SHARP_H = 1.6;
 
@@ -381,17 +383,23 @@ function estimateNumH(comps: Component[]): number {
   // 小节线是细高竖条（宽 ≤ max(3, 0.12 高)），数字在它纵向中段、横向几个线高以内；歌词在线外，挨不上。
   // 抽样 6 本 48 首与识别出的数字实高差 ≤1px（没小节线的页凑不够样本，照旧）。
   const bars = comps.filter((k) => k.bbox.h >= 12 && k.bbox.w <= Math.max(3, k.bbox.h * 0.12));
-  const anchored = bars.length >= 3 ? tall.filter((k) => bars.some((b) =>
+  const anchorOf = (ks: Component[]) => bars.length >= 3 ? ks.filter((k) => bars.some((b) =>
     b.bbox.h >= k.bbox.h * 1.2 && Math.abs(b.bbox.x - k.bbox.x) <= b.bbox.h * 6 &&
     Math.abs(rcy(b.bbox) - rcy(k.bbox)) < b.bbox.h * 0.3)) : [];
+  // 锚定样本连窄的「1」（宽高比 0.2~0.35，近方块那道门收不进）一起数：一行全是 `1̇` 的短条（裴克经文诗歌 038 第五行，
+  // 九个数字五个是 1，高音点倒有六个），只数方块数字凑不够样本，字号落在点上（15 对 51）。小节线宽高比不过 0.12，收不进来。
+  // 窄块不高过方块数字锚定中位的 `NUMH_NARROW_H` 倍：「1」与别的数字一样高，升降号高出一截（209 末行两个 ♯ 76 对数字 52，挤偏了 `tight`）
+  const ref = median(anchorOf(tall).map((k) => k.bbox.h));
+  const slim = [...tall, ...comps.filter((k) => k.bbox.h >= 6 && k.bbox.w / k.bbox.h > 0.2 && k.bbox.w / k.bbox.h <= 0.35 && (!ref || k.bbox.h <= ref * NUMH_NARROW_H))];
+  const anchored = anchorOf(slim);
   // 锚上的得占瘦高块的两成、且不小于原估计的 0.6：没几根真小节线的页（迦南诗选 1677《祷告》，16/385 块、中位 12 对数字 48）
   // 凑上来的是碎笔。锚上的块九成挤在中位 ±6% 以内（`tight`）的不看占比：中英三段对照（青年诗歌 79《我听见了主耶稣说》）
   // 一谱行下六行词，英文小写字母凑出 390 个瘦高块，锚上的 65 块全是 43±6% 的数字
   // 样本少的短条（简线混排谱的一行简谱，十来个数字）凑不够 15 块：锚上的占瘦高块六成以上、至少 5 块也算。
   // 裴克经文诗歌 209 末行全是高音点数字，点与附点同数字一样多，近方形块的中位落在点上（21 对数字 54），整行读成「6」
-  const raw3 = anchored.length >= 15 || (anchored.length >= NUMH_FEW_MIN && anchored.length >= tall.length * NUMH_FEW_FRAC) ? median(anchored.map((k) => k.bbox.h)) : 0;
+  const raw3 = anchored.length >= 15 || (anchored.length >= NUMH_FEW_MIN && anchored.length >= slim.length * NUMH_FEW_FRAC) ? median(anchored.map((k) => k.bbox.h)) : 0;
   const tight = raw3 > 0 && anchored.filter((k) => Math.abs(k.bbox.h - raw3) <= raw3 * 0.06).length >= anchored.length * 0.85;
-  const est3 = raw3 && (anchored.length >= tall.length * 0.2 || tight) ? raw3 : 0;
+  const est3 = raw3 && (anchored.length >= slim.length * 0.2 || tight) ? raw3 : 0;
   if (est3 && est > est3 * 1.15 && est3 >= est * 0.6) { probe("numH.barAnchored"); return est3; }
   // 估小方向同理：补充本七十来页字号估 27~30、数字实高 36~37（汉字碎块压低了中位，est2 的 1.3 倍门又够不着）。
   // 门开在 1.2：差一成多的页照旧。还得跟瘦高块的估计 est2 对得上（差不到一成）：四声部的小节线跨两个声部，锚上的瘦高块混进
@@ -1672,13 +1680,16 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       // 宽高比门 1.5（原 1.8）：新编赞美诗 250 的弧高一号（39×22、字号 32，1.77），点扣在弧里；点居中、正下方紧跟数字、弧拱得起来这几道门够严
       // 弧顶立着和弦字母（青年诗歌 91 末音 `Dm` 的 m 脚站在弧上，块 46×37）：块高过了门，改看下包络是不是拱。墨留给和弦，不进 fermataArcs
       const gluedTop = ab.h > numH * 0.7 && ab.h <= numH * 1.1 && lowerArched(ab);
-      if (ab.h < numH * 0.15 || (!gluedTop && (ab.h > numH * 0.7 || ab.w / ab.h < 1.5))) continue;
+      if (ab.h < numH * 0.15 || ab.h > numH * 1.1 || (!gluedTop && ab.w / ab.h < 1.5)) continue;
       const dotC = c.dots.find((o) => {
         const ob = o.bbox;
         return Math.abs(rcx(ob) - rcx(ab)) <= numH * 0.25 && ob.y >= ab.y &&
           ob.y - rbottom(ab) <= numH * 0.25 && ob.w <= numH * 0.4;
       });
       if (!dotC) continue;
+      // 高过 0.7 字号的弧只收点整个扣在拱里的（点底不出弧底）：近半圆的高拱（裴克经文诗歌 038 末行 80×46、字号 51，0.9）
+      const dotInside = rbottom(dotC.bbox) <= rbottom(ab) + numH * 0.05;
+      if (ab.h > numH * 0.7 && !gluedTop && !dotInside) continue;
       const owner = m.rd.find((k) => Math.abs(rcx(k.bbox) - rcx(ab)) <= numH * 0.3 &&
         // 窗口同八度点（0.8 字号）：八度那边收得到的点，延长记号得先认（补充本 62 的小号延长记号离数字 0.64 字号，点被当成高音点）
         k.bbox.y - rbottom(dotC.bbox) >= -2 && k.bbox.y - rbottom(dotC.bbox) <= numH * 0.8 &&

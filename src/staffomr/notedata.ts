@@ -1155,7 +1155,13 @@ export function buildNotes(
 
       // 复合音符字形自带时值、没有杠可分
       const beam = stem && s.compositeBase === undefined ? beamOf.get(stem) : undefined;
-      out.push({ sym: s, staff: stf, rest, diatonic, step, octave, alter: 0, accidental, duration: base, base, dots: 0, stemUp, ...(stem ? { stemTip: stem.up ? stem.seg.box.top : stem.seg.box.bottom } : {}), beams: nb, ...(beam ? { beam } : {}), x: s.px, voice: 1, ...(s.redrawn ? { hidden: true } : {}), slash: s.code.startsWith("noteheadSlash") || undefined, ...(s.code === "noteheadXBlack" ? { xHead: "x" as const } : s.code === "noteheadCircleX" ? { xHead: "circle-x" as const } : {}), ...(!rest && clef?.code.startsWith("unpitchedPercussionClef") ? { unpitched: true } : {}) });
+      // 符头左沿越过前面那根小节线的（排得紧的谱，裴克经文诗歌 038 末行全音符越 1.5pt），x 夹到小节左界：
+      // 下游按 x 分小节的地方都与 `makeBars` 按盒中点归的一致
+      // 只夹越过小节线的：行首第一小节的左界是谱表左端，不是小节线（位图路主我敬拜你首音左沿比谱表左端还靠左 1px）
+      const cx = (s.box.left + s.box.right) / 2;
+      const bi = stf.bars.findIndex((b) => cx >= b.left && cx < b.right);
+      const nx = bi > 0 ? Math.max(s.px, stf.bars[bi].left) : s.px;
+      out.push({ sym: s, staff: stf, rest, diatonic, step, octave, alter: 0, accidental, duration: base, base, dots: 0, stemUp, ...(stem ? { stemTip: stem.up ? stem.seg.box.top : stem.seg.box.bottom } : {}), beams: nb, ...(beam ? { beam } : {}), x: nx, voice: 1, ...(s.redrawn ? { hidden: true } : {}), slash: s.code.startsWith("noteheadSlash") || undefined, ...(s.code === "noteheadXBlack" ? { xHead: "x" as const } : s.code === "noteheadCircleX" ? { xHead: "circle-x" as const } : {}), ...(!rest && clef?.code.startsWith("unpitchedPercussionClef") ? { unpitched: true } : {}) });
     }
   }
   // **先按谱行、再按 x**。只按 x 排会把一页里几行谱的音符横向交织在一起

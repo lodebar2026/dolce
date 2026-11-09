@@ -294,6 +294,13 @@ export async function recognizeOutlinedPage(
   const entersStaff = (r: Rect) => staffBoxes.some((st) => r.y < st.bottom && r.y + r.h > st.top + sp * 0.5);
   const timePairs = bootstrapHeadSyms(syms, texts, geometry, groups, sp, (o, box) => inStaffZone(o) && (!inBand(o) || entersStaff(box)));
   if (opts.live?.time && timePairs.length) await readTimeSigs(syms, texts, timePairs, opts.live.time, sp);
+  // 简谱带底边贴着谱表时，五线谱高处那组的连音数字中心压进带框（裴克经文诗歌 152 前两行「2 3 4」）：整个在简谱数字下沿以下的也收
+  const digitFoot = new Map(bands.map((b) => {
+    const big = glyphObjs.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.h >= sp * TUPLET_JP_H);
+    return [b, median(big.map((o) => o.bbox.y + o.bbox.h))] as const;
+  }));
+  const underDigits = (o: VecObj) => bands.some((b) => inside(b.box, cx(o), cy(o)) && digitFoot.get(b)! > 0 && o.bbox.y >= digitFoot.get(b)!);
+  if (opts.live?.time) await readTupletDigits(syms, texts, opts.live.time, sp, (o) => inStaffZone(o) && (!inBand(o) || underDigits(o)));
 
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
   const marks = geometry.filter((o) => o.bbox.w >= sp * 0.3 && o.bbox.h >= sp * 0.3 && Math.max(o.bbox.w, o.bbox.h) <= sp * 2.5);
@@ -870,6 +877,36 @@ async function readTimeSigs(
     syms.push({ box: unionBox(pairs[i].num), code: `timeSig${n}` as SmuflName });
     syms.push({ box: unionBox(pairs[i].den), code: `timeSig${d}` as SmuflName });
     for (const o of [...pairs[i].num, ...pairs[i].den]) drop.add(o);
+  });
+  for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
+}
+
+/** 连音数字的高（线距）：比符头矮一截到一格多（裴克经文诗歌 1.06），歌词字 2 格以上 */
+const TUPLET_H: [number, number] = [0.7, 1.4];
+/** 量简谱数字行下沿时只数这么高（线距）以上的块：简谱数字 1.6 格，连音数字、点、减时线都矮 */
+const TUPLET_JP_H = 1.2;
+
+/**
+ * 字典认不出的连音数字（转曲后是正文字体的「3」，不是乐谱字体的 `tuplet3`）：谱表区里、简谱带外，单独一块、带曲线、
+ * 高在 `TUPLET_H` 以内、不宽过高的字形各画一条送拍号数字 OCR，读成单个 3 的造成 `tuplet3` 符号、对象从 `texts` 拿走。
+ * 挂不挂得上（贴着一组符杠或带方括号）由下游 `findTuplets` 判，挂不上的不改时值
+ */
+async function readTupletDigits(
+  syms: { box: Rect; code: SmuflName }[],
+  texts: VecObj[],
+  time: NonNullable<RasterLiveOcr["time"]>,
+  sp: number,
+  zone: (o: VecObj) => boolean,
+): Promise<void> {
+  const cands = texts.filter((o) => zone(o) && o.curves > 0 && o.bbox.w <= o.bbox.h && o.bbox.h >= sp * TUPLET_H[0] && o.bbox.h <= sp * TUPLET_H[1] && splitPieces(o).length === 1);
+  if (!cands.length) return;
+  const strips = cands.map((o) => timeStripOfObjs([o], -1, "num", sp));
+  const got = await time(strips);
+  const drop = new Set<VecObj>();
+  strips.forEach((st, i) => {
+    if (got.get(timeKey(st))?.trim() !== "3") return;
+    syms.push({ box: objRect(cands[i]), code: "tuplet3" });
+    drop.add(cands[i]);
   });
   for (let i = texts.length - 1; i >= 0; i--) if (drop.has(texts[i])) texts.splice(i, 1);
 }
