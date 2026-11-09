@@ -28,6 +28,7 @@ import {
 } from "./model";
 import { isFlag, isNoteHead, isPitchedHead, isRest } from "./glyphs";
 import { shapeSig } from "../omrkit/glyphdict";
+import { median } from "../omrkit/geom";
 import { isFill, isStroke, isWhite, subPaths, thinRectAxis } from "./vecgeom";
 import { classifyBarlines, tagRepeatDots } from "./barlines";
 
@@ -53,6 +54,8 @@ const STAFF_ASPECT_MIN = 4;
 
 /** 谱线候选的长度门槛：整页最长横线的这个比例。符杠、加线都短得多。 */
 const STAFF_LINE_LEN_RATIO = 0.35;
+/** 左端与整行谱线对齐的短谱线最短几个谱表高（≈ 12 格） */
+const SHORT_STAFF_H = 3;
 /** 凑第 n 条谱线时，离「按平均间距推出来的位置」允许差多少（相对间距）。 */
 const STAFF_LINE_TOL = 0.2;
 /** 兜底那一路「五条算不算等距」的容差（相对平均间距）。与 `groupStaves` 同一个数。 */
@@ -294,7 +297,11 @@ export function findStaves(pg: SPage): boolean {
   //    候选还要先滤一道长度：符杠（横的那些）在 `thinRectAxis` 之后也是横段，
   //    混进来会把搜索打乱。谱线是整页最长的横线，取「最长横线的 35%」当门槛。
   const maxLen = Math.max(0, ...hlines.map((l) => l.len));
-  const cands = hlines.filter((l) => !done.has(l) && l.len >= maxLen * STAFF_LINE_LEN_RATIO);
+  // 末行只剩一两小节的短谱表（裴克经文诗歌 142、199 末行 166pt，门槛 169）：左端与整行谱线的左端对齐、长过 `SHORT_STAFF_H` 个谱表高的也收。
+  // 短谱表总从左边距排起，符杠、松叶、房子线的左端不会正好落在边距上；五条等距那道门照旧
+  const longLeft = median(hlines.filter((l) => l.len >= maxLen * 0.9).map((l) => l.left));
+  const cands = hlines.filter((l) => !done.has(l) && (l.len >= maxLen * STAFF_LINE_LEN_RATIO
+    || (l.len >= pg.barlineHeight * SHORT_STAFF_H && Math.abs(l.left - longLeft) <= pg.barlineHeight * 0.25)));
   cands.sort((a, b) => a.cy - b.cy);
   const used = new Set<Seg>();
   for (let i = 0; i < cands.length; i++) {

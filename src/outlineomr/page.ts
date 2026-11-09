@@ -152,6 +152,60 @@ export function staffGroups(objs: readonly VecObj[], pageW: number): { groups: G
   return { groups: [...groups, ...short].sort((a, b) => a.ys[0] - b.ys[0]), sp };
 }
 
+/** 谱线错位判据：小节线至少几根、上端彼此差多少（线距）内算一簇、与本页其余各行的偏移差多少（线距）以上算错位、竖线高与谱表高差多少（线距）内算小节线 */
+const MISREG_MIN = 3;
+const MISREG_TIGHT = 0.1;
+const MISREG_DEV = 0.3;
+const MISREG_H = 0.25;
+
+/**
+ * **谱线印错了位**：原书个别行的五条谱线（连谱号）整体相对小节线、符头、调号上下错开（裴克经文诗歌 160 第一页末行低一格、
+ * 200 第二页首行高 0.6 格：小节线顶出顶线、够不着底线），照谱线读整行音高偏、小节线两端对不上谱线一根不认。
+ * 一行里与谱表等高的竖线（小节线）上端挤成一簇（至少 `MISREG_MIN` 根、彼此差不过 `MISREG_TIGHT` 格），这一簇对顶线的偏移与本页
+ * 其余各行的偏移差 `MISREG_DEV` 格以上、且没有一根对得上常规偏移的，把这一行谱线对象平移到小节线框住的位置（符头、调号跟小节线是一起排的），再重新分组。
+ */
+function realignStaffLines(objs: readonly VecObj[], pageW: number): { groups: Group5[]; sp: number } | null {
+  const st5 = staffGroups(objs, pageW);
+  if (!st5) return st5;
+  const { groups, sp } = st5;
+  const topsOf: number[][] = [];
+  const offs = groups.map((g) => {
+    const h = g.ys[4] - g.ys[0];
+    const tops = objs
+      .filter((o) => o.curves === 0 && o.bbox.w < sp * 0.3 && Math.abs(o.bbox.h - h) <= sp * MISREG_H && cx(o) > g.left && cx(o) < g.right
+        && o.bbox.y < g.ys[4] && o.bbox.y + o.bbox.h > g.ys[0])
+      .map((o) => o.bbox.y - g.ys[0])
+      .sort((a, b) => a - b);
+    topsOf.push(tops);
+    // 最大的一簇（符干碰巧与谱表等高的零星几根散在簇外）
+    let best: number[] = [];
+    for (let i = 0; i < tops.length; i++) {
+      const c = tops.filter((t) => t >= tops[i] && t - tops[i] <= sp * MISREG_TIGHT);
+      if (c.length > best.length) best = c;
+    }
+    return best.length >= MISREG_MIN ? median(best) : null;
+  });
+  let moved = false;
+  groups.forEach((g, i) => {
+    const off = offs[i];
+    const others = offs.filter((o, k): o is number => k !== i && o !== null);
+    if (off === null || !others.length) return;
+    const normal = median(others);
+    const dev = off - normal;
+    if (Math.abs(dev) < sp * MISREG_DEV) return;
+    // 有一根对得上本页常规偏移就不是错位：别的等高竖线凑成了一簇（072、152 首行三根高出一格的竖线与三根小节线一样多）
+    if (topsOf[i].some((t) => Math.abs(t - normal) <= sp * MISREG_TIGHT)) return;
+    for (const o of objs) {
+      if (o.curves !== 0 || o.bbox.h >= 2 || o.bbox.x > g.left + sp || o.bbox.x + o.bbox.w < g.right - sp) continue;
+      if (!g.ys.some((y) => Math.abs(o.bbox.y + o.bbox.h / 2 - y) <= 0.5)) continue;
+      o.bbox = { ...o.bbox, y: o.bbox.y + dev };
+      o.ctm = [o.ctm[0], o.ctm[1], o.ctm[2], o.ctm[3], o.ctm[4], o.ctm[5] + dev];
+    }
+    moved = true;
+  });
+  return moved ? staffGroups(objs, pageW) : st5;
+}
+
 const inside = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 const cx = (o: VecObj) => o.bbox.x + o.bbox.w / 2;
 const cy = (o: VecObj) => o.bbox.y + o.bbox.h / 2;
@@ -223,7 +277,7 @@ export async function recognizeOutlinedPage(
   const clip = opts.clip;
   if (clip) vec.objs = vec.objs.filter((o) => inside(clip.rect, cx(o), cy(o)) && !clip.drop?.some((r) => inside(r, cx(o), cy(o))));
   const pageBottom = clip ? clip.rect.y + clip.rect.h : vec.height;
-  const st5 = staffGroups(vec.objs, vec.width);
+  const st5 = realignStaffLines(vec.objs, vec.width);
   const empty = (): OutlinedPageResult => {
     const pg = buildPage(index, vec.width, vec.height, [], [], 20);
     return { ...recognizeBuiltPage(pg, { carryTime: opts.carryTime }), jianpuBands: [], jianpuFix: null, harmonies: 0, lyricRows: 0, header: [] };
