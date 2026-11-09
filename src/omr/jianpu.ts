@@ -1323,8 +1323,10 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       const wideSharp = (sysOf.has(m) ? raised : voicedPage ? k.bbox.h < medH * 0.8 : hungBoth) && hungLow && k.bbox.w <= medW * 1.5 &&
         accidentalOf(bin, k.bbox) === "sharp" && !underlined(k.bbox);
       // 上标小 ♭（青年诗歌 48《祂是耶稣》`ᵇ6` `ᵇ3`：25×27 对数字 29×49，底比数字底高出一半字高）：宽 0.86 字宽过不了宽度门，
-      // 离数字也有 0.4 字号。只收矮（≤0.7 字高）、整个悬在右邻上半截、形状判成 ♭ 的
-      const smallFlat = k.bbox.h <= medH * 0.7 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.35 && k.bbox.w <= medW &&
+      // 离数字也有 0.4 字号。只收矮（≤0.7 字高）、整个悬在右邻上半截、形状判成 ♭ 的。
+      // 宽度上限同宽 ♯ 的 1.5 倍数字宽：青年诗歌 125《终极完成的书拉密女》`ᵇ7` 的 ♭ 26×24 比本行数字（中位 22×40）还宽，
+      // 卡在 1 倍那道门外，当音符读成了 0
+      const smallFlat = k.bbox.h <= medH * 0.7 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.35 && k.bbox.w <= medW * 1.5 &&
         accidentalOf(bin, k.bbox) === "flat" && !underlined(k.bbox);
       if (k.bbox.w > medW * 0.85 && !wideSharp && !smallFlat) continue;
       if (k.bbox.h < medH * 0.45 || k.bbox.w < medW * 0.3) continue;         // 太小 → 点/碎片

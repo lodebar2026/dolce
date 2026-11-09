@@ -485,6 +485,23 @@ function dashInk(bin: Binary, a: Rect, b: Rect, h: number): boolean {
   return mid >= 0.3 && mid <= 0.7;
 }
 
+/** 框右边紧跟一道破折号（det 常不把它框进去）：离框不到 0.8 字高处起墨，往右连着走（断开不过 0.3 字高，「——」两笔间有缝），
+ *  墨长至少一个字高，且那一段按 `dashInk` 是居中的细横线。 */
+function trailingDash(bin: Binary, a: Rect, h: number): boolean {
+  const y0 = Math.max(0, Math.round(a.y)), y1 = Math.min(bin.h - 1, Math.round(a.y + a.h));
+  const inkCol = (x: number): boolean => { for (let y = y0; y <= y1; y++) if (bin.data[y * bin.w + x]) return true; return false; };
+  const ax1 = Math.round(a.x + a.w), xMax = Math.min(bin.w - 1, ax1 + Math.round(h * 6));
+  let start = -1;
+  for (let x = ax1 + 1; x <= Math.min(xMax, ax1 + Math.round(h * 0.8)); x++) if (inkCol(x)) { start = x; break; }
+  if (start < 0) return false;
+  let last = start;
+  for (let x = start; x <= xMax && x - last <= h * 0.3; x++) if (inkCol(x)) last = x;
+  if (last - start + 1 < h) return false;
+  // dashInk 量两框之间的空当：前框右缘挪到墨起点前，后框左缘放在墨终点后
+  const m = Math.round(h * 0.1);
+  return dashInk(bin, { x: a.x, y: a.y, w: start - m - a.x, h: a.h }, { x: last + 1 + m, y: a.y, w: 1, h: a.h }, h);
+}
+
 function mergeStackedColumns(comps: Component[], numH: number): Component[] {
   const boxes = comps.map((c) => ({ ...c.bbox }));
   const alive = boxes.map(() => true);
@@ -1349,7 +1366,11 @@ export async function recognizeHeader(
         // 基线下），同样字号的框比汉字高一截。1677《祷告》的「Pray」框 73px、标题「1677 祷 告」才 67px，
         // 1.05 一卡副标题就没了。
         .filter((l) => l.charH <= tl.charH * (hanziCount(l.text) ? 1.05 : 1.3))
-        .filter((l) => Math.abs(l.cx - titleCx) <= titleBox.w * 0.35)
+        // 引题：标题上方偏左印一行、以破折号引出标题（青年诗歌 77、125「新耶路撒冷——」），不与标题居中。
+        // 破折号 det 没框进去，靠框右边的墨认（`trailingDash`），认出的补回「——」
+        .map((l) => (l.bbox.y + l.bbox.h <= tl.bbox.y && /^[一-鿿]+$/.test(l.text.trim()) && trailingDash(bin, l.bbox, l.charH)
+          ? (probe("subtitle.leadIn"), { ...l, text: l.text.trim() + "——", leadIn: true }) : l))
+        .filter((l) => ("leadIn" in l) || Math.abs(l.cx - titleCx) <= titleBox.w * 0.35)
         .filter((l) => gapTitle(l) < firstStaffTopY - l.cy)
         .filter((l) => { const t = l.text.trim(); return t.length >= 2 && !metaRe.test(t) && !chordRe.test(t) && /[^\d\s.,:：、·]/.test(t); })
         .sort((a, b) => gapTitle(a) - gapTitle(b));
