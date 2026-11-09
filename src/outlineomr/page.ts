@@ -11,7 +11,7 @@ import type { Rect } from "../omrkit/types";
 import { buildPage } from "../staffomr/page";
 import { recognizeBuiltPage, type StaffPageResult } from "../staffomr/pagerun";
 import { attachHarmonies, attachLyrics, buildLyricLines } from "../staffomr/textanalyze";
-import { fifthsAt } from "../staffomr/notedata";
+import { fifthsAt, timeSignatures } from "../staffomr/notedata";
 import type { PObj, SPage, Staff } from "../staffomr/model";
 import { attachVoltas, type Volta } from "../staffomr/octave";
 import { makeSymObj, makeTextObj } from "../rasteromr/adapt";
@@ -42,6 +42,16 @@ const STAFF_ZONE_BELOW = 4;
 const NOTE_RUN = 5;
 /** 简谱小节线下端离谱表顶线至少多远（线距），见 `jianpuband.ts::BAR_CLEAR` */
 const BAR_CLEAR_VEC = 0.3;
+/** 简谱带底往下续接减时线、低音点：与上一道的缝最多多少（线距）、最厚是减时线的几倍 */
+const UNDER_GAP = 0.5;
+const UNDER_THICK = 2;
+/** 简谱条里的括号：宽不过高的几倍、高过本条数字中位的几倍 */
+const PAREN_W = 0.35;
+const PAREN_H = 1.15;
+/** 全 / 二分休止的矩形：宽、高（线距）、上沿 / 底边离第二 / 第三线的容差（线距） */
+const REST_RECT_W: [number, number] = [0.8, 1.4];
+const REST_RECT_H: [number, number] = [0.35, 0.65];
+const REST_RECT_TOL = 0.15;
 /** 简谱带顶罩进来的和弦字：底端离简谱数字顶至少空多少（线距） */
 const BAND_CHORD_CLEAR = 0.3;
 /** 简谱带顶罩进来的和弦字：至少多高（线距）、宽不过高的几倍 */
@@ -287,7 +297,25 @@ export async function recognizeOutlinedPage(
 
   // 文字里也有无曲线的小块：和弦的「/」、汉字「一」——不是细线（加线、减时线、房子），也不长（谱线、小节线）
   const marks = geometry.filter((o) => o.bbox.w >= sp * 0.3 && o.bbox.h >= sp * 0.3 && Math.max(o.bbox.w, o.bbox.h) <= sp * 2.5);
-  texts.push(...marks);
+  // 全休止、二分休止转曲后是填充的无曲线矩形（裴克经文诗歌 172「0 0」那一小节，1.0×0.5 格），被当成线、又作为小块并进了文字，
+  // 整小节空着写成隐藏休止。宽约一格、高约半格、上沿挂在第二线下的是全休止，底边坐在第三线上的是二分休止
+  const restRects = new Set<VecObj>();
+  for (const o of marks) {
+    if (o.curves || !/fill/i.test(o.paint)) continue;
+    const { w, h } = o.bbox;
+    if (w < sp * REST_RECT_W[0] || w > sp * REST_RECT_W[1] || h < sp * REST_RECT_H[0] || h > sp * REST_RECT_H[1]) continue;
+    const g = groups.find((q) => cx(o) > q.left && cx(o) < q.right && cy(o) > q.ys[0] && cy(o) < q.ys[4]);
+    if (!g) continue;
+    const code = Math.abs(o.bbox.y - g.ys[1]) < sp * REST_RECT_TOL ? "restWhole" : Math.abs(o.bbox.y + h - g.ys[2]) < sp * REST_RECT_TOL ? "restHalf" : null;
+    if (!code) continue;
+    // 平的一截符杠也是这么个矩形（祢話如甘霖PDF m10、m11 读出两个假二分休止）：符杠两头挨着符干，休止不挨竖线
+    const touched = geometry.some((q) => q !== o && q.bbox.w < sp * 0.3 && q.bbox.h > sp * 0.8 && q.bbox.y < o.bbox.y + h + sp * 0.2 && q.bbox.y + q.bbox.h > o.bbox.y - sp * 0.2
+      && cx(q) > o.bbox.x - sp * 0.3 && cx(q) < o.bbox.x + w + sp * 0.3);
+    if (touched) continue;
+    syms.push({ box: objRect(o), code });
+    restRects.add(o);
+  }
+  texts.push(...marks.filter((o) => !restRects.has(o)));
   // 汉字「一」、连字符「-」转曲后是**填充**的扁矩形（裴克经文诗歌歌词里的「一」2.27×0.20 格，出处「1-5节」的「-」），也不是线：
   // 谱表区与简谱行以外、填充（不是描边：加线、减时线、房子都是描的线）、不长过 `FLAT_TEXT_W` 格的扁块并进文字。
   // 大小按同一行的字量也收（横向 `FLAT_ROW_DX` 格内有个歌词字高以上的字、它纵向落在那个字的上下沿之间，厚、宽都按那个字高比）：
@@ -539,8 +567,32 @@ export async function recognizeOutlinedPage(
   if (bands.length && live.jianpu) {
     const strips: JianpuStrip[] = bands.map((b) => {
       const objs = vec.objs.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.w < b.box.w * 0.5 && !notes2.has(o) && !bandChord.has(o));
+      // 带底按小节线下端往下放 0.3 格（位图路再往下是往上的符杠），双减时线的第二道、它下面的低音点落在带外，
+      // 十六分全读成八分（裴克经文诗歌 097）。往下续接：横向叠在已收的减时线 / 点正下方、缝不过 `UNDER_GAP` 格、
+      // 不厚过减时线 `UNDER_THICK` 倍的一并收（符杠厚近三倍、谱表上方的加线离得更远）
+      const isLine = (o: VecObj) => o.bbox.w > o.bbox.h * 3 && o.bbox.h < sp * 0.3;
+      const lineH = median(objs.filter(isLine).map((o) => o.bbox.h));
+      if (lineH > 0) {
+        const got = new Set(objs);
+        for (let grew = true; grew; ) {
+          grew = false;
+          for (const o of vec.objs) {
+            if (got.has(o) || o.bbox.h > lineH * UNDER_THICK || o.bbox.w >= b.box.w * 0.5 || o.bbox.x < b.box.x || o.bbox.x + o.bbox.w > b.box.x + b.box.w) continue;
+            const over = objs.some((q) => (isLine(q) || q.bbox.h <= lineH * UNDER_THICK) && o.bbox.y >= q.bbox.y + q.bbox.h - lineH && o.bbox.y - (q.bbox.y + q.bbox.h) <= sp * UNDER_GAP
+              && Math.min(o.bbox.x + o.bbox.w, q.bbox.x + q.bbox.w) - Math.max(o.bbox.x, q.bbox.x) > Math.min(o.bbox.w, q.bbox.w) * 0.5);
+            if (over) (objs.push(o), got.add(o), (grew = true));
+          }
+        }
+      }
       // 条上下扩到把收进来的对象整个包住：简谱上方的连音弧顶常高出带框，按带框裁只剩弧的两头一小截，读成高音点
       //（裴克经文诗歌弧下的音全多了高八度）。横向不动，OCR 读回的 x 照旧按带框左缘换算
+      // 前奏括号「(」「)」不进条：简谱识别把它读成 0，弱起小节前补出一个休止（裴克经文诗歌 100、161）。
+      // 括号窄、比本条数字高出一截（0.56×2.03 格对数字 1.60 格高；「1」与数字同高）
+      const digitH = median(objs.filter((o) => !geo.has(o) && o.bbox.h >= sp * 0.8).map((o) => o.bbox.h));
+      for (let i = objs.length - 1; i >= 0; i--) {
+        const o = objs[i];
+        if (!geo.has(o) && o.curves > 0 && o.bbox.w < o.bbox.h * PAREN_W && digitH > 0 && o.bbox.h > digitH * PAREN_H) objs.splice(i, 1);
+      }
       const top = Math.min(b.box.y, ...objs.map((o) => o.bbox.y));
       const bottom = Math.max(b.box.y + b.box.h, ...objs.map((o) => o.bbox.y + o.bbox.h));
       const box = { x: b.box.x, y: top, w: b.box.w, h: bottom - top };
@@ -550,7 +602,16 @@ export async function recognizeOutlinedPage(
     const ocr = await live.jianpu(strips);
     const rows = (strip: JianpuStrip): JianpuRow[] | undefined =>
       ocr.get(jianpuKey(strip))?.map((row) => ({ bars: row.bars.map((x) => x / OCR_SCALE), nums: row.nums.map((n) => ({ ...n, x: n.x / OCR_SCALE })) }));
-    res.jianpuFix = fuseJianpu(notes, strips, (strip) => staffOfBox(strip.staff), rows, (st, x) => fifthsAt(r.ctx.get(st), x), unit);
+    // 满小节按这里生效的拍号（本页此前各行最后一处、本行 x 以左的；都没有取上一页带过来的）
+    const beatsAt = (st: Staff, x: number): number | undefined => {
+      let ts = opts.carryTime;
+      for (const stf of pg.staves) {
+        for (const t of timeSignatures(r.ctx.get(stf)?.time ?? [], sp)) if (stf !== st || t.x <= x) ts = t;
+        if (stf === st) break;
+      }
+      return ts && ts.beats > 0 && ts.beatType > 0 ? (ts.beats * 4) / ts.beatType : undefined;
+    };
+    res.jianpuFix = fuseJianpu(notes, strips, (strip) => staffOfBox(strip.staff), rows, (st, x) => fifthsAt(r.ctx.get(st), x), unit, beatsAt);
   }
 
   // ── 页眉（曲首页）：首行谱的和弦带以上 ─────────────────────────────────────

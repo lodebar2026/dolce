@@ -95,6 +95,10 @@ export function fuseJianpu(
   /** x 处生效的调号升降数（行中转调的那行前后不同） */
   fifthsOf: (st: Staff, x: number) => number,
   unit: RasterUnit,
+  /** x 处生效的拍号一小节几拍（四分音符计）。给了就按它定满小节，不给按全页简谱小节拍数的众数：
+   *  简谱 OCR 成片读错时众数也跟着错——裴克经文诗歌 097 双减时线全读成单线，每小节都按 3 拍算，
+   *  2/4 的五线谱小节反被当成不够拍，十六分全「纠」成八分 */
+  beatsAt?: (st: Staff, x: number) => number | undefined,
 ): FuseStats {
   const stats: FuseStats = { pairs: 0, pitch: 0, duration: 0, removed: 0, inserted: 0 };
   const sp = unit.space;
@@ -120,7 +124,7 @@ export function fuseJianpu(
     return ds.length ? ds[ds.length >> 1] : 0;
   })();
   // 先把每条简谱行拆成小节、与五线谱的音配好对，八度等全页投完票再定
-  type Meas = { jn: { n: JianpuNum; x: number; q: number }[]; sn: StaffNote[]; pairs: [JianpuNum, StaffNote][]; fifths: number };
+  type Meas = { jn: { n: JianpuNum; x: number; q: number }[]; sn: StaffNote[]; pairs: [JianpuNum, StaffNote][]; fifths: number; x0: number };
   const all: { st: Staff; meas: Meas[]; poly: boolean }[] = [];
   const votes: number[] = [];
   for (const strip of strips) {
@@ -149,7 +153,8 @@ export function fuseJianpu(
       const sn = staffNotes.filter((n) => cx(n) > a && cx(n) < b);
       if (!jn.length && !sn.length) continue;
       // 调号取本小节头一个音处生效的：行中转调（裴克经文诗歌 040 一房「♮♮ + 五个升号」）前后各按各的调换算
-      const fifths = fifthsOf(st, Math.min(...jn.map((j) => j.x), ...sn.map(cx)));
+      const x0 = Math.min(...jn.map((j) => j.x), ...sn.map(cx));
+      const fifths = fifthsOf(st, x0);
       const tonic = tonicOf(fifths);
       // 一对一配对：按 x 距离从近到远贪心
       const cand: [number, number, number][] = [];
@@ -171,7 +176,7 @@ export function fuseJianpu(
         const j = jn[ji].n;
         if (j.d >= 1 && j.d <= 7 && !sn[si].rest) votes.push(sn[si].diatonic - (tonic + j.d - 1 + 7 * j.oct));
       }
-      meas.push({ jn, sn, pairs, fifths });
+      meas.push({ jn, sn, pairs, fifths, x0 });
     }
     all.push({ st, meas, poly });
   }
@@ -179,10 +184,16 @@ export function fuseJianpu(
   // 八度基准：`1` 在全音阶序号上的位置 − 主音音级，取全页众数（配错的对各投各的，压不过众数）
   const base = mode(votes);
   const qSums = all.flatMap((r) => r.meas.map((m) => m.jn.reduce((s, j) => s + j.q, 0)));
-  const full = mode(qSums.filter((q) => q > 0));
-  for (const { meas, poly } of all) {
+  const fullMode = mode(qSums.filter((q) => q > 0));
+  // 拍号也可能与实际不符（裴克经文诗歌 119 页眉印 4/4、每小节只有 2 拍）：本页五线谱小节合上拍号的不比合上简谱众数的多，就不信拍号
+  const sCount = (q: number) => all.reduce((n, r) => n + r.meas.filter((m) => Math.abs(m.sn.reduce((s, x) => s + x.duration * 4, 0) - q) < 1e-6).length, 0);
+  const trusted = new Map<number, boolean>();
+  const trust = (q: number) => trusted.get(q) ?? (trusted.set(q, q === fullMode || sCount(q) > sCount(fullMode)), trusted.get(q)!);
+  for (const { st, meas, poly } of all) {
     for (const m of meas) {
       const { fifths } = m;
+      const ts = beatsAt?.(st, m.x0);
+      const full = ts !== undefined && trust(ts) ? ts : fullMode;
       const tonic = tonicOf(fifths);
       const jSum = m.jn.reduce((s, j) => s + j.q, 0);
       const sSum = () => m.sn.reduce((s, n) => s + n.duration * 4, 0);

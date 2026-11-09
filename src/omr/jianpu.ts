@@ -359,6 +359,12 @@ function splitOrnamentDot(bin: Binary, b: Rect, numH: number): Component | null 
   return { id: -1, bbox: t, area: t.w * t.h, cx: rcx(t), cy: rcy(t) };
 }
 
+/** 字号估计的小节线锚定一路，短条（样本凑不够 15 块）时至少几块、占瘦高块的几成 */
+const NUMH_FEW_MIN = 5;
+const NUMH_FEW_FRAC = 0.6;
+/** 高窄 ♯ 最高多少字高（见 `tallNarrow`） */
+const TALL_SHARP_H = 1.6;
+
 /** 估计数字字号：取"近似方形且较大"连通块的高度中位数。 */
 function estimateNumH(comps: Component[]): number {
   const squarish = comps.filter((k) => {
@@ -381,7 +387,9 @@ function estimateNumH(comps: Component[]): number {
   // 锚上的得占瘦高块的两成、且不小于原估计的 0.6：没几根真小节线的页（迦南诗选 1677《祷告》，16/385 块、中位 12 对数字 48）
   // 凑上来的是碎笔。锚上的块九成挤在中位 ±6% 以内（`tight`）的不看占比：中英三段对照（青年诗歌 79《我听见了主耶稣说》）
   // 一谱行下六行词，英文小写字母凑出 390 个瘦高块，锚上的 65 块全是 43±6% 的数字
-  const raw3 = anchored.length >= 15 ? median(anchored.map((k) => k.bbox.h)) : 0;
+  // 样本少的短条（简线混排谱的一行简谱，十来个数字）凑不够 15 块：锚上的占瘦高块六成以上、至少 5 块也算。
+  // 裴克经文诗歌 209 末行全是高音点数字，点与附点同数字一样多，近方形块的中位落在点上（21 对数字 54），整行读成「6」
+  const raw3 = anchored.length >= 15 || (anchored.length >= NUMH_FEW_MIN && anchored.length >= tall.length * NUMH_FEW_FRAC) ? median(anchored.map((k) => k.bbox.h)) : 0;
   const tight = raw3 > 0 && anchored.filter((k) => Math.abs(k.bbox.h - raw3) <= raw3 * 0.06).length >= anchored.length * 0.85;
   const est3 = raw3 && (anchored.length >= tall.length * 0.2 || tight) ? raw3 : 0;
   if (est3 && est > est3 * 1.15 && est3 >= est * 0.6) { probe("numH.barAnchored"); return est3; }
@@ -1279,7 +1287,12 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
         nx.bbox.h >= medH * 0.85 && nx.bbox.y - k.bbox.y >= medH * 0.25 &&
         rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3 &&
         nx.bbox.x - rright(k.bbox) >= 0 && nx.bbox.x - rright(k.bbox) <= numH * 1.0;
-      if (k.bbox.h > medH * 1.25 && !tallHung) continue;
+      // 又高又窄的 ♯（裴克经文诗歌 209 `♯4̇` 的 ♯ 22×76 对数字 32×51：1.46 字高，顶高出 0.6、底只高出 0.13 字高）：
+      // 过不了上面「底高出 0.3」那道门。比数字窄一截、顶高出、底不垂到数字底下、紧贴右邻的也按形状认
+      const tallNarrow = !voicedPage && k.bbox.h >= medH * 0.95 && k.bbox.h <= medH * TALL_SHARP_H && k.bbox.w <= medW * 0.85 &&
+        nx.bbox.h >= medH * 0.85 && nx.bbox.y - k.bbox.y >= medH * 0.25 && rbottom(k.bbox) <= rbottom(nx.bbox) &&
+        nx.bbox.x - rright(k.bbox) >= 0 && nx.bbox.x - rright(k.bbox) <= numH * 0.5;
+      if (k.bbox.h > medH * 1.25 && !tallHung && !tallNarrow) continue;
       // 「矮」不能只看块高：同书的 ♯ 也有印得和数字差不多高的（97《受难歌》28×32、26×30 对数字 37；101《我有主耶稣歌》`6 ♯5`
       // 的 ♯ 19×21 ~ 18×26 对数字 17×25），高度门一卡就当音符送去 OCR、读成休止 0。门放到 0.9 字高；再高的要整个悬高——
       // **顶比右邻数字高出 0.25、底高出 0.3 字高以上**（101 是 0.28~0.44；同行的数字顶是齐的，歪页上相邻两个数字也会差出 0.2：319 末行 `5 5`）。
@@ -1290,7 +1303,7 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       // 单声部行上只收**顶底都悬高**的（顶高出 0.25、底高出 0.3 字高）：青年诗歌 14《雲彩》`7 6 ♯5` 的 ♯ 粗印糊成一团 23×40，
       // 本行数字中位宽 26，差 1px 过不了宽度门，当音符读成了 1
       const hungBoth = k.bbox.h <= medH * 1.1 && nx.bbox.y - k.bbox.y >= medH * 0.25 && rbottom(nx.bbox) - rbottom(k.bbox) >= medH * 0.3;
-      if (tallHung) {
+      if (tallHung || tallNarrow) {
         if (accidentalOf(bin, k.bbox) !== "sharp" || underlined(k.bbox)) continue;
         probe("accidental.tallHung");
         accidentals.set(nx, "sharp");
