@@ -40,6 +40,8 @@ const STAFF_ZONE_ABOVE = 4.5;
 const STAFF_ZONE_BELOW = 4;
 /** 简谱行里的说明文字：至少几个字、字间缝不过字高的几成（简谱数字之间隔得开） */
 const NOTE_RUN = 5;
+/** 简谱小节线下端离谱表顶线至少多远（线距），见 `jianpuband.ts::BAR_CLEAR` */
+const BAR_CLEAR_VEC = 0.3;
 /** 简谱带顶罩进来的和弦字：底端离简谱数字顶至少空多少（线距） */
 const BAND_CHORD_CLEAR = 0.3;
 /** 简谱带顶罩进来的和弦字：至少多高（线距）、宽不过高的几倍 */
@@ -230,7 +232,7 @@ export async function recognizeOutlinedPage(
   const vSegs: LineSeg[] = geometry
     .filter((o) => o.bbox.w < sp * 0.3 && o.bbox.h > sp * 0.5)
     .map((o) => ({ x0: cx(o), y0: o.bbox.y, x1: cx(o), y1: o.bbox.y + o.bbox.h, lw: o.bbox.w, maxLw: o.bbox.w }));
-  const bands = findJianpuBands(vSegs, staffBoxes, unit);
+  const bands = findJianpuBands(vSegs, staffBoxes, unit, undefined, BAR_CLEAR_VEC);
   const inBand = (o: VecObj) => bands.some((b) => inside(b.box, cx(o), cy(o)));
 
   // ── 音乐符号：谱表上下一带、不在简谱行里 ─────────────────────────────────

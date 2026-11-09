@@ -19,7 +19,8 @@ import { contentKey } from "../omrkit/contentkey";
 const BAR_LEN = [1.2, 5.5] as const;
 /** 对上的简谱小节线长度不超过它们中位数的几倍 */
 const BAR_LEN_SPREAD = 1.15;
-/** 简谱小节线的下端离谱表顶线至少多远（线距）：再近就是符干、符杠那一带。 */
+/** 简谱小节线的下端离谱表顶线至少多远（线距）：再近就是符干、符杠那一带。
+ *  矢量路传得更小（`clear`）：竖线是精确的独立对象，符干从谱表里伸出、不悬空（裴克经文诗歌 112 简谱行紧贴谱表，离顶线 0.44 格） */
 const BAR_CLEAR = 0.5;
 /** 往上最多找多远（线距）。 */
 const BAR_REACH = 6;
@@ -57,12 +58,13 @@ export interface JianpuBand {
   lift?: (x: number) => number;
 }
 
-/** 定位各谱行上方的简谱行。`staves` 给每行谱的五线几何（弯、斜的另带逐列偏移 `lift`）。 */
+/** 定位各谱行上方的简谱行。`staves` 给每行谱的五线几何（弯、斜的另带逐列偏移 `lift`）；`clear` 见 `BAR_CLEAR`。 */
 export function findJianpuBands(
   vSegs: LineSeg[],
   staves: { left: number; right: number; top: number; bottom: number; lift?: (x: number) => number }[],
   unit: RasterUnit,
   bin?: Binary,
+  clear = BAR_CLEAR,
 ): JianpuBand[] {
   const sp = unit.space;
   const out: JianpuBand[] = [];
@@ -112,7 +114,7 @@ export function findJianpuBands(
     const cands = vSegs.filter((v) => {
       const [a, b] = span(v);
       const len = (b - a) / sp;
-      return len >= BAR_LEN[0] && len <= BAR_LEN[1] && b <= st.top - sp * BAR_CLEAR && b >= st.top - sp * BAR_REACH && cx(v) >= st.left - sp && cx(v) <= st.right + sp &&
+      return len >= BAR_LEN[0] && len <= BAR_LEN[1] && b <= st.top - sp * clear && b >= st.top - sp * BAR_REACH && cx(v) >= st.left - sp && cx(v) <= st.right + sp &&
         !onOtherStaff(v) && !hooked(v);
     });
     /** `top`~`bot` 这行简谱上方紧挨着的另一行：同 x（对上这行的小节线）、长度相当的短竖线；返回它的纵向范围与小节线 x。
