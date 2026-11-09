@@ -1121,7 +1121,9 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
   const braceRects: Rect[] = [];
   if (staff.length >= 4) {
     const firstX = median(staff.map((m) => Math.min(...m.rd.map((k) => k.bbox.x))));
-    const bars = raw.filter((k) => k.bbox.h >= numH * 4 && k.bbox.w <= numH * 2 && rright(k.bbox) < firstX)
+    // 贴着图边的竖块是扫描边框、不是连谱号（青年诗歌 128 左缘 0~8px 一道黑边贯穿全页，8 行全括成一个系统、读成 8 个声部）
+    const onEdge = (b: Rect) => b.x <= 0 || b.y <= 0 || rbottom(b) >= bin.h;
+    const bars = raw.filter((k) => k.bbox.h >= numH * 4 && k.bbox.w <= numH * 2 && rright(k.bbox) < firstX && !onEdge(k.bbox))
       .map((k) => ({ y0: k.bbox.y, y1: rbottom(k.bbox), x0: k.bbox.x, x1: rright(k.bbox) }))
       .sort((a, b) => a.y0 - b.y0);
     const braces: { y0: number; y1: number; x0: number; x1: number }[] = [];
@@ -1331,7 +1333,10 @@ export async function recognizeJianpu(bin: Binary, ocr: OcrBackend,
       if (k.bbox.w > medW * 0.85 && !wideSharp && !smallFlat) continue;
       if (k.bbox.h < medH * 0.45 || k.bbox.w < medW * 0.3) continue;         // 太小 → 点/碎片
       // 没紧贴右边那个数字。上面按形状认定的宽 ♯ 间隙放到 0.5 字号：101 第 1 系统 `6 ♯5` 的 ♯ 离数字 10px（字号 25）、67 是 13px（字号 35）
-      if (nx.bbox.x - rright(k.bbox) > numH * (wideSharp || smallFlat ? 0.5 : 0.3)) continue;
+      // 顶底都比右邻悬高 0.2 字高以上、形状判成 ♯ 的同样放到 0.5 字号：青年诗歌 138《永远的福乐》`5♯4̲` 的 ♯ 21×38 对数字 27×38，
+      // 顶底各高出 0.24 字高、离数字 0.5 字号，当音符读成了 1
+      const hungSharp = () => hungLow && nx.bbox.y - k.bbox.y >= medH * 0.2 && accidentalOf(bin, k.bbox) === "sharp" && !underlined(k.bbox);
+      if (nx.bbox.x - rright(k.bbox) > numH * (wideSharp || smallFlat || hungSharp() ? 0.5 : 0.3)) continue;
       if (nx.bbox.h < medH * 0.85) continue;                                 // 右邻得是个正常数字
       // 记号印在音符的**左上角**：顶比数字高、底也不该垂到数字底下（17 实测记号顶比数字高 10px）。
       if (k.bbox.y > nx.bbox.y + medH * 0.15 || rbottom(k.bbox) > rbottom(nx.bbox) + medH * 0.1) continue;

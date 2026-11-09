@@ -26,7 +26,9 @@ export function chordCandidates(
   const out: ChordCand[] = splitChordTokens(blankNonChord(blankAltChords(splitFarJump(rawText, srcX, mkBbox(0, 1).h))), srcX)
     .map(({ tok, index }) => {
       const x0 = srcX(index), x1 = srcX(index + tok.length);
-      const paren = /^\s*[(（]\s*$/.test(rawText.slice(0, index));
+      // 开括号被切进了前一块（青年诗歌 128《如鹰展翅上腾》`G(D)` 读成 `Am(Em)G(` | `D)`）：块首和弦后紧跟收括号的也算括号里的
+      const paren = /^\s*[(（]\s*$/.test(rawText.slice(0, index)) ||
+        (/^\s*$/.test(rawText.slice(0, index)) && /^[^()（）]*?[)）]/.test(rawText.slice(index)));
       return { tok: normalizeChord(tok), x: x0, bbox: mkBbox(x0, Math.max(x1, x0 + 1)), ...(paren ? { paren } : {}) };
     })
     // 归一后仍须是合法根音开头（可带前置升降号，`chordTextSegs`/`harmonyXml` 的最低要求），否则下游只能整段原样排字。
