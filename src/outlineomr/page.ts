@@ -40,6 +40,11 @@ const STAFF_ZONE_ABOVE = 4.5;
 const STAFF_ZONE_BELOW = 4;
 /** 简谱行里的说明文字：至少几个字、字间缝不过字高的几成（简谱数字之间隔得开） */
 const NOTE_RUN = 5;
+/** 简谱带顶罩进来的和弦字：底端离简谱数字顶至少空多少（线距） */
+const BAND_CHORD_CLEAR = 0.3;
+/** 简谱带顶罩进来的和弦字：至少多高（线距）、宽不过高的几倍 */
+const BAND_CHORD_MIN_H = 0.8;
+const BAND_CHORD_FLAT = 1.4;
 const NOTE_GAP = 0.35;
 /** 形状简单（一道横、一点、一竖、两竖）的符号：从一个对象拆出来的块认成它们不算数
  *（「到」「判」的立刀两竖认成打击乐谱号被摘走，裴克经文诗歌「到」读成「至」八十多处） */
@@ -297,6 +302,19 @@ export async function recognizeOutlinedPage(
   texts.push(...geometry.filter((o) => !marks.includes(o) && /fill/i.test(o.paint) && !/stroke/i.test(o.paint)
     && o.bbox.w >= sp * 0.3 && !inBand(o) && flatText(o)));
 
+  // 简谱带顶罩进来的和弦字：带顶按小节线顶再往上放 0.8 格（罩高音点、弧顶），小节线竖得高、和弦贴得近时和弦字的中心落进带里
+  //（裴克经文诗歌 069、106 首行和弦整行漏认）。顶端探出带顶、底端离本带简谱数字的顶还空着的字是和弦行的：
+  // 归和弦带，不进简谱条；高音点、弧上的三连音数字都整个在带里。和弦字母不扁、比点大：带顶还罩着简谱的延长记号
+  //（扁弧 13×8 与其中的点，探出带顶的也有），认成和弦读成「D」
+  const bandChord = new Set<VecObj>();
+  for (const b of bands) {
+    const inb = texts.filter((o) => !geo.has(o) && inside(b.box, cx(o), cy(o)));
+    const digitTop = median(inb.filter((o) => o.bbox.h >= sp * 0.8).map((o) => o.bbox.y));
+    for (const o of inb)
+      if (o.bbox.y < b.box.y && o.bbox.y + o.bbox.h <= digitTop - sp * BAND_CHORD_CLEAR && o.bbox.h >= sp * BAND_CHORD_MIN_H && o.bbox.w <= o.bbox.h * BAND_CHORD_FLAT)
+        bandChord.add(o);
+  }
+
   // ── 建页，接矢量路后半段 ─────────────────────────────────────────────────
   const pg = buildPage(index, vec.width, vec.height, geometry, [], sp * 4);
   let id = pg.objs.length;
@@ -383,9 +401,21 @@ export async function recognizeOutlinedPage(
     const zone: Rect = { x: s.left - sp * 2, y: bottom - sp * CHORD_ZONE, w: s.right - s.left + sp * 4, h: sp * CHORD_ZONE };
     // 从谱号左边起头的那串字不收（`headOfLine`）：和弦记号不会印在谱号左边，那是页眉的速度记号、速度术语
     //（裴克经文诗歌行首左上的「欢快地」落进首行的和弦带，整行一算汉字占了大半，判成文本行，这一行的和弦全丢）
-    const inZone = texts.filter((o) => !used.has(o) && !inBand(o) && inside(zone, cx(o), cy(o)));
+    const inZone = texts.filter((o) => !used.has(o) && (bandChord.has(o) ? own.some((b) => inside(b.box, cx(o), cy(o))) : !inBand(o) && inside(zone, cx(o), cy(o))));
     const lead = headOfLine(inZone, r.ctx.get(st)?.clef?.box, sp);
-    if (k === 0) headLead = lead;
+    if (k === 0) {
+      // 首行：和弦贴着简谱行印在最低那一横行；整行都在它之上的是页眉挤下来的字（裴克经文诗歌 129 右上「作曲：裴克」、
+      // 013 速度术语的后半「以崇敬的心」），留在和弦带里汉字一多整行判成文字行，和弦全丢。
+      // 最低一行不算单个碎块、扁横（破折号）；页眉字是汉字、比和弦字母高一截（漏检简谱行时最低一行是简谱数字，和弦行比它矮，不动）
+      const rows = rowsOf(inZone.filter((o) => !lead.has(o)));
+      const bottomOf = (row: VecObj[]) => Math.max(...row.map((o) => o.bbox.y + o.bbox.h));
+      const hOf = (row: VecObj[]) => median(row.map((o) => o.bbox.h));
+      const lowRow = rows.filter((row) => row.length > 1 && hOf(row) >= sp * BAND_CHORD_MIN_H).sort((p, q) => bottomOf(q) - bottomOf(p))[0];
+      const lowTop = lowRow ? Math.min(...lowRow.map((o) => o.bbox.y)) : 0;
+      for (const row of rows)
+        if (lowRow && row !== lowRow && bottomOf(row) <= lowTop && hOf(row) >= hOf(lowRow) * HEAD_ROW_H) for (const o of row) lead.add(o);
+      headLead = lead;
+    }
     const items = inZone.filter((o) => !lead.has(o)).sort((a, b) => a.bbox.x - b.bbox.x);
     const toks: VecObj[][] = [];
     for (const o of items) {
@@ -468,7 +498,7 @@ export async function recognizeOutlinedPage(
   for (const b of bands) {
     const st = staffOfBox(b.staff);
     if (!st) continue;
-    const inb = texts.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.h > sp * 0.8).sort((p, q) => p.bbox.x - q.bbox.x);
+    const inb = texts.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.h > sp * 0.8 && !bandChord.has(o)).sort((p, q) => p.bbox.x - q.bbox.x);
     let run: VecObj[] = [];
     const flush = () => {
       if (run.length >= NOTE_RUN) {
@@ -506,7 +536,7 @@ export async function recognizeOutlinedPage(
   // ── 简谱行互证（位图路 `jianpufuse.ts`；OCR 回来的 x 是条里的像素，换回页面单位） ──────────────
   if (bands.length && live.jianpu) {
     const strips: JianpuStrip[] = bands.map((b) => {
-      const objs = vec.objs.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.w < b.box.w * 0.5 && !notes2.has(o));
+      const objs = vec.objs.filter((o) => inside(b.box, cx(o), cy(o)) && o.bbox.w < b.box.w * 0.5 && !notes2.has(o) && !bandChord.has(o));
       // 条上下扩到把收进来的对象整个包住：简谱上方的连音弧顶常高出带框，按带框裁只剩弧的两头一小截，读成高音点
       //（裴克经文诗歌弧下的音全多了高八度）。横向不动，OCR 读回的 x 照旧按带框左缘换算
       const top = Math.min(b.box.y, ...objs.map((o) => o.bbox.y));
@@ -818,6 +848,8 @@ function inkCy(objs: readonly VecObj[], box: Rect): number {
 /**
  * 和弦带里从谱号左边起头的一串字：中心在谱号右缘以左的字，连同同一行（纵向交叠）、横向一个挨一个（缝不过 `HEAD_RUN_GAP` 格）
  * 接下去的字。速度「♩=72」的「2」、速度术语的后几个字常伸过谱号右缘，只按中心切会拦腰截断。没有谱号时为空。
+ * 与前一个字同字高的，词间空到 `HEAD_WORD_GAP` 个字高也接上：速度术语常是两个词（裴克经文诗歌 015「宽广　歌颂地」，
+ * 后一词留在和弦带里整行判成文字行，四个和弦全丢）；和弦字母比汉字矮一截，不会这样接进来。
  */
 function headOfLine(objs: readonly VecObj[], clef: { right: number } | undefined, sp: number): Set<VecObj> {
   const out = new Set<VecObj>();
@@ -826,13 +858,23 @@ function headOfLine(objs: readonly VecObj[], clef: { right: number } | undefined
   for (const o of sorted) if (cx(o) < clef.right) out.add(o);
   for (const o of sorted) {
     if (out.has(o)) continue;
-    const prev = [...out].find((q) => o.bbox.x - (q.bbox.x + q.bbox.w) <= sp * HEAD_RUN_GAP && o.bbox.x >= q.bbox.x
-      && Math.min(o.bbox.y + o.bbox.h, q.bbox.y + q.bbox.h) - Math.max(o.bbox.y, q.bbox.y) > Math.min(o.bbox.h, q.bbox.h) * 0.5);
+    const prev = [...out].find((q) => {
+      const gap = o.bbox.x - (q.bbox.x + q.bbox.w);
+      const sameH = Math.abs(o.bbox.h - q.bbox.h) <= Math.max(o.bbox.h, q.bbox.h) * HEAD_SAME_H;
+      return (gap <= sp * HEAD_RUN_GAP || (sameH && gap <= q.bbox.h * HEAD_WORD_GAP)) && o.bbox.x >= q.bbox.x
+        && Math.min(o.bbox.y + o.bbox.h, q.bbox.y + q.bbox.h) - Math.max(o.bbox.y, q.bbox.y) > Math.min(o.bbox.h, q.bbox.h) * 0.5;
+    });
     if (prev) out.add(o);
   }
   return out;
 }
 const HEAD_RUN_GAP = 1;
+/** 页眉那串字里词与词之间的空最宽多少（字高） */
+const HEAD_WORD_GAP = 1.5;
+/** 同字高：高差不过大者的几成 */
+const HEAD_SAME_H = 0.2;
+/** 首行和弦带里挤下来的页眉字行：字高至少是和弦那行的几倍 */
+const HEAD_ROW_H = 1.2;
 
 /** 房子的竖钩长度（线距） */
 const VOLTA_HOOK: [number, number] = [0.6, 5];
