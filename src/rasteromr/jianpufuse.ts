@@ -183,6 +183,16 @@ export function fuseJianpu(
   if (!all.length) return stats;
   // 八度基准：`1` 在全音阶序号上的位置 − 主音音级，取全页众数（配错的对各投各的，压不过众数）
   const base = mode(votes);
+  // 简谱行的连音记号不读（三个八分照八分算）：与五线谱连音配上对的数字按连音比例折算，不然有三连音的小节简谱合计多出半拍、
+  // 「不自洽」不拿它补，五线谱漏认的休止也就补不回来（裴克经文诗歌 152 末两行 `6 0 (3:3 4 3)` 的四分休止）
+  for (const r of all)
+    for (const m of r.meas) {
+      const tup = new Map(m.pairs.filter((p) => p[1].tuplet).map((p) => [p[0], p[1].tuplet!]));
+      for (const j of m.jn) {
+        const t = tup.get(j.n);
+        if (t) j.q = (j.q * t.normal) / t.actual;
+      }
+    }
   const qSums = all.flatMap((r) => r.meas.map((m) => m.jn.reduce((s, j) => s + j.q, 0)));
   const fullMode = mode(qSums.filter((q) => q > 0));
   // 拍号也可能与实际不符（裴克经文诗歌 119 页眉印 4/4、每小节只有 2 拍）：本页五线谱小节合上拍号的不比合上简谱众数的多，就不信拍号
@@ -268,7 +278,7 @@ export function fuseJianpu(
           }
         }
         // 时值只改音符对音符的：休止在简谱里是按拍拆开写的（二分休止写成 `0 0`），对不成一对一
-        if (!poly && !staffOk && !n.rest && j.d !== 0) {
+        if (!poly && !staffOk && !n.rest && !n.tuplet && j.d !== 0) {
           const bd = baseDots(qOf(j));
           if (bd && Math.abs(bd.base * (2 - 1 / 2 ** bd.dots) - n.duration) > 1e-6) {
             n.base = bd.base;
