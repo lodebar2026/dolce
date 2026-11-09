@@ -80,6 +80,8 @@ export interface JpNum {
   // 跳转记号（D.C./D.S./Fine/To Coda…），印在本谱行音符附近 → 小节右线上的记号（导出 MusicXML 时落成 <direction>+<sound>）。
   // 同一处可以印两个（青年诗歌 4《陪我生活》曲末上方 Fine、下方 D.S.），按 x 序都留。
   jumpMarks?: string[];
+  // 其中印在本谱行音符**下方**的（字块中心低于音符带底）：诗歌本写 `"ff:Fine"`，上方的写 `"ffs:Fine"`（`SourceOrnament.below`）
+  jumpBelow?: string[];
   // segno 𝄋：跳转的**目标**，不是跳转本身，故挂本音符所在小节的**左**线（记号名 `hs`，123 `!segno!`）。
   // 字形由 segno.ts 几何识别，与 OCR 出来的文字记号 jumpMark 分开。
   segno?: boolean;

@@ -488,6 +488,7 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
     const endingStop = [...notes].reverse().find((n) => n.endingStop !== undefined)?.endingStop;
     const repeatBackward = notes.some((n) => n.repeatBackward);
     const jumps = [...new Set(notes.flatMap((n) => n.jumpMarks ?? []))];
+    const jumpsBelow = new Set(notes.flatMap((n) => n.jumpBelow ?? []));
     const jump = jumps.length > 0;
     // 普通小节线也要显式写出：`.jpwabc` 写出端按右线出 `|`，没有就把相邻小节并成一个。
     // 曲末那小节图上没收线的不补（遵图片小节线）。
@@ -512,7 +513,7 @@ function measuresOfRows(rows: readonly StaffRow[], score: RecognizedScore, ids: 
       // 跳转记号（D.C./D.S./Fine/To Coda）：识别时锚在本小节某音符上，记在小节末
       for (const j of jumps) {
         const name = JUMP_ORNAMENT[j];
-        if (name) (b.ornaments ??= []).push({ name, level: 0 });
+        if (name) (b.ornaments ??= []).push({ name, level: 0, ...(jumpsBelow.has(j) ? { below: true } : {}) });
         else b.annotation = b.annotation ? `${b.annotation} ${j}` : j;
       }
       barlines.push(b);

@@ -1456,6 +1456,8 @@ export async function recognizeLyrics(
     while (bi > 0 && rcx(row.nums[bi].bbox) > jp.x) bi--;
     const marks = row.nums[bi].jumpMarks ??= [];
     if (!marks.includes(jp.word)) marks.push(jp.word);
+    // 上下照印：青年诗歌 4《陪我生活》曲末 Fine 在终止线上方、D.S. 在歌词下方
+    if (jp.y > row.bottomY) { probe("jump.below"); (row.nums[bi].jumpBelow ??= []).push(jp.word); }
   }
 
   // 剔除伪 verse：谱行下方噪声/记号被误当额外歌词行，rec 出来多为空、偶尔一行垃圾字（如世上 row3 的
