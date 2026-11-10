@@ -309,12 +309,19 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 let mut last: Option<(usize, f64)> = None;
                 // 和弦与休止按 x 合成一条序列
                 let notes = &page.notes[i];
-                let mut items: Vec<(f64, Option<&Chord>, Option<NoteType>)> = notes.chords.iter().map(|c| (c.x, Some(c), None)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r.ntype)))).collect();
+                let mut items: Vec<(f64, Option<&Chord>, Option<NoteType>, u8)> = notes.chords.iter().map(|c| (c.x, Some(c), None, 0)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r.ntype), r.dots))).collect();
                 items.sort_by(|a, b| a.0.total_cmp(&b.0));
-                for (x, ch, rest) in items {
+                // 临时记号在本小节内对同一音名同一八度一直有效
+                let mut held: std::collections::HashMap<(u8, i8), i8> = std::collections::HashMap::new();
+                let mut held_at = usize::MAX;
+                for (x, ch, rest, rdots) in items {
                     let j = bs.iter().filter(|b| b.x < x).count().min(count - 1);
+                    if j != held_at {
+                        held.clear();
+                        held_at = j;
+                    }
                     let Some(ch) = ch else {
-                        ms[j].events.push(Event { pitches: vec![], ntype: rest.unwrap(), dots: 0, stem_up: None });
+                        ms[j].events.push(Event { pitches: vec![], ntype: rest.unwrap(), dots: rdots, stem_up: None });
                         seq_len += 1;
                         last = None;
                         continue;
@@ -326,7 +333,13 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     }
                     let mut ps: Vec<_> = ch.heads.iter().map(|h| {
                         let mut p = c_at.pitch_at(h.pos);
-                        p.alter = k_at.alter_of(p.step);
+                        p.alter = match h.acc {
+                            Some(a) => {
+                                held.insert((p.step, p.octave), a);
+                                a
+                            }
+                            None => held.get(&(p.step, p.octave)).copied().unwrap_or(k_at.alter_of(p.step)),
+                        };
                         p
                     }).collect();
                     if last.is_some_and(|(lj, lx)| lj == j && ch.x - lx < SAME_ONSET * f.staves[i].space()) {
@@ -334,7 +347,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                         e.pitches.append(&mut ps);
                         e.stem_up = None;
                     } else {
-                        ms[j].events.push(Event { pitches: ps, ntype: ch.ntype(), dots: 0, stem_up: ch.stem.map(|s| s.up) });
+                        ms[j].events.push(Event { pitches: ps, ntype: ch.ntype(), dots: ch.dots, stem_up: ch.stem.map(|s| s.up) });
                         seq_len += 1;
                     }
                     let e = ms[j].events.last_mut().unwrap();

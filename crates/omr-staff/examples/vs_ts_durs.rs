@@ -26,11 +26,14 @@ fn main() {
     // (TS 基本时值, Rust 基本时值) → 个数，以 1/32 为单位取整作键
     let mut table: BTreeMap<(i64, i64), usize> = BTreeMap::new();
     let (mut both, mut same) = (0usize, 0usize);
+    // 附点：TS 有、Rust 有、相同；临时记号同
+    let mut marks = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
     for_sources(&corpus, &only, |key, pn, snap, src| {
         let Some(page) = recognize_page(src, None) else { return };
         let sp = page.frame.unit.space;
         let k = ts_scale(snap, pn, sp);
-        let heads: Vec<(f64, f64, f64)> = page.notes.iter().flat_map(|r| r.chords.iter().flat_map(|c| c.heads.iter().map(|h| (h.x, h.y, base_of(c.ntype()))))).collect();
+        let heads: Vec<(f64, f64, f64, u8, Option<i8>)> = page.notes.iter().flat_map(|r| r.chords.iter().flat_map(|c| c.heads.iter().map(|h| (h.x, h.y, base_of(c.ntype()), c.dots, h.acc)))).collect();
+        let (mut dd, mut ad) = (Vec::new(), Vec::new());
         let mut diff = Vec::new();
         for l in stage(snap, pn, "notes").unwrap_or("").lines() {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(l) else { continue };
@@ -47,6 +50,21 @@ fn main() {
             let (cx, cy) = ((n[0] + n[2]) / 2.0 * k, (n[1] + n[3]) / 2.0 * k);
             let Some(h) = heads.iter().find(|h| (h.0 - cx).abs() < sp * 0.6 && (h.1 - cy).abs() < sp * 0.45) else { continue };
             both += 1;
+            // 附点、临时记号
+            let ts_dots = v["dots"].as_u64().unwrap_or(0) as u8;
+            let ts_acc = v["accidental"].as_i64().map(|a| a as i8);
+            marks.0 += (ts_dots > 0) as usize;
+            marks.1 += (h.3 > 0) as usize;
+            marks.2 += (ts_dots > 0 && ts_dots == h.3) as usize;
+            marks.3 += ts_acc.is_some() as usize;
+            marks.4 += h.4.is_some() as usize;
+            marks.5 += (ts_acc.is_some() && ts_acc == h.4) as usize;
+            if ts_dots != h.3 {
+                dd.push((cx.round(), cy.round(), ts_dots, h.3));
+            }
+            if ts_acc != h.4 {
+                ad.push((cx.round(), cy.round(), ts_acc, h.4));
+            }
             *table.entry(((base * 32.0).round() as i64, (h.2 * 32.0).round() as i64)).or_default() += 1;
             // 快照里的时值只留三位小数（0.063），按 1/32 取整比
             if (base * 32.0).round() == (h.2 * 32.0).round() {
@@ -55,11 +73,20 @@ fn main() {
                 diff.push((cx.round(), cy.round(), base, h.2));
             }
         }
+        if verbose && !dd.is_empty() {
+            println!("{key} p{pn} 附点 (x, y, TS, Rust) {dd:?}");
+        }
+        if verbose && !ad.is_empty() {
+            println!("{key} p{pn} 临时记号 (x, y, TS, Rust) {ad:?}");
+        }
         if verbose && !diff.is_empty() {
             println!("{key} p{pn}（线距 {sp:.1}）：(x, y, TS, Rust) {diff:?}");
         }
     });
     println!("{corpus}：两边都有的头 {both}，基本时值相同 {same}（{:.1}%）", same as f64 * 100.0 / both.max(1) as f64);
+    let pct = |a: usize, b: usize| a as f64 * 100.0 / b.max(1) as f64;
+    println!("  附点：TS {}，Rust {}，相同 {}（查全 {:.1}%，查准 {:.1}%）", marks.0, marks.1, marks.2, pct(marks.2, marks.0), pct(marks.2, marks.1));
+    println!("  临时记号：TS {}，Rust {}，相同 {}（查全 {:.1}%，查准 {:.1}%）", marks.3, marks.4, marks.5, pct(marks.5, marks.3), pct(marks.5, marks.4));
     for ((t, r), n) in table.iter().filter(|((t, r), _)| t != r) {
         println!("  TS {t}/32 ↔ Rust {r}/32：{n}");
     }

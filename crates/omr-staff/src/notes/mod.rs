@@ -3,10 +3,12 @@
 pub mod beams;
 pub mod heads;
 pub mod hollow;
+pub mod marks;
 pub mod rests;
 pub mod stems;
 
 use crate::attrs::RowAttrs;
+use crate::frame::ink::{Blob, LINE};
 use crate::page::PageFrame;
 use heads::{Head, HeadKind, InkSum, Template, FILLED_HALF_W};
 use dolce_omr_sheet::score::NoteType;
@@ -55,6 +57,8 @@ pub struct Chord {
     pub tails: u8,
     /// `tails` 数的是符杠（否则是符尾）。
     pub beamed: bool,
+    /// 附点数。
+    pub dots: u8,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -63,6 +67,39 @@ pub struct RowNotes {
     pub chords: Vec<Chord>,
     /// 休止（按 x 排）。
     pub rests: Vec<rests::Rest>,
+}
+
+/// 与墨块 `b` 隔着细缝的别的墨块：同一行里一小截存疑像素（不长过 `slit`）两边分别是 `b` 与另一块的墨。
+/// 符号里两笔之间的细缝正落在线带上时，缝里只有谱线那几行有墨、纵向墨段短，会被当成线，一个符号断成两块（八分休止的圆点与斜笔）。
+pub(crate) fn bridged(f: &PageFrame, b: &Blob, slit: usize) -> Vec<i32> {
+    let pw = f.ink.w;
+    let (x0, y0, w, h) = (b.rect.x as usize, b.rect.y as usize, b.rect.w as usize, b.rect.h as usize);
+    let me = b.id as i32;
+    let mut out: Vec<i32> = Vec::new();
+    for y in y0..y0 + h {
+        for x in x0..x0 + w {
+            if f.labels[y * pw + x] != me {
+                continue;
+            }
+            // 向左、向右各看一截
+            for dir in [-1i64, 1] {
+                let mut n = 0;
+                let mut xx = x as i64 + dir;
+                while xx >= 0 && (xx as usize) < pw && n < slit && f.ink.tri[y * pw + xx as usize] == LINE {
+                    xx += dir;
+                    n += 1;
+                }
+                if n == 0 || xx < 0 || xx as usize >= pw {
+                    continue;
+                }
+                let other = f.labels[y * pw + xx as usize];
+                if other != 0 && other != me && !out.contains(&other) {
+                    out.push(other);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// 一页各行谱的音符（与 `staves` 同序）。
@@ -111,7 +148,7 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
                 cs.bottom = cs.bottom.max(st.bottom);
                 c.heads.push(h);
             }
-            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false }),
+            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0 }),
         }
     }
     for row in rows.iter_mut() {
@@ -160,9 +197,12 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
         }
         row.chords.sort_by(|a, b| a.x.total_cmp(&b.x));
     }
-    beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
     for (si, row) in rows.iter_mut().enumerate() {
         row.rests = rests::rests(f, si, from_of(si));
+    }
+    beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
+    for (si, row) in rows.iter_mut().enumerate() {
+        marks::marks(f, si, from_of(si), row);
     }
     rows
 }

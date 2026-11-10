@@ -3,8 +3,9 @@
 //! - 全 / 二分休止：实心的扁方块，贴着一条谱线——上沿贴线（吊着）的是全休止（整小节休止同形），下沿贴线（坐着）的是二分休止。
 //! - 八分及更短：左上有实心的圆点、底下是一根向左下斜的细笔；圆点个数按块高分八分 / 十六分 / 三十二分。
 //! - 四分：两格半到三格多高、一格上下宽的弯折笔画。没有孔（升降还原号都有孔）、没有长竖笔（符干、升降还原号的竖笔占块高的大半）。
+use super::bridged;
 use super::heads::{band, POS_MAX, POS_MIN, SEED_FILL, SEED_H, SEED_W};
-use crate::frame::ink::{Blob, LINE};
+use crate::frame::ink::LINE;
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::score::NoteType;
@@ -54,6 +55,8 @@ pub struct Rest {
     pub ntype: NoteType,
     /// 包围盒 `(x, y, w, h)`。
     pub rect: (f64, f64, f64, f64),
+    /// 附点数（[`super::marks`]）。
+    pub dots: u8,
 }
 
 /// 一个墨块的像素（包围盒内，行优先）。
@@ -176,39 +179,6 @@ impl Mask {
     }
 }
 
-/// 与墨块 `b` 隔着细缝的别的墨块：同一行里一小截存疑像素（不长过 `slit`）两边分别是 `b` 与另一块的墨。
-/// 符号里两笔之间的细缝正落在线带上时，缝里只有谱线那几行有墨、纵向墨段短，会被当成线，一个符号断成两块（八分休止的圆点与斜笔）。
-fn bridged(f: &PageFrame, b: &Blob, slit: usize) -> Vec<i32> {
-    let pw = f.ink.w;
-    let (x0, y0, w, h) = (b.rect.x as usize, b.rect.y as usize, b.rect.w as usize, b.rect.h as usize);
-    let me = b.id as i32;
-    let mut out: Vec<i32> = Vec::new();
-    for y in y0..y0 + h {
-        for x in x0..x0 + w {
-            if f.labels[y * pw + x] != me {
-                continue;
-            }
-            // 向左、向右各看一截
-            for dir in [-1i64, 1] {
-                let mut n = 0;
-                let mut xx = x as i64 + dir;
-                while xx >= 0 && (xx as usize) < pw && n < slit && f.ink.tri[y * pw + xx as usize] == LINE {
-                    xx += dir;
-                    n += 1;
-                }
-                if n == 0 || xx < 0 || xx as usize >= pw {
-                    continue;
-                }
-                let other = f.labels[y * pw + xx as usize];
-                if other != 0 && other != me && !out.contains(&other) {
-                    out.push(other);
-                }
-            }
-        }
-    }
-    out
-}
-
 /// 一行谱的休止候选（`x_from` 之右），按 x 排。
 pub fn rests(f: &PageFrame, si: usize, x_from: f64) -> Vec<Rest> {
     let s = &f.staves[si];
@@ -243,7 +213,7 @@ pub fn rests(f: &PageFrame, si: usize, x_from: f64) -> Vec<Rest> {
         let m = Mask::of(f, &ids, r, slit);
         let ntype = if bh <= BLOCK_H.1 { block(s, &m, r.y, bw, cx) } else { curvy(&m, sp, bw, bh) };
         if let Some(ntype) = ntype.filter(|t| (pos - 4.0).abs() <= CENTER_TOL || matches!(t, NoteType::Eighth | NoteType::N16th | NoteType::N32nd)) {
-            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h) });
+            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0 });
         }
     }
     out.sort_by(|a, b| a.x.total_cmp(&b.x));

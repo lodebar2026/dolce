@@ -37,7 +37,11 @@ fn main() {
         let (bx0, by0, bx1, by1) = (n(4) as f64, n(5) as f64, n(6) as f64, n(7) as f64);
         let sp = f.unit.space;
         for b in f.blobs.iter().filter(|b| b.cx >= bx0 && b.cx <= bx1 && b.cy >= by0 && b.cy <= by1) {
-            println!("块 {}：x {:.0} y {:.0} 宽 {:.2} 高 {:.2}（格） 面积 {}", b.id, b.rect.x, b.rect.y, b.rect.w / sp, b.rect.h / sp, b.area);
+            // 单块按升降还原号判的结果（按最近的一行谱）
+            let si = (0..f.staves.len()).min_by(|&i, &j| (f.staves[i].y_of(b.cx, 4.0) - b.cy).abs().total_cmp(&(f.staves[j].y_of(b.cx, 4.0) - b.cy).abs())).unwrap();
+            let u = dolce_omr_staff::attrs::units::single(&f.staves[si], b.rect, b.id as i32, b.area as f64);
+            let acc = dolce_omr_staff::attrs::lead::acc_kind(f, &u, f.staves[si].space());
+            println!("块 {}：x {:.0} y {:.0} 宽 {:.2} 高 {:.2}（格） 面积 {} 记号 {:?} 指 {:.1}", b.id, b.rect.x, b.rect.y, b.rect.w / sp, b.rect.h / sp, b.area, acc, u.mid());
         }
         for si in 0..f.staves.len() {
             for r in dolce_omr_staff::notes::rests::rests(f, si, 0.0).iter().filter(|r| r.x >= bx0 && r.x <= bx1 && r.y >= by0 && r.y <= by1) {

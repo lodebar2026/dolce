@@ -50,23 +50,25 @@ pub fn acc_kind(f: &PageFrame, u: &Unit, sp: f64) -> Option<Acc> {
     // 近乎通高的竖笔：升号两根（各占高的八成多），降号一根（顶天立地）；降号肚子、还原号的竖笔都不到七成
     let tall = stems(f, u, 0.72);
     if tall.len() >= 2 && ((tall[tall.len() - 1].0 - tall[0].1) as f64) >= sp * 0.15 {
-        return Some(Acc::Sharp);
+        // 还原号的两笔长的也过七成：它是错开的——左笔顶着上沿、够不着下沿，右笔踩着下沿、够不着上沿（升号反过来：左笔低、右笔高，且差得少）
+        let (a, b) = (tall[0], tall[tall.len() - 1]);
+        let staggered = (a.2 as f64 - y0) < h * 0.12 && (y1 - a.3 as f64) > h * 0.15 && (y1 - b.3 as f64) < h * 0.12 && (b.2 as f64 - y0) > h * 0.15;
+        return Some(if staggered { Acc::Natural } else { Acc::Sharp });
     }
     if tall.len() == 1 {
         let s = tall[0];
-        // 竖笔在左边、顶到上沿；右下有墨、右上没有
+        // 竖笔在左边、顶天立地；右下有墨、右上没有。竖笔不到通高的往下按还原号看（还原号左笔长的到近八成、右笔不到七成）
         let left = (s.0 as f64 + s.1 as f64) / 2.0 < x0 + u.rect.w * 0.4;
-        if !left || ((s.3 - s.2 + 1) as f64) < h * 0.85 {
-            return None;
+        if left && ((s.3 - s.2 + 1) as f64) >= h * 0.85 {
+            let (xa, xb) = (s.1 + 1, x1.ceil() as i64 - 1);
+            if xb < xa {
+                return None;
+            }
+            let ym = (y0 + h * 0.45) as i64;
+            let up = ink_in(f, xa, xb, y0 as i64, ym);
+            let down = ink_in(f, xa, xb, ym + 1, y1 as i64);
+            return (down > up * 2 && down as f64 >= sp * sp * 0.08).then_some(Acc::Flat);
         }
-        let (xa, xb) = (s.1 + 1, x1.ceil() as i64 - 1);
-        if xb < xa {
-            return None;
-        }
-        let ym = (y0 + h * 0.45) as i64;
-        let up = ink_in(f, xa, xb, y0 as i64, ym);
-        let down = ink_in(f, xa, xb, ym + 1, y1 as i64);
-        return (down > up * 2 && down as f64 >= sp * sp * 0.08).then_some(Acc::Flat);
     }
     // 还原号：两根错开的竖笔，左笔顶着上沿、下端离下沿远，右笔相反；两边没有探出去的横杠
     let st = stems(f, u, 0.5);
@@ -79,7 +81,9 @@ pub fn acc_kind(f: &PageFrame, u: &Unit, sp: f64) -> Option<Acc> {
     }
     let a_short = (y1 - a.3 as f64) > h * 0.2 && (a.2 as f64 - y0) < h * 0.12;
     let b_short = (b.2 as f64 - y0) > h * 0.2 && (y1 - b.3 as f64) < h * 0.12;
-    let out = ink_in(f, x0 as i64, a.0 - 1, y0 as i64, y1 as i64) + ink_in(f, b.1 + 1, x1 as i64, y0 as i64, y1 as i64);
+    // 外侧从竖笔再让出一笔宽起量：竖笔两三像素宽时只有一列够长，旁边那列是它自己
+    let m = ((sp * 0.12).round() as i64).max(1);
+    let out = ink_in(f, x0 as i64, a.0 - 1 - m, y0 as i64, y1 as i64) + ink_in(f, b.1 + 1 + m, x1 as i64, y0 as i64, y1 as i64);
     (a_short && b_short && (out as f64) < sp * sp * 0.06).then_some(Acc::Natural)
 }
 
