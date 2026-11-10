@@ -244,7 +244,8 @@ fn make_staff(bin: &Binary, hits: &[Hit], x0: usize, x1: usize, cols: usize) -> 
         }
         end
     };
-    let (left, right) = (walk(x0, -1), walk(x1, 1));
+    // 从轨迹端点往里退一段再起步：连着 `run_min` 列有墨才挪端点，从端点本身起步的话最后几列（取样步长以内）挪不过去
+    let (left, right) = (walk((x0 + run_min).min(x1), -1), walk(x1.saturating_sub(run_min).max(x0), 1));
     let (lo, hi) = (left / COL_STEP..=right / COL_STEP).filter_map(|c| curve.d.get(c)).fold((f64::MAX, f64::MIN), |(l, h), &v| (l.min(v as f64), h.max(v as f64)));
     let flat = hi - lo <= FLAT_SPREAD && ((hi + lo) / 2.0).abs() <= 1.0;
 

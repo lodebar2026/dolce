@@ -45,6 +45,7 @@ fn main() {
         _ => (dev().join("data/合唱谱/snap"), dev().join("testdata/合唱谱")),
     };
     let (mut pages, mut ts_n, mut rs_n, mut matched, mut d_top, mut d_lr) = (0, 0, 0, 0, 0.0, 0.0);
+    let (mut sl, mut sr, mut big) = (0.0, 0.0, 0usize);
     let mut odd: Vec<String> = Vec::new();
     let mut names: Vec<PathBuf> = std::fs::read_dir(&snapdir).unwrap().filter_map(|e| Some(e.ok()?.path())).collect();
     names.sort();
@@ -90,6 +91,14 @@ fn main() {
                     matched += 1;
                     d_top += (rs[j].0 - y).abs();
                     d_lr += (rs[j].1 - l).abs() + (rs[j].2 - r).abs();
+                    sl += rs[j].1 - l;
+                    sr += rs[j].2 - r;
+                    if (rs[j].1 - l).abs() > rs_space * 2.0 || (rs[j].2 - r).abs() > rs_space * 2.0 {
+                        big += 1;
+                        if std::env::var("SHOWEND").is_ok() {
+                            println!("  端点差大 {fname} p{} y{y:.0}: 左 {:.0}/{l:.0} 右 {:.0}/{r:.0}", i + 1, rs[j].1, rs[j].2);
+                        }
+                    }
                 }
             }
             if rs.len() != ts.len() {
@@ -99,6 +108,7 @@ fn main() {
         }
     }
     println!("{corpus}：{pages} 页，TS {ts_n} 行谱，Rust {rs_n} 行，配上 {matched}；首线平均差 {:.2} 像素，左右端平均差 {:.1} 像素", d_top / matched.max(1) as f64, d_lr / (2 * matched.max(1)) as f64);
+    println!("左端平均（Rust − TS）{:.1}，右端 {:.1}；差过两格的 {big} 行", sl / matched.max(1) as f64, sr / matched.max(1) as f64);
     for o in odd.iter().take(30) {
         println!("  {o}");
     }
