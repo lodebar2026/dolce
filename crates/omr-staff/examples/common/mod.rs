@@ -10,10 +10,20 @@ pub fn dev() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../dev"))
 }
 
-pub fn bin_of(src: &SourceImage) -> Binary {
+/// 只取标准档（不按谱表调整）：对比成像策略用。
+pub fn plain_bin(src: &SourceImage) -> Binary {
     let mut b = Binarizer::new(src).binarize(&[0.5], 1).remove(0);
     fix_polarity(&mut b);
     b
+}
+
+/// 成像（按谱表调整阈值、放大、补笔），回 (二值图, 松阈值图)。环境变量 `OMR_PLAIN=1` 时只取标准档。
+pub fn bin_of(src: &SourceImage) -> (Binary, Option<Binary>) {
+    if std::env::var("OMR_PLAIN").is_ok() {
+        return (plain_bin(src), None);
+    }
+    let im = dolce_omr_staff::prep::imaging::image_page(src);
+    (im.bin, im.soft)
 }
 
 /// TS 快照里一页某阶段的文本。
@@ -28,10 +38,11 @@ pub fn ts_space(snap: &serde_json::Value, page: usize) -> Option<f64> {
     serde_json::from_str::<serde_json::Value>(u).ok()?["space"].as_f64()
 }
 
-/// TS 把细线彩色页放大过一倍：按线距比折回 Rust 的坐标。
+/// 两边放大与否不同（细线彩色页放大一倍）：按线距比把 TS 坐标折成 Rust 的。
 pub fn ts_scale(snap: &serde_json::Value, page: usize, rs_space: f64) -> f64 {
     match ts_space(snap, page) {
         Some(t) if t > rs_space * 1.6 => 0.5,
+        Some(t) if t < rs_space / 1.6 => 2.0,
         _ => 1.0,
     }
 }
@@ -52,8 +63,8 @@ pub fn ts_bar_xs(snap: &serde_json::Value, page: usize) -> Vec<(f64, Vec<f64>)> 
         .collect()
 }
 
-/// 逐页：(快照键, 页号, 快照, 二值图)。
-pub fn for_pages(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde_json::Value, &Binary)) {
+/// 逐页：(快照键, 页号, 快照, 二值图, 松阈值图)。
+pub fn for_pages(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde_json::Value, &Binary, Option<&Binary>)) {
     let (snapdir, root) = match corpus {
         "solo" => (dev().join("data/五线谱/snap"), dev().join("testdata/五线谱")),
         _ => (dev().join("data/合唱谱/snap"), dev().join("testdata/合唱谱")),
@@ -86,7 +97,8 @@ pub fn for_pages(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde
             if stage(&snap, i + 1, "staves").is_none() {
                 continue;
             }
-            f(&key, i + 1, &snap, &bin_of(src));
+            let (bin, soft) = bin_of(src);
+            f(&key, i + 1, &snap, &bin, soft.as_ref());
         }
     }
 }

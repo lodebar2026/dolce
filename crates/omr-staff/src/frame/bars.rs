@@ -1,6 +1,7 @@
 //! **小节线**（在符头之前定）：竖段里纵贯一行谱（首线到末线）、两端不伸出谱表（或伸进同系统的邻行，贯穿小节线）、
 //! 两端旁边没挂着符头那样的一团墨（那是符干）的，按相邻几根并成一条（双线、终止线、反复记号的粗细两笔）。
 use crate::frame::ink::{InkLayers, VSeg, BG};
+use crate::frame::systems::System;
 use dolce_omr_sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
@@ -41,8 +42,20 @@ pub struct Barline {
     pub x0: f64,
     pub x1: f64,
     pub style: BarStyle,
-    /// 组成它的竖段（证据）。
+    /// 组成它的竖段（证据；系统内互证补出来的没有）。
     pub segs: Vec<VSeg>,
+    pub src: BarSrc,
+}
+
+/// 小节线从哪来。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BarSrc {
+    /// 本行的竖段。
+    Seg,
+    /// 同系统别的行有、本行回原图验到竖墨补的。
+    Ink,
+    /// 三行以上的系统过半的行都有、本行照多数补的（没验墨）。
+    Vote,
 }
 
 /// 一行谱的小节线候选（未经系统内互证）。`above` / `below`：同系统上下邻行（贯穿小节线可以伸进去）。
@@ -80,7 +93,7 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
                 b.x1 = b.x1.max(v.x1 as f64);
                 b.segs.push(v);
             }
-            _ => out.push(Barline { x: v.cx(), x0: v.x0 as f64, x1: v.x1 as f64, style: BarStyle::Regular, segs: vec![v] }),
+            _ => out.push(Barline { x: v.cx(), x0: v.x0 as f64, x1: v.x1 as f64, style: BarStyle::Regular, segs: vec![v], src: BarSrc::Seg }),
         }
     }
     for b in &mut out {
@@ -121,4 +134,147 @@ fn head_at_end(ink: &InkLayers, v: &VSeg, s: &Staff, sp: f64) -> bool {
         }
     }
     false
+}
+
+/// 系统内互证的横向容差（相对线距）：扫描件歪一点，隔着歌词的两行就错开几像素；小节线与相邻的干至少隔一格。
+const SYS_XTOL: f64 = 0.6;
+/// 行末这么多格以内不互证（各行右端参差，别的行的那一根常是谱行右界）。
+const LINE_END: f64 = 1.5;
+
+/// 一页各行谱的小节线：先逐行出候选（贯穿小节线只许伸进同系统的邻行），再在多行系统里按同 x 互证——
+/// 别的行有、本行没有的回原图验墨补（三行以上过半的行都有就照补）；只有少数行有、别的行原图同处也没有贯穿谱行的竖墨的摘掉。
+pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: &[System], unit: &Unit) -> Vec<Vec<Barline>> {
+    let mut out: Vec<Vec<Barline>> = vec![Vec::new(); staves.len()];
+    for sys in systems {
+        let g = &sys.staves;
+        for (k, &i) in g.iter().enumerate() {
+            let above = if k > 0 { Some(&staves[g[k - 1]]) } else { None };
+            let below = g.get(k + 1).map(|&j| &staves[j]);
+            out[i] = staff_barlines(ink, segs, &staves[i], unit, above, below);
+        }
+        if g.len() < 2 {
+            continue;
+        }
+        let sp = unit.space;
+        let xtol = sp * SYS_XTOL;
+        // 各行候选按 x 归簇：(行在系统里的序, 下标, x)
+        let mut all: Vec<(usize, usize, f64)> = g.iter().enumerate().flat_map(|(k, &i)| out[i].iter().enumerate().map(move |(j, b)| (k, j, b.x))).collect();
+        all.sort_by(|a, b| a.2.total_cmp(&b.2));
+        let mut clusters: Vec<Vec<(usize, usize, f64)>> = Vec::new();
+        for e in all {
+            match clusters.last_mut() {
+                Some(c) if e.2 - c.last().unwrap().2 <= xtol => c.push(e),
+                _ => clusters.push(vec![e]),
+            }
+        }
+        let n = g.len();
+        let mut add: Vec<(usize, f64, BarSrc)> = Vec::new();
+        let mut drop: Vec<(usize, usize)> = Vec::new();
+        for c in &clusters {
+            let mut rows: Vec<usize> = c.iter().map(|e| e.0).collect();
+            rows.sort();
+            rows.dedup();
+            if rows.len() == n {
+                continue;
+            }
+            let mut xs: Vec<f64> = c.iter().map(|e| e.2).collect();
+            xs.sort_by(f64::total_cmp);
+            let x = xs[xs.len() / 2];
+            let missing: Vec<usize> = (0..n).filter(|k| !rows.contains(k)).collect();
+            // 行末不互证
+            if missing.iter().chain(rows.iter()).any(|&k| x > staves[g[k]].right - sp * LINE_END) {
+                continue;
+            }
+            let inside = |k: usize| x >= staves[g[k]].left + sp;
+            if n >= 3 && rows.len() * 2 > n {
+                add.extend(missing.iter().filter(|&&k| inside(k)).map(|&k| (k, x, BarSrc::Vote)));
+                continue;
+            }
+            // 别的行回原图验墨：行行都验到才补
+            let found: Vec<Option<i64>> = missing.iter().map(|&k| bar_at(ink, &staves[g[k]], x, xtol.round() as i64, false)).collect();
+            if found.iter().all(|f| f.is_some()) && missing.iter().all(|&k| inside(k)) {
+                add.extend(missing.iter().zip(&found).map(|(&k, f)| (k, f.unwrap() as f64, BarSrc::Ink)));
+                continue;
+            }
+            // 少数行有、别的行同处也没有贯穿谱行的竖墨：摘掉
+            if rows.len() * 3 <= n || n == 2 {
+                let backed = missing.iter().filter(|&&k| bar_at(ink, &staves[g[k]], x, xtol.round() as i64, true).is_some()).count();
+                if (n == 2 && backed == 0) || (n >= 3 && (backed + rows.len()) * 3 <= n) {
+                    drop.extend(c.iter().map(|e| (e.0, e.1)));
+                }
+            }
+        }
+        drop.sort();
+        for &(k, j) in drop.iter().rev() {
+            out[g[k]].remove(j);
+        }
+        for (k, x, src) in add {
+            let v = &mut out[g[k]];
+            v.push(Barline { x, x0: x, x1: x, style: BarStyle::Regular, segs: vec![], src });
+            v.sort_by(|a, b| a.x.total_cmp(&b.x));
+        }
+    }
+    out
+}
+
+/// 原图上验这一行在 `cx` 左右 `range` 像素内有没有一根小节线模样的竖墨，有则回它的列：
+/// 从首线走到末线（逐行可左右挪一列，总共漂不过 0.15 格），断墨不过 6%、最长断口不过两像素；除谱线那几行外横向墨宽的行不多（贴着符头、穿过升号的过不了）；
+/// `through` 为假时上下各往外 0.4~0.9 格不能有墨（符干、系统线会伸出去）。
+pub fn bar_at(ink: &InkLayers, st: &Staff, cx: f64, range: i64, through: bool) -> Option<i64> {
+    let sp = st.space();
+    let on = |x: i64, y: i64| ink.at(x, y) != BG;
+    let run_w = |x: i64, y: i64| {
+        let (mut a, mut b) = (x, x);
+        while on(a - 1, y) {
+            a -= 1;
+        }
+        while on(b + 1, y) {
+            b += 1;
+        }
+        b - a + 1
+    };
+    let top = st.top(cx).round() as i64;
+    let bottom = st.bottom(cx).round() as i64;
+    let rows = (bottom - top + 1) as f64;
+    let inked = |xa: i64, xb: i64, y0: i64, y1: i64| (y0..=y1).filter(|&y| (xa - 1..=xb + 1).any(|x| on(x, y))).count() as f64 / ((y1 - y0 + 1).max(1)) as f64;
+    let c = cx.round() as i64;
+    for d in 0..=range {
+        for x0 in if d == 0 { vec![c] } else { vec![c - d, c + d] } {
+            let (mut x, mut miss, mut run, mut worst, mut wide, mut lo, mut hi) = (x0, 0, 0, 0, 0, x0, x0);
+            let mut ok = true;
+            for y in top..=bottom {
+                if on(x, y) {
+                    run = 0;
+                } else if on(x - 1, y) {
+                    x -= 1;
+                    run = 0;
+                } else if on(x + 1, y) {
+                    x += 1;
+                    run = 0;
+                } else {
+                    miss += 1;
+                    run += 1;
+                    worst = worst.max(run);
+                    continue;
+                }
+                if ((x - x0).abs() as f64) > sp * 0.15 {
+                    ok = false;
+                    break;
+                }
+                if run_w(x, y) as f64 > sp * 0.4 {
+                    wide += 1;
+                }
+                lo = lo.min(x);
+                hi = hi.max(x);
+            }
+            if !ok || miss as f64 > rows * 0.06 || worst > 2 || wide as f64 > rows * 0.3 {
+                continue;
+            }
+            if !through && (inked(lo, hi, (top as f64 - sp * 0.9).round() as i64, (top as f64 - sp * 0.4).round() as i64) > 0.3 || inked(lo, hi, (bottom as f64 + sp * 0.4).round() as i64, (bottom as f64 + sp * 0.9).round() as i64) > 0.3) {
+                continue;
+            }
+            return Some(x0);
+        }
+    }
+    None
 }

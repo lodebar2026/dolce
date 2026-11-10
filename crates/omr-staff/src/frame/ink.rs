@@ -91,9 +91,11 @@ impl InkLayers {
     }
 
     /// 竖段：逐列纵向墨段（存疑像素也算墨——竖笔与谱线交叉处本来就不是存疑，这里只为不在纯谱线上断开；
-    /// 段内不过 `max_gap` 像素的白缝接上——扫描件的竖笔常断一两像素）长不短过 `min_len` 的，相邻列横向连成一段（纵向重叠过短者一半）。
+    /// 段内不过 `max_gap` 像素的白缝接上——扫描件的竖笔常断一两像素），相邻列横向连成一段（纵向重叠过短者一半），连成后纵向不短过 `min_len` 的。
     /// 符干、小节线、系统线、升降号竖笔、谱号竖笔都在里面，归属由用它的模块定。
     pub fn vsegs(&self, min_len: usize, max_gap: usize) -> Vec<VSeg> {
+        // 单列只要够 `min_len` 的三分之一就收：细线扫描件两像素宽的竖笔，两列各在不同处断开、单列都不够长，合起来是完整一根
+        let piece = (min_len / 3).max(1);
         let mut open: Vec<VSeg> = Vec::new();
         let mut done: Vec<VSeg> = Vec::new();
         for x in 0..self.w {
@@ -116,7 +118,7 @@ impl InkLayers {
                         _ => break,
                     }
                 }
-                if y - a >= min_len {
+                if y - a >= piece {
                     runs.push((a, y - 1));
                 }
             }
@@ -139,6 +141,7 @@ impl InkLayers {
             open = next;
         }
         done.extend(open);
+        done.retain(|s| s.len() >= min_len);
         done.sort_by(|a, b| a.x0.cmp(&b.x0).then(a.y0.cmp(&b.y0)));
         done
     }
