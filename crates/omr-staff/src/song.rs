@@ -9,7 +9,7 @@ use dolce_omr_sheet::music::{Clef, Key};
 use dolce_omr_sheet::score::{Attrs, Measure, Part, Score};
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
-const BOUND_XTOL: f64 = 1.0;
+const BOUND_XTOL: f64 = 1.6;
 /// 最后一条小节线之后还剩这么多格的谱线，算没印右线的半截小节。
 const OPEN_TAIL: f64 = 3.0;
 
@@ -118,10 +118,15 @@ fn assign(clefs: &[Option<Clef>], slots: &[Option<Clef>]) -> Vec<usize> {
 /// 各系统的调号读数（同系统互证过的）顺着乐曲定下来：没读出的沿用；孤零零一个系统与前后都不同的照前后改；
 /// 收得不干净（后面还跟着像升降号的墨）又比邻近系统少几个同种记号的，照邻近的补——少读常见，转调少见且前后系统会一致。
 fn settle_keys(read: &[Option<(i8, bool)>]) -> Vec<i8> {
+    settle(read, |a, b| a.unsigned_abs() < b.unsigned_abs() && (a == 0 || (a > 0) == (b > 0))).into_iter().map(|v| v.unwrap_or(0)).collect()
+}
+
+/// 一串按乐曲次序的读数（值, 把握大）定下来：没读出的沿用前一个（开头的取后面第一个）；一段读数夹在两段相同的读数之间、
+/// 自己又只有一个或没把握的，照两边改；没把握又是邻段「少读」（`prefix(本段, 邻段)`）的照邻段补；开头结尾孤零零一个没把握的照邻段改。
+fn settle<T: Copy + PartialEq>(read: &[Option<(T, bool)>], prefix: impl Fn(T, T) -> bool) -> Vec<Option<T>> {
     let n = read.len();
-    let mut k: Vec<Option<i8>> = read.iter().map(|r| r.map(|x| x.0)).collect();
+    let mut k: Vec<Option<T>> = read.iter().map(|r| r.map(|x| x.0)).collect();
     let sure: Vec<bool> = read.iter().map(|r| r.is_some_and(|x| x.1)).collect();
-    // 没读出的沿用前一个，开头的取后面第一个
     for i in 1..n {
         if k[i].is_none() {
             k[i] = k[i - 1];
@@ -132,8 +137,10 @@ fn settle_keys(read: &[Option<(i8, bool)>]) -> Vec<i8> {
             k[i] = k[i + 1];
         }
     }
-    let mut k: Vec<i8> = k.into_iter().map(|v| v.unwrap_or(0)).collect();
-    let prefix = |a: i8, b: i8| a.unsigned_abs() < b.unsigned_abs() && (a == 0 || (a > 0) == (b > 0));
+    if k.iter().any(|v| v.is_none()) {
+        return k;
+    }
+    let mut k: Vec<T> = k.into_iter().map(|v| v.unwrap()).collect();
     for _ in 0..4 {
         let mut changed = false;
         let mut i = 0;
@@ -166,7 +173,7 @@ fn settle_keys(read: &[Option<(i8, bool)>]) -> Vec<i8> {
             break;
         }
     }
-    k
+    k.into_iter().map(Some).collect()
 }
 
 /// 把各页（按次序）拼成整曲。
@@ -184,16 +191,62 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
         .flat_map(|p| p.frame.systems.iter().map(move |sys| sys.staves.iter().filter_map(|&i| p.attrs[i].key.map(|k| (k.fifths, p.attrs[i].key_sure))).next()))
         .collect();
     let keys = settle_keys(&sys_keys);
+    // 各系统的行配到哪几个声部；各声部逐系统的行首谱号读数顺着乐曲定下来（行首换谱号少见：孤零零一行读得不同的照前后改）
+    let mut slots_all: Vec<Vec<usize>> = Vec::new();
+    let mut clef_reads: Vec<Vec<Option<(Clef, bool)>>> = vec![Vec::new(); nparts];
+    for page in pages {
+        for sys in &page.frame.systems {
+            let ra: Vec<&RowAttrs> = sys.staves.iter().map(|&i| &page.attrs[i]).collect();
+            let slots = assign(&ra.iter().map(|a| a.clef).collect::<Vec<_>>(), &clef);
+            for r in clef_reads.iter_mut() {
+                r.push(None);
+            }
+            for (k, &p) in slots.iter().enumerate() {
+                if let Some(c) = ra[k].clef {
+                    *clef_reads[p].last_mut().unwrap() = Some((c, ra[k].clef_sure));
+                    if ra[k].clef_sure || clef[p].is_none() {
+                        clef[p] = Some(c);
+                    }
+                }
+            }
+            slots_all.push(slots);
+        }
+    }
+    let clefs: Vec<Vec<Option<Clef>>> = clef_reads.iter().map(|r| settle(r, |_, _| false)).collect();
+    let mut clef: Vec<Option<Clef>> = vec![None; nparts];
     let mut sys_no = 0;
+    // 上一个系统行末没印右线（跨行劈开的小节）
+    let mut prev_open = false;
+    // 现行拍号
+    let mut time: Option<dolce_omr_sheet::music::Time> = None;
+    // 上一个系统末小节的宽度（相对它那一行常见的小节宽；没有为 0）
+    let mut prev_tail = 0.0f64;
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.frame;
         for (si, sys) in f.systems.iter().enumerate() {
             let sys_key = Key { fifths: keys[sys_no] };
+            let slots = slots_all[sys_no].clone();
+            let sys_i = sys_no;
             sys_no += 1;
             let rows = &sys.staves;
             let ra: Vec<&RowAttrs> = rows.iter().map(|&i| &page.attrs[i]).collect();
-            let slots = assign(&ra.iter().map(|a| a.clef).collect::<Vec<_>>(), &clef);
-            let (bs, open) = bounds(page, rows);
+            let (mut bs, open) = bounds(page, rows);
+            // 单独一根粗线不成样式（行末收尾的线扫出来常偏粗）：全曲最后一条当终止线，其余当普通线
+            let last_sys = pn + 1 == pages.len() && si + 1 == f.systems.len();
+            let nb = bs.len();
+            for (j, b) in bs.iter_mut().enumerate() {
+                if b.style == BarStyle::Heavy {
+                    b.style = if last_sys && j + 1 == nb && !open { BarStyle::LightHeavy } else { BarStyle::Regular };
+                }
+            }
+            // 跨行劈开的小节（暂按宽度估，音符层落地后改按拍数）：上一行末小节与这一行首小节都比本行常见的小节窄、合起来不过一个半
+            let lead = rows.iter().map(|&i| page.attrs[i].lead_end).fold(f64::MIN, f64::max);
+            let widths: Vec<f64> = bs.windows(2).map(|w| w[1].x - w[0].x).collect();
+            let med = dolce_omr_core::geom::median(&widths, 0.0);
+            let first_w = bs.first().map_or(f64::MAX, |b| b.x - lead);
+            let first_r = if med > 0.0 { first_w / med } else { f64::MAX };
+            let implicit = prev_open || (prev_tail > 0.0 && first_r < 0.7 && prev_tail < 0.85 && first_r + prev_tail <= 1.35);
+            let tail_w = if !open && nb >= 2 { bs[nb - 1].x - bs[nb - 2].x } else { 0.0 };
             let count = bs.len() + open as usize;
             let from = parts.first().map_or(0, |p| p.measures.len());
             let mut used = vec![false; nparts];
@@ -213,13 +266,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 }
                 let first = from == 0;
                 let mut at = Attrs::default();
-                // 谱号、调号：没读出的沿用；读数与现行的不同、把握又不大的也沿用
-                let c = match (a.clef, clef[p]) {
-                    (Some(c), None) => c,
-                    (Some(c), Some(cur)) if c == cur || a.clef_sure => c,
-                    (_, Some(cur)) => cur,
-                    (None, None) => Clef::TREBLE,
-                };
+                // 谱号：整曲定下来的那个（全曲都没读出的声部按高音谱号）
+                let c = clefs[p][sys_i].unwrap_or(Clef::TREBLE);
                 if first || clef[p] != Some(c) {
                     at.clef = Some(c);
                 }
@@ -229,7 +277,13 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     at.key = Some(kk);
                 }
                 key[p] = Some(kk);
-                at.time = a.time;
+                // 拍号：曲首照读数；后面的系统只收「与现行不同、且同系统两行以上各自读出同一个」的（单行系统只收数字拍号）
+                if let Some(t) = a.time {
+                    let strong = a.time_votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal);
+                    if first || (time != Some(t) && strong) {
+                        at.time = Some(t);
+                    }
+                }
                 ms[0].attrs = at;
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
@@ -251,6 +305,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 }
                 ms[0].new_system = true;
                 ms[0].new_page = si == 0 && pn > 0;
+                ms[0].implicit = implicit;
                 parts[p].measures.extend(ms);
                 layout.push(RowLayout { row: row_no, part: p, from, to: from + count - 1, space: f.staves[i].space() });
                 row_no += 1;
@@ -261,9 +316,19 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     let mut ms: Vec<Measure> = (0..count).map(|_| Measure::default()).collect();
                     ms[0].new_system = true;
                     ms[0].new_page = si == 0 && pn > 0;
+                    ms[0].implicit = implicit;
                     part.measures.extend(ms);
                 }
             }
+            if let Some(t) = rows.iter().filter_map(|&i| page.attrs[i].time).next() {
+                let votes = rows.iter().map(|&i| page.attrs[i].time_votes).max().unwrap_or(0);
+                if from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal) {
+                    time = Some(t);
+                }
+            }
+            prev_open = open && !bs.is_empty();
+            // 末小节的宽度折成「本行常见小节宽」的倍数，留给下一行比（各行线距、疏密不同，不直接比像素）
+            prev_tail = if med > 0.0 { tail_w / med } else { 0.0 };
             let top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up as f64;
             systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout });
         }

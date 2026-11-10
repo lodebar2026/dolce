@@ -243,3 +243,31 @@ pub fn strokes(f: &PageFrame, x0: i64, x1: i64, y0: i64, y1: i64, min_len: i64, 
     done.sort_by_key(|s| s.x0);
     done
 }
+
+/// 谱号与系统线、括号连成一大块时，把谱号**刻出来**：这一大块在谱行左端一带的列里，纵向墨段长过 `long` 的是系统线 / 括号的竖笔；
+/// 取最右那根竖笔之后的列，在谱表带（音级位置 [pos0, pos1]）里量上下沿。刻不出东西回 None。
+pub fn carve_after_line(f: &PageFrame, s: &Staff, u: &Unit, long: f64, pos0: f64, pos1: f64) -> Option<Unit> {
+    let sp = s.space();
+    let (xa, xb) = (u.rect.x.floor() as i64, u.rect.right().ceil() as i64 - 1);
+    let line_to = (s.left + sp * 1.5) as i64;
+    let mut start = xa;
+    for x in xa..=xb.min(line_to) {
+        if column(f, u, x).is_some_and(|c| c.2 as f64 >= long) {
+            start = x + 1;
+        }
+    }
+    let (mut top, mut bot, mut x0, mut x1, mut n) = (i64::MAX, i64::MIN, i64::MAX, i64::MIN, 0.0);
+    for x in start..=xb {
+        let (ya, yb) = (s.y_of(x as f64, pos0).round() as i64, (s.y_of(x as f64, pos1).round() as i64).min(f.ink.h as i64 - 1));
+        for y in ya.max(0)..=yb {
+            if u.ids.contains(&f.labels[y as usize * f.ink.w + x as usize]) {
+                top = top.min(y);
+                bot = bot.max(y);
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                n += 1.0;
+            }
+        }
+    }
+    (bot > top && x1 > x0).then(|| unit_of(s, Rect::new(x0 as f64, top as f64, (x1 - x0 + 1) as f64, (bot - top + 1) as f64), u.ids.clone(), n))
+}

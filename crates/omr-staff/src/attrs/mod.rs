@@ -31,25 +31,27 @@ pub struct RowAttrs {
     pub key_sure: bool,
     /// 行首印的拍号。
     pub time: Option<Time>,
+    /// 同系统里各自读出这个拍号的行数（互证前）。
+    pub time_votes: u8,
     /// 行首区（谱号、调号、拍号）的右缘 x。
     pub lead_end: f64,
     pub changes: Vec<Change>,
 }
 
-/// 读一个数字格（拍号的上下两个数字）。回 OCR 读出的字串；读不了回 None。
+/// 读一个数字格（拍号的上下两个数字）。回 OCR 逐字的候选（每个字按分降序的前若干名）；读不了回 None。
 pub trait DigitReader: Sync {
-    fn read_digit(&self, cell: &Gray) -> Option<String>;
+    fn read_digit(&self, cell: &Gray) -> Option<Vec<Vec<String>>>;
 }
 
 impl DigitReader for CachedOcr {
-    fn read_digit(&self, cell: &Gray) -> Option<String> {
-        self.read_cell(cell).ok()
+    fn read_digit(&self, cell: &Gray) -> Option<Vec<Vec<String>>> {
+        Some(self.rank_chars(cell, 40).ok()?.into_iter().map(|c| c.alts).collect())
     }
 }
 
 /// 一页各行谱的结构信息：逐行读行首区，再同系统互证。
 pub fn page_attrs(f: &PageFrame, ocr: Option<&dyn DigitReader>) -> Vec<RowAttrs> {
-    let mut rows: Vec<RowAttrs> = f.staves.iter().map(|s| lead::read_lead(f, s, ocr)).collect();
+    let mut rows: Vec<RowAttrs> = (0..f.staves.len()).map(|i| lead::read_lead(f, i, ocr)).collect();
     agree::system_agree(f, &mut rows);
     rows
 }

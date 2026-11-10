@@ -33,6 +33,8 @@ pub struct Measure {
     pub repeat_start: bool,
     pub new_system: bool,
     pub new_page: bool,
+    /// 上一行行末没印右线、这一小节是跨行劈开的后半截（MusicXML `implicit`；判分时上一行行末那条线不计）。
+    pub implicit: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -107,7 +109,7 @@ impl Score {
         for (pi, p) in parts.iter().enumerate() {
             let _ = writeln!(o, "  <part id=\"P{}\">", pi + 1);
             for (mi, m) in p.measures.iter().enumerate() {
-                let _ = writeln!(o, "    <measure number=\"{}\">", mi + 1);
+                let _ = writeln!(o, "    <measure number=\"{}\"{}>", mi + 1, if m.implicit { " implicit=\"yes\"" } else { "" });
                 if mi > 0 && (m.new_system || m.new_page) {
                     let _ = writeln!(o, "      <print {}=\"yes\"/>", if m.new_page { "new-page" } else { "new-system" });
                 }

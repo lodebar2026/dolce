@@ -4,7 +4,7 @@
 //!   中音谱号正好撑满谱表且左边两根竖笔），不比模板。
 //! - 调号按**位置自证**：谱号定了，第 i 个升号 / 降号该在哪条线、哪个间是定的；单元挨个往右接，位置对得上、形状不矛盾的才算。
 //! - 拍号：上下两个数字正好各占半个谱表，数字交给 OCR；C / ¢ 骑在中线上。
-use super::units::{ink_in, merged, split_at, stems, strokes, units_in, Unit};
+use super::units::{carve_after_line, ink_in, merged, split_at, stems, strokes, units_in, Unit};
 use super::{DigitReader, RowAttrs};
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
@@ -108,7 +108,8 @@ pub fn clef_shape(f: &PageFrame, u: &Unit, sp: f64) -> Option<(Clef, bool)> {
     if !(1.8..=10.5).contains(&h) || !(0.8..=4.0).contains(&w) {
         return None;
     }
-    if u.top <= -1.0 && u.bottom >= 8.8 && h >= 5.0 {
+    // 高音谱号：上端在首线上方一格半到两格多、下端在末线下方一格上下（挂着 8 的再低两格）；探得更远的是连着别的东西
+    if u.top <= -1.0 && u.top >= -5.3 && u.bottom >= 8.8 && u.bottom <= 15.6 && h >= 5.0 {
         let sure = (1.9..=3.5).contains(&w) && u.top <= -1.8 && u.bottom >= 9.6;
         // 下面挂着 8（连成一块的）
         let clef = if u.bottom >= 12.6 { Clef::TREBLE_8VB } else { Clef::TREBLE };
@@ -140,10 +141,27 @@ pub fn read_clef(f: &PageFrame, s: &Staff, us: &[Unit]) -> Option<ClefHit> {
         if u.rect.x > s.left + sp * CLEF_WITHIN {
             break;
         }
-        // 系统线、括号：贴着左端的细长竖笔，或整个在左端以左
-        if u.rect.right() < s.left + sp * 0.5 || u.rect.x < s.left - sp * 0.3 || (u.w(sp) < 0.5 && u.h(sp) >= 3.0) {
-            continue;
-        }
+        // 谱号与系统线、括号连成一大块：把系统线之后的那部分刻出来当谱号的单元
+        let carved;
+        let u = if u.h(sp) > 10.5 && u.rect.right() > s.left + sp * 1.0 {
+            // 先在整条谱表带里刻；判不出再只在谱表以内刻（括号下端的弯钩伸在末线下面，会把低音谱号的下沿拉低）
+            let full = carve_after_line(f, s, u, sp * 3.4, -6.0, 14.0).filter(|c| c.rect.x >= s.left - sp * 1.5);
+            let inner = || carve_after_line(f, s, u, sp * 3.4, -1.5, 7.85).filter(|c| c.rect.x >= s.left - sp * 1.5 && clef_shape(f, c, sp).is_some_and(|k| k.0 == Clef::BASS));
+            // 刻出来的下沿不可靠（括号钩、花括号都在这一带）：只收不带 8 的高音谱号
+            match full.filter(|c| clef_shape(f, c, sp).is_some_and(|k| k.0 == Clef::TREBLE && c.bottom <= 12.0)).or_else(inner) {
+                Some(c) => {
+                    carved = c;
+                    &carved
+                }
+                None => continue,
+            }
+        } else {
+            // 系统线、括号：贴着左端的细长竖笔，或整个在左端以左
+            if u.rect.right() < s.left + sp * 0.5 || u.rect.x < s.left - sp * 0.3 || (u.w(sp) < 0.5 && u.h(sp) >= 3.0) {
+                continue;
+            }
+            u
+        };
         // 断成几截的谱号（压在谱线上的细弧只剩存疑像素，上半截与下半截分了家）：横向挨着、纵向交叠的碎块并进来再判。
         // 低音谱号的两点、隔着空隙的第一个调号记号不并
         let mut whole = u.clone();
@@ -380,12 +398,19 @@ fn cell(f: &PageFrame, x0: i64, x1: i64, y0: i64, y1: i64) -> Gray {
     g
 }
 
-fn digits_of(s: &str) -> Option<u32> {
-    let d: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
-    if d.is_empty() || d.len() > 2 {
-        None
-    } else {
-        d.parse().ok()
+/// OCR 逐字候选 → 数：每个字取候选里排最前的数字（压着谱线、糊了孔的数字常被读成汉字，数字排在后几名）。
+/// 一个字读一位，两个字读两位；`ok` 限定合法的数。
+fn digits_of(alts: &[Vec<String>], ok: impl Fn(u32) -> bool) -> Option<u32> {
+    // 一位数：候选前几名里排最前的合法数字；两位数（12、16）只认两个字都是头名的
+    let digit = |a: &Vec<String>, top: usize, ok1: &dyn Fn(u32) -> bool| a.iter().take(top).filter_map(|s| s.parse::<u32>().ok().filter(|_| s.len() == 1)).find(|d| ok1(*d));
+    match alts.len() {
+        1 => digit(&alts[0], 4, &|d| ok(d)),
+        2 => {
+            let a = digit(&alts[0], 1, &|d| d == 1)?;
+            let b = digit(&alts[1], 1, &|d| ok(a * 10 + d))?;
+            Some(a * 10 + b)
+        }
+        _ => None,
     }
 }
 
@@ -441,12 +466,29 @@ pub fn read_time_at(f: &PageFrame, s: &Staff, us: &[&Unit], ocr: Option<&dyn Dig
     if up_ink < need || down_ink < need {
         return None;
     }
+    // 上下两半都得是「一个字」的模样：各自的墨横向铺开过半个列宽（一根竖笔带一个头的不是）
+    let spread = |ya: i64, yb: i64| (x0 as i64..=x1 as i64).filter(|&x| (ya..=yb).any(|y| f.ink.at(x, y) == crate::frame::ink::INK)).count() as f64;
+    if spread(ya, (ym - half * 0.3) as i64) < (x1 - x0) * 0.6 || spread((ym + half * 0.3) as i64, yb) < (x1 - x0) * 0.6 {
+        return None;
+    }
     // ¢：中线一带有一根竖笔穿过、且整体是一块（数字之间隔着中线，中线上只有存疑的线）
     let mid_ink = ink_in(f, x0 as i64, x1 as i64, (ym - sp * 0.12) as i64, (ym + sp * 0.12) as i64);
     let Some(ocr) = ocr else { return Some(TimeHit { time: None, right: x1 }) };
     let a = ocr.read_digit(&cell(f, x0 as i64 - 1, x1 as i64 + 1, ya, ym.round() as i64 - 1));
     let b = ocr.read_digit(&cell(f, x0 as i64 - 1, x1 as i64 + 1, ym.round() as i64 + 1, yb));
-    let t = time_from(a.as_deref().and_then(digits_of), b.as_deref().and_then(digits_of));
+    let num = a.as_deref().and_then(|v| digits_of(v, |d| matches!(d, 2..=9 | 12)));
+    let den = b.as_deref().and_then(|v| digits_of(v, |d| matches!(d, 2 | 4 | 8 | 16)));
+    let t = time_from(num, den);
+    if std::env::var("OMR_DBG").is_ok() {
+        eprintln!("拍号列 x {:.0}..{:.0} 位 {:.1}..{:.1}：上「{}」下「{}」→ {:?}", x0, x1, top, bottom, a.as_ref().map_or("?".into(), |v| v.iter().map(|c| c.iter().take(4).cloned().collect::<String>()).collect::<Vec<_>>().join("|")), b.as_ref().map_or("?".into(), |v| v.iter().map(|c| c.iter().take(4).cloned().collect::<String>()).collect::<Vec<_>>().join("|")), t);
+        if std::env::var("OMR_DBG").as_deref() == Ok("2") {
+            for g in [cell(f, x0 as i64 - 1, x1 as i64 + 1, ya, ym.round() as i64 - 1), cell(f, x0 as i64 - 1, x1 as i64 + 1, ym.round() as i64 + 1, yb)] {
+                for y in (0..g.h).step_by(2) {
+                    eprintln!("  {}", (0..g.w).map(|x| if g.data[y * g.w + x] == 0 { '#' } else { '.' }).collect::<String>());
+                }
+            }
+        }
+    }
     if t.is_none() && us.len() == 1 && mid_ink as f64 > sp * 0.24 * sp * 0.15 && top >= -1.6 {
         // 读不成两个数字、中线上又有墨连着：当 ¢（骑中线的 C 加一根竖笔）
         let st = stems(f, us[0], 0.8);
@@ -457,29 +499,37 @@ pub fn read_time_at(f: &PageFrame, s: &Staff, us: &[&Unit], ocr: Option<&dyn Dig
     Some(TimeHit { time: t, right: x1 })
 }
 
-/// 行首拍号：`start`（谱号 / 调号右缘）之后紧跟着的那一列。
-pub fn read_time(f: &PageFrame, s: &Staff, us: &[Unit], start: f64, ocr: Option<&dyn DigitReader>) -> Option<TimeHit> {
+/// 行首拍号：`start`（谱号 / 调号右缘）之后、`end`（第一条小节线）之前，自左而右逐列试，第一列读得出拍号的算。
+/// 调号没读全时拍号前面还隔着几个没认出的记号，所以不只看紧跟着的那一列。
+pub fn read_time(f: &PageFrame, s: &Staff, us: &[Unit], start: f64, end: f64, ocr: Option<&dyn DigitReader>) -> Option<TimeHit> {
     let sp = s.space();
-    let on_staff = |u: &Unit| u.bottom >= -1.5 && u.top <= 9.5 && u.rect.cx() > start && !(u.h(sp) < 1.2 && u.w(sp) < 1.0);
-    let u = us.iter().find(|u| on_staff(u))?;
-    if u.rect.x - start > sp * TIME_GAP {
-        return None;
-    }
-    // 同一列的其余单元：上下两个数字没并成一个的、C 断成左右两截的（横向挨着不过 0.4 格、合起来不宽过 2.4 格）
-    let mut col: Vec<&Unit> = vec![u];
-    let (mut xa, mut xb) = (u.rect.x, u.rect.right());
-    for v in us.iter().filter(|v| on_staff(v) && !std::ptr::eq(*v, u)) {
-        if v.rect.x <= xb + sp * 0.4 && v.rect.right() >= xa - sp * 0.4 && v.rect.right().max(xb) - v.rect.x.min(xa) <= sp * 2.4 {
-            xa = xa.min(v.rect.x);
-            xb = xb.max(v.rect.right());
-            col.push(v);
+    let on_staff = |u: &Unit| u.bottom >= -1.5 && u.top <= 9.5 && u.rect.cx() > start && u.rect.right() < end && !(u.h(sp) < 1.2 && u.w(sp) < 1.0);
+    let mut first = true;
+    for u in us.iter().filter(|u| on_staff(u)) {
+        // 同一列的其余单元：上下两个数字没并成一个的、C 断成左右两截的（横向挨着不过 0.4 格、合起来不宽过 2.4 格）
+        let mut col: Vec<&Unit> = vec![u];
+        let (mut xa, mut xb) = (u.rect.x, u.rect.right());
+        for v in us.iter().filter(|v| on_staff(v) && !std::ptr::eq(*v, u)) {
+            if v.rect.x <= xb + sp * 0.4 && v.rect.right() >= xa - sp * 0.4 && v.rect.right().max(xb) - v.rect.x.min(xa) <= sp * 2.4 {
+                xa = xa.min(v.rect.x);
+                xb = xb.max(v.rect.right());
+                col.push(v);
+            }
         }
+        match read_time_at(f, s, &col, ocr) {
+            Some(t) if t.time.is_some() => return Some(t),
+            // 紧跟着的那一列是拍号的模样却读不出：行首区照样算到它为止
+            Some(t) if first && u.rect.x - start <= sp * TIME_GAP => return Some(t),
+            _ => {}
+        }
+        first = false;
     }
-    read_time_at(f, s, &col, ocr)
+    None
 }
 
 /// 一行谱的行首区。
-pub fn read_lead(f: &PageFrame, s: &Staff, ocr: Option<&dyn DigitReader>) -> RowAttrs {
+pub fn read_lead(f: &PageFrame, row: usize, ocr: Option<&dyn DigitReader>) -> RowAttrs {
+    let s = &f.staves[row];
     let sp = s.space();
     let us = units_in(f, s, s.left + sp * LEAD_FROM, s.left + sp * LEAD_TO, -6.0, 16.0);
     let mut out = RowAttrs { lead_end: s.left, ..Default::default() };
@@ -511,7 +561,9 @@ pub fn read_lead(f: &PageFrame, s: &Staff, ocr: Option<&dyn DigitReader>) -> Row
             right = k.right;
         }
     }
-    if let Some(t) = read_time(f, s, &us, right - sp * 0.2, ocr) {
+    // 行首区的右界：左端十四格以内、第一条小节线之前
+    let end = f.bars[row].iter().map(|b| b.x0).find(|&x| x > right + sp).unwrap_or(f64::MAX).min(s.left + sp * 14.0);
+    if let Some(t) = read_time(f, s, &us, right - sp * 0.2, end, ocr) {
         out.time = t.time;
         right = t.right;
     }

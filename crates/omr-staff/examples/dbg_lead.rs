@@ -32,7 +32,7 @@ fn main() {
                 let st = dolce_omr_staff::attrs::units::strokes(&f, c.right as i64, (c.right + sp * 10.0) as i64, s.y_of(xm, -5.0) as i64, s.y_of(xm, 13.0) as i64, (sp * 1.5) as i64, (sp * 3.3) as i64, (sp * 0.5).ceil() as i64);
                 println!("   竖笔 {}", st.iter().map(|k| format!("x{:.1} 位{:.1}..{:.1}", (k.cx() - s.left) / sp, s.pos(k.cx(), k.top as f64), s.pos(k.cx(), k.bottom as f64))).collect::<Vec<_>>().join("  "));
             }
-            let r = read_lead(&f, s, Some(&ocr));
+            let r = read_lead(&f, i, Some(&ocr));
             println!("   → 谱号 {:?}（把握 {}） 调号 {:?}（把握 {}） 拍号 {:?} 行首止于 {:.1}", r.clef, r.clef_sure, r.key.map(|k| k.fifths), r.key_sure, r.time, (r.lead_end - s.left) / sp);
         }
     });

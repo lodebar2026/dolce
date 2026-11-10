@@ -47,6 +47,7 @@ pub fn system_agree(f: &PageFrame, rows: &mut [RowAttrs]) {
             if !tie {
                 for &i in g {
                     rows[i].time = Some(t);
+                    rows[i].time_votes = n as u8;
                 }
             }
         }

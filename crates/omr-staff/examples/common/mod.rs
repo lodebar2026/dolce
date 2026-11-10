@@ -73,6 +73,24 @@ pub fn for_pages(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde
 
 /// 逐页：(快照键, 页号, 快照, 原图)。只走 TS 快照里有谱表的页。
 pub fn for_sources(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde_json::Value, &SourceImage)) {
+    // 新编赞美诗没有 TS 阶段快照：直接按语料目录走（快照给空）
+    if corpus == "xinbian" {
+        let root = dev().join("testdata/新编赞美诗五线谱");
+        let mut dirs: Vec<PathBuf> = std::fs::read_dir(&root).unwrap().filter_map(|e| Some(e.ok()?.path())).filter(|p| p.is_dir()).collect();
+        dirs.sort();
+        for d in dirs {
+            let key = d.file_name().unwrap().to_string_lossy().to_string();
+            if !key.contains(only) {
+                continue;
+            }
+            let mut fs: Vec<PathBuf> = std::fs::read_dir(&d).map(|x| x.filter_map(|e| Some(e.ok()?.path())).collect()).unwrap_or_default();
+            fs.sort();
+            for (i, src) in fs.iter().flat_map(|p| sources(p)).enumerate() {
+                f(&key, i + 1, &serde_json::Value::Null, &src);
+            }
+        }
+        return;
+    }
     let (snapdir, root) = match corpus {
         "solo" => (dev().join("data/五线谱/snap"), dev().join("testdata/五线谱")),
         _ => (dev().join("data/合唱谱/snap"), dev().join("testdata/合唱谱")),
