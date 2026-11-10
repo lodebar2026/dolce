@@ -212,6 +212,7 @@ version = "0.1.0"
 dependencies = [
  "dolce-omr-core",
  "pdfium-render",
+ "serde",
 ]
 
 [[package]]
