@@ -20,6 +20,8 @@ const START_ZONE: f64 = 0.8;
 /// 端点旁符头窗：宽（相对线距）、窗里墨占比过这个就当挂着符头。
 const HEAD_WIN: f64 = 1.2;
 const HEAD_FILL: f64 = 0.35;
+/// 竖笔在谱表里横向连着的墨（平方线距）过这个数就不是小节线（见 `attached`）。
+const ATTACH: f64 = 0.4;
 
 /// 小节线的样式（MusicXML `bar-style` 的口径）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +47,8 @@ pub struct Barline {
     /// 组成它的竖段（证据；系统内互证补出来的没有）。
     pub segs: Vec<VSeg>,
     pub src: BarSrc,
+    /// 存疑：竖笔在谱表里横向连着一团墨（见 `attached`）。多行系统里要别的行作证才留；单行系统里留着带标记，由音符层按满拍裁。
+    pub weak: bool,
 }
 
 /// 小节线从哪来。
@@ -93,11 +97,12 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
                 b.x1 = b.x1.max(v.x1 as f64);
                 b.segs.push(v);
             }
-            _ => out.push(Barline { x: v.cx(), x0: v.x0 as f64, x1: v.x1 as f64, style: BarStyle::Regular, segs: vec![v], src: BarSrc::Seg }),
+            _ => out.push(Barline { x: v.cx(), x0: v.x0 as f64, x1: v.x1 as f64, style: BarStyle::Regular, segs: vec![v], src: BarSrc::Seg, weak: false }),
         }
     }
     for b in &mut out {
         b.x = (b.x0 + b.x1) / 2.0;
+        b.weak = b.segs.iter().all(|v| attached(ink, v, s, sp) >= attach_max());
         let heavy: Vec<bool> = b.segs.iter().map(|v| v.cols as f64 >= thin * HEAVY).collect();
         b.style = match heavy.as_slice() {
             [true] => BarStyle::Heavy,
@@ -109,6 +114,50 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
         };
     }
     out
+}
+
+fn attach_max() -> f64 {
+    std::env::var("OMR_ATTACH").ok().and_then(|v| v.parse().ok()).unwrap_or(ATTACH)
+}
+
+/// 竖段在谱表范围内横向连着的墨（竖笔列以外、与它八邻接连通的符号墨，谱线存疑像素不算）有多大（平方线距）。
+/// 小节线是孤立的一笔；挂着空心头的干、共用一根竖笔的降号肚子、升号的横杠都连着一团。
+fn attached(ink: &InkLayers, v: &VSeg, s: &Staff, sp: f64) -> f64 {
+    let x = v.cx();
+    let (ya, yb) = ((s.top(x) - sp * 0.5).floor() as i64, (s.bottom(x) + sp * 0.5).ceil() as i64);
+    let (xa, xb) = (v.x0 as i64 - (sp * 1.5) as i64, v.x1 as i64 + (sp * 1.5) as i64);
+    let (w, h) = ((xb - xa + 1) as usize, (yb - ya + 1) as usize);
+    let mut seen = vec![false; w * h];
+    let mut stack: Vec<(i64, i64)> = Vec::new();
+    let is_ink = |x: i64, y: i64| ink.at(x, y) == crate::frame::ink::INK;
+    for y in ya.max(v.y0 as i64)..=yb.min(v.y1 as i64) {
+        for x in v.x0 as i64..=v.x1 as i64 {
+            if is_ink(x, y) {
+                seen[(y - ya) as usize * w + (x - xa) as usize] = true;
+                stack.push((x, y));
+            }
+        }
+    }
+    let mut out = 0usize;
+    while let Some((x, y)) = stack.pop() {
+        if x < v.x0 as i64 - 1 || x > v.x1 as i64 + 1 {
+            out += 1;
+        }
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let (nx, ny) = (x + dx, y + dy);
+                if nx < xa || nx > xb || ny < ya || ny > yb {
+                    continue;
+                }
+                let i = (ny - ya) as usize * w + (nx - xa) as usize;
+                if !seen[i] && is_ink(nx, ny) {
+                    seen[i] = true;
+                    stack.push((nx, ny));
+                }
+            }
+        }
+    }
+    out as f64 / (sp * sp)
 }
 
 /// 竖段的上端或下端旁边（左或右一个符头宽的窗）墨很满：挂着符头，是符干不是小节线。窗里的谱线存疑像素不算墨。
@@ -152,6 +201,7 @@ pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: 
             let below = g.get(k + 1).map(|&j| &staves[j]);
             out[i] = staff_barlines(ink, segs, &staves[i], unit, above, below);
         }
+        // 单行系统没有别的行作证：存疑的留着、带标记，交给音符层按满拍裁
         if g.len() < 2 {
             continue;
         }
@@ -171,6 +221,11 @@ pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: 
         let mut add: Vec<(usize, f64, BarSrc)> = Vec::new();
         let mut drop: Vec<(usize, usize)> = Vec::new();
         for c in &clusters {
+            // 簇里全是存疑的（没有一行是孤立的一笔）：摘掉
+            if c.iter().all(|e| out[g[e.0]][e.1].weak) {
+                drop.extend(c.iter().map(|e| (e.0, e.1)));
+                continue;
+            }
             let mut rows: Vec<usize> = c.iter().map(|e| e.0).collect();
             rows.sort();
             rows.dedup();
@@ -210,7 +265,7 @@ pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: 
         }
         for (k, x, src) in add {
             let v = &mut out[g[k]];
-            v.push(Barline { x, x0: x, x1: x, style: BarStyle::Regular, segs: vec![], src });
+            v.push(Barline { x, x0: x, x1: x, style: BarStyle::Regular, segs: vec![], src, weak: false });
             v.sort_by(|a, b| a.x.total_cmp(&b.x));
         }
     }

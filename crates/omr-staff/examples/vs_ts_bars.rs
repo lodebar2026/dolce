@@ -13,6 +13,7 @@ fn main() {
     let corpus = a.get(1).cloned().unwrap_or("chorus".into());
     let only = a.get(2).cloned().unwrap_or_default();
     let (mut ts_n, mut rs_n, mut hit, mut staves_n, mut lead) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut weak_n, mut weak_hit) = (0usize, 0usize);
     let mut worst: Vec<(usize, String)> = Vec::new();
     for_pages(&corpus, &only, |key, pn, snap, bin, soft| {
         let Some((unit, staves)) = find_staves(bin) else { return };
@@ -53,6 +54,7 @@ fn main() {
                 if let Some(j) = (0..bars.len()).find(|&j| !used[j] && (bars[j].x - x * k).abs() < unit.space) {
                     used[j] = true;
                     hit += 1;
+                    weak_hit += bars[j].weak as usize;
                 } else if x * k < s.left + unit.space * 1.5 {
                     // 行首那根（TS 把系统线也记进小节线；这里系统线归系统层）
                     lead += 1;
@@ -60,6 +62,7 @@ fn main() {
                     miss += 1;
                 }
             }
+            weak_n += bars.iter().filter(|b| b.weak).count();
             let extra = used.iter().filter(|u| !**u).count();
             if miss + extra > 0 {
                 worst.push((miss + extra, format!("{key} p{pn} 行{}: TS {:?} | Rust {:?}", i + 1, tx.iter().map(|x| (x * k).round()).collect::<Vec<_>>(), bars.iter().map(|b| b.x.round()).collect::<Vec<_>>())));
@@ -67,7 +70,7 @@ fn main() {
         }
     });
     let real = ts_n - lead;
-    println!("{corpus}：{staves_n} 行谱，TS 小节线 {ts_n}（行首 {lead} 根不计），Rust {rs_n}，配上 {hit}（召回 {:.1}%，Rust 多出 {}）", hit as f64 * 100.0 / real.max(1) as f64, rs_n - hit);
+    println!("{corpus}：{staves_n} 行谱，TS 小节线 {ts_n}（行首 {lead} 根不计），Rust {rs_n}，配上 {hit}（召回 {:.1}%，Rust 多出 {}）；其中存疑 {weak_n}（配上 {weak_hit}）", hit as f64 * 100.0 / real.max(1) as f64, rs_n - hit);
     worst.sort_by(|a, b| b.0.cmp(&a.0));
     for (_, w) in worst.iter().take(12) {
         println!("  {w}");
