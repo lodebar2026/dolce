@@ -1,8 +1,9 @@
-//! 一页的识别：成像 → 框架结构（谱表、墨层、系统、小节线）→ 结构信息（谱号、调号、拍号）。逐页独立，可并行；
+//! 一页的识别：成像 → 框架结构（谱表、墨层、系统、小节线）→ 结构信息（谱号、调号、拍号）→ 音符数据。逐页独立，可并行；
 //! 跨页的事（沿用、声部指派、写出）在 [`crate::song`]。
 use crate::attrs::{self, DigitReader, RowAttrs};
 use crate::frame::bars::{page_barlines, Barline};
 use crate::frame::ink::{Blob, InkLayers, VSeg};
+use crate::notes::{page_notes, RowNotes};
 use crate::frame::systems::{find_systems, System};
 use crate::prep::imaging::image_page;
 use dolce_omr_core::image::Binary;
@@ -28,11 +29,13 @@ pub struct PageFrame {
     pub bars: Vec<Vec<Barline>>,
 }
 
-/// 一页的识别结果（现到结构信息）。
+/// 一页的识别结果（现到音符数据的实心头）。
 pub struct Page {
     pub frame: PageFrame,
     /// 各行谱的谱号 / 调号 / 拍号（与 `staves` 同序）。
     pub attrs: Vec<RowAttrs>,
+    /// 各行谱的音符（与 `staves` 同序）。
+    pub notes: Vec<RowNotes>,
 }
 
 /// 框架结构；页上没有谱表回 None。
@@ -52,5 +55,6 @@ pub fn frame_page(src: &SourceImage) -> Option<PageFrame> {
 pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Option<Page> {
     let frame = frame_page(src)?;
     let attrs = attrs::page_attrs(&frame, ocr);
-    Some(Page { frame, attrs })
+    let notes = page_notes(&frame, &attrs);
+    Some(Page { frame, attrs, notes })
 }

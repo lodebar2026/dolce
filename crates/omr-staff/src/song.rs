@@ -6,7 +6,8 @@ use crate::attrs::RowAttrs;
 use crate::frame::bars::BarStyle;
 use crate::page::Page;
 use dolce_omr_sheet::music::{Clef, Key};
-use dolce_omr_sheet::score::{Attrs, Measure, Part, Score};
+use crate::notes::SAME_ONSET;
+use dolce_omr_sheet::score::{Attrs, Event, Measure, NoteType, Part, Score};
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
 const BOUND_XTOL: f64 = 1.6;
@@ -20,6 +21,8 @@ pub struct RowLayout {
     pub from: usize,
     pub to: usize,
     pub space: f64,
+    /// 这一行的拍点数（和弦算一个）。
+    pub seq_len: usize,
 }
 
 pub struct SystemLayout {
@@ -300,6 +303,35 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     }
                 }
                 ms[0].attrs = at;
+                // 音：按 x 落进小节；音高按那一处现行的谱号（行首的 + x 之前的行中切换）与调号。
+                // 现只写一个声部：横向挨着的两个和弦（上下两声部各带干）并成一个拍点
+                let mut seq_len = 0;
+                let mut last: Option<(usize, f64)> = None;
+                for ch in &page.notes[i].chords {
+                    let (mut c_at, mut k_at) = (c, kk);
+                    for x in a.changes.iter().filter(|x| x.x < ch.x) {
+                        c_at = x.attrs.clef.unwrap_or(c_at);
+                        k_at = x.attrs.key.unwrap_or(k_at);
+                    }
+                    let j = bs.iter().filter(|b| b.x < ch.x).count().min(count - 1);
+                    let mut ps: Vec<_> = ch.heads.iter().map(|h| {
+                        let mut p = c_at.pitch_at(h.pos);
+                        p.alter = k_at.alter_of(p.step);
+                        p
+                    }).collect();
+                    if last.is_some_and(|(lj, lx)| lj == j && ch.x - lx < SAME_ONSET * f.staves[i].space()) {
+                        let e = ms[j].events.last_mut().unwrap();
+                        e.pitches.append(&mut ps);
+                        e.stem_up = None;
+                    } else {
+                        ms[j].events.push(Event { pitches: ps, ntype: NoteType::Quarter, dots: 0, stem_up: Some(ch.stem.up) });
+                        seq_len += 1;
+                    }
+                    let e = ms[j].events.last_mut().unwrap();
+                    e.pitches.sort_by_key(|p| (p.octave, p.step));
+                    e.pitches.dedup();
+                    last = Some((j, ch.x));
+                }
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
                     let j = bs.iter().filter(|b| b.x < ch.x).count();
@@ -322,7 +354,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 ms[0].new_page = si == 0 && pn > 0;
                 ms[0].implicit = implicit;
                 parts[p].measures.extend(ms);
-                layout.push(RowLayout { row: row_no, part: p, from, to: from + count - 1, space: f.staves[i].space() });
+                layout.push(RowLayout { row: row_no, part: p, from, to: from + count - 1, space: f.staves[i].space(), seq_len });
                 row_no += 1;
             }
             // 这一系统没印的声部照样占这么多小节
@@ -365,7 +397,7 @@ impl Song {
                 if k > 0 {
                     o.push(',');
                 }
-                o.push_str(&format!("{{\"row\":{},\"slot\":\"P{}.1\",\"part\":{},\"staff\":1,\"from\":{},\"to\":{},\"seqLen\":0}}", r.row, r.part + 1, r.part, r.from, r.to));
+                o.push_str(&format!("{{\"row\":{},\"slot\":\"P{}.1\",\"part\":{},\"staff\":1,\"from\":{},\"to\":{},\"seqLen\":{}}}", r.row, r.part + 1, r.part, r.from, r.to, r.seq_len));
                 if !sp.is_empty() {
                     sp.push(',');
                 }

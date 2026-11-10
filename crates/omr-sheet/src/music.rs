@@ -26,6 +26,19 @@ impl Clef {
     pub const TENOR: Clef = Clef { sign: ClefSign::C, line: 4, octave: 0 };
     pub const PERCUSSION: Clef = Clef { sign: ClefSign::Percussion, line: 3, octave: 0 };
 
+    /// 音级位置（第一线 0、往下每半格 +1）上的自然音（不带升降）。打击乐谱号按高音谱号的位置读。
+    pub fn pitch_at(&self, pos: i32) -> Pitch {
+        // 谱号定音的那个音的自然音序号（八度 × 7 + 音名）：G4、F3、C4
+        let base = match self.sign {
+            ClefSign::G | ClefSign::Percussion => 4 * 7 + 4,
+            ClefSign::F => 3 * 7 + 3,
+            ClefSign::C => 4 * 7,
+        };
+        let line = if self.sign == ClefSign::Percussion { 2 } else { self.line as i32 };
+        let d = base + (5 - line) * 2 - pos + self.octave as i32 * 7;
+        Pitch { step: d.rem_euclid(7) as u8, octave: d.div_euclid(7) as i8, alter: 0 }
+    }
+
     /// 调号第一个升号（F）在谱表上的音级位置（第一线 0、往下每半格 +1）。打击乐谱号没有调号。
     /// 高音谱号在第五线（0），低音谱号在第四线（2），中音谱号在第四间上（1），次中音谱号在第二线（6）。
     pub fn first_sharp_pos(&self) -> Option<i32> {
@@ -62,6 +75,36 @@ impl Clef {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Key {
     pub fifths: i8,
+}
+
+impl Key {
+    /// 调号给音名 `step`（0 = C … 6 = B）带的升降（+1 / −1 / 0）。
+    pub fn alter_of(&self, step: u8) -> i8 {
+        // 升号次序 F C G D A E B，降号次序反过来
+        const SHARPS: [u8; 7] = [3, 0, 4, 1, 5, 2, 6];
+        let n = self.fifths.unsigned_abs().min(7) as usize;
+        if self.fifths > 0 && SHARPS[..n].contains(&step) {
+            1
+        } else if self.fifths < 0 && SHARPS[7 - n..].contains(&step) {
+            -1
+        } else {
+            0
+        }
+    }
+}
+
+/// 音高：音名（0 = C … 6 = B）、八度（中央 C 是 4）、升降。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Pitch {
+    pub step: u8,
+    pub octave: i8,
+    pub alter: i8,
+}
+
+impl Pitch {
+    pub fn step_name(&self) -> char {
+        ['C', 'D', 'E', 'F', 'G', 'A', 'B'][self.step as usize % 7]
+    }
 }
 
 /// 拍号的印法。
@@ -114,6 +157,24 @@ impl BarStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pitches() {
+        let p = |c: Clef, pos| {
+            let p = c.pitch_at(pos);
+            format!("{}{}", p.step_name(), p.octave)
+        };
+        assert_eq!(p(Clef::TREBLE, 0), "F5");
+        assert_eq!(p(Clef::TREBLE, 10), "C4");
+        assert_eq!(p(Clef::BASS, 0), "A3");
+        assert_eq!(p(Clef::BASS, -2), "C4");
+        assert_eq!(p(Clef::ALTO, 4), "C4");
+        assert_eq!(p(Clef::TREBLE_8VB, 6), "G3");
+        let d = Key { fifths: 2 };
+        assert_eq!((d.alter_of(3), d.alter_of(0), d.alter_of(4)), (1, 1, 0));
+        let ef = Key { fifths: -3 };
+        assert_eq!((ef.alter_of(6), ef.alter_of(2), ef.alter_of(5), ef.alter_of(1)), (-1, -1, -1, 0));
+    }
 
     #[test]
     fn key_positions() {

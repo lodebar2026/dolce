@@ -1,6 +1,6 @@
 //! 识别结果模型（整曲）与 MusicXML 写出。现在只有骨架：声部、小节、谱号 / 调号 / 拍号、小节线样式与反复、分行分页；
 //! 音与记号、歌词、版面随各模块落地逐步加（见 web 模块页「识别-Rust」）。
-use crate::music::{BarStyle, Clef, ClefSign, Key, Time, TimeSymbol};
+use crate::music::{BarStyle, Clef, ClefSign, Key, Pitch, Time, TimeSymbol};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -18,13 +18,70 @@ impl Attrs {
     }
 }
 
+/// 写出用的时值单位：一个四分音符这么多份。
+pub const DIVISIONS: u32 = 24;
+
+/// 时值的基本型（不含附点）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NoteType {
+    Whole,
+    Half,
+    Quarter,
+    Eighth,
+    N16th,
+    N32nd,
+}
+
+impl NoteType {
+    pub fn xml(&self) -> &'static str {
+        match self {
+            NoteType::Whole => "whole",
+            NoteType::Half => "half",
+            NoteType::Quarter => "quarter",
+            NoteType::Eighth => "eighth",
+            NoteType::N16th => "16th",
+            NoteType::N32nd => "32nd",
+        }
+    }
+    /// 占多少份（`DIVISIONS` 口径）。
+    pub fn divisions(&self) -> u32 {
+        match self {
+            NoteType::Whole => DIVISIONS * 4,
+            NoteType::Half => DIVISIONS * 2,
+            NoteType::Quarter => DIVISIONS,
+            NoteType::Eighth => DIVISIONS / 2,
+            NoteType::N16th => DIVISIONS / 4,
+            NoteType::N32nd => DIVISIONS / 8,
+        }
+    }
+}
+
+/// 一个拍点上的事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Event {
+    pub pitches: Vec<Pitch>,
+    pub ntype: NoteType,
+    pub dots: u8,
+    /// 符干朝上 / 朝下；没有干（全音符、休止）为 None。
+    pub stem_up: Option<bool>,
+}
+
+impl Event {
+    pub fn divisions(&self) -> u32 {
+        let base = self.ntype.divisions();
+        (0..self.dots).fold((base, base), |(sum, last), _| (sum + last / 2, last / 2)).0
+    }
+}
+
 /// 一个小节（一个声部的）。
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Measure {
     /// 小节起头印的。
     pub attrs: Attrs,
-    /// 小节中途换的（按谱面次序；音符落地前先都排在小节内容之前）。
+    /// 小节中途换的（按谱面次序；现都排在小节内容之前）。
     pub mid: Vec<Attrs>,
+    /// 音与休止，按谱面次序（现只有一个声部）。
+    pub events: Vec<Event>,
     /// 右小节线；`None` 即普通单线。
     pub right: Option<BarStyle>,
     /// 右线左侧有反复点（反复结束）。
@@ -52,13 +109,44 @@ fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+fn write_event(o: &mut String, e: &Event) {
+    let dur = e.divisions();
+    let tail = |o: &mut String| {
+        let _ = writeln!(o, "        <duration>{dur}</duration>\n        <voice>1</voice>\n        <type>{}</type>", e.ntype.xml());
+        for _ in 0..e.dots {
+            o.push_str("        <dot/>\n");
+        }
+        if let Some(up) = e.stem_up {
+            let _ = writeln!(o, "        <stem>{}</stem>", if up { "up" } else { "down" });
+        }
+        o.push_str("      </note>\n");
+    };
+    if e.pitches.is_empty() {
+        o.push_str("      <note>\n        <rest/>\n");
+        tail(o);
+        return;
+    }
+    for (i, p) in e.pitches.iter().enumerate() {
+        o.push_str("      <note>\n");
+        if i > 0 {
+            o.push_str("        <chord/>\n");
+        }
+        let _ = write!(o, "        <pitch><step>{}</step>", p.step_name());
+        if p.alter != 0 {
+            let _ = write!(o, "<alter>{}</alter>", p.alter);
+        }
+        let _ = writeln!(o, "<octave>{}</octave></pitch>", p.octave);
+        tail(o);
+    }
+}
+
 fn write_attrs(o: &mut String, a: &Attrs, divisions: bool) {
     if a.is_empty() && !divisions {
         return;
     }
     o.push_str("      <attributes>\n");
     if divisions {
-        o.push_str("        <divisions>24</divisions>\n");
+        let _ = writeln!(o, "        <divisions>{DIVISIONS}</divisions>");
     }
     if let Some(k) = a.key {
         let _ = writeln!(o, "        <key><fifths>{}</fifths></key>", k.fifths);
@@ -120,6 +208,9 @@ impl Score {
                 for a in &m.mid {
                     write_attrs(&mut o, a, false);
                 }
+                for e in &m.events {
+                    write_event(&mut o, e);
+                }
                 if m.right.is_some() || m.repeat_end {
                     let style = m.right.unwrap_or(BarStyle::LightHeavy);
                     o.push_str("      <barline location=\"right\">\n");
@@ -155,5 +246,15 @@ mod tests {
         assert!(x.contains("<bar-style>light-light</bar-style>"));
         assert!(x.contains("<print new-system=\"yes\"/>"));
         assert!(x.contains("<repeat direction=\"backward\"/>"));
+    }
+
+    #[test]
+    fn notes_xml() {
+        let e = Event { pitches: vec![Pitch { step: 0, octave: 4, alter: 1 }, Pitch { step: 2, octave: 4, alter: 0 }], ntype: NoteType::Quarter, dots: 1, stem_up: Some(true) };
+        assert_eq!(e.divisions(), 36);
+        let x = Score { title: None, parts: vec![Part { measures: vec![Measure { events: vec![e], ..Default::default() }] }] }.to_musicxml();
+        assert!(x.contains("<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>"));
+        assert!(x.contains("<chord/>\n        <pitch><step>E</step><octave>4</octave></pitch>"));
+        assert!(x.contains("<duration>36</duration>") && x.contains("<dot/>") && x.contains("<stem>up</stem>"));
     }
 }
