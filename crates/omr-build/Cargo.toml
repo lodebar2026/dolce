@@ -1,0 +1,9 @@
+[package]
+name = "dolce-omr-build"
+description = "悦谱 Dolce 识别各 crate 的构建脚本工具：按源码目录算阶段代码指纹"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+sha2.workspace = true

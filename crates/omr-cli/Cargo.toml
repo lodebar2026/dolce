@@ -1,0 +1,16 @@
+[package]
+name = "dolce-omr-cli"
+description = "悦谱 Dolce 识别的命令行：识别、歌本切分、回归（跑识别 → 落盘 → 调私有仓库判分 → 对照基线）"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "omr-cli"
+path = "src/main.rs"
+
+[dependencies]
+dolce-omr-core = { path = "../omr-core" }
+serde = { workspace = true }
+serde_json = "1"
+rayon = "1.10"
