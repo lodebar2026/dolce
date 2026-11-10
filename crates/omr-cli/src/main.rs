@@ -6,10 +6,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 const USAGE: &str = "用法：
-  omr-cli regress <jianpu|solo|chorus|xinbian> [--only=子串] [--jobs=N] [--out=目录] [--ref=目录] [--web=目录] [--replay=目录]
+  omr-cli regress <jianpu|solo|chorus|xinbian> [--only=子串] [--jobs=N] [--out=目录] [--ref=目录] [--web=目录] [--replay=目录] [--area=结构] [--judge-only]
       跑识别（各曲并行）→ 产物落盘到 --out → 调私有仓库判分（solo-ops / chorus-ops 的 --from）→ 与 --ref 的 TS 基线逐曲比
       缺省：--out=../dev/data/rust-omr/runs/<档>，--ref=../dev/data/rust-omr/ref-c7c02820，--web=../web（判分脚本与 out/cli 所在的检出）
-      --replay：不识别，拷那个目录里同名的产物来判（拿 TS 归档自测回归流程）";
+      --replay：不识别，拷那个目录里同名的产物来判（拿 TS 归档自测回归流程）
+      --area：只比这一档的步数（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）；--judge-only：产物不动，只重新判分对比";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

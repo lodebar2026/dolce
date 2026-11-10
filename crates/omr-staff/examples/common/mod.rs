@@ -65,6 +65,14 @@ pub fn ts_bar_xs(snap: &serde_json::Value, page: usize) -> Vec<(f64, Vec<f64>)> 
 
 /// 逐页：(快照键, 页号, 快照, 二值图, 松阈值图)。
 pub fn for_pages(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde_json::Value, &Binary, Option<&Binary>)) {
+    for_sources(corpus, only, |key, pn, snap, src| {
+        let (bin, soft) = bin_of(src);
+        f(key, pn, snap, &bin, soft.as_ref());
+    });
+}
+
+/// 逐页：(快照键, 页号, 快照, 原图)。只走 TS 快照里有谱表的页。
+pub fn for_sources(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde_json::Value, &SourceImage)) {
     let (snapdir, root) = match corpus {
         "solo" => (dev().join("data/五线谱/snap"), dev().join("testdata/五线谱")),
         _ => (dev().join("data/合唱谱/snap"), dev().join("testdata/合唱谱")),
@@ -97,8 +105,7 @@ pub fn for_pages(corpus: &str, only: &str, mut f: impl FnMut(&str, usize, &serde
             if stage(&snap, i + 1, "staves").is_none() {
                 continue;
             }
-            let (bin, soft) = bin_of(src);
-            f(&key, i + 1, &snap, &bin, soft.as_ref());
+            f(&key, i + 1, &snap, src);
         }
     }
 }

@@ -2,6 +2,7 @@
 //! 两端旁边没挂着符头那样的一团墨（那是符干）的，按相邻几根并成一条（双线、终止线、反复记号的粗细两笔）。
 use crate::frame::ink::{InkLayers, VSeg, BG};
 use crate::frame::systems::System;
+pub use dolce_omr_sheet::music::BarStyle;
 use dolce_omr_sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,8 @@ const REACH_TOL: f64 = 0.35;
 const MAX_WIDTH: f64 = 0.8;
 /// 粗笔：宽过细笔中位数的这个倍数（终止线、反复记号那一笔）。
 const HEAVY: f64 = 2.0;
+/// 粗笔至少这么宽（相对线距）：细笔 0.1~0.16 格，粗笔半格上下。
+const HEAVY_MIN: f64 = 0.28;
 /// 几根竖笔相隔不过这么多（相对线距）并成一条小节线。
 const GROUP_GAP: f64 = 1.0;
 /// 谱行左端这么宽（相对线距）以内的竖笔是系统线 / 括号，不算小节线。
@@ -22,19 +25,6 @@ const HEAD_WIN: f64 = 1.2;
 const HEAD_FILL: f64 = 0.35;
 /// 竖笔在谱表里横向连着的墨（平方线距）过这个数就不是小节线（见 `attached`）。
 const ATTACH: f64 = 0.4;
-
-/// 小节线的样式（MusicXML `bar-style` 的口径）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BarStyle {
-    Regular,
-    /// 两根细
-    LightLight,
-    /// 细 + 粗（终止线、反复结束）
-    LightHeavy,
-    /// 粗 + 细（反复开始）
-    HeavyLight,
-    Heavy,
-}
 
 /// 一行谱上的一条小节线。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -103,7 +93,7 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
     for b in &mut out {
         b.x = (b.x0 + b.x1) / 2.0;
         b.weak = b.segs.iter().all(|v| attached(ink, v, s, sp) >= attach_max());
-        let heavy: Vec<bool> = b.segs.iter().map(|v| v.cols as f64 >= thin * HEAVY).collect();
+        let heavy: Vec<bool> = b.segs.iter().map(|v| v.cols as f64 >= thin * HEAVY && v.cols as f64 >= sp * HEAVY_MIN).collect();
         b.style = match heavy.as_slice() {
             [true] => BarStyle::Heavy,
             [_] => BarStyle::Regular,
@@ -165,21 +155,25 @@ fn head_at_end(ink: &InkLayers, v: &VSeg, s: &Staff, sp: f64) -> bool {
     let hw = (sp * HEAD_WIN).round() as i64;
     let hh = (sp * 0.5).round() as i64;
     let _ = s;
+    // 贴着竖笔的那一小条（符头是挂在干上的：紧挨着就有墨；隔着一截白的是旁边另一个音的头、符杠的一截）
+    let near = (sp * 0.35).round().max(2.0) as i64;
+    let fill = |xa: i64, xb: i64, y0: i64, y1: i64| {
+        let (mut n, mut ink_n) = (0, 0);
+        for y in y0..=y1 {
+            for x in xa..=xb {
+                n += 1;
+                ink_n += (ink.at(x, y) == crate::frame::ink::INK) as i32;
+            }
+        }
+        n > 0 && ink_n as f64 / n as f64 >= HEAD_FILL
+    };
     for &yend in &[v.y0 as i64, v.y1 as i64] {
-        for &(xa, xb) in &[(v.x0 as i64 - hw, v.x0 as i64 - 1), (v.x1 as i64 + 1, v.x1 as i64 + hw)] {
-            let (mut n, mut ink_n) = (0, 0);
-            for y in yend - hh..=yend + hh {
-                for x in xa..=xb {
-                    n += 1;
-                    let t = ink.at(x, y);
-                    if t != BG && t != crate::frame::ink::LINE {
-                        ink_n += 1;
-                    }
-                }
-            }
-            if n > 0 && ink_n as f64 / n as f64 >= HEAD_FILL {
-                return true;
-            }
+        let (l, r) = (v.x0 as i64, v.x1 as i64);
+        if fill(l - hw, l - 1, yend - hh, yend + hh) && fill(l - near, l - 1, yend - hh, yend + hh) {
+            return true;
+        }
+        if fill(r + 1, r + hw, yend - hh, yend + hh) && fill(r + 1, r + near, yend - hh, yend + hh) {
+            return true;
         }
     }
     false

@@ -1,6 +1,6 @@
 //! 回归：列曲目（私有仓库 `rust-omr/corpus.mjs`，与判分脚本同一套找曲规则）→ 各曲并行识别 → 产物落盘 →
 //! 调判分脚本离线读（`--from`）→ 与 TS 基线（`rust-omr/archive-baseline.sh` 归档的那份）逐曲比。
-use crate::recognize::{recognize, RecOutput};
+use crate::recognize::{open_ocr, recognize, RecOutput};
 use crate::sibling;
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -19,6 +19,10 @@ pub struct Opts {
     web: PathBuf,
     /// 不识别，把这个目录里同名的识别产物拷过来判（拿 TS 归档的产物自测回归流程：结果应与基线逐曲相同）
     replay: Option<PathBuf>,
+    /// 只比这一档（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）
+    area: Option<String>,
+    /// 不清产物目录、不识别，只重新判分对比
+    judge_only: bool,
 }
 
 impl Opts {
@@ -32,6 +36,8 @@ impl Opts {
             reference: val("ref").map(PathBuf::from).unwrap_or_else(|| sibling("dev/data/rust-omr/ref-c7c02820")),
             web: val("web").map(PathBuf::from).unwrap_or_else(|| sibling("web")),
             replay: val("replay").map(PathBuf::from),
+            area: val("area"),
+            judge_only: args.iter().any(|a| a == "--judge-only"),
         }
     }
 }
@@ -51,7 +57,9 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
         let _ = rayon::ThreadPoolBuilder::new().num_threads(o.jobs).build_global();
     }
     let out = o.out.clone().unwrap_or_else(|| sibling(&format!("dev/data/rust-omr/runs/{}", o.kind)));
-    let _ = fs::remove_dir_all(&out);
+    if !o.judge_only {
+        let _ = fs::remove_dir_all(&out);
+    }
     fs::create_dir_all(&out).map_err(|e| format!("建 {}：{e}", out.display()))?;
 
     let listed = node(&o.web, &["../dev/scripts/rust-omr/corpus.mjs", &o.kind])?;
@@ -61,17 +69,20 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     }
     println!("{}：{} 首，产物 → {}", o.kind, songs.len(), out.display());
 
+    let ocr = open_ocr(&sibling(&format!("dev/data/rust-omr/ocr-cache/{}.json", o.kind)))?;
     let t0 = Instant::now();
     let fails: Vec<(String, String)> = songs
         .par_iter()
+        .filter(|_| !o.judge_only)
         .filter_map(|s| {
             let r = match &o.replay {
                 Some(dir) => replay(dir, &out, &s.rec),
-                None => recognize(&o.kind, &s.inputs).and_then(|r| write(&out, &s.rec, r)),
+                None => recognize(&o.kind, &s.inputs, &ocr).and_then(|r| write(&out, &s.rec, r)),
             };
             r.err().map(|e| (s.key.clone(), e))
         })
         .collect();
+    ocr.cache.save()?;
     println!("识别 {:.1} s，失败 {} 首", t0.elapsed().as_secs_f64(), fails.len());
     for (k, e) in fails.iter().take(5) {
         println!("  ✗ {k}：{e}");
@@ -94,12 +105,12 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     };
     fs::write(out.join("judge.txt"), &log).ok();
 
-    compare(&report, &o.reference.join(format!("{}.ops.json", ref_name(&o.kind))), o.only.as_deref())
+    compare(&report, &o.reference.join(ref_name(&o.kind)), o.only.as_deref(), o.area.as_deref())
 }
 
 /// 各档基线报告在归档目录里的文件名（合唱谱是并起来的那份 `chorus-parts/ops.json`）。
 fn ref_name(kind: &str) -> String {
-    if kind == "chorus" { "chorus-parts/ops".into() } else { kind.into() }
+    if kind == "chorus" { "chorus-parts/ops.json".into() } else { format!("{kind}.ops.json") }
 }
 
 fn write(dir: &Path, base: &str, r: RecOutput) -> Result<(), String> {
@@ -107,9 +118,9 @@ fn write(dir: &Path, base: &str, r: RecOutput) -> Result<(), String> {
     match r {
         RecOutput::Staff { musicxml, layout } => {
             w("rec.musicxml", &musicxml)?;
-            w("rec.json", &layout.to_string())
+            w("rec.json", &layout)
         }
-        RecOutput::Jianpu { recognized } => w("rec.json", &recognized.to_string()),
+        RecOutput::Jianpu { recognized } => w("rec.json", &recognized),
     }
 }
 
@@ -144,8 +155,9 @@ fn node_env(web: &Path, env: &[(&str, &str)], args: &[&str]) -> Result<String, S
     Ok(s)
 }
 
-/// 报告里一首的准确率：solo-ops 的行有 `total` / `scratch`，合唱谱的行有 `opsAcc`（百分数）。
-fn accs(path: &Path) -> Result<BTreeMap<String, f64>, String> {
+/// 报告里一首的（步数, 从零步数, 档别）：solo-ops 的行是 `total` / `scratch` / `areas`，合唱谱的行是 `opsTotal` / `opsScratch` / `opsUsed`。
+/// `area` 给了就只取那一档（「结构」「音符」…）。档别：合唱谱分 干净 / 扫描 / 矢量，其余为空。
+fn rows(path: &Path, area: Option<&str>) -> Result<BTreeMap<String, (f64, f64, &'static str)>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("读 {}：{e}", path.display()))?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&text).map_err(|e| format!("解 {}：{e}", path.display()))?;
     let mut m = BTreeMap::new();
@@ -155,39 +167,68 @@ fn accs(path: &Path) -> Result<BTreeMap<String, f64>, String> {
             (Some(s), None) => s.to_string(),
             _ => continue,
         };
-        let acc = if let (Some(t), Some(s)) = (r["total"].as_f64(), r["scratch"].as_f64()) {
-            if s > 0.0 { (1.0 - t / s) * 100.0 } else { continue }
-        } else if let Some(a) = r["opsAcc"].as_f64() {
-            a
-        } else {
-            continue;
+        let chorus = r.get("opsTotal").is_some();
+        let (used, scratch) = match (area, chorus) {
+            (None, false) => (r["total"].as_f64(), r["scratch"].as_f64()),
+            (None, true) => (r["opsTotal"].as_f64(), r["opsScratch"].as_f64()),
+            (Some(a), false) => (r["areas"][a].as_f64(), r["scratchAreas"][a].as_f64()),
+            (Some(a), true) => (r["opsUsed"][a].as_f64(), r["opsScratchAreas"][a].as_f64()),
         };
-        m.insert(key, acc);
+        let class = if !chorus {
+            ""
+        } else if r["vector"].as_bool() == Some(true) {
+            "矢量"
+        } else if r["clean"].as_bool() == Some(true) {
+            "干净"
+        } else {
+            "扫描"
+        };
+        if let (Some(u), Some(s)) = (used, scratch) {
+            m.insert(key, (u, s, class));
+        }
     }
     Ok(m)
 }
 
-fn compare(report: &Path, reference: &Path, only: Option<&str>) -> Result<ExitCode, String> {
-    let base = accs(reference)?;
-    let now = accs(report).unwrap_or_default();
+fn compare(report: &Path, reference: &Path, only: Option<&str>, area: Option<&str>) -> Result<ExitCode, String> {
+    let base = rows(reference, area)?;
+    let now = rows(report, area).unwrap_or_default();
     let keys: Vec<&String> = base.keys().filter(|k| only.is_none_or(|s| k.contains(s))).collect();
-    let (mut sum_b, mut sum_n, mut worse, mut missing) = (0.0, 0.0, Vec::new(), 0usize);
+    // 档别 → (基线步数, 基线从零, 本次步数, 本次从零, 首数, 缺)
+    let mut sums: BTreeMap<&str, [f64; 6]> = BTreeMap::new();
+    let mut worse = Vec::new();
     for k in &keys {
-        let b = base[*k];
-        let n = now.get(*k).copied();
-        sum_b += b;
-        sum_n += n.unwrap_or(0.0);
-        match n {
-            None => missing += 1,
-            Some(n) if n < b - 0.005 => worse.push((k.to_string(), b, n)),
-            _ => {}
+        let (bu, bs, class) = base[*k];
+        let e = sums.entry(class).or_default();
+        e[4] += 1.0;
+        match now.get(*k) {
+            None => e[5] += 1.0,
+            Some(&(nu, ns, _)) => {
+                e[0] += bu;
+                e[1] += bs;
+                e[2] += nu;
+                e[3] += ns;
+                if nu > bu {
+                    worse.push((k.to_string(), bu, nu, bs));
+                }
+            }
         }
     }
-    let cnt = keys.len().max(1) as f64;
-    println!("逐曲平均：基线 {:.2}% → 本次 {:.2}%（{} 首，缺产物 {missing}，比基线差 {}）", sum_b / cnt, sum_n / cnt, keys.len(), worse.len());
-    worse.sort_by(|a, b| (a.2 - a.1).total_cmp(&(b.2 - b.1)));
-    for (k, b, n) in worse.iter().take(15) {
-        println!("  {k}：{b:.2} → {n:.2}");
+    let pct = |u: f64, s: f64| if s > 0.0 { (1.0 - u / s) * 100.0 } else { 100.0 };
+    let what = area.unwrap_or("合计");
+    let mut bad = false;
+    for (class, e) in &sums {
+        println!(
+            "{}{what}：基线 {:.2}%（{}/{}）→ 本次 {:.2}%（{}/{}）；{} 首，缺产物 {}（缺的两边都不计）",
+            if class.is_empty() { String::new() } else { format!("【{class}】") },
+            pct(e[0], e[1]), e[0], e[1], pct(e[2], e[3]), e[2], e[3], e[4], e[5]
+        );
+        bad |= e[2] > e[0] || e[5] > 0.0;
     }
-    Ok(if missing == 0 && worse.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+    println!("比基线步数多的 {} 首：", worse.len());
+    worse.sort_by(|a, b| (b.2 - b.1).total_cmp(&(a.2 - a.1)));
+    for (k, b, n, s) in worse.iter().take(25) {
+        println!("  {k}：{b} → {n} 步（从零 {s}）");
+    }
+    Ok(if bad { ExitCode::from(1) } else { ExitCode::SUCCESS })
 }

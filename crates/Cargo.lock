@@ -239,6 +239,9 @@ name = "dolce-omr-cli"
 version = "0.1.0"
 dependencies = [
  "dolce-omr-core",
+ "dolce-omr-ocr",
+ "dolce-omr-source",
+ "dolce-omr-staff",
  "rayon",
  "serde",
  "serde_json",
@@ -290,6 +293,7 @@ name = "dolce-omr-staff"
 version = "0.1.0"
 dependencies = [
  "dolce-omr-core",
+ "dolce-omr-ocr",
  "dolce-omr-sheet",
  "dolce-omr-source",
  "flate2",
