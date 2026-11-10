@@ -39,6 +39,9 @@ pub struct Barline {
     pub src: BarSrc,
     /// 存疑：竖笔在谱表里横向连着一团墨（见 `attached`）。多行系统里要别的行作证才留；单行系统里留着带标记，由音符层按满拍裁。
     pub weak: bool,
+    /// 左边有反复点（反复结束）、右边有反复点（反复开始）。
+    pub repeat_left: bool,
+    pub repeat_right: bool,
 }
 
 /// 小节线从哪来。
@@ -87,11 +90,22 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
                 b.x1 = b.x1.max(v.x1 as f64);
                 b.segs.push(v);
             }
-            _ => out.push(Barline { x: v.cx(), x0: v.x0 as f64, x1: v.x1 as f64, style: BarStyle::Regular, segs: vec![v], src: BarSrc::Seg, weak: false }),
+            _ => out.push(Barline { x: v.cx(), x0: v.x0 as f64, x1: v.x1 as f64, style: BarStyle::Regular, segs: vec![v], src: BarSrc::Seg, weak: false, repeat_left: false, repeat_right: false }),
         }
     }
     for b in &mut out {
+        // 一组里有孤立的一笔、也有旁边连着一团墨的（紧挨着小节线的符干）：只留孤立的
+        if b.segs.len() >= 2 {
+            let lone: Vec<VSeg> = b.segs.iter().copied().filter(|v| attached(ink, v, s, sp) < attach_max()).collect();
+            if !lone.is_empty() && lone.len() < b.segs.len() {
+                b.x0 = lone.iter().map(|v| v.x0).min().unwrap() as f64;
+                b.x1 = lone.iter().map(|v| v.x1).max().unwrap() as f64;
+                b.segs = lone;
+            }
+        }
         b.x = (b.x0 + b.x1) / 2.0;
+        b.repeat_left = repeat_dots(ink, s, b.x0 - sp * 1.1, b.x0 - 2.0);
+        b.repeat_right = repeat_dots(ink, s, b.x1 + 2.0, b.x1 + sp * 1.1);
         b.weak = b.segs.iter().all(|v| attached(ink, v, s, sp) >= attach_max());
         let heavy: Vec<bool> = b.segs.iter().map(|v| v.cols as f64 >= thin * HEAVY && v.cols as f64 >= sp * HEAVY_MIN).collect();
         b.style = match heavy.as_slice() {
@@ -104,6 +118,36 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
         };
     }
     out
+}
+
+/// 反复点：[xa, xb] 这一条里，第二间与第三间（音级位置 3、5）各有一个孤立的小圆点——各自的墨不大不小、
+/// 上下左右都不过大半格，点与点之间的中线一带没有符号墨。
+fn repeat_dots(ink: &InkLayers, s: &Staff, xa: f64, xb: f64) -> bool {
+    let sp = s.space();
+    let xm = (xa + xb) / 2.0;
+    let (xa, xb) = (xa.round() as i64, xb.round() as i64);
+    let dot = |pos: f64| {
+        let (y0, y1) = (s.y_of(xm, pos - 0.85).round() as i64, s.y_of(xm, pos + 0.85).round() as i64);
+        let (mut n, mut lx, mut hx, mut ly, mut hy) = (0usize, i64::MAX, i64::MIN, i64::MAX, i64::MIN);
+        for y in y0..=y1 {
+            for x in xa..=xb {
+                if ink.at(x, y) == crate::frame::ink::INK {
+                    n += 1;
+                    lx = lx.min(x);
+                    hx = hx.max(x);
+                    ly = ly.min(y);
+                    hy = hy.max(y);
+                }
+            }
+        }
+        let a = n as f64 / (sp * sp);
+        (0.05..=0.4).contains(&a) && ((hx - lx + 1) as f64) <= sp * 0.7 && ((hy - ly + 1) as f64) <= sp * 0.7 && ((hx - lx + 1) as f64) >= sp * 0.2 && ly > y0 && hy < y1
+    };
+    let mid_clear = {
+        let (y0, y1) = (s.y_of(xm, 3.9).round() as i64, s.y_of(xm, 4.1).round() as i64);
+        (y0..=y1).all(|y| (xa..=xb).all(|x| ink.at(x, y) != crate::frame::ink::INK))
+    };
+    dot(3.0) && dot(5.0) && mid_clear
 }
 
 fn attach_max() -> f64 {
@@ -259,7 +303,7 @@ pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: 
         }
         for (k, x, src) in add {
             let v = &mut out[g[k]];
-            v.push(Barline { x, x0: x, x1: x, style: BarStyle::Regular, segs: vec![], src, weak: false });
+            v.push(Barline { x, x0: x, x1: x, style: BarStyle::Regular, segs: vec![], src, weak: false, repeat_left: false, repeat_right: false });
             v.sort_by(|a, b| a.x.total_cmp(&b.x));
         }
     }

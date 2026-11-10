@@ -545,3 +545,43 @@ mod tests {
         assert!((staves[0].pos(300.0, staves[0].top(300.0) + 18.0) - 3.0).abs() < 0.2);
     }
 }
+
+/// 左端该对齐的谱行：个别行左段的谱线印得淡、断成碎点，逐列验墨（五条里要四条）走不过去，左端停在半路。
+/// 同页谱行的左端是对齐排的（首行缩进除外）：左端比本页常见左端靠右一格半以上的，按放宽的验墨（五条里有两条、
+/// 两格一窗里四分之一的列）往左走，走得到常见左端就挪过去；一路没有线墨的（真缩进）不动。
+pub fn align_lefts(bin: &Binary, staves: &mut [Staff]) {
+    if staves.len() < 3 {
+        return;
+    }
+    let lefts: Vec<f64> = staves.iter().map(|s| s.left).collect();
+    let target = median(&lefts, 0.0);
+    for s in staves.iter_mut().filter(|s| !s.one_line) {
+        let sp = s.space();
+        if s.left - target <= sp * 1.5 {
+            continue;
+        }
+        let r = (s.thick.iter().cloned().fold(0.0, f64::max) / 2.0).ceil() as i64 + 1;
+        let lines_at = |x: i64| {
+            (0..5)
+                .filter(|&k| {
+                    let yc = s.line_y(k, x as f64).round() as i64;
+                    (yc - r..=yc + r).any(|y| bin.ink(x, y))
+                })
+                .count()
+        };
+        let win = (sp * 2.0).round() as i64;
+        let mut x = s.left.round() as i64;
+        let goal = target.round() as i64;
+        while x > goal {
+            let a = (x - win).max(goal);
+            let hit = (a..x).filter(|&c| lines_at(c) >= 2).count();
+            if (hit as f64) < (x - a) as f64 * 0.25 {
+                break;
+            }
+            x = a;
+        }
+        if x == goal {
+            s.left = target;
+        }
+    }
+}

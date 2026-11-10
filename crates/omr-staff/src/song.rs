@@ -38,14 +38,17 @@ pub struct Song {
 struct Bound {
     x: f64,
     style: BarStyle,
+    /// 左边 / 右边有反复点（过半的行都有才算）。
+    rep_end: bool,
+    rep_start: bool,
 }
 
 fn bounds(page: &Page, rows: &[usize]) -> (Vec<Bound>, bool) {
     let f = &page.frame;
     let sp = f.unit.space;
-    let mut all: Vec<(f64, BarStyle)> = rows
+    let mut all: Vec<(f64, BarStyle, bool, bool)> = rows
         .iter()
-        .flat_map(|&i| f.bars[i].iter().filter(move |b| b.x > page.attrs[i].lead_end).map(|b| (b.x, b.style)))
+        .flat_map(|&i| f.bars[i].iter().filter(move |b| b.x > page.attrs[i].lead_end).map(|b| (b.x, b.style, b.repeat_left, b.repeat_right)))
         .collect();
     all.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut out: Vec<Bound> = Vec::new();
@@ -60,7 +63,9 @@ fn bounds(page: &Page, rows: &[usize]) -> (Vec<Bound>, bool) {
             // 样式取各行里最多的那种非普通样式（过半的行是普通线才算普通）
             let special: Vec<BarStyle> = c.iter().map(|e| e.1).filter(|s| *s != BarStyle::Regular).collect();
             let style = if special.len() * 2 >= c.len() { most(&special) } else { BarStyle::Regular };
-            out.push(Bound { x: c[c.len() / 2].0, style });
+            let rep_end = c.iter().filter(|e| e.2).count() * 2 > c.len();
+            let rep_start = c.iter().filter(|e| e.3).count() * 2 > c.len();
+            out.push(Bound { x: c[c.len() / 2].0, style, rep_end, rep_start });
         }
         i = j;
     }
@@ -256,12 +261,22 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 used[p] = true;
                 let a = ra[k];
                 let mut ms: Vec<Measure> = (0..count).map(|_| Measure::default()).collect();
-                for (j, m) in ms.iter_mut().enumerate() {
-                    match bs.get(j) {
-                        Some(b) if b.style != BarStyle::Regular => m.right = Some(b.style),
-                        Some(_) => {}
-                        // 行末没印右线的半截小节：GT 记不了「没印」，照普通线写
-                        None => {}
+                for j in 0..count {
+                    // 行末没印右线的半截小节（`bs` 里没有这一条）：GT 记不了「没印」，照普通线写
+                    let Some(b) = bs.get(j) else { continue };
+                    if b.style != BarStyle::Regular {
+                        ms[j].right = Some(b.style);
+                    }
+                    // 反复结束：点在线左，样式按细 + 粗；反复开始：点在线右，记在下一小节的左线上
+                    if b.rep_end {
+                        ms[j].repeat_end = true;
+                        ms[j].right = Some(BarStyle::LightHeavy);
+                    }
+                    if b.rep_start && j + 1 < count {
+                        ms[j + 1].repeat_start = true;
+                        if !b.rep_end {
+                            ms[j].right = None;
+                        }
                     }
                 }
                 let first = from == 0;

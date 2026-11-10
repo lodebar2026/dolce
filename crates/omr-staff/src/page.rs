@@ -38,7 +38,8 @@ pub struct Page {
 /// 框架结构；页上没有谱表回 None。
 pub fn frame_page(src: &SourceImage) -> Option<PageFrame> {
     let im = image_page(src);
-    let (unit, staves) = im.staves?;
+    let (unit, mut staves) = im.staves?;
+    crate::frame::staves::align_lefts(&im.bin, &mut staves);
     let ink = InkLayers::new(&im.bin, &staves, &unit);
     let segs = ink.vsegs((unit.space * 3.0) as usize, unit.thick.ceil().max(2.0) as usize);
     let (blobs, labels) = ink.blobs(4.0);
