@@ -26,7 +26,7 @@ pub struct Stem {
 }
 
 /// (x, y) 处横向墨宽（只数符号墨；超过 `cap` 就不再数）。
-fn width_at(ink: &InkLayers, x: i64, y: i64, cap: i64) -> i64 {
+pub(crate) fn width_at(ink: &InkLayers, x: i64, y: i64, cap: i64) -> i64 {
     let (mut a, mut b) = (x, x);
     while x - a <= cap && ink.at(a - 1, y) == INK {
         a -= 1;
