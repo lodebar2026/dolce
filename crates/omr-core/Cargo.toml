@@ -1,0 +1,11 @@
+[package]
+name = "dolce-omr-core"
+description = "悦谱 Dolce 识别的基础层：图像类型、几何与统计、像素内核、JS 数值口径、阶段缓存。不做 IO 之外的平台依赖，能编到 wasm"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+bincode.workspace = true
+sha2.workspace = true

@@ -13,6 +13,7 @@ default = ["napi"]
 napi = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 
 [dependencies]
+dolce-omr-core = { path = "../../crates/omr-core" }
 napi = { version = "3", default-features = false, features = ["napi4"], optional = true }
 napi-derive = { version = "3", optional = true }
 

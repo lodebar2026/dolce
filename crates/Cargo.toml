@@ -1,0 +1,17 @@
+# 识别（Rust）工作区。各 crate 的职责见 docs/模块/识别-Rust.md。
+[workspace]
+resolver = "2"
+members = ["omr-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"
+sha2 = "0.10"
+
+[profile.release]
+lto = "thin"
