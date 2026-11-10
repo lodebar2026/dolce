@@ -4,7 +4,7 @@
 //!   中音谱号正好撑满谱表且左边两根竖笔），不比模板。
 //! - 调号按**位置自证**：谱号定了，第 i 个升号 / 降号该在哪条线、哪个间是定的；单元挨个往右接，位置对得上、形状不矛盾的才算。
 //! - 拍号：上下两个数字正好各占半个谱表，数字交给 OCR；C / ¢ 骑在中线上。
-use super::units::{carve_after_line, ink_in, merged, split_at, stems, strokes, units_in, Unit};
+use super::units::{carve_after_line, ink_in, merged, single, split_at, stems, strokes, units_in, Unit};
 use super::{DigitReader, RowAttrs};
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
@@ -178,7 +178,20 @@ pub fn read_clef(f: &PageFrame, s: &Staff, us: &[Unit]) -> Option<ClefHit> {
                 used = used.max(j + 1);
             }
         }
-        let u = &whole;
+        // 并进了不相干的东西（谱号正上方的小节号、排练号）而判不出的：拿里面最高的那一块单独判
+        let alone;
+        let u = if clef_shape(f, &whole, sp).is_none() && whole.ids.len() > 1 {
+            let tallest = whole.ids.iter().filter_map(|&id| f.blobs.iter().find(|b| b.id as i32 == id)).max_by(|a, b| a.rect.h.total_cmp(&b.rect.h));
+            match tallest {
+                Some(b) => {
+                    alone = single(s, b.rect, b.id as i32, b.area as f64);
+                    &alone
+                }
+                None => &whole,
+            }
+        } else {
+            &whole
+        };
         let Some((mut clef, mut sure)) = clef_shape(f, u, sp) else { continue };
         let mut right = u.rect.right();
         if clef == Clef::BASS {

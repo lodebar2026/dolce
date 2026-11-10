@@ -44,6 +44,11 @@ fn unit_of(s: &Staff, rect: Rect, ids: Vec<i32>, area: f64) -> Unit {
     Unit { top: s.pos(x, rect.y), bottom: s.pos(x, rect.bottom()), rect, ids, area }
 }
 
+/// 单独一个墨块当单元。
+pub fn single(s: &Staff, rect: Rect, id: i32, area: f64) -> Unit {
+    unit_of(s, rect, vec![id], area)
+}
+
 /// 两个单元并成一个。
 pub fn merged(s: &Staff, a: &Unit, b: &Unit) -> Unit {
     let (x, y) = (a.rect.x.min(b.rect.x), a.rect.y.min(b.rect.y));

@@ -20,7 +20,7 @@ pub struct PageFrame {
     pub ink: InkLayers,
     /// 竖段（不短于三格）。
     pub segs: Vec<VSeg>,
-    /// 符号墨块与标号图（块号 = 下标 + 1）。
+    /// 符号墨块与标号图（标号图里的值是块的 `id`；小碎块被筛掉，`id` 不等于下标）。
     pub blobs: Vec<Blob>,
     pub labels: Vec<i32>,
     pub systems: Vec<System>,
