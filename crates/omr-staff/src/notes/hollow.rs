@@ -132,17 +132,18 @@ fn wall(img: &Binary, x: i64, y: i64, dx: i64, dy: i64, half: i64, depth: i64, c
     best
 }
 
-/// 一行谱的空心头与全音符（各带找到的干；全音符没有）。
-pub fn hollow_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64) -> Vec<(Head, Option<Stem>)> {
-    hollow_heads_traced(f, holes, claims, si, x_from, &mut |_, _| {})
+/// 一行谱的空心头与全音符（各带找到的干；全音符没有）。`scale`：本页符头比常见的大多少（[`super::head_scale`]），
+/// 孔、外圈、环壁、全音符墨块的尺寸上限照它放大——上限是照常见字体定的，头大的字体整页的孔都会超。
+pub fn hollow_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64, scale: f64) -> Vec<(Head, Option<Stem>)> {
+    hollow_heads_traced(f, holes, claims, si, x_from, scale, &mut |_, _| {})
 }
 
 /// 同 [`hollow_heads`]，每个落在本行范围里的孔在哪一关被丢（或留下）报给 `trace(孔, 说明)`：排查用。
-pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64, trace: &mut dyn FnMut((i64, i64, i64, i64), String)) -> Vec<(Head, Option<Stem>)> {
+pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64, scale: f64, trace: &mut dyn FnMut((i64, i64, i64, i64), String)) -> Vec<(Head, Option<Stem>)> {
     let s = &f.staves[si];
     let sp = s.space();
     let (lo, hi) = band(f, si);
-    let wall_max = (WALL_MAX * sp) as i64;
+    let wall_max = (WALL_MAX * scale * sp) as i64;
     let mut out = Vec::new();
     for &((hx, hy, hw, hh), area, which) in &holes.list {
         let img = &holes.imgs[which];
@@ -152,7 +153,7 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
         }
         let (w, h) = (hw as f64 / sp, hh as f64 / sp);
         let hole = (hx, hy, hw, hh);
-        if w < HOLE_W.0 || w > HOLE_W.1 || h < HOLE_H.0 || h > HOLE_H.1 {
+        if w < HOLE_W.0 || w > HOLE_W.1 * scale || h < HOLE_H.0 || h > HOLE_H.1 * scale {
             trace(hole, format!("孔的大小 {w:.2} × {h:.2} 格不像"));
             continue;
         }
@@ -188,7 +189,7 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
         let outer_h = (hh + up.1.min(wall_v) + down.1.min(wall_v)) as f64 / sp;
         let (xl, xr) = (hx - left.1, hx + hw - 1 + right.1);
         let outer_w = (xr - xl + 1) as f64 / sp;
-        if outer_h < OUTER_H.0 || outer_h > OUTER_H.1 || outer_w < OUTER_W.0 || outer_w > OUTER_W.1 {
+        if outer_h < OUTER_H.0 || outer_h > OUTER_H.1 * scale || outer_w < OUTER_W.0 || outer_w > OUTER_W.1 * scale {
             trace(hole, format!("外圈 {outer_w:.2} × {outer_h:.2} 格不像（壁 上{} 下{} 左{} 右{}）", up.1, down.1, left.1, right.1));
             continue;
         }
@@ -206,8 +207,8 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
             None => {
                 // 全音符：够宽、所在墨块就是孤立的一个环
                 let id = (0..=half).flat_map(|k| [k, -k]).map(|k| f.labels[(y + k) as usize * f.ink.w + (hx - 1) as usize]).find(|&v| v != 0).unwrap_or(0);
-                let alone = f.blobs.iter().find(|b| b.id as i32 == id).is_some_and(|b| b.rect.w <= WHOLE_BLOB.0 * sp && b.rect.h <= WHOLE_BLOB.1 * sp);
-                if outer_w >= WHOLE_W && alone {
+                let alone = f.blobs.iter().find(|b| b.id as i32 == id).is_some_and(|b| b.rect.w <= WHOLE_BLOB.0 * scale * sp && b.rect.h <= WHOLE_BLOB.1 * scale * sp);
+                if outer_w >= WHOLE_W * scale && alone {
                     trace(hole, format!("全音符，位 {pos}"));
                     head.kind = HeadKind::Whole;
                     out.push((head, None));

@@ -27,6 +27,8 @@ const SAME_STEM: f64 = 0.25;
 const TPL_DROP: f64 = 0.2;
 /// 两个和弦的头横向相隔不到这么多（相对线距）的算同一拍点（上下两个声部各自带干）。
 pub const SAME_ONSET: f64 = 0.8;
+/// 常见字体的实心头宽（相对线距，按模板过中心那一行量）。
+const HEAD_W: f64 = 1.25;
 
 impl Chord {
     /// 头型（同干的头按第一个算）。
@@ -105,20 +107,29 @@ pub(crate) fn bridged(f: &PageFrame, b: &Blob, slit: usize) -> Vec<i32> {
     out
 }
 
-/// 一页各行谱的音符（与 `staves` 同序）。
-pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
+/// 实心头的前半段：封过口的墨层、各行挂得上干的种子、自举模板的样本与模板。
+struct SeedStage {
+    solid: crate::frame::ink::InkLayers,
+    cands: Vec<(Head, Stem)>,
+    samples: Vec<(f64, f64, f64)>,
+    tpl: Template,
+}
+
+fn x_from(f: &PageFrame, attrs: &[RowAttrs], si: usize) -> f64 {
+    attrs.get(si).map_or(f.staves[si].left, |a| a.lead_end.max(f.staves[si].left))
+}
+
+fn seed_stage(f: &PageFrame, attrs: &[RowAttrs], claims: &Claims) -> SeedStage {
     // 实心头在封过口的墨层上找：扫描件的头里常夹着几像素的白缝，种子框、模板都按「满不满」量
     let solid = f.ink.sealed((hollow::SLIT_AREA * f.unit.space * f.unit.space).round() as usize);
     let sum = InkSum::new(&solid);
-    let claims = Claims::new(f);
-    let from_of = |si: usize| attrs.get(si).map_or(f.staves[si].left, |a| a.lead_end.max(f.staves[si].left));
-    // 实心头：各行的种子（谱表外的要加线作证）与各自的干
+    // 各行的种子（谱表外的要加线作证）与各自的干
     let mut cands: Vec<(Head, Stem)> = Vec::new();
     // 自举模板的样本：争同一处墨的种子里最满的那个
     let mut samples: Vec<(f64, f64, f64)> = Vec::new();
     for si in 0..f.staves.len() {
         let sp = f.staves[si].space();
-        let row: Vec<(Head, Stem)> = heads::seeds(f, &solid, &sum, si, from_of(si))
+        let row: Vec<(Head, Stem)> = heads::seeds(f, &solid, &sum, si, x_from(f, attrs, si))
             .into_iter()
             .filter(|h| ledgers::ledger_ok(f, h, FILLED_HALF_W * sp))
             .filter_map(|h| stems::find_stem(&f.ink, &h, sp, f.unit.thick, None, &|x| claims.bar_col(si, x)).map(|st| (h, st)))
@@ -126,8 +137,26 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
         samples.extend(heads::fullest(row.iter().map(|(h, _)| h.clone()).collect(), sp).iter().map(|h| (h.x, h.y, sp)));
         cands.extend(row);
     }
-    // 模板：挂得上干的种子叠出来；逐个打分，比本页中位数差得多的丢掉
+    // 模板：挂得上干的种子叠出来
     let tpl = Template::bootstrap(&solid, &samples).unwrap_or_else(Template::synthetic);
+    SeedStage { solid, cands, samples, tpl }
+}
+
+/// 本页符头比常见的大多少（不小于 1）：实心头模板量出的头宽比 [`HEAD_W`]。空心头的孔、外圈的尺寸上限照它放大。
+pub fn head_scale(f: &PageFrame, attrs: &[RowAttrs]) -> f64 {
+    scale_of(&seed_stage(f, attrs, &Claims::new(f)).tpl)
+}
+
+fn scale_of(tpl: &Template) -> f64 {
+    (tpl.head_width() / HEAD_W).max(1.0)
+}
+
+/// 一页各行谱的音符（与 `staves` 同序）。
+pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
+    let claims = Claims::new(f);
+    let from_of = |si: usize| x_from(f, attrs, si);
+    let SeedStage { solid, mut cands, samples, tpl } = seed_stage(f, attrs, &claims);
+    // 逐个打分，比本页中位数差得多的丢掉
     for (h, _) in cands.iter_mut() {
         let (s, x, y) = tpl.best_score(&solid, h.x, h.y, f.staves[h.staff].space(), 1);
         (h.score, h.x, h.y) = (s, x, y);
@@ -143,7 +172,7 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
     // 空心头与全音符
     let holes = hollow::page_holes(f);
     for si in 0..f.staves.len() {
-        all.extend(hollow::hollow_heads(f, &holes, &claims, si, from_of(si)));
+        all.extend(hollow::hollow_heads(f, &holes, &claims, si, from_of(si), scale_of(&tpl)));
     }
 
     let mut rows: Vec<RowNotes> = (0..f.staves.len()).map(|_| RowNotes::default()).collect();

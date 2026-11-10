@@ -22,6 +22,7 @@ fn main() {
         let solid = f.ink.sealed((dolce_omr_staff::notes::hollow::SLIT_AREA * f.unit.space * f.unit.space).round() as usize);
         let sum = InkSum::new(&solid);
         let holes = page_holes(f);
+        let scale = dolce_omr_staff::notes::head_scale(f, &page.attrs);
         let claims = dolce_omr_staff::notes::resolve::Claims::new(f);
         for si in 0..f.staves.len() {
             let s = &f.staves[si];
@@ -39,7 +40,7 @@ fn main() {
                 let kept = page.notes[si].chords.iter().any(|c| c.heads.iter().any(|k| (k.x - h.x).abs() < 3.0 && k.pos == h.pos));
                 println!("  种子 ({:.0}, {:.0}) 位 {} 满 {:.2} 加线 {} 干 {:?} → {}", h.x, h.y, h.pos, h.fill, ledger_ok(f, &h, 0.65 * sp), st, if kept { "留" } else { "丢" });
             }
-            hollow_heads_traced(f, &holes, &claims, si, from, &mut |(hx, hy, hw, hh), why| {
+            hollow_heads_traced(f, &holes, &claims, si, from, scale, &mut |(hx, hy, hw, hh), why| {
                 if (hx as f64 + hw as f64 / 2.0 - x).abs() <= r * sp && (hy as f64 + hh as f64 / 2.0 - y).abs() <= r * sp {
                     println!("  孔 {hx},{hy} {hw}×{hh}：{why}");
                 }

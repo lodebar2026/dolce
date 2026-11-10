@@ -106,9 +106,10 @@ fn main() {
                 }
             } else {
                 let holes = page_holes(f);
+        let scale = dolce_omr_staff::notes::head_scale(f, &page.attrs);
                 for si in 0..f.staves.len() {
                     let from = page.attrs[si].lead_end.max(f.staves[si].left);
-                    hollow_heads_traced(f, &holes, &claims, si, from, &mut |(hx, hy, hw, hh), w| {
+                    hollow_heads_traced(f, &holes, &claims, si, from, scale, &mut |(hx, hy, hw, hh), w| {
                         for (i, &(cx, cy)) in all_miss.iter().enumerate() {
                             if near(hx as f64 + hw as f64 / 2.0, hy as f64 + hh as f64 / 2.0, cx, cy) {
                                 // 说明里的数字、括号后面的细节去掉，只留类别

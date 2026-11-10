@@ -221,6 +221,15 @@ impl Template {
         Some(Template { t: on.iter().zip(&n).map(|(&a, &b)| if b >= need { a as f32 / b as f32 } else { 0.5 }).collect() })
     }
 
+    /// 模板上头的宽（相对线距）：过中心那一行连着的「多半是墨」的格子。本页符头的大小尺子（字体不同，头宽从 1.1 到 1.6 格都有）。
+    pub fn head_width(&self) -> f64 {
+        let row = &self.t[TPL_HY as usize * TPL_W..(TPL_HY as usize + 1) * TPL_W];
+        let c = TPL_HX as usize;
+        let l = (0..=c).rev().take_while(|&i| row[i] > 0.5).count();
+        let r = (c..TPL_W).take_while(|&i| row[i] > 0.5).count();
+        (l + r).saturating_sub(1) as f64 / TPL_RES
+    }
+
     /// 合成的斜椭圆（长半轴 0.62 格、短半轴 0.44 格、右端上翘 20°）：页上样本不够时用。
     pub fn synthetic() -> Self {
         let (a, b, th) = (0.62f64, 0.44f64, 20f64.to_radians());
