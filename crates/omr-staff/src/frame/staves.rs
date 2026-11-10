@@ -71,7 +71,8 @@ pub fn find_staves(bin: &Binary) -> Option<(Unit, Vec<Staff>)> {
         x1: usize,
     }
     let mut rows: Vec<Row> = Vec::new();
-    for t in tracks.into_iter().filter(|t| t.len() >= 8) {
+    // 短截也收（压满符杠的谱行逐列五连断成许多几列长的小截），拼完再按列数筛
+    for t in tracks {
         let cy = median(&t.iter().map(Hit::cy).collect::<Vec<_>>(), 0.0);
         let (x0, x1) = (t[0].x, t[t.len() - 1].x);
         let near: Vec<usize> = (0..rows.len()).filter(|&i| (rows[i].cy - cy).abs() < space * SAME_STAFF).collect();
@@ -124,10 +125,198 @@ pub fn find_staves(bin: &Binary) -> Option<(Unit, Vec<Staff>)> {
             None => keep.push(s),
         }
     }
-    let staves = keep;
+    let mut staves = keep;
     let thicks: Vec<f64> = staves.iter().flat_map(|s| s.thick).collect();
     let spaces: Vec<f64> = staves.iter().map(Staff::space).collect();
-    Some((Unit { space: median(&spaces, 0.0), thick: median(&thicks, 1.0) }, staves))
+    let unit = Unit { space: median(&spaces, 0.0), thick: median(&thicks, 1.0) };
+    let ones = single_line_staves(bin, &staves, &unit);
+    if !ones.is_empty() {
+        staves.extend(ones);
+        staves.sort_by(|a, b| a.ys[0].total_cmp(&b.ys[0]));
+    }
+    Some((unit, staves))
+}
+
+/// 单线谱：横线够长（不短过本页五线谱表宽的这个比例）。
+const ONE_LINE_LEN: f64 = 0.35;
+/// 单线谱：沿线逐列线带里有墨的占比下限（实线连着；歌词延长的虚线一半是空）。
+const ONE_LINE_FILL: f64 = 0.85;
+/// 单线谱：小节线上下各伸出至少这么多格（照五线谱表的高度印；符干只伸一边），至多这么多格（再长是穿过两行之间的贯穿小节线）。
+const ONE_LINE_BAR: f64 = 1.2;
+const ONE_LINE_BAR_MAX: f64 = 3.0;
+/// 单线谱：上下一格、两格处平行走着的线沿线有墨过这么多，是没认出来的五线谱行里的一条。
+const ONE_LINE_SIBLING: f64 = 0.4;
+
+/// **单线谱（打击乐）**：五线谱表之外一道细实横线，带两根以上上下对称穿过它的小节线。判据全是结构：
+/// 逐列细游程且上下各 0.4 格内空、串成够长的一道、沿线逐列有墨（歌词延长虚线过不了）、上下一两格处没有平行的线（漏检的五线谱行）、
+/// 两根以上上下各伸 `ONE_LINE_BAR`~`ONE_LINE_BAR_MAX` 格的竖笔穿过（小节线；符干只往一边伸，页框、标题下划线没有；
+/// 钢琴两行之间的长渐强线也有贯穿小节线穿过，但伸得更远）。
+/// 建成五线谱表：实线当第三线，上下四条按本页线距补出（`one_line`）——这种谱的小节线、谱号照五线谱表的高度印，判据照五线走。
+fn single_line_staves(bin: &Binary, staves: &[Staff], unit: &Unit) -> Vec<Staff> {
+    let (w, h) = (bin.w, bin.h);
+    let space = unit.space;
+    if staves.is_empty() || space <= 0.0 {
+        return vec![];
+    }
+    let cols = w.div_ceil(COL_STEP);
+    let col_of = |x: f64| ((x / COL_STEP as f64).round().max(0.0) as usize).min(cols - 1);
+    let max_thick = 2.0f64.max(unit.thick * 2.0).max((space * 0.25).round()) as usize;
+    let iso = 2.max((space * 0.4).round() as usize);
+    let in_staff = |x: f64, y: f64| staves.iter().any(|s| y > s.top(x) - space * 1.5 && y < s.bottom(x) + space * 1.5);
+    // 逐列：细游程、上下各 iso 内空
+    let mut hits: Vec<(usize, f64)> = Vec::new();
+    for x in (0..w).step_by(COL_STEP) {
+        let mut y = 0;
+        while y < h {
+            if bin.data[y * w + x] == 0 {
+                y += 1;
+                continue;
+            }
+            let a = y;
+            while y < h && bin.data[y * w + x] != 0 {
+                y += 1;
+            }
+            if y - a > max_thick {
+                continue;
+            }
+            let clear = (a.saturating_sub(iso)..a.saturating_sub(1)).all(|yy| bin.data[yy * w + x] == 0) && (y + 1..(y + iso).min(h)).all(|yy| bin.data[yy * w + x] == 0);
+            let c = a as f64 + (y - a - 1) as f64 / 2.0;
+            if clear && !in_staff(x as f64, c) {
+                hits.push((x, c));
+            }
+        }
+    }
+    // 串成轨迹：中心差不过一个线宽（至少 1.5 像素），横向空档不过两格
+    let dy = unit.thick.max(1.5);
+    let jump = space * 2.0;
+    let mut open: Vec<Vec<(usize, f64)>> = Vec::new();
+    let mut tracks: Vec<Vec<(usize, f64)>> = Vec::new();
+    for p in hits {
+        let mut k = 0;
+        while k < open.len() {
+            if (p.0 - open[k].last().unwrap().0) as f64 > jump {
+                tracks.push(open.swap_remove(k));
+            } else {
+                k += 1;
+            }
+        }
+        let best = open.iter_mut().filter(|o| o.last().unwrap().0 < p.0 && (o.last().unwrap().1 - p.1).abs() <= dy).min_by(|a, b| (a.last().unwrap().1 - p.1).abs().total_cmp(&(b.last().unwrap().1 - p.1).abs()));
+        match best {
+            Some(o) => o.push(p),
+            None => open.push(vec![p]),
+        }
+    }
+    tracks.extend(open);
+    tracks.sort_by_key(|t| std::cmp::Reverse(t.len()));
+    let staff_w = median(&staves.iter().map(|s| s.right - s.left).collect::<Vec<_>>(), 0.0);
+    let min_len = (space * 8.0).max(staff_w * ONE_LINE_LEN);
+    let mut out: Vec<Staff> = Vec::new();
+    for pts in tracks {
+        if pts.len() < 8 || ((pts[pts.len() - 1].0 - pts[0].0) as f64) < min_len * 0.6 {
+            continue;
+        }
+        let y = median(&pts.iter().map(|p| p.1).collect::<Vec<_>>(), 0.0);
+        if out.iter().any(|g| (g.ys[2] - y).abs() < space * 4.0 && (pts[0].0 as f64) <= g.right && (pts[pts.len() - 1].0 as f64) >= g.left) {
+            continue;
+        }
+        let mut per: Vec<Vec<f64>> = vec![Vec::new(); cols];
+        for p in &pts {
+            per[col_of(p.0 as f64)].push(p.1 - y);
+        }
+        let raw: Vec<f64> = per.iter().map(|a| if a.is_empty() { f64::NAN } else { median(a, 0.0) }).collect();
+        let curve = LineCurve { step: COL_STEP, d: fill_curve(&raw) };
+        let y_at = |x: usize| y + curve.at(x as f64);
+        let r = (unit.thick / 2.0).ceil() as i64 + 1;
+        let ink_at = |x: usize, k: f64| {
+            let yc = (y_at(x) + k * space).round() as i64;
+            (yc - r..=yc + r).any(|yy| bin.ink(x as i64, yy))
+        };
+        // 左右端：从轨迹两头沿线逐列往外走，断口容一格（扫描件淡线成串点）
+        let gap_max = 2.max(space.round() as usize);
+        let walk = |from: usize, dir: i64| {
+            let (mut end, mut gap) = (from, 0);
+            let mut x = from as i64;
+            while x >= 0 && (x as usize) < w {
+                if ink_at(x as usize, 0.0) {
+                    end = x as usize;
+                    gap = 0;
+                } else {
+                    gap += 1;
+                    if gap > gap_max {
+                        break;
+                    }
+                }
+                x += dir;
+            }
+            end
+        };
+        let (left, right) = (walk(pts[0].0, -1), walk(pts[pts.len() - 1].0, 1));
+        let span = (right - left + 1) as f64;
+        if ((right - left) as f64) < min_len || ((left..=right).filter(|&x| ink_at(x, 0.0)).count() as f64) < span * ONE_LINE_FILL {
+            continue;
+        }
+        if [-2.0, -1.0, 1.0, 2.0].iter().any(|&k| (left..=right).filter(|&x| ink_at(x, k)).count() as f64 >= span * ONE_LINE_SIBLING) {
+            continue;
+        }
+        // 上下对称穿过的竖笔（小节线）：线心上下各 ONE_LINE_BAR 格逐行有墨（容 0.2 格的断口）、又不连过 ONE_LINE_BAR_MAX 格；相邻几列算一根
+        let reach = (space * ONE_LINE_BAR).round() as i64;
+        let reach_max = (space * ONE_LINE_BAR_MAX).round() as i64;
+        let vgap = 1.max((space * 0.2).round() as i64);
+        let extent = |x: usize, yc: i64, dir: i64| {
+            let (mut e, mut gap) = (0, 0);
+            for k in 1..=reach_max + vgap + 1 {
+                if bin.ink(x as i64, yc + dir * k) {
+                    e = k;
+                    gap = 0;
+                } else {
+                    gap += 1;
+                    if gap > vgap {
+                        break;
+                    }
+                }
+            }
+            e
+        };
+        let solid = |x: usize, y0: i64, y1: i64| {
+            let mut gap = 0;
+            for yy in y0..=y1 {
+                if bin.ink(x as i64, yy) {
+                    gap = 0;
+                } else {
+                    gap += 1;
+                    if gap > vgap {
+                        return false;
+                    }
+                }
+            }
+            true
+        };
+        let (mut bars, mut last) = (0, f64::NEG_INFINITY);
+        for x in left..=right {
+            let yc = y_at(x).round() as i64;
+            if !solid(x, yc - reach, yc + reach) || extent(x, yc, -1) > reach_max || extent(x, yc, 1) > reach_max {
+                continue;
+            }
+            if x as f64 - last > space * 0.5 {
+                bars += 1;
+            }
+            last = x as f64;
+        }
+        if bars < 2 {
+            continue;
+        }
+        let (lo, hi) = (col_of(left as f64)..=col_of(right as f64)).map(|c| curve.d[c] as f64).fold((f64::MAX, f64::MIN), |(l, h), v| (l.min(v), h.max(v)));
+        let flat = hi - lo <= FLAT_SPREAD && ((hi + lo) / 2.0).abs() <= 1.0;
+        out.push(Staff {
+            ys: std::array::from_fn(|k| y + (k as f64 - 2.0) * space),
+            thick: [unit.thick; 5],
+            curve: if flat { None } else { Some(Arc::new(curve)) },
+            left: left as f64,
+            right: right as f64,
+            one_line: true,
+        });
+    }
+    out
 }
 
 /// 逐取样列找五连：相邻五段黑，各段不厚过间距的 `MAX_THICK`，四个间距彼此相差不过 `EVEN_TOL`。
