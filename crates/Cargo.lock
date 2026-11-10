@@ -265,6 +265,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-omr-sheet"
+version = "0.1.0"
+dependencies = [
+ "dolce-omr-core",
+ "serde",
+]
+
+[[package]]
 name = "dolce-omr-source"
 version = "0.1.0"
 dependencies = [
@@ -275,6 +283,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "dolce-omr-staff"
+version = "0.1.0"
+dependencies = [
+ "dolce-omr-core",
+ "dolce-omr-sheet",
+ "dolce-omr-source",
+ "flate2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

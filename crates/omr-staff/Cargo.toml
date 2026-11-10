@@ -1,0 +1,16 @@
+[package]
+name = "dolce-omr-staff"
+description = "悦谱 Dolce 五线谱路线（含混排）：预处理、框架结构、结构信息、音符数据、文本及符号、线性符号、简谱互证"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-omr-core = { path = "../omr-core" }
+dolce-omr-sheet = { path = "../omr-sheet" }
+serde.workspace = true
+
+[dev-dependencies]
+dolce-omr-source = { path = "../omr-source" }
+flate2 = "1"
+serde_json = "1"
