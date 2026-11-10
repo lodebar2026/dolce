@@ -6,8 +6,9 @@ use crate::attrs::RowAttrs;
 use crate::frame::bars::BarStyle;
 use crate::page::Page;
 use dolce_omr_sheet::music::{Clef, Key};
-use crate::notes::{Chord, SAME_ONSET};
-use dolce_omr_sheet::score::{Attrs, Event, Measure, NoteType, Part, Score};
+use crate::notes::meter::{self, Bar, Stats};
+use crate::notes::{Chord, RowNotes, SAME_ONSET};
+use dolce_omr_sheet::score::{measure_divisions, Attrs, Doubt, Event, Measure, NoteType, Part, Score};
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
 const BOUND_XTOL: f64 = 1.6;
@@ -35,6 +36,10 @@ pub struct SystemLayout {
 pub struct Song {
     pub score: Score,
     pub systems: Vec<SystemLayout>,
+    /// 可疑清单（满拍裁决交来的；别的模块的随后并进来）。
+    pub doubts: Vec<Doubt>,
+    /// 满拍读数。
+    pub meter: Stats,
 }
 
 /// 一个系统的小节边界。
@@ -184,6 +189,12 @@ fn settle<T: Copy + PartialEq>(read: &[Option<(T, bool)>], prefix: impl Fn(T, T)
     k.into_iter().map(Some).collect()
 }
 
+/// 本页实心头模板分的中位数（满拍裁决掂量「删这个头」时比的尺子）。
+fn page_med(page: &Page) -> f64 {
+    let v: Vec<f64> = page.notes.iter().flat_map(|r| r.chords.iter()).flat_map(|c| c.heads.iter()).filter(|h| h.kind == crate::notes::heads::HeadKind::Filled).map(|h| h.score).collect();
+    dolce_omr_core::geom::median(&v, 0.0)
+}
+
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let nparts = pages.iter().flat_map(|p| p.frame.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
@@ -229,6 +240,9 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut time: Option<dolce_omr_sheet::music::Time> = None;
     // 上一个系统末小节的宽度（相对它那一行常见的小节宽；没有为 0）
     let mut prev_tail = 0.0f64;
+    let mut doubts: Vec<Doubt> = Vec::new();
+    let mut stats = Stats::default();
+    let total_sys: usize = pages.iter().map(|p| p.frame.systems.len()).sum();
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.frame;
         for (si, sys) in f.systems.iter().enumerate() {
@@ -259,6 +273,33 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             let from = parts.first().map_or(0, |p| p.measures.len());
             let mut used = vec![false; nparts];
             let mut layout = Vec::new();
+            // 满拍裁决：这个系统起头的拍号（本系统读到、够格的；否则沿用），行中换拍号的从那一小节起
+            let read = rows.iter().filter_map(|&i| page.attrs[i].time).next();
+            let votes = rows.iter().map(|&i| page.attrs[i].time_votes).max().unwrap_or(0);
+            let mut now = read.filter(|t| from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal)).or(time);
+            let bar_of = |x: f64| bs.iter().filter(|b| b.x < x).count().min(count - 1);
+            let plain = |b: Option<&Bound>| b.is_none_or(|b| b.style == BarStyle::Regular && !b.rep_end && !b.rep_start);
+            let bars: Vec<Bar> = (0..count)
+                .map(|j| {
+                    if let Some(t) = rows.iter().flat_map(|&i| page.attrs[i].changes.iter()).filter(|c| bar_of(c.x) == j).filter_map(|c| c.attrs.time).next() {
+                        now = Some(t);
+                    }
+                    let edge = (j == 0 && (from == 0 || implicit)) || (j + 1 == count && (open || sys_no == total_sys));
+                    let left = if j == 0 { None } else { bs.get(j - 1) };
+                    Bar { want: now.map(measure_divisions), loose: edge || !plain(bs.get(j)) || !plain(left) }
+                })
+                .collect();
+            let mut sys_notes: Vec<RowNotes> = rows.iter().map(|&i| page.notes[i].clone()).collect();
+            let (flags, st) = meter::settle_system(f, rows, &mut sys_notes, &bar_of, &bars, page_med(page));
+            stats += st;
+            let sys_top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up as f64;
+            for fl in flags {
+                let s = &f.staves[rows[fl.row]];
+                let x0 = if fl.bar == 0 { lead } else { bs[fl.bar - 1].x };
+                let x1 = bs.get(fl.bar).map_or(s.right, |b| b.x);
+                let up = f.up as f64;
+                doubts.push(Doubt { page: pn + 1, sys_top, row: fl.row, measure: from + fl.bar, rect: (x0 / up, s.top(x0) / up, x1 / up, s.bottom(x0) / up), kind: fl.kind, note: fl.note });
+            }
             for (k, &i) in rows.iter().enumerate() {
                 let p = slots[k];
                 used[p] = true;
@@ -308,7 +349,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 let mut seq_len = 0;
                 let mut last: Option<(usize, f64)> = None;
                 // 和弦与休止按 x 合成一条序列
-                let notes = &page.notes[i];
+                let notes = &sys_notes[k];
                 let mut items: Vec<(f64, Option<&Chord>, Option<NoteType>, u8)> = notes.chords.iter().map(|c| (c.x, Some(c), None, 0)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r.ntype), r.dots))).collect();
                 items.sort_by(|a, b| a.0.total_cmp(&b.0));
                 // 临时记号在本小节内对同一音名同一八度一直有效
@@ -403,7 +444,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout });
         }
     }
-    Song { score: Score { title, parts }, systems }
+    Song { score: Score { title, parts }, systems, doubts, meter: stats }
 }
 
 impl Song {
@@ -428,7 +469,13 @@ impl Song {
             }
             o.push_str("]}");
         }
-        o.push_str(&format!("],\"notes\":[],\"rowSp\":{{{sp}}}}}"));
+        let ds: Vec<String> = self
+            .doubts
+            .iter()
+            .map(|d| format!("{{\"page\":{},\"sysTop\":{:.0},\"row\":{},\"m\":{},\"kind\":\"{}\",\"box\":[{:.0},{:.0},{:.0},{:.0}],\"note\":{:?}}}", d.page, d.sys_top, d.row, d.measure + 1, d.kind.code(), d.rect.0, d.rect.1, d.rect.2, d.rect.3, d.note))
+            .collect();
+        let m = &self.meter;
+        o.push_str(&format!("],\"notes\":[],\"rowSp\":{{{sp}}},\"doubts\":[{}],\"meter\":{{\"checked\":{},\"fullBefore\":{},\"fullAfter\":{},\"fixed\":{}}}}}", ds.join(","), m.checked, m.full_before, m.full_after, m.fixed));
         o
     }
 }

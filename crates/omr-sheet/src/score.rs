@@ -21,6 +21,11 @@ impl Attrs {
 /// 写出用的时值单位：一个四分音符这么多份。
 pub const DIVISIONS: u32 = 24;
 
+/// 拍号 `t` 下一小节多少份。
+pub fn measure_divisions(t: Time) -> u32 {
+    t.beats as u32 * DIVISIONS * 4 / (t.beat_type as u32).max(1)
+}
+
 /// 时值的基本型（不含附点）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NoteType {
@@ -54,6 +59,11 @@ impl NoteType {
             NoteType::N32nd => DIVISIONS / 8,
         }
     }
+    /// 带 `dots` 个附点占多少份。
+    pub fn dotted(&self, dots: u8) -> u32 {
+        let base = self.divisions();
+        (0..dots).fold((base, base), |(sum, last), _| (sum + last / 2, last / 2)).0
+    }
 }
 
 /// 一个拍点上的事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
@@ -68,8 +78,45 @@ pub struct Event {
 
 impl Event {
     pub fn divisions(&self) -> u32 {
-        let base = self.ntype.divisions();
-        (0..self.dots).fold((base, base), |(sum, last), _| (sum + last / 2, last / 2)).0
+        self.ntype.dotted(self.dots)
+    }
+}
+
+/// 一处把握不大的地方（随结果交出，核对视图标出来）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Doubt {
+    /// 页码（1 起）、系统顶（原图像素）、系统内第几行、全曲第几小节（0 起）。
+    pub page: usize,
+    pub sys_top: f64,
+    pub row: usize,
+    pub measure: usize,
+    /// 源图框 `(x0, y0, x1, y1)`（原图像素）。
+    pub rect: (f64, f64, f64, f64),
+    pub kind: DoubtKind,
+    /// 给人看的说明（改了什么、差多少）。
+    pub note: String,
+}
+
+/// 可疑的原因码。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DoubtKind {
+    /// 小节不满拍 / 超拍（保持原判）。
+    Underfull,
+    Overfull,
+    /// 同系统各行拍位对不齐。
+    Misaligned,
+    /// 按满拍改过的（改时值、删元素）。
+    Inferred,
+}
+
+impl DoubtKind {
+    pub fn code(&self) -> &'static str {
+        match self {
+            DoubtKind::Underfull => "underfull",
+            DoubtKind::Overfull => "overfull",
+            DoubtKind::Misaligned => "misaligned",
+            DoubtKind::Inferred => "inferred",
+        }
     }
 }
 
