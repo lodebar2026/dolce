@@ -90,9 +90,10 @@ impl InkLayers {
         (blobs, labels)
     }
 
-    /// 竖段：逐列纵向墨段（存疑像素也算墨——竖笔与谱线交叉处本来就不是存疑，这里只为不在纯谱线上断开）
-    /// 长不短过 `min_len` 的，相邻列横向连成一段（纵向重叠过短者一半）。符干、小节线、系统线、升降号竖笔、谱号竖笔都在里面，归属由用它的模块定。
-    pub fn vsegs(&self, min_len: usize) -> Vec<VSeg> {
+    /// 竖段：逐列纵向墨段（存疑像素也算墨——竖笔与谱线交叉处本来就不是存疑，这里只为不在纯谱线上断开；
+    /// 段内不过 `max_gap` 像素的白缝接上——扫描件的竖笔常断一两像素）长不短过 `min_len` 的，相邻列横向连成一段（纵向重叠过短者一半）。
+    /// 符干、小节线、系统线、升降号竖笔、谱号竖笔都在里面，归属由用它的模块定。
+    pub fn vsegs(&self, min_len: usize, max_gap: usize) -> Vec<VSeg> {
         let mut open: Vec<VSeg> = Vec::new();
         let mut done: Vec<VSeg> = Vec::new();
         for x in 0..self.w {
@@ -104,8 +105,16 @@ impl InkLayers {
                     continue;
                 }
                 let a = y;
-                while y < self.h && self.tri[y * self.w + x] != BG {
-                    y += 1;
+                loop {
+                    while y < self.h && self.tri[y * self.w + x] != BG {
+                        y += 1;
+                    }
+                    // 白缝不过 max_gap、缝下还有墨：接着走
+                    let g = (y..(y + max_gap + 1).min(self.h)).find(|&yy| self.tri[yy * self.w + x] != BG);
+                    match g {
+                        Some(yy) if yy > y => y = yy,
+                        _ => break,
+                    }
                 }
                 if y - a >= min_len {
                     runs.push((a, y - 1));
@@ -205,7 +214,7 @@ mod tests {
         assert_eq!(ink.at(105, 48), INK); // 头里的线是墨
         let (blobs, _) = ink.blobs(4.0);
         assert_eq!(blobs.len(), 2, "{blobs:?}"); // 竖笔一块（穿过谱线仍连着）、头一块
-        let v = ink.vsegs(40);
+        let v = ink.vsegs(40, 2);
         assert_eq!(v.len(), 1);
         assert_eq!((v[0].x0, v[0].x1, v[0].y0, v[0].y1), (150, 151, 20, 89));
     }

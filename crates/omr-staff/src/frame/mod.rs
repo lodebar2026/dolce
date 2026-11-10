@@ -1,3 +1,4 @@
 //! 框架结构：谱线与谱表 → 墨层 → 版面分区 → 系统 → 小节线。
+pub mod bars;
 pub mod ink;
 pub mod staves;
