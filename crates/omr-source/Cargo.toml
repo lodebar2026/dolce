@@ -1,0 +1,11 @@
+[package]
+name = "dolce-omr-source"
+description = "悦谱 Dolce 识别的取数层：PDF（PDFium）与图片 → 页面对象、文字、内嵌图原始像素、整页渲染"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-omr-core = { path = "../omr-core" }
+# 绑定的 PDFium 版本要与随应用分发的动态库同一个 chromium 构建号，否则绑定时缺符号
+pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_7881", "thread_safe", "image_latest"] }
