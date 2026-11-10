@@ -6,6 +6,7 @@ use crate::attrs::RowAttrs;
 use crate::frame::bars::BarStyle;
 use crate::page::Page;
 use dolce_omr_sheet::music::{Clef, Key};
+use crate::notes::heads::HeadKind;
 use crate::notes::SAME_ONSET;
 use dolce_omr_sheet::score::{Attrs, Event, Measure, NoteType, Part, Score};
 
@@ -324,7 +325,12 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                         e.pitches.append(&mut ps);
                         e.stem_up = None;
                     } else {
-                        ms[j].events.push(Event { pitches: ps, ntype: NoteType::Quarter, dots: 0, stem_up: Some(ch.stem.up) });
+                        let ntype = match ch.kind() {
+                            HeadKind::Filled => NoteType::Quarter,
+                            HeadKind::Half => NoteType::Half,
+                            HeadKind::Whole => NoteType::Whole,
+                        };
+                        ms[j].events.push(Event { pitches: ps, ntype, dots: 0, stem_up: ch.stem.map(|s| s.up) });
                         seq_len += 1;
                     }
                     let e = ms[j].events.last_mut().unwrap();

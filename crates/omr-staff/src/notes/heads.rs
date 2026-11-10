@@ -33,6 +33,10 @@ const TPL_MIN: usize = 6;
 pub enum HeadKind {
     /// 实心头。
     Filled,
+    /// 空心头带干（二分音符）。
+    Half,
+    /// 全音符。
+    Whole,
 }
 
 /// 一个符头候选。
@@ -87,7 +91,7 @@ impl InkSum {
 }
 
 /// 一行谱管的纵向范围：到上下邻行的中点为止（两行之间的加线音归近的那一行）。
-fn band(f: &PageFrame, si: usize) -> (f64, f64) {
+pub(crate) fn band(f: &PageFrame, si: usize) -> (f64, f64) {
     let s = &f.staves[si];
     let x = (s.left + s.right) / 2.0;
     let lo = if si > 0 { (f.staves[si - 1].bottom(x) + s.top(x)) / 2.0 } else { 0.0 };
@@ -163,21 +167,42 @@ pub fn seeds(f: &PageFrame, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
     kept
 }
 
-/// 谱表外的头要有加线作证：朝谱表那一侧最近的一条加线位置上，头的左边或右边伸出一截细横墨。
-pub fn ledger_ok(f: &PageFrame, h: &Head) -> bool {
+/// 谱表外的头要有加线作证：从谱表到头之间的**每一条**加线位置上，头的左边或右边都伸出一截细横墨
+/// （纵向不比谱线厚多少）。歌词、标题里的笔画凑不齐这一串。`half_w`：头的半宽（像素）。
+pub fn ledger_ok(f: &PageFrame, h: &Head, half_w: f64) -> bool {
     if (-1..=9).contains(&h.pos) {
         return true;
     }
     let s = &f.staves[h.staff];
     let sp = s.space();
-    let line = if h.pos < 0 { h.pos + (h.pos & 1) } else { h.pos - (h.pos & 1) };
-    let y = s.y_of(h.x, line as f64).round() as i64;
+    let last = if h.pos < 0 { h.pos + (h.pos & 1) } else { h.pos - (h.pos & 1) };
     let slack = ((0.15 * sp).round() as i64).max(1);
-    let (a, b) = ((0.7 * sp).round() as i64, (0.9 * sp).round() as i64);
+    let max_t = (f.unit.thick * 2.0).ceil() as i64 + 1;
+    let (a, b) = ((half_w + 0.05 * sp).round() as i64, (half_w + 0.3 * sp).round() as i64);
     let x = h.x.round() as i64;
-    let side = |dir: i64| (a..=b).any(|d| (-slack..=slack).any(|dy| f.ink.at(x + dir * d, y + dy) == INK));
-    side(-1) || side(1)
+    // (px, py) 处是细横墨：有墨，所在纵向墨段不厚
+    let thin = |px: i64, py: i64| {
+        if f.ink.at(px, py) != INK {
+            return false;
+        }
+        let (mut u, mut d) = (py, py);
+        while py - u <= max_t && f.ink.at(px, u - 1) == INK {
+            u -= 1;
+        }
+        while d - py <= max_t && f.ink.at(px, d + 1) == INK {
+            d += 1;
+        }
+        d - u + 1 <= max_t
+    };
+    let lines: Vec<i32> = if h.pos < 0 { (last..=-2).step_by(2).collect() } else { (10..=last).step_by(2).collect() };
+    lines.iter().all(|&line| {
+        let y = s.y_of(h.x, line as f64).round() as i64;
+        [-1, 1].iter().any(|&dir| (a..=b).any(|d| (-slack..=slack).any(|dy| thin(x + dir * d, y + dy))))
+    })
 }
+
+/// 实心头的半宽（相对线距）：查加线用。
+pub const FILLED_HALF_W: f64 = 0.65;
 
 /// 符头模板：`w × h` 格，每格是「此处是墨」的概率。
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,11 +1,12 @@
-//! 音符数据（M3）。现到 4a：实心头候选（[`heads`]）→ 挂符干、同干成和弦（[`stems`]）。时值先一律四分，
-//! 空心头、休止、符杠符尾、临时记号与附点、裁决、满拍随后逐步加。
+//! 音符数据（M3）。现到 4b：实心头候选（[`heads`]）、空心头与全音符（[`hollow`]）→ 挂符干、同干成和弦（[`stems`]）。
+//! 时值只按头型（四分 / 二分 / 全），休止、符杠符尾、临时记号与附点、裁决、满拍随后逐步加。
 pub mod heads;
+pub mod hollow;
 pub mod stems;
 
 use crate::attrs::RowAttrs;
 use crate::page::PageFrame;
-use heads::{Head, InkSum, Template};
+use heads::{Head, HeadKind, InkSum, Template, FILLED_HALF_W};
 use serde::{Deserialize, Serialize};
 use stems::Stem;
 
@@ -16,6 +17,13 @@ const TPL_DROP: f64 = 0.2;
 /// 两个和弦的头横向相隔不到这么多（相对线距）的算同一拍点（上下两个声部各自带干）。
 pub const SAME_ONSET: f64 = 0.8;
 
+impl Chord {
+    /// 头型（同干的头按第一个算）。
+    pub fn kind(&self) -> HeadKind {
+        self.heads[0].kind
+    }
+}
+
 /// 一个和弦（同一根干上的头；单音也是）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chord {
@@ -23,7 +31,8 @@ pub struct Chord {
     pub x: f64,
     /// 自上而下。
     pub heads: Vec<Head>,
-    pub stem: Stem,
+    /// 全音符没有干。
+    pub stem: Option<Stem>,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -35,16 +44,16 @@ pub struct RowNotes {
 /// 一页各行谱的音符（与 `staves` 同序）。
 pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
     let sum = InkSum::new(&f.ink);
-    // 各行的种子与各自的干
+    let from_of = |si: usize| attrs.get(si).map_or(f.staves[si].left, |a| a.lead_end.max(f.staves[si].left));
+    // 实心头：各行的种子与各自的干
     let mut cands: Vec<(Head, Stem)> = Vec::new();
     for si in 0..f.staves.len() {
         let sp = f.staves[si].space();
-        let from = attrs.get(si).map_or(f.staves[si].left, |a| a.lead_end.max(f.staves[si].left));
-        for h in heads::seeds(f, &sum, si, from) {
-            if !heads::ledger_ok(f, &h) {
+        for h in heads::seeds(f, &sum, si, from_of(si)) {
+            if !heads::ledger_ok(f, &h, FILLED_HALF_W * sp) {
                 continue;
             }
-            if let Some(st) = stems::find_stem(&f.ink, &h, sp, f.unit.thick) {
+            if let Some(st) = stems::find_stem(&f.ink, &h, sp, f.unit.thick, None) {
                 cands.push((h, st));
             }
         }
@@ -59,19 +68,26 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
     let scores: Vec<f64> = cands.iter().map(|(h, _)| h.score).collect();
     let floor = dolce_omr_core::geom::median(&scores, 0.0) - TPL_DROP;
     cands.retain(|(h, _)| h.score >= floor);
+    let mut all: Vec<(Head, Option<Stem>)> = cands.into_iter().map(|(h, s)| (h, Some(s))).collect();
+    // 空心头与全音符
+    let holes = hollow::page_holes(f);
+    for si in 0..f.staves.len() {
+        all.extend(hollow::hollow_heads(f, &holes, si, from_of(si)));
+    }
 
     let mut rows: Vec<RowNotes> = (0..f.staves.len()).map(|_| RowNotes::default()).collect();
-    for (h, st) in cands {
+    for (h, st) in all {
         let sp = f.staves[h.staff].space();
         let row = &mut rows[h.staff];
-        let hit = row.chords.iter_mut().find(|c| (c.stem.x - st.x).abs() as f64 <= SAME_STEM * sp && c.stem.top <= st.bottom && st.top <= c.stem.bottom);
-        match hit {
-            Some(c) => {
-                c.stem.top = c.stem.top.min(st.top);
-                c.stem.bottom = c.stem.bottom.max(st.bottom);
+        let hit = st.and_then(|st| row.chords.iter_mut().find(|c| c.stem.is_some_and(|cs| (cs.x - st.x).abs() as f64 <= SAME_STEM * sp && cs.top <= st.bottom && st.top <= cs.bottom)));
+        match (hit, st) {
+            (Some(c), Some(st)) => {
+                let cs = c.stem.as_mut().unwrap();
+                cs.top = cs.top.min(st.top);
+                cs.bottom = cs.bottom.max(st.bottom);
                 c.heads.push(h);
             }
-            None => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st }),
+            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st }),
         }
     }
     for row in rows.iter_mut() {

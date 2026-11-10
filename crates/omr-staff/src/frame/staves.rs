@@ -21,6 +21,8 @@ const MAX_THICK: f64 = 0.45;
 const SPACE_TOL: f64 = 0.2;
 /// 同一轨迹相邻两次命中，中心 y 至多挪多少（相对线距）。
 const TRACK_STEP: f64 = 0.5;
+/// 五连的首末两条线要往左右都延续：在这几处（相对线距）各探一下有没有墨。加线只有两格来长，一条加线 + 四条谱线凑出的假五连过不了。
+const CONT_PROBES: [f64; 2] = [1.6, 2.6];
 /// 轨迹允许中断的宽度（相对线距）：密集的音符、符杠会把几列遮住。
 const TRACK_GAP: f64 = 3.0;
 /// 两截轨迹中心差不过这么多格：横向不重叠是同一行谱断成几截，重叠的是错开一条线凑出的假五连。
@@ -50,6 +52,22 @@ impl Hit {
     }
 }
 
+/// 五连的首末线在左右两边都接着走（见 `CONT_PROBES`）。探到图外的那一侧不查；斜页容上下各半格。
+fn continues(bin: &Binary, h: &Hit) -> bool {
+    let r = (h.space * 0.5).round() as i64;
+    [h.ys[0], h.ys[4]].iter().all(|&y| {
+        [-1.0, 1.0].iter().all(|&dir| {
+            CONT_PROBES.iter().all(|&d| {
+                let x = h.x as f64 + dir * d * h.space;
+                if x < 0.0 || x >= bin.w as f64 {
+                    return true;
+                }
+                (-r..=r).any(|dy| bin.ink(x as i64, y.round() as i64 + dy))
+            })
+        })
+    })
+}
+
 /// 找一页的谱表；一行都凑不出（封面、歌词页、简谱页）回 None。谱表自上而下排好。
 pub fn find_staves(bin: &Binary) -> Option<(Unit, Vec<Staff>)> {
     let max_space = MAX_SPACE.max((bin.w.max(bin.h) / 50) as f64);
@@ -58,7 +76,7 @@ pub fn find_staves(bin: &Binary) -> Option<(Unit, Vec<Staff>)> {
         return None;
     }
     let space = median(&hits.iter().map(|h| h.space).collect::<Vec<_>>(), 0.0);
-    let hits: Vec<Hit> = hits.into_iter().filter(|h| (h.space - space).abs() <= space * SPACE_TOL).collect();
+    let hits: Vec<Hit> = hits.into_iter().filter(|h| (h.space - space).abs() <= space * SPACE_TOL && continues(bin, h)).collect();
     let cols = bin.w.div_ceil(COL_STEP);
     let mut tracks = build_tracks(hits, space);
     tracks.sort_by_key(|t| std::cmp::Reverse(t.len()));

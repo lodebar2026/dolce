@@ -8,12 +8,10 @@ use serde::{Deserialize, Serialize};
 const EDGE_ROW: f64 = 0.22;
 /// 头的左右缘最远离中心多远（相对线距）。
 const EDGE_CAP: f64 = 1.0;
-/// 离中心不到这么远（相对线距）的列在头肚子里，不当符干。
-const INNER: f64 = 0.3;
 /// 符干从头中心起至少伸出这么长（相对线距）。
 const MIN_LEN: f64 = 2.0;
 /// 其中细的一段至少这么长（相对线距）；细 = 横向墨宽不过 `THIN_W`。
-const MIN_THIN: f64 = 1.2;
+const MIN_THIN: f64 = 0.8;
 const THIN_W: f64 = 0.35;
 
 /// 一根符干。
@@ -55,34 +53,33 @@ fn run_end(ink: &InkLayers, x: i64, y: i64, dir: i64, gap: i64) -> i64 {
     }
 }
 
-/// 给一个头找符干。`sp`：所在行的线距；`thick`：谱线线宽。
-pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64) -> Option<Stem> {
+/// 给一个头找符干。`sp`：所在行的线距；`thick`：谱线线宽；`edges`：头的左右缘（空心头由外圈量得；实心头给 None，在这里按两行墨量）。
+pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>) -> Option<Stem> {
     let (cx, cy) = (h.x.round() as i64, h.y.round() as i64);
     let off = ((EDGE_ROW * sp).round() as i64).max(1);
     let rows = [cy - off, cy + off];
     let cap = (EDGE_CAP * sp) as i64;
-    let (mut xl, mut xr) = (cx, cx);
-    for &r in &rows {
-        let (mut a, mut b) = (cx, cx);
-        while cx - a < cap && ink.at(a - 1, r) == INK {
-            a -= 1;
+    let (xl, xr) = edges.unwrap_or_else(|| {
+        let (mut xl, mut xr) = (cx, cx);
+        for &r in &rows {
+            let (mut a, mut b) = (cx, cx);
+            while cx - a < cap && ink.at(a - 1, r) == INK {
+                a -= 1;
+            }
+            while b - cx < cap && ink.at(b + 1, r) == INK {
+                b += 1;
+            }
+            xl = xl.min(a);
+            xr = xr.max(b);
         }
-        while b - cx < cap && ink.at(b + 1, r) == INK {
-            b += 1;
-        }
-        xl = xl.min(a);
-        xr = xr.max(b);
-    }
-    let inner = (INNER * sp).round() as i64;
+        (xl, xr)
+    });
     let gap = (thick.ceil() as i64).max(1);
     let thin_w = ((THIN_W * sp) as i64).max((thick * 2.5) as i64);
     let half = (0.5 * sp).round() as i64;
     // (细段长, 干)
     let mut best: Option<(i64, Stem)> = None;
     for x in xl..=xr {
-        if (x - cx).abs() < inner {
-            continue;
-        }
         let Some(&r0) = rows.iter().find(|&&r| ink.at(x, r) == INK) else { continue };
         let (top, bottom) = (run_end(ink, x, r0, -1, gap), run_end(ink, x, r0, 1, gap));
         if ((cy - top).max(bottom - cy) as f64) < MIN_LEN * sp {

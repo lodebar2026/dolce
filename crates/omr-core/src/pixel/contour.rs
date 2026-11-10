@@ -96,6 +96,11 @@ pub fn contour_features(labels: &[i32], w: usize, h: usize, boxes: &[i32]) -> Ve
 
 /// 整页：从四边洪泛掉通到页外的背景，剩下的背景团（4 邻接）面积够 `min_area` 的就是孔。返回 `[x, y, w, h] * n`，按光栅序。
 pub fn find_holes(data: &[u8], w: usize, h: usize, min_area: u32) -> Vec<i32> {
+    find_holes_area(data, w, h, min_area).chunks_exact(5).flat_map(|c| [c[0], c[1], c[2], c[3]]).collect()
+}
+
+/// 同 [`find_holes`]，每个孔多带面积：`[x, y, w, h, area] * n`。
+pub fn find_holes_area(data: &[u8], w: usize, h: usize, min_area: u32) -> Vec<i32> {
     let mut blocked: Vec<u8> = data.iter().map(|&v| (v != 0) as u8).collect();
     let mut stack: Vec<u32> = Vec::new();
     let push = |i: usize, blocked: &mut Vec<u8>, stack: &mut Vec<u32>| {
@@ -163,7 +168,7 @@ pub fn find_holes(data: &[u8], w: usize, h: usize, min_area: u32) -> Vec<i32> {
                 }
             }
             if area >= min_area {
-                out.extend_from_slice(&[min_x as i32, min_y as i32, (max_x - min_x + 1) as i32, (max_y - min_y + 1) as i32]);
+                out.extend_from_slice(&[min_x as i32, min_y as i32, (max_x - min_x + 1) as i32, (max_y - min_y + 1) as i32, area as i32]);
             }
         }
     }

@@ -3,6 +3,7 @@
 #[path = "common/mod.rs"]
 mod common;
 use common::*;
+use dolce_omr_staff::notes::heads::HeadKind;
 use dolce_omr_staff::page::recognize_page;
 
 /// TS `syms` 阶段某种码的框 (x, y, w, h)。
@@ -11,7 +12,9 @@ fn ts_syms(snap: &serde_json::Value, page: usize, code: &str) -> Vec<(f64, f64, 
     s.lines()
         .filter_map(|l| {
             let v: serde_json::Value = serde_json::from_str(l).ok()?;
-            if v["code"].as_str()? != code {
+            let c = v["code"].as_str()?;
+            // `hollow`：二分与全音符合起来比（TS 的头型码在挂干之前定，全音符有的记成 noteheadHalf）
+            if !(c == code || (code == "hollow" && (c == "noteheadHalf" || c == "noteheadWhole"))) {
                 return None;
             }
             let b = &v["box"];
@@ -25,6 +28,12 @@ fn main() {
     let corpus = a.get(1).cloned().unwrap_or("chorus".into());
     let only = a.get(2).cloned().unwrap_or_default();
     let code = a.get(3).cloned().unwrap_or("noteheadBlack".into());
+    let kinds: &[HeadKind] = match code.as_str() {
+        "noteheadHalf" => &[HeadKind::Half],
+        "noteheadWhole" => &[HeadKind::Whole],
+        "hollow" => &[HeadKind::Half, HeadKind::Whole],
+        _ => &[HeadKind::Filled],
+    };
     let verbose = std::env::var("OMR_V").is_ok();
     let (mut ts_n, mut rs_n, mut hit) = (0usize, 0usize, 0usize);
     let mut per: Vec<(String, usize, usize, usize)> = Vec::new();
@@ -33,7 +42,7 @@ fn main() {
         let sp = page.frame.unit.space;
         let k = ts_scale(snap, pn, sp);
         let ts = ts_syms(snap, pn, &code);
-        let heads: Vec<(f64, f64, i32, f64)> = page.notes.iter().flat_map(|r| r.chords.iter().flat_map(|c| c.heads.iter().map(|h| (h.x, h.y, h.pos, h.score)))).collect();
+        let heads: Vec<(f64, f64, i32, f64)> = page.notes.iter().flat_map(|r| r.chords.iter().flat_map(|c| c.heads.iter().filter(|h| kinds.contains(&h.kind)).map(|h| (h.x, h.y, h.pos, h.score)))).collect();
         let mut used = vec![false; heads.len()];
         let mut miss = Vec::new();
         for &(x, y, w, h) in &ts {
