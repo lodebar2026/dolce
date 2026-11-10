@@ -2,7 +2,8 @@
 #[path = "common/mod.rs"]
 mod common;
 use common::*;
-use dolce_omr_staff::notes::heads::{ledger_ok, seeds, InkSum};
+use dolce_omr_staff::notes::heads::{seeds, InkSum};
+use dolce_omr_staff::notes::ledgers::ledger_ok;
 use dolce_omr_staff::notes::hollow::{hollow_heads_traced, page_holes};
 use dolce_omr_staff::notes::stems::find_stem;
 use dolce_omr_staff::page::recognize_page;
@@ -20,6 +21,7 @@ fn main() {
         let f = &page.frame;
         let sum = InkSum::new(&f.ink);
         let holes = page_holes(f);
+        let claims = dolce_omr_staff::notes::resolve::Claims::new(f);
         for si in 0..f.staves.len() {
             let s = &f.staves[si];
             let sp = s.space();
@@ -32,11 +34,11 @@ fn main() {
                 if (h.x - x).abs() > r * sp || (h.y - y).abs() > r * sp {
                     continue;
                 }
-                let st = find_stem(&f.ink, &h, sp, f.unit.thick, None);
+                let st = find_stem(&f.ink, &h, sp, f.unit.thick, None, &|x| claims.bar_col(si, x));
                 let kept = page.notes[si].chords.iter().any(|c| c.heads.iter().any(|k| (k.x - h.x).abs() < 3.0 && k.pos == h.pos));
                 println!("  种子 ({:.0}, {:.0}) 位 {} 满 {:.2} 加线 {} 干 {:?} → {}", h.x, h.y, h.pos, h.fill, ledger_ok(f, &h, 0.65 * sp), st, if kept { "留" } else { "丢" });
             }
-            hollow_heads_traced(f, &holes, si, from, &mut |(hx, hy, hw, hh), why| {
+            hollow_heads_traced(f, &holes, &claims, si, from, &mut |(hx, hy, hw, hh), why| {
                 if (hx as f64 + hw as f64 / 2.0 - x).abs() <= r * sp && (hy as f64 + hh as f64 / 2.0 - y).abs() <= r * sp {
                     println!("  孔 {hx},{hy} {hw}×{hh}：{why}");
                 }

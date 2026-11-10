@@ -4,7 +4,9 @@
 //! 孔照样是完整的一个（头的环与谱线交叉处纵向墨段长，是墨，环不断）。
 //! 孔落在音级格点上、外圈（孔加上下左右的环壁）像符头那么大的才要：升降还原号的孔外圈窄，字母的孔在谱表外没有加线作证。
 //! 有干的是二分音符；没干、所在墨块就是孤立一个环的是全音符。
-use super::heads::{band, ledger_ok, Head, HeadKind, POS_MAX, POS_MIN};
+use super::heads::{band, Head, HeadKind, POS_MAX, POS_MIN};
+use super::ledgers::ledger_ok;
+use super::resolve::Claims;
 use super::stems::{find_stem, Stem};
 use crate::frame::ink::LINE;
 use crate::page::PageFrame;
@@ -129,12 +131,12 @@ fn wall(img: &Binary, x: i64, y: i64, dx: i64, dy: i64, half: i64, depth: i64, c
 }
 
 /// 一行谱的空心头与全音符（各带找到的干；全音符没有）。
-pub fn hollow_heads(f: &PageFrame, holes: &Holes, si: usize, x_from: f64) -> Vec<(Head, Option<Stem>)> {
-    hollow_heads_traced(f, holes, si, x_from, &mut |_, _| {})
+pub fn hollow_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64) -> Vec<(Head, Option<Stem>)> {
+    hollow_heads_traced(f, holes, claims, si, x_from, &mut |_, _| {})
 }
 
 /// 同 [`hollow_heads`]，每个落在本行范围里的孔在哪一关被丢（或留下）报给 `trace(孔, 说明)`：排查用。
-pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, si: usize, x_from: f64, trace: &mut dyn FnMut((i64, i64, i64, i64), String)) -> Vec<(Head, Option<Stem>)> {
+pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64, trace: &mut dyn FnMut((i64, i64, i64, i64), String)) -> Vec<(Head, Option<Stem>)> {
     let s = &f.staves[si];
     let sp = s.space();
     let (lo, hi) = band(f, si);
@@ -194,7 +196,7 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, si: usize, x_from: f64,
             trace(hole, format!("位 {pos} 在谱表外、没有加线"));
             continue;
         }
-        match find_stem(&f.ink, &head, sp, f.unit.thick, Some((xl, xr))) {
+        match find_stem(&f.ink, &head, sp, f.unit.thick, Some((xl, xr)), &|x| claims.bar_col(si, x)) {
             Some(st) => {
                 trace(hole, format!("二分，位 {pos}，干 {st:?}"));
                 out.push((head, Some(st)))

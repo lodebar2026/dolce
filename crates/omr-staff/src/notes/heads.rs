@@ -101,7 +101,7 @@ pub(crate) fn band(f: &PageFrame, si: usize) -> (f64, f64) {
     (lo, hi)
 }
 
-/// 一行谱的种子（`x_from` 之右：行首区的谱号、调号、拍号不进候选）。
+/// 一行谱的种子（`x_from` 之右：行首区的谱号、调号、拍号不进候选）。同一处墨在相邻音级上都撑得满的各出一个，不在这里取舍。
 pub fn seeds(f: &PageFrame, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
     let s = &f.staves[si];
     let sp = s.space();
@@ -157,54 +157,27 @@ pub fn seeds(f: &PageFrame, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
         }
         close(&mut run);
     }
-    // 同一处墨在相邻音级上都撑得满的（头偏大、落在两格点之间）：留更满的
-    out.sort_by(|a, b| b.fill.total_cmp(&a.fill).then(a.x.total_cmp(&b.x)));
+    out.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.pos.cmp(&b.pos)));
+    out
+}
+
+/// 两个候选争同一处墨：横向相隔不到 `SAME_X` 格、音级差不过 1（头偏大、落在两格点之间时相邻音级上都撑得满）。
+pub fn same_ink(a: &Head, b: &Head, sp: f64) -> bool {
+    a.staff == b.staff && (a.x - b.x).abs() < SAME_X * sp && (a.pos - b.pos).abs() <= 1
+}
+
+/// 争同一处墨的种子只留最满的一个（自举模板取样用：这时还没有模板分；正式的取舍在 [`super::resolve`] 里按模板分做）。
+pub fn fullest(mut seeds: Vec<Head>, sp: f64) -> Vec<Head> {
+    seeds.sort_by(|a, b| b.fill.total_cmp(&a.fill).then(a.x.total_cmp(&b.x)));
     let mut kept: Vec<Head> = Vec::new();
-    for h in out {
-        if !kept.iter().any(|k| (k.x - h.x).abs() < SAME_X * sp && (k.pos - h.pos).abs() <= 1) {
+    for h in seeds {
+        if !kept.iter().any(|k| same_ink(k, &h, sp)) {
             kept.push(h);
         }
     }
     kept.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.pos.cmp(&b.pos)));
     kept
 }
-
-/// 谱表外的头要有加线作证：从谱表到头之间的**每一条**加线位置上，头的左边或右边都伸出一截细横墨
-/// （纵向不比谱线厚多少）。歌词、标题里的笔画凑不齐这一串。`half_w`：头的半宽（像素）。
-pub fn ledger_ok(f: &PageFrame, h: &Head, half_w: f64) -> bool {
-    if (-1..=9).contains(&h.pos) {
-        return true;
-    }
-    let s = &f.staves[h.staff];
-    let sp = s.space();
-    let last = if h.pos < 0 { h.pos + (h.pos & 1) } else { h.pos - (h.pos & 1) };
-    let slack = ((0.15 * sp).round() as i64).max(1);
-    let max_t = (f.unit.thick * 2.0).ceil() as i64 + 1;
-    let (a, b) = ((half_w + 0.05 * sp).round() as i64, (half_w + 0.3 * sp).round() as i64);
-    let x = h.x.round() as i64;
-    // (px, py) 处是细横墨：有墨，所在纵向墨段不厚
-    let thin = |px: i64, py: i64| {
-        if f.ink.at(px, py) != INK {
-            return false;
-        }
-        let (mut u, mut d) = (py, py);
-        while py - u <= max_t && f.ink.at(px, u - 1) == INK {
-            u -= 1;
-        }
-        while d - py <= max_t && f.ink.at(px, d + 1) == INK {
-            d += 1;
-        }
-        d - u + 1 <= max_t
-    };
-    let lines: Vec<i32> = if h.pos < 0 { (last..=-2).step_by(2).collect() } else { (10..=last).step_by(2).collect() };
-    lines.iter().all(|&line| {
-        let y = s.y_of(h.x, line as f64).round() as i64;
-        [-1, 1].iter().any(|&dir| (a..=b).any(|d| (-slack..=slack).any(|dy| thin(x + dir * d, y + dy))))
-    })
-}
-
-/// 实心头的半宽（相对线距）：查加线用。
-pub const FILLED_HALF_W: f64 = 0.65;
 
 /// 符头模板：`w × h` 格，每格是「此处是墨」的概率。
 #[derive(Clone, Debug, Serialize, Deserialize)]

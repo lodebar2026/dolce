@@ -53,8 +53,9 @@ fn run_end(ink: &InkLayers, x: i64, y: i64, dir: i64, gap: i64) -> i64 {
     }
 }
 
-/// 给一个头找符干。`sp`：所在行的线距；`thick`：谱线线宽；`edges`：头的左右缘（空心头由外圈量得；实心头给 None，在这里按两行墨量）。
-pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>) -> Option<Stem> {
+/// 给一个头找符干。`sp`：所在行的线距；`thick`：谱线线宽；`edges`：头的左右缘（空心头由外圈量得；实心头给 None，在这里按两行墨量）；
+/// `taken(x)`：这一列的竖笔已经归了别的元素（定下的小节线，见 [`super::resolve::Claims`]），不当符干。
+pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
     let (cx, cy) = (h.x.round() as i64, h.y.round() as i64);
     let off = ((EDGE_ROW * sp).round() as i64).max(1);
     let rows = [cy - off, cy + off];
@@ -80,6 +81,9 @@ pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64, edges: Option<(
     // (细段长, 干)
     let mut best: Option<(i64, Stem)> = None;
     for x in xl..=xr {
+        if taken(x) {
+            continue;
+        }
         let Some(&r0) = rows.iter().find(|&&r| ink.at(x, r) == INK) else { continue };
         let (top, bottom) = (run_end(ink, x, r0, -1, gap), run_end(ink, x, r0, 1, gap));
         if ((cy - top).max(bottom - cy) as f64) < MIN_LEN * sp {
