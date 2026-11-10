@@ -11,6 +11,8 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 
 | crate | 作用 |
 |---|---|
+| `crates/omr-build` | 构建脚本工具：`fingerprint(名, 目录…)` 按源码目录算阶段代码指纹，导出 `OMR_CODE_<名>`（阶段缓存键的一部分；上游 crate 的目录要一并列上） |
+| `crates/omr-cli` | 命令行 `omr-cli`：现在只有 `regress`（见「回归」） |
 | `crates/omr-source` | 取数层（迁移中）：现在只有 PDFium 能力验证的探针 `examples/rawglyph.rs`（逐字取字形轮廓）、`examples/images.rs`（内嵌图原始像素与页上矩阵） |
 | `crates/omr-core` | 基础层，不依赖平台（要能编到 wasm）：`image`（二值图、灰度图、矩形）、`geom`（对应 `omrkit/geom.ts`）、`pixel`（像素内核，原 `native/omrkernels/src/core`）、`js`（数值口径）、`stage`（阶段缓存） |
 
@@ -33,10 +35,21 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 ## 回归
 
 ```bash
-cd crates && cargo test          # Rust 单元测试
-npm run build:native && npm test -- omrkit/kernels   # 像素内核 TS ↔ Rust 逐项比对（私有仓库用例）
+cd crates && cargo test                                   # 单元测试
+cargo run --release -p dolce-omr-cli -- regress <jianpu|solo|chorus|xinbian> [--only=子串] [--jobs=N]
+npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ Rust 逐项比对（私有仓库用例）
 ```
+
+`regress` 的流程：
+1. 曲目由私有仓库 `rust-omr/corpus.mjs` 列（照判分脚本同一套找曲规则，不在 Rust 里另抄）。
+2. 各曲并行识别，产物落盘到 `dev/data/rust-omr/runs/<档>/`：五线谱 `<曲>.rec.musicxml` + `<曲>.rec.json`（版面摘要，形状见私有仓库 `chorus-opslib.mjs::recLayoutOf`），
+   简谱 `<曲>.rec.json`（`RecognizedScore`，由 `rust-omr/rec-to-123.mjs` 走 `omrEmitter("123")` 转成 `.rec.123`）。
+3. 判分脚本离线读（`solo-ops.mjs --from`、`chorus-ops.mjs --from --out-dir`），不碰 `dev/data` 下别的报告。
+4. 与 TS 基线逐曲比：基线是 `rust-omr/archive-baseline.sh` 在分支起点（main `c7c02820`）归档的读数与识别产物（`dev/data/rust-omr/ref-c7c02820/`）。
+   `--replay=<归档目录下某档>` 不识别、拿归档的 TS 产物走一遍，用来自测流程（读数应与基线逐曲相同）。
+
+判分脚本、语料、基线都在私有仓库；判分要 `web/`（main 检出）里的 `out/cli/j123.js` / `omr.js`，`--web=` 可另指。
 
 ## 已知限制
 
-只有基础层；取数、OCR、谱面元素类、两条路线、歌本切分、命令行与回归 runner 都还没有。
+只有基础层、取数验证探针与回归骨架；取数层正式实现、OCR、谱面元素类、两条路线、歌本切分都还没有。
