@@ -1,7 +1,8 @@
-//! 音符数据（M3）。现到 4b：实心头候选（[`heads`]）、空心头与全音符（[`hollow`]）→ 挂符干、同干成和弦（[`stems`]）。
-//! 时值只按头型（四分 / 二分 / 全），休止、符杠符尾、临时记号与附点、裁决、满拍随后逐步加。
+//! 音符数据（M3）。现到 4c：实心头候选（[`heads`]）、空心头与全音符（[`hollow`]）→ 挂符干、同干成和弦（[`stems`]）；休止（[`rests`]）。
+//! 音符时值只按头型（四分 / 二分 / 全），符杠符尾、临时记号与附点、裁决、满拍随后逐步加。
 pub mod heads;
 pub mod hollow;
+pub mod rests;
 pub mod stems;
 
 use crate::attrs::RowAttrs;
@@ -39,6 +40,8 @@ pub struct Chord {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RowNotes {
     pub chords: Vec<Chord>,
+    /// 休止（按 x 排）。
+    pub rests: Vec<rests::Rest>,
 }
 
 /// 一页各行谱的音符（与 `staves` 同序）。
@@ -97,6 +100,9 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
             c.x = c.heads.iter().map(|h| h.x).sum::<f64>() / c.heads.len() as f64;
         }
         row.chords.sort_by(|a, b| a.x.total_cmp(&b.x));
+    }
+    for (si, row) in rows.iter_mut().enumerate() {
+        row.rests = rests::rests(f, si, from_of(si));
     }
     rows
 }

@@ -7,7 +7,7 @@ use crate::frame::bars::BarStyle;
 use crate::page::Page;
 use dolce_omr_sheet::music::{Clef, Key};
 use crate::notes::heads::HeadKind;
-use crate::notes::SAME_ONSET;
+use crate::notes::{Chord, SAME_ONSET};
 use dolce_omr_sheet::score::{Attrs, Event, Measure, NoteType, Part, Score};
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
@@ -308,13 +308,23 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 // 现只写一个声部：横向挨着的两个和弦（上下两声部各带干）并成一个拍点
                 let mut seq_len = 0;
                 let mut last: Option<(usize, f64)> = None;
-                for ch in &page.notes[i].chords {
+                // 和弦与休止按 x 合成一条序列
+                let notes = &page.notes[i];
+                let mut items: Vec<(f64, Option<&Chord>, Option<NoteType>)> = notes.chords.iter().map(|c| (c.x, Some(c), None)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r.ntype)))).collect();
+                items.sort_by(|a, b| a.0.total_cmp(&b.0));
+                for (x, ch, rest) in items {
+                    let j = bs.iter().filter(|b| b.x < x).count().min(count - 1);
+                    let Some(ch) = ch else {
+                        ms[j].events.push(Event { pitches: vec![], ntype: rest.unwrap(), dots: 0, stem_up: None });
+                        seq_len += 1;
+                        last = None;
+                        continue;
+                    };
                     let (mut c_at, mut k_at) = (c, kk);
                     for x in a.changes.iter().filter(|x| x.x < ch.x) {
                         c_at = x.attrs.clef.unwrap_or(c_at);
                         k_at = x.attrs.key.unwrap_or(k_at);
                     }
-                    let j = bs.iter().filter(|b| b.x < ch.x).count().min(count - 1);
                     let mut ps: Vec<_> = ch.heads.iter().map(|h| {
                         let mut p = c_at.pitch_at(h.pos);
                         p.alter = k_at.alter_of(p.step);

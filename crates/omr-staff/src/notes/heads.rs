@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 pub const POS_MIN: i32 = -9;
 pub const POS_MAX: i32 = 17;
 /// 种子框的宽高（相对线距）与要求的墨占比。
-const SEED_W: f64 = 0.8;
-const SEED_H: f64 = 0.6;
-const SEED_FILL: f64 = 0.9;
+pub(crate) const SEED_W: f64 = 0.8;
+pub(crate) const SEED_H: f64 = 0.6;
+pub(crate) const SEED_FILL: f64 = 0.9;
 /// 种子框上下可挪多少（相对线距）找最满的位置。
 const SEED_SLACK: f64 = 0.1;
 /// 连着这么宽（相对线距）都撑得满的是实心块，不是符头。
