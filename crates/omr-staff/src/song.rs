@@ -7,8 +7,10 @@ use crate::frame::bars::BarStyle;
 use crate::page::Page;
 use dolce_omr_sheet::music::{Clef, Key};
 use crate::notes::meter::{self, Bar, Stats};
+use crate::notes::rests::Rest;
 use crate::notes::{Chord, RowNotes, SAME_ONSET};
-use dolce_omr_sheet::score::{measure_divisions, Attrs, Doubt, Event, Measure, NoteType, Part, Score};
+use dolce_omr_sheet::meter::{timeline, SHARED};
+use dolce_omr_sheet::score::{measure_divisions, Attrs, Doubt, Event, Measure, Part, Score};
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
 const BOUND_XTOL: f64 = 1.6;
@@ -195,6 +197,37 @@ fn page_med(page: &Page) -> f64 {
     dolce_omr_core::geom::median(&v, 0.0)
 }
 
+/// 一行谱一个小节里各元素（按 x 排好，`(x, y, 份数, 干朝向)`）的 `(起拍时刻, 声部 1 / 2)`。
+///
+/// 时间线排得通（两个声部排到同一处）的照时间线：并排的两个各归一个声部，共用的干与休止记在声部 1。
+/// 排不通的（漏了音、时值读错）不硬套时刻：横向挨着的算一个拍点，拍点依次往后排（每个占其中最短的时值），
+/// 并排的第一个（干朝上的）归声部 1、其余归声部 2——次序与各自的时值都照谱面留着。
+fn voices(items: &[(f64, f64, u32, Option<bool>)], same_dx: f64) -> Vec<(u32, u8)> {
+    let line = timeline(items, same_dx);
+    if line.even().is_some() {
+        return line.place.iter().map(|&(t, v)| (t, if v == SHARED || v == 0 { 1 } else { 2 })).collect();
+    }
+    let mut out = Vec::with_capacity(items.len());
+    let (mut i, mut t) = (0, 0);
+    while i < items.len() {
+        let mut j = i + 1;
+        while j < items.len() && items[j].0 - items[j - 1].0 < same_dx {
+            j += 1;
+        }
+        let rank = |e: &(f64, f64, u32, Option<bool>)| match e.3 {
+            Some(true) => 0,
+            None => 1,
+            Some(false) => 2,
+        };
+        let first = (i..j).min_by(|&a, &b| rank(&items[a]).cmp(&rank(&items[b])).then(items[a].1.total_cmp(&items[b].1))).unwrap();
+        // 朝向相同的并排干是一个和弦，同归一个声部
+        out.extend((i..j).map(|n| (t, if n == first || (items[n].3.is_some() && items[n].3 == items[first].3) { 1 } else { 2 })));
+        t += items[i..j].iter().map(|e| e.2).min().unwrap();
+        i = j;
+    }
+    out
+}
+
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let nparts = pages.iter().flat_map(|p| p.frame.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
@@ -345,56 +378,72 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 }
                 ms[0].attrs = at;
                 // 音：按 x 落进小节；音高按那一处现行的谱号（行首的 + x 之前的行中切换）与调号。
-                // 现只写一个声部：横向挨着的两个和弦（上下两声部各带干）并成一个拍点
+                // 一行谱至多两个声部：各元素的起拍时刻与声部由本小节的时间线定（[`voices`]）
                 let mut seq_len = 0;
-                let mut last: Option<(usize, f64)> = None;
-                // 和弦与休止按 x 合成一条序列
                 let notes = &sys_notes[k];
-                let mut items: Vec<(f64, Option<&Chord>, Option<NoteType>, u8)> = notes.chords.iter().map(|c| (c.x, Some(c), None, 0)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r.ntype), r.dots))).collect();
+                let dx = SAME_ONSET * f.staves[i].space();
+                // 和弦与休止按 x 合成一条序列
+                let mut items: Vec<(f64, Option<&Chord>, Option<&Rest>)> = notes.chords.iter().map(|c| (c.x, Some(c), None)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r)))).collect();
                 items.sort_by(|a, b| a.0.total_cmp(&b.0));
-                // 临时记号在本小节内对同一音名同一八度一直有效
-                let mut held: std::collections::HashMap<(u8, i8), i8> = std::collections::HashMap::new();
-                let mut held_at = usize::MAX;
-                for (x, ch, rest, rdots) in items {
-                    let j = bs.iter().filter(|b| b.x < x).count().min(count - 1);
-                    if j != held_at {
-                        held.clear();
-                        held_at = j;
-                    }
-                    let Some(ch) = ch else {
-                        ms[j].events.push(Event { pitches: vec![], ntype: rest.unwrap(), dots: rdots, stem_up: None });
-                        seq_len += 1;
-                        last = None;
-                        continue;
-                    };
-                    let (mut c_at, mut k_at) = (c, kk);
-                    for x in a.changes.iter().filter(|x| x.x < ch.x) {
-                        c_at = x.attrs.clef.unwrap_or(c_at);
-                        k_at = x.attrs.key.unwrap_or(k_at);
-                    }
-                    let mut ps: Vec<_> = ch.heads.iter().map(|h| {
-                        let mut p = c_at.pitch_at(h.pos);
-                        p.alter = match h.acc {
-                            Some(a) => {
-                                held.insert((p.step, p.octave), a);
-                                a
-                            }
-                            None => held.get(&(p.step, p.octave)).copied().unwrap_or(k_at.alter_of(p.step)),
+                let mut n0 = 0;
+                while n0 < items.len() {
+                    let j = bar_of(items[n0].0);
+                    let n1 = (n0..items.len()).find(|&n| bar_of(items[n].0) != j).unwrap_or(items.len());
+                    let want = bars[j].want.unwrap_or(4 * dolce_omr_sheet::score::DIVISIONS);
+                    let tl: Vec<(f64, f64, u32, Option<bool>)> = items[n0..n1]
+                        .iter()
+                        .map(|&(x, ch, rest)| match (ch, rest) {
+                            (Some(c), _) => (x, c.heads.iter().map(|h| h.y).sum::<f64>() / c.heads.len() as f64, meter::chord_dur(c), c.stem.map(|s| s.up)),
+                            (_, Some(r)) => (x, r.y, meter::rest_dur(r.ntype, r.dots, want), None),
+                            _ => unreachable!(),
+                        })
+                        .collect();
+                    let place = voices(&tl, dx);
+                    // 临时记号在本小节内对同一音名同一八度一直有效
+                    let mut held: std::collections::HashMap<(u8, i8), i8> = std::collections::HashMap::new();
+                    for (&(_, ch, rest), &(onset, voice)) in items[n0..n1].iter().zip(&place) {
+                        let Some(ch) = ch else {
+                            let r = rest.unwrap();
+                            ms[j].events.push(Event { onset, voice, ..Event::new(vec![], r.ntype, r.dots, None) });
+                            continue;
                         };
-                        p
-                    }).collect();
-                    if last.is_some_and(|(lj, lx)| lj == j && ch.x - lx < SAME_ONSET * f.staves[i].space()) {
-                        let e = ms[j].events.last_mut().unwrap();
-                        e.pitches.append(&mut ps);
-                        e.stem_up = None;
-                    } else {
-                        ms[j].events.push(Event { pitches: ps, ntype: ch.ntype(), dots: ch.dots, stem_up: ch.stem.map(|s| s.up) });
-                        seq_len += 1;
+                        let (mut c_at, mut k_at) = (c, kk);
+                        for x in a.changes.iter().filter(|x| x.x < ch.x) {
+                            c_at = x.attrs.clef.unwrap_or(c_at);
+                            k_at = x.attrs.key.unwrap_or(k_at);
+                        }
+                        let mut ps: Vec<_> = ch.heads.iter().map(|h| {
+                            let mut p = c_at.pitch_at(h.pos);
+                            p.alter = match h.acc {
+                                Some(a) => {
+                                    held.insert((p.step, p.octave), a);
+                                    a
+                                }
+                                None => held.get(&(p.step, p.octave)).copied().unwrap_or(k_at.alter_of(p.step)),
+                            };
+                            p
+                        }).collect();
+                        // 同一时刻同一声部已经有和弦的（并排两个朝向相同的干）并进去
+                        let e = match ms[j].events.iter().position(|e| e.onset == onset && e.voice == voice && !e.pitches.is_empty()) {
+                            Some(n) => {
+                                let e = &mut ms[j].events[n];
+                                e.pitches.append(&mut ps);
+                                e.stem_up = None;
+                                e
+                            }
+                            None => {
+                                ms[j].events.push(Event { onset, voice, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
+                                ms[j].events.last_mut().unwrap()
+                            }
+                        };
+                        e.pitches.sort_by_key(|p| (p.octave, p.step));
+                        e.pitches.dedup();
                     }
-                    let e = ms[j].events.last_mut().unwrap();
-                    e.pitches.sort_by_key(|p| (p.octave, p.step));
-                    e.pitches.dedup();
-                    last = Some((j, ch.x));
+                    let mut ons: Vec<u32> = ms[j].events.iter().map(|e| e.onset).collect();
+                    ons.sort_unstable();
+                    ons.dedup();
+                    seq_len += ons.len();
+                    n0 = n1;
                 }
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {

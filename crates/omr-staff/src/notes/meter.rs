@@ -117,7 +117,7 @@ impl std::ops::AddAssign for Stats {
     }
 }
 
-fn chord_dur(c: &Chord) -> u32 {
+pub fn chord_dur(c: &Chord) -> u32 {
     c.ntype().dotted(c.dots)
 }
 
@@ -144,7 +144,7 @@ fn chord_alts(c: &Chord, med: f64) -> Vec<(Op, Alt)> {
 }
 
 /// 全休止占满整小节。
-fn rest_dur(t: NoteType, dots: u8, want: u32) -> u32 {
+pub fn rest_dur(t: NoteType, dots: u8, want: u32) -> u32 {
     if t == NoteType::Whole { want } else { t.dotted(dots) }
 }
 

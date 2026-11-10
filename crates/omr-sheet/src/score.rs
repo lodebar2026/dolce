@@ -66,7 +66,26 @@ impl NoteType {
     }
 }
 
-/// 一个拍点上的事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
+/// 贴着音的奏法记号。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Art {
+    Fermata,
+    Staccato,
+    Tenuto,
+    Accent,
+    Arpeggiate,
+}
+
+/// 连音：`actual` 个音占 `normal` 个的时值；`start` / `stop` 标这一组的头尾。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tuplet {
+    pub actual: u8,
+    pub normal: u8,
+    pub start: bool,
+    pub stop: bool,
+}
+
+/// 一个事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     pub pitches: Vec<Pitch>,
@@ -74,11 +93,21 @@ pub struct Event {
     pub dots: u8,
     /// 符干朝上 / 朝下；没有干（全音符、休止）为 None。
     pub stem_up: Option<bool>,
+    /// 在小节里的起拍时刻（份）与声部（1 / 2；一行谱至多两个声部，共用的元素记在声部 1）。
+    pub onset: u32,
+    pub voice: u8,
+    pub arts: Vec<Art>,
+    pub tuplet: Option<Tuplet>,
 }
 
 impl Event {
+    pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None }
+    }
+
     pub fn divisions(&self) -> u32 {
-        self.ntype.dotted(self.dots)
+        let d = self.ntype.dotted(self.dots);
+        self.tuplet.map_or(d, |t| d * t.normal as u32 / (t.actual as u32).max(1))
     }
 }
 
@@ -127,7 +156,7 @@ pub struct Measure {
     pub attrs: Attrs,
     /// 小节中途换的（按谱面次序；现都排在小节内容之前）。
     pub mid: Vec<Attrs>,
-    /// 音与休止，按谱面次序（现只有一个声部）。
+    /// 音与休止（各带起拍时刻与声部）。
     pub events: Vec<Event>,
     /// 右小节线；`None` 即普通单线。
     pub right: Option<BarStyle>,
@@ -158,19 +187,59 @@ fn esc(s: &str) -> String {
 
 fn write_event(o: &mut String, e: &Event) {
     let dur = e.divisions();
-    let tail = |o: &mut String| {
-        let _ = writeln!(o, "        <duration>{dur}</duration>\n        <voice>1</voice>\n        <type>{}</type>", e.ntype.xml());
+    let tail = |o: &mut String, first: bool| {
+        let _ = writeln!(o, "        <duration>{dur}</duration>\n        <voice>{}</voice>\n        <type>{}</type>", e.voice.max(1), e.ntype.xml());
         for _ in 0..e.dots {
             o.push_str("        <dot/>\n");
         }
+        if let Some(t) = e.tuplet {
+            let _ = writeln!(o, "        <time-modification><actual-notes>{}</actual-notes><normal-notes>{}</normal-notes></time-modification>", t.actual, t.normal);
+        }
         if let Some(up) = e.stem_up {
             let _ = writeln!(o, "        <stem>{}</stem>", if up { "up" } else { "down" });
+        }
+        // 记号只写在和弦的第一个音上
+        let tup = e.tuplet.filter(|t| first && (t.start || t.stop));
+        if first && (!e.arts.is_empty() || tup.is_some()) {
+            o.push_str("        <notations>\n");
+            if let Some(t) = tup {
+                if t.start {
+                    o.push_str("          <tuplet type=\"start\" number=\"1\"/>\n");
+                }
+                if t.stop {
+                    o.push_str("          <tuplet type=\"stop\" number=\"1\"/>\n");
+                }
+            }
+            let inner: Vec<&str> = e
+                .arts
+                .iter()
+                .filter_map(|a| match a {
+                    Art::Staccato => Some("staccato"),
+                    Art::Tenuto => Some("tenuto"),
+                    Art::Accent => Some("accent"),
+                    _ => None,
+                })
+                .collect();
+            if !inner.is_empty() {
+                o.push_str("          <articulations>");
+                for a in inner {
+                    let _ = write!(o, "<{a}/>");
+                }
+                o.push_str("</articulations>\n");
+            }
+            if e.arts.contains(&Art::Fermata) {
+                o.push_str("          <fermata/>\n");
+            }
+            if e.arts.contains(&Art::Arpeggiate) {
+                o.push_str("          <arpeggiate/>\n");
+            }
+            o.push_str("        </notations>\n");
         }
         o.push_str("      </note>\n");
     };
     if e.pitches.is_empty() {
         o.push_str("      <note>\n        <rest/>\n");
-        tail(o);
+        tail(o, true);
         return;
     }
     for (i, p) in e.pitches.iter().enumerate() {
@@ -183,7 +252,25 @@ fn write_event(o: &mut String, e: &Event) {
             let _ = write!(o, "<alter>{}</alter>", p.alter);
         }
         let _ = writeln!(o, "<octave>{}</octave></pitch>", p.octave);
-        tail(o);
+        tail(o, i == 0);
+    }
+}
+
+/// 一个小节的事件按声部写：声部 1 写完 `<backup>` 回小节头再写声部 2；起拍时刻与游标不一致的用 `<forward>` / `<backup>` 挪。
+fn write_events(o: &mut String, events: &[Event]) {
+    let mut cur = 0u32;
+    for v in [1u8, 2] {
+        let mut es: Vec<&Event> = events.iter().filter(|e| e.voice.clamp(1, 2) == v).collect();
+        es.sort_by_key(|e| e.onset);
+        for e in es {
+            if e.onset > cur {
+                let _ = writeln!(o, "      <forward>\n        <duration>{}</duration>\n      </forward>", e.onset - cur);
+            } else if e.onset < cur {
+                let _ = writeln!(o, "      <backup>\n        <duration>{}</duration>\n      </backup>", cur - e.onset);
+            }
+            write_event(o, e);
+            cur = e.onset + e.divisions();
+        }
     }
 }
 
@@ -255,9 +342,7 @@ impl Score {
                 for a in &m.mid {
                     write_attrs(&mut o, a, false);
                 }
-                for e in &m.events {
-                    write_event(&mut o, e);
-                }
+                write_events(&mut o, &m.events);
                 if m.right.is_some() || m.repeat_end {
                     let style = m.right.unwrap_or(BarStyle::LightHeavy);
                     o.push_str("      <barline location=\"right\">\n");
@@ -297,9 +382,19 @@ mod tests {
 
     #[test]
     fn notes_xml() {
-        let e = Event { pitches: vec![Pitch { step: 0, octave: 4, alter: 1 }, Pitch { step: 2, octave: 4, alter: 0 }], ntype: NoteType::Quarter, dots: 1, stem_up: Some(true) };
+        let e = Event::new(vec![Pitch { step: 0, octave: 4, alter: 1 }, Pitch { step: 2, octave: 4, alter: 0 }], NoteType::Quarter, 1, Some(true));
         assert_eq!(e.divisions(), 36);
-        let x = Score { title: None, parts: vec![Part { measures: vec![Measure { events: vec![e], ..Default::default() }] }] }.to_musicxml();
+        // 第二声部：二分音符从小节头起
+        let mut low = Event::new(vec![Pitch { step: 0, octave: 3, alter: 0 }], NoteType::Half, 0, Some(false));
+        low.voice = 2;
+        low.arts.push(Art::Fermata);
+        let mut tri = Event::new(vec![], NoteType::Eighth, 0, None);
+        tri.onset = 36;
+        tri.tuplet = Some(Tuplet { actual: 3, normal: 2, start: true, stop: false });
+        assert_eq!(tri.divisions(), 8);
+        let x = Score { title: None, parts: vec![Part { measures: vec![Measure { events: vec![e, low, tri], ..Default::default() }] }] }.to_musicxml();
+        assert!(x.contains("<backup>\n        <duration>44</duration>") && x.contains("<voice>2</voice>") && x.contains("<fermata/>"));
+        assert!(x.contains("<actual-notes>3</actual-notes>") && x.contains("<tuplet type=\"start\" number=\"1\"/>"));
         assert!(x.contains("<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>"));
         assert!(x.contains("<chord/>\n        <pitch><step>E</step><octave>4</octave></pitch>"));
         assert!(x.contains("<duration>36</duration>") && x.contains("<dot/>") && x.contains("<stem>up</stem>"));

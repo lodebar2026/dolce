@@ -37,7 +37,12 @@ pub struct Line {
     pub end: [u32; 2],
     /// 排不通：一个声部还占着，同一拍点却并排来了两个元素。
     pub clash: bool,
+    /// 各元素（与输入同序）落在哪儿：`(起拍时刻, 声部)`，声部 0 / 1，两个声部共用的记 [`SHARED`]。
+    pub place: Vec<(u32, u8)>,
 }
+
+/// [`Line::place`] 里两个声部共用的元素（同节奏时共用一根干、一个休止）。
+pub const SHARED: u8 = 2;
 
 impl Line {
     pub fn fits(&self, want: u32) -> bool {
@@ -65,6 +70,7 @@ pub fn timeline(items: &[(f64, f64, u32, Option<bool>)], same_dx: f64) -> Line {
             j += 1;
         }
         let mut g: Vec<&(f64, f64, u32, Option<bool>)> = items[i..j].iter().collect();
+        let (g0, g1) = (i, j);
         i = j;
         // 朝上的在前、朝下的在后，没线索的按上下位置
         g.sort_by(|a, b| {
@@ -85,16 +91,21 @@ pub fn timeline(items: &[(f64, f64, u32, Option<bool>)], same_dx: f64) -> Line {
             (true, [true, true]) => {
                 line.end[0] += a.2;
                 line.end[1] += b.2;
+                // 排在前头的那个归上声部，其余归下声部
+                line.place.extend((g0..g1).map(|n| (t, if std::ptr::eq(&items[n], a) { 0 } else { 1 })));
             }
             (false, [true, true]) => {
                 let d = g.iter().map(|e| e.2).min().unwrap();
                 line.end[0] += d;
                 line.end[1] += d;
+                line.place.extend((g0..g1).map(|_| (t, SHARED)));
             }
             (two, _) => {
                 line.clash |= two;
                 let d = g.iter().map(|e| e.2).min().unwrap();
-                line.end[if free[0] { 0 } else { 1 }] += d;
+                let v = if free[0] { 0 } else { 1 };
+                line.end[v] += d;
+                line.place.extend((g0..g1).map(|_| (t, v as u8)));
             }
         }
     }
@@ -185,6 +196,7 @@ mod tests {
         let l = timeline(&[it(0.0, 36, Some(true)), it(1.0, 24, Some(false)), it(10.0, 24, Some(false)), it(15.0, 12, Some(true))], 3.0);
         assert!(l.fits(48));
         assert_eq!(l.onsets.iter().map(|o| o.1).collect::<Vec<_>>(), vec![0, 24, 36]);
+        assert_eq!(l.place, vec![(0, 0), (0, 1), (24, 1), (36, 0)]);
     }
 
     #[test]
