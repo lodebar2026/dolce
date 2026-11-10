@@ -57,6 +57,9 @@ pub struct Rest {
     pub rect: (f64, f64, f64, f64),
     /// 附点数（[`super::marks`]）。
     pub dots: u8,
+    /// 延长记号（[`super::artics`]）。
+    #[serde(default)]
+    pub arts: Vec<dolce_omr_sheet::score::Art>,
 }
 
 /// 一个墨块的像素（包围盒内，行优先）。
@@ -213,7 +216,7 @@ pub fn rests(f: &PageFrame, si: usize, x_from: f64) -> Vec<Rest> {
         let m = Mask::of(f, &ids, r, slit);
         let ntype = if bh <= BLOCK_H.1 { block(s, &m, r.y, bw, cx) } else { curvy(&m, sp, bw, bh) };
         if let Some(ntype) = ntype.filter(|t| (pos - 4.0).abs() <= CENTER_TOL || matches!(t, NoteType::Eighth | NoteType::N16th | NoteType::N32nd)) {
-            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0 });
+            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0, arts: Vec::new() });
         }
     }
     out.sort_by(|a, b| a.x.total_cmp(&b.x));

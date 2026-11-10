@@ -1,6 +1,7 @@
 //! 音符数据（M3）。现到 4g：实心头候选（[`heads`]）、空心头与全音符（[`hollow`]）、加线作证（[`ledgers`]）→ 挂符干（[`stems`]）
 //! → 裁决（[`resolve`]：归属、争同一处墨的候选取舍、同干假头）→ 成和弦；休止（[`rests`]）、符杠符尾（[`beams`]）、临时记号与附点（[`marks`]）。
 //! 满拍裁决（[`meter`]）要小节与拍号，在整曲拼接时逐系统做（[`crate::song`]）。
+pub mod artics;
 pub mod beams;
 pub mod heads;
 pub mod hollow;
@@ -64,6 +65,9 @@ pub struct Chord {
     pub beamed: bool,
     /// 附点数。
     pub dots: u8,
+    /// 贴头奏法（[`artics`]）。
+    #[serde(default)]
+    pub arts: Vec<dolce_omr_sheet::score::Art>,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -187,7 +191,7 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
                 cs.bottom = cs.bottom.max(st.bottom);
                 c.heads.push(h);
             }
-            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0 }),
+            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new() }),
         }
     }
     for row in rows.iter_mut() {
@@ -206,5 +210,6 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
     for (si, row) in rows.iter_mut().enumerate() {
         marks::marks(f, si, from_of(si), row);
     }
+    artics::artics(f, &mut rows);
     rows
 }

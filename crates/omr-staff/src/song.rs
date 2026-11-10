@@ -404,7 +404,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     for (&(_, ch, rest), &(onset, voice)) in items[n0..n1].iter().zip(&place) {
                         let Some(ch) = ch else {
                             let r = rest.unwrap();
-                            ms[j].events.push(Event { onset, voice, ..Event::new(vec![], r.ntype, r.dots, None) });
+                            ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), ..Event::new(vec![], r.ntype, r.dots, None) });
                             continue;
                         };
                         let (mut c_at, mut k_at) = (c, kk);
@@ -436,6 +436,11 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                                 ms[j].events.last_mut().unwrap()
                             }
                         };
+                        for a in &ch.arts {
+                            if !e.arts.contains(a) {
+                                e.arts.push(*a);
+                            }
+                        }
                         e.pitches.sort_by_key(|p| (p.octave, p.step));
                         e.pitches.dedup();
                     }
