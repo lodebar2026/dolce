@@ -84,10 +84,11 @@ fn main() {
             let near = |hx: f64, hy: f64, cx: f64, cy: f64| (hx - cx).abs() < sp * 0.6 && (hy - cy).abs() < sp * 0.45;
             let mut reason: Vec<Option<String>> = vec![None; all_miss.len()];
             if kinds.contains(&HeadKind::Filled) {
-                let sum = InkSum::new(&f.ink);
+                let solid = f.ink.sealed((dolce_omr_staff::notes::hollow::SLIT_AREA * f.unit.space * f.unit.space).round() as usize);
+        let sum = InkSum::new(&solid);
                 for si in 0..f.staves.len() {
                     let from = page.attrs[si].lead_end.max(f.staves[si].left);
-                    for h in seeds(f, &sum, si, from) {
+                    for h in seeds(f, &solid, &sum, si, from) {
                         for (i, &(cx, cy)) in all_miss.iter().enumerate() {
                             if !near(h.x, h.y, cx, cy) {
                                 continue;

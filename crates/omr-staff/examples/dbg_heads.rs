@@ -19,7 +19,8 @@ fn main() {
         }
         let Some(page) = recognize_page(src, None) else { return };
         let f = &page.frame;
-        let sum = InkSum::new(&f.ink);
+        let solid = f.ink.sealed((dolce_omr_staff::notes::hollow::SLIT_AREA * f.unit.space * f.unit.space).round() as usize);
+        let sum = InkSum::new(&solid);
         let holes = page_holes(f);
         let claims = dolce_omr_staff::notes::resolve::Claims::new(f);
         for si in 0..f.staves.len() {
@@ -30,7 +31,7 @@ fn main() {
             if std::env::var("OMR_CURVE").is_ok() {
                 println!("  线位 {:?} 曲线 {:?}", s.ys, s.curve.as_ref().map(|c| (c.step, c.d.iter().map(|v| (v * 10.0).round() / 10.0).collect::<Vec<_>>())));
             }
-            for h in seeds(f, &sum, si, from) {
+            for h in seeds(f, &solid, &sum, si, from) {
                 if (h.x - x).abs() > r * sp || (h.y - y).abs() > r * sp {
                     continue;
                 }

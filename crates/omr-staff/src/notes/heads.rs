@@ -101,8 +101,8 @@ pub(crate) fn band(f: &PageFrame, si: usize) -> (f64, f64) {
     (lo, hi)
 }
 
-/// 一行谱的种子（`x_from` 之右：行首区的谱号、调号、拍号不进候选）。同一处墨在相邻音级上都撑得满的各出一个，不在这里取舍。
-pub fn seeds(f: &PageFrame, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
+/// 一行谱的种子。`ink` / `sum`：量满不满用的墨层（封过口的，见 [`InkLayers::sealed`]）与它的积分图。（`x_from` 之右：行首区的谱号、调号、拍号不进候选）。同一处墨在相邻音级上都撑得满的各出一个，不在这里取舍。
+pub fn seeds(f: &PageFrame, ink: &InkLayers, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
     let s = &f.staves[si];
     let sp = s.space();
     let (bw, bh) = (((SEED_W * sp).round() as i64).max(3), ((SEED_H * sp).round() as i64).max(3));
@@ -128,7 +128,7 @@ pub fn seeds(f: &PageFrame, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
                 continue;
             }
             let yc = yc.round() as i64;
-            if f.ink.at(x, yc) != INK {
+            if ink.at(x, yc) != INK {
                 close(&mut run);
                 continue;
             }

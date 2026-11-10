@@ -16,6 +16,8 @@ use dolce_omr_core::pixel::contour::find_holes_area;
 /// 孔的宽高范围（相对线距）。
 const HOLE_W: (f64, f64) = (0.3, 1.25);
 const HOLE_H: (f64, f64) = (0.2, 1.0);
+/// 比最小的孔还小的白块（面积，相对线距的平方）不是头的内腔：实心头找候选时当墨（[`super::page_notes`]）。
+pub const SLIT_AREA: f64 = HOLE_W.0 * HOLE_H.0;
 /// 孔心离音级格点最远多少（半格为 1）。
 const GRID_TOL: f64 = 0.35;
 /// 外圈高、宽的范围（相对线距）。

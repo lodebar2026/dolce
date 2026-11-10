@@ -107,7 +107,9 @@ pub(crate) fn bridged(f: &PageFrame, b: &Blob, slit: usize) -> Vec<i32> {
 
 /// 一页各行谱的音符（与 `staves` 同序）。
 pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
-    let sum = InkSum::new(&f.ink);
+    // 实心头在封过口的墨层上找：扫描件的头里常夹着几像素的白缝，种子框、模板都按「满不满」量
+    let solid = f.ink.sealed((hollow::SLIT_AREA * f.unit.space * f.unit.space).round() as usize);
+    let sum = InkSum::new(&solid);
     let claims = Claims::new(f);
     let from_of = |si: usize| attrs.get(si).map_or(f.staves[si].left, |a| a.lead_end.max(f.staves[si].left));
     // 实心头：各行的种子（谱表外的要加线作证）与各自的干
@@ -116,7 +118,7 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
     let mut samples: Vec<(f64, f64, f64)> = Vec::new();
     for si in 0..f.staves.len() {
         let sp = f.staves[si].space();
-        let row: Vec<(Head, Stem)> = heads::seeds(f, &sum, si, from_of(si))
+        let row: Vec<(Head, Stem)> = heads::seeds(f, &solid, &sum, si, from_of(si))
             .into_iter()
             .filter(|h| ledgers::ledger_ok(f, h, FILLED_HALF_W * sp))
             .filter_map(|h| stems::find_stem(&f.ink, &h, sp, f.unit.thick, None, &|x| claims.bar_col(si, x)).map(|st| (h, st)))
@@ -125,12 +127,12 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
         cands.extend(row);
     }
     // 模板：挂得上干的种子叠出来；逐个打分，比本页中位数差得多的丢掉
-    let tpl = Template::bootstrap(&f.ink, &samples).unwrap_or_else(Template::synthetic);
+    let tpl = Template::bootstrap(&solid, &samples).unwrap_or_else(Template::synthetic);
     for (h, _) in cands.iter_mut() {
-        let (s, x, y) = tpl.best_score(&f.ink, h.x, h.y, f.staves[h.staff].space(), 1);
+        let (s, x, y) = tpl.best_score(&solid, h.x, h.y, f.staves[h.staff].space(), 1);
         (h.score, h.x, h.y) = (s, x, y);
     }
-    let sample_scores: Vec<f64> = samples.iter().map(|&(x, y, sp)| tpl.best_score(&f.ink, x, y, sp, 1).0).collect();
+    let sample_scores: Vec<f64> = samples.iter().map(|&(x, y, sp)| tpl.best_score(&solid, x, y, sp, 1).0).collect();
     let floor = dolce_omr_core::geom::median(&sample_scores, 0.0) - TPL_DROP;
     cands.retain(|(h, _)| h.score >= floor);
     // 争同一处墨的相邻音级候选：取总分最高的一组（分 = 模板分高出门槛多少）

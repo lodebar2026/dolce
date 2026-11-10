@@ -73,6 +73,57 @@ impl InkLayers {
         }
     }
 
+    /// 封口的副本：被墨（或存疑像素）围死、面积不过 `max_area` 像素的小白块填成墨。扫描件的实心笔画里常夹着几像素的白缝，
+    /// 量「这一块满不满」的判据用这份；找孔、量细笔仍用原样的。
+    pub fn sealed(&self, max_area: usize) -> InkLayers {
+        let (w, h) = (self.w, self.h);
+        let mut tri = self.tri.clone();
+        let mut seen = vec![false; w * h];
+        let mut comp: Vec<usize> = Vec::new();
+        let mut stack: Vec<usize> = Vec::new();
+        for start in 0..w * h {
+            if seen[start] || self.tri[start] != BG {
+                continue;
+            }
+            comp.clear();
+            stack.push(start);
+            seen[start] = true;
+            // 碰到页边的不算围死；过大的照样走完（标记访问），只是不记像素
+            let mut open = false;
+            while let Some(i) = stack.pop() {
+                if comp.len() <= max_area {
+                    comp.push(i);
+                }
+                let (x, y) = (i % w, i / w);
+                open |= x == 0 || y == 0 || x + 1 == w || y + 1 == h;
+                let mut go = |j: usize| {
+                    if !seen[j] && self.tri[j] == BG {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                };
+                if x > 0 {
+                    go(i - 1);
+                }
+                if x + 1 < w {
+                    go(i + 1);
+                }
+                if y > 0 {
+                    go(i - w);
+                }
+                if y + 1 < h {
+                    go(i + w);
+                }
+            }
+            if !open && comp.len() <= max_area {
+                for &i in &comp {
+                    tri[i] = INK;
+                }
+            }
+        }
+        InkLayers { w, h, tri }
+    }
+
     /// 符号的墨（存疑像素当底）：取墨块、量符号形状用。
     pub fn symbol_ink(&self) -> Binary {
         Binary { w: self.w, h: self.h, data: self.tri.iter().map(|&v| (v == INK) as u8).collect() }

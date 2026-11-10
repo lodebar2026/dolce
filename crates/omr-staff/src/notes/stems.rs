@@ -13,6 +13,8 @@ const MIN_LEN: f64 = 2.0;
 /// 其中细的一段至少这么长（相对线距）；细 = 横向墨宽不过 `THIN_W`。
 const MIN_THIN: f64 = 0.8;
 const THIN_W: f64 = 0.35;
+/// 干的列可以在量到的头缘之外这么多（相对线距）：斜着印的头，干接在头的下角 / 上角，量缘的那两行够不着它。
+const EDGE_OUT: f64 = 0.15;
 
 /// 一根符干。
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -80,11 +82,15 @@ pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64, edges: Option<(
     let half = (0.5 * sp).round() as i64;
     // (细段长, 干)
     let mut best: Option<(i64, Stem)> = None;
-    for x in xl..=xr {
+    let out = ((EDGE_OUT * sp).round() as i64).max(1);
+    for x in xl - out..=xr + out {
         if taken(x) {
             continue;
         }
-        let Some(&r0) = rows.iter().find(|&&r| ink.at(x, r) == INK) else { continue };
+        // 这一列从头里的哪一行起：量缘的两行上有墨的优先；缘外的列看头高以内离中心最近的墨
+        let inside = (xl..=xr).contains(&x);
+        let r0 = rows.iter().copied().find(|&r| inside && ink.at(x, r) == INK).or_else(|| (0..=half).flat_map(|d| [cy - d, cy + d]).find(|&r| ink.at(x, r) == INK));
+        let Some(r0) = r0 else { continue };
         let (top, bottom) = (run_end(ink, x, r0, -1, gap), run_end(ink, x, r0, 1, gap));
         if ((cy - top).max(bottom - cy) as f64) < MIN_LEN * sp {
             continue;
