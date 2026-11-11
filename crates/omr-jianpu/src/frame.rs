@@ -247,7 +247,8 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         if rows.iter().any(|r| (r.band.top(0.0) - band.top(0.0)).abs() < band.h() * 0.5) {
             continue;
         }
-        let row = RowFrame { band, cells: cut_cells(ink, &band) };
+        let mut row = RowFrame { band, cells: cut_cells(ink, &band) };
+        drop_aside(&mut row);
         let nd = row.digits().count();
         let nb = row.bars().count();
         // 带内切出的数字格多数得真读得出数字（歌词行里夹着段号、汉字的竖笔伸出带外像小节线）
@@ -283,6 +284,31 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     settle_dots(&mut rows);
     settle_bars(ink, &mut rows);
     rows
+}
+
+/// 一行旋律里不会有这么宽（带高的倍数）的空白。
+const ASIDE_GAP: f64 = 8.0;
+/// 隔在大空白外头的一小簇至多这么多格。
+const ASIDE_MAX: usize = 10;
+
+/// 与旋律印在同一排、隔着一大段空白的一小簇（「C/A 4/4」后面接前奏，行末的「D.S.」「Fine」）不是音符：
+/// 空白一侧没有小节线、格又少的那一簇从行里拿掉（它的字由页眉、上方带去读）。
+fn drop_aside(row: &mut RowFrame) {
+    let h = row.h();
+    let solid: Vec<usize> = (0..row.cells.len()).filter(|&i| row.cells[i].kind != CellKind::Other).collect();
+    let Some(k) = (1..solid.len()).max_by_key(|&k| row.cells[solid[k]].x0 - row.cells[solid[k - 1]].x1) else { return };
+    if ((row.cells[solid[k]].x0 - row.cells[solid[k - 1]].x1) as f64) < h * ASIDE_GAP {
+        return;
+    }
+    let bar = |i: &usize| matches!(row.cells[*i].kind, CellKind::Bar { .. });
+    let (left, right) = solid.split_at(k);
+    let (lb, rb) = (left.iter().any(bar), right.iter().any(bar));
+    let cut_x = (row.cells[solid[k - 1]].x1 + row.cells[solid[k]].x0) / 2;
+    if !lb && rb && left.len() <= ASIDE_MAX {
+        row.cells.retain(|c| c.x0 > cut_x);
+    } else if lb && !rb && right.len() <= ASIDE_MAX && right.len() * 2 < left.len() {
+        row.cells.retain(|c| c.x1 < cut_x);
+    }
 }
 
 /// 细竖条：宽不过带高的这么多倍。
