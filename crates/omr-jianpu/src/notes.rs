@@ -420,6 +420,9 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
                     out.claimed.push(r);
                 }
             }
+            if up && cnt == 0 && probe_high_dot(ink, n.bbox.cx(), n.bbox.y, h).is_some() {
+                cnt = 1;
+            }
             n.octave += if up { cnt } else { -cnt };
         }
         if n.digit == 0 || n.digit == crate::result::RHYTHM_DIGIT {
@@ -428,35 +431,61 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
     }
 }
 
+/// 粘在数字顶上的点，贴着数字那一行至多是它最宽一行的这么多倍。
+const NECK: f64 = 0.85;
+
 /// 在 `floor`（减时线底）下面、数字中线左右 0.32 字号的窗里找低音点：紧接着线的几行墨，横向不碰窗边、近圆、够实。
 fn probe_low_dot(ink: &Ink, cx: f64, floor: f64, h: f64) -> Option<Rect> {
+    probe_dot(ink, cx, floor.round() as i64, h, 1, false)
+}
+
+/// 高音点粘在数字顶上（粗体本、扫描件印糊的；有的上头还粘着弧）：从数字顶往上开窗找。
+fn probe_high_dot(ink: &Ink, cx: f64, top: f64, h: f64) -> Option<Rect> {
+    probe_dot(ink, cx, top.round() as i64 - 1, h, -1, true)
+}
+
+/// 从 `y0` 起朝 `dir`（1 向下、-1 向上）、在中线左右 0.32 字号的窗里找一团粘着别的墨的小圆点：
+/// 先跳过粘着的那几行毛边，再收横向不碰窗边的窄行；这一团近圆、够实，过了它是空白（`capped`：或者压着一道横贯窗子的墨——弧）。
+fn probe_dot(ink: &Ink, cx: f64, y0: i64, h: f64, dir: i64, capped: bool) -> Option<Rect> {
     let (xa, xb) = ((cx - h * 0.32).round() as i64, (cx + h * 0.32).round() as i64);
-    let y0 = floor.round() as i64;
     let span = |y: i64| {
         let a = (xa..=xb).find(|&x| ink.at(x, y))?;
         let b = (xa..=xb).rev().find(|&x| ink.at(x, y))?;
         Some((a, b))
     };
     let small = |s: (i64, i64)| s.0 > xa && s.1 < xb && ((s.1 - s.0 + 1) as f64) <= h * 0.45;
-    // 跳过线底的毛边（至多 3 行）
+    // 跳过毛边（至多 3 行）
     let mut y = y0;
-    while y < y0 + 3 && span(y).is_some_and(|s| !small(s)) {
-        y += 1;
+    while (y - y0).abs() < 3 && span(y).is_some_and(|s| !small(s)) {
+        y += dir;
     }
     let start = y;
     let (mut a, mut b, mut area) = (i64::MAX, i64::MIN, 0usize);
+    // 贴着数字那一行的宽、最宽一行的宽
+    let (mut neck, mut widest) = (0i64, 0i64);
     while let Some(s) = span(y).filter(|&s| small(s)) {
+        if y == start {
+            neck = s.1 - s.0 + 1;
+        }
+        widest = widest.max(s.1 - s.0 + 1);
         a = a.min(s.0);
         b = b.max(s.1);
         area += (s.0..=s.1).filter(|&x| ink.at(x, y)).count();
-        y += 1;
-        if (y - start) as f64 > h * 0.45 {
+        y += dir;
+        if (y - start).abs() as f64 > h * 0.45 {
             return None;
         }
     }
-    let (bw, bh) = ((b - a + 1) as f64, (y - start) as f64);
-    if b < a || span(y).is_some() || bh < h * 0.1 || bw < h * 0.1 || bw / bh < 0.55 || bw / bh > 1.8 || (area as f64) < bw * bh * 0.55 {
+    let (bw, bh) = ((b - a + 1) as f64, (y - start).abs() as f64);
+    // 过了这一团：空白；压着弧的话那一行横贯窗子
+    let beyond = span(y);
+    let open = beyond.is_none() || (capped && beyond.is_some_and(|s| s.0 <= xa || s.1 >= xb));
+    // 压着弧的那种得有脖子：圆点中间最宽，数字自己伸出带外的尖（「1」「4」的顶）贴着数字那头最宽
+    if capped && neck as f64 > widest as f64 * NECK {
         return None;
     }
-    Some(Rect::new(a as f64, start as f64, bw, bh))
+    if b < a || !open || bh < h * 0.1 || bw < h * 0.1 || bw / bh < 0.55 || bw / bh > 1.8 || (area as f64) < bw * bh * 0.55 {
+        return None;
+    }
+    Some(Rect::new(a as f64, start.min(y - dir) as f64, bw, bh))
 }
