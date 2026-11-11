@@ -38,6 +38,8 @@ pub struct Page {
     pub notes: Vec<RowNotes>,
     /// 文字：各行谱的歌词与记号、页眉。
     pub text: crate::text::PageText,
+    /// 线性符号：弧、松叶、房子。
+    pub spans: crate::spans::PageSpans,
 }
 
 /// 框架结构；页上没有谱表回 None。
@@ -68,5 +70,6 @@ pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Optio
         }
         row.chords.retain(|c| !c.heads.is_empty());
     }
-    Some(Page { frame, attrs, notes, text })
+    let spans = crate::spans::page_spans(&frame, &attrs, &notes, &text);
+    Some(Page { frame, attrs, notes, text, spans })
 }

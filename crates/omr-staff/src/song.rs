@@ -11,7 +11,10 @@ use crate::notes::rests::Rest;
 use crate::notes::{Chord, RowNotes, SAME_ONSET};
 use dolce_omr_sheet::meter::{timeline, SHARED};
 use crate::text::classify::RowText;
-use dolce_omr_sheet::score::{measure_divisions, Attrs, Dir, Doubt, Event, Lyric, Measure, Part, Score};
+use crate::spans::arcs::{Arc, ChordRef};
+use crate::spans::wedges::Wedge;
+use dolce_omr_sheet::music::Pitch;
+use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, Doubt, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
 use dolce_omr_text::lyrics::align;
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
@@ -233,9 +236,11 @@ fn voices(items: &[(f64, f64, u32, Option<bool>)], same_dx: f64) -> Vec<(u32, u8
 /// 接连这么多个音节所占的拍点上第 1 行都没有字，这一截算只印一遍的共用词。
 const SHARED_RUN: usize = 3;
 
-/// 文字能挂的一个拍点：和弦的 x、所在小节、事件下标、声部。
+/// 文字能挂的一个拍点：和弦的 x 与最上面那个头的 y、所在小节、事件下标、声部。
+#[derive(Clone, Copy)]
 struct Anchor {
     x: f64,
+    y: f64,
     bar: usize,
     event: usize,
     voice: u8,
@@ -319,6 +324,159 @@ fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, sam
     }
 }
 
+/// 房子的横线右端离谱表右端不过这么多（相对线距）、又没有收口的钩，算画到行尾（下一行接着）。
+const VOLTA_TO_END: f64 = 2.5;
+/// 松叶的端点离音头心这么远（相对线距）以内算挂在这个音上。
+const WEDGE_END: f64 = 0.5;
+/// 弧端指认和弦的容差（相对线距；满拍裁决删过头的和弦 x 会挪一点）。
+const ARC_CHORD: f64 = 0.6;
+/// 同时开着的圆滑线最多几条（MusicXML 的编号 1~6）。
+const SLUR_NUMBERS: u8 = 6;
+
+/// 弧的一端落在哪个事件上（全曲小节下标、小节内事件下标）。
+#[derive(Clone)]
+struct End {
+    measure: usize,
+    event: usize,
+    onset: u32,
+    voice: u8,
+    pitches: Vec<Pitch>,
+}
+
+/// 一条两端都定了的弧。`adjacent`：两端之间同声部没有别的音（延音线的「时间相邻」）。
+struct SpanRec {
+    a: End,
+    b: End,
+    above: bool,
+    adjacent: bool,
+}
+
+/// 画到行尾、等下一个系统接的半条弧。`last`：起端是这一行同声部的最后一个音。
+struct Pending {
+    end: End,
+    above: bool,
+    sys: usize,
+    last: bool,
+}
+
+/// 一行谱的弧挂到事件上：两端都有的直接记；画到行尾的留给下一个系统同一声部从行首来的那半条接。
+#[allow(clippy::too_many_arguments)]
+fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>) {
+    pending.retain(|p| p.sys + 1 >= sys);
+    let off = |i: usize, c: ChordRef| (anchors[i].x - c.x).abs() + (anchors[i].y - c.y).abs();
+    let find = |c: ChordRef| (0..anchors.len()).filter(|&i| (anchors[i].x - c.x).abs() <= ARC_CHORD * sp).min_by(|&a, &b| off(a, c).total_cmp(&off(b, c)));
+    let end = |i: usize| {
+        let a = &anchors[i];
+        let e = &ms[a.bar].events[a.event];
+        End { measure: from + a.bar, event: a.event, onset: e.onset, voice: a.voice, pitches: e.pitches.clone() }
+    };
+    let same = |i: usize, j: usize| anchors[i].bar == anchors[j].bar && anchors[i].event == anchors[j].event;
+    // 一段拍点里有没有与第 i 个同声部的别的音
+    let voiced = |range: std::ops::Range<usize>, i: usize| range.into_iter().any(|k| anchors[k].voice == anchors[i].voice && !same(k, i));
+    for arc in arcs {
+        match (arc.start.and_then(find), arc.end.and_then(find)) {
+            (Some(i), Some(j)) if i < j && !same(i, j) => {
+                let adjacent = !voiced(i + 1..j, i) && !voiced(i + 1..j, j);
+                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent });
+            }
+            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i) }),
+            (None, Some(j)) if arc.start.is_none() => {
+                let from_prev = |p: &Pending| p.sys + 1 == sys;
+                let Some(n) = pending.iter().position(|p| from_prev(p) && p.above == arc.above).or_else(|| pending.iter().position(from_prev)) else { continue };
+                let p = pending.remove(n);
+                recs.push(SpanRec { a: p.end, b: end(j), above: arc.above, adjacent: p.last && !voiced(0..j, j) });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 一行谱的松叶挂到事件上：起端记在离左端最近的音前；止端记在右端处或之后的第一个音前，这个音不在右端所在的小节里
+/// （松叶收在小节线前）就记在右端之前最后一个音的后面。
+fn row_wedges(wedges: &[&Wedge], anchors: &[Anchor], ms: &mut [Measure], bar_of: &dyn Fn(f64) -> usize, sp: f64) {
+    for w in wedges {
+        let Some(i) = (0..anchors.len()).min_by(|&a, &b| (anchors[a].x - w.x0).abs().total_cmp(&(anchors[b].x - w.x0).abs())) else { continue };
+        let next = anchors.iter().position(|a| a.x >= w.x1 - WEDGE_END * sp).filter(|&n| anchors[n].bar == bar_of(w.x1));
+        let (j, after) = match next {
+            Some(n) => (n, false),
+            None => match anchors.iter().rposition(|a| a.x < w.x1 - WEDGE_END * sp) {
+                Some(n) => (n, true),
+                None => continue,
+            },
+        };
+        if j < i || (j == i && !after) {
+            continue;
+        }
+        let kind = if w.cresc { score::Wedge::Crescendo } else { score::Wedge::Diminuendo };
+        ms[anchors[i].bar].events[anchors[i].event].pre.push(Dir::Wedge(kind));
+        let e = &mut ms[anchors[j].bar].events[anchors[j].event];
+        if after { &mut e.post } else { &mut e.pre }.push(Dir::Wedge(score::Wedge::Stop));
+    }
+}
+
+/// 弧朝的那一侧最外的音高（画在上方的取最高、下方的取最低）。
+fn outer(e: &End, above: bool) -> Option<Pitch> {
+    let k = |p: &&Pitch| (p.octave, p.step, p.alter);
+    if above { e.pitches.iter().max_by_key(k).copied() } else { e.pitches.iter().min_by_key(k).copied() }
+}
+
+/// 这条弧连的共同音高是不是两端里至少一端朝弧那一侧最外的音：延音线贴着它连的那个头画；
+/// 共用一根干的两个声部，上声部换音、下声部不动时罩在上面的是圆滑线——共同音在两端都不是最上面的。
+fn ties_outer(r: &SpanRec) -> bool {
+    [&r.a, &r.b].iter().any(|e| outer(e, r.above).is_some_and(|p| r.a.pitches.contains(&p) && r.b.pitches.contains(&p)))
+}
+
+/// 全曲的弧落到事件上：两端同声部相邻、共同音高在朝弧那一侧最外的是延音线（记在那个音上；同两端的其余几条各连一个音），
+/// 其余是圆滑线，同时开着的几条各用一个号。
+fn mark_spans(part: &mut Part, mut recs: Vec<SpanRec>) {
+    let key = |e: &End| (e.measure, e.onset, e.voice, e.event);
+    // 同两端的几条里，连最外那个音的排前面（和弦里一起连的其余几条跟着它算延音线）
+    recs.sort_by_key(|r| (key(&r.a), key(&r.b), !ties_outer(r)));
+    // 开着的圆滑线：(号, 止端)
+    let mut open: Vec<(u8, (usize, u32, u8, usize))> = Vec::new();
+    // 已记的延音线：(起端事件, 止端事件, 起端的音, 止端的音)
+    let mut tied: Vec<((usize, usize), (usize, usize), Pitch, Pitch)> = Vec::new();
+    let mut slurred: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    for r in &recs {
+        let (ka, kb) = ((r.a.measure, r.a.event), (r.b.measure, r.b.event));
+        let mut shared: Vec<Pitch> = r.a.pitches.iter().filter(|p| r.b.pitches.contains(p)).copied().filter(|p| !tied.iter().any(|t| t.0 == ka && t.1 == kb && (t.2 == *p || t.3 == *p))).collect();
+        shared.sort_by_key(|p| (p.octave, p.step));
+        // 和弦里几个音一起连：同两端已有延音线、这一条又没有剩下的共同音高（有个头音高读偏了），照样是延音线，各记在还空着的音上
+        let free = |e: &End, start: bool| {
+            let mut v: Vec<Pitch> = e.pitches.iter().copied().filter(|p| !tied.iter().any(|t| t.0 == ka && t.1 == kb && (if start { t.2 } else { t.3 }) == *p)).collect();
+            v.sort_by_key(|p| (p.octave, p.step));
+            if r.above { v.last().copied() } else { v.first().copied() }
+        };
+        let grouped = tied.iter().any(|t| t.0 == ka && t.1 == kb);
+        let pair = if !r.adjacent {
+            None
+        } else if !shared.is_empty() && (grouped || ties_outer(r)) {
+            // 画在上方的连最高的那个共同音，下方的连最低的
+            let p = if r.above { shared[shared.len() - 1] } else { shared[0] };
+            Some((p, p))
+        } else if grouped {
+            free(&r.a, true).zip(free(&r.b, false))
+        } else {
+            None
+        };
+        let (mark, stop_pitch) = if let Some((pa, pb)) = pair {
+            tied.push((ka, kb, pa, pb));
+            (SpanMark { kind: SpanKind::Tied, start: true, number: 1, above: r.above, pitch: Some(pa) }, Some(pb))
+        } else {
+            if slurred.contains(&(ka, kb)) || grouped {
+                continue;
+            }
+            open.retain(|o| o.1 >= key(&r.a));
+            let Some(number) = (1..=SLUR_NUMBERS).find(|n| !open.iter().any(|o| o.0 == *n)) else { continue };
+            open.push((number, key(&r.b)));
+            slurred.push((ka, kb));
+            (SpanMark { kind: SpanKind::Slur, start: true, number, above: r.above, pitch: None }, None)
+        };
+        part.measures[r.a.measure].events[r.a.event].spans.push(mark);
+        part.measures[r.b.measure].events[r.b.event].spans.push(SpanMark { start: false, pitch: stop_pitch, ..mark });
+    }
+}
+
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let nparts = pages.iter().flat_map(|p| p.frame.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
@@ -369,6 +527,11 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     // 全曲汉字词最多几行（拉丁词的行号接在它后面）
     let han_lines = pages.iter().flat_map(|p| p.text.rows.iter()).flat_map(|r| r.lyrics.iter()).filter(|l| !l.latin).map(|l| l.number).max().unwrap_or(0);
     let total_sys: usize = pages.iter().map(|p| p.frame.systems.len()).sum();
+    // 各声部的弧（两端定了的）与等下一个系统接的半条
+    let mut span_recs: Vec<Vec<SpanRec>> = (0..nparts).map(|_| Vec::new()).collect();
+    let mut pending: Vec<Vec<Pending>> = (0..nparts).map(|_| Vec::new()).collect();
+    // 各声部画到行尾、还没收的房子
+    let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.frame;
         for (si, sys) in f.systems.iter().enumerate() {
@@ -480,6 +643,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 items.sort_by(|a, b| a.0.total_cmp(&b.0));
                 // 文字要挂的拍点：这一行各和弦的 (x, 小节, 事件)
                 let mut anchors: Vec<Anchor> = Vec::new();
+                // 松叶能挂的拍点：和弦与休止
+                let mut beats: Vec<Anchor> = Vec::new();
                 let mut n0 = 0;
                 while n0 < items.len() {
                     let j = bar_of(items[n0].0);
@@ -500,6 +665,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                         let Some(ch) = ch else {
                             let r = rest.unwrap();
                             ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), ..Event::new(vec![], r.ntype, r.dots, None) });
+                            beats.push(Anchor { x: r.x, y: r.y, bar: j, event: ms[j].events.len() - 1, voice });
                             continue;
                         };
                         let (mut c_at, mut k_at) = (c, kk);
@@ -531,7 +697,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                                 ms[j].events.len() - 1
                             }
                         };
-                        anchors.push(Anchor { x: ch.x, bar: j, event: ei, voice });
+                        anchors.push(Anchor { x: ch.x, y: ch.heads[0].y, bar: j, event: ei, voice });
                         let e = &mut ms[j].events[ei];
                         for a in &ch.arts {
                             if !e.arts.contains(a) {
@@ -547,6 +713,49 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     seq_len += ons.len();
                     n0 = n1;
                 }
+                // 房子：记在印着它的这一行上，罩着哪几个小节。房号不读字：前一小节以反复结束线收尾的是第 2 房；
+                // 罩着的最后一小节以反复结束线收尾的是第 1 房；都看不出、又印在行首的是第 2 房。
+                // 横线画到行尾的先不收，下一个系统行首接着的那一条是它的续段（不另起）；下一个系统没有续段的，收在上一个系统的末小节
+                let mut cont = open_volta[p].take();
+                for v in page.spans.voltas.iter().filter(|v| v.staff == i) {
+                    let sp = f.staves[i].space();
+                    let js = bar_of(v.x0 + 1.5 * sp);
+                    let je = bar_of(v.x1 - sp).max(js);
+                    let e = match cont.take().filter(|_| js == 0) {
+                        Some(e) => e,
+                        None => {
+                            let number = if js > 0 && bs[js - 1].rep_end {
+                                2
+                            } else if bs.get(je).is_some_and(|b| b.rep_end) {
+                                1
+                            } else if js == 0 {
+                                2
+                            } else {
+                                1
+                            };
+                            let e = Ending { number, closed: v.closed };
+                            ms[js].ending_start = Some(e);
+                            e
+                        }
+                    };
+                    if je + 1 == count && v.x1 >= f.staves[i].right - VOLTA_TO_END * sp && !v.closed {
+                        open_volta[p] = Some(e);
+                    } else {
+                        ms[je].ending_stop = Some(Ending { closed: v.closed, ..e });
+                    }
+                }
+                if let (Some(e), Some(last)) = (cont, parts[p].measures.last_mut()) {
+                    last.ending_stop = Some(Ending { closed: false, ..e });
+                }
+                // 线性符号：弧、松叶按 x 挂到和弦上
+                anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
+                let sp_row = f.staves[i].space();
+                let arcs: Vec<&Arc> = page.spans.arcs.iter().filter(|a| a.staff == i).collect();
+                row_arcs(&arcs, &anchors, &ms, from, sp_row, sys_i, &mut pending[p], &mut span_recs[p]);
+                let wedges: Vec<&Wedge> = page.spans.wedges.iter().filter(|w| w.staff == i).collect();
+                beats.extend(anchors.iter().copied());
+                beats.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
+                row_wedges(&wedges, &beats, &mut ms, &bar_of, sp_row);
                 attach_text(&mut ms, anchors, &page.text.rows[i], dx, han_lines);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
@@ -595,6 +804,9 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             let top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up as f64;
             systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout });
         }
+    }
+    for (part, recs) in parts.iter_mut().zip(span_recs) {
+        mark_spans(part, recs);
     }
     let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
     Song { score: Score { title, credits, parts }, systems, doubts, meter: stats }

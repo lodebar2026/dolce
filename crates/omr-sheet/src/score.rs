@@ -89,6 +89,39 @@ pub struct Tuplet {
     pub stop: bool,
 }
 
+/// 弧的种类。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SpanKind {
+    Slur,
+    Tied,
+}
+
+/// 弧在这个音上的一端：圆滑线按 `number` 配对（同时开着的几条各用一个号）；延音线记在 `pitch` 那个音上（和弦里连的是哪个音）。
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SpanMark {
+    pub kind: SpanKind,
+    pub start: bool,
+    pub number: u8,
+    /// 画在音的上方（朝上拱）。
+    pub above: bool,
+    pub pitch: Option<Pitch>,
+}
+
+/// 松叶的一端。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Wedge {
+    Crescendo,
+    Diminuendo,
+    Stop,
+}
+
+/// 房子的一端：第几房；止端 `closed` 即右端有收口的钩。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ending {
+    pub number: u8,
+    pub closed: bool,
+}
+
 /// 挂在音上的一个歌词音节：第几行词（1 起，自上而下）、字（行首的印刷段号并在字前：`1.道`、`1 Be`）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Lyric {
@@ -108,6 +141,8 @@ pub enum Dir {
     Dynamics(String),
     /// 节拍器：四分音符每分钟多少拍；`circa` 即印着 `c.`。
     Metronome { per_minute: u32, circa: bool },
+    /// 松叶的起端 / 止端。
+    Wedge(Wedge),
 }
 
 /// 一个事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
@@ -127,11 +162,17 @@ pub struct Event {
     pub lyrics: Vec<Lyric>,
     #[serde(default)]
     pub pre: Vec<Dir>,
+    /// 写在音后面的记号（松叶收在小节末、后面没有音可挂的止端）。
+    #[serde(default)]
+    pub post: Vec<Dir>,
+    /// 弧的各端（圆滑线、延音线）。
+    #[serde(default)]
+    pub spans: Vec<SpanMark>,
 }
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new() }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new() }
     }
 
     pub fn divisions(&self) -> u32 {
@@ -197,6 +238,11 @@ pub struct Measure {
     pub new_page: bool,
     /// 上一行行末没印右线、这一小节是跨行劈开的后半截（MusicXML `implicit`；判分时上一行行末那条线不计）。
     pub implicit: bool,
+    /// 房子从这一小节的左线起 / 到这一小节的右线止。
+    #[serde(default)]
+    pub ending_start: Option<Ending>,
+    #[serde(default)]
+    pub ending_stop: Option<Ending>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -219,8 +265,18 @@ fn esc(s: &str) -> String {
 
 fn write_event(o: &mut String, e: &Event) {
     let dur = e.divisions();
-    let tail = |o: &mut String, first: bool| {
-        let _ = writeln!(o, "        <duration>{dur}</duration>\n        <voice>{}</voice>\n        <type>{}</type>", e.voice.max(1), e.ntype.xml());
+    // `pitch`：和弦里的这一个音（休止为 None）；`first`：和弦的第一个音（记号、歌词只写在它上面，延音线写在连着的那个音上）
+    let tail = |o: &mut String, first: bool, pitch: Option<&Pitch>| {
+        let ties: Vec<&SpanMark> = e.spans.iter().filter(|s| s.kind == SpanKind::Tied && (s.pitch.as_ref() == pitch || (first && s.pitch.is_none()))).collect();
+        let slurs: Vec<&SpanMark> = e.spans.iter().filter(|s| first && s.kind == SpanKind::Slur).collect();
+        let _ = writeln!(o, "        <duration>{dur}</duration>");
+        // 一个音上先收后起
+        for stop in [true, false] {
+            for t in ties.iter().filter(|t| t.start != stop) {
+                let _ = writeln!(o, "        <tie type=\"{}\"/>", if t.start { "start" } else { "stop" });
+            }
+        }
+        let _ = writeln!(o, "        <voice>{}</voice>\n        <type>{}</type>", e.voice.max(1), e.ntype.xml());
         for _ in 0..e.dots {
             o.push_str("        <dot/>\n");
         }
@@ -230,10 +286,17 @@ fn write_event(o: &mut String, e: &Event) {
         if let Some(up) = e.stem_up {
             let _ = writeln!(o, "        <stem>{}</stem>", if up { "up" } else { "down" });
         }
-        // 记号只写在和弦的第一个音上
         let tup = e.tuplet.filter(|t| first && (t.start || t.stop));
-        if first && (!e.arts.is_empty() || tup.is_some()) {
+        if (first && (!e.arts.is_empty() || tup.is_some())) || !ties.is_empty() || !slurs.is_empty() {
             o.push_str("        <notations>\n");
+            for stop in [true, false] {
+                for t in ties.iter().filter(|t| t.start != stop) {
+                    let _ = writeln!(o, "          <tied type=\"{}\"{}/>", if t.start { "start" } else { "stop" }, if t.start { if t.above { " orientation=\"over\"" } else { " orientation=\"under\"" } } else { "" });
+                }
+                for t in slurs.iter().filter(|t| t.start != stop) {
+                    let _ = writeln!(o, "          <slur type=\"{}\" number=\"{}\"{}/>", if t.start { "start" } else { "stop" }, t.number, if t.start { if t.above { " placement=\"above\"" } else { " placement=\"below\"" } } else { "" });
+                }
+            }
             if let Some(t) = tup {
                 if t.start {
                     o.push_str("          <tuplet type=\"start\" number=\"1\"/>\n");
@@ -245,6 +308,7 @@ fn write_event(o: &mut String, e: &Event) {
             let inner: Vec<&str> = e
                 .arts
                 .iter()
+                .filter(|_| first)
                 .filter_map(|a| match a {
                     Art::Staccato => Some("staccato"),
                     Art::Tenuto => Some("tenuto"),
@@ -259,10 +323,10 @@ fn write_event(o: &mut String, e: &Event) {
                 }
                 o.push_str("</articulations>\n");
             }
-            if e.arts.contains(&Art::Fermata) {
+            if first && e.arts.contains(&Art::Fermata) {
                 o.push_str("          <fermata/>\n");
             }
-            if e.arts.contains(&Art::Arpeggiate) {
+            if first && e.arts.contains(&Art::Arpeggiate) {
                 o.push_str("          <arpeggiate/>\n");
             }
             o.push_str("        </notations>\n");
@@ -276,7 +340,7 @@ fn write_event(o: &mut String, e: &Event) {
     };
     if e.pitches.is_empty() {
         o.push_str("      <note>\n        <rest/>\n");
-        tail(o, true);
+        tail(o, true, None);
         return;
     }
     for (i, p) in e.pitches.iter().enumerate() {
@@ -289,7 +353,7 @@ fn write_event(o: &mut String, e: &Event) {
             let _ = write!(o, "<alter>{}</alter>", p.alter);
         }
         let _ = writeln!(o, "<octave>{}</octave></pitch>", p.octave);
-        tail(o, i == 0);
+        tail(o, i == 0, Some(p));
     }
 }
 
@@ -328,6 +392,14 @@ fn write_dir(o: &mut String, d: &Dir) {
         Dir::Dynamics(t) => {
             let _ = writeln!(o, "      <direction placement=\"below\">\n        <direction-type>\n          <dynamics><{t}/></dynamics>\n        </direction-type>\n      </direction>");
         }
+        Dir::Wedge(w) => {
+            let t = match w {
+                Wedge::Crescendo => "crescendo",
+                Wedge::Diminuendo => "diminuendo",
+                Wedge::Stop => "stop",
+            };
+            let _ = writeln!(o, "      <direction placement=\"below\">\n        <direction-type>\n          <wedge type=\"{t}\"/>\n        </direction-type>\n      </direction>");
+        }
         Dir::Metronome { per_minute, circa } => {
             let pm = if *circa { format!("c. {per_minute}") } else { per_minute.to_string() };
             let _ = writeln!(o, "      <direction placement=\"above\">\n        <direction-type>\n          <metronome>\n            <beat-unit>quarter</beat-unit>\n            <per-minute>{pm}</per-minute>\n          </metronome>\n        </direction-type>\n        <sound tempo=\"{per_minute}\"/>\n      </direction>");
@@ -351,6 +423,9 @@ fn write_events(o: &mut String, events: &[Event]) {
                 write_dir(o, d);
             }
             write_event(o, e);
+            for d in &e.post {
+                write_dir(o, d);
+            }
             cur = e.onset + e.divisions();
         }
     }
@@ -424,18 +499,32 @@ impl Score {
                 if mi > 0 && (m.new_system || m.new_page) {
                     let _ = writeln!(o, "      <print {}=\"yes\"/>", if m.new_page { "new-page" } else { "new-system" });
                 }
-                if m.repeat_start {
-                    o.push_str("      <barline location=\"left\">\n        <bar-style>heavy-light</bar-style>\n        <repeat direction=\"forward\"/>\n      </barline>\n");
+                if m.repeat_start || m.ending_start.is_some() {
+                    o.push_str("      <barline location=\"left\">\n");
+                    if m.repeat_start {
+                        o.push_str("        <bar-style>heavy-light</bar-style>\n");
+                    }
+                    if let Some(e) = m.ending_start {
+                        let _ = writeln!(o, "        <ending number=\"{0}\" type=\"start\">{0}.</ending>", e.number);
+                    }
+                    if m.repeat_start {
+                        o.push_str("        <repeat direction=\"forward\"/>\n");
+                    }
+                    o.push_str("      </barline>\n");
                 }
                 write_attrs(&mut o, &m.attrs, mi == 0);
                 for a in &m.mid {
                     write_attrs(&mut o, a, false);
                 }
                 write_events(&mut o, &m.events);
-                if m.right.is_some() || m.repeat_end {
-                    let style = m.right.unwrap_or(BarStyle::LightHeavy);
+                if m.right.is_some() || m.repeat_end || m.ending_stop.is_some() {
                     o.push_str("      <barline location=\"right\">\n");
-                    let _ = writeln!(o, "        <bar-style>{}</bar-style>", style.xml());
+                    if m.right.is_some() || m.repeat_end {
+                        let _ = writeln!(o, "        <bar-style>{}</bar-style>", m.right.unwrap_or(BarStyle::LightHeavy).xml());
+                    }
+                    if let Some(e) = m.ending_stop {
+                        let _ = writeln!(o, "        <ending number=\"{}\" type=\"{}\"/>", e.number, if e.closed { "stop" } else { "discontinue" });
+                    }
                     if m.repeat_end {
                         o.push_str("        <repeat direction=\"backward\"/>\n");
                     }
@@ -491,5 +580,27 @@ mod tests {
         assert!(x.contains("<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>"));
         assert!(x.contains("<chord/>\n        <pitch><step>E</step><octave>4</octave></pitch>"));
         assert!(x.contains("<duration>36</duration>") && x.contains("<dot/>") && x.contains("<stem>up</stem>"));
+    }
+
+    #[test]
+    fn spans_xml() {
+        let (c, e4) = (Pitch { step: 0, octave: 4, alter: 0 }, Pitch { step: 2, octave: 4, alter: 0 });
+        let mut a = Event::new(vec![c, e4], NoteType::Quarter, 0, Some(true));
+        a.spans.push(SpanMark { kind: SpanKind::Tied, start: true, number: 1, above: true, pitch: Some(e4) });
+        a.spans.push(SpanMark { kind: SpanKind::Slur, start: true, number: 2, above: false, pitch: None });
+        a.pre.push(Dir::Wedge(Wedge::Crescendo));
+        let mut b = Event::new(vec![e4], NoteType::Quarter, 0, Some(true));
+        b.onset = 24;
+        b.spans.push(SpanMark { kind: SpanKind::Tied, start: false, number: 1, above: true, pitch: Some(e4) });
+        b.spans.push(SpanMark { kind: SpanKind::Slur, start: false, number: 2, above: false, pitch: None });
+        b.post.push(Dir::Wedge(Wedge::Stop));
+        let m = Measure { events: vec![a, b], ending_start: Some(Ending { number: 1, closed: true }), ending_stop: Some(Ending { number: 1, closed: true }), repeat_end: true, ..Default::default() };
+        let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![m] }] }.to_musicxml();
+        // 延音线记在 E 上、不在和弦的第一个音上；圆滑线记在第一个音上
+        let first = &x[x.find("<step>C</step>").unwrap()..x.find("<step>E</step>").unwrap()];
+        assert!(!first.contains("<tie ") && first.contains("<slur type=\"start\" number=\"2\" placement=\"below\"/>"));
+        assert!(x.contains("<tie type=\"start\"/>") && x.contains("<tied type=\"start\" orientation=\"over\"/>") && x.contains("<tied type=\"stop\"/>") && x.contains("<slur type=\"stop\" number=\"2\"/>"));
+        assert!(x.contains("<wedge type=\"crescendo\"/>") && x.find("<wedge type=\"stop\"/>").unwrap() > x.rfind("</note>").unwrap());
+        assert!(x.contains("<ending number=\"1\" type=\"start\">1.</ending>") && x.contains("<ending number=\"1\" type=\"stop\"/>") && x.contains("<repeat direction=\"backward\"/>"));
     }
 }
