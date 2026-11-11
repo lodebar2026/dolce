@@ -151,8 +151,7 @@ const VOLTA_TO_END: f64 = 2.5;
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let nparts = pages.iter().flat_map(|p| p.layout.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
     let mut parts: Vec<Part> = (0..nparts).map(|_| Part::default()).collect();
-    // 各声部现行的谱号、调号
-    let mut clef: Vec<Option<Clef>> = vec![None; nparts];
+    // 各声部现行的调号
     let mut key: Vec<Option<Key>> = vec![None; nparts];
     let mut systems = Vec::new();
     let mut row_no = 0;
@@ -164,28 +163,25 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let keys = settle_keys(&sys_keys);
     // 各系统的行配到哪几个声部；各声部逐系统的行首谱号读数顺着乐曲定下来（行首换谱号少见：孤零零一行读得不同的照前后改）
     let mixed = pages.iter().any(|p| !p.layout.bands.is_empty());
-    let mut slots_all: Vec<Vec<usize>> = Vec::new();
+    let mut slots_all = auto_slots(&profiles(pages));
     let mut clef_reads: Vec<Vec<Option<(Clef, bool)>>> = vec![Vec::new(); nparts];
+    let mut sys_no = 0;
     for page in pages {
         for sys in &page.layout.systems {
             let ra: Vec<&RowAttrs> = sys.staves.iter().map(|&i| &page.attrs[i]).collect();
-            let mut slots = assign(&ra.iter().map(|a| a.clef).collect::<Vec<_>>(), &clef);
-            // 简线混排谱里只有一行谱表的系统就是旋律，一律归第一个声部（按谱号保序配会落到靠下的声部，各行在两个声部间来回跳）
-            if mixed && slots.len() == 1 {
-                slots = vec![0];
+            // 简线混排谱里只有一行谱表的系统就是旋律，一律归第一个声部（按特征配会落到靠下的声部，各行在两个声部间来回跳）
+            if mixed && slots_all[sys_no].len() == 1 {
+                slots_all[sys_no] = vec![0];
             }
             for r in clef_reads.iter_mut() {
                 r.push(None);
             }
-            for (k, &p) in slots.iter().enumerate() {
+            for (k, &p) in slots_all[sys_no].iter().enumerate() {
                 if let Some(c) = ra[k].clef {
                     *clef_reads[p].last_mut().unwrap() = Some((c, ra[k].clef_sure));
-                    if ra[k].clef_sure || clef[p].is_none() {
-                        clef[p] = Some(c);
-                    }
                 }
             }
-            slots_all.push(slots);
+            sys_no += 1;
         }
     }
     let clefs: Vec<Vec<Option<Clef>>> = clef_reads.iter().map(|r| settle(r, |_, _| false)).collect();

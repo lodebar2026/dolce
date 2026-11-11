@@ -110,7 +110,12 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     };
     fs::write(out.join("judge.txt"), &log).ok();
 
-    compare(&report, &o.reference.join(ref_name(&o.kind)), o.only.as_deref(), o.area.as_deref())
+    let code = compare(&report, &o.reference.join(ref_name(&o.kind)), o.only.as_deref(), o.area.as_deref())?;
+    if o.replay.is_none() {
+        let last = out.with_file_name(format!("{}.last.json", out.file_name().map_or(String::new(), |n| n.to_string_lossy().to_string())));
+        vs_last(&report, &last, o.area.as_deref())?;
+    }
+    Ok(code)
 }
 
 /// 各档基线报告在归档目录里的文件名（合唱谱是并起来的那份 `chorus-parts/ops.json`）。
@@ -166,15 +171,50 @@ fn node_env(web: &Path, env: &[(&str, &str)], args: &[&str]) -> Result<String, S
 /// 报告里一首的（步数, 从零步数, 档别）：solo-ops 的行是 `total` / `scratch` / `areas`，合唱谱的行是 `opsTotal` / `opsScratch` / `opsUsed`。
 /// `area` 给了就只取那一档（「结构」「音符」…）。档别：合唱谱分 干净 / 扫描 / 矢量，其余为空。
 fn rows(path: &Path, area: Option<&str>) -> Result<BTreeMap<String, (f64, f64, &'static str)>, String> {
+    Ok(tally(&raw_rows(path)?, area))
+}
+
+/// 报告的各行（原样）。
+fn raw_rows(path: &Path) -> Result<Vec<serde_json::Value>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("读 {}：{e}", path.display()))?;
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&text).map_err(|e| format!("解 {}：{e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("解 {}：{e}", path.display()))
+}
+
+fn row_key(r: &serde_json::Value) -> Option<String> {
+    match (r["song"].as_str(), r["file"].as_str()) {
+        (Some(s), Some(f)) => Some(format!("{s}/{f}")),
+        (Some(s), None) => Some(s.to_string()),
+        _ => None,
+    }
+}
+
+/// 与上一次 Rust 的读数逐曲比（`runs/<档>.last.json` 存各曲最近一次的报告行，按曲合并：`--only` 跑一部分不丢别的），列出变了的，再记下这一次的。
+fn vs_last(report: &Path, last: &Path, area: Option<&str>) -> Result<(), String> {
+    let now = raw_rows(report)?;
+    let mut prev: BTreeMap<String, serde_json::Value> = fs::read_to_string(last).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let before = tally(&prev.values().cloned().collect::<Vec<_>>(), area);
+    let after = tally(&now, area);
+    let mut changed: Vec<(String, f64, f64)> = after.iter().filter_map(|(k, &(n, _, _))| before.get(k).filter(|b| b.0 != n).map(|b| (k.clone(), b.0, n))).collect();
+    if !changed.is_empty() || !before.is_empty() {
+        let (b, n): (f64, f64) = changed.iter().fold((0.0, 0.0), |a, c| (a.0 + c.1, a.1 + c.2));
+        println!("比上次变了的 {} 首（合计 {b} → {n} 步）：", changed.len());
+        changed.sort_by(|a, b| (b.2 - b.1).total_cmp(&(a.2 - a.1)));
+        for (k, b, n) in &changed {
+            println!("  {k}：{b} → {n}");
+        }
+    }
+    for r in now {
+        if let Some(k) = row_key(&r) {
+            prev.insert(k, r);
+        }
+    }
+    fs::write(last, serde_json::to_string(&prev).map_err(|e| e.to_string())?).map_err(|e| format!("写 {}：{e}", last.display()))
+}
+
+fn tally(rows: &[serde_json::Value], area: Option<&str>) -> BTreeMap<String, (f64, f64, &'static str)> {
     let mut m = BTreeMap::new();
     for r in rows {
-        let key = match (r["song"].as_str(), r["file"].as_str()) {
-            (Some(s), Some(f)) => format!("{s}/{f}"),
-            (Some(s), None) => s.to_string(),
-            _ => continue,
-        };
+        let Some(key) = row_key(r) else { continue };
         let chorus = r.get("opsTotal").is_some();
         let (used, scratch) = match (area, chorus) {
             (None, false) => (r["total"].as_f64(), r["scratch"].as_f64()),
@@ -195,7 +235,7 @@ fn rows(path: &Path, area: Option<&str>) -> Result<BTreeMap<String, (f64, f64, &
             m.insert(key, (u, s, class));
         }
     }
-    Ok(m)
+    m
 }
 
 /// `--only`：竖线隔开的几个子串，键含其中之一即中。
