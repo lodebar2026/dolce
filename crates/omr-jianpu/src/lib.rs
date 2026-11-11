@@ -3,11 +3,13 @@
 //! - [`prep`]（JM0）：成像、连通块
 //! - [`frame`]（JM1）：数字高、数字行与行带、带内切格（数字 / 小节线 / 增时线 / 点）
 //! - [`notes`]（JM3）：读数、八度点、减时线、建音
+//! - [`spans`]（JM5）：弧
 //! - [`text`]（JM2 / JM4）：歌词、页眉、调号拍号速度
 pub mod frame;
 pub mod notes;
 pub mod prep;
 pub mod result;
+pub mod spans;
 pub mod text;
 
 use dolce_omr_ocr::cache::CachedOcr;
@@ -28,6 +30,11 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     text::lyrics(&ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions);
     text::header(&ink, &rows, num_h, ocr, &mut score);
+    for i in 0..rows.len() {
+        // 上方带的顶：上一行最末一行歌词的底
+        let y_min = if i == 0 { 0.0 } else { score.lyric_regions.iter().map(|r| r.bbox.bottom()).filter(|&b| b < rows[i].top_at(w / 2.0) && b > rows[i - 1].bottom_at(w / 2.0)).fold(rows[i - 1].bottom_at(w / 2.0), f64::max) };
+        spans::arcs(&ink, &rows[i], &mut notes[i], y_min);
+    }
     for ((row, rn), labels) in rows.iter().zip(notes).zip(labels) {
         score.rows.push(StaffRow {
             lyric_labels: labels,
