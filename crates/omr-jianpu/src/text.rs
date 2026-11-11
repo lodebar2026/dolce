@@ -45,6 +45,17 @@ impl Claims {
 /// 一截墨行不矮于 `min_h`、墨够密才算字行；几行挤成一截的在投影的谷里切开。
 /// `one`：本页一行字的高（没给就不切挤在一起的行，回的是原始的各截——第一遍估行高用）。
 fn cut_lines(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f64, one: Option<f64>) -> Vec<(i64, i64)> {
+    cut_lines_at(ink, claims, slope, ya, yb, min_h, one, LINE_INK)
+}
+
+/// 一行字的墨至少占「行高 × 页宽」的这么多（弧、点凑的一截到不了）。
+const LINE_INK: f64 = 0.006;
+/// 谱后诗行里独占一行的段号（一个「二」）只有这么点墨。
+const LABEL_INK: f64 = 0.0006;
+
+/// 同 [`cut_lines`]，墨的密度门由 `min_ink` 给。
+#[allow(clippy::too_many_arguments)]
+fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f64, one: Option<f64>, min_ink: f64) -> Vec<(i64, i64)> {
     let w = ink.bin.w as i64;
     if yb <= ya {
         return Vec::new();
@@ -74,8 +85,7 @@ fn cut_lines(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f6
         }
         runs.push((a, i - 1));
     }
-    // 密度：一行字的墨至少占「行高 × 页宽」的 0.6%（弧、点凑的一截到不了）
-    let dense = |a: usize, b: usize| proj[a..=b].iter().sum::<u32>() as f64 >= (b - a + 1) as f64 * w as f64 * 0.006;
+    let dense = |a: usize, b: usize| proj[a..=b].iter().sum::<u32>() as f64 >= (b - a + 1) as f64 * w as f64 * min_ink;
     let Some(one) = one else {
         return runs.into_iter().filter(|&(a, b)| (b - a + 1) as f64 >= min_h && dense(a, b)).map(|(a, b)| (ya + a as i64, ya + b as i64)).collect();
     };
@@ -243,16 +253,20 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         let mut lines = cut_lines(ink, &claims, row.band.slope, ya, yb, h * 0.5, (one > 0.0).then_some(one));
         if last {
             // 谱后：只收紧跟着的几行（行距不过一行高），至多收到前面各行见过的段数
-            let mut keep = 0;
+            // 段数从头一截够一行字高的数起：贴着谱行的低音点、没认全的减时线凑成的矮截不占名额
+            let (mut keep, mut full) = (0, 0);
             for (k, l) in lines.iter().enumerate() {
                 let gap = if k == 0 { l.0 - ya } else { l.0 - lines[k - 1].1 };
-                if gap as f64 > h * 1.6 || (max_verses > 0 && k >= max_verses) {
+                if gap as f64 > h * 1.6 || (max_verses > 0 && full >= max_verses) {
                     break;
                 }
+                full += (full > 0 || ((l.1 - l.0 + 1) as f64) >= h * 0.9) as usize;
                 keep = k + 1;
             }
-            let rest = lines.split_off(keep);
-            stanza_lines = rest;
+            lines.truncate(keep);
+            // 谱后的诗行另切一遍：独占一行的段号墨少，按字行的密度门进不来
+            let from = lines.last().map_or(ya, |l| l.1 + 1);
+            stanza_lines = cut_lines_at(ink, &claims, row.band.slope, from, yb, h * 0.25, (one > 0.0).then_some(one), LABEL_INK);
         }
         let note_ix: Vec<usize> = (0..notes[i].nums.len()).filter(|&k| notes[i].nums[k].digit != 0).collect();
         let note_xs: Vec<f64> = note_ix.iter().map(|&k| notes[i].nums[k].bbox.cx()).collect();
@@ -343,7 +357,9 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
         let lead = seg.iter().position(|c| c.ch != ' ' && c.ch != '(' && c.ch != '（').unwrap_or(0);
         let c0 = seg[lead].ch;
         let digits = seg[lead..].iter().take_while(|c| c.ch.is_ascii_digit()).count();
-        let label = if CN_NUM.contains(c0) && seg.len() > lead + 2 {
+        // 段号独占一行的（「二」底下才是诗行）也起一段
+        let alone = seg[lead + 1..].iter().all(|c| " 、.．:：)）".contains(c.ch));
+        let label = if CN_NUM.contains(c0) && (seg.len() > lead + 2 || alone) {
             Some((c0.to_string(), lead + 1))
         } else if (1..=2).contains(&digits) && seg.get(lead + digits).is_some_and(|c| ".．、 ".contains(c.ch) || is_han(c.ch)) {
             Some((seg[lead..lead + digits].iter().map(|c| c.ch).collect::<String>() + if seg[lead + digits].ch == '.' { "." } else { "" }, lead + digits))
