@@ -6,6 +6,7 @@
 //!   系统与小节线是位图那份代码，只是探针与竖段换成矢量的。
 pub mod glyphs;
 pub mod notes;
+pub mod spans;
 pub mod text;
 
 use crate::frame::bars::page_barlines;
@@ -194,5 +195,16 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
         }
     }
     let text = crate::text::PageText { rows, credits, bands, false_heads: Vec::new() };
-    Some(crate::page::Page { layout: f.layout, attrs, notes, text, spans: Default::default() })
+    let ps = spans::pieces(&vp, &f.staff_lines, f.layout.unit.space);
+    if std::env::var("OMR_VEC_PIECES").is_ok() {
+        let sp = f.layout.unit.space;
+        for p in ps.iter().filter(|p| p.width() >= 2.0 * sp && p.shape.up.max(p.shape.down) <= 0.2 * sp) {
+            eprintln!("直笔画 x{}-{} a{:.0?} b{:.0?} 厚{:.1} 斜{:.2} sp{sp:.1}", p.stroke.x0, p.stroke.x1(), p.shape.a, p.shape.b, p.shape.thick, p.shape.slope());
+        }
+    }
+    let spans = crate::spans::judge(&f.layout, &ink, &attrs, &notes, ps);
+    if std::env::var("OMR_VEC_DEBUG").is_ok() {
+        eprintln!("矢量线性符号 弧{} 松叶{} 房子{}", spans.arcs.len(), spans.wedges.len(), spans.voltas.len());
+    }
+    Some(crate::page::Page { layout: f.layout, attrs, notes, text, spans })
 }

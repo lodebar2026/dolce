@@ -2,7 +2,7 @@
 use super::Piece;
 use crate::attrs::RowAttrs;
 use crate::notes::{Chord, RowNotes};
-use crate::page::PageFrame;
+use crate::page::Layout;
 
 /// 弧的宽度下限、拱高下限（相对线距）；拱高还不得低于宽的这么多、不得高过宽的这么多（延长记号的拱又短又高）。
 const MIN_W: f64 = 1.1;
@@ -87,7 +87,7 @@ fn arch_like(p: &Piece, sp: f64) -> bool {
         && p.shape.peak < 1.0 - PEAK_EDGE
 }
 
-pub fn arcs(f: &PageFrame, attrs: &[RowAttrs], notes: &[RowNotes], pieces: &[Piece]) -> Vec<Arc> {
+pub fn arcs(f: &Layout, attrs: &[RowAttrs], notes: &[RowNotes], pieces: &[Piece]) -> Vec<Arc> {
     let mut out: Vec<(Arc, f64)> = Vec::new();
     for p in pieces {
         if !arch_like(p, f.unit.space) {

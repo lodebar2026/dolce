@@ -12,7 +12,8 @@ pub mod wedges;
 use crate::attrs::RowAttrs;
 use crate::frame::ink::{BG, INK, LINE};
 use crate::notes::RowNotes;
-use crate::page::PageFrame;
+use crate::page::{Layout, PageFrame};
+use dolce_omr_sheet::element::Probe;
 use crate::text::PageText;
 use dolce_omr_sheet::curves::{join_all, trace, JoinTol, Shape, Stroke};
 
@@ -110,8 +111,13 @@ pub fn pieces(f: &PageFrame, text: &PageText) -> Vec<Piece> {
 /// 一页的线性符号。
 pub fn page_spans(f: &PageFrame, attrs: &[RowAttrs], notes: &[RowNotes], text: &PageText) -> PageSpans {
     let ps = pieces(f, text);
+    judge(&f.layout, &f.ink, attrs, notes, ps)
+}
+
+/// 细笔画 → 弧、松叶、房子（像素页、矢量页同一份判据；`ink` 是回看墨迹的探针）。
+pub fn judge(f: &Layout, ink: &dyn Probe, attrs: &[RowAttrs], notes: &[RowNotes], ps: Vec<Piece>) -> PageSpans {
     let wedges = wedges::wedges(f, &ps);
-    let voltas = voltas::voltas(f, attrs, &ps);
+    let voltas = voltas::voltas(f, ink, attrs, &ps);
     let arcs = arcs::arcs(f, attrs, notes, &ps);
     PageSpans { arcs, wedges, voltas }
 }

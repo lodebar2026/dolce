@@ -1,6 +1,6 @@
 //! 松叶（渐强 / 渐弱）：两条直的细笔画，一头挨着、另一头张开。整条连着尖的松叶在追踪时已在尖处分成两条边。
 use super::Piece;
-use crate::page::PageFrame;
+use crate::page::Layout;
 
 /// 一条边：宽度下限（相对线距）、离两端连线最远不过这么多（弧拱得高）、斜率上限、墨厚上限。
 const ARM_MIN_W: f64 = 2.0;
@@ -27,7 +27,7 @@ pub struct Wedge {
     pub cresc: bool,
 }
 
-pub fn wedges(f: &PageFrame, pieces: &[Piece]) -> Vec<Wedge> {
+pub fn wedges(f: &Layout, pieces: &[Piece]) -> Vec<Wedge> {
     let sp = f.unit.space;
     // 谱表里的直笔画（没标成存疑的谱线残段、加粗的线）不当边
     let in_staff = |p: &Piece| {
@@ -52,7 +52,8 @@ pub fn wedges(f: &PageFrame, pieces: &[Piece]) -> Vec<Wedge> {
                 continue;
             }
             let (ga, gb) = (l.mid(xa) - u.mid(xa), l.mid(xb) - u.mid(xb));
-            if ga <= 0.0 || gb <= 0.0 {
+            // 尖那头两边可以贴住（精确几何的尖端间距正好是 0），不能交叉
+            if ga < 0.0 || gb < 0.0 || ga.max(gb) <= 0.0 {
                 continue;
             }
             let (tip, open) = (ga.min(gb), ga.max(gb));

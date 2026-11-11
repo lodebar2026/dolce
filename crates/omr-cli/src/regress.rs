@@ -50,7 +50,7 @@ struct Song {
 }
 
 pub fn run(o: &Opts) -> Result<ExitCode, String> {
-    if !["jianpu", "solo", "chorus", "xinbian"].contains(&o.kind.as_str()) {
+    if !["jianpu", "solo", "chorus", "vector", "xinbian"].contains(&o.kind.as_str()) {
         return Err(format!("不认识的语料档「{}」", o.kind));
     }
     if o.jobs > 0 {
@@ -105,6 +105,7 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
         }
         "solo" => node(&o.web, &["../dev/scripts/solo-ops.mjs", "--staff", &format!("--from={outs}"), &format!("--out={reps}")])?,
         "xinbian" => node_env(&o.web, &[("STAFFIMG", "testdata/新编赞美诗五线谱")], &["../dev/scripts/solo-ops.mjs", "--staff", &format!("--from={outs}"), &format!("--out={reps}")])?,
+        "vector" => node_env(&o.web, &[("CHORUS", "testdata/矢量谱")], &["../dev/scripts/chorus-ops.mjs", &format!("--from={outs}"), &format!("--out-dir={outs}")])?,
         _ => node(&o.web, &["../dev/scripts/chorus-ops.mjs", &format!("--from={outs}"), &format!("--out-dir={outs}")])?,
     };
     fs::write(out.join("judge.txt"), &log).ok();
@@ -114,7 +115,10 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
 
 /// 各档基线报告在归档目录里的文件名（合唱谱是并起来的那份 `chorus-parts/ops.json`）。
 fn ref_name(kind: &str) -> String {
-    if kind == "chorus" { "chorus-parts/ops.json".into() } else { format!("{kind}.ops.json") }
+    match kind {
+        "chorus" | "vector" => format!("{kind}-parts/ops.json"),
+        _ => format!("{kind}.ops.json"),
+    }
 }
 
 fn write(dir: &Path, base: &str, r: RecOutput) -> Result<(), String> {

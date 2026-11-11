@@ -121,7 +121,7 @@ impl VecPage {
                 VKind::Line
             } else if !curved && fill {
                 VKind::Poly
-            } else if curved && elongated(&rect) && subs <= 2 {
+            } else if curved && subs <= 2 && (elongated(&rect) || fill && slim(&rings, &rect)) {
                 VKind::Curve
             } else if curved {
                 VKind::Glyph
@@ -213,6 +213,20 @@ fn white(c: [u8; 4]) -> bool {
 /// 扁长（细长曲线对象的外形）：长边过短边的 2.5 倍。
 fn elongated(r: &Rect) -> bool {
     r.w.max(r.h) >= 2.5 * r.w.min(r.h).max(0.01)
+}
+
+/// 细的填充对象：面积占外框不到 [`SLIM_FILL`]（月牙形的弧；短而拱得高的延音线长宽比不到 2.5，但很细）。符头、实心块占得满。
+const SLIM_FILL: f64 = 0.3;
+
+fn slim(rings: &[Vec<(f64, f64)>], r: &Rect) -> bool {
+    let area: f64 = rings
+        .iter()
+        .map(|g| (0..g.len()).map(|i| {
+            let (p, q) = (g[i], g[(i + 1) % g.len()]);
+            p.0 * q.1 - q.0 * p.1
+        }).sum::<f64>().abs() / 2.0)
+        .sum();
+    area < SLIM_FILL * r.w * r.h
 }
 
 fn bounds(rings: &[Vec<(f64, f64)>]) -> Rect {
@@ -343,12 +357,10 @@ fn path_lines(segs: &[Seg], tx: &dyn Fn(f64, f64) -> (f64, f64), obj: u32, lw: f
                 continue;
             }
         }
+        // 描边折线逐边成段（斜边也留：松叶的两条臂常是一条 M L L 折线；框架只取横、竖段）
         if pts.len() > 2 && stroke {
             for k in 1..pts.len() {
-                let l = vl(pts[k - 1], pts[k], lw);
-                if l.is_h() || l.is_v() {
-                    out.push(l);
-                }
+                out.push(vl(pts[k - 1], pts[k], lw));
             }
         }
     }
