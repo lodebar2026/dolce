@@ -100,3 +100,14 @@ pub fn header_line_ok(t: &str, gap: f64) -> bool {
     }
     !(gap <= NEAR && (chords::is_annotation_line(t) || words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)))
 }
+
+/// 第一行谱（最上面那行）的下标。
+pub fn first_index(f: &crate::page::Layout) -> usize {
+    (0..f.staves.len()).min_by(|&a, &b| f.staves[a].ys[0].total_cmp(&f.staves[b].ys[0])).unwrap_or(0)
+}
+
+/// 这行谱上方印着简谱行（混排谱）时，页眉区的下界从最上面那条简谱带的上沿量起（负数，相对谱表首线）；没有为 0。
+/// 同 `classify` 量和弦区的口径：简谱行与它上面的和弦行都不是页眉。
+pub fn band_lift(f: &crate::page::Layout, staff: usize) -> f64 {
+    f.bands.iter().filter(|k| k.anchor == staff && k.y1 <= 0.0).map(|k| k.y0).fold(0.0, f64::min)
+}

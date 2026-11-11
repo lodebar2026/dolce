@@ -5,6 +5,7 @@
 //! - [`frame_vector`]：横线段成谱表（`frame::staves::staves_from_hsegs`）→ 竖线段 → 系统（`frame::systems`）→ 小节线（`frame::bars`），
 //!   系统与小节线是位图那份代码，只是探针与竖段换成矢量的。
 pub mod glyphs;
+pub mod mixed;
 pub mod notes;
 pub mod spans;
 pub mod text;
@@ -185,11 +186,19 @@ pub fn frame_vector(vp: &VecPage) -> Option<VecFrame> {
 /// 识别一页纯矢量页；没有谱表回 None。
 pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&dolce_omr_ocr::surface::Gray>, ocr: Option<&dyn crate::attrs::DigitReader>) -> Option<crate::page::Page> {
     let vp = VecPage::build(pc, dolce_omr_sheet::prims::VEC_SCALE, (0.0, 0.0));
-    let f = frame_vector(&vp)?;
+    let mut f = frame_vector(&vp)?;
     let ink = VecInk::new(&vp, &f.staff_lines);
+    // 混排：简谱行（定位、认领、互证同位图；条只画落在带里的对象）
+    if let Some(c) = ocr.and_then(|o| o.cached()) {
+        let (bands, jianpu) = mixed::claim(&vp, &ink, &f.layout, c);
+        f.layout.bands = bands;
+        f.layout.jianpu = jianpu;
+    }
+    let in_band = |r: &dolce_omr_core::image::Rect| f.layout.bands.iter().any(|b| mixed::inside(b, &f.layout.staves[b.anchor], r));
     // 字形：文字层里的音乐字体字，加上路径画的字形块（转曲页）
-    let pieces = glyphs::path_pieces(&vp);
-    let mut syms = glyphs::music_chars(&vp);
+    // 带里的对象归简谱行，不进字形候选、不读字
+    let pieces: Vec<glyphs::GlyphPiece> = glyphs::path_pieces(&vp).into_iter().filter(|p| !in_band(&p.rect)).collect();
+    let mut syms: Vec<glyphs::VSym> = glyphs::music_chars(&vp).into_iter().filter(|s| !in_band(&s.rect)).collect();
     let path_syms = glyphs::path_glyphs(&pieces, f.layout.unit.space);
     syms.extend(path_syms.iter().filter(|s| !s.name.is_empty()).cloned());
     let attrs = notes::page_attrs(&f.layout, &syms);

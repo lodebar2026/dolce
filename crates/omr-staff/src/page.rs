@@ -72,7 +72,7 @@ pub struct Page {
 }
 
 /// 简谱小节线候选的竖段至少这么长（相对线距；与 [`band`] 的下限一致）。
-const SHORT_SEG: f64 = 1.2;
+pub(crate) const SHORT_SEG: f64 = 1.2;
 
 /// 框架结构；页上没有谱表回 None。
 pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOcr>) -> Option<PageFrame> {
@@ -99,13 +99,7 @@ pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOc
         (bands, jianpu, band_ink) = crate::mixed::claim(&mut bin, soft.as_mut(), &staves, &systems, cands, ocr);
         if !bands.is_empty() {
             got = layers(&bin, soft.as_ref());
-            // 印在大谱表两行之间、量自下面那行谱的简谱行是上面那行谱的旋律（闭合人声谱的女高音）
-            for b in bands.iter_mut().filter(|b| b.staff == b.anchor && b.y1 <= 0.0) {
-                if got.4.iter().any(|sys| sys.staves.iter().position(|&i| i == b.staff).is_some_and(|n| n > 0)) {
-                    jianpu.iter_mut().filter(|r| r.staff == b.staff).for_each(|r| r.staff -= 1);
-                    b.staff -= 1;
-                }
-            }
+            crate::mixed::settle_bands(&mut bands, &mut jianpu, &got.4);
         }
     }
     let (ink, segs, blobs, labels, systems, bars) = got;

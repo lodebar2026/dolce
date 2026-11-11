@@ -229,7 +229,7 @@ pub fn bands(f: &Layout, lines: Vec<GeoLine>) -> Vec<Band> {
 pub fn header(f: &Layout, vp: &VecPage, lines: &[GeoLine], pt: f64) -> Vec<Credit> {
     let Some(first) = f.staves.iter().min_by(|a, b| a.ys[0].total_cmp(&b.ys[0])) else { return Vec::new() };
     let sp = first.space();
-    let top = first.ys[0];
+    let top = first.ys[0] + crate::text::header::band_lift(f, crate::text::header::first_index(f));
     let k = f.up;
     let mut wl: Vec<WordLine> = Vec::new();
     for l in lines.iter().filter(|l| l.y1 <= top - CLEAR * sp) {

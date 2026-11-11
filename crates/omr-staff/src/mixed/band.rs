@@ -6,6 +6,7 @@
 use crate::frame::bars::Barline;
 use crate::frame::ink::VSeg;
 use dolce_omr_core::image::Binary;
+use dolce_omr_sheet::element::{Probe, BG};
 use dolce_omr_sheet::{Staff, Unit};
 
 /// 简谱小节线的长度（相对线距）：简谱字号比线距大得多的谱面上，带高低音点的一行能到五格上下。
@@ -75,19 +76,19 @@ fn cluster<'a>(vs: &[&'a VSeg], st: &Staff) -> Vec<&'a VSeg> {
 }
 
 /// 上端吊在一条长横线下（左右任一边伸出两格以上）的竖段：房子括线的竖钩，也与谱表小节线同 x。
-fn hooked(bin: &Binary, v: &VSeg, unit: &Unit) -> bool {
+fn hooked(bin: &dyn Probe, v: &VSeg, unit: &Unit) -> bool {
     let reach = unit.thick.round() as i64 + 2;
     let x = v.cx().round() as i64;
     for y in v.y0 as i64 - reach..=v.y0 as i64 + reach {
         for xx in x - 1..=x + 1 {
-            if !bin.ink(xx, y) {
+            if bin.at(xx, y) == BG {
                 continue;
             }
             let (mut a, mut b) = (xx, xx);
-            while bin.ink(a - 1, y) {
+            while bin.at(a - 1, y) != BG {
                 a -= 1;
             }
-            while bin.ink(b + 1, y) {
+            while bin.at(b + 1, y) != BG {
                 b += 1;
             }
             if ((xx - a).max(b - xx) as f64) >= unit.space * 2.0 {
@@ -99,14 +100,15 @@ fn hooked(bin: &Binary, v: &VSeg, unit: &Unit) -> bool {
 }
 
 /// 光竖条：两侧紧挨着有墨的行不过 [`SIDE_INK`]。汉字的竖笔总有横笔穿过或接着，简谱小节线是孤零零一根。
-fn bare(bin: &Binary, v: &VSeg) -> bool {
-    let side = (v.y0..=v.y1).filter(|&y| bin.ink(v.x0 as i64 - 2, y as i64) || bin.ink(v.x1 as i64 + 2, y as i64)).count();
+fn bare(bin: &dyn Probe, v: &VSeg) -> bool {
+    let side = (v.y0..=v.y1).filter(|&y| bin.at(v.x0 as i64 - 2, y as i64) != BG || bin.at(v.x1 as i64 + 2, y as i64) != BG).count();
     side as f64 <= v.len() as f64 * SIDE_INK
 }
 
 /// 定位各行谱的简谱行：先找谱表上方的；上方没有的再找下方的（闭合人声谱把简谱印在上行谱表与歌词之间）。
 /// `short`：不短于 [`BAR_LEN`] 下限的竖段；`bars`：各行谱的小节线（与 `staves` 同序）。
-pub fn find(bin: &Binary, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barline>], unit: &Unit) -> Vec<Band> {
+/// `bin`：回看墨迹的探针（像素页的二值图、矢量页的对象库）。
+pub fn find(bin: &dyn Probe, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barline>], unit: &Unit) -> Vec<Band> {
     let mut out: Vec<Band> = Vec::new();
     for below in [false, true] {
         for k in 0..staves.len() {
@@ -130,7 +132,7 @@ pub fn find(bin: &Binary, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barline>
 }
 
 /// 第 `k` 行谱上方（`below` 时下方）的简谱行。
-fn find_at(bin: &Binary, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barline>], unit: &Unit, k: usize, below: bool) -> Vec<Band> {
+fn find_at(bin: &dyn Probe, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barline>], unit: &Unit, k: usize, below: bool) -> Vec<Band> {
     let st = &staves[k];
     let sp = st.space();
     let depth = st.bottom(st.left) - st.top(st.left);

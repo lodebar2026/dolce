@@ -66,17 +66,13 @@ fn read_strip(b: &Band, s: &Strip, ocr: &CachedOcr, known: bool) -> Option<JpRow
 /// 回收下的带、各条的读数、划掉的墨（页面那么大的二值图；文字从原图取条送检时要把这些墨抹白）。
 pub fn claim(bin: &mut Binary, mut soft: Option<&mut Binary>, staves: &[Staff], systems: &[Vec<usize>], cands: Vec<Band>, ocr: &CachedOcr) -> (Vec<Band>, Vec<JpRow>, Option<Binary>) {
     let none = (Vec::new(), Vec::new(), None);
-    let with = systems.iter().filter(|sys| cands.iter().any(|b| sys.contains(&b.anchor))).count();
-    if cands.is_empty() || with * 2 <= systems.len() {
+    if !has_bands(systems, &cands) {
         return none;
     }
     // 在副本上切条试认
     let mut trial = bin.clone();
     let strips: Vec<Strip> = cands.iter().map(|b| band::erase(&mut [&mut trial], b, &staves[b.anchor])).collect();
-    let strict: Vec<Option<JpRow>> = cands.iter().zip(&strips).map(|(b, s)| read_strip(b, s, ocr, false)).collect();
-    if strict.iter().flatten().count() * 2 <= cands.len() {
-        return none;
-    }
+    let Some(strict) = trial_read(&cands, &strips, ocr) else { return none };
     if let Some(soft) = soft.as_mut().filter(|s| s.w == bin.w && s.h == bin.h) {
         for (b, s) in cands.iter().zip(&strips) {
             for (i, _) in s.bin.data.iter().enumerate().filter(|(_, v)| **v != 0) {
@@ -92,6 +88,33 @@ pub fn claim(bin: &mut Binary, mut soft: Option<&mut Binary>, staves: &[Staff], 
         }
     }
     *bin = trial;
-    let rows = cands.iter().zip(&strips).zip(strict).filter_map(|((b, s), r)| r.or_else(|| read_strip(b, s, ocr, true))).collect();
+    let rows = finish_rows(&cands, &strips, strict, ocr);
     (cands, rows, Some(gone))
+}
+
+/// 过半的系统带着候选带（两种证据共用的认领第一关）。
+pub fn has_bands(systems: &[Vec<usize>], cands: &[Band]) -> bool {
+    let with = systems.iter().filter(|sys| cands.iter().any(|b| sys.contains(&b.anchor))).count();
+    !cands.is_empty() && with * 2 > systems.len()
+}
+
+/// 各条照简谱路线自己的标准试认；过半认得出才算混排，否则 None。
+pub fn trial_read(cands: &[Band], strips: &[Strip], ocr: &CachedOcr) -> Option<Vec<Option<JpRow>>> {
+    let strict: Vec<Option<JpRow>> = cands.iter().zip(strips).map(|(b, s)| read_strip(b, s, ocr, false)).collect();
+    (strict.iter().flatten().count() * 2 > cands.len()).then_some(strict)
+}
+
+/// 没认出来的条（夹着说明文字）放宽再认一遍。
+pub fn finish_rows(cands: &[Band], strips: &[Strip], strict: Vec<Option<JpRow>>, ocr: &CachedOcr) -> Vec<JpRow> {
+    cands.iter().zip(strips).zip(strict).filter_map(|((b, s), r)| r.or_else(|| read_strip(b, s, ocr, true))).collect()
+}
+
+/// 印在大谱表两行之间、量自下面那行谱的简谱行是上面那行谱的旋律（闭合人声谱的女高音）。两种证据共用。
+pub fn settle_bands(bands: &mut [Band], jianpu: &mut [JpRow], systems: &[crate::frame::systems::System]) {
+    for b in bands.iter_mut().filter(|b| b.staff == b.anchor && b.y1 <= 0.0) {
+        if systems.iter().any(|sys| sys.staves.iter().position(|&i| i == b.staff).is_some_and(|n| n > 0)) {
+            jianpu.iter_mut().filter(|r| r.staff == b.staff).for_each(|r| r.staff -= 1);
+            b.staff -= 1;
+        }
+    }
 }
