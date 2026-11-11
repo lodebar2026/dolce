@@ -207,7 +207,8 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
         }
     }
     underlines(ink, row, &mut out);
-    octave_dots(ink, row, &mut out);
+    let used = crate::marks::apply(ink, row, &mut out, ocr);
+    octave_dots(ink, row, &mut out, &used);
     out
 }
 
@@ -369,12 +370,12 @@ fn under_floor(n: &JpNum, claimed: &[Rect], h: f64) -> f64 {
         .fold(n.bbox.bottom(), f64::max)
 }
 
-/// 八度点：数字正上方（高音）、减时线之下（低音）的小圆块。一个点只归横向最近的那个数字；上下各至多两个。
-fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
+/// 八度点：数字正上方（高音）、减时线之下（低音）的小圆块（`skip`：已认成别的记号的块）。一个点只归横向最近的那个数字；上下各至多两个。
+fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
     let h = row.h();
     let w = ink.bin.w as f64;
     let (ya, yb) = (row.top_at(0.0).min(row.top_at(w)) - h * 1.2, row.bottom_at(0.0).max(row.bottom_at(w)) + h * 1.6);
-    let dots: Vec<&Comp> = ink.comps.iter().filter(|k| k.cy > ya && k.cy < yb && dot_like(k, h)).collect();
+    let dots: Vec<&Comp> = ink.comps.iter().filter(|k| k.cy > ya && k.cy < yb && dot_like(k, h) && !skip.contains(&k.id)).collect();
     let floors: Vec<f64> = out.nums.iter().map(|n| under_floor(n, &out.claimed, h)).collect();
     // (点, 音, 上 / 下, 离数字多远)
     let mut hits: Vec<(usize, usize, bool, f64)> = Vec::new();

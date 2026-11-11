@@ -3,11 +3,13 @@
 //! - [`prep`]（JM0）：成像、连通块
 //! - [`frame`]（JM1）：数字高、数字行与行带、带内切格（数字 / 小节线 / 增时线 / 点）
 //! - [`notes`]（JM3）：读数、八度点、减时线、建音
+//! - [`marks`]（JM3）：临时升降号、倚音、顿音、重音、波音、延长记号
 //! - [`spans`]（JM5）：弧
 //! - [`beats`]（JM6）：满拍裁决、可疑清单
 //! - [`text`]（JM2 / JM4）：歌词、页眉、调号拍号速度
 pub mod beats;
 pub mod frame;
+pub mod marks;
 pub mod notes;
 pub mod prep;
 pub mod result;
