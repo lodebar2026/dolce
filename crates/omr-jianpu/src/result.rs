@@ -189,14 +189,8 @@ pub struct TextRegion {
     pub bbox: Rect,
 }
 
-/// 把握不大的一处（计划 §2.8）：涉及的音（行、行内第几个）、原因码。
-#[derive(Clone, Debug, Serialize)]
-pub struct Doubt {
-    pub row: usize,
-    pub note: Option<usize>,
-    pub bbox: Rect,
-    pub reason: String,
-}
+/// 可疑项：两条路线共用的那份（`omr-sheet::result`）；`at.row` 是全曲第几行、`at.note` 是行内第几个音。
+pub use dolce_omr_sheet::result::Doubt;
 
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]

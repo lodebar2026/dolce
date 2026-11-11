@@ -3,6 +3,7 @@
 //! 挑一组使它满拍；挑得出唯一的一组就改、记可疑，挑不出的保持原判、记可疑。把握大的元素不为凑满拍而改。
 use crate::notes::RowNotes;
 use crate::result::{Alt, AltKind, Doubt, JpNum, RecognizedScore};
+use dolce_omr_sheet::result::{codes, Locus};
 use dolce_omr_core::image::Rect;
 
 /// 一个四分音符的时值单位（容得下四条减时线、两个附点、三连音）。
@@ -195,12 +196,12 @@ pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut Re
             Some((t, beats, beat_type)) if !score.meter_read => {
                 score.beats = beats;
                 score.beat_type = beat_type;
-                score.doubts.push(Doubt { row: 0, note: None, bbox: Rect::new(0.0, 0.0, 0.0, 0.0), reason: "meter.inferred".into() });
+                score.doubts.push(Doubt::new(Locus { page: 1, ..Default::default() }, Rect::default(), codes::METER_INFERRED));
                 targets = vec![t];
                 all = bars(notes, sys, &targets);
             }
             _ => {
-                score.doubts.push(Doubt { row: 0, note: None, bbox: Rect::new(0.0, 0.0, 0.0, 0.0), reason: "meter.mismatch".into() });
+                score.doubts.push(Doubt::new(Locus { page: 1, ..Default::default() }, Rect::default(), codes::METER_MISMATCH));
                 if std::env::var("OMR_JP_DEBUG").is_ok() {
                     eprintln!("拍号与多数小节对不上：{:?}", hist);
                 }
@@ -305,7 +306,7 @@ pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut Re
                         }
                         next.repeat_forward |= gone.repeat_forward;
                     }
-                    score.doubts.push(Doubt { row: r, note: None, bbox: gone.bbox, reason: "beat.fix.bar".into() });
+                    score.doubts.push(Doubt::new(at(sys, r, None), gone.bbox, codes::BEAT_FIX_BAR));
                 }
                 rn.barline_xs.sort_by(f64::total_cmp);
                 tally.fixed += 1;
@@ -320,18 +321,19 @@ pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut Re
         if unique {
             for &k in &hits[0].1 {
                 let (r, i, alt) = cands[k];
+                let loc = at(sys, r, Some(i));
                 let n = &mut notes[r].nums[i];
                 apply(n, alt.kind);
-                let reason = format!("beat.fix.{}", alt.kind.code());
+                let reason = format!("{}.{}", codes::BEAT_FIX, alt.kind.code());
                 n.doubt.push(reason.clone());
-                score.doubts.push(Doubt { row: r, note: Some(i), bbox: n.bbox, reason });
+                score.doubts.push(Doubt::new(loc, n.bbox, &reason));
             }
             tally.fixed += 1;
             tally.full += 1;
         } else {
-            let reason = if !hits.is_empty() { "beat.ambiguous" } else if t0 < max { "beat.short" } else { "beat.over" };
+            let reason = if !hits.is_empty() { codes::BEAT_AMBIGUOUS } else if t0 < max { codes::BEAT_SHORT } else { codes::BEAT_OVER };
             notes[first.0].nums[first.1].doubt.push(reason.into());
-            score.doubts.push(Doubt { row: first.0, note: Some(first.1), bbox: bbox(notes, first), reason: reason.into() });
+            score.doubts.push(Doubt::new(at(sys, first.0, Some(first.1)), bbox(notes, first), reason));
             tally.bad += 1;
         }
         if debug {
@@ -341,4 +343,9 @@ pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut Re
         }
     }
     tally
+}
+
+/// 简谱可疑项的定位：全曲一页、行所在的系统。
+fn at(sys: &[Option<(u32, u32)>], r: usize, note: Option<usize>) -> Locus {
+    Locus { page: 1, system: sys.get(r).copied().flatten().map_or(0, |s| s.0 as usize), row: r, measure: None, note }
 }

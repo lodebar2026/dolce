@@ -6,7 +6,8 @@ use super::{Chord, RowNotes, SAME_ONSET};
 use crate::page::Layout;
 use dolce_omr_sheet::meter::{base_line, solve, Alt, Item, Line};
 use super::tuplets::TupletCand;
-use dolce_omr_sheet::score::{DoubtKind, NoteType, Tuplet};
+use dolce_omr_sheet::result::codes;
+use dolce_omr_sheet::score::{NoteType, Tuplet};
 
 /// 各种改动的花费（越大越不情愿；只用来在几种改法之间排先后）：加一条符尾、删休止、删和弦。
 const COST_TAIL: f64 = 1.2;
@@ -95,7 +96,8 @@ pub struct Bar {
 pub struct Flag {
     pub row: usize,
     pub bar: usize,
-    pub kind: DoubtKind,
+    /// 原因码（`omr-sheet::result::codes`）。
+    pub code: &'static str,
     pub note: String,
 }
 
@@ -246,7 +248,7 @@ pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of:
                 let others: Vec<(f64, u32)> = cells.iter().enumerate().filter(|(o, _)| *o != k).filter_map(|(_, c)| c.as_ref()).filter(|c| c.line.fits(want)).flat_map(|c| c.line.onsets.iter().copied()).collect();
                 let n = cell.line.misaligned(&others, cell.dx);
                 if n > 0 {
-                    flags.push(Flag { row: k, bar: j, kind: DoubtKind::Misaligned, note: format!("{n} 处拍位与别的行不齐") });
+                    flags.push(Flag { row: k, bar: j, code: codes::BEAT_MISALIGNED, note: format!("{n} 处拍位与别的行不齐") });
                 }
                 continue;
             }
@@ -266,11 +268,11 @@ pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of:
                             what.push(format!("{:?}", ops[*a]));
                         }
                     }
-                    flags.push(Flag { row: k, bar: j, kind: DoubtKind::Inferred, note: what.join("+") });
+                    flags.push(Flag { row: k, bar: j, code: codes::BEAT_FIX, note: what.join("+") });
                 }
                 None => {
                     let over = cell.line.end.iter().any(|&e| e > want);
-                    flags.push(Flag { row: k, bar: j, kind: if over { DoubtKind::Overfull } else { DoubtKind::Underfull }, note: format!("{}/{} 对 {want}", cell.line.end[0], cell.line.end[1]) });
+                    flags.push(Flag { row: k, bar: j, code: if over { codes::BEAT_OVER } else { codes::BEAT_SHORT }, note: format!("{}/{} 对 {want}", cell.line.end[0], cell.line.end[1]) });
                 }
             }
         }

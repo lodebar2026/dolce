@@ -15,7 +15,9 @@ use crate::text::classify::RowText;
 use crate::spans::arcs::{Arc, ChordRef};
 use crate::spans::wedges::Wedge;
 use dolce_omr_sheet::music::Pitch;
-use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, Doubt, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
+use dolce_omr_sheet::result::{Doubt, Locus};
+use dolce_omr_core::image::Rect;
+use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
 use dolce_omr_text::lyrics::align;
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
@@ -681,13 +683,13 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             let added: usize = extra.iter().map(|e| e.1).sum();
             // 原第 j 小节（系统内）展开后的下标
             let shifted = |j: usize| j + extra.iter().filter(|e| e.0 < j).map(|e| e.1).sum::<usize>();
-            let sys_top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up;
             for fl in flags {
                 let s = &f.staves[rows[fl.row]];
                 let x0 = if fl.bar == 0 { lead } else { bs[fl.bar - 1].x };
                 let x1 = bs.get(fl.bar).map_or(s.right, |b| b.x);
                 let up = f.up;
-                doubts.push(Doubt { page: pn + 1, sys_top, row: fl.row, measure: from + shifted(fl.bar), rect: (x0 / up, s.top(x0) / up, x1 / up, s.bottom(x0) / up), kind: fl.kind, note: fl.note });
+                let at = Locus { page: pn + 1, system: sys_i, row: fl.row, measure: Some(from + shifted(fl.bar)), note: None };
+                doubts.push(Doubt::new(at, Rect::new(x0 / up, s.top(x0) / up, (x1 - x0) / up, (s.bottom(x0) - s.top(x0)) / up), fl.code).with_note(fl.note));
             }
             for (k, &i) in rows.iter().enumerate() {
                 let p = slots[k];
@@ -956,7 +958,11 @@ impl Song {
         let ds: Vec<String> = self
             .doubts
             .iter()
-            .map(|d| format!("{{\"page\":{},\"sysTop\":{:.0},\"row\":{},\"m\":{},\"kind\":\"{}\",\"box\":[{:.0},{:.0},{:.0},{:.0}],\"note\":{:?}}}", d.page, d.sys_top, d.row, d.measure + 1, d.kind.code(), d.rect.0, d.rect.1, d.rect.2, d.rect.3, d.note))
+            .map(|d| {
+                let r = &d.rect;
+                let top = self.systems.get(d.at.system).map_or(0.0, |s| s.top);
+                format!("{{\"page\":{},\"sysTop\":{:.0},\"row\":{},\"m\":{},\"kind\":\"{}\",\"box\":[{:.0},{:.0},{:.0},{:.0}],\"note\":{:?}}}", d.at.page, top, d.at.row, d.at.measure.map_or(0, |m| m + 1), d.code, r.x, r.y, r.right(), r.bottom(), d.note)
+            })
             .collect();
         let m = &self.meter;
         o.push_str(&format!("],\"vector\":{},\"notes\":[],\"rowSp\":{{{sp}}},\"doubts\":[{}],\"meter\":{{\"checked\":{},\"fullBefore\":{},\"fullAfter\":{},\"fixed\":{}}}}}", self.vector, ds.join(","), m.checked, m.full_before, m.full_after, m.fixed));

@@ -6,6 +6,7 @@ pub mod element;
 pub mod meter;
 pub mod music;
 pub mod prims;
+pub mod result;
 pub mod score;
 pub mod shapes;
 pub mod staff;

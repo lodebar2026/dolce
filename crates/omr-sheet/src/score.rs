@@ -186,44 +186,6 @@ impl Event {
     }
 }
 
-/// 一处把握不大的地方（随结果交出，核对视图标出来）。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Doubt {
-    /// 页码（1 起）、系统顶（原图像素）、系统内第几行、全曲第几小节（0 起）。
-    pub page: usize,
-    pub sys_top: f64,
-    pub row: usize,
-    pub measure: usize,
-    /// 源图框 `(x0, y0, x1, y1)`（原图像素）。
-    pub rect: (f64, f64, f64, f64),
-    pub kind: DoubtKind,
-    /// 给人看的说明（改了什么、差多少）。
-    pub note: String,
-}
-
-/// 可疑的原因码。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DoubtKind {
-    /// 小节不满拍 / 超拍（保持原判）。
-    Underfull,
-    Overfull,
-    /// 同系统各行拍位对不齐。
-    Misaligned,
-    /// 按满拍改过的（改时值、删元素）。
-    Inferred,
-}
-
-impl DoubtKind {
-    pub fn code(&self) -> &'static str {
-        match self {
-            DoubtKind::Underfull => "underfull",
-            DoubtKind::Overfull => "overfull",
-            DoubtKind::Misaligned => "misaligned",
-            DoubtKind::Inferred => "inferred",
-        }
-    }
-}
-
 /// 一个小节（一个声部的）。
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Measure {
