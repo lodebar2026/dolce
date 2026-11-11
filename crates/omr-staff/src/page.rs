@@ -55,6 +55,6 @@ pub fn frame_page(src: &SourceImage) -> Option<PageFrame> {
 pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Option<Page> {
     let frame = frame_page(src)?;
     let attrs = attrs::page_attrs(&frame, ocr);
-    let notes = page_notes(&frame, &attrs);
+    let notes = page_notes(&frame, &attrs, ocr);
     Some(Page { frame, attrs, notes })
 }

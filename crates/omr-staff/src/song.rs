@@ -432,7 +432,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                                 e
                             }
                             None => {
-                                ms[j].events.push(Event { onset, voice, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
+                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
                                 ms[j].events.last_mut().unwrap()
                             }
                         };

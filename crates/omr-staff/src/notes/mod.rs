@@ -11,6 +11,7 @@ pub mod meter;
 pub mod resolve;
 pub mod rests;
 pub mod stems;
+pub mod tuplets;
 
 use crate::attrs::RowAttrs;
 use crate::frame::ink::{Blob, LINE};
@@ -68,6 +69,9 @@ pub struct Chord {
     /// 贴头奏法（[`artics`]）。
     #[serde(default)]
     pub arts: Vec<dolce_omr_sheet::score::Art>,
+    /// 连音（满拍裁决收下的候选，[`tuplets`]）。
+    #[serde(default)]
+    pub tuplet: Option<dolce_omr_sheet::score::Tuplet>,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -76,6 +80,9 @@ pub struct RowNotes {
     pub chords: Vec<Chord>,
     /// 休止（按 x 排）。
     pub rests: Vec<rests::Rest>,
+    /// 连音候选（[`tuplets`]）；满拍裁决收下的记到和弦上。
+    #[serde(default)]
+    pub tuplets: Vec<tuplets::TupletCand>,
 }
 
 /// 与墨块 `b` 隔着细缝的别的墨块：同一行里一小截存疑像素（不长过 `slit`）两边分别是 `b` 与另一块的墨。
@@ -156,7 +163,7 @@ fn scale_of(tpl: &Template) -> f64 {
 }
 
 /// 一页各行谱的音符（与 `staves` 同序）。
-pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
+pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::attrs::DigitReader>) -> Vec<RowNotes> {
     let claims = Claims::new(f);
     let from_of = |si: usize| x_from(f, attrs, si);
     let SeedStage { solid, mut cands, samples, tpl } = seed_stage(f, attrs, &claims);
@@ -191,7 +198,7 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
                 cs.bottom = cs.bottom.max(st.bottom);
                 c.heads.push(h);
             }
-            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new() }),
+            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None }),
         }
     }
     for row in rows.iter_mut() {
@@ -211,5 +218,6 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs]) -> Vec<RowNotes> {
         marks::marks(f, si, from_of(si), row);
     }
     artics::artics(f, &mut rows);
+    tuplets::tuplets(f, &mut rows, ocr);
     rows
 }

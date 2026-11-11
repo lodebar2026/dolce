@@ -401,7 +401,7 @@ pub struct TimeHit {
 }
 
 /// 把一块符号墨裁成白底黑字的小图（谱线存疑像素当底），四周垫白。
-fn cell(f: &PageFrame, x0: i64, x1: i64, y0: i64, y1: i64) -> Gray {
+pub(crate) fn cell(f: &PageFrame, x0: i64, x1: i64, y0: i64, y1: i64) -> Gray {
     let pad = ((y1 - y0 + 1) / 5).max(2) as usize;
     let (w, h) = ((x1 - x0 + 1) as usize, (y1 - y0 + 1) as usize);
     let mut g = Gray::new(w + 2 * pad, h + 2 * pad, 255);
@@ -417,7 +417,7 @@ fn cell(f: &PageFrame, x0: i64, x1: i64, y0: i64, y1: i64) -> Gray {
 
 /// OCR 逐字候选 → 数：每个字取候选里排最前的数字（压着谱线、糊了孔的数字常被读成汉字，数字排在后几名）。
 /// 一个字读一位，两个字读两位；`ok` 限定合法的数。
-fn digits_of(alts: &[Vec<String>], ok: impl Fn(u32) -> bool) -> Option<u32> {
+pub(crate) fn digits_of(alts: &[Vec<String>], ok: impl Fn(u32) -> bool) -> Option<u32> {
     // 一位数：候选前几名里排最前的合法数字；两位数（12、16）只认两个字都是头名的
     let digit = |a: &Vec<String>, top: usize, ok1: &dyn Fn(u32) -> bool| a.iter().take(top).filter_map(|s| s.parse::<u32>().ok().filter(|_| s.len() == 1)).find(|d| ok1(*d));
     match alts.len() {

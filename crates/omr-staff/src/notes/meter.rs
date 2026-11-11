@@ -5,7 +5,8 @@ use super::heads::HeadKind;
 use super::{Chord, RowNotes, SAME_ONSET};
 use crate::page::PageFrame;
 use dolce_omr_sheet::meter::{base_line, solve, Alt, Item, Line};
-use dolce_omr_sheet::score::{DoubtKind, NoteType};
+use super::tuplets::TupletCand;
+use dolce_omr_sheet::score::{DoubtKind, NoteType, Tuplet};
 
 /// 各种改动的花费（越大越不情愿；只用来在几种改法之间排先后）：加一条符尾、删休止、删和弦。
 const COST_TAIL: f64 = 1.2;
@@ -29,6 +30,8 @@ pub enum Op {
     Tails(u8),
     Kind(HeadKind),
     RestType(NoteType),
+    /// 收下连音候选：这个和弦是连音里的一个。
+    Tuplet(dolce_omr_sheet::score::Tuplet),
     Drop,
 }
 
@@ -47,6 +50,7 @@ pub fn apply(rows: &mut [RowNotes], fixes: &[Fix]) {
         match (f.target, f.op) {
             (Target::Chord(i), Op::Dots(d)) => row.chords[i].dots = d,
             (Target::Chord(i), Op::Tails(t)) => row.chords[i].tails = t,
+            (Target::Chord(i), Op::Tuplet(t)) => row.chords[i].tuplet = Some(t),
             (Target::Chord(i), Op::Kind(k)) => {
                 let c = &mut row.chords[i];
                 c.heads.iter_mut().for_each(|h| h.kind = k);
@@ -118,7 +122,8 @@ impl std::ops::AddAssign for Stats {
 }
 
 pub fn chord_dur(c: &Chord) -> u32 {
-    c.ntype().dotted(c.dots)
+    let d = c.ntype().dotted(c.dots);
+    c.tuplet.map_or(d, |t| d * t.normal as u32 / (t.actual as u32).max(1))
 }
 
 /// 一个和弦的备选。`med`：本页实心头模板分的中位数。
@@ -187,8 +192,36 @@ pub fn settle_system(f: &PageFrame, rows: &[usize], notes: &mut [RowNotes], bar_
                 continue;
             }
             both.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
-            let (items, ops): (Vec<Item>, Vec<(Target, Vec<Op>)>) = both.into_iter().map(|(it, t, o)| (it, (t, o))).unzip();
-            let line = base_line(&items, dx);
+            let (mut items, ops): (Vec<Item>, Vec<(Target, Vec<Op>)>) = both.into_iter().map(|(it, t, o)| (it, (t, o))).unzip();
+            let mut line = base_line(&items, dx);
+            // 连音候选：原判不满拍、折算后正好满拍的收下（先全收，再逐个试）
+            if !line.fits(want) {
+                let at = |i: usize| ops.iter().position(|(t, _)| *t == Target::Chord(i));
+                let cands: Vec<(&TupletCand, Vec<usize>)> = row.tuplets.iter().filter_map(|t| t.chords.iter().map(|&i| at(i)).collect::<Option<Vec<usize>>>().map(|ns| (t, ns))).collect();
+                let tries: Vec<Vec<usize>> = std::iter::once((0..cands.len()).collect()).chain((0..cands.len()).map(|n| vec![n])).filter(|v: &Vec<usize>| !v.is_empty()).collect();
+                for pick in tries {
+                    let mut scaled = items.clone();
+                    for &n in &pick {
+                        let (t, ns) = &cands[n];
+                        for &it in ns {
+                            scaled[it].dur = scaled[it].dur * t.normal as u32 / t.actual as u32;
+                            scaled[it].alts.clear();
+                        }
+                    }
+                    let l = base_line(&scaled, dx);
+                    if l.fits(want) {
+                        for &n in &pick {
+                            let (t, ns) = &cands[n];
+                            for (m, &it) in ns.iter().enumerate() {
+                                let Target::Chord(i) = ops[it].0 else { continue };
+                                fixes.push(Fix { row: k, target: Target::Chord(i), op: Op::Tuplet(Tuplet { actual: t.actual, normal: t.normal, start: m == 0, stop: m + 1 == ns.len() }) });
+                            }
+                        }
+                        (items, line) = (scaled, l);
+                        break;
+                    }
+                }
+            }
             cells.push(Some(Cell { items, ops, line, dx }));
         }
         let live: Vec<&Cell> = cells.iter().flatten().collect();
