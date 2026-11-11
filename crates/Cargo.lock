@@ -298,6 +298,7 @@ dependencies = [
  "dolce-omr-core",
  "dolce-omr-text",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

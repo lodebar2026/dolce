@@ -523,6 +523,90 @@ fn fill_curve(raw: &[f64]) -> Vec<f32> {
         .collect()
 }
 
+/// 横段成谱表（[`staves_from_hsegs`]）：候选线要长过全页最长横段的这个比例；或左端与长线左端对齐、长过 `SHORT_STAFF` 个谱表高（末行短谱表）。
+const HSEG_LONG: f64 = 0.35;
+const SHORT_STAFF: f64 = 3.0;
+/// 线距相对「谱表高的估计」的上下限（防吉他和弦图的品格线凑成谱表）。
+const HSEG_GAP: (f64, f64) = (0.1, 0.4);
+/// 往下推第 n 条线时的容差（相对线距）；五条按平均间距等距的兜底容差。
+const HSEG_TOL: f64 = 0.2;
+/// 五条的公共横跨至少是最短那条的这么多、且不短于这么多个谱表高。
+const HSEG_SPAN: (f64, f64) = (0.8, 4.0);
+
+/// **横段成谱表**（精确几何的横段：矢量页的谱线对象；判据照「左端对齐、等距、连着五条」）：
+/// 拿每条候选当顶线、试后面几条当第二线定出线距，再按「已找到那几条的平均间距」往下推（误差不累积），推不出时按紧挨的五条平均间距等距兜底。
+/// `height`：谱表高的估计（音乐字号；没有就按页宽估），只用来卡线距上下限。回各谱表与所用横段的下标。
+pub fn staves_from_hsegs(hs: &[dolce_omr_sheet::prims::HSeg], height: f64) -> Vec<(Staff, [usize; 5])> {
+    let max_len = hs.iter().map(|h| h.len()).fold(0.0, f64::max);
+    if max_len <= 0.0 {
+        return vec![];
+    }
+    let long_lefts: Vec<f64> = hs.iter().filter(|h| h.len() >= max_len * 0.9).map(|h| h.x0).collect();
+    let long_left = median(&long_lefts, 0.0);
+    let mut cands: Vec<usize> = (0..hs.len()).filter(|&i| hs[i].len() >= max_len * HSEG_LONG || (hs[i].len() >= height * SHORT_STAFF && (hs[i].x0 - long_left).abs() <= height * 0.25)).collect();
+    cands.sort_by(|&a, &b| hs[a].y.total_cmp(&hs[b].y));
+    let mut used = vec![false; hs.len()];
+    let mut out = Vec::new();
+    let span_ok = |five: &[usize], d: f64| {
+        let left = five.iter().map(|&i| hs[i].x0).fold(f64::MIN, f64::max);
+        let right = five.iter().map(|&i| hs[i].x1).fold(f64::MAX, f64::min);
+        let shortest = five.iter().map(|&i| hs[i].len()).fold(f64::MAX, f64::min);
+        right - left >= shortest * HSEG_SPAN.0 && right - left >= d * 4.0 * HSEG_SPAN.1
+    };
+    for (ci, &i) in cands.iter().enumerate() {
+        if used[i] {
+            continue;
+        }
+        let mut picked: Option<Vec<usize>> = None;
+        for &k in cands.iter().skip(ci + 1).take(3) {
+            if used[k] || picked.is_some() {
+                continue;
+            }
+            let d = hs[k].y - hs[i].y;
+            if d < height * HSEG_GAP.0 {
+                continue;
+            }
+            if d > height * HSEG_GAP.1 {
+                break;
+            }
+            let mut five = vec![i, k];
+            let mut dd = d;
+            for n in 2..=4 {
+                let want = hs[i].y + dd * n as f64;
+                let best = cands.iter().copied().filter(|&c| !used[c] && !five.contains(&c)).map(|c| (c, (hs[c].y - want).abs())).filter(|&(_, e)| e < dd * HSEG_TOL).min_by(|a, b| a.1.total_cmp(&b.1));
+                let Some((c, _)) = best else { break };
+                five.push(c);
+                dd = (hs[c].y - hs[i].y) / n as f64;
+            }
+            if five.len() == 5 && span_ok(&five, d) {
+                picked = Some(five);
+            }
+        }
+        if picked.is_none() && ci + 4 < cands.len() {
+            let five: Vec<usize> = cands[ci..ci + 5].to_vec();
+            if !five.iter().any(|&c| used[c]) {
+                let ds: Vec<f64> = (1..5).map(|k| hs[five[k]].y - hs[five[k - 1]].y).collect();
+                let avg = ds.iter().sum::<f64>() / 4.0;
+                if avg >= height * HSEG_GAP.0 && avg <= height * HSEG_GAP.1 && ds.iter().all(|d| (d - avg).abs() <= avg * HSEG_TOL) && span_ok(&five, avg) {
+                    picked = Some(five);
+                }
+            }
+        }
+        let Some(mut five) = picked else { continue };
+        five.sort_by(|&a, &b| hs[a].y.total_cmp(&hs[b].y));
+        for &c in &five {
+            used[c] = true;
+        }
+        let left = five.iter().map(|&c| hs[c].x0).fold(f64::MAX, f64::min);
+        let right = five.iter().map(|&c| hs[c].x1).fold(f64::MIN, f64::max);
+        let ys = [0, 1, 2, 3, 4].map(|n| hs[five[n]].y);
+        let thick = [0, 1, 2, 3, 4].map(|n| hs[five[n]].w.max(1.0));
+        out.push((Staff { ys, thick, curve: None, left, right, one_line: false }, [five[0], five[1], five[2], five[3], five[4]]));
+    }
+    out.sort_by(|a, b| a.0.ys[0].total_cmp(&b.0.ys[0]));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

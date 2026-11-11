@@ -11,34 +11,56 @@ use crate::prep::imaging::image_page;
 use dolce_omr_core::image::Binary;
 use dolce_omr_sheet::{Staff, Unit};
 use dolce_omr_source::raster::SourceImage;
+use dolce_omr_source::PageContent;
 
-/// 一页的框架结构与各层墨（识别各模块的共同输入）。
-pub struct PageFrame {
-    pub bin: Binary,
-    pub soft: Option<Binary>,
-    /// 相对原图的放大倍数。
-    pub up: usize,
+/// 一页的**版面**：只读版面的判断（文字分类、同系统互证、线性符号、整曲拼接）吃它，像素页、矢量页同一个形状。
+#[derive(Clone, Debug)]
+pub struct Layout {
+    /// 工作坐标相对源图（像素页：相对原图的放大倍数；矢量页：每点几单位）。写版面摘要、源图框时除掉它。
+    pub up: f64,
     pub unit: Unit,
     pub staves: Vec<Staff>,
+    pub systems: Vec<System>,
+    /// 各行谱的小节线（与 `staves` 同序）。
+    pub bars: Vec<Vec<Barline>>,
+    /// 混排谱的简谱行与各条的读数；带里的墨已从像素各层划出去。
+    pub bands: Vec<Band>,
+    pub jianpu: Vec<JpRow>,
+    /// 矢量页（框架与音符取自对象库）。
+    pub vector: bool,
+}
+
+/// 一页的框架结构与各层墨（位图各模块的共同输入）：版面 + 像素层。`f.staves` 之类经 `Deref` 读版面。
+pub struct PageFrame {
+    pub layout: Layout,
+    pub bin: Binary,
+    pub soft: Option<Binary>,
     pub ink: InkLayers,
     /// 竖段（不短于三格）。
     pub segs: Vec<VSeg>,
     /// 符号墨块与标号图（标号图里的值是块的 `id`；小碎块被筛掉，`id` 不等于下标）。
     pub blobs: Vec<Blob>,
     pub labels: Vec<i32>,
-    pub systems: Vec<System>,
-    /// 各行谱的小节线（与 `staves` 同序）。
-    pub bars: Vec<Vec<Barline>>,
-    /// 混排谱的简谱行与各条的读数；带里的墨已从上面各层划出去。
-    pub bands: Vec<Band>,
-    pub jianpu: Vec<JpRow>,
     /// 简谱行划掉的墨（没有简谱行为 None）。
     pub band_ink: Option<Binary>,
 }
 
+impl std::ops::Deref for PageFrame {
+    type Target = Layout;
+    fn deref(&self) -> &Layout {
+        &self.layout
+    }
+}
+
+impl std::ops::DerefMut for PageFrame {
+    fn deref_mut(&mut self) -> &mut Layout {
+        &mut self.layout
+    }
+}
+
 /// 一页的识别结果（现到音符数据的实心头）。
 pub struct Page {
-    pub frame: PageFrame,
+    pub layout: Layout,
     /// 各行谱的谱号 / 调号 / 拍号（与 `staves` 同序）。
     pub attrs: Vec<RowAttrs>,
     /// 各行谱的音符（与 `staves` 同序）。
@@ -87,7 +109,8 @@ pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOc
         }
     }
     let (ink, segs, blobs, labels, systems, bars) = got;
-    Some(PageFrame { bin, soft, up, unit, staves, ink, segs, blobs, labels, systems, bars, bands, jianpu, band_ink })
+    let layout = Layout { up: up as f64, unit, staves, systems, bars, bands, jianpu, vector: false };
+    Some(PageFrame { layout, bin, soft, ink, segs, blobs, labels, band_ink })
 }
 
 /// 识别一页；没有谱表回 None。
@@ -106,5 +129,20 @@ pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Optio
         row.chords.retain(|c| !c.heads.is_empty());
     }
     let spans = crate::spans::page_spans(&frame, &attrs, &notes, &text);
-    Some(Page { frame, attrs, notes, text, spans })
+    Some(Page { layout: frame.layout, attrs, notes, text, spans })
+}
+
+/// 一页的输入：像素层（内嵌的谱面大图 / 图片）与矢量层（路径、文字层），可以同时有（计划 §5.5「设计 3」）。
+pub struct PageSource {
+    pub raster: Option<SourceImage>,
+    /// PDF 页的内容（路径、文字层与字形轮廓）；图片文件没有。
+    pub content: Option<PageContent>,
+}
+
+/// 识别一页：谱表从哪一层找到，框架与音符就以那一层为主——先试像素层，找不到谱表再试矢量层。
+pub fn recognize_source(src: &PageSource, ocr: Option<&dyn DigitReader>) -> Option<Page> {
+    if let Some(p) = src.raster.as_ref().and_then(|r| recognize_page(r, ocr)) {
+        return Some(p);
+    }
+    crate::vector::recognize_vector(src.content.as_ref()?, ocr)
 }

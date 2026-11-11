@@ -2,9 +2,13 @@
 //! 识别结果模型与 MusicXML 写出（[`score`]，骨架）、
 //! 满拍验收与候选组合（[`meter`]）、细长笔画的追踪与拼接（[`curves`]：弧、松叶、房子横线共用）；元素库、证据、归属与互斥、空间查询随五线谱路线逐步加。
 pub mod curves;
+pub mod element;
 pub mod meter;
 pub mod music;
+pub mod prims;
 pub mod score;
+pub mod shapes;
 pub mod staff;
 
+pub use element::{Evidence, EvidenceOps, Probe, BG, INK, LINE};
 pub use staff::{LineCurve, Staff, Unit};

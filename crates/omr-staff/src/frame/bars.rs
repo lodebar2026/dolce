@@ -1,6 +1,6 @@
 //! **小节线**（在符头之前定）：竖段里纵贯一行谱（首线到末线）、两端不伸出谱表（或伸进同系统的邻行，贯穿小节线）、
 //! 两端旁边没挂着符头那样的一团墨（那是符干）的，按相邻几根并成一条（双线、终止线、反复记号的粗细两笔）。
-use crate::frame::ink::{InkLayers, VSeg, BG};
+use crate::frame::ink::{Probe, VSeg, BG};
 use crate::frame::systems::System;
 pub use dolce_omr_sheet::music::BarStyle;
 use dolce_omr_sheet::{Staff, Unit};
@@ -56,7 +56,7 @@ pub enum BarSrc {
 }
 
 /// 一行谱的小节线候选（未经系统内互证）。`above` / `below`：同系统上下邻行（贯穿小节线可以伸进去）。
-pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, above: Option<&Staff>, below: Option<&Staff>) -> Vec<Barline> {
+pub fn staff_barlines<P: Probe + ?Sized>(ink: &P, segs: &[VSeg], s: &Staff, unit: &Unit, above: Option<&Staff>, below: Option<&Staff>) -> Vec<Barline> {
     let sp = s.space();
     let mut cands: Vec<VSeg> = segs
         .iter()
@@ -122,7 +122,7 @@ pub fn staff_barlines(ink: &InkLayers, segs: &[VSeg], s: &Staff, unit: &Unit, ab
 
 /// 反复点：[xa, xb] 这一条里，第二间与第三间（音级位置 3、5）各有一个孤立的小圆点——各自的墨不大不小、
 /// 上下左右都不过大半格，点与点之间的中线一带没有符号墨。
-fn repeat_dots(ink: &InkLayers, s: &Staff, xa: f64, xb: f64) -> bool {
+fn repeat_dots<P: Probe + ?Sized>(ink: &P, s: &Staff, xa: f64, xb: f64) -> bool {
     let sp = s.space();
     let xm = (xa + xb) / 2.0;
     let (xa, xb) = (xa.round() as i64, xb.round() as i64);
@@ -156,7 +156,7 @@ fn attach_max() -> f64 {
 
 /// 竖段在谱表范围内横向连着的墨（竖笔列以外、与它八邻接连通的符号墨，谱线存疑像素不算）有多大（平方线距）。
 /// 小节线是孤立的一笔；挂着空心头的干、共用一根竖笔的降号肚子、升号的横杠都连着一团。
-fn attached(ink: &InkLayers, v: &VSeg, s: &Staff, sp: f64) -> f64 {
+fn attached<P: Probe + ?Sized>(ink: &P, v: &VSeg, s: &Staff, sp: f64) -> f64 {
     let x = v.cx();
     let (ya, yb) = ((s.top(x) - sp * 0.5).floor() as i64, (s.bottom(x) + sp * 0.5).ceil() as i64);
     let (xa, xb) = (v.x0 as i64 - (sp * 1.5) as i64, v.x1 as i64 + (sp * 1.5) as i64);
@@ -195,7 +195,7 @@ fn attached(ink: &InkLayers, v: &VSeg, s: &Staff, sp: f64) -> f64 {
 }
 
 /// 竖段的上端或下端旁边（左或右一个符头宽的窗）墨很满：挂着符头，是符干不是小节线。窗里的谱线存疑像素不算墨。
-fn head_at_end(ink: &InkLayers, v: &VSeg, s: &Staff, sp: f64) -> bool {
+fn head_at_end<P: Probe + ?Sized>(ink: &P, v: &VSeg, s: &Staff, sp: f64) -> bool {
     let hw = (sp * HEAD_WIN).round() as i64;
     let hh = (sp * 0.5).round() as i64;
     let _ = s;
@@ -230,7 +230,7 @@ const LINE_END: f64 = 1.5;
 
 /// 一页各行谱的小节线：先逐行出候选（贯穿小节线只许伸进同系统的邻行），再在多行系统里按同 x 互证——
 /// 别的行有、本行没有的回原图验墨补（三行以上过半的行都有就照补）；只有少数行有、别的行原图同处也没有贯穿谱行的竖墨的摘掉。
-pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: &[System], unit: &Unit) -> Vec<Vec<Barline>> {
+pub fn page_barlines<P: Probe + ?Sized>(ink: &P, segs: &[VSeg], staves: &[Staff], systems: &[System], unit: &Unit) -> Vec<Vec<Barline>> {
     let mut out: Vec<Vec<Barline>> = vec![Vec::new(); staves.len()];
     for sys in systems {
         let g = &sys.staves;
@@ -313,7 +313,7 @@ pub fn page_barlines(ink: &InkLayers, segs: &[VSeg], staves: &[Staff], systems: 
 /// 原图上验这一行在 `cx` 左右 `range` 像素内有没有一根小节线模样的竖墨，有则回它的列：
 /// 从首线走到末线（逐行可左右挪一列，总共漂不过 0.15 格），断墨不过 6%、最长断口不过两像素；除谱线那几行外横向墨宽的行不多（贴着符头、穿过升号的过不了）；
 /// `through` 为假时上下各往外 0.4~0.9 格不能有墨（符干、系统线会伸出去）。
-pub fn bar_at(ink: &InkLayers, st: &Staff, cx: f64, range: i64, through: bool) -> Option<i64> {
+pub fn bar_at<P: Probe + ?Sized>(ink: &P, st: &Staff, cx: f64, range: i64, through: bool) -> Option<i64> {
     let sp = st.space();
     let on = |x: i64, y: i64| ink.at(x, y) != BG;
     let run_w = |x: i64, y: i64| {

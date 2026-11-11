@@ -11,6 +11,7 @@
 pub mod model;
 pub mod pdf;
 pub mod raster;
+pub mod vector;
 mod pdfium;
 
 pub use model::*;

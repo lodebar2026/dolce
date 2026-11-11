@@ -65,7 +65,7 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     let listed = node(&o.web, &["../dev/scripts/rust-omr/corpus.mjs", &o.kind])?;
     let mut songs: Vec<Song> = serde_json::from_str(&listed).map_err(|e| format!("曲目清单：{e}"))?;
     if let Some(s) = &o.only {
-        songs.retain(|x| x.key.contains(s.as_str()));
+        songs.retain(|x| matches(&x.key, s));
     }
     println!("{}：{} 首，产物 → {}", o.kind, songs.len(), out.display());
 
@@ -194,10 +194,15 @@ fn rows(path: &Path, area: Option<&str>) -> Result<BTreeMap<String, (f64, f64, &
     Ok(m)
 }
 
+/// `--only`：竖线隔开的几个子串，键含其中之一即中。
+fn matches(key: &str, only: &str) -> bool {
+    only.split('|').any(|s| key.contains(s))
+}
+
 fn compare(report: &Path, reference: &Path, only: Option<&str>, area: Option<&str>) -> Result<ExitCode, String> {
     let base = rows(reference, area)?;
     let now = rows(report, area).unwrap_or_default();
-    let keys: Vec<&String> = base.keys().filter(|k| only.is_none_or(|s| k.contains(s))).collect();
+    let keys: Vec<&String> = base.keys().filter(|k| only.is_none_or(|s| matches(k, s))).collect();
     // 档别 → (基线步数, 基线从零, 本次步数, 本次从零, 首数, 缺)
     let mut sums: BTreeMap<&str, [f64; 6]> = BTreeMap::new();
     let mut worse = Vec::new();

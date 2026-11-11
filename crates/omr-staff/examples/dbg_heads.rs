@@ -18,7 +18,8 @@ fn main() {
             return;
         }
         let Some(page) = recognize_page(src, None) else { return };
-        let f = &page.frame;
+        let frame = dolce_omr_staff::page::frame_page(src, None).unwrap();
+        let f = &frame;
         let solid = f.ink.sealed((dolce_omr_staff::notes::hollow::SLIT_AREA * f.unit.space * f.unit.space).round() as usize);
         let sum = InkSum::new(&solid);
         let holes = page_holes(f);

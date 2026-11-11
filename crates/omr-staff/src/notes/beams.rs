@@ -6,7 +6,7 @@
 //!
 //! 探的是原图（谱线上的存疑像素算墨：杠压着线的地方本来就连着）；孤零零的谱线比杠薄得多，过不了厚度下限。
 use super::{Chord, RowNotes};
-use crate::frame::ink::{InkLayers, BG};
+use crate::frame::ink::{Probe, BG};
 use dolce_omr_sheet::Staff;
 
 /// 探测列离干多远（相对线距）：出了干的宽度、还在符尾根部最厚的那一段里。
@@ -33,7 +33,7 @@ const PATH_TOL: f64 = 0.2;
 const SPAN_MAX: f64 = 12.0;
 
 /// 列 `x` 上 [y0, y1] 里够厚的墨段的中心 y。
-fn thick_runs(ink: &InkLayers, x: i64, y0: i64, y1: i64, sp: f64, line: f64) -> Vec<f64> {
+fn thick_runs<P: Probe + ?Sized>(ink: &P, x: i64, y0: i64, y1: i64, sp: f64, line: f64) -> Vec<f64> {
     let min_t = (THICK.0 * sp).max(OVER_LINE * line + 1.0);
     let mut out = Vec::new();
     let mut y = y0;
@@ -59,7 +59,7 @@ fn thick_runs(ink: &InkLayers, x: i64, y0: i64, y1: i64, sp: f64, line: f64) -> 
 }
 
 /// 从 (xa, ya) 到 (xb, yb) 沿直线一路有墨。
-fn connected(ink: &InkLayers, (xa, ya): (i64, f64), (xb, yb): (i64, f64), sp: f64) -> bool {
+fn connected<P: Probe + ?Sized>(ink: &P, (xa, ya): (i64, f64), (xb, yb): (i64, f64), sp: f64) -> bool {
     if xb <= xa || (yb - ya).abs() > SLOPE_MAX * (xb - xa) as f64 + SAME_LAYER * sp {
         return false;
     }
@@ -72,7 +72,7 @@ fn connected(ink: &InkLayers, (xa, ya): (i64, f64), (xb, yb): (i64, f64), sp: f6
 }
 
 /// 一根干自由端一侧的厚墨段（从干端往头的方向排）。
-fn probe(ink: &InkLayers, c: &Chord, sp: f64, line: f64, right: bool) -> (i64, Vec<f64>) {
+fn probe<P: Probe + ?Sized>(ink: &P, c: &Chord, sp: f64, line: f64, right: bool) -> (i64, Vec<f64>) {
     let st = c.stem.unwrap();
     let d = (PROBE * sp).round() as i64;
     let x = if right { st.x + d } else { st.x - d };
@@ -102,7 +102,7 @@ fn probe(ink: &InkLayers, c: &Chord, sp: f64, line: f64, right: bool) -> (i64, V
 }
 
 /// 给一页各行谱的和弦记符杠层数与符尾数。整页的干一起找：跨谱表的连桁，杠两头的干分属上下两行谱。
-pub fn tails(ink: &InkLayers, rows: &mut [RowNotes], staves: &[Staff], line: f64) {
+pub fn tails<P: Probe + ?Sized>(ink: &P, rows: &mut [RowNotes], staves: &[Staff], line: f64) {
     // (行, 行内下标, 线距)，按干的 x 排
     let mut stemmed: Vec<(usize, usize, f64)> = Vec::new();
     for (r, row) in rows.iter().enumerate() {

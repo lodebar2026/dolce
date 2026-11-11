@@ -30,7 +30,7 @@ fn main() {
     let mut marks = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
     for_sources(&corpus, &only, |key, pn, snap, src| {
         let Some(page) = recognize_page(src, None) else { return };
-        let sp = page.frame.unit.space;
+        let sp = page.layout.unit.space;
         let k = ts_scale(snap, pn, sp);
         let heads: Vec<(f64, f64, f64, u8, Option<i8>)> = page.notes.iter().flat_map(|r| r.chords.iter().flat_map(|c| c.heads.iter().map(|h| (h.x, h.y, base_of(c.ntype()), c.dots, h.acc)))).collect();
         let (mut dd, mut ad) = (Vec::new(), Vec::new());

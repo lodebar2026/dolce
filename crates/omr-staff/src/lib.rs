@@ -19,3 +19,4 @@ pub mod prep;
 pub mod song;
 pub mod spans;
 pub mod text;
+pub mod vector;

@@ -1,7 +1,7 @@
 //! **符干与挂头**（3.3，最简）：从头两侧贴着的墨里找一根竖笔——纵向连着够长、其中有一段是细的（头叠成的墨柱没有细段）。
 //! 同一根竖笔上的头成一个和弦。竖笔直接在原图上量（谱线上的存疑像素算连着：竖笔过线处本来是墨，这里只为不在线上断开）。
 use super::heads::Head;
-use crate::frame::ink::{InkLayers, BG, INK};
+use crate::frame::ink::{Probe, BG, INK};
 use serde::{Deserialize, Serialize};
 
 /// 量头左右缘的两行离中心多远（相对线距）：避开中心那一行可能压着的加线。
@@ -28,7 +28,7 @@ pub struct Stem {
 }
 
 /// (x, y) 处横向墨宽（只数符号墨；超过 `cap` 就不再数）。
-pub(crate) fn width_at(ink: &InkLayers, x: i64, y: i64, cap: i64) -> i64 {
+pub(crate) fn width_at<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, cap: i64) -> i64 {
     let (mut a, mut b) = (x, x);
     while x - a <= cap && ink.at(a - 1, y) == INK {
         a -= 1;
@@ -40,13 +40,13 @@ pub(crate) fn width_at(ink: &InkLayers, x: i64, y: i64, cap: i64) -> i64 {
 }
 
 /// 从 (x, y) 沿列往 `dir` 方向走到墨断开（不过 `gap` 像素的白缝接上），回最后一个墨像素的 y。
-fn run_end(ink: &InkLayers, x: i64, y: i64, dir: i64, gap: i64) -> i64 {
+fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64) -> i64 {
     let mut end = y;
     let mut cur = y;
     loop {
         let next = (1..=gap + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG);
         match next {
-            Some(yy) if yy >= 0 && (yy as usize) < ink.h => {
+            Some(yy) if yy >= 0 && (yy as usize) < ink.height() => {
                 end = yy;
                 cur = yy;
             }
@@ -57,7 +57,7 @@ fn run_end(ink: &InkLayers, x: i64, y: i64, dir: i64, gap: i64) -> i64 {
 
 /// 给一个头找符干。`sp`：所在行的线距；`thick`：谱线线宽；`edges`：头的左右缘（空心头由外圈量得；实心头给 None，在这里按两行墨量）；
 /// `taken(x)`：这一列的竖笔已经归了别的元素（定下的小节线，见 [`super::resolve::Claims`]），不当符干。
-pub fn find_stem(ink: &InkLayers, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
+pub fn find_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
     let (cx, cy) = (h.x.round() as i64, h.y.round() as i64);
     let off = ((EDGE_ROW * sp).round() as i64).max(1);
     let rows = [cy - off, cy + off];

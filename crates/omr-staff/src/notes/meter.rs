@@ -3,7 +3,7 @@
 //! 凑不满的保持原判，记可疑。别的模块（跨谱表对齐、简谱互证）要改音符也走 [`Fix`]。
 use super::heads::HeadKind;
 use super::{Chord, RowNotes, SAME_ONSET};
-use crate::page::PageFrame;
+use crate::page::Layout;
 use dolce_omr_sheet::meter::{base_line, solve, Alt, Item, Line};
 use super::tuplets::TupletCand;
 use dolce_omr_sheet::score::{DoubtKind, NoteType, Tuplet};
@@ -167,7 +167,7 @@ struct Cell {
 
 /// 一个系统的满拍裁决。`rows`：这个系统各行谱的页内下标；`notes`：与 `rows` 同序的各行音符（就地改）；
 /// `bar_of`：x → 第几小节；`bars`：各小节的上下文。回可疑清单与读数。
-pub fn settle_system(f: &PageFrame, rows: &[usize], notes: &mut [RowNotes], bar_of: &dyn Fn(f64) -> usize, bars: &[Bar], med: f64) -> (Vec<Flag>, Stats) {
+pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of: &dyn Fn(f64) -> usize, bars: &[Bar], med: f64) -> (Vec<Flag>, Stats) {
     let mut flags = Vec::new();
     let mut stats = Stats::default();
     let mut fixes: Vec<Fix> = Vec::new();

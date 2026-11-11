@@ -8,10 +8,9 @@ use dolce_omr_core::pixel::ccl::connected_components;
 use dolce_omr_sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
-/// 墨层里一个像素的三种状态。
-pub const BG: u8 = 0;
-pub const INK: u8 = 1;
-pub const LINE: u8 = 2;
+/// 墨层里一个像素的三种状态（与矢量页同一套，见 `omr-sheet::element`）。
+pub use dolce_omr_sheet::element::{Probe, BG, INK, LINE};
+pub use dolce_omr_sheet::prims::VSeg;
 
 /// 一页的墨层。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -20,6 +19,19 @@ pub struct InkLayers {
     pub h: usize,
     /// 逐像素 `BG` / `INK` / `LINE`。
     pub tri: Vec<u8>,
+}
+
+impl Probe for InkLayers {
+    fn width(&self) -> usize {
+        self.w
+    }
+    fn height(&self) -> usize {
+        self.h
+    }
+    #[inline]
+    fn at(&self, x: i64, y: i64) -> u8 {
+        InkLayers::at(self, x, y)
+    }
 }
 
 impl InkLayers {
@@ -210,29 +222,6 @@ pub struct Blob {
     pub area: u32,
     pub cx: f64,
     pub cy: f64,
-}
-
-/// 一根竖段：横跨 [x0, x1] 列、纵向 [y0, y1]（含）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VSeg {
-    pub x0: usize,
-    pub x1: usize,
-    pub y0: usize,
-    pub y1: usize,
-    /// 连了几列（宽）。
-    pub cols: usize,
-}
-
-impl VSeg {
-    pub fn cx(&self) -> f64 {
-        (self.x0 + self.x1) as f64 / 2.0
-    }
-    pub fn len(&self) -> usize {
-        self.y1 - self.y0 + 1
-    }
-    pub fn is_empty(&self) -> bool {
-        false
-    }
 }
 
 #[cfg(test)]

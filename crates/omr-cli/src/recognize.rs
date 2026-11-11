@@ -4,7 +4,7 @@ use dolce_omr_ocr::native::NativeInfer;
 use dolce_omr_ocr::{Ocr, OcrCache};
 use dolce_omr_source::raster::{image_file, page_image, SourceImage};
 use dolce_omr_source::{ContentOpts, PdfDoc};
-use dolce_omr_staff::page::{recognize_page, Page};
+use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::song::assemble;
 use rayon::prelude::*;
 use std::path::Path;
@@ -17,15 +17,20 @@ pub enum RecOutput {
     Jianpu { recognized: String },
 }
 
-/// 一个输入文件的各页原图（PDF 逐页取内嵌图；图片一张一页）。
-pub fn sources(p: &Path) -> Result<Vec<SourceImage>, String> {
+/// 一个输入文件的各页（PDF 逐页取内嵌图与矢量内容；图片一张一页，只有像素层）。
+pub fn sources(p: &Path) -> Result<Vec<PageSource>, String> {
     let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let bytes = std::fs::read(p).map_err(|e| format!("读 {}：{e}", p.display()))?;
     if ext == "pdf" {
         let doc = PdfDoc::open(bytes)?;
-        Ok((0..doc.page_count()).filter_map(|i| page_image(&doc.content(i, ContentOpts { images: true, paths: false, text: false, outlines: false }).ok()?)).collect())
+        Ok((0..doc.page_count())
+            .filter_map(|i| {
+                let pc = doc.content(i, ContentOpts { images: true, paths: true, text: true, outlines: true }).ok()?;
+                Some(PageSource { raster: page_image(&pc), content: Some(pc) })
+            })
+            .collect())
     } else {
-        Ok(vec![image_file(&bytes)?])
+        Ok(vec![PageSource { raster: Some(image_file(&bytes)?), content: None }])
     }
 }
 
@@ -35,12 +40,13 @@ pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOu
         srcs.extend(sources(Path::new(f))?);
     }
     if kind == "jianpu" {
+        let srcs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.raster).collect();
         let score = dolce_omr_jianpu::recognize(&srcs, ocr)?;
         return Ok(RecOutput::Jianpu { recognized: serde_json::to_string(&score).map_err(|e| e.to_string())? });
     }
-    let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_page(s, Some(ocr))).collect();
+    let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_source(s, Some(ocr))).collect();
     if pages.is_empty() {
-        return Err("没有找到谱表（矢量页尚未接）".into());
+        return Err("没有找到谱表".into());
     }
     let song = assemble(&pages, None);
     Ok(RecOutput::Staff { musicxml: song.score.to_musicxml(), layout: song.layout_json() })

@@ -14,7 +14,8 @@ fn main() {
             return;
         }
         let Some(page) = recognize_page(src, None) else { return };
-        let f = &page.frame;
+        let frame = dolce_omr_staff::page::frame_page(src, None).unwrap();
+        let f = &frame;
         let sp = f.unit.space;
         println!("== {key} p{pn} {}×{} 放大 {} 线距 {sp:.1}", src.w, src.h, f.up);
         for (i, s) in f.staves.iter().enumerate() {

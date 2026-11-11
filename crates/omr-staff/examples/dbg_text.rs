@@ -18,7 +18,8 @@ fn main() {
             return;
         }
         let Some(page) = recognize_page(src, Some(&ocr)) else { return };
-        let f = &page.frame;
+        let Some(frame) = dolce_omr_staff::page::frame_page(src, Some(&ocr)) else { return };
+        let f = &frame;
         println!("== {key} p{pn} {}×{} 放大 {} 线距 {:.1}", src.w, src.h, f.up, f.unit.space);
         let t = std::time::Instant::now();
         let (bands, fh) = page_bands(f, src, &page.notes, &ocr);

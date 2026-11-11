@@ -49,7 +49,7 @@ fn main() {
     let mut per: Vec<(String, usize, usize, usize)> = Vec::new();
     for_sources(&corpus, &only, |key, pn, snap, src| {
         let Some(page) = recognize_page(src, None) else { return };
-        let sp = page.frame.unit.space;
+        let sp = page.layout.unit.space;
         let k = ts_scale(snap, pn, sp);
         let ts = ts_syms(snap, pn, &code);
         let heads: Vec<(f64, f64, i32, f64)> = page.notes.iter().flat_map(|r| r.chords.iter().flat_map(|c| c.heads.iter().filter(|h| kinds.contains(&h.kind)).map(|h| (h.x, h.y, h.pos, h.score)))).collect();
@@ -57,7 +57,7 @@ fn main() {
         let mut miss = Vec::new();
         // 点在谱表外：离它最近的那行谱的首线以上或末线以下半格多
         let outside = |x: f64, y: f64| {
-            let st = &page.frame.staves;
+            let st = &page.layout.staves;
             st.iter().min_by(|a, b| (a.y_of(x, 4.0) - y).abs().total_cmp(&(b.y_of(x, 4.0) - y).abs())).is_some_and(|s| {
                 let p = s.pos(x, y);
                 !(-1.5..=9.5).contains(&p)
@@ -78,7 +78,8 @@ fn main() {
         }
         rs_o += heads.iter().filter(|h| !(-1..=9).contains(&h.2)).count();
         if why_on {
-            let f = &page.frame;
+            let frame = dolce_omr_staff::page::frame_page(src, None).unwrap();
+            let f = &frame;
             let claims = dolce_omr_staff::notes::resolve::Claims::new(f);
             let all_miss: Vec<(f64, f64)> = ts.iter().map(|&(x, y, w, h)| ((x + w / 2.0) * k, (y + h / 2.0) * k)).filter(|&(cx, cy)| !heads.iter().any(|h| (h.0 - cx).abs() < sp * 0.6 && (h.1 - cy).abs() < sp * 0.45)).collect();
             let near = |hx: f64, hy: f64, cx: f64, cy: f64| (hx - cx).abs() < sp * 0.6 && (hy - cy).abs() < sp * 0.45;

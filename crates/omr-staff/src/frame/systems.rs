@@ -4,6 +4,7 @@
 //! 直接在两行之间的缝里逐行数左端那一小条窗口里有没有墨。窗口只开在谱行左缘（往外几格、往里半格）：歌词、力度都在更右边，
 //! 页边框在更左边，都进不来。淡得断成虚线的系统线再看松阈值图里贴着左端的那一根。左端标记没印出来的单行按间距并回去。
 use dolce_omr_core::image::Binary;
+use dolce_omr_sheet::element::{Probe, BG};
 use dolce_omr_sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
@@ -44,12 +45,12 @@ fn edge(s: &Staff) -> (f64, f64) {
 }
 
 /// 把一页的谱行分成系统（`staves` 自上而下）。`soft`：松阈值图（与 `bin` 同尺寸才用）。
-pub fn find_systems(bin: &Binary, soft: Option<&Binary>, staves: &[Staff], unit: &Unit) -> Vec<System> {
+pub fn find_systems<P: Probe + ?Sized>(bin: &P, soft: Option<&Binary>, staves: &[Staff], unit: &Unit) -> Vec<System> {
     if staves.is_empty() {
         return vec![];
     }
     let sp = unit.space;
-    let soft = soft.filter(|s| s.w == bin.w && s.h == bin.h);
+    let soft = soft.filter(|s| s.w == bin.width() && s.h == bin.height());
     let mut lefts: Vec<f64> = staves.iter().map(|s| s.left).collect();
     lefts.sort_by(f64::total_cmp);
     let med_left = lefts[lefts.len() / 2];
@@ -60,10 +61,10 @@ pub fn find_systems(bin: &Binary, soft: Option<&Binary>, staves: &[Staff], unit:
         let y1 = edge(b).0.round() as i64 - 1;
         let left = a.left.min(b.left);
         let x0 = ((left.min(med_left) - sp * LEFT_OUT).round() as i64).max(0);
-        let x1 = ((left + sp * LEFT_IN).round() as i64).min(bin.w as i64 - 1);
-        let rows = (y0..=y1).filter(|&y| y >= 0 && (y as usize) < bin.h).count();
+        let x1 = ((left + sp * LEFT_IN).round() as i64).min(bin.width() as i64 - 1);
+        let rows = (y0..=y1).filter(|&y| y >= 0 && (y as usize) < bin.height()).count();
         let frac = if (a.one_line || b.one_line) && (a.left - b.left).abs() <= sp * ONE_ALIGN { LINK_FRAC_ONE } else { LINK_FRAC };
-        let std = if rows == 0 { 1.0 } else { (y0..=y1).filter(|&y| (x0..=x1).any(|x| bin.ink(x, y))).count() as f64 / rows as f64 };
+        let std = if rows == 0 { 1.0 } else { (y0..=y1).filter(|&y| (x0..=x1).any(|x| bin.at(x, y) != BG)).count() as f64 / rows as f64 };
         let mut linked = std >= frac;
         if !linked && rows > 0 {
             if let Some(sf) = soft {
@@ -89,7 +90,7 @@ pub fn find_systems(bin: &Binary, soft: Option<&Binary>, staves: &[Staff], unit:
 /// 两行之间的系统线断成虚线（扫描件上人声方括号与钢琴大谱表之间那一截细线）：左端附近找墨最满的一列，
 /// 墨过 `DASH_INK`、且最长一段空白不到 `DASH_GAP` 格——真正的系统间隔那一列是白的，两个系统挨得近时上一个括号的下钩、
 /// 下一个括号的上钩把间隔两头填满，墨量过半、中间却隔着一格半的白。
-fn dashed(bin: &Binary, a: &Staff, b: &Staff, sp: f64) -> bool {
+fn dashed<P: Probe + ?Sized>(bin: &P, a: &Staff, b: &Staff, sp: f64) -> bool {
     let y0 = (edge(a).1 + sp * 0.5).round() as i64;
     let y1 = (edge(b).0 - sp * 0.5).round() as i64;
     if ((y1 - y0) as f64) < sp * 2.0 {
@@ -103,7 +104,7 @@ fn dashed(bin: &Binary, a: &Staff, b: &Staff, sp: f64) -> bool {
     ((xa - sp).round() as i64..=(xb + sp).round() as i64).any(|x0| {
         let (mut x, mut n, mut gap, mut worst) = (x0, 0usize, 0usize, 0usize);
         for y in y0..=y1 {
-            let hit = [x, x - 1, x + 1].into_iter().find(|&xx| bin.ink(xx, y));
+            let hit = [x, x - 1, x + 1].into_iter().find(|&xx| bin.at(xx, y) != BG);
             match hit {
                 Some(xx) => {
                     x = xx;

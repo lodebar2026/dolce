@@ -14,7 +14,8 @@ fn main() {
             return;
         }
         let Some(page) = recognize_page(src, None) else { return };
-        let f = &page.frame;
+        let Some(frame) = dolce_omr_staff::page::frame_page(src, None) else { return };
+        let f = &frame;
         if a.len() < 8 {
             let k = ts_scale(snap, pn, f.unit.space);
             println!("线距 {:.1}，折算 {k}", f.unit.space);

@@ -50,6 +50,8 @@ pub struct Song {
     pub meter: Stats,
     /// 混排谱简谱互证的读数。
     pub fused: fuse::Stats,
+    /// 框架与音符取自矢量层（判分按矢量档分）。
+    pub vector: bool,
 }
 
 /// 一个系统的小节边界。
@@ -62,7 +64,7 @@ struct Bound {
 }
 
 fn bounds(page: &Page, rows: &[usize]) -> (Vec<Bound>, bool) {
-    let f = &page.frame;
+    let f = &page.layout;
     let sp = f.unit.space;
     let mut all: Vec<(f64, BarStyle, bool, bool)> = rows
         .iter()
@@ -482,7 +484,7 @@ fn mark_spans(part: &mut Part, mut recs: Vec<SpanRec>) {
 
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
-    let nparts = pages.iter().flat_map(|p| p.frame.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
+    let nparts = pages.iter().flat_map(|p| p.layout.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
     let mut parts: Vec<Part> = (0..nparts).map(|_| Part::default()).collect();
     // 各声部现行的谱号、调号
     let mut clef: Vec<Option<Clef>> = vec![None; nparts];
@@ -492,15 +494,15 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     // 各系统的调号（同系统互证后各行相同，取第一个读出来的行）
     let sys_keys: Vec<Option<(i8, bool)>> = pages
         .iter()
-        .flat_map(|p| p.frame.systems.iter().map(move |sys| sys.staves.iter().filter_map(|&i| p.attrs[i].key.map(|k| (k.fifths, p.attrs[i].key_sure))).next()))
+        .flat_map(|p| p.layout.systems.iter().map(move |sys| sys.staves.iter().filter_map(|&i| p.attrs[i].key.map(|k| (k.fifths, p.attrs[i].key_sure))).next()))
         .collect();
     let keys = settle_keys(&sys_keys);
     // 各系统的行配到哪几个声部；各声部逐系统的行首谱号读数顺着乐曲定下来（行首换谱号少见：孤零零一行读得不同的照前后改）
-    let mixed = pages.iter().any(|p| !p.frame.bands.is_empty());
+    let mixed = pages.iter().any(|p| !p.layout.bands.is_empty());
     let mut slots_all: Vec<Vec<usize>> = Vec::new();
     let mut clef_reads: Vec<Vec<Option<(Clef, bool)>>> = vec![Vec::new(); nparts];
     for page in pages {
-        for sys in &page.frame.systems {
+        for sys in &page.layout.systems {
             let ra: Vec<&RowAttrs> = sys.staves.iter().map(|&i| &page.attrs[i]).collect();
             let mut slots = assign(&ra.iter().map(|a| a.clef).collect::<Vec<_>>(), &clef);
             // 简线混排谱里只有一行谱表的系统就是旋律，一律归第一个声部（按谱号保序配会落到靠下的声部，各行在两个声部间来回跳）
@@ -523,16 +525,16 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     }
     let clefs: Vec<Vec<Option<Clef>>> = clef_reads.iter().map(|r| settle(r, |_, _| false)).collect();
     // 混排谱：全曲的简谱校准（横向平移、「1」的位置）
-    let lead_of = |page: &Page, i: usize| page.attrs[i].lead_end.max(page.frame.staves[i].left);
+    let lead_of = |page: &Page, i: usize| page.attrs[i].lead_end.max(page.layout.staves[i].left);
     let calib = {
         let mut rows: Vec<(fuse::Ctx, &RowNotes)> = Vec::new();
         let mut n = 0;
         for page in pages {
-            for sys in &page.frame.systems {
+            for sys in &page.layout.systems {
                 for (k, &i) in sys.staves.iter().enumerate() {
-                    if let Some(jp) = page.frame.jianpu.iter().find(|r| r.staff == i) {
+                    if let Some(jp) = page.layout.jianpu.iter().find(|r| r.staff == i) {
                         let c = clefs[slots_all[n][k]][n].unwrap_or(Clef::TREBLE);
-                        rows.push((fuse::Ctx { si: i, st: &page.frame.staves[i], lead: lead_of(page, i), jp, clef: c, key: Key { fifths: keys[n] } }, &page.notes[i]));
+                        rows.push((fuse::Ctx { si: i, st: &page.layout.staves[i], lead: lead_of(page, i), jp, clef: c, key: Key { fifths: keys[n] } }, &page.notes[i]));
                     }
                 }
                 n += 1;
@@ -543,8 +545,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut fused = fuse::Stats::default();
     if std::env::var("OMR_MIXED_DEBUG").is_ok() {
         for (pn, page) in pages.iter().enumerate() {
-            for b in &page.frame.bands {
-                let n = page.frame.jianpu.iter().find(|r| r.staff == b.staff).map_or(0, |r| r.notes.len());
+            for b in &page.layout.bands {
+                let n = page.layout.jianpu.iter().find(|r| r.staff == b.staff).map_or(0, |r| r.notes.len());
                 eprintln!("页{} 简谱带 → 谱行{}（量自{}）y{:.0}~{:.0} 小节线{} 读出{}个音", pn + 1, b.staff, b.anchor, b.y0, b.y1, b.bars.len(), n);
             }
         }
@@ -562,14 +564,14 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut stats = Stats::default();
     // 全曲汉字词最多几行（拉丁词的行号接在它后面）
     let han_lines = pages.iter().flat_map(|p| p.text.rows.iter()).flat_map(|r| r.lyrics.iter()).filter(|l| !l.latin).map(|l| l.number).max().unwrap_or(0);
-    let total_sys: usize = pages.iter().map(|p| p.frame.systems.len()).sum();
+    let total_sys: usize = pages.iter().map(|p| p.layout.systems.len()).sum();
     // 各声部的弧（两端定了的）与等下一个系统接的半条
     let mut span_recs: Vec<Vec<SpanRec>> = (0..nparts).map(|_| Vec::new()).collect();
     let mut pending: Vec<Vec<Pending>> = (0..nparts).map(|_| Vec::new()).collect();
     // 各声部画到行尾、还没收的房子
     let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
     for (pn, page) in pages.iter().enumerate() {
-        let f = &page.frame;
+        let f = &page.layout;
         for (si, sys) in f.systems.iter().enumerate() {
             let sys_key = Key { fifths: keys[sys_no] };
             let slots = slots_all[sys_no].clone();
@@ -620,7 +622,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             let wants: Vec<Option<u32>> = bars.iter().map(|b| b.want).collect();
             let loose: Vec<bool> = bars.iter().map(|b| b.loose).collect();
             for (k, &i) in rows.iter().enumerate() {
-                if let Some(jp) = page.frame.jianpu.iter().find(|r| r.staff == i) {
+                if let Some(jp) = page.layout.jianpu.iter().find(|r| r.staff == i) {
                     let c = clefs[slots[k]][sys_i].unwrap_or(Clef::TREBLE);
                     let cx = fuse::Ctx { si: i, st: &f.staves[i], lead: lead_of(page, i), jp, clef: c, key: sys_key };
                     fused += fuse::apply(&cx, &mut sys_notes[k], &xs, &wants, &loose, &calib);
@@ -628,12 +630,12 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             }
             let (flags, st) = meter::settle_system(f, rows, &mut sys_notes, &bar_of, &bars, page_med(page));
             stats += st;
-            let sys_top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up as f64;
+            let sys_top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up;
             for fl in flags {
                 let s = &f.staves[rows[fl.row]];
                 let x0 = if fl.bar == 0 { lead } else { bs[fl.bar - 1].x };
                 let x1 = bs.get(fl.bar).map_or(s.right, |b| b.x);
-                let up = f.up as f64;
+                let up = f.up;
                 doubts.push(Doubt { page: pn + 1, sys_top, row: fl.row, measure: from + fl.bar, rect: (x0 / up, s.top(x0) / up, x1 / up, s.bottom(x0) / up), kind: fl.kind, note: fl.note });
             }
             for (k, &i) in rows.iter().enumerate() {
@@ -858,7 +860,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             prev_open = open && !bs.is_empty();
             // 末小节的宽度折成「本行常见小节宽」的倍数，留给下一行比（各行线距、疏密不同，不直接比像素）
             prev_tail = if med > 0.0 { tail_w / med } else { 0.0 };
-            let top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up as f64;
+            let top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up;
             systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout });
         }
     }
@@ -869,7 +871,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
         eprintln!("互证 {fused:?}");
     }
     let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
-    Song { score: Score { title, credits, parts }, systems, doubts, meter: stats, fused }
+    let vector = pages.iter().any(|p| p.layout.vector);
+    Song { score: Score { title, credits, parts }, systems, doubts, meter: stats, fused, vector }
 }
 
 impl Song {
@@ -900,7 +903,7 @@ impl Song {
             .map(|d| format!("{{\"page\":{},\"sysTop\":{:.0},\"row\":{},\"m\":{},\"kind\":\"{}\",\"box\":[{:.0},{:.0},{:.0},{:.0}],\"note\":{:?}}}", d.page, d.sys_top, d.row, d.measure + 1, d.kind.code(), d.rect.0, d.rect.1, d.rect.2, d.rect.3, d.note))
             .collect();
         let m = &self.meter;
-        o.push_str(&format!("],\"notes\":[],\"rowSp\":{{{sp}}},\"doubts\":[{}],\"meter\":{{\"checked\":{},\"fullBefore\":{},\"fullAfter\":{},\"fixed\":{}}}}}", ds.join(","), m.checked, m.full_before, m.full_after, m.fixed));
+        o.push_str(&format!("],\"vector\":{},\"notes\":[],\"rowSp\":{{{sp}}},\"doubts\":[{}],\"meter\":{{\"checked\":{},\"fullBefore\":{},\"fullAfter\":{},\"fixed\":{}}}}}", self.vector, ds.join(","), m.checked, m.full_before, m.full_after, m.fixed));
         o
     }
 }

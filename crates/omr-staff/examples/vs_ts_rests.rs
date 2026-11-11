@@ -19,7 +19,7 @@ fn main() {
     let mut per: Vec<(String, usize, usize, usize)> = Vec::new();
     for_sources(&corpus, &only, |key, pn, snap, src| {
         let Some(page) = recognize_page(src, None) else { return };
-        let sp = page.frame.unit.space;
+        let sp = page.layout.unit.space;
         let k = ts_scale(snap, pn, sp);
         let mut ts: Vec<(usize, f64, f64)> = Vec::new();
         for l in stage(snap, pn, "syms").unwrap_or("").lines() {
