@@ -11,6 +11,7 @@ dolce-omr-core = { path = "../omr-core" }
 dolce-omr-ocr = { path = "../omr-ocr" }
 dolce-omr-sheet = { path = "../omr-sheet" }
 dolce-omr-source = { path = "../omr-source" }
+dolce-omr-jianpu = { path = "../omr-jianpu" }
 serde.workspace = true
 
 [dev-dependencies]

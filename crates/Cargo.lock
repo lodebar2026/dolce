@@ -318,6 +318,7 @@ name = "dolce-omr-staff"
 version = "0.1.0"
 dependencies = [
  "dolce-omr-core",
+ "dolce-omr-jianpu",
  "dolce-omr-ocr",
  "dolce-omr-sheet",
  "dolce-omr-source",

@@ -18,7 +18,7 @@ fn main() {
         if page != 0 && pn != page {
             return;
         }
-        let Some(f) = frame_page(src) else { return };
+        let Some(f) = frame_page(src, None) else { return };
         println!("== {key} p{pn} 线距 {:.1} 线宽 {:.1} 放大 {}", f.unit.space, f.unit.thick, f.up);
         for (i, s) in f.staves.iter().enumerate() {
             let sp = s.space();

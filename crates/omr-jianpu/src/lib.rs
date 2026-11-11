@@ -20,6 +20,20 @@ use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_source::raster::SourceImage;
 use result::{RecognizedScore, StaffRow};
 
+/// 认一条简谱行（混排谱里从谱表上方切下来的条）：回工作图相对条的缩放与读出音最多的那一行。
+/// 只到建音（数字、八度点、减时线、附点、增时线、小节线），不挂歌词、不裁满拍——拍号在五线谱那边。
+/// `known`：已知是简谱行，不按「多数格读得出数字」筛（见 [`frame::find_rows_in`]）；调用方拿不带它的那一遍验带的真假。
+pub fn recognize_strip(src: &SourceImage, ocr: &CachedOcr, known: bool) -> Option<(f64, notes::RowNotes)> {
+    let ink = prep::Ink::load(std::slice::from_ref(src))?;
+    let num_h = frame::estimate_num_h(&ink.comps);
+    let rows = frame::find_rows_in(&ink, num_h, ocr, known);
+    let scale = ink.bin.w as f64 / src.w as f64;
+    if std::env::var("OMR_JP_DEBUG").is_ok() {
+        eprintln!("条 {}x{} 字号 {num_h:.1}：{} 行，各行数字 {:?}", ink.bin.w, ink.bin.h, rows.len(), rows.iter().map(|r| r.digits().count()).collect::<Vec<_>>());
+    }
+    rows.iter().map(|row| notes::build(&ink, row, ocr)).max_by_key(|r| r.nums.len()).map(|r| (scale, r))
+}
+
 /// 识别一首（各页原图按序）。没有找到数字行回 Err。
 pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
     let ink = prep::Ink::load(srcs).ok_or("没有页面")?;

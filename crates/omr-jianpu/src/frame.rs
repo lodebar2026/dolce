@@ -182,6 +182,12 @@ fn strict_digit(t: &str) -> Option<u8> {
 /// 找数字行。数字样的连通块（瘦高、与字号等高）按纵向中心聚成排，一排里多数读得出数字的是谱行的种子；
 /// 由种子定行带，再在带内切格。只有两三个数字又没有小节线的排（曲号、拍号）不算。
 pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
+    find_rows_in(ink, num_h, ocr, false)
+}
+
+/// 同 [`find_rows`]。`known`：这张图已知是一条简谱行（混排谱里按小节线对齐切下来的条），不再拿「多数格读得出数字」筛——
+/// 条里夹着的说明文字、行首的标志会把比例拉低。
+pub fn find_rows_in(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowFrame> {
     let cand: Vec<&Comp> = ink
         .comps
         .iter()
@@ -210,7 +216,7 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
         if std::env::var("OMR_JP_DEBUG").is_ok() && l.len() >= 3 {
             eprintln!("排 y{:.0} 块{} 读出数字{}", cand[l[0]].rect.cy(), l.len(), digits.len());
         }
-        if digits.is_empty() || (digits.len() as f64) < l.len() as f64 * 0.5 {
+        if digits.is_empty() || (!known && (digits.len() as f64) < l.len() as f64 * 0.5) {
             continue;
         }
         // 同一排里高度离群的不参加定带（拍号、曲号的大字）
@@ -232,7 +238,7 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("  带 y{:.0} 高{:.0} 数字格{nd} 读出{good} 线{nb}", band.top0, band.h());
         }
-        if (good as f64) < nd as f64 * 0.6 {
+        if !known && (good as f64) < nd as f64 * 0.6 {
             continue;
         }
         // 调号行（「1=B 4/4」与标题同排）：头一个数字后面紧跟着等号——上下两道短横；这种排里至多一根像小节线的竖笔

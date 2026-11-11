@@ -49,6 +49,10 @@ pub trait DigitReader: Sync {
     fn detect(&self, _image: &Gray) -> Option<Vec<Rect>> {
         None
     }
+    /// 带缓存的 OCR 本体（简谱行交简谱路线认时要它）。
+    fn cached(&self) -> Option<&CachedOcr> {
+        None
+    }
 }
 
 impl DigitReader for CachedOcr {
@@ -60,6 +64,9 @@ impl DigitReader for CachedOcr {
     }
     fn detect(&self, image: &Gray) -> Option<Vec<Rect>> {
         CachedOcr::detect(self, image).ok()
+    }
+    fn cached(&self) -> Option<&CachedOcr> {
+        Some(self)
     }
 }
 

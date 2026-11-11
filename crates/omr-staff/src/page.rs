@@ -5,6 +5,8 @@ use crate::frame::bars::{page_barlines, Barline};
 use crate::frame::ink::{Blob, InkLayers, VSeg};
 use crate::notes::{page_notes, RowNotes};
 use crate::frame::systems::{find_systems, System};
+use crate::mixed::band::{self, Band};
+use crate::mixed::JpRow;
 use crate::prep::imaging::image_page;
 use dolce_omr_core::image::Binary;
 use dolce_omr_sheet::{Staff, Unit};
@@ -27,6 +29,9 @@ pub struct PageFrame {
     pub systems: Vec<System>,
     /// 各行谱的小节线（与 `staves` 同序）。
     pub bars: Vec<Vec<Barline>>,
+    /// 混排谱的简谱行与各条的读数；带里的墨已从上面各层划出去。
+    pub bands: Vec<Band>,
+    pub jianpu: Vec<JpRow>,
 }
 
 /// 一页的识别结果（现到音符数据的实心头）。
@@ -42,22 +47,50 @@ pub struct Page {
     pub spans: crate::spans::PageSpans,
 }
 
+/// 简谱小节线候选的竖段至少这么长（相对线距；与 [`band`] 的下限一致）。
+const SHORT_SEG: f64 = 1.2;
+
 /// 框架结构；页上没有谱表回 None。
-pub fn frame_page(src: &SourceImage) -> Option<PageFrame> {
+pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOcr>) -> Option<PageFrame> {
     let im = image_page(src);
     let (unit, mut staves) = im.staves?;
-    crate::frame::staves::align_lefts(&im.bin, &mut staves);
-    let ink = InkLayers::new(&im.bin, &staves, &unit);
-    let segs = ink.vsegs((unit.space * 3.0) as usize, unit.thick.ceil().max(2.0) as usize);
-    let (blobs, labels) = ink.blobs(4.0);
-    let systems = find_systems(&im.bin, im.soft.as_ref(), &staves, &unit);
-    let bars = page_barlines(&ink, &segs, &staves, &systems, &unit);
-    Some(PageFrame { bin: im.bin, soft: im.soft, up: im.up, unit, staves, ink, segs, blobs, labels, systems, bars })
+    let (mut bin, mut soft, up) = (im.bin, im.soft, im.up);
+    crate::frame::staves::align_lefts(&bin, &mut staves);
+    let gap = unit.thick.ceil().max(2.0) as usize;
+    let layers = |bin: &Binary, soft: Option<&Binary>| {
+        let ink = InkLayers::new(bin, &staves, &unit);
+        let segs = ink.vsegs((unit.space * 3.0) as usize, gap);
+        let (blobs, labels) = ink.blobs(4.0);
+        let systems = find_systems(bin, soft, &staves, &unit);
+        let bars = page_barlines(&ink, &segs, &staves, &systems, &unit);
+        (ink, segs, blobs, labels, systems, bars)
+    };
+    let mut got = layers(&bin, soft.as_ref());
+    // 混排谱：简谱行整块的墨划出去，各层重建（认带要读数字，没有 OCR 就不认）
+    let (mut bands, mut jianpu) = (Vec::new(), Vec::new());
+    if let Some(ocr) = ocr {
+        let short = got.0.vsegs((unit.space * SHORT_SEG) as usize, gap);
+        let cands = band::find(&bin, &short, &staves, &got.5, &unit);
+        let systems: Vec<Vec<usize>> = got.4.iter().map(|s| s.staves.clone()).collect();
+        (bands, jianpu) = crate::mixed::claim(&mut bin, soft.as_mut(), &staves, &systems, cands, ocr);
+        if !bands.is_empty() {
+            got = layers(&bin, soft.as_ref());
+            // 印在大谱表两行之间、量自下面那行谱的简谱行是上面那行谱的旋律（闭合人声谱的女高音）
+            for b in bands.iter_mut().filter(|b| b.staff == b.anchor && b.y1 <= 0.0) {
+                if got.4.iter().any(|sys| sys.staves.iter().position(|&i| i == b.staff).is_some_and(|n| n > 0)) {
+                    jianpu.iter_mut().filter(|r| r.staff == b.staff).for_each(|r| r.staff -= 1);
+                    b.staff -= 1;
+                }
+            }
+        }
+    }
+    let (ink, segs, blobs, labels, systems, bars) = got;
+    Some(PageFrame { bin, soft, up, unit, staves, ink, segs, blobs, labels, systems, bars, bands, jianpu })
 }
 
 /// 识别一页；没有谱表回 None。
 pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Option<Page> {
-    let frame = frame_page(src)?;
+    let frame = frame_page(src, ocr.and_then(|o| o.cached()))?;
     let attrs = attrs::page_attrs(&frame, ocr);
     let notes = page_notes(&frame, &attrs, ocr);
     let mut notes = notes;
