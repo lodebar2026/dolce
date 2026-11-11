@@ -36,6 +36,8 @@ pub struct Page {
     pub attrs: Vec<RowAttrs>,
     /// 各行谱的音符（与 `staves` 同序）。
     pub notes: Vec<RowNotes>,
+    /// 文字：各行谱的歌词与记号、页眉。
+    pub text: crate::text::PageText,
 }
 
 /// 框架结构；页上没有谱表回 None。
@@ -56,5 +58,6 @@ pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Optio
     let frame = frame_page(src)?;
     let attrs = attrs::page_attrs(&frame, ocr);
     let notes = page_notes(&frame, &attrs, ocr);
-    Some(Page { frame, attrs, notes })
+    let text = crate::text::page_text(&frame, src, &notes, ocr);
+    Some(Page { frame, attrs, notes, text })
 }

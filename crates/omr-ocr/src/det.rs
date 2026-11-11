@@ -49,7 +49,8 @@ pub fn detect_region(infer: &dyn Infer, src: &Gray, region: Rect) -> Result<Vec<
     let mut hs: Vec<f64> = boxes.iter().map(|b| b.h).collect();
     hs.sort_by(f64::total_cmp);
     let med = hs.get(hs.len() / 2).copied().unwrap_or(0.0);
-    boxes.sort_by(|a, b| if (a.y - b.y).abs() > med * 0.6 { a.y.total_cmp(&b.y) } else { a.x.total_cmp(&b.x) });
+    // 这个比较不成全序（标准库的排序碰上会 panic）：用容得下它的稳定排序
+    dolce_omr_core::js::sort_by(&mut boxes, |a, b| if (a.y - b.y).abs() > med * 0.6 { a.y - b.y } else { a.x - b.x });
     Ok(boxes)
 }
 

@@ -1,6 +1,10 @@
 //! 识别结果模型（整曲）与 MusicXML 写出。现在只有骨架：声部、小节、谱号 / 调号 / 拍号、小节线样式与反复、分行分页；
 //! 音与记号、歌词、版面随各模块落地逐步加（见 web 模块页「识别-Rust」）。
 use crate::music::{BarStyle, Clef, ClefSign, Key, Pitch, Time, TimeSymbol};
+use dolce_omr_text::chords;
+use dolce_omr_text::header::Credit;
+use dolce_omr_text::lyrics::Syllabic;
+use dolce_omr_text::words::Jump;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -85,6 +89,27 @@ pub struct Tuplet {
     pub stop: bool,
 }
 
+/// 挂在音上的一个歌词音节：第几行词（1 起，自上而下）、字（行首的印刷段号并在字前：`1.道`、`1 Be`）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Lyric {
+    pub number: u8,
+    pub text: String,
+    pub syllabic: Syllabic,
+}
+
+/// 写在音前面的记号与文字（挂在这个拍点上）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Dir {
+    /// 和弦记号（归一后的写法，如 `F#m7/C#`）。
+    Harmony(String),
+    /// 文字指示；跳转记号另带播放语义。
+    Words { text: String, above: bool, jump: Option<Jump> },
+    /// 力度（`mf`）。
+    Dynamics(String),
+    /// 节拍器：四分音符每分钟多少拍；`circa` 即印着 `c.`。
+    Metronome { per_minute: u32, circa: bool },
+}
+
 /// 一个事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Event {
@@ -98,11 +123,15 @@ pub struct Event {
     pub voice: u8,
     pub arts: Vec<Art>,
     pub tuplet: Option<Tuplet>,
+    #[serde(default)]
+    pub lyrics: Vec<Lyric>,
+    #[serde(default)]
+    pub pre: Vec<Dir>,
 }
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new() }
     }
 
     pub fn divisions(&self) -> u32 {
@@ -178,6 +207,9 @@ pub struct Part {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Score {
     pub title: Option<String>,
+    /// 第一页的页眉各条（字号是点）。
+    #[serde(default)]
+    pub credits: Vec<Credit>,
     pub parts: Vec<Part>,
 }
 
@@ -235,6 +267,11 @@ fn write_event(o: &mut String, e: &Event) {
             }
             o.push_str("        </notations>\n");
         }
+        if first {
+            for l in &e.lyrics {
+                let _ = writeln!(o, "        <lyric number=\"{}\">\n          <syllabic>{}</syllabic>\n          <text>{}</text>\n        </lyric>", l.number, l.syllabic.xml(), esc(&l.text));
+            }
+        }
         o.push_str("      </note>\n");
     };
     if e.pitches.is_empty() {
@@ -256,6 +293,48 @@ fn write_event(o: &mut String, e: &Event) {
     }
 }
 
+fn write_dir(o: &mut String, d: &Dir) {
+    let alter = |o: &mut String, tag: &str, a: i8| {
+        if a != 0 {
+            let _ = write!(o, "<{tag}>{a}</{tag}>");
+        }
+    };
+    let step = |s: u8| ['C', 'D', 'E', 'F', 'G', 'A', 'B'][s as usize % 7];
+    match d {
+        Dir::Harmony(t) => {
+            let Some(c) = chords::parse(t) else { return };
+            let _ = write!(o, "      <harmony>\n        <root><root-step>{}</root-step>", step(c.root));
+            alter(o, "root-alter", c.root_alter);
+            let _ = write!(o, "</root>\n        <kind text=\"{}\">{}</kind>\n", esc(&c.kind), chords::kind_xml(&c.kind));
+            if let Some((b, a)) = c.bass {
+                let _ = write!(o, "        <bass><bass-step>{}</bass-step>", step(b));
+                alter(o, "bass-alter", a);
+                o.push_str("</bass>\n");
+            }
+            o.push_str("      </harmony>\n");
+        }
+        Dir::Words { text, above, jump } => {
+            let _ = write!(o, "      <direction placement=\"{}\">\n        <direction-type>\n          <words>{}</words>\n        </direction-type>\n", if *above { "above" } else { "below" }, esc(text));
+            match jump {
+                Some(Jump::DalSegno) => o.push_str("        <sound dalsegno=\"segno\"/>\n"),
+                Some(Jump::DaCapo) => o.push_str("        <sound dacapo=\"yes\"/>\n"),
+                Some(Jump::Fine) => o.push_str("        <sound fine=\"yes\"/>\n"),
+                Some(Jump::ToCoda) => o.push_str("        <sound tocoda=\"coda\"/>\n"),
+                Some(Jump::Coda) => o.push_str("        <sound coda=\"coda\"/>\n"),
+                None => {}
+            }
+            o.push_str("      </direction>\n");
+        }
+        Dir::Dynamics(t) => {
+            let _ = writeln!(o, "      <direction placement=\"below\">\n        <direction-type>\n          <dynamics><{t}/></dynamics>\n        </direction-type>\n      </direction>");
+        }
+        Dir::Metronome { per_minute, circa } => {
+            let pm = if *circa { format!("c. {per_minute}") } else { per_minute.to_string() };
+            let _ = writeln!(o, "      <direction placement=\"above\">\n        <direction-type>\n          <metronome>\n            <beat-unit>quarter</beat-unit>\n            <per-minute>{pm}</per-minute>\n          </metronome>\n        </direction-type>\n        <sound tempo=\"{per_minute}\"/>\n      </direction>");
+        }
+    }
+}
+
 /// 一个小节的事件按声部写：声部 1 写完 `<backup>` 回小节头再写声部 2；起拍时刻与游标不一致的用 `<forward>` / `<backup>` 挪。
 fn write_events(o: &mut String, events: &[Event]) {
     let mut cur = 0u32;
@@ -267,6 +346,9 @@ fn write_events(o: &mut String, events: &[Event]) {
                 let _ = writeln!(o, "      <forward>\n        <duration>{}</duration>\n      </forward>", e.onset - cur);
             } else if e.onset < cur {
                 let _ = writeln!(o, "      <backup>\n        <duration>{}</duration>\n      </backup>", cur - e.onset);
+            }
+            for d in &e.pre {
+                write_dir(o, d);
             }
             write_event(o, e);
             cur = e.onset + e.divisions();
@@ -321,6 +403,13 @@ impl Score {
         if let Some(t) = &self.title {
             let _ = writeln!(o, "  <work>\n    <work-title>{}</work-title>\n  </work>", esc(t));
         }
+        for c in &self.credits {
+            let _ = write!(o, "  <credit page=\"1\">\n");
+            if let Some(k) = c.kind {
+                let _ = writeln!(o, "    <credit-type>{}</credit-type>", k.xml());
+            }
+            let _ = writeln!(o, "    <credit-words justify=\"{}\" valign=\"bottom\" font-size=\"{}\">{}</credit-words>\n  </credit>", c.justify.xml(), (c.size * 2.0).round() / 2.0, esc(&c.text));
+        }
         o.push_str("  <part-list>\n");
         for i in 0..self.parts.len().max(1) {
             let _ = writeln!(o, "    <score-part id=\"P{}\">\n      <part-name print-object=\"no\"/>\n    </score-part>", i + 1);
@@ -370,7 +459,7 @@ mod tests {
         let mut m1 = Measure { attrs: Attrs { clef: Some(Clef::TREBLE_8VB), key: Some(Key { fifths: -2 }), time: Some(Time { beats: 4, beat_type: 4, symbol: TimeSymbol::Common }) }, ..Default::default() };
         m1.right = Some(BarStyle::LightLight);
         let m2 = Measure { repeat_end: true, new_system: true, ..Default::default() };
-        let x = Score { title: Some("a<b".into()), parts: vec![Part { measures: vec![m1, m2] }] }.to_musicxml();
+        let x = Score { title: Some("a<b".into()), credits: vec![], parts: vec![Part { measures: vec![m1, m2] }] }.to_musicxml();
         assert!(x.contains("<work-title>a&lt;b</work-title>"));
         assert!(x.contains("<key><fifths>-2</fifths></key>"));
         assert!(x.contains("<time symbol=\"common\"><beats>4</beats><beat-type>4</beat-type></time>"));
@@ -388,12 +477,16 @@ mod tests {
         let mut low = Event::new(vec![Pitch { step: 0, octave: 3, alter: 0 }], NoteType::Half, 0, Some(false));
         low.voice = 2;
         low.arts.push(Art::Fermata);
+        low.lyrics.push(Lyric { number: 2, text: "1.道".into(), syllabic: Syllabic::Single });
+        low.pre.push(Dir::Harmony("F#m7/C#".into()));
+        low.pre.push(Dir::Dynamics("mf".into()));
         let mut tri = Event::new(vec![], NoteType::Eighth, 0, None);
         tri.onset = 36;
         tri.tuplet = Some(Tuplet { actual: 3, normal: 2, start: true, stop: false });
         assert_eq!(tri.divisions(), 8);
-        let x = Score { title: None, parts: vec![Part { measures: vec![Measure { events: vec![e, low, tri], ..Default::default() }] }] }.to_musicxml();
+        let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![Measure { events: vec![e, low, tri], ..Default::default() }] }] }.to_musicxml();
         assert!(x.contains("<backup>\n        <duration>44</duration>") && x.contains("<voice>2</voice>") && x.contains("<fermata/>"));
+        assert!(x.contains("<lyric number=\"2\">") && x.contains("<text>1.道</text>") && x.contains("<kind text=\"m7\">minor-seventh</kind>") && x.contains("<bass-alter>1</bass-alter>") && x.contains("<dynamics><mf/></dynamics>"));
         assert!(x.contains("<actual-notes>3</actual-notes>") && x.contains("<tuplet type=\"start\" number=\"1\"/>"));
         assert!(x.contains("<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>"));
         assert!(x.contains("<chord/>\n        <pitch><step>E</step><octave>4</octave></pitch>"));

@@ -50,5 +50,5 @@ pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOu
 pub fn open_ocr(cache: &Path) -> Result<CachedOcr, String> {
     let dir = crate::sibling("web-rust/public/redist/ocr");
     let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).map_err(|e| format!("读 OCR 字典：{e}"))?;
-    Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 2, 1)), &dict)), cache: OcrCache::open(cache) })
+    Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache: OcrCache::open(cache) })
 }

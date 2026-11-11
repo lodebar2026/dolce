@@ -41,11 +41,25 @@ pub struct RowAttrs {
 /// 读一个数字格（拍号的上下两个数字）。回 OCR 逐字的候选（每个字按分降序的前若干名）；读不了回 None。
 pub trait DigitReader: Sync {
     fn read_digit(&self, cell: &Gray) -> Option<Vec<Vec<String>>>;
+    /// 读一条文字：逐字与左右缘（占条宽的比例）。
+    fn read_line(&self, _strip: &Gray) -> Option<Vec<dolce_omr_ocr::CharPos>> {
+        None
+    }
+    /// 检测画面里的文本行框（画面坐标）。
+    fn detect(&self, _image: &Gray) -> Option<Vec<Rect>> {
+        None
+    }
 }
 
 impl DigitReader for CachedOcr {
     fn read_digit(&self, cell: &Gray) -> Option<Vec<Vec<String>>> {
         Some(self.rank_chars(cell, 40).ok()?.into_iter().map(|c| c.alts).collect())
+    }
+    fn read_line(&self, strip: &Gray) -> Option<Vec<dolce_omr_ocr::CharPos>> {
+        CachedOcr::read_line(self, strip).ok()
+    }
+    fn detect(&self, image: &Gray) -> Option<Vec<Rect>> {
+        CachedOcr::detect(self, image).ok()
     }
 }
 

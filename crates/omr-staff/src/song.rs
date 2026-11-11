@@ -10,7 +10,9 @@ use crate::notes::meter::{self, Bar, Stats};
 use crate::notes::rests::Rest;
 use crate::notes::{Chord, RowNotes, SAME_ONSET};
 use dolce_omr_sheet::meter::{timeline, SHARED};
-use dolce_omr_sheet::score::{measure_divisions, Attrs, Doubt, Event, Measure, Part, Score};
+use crate::text::classify::RowText;
+use dolce_omr_sheet::score::{measure_divisions, Attrs, Dir, Doubt, Event, Lyric, Measure, Part, Score};
+use dolce_omr_text::lyrics::align;
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
 const BOUND_XTOL: f64 = 1.6;
@@ -228,6 +230,60 @@ fn voices(items: &[(f64, f64, u32, Option<bool>)], same_dx: f64) -> Vec<(u32, u8
     out
 }
 
+/// 文字能挂的一个拍点：和弦的 x、所在小节、事件下标、声部。
+struct Anchor {
+    x: f64,
+    bar: usize,
+    event: usize,
+    voice: u8,
+}
+
+/// 一行谱的歌词与记号按 x 挂到音上。横向挨着（同一拍点）的几个和弦只留声部 1 的那个。
+fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, same_dx: f64) {
+    anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
+    let mut pts: Vec<Anchor> = Vec::new();
+    for a in anchors {
+        match pts.last_mut() {
+            Some(p) if a.x - p.x < same_dx && a.bar == p.bar => {
+                if a.voice < p.voice {
+                    *p = a;
+                }
+            }
+            _ => pts.push(a),
+        }
+    }
+    if pts.is_empty() {
+        return;
+    }
+    let xs: Vec<f64> = pts.iter().map(|p| p.x).collect();
+    for line in &text.lyrics {
+        let sx: Vec<f64> = line.row.syls.iter().map(|s| s.x).collect();
+        for (k, (syl, &n)) in line.row.syls.iter().zip(&align(&sx, &xs)).enumerate() {
+            let e = &mut ms[pts[n].bar].events[pts[n].event];
+            // 行首印的段号并在首字前（汉字 `1.道`，拉丁 `1 Be`）
+            let text = match (&line.row.label, k) {
+                (Some(l), 0) if l.ends_with('.') && syl.text.chars().next().is_some_and(dolce_omr_text::chars::is_han) => format!("{l}{}", syl.text),
+                (Some(l), 0) => format!("{l} {}", syl.text),
+                _ => syl.text.clone(),
+            };
+            match e.lyrics.iter_mut().find(|l| l.number == line.number) {
+                // 音不够：多出来的字并进同一个音
+                Some(l) => l.text.push_str(&text),
+                None => e.lyrics.push(Lyric { number: line.number, text, syllabic: syl.syllabic }),
+            }
+        }
+    }
+    for m in &text.marks {
+        let nearest = || (0..xs.len()).min_by(|&a, &b| (xs[a] - m.x).abs().total_cmp(&(xs[b] - m.x).abs())).unwrap();
+        let n = match m.dir {
+            // 文字指示、节拍器从它的左端起管：取左端右边（容一个拍点宽）第一个音
+            Dir::Words { .. } | Dir::Metronome { .. } => xs.iter().position(|&x| x >= m.x - same_dx).unwrap_or(xs.len() - 1),
+            _ => nearest(),
+        };
+        ms[pts[n].bar].events[pts[n].event].pre.push(m.dir.clone());
+    }
+}
+
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let nparts = pages.iter().flat_map(|p| p.frame.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
@@ -385,6 +441,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 // 和弦与休止按 x 合成一条序列
                 let mut items: Vec<(f64, Option<&Chord>, Option<&Rest>)> = notes.chords.iter().map(|c| (c.x, Some(c), None)).chain(notes.rests.iter().map(|r| (r.x, None, Some(r)))).collect();
                 items.sort_by(|a, b| a.0.total_cmp(&b.0));
+                // 文字要挂的拍点：这一行各和弦的 (x, 小节, 事件)
+                let mut anchors: Vec<Anchor> = Vec::new();
                 let mut n0 = 0;
                 while n0 < items.len() {
                     let j = bar_of(items[n0].0);
@@ -424,18 +482,20 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                             p
                         }).collect();
                         // 同一时刻同一声部已经有和弦的（并排两个朝向相同的干）并进去
-                        let e = match ms[j].events.iter().position(|e| e.onset == onset && e.voice == voice && !e.pitches.is_empty()) {
+                        let ei = match ms[j].events.iter().position(|e| e.onset == onset && e.voice == voice && !e.pitches.is_empty()) {
                             Some(n) => {
                                 let e = &mut ms[j].events[n];
                                 e.pitches.append(&mut ps);
                                 e.stem_up = None;
-                                e
+                                n
                             }
                             None => {
                                 ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
-                                ms[j].events.last_mut().unwrap()
+                                ms[j].events.len() - 1
                             }
                         };
+                        anchors.push(Anchor { x: ch.x, bar: j, event: ei, voice });
+                        let e = &mut ms[j].events[ei];
                         for a in &ch.arts {
                             if !e.arts.contains(a) {
                                 e.arts.push(*a);
@@ -450,6 +510,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     seq_len += ons.len();
                     n0 = n1;
                 }
+                attach_text(&mut ms, anchors, &page.text.rows[i], dx);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
                     let j = bs.iter().filter(|b| b.x < ch.x).count();
@@ -498,7 +559,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout });
         }
     }
-    Song { score: Score { title, parts }, systems, doubts, meter: stats }
+    let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
+    Song { score: Score { title, credits, parts }, systems, doubts, meter: stats }
 }
 
 impl Song {

@@ -13,3 +13,4 @@ pub mod notes;
 pub mod page;
 pub mod prep;
 pub mod song;
+pub mod text;

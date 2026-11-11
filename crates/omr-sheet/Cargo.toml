@@ -6,5 +6,6 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+dolce-omr-text = { path = "../omr-text" }
 dolce-omr-core = { path = "../omr-core" }
 serde.workspace = true

@@ -1,7 +1,7 @@
 # 识别（Rust）工作区。各 crate 的职责见 docs/模块/识别-Rust.md。
 [workspace]
 resolver = "2"
-members = ["omr-build", "omr-cli", "omr-core", "omr-ocr", "omr-sheet", "omr-source", "omr-staff"]
+members = ["omr-build", "omr-cli", "omr-core", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text"]
 
 [workspace.package]
 version = "0.1.0"
