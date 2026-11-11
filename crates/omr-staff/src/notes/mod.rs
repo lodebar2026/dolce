@@ -186,6 +186,21 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
         all.extend(hollow::hollow_heads(f, &holes, &claims, si, from_of(si), scale_of(&tpl)));
     }
 
+    let mut rows = build_rows(&f.layout, &f.ink, all);
+    for (si, row) in rows.iter_mut().enumerate() {
+        row.rests = rests::rests(f, si, from_of(si));
+    }
+    beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
+    for (si, row) in rows.iter_mut().enumerate() {
+        marks::marks(f, si, from_of(si), row);
+    }
+    artics::artics(f, &mut rows);
+    tuplets::tuplets(f, &mut rows, ocr);
+    rows
+}
+
+/// 头与各自的干成和弦（同一根干的头一次成组），再按同干假头规则裁一遍。两种证据共用。
+pub fn build_rows<P: crate::frame::ink::Probe + ?Sized>(f: &crate::page::Layout, ink: &P, all: Vec<(Head, Option<Stem>)>) -> Vec<RowNotes> {
     let mut rows: Vec<RowNotes> = (0..f.staves.len()).map(|_| RowNotes::default()).collect();
     for (h, st) in all {
         let sp = f.staves[h.staff].space();
@@ -206,18 +221,9 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
             c.heads.sort_by(|a, b| a.pos.cmp(&b.pos).then(a.x.total_cmp(&b.x)));
             c.heads.dedup_by(|a, b| a.pos == b.pos && (a.x - b.x).abs() < 1.0);
             c.x = c.heads.iter().map(|h| h.x).sum::<f64>() / c.heads.len() as f64;
-            resolve::chord_rules(f, c);
+            resolve::chord_rules(f, ink, c);
         }
         row.chords.sort_by(|a, b| a.x.total_cmp(&b.x));
     }
-    for (si, row) in rows.iter_mut().enumerate() {
-        row.rests = rests::rests(f, si, from_of(si));
-    }
-    beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
-    for (si, row) in rows.iter_mut().enumerate() {
-        marks::marks(f, si, from_of(si), row);
-    }
-    artics::artics(f, &mut rows);
-    tuplets::tuplets(f, &mut rows, ocr);
     rows
 }

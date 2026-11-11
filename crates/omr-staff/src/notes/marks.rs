@@ -68,41 +68,60 @@ pub fn marks(f: &PageFrame, si: usize, x_from: f64, row: &mut RowNotes) {
             continue;
         }
         let Some(kind) = acc_kind(f, &u, sp) else { continue };
-        let pos = acc_pos(&u, kind);
-        let mut best: Option<(f64, usize, usize)> = None;
-        for (ci, c) in row.chords.iter().enumerate() {
-            for (hi, h) in c.heads.iter().enumerate() {
-                let gap = (h.x - HEAD_HALF * sp - r.right()) / sp;
-                // 先挑音级对得最准的（挨着的二度两个头都在容差里），再挑近的
-                let off = (h.pos as f64 - pos).abs();
-                let key = (off > 0.5) as u8 as f64 * 100.0 + gap;
-                if off <= ACC_POS_TOL && gap >= ACC_GAP.0 && gap <= ACC_GAP.1 && best.is_none_or(|b| key < b.0) {
-                    best = Some((key, ci, hi));
-                }
-            }
-        }
-        if let Some((_, ci, hi)) = best {
-            let h = &mut row.chords[ci].heads[hi];
+        if attach_acc(row, r, acc_pos(&u, kind), kind, sp) {
             used.extend(u.ids.iter().copied());
-            if h.acc.is_none() {
-                h.acc = Some(match kind {
-                    Acc::Sharp => 1,
-                    Acc::Flat => -1,
-                    Acc::Natural => 0,
-                });
-            }
         }
     }
-    // 附点：一个和弦里各头的点上下排成一列，点数 = 同一个间里横排着几个
-    let repeat = |x: f64| f.bars.get(si).is_some_and(|bs| bs.iter().any(|b| (b.repeat_left && b.x > x && b.x - x < REPEAT_NEAR * sp) || (b.repeat_right && b.x < x && x - b.x < REPEAT_NEAR * sp)));
-    let mut chord_dots: Vec<Vec<i32>> = vec![Vec::new(); row.chords.len()];
-    for b in &f.blobs {
+    // 附点
+    let dots = f.blobs.iter().filter_map(|b| {
         let (w, h) = (b.rect.w / sp, b.rect.h / sp);
         let (cx, cy) = (b.rect.x + b.rect.w / 2.0, b.rect.y + b.rect.h / 2.0);
         if cx < x_from || cx > s.right || cy < lo || cy >= hi || w < DOT_SIZE.0 || w > DOT_SIZE.1 || h < DOT_SIZE.0 || h > DOT_SIZE.1 {
-            continue;
+            return None;
         }
-        if w / h < DOT_ASPECT.0 || w / h > DOT_ASPECT.1 || (b.area as f64) < DOT_FILL * b.rect.w * b.rect.h || repeat(cx) {
+        if w / h < DOT_ASPECT.0 || w / h > DOT_ASPECT.1 || (b.area as f64) < DOT_FILL * b.rect.w * b.rect.h {
+            return None;
+        }
+        Some((cx, cy))
+    });
+    attach_dots(&f.layout, si, row, dots);
+}
+
+/// 一个临时记号（外框 `r`、指着的音级 `pos`）挂到它右边紧挨着、音级对得上的头。两种证据共用；挂上了回 true。
+pub fn attach_acc(row: &mut RowNotes, r: dolce_omr_core::image::Rect, pos: f64, kind: Acc, sp: f64) -> bool {
+    let mut best: Option<(f64, usize, usize)> = None;
+    for (ci, c) in row.chords.iter().enumerate() {
+        for (hi, h) in c.heads.iter().enumerate() {
+            let gap = (h.x - HEAD_HALF * sp - r.right()) / sp;
+            // 先挑音级对得最准的（挨着的二度两个头都在容差里），再挑近的
+            let off = (h.pos as f64 - pos).abs();
+            let key = (off > 0.5) as u8 as f64 * 100.0 + gap;
+            if off <= ACC_POS_TOL && gap >= ACC_GAP.0 && gap <= ACC_GAP.1 && best.is_none_or(|b| key < b.0) {
+                best = Some((key, ci, hi));
+            }
+        }
+    }
+    let Some((_, ci, hi)) = best else { return false };
+    let h = &mut row.chords[ci].heads[hi];
+    if h.acc.is_none() {
+        h.acc = Some(match kind {
+            Acc::Sharp => 1,
+            Acc::Flat => -1,
+            Acc::Natural => 0,
+        });
+    }
+    true
+}
+
+/// 附点（各点的中心）挂到和弦与休止上：点落在间里——头在线上时点在上面（偶尔下面）那个间，头在间里时点与头同高；
+/// 一个和弦里各头的点上下排成一列，点数 = 同一个间里横排着几个。反复记号的两点（紧挨着带反复点的小节线）不算。两种证据共用。
+pub fn attach_dots(f: &crate::page::Layout, si: usize, row: &mut RowNotes, dots: impl Iterator<Item = (f64, f64)>) {
+    let s = &f.staves[si];
+    let sp = s.space();
+    let repeat = |x: f64| f.bars.get(si).is_some_and(|bs| bs.iter().any(|b| (b.repeat_left && b.x > x && b.x - x < REPEAT_NEAR * sp) || (b.repeat_right && b.x < x && x - b.x < REPEAT_NEAR * sp)));
+    let mut chord_dots: Vec<Vec<i32>> = vec![Vec::new(); row.chords.len()];
+    for (cx, cy) in dots {
+        if repeat(cx) {
             continue;
         }
         let pos = s.pos(cx, cy);

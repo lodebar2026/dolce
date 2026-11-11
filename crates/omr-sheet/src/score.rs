@@ -168,11 +168,14 @@ pub struct Event {
     /// 弧的各端（圆滑线、延音线）。
     #[serde(default)]
     pub spans: Vec<SpanMark>,
+    /// 谱面上明印的临时记号（哪个音、升 1 / 降 −1 / 还原 0），写成 `<accidental>`。
+    #[serde(default)]
+    pub shown: Vec<(Pitch, i8)>,
 }
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new() }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new() }
     }
 
     pub fn divisions(&self) -> u32 {
@@ -279,6 +282,15 @@ fn write_event(o: &mut String, e: &Event) {
         let _ = writeln!(o, "        <voice>{}</voice>\n        <type>{}</type>", e.voice.max(1), e.ntype.xml());
         for _ in 0..e.dots {
             o.push_str("        <dot/>\n");
+        }
+        if let Some(&(_, a)) = pitch.and_then(|p| e.shown.iter().find(|(q, _)| q == p)) {
+            let _ = writeln!(o, "        <accidental>{}</accidental>", match a {
+                2 => "double-sharp",
+                1 => "sharp",
+                -1 => "flat",
+                -2 => "flat-flat",
+                _ => "natural",
+            });
         }
         if let Some(t) = e.tuplet {
             let _ = writeln!(o, "        <time-modification><actual-notes>{}</actual-notes><normal-notes>{}</normal-notes></time-modification>", t.actual, t.normal);

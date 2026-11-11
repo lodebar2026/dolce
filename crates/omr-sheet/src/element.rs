@@ -19,6 +19,10 @@ pub trait Probe: Sync {
     fn height(&self) -> usize;
     /// 出界回 [`BG`]。
     fn at(&self, x: i64, y: i64) -> u8;
+    /// 几何精确（矢量页）：判据的容差取线宽量级，不取像素糊度。
+    fn exact(&self) -> bool {
+        false
+    }
 }
 
 /// 元素的证据。

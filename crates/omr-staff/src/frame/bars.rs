@@ -74,7 +74,11 @@ pub fn staff_barlines<P: Probe + ?Sized>(ink: &P, segs: &[VSeg], s: &Staff, unit
             }
             let up_ok = y0 >= top - sp * END_TOL || above.is_some_and(|a| y0 <= a.bottom(x) + sp * END_TOL);
             let down_ok = y1 <= bot + sp * END_TOL || below.is_some_and(|b| y1 >= b.top(x) - sp * END_TOL);
-            up_ok && down_ok && !head_at_end(ink, v, s, sp)
+            // 几何精确时，两端正落在首末线（或伸进邻行的首末线）上的就是小节线：端点旁贴着的头是别的音（延音的和弦紧挨着小节线），不是挂在它上面的
+            let tol = (s.thick[0] * 1.5).max(sp * 0.08);
+            let on_line = |y: f64, a: f64, b: Option<f64>| (y - a).abs() <= tol || b.is_some_and(|b| (y - b).abs() <= tol);
+            let snapped = ink.exact() && on_line(y0, top, above.map(|a| a.bottom(x))) && on_line(y1, bot, below.map(|b| b.top(x)));
+            up_ok && down_ok && (snapped || !head_at_end(ink, v, s, sp))
         })
         .collect();
     cands.sort_by(|a, b| a.x0.cmp(&b.x0));
@@ -156,7 +160,11 @@ fn attach_max() -> f64 {
 
 /// 竖段在谱表范围内横向连着的墨（竖笔列以外、与它八邻接连通的符号墨，谱线存疑像素不算）有多大（平方线距）。
 /// 小节线是孤立的一笔；挂着空心头的干、共用一根竖笔的降号肚子、升号的横杠都连着一团。
+/// 几何精确时（矢量页）竖段是单独的线对象，压在它上面的头、杠是别的对象，连着的墨按定义为 0。
 fn attached<P: Probe + ?Sized>(ink: &P, v: &VSeg, s: &Staff, sp: f64) -> f64 {
+    if ink.exact() {
+        return 0.0;
+    }
     let x = v.cx();
     let (ya, yb) = ((s.top(x) - sp * 0.5).floor() as i64, (s.bottom(x) + sp * 0.5).ceil() as i64);
     let (xa, xb) = (v.x0 as i64 - (sp * 1.5) as i64, v.x1 as i64 + (sp * 1.5) as i64);

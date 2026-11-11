@@ -722,11 +722,13 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                             c_at = x.attrs.clef.unwrap_or(c_at);
                             k_at = x.attrs.key.unwrap_or(k_at);
                         }
+                        let mut shown: Vec<(Pitch, i8)> = Vec::new();
                         let mut ps: Vec<_> = ch.heads.iter().map(|h| {
                             let mut p = c_at.pitch_at(h.pos);
                             p.alter = match h.acc {
                                 Some(a) => {
                                     held.insert((p.step, p.octave), a);
+                                    shown.push((Pitch { alter: a, ..p }, a));
                                     a
                                 }
                                 None => held.get(&(p.step, p.octave)).copied().unwrap_or(k_at.alter_of(p.step)),
@@ -748,6 +750,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                         };
                         anchors.push(Anchor { x: ch.x, y: ch.heads[0].y, bar: j, event: ei, voice });
                         let e = &mut ms[j].events[ei];
+                        e.shown.extend(shown);
                         for a in &ch.arts {
                             if !e.arts.contains(a) {
                                 e.arts.push(*a);

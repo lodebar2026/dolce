@@ -18,10 +18,10 @@ const LEAD_TO: f64 = 18.0;
 /// 谱号要在左端这么多格以内起头。
 const CLEF_WITHIN: f64 = 4.0;
 /// 调号第一个记号离谱号、后面每个离前一个的最大空隙（格）。低音谱号的两点之后到第一个记号实测近 1.8 格。
-const KEY_GAP_FIRST: f64 = 2.2;
-const KEY_GAP: f64 = 1.5;
+pub(crate) const KEY_GAP_FIRST: f64 = 2.2;
+pub(crate) const KEY_GAP: f64 = 1.5;
 /// 调号记号的位置容差（音级位置，半格为 1）。
-const KEY_POS_TOL: f64 = 0.85;
+pub(crate) const KEY_POS_TOL: f64 = 0.85;
 /// 拍号离前一个单元的最大空隙（格）。
 const TIME_GAP: f64 = 3.0;
 

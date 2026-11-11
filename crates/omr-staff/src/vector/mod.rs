@@ -5,6 +5,7 @@
 //! - [`frame_vector`]：横线段成谱表（`frame::staves::staves_from_hsegs`）→ 竖线段 → 系统（`frame::systems`）→ 小节线（`frame::bars`），
 //!   系统与小节线是位图那份代码，只是探针与竖段换成矢量的。
 pub mod glyphs;
+pub mod notes;
 
 use crate::frame::bars::page_barlines;
 use crate::frame::staves::staves_from_hsegs;
@@ -26,6 +27,10 @@ pub struct VecInk<'a> {
     obj_lines: Vec<Vec<usize>>,
     /// 谱线段（`vp.lines` 的下标）。
     staff_line: Vec<bool>,
+    /// 只看这几种对象（None 全看）：数杠时只看厚带原语（平行四边形填充），连音括线、数字不冒充杠。
+    only: Option<&'static [VKind]>,
+    /// 线对象里只看不薄于这么多的线段（厚带模式；0 全看）。
+    min_w: f64,
 }
 
 impl<'a> VecInk<'a> {
@@ -38,16 +43,24 @@ impl<'a> VecInk<'a> {
         for &i in staff_lines {
             staff_line[i] = true;
         }
-        VecInk { vp, obj_lines, staff_line }
+        VecInk { vp, obj_lines, staff_line, only: None, min_w: 0.0 }
+    }
+
+    /// 只看厚带原语的探针（符杠）：平行四边形填充，与不薄于 `min_w` 的线段（画成细长填充矩形的杠）。
+    pub fn bands_only(&self, min_w: f64) -> VecInk<'a> {
+        VecInk { vp: self.vp, obj_lines: self.obj_lines.clone(), staff_line: self.staff_line.clone(), only: Some(&[VKind::Poly, VKind::Line]), min_w }
     }
 
     /// 点 (x, y)（工作坐标的实数点）的状态。
     pub fn at_f(&self, x: f64, y: f64) -> u8 {
         let mut line = false;
         for o in self.vp.hits(x, y) {
+            if self.only.is_some_and(|k| !k.contains(&o.kind)) {
+                continue;
+            }
             if o.kind == VKind::Line && !self.obj_lines[o.id as usize].is_empty() {
                 for &li in &self.obj_lines[o.id as usize] {
-                    if on_line(&self.vp.lines[li], x, y) {
+                    if self.vp.lines[li].w >= self.min_w && on_line(&self.vp.lines[li], x, y) {
                         if self.staff_line[li] {
                             line = true;
                         } else {
@@ -76,6 +89,9 @@ impl Probe for VecInk<'_> {
             return BG;
         }
         self.at_f(x as f64 + 0.5, y as f64 + 0.5)
+    }
+    fn exact(&self) -> bool {
+        true
     }
 }
 
@@ -142,8 +158,10 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, _ocr: Option<&dyn cr
     let vp = VecPage::build(pc, dolce_omr_sheet::prims::VEC_SCALE, (0.0, 0.0));
     let f = frame_vector(&vp)?;
     let n = f.layout.staves.len();
-    let attrs = vec![crate::attrs::RowAttrs::default(); n];
-    let notes = vec![crate::notes::RowNotes::default(); n];
+    let ink = VecInk::new(&vp, &f.staff_lines);
+    let syms = glyphs::music_chars(&vp);
+    let attrs = notes::page_attrs(&f.layout, &syms);
+    let notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
     let text = crate::text::PageText { rows: (0..n).map(|_| Default::default()).collect(), ..Default::default() };
     Some(crate::page::Page { layout: f.layout, attrs, notes, text, spans: Default::default() })
 }

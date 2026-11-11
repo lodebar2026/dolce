@@ -5,7 +5,8 @@
 use super::heads::{same_ink, Head, HeadKind};
 use super::stems;
 use super::Chord;
-use crate::page::PageFrame;
+use crate::frame::ink::Probe;
+use crate::page::Layout;
 
 /// 符杠端头当成的假头：离干端不到 `BEAM_END`、所在行横向墨宽过 `BEAM_WIDE`（相对线距）。
 const BEAM_END: f64 = 0.6;
@@ -17,7 +18,7 @@ pub struct Claims {
 }
 
 impl Claims {
-    pub fn new(f: &PageFrame) -> Self {
+    pub fn new(f: &Layout) -> Self {
         let bars = f.bars.iter().map(|row| row.iter().filter(|b| !b.weak && !b.segs.is_empty()).flat_map(|b| b.segs.iter().map(|s| (s.x0 as i64 - 1, s.x1 as i64 + 1))).collect()).collect();
         Claims { bars }
     }
@@ -93,7 +94,7 @@ pub fn pick(heads: &[Head], w: &[f64], sp_of: &dyn Fn(usize) -> f64) -> Vec<usiz
 }
 
 /// 同一根干上的假头。
-pub fn chord_rules(f: &PageFrame, c: &mut Chord) {
+pub fn chord_rules<P: Probe + ?Sized>(f: &Layout, ink: &P, c: &mut Chord) {
     // 干的两端各贴着一个「头」：真和弦的干总要伸出最外面的头一截，贴着干端的那个是符杠的端头（杠够厚时撑得满种子框）
     // 或两层杠之间的白缝，它上下两行横向都连着一长条墨
     if let (Some(st), true) = (c.stem, c.heads.len() >= 2) {
@@ -102,7 +103,7 @@ pub fn chord_rules(f: &PageFrame, c: &mut Chord) {
         // 实心的量头里的两行；「空心」的（两层杠与两根干围出的白缝被当成孔）量孔外上下两层杠所在的行
         let is_bar = |h: &Head| {
             let off = ((if h.kind == HeadKind::Filled { 0.2 } else { 0.35 }) * sp).round() as i64;
-            [-off, off].iter().any(|d| (-1..=1).any(|dx| stems::width_at(&f.ink, h.x.round() as i64 + dx * (sp * 0.3) as i64, h.y.round() as i64 + d, wide) > wide))
+            [-off, off].iter().any(|d| (-1..=1).any(|dx| stems::width_at(ink, h.x.round() as i64 + dx * (sp * 0.3) as i64, h.y.round() as i64 + d, wide) > wide))
         };
         let (top, bot) = (c.heads[0].clone(), c.heads.last().unwrap().clone());
         if (top.y - st.top as f64).abs() < near && (bot.y - st.bottom as f64).abs() < near {

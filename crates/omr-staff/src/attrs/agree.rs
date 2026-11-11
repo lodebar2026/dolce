@@ -1,9 +1,9 @@
 //! 同系统互证：一个系统里各行的调号相同、拍号相同（打击乐行除外）。把握不大的行照同系统里把握大的多数改。
 use super::RowAttrs;
-use crate::page::PageFrame;
+use crate::page::Layout;
 use dolce_omr_sheet::music::{ClefSign, Key, Time};
 
-pub fn system_agree(f: &PageFrame, rows: &mut [RowAttrs]) {
+pub fn system_agree(f: &Layout, rows: &mut [RowAttrs]) {
     for sys in &f.systems {
         let g = &sys.staves;
         if g.len() < 2 {

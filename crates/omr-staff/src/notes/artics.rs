@@ -101,34 +101,9 @@ pub fn artics(f: &PageFrame, rows: &mut [RowNotes]) {
             d.id != b.id && is_dot(d, sp, DOT_SIZE.1) && (d.cx - cx).abs() <= 0.2 * b.rect.w && if up { (0.35..=1.3).contains(&t) } else { (-0.3..=0.65).contains(&t) }
         });
         let Some(dot) = dot else { continue };
-        // 拱顶朝上的记在它下面那一行谱上，倒着的记在上面那一行
-        let row = (0..f.staves.len())
-            .filter_map(|si| {
-                let s = &f.staves[si];
-                if cx < s.left - s.space() || cx > s.right + s.space() {
-                    return None;
-                }
-                let d = if up { s.top(cx) - b.rect.bottom() } else { b.rect.y - s.bottom(cx) };
-                (d >= -0.5 * s.space() && d <= FERMATA_FAR * s.space()).then_some((d, si))
-            })
-            .min_by(|a, b| a.0.total_cmp(&b.0));
-        let Some((_, si)) = row else { continue };
-        let ssp = f.staves[si].space();
-        let row = &mut rows[si];
-        // 横向最近的音；并排两个声部的取朝拱那一边的（拱在上取干朝上的）
-        let key = |x: f64, toward: bool| (((x - cx).abs() / ssp > 0.5) as u8, !toward as u8, ((x - cx).abs() * 100.0) as i64);
-        let c = row.chords.iter().enumerate().filter(|(_, c)| (c.x - cx).abs() <= FERMATA_DX * ssp).min_by_key(|(_, c)| key(c.x, c.stem.is_none_or(|s| s.up == up))).map(|(i, c)| (i, (c.x - cx).abs()));
-        let r = row.rests.iter().enumerate().filter(|(_, r)| (r.x - cx).abs() <= FERMATA_DX * ssp).min_by_key(|(_, r)| key(r.x, true)).map(|(i, r)| (i, (r.x - cx).abs()));
-        let arts = match (c, r) {
-            (Some((i, dc)), Some((_, dr))) if dc <= dr => &mut row.chords[i].arts,
-            (Some((i, _)), None) => &mut row.chords[i].arts,
-            (_, Some((i, _))) => &mut row.rests[i].arts,
-            _ => continue,
-        };
-        if !arts.contains(&Art::Fermata) {
-            arts.push(Art::Fermata);
+        if attach_fermata(&f.layout, rows, b.rect, up) {
+            used.extend([b.id, dot.id]);
         }
-        used.extend([b.id, dot.id]);
     }
     // 贴头的：断奏点、保持线、重音。在和弦外沿（头缘或干端）之外
     for (si, row) in rows.iter_mut().enumerate() {
@@ -159,31 +134,74 @@ pub fn artics(f: &PageFrame, rows: &mut [RowNotes]) {
             } else {
                 continue;
             };
-            let hit = row
-                .chords
-                .iter_mut()
-                .filter(|c| (c.x - b.cx).abs() <= dx_max * sp)
-                .filter_map(|c| {
-                    let top = (c.heads[0].y - 0.5 * sp).min(c.stem.map_or(f64::MAX, |st| st.top as f64));
-                    let bot = (c.heads.last().unwrap().y + 0.5 * sp).max(c.stem.map_or(f64::MIN, |st| st.bottom as f64));
-                    let above = b.cy < top;
-                    // 断奏点、保持线只认贴着头的（干端那一侧的离头远、横向对的是干，与杂墨分不开）
-                    if kind != Art::Accent && c.stem.is_some_and(|st| st.up == above) {
-                        return None;
-                    }
-                    let x = if above { c.heads[0].x } else { c.heads.last().unwrap().x };
-                    if (x - b.cx).abs() > dx_max * sp {
-                        return None;
-                    }
-                    let gap = if above { top - b.rect.bottom() } else if b.cy > bot { b.rect.y - bot } else { return None };
-                    (gap >= ART_GAP.0 * sp && gap <= gap_max * sp).then_some((gap, c))
-                })
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            if let Some((_, c)) = hit {
-                if !c.arts.contains(&kind) {
-                    c.arts.push(kind);
-                }
-            }
+            attach_art(row, sp, kind, b.cx, b.cy, b.rect, dx_max, gap_max);
         }
     }
+}
+
+/// 延长记号（拱的外框 `r`、拱顶朝上 `up`）挂到音或休止：拱顶朝上的记在它下面那一行谱上，倒着的记在上面那一行；
+/// 横向最近的音，并排两个声部取朝拱那一边的。两种证据共用；挂上了回 true。
+pub fn attach_fermata(f: &crate::page::Layout, rows: &mut [RowNotes], r: dolce_omr_core::image::Rect, up: bool) -> bool {
+    let cx = r.cx();
+    let row = (0..f.staves.len())
+        .filter_map(|si| {
+            let s = &f.staves[si];
+            if cx < s.left - s.space() || cx > s.right + s.space() {
+                return None;
+            }
+            let d = if up { s.top(cx) - r.bottom() } else { r.y - s.bottom(cx) };
+            (d >= -0.5 * s.space() && d <= FERMATA_FAR * s.space()).then_some((d, si))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    let Some((_, si)) = row else { return false };
+    let ssp = f.staves[si].space();
+    let row = &mut rows[si];
+    let key = |x: f64, toward: bool| (((x - cx).abs() / ssp > 0.5) as u8, !toward as u8, ((x - cx).abs() * 100.0) as i64);
+    let c = row.chords.iter().enumerate().filter(|(_, c)| (c.x - cx).abs() <= FERMATA_DX * ssp).min_by_key(|(_, c)| key(c.x, c.stem.is_none_or(|s| s.up == up))).map(|(i, c)| (i, (c.x - cx).abs()));
+    let rr = row.rests.iter().enumerate().filter(|(_, r)| (r.x - cx).abs() <= FERMATA_DX * ssp).min_by_key(|(_, r)| key(r.x, true)).map(|(i, r)| (i, (r.x - cx).abs()));
+    let arts = match (c, rr) {
+        (Some((i, dc)), Some((_, dr))) if dc <= dr => &mut row.chords[i].arts,
+        (Some((i, _)), None) => &mut row.chords[i].arts,
+        (_, Some((i, _))) => &mut row.rests[i].arts,
+        _ => return false,
+    };
+    if !arts.contains(&Art::Fermata) {
+        arts.push(Art::Fermata);
+    }
+    true
+}
+
+/// 贴头记号（断奏点、保持线、重音）挂到和弦外沿（头缘或干端）之外最近的和弦。断奏点、保持线只认贴着头那一侧的。
+/// `dx_max` / `gap_max`：横向最远、离外沿最远（相对线距）。两种证据共用。
+#[allow(clippy::too_many_arguments)]
+pub fn attach_art(row: &mut RowNotes, sp: f64, kind: Art, cx: f64, cy: f64, r: dolce_omr_core::image::Rect, dx_max: f64, gap_max: f64) -> bool {
+    let hit = row
+        .chords
+        .iter_mut()
+        .filter(|c| (c.x - cx).abs() <= dx_max * sp)
+        .filter_map(|c| {
+            let top = (c.heads[0].y - 0.5 * sp).min(c.stem.map_or(f64::MAX, |st| st.top as f64));
+            let bot = (c.heads.last().unwrap().y + 0.5 * sp).max(c.stem.map_or(f64::MIN, |st| st.bottom as f64));
+            let above = cy < top;
+            if kind != Art::Accent && c.stem.is_some_and(|st| st.up == above) {
+                return None;
+            }
+            let x = if above { c.heads[0].x } else { c.heads.last().unwrap().x };
+            if (x - cx).abs() > dx_max * sp {
+                return None;
+            }
+            let gap = if above { top - r.bottom() } else if cy > bot { r.y - bot } else { return None };
+            (gap >= ART_GAP.0 * sp && gap <= gap_max * sp).then_some((gap, c))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    let Some((_, c)) = hit else { return false };
+    if !c.arts.contains(&kind) {
+        c.arts.push(kind);
+    }
+    true
+}
+
+/// 贴头记号的横向与空隙上限（相对线距）：重音放宽。
+pub fn art_reach(kind: Art) -> (f64, f64) {
+    if kind == Art::Accent { (ACCENT_DX, ACCENT_GAP) } else { (ART_DX, ART_GAP.1) }
 }

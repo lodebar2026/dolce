@@ -31,16 +31,6 @@ pub fn tuplets(f: &PageFrame, rows: &mut [RowNotes], ocr: Option<&dyn DigitReade
     for (si, row) in rows.iter_mut().enumerate() {
         let s = &f.staves[si];
         let sp = s.space();
-        let ext: Vec<(f64, f64)> = row
-            .chords
-            .iter()
-            .map(|c| {
-                let top = (c.heads[0].y - 0.5 * sp).min(c.stem.map_or(f64::MAX, |st| st.top as f64));
-                let bot = (c.heads.last().unwrap().y + 0.5 * sp).max(c.stem.map_or(f64::MIN, |st| st.bottom as f64));
-                (top, bot)
-            })
-            .collect();
-        let bar_between = |a: f64, b: f64| f.bars.get(si).is_some_and(|bs| bs.iter().any(|l| l.x > a && l.x < b));
         let mut found: Vec<TupletCand> = Vec::new();
         for b in &f.blobs {
             let (w, h) = (b.rect.w / sp, b.rect.h / sp);
@@ -51,32 +41,40 @@ pub fn tuplets(f: &PageFrame, rows: &mut [RowNotes], ocr: Option<&dyn DigitReade
             if row.chords.iter().any(|c| c.heads.iter().any(|hd| hd.x >= b.rect.x && hd.x <= b.rect.right() && hd.y >= b.rect.y && hd.y <= b.rect.bottom())) {
                 continue;
             }
-            // 数字上方 / 下方挨着的和弦里，找挨着的三个、正中对着数字的
-            let near: Vec<usize> = (0..row.chords.len())
-                .filter(|&i| {
-                    let (top, bot) = ext[i];
-                    let gap = if b.cy < top { top - b.rect.bottom() } else if b.cy > bot { b.rect.y - bot } else { return false };
-                    gap <= NEAR * sp && (row.chords[i].x - b.cx).abs() <= STEP_MAX * sp
-                })
-                .collect();
-            let best = near
-                .windows(3)
-                .filter(|w| {
-                    let c = |k: usize| &row.chords[w[k]];
-                    c(0).ntype() == c(1).ntype() && c(1).ntype() == c(2).ntype() && c(0).dots + c(1).dots + c(2).dots == 0 && c(1).x - c(0).x <= STEP_MAX * sp && c(2).x - c(1).x <= STEP_MAX * sp && !bar_between(c(0).x, c(2).x)
-                })
-                .map(|w| (((row.chords[w[0]].x + row.chords[w[2]].x) / 2.0 - b.cx).abs(), w))
-                .filter(|(d, _)| *d <= CENTER_DX * sp)
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            let Some((_, w)) = best else { continue };
+            let Some(w) = group_at(&f.layout, si, row, b.rect) else { continue };
             if found.iter().any(|t| t.chords.iter().any(|i| w.contains(i))) {
                 continue;
             }
             let g = cell(f, b.rect.x as i64, b.rect.right() as i64, b.rect.y as i64, b.rect.bottom() as i64);
             if ocr.read_digit(&g).and_then(|alts| digits_of(&alts, |d| d == 3)) == Some(3) {
-                found.push(TupletCand { chords: w.to_vec(), actual: 3, normal: 2 });
+                found.push(TupletCand { chords: w, actual: 3, normal: 2 });
             }
         }
         row.tuplets = found;
     }
+}
+
+/// 数字（外框 `r`）上方 / 下方挨着的和弦里，挨着的三个、时值相同、不隔小节线、正中对着数字的那一组。两种证据共用。
+pub fn group_at(f: &crate::page::Layout, si: usize, row: &RowNotes, r: dolce_omr_core::image::Rect) -> Option<Vec<usize>> {
+    let sp = f.staves[si].space();
+    let (cx, cy) = (r.cx(), r.y + r.h / 2.0);
+    let bar_between = |a: f64, b: f64| f.bars.get(si).is_some_and(|bs| bs.iter().any(|l| l.x > a && l.x < b));
+    let near: Vec<usize> = (0..row.chords.len())
+        .filter(|&i| {
+            let c = &row.chords[i];
+            let top = (c.heads[0].y - 0.5 * sp).min(c.stem.map_or(f64::MAX, |st| st.top as f64));
+            let bot = (c.heads.last().unwrap().y + 0.5 * sp).max(c.stem.map_or(f64::MIN, |st| st.bottom as f64));
+            let gap = if cy < top { top - r.bottom() } else if cy > bot { r.y - bot } else { return false };
+            gap <= NEAR * sp && (c.x - cx).abs() <= STEP_MAX * sp
+        })
+        .collect();
+    near.windows(3)
+        .filter(|w| {
+            let c = |k: usize| &row.chords[w[k]];
+            c(0).ntype() == c(1).ntype() && c(1).ntype() == c(2).ntype() && c(0).dots + c(1).dots + c(2).dots == 0 && c(1).x - c(0).x <= STEP_MAX * sp && c(2).x - c(1).x <= STEP_MAX * sp && !bar_between(c(0).x, c(2).x)
+        })
+        .map(|w| (((row.chords[w[0]].x + row.chords[w[2]].x) / 2.0 - cx).abs(), w))
+        .filter(|(d, _)| *d <= CENTER_DX * sp)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, w)| w.to_vec())
 }

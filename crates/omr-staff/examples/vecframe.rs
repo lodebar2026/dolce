@@ -21,8 +21,21 @@ fn main() -> Result<(), String> {
             let l = &f.layout;
             println!("  谱表 {} 线距 {:.1} 线宽 {:.2} 系统 {:?}", l.staves.len(), l.unit.space, l.unit.thick, l.systems.iter().map(|s| s.staves.len()).collect::<Vec<_>>());
             println!("  各行小节线 {:?}", l.bars.iter().map(|b| b.len()).collect::<Vec<_>>());
+            if let Ok(r) = std::env::var("BARROW") { let r: usize = r.parse().unwrap(); println!("  行{r} 小节线 {:?} 谱表 {:?} 左右 {:.0}~{:.0}", l.bars[r].iter().map(|b| (b.x.round(), b.weak, b.src)).collect::<Vec<_>>(), l.staves[r].ys, l.staves[r].left, l.staves[r].right); println!("  竖段 {:?}", f.segs.iter().filter(|v| v.cx() > 1500.0 && v.cx() < 1700.0 && v.y0 < 400).collect::<Vec<_>>()); }
         } else {
             println!("  没有谱表");
+        }
+        if std::env::var("OMR_VEC_DEBUG").is_ok() {
+            if let Some(p) = dolce_omr_staff::vector::recognize_vector(&pc, None) {
+                if let Some(r) = std::env::var("ROW").ok().and_then(|v| v.parse::<usize>().ok()) {
+                    for c in &p.notes[r].chords {
+                        println!("    和弦 x{:.0} 头{:?} 干{:?} 尾{} 杠{} 点{}", c.x, c.heads.iter().map(|h| (h.pos, h.kind)).collect::<Vec<_>>(), c.stem.map(|s| (s.x, s.top, s.bottom, s.up)), c.tails, c.beamed, c.dots);
+                    }
+                }
+                for (i, a) in p.attrs.iter().enumerate() {
+                    println!("  行{i} 谱号{:?} 调{:?} 拍{:?} 行首右缘{:.0} 切换{:?}", a.clef.map(|c| c.sign), a.key.map(|k| k.fifths), a.time.map(|t| (t.beats, t.beat_type)), a.lead_end, a.changes.iter().map(|c| (c.x.round(), c.attrs.key.map(|k| k.fifths), c.attrs.time.map(|t| t.beats))).collect::<Vec<_>>());
+                }
+            }
         }
         let syms = glyphs::music_chars(&vp);
         let mut hist: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
