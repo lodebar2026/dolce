@@ -609,6 +609,114 @@ pub fn unreliable_fonts_of(chars: &[TextChar]) -> Vec<String> {
     out
 }
 
+/// 路径画的字形块（转曲页）：一个路径对象里画了几个字形的（调号一串升号、一行字），按子路径外框相交并查成块，一块一个字形；
+/// 块内的外轮廓与内腔外框必相交，挨着不碰的两个字形分开。
+pub struct GlyphPiece {
+    pub obj: u32,
+    pub rings: Vec<Vec<(f64, f64)>>,
+    pub rect: Rect,
+    pub curved: bool,
+}
+
+/// 页上路径画的字形块（不含文字层的字）。
+pub fn path_pieces(vp: &VecPage) -> Vec<GlyphPiece> {
+    let mut out = Vec::new();
+    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph && matches!(o.src, ObjSrc::Path(_)) && o.twin_of.is_none()) {
+        let boxes: Vec<Rect> = o.rings.iter().map(|r| ring_rect(r)).collect();
+        let n = boxes.len();
+        let mut up: Vec<usize> = (0..n).collect();
+        fn root(up: &mut [usize], mut i: usize) -> usize {
+            while up[i] != i {
+                up[i] = up[up[i]];
+                i = up[i];
+            }
+            i
+        }
+        for i in 0..n {
+            for j in i + 1..n {
+                let (a, b) = (boxes[i], boxes[j]);
+                if a.x <= b.right() && b.x <= a.right() && a.y <= b.bottom() && b.y <= a.bottom() {
+                    let (ri, rj) = (root(&mut up, i), root(&mut up, j));
+                    up[ri] = rj;
+                }
+            }
+        }
+        let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+        for i in 0..n {
+            let r = root(&mut up, i);
+            groups.entry(r).or_default().push(i);
+        }
+        for g in groups.into_values() {
+            let rings: Vec<Vec<(f64, f64)>> = g.iter().map(|&i| o.rings[i].clone()).collect();
+            let rect = g.iter().map(|&i| boxes[i]).reduce(|a, b| {
+                let (x0, y0) = (a.x.min(b.x), a.y.min(b.y));
+                Rect::new(x0, y0, a.right().max(b.right()) - x0, a.bottom().max(b.bottom()) - y0)
+            });
+            if let Some(rect) = rect {
+                out.push(GlyphPiece { obj: o.id, rings, rect, curved: o.curved });
+            }
+        }
+    }
+    out
+}
+
+fn ring_rect(r: &[(f64, f64)]) -> Rect {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for &(x, y) in r {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+}
+
+
+/// 一个对象画进格子：工作坐标 `(x, y)` → 格子 `((x − ox)·k, (y − oy)·k)`，落在墨里的格逐个交给 `set`。
+/// 线对象按各直线段与线宽描；填充的按轮廓扫描线（非零环绕）；只描边的折线按线宽描。转曲字块、矢量简谱的裁条与混排的简谱条共用。
+pub fn draw_obj(vp: &VecPage, o: &VObj, ox: f64, oy: f64, k: f64, w: usize, h: usize, set: &mut dyn FnMut(usize, usize)) {
+    let mut put = |x: f64, y: f64| {
+        let (px, py) = (((x - ox) * k).floor() as i64, ((y - oy) * k).floor() as i64);
+        if px >= 0 && py >= 0 && (px as usize) < w && (py as usize) < h {
+            set(px as usize, py as usize);
+        }
+    };
+    let mut stroke = |a: (f64, f64), b: (f64, f64), half: f64| {
+        let n = ((b.0 - a.0).hypot(b.1 - a.1) * 2.0 * k).ceil().max(1.0) as usize;
+        let r = half.max(0.5 / k);
+        let step = 0.5 / k;
+        let m = (r / step).ceil() as i64;
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let (cx, cy) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+            for dy in -m..=m {
+                for dx in -m..=m {
+                    let (ex, ey) = (dx as f64 * step, dy as f64 * step);
+                    if ex * ex + ey * ey <= r * r + step * step / 4.0 {
+                        put(cx + ex, cy + ey);
+                    }
+                }
+            }
+        }
+    };
+    if o.kind == VKind::Line {
+        for l in vp.lines.iter().filter(|l| l.obj == o.id) {
+            stroke(l.a, l.b, l.w / 2.0);
+        }
+        return;
+    }
+    if o.fill {
+        let rs: Vec<Vec<(f64, f64)>> = o.rings.iter().map(|r| r.iter().map(|&(x, y)| ((x - ox) * k, (y - oy) * k)).collect()).collect();
+        dolce_omr_core::geom::fill_rings(&rs, w, h, set);
+        return;
+    }
+    for r in &o.rings {
+        for s in r.windows(2) {
+            stroke(s[0], s[1], o.stroke / 2.0);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

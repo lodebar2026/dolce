@@ -162,46 +162,7 @@ pub fn guess_by_code(f: Family, unicode: u32) -> Option<&'static str> {
     None
 }
 
-/// 扫描线填充（非零环绕、按像素心取样）：`rs` 是已换到像素坐标的闭合环，`w × h` 的格子里落在墨里的格逐个交给 `set(x, y)`。
-/// 签名与转曲字块成图（送 OCR）共用。
-pub fn fill_rings(rs: &[Vec<(f64, f64)>], w: usize, h: usize, set: &mut dyn FnMut(usize, usize)) {
-    let mut xs: Vec<(f64, i32)> = Vec::new();
-    for py in 0..h {
-        let y = py as f64 + 0.5;
-        xs.clear();
-        for r in rs {
-            let m = r.len();
-            for i in 0..m {
-                let (a, b) = (r[i], r[(i + 1) % m]);
-                if a.1 == b.1 {
-                    continue;
-                }
-                if y >= a.1.min(b.1) && y < a.1.max(b.1) {
-                    xs.push((a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0), if b.1 > a.1 { 1 } else { -1 }));
-                }
-            }
-        }
-        if xs.is_empty() {
-            continue;
-        }
-        xs.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let mut wind = 0;
-        for k in 0..xs.len() - 1 {
-            wind += xs[k].1;
-            if wind == 0 {
-                continue;
-            }
-            let from = (xs[k].0 - 0.5).ceil().max(0.0) as usize;
-            let to = ((xs[k + 1].0 - 0.5).floor()).min(w as f64 - 1.0);
-            if to < 0.0 {
-                continue;
-            }
-            for px in from..=to as usize {
-                set(px, py);
-            }
-        }
-    }
-}
+pub use dolce_omr_core::geom::fill_rings;
 
 /// 32×32 签名（逐位，按行）。
 pub type Sig = [u64; SIG_N * SIG_N / 64];

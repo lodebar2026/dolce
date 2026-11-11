@@ -46,6 +46,12 @@ pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOu
         srcs.extend(sources(Path::new(f))?);
     }
     if kind == "jianpu" {
+        // 没有内嵌图的纯矢量页（转曲简谱）走对象库证据
+        if srcs.iter().all(|s| s.raster.is_none()) && srcs.iter().any(|s| s.content.is_some()) {
+            let pcs: Vec<_> = srcs.into_iter().filter_map(|s| s.content).collect();
+            let score = dolce_omr_jianpu::recognize_vector(&pcs, ocr)?;
+            return Ok(RecOutput::Jianpu { recognized: serde_json::to_string(&score).map_err(|e| e.to_string())? });
+        }
         let srcs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.raster).collect();
         let score = dolce_omr_jianpu::recognize(&srcs, ocr)?;
         return Ok(RecOutput::Jianpu { recognized: serde_json::to_string(&score).map_err(|e| e.to_string())? });
@@ -63,4 +69,46 @@ pub fn open_ocr(cache: &Path) -> Result<CachedOcr, String> {
     let dir = crate::sibling("web-rust/public/redist/ocr");
     let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).map_err(|e| format!("读 OCR 字典：{e}"))?;
     Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache: OcrCache::open(cache) })
+}
+
+/// `omr-cli recognize jianpu 文件 [--render] [--out=文件]`：识别一个简谱文件，打出各项计数（没有 GT 时两条路对照用）。
+pub fn one(args: &[String]) -> Result<(), String> {
+    let (kind, file) = (args.first().ok_or("缺档")?, args.get(1).ok_or("缺文件")?);
+    if kind != "jianpu" {
+        return Err("现在只有 jianpu".into());
+    }
+    let render = args.iter().any(|a| a == "--render");
+    let out = args.iter().find_map(|a| a.strip_prefix("--out="));
+    let ocr = open_ocr(&crate::sibling("dev/data/rust-omr/ocr-cache/jianpu.json"))?;
+    let path = Path::new(file);
+    let t0 = std::time::Instant::now();
+    let score = if render {
+        let doc = PdfDoc::open(std::fs::read(path).map_err(|e| e.to_string())?)?;
+        let srcs: Vec<SourceImage> = (0..doc.page_count())
+            .filter_map(|i| {
+                let r = doc.render(i, 300.0 / 72.0).ok()?;
+                let gray: Vec<u8> = r.rgba.chunks_exact(4).map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect();
+                Some(SourceImage { w: r.w, h: r.h, gray, kind: dolce_omr_source::model::ImageKind::Gray, rect: dolce_omr_core::image::Rect::new(0.0, 0.0, r.w as f64, r.h as f64), page_w: r.w as f64, page_h: r.h as f64, size_known: false })
+            })
+            .collect();
+        dolce_omr_jianpu::recognize(&srcs, &ocr)?
+    } else {
+        let srcs = sources(path)?;
+        if srcs.iter().all(|s| s.raster.is_none()) {
+            let pcs: Vec<_> = srcs.into_iter().filter_map(|s| s.content).collect();
+            dolce_omr_jianpu::recognize_vector(&pcs, &ocr)?
+        } else {
+            let srcs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.raster).collect();
+            dolce_omr_jianpu::recognize(&srcs, &ocr)?
+        }
+    };
+    ocr.cache.save()?;
+    let rows = score.rows.len();
+    let notes: usize = score.rows.iter().map(|r| r.nums.len()).sum();
+    let bars: usize = score.rows.iter().map(|r| r.barline_xs.len()).sum();
+    println!("{}：{rows} 行、{notes} 个音、{bars} 条小节线、歌词区 {}、拍号 {}/{}，{:.1} s", if render { "渲染走像素" } else { "矢量" }, score.lyric_regions.len(), score.beats, score.beat_type, t0.elapsed().as_secs_f64());
+    if let Some(o) = out {
+        std::fs::write(o, serde_json::to_string(&score).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

@@ -16,6 +16,7 @@ use prep::{Ink, JpInk};
 pub mod result;
 pub mod spans;
 pub mod text;
+pub mod vector;
 
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_source::raster::SourceImage;
@@ -41,6 +42,13 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
     let mut ink = prep::RasterInk::load(srcs).ok_or("没有页面")?;
     let num_h = frame::estimate_num_h(ink.comps());
     ink.despeckle(num_h);
+    recognize_ink(&ink, num_h, ocr)
+}
+
+/// 识别一首纯矢量的简谱（各页的路径与文字层，按序）：证据换成对象库（[`vector::VecJpInk`]），判据同像素路。
+pub fn recognize_vector(pcs: &[dolce_omr_source::model::PageContent], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+    let ink = vector::VecJpInk::new(pcs).ok_or("没有对象")?;
+    let num_h = frame::estimate_num_h(ink.comps());
     recognize_ink(&ink, num_h, ocr)
 }
 

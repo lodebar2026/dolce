@@ -10,13 +10,22 @@ const USAGE: &str = "用法：
       跑识别（各曲并行）→ 产物落盘到 --out → 调私有仓库判分（solo-ops / chorus-ops 的 --from）→ 与 --ref 的 TS 基线逐曲比
       缺省：--out=../dev/data/rust-omr/runs/<档>，--ref=../dev/data/rust-omr/ref-c7c02820，--web=../web（判分脚本与 out/cli 所在的检出）
       --replay：不识别，拷那个目录里同名的产物来判（拿 TS 归档自测回归流程）
-      --area：只比这一档的步数（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）；--judge-only：产物不动，只重新判分对比";
+      --area：只比这一档的步数（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）；--judge-only：产物不动，只重新判分对比
+  omr-cli recognize jianpu 文件 [--render] [--out=文件]
+      识别一个简谱文件，打出行数、音数、小节数与满拍率；--render：PDF 页先用 PDFium 渲染再走像素路（对照纯矢量页那条路）";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("regress") => match regress::run(&regress::Opts::parse(&args[1..])) {
             Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some("recognize") => match recognize::one(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("✗ {e}");
                 ExitCode::from(2)

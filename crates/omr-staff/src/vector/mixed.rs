@@ -10,7 +10,7 @@ use crate::page::Layout;
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_sheet::Staff;
-use dolce_omr_source::vector::{VKind, VObj, VecPage};
+use dolce_omr_source::vector::VecPage;
 
 /// 外框 `r` 整个落在带里。
 pub fn inside(b: &Band, st: &Staff, r: &Rect) -> bool {
@@ -19,49 +19,6 @@ pub fn inside(b: &Band, st: &Staff, r: &Rect) -> bool {
         x >= b.x0 && x < b.x1 && y >= t + b.y0 && y < t + b.y1
     };
     ok(r.x, r.y) && ok(r.right(), r.bottom()) && ok(r.x, r.bottom()) && ok(r.right(), r.y)
-}
-
-/// 一个对象画进条（条左上角 `(ox, oy)`、一工作单位一像素）：填充的按轮廓扫描线，描边的折线与直线段按线宽描。
-fn draw(o: &VObj, vp: &VecPage, ox: f64, oy: f64, bin: &mut Binary) {
-    let (w, h) = (bin.w, bin.h);
-    let mut put = |x: f64, y: f64| {
-        let (px, py) = ((x - ox).floor() as i64, (y - oy).floor() as i64);
-        if px >= 0 && py >= 0 && (px as usize) < w && (py as usize) < h {
-            bin.data[py as usize * w + px as usize] = 1;
-        }
-    };
-    let stroke = |a: (f64, f64), b: (f64, f64), half: f64, put: &mut dyn FnMut(f64, f64)| {
-        let n = ((b.0 - a.0).hypot(b.1 - a.1) * 2.0).ceil().max(1.0) as usize;
-        let r = half.max(0.5);
-        for i in 0..=n {
-            let t = i as f64 / n as f64;
-            let (cx, cy) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
-            let k = r.ceil() as i64;
-            for dy in -k..=k {
-                for dx in -k..=k {
-                    if ((dx * dx + dy * dy) as f64) <= r * r + 0.25 {
-                        put(cx + dx as f64, cy + dy as f64);
-                    }
-                }
-            }
-        }
-    };
-    if o.kind == VKind::Line {
-        for l in vp.lines.iter().filter(|l| l.obj == o.id) {
-            stroke(l.a, l.b, l.w / 2.0, &mut put);
-        }
-        return;
-    }
-    if o.fill {
-        let rs: Vec<Vec<(f64, f64)>> = o.rings.iter().map(|r| r.iter().map(|&(x, y)| (x - ox, y - oy)).collect()).collect();
-        dolce_omr_sheet::shapes::fill_rings(&rs, w, h, &mut |x, y| bin.data[y * w + x] = 1);
-        return;
-    }
-    for r in &o.rings {
-        for s in r.windows(2) {
-            stroke(s[0], s[1], o.stroke / 2.0, &mut put);
-        }
-    }
 }
 
 /// 一条简谱行的条：外框整个落在带里的对象画成的二值图（页面工作坐标的左上角）。
@@ -73,7 +30,8 @@ fn strip_of(vp: &VecPage, b: &Band, st: &Staff) -> Strip {
     let (w, h) = ((x1 - x0).max(1.0) as usize, (y1 - y0).max(1.0) as usize);
     let mut bin = Binary::new(w, h);
     for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && inside(b, st, &o.rect)) {
-        draw(o, vp, x0, y0, &mut bin);
+        let (bw, bh) = (bin.w, bin.h);
+        dolce_omr_source::vector::draw_obj(vp, o, x0, y0, 1.0, bw, bh, &mut |x, y| bin.data[y * bw + x] = 1);
     }
     Strip { x: x0 as i64, y: y0 as i64, bin }
 }
