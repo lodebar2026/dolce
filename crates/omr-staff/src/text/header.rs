@@ -74,7 +74,10 @@ pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> 
             }
         }
         let ink_h = if ink_bot >= ink_top { (ink_bot - ink_top + 1) as f64 } else { b.h * up };
-        let text: String = recover_spaces(&chars, &blanks, ink_h).iter().map(|c| c.ch).collect();
+        let ia = (x0..x1).find(|&x| col(x)).unwrap_or(x0) as f64;
+        let ib = (x0..x1).rev().find(|&x| col(x)).map_or(x1, |x| x + 1) as f64;
+        let blanks: Vec<(f64, f64)> = blanks.into_iter().filter(|b| b.0 > ia && b.0 + b.1 < ib).collect();
+        let text: String = recover_spaces(&chars, &blanks, ink_h, ia, ib).iter().map(|c| c.ch).collect();
         let t = text.trim();
         if han_count(t) == 0 && latin_count(t) < 3 && !t.chars().any(|c| c.is_ascii_digit()) {
             continue;

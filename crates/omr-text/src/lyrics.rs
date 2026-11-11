@@ -128,8 +128,6 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
             };
             row.syls.push(Syl { text: t, x: (a + b) / 2.0, syllabic });
             *cont = hyphen;
-        } else if !hyphen {
-            *cont = false;
         }
     };
     for c in cs {
@@ -147,6 +145,11 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
             }
         } else if "-–—".contains(ch) && cur.is_some() {
             flush(&mut row, &mut cur, &mut cont, true);
+        } else if "-–".contains(ch) && !cont && row.syls.last().is_some_and(|s| s.text.chars().last().is_some_and(is_latin)) {
+            // 连字符与前一个音节隔着空当（`thou - sand`）：照样连着
+            let s = row.syls.last_mut().unwrap();
+            s.syllabic = if s.syllabic == Syllabic::End { Syllabic::Middle } else { Syllabic::Begin };
+            cont = true;
         } else if ch == ' ' || ch == '_' {
             flush(&mut row, &mut cur, &mut cont, false);
         } else if is_tail_punct(ch) {
@@ -212,6 +215,8 @@ mod tests {
         assert_eq!(r.label.as_deref(), Some("3"));
         let t: Vec<(&str, Syllabic)> = r.syls.iter().map(|s| (s.text.as_str(), s.syllabic)).collect();
         assert_eq!(t, [("Je", Syllabic::Begin), ("sus!", Syllabic::End), ("the", Syllabic::Single), ("name", Syllabic::Single)]);
+        let r = syllables(&line("thou - sand"));
+        assert_eq!(r.syls.iter().map(|s| s.syllabic).collect::<Vec<_>>(), [Syllabic::Begin, Syllabic::End]);
         let r = syllables(&line("10 for King,The 'Tis"));
         assert_eq!(r.label.as_deref(), Some("1"));
         let t: Vec<&str> = r.syls.iter().map(|s| s.text.as_str()).collect();

@@ -214,6 +214,17 @@ fn blanks(f: &PageFrame, rect: &Rect, drop: &HashSet<i32>) -> Vec<(f64, f64)> {
     out
 }
 
+/// 框里墨的左右缘（没有墨回框的两缘）。
+fn ink_span(f: &PageFrame, rect: &Rect, drop: &HashSet<i32>) -> (f64, f64) {
+    let pw = f.ink.w;
+    let (x0, x1) = (rect.x.max(0.0) as usize, (rect.right() as usize).min(pw));
+    let (y0, y1) = (rect.y.max(0.0) as usize, (rect.bottom() as usize).min(f.ink.h));
+    let col = |x: usize| (y0..y1).any(|y| f.ink.tri[y * pw + x] == INK && !drop.contains(&f.labels[y * pw + x]));
+    let a = (x0..x1).find(|&x| col(x)).unwrap_or(x0);
+    let b = (x0..x1).rev().find(|&x| col(x)).map_or(x1, |x| x + 1);
+    (a as f64, b as f64)
+}
+
 /// 读一段：送 OCR、字位折回页内坐标、补词间空格。读不出字回 None。
 fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, ocr: &dyn DigitReader) -> Option<Seg> {
     let (g, sx0, _) = strip(f, src, &rect, drop);
@@ -235,7 +246,8 @@ fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, o
     if chars.is_empty() {
         return None;
     }
-    let chars = recover_spaces(&chars, &blanks(f, &rect, drop), rect.h);
+    let (ia, ib) = ink_span(f, &rect, drop);
+    let chars = recover_spaces(&chars, &blanks(f, &rect, drop), rect.h, ia, ib);
     Some(Seg { chars, rect })
 }
 

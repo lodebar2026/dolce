@@ -37,11 +37,26 @@ fn wordy(c: char) -> bool {
 }
 
 /// 在逐字序列里补词间空格（插入 `' '`，位置取那道空白的两缘）。`blanks`：行里的空白列段 `(起, 宽)`，与字同一坐标系；
-/// `ink_h`：行的墨高。只在两侧都是字母 / 数字（数字与数字之间除外）处插；半角句读之后接字母的也插。
-pub fn recover_spaces(chars: &[Ch], blanks: &[(f64, f64)], ink_h: f64) -> Vec<Ch> {
-    if chars.len() < 2 {
-        return chars.to_vec();
+/// `ink_h`：行的墨高；`(x0, x1)`：行的墨的左右缘。只在两侧都是字母 / 数字（数字与数字之间除外）处插；半角句读之后接字母的也插。
+pub fn recover_spaces(chars0: &[Ch], blanks: &[(f64, f64)], ink_h: f64, x0: f64, x1: f64) -> Vec<Ch> {
+    if chars0.len() < 2 {
+        return chars0.to_vec();
     }
+    // rec 给的字位是按时间步折回来的，常整体偏一点（窄字母旁边差半个字，空格就落到邻字的另一侧：`shall speak` → `shal lspeak`）。
+    // 先估这一行的整体偏移：挪多少能让最多的字心落在墨上（不落在宽空白里、不出行的两头），并列取挪得少的
+    let unit = (x1 - x0) / chars0.len() as f64;
+    let wide = split_gaps(&blanks.iter().map(|b| b.1).collect::<Vec<_>>(), ink_h).max(ink_h * 0.14);
+    let on_ink = |x: f64| x >= x0 && x <= x1 && !blanks.iter().any(|&(bx, bw)| bw >= wide && x > bx && x < bx + bw);
+    let mut best = (0usize, 0.0f64);
+    for k in -6i32..=6 {
+        let d = k as f64 * 0.25 * unit;
+        let n = chars0.iter().filter(|c| on_ink(c.cx() + d)).count();
+        if n > best.0 || (n == best.0 && d.abs() < best.1.abs()) {
+            best = (n, d);
+        }
+    }
+    let shifted: Vec<Ch> = chars0.iter().map(|c| Ch { ch: c.ch, x0: c.x0 + best.1, x1: c.x1 + best.1 }).collect();
+    let chars = &shifted[..];
     // 每道空白左边那个字的下标
     let left_of = |bx: f64, bw: f64| -> Option<usize> {
         let mid = bx + bw / 2.0;
@@ -68,7 +83,7 @@ pub fn recover_spaces(chars: &[Ch], blanks: &[(f64, f64)], ink_h: f64) -> Vec<Ch
         }
     }
     let mut out = Vec::with_capacity(chars.len() + 8);
-    for (i, c) in chars.iter().enumerate() {
+    for (i, c) in chars0.iter().enumerate() {
         out.push(c.clone());
         if let Some((a, b)) = after[i] {
             out.push(Ch { ch: ' ', x0: a, x1: b });
@@ -89,9 +104,11 @@ mod tests {
 
     #[test]
     fn spaces_between_words() {
-        // "ofmy"：o f | m y，中间一道宽白
-        let cs: Vec<Ch> = "ofmy".chars().enumerate().map(|(i, ch)| { let x = i as f64 * 10.0 + if i >= 2 { 8.0 } else { 0.0 }; Ch { ch, x0: x, x1: x + 8.0 } }).collect();
-        let out = recover_spaces(&cs, &[(8.0, 2.0), (18.0, 10.0), (36.0, 2.0)], 16.0);
-        assert_eq!(out.iter().map(|c| c.ch).collect::<String>(), "of my");
+        // 墨：shall 占 0~32，白 32~44，speak 占 44~84；字位整体偏右 5（末一个 l 的字心落进了词间的白里）
+        let centers = [3.0, 10.0, 17.0, 23.0, 29.0, 48.0, 56.0, 64.0, 72.0, 78.0];
+        let cs: Vec<Ch> = "shallspeak".chars().zip(centers).map(|(ch, c)| Ch { ch, x0: c + 2.0, x1: c + 8.0 }).collect();
+        let blanks = [(6.0, 2.0), (14.0, 2.0), (22.0, 2.0), (26.0, 2.0), (32.0, 12.0), (50.0, 2.0), (58.0, 2.0), (66.0, 2.0), (74.0, 2.0)];
+        let out = recover_spaces(&cs, &blanks, 16.0, 0.0, 84.0);
+        assert_eq!(out.iter().map(|c| c.ch).collect::<String>(), "shall speak");
     }
 }
