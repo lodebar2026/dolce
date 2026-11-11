@@ -62,8 +62,10 @@ fn read_strip(b: &Band, s: &Strip, ocr: &CachedOcr, known: bool) -> Option<JpRow
 /// 认领一页的简谱行：候选带（[`band::find`]）先切条试认，**一页要么是混排要么不是**——过半的系统带着候选带、
 /// 过半的候选带照简谱路线自己的标准（多数格读得出数字）认得出数字行，这一页才算混排：带里的墨从 `bin`、`soft` 上划掉，
 /// 个别没认出来的条（夹着说明文字）放宽再认一遍。否则一条都不收——歌词行里汉字的竖笔、页眉里的年份偶尔也凑得出一排。
-pub fn claim(bin: &mut Binary, mut soft: Option<&mut Binary>, staves: &[Staff], systems: &[Vec<usize>], cands: Vec<Band>, ocr: &CachedOcr) -> (Vec<Band>, Vec<JpRow>) {
-    let none = (Vec::new(), Vec::new());
+///
+/// 回收下的带、各条的读数、划掉的墨（页面那么大的二值图；文字从原图取条送检时要把这些墨抹白）。
+pub fn claim(bin: &mut Binary, mut soft: Option<&mut Binary>, staves: &[Staff], systems: &[Vec<usize>], cands: Vec<Band>, ocr: &CachedOcr) -> (Vec<Band>, Vec<JpRow>, Option<Binary>) {
+    let none = (Vec::new(), Vec::new(), None);
     let with = systems.iter().filter(|sys| cands.iter().any(|b| sys.contains(&b.anchor))).count();
     if cands.is_empty() || with * 2 <= systems.len() {
         return none;
@@ -83,7 +85,13 @@ pub fn claim(bin: &mut Binary, mut soft: Option<&mut Binary>, staves: &[Staff], 
             let _ = b;
         }
     }
+    let mut gone = Binary::new(bin.w, bin.h);
+    for s in &strips {
+        for (i, _) in s.bin.data.iter().enumerate().filter(|(_, v)| **v != 0) {
+            gone.data[(s.y as usize + i / s.bin.w) * bin.w + s.x as usize + i % s.bin.w] = 1;
+        }
+    }
     *bin = trial;
     let rows = cands.iter().zip(&strips).zip(strict).filter_map(|((b, s), r)| r.or_else(|| read_strip(b, s, ocr, true))).collect();
-    (cands, rows)
+    (cands, rows, Some(gone))
 }

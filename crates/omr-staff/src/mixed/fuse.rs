@@ -338,3 +338,78 @@ pub fn apply(c: &Ctx, notes: &mut RowNotes, bounds: &[f64], wants: &[Option<u32>
     notes.rests.sort_by(|a, b| a.x.total_cmp(&b.x));
     stats
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn staff() -> Staff {
+        Staff { ys: [100.0, 110.0, 120.0, 130.0, 140.0], thick: [1.0; 5], curve: None, left: 0.0, right: 1000.0, one_line: false }
+    }
+
+    fn chord(x: f64, pos: &[i32]) -> Chord {
+        let heads = pos.iter().map(|&p| Head { staff: 0, x, y: 100.0 + p as f64 * 5.0, pos: p, kind: HeadKind::Filled, fill: 1.0, score: 1.0, acc: None }).collect();
+        Chord { x, heads, stem: None, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None }
+    }
+
+    fn jp(xs: &[(f64, u8, i32)]) -> JpRow {
+        JpRow { staff: 0, notes: xs.iter().map(|&(x, digit, octave)| JpNote { x, digit, octave, div: 0, dots: 0, aug: 0 }).collect() }
+    }
+
+    fn ctx<'a>(st: &'a Staff, jp: &'a JpRow) -> Ctx<'a> {
+        Ctx { si: 0, st, lead: 0.0, jp, clef: Clef::TREBLE, key: Key { fifths: 0 } }
+    }
+
+    // 高音谱号：第一线 F5，C4 在 pos 10、E4 在 8、G4 在 6
+    #[test]
+    fn pitch_follows_jianpu_and_false_heads_go() {
+        let st = staff();
+        let row = jp(&[(100.0, 3, 0), (200.0, 5, 0), (300.0, 5, 0), (400.0, 1, 0)]);
+        let mut notes = RowNotes { chords: vec![chord(100.0, &[8]), chord(200.0, &[1, 6]), chord(300.0, &[7]), chord(400.0, &[10])], ..Default::default() };
+        let c = ctx(&st, &row);
+        let cal = calibrate(&[(c, &notes)]);
+        assert_eq!((cal.base, cal.poly), (Some(28), false));
+        let s = apply(&c, &mut notes, &[], &[Some(4 * DIVISIONS)], &[false], &cal);
+        assert_eq!(notes.chords.iter().map(|c| c.heads.iter().map(|h| h.pos).collect::<Vec<_>>()).collect::<Vec<_>>(), vec![vec![8], vec![6], vec![6], vec![10]]);
+        assert_eq!((s.pairs, s.pitch, s.removed), (4, 1, 1));
+    }
+
+    #[test]
+    fn missing_note_is_inserted_when_it_fills_the_bar() {
+        let st = staff();
+        let row = jp(&[(100.0, 1, 0), (200.0, 2, 0), (300.0, 3, 0)]);
+        let mut notes = RowNotes { chords: vec![chord(100.0, &[10]), chord(300.0, &[8])], ..Default::default() };
+        let cal = Calib { shift: 0.0, base: Some(28), poly: false };
+        let s = apply(&ctx(&st, &row), &mut notes, &[], &[Some(3 * DIVISIONS)], &[false], &cal);
+        assert_eq!(s.inserted, 1);
+        assert_eq!(notes.chords.iter().map(|c| (c.x, c.heads[0].pos)).collect::<Vec<_>>(), vec![(100.0, 10), (200.0, 9), (300.0, 8)]);
+        // 简谱这一小节自己不满拍的不拿它补音
+        let mut short = RowNotes { chords: vec![chord(100.0, &[10]), chord(300.0, &[8])], ..Default::default() };
+        let s = apply(&ctx(&st, &row), &mut short, &[], &[Some(4 * DIVISIONS)], &[false], &cal);
+        assert_eq!((s.inserted, short.chords.len()), (0, 2));
+    }
+
+    #[test]
+    fn duration_only_when_staff_bar_is_off() {
+        let st = staff();
+        let mut row = jp(&[(100.0, 1, 0), (300.0, 3, 0)]);
+        row.notes[0].aug = 1;
+        let cal = Calib { shift: 0.0, base: Some(28), poly: false };
+        // 五线谱两个四分对 3/4 不满：照简谱把头一个改成二分
+        let mut notes = RowNotes { chords: vec![chord(100.0, &[10]), chord(300.0, &[8])], ..Default::default() };
+        let s = apply(&ctx(&st, &row), &mut notes, &[], &[Some(3 * DIVISIONS)], &[false], &cal);
+        assert_eq!((s.duration, notes.chords[0].kind()), (1, HeadKind::Half));
+    }
+
+    #[test]
+    fn polyphonic_staff_takes_only_one_step_fixes_on_top_notes() {
+        let st = staff();
+        // 简谱 6（A4，比最高音 G4 高一级）照改；高八度的 1（C5）差得多，不改；内声部都留着
+        let row = jp(&[(100.0, 6, 0), (300.0, 1, 1)]);
+        let mut notes = RowNotes { chords: vec![chord(100.0, &[6, 10]), chord(300.0, &[6, 10])], ..Default::default() };
+        let cal = Calib { shift: 0.0, base: Some(28), poly: true };
+        let s = apply(&ctx(&st, &row), &mut notes, &[], &[Some(2 * DIVISIONS)], &[false], &cal);
+        assert_eq!(notes.chords.iter().map(|c| c.heads.iter().map(|h| h.pos).collect::<Vec<_>>()).collect::<Vec<_>>(), vec![vec![5, 10], vec![6, 10]]);
+        assert_eq!((s.pitch, s.removed, s.inserted), (1, 0, 0));
+    }
+}

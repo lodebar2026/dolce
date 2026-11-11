@@ -833,6 +833,16 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             for (p, part) in parts.iter_mut().enumerate() {
                 if !used[p] {
                     let mut ms: Vec<Measure> = (0..count).map(|_| Measure::default()).collect();
+                    // 混排谱里单行系统只印旋律，别的声部这几小节各记一个全休止，曲首就没印的照样交代谱号、调号、拍号。
+                    // 别的谱不补：行数对不上多半是多认了假谱行，补出来的休止还得一个个删
+                    for m in ms.iter_mut().filter(|_| mixed) {
+                        m.events.push(Event::new(vec![], dolce_omr_sheet::score::NoteType::Whole, 0, None));
+                    }
+                    if mixed && from == 0 {
+                        let c = clefs[p][sys_i].unwrap_or(Clef::TREBLE);
+                        ms[0].attrs = Attrs { clef: Some(c), key: Some(sys_key), time: rows.iter().filter_map(|&i| page.attrs[i].time).next(), ..Attrs::default() };
+                        (clef[p], key[p]) = (Some(c), Some(sys_key));
+                    }
                     ms[0].new_system = true;
                     ms[0].new_page = si == 0 && pn > 0;
                     ms[0].implicit = implicit;

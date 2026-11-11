@@ -160,9 +160,11 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
                 let s = &f.staves[a];
                 (l.y0 - s.bottom(cx.clamp(s.left, s.right))) / s.space()
             });
+            // 下面那行谱上方印着简谱行的（混排谱），从最上面那条简谱行的上沿量起：和弦印在简谱行之上
             let d_below = b.below.map(|z| {
                 let s = &f.staves[z];
-                (s.top(cx.clamp(s.left, s.right)) - l.y1) / s.space()
+                let lift = f.bands.iter().filter(|k| k.anchor == z && k.y1 <= 0.0).map(|k| k.y0).fold(0.0, f64::min);
+                (s.top(cx.clamp(s.left, s.right)) + lift - l.y1) / s.space()
             });
             let chars = line_chars(l);
             let text: String = chars.iter().map(|c| c.ch).collect();

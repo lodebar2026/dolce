@@ -32,6 +32,8 @@ pub struct PageFrame {
     /// 混排谱的简谱行与各条的读数；带里的墨已从上面各层划出去。
     pub bands: Vec<Band>,
     pub jianpu: Vec<JpRow>,
+    /// 简谱行划掉的墨（没有简谱行为 None）。
+    pub band_ink: Option<Binary>,
 }
 
 /// 一页的识别结果（现到音符数据的实心头）。
@@ -67,12 +69,12 @@ pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOc
     };
     let mut got = layers(&bin, soft.as_ref());
     // 混排谱：简谱行整块的墨划出去，各层重建（认带要读数字，没有 OCR 就不认）
-    let (mut bands, mut jianpu) = (Vec::new(), Vec::new());
+    let (mut bands, mut jianpu, mut band_ink) = (Vec::new(), Vec::new(), None);
     if let Some(ocr) = ocr {
         let short = got.0.vsegs((unit.space * SHORT_SEG) as usize, gap);
         let cands = band::find(&bin, &short, &staves, &got.5, &unit);
         let systems: Vec<Vec<usize>> = got.4.iter().map(|s| s.staves.clone()).collect();
-        (bands, jianpu) = crate::mixed::claim(&mut bin, soft.as_mut(), &staves, &systems, cands, ocr);
+        (bands, jianpu, band_ink) = crate::mixed::claim(&mut bin, soft.as_mut(), &staves, &systems, cands, ocr);
         if !bands.is_empty() {
             got = layers(&bin, soft.as_ref());
             // 印在大谱表两行之间、量自下面那行谱的简谱行是上面那行谱的旋律（闭合人声谱的女高音）
@@ -85,7 +87,7 @@ pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOc
         }
     }
     let (ink, segs, blobs, labels, systems, bars) = got;
-    Some(PageFrame { bin, soft, up, unit, staves, ink, segs, blobs, labels, systems, bars, bands, jianpu })
+    Some(PageFrame { bin, soft, up, unit, staves, ink, segs, blobs, labels, systems, bars, bands, jianpu, band_ink })
 }
 
 /// 识别一页；没有谱表回 None。

@@ -167,7 +167,8 @@ fn strip(f: &PageFrame, src: &SourceImage, rect: &Rect, drop: &HashSet<i32>) -> 
                 let (x, y) = ((sx + dx) * up + up / 2, (sy + dy) * up + up / 2);
                 if x >= 0 && y >= 0 && x < pw && y < ph {
                     let l = f.labels[(y * pw + x) as usize];
-                    if l != 0 && drop.contains(&l) {
+                    // 简谱行划掉的墨不是这一路的字
+                    if (l != 0 && drop.contains(&l)) || f.band_ink.as_ref().is_some_and(|b| b.data[(y * pw + x) as usize] != 0) {
                         return true;
                     }
                 }

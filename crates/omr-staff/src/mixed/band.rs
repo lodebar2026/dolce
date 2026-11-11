@@ -263,3 +263,51 @@ pub fn erase(imgs: &mut [&mut Binary], band: &Band, st: &Staff) -> Strip {
     }
     Strip { x: x0, y: y0, bin: strip }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn staff() -> Staff {
+        Staff { ys: [30.0, 32.0, 34.0, 36.0, 38.0], thick: [1.0; 5], curve: None, left: 0.0, right: 50.0, one_line: false }
+    }
+
+    #[test]
+    fn only_blobs_wholly_inside_the_band_are_erased() {
+        let mut bin = Binary::new(50, 40);
+        // 带内的一小块
+        for y in 12..15 {
+            for x in 10..13 {
+                bin.data[y * 50 + x] = 1;
+            }
+        }
+        // 从谱表伸进带里的一根竖笔
+        for y in 20..33 {
+            bin.data[y * 50 + 30] = 1;
+        }
+        let band = Band { staff: 0, anchor: 0, y0: -20.0, y1: -5.0, x0: 0.0, x1: 50.0, bars: vec![] };
+        let strip = erase(&mut [&mut bin], &band, &staff());
+        assert!(!bin.ink(11, 13) && bin.ink(30, 22) && bin.ink(30, 30));
+        assert_eq!((strip.x, strip.y, strip.bin.data.iter().filter(|v| **v != 0).count()), (0, 10, 9));
+    }
+
+    #[test]
+    fn bars_must_stand_bare_and_level() {
+        let mut bin = Binary::new(50, 40);
+        for y in 5..20 {
+            bin.data[y * 50 + 10] = 1;
+            bin.data[y * 50 + 30] = 1;
+        }
+        // 第二根有横笔穿过（汉字的竖）
+        for y in 8..16 {
+            for x in 26..35 {
+                bin.data[y * 50 + x] = 1;
+            }
+        }
+        let (a, b) = (VSeg { x0: 10, x1: 10, y0: 5, y1: 19, cols: 1 }, VSeg { x0: 30, x1: 30, y0: 5, y1: 19, cols: 1 });
+        assert!(bare(&bin, &a) && !bare(&bin, &b));
+        let st = staff();
+        assert!(level(span(&a, &st), span(&b, &st)));
+        assert!(!level(span(&a, &st), (span(&a, &st).1 - 2.0, span(&a, &st).1 + 20.0)));
+    }
+}
