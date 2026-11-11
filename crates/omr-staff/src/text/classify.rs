@@ -14,7 +14,7 @@ const LYRIC_GAP: f64 = 0.8;
 const LYRIC_MIN_H: f64 = 1.3;
 /// 接不上的上方几行合起来不过这么多个音节，算假行。
 const WEAK_SYLS: usize = 6;
-/// 一栏的头一行歌词至少这么多个音节。
+/// 一栏的头一行歌词不到这么多个音节的，要再看像不像字。
 const LYRIC_START: usize = 3;
 /// 两行横向交叠过较窄那行的这个比例，算上下对着。
 const XOVER: f64 = 0.3;
@@ -219,7 +219,9 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
                     }
                     let row = syllables(&lyric_chars);
                     // 一栏的头一行要有三个以上音节：碎墨读出来的一两个字（「二 一」）不开头
-                    if row.syls.len() >= if prev.is_empty() { LYRIC_START } else { 1 } {
+                    // 一栏的头一行：一两个音节的要像字——碎墨读出来的多是笔画极少的字（「二 一」「十」）
+                    let debris = row.syls.len() < LYRIC_START && row.syls.iter().all(|s| s.text.chars().all(|c| "一二三十丨口日中甲由田曰工上下".contains(c) || !dolce_omr_text::chars::is_han(c)) && s.text.chars().any(dolce_omr_text::chars::is_han));
+                    if !row.syls.is_empty() && !(prev.is_empty() && debris) {
                         let latin = script_of(&row.syls.iter().map(|s| s.text.as_str()).collect::<String>()) == Script::Latin;
                         // 行号 = 上方同种文字、横向盖得住它的行数 + 1（副歌一行夹在主歌几行右边，是它那一栏的第 1 行）
                         let number = 1 + prev.iter().filter(|c| c.4 == latin).count() as u8;

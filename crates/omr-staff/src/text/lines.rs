@@ -33,6 +33,9 @@ const TOP_REACH: f64 = 9.0;
 const BOTTOM_REACH: f64 = 24.0;
 /// 过高的一截（超过行距这么多倍）按行距切成几行。
 const TALL: f64 = 1.7;
+/// 一截里的深谷：投影不到峰的这个比例、离两头都有字高的这么多倍。
+const VALLEY: f64 = 0.12;
+const VALLEY_EDGE: f64 = 0.45;
 /// 行内横向空当超过行高这么多倍就分段。
 const SEG_GAP: f64 = 2.0;
 /// 一行里另有这么多个字身，行里认出的符头才算字。
@@ -320,6 +323,23 @@ fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f
             i += 1;
         }
     }
+    // 上下两行只靠几笔相接的（拉丁词的降部碰到下一行汉字的顶）：一截里有深谷（不到峰的一成多）、两边都够一行高的，在谷底切开
+    let mut stack = runs;
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    while let Some((a, z)) = stack.pop() {
+        let edge = (char_h * VALLEY_EDGE) as usize;
+        if z - a > 2 * edge + 2 {
+            let peak = prof[a..=z].iter().cloned().fold(0.0, f64::max);
+            let cut = (a + edge..=z - edge).min_by(|&p, &q| prof[p].total_cmp(&prof[q])).unwrap();
+            if prof[cut] < peak * VALLEY {
+                stack.push((a, cut - 1));
+                stack.push((cut + 1, z));
+                continue;
+            }
+        }
+        runs.push((a, z));
+    }
+    runs.sort();
     // 几行挤成一截的：按本带的行距切开，切在预期位置附近投影最低处
     let normal: Vec<f64> = runs.iter().map(|&(a, z)| (z - a + 1) as f64).filter(|&h| h >= char_h * 0.8 && h <= char_h * TALL).collect();
     let pitch = median(&normal, char_h * 1.15);
