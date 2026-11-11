@@ -33,6 +33,10 @@ const TALL: f64 = 1.7;
 const SEG_GAP: f64 = 2.0;
 /// 一行里另有这么多个字身，行里认出的符头才算字。
 const TEXT_ROW: usize = 3;
+/// 横向分栏的白道：整条带都空着、宽过字高这么多倍。
+const GUTTER: f64 = 3.0;
+/// 两栏的行中心相差不过较矮那行行高的这个比例，算同一行。
+const SAME_ROW: f64 = 0.2;
 /// 送检条四周留的白边（原图像素）。
 const PAD: usize = 3;
 
@@ -238,11 +242,48 @@ fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0:
     }
     // 字高取字身墨块高的 85 分位（偏旁、标点、小写字母把中位数拉低）
     let char_h = dolce_omr_core::geom::quantile(&single, 0.85);
+    // 横向分栏：整条带从上到下都空着的宽白道两边各切各的行——主歌几行词右边接着副歌，副歌的行夹在主歌两行之间的高度上，
+    // 合在一起投影就并进了主歌的行。两栏切出的行高度对得上的再并回一行
+    let mut by_x: Vec<&(&Blob, f64)> = cand.iter().collect();
+    by_x.sort_by(|p, q| p.0.rect.x.total_cmp(&q.0.rect.x));
+    let mut blocks: Vec<Vec<(&Blob, f64)>> = Vec::new();
+    let mut right = f64::MIN;
+    for c in by_x {
+        if blocks.is_empty() || c.0.rect.x - right > GUTTER * char_h {
+            blocks.push(Vec::new());
+        }
+        right = right.max(c.0.rect.right());
+        blocks.last_mut().unwrap().push(*c);
+    }
+    let mut out: Vec<GeoLine> = Vec::new();
+    for b in blocks {
+        for l in block_lines(f, src, cx, &b, &off, sp, char_h, y0, y1, ocr) {
+            let same = out.iter_mut().find(|o| {
+                ((o.y0 + o.y1) / 2.0 - (l.y0 + l.y1) / 2.0).abs() <= SAME_ROW * o.h().min(l.h())
+            });
+            match same {
+                Some(o) => {
+                    o.y0 = o.y0.min(l.y0);
+                    o.y1 = o.y1.max(l.y1);
+                    o.segs.extend(l.segs);
+                }
+                None => out.push(l),
+            }
+        }
+    }
+    out.sort_by(|a, b| a.y0.total_cmp(&b.y0));
+    out
+}
+
+/// 一栏里的行。
+#[allow(clippy::too_many_arguments)]
+fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f64)], off: &dyn Fn(f64) -> f64, sp: f64, char_h: f64, y0: f64, y1: f64, ocr: &dyn DigitReader) -> Vec<GeoLine> {
+    let body = |b: &Blob| b.rect.h >= BODY_H.0 * sp && b.rect.w <= BODY_W * sp;
     // 纵向投影：带里各墨块的像素按拉平后的行数
     let n = (y1 - y0).ceil().max(1.0) as usize;
     let mut prof = vec![0.0f64; n + 1];
     let pw = f.ink.w;
-    for (b, _) in &cand {
+    for (b, _) in cand {
         let o = off(b.cx);
         let id = b.id as i32;
         for y in b.rect.y as usize..(b.rect.bottom() as usize).min(f.ink.h) {

@@ -8,8 +8,12 @@ use dolce_omr_text::lyrics::{syllables, LyricRow};
 use dolce_omr_text::{chords, words, Ch};
 
 /// 第一行歌词离谱表不过这么多格；之后各行与上一行的空隙不过较矮那行行高的这个比例。
-const LYRIC_FIRST: f64 = 9.0;
+const LYRIC_FIRST: f64 = 7.0;
 const LYRIC_GAP: f64 = 0.8;
+/// 歌词行至少这么高（相对线距）：再矮的是指法、连音数字、碎墨读出来的字。
+const LYRIC_MIN_H: f64 = 1.3;
+/// 两行横向交叠过较窄那行的这个比例，算上下对着。
+const XOVER: f64 = 0.3;
 /// 和弦记号离下面那行谱的首线不过这么多格。
 const CHORD_REACH: f64 = 5.5;
 /// 力度、术语、跳转离所归的谱行不过这么多格。
@@ -55,6 +59,37 @@ fn line_chars(l: &GeoLine) -> Vec<Ch> {
     out
 }
 
+/// 一行里左边一截汉字词、右边一截拉丁词（主歌的行右边接着副歌的英文行，高度碰巧对上）：拆成两行。
+/// 两截都要够长才拆（汉字两个以上、拉丁字母八个以上）。
+fn split_scripts(l: &GeoLine) -> Vec<GeoLine> {
+    let sc: Vec<Script> = l.segs.iter().map(|s| script_of(&s.text())).collect();
+    let han: usize = l.segs.iter().zip(&sc).filter(|(_, s)| **s == Script::Han).map(|(g, _)| han_count(&g.text())).sum();
+    let lat: usize = l.segs.iter().zip(&sc).filter(|(_, s)| **s == Script::Latin).map(|(g, _)| latin_count(&g.text())).sum();
+    if han < 2 || lat < 8 {
+        return vec![l.clone()];
+    }
+    // 按文字种类连着的归一组（数字、符号跟着前一组）
+    let mut groups: Vec<(Script, Vec<Seg>)> = Vec::new();
+    for (g, s) in l.segs.iter().zip(sc) {
+        match groups.last_mut() {
+            Some((cur, v)) if s == Script::Other || s == *cur => v.push(g.clone()),
+            Some((cur, v)) if *cur == Script::Other => {
+                *cur = s;
+                v.push(g.clone());
+            }
+            _ => groups.push((s, vec![g.clone()])),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(_, segs)| {
+            let y0 = segs.iter().map(|s| s.rect.y).fold(f64::MAX, f64::min);
+            let y1 = segs.iter().map(|s| s.rect.bottom()).fold(f64::MIN, f64::max);
+            GeoLine { y0, y1, segs }
+        })
+        .collect()
+}
+
 /// 像歌词的一行：两个以上汉字，或以拉丁字母为主的一串词。
 fn lyric_like(text: &str) -> bool {
     let total = text.chars().filter(|c| !c.is_whitespace()).count();
@@ -67,7 +102,8 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
     let t = seg.text();
     let t = t.trim();
     let x = seg.rect.x;
-    if let Some(d) = words::dynamic(t) {
+    // 力度只收两个字母以上的：单个 p / f 从杂墨里读出来的太多（延音线的一截、符尾），留给按字形认的那一路
+    if let Some(d) = words::dynamic(t).filter(|d| d.len() >= 2) {
         return vec![Mark { x: seg.rect.cx(), dir: Dir::Dynamics(d.to_string()) }];
     }
     if let Some((n, circa)) = words::metronome(t) {
@@ -96,11 +132,11 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
 pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
     let mut rows: Vec<RowText> = (0..f.staves.len()).map(|_| RowText::default()).collect();
     for b in bands {
-        // 歌词链：从上面那行谱往下数
-        let mut chain_end: Option<(f64, f64)> = None; // (上一行歌词的底, 行高)
-        let mut number = [0u8; 2];
-        let mut broken = b.above.is_none();
-        for l in &b.lines {
+        // 歌词链：从上面那行谱往下数。已收下的歌词行 (x0, x1, y1, 行高, 拉丁)；`blocked`：链断处那行的横向范围（它下面的不再收）
+        let mut chain: Vec<(f64, f64, f64, f64, bool)> = Vec::new();
+        let mut blocked: Vec<(f64, f64)> = Vec::new();
+        let lines: Vec<GeoLine> = b.lines.iter().flat_map(split_scripts).collect();
+        for l in &lines {
             let cx = l.cx();
             let d_above = b.above.map(|a| {
                 let s = &f.staves[a];
@@ -112,42 +148,46 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
             });
             let chars = line_chars(l);
             let text: String = chars.iter().map(|c| c.ch).collect();
+            let (x0, x1) = (l.segs.iter().map(|s| s.rect.x).fold(f64::MAX, f64::min), l.segs.iter().map(|s| s.rect.right()).fold(f64::MIN, f64::max));
+            let over = |a0: f64, a1: f64| a1.min(x1) - a0.max(x0) > XOVER * (a1 - a0).min(x1 - x0);
             // 和弦行优先：贴着下面那行谱、整行是和弦记号
             let chord_line = d_below.is_some_and(|d| d <= CHORD_REACH) && chords::is_annotation_line(&text);
-            let in_chain = !broken
-                && !chord_line
-                && lyric_like(&text)
-                && match chain_end {
+            let tall = b.above.is_some_and(|a| l.h() >= LYRIC_MIN_H * f.staves[a].space());
+            if b.above.is_some() && !chord_line && tall && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
+                // 横向盖得住它的上方歌词行：没有就是这一栏的头一行（看离谱表多远），有就看与最下面那行的空隙
+                let prev: Vec<&(f64, f64, f64, f64, bool)> = chain.iter().filter(|c| over(c.0, c.1)).collect();
+                let ok = match prev.iter().map(|c| (c.2, c.3)).max_by(|p, q| p.0.total_cmp(&q.0)) {
                     None => d_above.is_some_and(|d| d <= LYRIC_FIRST),
                     Some((bottom, h)) => l.y0 - bottom <= LYRIC_GAP * h.min(l.h()),
                 };
-            if in_chain {
-                let a = b.above.unwrap();
-                // 行里夹着的跳转记号（行尾的 Fine、D.C.）单独挂
-                let mut lyric_chars: Vec<Ch> = Vec::new();
-                for s in &l.segs {
-                    if let Some(j) = words::jump(s.text().trim()) {
-                        rows[a].marks.push(Mark { x: s.rect.x, dir: Dir::Words { text: s.text().trim().to_string(), above: false, jump: Some(j) } });
+                if ok {
+                    let a = b.above.unwrap();
+                    // 行里夹着的跳转记号（行尾的 Fine、D.C.）单独挂
+                    let mut lyric_chars: Vec<Ch> = Vec::new();
+                    for s in &l.segs {
+                        if let Some(j) = words::jump(s.text().trim()) {
+                            rows[a].marks.push(Mark { x: s.rect.x, dir: Dir::Words { text: s.text().trim().to_string(), above: false, jump: Some(j) } });
+                            continue;
+                        }
+                        if let (Some(p), Some(n)) = (lyric_chars.last(), s.chars.first()) {
+                            let sep = Ch { ch: ' ', x0: p.x1, x1: n.x0 };
+                            lyric_chars.push(sep);
+                        }
+                        lyric_chars.extend(s.chars.iter().cloned());
+                    }
+                    let row = syllables(&lyric_chars);
+                    if !row.syls.is_empty() {
+                        let latin = script_of(&row.syls.iter().map(|s| s.text.as_str()).collect::<String>()) == Script::Latin;
+                        // 行号 = 上方同种文字、横向盖得住它的行数 + 1（副歌一行夹在主歌几行右边，是它那一栏的第 1 行）
+                        let number = 1 + prev.iter().filter(|c| c.4 == latin).count() as u8;
+                        rows[a].lyrics.push(LyricLine { number, latin, row, y0: l.y0, y1: l.y1 });
+                        chain.push((x0, x1, l.y1, l.h(), latin));
                         continue;
                     }
-                    if let (Some(p), Some(n)) = (lyric_chars.last(), s.chars.first()) {
-                        let sep = Ch { ch: ' ', x0: p.x1, x1: n.x0 };
-                        lyric_chars.push(sep);
-                    }
-                    lyric_chars.extend(s.chars.iter().cloned());
+                } else if !prev.is_empty() {
+                    // 链断了：这一栏后面的成行文字是脚注、版权，不再当歌词
+                    blocked.push((x0, x1));
                 }
-                let row = syllables(&lyric_chars);
-                if !row.syls.is_empty() {
-                    let latin = script_of(&row.syls.iter().map(|s| s.text.as_str()).collect::<String>()) == Script::Latin;
-                    number[latin as usize] += 1;
-                    rows[a].lyrics.push(LyricLine { number: number[latin as usize], latin, row, y0: l.y0, y1: l.y1 });
-                    chain_end = Some((l.y1, l.h()));
-                    continue;
-                }
-            }
-            if chain_end.is_some() && lyric_like(&text) {
-                // 链断了：后面的成行文字是脚注、版权，不再当歌词
-                broken = true;
             }
             // 记号与文字指示：逐段看，归近的那行谱
             let to_below = match (d_above, d_below) {
@@ -160,10 +200,17 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
             if dist > MARK_REACH {
                 continue;
             }
-            for s in &l.segs {
-                // 和弦只归下面那行谱
-                let chord_ok = d_below.is_some_and(|d| d <= CHORD_REACH);
-                for m in mark_of(s, to_below, chord_ok) {
+            // 和弦只归下面那行谱
+            let chord_ok = d_below.is_some_and(|d| d <= CHORD_REACH);
+            let all: Vec<Vec<Mark>> = l.segs.iter().map(|s| mark_of(s, to_below, chord_ok)).collect();
+            // 整行只读出一个单字母和弦的不要：延长记号、弧头常读成 C、D
+            let chords_n = all.iter().flatten().filter(|m| matches!(m.dir, Dir::Harmony(_))).count();
+            let lone = chords_n == 1 && all.iter().flatten().any(|m| matches!(&m.dir, Dir::Harmony(t) if t.chars().count() == 1));
+            for ms in all {
+                for m in ms {
+                    if lone && matches!(m.dir, Dir::Harmony(_)) {
+                        continue;
+                    }
                     let row = if matches!(m.dir, Dir::Harmony(_) | Dir::Metronome { .. }) { b.below.unwrap_or(si) } else { si };
                     rows[row].marks.push(m);
                 }
