@@ -6,6 +6,9 @@ use serde::Serialize;
 fn zero(v: &u32) -> bool {
     *v == 0
 }
+fn single(v: &[TimeSig]) -> bool {
+    v.len() < 2
+}
 fn no(v: &bool) -> bool {
     !*v
 }
@@ -13,7 +16,7 @@ fn no(v: &bool) -> bool {
 /// 节奏音符 X（有声无音高）在 `digit` 里的值。
 pub const RHYTHM_DIGIT: u8 = 9;
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeSig {
     pub beats: u32,
@@ -35,6 +38,38 @@ pub struct Grace {
     pub octave: i32,
     pub div: u32,
     pub bbox: Rect,
+}
+
+/// 落选的时值候选（计划 §2.8）：证据差一点没收（或勉强收了）的减时线、附点、增时线。满拍裁决只在这些候选里挑。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AltKind {
+    DivPlus,
+    DivMinus,
+    DotPlus,
+    DotMinus,
+    AugPlus,
+    AugMinus,
+}
+
+impl AltKind {
+    /// 原因码的尾巴。
+    pub fn code(self) -> &'static str {
+        match self {
+            AltKind::DivPlus => "div+",
+            AltKind::DivMinus => "div-",
+            AltKind::DotPlus => "dot+",
+            AltKind::DotMinus => "dot-",
+            AltKind::AugPlus => "aug+",
+            AltKind::AugMinus => "aug-",
+        }
+    }
+}
+
+/// `cost`：改成这个候选要付的代价（证据越弱越大），裁决取总代价最小的一组。
+#[derive(Clone, Copy, Debug)]
+pub struct Alt {
+    pub kind: AltKind,
+    pub cost: f64,
 }
 
 /// 同一个音时值内后面换的和弦：`offset` 是落在时值里的比例。
@@ -62,6 +97,12 @@ pub struct JpNum {
     /// 复核：把握不大的原因码
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub doubt: Vec<String>,
+    /// 读成「1」的格其实像一根光竖条（没有旗、没有底座）：也许是小节线（不写出）
+    #[serde(skip)]
+    pub bar_like: bool,
+    /// 落选的时值候选（不写出）
+    #[serde(skip)]
+    pub alts: Vec<Alt>,
     /// 各段歌词（下标 = 段，空串 = 这段没字）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub lyrics: Vec<String>,
@@ -111,6 +152,12 @@ pub struct JpNum {
     /// `staccato` / `accent`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub articulation: Option<&'static str>,
+    /// `upper-mordent` / `lower-mordent`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ornament: Option<&'static str>,
+    /// 下滑音
+    #[serde(skip_serializing_if = "no")]
+    pub fall: bool,
 }
 
 /// 一行谱识别出的内容。
@@ -160,6 +207,14 @@ pub struct RecognizedScore {
     pub minor: bool,
     pub beats: u32,
     pub beat_type: u32,
+    /// 混合拍：页眉并排印着的全部拍号（头一个即 beats / beat_type）；只印一个时不写
+    #[serde(skip_serializing_if = "single")]
+    pub meters: Vec<TimeSig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meter_note: Option<String>,
+    /// 页眉里读到了拍号（没读到的是缺省 4/4；不写出）
+    #[serde(skip)]
+    pub meter_read: bool,
     pub rows: Vec<StaffRow>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<String>,

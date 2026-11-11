@@ -203,6 +203,8 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
         }
     }
     let mut rows: Vec<RowFrame> = Vec::new();
+    // 各行数字格里真读得出数字的比例
+    let mut ratios: Vec<f64> = Vec::new();
     for l in lines {
         let digits: Vec<Rect> = l.iter().filter(|&&i| read[i].is_some()).map(|&i| cand[i].rect).collect();
         if std::env::var("OMR_JP_DEBUG").is_ok() && l.len() >= 3 {
@@ -233,13 +235,48 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
         if (good as f64) < nd as f64 * 0.6 {
             continue;
         }
+        // 调号行（「1=B 4/4」与标题同排）：头一个数字后面紧跟着等号——上下两道短横；这种排里至多一根像小节线的竖笔
+        if nb <= 1 && key_line(ink, &row) {
+            if std::env::var("OMR_JP_DEBUG").is_ok() {
+                eprintln!("  调号行，不收");
+            }
+            continue;
+        }
         let span = row.digits().map(|c| c.x1).max().unwrap_or(0) - row.digits().map(|c| c.x0).min().unwrap_or(0);
         if nd >= 1 && (nb >= 1 || (nd >= 4 && span as f64 >= ink.bin.w as f64 * 0.3)) {
             rows.push(row);
+            ratios.push(good as f64 / nd as f64);
         }
+    }
+    // 三行以上时，比各行带高的中位矮一成半以上的排（页眉里的年份、英文署名，歌词里夹的数字）得几乎格格读得出数字、还得有小节线才算谱行
+    if rows.len() >= 3 {
+        let mh = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), num_h);
+        let keep: Vec<bool> = rows.iter().zip(&ratios).map(|(r, &q)| r.h() >= mh * 0.85 || (q >= 0.85 && r.bars().count() > 0)).collect();
+        let mut it = keep.iter();
+        rows.retain(|_| *it.next().unwrap());
     }
     rows.sort_by(|a, b| a.band.top0.total_cmp(&b.band.top0));
     rows
+}
+
+/// 头一个数字后面紧跟着等号（上下两道短横、各自又扁又薄）的排是调号行。
+fn key_line(ink: &Ink, row: &RowFrame) -> bool {
+    let h = row.h();
+    let Some(i) = row.cells.iter().position(|c| c.kind == CellKind::Digit) else { return false };
+    let Some(c) = row.cells.get(i + 1) else { return false };
+    if c.kind == CellKind::Digit || c.w() < h * 0.25 || (c.x0 - row.cells[i].x1) as f64 > h * 0.6 {
+        return false;
+    }
+    let mut groups: Vec<(i64, i64)> = Vec::new();
+    for y in c.y0..=c.y1 {
+        if ink.row_ink(y, c.x0, c.x1 + 1) {
+            match groups.last_mut() {
+                Some(g) if g.1 == y - 1 => g.1 = y,
+                _ => groups.push((y, y)),
+            }
+        }
+    }
+    groups.len() == 2 && groups.iter().all(|g| ((g.1 - g.0 + 1) as f64) <= h * 0.25)
 }
 
 /// 带内切格并分类。

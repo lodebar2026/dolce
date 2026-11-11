@@ -75,6 +75,10 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
         .par_iter()
         .filter(|_| !o.judge_only)
         .filter_map(|s| {
+            // 排查输出按曲分段（配 --jobs=1）
+            if std::env::var("OMR_JP_DEBUG").is_ok() {
+                eprintln!("== {}", s.key);
+            }
             let r = match &o.replay {
                 Some(dir) => replay(dir, &out, &s.rec),
                 None => recognize(&o.kind, &s.inputs, &ocr).and_then(|r| write(&out, &s.rec, r)),

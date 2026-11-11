@@ -4,7 +4,9 @@
 //! - [`frame`]（JM1）：数字高、数字行与行带、带内切格（数字 / 小节线 / 增时线 / 点）
 //! - [`notes`]（JM3）：读数、八度点、减时线、建音
 //! - [`spans`]（JM5）：弧
+//! - [`beats`]（JM6）：满拍裁决、可疑清单
 //! - [`text`]（JM2 / JM4）：歌词、页眉、调号拍号速度
+pub mod beats;
 pub mod frame;
 pub mod notes;
 pub mod prep;
@@ -37,8 +39,9 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
         text::chords_above(&ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
     let sys = frame::systems(&ink, &rows);
+    let tally = beats::settle(&mut notes, &sys, &mut score);
     if std::env::var("OMR_JP_DEBUG").is_ok() {
-        eprintln!("字号 {num_h:.1}，页 {}x{}", ink.bin.w, ink.bin.h);
+        eprintln!("字号 {num_h:.1}，页 {}x{}；拍号 {}/{}，小节 {}：满拍 {}（其中裁决改的 {}），不满 / 超拍 {}", ink.bin.w, ink.bin.h, score.beats, score.beat_type, tally.bars, tally.full, tally.fixed, tally.bad);
         for (i, r) in rows.iter().enumerate() {
             if std::env::var("OMR_JP_CELLS").is_ok() {
                 for c in &r.cells {

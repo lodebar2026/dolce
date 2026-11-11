@@ -5,7 +5,7 @@
 use crate::frame::{digit_cell, RowFrame};
 use crate::notes::RowNotes;
 use crate::prep::Ink;
-use crate::result::{RecognizedScore, TextRegion};
+use crate::result::{RecognizedScore, TextRegion, TimeSig};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::cache::CachedOcr;
@@ -410,7 +410,7 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-Ga-g])").unwrap());
 /// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
 static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
-static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(\d{1,2})").unwrap());
+static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*$").unwrap());
 
 /// 调名 → 五度圈位置。
@@ -485,12 +485,24 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                 used = true;
             }
         }
-        if let Some(c) = METER.captures(&l.text) {
+        // 并排印着几个拍号的是混合拍：头一个作主拍号，全部记进 `meters`；后面跟着的「混合拍」记说明
+        let mut first = true;
+        for c in METER.captures_iter(&l.text) {
             if let (Ok(a), Ok(b)) = (c[1].parse::<u32>(), c[2].parse::<u32>()) {
                 if (1..=12).contains(&a) && [2, 4, 8, 16].contains(&b) {
-                    score.beats = a;
-                    score.beat_type = b;
+                    if std::mem::take(&mut first) {
+                        score.beats = a;
+                        score.beat_type = b;
+                        score.meters.clear();
+                    }
+                    if !score.meters.iter().any(|m| m.beats == a && m.beat_type == b) {
+                        score.meters.push(TimeSig { beats: a, beat_type: b });
+                    }
+                    score.meter_read = true;
                     used = true;
+                    if l.text.contains("混合拍") {
+                        score.meter_note = Some("混合拍".into());
+                    }
                 }
             }
         }
@@ -538,7 +550,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
 /// 叠排的拍号：上下两个数字、横向对齐、中间隔一道横线的空当。只在行内文字没读出 `4/4` 时用。
 fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut RecognizedScore) {
     let digitish: Vec<&crate::prep::Comp> = ink.comps.iter().filter(|k| k.rect.bottom() < top && k.rect.h >= num_h * 0.5 && k.rect.h <= num_h * 1.4 && k.rect.w >= k.rect.h * 0.3 && k.rect.w <= k.rect.h * 1.0).collect();
-    let mut best: Option<(f64, u32, u32)> = None;
+    // (上面那个数字的 y, 中线 x, 分子, 分母)
+    let mut found: Vec<(f64, f64, u32, u32)> = Vec::new();
     for a in &digitish {
         for b in &digitish {
             let gap = b.rect.y - a.rect.bottom();
@@ -550,15 +563,25 @@ fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut R
             if let (Some(x), Some(y)) = (d(&t[0]), d(&t[1])) {
                 // 分子读成 8 的按 3（分子几乎不可能是 8），分母只可能是 2 的幂
                 let x = if x == 8 { 3 } else { x };
-                if (1..=12).contains(&x) && [2, 4, 8].contains(&y) && best.is_none_or(|p| a.rect.y > p.0) {
-                    best = Some((a.rect.y, x, y));
+                if (1..=12).contains(&x) && [2, 4, 8].contains(&y) {
+                    found.push((a.rect.y, a.rect.cx(), x, y));
                 }
             }
         }
     }
-    if let Some((_, x, y)) = best {
-        score.beats = x;
-        score.beat_type = y;
+    // 取最靠下的那一排；同一排并排几个的是混合拍
+    let Some(y0) = found.iter().map(|f| f.0).reduce(f64::max) else { return };
+    found.retain(|f| y0 - f.0 < num_h * 0.5);
+    found.sort_by(|a, b| a.1.total_cmp(&b.1));
+    score.beats = found[0].2;
+    score.beat_type = found[0].3;
+    score.meter_read = true;
+    score.meters.clear();
+    for f in &found {
+        let m = TimeSig { beats: f.2, beat_type: f.3 };
+        if !score.meters.contains(&m) {
+            score.meters.push(m);
+        }
     }
 }
 

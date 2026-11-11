@@ -2,7 +2,7 @@
 //! 减时线是带下方的细长横墨（按横向游程找，不靠连通块：线与数字、低音点粘着也照样量得出）。
 use crate::frame::{digit_cell, digit_of, Cell, CellKind, RowFrame};
 use crate::prep::{Comp, Ink};
-use crate::result::JpNum;
+use crate::result::{Alt, AltKind, JpNum};
 use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::cache::CachedOcr;
 
@@ -70,6 +70,23 @@ pub fn hlines(ink: &Ink, xa: i64, xb: i64, ya: i64, yb: i64, min_len: i64) -> Ve
     done
 }
 
+/// 读成「1」的格像不像一根光竖条：窄，各行墨宽几乎一样（「1」顶上有旗、多半还有底座，那几行宽出去）。
+fn bar_like(ink: &Ink, c: &Cell, h: f64) -> bool {
+    if c.w() > h * 0.3 {
+        return false;
+    }
+    let ws: Vec<f64> = (c.y0..=c.y1).map(|y| (c.x0..=c.x1).filter(|&x| ink.at(x, y)).count() as f64).collect();
+    let med = dolce_omr_core::geom::median(&ws, 1.0);
+    let wide = ws.iter().filter(|&&w| w > med * 1.5 + 1.0).count();
+    (wide as f64) < ws.len() as f64 * 0.08
+}
+
+/// 线的两头是不是都顺着往下弯（弧的平顶：下面那行谱的连线拱到这一行脚下）。减时线两头是齐的。
+fn arc_ends(ink: &Ink, x0: i64, x1: i64, y1: i64) -> bool {
+    let down = |x: i64, dir: i64| (1..=3).any(|d| (1..=3).any(|e| ink.at(x + dir * d, y1 + e)));
+    down(x0, -1) && down(x1, 1)
+}
+
 /// 八度点 / 附点样的小圆块。
 pub fn dot_like(k: &Comp, h: f64) -> bool {
     let (w, hh) = (k.rect.w, k.rect.h);
@@ -105,7 +122,7 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
                 let d = read[di];
                 di += 1;
                 let Some(d) = d else { continue };
-                let mut n = JpNum { digit: d, bbox: c.rect(), ..Default::default() };
+                let mut n = JpNum { digit: d, bbox: c.rect(), bar_like: d == 1 && bar_like(ink, c, h), ..Default::default() };
                 n.repeat_forward = std::mem::take(&mut pending_forward);
                 out.nums.push(n);
             }
@@ -113,13 +130,24 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
                 if let Some(n) = out.nums.last_mut() {
                     n.augment += 1;
                     n.augment_rects.push(c.rect());
+                    // 短得勉强的横（不到 0.4 字号）：也许是杂墨
+                    if c.w() < h * 0.4 {
+                        n.alts.push(Alt { kind: AltKind::AugMinus, cost: 1.2 });
+                    }
                 }
             }
             CellKind::Dot => {
                 if let Some(n) = out.nums.last_mut() {
                     let after_bar = last_bar_x1.is_some_and(|b| b as f64 > n.bbox.right());
-                    if n.augment == 0 && !after_bar && c.x0 as f64 - n.bbox.right() <= h * 2.0 && c.x0 as f64 >= n.bbox.right() - 1.0 {
+                    let gap = c.x0 as f64 - n.bbox.right();
+                    if n.augment == 0 && !after_bar && gap <= h * 2.0 && gap >= -1.0 {
                         n.dot += 1;
+                        // 离数字一个字号开外的点：收得勉强
+                        if gap > h {
+                            n.alts.push(Alt { kind: AltKind::DotMinus, cost: 1.0 });
+                        }
+                    } else if n.augment == 0 && !after_bar && gap > h * 2.0 && gap <= h * 3.0 {
+                        n.alts.push(Alt { kind: AltKind::DotPlus, cost: 1.2 });
                     }
                 }
             }
@@ -139,7 +167,21 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
                     }
                 }
             }
-            CellKind::Other => {}
+            CellKind::Other => {
+                // 没归上类的小墨：像点的（偏高、偏大一点）、像横的（短一点、扁得不够）各记一个候选
+                let Some(n) = out.nums.last_mut() else { continue };
+                let after_bar = last_bar_x1.is_some_and(|b| b as f64 > n.bbox.right());
+                let gap = c.x0 as f64 - n.bbox.right();
+                if after_bar || gap < -1.0 {
+                    continue;
+                }
+                let (cw, ch) = (c.w(), c.h());
+                if cw <= h * 0.5 && ch <= h * 0.5 && cw >= h * 0.08 && ch >= h * 0.08 && n.augment == 0 && n.dot == 0 && gap <= h * 1.2 {
+                    n.alts.push(Alt { kind: AltKind::DotPlus, cost: 1.2 });
+                } else if ch <= h * 0.35 && cw >= h * 0.2 && cw >= ch * 1.3 && c.y0 as f64 >= row.top_at(c.cx()) + h * 0.15 && (c.y1 as f64) <= row.bottom_at(c.cx()) - h * 0.1 {
+                    n.alts.push(Alt { kind: AltKind::AugPlus, cost: 1.2 });
+                }
+            }
         }
     }
     // 并排两根：复纵线；右边那根粗的是终止线（行末的记 final_end）
@@ -169,16 +211,21 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
     out
 }
 
-/// 减时线：数字正下方一道道细横线。第一道离数字底不过 0.4 字号，其后每道离上一道不过 0.25 字号、不比上一道宽出去。
+/// 减时线：数字正下方一道道细横线。第一道离数字底不过 0.4 字号，其后每道与上一道之间的空白不过 0.25 字号、不比上一道宽出去。
+/// 间隔按**空白行数**量（小图上一道线一像素厚、隔两像素，按坐标差算就过了门）。差一点没收的、收得勉强的记候选，交满拍裁决。
 fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
     let h = row.h();
     let w = ink.bin.w as f64;
     let ya = row.bottom_at(0.0).min(row.bottom_at(w)).floor() as i64;
     let yb = row.bottom_at(0.0).max(row.bottom_at(w)).ceil() as i64 + (h * 1.0) as i64;
     let max_thick = (h * 0.2).max(4.0);
-    let lines: Vec<HLine> = hlines(ink, 0, ink.bin.w as i64, ya, yb, (h * 0.4) as i64).into_iter().filter(|l| ((l.y1 - l.y0 + 1) as f64) <= max_thick).collect();
+    // 厚过一道线上限、不到两倍的也留着：多半是两道线印粘了（按一道收，另记「多一道」的候选）
+    let lines: Vec<HLine> = hlines(ink, 0, ink.bin.w as i64, ya, yb, (h * 0.4) as i64).into_iter().filter(|l| ((l.y1 - l.y0 + 1) as f64) <= max_thick * 2.0 && !arc_ends(ink, l.x0, l.x1, l.y1)).collect();
+    let thick = |l: &HLine| (l.y1 - l.y0 + 1) as f64;
     let slack = h * 0.15;
     let mut used: Vec<usize> = Vec::new();
+    // 各音收下的线（下标）
+    let mut taken: Vec<Vec<usize>> = Vec::with_capacity(out.nums.len());
     for n in &mut out.nums {
         let cx = n.bbox.cx();
         let bottom = row.bottom_at(cx).max(n.bbox.bottom());
@@ -190,23 +237,120 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
             .collect();
         under.sort_by_key(|&i| lines[i].y0);
         let mut prev: Option<&HLine> = None;
+        let mut mine: Vec<usize> = Vec::new();
         for i in under {
             let l = &lines[i];
-            let ok = match prev {
-                None => l.y0 as f64 - bottom <= h * 0.4,
-                Some(p) => (l.y0 - p.y1) as f64 <= h * 0.25 && l.y0 > p.y1 && l.x0 as f64 >= p.x0 as f64 - slack && l.x1 as f64 <= p.x1 as f64 + slack,
+            // 与上一道（或数字底）之间的空白
+            let blank = match prev {
+                None => l.y0 as f64 - bottom,
+                Some(p) => (l.y0 - p.y1 - 1) as f64,
             };
-            if !ok {
+            let lim = if prev.is_none() { h * 0.4 } else { h * 0.25 };
+            let fits = prev.is_none_or(|p| l.y0 > p.y1 && l.x0 as f64 >= p.x0 as f64 - slack && l.x1 as f64 <= p.x1 as f64 + slack);
+            if blank > lim || !fits {
+                // 差一点：隔得稍远（不到门的 1.8 倍），或隔得不远却宽出去了
+                if fits && blank <= lim * 1.8 {
+                    n.alts.push(Alt { kind: AltKind::DivPlus, cost: 1.0 });
+                } else if !fits && blank <= lim && prev.is_some_and(|p| l.y0 > p.y1) {
+                    n.alts.push(Alt { kind: AltKind::DivPlus, cost: 1.5 });
+                }
                 break;
+            }
+            // 收得勉强：贴着门、或线比数字窄得多
+            if blank > lim * 0.75 || ((l.x1 - l.x0 + 1) as f64) < n.bbox.w * 0.5 {
+                n.alts.push(Alt { kind: AltKind::DivMinus, cost: 1.2 });
             }
             n.div += 1;
             prev = Some(l);
+            mine.push(i);
             if !used.contains(&i) {
                 used.push(i);
             }
             if n.div >= 4 {
                 break;
             }
+        }
+        // 没罩到数字中线、却压着数字小半边的线（线印短了或数字偏了）：位置合下一道线的也记候选
+        let floor = prev.map_or(bottom, |p| p.y1 as f64 + 1.0);
+        let lim = if prev.is_none() { h * 0.4 } else { h * 0.25 };
+        let half = (0..lines.len()).any(|i| {
+            let l = &lines[i];
+            let ov = (l.x1 as f64 + 1.0).min(n.bbox.right()) - (l.x0 as f64).max(n.bbox.x);
+            !mine.contains(&i) && !(l.x0 as f64 - slack <= cx && cx <= l.x1 as f64 + slack) && ov >= n.bbox.w * 0.3 && l.y0 as f64 >= floor - h * 0.02 && l.y0 as f64 - floor <= lim
+        });
+        if half && n.div < 4 {
+            n.alts.push(Alt { kind: AltKind::DivPlus, cost: 1.3 });
+        }
+        taken.push(mine);
+    }
+    // 逐列再数一遍：两道线一头印粘了（斜着碰上）时按整条线量是一道，数字正下方的各列里却分得开
+    let min_len = (h * 0.4) as i64;
+    for n in out.nums.iter_mut() {
+        let bottom = row.bottom_at(n.bbox.cx()).max(n.bbox.bottom());
+        let (xa, xb) = ((n.bbox.x + n.bbox.w * 0.25).round() as i64, (n.bbox.right() - n.bbox.w * 0.25).round() as i64);
+        let mut counts: Vec<u32> = Vec::new();
+        let mut rects: Vec<Vec<Rect>> = Vec::new();
+        for x in xa..=xb.max(xa) {
+            let mut cnt = 0;
+            let mut rs: Vec<Rect> = Vec::new();
+            let mut floor = bottom;
+            let mut prev: Option<(i64, i64)> = None;
+            let mut y = (bottom - h * 0.02).ceil() as i64;
+            while cnt < 4 {
+                // 下一截墨
+                while (y as f64) < floor + h * 0.4 + 1.0 && !ink.at(x, y) {
+                    y += 1;
+                }
+                if !ink.at(x, y) {
+                    break;
+                }
+                let y0 = y;
+                let (mut rx0, mut rx1) = (i64::MAX, i64::MIN);
+                while ink.at(x, y) && ((y - y0) as f64) < max_thick {
+                    // 这一行穿过本列的横向墨段（容一像素断口），各行取最宽
+                    let (mut a, mut b) = (x, x);
+                    while a > 0 && (ink.at(a - 1, y) || ink.at(a - 2, y)) {
+                        a -= 1;
+                    }
+                    while b < ink.bin.w as i64 && (ink.at(b + 1, y) || ink.at(b + 2, y)) {
+                        b += 1;
+                    }
+                    rx0 = rx0.min(a);
+                    rx1 = rx1.max(b);
+                    y += 1;
+                }
+                let blank = y0 as f64 - floor;
+                let lim = if cnt == 0 { h * 0.4 } else { h * 0.25 };
+                // 歌词字的顶横两头都宽出去半个字号以上；线头印得参差的不算
+                let fits = prev.is_none_or(|p| rx0 as f64 >= p.0 as f64 - h * 0.5 || rx1 as f64 <= p.1 as f64 + h * 0.5);
+                if ink.at(x, y) || rx1 - rx0 + 1 < min_len || blank > lim || !fits || arc_ends(ink, rx0, rx1, y - 1) {
+                    break;
+                }
+                cnt += 1;
+                rs.push(Rect::new(rx0 as f64, y0 as f64, (rx1 - rx0 + 1) as f64, (y - y0) as f64));
+                prev = Some((rx0, rx1));
+                floor = y as f64;
+            }
+            counts.push(cnt);
+            rects.push(rs);
+        }
+        // 六成以上的列数出同一个更大的数
+        let Some(&best) = counts.iter().max() else { continue };
+        let agree = counts.iter().filter(|&&c| c == best).count();
+        if best > n.div && agree * 5 >= counts.len() * 3 {
+            n.div = best;
+            n.alts.retain(|a| a.kind != AltKind::DivPlus);
+            if let Some(i) = counts.iter().position(|&c| c == best) {
+                out.claimed.extend(rects[i].iter().copied());
+            }
+        }
+    }
+    // 比本行线厚的中位厚出一倍的：两道粘成一道
+    let ts: Vec<f64> = used.iter().map(|&i| thick(&lines[i])).collect();
+    let med = dolce_omr_core::geom::median(&ts, 0.0);
+    for (n, mine) in out.nums.iter_mut().zip(&taken) {
+        if mine.iter().any(|&i| thick(&lines[i]) >= med * 1.8 && thick(&lines[i]) >= 3.0) && n.div < 4 {
+            n.alts.push(Alt { kind: AltKind::DivPlus, cost: 0.8 });
         }
     }
     for i in used {
