@@ -24,8 +24,9 @@ use result::{RecognizedScore, StaffRow};
 /// 只到建音（数字、八度点、减时线、附点、增时线、小节线），不挂歌词、不裁满拍——拍号在五线谱那边。
 /// `known`：已知是简谱行，不按「多数格读得出数字」筛（见 [`frame::find_rows_in`]）；调用方拿不带它的那一遍验带的真假。
 pub fn recognize_strip(src: &SourceImage, ocr: &CachedOcr, known: bool) -> Option<(f64, notes::RowNotes)> {
-    let ink = prep::Ink::load(std::slice::from_ref(src))?;
+    let mut ink = prep::Ink::load(std::slice::from_ref(src))?;
     let num_h = frame::estimate_num_h(&ink.comps);
+    ink.despeckle(num_h);
     let rows = frame::find_rows_in(&ink, num_h, ocr, known);
     let scale = ink.bin.w as f64 / src.w as f64;
     if std::env::var("OMR_JP_DEBUG").is_ok() {
@@ -36,8 +37,9 @@ pub fn recognize_strip(src: &SourceImage, ocr: &CachedOcr, known: bool) -> Optio
 
 /// 识别一首（各页原图按序）。没有找到数字行回 Err。
 pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
-    let ink = prep::Ink::load(srcs).ok_or("没有页面")?;
+    let mut ink = prep::Ink::load(srcs).ok_or("没有页面")?;
     let num_h = frame::estimate_num_h(&ink.comps);
+    ink.despeckle(num_h);
     let rows = frame::find_rows(&ink, num_h, ocr);
     if rows.is_empty() {
         return Err("没有找到数字行".into());

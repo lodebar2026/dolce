@@ -11,6 +11,8 @@ use dolce_omr_source::raster::{fix_polarity, SourceImage};
 /// 工作图宽上限。
 const MAX_W: usize = 2200;
 const SAUVOLA_K: f64 = 0.2;
+/// 面积不到「字号平方的这么多倍」的墨是孤点（八度点、附点的直径在字号的一成半上下，面积是它的三四倍）。
+const SPECK: f64 = 0.006;
 
 /// 一个连通块（墨的 8 邻接块）。`id` = 标号图里的值。
 #[derive(Clone, Debug)]
@@ -60,9 +62,26 @@ impl Ink {
         let mut bin = Binary { w, h, data };
         fix_polarity(&mut bin);
         let mut labels = vec![0i32; w * h];
-        let flat = connected_components(&bin.data, w, h, 2.0, &mut labels);
+        let flat = connected_components(&bin.data, w, h, 1.0, &mut labels);
         let comps = flat.chunks_exact(8).map(|c| Comp { id: c[0] as i32, rect: Rect::new(c[1], c[2], c[3], c[4]), area: c[5], cx: c[6], cy: c[7] }).collect();
         Some(Ink { gray, bin, labels, comps })
+    }
+
+    /// 抹孤点：深底、网点上二值化撒出来的碎墨（面积按字号定，至少两个像素才算块）从二值图、标号图、块表里去掉。
+    /// 带内切格逐列看墨，一粒孤点就把增时线、小节线的格撑高、把空白隔成格。
+    pub fn despeckle(&mut self, num_h: f64) {
+        let min = (num_h * num_h * SPECK).max(2.0);
+        let mut small = vec![false; self.comps.iter().map(|k| k.id).max().unwrap_or(0) as usize + 1];
+        for k in self.comps.iter().filter(|k| k.area < min) {
+            small[k.id as usize] = true;
+        }
+        for (v, l) in self.bin.data.iter_mut().zip(self.labels.iter_mut()) {
+            if *l > 0 && small[*l as usize] {
+                *v = 0;
+                *l = 0;
+            }
+        }
+        self.comps.retain(|k| k.area >= min);
     }
 
     #[inline]

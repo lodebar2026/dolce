@@ -188,6 +188,24 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
 /// 同 [`find_rows`]。`known`：这张图已知是一条简谱行（混排谱里按小节线对齐切下来的条），不再拿「多数格读得出数字」筛——
 /// 条里夹着的说明文字、行首的标志会把比例拉低。
 pub fn find_rows_in(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowFrame> {
+    let rows = find_rows_at(ink, num_h, ocr, known);
+    // 字号估偏了（数字又宽又扁的字体、歌词字比数字多得多的页）：头一遍认下的行带高才是本页的数字高，照它再找一遍——
+    // 候选的高宽门都按字号开，估小了宽数字进不来、一行只剩几个「1」「7」定带
+    let hs: Vec<f64> = rows.iter().map(|r| r.h()).collect();
+    let mh = median(&hs, num_h);
+    if rows.len() >= 2 && (mh - num_h).abs() > num_h * RESCALE {
+        let again = find_rows_at(ink, mh, ocr, known);
+        if again.len() >= rows.len() {
+            return again;
+        }
+    }
+    rows
+}
+
+/// 头一遍认下的行带高与估的字号差出这么多就照带高重找。
+const RESCALE: f64 = 0.1;
+
+fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowFrame> {
     let cand: Vec<&Comp> = ink
         .comps
         .iter()
@@ -262,8 +280,35 @@ pub fn find_rows_in(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<
         rows.retain(|_| *it.next().unwrap());
     }
     rows.sort_by(|a, b| a.band.top0.total_cmp(&b.band.top0));
+    settle_dots(&mut rows);
     rows
 }
+
+/// 增时线至少这么扁（宽 / 高）。
+const DASH_FLAT: f64 = 1.8;
+/// 扁到这个程度以下的短横是「说不准」的：细体字的附点是个扁圆，密排本的增时线是一截短横，两样的宽高差不多。
+const DASH_SURE: f64 = 2.6;
+/// 宽到带高的这么多倍的增时线是长线。
+const DASH_LONG: f64 = 0.6;
+
+/// 说不准的短横（[`DASH_FLAT`]–[`DASH_SURE`]、又不长）照本页的排法定：这一页的增时线是长线的（有两条以上），短的扁块是附点；
+/// 没有长线的页照扁度当增时线（密排本一律短线，附点另是更小更圆的点）。
+fn settle_dots(rows: &mut [RowFrame]) {
+    let long: Vec<f64> = rows.iter().flat_map(|r| r.cells.iter().filter(|c| c.kind == CellKind::Dash && c.w() >= r.h() * DASH_LONG).map(|c| c.w())).collect();
+    if long.len() < 2 {
+        return;
+    }
+    // 比本页长线的一半还短的才是点（印断的、收笔淡掉半截的长线不算）
+    let lim = median(&long, 0.0) * DOT_OF_DASH;
+    for r in rows.iter_mut() {
+        for c in r.cells.iter_mut().filter(|c| c.kind == CellKind::Dash && c.w() < lim && c.w() < c.h() * DASH_SURE) {
+            c.kind = CellKind::Dot;
+        }
+    }
+}
+
+/// 说不准的短横宽不到本页长增时线中位宽的这么多倍才改判附点。
+const DOT_OF_DASH: f64 = 0.4;
 
 /// 头一个数字后面紧跟着等号（上下两道短横、各自又扁又薄）的排是调号行。
 fn key_line(ink: &Ink, row: &RowFrame) -> bool {
@@ -326,7 +371,8 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     cells.retain(|c| c.y1 >= c.y0);
     // 并排粘在一起的数字按本行数字宽切开
     let tall = |c: &Cell| c.h() >= h * 0.72;
-    let ws: Vec<f64> = cells.iter().filter(|c| tall(c) && c.w() >= c.h() * 0.4 && c.w() <= c.h() * 0.9).map(|c| c.w()).collect();
+    // 本行数字宽：近方形的宽体数字也算（只收到九成高的话，宽体页里只剩「1」定宽，个个数字被当成两个粘在一起切开）
+    let ws: Vec<f64> = cells.iter().filter(|c| tall(c) && c.w() >= c.h() * 0.4 && c.w() <= c.h() * 1.15).map(|c| c.w()).collect();
     let med_w = median(&ws, h * 0.6);
     let mut out: Vec<Cell> = Vec::new();
     for c in cells {
@@ -407,7 +453,7 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     if ch >= h * 0.72 && cw >= h * 0.1 {
         return CellKind::Digit;
     }
-    if ch <= h * 0.3 && cw >= h * 0.28 && cw >= ch * 1.8 && rel > 0.25 && rel < 0.8 {
+    if ch <= h * 0.3 && cw >= h * 0.28 && cw >= ch * DASH_FLAT && rel > 0.25 && rel < 0.8 {
         return CellKind::Dash;
     }
     if cw <= h * 0.42 {
