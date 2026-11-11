@@ -76,3 +76,77 @@ pub fn music_chars(vp: &VecPage) -> Vec<VSym> {
 pub fn family_of(vp: &VecPage, s: &VSym) -> Option<Family> {
     vp.char_of(&vp.objs[s.obj as usize]).and_then(|c| music_family(&c.font))
 }
+
+/// 路径画的字形块（转曲页）：一个路径对象里画了几个字形的（调号一串升号、一行字），按子路径外框相交并查成块，一块一个字形；
+/// 块内的外轮廓与内腔外框必相交，挨着不碰的两个字形分开。
+pub struct GlyphPiece {
+    pub obj: u32,
+    pub rings: Vec<Vec<(f64, f64)>>,
+    pub rect: Rect,
+    pub curved: bool,
+}
+
+/// 页上路径画的字形块（不含文字层的字）。
+pub fn path_pieces(vp: &VecPage) -> Vec<GlyphPiece> {
+    let mut out = Vec::new();
+    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph && matches!(o.src, dolce_omr_source::vector::ObjSrc::Path(_)) && o.twin_of.is_none()) {
+        let boxes: Vec<Rect> = o.rings.iter().map(|r| ring_rect(r)).collect();
+        let n = boxes.len();
+        let mut up: Vec<usize> = (0..n).collect();
+        fn root(up: &mut [usize], mut i: usize) -> usize {
+            while up[i] != i {
+                up[i] = up[up[i]];
+                i = up[i];
+            }
+            i
+        }
+        for i in 0..n {
+            for j in i + 1..n {
+                let (a, b) = (boxes[i], boxes[j]);
+                if a.x <= b.right() && b.x <= a.right() && a.y <= b.bottom() && b.y <= a.bottom() {
+                    let (ri, rj) = (root(&mut up, i), root(&mut up, j));
+                    up[ri] = rj;
+                }
+            }
+        }
+        let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+        for i in 0..n {
+            let r = root(&mut up, i);
+            groups.entry(r).or_default().push(i);
+        }
+        for g in groups.into_values() {
+            let rings: Vec<Vec<(f64, f64)>> = g.iter().map(|&i| o.rings[i].clone()).collect();
+            let rect = g.iter().map(|&i| boxes[i]).reduce(|a, b| {
+                let (x0, y0) = (a.x.min(b.x), a.y.min(b.y));
+                Rect::new(x0, y0, a.right().max(b.right()) - x0, a.bottom().max(b.bottom()) - y0)
+            });
+            if let Some(rect) = rect {
+                out.push(GlyphPiece { obj: o.id, rings, rect, curved: o.curved });
+            }
+        }
+    }
+    out
+}
+
+fn ring_rect(r: &[(f64, f64)]) -> Rect {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for &(x, y) in r {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+}
+
+/// 转曲页的音乐字形：字形块跨字体认身份（1 em = 4 线距）；认不出的回 `name` 为空串（多半是文字，交给读字那一路）。
+pub fn path_glyphs(pieces: &[GlyphPiece], space: f64) -> Vec<VSym> {
+    let em = 4.0 * space;
+    pieces
+        .iter()
+        .map(|p| {
+            let (name, dist) = dolce_omr_sheet::shapes::identify_outline(&p.rings, (p.rect.w / em, p.rect.h / em)).unwrap_or(("", u32::MAX));
+            VSym { obj: p.obj, name, rect: p.rect, dist, em, curved: p.curved }
+        })
+        .collect()
+}

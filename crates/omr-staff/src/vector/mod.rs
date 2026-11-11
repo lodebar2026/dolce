@@ -187,7 +187,11 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     let vp = VecPage::build(pc, dolce_omr_sheet::prims::VEC_SCALE, (0.0, 0.0));
     let f = frame_vector(&vp)?;
     let ink = VecInk::new(&vp, &f.staff_lines);
-    let syms = glyphs::music_chars(&vp);
+    // 字形：文字层里的音乐字体字，加上路径画的字形块（转曲页）
+    let pieces = glyphs::path_pieces(&vp);
+    let mut syms = glyphs::music_chars(&vp);
+    let path_syms = glyphs::path_glyphs(&pieces, f.layout.unit.space);
+    syms.extend(path_syms.iter().filter(|s| !s.name.is_empty()).cloned());
     let attrs = notes::page_attrs(&f.layout, &syms);
     let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
     // 多小节休止：粗横段 + 两端竖段 + 上方的数字（共用判据 `notes::rests::multi_rests`）
@@ -210,7 +214,12 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
         .filter(|s| !f.layout.staves.iter().any(|st| st.covers(s.cx(), s.cy(), 1.5) && s.cx() >= st.left && s.cx() <= st.right))
         .map(|s| (if s.name == "accidentalSharp" { '#' } else { 'b' }, s.rect))
         .collect();
-    let tiles = dolce_omr_source::raster::side_tiles(pc, None);
+    let mut tiles = dolce_omr_source::raster::side_tiles(pc, None);
+    // 转曲页（文字层里没有正文的字）：认不出身份的字形块多半是字，按轮廓成图当小图读
+    if !vp.chars.iter().any(|c| !c.generated && glyphs::music_family(&c.font).is_none()) {
+        let unknown: Vec<&glyphs::GlyphPiece> = pieces.iter().zip(&path_syms).filter(|(_, s)| s.name.is_empty()).map(|(p, _)| p).collect();
+        tiles.extend(text::piece_tiles(&unknown, &vp));
+    }
     let lines = text::text_lines(&vp, ocr, rendered, &tiles, &accs);
     let credits = text::header(&f.layout, &vp, &lines, 1.0);
     let bands = text::bands(&f.layout, lines);

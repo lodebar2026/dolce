@@ -162,6 +162,47 @@ pub fn guess_by_code(f: Family, unicode: u32) -> Option<&'static str> {
     None
 }
 
+/// 扫描线填充（非零环绕、按像素心取样）：`rs` 是已换到像素坐标的闭合环，`w × h` 的格子里落在墨里的格逐个交给 `set(x, y)`。
+/// 签名与转曲字块成图（送 OCR）共用。
+pub fn fill_rings(rs: &[Vec<(f64, f64)>], w: usize, h: usize, set: &mut dyn FnMut(usize, usize)) {
+    let mut xs: Vec<(f64, i32)> = Vec::new();
+    for py in 0..h {
+        let y = py as f64 + 0.5;
+        xs.clear();
+        for r in rs {
+            let m = r.len();
+            for i in 0..m {
+                let (a, b) = (r[i], r[(i + 1) % m]);
+                if a.1 == b.1 {
+                    continue;
+                }
+                if y >= a.1.min(b.1) && y < a.1.max(b.1) {
+                    xs.push((a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0), if b.1 > a.1 { 1 } else { -1 }));
+                }
+            }
+        }
+        if xs.is_empty() {
+            continue;
+        }
+        xs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut wind = 0;
+        for k in 0..xs.len() - 1 {
+            wind += xs[k].1;
+            if wind == 0 {
+                continue;
+            }
+            let from = (xs[k].0 - 0.5).ceil().max(0.0) as usize;
+            let to = ((xs[k + 1].0 - 0.5).floor()).min(w as f64 - 1.0);
+            if to < 0.0 {
+                continue;
+            }
+            for px in from..=to as usize {
+                set(px, py);
+            }
+        }
+    }
+}
+
 /// 32×32 签名（逐位，按行）。
 pub type Sig = [u64; SIG_N * SIG_N / 64];
 
@@ -193,43 +234,10 @@ pub fn sig(rings: &[Vec<(f64, f64)>], bounds: Option<(f64, f64, f64, f64)>, flip
     let sc = (n - 2.0) / w.max(h);
     let (ox, oy) = ((n - w * sc) / 2.0, (n - h * sc) / 2.0);
     let rs: Vec<Vec<(f64, f64)>> = rings.iter().map(|r| r.iter().map(|&(x, y)| ((x - x0) * sc + ox, ((if flip { -y } else { y }) - y0) * sc + oy)).collect()).collect();
-    let mut xs: Vec<(f64, i32)> = Vec::new();
-    for py in 0..SIG_N {
-        let y = py as f64 + 0.5;
-        xs.clear();
-        for r in &rs {
-            let m = r.len();
-            for i in 0..m {
-                let (a, b) = (r[i], r[(i + 1) % m]);
-                if a.1 == b.1 {
-                    continue;
-                }
-                if y >= a.1.min(b.1) && y < a.1.max(b.1) {
-                    xs.push((a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0), if b.1 > a.1 { 1 } else { -1 }));
-                }
-            }
-        }
-        if xs.is_empty() {
-            continue;
-        }
-        xs.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let mut wind = 0;
-        for k in 0..xs.len() - 1 {
-            wind += xs[k].1;
-            if wind == 0 {
-                continue;
-            }
-            let from = (xs[k].0 - 0.5).ceil().max(0.0) as usize;
-            let to = ((xs[k + 1].0 - 0.5).floor()).min(n - 1.0);
-            if to < 0.0 {
-                continue;
-            }
-            for px in from..=to as usize {
-                let bit = py * SIG_N + px;
-                out[bit / 64] |= 1 << (bit % 64);
-            }
-        }
-    }
+    fill_rings(&rs, SIG_N, SIG_N, &mut |px, py| {
+        let bit = py * SIG_N + px;
+        out[bit / 64] |= 1 << (bit % 64);
+    });
     out
 }
 
@@ -322,6 +330,48 @@ pub fn identify(rings: &[Vec<(f64, f64)>], bounds: Option<(f64, f64, f64, f64)>,
         }
     }
     family.and_then(|f| guess_by_code(f, unicode)).map(|n| (n, SIG_MAX))
+}
+
+/// 跨字体（转曲对象，没有字体与码位）：尺寸差 [`OUTLINE_SIZE_TOL`] em 内取签名最近、距离不过 [`OUTLINE_SIG_MAX`]；
+/// 几乎同形（不过 [`SIG_SAME`]）时尺寸放到 [`SIZE_LOOSE`]（别的字体同一符号比例不同：调号的升号矮三成）；
+/// 小圆点（近圆、不过 [`DOT_MAX_EM`] em）签名抖得厉害，附点放到 [`DOT_SIG_MAX`]。门槛照 TS 转曲那一路（祢話如甘霖：符头 15~28、谱号 26、拍号数字 ~50，文字 90 开外）。
+const OUTLINE_SIZE_TOL: f64 = 0.08;
+const OUTLINE_SIG_MAX: u32 = 60;
+const SIG_SAME: u32 = 20;
+const SIZE_LOOSE: f64 = 0.25;
+const DOT_SIG_MAX: u32 = 100;
+const DOT_MAX_EM: f64 = 0.175;
+
+/// 转曲对象（一个字形块）的身份。`rings`：页面上的轮廓（y 朝下）；`size`：外框宽高（em，1 em = 4 线距）。认不出（多半是文字）回 None。
+pub fn identify_outline(rings: &[Vec<(f64, f64)>], size: (f64, f64)) -> Option<(&'static str, u32)> {
+    if rings.is_empty() {
+        return None;
+    }
+    let (w, h) = size;
+    let s = sig(rings, None, true);
+    let (mut best, mut loose): (Option<(&'static str, u32)>, Option<(&'static str, u32)>) = (None, None);
+    for c in dict() {
+        let (dw, dh) = ((c.w - w).abs(), (c.h - h).abs());
+        if dw > SIZE_LOOSE || dh > SIZE_LOOSE {
+            continue;
+        }
+        let d = sig_distance(&s, &c.sig);
+        if dw <= OUTLINE_SIZE_TOL && dh <= OUTLINE_SIZE_TOL && best.is_none_or(|b| d < b.1) {
+            best = Some((c.smufl, d));
+        }
+        if loose.is_none_or(|l| d < l.1) {
+            loose = Some((c.smufl, d));
+        }
+    }
+    if let Some(l) = loose.filter(|l| l.1 <= SIG_SAME) {
+        return Some(l);
+    }
+    let b = best?;
+    if b.1 <= OUTLINE_SIG_MAX {
+        return Some(b);
+    }
+    let round = (w - h).abs() <= w.max(h) * 0.25 && w <= DOT_MAX_EM;
+    (b.0 == "augmentationDot" && b.1 <= DOT_SIG_MAX && round).then_some(b)
 }
 
 #[cfg(test)]
