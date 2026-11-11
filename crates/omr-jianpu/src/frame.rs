@@ -202,6 +202,8 @@ pub fn find_rows_in(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<
     rows
 }
 
+/// 矮排的底离下面正常行的顶不到带高的这么多倍，是骑在那一行上的倚音。
+const PERCH: f64 = 0.5;
 /// 头一遍认下的行带高与估的字号差出这么多就照带高重找。
 const RESCALE: f64 = 0.1;
 
@@ -276,7 +278,9 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     // 三行以上时，比各行带高的中位矮一成半以上的排（页眉里的年份、英文署名，歌词里夹的数字）得几乎格格读得出数字、还得有小节线才算谱行
     if rows.len() >= 3 {
         let mh = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), num_h);
-        let keep: Vec<bool> = rows.iter().zip(&ratios).map(|(r, &q)| r.h() >= mh * 0.85 || (q >= 0.85 && r.bars().count() > 0)).collect();
+        // 矮一截又紧贴在正常行顶上的一排是那一行的倚音（底下压着减时线、伸上来的小节线也穿过它），不是谱行
+        let perched = |r: &RowFrame| rows.iter().any(|o| o.h() >= mh * 0.85 && o.band.top0 > r.band.top0 && o.band.top0 - r.band.bottom0 < mh * PERCH);
+        let keep: Vec<bool> = rows.iter().zip(&ratios).map(|(r, &q)| r.h() >= mh * 0.85 || (q >= 0.85 && r.bars().count() > 0 && !perched(r))).collect();
         let mut it = keep.iter();
         rows.retain(|_| *it.next().unwrap());
     }
