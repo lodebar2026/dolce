@@ -13,7 +13,7 @@ use dolce_omr_text::{chords, words, Ch};
 
 /// 行底离第一行谱至少这么多格（再近的是和弦、速度、压着谱表的杂墨）。
 const CLEAR: f64 = 0.3;
-/// 离谱表这么多格以内的行，像和弦 / 节拍器 / 力度的不进页眉。
+/// 离谱表这么多格以内的行，像和弦 / 节拍器 / 力度 / 速度术语的不进页眉。
 const NEAR: f64 = 6.0;
 /// 图片文件没有可信的页面尺寸：按 A4 宽折算字号。
 const A4_W: f64 = 595.0;
@@ -83,7 +83,7 @@ pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> 
             continue;
         }
         let near = (top - (b.y + b.h) * up) / sp <= NEAR;
-        if near && (chords::is_annotation_line(t) || words::metronome(t).is_some() || words::dynamic(t).is_some()) {
+        if near && (chords::is_annotation_line(t) || words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)) {
             continue;
         }
         lines.push(WordLine { text: t.to_string(), x: b.x, y: b.y, w: b.w, h: b.h });

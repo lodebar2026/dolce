@@ -33,6 +33,9 @@ fn main() {
         for (i, r) in page.text.rows.iter().enumerate() {
             println!("  谱行 {i}（y {:.0}）：歌词 {} 行；记号 {}", f.staves[i].ys[0], r.lyrics.len(), r.marks.iter().map(|m| format!("{:.0}:{:?}", m.x, m.dir)).collect::<Vec<_>>().join(" "));
         }
+        for c in &page.text.credits {
+            println!("  页眉 {:?} {:?} {:.1}pt：{}", c.kind, c.justify, c.size, c.text);
+        }
         println!("  文字 {} ms，OCR {} 条", t.elapsed().as_millis(), ocr.cache.len());
     });
 }
