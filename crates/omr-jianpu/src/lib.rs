@@ -3,10 +3,12 @@
 //! - [`prep`]（JM0）：成像、连通块
 //! - [`frame`]（JM1）：数字高、数字行与行带、带内切格（数字 / 小节线 / 增时线 / 点）
 //! - [`notes`]（JM3）：读数、八度点、减时线、建音
+//! - [`text`]（JM2 / JM4）：歌词、页眉、调号拍号速度
 pub mod frame;
 pub mod notes;
 pub mod prep;
 pub mod result;
+pub mod text;
 
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_source::raster::SourceImage;
@@ -22,9 +24,13 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
     }
     let w = ink.bin.w as f64;
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
-    for row in &rows {
-        let rn = notes::build(&ink, row, ocr);
+    let mut notes: Vec<notes::RowNotes> = rows.iter().map(|row| notes::build(&ink, row, ocr)).collect();
+    let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
+    text::lyrics(&ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions);
+    text::header(&ink, &rows, num_h, ocr, &mut score);
+    for ((row, rn), labels) in rows.iter().zip(notes).zip(labels) {
         score.rows.push(StaffRow {
+            lyric_labels: labels,
             top_y: row.top_at(w / 2.0),
             bottom_y: row.bottom_at(w / 2.0),
             nums: rn.nums,
