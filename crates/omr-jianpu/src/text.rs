@@ -422,6 +422,8 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
 }
 
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-Ga-g])").unwrap());
+/// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
+static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(\d{1,2})").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*$").unwrap());
 
@@ -479,6 +481,23 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             score.fifths = fifths_of(letter, alter);
             score.key = format!("{letter}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" });
             used = true;
+        }
+        if !used {
+            if let Some(c) = KEY_BARE.captures(&l.text) {
+                let alt = |t: &str| match t {
+                    "b" | "♭" => -1,
+                    "#" | "♯" => 1,
+                    _ => 0,
+                };
+                let alter = alt(&c[1]) + alt(&c[3]);
+                let letter = c[2].chars().next().unwrap();
+                let minor = &c[4] == "m";
+                // 小调记关系大调的升降号数
+                score.fifths = fifths_of(letter, alter) - if minor { 3 } else { 0 };
+                score.minor = minor;
+                score.key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
+                used = true;
+            }
         }
         if let Some(c) = METER.captures(&l.text) {
             if let (Ok(a), Ok(b)) = (c[1].parse::<u32>(), c[2].parse::<u32>()) {
