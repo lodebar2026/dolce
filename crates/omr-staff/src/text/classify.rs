@@ -12,6 +12,10 @@ const LYRIC_FIRST: f64 = 7.0;
 const LYRIC_GAP: f64 = 0.8;
 /// 歌词行至少这么高（相对线距）：再矮的是指法、连音数字、碎墨读出来的字。
 const LYRIC_MIN_H: f64 = 1.3;
+/// 接不上的上方几行合起来不过这么多个音节，算假行。
+const WEAK_SYLS: usize = 6;
+/// 一栏的头一行歌词至少这么多个音节。
+const LYRIC_START: usize = 3;
 /// 两行横向交叠过较窄那行的这个比例，算上下对着。
 const XOVER: f64 = 0.3;
 /// 和弦记号离下面那行谱的首线不过这么多格（混排谱的和弦印在简谱行上方），且比离上面那行谱近。
@@ -92,6 +96,12 @@ fn split_scripts(l: &GeoLine) -> Vec<GeoLine> {
         .collect()
 }
 
+/// 段落标签（`(副歌)`、`【副歌】`、`副歌：`）：不是唱词。
+fn section_label(t: &str) -> bool {
+    let core: String = t.chars().filter(|c| !"()（）[]【】:：. 　".contains(*c)).collect();
+    ["副歌", "和声", "合唱", "齐唱", "独唱", "领唱", "女声", "男声", "重唱", "尾声", "副歌)"].contains(&core.as_str())
+}
+
 fn unspaced(t: &str) -> String {
     t.chars().filter(|c| !c.is_whitespace()).collect()
 }
@@ -100,7 +110,7 @@ fn unspaced(t: &str) -> String {
 fn lyric_like(text: &str) -> bool {
     let total = text.chars().filter(|c| !c.is_whitespace()).count();
     let (h, l) = (han_count(text), latin_count(text));
-    h >= 2 || (l >= 4 && l * 10 >= total * 6)
+    (h >= 2 && h * 2 >= total.saturating_sub(l)) || (l >= 4 && l * 10 >= total * 6)
 }
 
 /// 一段字是不是记号 / 文字指示；是的话交出来。`above`：印在所归谱行的上方。
@@ -140,6 +150,8 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
     for b in bands {
         // 歌词链：从上面那行谱往下数。已收下的歌词行 (x0, x1, y1, 行高, 拉丁)；`blocked`：链断处那行的横向范围（它下面的不再收）
         let mut chain: Vec<(f64, f64, f64, f64, bool)> = Vec::new();
+        // 链上各行在 `rows[a].lyrics` 里的下标与音节数（与 `chain` 同序）
+        let mut chain_at: Vec<(usize, usize)> = Vec::new();
         let mut blocked: Vec<(f64, f64)> = Vec::new();
         let lines: Vec<GeoLine> = b.lines.iter().flat_map(split_scripts).collect();
         for l in &lines {
@@ -162,16 +174,39 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
             let tall = b.above.is_some_and(|a| l.h() >= LYRIC_MIN_H * f.staves[a].space());
             if b.above.is_some() && !chord_line && tall && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
                 // 横向盖得住它的上方歌词行：没有就是这一栏的头一行（看离谱表多远），有就看与最下面那行的空隙
-                let prev: Vec<&(f64, f64, f64, f64, bool)> = chain.iter().filter(|c| over(c.0, c.1)).collect();
-                let ok = match prev.iter().map(|c| (c.2, c.3)).max_by(|p, q| p.0.total_cmp(&q.0)) {
+                let mut prev: Vec<(f64, f64, f64, f64, bool)> = chain.iter().filter(|c| over(c.0, c.1)).copied().collect();
+                let gap_ok = |prev: &[(f64, f64, f64, f64, bool)]| match prev.iter().map(|c| (c.2, c.3)).max_by(|p, q| p.0.total_cmp(&q.0)) {
                     None => d_above.is_some_and(|d| d <= LYRIC_FIRST),
                     Some((bottom, h)) => l.y0 - bottom <= LYRIC_GAP * h.min(l.h()),
                 };
+                let mut ok = gap_ok(&prev);
+                // 接不上的上方那几行合起来没几个字（碎墨读成的假行），这一行自己离谱表不远：丢掉它们、从这一行起头
+                if !ok && !prev.is_empty() && d_above.is_some_and(|d| d <= LYRIC_FIRST) {
+                    let weak: usize = chain.iter().zip(&chain_at).filter(|(c, _)| over(c.0, c.1)).map(|(_, a)| a.1).sum();
+                    if weak <= WEAK_SYLS {
+                        let a = b.above.unwrap();
+                        for (c, at) in chain.iter().zip(&chain_at) {
+                            if over(c.0, c.1) {
+                                rows[a].lyrics[at.0].row.syls.clear();
+                            }
+                        }
+                        let keep: Vec<bool> = chain.iter().map(|c| !over(c.0, c.1)).collect();
+                        let mut k = keep.iter();
+                        chain.retain(|_| *k.next().unwrap());
+                        let mut k = keep.iter();
+                        chain_at.retain(|_| *k.next().unwrap());
+                        prev.clear();
+                        ok = true;
+                    }
+                }
                 if ok {
                     let a = b.above.unwrap();
                     // 行里夹着的跳转记号（行尾的 Fine、D.C.）单独挂
                     let mut lyric_chars: Vec<Ch> = Vec::new();
                     for s in &l.segs {
+                        if section_label(s.text().trim()) {
+                            continue;
+                        }
                         if let Some(j) = words::jump(s.text().trim()) {
                             rows[a].marks.push(Mark { x: s.rect.x, dir: Dir::Words { text: s.text().trim().to_string(), above: false, jump: Some(j) } });
                             continue;
@@ -183,10 +218,12 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
                         lyric_chars.extend(s.chars.iter().cloned());
                     }
                     let row = syllables(&lyric_chars);
-                    if !row.syls.is_empty() {
+                    // 一栏的头一行要有三个以上音节：碎墨读出来的一两个字（「二 一」）不开头
+                    if row.syls.len() >= if prev.is_empty() { LYRIC_START } else { 1 } {
                         let latin = script_of(&row.syls.iter().map(|s| s.text.as_str()).collect::<String>()) == Script::Latin;
                         // 行号 = 上方同种文字、横向盖得住它的行数 + 1（副歌一行夹在主歌几行右边，是它那一栏的第 1 行）
                         let number = 1 + prev.iter().filter(|c| c.4 == latin).count() as u8;
+                        chain_at.push((rows[a].lyrics.len(), row.syls.len()));
                         rows[a].lyrics.push(LyricLine { number, latin, row, y0: l.y0, y1: l.y1 });
                         chain.push((x0, x1, l.y1, l.h(), latin));
                         continue;
@@ -216,6 +253,9 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
                 }
             }
         }
+    }
+    for r in rows.iter_mut() {
+        r.lyrics.retain(|l| !l.row.syls.is_empty());
     }
     // 整页读出的和弦记号不到三个的不要：没有和弦的谱面上，延长记号、弧头偶尔读成一个 C、D
     if rows.iter().flat_map(|r| r.marks.iter()).filter(|m| matches!(m.dir, Dir::Harmony(_))).count() < MIN_CHORDS {

@@ -22,6 +22,10 @@ const WIDE: f64 = 8.0;
 const HIGH: f64 = 6.5;
 const ARC_W: f64 = 3.0;
 const ARC_FILL: f64 = 0.22;
+/// 短弧样的墨块：宽过高的 `FLAT` 倍、宽过 `FLAT_W` 格、墨占外框不到 `FLAT_FILL`（横笔、连字符是实心的，占得满）。
+const FLAT: f64 = 2.0;
+const FLAT_W: f64 = 1.2;
+const FLAT_FILL: f64 = 0.45;
 /// 贴着谱表（首末线外这么多格以内）的墨块不当文字。
 const STAFF_PAD: f64 = 0.25;
 /// 首行上方、末行下方的带伸出去这么多格。
@@ -109,6 +113,13 @@ fn excluded(f: &PageFrame, notes: &[RowNotes]) -> (HashSet<i32>, std::collection
         }
     }
     let mut maybe: std::collections::HashMap<i32, Vec<FalseHead>> = std::collections::HashMap::new();
+    // 扁而稀的墨块（延音线、小圆滑线，也可能是字里的一撇一捺）同样先不定：成行的字里的留着，否则不当文字
+    for b in &f.blobs {
+        let sp = f.unit.space;
+        if !out.contains(&(b.id as i32)) && b.rect.w >= FLAT * b.rect.h && b.rect.w >= FLAT_W * sp && (b.area as f64) < FLAT_FILL * b.rect.w * b.rect.h {
+            maybe.entry(b.id as i32).or_default();
+        }
+    }
     for (si, row) in notes.iter().enumerate() {
         let sp = f.staves[si].space();
         for c in &row.chords {
