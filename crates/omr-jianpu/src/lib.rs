@@ -1,0 +1,39 @@
+//! 简谱路线（位图）：各页原图 → [`result::RecognizedScore`]。
+//!
+//! - [`prep`]（JM0）：成像、连通块
+//! - [`frame`]（JM1）：数字高、数字行与行带、带内切格（数字 / 小节线 / 增时线 / 点）
+//! - [`notes`]（JM3）：读数、八度点、减时线、建音
+pub mod frame;
+pub mod notes;
+pub mod prep;
+pub mod result;
+
+use dolce_omr_ocr::cache::CachedOcr;
+use dolce_omr_source::raster::SourceImage;
+use result::{RecognizedScore, StaffRow};
+
+/// 识别一首（各页原图按序）。没有找到数字行回 Err。
+pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+    let ink = prep::Ink::load(srcs).ok_or("没有页面")?;
+    let num_h = frame::estimate_num_h(&ink.comps);
+    let rows = frame::find_rows(&ink, num_h, ocr);
+    if rows.is_empty() {
+        return Err("没有找到数字行".into());
+    }
+    let w = ink.bin.w as f64;
+    let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
+    for row in &rows {
+        let rn = notes::build(&ink, row, ocr);
+        score.rows.push(StaffRow {
+            top_y: row.top_at(w / 2.0),
+            bottom_y: row.bottom_at(w / 2.0),
+            nums: rn.nums,
+            barline_xs: rn.barline_xs,
+            final_barline: rn.final_end.then_some("end"),
+            double_bar_xs: rn.double_bar_xs,
+            end_bar_xs: rn.end_bar_xs,
+            ..Default::default()
+        });
+    }
+    Ok(score)
+}

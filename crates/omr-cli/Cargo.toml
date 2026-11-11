@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 dolce-omr-core = { path = "../omr-core" }
+dolce-omr-jianpu = { path = "../omr-jianpu" }
 dolce-omr-ocr = { path = "../omr-ocr" }
 dolce-omr-source = { path = "../omr-source" }
 dolce-omr-staff = { path = "../omr-staff" }

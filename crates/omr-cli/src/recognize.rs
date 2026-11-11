@@ -1,4 +1,4 @@
-//! 一档语料的一首曲子 → 识别产物。五线谱路线现到结构信息（小节、谱号调号拍号）；简谱路线未接。
+//! 一档语料的一首曲子 → 识别产物。五线谱走 `omr-staff`，简谱走 `omr-jianpu`。
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_ocr::native::NativeInfer;
 use dolce_omr_ocr::{Ocr, OcrCache};
@@ -10,7 +10,6 @@ use rayon::prelude::*;
 use std::path::Path;
 
 /// 识别产物：判分脚本 `--from` 读的那几样文件的内容。
-#[allow(dead_code)] // 简谱路线落地前没人造 Jianpu
 pub enum RecOutput {
     /// 五线谱：MusicXML 与版面摘要（形状见私有仓库 `chorus-opslib.mjs::recLayoutOf`；独唱谱只要 `notes` / `rowSp`）
     Staff { musicxml: String, layout: String },
@@ -31,12 +30,13 @@ pub fn sources(p: &Path) -> Result<Vec<SourceImage>, String> {
 }
 
 pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOutput, String> {
-    if kind == "jianpu" {
-        return Err("简谱路线尚未实现".into());
-    }
     let mut srcs = Vec::new();
     for f in inputs {
         srcs.extend(sources(Path::new(f))?);
+    }
+    if kind == "jianpu" {
+        let score = dolce_omr_jianpu::recognize(&srcs, ocr)?;
+        return Ok(RecOutput::Jianpu { recognized: serde_json::to_string(&score).map_err(|e| e.to_string())? });
     }
     let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_page(s, Some(ocr))).collect();
     if pages.is_empty() {

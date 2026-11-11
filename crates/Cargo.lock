@@ -248,6 +248,7 @@ name = "dolce-omr-cli"
 version = "0.1.0"
 dependencies = [
  "dolce-omr-core",
+ "dolce-omr-jianpu",
  "dolce-omr-ocr",
  "dolce-omr-source",
  "dolce-omr-staff",
@@ -263,6 +264,20 @@ dependencies = [
  "bincode",
  "serde",
  "sha2",
+]
+
+[[package]]
+name = "dolce-omr-jianpu"
+version = "0.1.0"
+dependencies = [
+ "dolce-omr-core",
+ "dolce-omr-ocr",
+ "dolce-omr-sheet",
+ "dolce-omr-source",
+ "dolce-omr-text",
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
