@@ -118,7 +118,7 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
             CellKind::Dot => {
                 if let Some(n) = out.nums.last_mut() {
                     let after_bar = last_bar_x1.is_some_and(|b| b as f64 > n.bbox.right());
-                    if n.augment == 0 && !after_bar && c.x0 as f64 - n.bbox.right() <= h * 0.9 && c.x0 as f64 >= n.bbox.right() - 1.0 {
+                    if n.augment == 0 && !after_bar && c.x0 as f64 - n.bbox.right() <= h * 2.0 && c.x0 as f64 >= n.bbox.right() - 1.0 {
                         n.dot += 1;
                     }
                 }
@@ -256,7 +256,7 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
             mine.sort_by(|a, b| a.3.total_cmp(&b.3));
             // 第一个点贴着数字（或减时线），第二个贴着第一个
             let mut edge = 0.0;
-            let mut cnt = 0;
+            let mut cnt: i32 = 0;
             for t in mine {
                 let first = if up { h * 0.45 } else { h * 0.38 };
                 if t.3 - edge > if cnt == 0 { first } else { h * 0.3 } || cnt >= 2 {
@@ -268,10 +268,50 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
                     out.claimed.push(dots[t.0].rect);
                 }
             }
+            // 低音点粘在减时线底下（连通块里它不单独成块）：回原图在线底下开窗找一团不碰窗边的小圆墨
+            if !up && cnt == 0 && n.div > 0 {
+                if let Some(r) = probe_low_dot(ink, n.bbox.cx(), floors[ni], h) {
+                    cnt = 1;
+                    out.claimed.push(r);
+                }
+            }
             n.octave += if up { cnt } else { -cnt };
         }
         if n.digit == 0 || n.digit == crate::result::RHYTHM_DIGIT {
             n.octave = 0;
         }
     }
+}
+
+/// 在 `floor`（减时线底）下面、数字中线左右 0.32 字号的窗里找低音点：紧接着线的几行墨，横向不碰窗边、近圆、够实。
+fn probe_low_dot(ink: &Ink, cx: f64, floor: f64, h: f64) -> Option<Rect> {
+    let (xa, xb) = ((cx - h * 0.32).round() as i64, (cx + h * 0.32).round() as i64);
+    let y0 = floor.round() as i64;
+    let span = |y: i64| {
+        let a = (xa..=xb).find(|&x| ink.at(x, y))?;
+        let b = (xa..=xb).rev().find(|&x| ink.at(x, y))?;
+        Some((a, b))
+    };
+    let small = |s: (i64, i64)| s.0 > xa && s.1 < xb && ((s.1 - s.0 + 1) as f64) <= h * 0.45;
+    // 跳过线底的毛边（至多 3 行）
+    let mut y = y0;
+    while y < y0 + 3 && span(y).is_some_and(|s| !small(s)) {
+        y += 1;
+    }
+    let start = y;
+    let (mut a, mut b, mut area) = (i64::MAX, i64::MIN, 0usize);
+    while let Some(s) = span(y).filter(|&s| small(s)) {
+        a = a.min(s.0);
+        b = b.max(s.1);
+        area += (s.0..=s.1).filter(|&x| ink.at(x, y)).count();
+        y += 1;
+        if (y - start) as f64 > h * 0.45 {
+            return None;
+        }
+    }
+    let (bw, bh) = ((b - a + 1) as f64, (y - start) as f64);
+    if b < a || span(y).is_some() || bh < h * 0.1 || bw < h * 0.1 || bw / bh < 0.55 || bw / bh > 1.8 || (area as f64) < bw * bh * 0.55 {
+        return None;
+    }
+    Some(Rect::new(a as f64, start as f64, bw, bh))
 }

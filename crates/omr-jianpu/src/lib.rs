@@ -40,6 +40,11 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
     if std::env::var("OMR_JP_DEBUG").is_ok() {
         eprintln!("字号 {num_h:.1}，页 {}x{}", ink.bin.w, ink.bin.h);
         for (i, r) in rows.iter().enumerate() {
+            if std::env::var("OMR_JP_CELLS").is_ok() {
+                for c in &r.cells {
+                    eprintln!("    格 x{}-{} y{}-{} {:?}", c.x0, c.x1, c.y0, c.y1, c.kind);
+                }
+            }
             eprintln!("行{i} y{:.0}-{:.0} 高{:.1} 数字{} 线{} 音{} 系统{:?}", r.top_at(w / 2.0), r.bottom_at(w / 2.0), r.h(), r.digits().count(), r.bars().count(), notes[i].nums.len(), sys[i]);
         }
     }
