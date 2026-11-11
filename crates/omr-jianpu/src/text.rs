@@ -239,7 +239,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             // 下一行谱头顶上的和弦行、弧与点凑成的一截不是歌词
             let near_next = !last && (yb - y1) as f64 <= h * 1.3;
             let (cov, cnt) = chords::coverage(&text);
-            if near_next && (chords::is_chord_coverage(cov, cnt) || han_count(&text) < 2) {
+            let chordish = chords::is_chord_coverage(cov, cnt) && !text.chars().any(is_han);
+            if (!last && chordish) || (near_next && han_count(&text) < 2) {
                 continue;
             }
             let lr = syllables(&chars);
@@ -405,4 +406,46 @@ pub fn has_han(s: &str) -> bool {
 /// 行里各段文字高的中位（排查用）。
 pub fn median_h(lines: &[TextLine]) -> f64 {
     median(&lines.iter().map(|l| (l.y1 - l.y0 + 1) as f64).collect::<Vec<_>>(), 0.0)
+}
+
+/// 一行谱头顶上的和弦行：上方带里切行读字，整行是和弦记号的，各记号按左缘挂到它底下（或左边最近）的音上；
+/// 一个音上已有和弦的记成这个音时值内后面换的和弦。
+pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOcr, y_min: f64, regions: &mut Vec<TextRegion>) {
+    let h = row.h();
+    let w = ink.bin.w as f64;
+    let top = row.top_at(w / 2.0);
+    let ya = y_min.max(top - h * 2.8).max(0.0) as i64;
+    let yb = top.floor() as i64 - 1;
+    if rn.nums.is_empty() {
+        return;
+    }
+    let claims = Claims::new(ink, std::iter::empty());
+    for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, h * 0.35, None) {
+        let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.bin.w as i64);
+        let text: String = chars.iter().map(|c| c.ch).collect();
+        if std::env::var("OMR_JP_DEBUG").is_ok() {
+            eprintln!("上方带 y{y0}-{y1}: {text}");
+        }
+        let clean = chords::blank_non_chord(&text);
+        let (cov, cnt) = chords::coverage(&clean);
+        if !chords::is_chord_coverage(cov, cnt) || text.chars().any(is_han) {
+            continue;
+        }
+        let x_at = |i: usize| chars.get(i).map_or(0.0, |c| c.x0);
+        for t in chords::split_tokens(&clean, Some(&x_at)) {
+            let x = x_at(t.index);
+            let tok = chords::normalize(&t.tok);
+            let k = rn.nums.iter().rposition(|n| n.bbox.x <= x + h * 0.4).unwrap_or(0);
+            let next_x = rn.nums.get(k + 1).map_or(rn.nums[k].bbox.x + h * 4.0, |n| n.bbox.x);
+            let n = &mut rn.nums[k];
+            let x1 = chars.get(t.index + t.tok.chars().count() - 1).map_or(x, |c| c.x1);
+            regions.push(TextRegion { text: tok.clone(), bbox: Rect::new(x, y0 as f64, x1 - x, (y1 - y0 + 1) as f64) });
+            if n.chord.is_none() {
+                n.chord = Some(tok);
+            } else {
+                let offset = ((x - n.bbox.x) / (next_x - n.bbox.x).max(1.0)).clamp(0.0, 0.99);
+                n.extra_chords.push(crate::result::ExtraChord { tok, offset });
+            }
+        }
+    }
 }

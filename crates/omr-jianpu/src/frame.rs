@@ -346,6 +346,10 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
             }
         }
     }
+    // 与数字等高的小节线（数字排版的本子）：细而实心的一根竖条，「1」带旗、带底座，填不满外框
+    if ch >= h * 0.9 && cw <= (h * 0.14).max(3.0) && ink.count(&c.rect()) as f64 >= cw * ch * 0.92 {
+        return CellKind::Bar { thick: false };
+    }
     if ch >= h * 0.72 && cw >= h * 0.1 {
         return CellKind::Digit;
     }

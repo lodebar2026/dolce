@@ -34,6 +34,7 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
         // 上方带的顶：上一行最末一行歌词的底
         let y_min = if i == 0 { 0.0 } else { score.lyric_regions.iter().map(|r| r.bbox.bottom()).filter(|&b| b < rows[i].top_at(w / 2.0) && b > rows[i - 1].bottom_at(w / 2.0)).fold(rows[i - 1].bottom_at(w / 2.0), f64::max) };
         spans::arcs(&ink, &rows[i], &mut notes[i], y_min);
+        text::chords_above(&ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
     for ((row, rn), labels) in rows.iter().zip(notes).zip(labels) {
         score.rows.push(StaffRow {

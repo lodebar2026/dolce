@@ -37,6 +37,13 @@ pub struct Grace {
     pub bbox: Rect,
 }
 
+/// 同一个音时值内后面换的和弦：`offset` 是落在时值里的比例。
+#[derive(Clone, Debug, Serialize)]
+pub struct ExtraChord {
+    pub tok: String,
+    pub offset: f64,
+}
+
 /// 一个简谱音符（数字 + 修饰）。
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +73,8 @@ pub struct JpNum {
     pub chord: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chord_offset: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extra_chords: Vec<ExtraChord>,
     #[serde(skip_serializing_if = "zero")]
     pub slur_start: u32,
     #[serde(skip_serializing_if = "zero")]
@@ -170,6 +179,8 @@ pub struct RecognizedScore {
     pub header_regions: Vec<TextRegion>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub lyric_regions: Vec<TextRegion>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub chord_regions: Vec<TextRegion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dot_diam: Option<f64>,
     /// 可疑清单（TS 那份没有；核对视图现读各音的 `doubt`，这份供回归统计）
