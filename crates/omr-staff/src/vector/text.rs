@@ -316,7 +316,7 @@ pub fn dynamics(f: &Layout, syms: &[VSym], rows: &mut [RowText]) {
             .filter(|&(d, _)| d <= DYN_REACH)
             .min_by(|a, b| a.0.total_cmp(&b.0));
         if let Some((_, si)) = best {
-            rows[si].marks.push(Mark { x: cx, dir: Dir::Dynamics(d.to_string()) });
+            rows[si].marks.push(Mark { x: cx, rect: r, dir: Dir::Dynamics(d.to_string()) });
         }
     }
 }

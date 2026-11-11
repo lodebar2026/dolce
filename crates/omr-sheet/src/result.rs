@@ -7,9 +7,6 @@
 use dolce_omr_core::image::Rect;
 use serde::{Deserialize, Serialize};
 
-/// 识别 id（`omr12`、`omrL3`…）。同一份底本重跑、带约束重跑，没变的元素号码不变。
-pub type Rid = String;
-
 /// 识别 id 的种类（前缀）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RidKind {
@@ -22,6 +19,8 @@ pub enum RidKind {
 }
 
 impl RidKind {
+    pub const ALL: [RidKind; 6] = [RidKind::Note, RidKind::Lyric, RidKind::Words, RidKind::Dynamics, RidKind::Tie, RidKind::Slur];
+
     pub fn prefix(self) -> &'static str {
         match self {
             RidKind::Note => "omr",
@@ -34,6 +33,43 @@ impl RidKind {
     }
 }
 
+/// 识别 id（写出成 `omr12`、`omrL3`…）。同一份底本重跑、带约束重跑，没变的元素号码不变。
+/// 弧在认出时就占号、拼整曲时才定是延音线还是圆滑线：两种共用一个序号，前缀随种类（号码照样不重）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Rid {
+    pub kind: RidKind,
+    pub n: u32,
+}
+
+impl std::fmt::Display for Rid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.kind.prefix(), self.n)
+    }
+}
+
+impl std::str::FromStr for Rid {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        // 长前缀先比（`omrL` 先于 `omr`）
+        let mut kinds = RidKind::ALL;
+        kinds.sort_by_key(|k| std::cmp::Reverse(k.prefix().len()));
+        kinds.iter().find_map(|&kind| s.strip_prefix(kind.prefix()).and_then(|n| n.parse().ok()).map(|n| Rid { kind, n })).ok_or(())
+    }
+}
+
+impl Serialize for Rid {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Rid {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        s.parse().map_err(|_| serde::de::Error::custom(format!("识别 id 不认得：{s}")))
+    }
+}
+
 /// 按种类各自顺序发号（`omr1`、`omr2`…；`omrL1`…）。编号次序由调用方保证确定（页序 → 系统 → 谱行 → x）。
 #[derive(Clone, Debug, Default)]
 pub struct RidSeq {
@@ -42,9 +78,26 @@ pub struct RidSeq {
 
 impl RidSeq {
     pub fn take(&mut self, kind: RidKind) -> Rid {
-        let k = kind as usize;
+        // 延音线与圆滑线共用一个序号
+        let k = if kind == RidKind::Tie { RidKind::Slur } else { kind } as usize;
         self.next[k] += 1;
-        format!("{}{}", kind.prefix(), self.next[k])
+        Rid { kind, n: self.next[k] }
+    }
+}
+
+/// 一个元素的识别出处：识别 id（不写 id 的元素为 None）与源图框（没量到为 None）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Src {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rid: Option<Rid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<SrcBox>,
+}
+
+impl Src {
+    /// ` id="omr3"`（没有 id 时为空串）：写 MusicXML 属性用。
+    pub fn id_attr(&self) -> String {
+        self.rid.map_or(String::new(), |r| format!(" id=\"{r}\""))
     }
 }
 
@@ -121,4 +174,20 @@ pub mod codes {
     pub const METER_INFERRED: &str = "meter.inferred";
     /// 读到的拍号与多数小节对不上。
     pub const METER_MISMATCH: &str = "meter.mismatch";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rid_round_trip() {
+        let mut seq = RidSeq::default();
+        let (a, b, c, d) = (seq.take(RidKind::Note), seq.take(RidKind::Slur), seq.take(RidKind::Tie), seq.take(RidKind::Lyric));
+        assert_eq!([a, b, c, d].map(|r| r.to_string()), ["omr1", "omrS1", "omrT2", "omrL1"]);
+        for r in [a, b, c, d] {
+            assert_eq!(r.to_string().parse::<Rid>(), Ok(r));
+        }
+        assert_eq!(serde_json::to_string(&c).unwrap(), "\"omrT2\"");
+    }
 }

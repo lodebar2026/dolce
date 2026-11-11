@@ -63,6 +63,8 @@ impl Syllabic {
 pub struct Syl {
     pub text: String,
     pub x: f64,
+    /// 字墨的宽（源框用；与 `x` 同一坐标系）。
+    pub w: f64,
     pub syllabic: Syllabic,
 }
 
@@ -109,7 +111,7 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
         // 英文第一段常以「O」起头：`1 O for` 读成 `10 for`
         if l.len() == 2 && l.ends_with('0') && cs.get(n).is_some_and(|c| c.ch.is_ascii_lowercase()) {
             row.label = Some(l[..1].to_string());
-            row.syls.push(Syl { text: "O".into(), x: cs[1].cx(), syllabic: Syllabic::Single });
+            row.syls.push(Syl { text: "O".into(), x: cs[1].cx(), w: cs[1].x1 - cs[1].x0, syllabic: Syllabic::Single });
         } else {
             row.label = Some(l);
         }
@@ -126,7 +128,7 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
                 (true, true) => Syllabic::Middle,
                 (true, false) => Syllabic::End,
             };
-            row.syls.push(Syl { text: t, x: (a + b) / 2.0, syllabic });
+            row.syls.push(Syl { text: t, x: (a + b) / 2.0, w: b - a, syllabic });
             *cont = hyphen;
         }
     };
@@ -134,7 +136,7 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
         let ch = c.ch;
         if is_han(ch) {
             flush(&mut row, &mut cur, &mut cont, false);
-            row.syls.push(Syl { text: format!("{}{ch}", std::mem::take(&mut lead)), x: c.cx(), syllabic: Syllabic::Single });
+            row.syls.push(Syl { text: format!("{}{ch}", std::mem::take(&mut lead)), x: c.cx(), w: c.x1 - c.x0, syllabic: Syllabic::Single });
         } else if is_latin(ch) || ((ch == '\'' || ch == '’') && cur.is_some()) {
             match cur.as_mut() {
                 Some((t, _, b)) => {

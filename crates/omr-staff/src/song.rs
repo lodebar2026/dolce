@@ -15,9 +15,9 @@ use crate::text::classify::RowText;
 use crate::spans::arcs::{Arc, ChordRef};
 use crate::spans::wedges::Wedge;
 use dolce_omr_sheet::music::Pitch;
-use dolce_omr_sheet::result::{Doubt, Locus};
+use dolce_omr_sheet::result::{Doubt, Locus, Rid, RidKind, RidSeq, Src, SrcBox};
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
+use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, HeadSrc, Placed, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
 use dolce_omr_text::lyrics::align;
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
@@ -54,6 +54,29 @@ pub struct Song {
     pub fused: fuse::Stats,
     /// 框架与音符取自矢量层（判分按矢量档分）。
     pub vector: bool,
+}
+
+/// 发识别 id、把页内工作坐标的框折成原图像素。号码随整曲拼接的循环发（页序 → 系统 → 谱行 → x），
+/// 只取决于识别产物、不取决于声部指派：改关联表重拼时号码不变。
+struct Ids {
+    seq: RidSeq,
+    page: usize,
+    up: f64,
+}
+
+impl Ids {
+    fn at(&self, r: Rect) -> SrcBox {
+        SrcBox { page: self.page, rect: Rect::new(r.x / self.up, r.y / self.up, r.w / self.up, r.h / self.up) }
+    }
+
+    fn src(&mut self, kind: RidKind, r: Rect) -> Src {
+        Src { rid: Some(self.seq.take(kind)), at: Some(self.at(r)) }
+    }
+}
+
+/// 符头的源框（中心 ± 半个头；头宽按 1.3 格、头高 1 格估）。
+fn head_rect(x: f64, y: f64, sp: f64) -> Rect {
+    Rect::new(x - 0.65 * sp, y - 0.5 * sp, 1.3 * sp, sp)
 }
 
 /// 一个系统的小节边界。
@@ -255,13 +278,13 @@ struct Anchor {
 
 /// 一行谱的歌词与记号按 x 挂到音上。横向挨着（同一拍点）的几个和弦只留声部 1 的那个。
 /// `rests`：这一行谱的休止拍点——整行没有音（只有休止，如器乐声部开头空着）时记号挂到它们上，歌词不挂。
-fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], text: &RowText, same_dx: f64, han_lines: u8) {
+fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], text: &RowText, same_dx: f64, han_lines: u8, ids: &mut Ids) {
     if anchors.is_empty() {
         let marks_only = RowText { lyrics: Vec::new(), marks: text.marks.clone() };
         if rests.is_empty() || marks_only.marks.is_empty() {
             return;
         }
-        return attach_text(ms, rests.to_vec(), &[], &marks_only, same_dx, han_lines);
+        return attach_text(ms, rests.to_vec(), &[], &marks_only, same_dx, han_lines, ids);
     }
     anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
     let mut pts: Vec<Anchor> = Vec::new();
@@ -324,7 +347,10 @@ fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], t
             match e.lyrics.iter_mut().find(|l| l.number == number) {
                 // 音不够：多出来的字并进同一个音
                 Some(l) => l.text.push_str(&text),
-                None => e.lyrics.push(Lyric { number, text, syllabic: syl.syllabic }),
+                None => {
+                    let src = ids.src(RidKind::Lyric, Rect::new(syl.x - syl.w / 2.0, line.y0, syl.w, line.y1 - line.y0));
+                    e.lyrics.push(Lyric { number, text, syllabic: syl.syllabic, src })
+                }
             }
         }
     }
@@ -335,7 +361,12 @@ fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], t
             Dir::Words { .. } | Dir::Metronome { .. } => xs.iter().position(|&x| x >= m.x - same_dx).unwrap_or(xs.len() - 1),
             _ => nearest(),
         };
-        ms[pts[n].bar].events[pts[n].event].pre.push(m.dir.clone());
+        let src = match m.dir {
+            Dir::Words { .. } | Dir::Metronome { .. } => ids.src(RidKind::Words, m.rect),
+            Dir::Dynamics(_) => ids.src(RidKind::Dynamics, m.rect),
+            _ => Src { rid: None, at: Some(ids.at(m.rect)) },
+        };
+        ms[pts[n].bar].events[pts[n].event].pre.push(Placed { dir: m.dir.clone(), src });
     }
 }
 
@@ -364,6 +395,8 @@ struct SpanRec {
     b: End,
     above: bool,
     adjacent: bool,
+    /// 认出时发的号（种类等定了延音线 / 圆滑线再改）与框。
+    src: Src,
 }
 
 /// 画到行尾、等下一个系统接的半条弧。`last`：起端是这一行同声部的最后一个音。
@@ -372,6 +405,7 @@ struct Pending {
     above: bool,
     sys: usize,
     last: bool,
+    src: Src,
 }
 
 /// 多小节休止展开：`extra` 是 (系统内第 j 小节, 要补几个)；补的小节各一个整小节休止，第 j 小节的右线（样式、反复结束）挪到补的最后一个上。
@@ -406,7 +440,7 @@ fn expand_multi_rests(ms: &mut Vec<Measure>, extra: &[(usize, usize)], from: usi
 
 /// 一行谱的弧挂到事件上：两端都有的直接记；画到行尾的留给下一个系统同一声部从行首来的那半条接。
 #[allow(clippy::too_many_arguments)]
-fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>) {
+fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>, ids: &mut Ids) {
     pending.retain(|p| p.sys + 1 >= sys);
     let off = |i: usize, c: ChordRef| (anchors[i].x - c.x).abs() + (anchors[i].y - c.y).abs();
     let find = |c: ChordRef| (0..anchors.len()).filter(|&i| (anchors[i].x - c.x).abs() <= ARC_CHORD * sp).min_by(|&a, &b| off(a, c).total_cmp(&off(b, c)));
@@ -418,18 +452,25 @@ fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: usize, sp: 
     let same = |i: usize, j: usize| anchors[i].bar == anchors[j].bar && anchors[i].event == anchors[j].event;
     // 一段拍点里有没有与第 i 个同声部的别的音
     let voiced = |range: std::ops::Range<usize>, i: usize| range.into_iter().any(|k| anchors[k].voice == anchors[i].voice && !same(k, i));
+    // 弧的框：两端连线，往拱的一侧放一格
+    let rect = |arc: &Arc| {
+        let (x0, x1) = (arc.a.0.min(arc.b.0), arc.a.0.max(arc.b.0));
+        let (y0, y1) = (arc.a.1.min(arc.b.1), arc.a.1.max(arc.b.1));
+        let (y0, y1) = if arc.above { (y0 - sp, y1) } else { (y0, y1 + sp) };
+        Rect::new(x0, y0, x1 - x0, y1 - y0)
+    };
     for arc in arcs {
         match (arc.start.and_then(find), arc.end.and_then(find)) {
             (Some(i), Some(j)) if i < j && !same(i, j) => {
                 let adjacent = !voiced(i + 1..j, i) && !voiced(i + 1..j, j);
-                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent });
+                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent, src: ids.src(RidKind::Slur, rect(arc)) });
             }
-            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i) }),
+            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i), src: ids.src(RidKind::Slur, rect(arc)) }),
             (None, Some(j)) if arc.start.is_none() => {
                 let from_prev = |p: &Pending| p.sys + 1 == sys;
                 let Some(n) = pending.iter().position(|p| from_prev(p) && p.above == arc.above).or_else(|| pending.iter().position(from_prev)) else { continue };
                 let p = pending.remove(n);
-                recs.push(SpanRec { a: p.end, b: end(j), above: arc.above, adjacent: p.last && !voiced(0..j, j) });
+                recs.push(SpanRec { a: p.end, b: end(j), above: arc.above, adjacent: p.last && !voiced(0..j, j), src: p.src });
             }
             _ => {}
         }
@@ -453,9 +494,9 @@ fn row_wedges(wedges: &[&Wedge], anchors: &[Anchor], ms: &mut [Measure], bar_of:
             continue;
         }
         let kind = if w.cresc { score::Wedge::Crescendo } else { score::Wedge::Diminuendo };
-        ms[anchors[i].bar].events[anchors[i].event].pre.push(Dir::Wedge(kind));
+        ms[anchors[i].bar].events[anchors[i].event].pre.push(Dir::Wedge(kind).into());
         let e = &mut ms[anchors[j].bar].events[anchors[j].event];
-        if after { &mut e.post } else { &mut e.pre }.push(Dir::Wedge(score::Wedge::Stop));
+        if after { &mut e.post } else { &mut e.pre }.push(Dir::Wedge(score::Wedge::Stop).into());
     }
 }
 
@@ -504,9 +545,10 @@ fn mark_spans(part: &mut Part, mut recs: Vec<SpanRec>) {
         } else {
             None
         };
+        let src = |kind: RidKind| Src { rid: r.src.rid.map(|x| Rid { kind, ..x }), at: r.src.at };
         let (mark, stop_pitch) = if let Some((pa, pb)) = pair {
             tied.push((ka, kb, pa, pb));
-            (SpanMark { kind: SpanKind::Tied, start: true, number: 1, above: r.above, pitch: Some(pa) }, Some(pb))
+            (SpanMark { kind: SpanKind::Tied, start: true, number: 1, above: r.above, pitch: Some(pa), src: src(RidKind::Tie) }, Some(pb))
         } else {
             if slurred.contains(&(ka, kb)) || grouped {
                 continue;
@@ -515,7 +557,7 @@ fn mark_spans(part: &mut Part, mut recs: Vec<SpanRec>) {
             let Some(number) = (1..=SLUR_NUMBERS).find(|n| !open.iter().any(|o| o.0 == *n)) else { continue };
             open.push((number, key(&r.b)));
             slurred.push((ka, kb));
-            (SpanMark { kind: SpanKind::Slur, start: true, number, above: r.above, pitch: None }, None)
+            (SpanMark { kind: SpanKind::Slur, start: true, number, above: r.above, pitch: None, src: src(RidKind::Slur) }, None)
         };
         part.measures[r.a.measure].events[r.a.event].spans.push(mark);
         part.measures[r.b.measure].events[r.b.event].spans.push(SpanMark { start: false, pitch: stop_pitch, ..mark });
@@ -610,8 +652,10 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut pending: Vec<Vec<Pending>> = (0..nparts).map(|_| Vec::new()).collect();
     // 各声部画到行尾、还没收的房子
     let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
+    let mut ids = Ids { seq: RidSeq::default(), page: 1, up: 1.0 };
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.layout;
+        (ids.page, ids.up) = (pn + 1, f.up);
         for (si, sys) in f.systems.iter().enumerate() {
             let sys_key = Key { fifths: keys[sys_no] };
             let slots = slots_all[sys_no].clone();
@@ -766,7 +810,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     for (&(_, ch, rest), &(onset, voice)) in items[n0..n1].iter().zip(&place) {
                         let Some(ch) = ch else {
                             let r = rest.unwrap();
-                            ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), ..Event::new(vec![], r.ntype, r.dots, None) });
+                            let src = vec![HeadSrc { pitch: None, src: ids.src(RidKind::Note, Rect::new(r.rect.0, r.rect.1, r.rect.2, r.rect.3)) }];
+                            ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), src, ..Event::new(vec![], r.ntype, r.dots, None) });
                             beats.push(Anchor { x: r.x, y: r.y, bar: j, event: ms[j].events.len() - 1, voice });
                             continue;
                         };
@@ -788,16 +833,19 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                             };
                             p
                         }).collect();
+                        let sp = f.staves[i].space();
+                        let mut hs: Vec<HeadSrc> = ch.heads.iter().zip(&ps).map(|(h, p)| HeadSrc { pitch: Some(*p), src: ids.src(RidKind::Note, head_rect(h.x, h.y, sp)) }).collect();
                         // 同一时刻同一声部已经有和弦的（并排两个朝向相同的干）并进去
                         let ei = match ms[j].events.iter().position(|e| e.onset == onset && e.voice == voice && !e.pitches.is_empty()) {
                             Some(n) => {
                                 let e = &mut ms[j].events[n];
                                 e.pitches.append(&mut ps);
+                                e.src.append(&mut hs);
                                 e.stem_up = None;
                                 n
                             }
                             None => {
-                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
+                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, src: hs, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
                                 ms[j].events.len() - 1
                             }
                         };
@@ -856,13 +904,13 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
                 let sp_row = f.staves[i].space();
                 let arcs: Vec<&Arc> = page.spans.arcs.iter().filter(|a| a.staff == i).collect();
-                row_arcs(&arcs, &anchors, &ms, from, sp_row, sys_i, &mut pending[p], &mut span_recs[p]);
+                row_arcs(&arcs, &anchors, &ms, from, sp_row, sys_i, &mut pending[p], &mut span_recs[p], &mut ids);
                 let wedges: Vec<&Wedge> = page.spans.wedges.iter().filter(|w| w.staff == i).collect();
                 let rests: Vec<Anchor> = beats.clone();
                 beats.extend(anchors.iter().copied());
                 beats.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
                 row_wedges(&wedges, &beats, &mut ms, &bar_of, sp_row);
-                attach_text(&mut ms, anchors, &rests, &page.text.rows[i], dx, han_lines);
+                attach_text(&mut ms, anchors, &rests, &page.text.rows[i], dx, han_lines, &mut ids);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
                     let j = bs.iter().filter(|b| b.x < ch.x).count();

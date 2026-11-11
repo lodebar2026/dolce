@@ -2,6 +2,7 @@
 //! 力度、跳转、表情术语归近的那行。只定「是什么、在哪一行谱的哪个 x」，挂到哪个音由整曲拼接时按 x 定。
 use super::lines::{Band, GeoLine, Seg};
 use crate::page::Layout;
+use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::score::Dir;
 use dolce_omr_text::chars::{han_count, latin_count, script_of, Script};
 use dolce_omr_text::lyrics::{syllables, LyricRow};
@@ -43,6 +44,8 @@ pub struct LyricLine {
 #[derive(Clone, Debug)]
 pub struct Mark {
     pub x: f64,
+    /// 字墨的框（页内工作坐标；源框用）。
+    pub rect: Rect,
     pub dir: Dir,
 }
 
@@ -143,9 +146,15 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
     let t = seg.text();
     let t = t.trim();
     let x = seg.rect.x;
+    let r = seg.rect;
+    // 一截字（`a..b` 个字）的框，纵向取整段
+    let span = |a: usize, b: usize| -> Rect {
+        let (x0, x1) = (seg.chars.get(a).map_or(r.x, |c| c.x0), seg.chars.get(b.max(a + 1) - 1).map_or(r.right(), |c| c.x1));
+        Rect::new(x0, r.y, (x1 - x0).max(0.0), r.h)
+    };
     // 力度只收两个字母以上的：单个 p / f 从杂墨里读出来的太多（延音线的一截、符尾），留给按字形认的那一路
     if let Some(d) = words::dynamic(t).filter(|d| d.len() >= 2) {
-        return vec![Mark { x: seg.rect.cx(), dir: Dir::Dynamics(d.to_string()) }];
+        return vec![Mark { x: seg.rect.cx(), rect: r, dir: Dir::Dynamics(d.to_string()) }];
     }
     // 节拍器从等号起解析（前面可以是汉字的速度提示）
     let eq = seg.chars.iter().position(|c| c.ch == '=' || c.ch == '＝').unwrap_or(0);
@@ -162,7 +171,7 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
         while start > 0 && matches!(cs[start - 1].ch, '(' | ' ') {
             start -= 1;
         }
-        let mut out = vec![Mark { x: cs.get(start).map_or(x, |c| c.x0), dir: Dir::Metronome { per_minute: n, circa } }];
+        let mut out = vec![Mark { x: cs.get(start).map_or(x, |c| c.x0), rect: span(start, cs.len()), dir: Dir::Metronome { per_minute: n, circa } }];
         let pre: String = cs[..start].iter().map(|c| c.ch).collect();
         // 行首的排练号（【A】）不算
         let pre = pre.trim();
@@ -172,12 +181,12 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
         };
         let han_hint = (2..=12).contains(&han_count(pre)) && !pre.chars().any(|c| c.is_ascii_digit());
         if (words::has_term(pre) && latin_count(pre) >= 3 && han_count(pre) == 0) || han_hint {
-            out.insert(0, Mark { x, dir: Dir::Words { text: pre.to_string(), above, jump: None } });
+            out.insert(0, Mark { x, rect: span(0, start), dir: Dir::Words { text: pre.to_string(), above, jump: None } });
         }
         return out;
     }
     if let Some(j) = words::jump(t) {
-        return vec![Mark { x, dir: Dir::Words { text: t.to_string(), above, jump: Some(j) } }];
+        return vec![Mark { x, rect: r, dir: Dir::Words { text: t.to_string(), above, jump: Some(j) } }];
     }
     if chord_ok && chords::is_annotation_line(&unspaced(t)) {
         // 切词在逐字序列上做（下标对得上字位）；补出来的空格先去掉——根音与抬高的后缀之间有道白（`C sus4`）
@@ -186,11 +195,15 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
         let x_at = |i: usize| cs.get(i).map_or(0.0, |c| c.cx());
         return chords::split_tokens(&chords::blank_non_chord(&s), Some(&x_at))
             .into_iter()
-            .map(|tk| Mark { x: cs[tk.index].x0, dir: Dir::Harmony(chords::normalize(&tk.tok)) })
+            .map(|tk| {
+                let last = cs[(tk.index + tk.tok.chars().count()).min(cs.len()) - 1];
+                let x0 = cs[tk.index].x0;
+                Mark { x: x0, rect: Rect::new(x0, r.y, (last.x1 - x0).max(0.0), r.h), dir: Dir::Harmony(chords::normalize(&tk.tok)) }
+            })
             .collect();
     }
     if words::has_term(t) && latin_count(t) >= 3 && t.chars().count() <= 32 && han_count(t) == 0 {
-        return vec![Mark { x, dir: Dir::Words { text: t.to_string(), above, jump: None } }];
+        return vec![Mark { x, rect: r, dir: Dir::Words { text: t.to_string(), above, jump: None } }];
     }
     Vec::new()
 }
@@ -263,7 +276,7 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
                             continue;
                         }
                         if let Some(j) = words::jump(s.text().trim()) {
-                            rows[a].marks.push(Mark { x: s.rect.x, dir: Dir::Words { text: s.text().trim().to_string(), above: false, jump: Some(j) } });
+                            rows[a].marks.push(Mark { x: s.rect.x, rect: s.rect, dir: Dir::Words { text: s.text().trim().to_string(), above: false, jump: Some(j) } });
                             continue;
                         }
                         if let (Some(p), Some(n)) = (lyric_chars.last(), s.chars.first()) {

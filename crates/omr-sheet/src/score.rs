@@ -1,6 +1,7 @@
 //! 识别结果模型（整曲）与 MusicXML 写出。现在只有骨架：声部、小节、谱号 / 调号 / 拍号、小节线样式与反复、分行分页；
 //! 音与记号、歌词、版面随各模块落地逐步加（见 web 模块页「识别-Rust」）。
 use crate::music::{BarStyle, Clef, ClefSign, Key, Pitch, Time, TimeSymbol};
+use crate::result::Src;
 use dolce_omr_text::chords;
 use dolce_omr_text::header::Credit;
 use dolce_omr_text::lyrics::Syllabic;
@@ -107,6 +108,9 @@ pub struct SpanMark {
     /// 画在音的上方（朝上拱）。
     pub above: bool,
     pub pitch: Option<Pitch>,
+    /// 识别 id 与源框（两端同一个；id 只写在起端）。
+    #[serde(default)]
+    pub src: Src,
 }
 
 /// 松叶的一端。
@@ -130,6 +134,8 @@ pub struct Lyric {
     pub number: u8,
     pub text: String,
     pub syllabic: Syllabic,
+    #[serde(default)]
+    pub src: Src,
 }
 
 /// 写在音前面的记号与文字（挂在这个拍点上）。
@@ -145,6 +151,27 @@ pub enum Dir {
     Metronome { per_minute: u32, circa: bool },
     /// 松叶的起端 / 止端。
     Wedge(Wedge),
+}
+
+/// 挂在拍点上的一条记号 / 文字，带识别出处（文字指示、节拍器、力度有识别 id；和弦记号、松叶只有框或什么都没有）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Placed {
+    pub dir: Dir,
+    #[serde(default)]
+    pub src: Src,
+}
+
+impl From<Dir> for Placed {
+    fn from(dir: Dir) -> Self {
+        Placed { dir, src: Src::default() }
+    }
+}
+
+/// 和弦里一个音（或休止）的识别出处：哪个音高（休止为 None）、识别 id、源框。
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HeadSrc {
+    pub pitch: Option<Pitch>,
+    pub src: Src,
 }
 
 /// 一个事件：和弦（`pitches` 自低到高；单音也是）或休止（`pitches` 为空）。
@@ -163,21 +190,29 @@ pub struct Event {
     #[serde(default)]
     pub lyrics: Vec<Lyric>,
     #[serde(default)]
-    pub pre: Vec<Dir>,
+    pub pre: Vec<Placed>,
     /// 写在音后面的记号（松叶收在小节末、后面没有音可挂的止端）。
     #[serde(default)]
-    pub post: Vec<Dir>,
+    pub post: Vec<Placed>,
     /// 弧的各端（圆滑线、延音线）。
     #[serde(default)]
     pub spans: Vec<SpanMark>,
     /// 谱面上明印的临时记号（哪个音、升 1 / 降 −1 / 还原 0），写成 `<accidental>`。
     #[serde(default)]
     pub shown: Vec<(Pitch, i8)>,
+    /// 各音（休止一条）的识别 id 与源框；写出时 `<note id>` 按音高从这里取。
+    #[serde(default)]
+    pub src: Vec<HeadSrc>,
 }
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new() }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new() }
+    }
+
+    /// 这个音（休止为 None）的识别出处。
+    pub fn src_of(&self, pitch: Option<&Pitch>) -> Src {
+        self.src.iter().find(|h| h.pitch.as_ref() == pitch).or_else(|| self.src.first().filter(|_| pitch.is_none())).map_or(Src::default(), |h| h.src)
     }
 
     pub fn divisions(&self) -> u32 {
@@ -268,10 +303,10 @@ fn write_event(o: &mut String, e: &Event, perc: bool) {
             o.push_str("        <notations>\n");
             for stop in [true, false] {
                 for t in ties.iter().filter(|t| t.start != stop) {
-                    let _ = writeln!(o, "          <tied type=\"{}\"{}/>", if t.start { "start" } else { "stop" }, if t.start { if t.above { " orientation=\"over\"" } else { " orientation=\"under\"" } } else { "" });
+                    let _ = writeln!(o, "          <tied type=\"{}\"{}{}/>", if t.start { "start" } else { "stop" }, if t.start { t.src.id_attr() } else { String::new() }, if t.start { if t.above { " orientation=\"over\"" } else { " orientation=\"under\"" } } else { "" });
                 }
                 for t in slurs.iter().filter(|t| t.start != stop) {
-                    let _ = writeln!(o, "          <slur type=\"{}\" number=\"{}\"{}/>", if t.start { "start" } else { "stop" }, t.number, if t.start { if t.above { " placement=\"above\"" } else { " placement=\"below\"" } } else { "" });
+                    let _ = writeln!(o, "          <slur type=\"{}\" number=\"{}\"{}{}/>", if t.start { "start" } else { "stop" }, t.number, if t.start { t.src.id_attr() } else { String::new() }, if t.start { if t.above { " placement=\"above\"" } else { " placement=\"below\"" } } else { "" });
                 }
             }
             if let Some(t) = tup {
@@ -311,18 +346,18 @@ fn write_event(o: &mut String, e: &Event, perc: bool) {
         }
         if first {
             for l in &e.lyrics {
-                let _ = writeln!(o, "        <lyric number=\"{}\">\n          <syllabic>{}</syllabic>\n          <text>{}</text>\n        </lyric>", l.number, l.syllabic.xml(), esc(&l.text));
+                let _ = writeln!(o, "        <lyric number=\"{}\"{}>\n          <syllabic>{}</syllabic>\n          <text>{}</text>\n        </lyric>", l.number, l.src.id_attr(), l.syllabic.xml(), esc(&l.text));
             }
         }
         o.push_str("      </note>\n");
     };
     if e.pitches.is_empty() {
-        o.push_str("      <note>\n        <rest/>\n");
+        let _ = writeln!(o, "      <note{}>\n        <rest/>", e.src_of(None).id_attr());
         tail(o, true, None);
         return;
     }
     for (i, p) in e.pitches.iter().enumerate() {
-        o.push_str("      <note>\n");
+        let _ = writeln!(o, "      <note{}>", e.src_of(Some(p)).id_attr());
         if i > 0 {
             o.push_str("        <chord/>\n");
         }
@@ -340,7 +375,8 @@ fn write_event(o: &mut String, e: &Event, perc: bool) {
     }
 }
 
-fn write_dir(o: &mut String, d: &Dir) {
+fn write_dir(o: &mut String, pd: &Placed) {
+    let (d, id) = (&pd.dir, pd.src.id_attr());
     let alter = |o: &mut String, tag: &str, a: i8| {
         if a != 0 {
             let _ = write!(o, "<{tag}>{a}</{tag}>");
@@ -361,7 +397,7 @@ fn write_dir(o: &mut String, d: &Dir) {
             o.push_str("      </harmony>\n");
         }
         Dir::Words { text, above, jump } => {
-            let _ = write!(o, "      <direction placement=\"{}\">\n        <direction-type>\n          <words>{}</words>\n        </direction-type>\n", if *above { "above" } else { "below" }, esc(text));
+            let _ = write!(o, "      <direction placement=\"{}\"{id}>\n        <direction-type>\n          <words>{}</words>\n        </direction-type>\n", if *above { "above" } else { "below" }, esc(text));
             match jump {
                 Some(Jump::DalSegno) => o.push_str("        <sound dalsegno=\"segno\"/>\n"),
                 Some(Jump::DaCapo) => o.push_str("        <sound dacapo=\"yes\"/>\n"),
@@ -373,7 +409,7 @@ fn write_dir(o: &mut String, d: &Dir) {
             o.push_str("      </direction>\n");
         }
         Dir::Dynamics(t) => {
-            let _ = writeln!(o, "      <direction placement=\"below\">\n        <direction-type>\n          <dynamics><{t}/></dynamics>\n        </direction-type>\n      </direction>");
+            let _ = writeln!(o, "      <direction placement=\"below\"{id}>\n        <direction-type>\n          <dynamics><{t}/></dynamics>\n        </direction-type>\n      </direction>");
         }
         Dir::Wedge(w) => {
             let t = match w {
@@ -385,7 +421,7 @@ fn write_dir(o: &mut String, d: &Dir) {
         }
         Dir::Metronome { per_minute, circa } => {
             let pm = if *circa { format!("c. {per_minute}") } else { per_minute.to_string() };
-            let _ = writeln!(o, "      <direction placement=\"above\">\n        <direction-type>\n          <metronome>\n            <beat-unit>quarter</beat-unit>\n            <per-minute>{pm}</per-minute>\n          </metronome>\n        </direction-type>\n        <sound tempo=\"{per_minute}\"/>\n      </direction>");
+            let _ = writeln!(o, "      <direction placement=\"above\"{id}>\n        <direction-type>\n          <metronome>\n            <beat-unit>quarter</beat-unit>\n            <per-minute>{pm}</per-minute>\n          </metronome>\n        </direction-type>\n        <sound tempo=\"{per_minute}\"/>\n      </direction>");
         }
     }
 }
@@ -529,6 +565,7 @@ impl Score {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::result::{Rid, RidKind, Src};
 
     #[test]
     fn skeleton_xml() {
@@ -553,16 +590,18 @@ mod tests {
         let mut low = Event::new(vec![Pitch { step: 0, octave: 3, alter: 0 }], NoteType::Half, 0, Some(false));
         low.voice = 2;
         low.arts.push(Art::Fermata);
-        low.lyrics.push(Lyric { number: 2, text: "1.道".into(), syllabic: Syllabic::Single });
-        low.pre.push(Dir::Harmony("F#m7/C#".into()));
-        low.pre.push(Dir::Dynamics("mf".into()));
+        low.lyrics.push(Lyric { number: 2, text: "1.道".into(), syllabic: Syllabic::Single, src: Src { rid: Some(Rid { kind: RidKind::Lyric, n: 4 }), at: None } });
+        low.src.push(HeadSrc { pitch: Some(Pitch { step: 0, octave: 3, alter: 0 }), src: Src { rid: Some(Rid { kind: RidKind::Note, n: 7 }), at: None } });
+        low.pre.push(Dir::Harmony("F#m7/C#".into()).into());
+        low.pre.push(Placed { dir: Dir::Dynamics("mf".into()), src: Src { rid: Some(Rid { kind: RidKind::Dynamics, n: 1 }), at: None } });
         let mut tri = Event::new(vec![], NoteType::Eighth, 0, None);
         tri.onset = 36;
         tri.tuplet = Some(Tuplet { actual: 3, normal: 2, start: true, stop: false });
         assert_eq!(tri.divisions(), 8);
         let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![Measure { events: vec![e, low, tri], ..Default::default() }] }] }.to_musicxml();
         assert!(x.contains("<backup>\n        <duration>44</duration>") && x.contains("<voice>2</voice>") && x.contains("<fermata/>"));
-        assert!(x.contains("<lyric number=\"2\">") && x.contains("<text>1.道</text>") && x.contains("<kind text=\"m7\">minor-seventh</kind>") && x.contains("<bass-alter>1</bass-alter>") && x.contains("<dynamics><mf/></dynamics>"));
+        assert!(x.contains("<note id=\"omr7\">") && x.contains("<direction placement=\"below\" id=\"omrD1\">"));
+        assert!(x.contains("<lyric number=\"2\" id=\"omrL4\">") && x.contains("<text>1.道</text>") && x.contains("<kind text=\"m7\">minor-seventh</kind>") && x.contains("<bass-alter>1</bass-alter>") && x.contains("<dynamics><mf/></dynamics>"));
         assert!(x.contains("<actual-notes>3</actual-notes>") && x.contains("<tuplet type=\"start\" number=\"1\"/>"));
         assert!(x.contains("<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>"));
         assert!(x.contains("<chord/>\n        <pitch><step>E</step><octave>4</octave></pitch>"));
@@ -573,14 +612,14 @@ mod tests {
     fn spans_xml() {
         let (c, e4) = (Pitch { step: 0, octave: 4, alter: 0 }, Pitch { step: 2, octave: 4, alter: 0 });
         let mut a = Event::new(vec![c, e4], NoteType::Quarter, 0, Some(true));
-        a.spans.push(SpanMark { kind: SpanKind::Tied, start: true, number: 1, above: true, pitch: Some(e4) });
-        a.spans.push(SpanMark { kind: SpanKind::Slur, start: true, number: 2, above: false, pitch: None });
-        a.pre.push(Dir::Wedge(Wedge::Crescendo));
+        a.spans.push(SpanMark { kind: SpanKind::Tied, start: true, number: 1, above: true, pitch: Some(e4), src: Src::default() });
+        a.spans.push(SpanMark { kind: SpanKind::Slur, start: true, number: 2, above: false, pitch: None, src: Src::default() });
+        a.pre.push(Dir::Wedge(Wedge::Crescendo).into());
         let mut b = Event::new(vec![e4], NoteType::Quarter, 0, Some(true));
         b.onset = 24;
-        b.spans.push(SpanMark { kind: SpanKind::Tied, start: false, number: 1, above: true, pitch: Some(e4) });
-        b.spans.push(SpanMark { kind: SpanKind::Slur, start: false, number: 2, above: false, pitch: None });
-        b.post.push(Dir::Wedge(Wedge::Stop));
+        b.spans.push(SpanMark { kind: SpanKind::Tied, start: false, number: 1, above: true, pitch: Some(e4), src: Src::default() });
+        b.spans.push(SpanMark { kind: SpanKind::Slur, start: false, number: 2, above: false, pitch: None, src: Src::default() });
+        b.post.push(Dir::Wedge(Wedge::Stop).into());
         let m = Measure { events: vec![a, b], ending_start: Some(Ending { number: 1, closed: true }), ending_stop: Some(Ending { number: 1, closed: true }), repeat_end: true, ..Default::default() };
         let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![m] }] }.to_musicxml();
         // 延音线记在 E 上、不在和弦的第一个音上；圆滑线记在第一个音上
