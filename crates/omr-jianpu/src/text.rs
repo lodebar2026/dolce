@@ -17,20 +17,6 @@ use dolce_omr_text::{chords, words, Ch};
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// 切出的一行字：纵向范围（页内坐标，行带斜率已折回行左端）与读出的字。
-#[derive(Clone, Debug)]
-pub struct TextLine {
-    pub y0: i64,
-    pub y1: i64,
-    pub chars: Vec<Ch>,
-}
-
-impl TextLine {
-    pub fn text(&self) -> String {
-        self.chars.iter().map(|c| c.ch).collect()
-    }
-}
-
 /// 页面大小的占用图：已归了音符的墨。
 pub struct Claims {
     w: usize,
@@ -574,16 +560,6 @@ fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut R
         score.beats = x;
         score.beat_type = y;
     }
-}
-
-/// 页眉里汉字多的行才当标题候选（给调用方过滤用）。
-pub fn has_han(s: &str) -> bool {
-    s.chars().any(is_han)
-}
-
-/// 行里各段文字高的中位（排查用）。
-pub fn median_h(lines: &[TextLine]) -> f64 {
-    median(&lines.iter().map(|l| (l.y1 - l.y0 + 1) as f64).collect::<Vec<_>>(), 0.0)
 }
 
 /// 一行谱头顶上的和弦行：上方带里切行读字，整行是和弦记号的，各记号按左缘挂到它底下（或左边最近）的音上；
