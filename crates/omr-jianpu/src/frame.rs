@@ -61,13 +61,18 @@ impl Band {
     }
     /// 数字框 → 行带：斜率取各框中心的最小二乘（样本少或太窄时不取），上下沿取去掉斜率后的中位。
     fn fit(rs: &[Rect]) -> Band {
-        let n = rs.len() as f64;
-        let (mx, my) = (rs.iter().map(|r| r.cx()).sum::<f64>() / n, rs.iter().map(|r| r.cy()).sum::<f64>() / n);
-        let sxx: f64 = rs.iter().map(|r| (r.cx() - mx).powi(2)).sum();
-        let sxy: f64 = rs.iter().map(|r| (r.cx() - mx) * (r.cy() - my)).sum();
-        let span = rs.iter().map(|r| r.cx()).fold(f64::MIN, f64::max) - rs.iter().map(|r| r.cx()).fold(f64::MAX, f64::min);
         let h = median(&rs.iter().map(|r| r.h).collect::<Vec<_>>(), 1.0);
-        let slope = if rs.len() >= 5 && span >= h * 8.0 { (sxy / sxx).clamp(-0.05, 0.05) } else { 0.0 };
+        // 斜率：隔得够远的两两连线斜率的中位（个别离群的框带不偏）
+        let mut ks: Vec<f64> = Vec::new();
+        for (i, a) in rs.iter().enumerate() {
+            for b in &rs[i + 1..] {
+                let dx = b.cx() - a.cx();
+                if dx.abs() >= h * 4.0 {
+                    ks.push((b.cy() - a.cy()) / dx);
+                }
+            }
+        }
+        let slope = if ks.len() >= 6 { median(&ks, 0.0).clamp(-0.03, 0.03) } else { 0.0 };
         let top0 = median(&rs.iter().map(|r| r.y - slope * r.cx()).collect::<Vec<_>>(), 0.0);
         let bottom0 = median(&rs.iter().map(|r| r.bottom() - slope * r.cx()).collect::<Vec<_>>(), 0.0);
         Band { slope, top0, bottom0 }
@@ -200,13 +205,16 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
     let mut rows: Vec<RowFrame> = Vec::new();
     for l in lines {
         let digits: Vec<Rect> = l.iter().filter(|&&i| read[i].is_some()).map(|&i| cand[i].rect).collect();
+        if std::env::var("OMR_JP_DEBUG").is_ok() && l.len() >= 3 {
+            eprintln!("排 y{:.0} 块{} 读出数字{}", cand[l[0]].rect.cy(), l.len(), digits.len());
+        }
         if digits.is_empty() || (digits.len() as f64) < l.len() as f64 * 0.5 {
             continue;
         }
         // 同一排里高度离群的不参加定带（拍号、曲号的大字）
         let mh = median(&digits.iter().map(|r| r.h).collect::<Vec<_>>(), num_h);
         let core: Vec<Rect> = digits.iter().copied().filter(|r| (r.h - mh).abs() <= mh * 0.12).collect();
-        if core.is_empty() || (mh - num_h).abs() > num_h * 0.22 {
+        if core.is_empty() || (mh - num_h).abs() > num_h * 0.4 {
             continue;
         }
         let band = Band::fit(&core);
@@ -219,6 +227,9 @@ pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
         // 带内切出的数字格多数得真读得出数字（歌词行里夹着段号、汉字的竖笔伸出带外像小节线）
         let imgs: Vec<Gray> = row.digits().map(|c| digit_cell(ink, &c.rect())).collect();
         let good = ocr.read_cells(&imgs).map_or(0, |v| v.iter().filter(|t| strict_digit(t).is_some()).count());
+        if std::env::var("OMR_JP_DEBUG").is_ok() {
+            eprintln!("  带 y{:.0} 高{:.0} 数字格{nd} 读出{good} 线{nb}", band.top0, band.h());
+        }
         if (good as f64) < nd as f64 * 0.6 {
             continue;
         }
@@ -391,7 +402,9 @@ pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
         let inside: Vec<usize> = (0..rows.len())
             .filter(|&i| {
                 let cy = (rows[i].top_at(k.cx) + rows[i].bottom_at(k.cx)) / 2.0;
-                cy > k.rect.y - h * 0.3 && cy < k.rect.bottom() + h * 0.3
+                // 方括号的钩常收在末行的顶上：行带挨着竖线两端一个字号以内就算括着
+                let _ = cy;
+                rows[i].bottom_at(k.cx) > k.rect.y - h && rows[i].top_at(k.cx) < k.rect.bottom() + h
             })
             .collect();
         if inside.len() < 2 || inside.iter().any(|&i| k.rect.x > first_x[i]) {

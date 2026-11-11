@@ -37,6 +37,12 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
         text::chords_above(&ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
     let sys = frame::systems(&ink, &rows);
+    if std::env::var("OMR_JP_DEBUG").is_ok() {
+        eprintln!("字号 {num_h:.1}，页 {}x{}", ink.bin.w, ink.bin.h);
+        for (i, r) in rows.iter().enumerate() {
+            eprintln!("行{i} y{:.0}-{:.0} 高{:.1} 数字{} 线{} 音{} 系统{:?}", r.top_at(w / 2.0), r.bottom_at(w / 2.0), r.h(), r.digits().count(), r.bars().count(), notes[i].nums.len(), sys[i]);
+        }
+    }
     for (((row, rn), labels), sv) in rows.iter().zip(notes).zip(labels).zip(sys) {
         score.rows.push(StaffRow {
             system: sv.map(|s| s.0),
