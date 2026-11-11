@@ -205,10 +205,14 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
     let all: Vec<f64> = (0..rows.len())
         .flat_map(|i| {
             let (ya, yb) = zone(i);
-            cut_lines(ink, &claims, rows[i].band.slope, ya, yb, rows[i].h() * 0.5, None).into_iter().map(|l| (l.1 - l.0 + 1) as f64)
+            // 歌词字不比数字小多少：矮的一截（减时线没认全剩下的、弧与点凑的）不参加估行高
+            let h = rows[i].h();
+            cut_lines(ink, &claims, rows[i].band.slope, ya, yb, h * 0.5, None).into_iter().map(|l| (l.1 - l.0 + 1) as f64).filter(move |&v| v >= h * 0.9)
         })
         .collect();
-    let one = median(&all, 0.0);
+    let num_h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
+    // 几行挤成一截的把中位拉高：取偏矮的分位，且不过 1.8 字号
+    let one = if all.is_empty() { num_h * 1.25 } else { dolce_omr_core::geom::quantile(&all, 0.3).min(num_h * 1.8) };
     for i in 0..rows.len() {
         let row = &rows[i];
         let h = row.h();

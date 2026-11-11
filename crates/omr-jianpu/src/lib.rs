@@ -36,8 +36,11 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
         spans::arcs(&ink, &rows[i], &mut notes[i], y_min);
         text::chords_above(&ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
-    for ((row, rn), labels) in rows.iter().zip(notes).zip(labels) {
+    let sys = frame::systems(&ink, &rows);
+    for (((row, rn), labels), sv) in rows.iter().zip(notes).zip(labels).zip(sys) {
         score.rows.push(StaffRow {
+            system: sv.map(|s| s.0),
+            voice: sv.map(|s| s.1),
             lyric_labels: labels,
             top_y: row.top_at(w / 2.0),
             bottom_y: row.bottom_at(w / 2.0),

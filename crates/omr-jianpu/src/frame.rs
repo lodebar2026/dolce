@@ -376,3 +376,41 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     }
     CellKind::Other
 }
+
+/// 多声部：左端一根竖线（连谱号）从上到下括着的几行谱是一个系统。回各行的 (系统号, 系统内第几声部)；没被括着的行为 None。
+/// 竖线：比两行谱还高的细长块，在它括着的各行第一个数字的左边。
+pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
+    let mut out: Vec<Option<(u32, u32)>> = vec![None; rows.len()];
+    if rows.len() < 2 {
+        return out;
+    }
+    let h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 1.0);
+    let first_x: Vec<f64> = rows.iter().map(|r| r.digits().map(|c| c.x0).min().unwrap_or(0) as f64).collect();
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for k in ink.comps.iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2) {
+        let inside: Vec<usize> = (0..rows.len())
+            .filter(|&i| {
+                let cy = (rows[i].top_at(k.cx) + rows[i].bottom_at(k.cx)) / 2.0;
+                cy > k.rect.y - h * 0.3 && cy < k.rect.bottom() + h * 0.3
+            })
+            .collect();
+        if inside.len() < 2 || inside.iter().any(|&i| k.rect.x > first_x[i]) {
+            continue;
+        }
+        // 同一组行的几根线（连谱号与紧挨着的系统线）只记一次；括得多的盖过括得少的
+        if let Some(g) = groups.iter_mut().find(|g| g.iter().any(|i| inside.contains(i))) {
+            if inside.len() > g.len() {
+                *g = inside;
+            }
+        } else {
+            groups.push(inside);
+        }
+    }
+    groups.sort_by_key(|g| g[0]);
+    for (si, g) in groups.iter().enumerate() {
+        for (vi, &i) in g.iter().enumerate() {
+            out[i] = Some((si as u32, vi as u32));
+        }
+    }
+    out
+}
