@@ -281,7 +281,46 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     }
     rows.sort_by(|a, b| a.band.top0.total_cmp(&b.band.top0));
     settle_dots(&mut rows);
+    settle_bars(ink, &mut rows);
     rows
+}
+
+/// 细竖条：宽不过带高的这么多倍。
+const STROKE_W: f64 = 0.3;
+/// 本页小节线比行带高出这么多（相对带高）以上，才拿高度分小节线与「1」（数字排版的本子小节线与数字等高，分不了）。
+const BAR_TALLER: f64 = 0.12;
+/// 竖条的高落在「带高」与「本页小节线高」之间的这个分位以上算小节线。
+const BAR_SPLIT: f64 = 0.5;
+
+/// 小节线与数字「1」按**本页小节线的统计高度**分：先拿伸出行带一大截的细竖条当确定的小节线，量出它们通高（相对带高）的中位；
+/// 别的细竖条——带内切出来读成数字的、勉强够上伸出量当了小节线的——通高离这个中位近的是小节线、离带高近的是「1」。
+fn settle_bars(ink: &Ink, rows: &mut [RowFrame]) {
+    // 各细竖条的通高比（穿过带中线的那段墨的全长 / 带高）
+    let tall_of = |r: &RowFrame, c: &Cell| -> Option<f64> {
+        let h = r.h();
+        if c.h() < h * 0.9 || c.w() > (h * STROKE_W).max(4.0) || !matches!(c.kind, CellKind::Digit | CellKind::Bar { .. }) {
+            return None;
+        }
+        (c.x0..=c.x1).filter_map(|x| overshoot(ink, &r.band, x)).map(|(up, dn)| (h + up + dn) / h).max_by(|a, b| a.total_cmp(b))
+    };
+    let sure: Vec<f64> = rows.iter().flat_map(|r| r.cells.iter().filter(|c| matches!(c.kind, CellKind::Bar { .. })).filter_map(|c| tall_of(r, c)).filter(|&t| t >= 1.0 + BAR_TALLER)).collect();
+    let bars = rows.iter().map(|r| r.bars().count()).sum::<usize>();
+    // 多数小节线都明显高过行带的页才分
+    if sure.len() < 4 || sure.len() * 3 < bars * 2 {
+        return;
+    }
+    let bar_h = median(&sure, 0.0);
+    let cut = 1.0 + (bar_h - 1.0) * BAR_SPLIT;
+    for r in rows.iter_mut() {
+        let ts: Vec<Option<f64>> = r.cells.iter().map(|c| tall_of(r, c)).collect();
+        for (c, t) in r.cells.iter_mut().zip(ts) {
+            let Some(t) = t else { continue };
+            match c.kind {
+                CellKind::Digit if t >= cut => c.kind = CellKind::Bar { thick: false },
+                _ => {}
+            }
+        }
+    }
 }
 
 /// 墨占外框这么多的竖条是实心的。
@@ -411,6 +450,17 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     for c in &mut out {
         if matches!(c.kind, CellKind::Bar { .. }) {
             c.kind = CellKind::Bar { thick: c.w() >= thin * 2.0 && c.w() >= h * 0.1 };
+        }
+    }
+    // 紧挨着粗线的等高细竖条是终止线 / 反复线的那道细线，不是数字「1」
+    for i in 0..out.len() {
+        let c = out[i];
+        if c.kind != CellKind::Digit || c.w() > h * 0.2 || c.h() < h * 0.9 {
+            continue;
+        }
+        let thick_near = |o: &Cell| o.kind == (CellKind::Bar { thick: true }) && ((o.x0 - c.x1).max(c.x0 - o.x1) as f64) <= h * 0.4;
+        if (i > 0 && thick_near(&out[i - 1])) || out.get(i + 1).is_some_and(thick_near) {
+            out[i].kind = CellKind::Bar { thick: false };
         }
     }
     out
