@@ -284,6 +284,8 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     rows
 }
 
+/// 墨占外框这么多的竖条是实心的。
+const SOLID: f64 = 0.9;
 /// 增时线至少这么扁（宽 / 高）。
 const DASH_FLAT: f64 = 1.8;
 /// 扁到这个程度以下的短横是「说不准」的：细体字的附点是个扁圆，密排本的增时线是一截短横，两样的宽高差不多。
@@ -448,6 +450,10 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     }
     // 与数字等高的小节线（数字排版的本子）：细而实心的一根竖条，「1」带旗、带底座，填不满外框
     if ch >= h * 0.9 && cw <= (h * 0.14).max(3.0) && ink.count(&c.rect()) as f64 >= cw * ch * 0.92 {
+        return CellKind::Bar { thick: false };
+    }
+    // 与数字等高的粗线（终止线、反复线的那一道）：把外框填满的实心竖条，数字再粗也有旗、有腰，填不到这么满
+    if ch >= h * 0.9 && cw <= h * 0.6 && ink.count(&c.rect()) as f64 >= cw * ch * SOLID {
         return CellKind::Bar { thick: false };
     }
     if ch >= h * 0.72 && cw >= h * 0.1 {

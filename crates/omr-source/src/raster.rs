@@ -147,8 +147,44 @@ pub fn image_file(bytes: &[u8]) -> Result<SourceImage, String> {
     let color = img.color().has_color();
     let rgb = img.to_rgb8();
     let (w, h) = (rgb.width() as usize, rgb.height() as usize);
-    let gray = if color { to_gray(rgb.as_raw(), w, h, 3) } else { img.to_luma8().into_raw() };
+    let gray = if color { ink_gray(rgb.as_raw(), w, h) } else { img.to_luma8().into_raw() };
     Ok(SourceImage { w, h, gray, kind: if color { ImageKind::Color } else { ImageKind::Gray }, rect: Rect::new(0.0, 0.0, w as f64, h as f64), page_w: w as f64, page_h: h as f64, size_known: false })
+}
+
+/// 换通道要比亮度的墨底差大出这么多倍（黑墨、灰墨各通道一样，不换）。
+const CHANNEL_GAIN: f64 = 1.25;
+
+/// 彩色页 → 灰度。彩色油墨印在同色调的底上（橙字印在浅橙的底纹上）按亮度转，墨与底差得很少，纸纹、底图的起伏盖得过笔画；
+/// 这种页取**墨底差最大的那个颜色通道**：墨底差 = 本页该通道的中位（底）减去最暗的百分之二（墨）。
+fn ink_gray(px: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let luma = to_gray(px, w, h, 3);
+    let n = w * h;
+    let step = (n / 200_000).max(1);
+    let spread = |at: &dyn Fn(usize) -> u8| -> f64 {
+        let mut hist = [0usize; 256];
+        let mut total = 0usize;
+        for i in (0..n).step_by(step) {
+            hist[at(i) as usize] += 1;
+            total += 1;
+        }
+        let q = |f: f64| -> f64 {
+            let (mut acc, want) = (0usize, (total as f64 * f) as usize);
+            for (v, c) in hist.iter().enumerate() {
+                acc += c;
+                if acc > want {
+                    return v as f64;
+                }
+            }
+            255.0
+        };
+        q(0.5) - q(0.02)
+    };
+    let base = spread(&|i| luma[i]);
+    let best = (0..3).map(|c| (c, spread(&|i| px[i * 3 + c]))).max_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+    if best.1 > base * CHANNEL_GAIN && best.1 > base + 8.0 {
+        return (0..n).map(|i| px[i * 3 + best.0]).collect();
+    }
+    luma
 }
 
 /// Sauvola 窗口半径占页宽的比例。
