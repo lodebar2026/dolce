@@ -120,6 +120,19 @@ fn cut_lines(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f6
 
 /// 读一行：行里的墨按宽空当分段，各段从灰度图取条送 rec，字位折回页内坐标、补词间空格；段与段之间隔一个空格。
 fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64) -> Vec<Ch> {
+    let mut out: Vec<Ch> = Vec::new();
+    for seg in read_segs(ink, claims, ocr, slope, y0, y1, xa, xb) {
+        if let Some(l) = out.last() {
+            let x = l.x1;
+            out.push(Ch { ch: ' ', x0: x, x1: x });
+        }
+        out.extend(seg);
+    }
+    out
+}
+
+/// 同 [`read_line`]，各段分开回。
+fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64) -> Vec<Vec<Ch>> {
     let w = ink.bin.w as i64;
     let hh = (y1 - y0 + 1) as f64;
     let shift = |x: i64| (slope * (x - w / 2) as f64).round() as i64;
@@ -146,7 +159,7 @@ fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
             _ => segs.push(vec![s]),
         }
     }
-    let mut out: Vec<Ch> = Vec::new();
+    let mut out: Vec<Vec<Ch>> = Vec::new();
     for g in segs {
         let (sa, sb) = (g[0].0, g.last().unwrap().1);
         if ((sb - sa + 1) as f64) < hh * 0.25 {
@@ -172,15 +185,37 @@ fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
             continue;
         }
         let blanks: Vec<(f64, f64)> = g.windows(2).map(|p| ((p[0].1 + 1) as f64, (p[1].0 - p[0].1 - 1) as f64)).collect();
-        let chars = recover_spaces(&chars, &blanks, hh, sa as f64, (sb + 1) as f64);
-        if let Some(l) = out.last() {
-            let x = l.x1;
-            out.push(Ch { ch: ' ', x0: x, x1: x });
-        }
-        out.extend(chars);
+        out.push(recover_spaces(&chars, &blanks, hh, sa as f64, (sb + 1) as f64));
     }
     out
 }
+
+const CN_NUM: &str = "一二三四五六七八九十";
+
+/// 行首的边注：汉字段号（`一`、`二、`）与「副」「(副)」，印在首音左边。回 (段号, 去掉边注后的字)。
+fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
+    let mut i = 0;
+    while chars.get(i).is_some_and(|c| "(（ ".contains(c.ch)) {
+        i += 1;
+    }
+    let Some(c) = chars.get(i) else { return (None, chars) };
+    if !(CN_NUM.contains(c.ch) || c.ch == '副') || c.cx() > first_x - h * 0.4 {
+        return (None, chars);
+    }
+    let mut j = i + 1;
+    // 「副一」「副歌」这类两个字的边注
+    if c.ch == '副' && chars.get(j).is_some_and(|d| (CN_NUM.contains(d.ch) || d.ch == '歌') && d.cx() < first_x - h * 0.4) {
+        j += 1;
+    }
+    while chars.get(j).is_some_and(|c| ")）、.．:： ".contains(c.ch)) {
+        j += 1;
+    }
+    if !chars.get(j).is_some_and(|c| is_han(c.ch) || "“‘\"".contains(c.ch)) {
+        return (None, chars);
+    }
+    ((c.ch != '副').then(|| c.ch.to_string()), &chars[j..])
+}
+
 
 /// 全角拉丁字母、数字折半角（中文标点不动）。
 fn fold(c: char) -> char {
@@ -196,6 +231,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied()));
     let w = ink.bin.w as f64;
     let mut max_verses = 0usize;
+    let mut stanza_lines: Vec<(i64, i64)> = Vec::new();
     let zone = |i: usize| {
         let ya = rows[i].bottom_at(w / 2.0).ceil() as i64 + 1;
         let yb = if i + 1 == rows.len() { ink.bin.h as i64 } else { rows[i + 1].top_at(w / 2.0).floor() as i64 };
@@ -229,7 +265,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 }
                 keep = k + 1;
             }
-            lines.truncate(keep);
+            let rest = lines.split_off(keep);
+            stanza_lines = rest;
         }
         let note_ix: Vec<usize> = (0..notes[i].nums.len()).filter(|&k| notes[i].nums[k].digit != 0).collect();
         let note_xs: Vec<f64> = note_ix.iter().map(|&k| notes[i].nums[k].bbox.cx()).collect();
@@ -247,8 +284,17 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             if (!last && chordish) || (near_next && han_count(&text) < 2) {
                 continue;
             }
-            let lr = syllables(&chars);
-            if lr.syls.is_empty() || note_xs.is_empty() {
+            // 没认全的减时线、弧凑成的一截：比一行字矮得多，或读出来只有横杠
+            let junk = text.chars().filter(|&c| is_han(c)).all(|c| "一二三".contains(c)) && (((y1 - y0 + 1) as f64) < one * 0.75 || !text.chars().any(|c| c.is_ascii_alphabetic()));
+            if junk || note_xs.is_empty() {
+                continue;
+            }
+            let (margin, body) = margin_label(&chars, note_xs[0] - notes[i].nums[note_ix[0]].bbox.w / 2.0, h);
+            let mut lr = syllables(body);
+            if margin.is_some() {
+                lr.label = margin;
+            }
+            if lr.syls.is_empty() {
                 continue;
             }
             let at = align(&lr.syls.iter().map(|s| s.x).collect::<Vec<_>>(), &note_xs);
@@ -267,6 +313,111 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             verse += 1;
         }
         max_verses = max_verses.max(verse);
+    }
+    stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines);
+}
+
+/// 谱后单独排版的附段歌词（诗行，不跟音符对齐）：以段号起头的一段，字数与第 1 段前几行谱的字位数对得上（差不过 2）时，
+/// 按第 1 段的字位骨架逐字落到音上。分栏排的按栏从左到右、栏内从上到下读。
+fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, lines: &[(i64, i64)]) {
+    if lines.is_empty() || rows.is_empty() {
+        return;
+    }
+    let slope = rows[rows.len() - 1].band.slope;
+    let hh = median(&lines.iter().map(|l| (l.1 - l.0 + 1) as f64).collect::<Vec<_>>(), 1.0);
+    // 各段文字，带栏位（段左缘）
+    let mut segs: Vec<(f64, i64, Vec<Ch>)> = Vec::new();
+    for &(y0, y1) in lines {
+        for seg in read_segs(ink, claims, ocr, slope, y0, y1, 0, ink.bin.w as i64) {
+            if std::env::var("OMR_JP_DEBUG").is_ok() {
+                eprintln!("谱后 y{y0}: {}", seg.iter().map(|c| c.ch).collect::<String>());
+            }
+            if let Some(x) = seg.first().map(|c| c.x0) {
+                segs.push((x, y0, seg));
+            }
+        }
+    }
+    // 分栏：左缘相差不过 3 行高的归一栏
+    let mut cols: Vec<f64> = Vec::new();
+    for s in &segs {
+        if !cols.iter().any(|&c| (c - s.0).abs() <= hh * 3.0) {
+            cols.push(s.0);
+        }
+    }
+    cols.sort_by(f64::total_cmp);
+    let col_of = |x: f64| cols.iter().position(|&c| (c - x).abs() <= hh * 3.0).unwrap_or(0);
+    segs.sort_by(|a, b| col_of(a.0).cmp(&col_of(b.0)).then(a.1.cmp(&b.1)));
+    // 以段号起头的切成段
+    let mut blocks: Vec<(String, Vec<Ch>)> = Vec::new();
+    for (_, _, seg) in segs {
+        let text: String = seg.iter().map(|c| c.ch).collect();
+        if text.trim_start().starts_with("注") {
+            break;
+        }
+        let lead = seg.iter().position(|c| c.ch != ' ' && c.ch != '(' && c.ch != '（').unwrap_or(0);
+        let c0 = seg[lead].ch;
+        let digits = seg[lead..].iter().take_while(|c| c.ch.is_ascii_digit()).count();
+        let label = if CN_NUM.contains(c0) && seg.len() > lead + 2 {
+            Some((c0.to_string(), lead + 1))
+        } else if (1..=2).contains(&digits) && seg.get(lead + digits).is_some_and(|c| ".．、 ".contains(c.ch) || is_han(c.ch)) {
+            Some((seg[lead..lead + digits].iter().map(|c| c.ch).collect::<String>() + if seg[lead + digits].ch == '.' { "." } else { "" }, lead + digits))
+        } else {
+            None
+        };
+        match label {
+            Some((l, n)) => {
+                let mut body = &seg[n..];
+                while body.first().is_some_and(|c| ")）、.．:： ".contains(c.ch)) {
+                    body = &body[1..];
+                }
+                blocks.push((l, body.to_vec()));
+            }
+            None => {
+                if let Some(b) = blocks.last_mut() {
+                    b.1.push(Ch { ch: ' ', x0: 0.0, x1: 0.0 });
+                    b.1.extend(seg);
+                }
+            }
+        }
+    }
+    // 第 1 段的字位骨架：各行里第 1 段有字的音
+    let slots: Vec<Vec<usize>> = notes.iter().map(|rn| (0..rn.nums.len()).filter(|&k| rn.nums[k].lyrics.first().is_some_and(|t| !t.is_empty())).collect()).collect();
+    let base = notes.iter().find(|rn| !rn.nums.is_empty()).map_or(1, |rn| rn.nums.iter().map(|n| n.lyrics.len()).max().unwrap_or(1)).max(1);
+    for (bi, (label, chars)) in blocks.iter().enumerate() {
+        let syls = syllables(chars).syls;
+        let n = syls.len();
+        // 取前几行谱：字位数的累计最接近这段的字数
+        let mut sum = 0usize;
+        let mut best: Option<(usize, usize)> = None;
+        for (ri, s) in slots.iter().enumerate() {
+            sum += s.len();
+            if best.is_none_or(|b| sum.abs_diff(n) < b.1) {
+                best = Some((ri, sum.abs_diff(n)));
+            }
+        }
+        let Some((upto, diff)) = best else { continue };
+        if diff > 2 || n < 4 {
+            continue;
+        }
+        let v = base + bi;
+        let mut k = 0;
+        'rows: for ri in 0..=upto {
+            for &ni in &slots[ri] {
+                let Some(s) = syls.get(k) else { break 'rows };
+                let num = &mut notes[ri].nums[ni];
+                if num.lyrics.len() <= v {
+                    num.lyrics.resize(v + 1, String::new());
+                }
+                num.lyrics[v] = s.text.clone();
+                k += 1;
+            }
+        }
+        if let Some(ri) = (0..=upto).find(|&ri| !slots[ri].is_empty()) {
+            if labels[ri].len() <= v {
+                labels[ri].resize(v + 1, String::new());
+            }
+            labels[ri][v] = label.clone();
+        }
     }
 }
 
@@ -305,6 +456,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         let text: String = got.iter().flat_map(|c| c.ch.chars()).map(fold).collect();
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("页眉 {:.0},{:.0} {:.0}x{:.0}: {text}", b.x, b.y, b.w, b.h);
+        }
+        // 首行谱头顶上的和弦行不是页眉
+        if top - (b.y + b.h) <= num_h * 3.0 && chords::is_annotation_line(&text) {
+            continue;
         }
         if !text.trim().is_empty() {
             lines.push(WordLine { text, x: b.x, y: b.y, w: b.w, h: b.h });
@@ -430,7 +585,22 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("上方带 y{y0}-{y1}: {text}");
         }
-        let clean = chords::blank_non_chord(&text);
+        // 括号里的备选和弦（移调的另一套）不收
+        let mut depth = 0;
+        let no_paren: String = text
+            .chars()
+            .map(|c| {
+                if "(（".contains(c) {
+                    depth += 1;
+                }
+                let r = if depth > 0 { ' ' } else { c };
+                if ")）".contains(c) && depth > 0 {
+                    depth -= 1;
+                }
+                r
+            })
+            .collect();
+        let clean = chords::blank_non_chord(&no_paren);
         let (cov, cnt) = chords::coverage(&clean);
         if !chords::is_chord_coverage(cov, cnt) || text.chars().any(is_han) {
             continue;

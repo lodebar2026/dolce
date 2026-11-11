@@ -398,7 +398,9 @@ pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
     let h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 1.0);
     let first_x: Vec<f64> = rows.iter().map(|r| r.digits().map(|c| c.x0).min().unwrap_or(0) as f64).collect();
     let mut groups: Vec<Vec<usize>> = Vec::new();
-    for k in ink.comps.iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2) {
+    let pw = ink.bin.w as f64;
+    // 贴着纸边的（扫描件的黑边）、把整页的行都括进去的不是连谱号
+    for k in ink.comps.iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2 && k.rect.x > 2.0 && k.rect.right() < pw - 2.0) {
         let inside: Vec<usize> = (0..rows.len())
             .filter(|&i| {
                 let cy = (rows[i].top_at(k.cx) + rows[i].bottom_at(k.cx)) / 2.0;
@@ -407,7 +409,7 @@ pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
                 rows[i].bottom_at(k.cx) > k.rect.y - h && rows[i].top_at(k.cx) < k.rect.bottom() + h
             })
             .collect();
-        if inside.len() < 2 || inside.iter().any(|&i| k.rect.x > first_x[i]) {
+        if inside.len() < 2 || (inside.len() == rows.len() && rows.len() >= 5) || inside.iter().any(|&i| k.rect.x > first_x[i]) {
             continue;
         }
         // 同一组行的几根线（连谱号与紧挨着的系统线）只记一次；括得多的盖过括得少的
