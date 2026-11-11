@@ -508,6 +508,64 @@ fn seg_dist2(a: (f64, f64), b: (f64, f64), p: (f64, f64)) -> f64 {
     (p.0 - qx).powi(2) + (p.1 - qy).powi(2)
 }
 
+/// 文字层不可靠的字体：同一个字体里不同码点的字画着同一个轮廓（PDFium 把 CID 当码点交出、轮廓也取不对，如预置 CMap 的
+/// `PMingLiU-ETen-B5-H`），或交出控制字符（没有码位映射的子集字体）。这些字只能从渲染的页面上裁条读。
+pub fn unreliable_fonts(pc: &PageContent) -> Vec<String> {
+    unreliable_fonts_of(&pc.chars)
+}
+
+/// 同 [`unreliable_fonts`]，吃字的列表。
+pub fn unreliable_fonts_of(chars: &[TextChar]) -> Vec<String> {
+    let mut seen: std::collections::HashMap<(String, Vec<i64>), u32> = std::collections::HashMap::new();
+    let mut out: Vec<String> = Vec::new();
+    for c in chars.iter().filter(|c| !c.generated) {
+        // 交出控制字符的（没有码位映射，PDFium 把字形号当码点）
+        if c.unicode < 0x20 {
+            if !out.contains(&c.font) {
+                out.push(c.font.clone());
+            }
+            continue;
+        }
+        if c.unicode == 0x20 {
+            continue;
+        }
+        let Some(o) = &c.outline else { continue };
+        // 轮廓相对第一点、按字号归一后量化的指纹
+        let (mut fx, mut fy) = (f64::NAN, f64::NAN);
+        let mut fp = Vec::new();
+        for sg in o {
+            let pts: &[(f64, f64)] = &match *sg {
+                Seg::Move(x, y) | Seg::Line(x, y) => vec![(x, y)],
+                Seg::Cubic(a, b, cc, d, x, y) => vec![(a, b), (cc, d), (x, y)],
+                Seg::Close => vec![],
+            };
+            for &(x, y) in pts {
+                if fx.is_nan() {
+                    (fx, fy) = (x, y);
+                }
+                let k = c.size_scaled.max(0.01);
+                fp.push(((x - fx) / k * 200.0).round() as i64);
+                fp.push(((y - fy) / k * 200.0).round() as i64);
+            }
+        }
+        if fp.len() < 6 {
+            continue;
+        }
+        match seen.get(&(c.font.clone(), fp.clone())) {
+            Some(&u) if u != c.unicode => {
+                if !out.contains(&c.font) {
+                    out.push(c.font.clone());
+                }
+            }
+            Some(_) => {}
+            None => {
+                seen.insert((c.font.clone(), fp), c.unicode);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

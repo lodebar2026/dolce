@@ -26,7 +26,7 @@ fn main() -> Result<(), String> {
             println!("  没有谱表");
         }
         if std::env::var("OMR_VEC_DEBUG").is_ok() {
-            if let Some(p) = dolce_omr_staff::vector::recognize_vector(&pc, None) {
+            if let Some(p) = dolce_omr_staff::vector::recognize_vector(&pc, None, None) {
                 if let Some(r) = std::env::var("ROW").ok().and_then(|v| v.parse::<usize>().ok()) {
                     for c in &p.notes[r].chords {
                         println!("    和弦 x{:.0} 头{:?} 干{:?} 尾{} 杠{} 点{}", c.x, c.heads.iter().map(|h| (h.pos, h.kind)).collect::<Vec<_>>(), c.stem.map(|s| (s.x, s.top, s.bottom, s.up)), c.tails, c.beamed, c.dots);

@@ -245,3 +245,8 @@ mod tests {
         assert_eq!(split_text("B RO K E N"), ["BROKEN"]);
     }
 }
+
+/// 版权声明（`Copyright`、`©`、`版權所有` 起头）。
+pub fn is_rights(t: &str) -> bool {
+    RIGHTS.is_match(t)
+}

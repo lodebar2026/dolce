@@ -53,6 +53,20 @@ pub fn page_image(pc: &PageContent) -> Option<SourceImage> {
     Some(mosaic(&tiles, big, pc.width, pc.height))
 }
 
+/// 小图的页上高度不过这么多点（一行字的量级；更高的是插图、谱面）。
+const SIDE_TILE_H: f64 = 40.0;
+
+/// 谱面大图以外的小图（已取正、页面坐标）：干净合唱谱页眉、版权行里逐字贴的汉字图就是这种。
+/// `big`：谱面那张的页上框（混合页），中心落在它里面的不要。
+pub fn side_tiles(pc: &PageContent, big: Option<&Rect>) -> Vec<PageImage> {
+    pc.images
+        .iter()
+        .filter(|t| t.rect.h <= SIDE_TILE_H && t.rect.w > 0.0 && t.rect.h > 0.0)
+        .filter(|t| big.is_none_or(|b| !(t.rect.cx() >= b.x && t.rect.cx() <= b.right() && t.rect.cy() >= b.y && t.rect.cy() <= b.bottom())))
+        .filter_map(upright)
+        .collect()
+}
+
 /// 各块按页上位置拼回一张：分辨率取最大那块的，最近邻取样，重叠处取深的。
 fn mosaic(tiles: &[PageImage], big: &PageImage, pw: f64, ph: f64) -> SourceImage {
     let s = big.w as f64 / big.rect.w;

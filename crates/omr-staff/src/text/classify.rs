@@ -1,7 +1,7 @@
 //! 文字行的分类与归属（M4 4.2~4.5）：歌词行归上面那行谱、逐行编号；和弦、节拍器归下面那行谱；
 //! 力度、跳转、表情术语归近的那行。只定「是什么、在哪一行谱的哪个 x」，挂到哪个音由整曲拼接时按 x 定。
 use super::lines::{Band, GeoLine, Seg};
-use crate::page::PageFrame;
+use crate::page::Layout;
 use dolce_omr_sheet::score::Dir;
 use dolce_omr_text::chars::{han_count, latin_count, script_of, Script};
 use dolce_omr_text::lyrics::{syllables, LyricRow};
@@ -96,6 +96,31 @@ fn split_scripts(l: &GeoLine) -> Vec<GeoLine> {
         .collect()
 }
 
+/// 小节号：纯数字（三位以内）、横向在下面那行谱左端 [`BARNO_X`] 格以内、紧贴着那行谱的上方（[`BARNO_GAP`] 格以内）。
+const BARNO_X: f64 = 3.0;
+const BARNO_GAP: f64 = 2.5;
+
+/// 行里剔掉小节号那一段（和弦行开头印着小节号，整行就不像和弦行了）；剔完空了回 None。
+fn strip_bar_numbers(f: &Layout, b: &Band, l: &GeoLine) -> Option<GeoLine> {
+    let Some(z) = b.below else { return Some(l.clone()) };
+    let s = &f.staves[z];
+    let is_no = |g: &Seg| {
+        let t = g.text();
+        let t = t.trim();
+        !t.is_empty() && t.len() <= 3 && t.chars().all(|c| c.is_ascii_digit()) && (g.rect.x - s.left).abs() <= BARNO_X * s.space() && (s.top(g.rect.cx()) - g.rect.bottom()) / s.space() <= BARNO_GAP
+    };
+    if !l.segs.iter().any(is_no) {
+        return Some(l.clone());
+    }
+    let segs: Vec<Seg> = l.segs.iter().filter(|g| !is_no(g)).cloned().collect();
+    if segs.is_empty() {
+        return None;
+    }
+    let y0 = segs.iter().map(|s| s.rect.y).fold(f64::MAX, f64::min);
+    let y1 = segs.iter().map(|s| s.rect.bottom()).fold(f64::MIN, f64::max);
+    Some(GeoLine { y0, y1, segs })
+}
+
 /// 段落标签（`(副歌)`、`【副歌】`、`副歌：`）：不是唱词。
 fn section_label(t: &str) -> bool {
     let core: String = t.chars().filter(|c| !"()（）[]【】:：. 　".contains(*c)).collect();
@@ -123,7 +148,25 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
         return vec![Mark { x: seg.rect.cx(), dir: Dir::Dynamics(d.to_string()) }];
     }
     if let Some((n, circa)) = words::metronome(t) {
-        return vec![Mark { x, dir: Dir::Metronome { per_minute: n, circa } }];
+        // 「Andante ♩= 76」：等号前（连同贴着它的音符字、开括号）是术语，单挂一条；节拍器的 x 取音符字（或等号）
+        let eq = seg.chars.iter().position(|c| c.ch == '=' || c.ch == '＝').unwrap_or(0);
+        let cs = &seg.chars;
+        let mut k = eq;
+        while k > 0 && cs[k - 1].ch == ' ' {
+            k -= 1;
+        }
+        // 等号前单独一个字（音符字形、矢量字体里代音符的 q）：它前面是空格、开括号或段首
+        let mut start = if k > 0 && (k == 1 || matches!(cs[k - 2].ch, ' ' | '(')) { k - 1 } else { k };
+        while start > 0 && matches!(cs[start - 1].ch, '(' | ' ') {
+            start -= 1;
+        }
+        let mut out = vec![Mark { x: cs.get(start).map_or(x, |c| c.x0), dir: Dir::Metronome { per_minute: n, circa } }];
+        let pre: String = cs[..start].iter().map(|c| c.ch).collect();
+        let pre = pre.trim();
+        if words::has_term(pre) && latin_count(pre) >= 3 && han_count(pre) == 0 {
+            out.insert(0, Mark { x, dir: Dir::Words { text: pre.to_string(), above, jump: None } });
+        }
+        return out;
     }
     if let Some(j) = words::jump(t) {
         return vec![Mark { x, dir: Dir::Words { text: t.to_string(), above, jump: Some(j) } }];
@@ -145,7 +188,7 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
 }
 
 /// 各条带的行 → 各行谱的歌词与记号（与 `staves` 同序）。
-pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
+pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
     let mut rows: Vec<RowText> = (0..f.staves.len()).map(|_| RowText::default()).collect();
     for b in bands {
         // 歌词链：从上面那行谱往下数。已收下的歌词行 (x0, x1, y1, 行高, 拉丁)；`blocked`：链断处那行的横向范围（它下面的不再收）
@@ -153,8 +196,10 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
         // 链上各行在 `rows[a].lyrics` 里的下标与音节数（与 `chain` 同序）
         let mut chain_at: Vec<(usize, usize)> = Vec::new();
         let mut blocked: Vec<(f64, f64)> = Vec::new();
-        let lines: Vec<GeoLine> = b.lines.iter().flat_map(split_scripts).collect();
-        for l in &lines {
+        let lines: Vec<GeoLine> = b.lines.iter().filter_map(|l| strip_bar_numbers(f, b, l)).flat_map(|l| split_scripts(&l)).collect();
+        // 页脚：从版权声明那行起往下都是（版权、复印说明、网址、页码），不当歌词与记号
+        let footer = lines.iter().position(|l| dolce_omr_text::header::is_rights(&line_chars(l).iter().map(|c| c.ch).collect::<String>())).filter(|_| b.below.is_none());
+        for l in &lines[..footer.unwrap_or(lines.len())] {
             let cx = l.cx();
             let d_above = b.above.map(|a| {
                 let s = &f.staves[a];
@@ -273,7 +318,7 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
 
 /// 中英对照的闭合谱：汉字词印在两行谱之间、英文词印在下面那行谱之下，唱的是同一条旋律——
 /// 同系统里上一行谱有汉字词、下一行谱的词全是拉丁字母的，拉丁那几行接到上一行谱的词后面。
-fn fold_bilingual(f: &PageFrame, rows: &mut [RowText]) {
+fn fold_bilingual(f: &Layout, rows: &mut [RowText]) {
     for sys in &f.systems {
         for w in sys.staves.windows(2) {
             let (u, l) = (w[0], w[1]);

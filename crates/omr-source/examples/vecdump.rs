@@ -1,5 +1,5 @@
 //! 矢量页的对象清单（排查）：路径逐个列（段数、有无曲线、填 / 描、线宽、外框），字按字体列码位与框。
-//! 用法：`cargo run --release -p dolce-omr-source --example vecdump -- 文件.pdf 页号 [paths|chars|all] [x0 y0 x1 y1]`
+//! 用法：`cargo run --release -p dolce-omr-source --example vecdump -- 文件.pdf 页号 [paths|chars|gen|all]（gen：连 PDFium 补出的空格、换行一起列） [x0 y0 x1 y1]`
 use dolce_omr_source::model::Seg;
 use dolce_omr_source::{ContentOpts, PdfDoc};
 
@@ -32,12 +32,12 @@ fn main() -> Result<(), String> {
     }
     if what != "paths" {
         for (i, c) in pc.chars.iter().enumerate() {
-            if c.generated || !inside(c.bbox.x + c.bbox.w / 2.0, c.bbox.y + c.bbox.h / 2.0) {
+            if (c.generated && what != "gen") || !inside(c.bbox.x + c.bbox.w / 2.0, c.bbox.y + c.bbox.h / 2.0) {
                 continue;
             }
             println!(
-                "C{i} {} U+{:04X} {:?} 字号{:.1} 原点({:.2},{:.2}) 框[{:.2},{:.2} {:.2}×{:.2}]{}",
-                c.font, c.unicode, char::from_u32(c.unicode).unwrap_or('?'), c.size_scaled, c.origin.0, c.origin.1, c.bbox.x, c.bbox.y, c.bbox.w, c.bbox.h,
+                "C{i}{} {} U+{:04X} {:?} 字号{:.1} 原点({:.2},{:.2}) 框[{:.2},{:.2} {:.2}×{:.2}]{}",
+                if c.generated { "(补)" } else { "" }, c.font, c.unicode, char::from_u32(c.unicode).unwrap_or('?'), c.size_scaled, c.origin.0, c.origin.1, c.bbox.x, c.bbox.y, c.bbox.w, c.bbox.h,
                 if c.outline.is_none() { " 无轮廓" } else { "" }
             );
         }

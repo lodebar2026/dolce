@@ -6,6 +6,7 @@
 //!   系统与小节线是位图那份代码，只是探针与竖段换成矢量的。
 pub mod glyphs;
 pub mod notes;
+pub mod text;
 
 use crate::frame::bars::page_barlines;
 use crate::frame::staves::staves_from_hsegs;
@@ -154,14 +155,44 @@ pub fn frame_vector(vp: &VecPage) -> Option<VecFrame> {
 }
 
 /// 识别一页纯矢量页；没有谱表回 None。
-pub fn recognize_vector(pc: &dolce_omr_source::PageContent, _ocr: Option<&dyn crate::attrs::DigitReader>) -> Option<crate::page::Page> {
+pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&dolce_omr_ocr::surface::Gray>, ocr: Option<&dyn crate::attrs::DigitReader>) -> Option<crate::page::Page> {
     let vp = VecPage::build(pc, dolce_omr_sheet::prims::VEC_SCALE, (0.0, 0.0));
     let f = frame_vector(&vp)?;
-    let n = f.layout.staves.len();
     let ink = VecInk::new(&vp, &f.staff_lines);
     let syms = glyphs::music_chars(&vp);
     let attrs = notes::page_attrs(&f.layout, &syms);
     let notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
-    let text = crate::text::PageText { rows: (0..n).map(|_| Default::default()).collect(), ..Default::default() };
+    // 谱表以外的升降号字形（和弦记号里的）插进字行
+    let accs: Vec<(char, dolce_omr_core::image::Rect)> = syms
+        .iter()
+        .filter(|s| matches!(s.name, "accidentalSharp" | "accidentalFlat"))
+        .filter(|s| !f.layout.staves.iter().any(|st| st.covers(s.cx(), s.cy(), 1.5) && s.cx() >= st.left && s.cx() <= st.right))
+        .map(|s| (if s.name == "accidentalSharp" { '#' } else { 'b' }, s.rect))
+        .collect();
+    let tiles = dolce_omr_source::raster::side_tiles(pc, None);
+    let lines = text::text_lines(&vp, ocr, rendered, &tiles, &accs);
+    let credits = text::header(&f.layout, &vp, &lines, 1.0);
+    let bands = text::bands(&f.layout, lines);
+    if std::env::var("OMR_VEC_DEBUG").is_ok() {
+        for b in &bands {
+            for l in &b.lines {
+                let t: Vec<String> = l.segs.iter().map(|s| format!("{}@{:.0}", s.chars.iter().map(|c| c.ch).collect::<String>(), s.rect.x)).collect();
+                let da = b.above.map(|a| (l.y0 - f.layout.staves[a].ys[4]) / f.layout.staves[a].space());
+                let dz = b.below.map(|z| (f.layout.staves[z].ys[0] - l.y1) / f.layout.staves[z].space());
+                eprintln!("矢量带 上{:?} 下{:?} y{:.0}-{:.0} 距上{da:.1?} 距下{dz:.1?} {t:?}", b.above, b.below, l.y0, l.y1);
+            }
+        }
+    }
+    let mut rows = crate::text::classify::classify(&f.layout, &bands);
+    text::dynamics(&f.layout, &syms, &mut rows);
+    if std::env::var("OMR_VEC_DEBUG").is_ok() {
+        for (i, r) in rows.iter().enumerate() {
+            let hs: Vec<String> = r.marks.iter().map(|m| format!("{:?}@{:.0}", m.dir, m.x)).collect();
+            if !hs.is_empty() {
+                eprintln!("矢量记号 行{i} {hs:?}");
+            }
+        }
+    }
+    let text = crate::text::PageText { rows, credits, bands, false_heads: Vec::new() };
     Some(crate::page::Page { layout: f.layout, attrs, notes, text, spans: Default::default() })
 }

@@ -79,11 +79,7 @@ pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> 
         let blanks: Vec<(f64, f64)> = blanks.into_iter().filter(|b| b.0 > ia && b.0 + b.1 < ib).collect();
         let text: String = recover_spaces(&chars, &blanks, ink_h, ia, ib).iter().map(|c| c.ch).collect();
         let t = text.trim();
-        if han_count(t) == 0 && latin_count(t) < 3 && !t.chars().any(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        let near = (top - (b.y + b.h) * up) / sp <= NEAR;
-        if near && (chords::is_annotation_line(t) || words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)) {
+        if !header_line_ok(t, (top - (b.y + b.h) * up) / sp) {
             continue;
         }
         lines.push(WordLine { text: t.to_string(), x: b.x, y: b.y, w: b.w, h: b.h });
@@ -94,4 +90,13 @@ pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> 
         c.size *= pt;
     }
     out
+}
+
+/// 页眉候选行要不要：没有汉字、拉丁字母不到三个、也没有数字的不要；离谱表 [`NEAR`] 格以内（`gap`，格）像和弦 / 节拍器 / 力度 / 速度术语的不要。
+/// 两种证据共用（矢量页的行来自文字层）。
+pub fn header_line_ok(t: &str, gap: f64) -> bool {
+    if han_count(t) == 0 && latin_count(t) < 3 && !t.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    !(gap <= NEAR && (chords::is_annotation_line(t) || words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)))
 }

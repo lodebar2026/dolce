@@ -3,7 +3,7 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 /// 节拍器记号（`♩ = 72`、`J=c.78`：音符字形读成一两个字母）。
-static METRO: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[=＝]\s*(c(?:a|irca)?\.?\s*)?(\d ?\d ?\d?)").unwrap());
+static METRO: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[=＝]\s*(c(?:a|irca)?\s*\.?\s*)?(\d ?\d ?\d?)").unwrap());
 /// 表情与速度术语。
 static TERM: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(rit|rall|riten|ritard|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|andante|allegro|allegretto|moderato|adagio|largo|lento|maestoso|vivace|presto)\b|\bd\. ?[sc]\b").unwrap()

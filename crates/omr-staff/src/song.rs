@@ -252,7 +252,15 @@ struct Anchor {
 }
 
 /// 一行谱的歌词与记号按 x 挂到音上。横向挨着（同一拍点）的几个和弦只留声部 1 的那个。
-fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, same_dx: f64, han_lines: u8) {
+/// `rests`：这一行谱的休止拍点——整行没有音（只有休止，如器乐声部开头空着）时记号挂到它们上，歌词不挂。
+fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], text: &RowText, same_dx: f64, han_lines: u8) {
+    if anchors.is_empty() {
+        let marks_only = RowText { lyrics: Vec::new(), marks: text.marks.clone() };
+        if rests.is_empty() || marks_only.marks.is_empty() {
+            return;
+        }
+        return attach_text(ms, rests.to_vec(), &[], &marks_only, same_dx, han_lines);
+    }
     anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
     let mut pts: Vec<Anchor> = Vec::new();
     for a in anchors {
@@ -805,10 +813,11 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 let arcs: Vec<&Arc> = page.spans.arcs.iter().filter(|a| a.staff == i).collect();
                 row_arcs(&arcs, &anchors, &ms, from, sp_row, sys_i, &mut pending[p], &mut span_recs[p]);
                 let wedges: Vec<&Wedge> = page.spans.wedges.iter().filter(|w| w.staff == i).collect();
+                let rests: Vec<Anchor> = beats.clone();
                 beats.extend(anchors.iter().copied());
                 beats.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
                 row_wedges(&wedges, &beats, &mut ms, &bar_of, sp_row);
-                attach_text(&mut ms, anchors, &page.text.rows[i], dx, han_lines);
+                attach_text(&mut ms, anchors, &rests, &page.text.rows[i], dx, han_lines);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
                     let j = bs.iter().filter(|b| b.x < ch.x).count();

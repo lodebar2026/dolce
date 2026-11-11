@@ -33,7 +33,7 @@ impl VSym {
 }
 
 /// 轮廓的全部坐标（含控制点）的外框（工作坐标）。
-fn raw_bounds(segs: &[Seg], vp: &VecPage) -> Option<(f64, f64, f64, f64)> {
+pub(crate) fn raw_bounds(segs: &[Seg], vp: &VecPage) -> Option<(f64, f64, f64, f64)> {
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
     let mut take = |x: f64, y: f64| {
         let (x, y) = ((x - vp.origin.0) * vp.scale, (y - vp.origin.1) * vp.scale);

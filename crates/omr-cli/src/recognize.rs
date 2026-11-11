@@ -26,11 +26,17 @@ pub fn sources(p: &Path) -> Result<Vec<PageSource>, String> {
         Ok((0..doc.page_count())
             .filter_map(|i| {
                 let pc = doc.content(i, ContentOpts { images: true, paths: true, text: true, outlines: true }).ok()?;
-                Some(PageSource { raster: page_image(&pc), content: Some(pc) })
+                let raster = page_image(&pc);
+                // 文字层有不可靠字体的纯矢量页：整页渲染一张灰度图备用（只裁那几段字读）
+                let rendered = (raster.is_none() && !dolce_omr_source::vector::unreliable_fonts(&pc).is_empty())
+                    .then(|| doc.render(i, dolce_omr_sheet::prims::VEC_SCALE).ok())
+                    .flatten()
+                    .map(|r| dolce_omr_ocr::surface::Gray { w: r.w, h: r.h, data: r.rgba.chunks_exact(4).map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect() });
+                Some(PageSource { raster, content: Some(pc), rendered })
             })
             .collect())
     } else {
-        Ok(vec![PageSource { raster: Some(image_file(&bytes)?), content: None }])
+        Ok(vec![PageSource { raster: Some(image_file(&bytes)?), content: None, rendered: None }])
     }
 }
 

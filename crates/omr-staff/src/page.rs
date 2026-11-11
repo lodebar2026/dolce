@@ -137,12 +137,32 @@ pub struct PageSource {
     pub raster: Option<SourceImage>,
     /// PDF 页的内容（路径、文字层与字形轮廓）；图片文件没有。
     pub content: Option<PageContent>,
+    /// 文字层有不可靠字体时整页渲染的灰度图（每点 `VEC_SCALE` 像素，与矢量页工作坐标对齐），那几段字从它裁条读。
+    pub rendered: Option<dolce_omr_ocr::surface::Gray>,
 }
 
 /// 识别一页：谱表从哪一层找到，框架与音符就以那一层为主——先试像素层，找不到谱表再试矢量层。
 pub fn recognize_source(src: &PageSource, ocr: Option<&dyn DigitReader>) -> Option<Page> {
-    if let Some(p) = src.raster.as_ref().and_then(|r| recognize_page(r, ocr)) {
-        return Some(p);
+    if let Some(r) = src.raster.as_ref() {
+        if let Some(mut p) = recognize_page(r, ocr) {
+            // 混合页：谱面是内嵌大图、页眉页脚是文字层（干净合唱谱）。文字层按大图的像素格换进工作坐标，页眉两边合池
+            if let Some(pc) = src.content.as_ref().filter(|pc| pc.chars.iter().any(|c| !c.generated)) {
+                let scale = p.layout.up * r.w as f64 / r.rect.w.max(1e-9);
+                let vp = dolce_omr_source::vector::VecPage::build(pc, scale, (r.rect.x, r.rect.y));
+                let tiles = dolce_omr_source::raster::side_tiles(pc, Some(&r.rect));
+                let lines = crate::vector::text::text_lines(&vp, ocr, None, &tiles, &[]);
+                let pt = if r.size_known { r.pt_per_px() } else { 1.0 };
+                let layer = crate::vector::text::header(&p.layout, &vp, &lines, pt);
+                if std::env::var("OMR_VEC_DEBUG").is_ok() {
+                    let segs: Vec<String> = lines.iter().flat_map(|l| l.segs.iter().map(|s| s.chars.iter().map(|c| c.ch).collect::<String>())).collect();
+                    eprintln!("混合页 行{segs:?} 页眉{:?} 原{:?}", layer.iter().map(|c| &c.text).collect::<Vec<_>>(), p.text.credits.iter().map(|c| (&c.text, c.rect)).collect::<Vec<_>>());
+                }
+                if !layer.is_empty() {
+                    p.text.credits = crate::vector::text::merge_credits(std::mem::take(&mut p.text.credits), layer);
+                }
+            }
+            return Some(p);
+        }
     }
-    crate::vector::recognize_vector(src.content.as_ref()?, ocr)
+    crate::vector::recognize_vector(src.content.as_ref()?, src.rendered.as_ref(), ocr)
 }

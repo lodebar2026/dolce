@@ -13,6 +13,7 @@ path = "src/main.rs"
 dolce-omr-core = { path = "../omr-core" }
 dolce-omr-jianpu = { path = "../omr-jianpu" }
 dolce-omr-ocr = { path = "../omr-ocr" }
+dolce-omr-sheet = { path = "../omr-sheet" }
 dolce-omr-source = { path = "../omr-source" }
 dolce-omr-staff = { path = "../omr-staff" }
 serde = { workspace = true }
