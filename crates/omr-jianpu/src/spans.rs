@@ -17,7 +17,7 @@ const MIN_ARCH: f64 = 0.08;
 /// 一行谱上方的弧，记到两端的音上。`y_min`：上方带的顶（上一行的歌词底）。
 pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &CachedOcr) {
     let h = row.h();
-    let w = ink.bin.w;
+    let w = ink.w();
     let wf = w as f64;
     let top_min = row.top_at(0.0).min(row.top_at(wf));
     let top_max = row.top_at(0.0).max(row.top_at(wf));
@@ -88,7 +88,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         if !(3..=7).contains(&cnt) || rn.nums[i..=j].iter().any(|n| n.tuplet.is_some()) {
             continue;
         }
-        let cand = ink.comps.iter().find(|k| {
+        let cand = ink.comps().iter().find(|k| {
             let b = &k.rect;
             (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.8 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
         });

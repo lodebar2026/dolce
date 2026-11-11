@@ -162,9 +162,9 @@ fn owner_below(nums: &[JpNum], dots: &[&Comp], b: &Rect, h: f64, dx: f64, gap_lo
 /// 认一行谱的贴音记号，记到各音上。回认下的连通块 id。
 pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr) -> Vec<i32> {
     let h = row.h();
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let (ya, yb) = (row.top_at(0.0).min(row.top_at(w)) - h * 2.0, row.bottom_at(0.0).max(row.bottom_at(w)));
-    let near: Vec<&Comp> = ink.comps.iter().filter(|k| k.rect.bottom() > ya && k.rect.y < yb).collect();
+    let near: Vec<&Comp> = ink.comps().iter().filter(|k| k.rect.bottom() > ya && k.rect.y < yb).collect();
     let dots: Vec<&Comp> = near.iter().copied().filter(|k| dot_like(k, h)).collect();
     let mut used: Vec<i32> = Vec::new();
     let debug = std::env::var("OMR_JP_DEBUG").is_ok();

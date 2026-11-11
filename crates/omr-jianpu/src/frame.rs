@@ -148,7 +148,7 @@ impl RowFrame {
 
 /// 数字格送检的画面：墨的外框等比缩进 64×64 的白格、四周留 8。
 pub fn digit_cell(ink: &Ink, r: &Rect) -> Gray {
-    let src = Gray::crop_binary(&ink.bin, *r, 0);
+    let src = ink.crop_bin(r);
     let (w, h) = (src.w as f64, src.h as f64);
     let s = (48.0 / w).min(48.0 / h);
     let mut out = Gray::new(64, 64, 255);
@@ -209,7 +209,7 @@ const RESCALE: f64 = 0.1;
 
 fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowFrame> {
     let cand: Vec<&Comp> = ink
-        .comps
+        .comps()
         .iter()
         .filter(|k| k.rect.h >= num_h * 0.72 && k.rect.h <= num_h * 1.3 && k.rect.w >= k.rect.h * 0.18 && k.rect.w <= num_h * 1.05)
         .collect();
@@ -270,7 +270,7 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
             continue;
         }
         let span = row.digits().map(|c| c.x1).max().unwrap_or(0) - row.digits().map(|c| c.x0).min().unwrap_or(0);
-        if nd >= 1 && (nb >= 1 || (nd >= 4 && span as f64 >= ink.bin.w as f64 * 0.3)) {
+        if nd >= 1 && (nb >= 1 || (nd >= 4 && span as f64 >= ink.w() as f64 * 0.3)) {
             rows.push(row);
             ratios.push(good as f64 / nd as f64);
         }
@@ -403,7 +403,7 @@ fn key_line(ink: &Ink, row: &RowFrame) -> bool {
 
 /// 带内切格并分类。
 fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
-    let w = ink.bin.w as i64;
+    let w = ink.w() as i64;
     let h = band.h();
     let rows_of = |x: i64| (band.top(x as f64).round() as i64, band.bottom(x as f64).round() as i64 - 1);
     let col = |x: i64| {
@@ -573,9 +573,9 @@ pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
     let h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 1.0);
     let first_x: Vec<f64> = rows.iter().map(|r| r.digits().map(|c| c.x0).min().unwrap_or(0) as f64).collect();
     let mut groups: Vec<Vec<usize>> = Vec::new();
-    let pw = ink.bin.w as f64;
+    let pw = ink.w() as f64;
     // 贴着纸边的（扫描件的黑边）、把整页的行都括进去的不是连谱号
-    for k in ink.comps.iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2 && k.rect.x > 2.0 && k.rect.right() < pw - 2.0) {
+    for k in ink.comps().iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2 && k.rect.x > 2.0 && k.rect.right() < pw - 2.0) {
         let inside: Vec<usize> = (0..rows.len())
             .filter(|&i| {
                 let cy = (rows[i].top_at(k.cx) + rows[i].bottom_at(k.cx)) / 2.0;

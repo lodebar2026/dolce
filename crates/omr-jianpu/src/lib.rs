@@ -12,6 +12,7 @@ pub mod frame;
 pub mod marks;
 pub mod notes;
 pub mod prep;
+use prep::{Ink, JpInk};
 pub mod result;
 pub mod spans;
 pub mod text;
@@ -24,42 +25,47 @@ use result::{RecognizedScore, StaffRow};
 /// 只到建音（数字、八度点、减时线、附点、增时线、小节线），不挂歌词、不裁满拍——拍号在五线谱那边。
 /// `known`：已知是简谱行，不按「多数格读得出数字」筛（见 [`frame::find_rows_in`]）；调用方拿不带它的那一遍验带的真假。
 pub fn recognize_strip(src: &SourceImage, ocr: &CachedOcr, known: bool) -> Option<(f64, notes::RowNotes)> {
-    let mut ink = prep::Ink::load(std::slice::from_ref(src))?;
-    let num_h = frame::estimate_num_h(&ink.comps);
+    let mut ink = prep::RasterInk::load(std::slice::from_ref(src))?;
+    let num_h = frame::estimate_num_h(ink.comps());
     ink.despeckle(num_h);
     let rows = frame::find_rows_in(&ink, num_h, ocr, known);
-    let scale = ink.bin.w as f64 / src.w as f64;
+    let scale = ink.w() as f64 / src.w as f64;
     if std::env::var("OMR_JP_DEBUG").is_ok() {
-        eprintln!("条 {}x{} 字号 {num_h:.1}：{} 行，各行数字 {:?}", ink.bin.w, ink.bin.h, rows.len(), rows.iter().map(|r| r.digits().count()).collect::<Vec<_>>());
+        eprintln!("条 {}x{} 字号 {num_h:.1}：{} 行，各行数字 {:?}", ink.w(), ink.h(), rows.len(), rows.iter().map(|r| r.digits().count()).collect::<Vec<_>>());
     }
     rows.iter().map(|row| notes::build(&ink, row, ocr)).max_by_key(|r| r.nums.len()).map(|r| (scale, r))
 }
 
 /// 识别一首（各页原图按序）。没有找到数字行回 Err。
 pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
-    let mut ink = prep::Ink::load(srcs).ok_or("没有页面")?;
-    let num_h = frame::estimate_num_h(&ink.comps);
+    let mut ink = prep::RasterInk::load(srcs).ok_or("没有页面")?;
+    let num_h = frame::estimate_num_h(ink.comps());
     ink.despeckle(num_h);
-    let rows = frame::find_rows(&ink, num_h, ocr);
+    recognize_ink(&ink, num_h, ocr)
+}
+
+/// 识别一首（证据已备好：像素页的墨层或矢量页的对象库；`num_h` 数字字号）。像素、矢量两种证据同一份判据。
+pub fn recognize_ink(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+    let rows = frame::find_rows(ink, num_h, ocr);
     if rows.is_empty() {
         return Err("没有找到数字行".into());
     }
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
-    let mut notes: Vec<notes::RowNotes> = rows.iter().map(|row| notes::build(&ink, row, ocr)).collect();
+    let mut notes: Vec<notes::RowNotes> = rows.iter().map(|row| notes::build(ink, row, ocr)).collect();
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
-    text::lyrics(&ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions);
-    text::header(&ink, &rows, num_h, ocr, &mut score);
+    text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions);
+    text::header(ink, &rows, num_h, ocr, &mut score);
     for i in 0..rows.len() {
         // 上方带的顶：上一行最末一行歌词的底
         let y_min = if i == 0 { 0.0 } else { score.lyric_regions.iter().map(|r| r.bbox.bottom()).filter(|&b| b < rows[i].top_at(w / 2.0) && b > rows[i - 1].bottom_at(w / 2.0)).fold(rows[i - 1].bottom_at(w / 2.0), f64::max) };
-        spans::arcs(&ink, &rows[i], &mut notes[i], y_min, ocr);
-        text::chords_above(&ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
+        spans::arcs(ink, &rows[i], &mut notes[i], y_min, ocr);
+        text::chords_above(ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
-    let sys = frame::systems(&ink, &rows);
+    let sys = frame::systems(ink, &rows);
     let tally = beats::settle(&mut notes, &sys, &mut score);
     if std::env::var("OMR_JP_DEBUG").is_ok() {
-        eprintln!("字号 {num_h:.1}，页 {}x{}；拍号 {}/{}，小节 {}：满拍 {}（其中裁决改的 {}），不满 / 超拍 {}", ink.bin.w, ink.bin.h, score.beats, score.beat_type, tally.bars, tally.full, tally.fixed, tally.bad);
+        eprintln!("字号 {num_h:.1}，页 {}x{}；拍号 {}/{}，小节 {}：满拍 {}（其中裁决改的 {}），不满 / 超拍 {}", ink.w(), ink.h(), score.beats, score.beat_type, tally.bars, tally.full, tally.fixed, tally.bad);
         for (i, r) in rows.iter().enumerate() {
             if std::env::var("OMR_JP_CELLS").is_ok() {
                 for c in &r.cells {

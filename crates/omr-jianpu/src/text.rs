@@ -25,7 +25,7 @@ pub struct Claims {
 
 impl Claims {
     pub fn new(ink: &Ink, rects: impl Iterator<Item = Rect>) -> Claims {
-        let (w, h) = (ink.bin.w, ink.bin.h);
+        let (w, h) = (ink.w(), ink.h());
         let mut mask = vec![0u8; w * h];
         for r in rects {
             for y in (r.y.max(0.0) as usize)..(r.bottom().ceil() as usize).min(h) {
@@ -56,13 +56,13 @@ const LABEL_INK: f64 = 0.0006;
 /// 同 [`cut_lines`]，墨的密度门由 `min_ink` 给。
 #[allow(clippy::too_many_arguments)]
 fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f64, one: Option<f64>, min_ink: f64) -> Vec<(i64, i64)> {
-    let w = ink.bin.w as i64;
+    let w = ink.w() as i64;
     if yb <= ya {
         return Vec::new();
     }
     let n = (yb - ya) as usize;
     let mut proj = vec![0u32; n];
-    for y in ya.max(0)..yb.min(ink.bin.h as i64) {
+    for y in ya.max(0)..yb.min(ink.h() as i64) {
         for x in 0..w {
             if claims.free(ink, x, y) {
                 let yy = y - (slope * (x - w / 2) as f64).round() as i64 - ya;
@@ -129,7 +129,7 @@ fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
 
 /// 同 [`read_line`]，各段分开回。
 fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64) -> Vec<Vec<Ch>> {
-    let w = ink.bin.w as i64;
+    let w = ink.w() as i64;
     let hh = (y1 - y0 + 1) as f64;
     let shift = |x: i64| (slope * (x - w / 2) as f64).round() as i64;
     let col = |x: i64| (y0..=y1).any(|y| claims.free(ink, x, y + shift(x)));
@@ -225,12 +225,12 @@ fn fold(c: char) -> char {
 /// 各谱行下面的歌词：切行、读字、对音，写进各音的 `lyrics` 与行的段号。回各行歌词带的行（供叠加与排查）。
 pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>) {
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied()));
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let mut max_verses = 0usize;
     let mut stanza_lines: Vec<(i64, i64)> = Vec::new();
     let zone = |i: usize| {
         let ya = rows[i].bottom_at(w / 2.0).ceil() as i64 + 1;
-        let yb = if i + 1 == rows.len() { ink.bin.h as i64 } else { rows[i + 1].top_at(w / 2.0).floor() as i64 };
+        let yb = if i + 1 == rows.len() { ink.h() as i64 } else { rows[i + 1].top_at(w / 2.0).floor() as i64 };
         (ya, yb)
     };
     // 本页一行字的高：各词带里够高够密的墨截的中位高（两行挤成一截的、弧与点凑的一截都是少数）
@@ -272,7 +272,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         let note_xs: Vec<f64> = note_ix.iter().map(|&k| notes[i].nums[k].bbox.cx()).collect();
         let mut verse = 0usize;
         for (y0, y1) in lines {
-            let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.bin.w as i64);
+            let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64);
             let text: String = chars.iter().map(|c| c.ch).collect();
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("行{i} 词带 y{y0}-{y1}: {text}");
@@ -328,7 +328,7 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
     // 各段文字，带栏位（段左缘）
     let mut segs: Vec<(f64, i64, Vec<Ch>)> = Vec::new();
     for &(y0, y1) in lines {
-        for seg in read_segs(ink, claims, ocr, slope, y0, y1, 0, ink.bin.w as i64) {
+        for seg in read_segs(ink, claims, ocr, slope, y0, y1, 0, ink.w() as i64) {
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("谱后 y{y0}: {}", seg.iter().map(|c| c.ch).collect::<String>());
             }
@@ -445,7 +445,7 @@ fn fifths_of(letter: char, alter: i32) -> i32 {
 
 /// 页眉：首行谱以上。DBNet 检出文本行，逐行读字；调号、拍号、速度、曲号按内容认，其余交 `omr-text` 分标题与署名。
 pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: &mut RecognizedScore) {
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let top = rows[0].top_at(w / 2.0);
     let zone = Rect::new(0.0, 0.0, w, (top - num_h * 0.3).max(1.0));
     let crop = ink.strip(&zone, 0);
@@ -565,7 +565,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
 
 /// 叠排的拍号：上下两个数字、横向对齐、中间隔一道横线的空当。只在行内文字没读出 `4/4` 时用。
 fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut RecognizedScore) {
-    let digitish: Vec<&crate::prep::Comp> = ink.comps.iter().filter(|k| k.rect.bottom() < top && k.rect.h >= num_h * 0.5 && k.rect.h <= num_h * 1.4 && k.rect.w >= k.rect.h * 0.3 && k.rect.w <= k.rect.h * 1.0).collect();
+    let digitish: Vec<&crate::prep::Comp> = ink.comps().iter().filter(|k| k.rect.bottom() < top && k.rect.h >= num_h * 0.5 && k.rect.h <= num_h * 1.4 && k.rect.w >= k.rect.h * 0.3 && k.rect.w <= k.rect.h * 1.0).collect();
     // (上面那个数字的 y, 中线 x, 分子, 分母)
     let mut found: Vec<(f64, f64, u32, u32)> = Vec::new();
     for a in &digitish {
@@ -605,7 +605,7 @@ fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut R
 /// 一个音上已有和弦的记成这个音时值内后面换的和弦。
 pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOcr, y_min: f64, regions: &mut Vec<TextRegion>) {
     let h = row.h();
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let top = row.top_at(w / 2.0);
     let ya = y_min.max(top - h * 2.8).max(0.0) as i64;
     let yb = top.floor() as i64 - 1;
@@ -614,7 +614,7 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
     }
     let claims = Claims::new(ink, std::iter::empty());
     for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, h * 0.35, None) {
-        let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.bin.w as i64);
+        let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64);
         let text: String = chars.iter().map(|c| c.ch).collect();
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("上方带 y{y0}-{y1}: {text}");

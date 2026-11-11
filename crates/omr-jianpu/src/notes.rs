@@ -216,12 +216,12 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
 /// 间隔按**空白行数**量（小图上一道线一像素厚、隔两像素，按坐标差算就过了门）。差一点没收的、收得勉强的记候选，交满拍裁决。
 fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
     let h = row.h();
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let ya = row.bottom_at(0.0).min(row.bottom_at(w)).floor() as i64;
     let yb = row.bottom_at(0.0).max(row.bottom_at(w)).ceil() as i64 + (h * 1.0) as i64;
     let max_thick = (h * 0.2).max(4.0);
     // 厚过一道线上限、不到两倍的也留着：多半是两道线印粘了（按一道收，另记「多一道」的候选）
-    let lines: Vec<HLine> = hlines(ink, 0, ink.bin.w as i64, ya, yb, (h * 0.4) as i64).into_iter().filter(|l| ((l.y1 - l.y0 + 1) as f64) <= max_thick * 2.0 && !arc_ends(ink, l.x0, l.x1, l.y1)).collect();
+    let lines: Vec<HLine> = hlines(ink, 0, ink.w() as i64, ya, yb, (h * 0.4) as i64).into_iter().filter(|l| ((l.y1 - l.y0 + 1) as f64) <= max_thick * 2.0 && !arc_ends(ink, l.x0, l.x1, l.y1)).collect();
     let thick = |l: &HLine| (l.y1 - l.y0 + 1) as f64;
     let slack = h * 0.15;
     let mut used: Vec<usize> = Vec::new();
@@ -313,7 +313,7 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
                     while a > 0 && (ink.at(a - 1, y) || ink.at(a - 2, y)) {
                         a -= 1;
                     }
-                    while b < ink.bin.w as i64 && (ink.at(b + 1, y) || ink.at(b + 2, y)) {
+                    while b < ink.w() as i64 && (ink.at(b + 1, y) || ink.at(b + 2, y)) {
                         b += 1;
                     }
                     rx0 = rx0.min(a);
@@ -373,9 +373,9 @@ fn under_floor(n: &JpNum, claimed: &[Rect], h: f64) -> f64 {
 /// 八度点：数字正上方（高音）、减时线之下（低音）的小圆块（`skip`：已认成别的记号的块）。一个点只归横向最近的那个数字；上下各至多两个。
 fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
     let h = row.h();
-    let w = ink.bin.w as f64;
+    let w = ink.w() as f64;
     let (ya, yb) = (row.top_at(0.0).min(row.top_at(w)) - h * 1.2, row.bottom_at(0.0).max(row.bottom_at(w)) + h * 1.6);
-    let dots: Vec<&Comp> = ink.comps.iter().filter(|k| k.cy > ya && k.cy < yb && dot_like(k, h) && !skip.contains(&k.id)).collect();
+    let dots: Vec<&Comp> = ink.comps().iter().filter(|k| k.cy > ya && k.cy < yb && dot_like(k, h) && !skip.contains(&k.id)).collect();
     let floors: Vec<f64> = out.nums.iter().map(|n| under_floor(n, &out.claimed, h)).collect();
     // (点, 音, 上 / 下, 离数字多远)
     let mut hits: Vec<(usize, usize, bool, f64)> = Vec::new();

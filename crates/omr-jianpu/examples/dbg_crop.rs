@@ -1,5 +1,5 @@
 //! 排查：把工作图（二值）的一块写成 BMP（墨黑底白，放大 `倍数`）。用法：dbg_crop 图片 x0 y0 x1 y1 出图.bmp [倍数]
-use dolce_omr_jianpu::prep::Ink;
+use dolce_omr_jianpu::prep::{JpInk, RasterInk};
 use dolce_omr_source::raster::image_file;
 
 fn main() {
@@ -8,7 +8,7 @@ fn main() {
     let (x0, y0, x1, y1) = (n(2), n(3), n(4), n(5));
     let k = a.get(7).map_or(1, |s| s.parse::<i64>().unwrap());
     let src = image_file(&std::fs::read(&a[1]).unwrap()).unwrap();
-    let ink = Ink::load(&[src]).unwrap();
+    let ink = RasterInk::load(&[src]).unwrap();
     eprintln!("工作图 {}x{}", ink.bin.w, ink.bin.h);
     let (w, h) = ((x1 - x0) * k, (y1 - y0) * k);
     let stride = ((w * 3 + 3) / 4) * 4;
