@@ -2,7 +2,10 @@
 //! 朝上拱、两端落在音上的是弧；两端的音相邻且同音高的是延音线，其余是圆滑线。
 use crate::frame::RowFrame;
 use crate::notes::RowNotes;
+use crate::frame::digit_cell;
 use crate::prep::Ink;
+use crate::result::Tuplet;
+use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_sheet::curves::{join_all, trace, JoinTol, Stroke};
 
 /// 细墨：纵向墨段不厚过这么多（相对字号）。
@@ -12,7 +15,7 @@ const MIN_W: f64 = 0.7;
 const MIN_ARCH: f64 = 0.08;
 
 /// 一行谱上方的弧，记到两端的音上。`y_min`：上方带的顶（上一行的歌词底）。
-pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64) {
+pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &CachedOcr) {
     let h = row.h();
     let w = ink.bin.w;
     let wf = w as f64;
@@ -54,8 +57,8 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64) {
     let raw = trace(&mask, w, hh, (h * 0.15).max(3.0) as usize);
     let tol = JoinTol { max_gap: (h * 0.45) as i64, dy: h * 0.12, dy_per_gap: 0.35, span: (h * 0.3).max(3.0) as usize };
     let strokes: Vec<Stroke> = join_all(raw, tol, &|_, _| true);
-    // 候选弧：(左端音, 右端音, 宽)
-    let mut found: Vec<(usize, usize, f64)> = Vec::new();
+    // 候选弧：(左端音, 右端音, 宽, 弧顶中点)
+    let mut found: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
     for s in &strokes {
         if s.width() < h * MIN_W {
             continue;
@@ -76,9 +79,35 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64) {
         if i >= j || found.iter().any(|f| f.0 == i && f.1 == j) {
             continue;
         }
-        found.push((i, j, s.width()));
+        found.push((i, j, s.width(), ((ax + bx) / 2.0, ay.min(by) - arch)));
     }
-    for (i, j, _) in found {
+    // 多连音：弧顶上（或嵌在弧顶里）立着一个小号数字，读出来正是弧罩着的音数——组里各音记同一份比例，不再当圆滑线
+    let mut tuplets: Vec<usize> = Vec::new();
+    for (fi, &(i, j, _, (mx, my))) in found.iter().enumerate() {
+        let cnt = j - i + 1;
+        if !(3..=7).contains(&cnt) || rn.nums[i..=j].iter().any(|n| n.tuplet.is_some()) {
+            continue;
+        }
+        let cand = ink.comps.iter().find(|k| {
+            let b = &k.rect;
+            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.8 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
+        });
+        let Some(k) = cand else { continue };
+        let Ok(t) = ocr.read_cells(&[digit_cell(ink, &k.rect)]) else { continue };
+        if t[0].trim() != cnt.to_string() {
+            continue;
+        }
+        let actual = cnt as u32;
+        let normal = if actual == 3 { 2 } else { 4 };
+        for (k, n) in rn.nums[i..=j].iter_mut().enumerate() {
+            n.tuplet = Some(Tuplet { actual, normal, start: k == 0, stop: k + 1 == cnt });
+        }
+        tuplets.push(fi);
+    }
+    for (fi, (i, j, _, _)) in found.into_iter().enumerate() {
+        if tuplets.contains(&fi) {
+            continue;
+        }
         let (a, b) = (&rn.nums[i], &rn.nums[j]);
         let tie = j == i + 1 && a.digit == b.digit && a.octave == b.octave && a.digit != 0;
         if tie {
