@@ -18,7 +18,11 @@ const MARK_REACH: f64 = 7.0;
 /// 一行歌词：第几行（1 起，自上而下）与各音节（x 是页内坐标）。
 #[derive(Clone, Debug)]
 pub struct LyricLine {
+    /// 同一行谱下、同一种文字里的第几行（1 起）。汉字词与拉丁词各编各的：主歌五行汉字在两行谱之间、
+    /// 副歌一行汉字一行英文上下挨着，按 y 一路数下去副歌的英文就成了第 2 行、接不上主歌的英文。
+    /// 写出时拉丁词的行号排在全曲汉字词之后（[`crate::song`]）。
     pub number: u8,
+    pub latin: bool,
     pub row: LyricRow,
     /// 行的纵向范围（页内坐标）。
     pub y0: f64,
@@ -94,7 +98,7 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
     for b in bands {
         // 歌词链：从上面那行谱往下数
         let mut chain_end: Option<(f64, f64)> = None; // (上一行歌词的底, 行高)
-        let mut number = 0u8;
+        let mut number = [0u8; 2];
         let mut broken = b.above.is_none();
         for l in &b.lines {
             let cx = l.cx();
@@ -134,8 +138,9 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
                 }
                 let row = syllables(&lyric_chars);
                 if !row.syls.is_empty() {
-                    number += 1;
-                    rows[a].lyrics.push(LyricLine { number, row, y0: l.y0, y1: l.y1 });
+                    let latin = script_of(&row.syls.iter().map(|s| s.text.as_str()).collect::<String>()) == Script::Latin;
+                    number[latin as usize] += 1;
+                    rows[a].lyrics.push(LyricLine { number: number[latin as usize], latin, row, y0: l.y0, y1: l.y1 });
                     chain_end = Some((l.y1, l.h()));
                     continue;
                 }
@@ -172,12 +177,11 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
 /// 中英对照的闭合谱：汉字词印在两行谱之间、英文词印在下面那行谱之下，唱的是同一条旋律——
 /// 同系统里上一行谱有汉字词、下一行谱的词全是拉丁字母的，拉丁那几行接到上一行谱的词后面。
 fn fold_bilingual(f: &PageFrame, rows: &mut [RowText]) {
-    let script = |l: &LyricLine| script_of(&l.row.syls.iter().map(|s| s.text.as_str()).collect::<String>());
     for sys in &f.systems {
         for w in sys.staves.windows(2) {
             let (u, l) = (w[0], w[1]);
-            if rows[u].lyrics.iter().any(|x| script(x) == Script::Han) && !rows[l].lyrics.is_empty() && rows[l].lyrics.iter().all(|x| script(x) == Script::Latin) {
-                let base = rows[u].lyrics.len() as u8;
+            if rows[u].lyrics.iter().any(|x| !x.latin) && !rows[l].lyrics.is_empty() && rows[l].lyrics.iter().all(|x| x.latin) {
+                let base = rows[u].lyrics.iter().filter(|x| x.latin).count() as u8;
                 let moved: Vec<LyricLine> = std::mem::take(&mut rows[l].lyrics).into_iter().map(|mut x| { x.number += base; x }).collect();
                 rows[u].lyrics.extend(moved);
             }

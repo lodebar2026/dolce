@@ -21,7 +21,8 @@ fn main() {
         let f = &page.frame;
         println!("== {key} p{pn} {}×{} 放大 {} 线距 {:.1}", src.w, src.h, f.up, f.unit.space);
         let t = std::time::Instant::now();
-        let bands = page_bands(f, src, &page.notes, &ocr);
+        let (bands, fh) = page_bands(f, src, &page.notes, &ocr);
+        println!("  字行里的假符头 {} 个（页识别时已摘 {}）", fh.len(), page.text.false_heads.len());
         for b in &bands {
             let y = |i: Option<usize>| i.map_or("—".to_string(), |i| format!("{:.0}~{:.0}", f.staves[i].ys[0], f.staves[i].ys[4]));
             println!("  带 上 {} 下 {}", y(b.above), y(b.below));

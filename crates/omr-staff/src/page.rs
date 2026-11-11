@@ -58,6 +58,15 @@ pub fn recognize_page(src: &SourceImage, ocr: Option<&dyn DigitReader>) -> Optio
     let frame = frame_page(src)?;
     let attrs = attrs::page_attrs(&frame, ocr);
     let notes = page_notes(&frame, &attrs, ocr);
+    let mut notes = notes;
     let text = crate::text::page_text(&frame, src, &notes, ocr);
+    // 文字回馈：落在字行里的假符头摘掉
+    for h in &text.false_heads {
+        let row = &mut notes[h.staff];
+        for c in row.chords.iter_mut() {
+            c.heads.retain(|x| !(x.x == h.x && x.y == h.y));
+        }
+        row.chords.retain(|c| !c.heads.is_empty());
+    }
     Some(Page { frame, attrs, notes, text })
 }

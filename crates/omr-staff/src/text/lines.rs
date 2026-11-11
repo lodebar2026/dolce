@@ -15,18 +15,24 @@ use dolce_omr_text::Ch;
 use std::collections::HashSet;
 
 /// 字身的墨块：高在这个范围（相对线距），宽不过上限。
-const BODY_H: (f64, f64) = (0.4, 2.8);
-const BODY_W: f64 = 4.0;
+const BODY_H: (f64, f64) = (0.4, 3.8);
+const BODY_W: f64 = 8.0;
+/// 不当文字的大墨块：宽过 / 高过这么多格，或宽过 `ARC_W` 格而墨占外框不到 `ARC_FILL`。
+const WIDE: f64 = 8.0;
+const HIGH: f64 = 6.5;
+const ARC_W: f64 = 3.0;
+const ARC_FILL: f64 = 0.22;
 /// 贴着谱表（首末线外这么多格以内）的墨块不当文字。
 const STAFF_PAD: f64 = 0.25;
 /// 首行上方、末行下方的带伸出去这么多格。
 const TOP_REACH: f64 = 9.0;
 const BOTTOM_REACH: f64 = 24.0;
-/// 过高的行（超过带内字高中位数这么多倍）在中段的投影谷切开；谷底要低到峰的这个比例。
+/// 过高的一截（超过行距这么多倍）按行距切成几行。
 const TALL: f64 = 1.7;
-const VALLEY: f64 = 0.35;
 /// 行内横向空当超过行高这么多倍就分段。
 const SEG_GAP: f64 = 2.0;
+/// 一行里另有这么多个字身，行里认出的符头才算字。
+const TEXT_ROW: usize = 3;
 /// 送检条四周留的白边（原图像素）。
 const PAD: usize = 3;
 
@@ -70,35 +76,26 @@ pub struct Band {
     pub lines: Vec<GeoLine>,
 }
 
-/// 音符占着的墨块、贴着谱表的墨块、太大的墨块：不当文字，送检时抹白。
-fn excluded(f: &PageFrame, notes: &[RowNotes]) -> HashSet<i32> {
+/// 字行里的假符头：哪一行谱、头的位置。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FalseHead {
+    pub staff: usize,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// 不当文字的墨块（送检时抹白）：贴着谱表的、太大的（带干的音符、弧、杠）、休止。
+/// 谱表外、字身大小的墨块上认出的符头先不定（`maybe`：块 → 头）：落在成行的字里的是字（「口」「日」的框读成了空心头），
+/// 孤零零的才是音符（加线上的全音符）。
+fn excluded(f: &PageFrame, notes: &[RowNotes]) -> (HashSet<i32>, std::collections::HashMap<i32, Vec<FalseHead>>) {
     let mut out: HashSet<i32> = HashSet::new();
     let (w, h) = (f.ink.w as i64, f.ink.h as i64);
     let label = |x: i64, y: i64| if x >= 0 && y >= 0 && x < w && y < h { f.labels[(y * w + x) as usize] } else { 0 };
-    for (si, row) in notes.iter().enumerate() {
-        let sp = f.staves[si].space();
-        for c in &row.chords {
-            for hd in &c.heads {
-                let (rx, ry) = ((sp * 0.5) as i64, (sp * 0.3) as i64);
-                for y in (hd.y as i64 - ry..=hd.y as i64 + ry).step_by(2) {
-                    for x in (hd.x as i64 - rx..=hd.x as i64 + rx).step_by(2) {
-                        out.insert(label(x, y));
-                    }
-                }
-            }
-            if let Some(st) = c.stem {
-                for y in (st.top..=st.bottom).step_by(2) {
-                    out.insert(label(st.x, y));
-                }
-            }
-        }
-        for r in &row.rests {
-            out.insert(label(r.x as i64, r.y as i64));
-        }
-    }
     for b in &f.blobs {
         let sp = f.unit.space;
-        let big = b.rect.h > BODY_H.1 * sp || b.rect.w > BODY_W * sp;
+        // 太大的：横向很长的（弧、松叶、横线）、纵向很长的（花括号、竖线）、又宽又稀的（短弧）。
+        // 上下两行字相接连成的一块不在此列——它比两行字高不了多少
+        let big = b.rect.w > WIDE * sp || b.rect.h > HIGH * sp || (b.rect.w > ARC_W * sp && (b.area as f64) < ARC_FILL * b.rect.w * b.rect.h);
         let on_staff = f.staves.iter().any(|s| {
             let x = b.cx.clamp(s.left, s.right);
             b.rect.bottom() > s.top(x) - STAFF_PAD * s.space() && b.rect.y < s.bottom(x) + STAFF_PAD * s.space() && b.rect.right() > s.left - 2.0 * s.space() && b.rect.x < s.right + 2.0 * s.space()
@@ -107,8 +104,32 @@ fn excluded(f: &PageFrame, notes: &[RowNotes]) -> HashSet<i32> {
             out.insert(b.id as i32);
         }
     }
+    let mut maybe: std::collections::HashMap<i32, Vec<FalseHead>> = std::collections::HashMap::new();
+    for (si, row) in notes.iter().enumerate() {
+        let sp = f.staves[si].space();
+        for c in &row.chords {
+            for hd in &c.heads {
+                let (rx, ry) = ((sp * 0.5) as i64, (sp * 0.3) as i64);
+                let mut seen: Vec<i32> = Vec::new();
+                for y in (hd.y as i64 - ry..=hd.y as i64 + ry).step_by(2) {
+                    for x in (hd.x as i64 - rx..=hd.x as i64 + rx).step_by(2) {
+                        let l = label(x, y);
+                        if l != 0 && !out.contains(&l) && !seen.contains(&l) {
+                            seen.push(l);
+                        }
+                    }
+                }
+                for l in seen {
+                    maybe.entry(l).or_default().push(FalseHead { staff: si, x: hd.x, y: hd.y });
+                }
+            }
+        }
+        for r in &row.rests {
+            out.insert(label(r.x as i64, r.y as i64));
+        }
+    }
     out.remove(&0);
-    out
+    (out, maybe)
 }
 
 /// 一段字的条：从原图裁（四周留白），不当文字的墨抹白。回 (条, 条左上角在原图上的位置)。
@@ -178,6 +199,9 @@ fn blanks(f: &PageFrame, rect: &Rect, drop: &HashSet<i32>) -> Vec<(f64, f64)> {
 /// 读一段：送 OCR、字位折回页内坐标、补词间空格。读不出字回 None。
 fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, ocr: &dyn DigitReader) -> Option<Seg> {
     let (g, sx0, _) = strip(f, src, &rect, drop);
+    if let Ok(dir) = std::env::var("OMR_STRIPS") {
+        let _ = std::fs::write(format!("{dir}/{:.0}_{:.0}.pgm", rect.y, rect.x), [format!("P5 {} {} 255\n", g.w, g.h).as_bytes(), &g.data].concat());
+    }
     let got = ocr.read_line(&g)?;
     let up = f.up as f64;
     let w = g.w as f64;
@@ -198,29 +222,36 @@ fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, o
 }
 
 /// 一条带里的行。`ref_si`：拿哪一行谱的弯度拉平；`(y0, y1)`：带的纵向范围（拉平后的坐标）。
-fn band_lines(f: &PageFrame, src: &SourceImage, drop: &HashSet<i32>, ref_si: usize, y0: f64, y1: f64, ocr: &dyn DigitReader) -> Vec<GeoLine> {
+///
+/// 行按**像素**的纵向投影切（不按墨块外框：上下两行的笔画相接时两行的字连成一块，外框把谷填平了）；
+/// 几行挤成一截的按行距切开。送检的条纵向只取这一行的范围，连到邻行的墨块在行界处截断。
+fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0: f64, y1: f64, ocr: &dyn DigitReader) -> Vec<GeoLine> {
     let s = &f.staves[ref_si];
     let sp = s.space();
-    // 拉平：减去这行谱在该 x 处相对左端的偏移
-    let flat = |b: &Blob| {
-        let x = b.cx.clamp(s.left, s.right);
-        b.cy - (s.bottom(x) - s.ys[4])
-    };
-    let cand: Vec<(&Blob, f64)> = f.blobs.iter().filter(|b| !drop.contains(&(b.id as i32))).map(|b| (b, flat(b))).filter(|&(_, y)| y >= y0 && y < y1).collect();
-    let body = |b: &Blob| b.rect.h >= BODY_H.0 * sp && b.rect.h <= BODY_H.1 * sp && b.rect.w <= BODY_W * sp;
-    let bodies: Vec<&(&Blob, f64)> = cand.iter().filter(|(b, _)| body(b)).collect();
-    if bodies.is_empty() {
+    let off = |x: f64| s.bottom(x.clamp(s.left, s.right)) - s.ys[4];
+    // 带里的墨块（中心在带里、不在排除之列）与拉平后的中心 y
+    let cand: Vec<(&Blob, f64)> = f.blobs.iter().filter(|b| !cx.drop.contains(&(b.id as i32))).map(|b| (b, b.cy - off(b.cx))).filter(|&(b, y)| y >= y0 && y < y1 && b.rect.y - off(b.cx) >= y0 - sp).collect();
+    let body = |b: &Blob| b.rect.h >= BODY_H.0 * sp && b.rect.w <= BODY_W * sp;
+    let single: Vec<f64> = cand.iter().filter(|(b, _)| body(b) && b.rect.h <= BODY_H.1 * sp).map(|(b, _)| b.rect.h).collect();
+    if single.is_empty() {
         return Vec::new();
     }
-    let char_h = median(&bodies.iter().map(|(b, _)| b.rect.h).collect::<Vec<_>>(), sp * 1.5);
-    // 纵向投影（按拉平后的行）
+    // 字高取字身墨块高的 85 分位（偏旁、标点、小写字母把中位数拉低）
+    let char_h = dolce_omr_core::geom::quantile(&single, 0.85);
+    // 纵向投影：带里各墨块的像素按拉平后的行数
     let n = (y1 - y0).ceil().max(1.0) as usize;
     let mut prof = vec![0.0f64; n + 1];
-    for (b, y) in &bodies {
-        let a = ((y - b.rect.h / 2.0 - y0).max(0.0) as usize).min(n);
-        let z = ((y + b.rect.h / 2.0 - y0).max(0.0) as usize).min(n);
-        for p in &mut prof[a..=z] {
-            *p += b.rect.w;
+    let pw = f.ink.w;
+    for (b, _) in &cand {
+        let o = off(b.cx);
+        let id = b.id as i32;
+        for y in b.rect.y as usize..(b.rect.bottom() as usize).min(f.ink.h) {
+            let r = y as f64 - o - y0;
+            if r < 0.0 || r > n as f64 {
+                continue;
+            }
+            let cnt = (b.rect.x as usize..(b.rect.right() as usize).min(pw)).filter(|&x| f.labels[y * pw + x] == id).count();
+            prof[r as usize] += cnt as f64;
         }
     }
     let mut runs: Vec<(usize, usize)> = Vec::new();
@@ -237,42 +268,72 @@ fn band_lines(f: &PageFrame, src: &SourceImage, drop: &HashSet<i32>, ref_si: usi
             i += 1;
         }
     }
-    // 过高的行在中段的谷切开
+    // 几行挤成一截的：按本带的行距切开，切在预期位置附近投影最低处
+    let normal: Vec<f64> = runs.iter().map(|&(a, z)| (z - a + 1) as f64).filter(|&h| h >= char_h * 0.8 && h <= char_h * TALL).collect();
+    let pitch = median(&normal, char_h * 1.15);
     let mut rows: Vec<(usize, usize)> = Vec::new();
-    while let Some((a, z)) = runs.pop() {
+    for (a, z) in runs {
         let hgt = (z - a + 1) as f64;
-        if hgt > TALL * char_h {
-            let (m0, m1) = (a + (hgt * 0.25) as usize, a + (hgt * 0.75) as usize);
-            let peak = prof[a..=z].iter().cloned().fold(0.0, f64::max);
-            let cut = (m0..=m1).min_by(|&p, &q| prof[p].total_cmp(&prof[q])).unwrap();
-            if prof[cut] < peak * VALLEY && cut > a && cut < z {
-                runs.push((a, cut - 1));
-                runs.push((cut + 1, z));
-                continue;
+        let k = (hgt / pitch).round() as usize;
+        if hgt > TALL * pitch && k >= 2 {
+            let step = hgt / k as f64;
+            let mut from = a;
+            for i in 1..k {
+                let c = a as f64 + step * i as f64;
+                let (m0, m1) = ((c - step * 0.25) as usize, (c + step * 0.25) as usize);
+                let cut = (m0.max(from + 1)..=m1.min(z - 1)).min_by(|&p, &q| prof[p].total_cmp(&prof[q])).unwrap_or(c as usize);
+                rows.push((from, cut));
+                from = cut + 1;
             }
-        }
-        if hgt >= BODY_H.0 * sp {
+            rows.push((from, z));
+        } else if hgt >= BODY_H.0 * sp {
             rows.push((a, z));
         }
     }
-    rows.sort();
     let mut out = Vec::new();
     for (a, z) in rows {
-        let (ra, rz) = (y0 + a as f64 - char_h * 0.1, y0 + z as f64 + char_h * 0.1);
-        let mut mem: Vec<&Blob> = cand.iter().filter(|(b, y)| *y >= ra && *y <= rz && b.rect.h <= (rz - ra) * 1.3).map(|(b, _)| *b).collect();
+        let (ra, rz) = (y0 + a as f64, y0 + z as f64 + 1.0);
+        // 这一行的墨块：纵向与行交叠过自己一半高、或盖住行的一半
+        let over = |b: &Blob| {
+            let (t, u) = (b.rect.y - off(b.cx), b.rect.bottom() - off(b.cx));
+            let ov = (u.min(rz) - t.max(ra)).max(0.0);
+            ov >= (u - t) * 0.5 || ov >= (rz - ra) * 0.5
+        };
+        let mut mem: Vec<&Blob> = cand.iter().map(|(b, _)| *b).filter(|b| over(b)).collect();
+        // 行里认出过符头的墨块：同行另有三个以上字身就是字（记下假符头），否则是音符、不进这一行
+        let plain = mem.iter().filter(|b| body(b) && !cx.maybe.contains_key(&(b.id as i32))).count();
+        if plain >= TEXT_ROW {
+            for b in &mem {
+                if let Some(h) = cx.maybe.get(&(b.id as i32)) {
+                    cx.false_heads.extend(h.iter().copied());
+                }
+            }
+        } else {
+            cx.drop.extend(mem.iter().filter(|b| cx.maybe.contains_key(&(b.id as i32))).map(|b| b.id as i32));
+            mem.retain(|b| !cx.maybe.contains_key(&(b.id as i32)));
+        }
         mem.sort_by(|p, q| p.rect.x.total_cmp(&q.rect.x));
         let row_h = (z - a + 1) as f64;
-        let mut segs: Vec<(Rect, bool)> = Vec::new();
+        // 横向分段：(左, 右, 有没有字身)
+        let mut segs: Vec<(f64, f64, bool)> = Vec::new();
         for b in mem {
             match segs.last_mut() {
-                Some((r, has)) if b.rect.x - r.right() <= SEG_GAP * row_h => {
-                    *r = dolce_omr_core::geom::union_rect(r, &b.rect);
+                Some((_, r, has)) if b.rect.x - *r <= SEG_GAP * row_h => {
+                    *r = r.max(b.rect.right());
                     *has |= body(b);
                 }
-                _ => segs.push((b.rect, body(b))),
+                _ => segs.push((b.rect.x, b.rect.right(), body(b))),
             }
         }
-        let segs: Vec<Seg> = segs.into_iter().filter(|s| s.1).filter_map(|(r, _)| read_seg(f, src, r, drop, ocr)).collect();
+        let segs: Vec<Seg> = segs
+            .into_iter()
+            .filter(|s| s.2)
+            .filter_map(|(xa, xb, _)| {
+                // 条的纵向范围：这一行（折回这一段所在处的实际 y）
+                let o = off((xa + xb) / 2.0);
+                read_seg(f, src, Rect::new(xa, ra + o, xb - xa, rz - ra), &cx.drop, ocr)
+            })
+            .collect();
         if segs.is_empty() {
             continue;
         }
@@ -283,25 +344,32 @@ fn band_lines(f: &PageFrame, src: &SourceImage, drop: &HashSet<i32>, ref_si: usi
     out
 }
 
-/// 一页各条带的文字行。
-pub fn page_bands(f: &PageFrame, src: &SourceImage, notes: &[RowNotes], ocr: &dyn DigitReader) -> Vec<Band> {
-    let drop = excluded(f, notes);
+/// 切行时的账：不当文字的墨块、谱表外认出过符头的墨块、判成字的假符头。
+struct Ctx {
+    drop: HashSet<i32>,
+    maybe: std::collections::HashMap<i32, Vec<FalseHead>>,
+    false_heads: Vec<FalseHead>,
+}
+
+/// 一页各条带的文字行，与落在字行里的假符头。
+pub fn page_bands(f: &PageFrame, src: &SourceImage, notes: &[RowNotes], ocr: &dyn DigitReader) -> (Vec<Band>, Vec<FalseHead>) {
+    let (drop, maybe) = excluded(f, notes);
+    let mut cx = Ctx { drop, maybe, false_heads: Vec::new() };
     let n = f.staves.len();
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|&a, &b| f.staves[a].ys[0].total_cmp(&f.staves[b].ys[0]));
     let mut out = Vec::new();
-    let Some(&first) = order.first() else { return out };
+    let Some(&first) = order.first() else { return (out, Vec::new()) };
     let s0 = &f.staves[first];
-    out.push(Band { above: None, below: Some(first), lines: band_lines(f, src, &drop, first, (s0.ys[0] - TOP_REACH * s0.space()).max(0.0), s0.ys[0], ocr) });
+    out.push(Band { above: None, below: Some(first), lines: band_lines(f, src, &mut cx, first, (s0.ys[0] - TOP_REACH * s0.space()).max(0.0), s0.ys[0], ocr) });
     for (k, &si) in order.iter().enumerate() {
         let s = &f.staves[si];
         let next = order.get(k + 1).copied();
-        // 下一行谱的首线折到这一行的拉平坐标里（两行弯度相近，取左端处）
         let y1 = match next {
             Some(ni) => f.staves[ni].ys[0],
             None => (s.ys[4] + BOTTOM_REACH * s.space()).min(f.ink.h as f64),
         };
-        out.push(Band { above: Some(si), below: next, lines: band_lines(f, src, &drop, si, s.ys[4], y1, ocr) });
+        out.push(Band { above: Some(si), below: next, lines: band_lines(f, src, &mut cx, si, s.ys[4], y1, ocr) });
     }
-    out
+    (out, cx.false_heads)
 }

@@ -20,10 +20,12 @@ pub struct PageText {
     pub credits: Vec<Credit>,
     /// 各条带切出的行（排查与核对用）。
     pub bands: Vec<lines::Band>,
+    /// 落在字行里的假符头（M4 4.7：由页识别从音符里摘掉）。
+    pub false_heads: Vec<lines::FalseHead>,
 }
 
 pub fn page_text(f: &PageFrame, src: &SourceImage, notes: &[RowNotes], ocr: Option<&dyn DigitReader>) -> PageText {
     let Some(ocr) = ocr else { return PageText { rows: (0..f.staves.len()).map(|_| RowText::default()).collect(), ..Default::default() } };
-    let bands = lines::page_bands(f, src, notes, ocr);
-    PageText { rows: classify::classify(f, &bands), credits: header::page_credits(f, src, ocr), bands }
+    let (bands, false_heads) = lines::page_bands(f, src, notes, ocr);
+    PageText { rows: classify::classify(f, &bands), credits: header::page_credits(f, src, ocr), bands, false_heads }
 }

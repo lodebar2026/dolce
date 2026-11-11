@@ -239,7 +239,7 @@ struct Anchor {
 }
 
 /// 一行谱的歌词与记号按 x 挂到音上。横向挨着（同一拍点）的几个和弦只留声部 1 的那个。
-fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, same_dx: f64) {
+fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, same_dx: f64, han_lines: u8) {
     anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
     let mut pts: Vec<Anchor> = Vec::new();
     for a in anchors {
@@ -257,6 +257,8 @@ fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, sam
     }
     let xs: Vec<f64> = pts.iter().map(|p| p.x).collect();
     for line in &text.lyrics {
+        // 拉丁词的行号排在全曲汉字词之后
+        let number = if line.latin { line.number + han_lines } else { line.number };
         let sx: Vec<f64> = line.row.syls.iter().map(|s| s.x).collect();
         for (k, (syl, &n)) in line.row.syls.iter().zip(&align(&sx, &xs)).enumerate() {
             let e = &mut ms[pts[n].bar].events[pts[n].event];
@@ -266,10 +268,10 @@ fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, sam
                 (Some(l), 0) => format!("{l} {}", syl.text),
                 _ => syl.text.clone(),
             };
-            match e.lyrics.iter_mut().find(|l| l.number == line.number) {
+            match e.lyrics.iter_mut().find(|l| l.number == number) {
                 // 音不够：多出来的字并进同一个音
                 Some(l) => l.text.push_str(&text),
-                None => e.lyrics.push(Lyric { number: line.number, text, syllabic: syl.syllabic }),
+                None => e.lyrics.push(Lyric { number, text, syllabic: syl.syllabic }),
             }
         }
     }
@@ -331,6 +333,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut prev_tail = 0.0f64;
     let mut doubts: Vec<Doubt> = Vec::new();
     let mut stats = Stats::default();
+    // 全曲汉字词最多几行（拉丁词的行号接在它后面）
+    let han_lines = pages.iter().flat_map(|p| p.text.rows.iter()).flat_map(|r| r.lyrics.iter()).filter(|l| !l.latin).map(|l| l.number).max().unwrap_or(0);
     let total_sys: usize = pages.iter().map(|p| p.frame.systems.len()).sum();
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.frame;
@@ -510,7 +514,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     seq_len += ons.len();
                     n0 = n1;
                 }
-                attach_text(&mut ms, anchors, &page.text.rows[i], dx);
+                attach_text(&mut ms, anchors, &page.text.rows[i], dx, han_lines);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
                     let j = bs.iter().filter(|b| b.x < ch.x).count();
