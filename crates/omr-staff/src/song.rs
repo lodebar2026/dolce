@@ -372,6 +372,36 @@ struct Pending {
     last: bool,
 }
 
+/// 多小节休止展开：`extra` 是 (系统内第 j 小节, 要补几个)；补的小节各一个整小节休止，第 j 小节的右线（样式、反复结束）挪到补的最后一个上。
+/// 这一行已记下的弧端、等着接的半条弧，小节号在 j 之后的跟着顺移。
+fn expand_multi_rests(ms: &mut Vec<Measure>, extra: &[(usize, usize)], from: usize, recs: &mut [SpanRec], pending: &mut [Pending]) {
+    for &(j, k) in extra.iter().rev() {
+        if j >= ms.len() || k == 0 {
+            continue;
+        }
+        let (right, rep_end) = (ms[j].right.take(), std::mem::take(&mut ms[j].repeat_end));
+        for n in 0..k {
+            let mut m = Measure::default();
+            m.events.push(Event::new(vec![], dolce_omr_sheet::score::NoteType::Whole, 0, None));
+            if n + 1 == k {
+                (m.right, m.repeat_end) = (right, rep_end);
+            }
+            ms.insert(j + 1 + n, m);
+        }
+        let at = from + j;
+        for r in recs.iter_mut() {
+            for e in [&mut r.a, &mut r.b] {
+                if e.measure > at {
+                    e.measure += k;
+                }
+            }
+        }
+        for q in pending.iter_mut().filter(|q| q.end.measure > at) {
+            q.end.measure += k;
+        }
+    }
+}
+
 /// 一行谱的弧挂到事件上：两端都有的直接记；画到行尾的留给下一个系统同一声部从行首来的那半条接。
 #[allow(clippy::too_many_arguments)]
 fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>) {
@@ -638,13 +668,26 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             }
             let (flags, st) = meter::settle_system(f, rows, &mut sys_notes, &bar_of, &bars, page_med(page));
             stats += st;
+            // 多小节休止：第 j 小节印着 n 小节的，各声部在它后面插 n − 1 个整小节休止（GT 照展开后的小节记）
+            let mut extra: Vec<(usize, usize)> = Vec::new();
+            for r in sys_notes.iter().flat_map(|rn| rn.rests.iter()).filter(|r| r.measures >= 2) {
+                let j = bar_of(r.x);
+                match extra.iter_mut().find(|e| e.0 == j) {
+                    Some(e) => e.1 = e.1.max(r.measures as usize - 1),
+                    None => extra.push((j, r.measures as usize - 1)),
+                }
+            }
+            extra.sort_unstable();
+            let added: usize = extra.iter().map(|e| e.1).sum();
+            // 原第 j 小节（系统内）展开后的下标
+            let shifted = |j: usize| j + extra.iter().filter(|e| e.0 < j).map(|e| e.1).sum::<usize>();
             let sys_top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up;
             for fl in flags {
                 let s = &f.staves[rows[fl.row]];
                 let x0 = if fl.bar == 0 { lead } else { bs[fl.bar - 1].x };
                 let x1 = bs.get(fl.bar).map_or(s.right, |b| b.x);
                 let up = f.up;
-                doubts.push(Doubt { page: pn + 1, sys_top, row: fl.row, measure: from + fl.bar, rect: (x0 / up, s.top(x0) / up, x1 / up, s.bottom(x0) / up), kind: fl.kind, note: fl.note });
+                doubts.push(Doubt { page: pn + 1, sys_top, row: fl.row, measure: from + shifted(fl.bar), rect: (x0 / up, s.top(x0) / up, x1 / up, s.bottom(x0) / up), kind: fl.kind, note: fl.note });
             }
             for (k, &i) in rows.iter().enumerate() {
                 let p = slots[k];
@@ -836,17 +879,18 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                         ms[j].mid.push(ch.attrs);
                     }
                 }
+                expand_multi_rests(&mut ms, &extra, from, &mut span_recs[p], &mut pending[p]);
                 ms[0].new_system = true;
                 ms[0].new_page = si == 0 && pn > 0;
                 ms[0].implicit = implicit;
                 parts[p].measures.extend(ms);
-                layout.push(RowLayout { row: row_no, part: p, from, to: from + count - 1, space: f.staves[i].space(), seq_len });
+                layout.push(RowLayout { row: row_no, part: p, from, to: from + count + added - 1, space: f.staves[i].space(), seq_len });
                 row_no += 1;
             }
             // 这一系统没印的声部照样占这么多小节
             for (p, part) in parts.iter_mut().enumerate() {
                 if !used[p] {
-                    let mut ms: Vec<Measure> = (0..count).map(|_| Measure::default()).collect();
+                    let mut ms: Vec<Measure> = (0..count + added).map(|_| Measure::default()).collect();
                     // 混排谱里单行系统只印旋律，别的声部这几小节各记一个全休止，曲首就没印的照样交代谱号、调号、拍号。
                     // 别的谱不补：行数对不上多半是多认了假谱行，补出来的休止还得一个个删
                     for m in ms.iter_mut().filter(|_| mixed) {

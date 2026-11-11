@@ -75,6 +75,8 @@ impl NoteType {
 pub enum Art {
     Fermata,
     Staccato,
+    /// 断奏楔（▼）。
+    Staccatissimo,
     Tenuto,
     Accent,
     Arpeggiate,
@@ -266,7 +268,8 @@ fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-fn write_event(o: &mut String, e: &Event) {
+/// `perc`：现行谱号是打击乐谱号——音写 `<unpitched>`（显示位置），不写 `<pitch>`。
+fn write_event(o: &mut String, e: &Event, perc: bool) {
     let dur = e.divisions();
     // `pitch`：和弦里的这一个音（休止为 None）；`first`：和弦的第一个音（记号、歌词只写在它上面，延音线写在连着的那个音上）
     let tail = |o: &mut String, first: bool, pitch: Option<&Pitch>| {
@@ -324,6 +327,7 @@ fn write_event(o: &mut String, e: &Event) {
                 .filter_map(|a| match a {
                     Art::Staccato => Some("staccato"),
                     Art::Tenuto => Some("tenuto"),
+                    Art::Staccatissimo => Some("staccatissimo"),
                     Art::Accent => Some("accent"),
                     _ => None,
                 })
@@ -359,6 +363,11 @@ fn write_event(o: &mut String, e: &Event) {
         o.push_str("      <note>\n");
         if i > 0 {
             o.push_str("        <chord/>\n");
+        }
+        if perc {
+            let _ = writeln!(o, "        <unpitched><display-step>{}</display-step><display-octave>{}</display-octave></unpitched>", p.step_name(), p.octave);
+            tail(o, i == 0, Some(p));
+            continue;
         }
         let _ = write!(o, "        <pitch><step>{}</step>", p.step_name());
         if p.alter != 0 {
@@ -420,7 +429,7 @@ fn write_dir(o: &mut String, d: &Dir) {
 }
 
 /// 一个小节的事件按声部写：声部 1 写完 `<backup>` 回小节头再写声部 2；起拍时刻与游标不一致的用 `<forward>` / `<backup>` 挪。
-fn write_events(o: &mut String, events: &[Event]) {
+fn write_events(o: &mut String, events: &[Event], perc: bool) {
     let mut cur = 0u32;
     for v in [1u8, 2] {
         let mut es: Vec<&Event> = events.iter().filter(|e| e.voice.clamp(1, 2) == v).collect();
@@ -434,7 +443,7 @@ fn write_events(o: &mut String, events: &[Event]) {
             for d in &e.pre {
                 write_dir(o, d);
             }
-            write_event(o, e);
+            write_event(o, e, perc);
             for d in &e.post {
                 write_dir(o, d);
             }
@@ -506,6 +515,7 @@ impl Score {
         let parts: Vec<&Part> = if self.parts.is_empty() { vec![&empty] } else { self.parts.iter().collect() };
         for (pi, p) in parts.iter().enumerate() {
             let _ = writeln!(o, "  <part id=\"P{}\">", pi + 1);
+            let mut perc = false;
             for (mi, m) in p.measures.iter().enumerate() {
                 let _ = writeln!(o, "    <measure number=\"{}\"{}>", mi + 1, if m.implicit { " implicit=\"yes\"" } else { "" });
                 if mi > 0 && (m.new_system || m.new_page) {
@@ -528,7 +538,10 @@ impl Score {
                 for a in &m.mid {
                     write_attrs(&mut o, a, false);
                 }
-                write_events(&mut o, &m.events);
+                if let Some(c) = std::iter::once(&m.attrs).chain(&m.mid).filter_map(|a| a.clef).last() {
+                    perc = c.sign == ClefSign::Percussion;
+                }
+                write_events(&mut o, &m.events, perc);
                 if m.right.is_some() || m.repeat_end || m.ending_stop.is_some() {
                     o.push_str("      <barline location=\"right\">\n");
                     if m.right.is_some() || m.repeat_end {

@@ -8,7 +8,9 @@ use super::heads::{band, POS_MAX, POS_MIN, SEED_FILL, SEED_H, SEED_W};
 use crate::frame::ink::LINE;
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
+use dolce_omr_sheet::prims::VSeg;
 use dolce_omr_sheet::score::NoteType;
+use dolce_omr_sheet::Staff;
 use serde::{Deserialize, Serialize};
 
 /// 块状休止的宽、高范围（相对线距；高里含贴着的那条线）与占包围盒的比例。
@@ -60,6 +62,47 @@ pub struct Rest {
     /// 延长记号（[`super::artics`]）。
     #[serde(default)]
     pub arts: Vec<dolce_omr_sheet::score::Art>,
+    /// 多小节休止的小节数（[`multi_rests`]；普通休止为 0）。整曲拼接时展开成这么多个整小节休止。
+    #[serde(default)]
+    pub measures: u16,
+}
+
+/// 多小节休止：横条高（相对线距）、至少多宽、条心离中线不过多远；两端竖线的高与离条端多远；数字在条上方不出多远。
+const MR_BAR_H: (f64, f64) = (0.3, 0.8);
+const MR_BAR_W: f64 = 3.0;
+const MR_MID: f64 = 0.4;
+const MR_END_H: (f64, f64) = (1.2, 3.0);
+const MR_END_NEAR: f64 = 0.3;
+const MR_NUM_UP: f64 = 4.0;
+
+/// **多小节休止**（两种证据共用的判据）：谱表中线上一道粗横条（`bars`：实心横条的外框），两端各一笔竖线（`vsegs`），
+/// 上方印小节数（`digits`：读出的数与外框，横向落在横条上方、离谱表顶不出 [`MR_NUM_UP`] 格）。没印数的不收。
+pub fn multi_rests(staves: &[Staff], bars: &[Rect], vsegs: &[VSeg], digits: &[(u32, Rect)]) -> Vec<Rest> {
+    let mut out = Vec::new();
+    for b in bars {
+        let (cx, cy) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+        let Some((si, st)) = staves.iter().enumerate().find(|(_, s)| (s.ys[2] - cy).abs() <= MR_MID * s.space() && b.x >= s.left - s.space() && b.right() <= s.right + s.space()) else { continue };
+        let sp = st.space();
+        if b.w < MR_BAR_W * sp || b.h < MR_BAR_H.0 * sp || b.h > MR_BAR_H.1 * sp {
+            continue;
+        }
+        let end = |x: f64| {
+            vsegs.iter().any(|v| {
+                let len = (v.y1 - v.y0) as f64;
+                (v.cx() - x).abs() <= MR_END_NEAR * sp && len >= MR_END_H.0 * sp && len <= MR_END_H.1 * sp && ((v.y0 + v.y1) as f64 / 2.0 - cy).abs() <= 0.5 * sp
+            })
+        };
+        if !end(b.x) || !end(b.right()) {
+            continue;
+        }
+        let top = st.top(cx);
+        let Some(&(n, _)) = digits.iter().find(|(_, r)| r.x + r.w / 2.0 >= b.x && r.x + r.w / 2.0 <= b.right() && r.bottom() <= top + 0.5 * sp && top - r.bottom() <= MR_NUM_UP * sp) else { continue };
+        if n < 2 {
+            continue;
+        }
+        out.push(Rest { staff: si, x: cx, y: cy, ntype: NoteType::Whole, rect: (b.x, b.y, b.w, b.h), dots: 0, arts: Vec::new(), measures: n.min(u16::MAX as u32) as u16 });
+    }
+    out
 }
 
 /// 一个墨块的像素（包围盒内，行优先）。
@@ -216,7 +259,7 @@ pub fn rests(f: &PageFrame, si: usize, x_from: f64) -> Vec<Rest> {
         let m = Mask::of(f, &ids, r, slit);
         let ntype = if bh <= BLOCK_H.1 { block(s, &m, r.y, bw, cx) } else { curvy(&m, sp, bw, bh) };
         if let Some(ntype) = ntype.filter(|t| (pos - 4.0).abs() <= CENTER_TOL || matches!(t, NoteType::Eighth | NoteType::N16th | NoteType::N32nd)) {
-            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0, arts: Vec::new() });
+            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0, arts: Vec::new(), measures: 0 });
         }
     }
     out.sort_by(|a, b| a.x.total_cmp(&b.x));

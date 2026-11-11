@@ -428,3 +428,21 @@ fn tile_chars(vp: &VecPage, tiles: &[PageImage], ocr: &dyn DigitReader) -> Vec<T
     }
     out
 }
+
+/// 文字层的数（连着的阿拉伯数字并成一个，基线相同、字缝不过半个字号）与外框（工作坐标）：多小节休止上方的小节数之类。
+pub fn numbers(vp: &VecPage) -> Vec<(u32, Rect)> {
+    let mut out: Vec<(u32, Rect, f64, f64)> = Vec::new();
+    for c in vp.chars.iter().filter(|c| !c.generated && music_family(&c.font).is_none()) {
+        let Some(d) = char::from_u32(c.unicode).and_then(|ch| ch.to_digit(10)) else { continue };
+        let r = vp.rect_of(&c.bbox);
+        let (base, size) = ((c.origin.1 - vp.origin.1) * vp.scale, c.size_scaled * vp.scale);
+        match out.last_mut() {
+            Some((n, u, b, sz)) if (*b - base).abs() <= SAME_BASE * *sz && r.x - u.right() <= 0.5 * *sz && r.x >= u.x => {
+                *n = *n * 10 + d;
+                *u = Rect::new(u.x, u.y.min(r.y), r.right() - u.x, u.bottom().max(r.bottom()) - u.y.min(r.y));
+            }
+            _ => out.push((d, r, base, size)),
+        }
+    }
+    out.into_iter().map(|(n, r, _, _)| (n, r)).collect()
+}

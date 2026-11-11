@@ -118,7 +118,34 @@ pub struct VecFrame {
 
 /// 横线原语。
 pub fn hsegs(vp: &VecPage) -> Vec<HSeg> {
-    vp.lines.iter().filter(|l| l.is_h()).map(|l| HSeg { x0: l.a.0.min(l.b.0), x1: l.a.0.max(l.b.0), y: (l.a.1 + l.b.1) / 2.0, w: l.w, obj: l.obj }).collect()
+    joined_hsegs(vp).into_iter().map(|(h, _)| h).collect()
+}
+
+/// 横线原语与各自由 `vp.lines` 里哪几段并成：同高（差不过线宽的一半）、同宽、首尾相接或交叠的段并成一条——
+/// 平铺的谱线字形（`staff5Lines` 一块块排过去）、按小节分段画的谱线都是这样。
+fn joined_hsegs(vp: &VecPage) -> Vec<(HSeg, Vec<usize>)> {
+    let mut idx: Vec<usize> = (0..vp.lines.len()).filter(|&i| vp.lines[i].is_h()).collect();
+    let y = |i: usize| (vp.lines[i].a.1 + vp.lines[i].b.1) / 2.0;
+    let x0 = |i: usize| vp.lines[i].a.0.min(vp.lines[i].b.0);
+    let x1 = |i: usize| vp.lines[i].a.0.max(vp.lines[i].b.0);
+    idx.sort_by(|&a, &b| y(a).total_cmp(&y(b)).then(x0(a).total_cmp(&x0(b))));
+    let mut out: Vec<(HSeg, Vec<usize>)> = Vec::new();
+    for i in idx {
+        let l = &vp.lines[i];
+        let tol = (l.w / 2.0).max(0.5);
+        let hit = out.iter_mut().rev().take_while(|(h, _)| y(i) - h.y <= tol).find(|(h, _)| {
+            (h.y - y(i)).abs() <= tol && (h.w - l.w).abs() <= 0.5 * h.w.max(l.w) && x0(i) <= h.x1 + tol && x1(i) >= h.x0 - tol
+        });
+        match hit {
+            Some((h, m)) => {
+                h.x0 = h.x0.min(x0(i));
+                h.x1 = h.x1.max(x1(i));
+                m.push(i);
+            }
+            None => out.push((HSeg { x0: x0(i), x1: x1(i), y: y(i), w: l.w, obj: l.obj }, vec![i])),
+        }
+    }
+    out
 }
 
 /// 竖线原语（`vp.lines` 里竖的，至少 `min_len` 长）。
@@ -134,15 +161,15 @@ fn staff_height(vp: &VecPage) -> f64 {
 
 /// 矢量页的框架结构；页上没有谱表回 None。
 pub fn frame_vector(vp: &VecPage) -> Option<VecFrame> {
-    let hs = hsegs(vp);
+    let joined = joined_hsegs(vp);
+    let hs: Vec<HSeg> = joined.iter().map(|(h, _)| *h).collect();
     let height = staff_height(vp);
     let found = staves_from_hsegs(&hs, height);
     if found.is_empty() {
         return None;
     }
-    // 横段下标 → `vp.lines` 下标
-    let h_idx: Vec<usize> = (0..vp.lines.len()).filter(|&i| vp.lines[i].is_h()).collect();
-    let staff_lines: Vec<usize> = found.iter().flat_map(|(_, five)| five.iter().map(|&k| h_idx[k])).collect();
+    // 横段 → 并成它的 `vp.lines` 下标
+    let staff_lines: Vec<usize> = found.iter().flat_map(|(_, five)| five.iter().flat_map(|&k| joined[k].1.iter().copied())).collect();
     let staves: Vec<_> = found.into_iter().map(|(s, _)| s).collect();
     let spaces: Vec<f64> = staves.iter().map(|s| s.space()).collect();
     let thicks: Vec<f64> = staves.iter().flat_map(|s| s.thick).collect();
@@ -162,7 +189,20 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     let ink = VecInk::new(&vp, &f.staff_lines);
     let syms = glyphs::music_chars(&vp);
     let attrs = notes::page_attrs(&f.layout, &syms);
-    let notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
+    let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
+    // 多小节休止：粗横段 + 两端竖段 + 上方的数字（共用判据 `notes::rests::multi_rests`）
+    let sp = f.layout.unit.space;
+    let bars: Vec<dolce_omr_core::image::Rect> = vp
+        .lines
+        .iter()
+        .filter(|l| l.is_h() && l.w >= 0.3 * sp)
+        .map(|l| dolce_omr_core::image::Rect::new(l.a.0.min(l.b.0), (l.a.1 + l.b.1) / 2.0 - l.w / 2.0, (l.b.0 - l.a.0).abs(), l.w))
+        .collect();
+    for r in crate::notes::rests::multi_rests(&f.layout.staves, &bars, &vsegs(&vp, 0.0), &text::numbers(&vp)) {
+        let si = r.staff;
+        notes[si].rests.push(r);
+        notes[si].rests.sort_by(|a, b| a.x.total_cmp(&b.x));
+    }
     // 谱表以外的升降号字形（和弦记号里的）插进字行
     let accs: Vec<(char, dolce_omr_core::image::Rect)> = syms
         .iter()

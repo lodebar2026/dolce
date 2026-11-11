@@ -121,7 +121,7 @@ impl VecPage {
                 VKind::Line
             } else if !curved && fill {
                 VKind::Poly
-            } else if curved && subs <= 2 && (elongated(&rect) || fill && slim(&rings, &rect)) {
+            } else if curved && subs <= 2 && (elongated(&rect) || fill && slim(&rings, &rect) || !fill && open_path(&p.segs)) {
                 VKind::Curve
             } else if curved {
                 VKind::Glyph
@@ -146,7 +146,18 @@ impl VecPage {
             let rect = if rings.is_empty() { Rect::new(x0, y0, c.bbox.w * scale, c.bbox.h * scale) } else { bounds(&rings) };
             // 没轮廓的字按外框当填充块
             let rings = if rings.is_empty() { vec![vec![(rect.x, rect.y), (rect.right(), rect.y), (rect.right(), rect.bottom()), (rect.x, rect.bottom())]] } else { rings };
-            objs.push(VObj { id, kind: VKind::Glyph, src: ObjSrc::Char(ci), rect, rings, fill: true, stroke: 0.0, curved, subpaths: subs, twin_of: None });
+            // 轮廓全由细长的轴向矩形组成的字（Anastasia 的谱线 staff5Lines、符干、小节线、加线都是字形）：当线对象，化成直线段
+            let mine = match &c.outline {
+                Some(o) if !curved => path_lines(o, &tx, id, 0.0, true, false),
+                _ => Vec::new(),
+            };
+            let kind = if !mine.is_empty() && c.outline.as_ref().is_some_and(|o| mine.len() >= straight_subpaths(o)) {
+                lines.extend(merge_redrawn(mine, 0.15 * scale));
+                VKind::Line
+            } else {
+                VKind::Glyph
+            };
+            objs.push(VObj { id, kind, src: ObjSrc::Char(ci), rect, rings, fill: true, stroke: 0.0, curved, subpaths: subs, twin_of: None });
         }
         merge_twins(&mut objs);
         let grid_w = (w as f64 / CELL).ceil() as usize + 1;
@@ -211,6 +222,26 @@ fn white(c: [u8; 4]) -> bool {
 }
 
 /// 扁长（细长曲线对象的外形）：长边过短边的 2.5 倍。
+/// 只有一条不闭合的子路径（首尾不重合、没有 Close）：描边画的弧、一段段拼起来的弧的一段（字形是闭合的轮廓）。
+fn open_path(segs: &[Seg]) -> bool {
+    let mut first: Option<(f64, f64)> = None;
+    let mut last = (0.0, 0.0);
+    for s in segs {
+        match *s {
+            Seg::Move(x, y) => {
+                if first.is_some() {
+                    return false;
+                }
+                first = Some((x, y));
+                last = (x, y);
+            }
+            Seg::Line(x, y) | Seg::Cubic(_, _, _, _, x, y) => last = (x, y),
+            Seg::Close => return false,
+        }
+    }
+    first.is_some_and(|f| (f.0 - last.0).abs() + (f.1 - last.1).abs() > 1e-3)
+}
+
 fn elongated(r: &Rect) -> bool {
     r.w.max(r.h) >= 2.5 * r.w.min(r.h).max(0.01)
 }

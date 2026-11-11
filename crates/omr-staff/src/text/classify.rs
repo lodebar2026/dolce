@@ -147,9 +147,11 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
     if let Some(d) = words::dynamic(t).filter(|d| d.len() >= 2) {
         return vec![Mark { x: seg.rect.cx(), dir: Dir::Dynamics(d.to_string()) }];
     }
-    if let Some((n, circa)) = words::metronome(t) {
-        // 「Andante ♩= 76」：等号前（连同贴着它的音符字、开括号）是术语，单挂一条；节拍器的 x 取音符字（或等号）
-        let eq = seg.chars.iter().position(|c| c.ch == '=' || c.ch == '＝').unwrap_or(0);
+    // 节拍器从等号起解析（前面可以是汉字的速度提示）
+    let eq = seg.chars.iter().position(|c| c.ch == '=' || c.ch == '＝').unwrap_or(0);
+    let tail: String = seg.chars[eq..].iter().map(|c| c.ch).collect();
+    if let Some((n, circa)) = words::metronome(&tail).filter(|_| seg.chars.get(eq).is_some_and(|c| c.ch == '=' || c.ch == '＝')) {
+        // 「Andante ♩= 76」「欢快 热烈地 ♩= 144」：等号前（连同贴着它的音符字、开括号）是术语或中文速度提示，单挂一条；节拍器的 x 取音符字（或等号）
         let cs = &seg.chars;
         let mut k = eq;
         while k > 0 && cs[k - 1].ch == ' ' {
@@ -162,8 +164,14 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
         }
         let mut out = vec![Mark { x: cs.get(start).map_or(x, |c| c.x0), dir: Dir::Metronome { per_minute: n, circa } }];
         let pre: String = cs[..start].iter().map(|c| c.ch).collect();
+        // 行首的排练号（【A】）不算
         let pre = pre.trim();
-        if words::has_term(pre) && latin_count(pre) >= 3 && han_count(pre) == 0 {
+        let pre = match pre.strip_prefix('【').and_then(|r| r.split_once('】')) {
+            Some((_, rest)) => rest.trim(),
+            None => pre,
+        };
+        let han_hint = (2..=12).contains(&han_count(pre)) && !pre.chars().any(|c| c.is_ascii_digit());
+        if (words::has_term(pre) && latin_count(pre) >= 3 && han_count(pre) == 0) || han_hint {
             out.insert(0, Mark { x, dir: Dir::Words { text: pre.to_string(), above, jump: None } });
         }
         return out;

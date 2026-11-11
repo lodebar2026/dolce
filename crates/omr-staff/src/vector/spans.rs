@@ -72,19 +72,70 @@ fn sample(x0: f64, x1: f64, ext: &dyn Fn(f64) -> Option<(f64, f64)>) -> Option<S
     (!cols.is_empty()).then(|| Stroke { x0: a + lead as i64, cols })
 }
 
+/// 两个曲线对象端点相接：端点相距不过这么多（相对线距）。
+const CHAIN_GAP: f64 = 0.12;
+/// 一条弧的两条边：外框横向交叠占窄的那个的这么多，纵向也交叠。
+const EDGE_OVERLAP: f64 = 0.6;
+
+/// 折线的两个端点。
+fn ends(o: &VObj) -> Option<[(f64, f64); 2]> {
+    let r = o.rings.first()?;
+    Some([*r.first()?, *r.last()?])
+}
+
+/// 曲线对象分组（并查）：画两遍的（`twin_of`）、外框大半交叠的（一条弧的上下两条边）、端点相接的（一段接一段）归一组。
+fn curve_groups(vp: &VecPage, sp: f64) -> Vec<Vec<&VObj>> {
+    let cs: Vec<&VObj> = vp.objs.iter().filter(|o| o.kind == VKind::Curve).collect();
+    let mut up: Vec<usize> = (0..cs.len()).collect();
+    fn root(up: &mut [usize], mut i: usize) -> usize {
+        while up[i] != i {
+            up[i] = up[up[i]];
+            i = up[i];
+        }
+        i
+    }
+    let tol = CHAIN_GAP * sp;
+    let mut order: Vec<usize> = (0..cs.len()).collect();
+    order.sort_by(|&a, &b| cs[a].rect.x.total_cmp(&cs[b].rect.x));
+    for (k, &i) in order.iter().enumerate() {
+        for &j in &order[k + 1..] {
+            let (a, b) = (cs[i], cs[j]);
+            if b.rect.x > a.rect.right() + tol {
+                break;
+            }
+            let twin = a.twin_of == Some(b.id) || b.twin_of == Some(a.id);
+            let xo = a.rect.right().min(b.rect.right()) - a.rect.x.max(b.rect.x);
+            let yo = a.rect.bottom().min(b.rect.bottom()) - a.rect.y.max(b.rect.y);
+            let edges = !a.fill && !b.fill && xo >= EDGE_OVERLAP * a.rect.w.min(b.rect.w) && yo > 0.0;
+            let chain = match (ends(a), ends(b)) {
+                (Some(ea), Some(eb)) if !a.fill && !b.fill => ea.iter().any(|p| eb.iter().any(|q| (p.0 - q.0).hypot(p.1 - q.1) <= tol)),
+                _ => false,
+            };
+            if twin || edges || chain {
+                let (ri, rj) = (root(&mut up, i), root(&mut up, j));
+                up[ri] = rj;
+            }
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<&VObj>> = std::collections::BTreeMap::new();
+    for i in 0..cs.len() {
+        let r = root(&mut up, i);
+        groups.entry(r).or_default().push(cs[i]);
+    }
+    groups.into_values().collect()
+}
+
 /// 一页的细笔画。`staff_lines`：谱线段（`vp.lines` 的下标）；`sp`：线距。
 pub fn pieces(vp: &VecPage, staff_lines: &[usize], sp: f64) -> Vec<Piece> {
     let mut out: Vec<Stroke> = Vec::new();
-    // 曲线对象：画两遍的按组取外沿
-    for o in vp.objs.iter().filter(|o| o.kind == VKind::Curve && o.twin_of.is_none()) {
-        if o.rect.w < MIN_PIECE * sp {
+    // 曲线对象：画两遍的（填充 + 描边）、一条弧的上下两条边、一段接一段拼起来的，并成一组按组取外沿
+    for g in curve_groups(vp, sp) {
+        let (x0, x1) = (g.iter().map(|o| o.rect.x).fold(f64::MAX, f64::min), g.iter().map(|o| o.rect.right()).fold(f64::MIN, f64::max));
+        if x1 - x0 < MIN_PIECE * sp {
             continue;
         }
-        let twins: Vec<&VObj> = vp.objs.iter().filter(|t| t.twin_of == Some(o.id)).collect();
-        let ext = |x: f64| {
-            std::iter::once(o).chain(twins.iter().copied()).filter_map(|t| obj_extent(t, x)).reduce(|p, q| (p.0.min(q.0), p.1.max(q.1)))
-        };
-        out.extend(sample(o.rect.x, o.rect.right(), &ext));
+        let ext = |x: f64| g.iter().filter_map(|t| obj_extent(t, x)).reduce(|p, q| (p.0.min(q.0), p.1.max(q.1)));
+        out.extend(sample(x0, x1, &ext));
     }
     // 直线段：谱线、竖的、厚的、短的不要
     for (i, l) in vp.lines.iter().enumerate() {

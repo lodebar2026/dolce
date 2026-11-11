@@ -59,7 +59,8 @@ pub(crate) fn raw_bounds(segs: &[Seg], vp: &VecPage) -> Option<(f64, f64, f64, f
 /// 一页文字层里音乐字体的字（认不出身份的也回，`name` 为空串）。
 pub fn music_chars(vp: &VecPage) -> Vec<VSym> {
     let mut out = Vec::new();
-    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph) {
+    // 化成了线对象的字（谱线、符干、小节线，打击乐谱号的两道粗竖条）也认身份：谱号要它
+    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph || o.kind == VKind::Line && matches!(o.src, dolce_omr_source::vector::ObjSrc::Char(_))) {
         let Some(c) = vp.char_of(o) else { continue };
         let Some(fam) = music_family(&c.font) else { continue };
         let size = (c.size_scaled > 0.0).then(|| (c.bbox.w / c.size_scaled, c.bbox.h / c.size_scaled));

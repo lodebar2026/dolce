@@ -219,7 +219,7 @@ pub fn apply(c: &Ctx, notes: &mut RowNotes, bounds: &[f64], wants: &[Option<u32>
                 let x = n.x + off;
                 if n.digit == 0 {
                     let y = c.st.y_of(x, 4.0);
-                    new_rests.push(Rest { staff: c.si, x, y, ntype: t, rect: (x - sp / 2.0, y - sp / 2.0, sp, sp), dots, arts: Vec::new() });
+                    new_rests.push(Rest { staff: c.si, x, y, ntype: t, rect: (x - sp / 2.0, y - sp / 2.0, sp, sp), dots, arts: Vec::new(), measures: 0 });
                 } else {
                     let pos = dia(c.clef, 0) - (base + tonic(c.key) + n.digit as i32 - 1 + 7 * n.octave);
                     let (kind, tails) = shape_of(t);

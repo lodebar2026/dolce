@@ -19,6 +19,9 @@ use crate::page::Layout;
 use dolce_omr_sheet::music::{Clef, Key, Time, TimeSymbol};
 use dolce_omr_sheet::score::{Art, Attrs, NoteType};
 
+/// 头干尾一体的字形（`metNote*`）：头宽（相对线距，SMuFL 实心符头宽 1.18 格）；头心在谱表上方不出这么多个音级（再高的是速度记号里的音符）。
+const HEAD_W: f64 = 1.18;
+const MET_POS_MIN: f64 = -5.0;
 /// 谱号要在谱行左端这么多格以内起头（同位图）。
 const CLEF_WITHIN: f64 = 4.0;
 /// 拍号离前一个记号最多隔这么多格（同位图）。
@@ -249,12 +252,45 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
         let stem = (kind != HeadKind::Whole).then(|| find_stem(ink, &h, st.space(), f.unit.thick, Some((s.rect.x.floor() as i64, s.rect.right().ceil() as i64)), &|x| claims.bar_col(si, x))).flatten();
         all.push((h, stem));
     }
+    // 整个音画成一个速度记号字形的（Anastasia 的 `metNote8thUp` 一族：头 + 干 + 尾一体）：按字形几何拆成头与干，尾数照名字。
+    // 谱表上方远处的才是速度记号里的音符，不收
+    let mut fused_tails: Vec<(f64, f64, u8)> = Vec::new();
+    for s in syms.iter().filter(|s| s.name.starts_with("metNote")) {
+        let Some(si) = staff_of(f, s, MET_POS_MIN, POS_MAX as f64 + 0.5) else { continue };
+        let st = &f.staves[si];
+        let sp = st.space();
+        if s.cx() < attrs.get(si).map_or(st.left, |a| a.lead_end) {
+            continue;
+        }
+        let up = !s.name.ends_with("Down");
+        let (hw, hh) = (HEAD_W * sp, sp);
+        let (x, y) = (s.rect.x + hw / 2.0, if up { s.rect.bottom() - hh / 2.0 } else { s.rect.y + hh / 2.0 });
+        let kind = if s.name.contains("Half") { HeadKind::Half } else { HeadKind::Filled };
+        let pos = st.pos(x, y).round() as i32;
+        let h = Head { staff: si, x, y, pos, kind, fill: 1.0, score: 1.0, acc: None };
+        let sx = if up { s.rect.x + hw - f.unit.thick / 2.0 } else { s.rect.x + f.unit.thick / 2.0 };
+        let stem = Stem { x: sx.round() as i64, top: s.rect.y.round() as i64, bottom: s.rect.bottom().round() as i64, up };
+        let tails = match s.name {
+            n if n.contains("8th") => 1,
+            n if n.contains("16th") => 2,
+            n if n.contains("32nd") => 3,
+            _ => 0,
+        };
+        fused_tails.push((x, y, tails));
+        all.push((h, Some(stem)));
+    }
     let mut rows = build_rows(f, ink, all);
     // 休止
     for s in syms.iter() {
         let ntype = match s.name {
-            "restHBar" | "restWhole" | "restDoubleWhole" => NoteType::Whole,
-            "restHalf" => NoteType::Half,
+            // 全休止与二分休止常是同一个方块字形，按位置分：挂在第四线下（顶边贴第四线）的是全休止，坐在第三线上（底边贴第三线）的是二分休止
+            "restWhole" | "restHalf" => match staff_of(f, s, -6.0, 14.0).map(|si| &f.staves[si]) {
+                Some(st) if (s.rect.y - st.y_of(s.cx(), 2.0)).abs() < (s.rect.bottom() - st.y_of(s.cx(), 4.0)).abs() => NoteType::Whole,
+                Some(_) => NoteType::Half,
+                None if s.name == "restWhole" => NoteType::Whole,
+                None => NoteType::Half,
+            },
+            "restHBar" | "restDoubleWhole" => NoteType::Whole,
             "restQuarter" => NoteType::Quarter,
             "rest8th" => NoteType::Eighth,
             "rest16th" => NoteType::N16th,
@@ -270,7 +306,7 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
         if r.iter().any(|o| (o.x - s.cx()).abs() < 0.5 && (o.y - s.cy()).abs() < 0.5) {
             continue;
         }
-        r.push(Rest { staff: si, x: s.cx(), y: s.cy(), ntype, rect: (s.rect.x, s.rect.y, s.rect.w, s.rect.h), dots: 0, arts: Vec::new() });
+        r.push(Rest { staff: si, x: s.cx(), y: s.cy(), ntype, rect: (s.rect.x, s.rect.y, s.rect.w, s.rect.h), dots: 0, arts: Vec::new(), measures: 0 });
     }
     for row in rows.iter_mut() {
         row.rests.sort_by(|a, b| a.x.total_cmp(&b.x));
@@ -294,6 +330,10 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
                 })
                 .max();
             c.tails = n.unwrap_or(0);
+            // 头干尾一体的字形：尾数照名字
+            if let Some(&(_, _, t)) = fused_tails.iter().find(|(x, y, _)| c.heads.iter().any(|h| (h.x - x).abs() < 0.5 && (h.y - y).abs() < 0.5)) {
+                c.tails = c.tails.max(t);
+            }
         }
     }
     // 临时记号（调号与行中调号串用掉的不算：它们在行首区之内或紧跟小节线，右边挂不上头）、附点、奏法
@@ -319,7 +359,8 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
         attach_dots(f, si, row, dots);
         for s in syms.iter().filter(|s| s.cx() > from && staff_of(f, s, -12.0, 20.0) == Some(si)) {
             let kind = match s.name {
-                n if n.starts_with("articStaccato") && !n.contains("Staccatissimo") => Art::Staccato,
+                n if n.starts_with("articStaccatissimo") => Art::Staccatissimo,
+                n if n.starts_with("articStaccato") => Art::Staccato,
                 n if n.starts_with("articTenuto") && !n.contains("Staccato") => Art::Tenuto,
                 n if n.starts_with("articAccent") || n.starts_with("articMarcato") => Art::Accent,
                 _ => continue,
