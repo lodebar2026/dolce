@@ -14,8 +14,10 @@ const LYRIC_GAP: f64 = 0.8;
 const LYRIC_MIN_H: f64 = 1.3;
 /// 两行横向交叠过较窄那行的这个比例，算上下对着。
 const XOVER: f64 = 0.3;
-/// 和弦记号离下面那行谱的首线不过这么多格。
-const CHORD_REACH: f64 = 5.5;
+/// 和弦记号离下面那行谱的首线不过这么多格（混排谱的和弦印在简谱行上方），且比离上面那行谱近。
+const CHORD_REACH: f64 = 9.0;
+/// 一页至少读出这么多个和弦记号才算有和弦。
+const MIN_CHORDS: usize = 3;
 /// 力度、术语、跳转离所归的谱行不过这么多格。
 const MARK_REACH: f64 = 7.0;
 
@@ -90,6 +92,10 @@ fn split_scripts(l: &GeoLine) -> Vec<GeoLine> {
         .collect()
 }
 
+fn unspaced(t: &str) -> String {
+    t.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
 /// 像歌词的一行：两个以上汉字，或以拉丁字母为主的一串词。
 fn lyric_like(text: &str) -> bool {
     let total = text.chars().filter(|c| !c.is_whitespace()).count();
@@ -112,14 +118,14 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
     if let Some(j) = words::jump(t) {
         return vec![Mark { x, dir: Dir::Words { text: t.to_string(), above, jump: Some(j) } }];
     }
-    if chord_ok && chords::is_annotation_line(t) {
-        // 切词在逐字序列上做（下标对得上字位）
-        let s: String = seg.chars.iter().map(|c| c.ch).collect();
-        let xs: Vec<f64> = seg.chars.iter().map(|c| c.cx()).collect();
-        let x_at = |i: usize| xs.get(i).copied().unwrap_or(0.0);
+    if chord_ok && chords::is_annotation_line(&unspaced(t)) {
+        // 切词在逐字序列上做（下标对得上字位）；补出来的空格先去掉——根音与抬高的后缀之间有道白（`C sus4`）
+        let cs: Vec<&Ch> = seg.chars.iter().filter(|c| c.ch != ' ').collect();
+        let s: String = cs.iter().map(|c| c.ch).collect();
+        let x_at = |i: usize| cs.get(i).map_or(0.0, |c| c.cx());
         return chords::split_tokens(&chords::blank_non_chord(&s), Some(&x_at))
             .into_iter()
-            .map(|tk| Mark { x: seg.chars[tk.index].x0, dir: Dir::Harmony(chords::normalize(&tk.tok)) })
+            .map(|tk| Mark { x: cs[tk.index].x0, dir: Dir::Harmony(chords::normalize(&tk.tok)) })
             .collect();
     }
     if words::has_term(t) && latin_count(t) >= 3 && t.chars().count() <= 32 && han_count(t) == 0 {
@@ -151,7 +157,8 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
             let (x0, x1) = (l.segs.iter().map(|s| s.rect.x).fold(f64::MAX, f64::min), l.segs.iter().map(|s| s.rect.right()).fold(f64::MIN, f64::max));
             let over = |a0: f64, a1: f64| a1.min(x1) - a0.max(x0) > XOVER * (a1 - a0).min(x1 - x0);
             // 和弦行优先：贴着下面那行谱、整行是和弦记号
-            let chord_line = d_below.is_some_and(|d| d <= CHORD_REACH) && chords::is_annotation_line(&text);
+            let chord_zone = d_below.is_some_and(|d| d <= CHORD_REACH && d_above.is_none_or(|a| d < a));
+            let chord_line = chord_zone && chords::is_annotation_line(&unspaced(&text));
             let tall = b.above.is_some_and(|a| l.h() >= LYRIC_MIN_H * f.staves[a].space());
             if b.above.is_some() && !chord_line && tall && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
                 // 横向盖得住它的上方歌词行：没有就是这一栏的头一行（看离谱表多远），有就看与最下面那行的空隙
@@ -197,24 +204,23 @@ pub fn classify(f: &PageFrame, bands: &[Band]) -> Vec<RowText> {
             };
             let (si, dist) = if to_below { (b.below, d_below) } else { (b.above, d_above) };
             let (Some(si), Some(dist)) = (si, dist) else { continue };
-            if dist > MARK_REACH {
+            if dist > MARK_REACH.max(if chord_zone { CHORD_REACH } else { 0.0 }) {
                 continue;
             }
             // 和弦只归下面那行谱
-            let chord_ok = d_below.is_some_and(|d| d <= CHORD_REACH);
-            let all: Vec<Vec<Mark>> = l.segs.iter().map(|s| mark_of(s, to_below, chord_ok)).collect();
-            // 整行只读出一个单字母和弦的不要：延长记号、弧头常读成 C、D
-            let chords_n = all.iter().flatten().filter(|m| matches!(m.dir, Dir::Harmony(_))).count();
-            let lone = chords_n == 1 && all.iter().flatten().any(|m| matches!(&m.dir, Dir::Harmony(t) if t.chars().count() == 1));
-            for ms in all {
-                for m in ms {
-                    if lone && matches!(m.dir, Dir::Harmony(_)) {
-                        continue;
-                    }
+            let chord_ok = chord_zone;
+            for s in &l.segs {
+                for m in mark_of(s, to_below, chord_ok) {
                     let row = if matches!(m.dir, Dir::Harmony(_) | Dir::Metronome { .. }) { b.below.unwrap_or(si) } else { si };
                     rows[row].marks.push(m);
                 }
             }
+        }
+    }
+    // 整页读出的和弦记号不到三个的不要：没有和弦的谱面上，延长记号、弧头偶尔读成一个 C、D
+    if rows.iter().flat_map(|r| r.marks.iter()).filter(|m| matches!(m.dir, Dir::Harmony(_))).count() < MIN_CHORDS {
+        for r in rows.iter_mut() {
+            r.marks.retain(|m| !matches!(m.dir, Dir::Harmony(_)));
         }
     }
     fold_bilingual(f, &mut rows);

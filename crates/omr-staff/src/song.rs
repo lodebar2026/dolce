@@ -230,6 +230,9 @@ fn voices(items: &[(f64, f64, u32, Option<bool>)], same_dx: f64) -> Vec<(u32, u8
     out
 }
 
+/// 接连这么多个音节所占的拍点上第 1 行都没有字，这一截算只印一遍的共用词。
+const SHARED_RUN: usize = 3;
+
 /// 文字能挂的一个拍点：和弦的 x、所在小节、事件下标、声部。
 struct Anchor {
     x: f64,
@@ -256,11 +259,41 @@ fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, text: &RowText, sam
         return;
     }
     let xs: Vec<f64> = pts.iter().map(|p| p.x).collect();
-    for line in &text.lyrics {
+    // 各行词的音节挂到哪个拍点
+    let placed: Vec<Vec<usize>> = text.lyrics.iter().map(|l| align(&l.row.syls.iter().map(|s| s.x).collect::<Vec<_>>(), &xs)).collect();
+    // 同种文字第 1 行占着的拍点
+    let first_at = |latin: bool| -> Vec<bool> {
+        let mut v = vec![false; xs.len()];
+        for (l, p) in text.lyrics.iter().zip(&placed) {
+            if l.latin == latin && l.number == 1 {
+                p.iter().for_each(|&n| v[n] = true);
+            }
+        }
+        v
+    };
+    let first = [first_at(false), first_at(true)];
+    for (line, place) in text.lyrics.iter().zip(&placed) {
         // 拉丁词的行号排在全曲汉字词之后
-        let number = if line.latin { line.number + han_lines } else { line.number };
-        let sx: Vec<f64> = line.row.syls.iter().map(|s| s.x).collect();
-        for (k, (syl, &n)) in line.row.syls.iter().zip(&align(&sx, &xs)).enumerate() {
+        let base = if line.latin { han_lines } else { 0 };
+        // 只印一遍的词（副歌）排在几行主歌的中间那一行的高度上：这一行里接连三个以上音节所占的那一段拍点，
+        // 第 1 行一个字都没有的，是共用的一行，记到第 1 行
+        let occupied = &first[line.latin as usize];
+        let mut shared = vec![false; place.len()];
+        if line.number > 1 {
+            let mut k = 0;
+            while k < place.len() {
+                let mut e = k;
+                while e + 1 < place.len() && !(place[e]..=place[e + 1]).any(|n| occupied[n]) {
+                    e += 1;
+                }
+                if !occupied[place[k]] && e - k + 1 >= SHARED_RUN {
+                    shared[k..=e].iter_mut().for_each(|v| *v = true);
+                }
+                k = e + 1;
+            }
+        }
+        for (k, (syl, &n)) in line.row.syls.iter().zip(place).enumerate() {
+            let number = base + if shared[k] { 1 } else { line.number };
             let e = &mut ms[pts[n].bar].events[pts[n].event];
             // 行首印的段号并在首字前（汉字 `1.道`，拉丁 `1 Be`）
             let text = match (&line.row.label, k) {

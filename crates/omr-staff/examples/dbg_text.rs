@@ -30,6 +30,9 @@ fn main() {
                 println!("    行 y {:.0}~{:.0}：{}", l.y0, l.y1, l.segs.iter().map(|s| format!("[{:.0} {}]", s.rect.x, s.text())).collect::<Vec<_>>().join(" "));
             }
         }
+        for (i, r) in page.text.rows.iter().enumerate() {
+            println!("  谱行 {i}（y {:.0}）：歌词 {} 行；记号 {}", f.staves[i].ys[0], r.lyrics.len(), r.marks.iter().map(|m| format!("{:.0}:{:?}", m.x, m.dir)).collect::<Vec<_>>().join(" "));
+        }
         println!("  文字 {} ms，OCR {} 条", t.elapsed().as_millis(), ocr.cache.len());
     });
 }
