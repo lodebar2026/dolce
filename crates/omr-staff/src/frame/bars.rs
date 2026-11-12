@@ -12,8 +12,8 @@ const END_TOL: f64 = 0.6;
 const REACH_TOL: f64 = 0.35;
 /// 竖笔最宽（相对线距）：再宽是实心块。
 const MAX_WIDTH: f64 = 0.8;
-/// 粗笔：宽过细笔中位数的这个倍数（终止线、反复记号那一笔）。
-const HEAVY: f64 = 2.0;
+/// 粗笔：宽过细笔中位数的这个倍数（终止线、反复记号那一笔）。同 TS 1.8：扫描件细笔糊宽，粗细比只有 2.1 上下（新编 184 细 5、粗 10~11 像素）。
+const HEAVY: f64 = 1.8;
 /// 粗笔至少这么宽（相对线距）：细笔 0.1~0.16 格，粗笔半格上下。
 const HEAVY_MIN: f64 = 0.28;
 /// 几根竖笔相隔不过这么多（相对线距）并成一条小节线。
@@ -335,6 +335,8 @@ pub fn page_barlines<P: Probe + ?Sized>(ink: &P, segs: &[VSeg], staves: &[Staff]
 pub fn bar_at<P: Probe + ?Sized>(ink: &P, st: &Staff, cx: f64, range: i64, through: bool) -> Option<i64> {
     let sp = st.space();
     let on = |x: i64, y: i64| ink.at(x, y) != BG;
+    // 顺着竖墨走时松阈值图上有墨也算连着（扫描件印淡的小节线断成几截，新编 233 第 2 系统）；判宽、判伸出谱表只看标准图
+    let trace = |x: i64, y: i64| on(x, y) || ink.faint(x, y);
     let run_w = |x: i64, y: i64| {
         let (mut a, mut b) = (x, x);
         while on(a - 1, y) {
@@ -355,12 +357,12 @@ pub fn bar_at<P: Probe + ?Sized>(ink: &P, st: &Staff, cx: f64, range: i64, throu
             let (mut x, mut miss, mut run, mut worst, mut wide, mut lo, mut hi) = (x0, 0, 0, 0, 0, x0, x0);
             let mut ok = true;
             for y in top..=bottom {
-                if on(x, y) {
+                if trace(x, y) {
                     run = 0;
-                } else if on(x - 1, y) {
+                } else if trace(x - 1, y) {
                     x -= 1;
                     run = 0;
-                } else if on(x + 1, y) {
+                } else if trace(x + 1, y) {
                     x += 1;
                     run = 0;
                 } else {
@@ -379,7 +381,8 @@ pub fn bar_at<P: Probe + ?Sized>(ink: &P, st: &Staff, cx: f64, range: i64, throu
                 lo = lo.min(x);
                 hi = hi.max(x);
             }
-            if !ok || miss as f64 > rows * 0.06 || worst > 2 || wide as f64 > rows * 0.3 {
+            // 断口：最长不过半格、合计不过一成多（扫描件印淡的小节线断成几截，新编 233 第 2 系统低音行断 10 像素；调用时已有别的行作证）
+            if !ok || miss as f64 > rows * 0.12 || worst as f64 > (sp * 0.5).max(2.0) || wide as f64 > rows * 0.3 {
                 continue;
             }
             if !through && (inked(lo, hi, (top as f64 - sp * 0.9).round() as i64, (top as f64 - sp * 0.4).round() as i64) > 0.3 || inked(lo, hi, (bottom as f64 + sp * 0.4).round() as i64, (bottom as f64 + sp * 0.9).round() as i64) > 0.3) {

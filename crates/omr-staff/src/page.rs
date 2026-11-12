@@ -93,7 +93,8 @@ pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOc
         let segs = ink.vsegs((unit.space * 3.0) as usize, gap);
         let (blobs, labels) = ink.blobs(4.0);
         let systems = find_systems(bin, soft, &staves, &unit);
-        let bars = page_barlines(&ink, &segs, &staves, &systems, &unit);
+        let probe = crate::frame::ink::WithSoft { ink: &ink, soft: soft.filter(|s| s.w == ink.w && s.h == ink.h) };
+        let bars = page_barlines(&probe, &segs, &staves, &systems, &unit);
         (ink, segs, blobs, labels, systems, bars)
     };
     let mut got = layers(&bin, soft.as_ref());
