@@ -78,7 +78,14 @@ pub fn staff_barlines<P: Probe + ?Sized>(ink: &P, segs: &[VSeg], s: &Staff, unit
             let tol = (s.thick[0] * 1.5).max(sp * 0.08);
             let on_line = |y: f64, a: f64, b: Option<f64>| (y - a).abs() <= tol || b.is_some_and(|b| (y - b).abs() <= tol);
             let snapped = ink.exact() && on_line(y0, top, above.map(|a| a.bottom(x))) && on_line(y1, bot, below.map(|b| b.top(x)));
-            up_ok && down_ok && (snapped || !head_at_end(ink, v, s, sp))
+            // 落在线上也可能是干：从首线下到末线的干（E4 音朝上的干、杠在首线上）——干端收在头里、不正落在线上（离线过 0.75 线宽），
+            // 头贴着干长（零距离）；小节线两端正落在线上，旁边的音总隔着一点
+            let tight = (s.thick[0] * 0.75).max(1.0);
+            let off_line = !on_line(y0, top, above.map(|a| a.bottom(x))) || !on_line(y1, bot, below.map(|b| b.top(x))) || {
+                let t = |y: f64, a: f64, b: Option<f64>| (y - a).abs() <= tight || b.is_some_and(|b| (y - b).abs() <= tight);
+                !t(y0, top, above.map(|a| a.bottom(x))) || !t(y1, bot, below.map(|b| b.top(x)))
+            };
+            up_ok && down_ok && if snapped { !(off_line && head_at_end_near(ink, v, sp, (s.thick[0].ceil() as i64).max(2))) } else { !head_at_end(ink, v, s, sp) }
         })
         .collect();
     cands.sort_by(|a, b| a.x0.cmp(&b.x0));
@@ -204,11 +211,15 @@ fn attached<P: Probe + ?Sized>(ink: &P, v: &VSeg, s: &Staff, sp: f64) -> f64 {
 
 /// 竖段的上端或下端旁边（左或右一个符头宽的窗）墨很满：挂着符头，是符干不是小节线。窗里的谱线存疑像素不算墨。
 fn head_at_end<P: Probe + ?Sized>(ink: &P, v: &VSeg, s: &Staff, sp: f64) -> bool {
-    let hw = (sp * HEAD_WIN).round() as i64;
-    let hh = (sp * 0.5).round() as i64;
     let _ = s;
     // 贴着竖笔的那一小条（符头是挂在干上的：紧挨着就有墨；隔着一截白的是旁边另一个音的头、符杠的一截）
-    let near = (sp * 0.35).round().max(2.0) as i64;
+    head_at_end_near(ink, v, sp, (sp * 0.35).round().max(2.0) as i64)
+}
+
+/// 同 [`head_at_end`]，贴着竖笔那一小条的宽（像素）由调用方定。
+fn head_at_end_near<P: Probe + ?Sized>(ink: &P, v: &VSeg, sp: f64, near: i64) -> bool {
+    let hw = (sp * HEAD_WIN).round() as i64;
+    let hh = (sp * 0.5).round() as i64;
     let fill = |xa: i64, xb: i64, y0: i64, y1: i64| {
         let (mut n, mut ink_n) = (0, 0);
         for y in y0..=y1 {
