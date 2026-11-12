@@ -13,6 +13,9 @@ const MIN_LEN: f64 = 2.0;
 /// 其中细的一段至少这么长（相对线距）；细 = 横向墨宽不过 `THIN_W`。
 const MIN_THIN: f64 = 0.8;
 const THIN_W: f64 = 0.35;
+/// 干的断口最宽（相对线距）与断口那头细墨至少连着多长（相对线距），见 [`run_end`]。
+const STEM_BREAK: f64 = 0.4;
+const STEM_RESUME: f64 = 0.3;
 /// 干的列可以在量到的头缘之外这么多（相对线距）：斜着印的头，干接在头的下角 / 上角，量缘的那两行够不着它。
 const EDGE_OUT: f64 = 0.15;
 
@@ -40,13 +43,36 @@ pub(crate) fn width_at<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, cap: i64) -> 
 }
 
 /// 从 (x, y) 沿列往 `dir` 方向走到墨断开（不过 `gap` 像素的白缝接上），回最后一个墨像素的 y。
-fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64) -> i64 {
+/// `wide`：扫描件的干常断成几截（头与干之间、干中段），断口宽过 `gap`、不过 `wide.0` 像素时，
+/// 断口这头是细墨（顺着干走过来的）就接；这头是头的，那头接着的要是细墨（横向墨宽不过 `wide.1`；看 `wide.2` 行，那截先断了的要有两行以上）才接上——接着的是另一个头（上下贴着的两个头之间的缝）不接。
+fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64, wide: (i64, i64, i64)) -> i64 {
     let mut end = y;
     let mut cur = y;
+    let h = ink.height() as i64;
     loop {
-        let next = (1..=gap + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG);
+        let near = (1..=gap + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG);
+        let next = near.or_else(|| {
+            let yy = (gap + 2..=wide.0 + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG)?;
+            // 断口这头是细墨（顺着干走过来）：那头接着什么都接（干断开后接着和弦的另一个头）
+            // （谱线上的存疑像素横向连不成墨宽，量出来都细，不算）
+            if (0..2).all(|k| ink.at(x, cur - dir * k) == INK && width_at(ink, x, cur - dir * k, wide.1) <= wide.1) {
+                return Some(yy);
+            }
+            // 细墨连着 wide.2 行；先断了也行（干断成几小截），只要那截有两行以上、都细
+            let (mut k, mut n) = (0, 0);
+            while k < wide.2 && ink.at(x, yy + dir * k) != BG {
+                if ink.at(x, yy + dir * k) == INK {
+                    if width_at(ink, x, yy + dir * k, wide.1) > wide.1 {
+                        return None;
+                    }
+                    n += 1;
+                }
+                k += 1;
+            }
+            (n >= 2).then_some(yy)
+        });
         match next {
-            Some(yy) if yy >= 0 && (yy as usize) < ink.height() => {
+            Some(yy) if yy >= 0 && yy < h => {
                 end = yy;
                 cur = yy;
             }
@@ -110,6 +136,7 @@ fn scan_stem<P: Probe + ?Sized>(ink: &P, cy: i64, sp: f64, thick: f64, xl: i64, 
     let gap = (thick.ceil() as i64).max(1);
     let thin_w = ((THIN_W * sp) as i64).max((thick * 2.5) as i64);
     let half = (0.5 * sp).round() as i64;
+    let wide = ((STEM_BREAK * sp) as i64, thin_w, ((STEM_RESUME * sp).round() as i64).max(2));
     // (细段长, 干)
     let mut best: Option<(i64, Stem)> = None;
     let out = ((EDGE_OUT * sp).round() as i64).max(1);
@@ -121,7 +148,7 @@ fn scan_stem<P: Probe + ?Sized>(ink: &P, cy: i64, sp: f64, thick: f64, xl: i64, 
         let inside = (xl..=xr).contains(&x);
         let r0 = rows.iter().copied().find(|&r| inside && ink.at(x, r) == INK).or_else(|| (0..=half).flat_map(|d| [cy - d, cy + d]).find(|&r| ink.at(x, r) == INK));
         let Some(r0) = r0 else { continue };
-        let (top, bottom) = (run_end(ink, x, r0, -1, gap), run_end(ink, x, r0, 1, gap));
+        let (top, bottom) = (run_end(ink, x, r0, -1, gap, wide), run_end(ink, x, r0, 1, gap, wide));
         if ((cy - top).max(bottom - cy) as f64) < MIN_LEN * sp {
             continue;
         }
