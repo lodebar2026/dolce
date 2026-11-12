@@ -170,6 +170,22 @@ impl From<Dir> for Placed {
     }
 }
 
+/// 一个落选候选（换候选用）：改成什么、花费（越小越像；与满拍裁决同一把尺子）。
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EventAlt {
+    pub choice: Choice,
+    pub cost: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Choice {
+    /// 改成这个时值（音符种类 + 附点数；实心 / 空心随种类走）。
+    Duration { ntype: NoteType, dots: u8 },
+    /// 删掉（不是音 / 不是休止）。
+    Drop,
+}
+
 /// 和弦里一个音（或休止）的识别出处：哪个音高（休止为 None）、识别 id、源框。
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HeadSrc {
@@ -209,11 +225,14 @@ pub struct Event {
     /// 各音（休止一条）的识别 id 与源框；写出时 `<note id>` 按音高从这里取。
     #[serde(default)]
     pub src: Vec<HeadSrc>,
+    /// 落选候选（花费从小到大）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alts: Vec<EventAlt>,
 }
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, staff: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new() }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, staff: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new(), alts: Vec::new() }
     }
 
     /// 这个音（休止为 None）的识别出处。

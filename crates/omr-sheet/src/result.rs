@@ -174,6 +174,12 @@ pub mod codes {
     pub const METER_INFERRED: &str = "meter.inferred";
     /// 读到的拍号与多数小节对不上。
     pub const METER_MISMATCH: &str = "meter.mismatch";
+    /// 符头的模板分比本页中位低一截（可能不是头）。
+    pub const HEAD_WEAK: &str = "head.weak";
+    /// 这一行没读出调号，沿用的（调号不是 C 大调时才记）。
+    pub const KEY_CARRIED: &str = "key.carried";
+    /// 这一行没读出谱号，沿用的。
+    pub const CLEF_CARRIED: &str = "clef.carried";
 }
 
 #[cfg(test)]

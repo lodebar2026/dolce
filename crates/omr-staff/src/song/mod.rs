@@ -15,7 +15,7 @@ use crate::text::classify::RowText;
 use crate::spans::arcs::{Arc, ChordRef};
 use crate::spans::wedges::Wedge;
 use dolce_omr_sheet::music::Pitch;
-use dolce_omr_sheet::result::{Doubt, Locus, Rid, RidKind, RidSeq, Src, SrcBox};
+use dolce_omr_sheet::result::{codes, Doubt, Locus, Rid, RidKind, RidSeq, Src, SrcBox};
 use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, HeadSrc, Placed, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
 use dolce_omr_text::lyrics::align;
@@ -319,7 +319,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     fused += fuse::apply(&cx, &mut sys_notes[k], &xs, &wants, &loose, &calib);
                 }
             }
-            let (flags, st) = meter::settle_system(f, rows, &mut sys_notes, &bar_of, &bars, page_med(page));
+            let head_med = page_med(page);
+            let (flags, st) = meter::settle_system(f, rows, &mut sys_notes, &bar_of, &bars, head_med);
             stats += st;
             // 多小节休止：第 j 小节印着 n 小节的，各声部在它后面插 n − 1 个整小节休止（GT 照展开后的小节记）
             let mut extra: Vec<(usize, usize)> = Vec::new();
@@ -341,6 +342,20 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 let up = f.up;
                 let at = Locus { page: pn + 1, system: sys_i, row: fl.row, measure: Some(from + shifted(fl.bar)), note: None };
                 doubts.push(Doubt::new(at, Rect::new(x0 / up, s.top(x0) / up, (x1 - x0) / up, (s.bottom(x0) - s.top(x0)) / up), fl.code).with_note(fl.note));
+            }
+            // 沿用来的调号、谱号（这个系统 / 这一行没读出来）
+            let lead_rect = |k: usize| {
+                let s = &f.staves[rows[k]];
+                let x1 = page.attrs[rows[k]].lead_end.max(s.left + s.space());
+                Rect::new(s.left / f.up, s.top(s.left) / f.up, (x1 - s.left) / f.up, (s.bottom(s.left) - s.top(s.left)) / f.up)
+            };
+            if sys_keys[sys_i].is_none() && sys_key.fifths != 0 {
+                doubts.push(Doubt::new(Locus { page: pn + 1, system: sys_i, row: 0, measure: Some(from), note: None }, lead_rect(0), codes::KEY_CARRIED));
+            }
+            for (k, &p) in slots.iter().enumerate() {
+                if clef_reads[p][sys_i].is_none() {
+                    doubts.push(Doubt::new(Locus { page: pn + 1, system: sys_i, row: k, measure: Some(from), note: None }, lead_rect(k), codes::CLEF_CARRIED));
+                }
             }
             for (k, &i) in rows.iter().enumerate() {
                 let p = slots[k];
@@ -418,7 +433,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                         let Some(ch) = ch else {
                             let r = rest.unwrap();
                             let src = vec![HeadSrc { pitch: None, src: ids.src(r.rid, RidKind::Note, Rect::new(r.rect.0, r.rect.1, r.rect.2, r.rect.3)) }];
-                            ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), src, ..Event::new(vec![], r.ntype, r.dots, None) });
+                            ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), src, alts: meter::rest_menu(r), ..Event::new(vec![], r.ntype, r.dots, None) });
                             beats.push(Anchor { x: r.x, y: r.y, bar: j, event: ms[j].events.len() - 1, voice });
                             continue;
                         };
@@ -452,7 +467,12 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                                 n
                             }
                             None => {
-                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, src: hs, ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
+                                if meter::weak(ch, head_med) {
+                                    let at = Locus { page: pn + 1, system: sys_i, row: k, measure: Some(from + shifted(j)), note: None };
+                                    let h = &ch.heads[0];
+                                    doubts.push(Doubt { rid: hs[0].src.rid, ..Doubt::new(at, ids.at(head_rect(h.x, h.y, sp)).rect, codes::HEAD_WEAK) });
+                                }
+                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, src: hs, alts: meter::chord_menu(ch, head_med), ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
                                 ms[j].events.len() - 1
                             }
                         };

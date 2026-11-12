@@ -41,7 +41,8 @@ pub struct Grace {
 }
 
 /// 落选的时值候选（计划 §2.8）：证据差一点没收（或勉强收了）的减时线、附点、增时线。满拍裁决只在这些候选里挑。
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AltKind {
     DivPlus,
     DivMinus,
@@ -66,7 +67,7 @@ impl AltKind {
 }
 
 /// `cost`：改成这个候选要付的代价（证据越弱越大），裁决取总代价最小的一组。
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct Alt {
     pub kind: AltKind,
     pub cost: f64,
@@ -100,8 +101,8 @@ pub struct JpNum {
     /// 读成「1」的格其实像一根光竖条（没有旗、没有底座）：也许是小节线（不写出）
     #[serde(skip)]
     pub bar_like: bool,
-    /// 落选的时值候选（不写出）
-    #[serde(skip)]
+    /// 落选的时值候选（换候选用；TS 的 `JpNum` 没有这一项，读入时忽略）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<Alt>,
     /// 各段歌词（下标 = 段，空串 = 这段没字）
     #[serde(skip_serializing_if = "Vec::is_empty")]

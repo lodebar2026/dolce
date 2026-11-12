@@ -2,12 +2,13 @@
 //! 选一组使本小节满拍、且与同系统别的行拍位对齐的；选出来的以**修正提案**（[`Fix`]）交回，由 [`apply`] 统一落到音符上。
 //! 凑不满的保持原判，记可疑。别的模块（跨谱表对齐、简谱互证）要改音符也走 [`Fix`]。
 use super::heads::HeadKind;
+use super::rests::Rest;
 use super::{Chord, RowNotes, SAME_ONSET};
 use crate::page::Layout;
 use dolce_omr_sheet::meter::{base_line, solve, Alt, Item, Line};
 use super::tuplets::TupletCand;
 use dolce_omr_sheet::result::codes;
-use dolce_omr_sheet::score::{NoteType, Tuplet};
+use dolce_omr_sheet::score::{Choice, EventAlt, NoteType, Tuplet};
 
 /// 各种改动的花费（越大越不情愿；只用来在几种改法之间排先后）：加一条符尾、删休止、删和弦。
 const COST_TAIL: f64 = 1.2;
@@ -142,12 +143,96 @@ fn chord_alts(c: &Chord, med: f64) -> Vec<(Op, Alt)> {
         t.tails += 1;
         v.push((Op::Tails(t.tails), Alt { dur: Some(chord_dur(&t)), cost: COST_TAIL }));
     }
-    let s = c.heads.iter().map(|h| h.score).fold(0.0, f64::max);
-    let low = ((med - s) / LOW_SPAN).clamp(0.0, 1.0);
+    let low = lowness(c, med);
     if low > 0.5 {
         v.push((Op::Drop, Alt { dur: None, cost: COST_DROP - (COST_DROP - COST_DROP_LOW) * low }));
     }
     v
+}
+
+/// 换候选菜单里「拉长」那几样（去一条符尾、补 / 去附点、实心改空心）的花费：满拍裁决量过它们净亏，不拿来凑满拍，只给人选。
+const COST_LONGER: f64 = 2.5;
+
+fn longer(t: NoteType) -> Option<NoteType> {
+    Some(match t {
+        NoteType::N32nd => NoteType::N16th,
+        NoteType::N16th => NoteType::Eighth,
+        NoteType::Eighth => NoteType::Quarter,
+        NoteType::Quarter => NoteType::Half,
+        NoteType::Half => NoteType::Whole,
+        NoteType::Whole => return None,
+    })
+}
+
+fn shorter(t: NoteType) -> Option<NoteType> {
+    Some(match t {
+        NoteType::Whole => NoteType::Half,
+        NoteType::Half => NoteType::Quarter,
+        NoteType::Quarter => NoteType::Eighth,
+        NoteType::Eighth => NoteType::N16th,
+        NoteType::N16th => NoteType::N32nd,
+        NoteType::N32nd => return None,
+    })
+}
+
+fn menu(mut v: Vec<EventAlt>) -> Vec<EventAlt> {
+    v.sort_by(|a, b| a.cost.total_cmp(&b.cost));
+    let mut out: Vec<EventAlt> = Vec::new();
+    for a in v {
+        if !out.iter().any(|o| o.choice == a.choice) {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// 一个和弦的落选候选（换候选菜单）：满拍裁决的备选（[`chord_alts`]：加一条符尾、删模板分低的头）照它的花费，
+/// 另给拉长的几样与删掉（按 [`COST_LONGER`]、[`COST_DROP`]）。
+pub fn chord_menu(c: &Chord, med: f64) -> Vec<EventAlt> {
+    let (t, d) = (c.ntype(), c.dots);
+    let mut v: Vec<EventAlt> = chord_alts(c, med)
+        .into_iter()
+        .map(|(op, a)| EventAlt {
+            choice: match op {
+                Op::Tails(n) => Choice::Duration { ntype: Chord { tails: n, ..c.clone() }.ntype(), dots: d },
+                _ => Choice::Drop,
+            },
+            cost: a.cost,
+        })
+        .collect();
+    if c.kind() == HeadKind::Filled && c.tails > 0 {
+        v.extend(longer(t).map(|ntype| EventAlt { choice: Choice::Duration { ntype, dots: d }, cost: COST_LONGER }));
+    }
+    if c.kind() == HeadKind::Filled && c.tails == 0 {
+        v.push(EventAlt { choice: Choice::Duration { ntype: NoteType::Half, dots: d }, cost: COST_LONGER });
+    }
+    v.push(EventAlt { choice: Choice::Duration { ntype: t, dots: if d == 0 { 1 } else { 0 } }, cost: COST_LONGER });
+    v.push(EventAlt { choice: Choice::Drop, cost: COST_DROP });
+    menu(v)
+}
+
+/// 一个休止的落选候选：删掉（同满拍裁决），或长一档 / 短一档的休止。
+pub fn rest_menu(r: &Rest) -> Vec<EventAlt> {
+    let mut v = vec![EventAlt { choice: Choice::Drop, cost: COST_DROP_REST }];
+    for t in [longer(r.ntype), shorter(r.ntype)].into_iter().flatten() {
+        v.push(EventAlt { choice: Choice::Duration { ntype: t, dots: r.dots }, cost: COST_LONGER });
+    }
+    menu(v)
+}
+
+/// 和弦的模板分比本页中位低多少（0~1，过 0.5 算低：满拍裁决可以删它、核对时标可疑）。
+pub fn lowness(c: &Chord, med: f64) -> f64 {
+    let s = c.heads.iter().map(|h| h.score).fold(0.0, f64::max);
+    ((med - s) / LOW_SPAN).clamp(0.0, 1.0)
+}
+
+/// 模板分比本页中位低这么多标「头可疑」（同满拍裁决肯删它的门槛：低满一个 `LOW_SPAN`）。
+pub const WEAK_GAP: f64 = LOW_SPAN;
+
+/// 这个和弦的头模板分低得可疑（核对时标出来）。只看实心头：空心头、全音符不算模板分（恒为 0）。
+pub fn weak(c: &Chord, med: f64) -> bool {
+    let s = c.heads.iter().map(|h| h.score).fold(0.0, f64::max);
+    c.kind() == HeadKind::Filled && s > 0.0 && med - s >= WEAK_GAP
 }
 
 /// 全休止占满整小节。
