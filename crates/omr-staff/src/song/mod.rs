@@ -194,7 +194,8 @@ fn page_med(page: &Page) -> f64 {
 const VOLTA_TO_END: f64 = 2.5;
 
 /// 弱起与跨行劈开的小节按拍数定（各声部的小节结构相同，按全部声部量）：
-/// 曲首小节不满拍、又是整拍的是弱起；系统首小节与上一系统末小节都不满、合起来正好一小节的是跨行劈开的后半截；
+/// 曲首小节不满拍、又是整拍的是弱起；系统首小节与上一系统末小节都不满、合起来正好一小节的是跨行劈开的后半截
+/// （或上一小节各声部都不满、有一个声部两半合起来正好一小节）；
 /// 按宽度估成劈开、两半其实各自满拍的撤掉。都记 `implicit`。
 fn split_bars(parts: &mut [Part]) {
     let n = parts.iter().map(|p| p.measures.len()).max().unwrap_or(0);
@@ -218,6 +219,8 @@ fn split_bars(parts: &mut [Part]) {
     }
     let ds: Vec<u32> = (0..n).map(dur).collect();
     let firsts: Vec<bool> = (0..n).map(|mi| parts.iter().any(|p| p.measures.get(mi).is_some_and(|m| m.new_system))).collect();
+    // 各声部各小节的内容时值
+    let pds: Vec<Vec<u32>> = parts.iter().map(|p| p.measures.iter().map(|m| m.events.iter().map(|e| e.onset + e.divisions()).max().unwrap_or(0)).collect()).collect();
     let mut set = |mi: usize, v: bool| parts.iter_mut().filter_map(|p| p.measures.get_mut(mi)).for_each(|m| m.implicit = v);
     if n > 1 && want[0] > 0 && ds[0] > 0 && ds[0] < want[0] && ds[0] % beat[0] == 0 {
         set(0, true);
@@ -227,7 +230,10 @@ fn split_bars(parts: &mut [Part]) {
         if !firsts[mi] || w == 0 || ds[mi] == 0 || ds[mi - 1] == 0 {
             continue;
         }
-        if ds[mi] < w && ds[mi - 1] < w && ds[mi] + ds[mi - 1] == w {
+        // 各声部分开量：上一小节各声部都不满、有一个声部两半合起来正好一小节的也算（别的声部有一半时值读错，新编 139 低音第 16 小节读成 4 拍）
+        let prev_short = pds.iter().filter_map(|d| d.get(mi - 1)).all(|&d| d < w);
+        let one_exact = pds.iter().any(|d| d.get(mi).is_some_and(|&a| a > 0 && a < w) && d.get(mi - 1).is_some_and(|&b| b + d[mi] == w));
+        if (ds[mi] < w && ds[mi - 1] < w && ds[mi] + ds[mi - 1] == w) || (prev_short && one_exact) {
             set(mi, true);
         } else if ds[mi] == w && ds[mi - 1] == w {
             set(mi, false);
