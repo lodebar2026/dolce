@@ -1,7 +1,7 @@
 //! OCR：PP-OCR 识别（rec，CTC）与检测（DBNet det）。
 //!
 //! - [`surface`]：灰度画面与缩放（缩小面积平均、放大双线性）
-//! - 推理经 [`Infer`] 注入：原生（`native` 特性，onnxruntime）/ 宿主（wasm 下由网页调 onnxruntime-web）/ 回归用的缓存
+//! - 推理经 [`Infer`] 注入：原生（`native` 特性，onnxruntime）/ 纯 Rust（`tract` 特性，网页版 wasm）/ 回归用的缓存
 //! - [`Ocr`]：文本条带位置识别、数字格批量识别、逐字候选、文本检测（单块与整页分块）
 //! - [`cache`]：按送检画面内容寻址的结果缓存（回归第二次起不推理）
 //!
@@ -13,6 +13,8 @@ mod det;
 #[cfg(feature = "native")]
 pub mod native;
 pub mod surface;
+#[cfg(feature = "tract")]
+pub mod tract;
 
 pub use cache::OcrCache;
 pub use ctc::{CharPos, RankedChar};

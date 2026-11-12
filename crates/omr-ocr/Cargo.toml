@@ -9,12 +9,15 @@ publish.workspace = true
 default = ["native"]
 # 原生推理（onnxruntime，桌面与命令行）；wasm 不开，推理由宿主页面经 `Infer` 注入
 native = ["dep:ort"]
+# 纯 Rust 推理（tract）：网页版 wasm 用；原生下也能开，用来与 ort 对账
+tract = ["dep:tract-onnx"]
 
 [dependencies]
 dolce-omr-core = { path = "../omr-core" }
 serde.workspace = true
 serde_json = "1"
 ort = { version = "=2.0.0-rc.14", optional = true }
+tract-onnx = { version = "0.23", optional = true }
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

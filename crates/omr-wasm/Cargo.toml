@@ -1,0 +1,16 @@
+[package]
+name = "dolce-omr-wasm"
+description = "悦谱 Dolce 识别的网页版绑定（wasm-bindgen）：OCR 用 tract 纯 Rust 推理"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+dolce-omr-core = { path = "../omr-core" }
+dolce-omr-ocr = { path = "../omr-ocr", default-features = false, features = ["tract"] }
+wasm-bindgen = "=0.2.120"
+# tract 的随机数依赖在 wasm32-unknown-unknown 下要指定从 JS 取
+getrandom = { version = "0.4", features = ["wasm_js"] }
