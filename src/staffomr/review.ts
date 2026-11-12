@@ -51,6 +51,9 @@ export interface StaffReviewStats {
   parts?: number;
 }
 
+/** 重建的产物：新的 MusicXML 与系统结构。 */
+export type Rebuilt = { xml: string; score: ReviewGeometry };
+
 export interface StaffReviewResult<P extends StaffReviewPage = StaffReviewPage> {
   xml: string | null;
   score: ReviewGeometry | null;
@@ -64,10 +67,10 @@ export interface StaffReviewResult<P extends StaffReviewPage = StaffReviewPage> 
   markBoxes: Map<string, MarkBox>;
   /** 各系统各谱行现在指派到第几个声部行（`buildScore` 的结果；关联表的初值） */
   assignment(): number[][];
-  /** 按新的指派（`slots[系统][谱行]`，-1 忽略）重建 MusicXML，不重跑识别 */
-  rebuild(slots: number[][]): { xml: string; score: ReviewGeometry };
+  /** 按新的指派（`slots[系统][谱行]`，-1 忽略）重建 MusicXML，不重跑识别（Rust 会话是异步的，TS 各路同步回） */
+  rebuild(slots: number[][]): Rebuilt | Promise<Rebuilt>;
   /** 改系统切分（合并 / 拆开，`score.ts::restructureSystems`）后按自动指派重建，不重跑识别；做不了返回 null */
-  restructure?(op: SystemOp): { xml: string; score: ReviewGeometry } | null;
+  restructure?(op: SystemOp): Rebuilt | null | Promise<Rebuilt | null>;
 }
 
 /** 识别对照里音以外的源框：歌词字、弧、延音线、力度、文字指示 */

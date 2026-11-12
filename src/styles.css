@@ -552,6 +552,7 @@ button:focus-visible, select:focus-visible {
 .omr-overlay text.omr-chord-deleted { opacity: 0.45; text-decoration: line-through; }
 /* 核对时改过的（`omr/reproject.ts`）：改过、新插的标青，删掉的变灰加红色删除线，改过的歌词盖一层白底新字 */
 .doubt-count { color: #e67700; }
+.omr-region-box { pointer-events: none; fill: rgba(25, 113, 194, 0.12); stroke: #1971c2; stroke-width: 2; stroke-dasharray: 6 3; }
 .omr-doubt-box { pointer-events: none; fill: rgba(250, 176, 5, 0.18); stroke: #f59f00; stroke-width: 2; stroke-dasharray: 4 2; }
 .omr-overlay .omr-num-edited text, .omr-overlay .omr-num-inserted text { fill: #087f5b; }
 .omr-overlay .omr-num-edited circle, .omr-overlay .omr-num-inserted circle { fill: #087f5b; }

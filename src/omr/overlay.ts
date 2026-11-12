@@ -535,31 +535,42 @@ function buildDoubtLayer(score: RecognizedScore, stats: Stats, lyricFixes: reado
       if (a) b = { x: a.x - stats.lyrH / 2, y: a.y - stats.lyrH / 2, w: stats.lyrH, h: stats.lyrH };
     }
     if (!b) continue;
-    const r = document.createElementNS(SVG_NS, "rect");
-    r.setAttribute("x", String(b.x - pad));
-    r.setAttribute("y", String(b.y - pad));
-    r.setAttribute("width", String(b.w + pad * 2));
-    r.setAttribute("height", String(b.h + pad * 2));
-    r.setAttribute("rx", String(pad));
-    r.setAttribute("class", "omr-doubt-box");
+    const reasons = it.verse === null ? flat[it.i]!.doubt ?? [] : [];
+    const r = doubtBox(b, pad, it.verse === null ? doubtTitle(reasons) : tr("omr.doubt.lyric", { n: it.verse + 1 }));
     r.dataset.i = String(it.i);
     if (it.verse !== null) r.dataset.verse = String(it.verse);
-    const t = document.createElementNS(SVG_NS, "title");
-    const reasons = it.verse === null ? flat[it.i]!.doubt ?? [] : [];
-    t.textContent = it.verse === null ? tr("omr.doubt.reasons", { list: reasons.map((x) => (x in DOUBT_TEXT ? tr(`omr.doubt.${x}` as MsgKey) : x)).join(tr("omr.doubt.sep")) }) : tr("omr.doubt.lyric", { n: it.verse + 1 });
-    r.appendChild(t);
     g.appendChild(r);
   }
   return g;
 }
 
-/** 有译文的可疑理由（文字在词典 `omr.doubt.<code>`；中文原文留作对照）。 */
-const DOUBT_TEXT: Record<string, string> = {
-  "note.offRow": "比同一行的音高出或低出一截，可能不是音（小字、附注）",
-  "oct.inkAbove": "正上方有像高音点的墨（粘在弧上），可能漏了高音点",
-  "oct.oddShape": "八度点形状不像点，可能把别的记号当成了八度点",
-  "oct.offCenter": "旁边有个偏了一点的点，可能漏了八度点",
-};
+/** 一个可疑黄框（简谱、五线谱核对视图同一画法）：`b` 外扩 `pad`，悬停提示 `title`。 */
+export function doubtBox(b: Rect, pad: number, title: string): SVGRectElement {
+  const r = document.createElementNS(SVG_NS, "rect");
+  r.setAttribute("x", String(b.x - pad));
+  r.setAttribute("y", String(b.y - pad));
+  r.setAttribute("width", String(b.w + pad * 2));
+  r.setAttribute("height", String(b.h + pad * 2));
+  r.setAttribute("rx", String(pad));
+  r.setAttribute("class", "omr-doubt-box");
+  const t = document.createElementNS(SVG_NS, "title");
+  t.textContent = title;
+  r.appendChild(t);
+  return r;
+}
+
+/** 可疑理由码 → 「可疑：…；…」（有译文的取词典 `omr.doubt.<code>`，没有的原样）。 */
+export function doubtTitle(codes: readonly string[]): string {
+  return tr("omr.doubt.reasons", { list: codes.map((x) => (DOUBT_CODES.has(x) ? tr(`omr.doubt.${x}` as MsgKey) : x)).join(tr("omr.doubt.sep")) });
+}
+
+/** 有译文的可疑理由码（文字在词典 `omr.doubt.<code>`）：TS 简谱的四个，Rust 两条路线共用的一张（`omr-sheet::result::codes`，简谱满拍改法细分 `beat.fix.<改法>`）。 */
+const DOUBT_CODES = new Set([
+  "note.offRow", "oct.inkAbove", "oct.oddShape", "oct.offCenter",
+  "beat.short", "beat.over", "beat.ambiguous", "beat.misaligned", "beat.fix", "beat.fix.bar",
+  "beat.fix.div+", "beat.fix.div-", "beat.fix.dot+", "beat.fix.dot-", "beat.fix.aug+", "beat.fix.aug-",
+  "meter.inferred", "meter.mismatch", "head.weak", "key.carried", "clef.carried",
+]);
 
 /** 一行的竖向内容范围（含八度点 + 本行下方歌词带），供浮窗 viewBox 竖向裁剪。横向用整幅源图宽以便 1:1 对比。 */
 function rowContentExtent(score: RecognizedScore, stats: Stats, ri: number): { top: number; bottom: number } {

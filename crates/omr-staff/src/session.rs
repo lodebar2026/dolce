@@ -109,10 +109,7 @@ impl Session {
         match op {
             Op::Rebuild { slots } => self.rebuild(&slots)?,
             Op::Restructure { change } => self.restructure(change)?,
-            Op::Pin { rid, fact } => {
-                self.c.pins.retain(|p| p.0 != rid);
-                self.c.pins.push((rid, fact));
-            }
+            Op::Pin { rid, fact } => self.pin(rid, fact),
             Op::Unpin { rid } => {
                 self.c.pins.retain(|p| p.0 != rid);
                 self.c.adds.retain(|a| a.rid != rid);
@@ -136,13 +133,19 @@ impl Session {
                     Choice::Duration { ntype, dots } => Fact::Duration { ntype, dots },
                     Choice::Drop => Fact::Drop,
                 };
-                self.c.pins.retain(|p| p.0 != rid);
-                self.c.pins.push((rid, fact));
+                self.pin(rid, fact);
             }
             Op::Context { system, context } => self.c.contexts.push((system, context)),
         }
         self.reassemble();
         Ok(&self.song)
+    }
+
+    /// 钉一条事实：同一个 id 上同一种事实（删 / 时值 / 音高）后钉的压前钉的，不同种的并存（改了音高又改时值两条都留）；删掉压掉别的。
+    fn pin(&mut self, rid: Rid, fact: Fact) {
+        let kind = |f: &Fact| std::mem::discriminant(f);
+        self.c.pins.retain(|p| p.0 != rid || (kind(&p.1) != kind(&fact) && fact != Fact::Drop && p.1 != Fact::Drop));
+        self.c.pins.push((rid, fact));
     }
 
     fn rebuild(&mut self, slots: &[Vec<Option<usize>>]) -> Result<(), String> {

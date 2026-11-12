@@ -16,7 +16,8 @@ fn image_is_one_page() {
     let r = d.render(0, 0.5).unwrap();
     assert_eq!((r.w, r.h), ((w * 0.5).round() as usize, (h * 0.5).round() as usize));
     assert_eq!(r.rgba.len(), r.w * r.h * 4);
-    let (bin, k) = staff_binary(&d, 0).unwrap();
+    let (bin, k, at) = staff_binary(&d, 0).unwrap();
+    assert_eq!((at.page_w, at.page_h), (w, h));
     assert_eq!(k, 1.0);
     assert_eq!((bin.w as f64, bin.h as f64), (w, h));
     assert!(bin.data.iter().any(|&v| v == 1) && bin.data.iter().any(|&v| v == 0));
@@ -32,4 +33,12 @@ fn pdf_pages_and_render() {
     let r = d.render(0, 2.0).unwrap();
     assert_eq!(r.w, (w * 2.0).round() as usize);
     assert_eq!(d.sources(&[0, 3]).unwrap().iter().map(|s| s.0).collect::<Vec<_>>(), vec![0, 3]);
+}
+
+#[test]
+fn several_files_make_one_doc() {
+    let (Some(a), Some(b)) = (testdata("五线谱/万口欢唱/万口欢唱.png"), testdata("合唱谱/破碎扫描/破碎.pdf")) else { return };
+    let d = Doc::open_many(vec![a, b]).unwrap();
+    assert_eq!(d.page_count(), 12);
+    assert!(d.page_size(1).unwrap().0 < 1000.0);
 }

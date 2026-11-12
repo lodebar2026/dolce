@@ -2,14 +2,18 @@
 // 启动后按 `DOLCE_BENCH` 环境变量指的配置逐份识别位图五线谱，量几何与 OCR 各段，结果写成 JSON 后退出。
 // 正式构建里 `main.ts` 不引这个模块（构建期常量判掉，整段剔除）。
 //
-// 配置：{ "pdfs": ["绝对路径", …], "caches": "放 raster*.json 离线缓存的目录", "jianpu": ["简谱图片绝对路径", …], "dump": "简谱输出目录", "out": "结果 JSON 路径" }
+// 配置：{ "pdfs": ["绝对路径", …], "caches": "放 raster*.json 离线缓存的目录", "jianpu": ["简谱图片绝对路径", …], "dump": "简谱输出目录", "out": "结果 JSON 路径",
+//         "rust": [{ "files": ["绝对路径", …], "kind": "auto|staff|jianpu", "ops": [会话操作, …] }, …] }
+// `rust`：走编辑器真实入口（`OmrController.recognizeFiles` → Rust 识别），记状态栏、会话种类、核对数据、各会话操作的回话与关联表原样重建（P12 桌面版走通用）。
 // 位图五线谱每份跑两遍：按离线缓存认（只量几何，同 Node 回归与 dev 的 WebKit 测速）、现跑 OCR（推理走原生 ort，按种类计时）。
 // 简谱每张现跑一遍，计时并把 123 与整份识别结果写到 `dump`（与 Node 现跑的输出逐字比，验原生推理那一路）。
 import { invoke } from "@tauri-apps/api/core";
 import { omrProfile, omrProfileReset } from "../omrkit/paddleocr";
 import type { RasterOcrCaches } from "../rasteromr/song";
+import type { RustReviewResult, RustSessionOp } from "../omrrust/adapter";
 
 interface BenchConfig {
+  rust?: { files: string[]; kind?: "auto" | "staff" | "jianpu"; ops?: RustSessionOp[] }[];
   pdfs?: string[];
   jianpu?: string[];
   dump?: string;
@@ -44,6 +48,52 @@ export async function maybeRunDesktopBench(): Promise<void> {
     await invoke("bench_write", { path: `${cfg.out}.log`, text: log }).catch(() => undefined);
   };
   await step("开始");
+  const saveRows = (ok: boolean, error?: string) =>
+    invoke("bench_write", { path: cfg.out, text: JSON.stringify({ ok, error, ua: navigator.userAgent, rows }, null, 1) }).catch(() => undefined);
+  if (cfg.rust?.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const app = (window as any).__app;
+    for (const item of cfg.rust) {
+      const row: Record<string, unknown> = { files: item.files, kind: item.kind ?? "auto" };
+      try {
+        const files = await Promise.all(item.files.map(async (p) => ({ bytes: await readBytes(p), name: p.split("/").pop()! })));
+        app.omr.kind = item.kind ?? "auto";
+        const t0 = performance.now();
+        row.ok = await app.omr.recognizeFiles(files);
+        row.ms = Math.round(performance.now() - t0);
+        row.status = app.status as string;
+        row.sessionKind = app.omr.sessionKind;
+        row.textHead = (app.getText() as string).slice(0, 200);
+        const res = app.omr.staffResult as RustReviewResult | null;
+        if (res) {
+          row.stats = res.stats;
+          row.noteBoxes = res.noteBoxes.size;
+          row.doubts = res.doubts.length;
+          row.pages = res.pages.map((p) => ({ w: p.result.raster?.bin.w, h: p.result.raster?.bin.h, scale: p.scale }));
+          const ops: unknown[] = [];
+          for (const op of item.ops ?? []) {
+            const t1 = performance.now();
+            try {
+              const r = await res.apply!(op);
+              ops.push({ op: op.op, ms: Math.round(performance.now() - t1), rid: r.rid, count: r.count, xml: r.xml.length });
+            } catch (e) {
+              ops.push({ op: op.op, error: String(e) });
+            }
+          }
+          row.ops = ops;
+          const t2 = performance.now();
+          row.rebuild = await app.omr.rebuildStaff(res.assignment());
+          row.rebuildMs = Math.round(performance.now() - t2);
+        } else row.jianpuRows = app.omr["score"]?.rows?.length ?? null;
+      } catch (e) {
+        row.error = String((e as Error)?.stack ?? e);
+      }
+      rows.push(row);
+      await step(`rust ${item.files.map((f) => f.split("/").pop()).join("+")} ${String(row.ok)} ${String(row.ms)}ms`);
+      await saveRows(true);
+    }
+    if (!cfg.pdfs?.length && !cfg.jianpu?.length) return void invoke("bench_exit");
+  }
   try {
     const m = await import("../rasteromr/browser");
     let caches: RasterOcrCaches | undefined;

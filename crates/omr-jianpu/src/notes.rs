@@ -476,6 +476,9 @@ fn probe_dot(ink: &Ink, cx: f64, y0: i64, h: f64, dir: i64, capped: bool) -> Opt
             return None;
         }
     }
+    if b < a {
+        return None;
+    }
     let (bw, bh) = ((b - a + 1) as f64, (y - start).abs() as f64);
     // 过了这一团：空白；压着弧的话那一行横贯窗子
     let beyond = span(y);

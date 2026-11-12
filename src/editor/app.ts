@@ -704,6 +704,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.syncView.entryAt(target);
   }
 
+  /** Alt+点原图补音交给识别会话（`OmrController.staffInsertAt`） */
+  staffInsertAt(ev: MouseEvent): boolean {
+    return this.omr.staffInsertAt(ev);
+  }
+
   /** Alt+点原图补漏识：点的位置落在哪两个音之间（`OmrController.sourcePoint`） */
   sourcePoint(ev: MouseEvent): ReturnType<OmrController["sourcePoint"]> {
     return this.omr.sourcePoint(ev);

@@ -19,10 +19,16 @@ use serde::{Deserialize, Serialize};
 
 pub use dolce_omr_core::progress::{Step, CANCELLED};
 
-/// 一份打开的文档。
+/// 一份打开的文档：一个或几个文件（几张照片合成一首），页按文件次序接着编。
 pub struct Doc {
-    pdf: Option<PdfDoc>,
-    image: Option<SourceImage>,
+    parts: Vec<Part>,
+    /// 各页：(第几个文件, 文件内页号)
+    index: Vec<(usize, usize)>,
+}
+
+enum Part {
+    Pdf(PdfDoc),
+    Image(SourceImage),
 }
 
 /// 识别哪一路：自动（先试五线谱）/ 指定。
@@ -42,6 +48,8 @@ pub struct Opts {
     pub kind: Kind,
     /// 只认这几页（0 起）；空 = 全部
     pub pages: Vec<usize>,
+    /// 曲名（五线谱写进 `<work-title>`；编辑器给文件名）
+    pub title: Option<String>,
 }
 
 pub enum Recognition {
@@ -54,36 +62,55 @@ pub enum Recognition {
 impl Doc {
     /// 打开字节：`%PDF` 开头当 PDF，其余当图片。
     pub fn open(bytes: Vec<u8>) -> Result<Doc, String> {
-        if bytes.starts_with(b"%PDF") {
-            Ok(Doc { pdf: Some(PdfDoc::open(bytes)?), image: None })
-        } else {
-            Ok(Doc { pdf: None, image: Some(image_file(&bytes)?) })
+        Doc::open_many(vec![bytes])
+    }
+
+    /// 打开几个文件，页按次序接起来。
+    pub fn open_many(files: Vec<Vec<u8>>) -> Result<Doc, String> {
+        let mut parts = Vec::new();
+        let mut index = Vec::new();
+        for (k, bytes) in files.into_iter().enumerate() {
+            let p = if bytes.starts_with(b"%PDF") { Part::Pdf(PdfDoc::open(bytes)?) } else { Part::Image(image_file(&bytes)?) };
+            let n = match &p {
+                Part::Pdf(d) => d.page_count(),
+                Part::Image(_) => 1,
+            };
+            index.extend((0..n).map(|i| (k, i)));
+            parts.push(p);
         }
+        if index.is_empty() {
+            return Err("没有页面".into());
+        }
+        Ok(Doc { parts, index })
     }
 
     pub fn is_pdf(&self) -> bool {
-        self.pdf.is_some()
+        self.parts.iter().any(|p| matches!(p, Part::Pdf(_)))
     }
 
     pub fn page_count(&self) -> usize {
-        self.pdf.as_ref().map_or(1, |d| d.page_count())
+        self.index.len()
+    }
+
+    fn part(&self, i: usize) -> Result<(&Part, usize), String> {
+        let &(k, j) = self.index.get(i).ok_or_else(|| format!("没有第 {} 页", i + 1))?;
+        Ok((&self.parts[k], j))
     }
 
     /// 页尺寸：PDF 是点，图片是像素。
     pub fn page_size(&self, i: usize) -> Result<(f64, f64), String> {
-        match (&self.pdf, &self.image) {
-            (Some(d), _) => d.page_size(i),
-            (_, Some(im)) => Ok((im.w as f64, im.h as f64)),
-            _ => Err("没有页面".into()),
+        match self.part(i)? {
+            (Part::Pdf(d), j) => d.page_size(j),
+            (Part::Image(im), _) => Ok((im.w as f64, im.h as f64)),
         }
     }
 
     /// 整页渲染（RGBA）：PDF 每点 `scale` 像素；图片按 `scale` 缩放原图。
     pub fn render(&self, i: usize, scale: f64) -> Result<Rendered, String> {
-        if let Some(d) = &self.pdf {
-            return d.render(i, scale);
-        }
-        let im = self.image.as_ref().ok_or("没有页面")?;
+        let im = match self.part(i)? {
+            (Part::Pdf(d), j) => return d.render(j, scale),
+            (Part::Image(im), _) => im,
+        };
         let (w, h) = (((im.w as f64 * scale).round() as usize).max(1), ((im.h as f64 * scale).round() as usize).max(1));
         let mut rgba = vec![255u8; w * h * 4];
         for y in 0..h {
@@ -104,8 +131,9 @@ impl Doc {
 
     /// 一页的识别输入（PDF 取内嵌图与矢量内容；文字层有不可靠字体的纯矢量页另渲一张灰度图）。
     pub fn source(&self, i: usize) -> Result<PageSource, String> {
-        let Some(doc) = &self.pdf else {
-            return Ok(PageSource { raster: self.image.clone(), content: None, rendered: None });
+        let (doc, i) = match self.part(i)? {
+            (Part::Pdf(d), j) => (d, j),
+            (Part::Image(im), _) => return Ok(PageSource { raster: Some(im.clone()), content: None, rendered: None }),
         };
         let pc = doc.content(i, ContentOpts { images: true, paths: true, text: true, outlines: true })?;
         let raster = page_image(&pc);
@@ -144,7 +172,7 @@ pub fn recognize(doc: &Doc, ocr: &CachedOcr, opts: &Opts, hook: &Hook) -> Result
             }
             hook.step(srcs.len(), srcs.len() + 1, "assemble")?;
             let (idx, pages): (Vec<usize>, Vec<Page>) = pages.into_iter().unzip();
-            return Ok(Recognition::Staff { session: Session::new(pages, None), pages: idx });
+            return Ok(Recognition::Staff { session: Session::new(pages, opts.title.clone()), pages: idx });
         }
     }
     jianpu(doc, srcs, ocr, hook)
@@ -180,8 +208,7 @@ fn jianpu(doc: &Doc, srcs: Vec<(usize, PageSource)>, ocr: &CachedOcr, hook: &Hoo
         let pcs: Vec<_> = srcs.into_iter().filter_map(|s| s.1.content).collect();
         let score = dolce_omr_jianpu::recognize_vector_hooked(&pcs, ocr, hook)?;
         let width = pcs.iter().map(|p| p.width).fold(0.0, f64::max);
-        let pdf = doc.pdf.as_ref().ok_or("没有页面")?;
-        let grays = idx.iter().map(|&i| pdf.render(i, dolce_omr_jianpu::vector::PAGE_W / width).map(|r| gray_of(&r))).collect::<Result<Vec<_>, _>>()?;
+        let grays = idx.iter().map(|&i| doc.render(i, dolce_omr_jianpu::vector::PAGE_W / width).map(|r| gray_of(&r))).collect::<Result<Vec<_>, _>>()?;
         return Ok(Recognition::Jianpu { score, binary: stack(&grays) });
     }
     let imgs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.1.raster).collect();
@@ -207,20 +234,32 @@ fn stack(pages: &[Gray]) -> Binary {
 /// 纯矢量页的核对底图每点几像素（核对 JSON 里矢量页的坐标是 PDF 点）。
 pub const VECTOR_OVERLAY_SCALE: f64 = 2.0;
 
-/// 一页的灰度原图与「核对坐标 → 这张图像素」的倍数：位图页是内嵌原图（原分辨率，倍数 1），纯矢量页按 [`VECTOR_OVERLAY_SCALE`] 渲。
-fn review_gray(doc: &Doc, page: usize) -> Result<(Gray, f64), String> {
-    let src = doc.source(page)?;
-    if let Some(r) = src.raster {
-        return Ok((Gray { w: r.w, h: r.h, data: r.gray }, 1.0));
-    }
-    let pdf = doc.pdf.as_ref().ok_or("没有页面")?;
-    Ok((gray_of(&pdf.render(page, VECTOR_OVERLAY_SCALE)?), VECTOR_OVERLAY_SCALE))
+/// 核对底图在页上的位置：位图页是内嵌原图那一块（点，左上原点），纯矢量页是整页。编辑器拿它把整页渲染图摆到底图坐标里。
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Placement {
+    /// 底图在页面上占的框（点）
+    pub rect: dolce_omr_core::image::Rect,
+    /// 页面尺寸（点；图片输入是像素）
+    pub page_w: f64,
+    pub page_h: f64,
 }
 
-/// 五线谱核对视图的底图与倍数（核对 JSON 的坐标乘它是底图像素；交 web 适配器当页的 `scale`）。
-pub fn staff_binary(doc: &Doc, page: usize) -> Result<(Binary, f64), String> {
-    let (g, k) = review_gray(doc, page)?;
-    Ok((binarize(&g.data, g.w, g.h), k))
+/// 一页的灰度原图、「核对坐标 → 这张图像素」的倍数与它在页上的位置：位图页是内嵌原图（原分辨率，倍数 1），纯矢量页按 [`VECTOR_OVERLAY_SCALE`] 渲整页。
+fn review_gray(doc: &Doc, page: usize) -> Result<(Gray, f64, Placement), String> {
+    let src = doc.source(page)?;
+    if let Some(r) = src.raster {
+        let at = Placement { rect: r.rect, page_w: r.page_w, page_h: r.page_h };
+        return Ok((Gray { w: r.w, h: r.h, data: r.gray }, 1.0, at));
+    }
+    let (pw, ph) = doc.page_size(page)?;
+    let at = Placement { rect: dolce_omr_core::image::Rect::new(0.0, 0.0, pw, ph), page_w: pw, page_h: ph };
+    Ok((gray_of(&doc.render(page, VECTOR_OVERLAY_SCALE)?), VECTOR_OVERLAY_SCALE, at))
+}
+
+/// 五线谱核对视图的底图、倍数（核对 JSON 的坐标乘它是底图像素；交 web 适配器当页的 `scale`）与它在页上的位置。
+pub fn staff_binary(doc: &Doc, page: usize) -> Result<(Binary, f64, Placement), String> {
+    let (g, k, at) = review_gray(doc, page)?;
+    Ok((binarize(&g.data, g.w, g.h), k, at))
 }
 
 /// 五线谱会话的当前产物：带识别 id 的 MusicXML 与核对 JSON。
@@ -287,7 +326,7 @@ pub enum RegionClass {
 /// 只换已有元素的文字（框里没有歌词 / 文字指示回 Err）；回换了几个。
 pub fn region(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, rect: dolce_omr_core::image::Rect, class: RegionClass, ocr: &CachedOcr) -> Result<usize, String> {
     use dolce_omr_sheet::score::Dir;
-    let (g, k) = review_gray(doc, *pages.get(pi).ok_or("没有这一页")?)?;
+    let (g, k, _) = review_gray(doc, *pages.get(pi).ok_or("没有这一页")?)?;
     let (x0, y0) = ((rect.x * k).floor().max(0.0) as usize, (rect.y * k).floor().max(0.0) as usize);
     let (x1, y1) = ((((rect.x + rect.w) * k).ceil() as usize).min(g.w), (((rect.y + rect.h) * k).ceil() as usize).min(g.h));
     if x1 <= x0 + 2 || y1 <= y0 + 2 {

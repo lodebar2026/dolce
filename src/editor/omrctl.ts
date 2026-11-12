@@ -14,7 +14,7 @@ import type { SystemOp } from "../staffomr/score";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import {
-  recognizeMusicppDetailed, renderRecognitionSvg, renderRowPopup, renderHeaderPopup, renderRowSource,
+  renderRecognitionSvg, renderRowPopup, renderHeaderPopup, renderRowSource,
   OMR_EMITTERS, DEFAULT_OMR_FORMAT, isOmrFormat, omrEmitter,
   type OmrFormat, type RecogView,
 } from "../omr";
@@ -26,20 +26,25 @@ import type { SyncEntry } from "./sync";
 import type { DocFormatId } from "./formats";
 import { confirmDiscardEdits, type FormatOption, type FormatSource, type FormatSwitch } from "./formatswitch";
 import { harmonyPlacesOf, reprojectRecognized, type Reprojected } from "../omr/reproject";
-import { doubtItems } from "../omr/overlay";
+import { doubtBox, doubtItems, doubtTitle } from "../omr/overlay";
 import { baseImage } from "../omrkit/svgkit";
 import type { ProjectKind, ProjectSnapshot } from "./omrproject";
 import { t } from "../i18n";
 import { COMPARE_VALUES, type CompareValue } from "./comparemode";
-import { isPdf } from "../omrkit/pdf";
 import type { StaffReviewResult } from "../staffomr/review";
 import { carryIds, COVERED, markEntryKey, pitchAt, stampXmlIds, StaffLinks, staffMarksOf, surfaceIds, textView, xmlShape, type StaffView } from "./omrlinks";
-import type { PendingPage } from "../rasteromr/browser";
+import { isCancelled, omrEngine, renderPageUrl, type OmrDocHandle, type PageBinary, type RecognizeResult } from "../omrrust/engine";
+import { reviewFromRust, type RustReviewResult, type RustSessionOp } from "../omrrust/adapter";
 import { attachPinchZoom } from "./pinchzoom";
 
 /** 一份识别输入（拖进来、选进来的图片或 PDF）。 */
 /** 并排原图一页的整页底图：图的地址与它在识别位图坐标里的位置（见 `placePageView`） */
 type PageView = { url: string; x: number; y: number; w: number; h: number } | null;
+/** 原图一页：尺寸（PDF 是点，图片是像素）与整页渲染图（画不出为 null） */
+type OriginalPage = { w: number; h: number; rendered: Promise<{ url: string; w: number; h: number } | null> };
+/** 并排原图整页渲染的目标宽（像素）与每点至多几像素 */
+const ORIGINAL_W = 2400;
+const ORIGINAL_MAX_SCALE = 4;
 
 export interface RecogInput {
   bytes: Uint8Array;
@@ -186,6 +191,11 @@ export class OmrController implements FormatSource {
   private lastInputs: RecogInput[] = [];
   /** 正在识别（Esc 取消只在这期间有效） */
   private busy = false;
+  /** 正在识别的那份文档（Esc 叫它停） */
+  private recDoc: OmrDocHandle | null = null;
+  /** Rust 五线谱结果各页：对应文档的第几页、底图在页上的位置（并排原图按它摆整页图） */
+  private rustPages: number[] = [];
+  private rustPlace: PageBinary["place"][] = [];
   private cancelRequested = false;
   /**
    * 识别代号：每开始一次识别、每次 `clear()`（打开了别的文档）加一。识别 await 回来代号变了就是过时的——
@@ -211,7 +221,10 @@ export class OmrController implements FormatSource {
     }
     this.syncKindSelects();
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && this.busy) this.cancelRequested = true;
+      if (ev.key === "Escape" && this.busy) {
+        this.cancelRequested = true;
+        this.recDoc?.cancel();
+      }
     });
   }
 
@@ -302,92 +315,89 @@ export class OmrController implements FormatSource {
   private async recognizeFilesInner(files: readonly RecogInput[], g: number): Promise<boolean> {
     if (!files.length) return false;
     this.lastInputs = [...files];
-    void this.showPending(files, g); // 判路之前就清掉旧图、铺原图与占位（判路要栅格化第一页，得等一会）
-    const first = files[0]!;
-    // 文字层完整的五线谱 PDF（矢量）先试：只要不是指定按简谱识别
-    if (files.length === 1 && this.kind !== "jianpu" && isPdf(first.bytes, first.mime) && (await this.tryStaffPdf(first.bytes, performance.now(), g))) return true;
-    if (g !== this.gen) return false;
-    if (this.kind !== "jianpu") {
-      const t0 = performance.now();
-      try {
-        const rb = await import("../rasteromr/browser");
-        const pdfs: Uint8Array[] = [];
-        for (const f of files) pdfs.push(await rb.asRasterPdf(f.bytes, f.mime));
-        // 判路时栅格化过的页交给识别，不再取一遍
-        const probe = this.kind === "staff" ? null : await rb.probeRasterStaff(pdfs[0]!);
-        if (g !== this.gen) return false;
-        if (!probe || probe.isStaff) return await this.recognizeRasterStaff(pdfs, files, t0, g, probe?.pages);
-      } catch (e) {
-        if (g !== this.gen) return false;
-        if (this.kind === "staff") {
-          console.error("位图五线谱识别失败", e);
-          this.host.setStatus(t("omr.staffFailed", { error: e instanceof Error ? e.message : String(e) }));
-          return false;
-        }
-        console.warn("五线谱判定失败，按简谱识别", e);
-      }
-    }
-    const ok = await this.recognizeJianpu({ bytes: first.bytes, mime: first.mime }, g);
-    if (ok && files.length > 1) this.host.setStatus(this.host.status + t("omr.firstOnly", { n: files.length }));
-    return ok;
+    void this.showPending(files, g); // 识别之前就清掉旧图、铺原图与占位
+    return this.recognizeRust(files, g);
   }
 
-  /** 位图五线谱：在线 OCR 跑整曲识别，产物是 MusicXML，落地同打开 `.musicxml`（无代码区、谱面上改模型）。 */
-  private async recognizeRasterStaff(pdfs: Uint8Array[], files: readonly RecogInput[], t0: number, g: number, firstPages?: Map<number, import("../rasteromr/rasterpage").RasterPage | null>): Promise<boolean> {
-    const rb = await import("../rasteromr/browser");
+  /** 识别（Rust，`omrrust/engine.ts`）：判路（五线谱 / 简谱）、识别都在 Rust。五线谱落地同打开 `.musicxml`，简谱落地同前（`emit`）。 */
+  private async recognizeRust(files: readonly RecogInput[], g: number): Promise<boolean> {
+    const t0 = performance.now();
     this.busy = true;
     this.cancelRequested = false;
-    this.progress(t("omr.staffRunning"));
-    this.prerenderOriginals(files); // 并排原图的原样底图不等识别，现在就画起来
-    void this.showPending(files, g);
-    let res;
+    let doc: OmrDocHandle;
+    let r: RecognizeResult;
     try {
-      res = await rb.recognizeRasterPdfs(pdfs, {
-        title: files.length === 1 && files[0]!.name ? baseTitle(files[0]!.name) : undefined,
-        onPage: (done, total) => {
-          if (g !== this.gen) return;
-          this.progress(t("omr.staffProgress", { done, total }) + t("omr.escCancel"));
-          this.markPendingDone(done);
-        },
-        // 过时的（又开始了一次识别、打开了别的文档）自己停下
-        cancelled: () => g !== this.gen || this.cancelRequested,
-        firstPages,
+      doc = await this.prerenderOriginals(files).doc;
+      if (g !== this.gen) return false;
+      this.recDoc = doc;
+      const title = files.length === 1 && files[0]!.name ? baseTitle(files[0]!.name) : undefined;
+      r = await doc.recognize({ kind: this.kind, title }, (p) => {
+        if (g !== this.gen) return;
+        if (p.stage === "page") {
+          this.progress(t("omr.staffProgress", { done: p.done, total: Math.max(1, p.total - 1) }) + t("omr.escCancel"));
+          this.markPendingDone(p.done);
+        } else this.progress(t("omr.running") + t("omr.escCancel"));
       });
     } catch (e) {
-      if (g === this.gen) {
-        this.endPending(false);
-        this.host.setStatus(this.cancelRequested ? t("omr.cancelled") : t("omr.staffFailed", { error: e instanceof Error ? e.message : String(e) }));
-      }
+      if (g === this.gen) this.host.setStatus(this.cancelRequested || isCancelled(e) ? t("omr.cancelled") : t("omr.failed", { error: e instanceof Error ? e.message : String(e) }));
       return false;
     } finally {
-      if (g === this.gen) this.busy = false;
+      if (g === this.gen) {
+        this.busy = false;
+        this.recDoc = null;
+      }
     }
     if (g !== this.gen) return false;
-    if (!res.xml) {
-      this.endPending(false);
-      this.host.setStatus(t("omr.noStaffFound"));
+    try {
+      if (r.kind === "jianpu") return await this.landJianpu(r.score, (await doc.binary(0)).bin, t0);
+      return await this.landStaff(doc, r, files, t0, g);
+    } catch (e) {
+      if (g === this.gen) this.host.setStatus(t("omr.failed", { error: e instanceof Error ? e.message : String(e) }));
       return false;
     }
+  }
+
+  /** Rust 五线谱结果 → 核对数据（各页底图从 Rust 取，会话操作转给这份文档）。 */
+  private async rustReview(doc: OmrDocHandle, r: Extract<RecognizeResult, { kind: "staff" }>): Promise<{ res: RustReviewResult; place: PageBinary["place"][] }> {
+    const bins = await Promise.all(r.pages.map((pn) => doc.binary(pn)));
+    const res = reviewFromRust(r.review, r.xml, { rasters: bins.map((b) => b.bin), scales: bins.map((b) => b.scale), call: (op) => doc.session(op) });
+    return { res, place: bins.map((b) => b.place) };
+  }
+
+  private async landStaff(doc: OmrDocHandle, r: Extract<RecognizeResult, { kind: "staff" }>, files: readonly RecogInput[], t0: number, g: number): Promise<boolean> {
+    const { res, place } = await this.rustReview(doc, r);
+    if (g !== this.gen) return false;
     this.endPending(true);
     this.clear();
     this.lastInputs = [...files];
     this.staffResult = res;
+    this.rustPages = r.pages;
+    this.rustPlace = place;
     this.sessionKind = "staff";
-    this.host.adoptStaffXml(res.xml);
+    this.host.adoptStaffXml(r.xml);
     this.staffEmitted = this.host.getText();
     // 用默认编辑格式（ABC）看源码；MusicXML 原文留在格式下拉里（识别 id 按拍点、音高带过去）
     const formatNote = this.host.openInEditFormat();
     this.host.setContextControl(this.kindField(), true);
-    // 位图路有页面位图与音符坐标：「原图对照」可用（矢量 PDF 那一路没有位图，不给）
     if (this.btnEl) this.btnEl.textContent = t("omr.compare");
     this.host.setContextControl(this.btnEl, true);
-    // 谱表正上方认出了简谱行（简线混排谱，`rasteromr/jianpuband.ts`）进混排档，否则五线谱档
-    await this.enterAfterRecognize(res.pages.some((p) => p.result.jianpuStrips.length > 0) ? "mixed" : "staff");
+    // 谱表正上方认出了简谱行（简线混排谱）进混排档，否则五线谱档
+    await this.enterAfterRecognize(res.pages.some((p) => ((p.result as { jianpuStrips?: readonly unknown[] }).jianpuStrips?.length ?? 0) > 0) ? "mixed" : "staff");
     const s = res.stats;
     this.host.setStatus(
       t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: s.pages, parts: s.parts ?? 1, notes: s.notes }) +
         (s.bars ? t("omr.fullBars", { pct: Math.round((s.full / s.bars) * 100) }) : "") + t("omr.editOnScore") + (formatNote ? `　${formatNote}` : ""),
     );
+    return true;
+  }
+
+  private async landJianpu(score: RecognizedScore, bin: Binary, t0: number): Promise<boolean> {
+    this.endPending(true);
+    this.emit(score, bin);
+    this.host.setContextControl(this.kindField(), true);
+    await this.enterAfterRecognize("original"); // 简谱进简谱档，对照方式按用户上次的选择（没选过就并排）
+    const n = this.beatMarks.length;
+    this.host.setStatus(t("omr.done", { sec: ((performance.now() - t0) / 1000).toFixed(1) }) + (n ? t("omr.beatIssues", { n }) : ""));
     return true;
   }
 
@@ -471,46 +481,24 @@ export class OmrController implements FormatSource {
 
   private async loadStaffResult(): Promise<boolean> {
     const g = this.gen;
-    // 补的途中打开了别的文档：补回来的不能挂到新文档上
-    const land = (r: import("../staffomr/review").StaffReviewResult): boolean => {
-      if (g !== this.gen) return false;
-      this.staffResult = r;
-      this.host.setStatus("");
-      return true;
-    };
-    if (this.sessionKind === "vector") {
-      // 矢量 PDF 项目重开：重跑一遍矢量识别拿框（快，不用 OCR），再渲底图
-      this.progress(t("omr.loadingPdf"));
-      try {
-        const sb = await import("../staffomr/browser");
-        const bytes = this.lastInputs[0]!.bytes;
-        const doc = await sb.openStaffPdf(bytes);
-        try {
-          // 转曲的矢量谱（`outlineomr/`）重跑要带 OCR（文字是路径），慢一些
-          const res = (await sb.isStaffPdf(doc.pdf, doc.OPS))
-            ? await sb.recognizeStaffPdf(doc, { noteIds: true })
-            : await (await import("../outlineomr/browser")).recognizeOutlinedPdf(doc, { noteIds: true });
-          return land(await sb.vectorOverlayResult(doc, res));
-        } finally {
-          doc.pdf.destroy?.();
-        }
-      } catch (e) {
-        if (g === this.gen) this.host.setStatus(t("omr.loadFailed", { error: e instanceof Error ? e.message : String(e) }));
-        return false;
-      }
-    }
-    if (this.sessionKind !== "staff") return false;
-    const rb = await import("../rasteromr/browser");
+    if (this.sessionKind !== "staff" && this.sessionKind !== "vector") return false;
+    // 重跑一遍识别拿框与会话（不动原文）；补的途中打开了别的文档，补回来的不能挂到新文档上
     this.progress(t("omr.loadingImg"));
     try {
-      const pdfs: Uint8Array[] = [];
-      for (const f of this.lastInputs) pdfs.push(await rb.asRasterPdf(f.bytes, f.mime));
-      return land(await rb.recognizeRasterPdfs(pdfs, {
-        // 与第一次识别同口径（关联表重建出的 MusicXML 要有曲名）
-        title: this.lastInputs.length === 1 && this.lastInputs[0]!.name ? baseTitle(this.lastInputs[0]!.name) : undefined,
-        onPage: (done, total) => g === this.gen && this.progress(t("omr.loadingImgPages", { done, total })),
-        cancelled: () => g !== this.gen,
-      }));
+      const doc = await this.prerenderOriginals(this.lastInputs).doc;
+      // 与第一次识别同口径（关联表重建出的 MusicXML 要有曲名）
+      const title = this.lastInputs.length === 1 && this.lastInputs[0]!.name ? baseTitle(this.lastInputs[0]!.name) : undefined;
+      const r = await doc.recognize({ kind: "staff", title }, (p) => {
+        if (g === this.gen && p.stage === "page") this.progress(t("omr.loadingImgPages", { done: p.done, total: Math.max(1, p.total - 1) }));
+      });
+      if (g !== this.gen || r.kind !== "staff") return false;
+      const { res, place } = await this.rustReview(doc, r);
+      if (g !== this.gen) return false;
+      this.staffResult = res;
+      this.rustPages = r.pages;
+      this.rustPlace = place;
+      this.host.setStatus("");
+      return true;
     } catch (e) {
       if (g === this.gen) this.host.setStatus(t("omr.loadFailed", { error: e instanceof Error ? e.message : String(e) }));
       return false;
@@ -617,13 +605,7 @@ export class OmrController implements FormatSource {
       this.syncSide(null);
     }
     // 占位的页数与比例按原图（PDF 各页先量大小，图片读自然大小），不等识别
-    const sizes: { w: number; h: number }[] = [];
-    for (const src of this.prerenderOriginals(files).sources) {
-      const got = await src.catch(() => null);
-      if (got === null) continue;
-      if (typeof got === "string") sizes.push(await imageSize(got));
-      else sizes.push(...got.map((p) => ({ w: p.w, h: p.h })));
-    }
+    const sizes = [...((await this.prerenderOriginals(files).doc.catch(() => null))?.sizes ?? [])];
     const pend = this.pending;
     if (!pend || pend.g !== g || g !== this.gen || !sizes.length) return;
     const NS = "http://www.w3.org/2000/svg";
@@ -927,94 +909,80 @@ export class OmrController implements FormatSource {
       return id !== undefined && b ? [{ id, x: b.x, y: b.y, w: b.w, h: b.h }] : [];
     }) : [];
     // 简谱的位图就是整张原图（PDF 是第一页整页）等比缩放来的、没纠斜：原图铺满位图范围就对得上
-    return [page(bin, boxes, this.wholePageView(0, 1, bin))];
+    return [page(bin, boxes, this.wholePageView(bin))];
   }
 
-  /** 原图各份的原样底图（`renderPdfPages`），按输入列表缓存：开始识别时就画起来（`prerenderOriginals`），不等识别。
-   *  图片输入直接是原图的地址；PDF 是逐页的 promise（外层知道页数时给出）。 */
-  private originals: { inputs: readonly RecogInput[]; sources: Promise<PendingPage[] | string>[] } | null = null;
+  /** 原图（各份按次序接成一份 Rust 文档，`omrrust/engine.ts`）与各页的整页渲染图，按输入列表缓存：开始识别时就画起来，不等识别；
+   *  识别、补对照数据、会话都用这同一份文档。 */
+  private originals: { inputs: readonly RecogInput[]; doc: Promise<OmrDocHandle>; pages: Promise<OriginalPage[]> } | null = null;
   private prerenderOriginals(inputs: readonly RecogInput[]): NonNullable<OmrController["originals"]> {
     const cur = this.originals;
     if (cur && cur.inputs.length === inputs.length && cur.inputs.every((x, i) => x.bytes === inputs[i]!.bytes)) return cur;
     this.releaseOriginals();
-    // 一份一份接着画：PDF 各页在 `renderPdfPages` 里已按页序排队，几份之间也排队，免得同时开几个画布
-    let prev: Promise<unknown> = Promise.resolve();
-    const sources = inputs.map((src) => {
-      const s: Promise<PendingPage[] | string> = isPdf(src.bytes, src.mime)
-        ? prev.then(async () => (await import("../rasteromr/browser")).renderPdfPages(src.bytes))
-        : Promise.resolve(URL.createObjectURL(new Blob([src.bytes as BlobPart], src.mime ? { type: src.mime } : {})));
-      prev = s.then((pages) => (typeof pages === "string" ? null : Promise.all(pages.map((p) => p.rendered)))).catch(() => null);
-      return s;
+    const doc = omrEngine().then((e) => e.open(inputs.map((f) => f.bytes)));
+    // 一页一页接着画（渲染与识别同一份文档，几页同时画只会排队）
+    const pages = doc.then((d) => {
+      let prev: Promise<unknown> = Promise.resolve();
+      return d.sizes.map((sz, i): OriginalPage => {
+        const rendered = prev.then(() => renderPageUrl(d, i, Math.min(ORIGINAL_MAX_SCALE, ORIGINAL_W / sz.w))).catch(() => null);
+        prev = rendered;
+        return { ...sz, rendered };
+      });
     });
-    this.originals = { inputs: [...inputs], sources };
+    this.originals = { inputs: [...inputs], doc, pages };
     return this.originals;
   }
 
   private releaseOriginals(): void {
-    const revoke = (u: string | undefined): void => void (u?.startsWith("blob:") && URL.revokeObjectURL(u));
-    for (const s of this.originals?.sources ?? []) {
-      void s.then((v) => (typeof v === "string" ? revoke(v) : v.forEach((p) => void p.rendered.then((r) => revoke(r?.url))))).catch(() => undefined);
-    }
+    const o = this.originals;
     this.originals = null;
+    if (!o) return;
+    void o.pages.then((ps) => ps.forEach((p) => void p.rendered.then((r) => r && URL.revokeObjectURL(r.url)))).catch(() => undefined);
+    void o.doc.then((d) => d.close()).catch(() => undefined);
   }
 
-  /** 还没有对照数据时（项目重开、正从原图补）并排面板先放的原图：不带框，按各份各页的顺序，画好一页换上一页（之前铺白纸）。 */
+  /** 还没有对照数据时（项目重开、正从原图补）并排面板先放的原图：不带框，按页序，画好一页换上一页（之前铺白纸）。 */
   private async plainOriginalPages(): Promise<Element[]> {
     const NS = "http://www.w3.org/2000/svg";
-    const out: Element[] = [];
-    for (const src of this.prerenderOriginals(this.lastInputs).sources) {
-      const got = await src.catch(() => null);
-      if (got === null) continue;
-      if (typeof got === "string") {
-        const img = document.createElement("img");
-        img.className = "omr-side-page";
-        img.src = got;
-        img.style.setProperty("image-orientation", "none");
-        out.push(img);
-        continue;
-      }
-      for (const pg of got) {
-        const svg = document.createElementNS(NS, "svg");
-        svg.setAttribute("class", "omr-side-page");
-        svg.setAttribute("viewBox", `0 0 ${pg.w} ${pg.h}`);
-        void pg.rendered.then((r) => {
-          if (!r) return;
-          const img = document.createElementNS(NS, "image");
-          for (const [k, v] of [["x", 0], ["y", 0], ["width", pg.w], ["height", pg.h]] as const) img.setAttribute(k, String(v));
-          img.setAttribute("href", r.url);
-          img.setAttribute("preserveAspectRatio", "none");
-          svg.appendChild(img);
-        });
-        out.push(svg);
-      }
-    }
-    return out;
+    const pages = await this.prerenderOriginals(this.lastInputs).pages.catch(() => [] as OriginalPage[]);
+    return pages.map((pg) => {
+      const svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("class", "omr-side-page");
+      svg.setAttribute("viewBox", `0 0 ${pg.w} ${pg.h}`);
+      void pg.rendered.then((r) => {
+        if (!r) return;
+        const img = document.createElementNS(NS, "image");
+        for (const [k, v] of [["x", 0], ["y", 0], ["width", pg.w], ["height", pg.h]] as const) img.setAttribute(k, String(v));
+        img.setAttribute("href", r.url);
+        img.setAttribute("preserveAspectRatio", "none");
+        svg.appendChild(img);
+      });
+      return svg;
+    });
   }
 
-  /** 第 `si` 份原图第 `pn` 页**整页**铺满位图 `bin`（简谱：位图就是整页缩放来的）；画不出为 null */
-  private async wholePageView(si: number, pn: number, bin: Binary): Promise<PageView> {
-    const src = this.prerenderOriginals(this.lastInputs).sources[si];
-    const got = src ? await src.catch(() => null) : null;
-    if (got === null) return null;
-    const url = typeof got === "string" ? got : (await (got[pn - 1]?.rendered ?? Promise.resolve(null)))?.url;
-    return url ? { url, x: 0, y: 0, w: bin.w, h: bin.h } : null;
+  /** 简谱：单张图片的原图整页铺满位图 `bin`（位图就是那张图缩放来的）；PDF（位图取的是页里的内嵌图）、几张图拼的画不了，为 null */
+  private async wholePageView(bin: Binary): Promise<PageView> {
+    const o = this.prerenderOriginals(this.lastInputs);
+    const d = await o.doc.catch(() => null);
+    if (!d || d.pdf || d.sizes.length !== 1) return null;
+    const r = await ((await o.pages.catch(() => [] as OriginalPage[]))[0]?.rendered ?? Promise.resolve(null));
+    return r ? { url: r.url, x: 0, y: 0, w: bin.w, h: bin.h } : null;
   }
 
-  /** 并排原图各页的整页底图：原样底图（`prerenderOriginals`）按识别位图摆好（`placePageView`）。逐页一个 promise，画好一页先给一页；
-   *  取不到的页为 null（照旧画位图）。图片直接画原图：识别时它被包成一页与图同大的 PDF，位图与原图一一对应（彩色放大过的按位图宽高拉伸）。 */
+  /** 并排原图各页的整页底图：整页渲染图按底图在页上的位置（Rust `staff_binary` 交来的）摆到底图坐标里。逐页一个 promise，画好一页先给一页；
+   *  取不到的页为 null（照旧画底图）。 */
   private staffPageViews(res: StaffReviewResult): Promise<PageView>[] {
-    // 只有位图路：矢量 PDF 的位图本就是整页渲出来的
-    if (this.sessionKind !== "staff") return res.pages.map(() => Promise.resolve(null));
-    const { sources } = this.prerenderOriginals(this.lastInputs);
-    return res.pages.map(async (p): Promise<PageView> => {
+    const o = this.prerenderOriginals(this.lastInputs);
+    return res.pages.map(async (p, i): Promise<PageView> => {
       const bin = p.result.raster?.bin;
-      const src = sources[p.source];
-      if (!bin || !src) return null;
-      const got = await src.catch(() => null);
-      if (got === null) return null;
-      if (typeof got === "string") return { url: got, x: 0, y: 0, w: bin.w, h: bin.h };
-      const r = await (got[p.pn - 1]?.rendered ?? Promise.resolve(null));
-      return r ? (await import("../rasteromr/browser")).placePageView(r, bin) : null;
+      const place = this.rustPlace[i];
+      const dp = this.rustPages[i];
+      if (!bin || !place || dp === undefined) return null;
+      const r = await ((await o.pages.catch(() => [] as OriginalPage[]))[dp]?.rendered ?? Promise.resolve(null));
+      if (!r) return null;
+      const sx = bin.w / place.rect.w, sy = bin.h / place.rect.h;
+      return { url: r.url, x: -place.rect.x * sx, y: -place.rect.y * sy, w: place.pageW * sx, h: place.pageH * sy };
     });
   }
 
@@ -1144,120 +1112,15 @@ export class OmrController implements FormatSource {
   /** 已取得图片字节后的识别核心（供拖拽识别复用）。
    *  保留二值图+识别结果，完成后进简谱档，核对方式按用户在「核对」下拉里选过的（没选过就并排原图，`enterAfterRecognize`）。 */
   async recognizeBytes(picked: { bytes: Uint8Array; mime?: string }, jianpuOnly = false): Promise<boolean> {
-    // 外部直接调（回归脚本、旧入口）走完整分流
+    // 外部直接调（回归脚本、旧入口）走完整分流；只认简谱的临时按简谱识别
     if (!jianpuOnly) return this.recognizeFiles([picked]);
-    this.lastInputs = [{ ...picked }];
-    const ok = await this.recognizeJianpu(picked, ++this.gen);
-    this.syncPagesBtn();
-    return ok;
-  }
-
-  /** 简谱识别（`recognizeFiles` 判完了走这里）。 */
-  private async recognizeJianpu(picked: { bytes: Uint8Array; mime?: string }, g: number): Promise<boolean> {
-    this.host.setStatus(t("omr.running"));
-    void this.showPending([this.lastInputs[0] ?? picked], g);
+    const prev = this.kind;
+    this.kind = "jianpu";
     try {
-      const t0 = performance.now();
-      const { bin, score } = await recognizeMusicppDetailed(picked.bytes, picked.mime);
-      if (g !== this.gen) return false;
-      this.endPending(true);
-      this.emit(score, bin);
-      this.host.setContextControl(this.kindField(), true);
-      await this.enterAfterRecognize("original"); // 简谱进简谱档，对照方式按用户上次的选择（没选过就并排）
-      const n = this.beatMarks.length;
-      this.host.setStatus(t("omr.done", { sec: ((performance.now() - t0) / 1000).toFixed(1) })
-        + (n ? t("omr.beatIssues", { n }) : ""));
-      return true;
-    } catch (e) {
-      console.error("OMR failed", e);
-      if (g !== this.gen) return false;
-      this.host.setStatus(t("omr.failed", { error: (e instanceof Error ? e.message : String(e)) }));
-      return false;
-    }
-  }
-
-  /**
-   * 五线谱 PDF 那条路：识别 → MusicXML → 走导入路径落地。
-   *
-   * 与简谱那条路的分工写在 `staffomr/browser.ts` 开头。识别不出谱表就返回 false，
-   * 让调用方继续走简谱那条（该 PDF 多半是扫描件或简谱）。
-   */
-  private async tryStaffPdf(bytes: Uint8Array, t0: number, g: number): Promise<boolean> {
-    const { openStaffPdf, isStaffPdf, recognizeStaffPdf, vectorOverlayResult } = await import("../staffomr/browser");
-    // 一份 PDF 只打开一次：判路、识别、渲对照底图共用
-    let doc: Awaited<ReturnType<typeof openStaffPdf>>;
-    try {
-      doc = await openStaffPdf(bytes);
-    } catch {
-      return false;
-    }
-    try {
-      return await this.adoptStaffPdf(doc, t0, g, isStaffPdf, recognizeStaffPdf, vectorOverlayResult);
+      return await this.recognizeFiles([picked]);
     } finally {
-      doc.pdf.destroy?.();
+      this.kind = prev;
     }
-  }
-
-  private async adoptStaffPdf(
-    doc: import("../staffomr/browser").StaffPdfDoc, t0: number, g: number,
-    isStaffPdf: typeof import("../staffomr/browser").isStaffPdf,
-    recognizeStaffPdf: typeof import("../staffomr/browser").recognizeStaffPdf,
-    vectorOverlayResult: typeof import("../staffomr/browser").vectorOverlayResult,
-  ): Promise<boolean> {
-    let ok = false;
-    // 文字层完整的走矢量路；没有文字层、路径里有五线谱的（文字与音乐字形都转了曲）走 `outlineomr/`，不再落到简谱识别
-    let outlined: typeof import("../outlineomr/browser") | null = null;
-    try {
-      ok = await isStaffPdf(doc.pdf, doc.OPS);
-      if (!ok) {
-        const ob = await import("../outlineomr/browser");
-        if (await ob.isOutlinedStaffPdf(doc.pdf, doc.OPS)) (outlined = ob), (ok = true);
-      }
-    } catch {
-      return false;
-    }
-    if (!ok || g !== this.gen) return false;
-    void this.showPending(this.lastInputs, g);
-    const onProgress = (done: number, total: number) => {
-      if (g !== this.gen) return;
-      this.host.setStatus(t("omr.staffProgress", { done, total }));
-      this.markPendingDone(done);
-    };
-    const res = outlined ? await outlined.recognizeOutlinedPdf(doc, { onProgress, noteIds: true }) : await recognizeStaffPdf(doc, { onProgress, noteIds: true });
-    if (g !== this.gen) return true; // 过时：不落地，也不让调用方再按简谱试
-    if (!res.notes) {
-      this.host.setStatus(t("omr.noStaff"));
-      return false;
-    }
-    // 五线谱只出 MusicXML，且只进混排视图（理由见 OmrHost.adoptStaffXml）。
-    const inputs = this.lastInputs;
-    this.endPending(true);
-    this.clear();
-    this.lastInputs = inputs;
-    this.sessionKind = "vector";
-    this.host.setContextControl(this.kindField(), true);
-    const jpOk = this.host.adoptStaffXml(res.musicxml);
-    this.staffEmitted = this.host.getText();
-    const formatNote = jpOk ? this.host.openInEditFormat() : "";
-    const g2 = this.gen; // 上面 clear() 换了代号
-    // 原图对照：页面渲成位图、框放大到像素（`vectorOverlayResult`），之后与位图那一路同一套对照视图与关联表
-    try {
-      const overlay = await vectorOverlayResult(doc, res);
-      if (g2 !== this.gen) return true;
-      this.staffResult = overlay;
-      if (this.btnEl) this.btnEl.textContent = t("omr.compare");
-      this.host.setContextControl(this.btnEl, true);
-    } catch (e) {
-      console.warn("矢量 PDF 渲不出对照底图", e);
-    }
-    // 转曲的简线混排谱（认出了简谱行）进混排档，同位图路
-    if (g2 === this.gen) await this.enterAfterRecognize(outlined && "jianpu" in res && res.jianpu ? "mixed" : "staff");
-    this.host.setStatus(
-      t("omr.staffDone", { sec: ((performance.now() - t0) / 1000).toFixed(1), pages: res.pages, parts: res.parts, notes: res.notes }) +
-        (res.skipped ? t("omr.staffSkipped", { n: res.skipped }) : "") +
-        (jpOk ? "" : t("omr.staffNoJp")) + (formatNote ? `　${formatNote}` : ""),
-    );
-    return true;
   }
 
   /**
@@ -1392,12 +1255,14 @@ export class OmrController implements FormatSource {
   private syncDoubtEl(n: number): void {
     const el = this.doubtEl;
     if (!el) return;
-    el.hidden = n === 0 || this.host.mode !== "recognize" || !!this.staffResult;
+    el.hidden = n === 0 || this.host.mode !== "recognize";
     el.textContent = t("omr.doubts", { n });
   }
 
   /** F8 导航用：各处可疑项在原文的位置（按点选映射）与跳过去的办法（同点命中框）。不在核对视图、没有映射时为空 */
   doubtStops(): { at: number; go(): void }[] {
+    // 五线谱没有点选映射（F8 按原文位置排序），可疑只走「N 处可疑」按钮（`nextDoubt`）
+    if (this.staffResult) return [];
     const score = this.shown?.score ?? this.score;
     if (!score || this.host.mode !== "recognize" || !this.meta) return [];
     const items = doubtItems(score, this.shown?.lyricFixes ?? []);
@@ -1422,8 +1287,35 @@ export class OmrController implements FormatSource {
     this.host.setStatus(t("omr.doubtAt", { i: k + 1, n }) + `${hit.closest("svg")?.querySelector(`.omr-doubt-box[data-i="${it.i}"]${it.verse === null ? ":not([data-verse])" : `[data-verse="${it.verse}"]`} title`)?.textContent ?? ""}`);
   }
 
+  /** 五线谱的可疑清单（Rust 识别交来的；TS 各路没有） */
+  private staffDoubts(): RustReviewResult["doubts"] {
+    return (this.staffResult as RustReviewResult | null)?.doubts ?? [];
+  }
+
+  /** 五线谱：跳到第 `k` 处可疑——滚到它的黄框，有识别 id 的选中那个音（同点命中框）。 */
+  private jumpStaffDoubt(k: number): void {
+    const ds = this.staffDoubts();
+    const d = ds[k];
+    if (!d) return;
+    this.doubtAt = k;
+    const pane = document.getElementById("score-pane");
+    const box = pane?.querySelector<SVGRectElement>(`.omr-doubt-box[data-doubt="${k}"]`);
+    const hit = d.rid ? pane?.querySelector<SVGRectElement>(`.omr-hits rect[data-omr="${d.rid}"]`) : null;
+    (hit ?? box)?.scrollIntoView({ block: "center", inline: "nearest" });
+    if (hit) {
+      const r = hit.getBoundingClientRect();
+      hit.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+    }
+    this.host.setStatus(t("omr.doubtAt", { i: k + 1, n: ds.length }) + doubtTitle([d.code]));
+  }
+
   /** 跳到下一处标黄的音 / 字：选中它（同点命中框）并滚到眼前。 */
   nextDoubt(): void {
+    if (this.staffResult) {
+      const n = this.staffDoubts().length;
+      if (n) this.jumpStaffDoubt((this.doubtAt + 1) % n);
+      return;
+    }
     const score = this.shown?.score ?? this.score;
     if (!score) return;
     const items = doubtItems(score, this.shown?.lyricFixes ?? []);
@@ -1646,6 +1538,8 @@ export class OmrController implements FormatSource {
     }
     const pages = res.pages;
     const view = this.view;
+    const doubts = this.staffDoubts();
+    this.syncDoubtEl(doubts.length);
     this.host.renderPagesWith(pages.length, (i) => {
       const bin = pages[i]!.result.raster!.bin;
       const marks: StaffMark[] = [...res.noteBoxes].filter(([, b]) => b.page === i).map(([id, b]) => {
@@ -1656,6 +1550,22 @@ export class OmrController implements FormatSource {
       });
       const svg = renderStaffRecognitionPage(bin, [...marks, ...(insertedByPage.get(i) ?? [])], view, barsByPage.get(i) ?? [], othersByPage.get(i) ?? []);
       svg.dataset.page = String(i);
+      // 可疑黄框（Rust 识别的可疑清单；画在命中层下面，不挡点击）
+      const k = pages[i]!.scale ?? 1;
+      const mine = doubts.map((d, n) => ({ d, n })).filter((x) => x.d.at.page === i + 1);
+      if (mine.length) {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("class", "omr-doubt");
+        for (const { d, n } of mine) {
+          const b = { x: d.rect.x * k, y: d.rect.y * k, w: d.rect.w * k, h: d.rect.h * k };
+          const r = doubtBox(b, Math.max(3, Math.min(b.w, b.h) * 0.15), doubtTitle([d.code]) + (d.note ? `（${d.note}）` : ""));
+          r.dataset.doubt = String(n);
+          g.appendChild(r);
+        }
+        const hits = svg.querySelector(".omr-hits");
+        if (hits) svg.insertBefore(g, hits);
+        else svg.appendChild(g);
+      }
       return svg;
     }, {
       aspectRatio: (i) => `${pages[i]!.result.raster!.bin.w} / ${pages[i]!.result.raster!.bin.h}`,
@@ -1692,8 +1602,17 @@ export class OmrController implements FormatSource {
       if (this.host.visualEnabled()) this.host.visualDblClick(e);
     });
     // 右键谱行的空白处：改系统切分 / 忽略这一行 / 改归属（识谱软件在谱表上右键改结构的那一套）；点在命中框上照常弹编辑菜单
+    this.wireRegionDrag(svg);
     svg.addEventListener("contextmenu", (e) => {
-      if (e.target instanceof Element && e.target.closest(".omr-hits rect")) return;
+      const hitRect = e.target instanceof Element ? e.target.closest(".omr-hits rect") : null;
+      // Alt+右键有落选候选的音：换候选
+      const rid = hitRect?.getAttribute("data-omr");
+      if (e.altKey && rid && this.showAltsMenu(e.clientX, e.clientY, rid)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (hitRect) return;
       const at = this.staffRowAt(svg, e.clientX, e.clientY);
       if (!at) return;
       e.preventDefault();
@@ -1720,10 +1639,11 @@ export class OmrController implements FormatSource {
     return { si, ri: systems[si]!.sys.staves.indexOf(st), rows: systems[si]!.sys.staves.length, nextSamePage: systems[si + 1]?.page === pg.result.page };
   }
 
-  private showRowMenu(x: number, y: number, at: { si: number; ri: number; rows: number; nextSamePage: boolean }): void {
+  /** 在 (x, y)（视口坐标）弹一个小菜单；点外面或按 Esc 收起。 */
+  private popMenu(x: number, y: number, cls: string, items: readonly { label: string; enabled?: boolean; run: () => void }[]): void {
     document.querySelector(".omr-row-menu")?.remove();
     const menu = document.createElement("div");
-    menu.className = "visual-menu omr-row-menu";
+    menu.className = `visual-menu omr-row-menu ${cls}`;
     menu.setAttribute("role", "menu");
     const close = (): void => {
       menu.remove();
@@ -1735,36 +1655,129 @@ export class OmrController implements FormatSource {
       if (e.target instanceof Node && menu.contains(e.target)) return;
       close();
     };
-    const item = (label: string, enabled: boolean, run: () => void): void => {
+    for (const it of items) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "visual-menu-item";
-      b.textContent = label;
-      b.disabled = !enabled;
+      b.textContent = it.label;
+      b.disabled = it.enabled === false;
       b.setAttribute("role", "menuitem");
       b.addEventListener("mousedown", (e) => e.preventDefault());
       b.addEventListener("click", () => {
         close();
-        run();
+        it.run();
       });
       menu.appendChild(b);
-    };
-    item(t("omr.row.merge"), at.nextSamePage, () => void this.restructureStaff({ merge: at.si }));
-    item(t("omr.row.split"), at.ri > 0, () => void this.restructureStaff({ split: { system: at.si, row: at.ri } }));
-    item(t("omr.row.ignore"), true, () => {
-      const res = this.staffResult;
-      if (!res) return;
-      const slots = res.assignment().map((r) => [...r]);
-      if (slots[at.si]) slots[at.si]![at.ri] = -1;
-      void this.rebuildStaff(slots);
-    });
-    item(t("omr.row.assign"), true, () => document.getElementById("btn-parts")?.click());
+    }
     document.body.appendChild(menu);
     const r = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - r.width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - r.height - 8))}px`;
     document.addEventListener("mousedown", away, true);
     document.addEventListener("keydown", away, true);
+  }
+
+  private showRowMenu(x: number, y: number, at: { si: number; ri: number; rows: number; nextSamePage: boolean }): void {
+    this.popMenu(x, y, "", [
+      { label: t("omr.row.merge"), enabled: at.nextSamePage, run: () => void this.restructureStaff({ merge: at.si }) },
+      { label: t("omr.row.split"), enabled: at.ri > 0, run: () => void this.restructureStaff({ split: { system: at.si, row: at.ri } }) },
+      {
+        label: t("omr.row.ignore"),
+        run: () => {
+          const res = this.staffResult;
+          if (!res) return;
+          const slots = res.assignment().map((r) => [...r]);
+          if (slots[at.si]) slots[at.si]![at.ri] = -1;
+          void this.rebuildStaff(slots);
+        },
+      },
+      { label: t("omr.row.assign"), run: () => document.getElementById("btn-parts")?.click() },
+    ]);
+  }
+
+  /** 会话操作（Rust 识别才有）：照重建的流程落地（手改回放、钉住）。没有会话回 false */
+  private async staffSessionOp(op: RustSessionOp, done: (r: { rid?: string; count?: number }) => string): Promise<boolean> {
+    const res = this.staffResult as RustReviewResult | null;
+    if (!res?.apply) return false;
+    let reply: { rid?: string; count?: number } = {};
+    const ok = await this.rebuildStaffWith(async () => {
+      const r = await res.apply!(op);
+      reply = r;
+      return r;
+    });
+    if (ok) this.host.setStatus(done(reply));
+    return ok;
+  }
+
+  /** Alt+点原图（五线谱、有 Rust 会话）：在那儿开窗找头补一个音（找不到按位置补四分音符）。处理了回 true */
+  staffInsertAt(ev: MouseEvent): boolean {
+    const res = this.staffResult as RustReviewResult | null;
+    if (this.host.mode !== "recognize" || !res?.apply) return false;
+    const svg = ev.target instanceof Element ? ev.target.closest<SVGSVGElement>("svg.omr-recognize") : null;
+    const m = svg?.getScreenCTM();
+    const page = Number(svg?.dataset.page ?? -1);
+    if (!svg || !m || page < 0) return false;
+    const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(m.inverse());
+    const k = res.pages[page]?.scale ?? 1;
+    void this.staffSessionOp({ op: "insert", page, x: p.x / k, y: p.y / k }, () => t("omr.inserted"));
+    return true;
+  }
+
+  /** Alt+右键有落选候选的音：列出候选，选了换上（会话 `choose`）。 */
+  private showAltsMenu(x: number, y: number, rid: string): boolean {
+    const res = this.staffResult as RustReviewResult | null;
+    const alts = res?.alts.get(rid);
+    if (!res?.apply || !alts?.length) return false;
+    const label = (a: (typeof alts)[number]): string =>
+      a.kind === "drop" ? t("omr.alt.drop") : t("omr.alt.duration", { type: t(`omr.alt.type.${a.type}` as never), dots: "·".repeat(a.dots) });
+    this.popMenu(x, y, "omr-alts-menu", alts.map((a, i) => ({ label: label(a), run: () => void this.staffSessionOp({ op: "choose", rid, alt: i }, () => t("omr.altChosen")) })));
+    return true;
+  }
+
+  /** Alt+Shift 拖框（五线谱、有 Rust 会话）：框里的字重读，菜单选当歌词还是文字。 */
+  private wireRegionDrag(svg: SVGSVGElement): void {
+    svg.addEventListener("mousedown", (e) => {
+      const res = this.staffResult as RustReviewResult | null;
+      if (!e.altKey || !e.shiftKey || e.button !== 0 || !res?.apply) return;
+      const m = svg.getScreenCTM();
+      const page = Number(svg.dataset.page ?? -1);
+      if (!m || page < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const inv = m.inverse();
+      const at = (ev: MouseEvent): DOMPoint => new DOMPoint(ev.clientX, ev.clientY).matrixTransform(inv);
+      const p0 = at(e);
+      const box = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      box.setAttribute("class", "omr-region-box");
+      svg.appendChild(box);
+      let p1 = p0;
+      const draw = (): void => {
+        box.setAttribute("x", String(Math.min(p0.x, p1.x)));
+        box.setAttribute("y", String(Math.min(p0.y, p1.y)));
+        box.setAttribute("width", String(Math.abs(p1.x - p0.x)));
+        box.setAttribute("height", String(Math.abs(p1.y - p0.y)));
+      };
+      draw();
+      const move = (ev: MouseEvent): void => {
+        p1 = at(ev);
+        draw();
+      };
+      const up = (ev: MouseEvent): void => {
+        window.removeEventListener("mousemove", move, true);
+        window.removeEventListener("mouseup", up, true);
+        box.remove();
+        const k = res.pages[page]?.scale ?? 1;
+        const rect = { x: Math.min(p0.x, p1.x) / k, y: Math.min(p0.y, p1.y) / k, w: Math.abs(p1.x - p0.x) / k, h: Math.abs(p1.y - p0.y) / k };
+        if (rect.w < 4 || rect.h < 4) return;
+        const run = (cls: "lyric" | "text") => void this.staffSessionOp({ op: "region", page, rect, class: cls }, (r) => t("omr.regionDone", { n: r.count ?? 0 }));
+        this.popMenu(ev.clientX, ev.clientY, "omr-region-menu", [
+          { label: t("omr.region.lyric"), run: () => run("lyric") },
+          { label: t("omr.region.text"), run: () => run("text") },
+        ]);
+      };
+      window.addEventListener("mousemove", move, true);
+      window.addEventListener("mouseup", up, true);
+    }, true);
   }
 
   /** 五线谱对照：和弦所在那行谱表的竖向范围（插入光标照它画）。 */
@@ -1810,20 +1823,21 @@ export class OmrController implements FormatSource {
   async restructureStaff(op: SystemOp): Promise<boolean> {
     const res = this.staffResult;
     if (!res?.restructure) return false;
-    return this.rebuildStaffWith(() => {
-      const r = res.restructure!(op);
+    return this.rebuildStaffWith(async () => {
+      const r = await res.restructure!(op);
       if (!r) throw new Error(t("omr.restructureNo"));
       return r;
     });
   }
 
-  private async rebuildStaffWith(make: () => { xml: string; score: NonNullable<import("../staffomr/review").StaffReviewResult["score"]> }): Promise<boolean> {
+  private async rebuildStaffWith(make: () => import("../staffomr/review").Rebuilt | Promise<import("../staffomr/review").Rebuilt>): Promise<boolean> {
     const edits = await this.captureStaffEdits();
     if (edits && edits.lost > 0 && !(await confirmDiscardEdits())) return false;
+    if (edits) await this.pinStaffEdits(edits);
     const inRecognize = this.host.mode === "recognize";
     let xml: string;
     try {
-      const r = make();
+      const r = await make();
       xml = r.xml;
       // 系统、谱行的结构跟着换（关联表、右键谱行按它认系统）
       if (this.staffResult) this.staffResult.score = r.score;
@@ -1847,6 +1861,33 @@ export class OmrController implements FormatSource {
     if (inRecognize && (this.host.mode as string) !== "recognize") await this.toggle();
     this.host.setStatus(replay ? t("omr.rebuiltReplayed", { n: replay.replayed, lost: replay.missed + (edits?.lost ?? 0) }) : t("omr.rebuilt"));
     return true;
+  }
+
+  /**
+   * Rust 会话：手改里的删音、改时值、改音高记成会话的钉住事实（之后重拼、满拍裁决都照它，不再回原样）。
+   * 删掉的从 TS 回放里拿掉（Rust 已经删了，回放会找不到）；改的照旧回放（音高时值与钉的一致，歌词等别的改动靠它）。
+   */
+  private async pinStaffEdits(edits: StaffEdits): Promise<void> {
+    const res = this.staffResult as RustReviewResult | null;
+    if (!res?.apply) return;
+    const NTYPE: Record<string, string> = { whole: "Whole", half: "Half", quarter: "Quarter", eighth: "Eighth", "16th": "N16th", "32nd": "N32nd" };
+    const ops: RustSessionOp[] = [];
+    for (const id of edits.deleted) ops.push({ op: "pin", rid: id, fact: { fact: "drop" } });
+    for (const [id, c] of edits.chords) {
+      if (c.rest || c.grace || c.timeMod || c.pitches.length !== 1) continue;
+      const p = c.pitches[0]!;
+      ops.push({ op: "pin", rid: id, fact: { fact: "pitch", pitch: { step: "CDEFGAB".indexOf(p.step), octave: p.octave, alter: p.alter } } });
+      const ntype = c.type ? NTYPE[c.type] : undefined;
+      if (ntype) ops.push({ op: "pin", rid: id, fact: { fact: "duration", ntype, dots: c.dots } });
+    }
+    for (const op of ops) {
+      try {
+        await res.apply(op);
+        if (op.op === "pin" && op.fact.fact === "drop") edits.deleted.delete(op.rid);
+      } catch (e) {
+        console.warn("钉住手改失败", op, e);
+      }
+    }
   }
 
   /** 识别（或上次重建）落地之后的手改：按识别 id 记下改过的和弦（音高、休止、时值、连音、倚音、歌词）与删掉的；`lost` 是回放不了的处数（新插的音、记下的回放不出现在的谱）。 */
@@ -2456,12 +2497,3 @@ function flatOrder(score: RecognizedScore): number[] {
   return order;
 }
 
-/** 图片地址 → 自然大小（读不出给 A4 比例，只用来定占位页的比例） */
-function imageSize(url: string): Promise<{ w: number; h: number }> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve({ w: img.naturalWidth || 595, h: img.naturalHeight || 842 });
-    img.onerror = () => resolve({ w: 595, h: 842 });
-    img.src = url;
-  });
-}

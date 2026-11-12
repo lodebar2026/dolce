@@ -45,23 +45,38 @@ export interface RustReviewJson {
   stats: { pages: number; parts: number; systems: number; notes: number; bars: number; full: number };
 }
 
-/** 会话操作（Rust `omr-staff::session::Op` 里编辑器用得到的两样）。 */
+/** 识别音高（同 MusicXML：`step` 0..6 = C..B）。 */
+export type RustPitch = { step: number; octave: number; alter: number };
+
+/** 会话操作（Rust `omr-staff::session::Op` 与 `omr-engine` 的 insert / region）。 */
 export type RustSessionOp =
   | { op: "rebuild"; slots: (number | null)[][] }
-  | { op: "restructure"; change: { kind: "merge"; system: number } | { kind: "split"; system: number; row: number } };
+  | { op: "restructure"; change: { kind: "merge"; system: number } | { kind: "split"; system: number; row: number } }
+  | { op: "pin"; rid: string; fact: { fact: "drop" } | { fact: "duration"; ntype: string; dots: number } | { fact: "pitch"; pitch: RustPitch } }
+  | { op: "unpin"; rid: string }
+  | { op: "choose"; rid: string; alt: number }
+  | { op: "insert"; page: number; x: number; y: number }
+  | { op: "region"; page: number; rect: { x: number; y: number; w: number; h: number }; class: "lyric" | "text" };
 
-/** 转调会话：做一条操作，回新的 MusicXML 与核对 JSON；做不了回 null。P12 接 Tauri 命令，现在 Node 里调 `omr-cli session` 测。 */
-export type RustSessionCall = (op: RustSessionOp) => { xml: string; review: string | RustReviewJson } | null;
+/** 会话的回话：新的 MusicXML 与核对 JSON（补认另回新音的 id，重认回换了几个字）。 */
+export type RustSessionReply = { xml: string; review: string | RustReviewJson; rid?: string; count?: number };
+
+/** 转调会话：做一条操作；做不了回 null（Tauri 命令 / wasm Worker 都是异步的）。 */
+export type RustSessionCall = (op: RustSessionOp) => Promise<RustSessionReply | null>;
 
 export interface RustReviewResult extends StaffReviewResult {
   /** 可疑清单与落选候选（随会话操作更新） */
   doubts: RustDoubt[];
   alts: Map<string, RustAlt[]>;
+  /** 做一条会话操作（钉住、换候选、补认、重认……），回新的 MusicXML 与系统结构；回话里的 `rid` / `count` 原样带出。没有会话为 undefined */
+  apply?(op: RustSessionOp): Promise<{ xml: string; score: ReviewGeometry; rid?: string; count?: number }>;
 }
 
 export interface RustReviewOpts {
   /** 各页底图（与 `pages` 同序；对照视图要）。缺了的页 `raster` 为 null */
   rasters?: readonly (Binary | null | undefined)[];
+  /** 各页核对坐标乘几是底图像素（矢量页按 PDF 点识别、底图放大渲；缺省取核对 JSON 的） */
+  scales?: readonly (number | undefined)[];
   /** 会话；不给就不能改关联表 / 系统切分 */
   call?: RustSessionCall;
 }
@@ -94,7 +109,7 @@ export function reviewFromRust(json: string | RustReviewJson, xml: string, opts:
       page: pageGeoms[i]!,
       jianpuStrips: Array.from({ length: p.jianpu }, () => null),
     };
-    return { source: 0, pn: p.pn, result, scale: p.scale };
+    return { source: 0, pn: p.pn, result, scale: opts.scales?.[i] ?? p.scale };
   });
   const geometry = (j: RustReviewJson): ReviewGeometry => ({
     systems: j.systems.map((s) => {
@@ -116,8 +131,8 @@ export function reviewFromRust(json: string | RustReviewJson, xml: string, opts:
     doubts: [],
     alts: new Map(),
     assignment: () => toTs(current.assignment),
-    rebuild(slots) {
-      const r = run({ op: "rebuild", slots: toRust(slots) });
+    async rebuild(slots) {
+      const r = await run({ op: "rebuild", slots: toRust(slots) });
       if (!r) throw new Error("会话没有回结果");
       return r;
     },
@@ -132,17 +147,24 @@ export function reviewFromRust(json: string | RustReviewJson, xml: string, opts:
     res.alts = new Map(Object.entries(j.alts));
     res.stats = statsOf(j);
   };
-  const run = (op: RustSessionOp): { xml: string; score: ReviewGeometry } | null => {
+  const run = async (op: RustSessionOp): Promise<{ xml: string; score: ReviewGeometry; rid?: string; count?: number } | null> => {
     if (!opts.call) throw new Error("没有会话，不能重拼");
-    const r = opts.call(op);
+    const r = await opts.call(op);
     if (!r) return null;
     const j = parse(r.review);
     if (j.pages.length !== pageGeoms.length) throw new Error("会话回来的页数变了");
     adopt(j);
     res.xml = r.xml;
-    return { xml: r.xml, score: geometry(j) };
+    return { xml: r.xml, score: geometry(j), ...(r.rid ? { rid: r.rid } : {}), ...(r.count !== undefined ? { count: r.count } : {}) };
   };
-  if (opts.call) res.restructure = (op) => run(systemOpToRust(op));
+  if (opts.call) {
+    res.restructure = (op) => run(systemOpToRust(op));
+    res.apply = async (op) => {
+      const r = await run(op);
+      if (!r) throw new Error("会话没有回结果");
+      return r;
+    };
+  }
   adopt(first);
   return res;
 }

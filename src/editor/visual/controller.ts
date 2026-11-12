@@ -104,6 +104,8 @@ export interface VisualHost {
   setStatus(text: string): void;
   saveSettings(): void;
   /** 识别核对：Alt+点原图的那一处落在哪两个音之间（五线谱另给按位置推出的音高）；不在核对视图为 null */
+  /** Alt+点原图补音交给识别会话（五线谱 Rust 识别）；处理了回 true（`OmrController.staffInsertAt`） */
+  staffInsertAt?(ev: MouseEvent): boolean;
   sourcePoint?(ev: MouseEvent): { after: ElementId | null; before: ElementId | null; pitch?: { step: "A" | "B" | "C" | "D" | "E" | "F" | "G"; octave: number } } | null;
   /** 识别核对时的可疑项（F8 与拍数不对的小节按原文位置一起走）：各在原文的哪儿、怎么跳过去 */
   doubtStops?(): { at: number; go(): void }[];
@@ -726,6 +728,8 @@ export class VisualEditController {
     if (ev.altKey && entry?.kind === "note" && this.host.surfaceKind() === "staff" && this.pickChordNote(entry, ev.clientY)) return true;
     // Alt+点原图上没有东西的地方（识别核对）：在那儿补一个漏识的音 / 小节线（PhotoScore 的 Alt+点复制选中的那一样）
     if (ev.altKey && !entry) {
+      // 五线谱有 Rust 会话：回原图开窗找头补音（会话 `insert`）
+      if (this.host.staffInsertAt?.(ev)) return true;
       const sp = this.host.sourcePoint?.(ev);
       if (sp) return this.insertAtSource(sp);
     }
