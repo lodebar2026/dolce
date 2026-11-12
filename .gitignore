@@ -21,6 +21,9 @@ node_modules
 # pdf.js 位图解码器 wasm：来自 pdfjs-dist 包，构建时从 node_modules 拷入（见 vite.config.ts），不入库
 public/redist/pdfjs
 
+# 网页版识别的 wasm（Rust 识别 + PDFium 的 wasm 版）：scripts/build-wasm.mjs 产出，不入库
+public/redist/omr
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

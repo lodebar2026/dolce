@@ -19,6 +19,7 @@ pub fn set_library_path(p: PathBuf) -> bool {
     OVERRIDE.set(p).is_ok()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// 动态库位置：[`set_library_path`] 指定的 → 环境变量 `PDFIUM_LIB_PATH` → 可执行文件同目录 → 构建时找到的目录（`build.rs`）。
 fn locate() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = OVERRIDE.get().cloned().into_iter().collect();
@@ -37,6 +38,15 @@ fn locate() -> Vec<PathBuf> {
     v
 }
 
+/// wasm：宿主页面先加载 PDFium 的 wasm 模块并调 `initialize_pdfium_render`，这里只绑上去。
+#[cfg(target_arch = "wasm32")]
+fn load() -> Result<Mutex<Lib>, String> {
+    let b = Pdfium::bind_to_system_library().map_err(|e| format!("PDFium wasm 未初始化：{e:?}"))?;
+    unsafe { b.FPDF_InitLibrary() };
+    Ok(Mutex::new(Lib { b }))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn load() -> Result<Mutex<Lib>, String> {
     let mut errs = Vec::new();
     for p in locate() {

@@ -13,6 +13,8 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 |---|---|
 | `crates/omr-build` | 构建脚本工具：`fingerprint(名, 目录…)` 按源码目录算阶段代码指纹，导出 `OMR_CODE_<名>`（阶段缓存键的一部分；上游 crate 的目录要一并列上） |
 | `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/omr-engine` | 三端共用的入口：`Doc`（打开 PDF / 图片，几个文件合成一份；页尺寸、整页渲染）、`recognize`（判路：先按五线谱认，一页谱表都没有再走简谱；进度与取消）、`staff_binary`（核对底图）、`insert` / `region`（点图补认、框选重认）；`Handle`（文档句柄：桌面版 Tauri 命令与网页版 wasm 都是它外面的薄壳，请求与回应的字节 / JSON 格式两边一样）。页级并行在特性 `parallel` 后面，wasm 下关 |
+| `crates/omr-wasm` | 网页版绑定（wasm-bindgen，`scripts/build-wasm.mjs` 编进 `public/redist/omr/`，Worker `src/omrrust/worker.ts` 里跑）：`OmrDoc`（与 Tauri 命令一一对应）、`load_ocr`（OCR 用 tract 推理同一份 ONNX）、`set_pdfium_module` |
 | `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `omr-cli`，本 crate 不依赖识别路线） |
 | `crates/omr-source` | 取数层：`pdf.rs`（PDFium：页数、内嵌图原始像素与矩阵、路径、文字层、字形轮廓、整页渲染）、`raster.rs`（取页图：最大块 / 拼图页 / 按矩阵转正、图片文件按 EXIF 转正；`Binarizer` 灰度各倍数只算一次、几档 Sauvola 共用积分图；极性自检） |
 | `crates/omr-ocr` | PP-OCR：识别（CTC、逐字位置、前 K 候选）、DBNet 检测（含分块）、原生推理（ort 会话池）、按条内容指纹的落盘缓存 |
@@ -36,6 +38,11 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
   pdfium-render 的 `font.glyphs()` 拿 0 号试探字形数，符号字体（Maestro）试出 0，之后 `get` 全失败——不能用它。
   实测（2026-11-10）：Anastasia 1684/1685（差的是空格）、Maestro 225/225 与 214/214；子集字体 `LNFFGN+Maestro` 0/54（字符码 0x87 之类没有 Unicode 映射，PDFium 回的就是码本身，反查不回字符码）。
   这类字先按字框渲染取位图签名兜底，大量出现再解字体程序（`FPDFFont_GetFontData`）。
+- **PDFium 的 wasm 版**（pdfium-binaries 同一构建号的 `pdfium-wasm.tgz`，emscripten 非模块脚本）：Worker 把脚本当函数体跑、`Module` 由参数交进去；
+  pdfium-render 0.9.5 的 wasm 绑定要 `Module.wasmExports`（脚本里是局部量，要挂出来）、认 `PDFium_Init`（这一版只导出 `FPDF_InitLibrary`，补别名）。
+  绑定有两处毛病，`omr-source/src/pdfium_wasm.rs` 绕开、直接调模块：`FPDFPageObj_GetMatrix` 先在本模块内存上开视图再分配，内存一长就报 detached ArrayBuffer（八段锦必现）；
+  `FPDFText_GetCharBox` 出参次序交错（左上右下 对 左右下上），字框读反（破碎页眉字号读成 −394）。
+  修过之后八段锦、宣主荣耀的页面内容与原生逐字节相同；没嵌入的字体（破碎的 ArialMT）原生取系统字体、wasm 取 PDFium 内置字体，字形轮廓与字框不同，属平台差。
 - **内嵌图**：`get_raw_image` 给原始尺寸、不重采样；CCITT（2482×3510，约 20 ms）、DCT（RGB / 灰度）、Flate 都取得出，页上矩阵从 `matrix()` 取，一页好几块的（星空下的祝福）各自带矩阵。JBIG2 语料里没碰到，未验。
 
 ### 五线谱：预处理与框架结构
@@ -556,7 +563,9 @@ npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ 
 
 ## 已知限制
 
-- 五线谱做到混排互证（P8）、矢量档（P9）与整曲结果模型、会话、核对 JSON（P10），歌本切分（P11）已迁；版面分区、wasm、接进编辑器（Tauri 命令）还没有。
+- 五线谱做到混排互证（P8）、矢量档（P9）与整曲结果模型、会话、核对 JSON（P10），歌本切分（P11）已迁，桌面版与网页版已接进编辑器（P12）；版面分区还没有。
+- 网页版识别单线程：OCR 用 tract（比 onnxruntime-web 单线程慢一倍），破碎 12 页约 28 秒、一页简谱约 25 秒，几乎都花在 OCR 上；wasm 21 MB（gzip 5.0 MB），PDFium 5.2 MB（gzip 2.4 MB）。
+- 某声部整小节没有音时（破碎前几个系统还没出现的钢琴声部），写出的 MusicXML 小节里一个 `<note>` 都没有、不补整小节休止，编辑器试听报「measure has no chord」拼不出。
 - 转曲矢量路认不出《裴克圣经经文诗歌歌谱》（CorelDRAW 转曲）这套字形的调号与拍号（逐首识别对 pu.db 调号 14%、拍号 0.5%，音高随之全错，音符 24.6%；TS 那边是专门补过的，现 99.31），P9 的字形字典只拿祢話如甘霖PDF 一份定过。
 - 歌本切分：哈利路亚 474「羡」读成异体「羨」（rec 逐字读法，TS 读对）；位图歌本的 JPEG 比 sharp 出的大约三成。
 - 线性符号（P6）没做的：**跨谱表的弧**（钢琴两行之间；大谱表已合（10d），弧端还不挂另一谱表的音）、**虚线弧**（等宽等距的短横划排成的弧，Holy Holy Holy 一半的弧）、

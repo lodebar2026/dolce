@@ -2,14 +2,12 @@
 //! 识别、会话都在 `crates/omr-engine`；这里只管句柄表、线程与 IPC。重活一律 `spawn_blocking`，二进制走 `ipc::Response`。
 //!
 //! OCR 与 TS 识别路的推理命令（`omr_onnx*` / `omr_det`，P13 随 TS 识别删）共用一套原生会话池（[`infer`]）。
-use dolce_omr_core::image::Rect;
 use dolce_omr_core::progress::{Hook, Step};
-use dolce_omr_engine::{Doc, Opts, Recognition, RegionClass};
+use dolce_omr_engine::{Handle, Opts};
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_ocr::native::{NativeInfer, DET_FILE, REC_FILE};
 use dolce_omr_ocr::{Infer, Model, Ocr, OcrCache};
-use dolce_omr_staff::session::{Op, Session};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -67,14 +65,8 @@ pub fn setup(app: &tauri::AppHandle) {
     }
 }
 
-enum Rec {
-    Staff { session: Session, pages: Vec<usize> },
-    Jianpu { binary: dolce_omr_core::image::Binary },
-}
-
 struct Entry {
-    doc: Doc,
-    rec: Mutex<Option<Rec>>,
+    h: Handle,
     cancel: AtomicBool,
 }
 
@@ -92,34 +84,19 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// 打开文档（几个文件合成一份，页按次序接起来）。请求体：`u32 文件数`，每个文件 `u32 长度` + 原始字节（小端）。
-/// 回 `{id, pdf, sizes: [[w, h]…]}`（PDF 是点，图片是像素）。
+/// 打开文档（几个文件合成一份）。请求体见 `omr-engine::split_files`；回 `{id, pdf, sizes}`。
 #[tauri::command]
 pub async fn omr_open(state: tauri::State<'_, OmrState>, request: tauri::ipc::Request<'_>) -> Result<Value, String> {
     let body = match request.body() {
         tauri::ipc::InvokeBody::Raw(v) => v.clone(),
         _ => return Err("omr_open 需要原始字节请求体".into()),
     };
-    let doc = blocking(move || Doc::open_many(split_files(&body)?)).await?;
-    let sizes: Vec<[f64; 2]> = (0..doc.page_count()).map(|i| doc.page_size(i).map(|(w, h)| [w, h])).collect::<Result<_, _>>()?;
-    let pdf = doc.is_pdf();
+    let h = blocking(move || Handle::open(&body)).await?;
+    let mut info = h.info()?;
     let id = state.next.fetch_add(1, Ordering::Relaxed) + 1;
-    state.docs.lock().map_err(|e| e.to_string())?.insert(id, Arc::new(Entry { doc, rec: Mutex::new(None), cancel: AtomicBool::new(false) }));
-    Ok(json!({ "id": id, "pdf": pdf, "sizes": sizes }))
-}
-
-/// `u32 个数` + 各个 `u32 长度` + 字节 → 各段。
-fn split_files(b: &[u8]) -> Result<Vec<Vec<u8>>, String> {
-    let u32_at = |o: usize| b.get(o..o + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize).ok_or("请求体太短");
-    let n = u32_at(0)?;
-    let mut off = 4;
-    let mut out = Vec::with_capacity(n);
-    for _ in 0..n {
-        let len = u32_at(off)?;
-        out.push(b.get(off + 4..off + 4 + len).ok_or("请求体太短")?.to_vec());
-        off += 4 + len;
-    }
-    Ok(out)
+    state.docs.lock().map_err(|e| e.to_string())?.insert(id, Arc::new(Entry { h, cancel: AtomicBool::new(false) }));
+    info["id"] = json!(id);
+    Ok(info)
 }
 
 #[tauri::command]
@@ -128,44 +105,18 @@ pub fn omr_close(state: tauri::State<'_, OmrState>, id: u32) -> Result<(), Strin
     Ok(())
 }
 
-/// 整页渲染：回 `u32 宽, u32 高`（小端）+ RGBA。
+/// 整页渲染（格式见 `omr-engine::Handle::render_bytes`）。
 #[tauri::command]
 pub async fn omr_render(state: tauri::State<'_, OmrState>, id: u32, page: usize, scale: f64) -> Result<Response, String> {
     let e = entry(&state, id)?;
-    let r = blocking(move || e.doc.render(page, scale)).await?;
-    let mut out = Vec::with_capacity(8 + r.rgba.len());
-    out.extend_from_slice(&(r.w as u32).to_le_bytes());
-    out.extend_from_slice(&(r.h as u32).to_le_bytes());
-    out.extend_from_slice(&r.rgba);
-    Ok(Response::new(out))
+    Ok(Response::new(blocking(move || e.h.render_bytes(page, scale)).await?))
 }
 
-/// 核对底图：简谱是识别用的二值图（`page` 不看，没有位置），五线谱是第 `page` 页（文档页号）。
-/// 回 `u32 宽, u32 高, f32 倍数`（核对坐标乘它是底图像素）、`f32 × 6` 底图在页上的框 x y w h 与页宽高（点；没有全 0）+ 每像素一字节 0 / 1。
+/// 核对底图（格式见 `omr-engine::Handle::binary_bytes`）。
 #[tauri::command]
 pub async fn omr_binary(state: tauri::State<'_, OmrState>, id: u32, page: usize) -> Result<Response, String> {
     let e = entry(&state, id)?;
-    Ok(Response::new(blocking(move || page_binary(&e, page)).await?))
-}
-
-fn page_binary(e: &Entry, page: usize) -> Result<Vec<u8>, String> {
-    let (bin, k, at) = match &*e.rec.lock().map_err(|e| e.to_string())? {
-        Some(Rec::Jianpu { binary }) => (binary.clone(), 1.0, None),
-        _ => {
-            let (b, k, at) = dolce_omr_engine::staff_binary(&e.doc, page)?;
-            (b, k, Some(at))
-        }
-    };
-    let mut out = Vec::with_capacity(36 + bin.data.len());
-    out.extend_from_slice(&(bin.w as u32).to_le_bytes());
-    out.extend_from_slice(&(bin.h as u32).to_le_bytes());
-    out.extend_from_slice(&(k as f32).to_le_bytes());
-    let f = at.map_or([0.0; 6], |a| [a.rect.x, a.rect.y, a.rect.w, a.rect.h, a.page_w, a.page_h]);
-    for v in f {
-        out.extend_from_slice(&(v as f32).to_le_bytes());
-    }
-    out.extend_from_slice(&bin.data);
-    Ok(out)
+    Ok(Response::new(blocking(move || e.h.binary_bytes(page)).await?))
 }
 
 #[derive(Clone, Serialize)]
@@ -175,31 +126,16 @@ pub struct Progress {
     stage: String,
 }
 
-/// 识别：进度逐步发到 `on_progress`。回 `{kind: "staff", xml, review, pages}` 或 `{kind: "jianpu", score}`；取消回错误「已取消」。
+/// 识别：进度逐步发到 `on_progress`；回应见 `omr-engine::Handle::recognize`。
 #[tauri::command]
 pub async fn omr_recognize(app: tauri::AppHandle, state: tauri::State<'_, OmrState>, id: u32, opts: Opts, on_progress: Channel<Progress>) -> Result<Value, String> {
     let e = entry(&state, id)?;
     e.cancel.store(false, Ordering::Relaxed);
     blocking(move || {
-        let ocr = ocr(&app)?;
         let send = |s: Step| {
             let _ = on_progress.send(Progress { done: s.done, total: s.total, stage: s.stage.to_string() });
         };
-        let hook = Hook { on: Some(&send), cancel: Some(&e.cancel) };
-        let r = dolce_omr_engine::recognize(&e.doc, ocr, &opts, &hook)?;
-        let mut slot = e.rec.lock().map_err(|e| e.to_string())?;
-        Ok(match r {
-            Recognition::Staff { session, pages } => {
-                let (xml, review) = dolce_omr_engine::staff_output(&session);
-                let v = json!({ "kind": "staff", "xml": xml, "review": review, "pages": pages });
-                *slot = Some(Rec::Staff { session, pages });
-                v
-            }
-            Recognition::Jianpu { score, binary } => {
-                *slot = Some(Rec::Jianpu { binary });
-                json!({ "kind": "jianpu", "score": score })
-            }
-        })
+        e.h.recognize(ocr(&app)?, &opts, &Hook { on: Some(&send), cancel: Some(&e.cancel) })
     })
     .await
 }
@@ -210,49 +146,9 @@ pub fn omr_cancel(state: tauri::State<'_, OmrState>, id: u32) -> Result<(), Stri
     Ok(())
 }
 
-/// 会话操作（五线谱）。`op` 除 `omr-staff::session::Op` 的各种外，还有：
-/// `{op: "insert", page, x, y}`（点原图补认，`page` 是结果页下标，坐标是核对坐标）→ 另回 `rid`；
-/// `{op: "region", page, rect: {x, y, w, h}, class: "lyric" | "text"}`（框选重认）→ 另回 `count`。
-/// 回 `{xml, review, …}`。
+/// 会话操作（五线谱；各操作见 `omr-engine::Handle::session`）。
 #[tauri::command]
 pub async fn omr_session(app: tauri::AppHandle, state: tauri::State<'_, OmrState>, id: u32, op: Value) -> Result<Value, String> {
     let e = entry(&state, id)?;
-    blocking(move || {
-        let mut slot = e.rec.lock().map_err(|e| e.to_string())?;
-        let Some(Rec::Staff { session, pages }) = slot.as_mut() else { return Err("这份文档没有五线谱识别结果".into()) };
-        let mut extra = json!({});
-        match op.get("op").and_then(Value::as_str) {
-            Some("insert") => {
-                #[derive(Deserialize)]
-                struct A {
-                    page: usize,
-                    x: f64,
-                    y: f64,
-                }
-                let a: A = serde_json::from_value(op).map_err(|e| e.to_string())?;
-                let rid = dolce_omr_engine::insert(&e.doc, session, pages, a.page, a.x, a.y)?;
-                extra = json!({ "rid": rid.to_string() });
-            }
-            Some("region") => {
-                #[derive(Deserialize)]
-                struct A {
-                    page: usize,
-                    rect: Rect,
-                    class: RegionClass,
-                }
-                let a: A = serde_json::from_value(op).map_err(|e| e.to_string())?;
-                let n = dolce_omr_engine::region(&e.doc, session, pages, a.page, a.rect, a.class, ocr(&app)?)?;
-                extra = json!({ "count": n });
-            }
-            _ => {
-                let op: Op = serde_json::from_value(op).map_err(|e| format!("会话操作不认得：{e}"))?;
-                session.apply(op)?;
-            }
-        }
-        let (xml, review) = dolce_omr_engine::staff_output(session);
-        extra["xml"] = json!(xml);
-        extra["review"] = json!(review);
-        Ok(extra)
-    })
-    .await
+    blocking(move || e.h.session(op, || ocr(&app))).await
 }

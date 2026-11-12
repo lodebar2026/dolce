@@ -14,6 +14,10 @@ pub mod raster;
 pub mod vector;
 mod pdfium;
 pub use pdfium::set_library_path;
+#[cfg(target_arch = "wasm32")]
+mod pdfium_wasm;
+#[cfg(target_arch = "wasm32")]
+pub use pdfium_wasm::set_module as set_wasm_module;
 
 pub use model::*;
 pub use pdf::{ContentOpts, PdfDoc, Rendered};

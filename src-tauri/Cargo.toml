@@ -37,7 +37,6 @@ bytemuck = "1"
 dolce-omr-core = { path = "../crates/omr-core" }
 dolce-omr-engine = { path = "../crates/omr-engine" }
 dolce-omr-ocr = { path = "../crates/omr-ocr", features = ["native"] }
-dolce-omr-staff = { path = "../crates/omr-staff" }
 # 直接依赖取数层：它的构建脚本经 `links` 把 PDFium 动态库目录交给本包构建脚本（打包时拷进资源）
 dolce-omr-source = { path = "../crates/omr-source" }
 

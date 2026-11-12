@@ -439,10 +439,12 @@ dependencies = [
  "dolce-omr-core",
  "flate2",
  "image",
+ "js-sys",
  "pdfium-render",
  "serde",
  "serde_json",
  "sha2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -472,9 +474,14 @@ dependencies = [
 name = "dolce-omr-wasm"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "dolce-omr-core",
+ "dolce-omr-engine",
  "dolce-omr-ocr",
+ "dolce-omr-source",
  "getrandom",
+ "js-sys",
+ "serde_json",
  "wasm-bindgen",
 ]
 

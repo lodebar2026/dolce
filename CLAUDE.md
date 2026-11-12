@@ -18,7 +18,7 @@
 
 构建、类型检查、桌面调试命令见 [docs/架构.md](docs/架构.md)「技术栈与构建」。
 回归脚本、语料与基线不在本仓库（本地私有仓库，从本仓库根跑 `node ../dev/scripts/xxx.mjs`）；
-`scripts/` 只留发布链路：`release.sh`、`pack-omr.mjs`、`win-crt.mjs`、`vcredist.mjs`，外加随 OMR 包分发的 `omr-cli.mjs`。
+`scripts/` 只留构建与发布链路：`release.sh`、`pack-omr.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm），外加随 OMR 包分发的 `omr-cli.mjs`。
 文档里写的 `../dev/scripts/xxx.mjs` 都在私有仓库。
 
 ## 约定

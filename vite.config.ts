@@ -18,6 +18,22 @@ function copyPdfjsWasm(): Plugin {
   return { name: "copy-pdfjs-wasm", buildStart: copy, configureServer: copy };
 }
 
+// 网页版识别的 wasm（Rust 识别 + PDFium 的 wasm 版）→ public/redist/omr/（不入库，见 scripts/build-wasm.mjs）。
+// 开发时编不出来只警告（网页版识别用不了，其余照常）；构建时编不出来就失败。桌面版（TAURI_ENV_PLATFORM）与 DOLCE_NO_WASM 跳过。
+function buildOmrWasm(): Plugin {
+  const run = async (strict: boolean) => {
+    // @ts-expect-error 构建脚本是无类型的 .mjs
+    const { buildWasm } = (await import("./scripts/build-wasm.mjs")) as { buildWasm: () => void };
+    try {
+      buildWasm();
+    } catch (e) {
+      if (strict) throw e;
+      console.warn(`[build-wasm] ${(e as Error).message}——网页版识别用不了`);
+    }
+  };
+  return { name: "build-omr-wasm", buildStart: () => run(true), configureServer: () => run(false) };
+}
+
 // 英文落地页 `/en/`（SEO）：构建完把产出的 index.html 复制一份到 en/index.html——
 // `<!-- seo:start -->…<!-- seo:end -->` 换成 seo/head.en.html，`<html>` 标成英文（`data-ui-lang` 让
 // 界面默认英文，见 i18n/index.ts），带 data-i18n* 的静态文字按英文词典预译（爬虫拿到的正文就是英文）。
@@ -71,7 +87,7 @@ const base = process.env.BASE_PATH || "/";
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   base,
-  plugins: [copyPdfjsWasm(), emitEnPage()],
+  plugins: [copyPdfjsWasm(), buildOmrWasm(), emitEnPage()],
   define: { __APP_VERSION__: JSON.stringify(pkgVersion) },
   // 程序产出一律放 out/（构建、脚本报告、缓存），web 根下不再散落输出目录
   build: { outDir: "out/dist", emptyOutDir: true },

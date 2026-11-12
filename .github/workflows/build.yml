@@ -52,6 +52,8 @@ jobs:
       # 「找不到 MSVCP140_1.dll」。下面 tauri-action 那步是增量编译，不会重来一遍。
       - name: 校验 Windows 包内置的 VC++ 运行库
         if: matrix.os == 'windows-latest'
+        env:
+          DOLCE_NO_WASM: "1"
         run: |
           npm run build
           node scripts/win-crt.mjs
@@ -85,6 +87,18 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      # 网页版识别的 wasm（crates/omr-wasm，scripts/build-wasm.mjs 在 vite build 开头编）：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
+      - name: Setup Rust (wasm)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+          cache-all-crates: true
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' crates/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')" --locked
       - name: Type check
         run: npx tsc --noEmit
       - name: Build (subpath base for project Pages)

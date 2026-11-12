@@ -1,34 +1,124 @@
-//! 网页版绑定。现在只有 OCR 探针（P12 12a：量 tract 在浏览器里的加载与单条耗时），12g 补齐文档、识别与会话。
+//! 网页版绑定：Worker（`src/omrrust/worker.ts`）里跑，接口与桌面版 Tauri 命令（`src-tauri/src/omr.rs`）一一对应，
+//! 都是 `omr-engine::Handle` 外面的薄壳；字节与 JSON 的格式两边相同。
+//!
+//! 先后：Worker 加载 PDFium 的 wasm 模块后调 `initialize_pdfium_render`（pdfium-render 导出）与 [`set_pdfium_module`]，要识别前调 [`load_ocr`] 交模型字节。
+//! wasm 下没有线程：识别同步跑完，进度回调里由 JS 查取消标志（`SharedArrayBuffer`），回真就在下一步停。
 use dolce_omr_core::image::Rect;
+use dolce_omr_core::progress::{Hook, Step};
+use dolce_omr_engine::{Handle, Opts};
+use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_ocr::surface::Gray;
 use dolce_omr_ocr::tract::TractInfer;
-use dolce_omr_ocr::Ocr;
+use dolce_omr_ocr::{Ocr, OcrCache};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use wasm_bindgen::prelude::*;
 
+static OCR: OnceLock<CachedOcr> = OnceLock::new();
+
+#[wasm_bindgen(start)]
+fn start() {
+    console_error_panic_hook::set_once();
+}
+
+fn err(e: String) -> JsError {
+    JsError::new(&e)
+}
+
+fn ocr() -> Result<&'static CachedOcr, String> {
+    OCR.get().ok_or_else(|| "OCR 模型还没加载".to_string())
+}
+
+/// 交 PDFium 的 emscripten 模块：先调 pdfium-render 导出的 `initialize_pdfium_render(模块, 本模块导出, false)`，再调这个
+/// （取数层有两个接口绕开绑定直接调模块，见 `omr-source/src/pdfium_wasm.rs`）。
 #[wasm_bindgen]
-pub struct OcrProbe {
-    ocr: Ocr,
+pub fn set_pdfium_module(module: JsValue) {
+    dolce_omr_source::set_wasm_module(module);
+}
+
+/// 交 OCR 模型（rec / det 的 ONNX 字节与字典）；只第一次有效。
+#[wasm_bindgen]
+pub fn load_ocr(rec: &[u8], det: &[u8], dict: &str) -> Result<(), JsError> {
+    if OCR.get().is_none() {
+        let infer = TractInfer::new(rec, det).map_err(err)?;
+        let _ = OCR.set(CachedOcr { ocr: Some(Ocr::new(Box::new(infer), dict)), cache: OcrCache::memory() });
+    }
+    Ok(())
 }
 
 #[wasm_bindgen]
-impl OcrProbe {
-    #[wasm_bindgen(constructor)]
-    pub fn new(rec: &[u8], det: &[u8], dict: &str) -> Result<OcrProbe, JsError> {
-        let infer = TractInfer::new(rec, det).map_err(|e| JsError::new(&e))?;
-        Ok(OcrProbe { ocr: Ocr::new(Box::new(infer), dict) })
+pub fn ocr_loaded() -> bool {
+    OCR.get().is_some()
+}
+
+/// 一份打开的文档（几个文件合成一份）。
+#[wasm_bindgen]
+pub struct OmrDoc {
+    h: Handle,
+}
+
+/// JS 回调没有 `Sync`；wasm 只有一个线程，包一层过 `Hook` 的约束。
+struct Single<T>(T);
+unsafe impl<T> Sync for Single<T> {}
+
+#[wasm_bindgen]
+impl OmrDoc {
+    /// 请求体同 Tauri 的 `omr_open`（`u32 个数` + 各 `u32 长度` + 字节）。
+    pub fn open(body: &[u8]) -> Result<OmrDoc, JsError> {
+        Ok(OmrDoc { h: Handle::open(body).map_err(err)? })
     }
 
-    /// 读一条灰度文本条，回识别出的字串。
-    pub fn read_line(&self, gray: &[u8], w: usize, h: usize) -> Result<String, JsError> {
-        let g = Gray { w, h, data: gray.to_vec() };
-        let r = self.ocr.read_lines(std::slice::from_ref(&g)).map_err(|e| JsError::new(&e))?;
-        Ok(r[0].iter().map(|c| c.ch.as_str()).collect())
+    /// `{pdf, sizes}` 的 JSON。
+    pub fn info(&self) -> Result<String, JsError> {
+        Ok(self.h.info().map_err(err)?.to_string())
     }
 
-    /// 检测整个画面的文本框个数。
-    pub fn detect(&self, gray: &[u8], w: usize, h: usize) -> Result<usize, JsError> {
-        let g = Gray { w, h, data: gray.to_vec() };
-        let r = self.ocr.detect(&g, Rect::new(0.0, 0.0, w as f64, h as f64)).map_err(|e| JsError::new(&e))?;
-        Ok(r.len())
+    pub fn render(&self, page: usize, scale: f64) -> Result<Vec<u8>, JsError> {
+        self.h.render_bytes(page, scale).map_err(err)
+    }
+
+    pub fn binary(&self, page: usize) -> Result<Vec<u8>, JsError> {
+        self.h.binary_bytes(page).map_err(err)
+    }
+
+    /// 识别：`opts` 是 `Opts` 的 JSON；`progress(done, total, stage)` 回真表示要取消。回 JSON。
+    pub fn recognize(&self, opts: &str, progress: &js_sys::Function) -> Result<String, JsError> {
+        let opts: Opts = serde_json::from_str(opts).map_err(|e| err(e.to_string()))?;
+        let cancel = AtomicBool::new(false);
+        let f = Single(progress);
+        let send = |s: Step| {
+            let r = f.0.call3(&JsValue::NULL, &JsValue::from(s.done as u32), &JsValue::from(s.total as u32), &JsValue::from_str(s.stage));
+            if r.is_ok_and(|v| v.is_truthy()) {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        };
+        let send = Single(send);
+        let on = |s: Step| (send.0)(s);
+        let hook = Hook { on: Some(&on), cancel: Some(&cancel) };
+        Ok(self.h.recognize(ocr().map_err(err)?, &opts, &hook).map_err(err)?.to_string())
+    }
+
+    /// 会话操作：`op` 的 JSON，同 Tauri 的 `omr_session`。回 JSON。
+    pub fn session(&self, op: &str) -> Result<String, JsError> {
+        let op = serde_json::from_str(op).map_err(|e| err(e.to_string()))?;
+        Ok(self.h.session(op, ocr).map_err(err)?.to_string())
     }
 }
+
+/// OCR 探针（P12 12a：量 tract 在浏览器里的单条耗时；用 [`load_ocr`] 交的模型）。
+#[wasm_bindgen]
+pub fn ocr_read_line(gray: &[u8], w: usize, h: usize) -> Result<String, JsError> {
+    let g = Gray { w, h, data: gray.to_vec() };
+    let o = ocr().map_err(err)?.ocr.as_ref().ok_or_else(|| err("没有 OCR".into()))?;
+    let r = o.read_lines(std::slice::from_ref(&g)).map_err(err)?;
+    Ok(r[0].iter().map(|c| c.ch.as_str()).collect())
+}
+
+/// OCR 探针：整个画面检测出几个文本框。
+#[wasm_bindgen]
+pub fn ocr_detect(gray: &[u8], w: usize, h: usize) -> Result<usize, JsError> {
+    let g = Gray { w, h, data: gray.to_vec() };
+    let o = ocr().map_err(err)?.ocr.as_ref().ok_or_else(|| err("没有 OCR".into()))?;
+    Ok(o.detect(&g, Rect::new(0.0, 0.0, w as f64, h as f64)).map_err(err)?.len())
+}
+

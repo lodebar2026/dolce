@@ -4,6 +4,7 @@
 //! - [`recognize`]：判路（先按五线谱认，没有一页找到谱表就走简谱）、带进度与取消（[`Hook`]）
 //! - [`Recognition`]：五线谱交会话（[`Session`]，改关联表 / 切分 / 钉住都在它上面），简谱交识别结果与识别用的二值图
 //! - [`staff_binary`]：五线谱核对视图的底图（坐标与核对 JSON 一致）
+//! - [`Handle`]：桌面版、网页版共用的文档句柄（请求与回应的字节 / JSON 格式）
 use dolce_omr_core::image::Binary;
 use dolce_omr_core::pixel::preprocess::otsu;
 use dolce_omr_core::progress::Hook;
@@ -17,7 +18,10 @@ use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::session::Session;
 use serde::{Deserialize, Serialize};
 
+mod handle;
+
 pub use dolce_omr_core::progress::{Step, CANCELLED};
+pub use handle::{split_files, Handle};
 
 /// 一份打开的文档：一个或几个文件（几张照片合成一首），页按文件次序接着编。
 pub struct Doc {

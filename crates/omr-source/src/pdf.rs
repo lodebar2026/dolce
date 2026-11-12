@@ -154,12 +154,33 @@ fn flip(m: &M, h: f64) -> M {
     [m[0], -m[1], m[2], -m[3], m[4], h - m[5]]
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn obj_matrix(l: &Lib, obj: FPDF_PAGEOBJECT) -> M {
     let mut fm = FS_MATRIX { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 };
     if l.b.FPDFPageObj_GetMatrix(obj, &mut fm) == 0 {
         return IDENT;
     }
     [fm.a as f64, fm.b as f64, fm.c as f64, fm.d as f64, fm.e as f64, fm.f as f64]
+}
+
+/// wasm 下绑定的这一条有毛病，直接调（见 `pdfium_wasm`）。
+#[cfg(target_arch = "wasm32")]
+unsafe fn obj_matrix(_: &Lib, obj: FPDF_PAGEOBJECT) -> M {
+    crate::pdfium_wasm::obj_matrix(obj as usize).map_or(IDENT, |m| m.map(|v| v as f64))
+}
+
+/// 第 `i` 个字的框（左、右、下、上）。
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn char_box(l: &Lib, tp: FPDF_TEXTPAGE, i: c_int) -> [f64; 4] {
+    let (mut x0, mut x1, mut y0, mut y1) = (0 as c_double, 0 as c_double, 0 as c_double, 0 as c_double);
+    l.b.FPDFText_GetCharBox(tp, i, &mut x0, &mut x1, &mut y0, &mut y1);
+    [x0, x1, y0, y1]
+}
+
+/// wasm 下绑定的这一条出参次序错，直接调（见 `pdfium_wasm`）。
+#[cfg(target_arch = "wasm32")]
+unsafe fn char_box(_: &Lib, tp: FPDF_TEXTPAGE, i: c_int) -> [f64; 4] {
+    crate::pdfium_wasm::char_box(tp as usize, i).unwrap_or([0.0; 4])
 }
 
 fn bbox_of(pts: impl Iterator<Item = (f64, f64)>) -> Rect {
@@ -302,7 +323,14 @@ unsafe fn bitmap_rgba(l: &Lib, bmp: FPDF_BITMAP) -> Rendered {
     let h = l.b.FPDFBitmap_GetHeight(bmp).max(0) as usize;
     let stride = l.b.FPDFBitmap_GetStride(bmp).max(0) as usize;
     let fmt = l.b.FPDFBitmap_GetFormat(bmp);
-    let buf = std::slice::from_raw_parts(l.b.FPDFBitmap_GetBuffer(bmp) as *const u8, stride * h);
+    // wasm 下 PDFium 在另一块堆上，只能拷一份过来
+    #[cfg(not(target_arch = "wasm32"))]
+    let buf = l.b.FPDFBitmap_GetBuffer_as_slice(bmp);
+    #[cfg(target_arch = "wasm32")]
+    let buf = &l.b.FPDFBitmap_GetBuffer_as_vec(bmp)[..];
+    if buf.len() < stride * h {
+        return Rendered { w: 0, h: 0, rgba: Vec::new() };
+    }
     let mut out = vec![0u8; w * h * 4];
     for y in 0..h {
         let row = &buf[y * stride..];
@@ -352,8 +380,7 @@ unsafe fn text_chars(l: &Lib, page: FPDF_PAGE, h: f64, outlines: bool) -> Vec<Te
         let size = l.b.FPDFText_GetFontSize(tp, i);
         let (mut ox, mut oy) = (0 as c_double, 0 as c_double);
         l.b.FPDFText_GetCharOrigin(tp, i, &mut ox, &mut oy);
-        let (mut x0, mut x1, mut y0, mut y1) = (0 as c_double, 0 as c_double, 0 as c_double, 0 as c_double);
-        l.b.FPDFText_GetCharBox(tp, i, &mut x0, &mut x1, &mut y0, &mut y1);
+        let [x0, x1, y0, y1] = char_box(l, tp, i);
         let obj = l.b.FPDFText_GetTextObject(tp, i);
         let (mut font, mut subset, mut size_scaled, mut outline) = (String::new(), false, size, None);
         if !obj.is_null() {

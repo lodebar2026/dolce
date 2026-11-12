@@ -14,6 +14,11 @@ dolce-omr-core = { path = "../omr-core" }
 # 绑定的 PDFium 版本要与随应用分发的动态库同一个 chromium 构建号，否则绑定时缺符号
 pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_7881", "thread_safe", "image_latest"] }
 
+# wasm 下绕开 pdfium-render wasm 绑定的两处毛病，直接调 PDFium 的 emscripten 模块（src/pdfium_wasm.rs）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "=0.2.120"
+
 [dev-dependencies]
 flate2 = "1"
 serde_json = "1"
