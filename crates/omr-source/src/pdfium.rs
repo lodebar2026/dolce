@@ -12,10 +12,16 @@ pub(crate) struct Lib {
 }
 
 static LIB: OnceLock<Result<Mutex<Lib>, String>> = OnceLock::new();
+static OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
-/// 动态库位置：环境变量 `PDFIUM_LIB_PATH` → 可执行文件同目录 → 构建时找到的目录（`build.rs`）。
+/// 指定动态库路径（桌面版从资源目录取）。要在第一次用 PDFium 之前调；回 false 表示已经指定过。
+pub fn set_library_path(p: PathBuf) -> bool {
+    OVERRIDE.set(p).is_ok()
+}
+
+/// 动态库位置：[`set_library_path`] 指定的 → 环境变量 `PDFIUM_LIB_PATH` → 可执行文件同目录 → 构建时找到的目录（`build.rs`）。
 fn locate() -> Vec<PathBuf> {
-    let mut v = Vec::new();
+    let mut v: Vec<PathBuf> = OVERRIDE.get().cloned().into_iter().collect();
     if let Ok(p) = std::env::var("PDFIUM_LIB_PATH") {
         v.push(PathBuf::from(p));
     }

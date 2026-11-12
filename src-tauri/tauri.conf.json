@@ -31,8 +31,10 @@
     "targets": "all",
     "resources": {
       "../public/redist/Bravura.otf": "Bravura.otf",
-      "../public/redist/ocr/ch_PP-OCRv6_small_rec_infer.onnx": "ocr/rec.onnx",
-      "../public/redist/ocr/ch_PP-OCRv4_det_infer.onnx": "ocr/det.onnx"
+      "../public/redist/ocr/ch_PP-OCRv6_small_rec_infer.onnx": "ocr/ch_PP-OCRv6_small_rec_infer.onnx",
+      "../public/redist/ocr/ch_PP-OCRv4_det_infer.onnx": "ocr/ch_PP-OCRv4_det_infer.onnx",
+      "../public/redist/ocr/ppocrv6_dict.txt": "ocr/ppocrv6_dict.txt",
+      "pdfium/": "pdfium/"
     },
     "icon": [
       "icons/32x32.png",

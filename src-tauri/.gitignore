@@ -8,3 +8,6 @@
 
 # Windows 打包时从官方 vc_redist 抠出的 VC++ 运行库（微软二进制，不入库；见 scripts/win-crt.mjs）
 /crt/
+
+# PDFium 动态库：构建脚本从 crates/omr-source 的缓存拷来打进资源（见 build.rs），不入库
+/pdfium/

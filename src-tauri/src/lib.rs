@@ -143,65 +143,11 @@ fn export_pdf_cmd(
 // 二进制协议（避开 JSON 序列化大数组的开销）——
 //   请求体: [model u8(0=rec,1=det)][ndims u8][dims i32×ndims (LE)][f32 data (LE)]
 //   响应体: [ndims u8][dims i32×ndims (LE)][f32 data (LE)]
-use std::sync::Mutex;
 
-/// 每个模型一个**会话池**：前端多页并行时各页的 OCR 同时到来，一把锁会让它们排队。
-/// 池大小 `DOLCE_OCR_SESS`（缺省 3）、每个会话的算子线程数 `DOLCE_OCR_THREADS`（缺省 3）可调。
-/// 实测（10 核 Mac，现跑合唱谱）1×4 → 3×3：宁静 19.2→17.1 s、破碎扫描 37.8→32.1 s；2×4、2×2 介于其间。会话按需建（没争用不建第二个）。
-/// 同一模型、同样的线程数，换哪个会话推理结果都一样（各会话独立、不共享状态）。
-type SessPool = Vec<Mutex<Option<ort::session::Session>>>;
-static REC_SESS: std::sync::OnceLock<SessPool> = std::sync::OnceLock::new();
-static DET_SESS: std::sync::OnceLock<SessPool> = std::sync::OnceLock::new();
-static POOL_NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+mod omr;
 
-fn env_usize(name: &str, def: usize) -> usize {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).filter(|&v| v > 0).unwrap_or(def)
-}
-fn sess_pool(slot: &'static std::sync::OnceLock<SessPool>) -> &'static SessPool {
-    slot.get_or_init(|| (0..env_usize("DOLCE_OCR_SESS", 3)).map(|_| Mutex::new(None)).collect())
-}
-/// 取一个空闲会话（都忙就按轮转排到其中一个上等）。
-fn lock_sess(pool: &'static SessPool) -> Result<std::sync::MutexGuard<'static, Option<ort::session::Session>>, String> {
-    for m in pool {
-        if let Ok(g) = m.try_lock() {
-            return Ok(g);
-        }
-    }
-    let i = POOL_NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % pool.len();
-    pool[i].lock().map_err(|e| e.to_string())
-}
-static ORT_ENV: std::sync::OnceLock<ort::environment::Environment> = std::sync::OnceLock::new();
-
-fn ort_env() -> Result<&'static ort::environment::Environment, String> {
-    if let Some(env) = ORT_ENV.get() {
-        return Ok(env);
-    }
-    let env = ort::init().build().map_err(|e| e.to_string())?;
-    Ok(ORT_ENV.get_or_init(|| env))
-}
-
-fn ocr_model_path(app: &tauri::AppHandle, file: &str) -> Result<std::path::PathBuf, String> {
-    let dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-    Ok(dir.join("ocr").join(file))
-}
-
-fn ensure_ocr_session(
-    slot: &mut Option<ort::session::Session>,
-    app: &tauri::AppHandle,
-    file: &str,
-) -> Result<(), String> {
-    if slot.is_none() {
-        let path = ocr_model_path(app, file)?;
-        let sess = ort::session::Session::builder(ort_env()?)
-            .map_err(|e| e.to_string())?
-            .with_intra_threads(env_usize("DOLCE_OCR_THREADS", 3))
-            .map_err(|e| e.to_string())?
-            .commit_from_file(&path)
-            .map_err(|e| format!("加载模型 {} 失败: {}", path.display(), e))?;
-        *slot = Some(sess);
-    }
-    Ok(())
-}
+// 会话池在 `omr::infer`（与 Rust 识别共用一套：每个模型 `DOLCE_OCR_SESS` 个会话 × `DOLCE_OCR_THREADS` 线程，缺省 3 × 3）。
+// 实测（10 核 Mac，现跑合唱谱）1×4 → 3×3：宁静 19.2→17.1 s、破碎扫描 37.8→32.1 s；2×4、2×2 介于其间。会话按需建（没争用不建第二个）。
 
 #[inline]
 fn ri32(b: &[u8], o: usize) -> i32 {
@@ -217,27 +163,15 @@ fn infer_one(
     dims: Vec<i64>,
     data: Vec<f32>,
 ) -> Result<(Vec<i32>, Vec<u8>), String> {
-    let (pool, file) = if model == 0 {
-        (sess_pool(&REC_SESS), "rec.onnx")
-    } else {
-        (sess_pool(&DET_SESS), "det.onnx")
-    };
-    let mut guard = lock_sess(pool)?;
-    ensure_ocr_session(&mut guard, app, file)?;
-    let sess = guard.as_mut().unwrap();
-    let iname = sess.inputs()[0].name().to_string();
-    let oname = sess.outputs()[0].name().to_string();
-    let tensor = ort::value::Tensor::from_array((dims, data)).map_err(|e| e.to_string())?;
+    use dolce_omr_ocr::Infer;
+    let m = if model == 0 { dolce_omr_ocr::Model::Rec } else { dolce_omr_ocr::Model::Det };
+    let infer = omr::infer(app)?;
     #[cfg(feature = "bench")]
     let t_run = std::time::Instant::now();
-    let outputs = sess
-        .run(ort::inputs![iname.as_str() => tensor])
-        .map_err(|e| e.to_string())?;
+    let (out, shape) = infer.run(m, data, &dims.iter().map(|&d| d as usize).collect::<Vec<_>>())?;
     #[cfg(feature = "bench")]
     bench::add_run(model, t_run.elapsed());
-    let (shape, out) = outputs[oname.as_str()]
-        .try_extract_tensor::<f32>()
-        .map_err(|e| e.to_string())?;
+    let out = out.as_slice();
 
     if mode == 1 {
         let (bn, t, c) = (shape[0] as usize, shape[1] as usize, shape[2] as usize);
@@ -575,7 +509,7 @@ fn raw_body(request: &tauri::ipc::Request<'_>, cmd: &str) -> Result<Vec<u8>, Str
 }
 
 /// 推理命令一律 **async + 阻塞线程池**：同步命令跑在主线程上、一个接一个，前端多页并行时各页的 OCR 只能排队；
-/// 挪到 `spawn_blocking` 后几条推理可以同时进行（会话池见 `REC_SESS`）。
+/// 挪到 `spawn_blocking` 后几条推理可以同时进行（会话池见 `omr::infer`）。
 async fn run_blocking(app: tauri::AppHandle, body: Vec<u8>, f: fn(&tauri::AppHandle, &[u8]) -> Result<Vec<u8>, String>) -> Result<tauri::ipc::Response, String> {
     let resp = tauri::async_runtime::spawn_blocking(move || f(&app, &body)).await.map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(resp))
@@ -721,7 +655,12 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .manage(omr::OmrState::default())
+        .setup(|app| {
+            omr::setup(app.handle());
+            Ok(())
+        });
     #[cfg(target_os = "macos")]
     let builder = builder.manage(MidiState::default());
     #[cfg(not(feature = "bench"))]
@@ -730,6 +669,13 @@ pub fn run() {
         omr_onnx,
         omr_onnx_batch,
         omr_det,
+        omr::omr_open,
+        omr::omr_close,
+        omr::omr_render,
+        omr::omr_binary,
+        omr::omr_recognize,
+        omr::omr_cancel,
+        omr::omr_session,
         midi_play_cmd,
         midi_stop_cmd
     ]);
@@ -739,6 +685,13 @@ pub fn run() {
         omr_onnx,
         omr_onnx_batch,
         omr_det,
+        omr::omr_open,
+        omr::omr_close,
+        omr::omr_render,
+        omr::omr_binary,
+        omr::omr_recognize,
+        omr::omr_cancel,
+        omr::omr_session,
         midi_play_cmd,
         midi_stop_cmd,
         bench::bench_config,

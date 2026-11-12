@@ -13,6 +13,7 @@ pub mod pdf;
 pub mod raster;
 pub mod vector;
 mod pdfium;
+pub use pdfium::set_library_path;
 
 pub use model::*;
 pub use pdf::{ContentOpts, PdfDoc, Rendered};

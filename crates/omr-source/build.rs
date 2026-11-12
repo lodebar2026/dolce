@@ -35,6 +35,8 @@ fn main() {
 
 fn export(dir: &Path) {
     println!("cargo:rustc-env=DOLCE_PDFIUM_DIR={}", dir.display());
+    // 直接依赖本 crate 的构建脚本读 `DEP_PDFIUM_DIR`（桌面版 src-tauri 打包时拷库）
+    println!("cargo:dir={}", dir.display());
 }
 
 fn cache_dir(target: &str) -> PathBuf {
