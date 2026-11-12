@@ -112,3 +112,58 @@ pub fn one(args: &[String]) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// `omr-cli session 文件 --ops=操作.jsonl [--out=目录]`：识别一个五线谱文件，开会话，逐条做操作（每行一条 JSON，形状见 `omr-staff::session::Op`），
+/// 每一步写出 `<步>.musicxml` 与 `<步>.rec.json`，报声部数、小节数、钉住几条，以及识别 id 比上一步留下 / 没了 / 新出的个数（查号码稳定）。
+pub fn session(args: &[String]) -> Result<(), String> {
+    use dolce_omr_staff::session::{Op, Session};
+    let file = args.first().filter(|a| !a.starts_with("--")).ok_or("缺文件")?;
+    let val = |k: &str| args.iter().find_map(|a| a.strip_prefix(&format!("--{k}=")).map(str::to_string));
+    let ops: Vec<Op> = match val("ops") {
+        Some(p) => std::fs::read_to_string(&p)
+            .map_err(|e| format!("读 {p}：{e}"))?
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with("//"))
+            .map(|l| serde_json::from_str(l).map_err(|e| format!("操作「{l}」：{e}")))
+            .collect::<Result<_, _>>()?,
+        None => Vec::new(),
+    };
+    let out = std::path::PathBuf::from(val("out").unwrap_or_else(|| "session-out".into()));
+    std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    let ocr = open_ocr(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json"))?;
+    let srcs = sources(Path::new(file))?;
+    let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_source(s, Some(&ocr))).collect();
+    ocr.cache.save()?;
+    if pages.is_empty() {
+        return Err("没有找到谱表".into());
+    }
+    let ids = |x: &str| -> std::collections::BTreeSet<String> { x.split(" id=\"").skip(1).filter_map(|s| s.split('"').next()).map(str::to_string).collect() };
+    let mut s = Session::new(pages, None);
+    let mut prev = ids(&s.song().score.to_musicxml());
+    let dump = |k: usize, s: &Session, prev: &std::collections::BTreeSet<String>, what: &str| -> Result<std::collections::BTreeSet<String>, String> {
+        let song = s.song();
+        let x = song.score.to_musicxml();
+        std::fs::write(out.join(format!("{k}.musicxml")), &x).map_err(|e| e.to_string())?;
+        std::fs::write(out.join(format!("{k}.rec.json")), song.layout_json()).map_err(|e| e.to_string())?;
+        let now = ids(&x);
+        let measures = song.score.parts.first().map_or(0, |p| p.measures.len());
+        let staves: Vec<u8> = song.score.parts.iter().map(|p| p.staves.max(1)).collect();
+        println!(
+            "{k} {what}：{} 个声部（谱表 {staves:?}）、{measures} 小节、钉住 {}；id 留 {} 没 {} 新 {}",
+            song.score.parts.len(),
+            s.constraints().pins.len(),
+            now.intersection(prev).count(),
+            prev.difference(&now).count(),
+            now.difference(prev).count()
+        );
+        Ok(now)
+    };
+    prev = dump(0, &s, &prev, "识别")?;
+    println!("  关联表 {:?}", s.assignment());
+    for (k, op) in ops.into_iter().enumerate() {
+        let what = serde_json::to_string(&op).unwrap_or_default();
+        s.apply(op)?;
+        prev = dump(k + 1, &s, &prev, &what)?;
+    }
+    Ok(())
+}

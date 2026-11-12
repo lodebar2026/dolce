@@ -72,6 +72,9 @@ pub struct Chord {
     /// 连音（满拍裁决收下的候选，[`tuplets`]）。
     #[serde(default)]
     pub tuplet: Option<dolce_omr_sheet::score::Tuplet>,
+    /// 用户钉住的（时值、音高照钉的；满拍裁决不再动它，见 `song::Constraints`）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -213,7 +216,7 @@ pub fn build_rows<P: crate::frame::ink::Probe + ?Sized>(f: &crate::page::Layout,
                 cs.bottom = cs.bottom.max(st.bottom);
                 c.heads.push(h);
             }
-            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None }),
+            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false }),
         }
     }
     for row in rows.iter_mut() {

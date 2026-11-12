@@ -22,9 +22,12 @@ use dolce_omr_text::lyrics::align;
 
 mod assign;
 mod attach;
+mod constraints;
 mod grand;
 mod ids;
 mod spans;
+pub use constraints::{Constraints, Context, Fact};
+use constraints::apply_pins;
 use assign::*;
 use attach::*;
 use grand::*;
@@ -60,6 +63,8 @@ pub struct Song {
     pub systems: Vec<SystemLayout>,
     /// 各槽位（`RowLayout::part`）落到（第几声部, 第几谱表）：大谱表合并后两个槽位进同一个声部。
     pub slot_at: Vec<(usize, u8)>,
+    /// 关联表：各系统各行配到了第几个槽位（编辑器关联表的初值；改了交回 [`Constraints::slots`]）。
+    pub assignment: Vec<Vec<usize>>,
     /// 可疑清单（满拍裁决交来的；别的模块的随后并进来）。
     pub doubts: Vec<Doubt>,
     /// 满拍读数。
@@ -174,6 +179,11 @@ fn split_bars(parts: &mut [Part]) {
 
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
+    assemble_with(pages, title, &Constraints::default())
+}
+
+/// 带约束拼整曲（[`Constraints`]：关联表、钉住的事实、从某处起改的谱号调号拍号）。只重跑拼接，不重认。
+pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> Song {
     let nparts = pages.iter().flat_map(|p| p.layout.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
     let mut parts: Vec<Part> = (0..nparts).map(|_| Part::default()).collect();
     // 各声部现行的调号
@@ -185,11 +195,20 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
         .iter()
         .flat_map(|p| p.layout.systems.iter().map(move |sys| sys.staves.iter().filter_map(|&i| p.attrs[i].key.map(|k| (k.fifths, p.attrs[i].key_sure))).next()))
         .collect();
-    let keys = settle_keys(&sys_keys);
+    let mut keys = settle_keys(&sys_keys);
+    for (n, k) in keys.iter_mut().enumerate() {
+        if let Some(f) = c.key_at(n) {
+            *k = f;
+        }
+    }
     // 各系统的行配到哪几个声部；各声部逐系统的行首谱号读数顺着乐曲定下来（行首换谱号少见：孤零零一行读得不同的照前后改）
     let mixed = pages.iter().any(|p| !p.layout.bands.is_empty());
     let profs = profiles(pages);
-    let mut slots_all = auto_slots(&profs);
+    // 关联表：给了且每个系统的行数都对得上就照它，否则自动指派
+    let mut slots_all = match &c.slots {
+        Some(s) if s.len() == profs.len() && s.iter().zip(&profs).all(|(a, b)| a.len() == b.len()) => s.clone(),
+        _ => auto_slots(&profs),
+    };
     let mut clef_reads: Vec<Vec<Option<(Clef, bool)>>> = vec![Vec::new(); nparts];
     let mut sys_no = 0;
     for page in pages {
@@ -210,7 +229,14 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             sys_no += 1;
         }
     }
-    let clefs: Vec<Vec<Option<Clef>>> = clef_reads.iter().map(|r| settle(r, |_, _| false)).collect();
+    let mut clefs: Vec<Vec<Option<Clef>>> = clef_reads.iter().map(|r| settle(r, |_, _| false)).collect();
+    for (p, cs) in clefs.iter_mut().enumerate() {
+        for (n, cl) in cs.iter_mut().enumerate() {
+            if let Some(f) = c.clef_at(n, p) {
+                *cl = Some(f);
+            }
+        }
+    }
     // 混排谱：全曲的简谱校准（横向平移、「1」的位置）
     let lead_of = |page: &Page, i: usize| page.attrs[i].lead_end.max(page.layout.staves[i].left);
     let calib = {
@@ -260,6 +286,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     // 各声部画到行尾、等下一个系统接着的松叶
     let mut open_wedge: Vec<OpenWedge> = vec![None; nparts];
     let mut ids = Ids::new(pages);
+    apply_pins(pages, &mut ids.notes, &c.pins);
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.layout;
         (ids.page, ids.up) = (pn + 1, f.up);
@@ -292,8 +319,10 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
             let mut used = vec![false; nparts];
             let mut layout = Vec::new();
             // 满拍裁决：这个系统起头的拍号（本系统读到、够格的；否则沿用），行中换拍号的从那一小节起
-            let read = rows.iter().filter_map(|&i| page.attrs[i].time).next();
-            let votes = rows.iter().map(|&i| page.attrs[i].time_votes).max().unwrap_or(0);
+            // 用户在这个系统改了拍号：当作读出、够格
+            let forced = c.time_at(sys_i);
+            let read = forced.or_else(|| rows.iter().filter_map(|&i| page.attrs[i].time).next());
+            let votes = if forced.is_some() { 2 } else { rows.iter().map(|&i| page.attrs[i].time_votes).max().unwrap_or(0) };
             let mut now = read.filter(|t| from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal)).or(time);
             let bar_of = |x: f64| bs.iter().filter(|b| b.x < x).count().min(count - 1);
             let plain = |b: Option<&Bound>| b.is_none_or(|b| b.style == BarStyle::Regular && !b.rep_end && !b.rep_start);
@@ -394,8 +423,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 }
                 key[p] = Some(kk);
                 // 拍号：曲首照读数；后面的系统只收「与现行不同、且同系统两行以上各自读出同一个」的（单行系统只收数字拍号）
-                if let Some(t) = a.time {
-                    let strong = a.time_votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal);
+                if let Some(t) = forced.or(a.time) {
+                    let strong = forced.is_some() || a.time_votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal);
                     if first || (time != Some(t) && strong) {
                         at.time = Some(t);
                     }
@@ -584,8 +613,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     part.measures.extend(ms);
                 }
             }
-            if let Some(t) = rows.iter().filter_map(|&i| page.attrs[i].time).next() {
-                let votes = rows.iter().map(|&i| page.attrs[i].time_votes).max().unwrap_or(0);
+            if let Some(t) = read {
                 if from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal) {
                     time = Some(t);
                 }
@@ -609,7 +637,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     }
     let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
     let vector = pages.iter().any(|p| p.layout.vector);
-    Song { score: Score { title, credits, parts }, systems, slot_at, doubts, meter: stats, fused, vector }
+    Song { score: Score { title, credits, parts }, systems, slot_at, assignment: slots_all, doubts, meter: stats, fused, vector }
 }
 
 impl Song {

@@ -266,12 +266,13 @@ pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of:
             let row = &notes[k];
             let mut both: Vec<(Item, Target, Vec<Op>)> = Vec::new();
             for (i, c) in row.chords.iter().enumerate().filter(|(_, c)| bar_of(c.x) == j) {
-                let (ops, alts): (Vec<Op>, Vec<Alt>) = chord_alts(c, med).into_iter().unzip();
+                // 钉住的不出候选（用户定了的，不为凑满拍改）
+                let (ops, alts): (Vec<Op>, Vec<Alt>) = if c.pinned { (Vec::new(), Vec::new()) } else { chord_alts(c, med).into_iter().unzip() };
                 let y = c.heads.iter().map(|h| h.y).sum::<f64>() / c.heads.len() as f64;
                 both.push((Item { x: c.x, y, dur: chord_dur(c), up: c.stem.map(|s| s.up), alts }, Target::Chord(i), ops));
             }
             for (i, r) in row.rests.iter().enumerate().filter(|(_, r)| bar_of(r.x) == j) {
-                let (ops, alts): (Vec<Op>, Vec<Alt>) = rest_alts().into_iter().unzip();
+                let (ops, alts): (Vec<Op>, Vec<Alt>) = if r.pinned { (Vec::new(), Vec::new()) } else { rest_alts().into_iter().unzip() };
                 both.push((Item { x: r.x, y: r.y, dur: rest_dur(r.ntype, r.dots, want), up: None, alts }, Target::Rest(i), ops));
             }
             if both.is_empty() {

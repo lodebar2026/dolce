@@ -16,6 +16,7 @@ pub mod mixed;
 pub mod notes;
 pub mod page;
 pub mod prep;
+pub mod session;
 pub mod song;
 pub mod spans;
 pub mod text;

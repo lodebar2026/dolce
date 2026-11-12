@@ -68,6 +68,9 @@ pub struct Rest {
     /// 识别 id（同 [`super::heads::Head::rid`]）。
     #[serde(default)]
     pub rid: Option<dolce_omr_sheet::result::Rid>,
+    /// 用户钉住的（同 [`super::Chord::pinned`]）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 /// 多小节休止：横条高（相对线距）、至少多宽、条心离中线不过多远；两端竖线的高与离条端多远；数字在条上方不出多远。
@@ -103,7 +106,7 @@ pub fn multi_rests(staves: &[Staff], bars: &[Rect], vsegs: &[VSeg], digits: &[(u
         if n < 2 {
             continue;
         }
-        out.push(Rest { staff: si, x: cx, y: cy, ntype: NoteType::Whole, rect: (b.x, b.y, b.w, b.h), dots: 0, arts: Vec::new(), measures: n.min(u16::MAX as u32) as u16, rid: None });
+        out.push(Rest { staff: si, x: cx, y: cy, ntype: NoteType::Whole, rect: (b.x, b.y, b.w, b.h), dots: 0, arts: Vec::new(), measures: n.min(u16::MAX as u32) as u16, rid: None, pinned: false });
     }
     out
 }
@@ -262,7 +265,7 @@ pub fn rests(f: &PageFrame, si: usize, x_from: f64) -> Vec<Rest> {
         let m = Mask::of(f, &ids, r, slit);
         let ntype = if bh <= BLOCK_H.1 { block(s, &m, r.y, bw, cx) } else { curvy(&m, sp, bw, bh) };
         if let Some(ntype) = ntype.filter(|t| (pos - 4.0).abs() <= CENTER_TOL || matches!(t, NoteType::Eighth | NoteType::N16th | NoteType::N32nd)) {
-            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0, arts: Vec::new(), measures: 0, rid: None });
+            out.push(Rest { staff: si, x: cx, y: cy, ntype, rect: (r.x, r.y, r.w, r.h), dots: 0, arts: Vec::new(), measures: 0, rid: None, pinned: false });
         }
     }
     out.sort_by(|a, b| a.x.total_cmp(&b.x));

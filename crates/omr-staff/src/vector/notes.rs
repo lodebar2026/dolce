@@ -306,7 +306,7 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
         if r.iter().any(|o| (o.x - s.cx()).abs() < 0.5 && (o.y - s.cy()).abs() < 0.5) {
             continue;
         }
-        r.push(Rest { staff: si, x: s.cx(), y: s.cy(), ntype, rect: (s.rect.x, s.rect.y, s.rect.w, s.rect.h), dots: 0, arts: Vec::new(), measures: 0, rid: None });
+        r.push(Rest { staff: si, x: s.cx(), y: s.cy(), ntype, rect: (s.rect.x, s.rect.y, s.rect.w, s.rect.h), dots: 0, arts: Vec::new(), measures: 0, rid: None, pinned: false });
     }
     for row in rows.iter_mut() {
         row.rests.sort_by(|a, b| a.x.total_cmp(&b.x));

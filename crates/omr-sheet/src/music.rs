@@ -39,6 +39,17 @@ impl Clef {
         Pitch { step: d.rem_euclid(7) as u8, octave: d.div_euclid(7) as i8, alter: 0 }
     }
 
+    /// [`Self::pitch_at`] 反过来：这个音（只看音名与八度）在谱表上的音级位置。
+    pub fn pos_of(&self, p: Pitch) -> i32 {
+        let base = match self.sign {
+            ClefSign::G | ClefSign::Percussion => 4 * 7 + 4,
+            ClefSign::F => 3 * 7 + 3,
+            ClefSign::C => 4 * 7,
+        };
+        let line = if self.sign == ClefSign::Percussion { 2 } else { self.line as i32 };
+        base + (5 - line) * 2 + self.octave as i32 * 7 - (p.octave as i32 * 7 + p.step as i32)
+    }
+
     /// 调号第一个升号（F）在谱表上的音级位置（第一线 0、往下每半格 +1）。打击乐谱号没有调号。
     /// 高音谱号在第五线（0），低音谱号在第四线（2），中音谱号在第四间上（1），次中音谱号在第二线（6）。
     pub fn first_sharp_pos(&self) -> Option<i32> {

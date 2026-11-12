@@ -1,4 +1,4 @@
-//! 识别 id：**整曲拼接前按识别产物发号**（页序 → 系统 → 谱行 → x；各种类各自编号），拼接时只取号。
+//! 识别 id：**整曲拼接前按识别产物发号**（页序 → 页内谱行自上而下 → x；各种类各自编号），拼接时只取号。
 //! 这样号码只取决于识别产物——满拍裁决删了哪个头、改关联表、钉住事实后重拼，别的元素号码都不变（删掉的留空号）。
 //! 拼接里新造的元素（混排互证补的音）没有预发的号，接着往后续发。
 use super::*;
@@ -14,7 +14,7 @@ pub(super) struct Ids {
     syls: Vec<Vec<Vec<Vec<Rid>>>>,
     /// 各页各行谱：各条记号的号（文字指示、节拍器、力度才有）。
     marks: Vec<Vec<Vec<Option<Rid>>>>,
-    /// 各页：各条弧的号（与 `Page::spans.arcs` 同序；不在任何系统里的谱行上的为 None）。
+    /// 各页：各条弧的号（与 `Page::spans.arcs` 同序）。
     arcs: Vec<Vec<Option<Rid>>>,
 }
 
@@ -29,8 +29,9 @@ impl Ids {
             let mut ps: Vec<Vec<Vec<Rid>>> = vec![Vec::new(); ns];
             let mut pm: Vec<Vec<Option<Rid>>> = vec![Vec::new(); ns];
             let mut pa: Vec<Option<Rid>> = vec![None; page.spans.arcs.len()];
-            for sys in &page.layout.systems {
-                for &i in &sys.staves {
+            // 按页内全部谱行自上而下编，不经系统表：改系统切分、拿掉不要的行，号码都不变
+            {
+                for i in 0..ns {
                     // 头与休止按 x 合成一条（和弦里的头自上而下）
                     let row = &mut pn[i];
                     let mut items: Vec<(f64, usize, bool)> = row.chords.iter().enumerate().map(|(k, c)| (c.x, k, true)).chain(row.rests.iter().enumerate().map(|(k, r)| (r.x, k, false))).collect();

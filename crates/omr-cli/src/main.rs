@@ -1,4 +1,4 @@
-//! `omr-cli`：识别的命令行。现在只有回归（`regress`）；识别、切分随两条路线落地后加。
+//! `omr-cli`：识别的命令行：回归（`regress`）、识别一个简谱文件（`recognize`）、五线谱会话（`session`）；切分随歌本切分落地后加。
 mod recognize;
 mod regress;
 
@@ -12,13 +12,23 @@ const USAGE: &str = "用法：
       --replay：不识别，拷那个目录里同名的产物来判（拿 TS 归档自测回归流程）
       --area：只比这一档的步数（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）；--judge-only：产物不动，只重新判分对比
   omr-cli recognize jianpu 文件 [--render] [--out=文件]
-      识别一个简谱文件，打出行数、音数、小节数与满拍率；--render：PDF 页先用 PDFium 渲染再走像素路（对照纯矢量页那条路）";
+      识别一个简谱文件，打出行数、音数、小节数与满拍率；--render：PDF 页先用 PDFium 渲染再走像素路（对照纯矢量页那条路）
+  omr-cli session 五线谱文件 --ops=操作.jsonl [--out=目录]
+      识别后开会话，逐条做操作（每行一条 JSON：rebuild / restructure / pin / unpin / choose / context，见 omr-staff::session::Op），
+      每一步写出 <步>.musicxml 与 <步>.rec.json，报声部数、小节数与识别 id 比上一步留下 / 没了 / 新出的个数";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("regress") => match regress::run(&regress::Opts::parse(&args[1..])) {
             Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some("session") => match recognize::session(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("✗ {e}");
                 ExitCode::from(2)
