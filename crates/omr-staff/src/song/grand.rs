@@ -1,6 +1,6 @@
 //! 大谱表：花括号括着的上下两个槽位合成一个两谱表的声部（钢琴）。各槽位照常按「一行谱一个槽位」拼完、标完弧，最后一步才合：
 //! 下谱表的事件记第 2 谱表、声部号加 4（同 MusicXML 惯例的 5、6），圆滑线号加 [`SLUR_NUMBERS`]（两行各开一条长弧时号不撞），
-//! 下谱表小节起头的谱号进 `staff_attrs`、行中换的谱号进 `mid`（都记第 2 谱表）。
+//! 下谱表小节起头的谱号进 `staff_attrs`、行中换的谱号进 `mid`（都记第 2 谱表）；调号、拍号两谱表共用，上面那行没读出的取下面那行的。
 use super::*;
 use dolce_omr_sheet::music::ClefSign;
 
@@ -75,6 +75,9 @@ pub(super) fn merge(parts: Vec<Part>, pairs: &[usize]) -> (Vec<Part>, Vec<(usize
                 at[l] = (out.len(), 2);
                 upper.staves = 2;
                 for (m, low) in upper.measures.iter_mut().zip(lower.measures) {
+                    // 调号、拍号两谱表共用：上面那行没读出、下面那行读出了的取下面的（不然合成大谱表后丢了）
+                    m.attrs.key = m.attrs.key.or(low.attrs.key);
+                    m.attrs.time = m.attrs.time.or(low.attrs.time);
                     if let Some(c) = low.attrs.clef {
                         m.staff_attrs.push(Attrs { clef: Some(c), staff: 2, ..Attrs::default() });
                     }
