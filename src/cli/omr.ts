@@ -2,7 +2,7 @@
 // 由 `npm run build:cli` 打成 out/cli/omr.js，供 scripts/omr-cli.mjs 与 OMR 回归脚本 import。
 //
 // 与 cli/index.ts 的分工：那个是**矢量 PDF 版面**那一摊（vector/inventory/pdflayout），
-// 这个是**位图简谱识别**这一条（decode → jianpu → emit），外加歌本切分（含转曲矢量歌本的逐首识别）。
+// 这个是**位图简谱识别**这一条（decode → jianpu → emit），外加歌本切分的规划。识别命令行与分发包已改走 Rust（`cli/omrfmt.ts`），这里只给回归脚本用，P13 随 TS 识别删。
 import { installNodeDecoder } from "../omrkit/decode.node";
 import { setOmrRuntime } from "../omrkit/runtime";
 import { installNodeKernels } from "./omrkernels.node";
@@ -70,12 +70,7 @@ export async function recognizeImage(
   return { text: emitted.text, kind: emitted.kind, format, detail };
 }
 
-// 歌本切分（omr-cli split）：整本 PDF / 页图文件夹 → 一首一张图 + 目录核对
+// 歌本切分的规划与核对（纯计算；取页、写出与逐首识别在 Rust 的 omr-cli split）
 export { planBook, songFileNames, checkAgainstToc } from "../omr/booksplit";
 export { scanPage, pageBinary } from "../omr/booksplit/scan";
 export type { BookPlan, SplitReport } from "../omr/booksplit";
-export { openBookSource } from "../omr/booksplit/source.node";
-export { writeSongs, songImageExt } from "../omr/booksplit/write.node";
-// 转曲矢量歌本逐首识别（回原书取矢量对象，`outlineomr`）
-export { recognizeBookSongs, BOOK_FORMATS, isBookFormat } from "../omr/booksplit/recognize";
-export type { BookFormat, BookRecognizeReport } from "../omr/booksplit/recognize";

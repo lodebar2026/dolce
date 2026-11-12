@@ -1,11 +1,10 @@
 // OMR 的推理运行时注入点：把「模型/字典从哪来、用什么跑」从 paddleocr.ts 里剥出去，
-// 让识别管线本身不绑浏览器。两个实现：
-//   - `runtime.browser.ts`  onnxruntime-web（wasm），模型走 BASE_URL 下的 HTTP 资源；
-//   - `runtime.node.ts`     onnxruntime-node（原生），模型走本地文件路径。
+// 让识别管线本身不绑浏览器。现在只剩 `runtime.node.ts`（onnxruntime-node，回归脚本用）；
+// 浏览器那份随编辑器识别改走 Rust 删了（P12），整套 TS 识别 P13 删。
 // 第三条路 Tauri 原生 OCR 不在这里——它绕开 session 直接 IPC 把张量交给 Rust，
 // 见 paddleocr.ts::nativeOcr。
 //
-// 装配：浏览器侧由 `browser.ts::installBrowserOmr` 设好（各路浏览器入口各调一次）；Node 侧由 `cli/omr.ts` 显式设。
+// 装配：Node 侧由 `cli/omr.ts` 显式设。
 // **`runtime.node.ts` 绝不能进浏览器入口的 import 链**，否则打包会把 fs 拖进浏览器产物。
 
 export interface OmrRunOut {

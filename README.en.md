@@ -208,12 +208,14 @@ Regression scripts and test corpora are not part of this repository.
   structure of the 123 format.
 - [Bravura / SMuFL](https://github.com/steinbergmedia/bravura) (Steinberg, SIL OFL): music font and glyph metadata.
 - [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (Apache-2.0): recognition models for digits and lyrics
-  in OMR, run with [onnxruntime-web](https://github.com/microsoft/onnxruntime).
+  in OMR, run with [ONNX Runtime](https://github.com/microsoft/onnxruntime) (via [ort](https://github.com/pykeio/ort)) on desktop
+  and the command line, and with [tract](https://github.com/sonos/tract) on the web.
+- [PDFium](https://pdfium.googlesource.com/pdfium/) (prebuilt by [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries),
+  bound through [pdfium-render](https://github.com/ajrcarey/pdfium-render)): reading PDFs for OMR.
 - Editor, desktop shell and build: [CodeMirror 6](https://codemirror.net/), [Tauri 2](https://tauri.app/),
   [Vite](https://vite.dev/) and [TypeScript](https://www.typescriptlang.org/).
 - Libraries:
   - [opencc-js](https://github.com/nk2028/opencc-js): Simplified/Traditional conversion
-  - [pdf.js](https://mozilla.github.io/pdf.js/): PDF rasterization
   - [jsPDF](https://github.com/parallax/jsPDF): PDF export
   - [smplr](https://github.com/danigb/smplr): playback sampler
   - [FluidR3 GM](https://github.com/gleitz/midi-js-soundfonts): the piano sound used for playback (CC BY 3.0)

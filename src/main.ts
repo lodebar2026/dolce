@@ -72,7 +72,7 @@ async function boot() {
     paletteBtn: document.getElementById("btn-palette") as HTMLButtonElement | null,
   });
   app.mountEditor(codePane, SAMPLE);
-  const win = window as unknown as { __app: App; __paint: ReturnType<typeof paintProbe>; __mixedModel: unknown; __omr: unknown; __raster: unknown; __project: unknown; __xmlout: unknown; __fanqie: unknown; __book: unknown;
+  const win = window as unknown as { __app: App; __paint: ReturnType<typeof paintProbe>; __mixedModel: unknown; __project: unknown; __xmlout: unknown; __fanqie: unknown; __book: unknown;
     __j123: unknown; __pptx: unknown; __songbook: unknown };
   win.__app = app;
   // 统一排版器暴露（`new __paint.ScorePainter(__paint.resources)` + 请求），供混排 / 原样文档的无头回归脚本用。
@@ -80,10 +80,6 @@ async function boot() {
   // 混排模型（`AccidentalStat` / `GlyphCodes`）暴露，供 scripts/jianpu-semantic-check.mjs 三方比简谱语义。
   win.__mixedModel = Promise.all([import("./mixed/model"), import("./smufl/smufl"), import("./mixed/layout"), import("./mixed/staffpages")])
     .then(([model, smufl, layout, pages]) => ({ ...model, GlyphCodes: smufl.GlyphCodes, MetaData: smufl.MetaData, ...layout, formatMixedScore: pages.formatMixedScore }));
-  // OMR 原语暴露（便于脚本化测试/准确率回归，同 __app 约定）。
-  win.__omr = import("./omr");
-  // 位图五线谱的浏览器侧入口（在线 OCR）：回归脚本 `staff-measure-all.mjs --live` 拿它与离线缓存那条路比读数
-  win.__raster = import("./rasteromr/browser");
   // 桌面测速构建（VITE_DOLCE_BENCH=1）：按 DOLCE_BENCH 配置自动识别、量 OCR 各段后退出；正式构建整段剔除
   if (import.meta.env.VITE_DOLCE_BENCH) void import("./editor/desktopbench").then((b) => b.maybeRunDesktopBench());
   // 识别项目打包 / 自动保存草稿：`omr-project-check.mjs` 拿字节做存—开往返

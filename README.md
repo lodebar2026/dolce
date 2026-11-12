@@ -135,12 +135,12 @@ w:我罪已_得赦免_
 - [Bravura / SMuFL](https://github.com/steinbergmedia/bravura)（Steinberg，SIL OFL）——
   音乐字体与字形元数据
 - [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)（Apache-2.0）—— 识谱里数字与歌词的
-  识别模型；推理运行时用 [onnxruntime-web](https://github.com/microsoft/onnxruntime)
+  识别模型；推理桌面版与命令行用 [ONNX Runtime](https://github.com/microsoft/onnxruntime)（经 [ort](https://github.com/pykeio/ort)），网页版用 [tract](https://github.com/sonos/tract)
+- [PDFium](https://pdfium.googlesource.com/pdfium/)（[pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) 的预编译版，经 [pdfium-render](https://github.com/ajrcarey/pdfium-render)）—— 识谱读 PDF
 - [CodeMirror 6](https://codemirror.net/)、
   [Tauri 2](https://tauri.app/)、[Vite](https://vite.dev/)、[TypeScript](https://www.typescriptlang.org/)
   —— 编辑器 / 桌面外壳 / 构建
 - [opencc-js](https://github.com/nk2028/opencc-js)（简繁转换）、
-  [pdf.js](https://mozilla.github.io/pdf.js/)（PDF 栅格化）、
   [jsPDF](https://github.com/parallax/jsPDF)（PDF 导出）、
   [smplr](https://github.com/danigb/smplr)（试听音源）、
   [FluidR3 GM](https://github.com/gleitz/midi-js-soundfonts)（试听的钢琴音色，CC BY 3.0）、

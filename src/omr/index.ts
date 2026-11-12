@@ -1,7 +1,5 @@
 // src/omr 公共入口：简谱图像识别（OMR）。
-// 副作用：装配浏览器运行时（ort-web）与解码器（`omrkit/browser.ts`）。Node CLI 不走这个入口，自己 setOmrRuntime(nodeRuntime)。
-import { installBrowserOmr } from "../omrkit/browser";
-installBrowserOmr();
+// 编辑器只用它的结果类型、核对视图的画法与输出格式；识别本身在 Rust（`omrrust/engine.ts`），这里不再装浏览器运行时与解码器。
 
 export * from "../omrkit/types";
 export { rgbaToBinary, toGray } from "../omrkit/preprocess";

@@ -541,6 +541,22 @@ GT 由 TS 的报告生成（`book-check.mjs --make-gt`），两边读法不同�
 `--recognize` 裴克 215 首全部写出、59 s；对 pu.db 近似 GT（`rust-omr/book-pudb.mjs`）音符只有 24.6%：这套 CorelDRAW 转曲字形的调号、拍号认不出（调号 14%、拍号 0.5%），
 整页识别同样，与裁段无关，属转曲矢量路的字形覆盖（见「已知限制」）。
 
+## 接入（P12）
+
+三端同一个入口 `omr-engine`，识别、判路、会话都在 Rust；TS 只剩结果的落地（`omrrust/adapter.ts` 把会话产物包成核对视图要的 `StaffReviewResult`，简谱交 `recognizedToDoc` / `emit`）与格式写出。
+
+| 端 | 外壳 | 前端 / 调用方 |
+|---|---|---|
+| 桌面版 | `src-tauri/src/omr.rs`：`omr_open` / `render` / `binary` / `recognize`（进度走 `Channel`）/ `cancel` / `session` / `close`，OCR 是 `ort` 原生会话池（`DOLCE_OCR_SESS` × `DOLCE_OCR_THREADS`，缺省 3 × 3），PDFium 动态库随包 | `src/omrrust/engine.ts`（`omrEngine()` 判宿主）→ `editor/omrctl.ts` |
+| 网页版 | `crates/omr-wasm`（`OmrDoc` 与 Tauri 命令一一对应、`load_ocr` 用 tract、`set_pdfium_module`）跑在 Worker `src/omrrust/worker.ts` 里；`scripts/build-wasm.mjs` 编进 `public/redist/omr/`（不入库，vite dev / build 开头调） | `src/omrrust/webengine.ts`（取消走 SharedArrayBuffer 标志） |
+| 命令行 | `omr-cli run`（一首一行 JSON）/ `split` | `scripts/omr-cli.mjs` 起它、用 `out/cli/omrfmt.js` 转格式；`scripts/pack-omr.mjs` 打分发包（识别程序 + PDFium + 模型 + 写出端） |
+
+- **请求与回应的格式两端一样**（`omr-engine::Handle`）：打开是 `u32 个数` + 各 `u32 长度` + 字节；渲染回 `u32 宽高` + RGBA；核对底图回宽高、倍数（核对坐标乘它是底图像素）、底图在页上的框与页宽高 + 0 / 1 像素；识别与会话回 JSON。
+- **会话操作**：`omr-staff::session::Op` 各种（rebuild / restructure / pin / unpin / choose / context），外加 `insert`（点原图补音）与 `region`（框选重读歌词 / 文字指示）。编辑器重建前把删音、改音高、改时值记成钉住（同一音上不同种事实并存），其余手改照旧按识别 id 回放。
+- **取消**：识别各阶段之间查一次（`omr-core::progress::Hook`），回「已取消」；wasm 没有线程，进度回调里由 JS 查标志。
+- **PDF 只走 PDFium**：编辑器、网页版、命令行都不再用 pdf.js（P12 删了 `pdfjs-dist`）。dev 脚本里还要 pdf.js 的（矢量版面核对、截图）单独装在 dev 的 `tools/pdfjs/`。
+- 留后：`omr/inventory.ts` / `bookprofile.ts` 的 `VecPage` 仍由 dev 脚本经 pdf.js 取（计划里的 `omr-cli vecdump` 没做）；参照歌词互证没迁；TS 识别目录 P13 删。
+
 ## 回归
 
 ```bash

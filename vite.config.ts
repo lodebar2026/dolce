@@ -1,22 +1,11 @@
 import { defineConfig, type Plugin } from "vite";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { en } from "./src/i18n/en";
 
 // @ts-expect-error import.meta.dirname 在 Vite 的 ESM 配置里可用（node ≥20 亦有）
 const here = typeof import.meta.dirname === "string" ? import.meta.dirname : dirname(fileURLToPath(import.meta.url));
-
-// pdf.js v6 的位图解码器 wasm（jbig2 兼管 CCITTFax G4，供 OMR 读扫描版乐谱 PDF）来自
-// `pdfjs-dist` 包，版本随 package-lock 锁定 → 不入库，改为构建/开发启动时从 node_modules 拷到
-// public/redist/pdfjs/（pdf.js 按固定文件名 fetch `${wasmUrl}jbig2.wasm`，故不能走 Vite ?url 的 hash 资源）。
-function copyPdfjsWasm(): Plugin {
-  const files = ["jbig2.wasm", "jbig2_nowasm_fallback.js", "openjpeg.wasm", "openjpeg_nowasm_fallback.js", "qcms_bg.wasm"];
-  const src = `${here}/node_modules/pdfjs-dist/wasm`;
-  const dst = `${here}/public/redist/pdfjs`;
-  const copy = () => { mkdirSync(dst, { recursive: true }); for (const f of files) copyFileSync(`${src}/${f}`, `${dst}/${f}`); };
-  return { name: "copy-pdfjs-wasm", buildStart: copy, configureServer: copy };
-}
 
 // 网页版识别的 wasm（Rust 识别 + PDFium 的 wasm 版）→ public/redist/omr/（不入库，见 scripts/build-wasm.mjs）。
 // 开发时编不出来只警告（网页版识别用不了，其余照常）；构建时编不出来就失败。桌面版（TAURI_ENV_PLATFORM）与 DOLCE_NO_WASM 跳过。
@@ -87,7 +76,7 @@ const base = process.env.BASE_PATH || "/";
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   base,
-  plugins: [copyPdfjsWasm(), buildOmrWasm(), emitEnPage()],
+  plugins: [buildOmrWasm(), emitEnPage()],
   define: { __APP_VERSION__: JSON.stringify(pkgVersion) },
   // 程序产出一律放 out/（构建、脚本报告、缓存），web 根下不再散落输出目录
   build: { outDir: "out/dist", emptyOutDir: true },
@@ -101,9 +90,8 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    // 跨源隔离：让 onnxruntime-web 拿到 SharedArrayBuffer 以开 wasm 多线程（OMR rec 推理 ~2x）。
-    // 全站资源同源，COEP require-corp 无副作用。多线程初始化带超时回退，开不起来会自动退单线程。
-    // 注意：生产 GitHub Pages 无法设响应头 → 那里非隔离，desiredThreads 自动返回 1（仍享数字批量加速）。
+    // 跨源隔离：网页版识别（wasm Worker）的取消标志放在 SharedArrayBuffer 里（`omrrust/webengine.ts`）。
+    // 全站资源同源，COEP require-corp 无副作用。生产 GitHub Pages 设不了响应头，靠 coi-serviceworker 补。
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",

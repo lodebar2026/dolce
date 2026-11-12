@@ -1,6 +1,6 @@
 /*! coi-serviceworker v0.1.7 - Guido Zuidhof and contributors, licensed under MIT */
 // GitHub Pages 等无法自定义响应头的静态托管上，用 service worker 给自身响应补 COOP/COEP，
-// 使页面 crossOriginIsolated → onnxruntime-web 可用 SharedArrayBuffer 开 wasm 多线程（OMR rec ~2x）。
+// 使页面 crossOriginIsolated → 网页版识别（wasm Worker）能用 SharedArrayBuffer 放取消标志。
 // Tauri / dev 已原生发头 → 页面已隔离 → 脚本自动 return 不注册（见末尾守卫）。
 let coepCredentialless = false;
 if (typeof window === 'undefined') {

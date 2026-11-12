@@ -2,6 +2,8 @@
 
 **判据全录** → [../实现/OMR-简谱识别.md](../实现/OMR-简谱识别.md)、[../实现/矢量PDF识别.md](../实现/矢量PDF识别.md)
 
+> **2026-11 起编辑器、网页版、命令行的识别都走 Rust**（见 [识别-Rust](识别-Rust.md)「接入」）。本页的 TS 实现只剩回归脚本用：浏览器侧入口（`browser.ts`、`decode.browser.ts`、`runtime.browser.ts`）与 pdf.js 已删，Node 侧不再读 PDF；整套 TS 识别迁移计划 P13 删。下文提到这些的地方是旧实现的记录。
+
 ## 职责
 
 简谱图片/PDF → 123（经 `ScoreDoc`）/ 文本谱原文。**不产出 MusicXML**（要的话就是 123 文档的导出；只有五线谱识别出 MusicXML）。**全本地、可离线**（连通域几何启发 + PaddleOCR）。
