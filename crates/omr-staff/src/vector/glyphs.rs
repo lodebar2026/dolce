@@ -82,16 +82,27 @@ pub use dolce_omr_source::vector::{path_pieces, GlyphPiece};
 /// 转曲页的音乐字形：字形块跨字体认身份（1 em = 4 线距）；认不出的回 `name` 为空串（多半是文字，交给读字那一路）。
 /// 形状简单（一道横、一点、一竖、两竖）的符号从一个对象拆出来的块认成它们不算数（「到」「判」的立刀两竖认成打击乐谱号，
 /// 后面整段音读成打击乐）；圆点组成的字形，没有曲线的对象不认（还原号拆出来的两道横杠认成反复记号两点）。照 TS 转曲那一路。
-pub fn path_glyphs(pieces: &[GlyphPiece], space: f64) -> Vec<VSym> {
+/// 签名的归一外框同字典建库（与 TS 转曲那一路同口径）：按路径的全部坐标（含曲线控制点）取；有的排版软件转曲后一个符头只用两段三次曲线画椭圆
+/// （CorelDRAW），控制点远在曲线外，控制点外框比曲线外框大出 [`CTRL_SLACK`] 以上时改按曲线外框取。从一个对象拆出来的块没有单独的控制点，按曲线外框取。
+pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_omr_source::PageContent) -> Vec<VSym> {
     let em = 4.0 * space;
     let mut per_obj: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for p in pieces {
         *per_obj.entry(p.obj).or_default() += 1;
     }
+    let ctrl = |p: &GlyphPiece| -> Option<(f64, f64, f64, f64)> {
+        if per_obj[&p.obj] != 1 {
+            return None;
+        }
+        let dolce_omr_source::vector::ObjSrc::Path(pi) = vp.objs[p.obj as usize].src else { return None };
+        let b = raw_bounds(&pc.paths.get(pi)?.segs, vp)?;
+        let (bw, bh) = (b.2 - b.0, b.3 - b.1);
+        (bw <= p.rect.w.max(1e-9) * (1.0 + CTRL_SLACK) && bh <= p.rect.h.max(1e-9) * (1.0 + CTRL_SLACK)).then_some(b)
+    };
     pieces
         .iter()
         .map(|p| {
-            let (mut name, dist) = dolce_omr_sheet::shapes::identify_outline(&p.rings, (p.rect.w / em, p.rect.h / em)).unwrap_or(("", u32::MAX));
+            let (mut name, dist) = dolce_omr_sheet::shapes::identify_outline_in(&p.rings, (p.rect.w / em, p.rect.h / em), ctrl(p)).unwrap_or(("", u32::MAX));
             if per_obj[&p.obj] > 1 && PLAIN_SHAPES.contains(&name) || DOT_SHAPES.contains(&name) && !p.curved {
                 name = "";
             }
@@ -99,6 +110,23 @@ pub fn path_glyphs(pieces: &[GlyphPiece], space: f64) -> Vec<VSym> {
         })
         .collect()
 }
+
+const CTRL_SLACK: f64 = 0.05;
+
+/// 转曲页画成细长曲线对象的字形（八分休止、符尾：对象库按形状归成曲线，不进字形块）：一个对象当一块认身份，只收认得出的。
+pub fn curve_glyphs(vp: &VecPage, space: f64, pc: &dolce_omr_source::PageContent, skip: &dyn Fn(&Rect) -> bool) -> Vec<VSym> {
+    use dolce_omr_source::vector::{ObjSrc, VKind};
+    let pieces: Vec<GlyphPiece> = vp
+        .objs
+        .iter()
+        .filter(|o| o.kind == VKind::Curve && matches!(o.src, ObjSrc::Path(_)) && o.twin_of.is_none() && !skip(&o.rect))
+        .map(|o| GlyphPiece { obj: o.id, rings: o.rings.clone(), rect: o.rect, curved: true })
+        .collect();
+    path_glyphs(&pieces, space, vp, pc).into_iter().filter(|s| CURVE_SHAPES.contains(&s.name)).collect()
+}
+
+/// 曲线对象里只收这几种（弧、延长记号的拱另有一路）。
+const CURVE_SHAPES: &[&str] = &["rest8th", "rest16th", "rest32nd", "flag8thUp", "flag8thDown", "flag16thUp", "flag16thDown", "flag32ndUp", "flag32ndDown"];
 
 const PLAIN_SHAPES: &[&str] = &[
     "articTenutoAbove", "articTenutoBelow", "legerLine", "stem", "augmentationDot", "articStaccatoAbove", "articStaccatoBelow",

@@ -229,7 +229,7 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     // 带里的对象归简谱行，不进字形候选、不读字
     let pieces: Vec<glyphs::GlyphPiece> = glyphs::path_pieces(&vp).into_iter().filter(|p| !in_band(&p.rect)).collect();
     let mut syms: Vec<glyphs::VSym> = glyphs::music_chars(&vp).into_iter().filter(|s| !in_band(&s.rect)).collect();
-    let mut path_syms = glyphs::path_glyphs(&pieces, f.layout.unit.space);
+    let mut path_syms = glyphs::path_glyphs(&pieces, f.layout.unit.space, &vp, pc);
     let staff_zone = |r: &dolce_omr_core::image::Rect| {
         let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         f.layout.staves.iter().any(|st| {
@@ -239,6 +239,7 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     };
     glyphs::hollow_heads(&pieces, &mut path_syms, &staff_zone);
     syms.extend(path_syms.iter().filter(|s| !s.name.is_empty()).cloned());
+    syms.extend(glyphs::curve_glyphs(&vp, f.layout.unit.space, pc, &in_band));
     let by_strokes = glyphs::stroke_accidentals(&vp, f.layout.unit.space, &syms, &in_band);
     syms.extend(by_strokes);
     let lead_frame = std::cell::OnceCell::new();

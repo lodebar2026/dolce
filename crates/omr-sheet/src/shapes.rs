@@ -305,11 +305,16 @@ const DOT_MAX_EM: f64 = 0.175;
 
 /// 转曲对象（一个字形块）的身份。`rings`：页面上的轮廓（y 朝下）；`size`：外框宽高（em，1 em = 4 线距）。认不出（多半是文字）回 None。
 pub fn identify_outline(rings: &[Vec<(f64, f64)>], size: (f64, f64)) -> Option<(&'static str, u32)> {
+    identify_outline_in(rings, size, None)
+}
+
+/// 同 [`identify_outline`]，签名的归一外框由调用方给（页面坐标、y 朝下；见 [`sig`] 的 `bounds`）。
+pub fn identify_outline_in(rings: &[Vec<(f64, f64)>], size: (f64, f64), bounds: Option<(f64, f64, f64, f64)>) -> Option<(&'static str, u32)> {
     if rings.is_empty() {
         return None;
     }
     let (w, h) = size;
-    let s = sig(rings, None, true);
+    let s = sig(rings, bounds, true);
     let (mut best, mut loose): (Option<(&'static str, u32)>, Option<(&'static str, u32)>) = (None, None);
     for c in dict() {
         let (dw, dh) = ((c.w - w).abs(), (c.h - h).abs());
@@ -333,6 +338,15 @@ pub fn identify_outline(rings: &[Vec<(f64, f64)>], size: (f64, f64)) -> Option<(
     }
     let round = (w - h).abs() <= w.max(h) * 0.25 && w <= DOT_MAX_EM;
     (b.0 == "augmentationDot" && b.1 <= DOT_SIG_MAX && round).then_some(b)
+}
+
+/// 排查用：跨字体签名最近的前 `k` 类（名、距离、宽高差 em），不卡尺寸。
+pub fn nearest_outline(rings: &[Vec<(f64, f64)>], size: (f64, f64), k: usize) -> Vec<(&'static str, u32, f64, f64)> {
+    let s = sig(rings, None, true);
+    let mut v: Vec<_> = dict().iter().map(|c| (c.smufl, sig_distance(&s, &c.sig), c.w - size.0, c.h - size.1)).collect();
+    v.sort_by_key(|x| x.1);
+    v.truncate(k);
+    v
 }
 
 #[cfg(test)]
