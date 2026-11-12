@@ -143,8 +143,9 @@ fn time_at(f: &Layout, si: usize, syms: &[&VSym], x0: f64, x1: f64) -> Option<(T
 }
 
 /// 一页各行谱的结构信息（行首 + 行中切换），再同系统互证（与位图同一份 `attrs::agree`）。
-/// `lead`：字形字典在行首认不出谱号的行（转曲页换了一套字体）改走的行首读法（见 `vector::raster_lead`），读出谱号就用它的谱号 / 调号 / 拍号。
-pub fn page_attrs(f: &Layout, syms: &[VSym], lead: Option<&dyn Fn(usize) -> RowAttrs>) -> Vec<RowAttrs> {
+/// `lead`：字形字典在行首认不出谱号的行（转曲页换了一套字体）改走的行首读法（见 `vector::raster_frame`），读出谱号就用它的谱号 / 调号 / 拍号；
+/// 这样的行，行中小节线后字典认不出的拍号也走同一份位图读法（`mid_time(行, 起, 止)`，裴克经文诗歌 036 中途换 3/4）。
+pub fn page_attrs(f: &Layout, syms: &[VSym], lead: Option<&dyn Fn(usize) -> RowAttrs>, mid_time: Option<&dyn Fn(usize, f64, f64) -> Option<Time>>) -> Vec<RowAttrs> {
     let mut rows: Vec<RowAttrs> = Vec::with_capacity(f.staves.len());
     for si in 0..f.staves.len() {
         let st = &f.staves[si];
@@ -229,7 +230,10 @@ pub fn page_attrs(f: &Layout, syms: &[VSym], lead: Option<&dyn Fn(usize) -> RowA
                     if let Some((t, _, _)) = time_at(f, si, &after, r - sp * 0.2, r + sp * TIME_GAP) {
                         changes.push(Change { x: b.x + 0.6, attrs: Attrs { clef: None, key: None, time: Some(t), staff: 0 } });
                     }
-                } else if let Some((t, _, _)) = time_at(f, si, &after, start, start + sp * TIME_GAP) {
+                } else if let Some(t) = time_at(f, si, &after, start, start + sp * TIME_GAP)
+                    .map(|(t, _, _)| t)
+                    .or_else(|| mid_time.filter(|_| fell).and_then(|g| g(si, start, (start + sp * TIME_GAP).min(head_x(start)))))
+                {
                     changes.push(Change { x: b.x + 0.6, attrs: Attrs { clef: None, key: None, time: Some(t), staff: 0 } });
                 }
             }

@@ -544,6 +544,14 @@ pub fn read_time(f: &PageFrame, s: &Staff, us: &[Unit], start: f64, end: f64, oc
     None
 }
 
+/// 行中 `[start, end]` 之间的拍号（小节线后换拍）：同行首拍号一份读法，读不出数回 None。
+pub fn read_time_between(f: &PageFrame, row: usize, start: f64, end: f64, ocr: Option<&dyn DigitReader>) -> Option<Time> {
+    let s = &f.staves[row];
+    let sp = s.space();
+    let us = units_in(f, s, start - sp * 0.5, end + sp, -6.0, 16.0);
+    read_time(f, s, &us, start, end, ocr).and_then(|t| t.time)
+}
+
 /// 一行谱的行首区。
 pub fn read_lead(f: &PageFrame, row: usize, ocr: Option<&dyn DigitReader>) -> RowAttrs {
     let s = &f.staves[row];

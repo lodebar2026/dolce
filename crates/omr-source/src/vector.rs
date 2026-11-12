@@ -121,7 +121,7 @@ impl VecPage {
                 VKind::Line
             } else if !curved && fill {
                 VKind::Poly
-            } else if curved && subs <= 2 && (elongated(&rect) || fill && slim(&rings, &rect) || !fill && open_path(&p.segs)) {
+            } else if curved && subs <= 2 && (elongated(&rect) || fill && slim(&rings, &rect) && arc_like(&rings, &rect, &p.segs) || !fill && open_path(&p.segs)) {
                 VKind::Curve
             } else if curved {
                 VKind::Glyph
@@ -250,14 +250,27 @@ fn elongated(r: &Rect) -> bool {
 const SLIM_FILL: f64 = 0.3;
 
 fn slim(rings: &[Vec<(f64, f64)>], r: &Rect) -> bool {
-    let area: f64 = rings
+    fill_area(rings) < SLIM_FILL * r.w * r.h
+}
+
+/// 不扁的细填充对象当弧还要结构简单（同 TS 转曲路）：短弧是两条曲线首尾相接的月牙，段数不过 [`ARC_SEGS`]；
+/// 段多的（单笔轮廓画成的汉字「天」「下」，十几段）只有墨极细（不到外框的 [`ARC_INK`]，斜着走的长弧）才算。
+const ARC_SEGS: usize = 6;
+const ARC_INK: f64 = 0.15;
+
+fn arc_like(rings: &[Vec<(f64, f64)>], r: &Rect, segs: &[Seg]) -> bool {
+    let n = segs.iter().filter(|s| matches!(s, Seg::Line(..) | Seg::Cubic(..))).count();
+    n <= ARC_SEGS || fill_area(rings) < ARC_INK * r.w * r.h
+}
+
+fn fill_area(rings: &[Vec<(f64, f64)>]) -> f64 {
+    rings
         .iter()
         .map(|g| (0..g.len()).map(|i| {
             let (p, q) = (g[i], g[(i + 1) % g.len()]);
             p.0 * q.1 - q.0 * p.1
         }).sum::<f64>().abs() / 2.0)
-        .sum();
-    area < SLIM_FILL * r.w * r.h
+        .sum()
 }
 
 fn bounds(rings: &[Vec<(f64, f64)>]) -> Rect {
@@ -620,41 +633,44 @@ pub struct GlyphPiece {
 
 /// 页上路径画的字形块（不含文字层的字）。
 pub fn path_pieces(vp: &VecPage) -> Vec<GlyphPiece> {
+    vp.objs.iter().filter(|o| o.kind == VKind::Glyph && matches!(o.src, ObjSrc::Path(_)) && o.twin_of.is_none()).flat_map(obj_pieces).collect()
+}
+
+/// 一个对象按子路径外框相交并查成块（见 [`GlyphPiece`]）。
+pub fn obj_pieces(o: &VObj) -> Vec<GlyphPiece> {
     let mut out = Vec::new();
-    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph && matches!(o.src, ObjSrc::Path(_)) && o.twin_of.is_none()) {
-        let boxes: Vec<Rect> = o.rings.iter().map(|r| ring_rect(r)).collect();
-        let n = boxes.len();
-        let mut up: Vec<usize> = (0..n).collect();
-        fn root(up: &mut [usize], mut i: usize) -> usize {
-            while up[i] != i {
-                up[i] = up[up[i]];
-                i = up[i];
-            }
-            i
+    let boxes: Vec<Rect> = o.rings.iter().map(|r| ring_rect(r)).collect();
+    let n = boxes.len();
+    let mut up: Vec<usize> = (0..n).collect();
+    fn root(up: &mut [usize], mut i: usize) -> usize {
+        while up[i] != i {
+            up[i] = up[up[i]];
+            i = up[i];
         }
-        for i in 0..n {
-            for j in i + 1..n {
-                let (a, b) = (boxes[i], boxes[j]);
-                if a.x <= b.right() && b.x <= a.right() && a.y <= b.bottom() && b.y <= a.bottom() {
-                    let (ri, rj) = (root(&mut up, i), root(&mut up, j));
-                    up[ri] = rj;
-                }
+        i
+    }
+    for i in 0..n {
+        for j in i + 1..n {
+            let (a, b) = (boxes[i], boxes[j]);
+            if a.x <= b.right() && b.x <= a.right() && a.y <= b.bottom() && b.y <= a.bottom() {
+                let (ri, rj) = (root(&mut up, i), root(&mut up, j));
+                up[ri] = rj;
             }
         }
-        let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
-        for i in 0..n {
-            let r = root(&mut up, i);
-            groups.entry(r).or_default().push(i);
-        }
-        for g in groups.into_values() {
-            let rings: Vec<Vec<(f64, f64)>> = g.iter().map(|&i| o.rings[i].clone()).collect();
-            let rect = g.iter().map(|&i| boxes[i]).reduce(|a, b| {
-                let (x0, y0) = (a.x.min(b.x), a.y.min(b.y));
-                Rect::new(x0, y0, a.right().max(b.right()) - x0, a.bottom().max(b.bottom()) - y0)
-            });
-            if let Some(rect) = rect {
-                out.push(GlyphPiece { obj: o.id, rings, rect, curved: o.curved });
-            }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..n {
+        let r = root(&mut up, i);
+        groups.entry(r).or_default().push(i);
+    }
+    for g in groups.into_values() {
+        let rings: Vec<Vec<(f64, f64)>> = g.iter().map(|&i| o.rings[i].clone()).collect();
+        let rect = g.iter().map(|&i| boxes[i]).reduce(|a, b| {
+            let (x0, y0) = (a.x.min(b.x), a.y.min(b.y));
+            Rect::new(x0, y0, a.right().max(b.right()) - x0, a.bottom().max(b.bottom()) - y0)
+        });
+        if let Some(rect) = rect {
+            out.push(GlyphPiece { obj: o.id, rings, rect, curved: o.curved });
         }
     }
     out

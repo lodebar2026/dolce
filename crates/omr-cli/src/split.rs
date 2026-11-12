@@ -182,7 +182,9 @@ fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Pa
     let done = AtomicUsize::new(0);
     let failed = Mutex::new(Vec::new());
     let ok = AtomicUsize::new(0);
-    (0..plan.songs.len()).into_par_iter().for_each(|k| {
+    // 排查用：OMR_BOOK_ONLY=子串 只认文件名含它的那几首
+    let only = std::env::var("OMR_BOOK_ONLY").ok();
+    (0..plan.songs.len()).into_par_iter().filter(|&k| only.as_ref().is_none_or(|s| names[k].contains(s.as_str()))).for_each(|k| {
         let r = (|| -> Result<(), String> {
             let mut pages: Vec<Page> = Vec::new();
             for c in song_clips(plan, k) {

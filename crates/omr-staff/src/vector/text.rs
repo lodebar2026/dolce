@@ -446,27 +446,3 @@ pub fn numbers(vp: &VecPage) -> Vec<(u32, Rect)> {
     }
     out.into_iter().map(|(n, r, _, _)| (n, r)).collect()
 }
-
-/// 转曲字块成图：每个工作单位几像素（每点 `PIECE_PX × VEC_SCALE` 像素，十点字约五十像素高）。
-const PIECE_PX: f64 = 1.5;
-
-/// 转曲页认不出身份的字形块（多半是字）按自己的轮廓画成小灰度图（扫描线填充，只画这一块，不整页渲染），
-/// 当成谱面以外的小图交给 [`text_lines`] 按行拼条读。
-pub fn piece_tiles(pieces: &[&super::glyphs::GlyphPiece], vp: &VecPage) -> Vec<PageImage> {
-    pieces
-        .iter()
-        .filter_map(|p| {
-            let (w, h) = ((p.rect.w * PIECE_PX).ceil() as usize + 2, (p.rect.h * PIECE_PX).ceil() as usize + 2);
-            if w < 2 || h < 2 || w * h > 4_000_000 {
-                return None;
-            }
-            let rs: Vec<Vec<(f64, f64)>> = p.rings.iter().map(|r| r.iter().map(|&(x, y)| ((x - p.rect.x) * PIECE_PX + 1.0, (y - p.rect.y) * PIECE_PX + 1.0)).collect()).collect();
-            let mut gray = vec![255u8; w * h];
-            dolce_omr_sheet::shapes::fill_rings(&rs, w, h, &mut |x, y| gray[y * w + x] = 0);
-            // 页面点：工作坐标 / scale + 原点（多出的一像素白边一并算进去）
-            let pad = 1.0 / PIECE_PX;
-            let rect = Rect::new((p.rect.x - pad) / vp.scale + vp.origin.0, (p.rect.y - pad) / vp.scale + vp.origin.1, w as f64 / PIECE_PX / vp.scale, h as f64 / PIECE_PX / vp.scale);
-            Some(PageImage { w, h, kind: dolce_omr_source::model::ImageKind::Mask, gray, rgb: Vec::new(), ctm: [rect.w, 0.0, 0.0, rect.h, rect.x, rect.y], rect, bpp: 1, filters: Vec::new() })
-        })
-        .collect()
-}

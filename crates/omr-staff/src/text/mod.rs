@@ -27,5 +27,21 @@ pub struct PageText {
 pub fn page_text(f: &PageFrame, src: &SourceImage, notes: &[RowNotes], ocr: Option<&dyn DigitReader>) -> PageText {
     let Some(ocr) = ocr else { return PageText { rows: (0..f.staves.len()).map(|_| RowText::default()).collect(), ..Default::default() } };
     let (bands, false_heads) = lines::page_bands(f, src, notes, ocr);
-    PageText { rows: classify::classify(f, &bands), credits: header::page_credits(f, src, ocr), bands, false_heads }
+    let mut rows = classify::classify(f, &bands);
+    let (credits, tempo) = header::page_credits(f, src, ocr);
+    // 页眉里的速度记号归首行谱（那行谱上方的带里已认出节拍器的不重复记）
+    if let Some(si) = (0..f.staves.len()).min_by(|&a, &b| f.staves[a].ys[0].total_cmp(&f.staves[b].ys[0])) {
+        if !rows[si].marks.iter().any(|m| matches!(m.dir, dolce_omr_sheet::score::Dir::Metronome { .. })) {
+            rows[si].marks.extend(tempo.into_iter().take(1));
+        }
+    }
+    if std::env::var("OMR_TEXT_DEBUG").is_ok() {
+        eprintln!("页眉 {:?}", credits.iter().map(|c| &c.text).collect::<Vec<_>>());
+        for b in &bands {
+            for l in &b.lines {
+                eprintln!("文字带 上{:?} 下{:?} y{:.0}-{:.0} {:?}", b.above, b.below, l.y0, l.y1, l.segs.iter().map(|s| format!("{}@{:.0}", s.text(), s.rect.x)).collect::<Vec<_>>());
+            }
+        }
+    }
+    PageText { rows, credits, bands, false_heads }
 }

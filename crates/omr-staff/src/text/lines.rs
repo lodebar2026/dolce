@@ -36,6 +36,10 @@ const TALL: f64 = 1.7;
 /// 一截里的深谷：投影不到峰的这个比例、离两头都有字高的这么多倍。
 const VALLEY: f64 = 0.12;
 const VALLEY_EDGE: f64 = 0.45;
+/// 相邻两截投影合起来不过字高的这么多倍，是一个字的上下部件、并成一行。
+const ONE_CHAR: f64 = 1.15;
+/// 字的上下部件：横向落在字身块左右之内，两头各容字高的这么多倍。
+const PART_TOL: f64 = 0.15;
 /// 行内横向空当超过行高这么多倍就分段。
 const SEG_GAP: f64 = 2.0;
 /// 一行里另有这么多个字身，行里认出的符头才算字。
@@ -269,6 +273,10 @@ fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0:
     }
     // 字高取字身墨块高的 85 分位（偏旁、标点、小写字母把中位数拉低）
     let char_h = dolce_omr_core::geom::quantile(&single, 0.85);
+    // 一个字高的另一个估计：整条带投影的各截高（行高）的中位数。扫描件的方块字常碎成几块（「三」「主」），字身块高偏低，
+    // 一个字的上下部件按它并不起来（新编 009「三一上主」切成上下两行）
+    let rows: Vec<f64> = profile(f, &cand, &off, y0, y1).1.iter().map(|&(a, z)| (z - a + 1) as f64).filter(|&h| h >= char_h * 0.8 && h <= char_h * TALL).collect();
+    let one_h = char_h.max(median(&rows, char_h));
     // 横向分栏：整条带从上到下都空着的宽白道两边各切各的行——主歌几行词右边接着副歌，副歌的行夹在主歌两行之间的高度上，
     // 合在一起投影就并进了主歌的行。两栏切出的行高度对得上的再并回一行
     let mut by_x: Vec<&(&Blob, f64)> = cand.iter().collect();
@@ -284,7 +292,7 @@ fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0:
     }
     let mut out: Vec<GeoLine> = Vec::new();
     for b in blocks {
-        for l in block_lines(f, src, cx, &b, &off, sp, char_h, y0, y1, ocr) {
+        for l in block_lines(f, src, cx, &b, &off, sp, char_h, one_h, y0, y1, ocr) {
             let same = out.iter_mut().find(|o| {
                 ((o.y0 + o.y1) / 2.0 - (l.y0 + l.y1) / 2.0).abs() <= SAME_ROW * o.h().min(l.h())
             });
@@ -302,11 +310,8 @@ fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0:
     out
 }
 
-/// 一栏里的行。
-#[allow(clippy::too_many_arguments)]
-fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f64)], off: &dyn Fn(f64) -> f64, sp: f64, char_h: f64, y0: f64, y1: f64, ocr: &dyn DigitReader) -> Vec<GeoLine> {
-    let body = |b: &Blob| b.rect.h >= BODY_H.0 * sp && b.rect.w <= BODY_W * sp;
-    // 纵向投影：带里各墨块的像素按拉平后的行数
+/// 纵向投影（带里各墨块的像素按拉平后的行数）与有墨的各截。
+fn profile(f: &PageFrame, cand: &[(&Blob, f64)], off: &dyn Fn(f64) -> f64, y0: f64, y1: f64) -> (Vec<f64>, Vec<(usize, usize)>) {
     let n = (y1 - y0).ceil().max(1.0) as usize;
     let mut prof = vec![0.0f64; n + 1];
     let pw = f.ink.w;
@@ -336,12 +341,38 @@ fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f
             i += 1;
         }
     }
+    (prof, runs)
+}
+
+/// 一栏里的行。
+#[allow(clippy::too_many_arguments)]
+/// `one_h`：一个字高（并部件、不切深谷用；见 `band_lines`）。
+fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f64)], off: &dyn Fn(f64) -> f64, sp: f64, char_h: f64, one_h: f64, y0: f64, y1: f64, ocr: &dyn DigitReader) -> Vec<GeoLine> {
+    let body = |b: &Blob| b.rect.h >= BODY_H.0 * sp && b.rect.w <= BODY_W * sp;
+    let (prof, runs) = profile(f, cand, off, y0, y1);
+    // 一个字的上下部件不相连（「二」、碎开的「三」「主」）：相邻两截合起来不过一个字高、两截各有正经字身块（不是待定的扁稀块）的是同一行。
+    // 单字成栏时只有它自己的投影，会在部件之间断开（新编 009「三一上主」）；字行上方贴着的延音线那一截只有扁稀块，不并（破碎干净版）
+    let has_body = |a: usize, z: usize| {
+        cand.iter().any(|(b, _)| {
+            let t = b.rect.y - off(b.cx) - y0;
+            body(b) && !cx.maybe.contains_key(&(b.id as i32)) && t < z as f64 + 1.0 && t + b.rect.h > a as f64
+        })
+    };
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (a, z) in runs {
+        match merged.last_mut() {
+            Some(m) if (z - m.0 + 1) as f64 <= one_h * ONE_CHAR && has_body(m.0, m.1) && has_body(a, z) => m.1 = z,
+            _ => merged.push((a, z)),
+        }
+    }
+    let runs = merged;
     // 上下两行只靠几笔相接的（拉丁词的降部碰到下一行汉字的顶）：一截里有深谷（不到峰的一成多）、两边都够一行高的，在谷底切开
     let mut stack = runs;
     let mut runs: Vec<(usize, usize)> = Vec::new();
     while let Some((a, z)) = stack.pop() {
         let edge = (char_h * VALLEY_EDGE) as usize;
-        if z - a > 2 * edge + 2 {
+        // 不过一个字高的一截就是一行字，不切（单字成栏时只有它自己的投影，「美」腰上那几行很淡）
+        if z - a > 2 * edge + 2 && (z - a + 1) as f64 > one_h * ONE_CHAR {
             let peak = prof[a..=z].iter().cloned().fold(0.0, f64::max);
             let cut = (a + edge..=z - edge).min_by(|&p, &q| prof[p].total_cmp(&prof[q])).unwrap();
             if prof[cut] < peak * VALLEY {
@@ -353,6 +384,9 @@ fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f
         runs.push((a, z));
     }
     runs.sort();
+    if std::env::var("OMR_TEXT_DEBUG").is_ok() {
+        eprintln!("切行 带y{y0:.0} 字高{char_h:.1}/{one_h:.1} 截{:?}", runs.iter().map(|&(a, z)| (y0 as usize + a, y0 as usize + z)).collect::<Vec<_>>());
+    }
     // 几行挤成一截的：按本带的行距切开，切在预期位置附近投影最低处
     let normal: Vec<f64> = runs.iter().map(|&(a, z)| (z - a + 1) as f64).filter(|&h| h >= char_h * 0.8 && h <= char_h * TALL).collect();
     let pitch = median(&normal, char_h * 1.15);
@@ -394,8 +428,14 @@ fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f
                 }
             }
         } else {
-            cx.drop.extend(mem.iter().filter(|b| cx.maybe.contains_key(&(b.id as i32))).map(|b| b.id as i32));
-            mem.retain(|b| !cx.maybe.contains_key(&(b.id as i32)));
+            // 矢量页（转曲页画成的像素）：横向落在本行某个字身块左右之内的扁块是那个字的上下部件（裴克经文诗歌 003 单字成栏的「美」的大底），留下。
+            // 位图页不这样留：短延音线同样落在字宽里，吃进文字行就被弧那边剔掉（破碎干净版多补 6 条延音线）
+            let tol = char_h * PART_TOL;
+            let bodies: Vec<Rect> = mem.iter().filter(|b| body(b) && !cx.maybe.contains_key(&(b.id as i32))).map(|b| b.rect).collect();
+            let part = |b: &Blob| f.vector && bodies.iter().any(|r| b.rect.x >= r.x - tol && b.rect.right() <= r.right() + tol);
+            let gone: Vec<i32> = mem.iter().filter(|b| cx.maybe.contains_key(&(b.id as i32)) && !part(b)).map(|b| b.id as i32).collect();
+            cx.drop.extend(gone.iter().copied());
+            mem.retain(|b| !gone.contains(&(b.id as i32)));
         }
         mem.sort_by(|p, q| p.rect.x.total_cmp(&q.rect.x));
         let row_h = (z - a + 1) as f64;
@@ -439,6 +479,11 @@ struct Ctx {
 /// 一页各条带的文字行，与落在字行里的假符头。
 pub fn page_bands(f: &PageFrame, src: &SourceImage, notes: &[RowNotes], ocr: &dyn DigitReader) -> (Vec<Band>, Vec<FalseHead>) {
     let (drop, maybe) = excluded(f, notes);
+    if let Some(q) = std::env::var("OMR_TEXT_PROBE").ok().map(|v| v.split(',').filter_map(|t| t.parse::<usize>().ok()).collect::<Vec<_>>()).filter(|q| q.len() == 2) {
+        let l = f.labels[q[1] * f.ink.w + q[0]];
+        let b = f.blobs.iter().find(|b| b.id as i32 == l);
+        eprintln!("探墨块 {q:?} 标号{l} 块{:?} 排除{} 待定{}", b.map(|b| (b.rect, b.area)), drop.contains(&l), maybe.contains_key(&l));
+    }
     let mut cx = Ctx { drop, maybe, false_heads: Vec::new() };
     let n = f.staves.len();
     let mut order: Vec<usize> = (0..n).collect();
