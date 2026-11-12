@@ -204,15 +204,23 @@ fn stack(pages: &[Gray]) -> Binary {
     binarize(&all, w, h)
 }
 
-/// 五线谱核对视图的底图：位图页是内嵌原图（原分辨率），纯矢量页按矢量工作坐标（每点 `VEC_SCALE` 像素）渲。
-pub fn staff_binary(doc: &Doc, page: usize) -> Result<Binary, String> {
+/// 纯矢量页的核对底图每点几像素（核对 JSON 里矢量页的坐标是 PDF 点）。
+pub const VECTOR_OVERLAY_SCALE: f64 = 2.0;
+
+/// 一页的灰度原图与「核对坐标 → 这张图像素」的倍数：位图页是内嵌原图（原分辨率，倍数 1），纯矢量页按 [`VECTOR_OVERLAY_SCALE`] 渲。
+fn review_gray(doc: &Doc, page: usize) -> Result<(Gray, f64), String> {
     let src = doc.source(page)?;
     if let Some(r) = src.raster {
-        return Ok(binarize(&r.gray, r.w, r.h));
+        return Ok((Gray { w: r.w, h: r.h, data: r.gray }, 1.0));
     }
     let pdf = doc.pdf.as_ref().ok_or("没有页面")?;
-    let g = gray_of(&pdf.render(page, VEC_SCALE)?);
-    Ok(binarize(&g.data, g.w, g.h))
+    Ok((gray_of(&pdf.render(page, VECTOR_OVERLAY_SCALE)?), VECTOR_OVERLAY_SCALE))
+}
+
+/// 五线谱核对视图的底图与倍数（核对 JSON 的坐标乘它是底图像素；交 web 适配器当页的 `scale`）。
+pub fn staff_binary(doc: &Doc, page: usize) -> Result<(Binary, f64), String> {
+    let (g, k) = review_gray(doc, page)?;
+    Ok((binarize(&g.data, g.w, g.h), k))
 }
 
 /// 五线谱会话的当前产物：带识别 id 的 MusicXML 与核对 JSON。
@@ -227,4 +235,127 @@ pub fn binary_bytes(b: &Binary) -> Vec<u8> {
     out.extend_from_slice(&(b.h as u32).to_le_bytes());
     out.extend_from_slice(&b.data);
     out
+}
+
+/// 点原图补认：第 `pi` 个结果页（`pages[pi]` 是它在文档里的页号）上的点 (x, y)（核对坐标）落到最近的一行谱，
+/// 在原图上开窗按模板找头（[`dolce_omr_staff::notes::head_near`]），找不到就按点的位置造一个四分音符；交会话补音，回新音的识别 id。
+pub fn insert(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, x: f64, y: f64) -> Result<dolce_omr_sheet::result::Rid, String> {
+    use dolce_omr_staff::notes::heads::HeadKind;
+    use dolce_omr_staff::song::NewNote;
+    let page = session.pages().get(pi).ok_or("没有这一页")?;
+    let up = page.layout.up;
+    let (wx, wy) = (x * up, y * up);
+    // 最近的一行谱：点到谱表上下沿的距离（在谱表里为 0），按线距折算，至多 6 格
+    let si = page
+        .layout
+        .staves
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (i, ((s.top(wx) - wy).max(wy - s.bottom(wx)).max(0.0)) / s.space()))
+        .filter(|&(_, d)| d <= 6.0)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|p| p.0)
+        .ok_or("点不在任何一行谱附近")?;
+    let st = &page.layout.staves[si];
+    let found = if page.layout.vector {
+        None
+    } else {
+        let src = doc.source(*pages.get(pi).ok_or("没有这一页")?)?;
+        src.raster.as_ref().and_then(|r| dolce_omr_staff::page::frame_page(r, None)).and_then(|f| dolce_omr_staff::notes::head_near(&f, &page.attrs, si, wx, wy))
+    };
+    let note = match found {
+        Some((h, stem, tails)) => NewNote { page: pi, staff: si, x: h.x, y: h.y, pos: h.pos, kind: h.kind, tails, dots: 0, stem },
+        None => {
+            let pos = st.pos(wx, wy).round() as i32;
+            NewNote { page: pi, staff: si, x: wx, y: st.y_of(wx, pos as f64), pos, kind: HeadKind::Filled, tails: 0, dots: 0, stem: None }
+        }
+    };
+    session.apply(dolce_omr_staff::session::Op::Add { note })?;
+    session.last_added().ok_or_else(|| "补音没记上".into())
+}
+
+/// 框选重认读成哪一类。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RegionClass {
+    Lyric,
+    Text,
+}
+
+/// 框选重认：第 `pi` 个结果页上的框（核对坐标 x, y, w, h）裁出来读一行字。
+/// 歌词：框里原有的歌词字按 x 分字（汉字一字一个，拉丁词一词一个，标点随前一个）给最近的那个；文字：框里第一条文字指示换成整串。
+/// 只换已有元素的文字（框里没有歌词 / 文字指示回 Err）；回换了几个。
+pub fn region(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, rect: dolce_omr_core::image::Rect, class: RegionClass, ocr: &CachedOcr) -> Result<usize, String> {
+    use dolce_omr_sheet::score::Dir;
+    let (g, k) = review_gray(doc, *pages.get(pi).ok_or("没有这一页")?)?;
+    let (x0, y0) = ((rect.x * k).floor().max(0.0) as usize, (rect.y * k).floor().max(0.0) as usize);
+    let (x1, y1) = ((((rect.x + rect.w) * k).ceil() as usize).min(g.w), (((rect.y + rect.h) * k).ceil() as usize).min(g.h));
+    if x1 <= x0 + 2 || y1 <= y0 + 2 {
+        return Err("框太小".into());
+    }
+    let strip = Gray { w: x1 - x0, h: y1 - y0, data: (y0..y1).flat_map(|y| g.data[y * g.w + x0..y * g.w + x1].iter().copied()).collect() };
+    let chars = ocr.read_line(&strip)?;
+    let inside = |at: Option<dolce_omr_sheet::result::SrcBox>| at.filter(|a| a.page == pi + 1).map(|a| (a.rect.x + a.rect.w / 2.0, a.rect.y + a.rect.h / 2.0)).filter(|&(cx, cy)| cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h);
+    let score = &session.song().score;
+    let events = || score.parts.iter().flat_map(|p| p.measures.iter()).flat_map(|m| m.events.iter());
+    let mut ops = Vec::new();
+    match class {
+        RegionClass::Lyric => {
+            let mut targets: Vec<(f64, dolce_omr_sheet::result::Rid)> =
+                events().flat_map(|e| e.lyrics.iter()).filter_map(|l| Some((inside(l.src.at)?.0, l.src.rid?))).collect();
+            if targets.is_empty() {
+                return Err("框里没有歌词".into());
+            }
+            targets.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut got: Vec<String> = vec![String::new(); targets.len()];
+            for (text, cx) in tokens(&chars) {
+                let x = rect.x + cx * rect.w;
+                let t = (0..targets.len()).min_by(|&a, &b| (targets[a].0 - x).abs().total_cmp(&(targets[b].0 - x).abs())).unwrap();
+                got[t].push_str(&text);
+            }
+            for (t, text) in targets.iter().zip(got) {
+                if !text.is_empty() {
+                    ops.push((t.1, text));
+                }
+            }
+        }
+        RegionClass::Text => {
+            let rid = events()
+                .flat_map(|e| e.pre.iter())
+                .filter(|d| matches!(d.dir, Dir::Words { .. }))
+                .find_map(|d| inside(d.src.at).and(d.src.rid))
+                .ok_or("框里没有文字指示")?;
+            let text: String = chars.iter().map(|c| c.ch.as_str()).collect::<String>().trim().to_string();
+            ops.push((rid, text));
+        }
+    }
+    let n = ops.len();
+    for (rid, text) in ops {
+        session.apply(dolce_omr_staff::session::Op::Text { rid, text })?;
+    }
+    Ok(n)
+}
+
+/// 读出的一行字切成分给音的单位：汉字一字一个，拉丁字母连成的词一个，标点随前一个；空格只作分隔。回 (字串, 中心占条宽的比例)。
+fn tokens(chars: &[dolce_omr_ocr::CharPos]) -> Vec<(String, f64)> {
+    let mut out: Vec<(String, f64, f64)> = Vec::new();
+    let mut prev_latin = false;
+    for c in chars {
+        let ch = c.ch.chars().next().unwrap_or(' ');
+        if ch.is_whitespace() {
+            prev_latin = false;
+            continue;
+        }
+        let latin = ch.is_ascii_alphanumeric() || ch == '\'' || ch == '-';
+        let punct = !latin && !ch.is_alphanumeric();
+        match out.last_mut() {
+            Some(t) if punct || (latin && prev_latin) => {
+                t.0.push_str(&c.ch);
+                t.2 = c.x1;
+            }
+            _ => out.push((c.ch.clone(), c.x0, c.x1)),
+        }
+        prev_latin = latin;
+    }
+    out.into_iter().map(|(s, a, b)| (s, (a + b) / 2.0)).collect()
 }

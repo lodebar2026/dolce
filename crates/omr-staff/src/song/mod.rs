@@ -28,8 +28,8 @@ mod grand;
 mod ids;
 mod review;
 mod spans;
-pub use constraints::{Constraints, Context, Fact};
-use constraints::apply_pins;
+pub use constraints::{Added, Constraints, Context, Fact, NewNote, ADD_BASE};
+use constraints::{apply_adds, apply_pins, apply_texts};
 use assign::*;
 use attach::*;
 use grand::*;
@@ -362,6 +362,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
         .collect();
     let mut ids = Ids::new(pages);
     apply_pins(pages, &mut ids.notes, &c.pins);
+    apply_adds(&mut ids.notes, &c.adds);
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.layout;
         (ids.page, ids.up) = (pn + 1, f.up);
@@ -719,7 +720,9 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
     }
     let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
     let vector = pages.iter().any(|p| p.layout.vector);
-    Song { score: Score { title, credits, parts }, systems, pages: geom, slot_at, assignment: slots_all, doubts, meter: stats, fused, vector }
+    let mut score = Score { title, credits, parts };
+    apply_texts(&mut score, &c.texts);
+    Song { score, systems, pages: geom, slot_at, assignment: slots_all, doubts, meter: stats, fused, vector }
 }
 
 impl Song {

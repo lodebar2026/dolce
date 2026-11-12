@@ -7,13 +7,14 @@
 //! | 钉住事实（删音、改时值、改音高） | [`Constraints::pins`]，按识别 id |
 //! | 换候选 | 取那个事件的第 k 个落选候选，折成钉住的事实 |
 //! | 从某处起改谱号 / 调号 / 拍号 | [`Constraints::contexts`] |
+//! | 补音（点原图补认） | [`Constraints::adds`]，号码从 `ADD_BASE` 起另发；找头在 `omr-engine::insert`（要回原图） |
+//! | 换字（框选重认） | [`Constraints::texts`]，按识别 id；裁图读字在 `omr-engine::region` |
 //!
 //! 识别 id 在拼接前按识别产物预发（`song/ids.rs`），所以这些操作之后没变的元素号码不变（删掉的留空号）；编辑器按号把手改放回去。
-//! 点原图补认、框选区域重认要回到识别阶段开窗重找，不在这里（P12）。
 use crate::frame::systems::System;
 use crate::page::Page;
-use crate::song::{assemble_with, Constraints, Context, Fact, Song};
-use dolce_omr_sheet::result::Rid;
+use crate::song::{assemble_with, Added, Constraints, Context, Fact, NewNote, Song, ADD_BASE};
+use dolce_omr_sheet::result::{Rid, RidKind};
 use dolce_omr_sheet::score::Choice;
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,10 @@ pub enum Op {
     Unpin { rid: Rid },
     Choose { rid: Rid, alt: usize },
     Context { system: usize, context: Context },
+    /// 补一个音（点原图补认；找头在 `omr-engine::insert`，这里只记下、发号）。
+    Add { note: NewNote },
+    /// 换文字（框选重认）：歌词字、文字指示。
+    Text { rid: Rid, text: String },
 }
 
 pub struct Session {
@@ -58,6 +63,16 @@ impl Session {
         let braced = systems.iter().enumerate().flat_map(|(pn, sys)| sys.iter().flat_map(move |s| s.braces.iter().map(move |&k| (pn, s.staves[k])))).collect();
         let song = assemble_with(&pages, title.clone(), &Constraints::default());
         Session { pages, title, systems, hidden: Vec::new(), braced, c: Constraints::default(), song }
+    }
+
+    /// 各结果页（识别产物，会话不改它们）。
+    pub fn pages(&self) -> &[Page] {
+        &self.pages
+    }
+
+    /// 最近补的那个音的识别 id。
+    pub fn last_added(&self) -> Option<Rid> {
+        self.c.adds.last().map(|a| a.rid)
     }
 
     pub fn song(&self) -> &Song {
@@ -98,7 +113,22 @@ impl Session {
                 self.c.pins.retain(|p| p.0 != rid);
                 self.c.pins.push((rid, fact));
             }
-            Op::Unpin { rid } => self.c.pins.retain(|p| p.0 != rid),
+            Op::Unpin { rid } => {
+                self.c.pins.retain(|p| p.0 != rid);
+                self.c.adds.retain(|a| a.rid != rid);
+                self.c.texts.retain(|t| t.0 != rid);
+            }
+            Op::Add { note } => {
+                if note.page >= self.pages.len() || note.staff >= self.pages[note.page].layout.staves.len() {
+                    return Err("没有这一行谱".into());
+                }
+                let n = self.c.adds.iter().map(|a| a.rid.n).max().unwrap_or(ADD_BASE) + 1;
+                self.c.adds.push(Added { rid: Rid { kind: RidKind::Note, n }, note });
+            }
+            Op::Text { rid, text } => {
+                self.c.texts.retain(|t| t.0 != rid);
+                self.c.texts.push((rid, text));
+            }
             Op::Choose { rid, alt } => {
                 let e = self.song.score.parts.iter().flat_map(|p| p.measures.iter()).flat_map(|m| m.events.iter()).find(|e| e.src.iter().any(|h| h.src.rid == Some(rid))).ok_or(format!("没有 {rid}"))?;
                 let a = e.alts.get(alt).ok_or(format!("{rid} 没有第 {alt} 个候选"))?;

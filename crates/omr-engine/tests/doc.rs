@@ -16,7 +16,8 @@ fn image_is_one_page() {
     let r = d.render(0, 0.5).unwrap();
     assert_eq!((r.w, r.h), ((w * 0.5).round() as usize, (h * 0.5).round() as usize));
     assert_eq!(r.rgba.len(), r.w * r.h * 4);
-    let bin = staff_binary(&d, 0).unwrap();
+    let (bin, k) = staff_binary(&d, 0).unwrap();
+    assert_eq!(k, 1.0);
     assert_eq!((bin.w as f64, bin.h as f64), (w, h));
     assert!(bin.data.iter().any(|&v| v == 1) && bin.data.iter().any(|&v| v == 0));
 }

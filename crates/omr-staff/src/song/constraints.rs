@@ -4,8 +4,12 @@
 //! - **钉住的事实**（`pins`，按识别 id）：删掉、改时值、改音高。落在预发号之后的音符上（号码不受影响），被钉的和弦 / 休止标 `pinned`，
 //!   满拍裁决不再给它出候选；同小节别的元素照常按新的约束重新裁决。
 //! - **从某个系统起改的上下文**（`contexts`）：谱号（对一个槽位）、调号、拍号，后面的系统一路照它，直到下一处改的。
+//! - **补的音**（`adds`，点原图补认）：号码从 [`ADD_BASE`] 起另发，不挪预发号；补的音标 `pinned`。
+//! - **改的字**（`texts`，框选重认）：按识别 id 换歌词字、文字指示的文字，拼完整曲后换。
 use super::*;
-use crate::notes::heads::HeadKind;
+use crate::notes::heads::{Head, HeadKind};
+use crate::notes::stems::Stem;
+use crate::notes::Chord;
 use dolce_omr_sheet::music::Time;
 use dolce_omr_sheet::score::NoteType;
 use serde::{Deserialize, Serialize};
@@ -42,6 +46,70 @@ pub struct Constraints {
     /// （从全曲第几个系统起，改成什么）。
     #[serde(default)]
     pub contexts: Vec<(usize, Context)>,
+    #[serde(default)]
+    pub adds: Vec<Added>,
+    #[serde(default)]
+    pub texts: Vec<(Rid, String)>,
+}
+
+/// 补的音的识别 id 从这个号起（预发号是按识别产物顺序编的，一首曲子到不了这么多）。
+pub const ADD_BASE: u32 = 1_000_000;
+
+/// 一个补的音。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Added {
+    pub rid: Rid,
+    #[serde(flatten)]
+    pub note: NewNote,
+}
+
+/// 补的音的内容（点原图补认）：落在哪一页（结果页下标）哪一行谱、头的位置与音级、头型、杠尾、附点，有干就带上。坐标是页内工作坐标。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNote {
+    pub page: usize,
+    pub staff: usize,
+    pub x: f64,
+    pub y: f64,
+    pub pos: i32,
+    pub kind: HeadKind,
+    #[serde(default)]
+    pub tails: u8,
+    #[serde(default)]
+    pub dots: u8,
+    #[serde(default)]
+    pub stem: Option<Stem>,
+}
+
+/// 补的音落进预发号之后的音符（各页各行）。
+pub(super) fn apply_adds(notes: &mut [Vec<RowNotes>], adds: &[Added]) {
+    for Added { rid, note: a } in adds {
+        let Some(row) = notes.get_mut(a.page).and_then(|p| p.get_mut(a.staff)) else { continue };
+        let head = Head { staff: a.staff, x: a.x, y: a.y, pos: a.pos, kind: a.kind, fill: 1.0, score: 1.0, acc: None, rid: Some(*rid) };
+        row.chords.push(Chord { x: a.x, heads: vec![head], stem: a.stem, tails: a.tails, beamed: false, dots: a.dots, arts: Vec::new(), tuplet: None, pinned: true });
+        row.chords.sort_by(|a, b| a.x.total_cmp(&b.x));
+    }
+}
+
+/// 改的字：歌词字、文字指示按识别 id 换文字。
+pub(super) fn apply_texts(score: &mut dolce_omr_sheet::score::Score, texts: &[(Rid, String)]) {
+    use dolce_omr_sheet::score::Dir;
+    if texts.is_empty() {
+        return;
+    }
+    let find = |r: Option<Rid>| r.and_then(|r| texts.iter().rev().find(|t| t.0 == r)).map(|t| t.1.clone());
+    for e in score.parts.iter_mut().flat_map(|p| p.measures.iter_mut()).flat_map(|m| m.events.iter_mut()) {
+        for l in e.lyrics.iter_mut() {
+            if let Some(t) = find(l.src.rid) {
+                l.text = t;
+            }
+        }
+        for d in e.pre.iter_mut() {
+            if let (Dir::Words { text, .. }, Some(t)) = (&mut d.dir, find(d.src.rid)) {
+                *text = t;
+            }
+        }
+    }
 }
 
 impl Constraints {

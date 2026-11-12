@@ -230,3 +230,35 @@ pub fn build_rows<P: crate::frame::ink::Probe + ?Sized>(f: &crate::page::Layout,
     }
     rows
 }
+
+/// 点原图补认（会话的补音）：在 (x, y)（页内工作坐标）附近找一个头。
+/// 同首轮找头一把尺子——本页自举的实心头模板（[`seed_stage`]），只是窗口限在点的周围（横向 ±1 格、音级 ±1）、门槛放宽一档。
+/// 找到了再探干与杠尾；找不到回 None（调用方按点的位置造一个四分音符）。回 (头, 干, 杠尾数)。
+pub fn head_near(f: &PageFrame, attrs: &[RowAttrs], si: usize, x: f64, y: f64) -> Option<(Head, Option<Stem>, u8)> {
+    let st = f.staves.get(si)?;
+    let sp = st.space();
+    let SeedStage { solid, samples, tpl, .. } = seed_stage(f, attrs, &Claims::new(f));
+    let sample_scores: Vec<f64> = samples.iter().map(|&(x, y, sp)| tpl.best_score(&solid, x, y, sp, 1).0).collect();
+    let floor = dolce_omr_core::geom::median(&sample_scores, 0.0) - 2.0 * TPL_DROP;
+    let p0 = st.pos(x, y).round() as i32;
+    let r = sp.round().max(1.0) as i64;
+    let mut best: Option<(f64, f64, f64, i32)> = None;
+    for p in p0 - 1..=p0 + 1 {
+        for dx in -r..=r {
+            let cx = x + dx as f64;
+            let (s, bx, by) = tpl.best_score(&solid, cx, st.y_of(cx, p as f64), sp, 1);
+            // 一样高取离点近的音级
+            if best.is_none_or(|b| s > b.0 + 1e-9 || (s > b.0 - 1e-9 && (p - p0).abs() < (b.3 - p0).abs())) {
+                best = Some((s, bx, by, p));
+            }
+        }
+    }
+    let (score, hx, hy, pos) = best.filter(|b| b.0 >= floor)?;
+    let head = Head { staff: si, x: hx, y: hy, pos, kind: heads::HeadKind::Filled, fill: 1.0, score, acc: None, rid: None };
+    let stem = stems::find_stem(&f.ink, &head, sp, f.unit.thick, None, &|_| false);
+    let mut rows: Vec<RowNotes> = (0..f.staves.len()).map(|_| RowNotes::default()).collect();
+    rows[si].chords.push(Chord { x: hx, heads: vec![head.clone()], stem, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false });
+    beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
+    let tails = rows[si].chords[0].tails;
+    Some((head, stem, tails))
+}
