@@ -8,7 +8,9 @@ use dolce_omr_text::chars::{han_count, latin_count, script_of, Script};
 use dolce_omr_text::lyrics::{syllables, LyricRow};
 use dolce_omr_text::{chords, words, Ch};
 
-/// 第一行歌词离谱表不过这么多格；之后各行与上一行的空隙不过较矮那行行高的这个比例。
+/// 第一行歌词离谱表不过这么多格（下面还有谱行的带里，离上面谱表比离下面近的也收、两行谱的系统里两行之间的不限：低音多的谱行下歌词离谱表七格开外，新编 176；
+/// 副歌的歌词夹在高低音谱表正中，新编 294）；
+/// 之后各行与上一行的空隙不过较矮那行行高的这个比例。
 const LYRIC_FIRST: f64 = 7.0;
 const LYRIC_GAP: f64 = 0.8;
 /// 歌词行至少这么高（相对线距）：再矮的是指法、连音数字、碎墨读出来的字。
@@ -217,6 +219,9 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
         // 链上各行在 `rows[a].lyrics` 里的下标与音节数（与 `chain` 同序）
         let mut chain_at: Vec<(usize, usize)> = Vec::new();
         let mut blocked: Vec<(f64, f64)> = Vec::new();
+        // 上下两行谱同属一个系统（高低音谱表之间的歌词带）
+        // 只看两行谱的系统（四声部大谱表）：合唱谱多行系统里声部行与钢琴行之间印的中文表情指示会被收成歌词（望十架、紫袍荆冠）
+        let in_system = matches!((b.above, b.below), (Some(a), Some(z)) if f.systems.iter().any(|s| s.staves.len() == 2 && s.staves.contains(&a) && s.staves.contains(&z)));
         let lines: Vec<GeoLine> = b.lines.iter().filter_map(|l| strip_bar_numbers(f, b, l)).flat_map(|l| split_scripts(&l)).collect();
         // 页脚：从版权声明那行起往下都是（版权、复印说明、网址、页码），不当歌词与记号
         let footer = lines.iter().position(|l| dolce_omr_text::header::is_rights(&line_chars(l).iter().map(|c| c.ch).collect::<String>())).filter(|_| b.below.is_none());
@@ -240,11 +245,14 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
             let chord_zone = d_below.is_some_and(|d| d <= CHORD_REACH && d_above.is_none_or(|a| d < a));
             let chord_line = chord_zone && chords::is_annotation_line(&unspaced(&text));
             let tall = b.above.is_some_and(|a| l.h() >= LYRIC_MIN_H * f.staves[a].space());
+            if std::env::var("OMR_TEXT_DEBUG").is_ok() {
+                eprintln!("分类 y{:.0} {text:?}：距上 {d_above:?} 距下 {d_below:?} 高够 {tall} 像歌词 {} 和弦行 {chord_line} 链 {}", l.y0, lyric_like(&text), chain.len());
+            }
             if b.above.is_some() && !chord_line && tall && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
                 // 横向盖得住它的上方歌词行：没有就是这一栏的头一行（看离谱表多远），有就看与最下面那行的空隙
                 let mut prev: Vec<(f64, f64, f64, f64, bool)> = chain.iter().filter(|c| over(c.0, c.1)).copied().collect();
                 let gap_ok = |prev: &[(f64, f64, f64, f64, bool)]| match prev.iter().map(|c| (c.2, c.3)).max_by(|p, q| p.0.total_cmp(&q.0)) {
-                    None => d_above.is_some_and(|d| d <= LYRIC_FIRST),
+                    None => d_above.is_some_and(|d| d <= LYRIC_FIRST || in_system || d_below.is_some_and(|z| d < z)),
                     Some((bottom, h)) => l.y0 - bottom <= LYRIC_GAP * h.min(l.h()),
                 };
                 let mut ok = gap_ok(&prev);

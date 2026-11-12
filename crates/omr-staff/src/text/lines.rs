@@ -265,7 +265,17 @@ fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0:
     let sp = s.space();
     let off = |x: f64| s.bottom(x.clamp(s.left, s.right)) - s.ys[4];
     // 带里的墨块（中心在带里、不在排除之列）与拉平后的中心 y
-    let cand: Vec<(&Blob, f64)> = f.blobs.iter().filter(|b| !cx.drop.contains(&(b.id as i32))).map(|b| (b, b.cy - off(b.cx))).filter(|&(b, y)| y >= y0 && y < y1 && b.rect.y - off(b.cx) >= y0 - sp).collect();
+    // 谱行之间的带（下面还有谱行）里右缘不过谱表左端半格的墨是系统线、括号的一截，不是字（新编 239 系统线断成几截读成「1」自成一栏，
+    // 切出的行与正文行错开半行，并行时把第 1 段词劈成两行）
+    let below = f.staves.iter().any(|t| t.ys[0] >= y1 - 1.0);
+    let lead = s.left + sp * 0.5;
+    let cand: Vec<(&Blob, f64)> = f
+        .blobs
+        .iter()
+        .filter(|b| !cx.drop.contains(&(b.id as i32)) && !(below && b.rect.right() <= lead))
+        .map(|b| (b, b.cy - off(b.cx)))
+        .filter(|&(b, y)| y >= y0 && y < y1 && b.rect.y - off(b.cx) >= y0 - sp)
+        .collect();
     let body = |b: &Blob| b.rect.h >= BODY_H.0 * sp && b.rect.w <= BODY_W * sp;
     let single: Vec<f64> = cand.iter().filter(|(b, _)| body(b) && b.rect.h <= BODY_H.1 * sp).map(|(b, _)| b.rect.h).collect();
     if single.is_empty() {
@@ -385,7 +395,7 @@ fn block_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, cand: &[(&Blob, f
     }
     runs.sort();
     if std::env::var("OMR_TEXT_DEBUG").is_ok() {
-        eprintln!("切行 带y{y0:.0} 字高{char_h:.1}/{one_h:.1} 截{:?}", runs.iter().map(|&(a, z)| (y0 as usize + a, y0 as usize + z)).collect::<Vec<_>>());
+        eprintln!("切行 带y{y0:.0} x{:.0}~{:.0} 字高{char_h:.1}/{one_h:.1} 截{:?}", cand.iter().map(|c| c.0.rect.x).fold(f64::MAX, f64::min), cand.iter().map(|c| c.0.rect.right()).fold(f64::MIN, f64::max), runs.iter().map(|&(a, z)| (y0 as usize + a, y0 as usize + z)).collect::<Vec<_>>());
     }
     // 几行挤成一截的：按本带的行距切开，切在预期位置附近投影最低处
     let normal: Vec<f64> = runs.iter().map(|&(a, z)| (z - a + 1) as f64).filter(|&h| h >= char_h * 0.8 && h <= char_h * TALL).collect();
