@@ -1,4 +1,4 @@
-//! `omr-cli`：识别的命令行：回归（`regress`）、识别一个简谱文件（`recognize`）、五线谱会话（`session`）；切分随歌本切分落地后加。
+//! `omr-cli`：识别的命令行：回归（`regress`）、识别一个文件（`recognize`）、五线谱会话（`session`）；切分随歌本切分落地后加。
 mod recognize;
 mod regress;
 
@@ -13,9 +13,11 @@ const USAGE: &str = "用法：
       --area：只比这一档的步数（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）；--judge-only：产物不动，只重新判分对比
   omr-cli recognize jianpu 文件 [--render] [--out=文件]
       识别一个简谱文件，打出行数、音数、小节数与满拍率；--render：PDF 页先用 PDFium 渲染再走像素路（对照纯矢量页那条路）
+  omr-cli recognize staff 文件 [--out=目录]
+      识别一个五线谱文件，写出 <曲>.musicxml（带识别 id）与 <曲>.review.json（核对 JSON：各页谱行几何、系统、关联表、源框、可疑、候选）
   omr-cli session 五线谱文件 --ops=操作.jsonl [--out=目录]
       识别后开会话，逐条做操作（每行一条 JSON：rebuild / restructure / pin / unpin / choose / context，见 omr-staff::session::Op），
-      每一步写出 <步>.musicxml 与 <步>.rec.json，报声部数、小节数与识别 id 比上一步留下 / 没了 / 新出的个数";
+      每一步写出 <步>.musicxml、<步>.rec.json 与 <步>.review.json，报声部数、小节数与识别 id 比上一步留下 / 没了 / 新出的个数";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

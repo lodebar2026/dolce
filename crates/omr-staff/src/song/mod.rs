@@ -19,12 +19,14 @@ use dolce_omr_sheet::result::{codes, Doubt, Locus, Rid, RidKind, RidSeq, Src, Sr
 use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, HeadSrc, Placed, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
 use dolce_omr_text::lyrics::align;
+use serde::Serialize;
 
 mod assign;
 mod attach;
 mod constraints;
 mod grand;
 mod ids;
+mod review;
 mod spans;
 pub use constraints::{Constraints, Context, Fact};
 use constraints::apply_pins;
@@ -56,11 +58,67 @@ pub struct SystemLayout {
     pub top: f64,
     pub bars: usize,
     pub rows: Vec<RowLayout>,
+    /// 这个系统各行谱的页内下标（自上而下；核对几何按它引用 [`PageGeom::staves`]）。
+    pub staves: Vec<usize>,
+}
+
+/// 核对几何（编辑器对照视图、点谱行菜单用）：一页的各行谱，坐标是原图像素。
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageGeom {
+    /// 1 起。
+    pub pn: usize,
+    pub staves: Vec<StaffGeom>,
+    /// 认出的简谱带个数（有就是混排谱）。
+    pub jianpu: usize,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffGeom {
+    /// 五条线的 y（谱行横向中点处量）。
+    pub line_ys: Vec<f64>,
+    /// 各小节：右线 x、小节里各音的框。
+    pub bars: Vec<BarGeom>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct BarGeom {
+    pub right: f64,
+    pub notes: Vec<NoteGeom>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct NoteGeom {
+    #[serde(rename = "box")]
+    pub bx: BoxLrtb,
+}
+
+/// 核对几何的坐标取到 0.01 像素：OCR 现推与读缓存的字框差在末几位，取整后同一份底本的核对 JSON 逐字相同。
+pub fn px(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+/// TS 那边的框形状（`left / right / top / bottom`）。
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub struct BoxLrtb {
+    pub left: f64,
+    pub right: f64,
+    pub top: f64,
+    pub bottom: f64,
+}
+
+impl From<Rect> for BoxLrtb {
+    fn from(r: Rect) -> Self {
+        BoxLrtb { left: px(r.x), right: px(r.right()), top: px(r.y), bottom: px(r.bottom()) }
+    }
 }
 
 pub struct Song {
     pub score: Score,
     pub systems: Vec<SystemLayout>,
+    /// 各页的核对几何（与输入的页同序）。
+    pub pages: Vec<PageGeom>,
     /// 各槽位（`RowLayout::part`）落到（第几声部, 第几谱表）：大谱表合并后两个槽位进同一个声部。
     pub slot_at: Vec<(usize, u8)>,
     /// 关联表：各系统各行配到了第几个槽位（编辑器关联表的初值；改了交回 [`Constraints::slots`]）。
@@ -285,6 +343,23 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
     let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
     // 各声部画到行尾、等下一个系统接着的松叶
     let mut open_wedge: Vec<OpenWedge> = vec![None; nparts];
+    let mut geom: Vec<PageGeom> = pages
+        .iter()
+        .enumerate()
+        .map(|(pn, p)| PageGeom {
+            pn: pn + 1,
+            jianpu: p.layout.bands.len(),
+            staves: p
+                .layout
+                .staves
+                .iter()
+                .map(|s| {
+                    let cx = (s.left + s.right) / 2.0;
+                    StaffGeom { line_ys: (0..5).map(|k| px(s.y_of(cx, (k * 2) as f64) / p.layout.up)).collect(), bars: Vec::new() }
+                })
+                .collect(),
+        })
+        .collect();
     let mut ids = Ids::new(pages);
     apply_pins(pages, &mut ids.notes, &c.pins);
     for (pn, page) in pages.iter().enumerate() {
@@ -585,6 +660,13 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                         ms[j].mid.push(ch.attrs);
                     }
                 }
+                // 核对几何：印着的各小节（多小节休止展开之前）的右线与里面各音的框
+                geom[pn].staves[i].bars = (0..count)
+                    .map(|j| BarGeom {
+                        right: px(bs.get(j).map_or(f.staves[i].right, |b| b.x) / f.up),
+                        notes: ms[j].events.iter().flat_map(|e| e.src.iter()).filter_map(|h| h.src.at).map(|a| NoteGeom { bx: a.rect.into() }).collect(),
+                    })
+                    .collect();
                 expand_multi_rests(&mut ms, &extra, from, &mut span_recs[p], &mut pending[p]);
                 ms[0].new_system = true;
                 ms[0].new_page = si == 0 && pn > 0;
@@ -622,7 +704,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
             // 末小节的宽度折成「本行常见小节宽」的倍数，留给下一行比（各行线距、疏密不同，不直接比像素）
             prev_tail = if med > 0.0 { tail_w / med } else { 0.0 };
             let top = f.staves[rows[0]].top(f.staves[rows[0]].left) / f.up;
-            systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout });
+            systems.push(SystemLayout { page: pn + 1, top, bars: count, rows: layout, staves: rows.clone() });
         }
     }
     for (part, recs) in parts.iter_mut().zip(span_recs) {
@@ -637,7 +719,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
     }
     let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
     let vector = pages.iter().any(|p| p.layout.vector);
-    Song { score: Score { title, credits, parts }, systems, slot_at, assignment: slots_all, doubts, meter: stats, fused, vector }
+    Song { score: Score { title, credits, parts }, systems, pages: geom, slot_at, assignment: slots_all, doubts, meter: stats, fused, vector }
 }
 
 impl Song {

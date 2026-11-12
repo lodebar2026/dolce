@@ -13,7 +13,7 @@ dolce-omr-sheet = { path = "../omr-sheet" }
 dolce-omr-source = { path = "../omr-source" }
 dolce-omr-jianpu = { path = "../omr-jianpu" }
 serde.workspace = true
+serde_json = "1"
 
 [dev-dependencies]
 flate2 = "1"
-serde_json = "1"

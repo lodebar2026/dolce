@@ -71,11 +71,34 @@ pub fn open_ocr(cache: &Path) -> Result<CachedOcr, String> {
     Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache: OcrCache::open(cache) })
 }
 
+/// `omr-cli recognize staff 文件 [--out=目录]`：识别一个五线谱文件，写出 `<曲>.musicxml`（带识别 id）与 `<曲>.review.json`（核对 JSON，交 web `omrrust/adapter.ts`）。
+fn one_staff(file: &str, out: &str) -> Result<(), String> {
+    let ocr = open_ocr(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json"))?;
+    let t0 = std::time::Instant::now();
+    let srcs = sources(Path::new(file))?;
+    let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_source(s, Some(&ocr))).collect();
+    ocr.cache.save()?;
+    if pages.is_empty() {
+        return Err("没有找到谱表".into());
+    }
+    let song = assemble(&pages, None);
+    let stem = Path::new(file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "score".into());
+    let out = Path::new(out);
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    std::fs::write(out.join(format!("{stem}.musicxml")), song.score.to_musicxml()).map_err(|e| e.to_string())?;
+    std::fs::write(out.join(format!("{stem}.review.json")), song.review_json()).map_err(|e| e.to_string())?;
+    println!("{stem}：{} 页、{} 个声部、{} 个系统，{:.1} s", pages.len(), song.score.parts.len(), song.systems.len(), t0.elapsed().as_secs_f64());
+    Ok(())
+}
+
 /// `omr-cli recognize jianpu 文件 [--render] [--out=文件]`：识别一个简谱文件，打出各项计数（没有 GT 时两条路对照用）。
 pub fn one(args: &[String]) -> Result<(), String> {
     let (kind, file) = (args.first().ok_or("缺档")?, args.get(1).ok_or("缺文件")?);
+    if kind == "staff" {
+        return one_staff(file, args.iter().find_map(|a| a.strip_prefix("--out=")).unwrap_or("."));
+    }
     if kind != "jianpu" {
-        return Err("现在只有 jianpu".into());
+        return Err("档只有 jianpu / staff".into());
     }
     let render = args.iter().any(|a| a == "--render");
     let out = args.iter().find_map(|a| a.strip_prefix("--out="));
@@ -145,6 +168,7 @@ pub fn session(args: &[String]) -> Result<(), String> {
         let x = song.score.to_musicxml();
         std::fs::write(out.join(format!("{k}.musicxml")), &x).map_err(|e| e.to_string())?;
         std::fs::write(out.join(format!("{k}.rec.json")), song.layout_json()).map_err(|e| e.to_string())?;
+        std::fs::write(out.join(format!("{k}.review.json")), s.review_json()).map_err(|e| e.to_string())?;
         let now = ids(&x);
         let measures = song.score.parts.first().map_or(0, |p| p.measures.len());
         let staves: Vec<u8> = song.score.parts.iter().map(|p| p.staves.max(1)).collect();

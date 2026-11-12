@@ -46,15 +46,18 @@ pub struct Session {
     systems: Vec<Vec<System>>,
     /// 不要的行：(页, 页内谱行)。
     hidden: Vec<(usize, usize)>,
+    /// 识别认出的花括号：(页, 上面那行的页内谱行)。拆开时括号断掉，合回来照它补回（不然自动指派与原来不同）。
+    braced: Vec<(usize, usize)>,
     c: Constraints,
     song: Song,
 }
 
 impl Session {
     pub fn new(pages: Vec<Page>, title: Option<String>) -> Session {
-        let systems = pages.iter().map(|p| p.layout.systems.clone()).collect();
+        let systems: Vec<Vec<System>> = pages.iter().map(|p| p.layout.systems.clone()).collect();
+        let braced = systems.iter().enumerate().flat_map(|(pn, sys)| sys.iter().flat_map(move |s| s.braces.iter().map(move |&k| (pn, s.staves[k])))).collect();
         let song = assemble_with(&pages, title.clone(), &Constraints::default());
-        Session { pages, title, systems, hidden: Vec::new(), c: Constraints::default(), song }
+        Session { pages, title, systems, hidden: Vec::new(), braced, c: Constraints::default(), song }
     }
 
     pub fn song(&self) -> &Song {
@@ -79,6 +82,12 @@ impl Session {
             }
         }
         out
+    }
+
+    /// 核对 JSON（[`Song::review_json_with`]）：系统表按会话的切分（含不要的行），关联表即 [`Session::assignment`]。
+    pub fn review_json(&self) -> String {
+        let systems: Vec<_> = self.systems.iter().enumerate().flat_map(|(pn, sys)| sys.iter().map(move |s| (pn, s.staves.clone()))).collect();
+        self.song.review_json_with(&systems, &self.assignment())
     }
 
     pub fn apply(&mut self, op: Op) -> Result<&Song, String> {
@@ -152,7 +161,14 @@ impl Session {
                     return Err("跨页的两个系统不能合并".into());
                 }
                 let next = self.systems[pa].remove(a + 1);
-                self.systems[pa][a] = merge_systems(&self.systems[pa][a], &next);
+                let mut m = merge_systems(&self.systems[pa][a], &next);
+                // 接缝处的两行原来被花括号括着（先拆后合）就补回
+                let seam = self.systems[pa][a].staves.len();
+                if self.braced.contains(&(pa, m.staves[seam - 1])) {
+                    m.braces.push(seam - 1);
+                    m.braces.sort_unstable();
+                }
+                self.systems[pa][a] = m;
             }
             SystemOp::Split { system, row } => {
                 let (p, a) = at(system).ok_or("没有这个系统")?;

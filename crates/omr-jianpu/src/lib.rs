@@ -62,7 +62,7 @@ pub fn recognize_ink(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Result<Recognize
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
     let mut notes: Vec<notes::RowNotes> = rows.iter().map(|row| notes::build(ink, row, ocr)).collect();
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
-    text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions);
+    text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions);
     text::header(ink, &rows, num_h, ocr, &mut score);
     for i in 0..rows.len() {
         // 上方带的顶：上一行最末一行歌词的底

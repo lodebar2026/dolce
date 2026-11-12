@@ -107,6 +107,9 @@ pub struct JpNum {
     /// 各段歌词（下标 = 段，空串 = 这段没字）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub lyrics: Vec<String>,
+    /// 复核：哪几段（0 起）的歌词字把握不大（OCR 第一名不是它，或第一名领先第二名不到 [`crate::text::LYRIC_DOUBT_MARGIN`]）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lyric_doubt: Vec<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub section_mark: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -231,6 +234,9 @@ pub struct RecognizedScore {
     pub lyric_regions: Vec<TextRegion>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub chord_regions: Vec<TextRegion>,
+    /// 谱后单独排版、按第 1 段骨架落到音上的附段：各行原文与源框
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stanza_regions: Vec<TextRegion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dot_diam: Option<f64>,
     /// 可疑清单（TS 那份没有；核对视图现读各音的 `doubt`，这份供回归统计）
