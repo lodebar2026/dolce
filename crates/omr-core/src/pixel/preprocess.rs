@@ -73,3 +73,48 @@ pub fn upsample(gray: &[u8], w: usize, h: usize, up: usize) -> Vec<u8> {
     }
     out
 }
+
+/// 全局 Otsu：回 (阈值, 类间方差)。阈值以下（含）为一类；类间方差越大两类分得越开（几个通道里挑分得最开的那个）。
+/// 对应 `src/omrkit/preprocess.ts::otsu`。
+pub fn otsu(gray: &[u8]) -> (u8, f64) {
+    let mut hist = [0u64; 256];
+    for &v in gray {
+        hist[v as usize] += 1;
+    }
+    let total = gray.len() as f64;
+    let sum: f64 = hist.iter().enumerate().map(|(t, &c)| t as f64 * c as f64).sum();
+    let (mut sum_b, mut w_b, mut max, mut thr) = (0f64, 0f64, 0f64, 127u8);
+    for (t, &c) in hist.iter().enumerate() {
+        w_b += c as f64;
+        if w_b == 0.0 {
+            continue;
+        }
+        let w_f = total - w_b;
+        if w_f == 0.0 {
+            break;
+        }
+        sum_b += t as f64 * c as f64;
+        let (m_b, m_f) = (sum_b / w_b, (sum - sum_b) / w_f);
+        let between = w_b * w_f * (m_b - m_f) * (m_b - m_f);
+        if between > max {
+            max = between;
+            thr = t as u8;
+        }
+    }
+    (thr, max)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::otsu;
+
+    #[test]
+    fn otsu_splits_two_levels() {
+        let mut g = vec![20u8; 100];
+        g.extend(vec![220u8; 300]);
+        let (thr, sep) = otsu(&g);
+        assert!((20..220).contains(&thr));
+        assert!(sep > 0.0);
+        assert_eq!(otsu(&[128u8; 50]).1, 0.0);
+    }
+}

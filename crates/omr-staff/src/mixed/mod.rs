@@ -48,7 +48,7 @@ fn read_strip(b: &Band, s: &Strip, ocr: &CachedOcr, known: bool) -> Option<JpRow
         out.extend_from_slice(&gray);
         let _ = std::fs::write(format!("{dir}/strip-staff{}-y{}.pgm", b.staff, s.y), out);
     }
-    let src = SourceImage { w, h, gray, kind: ImageKind::Gray, rect: Rect::new(0.0, 0.0, w as f64, h as f64), page_w: w as f64, page_h: h as f64, size_known: false };
+    let src = SourceImage { w, h, gray, rgb: Vec::new(), kind: ImageKind::Gray, rect: Rect::new(0.0, 0.0, w as f64, h as f64), page_w: w as f64, page_h: h as f64, size_known: false };
     let (scale, row) = dolce_omr_jianpu::recognize_strip(&src, ocr, known)?;
     let notes: Vec<JpNote> = row
         .nums

@@ -12,7 +12,8 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 | crate | 作用 |
 |---|---|
 | `crates/omr-build` | 构建脚本工具：`fingerprint(名, 目录…)` 按源码目录算阶段代码指纹，导出 `OMR_CODE_<名>`（阶段缓存键的一部分；上游 crate 的目录要一并列上） |
-| `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」） |
+| `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `omr-cli`，本 crate 不依赖识别路线） |
 | `crates/omr-source` | 取数层：`pdf.rs`（PDFium：页数、内嵌图原始像素与矩阵、路径、文字层、字形轮廓、整页渲染）、`raster.rs`（取页图：最大块 / 拼图页 / 按矩阵转正、图片文件按 EXIF 转正；`Binarizer` 灰度各倍数只算一次、几档 Sauvola 共用积分图；极性自检） |
 | `crates/omr-ocr` | PP-OCR：识别（CTC、逐字位置、前 K 候选）、DBNet 检测（含分块）、原生推理（ort 会话池）、按条内容指纹的落盘缓存 |
 | `crates/omr-text` | 两条路线共用的文字处理（纯文本与纯几何，不碰像素、不调 OCR）：`chords`（和弦文法：切词、覆盖率、归一、拆成根音 / 性质 / 低音）、`header`（页眉各行分类）、`spaces`（按空白列补词间空格）、`lyrics`（歌词切音节、段号、标点归属、对音）、`words`（节拍器、术语、力度、跳转的词表） |
@@ -503,12 +504,43 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
   附段分两栏且段号单独成列的版式；页眉里被检测切成两截的标题、英文署名的词间空格。
 - 重复：`text.rs` 的取条、空白列、分段读字与五线谱 `text/lines.rs` 是同一机制的两份（那边绑着 `PageFrame`），P10 定结果模型时下沉到共用层。
 
+### 歌本切分（P11，`omr-book`，`omr-cli split`）
+
+判据照 TS（`src/omr/booksplit/`，见 [识别-简谱omr](识别-简谱omr.md)「歌本切分」与实现篇）原样搬过来，参数、`切分报告.txt`、报告 JSON 形状都与 `omr-cli.mjs split` 相同。与 TS 不同的地方：
+
+- **取页走 `omr-source`**：位图 PDF 每页取内嵌源图（`raster::page_image`，不重采样；彩色页带 RGB，`SourceImage.rgb`），没有内嵌图的页按 300 dpi 渲；
+  转曲矢量 PDF 用 PDFium 整页渲（扫描 300 dpi、出图按 `--dpi` 重渲），不再走对象 → SVG → librsvg；页图文件夹按文件名自然序、EXIF 摆正。
+  判路照旧：取样 0.2 / 0.5 / 0.8 处三页，都没有内嵌图且有路径才是矢量歌本，带文字层的报错不收。
+- **逐页并行扫描**：TS 读页码要拿「上一页 + 1」挑候选，只能串行。这里每页先把页脚候选全读出来、取最靠下读得出的那个扫完，再按页序顺推；
+  候选里有等于「上一页 + 1」而扫描时取了别的，只把这几页重扫。目录页成片补认（相邻、歌谱区外、无标题的页）照 TS 的循环。
+- **曲名拼接的两处修正**（两本书上 Rust 读对、TS 读错的名字就来自这两条）：
+  - 检测框左右相叠时叠住的那个字两框各读一遍（「神是」「是爱」、「1=E4/4三」「主的羊…」——「三」是「主」被前框截去下半）：
+    前框末一个汉字与后框头一个汉字左缘差不到半个字高是同一个字形，留离自己框相叠那条边远的（`drop_overlap_twins`）。
+  - 首尾点号只在拼好的整个曲名上去（框常在逗号处切开，「神啊，」「愿列邦称赞祢」）；整段重读（只留汉字）读出的与原曲名汉字相同时留原曲名，不丢逗号、叹号。
+- **出图**：位图歌本写 JPEG（`image` 的编码器，同质量下比 sharp 大约三成），本首用到的页有彩色的出彩色、否则灰度；矢量歌本写灰度 PNG。按首分块并行，每块留最近 4 页源图。
+- **逐首识别**（`--recognize`，只收转曲矢量歌本）：每段取那一页的对象按 `PageContent::clip`（中心落在裁框里、不落在页码框里）裁出一截当一页，走五线谱 / 混排路线、`assemble` 带上切分认出的曲名，写 `<文件名>.musicxml`。
+  `-f` 只有 musicxml（别的格式要 TS 的转换器，P12 由 `omr-cli.mjs` 包 Rust 时接）。
+- 排查：`OMR_BOOK_DEBUG=<页序号，0 起>` 打出那一页各标题候选带的检测框、逐字位置与解析结果、整段重读。
+
+读数（2026-11-12，对曲目清单 GT `dev/testdata/歌本切分/<书>.gt.json`，`rust-omr/book-check.mjs`）：
+
+| 书 | 切出 / 缺 / 重号 | 文件名对 GT | 段上下沿像素差 | 冷 / 热缓存（TS） |
+|---|---|---|---|---|
+| 哈利路亚 PDF（438 页扫描） | 551 / 0 / 0 | 550（「羡」读成「羨」） | 全 0 | 34 s / 6 s（125 s） |
+| 哈利路亚页图 | 551 / 0 / 0 | 550（同上） | 中位 0、最大 121（TS 页图路同样） | 33 s / 4 s（100 s） |
+| 裴克（267 页转曲矢量） | 215 / 0 / 0 | 215 | 中位 0、最大 1 | 83 s / 6 s（181 s） |
+
+GT 由 TS 的报告生成（`book-check.mjs --make-gt`），两边读法不同的曲名对原图订正过（哈利路亚 160「虚」、425「洗」，裴克 012、013、039、040）。
+`--recognize` 裴克 215 首全部写出、59 s；对 pu.db 近似 GT（`rust-omr/book-pudb.mjs`）音符只有 24.6%：这套 CorelDRAW 转曲字形的调号、拍号认不出（调号 14%、拍号 0.5%），
+整页识别同样，与裁段无关，属转曲矢量路的字形覆盖（见「已知限制」）。
+
 ## 回归
 
 ```bash
 cd crates && cargo test                                   # 单元测试
 cargo run --release -p dolce-omr-cli -- regress <jianpu|solo|chorus|vector|xinbian> [--only=子串] [--jobs=N]   # vector：矢量民乐分谱（八段锦，testdata/矢量谱）
 cargo run --release -p dolce-omr-staff --example vs_ts_bars -- chorus|solo   # 框架结构对 TS 阶段快照（线索，不当对错）
+cargo run --release -p dolce-omr-cli -- split <歌本> --dry-run --report r.json && node ../dev/scripts/rust-omr/book-check.mjs r.json ../dev/testdata/歌本切分/<书>.gt.json   # 歌本切分对曲目清单
 npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ Rust 逐项比对（私有仓库用例）
 ```
 
@@ -524,7 +556,9 @@ npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ 
 
 ## 已知限制
 
-- 五线谱做到混排互证（P8）、矢量档（P9）与整曲结果模型、会话、核对 JSON（P10）；版面分区、歌本切分、wasm、接进编辑器（Tauri 命令）还没有。
+- 五线谱做到混排互证（P8）、矢量档（P9）与整曲结果模型、会话、核对 JSON（P10），歌本切分（P11）已迁；版面分区、wasm、接进编辑器（Tauri 命令）还没有。
+- 转曲矢量路认不出《裴克圣经经文诗歌歌谱》（CorelDRAW 转曲）这套字形的调号与拍号（逐首识别对 pu.db 调号 14%、拍号 0.5%，音高随之全错，音符 24.6%；TS 那边是专门补过的，现 99.31），P9 的字形字典只拿祢話如甘霖PDF 一份定过。
+- 歌本切分：哈利路亚 474「羡」读成异体「羨」（rec 逐字读法，TS 读对）；位图歌本的 JPEG 比 sharp 出的大约三成。
 - 线性符号（P6）没做的：**跨谱表的弧**（钢琴两行之间；大谱表已合（10d），弧端还不挂另一谱表的音）、**虚线弧**（等宽等距的短横划排成的弧，Holy Holy Holy 一半的弧）、
   八度线（8va 虚线及改音高）、带括号的连音括线（合唱谱补 61 步）、刮奏线、踏板线；房号不读字、跨页的房子与弧不接续；
   弧穿过符干以外的墨（被符杠、歌词压着）断开不接，嵌套弧、首尾相接的弧只按各自两端挂；倚音上的小弧挂不上（倚音没认）；

@@ -94,3 +94,35 @@ pub struct TextChar {
     /// 字形轮廓（页面点）；取不到为 None（如子集字体里没有 Unicode 映射的码位，退路见模块页）。
     pub outline: Option<Vec<Seg>>,
 }
+
+impl PageContent {
+    /// 只留中心落在 `rect` 里、不落在 `drop` 任一框里的路径、字与图（页面点）。歌本逐首识别按段取一页的一截用；页面尺寸不变。
+    pub fn clip(&self, rect: &Rect, drop: &[Rect]) -> PageContent {
+        let inside = |r: &Rect, x: f64, y: f64| x >= r.x && x <= r.right() && y >= r.y && y <= r.bottom();
+        let keep = |b: &Rect| inside(rect, b.cx(), b.cy()) && !drop.iter().any(|d| inside(d, b.cx(), b.cy()));
+        PageContent {
+            width: self.width,
+            height: self.height,
+            images: self.images.iter().filter(|o| keep(&o.rect)).cloned().collect(),
+            paths: self.paths.iter().filter(|o| keep(&o.bbox)).cloned().collect(),
+            chars: self.chars.iter().filter(|o| keep(&o.bbox)).cloned().collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path(x: f64, y: f64) -> PathObj {
+        PathObj { segs: vec![], fill: None, stroke: None, line_width: 1.0, even_odd: false, dashed: false, bbox: Rect::new(x, y, 2.0, 2.0) }
+    }
+
+    #[test]
+    fn clip_by_center() {
+        let pc = PageContent { width: 100.0, height: 100.0, images: vec![], paths: vec![path(10.0, 10.0), path(10.0, 50.0), path(10.0, 90.0)], chars: vec![] };
+        let c = pc.clip(&Rect::new(0.0, 0.0, 100.0, 60.0), &[Rect::new(0.0, 45.0, 30.0, 10.0)]);
+        assert_eq!(c.paths.len(), 1);
+        assert_eq!(c.paths[0].bbox.y, 10.0);
+    }
+}

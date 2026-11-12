@@ -6,7 +6,7 @@ use crate::prep::{Comp, Ink};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::surface::{blit, Gray};
+use dolce_omr_ocr::surface::Gray;
 
 /// 数字高（字号）的估计。近方块的中位高为底；汉字碎块压低、歌词字压高时，改信「夹在小节线之间的瘦高块」。
 pub fn estimate_num_h(comps: &[Comp]) -> f64 {
@@ -148,12 +148,7 @@ impl RowFrame {
 
 /// 数字格送检的画面：墨的外框等比缩进 64×64 的白格、四周留 8。
 pub fn digit_cell(ink: &Ink, r: &Rect) -> Gray {
-    let src = ink.crop_bin(r);
-    let (w, h) = (src.w as f64, src.h as f64);
-    let s = (48.0 / w).min(48.0 / h);
-    let mut out = Gray::new(64, 64, 255);
-    blit(&mut out, &src, Rect::new(0.0, 0.0, w, h), Rect::new((64.0 - w * s) / 2.0, (64.0 - h * s) / 2.0, w * s, h * s));
-    out
+    dolce_omr_ocr::surface::fit_cell(&ink.crop_bin(r))
 }
 
 /// rec 读出的字 → 简谱数字：0–7；`X` 是节奏音符（9）；别的不是数字。

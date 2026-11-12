@@ -10,6 +10,7 @@ name = "omr-cli"
 path = "src/main.rs"
 
 [dependencies]
+dolce-omr-book = { path = "../omr-book" }
 dolce-omr-core = { path = "../omr-core" }
 dolce-omr-jianpu = { path = "../omr-jianpu" }
 dolce-omr-ocr = { path = "../omr-ocr" }

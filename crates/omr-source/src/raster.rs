@@ -17,6 +17,8 @@ pub struct SourceImage {
     pub h: usize,
     /// 灰度，0 黑 255 白。
     pub gray: Vec<u8>,
+    /// 彩色图的 RGB（`w * h * 3`）；不是彩色为空。识别只看灰度，歌本切分写出原色、取纸色要它。
+    pub rgb: Vec<u8>,
     pub kind: ImageKind,
     /// 图在页面上的位置（点，左上原点、y 向下）。
     pub rect: Rect,
@@ -46,7 +48,7 @@ pub fn page_image(pc: &PageContent) -> Option<SourceImage> {
     let area = |t: &PageImage| t.rect.w * t.rect.h;
     let big = tiles.iter().max_by(|a, b| area(a).total_cmp(&area(b)))?;
     let rest: f64 = tiles.iter().map(area).sum::<f64>() - area(big);
-    let one = |t: &PageImage| SourceImage { w: t.w, h: t.h, gray: t.gray.clone(), kind: t.kind, rect: t.rect, page_w: pc.width, page_h: pc.height, size_known: true };
+    let one = |t: &PageImage| SourceImage { w: t.w, h: t.h, gray: t.gray.clone(), rgb: t.rgb.clone(), kind: t.kind, rect: t.rect, page_w: pc.width, page_h: pc.height, size_known: true };
     if tiles.len() < 2 || area(big) >= page_area * MOSAIC_COVER || rest < area(big) * MOSAIC_REST {
         return Some(one(big));
     }
@@ -76,6 +78,8 @@ fn mosaic(tiles: &[PageImage], big: &PageImage, pw: f64, ph: f64) -> SourceImage
     let y1 = tiles.iter().map(|t| t.rect.bottom()).fold(f64::MIN, f64::max);
     let (w, h) = (((x1 - x0) * s).ceil() as usize, ((y1 - y0) * s).ceil() as usize);
     let mut out = vec![255u8; w * h];
+    let color = tiles.iter().any(|t| !t.rgb.is_empty());
+    let mut rgb = if color { vec![255u8; w * h * 3] } else { Vec::new() };
     for t in tiles {
         let xa = ((t.rect.x - x0) * s).floor().max(0.0) as usize;
         let xb = (((t.rect.right() - x0) * s).ceil() as usize).min(w);
@@ -91,14 +95,19 @@ fn mosaic(tiles: &[PageImage], big: &PageImage, pw: f64, ph: f64) -> SourceImage
                 if sx < 0.0 || sx >= t.w as f64 {
                     continue;
                 }
-                let v = t.gray[sy as usize * t.w + sx as usize];
+                let si = sy as usize * t.w + sx as usize;
+                let v = t.gray[si];
                 let o = &mut out[y * w + x];
+                if v <= *o && color {
+                    let px = if t.rgb.is_empty() { [v, v, v] } else { [t.rgb[si * 3], t.rgb[si * 3 + 1], t.rgb[si * 3 + 2]] };
+                    rgb[(y * w + x) * 3..(y * w + x) * 3 + 3].copy_from_slice(&px);
+                }
                 *o = (*o).min(v);
             }
         }
     }
     let kind = if tiles.iter().any(|t| t.kind == ImageKind::Color) { ImageKind::Color } else if tiles.iter().all(|t| t.kind == ImageKind::Mask) { ImageKind::Mask } else { ImageKind::Gray };
-    SourceImage { w, h, gray: out, kind, rect: Rect::new(x0, y0, x1 - x0, y1 - y0), page_w: pw, page_h: ph, size_known: true }
+    SourceImage { w, h, gray: out, rgb, kind, rect: Rect::new(x0, y0, x1 - x0, y1 - y0), page_w: pw, page_h: ph, size_known: true }
 }
 
 /// 轴对齐（含翻转、90° 倍数旋转）的图摆成页面方向：交出的图矩阵是 `[rect.w, 0, 0, rect.h, rect.x, rect.y]`。
@@ -162,7 +171,8 @@ pub fn image_file(bytes: &[u8]) -> Result<SourceImage, String> {
     let rgb = img.to_rgb8();
     let (w, h) = (rgb.width() as usize, rgb.height() as usize);
     let gray = if color { ink_gray(rgb.as_raw(), w, h) } else { img.to_luma8().into_raw() };
-    Ok(SourceImage { w, h, gray, kind: if color { ImageKind::Color } else { ImageKind::Gray }, rect: Rect::new(0.0, 0.0, w as f64, h as f64), page_w: w as f64, page_h: h as f64, size_known: false })
+    let rgb = if color { rgb.into_raw() } else { Vec::new() };
+    Ok(SourceImage { w, h, gray, rgb, kind: if color { ImageKind::Color } else { ImageKind::Gray }, rect: Rect::new(0.0, 0.0, w as f64, h as f64), page_w: w as f64, page_h: h as f64, size_known: false })
 }
 
 /// 换通道要比亮度的墨底差大出这么多倍（黑墨、灰墨各通道一样，不换）。

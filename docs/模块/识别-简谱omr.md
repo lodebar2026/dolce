@@ -149,6 +149,7 @@
 | `booksplit/recognize.ts` | 逐首识别：摆放的各段换回 PDF 点交 `outlineomr`，写 MusicXML 或转成别的格式 |
 
 判据与踩坑见 [../实现/OMR-简谱识别.md](../实现/OMR-简谱识别.md)「歌本切分」。
+Rust 版（迁移中，`crates/omr-book`，`omr-cli split`）判据同此，差别与读数见 [识别-Rust](识别-Rust.md)「歌本切分」。
 
 ## 回归
 

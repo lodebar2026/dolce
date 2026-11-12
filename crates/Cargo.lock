@@ -237,6 +237,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-omr-book"
+version = "0.1.0"
+dependencies = [
+ "dolce-omr-core",
+ "dolce-omr-ocr",
+ "dolce-omr-source",
+ "image",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dolce-omr-build"
 version = "0.1.0"
 dependencies = [
@@ -247,6 +261,7 @@ dependencies = [
 name = "dolce-omr-cli"
 version = "0.1.0"
 dependencies = [
+ "dolce-omr-book",
  "dolce-omr-core",
  "dolce-omr-jianpu",
  "dolce-omr-ocr",

@@ -137,3 +137,13 @@ mod tests {
         assert!(u.data[0] < u.data[3]);
     }
 }
+
+/// 单字格：把 `src` 整张等比缩进 64×64 白格的中间 48×48（四周各留 8）。数字格送检都用这个（简谱数字、歌本页码与曲号；
+/// 对应 web `paddleocr.ts::cellOf`）。
+pub fn fit_cell(src: &Gray) -> Gray {
+    let (w, h) = (src.w as f64, src.h as f64);
+    let s = (48.0 / w).min(48.0 / h);
+    let mut out = Gray::new(64, 64, 255);
+    blit(&mut out, src, Rect::new(0.0, 0.0, w, h), Rect::new((64.0 - w * s) / 2.0, (64.0 - h * s) / 2.0, w * s, h * s));
+    out
+}
