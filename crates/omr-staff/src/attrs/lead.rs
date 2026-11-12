@@ -260,9 +260,12 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
     let mut best = KeyHit { fifths: 0, sure: true, right: start, used: 0 };
     // 纵向不沾谱表的（谱表上方的和弦字、下方的字）不在调号串里
     let on_staff = |u: &Unit| u.bottom >= -3.0 && u.top <= 9.5;
+    let dbg = std::env::var("OMR_KEY_DEBUG").is_ok();
+    let mut why: Vec<String> = Vec::new();
     for sharp in [true, false] {
         let (mut n, mut right, mut used, mut sure) = (0usize, start, 0usize, true);
         let mut j = from;
+        let mut brk = String::from("到头");
         while j < us.len() && n < 7 {
             let u = &us[j];
             // 不沾谱表的、碎点（低音谱号的两点、污点）跳过
@@ -272,6 +275,7 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
             }
             let gap = if n == 0 { KEY_GAP_FIRST } else { KEY_GAP };
             if u.rect.x - right > sp * gap {
+                brk = format!("间隔 {:.1} 格", (u.rect.x - right) / sp);
                 break;
             }
             // 并排粘成一块的几个：按一个记号一格宽切开
@@ -303,6 +307,11 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
                         None => true,
                     };
                 if !fits {
+                    if dbg {
+                        let pos = acc_pos(p, if sharp { Acc::Sharp } else { Acc::Flat });
+                        let r = if !acc_sized(p, sp) { "尺寸" } else if want.is_none_or(|w| (pos - w as f64).abs() > KEY_POS_TOL) { "位置" } else { "种类" };
+                        brk = format!("{r}（宽{:.2} 高{:.2} 位{:.1}..{:.1} 指{:.1} 要{:?} 认{:?} 粘{}）", p.w(sp), p.h(sp), p.top, p.bottom, pos, want, kind.map(|k| format!("{k:?}")), parts.len());
+                    }
                     ok = false;
                     // 串断在一个紧跟着的单元上：除非它是拍号的模样（撑满谱表，或骑中线的 C），这一串可能没读全
                     let timeish = ((-0.7..=0.9).contains(&u.top) && (7.1..=8.7).contains(&u.bottom) && u.w(sp) <= 2.6) || ((u.mid() - 4.0).abs() <= 0.8 && (1.6..=2.9).contains(&u.h(sp)) && u.top >= 0.6);
@@ -323,11 +332,17 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
             j += 1;
             used = j - from;
         }
+        if dbg {
+            why.push(format!("{}{n} 断:{brk}", if sharp { "升" } else { "降" }));
+        }
         if n > best.fifths.unsigned_abs() as usize {
             best = KeyHit { fifths: if sharp { n as i8 } else { -(n as i8) }, sure, right, used };
         } else if n == 0 && best.fifths == 0 {
             best.sure &= sure;
         }
+    }
+    if dbg {
+        eprintln!("调号单元读 {}", why.join(" | "));
     }
     best
 }
@@ -394,6 +409,9 @@ pub fn read_key_strokes(f: &PageFrame, s: &Staff, clef: Clef, start: f64) -> (i8
         }
         if n > best.0.unsigned_abs() as usize {
             best = (n as i8, right);
+        }
+        if std::env::var("OMR_KEY_DEBUG").is_ok() {
+            eprintln!("调号竖笔读 降{} 升{} 竖笔{}", if best.0 < 0 { -best.0 } else { 0 }, n, st.len());
         }
     }
     best
