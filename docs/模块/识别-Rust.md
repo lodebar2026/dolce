@@ -12,12 +12,12 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 | crate | 作用 |
 |---|---|
 | `crates/omr-build` | 构建脚本工具：`fingerprint(名, 目录…)` 按源码目录算阶段代码指纹，导出 `OMR_CODE_<名>`（阶段缓存键的一部分；上游 crate 的目录要一并列上） |
-| `crates/omr-cli` | 命令行 `omr-cli`：现在只有 `regress`（见「回归」；五线谱三档与简谱都接上了） |
+| `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」） |
 | `crates/omr-source` | 取数层：`pdf.rs`（PDFium：页数、内嵌图原始像素与矩阵、路径、文字层、字形轮廓、整页渲染）、`raster.rs`（取页图：最大块 / 拼图页 / 按矩阵转正、图片文件按 EXIF 转正；`Binarizer` 灰度各倍数只算一次、几档 Sauvola 共用积分图；极性自检） |
 | `crates/omr-ocr` | PP-OCR：识别（CTC、逐字位置、前 K 候选）、DBNet 检测（含分块）、原生推理（ort 会话池）、按条内容指纹的落盘缓存 |
 | `crates/omr-text` | 两条路线共用的文字处理（纯文本与纯几何，不碰像素、不调 OCR）：`chords`（和弦文法：切词、覆盖率、归一、拆成根音 / 性质 / 低音）、`header`（页眉各行分类）、`spaces`（按空白列补词间空格）、`lyrics`（歌词切音节、段号、标点归属、对音）、`words`（节拍器、术语、力度、跳转的词表） |
 | `crates/omr-sheet` | 谱面元素公共件：`Staff`（五条线位、各线带厚、共用偏移曲线、左右端、单线谱）与谱表局部坐标（`pos` / `y_of`：第一线 0、往下每半格 +1）、`music`（谱号调号拍号、音高）、`meter`（满拍验收与候选组合）、`curves`（细长笔画的追踪、拼接、量形状）、`score`（结果模型与 MusicXML 写出） |
-| `crates/omr-staff` | 五线谱路线：`prep/`（成像、网点网纹）、`frame/`（找谱表、墨层、系统、小节线）、`attrs/`（谱号、调号、拍号）、`notes/`（符头候选、加线作证、符干挂头、裁决、休止、符杠符尾、临时记号与附点、满拍裁决与修正提案）、`text/`（文字行、分类与归属、页眉）、`spans/`（线性符号：弧、松叶、房子）、`mixed/`（混排简谱互证：简谱行定位与划出、交 `omr-jianpu` 认、逐小节配对纠错；本路线唯一依赖 `omr-jianpu` 的地方）、`song.rs`（整曲拼接，文字与线性符号按 x 挂到拍点）。`examples/` 是对 TS 阶段快照的对账与排查工具（`vs_ts_staves`、`vs_ts_bars`、`vs_ts_heads`、`vs_ts_rests`、`vs_ts_durs`、`dbg_heads`、`dbg_tri`、`dbg_systems`、`dbg_bars`、`dbg_crop`、`dbg_text`：某页各条带切出的行与读出的字、各谱行挂上的歌词与记号、页眉；`dbg_spans`：某页认出的弧、松叶、房子，给了点就列那附近的细笔画与形状） |
+| `crates/omr-staff` | 五线谱路线：`prep/`（成像、网点网纹）、`frame/`（找谱表、墨层、系统、小节线）、`attrs/`（谱号、调号、拍号）、`notes/`（符头候选、加线作证、符干挂头、裁决、休止、符杠符尾、临时记号与附点、满拍裁决与修正提案）、`text/`（文字行、分类与归属、页眉）、`spans/`（线性符号：弧、松叶、房子）、`mixed/`（混排简谱互证：简谱行定位与划出、交 `omr-jianpu` 认、逐小节配对纠错；本路线唯一依赖 `omr-jianpu` 的地方）、`song/`（整曲拼接：识别 id 预发、声部指派、花括号合大谱表、文字与线性符号按 x 挂到拍点、约束、核对 JSON）、`session.rs`（会话：改关联表 / 系统切分、钉住事实、换候选，只重跑拼接）。`examples/` 是对 TS 阶段快照的对账与排查工具（`vs_ts_staves`、`vs_ts_bars`、`vs_ts_heads`、`vs_ts_rests`、`vs_ts_durs`、`dbg_heads`、`dbg_tri`、`dbg_systems`、`dbg_bars`、`dbg_crop`、`dbg_text`：某页各条带切出的行与读出的字、各谱行挂上的歌词与记号、页眉；`dbg_spans`：某页认出的弧、松叶、房子，给了点就列那附近的细笔画与形状） |
 | `crates/omr-jianpu` | 简谱路线（位图）：`prep`（成像、连通块）、`frame`（数字高、数字行与行带、带内切格、连谱号分系统与声部）、`notes`（读数、增时线、附点、减时线、八度点、小节线与反复冒号）、`marks`（临时升降号、倚音、顿音 / 重音 / 波音 / 延长记号）、`beats`（满拍裁决与可疑清单）、`text`（歌词带切行与对音、谱后附段、和弦行、页眉与调号 / 拍号 / 速度）、`spans`（弧）、`result`（`RecognizedScore`，形状同 web `omrkit/types.ts`，交 TS 的 `recognizedToDoc`） |
 | `crates/omr-core` | 基础层，不依赖平台（要能编到 wasm）：`image`（二值图、灰度图、矩形）、`geom`（对应 `omrkit/geom.ts`）、`pixel`（像素内核，原 `native/omrkernels/src/core`）、`js`（数值口径）、`stage`（阶段缓存） |
 
@@ -367,6 +367,53 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
     和弦区上移后延长记号、弧头偶尔读成一个和弦（是谁多 1 步）；简谱的调号拍号（`1=B 4/4`）没并进页眉；
   - 矢量 / 转曲混排（7j 之后）。
 
+### 整曲与结果模型（P10：10a–10h，`omr-sheet::{result, score}`、`omr-staff/src/song/`、`session.rs`）
+
+结果模型 `omr-sheet::score` 按 web `model/doc.ts`（ScoreDoc）的层次排，字段先取同义的名字，将来 ScoreDoc 迁进 Rust 时「识别结果 → ScoreDoc」一一映射：
+
+| 识别结果（`omr-sheet::score`） | ScoreDoc（`model/doc.ts`） | 说明 |
+|---|---|---|
+| `Score { title, credits, parts }` | `Song`（`work`、`identification`、`parts`） | 一首 |
+| `Part { staves, measures }` | `Part { staffCount, measures }` | 大谱表是一个 `Part` 两个谱表；ScoreDoc 读入时按 `staffOf` 拆、写 MusicXML 时并回 |
+| `Measure { attrs, mid, events, implicit, … }` | `Measure { attrs, laterAttrs, elements, implicit, barlines }` | 行中改谱号 / 调号记 `mid` ↔ `laterAttrs` |
+| `Event`（`pitches` 空 = 休止） | `Chord` / `Rest` | `Event::src` 每个头一份出处（`HeadSrc`：音高、`Src { rid, at }`） |
+| `Lyric` / `Dir` / `SpanMark` | `Lyric` / `Direction` / `Mark`（`start` / `end`） | 弧在识别结果里是两端各一个 `SpanMark`，ScoreDoc 是一条 `Mark` |
+| `Rid`（元素自身的字段） | 现在写进 MusicXML 的 `id` 属性，读入后在 `xmlsurface` 旁表 | ScoreDoc 进 Rust 后 id 直接做成模型字段 |
+
+- **识别 id**（`result::Rid`，10b / 10f）：种类 + 序号，前缀同 TS `review.ts::numberOmrIds`——音与休止 `omr12`、歌词字 `omrL3`、文字指示与节拍器 `omrW`、力度 `omrD`、
+  延音线 `omrT` 与圆滑线 `omrS`（两样共用序号）。**在整曲拼接之前按识别产物预发**（`song/ids.rs`）：按页序、页内全部谱行自上而下（不经系统表）、行内按 x 编，
+  头与休止的号记在 `Head::rid` / `Rest::rid` 上随音符走。所以满拍裁决删改、改关联表、改系统切分、钉住事实之后，没动的元素号码不变；删掉的留空号，不往前挪；
+  混排互证补的音接着续发。按系统表编不行：拿掉一行谱，同页后面的号整体挪。
+- **源框**（`SrcBox { page, rect }`）：原图像素、`page` 1 起。写 MusicXML 只写 id，框走核对 JSON。
+- **可疑项**（10a / 10f）：两条路线同一个 `result::Doubt { rid, at: Locus, rect, code, note, alts }`，原因码一张表（`result::codes`）：
+  满拍 `beat.short / over / ambiguous / misaligned / fix / fix.bar`、拍号 `meter.inferred / mismatch`、`head.weak`（实心头模板分比本页中位低一个 LOW_SPAN）、
+  `key.carried` / `clef.carried`（没读出、沿用上一系统的）。简谱各音的 `JpNum.doubt` 照 TS 的字符串码写，核对视图现读它。
+- **落选候选**（10f）：`Event::alts`（`EventAlt { choice, cost }`）——满拍裁决那两样照原花费，另给去符尾 / 补去附点 / 实心改空心 / 删掉，休止给长短一档与删掉；
+  简谱 `JpNum::alts` 同口径写出。
+- **声部指派**（10c，`song/assign.rs`）：每行谱一份特征（谱号、花括号上下半、有无歌词、音域中位、声部标签）保序 DP 三遍（不看标签 → 按投票定名后带标签 → 按重估音域再排），
+  行数超过槽位的系统退到对齐。参考 TS `assignSlots`，重新实现。
+- **花括号与大谱表**（10d，`frame/systems.rs`、`song/grand.rs`）：系统层逐行量紧贴系统线左边那段墨的中心——花括号的臂在 −1.2 格、尖在 −0.8 格，方括号与细系统线都在 −0.5 格；
+  花括号括着的两个槽位整曲拼完后合成一个两谱表声部；一处都没认出时 G + F 谱号相邻、都没有词的兜底合并。写出 `<staves>`、`<clef number>`、`<staff>`、记号与松叶按谱表编号。
+- **跨行跨页**（10e）：曲首不满拍且是整拍的记 `implicit`；行末劈开的小节两半按拍数合（`song::split_bars`）；松叶画到行尾的半条走 `OpenWedge` 接下一系统。
+- **约束与会话**（10g，`song/constraints.rs`、`session.rs`）：`assemble_with(pages, title, &Constraints)`——关联表（`slots`）、按 id 钉住的事实（删掉 / 改时值 / 改音高，
+  落在预发号之后的音符上、标 `pinned`，满拍裁决不给钉住的出候选）、从某系统起改的谱号 / 调号 / 拍号。`Session::apply(Op)`：`rebuild`（关联表，`null` = 这一行不要）、
+  `restructure`（合并 / 拆开系统，关联表回自动指派）、`pin` / `unpin`、`choose`（取第 k 个落选候选折成钉住的事实）、`context`；每次只重跑拼接（毫秒级）。
+  先拆后合时按识别认出的花括号补回接缝处的括号，不然自动指派与原来不同。点原图补认、框选重认要回识别阶段，不在会话里（P12）。
+- **核对 JSON**（10h，`song/review.rs`）：编辑器对照视图、关联表、谱行菜单要的、MusicXML 装不下的东西。形状（`version` 1，页下标 0 起、坐标原图像素、取到 0.01 像素）：
+  `pages[{pn, scale, staves[{lineYs, bars[{right, notes[{box}]}]}], jianpu}]`、`systems[{page, staves}]`（页内谱行下标）、`assignment`（与 `systems` 同形）、
+  `noteBoxes{id: {page, box, step, octave, alter, rest}}`、`markBoxes{id: {page, box, kind}}`、`doubts`、`alts{事件第一个音的 id: [...]}`、`stats`。
+  `noteBoxes` 照写出端 `Event::src_of` 取：同音高叠着的两个头只有一个 id 写进 XML。坐标取整是因为 OCR 现推与读缓存的字框末几位不同，不取整同一份底本两遍不逐字相同。
+- **TS 适配器**（方案 A 的过渡件）：乐谱走带 id 的 MusicXML，编辑器照旧 `adoptStaffXml` → `fromxml`，`xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改；
+  `src/omrrust/adapter.ts::reviewFromRust(json, xml, {rasters, call})` 把核对 JSON 包成 `StaffReviewResult`，`rebuild` / `restructure` 转调会话。
+  `StaffReviewResult.score` 收窄成 `review.ts::ReviewGeometry`（编辑器只读系统表：各系统在哪页、哪几行谱，按引用与 `pages[].result.page.staves` 比），
+  TS 识别路的 `StaffScore` 原样满足。ScoreDoc 迁进 Rust 后，识别结果直接建模型，适配器与 JSON 中转一并退役。
+- 命令行：`omr-cli recognize staff 文件 --out=目录`（`<曲>.musicxml` + `<曲>.review.json`）、`omr-cli session 文件 --ops=操作.jsonl --out=目录`（逐步写 MusicXML、`rec.json`、`review.json`，
+  报识别 id 比上一步留 / 没 / 新的个数）。核对：私有仓库 `rust-omr/adapter-check.mjs`（两遍逐字相同、id 与框一一对上、`loadScoreDoc` 后按表层取得到 id、
+  rebuild 回原指派与拆开再合回 XML 不变）、`rust-omr/session-破碎.jsonl`、`rust-omr/jianpu-fields.mjs`（简谱结果对 `omrkit/types.ts` 逐字段）、`rust-omr/doubt-cover.mjs`（错步落在可疑小节的比例）。
+
+读数（2026-11-12，P10 收尾对 P9 收尾）：简谱 94.02、独唱谱 88.91、八段锦 94.95 不变；合唱谱干净 87.58 → 87.76、扫描 75.02 → 75.02（−10 步）、矢量 96.23 → 96.19；
+新编 80.92 → 81.31（逐首 0 首退步）。合唱谱还有 22 首「改关联」比 P9 多（指派与大谱表合并在个别曲子上配错，全档净少 22）。
+
 ### 简谱路线（`omr-jianpu`，P7：7a–7i）
 
 与 TS 那条「先做十几种块手术、再按连通块认」的路不同：**认数字不靠连通块外框**，数字与上下的线、点、弧粘成一块也不要紧。
@@ -445,9 +492,9 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 
 没做（留后）：
 - 功能：下滑音、被数字断成两截的三连音、倚音串与倚音的低八度点、粘成一块的延长记号；裁决里的歌词纠休止、0 复原、小节线读成 1 的反向、同系统各声部拍位对齐；
-  换候选 / 钉住事实的会话接口；房子、连音括线、跨行的半条弧、嵌套弧的拆分；
+  换候选 / 钉住事实的会话接口（`JpNum::alts` 已写出）；房子、连音括线、跨行的半条弧、嵌套弧的拆分；
   段落标记、力度文字、跳转（D.S. / Fine）与 segno；行中转拍号、混合拍的几个拍号；副标题与书眉的细分、页脚注；参照歌词互证；
-  歌词字的候选与可疑；矢量档（7j）；按数字高归一的工作分辨率与 OCR 并发（单曲提速）。
+  矢量档（7j）；按数字高归一的工作分辨率与 OCR 并发（单曲提速）。
 - 精度：**高音点粘在弧上、不粘数字的**（弧的两端正落在点上，迦南 1850 一串 1' 读成 1）——试过「隔一段空白往上找坠着的圆头」，
   弧的端头、弧谷凑出假点伤了 27 首，撤了；要等弧先认下来、再看弧端有没有鼓出圆头；数字粘小节线；
   谱后诗行里独占一行的段号「二」「三」（几横之间是空的，投影断成薄片、切不成行；试过并薄片没并出来，仰看穹苍还差 113 步歌词）；
@@ -477,8 +524,8 @@ npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ 
 
 ## 已知限制
 
-- 五线谱做到混排互证（P8）与矢量档（P9：框架、音符、文字、线性符号、转曲、混排与纯矢量简谱）；版面分区、歌本切分、wasm 还没有。
-- 线性符号（P6）没做的：**跨谱表的弧**（钢琴两行之间，现在一行谱一个声部、写不出；等整曲定稿合大谱表）、**虚线弧**（等宽等距的短横划排成的弧，Holy Holy Holy 一半的弧）、
+- 五线谱做到混排互证（P8）、矢量档（P9）与整曲结果模型、会话、核对 JSON（P10）；版面分区、歌本切分、wasm、接进编辑器（Tauri 命令）还没有。
+- 线性符号（P6）没做的：**跨谱表的弧**（钢琴两行之间；大谱表已合（10d），弧端还不挂另一谱表的音）、**虚线弧**（等宽等距的短横划排成的弧，Holy Holy Holy 一半的弧）、
   八度线（8va 虚线及改音高）、带括号的连音括线（合唱谱补 61 步）、刮奏线、踏板线；房号不读字、跨页的房子与弧不接续；
   弧穿过符干以外的墨（被符杠、歌词压着）断开不接，嵌套弧、首尾相接的弧只按各自两端挂；倚音上的小弧挂不上（倚音没认）；
   松叶两可端点要的音符几何（`rec.json` 的 `notes`）没写；延音线 / 圆滑线之分在漏头的和弦上靠不住。
@@ -489,7 +536,7 @@ npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ 
 - 奏法：琶音线、震音、顿音（楔形点）、换气记号没做；干端那一侧的断奏点、保持线不认；谱表里压着线的记号（被线切碎）认不出。
   连音只认带数字的三连音（三个时值相同的和弦），带休止的、二连五连六连、只有括号的没做；拍号不明或小节另有错的收不下。
 - 满拍裁决：  不满拍的不补（回原图补漏音、补附点要有墨的证据，没做）；拍号存疑时按多数小节的时值和反过来定拍号没做；满而不齐只记可疑、不改；
-  可疑清单只有满拍这几类（裁决时第一二名接近、无主墨、沿用的调号拍号还没记）；元素还没有稳定 id 与落选候选。
+  可疑清单还没记：符头裁决第一二名接近（裁决没留第二名）、无主墨、混排互证改过的地方、把握低的拆分。
   加线没建成元素：加线位补搜（有加线而头没认出的地方放宽种子 / 干的要求）没做，谱表外的头查全比表内低六七个点。
 - 并排粘连的头、全音符的二度叠置没做；扫描档的空心头查全低（环断口、孔糊死），留给扫描档专项。空心头找孔每页多两遍整页洪泛，识别耗时涨了约四成，未优化。
 - 休止：扫描档查全查准都低（断笔、糊团），留给扫描档专项；断了干的小号符头（两个头靠残干连着、头不够种子框大）会读成四分休止（齐来谢主歌一处）；多小节休止（长横杠加数字）没做。
@@ -501,3 +548,8 @@ npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ 
   歌词与文字指示的字号和位置（只有页眉带字号）、一个音上换和弦、歌词改挂下面那行谱（呼应句、页顶的词）、多声部各自的词、按拼写拆跨音的英文词。
 - 合唱谱的文字指示（表情术语以外的整句、中文指示）基本没收（干净合唱谱的页眉 9c 已从文字层与小图取到）。
 - 歌词行与下一行谱上方的文字（和弦以外）混在同一条带里时只按内容与远近分，没有用版面分区（1.3 仍未做）。
+- 整曲与结果模型（P10）留后：声部标签读字（行首「S.A.」「Piano」「女高」，特征字段已留、恒为空）；方括号写 `<part-group>`、系统里没印的谱表写 `print-object="no"`、
+  人声对（两行间有词）的拆分判据；会话里钉住改音高只改头的位置与临时记号、混排互证还会动钉住的和弦；改上下文只到系统粒度、改切分后按系统号记的上下文清掉；
+  简谱路线的会话（换候选 / 钉住）没接；会话回调现在是同步的（Node 里调 CLI 测），P12 接 Tauri 时改异步；适配器的 `stats` 只有音数、小节、满拍、声部、系统几样。
+- 简谱结果对 `omrkit/types.ts` 还没写出的字段（功能没做）：行内转拍号 `StaffRow.meters` / `JpNum.timeChange`、`finalBarlineThin`、页眉逐字源位 `TextRegion.chars`、
+  `subtitlesMore`、`headerNotes`、`tempoBeat`、`footnotes`、参照歌词互证 `lyricCheck`。
