@@ -191,6 +191,13 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
     for si in 0..f.staves.len() {
         all.extend(hollow::hollow_heads(f, &holes, &claims, si, from_of(si), scale_of(&tpl)));
     }
+    // 环有缺口、内腔漏出去的空心头
+    if std::env::var("OMR_NO_OPEN").is_err() {
+        for si in 0..f.staves.len() {
+            let more = hollow::open_cavity_heads(f, &holes, &claims, si, from_of(si), scale_of(&tpl), &all);
+            all.extend(more);
+        }
+    }
 
     // 两声部同音共用一个头（上下各一根干）：一个头出两个音，各挂各的干
     let scale = scale_of(&tpl);

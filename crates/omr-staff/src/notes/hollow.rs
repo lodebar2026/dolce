@@ -236,3 +236,181 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
     }
     out
 }
+
+/// 开口内腔离谱表上下至多几格：歌词里的字母 o 也围得出一个。
+const OPEN_BAND: f64 = 2.0;
+/// 开口内腔的宽、高下限（相对线距）：比封闭的孔严，开口的白不论形状，太小的是笔画间的缝。
+const OPEN_HOLE: (f64, f64) = (0.45, 0.3);
+/// 开口内腔挂上的干比本行干宽中位宽出这么多倍的不收。
+const STEM_WIDE: f64 = 1.5;
+/// 开口内腔收出的头盒里的墨占比范围（环）：实心头满、空当几乎没墨。
+const OPEN_FILL: (f64, f64) = (0.3, 0.75);
+/// 开口内腔收出的头盒（相对线距，照本页头的放大倍数放大）。
+const OPEN_HEAD: (f64, f64) = (1.25, 1.0);
+/// 上下隔着这么多格以内（且多于一格）有实心头、横向又相交的：内腔是弯回符干的八分符尾围出来的。
+const FLAG_REACH: f64 = 7.0;
+
+/// 干在头外那一截的墨宽中位（像素）：从头心起 0.8 格往干梢量到梢前 0.3 格。
+fn stem_width(f: &PageFrame, h: &Head, st: &Stem, sp: f64) -> f64 {
+    let cy = h.y.round() as i64;
+    let (a, b) = if st.up { (st.top + (0.3 * sp) as i64, cy - (0.8 * sp) as i64) } else { (cy + (0.8 * sp) as i64, st.bottom - (0.3 * sp) as i64) };
+    let mut v: Vec<i64> = (a..=b).filter(|&y| f.ink.at(st.x, y) == crate::frame::ink::INK).map(|y| super::stems::width_at(&f.ink, st.x, y, sp as i64)).collect();
+    if v.is_empty() {
+        return 0.0;
+    }
+    v.sort();
+    v[v.len() / 2] as f64
+}
+
+/// **开口内腔** → 二分头：扫描件上头的环有缺口（一笔印淡、二值化断开），内腔从缺口漏到谱线间的空白里，
+/// [`page_holes`] 找不到孔。改认「四向都碰得到墨」的白像素：从它往左右、上下各走不过一个内腔那么远都碰到符号墨
+/// （谱线不算墨，漏进谱间的白往上下走不到墨），按四连通拼成块，内腔大小的块、以它的中心定头。
+/// 内腔不论形状（缺口那一侧常连着头与干之间的一截），改按头盒里的墨像环、要挂得上干、不是符尾围出来的收。
+/// `taken`：已认出的头，盖住的不再收。
+pub fn open_cavity_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usize, x_from: f64, scale: f64, taken: &[(Head, Option<Stem>)]) -> Vec<(Head, Option<Stem>)> {
+    let s = &f.staves[si];
+    let sp = s.space();
+    let img = &holes.imgs[0];
+    let (bw, bh) = (img.w as i64, img.h as i64);
+    let (lo, hi) = band(f, si);
+    let xm = (s.left + s.right) / 2.0;
+    let y0 = (s.top(xm) - OPEN_BAND * sp).max(lo).max(0.0) as i64;
+    let y1 = ((s.bottom(xm) + OPEN_BAND * sp).min(hi).ceil() as i64).min(bh - 1);
+    let x0 = x_from.max(0.0) as i64;
+    let x1 = (s.right.ceil() as i64).min(bw - 1);
+    if x1 <= x0 || y1 <= y0 {
+        return Vec::new();
+    }
+    let (rw, rh) = ((x1 - x0 + 1) as usize, (y1 - y0 + 1) as usize);
+    let reach_h = (HOLE_W.1 * scale * sp).ceil() as i64;
+    let reach_v = (HOLE_H.1 * scale * sp).ceil() as i64;
+    let ink = |x: i64, y: i64| img.ink(x, y);
+    // 各白像素往四向到墨的距离是否都在 reach 内：逐行、逐列各扫两遍
+    let mut ok = vec![0u8; rw * rh];
+    for y in 0..rh {
+        let yy = y0 + y as i64;
+        let mut last: Option<i64> = (x0 - reach_h..x0).rev().find(|&x| ink(x, yy));
+        for x in 0..rw {
+            let xx = x0 + x as i64;
+            if ink(xx, yy) {
+                last = Some(xx);
+            } else if last.is_some_and(|l| xx - l <= reach_h) {
+                ok[y * rw + x] = 1;
+            }
+        }
+        let mut next: Option<i64> = (x1 + 1..=x1 + reach_h).find(|&x| ink(x, yy));
+        for x in (0..rw).rev() {
+            let xx = x0 + x as i64;
+            if ink(xx, yy) {
+                next = Some(xx);
+            } else if ok[y * rw + x] == 1 && next.is_some_and(|n| n - xx <= reach_h) {
+                ok[y * rw + x] = 2;
+            }
+        }
+    }
+    for x in 0..rw {
+        let xx = x0 + x as i64;
+        let mut last: Option<i64> = (y0 - reach_v..y0).rev().find(|&y| ink(xx, y));
+        for y in 0..rh {
+            let yy = y0 + y as i64;
+            if ink(xx, yy) {
+                last = Some(yy);
+            } else if ok[y * rw + x] == 2 && last.is_some_and(|l| yy - l <= reach_v) {
+                ok[y * rw + x] = 3;
+            }
+        }
+        let mut next: Option<i64> = (y1 + 1..=y1 + reach_v).find(|&y| ink(xx, y));
+        for y in (0..rh).rev() {
+            let yy = y0 + y as i64;
+            if ink(xx, yy) {
+                next = Some(yy);
+            } else if ok[y * rw + x] == 3 && next.is_some_and(|n| n - yy <= reach_v) {
+                ok[y * rw + x] = 4;
+            }
+        }
+    }
+    let min_area = (sp * sp * 0.06).max(4.0) as usize;
+    // 本页没认出封闭的空心头就不找（TS 同：头盒照本页二分头定）
+    if !taken.iter().any(|(h, _)| h.kind == HeadKind::Half) {
+        return Vec::new();
+    }
+    // 本行已认出的头的干宽中位：开口内腔挂上的「干」照它比（粗笔记号的竖笔被当成干）
+    let mut sw: Vec<f64> = taken.iter().filter(|(h, _)| h.staff == si).filter_map(|(h, st)| st.as_ref().map(|st| stem_width(f, h, st, sp))).filter(|&w| w > 0.0).collect();
+    sw.sort_by(f64::total_cmp);
+    let stem_med = sw.get(sw.len() / 2).copied().unwrap_or(f.unit.thick);
+    let (hw, hh) = ((OPEN_HEAD.0 * scale * sp).round() as i64, (OPEN_HEAD.1 * scale * sp).round() as i64);
+    let mut out: Vec<(Head, Option<Stem>)> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    for i in 0..ok.len() {
+        if ok[i] != 4 {
+            continue;
+        }
+        ok[i] = 5;
+        stack.push(i);
+        let (mut n, mut ax, mut ay, mut bx, mut by) = (0usize, rw, rh, 0usize, 0usize);
+        while let Some(k) = stack.pop() {
+            let (x, y) = (k % rw, k / rw);
+            n += 1;
+            (ax, ay, bx, by) = (ax.min(x), ay.min(y), bx.max(x), by.max(y));
+            let nb = [(x > 0).then(|| k - 1), (x + 1 < rw).then(|| k + 1), (y > 0).then(|| k - rw), (y + 1 < rh).then(|| k + rw)];
+            for q in nb.into_iter().flatten() {
+                if ok[q] == 4 {
+                    ok[q] = 5;
+                    stack.push(q);
+                }
+            }
+        }
+        let (cw, ch) = ((bx - ax + 1) as f64 / sp, (by - ay + 1) as f64 / sp);
+        if n < min_area || cw < OPEN_HOLE.0 || cw > HOLE_W.1 * scale || ch < OPEN_HOLE.1 || ch > HOLE_H.1 * scale {
+            continue;
+        }
+        let cav = (x0 + ax as i64, y0 + ay as i64, (bx - ax + 1) as i64, (by - ay + 1) as i64);
+        // 封闭的孔归 [`hollow_heads`] 管：它那里丢了的（升降号、实心墨夹出的空当）这里不再捡
+        let cross = |a: &(i64, i64, i64, i64), b: &(i64, i64, i64, i64)| a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3;
+        if holes.list.iter().any(|(r, _, _)| (r.2 as f64) <= HOLE_W.1 * scale * sp && (r.3 as f64) <= HOLE_H.1 * scale * sp && cross(r, &cav)) {
+            continue;
+        }
+        let (cx, cy) = (cav.0 as f64 + cav.2 as f64 / 2.0, cav.1 as f64 + cav.3 as f64 / 2.0);
+        let pos = s.pos(cx, cy).round() as i32;
+        if !(POS_MIN..=POS_MAX).contains(&pos) {
+            continue;
+        }
+        // 已认出的头盖着的不收；上下隔一格多有实心头、横向相交的，这「内腔」是弯回干的符尾
+        let clash = taken.iter().chain(out.iter()).any(|(h, _)| {
+            if h.staff != si {
+                return false;
+            }
+            let (dx, dy) = ((h.x - cx).abs(), (h.y - cy).abs());
+            (dx < hw as f64 * 0.8 && dy < sp * 0.6) || (h.kind == HeadKind::Filled && dx < hw as f64 && dy >= sp && dy <= FLAG_REACH * sp)
+        });
+        if clash {
+            continue;
+        }
+        let (bx0, by0) = ((cx - hw as f64 / 2.0).round() as i64, (cy - hh as f64 / 2.0).round() as i64);
+        let mut n_ink = 0;
+        for y in by0..by0 + hh {
+            for x in bx0..bx0 + hw {
+                n_ink += img.ink(x, y) as i64;
+            }
+        }
+        let fill = n_ink as f64 / (hw * hh).max(1) as f64;
+        if fill < OPEN_FILL.0 || fill > OPEN_FILL.1 {
+            continue;
+        }
+        let head = Head { staff: si, x: cx, y: cy, pos, kind: HeadKind::Half, fill: 0.0, score: 0.0, acc: None, rid: None };
+        if !ledger_ok(f, &head, hw as f64 / 2.0) {
+            continue;
+        }
+        let Some(st) = find_stem(&f.ink, &head, sp, f.unit.thick, Some((bx0, bx0 + hw - 1)), &|x| claims.bar_col(si, x)) else { continue };
+        // 挂上的干要像本行的干那么细：粗笔记号（花括号、大号字）两笔夹出的白，「干」是它自己的粗笔
+        let stw = stem_width(f, &head, &st, sp);
+        if stw > (STEM_WIDE * stem_med).max(stem_med + 1.0) {
+            continue;
+        }
+        if std::env::var("OMR_OPEN_DEBUG").is_ok() {
+            eprintln!("开口内腔 行{si} 孔 {cav:?} 位 {pos} 墨 {fill:.2} 干 {st:?} 干宽 {stw} / {stem_med}");
+        }
+        out.push((head, Some(st)));
+    }
+    out
+}
