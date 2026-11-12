@@ -2298,85 +2298,47 @@ rec 全被按在一个弱核上、按歌词条数累积的形状。
 `OMR_THREADS` / `--threads=N` 定多线程时用几个核（默认 4）。`--profile` 会把实际生效的
 `模式/线程数` 一并打出来。**换机器请先用这三种跑一遍对比再定**，别照搬默认值。
 
-### 批量比逐张起进程快得多
+### 命令行（`scripts/omr-cli.mjs`，2026-11 起识别走 Rust）
 
-模型 21MB、ONNX 图反序列化 + ORT 初始化 + JIT 预热约 **2.4s**（M5 实测，弱 CPU 上更久）。
-逐张调用等于每张都付一遍，浏览器版页面常驻只付一次——服务端集成若是「一张图起一次进程」，
-这笔固定开销足以把原生推理的优势吃光。CLI 因此支持多图/目录一次跑完：
-
-```bash
-node scripts/omr-cli.mjs a.jpg b.jpg 谱子目录/ -o 出目录/
-```
-
-或者把 `out/cli/omr.js` 当库 `import` 进常驻服务（`recognizeImage`），只加载一次模型。
-
-### 命令
+识别迁 Rust（P12）后，`omr-cli.mjs` 不再 import TS 识别：它起 Rust 的 `omr-cli run`（批量识别，一个文件一首，判路同编辑器），
+逐行收 JSON（五线谱是带识别 id 的 MusicXML，简谱是 `RecognizedScore`），再用编辑器同一套写出端（`src/cli/omrfmt.ts` → `out/cli/omrfmt.js`，
+只依赖 Node 内置模块）转成要的格式；`split` 原样转给 Rust 的 `omr-cli split`，`--recognize -f` 选 MusicXML 以外的格式时先写 MusicXML 再逐首转。
+上面几节（ORT 线程、预热）讲的是 TS 识别在 Node 里的推理，只剩回归脚本经 `out/cli/omr.js` 用，P13 随 TS 识别删。
 
 ```bash
-npm run build:cli && node scripts/omr-cli.mjs <图…|目录…> [-f shige|tomato|jpwabc] [-o 出]
-                       [--profile] [--thread-mode=auto|always|single] [--threads=N]
-                       [-l 歌词.txt [--lyrics-report 核对.json]]     # 参照歌词只配单张图
-npm run build && npm run build:cli && node ../dev/scripts/omr-node-check.mjs [曲名子串…]
+npm run build:cli && node scripts/omr-cli.mjs <图…|PDF…|目录…> [-f 格式] [-o 出] [--kind=auto|staff|jianpu] [--profile]
+node scripts/omr-cli.mjs split 歌本.pdf -o 歌谱/ [--recognize -f 123]
 ```
 
-后者是 Node 管线的验收依据：同一张图两端各跑一遍，比文本谱原文与结构统计，逐字符必须相同。
-模型默认读 `public/redist/ocr/`（env `OMR_MODELS` 可改），线程数 env `OMR_THREADS`。
+- 识别程序按 包内同目录 → `DOLCE_OMR_BIN` → 仓库 `crates/target/release` 找；模型按 `OMR_MODELS` → 识别程序旁的 `models/` → 仓库 `public/redist/ocr` 找。
+- 输入多了 PDF 与五线谱（以前只吃位图简谱）；格式多了 `musicxml`（五线谱写出时去掉识别 id）。
+- `-l / --lyrics` 参照歌词互证还没迁到 Rust，报「暂不支持」退出；`--threads` / `--thread-mode` 不再用（推理线程由识别程序自己定）。
+- 批量仍比逐张起进程快：OCR 模型加载与推理会话初始化每个进程付一次。
 
 ### 打包分发（`scripts/pack-omr.mjs`）
 
-打成**自包含**分发包：解压即用，不联网、不装依赖，只要目标机有 Node ≥20。
-支持交叉打包——在 mac 上就能打出 Linux / Windows 的包。
+打成**自包含**分发包：解压即用，不联网、不装依赖，目标机要 Node ≥ 20（只用来转输出格式）。
 
 ```bash
-npm run build:cli && node scripts/pack-omr.mjs                     # 当前平台
-node scripts/pack-omr.mjs --targets=all                            # 全部 5 个
-node scripts/pack-omr.mjs --targets=linux-x64,win32-x64            # 挑几个
-node scripts/pack-omr.mjs --targets=linux-x64 --libc=musl          # Alpine 那类
-node scripts/pack-omr.mjs --targets=win32-x64 --no-slim            # Windows 保留 DirectML
+npm run build:cli && node scripts/pack-omr.mjs                     # 当前平台（识别程序没编就当场 cargo build --release）
+node scripts/pack-omr.mjs --targets=linux-x64 --bin-dir=… --pdfium-dir=…   # 别的平台：识别程序与 PDFium 要先在那个平台编好
 node scripts/pack-omr.mjs --targets=win32-x64 --no-crt             # Windows 不内置 VC++ 运行库
 ```
 
-脚本本身在 macOS / Linux / Windows 都能跑：外部命令只用 npm（Windows 上要 `npm.cmd`，
-execFile 不走 shell 找不到裸 `npm`，Git Bash 里也一样）与 tar，体积统计走 Node 自己遍历
-（Windows 没有 `du`）。**打 zip 不用 `zip` 命令**（Windows 没有）：bsdtar 能产 zip，但要显式
-`--options zip:compression=deflate`，否则 `-a` 默认 store、85M 的包原样存成 85M；GNU tar 不认
-zip 格式，那种环境才回退到 `zip`。
+包里：Rust 识别程序 `omr-cli`（ONNX Runtime 静态链在里面）、PDFium 动态库（识别程序在自己旁边找）、`models/`、
+`omr-cli.mjs`（Windows 另附 `omr-cli.cmd`）、`omrfmt.js` 及其 chunk。**不再带 node_modules**（onnxruntime-node、sharp、pdfjs-dist 都去掉了）。
+darwin-arm64：目录 69M、tar.gz 36M（以前 96M / 46M）。
 
-产物 `out/pkg/dolce-omr-<版本>-<os>-<cpu>[-musl].{tar.gz|zip}`（Windows 出 zip），
-内含 `omr.js` + 共享 chunk + `omr-cli.mjs`（Windows 另附 `omr-cli.cmd`）+ `models/` + `node_modules/`。
-
-| 目标 | 目录 | 压缩包 |
-|---|---|---|
-| darwin-arm64 | 96M | 46M |
-| linux-x64 | 98M | 50M |
-| linux-arm64 | 78M | 43M |
-| win32-x64 | 83M（`--no-slim` 123M） | 44M（`--no-slim` 61M） |
-| win32-arm64 | 82M（`--no-slim` 127M） | 44M（`--no-slim` 62M） |
-
-**交叉打包靠什么成立**：两个原生依赖都是预编译分发，不在安装时编译——sharp 按平台拆成
-`@img/sharp-<os>-<cpu>` 子包（`npm i --os= --cpu= --libc=` 能精确拉到），onnxruntime-node 是
-单包内含全平台二进制（装完再裁掉别的平台）。所以不需要目标平台的工具链。**但产物没在目标平台
-跑过**，脚本只做静态校验（目标平台的 ORT binding、运行库、sharp 平台包在不在），到目标机上
-务必 `omr-cli.mjs <图>` 自检一次。
-
-几处踩过的坑：
-
-- 生成的 `package.json` **不能写 `os`/`cpu` 字段**——npm 会拿它跟宿主比，交叉打包时自己
-  `npm install` 到那个目录就先 `EBADPLATFORM` 挂掉。改用自定义的 `target` 字段做记录。
-- vite 多入口把 `omr.js` 与 `index.js` 的公共代码拆成了共享 chunk（`lyrics.js`），只拷
-  `omr.js` 会 `ERR_MODULE_NOT_FOUND` → 顺着相对 import 递归收全。
-- `runtime.node.ts` 找模型**按产物位置解析，不看 cwd**（`import.meta.url` → 同级 `models/`
-  → 仓库 `public/redist/ocr`），否则第三方在任意目录跑就找不到模型。
-- macOS 的 `libonnxruntime.1.dylib` 与 `libonnxruntime.1.29.0.dylib` 是两个完整副本（各 42MB），
-  换硬链接后 tar 存成 hardlink 记录，直接省 42MB。
-- Windows 包里除 `onnxruntime.dll` 还有 `DirectML.dll`/`dxcompiler.dll`/`dxil.dll` 共 ~36MB，
-  那是 DirectML EP 用的，我们只跑 CPU EP，**默认删掉**（`--no-slim` 保留）。已在 Windows 上
-  实测：删后 16 张图全跑通、与 macOS 侧逐字一致。另外 Windows 上 shebang 不起作用，
-  故另附 `omr-cli.cmd`。
-- `engines` 写 `>=18.17`（sharp 0.35 的下限）：实测 Node 18.20.5 能跑，不必卡 20。
-- Windows 的 **VC++ 运行库直接内置在包里**（app-local 部署），用户不必先装 vc_redist——见下一节。
+识别程序与 PDFium 都是原生的，**不能交叉打包**（以前靠 npm 预编译包交叉打，现在不行）：别的平台的识别程序按
+`crates/target/<三元组>/release/` → `--bin-dir` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`（omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir` 找，缺了报错不打。
+产物 `out/pkg/dolce-omr-<版本>-<os>-<cpu>.{tar.gz|zip}`（Windows 出 zip）。打 zip 不用 `zip` 命令（Windows 没有）：bsdtar 能产 zip，
+但要显式 `--options zip:compression=deflate`；GNU tar 不认 zip，那种环境才回退到 `zip`。
+生成的 `package.json` 不能写 `os` / `cpu` 字段（npm 会拿它跟宿主比），用自定义的 `target` 字段记录。
 
 ### Windows 包内置 VC++ 运行库（`scripts/vcredist.mjs`）
+
+（下面是 TS 识别时代的包：`onnxruntime.dll` 与 `onnxruntime_binding.node`。现在包里是 Rust 识别程序 `omr-cli.exe`，ORT 静态链入、同样 `/MD` 编，
+导入的是同一批 CRT，与桌面版同理；按目录算需求、闭包、校验这一套照用。）
 
 `onnxruntime.dll` 与 `onnxruntime_binding.node` 动态链接 VC++ 运行库——查导入表，实际要的是
 `VCRUNTIME140.dll` / `VCRUNTIME140_1.dll`（arm64 没有 `_1`）/ `MSVCP140.dll` / `MSVCP140_1.dll` /

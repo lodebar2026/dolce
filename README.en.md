@@ -92,10 +92,9 @@ The interface is available in **English and Chinese**: it follows your browser l
   every format. Dropped images are routed to jianpu or staff recognition automatically (by looking for five-line staves),
   or you can choose explicitly. If staves are assigned to the wrong parts, fix the mapping in the parts panel and
   the score is rebuilt without re-recognizing.
-- **Lyrics cross-check.** The command-line recognizer (`omr-cli.mjs image --lyrics lyrics.txt`) can take the
-  song's lyric text as a reference. Look-alike characters are corrected from it and dropped characters filled
-  back in; anything else that disagrees (edition wording, extra or missing syllables, likely missed slurs, repeat
-  order) is listed for review rather than changed.
+- **Command-line recognition.** `omr-cli.mjs images-or-PDFs… -f format -o out` batch-recognizes jianpu and staff
+  images and PDFs into text notation, 123, ABC, MusicXML and the other formats, with the same recognizer and writers
+  as the editor (the `--lyrics` cross-check against a reference lyric text is temporarily unavailable).
 - **Hymnal splitting.** `omr-cli.mjs split book.pdf -o songs/` turns a paged jianpu hymnal (scanned PDF or a
   folder of page images) into one `number title.jpg` per song: pages holding several songs are cut at the titles,
   songs running over pages are joined into one image with page numbers removed and system spacing kept even, and

@@ -1,38 +1,25 @@
 #!/usr/bin/env node
-// 把简谱 OMR 命令行打成**自包含**分发包：解压即用，不联网、不装依赖（只要机器上有 Node ≥18.17）。
-// 支持交叉打包——在 mac 上就能打出 Linux / Windows 的包。
+// 把识谱命令行打成**自包含**分发包：解压即用，不联网、不装依赖（只要机器上有 Node ≥ 20，用来转输出格式）。
+//
+// 包里：Rust 识别程序 `omr-cli`（crates/omr-cli，ONNX Runtime 静态链在里面）+ PDFium 动态库 + `models/`（OCR 模型）
+//      + `omr-cli.mjs`（入口：起识别程序、转格式）+ `omrfmt.js` 及其 chunk（编辑器同一套写出端，只依赖 Node 内置模块）。
+// 不再带 node_modules（以前的 onnxruntime-node、sharp、pdfjs-dist 都没了）。
 //
 // 用法（从仓库根跑，先 npm run build:cli）：
-//   node scripts/pack-omr.mjs                                 # 当前平台
-//   node scripts/pack-omr.mjs --targets=all                   # 全部 5 个目标
-//   node scripts/pack-omr.mjs --targets=linux-x64,win32-x64   # 挑几个
-//   node scripts/pack-omr.mjs --targets=linux-x64 --libc=musl # Alpine 那类 musl 发行版
-//   node scripts/pack-omr.mjs --no-slim                       # Windows 包保留 DirectML（见下）
+//   node scripts/pack-omr.mjs                                 # 当前平台（识别程序没编就当场 cargo build --release）
+//   node scripts/pack-omr.mjs --targets=linux-x64,win32-x64   # 别的平台：识别程序要先在那个平台（或 CI）编好，见下
 //   node scripts/pack-omr.mjs --no-crt                        # Windows 包不内置 VC++ 运行库
 //   node scripts/pack-omr.mjs --keep                          # 保留目录、不打压缩包
 //
-// 本脚本自身在 macOS / Linux / Windows 都能跑：外部命令只用 npm（Windows 上是 npm.cmd）与
-// tar（Win10 1803+ 自带 bsdtar；GNU tar 不认 zip，那种环境回退到 zip 命令），体积统计走 Node
-// 自己遍历，不依赖 du。
+// 识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的 `omr-cli` 按
+// `crates/target/<三元组>/release/` → `--bin-dir=目录` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`
+// （omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir=目录` 找；缺了就报错，不打半成品。
 //
-// 产物：out/pkg/dolce-omr-<版本>-<os>-<cpu>[-musl].{tar.gz|zip}
-//
-// ## 交叉打包靠什么成立
-// 两个原生依赖都是**预编译分发**，不在安装时编译：
-//   - sharp 按平台拆成 @img/sharp-<os>-<cpu> 子包，`npm i --os= --cpu= --libc=` 能精确拉到；
-//   - onnxruntime-node 是**单包内含全平台**二进制，装完再裁掉别的平台。
-// 所以交叉打包不需要目标平台的工具链。win32-x64 的产物已在 Windows 上实测跑通（16 张图逐字
-// 一致）；**其余目标仍只做静态校验**（该在的文件在不在），到目标机上请 `omr-cli.mjs <图>` 自检。
-//
-// ## 各平台的裁剪要点
-//   darwin  libonnxruntime.1.dylib 与 libonnxruntime.1.29.0.dylib 是两个完整副本（各 42MB），
-//           换成硬链接，tar 存成 hardlink 记录 → 省 42MB。
-//   win32   除 onnxruntime.dll 外还带 DirectML.dll / dxcompiler.dll / dxil.dll 共 ~36MB，那是
-//           DirectML EP 用的，我们只跑 CPU EP，**默认删掉**（包从 122M 降到 85M）。
-//           已在 Windows 上实测：删后 16 张图全跑通、与 macOS 侧逐字一致。要保留用 `--no-slim`。
-import { readFile, writeFile, mkdir, rm, cp, readdir, link, unlink, chmod, stat } from "node:fs/promises";
+// 产物：out/pkg/dolce-omr-<版本>-<os>-<cpu>.{tar.gz|zip}
+import { readFile, writeFile, mkdir, rm, cp, readdir, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { crtLibrary, crtClosure, peImports } from "./vcredist.mjs";
@@ -40,11 +27,19 @@ import { crtLibrary, crtClosure, peImports } from "./vcredist.mjs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const NAME = "dolce-omr";
 const OUT = join(ROOT, "out/pkg");
+/** 与 crates/omr-source/build.rs 同一个构建号 */
+const PDFIUM_BUILD = "7881";
 
-/** ORT 有预编译二进制的目标（`node_modules/onnxruntime-node/bin/napi-v6/` 下的实际目录）。 */
-const TARGETS = ["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64", "win32-arm64"];
-/** 只跑 CPU EP，Windows 上这三个 DirectML 相关的 dll 用不到（--slim 时删）。 */
-const WIN_DML = ["DirectML.dll", "dxcompiler.dll", "dxil.dll"];
+/** 目标 → Rust 三元组、PDFium 库名。 */
+const TARGETS = {
+  "darwin-arm64": { triple: "aarch64-apple-darwin", lib: "libpdfium.dylib" },
+  "darwin-x64": { triple: "x86_64-apple-darwin", lib: "libpdfium.dylib" },
+  "linux-x64": { triple: "x86_64-unknown-linux-gnu", lib: "libpdfium.so" },
+  "linux-arm64": { triple: "aarch64-unknown-linux-gnu", lib: "libpdfium.so" },
+  "win32-x64": { triple: "x86_64-pc-windows-msvc", lib: "pdfium.dll" },
+  "win32-arm64": { triple: "aarch64-pc-windows-msvc", lib: "pdfium.dll" },
+};
+const HOST = `${process.platform}-${process.arch}`;
 
 const argv = process.argv.slice(2);
 const opt = (k, dflt) => {
@@ -52,21 +47,19 @@ const opt = (k, dflt) => {
   return hit ? hit.slice(k.length + 3) : dflt;
 };
 const KEEP = argv.includes("--keep");
-const SLIM = !argv.includes("--no-slim"); // Windows 上实测通过，默认开
-const DEDUPE = !argv.includes("--no-dedupe");
 const CRT = !argv.includes("--no-crt"); // Windows 包内置 VC++ 运行库（app-local），见 vcredist.mjs
-const LIBC = opt("libc", "glibc");
-const targetsArg = opt("targets", `${process.platform}-${process.arch}`);
-const targets = targetsArg === "all" ? TARGETS : targetsArg.split(",").map((t) => t.trim());
+const BIN_DIR = opt("bin-dir", null);
+const PDFIUM_DIR = opt("pdfium-dir", null);
+const targets = opt("targets", HOST).split(",").map((t) => t.trim());
 
 for (const t of targets) {
-  if (!TARGETS.includes(t)) {
-    console.error(`不认识的目标 ${t}；可选：${TARGETS.join(" / ")} 或 all`);
+  if (!TARGETS[t]) {
+    console.error(`不认识的目标 ${t}；可选：${Object.keys(TARGETS).join(" / ")}`);
     process.exit(1);
   }
 }
-if (!existsSync(join(ROOT, "out", "cli", "omr.js"))) {
-  console.error("缺 out/cli/omr.js —— 先跑 npm run build:cli");
+if (!existsSync(join(ROOT, "out", "cli", "omrfmt.js"))) {
+  console.error("缺 out/cli/omrfmt.js —— 先跑 npm run build:cli");
   process.exit(1);
 }
 
@@ -75,24 +68,18 @@ let CRT_LIB = new Map();
 
 const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf-8"));
 const VER = pkg.version;
-/** Windows 上没有 du，自己遍历。硬链接按 (dev,ino) 只算一次，与 du 口径一致。 */
-const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
-async function bytesOf(p, seen = new Set()) {
+/** Windows 上没有 du，自己遍历。 */
+async function bytesOf(p) {
   const st = await stat(p);
-  if (!st.isDirectory()) {
-    const key = `${st.dev}:${st.ino}`;
-    if (st.nlink > 1) { if (seen.has(key)) return 0; seen.add(key); }
-    return st.size;
-  }
+  if (!st.isDirectory()) return st.size;
   let total = 0;
-  for (const e of await readdir(p)) total += await bytesOf(join(p, e), seen);
+  for (const e of await readdir(p)) total += await bytesOf(join(p, e));
   return total;
 }
 const human = (n) => (n >= 1 << 20 ? `${Math.round(n / (1 << 20))}M` : `${Math.round(n / 1024)}K`);
 const du = async (p) => human(await bytesOf(p));
 
-/** vite 多入口会把 omr.js 与 index.js 的公共代码拆成共享 chunk（如 lyrics.js），
- *  只拷 omr.js 会 ERR_MODULE_NOT_FOUND → 顺着相对 import 递归收全。 */
+/** vite 多入口会把公共代码拆成共享 chunk，只拷入口会 ERR_MODULE_NOT_FOUND → 顺着相对 import 递归收全。 */
 async function copyWithChunks(dir, entry) {
   const seen = new Set();
   const walk = async (name) => {
@@ -107,19 +94,41 @@ async function copyWithChunks(dir, entry) {
   return [...seen];
 }
 
-/** 递归找出包里的 Windows 原生二进制（dll / node / exe），返回 [绝对路径, 依赖的 DLL 名]。 */
+/** 识别程序：别的平台按三元组目录 / --bin-dir；本机没编就当场编。 */
+function findBin(target) {
+  const { triple } = TARGETS[target];
+  const exe = target.startsWith("win32") ? "omr-cli.exe" : "omr-cli";
+  const cands = [BIN_DIR && join(BIN_DIR, exe), join(ROOT, "crates/target", triple, "release", exe), target === HOST && join(ROOT, "crates/target/release", exe)].filter(Boolean);
+  let hit = cands.find((p) => existsSync(p));
+  if (!hit && target === HOST) {
+    console.log("编识别程序（cargo build --release -p dolce-omr-cli）…");
+    execFileSync("cargo", ["build", "--release", "-p", "dolce-omr-cli"], { cwd: join(ROOT, "crates"), stdio: "inherit" });
+    hit = cands.find((p) => existsSync(p));
+  }
+  if (!hit) throw new Error(`缺 ${target} 的识别程序（找过：${cands.join("、")}）——在那个平台或 CI 上 cargo build --release -p dolce-omr-cli，再用 --bin-dir 指过来`);
+  return { path: hit, exe };
+}
+
+function findPdfium(target) {
+  const { triple, lib } = TARGETS[target];
+  const cands = [PDFIUM_DIR && join(PDFIUM_DIR, lib), join(homedir(), ".cache/dolce-pdfium", PDFIUM_BUILD, triple, lib)].filter(Boolean);
+  const hit = cands.find((p) => existsSync(p));
+  if (!hit) throw new Error(`缺 ${target} 的 PDFium（找过：${cands.join("、")}）——编那个目标时 omr-source 的构建脚本会下载，或用 --pdfium-dir 指过来`);
+  return { path: hit, lib };
+}
+
+/** 递归找出包里的 Windows 原生二进制（dll / exe），返回 [绝对路径, 依赖的 DLL 名]。 */
 async function scanPe(dir, out = []) {
   for (const e of await readdir(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
     if (e.isDirectory()) { await scanPe(p, out); continue; }
-    if (!/\.(dll|node|exe)$/i.test(e.name)) continue;
+    if (!/\.(dll|exe)$/i.test(e.name)) continue;
     out.push([p, peImports(await readFile(p))]);
   }
   return out;
 }
 
-/** 每个目录里缺哪些 CRT（app-local 的搜索范围是**加载者自己那个目录**，所以要按目录分别算）。
- *  返回 Map<目录, Set<小写 dll 名>>；lib 为 null 时只报需求、不算闭包（校验用）。 */
+/** 每个目录里缺哪些 CRT（app-local 的搜索范围是加载者自己那个目录）。lib 为 null 时只报需求、不算闭包（校验用）。 */
 async function crtNeeds(dir, lib) {
   const byDir = new Map();
   for (const [file, deps] of await scanPe(dir)) {
@@ -136,47 +145,28 @@ async function crtNeeds(dir, lib) {
   return new Map([...byDir].map(([d, needs]) => [d, crtClosure(needs, lib)]));
 }
 
-/** Windows：把 VC++ 运行库放到用它的二进制旁边（app-local），省掉用户装 vc_redist 这一步。
- *  为什么不静态链接、app-local 凭什么生效、DLL 怎么从官方 exe 里抠出来 —— 见 scripts/vcredist.mjs。 */
+/** Windows：把 VC++ 运行库放到用它的二进制旁边（app-local），省掉用户装 vc_redist 这一步（见 scripts/vcredist.mjs）。 */
 async function installCrt(dir, cpu) {
   const lib = (CRT_LIB = await crtLibrary(cpu));
   let n = 0;
-  // 闭包会带出新依赖（MSVCP140 → VCRUNTIME140_1 → …），拷完再算一轮直到不再缺
   for (let round = 0; round < 4; round++) {
     const needs = await crtNeeds(dir, lib);
     if (!needs.size) break;
     for (const [d, dlls] of needs) {
       for (const name of dlls) { await writeFile(join(d, name), lib.get(name)); n++; }
-      console.log(`内置 VC++ 运行库 → ${d.replace(dir + "/", "").replace(/\\/g, "/")}：${[...dlls].sort().join(" ")}`);
+      console.log(`内置 VC++ 运行库：${[...dlls].sort().join(" ")}`);
     }
   }
   if (!n) console.log("内置 VC++ 运行库：包里没有依赖 CRT 的二进制，跳过");
 }
 
-/** 装完之后静态校验：目标平台的 ORT 二进制与 sharp 平台包必须真的在包里。
- *  交叉打包最容易出的错就是 npm 静默装了宿主平台的包，跑到目标机上才炸。 */
-async function verify(dir, os, cpu, libcTag) {
+async function verify(dir, os, exe, lib) {
   const problems = [];
-  const ortDir = join(dir, "node_modules", "onnxruntime-node", "bin");
-  const napi = existsSync(ortDir) ? (await readdir(ortDir))[0] : null;
-  const binDir = napi ? join(ortDir, napi, os, cpu) : null;
-  if (!binDir || !existsSync(join(binDir, "onnxruntime_binding.node"))) {
-    problems.push(`缺 onnxruntime_binding.node（${os}/${cpu}）`);
-  }
-  const libRe = os === "win32" ? /^onnxruntime\.dll$/ : os === "darwin" ? /\.dylib$/ : /\.so(\.\d+)?$/;
-  if (binDir && existsSync(binDir) && !(await readdir(binDir)).some((f) => libRe.test(f))) {
-    problems.push(`缺 ${os} 的 onnxruntime 运行库`);
-  }
-  const sharpPkg = `@img/sharp-${libcTag === "musl" ? `${os}musl` : os}-${cpu}`;
-  if (!existsSync(join(dir, "node_modules", sharpPkg))) problems.push(`缺 ${sharpPkg}`);
-  // 内置 CRT 时，包里不该再有哪个二进制缺 VC++ 运行库（缺了到 Windows 上才炸）
-  if (CRT && os === "win32") {
-    for (const [d, dlls] of await crtNeeds(dir, null)) {
-      problems.push(`${d.replace(dir + "/", "")} 缺 ${[...dlls].sort().join(" ")}`);
-    }
-  }
-  for (const f of ["omr.js", "omr-cli.mjs", "models/ppocrv6_dict.txt"]) {
+  for (const f of [exe, lib, "omrfmt.js", "omr-cli.mjs", "models/ppocrv6_dict.txt"]) {
     if (!existsSync(join(dir, f))) problems.push(`缺 ${f}`);
+  }
+  if (CRT && os === "win32") {
+    for (const [d, dlls] of await crtNeeds(dir, null)) problems.push(`${d.replace(dir + "/", "")} 缺 ${[...dlls].sort().join(" ")}`);
   }
   return problems;
 }
@@ -191,9 +181,7 @@ function hasBsdtar() {
   return _bsdtar;
 }
 
-/** 打包成 zip 或 tar.gz。**不用 zip 命令**——Windows 上没有；bsdtar 能产 zip，
- *  但要显式给 deflate，否则 -a 默认 store（85M 的包会原样存成 85M）。
- *  GNU tar 不认 zip 格式，那种环境（多数 Linux）回退到 zip 命令。 */
+/** 打包成 zip 或 tar.gz。bsdtar 产 zip 要显式给 deflate；GNU tar 不认 zip，回退到 zip 命令。 */
 function archive(file, dirName, asZip) {
   if (!asZip) { execFileSync("tar", ["czf", file, "-C", OUT, dirName]); return; }
   if (hasBsdtar()) {
@@ -204,170 +192,105 @@ function archive(file, dirName, asZip) {
   catch { throw new Error("打 zip 需要 bsdtar 或 zip 命令，两者都没有"); }
 }
 
+function readme(os, cpu) {
+  const win = os === "win32";
+  const run = win ? "omr-cli.cmd" : "./omr-cli.mjs";
+  const c = win ? "::" : "#";
+  return `# ${NAME} ${VER}
+
+识谱命令行：简谱、五线谱的图片或 PDF → 文本谱 / 123 / MusicXML 等。自包含：解压即用，不联网、不装依赖，
+只要机器上有 Node ≥ 20（转输出格式用；识别本身是包里的原生程序 \`${win ? "omr-cli.exe" : "omr-cli"}\`）。
+本包目标平台 **${os}/${cpu}**。
+
+\`\`\`${win ? "bat" : "bash"}
+${run} 图片.jpg                       ${c} 默认输出诗歌本文本谱到 stdout
+${run} 图片.jpg -f 123 -o 曲.123      ${c} 换格式、写文件
+${run} 合唱.pdf -f musicxml -o 合唱.musicxml   ${c} 五线谱
+${run} a.jpg b.pdf 谱子目录${win ? "\\" : "/"} -o 出目录${win ? "\\" : "/"}   ${c} 批量：一个进程跑完（一个文件一首）
+${run} 图片.jpg --kind=jianpu --profile   ${c} 指定路线、附带每首耗时
+${run} split 歌本.pdf -o 歌谱${win ? "\\" : "/"}        ${c} 歌本切分：整本 PDF / 页图目录 → 一首一张图，按目录核对缺漏
+\`\`\`
+
+输入：图片（jpg / png / webp / bmp / tif）与 PDF；一个文件一首（几页的 PDF 是一首）。路线缺省自动：先按五线谱认，
+一页谱表都没有再走简谱；\`--kind=staff|jianpu\` 指定。
+格式：\`shige\`（诗歌本文本谱，缺省）、\`tomato\`（番茄简谱）、\`123\`、\`jpwabc\`、\`abc\`、\`jly\`、\`jcx\`、\`musicxml\`。
+
+歌本切分（\`split\`）：分页的诗歌集切成一首一张 \`曲号 曲名.jpg\`——一页多首按标题切开、一首跨页按序拼接，
+去掉页码，拼缝处用本首的系统间距，边距照源图。输入是扫描 PDF（取每页内嵌的原图，不重新渲染）或页图目录（按文件名自然序）。
+自动认书内目录页核对缺号、重号、起始页，报告写到输出目录的 \`切分报告.txt\`；认错目录页时用 \`--toc-pages 3-15\` 指定，
+\`--dry-run\` 只出报告不写图。转曲矢量 PDF 出 \`曲号 曲名.png\`（\`--dpi\`，缺省 300）；加 \`--recognize\` 切完逐首识别（回原书取矢量对象），
+\`-f\` 选格式（缺省 \`musicxml\`），与图片同名放在一起。
+
+参照歌词互证（以前的 \`-l\` / \`--lyrics\`）暂不支持。
+环境变量：\`OMR_MODELS\` 指定模型目录（缺省包内 \`models/\`）。
+${win ? `\n${CRT ? "识别程序动态链接 VC++ 运行库，本包已把它们放在同目录内置，不必另装 Microsoft Visual C++ 可再发行组件。" : "需要 Microsoft Visual C++ 2015–2022 可再发行组件。"}\n输出编码为 UTF-8，用 \`-o\` 写文件最稳；直接看 stdout 的话先 \`chcp 65001\`。\n` : ""}`;
+}
+
 async function build(target) {
   const [os, cpu] = target.split("-");
-  const libcTag = os === "linux" && LIBC === "musl" ? "musl" : null;
-  const suffix = `${target}${libcTag ? "-musl" : ""}`;
-  const dir = join(OUT, `${NAME}-${suffix}`);
-  console.log(`\n===== ${target}${libcTag ? " (musl)" : ""} =====`);
+  const dir = join(OUT, `${NAME}-${target}`);
+  console.log(`\n===== ${target} =====`);
+  const bin = findBin(target);
+  const pdfium = findPdfium(target);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
 
-  // 1. 代码 + 模型
-  const chunks = await copyWithChunks(dir, "omr.js");
+  // 1. 识别程序 + PDFium（识别程序在自己旁边找 PDFium 与 models/）
+  await cp(bin.path, join(dir, bin.exe));
+  await chmod(join(dir, bin.exe), 0o755);
+  await cp(pdfium.path, join(dir, pdfium.lib));
+  // 2. 入口与写出端
+  const chunks = await copyWithChunks(dir, "omrfmt.js");
   await cp(join(ROOT, "scripts", "omr-cli.mjs"), join(dir, "omr-cli.mjs"));
   await chmod(join(dir, "omr-cli.mjs"), 0o755);
+  // 3. 模型
   await mkdir(join(dir, "models"), { recursive: true });
-  for (const f of await readdir(join(ROOT, "public", "redist", "ocr"))) {
-    await cp(join(ROOT, "public", "redist", "ocr", f), join(dir, "models", f));
-  }
-  console.log(`代码 ${chunks.join(", ")} + 模型 ${await du(join(dir, "models"))}`);
+  for (const f of await readdir(join(ROOT, "public", "redist", "ocr"))) await cp(join(ROOT, "public", "redist", "ocr", f), join(dir, "models", f));
+  console.log(`识别程序 ${await du(join(dir, bin.exe))}、PDFium ${await du(join(dir, pdfium.lib))}、写出端 ${chunks.length} 个文件、模型 ${await du(join(dir, "models"))}`);
 
-  // 2. package.json：只留运行期真正要的两个依赖
   await writeFile(join(dir, "package.json"), JSON.stringify({
     name: NAME,
     version: VER,
-    description: "简谱图像识别命令行（图片 → 诗歌本/番茄文本谱 或 123 简谱），自包含离线运行",
+    description: "识谱命令行（简谱 / 五线谱的图片或 PDF → 文本谱 / 123 / MusicXML 等），自包含离线运行",
     type: "module",
     bin: { [NAME]: "./omr-cli.mjs" },
-    exports: { ".": "./omr.js" },
-    engines: { node: ">=18.17" }, // 实测 18.20.5 可跑；sharp 0.35 的下限也是 18.17
+    engines: { node: ">=20" },
     license: pkg.license,
-    // 目标平台只做记录用：**不能写 os/cpu 字段**——npm 会拿它跟宿主比，交叉打包时
-    // 自己 install 到这个目录就先 EBADPLATFORM 挂掉了。
-    target: `${os}-${cpu}${libcTag ? "-musl" : ""}`,
-    dependencies: {
-      "onnxruntime-node": pkg.devDependencies["onnxruntime-node"],
-      sharp: pkg.dependencies.sharp,
-      // 只有 split 读 PDF 时才动态加载（Node ≥ 22.13，含转曲矢量歌本的渲染与逐首识别）；识别单张图用不到
-      "pdfjs-dist": pkg.dependencies["pdfjs-dist"],
-    },
+    // 只做记录：不能写 os/cpu 字段（npm 会拿它跟宿主比）
+    target,
   }, null, 2) + "\n");
-
-  // 3. 装依赖（npm 自己解依赖树，比手工拷可靠）
-  const flags = ["install", "--omit=dev", "--no-audit", "--no-fund", "--no-package-lock",
-    `--os=${os}`, `--cpu=${cpu}`];
-  if (os === "linux") flags.push(`--libc=${LIBC}`);
-  // Windows 上 npm 是 npm.cmd，execFile 不走 shell 找不到裸 "npm"（Git Bash 里也一样）。
-  execFileSync(NPM, flags, { cwd: dir, stdio: ["ignore", "ignore", "inherit"] });
-
-  // 4. 裁掉 ORT 的其余平台
-  const ortBin = join(dir, "node_modules", "onnxruntime-node", "bin");
-  for (const napi of await readdir(ortBin)) {
-    for (const plat of await readdir(join(ortBin, napi))) {
-      if (plat !== os) { await rm(join(ortBin, napi, plat), { recursive: true, force: true }); continue; }
-      for (const a of await readdir(join(ortBin, napi, plat))) {
-        if (a !== cpu) await rm(join(ortBin, napi, plat, a), { recursive: true, force: true });
-      }
-    }
-  }
-  const binDir = join(ortBin, (await readdir(ortBin))[0], os, cpu);
-
-  // 5. darwin：同一 dylib 的重复副本 → 硬链接
-  if (DEDUPE && os === "darwin" && existsSync(binDir)) {
-    const libs = (await readdir(binDir)).filter((f) => f.endsWith(".dylib")).sort((a, b) => a.length - b.length);
-    for (const dup of libs.slice(1)) {
-      const [a, b] = [join(binDir, libs[0]), join(binDir, dup)];
-      if ((await stat(a)).size !== (await stat(b)).size) continue; // 不是同一份就别动
-      await unlink(b);
-      await link(a, b);
-      console.log(`去重 ${dup} → 硬链到 ${libs[0]}`);
-    }
-  }
-  // 5b. win32：--slim 去掉 DirectML 那套（只跑 CPU EP 用不上）
-  if (SLIM && os === "win32" && existsSync(binDir)) {
-    for (const f of WIN_DML) await rm(join(binDir, f), { force: true });
-    console.log(`slim：删掉 ${WIN_DML.join(" / ")}（只跑 CPU EP 用不到；Windows 实测通过）`);
-  }
-
-  // 5c. win32：给个 .cmd 入口——shebang 在 Windows 上不起作用，自包含包又没有 npm 生成的 shim
-  if (os === "win32") {
-    await writeFile(join(dir, "omr-cli.cmd"),
-      "@echo off\r\nsetlocal\r\nnode \"%~dp0omr-cli.mjs\" %*\r\n", "utf-8");
-  }
-
-  // 5d. win32：内置 VC++ 运行库（app-local），用户不必先装 vc_redist
+  // Windows：shebang 不起作用，给个 .cmd 入口
+  if (os === "win32") await writeFile(join(dir, "omr-cli.cmd"), "@echo off\r\nsetlocal\r\nnode \"%~dp0omr-cli.mjs\" %*\r\n", "utf-8");
   if (CRT && os === "win32") await installCrt(dir, cpu);
+  await writeFile(join(dir, "README.md"), readme(os, cpu));
 
-  // 6. README
-  await writeFile(join(dir, "README.md"), `# ${NAME} ${VER}
-
-简谱图像识别命令行。自包含：解压即用，不联网、不装依赖，只要机器上有 Node ≥ 18.17（实测 18.20.5 / 20 / 22 均可）。
-本包目标平台 **${os}/${cpu}${libcTag ? " (musl)" : ""}**。
-
-${os === "win32" ? `\`\`\`bat
-omr-cli.cmd 图片.jpg                      :: 默认输出诗歌本文本谱到 stdout
-omr-cli.cmd 图片.jpg -f tomato -o 曲.txt  :: 换格式、写文件
-omr-cli.cmd 图片.jpg --profile            :: 附带分段耗时
-omr-cli.cmd 图片.jpg -l 歌词.txt          :: 附同一首的歌词文本，词谱互证纠错（不一致处打到 stderr）
-omr-cli.cmd split 歌本.pdf -o 歌谱\         :: 歌本切分：整本 PDF / 页图目录 → 一首一张图，按目录核对缺漏
-\`\`\`
-
-${CRT ? `\`onnxruntime.dll\` 与 \`onnxruntime_binding.node\` 动态链接 VC++ 运行库（\`MSVCP140.dll\` /
-\`VCRUNTIME140.dll\` 那几个，不在系统自带的 UCRT 里），**本包已把它们放在同目录内置**，
-不必另装 Microsoft Visual C++ 可再发行组件。（sharp 那部分是静态链接的，本来就不需要。）` : `需要 **Microsoft Visual C++ 2015–2022 可再发行组件**（\`vc_redist.${cpu === "arm64" ? "arm64" : "x64"}.exe\`）：
-包里的 \`onnxruntime.dll\` 与 \`onnxruntime_binding.node\` 动态链接 \`MSVCP140.dll\` / \`VCRUNTIME140.dll\`，
-那几个不在系统自带的 UCRT 里。（sharp 那部分是静态链接的，不需要。）
-Win10/11 多半已装过，报「找不到 VCRUNTIME140.dll」时到微软官网下载安装即可。`}
-输出编码为 UTF-8，用 \`-o\` 写文件最稳；直接看 stdout 的话先 \`chcp 65001\`。` : `\`\`\`bash
-./omr-cli.mjs 图片.jpg                      # 默认输出诗歌本文本谱到 stdout
-./omr-cli.mjs 图片.jpg -f tomato -o 曲.txt   # 换格式、写文件
-./omr-cli.mjs 图片.jpg --profile             # 附带分段耗时
-./omr-cli.mjs 图片.jpg -l 歌词.txt           # 附同一首的歌词文本，词谱互证纠错（不一致处打到 stderr）
-./omr-cli.mjs split 歌本.pdf -o 歌谱/        # 歌本切分：整本 PDF / 页图目录 → 一首一张图，按目录核对缺漏
-\`\`\``}
-
-格式：\`shige\`（诗歌本文本谱，默认）、\`tomato\`（番茄简谱）、\`123\`（123 简谱）。
-识别输入只吃位图（jpg/png/webp/bmp/tiff），**不吃 PDF**。
-
-歌本切分（\`split\`）：分页的简谱诗歌集切成一首一张 \`曲号 曲名.jpg\`——一页多首按标题切开、一首跨页按序拼接，
-去掉页码，拼缝处用本首的系统间距，边距照源图。输入是扫描 PDF（取每页内嵌的原图，不重新渲染；需 Node ≥ 22.13）
-或页图目录（按文件名自然序）。自动认书内目录页（「首句 曲号 页码」或只列「曲号 曲名」）核对缺号、重号、起始页，报告写到输出目录的
-\`切分报告.txt\`；认错目录页时用 \`--toc-pages 3-15\` 指定（按源页序，1 起），\`--dry-run\` 只出报告不写图。
-转曲矢量 PDF（字与谱都转成了路径、没有内嵌图）出 \`曲号 曲名.png\`，\`--dpi 200\` 定分辨率（缺省 300）；
-加 \`--recognize\` 切完逐首识别（回原书取矢量对象，五线谱与简线混排谱），\`-f\` 选格式（缺省 \`musicxml\`，
-另有 \`123\` / \`jpwabc\` / \`abc\` / \`shige\` / \`tomato\` / \`jly\` / \`jcx\`），与图片同名放在一起。
-
-当库用：
-
-\`\`\`js
-import { recognizeImage, decodeLyricsBytes } from "./omr.js";
-const { text } = await recognizeImage(bytes, { mime: "image/jpeg", format: "shige" });
-// 带参照歌词（decodeLyricsBytes 认 UTF-8 / GBK / UTF-16）：结果在 detail.score.lyricCheck
-const r = await recognizeImage(bytes, { mime: "image/jpeg", lyrics: decodeLyricsBytes(lyricBytes) });
-\`\`\`
-
-参照歌词（\`-l\` / \`--lyrics\`）：一份 .txt / .lrc 对一张图，按演唱顺序写全即可（反复、副歌每段都写），
-段号、\`(副歌)\`、lrc 时间戳自动去掉。形近字按歌词选字、补回漏读的字；版本用字不同、字多字少、
-疑似漏认的弧、反复顺序对不上只报告不改。\`--lyrics-report 核对.json\` 另落结果。
-
-环境变量：\`OMR_MODELS\` 指定模型目录（默认包内 \`models/\`），\`OMR_THREADS\` 调线程数（默认 4）。
-`);
-
-  // 7. 校验 + 压缩
-  const problems = await verify(dir, os, cpu, libcTag);
+  const problems = await verify(dir, os, bin.exe, pdfium.lib);
   if (problems.length) {
-    console.error(`✗ ${suffix} 校验不过：${problems.join("；")}`);
-    return { target: suffix, ok: false };
+    console.error(`✗ ${target} 校验不过：${problems.join("；")}`);
+    return { target, ok: false };
   }
   const size = await du(dir);
-  if (KEEP) { console.log(`✓ ${suffix}  ${size}  → ${dir}`); return { target: suffix, ok: true, size }; }
-  // Windows 出 zip（那边解压即用），其余 tar.gz（能保住硬链接与可执行位）
+  if (KEEP) { console.log(`✓ ${target}  ${size}  → ${dir}`); return { target, ok: true, size }; }
   const isWin = os === "win32";
-  const file = join(OUT, `${NAME}-${VER}-${suffix}.${isWin ? "zip" : "tar.gz"}`);
+  const file = join(OUT, `${NAME}-${VER}-${target}.${isWin ? "zip" : "tar.gz"}`);
   await rm(file, { force: true });
-  archive(file, `${NAME}-${suffix}`, isWin);
+  archive(file, `${NAME}-${target}`, isWin);
   await rm(dir, { recursive: true, force: true });
-  console.log(`✓ ${suffix}  目录 ${size} → ${file.replace(ROOT + "/", "")} (${await du(file)})`);
-  return { target: suffix, ok: true, size, file };
+  console.log(`✓ ${target}  目录 ${size} → ${file.replace(ROOT + "/", "")} (${await du(file)})`);
+  return { target, ok: true, size, file };
 }
 
 console.log(`打包 ${NAME} ${VER}：${targets.join(", ")}`);
 await mkdir(OUT, { recursive: true });
 const results = [];
-for (const t of targets) results.push(await build(t));
-
+for (const t of targets) {
+  try {
+    results.push(await build(t));
+  } catch (e) {
+    console.error(`✗ ${t}：${e instanceof Error ? e.message : String(e)}`);
+    results.push({ target: t, ok: false });
+  }
+}
 const bad = results.filter((r) => !r.ok);
 console.log(`\n完成 ${results.length - bad.length}/${results.length}`);
 if (bad.length) { console.error(`失败：${bad.map((r) => r.target).join(", ")}`); process.exit(1); }
-console.log("交叉产物只做了静态校验（win32-x64 另经 Windows 实测），到目标机请 omr-cli.mjs <图> 自检一次。");

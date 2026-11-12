@@ -7,23 +7,14 @@ import { outlinedLive } from "../../outlineomr/live";
 import type { StaffGlyphDict } from "../../staffomr/staffglyphs";
 import glyphmap from "../../staffomr/glyphmap.json";
 import type { OcrBackend } from "../../omrkit/ocr";
-import { loadScoreDoc } from "../../model/fromxml";
-import { CONVERT_TARGETS, type ConvertTarget } from "../../convert/targets";
-import { DOC_EXT, encodeDocText, utf8 } from "../../convert/docfile";
+import { XML_OUT_FORMATS, encodeXmlAs, isXmlOutFormat, type XmlOutFormat } from "../../convert/xmlformats";
 import type { BookPlan } from "./index";
 import type { PageSource } from "./types";
 
 /** 歌本识别的输出格式：MusicXML 加上各可编辑格式。 */
-export type BookFormat = "musicxml" | ConvertTarget;
-export const BOOK_FORMATS: readonly BookFormat[] = ["musicxml", ...CONVERT_TARGETS.map((t) => t.id)];
-export const isBookFormat = (v: unknown): v is BookFormat => BOOK_FORMATS.includes(v as BookFormat);
-
-/** 一种格式的扩展名与落盘字节（与编辑器存盘同一份：`convert/docfile.ts`）。 */
-function encodeAs(format: BookFormat, xml: string): { ext: string; bytes: Uint8Array } {
-  if (format === "musicxml") return { ext: DOC_EXT.musicxml, bytes: utf8(xml) };
-  const spec = CONVERT_TARGETS.find((t) => t.id === format)!;
-  return { ext: DOC_EXT[spec.docFormat], bytes: encodeDocText(spec.docFormat, spec.emit(loadScoreDoc(xml))) };
-}
+export type BookFormat = XmlOutFormat;
+export const BOOK_FORMATS = XML_OUT_FORMATS;
+export const isBookFormat = isXmlOutFormat;
 
 export interface BookRecognizeReport {
   ok: number;
@@ -61,7 +52,7 @@ export async function recognizeBookSongs(
     try {
       const r = await recognizeOutlinedDoc(vec.pdf, vec.OPS, look, { title: song.title || undefined, live, segments });
       if (!r.musicxml) throw new Error("没认出谱表");
-      const { ext, bytes } = encodeAs(format, r.musicxml);
+      const { ext, bytes } = encodeXmlAs(format, r.musicxml);
       await writeFile(join(outDir, names[s] + ext), bytes);
       ok++;
     } catch (e) {

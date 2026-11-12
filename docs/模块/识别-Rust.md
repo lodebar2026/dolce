@@ -12,7 +12,7 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
 | crate | 作用 |
 |---|---|
 | `crates/omr-build` | 构建脚本工具：`fingerprint(名, 目录…)` 按源码目录算阶段代码指纹，导出 `OMR_CODE_<名>`（阶段缓存键的一部分；上游 crate 的目录要一并列上） |
-| `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout；web 的 `scripts/omr-cli.mjs` 与 OMR 分发包起它、再用 TS 写出端转格式）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
 | `crates/omr-engine` | 三端共用的入口：`Doc`（打开 PDF / 图片，几个文件合成一份；页尺寸、整页渲染）、`recognize`（判路：先按五线谱认，一页谱表都没有再走简谱；进度与取消）、`staff_binary`（核对底图）、`insert` / `region`（点图补认、框选重认）；`Handle`（文档句柄：桌面版 Tauri 命令与网页版 wasm 都是它外面的薄壳，请求与回应的字节 / JSON 格式两边一样）。页级并行在特性 `parallel` 后面，wasm 下关 |
 | `crates/omr-wasm` | 网页版绑定（wasm-bindgen，`scripts/build-wasm.mjs` 编进 `public/redist/omr/`，Worker `src/omrrust/worker.ts` 里跑）：`OmrDoc`（与 Tauri 命令一一对应）、`load_ocr`（OCR 用 tract 推理同一份 ONNX）、`set_pdfium_module` |
 | `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `omr-cli`，本 crate 不依赖识别路线） |
@@ -526,7 +526,7 @@ Rust 这边不要求与 TS 逐字相同，按各语料的 GT 判分追平或超�
   - 首尾点号只在拼好的整个曲名上去（框常在逗号处切开，「神啊，」「愿列邦称赞祢」）；整段重读（只留汉字）读出的与原曲名汉字相同时留原曲名，不丢逗号、叹号。
 - **出图**：位图歌本写 JPEG（`image` 的编码器，同质量下比 sharp 大约三成），本首用到的页有彩色的出彩色、否则灰度；矢量歌本写灰度 PNG。按首分块并行，每块留最近 4 页源图。
 - **逐首识别**（`--recognize`，只收转曲矢量歌本）：每段取那一页的对象按 `PageContent::clip`（中心落在裁框里、不落在页码框里）裁出一截当一页，走五线谱 / 混排路线、`assemble` 带上切分认出的曲名，写 `<文件名>.musicxml`。
-  `-f` 只有 musicxml（别的格式要 TS 的转换器，P12 由 `omr-cli.mjs` 包 Rust 时接）。
+  `-f` 只有 musicxml；别的格式由 `omr-cli.mjs split` 在 Rust 写完 MusicXML 后逐首转（TS 写出端）。
 - 排查：`OMR_BOOK_DEBUG=<页序号，0 起>` 打出那一页各标题候选带的检测框、逐字位置与解析结果、整段重读。
 
 读数（2026-11-12，对曲目清单 GT `dev/testdata/歌本切分/<书>.gt.json`，`rust-omr/book-check.mjs`）：

@@ -1,6 +1,7 @@
-//! `omr-cli`：识别的命令行：回归（`regress`）、识别一个文件（`recognize`）、五线谱会话（`session`）、歌本切分（`split`）。
+//! `omr-cli`：识别的命令行：回归（`regress`）、批量识别（`run`，web 的 omr-cli.mjs 与分发包用）、识别一个文件（`recognize`）、五线谱会话（`session`）、歌本切分（`split`）。
 mod recognize;
 mod regress;
+mod run;
 mod split;
 
 use std::path::PathBuf;
@@ -45,6 +46,13 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some("run") => match run::run(&args[1..]) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
         Some("split") => match split::run(&args[1..]) {
             Ok(code) => code,
             Err(e) => {
@@ -53,7 +61,7 @@ fn main() -> ExitCode {
             }
         },
         _ => {
-            eprintln!("{USAGE}{}", split::USAGE);
+            eprintln!("{USAGE}{}{}", run::USAGE, split::USAGE);
             ExitCode::from(2)
         }
     }

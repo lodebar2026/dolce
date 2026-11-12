@@ -1,13 +1,13 @@
 //! 一档语料的一首曲子 → 识别产物。五线谱走 `omr-staff`，简谱走 `omr-jianpu`。
 use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::native::NativeInfer;
+use dolce_omr_ocr::native::{NativeInfer, REC_FILE};
 use dolce_omr_ocr::{Ocr, OcrCache};
 use dolce_omr_source::raster::SourceImage;
 use dolce_omr_source::PdfDoc;
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::song::assemble;
 use rayon::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 识别产物：判分脚本 `--from` 读的那几样文件的内容。
 pub enum RecOutput {
@@ -47,16 +47,28 @@ pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOu
     Ok(RecOutput::Staff { musicxml: song.score.to_musicxml(), layout: song.layout_json() })
 }
 
-/// 回归用的 OCR：模型取本检出的 `public/redist/ocr`，结果缓存落在 `cache`（按送检画面内容寻址，第二次起不推理）。
-pub fn open_ocr(cache: &Path) -> Result<CachedOcr, String> {
-    let dir = crate::sibling("web-rust/public/redist/ocr");
-    let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).map_err(|e| format!("读 OCR 字典：{e}"))?;
-    Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache: OcrCache::open(cache) })
+/// OCR 模型目录：环境变量 `OMR_MODELS` → 可执行文件旁的 `models/`（分发包）→ 本检出的 `public/redist/ocr`（开发、回归）。
+pub fn model_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("OMR_MODELS") {
+        return PathBuf::from(d);
+    }
+    if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("models"))).filter(|d| d.join(REC_FILE).exists()) {
+        return d;
+    }
+    crate::sibling("web-rust/public/redist/ocr")
+}
+
+/// 识别用的 OCR：模型取 [`model_dir`]，给了 `cache` 就把结果按送检画面内容寻址落在那里（第二次起不推理），否则只在内存里。
+pub fn open_ocr(cache: Option<&Path>) -> Result<CachedOcr, String> {
+    let dir = model_dir();
+    let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).map_err(|e| format!("读 OCR 字典（{}）：{e}", dir.display()))?;
+    let cache = cache.map_or_else(OcrCache::memory, OcrCache::open);
+    Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache })
 }
 
 /// `omr-cli recognize staff 文件 [--out=目录]`：识别一个五线谱文件，写出 `<曲>.musicxml`（带识别 id）与 `<曲>.review.json`（核对 JSON，交 web `omrrust/adapter.ts`）。
 fn one_staff(file: &str, out: &str) -> Result<(), String> {
-    let ocr = open_ocr(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json"))?;
+    let ocr = open_ocr(Some(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json")))?;
     let t0 = std::time::Instant::now();
     let srcs = sources(Path::new(file))?;
     let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_source(s, Some(&ocr))).collect();
@@ -85,7 +97,7 @@ pub fn one(args: &[String]) -> Result<(), String> {
     }
     let render = args.iter().any(|a| a == "--render");
     let out = args.iter().find_map(|a| a.strip_prefix("--out="));
-    let ocr = open_ocr(&crate::sibling("dev/data/rust-omr/ocr-cache/jianpu.json"))?;
+    let ocr = open_ocr(Some(&crate::sibling("dev/data/rust-omr/ocr-cache/jianpu.json")))?;
     let path = Path::new(file);
     let t0 = std::time::Instant::now();
     let score = if render {
@@ -136,7 +148,7 @@ pub fn session(args: &[String]) -> Result<(), String> {
     };
     let out = std::path::PathBuf::from(val("out").unwrap_or_else(|| "session-out".into()));
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-    let ocr = open_ocr(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json"))?;
+    let ocr = open_ocr(Some(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json")))?;
     let srcs = sources(Path::new(file))?;
     let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_source(s, Some(&ocr))).collect();
     ocr.cache.save()?;

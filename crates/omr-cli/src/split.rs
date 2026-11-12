@@ -122,8 +122,10 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
         eprintln!("--dpi 只对转曲矢量 PDF 有效，位图歌本照源图原分辨率出 JPEG，已忽略");
     }
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "book".into());
-    let cache = o.cache.map(PathBuf::from).unwrap_or_else(|| crate::sibling(&format!("dev/data/rust-omr/ocr-cache/book-{stem}.json")));
-    let ocr = open_ocr(&cache)?;
+    // 缓存：--cache 给的；开发检出（同级有 dev/）落在私有仓库；分发包里只在内存
+    let dev = crate::sibling("dev/data/rust-omr/ocr-cache");
+    let cache = o.cache.map(PathBuf::from).or_else(|| dev.is_dir().then(|| dev.join(format!("book-{stem}.json"))));
+    let ocr = open_ocr(cache.as_deref())?;
     let scan_tick = ticker("扫描");
     let plan = plan_book(&src, &ocr, &PlanOptions { toc_pages, on_progress: Some(&scan_tick) });
     ocr.cache.save()?;

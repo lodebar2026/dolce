@@ -69,7 +69,7 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     }
     println!("{}：{} 首，产物 → {}", o.kind, songs.len(), out.display());
 
-    let ocr = open_ocr(&sibling(&format!("dev/data/rust-omr/ocr-cache/{}.json", o.kind)))?;
+    let ocr = open_ocr(Some(&sibling(&format!("dev/data/rust-omr/ocr-cache/{}.json", o.kind))))?;
     let t0 = Instant::now();
     let fails: Vec<(String, String)> = songs
         .par_iter()
