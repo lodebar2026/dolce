@@ -142,10 +142,22 @@ pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &
 /// 松叶的端点离音头心这么远（相对线距）以内算挂在这个音上。
 pub(super) const WEDGE_END: f64 = 0.5;
 
+/// 松叶的右端离谱表右端、左端离行首（谱号调号之后）不过这么多（相对线距），算画到行尾 / 从行首接着画（跨行的一条）。
+pub(super) const WEDGE_EDGE: f64 = 1.5;
+
+/// 一行谱上画到行尾、等下一个系统同一槽位接着的松叶：(哪个系统, 渐强)。
+pub(super) type OpenWedge = Option<(usize, bool)>;
+
 /// 一行谱的松叶挂到事件上：起端记在离左端最近的音前；止端记在右端处或之后的第一个音前，这个音不在右端所在的小节里
 /// （松叶收在小节线前）就记在右端之前最后一个音的后面。
-pub(super) fn row_wedges(wedges: &[&Wedge], anchors: &[Anchor], ms: &mut [Measure], bar_of: &dyn Fn(f64) -> usize, sp: f64) {
-    for w in wedges {
+/// 跨行：上一个系统同一槽位画到行尾的（`open`）、这一行行首起的同向的一条是它的续段——删掉上一条的止端（在 `prev` 里，那一槽位已拼好的小节）、
+/// 这一条不另起；这一行画到行尾的记进 `open`。
+#[allow(clippy::too_many_arguments)]
+pub(super) fn row_wedges(wedges: &[&Wedge], anchors: &[Anchor], ms: &mut [Measure], bar_of: &dyn Fn(f64) -> usize, sp: f64, (lead, right): (f64, f64), sys: usize, open: &mut OpenWedge, prev: &mut [Measure]) {
+    let carried = open.take();
+    let mut ws: Vec<&&Wedge> = wedges.iter().collect();
+    ws.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+    for (k, w) in ws.into_iter().enumerate() {
         let Some(i) = (0..anchors.len()).min_by(|&a, &b| (anchors[a].x - w.x0).abs().total_cmp(&(anchors[b].x - w.x0).abs())) else { continue };
         let next = anchors.iter().position(|a| a.x >= w.x1 - WEDGE_END * sp).filter(|&n| anchors[n].bar == bar_of(w.x1));
         let (j, after) = match next {
@@ -159,8 +171,29 @@ pub(super) fn row_wedges(wedges: &[&Wedge], anchors: &[Anchor], ms: &mut [Measur
             continue;
         }
         let kind = if w.cresc { score::Wedge::Crescendo } else { score::Wedge::Diminuendo };
-        ms[anchors[i].bar].events[anchors[i].event].pre.push(Dir::Wedge(kind).into());
+        let cont = k == 0 && w.x0 <= lead + WEDGE_EDGE * sp && carried.is_some_and(|(s, c)| s + 1 == sys && c == w.cresc) && unstop(prev);
+        if !cont {
+            ms[anchors[i].bar].events[anchors[i].event].pre.push(Dir::Wedge(kind).into());
+        }
         let e = &mut ms[anchors[j].bar].events[anchors[j].event];
         if after { &mut e.post } else { &mut e.pre }.push(Dir::Wedge(score::Wedge::Stop).into());
+        if w.x1 >= right - WEDGE_EDGE * sp {
+            *open = Some((sys, w.cresc));
+        }
     }
+}
+
+/// 删掉这一槽位已拼好的小节里最后一个松叶止端（上一行画到行尾的那条，续段接着它）。删到了才回 true。
+fn unstop(prev: &mut [Measure]) -> bool {
+    for m in prev.iter_mut().rev() {
+        for e in m.events.iter_mut().rev() {
+            for list in [&mut e.post, &mut e.pre] {
+                if let Some(n) = list.iter().rposition(|d| d.dir == Dir::Wedge(score::Wedge::Stop)) {
+                    list.remove(n);
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }

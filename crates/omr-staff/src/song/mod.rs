@@ -151,6 +151,48 @@ fn page_med(page: &Page) -> f64 {
 /// 房子的横线右端离谱表右端不过这么多（相对线距）、又没有收口的钩，算画到行尾（下一行接着）。
 const VOLTA_TO_END: f64 = 2.5;
 
+/// 弱起与跨行劈开的小节按拍数定（各声部的小节结构相同，按全部声部量）：
+/// 曲首小节不满拍、又是整拍的是弱起；系统首小节与上一系统末小节都不满、合起来正好一小节的是跨行劈开的后半截；
+/// 按宽度估成劈开、两半其实各自满拍的撤掉。都记 `implicit`。
+fn split_bars(parts: &mut [Part]) {
+    let n = parts.iter().map(|p| p.measures.len()).max().unwrap_or(0);
+    // 第 mi 小节的内容时值（各声部里最长的；全空为 0）与现行拍号的一小节
+    let dur = |mi: usize| parts.iter().filter_map(|p| p.measures.get(mi)).flat_map(|m| m.events.iter()).map(|e| e.onset + e.divisions()).max().unwrap_or(0);
+    let mut want = vec![0u32; n];
+    let mut beat = vec![0u32; n];
+    let mut now: Option<dolce_omr_sheet::music::Time> = None;
+    for mi in 0..n {
+        for p in parts.iter() {
+            if let Some(m) = p.measures.get(mi) {
+                if let Some(t) = std::iter::once(&m.attrs).chain(&m.mid).filter_map(|a| a.time).last() {
+                    now = Some(t);
+                }
+            }
+        }
+        if let Some(t) = now {
+            want[mi] = measure_divisions(t);
+            beat[mi] = score::DIVISIONS * 4 / (t.beat_type as u32).max(1);
+        }
+    }
+    let ds: Vec<u32> = (0..n).map(dur).collect();
+    let firsts: Vec<bool> = (0..n).map(|mi| parts.iter().any(|p| p.measures.get(mi).is_some_and(|m| m.new_system))).collect();
+    let mut set = |mi: usize, v: bool| parts.iter_mut().filter_map(|p| p.measures.get_mut(mi)).for_each(|m| m.implicit = v);
+    if n > 1 && want[0] > 0 && ds[0] > 0 && ds[0] < want[0] && ds[0] % beat[0] == 0 {
+        set(0, true);
+    }
+    for mi in 1..n {
+        let w = want[mi];
+        if !firsts[mi] || w == 0 || ds[mi] == 0 || ds[mi - 1] == 0 {
+            continue;
+        }
+        if ds[mi] < w && ds[mi - 1] < w && ds[mi] + ds[mi - 1] == w {
+            set(mi, true);
+        } else if ds[mi] == w && ds[mi - 1] == w {
+            set(mi, false);
+        }
+    }
+}
+
 /// 把各页（按次序）拼成整曲。
 pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let nparts = pages.iter().flat_map(|p| p.layout.systems.iter().map(|s| s.staves.len())).max().unwrap_or(0);
@@ -236,6 +278,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut pending: Vec<Vec<Pending>> = (0..nparts).map(|_| Vec::new()).collect();
     // 各声部画到行尾、还没收的房子
     let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
+    // 各声部画到行尾、等下一个系统接着的松叶
+    let mut open_wedge: Vec<OpenWedge> = vec![None; nparts];
     let mut ids = Ids { seq: RidSeq::default(), page: 1, up: 1.0 };
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.layout;
@@ -493,7 +537,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 let rests: Vec<Anchor> = beats.clone();
                 beats.extend(anchors.iter().copied());
                 beats.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
-                row_wedges(&wedges, &beats, &mut ms, &bar_of, sp_row);
+                row_wedges(&wedges, &beats, &mut ms, &bar_of, sp_row, (lead_of(page, i), f.staves[i].right), sys_i, &mut open_wedge[p], &mut parts[p].measures);
                 attach_text(&mut ms, anchors, &rests, &page.text.rows[i], dx, han_lines, &mut ids);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
@@ -557,6 +601,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     for (part, recs) in parts.iter_mut().zip(span_recs) {
         mark_spans(part, recs);
     }
+    split_bars(&mut parts);
     // 花括号括着的两个槽位合成大谱表
     let pairs = grand_pairs(pages, &slots_all, &profs, nparts);
     let (parts, slot_at) = merge(parts, &pairs);
