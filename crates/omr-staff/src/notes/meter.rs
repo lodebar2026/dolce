@@ -354,6 +354,10 @@ pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of:
                             what.push(format!("{:?}", ops[*a]));
                         }
                     }
+                    if std::env::var("OMR_METER_DEBUG").is_ok() {
+                        let its: Vec<String> = cell.items.iter().map(|it| format!("{:.0}:{}{}", it.x, it.dur, it.up.map_or("", |u| if u { "↑" } else { "↓" }))).collect();
+                        eprintln!("满拍 行{k} 小节{j} 要{want} 原{:?} [{}] → {}", cell.line.end, its.join(" "), what.join("+"));
+                    }
                     flags.push(Flag { row: k, bar: j, code: codes::BEAT_FIX, note: what.join("+") });
                 }
                 None => {

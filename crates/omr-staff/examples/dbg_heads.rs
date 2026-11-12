@@ -41,6 +41,12 @@ fn main() {
                 let kept = page.notes[si].chords.iter().any(|c| c.heads.iter().any(|k| (k.x - h.x).abs() < 3.0 && k.pos == h.pos));
                 println!("  种子 ({:.0}, {:.0}) 位 {} 满 {:.2} 加线 {} 干 {:?} → {}", h.x, h.y, h.pos, h.fill, ledger_ok(f, &h, 0.65 * sp), st, if kept { "留" } else { "丢" });
             }
+            for c in &page.notes[si].chords {
+                if (c.x - x).abs() <= r * sp && c.heads.iter().any(|h| (h.y - y).abs() <= r * sp) {
+                    let hs: Vec<String> = c.heads.iter().map(|h| format!("{}{:?}", h.pos, h.kind)).collect();
+                    println!("  和弦 x {:.0} 头 [{}] 干 {:?} 尾 {} 附点 {}", c.x, hs.join(" "), c.stem, c.tails, c.dots);
+                }
+            }
             hollow_heads_traced(f, &holes, &claims, si, from, scale, &mut |(hx, hy, hw, hh), why| {
                 if (hx as f64 + hw as f64 / 2.0 - x).abs() <= r * sp && (hy as f64 + hh as f64 / 2.0 - y).abs() <= r * sp {
                     println!("  孔 {hx},{hy} {hw}×{hh}：{why}");
