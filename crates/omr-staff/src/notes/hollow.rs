@@ -184,9 +184,25 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
             trace(hole, format!("左右的壁太厚（左{} 右{}）：旁边是实心的墨", left.0, right.0));
             continue;
         }
-        // 上下的壁只算到 `WALL_V` 格：和弦里上下相邻的头共用一道壁，间里的头上下是整条谱线
+        // 上下的壁只算到 `WALL_V` 格：和弦里上下相邻的头共用一道壁，间里的头上下是整条谱线。
+        // 正上 / 正下另有一个头那么大的孔（三度叠着的两个空心头）：中间那道壁两家共用，这一侧只算两孔间距的一半
         let wall_v = (WALL_V * sp).ceil() as i64;
-        let outer_h = (hh + up.1.min(wall_v) + down.1.min(wall_v)) as f64 / sp;
+        let shared = |below: bool| -> Option<i64> {
+            holes
+                .list
+                .iter()
+                .filter(|&&((ox, oy, ow, oh), _, _)| {
+                    let head_like = (ow as f64 / sp) <= HOLE_W.1 * scale && (oh as f64 / sp) <= HOLE_H.1 * scale && (ow as f64 / sp) >= HOLE_W.0;
+                    head_like && (ox, oy, ow, oh) != hole && ox.max(hx) < (ox + ow).min(hx + hw) && ((ox + ow).min(hx + hw) - ox.max(hx)) * 2 >= ow.min(hw)
+                })
+                .map(|&((_, oy, _, oh), _, _)| if below { oy - (hy + hh) } else { hy - (oy + oh) })
+                .filter(|&g| g >= 0 && g <= wall_v)
+                .min()
+                .map(|g| (g + 1) / 2)
+        };
+        let up_v = up.1.min(wall_v).min(shared(false).unwrap_or(i64::MAX));
+        let down_v = down.1.min(wall_v).min(shared(true).unwrap_or(i64::MAX));
+        let outer_h = (hh + up_v + down_v) as f64 / sp;
         let (xl, xr) = (hx - left.1, hx + hw - 1 + right.1);
         let outer_w = (xr - xl + 1) as f64 / sp;
         if outer_h < OUTER_H.0 || outer_h > OUTER_H.1 * scale || outer_w < OUTER_W.0 || outer_w > OUTER_W.1 * scale {

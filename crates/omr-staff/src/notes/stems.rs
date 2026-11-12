@@ -58,25 +58,55 @@ fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64) -> i6
 /// 给一个头找符干。`sp`：所在行的线距；`thick`：谱线线宽；`edges`：头的左右缘（空心头由外圈量得；实心头给 None，在这里按两行墨量）；
 /// `taken(x)`：这一列的竖笔已经归了别的元素（定下的小节线，见 [`super::resolve::Claims`]），不当符干。
 pub fn find_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
+    let cy = h.y.round() as i64;
+    let (xl, xr) = edges.unwrap_or_else(|| head_edges(ink, h, sp));
+    scan_stem(ink, cy, sp, thick, xl, xr, None, taken)
+}
+
+/// 头的左右缘：在中心上下各 [`EDGE_ROW`] 格的两行上数连着的墨。
+fn head_edges<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64) -> (i64, i64) {
     let (cx, cy) = (h.x.round() as i64, h.y.round() as i64);
     let off = ((EDGE_ROW * sp).round() as i64).max(1);
     let rows = [cy - off, cy + off];
     let cap = (EDGE_CAP * sp) as i64;
-    let (xl, xr) = edges.unwrap_or_else(|| {
-        let (mut xl, mut xr) = (cx, cx);
-        for &r in &rows {
-            let (mut a, mut b) = (cx, cx);
-            while cx - a < cap && ink.at(a - 1, r) == INK {
-                a -= 1;
-            }
-            while b - cx < cap && ink.at(b + 1, r) == INK {
-                b += 1;
-            }
-            xl = xl.min(a);
-            xr = xr.max(b);
+    let (mut xl, mut xr) = (cx, cx);
+    for &r in &rows {
+        let (mut a, mut b) = (cx, cx);
+        while cx - a < cap && ink.at(a - 1, r) == INK {
+            a -= 1;
         }
-        (xl, xr)
-    });
+        while b - cx < cap && ink.at(b + 1, r) == INK {
+            b += 1;
+        }
+        xl = xl.min(a);
+        xr = xr.max(b);
+    }
+    (xl, xr)
+}
+
+/// 两声部同音共用一个头：头已挂上干 `st`（朝上的贴右缘、朝下的贴左缘），对侧的缘上另有一根朝反方向的干
+///（细段在反方向、不越过头往 `st` 那一边伸）。回那根干；不是共头回 None。同 TS `notedata.ts::unisonStems`。
+pub fn unison_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>, st: &Stem, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
+    let cy = h.y.round() as i64;
+    let (xl, xr) = edges.unwrap_or_else(|| head_edges(ink, h, sp));
+    let tol = (sp / 4.0).round() as i64;
+    // 已挂的干贴在正经那一侧
+    if (st.x - if st.up { xr } else { xl }).abs() > tol {
+        return None;
+    }
+    let (a, b) = if st.up { (xl - tol, xl + tol) } else { (xr - tol, xr + tol) };
+    let other = scan_stem(ink, cy, sp, thick, a, b, Some(!st.up), taken)?;
+    let half = (0.5 * sp).round() as i64;
+    // 反方向那根不越过头：朝下的上端、朝上的下端都在头里
+    let ok = if other.up { other.bottom <= cy + half } else { other.top >= cy - half };
+    (ok && (other.x - st.x).abs() > tol).then_some(other)
+}
+
+/// 在 `[xl, xr]`（外扩 [`EDGE_OUT`]）的列里找干；`want`：只要这个朝向的（细段在头的那一侧）。
+#[allow(clippy::too_many_arguments)]
+fn scan_stem<P: Probe + ?Sized>(ink: &P, cy: i64, sp: f64, thick: f64, xl: i64, xr: i64, want: Option<bool>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
+    let off = ((EDGE_ROW * sp).round() as i64).max(1);
+    let rows = [cy - off, cy + off];
     let gap = (thick.ceil() as i64).max(1);
     let thin_w = ((THIN_W * sp) as i64).max((thick * 2.5) as i64);
     let half = (0.5 * sp).round() as i64;
@@ -97,12 +127,16 @@ pub fn find_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, edge
         }
         let thin = |a: i64, b: i64| (a..=b).filter(|&y| ink.at(x, y) == INK && width_at(ink, x, y, thin_w) <= thin_w).count() as i64;
         let (tu, td) = (thin(top, cy - half), thin(cy + half, bottom));
-        let t = tu.max(td);
+        let t = match want {
+            Some(true) => tu,
+            Some(false) => td,
+            None => tu.max(td),
+        };
         if (t as f64) < MIN_THIN * sp {
             continue;
         }
         if best.is_none_or(|(bt, _)| t > bt) {
-            best = Some((t, Stem { x, top, bottom, up: tu >= td }));
+            best = Some((t, Stem { x, top, bottom, up: want.unwrap_or(tu >= td) }));
         }
     }
     best.map(|b| b.1)

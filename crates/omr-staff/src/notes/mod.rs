@@ -165,6 +165,9 @@ fn scale_of(tpl: &Template) -> f64 {
     (tpl.head_width() / HEAD_W).max(1.0)
 }
 
+/// 空心头半宽（相对线距，照本页头的放大倍数放大）：找同音共头的另一根干时当头的左右缘。
+const UNISON_HALF_W: f64 = 0.6;
+
 /// 一页各行谱的音符（与 `staves` 同序）。
 pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::attrs::DigitReader>) -> Vec<RowNotes> {
     let claims = Claims::new(f);
@@ -189,6 +192,22 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
         all.extend(hollow::hollow_heads(f, &holes, &claims, si, from_of(si), scale_of(&tpl)));
     }
 
+    // 两声部同音共用一个头（上下各一根干）：一个头出两个音，各挂各的干
+    let scale = scale_of(&tpl);
+    let twins: Vec<(Head, Option<Stem>)> = all
+        .iter()
+        .filter_map(|(h, st)| {
+            let st = st.as_ref()?;
+            let sp = f.staves[h.staff].space();
+            let edges = (h.kind != heads::HeadKind::Filled).then(|| {
+                let hw = UNISON_HALF_W * scale * sp;
+                ((h.x - hw).round() as i64, (h.x + hw).round() as i64)
+            });
+            let other = stems::unison_stem(&f.ink, h, sp, f.unit.thick, edges, st, &|x| claims.bar_col(h.staff, x))?;
+            Some((h.clone(), Some(other)))
+        })
+        .collect();
+    all.extend(twins);
     let mut rows = build_rows(&f.layout, &f.ink, all);
     for (si, row) in rows.iter_mut().enumerate() {
         row.rests = rests::rests(f, si, from_of(si));
