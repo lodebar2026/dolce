@@ -29,8 +29,10 @@ const WALL_V: f64 = 0.3;
 /// 原图上的孔占包围盒的比例过这个数的是方格子。
 const BOX_FULL: f64 = 0.88;
 /// 全音符：外圈至少这么宽、所在墨块不超过这么大（相对线距）。
-const WHOLE_W: f64 = 1.3;
+const WHOLE_W: f64 = 1.25;
 const WHOLE_BLOB: (f64, f64) = (2.3, 1.4);
+/// 叠着的全音符（三度「8」字、几个摞着）连成的墨块最高（相对线距）。
+const WHOLE_STACK_H: f64 = 3.2;
 
 /// 加线那样的细横线：纵向不比谱线厚多少、横向连着至少这么长（相对线距）。找孔前先抹掉（只在找孔用的副本里），
 /// 不然压在加线上的空心头，孔被加线劈成上下两半。头的环壁与它交叉处纵向墨段长，抹不到，环不断。
@@ -222,14 +224,38 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
             }
             None => {
                 // 全音符：够宽、所在墨块就是孤立的一个环
-                let id = (0..=half).flat_map(|k| [k, -k]).map(|k| f.labels[(y + k) as usize * f.ink.w + (hx - 1) as usize]).find(|&v| v != 0).unwrap_or(0);
-                let alone = f.blobs.iter().find(|b| b.id as i32 == id).is_some_and(|b| b.rect.w <= WHOLE_BLOB.0 * scale * sp && b.rect.h <= WHOLE_BLOB.1 * scale * sp);
+                // 孔左右两边的环壁所在墨块（孔框贴着壁的那一列在符号墨里可能是白，往外找到壁）：叠成「8」字的全音符去线后常劈成左右两半，
+                // 两块合起来量。合框里上下另有头那么大的孔（叠着的全音符）高可到 `WHOLE_STACK_H` 格
+                let side = |x0: i64, dir: i64, reach: i64| -> i32 {
+                    (1..=reach.max(1) + 1)
+                        .flat_map(|dx| (0..=half).flat_map(move |k| [(dx, k), (dx, -k)]))
+                        .map(|(dx, k)| (x0 + dir * dx, y + k))
+                        .filter(|&(xx, yy)| xx >= 0 && (xx as usize) < f.ink.w && yy >= 0 && (yy as usize) < f.ink.h)
+                        .map(|(xx, yy)| f.labels[yy as usize * f.ink.w + xx as usize])
+                        .find(|&v| v != 0)
+                        .unwrap_or(0)
+                };
+                let ids = [side(hx, -1, left.1), side(hx + hw - 1, 1, right.1)];
+                let rects: Vec<_> = f.blobs.iter().filter(|b| b.id as i32 != 0 && ids.contains(&(b.id as i32))).map(|b| b.rect).collect();
+                let union = rects.iter().fold(None::<(f64, f64, f64, f64)>, |u, r| {
+                    let (x0, y0, x1, y1) = (r.x as f64, r.y as f64, (r.x + r.w) as f64, (r.y + r.h) as f64);
+                    Some(u.map_or((x0, y0, x1, y1), |u| (u.0.min(x0), u.1.min(y0), u.2.max(x1), u.3.max(y1))))
+                });
+                let stacked = union.is_some_and(|u| {
+                    holes.list.iter().any(|&((ox, oy, ow, oh), _, _)| {
+                        (ox, oy, ow, oh) != hole && (ow as f64) <= HOLE_W.1 * scale * sp && (oh as f64) <= HOLE_H.1 * scale * sp && (ow as f64) >= HOLE_W.0 * sp
+                            && ox.max(hx) < (ox + ow).min(hx + hw) && (ox as f64) >= u.0 && ((ox + ow) as f64) <= u.2 && (oy as f64) >= u.1 && ((oy + oh) as f64) <= u.3
+                    })
+                });
+                let max_h = if stacked { WHOLE_STACK_H } else { WHOLE_BLOB.1 };
+                let alone = union.is_some_and(|u| u.2 - u.0 <= WHOLE_BLOB.0 * scale * sp && u.3 - u.1 <= max_h * scale * sp);
                 if outer_w >= WHOLE_W * scale && alone {
                     trace(hole, format!("全音符，位 {pos}"));
                     head.kind = HeadKind::Whole;
                     out.push((head, None));
                 } else {
-                    trace(hole, format!("位 {pos} 没有干，外圈宽 {outer_w:.2} 格、独立成块 {alone}：不是全音符"));
+                    let r = union.map(|u| ((u.2 - u.0) / sp, (u.3 - u.1) / sp));
+                    trace(hole, format!("位 {pos} 没有干，外圈宽 {outer_w:.2} 格、独立成块 {alone}（块 {r:.1?}）：不是全音符"));
                 }
             }
         }
