@@ -23,10 +23,12 @@ use dolce_omr_text::lyrics::align;
 mod assign;
 mod attach;
 mod grand;
+mod ids;
 mod spans;
 use assign::*;
 use attach::*;
 use grand::*;
+use ids::*;
 use spans::*;
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
@@ -66,29 +68,6 @@ pub struct Song {
     pub fused: fuse::Stats,
     /// 框架与音符取自矢量层（判分按矢量档分）。
     pub vector: bool,
-}
-
-/// 发识别 id、把页内工作坐标的框折成原图像素。号码随整曲拼接的循环发（页序 → 系统 → 谱行 → x），
-/// 只取决于识别产物、不取决于声部指派：改关联表重拼时号码不变。
-struct Ids {
-    seq: RidSeq,
-    page: usize,
-    up: f64,
-}
-
-impl Ids {
-    fn at(&self, r: Rect) -> SrcBox {
-        SrcBox { page: self.page, rect: Rect::new(r.x / self.up, r.y / self.up, r.w / self.up, r.h / self.up) }
-    }
-
-    fn src(&mut self, kind: RidKind, r: Rect) -> Src {
-        Src { rid: Some(self.seq.take(kind)), at: Some(self.at(r)) }
-    }
-}
-
-/// 符头的源框（中心 ± 半个头；头宽按 1.3 格、头高 1 格估）。
-fn head_rect(x: f64, y: f64, sp: f64) -> Rect {
-    Rect::new(x - 0.65 * sp, y - 0.5 * sp, 1.3 * sp, sp)
 }
 
 /// 一个系统的小节边界。
@@ -280,7 +259,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
     // 各声部画到行尾、等下一个系统接着的松叶
     let mut open_wedge: Vec<OpenWedge> = vec![None; nparts];
-    let mut ids = Ids { seq: RidSeq::default(), page: 1, up: 1.0 };
+    let mut ids = Ids::new(pages);
     for (pn, page) in pages.iter().enumerate() {
         let f = &page.layout;
         (ids.page, ids.up) = (pn + 1, f.up);
@@ -328,7 +307,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     Bar { want: now.map(measure_divisions), loose: edge || !plain(bs.get(j)) || !plain(left) }
                 })
                 .collect();
-            let mut sys_notes: Vec<RowNotes> = rows.iter().map(|&i| page.notes[i].clone()).collect();
+            let mut sys_notes: Vec<RowNotes> = rows.iter().map(|&i| ids.notes[pn][i].clone()).collect();
             // 混排谱：先照简谱行纠（音高、时值、补漏删假），再验满拍
             let xs: Vec<f64> = bs.iter().map(|b| b.x).collect();
             let wants: Vec<Option<u32>> = bars.iter().map(|b| b.want).collect();
@@ -438,7 +417,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                     for (&(_, ch, rest), &(onset, voice)) in items[n0..n1].iter().zip(&place) {
                         let Some(ch) = ch else {
                             let r = rest.unwrap();
-                            let src = vec![HeadSrc { pitch: None, src: ids.src(RidKind::Note, Rect::new(r.rect.0, r.rect.1, r.rect.2, r.rect.3)) }];
+                            let src = vec![HeadSrc { pitch: None, src: ids.src(r.rid, RidKind::Note, Rect::new(r.rect.0, r.rect.1, r.rect.2, r.rect.3)) }];
                             ms[j].events.push(Event { onset, voice, arts: r.arts.clone(), src, ..Event::new(vec![], r.ntype, r.dots, None) });
                             beats.push(Anchor { x: r.x, y: r.y, bar: j, event: ms[j].events.len() - 1, voice });
                             continue;
@@ -462,7 +441,7 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                             p
                         }).collect();
                         let sp = f.staves[i].space();
-                        let mut hs: Vec<HeadSrc> = ch.heads.iter().zip(&ps).map(|(h, p)| HeadSrc { pitch: Some(*p), src: ids.src(RidKind::Note, head_rect(h.x, h.y, sp)) }).collect();
+                        let mut hs: Vec<HeadSrc> = ch.heads.iter().zip(&ps).map(|(h, p)| HeadSrc { pitch: Some(*p), src: ids.src(h.rid, RidKind::Note, head_rect(h.x, h.y, sp)) }).collect();
                         // 同一时刻同一声部已经有和弦的（并排两个朝向相同的干）并进去
                         let ei = match ms[j].events.iter().position(|e| e.onset == onset && e.voice == voice && !e.pitches.is_empty()) {
                             Some(n) => {
@@ -531,14 +510,14 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
                 // 线性符号：弧、松叶按 x 挂到和弦上
                 anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
                 let sp_row = f.staves[i].space();
-                let arcs: Vec<&Arc> = page.spans.arcs.iter().filter(|a| a.staff == i).collect();
+                let arcs: Vec<(usize, &Arc)> = page.spans.arcs.iter().enumerate().filter(|(_, a)| a.staff == i).collect();
                 row_arcs(&arcs, &anchors, &ms, from, sp_row, sys_i, &mut pending[p], &mut span_recs[p], &mut ids);
                 let wedges: Vec<&Wedge> = page.spans.wedges.iter().filter(|w| w.staff == i).collect();
                 let rests: Vec<Anchor> = beats.clone();
                 beats.extend(anchors.iter().copied());
                 beats.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
                 row_wedges(&wedges, &beats, &mut ms, &bar_of, sp_row, (lead_of(page, i), f.staves[i].right), sys_i, &mut open_wedge[p], &mut parts[p].measures);
-                attach_text(&mut ms, anchors, &rests, &page.text.rows[i], dx, han_lines, &mut ids);
+                attach_text(&mut ms, anchors, &rests, (i, &page.text.rows[i]), dx, han_lines, &mut ids);
                 // 行中切换：落在哪个小节；最后一条小节线之后的（行末预告）不属于这一行
                 for ch in &a.changes {
                     let j = bs.iter().filter(|b| b.x < ch.x).count();

@@ -219,11 +219,11 @@ pub fn apply(c: &Ctx, notes: &mut RowNotes, bounds: &[f64], wants: &[Option<u32>
                 let x = n.x + off;
                 if n.digit == 0 {
                     let y = c.st.y_of(x, 4.0);
-                    new_rests.push(Rest { staff: c.si, x, y, ntype: t, rect: (x - sp / 2.0, y - sp / 2.0, sp, sp), dots, arts: Vec::new(), measures: 0 });
+                    new_rests.push(Rest { staff: c.si, x, y, ntype: t, rect: (x - sp / 2.0, y - sp / 2.0, sp, sp), dots, arts: Vec::new(), measures: 0, rid: None });
                 } else {
                     let pos = dia(c.clef, 0) - (base + tonic(c.key) + n.digit as i32 - 1 + 7 * n.octave);
                     let (kind, tails) = shape_of(t);
-                    let head = Head { staff: c.si, x, y: c.st.y_of(x, pos as f64), pos, kind, fill: 1.0, score: 1.0, acc: None };
+                    let head = Head { staff: c.si, x, y: c.st.y_of(x, pos as f64), pos, kind, fill: 1.0, score: 1.0, acc: None, rid: None };
                     new_chords.push(Chord { x, heads: vec![head], stem: None, tails, beamed: false, dots, arts: Vec::new(), tuplet: None });
                 }
                 stats.inserted += 1;
@@ -348,7 +348,7 @@ mod tests {
     }
 
     fn chord(x: f64, pos: &[i32]) -> Chord {
-        let heads = pos.iter().map(|&p| Head { staff: 0, x, y: 100.0 + p as f64 * 5.0, pos: p, kind: HeadKind::Filled, fill: 1.0, score: 1.0, acc: None }).collect();
+        let heads = pos.iter().map(|&p| Head { staff: 0, x, y: 100.0 + p as f64 * 5.0, pos: p, kind: HeadKind::Filled, fill: 1.0, score: 1.0, acc: None, rid: None }).collect();
         Chord { x, heads, stem: None, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None }
     }
 

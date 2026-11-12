@@ -47,13 +47,13 @@ pub(super) struct Anchor {
 
 /// 一行谱的歌词与记号按 x 挂到音上。横向挨着（同一拍点）的几个和弦只留声部 1 的那个。
 /// `rests`：这一行谱的休止拍点——整行没有音（只有休止，如器乐声部开头空着）时记号挂到它们上，歌词不挂。
-pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], text: &RowText, same_dx: f64, han_lines: u8, ids: &mut Ids) {
+pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &[Anchor], (staff, text): (usize, &RowText), same_dx: f64, han_lines: u8, ids: &mut Ids) {
     if anchors.is_empty() {
         let marks_only = RowText { lyrics: Vec::new(), marks: text.marks.clone() };
         if rests.is_empty() || marks_only.marks.is_empty() {
             return;
         }
-        return attach_text(ms, rests.to_vec(), &[], &marks_only, same_dx, han_lines, ids);
+        return attach_text(ms, rests.to_vec(), &[], (staff, &marks_only), same_dx, han_lines, ids);
     }
     anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
     let mut pts: Vec<Anchor> = Vec::new();
@@ -84,7 +84,7 @@ pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &
         v
     };
     let first = [first_at(false), first_at(true)];
-    for (line, place) in text.lyrics.iter().zip(&placed) {
+    for (li, (line, place)) in text.lyrics.iter().zip(&placed).enumerate() {
         // 拉丁词的行号排在全曲汉字词之后
         let base = if line.latin { han_lines } else { 0 };
         // 只印一遍的词（副歌）排在几行主歌的中间那一行的高度上：这一行里接连三个以上音节所占的那一段拍点，
@@ -117,13 +117,14 @@ pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &
                 // 音不够：多出来的字并进同一个音
                 Some(l) => l.text.push_str(&text),
                 None => {
-                    let src = ids.src(RidKind::Lyric, Rect::new(syl.x - syl.w / 2.0, line.y0, syl.w, line.y1 - line.y0));
+                    let rid = ids.syl(staff, li, k);
+                    let src = ids.src(rid, RidKind::Lyric, Rect::new(syl.x - syl.w / 2.0, line.y0, syl.w, line.y1 - line.y0));
                     e.lyrics.push(Lyric { number, text, syllabic: syl.syllabic, src })
                 }
             }
         }
     }
-    for m in &text.marks {
+    for (mi, m) in text.marks.iter().enumerate() {
         let nearest = || (0..xs.len()).min_by(|&a, &b| (xs[a] - m.x).abs().total_cmp(&(xs[b] - m.x).abs())).unwrap();
         let n = match m.dir {
             // 文字指示、节拍器从它的左端起管：取左端右边（容一个拍点宽）第一个音
@@ -131,8 +132,8 @@ pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &
             _ => nearest(),
         };
         let src = match m.dir {
-            Dir::Words { .. } | Dir::Metronome { .. } => ids.src(RidKind::Words, m.rect),
-            Dir::Dynamics(_) => ids.src(RidKind::Dynamics, m.rect),
+            Dir::Words { .. } | Dir::Metronome { .. } => ids.src(ids.mark(staff, mi), RidKind::Words, m.rect),
+            Dir::Dynamics(_) => ids.src(ids.mark(staff, mi), RidKind::Dynamics, m.rect),
             _ => Src { rid: None, at: Some(ids.at(m.rect)) },
         };
         ms[pts[n].bar].events[pts[n].event].pre.push(Placed { dir: m.dir.clone(), src });

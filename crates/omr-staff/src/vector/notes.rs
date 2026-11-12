@@ -248,7 +248,7 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
             _ => HeadKind::Whole,
         };
         let pos = st.pos(x, y).round() as i32;
-        let h = Head { staff: si, x, y, pos, kind, fill: 1.0, score: 1.0, acc: None };
+        let h = Head { staff: si, x, y, pos, kind, fill: 1.0, score: 1.0, acc: None, rid: None };
         let stem = (kind != HeadKind::Whole).then(|| find_stem(ink, &h, st.space(), f.unit.thick, Some((s.rect.x.floor() as i64, s.rect.right().ceil() as i64)), &|x| claims.bar_col(si, x))).flatten();
         all.push((h, stem));
     }
@@ -267,7 +267,7 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
         let (x, y) = (s.rect.x + hw / 2.0, if up { s.rect.bottom() - hh / 2.0 } else { s.rect.y + hh / 2.0 });
         let kind = if s.name.contains("Half") { HeadKind::Half } else { HeadKind::Filled };
         let pos = st.pos(x, y).round() as i32;
-        let h = Head { staff: si, x, y, pos, kind, fill: 1.0, score: 1.0, acc: None };
+        let h = Head { staff: si, x, y, pos, kind, fill: 1.0, score: 1.0, acc: None, rid: None };
         let sx = if up { s.rect.x + hw - f.unit.thick / 2.0 } else { s.rect.x + f.unit.thick / 2.0 };
         let stem = Stem { x: sx.round() as i64, top: s.rect.y.round() as i64, bottom: s.rect.bottom().round() as i64, up };
         let tails = match s.name {
@@ -306,7 +306,7 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
         if r.iter().any(|o| (o.x - s.cx()).abs() < 0.5 && (o.y - s.cy()).abs() < 0.5) {
             continue;
         }
-        r.push(Rest { staff: si, x: s.cx(), y: s.cy(), ntype, rect: (s.rect.x, s.rect.y, s.rect.w, s.rect.h), dots: 0, arts: Vec::new(), measures: 0 });
+        r.push(Rest { staff: si, x: s.cx(), y: s.cy(), ntype, rect: (s.rect.x, s.rect.y, s.rect.w, s.rect.h), dots: 0, arts: Vec::new(), measures: 0, rid: None });
     }
     for row in rows.iter_mut() {
         row.rests.sort_by(|a, b| a.x.total_cmp(&b.x));

@@ -56,6 +56,9 @@ pub struct Head {
     pub score: f64,
     /// 头前的临时记号：升 1、降 −1、还原 0（[`super::marks`]）。
     pub acc: Option<i8>,
+    /// 识别 id：整曲拼接前按识别产物发（页序 → 系统 → 谱行 → x），之后裁决删改不动别的头的号。
+    #[serde(default)]
+    pub rid: Option<dolce_omr_sheet::result::Rid>,
 }
 
 /// 符号墨（存疑像素不算）的积分图。
@@ -117,7 +120,7 @@ pub fn seeds(f: &PageFrame, ink: &InkLayers, sum: &InkSum, si: usize, x_from: f6
         let mut close = |run: &mut Option<(i64, i64, f64, i64, i64)>| {
             if let Some((a, b, fill, _, y)) = run.take() {
                 if ((b - a + 1) as f64) <= SEED_RUN * sp {
-                    out.push(Head { staff: si, x: (a + b) as f64 / 2.0, y: y as f64, pos: p, kind: HeadKind::Filled, fill, score: 0.0, acc: None });
+                    out.push(Head { staff: si, x: (a + b) as f64 / 2.0, y: y as f64, pos: p, kind: HeadKind::Filled, fill, score: 0.0, acc: None, rid: None });
                 }
             }
         };

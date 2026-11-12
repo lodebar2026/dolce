@@ -194,7 +194,7 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
             continue;
         }
         let half_w = (xr - xl + 1) as f64 / 2.0;
-        let mut head = Head { staff: si, x: (xl + xr) as f64 / 2.0, y: cy, pos, kind: HeadKind::Half, fill: 0.0, score: 0.0, acc: None };
+        let mut head = Head { staff: si, x: (xl + xr) as f64 / 2.0, y: cy, pos, kind: HeadKind::Half, fill: 0.0, score: 0.0, acc: None, rid: None };
         if !ledger_ok(f, &head, half_w) {
             trace(hole, format!("位 {pos} 在谱表外、没有加线"));
             continue;

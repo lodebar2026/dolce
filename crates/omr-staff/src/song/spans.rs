@@ -68,7 +68,7 @@ pub(super) fn expand_multi_rests(ms: &mut Vec<Measure>, extra: &[(usize, usize)]
 
 /// 一行谱的弧挂到事件上：两端都有的直接记；画到行尾的留给下一个系统同一声部从行首来的那半条接。
 #[allow(clippy::too_many_arguments)]
-pub(super) fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>, ids: &mut Ids) {
+pub(super) fn row_arcs(arcs: &[(usize, &Arc)], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>, ids: &mut Ids) {
     pending.retain(|p| p.sys + 1 >= sys);
     let off = |i: usize, c: ChordRef| (anchors[i].x - c.x).abs() + (anchors[i].y - c.y).abs();
     let find = |c: ChordRef| (0..anchors.len()).filter(|&i| (anchors[i].x - c.x).abs() <= ARC_CHORD * sp).min_by(|&a, &b| off(a, c).total_cmp(&off(b, c)));
@@ -87,13 +87,13 @@ pub(super) fn row_arcs(arcs: &[&Arc], anchors: &[Anchor], ms: &[Measure], from: 
         let (y0, y1) = if arc.above { (y0 - sp, y1) } else { (y0, y1 + sp) };
         Rect::new(x0, y0, x1 - x0, y1 - y0)
     };
-    for arc in arcs {
+    for &(ak, arc) in arcs {
         match (arc.start.and_then(find), arc.end.and_then(find)) {
             (Some(i), Some(j)) if i < j && !same(i, j) => {
                 let adjacent = !voiced(i + 1..j, i) && !voiced(i + 1..j, j);
-                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent, src: ids.src(RidKind::Slur, rect(arc)) });
+                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent, src: ids.src(ids.arc(ak), RidKind::Slur, rect(arc)) });
             }
-            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i), src: ids.src(RidKind::Slur, rect(arc)) }),
+            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i), src: ids.src(ids.arc(ak), RidKind::Slur, rect(arc)) }),
             (None, Some(j)) if arc.start.is_none() => {
                 let from_prev = |p: &Pending| p.sys + 1 == sys;
                 let Some(n) = pending.iter().position(|p| from_prev(p) && p.above == arc.above).or_else(|| pending.iter().position(from_prev)) else { continue };
