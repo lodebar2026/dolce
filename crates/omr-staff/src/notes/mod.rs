@@ -30,7 +30,7 @@ const TPL_DROP: f64 = 0.2;
 /// 两个和弦的头横向相隔不到这么多（相对线距）的算同一拍点（上下两个声部各自带干）。
 pub const SAME_ONSET: f64 = 0.8;
 /// 常见字体的实心头宽（相对线距，按模板过中心那一行量）。
-const HEAD_W: f64 = 1.25;
+pub(crate) const HEAD_W: f64 = 1.25;
 
 impl Chord {
     /// 头型（同干的头按第一个算）。

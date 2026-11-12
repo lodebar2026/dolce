@@ -31,6 +31,14 @@ const BOX_FULL: f64 = 0.88;
 /// 全音符：外圈至少这么宽、所在墨块不超过这么大（相对线距）。
 const WHOLE_W: f64 = 1.25;
 const WHOLE_BLOB: (f64, f64) = (2.3, 1.4);
+/// 全音符外圈不比本页实心头窄多少（相对实心头宽）：粗体字的页上全音符与实心头差不多宽（098 奇妙十架歌实心头 1.44 格、全音符 1.42 格）。
+const WHOLE_VS_BLACK: f64 = 0.95;
+
+/// 全音符外圈宽下限（相对线距）：不窄于 [`WHOLE_W`]，也不窄于本页实心头宽（`scale` 倍常见头宽）的 [`WHOLE_VS_BLACK`] 倍。
+fn whole_min(scale: f64) -> f64 {
+    WHOLE_W.max(WHOLE_VS_BLACK * super::HEAD_W * scale)
+}
+
 /// 叠着的全音符（三度「8」字、几个摞着）连成的墨块最高（相对线距）。
 const WHOLE_STACK_H: f64 = 3.2;
 
@@ -169,7 +177,7 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
         let at = s.pos(cx, cy);
         let pos = at.round() as i32;
         if (at - pos as f64).abs() > GRID_TOL || !(POS_MIN..=POS_MAX).contains(&pos) {
-            trace(hole, format!("孔心音级 {at:.2} 不在格点上"));
+            trace(hole, format!("孔心音级 {at:.2} 不在格点上（图{which}）"));
             continue;
         }
         // 外圈：孔的包围盒加四面的环壁（各面在中点附近几行 / 列上取最厚的）
@@ -224,32 +232,8 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
             }
             None => {
                 // 全音符：够宽、所在墨块就是孤立的一个环
-                // 孔左右两边的环壁所在墨块（孔框贴着壁的那一列在符号墨里可能是白，往外找到壁）：叠成「8」字的全音符去线后常劈成左右两半，
-                // 两块合起来量。合框里上下另有头那么大的孔（叠着的全音符）高可到 `WHOLE_STACK_H` 格
-                let side = |x0: i64, dir: i64, reach: i64| -> i32 {
-                    (1..=reach.max(1) + 1)
-                        .flat_map(|dx| (0..=half).flat_map(move |k| [(dx, k), (dx, -k)]))
-                        .map(|(dx, k)| (x0 + dir * dx, y + k))
-                        .filter(|&(xx, yy)| xx >= 0 && (xx as usize) < f.ink.w && yy >= 0 && (yy as usize) < f.ink.h)
-                        .map(|(xx, yy)| f.labels[yy as usize * f.ink.w + xx as usize])
-                        .find(|&v| v != 0)
-                        .unwrap_or(0)
-                };
-                let ids = [side(hx, -1, left.1), side(hx + hw - 1, 1, right.1)];
-                let rects: Vec<_> = f.blobs.iter().filter(|b| b.id as i32 != 0 && ids.contains(&(b.id as i32))).map(|b| b.rect).collect();
-                let union = rects.iter().fold(None::<(f64, f64, f64, f64)>, |u, r| {
-                    let (x0, y0, x1, y1) = (r.x as f64, r.y as f64, (r.x + r.w) as f64, (r.y + r.h) as f64);
-                    Some(u.map_or((x0, y0, x1, y1), |u| (u.0.min(x0), u.1.min(y0), u.2.max(x1), u.3.max(y1))))
-                });
-                let stacked = union.is_some_and(|u| {
-                    holes.list.iter().any(|&((ox, oy, ow, oh), _, _)| {
-                        (ox, oy, ow, oh) != hole && (ow as f64) <= HOLE_W.1 * scale * sp && (oh as f64) <= HOLE_H.1 * scale * sp && (ow as f64) >= HOLE_W.0 * sp
-                            && ox.max(hx) < (ox + ow).min(hx + hw) && (ox as f64) >= u.0 && ((ox + ow) as f64) <= u.2 && (oy as f64) >= u.1 && ((oy + oh) as f64) <= u.3
-                    })
-                });
-                let max_h = if stacked { WHOLE_STACK_H } else { WHOLE_BLOB.1 };
-                let alone = union.is_some_and(|u| u.2 - u.0 <= WHOLE_BLOB.0 * scale * sp && u.3 - u.1 <= max_h * scale * sp);
-                if outer_w >= WHOLE_W * scale && alone {
+                let (alone, union) = isolated_ring(f, holes, hole, y, (left.1, right.1), half, scale, sp);
+                if outer_w >= whole_min(scale) && alone {
                     trace(hole, format!("全音符，位 {pos}"));
                     head.kind = HeadKind::Whole;
                     out.push((head, None));
@@ -263,10 +247,50 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
     out
 }
 
+/// 孔所在的是不是孤立的一个环（全音符）：孔左右两壁所在墨块的合框不过 [`WHOLE_BLOB`]（孔框贴着壁的那一列在符号墨里可能是白，往外找到壁）；
+/// 叠成「8」字的全音符去线后常劈成左右两半，两块合起来量。合框里上下另有头那么大的孔（叠着的全音符）高可到 [`WHOLE_STACK_H`] 格。
+/// `reach`：左右壁伸出孔框多远（像素）。回 (孤立, 合框 (x0, y0, x1, y1))。
+#[allow(clippy::too_many_arguments)]
+fn isolated_ring(f: &PageFrame, holes: &Holes, hole: (i64, i64, i64, i64), y: i64, reach: (i64, i64), half: i64, scale: f64, sp: f64) -> (bool, Option<(f64, f64, f64, f64)>) {
+    let (hx, _, hw, _) = hole;
+    let side = |x0: i64, dir: i64, reach: i64| -> i32 {
+        (1..=reach.max(1) + 1)
+            .flat_map(|dx| (0..=half).flat_map(move |k| [(dx, k), (dx, -k)]))
+            .map(|(dx, k)| (x0 + dir * dx, y + k))
+            .filter(|&(xx, yy)| xx >= 0 && (xx as usize) < f.ink.w && yy >= 0 && (yy as usize) < f.ink.h)
+            .map(|(xx, yy)| f.labels[yy as usize * f.ink.w + xx as usize])
+            .find(|&v| v != 0)
+            .unwrap_or(0)
+    };
+    let ids = [side(hx, -1, reach.0), side(hx + hw - 1, 1, reach.1)];
+    let union = f.blobs.iter().filter(|b| b.id as i32 != 0 && ids.contains(&(b.id as i32))).fold(None::<(f64, f64, f64, f64)>, |u, b| {
+        let r = b.rect;
+        let (x0, y0, x1, y1) = (r.x as f64, r.y as f64, (r.x + r.w) as f64, (r.y + r.h) as f64);
+        Some(u.map_or((x0, y0, x1, y1), |u| (u.0.min(x0), u.1.min(y0), u.2.max(x1), u.3.max(y1))))
+    });
+    let stacked = union.is_some_and(|u| {
+        holes.list.iter().any(|&((ox, oy, ow, oh), _, _)| {
+            (ox, oy, ow, oh) != hole
+                && (ow as f64) <= HOLE_W.1 * scale * sp
+                && (oh as f64) <= HOLE_H.1 * scale * sp
+                && (ow as f64) >= HOLE_W.0 * sp
+                && ox.max(hx) < (ox + ow).min(hx + hw)
+                && (ox as f64) >= u.0
+                && ((ox + ow) as f64) <= u.2
+                && (oy as f64) >= u.1
+                && ((oy + oh) as f64) <= u.3
+        })
+    });
+    let max_h = if stacked { WHOLE_STACK_H } else { WHOLE_BLOB.1 };
+    (union.is_some_and(|u| u.2 - u.0 <= WHOLE_BLOB.0 * scale * sp && u.3 - u.1 <= max_h * scale * sp), union)
+}
+
 /// 开口内腔离谱表上下至多几格：歌词里的字母 o 也围得出一个。
 const OPEN_BAND: f64 = 2.0;
 /// 开口内腔的宽、高下限（相对线距）：比封闭的孔严，开口的白不论形状，太小的是笔画间的缝。
 const OPEN_HOLE: (f64, f64) = (0.45, 0.3);
+/// 封闭的孔盖住开口内腔外框这么多就归封闭孔那一路。
+const OPEN_COVERED: f64 = 0.6;
 /// 开口内腔挂上的干比本行干宽中位宽出这么多倍的不收。
 const STEM_WIDE: f64 = 1.5;
 /// 开口内腔收出的头盒里的墨占比范围（环）：实心头满、空当几乎没墨。
@@ -391,9 +415,13 @@ pub fn open_cavity_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usiz
             continue;
         }
         let cav = (x0 + ax as i64, y0 + ay as i64, (bx - ax + 1) as i64, (by - ay + 1) as i64);
+        if std::env::var("OMR_OPEN_DEBUG").is_ok_and(|v| v == "2") {
+            eprintln!("  内腔 行{si} {cav:?}");
+        }
         // 封闭的孔归 [`hollow_heads`] 管：它那里丢了的（升降号、实心墨夹出的空当）这里不再捡
-        let cross = |a: &(i64, i64, i64, i64), b: &(i64, i64, i64, i64)| a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3;
-        if holes.list.iter().any(|(r, _, _)| (r.2 as f64) <= HOLE_W.1 * scale * sp && (r.3 as f64) <= HOLE_H.1 * scale * sp && cross(r, &cav)) {
+        // （盖住内腔大半的才算：压线的头，原图上被线切出的半截孔也是头那么大，内腔却从缺口漏了出去）
+        let inter = |a: &(i64, i64, i64, i64), b: &(i64, i64, i64, i64)| ((a.0 + a.2).min(b.0 + b.2) - a.0.max(b.0)).max(0) * ((a.1 + a.3).min(b.1 + b.3) - a.1.max(b.1)).max(0);
+        if holes.list.iter().any(|(r, _, _)| (r.2 as f64) <= HOLE_W.1 * scale * sp && (r.3 as f64) <= HOLE_H.1 * scale * sp && inter(r, &cav) as f64 >= OPEN_COVERED * (cav.2 * cav.3) as f64) {
             continue;
         }
         let (cx, cy) = (cav.0 as f64 + cav.2 as f64 / 2.0, cav.1 as f64 + cav.3 as f64 / 2.0);
@@ -409,7 +437,11 @@ pub fn open_cavity_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usiz
             let (dx, dy) = ((h.x - cx).abs(), (h.y - cy).abs());
             (dx < hw as f64 * 0.8 && dy < sp * 0.6) || (h.kind == HeadKind::Filled && dx < hw as f64 && dy >= sp && dy <= FLAG_REACH * sp)
         });
+        let dbg2 = std::env::var("OMR_OPEN_DEBUG").is_ok_and(|v| v == "2");
         if clash {
+            if dbg2 {
+                eprintln!("    撞已认出的头");
+            }
             continue;
         }
         let (bx0, by0) = ((cx - hw as f64 / 2.0).round() as i64, (cy - hh as f64 / 2.0).round() as i64);
@@ -421,13 +453,40 @@ pub fn open_cavity_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usiz
         }
         let fill = n_ink as f64 / (hw * hh).max(1) as f64;
         if fill < OPEN_FILL.0 || fill > OPEN_FILL.1 {
+            if dbg2 {
+                eprintln!("    墨 {fill:.2}");
+            }
             continue;
         }
         let head = Head { staff: si, x: cx, y: cy, pos, kind: HeadKind::Half, fill: 0.0, score: 0.0, acc: None, rid: None };
         if !ledger_ok(f, &head, hw as f64 / 2.0) {
             continue;
         }
-        let Some(st) = find_stem(&f.ink, &head, sp, f.unit.thick, Some((bx0, bx0 + hw - 1)), &|x| claims.bar_col(si, x)) else { continue };
+        let Some(st) = find_stem(&f.ink, &head, sp, f.unit.thick, Some((bx0, bx0 + hw - 1)), &|x| claims.bar_col(si, x)) else {
+            // 没干：全音符（够宽、孤立的一个环）。左右壁从内腔中心那一行往外数
+            let (y, half) = (cy.round() as i64, ((0.22 * sp).round() as i64).max(1));
+            let run = |x0: i64, dir: i64| (0..(WALL_MAX * scale * sp) as i64).take_while(|&t| img.ink(x0 + dir * (t + 1), y)).count() as i64;
+            let (l, r) = (run(cav.0, -1), run(cav.0 + cav.2 - 1, 1));
+            let outer_w = (cav.2 + l + r) as f64 / sp;
+            if l == 0 || r == 0 || outer_w < whole_min(scale) || outer_w > OUTER_W.1 * scale {
+                if dbg2 {
+                    eprintln!("    无干，壁 {l}/{r} 外圈宽 {outer_w:.2} 放大 {scale:.2}");
+                }
+                continue;
+            }
+            let (alone, _) = isolated_ring(f, holes, cav, y, (l, r), half, scale, sp);
+            if !alone {
+                if dbg2 {
+                    eprintln!("    无干，不孤立");
+                }
+                continue;
+            }
+            if std::env::var("OMR_OPEN_DEBUG").is_ok() {
+                eprintln!("开口内腔全音符 行{si} 孔 {cav:?} 位 {pos} 墨 {fill:.2} 外圈宽 {outer_w:.2}");
+            }
+            out.push((Head { kind: HeadKind::Whole, ..head }, None));
+            continue;
+        };
         // 挂上的干要像本行的干那么细：粗笔记号（花括号、大号字）两笔夹出的白，「干」是它自己的粗笔
         let stw = stem_width(f, &head, &st, sp);
         if stw > (STEM_WIDE * stem_med).max(stem_med + 1.0) {
