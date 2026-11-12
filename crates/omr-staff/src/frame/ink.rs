@@ -12,6 +12,28 @@ use serde::{Deserialize, Serialize};
 pub use dolce_omr_sheet::element::{Probe, BG, INK, LINE};
 pub use dolce_omr_sheet::prims::VSeg;
 
+/// 墨层带上松阈值图（挂干量断口时看淡笔画）。
+pub struct WithSoft<'a> {
+    pub ink: &'a InkLayers,
+    pub soft: Option<&'a Binary>,
+}
+
+impl Probe for WithSoft<'_> {
+    fn width(&self) -> usize {
+        self.ink.w
+    }
+    fn height(&self) -> usize {
+        self.ink.h
+    }
+    #[inline]
+    fn at(&self, x: i64, y: i64) -> u8 {
+        self.ink.at(x, y)
+    }
+    fn faint(&self, x: i64, y: i64) -> bool {
+        self.soft.is_some_and(|s| s.ink(x, y))
+    }
+}
+
 /// 一页的墨层。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InkLayers {

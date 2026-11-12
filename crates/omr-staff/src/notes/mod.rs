@@ -146,7 +146,7 @@ fn seed_stage(f: &PageFrame, attrs: &[RowAttrs], claims: &Claims) -> SeedStage {
         let row: Vec<(Head, Stem)> = heads::seeds(f, &solid, &sum, si, x_from(f, attrs, si))
             .into_iter()
             .filter(|h| ledgers::ledger_ok(f, h, FILLED_HALF_W * sp))
-            .filter_map(|h| stems::find_stem(&f.ink, &h, sp, f.unit.thick, None, &|x| claims.bar_col(si, x)).map(|st| (h, st)))
+            .filter_map(|h| stems::find_stem(&f.stem_ink(), &h, sp, f.unit.thick, None, &|x| claims.bar_col(si, x)).map(|st| (h, st)))
             .collect();
         samples.extend(heads::fullest(row.iter().map(|(h, _)| h.clone()).collect(), sp).iter().map(|h| (h.x, h.y, sp)));
         cands.extend(row);
@@ -210,7 +210,7 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
                 let hw = UNISON_HALF_W * scale * sp;
                 ((h.x - hw).round() as i64, (h.x + hw).round() as i64)
             });
-            let other = stems::unison_stem(&f.ink, h, sp, f.unit.thick, edges, st, &|x| claims.bar_col(h.staff, x))?;
+            let other = stems::unison_stem(&f.stem_ink(), h, sp, f.unit.thick, edges, st, &|x| claims.bar_col(h.staff, x))?;
             Some((h.clone(), Some(other)))
         })
         .collect();
@@ -281,7 +281,7 @@ pub fn head_near(f: &PageFrame, attrs: &[RowAttrs], si: usize, x: f64, y: f64) -
     }
     let (score, hx, hy, pos) = best.filter(|b| b.0 >= floor)?;
     let head = Head { staff: si, x: hx, y: hy, pos, kind: heads::HeadKind::Filled, fill: 1.0, score, acc: None, rid: None };
-    let stem = stems::find_stem(&f.ink, &head, sp, f.unit.thick, None, &|_| false);
+    let stem = stems::find_stem(&f.stem_ink(), &head, sp, f.unit.thick, None, &|_| false);
     let mut rows: Vec<RowNotes> = (0..f.staves.len()).map(|_| RowNotes::default()).collect();
     rows[si].chords.push(Chord { x: hx, heads: vec![head.clone()], stem, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false });
     beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);

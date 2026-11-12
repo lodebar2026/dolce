@@ -23,6 +23,10 @@ pub trait Probe: Sync {
     fn exact(&self) -> bool {
         false
     }
+    /// 松阈值图上这里有墨（扫描件印淡的笔画：给断口作佐证）；没有松图的一律 false。
+    fn faint(&self, _x: i64, _y: i64) -> bool {
+        false
+    }
 }
 
 /// 元素的证据。

@@ -225,7 +225,7 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
             trace(hole, format!("位 {pos} 在谱表外、没有加线"));
             continue;
         }
-        match find_stem(&f.ink, &head, sp, f.unit.thick, Some((xl, xr)), &|x| claims.bar_col(si, x)) {
+        match find_stem(&f.stem_ink(), &head, sp, f.unit.thick, Some((xl, xr)), &|x| claims.bar_col(si, x)) {
             Some(st) => {
                 trace(hole, format!("二分，位 {pos}，干 {st:?}"));
                 out.push((head, Some(st)))
@@ -462,7 +462,7 @@ pub fn open_cavity_heads(f: &PageFrame, holes: &Holes, claims: &Claims, si: usiz
         if !ledger_ok(f, &head, hw as f64 / 2.0) {
             continue;
         }
-        let Some(st) = find_stem(&f.ink, &head, sp, f.unit.thick, Some((bx0, bx0 + hw - 1)), &|x| claims.bar_col(si, x)) else {
+        let Some(st) = find_stem(&f.stem_ink(), &head, sp, f.unit.thick, Some((bx0, bx0 + hw - 1)), &|x| claims.bar_col(si, x)) else {
             // 没干：全音符（够宽、孤立的一个环）。左右壁从内腔中心那一行往外数
             let (y, half) = (cy.round() as i64, ((0.22 * sp).round() as i64).max(1));
             let run = |x0: i64, dir: i64| (0..(WALL_MAX * scale * sp) as i64).take_while(|&t| img.ink(x0 + dir * (t + 1), y)).count() as i64;

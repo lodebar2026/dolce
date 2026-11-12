@@ -45,6 +45,13 @@ pub struct PageFrame {
     pub band_ink: Option<Binary>,
 }
 
+impl PageFrame {
+    /// 挂干用的墨层（带松阈值图，同尺寸才带）。
+    pub fn stem_ink(&self) -> crate::frame::ink::WithSoft<'_> {
+        crate::frame::ink::WithSoft { ink: &self.ink, soft: self.soft.as_ref().filter(|s| s.w == self.ink.w && s.h == self.ink.h) }
+    }
+}
+
 impl std::ops::Deref for PageFrame {
     type Target = Layout;
     fn deref(&self) -> &Layout {
