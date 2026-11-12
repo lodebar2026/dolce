@@ -151,8 +151,13 @@ pub fn read_clef(f: &PageFrame, s: &Staff, us: &[Unit]) -> Option<ClefHit> {
             // 先在整条谱表带里刻；判不出再只在谱表以内刻（括号下端的弯钩伸在末线下面，会把低音谱号的下沿拉低）
             let full = carve_after_line(f, s, u, sp * 3.4, -6.0, 14.0).filter(|c| c.rect.x >= s.left - sp * 1.5);
             let inner = || carve_after_line(f, s, u, sp * 3.4, -1.5, 7.85).filter(|c| c.rect.x >= s.left - sp * 1.5 && clef_shape(f, c, sp).is_some_and(|k| k.0 == Clef::BASS));
+            if std::env::var("OMR_CLEF_DEBUG").is_ok() {
+                let d = |c: &Option<Unit>| c.as_ref().map(|c| (c.rect.x as i64, c.top, c.bottom, c.w(sp), c.h(sp), clef_shape(f, c, sp).map(|k| k.0)));
+                eprintln!("刻谱号 行左 {:.0}：整带 {:?} 谱表内 {:?}", s.left, d(&full), d(&carve_after_line(f, s, u, sp * 3.4, -1.5, 7.85)));
+            }
             // 刻出来的下沿不可靠（括号钩、花括号都在这一带）：只收不带 8 的高音谱号
-            match full.filter(|c| clef_shape(f, c, sp).is_some_and(|k| k.0 == Clef::TREBLE && c.bottom <= 12.0)).or_else(inner) {
+            // 也不收太窄的（高音谱号宽约是高的 0.38）：末行括号的下钩连着下面的墨，刻出来 0.9 格宽、7 格高，按位置像高音谱号（新编 236、164 末行低音谱表读成 G）
+            match full.filter(|c| clef_shape(f, c, sp).is_some_and(|k| k.0 == Clef::TREBLE && c.bottom <= 12.0) && c.w(sp) >= c.h(sp) * 0.25).or_else(inner) {
                 Some(c) => {
                     carved = c;
                     &carved
