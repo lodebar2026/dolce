@@ -183,6 +183,36 @@ pub fn frame_vector(vp: &VecPage) -> Option<VecFrame> {
     Some(VecFrame { layout, staff_lines, segs })
 }
 
+/// 行首区画成像素的页框（只给字形字典在行首认不出谱号的行用：转曲页换了一套字体，谱号、调号、拍号都不在字典里）。
+/// 各行谱左端 [`LEAD_SPAN`] 格以内的对象（简谱带里的不画）按工作坐标画进二值图，版面照搬矢量的，
+/// 行首读法（谱号自举、调号按竖笔数、拍号读数字）走位图同一份 `attrs::lead::read_lead`，不另写一套矢量判据。
+fn raster_lead(vp: &VecPage, f: &Layout, in_band: &dyn Fn(&dolce_omr_core::image::Rect) -> bool) -> crate::page::PageFrame {
+    use dolce_omr_core::image::Binary;
+    let (w, h) = (vp.w.max(1), vp.h.max(1));
+    let mut bin = Binary::new(w, h);
+    let near = |r: &dolce_omr_core::image::Rect| {
+        f.staves.iter().any(|st| {
+            let sp = st.space();
+            r.x < st.left + sp * LEAD_SPAN && r.right() > st.left - sp && r.bottom() > st.ys[0] - sp * 4.0 && r.y < st.ys[4] + sp * 4.0
+        })
+    };
+    for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && near(&o.rect) && !in_band(&o.rect)) {
+        dolce_omr_source::vector::draw_obj(vp, o, 0.0, 0.0, 1.0, w, h, &mut |x, y| bin.data[y * w + x] = 1);
+    }
+    let unit = f.unit;
+    let ink = crate::frame::ink::InkLayers::new(&bin, &f.staves, &unit);
+    let segs = ink.vsegs((unit.space * VSEG_MIN) as usize, unit.thick.ceil().max(2.0) as usize);
+    let (blobs, labels) = ink.blobs(4.0);
+    crate::page::PageFrame { layout: f.clone(), bin, soft: None, ink, segs, blobs, labels, band_ink: None }
+}
+
+/// 谱表区：字形落在谱表上下这么多线距以内才当音乐符号认（加线上的低音、谱表上方的附点与符尾；同 TS 转曲路）。
+const STAFF_ZONE_ABOVE: f64 = 4.5;
+const STAFF_ZONE_BELOW: f64 = 4.0;
+
+/// 行首区画多宽（相对线距；位图行首读法看左端十四格，留两格余量）。
+const LEAD_SPAN: f64 = 16.0;
+
 /// 识别一页纯矢量页；没有谱表回 None。
 pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&dolce_omr_ocr::surface::Gray>, ocr: Option<&dyn crate::attrs::DigitReader>) -> Option<crate::page::Page> {
     let vp = VecPage::build(pc, dolce_omr_sheet::prims::VEC_SCALE, (0.0, 0.0));
@@ -199,9 +229,21 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     // 带里的对象归简谱行，不进字形候选、不读字
     let pieces: Vec<glyphs::GlyphPiece> = glyphs::path_pieces(&vp).into_iter().filter(|p| !in_band(&p.rect)).collect();
     let mut syms: Vec<glyphs::VSym> = glyphs::music_chars(&vp).into_iter().filter(|s| !in_band(&s.rect)).collect();
-    let path_syms = glyphs::path_glyphs(&pieces, f.layout.unit.space);
+    let mut path_syms = glyphs::path_glyphs(&pieces, f.layout.unit.space);
+    let staff_zone = |r: &dolce_omr_core::image::Rect| {
+        let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        f.layout.staves.iter().any(|st| {
+            let sp = st.space();
+            cx > st.left - sp && cx < st.right + sp && cy > st.ys[0] - sp * STAFF_ZONE_ABOVE && cy < st.ys[4] + sp * STAFF_ZONE_BELOW
+        })
+    };
+    glyphs::hollow_heads(&pieces, &mut path_syms, &staff_zone);
     syms.extend(path_syms.iter().filter(|s| !s.name.is_empty()).cloned());
-    let attrs = notes::page_attrs(&f.layout, &syms);
+    let by_strokes = glyphs::stroke_accidentals(&vp, f.layout.unit.space, &syms, &in_band);
+    syms.extend(by_strokes);
+    let lead_frame = std::cell::OnceCell::new();
+    let lead = |si: usize| crate::attrs::lead::read_lead(lead_frame.get_or_init(|| raster_lead(&vp, &f.layout, &in_band)), si, ocr);
+    let attrs = notes::page_attrs(&f.layout, &syms, Some(&lead));
     let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
     // 多小节休止：粗横段 + 两端竖段 + 上方的数字（共用判据 `notes::rests::multi_rests`）
     let sp = f.layout.unit.space;

@@ -26,6 +26,9 @@ const MET_POS_MIN: f64 = -5.0;
 const CLEF_WITHIN: f64 = 4.0;
 /// 拍号离前一个记号最多隔这么多格（同位图）。
 const TIME_GAP: f64 = 3.0;
+/// 临时记号离它的符头最多几格（记号右缘到符头左缘），与符头差不过几个音级（TS 转曲路：中心同高、差不过 0.35 格）。
+const TEMP_ACC_DX: f64 = 1.2;
+const TEMP_ACC_POS: f64 = 0.7;
 /// 符杠原语不薄于这么多（相对线距；同位图数杠的厚度下限）。
 const BAND_MIN: f64 = 0.18;
 /// 字号小于本页符头字号中位数的这个比例的符头是倚音。
@@ -140,7 +143,8 @@ fn time_at(f: &Layout, si: usize, syms: &[&VSym], x0: f64, x1: f64) -> Option<(T
 }
 
 /// 一页各行谱的结构信息（行首 + 行中切换），再同系统互证（与位图同一份 `attrs::agree`）。
-pub fn page_attrs(f: &Layout, syms: &[VSym]) -> Vec<RowAttrs> {
+/// `lead`：字形字典在行首认不出谱号的行（转曲页换了一套字体）改走的行首读法（见 `vector::raster_lead`），读出谱号就用它的谱号 / 调号 / 拍号。
+pub fn page_attrs(f: &Layout, syms: &[VSym], lead: Option<&dyn Fn(usize) -> RowAttrs>) -> Vec<RowAttrs> {
     let mut rows: Vec<RowAttrs> = Vec::with_capacity(f.staves.len());
     for si in 0..f.staves.len() {
         let st = &f.staves[si];
@@ -163,16 +167,27 @@ pub fn page_attrs(f: &Layout, syms: &[VSym]) -> Vec<RowAttrs> {
             right = s.rect.right();
             clef = Some(c);
         }
-        if let Some(c) = clef.filter(|c| *c != Clef::PERCUSSION) {
-            let (n, r, _) = key_chain(f, si, c, &mine, right, KEY_GAP_FIRST, head_x(right));
-            out.key = Some(Key { fifths: n });
-            out.key_sure = true;
-            right = right.max(r);
-        }
-        let end = f.bars[si].iter().map(|b| b.x0).find(|&x| x > right + sp).unwrap_or(f64::MAX).min(head_x(right)).min(st.left + sp * 14.0);
-        if let Some((t, r, _)) = time_at(f, si, &mine, right - sp * 0.2, end.min(right + sp * TIME_GAP)) {
-            out.time = Some(t);
-            right = right.max(r);
+        let fell = match lead.filter(|_| clef.is_none()).map(|g| g(si)).filter(|r| r.clef.is_some()) {
+            Some(r) => {
+                clef = r.clef;
+                right = r.lead_end;
+                out = RowAttrs { changes: Vec::new(), ..r };
+                true
+            }
+            None => false,
+        };
+        if !fell {
+            if let Some(c) = clef.filter(|c| *c != Clef::PERCUSSION) {
+                let (n, r, _) = key_chain(f, si, c, &mine, right, KEY_GAP_FIRST, head_x(right));
+                out.key = Some(Key { fifths: n });
+                out.key_sure = true;
+                right = right.max(r);
+            }
+            let end = f.bars[si].iter().map(|b| b.x0).find(|&x| x > right + sp).unwrap_or(f64::MAX).min(head_x(right)).min(st.left + sp * 14.0);
+            if let Some((t, r, _)) = time_at(f, si, &mine, right - sp * 0.2, end.min(right + sp * TIME_GAP)) {
+                out.time = Some(t);
+                right = right.max(r);
+            }
         }
         out.lead_end = right;
         // 行中切换：行首区之后的谱号、小节线（或换谱号）后紧跟的调号串（还原号串清掉旧调）、拍号
@@ -191,7 +206,14 @@ pub fn page_attrs(f: &Layout, syms: &[VSym]) -> Vec<RowAttrs> {
                 if head_x(start) == f64::MAX {
                     continue;
                 }
-                let after: Vec<&VSym> = mine.iter().copied().filter(|s| s.rect.x > start && s.rect.x < start + sp * 8.0).collect();
+                // 右边紧挨着一个同高符头的升降号是那个音的临时记号，调号串到它为止（C 调曲子小节线后的临时还原 / 升号不当转调）
+                let temp = |s: &VSym| {
+                    acc_of(s.name).is_some_and(|k| {
+                        let p = acc_pos(f, si, s, k);
+                        mine.iter().any(|h| is_head(h.name) && h.rect.x >= s.rect.right() - sp * 0.2 && h.rect.x <= s.rect.right() + sp * TEMP_ACC_DX && (st.pos(h.cx(), h.cy()) - p).abs() < TEMP_ACC_POS)
+                    })
+                };
+                let after: Vec<&VSym> = mine.iter().copied().filter(|s| s.rect.x > start && s.rect.x < start + sp * 8.0).take_while(|s| !temp(s)).collect();
                 // 还原号串
                 let nat: Vec<&&VSym> = after.iter().take_while(|s| s.name == "accidentalNatural").collect();
                 let from = nat.last().map_or(start, |s| s.rect.right());
