@@ -1,4 +1,5 @@
 //! 同系统互证：一个系统里各行的调号相同、拍号相同（打击乐行除外）。把握不大的行照同系统里把握大的多数改。
+//! 全页共享（[`page_share`]）：同种记号读少了的行补成本页最长的那串。
 use super::RowAttrs;
 use crate::page::Layout;
 use dolce_omr_sheet::music::{ClefSign, Key, Time};
@@ -50,6 +51,34 @@ pub fn system_agree(f: &Layout, rows: &mut [RowAttrs]) {
                     rows[i].time_votes = n as u8;
                 }
             }
+        }
+    }
+}
+
+/// **全页共享调号**（同 TS `shareKeySignature`）：按块、按笔画读出来的调号记号只会少不会多（扫描件升号竖笔断光、降号碎成两块，
+/// 新编 035 一个升号读成 0、147 三个降号读成两个）。取本页至少两行读到的、记号最多的那个调号；没有的话，记号最多的那行、
+/// 别的（至少两）行读到的都是同种记号且更少，也取它。同种记号更少（含读成 0 个）的行补成它。
+/// 只在全页系统都不过两行时做（大谱表一个系统只有两票，两行一起少读就补不回来）：合唱谱多行系统里系统内互证够票，
+/// 曲中转调又多，全页共享会抹掉转调、把 C 大调曲子个别行多读的记号推给全页（合唱扫描 +88 步）。
+pub fn page_share(f: &Layout, rows: &mut [RowAttrs]) {
+    if f.systems.iter().any(|s| s.staves.len() > 2) {
+        return;
+    }
+    let keys: Vec<(usize, Key)> = rows.iter().enumerate().filter(|(_, r)| r.clef.is_none_or(|c| c.sign != ClefSign::Percussion)).filter_map(|(i, r)| r.key.map(|k| (i, k))).collect();
+    let count = |k: Key| keys.iter().filter(|x| x.1 == k).count();
+    let mut best = keys.iter().map(|x| x.1).filter(|&k| k.fifths != 0 && count(k) >= 2).max_by_key(|k| k.fifths.unsigned_abs());
+    if let Some(&(li, longest)) = keys.iter().max_by_key(|x| x.1.fifths.unsigned_abs()) {
+        let others: Vec<Key> = keys.iter().filter(|x| x.0 != li && x.1.fifths != 0).map(|x| x.1).collect();
+        let prefix = |k: Key| k.fifths.signum() == longest.fifths.signum() && k.fifths.unsigned_abs() <= longest.fifths.unsigned_abs();
+        if longest.fifths != 0 && others.len() >= 2 && others.iter().all(|&k| prefix(k)) && best.is_none_or(|b| longest.fifths.unsigned_abs() > b.fifths.unsigned_abs()) {
+            best = Some(longest);
+        }
+    }
+    let Some(best) = best else { return };
+    for (i, k) in keys {
+        let fewer = k.fifths == 0 || (k.fifths.signum() == best.fifths.signum() && k.fifths.unsigned_abs() < best.fifths.unsigned_abs());
+        if fewer {
+            rows[i].key = Some(best);
         }
     }
 }

@@ -74,5 +74,6 @@ impl DigitReader for CachedOcr {
 pub fn page_attrs(f: &PageFrame, ocr: Option<&dyn DigitReader>) -> Vec<RowAttrs> {
     let mut rows: Vec<RowAttrs> = (0..f.staves.len()).map(|i| lead::read_lead(f, i, ocr)).collect();
     agree::system_agree(f, &mut rows);
+    agree::page_share(f, &mut rows);
     rows
 }
