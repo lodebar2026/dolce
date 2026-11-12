@@ -12,6 +12,10 @@ fn env() -> Result<&'static ort::environment::Environment, String> {
     ENV.get_or_init(|| ort::init().build().map_err(|e| e.to_string())).as_ref().map_err(|e| e.clone())
 }
 
+/// 模型文件名（web 仓库 `public/redist/ocr/`、桌面版资源目录 `ocr/` 同名）。
+pub const REC_FILE: &str = "ch_PP-OCRv6_small_rec_infer.onnx";
+pub const DET_FILE: &str = "ch_PP-OCRv4_det_infer.onnx";
+
 pub struct NativeInfer {
     rec: Pool,
     det: Pool,
@@ -52,10 +56,12 @@ impl Pool {
 impl NativeInfer {
     /// `dir` 里要有 `ch_PP-OCRv6_small_rec_infer.onnx` 与 `ch_PP-OCRv4_det_infer.onnx`（web 仓库 `public/redist/ocr/`）。
     pub fn new(dir: &Path, sessions: usize, threads: usize) -> Self {
-        NativeInfer {
-            rec: Pool::new(&dir.join("ch_PP-OCRv6_small_rec_infer.onnx"), sessions, threads),
-            det: Pool::new(&dir.join("ch_PP-OCRv4_det_infer.onnx"), sessions, threads),
-        }
+        Self::with_paths(&dir.join(REC_FILE), &dir.join(DET_FILE), sessions, threads)
+    }
+
+    /// 模型文件各自给路径（桌面版从资源目录取）。
+    pub fn with_paths(rec: &Path, det: &Path, sessions: usize, threads: usize) -> Self {
+        NativeInfer { rec: Pool::new(rec, sessions, threads), det: Pool::new(det, sessions, threads) }
     }
 }
 

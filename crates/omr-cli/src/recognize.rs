@@ -2,8 +2,8 @@
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_ocr::native::NativeInfer;
 use dolce_omr_ocr::{Ocr, OcrCache};
-use dolce_omr_source::raster::{image_file, page_image, SourceImage};
-use dolce_omr_source::{ContentOpts, PdfDoc};
+use dolce_omr_source::raster::SourceImage;
+use dolce_omr_source::PdfDoc;
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::song::assemble;
 use rayon::prelude::*;
@@ -17,27 +17,10 @@ pub enum RecOutput {
     Jianpu { recognized: String },
 }
 
-/// 一个输入文件的各页（PDF 逐页取内嵌图与矢量内容；图片一张一页，只有像素层）。
+/// 一个输入文件的各页（取数走 `omr-engine`，与桌面版、网页版同一份）。
 pub fn sources(p: &Path) -> Result<Vec<PageSource>, String> {
-    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    let bytes = std::fs::read(p).map_err(|e| format!("读 {}：{e}", p.display()))?;
-    if ext == "pdf" {
-        let doc = PdfDoc::open(bytes)?;
-        Ok((0..doc.page_count())
-            .filter_map(|i| {
-                let pc = doc.content(i, ContentOpts { images: true, paths: true, text: true, outlines: true }).ok()?;
-                let raster = page_image(&pc);
-                // 文字层有不可靠字体的纯矢量页：整页渲染一张灰度图备用（只裁那几段字读）
-                let rendered = (raster.is_none() && !dolce_omr_source::vector::unreliable_fonts(&pc).is_empty())
-                    .then(|| doc.render(i, dolce_omr_sheet::prims::VEC_SCALE).ok())
-                    .flatten()
-                    .map(|r| dolce_omr_ocr::surface::Gray { w: r.w, h: r.h, data: r.rgba.chunks_exact(4).map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect() });
-                Some(PageSource { raster, content: Some(pc), rendered })
-            })
-            .collect())
-    } else {
-        Ok(vec![PageSource { raster: Some(image_file(&bytes)?), content: None, rendered: None }])
-    }
+    let doc = dolce_omr_engine::Doc::open(std::fs::read(p).map_err(|e| format!("读 {}：{e}", p.display()))?)?;
+    Ok(doc.sources(&[])?.into_iter().map(|s| s.1).collect())
 }
 
 pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOutput, String> {

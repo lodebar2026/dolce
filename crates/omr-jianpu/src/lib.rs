@@ -18,6 +18,8 @@ pub mod spans;
 pub mod text;
 pub mod vector;
 
+use dolce_omr_core::image::Binary;
+use dolce_omr_core::progress::Hook;
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_source::raster::SourceImage;
 use result::{RecognizedScore, StaffRow};
@@ -39,37 +41,61 @@ pub fn recognize_strip(src: &SourceImage, ocr: &CachedOcr, known: bool) -> Optio
 
 /// 识别一首（各页原图按序）。没有找到数字行回 Err。
 pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+    recognize_hooked(srcs, ocr, &Hook::NONE).map(|r| r.0)
+}
+
+/// 同 [`recognize`]，带进度与取消；另交出识别用的二值图（各页上下拼起、过宽的已缩，结果坐标就在它上面；编辑器核对视图拿它当底图）。
+pub fn recognize_hooked(srcs: &[SourceImage], ocr: &CachedOcr, hook: &Hook) -> Result<(RecognizedScore, Binary), String> {
     let mut ink = prep::RasterInk::load(srcs).ok_or("没有页面")?;
     let num_h = frame::estimate_num_h(ink.comps());
     ink.despeckle(num_h);
-    recognize_ink(&ink, num_h, ocr)
+    let score = recognize_ink_hooked(&ink, num_h, ocr, hook)?;
+    Ok((score, ink.bin.clone()))
 }
 
 /// 识别一首纯矢量的简谱（各页的路径与文字层，按序）：证据换成对象库（[`vector::VecJpInk`]），判据同像素路。
 pub fn recognize_vector(pcs: &[dolce_omr_source::model::PageContent], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+    recognize_vector_hooked(pcs, ocr, &Hook::NONE)
+}
+
+/// 同 [`recognize_vector`]，带进度与取消。
+pub fn recognize_vector_hooked(pcs: &[dolce_omr_source::model::PageContent], ocr: &CachedOcr, hook: &Hook) -> Result<RecognizedScore, String> {
     let ink = vector::VecJpInk::new(pcs).ok_or("没有对象")?;
     let num_h = frame::estimate_num_h(ink.comps());
-    recognize_ink(&ink, num_h, ocr)
+    recognize_ink_hooked(&ink, num_h, ocr, hook)
 }
 
 /// 识别一首（证据已备好：像素页的墨层或矢量页的对象库；`num_h` 数字字号）。像素、矢量两种证据同一份判据。
 pub fn recognize_ink(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+    recognize_ink_hooked(ink, num_h, ocr, &Hook::NONE)
+}
+
+/// 简谱识别分几步报进度：数字行、建音、歌词、页眉、弧与和弦、满拍裁决。
+const STEPS: usize = 6;
+
+pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook) -> Result<RecognizedScore, String> {
+    hook.step(0, STEPS, "rows")?;
     let rows = frame::find_rows(ink, num_h, ocr);
     if rows.is_empty() {
         return Err("没有找到数字行".into());
     }
     let w = ink.w() as f64;
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
+    hook.step(1, STEPS, "notes")?;
     let mut notes: Vec<notes::RowNotes> = rows.iter().map(|row| notes::build(ink, row, ocr)).collect();
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
+    hook.step(2, STEPS, "lyrics")?;
     text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions);
+    hook.step(3, STEPS, "header")?;
     text::header(ink, &rows, num_h, ocr, &mut score);
+    hook.step(4, STEPS, "spans")?;
     for i in 0..rows.len() {
         // 上方带的顶：上一行最末一行歌词的底
         let y_min = if i == 0 { 0.0 } else { score.lyric_regions.iter().map(|r| r.bbox.bottom()).filter(|&b| b < rows[i].top_at(w / 2.0) && b > rows[i - 1].bottom_at(w / 2.0)).fold(rows[i - 1].bottom_at(w / 2.0), f64::max) };
         spans::arcs(ink, &rows[i], &mut notes[i], y_min, ocr);
         text::chords_above(ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
+    hook.step(5, STEPS, "beats")?;
     let sys = frame::systems(ink, &rows);
     let tally = beats::settle(&mut notes, &sys, &mut score);
     if std::env::var("OMR_JP_DEBUG").is_ok() {

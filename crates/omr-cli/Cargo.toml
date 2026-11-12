@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 dolce-omr-book = { path = "../omr-book" }
 dolce-omr-core = { path = "../omr-core" }
+dolce-omr-engine = { path = "../omr-engine" }
 dolce-omr-jianpu = { path = "../omr-jianpu" }
 dolce-omr-ocr = { path = "../omr-ocr" }
 dolce-omr-sheet = { path = "../omr-sheet" }

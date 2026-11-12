@@ -12,7 +12,7 @@ use dolce_omr_source::model::PageContent;
 use dolce_omr_source::vector::{draw_obj, path_pieces, ObjSrc, VKind, VecPage};
 
 /// 页宽折成这么多工作单位（同像素路工作图的宽上限）。
-const PAGE_W: f64 = 2200.0;
+pub const PAGE_W: f64 = 2200.0;
 
 /// 矢量页（多页竖排）的简谱证据。
 pub struct VecJpInk {
