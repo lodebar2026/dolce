@@ -57,6 +57,14 @@ fn count(f: &Option<(Unit, Vec<Staff>)>) -> usize {
     f.as_ref().map_or(0, |(_, s)| s.len())
 }
 
+/// 放大后有谱行比原分辨率那行短出 `UPSCALE_SHORTER` 格以上（淡线放大后断得更碎，左端退过谱号、调号、拍号到第一个音；
+/// 只差两三格的是首行左端读法不同，不算）。两边谱行数一样才比，按次序配。
+const UPSCALE_SHORTER: f64 = 6.0;
+fn shorter(one: &Option<(Unit, Vec<Staff>)>, big: &Option<(Unit, Vec<Staff>)>) -> bool {
+    let (Some((u, a)), Some((_, b))) = (one, big) else { return false };
+    a.len() == b.len() && a.iter().zip(b).any(|(p, q)| (q.left / 2.0 - p.left).max(p.right - q.right / 2.0) > u.space * UPSCALE_SHORTER)
+}
+
 /// 一页原图成像。
 pub fn image_page(src: &SourceImage) -> Imaged {
     let mut bz = Binarizer::new(src);
@@ -91,7 +99,12 @@ pub fn image_page(src: &SourceImage) -> Imaged {
         let thin = u.thick / u.space < UPSCALE_THIN;
         let space1 = u.space;
         let big = pair(&mut bz, 2);
-        let ok = big.3.as_ref().is_some_and(|(u2, _)| thin || u2.thick / (space1 * 2.0) < UPSCALE_RECHECK);
+        if std::env::var("OMR_STAFF_DEBUG").is_ok() {
+            let ext = |f: &Option<(Unit, Vec<Staff>)>| f.as_ref().map(|(_, s)| s.iter().map(|s| (s.left as i64, s.right as i64)).collect::<Vec<_>>());
+            eprintln!("放大前 {:?}\n放大后 {:?}", ext(&one.3), ext(&big.3));
+        }
+        // 放大后找到的谱行比原分辨率少的不放大（扫描件淡线放大后有一行断成几截凑不够列，整行丢）
+        let ok = count(&big.3) >= count(&one.3) && !shorter(&one.3, &big.3) && big.3.as_ref().is_some_and(|(u2, _)| thin || u2.thick / (space1 * 2.0) < UPSCALE_RECHECK);
         if ok {
             big
         } else {
@@ -128,6 +141,10 @@ pub fn image_page(src: &SourceImage) -> Imaged {
         let mut trial = bin.clone();
         merge_horizontal(&mut trial.data, &soft.data, bin.w, bin.h, (u.space * LINE_RUN).round() as usize, ((u.thick * 2.0).round() as usize).max(2), (u.thick.round() as i64).max(1));
         let tf = find_staves(&trial);
+        if std::env::var("OMR_STAFF_DEBUG").is_ok() {
+            eprintln!("补线前左端 {:?}", staves.iter().map(|s| s.left as i64).collect::<Vec<_>>());
+            eprintln!("补线后左端 {:?}", tf.as_ref().map(|(_, s)| s.iter().map(|s| s.left as i64).collect::<Vec<_>>()));
+        }
         if count(&tf) > staves.len() {
             bin = trial;
             found = tf;

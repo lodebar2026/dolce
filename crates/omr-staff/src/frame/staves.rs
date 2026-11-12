@@ -121,6 +121,9 @@ pub fn find_staves(bin: &Binary) -> Option<(Unit, Vec<Staff>)> {
     for r in rows {
         let mut xs: Vec<usize> = r.hits.iter().map(|h| h.x).collect();
         xs.dedup();
+        if std::env::var("OMR_STAFF_DEBUG").is_ok() {
+            eprintln!("谱行候选 cy {:.0} x{}~{}：{} 列（要 {need}）", r.cy, r.x0, r.x1, xs.len());
+        }
         if xs.len() < need {
             continue;
         }
@@ -419,26 +422,29 @@ fn make_staff(bin: &Binary, hits: &[Hit], x0: usize, x1: usize, cols: usize) -> 
 
     // 左右端：沿曲线往外逐列验墨，断口容半格，连着一格有墨才挪端点（括号、乐器名的笔画擦到谱线那一带，不能一擦就把端点拉过去）
     let r = (thick0 / 2.0).ceil() as i64 + 1;
-    let present = |x: usize| {
-        (0..5)
-            .filter(|&k| {
-                let yc = y_at(k, x).round() as i64;
-                (yc - r..=yc + r).any(|y| bin.ink(x as i64, y))
-            })
-            .count()
-            >= EXTENT_LINES
+    // x 处五条线里有几条有墨够 `EXTENT_LINES`；`half` > 0 时每条线看左右 `half` 列的小窗（虚线）
+    let present = |half: i64| {
+        move |x: i64| {
+            (0..5)
+                .filter(|&k| {
+                    let yc = y_at(k, x.max(0) as usize).round() as i64;
+                    (x - half..=x + half).any(|xx| (yc - r..=yc + r).any(|y| bin.ink(xx, y)))
+                })
+                .count()
+                >= EXTENT_LINES
+        }
     };
     let gap_max = 3.max((space * 0.5).round() as usize);
     let run_min = 4.max(space.round() as usize);
-    let walk = |from: usize, dir: i64| {
+    let walk = |from: i64, dir: i64, ok: &dyn Fn(i64) -> bool| {
         let (mut end, mut gap, mut streak) = (from, 0, 0);
-        let mut x = from as i64;
+        let mut x = from;
         while x >= 0 && (x as usize) < bin.w {
-            if present(x as usize) {
+            if ok(x) {
                 gap = 0;
                 streak += 1;
                 if streak >= run_min {
-                    end = x as usize;
+                    end = x;
                 }
             } else {
                 streak = 0;
@@ -451,8 +457,57 @@ fn make_staff(bin: &Binary, hits: &[Hit], x0: usize, x1: usize, cols: usize) -> 
         }
         end
     };
+    // **虚线**：扫描件的谱线断成一截一截、各条线的断口错开（新编 026、f06、f07），逐列看常常只有两三条线有墨，左端停在谱号后面，
+    // 系统线窗口落空。每条线看左右半格的小窗再走一遍，还不够远就放到一格窗（点状虚线）；走完往里退过整列全空、过半格宽的空白
+    // （空白外是括号）、竖笔（系统线、方括号：开窗会把它的几列也算成「五条线都在」）与竖笔和谱线起点之间的空列；
+    // 比逐列走得远出两格以上才用，实线的端点一像素不动。走到竖笔就停不行：谱号的竖笔也挡。
+    let strict = present(0);
+    let near = present(1);
+    let dashed = present(1.max((space * 0.5).round() as i64));
+    let dotted = present(1.max(space.round() as i64));
+    // 竖笔：四个间的中点有三个以上有墨
+    let vertical = |x: i64| (0..4).filter(|&k| bin.ink(x, ((y_at(k, x.max(0) as usize) + y_at(k + 1, x.max(0) as usize)) / 2.0).round() as i64)).count() >= 3;
+    let blank = |x: i64| {
+        (0..5).all(|k| {
+            let yc = y_at(k, x.max(0) as usize).round() as i64;
+            (yc - r..=yc + r).all(|y| !bin.ink(x, y))
+        })
+    };
+    let walk_end = |from: i64, dir: i64| -> i64 {
+        let a = walk(from, dir, &strict);
+        let back = |mut b: i64| {
+            let mut run = 0;
+            let mut x = a;
+            while (b - x) * dir > 0 {
+                run = if blank(x) { run + 1 } else { 0 };
+                if run as f64 > space * 0.5 {
+                    b = x - dir * run;
+                    break;
+                }
+                x += dir;
+            }
+            while (b - a) * dir > 0 && (vertical(b) || !near(b)) {
+                b -= dir;
+            }
+            b
+        };
+        let b = back(walk(from, dir, &dashed));
+        if std::env::var("OMR_STAFF_DEBUG").is_ok() {
+            eprintln!("端点 y{:.0} 方向 {dir}：逐列 {a}，半格窗 {} → 退后 {b}；竖笔 {:?}", ys[0], walk(from, dir, &dashed), (a - 3..=a + 3).map(|x| vertical(x)).collect::<Vec<_>>());
+        }
+        if ((b - a) * dir) as f64 > space * 2.0 {
+            return b;
+        }
+        let c = back(walk(from, dir, &dotted));
+        if ((c - a) * dir) as f64 > space * 2.0 {
+            c
+        } else {
+            a
+        }
+    };
     // 从轨迹端点往里退一段再起步：连着 `run_min` 列有墨才挪端点，从端点本身起步的话最后几列（取样步长以内）挪不过去
-    let (left, right) = (walk((x0 + run_min).min(x1), -1), walk(x1.saturating_sub(run_min).max(x0), 1));
+    let left = walk_end((x0 + run_min).min(x1) as i64, -1).max(0) as usize;
+    let right = walk_end(x1.saturating_sub(run_min).max(x0) as i64, 1).max(0) as usize;
     let (lo, hi) = (left / COL_STEP..=right / COL_STEP).filter_map(|c| curve.d.get(c)).fold((f64::MAX, f64::MIN), |(l, h), &v| (l.min(v as f64), h.max(v as f64)));
     let flat = hi - lo <= FLAT_SPREAD && ((hi + lo) / 2.0).abs() <= 1.0;
 

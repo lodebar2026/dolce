@@ -81,6 +81,9 @@ pub fn find_systems<P: Probe + ?Sized>(bin: &P, soft: Option<&Binary>, staves: &
         if !linked {
             linked = dashed(bin, a, b, sp);
         }
+        if std::env::var("OMR_SYS_DEBUG").is_ok() {
+            eprintln!("行 {} / {}：左 {:.0} / {:.0}，窗 x{x0}~{x1} y{y0}~{y1}，标准图 {std:.2} → {linked}", i - 1, i, a.left, b.left);
+        }
         if linked {
             groups.last_mut().unwrap().push(i);
         } else {

@@ -25,6 +25,9 @@ fn main() {
     for_pages(&corpus, &only, |key, pn, _snap, bin, soft| {
         let Some((unit, staves)) = find_staves(bin) else { return };
         let sys = find_systems(bin, soft, &staves, &unit);
+        if std::env::var("OMR_STAFF_ENDS").is_ok() {
+            println!("{key} p{pn} 端点 {:?}", staves.iter().map(|s| (s.left as i64, s.right as i64)).collect::<Vec<_>>());
+        }
         let sizes: Vec<usize> = sys.iter().map(|s| s.staves.len()).collect();
         for &n in &sizes {
             *hist.entry(n).or_default() += 1;

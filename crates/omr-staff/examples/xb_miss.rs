@@ -123,7 +123,18 @@ fn main() {
                         }
                     }
                     None => {
-                        let mut r = "没有种子".to_string();
+                        // 那一音级沿小节最满的种子框（看是差一点还是根本没墨）
+                        let (bw, bh) = (((0.8 * sp).round() as i64).max(3), ((0.6 * sp).round() as i64).max(3));
+                        let mut best = 0.0f64;
+                        for x in x0.round() as i64..=x1.round() as i64 {
+                            let yc = s.y_of(x as f64, pos as f64).round() as i64;
+                            for dy in -1..=1 {
+                                let c = sum.count(x - bw / 2, yc + dy - bh / 2, x - bw / 2 + bw, yc + dy - bh / 2 + bh) as f64 / (bw * bh) as f64;
+                                best = best.max(c);
+                            }
+                        }
+                        let bucket = if best >= 0.8 { "满 0.8+" } else if best >= 0.6 { "满 0.6~0.8" } else { "满不到 0.6" };
+                        let mut r = format!("没有种子（{bucket}）");
                         hollow_heads_traced(f, &holes, &claims, si, x0, scale, &mut |(hx, hy, hw, hh), w| {
                             if inside(hx as f64 + hw as f64 / 2.0, hy as f64 + hh as f64 / 2.0) && w.starts_with("二分") {
                                 r = "没有种子，有空心孔（实心头当成了二分）".into();
