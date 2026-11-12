@@ -23,17 +23,21 @@ pub(super) fn profiles(pages: &[Page]) -> Vec<Vec<StaffProfile>> {
     let mut out = Vec::new();
     for page in pages {
         for sys in &page.layout.systems {
-            out.push(
-                sys.staves
-                    .iter()
+            let mut rows: Vec<StaffProfile> = sys
+                .staves
+                .iter()
                     .map(|&i| {
                         let clef = page.attrs[i].clef;
                         // 音域：按行首谱号折算各头的全音阶级数取中位（谱号没认出就不量，免得 F 谱号的行按 G 算）
                         let pitch = clef.and_then(|c| median(page.notes[i].chords.iter().flat_map(|ch| ch.heads.iter()).map(|h| c.pitch_at(h.pos)).map(|p| p.octave as i32 * 7 + p.step as i32).collect()));
                         StaffProfile { clef, brace: None, lyric: !page.text.rows[i].lyrics.is_empty(), pitch, label: None }
                     })
-                    .collect(),
-            );
+                    .collect();
+            for &k in &sys.braces {
+                rows[k].brace = Some(BraceHalf::Top);
+                rows[k + 1].brace = Some(BraceHalf::Bottom);
+            }
+            out.push(rows);
         }
     }
     out

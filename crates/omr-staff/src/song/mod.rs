@@ -22,9 +22,11 @@ use dolce_omr_text::lyrics::align;
 
 mod assign;
 mod attach;
+mod grand;
 mod spans;
 use assign::*;
 use attach::*;
+use grand::*;
 use spans::*;
 
 /// 同系统各行的小节线按 x 归成一处的容差（相对线距）。
@@ -54,6 +56,8 @@ pub struct SystemLayout {
 pub struct Song {
     pub score: Score,
     pub systems: Vec<SystemLayout>,
+    /// 各槽位（`RowLayout::part`）落到（第几声部, 第几谱表）：大谱表合并后两个槽位进同一个声部。
+    pub slot_at: Vec<(usize, u8)>,
     /// 可疑清单（满拍裁决交来的；别的模块的随后并进来）。
     pub doubts: Vec<Doubt>,
     /// 满拍读数。
@@ -163,7 +167,8 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     let keys = settle_keys(&sys_keys);
     // 各系统的行配到哪几个声部；各声部逐系统的行首谱号读数顺着乐曲定下来（行首换谱号少见：孤零零一行读得不同的照前后改）
     let mixed = pages.iter().any(|p| !p.layout.bands.is_empty());
-    let mut slots_all = auto_slots(&profiles(pages));
+    let profs = profiles(pages);
+    let mut slots_all = auto_slots(&profs);
     let mut clef_reads: Vec<Vec<Option<(Clef, bool)>>> = vec![Vec::new(); nparts];
     let mut sys_no = 0;
     for page in pages {
@@ -552,12 +557,15 @@ pub fn assemble(pages: &[Page], title: Option<String>) -> Song {
     for (part, recs) in parts.iter_mut().zip(span_recs) {
         mark_spans(part, recs);
     }
+    // 花括号括着的两个槽位合成大谱表
+    let pairs = grand_pairs(pages, &slots_all, &profs, nparts);
+    let (parts, slot_at) = merge(parts, &pairs);
     if std::env::var("OMR_MIXED_DEBUG").is_ok() {
         eprintln!("互证 {fused:?}");
     }
     let credits = pages.first().map(|p| p.text.credits.clone()).unwrap_or_default();
     let vector = pages.iter().any(|p| p.layout.vector);
-    Song { score: Score { title, credits, parts }, systems, doubts, meter: stats, fused, vector }
+    Song { score: Score { title, credits, parts }, systems, slot_at, doubts, meter: stats, fused, vector }
 }
 
 impl Song {
@@ -574,7 +582,8 @@ impl Song {
                 if k > 0 {
                     o.push(',');
                 }
-                o.push_str(&format!("{{\"row\":{},\"slot\":\"P{}.1\",\"part\":{},\"staff\":1,\"from\":{},\"to\":{},\"seqLen\":{}}}", r.row, r.part + 1, r.part, r.from, r.to, r.seq_len));
+                let (part, staff) = self.slot_at.get(r.part).copied().unwrap_or((r.part, 1));
+                o.push_str(&format!("{{\"row\":{},\"slot\":\"P{}.{staff}\",\"part\":{part},\"staff\":{staff},\"from\":{},\"to\":{},\"seqLen\":{}}}", r.row, part + 1, r.from, r.to, r.seq_len));
                 if !sp.is_empty() {
                     sp.push(',');
                 }

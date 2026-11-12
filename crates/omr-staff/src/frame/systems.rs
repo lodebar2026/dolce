@@ -37,6 +37,9 @@ pub struct System {
     pub staves: Vec<usize>,
     /// 由左端标记连起来的（否则是单行，或按间距并的）。
     pub linked: bool,
+    /// 花括号括着的两行：上面那行在 `staves` 里的下标（下面那行是它的下一个）。
+    #[serde(default)]
+    pub braces: Vec<usize>,
 }
 
 /// 左端那一处的首末线 y。
@@ -84,7 +87,63 @@ pub fn find_systems<P: Probe + ?Sized>(bin: &P, soft: Option<&Binary>, staves: &
             groups.push(vec![i]);
         }
     }
-    join_by_gap(groups.into_iter().map(|g| System { linked: g.len() > 1, staves: g }).collect(), staves)
+    let mut out = join_by_gap(groups.into_iter().map(|g| System { linked: g.len() > 1, staves: g, braces: Vec::new() }).collect(), staves);
+    for sys in out.iter_mut().filter(|s| s.linked) {
+        sys.braces = (0..sys.staves.len() - 1).filter(|&k| is_brace(bin, &staves[sys.staves[k]], &staves[sys.staves[k + 1]])).collect();
+    }
+    out
+}
+
+/// 括号的墨从系统线往左这么远起找（跳过系统线本身）、最远找到几格。
+const MARK_NEAR: f64 = 0.35;
+const MARK_FAR: f64 = 4.0;
+/// 两行之间那一段有括号墨的行至少占这几成。
+const MARK_COVER: f64 = 0.7;
+/// 花括号的尖（两行之间）与两条臂（两行谱身中段）的横向中心至少差这么多格（同一个方向）。
+const BRACE_BULGE: f64 = 0.2;
+
+/// 上下相邻、左端连着的两行是不是花括号括着（钢琴大谱表）：逐行取紧贴系统线左边的那段墨的横向中心，
+/// 花括号是弯的，两行之间那一段（尖）与两行谱身中段（臂）的中心差出一截（实测合唱谱：臂离系统线 1.2 格、尖 0.8 格，
+/// 尖处紧贴系统线的是括号内侧那一笔）；方括号是一根直的粗竖笔，三处中心一样；只有系统线的，左边没墨。
+fn is_brace<P: Probe + ?Sized>(bin: &P, a: &Staff, b: &Staff) -> bool {
+    let sp = (a.space() + b.space()) / 2.0;
+    let line = a.left.min(b.left);
+    let (x_near, x_far) = ((line - sp * MARK_NEAR).round() as i64, ((line - sp * MARK_FAR).round() as i64).max(0));
+    // 这一行紧贴系统线左边那段墨的中心
+    let center = |y: i64| -> Option<f64> {
+        let mut x = x_near;
+        while x >= x_far && bin.at(x, y) == BG {
+            x -= 1;
+        }
+        if x < x_far {
+            return None;
+        }
+        let r = x;
+        while x >= x_far && bin.at(x, y) != BG {
+            x -= 1;
+        }
+        Some((r + x + 1) as f64 / 2.0)
+    };
+    let band = |y0: f64, y1: f64| -> (Vec<f64>, usize) {
+        let ys: Vec<i64> = (y0.round() as i64..=y1.round() as i64).filter(|&y| y >= 0 && (y as usize) < bin.height()).collect();
+        let cs: Vec<f64> = ys.iter().filter_map(|&y| center(y)).collect();
+        (cs, ys.len())
+    };
+    let (at, ab) = edge(a);
+    let (bt, bb) = edge(b);
+    // 两行谱身的中段（上下各去掉四分之一）、两行之间的缝（中间一半）
+    let (arm_a, na) = band(at + (ab - at) * 0.25, ab - (ab - at) * 0.25);
+    let (arm_b, nb) = band(bt + (bb - bt) * 0.25, bb - (bb - bt) * 0.25);
+    let (tip, nt) = band(ab + (bt - ab) * 0.25, bt - (bt - ab) * 0.25);
+    let cover = (arm_a.len() + arm_b.len() + tip.len()) as f64 / (na + nb + nt).max(1) as f64;
+    let med = |v: &[f64]| dolce_omr_core::geom::median(v, f64::NAN);
+    let (ma, mb, mt) = (med(&arm_a), med(&arm_b), med(&tip));
+    let (da, db) = (mt - ma, mt - mb);
+    let brace = cover >= MARK_COVER && da.abs() >= sp * BRACE_BULGE && db.abs() >= sp * BRACE_BULGE && da.signum() == db.signum();
+    if std::env::var("OMR_BRACE_DEBUG").is_ok() {
+        eprintln!("括号 y{:.0}~{:.0}：墨 {:.2}，臂 {:.2} / {:.2}、尖 {:.2}（格，相对系统线）→ {}", at, bb, cover, (ma - line) / sp, (mb - line) / sp, (mt - line) / sp, if brace { "花括号" } else { "否" });
+    }
+    brace
 }
 
 /// 两行之间的系统线断成虚线（扫描件上人声方括号与钢琴大谱表之间那一截细线）：左端附近找墨最满的一列，

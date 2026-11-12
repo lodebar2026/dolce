@@ -23,7 +23,7 @@ fn main() {
         let segs = ink.vsegs((unit.space * 3.0) as usize, unit.thick.ceil().max(2.0) as usize);
         let systems = find_systems(bin, soft, &staves, &unit);
         let all = if std::env::var("OMR_NOSYS").is_ok() {
-            let one: Vec<_> = (0..staves.len()).map(|i| dolce_omr_staff::frame::systems::System { staves: vec![i], linked: false }).collect();
+            let one: Vec<_> = (0..staves.len()).map(|i| dolce_omr_staff::frame::systems::System { staves: vec![i], linked: false, braces: Vec::new() }).collect();
             page_barlines(&ink, &segs, &staves, &one, &unit)
         } else {
             page_barlines(&ink, &segs, &staves, &systems, &unit)

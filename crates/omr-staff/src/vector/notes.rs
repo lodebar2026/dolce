@@ -181,7 +181,7 @@ pub fn page_attrs(f: &Layout, syms: &[VSym]) -> Vec<RowAttrs> {
         for s in mine.iter().filter(|s| s.rect.x > right + sp * 0.5) {
             if let Some(c) = clef_of(s.name, f, si, s) {
                 cur_clef = Some(c);
-                changes.push(Change { x: s.cx(), attrs: Attrs { clef: Some(c), key: None, time: None } });
+                changes.push(Change { x: s.cx(), attrs: Attrs { clef: Some(c), key: None, time: None, staff: 0 } });
             }
         }
         if let Some(c) = cur_clef.or(clef).filter(|c| *c != Clef::PERCUSSION) {
@@ -203,12 +203,12 @@ pub fn page_attrs(f: &Layout, syms: &[VSym]) -> Vec<RowAttrs> {
                     continue;
                 }
                 if n != 0 || !nat.is_empty() {
-                    changes.push(Change { x: b.x + 0.5, attrs: Attrs { clef: None, key: Some(Key { fifths: n }), time: None } });
+                    changes.push(Change { x: b.x + 0.5, attrs: Attrs { clef: None, key: Some(Key { fifths: n }), time: None, staff: 0 } });
                     if let Some((t, _, _)) = time_at(f, si, &after, r - sp * 0.2, r + sp * TIME_GAP) {
-                        changes.push(Change { x: b.x + 0.6, attrs: Attrs { clef: None, key: None, time: Some(t) } });
+                        changes.push(Change { x: b.x + 0.6, attrs: Attrs { clef: None, key: None, time: Some(t), staff: 0 } });
                     }
                 } else if let Some((t, _, _)) = time_at(f, si, &after, start, start + sp * TIME_GAP) {
-                    changes.push(Change { x: b.x + 0.6, attrs: Attrs { clef: None, key: None, time: Some(t) } });
+                    changes.push(Change { x: b.x + 0.6, attrs: Attrs { clef: None, key: None, time: Some(t), staff: 0 } });
                 }
             }
         }

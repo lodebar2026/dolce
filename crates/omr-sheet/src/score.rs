@@ -15,6 +15,9 @@ pub struct Attrs {
     pub clef: Option<Clef>,
     pub key: Option<Key>,
     pub time: Option<Time>,
+    /// 谱号属于第几谱表（多谱表的声部；0 / 1 都是第一谱表）。
+    #[serde(default)]
+    pub staff: u8,
 }
 
 impl Attrs {
@@ -185,6 +188,9 @@ pub struct Event {
     /// 在小节里的起拍时刻（份）与声部（1 / 2；一行谱至多两个声部，共用的元素记在声部 1）。
     pub onset: u32,
     pub voice: u8,
+    /// 第几谱表（1 起；钢琴大谱表的左手是 2）。
+    #[serde(default)]
+    pub staff: u8,
     pub arts: Vec<Art>,
     pub tuplet: Option<Tuplet>,
     #[serde(default)]
@@ -207,7 +213,7 @@ pub struct Event {
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new() }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, staff: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new() }
     }
 
     /// 这个音（休止为 None）的识别出处。
@@ -226,7 +232,10 @@ impl Event {
 pub struct Measure {
     /// 小节起头印的。
     pub attrs: Attrs,
-    /// 小节中途换的（按谱面次序；现都排在小节内容之前）。
+    /// 其余谱表在小节起头印的谱号（多谱表的声部；`staff` 记第几谱表）。
+    #[serde(default)]
+    pub staff_attrs: Vec<Attrs>,
+    /// 小节中途换的（按谱面次序；现都排在小节内容之前；`staff` 记第几谱表）。
     pub mid: Vec<Attrs>,
     /// 音与休止（各带起拍时刻与声部）。
     pub events: Vec<Event>,
@@ -250,6 +259,9 @@ pub struct Measure {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Part {
     pub measures: Vec<Measure>,
+    /// 谱表数（钢琴大谱表 2；0 / 1 都是单谱表）。
+    #[serde(default)]
+    pub staves: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -266,7 +278,7 @@ fn esc(s: &str) -> String {
 }
 
 /// `perc`：现行谱号是打击乐谱号——音写 `<unpitched>`（显示位置），不写 `<pitch>`。
-fn write_event(o: &mut String, e: &Event, perc: bool) {
+fn write_event(o: &mut String, e: &Event, perc: bool, multi: bool) {
     let dur = e.divisions();
     // `pitch`：和弦里的这一个音（休止为 None）；`first`：和弦的第一个音（记号、歌词只写在它上面，延音线写在连着的那个音上）
     let tail = |o: &mut String, first: bool, pitch: Option<&Pitch>| {
@@ -297,6 +309,9 @@ fn write_event(o: &mut String, e: &Event, perc: bool) {
         }
         if let Some(up) = e.stem_up {
             let _ = writeln!(o, "        <stem>{}</stem>", if up { "up" } else { "down" });
+        }
+        if multi {
+            let _ = writeln!(o, "        <staff>{}</staff>", e.staff.max(1));
         }
         let tup = e.tuplet.filter(|t| first && (t.start || t.stop));
         if (first && (!e.arts.is_empty() || tup.is_some())) || !ties.is_empty() || !slurs.is_empty() {
@@ -375,8 +390,10 @@ fn write_event(o: &mut String, e: &Event, perc: bool) {
     }
 }
 
-fn write_dir(o: &mut String, pd: &Placed) {
+/// `staff`：多谱表声部里这条记号属于第几谱表（写 `<staff>`；松叶按谱表编号，两行各开一条时不配串）。
+fn write_dir(o: &mut String, pd: &Placed, staff: Option<u8>) {
     let (d, id) = (&pd.dir, pd.src.id_attr());
+    let st = staff.map_or(String::new(), |n| format!("        <staff>{n}</staff>\n"));
     let alter = |o: &mut String, tag: &str, a: i8| {
         if a != 0 {
             let _ = write!(o, "<{tag}>{a}</{tag}>");
@@ -394,10 +411,11 @@ fn write_dir(o: &mut String, pd: &Placed) {
                 alter(o, "bass-alter", a);
                 o.push_str("</bass>\n");
             }
+            o.push_str(&st);
             o.push_str("      </harmony>\n");
         }
         Dir::Words { text, above, jump } => {
-            let _ = write!(o, "      <direction placement=\"{}\"{id}>\n        <direction-type>\n          <words>{}</words>\n        </direction-type>\n", if *above { "above" } else { "below" }, esc(text));
+            let _ = write!(o, "      <direction placement=\"{}\"{id}>\n        <direction-type>\n          <words>{}</words>\n        </direction-type>\n{st}", if *above { "above" } else { "below" }, esc(text));
             match jump {
                 Some(Jump::DalSegno) => o.push_str("        <sound dalsegno=\"segno\"/>\n"),
                 Some(Jump::DaCapo) => o.push_str("        <sound dacapo=\"yes\"/>\n"),
@@ -409,7 +427,7 @@ fn write_dir(o: &mut String, pd: &Placed) {
             o.push_str("      </direction>\n");
         }
         Dir::Dynamics(t) => {
-            let _ = writeln!(o, "      <direction placement=\"below\"{id}>\n        <direction-type>\n          <dynamics><{t}/></dynamics>\n        </direction-type>\n      </direction>");
+            let _ = writeln!(o, "      <direction placement=\"below\"{id}>\n        <direction-type>\n          <dynamics><{t}/></dynamics>\n        </direction-type>\n{st}      </direction>");
         }
         Dir::Wedge(w) => {
             let t = match w {
@@ -417,20 +435,24 @@ fn write_dir(o: &mut String, pd: &Placed) {
                 Wedge::Diminuendo => "diminuendo",
                 Wedge::Stop => "stop",
             };
-            let _ = writeln!(o, "      <direction placement=\"below\">\n        <direction-type>\n          <wedge type=\"{t}\"/>\n        </direction-type>\n      </direction>");
+            let num = staff.map_or(String::new(), |n| format!(" number=\"{n}\""));
+            let _ = writeln!(o, "      <direction placement=\"below\">\n        <direction-type>\n          <wedge type=\"{t}\"{num}/>\n        </direction-type>\n{st}      </direction>");
         }
         Dir::Metronome { per_minute, circa } => {
             let pm = if *circa { format!("c. {per_minute}") } else { per_minute.to_string() };
-            let _ = writeln!(o, "      <direction placement=\"above\"{id}>\n        <direction-type>\n          <metronome>\n            <beat-unit>quarter</beat-unit>\n            <per-minute>{pm}</per-minute>\n          </metronome>\n        </direction-type>\n        <sound tempo=\"{per_minute}\"/>\n      </direction>");
+            let _ = writeln!(o, "      <direction placement=\"above\"{id}>\n        <direction-type>\n          <metronome>\n            <beat-unit>quarter</beat-unit>\n            <per-minute>{pm}</per-minute>\n          </metronome>\n        </direction-type>\n{st}        <sound tempo=\"{per_minute}\"/>\n      </direction>");
         }
     }
 }
 
 /// 一个小节的事件按声部写：声部 1 写完 `<backup>` 回小节头再写声部 2；起拍时刻与游标不一致的用 `<forward>` / `<backup>` 挪。
-fn write_events(o: &mut String, events: &[Event], perc: bool) {
+fn write_events(o: &mut String, events: &[Event], perc: bool, multi: bool) {
     let mut cur = 0u32;
-    for v in [1u8, 2] {
-        let mut es: Vec<&Event> = events.iter().filter(|e| e.voice.clamp(1, 2) == v).collect();
+    let mut voices: Vec<u8> = events.iter().map(|e| e.voice.max(1)).collect();
+    voices.sort_unstable();
+    voices.dedup();
+    for v in voices {
+        let mut es: Vec<&Event> = events.iter().filter(|e| e.voice.max(1) == v).collect();
         es.sort_by_key(|e| e.onset);
         for e in es {
             if e.onset > cur {
@@ -438,20 +460,22 @@ fn write_events(o: &mut String, events: &[Event], perc: bool) {
             } else if e.onset < cur {
                 let _ = writeln!(o, "      <backup>\n        <duration>{}</duration>\n      </backup>", cur - e.onset);
             }
+            let staff = multi.then_some(e.staff.max(1));
             for d in &e.pre {
-                write_dir(o, d);
+                write_dir(o, d, staff);
             }
-            write_event(o, e, perc);
+            write_event(o, e, perc, multi);
             for d in &e.post {
-                write_dir(o, d);
+                write_dir(o, d, staff);
             }
             cur = e.onset + e.divisions();
         }
     }
 }
 
-fn write_attrs(o: &mut String, a: &Attrs, divisions: bool) {
-    if a.is_empty() && !divisions {
+/// 一组 `<attributes>`：`a` 的调号拍号与各谱表的谱号（`more` 是其余谱表的）；`staves` 给了（首小节）写谱表数与花括号。
+fn write_attrs(o: &mut String, a: &Attrs, more: &[Attrs], divisions: bool, staves: Option<u8>) {
+    if a.is_empty() && more.iter().all(|m| m.clef.is_none()) && !divisions {
         return;
     }
     o.push_str("      <attributes>\n");
@@ -469,24 +493,37 @@ fn write_attrs(o: &mut String, a: &Attrs, divisions: bool) {
         };
         let _ = writeln!(o, "        <time{sym}><beats>{}</beats><beat-type>{}</beat-type></time>", t.beats, t.beat_type);
     }
-    if let Some(c) = a.clef {
-        let sign = match c.sign {
-            ClefSign::G => "G",
-            ClefSign::F => "F",
-            ClefSign::C => "C",
-            ClefSign::Percussion => "percussion",
-        };
-        o.push_str("        <clef>");
-        let _ = write!(o, "<sign>{sign}</sign>");
-        if c.sign != ClefSign::Percussion {
-            let _ = write!(o, "<line>{}</line>", c.line);
-        }
-        if c.octave != 0 {
-            let _ = write!(o, "<clef-octave-change>{}</clef-octave-change>", c.octave);
-        }
-        o.push_str("</clef>\n");
+    if let Some(n) = staves.filter(|&n| n > 1) {
+        let _ = writeln!(o, "        <staves>{n}</staves>\n        <part-symbol>brace</part-symbol>");
+    }
+    for (c, staff) in std::iter::once(a).chain(more).filter_map(|a| a.clef.map(|c| (c, a.staff))) {
+        write_clef(o, c, if staves.is_some() || staff > 1 || more.iter().any(|m| m.clef.is_some()) { Some(staff.max(1)) } else { None });
     }
     o.push_str("      </attributes>\n");
+}
+
+/// `<clef>`；`number` 给了（多谱表的声部）写 `number`。
+fn write_clef(o: &mut String, c: Clef, number: Option<u8>) {
+    let sign = match c.sign {
+        ClefSign::G => "G",
+        ClefSign::F => "F",
+        ClefSign::C => "C",
+        ClefSign::Percussion => "percussion",
+    };
+    match number {
+        Some(n) => {
+            let _ = write!(o, "        <clef number=\"{n}\">");
+        }
+        None => o.push_str("        <clef>"),
+    }
+    let _ = write!(o, "<sign>{sign}</sign>");
+    if c.sign != ClefSign::Percussion {
+        let _ = write!(o, "<line>{}</line>", c.line);
+    }
+    if c.octave != 0 {
+        let _ = write!(o, "<clef-octave-change>{}</clef-octave-change>", c.octave);
+    }
+    o.push_str("</clef>\n");
 }
 
 impl Score {
@@ -509,7 +546,7 @@ impl Score {
             let _ = writeln!(o, "    <score-part id=\"P{}\">\n      <part-name print-object=\"no\"/>\n    </score-part>", i + 1);
         }
         o.push_str("  </part-list>\n");
-        let empty = Part { measures: vec![Measure::default()] };
+        let empty = Part { measures: vec![Measure::default()], staves: 1 };
         let parts: Vec<&Part> = if self.parts.is_empty() { vec![&empty] } else { self.parts.iter().collect() };
         for (pi, p) in parts.iter().enumerate() {
             let _ = writeln!(o, "  <part id=\"P{}\">", pi + 1);
@@ -532,14 +569,15 @@ impl Score {
                     }
                     o.push_str("      </barline>\n");
                 }
-                write_attrs(&mut o, &m.attrs, mi == 0);
+                let multi = p.staves > 1;
+                write_attrs(&mut o, &m.attrs, &m.staff_attrs, mi == 0, (mi == 0 && multi).then_some(p.staves));
                 for a in &m.mid {
-                    write_attrs(&mut o, a, false);
+                    write_attrs(&mut o, a, &[], false, None);
                 }
                 if let Some(c) = std::iter::once(&m.attrs).chain(&m.mid).filter_map(|a| a.clef).last() {
                     perc = c.sign == ClefSign::Percussion;
                 }
-                write_events(&mut o, &m.events, perc);
+                write_events(&mut o, &m.events, perc, multi);
                 if m.right.is_some() || m.repeat_end || m.ending_stop.is_some() {
                     o.push_str("      <barline location=\"right\">\n");
                     if m.right.is_some() || m.repeat_end {
@@ -569,10 +607,10 @@ mod tests {
 
     #[test]
     fn skeleton_xml() {
-        let mut m1 = Measure { attrs: Attrs { clef: Some(Clef::TREBLE_8VB), key: Some(Key { fifths: -2 }), time: Some(Time { beats: 4, beat_type: 4, symbol: TimeSymbol::Common }) }, ..Default::default() };
+        let mut m1 = Measure { attrs: Attrs { clef: Some(Clef::TREBLE_8VB), key: Some(Key { fifths: -2 }), time: Some(Time { beats: 4, beat_type: 4, symbol: TimeSymbol::Common }), staff: 0 }, ..Default::default() };
         m1.right = Some(BarStyle::LightLight);
         let m2 = Measure { repeat_end: true, new_system: true, ..Default::default() };
-        let x = Score { title: Some("a<b".into()), credits: vec![], parts: vec![Part { measures: vec![m1, m2] }] }.to_musicxml();
+        let x = Score { title: Some("a<b".into()), credits: vec![], parts: vec![Part { measures: vec![m1, m2], staves: 1 }] }.to_musicxml();
         assert!(x.contains("<work-title>a&lt;b</work-title>"));
         assert!(x.contains("<key><fifths>-2</fifths></key>"));
         assert!(x.contains("<time symbol=\"common\"><beats>4</beats><beat-type>4</beat-type></time>"));
@@ -598,7 +636,7 @@ mod tests {
         tri.onset = 36;
         tri.tuplet = Some(Tuplet { actual: 3, normal: 2, start: true, stop: false });
         assert_eq!(tri.divisions(), 8);
-        let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![Measure { events: vec![e, low, tri], ..Default::default() }] }] }.to_musicxml();
+        let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![Measure { events: vec![e, low, tri], ..Default::default() }], staves: 1 }] }.to_musicxml();
         assert!(x.contains("<backup>\n        <duration>44</duration>") && x.contains("<voice>2</voice>") && x.contains("<fermata/>"));
         assert!(x.contains("<note id=\"omr7\">") && x.contains("<direction placement=\"below\" id=\"omrD1\">"));
         assert!(x.contains("<lyric number=\"2\" id=\"omrL4\">") && x.contains("<text>1.道</text>") && x.contains("<kind text=\"m7\">minor-seventh</kind>") && x.contains("<bass-alter>1</bass-alter>") && x.contains("<dynamics><mf/></dynamics>"));
@@ -621,7 +659,7 @@ mod tests {
         b.spans.push(SpanMark { kind: SpanKind::Slur, start: false, number: 2, above: false, pitch: None, src: Src::default() });
         b.post.push(Dir::Wedge(Wedge::Stop).into());
         let m = Measure { events: vec![a, b], ending_start: Some(Ending { number: 1, closed: true }), ending_stop: Some(Ending { number: 1, closed: true }), repeat_end: true, ..Default::default() };
-        let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![m] }] }.to_musicxml();
+        let x = Score { title: None, credits: vec![], parts: vec![Part { measures: vec![m], staves: 1 }] }.to_musicxml();
         // 延音线记在 E 上、不在和弦的第一个音上；圆滑线记在第一个音上
         let first = &x[x.find("<step>C</step>").unwrap()..x.find("<step>E</step>").unwrap()];
         assert!(!first.contains("<tie ") && first.contains("<slur type=\"start\" number=\"2\" placement=\"below\"/>"));
