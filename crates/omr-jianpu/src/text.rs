@@ -913,6 +913,12 @@ static KEY_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯
 /// 单字符路读出的音名组：可带前后升降号。
 /// 和弦行里的跳转记号：只认写全的（`Fine`、D 后带点的 `D.C.` / `D. C`），宽松写法在和弦行多是连写和弦的误检（`G/D C` → `DC`）。
 static CHORD_ROW_JUMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"D\s*\.\s*[CS]\b\.?|Fine(?:[^a-z]|$)").unwrap());
+/// 段落方框里的英文段落词。
+static SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)(intro|verse|chorus|pre-?chorus|bridge|coda|outro|ending|interlude|solo|refrain|tag)\d*").unwrap());
+/// 中文段名「(副歌)」：带括号的、或整块只有这两个字的。
+static CN_SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[（(]\s*副\s*歌\s*[)）]|^[\s（(【\[]*副\s*歌[\s)）】\]：:]*$").unwrap());
+/// 力度记号（相邻两个常读成一块：`mfdim.`）。
+static DYN_TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)cresc|dim|ppp|pp|p|mp|mf|fff|ff|f").unwrap());
 static KEY_GLYPHS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([b#♭♯]?)\s*([A-Ga-g])\s*([b#♭♯]?)$").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
@@ -1476,7 +1482,8 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
     // 弧（扁宽、墨稀，粘连的「Am」墨实）与高音点、附点（小圆块）也不算：和弦字常与下面的弧、点上下挨着连成一截，取条就把弧切进字里读乱
     let marks = ink.comps().iter().filter(|k| {
         let r = &k.rect;
-        r.bottom() > ya as f64 && r.y < yb as f64 && ((r.w >= h * 1.2 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
+        // 伸进音符带半个字号以上的窄块是小节线（顶上粘着行末半弧，「主祢真伟大」读成 T、整行和弦丢）：和弦字不往下伸
+        r.bottom() > ya as f64 && r.y < yb as f64 && ((r.bottom() > top + h * 0.5 && r.w <= h * 1.5) || (r.w >= h * 0.8 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
     });
     let marks: Vec<&Comp> = marks.collect();
     let mut claims = Claims::comps(ink, marks.iter().copied()).tall_runs(ink, h * 2.2);
@@ -1501,6 +1508,46 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
             }
         }
         let mut text: String = cs.into_iter().collect();
+        // 段落词与力度：和弦带也是上一行歌词带的下半截，段落方框（`Chorus`、「(副歌)」）、整块的力度常印在这里（首行上方带除外：
+        // 那里收的多是页眉与音符上方的碎块，读出的噪声足以凑成段落词，同 TS）
+        if y_min > 0.0 {
+            let x_of = |i: usize| chars.get(i).map_or(0.0, |c| c.x0);
+            let cn = CN_SECTION.find(&text).map(|m| (m.start(), m.end(), "(副歌)".to_string()));
+            let hit = cn.or_else(|| {
+                SECTION.find(&text).map(|m| {
+                    let before = text[..m.start()].chars().last().unwrap_or(' ');
+                    let after = text[m.end()..].chars().next().unwrap_or(' ');
+                    let body = if m.as_str().chars().any(|c| c.is_ascii_uppercase()) {
+                        m.as_str().to_string()
+                    } else {
+                        let mut cs = m.as_str().chars();
+                        cs.next().map(|c| c.to_ascii_uppercase()).into_iter().chain(cs).collect()
+                    };
+                    let word = if "【[［".contains(before) && "】]］".contains(after) { format!("{before}{body}{after}") } else { body };
+                    (m.start(), m.end(), word)
+                })
+            });
+            if let Some((a, b, word)) = hit {
+                let x = x_of(text[..a].chars().count());
+                place_section(rn, x, word);
+                text = format!("{}{}{}", &text[..a], " ".repeat(text[a..b].chars().count()), &text[b..]);
+            }
+            let skip = |c: char| c.is_whitespace() || ".,·•'`".contains(c);
+            let kept: Vec<(usize, char)> = text.chars().enumerate().filter(|&(_, c)| !skip(c)).collect();
+            let t: String = kept.iter().map(|&(_, c)| c).collect();
+            let toks: Vec<regex::Match> = DYN_TOKEN.find_iter(&t).collect();
+            let ink_w = chars.iter().map(|c| c.x1 - c.x0).sum::<f64>();
+            if !t.is_empty() && !toks.is_empty() && toks.iter().map(|m| m.as_str().len()).sum::<usize>() == t.len() && ink_w <= t.len() as f64 * (y1 - y0 + 1) as f64 * 1.6 {
+                for m in toks {
+                    let x = x_of(kept[t[..m.start()].chars().count()].0);
+                    let name = m.as_str().to_lowercase();
+                    let name = if name.starts_with("cresc") || name.starts_with("dim") { name + "." } else { name };
+                    let best = (0..rn.nums.len()).min_by(|&a, &b| (rn.nums[a].bbox.cx() - x).abs().total_cmp(&(rn.nums[b].bbox.cx() - x).abs())).unwrap();
+                    rn.nums[best].dynamics.push(name);
+                }
+                continue;
+            }
+        }
         // 有的本子把 Fine / D.C. 就印在和弦行里（青年诗歌 2、48）：写全的 `Fine`、带点的 `D.C.` 和弦名凑不出来，照收成跳转记号再从行里抹掉
         if let Some(m) = CHORD_ROW_JUMP.find(&text) {
             let word = if m.as_str().starts_with('F') { "Fine" } else if m.as_str().contains('S') { "D.S." } else { "D.C." };
@@ -1544,6 +1591,18 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         }
     }
     place_chords(rn, cands, regions);
+}
+
+/// 段落词落位（同 TS）：标记框略偏左于段首音，按 x 找起点音再退回本小节首音；退到休止就停（弱起进段从休止后那个音起）。
+fn place_section(rn: &mut RowNotes, x: f64, word: String) {
+    let nums = &mut rn.nums;
+    let num_h = median(&nums.iter().map(|n| n.bbox.h).collect::<Vec<_>>(), 1.0);
+    let mut bi = nums.iter().position(|n| n.bbox.cx() >= x - num_h * 0.5).unwrap_or(0);
+    let bar_x = rn.barline_xs.iter().copied().filter(|&b| b < nums[bi].bbox.cx()).fold(f64::NEG_INFINITY, f64::max);
+    while bi > 0 && nums[bi - 1].bbox.cx() > bar_x && nums[bi - 1].digit != 0 {
+        bi -= 1;
+    }
+    nums[bi].section_mark = Some(word);
 }
 
 /// 一个待落位的和弦：记号、左缘 x、源框。

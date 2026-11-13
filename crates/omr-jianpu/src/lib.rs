@@ -115,6 +115,19 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
         text::chords_above(ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
     spans::pair_halves(&mut notes, &halves);
+    // 全局合理性（同 TS）：真配了和弦的谱子基本上每小节至少一个（最稀的一首 0.56 个/小节）；稀稀拉拉几个多半是弧、点、页眉读成的，整批作废
+    {
+        let bars: usize = notes.iter().map(|r| r.barline_xs.len()).sum();
+        let chord_n: usize = notes.iter().map(|r| r.nums.iter().filter(|n| n.chord.is_some()).count()).sum();
+        if bars >= 4 && (chord_n as f64) < bars as f64 * 0.4 {
+            for n in notes.iter_mut().flat_map(|r| r.nums.iter_mut()) {
+                n.chord = None;
+                n.chord_offset = None;
+                n.extra_chords.clear();
+            }
+            score.chord_regions.clear();
+        }
+    }
     hook.step(5, STEPS, "beats")?;
     let tally = beats::settle(&mut notes, &sys, &mut score);
     if std::env::var("OMR_JP_DEBUG").is_ok() {
