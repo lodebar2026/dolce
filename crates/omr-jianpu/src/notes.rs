@@ -609,8 +609,9 @@ fn probe_dot(ink: &Ink, cx: f64, y0: i64, h: f64, dir: i64, capped: bool) -> Opt
     // 过了这一团：空白；压着弧的话那一行横贯窗子
     let beyond = span(y);
     let open = beyond.is_none() || (capped && beyond.is_some_and(|s| s.0 <= xa || s.1 >= xb));
-    // 压着弧的那种得有脖子：圆点中间最宽，数字自己伸出带外的尖（「1」「4」的顶）贴着数字那头最宽
-    if capped && neck as f64 > widest as f64 * NECK {
+    // 压着弧的那种得有脖子：圆点中间最宽，数字自己伸出带外的尖（「1」「4」的顶）贴着数字那头最宽；
+    // 过了这一团是空白、团有一个点高的不用这条（点整片压在「5」顶横上，贴着数字那行就是最宽的，青年诗歌 5）
+    if capped && neck as f64 > widest as f64 * NECK && (beyond.is_some() || ((y - start).abs() as f64) < h * 0.25) {
         return None;
     }
     if b < a || !open || bh < h * 0.1 || bw < h * 0.1 || bw / bh < 0.55 || bw / bh > 1.8 || (area as f64) < bw * bh * 0.55 {
