@@ -1154,6 +1154,7 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
             claims.mask[y as usize * claims.w + x as usize] = 1;
         }
     }
+    let mut cands: Vec<ChordCand> = Vec::new();
     for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, (0, ink.w() as i64), h * 0.35, None) {
         let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64, None);
         let text: String = chars.iter().map(|c| c.ch).collect();
@@ -1191,18 +1192,113 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         let x_at = |i: usize| chars.get(i).map_or(0.0, |c| c.x0);
         for t in chords::split_tokens(&clean, Some(&x_at)) {
             let x = x_at(t.index);
-            let tok = chords::normalize(&t.tok);
-            let k = rn.nums.iter().rposition(|n| n.bbox.x <= x + h * 0.4).unwrap_or(0);
-            let next_x = rn.nums.get(k + 1).map_or(rn.nums[k].bbox.x + h * 4.0, |n| n.bbox.x);
-            let n = &mut rn.nums[k];
             let x1 = chars.get(t.index + t.tok.chars().count() - 1).map_or(x, |c| c.x1);
-            regions.push(TextRegion { text: tok.clone(), bbox: Rect::new(x, y0 as f64, x1 - x, (y1 - y0 + 1) as f64) });
-            if n.chord.is_none() {
-                n.chord = Some(tok);
-            } else {
-                let offset = ((x - n.bbox.x) / (next_x - n.bbox.x).max(1.0)).clamp(0.0, 0.99);
-                n.extra_chords.push(crate::result::ExtraChord { tok, offset });
+            cands.push(ChordCand { tok: chords::normalize(&t.tok), x, bbox: Rect::new(x, y0 as f64, x1 - x, (y1 - y0 + 1) as f64) });
+        }
+    }
+    place_chords(rn, cands, regions);
+}
+
+/// 一个待落位的和弦：记号、左缘 x、源框。
+struct ChordCand {
+    tok: String,
+    x: f64,
+    bbox: Rect,
+}
+
+/// 印在增时线上方的和弦按增时线的源图位置定拍：横块与增时线数对得上、本音是四分音才用（一条线一拍，第 k 条在 (1+k)/(1+augment) 处）。
+/// 左缘到横块右四分之一以内才算；再往右是下一个音的和弦往左探出来。
+fn dash_beat(n: &crate::result::JpNum, x: f64) -> Option<f64> {
+    let rs = &n.augment_rects;
+    if rs.is_empty() || rs.len() != n.augment as usize || n.div > 0 || n.dot > 0 || x <= n.bbox.right() {
+        return None;
+    }
+    rs.iter().enumerate().rev().find(|(_, r)| x >= r.x - r.w * 0.5 && x <= r.x + r.w * 0.75).map(|(k, _)| (1 + k) as f64 / (1 + n.augment) as f64)
+}
+
+/// 和弦落到音上（TS `chordline.ts::placeChords` 同判据）。比较基准取**左缘**：和弦的左缘习惯对齐所辖音的左缘。
+/// 夹在两音之间的：明显贴右邻（0.65 以后）归右邻；0.35 以后、中间隔着小节线、左缘已到线前 0.3 字号以内的是下一小节的强拍和弦
+/// （下一小节首音另有自己的和弦时不动）；其余挂左音 + 拍内偏移。同一音已有和弦：落在本音时值之内的记拍位（长音里换和弦），
+/// 长音上方挤着的依次挂到增时线上，再不然顺延给右邻空位（限一格）；同名的不重挂。
+fn place_chords(rn: &mut RowNotes, mut cands: Vec<ChordCand>, regions: &mut Vec<TextRegion>) {
+    let nums = &mut rn.nums;
+    if nums.is_empty() {
+        return;
+    }
+    let lefts: Vec<f64> = nums.iter().map(|n| n.bbox.x).collect();
+    cands.sort_by(|a, b| a.x.total_cmp(&b.x));
+    let mut extra_y: std::collections::HashMap<usize, Vec<f64>> = std::collections::HashMap::new();
+    let mut placed_x: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+    for ci in 0..cands.len() {
+        let c = &cands[ci];
+        let x = c.x;
+        let mut i = 0;
+        while i + 1 < lefts.len() && lefts[i + 1] <= x {
+            i += 1;
+        }
+        let mut frac = 0.0;
+        if let Some(d) = dash_beat(&nums[i], x) {
+            frac = d;
+        } else if i + 1 < lefts.len() && x > lefts[i] {
+            let gap = lefts[i + 1] - lefts[i];
+            if gap > 1.0 {
+                let t = (x - lefts[i]) / gap;
+                let h = nums[i].bbox.h;
+                let bar = rn.barline_xs.iter().copied().find(|&bx| bx > nums[i].bbox.right() && bx < lefts[i + 1]);
+                let nx = cands.get(ci + 1).map_or(f64::INFINITY, |c| c.x);
+                let next_own = if i + 2 < lefts.len() { nx < lefts[i + 2] - (lefts[i + 2] - lefts[i + 1]) * 0.35 } else { nx < f64::INFINITY };
+                if t >= 0.65 || (t >= 0.35 && bar.is_some_and(|b| x >= b - h * 0.3) && !next_own) {
+                    i += 1;
+                } else if t >= 0.35 {
+                    frac = t;
+                }
             }
         }
+        let n = &nums[i];
+        let prev_x = placed_x.get(&i).copied();
+        if n.chord.as_deref() == Some(c.tok.as_str()) && !(prev_x.is_some_and(|p| x - p > n.bbox.h) && n.augment > 0) {
+            continue;
+        }
+        if frac > 0.0 && n.chord.is_some() {
+            let ys = extra_y.entry(i).or_default();
+            let n = &mut nums[i];
+            if let Some(k) = n.extra_chords.iter().position(|e| (e.offset - frac).abs() < 0.1) {
+                // 同一拍位撞车 = 两套并行编配，留贴着谱行的下排
+                if c.bbox.y > ys[k] {
+                    n.extra_chords[k] = crate::result::ExtraChord { tok: c.tok.clone(), offset: frac };
+                    ys[k] = c.bbox.y;
+                    regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+                }
+            } else if !n.extra_chords.iter().any(|e| e.tok == c.tok) {
+                n.extra_chords.push(crate::result::ExtraChord { tok: c.tok.clone(), offset: frac });
+                ys.push(c.bbox.y);
+                regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+            }
+            continue;
+        }
+        let n0 = &nums[i];
+        if n0.chord.is_some() && n0.augment > 0 && n0.div == 0 && n0.dot == 0 && x > n0.bbox.x && (i + 1 >= nums.len() || x < lefts[i + 1]) {
+            let aug = n0.augment;
+            let n0 = &mut nums[i];
+            if (n0.extra_chords.len() as u32) < aug {
+                let offset = (1 + n0.extra_chords.len()) as f64 / (1 + aug) as f64;
+                n0.extra_chords.push(crate::result::ExtraChord { tok: c.tok.clone(), offset });
+                regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+            }
+            continue;
+        }
+        if nums[i].chord.is_some() && i + 1 < nums.len() && nums[i + 1].chord.is_none() {
+            i += 1;
+            frac = 0.0;
+        }
+        if nums[i].chord.is_some() {
+            continue;
+        }
+        nums[i].chord = Some(c.tok.clone());
+        placed_x.insert(i, x);
+        if frac > 0.0 {
+            nums[i].chord_offset = Some(frac);
+        }
+        regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
     }
 }
