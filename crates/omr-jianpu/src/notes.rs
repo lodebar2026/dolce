@@ -309,6 +309,10 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
             };
             let lim = if prev.is_none() { h * 0.4 } else { h * 0.25 };
             let fits = prev.is_none_or(|p| l.y0 > p.y1 && l.x0 as f64 >= p.x0 as f64 - slack && l.x1 as f64 <= p.x1 as f64 + slack);
+            // 数字格切短了时它自己的底横（「2」）贴着格底、横向不出数字框
+            if prev.is_none() && blank < 1.0 && l.x0 as f64 >= n.bbox.x - 2.0 && l.x1 as f64 <= n.bbox.right() + 2.0 && ink.at(((l.x0 + l.x1) / 2) as i64, l.y0 - 1) {
+                break;
+            }
             if blank > lim || !fits {
                 // 差一点：隔得稍远（不到门的 1.8 倍），或隔得不远却宽出去了
                 if fits && blank <= lim * 1.8 {
@@ -389,7 +393,8 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
                 // 歌词字的顶横两头都宽出去半个字号以上；线头印得参差的不算
                 let fits = prev.is_none_or(|p| rx0 as f64 >= p.0 as f64 - h * 0.5 || rx1 as f64 <= p.1 as f64 + h * 0.5);
                 // 贴着数字的头一道得比数字宽出八成：数字格切短了一两行时，数字自己的底弧（「6」「3」）就落在这里
-                let stub = cnt == 0 && blank < 1.0 && ((rx1 - rx0 + 1) as f64) < n.bbox.w * 0.8;
+                // 贴着数字、横向又不出数字框的是数字自己的底（「2」的底横、「6」「3」的底弧）
+                let stub = cnt == 0 && blank < 1.0 && (((rx1 - rx0 + 1) as f64) < n.bbox.w * 0.8 || (rx0 as f64 >= n.bbox.x - 2.0 && rx1 as f64 <= n.bbox.right() + 2.0));
                 if ink.at(x, y) || stub || rx1 - rx0 + 1 < min_len || blank > lim || !fits || arc_ends(ink, rx0, rx1, y - 1) || glyph_top(ink, rx0, rx1, y0, y - 1, h) {
                     break;
                 }
