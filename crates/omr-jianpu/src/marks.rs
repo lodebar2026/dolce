@@ -647,3 +647,70 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
     }
     used
 }
+
+/// segno 𝄋（跳转目标，同 TS `detectSegno`）：不是文字，OCR 够不着，按形认——主体是一块空心的 S（一个字号上下、窄于高、墨占框 28%~62%），
+/// 斜笔两侧各扣一颗小圆点（对角两侧），或直立的 S 左右齐半高夹着两颗点（`·S·`，青年诗歌 4）。上方带里别的东西（和弦、段落词、房号、倚音）
+/// 都凑不出「一块空心斜体 + 两颗孤立圆点」。左右一个字号内另有字号级墨块的是字的一半（选本 375 书眉「难」的「又」）。
+/// 锚到正下方最近的音（写出端提升为该小节左线上的记号：D.S. 跳回来落在这条线上）。
+pub fn segno(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], num_h: f64) {
+    let comps = ink.comps();
+    let small = |d: &Comp| {
+        let s = d.rect.w.max(d.rect.h);
+        s >= num_h * 0.08 && s <= num_h * 0.3
+    };
+    for (ri, _) in rows.iter().enumerate() {
+        let rn = &notes[ri];
+        if rn.nums.is_empty() {
+            continue;
+        }
+        let row_top = rn.nums.iter().map(|n| n.bbox.y).fold(f64::MAX, f64::min);
+        let (y0, y1, y_diag) = (row_top - num_h * 4.0, row_top - num_h * 0.2, row_top - num_h * 2.8);
+        let mut hits: Vec<(usize, Vec<i32>)> = Vec::new();
+        for k in comps {
+            let b = &k.rect;
+            if b.bottom() > y1 || b.y < y0 {
+                continue;
+            }
+            if b.h < num_h * 0.85 || b.h > num_h * 1.6 || b.w < num_h * 0.45 || b.w > num_h * 1.1 {
+                continue;
+            }
+            let aspect = b.w / b.h;
+            if !(0.45..=1.0).contains(&aspect) || !(0.28..=0.62).contains(&k.fill()) {
+                continue;
+            }
+            let cy = b.cy();
+            let side: Vec<&Comp> = comps.iter().filter(|d| d.id != k.id && small(d) && (d.rect.cy() - cy).abs() <= b.h * 0.3).collect();
+            let l = side.iter().filter(|d| d.rect.right() <= b.x && d.rect.right() >= b.x - num_h * 0.7).map(|d| d.rect.x).fold(f64::MAX, f64::min);
+            let r = side.iter().filter(|d| d.rect.x >= b.right() && d.rect.x <= b.right() + num_h * 0.7).map(|d| d.rect.right()).fold(f64::MIN, f64::max);
+            let pad = num_h * 0.2;
+            let near: Vec<&Comp> = comps.iter().filter(|d| d.id != k.id && small(d) && d.rect.cx() >= b.x - pad && d.rect.cx() <= b.right() + pad && d.rect.cy() >= b.y - pad && d.rect.cy() <= b.bottom() + pad).collect();
+            let form_side = l < f64::MAX && r > f64::MIN;
+            let form_diag = !form_side && {
+                let above: Vec<&&Comp> = near.iter().filter(|d| d.rect.cy() < cy).collect();
+                let below: Vec<&&Comp> = near.iter().filter(|d| d.rect.cy() > cy).collect();
+                above.iter().any(|a| below.iter().any(|z| (a.rect.cx() - z.rect.cx()).abs() >= num_h * 0.2 && (a.rect.cy() - z.rect.cy()).abs() >= num_h * 0.1))
+            };
+            if !form_side && !form_diag {
+                continue;
+            }
+            if form_diag && b.y < y_diag {
+                continue;
+            }
+            let (sx0, sx1) = if form_side { (l, r) } else { (b.x - num_h, b.right() + num_h) };
+            if comps.iter().any(|o| o.id != k.id && o.rect.w.max(o.rect.h) > num_h * 0.4 && o.rect.bottom().min(b.bottom()) - o.rect.y.max(b.y) > b.h * 0.3 && o.rect.x < sx1 && o.rect.right() > sx0) {
+                continue;
+            }
+            let cx = b.cx();
+            let Some(best) = rn.nums.iter().position(|n| n.bbox.right() >= cx - num_h * 1.5) else { continue };
+            let pad_x = if form_side { num_h * 0.7 } else { num_h * 0.2 };
+            let mut ids = vec![k.id];
+            ids.extend(comps.iter().filter(|d| d.id != k.id && d.rect.w.max(d.rect.h) <= num_h * 0.3 && d.rect.cx() >= b.x - pad_x && d.rect.cx() <= b.right() + pad_x && d.rect.cy() >= b.y - num_h * 0.2 && d.rect.cy() <= b.bottom() + num_h * 0.2).map(|d| d.id));
+            hits.push((best, ids));
+        }
+        let rn = &mut notes[ri];
+        for (best, ids) in hits {
+            rn.nums[best].segno = true;
+            rn.segno_ink.extend(ids);
+        }
+    }
+}

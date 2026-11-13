@@ -20,6 +20,8 @@ pub struct RowNotes {
     pub claimed: Vec<Rect>,
     /// 行里印的转拍号
     pub meters: Vec<crate::result::RowMeter>,
+    /// 认作 segno 的墨（主体与两颗点；读和弦带前抹掉）
+    pub segno_ink: Vec<i32>,
 }
 
 /// 细长横墨：列范围与行范围（都含端点）。
