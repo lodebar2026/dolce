@@ -525,8 +525,9 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
                     out.claimed.push(r);
                 }
             }
-            if up && cnt == 0 && probe_high_dot(ink, n.bbox.cx(), n.bbox.y, h).is_some() {
-                cnt = 1;
+            // 粘顶的高音点先记下，等低音点与上下行共用的点归定了再收（`lib::promote_glued_up`）
+            if up && cnt == 0 {
+                n.glued_up = probe_high_dot(ink, n.bbox.cx(), n.bbox.y, h).map(|r| n.bbox.y - r.bottom());
             }
             n.octave += if up { cnt } else { -cnt };
         }

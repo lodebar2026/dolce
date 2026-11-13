@@ -92,6 +92,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     };
     let mut notes: Vec<notes::RowNotes> = rows.iter().enumerate().map(|(i, row)| notes::build(ink, row, ocr, ctx(i))).collect();
     settle_shared_dots(&mut notes);
+    promote_glued_up(&mut notes);
     spans::endings(ink, &rows, &mut notes, ocr);
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     hook.step(2, STEPS, "lyrics")?;
@@ -182,6 +183,17 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
 
 /// 密排的多声部谱里上一行的低音点也落在下一行数字顶上的窗里：两行各收一次，一上一下抵掉了。
 /// 同一个点只归缝小的那个音，另一个退回这一级。
+/// 粘在数字顶上的高音点：一个音不会同时有高音点和低音点，已收了低音点的不收（新编赞美诗 78 下声部「5」顶上 6×4 的笔头，
+/// 脚下另有它自己的低音点）。在共用点裁决之后做：上下两行抢同一个点的先归定。
+fn promote_glued_up(notes: &mut [notes::RowNotes]) {
+    for n in notes.iter_mut().flat_map(|r| r.nums.iter_mut()) {
+        if n.glued_up.is_none() || n.octave != 0 || n.oct_dots.iter().any(|o| !o.1) || n.digit == 0 || n.digit == crate::result::RHYTHM_DIGIT {
+            continue;
+        }
+        n.octave = 1;
+    }
+}
+
 fn settle_shared_dots(notes: &mut [notes::RowNotes]) {
     use std::collections::HashMap;
     let mut by_id: HashMap<i32, Vec<(usize, usize, bool, f64)>> = HashMap::new();
