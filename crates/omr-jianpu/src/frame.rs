@@ -592,7 +592,8 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
         }
         if let [a, b] = groups[..] {
             let ok = |g: (usize, usize)| ((g.1 - g.0 + 1) as f64) <= h * 0.42 && ((g.1 - g.0 + 1) as f64) >= h * 0.08 && g.0 > 0 && g.1 + 1 < rows.len();
-            if ok(a) && ok(b) && ((b.0 - a.1) as f64) >= h * 0.3 {
+            // 两点上下撑开 0.8 字号以上（倚音底下的小弧连点挨得近，迦南 1727）
+            if ok(a) && ok(b) && ((b.0 - a.1) as f64) >= h * 0.3 && ((b.1 - a.0 + 1) as f64) >= h * 0.8 {
                 out[k] = Cell { y0: y0 + a.0 as i64, y1: y0 + b.1 as i64, kind: CellKind::Colon, ..c };
             }
         }
@@ -737,7 +738,8 @@ fn ink_groups(ink: &Ink, c: &Cell) -> Vec<(i64, i64)> {
 /// 格里的墨分上下两截、各不过 0.32 字号高（冒号的两点）。
 fn colon_like(ink: &Ink, c: &Cell, h: f64) -> bool {
     let groups = ink_groups(ink, c);
-    groups.len() == 2 && groups.iter().all(|g| ((g.1 - g.0 + 1) as f64) <= h * 0.32 && ((g.1 - g.0 + 1) as f64) >= h * 0.08)
+    // 两点之间空开 0.08 字号以上（倚音底下的小弧紧挨着点，迦南 1727「|{6̲}1」）
+    groups.len() == 2 && groups.iter().all(|g| ((g.1 - g.0 + 1) as f64) <= h * 0.32 && ((g.1 - g.0 + 1) as f64) >= h * 0.08) && ((groups[1].0 - groups[0].1 - 1) as f64) >= (h * 0.08).max(2.0)
 }
 
 fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
