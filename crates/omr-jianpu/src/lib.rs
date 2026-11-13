@@ -132,6 +132,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     }
     hook.step(5, STEPS, "beats")?;
     let tally = beats::settle(&mut notes, &sys, &mut score);
+    implied_ties(&mut notes);
     if std::env::var("OMR_JP_DEBUG").is_ok() {
         eprintln!("字号 {num_h:.1}，页 {}x{}；拍号 {}/{}，小节 {}：满拍 {}（其中裁决改的 {}），不满 / 超拍 {}", ink.w(), ink.h(), score.beats, score.beat_type, tally.bars, tally.full, tally.fixed, tally.bad);
         for (i, r) in rows.iter().enumerate() {
@@ -192,6 +193,36 @@ fn promote_glued_up(notes: &mut [notes::RowNotes]) {
             continue;
         }
         n.octave = 1;
+    }
+}
+
+/// 隐含延音线（同 TS `impliedTie`）：没词的音与前一个音同音高，就是延音——简谱里同音延续本该有连音线，但跨谱行的弧画不出来
+/// （原图上就没有），行内的淡弧也可能漏检。有词的音是新音节、不算延音；有词率不到四成的行（前奏、间奏、只印几个「啦」的衬词行）
+/// 没有这条线索，跳过。圆滑线里面不补：一字多音的弧罩着的同音重复是重新发音（1782 `2⌒3 3⌒2` 外面再套一条大弧）。
+fn implied_ties(notes: &mut [notes::RowNotes]) {
+    let has_word = |n: &result::JpNum| n.lyrics.iter().any(|t| !t.trim().is_empty());
+    let mut flat: Vec<(usize, usize, bool)> = Vec::new();
+    for (ri, rn) in notes.iter().enumerate() {
+        let with = rn.nums.iter().filter(|n| has_word(n)).count();
+        let has = !rn.nums.is_empty() && with as f64 / rn.nums.len() as f64 >= 0.4;
+        flat.extend((0..rn.nums.len()).map(|ni| (ri, ni, has)));
+    }
+    let mut depth = 0i64;
+    for i in 1..flat.len() {
+        let ((pr, pn, _), (cr, cn, has)) = (flat[i - 1], flat[i]);
+        let (prev, cur) = (&notes[pr].nums[pn], &notes[cr].nums[cn]);
+        depth = (depth + prev.slur_start as i64 - prev.slur_stop as i64).max(0);
+        if depth > 0 || prev.slur_stop > 0 || cur.slur_start > 0 || !has || has_word(cur) {
+            continue;
+        }
+        if cur.digit == 0 || prev.digit == 0 || cur.digit == result::RHYTHM_DIGIT || cur.digit != prev.digit || cur.octave != prev.octave {
+            continue;
+        }
+        if cur.tie_stop || prev.tie_start {
+            continue;
+        }
+        notes[pr].nums[pn].tie_start = true;
+        notes[cr].nums[cn].tie_stop = true;
     }
 }
 
