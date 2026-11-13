@@ -715,7 +715,9 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     let h = band.h();
     let (cw, ch) = (c.w(), c.h());
     let rel = ((c.y0 + c.y1) as f64 / 2.0 - band.top(c.cx())) / h;
-    if ch >= h * 0.9 && cw <= (h * 0.3).max(4.0) {
+    // 声部行字号小，终止线的粗线（毛边填不满）宽过 0.3 字号：墨填满七成五的放到 0.4 字号（四声部马槽歌末尾）
+    let solid_ish = cw <= h * 0.4 && ink.count(&c.rect()) as f64 >= cw * ch * 0.75;
+    if ch >= h * 0.9 && (cw <= (h * 0.3).max(4.0) || solid_ish) {
         // 小节线：纵贯行带、上下都伸出去一截（数字「1」正好与带等高）
         let best = (c.x0..=c.x1).filter_map(|x| overshoot(ink, band, x)).max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)));
         if let Some((up, dn)) = best {
