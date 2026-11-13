@@ -116,6 +116,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
         text::chords_above(ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
     spans::pair_halves(&mut notes, &halves);
+    text::split_spanning_words(&mut notes);
     // 全局合理性（同 TS）：真配了和弦的谱子基本上每小节至少一个（最稀的一首 0.56 个/小节）；稀稀拉拉几个多半是弧、点、页眉读成的，整批作废
     {
         let bars: usize = notes.iter().map(|r| r.barline_xs.len()).sum();

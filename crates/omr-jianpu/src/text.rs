@@ -379,6 +379,8 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
 /// 读好、对好音的一行歌词，等同行各段比过对位再写进音里。
 struct Pending {
     syls: Vec<(usize, String, bool)>,
+    /// 英文词：(音下标, 字迹左缘, 右缘)，弧认完后按拼写拆（`split_spanning_words`）
+    exts: Vec<(usize, f64, f64)>,
     label: Option<String>,
     region: TextRegion,
     ratio: Option<f64>,
@@ -599,49 +601,10 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 continue;
             }
             let at0 = align(&lr.syls.iter().map(|s| s.x).collect::<Vec<_>>(), &note_xs);
-            // 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：按拼写切成那么多段（同 TS `splitSpanningWords`）
-            let mut placed: Vec<(dolce_omr_text::lyrics::Syl, usize)> = lr.syls.iter().cloned().zip(at0.iter().copied()).collect();
+            // 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：等弧认完再按拼写切（`split_spanning_words`），
+            // 这里先记下词的字迹范围
+            let placed: Vec<(dolce_omr_text::lyrics::Syl, usize)> = lr.syls.iter().cloned().zip(at0.iter().copied()).collect();
             let line_h = (y1 - y0 + 1) as f64;
-            for k in (0..placed.len()).rev() {
-                let (s, own) = (placed[k].0.clone(), placed[k].1);
-                if !s.text.chars().any(|c| c.is_ascii_alphabetic()) || s.text.chars().any(is_han) {
-                    continue;
-                }
-                let ex1 = s.x + s.w / 2.0 - line_h * 0.3;
-                let taken = |i: usize| placed.iter().enumerate().any(|(j, p)| j != k && p.1 == i);
-                // 词心可能落在后一个音上（对音按就近）：往左把字迹范围里空着的音也收进来
-                let ex0 = s.x - s.w / 2.0 - line_h * 0.3;
-                let mut first = own;
-                while first > 0 && !taken(first - 1) && note_xs[first - 1] >= ex0 {
-                    first -= 1;
-                }
-                let mut span: Vec<usize> = (first..=own).collect();
-                let mut i = own + 1;
-                while i < note_xs.len() && note_xs[i] < ex1 && !taken(i) {
-                    span.push(i);
-                    i += 1;
-                }
-                let mut parts = None;
-                while span.len() >= 2 {
-                    parts = dolce_omr_text::ensyllable::split_english_word(&s.text, span.len());
-                    if parts.is_some() {
-                        break;
-                    }
-                    span.pop();
-                }
-                let Some(parts) = parts else { continue };
-                let repl: Vec<(dolce_omr_text::lyrics::Syl, usize)> = parts
-                    .into_iter()
-                    .zip(&span)
-                    .enumerate()
-                    .map(|(j, (t, &n))| {
-                        // 按拼写切出的段之间没印连字符；末一段承原词的连字符
-                        let syllabic = if j + 1 == span.len() { s.syllabic } else { dolce_omr_text::lyrics::Syllabic::Single };
-                        (dolce_omr_text::lyrics::Syl { text: t, x: note_xs[n], w: s.w / span.len() as f64, syllabic }, n)
-                    })
-                    .collect();
-                placed.splice(k..=k, repl);
-            }
             let at: Vec<usize> = placed.iter().map(|p| p.1).collect();
             lr.syls = placed.into_iter().map(|p| p.0).collect();
             // (音下标, 字, 把握不大)
@@ -656,11 +619,19 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                     (note_ix[k], text, s.text.chars().any(is_han) && doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5))
                 })
                 .collect();
+            // 英文词的字迹范围（左缘、过末字中部的右缘），按音下标
+            let exts: Vec<(usize, f64, f64)> = lr
+                .syls
+                .iter()
+                .zip(&at)
+                .filter(|(s, _)| s.text.chars().any(|c| c.is_ascii_alphabetic()) && !s.text.chars().any(is_han))
+                .map(|(s, &k)| (note_ix[k], s.x - s.w / 2.0 - line_h * 0.3, s.x + s.w / 2.0 - line_h * 0.3))
+                .collect();
             // 字落在音正下方（0.4 字号内）的比例：夹在谱行间的普通文字与同行各段词错开（见下）
             let han: Vec<&Ch> = chars.iter().filter(|c| is_han(c.ch)).collect();
             let ratio = (han.len() >= 4).then(|| han.iter().filter(|c| note_xs.iter().any(|&x| (x - c.cx()).abs() <= h * 0.4)).count() as f64 / han.len() as f64);
             let region = TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64) };
-            pend.push(Pending { syls, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
+            pend.push(Pending { syls, exts, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
         }
         // 与同谱行别的歌词行错开、字不落在音下的一行是夹在谱行间的普通文字（青年诗歌 16《神圣罗曼史》第 4 行词下
         // 「(副歌接下一页 注：…)」只有 0.42，同行四段词都是 1.00；同 TS `misaligned`）。只比同一谱行：四声部谱的词对的是另一声部的音，整行几段一起低
@@ -687,6 +658,9 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 if doubt && !n.lyric_doubt.contains(&verse) {
                     n.lyric_doubt.push(verse);
                 }
+            }
+            for (ni, x0, x1) in p.exts {
+                notes[i].nums[ni].word_ext.push((verse, x0, x1));
             }
             if labels[i].len() <= verse {
                 labels[i].resize(verse + 1, String::new());
@@ -722,6 +696,66 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         }
     }
     stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions, footnotes);
+}
+
+/// 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：按拼写切成那么多段（同 TS `splitSpanningWords`）。
+/// 罩住 = 音的中心落在词的字迹范围里；没人认领 = 本段这个音上没字、不是休止、不是弧 / 延音线的后续音（那是一字多音，本就该空着，
+/// `every` 罩着 `2·⌒1̲`）。词心可能落在后一个音上（对音按就近）：往左把字迹范围里空着、不是后续音的也收进来。
+/// 罩着的音比切得出的段多（`cono` 罩着 `6̲ 5̲ 6̲`）：从左取能切出的段数，剩下的是一字多音。弧要先认完，故在认弧之后做。
+pub fn split_spanning_words(notes: &mut [RowNotes]) {
+    for rn in notes.iter_mut() {
+        let nums = &mut rn.nums;
+        let mut cont = Vec::with_capacity(nums.len());
+        let mut depth = 0i64;
+        for n in nums.iter() {
+            cont.push(depth > 0 || n.tie_stop);
+            depth = (depth + n.slur_start as i64 - n.slur_stop as i64).max(0);
+        }
+        for k in (0..nums.len()).rev() {
+            for (v, ex0, ex1) in nums[k].word_ext.clone() {
+                let Some(text) = nums[k].lyrics.get(v).cloned() else { continue };
+                let empty = |n: &crate::result::JpNum| n.lyrics.get(v).is_none_or(|t| t.is_empty());
+                let free = |i: usize, nums: &[crate::result::JpNum]| empty(&nums[i]) && nums[i].digit != 0 && nums[i].digit != crate::result::RHYTHM_DIGIT;
+                let mut first = k;
+                while first > 0 && !cont[first] && free(first - 1, nums) && nums[first - 1].bbox.cx() >= ex0 {
+                    first -= 1;
+                }
+                let mut span: Vec<usize> = (first..=k).collect();
+                let mut i = k + 1;
+                while i < nums.len() && nums[i].bbox.cx() < ex1 && free(i, nums) && !cont[i] {
+                    span.push(i);
+                    i += 1;
+                }
+                let (word, hy) = match text.strip_suffix('-') {
+                    Some(w) => (w.to_string(), true),
+                    None => (text.clone(), false),
+                };
+                let mut parts = None;
+                while span.len() >= 2 {
+                    parts = dolce_omr_text::ensyllable::split_english_word(&word, span.len());
+                    if parts.is_some() {
+                        break;
+                    }
+                    span.pop();
+                }
+                let Some(parts) = parts else { continue };
+                let doubt = nums[k].lyric_doubt.contains(&v);
+                nums[k].lyrics[v].clear();
+                nums[k].lyric_doubt.retain(|&d| d != v);
+                let last = parts.len() - 1;
+                for (j, (t, &n)) in parts.into_iter().zip(&span).enumerate() {
+                    let ly = &mut nums[n].lyrics;
+                    if ly.len() <= v {
+                        ly.resize(v + 1, String::new());
+                    }
+                    ly[v] = if j == last && hy { format!("{t}-") } else { t };
+                    if doubt && !nums[n].lyric_doubt.contains(&v) {
+                        nums[n].lyric_doubt.push(v);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// 一段字里的跳转记号：整段是记号，或含汉字的段末尾带一个写全的（`远。Fine`、`D.C.`）。

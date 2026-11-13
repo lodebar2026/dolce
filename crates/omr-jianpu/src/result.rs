@@ -107,6 +107,9 @@ pub struct JpNum {
     /// 粘在数字顶上（或弧端）探出来的高音点离数字顶多远：等全页认出的高音点缝定了再裁决（`lib::promote_glued_up`）
     #[serde(skip)]
     pub glued_up: Option<f64>,
+    /// 歌词里的英文词（段、字迹左缘、右缘）：认完弧后按拼写拆到罩着的空音上（`text::split_spanning_words`）
+    #[serde(skip)]
+    pub word_ext: Vec<(usize, f64, f64)>,
     /// 落选的时值候选（换候选用；TS 的 `JpNum` 没有这一项，读入时忽略）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<Alt>,
