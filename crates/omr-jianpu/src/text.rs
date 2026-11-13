@@ -1453,12 +1453,13 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let title = cs.iter().find(|c| c.kind == Some(CreditType::Title));
     if let Some(t) = title {
         score.title = Some(t.text.clone());
-        // 曲号与曲名印在一个框里（「1771你曾向主许下」）：开头的数字是曲号
-        if let Some(c) = TITLE_NUMBER.captures(&t.text) {
+        // 曲号与曲名印在一个框里（「1771你曾向主许下」）：开头的数字是曲号。署名整理时已把行首数字剥掉，回原行找
+        let raw = rest.iter().find(|l| l.text.trim_end().ends_with(t.text.trim()) && TITLE_NUMBER.is_match(&l.text)).map(|l| l.text.clone()).unwrap_or_else(|| t.text.clone());
+        if let Some(c) = TITLE_NUMBER.captures(&raw) {
             if number.is_none() {
                 number = Some((c[1].to_string(), f64::NEG_INFINITY, t.rect.3));
             }
-            score.title = Some(c[2].to_string());
+            score.title = Some(c[2].trim().to_string());
         }
         for c in &cs {
             // 引题：标题上方印一行汉字、以破折号引出标题（青年诗歌 77、125「新耶路撒冷——」，同 TS subtitle.leadIn），不与标题居中；
