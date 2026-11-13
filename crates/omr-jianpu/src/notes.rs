@@ -472,6 +472,10 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
             hits.push((di, ni, false, dn_gap));
         }
     }
+    // 本行（不够就全页）收得到的独立点的点径中位：线下探出来的粘点比它小一截的是字顶碎笔（青年诗歌 98 的 4×6 对 11×10）
+    let diam = |r: &Rect| (r.w + r.h) / 2.0;
+    let row_d: Vec<f64> = hits.iter().map(|t| diam(&dots[t.0].rect)).collect();
+    let med_diam = if row_d.len() >= 3 { dolce_omr_core::geom::median(&row_d, 0.0) } else { 0.0 };
     for (ni, n) in out.nums.iter_mut().enumerate() {
         for up in [true, false] {
             let mut mine: Vec<&(usize, usize, bool, f64)> = hits.iter().filter(|t| t.1 == ni && t.2 == up).collect();
@@ -490,6 +494,22 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
                 if first_cx.is_some_and(|c| (d.cx - c).abs() > d.rect.w * 0.5) {
                     break;
                 }
+                // 同一个音的两个八度点是同一个字模印的：包围盒面积不差出一倍（摞在点上的小字、碎渣在这里断）
+                if let Some(&(pid, _, _)) = n.oct_dots.iter().rev().find(|o| o.1 == up) {
+                    if cnt > 0 {
+                        if let Some(p) = dots.iter().find(|k| k.id == pid) {
+                            let (aa, ab) = (d.rect.w * d.rect.h, p.rect.w * p.rect.h);
+                            if aa.min(ab) < aa.max(ab) * 0.5 {
+                                break;
+                            }
+                        }
+                    }
+                }
+                // 第二个下点：歌词字顶的点画（「初」的衤点）正摞在低音点下方，下面紧挨着字身；真低音点下方留白
+                // （头一个点不用这条：歌词排得紧的行，真低音点下面不到 0.18 字号就是字顶）
+                if !up && cnt > 0 && ink_below(ink, &d.rect, h) >= 0.12 {
+                    break;
+                }
                 first_cx.get_or_insert(d.cx);
                 cnt += 1;
                 n.oct_dots.push((dots[t.0].id, up, t.3));
@@ -500,7 +520,7 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
             }
             // 低音点粘在减时线底下（连通块里它不单独成块）：回原图在线底下开窗找一团不碰窗边的小圆墨
             if !up && cnt == 0 && n.div > 0 {
-                if let Some(r) = probe_low_dot(ink, n.bbox.cx(), floors[ni], h) {
+                if let Some(r) = probe_low_dot(ink, n.bbox.cx(), floors[ni], h).filter(|r| ink_below(ink, r, h) < 0.12 && diam(r) >= med_diam * 0.6) {
                     cnt = 1;
                     out.claimed.push(r);
                 }
@@ -514,6 +534,20 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
             n.octave = 0;
         }
     }
+}
+
+/// 点正下方紧挨着的一小条（0.18 字号高、左右各宽出 0.2 字号）里墨的占比（同 TS `inkBelow`）：字顶笔画与字身之间几乎不留空，
+/// 真低音点到下一行歌词字顶还有半个点径。
+fn ink_below(ink: &Ink, r: &Rect, h: f64) -> f64 {
+    let y0 = r.bottom().round() as i64 + 1;
+    let y1 = (r.bottom() + h * 0.18).round() as i64;
+    let (x0, x1) = ((r.x - h * 0.2).round() as i64, (r.right() + h * 0.2).round() as i64);
+    if y1 <= y0 || x1 <= x0 {
+        return 0.0;
+    }
+    let tot = ((y1 - y0 + 1) * (x1 - x0 + 1)) as f64;
+    let n = (y0..=y1).flat_map(|y| (x0..=x1).map(move |x| (x, y))).filter(|&(x, y)| ink.at(x, y)).count();
+    n as f64 / tot
 }
 
 /// 粘在数字顶上的点，贴着数字那一行至多是它最宽一行的这么多倍。
