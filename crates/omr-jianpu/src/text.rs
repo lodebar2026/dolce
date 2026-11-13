@@ -690,13 +690,29 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let crop = ink.strip(&zone, 0);
     let boxes = ocr.detect(&crop).unwrap_or_default();
     let mut lines: Vec<WordLine> = Vec::new();
+    let none = Claims::new(ink, std::iter::empty());
     for b in boxes {
         if b.h < num_h * 0.35 {
             continue;
         }
         let strip = ink.strip(&b, 0);
         let Ok(got) = ocr.read_line(&strip) else { continue };
-        let text: String = got.iter().flat_map(|c| c.ch.chars()).map(fold).collect();
+        // 补词间空格（rec 不吐空格，`YouhavemadeapromisetotheLord`）：按框里的空白列；署名里名字与职能词之间的空当照谱面补
+        let sw = strip.w as f64;
+        let mut chars: Vec<Ch> = Vec::new();
+        for c in &got {
+            let cs: Vec<char> = c.ch.chars().map(fold).collect();
+            let (a, z) = (b.x + c.x0 * sw, b.x + c.x1 * sw);
+            let n = cs.len().max(1) as f64;
+            for (i, ch) in cs.into_iter().enumerate() {
+                chars.push(Ch { ch, x0: a + (z - a) * i as f64 / n, x1: a + (z - a) * (i + 1) as f64 / n });
+            }
+        }
+        let chars = box_spaces(ink, &none, &b, &chars);
+        let mut text: String = chars.iter().map(|c| c.ch).collect();
+        if CREDIT_ROLE.is_match(&text) {
+            text = han_gaps(&chars, b.h);
+        }
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("页眉 {:.0},{:.0} {:.0}x{:.0}: {text}", b.x, b.y, b.w, b.h);
         }
@@ -800,6 +816,48 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     } else if let Some((n, _)) = number {
         score.number = Some(n);
     }
+}
+
+/// 框里的字按框里的空白列补词间空格（同 `read_segs` 的读法，字由整框一次 rec 给出）。
+fn box_spaces(ink: &Ink, none: &Claims, b: &Rect, chars: &[Ch]) -> Vec<Ch> {
+    let (x0, x1) = (b.x.floor().max(0.0) as i64, ((b.x + b.w).ceil() as i64).min(ink.w() as i64));
+    let (y0, y1) = (b.y.floor().max(0.0) as i64, ((b.y + b.h).ceil() as i64).min(ink.h() as i64) - 1);
+    let col = |x: i64| (y0..=y1).any(|y| none.free(ink, x, y));
+    let spans: Vec<i64> = (x0..x1).filter(|&x| col(x)).collect();
+    let (Some(&ia), Some(&ib)) = (spans.first(), spans.last()) else { return chars.to_vec() };
+    let mut blanks: Vec<(f64, f64)> = Vec::new();
+    for p in spans.windows(2) {
+        if p[1] > p[0] + 1 {
+            blanks.push(((p[0] + 1) as f64, (p[1] - p[0] - 1) as f64));
+        }
+    }
+    let rows: Vec<i64> = (y0..=y1).filter(|&y| (ia..=ib).any(|x| none.free(ink, x, y))).collect();
+    let ink_h = match (rows.first(), rows.last()) {
+        (Some(a), Some(z)) => (z - a + 1) as f64,
+        _ => b.h,
+    };
+    recover_spaces(chars, &blanks, ink_h, ia as f64, (ib + 1) as f64)
+}
+
+/// 署名行里的职能词（有它才在汉字之间按空当补空格）。
+static CREDIT_ROLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[词詞曲译譯编編]").unwrap());
+
+/// 汉字与汉字之间的空当比本行字间白的中位宽出一倍、又不窄于四分之一字高的，补一个空格（「盛晓玫 词曲」「刘廷芳 杨荫浏」）。
+fn han_gaps(chars: &[Ch], h: f64) -> String {
+    let pairs: Vec<f64> = chars.windows(2).filter(|p| is_han(p[0].ch) && is_han(p[1].ch)).map(|p| p[1].x0 - p[0].x1).collect();
+    let med = median(&pairs, 0.0).max(0.0);
+    let mut out = String::new();
+    for (i, c) in chars.iter().enumerate() {
+        if i > 0 {
+            let p = &chars[i - 1];
+            let gap = c.x0 - p.x1;
+            if is_han(p.ch) && is_han(c.ch) && gap >= h * 0.25 && gap >= med * 2.0 + 1.0 {
+                out.push(' ');
+            }
+        }
+        out.push(c.ch);
+    }
+    out
 }
 
 /// 叠排的拍号：上下两个数字、横向对齐、中间隔一道横线的空当。只在行内文字没读出 `4/4` 时用。
