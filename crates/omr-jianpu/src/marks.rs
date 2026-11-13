@@ -546,6 +546,43 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             used.push(dot.id);
         }
     }
+    // 延长记号的弧粘在上方的字上（和弦「Dm」的 D 底压着弧，青年诗歌 91）：弧不单独成块，上面那条认不出，点就被收成高音点。
+    // 改从点认：音头顶（0.7 字号内）居中的一个点，点正上方 0.6 字号内有墨（弧顶）、点与弧顶之间空着，
+    // 从弧顶顺着笔画往两边一路平着或往下走，走到 0.3 字号开外落到点的高度（弧脚）
+    for i in 0..out.nums.len() {
+        let n = &out.nums[i];
+        if n.fermata || n.digit == 0 || n.digit == RHYTHM_DIGIT {
+            continue;
+        }
+        let nb = n.bbox;
+        let Some(dot) = dots.iter().find(|o| !used.contains(&o.id) && (o.cx - nb.cx()).abs() <= h * 0.25 && nb.y - o.rect.bottom() >= -h * 0.1 && nb.y - o.rect.bottom() <= h * 0.7) else { continue };
+        let r = dot.rect;
+        let (cy, dy0) = (r.cy().round() as i64, r.y.round() as i64);
+        let cx = r.cx().round() as i64;
+        let top = (dy0 - (h * 0.6) as i64..dy0).rev().find(|&y| ink.at(cx, y));
+        let gap = top.is_some_and(|t| dy0 - t >= 2 && (t + 1..dy0).all(|y| !ink.at(cx, y)));
+        // 从弧顶顺着笔画往两边走：每列取紧挨着上一列的那截墨的底沿，只许平着或往下（一列至多落 2 像素、不许回升），走到 0.3 字号开外落到点的高度
+        let leg = |dir: i64| {
+            let Some(mut y) = top else { return false };
+            let (reach, lo) = ((h * 0.6).round() as i64, cy - (h * 0.2) as i64);
+            for k in 1..=reach {
+                let x = cx + dir * k;
+                let Some(ny) = (y - 1..=y + 2).rev().find(|&yy| ink.at(x, yy) && !ink.at(x, yy + 1)) else { return false };
+                y = ny;
+                if (k as f64) >= h * 0.3 && y >= lo {
+                    return true;
+                }
+            }
+            false
+        };
+        if gap && leg(-1) && leg(1) {
+            if debug {
+                eprintln!("延长记号（弧粘别的墨）点 x{:.0} y{:.0} → 音{}", r.x, r.y, out.nums[i].digit);
+            }
+            out.nums[i].fermata = true;
+            used.push(dot.id);
+        }
+    }
     if debug {
         let cnt = |f: &dyn Fn(&JpNum) -> bool| out.nums.iter().filter(|n| f(n)).count();
         eprintln!(
