@@ -105,7 +105,12 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
     // 从首个数字格起，贴着（隔不过 2 像素）的格并成块
     let mut blocks: Vec<(usize, usize, Rect)> = Vec::new();
     let mut i = first;
-    while i < cells.len() && cells[i].kind == CellKind::Digit {
+    while i < cells.len() && matches!(cells[i].kind, CellKind::Digit | CellKind::Colon) {
+        // 段落名后的冒号（「前奏：」，青年诗歌 15）跳过，接着往后收
+        if cells[i].kind == CellKind::Colon {
+            i += 1;
+            continue;
+        }
         let mut j = i;
         let mut r = cells[i].rect();
         while j + 1 < cells.len() && cells[j + 1].kind == CellKind::Digit && cells[j + 1].x0 - cells[j].x1 <= 2 {
@@ -136,7 +141,8 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
     if !(1..=4).contains(&n) || !text.chars().all(dolce_omr_text::chars::is_han) {
         return None;
     }
-    Some((blocks[k - 1].1 + 1, text))
+    let end = blocks[k - 1].1 + 1;
+    Some((if cells.get(end).is_some_and(|c| c.kind == CellKind::Colon) { end + 1 } else { end }, text))
 }
 
 /// 横墨是一块字形的顶横（下一行数字「5」「7」的顶、「2」「3」的顶弧）：它所在的连通块顶不比这道横高出半个字号（逐列量时侧边列的顶比弧顶低）、往下伸出 0.4 字号以上。
