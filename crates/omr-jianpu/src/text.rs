@@ -346,7 +346,34 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
         let mid = (sa + sb) / 2;
         let rect = Rect::new(sa as f64, (y0 + shift(mid)) as f64, (sb - sa + 1) as f64, hh);
         let pad = (hh * 0.12).ceil() as i64;
-        let strip = ink.strip(&rect, pad);
+        let mut strip = ink.strip(&rect, pad);
+        // 从条顶到条底整列是墨的细竖线：贯穿整条的竖线（没认成小节线的连谱号、谱框竖线；字的笔画到不了上下留白那几行）。抹白，
+        // 免得行首段号贴着它印的（新编赞美诗·四声部 2「1恳」）跟竖线读成一团、整个读丢。成片整列黑的（实底的图块）不是线，不动
+        // 按二值墨量（灰度图在有的 PDF 页上字周围是暗底）
+        let (sx0, sy0) = (rect.x.floor() as i64 - pad, rect.y.floor() as i64 - pad);
+        let full: Vec<bool> = (0..strip.w).map(|x| (0..strip.h).all(|y| ink.at(sx0 + x as i64, sy0 + y as i64))).collect();
+        let thin = (hh * 0.15).max(2.0) as usize;
+        let mut x = 0;
+        while x < strip.w {
+            if !full[x] {
+                x += 1;
+                continue;
+            }
+            let a = x;
+            while x < strip.w && full[x] {
+                x += 1;
+            }
+            if x - a <= thin {
+                for c in a..x {
+                    for y in 0..strip.h {
+                        strip.data[y * strip.w + c] = 255;
+                    }
+                }
+            }
+        }
+        if let Ok(dir) = std::env::var("OMR_STRIPS") {
+            let _ = std::fs::write(format!("{dir}/{:.0}_{:.0}.pgm", rect.y, rect.x), [format!("P5 {} {} 255\n", strip.w, strip.h).as_bytes(), &strip.data].concat());
+        }
         // 要候选时贪心解码与前几名一次推理出来
         let (got, ranks) = if doubts.is_some() {
             let Ok((g, r)) = ocr.read_line_ranked(&strip, RANK_K) else { continue };
@@ -727,6 +754,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         max_verses = max_verses.max(verse);
     }
     drop_pseudo_verses(notes, labels, regions, &written);
+    fill_verse_labels(labels);
     // 跳转记号落位：作用于小节末，归 x 处或其左边最近的那个音；行按 y 就近取（`D.C. al Fine` 常印在下一行的右上方），印在音符带下方的记 below
     for (ri, word, x, y) in jumps {
         let mut r = ri;
@@ -754,6 +782,32 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
 /// 剔伪段（同 TS）：谱行下方的噪声、记号（弧与「渐慢 rit.」凑成的一截，迦南 1775）被当成额外的一段词。真段有字的谱行横跨全曲：
 /// 有字谱行数不到主段（有字谱行最多的那段）一半的，在它出现的那一行还得是完整一行——字数到主段同一谱行的六成——才留
 /// （多段谱的第 2..N 段只印在主歌那几行）。主段是汉字词的只比汉字数（拉丁碎字凑不成一行中文词）。
+/// 段号漏读补齐（同 TS `lyrics.verseLabelFill`）：一谱行上读出来的阿拉伯段号（≥2 个）都恰好是「行序+1」、印法（后缀）一样，
+/// 这一行上别的歌词行没读出号的也照「行序+1」补上——号常与首字或连谱号粘着、读丢（新编赞美诗·四声部 2《三一来临歌》「4圣」）。
+fn fill_verse_labels(labels: &mut [Vec<String>]) {
+    for ls in labels.iter_mut() {
+        let read: Vec<(usize, &str)> = ls.iter().enumerate().filter(|(_, l)| !l.is_empty()).map(|(v, l)| (v, l.as_str())).collect();
+        if read.len() < 2 || read.len() == ls.len() {
+            continue;
+        }
+        let mut suffix: Option<&str> = None;
+        let ok = read.iter().all(|&(v, l)| {
+            let d = l.trim_end_matches(|c: char| !c.is_ascii_digit());
+            let suf = &l[d.len()..];
+            d.parse::<usize>().ok() == Some(v + 1) && *suffix.get_or_insert(suf) == suf
+        });
+        if !ok {
+            continue;
+        }
+        let suf = suffix.unwrap_or("").to_string();
+        for (v, l) in ls.iter_mut().enumerate() {
+            if l.is_empty() {
+                *l = format!("{}{suf}", v + 1);
+            }
+        }
+    }
+}
+
 /// 按视觉行序整体决定去留；剔掉的连歌词区一起去（认弧时按歌词区封顶）。
 fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], regions: &mut Vec<TextRegion>, written: &[(usize, usize, usize, usize, usize, usize)]) {
     use std::collections::{HashMap, HashSet};
