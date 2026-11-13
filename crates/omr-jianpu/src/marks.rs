@@ -546,6 +546,56 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             used.push(dot.id);
         }
     }
+    // 下滑音 ↘（同 TS fallOf，迦南诗选 2252「5⌒6↘ 3」）：数字右上紧挨着一笔向右下弯的细线、末端带箭头。与数字靠笔画粗细分——
+    // 逐行墨段的中位宽不到左邻数字的六成；下部四成里最宽的一行至少是上部箭杆中位宽的 1.8 倍（箭头）；高 0.5~1.05 字高、不比数字宽出八成，
+    // 顶不低于数字顶下 0.2 字高、底收在数字底线上方 0.1 字高
+    let run_med = |b: &Rect| {
+        let mut runs: Vec<f64> = Vec::new();
+        for y in b.y.round() as i64..b.bottom().round() as i64 {
+            let mut n = 0;
+            for x in b.x.round() as i64..=b.right().round() as i64 {
+                if x < b.right().round() as i64 && ink.at(x, y) {
+                    n += 1;
+                } else if n > 0 {
+                    runs.push(n as f64);
+                    n = 0;
+                }
+            }
+        }
+        median(&runs, 0.0)
+    };
+    for i in 0..out.nums.len() {
+        let pb = out.nums[i].bbox;
+        if out.nums[i].digit == 0 || pb.h < med_h * 0.85 {
+            continue;
+        }
+        let next_x = out.nums.get(i + 1).map_or(f64::MAX, |n| n.bbox.x);
+        let hit = near.iter().find(|k| {
+            let b = &k.rect;
+            let gap = b.x - pb.right();
+            !used.contains(&k.id) && !in_note(b, &out.nums) && b.right() < next_x && gap >= -h * 0.05 && gap <= h * 0.3 && b.h >= med_h * 0.5 && b.h <= med_h * 1.05 && b.w <= pb.w * 0.8
+                && b.y <= pb.y + med_h * 0.2 && b.bottom() <= pb.bottom() - med_h * 0.1
+                // 箭头在行带里切成了格（与数字同高、读不出数，或没归上类）：块得罩着行里一个没成音的格
+                && row.cells.iter().any(|c| matches!(c.kind, crate::frame::CellKind::Digit | crate::frame::CellKind::Other) && (c.x0 as f64) < b.right() && (c.x1 as f64) >= b.x && !out.nums.iter().any(|n| (n.bbox.cx() - c.cx()).abs() < 1.0))
+        });
+        let Some(k) = hit else { continue };
+        let b = k.rect;
+        let (rm, pm) = (run_med(&b), run_med(&pb));
+        if rm <= 0.0 || rm > pm * 0.6 {
+            continue;
+        }
+        let rows: Vec<f64> = (b.y.round() as i64..b.bottom().round() as i64).map(|y| (b.x.round() as i64..b.right().round() as i64).filter(|&x| ink.at(x, y)).count() as f64).collect();
+        let cut = (b.h * 0.6).round() as usize;
+        let shaft = median(&rows[..cut.min(rows.len())].iter().copied().filter(|&v| v > 0.0).collect::<Vec<_>>(), 0.0);
+        if shaft <= 0.0 || rows[cut.min(rows.len())..].iter().copied().fold(0.0, f64::max) < shaft * 1.8 {
+            continue;
+        }
+        if debug {
+            eprintln!("下滑音 x{:.0} y{:.0} {:.0}x{:.0} → 音{}", b.x, b.y, b.w, b.h, out.nums[i].digit);
+        }
+        out.nums[i].fall = true;
+        used.push(k.id);
+    }
     // 延长记号的弧粘在上方的字上（和弦「Dm」的 D 底压着弧，青年诗歌 91）：弧不单独成块，上面那条认不出，点就被收成高音点。
     // 改从点认：音头顶（0.7 字号内）居中的一个点，点正上方 0.6 字号内有墨（弧顶）、点与弧顶之间空着，
     // 从弧顶顺着笔画往两边一路平着或往下走，走到 0.3 字号开外落到点的高度（弧脚）
