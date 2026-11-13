@@ -164,8 +164,11 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         let (ax, ay) = (sh.a.0, sh.a.1 + ya as f64);
         let (bx, by) = (sh.b.0, sh.b.1 + ya as f64);
         let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
-        let reach = |k: Option<usize>| h * if k.is_some_and(|k| rn.nums[k].octave > 0) { 1.5 } else { 1.0 };
-        if row.top_at(ax) - ay > reach(near(ax)) || row.top_at(bx) - by > reach(near(bx)) || sh.slope().abs() > 0.35 {
+        // 端上的音头顶有高音点、波音的，弧架在它们上方，各再让出一截（迦南 2252「(3 2̃)」弧在波音上）
+        let reach = |k: Option<usize>| h * (1.0 + if k.is_some_and(|k| rn.nums[k].octave > 0) { 0.5 } else { 0.0 } + if k.is_some_and(|k| rn.nums[k].ornament.is_some()) { 0.6 } else { 0.0 });
+        // 弧为让开一端的记号整体抬高，两端都按让得多的那端算
+        let lim = reach(near(ax)).max(reach(near(bx)));
+        if row.top_at(ax) - ay > lim || row.top_at(bx) - by > lim || sh.slope().abs() > 0.35 {
             continue;
         }
         // 整体右偏半个音的排版（圣徒诗歌 11「(3 1) (6̣ 2)」弧脚起在首音右缘外）：按两端配的音组（弧宽对音距、整体偏移取一半，同 TS fitEnds）
