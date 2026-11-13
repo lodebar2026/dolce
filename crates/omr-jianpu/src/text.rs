@@ -960,12 +960,15 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
     let h = row.h();
     let w = ink.w() as f64;
     let top = row.top_at(w / 2.0);
-    let ya = y_min.max(top - h * 2.8).max(0.0) as i64;
+    // 上方带从上一行最末一行歌词的底起（有的本子和弦行离谱行四五个字号，青年诗歌 5）；首行上面是页眉，只看近处
+    let reach = if y_min > 0.0 { h * 6.0 } else { h * 2.8 };
+    let ya = y_min.max(top - reach).max(0.0) as i64;
     let yb = top.floor() as i64 - 1;
     if rn.nums.is_empty() {
         return;
     }
-    let claims = Claims::new(ink, std::iter::empty());
+    // 贯穿几行的竖墨（扫描件纸边、连谱号）不算，否则上方带连成一截切不开
+    let claims = Claims::new(ink, std::iter::empty()).tall_runs(ink, h * 2.2);
     for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, (0, ink.w() as i64), h * 0.35, None) {
         let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64, None);
         let text: String = chars.iter().map(|c| c.ch).collect();
