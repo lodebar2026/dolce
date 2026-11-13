@@ -600,7 +600,9 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             if lr.syls.is_empty() {
                 continue;
             }
-            let at0 = align(&lr.syls.iter().map(|s| s.x).collect::<Vec<_>>(), &note_xs);
+            // 英文按词左缘对位（同 TS：音节起始 x 对音心；长词的字心常落到后一个音上，`dear` 罩着 `1̲ 1̲`）
+            let latin = |s: &dolce_omr_text::lyrics::Syl| s.text.chars().any(|c| c.is_ascii_alphabetic()) && !s.text.chars().any(is_han);
+            let at0 = align(&lr.syls.iter().map(|s| if latin(s) { s.x - s.w / 2.0 } else { s.x }).collect::<Vec<_>>(), &note_xs);
             // 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：等弧认完再按拼写切（`split_spanning_words`），
             // 这里先记下词的字迹范围
             let placed: Vec<(dolce_omr_text::lyrics::Syl, usize)> = lr.syls.iter().cloned().zip(at0.iter().copied()).collect();
