@@ -522,7 +522,9 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
                 let neck: Vec<f64> = (ft..fb - bw.round() as i64).map(|y| (xa0..=xa1).filter(|&x| ink.at(x, y)).count() as f64).collect();
                 head >= bw * bw * 0.7 && !neck.is_empty() && dolce_omr_core::geom::median(&neck, 0.0) <= bw * 0.5
             };
-            if touch && !edge && bw >= h * 0.12 && bh >= h * 0.12 && bw >= dot_w * 0.6 && bw <= dot_w * 1.5 && (lolly || (bh <= bw * 1.65 && bw / bh <= 1.8 && area as f64 >= bw * bh * 0.7)) && gap >= 1.0 && gap <= h * 0.6 {
+            // 夹在弧脚与数字顶之间、上下都粘着的点（青年诗歌 5「3̇⌒」）：团连着弧墨量，墨略稀；宽正是本行点宽、不比宽高出四成就收
+            let snug = gap < 1.0 && bw >= dot_w * 0.9 && bw <= dot_w * 1.2 && bh <= bw * 1.4 && area as f64 >= bw * bh * 0.6;
+            if touch && !edge && bw >= h * 0.12 && bh >= h * 0.12 && bw >= dot_w * 0.6 && bw <= dot_w * 1.5 && (lolly || (bh <= bw * 1.65 && bw / bh <= 1.8 && area as f64 >= bw * bh * 0.7) || snug) && gap >= if snug { 0.0 } else { 1.0 } && gap <= h * 0.6 {
                 found = true;
                 if std::env::var("OMR_DOT_DEBUG").is_ok() {
                     eprintln!("  弧点收 音x{:.0} y{:.0} 团{bw}x{bh} 实{:.2} 隔{gap} 点宽{dot_w}", cx, n.bbox.y, filled / (bw * bh));
