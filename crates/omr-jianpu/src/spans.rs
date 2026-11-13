@@ -426,7 +426,9 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
             continue;
         }
         let cx = n.bbox.cx();
-        let (xa, xb) = ((cx - h * 0.3).round() as i64, (cx + h * 0.3).round() as i64);
+        // 窄字窗宽 ±0.4 字号（别的 ±0.3）：「1」上的点常偏到框心一侧，弧脚又从那侧落下来（青年诗歌 5「2̇⌒1̇」）
+        let half = if n.bbox.w < h * 0.6 { 0.4 } else { 0.3 };
+        let (xa, xb) = ((cx - h * half).round() as i64, (cx + h * half).round() as i64);
         let (wa, wb) = ((n.bbox.y - h * 0.75).round() as i64, n.bbox.y.round() as i64 - 1);
         if wb <= wa {
             continue;
