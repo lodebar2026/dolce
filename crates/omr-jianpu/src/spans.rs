@@ -42,9 +42,9 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     let top_min = row.top_at(0.0).min(row.top_at(wf));
     let top_max = row.top_at(0.0).max(row.top_at(wf));
     let ya = y_min.max(top_min - h * 1.5).max(0.0) as i64;
-    let yb = top_max.ceil() as i64;
+    let yb = (top_max + h * 0.25).ceil() as i64;
     let mut halves = Halves::default();
-    if yb <= ya + 2 || rn.nums.len() < 2 {
+    if yb <= ya + 2 + (h * 0.25) as i64 || rn.nums.len() < 2 {
         return halves;
     }
     // 行的右界：末条小节线或末音右缘
@@ -54,8 +54,11 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     let thin = (THIN * h).round().max(2.0) as i64;
     // 细墨掩膜：数字顶以上、纵向墨段不厚的墨
     let mut mask = vec![0u8; w * hh];
+    // 数字之间的列放到数字顶下 0.25 字号：低平的弧两端落到与数字顶齐平（四声部圣哉三一歌「(1̇ 5)」）
+    let gap = (h * 0.25).round() as i64;
+    let in_num = |x: i64| rn.nums.iter().any(|n| x as f64 >= n.bbox.x - 2.0 && (x as f64) < n.bbox.right() + 2.0) || rn.barline_xs.iter().any(|&b| (b - x as f64).abs() <= h * 0.2);
     for x in 0..w as i64 {
-        let lim = (row.top_at(x as f64) - 1.0).floor() as i64;
+        let lim = (row.top_at(x as f64) - 1.0).floor() as i64 + if x as f64 > first_left && (x as f64) < row_right && !in_num(x) { gap } else { 0 };
         let mut y = ya;
         while y < lim.min(yb) {
             if !ink.at(x, y) {
