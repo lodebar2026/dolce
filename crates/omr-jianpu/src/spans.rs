@@ -166,8 +166,16 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         if row.top_at(ax) - ay > reach(near(ax)) || row.top_at(bx) - by > reach(near(bx)) || sh.slope().abs() > 0.35 {
             continue;
         }
-        let (Some(i), Some(j)) = (near(ax), near(bx)) else { continue };
-        if i >= j || found.iter().any(|f| f.0 == i && f.1 == j) {
+        // 整体右偏半个音的排版（圣徒诗歌 11「(3 1) (6̣ 2)」弧脚起在首音右缘外）：按两端配的音组（弧宽对音距、整体偏移取一半，同 TS fitEnds）
+        // 是一字多音的形、按最近端配的不是，就改用前者
+        let fit = fit_ends(rn, ax, bx, h);
+        let (i, j) = match (near(ax), near(bx), fit) {
+            (Some(i), Some(j), Some(f)) if i < j && (i, j) != f => if melisma(rn, f) && !melisma(rn, (i, j)) { f } else { (i, j) },
+            (Some(i), Some(j), _) if i < j => (i, j),
+            (_, _, Some(f)) if melisma(rn, f) => f,
+            _ => continue,
+        };
+        if found.iter().any(|f| f.0 == i && f.1 == j) {
             continue;
         }
         // 两道相邻的弧在中间音头上接成一笔、整笔仍朝上拱（迦南 2252「(2 (3) 3)」）：中间那个音上方是个谷——两边的拱顶都比谷底高出
@@ -663,4 +671,32 @@ fn trim_gray(g: &dolce_omr_ocr::surface::Gray) -> dolce_omr_ocr::surface::Gray {
         }
     }
     out
+}
+
+/// 按弧的两端配起止音：弧宽对音距、整体偏移取一半（同 TS fitEnds）。
+fn fit_ends(rn: &RowNotes, ax: f64, bx: f64, h: f64) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize, f64)> = None;
+    for (i, a) in rn.nums.iter().enumerate() {
+        let dl = ax - a.bbox.cx();
+        if dl.abs() > h * 1.2 {
+            continue;
+        }
+        for (j, b) in rn.nums.iter().enumerate().skip(i + 1) {
+            let dr = bx - b.bbox.cx();
+            if dr.abs() > h * 1.2 {
+                continue;
+            }
+            let cost = (dr - dl).abs() + (dl + dr).abs() / 2.0;
+            if best.is_none_or(|b| cost < b.2) {
+                best = Some((i, j, cost));
+            }
+        }
+    }
+    best.map(|b| (b.0, b.1))
+}
+
+/// 一字多音的形：起音有词、其后各音在各段都没词。
+fn melisma(rn: &RowNotes, (i, j): (usize, usize)) -> bool {
+    let has = |k: usize| rn.nums[k].lyrics.iter().any(|t| !t.is_empty());
+    j > i && has(i) && (i + 1..=j).all(|k| !has(k))
 }
