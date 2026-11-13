@@ -9,10 +9,7 @@ use dolce_omr_staff::page::frame_page;
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../public/redist/ocr"));
-    let ocr = dolce_omr_ocr::cache::CachedOcr {
-        ocr: Some(dolce_omr_ocr::Ocr::new(Box::new(dolce_omr_ocr::native::NativeInfer::new(&dir, 1, 1)), &std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).unwrap())),
-        cache: dolce_omr_ocr::OcrCache::memory(),
-    };
+    let ocr = dolce_omr_ocr::cache::CachedOcr::new(Some(dolce_omr_ocr::Ocr::new(Box::new(dolce_omr_ocr::native::NativeInfer::new(&dir, 1, 1)), &std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).unwrap())), dolce_omr_ocr::OcrCache::memory());
     let page: usize = a.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
     for_sources(&a[1], &a[2], |key, pn, _snap, src| {
         if page != 0 && pn != page {

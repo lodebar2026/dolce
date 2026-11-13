@@ -79,6 +79,8 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     if rows.is_empty() {
         return Err("没有找到数字行".into());
     }
+    // 分轮预取（`CachedOcr::rounds`）时各阶段之间查一下：上一阶段缺 OCR 就不往下算
+    ocr.barrier()?;
     let w = ink.w() as f64;
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
     hook.step(1, STEPS, "notes")?;
@@ -95,12 +97,14 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     promote_glued_up(&mut notes);
     spans::endings(ink, &rows, &mut notes, ocr);
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
+    ocr.barrier()?;
     hook.step(2, STEPS, "lyrics")?;
     text::stacked_meters(ink, &rows, &mut notes, ocr);
     marks::segno(ink, &rows, &mut notes, num_h);
     text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes);
     hook.step(3, STEPS, "header")?;
     text::header(ink, &rows, num_h, ocr, &mut score);
+    ocr.barrier()?;
     hook.step(4, STEPS, "spans")?;
     let mut halves = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {
@@ -132,6 +136,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             score.chord_regions.clear();
         }
     }
+    ocr.barrier()?;
     hook.step(5, STEPS, "beats")?;
     text::slash_meters(ink, &rows, &mut notes, ocr);
     let tally = beats::settle(&mut notes, &sys, &mut score);

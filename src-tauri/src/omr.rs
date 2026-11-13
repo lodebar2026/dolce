@@ -46,7 +46,7 @@ impl Infer for Shared {
 fn ocr(app: &tauri::AppHandle) -> Result<&'static CachedOcr, String> {
     OCR.get_or_init(|| {
         let dict = std::fs::read_to_string(res(app, "ocr/ppocrv6_dict.txt")?).map_err(|e| format!("读 OCR 字典：{e}"))?;
-        Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(Shared(infer(app)?)), &dict)), cache: OcrCache::memory() })
+        Ok(CachedOcr::new(Some(Ocr::new(Box::new(Shared(infer(app)?)), &dict)), OcrCache::memory()))
     })
     .as_ref()
     .map_err(|e| e.clone())
@@ -135,7 +135,8 @@ pub async fn omr_recognize(app: tauri::AppHandle, state: tauri::State<'_, OmrSta
         let send = |s: Step| {
             let _ = on_progress.send(Progress { done: s.done, total: s.total, stage: s.stage.to_string() });
         };
-        e.h.recognize(ocr(&app)?, &opts, &Hook { on: Some(&send), cancel: Some(&e.cancel) })
+        // 分轮预取：各轮缺的 OCR 一批分给会话池的各个会话
+        e.h.recognize_rounds(ocr(&app)?, &opts, &Hook { on: Some(&send), cancel: Some(&e.cancel) }, env_usize("DOLCE_OCR_SESS", 3))
     })
     .await
 }

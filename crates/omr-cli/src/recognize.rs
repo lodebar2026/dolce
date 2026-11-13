@@ -63,7 +63,7 @@ pub fn open_ocr(cache: Option<&Path>) -> Result<CachedOcr, String> {
     let dir = model_dir();
     let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).map_err(|e| format!("读 OCR 字典（{}）：{e}", dir.display()))?;
     let cache = cache.map_or_else(OcrCache::memory, OcrCache::open);
-    Ok(CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache })
+    Ok(CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache))
 }
 
 /// `omr-cli recognize staff 文件 [--out=目录]`：识别一个五线谱文件，写出 `<曲>.musicxml`（带识别 id）与 `<曲>.review.json`（核对 JSON，交 web `omrrust/adapter.ts`）。

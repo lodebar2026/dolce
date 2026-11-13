@@ -3,6 +3,8 @@
 // 识别 / 框选重认前取 OCR 模型。消息与 Tauri 命令一一对应，字节与 JSON 的格式同桌面版（omr-engine::Handle）。
 //
 // wasm 里没有线程：识别同步跑完，进度回调里查主线程放在 SharedArrayBuffer 里的取消标志，置位就在下一步停。
+// OCR 分轮预取（`CachedOcr::rounds`）：每轮只查缓存跑一遍识别，缺的 OCR 攒成几份活，分给本 Worker 和几个帮手 Worker
+//（同一脚本再开几份，只加载识别模块与 OCR 模型）一起推理，结果写回缓存再跑下一轮；齐了的那一轮就是结果（与逐条推理逐字一致）。
 
 const BASE = import.meta.env.BASE_URL;
 const OMR_DIR = `${BASE}redist/omr/`;
@@ -14,6 +16,8 @@ interface OmrDocWasm {
   render(page: number, scale: number): Uint8Array;
   binary(page: number): Uint8Array;
   recognize(opts: string, progress: (done: number, total: number, stage: string) => boolean): string;
+  /** 齐了回结果 JSON；缺 OCR 回各份活 */
+  recognize_round(opts: string, progress: (done: number, total: number, stage: string) => boolean): string | Uint8Array[];
   session(op: string): string;
   free(): void;
 }
@@ -23,6 +27,8 @@ interface OmrWasm {
   set_pdfium_module(pdfium: object): void;
   load_ocr(rec: Uint8Array, det: Uint8Array, dict: string): void;
   ocr_loaded(): boolean;
+  ocr_exec(job: Uint8Array): string;
+  ocr_put(results: string): void;
   OmrDoc: { open(body: Uint8Array): OmrDocWasm };
 }
 
@@ -32,7 +38,9 @@ export type Request =
   | { id: number; cmd: "binary"; doc: number; page: number }
   | { id: number; cmd: "recognize"; doc: number; opts: object; cancel: Int32Array | null }
   | { id: number; cmd: "session"; doc: number; op: object }
-  | { id: number; cmd: "close"; doc: number };
+  | { id: number; cmd: "close"; doc: number }
+  /** 帮手 Worker：推理一份 OCR 活，回 `[[缓存键, 结果], …]` 的 JSON */
+  | { id: number; cmd: "ocr_exec"; job: Uint8Array };
 
 export type Reply =
   | { id: number; ok: true; value: unknown }
@@ -80,12 +88,24 @@ async function loadOmr(): Promise<OmrWasm> {
   }
 }
 
+let omrReady: Promise<{ m: OmrWasm; local: object }> | null = null;
+
+/** 只加载识别模块（帮手 Worker 只推理 OCR，不要 PDFium）。 */
+function omrOnly(): Promise<{ m: OmrWasm; local: object }> {
+  omrReady ??= (async () => {
+    const m = await loadOmr();
+    const local = await m.default({ module_or_path: url(`${OMR_DIR}dolce_omr_wasm_bg.wasm`) });
+    return { m, local };
+  })();
+  omrReady.catch(() => (omrReady = null));
+  return omrReady;
+}
+
 let ready: Promise<OmrWasm> | null = null;
 
 function wasm(): Promise<OmrWasm> {
   ready ??= (async () => {
-    const [m, pdfium] = await Promise.all([loadOmr(), loadPdfium()]);
-    const local = await m.default({ module_or_path: url(`${OMR_DIR}dolce_omr_wasm_bg.wasm`) });
+    const [{ m, local }, pdfium] = await Promise.all([omrOnly(), loadPdfium()]);
     if (!m.initialize_pdfium_render(pdfium, local, false)) throw new Error("PDFium 绑定失败");
     m.set_pdfium_module(pdfium);
     return m;
@@ -110,6 +130,96 @@ function ocr(m: OmrWasm): Promise<void> {
   return ocrReady;
 }
 
+/** 帮手 Worker 几个：核数减 3（留给本 Worker、页面与系统），至多 7 个；没有 `Worker`（个别环境的 Worker 里不能再开）就不开。
+ *  每个帮手各载一份识别模块与 OCR 模型（约多占 60 MB），闲置 [`HELPER_IDLE_MS`] 后停掉还内存。 */
+const HELPERS = typeof Worker === "undefined" ? 0 : Math.min(7, Math.max(0, (self.navigator?.hardwareConcurrency ?? 2) - 3));
+const HELPER_IDLE_MS = 60_000;
+
+class Helper {
+  private w: Worker | null = new Worker(self.location.href, { type: "module" });
+  private next = 0;
+  private pending = new Map<number, { resolve: (v: string) => void; reject: (e: Error) => void }>();
+
+  constructor() {
+    this.w!.onmessage = (ev: MessageEvent<Reply>) => {
+      const r = ev.data;
+      const p = this.pending.get(r.id);
+      if (!p || "progress" in r) return;
+      this.pending.delete(r.id);
+      if (r.ok) p.resolve(r.value as string);
+      else p.reject(new Error(r.error));
+    };
+    this.w!.onerror = () => this.fail(new Error("OCR 帮手 Worker 出错"));
+  }
+
+  get alive(): boolean {
+    return this.w !== null;
+  }
+
+  exec(job: Uint8Array): Promise<string> {
+    const w = this.w;
+    if (!w) return Promise.reject(new Error("OCR 帮手 Worker 已停"));
+    const id = ++this.next;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      w.postMessage({ id, cmd: "ocr_exec", job } satisfies Request);
+    });
+  }
+
+  stop(): void {
+    this.fail(new Error("OCR 帮手 Worker 已停"));
+  }
+
+  private fail(e: Error): void {
+    this.w?.terminate();
+    this.w = null;
+    for (const p of this.pending.values()) p.reject(e);
+    this.pending.clear();
+  }
+}
+
+let helpers: Helper[] | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 一轮的 OCR 活：帮手各自取下一份，本 Worker 也同步干，每干完一份让出一下（收帮手的结果）。帮手出错的那份本 Worker 补做。 */
+async function runJobs(m: OmrWasm, jobs: Uint8Array[]): Promise<void> {
+  if (idleTimer) clearTimeout(idleTimer);
+  helpers ??= Array.from({ length: HELPERS }, () => new Helper());
+  idleTimer = setTimeout(() => {
+    helpers?.forEach((h) => h.stop());
+    helpers = null;
+  }, HELPER_IDLE_MS);
+  let next = 0;
+  const redo: Uint8Array[] = [];
+  const crew = helpers.filter((h) => h.alive).map(async (h) => {
+    while (next < jobs.length) {
+      const j = jobs[next++]!;
+      try {
+        m.ocr_put(await h.exec(j));
+      } catch {
+        redo.push(j);
+        return;
+      }
+    }
+  });
+  // 让出一下收帮手的结果：setTimeout(0) 连着用会被钳到 4 ms，一轮几百份活就白等一两秒，改用 MessageChannel
+  const yieldTask = () =>
+    new Promise<void>((r) => {
+      const c = new MessageChannel();
+      c.port1.onmessage = () => r();
+      c.port2.postMessage(0);
+    });
+  while (next < jobs.length) {
+    m.ocr_put(m.ocr_exec(jobs[next++]!));
+    if (crew.length) await yieldTask();
+  }
+  await Promise.all(crew);
+  for (const j of redo) m.ocr_put(m.ocr_exec(j));
+}
+
+/** 分轮识别最多几轮（同 Rust `MAX_ROUNDS`），再多就逐条推理跑完。 */
+const MAX_ROUNDS = 40;
+
 const docs = new Map<number, OmrDocWasm>();
 let nextDoc = 0;
 
@@ -130,6 +240,11 @@ function message(e: unknown): string {
 }
 
 async function handle(q: Request): Promise<{ value: unknown; transfer?: Transferable[] }> {
+  if (q.cmd === "ocr_exec") {
+    const { m } = await omrOnly();
+    await ocr(m);
+    return { value: m.ocr_exec(q.job) };
+  }
   const m = await wasm();
   switch (q.cmd) {
     case "open": {
@@ -150,11 +265,23 @@ async function handle(q: Request): Promise<{ value: unknown; transfer?: Transfer
       const d = doc(q.doc);
       await ocr(m);
       const flag = q.cancel;
-      const out = d.recognize(JSON.stringify(q.opts), (done, total, stage) => {
-        self.postMessage({ id: q.id, progress: { done, total, stage } } satisfies Reply);
+      // 每轮都从头跑一遍：进度只往前报
+      let best = 0;
+      const progress = (done: number, total: number, stage: string) => {
+        const r = done / Math.max(1, total);
+        if (r >= best) {
+          best = r;
+          self.postMessage({ id: q.id, progress: { done, total, stage } } satisfies Reply);
+        }
         return flag ? Atomics.load(flag, 0) !== 0 : false;
-      });
-      return { value: JSON.parse(out) };
+      };
+      const opts = JSON.stringify(q.opts);
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        const out = d.recognize_round(opts, progress);
+        if (typeof out === "string") return { value: JSON.parse(out) };
+        await runJobs(m, out);
+      }
+      return { value: JSON.parse(d.recognize(opts, progress)) };
     }
     case "session": {
       const d = doc(q.doc);

@@ -9,8 +9,8 @@
 //! 文档在锁外（识别时也能渲染），识别结果在锁里。
 use crate::{Doc, Opts, Recognition, RegionClass};
 use dolce_omr_core::image::{Binary, Rect};
-use dolce_omr_core::progress::Hook;
-use dolce_omr_ocr::cache::CachedOcr;
+use dolce_omr_core::progress::{Hook, Step, CANCELLED};
+use dolce_omr_ocr::cache::{CachedOcr, OcrReq};
 use dolce_omr_staff::session::{Op, Session};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -98,6 +98,44 @@ impl Handle {
                 json!({ "kind": "jianpu", "score": score })
             }
         })
+    }
+
+    /// 分轮预取地识别（桌面版、命令行）：各轮缺的 OCR 一批分给 `threads` 个线程推理，见 [`CachedOcr::rounds`]。
+    /// 进度只往前报（每轮都从头跑一遍，退回去的不报）。
+    pub fn recognize_rounds(&self, ocr: &CachedOcr, opts: &Opts, hook: &Hook, threads: usize) -> Result<Value, String> {
+        let best = Mutex::new(0.0f64);
+        let fwd = |s: Step| {
+            let r = s.done as f64 / s.total.max(1) as f64;
+            if let Ok(mut b) = best.lock() {
+                if r >= *b {
+                    *b = r;
+                    if let Some(f) = hook.on {
+                        f(s);
+                    }
+                }
+            }
+        };
+        let h = Hook { on: Some(&fwd), cancel: hook.cancel };
+        ocr.rounds(
+            || self.recognize(ocr, opts, &h),
+            |o, reqs| {
+                if hook.cancelled() {
+                    return Err(CANCELLED.into());
+                }
+                o.fill_local(reqs, threads)
+            },
+        )
+    }
+
+    /// 分轮预取的一轮（网页版：推理分给几个 Worker，由页面驱动各轮）：缺 OCR 回 `Err(请求)`，不缺回识别结果。
+    pub fn recognize_round(&self, ocr: &CachedOcr, opts: &Opts, hook: &Hook) -> Result<Result<Value, Vec<OcrReq>>, String> {
+        ocr.begin_defer();
+        let r = self.recognize(ocr, opts, hook);
+        let reqs = ocr.end_defer();
+        if !reqs.is_empty() && !hook.cancelled() {
+            return Ok(Err(reqs));
+        }
+        r.map(Ok)
     }
 
     /// 会话操作（五线谱）。`op` 除 `omr-staff::session::Op` 的各种外，还有：

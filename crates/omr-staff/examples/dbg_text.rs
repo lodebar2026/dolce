@@ -12,7 +12,7 @@ fn main() {
     let only_page: Option<usize> = a.get(3).and_then(|s| s.parse().ok());
     let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../public/redist/ocr"));
     let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).unwrap();
-    let ocr = CachedOcr { ocr: Some(Ocr::new(Box::new(NativeInfer::new(&dir, 1, 4)), &dict)), cache: OcrCache::memory() };
+    let ocr = CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, 1, 4)), &dict)), OcrCache::memory());
     common::for_sources(&a[1], &a[2], |key, pn, _, src| {
         if only_page.is_some_and(|p| p != pn) {
             return;

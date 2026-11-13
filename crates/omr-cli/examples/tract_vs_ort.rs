@@ -85,7 +85,7 @@ fn main() {
         }
     }
     for f in &args[1..] {
-        let ocr = CachedOcr { ocr: Some(Ocr::new(Box::new(Fwd(dual)), &dict)), cache: OcrCache::memory() };
+        let ocr = CachedOcr::new(Some(Ocr::new(Box::new(Fwd(dual)), &dict)), OcrCache::memory());
         let t = Instant::now();
         let ok = run(&kind, f, &ocr);
         eprintln!("{f}：{ok} {:.1} s", t.elapsed().as_secs_f64());

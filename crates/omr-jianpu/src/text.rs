@@ -347,12 +347,19 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
         let rect = Rect::new(sa as f64, (y0 + shift(mid)) as f64, (sb - sa + 1) as f64, hh);
         let pad = (hh * 0.12).ceil() as i64;
         let strip = ink.strip(&rect, pad);
-        let Ok(got) = ocr.read_line(&strip) else { continue };
+        // 要候选时贪心解码与前几名一次推理出来
+        let (got, ranks) = if doubts.is_some() {
+            let Ok((g, r)) = ocr.read_line_ranked(&strip, RANK_K) else { continue };
+            (g, Some(r))
+        } else {
+            let Ok(g) = ocr.read_line(&strip) else { continue };
+            (g, None)
+        };
         let sw = strip.w as f64;
         let x_left = sa as f64 - pad as f64;
         if let Some(d) = doubts.as_deref_mut() {
             // 排名与贪心解码按同一套分段，逐个对上；对不上（个数不同）就不判
-            if let Ok(rk) = ocr.rank_chars(&strip, RANK_K) {
+            if let Some(rk) = ranks {
                 if rk.len() == got.len() {
                     for (c, r) in got.iter().zip(&rk) {
                         let mut it = c.ch.chars();

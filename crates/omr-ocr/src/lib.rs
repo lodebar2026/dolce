@@ -73,10 +73,15 @@ impl Ocr {
 
     /// 逐字候选：每字前 `k` 名（分降序）。字的划分同 [`Ocr::read_lines`]。
     pub fn rank_chars(&self, strip: &Gray, k: usize) -> Result<Vec<RankedChar>, String> {
+        Ok(self.read_rank(strip, k)?.1)
+    }
+
+    /// 同一条的 [`Ocr::read_lines`] 与 [`Ocr::rank_chars`]：张量相同，只推理一次。
+    pub fn read_rank(&self, strip: &Gray, k: usize) -> Result<(Vec<CharPos>, Vec<RankedChar>), String> {
         let max_w = (REC_H as f64 * strip.w as f64 / strip.h as f64).ceil().clamp(REC_MAXW as f64, REC_MAXW_LONG as f64) as usize;
-        let (t, _, tw) = prep_strip(strip, max_w);
+        let (t, w, tw) = prep_strip(strip, max_w);
         let (out, dims) = self.infer.run(Model::Rec, t, &[1, 3, REC_H, tw])?;
-        Ok(ctc::rank(&out, dims[1], dims[2], &self.chars, k))
+        Ok((ctc::decode(&out, dims[1], dims[2], &self.chars, w, tw), ctc::rank(&out, dims[1], dims[2], &self.chars, k)))
     }
 
     /// 数字格批量识别：每格缩到 48×48，一批 64 格。交出每格贪心解码的字串（上层自己挑数字）。
