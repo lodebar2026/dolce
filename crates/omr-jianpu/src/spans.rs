@@ -151,6 +151,39 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         found.push((i, j, s.width(), ((ax + bx) / 2.0, ay.min(by) - arch)));
     }
+    // 嵌套双弧（迦南诗选「((5_ (6_) 6))」）：外弧罩三个音，底下两道小弧从外弧上分出来、往中间那个音头顶落成一个 V，
+    // 与外弧粘成一块，追笔画只追出外弧。中间那个音两侧各一个字号内逐列从数字顶往上数墨段（到外弧顶），一侧有 0.3 字号、另一侧 0.2 字号以上的列数出两段就是（八度点只占一两列）
+    for k in 0..found.len() {
+        let (i, j, _, (_, my)) = found[k];
+        if j != i + 2 || found.iter().any(|f| (f.0 == i && f.1 == i + 1) || (f.0 == i + 1 && f.1 == j)) {
+            continue;
+        }
+        let cx = |n: usize| rn.nums[n].bbox.cx();
+        let two_runs = |x: i64| {
+            let mut runs = 0;
+            let mut prev = false;
+            let mut y = (row.top_at(x as f64) - 1.0).floor() as i64;
+            while y as f64 >= my - h * 0.25 {
+                let on = ink.at(x, y);
+                if on && !prev {
+                    runs += 1;
+                }
+                prev = on;
+                y -= 1;
+            }
+            runs >= 2
+        };
+        let m = cx(i + 1);
+        let side = |a: f64, b: f64| (a.ceil() as i64..=b.floor() as i64).filter(|&x| two_runs(x)).count() as f64;
+        let (l, r) = (side((m - h).max((cx(i) + m) / 2.0), m - 1.0), side(m + 1.0, (m + h).min((m + cx(j)) / 2.0)));
+        if std::env::var("OMR_ARC_DEBUG").is_ok() {
+            eprintln!("  嵌套 {i}-{j} 两段列 左{l} 右{r} 中{m:.0} 顶{my:.0} 字号{h:.0} 行顶{:.0}", row.top_at(m));
+        }
+        if l.max(r) >= h * 0.3 && l.min(r) >= h * 0.2 {
+            found.push((i, i + 1, 0.0, ((cx(i) + m) / 2.0, my)));
+            found.push((i + 1, j, 0.0, ((m + cx(j)) / 2.0, my)));
+        }
+    }
     // 多连音：弧顶上（或嵌在弧顶里）立着一个小号数字，读出来正是弧罩着的音数——组里各音记同一份比例，不再当圆滑线
     let mut tuplets: Vec<usize> = Vec::new();
     for (fi, &(i, j, _, (mx, my))) in found.iter().enumerate() {
