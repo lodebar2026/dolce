@@ -666,6 +666,8 @@ static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#
 /// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
 static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
+/// 标题框开头的曲号：数字后面直接接汉字曲名。
+static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*([一-鿿].*)$").unwrap());
 /// 书眉：书名后接曲号（`青年诗歌—015`），曲号去掉前导零。
 static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})\s*$").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*$").unwrap());
@@ -838,6 +840,13 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let title = cs.iter().find(|c| c.kind == Some(CreditType::Title));
     if let Some(t) = title {
         score.title = Some(t.text.clone());
+        // 曲号与曲名印在一个框里（「1771你曾向主许下」）：开头的数字是曲号
+        if let Some(c) = TITLE_NUMBER.captures(&t.text) {
+            if number.is_none() {
+                number = Some((c[1].to_string(), f64::NEG_INFINITY, t.rect.3));
+            }
+            score.title = Some(c[2].to_string());
+        }
         for c in &cs {
             match c.kind {
                 Some(CreditType::Title) if !std::ptr::eq(c, t) && score.subtitle.is_none() => score.subtitle = Some(c.text.clone()),

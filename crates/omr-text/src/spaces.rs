@@ -33,14 +33,14 @@ pub fn split_gaps(ws: &[f64], h: f64) -> f64 {
 }
 
 /// 词间白的门：[`split_gaps`]；分不开两簇时，字母多半挨着、只有词间留了白（`Lordforme` 只有两道 9~10 像素的白，
-/// 字母间是 0~1 像素、不进统计）——宽过 0.3 墨高的白不到字数三分之一的，这几道就是词界（匀开的一串大写每个字母间都有白，到不了）。
+/// 字母间是 0~1 像素、不进统计）——宽过 0.2 墨高的白不到字数三分之一的，这几道就是词界（匀开的一串大写每个字母间都有白，到不了）。
 fn word_gap(ws: &[f64], h: f64, n_chars: usize) -> f64 {
     let t = split_gaps(ws, h);
     if t.is_finite() {
         return t;
     }
-    let big: Vec<f64> = ws.iter().copied().filter(|&w| w >= h * 0.3).collect();
-    let small = ws.iter().copied().filter(|&w| w < h * 0.3).fold(1.0, f64::max);
+    let big: Vec<f64> = ws.iter().copied().filter(|&w| w >= h * 0.2).collect();
+    let small = ws.iter().copied().filter(|&w| w < h * 0.2).fold(1.0, f64::max);
     let lo = big.iter().copied().fold(f64::INFINITY, f64::min);
     // 还得比字母间最宽的白宽出 2.5 倍（与两簇的分界同一个比）
     if !big.is_empty() && big.len() * 3 <= n_chars && lo >= small * 2.5 {
