@@ -900,6 +900,8 @@ static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#
 static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
 /// 整框只是个调名（可带「/调名」，变调夹谱的另一套调）：`Em/Bm`、`bE`。
 static KEY_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?)?\s*$").unwrap());
+/// 单字符路读出的音名组：可带前后升降号。
+static KEY_GLYPHS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([b#♭♯]?)\s*([A-Ga-g])\s*([b#♭♯]?)$").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
 static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*([一-鿿].*)$").unwrap());
@@ -1193,6 +1195,148 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     } else if let Some((n, _, _)) = number {
         score.number = Some(n);
     }
+    // det 连「1=」那一行都漏了（迦南 1775 只框出标题、赞美诗歌 946 只框出「bE」）：回连通块里按字形找
+    if !key_found {
+        let (x_max, y_min) = title.map_or((w / 2.0, 0.0), |t| (t.rect.0 + t.rect.2 / 2.0, t.rect.1));
+        if let Some(f) = key_by_glyphs(ink, ocr, x_max, y_min, top - num_h * 0.1, num_h) {
+            score.fifths = f;
+            score.minor = false;
+            score.key = key_name(f);
+        }
+    }
+}
+
+/// 五度圈位置 → 大调调名（`Bb`、`F#`）。
+fn key_name(f: i32) -> String {
+    const NAMES: [&str; 15] = ["Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#"];
+    NAMES[(f + 7).clamp(0, 14) as usize].to_string()
+}
+
+/// 调号的单字符读法（同 TS `keyByGlyphs` 锚点一）：页眉里首行谱以上、标题中线左边的字号大小的块中找「=」——两道上下对齐的扁横，
+/// 左边紧挨一个读得出 1（或就是一根细竖）的块（`二` `三` 的横笔、`♩=95` 的 `=` 靠这条挡掉）；也有反着印的 `C=1`。
+/// 音名组取 `=` 另一侧紧挨着的至多四块（衬线体 E 断成三块再加上标 ♭），碰到拍号的分数线或比字宽的空当就停。
+fn key_by_glyphs(ink: &Ink, ocr: &CachedOcr, x_max: f64, y_min: f64, y_max: f64, num_h: f64) -> Option<i32> {
+    let mut pool: Vec<&Rect> = ink
+        .comps()
+        .iter()
+        .filter(|k| k.rect.cy() >= y_min && k.rect.cy() <= y_max && k.cx < x_max && k.rect.h <= num_h * 2.0 && k.rect.w <= num_h * 2.0)
+        .map(|k| &k.rect)
+        .collect();
+    pool.sort_by(|a, b| a.x.total_cmp(&b.x));
+    let is_bar = |r: &Rect| r.w >= r.h * 2.5 && r.h <= num_h * 0.25 && r.w >= num_h * 0.2 && r.w <= num_h * 1.6;
+    let ov_x = |a: &Rect, b: &Rect| (a.right().min(b.right()) - a.x.max(b.x)).max(0.0) / a.w.min(b.w).max(1.0);
+    let mut eqs: Vec<Rect> = Vec::new();
+    for a in pool.iter().filter(|r| is_bar(r)) {
+        for b in pool.iter().filter(|r| is_bar(r)) {
+            let dy = b.cy() - a.cy();
+            if dy > 0.0 && dy <= num_h * 0.5 && ov_x(a, b) >= 0.6 {
+                eqs.push(a.union(b));
+            }
+        }
+    }
+    for eq in &eqs {
+        for dir in [1.0f64, -1.0] {
+            let gap_to = |k: &Rect| if dir > 0.0 { eq.x - k.right() } else { k.x - eq.right() };
+            let one = pool
+                .iter()
+                .filter(|k| !is_bar(k) && gap_to(k) >= -1.0 && gap_to(k) <= num_h && k.h >= num_h * 0.4 && eq.cy() >= k.y && eq.cy() <= k.bottom() && k.w <= k.h * 0.75)
+                .min_by(|a, b| gap_to(a).total_cmp(&gap_to(b)));
+            let Some(one) = one else { continue };
+            // 衬线体的「1」只是一根带脚的细竖，数字模型常读不成 1：细竖本身就够
+            if one.w > one.h * 0.4 {
+                let t = ocr.read_cells(&[crate::frame::digit_cell(ink, one)]).ok()?;
+                if crate::frame::digit_of(&t[0]) != Some(1) {
+                    continue;
+                }
+            }
+            // 音名组：从 `=` 另一侧起紧挨着的块
+            let edge0 = if dir > 0.0 { eq.right() } else { eq.x };
+            let mut cands: Vec<&&Rect> = pool.iter().filter(|k| !is_bar(k) && (if dir > 0.0 { k.x >= edge0 - 2.0 } else { k.right() <= edge0 + 2.0 }) && k.y <= one.bottom() && k.bottom() >= one.y).collect();
+            cands.sort_by(|a, b| if dir > 0.0 { a.x.total_cmp(&b.x) } else { b.x.total_cmp(&a.x) });
+            let first_gap = num_h.max(one.h);
+            let mut group: Vec<Rect> = Vec::new();
+            let mut cur = edge0;
+            let mut ok = true;
+            for k in cands {
+                if k.w >= k.h * 2.5 && k.h <= num_h * 0.25 {
+                    break;
+                }
+                let gap = if dir > 0.0 { k.x - cur } else { cur - k.right() };
+                let gh = group.iter().map(|g| g.h).fold(0.0, f64::max);
+                if gap > if group.is_empty() { first_gap } else { (gh * 0.6).max(4.0) } {
+                    break;
+                }
+                group.push(**k);
+                cur = if dir > 0.0 { cur.max(k.right()) } else { cur.min(k.x) };
+                if group.len() > 4 {
+                    ok = false;
+                    break;
+                }
+            }
+            if !ok || group.is_empty() {
+                continue;
+            }
+            if let Some(f) = read_key_group(ink, ocr, &group) {
+                return Some(f);
+            }
+        }
+    }
+    None
+}
+
+/// 读调号的音名组（同 TS `readKeyGroup`）：底边比其余块高出两成字高、竖长、形状判得出 ♭ / ♯ 的是上标升降号，其余并成一条送读，
+/// 读出一个音名（可带升降号）才算。上标号形状看反的（出了五度圈）翻过来。
+fn read_key_group(ink: &Ink, ocr: &CachedOcr, group: &[Rect]) -> Option<i32> {
+    let lowest = group.iter().map(|g| g.bottom()).fold(f64::MIN, f64::max);
+    let mut acc = 0i32;
+    let mut letters: Vec<Rect> = group.to_vec();
+    for (i, g) in group.iter().enumerate() {
+        let lh = group.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, o)| o.h).fold(0.0, f64::max);
+        if lh <= 0.0 || lowest - g.bottom() < lh * 0.2 || g.h < g.w {
+            continue;
+        }
+        match crate::marks::accidental_of(ink, g) {
+            Some("flat") => acc = -1,
+            Some("sharp") => acc = 1,
+            _ => continue,
+        }
+        letters.remove(i);
+        break;
+    }
+    let read = |ks: &[Rect]| -> Option<(i32, char)> {
+        let r = ks.iter().skip(1).fold(ks[0], |a, b| a.union(b));
+        let t: String = ocr.read_line(&ink.strip(&r, 2)).ok()?.into_iter().map(|c| c.ch).collect();
+        let c = KEY_GLYPHS.captures(t.trim())?;
+        let a = |s: &str| match s {
+            "b" | "♭" => -1,
+            "#" | "♯" => 1,
+            _ => 0,
+        };
+        let letter = c[2].chars().next()?;
+        // 小写音名多半是降号本身读成的 b
+        if letter.is_ascii_lowercase() {
+            return None;
+        }
+        Some((a(&c[1]) + a(&c[3]), letter))
+    };
+    let (mut alt, mut letter) = match read(&letters) {
+        Some(v) => v,
+        None if acc != 0 => {
+            acc = 0;
+            read(group)?
+        }
+        None => return None,
+    };
+    if acc != 0 {
+        alt = acc;
+    }
+    let mut f = fifths_of(letter, alt);
+    if acc != 0 && !(-7..=7).contains(&f) {
+        f = fifths_of(letter, -acc);
+    }
+    letter = letter.to_ascii_uppercase();
+    let _ = letter;
+    (-7..=7).contains(&f).then_some(f)
 }
 
 /// 两框之间（横向 `x0..x1`、纵向 `y0..y1`）只有一道破折号：中间那一截里有一行墨横贯过半个空当，空当里别的墨不多。
