@@ -623,7 +623,12 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 let repl: Vec<(dolce_omr_text::lyrics::Syl, usize)> = parts
                     .into_iter()
                     .zip(&span)
-                    .map(|(t, &n)| (dolce_omr_text::lyrics::Syl { text: t, x: note_xs[n], w: s.w / span.len() as f64, syllabic: s.syllabic }, n))
+                    .enumerate()
+                    .map(|(j, (t, &n))| {
+                        // 按拼写切出的段之间没印连字符；末一段承原词的连字符
+                        let syllabic = if j + 1 == span.len() { s.syllabic } else { dolce_omr_text::lyrics::Syllabic::Single };
+                        (dolce_omr_text::lyrics::Syl { text: t, x: note_xs[n], w: s.w / span.len() as f64, syllabic }, n)
+                    })
                     .collect();
                 placed.splice(k..=k, repl);
             }
@@ -634,7 +639,12 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 .syls
                 .iter()
                 .zip(&at)
-                .map(|(s, &k)| (note_ix[k], s.text.clone(), s.text.chars().any(is_han) && doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5)))
+                .map(|(s, &k)| {
+                    // 英文音节后面印着连字符（接下一个音节）的，字后带「-」（同 TS，写出端转 `\-`）
+                    let hy = matches!(s.syllabic, dolce_omr_text::lyrics::Syllabic::Begin | dolce_omr_text::lyrics::Syllabic::Middle);
+                    let text = if hy { format!("{}-", s.text) } else { s.text.clone() };
+                    (note_ix[k], text, s.text.chars().any(is_han) && doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5))
+                })
                 .collect();
             // 字落在音正下方（0.4 字号内）的比例：夹在谱行间的普通文字与同行各段词错开（见下）
             let han: Vec<&Ch> = chars.iter().filter(|c| is_han(c.ch)).collect();
