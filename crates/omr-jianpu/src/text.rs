@@ -981,7 +981,21 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             None => joined.push(l),
         }
     }
-    let lines = joined;
+    // det 把署名与紧跟着的调号框成一行（「作词：托普雷迪1=bB 3」）：在「1=」处切成两行，左段汉字、右段调号各归各的
+    let mut lines: Vec<WordLine> = Vec::new();
+    for l in joined {
+        let cut = l.text.find("1=").or_else(|| l.text.find("1＝")).filter(|&k| k > 0 && l.text[..k].chars().any(is_han));
+        match cut {
+            Some(k) => {
+                let n = l.text.chars().count() as f64;
+                let nk = l.text[..k].chars().count() as f64;
+                let xk = l.x + l.w * nk / n;
+                lines.push(WordLine { text: l.text[..k].trim().to_string(), x: l.x, y: l.y, w: xk - l.x, h: l.h });
+                lines.push(WordLine { text: l.text[k..].to_string(), x: xk, y: l.y, w: l.x + l.w - xk, h: l.h });
+            }
+            None => lines.push(l),
+        }
+    }
     // 曲号不比标题小多少（拍号的分子、速度数字小得多）
     let max_h = lines.iter().map(|l| l.h).fold(0.0, f64::max);
     // 标题：不是书眉、曲号的行里最大的那行
