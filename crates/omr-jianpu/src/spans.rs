@@ -22,12 +22,14 @@ pub struct Halves {
     pub open: Option<usize>,
     /// 收口弧收在这个音上
     pub head: Option<usize>,
+    /// 行首一截平的细笔画（拱不起来、只往右平着或往下落），也收在首音上：单看分不出是不是弧，上一行有开口半弧时才当收口
+    pub weak_head: Option<usize>,
 }
 
 /// 相邻两行一头开口、一头收口的配成一条跨行圆滑线。单有一头的不记（TS `slur.ts` 跨行圆滑线同判据）。
 pub fn pair_halves(notes: &mut [RowNotes], halves: &[Halves]) {
     for i in 0..halves.len().saturating_sub(1) {
-        if let (Some(a), Some(b)) = (halves[i].open, halves[i + 1].head) {
+        if let (Some(a), Some(b)) = (halves[i].open, halves[i + 1].head.or(halves[i + 1].weak_head)) {
             notes[i].nums[a].slur_start += 1;
             notes[i + 1].nums[b].slur_stop += 1;
         }
@@ -126,6 +128,10 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
                     halves.head = Some(j);
                     continue;
                 }
+            }
+            // 跨行弧的尾巴在行首常只剩平平一截（迦南 2038「(6- | 6--)」行首那段只往右低 4px）
+            if halves.weak_head.is_none() && ax <= first_left && row.top_at(bx) - by <= h && ay <= by + 1.0 && sh.slope().abs() <= 0.2 && on_first {
+                halves.weak_head = Some(0);
             }
         }
         if s.width() < h * MIN_W {
