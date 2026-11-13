@@ -328,6 +328,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(ink, num_h0 * 2.2);
     let mut max_verses = 0usize;
+    // 歌词带里读到的跳转记号：(行, 记号, x, y)
+    let mut jumps: Vec<(usize, &'static str, f64, f64)> = Vec::new();
     // 各行歌词头一行顶离谱行底的距离
     let mut first_gaps: Vec<f64> = Vec::new();
     let mut stanza_lines: Vec<(i64, i64)> = Vec::new();
@@ -379,7 +381,22 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         let mut verse = 0usize;
         for (y0, y1) in lines {
             let mut doubt_xs: Vec<f64> = Vec::new();
-            let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut doubt_xs));
+            let mut chars: Vec<Ch> = Vec::new();
+            for mut seg in read_segs(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut doubt_xs)) {
+                // 跳转记号（Fine、D.S. al Fine）不是词：记下位置挂到音上，从行里拿掉
+                if let Some((word, x, keep)) = jump_in(&seg) {
+                    jumps.push((i, word, x, (y0 + y1) as f64 / 2.0));
+                    seg.truncate(keep);
+                    if seg.iter().all(|c| c.ch == ' ') {
+                        continue;
+                    }
+                }
+                if let Some(l) = chars.last() {
+                    let x = l.x1;
+                    chars.push(Ch { ch: ' ', x0: x, x1: x });
+                }
+                chars.extend(seg);
+            }
             let text: String = chars.iter().map(|c| c.ch).collect();
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("行{i} 词带 y{y0}-{y1}: {text}");
@@ -454,7 +471,56 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         }
         max_verses = max_verses.max(verse);
     }
+    // 跳转记号落位：作用于小节末，归 x 处或其左边最近的那个音；行按 y 就近取（`D.C. al Fine` 常印在下一行的右上方），印在音符带下方的记 below
+    for (ri, word, x, y) in jumps {
+        let mut r = ri;
+        if r + 1 < rows.len() && rows[r + 1].top_at(x) - y < y - rows[r].bottom_at(x) {
+            r += 1;
+        }
+        let nums = &mut notes[r].nums;
+        if nums.is_empty() {
+            continue;
+        }
+        let mut bi = nums.len() - 1;
+        while bi > 0 && nums[bi].bbox.cx() > x {
+            bi -= 1;
+        }
+        if !nums[bi].jump_marks.iter().any(|w| w == word) {
+            nums[bi].jump_marks.push(word.to_string());
+        }
+        if y > rows[r].bottom_at(x) && !nums[bi].jump_below.iter().any(|w| w == word) {
+            nums[bi].jump_below.push(word.to_string());
+        }
+    }
     stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions);
+}
+
+/// 一段字里的跳转记号：整段是记号，或含汉字的段末尾带一个写全的（`远。Fine`、`D.C.`）。
+/// 回 (记号, 起始 x, 记号之前留几个字)。`D.S. al Fine` 记成 `D.S.`（同 TS `normalizeJump`：收尾 Fine 由写出端推）。
+fn jump_in(seg: &[Ch]) -> Option<(&'static str, f64, usize)> {
+    let text: String = seg.iter().map(|c| c.ch).collect();
+    let m = chords::JUMP.find_iter(&text).next()?;
+    let han = text.chars().any(is_han);
+    let full = m.as_str().contains("Fine") || m.as_str().matches(['.', '·']).count() >= 2;
+    let before = text[..m.start()].chars().count();
+    let after = text[m.end()..].trim();
+    if han && !(full && after.is_empty()) {
+        return None;
+    }
+    if !han && !text[..m.start()].trim().is_empty() {
+        return None;
+    }
+    let t: String = m.as_str().chars().filter(|c| !c.is_whitespace() && !".,·".contains(*c)).collect::<String>().to_uppercase();
+    let word = if t.starts_with("FINE") {
+        "Fine"
+    } else if t.starts_with("TO") {
+        "To Coda"
+    } else if t.starts_with("DS") {
+        "D.S."
+    } else {
+        "D.C."
+    };
+    Some((word, seg.get(before).map_or(0.0, |c| c.x0), before))
 }
 
 /// 谱后单独排版的附段歌词（诗行，不跟音符对齐）：以段号起头的一段，字数与第 1 段前几行谱的字位数对得上（差不过 2）时，
