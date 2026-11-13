@@ -45,22 +45,37 @@ function bindgenVersion() {
   return /name = "wasm-bindgen"\nversion = "([^"]+)"/.exec(lock)?.[1] ?? "?";
 }
 
+/** 两份：`dolce_omr_wasm` 只用 simd128（Safari 没有 relaxed-simd）；`dolce_omr_wasm_relaxed` 另开 relaxed-simd——tract 的矩阵内核
+ *  改用融合乘加，Chromium 里 OCR 快一成多。Worker 按浏览器支持挑一份（`worker.ts::loadOmr`）。两份各用自己的 target 目录，免得来回全量重编。 */
+const VARIANTS = [
+  { name: NAME, features: "+simd128", target: "target", opt: [] },
+  { name: `${NAME}_relaxed`, features: "+simd128,+relaxed-simd", target: "target/wasm-relaxed", opt: ["--enable-relaxed-simd"] },
+];
+
 function buildOmr() {
-  const stamp = join(out, `${NAME}_bg.wasm`);
-  if (existsSync(stamp) && statSync(stamp).mtimeMs > Math.max(newest(crates), statSync(fileURLToPath(import.meta.url)).mtimeMs)) return;
+  const srcTime = Math.max(newest(crates), statSync(fileURLToPath(import.meta.url)).mtimeMs);
+  const todo = VARIANTS.filter((v) => {
+    const stamp = join(out, `${v.name}_bg.wasm`);
+    return !(existsSync(stamp) && statSync(stamp).mtimeMs > srcTime);
+  });
+  if (!todo.length) return;
   const want = bindgenVersion();
   const got = has("wasm-bindgen") ? execFileSync("wasm-bindgen", ["--version"], { encoding: "utf8" }).trim().split(" ")[1] : null;
   if (got !== want) throw new Error(`要 wasm-bindgen-cli ${want}（现在 ${got ?? "没有"}）：cargo install wasm-bindgen-cli --version ${want}`);
-  console.log("[build-wasm] 编 omr-wasm …");
-  run("cargo", ["build", "-p", "dolce-omr-wasm", "--release", "--target", "wasm32-unknown-unknown"], {
-    cwd: crates,
-    env: { ...process.env, RUSTFLAGS: `${process.env.RUSTFLAGS ?? ""} -C target-feature=+simd128`.trim() },
-  });
   mkdirSync(out, { recursive: true });
-  const wasm = join(crates, `target/wasm32-unknown-unknown/release/${NAME}.wasm`);
-  // 去掉名字段（30 → 21 MB；panic 信息照打，只是栈上没函数名）
-  run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", out]);
-  if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-simd", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", stamp, "-o", stamp]);
+  for (const v of todo) {
+    console.log(`[build-wasm] 编 omr-wasm（${v.features}）…`);
+    const target = join(crates, v.target);
+    run("cargo", ["build", "-p", "dolce-omr-wasm", "--release", "--target", "wasm32-unknown-unknown", "--target-dir", target], {
+      cwd: crates,
+      env: { ...process.env, RUSTFLAGS: `${process.env.RUSTFLAGS ?? ""} -C target-feature=${v.features}`.trim() },
+    });
+    const wasm = join(target, `wasm32-unknown-unknown/release/${NAME}.wasm`);
+    // 去掉名字段（30 → 21 MB；panic 信息照打，只是栈上没函数名）
+    run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", out, "--out-name", v.name]);
+    const stamp = join(out, `${v.name}_bg.wasm`);
+    if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-simd", ...v.opt, "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", stamp, "-o", stamp]);
+  }
 }
 
 /** pdfium-binaries 的 wasm 包（pdfium.js + pdfium.wasm），缓存在 ~/.cache/dolce-pdfium/<构建号>/wasm/。 */

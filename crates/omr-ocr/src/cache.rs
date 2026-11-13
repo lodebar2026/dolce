@@ -176,7 +176,7 @@ pub fn decode_reqs(b: &[u8]) -> Option<Vec<OcrReq>> {
 }
 
 /// 数字格批量推理每批多少格（同 `Ocr::read_cells` 内部分批）。
-const CELL_BATCH: usize = 16;
+const CELL_BATCH: usize = 8;
 
 /// 推理一组请求，回 (缓存键, 结果) 各条（一条请求可出两条：`LineRank`）。数字格并成批。
 pub fn exec(ocr: &Ocr, reqs: &[OcrReq]) -> Result<Vec<(String, serde_json::Value)>, String> {
@@ -413,19 +413,30 @@ impl CachedOcr {
     }
 }
 
-/// 一批请求分成各自独立推理的活：数字格按批切，其余一条一份；大活在前（整页检测、整批数字格先派）。
+/// 一批请求分成各自独立推理的活：数字格按批切，其余一条一份；按估计的算量从大到小排（大活先派，免得落在一轮末尾拖着）。
 pub fn jobs(reqs: Vec<OcrReq>) -> Vec<Vec<OcrReq>> {
     let (cells, rest): (Vec<OcrReq>, Vec<OcrReq>) = reqs.into_iter().partition(|r| matches!(r, OcrReq::Cell(_)));
     let mut jobs: Vec<Vec<OcrReq>> = cells.chunks(CELL_BATCH).map(|c| c.to_vec()).collect();
     jobs.extend(rest.into_iter().map(|r| vec![r]));
-    jobs.sort_by_key(|j| std::cmp::Reverse(j.iter().map(req_pixels).sum::<usize>()));
+    jobs.sort_by_key(|j| std::cmp::Reverse(j.iter().map(req_cost).sum::<usize>()));
     jobs
 }
 
-/// 请求的画面像素数（派活排序用）。
-fn req_pixels(r: &OcrReq) -> usize {
+/// 一条请求估计的算量（相对单位：一条 320 宽的常规文本条记 320）。rec 的算量随张量宽线性涨；
+/// 宽过 320 的长条走符号形状的计划，比定形计划慢四五倍；一个数字格约是常规条的六分之一；检测按像素算。
+fn req_cost(r: &OcrReq) -> usize {
+    let strip = |g: &Gray| {
+        let tw = (48.0 * g.w as f64 / g.h.max(1) as f64).ceil() as usize;
+        if tw <= 320 {
+            320
+        } else {
+            tw * 4
+        }
+    };
     match r {
-        OcrReq::Line(g) | OcrReq::LineRank(g, _) | OcrReq::Rank(g, _) | OcrReq::Cell(g) | OcrReq::Detect(g) | OcrReq::DetectTiled(g, _) => g.w * g.h,
+        OcrReq::Line(g) | OcrReq::LineRank(g, _) | OcrReq::Rank(g, _) => strip(g),
+        OcrReq::Cell(_) => 50,
+        OcrReq::Detect(g) | OcrReq::DetectTiled(g, _) => g.w * g.h / 100,
     }
 }
 

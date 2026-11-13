@@ -76,9 +76,20 @@ async function loadPdfium(): Promise<object> {
   });
 }
 
+/** 浏览器支不支持 relaxed-simd（一段用了 `i8x16.relaxed_swizzle` 的最小模块能不能过校验）。Safari 不支持。 */
+const RELAXED = (() => {
+  try {
+    return WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 15, 1, 13, 0, 65, 1, 253, 15, 65, 2, 253, 15, 253, 128, 2, 11]));
+  } catch {
+    return false;
+  }
+})();
+/** 识别模块用哪一份：支持 relaxed-simd 的用另开了它的那份（矩阵内核用融合乘加，OCR 快一成多），见 scripts/build-wasm.mjs。 */
+const OMR_NAME = RELAXED ? "dolce_omr_wasm_relaxed" : "dolce_omr_wasm";
+
 /** 识别模块的胶水按文本取来、从 Blob 地址 import（开发服务器不让把 public/ 下的脚本当模块加载）。 */
 async function loadOmr(): Promise<OmrWasm> {
-  const r = await fetch(url(`${OMR_DIR}dolce_omr_wasm.js`));
+  const r = await fetch(url(`${OMR_DIR}${OMR_NAME}.js`));
   if (!r.ok) throw new Error(`取识别模块失败（${r.status}）`);
   const blob = URL.createObjectURL(new Blob([await r.text()], { type: "text/javascript" }));
   try {
@@ -94,7 +105,7 @@ let omrReady: Promise<{ m: OmrWasm; local: object }> | null = null;
 function omrOnly(): Promise<{ m: OmrWasm; local: object }> {
   omrReady ??= (async () => {
     const m = await loadOmr();
-    const local = await m.default({ module_or_path: url(`${OMR_DIR}dolce_omr_wasm_bg.wasm`) });
+    const local = await m.default({ module_or_path: url(`${OMR_DIR}${OMR_NAME}_bg.wasm`) });
     return { m, local };
   })();
   omrReady.catch(() => (omrReady = null));
@@ -189,7 +200,9 @@ async function runJobs(m: OmrWasm, jobs: Uint8Array[]): Promise<void> {
     helpers?.forEach((h) => h.stop());
     helpers = null;
   }, HELPER_IDLE_MS);
-  let next = 0;
+  // 最大的一份本 Worker 自己做（帮手可能落在小核上），帮手从第二份起取
+  const mineFirst = jobs.length > 0 && HELPERS > 0;
+  let next = mineFirst ? 1 : 0;
   const redo: Uint8Array[] = [];
   const crew = helpers.filter((h) => h.alive).map(async (h) => {
     while (next < jobs.length) {
@@ -209,6 +222,10 @@ async function runJobs(m: OmrWasm, jobs: Uint8Array[]): Promise<void> {
       c.port1.onmessage = () => r();
       c.port2.postMessage(0);
     });
+  if (mineFirst) {
+    m.ocr_put(m.ocr_exec(jobs[0]!));
+    await yieldTask();
+  }
   while (next < jobs.length) {
     m.ocr_put(m.ocr_exec(jobs[next++]!));
     if (crew.length) await yieldTask();

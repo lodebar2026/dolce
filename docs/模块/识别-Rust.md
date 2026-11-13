@@ -586,10 +586,13 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
   结果与逐条推理逐字一致（缓存按画面内容寻址）。简谱各阶段之间查 `ocr.barrier()`：上一阶段还缺就不往下算——下游拿残缺的结果切出的条与最后一轮不同、
   白推理（实测一页三成多的文本条），加了屏障后 6~7 轮、没有白推理。桌面版 `Handle::recognize_rounds` 分给会话池（3 个会话），命令行 `run` 同；
   网页版 `OmrDoc::recognize_round` 交出各份活（`encode_reqs` 的字节），`worker.ts` 分给本 Worker 与几个帮手 Worker（同一脚本，只载识别模块与 OCR 模型，
-  核数减 3、至多 7 个，闲置 60 秒停掉）调 `ocr_exec`，结果 `ocr_put` 回来。数字格每份 16 格（份大了一轮里分不匀）。
+  核数减 3、至多 7 个，闲置 60 秒停掉）调 `ocr_exec`，结果 `ocr_put` 回来。数字格每份 8 格（份大了一轮里分不匀）；各份按估计算量从大到小派
+  （宽过 320 的长条走符号计划、算四倍），最大的一份本 Worker 自己做。
   同一条既要贪心解码又要逐字候选时一次推理两样都出（`read_line_ranked`）。`OMR_OCR_SEQ=1` 退回逐条推理（对照用），`OMR_OCR_ROUNDS=1` 打各轮耗时。
-- **tract 定形计划**：rec 的常规文本条（1×3×48×320）与数字格（16×3×48×48，不满补空白格）各编一份定形计划，比符号形状的计划快 4~5 倍（原生），
-  输出差在 1e-5 以内；其余形状（长条）照用符号计划。
+- **tract 定形计划**：rec 的常规文本条（1×3×48×320）与数字格（4 / 8 / 16 格三档，不满补空白格）加载时各编一份定形计划，比符号形状的计划快 4~5 倍（原生），
+  输出差在 1e-5 以内；其余形状（长条）照用符号计划（wasm 里长条现编定形计划要 80 ms，省下的不够）。
+- **网页版两份 wasm**（`scripts/build-wasm.mjs`）：`dolce_omr_wasm` 只开 simd128，`dolce_omr_wasm_relaxed` 另开 relaxed-simd（tract 的 8×8 矩阵内核改用融合乘加，
+  Chromium 里一页快一成多）；`worker.ts` 按 `WebAssembly.validate` 探到的支持挑一份（Safari 没有 relaxed-simd）。两份各用自己的 cargo target 目录。
 - **PDF 只走 PDFium**：编辑器、网页版、命令行都不再用 pdf.js（P12 删了 `pdfjs-dist`）。dev 脚本里还要 pdf.js 的（矢量版面核对、截图）单独装在 dev 的 `tools/pdfjs/`。
 - 留后：`omr/inventory.ts` / `bookprofile.ts` 的 `VecPage` 仍由 dev 脚本经 pdf.js 取（计划里的 `omr-cli vecdump` 没做）；参照歌词互证没迁；TS 识别目录 P13 删。
 
@@ -616,8 +619,9 @@ npm run build:native && npm test -- omrkit/kernels        # 像素内核 TS ↔ 
 ## 已知限制
 
 - 五线谱做到混排互证（P8）、矢量档（P9）与整曲结果模型、会话、核对 JSON（P10），歌本切分（P11）已迁，桌面版与网页版已接进编辑器（P12）；版面分区还没有。
-- 网页版 OCR 用 tract：wasm 里的矩阵内核是 simd128 四路，定形计划一条 320 宽的文本条约 48 ms（原生 7 ms）；靠分轮预取 + 帮手 Worker 并行，
-  一页简谱 1.4~3.8 秒（Chromium，十核机；TS 旧版 1.3~3.5 秒），Safari 比 TS 旧版快。onnxruntime-web 单线程一条 43 ms，与 tract 定形计划差不多，不值得换回。
+- 网页版 OCR 用 tract：wasm 里的矩阵内核是四路 SIMD，一条 320 宽的文本条约 40 ms（原生 7 ms，原生走 Apple SME），矩阵乘占九成；靠分轮预取 + 帮手 Worker 并行，
+  一页简谱 1.1~3.3 秒（Chromium，十核机；TS 旧版 1.2~3.4 秒，合计慢一成多），Safari 1.5~4.9 秒、比 TS 旧版快。onnxruntime-web 单线程一条 43 ms，不值得换回。
+  比 TS 多出的算量主要在送检的量：找数字行时整页数字大小的块都读（TS 只读行内的），歌词按真实空当切段（TS 把一行的字压紧拼条），都牵涉判据。
   wasm 21 MB（gzip 5.0 MB），PDFium 5.2 MB（gzip 2.4 MB）。
 - 某声部整小节没有音时（破碎前几个系统还没出现的钢琴声部），写出的 MusicXML 小节里一个 `<note>` 都没有、不补整小节休止，编辑器试听报「measure has no chord」拼不出。
 - 《裴克圣经经文诗歌歌谱》逐首识别对 pu.db（P13a 后）：音符 96.78、歌词 88.21、对位 92.08、调号 91.94、拍号 97.21、速度 97.21（TS 同口径音符 97.68、歌词 88.59、对位 93.47、速度 97.21）；
