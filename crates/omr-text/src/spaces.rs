@@ -38,7 +38,12 @@ pub fn split_gaps(ws: &[f64], h: f64) -> f64 {
 /// 白 5/4/4/3 对字母间 1）。最窄的一道再往下按 1 像素算。
 fn word_gap(ws: &[f64], h: f64, n_chars: usize) -> f64 {
     let t = split_gaps(ws, h);
-    if t.is_finite() {
+    // 宽过 1 像素的白只有一道时 split_gaps 按 0.3 墨高定界；字母间那几道 0~1 像素的白也算上，仍照下面的断口找
+    // （迦南 1942 `We'refamily`：白 1/1/9，墨高 34 连着 f、y 的上下伸）。这时一道白要宽过 0.2 墨高：
+    // 衬线体两个字母之间也能留出 0.15 墨高的白（青年诗歌 22 `to` 白 6、行高 40）
+    let single = ws.iter().filter(|&&w| w > 1.0).count() < 2;
+    let floor = if single { 0.2 } else { 0.14 };
+    if t.is_finite() && !single {
         return t;
     }
     let mut v: Vec<f64> = ws.to_vec();
@@ -46,8 +51,8 @@ fn word_gap(ws: &[f64], h: f64, n_chars: usize) -> f64 {
     for j in 1..=v.len() {
         let next = v.get(j).copied().unwrap_or(1.0).max(1.0);
         if v[j - 1] >= next * 2.5 {
-            if j * 3 <= n_chars && v[j - 1] >= h * 0.14 {
-                return v[j - 1];
+            if j * 3 <= n_chars && v[j - 1] >= h * floor {
+                return v[j - 1].min(t);
             }
             break;
         }

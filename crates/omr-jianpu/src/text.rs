@@ -412,6 +412,9 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
             continue;
         }
         let blanks: Vec<(f64, f64)> = g.windows(2).map(|p| ((p[0].1 + 1) as f64, (p[1].0 - p[0].1 - 1) as f64)).collect();
+        if std::env::var("OMR_SPACE_DEBUG").is_ok() {
+            eprintln!("段 h{hh} 白{:?} 字{}", blanks.iter().map(|b| b.1 as i64).collect::<Vec<_>>(), chars.iter().map(|c| c.ch).collect::<String>());
+        }
         out.push(recover_spaces(&chars, &blanks, hh, sa as f64, (sb + 1) as f64));
     }
     out
@@ -1927,7 +1930,7 @@ fn box_spaces(ink: &Ink, none: &Claims, b: &Rect, chars: &[Ch]) -> Vec<Ch> {
     let (y0, y1) = (b.y.floor().max(0.0) as i64, ((b.y + b.h).ceil() as i64).min(ink.h() as i64) - 1);
     let Some(bi) = box_ink(x0, x1, y0, y1 + 1, |x| (y0..=y1).any(|y| none.free(ink, x, y)), |y| (x0..x1).any(|x| none.free(ink, x, y))) else { return chars.to_vec() };
     if std::env::var("OMR_JP_DEBUG").is_ok() {
-        eprintln!("  框空白 墨高{} {:?}", bi.height, bi.blanks.iter().map(|b| b.1 as i64).collect::<Vec<_>>());
+        eprintln!("  框空白 墨高{} {:?} 墨{:.0}-{:.0} 字{:?}", bi.height, bi.blanks.iter().map(|b| (b.0 as i64, b.1 as i64)).collect::<Vec<_>>(), bi.left, bi.right, chars.iter().map(|c| (c.ch, c.cx() as i64)).collect::<Vec<_>>());
     }
     recover_spaces(chars, &bi.blanks, bi.height, bi.left, bi.right)
 }
