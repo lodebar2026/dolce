@@ -258,8 +258,21 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             let side = |a: f64, b: f64| (a.ceil() as i64..=b.floor() as i64).filter(|&x| two_runs(x)).count() as f64;
             let (b, c) = (cx(i + 1), cx(i + 2));
             let (l, r) = (side((b - h).max((cx(i) + b) / 2.0), b - 1.0), side(c + 1.0, (c + h).min((c + cx(j)) / 2.0)));
+            // 第二、三个音之间中段：「((2 3) (3 2))」两道内弧在这里各自落下、只剩外弧一段；
+            // 「(3. (4 (3) 2))」第二道内弧整个架在这两个音上、外弧底下还有一段（迦南 1921，后一道内弧在末音处并进外弧）
+            let mid = side(b + (c - b) * 0.25, c - (c - b) * 0.25);
             if std::env::var("OMR_ARC_DEBUG").is_ok() {
-                eprintln!("  嵌套四 {i}-{j} 两段列 左{l} 右{r}");
+                eprintln!("  嵌套四 {i}-{j} 两段列 左{l} 右{r} 中{mid}");
+            }
+            if !has_l && !has_r && mid >= (c - b) * 0.5 * 0.6 {
+                found.push((i + 1, i + 2, 0.0, ((b + c) / 2.0, my)));
+                if l >= h * 0.3 {
+                    found.push((i, i + 1, 0.0, ((cx(i) + b) / 2.0, my)));
+                }
+                if r >= h * 0.3 {
+                    found.push((i + 2, j, 0.0, ((c + cx(j)) / 2.0, my)));
+                }
+                continue;
             }
             // 一侧的内弧已单独追出来的，另一侧够 0.3 字号就补
             let (add_l, add_r) = match (has_l, has_r) {
