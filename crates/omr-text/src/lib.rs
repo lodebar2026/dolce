@@ -8,6 +8,7 @@
 //! - [`words`]：速度与节拍器、跳转、力度的词表与判据
 pub mod chars;
 pub mod chords;
+pub mod ensyllable;
 pub mod header;
 pub mod lyrics;
 pub mod spaces;

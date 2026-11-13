@@ -464,7 +464,47 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             if lr.syls.is_empty() {
                 continue;
             }
-            let at = align(&lr.syls.iter().map(|s| s.x).collect::<Vec<_>>(), &note_xs);
+            let at0 = align(&lr.syls.iter().map(|s| s.x).collect::<Vec<_>>(), &note_xs);
+            // 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：按拼写切成那么多段（同 TS `splitSpanningWords`）
+            let mut placed: Vec<(dolce_omr_text::lyrics::Syl, usize)> = lr.syls.iter().cloned().zip(at0.iter().copied()).collect();
+            let line_h = (y1 - y0 + 1) as f64;
+            for k in (0..placed.len()).rev() {
+                let (s, own) = (placed[k].0.clone(), placed[k].1);
+                if !s.text.chars().any(|c| c.is_ascii_alphabetic()) || s.text.chars().any(is_han) {
+                    continue;
+                }
+                let ex1 = s.x + s.w / 2.0 - line_h * 0.3;
+                let taken = |i: usize| placed.iter().enumerate().any(|(j, p)| j != k && p.1 == i);
+                // 词心可能落在后一个音上（对音按就近）：往左把字迹范围里空着的音也收进来
+                let ex0 = s.x - s.w / 2.0 - line_h * 0.3;
+                let mut first = own;
+                while first > 0 && !taken(first - 1) && note_xs[first - 1] >= ex0 {
+                    first -= 1;
+                }
+                let mut span: Vec<usize> = (first..=own).collect();
+                let mut i = own + 1;
+                while i < note_xs.len() && note_xs[i] < ex1 && !taken(i) {
+                    span.push(i);
+                    i += 1;
+                }
+                let mut parts = None;
+                while span.len() >= 2 {
+                    parts = dolce_omr_text::ensyllable::split_english_word(&s.text, span.len());
+                    if parts.is_some() {
+                        break;
+                    }
+                    span.pop();
+                }
+                let Some(parts) = parts else { continue };
+                let repl: Vec<(dolce_omr_text::lyrics::Syl, usize)> = parts
+                    .into_iter()
+                    .zip(&span)
+                    .map(|(t, &n)| (dolce_omr_text::lyrics::Syl { text: t, x: note_xs[n], w: s.w / span.len() as f64, syllabic: s.syllabic }, n))
+                    .collect();
+                placed.splice(k..=k, repl);
+            }
+            let at: Vec<usize> = placed.iter().map(|p| p.1).collect();
+            lr.syls = placed.into_iter().map(|p| p.0).collect();
             for (s, &k) in lr.syls.iter().zip(&at) {
                 let n = &mut notes[i].nums[note_ix[k]];
                 if n.lyrics.len() <= verse {
