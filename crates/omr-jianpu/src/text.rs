@@ -434,7 +434,7 @@ fn lyric_span(ink: &Ink, row: &RowFrame) -> (i64, i64) {
 
 /// 各谱行下面的歌词：切行、读字、对音，写进各音的 `lyrics` 与行的段号。回各行歌词带的行（供叠加与排查）。
 /// `stanza_regions`：谱后附段落到音上的那几段，各行原文与源框（识别模式按原位叠加）。
-pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>) {
+pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>) {
     let w = ink.w() as f64;
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(ink, num_h0 * 2.2);
@@ -711,7 +711,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             nums[bi].jump_below.push(word.to_string());
         }
     }
-    stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions);
+    stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions, footnotes);
 }
 
 /// 一段字里的跳转记号：整段是记号，或含汉字的段末尾带一个写全的（`远。Fine`、`D.C.`）。
@@ -744,7 +744,7 @@ fn jump_in(seg: &[Ch]) -> Option<(&'static str, f64, usize)> {
 
 /// 谱后单独排版的附段歌词（诗行，不跟音符对齐）：以段号起头的一段，字数与第 1 段前几行谱的字位数对得上（差不过 2）时，
 /// 按第 1 段的字位骨架逐字落到音上。分栏排的按栏从左到右、栏内从上到下读。
-fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, lines: &[(i64, i64)], regions: &mut Vec<TextRegion>) {
+fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, lines: &[(i64, i64)], regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>) {
     if lines.is_empty() || rows.is_empty() {
         return;
     }
@@ -794,12 +794,26 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
     let score_verses = notes.iter().flat_map(|rn| rn.nums.iter().map(|n| n.lyrics.len())).max().unwrap_or(1).max(1);
     // 以段号起头的切成段（带各行原文与源框）
     let mut blocks: Vec<(String, Vec<Ch>, Vec<TextRegion>)> = Vec::new();
+    let mut prev_bot: Option<i64> = None;
     for (_, y0, seg, y1) in segs {
         let text: String = seg.iter().map(|c| c.ch).collect();
         let (xa, xb) = (seg.first().map_or(0.0, |c| c.x0), seg.last().map_or(0.0, |c| c.x1));
         let region = TextRegion { text: text.clone(), bbox: Rect::new(xa, y0 as f64, xb - xa, (y1 - y0 + 1) as f64) };
-        if text.trim_start().starts_with("注") {
-            break;
+        // 「注：…」起头的整段是页脚注：从这一行起，行距不过 1.5 倍行高的接续行并成一条；隔开的下一个「注」另起一条（同 TS stanzas.ts）
+        if FOOTNOTE.is_match(text.trim_start()) || !footnotes.is_empty() {
+            let t = text.trim().to_string();
+            if FOOTNOTE.is_match(&t) {
+                footnotes.push(t);
+            } else if prev_bot.is_some_and(|b| (y0 - b) as f64 <= hh * 1.5) {
+                if let Some(f) = footnotes.last_mut() {
+                    f.push_str(&t);
+                }
+            } else {
+                prev_bot = None;
+                continue;
+            }
+            prev_bot = Some(y1);
+            continue;
         }
         let lead = seg.iter().position(|c| c.ch != ' ' && c.ch != '(' && c.ch != '（').unwrap_or(0);
         let c0 = seg[lead].ch;
@@ -893,6 +907,10 @@ static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【]
 static BRACKET_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([\[［])\s*").unwrap());
 static BRACKET_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*([\]］])$").unwrap());
 static NAME_YEAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([A-Za-z])\((\d{4})\)").unwrap());
+/// 谱后的注：行首「注：」「(注:」（OCR 偶把冒号读成分号）。
+static FOOTNOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[(（]?注\s*[:：;；]").unwrap());
+/// 速度前的音符带附点：`♩.=`、`J.=`（rec 把四分音符读成 J、d）。
+static DOTTED_BEAT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[♩♪Jjd]\s*[.．·•]\s*[=＝]").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*$").unwrap());
 
 /// 调名 → 五度圈位置。
@@ -1068,6 +1086,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
         if let Some((bpm, _)) = words::metronome(&l.text) {
             score.tempo = Some(bpm);
+            // 音符后带附点的（`♩.=60`，rec 读成「J.=60」）：拍单位是附点四分
+            if DOTTED_BEAT.is_match(&l.text) {
+                score.tempo_beat = Some(crate::result::BeatUnit { num: 3, den: 8 });
+            }
             used = true;
         }
         if let Some(c) = NUMBER.captures(&l.text) {

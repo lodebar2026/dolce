@@ -95,7 +95,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     spans::endings(ink, &rows, &mut notes, ocr);
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     hook.step(2, STEPS, "lyrics")?;
-    text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions);
+    text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes);
     hook.step(3, STEPS, "header")?;
     text::header(ink, &rows, num_h, ocr, &mut score);
     hook.step(4, STEPS, "spans")?;

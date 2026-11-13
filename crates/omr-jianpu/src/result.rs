@@ -167,6 +167,13 @@ pub struct JpNum {
     pub fall: bool,
 }
 
+/// 拍单位（分数）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct BeatUnit {
+    pub num: u32,
+    pub den: u32,
+}
+
 /// 一行谱识别出的内容。
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -240,6 +247,12 @@ pub struct RecognizedScore {
     pub credits_top_left: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tempo: Option<u32>,
+    /// 谱后的「注：…」（注文折行的接续行并成一条），写出端记左下页文
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub footnotes: Vec<String>,
+    /// 速度的拍单位（附点四分 `♩.=` 为 3/8）；缺省四分
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tempo_beat: Option<BeatUnit>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub header_regions: Vec<TextRegion>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
