@@ -870,6 +870,20 @@ pub fn mutual_bars(ink: &Ink, rows: &mut [RowFrame], sys: &[Option<(u32, u32)>])
                 }
                 if let [c] = hit[..] {
                     let cell = r.cells[c];
+                    // 增时线粘着小节线成一格（圣哉三一歌下声部「5- |」读成「5 1」）：其余声部全有线时，格里有一列贯穿全格高的竖墨就在那里劈开，
+                    // 左边是增时线、右边那截是线
+                    if all && cell.kind == CellKind::Digit && cell.w() > h * 0.3 && cell.h() >= h * 0.7 {
+                        let full = |xx: i64| (cell.y0..=cell.y1).filter(|&y| ink.at(xx, y)).count() as f64 >= cell.h() * 0.9;
+                        let cols: Vec<i64> = (cell.x0..=cell.x1).filter(|&xx| full(xx)).collect();
+                        if let (Some(&a), Some(&b)) = (cols.first(), cols.last()) {
+                            if ((b - a + 1) as f64) <= h * 0.25 && (a as f64 - x).abs() <= h * 0.5 && b == cell.x1 && a > cell.x0 + 1 {
+                                let left = Cell { x0: cell.x0, x1: a - 1, kind: CellKind::Dash, ..cell };
+                                let bar = Cell { x0: a, x1: b, kind: CellKind::Bar { thick: false }, ..cell };
+                                r.cells.splice(c..=c, [left, bar]);
+                                continue;
+                            }
+                        }
+                    }
                     if cell.kind != CellKind::Digit || cell.w() > h * 0.3 || cell.h() < h * 0.5 {
                         continue;
                     }
