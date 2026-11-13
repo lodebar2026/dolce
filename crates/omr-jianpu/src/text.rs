@@ -407,6 +407,13 @@ const CN_NUM: &str = "一二三四五六七八九十";
 
 /// 行首的边注：汉字段号（`一`、`二、`）与「副」「(副)」，印在首音左边。回 (段号, 去掉边注后的字)。
 fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
+    // 首音左边带右括号的一小段汉字（「(尾声)」，左括号常读丢）是边注、不入词（青年诗歌 14）；「(副一)」那种走下面记标签
+    if let Some(k) = chars.iter().take(6).position(|c| ")）".contains(c.ch)) {
+        let body: Vec<&Ch> = chars[..k].iter().filter(|c| is_han(c.ch)).collect();
+        if !body.is_empty() && body.len() <= 4 && !body.iter().any(|c| c.ch == '副' || CN_NUM.contains(c.ch)) && chars[..k].iter().all(|c| is_han(c.ch) || "(（ ".contains(c.ch)) && chars[k].cx() < first_x - h * 0.2 {
+            return (None, &chars[k + 1..]);
+        }
+    }
     let mut i = 0;
     while chars.get(i).is_some_and(|c| "(（ ".contains(c.ch)) {
         i += 1;
