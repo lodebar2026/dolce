@@ -538,7 +538,12 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     let tall = |c: &Cell| c.h() >= h * 0.72;
     // 本行数字宽：近方形的宽体数字也算（只收到九成高的话，宽体页里只剩「1」定宽，个个数字被当成两个粘在一起切开）
     let ws: Vec<f64> = cells.iter().filter(|c| tall(c) && c.w() >= c.h() * 0.4 && c.w() <= c.h() * 1.15).map(|c| c.w()).collect();
-    let med_w = median(&ws, h * 0.6);
+    // 取上四分位：「1」多的行（迦南 1850「1̇ 1̇ 1̇ 1̇ 2̇」）中位被窄的「1」拉下来，「2」「6」就被当成两个粘连切开
+    let med_w = {
+        let mut v = ws.clone();
+        v.sort_by(f64::total_cmp);
+        if v.is_empty() { h * 0.6 } else { v[(v.len() * 3 / 4).min(v.len() - 1)] }
+    };
     let mut out: Vec<Cell> = Vec::new();
     for c in cells {
         let n = (c.w() / med_w).round() as i64;
