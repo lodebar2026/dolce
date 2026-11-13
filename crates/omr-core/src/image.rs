@@ -63,6 +63,11 @@ impl Rect {
         Rect { x, y, w, h }
     }
     #[inline]
+    /// 罩住两框的最小框。
+    pub fn union(&self, o: &Rect) -> Rect {
+        let (x, y) = (self.x.min(o.x), self.y.min(o.y));
+        Rect::new(x, y, self.right().max(o.right()) - x, self.bottom().max(o.bottom()) - y)
+    }
     pub fn right(&self) -> f64 {
         self.x + self.w
     }

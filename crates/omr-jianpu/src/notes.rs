@@ -87,6 +87,54 @@ fn arc_ends(ink: &Ink, x0: i64, x1: i64, y1: i64) -> bool {
     down(x0, -1) && down(x1, 1)
 }
 
+/// 行首印的段落名（「前奏」「前奏：」，同 TS `prelude.rowHead` / `pseudoRow.headWithPrelude`）：行首连着的数字格按贴着的并成块，
+/// 近方（宽不下于 0.85 高）、不比本行数字矮的块是字（数字是竖长的）；两块以上，或一块却比数字高出一成半，其后还有三个以上的数字格、
+/// 其中七成不是近方的，且块前没有小节线。整块送去读，读出一到四个汉字才算。回（摘掉的格数, 字）。
+fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, String)> {
+    let cells = &row.cells;
+    let first = cells.iter().position(|c| c.kind == CellKind::Digit)?;
+    if cells[..first].iter().any(|c| matches!(c.kind, CellKind::Bar { .. })) {
+        return None;
+    }
+    let hs: Vec<f64> = cells.iter().filter(|c| c.kind == CellKind::Digit).map(|c| c.h()).collect();
+    let med_h = dolce_omr_core::geom::median(&hs, row.h());
+    // 从首个数字格起，贴着（隔不过 2 像素）的格并成块
+    let mut blocks: Vec<(usize, usize, Rect)> = Vec::new();
+    let mut i = first;
+    while i < cells.len() && cells[i].kind == CellKind::Digit {
+        let mut j = i;
+        let mut r = cells[i].rect();
+        while j + 1 < cells.len() && cells[j + 1].kind == CellKind::Digit && cells[j + 1].x0 - cells[j].x1 <= 2 {
+            j += 1;
+            r = r.union(&cells[j].rect());
+        }
+        blocks.push((i, j, r));
+        i = j + 1;
+    }
+    let square = |r: &Rect| r.w >= r.h * 0.85 && r.h >= med_h * 0.95;
+    let k = blocks.iter().take_while(|b| square(&b.2)).count();
+    if k == 0 || k >= blocks.len() {
+        return None;
+    }
+    let tall = blocks[..k].iter().any(|b| b.2.h >= med_h * 1.15);
+    let rest = &blocks[k..];
+    if (k < 2 && !tall) || rest.len() < 3 || (rest.iter().filter(|b| !square(&b.2)).count() as f64) < rest.len() as f64 * 0.7 {
+        return None;
+    }
+    let mut r = blocks[0].2;
+    for b in &blocks[1..k] {
+        r = r.union(&b.2);
+    }
+    let pad = med_h * 0.3;
+    let roi = Rect::new((r.x - pad).max(0.0), (r.y - pad).max(0.0), r.w + pad * 2.0, r.h + pad * 2.0);
+    let text: String = ocr.read_line(&ink.crop_bin(&roi)).ok()?.into_iter().map(|c| c.ch).collect::<String>().split_whitespace().collect();
+    let n = text.chars().count();
+    if !(1..=4).contains(&n) || !text.chars().all(dolce_omr_text::chars::is_han) {
+        return None;
+    }
+    Some((blocks[k - 1].1 + 1, text))
+}
+
 /// 横墨是一块字形的顶横（下一行数字「5」「7」的顶、「2」「3」的顶弧）：它所在的连通块顶不比这道横高出半个字号（逐列量时侧边列的顶比弧顶低）、往下伸出 0.4 字号以上。
 /// 减时线自成一块，或粘着上面的数字（块往上伸）。
 fn glyph_top(ink: &Ink, x0: i64, x1: i64, y0: i64, y1: i64, h: f64) -> bool {
@@ -105,8 +153,11 @@ pub fn dot_like(k: &Comp, h: f64) -> bool {
 pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowCtx) -> RowNotes {
     let h = row.h();
     let mut out = RowNotes::default();
+    // 行首印的段落名（「前奏」）：摘掉那几格，认出字的挂到首音上
+    let (skip, head_mark) = head_label(ink, row, ocr).map_or((0, None), |(k, t)| (k, Some(t)));
+    let cells: Vec<&Cell> = row.cells.iter().skip(skip).collect();
     // 读数
-    let digit_cells: Vec<&Cell> = row.digits().collect();
+    let digit_cells: Vec<&Cell> = cells.iter().copied().filter(|c| c.kind == CellKind::Digit).collect();
     let imgs: Vec<_> = digit_cells.iter().map(|c| digit_cell(ink, &c.rect())).collect();
     let texts = ocr.read_cells(&imgs).unwrap_or_else(|_| vec![String::new(); imgs.len()]);
     let mut read: Vec<Option<u8>> = Vec::with_capacity(texts.len());
@@ -122,7 +173,7 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
     let mut pending_forward = false;
     let mut bars: Vec<&Cell> = Vec::new();
     let mut last_bar_x1: Option<i64> = None;
-    for c in &row.cells {
+    for &c in &cells {
         match c.kind {
             CellKind::Digit => {
                 let d = read[di];
@@ -212,6 +263,9 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
         } else {
             out.double_bar_xs.push(b.cx());
         }
+    }
+    if let (Some(t), Some(n)) = (head_mark, out.nums.first_mut()) {
+        n.section_mark = Some(t);
     }
     underlines(ink, row, &mut out);
     let used = crate::marks::apply(ink, row, &mut out, ocr, ctx);
