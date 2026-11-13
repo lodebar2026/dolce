@@ -554,6 +554,17 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
         }
         i = j.max(i + 1);
     }
+    // 比本行小节线中位宽窄得多（不到四成）、又贴着数字（隔不过 2 像素）的竖条是数字裂出来的碎边（基督更美「1」右边一像素宽的一竖）
+    let bw: Vec<f64> = out.iter().filter(|c| matches!(c.kind, CellKind::Bar { .. })).map(|c| c.w()).collect();
+    let mb = median(&bw, 0.0);
+    for k in 0..out.len() {
+        if matches!(out[k].kind, CellKind::Bar { .. }) && bw.len() >= 3 && out[k].w() < mb * 0.4 {
+            let touch = |o: &Cell| o.kind == CellKind::Digit && (o.x0 - out[k].x1).max(out[k].x0 - o.x1) <= 2;
+            if (k > 0 && touch(&out[k - 1])) || out.get(k + 1).is_some_and(touch) {
+                out[k].kind = CellKind::Other;
+            }
+        }
+    }
     // 粗线：比本行细线宽的中位粗一倍以上
     let bw: Vec<f64> = out.iter().filter(|c| matches!(c.kind, CellKind::Bar { .. })).map(|c| c.w()).collect();
     let thin = dolce_omr_core::geom::quantile(&bw, 0.3).max(1.0);

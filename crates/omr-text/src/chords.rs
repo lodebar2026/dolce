@@ -7,7 +7,8 @@ use std::sync::LazyLock;
 
 static SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)(intro|verse|chorus|pre-?chorus|bridge|coda|outro|ending|interlude|solo|fine|tag|refrain)\d*").unwrap());
 static BRACKET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\[【][^\]】]*[\]】]").unwrap());
-static CN_SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(副歌|主歌|前奏|间奏|尾奏|尾声|过门|引子|结束)").unwrap());
+/// 中文段落名，带不带圆括号都算（基督更美副歌行首下方印的「（副歌）」）。
+static CN_SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[(（]?\s*(副歌|主歌|前奏|间奏|尾奏|尾声|过门|引子|结束)\s*[)）]?").unwrap());
 /// 单个和弦记号：根音大写 + 可选升降号（前置后置都认）+ 性质 + 数字（不收单独的 1）+ sus/add + 转位低音。
 static TOKEN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?(?:\d{2,}|[02-9])?(?:sus\d*|add\d*)?(?:/[#♯b♭]?[A-G][#♯b♭]?)?").unwrap());

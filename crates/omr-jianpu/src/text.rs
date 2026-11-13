@@ -551,9 +551,15 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                     if let Some(k) = k {
                         let d = &chars[k + l.len() - 2];
                         if let Some(nx) = chars.get(k + l.len() - 1) {
-                            let (xa, xb) = (d.x1.ceil() as i64 + 1, nx.x0.floor() as i64 - 1);
-                            let ymid = (y0 + y1) / 2;
-                            if xb > xa && !(xa..xb).any(|x| (ymid..=y1).any(|y| claims.free(ink, x, y))) {
+                            // 数字与后一个字的字心之间、行的下半截有没有一个点大小的独立小块（OCR 字位不准，量空白列会量进邻字）
+                            let lh = (y1 - y0 + 1) as f64;
+                            let ymid = (y0 + y1) as f64 / 2.0;
+                            let mid = w / 2.0;
+                            let dot = ink.comps().iter().any(|k| {
+                                let cy = k.cy - row.band.slope * (k.cx - mid);
+                                k.rect.w <= lh * 0.3 && k.rect.h <= lh * 0.3 && k.cx > d.cx() && k.cx < nx.cx() && cy >= ymid && cy <= y1 as f64 + 2.0
+                            });
+                            if !dot {
                                 l.pop();
                             }
                         }
