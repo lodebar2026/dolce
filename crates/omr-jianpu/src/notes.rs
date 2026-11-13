@@ -269,7 +269,7 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
     }
     underlines(ink, row, &mut out);
     let used = crate::marks::apply(ink, row, &mut out, ocr, ctx);
-    octave_dots(ink, row, &mut out, &used);
+    octave_dots(ink, row, &mut out, &used, ctx == crate::marks::RowCtx::InSystem);
     out
 }
 
@@ -445,7 +445,7 @@ fn under_floor(n: &JpNum, claimed: &[Rect], h: f64) -> f64 {
 }
 
 /// 八度点：数字正上方（高音）、减时线之下（低音）的小圆块（`skip`：已认成别的记号的块）。一个点只归横向最近的那个数字；上下各至多两个。
-fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
+fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voiced: bool) {
     let h = row.h();
     let w = ink.w() as f64;
     let (ya, yb) = (row.top_at(0.0).min(row.top_at(w)) - h * 1.2, row.bottom_at(0.0).max(row.bottom_at(w)) + h * 1.6);
@@ -485,7 +485,8 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
             let mut cnt: i32 = 0;
             let mut first_cx: Option<f64> = None;
             for t in mine {
-                let first = if up { h * 0.45 } else { h * 0.38 };
+                // 声部行的低音点下面没有歌词挤着，声部间留得宽、点离数字远些（新编赞美诗 78 上声部 0.4 字号）；单声部行下方紧挨歌词，收紧
+                let first = if up { h * 0.45 } else if voiced { h * 0.45 } else { h * 0.38 };
                 if t.3 - edge > if cnt == 0 { first } else { h * 0.3 } || cnt >= 2 {
                     break;
                 }
