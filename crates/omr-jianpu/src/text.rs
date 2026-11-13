@@ -1946,9 +1946,12 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
                 r
             })
             .collect();
+        // 和弦行尾印着方框「副歌」这类一小段汉字（诗歌本 1，与「E7」挨着读成「E7副歌」）：共四字以内就把汉字抹掉再判，别让整行和弦丢掉
+        let han_n = no_paren.chars().filter(|&c| is_han(c)).count();
+        let no_paren: String = if han_n <= 4 { no_paren.chars().map(|c| if is_han(c) { ' ' } else { c }).collect() } else { no_paren };
         let clean = chords::blank_non_chord(&no_paren);
         let (cov, cnt) = chords::coverage(&clean);
-        if !chords::is_chord_coverage(cov, cnt) || text.chars().any(is_han) {
+        if !chords::is_chord_coverage(cov, cnt) || no_paren.chars().any(is_han) {
             continue;
         }
         let x_at = |i: usize| chars.get(i).map_or(0.0, |c| c.x0);

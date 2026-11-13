@@ -197,6 +197,28 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         found.push((i, j, s.width(), ((ax + bx) / 2.0, ay.min(by) - arch)));
     }
+    // 中间断开、缺口里嵌小号数字的连音弧「⌒3⌒」（诗歌本 1）：左半往右升、右半往右落，缺口一个字号内、两半里端高低相近——拼成一道，只留作多连音候选
+    {
+        let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
+        let shapes: Vec<_> = strokes.iter().filter(|s| s.width() >= h * 0.5).map(|s| s.shape()).filter(|sh| sh.thick <= h * 0.2).collect();
+        for l in &shapes {
+            for r in &shapes {
+                let gap = r.a.0 - l.b.0;
+                if gap < 0.0 || gap > h || l.a.1 - l.b.1 < h * 0.1 || r.b.1 - r.a.1 < h * 0.1 || (l.b.1 - r.a.1).abs() > h * 0.5 {
+                    continue;
+                }
+                let (ay, by) = (l.a.1 + ya as f64, r.b.1 + ya as f64);
+                if row.top_at(l.a.0) - ay > h * 1.5 || row.top_at(r.b.0) - by > h * 1.5 {
+                    continue;
+                }
+                if let (Some(i), Some(j)) = (near(l.a.0), near(r.b.0)) {
+                    if j >= i + 2 {
+                        flats.push((i, j, r.b.0 - l.a.0, ((l.b.0 + r.a.0) / 2.0, (l.b.1 + r.a.1) / 2.0 + ya as f64)));
+                    }
+                }
+            }
+        }
+    }
     // 嵌套双弧（迦南诗选「((5_ (6_) 6))」）：外弧罩三个音，底下两道小弧从外弧上分出来、往中间那个音头顶落成一个 V，
     // 与外弧粘成一块，追笔画只追出外弧。中间那个音两侧各一个字号内逐列从数字顶往上数墨段（到外弧顶），一侧有 0.3 字号、另一侧 0.2 字号以上的列数出两段就是（八度点只占一两列）
     // 罩四个音的「((2 3) (3 2))」同理：左内弧往第二个音头顶落、右内弧从第三个音头顶起，各在那个音朝外弧中段的一侧数出两段（迦南 1782）
@@ -320,8 +342,13 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         tuplets.push(fi);
     }
+    let tuplet_spans: Vec<(usize, usize)> = tuplets.iter().filter(|&&fi| fi >= n_arcs).map(|&fi| (found[fi].0, found[fi].1)).collect();
     for (fi, (i, j, _, _)) in found.into_iter().enumerate() {
         if tuplets.contains(&fi) || fi >= n_arcs {
+            continue;
+        }
+        // 拼出来的连音括线认了，它的半截不再当弧（「⌒3⌒」右半自己也罩得住两个音）
+        if tuplet_spans.iter().any(|&(ti, tj)| i >= ti && j <= tj && j - i < tj - ti) {
             continue;
         }
         let (a, b) = (&rn.nums[i], &rn.nums[j]);
