@@ -473,6 +473,24 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
             }
         }
     }
+    // 同一行里隔着不大空当的后一段是诗句中间断开的后半句（不是另一栏），接回左边那段——除非它以带分隔的段号起头
+    let strict_start = |seg: &[Ch]| {
+        let t: Vec<char> = seg.iter().map(|c| c.ch).filter(|c| !" (（".contains(*c)).collect();
+        t.first().is_some_and(|c| CN_NUM.contains(*c) || c.is_ascii_digit()) && t.get(1).is_some_and(|c| "、.．:：)）".contains(*c) || c.is_ascii_digit())
+    };
+    segs.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.total_cmp(&b.0)));
+    let mut kept: Vec<(f64, i64, Vec<Ch>, i64)> = Vec::new();
+    for s in segs {
+        match kept.last_mut() {
+            Some(k) if k.1 == s.1 && s.0 - k.2.last().map_or(0.0, |c| c.x1) <= hh * 3.0 && !strict_start(&s.2) => {
+                let x = k.2.last().map_or(0.0, |c| c.x1);
+                k.2.push(Ch { ch: ' ', x0: x, x1: x });
+                k.2.extend(s.2);
+            }
+            _ => kept.push(s),
+        }
+    }
+    let mut segs = kept;
     // 分栏：左缘相差不过 3 行高的归一栏
     let mut cols: Vec<f64> = Vec::new();
     for s in &segs {
@@ -482,24 +500,6 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
     }
     cols.sort_by(f64::total_cmp);
     let col_of = |x: f64| cols.iter().position(|&c| (c - x).abs() <= hh * 3.0).unwrap_or(0);
-    // 真分栏得有段起头（段号打头）的行；没有的那一栏是同一行诗句中间的大空当断开的后半句，接回同一行左边那段
-    let starts = |seg: &[Ch]| seg.iter().find(|c| !" (（".contains(c.ch)).is_some_and(|c| CN_NUM.contains(c.ch) || c.ch.is_ascii_digit());
-    let real: Vec<bool> = (0..cols.len()).map(|ci| ci == 0 || segs.iter().any(|s| col_of(s.0) == ci && starts(&s.2))).collect();
-    if real.iter().any(|r| !r) {
-        segs.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.total_cmp(&b.0)));
-        let mut kept: Vec<(f64, i64, Vec<Ch>, i64)> = Vec::new();
-        for s in segs {
-            match kept.last_mut() {
-                Some(k) if !real[col_of(s.0)] && k.1 == s.1 => {
-                    let x = k.2.last().map_or(0.0, |c| c.x1);
-                    k.2.push(Ch { ch: ' ', x0: x, x1: x });
-                    k.2.extend(s.2);
-                }
-                _ => kept.push(s),
-            }
-        }
-        segs = kept;
-    }
     segs.sort_by(|a, b| col_of(a.0).cmp(&col_of(b.0)).then(a.1.cmp(&b.1)));
     // 谱里已有的段数（各音歌词段数的最大）
     let score_verses = notes.iter().flat_map(|rn| rn.nums.iter().map(|n| n.lyrics.len())).max().unwrap_or(1).max(1);
