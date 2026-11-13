@@ -258,15 +258,25 @@ pub fn build_rows<P: crate::frame::ink::Probe + ?Sized>(f: &crate::page::Layout,
 }
 
 /// 点原图补认（会话的补音）：在 (x, y)（页内工作坐标）附近找一个头。
-/// 同首轮找头一把尺子——本页自举的实心头模板（[`seed_stage`]），只是窗口限在点的周围（横向 ±1 格、音级 ±1）、门槛放宽一档。
-/// 找到了再探干与杠尾；找不到回 None（调用方按点的位置造一个四分音符）。回 (头, 干, 杠尾数)。
+/// 先看首轮的空心头检出在点周围有没有；没有再用同首轮一把尺子——本页自举的实心头模板（[`seed_stage`]），窗口限在点的周围（横向 ±1 格、音级 ±1）、门槛放宽一档。
+/// 实心头再探干与杠尾（左右两侧都看，见 [`beams::lone_tails`]）；都找不到回 None（调用方按点的位置造一个四分音符）。回 (头, 干, 杠尾数)。
 pub fn head_near(f: &PageFrame, attrs: &[RowAttrs], si: usize, x: f64, y: f64) -> Option<(Head, Option<Stem>, u8)> {
     let st = f.staves.get(si)?;
     let sp = st.space();
-    let SeedStage { solid, samples, tpl, .. } = seed_stage(f, attrs, &Claims::new(f));
+    let claims = Claims::new(f);
+    let SeedStage { solid, samples, tpl, .. } = seed_stage(f, attrs, &claims);
+    let p0 = st.pos(x, y).round() as i32;
+    // 空心头 / 全音符先看（实心模板放宽了门槛，空心头的环也能够上分）：同首轮的空心头检出，取点周围（横向 1.5 格、音级 ±1）最近的
+    let holes = hollow::page_holes(f);
+    let near = hollow::hollow_heads(f, &holes, &claims, si, x_from(f, attrs, si), scale_of(&tpl))
+        .into_iter()
+        .filter(|(h, _)| (h.x - x).abs() <= sp * 1.5 && (h.pos - p0).abs() <= 1)
+        .min_by(|a, b| ((a.0.x - x).abs() + (a.0.y - y).abs()).total_cmp(&((b.0.x - x).abs() + (b.0.y - y).abs())));
+    if let Some((h, stem)) = near {
+        return Some((h, stem, 0));
+    }
     let sample_scores: Vec<f64> = samples.iter().map(|&(x, y, sp)| tpl.best_score(&solid, x, y, sp, 1).0).collect();
     let floor = dolce_omr_core::geom::median(&sample_scores, 0.0) - 2.0 * TPL_DROP;
-    let p0 = st.pos(x, y).round() as i32;
     let r = sp.round().max(1.0) as i64;
     let mut best: Option<(f64, f64, f64, i32)> = None;
     for p in p0 - 1..=p0 + 1 {
@@ -282,9 +292,7 @@ pub fn head_near(f: &PageFrame, attrs: &[RowAttrs], si: usize, x: f64, y: f64) -
     let (score, hx, hy, pos) = best.filter(|b| b.0 >= floor)?;
     let head = Head { staff: si, x: hx, y: hy, pos, kind: heads::HeadKind::Filled, fill: 1.0, score, acc: None, rid: None };
     let stem = stems::find_stem(&f.stem_ink(), &head, sp, f.unit.thick, None, &|_| false);
-    let mut rows: Vec<RowNotes> = (0..f.staves.len()).map(|_| RowNotes::default()).collect();
-    rows[si].chords.push(Chord { x: hx, heads: vec![head.clone()], stem, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false });
-    beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
-    let tails = rows[si].chords[0].tails;
+    let chord = Chord { x: hx, heads: vec![head.clone()], stem, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false };
+    let tails = beams::lone_tails(&f.ink, &chord, sp, f.unit.thick);
     Some((head, stem, tails))
 }

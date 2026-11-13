@@ -2,9 +2,9 @@
 use crate::chars::{is_han, is_latin};
 use crate::Ch;
 
-/// 贴在字尾的标点。
+/// 贴在字尾的标点。半角句点不算（同 TS `LYRIC_PUNCT`）：英文歌词句末的点谱面上印着、GT 照例不记，rec 也常把字下的墨渣读成点。
 fn is_tail_punct(c: char) -> bool {
-    "，。、；：！？…—,;:!?.”’)）".contains(c)
+    "，。、；：！？…—,;:!?”’)）".contains(c)
 }
 
 /// 领起后一字的开引号、开括号。
@@ -134,7 +134,10 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
     };
     for c in cs {
         let ch = c.ch;
-        if is_han(ch) {
+        if ch == '一' && cur.is_some() {
+            // 夹在拉丁字母后的「一」是连字符读成的（`e一cono`）
+            flush(&mut row, &mut cur, &mut cont, true);
+        } else if is_han(ch) {
             flush(&mut row, &mut cur, &mut cont, false);
             row.syls.push(Syl { text: format!("{}{ch}", std::mem::take(&mut lead)), x: c.cx(), w: c.x1 - c.x0, syllabic: Syllabic::Single });
         } else if is_latin(ch) || ((ch == '\'' || ch == '’') && cur.is_some()) {
@@ -152,7 +155,8 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
             let s = row.syls.last_mut().unwrap();
             s.syllabic = if s.syllabic == Syllabic::End { Syllabic::Middle } else { Syllabic::Begin };
             cont = true;
-        } else if ch == ' ' || ch == '_' {
+        } else if ch == ' ' || ch == '_' || (ch == '.' && cur.is_some()) {
+            // 半角句点不记，但收住这个词（`thing.It's` 读丢了空格）
             flush(&mut row, &mut cur, &mut cont, false);
         } else if is_tail_punct(ch) {
             if let Some((t, _, _)) = cur.as_mut() {

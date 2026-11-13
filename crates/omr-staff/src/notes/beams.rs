@@ -153,3 +153,15 @@ pub fn tails<P: Probe + ?Sized>(ink: &P, rows: &mut [RowNotes], staves: &[Staff]
         c.beamed = true;
     }
 }
+
+/// 单独一个和弦（点原图补认）的符杠 / 符尾层数：没有别的干可连，干端左右两侧的厚墨层都算——杠连向左边的（一组的末音）也认得出。
+pub fn lone_tails<P: Probe + ?Sized>(ink: &P, c: &Chord, sp: f64, line: f64) -> u8 {
+    if c.stem.is_none() {
+        return 0;
+    }
+    let mut ys = probe(ink, c, sp, line, false).1;
+    ys.extend(probe(ink, c, sp, line, true).1);
+    ys.sort_by(f64::total_cmp);
+    ys.dedup_by(|a, b| (*a - *b).abs() < SAME_LAYER * sp);
+    ys.len().min(4) as u8
+}
