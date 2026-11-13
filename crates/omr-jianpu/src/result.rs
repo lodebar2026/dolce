@@ -23,6 +23,16 @@ pub struct TimeSig {
     pub beat_type: u32,
 }
 
+/// 一个歌词汉字的 OCR 候选：第几段、该段歌词串里第几个汉字、前几名与得分（降序）、字的源框。
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct LyricAlt {
+    pub verse: usize,
+    pub idx: usize,
+    pub alts: Vec<String>,
+    pub scores: Vec<f32>,
+    pub bbox: Rect,
+}
+
 /// 谱行里印的转拍号：位置、拍号、源框。
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,6 +130,9 @@ pub struct JpNum {
     /// 歌词里的英文词（段、字迹左缘、右缘）：认完弧后按拼写拆到罩着的空音上（`text::split_spanning_words`）
     #[serde(skip)]
     pub word_ext: Vec<(usize, f64, f64)>,
+    /// 歌词汉字的 OCR 候选（参照歌词互证选字用，TS `LyricHooks.rankAlts` / `regionOf` 读它）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lyric_alts: Vec<LyricAlt>,
     /// 落选的时值候选（换候选用；TS 的 `JpNum` 没有这一项，读入时忽略）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<Alt>,

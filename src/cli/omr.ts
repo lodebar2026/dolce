@@ -32,20 +32,7 @@ export { recognizedBeatIssues } from "../omr/beats";
 export type { RecognizedBeatIssue } from "../omr/beats";
 export { metaFrom123, metaFromFanqie } from "../omr/meta";
 export type { RecognizedScore, Binary, LyricCheck, LyricCheckItem } from "../omrkit/types";
-export { parseRefLyrics, formatLyricCheckItem } from "../omr/reflyrics";
-
-/** 歌词文件字节 → 文本。歌本配套的歌词编码混杂：带 BOM 的 UTF-16LE/UTF-8，否则先按 UTF-8 严格解码、
- *  解不了退 GBK（老 .txt / .lrc 多是 GBK）。 */
-export function decodeLyricsBytes(b: Uint8Array): string {
-  if (b[0] === 0xff && b[1] === 0xfe) return new TextDecoder("utf-16le").decode(b.subarray(2));
-  if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder("utf-16be").decode(b.subarray(2));
-  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return new TextDecoder("utf-8").decode(b.subarray(3));
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(b);
-  } catch {
-    return new TextDecoder("gbk").decode(b);
-  }
-}
+export { parseRefLyrics, formatLyricCheckItem, decodeLyricsBytes } from "../omr/reflyrics";
 
 export interface RecognizeResult {
   /** 输出原文（123、.jpwabc、ABC 或文本谱原文）。 */

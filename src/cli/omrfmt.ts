@@ -7,6 +7,8 @@ import { scoreDocToMusicXml } from "../model/toxml";
 import { CONVERT_TARGETS } from "../convert/targets";
 import { DOC_EXT, encodeDocText, utf8 } from "../convert/docfile";
 import { XML_OUT_FORMATS, encodeXmlAs, isXmlOutFormat, type XmlOutFormat } from "../convert/xmlformats";
+import { applyRefLyrics, rustLyricHooks } from "../omr/reflyrics";
+export { decodeLyricsBytes, formatLyricCheckItem } from "../omr/reflyrics";
 
 /** 输出格式：MusicXML 加上各可编辑格式（`convert/targets.ts`），顺序即帮助里的顺序。 */
 export const OUT_FORMATS = XML_OUT_FORMATS;
@@ -42,4 +44,12 @@ export function encodeStaffXml(xml: string, format: OutFormat): Encoded {
 /** 去掉元素上的识别 id（`id="omr…"`）。 */
 export function stripOmrIds(xml: string): string {
   return xml.replace(/ id="omr[A-Za-z]*\d+"/g, "");
+}
+
+/** 参照歌词互证（`-l`）：形近字按歌词选字（候选取 Rust 挂在音上的 `lyricAlts`）、补漏字，其余不一致只报告；结果挂到 `score.lyricCheck`。
+ *  在 Rust 识别之后做（TS 管线里它挂在歌词落位之后、弧裁决之前，补上的字还喂给后面几步；这里那几步已做完）。 */
+export async function checkRefLyrics(score: RecognizedScore, refText: string): Promise<NonNullable<RecognizedScore["lyricCheck"]>> {
+  const lc = await applyRefLyrics(score, refText, rustLyricHooks(score));
+  score.lyricCheck = lc;
+  return lc;
 }

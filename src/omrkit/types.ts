@@ -115,6 +115,8 @@ export interface JpNum {
   //   文本谱 `&dy`；.jpwabc 装不下（layout 那边只画重音）。
   // 重音（音符正上方的 `>`）→ `["accent"]`，123 `!accent!`、文本谱 `&zy`。
   articulation?: "staccato" | "accent";
+  /** 歌词汉字的 OCR 候选（Rust 识别给出；参照歌词互证选字用）：第几段、该段歌词串里第几个汉字、前几名与得分、字框 */
+  lyricAlts?: { verse: number; idx: number; alts: string[]; scores: number[]; bbox: Rect }[];
 }
 
 /** 一行（一个 staff 行）识别出的内容。 */

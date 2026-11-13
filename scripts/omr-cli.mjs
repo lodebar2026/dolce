@@ -7,6 +7,7 @@
 //   node scripts/omr-cli.mjs 合唱.pdf -f musicxml -o 合唱.musicxml   # 五线谱（自动判路：先按五线谱认，一页谱表都没有再走简谱）
 //   node scripts/omr-cli.mjs a.jpg b.pdf 谱子目录/ -o 出目录/      # 批量：一个进程跑完整批（一个文件一首）
 //   node scripts/omr-cli.mjs 图片.jpg --kind=jianpu --profile       # 指定路线、附带每首耗时
+//   node scripts/omr-cli.mjs 图.jpg -l 歌词.txt [--lyrics-report 核对.json]   # 简谱参照歌词互证：形近字按歌词选字、补漏字，不一致处报到 stderr
 //   node scripts/omr-cli.mjs split 歌本.pdf -o 歌谱/       # 歌本切分：整本 PDF 或页图目录 → 一首一张图 + 目录核对
 //   node scripts/omr-cli.mjs split 矢量歌本.pdf -o 歌谱/ --dpi 200 --recognize -f 123   # 转曲矢量歌本：出 PNG，逐首按矢量识别
 // 格式清单取自 src/convert/targets.ts（加 MusicXML），加格式不用改本脚本。
@@ -37,6 +38,8 @@ function findBin() {
 }
 
 // 两种布局都要认：仓库里是 ../out/cli/omrfmt.js，打包产物里是同目录的 ./omrfmt.js。
+async function isDirPath(p) { try { return (await stat(p)).isDirectory(); } catch { return false; } }
+
 async function loadFmt() {
   const url = ["./omrfmt.js", "../out/cli/omrfmt.js"].map((r) => new URL(r, import.meta.url)).find((u) => existsSync(fileURLToPath(u)));
   if (!url) { console.error("找不到 omrfmt.js —— 仓库里先跑 npm run build:cli"); process.exit(1); }
@@ -61,17 +64,16 @@ function runBin(args, onLine) {
 const argv = process.argv.slice(2);
 if (argv[0] === "split") await runSplit(argv.slice(1)); // 不返回
 
-const opts = { format: "shige", out: null, profile: false, help: false, kind: "auto", inputs: [] };
+const opts = { format: "shige", out: null, profile: false, help: false, kind: "auto", inputs: [], lyrics: null, lyricsReport: null };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "-f" || a === "--format") opts.format = argv[++i];
   else if (a === "-o" || a === "--out") opts.out = argv[++i];
   else if (a === "--profile") opts.profile = true;
   else if (a.startsWith("--kind=")) opts.kind = a.slice(7);
-  else if (a === "-l" || a === "--lyrics" || a === "--lyrics-report") {
-    console.error(`${a}：参照歌词互证暂不支持（识别已换成 Rust，这一项还没迁过去）`);
-    process.exit(1);
-  } else if (a.startsWith("--threads=") || a.startsWith("--thread-mode=")) console.error(`${a.split("=")[0]} 已不用（推理线程由识别程序自己定），忽略`);
+  else if (a === "-l" || a === "--lyrics") opts.lyrics = argv[++i];
+  else if (a === "--lyrics-report") opts.lyricsReport = argv[++i];
+  else if (a.startsWith("--threads=") || a.startsWith("--thread-mode=")) console.error(`${a.split("=")[0]} 已不用（推理线程由识别程序自己定），忽略`);
   else if (a === "-h" || a === "--help") opts.help = true;
   else opts.inputs.push(a);
 }
@@ -81,7 +83,10 @@ const fmt = await loadFmt();
 function usage() {
   const list = fmt.OUT_FORMATS.map((f) => `${f}（${fmt.formatLabel(f)}）`).join("、");
   console.error(`用法: omr-cli.mjs <图片…|PDF…|目录…> [-f 格式] [-o 输出] [--kind=auto|staff|jianpu] [--profile]
+              [-l 歌词文件 [--lyrics-report 核对.json]]
 格式: ${list}；缺省 shige
+歌词: -l/--lyrics 给同一首诗歌的歌词文本（.txt/.lrc），只配单张简谱；形近字按歌词选字、补漏字，
+      两边不一致处打到 stderr，--lyrics-report 另落 JSON。
 路线: 缺省自动（先按五线谱认，一页谱表都没有再走简谱），--kind 指定
 批量: 多个文件或目录一起给，同一进程跑完（一个文件一首；目录取里面的图片与 PDF，不递归）；-o 给目录则逐个写文件。`);
 }
@@ -90,8 +95,16 @@ if (opts.help || !opts.inputs.length) { usage(); process.exit(opts.help ? 0 : 1)
 if (!fmt.isOutFormat(opts.format)) { console.error(`未知格式 ${opts.format}`); usage(); process.exit(1); }
 if (!["auto", "staff", "jianpu"].includes(opts.kind)) { console.error(`--kind 只有 auto / staff / jianpu`); process.exit(1); }
 
+if (opts.lyricsReport && !opts.lyrics) { console.error("--lyrics-report 要和 --lyrics 一起给"); process.exit(1); }
+let refLyrics;
+if (opts.lyrics) {
+  if (opts.inputs.length !== 1 || (await isDirPath(opts.inputs[0]))) { console.error("--lyrics 只配单张图（一份歌词对一首歌），批量请逐张跑"); process.exit(1); }
+  try { refLyrics = fmt.decodeLyricsBytes(new Uint8Array(await readFile(opts.lyrics))); }
+  catch (e) { console.error(`读不了歌词文件 ${opts.lyrics}：${e instanceof Error ? e.message : String(e)}`); process.exit(1); }
+}
+
 // -o 是目录（多个输入、给了目录，或路径本身就是已存在的目录）时逐个写文件，否则当单个输出文件。
-const isDir = async (p) => { try { return (await stat(p)).isDirectory(); } catch { return false; } };
+const isDir = isDirPath;
 const anyDir = (await Promise.all(opts.inputs.map(isDir))).some(Boolean);
 const outIsDir = opts.out != null && (opts.inputs.length > 1 || anyDir || (await isDir(opts.out)));
 if (outIsDir) await mkdir(opts.out, { recursive: true });
@@ -107,6 +120,10 @@ const code = await runBin(["run", `--kind=${opts.kind}`, ...opts.inputs], async 
   tPrev = performance.now();
   n++;
   if (r.error) { console.error(`✗ ${name}: ${r.error}`); failed++; return; }
+  // 参照歌词互证：改字、补字要在写出之前
+  let lc;
+  if (refLyrics !== undefined && r.kind === "jianpu") lc = await fmt.checkRefLyrics(r.score, refLyrics);
+  else if (refLyrics !== undefined) console.error("[歌词核对] 参照歌词只用于简谱，五线谱未核对");
   let enc;
   try {
     enc = r.kind === "staff" ? fmt.encodeStaffXml(r.xml, opts.format) : fmt.encodeRecognized(r.score, opts.format);
@@ -125,6 +142,21 @@ const code = await runBin(["run", `--kind=${opts.kind}`, ...opts.inputs], async 
   } else {
     if (multi) process.stdout.write(`# ===== ${name} =====\n`);
     process.stdout.write(enc.text.endsWith("\n") ? enc.text : enc.text + "\n");
+  }
+  if (refLyrics !== undefined && r.kind === "jianpu") {
+    if (!lc || !lc.ocrChars) console.error("[歌词核对] 没有识别到歌词，未核对");
+    else {
+      const cnt = (k) => lc.items.filter((x) => x.kind === k).length;
+      const review = lc.items.filter((x) => x.review).length;
+      console.error(`[歌词核对] 按${lc.order === "expanded" ? "演唱顺序" : "谱面顺序"}对齐：同字 ${lc.matched}/${lc.ocrChars}（参照 ${lc.refChars} 字）`
+        + ` ｜ 已改 ${cnt("fixed")}、已补 ${cnt("filled")}${review ? `（其中待复查 ${review}）` : ""}、待核 ${lc.items.length - cnt("fixed") - cnt("filled")}`);
+      for (const x of lc.items) console.error("  " + fmt.formatLyricCheckItem(x));
+      for (const u of lc.unmatchedRef) console.error(`  [参照未对上] 第 ${u.from + 1}–${u.to} 字「${u.text}」`);
+    }
+    if (opts.lyricsReport) {
+      await writeFile(opts.lyricsReport, JSON.stringify(lc ?? null, null, 2));
+      console.error(`已写入 ${opts.lyricsReport}`);
+    }
   }
   if (opts.profile) console.error(`[OMR] ${name} ${r.kind === "staff" ? "五线谱" : "简谱"} ${ms.toFixed(0)}ms`);
 });

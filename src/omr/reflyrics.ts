@@ -8,7 +8,7 @@
 //
 // 挂在 jianpu.ts 的歌词落位之后、弧裁决与「有词的 0」复原之前：补上的字要喂给那几步（都看音符有没有词）。
 // **无 DOM 依赖**（Node CLI 要 import 它）。
-import type { JpNum, LyricCheck, LyricCheckItem, RecognizedScore, StaffRow } from "../omrkit/types";
+import type { JpNum, LyricCheck, LyricCheckItem, RecognizedScore, Rect, StaffRow, TextRegion } from "../omrkit/types";
 import { rcx } from "../omrkit/types";
 import type { LyricCharRef, LyricHooks } from "./lyrics";
 import { simplifiedOf } from "./hanvariant";
@@ -325,6 +325,35 @@ function replaceHanzi(text: string, idx: number, ch: string): string {
  * 参照歌词与识别结果互证：改形近字、补漏字，其余不一致只报告。直接改 `score.rows` 里各音符的 `lyrics`
  * （与叠加框的 text），返回核对结果（也挂到调用方的 `score.lyricCheck`）。
  */
+/** 歌词文件字节 → 文本。歌本配套的歌词编码混杂：带 BOM 的 UTF-16LE/UTF-8，否则先按 UTF-8 严格解码、
+ *  解不了退 GBK（老 .txt / .lrc 多是 GBK）。 */
+export function decodeLyricsBytes(b: Uint8Array): string {
+  if (b[0] === 0xff && b[1] === 0xfe) return new TextDecoder("utf-16le").decode(b.subarray(2));
+  if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder("utf-16be").decode(b.subarray(2));
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return new TextDecoder("utf-8").decode(b.subarray(3));
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(b);
+  } catch {
+    return new TextDecoder("gbk").decode(b);
+  }
+}
+
+/** Rust 识别结果的回查口：候选取各音上挂的 `lyricAlts`，字框取与它重叠最多的那个逐字歌词区（改字时一并改它的 text）。 */
+export function rustLyricHooks(score: RecognizedScore): LyricHooks {
+  const altOf = (r: LyricCharRef) => r.n.lyricAlts?.find((a) => a.verse === r.verse && a.idx === r.idx);
+  const ov = (a: Rect, b: Rect) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  return {
+    rankAlts: async (reqs) => reqs.map((r) => { const a = altOf(r); return a ? { alts: a.alts, scores: a.scores } : null; }),
+    regionOf: (r) => {
+      const a = altOf(r);
+      if (!a) return undefined;
+      let best: TextRegion | undefined, bo = 0;
+      for (const g of score.lyricRegions ?? []) { const o = ov(g.bbox, a.bbox); if (o > bo) { bo = o; best = g; } }
+      return best ?? { text: a.alts[0] ?? "", bbox: a.bbox };
+    },
+  };
+}
+
 export async function applyRefLyrics(score: RecognizedScore, refText: string, hooks: LyricHooks): Promise<LyricCheck> {
   const ref = parseRefLyrics(refText);
   const rows = score.rows;

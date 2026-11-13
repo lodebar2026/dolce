@@ -284,7 +284,7 @@ fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, xr: (i
 }
 
 /// 读一行：行里的墨按宽空当分段，各段从灰度图取条送 rec，字位折回页内坐标、补词间空格；段与段之间隔一个空格。
-fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, doubts: Option<&mut Vec<f64>>) -> Vec<Ch> {
+fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, doubts: Option<&mut LineRanks>) -> Vec<Ch> {
     let mut out: Vec<Ch> = Vec::new();
     for seg in read_segs(ink, claims, ocr, slope, y0, y1, xa, xb, doubts) {
         if let Some(l) = out.last() {
@@ -299,8 +299,18 @@ fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
 /// 歌词字复核的门：OCR 第一名比第二名高不了这么多（logit 差）就算把握不大（TS `omr/jianpu.ts::LYRIC_DOUBT_MARGIN` 同值）。
 pub const LYRIC_DOUBT_MARGIN: f32 = 0.7;
 
-/// 同 [`read_line`]，各段分开回。`doubts` 给了：再取逐字前两名（同一条画面，走内容缓存），把握不大的汉字的中心 x 记进去。
-fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, mut doubts: Option<&mut Vec<f64>>) -> Vec<Vec<Ch>> {
+/// 一行字的逐字候选：把握不大的汉字的中心 x；各汉字的前几名候选（中心 x、候选、得分），参照歌词选字用（TS `rankAlts`）。
+#[derive(Default)]
+struct LineRanks {
+    doubt_xs: Vec<f64>,
+    chars: Vec<(f64, Vec<String>, Vec<f32>)>,
+}
+
+/// 参照歌词选字时看 OCR 前几名（同 TS `rankTextChars(…, 10)`）。
+const RANK_K: usize = 10;
+
+/// 同 [`read_line`]，各段分开回。`doubts` 给了：再取逐字前几名（同一条画面，走内容缓存），把握不大的汉字的中心 x 与各汉字的候选记进去。
+fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, mut doubts: Option<&mut LineRanks>) -> Vec<Vec<Ch>> {
     let w = ink.w() as i64;
     let hh = (y1 - y0 + 1) as f64;
     let shift = |x: i64| (slope * (x - w / 2) as f64).round() as i64;
@@ -342,7 +352,7 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
         let x_left = sa as f64 - pad as f64;
         if let Some(d) = doubts.as_deref_mut() {
             // 排名与贪心解码按同一套分段，逐个对上；对不上（个数不同）就不判
-            if let Ok(rk) = ocr.rank_chars(&strip, 2) {
+            if let Ok(rk) = ocr.rank_chars(&strip, RANK_K) {
                 if rk.len() == got.len() {
                     for (c, r) in got.iter().zip(&rk) {
                         let mut it = c.ch.chars();
@@ -350,10 +360,12 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
                         if !is_han(ch) || r.alts.is_empty() {
                             continue;
                         }
+                        let cx = x_left + (c.x0 + c.x1) / 2.0 * sw;
                         let margin = r.scores.first().copied().unwrap_or(1.0) - r.scores.get(1).copied().unwrap_or(0.0);
                         if r.alts[0] != c.ch || margin < LYRIC_DOUBT_MARGIN {
-                            d.push(x_left + (c.x0 + c.x1) / 2.0 * sw);
+                            d.doubt_xs.push(cx);
                         }
+                        d.chars.push((cx, r.alts.clone(), r.scores.clone()));
                     }
                 }
             }
@@ -379,6 +391,8 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
 /// 读好、对好音的一行歌词，等同行各段比过对位再写进音里。
 struct Pending {
     syls: Vec<(usize, String, bool)>,
+    /// 与 `syls` 对齐：音节里那个汉字的 OCR 候选、得分与字框
+    alts: Vec<Option<(Vec<String>, Vec<f32>, Rect)>>,
     /// 逐音节的源框（识别模式按原位逐字叠加，同 TS 歌词单字的 `lyricRegions`）
     cells: Vec<TextRegion>,
     /// 英文词：(音下标, 字迹左缘, 右缘)，弧认完后按拼写拆（`split_spanning_words`）
@@ -516,9 +530,9 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         let note_xs: Vec<f64> = note_ix.iter().map(|&k| notes[i].nums[k].bbox.cx()).collect();
         let mut pend: Vec<Pending> = Vec::new();
         for (y0, y1) in lines {
-            let mut doubt_xs: Vec<f64> = Vec::new();
+            let mut ranks = LineRanks::default();
             let mut chars: Vec<Ch> = Vec::new();
-            for mut seg in read_segs(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut doubt_xs)) {
+            for mut seg in read_segs(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut ranks)) {
                 // 跳转记号（Fine、D.S. al Fine）不是词：记下位置挂到音上，从行里拿掉
                 if let Some((word, x, keep)) = jump_in(&seg) {
                     jumps.push((i, word, x, (y0 + y1) as f64 / 2.0));
@@ -622,7 +636,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                     // 英文音节后面印着连字符（接下一个音节）的，字后带「-」（同 TS，写出端转 `\-`）
                     let hy = matches!(s.syllabic, dolce_omr_text::lyrics::Syllabic::Begin | dolce_omr_text::lyrics::Syllabic::Middle);
                     let text = if hy { format!("{}-", s.text) } else { s.text.clone() };
-                    (note_ix[k], text, s.text.chars().any(is_han) && doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5))
+                    (note_ix[k], text, s.text.chars().any(is_han) && ranks.doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5))
                 })
                 .collect();
             // 英文词的字迹范围（左缘、过末字中部的右缘），按音下标
@@ -637,13 +651,26 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             let han: Vec<&Ch> = chars.iter().filter(|c| is_han(c.ch)).collect();
             let ratio = (han.len() >= 4).then(|| han.iter().filter(|c| note_xs.iter().any(|&x| (x - c.cx()).abs() <= h * 0.4)).count() as f64 / han.len() as f64);
             let region = TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64), chars: Vec::new() };
+            // 各音节里汉字的候选（音节里只一个汉字的才挂；按字心就近对上逐字候选）
+            let alts: Vec<Option<(Vec<String>, Vec<f32>, Rect)>> = lr
+                .syls
+                .iter()
+                .map(|s| {
+                    if han_count(&s.text) != 1 {
+                        return None;
+                    }
+                    let (cx, a, sc) = ranks.chars.iter().filter(|c| (c.0 - s.x).abs() <= s.w / 2.0 + 1.0).min_by(|p, q| (p.0 - s.x).abs().total_cmp(&(q.0 - s.x).abs()))?;
+                    let hw = s.w.min((y1 - y0 + 1) as f64) / 2.0;
+                    Some((a.clone(), sc.clone(), Rect::new(cx - hw, y0 as f64, hw * 2.0, (y1 - y0 + 1) as f64)))
+                })
+                .collect();
             let cells: Vec<TextRegion> = lr
                 .syls
                 .iter()
                 .filter(|s| !s.text.trim().is_empty())
                 .map(|s| TextRegion { text: s.text.clone(), bbox: Rect::new(s.x - s.w / 2.0, y0 as f64, s.w.max(1.0), (y1 - y0 + 1) as f64), chars: Vec::new() })
                 .collect();
-            pend.push(Pending { syls, cells, exts, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
+            pend.push(Pending { syls, alts, cells, exts, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
         }
         // 与同谱行别的歌词行错开、字不落在音下的一行是夹在谱行间的普通文字（青年诗歌 16《神圣罗曼史》第 4 行词下
         // 「(副歌接下一页 注：…)」只有 0.42，同行四段词都是 1.00；同 TS `misaligned`）。只比同一谱行：四声部谱的词对的是另一声部的音，整行几段一起低
@@ -662,10 +689,13 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 continue;
             }
             written.push((i, verse, regions.len(), regions.len() + p.cells.len(), p.syls.iter().map(|x| x.1.chars().count()).sum(), p.syls.iter().map(|x| han_count(&x.1)).sum()));
-            for (ni, t, doubt) in p.syls {
+            for ((ni, t, doubt), alt) in p.syls.into_iter().zip(p.alts) {
                 let n = &mut notes[i].nums[ni];
                 if n.lyrics.len() <= verse {
                     n.lyrics.resize(verse + 1, String::new());
+                }
+                if let Some((alts, scores, bbox)) = alt {
+                    n.lyric_alts.push(crate::result::LyricAlt { verse, idx: han_count(&n.lyrics[verse]), alts, scores, bbox });
                 }
                 n.lyrics[verse].push_str(&t);
                 if doubt && !n.lyric_doubt.contains(&verse) {
@@ -753,6 +783,7 @@ fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], region
             }
             n.lyric_doubt.retain(|&d| d != v);
             n.word_ext.retain(|e| e.0 != v);
+            n.lyric_alts.retain(|a| a.verse != v);
         }
         if let Some(l) = labels[r].get_mut(v) {
             l.clear();
