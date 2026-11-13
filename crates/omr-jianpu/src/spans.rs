@@ -3,6 +3,7 @@
 use crate::frame::RowFrame;
 use crate::notes::RowNotes;
 use crate::frame::digit_cell;
+use dolce_omr_core::image::Rect;
 use crate::prep::Ink;
 use crate::result::Tuplet;
 use dolce_omr_ocr::cache::CachedOcr;
@@ -336,5 +337,114 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
         if found {
             n.octave = 1;
         }
+    }
+}
+
+/// 房子（判据照 TS `repeats.ts::endingCandidates`）：谱行上方一道够长（≥ 6 字号）、与本行音的横向范围交叠过半的横墨，
+/// 左端有下垂的立脚（房括号 ⌐ 必有；歌词、弧、减时线这些长横墨没有）。窗口从数字顶上 3.4 字号起（行内有弧时括线被顶得很高），
+/// 不越过上一行音底下半个字号（那里是上一行的减时线）。房号是括线左端内侧连着的一串小块，逐块读数；读不出时按阅读序 1、2 轮。
+/// 括线罩着的头一个音记 `ending_start`、末一个音记 `ending_stop`。
+pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &CachedOcr) {
+    let w = ink.w() as i64;
+    let mut found: Vec<(usize, Rect, Vec<Rect>)> = Vec::new();
+    for (ri, rn) in notes.iter().enumerate() {
+        if rn.nums.is_empty() {
+            continue;
+        }
+        let num_h = dolce_omr_core::geom::median(&rn.nums.iter().map(|n| n.bbox.h).collect::<Vec<_>>(), rows[ri].h());
+        let row_top = dolce_omr_core::geom::median(&rn.nums.iter().map(|n| n.bbox.y).collect::<Vec<_>>(), 0.0);
+        let (nx0, nx1) = (rn.nums[0].bbox.x, rn.nums[rn.nums.len() - 1].bbox.right());
+        let prev_bottom = if ri > 0 { notes[ri - 1].nums.iter().map(|n| n.bbox.bottom()).fold(f64::MIN, f64::max) } else { f64::MIN };
+        let y0 = (row_top - num_h * 3.4).floor().max((prev_bottom + num_h * 0.5).ceil()).max(0.0) as i64;
+        let y1 = (row_top - num_h * 0.3).ceil() as i64;
+        let mut runs: Vec<Rect> = Vec::new();
+        for y in y0..=y1 {
+            let (mut start, mut last) = (-1i64, -1i64);
+            for x in 0..=w {
+                let on = x < w && ink.at(x, y);
+                if on {
+                    if start < 0 {
+                        start = x;
+                    }
+                    last = x;
+                }
+                if start >= 0 && ((!on && x - last > 1) || x == w) {
+                    let rw = (last - start + 1) as f64;
+                    let ov = ((last + 1) as f64).min(nx1) - (start as f64).max(nx0);
+                    if rw >= num_h * 6.0 && ov >= rw.min(nx1 - nx0) * 0.5 {
+                        runs.push(Rect::new(start as f64, y as f64, rw, 1.0));
+                    }
+                    start = -1;
+                    last = -1;
+                }
+            }
+        }
+        // 一道横线一到三像素厚，相邻几行重复出现：每段只留最长的
+        runs.sort_by(|a, b| b.w.total_cmp(&a.w));
+        let mut uniq: Vec<Rect> = Vec::new();
+        for r in runs {
+            if !uniq.iter().any(|u| (r.right().min(u.right()) - r.x.max(u.x)).max(0.0) >= r.w.min(u.w) * 0.8 && (r.y - u.y).abs() <= 3.0) {
+                uniq.push(r);
+            }
+        }
+        for b in uniq {
+            // 左端下垂的立脚
+            let need = (num_h * 0.35).round().max(2.0) as i64;
+            let hook = (b.x as i64..=(b.x as i64 + (num_h * 0.25).round().max(1.0) as i64)).any(|x| {
+                let mut run = 0;
+                (b.y as i64..(b.y + num_h * 1.6) as i64).any(|y| {
+                    run = if ink.at(x, y) { run + 1 } else { 0 };
+                    run >= need
+                })
+            });
+            if !hook {
+                continue;
+            }
+            let mut near: Vec<&Rect> = ink
+                .comps()
+                .iter()
+                .map(|k| &k.rect)
+                .filter(|r| r.cx() >= b.x - num_h * 0.1 && r.cx() <= b.x + num_h * 5.0 && r.cy() >= b.y - num_h * 0.2 && r.cy() <= b.y + num_h * 0.9 && r.h >= num_h * 0.18 && r.h <= num_h * 0.9 && r.w <= num_h * 0.9)
+                .collect();
+            near.sort_by(|a, b| a.x.total_cmp(&b.x));
+            // 号与号之间的点（`1.`）只有数字三成高；断在头一个大空当
+            let h_max = near.iter().map(|r| r.h).fold(0.0, f64::max);
+            let mut labels: Vec<Rect> = Vec::new();
+            for r in near {
+                if r.h < h_max * 0.55 {
+                    continue;
+                }
+                if labels.last().is_some_and(|l| r.x - l.right() > num_h * 1.2) {
+                    break;
+                }
+                labels.push(*r);
+            }
+            found.push((ri, b, labels));
+        }
+    }
+    found.sort_by(|a, b| a.1.y.total_cmp(&b.1.y).then(a.1.x.total_cmp(&b.1.x)));
+    let imgs: Vec<_> = found.iter().flat_map(|f| f.2.iter().map(|r| digit_cell(ink, r))).collect();
+    let texts = ocr.read_cells(&imgs).unwrap_or_else(|_| vec![String::new(); imgs.len()]);
+    let mut at = 0;
+    for (i, (ri, b, labels)) in found.iter().enumerate() {
+        let mut nums: Vec<u8> = Vec::new();
+        for t in &texts[at..at + labels.len()] {
+            if let Some(d) = crate::frame::digit_of(t).filter(|d| (1..=7).contains(d)) {
+                if !nums.contains(&d) {
+                    nums.push(d);
+                }
+            }
+        }
+        at += labels.len();
+        if nums.is_empty() {
+            nums.push((i % 2) as u8 + 1);
+        }
+        let number = nums.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
+        let rn = &mut notes[*ri];
+        let num_h = rows[*ri].h();
+        let covered: Vec<usize> = (0..rn.nums.len()).filter(|&k| rn.nums[k].bbox.cx() >= b.x - num_h * 0.5 && rn.nums[k].bbox.cx() <= b.right() + num_h * 0.5).collect();
+        let (Some(&a), Some(&z)) = (covered.first(), covered.last()) else { continue };
+        rn.nums[a].ending_start = Some(number.clone());
+        rn.nums[z].ending_stop = Some(number);
     }
 }

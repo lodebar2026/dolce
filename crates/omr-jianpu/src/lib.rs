@@ -92,6 +92,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     };
     let mut notes: Vec<notes::RowNotes> = rows.iter().enumerate().map(|(i, row)| notes::build(ink, row, ocr, ctx(i))).collect();
     settle_shared_dots(&mut notes);
+    spans::endings(ink, &rows, &mut notes, ocr);
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     hook.step(2, STEPS, "lyrics")?;
     text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions);
