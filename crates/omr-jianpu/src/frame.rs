@@ -299,6 +299,28 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         if !known && (good as f64) < nd as f64 * 0.6 {
             continue;
         }
+        // 没有一道可信小节线（细的——不过 0.2 字号，或旁边一个字号内另有一道线作伴的粗线）的排整排读一遍：读出两个以上汉字的是标题排
+        //（迦南 1811「1811 心 愿」：曲号读得出数字、「愿」左边那一竖粗而实心、比数字高，像终止线的粗线）。
+        // 行首印「前奏」「尾声」的谱行有真小节线，不读
+        let credible = row.bars().any(|c| {
+            let h = row.h();
+            let thin = c.w() <= (h * 0.2).max(3.0);
+            let pair = row.bars().any(|o| !std::ptr::eq(o, c) && ((o.x0 - c.x1).max(c.x0 - o.x1) as f64) <= h);
+            thin || pair
+        });
+        if !credible && !known {
+            let (x0, x1) = (row.cells.iter().map(|c| c.x0).min().unwrap_or(0), row.cells.iter().map(|c| c.x1).max().unwrap_or(0));
+            let y0 = row.cells.iter().map(|c| c.y0).min().unwrap_or(0);
+            let y1 = row.cells.iter().map(|c| c.y1).max().unwrap_or(0);
+            let strip = ink.strip(&Rect::new(x0 as f64, y0 as f64, (x1 - x0 + 1) as f64, (y1 - y0 + 1) as f64), 4);
+            let han = ocr.read_line(&strip).map_or(0, |v| v.iter().filter(|c| c.ch.chars().any(dolce_omr_text::chars::is_han)).count());
+            if han >= 2 {
+                if std::env::var("OMR_JP_DEBUG").is_ok() {
+                    eprintln!("  读出汉字 {han}，不收");
+                }
+                continue;
+            }
+        }
         // 调号行（「1=B 4/4」与标题同排）：头一个数字后面紧跟着等号——上下两道短横；这种排里至多一根像小节线的竖笔
         if nb <= 1 && key_line(ink, &row) {
             if std::env::var("OMR_JP_DEBUG").is_ok() {
