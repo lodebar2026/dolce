@@ -466,9 +466,10 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
         }
         let up_gap = n.bbox.y - d.rect.bottom();
         let dn_gap = d.rect.y - floors[ni];
-        if up_gap >= -h * 0.08 && up_gap <= h * 0.75 {
+        // 小图上数字框取整、点只有三五个像素，压进框里一两像素的照收
+        if up_gap >= -(h * 0.08).max(2.0) && up_gap <= h * 0.75 {
             hits.push((di, ni, true, up_gap));
-        } else if dn_gap >= -h * 0.06 && dn_gap <= h * 0.7 {
+        } else if dn_gap >= -(h * 0.06).max(2.0) && dn_gap <= h * 0.7 {
             hits.push((di, ni, false, dn_gap));
         }
     }
