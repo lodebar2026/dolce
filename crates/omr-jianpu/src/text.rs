@@ -111,6 +111,17 @@ fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, xr: (i
         }
         runs.push((a, i - 1));
     }
+    // 上下分开的几笔（「二」「三」两三道横）：空当不过六成行字高、合起来不过一行字高的并成一截
+    if let Some(one) = one {
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for r in runs {
+            match merged.last_mut() {
+                Some(m) if ((r.0 - m.1 - 1) as f64) <= one * 0.6 && ((r.1 - m.0 + 1) as f64) <= one * 1.1 && ((m.1 - m.0 + 1) as f64) < one * 0.5 => m.1 = r.1,
+                _ => merged.push(r),
+            }
+        }
+        runs = merged;
+    }
     let dense = |a: usize, b: usize| proj[a..=b].iter().sum::<u32>() as f64 >= (b - a + 1) as f64 * (xb - xa).max(1) as f64 * min_ink;
     let Some(one) = one else {
         return runs.into_iter().filter(|&(a, b)| (b - a + 1) as f64 >= min_h && dense(a, b)).map(|(a, b)| (ya + a as i64, ya + b as i64)).collect();
@@ -471,7 +482,27 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
     }
     cols.sort_by(f64::total_cmp);
     let col_of = |x: f64| cols.iter().position(|&c| (c - x).abs() <= hh * 3.0).unwrap_or(0);
+    // 真分栏得有段起头（段号打头）的行；没有的那一栏是同一行诗句中间的大空当断开的后半句，接回同一行左边那段
+    let starts = |seg: &[Ch]| seg.iter().find(|c| !" (（".contains(c.ch)).is_some_and(|c| CN_NUM.contains(c.ch) || c.ch.is_ascii_digit());
+    let real: Vec<bool> = (0..cols.len()).map(|ci| ci == 0 || segs.iter().any(|s| col_of(s.0) == ci && starts(&s.2))).collect();
+    if real.iter().any(|r| !r) {
+        segs.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.total_cmp(&b.0)));
+        let mut kept: Vec<(f64, i64, Vec<Ch>, i64)> = Vec::new();
+        for s in segs {
+            match kept.last_mut() {
+                Some(k) if !real[col_of(s.0)] && k.1 == s.1 => {
+                    let x = k.2.last().map_or(0.0, |c| c.x1);
+                    k.2.push(Ch { ch: ' ', x0: x, x1: x });
+                    k.2.extend(s.2);
+                }
+                _ => kept.push(s),
+            }
+        }
+        segs = kept;
+    }
     segs.sort_by(|a, b| col_of(a.0).cmp(&col_of(b.0)).then(a.1.cmp(&b.1)));
+    // 谱里已有的段数（各音歌词段数的最大）
+    let score_verses = notes.iter().flat_map(|rn| rn.nums.iter().map(|n| n.lyrics.len())).max().unwrap_or(1).max(1);
     // 以段号起头的切成段（带各行原文与源框）
     let mut blocks: Vec<(String, Vec<Ch>, Vec<TextRegion>)> = Vec::new();
     for (_, y0, seg, y1) in segs {
@@ -486,7 +517,16 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
         let digits = seg[lead..].iter().take_while(|c| c.ch.is_ascii_digit()).count();
         // 段号独占一行的（「二」底下才是诗行）也起一段
         let alone = seg[lead + 1..].iter().all(|c| " 、.．:：)）".contains(c.ch));
-        let label = if CN_NUM.contains(c0) && (seg.len() > lead + 2 || alone) {
+        // 汉字段号后面跟着分隔（「二、」「三.」）或独占一行；直接粘着诗行的（「二我虽忘祂」）得是接下来该到的那个段号——
+        // 诗行本身常以「一」起头（「一面运行」）。头一段该到的是谱里已有段数的下一个
+        let cn_sep = seg.get(lead + 1).is_some_and(|c| " 、.．:：)）".contains(c.ch));
+        let cn: Vec<char> = CN_NUM.chars().collect();
+        let expect = match blocks.last() {
+            Some(b) => b.0.chars().next().and_then(|c| cn.iter().position(|&d| d == c)).map(|k| k + 1),
+            None => Some(score_verses),
+        };
+        let glued = expect.and_then(|k| cn.get(k)).is_some_and(|&c| c == c0);
+        let label = if CN_NUM.contains(c0) && ((seg.len() > lead + 2 && (cn_sep || glued)) || alone) {
             Some((c0.to_string(), lead + 1))
         } else if (1..=2).contains(&digits) && seg.get(lead + digits).is_some_and(|c| ".．、 ".contains(c.ch) || is_han(c.ch)) {
             Some((seg[lead..lead + digits].iter().map(|c| c.ch).collect::<String>() + if seg[lead + digits].ch == '.' { "." } else { "" }, lead + digits))
