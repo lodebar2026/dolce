@@ -568,6 +568,35 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     for c in &mut out {
         c.kind = classify(ink, band, c);
     }
+    // 拉得比行带还开的反复冒号（爱主颂 92「‖: 」「:‖」：上点在带外、下点被带底切成一个「点」）：贴着小节线（0.6 字号内）的点格、
+    // 带上下各放 0.6 字号重数这几列的墨，恰是上下两团、各不过 0.42 字号、中间空出 0.3 字号以上，就是冒号
+    for k in 0..out.len() {
+        if !matches!(out[k].kind, CellKind::Dot | CellKind::Other) || out[k].w() > h * 0.42 {
+            continue;
+        }
+        let c = out[k];
+        let near_bar = out.iter().any(|o| matches!(o.kind, CellKind::Bar { .. }) && ((o.x0 - c.x1).max(c.x0 - o.x1) as f64) <= h * 0.6);
+        if !near_bar {
+            continue;
+        }
+        let (y0, y1) = ((band.top(c.cx()) - h * 0.6).round() as i64, (band.top(c.cx()) + h * 1.6).round() as i64);
+        let rows: Vec<bool> = (y0..=y1).map(|y| (c.x0..=c.x1).any(|x| ink.at(x, y))).collect();
+        let mut groups: Vec<(usize, usize)> = Vec::new();
+        for (i, &on) in rows.iter().enumerate() {
+            if on {
+                match groups.last_mut() {
+                    Some(g) if g.1 + 1 == i => g.1 = i,
+                    _ => groups.push((i, i)),
+                }
+            }
+        }
+        if let [a, b] = groups[..] {
+            let ok = |g: (usize, usize)| ((g.1 - g.0 + 1) as f64) <= h * 0.42 && ((g.1 - g.0 + 1) as f64) >= h * 0.08 && g.0 > 0 && g.1 + 1 < rows.len();
+            if ok(a) && ok(b) && ((b.0 - a.1) as f64) >= h * 0.3 {
+                out[k] = Cell { y0: y0 + a.0 as i64, y1: y0 + b.1 as i64, kind: CellKind::Colon, ..c };
+            }
+        }
+    }
     // 窄了一点的增时线（青年诗歌 91 末行「3 - - -」每道 10×4 或 10×3、字号 41，不够 0.28 字号）认成了点或认不出：
     // 两个以上紧挨着排开（中间没有别的格、间隔不比自身窄）、各自扁得像增时线（宽过 0.2 字号）的短横是一串增时线——附点是圆的，也不会成串排开
     let flat = |c: &Cell| {
