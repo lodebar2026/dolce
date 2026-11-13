@@ -402,6 +402,9 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
             .filter(|(_, n)| d.cx >= n.bbox.x - h * 0.12 && d.cx <= n.bbox.right() + h * 0.12)
             .min_by(|a, b| (a.1.bbox.cx() - d.cx).abs().total_cmp(&(b.1.bbox.cx() - d.cx).abs()));
         let Some((ni, n)) = near else { continue };
+        if std::env::var("OMR_OCT_DEBUG").is_ok() {
+            eprintln!("八度点 {:.0}x{:.0} @{:.0},{:.0} → 音{} @{:.0},{:.0} 上缝{:.1} 下缝{:.1}", d.rect.w, d.rect.h, d.rect.x, d.rect.y, n.digit, n.bbox.x, n.bbox.y, n.bbox.y - d.rect.bottom(), d.rect.y - floors[ni]);
+        }
         let up_gap = n.bbox.y - d.rect.bottom();
         let dn_gap = d.rect.y - floors[ni];
         if up_gap >= -h * 0.08 && up_gap <= h * 0.75 {
@@ -423,6 +426,7 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
                     break;
                 }
                 cnt += 1;
+                n.oct_dots.push((dots[t.0].id, up, t.3));
                 edge = t.3 + dots[t.0].rect.h;
                 if !up {
                     out.claimed.push(dots[t.0].rect);

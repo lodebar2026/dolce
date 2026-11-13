@@ -90,6 +90,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
         _ => marks::RowCtx::Single,
     };
     let mut notes: Vec<notes::RowNotes> = rows.iter().enumerate().map(|(i, row)| notes::build(ink, row, ocr, ctx(i))).collect();
+    settle_shared_dots(&mut notes);
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     hook.step(2, STEPS, "lyrics")?;
     text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions);
@@ -154,4 +155,28 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
         });
     }
     Ok(score)
+}
+
+/// 密排的多声部谱里上一行的低音点也落在下一行数字顶上的窗里：两行各收一次，一上一下抵掉了。
+/// 同一个点只归缝小的那个音，另一个退回这一级。
+fn settle_shared_dots(notes: &mut [notes::RowNotes]) {
+    use std::collections::HashMap;
+    let mut by_id: HashMap<i32, Vec<(usize, usize, bool, f64)>> = HashMap::new();
+    for (ri, rn) in notes.iter().enumerate() {
+        for (ni, n) in rn.nums.iter().enumerate() {
+            for &(id, up, gap) in &n.oct_dots {
+                by_id.entry(id).or_default().push((ri, ni, up, gap));
+            }
+        }
+    }
+    for owners in by_id.values().filter(|v| v.len() >= 2) {
+        let best = owners.iter().min_by(|a, b| a.3.total_cmp(&b.3)).copied().unwrap();
+        for &(ri, ni, up, _) in owners {
+            if (ri, ni) == (best.0, best.1) {
+                continue;
+            }
+            let n = &mut notes[ri].nums[ni];
+            n.octave += if up { -1 } else { 1 };
+        }
+    }
 }

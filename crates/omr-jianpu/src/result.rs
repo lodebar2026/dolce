@@ -101,6 +101,9 @@ pub struct JpNum {
     /// 读成「1」的格其实像一根光竖条（没有旗、没有底座）：也许是小节线（不写出）
     #[serde(skip)]
     pub bar_like: bool,
+    /// 收下的八度点（连通块 id、在上、离数字多远）：上下两行都收了同一个点时按缝小的归（`lib::settle_shared_dots`）
+    #[serde(skip)]
+    pub oct_dots: Vec<(i32, bool, f64)>,
     /// 落选的时值候选（换候选用；TS 的 `JpNum` 没有这一项，读入时忽略）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<Alt>,
