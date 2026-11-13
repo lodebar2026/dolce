@@ -2116,6 +2116,10 @@ fn place_chords(rn: &mut RowNotes, mut cands: Vec<ChordCand>, regions: &mut Vec<
     for ci in 0..cands.len() {
         let c = &cands[ci];
         let x = c.x;
+        // 整个落在首音左边半个字号以外的不是和弦（行首竖排「（副歌）」的括号读成 C，8085）
+        if c.bbox.right() < nums[0].bbox.x - nums[0].bbox.h * 0.5 {
+            continue;
+        }
         let mut i = 0;
         while i + 1 < lefts.len() && lefts[i + 1] <= x {
             i += 1;
