@@ -81,6 +81,16 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             }
         }
     }
+    // 已认作八度点的独立小块不是弧的一截：弧端落在高音点旁边时，点被接进笔画成了回折，整道弧被丢（迦南 1790「(6 1̇)」）
+    for c in ink.comps().iter().filter(|c| rn.nums.iter().any(|n| n.oct_dots.iter().any(|o| o.0 == c.id))) {
+        for y in (c.rect.y as i64).max(ya)..(c.rect.bottom().ceil() as i64).min(yb) {
+            for x in (c.rect.x as i64).max(0)..(c.rect.right().ceil() as i64).min(w as i64) {
+                if ink.owns(c, x, y) {
+                    mask[(y - ya) as usize * w + x as usize] = 0;
+                }
+            }
+        }
+    }
     let raw = trace(&mask, w, hh, (h * 0.15).max(3.0) as usize);
     let tol = JoinTol { max_gap: (h * 0.45) as i64, dy: h * 0.12, dy_per_gap: 0.35, span: (h * 0.3).max(3.0) as usize };
     let strokes: Vec<Stroke> = join_all(raw, tol, &|_, _| true);
