@@ -1037,6 +1037,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             None => lines.push(l),
         }
     }
+    extend_spaced_title(ink, ocr, num_h, &mut lines);
     // 曲号不比标题小多少（拍号的分子、速度数字小得多）
     let max_h = lines.iter().map(|l| l.h).fold(0.0, f64::max);
     // 标题：不是书眉、曲号的行里最大的那行
@@ -1222,6 +1223,63 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             score.key = key_name(f);
         }
     }
+}
+
+/// 拉开字距排的书法体标题，det 只框到其中几个字（青年诗歌 98「唯　一　的　愛」只框到「的愛」：「唯」整个漏、「一」只是一道扁横）。
+/// 同 TS `extendSpacedTitle`：页上最大一号的纯汉字框，两侧同一排上不落在任何 det 框里的墨按横向交叠并成字列，从框边往外逐列收
+/// （列中线在框的纵向范围里、上下不出框三成字高、不高过一点二字高，宽或高够四成字高，与当前边缘的空当不过四个字高）；
+/// 收到了连同原框重新读，读出的汉字数正好是原来的加上新收的列数才换——读不齐宁可不动。
+fn extend_spaced_title(ink: &Ink, ocr: &CachedOcr, num_h: f64, lines: &mut [WordLine]) {
+    let all_han = |t: &str| !t.trim().is_empty() && t.trim().chars().all(is_han);
+    let Some(ti) = (0..lines.len()).filter(|&i| all_han(&lines[i].text)).max_by(|&a, &b| lines[a].h.total_cmp(&lines[b].h)) else { return };
+    let t = &lines[ti];
+    let h = t.h;
+    if h < num_h * 1.3 {
+        return;
+    }
+    let b = Rect::new(t.x, t.y, t.w, t.h);
+    let in_any = |k: &Comp| lines.iter().any(|l| k.cx >= l.x && k.cx <= l.x + l.w && k.rect.cy() >= l.y && k.rect.cy() <= l.y + l.h);
+    let mut pool: Vec<Rect> = ink
+        .comps()
+        .iter()
+        .filter(|k| !in_any(k) && k.rect.cy() >= b.y && k.rect.cy() <= b.bottom() && k.rect.y >= b.y - h * 0.3 && k.rect.bottom() <= b.bottom() + h * 0.3 && k.rect.h <= h * 1.2)
+        .map(|k| k.rect)
+        .collect();
+    pool.sort_by(|p, q| p.x.total_cmp(&q.x));
+    let mut cols: Vec<Rect> = Vec::new();
+    for r in pool {
+        match cols.last_mut() {
+            Some(last) if r.x <= last.right() => *last = last.union(&r),
+            _ => cols.push(r),
+        }
+    }
+    let big: Vec<Rect> = cols.into_iter().filter(|r| (r.w >= h * 0.4 || r.h >= h * 0.4) && r.h <= h * 1.2).collect();
+    let mut add: Vec<Rect> = Vec::new();
+    let (mut lx, mut rx) = (b.x, b.right());
+    for r in big.iter().filter(|r| r.right() <= b.x).rev() {
+        if lx - r.right() > h * 4.0 {
+            break;
+        }
+        add.push(*r);
+        lx = r.x;
+    }
+    for r in big.iter().filter(|r| r.x >= b.right()) {
+        if r.x - rx > h * 4.0 {
+            break;
+        }
+        add.push(*r);
+        rx = r.right();
+    }
+    if add.is_empty() {
+        return;
+    }
+    let u = add.iter().fold(b, |a, r| a.union(r));
+    let Ok(got) = ocr.read_line(&ink.strip(&u, 2)) else { return };
+    let txt: String = got.into_iter().map(|c| c.ch).collect::<String>().trim().to_string();
+    if !all_han(&txt) || txt.chars().count() != t.text.trim().chars().count() + add.len() {
+        return;
+    }
+    lines[ti] = WordLine { text: txt, x: u.x, y: u.y, w: u.w, h: u.h };
 }
 
 /// 五度圈位置 → 大调调名（`Bb`、`F#`）。
