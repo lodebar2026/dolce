@@ -467,16 +467,21 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
                 x1 = x1.max(x);
                 y0 = y0.min(y);
                 y1 = y1.max(y);
-                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                // 团按 4 邻接取；与笔画墨斜角相接也算粘着（连通块按 8 邻接，点只斜挨弧脚一角就与弧成了一块，1801「(1̇ 2̇)」）
+                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)] {
                     let (nx, ny) = (x as i64 + dx, y as i64 + dy);
                     if nx < 0 || ny < 0 || nx >= ww as i64 || ny >= wh as i64 {
                         continue;
                     }
                     let j = ny as usize * ww + nx as usize;
-                    if res[j] == 1 && !seen[j] {
-                        seen[j] = true;
-                        stack.push(j);
-                    } else if res[j] == 0 && ink.at(xa + nx, wa + ny) {
+                    if dx == 0 || dy == 0 {
+                        if res[j] == 1 && !seen[j] {
+                            seen[j] = true;
+                            stack.push(j);
+                            continue;
+                        }
+                    }
+                    if res[j] == 0 && ink.at(xa + nx, wa + ny) {
                         touch = true;
                     }
                 }
