@@ -346,7 +346,31 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     rows.sort_by(|a, b| a.band.top0.total_cmp(&b.band.top0));
     settle_dots(&mut rows);
     settle_bars(ink, &mut rows);
+    drop_bracket_cells(ink, &mut rows);
     rows
+}
+
+/// 连谱号（竖线、方括号、花括号）落在行带里的那一截被切成了格（赞美诗歌 946 的花括号读成音「1」）：跨两行以上、不贴纸边的竖高块，
+/// 它横向范围里、排在各行行首的格拿掉（与 [`systems`] 同一筛法）。
+fn drop_bracket_cells(ink: &Ink, rows: &mut [RowFrame]) {
+    if rows.len() < 2 {
+        return;
+    }
+    let h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 1.0);
+    let pw = ink.w() as f64;
+    for k in ink.comps().iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2 && k.rect.x > 2.0 && k.rect.right() < pw - 2.0) {
+        let inside: Vec<usize> = (0..rows.len()).filter(|&i| rows[i].bottom_at(k.cx) > k.rect.y && rows[i].top_at(k.cx) < k.rect.bottom()).collect();
+        if inside.len() < 2 || (inside.len() == rows.len() && rows.len() >= 5) {
+            continue;
+        }
+        for &i in &inside {
+            let cells = &mut rows[i].cells;
+            let lead = cells.iter().take_while(|c| c.x0 as f64 >= k.rect.x - 1.0 && c.x1 as f64 <= k.rect.right() + 1.0).count();
+            if lead > 0 && lead < cells.len() {
+                cells.drain(..lead);
+            }
+        }
+    }
 }
 
 /// 同排的墨按这么宽（字号的倍数）的空白分簇：旋律里音与音之间、说明文字的字与字之间都到不了。
@@ -562,6 +586,24 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
             let touch = |o: &Cell| o.kind == CellKind::Digit && (o.x0 - out[k].x1).max(out[k].x0 - o.x1) <= 2;
             if (k > 0 && touch(&out[k - 1])) || out.get(k + 1).is_some_and(touch) {
                 out[k].kind = CellKind::Other;
+            }
+        }
+    }
+    // 与本行小节线一般细（不过中位宽的 1.3 倍）、等高、逐行墨宽一致的竖条也是小节线：细线门（0.14 字号）按字号定，线印得粗一点就落成了数字
+    //（赞美诗歌 946 第二行末线 6 像素、字号 38）。「1」顶上带旗，那几行比中位宽出一截
+    if bw.len() >= 2 {
+        for c in out.iter_mut().filter(|c| c.kind == CellKind::Digit && c.h() >= h * 0.9 && c.w() <= mb * 1.3) {
+            let ws: Vec<f64> = (c.y0..=c.y1)
+                .filter_map(|y| {
+                    let a = (c.x0..=c.x1).find(|&x| ink.at(x, y))?;
+                    let b = (c.x0..=c.x1).rev().find(|&x| ink.at(x, y))?;
+                    Some((b - a + 1) as f64)
+                })
+                .collect();
+            let med = median(&ws, 0.0);
+            let max = ws.iter().copied().fold(0.0, f64::max);
+            if ws.len() as f64 >= c.h() * 0.95 && max <= med + 1.0 {
+                c.kind = CellKind::Bar { thick: false };
             }
         }
     }
