@@ -222,6 +222,12 @@ pub struct RecognizedScore {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<String>,
+    /// 紧贴第一行副标题、同样居中的第二行
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subtitles_more: Vec<String>,
+    /// 页眉里整行包在方括号里的谱面说明（`[ 共2张：A（原调）、G调 ]`），写 N:
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub header_notes: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub credits: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

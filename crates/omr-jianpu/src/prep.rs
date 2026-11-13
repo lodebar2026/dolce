@@ -92,6 +92,11 @@ pub trait JpInk: Sync {
     fn h(&self) -> usize;
     fn at(&self, x: i64, y: i64) -> bool;
     fn comps(&self) -> &[Comp];
+    /// `(x, y)` 的墨属不属于块 `c`（像素页查标号图；矢量页的块是对象，没有逐像素归属，按外框里有墨算）。
+    fn owns(&self, c: &Comp, x: i64, y: i64) -> bool {
+        let (fx, fy) = (x as f64 + 0.5, y as f64 + 0.5);
+        fx >= c.rect.x && fx < c.rect.right() && fy >= c.rect.y && fy < c.rect.bottom() && self.at(x, y)
+    }
     /// 送 OCR 的灰度条（出界部分是白），四周留 `pad` 白。
     fn strip(&self, r: &Rect, pad: i64) -> Gray;
 
@@ -155,6 +160,9 @@ impl JpInk for RasterInk {
     }
     fn comps(&self) -> &[Comp] {
         &self.comps
+    }
+    fn owns(&self, c: &Comp, x: i64, y: i64) -> bool {
+        x >= 0 && y >= 0 && (x as usize) < self.bin.w && (y as usize) < self.bin.h && self.labels[y as usize * self.bin.w + x as usize] == c.id
     }
     /// 从灰度图裁一条（出界部分是白），四周留 `pad` 白。
     fn strip(&self, r: &Rect, pad: i64) -> Gray {

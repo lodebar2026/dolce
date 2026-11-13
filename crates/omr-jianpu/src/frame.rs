@@ -504,6 +504,25 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     for c in &mut out {
         c.kind = classify(ink, band, c);
     }
+    // 窄了一点的增时线（青年诗歌 91 末行「3 - - -」每道 10×4 或 10×3、字号 41，不够 0.28 字号）认成了点或认不出：
+    // 两个以上紧挨着排开（中间没有别的格、间隔不比自身窄）、各自扁得像增时线（宽过 0.2 字号）的短横是一串增时线——附点是圆的，也不会成串排开
+    let flat = |c: &Cell| {
+        let rel = ((c.y0 + c.y1) as f64 / 2.0 - band.top(c.cx())) / h;
+        matches!(c.kind, CellKind::Dot | CellKind::Other) && c.w() >= h * 0.2 && c.h() <= h * 0.3 && c.w() >= c.h() * DASH_FLAT && rel > 0.25 && rel < 0.8
+    };
+    let mut i = 0;
+    while i < out.len() {
+        let mut j = i;
+        while j < out.len() && flat(&out[j]) && (j == i || (out[j].x0 - out[j - 1].x1) as f64 >= out[j - 1].w() * 0.8) {
+            j += 1;
+        }
+        if j - i >= 2 {
+            for c in &mut out[i..j] {
+                c.kind = CellKind::Dash;
+            }
+        }
+        i = j.max(i + 1);
+    }
     // 粗线：比本行细线宽的中位粗一倍以上
     let bw: Vec<f64> = out.iter().filter(|c| matches!(c.kind, CellKind::Bar { .. })).map(|c| c.w()).collect();
     let thin = dolce_omr_core::geom::quantile(&bw, 0.3).max(1.0);

@@ -4,7 +4,7 @@
 //! 字的分类、切音节、对音、页眉分类用 `omr-text`（与五线谱路线同一份）。
 use crate::frame::{digit_cell, RowFrame};
 use crate::notes::RowNotes;
-use crate::prep::Ink;
+use crate::prep::{Comp, Ink};
 use crate::result::{RecognizedScore, TextRegion, TimeSig};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
@@ -31,6 +31,22 @@ impl Claims {
             for y in (r.y.max(0.0) as usize)..(r.bottom().ceil() as usize).min(h) {
                 for x in (r.x.max(0.0) as usize)..(r.right().ceil() as usize).min(w) {
                     mask[y * w + x] = 1;
+                }
+            }
+        }
+        Claims { w, mask }
+    }
+    /// 只占这些块自己的墨（外框里别的块不占：弧的外框盖进相邻的和弦字，按框占会把字抹掉半边）。
+    pub fn comps<'a>(ink: &Ink, comps: impl Iterator<Item = &'a Comp>) -> Claims {
+        let (w, h) = (ink.w(), ink.h());
+        let mut mask = vec![0u8; w * h];
+        for c in comps {
+            let r = &c.rect;
+            for y in (r.y.max(0.0) as usize)..(r.bottom().ceil() as usize).min(h) {
+                for x in (r.x.max(0.0) as usize)..(r.right().ceil() as usize).min(w) {
+                    if ink.owns(c, x as i64, y as i64) {
+                        mask[y * w + x] = 1;
+                    }
                 }
             }
         }
@@ -64,6 +80,80 @@ impl Claims {
     fn free(&self, ink: &Ink, x: i64, y: i64) -> bool {
         ink.at(x, y) && self.mask[y as usize * self.w + x as usize] == 0
     }
+}
+
+/// 弧顶粘着上方的字（和弦字母的脚立在弧上、弧尾穿过字）：块的**下包络**（每列最低墨点）按相邻列落差切成平滑段，最长那段
+/// ≥1.2 字号宽、墨中位厚 ≤0.15 字号、两端比最高处低 ≥0.15 字号（拱形）就是弧；剩下的墨得从弧顶以上 0.3 字号起笔（字立在弧上）。
+/// 回弧的像素（段内每列最低墨点往上一个中位厚；底段整段不过 0.2 字号的列整段归弧）。不是这种块回空。TS `splitArcUnderGlyph` 同判据。
+fn under_glyph_arc(ink: &Ink, k: &Comp, num_h: f64) -> Vec<(i64, i64)> {
+    let b = &k.rect;
+    if b.w < num_h * 1.5 || b.h <= num_h * 0.8 || b.h > num_h * 2.0 {
+        return Vec::new();
+    }
+    let (bx, by, bw, bh) = (b.x as i64, b.y as i64, b.w as i64, b.h as i64);
+    let own = |xx: i64, yy: i64| ink.owns(k, bx + xx, by + yy);
+    let mut low = vec![-1i64; bw as usize];
+    let mut thick = vec![0i64; bw as usize];
+    for xx in 0..bw {
+        let mut yy = bh - 1;
+        while yy >= 0 && !own(xx, yy) {
+            yy -= 1;
+        }
+        low[xx as usize] = yy;
+        let mut t = 0;
+        while yy - t >= 0 && own(xx, yy - t) {
+            t += 1;
+        }
+        thick[xx as usize] = t;
+    }
+    let step = (num_h * 0.06).max(2.0);
+    let (mut best, mut x0) = ((0i64, -1i64), -1i64);
+    for xx in 0..=bw {
+        let ok = xx < bw && low[xx as usize] >= 0 && (x0 < 0 || ((low[xx as usize] - low[xx as usize - 1]).abs() as f64) <= step);
+        if ok && x0 < 0 {
+            x0 = xx;
+        } else if !ok && x0 >= 0 {
+            if xx - 1 - x0 > best.1 - best.0 {
+                best = (x0, xx - 1);
+            }
+            x0 = if xx < bw && low[xx as usize] >= 0 { xx } else { -1 };
+        }
+    }
+    let run_w = best.1 - best.0 + 1;
+    if run_w <= 0 {
+        return Vec::new();
+    }
+    let in_run = |xx: i64| xx >= best.0 && xx <= best.1;
+    let t0 = median(&(best.0..=best.1).map(|xx| thick[xx as usize] as f64).filter(|&t| t > 0.0).collect::<Vec<_>>(), 0.0);
+    let top_y = (best.0..=best.1).map(|xx| low[xx as usize]).min().unwrap_or(0);
+    let end_y = low[best.0 as usize].min(low[best.1 as usize]);
+    if (run_w as f64) < num_h * 1.2 || t0 > num_h * 0.15 || ((end_y - top_y) as f64) < num_h * 0.15 {
+        return Vec::new();
+    }
+    let cap = t0.ceil() as i64 + 1;
+    let cap_max = (cap as f64).max(num_h * 0.2);
+    let arc_px = |xx: i64, yy: i64| {
+        in_run(xx) && yy <= low[xx as usize] && yy > low[xx as usize] - if (thick[xx as usize] as f64) <= cap_max { thick[xx as usize] } else { cap }
+    };
+    let (mut arc, mut arc_top, mut glyph_top) = (Vec::new(), i64::MAX, i64::MAX);
+    for yy in 0..bh {
+        for xx in 0..bw {
+            if !own(xx, yy) {
+                continue;
+            }
+            if arc_px(xx, yy) {
+                arc.push((bx + xx, by + yy));
+                arc_top = arc_top.min(yy);
+            } else {
+                glyph_top = glyph_top.min(yy);
+            }
+        }
+    }
+    // 字得从弧顶以上起笔（字脚压在弧上，字身在上面）
+    if arc.is_empty() || glyph_top == i64::MAX || glyph_top as f64 > arc_top as f64 - num_h * 0.3 {
+        return Vec::new();
+    }
+    arc
 }
 
 /// 一条带 `[ya, yb)` 里的字行（纵向范围）。`slope`：行带斜率，投影时折掉。
@@ -405,8 +495,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             }
             // 下一行谱头顶上的和弦行、弧与点凑成的一截不是歌词
             let near_next = !last && (yb - y1) as f64 <= h * 1.3;
-            let (cov, cnt) = chords::coverage(&text);
-            let chordish = chords::is_chord_coverage(cov, cnt) && !text.chars().any(is_han);
+            // 和弦行夹着段落名（「E 【Chorus】 A D E」）也是：段落名、方括号注记先剔掉再看覆盖率
+            let chordish = chords::is_annotation_line(&text);
             // 英文歌词：至少三个三字母以上的小写词（和弦行、跳转记号、段落名到不了）
             let words = text.split(|c: char| !c.is_ascii_lowercase()).filter(|w| w.len() >= 3).count();
             if (!last && chordish) || (near_next && han_count(&text) < 2 && words < 3) {
@@ -721,12 +811,16 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
 
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-Ga-g])").unwrap());
 /// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
-static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
+static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
 static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*([一-鿿].*)$").unwrap());
 /// 书眉：书名后接曲号（`青年诗歌—015`），曲号去掉前导零。
 static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})\s*$").unwrap());
+static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【].*[\]］】]$").unwrap());
+static BRACKET_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([\[［])\s*").unwrap());
+static BRACKET_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*([\]］])$").unwrap());
+static NAME_YEAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([A-Za-z])\((\d{4})\)").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*$").unwrap());
 
 /// 调名 → 五度圈位置。
@@ -893,6 +987,18 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
     }
     stacked_meter(ink, top, num_h, ocr, score);
+    // 整行包在方括号里、带汉字的是谱面说明（`[共2张：A（原调）、G调]`），不是署名、标题
+    rest.retain(|l| {
+        let t = l.text.trim();
+        let note = BRACKET_NOTE.is_match(t) && t.chars().any(is_han);
+        if note {
+            let n = BRACKET_OPEN.replace(t, "$1 ");
+            let n = BRACKET_CLOSE.replace(&n, " $1").into_owned();
+            score.header_regions.push(TextRegion { text: n.clone(), bbox: Rect::new(l.x, l.y, l.w, l.h) });
+            score.header_notes.push(n);
+        }
+        !note
+    });
     let cs = credits(&rest, 0.0, w);
     let title = cs.iter().find(|c| c.kind == Some(CreditType::Title));
     if let Some(t) = title {
@@ -908,10 +1014,20 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             match c.kind {
                 Some(CreditType::Title) if !std::ptr::eq(c, t) && score.subtitle.is_none() => score.subtitle = Some(c.text.clone()),
                 Some(CreditType::Subtitle) if score.subtitle.is_none() => score.subtitle = Some(c.text.clone()),
+                // 第二行副标题：紧贴第一行下面（心距不过一个半行高）
+                Some(CreditType::Subtitle) if score.subtitles_more.is_empty() && {
+                    let prev = cs.iter().find(|p| p.kind == Some(CreditType::Subtitle) && Some(&p.text) == score.subtitle.as_ref());
+                    prev.is_some_and(|p| {
+                        let (pc, cc) = (p.rect.1 + p.rect.3 / 2.0, c.rect.1 + c.rect.3 / 2.0);
+                        cc > pc && pc > t.rect.1 + t.rect.3 / 2.0 && cc - pc <= p.rect.3.max(c.rect.3) * 1.5
+                    })
+                } => score.subtitles_more.push(c.text.clone()),
                 Some(CreditType::Composer) | Some(CreditType::Lyricist) => {
                     // 印在标题左边、不低于标题的署名记左上
                     let left_of = c.rect.0 + c.rect.2 <= t.rect.0 && c.rect.1 + c.rect.3 / 2.0 <= t.rect.1 + t.rect.3;
-                    if left_of { score.credits_top_left.push(c.text.clone()) } else { score.credits.push(c.text.clone()) }
+                    // 英文名与括号年份之间 CTC 不吐空格（`Brian Doerksen(2002) 词曲`）
+                    let t = NAME_YEAR.replace(&c.text, "$1 ($2)").into_owned();
+                    if left_of { score.credits_top_left.push(t) } else { score.credits.push(t) }
                 }
                 _ => {}
             }
@@ -1030,7 +1146,14 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         let r = &k.rect;
         r.bottom() > ya as f64 && r.y < yb as f64 && ((r.w >= h * 1.2 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
     });
-    let claims = Claims::new(ink, marks.map(|k| k.rect)).tall_runs(ink, h * 2.2);
+    let marks: Vec<&Comp> = marks.collect();
+    let mut claims = Claims::comps(ink, marks.iter().copied()).tall_runs(ink, h * 2.2);
+    // 弧顶粘着上方和弦字的块（青年诗歌 91 `F(C)⌒Dm(Am)` 弧尾连着 D，整块 164×44 过不了上面的弧门，D 读成 R、整行和弦全丢）：只扣弧那几像素
+    for k in ink.comps().iter().filter(|k| k.rect.bottom() > ya as f64 && k.rect.y < yb as f64 && !marks.iter().any(|m| m.id == k.id)) {
+        for (x, y) in under_glyph_arc(ink, k, h) {
+            claims.mask[y as usize * claims.w + x as usize] = 1;
+        }
+    }
     for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, (0, ink.w() as i64), h * 0.35, None) {
         let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64, None);
         let text: String = chars.iter().map(|c| c.ch).collect();
