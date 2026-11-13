@@ -80,6 +80,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     let raw = trace(&mask, w, hh, (h * 0.15).max(3.0) as usize);
     let tol = JoinTol { max_gap: (h * 0.45) as i64, dy: h * 0.12, dy_per_gap: 0.35, span: (h * 0.3).max(3.0) as usize };
     let strokes: Vec<Stroke> = join_all(raw, tol, &|_, _| true);
+    arc_dots(ink, row, rn, &strokes, ya);
     // 候选弧：(左端音, 右端音, 宽, 弧顶中点)
     let mut found: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
     let dbg = std::env::var("OMR_ARC_DEBUG").is_ok();
@@ -187,4 +188,153 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
     }
     halves
+}
+
+/// 高音点粘在弧上（迦南 1850「6 1̇ 1̇」两条内弧在点上首尾相接、外弧的脚也压着它）：连通块里点不单独成块，数字顶上又隔着空白。
+/// 在还没有八度点的音头顶开窗（中线左右 0.3 字号、往上 0.75 字号），扣掉弧笔画本身（每列笔画墨段上下各放一像素；笔画在点那几列
+/// 断开、拼接时按两端连线补上的也算），剩下的墨按 4 邻接取团：贴着笔画、横向不碰窗边、近圆够实、宽高在 0.12~0.45 字号的是点。
+/// 弧端陡下来那截竖墨扣不干净，剩的是瘦高条，过不了宽高比。
+fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya: i64) {
+    let h = row.h();
+    // 本行独立的点（八度点、附点）的中位宽：粘在弧上的点与它们一般大
+    let wf = ink.w() as f64;
+    let (ra, rb) = (row.top_at(0.0).min(row.top_at(wf)) - h * 1.2, row.bottom_at(0.0).max(row.bottom_at(wf)) + h * 1.6);
+    let dws: Vec<f64> = ink.comps().iter().filter(|k| k.cy > ra && k.cy < rb && crate::notes::dot_like(k, h)).map(|k| k.rect.w).collect();
+    if dws.is_empty() {
+        return;
+    }
+    let dot_w = dolce_omr_core::geom::median(&dws, 0.0);
+    // 各笔画的中线与半粗：墨段比笔画中位粗厚出一半以上的「胖列」（点粘在那儿）中线按两侧正常列插值，在端头的按端头走向外推
+    let paths: Vec<(i64, Vec<f64>, f64)> = strokes
+        .iter()
+        .filter(|s| s.width() >= h * 0.3)
+        .map(|s| {
+            let th: Vec<f64> = s.cols.iter().map(|c| (c.1 - c.0 + 1) as f64).collect();
+            let t = dolce_omr_core::geom::median(&th, 1.0);
+            let fat: Vec<bool> = th.iter().map(|&v| v > t * 1.5 + 1.0).collect();
+            let raw: Vec<f64> = s.cols.iter().map(|c| (c.0 + c.1) as f64 / 2.0).collect();
+            let n = raw.len();
+            let mut mids = raw.clone();
+            let good: Vec<usize> = (0..n).filter(|&i| !fat[i]).collect();
+            if !good.is_empty() {
+                for i in (0..n).filter(|&i| fat[i]) {
+                    let l = good.iter().rev().find(|&&g| g < i).copied();
+                    let r = good.iter().find(|&&g| g > i).copied();
+                    mids[i] = match (l, r) {
+                        (Some(l), Some(r)) => raw[l] + (raw[r] - raw[l]) * (i - l) as f64 / (r - l) as f64,
+                        (Some(l), None) => {
+                            let l0 = good.iter().rev().nth(3.min(good.len() - 1)).copied().unwrap_or(l);
+                            raw[l] + if l > l0 { (raw[l] - raw[l0]) / (l - l0) as f64 * (i - l) as f64 } else { 0.0 }
+                        }
+                        (None, Some(r)) => {
+                            let r0 = good.get(3.min(good.len() - 1)).copied().unwrap_or(r);
+                            raw[r] - if r0 > r { (raw[r0] - raw[r]) / (r0 - r) as f64 * (r - i) as f64 } else { 0.0 }
+                        }
+                        (None, None) => raw[i],
+                    };
+                }
+            }
+            (s.x0, mids, t / 2.0 + 1.0)
+        })
+        .collect();
+    for n in rn.nums.iter_mut() {
+        if n.octave != 0 || n.digit == 0 || n.digit == crate::result::RHYTHM_DIGIT {
+            continue;
+        }
+        let cx = n.bbox.cx();
+        let (xa, xb) = ((cx - h * 0.3).round() as i64, (cx + h * 0.3).round() as i64);
+        let (wa, wb) = ((n.bbox.y - h * 0.75).round() as i64, n.bbox.y.round() as i64 - 1);
+        if wb <= wa {
+            continue;
+        }
+        let on_stroke = |x: i64, y: i64| {
+            paths.iter().any(|(x0, mids, half)| x >= *x0 && x < x0 + mids.len() as i64 && (y as f64 - mids[(x - x0) as usize] - ya as f64).abs() <= *half)
+        };
+        let (ww, wh) = ((xb - xa + 1) as usize, (wb - wa + 1) as usize);
+        let mut res = vec![0u8; ww * wh];
+        let mut any_stroke = false;
+        for y in wa..=wb {
+            for x in xa..=xb {
+                if ink.at(x, y) {
+                    if on_stroke(x, y) {
+                        any_stroke = true;
+                    } else {
+                        res[(y - wa) as usize * ww + (x - xa) as usize] = 1;
+                    }
+                }
+            }
+        }
+        if !any_stroke {
+            continue;
+        }
+        // 4 邻接取团
+        let mut seen = vec![false; ww * wh];
+        let mut found = false;
+        for start in 0..ww * wh {
+            if res[start] == 0 || seen[start] || found {
+                continue;
+            }
+            let (mut x0, mut x1, mut y0, mut y1, mut touch) = (usize::MAX, 0, usize::MAX, 0, false);
+            let mut stack = vec![start];
+            seen[start] = true;
+            while let Some(i) = stack.pop() {
+                let (x, y) = (i % ww, i / ww);
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                y0 = y0.min(y);
+                y1 = y1.max(y);
+                for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+                    let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                    if nx < 0 || ny < 0 || nx >= ww as i64 || ny >= wh as i64 {
+                        continue;
+                    }
+                    let j = ny as usize * ww + nx as usize;
+                    if res[j] == 1 && !seen[j] {
+                        seen[j] = true;
+                        stack.push(j);
+                    } else if res[j] == 0 && ink.at(xa + nx, wa + ny) {
+                        touch = true;
+                    }
+                }
+            }
+            // 连同那几列里与它连着的笔画墨一起量：点被笔画压去一条，剩的团是扁的
+            let (mut ft, mut fb) = (y0 as i64 + wa, y1 as i64 + wa);
+            for x in x0..=x1 {
+                let gx = xa + x as i64;
+                for y in y0..=y1 {
+                    if res[y * ww + x] == 1 {
+                        let gy = wa + y as i64;
+                        let mut t = gy;
+                        while ink.at(gx, t - 1) && gy - t < (h * 0.5) as i64 {
+                            t -= 1;
+                        }
+                        let mut b = gy;
+                        while ink.at(gx, b + 1) && b + 1 <= wb && b - gy < (h * 0.5) as i64 {
+                            b += 1;
+                        }
+                        ft = ft.min(t);
+                        fb = fb.max(b);
+                    }
+                }
+            }
+            let (bw, bh) = ((x1 - x0 + 1) as f64, (fb - ft + 1) as f64);
+            let filled = (ft..=fb).map(|y| (xa + x0 as i64..=xa + x1 as i64).filter(|&x| ink.at(x, y)).count()).sum::<usize>() as f64;
+            let area = filled as usize;
+            let y1 = (fb - wa) as usize;
+            let edge = x0 == 0 || x1 == ww - 1;
+            let gap = (wb - (wa + y1 as i64)) as f64;
+            if std::env::var("OMR_DOT_DEBUG").is_ok() && area >= 4 && touch && !edge {
+                eprintln!("  弧点 音x{:.0} 团{bw}x{bh} 实{:.2} 隔{gap} 点宽{dot_w}", cx, area as f64 / (bw * bh));
+            }
+            if touch && !edge && bw >= h * 0.12 && bh >= h * 0.12 && bw >= dot_w * 0.6 && bw <= dot_w * 1.5 && bh <= bw * 1.65 && bw / bh <= 1.8 && area as f64 >= bw * bh * 0.7 && gap >= 1.0 && gap <= h * 0.6 {
+                found = true;
+                if std::env::var("OMR_DOT_DEBUG").is_ok() {
+                    eprintln!("  弧点收 音x{:.0} y{:.0} 团{bw}x{bh} 实{:.2} 隔{gap} 点宽{dot_w}", cx, n.bbox.y, filled / (bw * bh));
+                }
+            }
+        }
+        if found {
+            n.octave = 1;
+        }
+    }
 }
