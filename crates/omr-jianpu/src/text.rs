@@ -1206,6 +1206,10 @@ static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4
 static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})|0*(\d{1,4})\s*[—\-－–_]+\s*[一-鿿]{2,8})\s*$").unwrap());
 /// 页码紧贴书名、没有破折号的书眉（「018青年诗歌」）：只在框缩在页面一侧、位置在标题上部时才算（与「277从前所珍爱」这种曲号前缀同形）。
 static RUNNING_HEAD_NODASH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\d{1,4}\s*[一-鿿]{2,8}\s*$").unwrap());
+/// 署名末尾紧贴汉字的年份（可带「-」接卒年）。
+static CREDIT_YEAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([一-鿿])(\d{4}(?:\s*[-–—]\s*\d{4})?)\s*$").unwrap());
+/// 署名末尾的职能词组（「词曲」「作词、作曲」「译」）：1 是前面的名字。
+static CREDIT_ROLE_TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*?[^\s：:])((?:[作編编]?[詞词曲])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲]))*)\s*$").unwrap());
 static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【].*[\]］】]$").unwrap());
 static BRACKET_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([\[［])\s*").unwrap());
 static BRACKET_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*([\]］])$").unwrap());
@@ -1502,9 +1506,12 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                         cc > pc && pc > t.rect.1 + t.rect.3 / 2.0 && cc - pc <= p.rect.3.max(c.rect.3) * 1.5
                     })
                 } => score.subtitles_more.push(c.text.clone()),
+                // 汉字表情、速度说明（「中速」「稍快」「中速潇酒地」）：没有职能字，不是署名（同 TS，不收）
+                Some(CreditType::Composer) | Some(CreditType::Lyricist)
+                    if c.text.chars().all(|ch| is_han(ch) || ch.is_whitespace()) && !c.text.chars().any(|ch| "词詞曲译譯编編作配撰".contains(ch)) && c.text.chars().any(|ch| "速快慢地".contains(ch)) => {}
                 Some(CreditType::Composer) | Some(CreditType::Lyricist) => {
-                    // 印在标题左边、不低于标题的署名记左上
-                    let left_of = c.rect.0 + c.rect.2 <= t.rect.0 && c.rect.1 + c.rect.3 / 2.0 <= t.rect.1 + t.rect.3;
+                    // 整块印在标题左边的署名记左上（同 TS：只比横向，左栏往下排到标题下面的几行也算，马槽歌、三一来临歌）
+                    let left_of = c.rect.0 + c.rect.2 <= t.rect.0;
                     // 英文名与括号年份之间 CTC 不吐空格（`Brian Doerksen(2002) 词曲`）
                     let t = NAME_YEAR.replace(&c.text, "$1 ($2)").into_owned();
                     if left_of { score.credits_top_left.push(t) } else { score.credits.push(t) }
@@ -1540,23 +1547,86 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             r.chars = cs;
         }
     }
-    // 标题词间的空格（「爱 喜乐 生命」「温州的水 温州的山」）：rec 把整行读成连着的汉字，按逐字位置补——
+    // 标题词间的空格（「爱 喜乐 生命」「温州的水 温州的山」）：rec 把整行读成连着的字，按逐字位置补——
     // 相邻两字中心距比全行中位大出四成的地方是词间空白
-    if let Some(t) = score.title.clone().filter(|t| !t.contains(' ') && t.chars().count() >= 4 && t.chars().all(is_han)) {
-        let reg = score.header_regions.iter().find(|r| r.chars.len() >= t.chars().count() && r.chars.iter().map(|c| c.text.as_str()).collect::<String>().ends_with(&t));
-        if let Some(r) = reg {
-            let cs = &r.chars[r.chars.len() - t.chars().count()..];
-            let gaps: Vec<f64> = cs.windows(2).map(|p| p[1].cx - p[0].cx).collect();
-            let m = median(&gaps, 0.0);
-            if m > 0.0 && gaps.iter().any(|&g| g > m * 1.4) {
-                let mut out = String::new();
-                for (k, c) in cs.iter().enumerate() {
-                    if k > 0 && gaps[k - 1] > m * 1.4 {
-                        out.push(' ');
-                    }
-                    out.push_str(&c.text);
+    let spaced = |t: &str, regions: &[TextRegion]| -> Option<String> {
+        if t.contains(' ') || t.chars().count() < 4 || !t.chars().any(is_han) {
+            return None;
+        }
+        let r = regions.iter().find(|r| r.chars.len() >= t.chars().count() && r.chars.iter().map(|c| c.text.as_str()).collect::<String>().ends_with(t))?;
+        let cs = &r.chars[r.chars.len() - t.chars().count()..];
+        let gaps: Vec<f64> = cs.windows(2).map(|p| p[1].cx - p[0].cx).collect();
+        let m = median(&gaps, 0.0);
+        if m <= 0.0 || !gaps.iter().any(|&g| g > m * 1.4) {
+            return None;
+        }
+        let mut out = String::new();
+        for (k, c) in cs.iter().enumerate() {
+            if k > 0 && gaps[k - 1] > m * 1.4 {
+                out.push(' ');
+            }
+            out.push_str(&c.text);
+        }
+        Some(out)
+    };
+    if let Some(t) = score.title.clone().filter(|t| t.chars().all(is_han)) {
+        if let Some(v) = spaced(&t, &score.header_regions) {
+            score.title = Some(v);
+        }
+    }
+    // 署名末尾的年份与汉字之间补空格（「贾迪尼曲 1769」「柯克帕特里克曲 1838-1921」，同 GT 口径）；署名里人名之间的空白按字距切会误切，不切
+    for c in score.credits.iter_mut().chain(score.credits_top_left.iter_mut()) {
+        *c = CREDIT_YEAR.replace(c, "$1 $2").into_owned();
+    }
+    // 署名里的空当（同 TS spaceIfGap，回源图量墨列）：名字与职能词之间（「林婉容 词曲」有、沧海一声笑「黄 霑作词」没有）、
+    // 全是汉字的署名里两个人名之间（「刘廷芳 杨荫浏合译」）。两字之间最长的空白列比本框字间空白中位宽出八成、又够 0.2 字高才补
+    let regions = score.header_regions.clone();
+    for c in score.credits.iter_mut().chain(score.credits_top_left.iter_mut()) {
+        let compact: Vec<char> = c.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let cs: String = compact.iter().collect();
+        let Some(r) = regions.iter().find(|r| r.chars.iter().map(|x| x.text.as_str()).collect::<String>() == cs) else { continue };
+        let (y0, y1) = (r.bbox.y.round() as i64, r.bbox.bottom().round() as i64);
+        let blank = |xa: f64, xb: f64| {
+            let (mut best, mut run) = (0, 0);
+            for x in xa.round() as i64..=xb.round() as i64 {
+                if (y0..y1).any(|y| ink.at(x, y)) {
+                    run = 0;
+                } else {
+                    run += 1;
+                    best = best.max(run);
                 }
-                score.title = Some(out);
+            }
+            best as f64
+        };
+        let han_pair = |k: usize| r.chars[k - 1].text.chars().all(is_han) && r.chars[k].text.chars().all(is_han);
+        let all: Vec<(usize, f64)> = (1..r.chars.len()).map(|k| (k, blank(r.chars[k - 1].cx, r.chars[k].cx))).collect();
+        let latin = c.chars().any(|ch| ch.is_ascii_alphabetic());
+        // 汉字署名比汉字字间；带拉丁字母的比全行字间（字母间空白小）
+        let gaps: Vec<(usize, f64)> = all.iter().copied().filter(|&(k, _)| latin || han_pair(k)).collect();
+        if gaps.len() < 2 {
+            continue;
+        }
+        // 比的是别处字间空白的中位（不含这一处）
+        let wide = |k: usize| {
+            let typical = median(&gaps.iter().filter(|g| g.0 != k).map(|g| g.1).collect::<Vec<_>>(), 0.0);
+            gaps.iter().any(|&(j, g)| j == k && g >= (typical * 1.8).max(r.bbox.h * 0.2))
+        };
+        let role_at = CREDIT_ROLE_TAIL.captures(c).map(|m| m.get(1).unwrap().as_str().chars().filter(|ch| !ch.is_whitespace()).count());
+        if c.chars().all(|ch| is_han(ch) || ch.is_ascii_digit() || ch.is_whitespace() || "-–—、，,·".contains(ch)) {
+            // 全汉字署名：按空当重排
+            let mut out = String::new();
+            for (k, ch) in compact.iter().enumerate() {
+                if k > 0 && wide(k) {
+                    out.push(' ');
+                }
+                out.push(*ch);
+            }
+            *c = CREDIT_YEAR.replace(&out, "$1 $2").into_owned();
+        } else if let Some(at) = role_at.filter(|&at| at > 0 && at < compact.len() && wide(at)) {
+            // 带拉丁字母的只补职能词前那一处
+            let name_len = c.char_indices().filter(|(_, ch)| !ch.is_whitespace()).nth(at).map_or(c.len(), |(i, _)| i);
+            if !c[..name_len].ends_with(' ') {
+                *c = format!("{} {}", c[..name_len].trim_end(), &c[name_len..]);
             }
         }
     }
