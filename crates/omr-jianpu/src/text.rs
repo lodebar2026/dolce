@@ -1416,7 +1416,9 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         let beside_key = key_boxes.iter().any(|k| {
             l.x - (k.x + k.w) <= num_h * 0.5 && l.x + l.w > k.x + k.w && (l.y + l.h).min(k.y + k.h) - l.y.max(k.y) >= l.h.min(k.h) * 0.5
         });
-        if let Some(c) = NUMBER.captures(&l.text).filter(|_| !beside_key) {
+        // 只读出一位数、框高近两倍于宽的也是叠排拍号（赞美诗歌 936「4/4」读成「4」、43×89，比曲号框还高）
+        let stacked = l.text.trim().chars().filter(|c| c.is_ascii_digit()).count() == 1 && l.h >= l.w * 1.8;
+        if let Some(c) = NUMBER.captures(&l.text).filter(|_| !beside_key && !stacked) {
             if l.h >= num_h * 0.6 && l.h >= max_h * 0.6 && number.as_ref().is_none_or(|n| n.2 < l.h) {
                 number = Some((c[1].trim_start_matches('0').to_string(), l.x + l.w / 2.0, l.h));
             }
@@ -1526,6 +1528,26 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                 c.text = t.to_string();
             }
             r.chars = cs;
+        }
+    }
+    // 标题词间的空格（「爱 喜乐 生命」「温州的水 温州的山」）：rec 把整行读成连着的汉字，按逐字位置补——
+    // 相邻两字中心距比全行中位大出四成的地方是词间空白
+    if let Some(t) = score.title.clone().filter(|t| !t.contains(' ') && t.chars().count() >= 4 && t.chars().all(is_han)) {
+        let reg = score.header_regions.iter().find(|r| r.chars.len() >= t.chars().count() && r.chars.iter().map(|c| c.text.as_str()).collect::<String>().ends_with(&t));
+        if let Some(r) = reg {
+            let cs = &r.chars[r.chars.len() - t.chars().count()..];
+            let gaps: Vec<f64> = cs.windows(2).map(|p| p[1].cx - p[0].cx).collect();
+            let m = median(&gaps, 0.0);
+            if m > 0.0 && gaps.iter().any(|&g| g > m * 1.4) {
+                let mut out = String::new();
+                for (k, c) in cs.iter().enumerate() {
+                    if k > 0 && gaps[k - 1] > m * 1.4 {
+                        out.push(' ');
+                    }
+                    out.push_str(&c.text);
+                }
+                score.title = Some(out);
+            }
         }
     }
     // det 连「1=」那一行都漏了（迦南 1775 只框出标题、赞美诗歌 946 只框出「bE」）：回连通块里按字形找
