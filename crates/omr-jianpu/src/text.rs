@@ -1334,7 +1334,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         // 书眉「青年诗歌—015」「青年诗歌073」：书名带曲号，记曲号、不当标题
         if let Some(c) = BOOK_NUMBER.captures(&l.text) {
             // 书眉在页顶：整行在最大那行字（标题）顶上（署名「戴克斯曲1861」「合译1932」与标题同排或在下面）
-            if l.y + l.h <= title_y {
+            // 书眉框缩在页面一侧、中线在标题上部（det 把大号斜体页码的框撑到与标题一样高、两框交叠一截：青年诗歌 21「青年诗歌021」）
+            let wf = ink.w() as f64;
+            let side = l.x + l.w < wf / 2.0 || l.x > wf / 2.0;
+            if l.y + l.h <= title_y || (side && l.y + l.h / 2.0 < title_y + title_h * 0.3) {
                 if number.as_ref().is_none_or(|n| n.2 < l.h) {
                     // 书眉里的曲号不记印在哪侧（不是标题旁的曲号）
                     number = Some((c.get(1).or(c.get(2)).map_or("", |m| m.as_str()).to_string(), f64::NAN, l.h));
