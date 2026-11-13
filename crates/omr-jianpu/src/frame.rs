@@ -734,6 +734,20 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     if ch >= h * 0.9 && cw <= h * 0.6 && ink.count(&c.rect()) as f64 >= cw * ch * SOLID {
         return CellKind::Bar { thick: false };
     }
+    // 细粗两根毛刺粘成一格的终止线「‖」（四声部马槽歌末尾下声部读成「1」）：恰两段贯穿全格高的竖墨列、两段之间有一列墨稀（只有毛刺），两段外没墨，竖墨伸出行带（「0」的两侧竖笔不伸出）
+    if ch >= h * 0.9 && cw <= h * 0.8 {
+        let col: Vec<f64> = (c.x0..=c.x1).map(|x| (c.y0..=c.y1).filter(|&y| ink.at(x, y)).count() as f64 / ch).collect();
+        let full: Vec<bool> = col.iter().map(|&v| v >= 0.85).collect();
+        let runs = full.iter().zip(full.iter().skip(1).chain([&false])).filter(|(a, b)| **a && !**b).count();
+        if let (Some(a), Some(b)) = (full.iter().position(|&f| f), full.iter().rposition(|&f| f)) {
+            let gap_ok = (a..=b).filter(|&i| !full[i]).any(|i| col[i] <= 0.2);
+            let outside = (0..a).chain(b + 1..col.len()).all(|i| col[i] <= 0.3);
+            let over = (c.x0..=c.x1).filter_map(|x| overshoot(ink, band, x)).any(|(up, dn)| up + dn >= h * 0.3);
+            if runs == 2 && gap_ok && outside && over {
+                return CellKind::Bar { thick: true };
+            }
+        }
+    }
     // 印得大的冒号（反复记号的两点，青年诗歌 5 一点就 0.2 字号、上下拉开 0.7 字号）：窄格里上下两团近方的墨，中间空着
     if cw <= h * 0.3 && ch >= h * 0.35 && colon_like(ink, c, h) {
         return CellKind::Colon;
