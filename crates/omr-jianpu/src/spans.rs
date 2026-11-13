@@ -99,13 +99,15 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             let (bx, by) = (sh.b.0, sh.b.1 + ya as f64);
             let top = s.top() as f64 + ya as f64;
             let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
-            if halves.open.is_none() && bx >= row_right - h * 0.3 && row.top_at(ax) - ay <= h && top <= ay - h * 0.1 && near(bx).is_none_or(|j| rn.nums[j].bbox.right() < ax) {
+            if halves.open.is_none() && bx >= row_right - h * 0.3 && row.top_at(ax) - ay <= h && top <= ay - h * 0.1 && near(bx).is_none_or(|j| Some(j) == near(ax) || rn.nums[j].bbox.right() < ax) {
                 if let Some(i) = near(ax) {
                     halves.open = Some(i);
                     continue;
                 }
             }
-            if halves.head.is_none() && ax <= first_left && row.top_at(bx) - by <= h && top <= by - h * 0.1 && near(ax).is_none_or(|i| i == 0 && rn.nums[0].bbox.x > bx) {
+            // 收在首音自己头上的短半弧（「(5,_ | 5,-)」行首那半截只从首音左缘外起笔、落在首音头顶）：左端也就近到首音
+            let on_first = near(ax) == Some(0) && near(bx) == Some(0);
+            if halves.head.is_none() && ax <= first_left && row.top_at(bx) - by <= h && top <= by - h * 0.1 && (on_first || near(ax).is_none_or(|i| i == 0 && rn.nums[0].bbox.x > bx)) {
                 if let Some(j) = near(bx) {
                     halves.head = Some(j);
                     continue;
