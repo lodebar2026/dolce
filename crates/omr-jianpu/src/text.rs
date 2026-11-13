@@ -1204,6 +1204,8 @@ static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]
 static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*([一-鿿].*)$").unwrap());
 /// 书眉：书名后接曲号（`青年诗歌—015`），或曲号在前、隔着破折号接书名（`060—青年诗歌`；不带破折号的「1942我们是一家人」是曲号加曲名）。曲号去掉前导零。
 static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})|0*(\d{1,4})\s*[—\-－–_]+\s*[一-鿿]{2,8})\s*$").unwrap());
+/// 页码紧贴书名、没有破折号的书眉（「018青年诗歌」）：只在框缩在页面一侧、位置在标题上部时才算（与「277从前所珍爱」这种曲号前缀同形）。
+static RUNNING_HEAD_NODASH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\d{1,4}\s*[一-鿿]{2,8}\s*$").unwrap());
 static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【].*[\]］】]$").unwrap());
 static BRACKET_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([\[［])\s*").unwrap());
 static BRACKET_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*([\]］])$").unwrap());
@@ -1321,9 +1323,12 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     }
     extend_spaced_title(ink, ocr, num_h, &mut lines);
     // 曲号不比标题小多少（拍号的分子、速度数字小得多）
-    let max_h = lines.iter().map(|l| l.h).fold(0.0, f64::max);
+    // 调号框不算（竖排叠印的拍号、速度挤进调号框，把框撑到两排字高：迦南 1727 的 90 比曲号 46 高出一倍）
+    let max_h = lines.iter().filter(|l| !KEY.is_match(&l.text)).map(|l| l.h).fold(0.0, f64::max);
     // 标题：不是书眉、曲号的行里最大的那行
-    let plain = || lines.iter().filter(|l| !BOOK_NUMBER.is_match(&l.text) && !NUMBER.is_match(&l.text));
+    let pw = ink.w() as f64;
+    let one_side = |l: &WordLine| l.x + l.w < pw / 2.0 || l.x > pw / 2.0;
+    let plain = || lines.iter().filter(|l| !BOOK_NUMBER.is_match(&l.text) && !NUMBER.is_match(&l.text) && !(RUNNING_HEAD_NODASH.is_match(&l.text) && one_side(l)));
     let title_h = plain().map(|l| l.h).fold(0.0, f64::max);
     let title_y = plain().find(|l| l.h == title_h).map_or(0.0, |l| l.y);
     let mut rest: Vec<WordLine> = Vec::new();
@@ -1333,17 +1338,13 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let key_boxes: Vec<WordLine> = lines.iter().filter(|k| KEY.is_match(&k.text)).cloned().collect();
     let mixed_word = lines.iter().any(|l| l.text.contains("混合拍"));
     for l in lines {
-        // 书眉「青年诗歌—015」「青年诗歌073」：书名带曲号，记曲号、不当标题
-        if let Some(c) = BOOK_NUMBER.captures(&l.text) {
+        // 书眉「青年诗歌—015」「青年诗歌073」「018青年诗歌」：书名带页码，不当标题、也不记曲号（是页码：13 首印在 18 页、53 首在 58 页；同 TS）
+        if BOOK_NUMBER.is_match(&l.text) || (RUNNING_HEAD_NODASH.is_match(&l.text) && one_side(&l)) {
             // 书眉在页顶：整行在最大那行字（标题）顶上（署名「戴克斯曲1861」「合译1932」与标题同排或在下面）
             // 书眉框缩在页面一侧、中线在标题上部（det 把大号斜体页码的框撑到与标题一样高、两框交叠一截：青年诗歌 21「青年诗歌021」）
             let wf = ink.w() as f64;
             let side = l.x + l.w < wf / 2.0 || l.x > wf / 2.0;
             if l.y + l.h <= title_y || (side && l.y + l.h / 2.0 < title_y + title_h * 0.3) {
-                if number.as_ref().is_none_or(|n| n.2 < l.h) {
-                    // 书眉里的曲号不记印在哪侧（不是标题旁的曲号）
-                    number = Some((c.get(1).or(c.get(2)).map_or("", |m| m.as_str()).to_string(), f64::NAN, l.h));
-                }
                 continue;
             }
         }
@@ -1423,7 +1424,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         // 只读出一位数、框高近两倍于宽的也是叠排拍号（赞美诗歌 936「4/4」读成「4」、43×89，比曲号框还高）
         let stacked = l.text.trim().chars().filter(|c| c.is_ascii_digit()).count() == 1 && l.h >= l.w * 1.8;
         if let Some(c) = NUMBER.captures(&l.text).filter(|_| !beside_key && !stacked) {
-            if l.h >= num_h * 0.6 && l.h >= max_h * 0.6 && number.as_ref().is_none_or(|n| n.2 < l.h) {
+            if l.h >= num_h * 0.6 && l.h >= max_h * 0.5 && number.as_ref().is_none_or(|n| n.2 < l.h) {
                 number = Some((c[1].trim_start_matches('0').to_string(), l.x + l.w / 2.0, l.h));
             }
             used = true;
@@ -1474,7 +1475,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         // 曲号与曲名印在一个框里（「1771你曾向主许下」）：开头的数字是曲号。署名整理时已把行首数字剥掉，回原行找
         let raw = rest.iter().find(|l| l.text.trim_end().ends_with(t.text.trim()) && TITLE_NUMBER.is_match(&l.text)).map(|l| l.text.clone()).unwrap_or_else(|| t.text.clone());
         if let Some(c) = TITLE_NUMBER.captures(&raw) {
-            if number.is_none() {
+            // 标题框里带的曲号优先于比标题矮的单独数字框（传统诗歌选集 1「1圣哉!…」旁边署名下的年份「1861」）
+            if number.as_ref().is_none_or(|n| n.2 < t.rect.3 * 0.8) {
                 number = Some((c[1].to_string(), f64::NEG_INFINITY, t.rect.3));
             }
             score.title = Some(c[2].trim().to_string());
