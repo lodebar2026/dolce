@@ -873,6 +873,76 @@ pub fn slash_meters(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &
     }
 }
 
+/// 曲中叠排的转拍号（同 TS `meterCandidates`，诗歌本 714 混合拍小节线后的「3/4」）：一道与数字同宽量级的短横（分数线），
+/// 正上、正下各紧贴一个字号相当的数字块，都不宽过分数线一半以上；分子、分母各自在同一高度左右 4.5 字号内都有别的数字的，
+/// 是四声部谱夹在两声部之间的减时线，不算。读成合法拍号才收；分母常被当成一个带减时线的音，摘掉。锚到右边第一个音上。
+pub fn stacked_meters(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &CachedOcr) {
+    let num_h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
+    if num_h <= 0.0 {
+        return;
+    }
+    let comps = ink.comps();
+    let digitish = |k: &Comp| k.rect.h >= num_h * 0.35 && k.rect.h <= num_h * 1.05 && k.rect.w >= num_h * 0.15 && k.rect.w <= num_h * 0.9;
+    let read = |r: &Rect| -> Option<u32> {
+        let t = ocr.read_cells(&[crate::frame::digit_cell(ink, r)]).ok()?.remove(0);
+        let ds: String = t.chars().filter(|c| c.is_ascii_digit()).collect();
+        ds.parse().ok()
+    };
+    for (ri, row) in rows.iter().enumerate() {
+        let (top, bot) = (row.top_at(0.0).min(row.top_at(ink.w() as f64)), row.bottom_at(0.0).max(row.bottom_at(ink.w() as f64)));
+        for l in comps.iter().filter(|l| l.rect.w >= num_h * 0.35 && l.rect.w <= num_h * 1.6 && l.rect.w >= l.rect.h * 2.5 && l.rect.cy() > top - num_h * 0.5 && l.rect.cy() < bot + num_h * 0.5) {
+            let hb = &l.rect;
+            let near = |k: &Comp| (k.rect.cx() - hb.cx()).abs() <= (num_h * 0.3).max(hb.w * 0.5);
+            let pick = |up: bool| {
+                comps
+                    .iter()
+                    .filter(|k| k.id != l.id && digitish(k) && near(k))
+                    .filter(|k| {
+                        let g = if up { hb.y - k.rect.bottom() } else { k.rect.y - hb.bottom() };
+                        g >= -2.0 && g < num_h * 0.55
+                    })
+                    .min_by(|a, b| {
+                        let g = |k: &&Comp| if up { hb.y - k.rect.bottom() } else { k.rect.y - hb.bottom() };
+                        g(a).total_cmp(&g(b))
+                    })
+            };
+            let (Some(up), Some(dn)) = (pick(true), pick(false)) else { continue };
+            if up.rect.w > hb.w * 1.5 || dn.rect.w > hb.w * 1.5 || up.rect.h.min(dn.rect.h) < up.rect.h.max(dn.rect.h) * 0.8 {
+                continue;
+            }
+            // 上下还叠着一条横线的是双减时线
+            if comps.iter().any(|o| o.id != l.id && o.rect.w >= o.rect.h * 2.5 && (o.rect.cx() - hb.cx()).abs() <= hb.w * 0.5 && (o.rect.cy() - hb.cy()).abs() <= num_h * 0.3 && o.rect.cy() != hb.cy()) {
+                continue;
+            }
+            let row_mate = |k: &Comp| comps.iter().any(|o| o.id != k.id && o.id != up.id && o.id != dn.id && digitish(o) && o.rect.h >= k.rect.h * 0.7 && (o.rect.cy() - k.rect.cy()).abs() <= num_h * 0.2 && (o.rect.cx() - k.rect.cx()).abs() <= num_h * 4.5);
+            if row_mate(up) && row_mate(dn) {
+                continue;
+            }
+            let (Some(b), Some(t)) = (read(&up.rect), read(&dn.rect)) else { continue };
+            if !(1..=16).contains(&b) || ![2, 4, 8, 16].contains(&t) {
+                continue;
+            }
+            let band = up.rect.union(&dn.rect).union(hb);
+            let rn = &mut notes[ri];
+            if rn.meters.iter().any(|m| (m.x - band.cx()).abs() < num_h) {
+                continue;
+            }
+            if std::env::var("OMR_JP_DEBUG").is_ok() {
+                eprintln!("行{ri} 转拍号 {b}/{t} @{:.0}", band.cx());
+            }
+            rn.nums.retain(|n| {
+                let ov = (n.bbox.right().min(band.right()) - n.bbox.x.max(band.x)).max(0.0) * (n.bbox.bottom().min(band.bottom()) - n.bbox.y.max(band.y)).max(0.0);
+                ov < n.bbox.w * n.bbox.h * 0.5
+            });
+            rn.meters.push(crate::result::RowMeter { x: band.cx(), beats: b, beat_type: t, bbox: band });
+            if let Some(n) = rn.nums.iter_mut().find(|n| n.bbox.x > band.cx()) {
+                n.time_change = Some(TimeSig { beats: b, beat_type: t });
+            }
+        }
+        notes[ri].meters.sort_by(|a, b| a.x.total_cmp(&b.x));
+    }
+}
+
 /// 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：按拼写切成那么多段（同 TS `splitSpanningWords`）。
 /// 罩住 = 音的中心落在词的字迹范围里；没人认领 = 本段这个音上没字、不是休止、不是弧 / 延音线的后续音（那是一字多音，本就该空着，
 /// `every` 罩着 `2·⌒1̲`）。词心可能落在后一个音上（对音按就近）：往左把字迹范围里空着、不是后续音的也收进来。
@@ -1273,6 +1343,11 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             }
         }
         let mut used = false;
+        // 单独一框的「混合拍」（拍号说明，诗歌本 714 印在几个拍号下面）不是署名
+        if l.text.trim().trim_matches(|c| "()（）".contains(c)) == "混合拍" {
+            score.meter_note = Some("混合拍".into());
+            continue;
+        }
         if let Some(c) = KEY.captures(&l.text) {
             let alter = match &c[1] {
                 "b" | "♭" | "降" => -1,
