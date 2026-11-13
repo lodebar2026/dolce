@@ -824,7 +824,8 @@ pub fn mutual_bars(ink: &Ink, rows: &mut [RowFrame], sys: &[Option<(u32, u32)>])
             continue;
         }
         let xs: Vec<Vec<f64>> = idx.iter().map(|&i| bar_xs(&rows[i])).collect();
-        let mut edits: Vec<(usize, Vec<f64>)> = Vec::new();
+        // (行, 位置, 其余声部是不是全都有)
+        let mut edits: Vec<(usize, Vec<f64>, bool)> = Vec::new();
         for (k, &i) in idx.iter().enumerate() {
             let r = &rows[i];
             let h = r.h();
@@ -849,12 +850,12 @@ pub fn mutual_bars(ink: &Ink, rows: &mut [RowFrame], sys: &[Option<(u32, u32)>])
                     }
                     let votes = xs.iter().enumerate().filter(|(jj, vv)| *jj != k && vv.iter().any(|t| (t - x).abs() <= tol)).count();
                     if votes >= 2 {
-                        edits.push((i, vec![x]));
+                        edits.push((i, vec![x], votes + 1 == idx.len()));
                     }
                 }
             }
         }
-        for (i, xs) in edits {
+        for (i, xs, all) in edits {
             let r = &mut rows[i];
             let h = r.h();
             for x in xs {
@@ -873,7 +874,8 @@ pub fn mutual_bars(ink: &Ink, rows: &mut [RowFrame], sys: &[Option<(u32, u32)>])
                         continue;
                     }
                     let (med, max, n) = stroke_widths(ink, &cell);
-                    if (n as f64) >= cell.h() * 0.95 && max <= med * 1.5 + 1.0 {
+                    // 其余声部全都在这里有线：带衬脚的线（笔画不匀）也是线（圣哉三一歌下声部「5- | 4」读成「5 1 4」）
+                    if all || ((n as f64) >= cell.h() * 0.95 && max <= med * 1.5 + 1.0) {
                         r.cells[c].kind = CellKind::Bar { thick: false };
                     }
                 }

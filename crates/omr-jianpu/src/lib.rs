@@ -147,6 +147,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             eprintln!("行{i} y{:.0}-{:.0} 高{:.1} 数字{} 线{} 音{} 系统{:?}", r.top_at(w / 2.0), r.bottom_at(w / 2.0), r.h(), r.digits().count(), r.bars().count(), notes[i].nums.len(), sys[i]);
         }
     }
+    system_end_bars(&mut notes, &sys, &rows);
     // 末行（多声部谱是末系统的各声部行）行末并排两根不作他想，就是终止线——细粗之别常印不出来
     let last_sys = sys.last().copied().flatten().map(|s| s.0);
     let mut thin_end = vec![false; rows.len()];
@@ -227,6 +228,36 @@ fn implied_ties(notes: &mut [notes::RowNotes]) {
         }
         notes[pr].nums[pn].tie_start = true;
         notes[cr].nums[cn].tie_stop = true;
+    }
+}
+
+/// 同一系统里别的声部在这个位置是段落终止线（细粗两根），本行那里有两根隔得稍开（一个字号内）的线没配成对：也记终止线
+/// （圣哉三一歌末系统下两声部两根隔 21px、上两声部 15px）。
+fn system_end_bars(notes: &mut [notes::RowNotes], sys: &[Option<(u32, u32)>], rows: &[frame::RowFrame]) {
+    let mut groups: std::collections::BTreeMap<u32, Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, s) in sys.iter().enumerate() {
+        if let Some((g, _)) = s {
+            groups.entry(*g).or_default().push(i);
+        }
+    }
+    for idx in groups.values() {
+        let ends: Vec<f64> = idx.iter().flat_map(|&i| notes[i].end_bar_xs.clone()).collect();
+        for &i in idx {
+            let h = rows[i].h();
+            for &x in &ends {
+                let rn = &mut notes[i];
+                if rn.end_bar_xs.iter().any(|&e| (e - x).abs() <= h * 0.6) {
+                    continue;
+                }
+                let bs = &rn.barline_xs;
+                let pair = bs.windows(2).find(|w| w[1] - w[0] <= h && (w[1] - x).abs() <= h * 0.6 && !rn.nums.iter().any(|n| n.bbox.cx() > w[0] && n.bbox.cx() < w[1]));
+                if let Some(w) = pair {
+                    let (a, b) = (w[0], w[1]);
+                    rn.double_bar_xs.retain(|&d| (d - a).abs() > 1.0 && (d - b).abs() > 1.0);
+                    rn.end_bar_xs.push(b);
+                }
+            }
+        }
     }
 }
 
