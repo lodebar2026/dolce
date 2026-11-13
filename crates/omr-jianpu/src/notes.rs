@@ -87,12 +87,12 @@ fn arc_ends(ink: &Ink, x0: i64, x1: i64, y1: i64) -> bool {
     down(x0, -1) && down(x1, 1)
 }
 
-/// 横墨是一块字形的顶横（下一行数字「5」「7」的顶）：它所在的连通块从这道横起笔、往下伸出 0.4 字号以上。
+/// 横墨是一块字形的顶横（下一行数字「5」「7」的顶、「2」「3」的顶弧）：它所在的连通块顶不比这道横高出半个字号（逐列量时侧边列的顶比弧顶低）、往下伸出 0.4 字号以上。
 /// 减时线自成一块，或粘着上面的数字（块往上伸）。
 fn glyph_top(ink: &Ink, x0: i64, x1: i64, y0: i64, y1: i64, h: f64) -> bool {
     ink.comps().iter().any(|k| {
         let r = &k.rect;
-        r.x <= x0 as f64 + 1.0 && r.right() >= x1 as f64 && (r.y - y0 as f64).abs() <= 1.0 && r.bottom() >= y1 as f64 + h * 0.4
+        r.x <= x0 as f64 + 1.0 && r.right() >= x1 as f64 && r.y >= y0 as f64 - h * 0.5 && r.y <= y0 as f64 + 1.0 && r.bottom() >= y1 as f64 + h * 0.4
     })
 }
 
@@ -288,6 +288,9 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
         if half && n.div < 4 {
             n.alts.push(Alt { kind: AltKind::DivPlus, cost: 1.3 });
         }
+        if std::env::var("OMR_DIV_DEBUG").is_ok() && !mine.is_empty() {
+            eprintln!("减时线 音{} @{:.0},{:.0}：{:?}", n.digit, n.bbox.x, n.bbox.y, mine.iter().map(|&i| (lines[i].x0, lines[i].x1, lines[i].y0, lines[i].y1)).collect::<Vec<_>>());
+        }
         taken.push(mine);
     }
     // 逐列再数一遍：两道线一头印粘了（斜着碰上）时按整条线量是一道，数字正下方的各列里却分得开
@@ -330,7 +333,9 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
                 let lim = if cnt == 0 { h * 0.4 } else { h * 0.25 };
                 // 歌词字的顶横两头都宽出去半个字号以上；线头印得参差的不算
                 let fits = prev.is_none_or(|p| rx0 as f64 >= p.0 as f64 - h * 0.5 || rx1 as f64 <= p.1 as f64 + h * 0.5);
-                if ink.at(x, y) || rx1 - rx0 + 1 < min_len || blank > lim || !fits || arc_ends(ink, rx0, rx1, y - 1) || glyph_top(ink, rx0, rx1, y0, y - 1, h) {
+                // 贴着数字的头一道得比数字宽出八成：数字格切短了一两行时，数字自己的底弧（「6」「3」）就落在这里
+                let stub = cnt == 0 && blank < 1.0 && ((rx1 - rx0 + 1) as f64) < n.bbox.w * 0.8;
+                if ink.at(x, y) || stub || rx1 - rx0 + 1 < min_len || blank > lim || !fits || arc_ends(ink, rx0, rx1, y - 1) || glyph_top(ink, rx0, rx1, y0, y - 1, h) {
                     break;
                 }
                 cnt += 1;
@@ -345,6 +350,9 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
         let Some(&best) = counts.iter().max() else { continue };
         let agree = counts.iter().filter(|&&c| c == best).count();
         if best > n.div && agree * 5 >= counts.len() * 3 {
+            if std::env::var("OMR_DIV_DEBUG").is_ok() {
+                eprintln!("减时线逐列 音{} @{:.0},{:.0}：{} → {best}", n.digit, n.bbox.x, n.bbox.y, n.div);
+            }
             n.div = best;
             n.alts.retain(|a| a.kind != AltKind::DivPlus);
             if let Some(i) = counts.iter().position(|&c| c == best) {
