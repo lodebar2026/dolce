@@ -152,6 +152,31 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         if i >= j || found.iter().any(|f| f.0 == i && f.1 == j) {
             continue;
         }
+        // 两道相邻的弧在中间音头上接成一笔、整笔仍朝上拱（迦南 2252「(2 (3) 3)」）：中间那个音上方是个谷——两边的拱顶都比谷底高出
+        // 0.15 字号以上——在谷底劈成两道
+        if j == i + 2 {
+            let xm = rn.nums[i + 1].bbox.cx().round() as i64;
+            let (x0, x1) = (s.x0, s.x1());
+            let r = (h * 0.3).round() as i64;
+            if xm - r > x0 && xm + r < x1 {
+                let low = (xm - r..=xm + r).map(|x| s.mid(x)).fold(f64::MIN, f64::max);
+                let peak = |a: i64, b: i64| (a..=b).map(|x| s.mid(x)).fold(f64::MAX, f64::min);
+                let (pl, pr) = (peak(x0, xm - r), peak(xm + r, x1));
+                if low - pl.max(pr) >= h * 0.15 {
+                    for (p, q) in [(i, i + 1), (i + 1, j)] {
+                        if !found.iter().any(|f| f.0 == p && f.1 == q) {
+                            found.push((p, q, 0.0, ((ax + bx) / 2.0, ay.min(by))));
+                        }
+                    }
+                    // 谷底正上方还有墨（外弧从上面过）：是外弧底下套着 V 形两道内弧（迦南 1940「((3 (2) 2))」，笔追的是内弧），外弧也留
+                    let top_at_m = s.cols[(xm - x0) as usize].0 as i64 + ya;
+                    let over = (pl.min(pr) as i64 + ya - (h * 0.3) as i64..top_at_m - 1).any(|y| ink.at(xm, y));
+                    if !over {
+                        continue;
+                    }
+                }
+            }
+        }
         found.push((i, j, s.width(), ((ax + bx) / 2.0, ay.min(by) - arch)));
     }
     // 嵌套双弧（迦南诗选「((5_ (6_) 6))」）：外弧罩三个音，底下两道小弧从外弧上分出来、往中间那个音头顶落成一个 V，
