@@ -18,6 +18,8 @@ pub struct RowNotes {
     pub end_bar_xs: Vec<f64>,
     /// 已归了音符的墨（减时线、低音点），歌词切行时不算字
     pub claimed: Vec<Rect>,
+    /// 行里印的转拍号
+    pub meters: Vec<crate::result::RowMeter>,
 }
 
 /// 细长横墨：列范围与行范围（都含端点）。

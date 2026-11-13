@@ -164,8 +164,10 @@ fn bbox(notes: &[RowNotes], part: (usize, usize, usize)) -> Rect {
 pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut RecognizedScore) -> Tally {
     let of = |beats: u32, beat_type: u32| QUARTER * 4 * beats as i64 / beat_type.max(1) as i64;
     let mut targets: Vec<i64> = vec![of(score.beats, score.beat_type)];
-    for m in &score.meters {
-        let t = of(m.beats, m.beat_type);
+    // 页眉的混合拍、曲中转拍号都算合法的小节长
+    let changes: Vec<(u32, u32)> = notes.iter().flat_map(|r| r.nums.iter()).filter_map(|n| n.time_change.as_ref().map(|t| (t.beats, t.beat_type))).collect();
+    for (b, bt) in score.meters.iter().map(|m| (m.beats, m.beat_type)).chain(changes) {
+        let t = of(b, bt);
         if !targets.contains(&t) {
             targets.push(t);
         }

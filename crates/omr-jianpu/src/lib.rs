@@ -131,6 +131,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
         }
     }
     hook.step(5, STEPS, "beats")?;
+    text::slash_meters(ink, &rows, &mut notes, ocr);
     let tally = beats::settle(&mut notes, &sys, &mut score);
     implied_ties(&mut notes);
     if std::env::var("OMR_JP_DEBUG").is_ok() {
@@ -177,6 +178,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             final_barline_thin: thin,
             double_bar_xs: rn.double_bar_xs,
             end_bar_xs: rn.end_bar_xs,
+            meters: rn.meters,
             ..Default::default()
         });
     }

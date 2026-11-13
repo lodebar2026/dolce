@@ -23,6 +23,16 @@ pub struct TimeSig {
     pub beat_type: u32,
 }
 
+/// 谱行里印的转拍号：位置、拍号、源框。
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowMeter {
+    pub x: f64,
+    pub beats: u32,
+    pub beat_type: u32,
+    pub bbox: Rect,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tuplet {
@@ -162,6 +172,7 @@ pub struct JpNum {
     pub fermata: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tuplet: Option<Tuplet>,
+
     /// `staccato` / `accent`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub articulation: Option<&'static str>,
@@ -194,6 +205,9 @@ pub struct StaffRow {
     /// 终止线只按位置认的（两根没分出粗细）：跳转曲写出端据此写细细双线
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub final_barline_thin: bool,
+    /// 行里印的转拍号（按 x 排）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub meters: Vec<RowMeter>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub double_bar_xs: Vec<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

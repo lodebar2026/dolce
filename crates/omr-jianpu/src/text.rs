@@ -765,6 +765,75 @@ fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], region
     }
 }
 
+/// 曲中斜杠式转拍号（同 TS `meter.slashInline`，选本 376 副歌行首的小号「4/4」）：斜笔（墨都落在从右上到左下的对角带里）左右各贴一个
+/// 同高的块，右下方紧挨着正常大小的音（那一行的首音；页眉里「G调 6/8」离谱行两个字号开外，不算），同高处没有本行的音。
+/// 两头按数字读成合法拍号（分子 1~16，分母 2 / 4 / 8 / 16）才收，锚到右边第一个音上。
+pub fn slash_meters(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &CachedOcr) {
+    let num_h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
+    if num_h <= 0.0 {
+        return;
+    }
+    let comps = ink.comps();
+    let slash = |b: &Rect| {
+        let (mut diag, mut off) = (0usize, 0usize);
+        for y in b.y as i64..(b.y + b.h) as i64 {
+            for x in b.x as i64..(b.x + b.w) as i64 {
+                if !ink.at(x, y) {
+                    continue;
+                }
+                let u = (x as f64 - b.x) / (b.w - 1.0).max(1.0);
+                let v = (y as f64 - b.y) / (b.h - 1.0).max(1.0);
+                if (u + v - 1.0).abs() <= 0.35 {
+                    diag += 1;
+                } else {
+                    off += 1;
+                }
+            }
+        }
+        diag >= 8 && off as f64 <= diag as f64 * 0.15
+    };
+    let read = |r: &Rect| -> Option<u32> {
+        let t = ocr.read_cells(&[crate::frame::digit_cell(ink, r)]).ok()?.remove(0);
+        let ds: String = t.chars().filter(|c| c.is_ascii_digit()).collect();
+        ds.parse().ok()
+    };
+    for sl in comps.iter().map(|k| k.rect) {
+        if sl.h < num_h * 0.5 || sl.h > num_h * 0.95 || sl.w > sl.h * 0.8 || !slash(&sl) {
+            continue;
+        }
+        let gap_of = |k: &Rect, dir: f64| if dir > 0.0 { k.x - sl.right() } else { sl.x - k.right() };
+        let mate = |dir: f64| {
+            comps
+                .iter()
+                .map(|k| k.rect)
+                .filter(|k| *k != sl && (k.y - sl.y).abs() <= num_h * 0.15 && (k.h - sl.h).abs() <= num_h * 0.15 && gap_of(k, dir) >= -2.0 && gap_of(k, dir) <= num_h * 0.4)
+                .min_by(|p, q| gap_of(p, dir).total_cmp(&gap_of(q, dir)))
+        };
+        let (Some(a), Some(b)) = (mate(-1.0), mate(1.0)) else { continue };
+        let band = a.union(&sl).union(&b);
+        // 右下方紧挨着本行首音、同高处没有本行的音
+        let Some(ri) = (0..rows.len()).find(|&i| {
+            let ns = &notes[i].nums;
+            ns.iter().any(|n| n.bbox.h >= num_h * 0.85 && n.bbox.y >= band.bottom() - num_h * 0.3 && n.bbox.y <= band.bottom() + num_h * 0.5 && n.bbox.x >= band.x && n.bbox.x <= band.right() + num_h * 1.5)
+                && !ns.iter().any(|n| (n.bbox.cy() - band.cy()).abs() <= num_h * 0.3 && (n.bbox.cx() - band.cx()).abs() <= num_h * 3.0)
+        }) else {
+            continue;
+        };
+        let (Some(up), Some(dn)) = (read(&a), read(&b)) else { continue };
+        if !(1..=16).contains(&up) || ![2, 4, 8, 16].contains(&dn) {
+            continue;
+        }
+        let rn = &mut notes[ri];
+        if rn.meters.iter().any(|m| (m.x - band.cx()).abs() < num_h) {
+            continue;
+        }
+        rn.meters.push(crate::result::RowMeter { x: band.cx(), beats: up, beat_type: dn, bbox: band });
+        if let Some(n) = rn.nums.iter_mut().find(|n| n.bbox.x > band.cx()) {
+            n.time_change = Some(TimeSig { beats: up, beat_type: dn });
+        }
+    }
+}
+
 /// 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：按拼写切成那么多段（同 TS `splitSpanningWords`）。
 /// 罩住 = 音的中心落在词的字迹范围里；没人认领 = 本段这个音上没字、不是休止、不是弧 / 延音线的后续音（那是一字多音，本就该空着，
 /// `every` 罩着 `2·⌒1̲`）。词心可能落在后一个音上（对音按就近）：往左把字迹范围里空着、不是后续音的也收进来。
