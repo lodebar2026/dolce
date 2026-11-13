@@ -460,7 +460,16 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 if gap as f64 > reach || (max_verses > 0 && full >= max_verses) {
                     break;
                 }
-                full += (full > 0 || ((l.1 - l.0 + 1) as f64) >= h * 0.9) as usize;
+                // 横向只占一小截的（行末的「D.S. al Fine」、注记）也不占：歌词一行铺满大半行（世上所有的民族末行）
+                let (mut lo, mut hi) = (i64::MAX, i64::MIN);
+                for x in xa.max(0)..xb.min(ink.w() as i64) {
+                    if (l.0..=l.1).any(|y| claims.free(ink, x, y + (row.band.slope * (x as f64 - w / 2.0)).round() as i64)) {
+                        lo = lo.min(x);
+                        hi = hi.max(x);
+                    }
+                }
+                let wide = hi >= lo && (hi - lo) as f64 >= (xb - xa) as f64 * 0.25;
+                full += (full > 0 || (((l.1 - l.0 + 1) as f64) >= h * 0.9 && wide)) as usize;
                 keep = k + 1;
             }
             lines.truncate(keep);
