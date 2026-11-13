@@ -224,6 +224,16 @@ pub struct StaffRow {
 pub struct TextRegion {
     pub text: String,
     pub bbox: Rect,
+    /// 逐字源图位置（页眉行用 OCR 的字位；识别模式据此逐字落回源图 x）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub chars: Vec<RegionChar>,
+}
+
+/// 页眉行里一个字的源图中心 x。
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct RegionChar {
+    pub text: String,
+    pub cx: f64,
 }
 
 /// 可疑项：两条路线共用的那份（`omr-sheet::result`）；`at.row` 是全曲第几行、`at.note` 是行内第几个音。

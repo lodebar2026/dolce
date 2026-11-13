@@ -379,6 +379,8 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
 /// 读好、对好音的一行歌词，等同行各段比过对位再写进音里。
 struct Pending {
     syls: Vec<(usize, String, bool)>,
+    /// 逐音节的源框（识别模式按原位逐字叠加，同 TS 歌词单字的 `lyricRegions`）
+    cells: Vec<TextRegion>,
     /// 英文词：(音下标, 字迹左缘, 右缘)，弧认完后按拼写拆（`split_spanning_words`）
     exts: Vec<(usize, f64, f64)>,
     label: Option<String>,
@@ -451,8 +453,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(ink, num_h0 * 2.2);
     let mut max_verses = 0usize;
-    // 写下的各行词：(谱行, 段, 歌词区下标, 字数, 汉字数)
-    let mut written: Vec<(usize, usize, usize, usize, usize)> = Vec::new();
+    // 写下的各行词：(谱行, 段, 歌词区下标起止, 字数, 汉字数)
+    let mut written: Vec<(usize, usize, usize, usize, usize, usize)> = Vec::new();
     // 歌词带里读到的跳转记号：(行, 记号, x, y)
     let mut jumps: Vec<(usize, &'static str, f64, f64)> = Vec::new();
     // 各行歌词头一行顶离谱行底的距离
@@ -634,8 +636,14 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             // 字落在音正下方（0.4 字号内）的比例：夹在谱行间的普通文字与同行各段词错开（见下）
             let han: Vec<&Ch> = chars.iter().filter(|c| is_han(c.ch)).collect();
             let ratio = (han.len() >= 4).then(|| han.iter().filter(|c| note_xs.iter().any(|&x| (x - c.cx()).abs() <= h * 0.4)).count() as f64 / han.len() as f64);
-            let region = TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64) };
-            pend.push(Pending { syls, exts, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
+            let region = TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64), chars: Vec::new() };
+            let cells: Vec<TextRegion> = lr
+                .syls
+                .iter()
+                .filter(|s| !s.text.trim().is_empty())
+                .map(|s| TextRegion { text: s.text.clone(), bbox: Rect::new(s.x - s.w / 2.0, y0 as f64, s.w.max(1.0), (y1 - y0 + 1) as f64), chars: Vec::new() })
+                .collect();
+            pend.push(Pending { syls, cells, exts, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
         }
         // 与同谱行别的歌词行错开、字不落在音下的一行是夹在谱行间的普通文字（青年诗歌 16《神圣罗曼史》第 4 行词下
         // 「(副歌接下一页 注：…)」只有 0.42，同行四段词都是 1.00；同 TS `misaligned`）。只比同一谱行：四声部谱的词对的是另一声部的音，整行几段一起低
@@ -653,7 +661,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 }
                 continue;
             }
-            written.push((i, verse, regions.len(), p.syls.iter().map(|x| x.1.chars().count()).sum(), p.syls.iter().map(|x| han_count(&x.1)).sum()));
+            written.push((i, verse, regions.len(), regions.len() + p.cells.len(), p.syls.iter().map(|x| x.1.chars().count()).sum(), p.syls.iter().map(|x| han_count(&x.1)).sum()));
             for (ni, t, doubt) in p.syls {
                 let n = &mut notes[i].nums[ni];
                 if n.lyrics.len() <= verse {
@@ -674,7 +682,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             if verse == 0 {
                 first_gaps.push(p.gap);
             }
-            regions.push(p.region);
+            regions.extend(p.cells);
             verse += 1;
         }
         max_verses = max_verses.max(verse);
@@ -708,19 +716,19 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
 /// 有字谱行数不到主段（有字谱行最多的那段）一半的，在它出现的那一行还得是完整一行——字数到主段同一谱行的六成——才留
 /// （多段谱的第 2..N 段只印在主歌那几行）。主段是汉字词的只比汉字数（拉丁碎字凑不成一行中文词）。
 /// 按视觉行序整体决定去留；剔掉的连歌词区一起去（认弧时按歌词区封顶）。
-fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], regions: &mut Vec<TextRegion>, written: &[(usize, usize, usize, usize, usize)]) {
+fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], regions: &mut Vec<TextRegion>, written: &[(usize, usize, usize, usize, usize, usize)]) {
     use std::collections::{HashMap, HashSet};
     let mut rows_of: HashMap<usize, HashSet<usize>> = HashMap::new();
-    for &(r, v, _, n, _) in written {
+    for &(r, v, _, _, n, _) in written {
         if n > 0 {
             rows_of.entry(v).or_default().insert(r);
         }
     }
     let primary = rows_of.values().map(|s| s.len()).max().unwrap_or(0);
     let Some(pv) = rows_of.iter().max_by_key(|(v, s)| (s.len(), std::cmp::Reverse(**v))).map(|(v, _)| *v) else { return };
-    let count = |r: usize, v: usize, han: bool| written.iter().filter(|w| w.0 == r && w.1 == v).map(|w| if han { w.4 } else { w.3 }).sum::<usize>();
+    let count = |r: usize, v: usize, han: bool| written.iter().filter(|w| w.0 == r && w.1 == v).map(|w| if han { w.5 } else { w.4 }).sum::<usize>();
     let mut real: HashSet<usize> = HashSet::new();
-    for &(r, v, _, _, _) in written {
+    for &(r, v, _, _, _, _) in written {
         if rows_of.get(&v).map_or(0, |s| s.len()) * 2 >= primary {
             real.insert(v);
             continue;
@@ -732,12 +740,12 @@ fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], region
         }
     }
     let mut gone: Vec<usize> = Vec::new();
-    for &(r, v, ri, _, _) in written {
+    for &(r, v, ra, rb, _, _) in written {
         if real.contains(&v) {
             continue;
         }
         if std::env::var("OMR_JP_DEBUG").is_ok() {
-            eprintln!("  丢伪段 行{r} 段{v}: {}", regions[ri].text);
+            eprintln!("  丢伪段 行{r} 段{v}: {}", regions[ra..rb].iter().map(|c| c.text.as_str()).collect::<String>());
         }
         for n in notes[r].nums.iter_mut() {
             if let Some(t) = n.lyrics.get_mut(v) {
@@ -749,7 +757,7 @@ fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], region
         if let Some(l) = labels[r].get_mut(v) {
             l.clear();
         }
-        gone.push(ri);
+        gone.extend(ra..rb);
     }
     // 各行末尾空下来的段截掉
     for (r, rn) in notes.iter_mut().enumerate() {
@@ -978,7 +986,7 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
     for (_, y0, seg, y1) in segs {
         let text: String = seg.iter().map(|c| c.ch).collect();
         let (xa, xb) = (seg.first().map_or(0.0, |c| c.x0), seg.last().map_or(0.0, |c| c.x1));
-        let region = TextRegion { text: text.clone(), bbox: Rect::new(xa, y0 as f64, xb - xa, (y1 - y0 + 1) as f64) };
+        let region = TextRegion { text: text.clone(), bbox: Rect::new(xa, y0 as f64, xb - xa, (y1 - y0 + 1) as f64), chars: Vec::new() };
         // 「注：…」起头的整段是页脚注：从这一行起，行距不过 1.5 倍行高的接续行并成一条；隔开的下一个「注」另起一条（同 TS stanzas.ts）
         if FOOTNOTE.is_match(text.trim_start()) || !footnotes.is_empty() {
             let t = text.trim().to_string();
@@ -1127,6 +1135,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let crop = ink.strip(&zone, 0);
     let boxes = ocr.detect(&crop).unwrap_or_default();
     let mut lines: Vec<WordLine> = Vec::new();
+    // 各 det 框的逐字中心（页眉区按框找回来挂 `chars`）
+    let mut line_chars: Vec<(Rect, Vec<crate::result::RegionChar>)> = Vec::new();
     let none = Claims::new(ink, std::iter::empty());
     for b in boxes {
         if b.h < num_h * 0.35 {
@@ -1159,6 +1169,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             continue;
         }
         if !text.trim().is_empty() {
+            line_chars.push((Rect::new(b.x, b.y, b.w, b.h), chars.iter().filter(|c| c.ch != ' ').map(|c| crate::result::RegionChar { text: c.ch.to_string(), cx: c.cx() }).collect()));
             lines.push(WordLine { text, x: b.x, y: b.y, w: b.w, h: b.h });
         }
     }
@@ -1327,7 +1338,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         if note {
             let n = BRACKET_OPEN.replace(t, "$1 ");
             let n = BRACKET_CLOSE.replace(&n, " $1").into_owned();
-            score.header_regions.push(TextRegion { text: n.clone(), bbox: Rect::new(l.x, l.y, l.w, l.h) });
+            score.header_regions.push(TextRegion { text: n.clone(), bbox: Rect::new(l.x, l.y, l.w, l.h), chars: Vec::new() });
             score.header_notes.push(n);
         }
         !note
@@ -1349,7 +1360,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             let (cx0, cy0, cw, ch) = c.rect;
             if !std::ptr::eq(c, t) && score.subtitle.is_none() && cy0 + ch <= t.rect.1 && c.text.trim().chars().all(is_han) && c.text.trim().chars().count() >= 2 && dash_between(ink, cx0 + cw, cx0 + cw + ch * 2.2, cy0, cy0 + ch) {
                 let text = format!("{}——", c.text.trim());
-                score.header_regions.push(TextRegion { text: text.clone(), bbox: Rect::new(cx0, cy0, cw, ch) });
+                score.header_regions.push(TextRegion { text: text.clone(), bbox: Rect::new(cx0, cy0, cw, ch), chars: Vec::new() });
                 score.subtitle = Some(text);
                 continue;
             }
@@ -1373,7 +1384,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                 }
                 _ => {}
             }
-            score.header_regions.push(TextRegion { text: c.text.clone(), bbox: Rect::new(c.rect.0, c.rect.1, c.rect.2, c.rect.3) });
+            score.header_regions.push(TextRegion { text: c.text.clone(), bbox: Rect::new(c.rect.0, c.rect.1, c.rect.2, c.rect.3), chars: Vec::new() });
         }
         if let Some((n, x, _)) = number {
             if !x.is_nan() {
@@ -1383,6 +1394,24 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
     } else if let Some((n, _, _)) = number {
         score.number = Some(n);
+    }
+    // 页眉区挂逐字位置：区里的字数与落在区里的那几个 det 框的字数对得上才挂（识别模式逐字对位，同 TS `TextRegion.chars`）
+    for r in score.header_regions.iter_mut() {
+        let mut cs: Vec<crate::result::RegionChar> = line_chars
+            .iter()
+            .filter(|(b, _)| {
+                let ov = (b.right().min(r.bbox.right()) - b.x.max(r.bbox.x)).max(0.0) * (b.bottom().min(r.bbox.bottom()) - b.y.max(r.bbox.y)).max(0.0);
+                ov >= b.w * b.h * 0.6
+            })
+            .flat_map(|(_, c)| c.iter().filter(|c| c.cx >= r.bbox.x - 1.0 && c.cx <= r.bbox.right() + 1.0).cloned())
+            .collect();
+        cs.sort_by(|a, b| a.cx.total_cmp(&b.cx));
+        if !cs.is_empty() && cs.len() == r.text.chars().filter(|c| !c.is_whitespace()).count() {
+            for (c, t) in cs.iter_mut().zip(r.text.chars().filter(|c| !c.is_whitespace())) {
+                c.text = t.to_string();
+            }
+            r.chars = cs;
+        }
     }
     // det 连「1=」那一行都漏了（迦南 1775 只框出标题、赞美诗歌 946 只框出「bE」）：回连通块里按字形找
     if !key_found {
@@ -1901,12 +1930,12 @@ fn place_chords(rn: &mut RowNotes, mut cands: Vec<ChordCand>, regions: &mut Vec<
                 if c.bbox.y > ys[k] {
                     n.extra_chords[k] = crate::result::ExtraChord { tok: c.tok.clone(), offset: frac };
                     ys[k] = c.bbox.y;
-                    regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+                    regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox, chars: Vec::new() });
                 }
             } else if !n.extra_chords.iter().any(|e| e.tok == c.tok) {
                 n.extra_chords.push(crate::result::ExtraChord { tok: c.tok.clone(), offset: frac });
                 ys.push(c.bbox.y);
-                regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+                regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox, chars: Vec::new() });
             }
             continue;
         }
@@ -1917,7 +1946,7 @@ fn place_chords(rn: &mut RowNotes, mut cands: Vec<ChordCand>, regions: &mut Vec<
             if (n0.extra_chords.len() as u32) < aug {
                 let offset = (1 + n0.extra_chords.len()) as f64 / (1 + aug) as f64;
                 n0.extra_chords.push(crate::result::ExtraChord { tok: c.tok.clone(), offset });
-                regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+                regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox, chars: Vec::new() });
             }
             continue;
         }
@@ -1933,6 +1962,6 @@ fn place_chords(rn: &mut RowNotes, mut cands: Vec<ChordCand>, regions: &mut Vec<
         if frac > 0.0 {
             nums[i].chord_offset = Some(frac);
         }
-        regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox });
+        regions.push(TextRegion { text: c.tok.clone(), bbox: c.bbox, chars: Vec::new() });
     }
 }
