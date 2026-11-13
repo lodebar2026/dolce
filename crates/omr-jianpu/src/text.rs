@@ -136,6 +136,7 @@ fn under_glyph_arc(ink: &Ink, k: &Comp, num_h: f64) -> Vec<(i64, i64)> {
         in_run(xx) && yy <= low[xx as usize] && yy > low[xx as usize] - if (thick[xx as usize] as f64) <= cap_max { thick[xx as usize] } else { cap }
     };
     let (mut arc, mut arc_top, mut glyph_top) = (Vec::new(), i64::MAX, i64::MAX);
+    let (mut glyph_n, mut glyph_beside) = (0usize, 0usize);
     for yy in 0..bh {
         for xx in 0..bw {
             if !own(xx, yy) {
@@ -146,11 +147,20 @@ fn under_glyph_arc(ink: &Ink, k: &Comp, num_h: f64) -> Vec<(i64, i64)> {
                 arc_top = arc_top.min(yy);
             } else {
                 glyph_top = glyph_top.min(yy);
+                glyph_n += 1;
+                if !in_run(xx) {
+                    glyph_beside += 1;
+                }
             }
         }
     }
-    // 字得从弧顶以上起笔（字脚压在弧上，字身在上面）
-    if arc.is_empty() || glyph_top == i64::MAX || glyph_top as f64 > arc_top as f64 - num_h * 0.3 {
+    // 字得从弧顶以上起笔（字脚压在弧上，字身在上面）；弧从字的侧边起（「D7」的 7 接着弧头，青年诗歌 48）字身大半在弧段外，比弧顶高就行
+    // 整块都在弧段里的就是一道高拱的弧（比上面弧门的字号上限高，青年诗歌 48 跨四拍的长弧）
+    if glyph_n == 0 && !arc.is_empty() {
+        return arc;
+    }
+    let beside = glyph_n > 0 && glyph_beside as f64 >= glyph_n as f64 * 0.6;
+    if arc.is_empty() || glyph_top == i64::MAX || glyph_top as f64 > arc_top as f64 - if beside { 1.0 } else { num_h * 0.3 } {
         return Vec::new();
     }
     arc
@@ -901,6 +911,8 @@ static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]
 /// 整框只是个调名（可带「/调名」，变调夹谱的另一套调）：`Em/Bm`、`bE`。
 static KEY_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?)?\s*$").unwrap());
 /// 单字符路读出的音名组：可带前后升降号。
+/// 和弦行里的跳转记号：只认写全的（`Fine`、D 后带点的 `D.C.` / `D. C`），宽松写法在和弦行多是连写和弦的误检（`G/D C` → `DC`）。
+static CHORD_ROW_JUMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"D\s*\.\s*[CS]\b\.?|Fine(?:[^a-z]|$)").unwrap());
 static KEY_GLYPHS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([b#♭♯]?)\s*([A-Ga-g])\s*([b#♭♯]?)$").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
@@ -1488,7 +1500,22 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
                 cs.swap(i, i + 1);
             }
         }
-        let text: String = cs.into_iter().collect();
+        let mut text: String = cs.into_iter().collect();
+        // 有的本子把 Fine / D.C. 就印在和弦行里（青年诗歌 2、48）：写全的 `Fine`、带点的 `D.C.` 和弦名凑不出来，照收成跳转记号再从行里抹掉
+        if let Some(m) = CHORD_ROW_JUMP.find(&text) {
+            let word = if m.as_str().starts_with('F') { "Fine" } else if m.as_str().contains('S') { "D.S." } else { "D.C." };
+            let x = chars.get(text[..m.start()].chars().count()).map_or(0.0, |c| c.x0);
+            let nums = &mut rn.nums;
+            let mut bi = nums.len() - 1;
+            while bi > 0 && nums[bi].bbox.cx() > x {
+                bi -= 1;
+            }
+            if !nums[bi].jump_marks.iter().any(|w| w == word) {
+                nums[bi].jump_marks.push(word.to_string());
+            }
+            let n = m.as_str().chars().count();
+            text = format!("{}{}{}", &text[..m.start()], " ".repeat(n), &text[m.end()..]);
+        }
         // 括号里的备选和弦（移调的另一套）不收
         let mut depth = 0;
         let no_paren: String = text
