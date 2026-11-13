@@ -887,8 +887,8 @@ static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
 static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*([一-鿿].*)$").unwrap());
-/// 书眉：书名后接曲号（`青年诗歌—015`），曲号去掉前导零。
-static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})\s*$").unwrap());
+/// 书眉：书名后接曲号（`青年诗歌—015`），或曲号在前、隔着破折号接书名（`060—青年诗歌`；不带破折号的「1942我们是一家人」是曲号加曲名）。曲号去掉前导零。
+static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})|0*(\d{1,4})\s*[—\-－–_]+\s*[一-鿿]{2,8})\s*$").unwrap());
 static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【].*[\]］】]$").unwrap());
 static BRACKET_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([\[［])\s*").unwrap());
 static BRACKET_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*([\]］])$").unwrap());
@@ -951,20 +951,28 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             lines.push(WordLine { text, x: b.x, y: b.y, w: b.w, h: b.h });
         }
     }
-    // det 把一行切成几框的（「祂來」|「過」、「泥土音乐《脚步》」|「（2007）」）：同高、同一横排、挨着的并回一行
+    // det 把一行切成几框的（「祂來」|「過」、「泥土音乐《脚步》」|「（2007）」）：同高、同一横排、挨着的并回一行。
+    // 两截汉字中间隔着一道 det 没框进来的破折号（「经历基督」——「作牧人」）的也并，补上「——」
     lines.sort_by(|a, b| a.x.total_cmp(&b.x));
     let mut joined: Vec<WordLine> = Vec::new();
     for l in lines {
+        let mut dashed = false;
         let hit = joined.iter_mut().find(|j| {
             let ov = (j.y + j.h).min(l.y + l.h) - j.y.max(l.y);
             let hh = j.h.min(l.h);
+            let gap = l.x - (j.x + j.w);
+            let same_row = ov >= hh * 0.6 && (j.h - l.h).abs() <= hh * 0.3 && !NUMBER.is_match(&j.text) && !NUMBER.is_match(&l.text);
             // 切开的框是叠着或贴着的（隔开的是两行字：曲号与标题、署名与副标题）
-            ov >= hh * 0.6 && (j.h - l.h).abs() <= hh * 0.3 && l.x - (j.x + j.w) <= hh * 0.1 && l.x - (j.x + j.w) >= -hh && !NUMBER.is_match(&j.text) && !NUMBER.is_match(&l.text)
+            if same_row && gap <= hh * 0.1 && gap >= -hh {
+                return true;
+            }
+            dashed = same_row && gap > hh * 0.3 && gap <= hh * 3.0 && j.text.chars().last().is_some_and(is_han) && l.text.chars().next().is_some_and(is_han) && dash_between(ink, j.x + j.w, l.x, j.y.max(l.y), (j.y + j.h).min(l.y + l.h));
+            dashed
         });
         match hit {
             Some(j) => {
                 let latin = j.text.chars().last().is_some_and(|c| c.is_ascii_alphanumeric()) && l.text.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
-                j.text = format!("{}{}{}", j.text, if latin { " " } else { "" }, l.text);
+                j.text = format!("{}{}{}", j.text, if dashed { "——" } else if latin { " " } else { "" }, l.text);
                 let (x1, y1) = ((j.x + j.w).max(l.x + l.w), (j.y + j.h).max(l.y + l.h));
                 j.y = j.y.min(l.y);
                 j.w = x1 - j.x;
@@ -989,7 +997,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             if l.y + l.h <= title_y {
                 if number.as_ref().is_none_or(|n| n.2 < l.h) {
                     // 书眉里的曲号不记印在哪侧（不是标题旁的曲号）
-                    number = Some((c[1].to_string(), f64::NAN, l.h));
+                    number = Some((c.get(1).or(c.get(2)).map_or("", |m| m.as_str()).to_string(), f64::NAN, l.h));
                 }
                 continue;
             }
@@ -1114,6 +1122,31 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     } else if let Some((n, _, _)) = number {
         score.number = Some(n);
     }
+}
+
+/// 两框之间（横向 `x0..x1`、纵向 `y0..y1`）只有一道破折号：中间那一截里有一行墨横贯过半个空当，空当里别的墨不多。
+fn dash_between(ink: &Ink, x0: f64, x1: f64, y0: f64, y1: f64) -> bool {
+    let (xa, xb) = (x0.ceil() as i64 + 1, x1.floor() as i64 - 1);
+    let (ya, yb) = (y0.round() as i64, y1.round() as i64);
+    if xb - xa < 4 || yb - ya < 4 {
+        return false;
+    }
+    let hh = (yb - ya) as f64;
+    let mut best = 0usize;
+    let mut best_y = 0i64;
+    for y in (y0 + hh * 0.3).round() as i64..=(y0 + hh * 0.75).round() as i64 {
+        let n = (xa..=xb).filter(|&x| ink.at(x, y)).count();
+        if n > best {
+            best = n;
+            best_y = y;
+        }
+    }
+    if (best as f64) < (xb - xa + 1) as f64 * 0.5 {
+        return false;
+    }
+    // 横墨上下 0.15 行高以外基本是空的（不是一个字）
+    let far = (ya..=yb).filter(|&y| (y - best_y).abs() as f64 > hh * 0.15).map(|y| (xa..=xb).filter(|&x| ink.at(x, y)).count()).sum::<usize>();
+    (far as f64) <= best as f64 * 0.3
 }
 
 /// 框里的字按框里的空白列补词间空格（同 `read_segs` 的读法，字由整框一次 rec 给出）。
