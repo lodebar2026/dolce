@@ -87,6 +87,15 @@ fn arc_ends(ink: &Ink, x0: i64, x1: i64, y1: i64) -> bool {
     down(x0, -1) && down(x1, 1)
 }
 
+/// 横墨是一块字形的顶横（下一行数字「5」「7」的顶）：它所在的连通块从这道横起笔、往下伸出 0.4 字号以上。
+/// 减时线自成一块，或粘着上面的数字（块往上伸）。
+fn glyph_top(ink: &Ink, x0: i64, x1: i64, y0: i64, y1: i64, h: f64) -> bool {
+    ink.comps().iter().any(|k| {
+        let r = &k.rect;
+        r.x <= x0 as f64 + 1.0 && r.right() >= x1 as f64 && (r.y - y0 as f64).abs() <= 1.0 && r.bottom() >= y1 as f64 + h * 0.4
+    })
+}
+
 /// 八度点 / 附点样的小圆块。
 pub fn dot_like(k: &Comp, h: f64) -> bool {
     let (w, hh) = (k.rect.w, k.rect.h);
@@ -218,7 +227,7 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
     let yb = row.bottom_at(0.0).max(row.bottom_at(w)).ceil() as i64 + (h * 1.0) as i64;
     let max_thick = (h * 0.2).max(4.0);
     // 厚过一道线上限、不到两倍的也留着：多半是两道线印粘了（按一道收，另记「多一道」的候选）
-    let lines: Vec<HLine> = hlines(ink, 0, ink.w() as i64, ya, yb, (h * 0.4) as i64).into_iter().filter(|l| ((l.y1 - l.y0 + 1) as f64) <= max_thick * 2.0 && !arc_ends(ink, l.x0, l.x1, l.y1)).collect();
+    let lines: Vec<HLine> = hlines(ink, 0, ink.w() as i64, ya, yb, (h * 0.4) as i64).into_iter().filter(|l| ((l.y1 - l.y0 + 1) as f64) <= max_thick * 2.0 && !arc_ends(ink, l.x0, l.x1, l.y1) && !glyph_top(ink, l.x0, l.x1, l.y0, l.y1, h)).collect();
     let thick = |l: &HLine| (l.y1 - l.y0 + 1) as f64;
     let slack = h * 0.15;
     let mut used: Vec<usize> = Vec::new();
@@ -321,7 +330,7 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
                 let lim = if cnt == 0 { h * 0.4 } else { h * 0.25 };
                 // 歌词字的顶横两头都宽出去半个字号以上；线头印得参差的不算
                 let fits = prev.is_none_or(|p| rx0 as f64 >= p.0 as f64 - h * 0.5 || rx1 as f64 <= p.1 as f64 + h * 0.5);
-                if ink.at(x, y) || rx1 - rx0 + 1 < min_len || blank > lim || !fits || arc_ends(ink, rx0, rx1, y - 1) {
+                if ink.at(x, y) || rx1 - rx0 + 1 < min_len || blank > lim || !fits || arc_ends(ink, rx0, rx1, y - 1) || glyph_top(ink, rx0, rx1, y0, y - 1, h) {
                     break;
                 }
                 cnt += 1;

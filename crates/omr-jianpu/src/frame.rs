@@ -358,18 +358,27 @@ fn drop_bracket_cells(ink: &Ink, rows: &mut [RowFrame]) {
     }
     let h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 1.0);
     let pw = ink.w() as f64;
+    // 各行括着它的竖高块（双竖线、方括号的钩常是并排几块）：行首排在这些块横向范围里的格都拿掉
+    let mut spans: Vec<Vec<(f64, f64)>> = vec![Vec::new(); rows.len()];
     for k in ink.comps().iter().filter(|k| k.rect.h >= h * 2.2 && k.rect.w <= h * 1.2 && k.rect.x > 2.0 && k.rect.right() < pw - 2.0) {
         let inside: Vec<usize> = (0..rows.len()).filter(|&i| rows[i].bottom_at(k.cx) > k.rect.y && rows[i].top_at(k.cx) < k.rect.bottom()).collect();
         if inside.len() < 2 || (inside.len() == rows.len() && rows.len() >= 5) {
             continue;
         }
         for &i in &inside {
-            let cells = &mut rows[i].cells;
-            let lead = cells.iter().take_while(|c| c.x0 as f64 >= k.rect.x - 1.0 && c.x1 as f64 <= k.rect.right() + 1.0).count();
-            if lead > 0 && lead < cells.len() {
-                cells.drain(..lead);
-            }
+            spans[i].push((k.rect.x - 1.0, k.rect.right() + 1.0));
         }
+    }
+    for (row, sp) in rows.iter_mut().zip(&spans) {
+        let cells = &mut row.cells;
+        // 行首（第一个落在括号外的数字 / 小节线格之前）落在括号里的格；纸边的碎屑格夹在前头不挡
+        let inside = |c: &Cell| sp.iter().any(|&(a, b)| c.x0 as f64 >= a && c.x1 as f64 <= b);
+        let Some(first) = cells.iter().position(|c| !inside(c) && c.kind != CellKind::Other) else { continue };
+        let mut i = 0;
+        cells.retain(|c| {
+            i += 1;
+            !(i <= first && inside(c))
+        });
     }
 }
 

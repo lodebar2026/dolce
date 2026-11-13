@@ -99,7 +99,15 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     let mut halves = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {
         // 上方带的顶：上一行最末一行歌词的底
-        let y_min = if i == 0 { 0.0 } else { score.lyric_regions.iter().map(|r| r.bbox.bottom()).filter(|&b| b < rows[i].top_at(w / 2.0) && b > rows[i - 1].bottom_at(w / 2.0)).fold(rows[i - 1].bottom_at(w / 2.0), f64::max) };
+        // 末一条词带常把底下的弧切进来（带高比别的词行高出一截）：各条按本处词行高的中位封底
+        let y_min = if i == 0 {
+            0.0
+        } else {
+            let (lo, hi) = (rows[i - 1].bottom_at(w / 2.0), rows[i].top_at(w / 2.0));
+            let between: Vec<&dolce_omr_core::image::Rect> = score.lyric_regions.iter().map(|r| &r.bbox).filter(|b| b.bottom() < hi && b.bottom() > lo).collect();
+            let med = dolce_omr_core::geom::median(&between.iter().map(|b| b.h).collect::<Vec<_>>(), 0.0);
+            between.iter().map(|b| if between.len() >= 2 { b.bottom().min(b.y + med * 1.15) } else { b.bottom() }).fold(lo, f64::max)
+        };
         halves.push(spans::arcs(ink, &rows[i], &mut notes[i], y_min, ocr));
         text::chords_above(ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
