@@ -59,12 +59,37 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     let strokes: Vec<Stroke> = join_all(raw, tol, &|_, _| true);
     // 候选弧：(左端音, 右端音, 宽, 弧顶中点)
     let mut found: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
+    let dbg = std::env::var("OMR_ARC_DEBUG").is_ok();
     for s in &strokes {
+        if dbg && s.width() >= h * 0.3 {
+            let sh = s.shape();
+            let (arch, up) = sh.arch();
+            eprintln!("  笔 x{:.0}-{:.0} y{:.0}/{:.0} 宽{:.0} 拱{arch:.1} 上{up} 回{:.1} 粗{:.1} 峰{:.2}", sh.a.0, sh.b.0, sh.a.1 + ya as f64, sh.b.1 + ya as f64, s.width(), sh.back(), sh.thick, sh.peak);
+        }
         if s.width() < h * MIN_W {
             continue;
         }
         let sh = s.shape();
         let (arch, up) = sh.arch();
+        // M 形：两道相邻的小弧在中间那个音上接成一笔，整笔中间凹下去（嵌在一道大弧底下的「((2 (3) 3))」）——在中间的音处劈成两道
+        if !up && arch >= h * MIN_ARCH && sh.thick <= h * 0.2 {
+            let (ax, bx) = (sh.a.0, sh.b.0);
+            let (ay, by) = (sh.a.1 + ya as f64, sh.b.1 + ya as f64);
+            if row.top_at(ax) - ay <= h * 1.0 && row.top_at(bx) - by <= h * 1.0 {
+                let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
+                let mid = rn.nums.iter().enumerate().filter(|(_, n)| n.bbox.cx() > ax + h * 0.3 && n.bbox.cx() < bx - h * 0.3).min_by(|a, b| (a.1.bbox.cx() - (ax + bx) / 2.0).abs().total_cmp(&(b.1.bbox.cx() - (ax + bx) / 2.0).abs())).map(|p| p.0);
+                if let (Some(i), Some(m), Some(j)) = (near(ax), mid, near(bx)) {
+                    if i < m && m < j && j - i == 2 {
+                        for (p, q) in [(i, m), (m, j)] {
+                            if !found.iter().any(|f| f.0 == p && f.1 == q) {
+                                found.push((p, q, 0.0, ((ax + bx) / 2.0, ay.min(by))));
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         if !up || arch < h * MIN_ARCH || arch < s.width() * 0.025 || arch > h * 1.3 || sh.back() > arch * 0.35 || sh.thick > h * 0.2 || sh.peak < 0.12 || sh.peak > 0.88 {
             continue;
         }
