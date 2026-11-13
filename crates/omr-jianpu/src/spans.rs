@@ -362,7 +362,14 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
             if std::env::var("OMR_DOT_DEBUG").is_ok() && area >= 4 && touch && !edge {
                 eprintln!("  弧点 音x{:.0} 团{bw}x{bh} 实{:.2} 隔{gap} 点宽{dot_w}", cx, area as f64 / (bw * bh));
             }
-            if touch && !edge && bw >= h * 0.12 && bh >= h * 0.12 && bw >= dot_w * 0.6 && bw <= dot_w * 1.5 && bh <= bw * 1.65 && bw / bh <= 1.8 && area as f64 >= bw * bh * 0.7 && gap >= 1.0 && gap <= h * 0.6 {
+            // 挂在括线、弧端竖钩下的点（「⌐3⌐」三连音括线两端，第一声呼求前奏）：团是棒棒糖形——底下一个本行点那么宽（九成以上，弧端的笔尖窄）的方块实而圆，上面是比点窄一半的细颈
+            let lolly = bh > bw * 1.65 && bw >= dot_w * 0.9 && {
+                let (xa0, xa1) = (xa + x0 as i64, xa + x1 as i64);
+                let head = (fb - bw.round() as i64 + 1..=fb).map(|y| (xa0..=xa1).filter(|&x| ink.at(x, y)).count()).sum::<usize>() as f64;
+                let neck: Vec<f64> = (ft..fb - bw.round() as i64).map(|y| (xa0..=xa1).filter(|&x| ink.at(x, y)).count() as f64).collect();
+                head >= bw * bw * 0.7 && !neck.is_empty() && dolce_omr_core::geom::median(&neck, 0.0) <= bw * 0.5
+            };
+            if touch && !edge && bw >= h * 0.12 && bh >= h * 0.12 && bw >= dot_w * 0.6 && bw <= dot_w * 1.5 && (lolly || (bh <= bw * 1.65 && bw / bh <= 1.8 && area as f64 >= bw * bh * 0.7)) && gap >= 1.0 && gap <= h * 0.6 {
                 found = true;
                 if std::env::var("OMR_DOT_DEBUG").is_ok() {
                     eprintln!("  弧点收 音x{:.0} y{:.0} 团{bw}x{bh} 实{:.2} 隔{gap} 点宽{dot_w}", cx, n.bbox.y, filled / (bw * bh));
