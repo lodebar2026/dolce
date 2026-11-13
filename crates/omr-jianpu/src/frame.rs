@@ -168,6 +168,12 @@ pub fn digit_of(text: &str) -> Option<u8> {
     }
 }
 
+/// 粗体小图把 3 / 5 / 6 的开口糊成闭环读成 8 / B：取 OCR 候选里排最前的 0–7。
+pub fn alt_digit(ocr: &CachedOcr, img: &Gray) -> Option<u8> {
+    let r = ocr.rank_chars(img, 10).ok()?;
+    r.first().and_then(|c| c.alts.iter().find_map(|a| a.chars().next().filter(|c| ('0'..='7').contains(c) && a.chars().count() == 1))).map(|c| c as u8 - b'0')
+}
+
 /// 整格只读出一个 0–7。
 fn strict_digit(t: &str) -> Option<u8> {
     let t = t.trim();
@@ -283,7 +289,10 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         let nb = row.bars().count();
         // 带内切出的数字格多数得真读得出数字（歌词行里夹着段号、汉字的竖笔伸出带外像小节线）
         let imgs: Vec<Gray> = row.digits().map(|c| digit_cell(ink, &c.rect())).collect();
-        let good = ocr.read_cells(&imgs).map_or(0, |v| v.iter().filter(|t| strict_digit(t).is_some()).count());
+        let good = ocr.read_cells(&imgs).map_or(0, |v| {
+            // 读成 8 / B 的照候选再认一遍（迦南诗选 1940 小图粗体，一行的 6、3 全读成 B、8，整行丢）
+            v.iter().zip(&imgs).filter(|(t, img)| strict_digit(t).is_some() || (matches!(t.trim(), "8" | "B") && alt_digit(ocr, img).is_some())).count()
+        });
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("  带 y{:.0} 高{:.0} 数字格{nd} 读出{good} 线{nb}", band.top0, band.h());
         }

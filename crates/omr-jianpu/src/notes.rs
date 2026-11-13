@@ -104,10 +104,7 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
     for (i, t) in texts.iter().enumerate() {
         let mut d = digit_of(t);
         if d.is_none() && !t.trim().is_empty() {
-            // 粗体小图把 3 / 5 / 6 的开口糊成闭环读成 8 / B：取候选里排最前的 0–7
-            if let Ok(r) = ocr.rank_chars(&imgs[i], 10) {
-                d = r.first().and_then(|c| c.alts.iter().find_map(|a| a.chars().next().filter(|c| ('0'..='7').contains(c) && a.chars().count() == 1))).map(|c| c as u8 - b'0');
-            }
+            d = crate::frame::alt_digit(ocr, &imgs[i]);
         }
         read.push(d);
     }
