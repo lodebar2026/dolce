@@ -495,6 +495,9 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
     let diam = |r: &Rect| (r.w + r.h) / 2.0;
     let row_d: Vec<f64> = hits.iter().map(|t| diam(&dots[t.0].rect)).collect();
     let med_diam = if row_d.len() >= 3 { dolce_omr_core::geom::median(&row_d, 0.0) } else { 0.0 };
+    // 本行低音点顶离行带底的中位：页面歪斜时个别数字框高出一截、点又低一截，按「离数字多远」过不了门，按与同行别的低音点同高收
+    let low_rel: Vec<f64> = hits.iter().filter(|t| !t.2 && t.3 <= h * 0.38).map(|t| dots[t.0].rect.y - row.bottom_at(dots[t.0].cx)).collect();
+    let low_rel_med = if low_rel.len() >= 3 { Some(dolce_omr_core::geom::median(&low_rel, 0.0)) } else { None };
     for (ni, n) in out.nums.iter_mut().enumerate() {
         for up in [true, false] {
             let mut mine: Vec<&(usize, usize, bool, f64)> = hits.iter().filter(|t| t.1 == ni && t.2 == up).collect();
@@ -506,7 +509,9 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
             for t in mine {
                 // 声部行的低音点下面没有歌词挤着，声部间留得宽、点离数字远些（新编赞美诗 78 上声部 0.4 字号）；单声部行下方紧挨歌词，收紧
                 let first = if up { h * 0.45 } else if voiced { h * 0.45 } else { h * 0.38 };
-                if t.3 - edge > if cnt == 0 { first } else { h * 0.3 } || cnt >= 2 {
+                let d0 = dots[t.0];
+                let level = !up && cnt == 0 && t.3 <= h * 0.6 && low_rel_med.is_some_and(|m| (d0.rect.y - row.bottom_at(d0.cx) - m).abs() <= h * 0.15);
+                if (t.3 - edge > if cnt == 0 { first } else { h * 0.3 } && !level) || cnt >= 2 {
                     break;
                 }
                 // 第二个点正落在第一个点的正上 / 下方（错开半个点以上的是旁边的标点、别的记号）
