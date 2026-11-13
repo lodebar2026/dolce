@@ -223,8 +223,10 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
             }
             CellKind::Colon => {
                 // 冒号贴着小节线：在线左是反复结束，在线右是反复开始
+                // 线与冒号之间没有音的（行首「‖ :3」隔得开，青年诗歌 14），隔到 1.2 字号也是反复开始
+                let none_between = |b: i64| !out.nums.iter().any(|n| n.bbox.cx() > b as f64);
                 match last_bar_x1 {
-                    Some(b) if (c.x0 - b) as f64 <= h * 0.6 => pending_forward = true,
+                    Some(b) if (c.x0 - b) as f64 <= h * 0.6 || ((c.x0 - b) as f64 <= h * 1.2 && none_between(b)) => pending_forward = true,
                     _ => {
                         if let Some(n) = out.nums.last_mut() {
                             n.repeat_backward = true;
