@@ -437,9 +437,9 @@ fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
     }
     // 带括号的副歌标签「(副一)」「(副)」「(副歌)」照原样记成行首标签（同 TS `SIDE_LABEL_RE`）；不带括号的「副」是边注、不记
     if c.ch == '副' {
-        let open = chars[..i].iter().any(|d| "(（".contains(d.ch));
         let close = chars[i + 1..j].iter().any(|d| ")）".contains(d.ch));
-        if open && close {
+        // 左括号常读丢（「副二) 因你爱」，青年诗歌 16）：有右括号就算带括号的标签
+        if close {
             let body: String = chars[i..j].iter().map(|d| d.ch).filter(|&ch| ch == '副' || ch == '歌' || CN_NUM.contains(ch) || ch.is_ascii_digit()).collect();
             return (Some(format!("({body})")), &chars[j..]);
         }
