@@ -82,6 +82,18 @@ fn center_stroke(ink: &Ink, b: &Rect, h: f64) -> Option<(i64, i64)> {
 
 /// 变音记号的形状（判据照 TS `omr/accidental.ts`）：♯ 四象限都有墨；♭ 右上空、左竖到底；♮ 左竖高、右竖低。
 pub fn accidental_of(ink: &Ink, b: &Rect) -> Option<&'static str> {
+    accidental_of_by(&|x, y| ink.at(x, y), b)
+}
+
+/// 同 [`accidental_of`]，墨由 `at` 给（粘连块重分后只看本块的墨）。
+fn accidental_of_by(at: &dyn Fn(i64, i64) -> bool, b: &Rect) -> Option<&'static str> {
+    struct P<'a>(&'a dyn Fn(i64, i64) -> bool);
+    impl P<'_> {
+        fn at(&self, x: i64, y: i64) -> bool {
+            (self.0)(x, y)
+        }
+    }
+    let ink = P(at);
     let (bx0, bx1, by0, by1) = (b.x.round() as i64, b.right().round() as i64, b.y.round() as i64, b.bottom().round() as i64);
     let frac = |x0: i64, x1: i64, y0: i64, y1: i64| {
         let tot = ((x1 - x0) * (y1 - y0)).max(1) as f64;
@@ -140,6 +152,93 @@ pub fn accidental_of(ink: &Ink, b: &Rect) -> Option<&'static str> {
     (lt.min(rt).min(lb).min(rb) >= 0.12).then_some("sharp")
 }
 
+/// 粘连的临时号：窗取数字左边一个半数字宽（不越过左邻音）、数字顶上 0.7 到数字底上 0.2 字高，扣掉各音的框，
+/// 窗里重分 8 邻接块；块左头只有一道细墨（拖进来的弧笔）的列削掉。剩下的块要悬高（底比数字底高出 0.2 字高以上）、
+/// 碰着窗顶窗底的块不算（被窗切开的连谱号、竖线）。尺寸在临时号那一档（高 0.45~1.1、宽 0.3~1.5 数字）、离数字不过 0.5 字号，形状判得出 ♯ / ♭。
+fn glued_accidental(ink: &Ink, nums: &[JpNum], i: usize, med_h: f64, med_w: f64, h: f64) -> Option<(Rect, &'static str)> {
+    use dolce_omr_core::pixel::ccl::connected_components;
+    let nb = nums[i].bbox;
+    let left = if i > 0 && nums[i - 1].bbox.right() < nb.x { nums[i - 1].bbox.right() + 1.0 } else { nb.x - med_w * 1.5 };
+    let x0 = left.max(nb.x - med_w * 1.5).max(0.0).round() as i64;
+    // 窗左界是左邻音的右缘时，从左边拖进来的弧笔是那个音的；否则碰着窗左界的是窗外的大块（连谱号的钩）
+    let left_is_note = i > 0 && nums[i - 1].bbox.right() + 1.0 >= nb.x - med_w * 1.5;
+    let x1 = nb.x.round() as i64;
+    let y0 = (nb.y - med_h * 0.7).max(0.0).round() as i64;
+    let y1 = (nb.bottom() - med_h * 0.2).round() as i64;
+    if x1 - x0 < 3 || y1 - y0 < 3 {
+        return None;
+    }
+    let (w, hh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    let inside = |x: f64, y: f64| nums.iter().any(|n| x >= n.bbox.x && x < n.bbox.right() && y >= n.bbox.y && y < n.bbox.bottom());
+    let mut data = vec![0u8; w * hh];
+    for y in 0..hh {
+        for x in 0..w {
+            let (gx, gy) = (x0 + x as i64, y0 + y as i64);
+            if ink.at(gx, gy) && !inside(gx as f64, gy as f64) {
+                data[y * w + x] = 1;
+            }
+        }
+    }
+    let mut labels = vec![0i32; w * hh];
+    let flat = connected_components(&data, w, hh, 1.0, &mut labels);
+    if std::env::var("OMR_ACC_DEBUG").is_ok() {
+        eprintln!("  粘连窗 音{} 窗 x{x0}-{x1} y{y0}-{y1} 块数{}", nums[i].digit, flat.len() / 8);
+    }
+    let thin = (med_h * 0.12).max(2.0);
+    for (ci, c) in flat.chunks(8).enumerate() {
+        let lab = ci as i32 + 1;
+        let (cx0, cy0, cw, ch) = (c[1] as usize, c[2] as usize, c[3] as usize, c[4] as usize);
+        // 碰着窗顶、窗底的是被窗切开的大块（连谱号的钩、竖线）
+        if cy0 == 0 || cy0 + ch >= hh || (cx0 == 0 && !left_is_note) {
+            continue;
+        }
+        // 左头只有一道细墨的列削掉（拖进来的弧笔）
+        let col = |x: usize| {
+            let (mut runs, mut long, mut cur) = (0, 0usize, 0usize);
+            for y in cy0..cy0 + ch {
+                if labels[y * w + x] == lab {
+                    if cur == 0 {
+                        runs += 1;
+                    }
+                    cur += 1;
+                    long = long.max(cur);
+                } else {
+                    cur = 0;
+                }
+            }
+            (runs, long)
+        };
+        let mut a = cx0;
+        while a < cx0 + cw && { let (r, l) = col(a); r <= 1 && (l as f64) <= thin } {
+            a += 1;
+        }
+        if a >= cx0 + cw {
+            continue;
+        }
+        // 削过的块重量上下界
+        let ys: Vec<usize> = (cy0..cy0 + ch).filter(|&y| (a..cx0 + cw).any(|x| labels[y * w + x] == lab)).collect();
+        let (Some(&t), Some(&bt)) = (ys.first(), ys.last()) else { continue };
+        let r = Rect::new((x0 + a as i64) as f64, (y0 + t as i64) as f64, (cx0 + cw - a) as f64, (bt - t + 1) as f64);
+        let gap = nb.x - r.right();
+        if std::env::var("OMR_ACC_DEBUG").is_ok() {
+            eprintln!("  粘连窗 音{} 块 {:.0}x{:.0} @{:.0},{:.0} 缝{gap:.0} 底高出{:.0} 形{:?}", nums[i].digit, r.w, r.h, r.x, r.y, nb.bottom() - r.bottom(), accidental_of_by(&|gx, gy| { let (x, y) = (gx - x0, gy - y0); x >= a as i64 && x < w as i64 && y >= 0 && y < hh as i64 && labels[y as usize * w + x as usize] == lab }, &r));
+        }
+        if r.h < med_h * 0.45 || r.h > med_h * 1.1 || r.w < med_w * 0.3 || r.w > med_w * 1.5 || gap > h * 0.5 || nb.bottom() - r.bottom() < med_h * 0.2 || r.bottom() < nb.y + med_h * 0.1 {
+            continue;
+        }
+        // 削掉的弧笔不能留在形状判里：按窗里的标号图另画一份只含本块的墨
+        let only = |gx: i64, gy: i64| {
+            let (x, y) = (gx - x0, gy - y0);
+            x >= a as i64 && x < w as i64 && y >= 0 && y < hh as i64 && labels[y as usize * w + x as usize] == lab
+        };
+        let kind = accidental_of_by(&only, &r);
+        if let Some(k @ ("sharp" | "flat")) = kind {
+            return Some((r, k));
+        }
+    }
+    None
+}
+
 /// 记号正下方的音：横向对正（中线差不过 `dx` 字号）、是有音高的音；纵向间隙量到数字顶，或数字头上夹着的高八度点。
 fn owner_below(nums: &[JpNum], dots: &[&Comp], b: &Rect, h: f64, dx: f64, gap_lo: f64, gap_hi: f64, own: i32) -> Option<usize> {
     nums.iter().position(|n| {
@@ -160,7 +259,24 @@ fn owner_below(nums: &[JpNum], dots: &[&Comp], b: &Rect, h: f64, dx: f64, gap_lo
 }
 
 /// 认一行谱的贴音记号，记到各音上。回认下的连通块 id。
-pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr) -> Vec<i32> {
+/// 行所在的版式：连谱号括着的声部行、声部页上没归进系统的行、单声部页的行。临时号的放宽门按它分。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowCtx {
+    Single,
+    InSystem,
+    VoicedLoose,
+}
+
+impl RowCtx {
+    fn in_voiced_page(self) -> bool {
+        self != RowCtx::Single
+    }
+}
+
+/// 高悬又窄的 ♯ 最高到数字的几倍（同 TS `TALL_SHARP_H`）。
+const TALL_SHARP_H: f64 = 1.6;
+
+pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx: RowCtx) -> Vec<i32> {
     let h = row.h();
     let w = ink.w() as f64;
     let (ya, yb) = (row.top_at(0.0).min(row.top_at(w)) - h * 2.0, row.bottom_at(0.0).max(row.bottom_at(w)));
@@ -168,48 +284,113 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr) -> 
     let dots: Vec<&Comp> = near.iter().copied().filter(|k| dot_like(k, h)).collect();
     let mut used: Vec<i32> = Vec::new();
     let debug = std::env::var("OMR_JP_DEBUG").is_ok();
+    let acc_debug = std::env::var("OMR_ACC_DEBUG").is_ok();
     let in_note = |b: &Rect, nums: &[JpNum]| nums.iter().any(|n| b.x < n.bbox.right() && b.right() > n.bbox.x && b.y < n.bbox.bottom() && b.bottom() > n.bbox.y);
 
-    // 临时升降号：紧贴数字左边、不比数字宽、顶不低于数字腰的一块，形状判得出 ♯ / ♭ / ♮
-    let med_w = median(&out.nums.iter().map(|n| n.bbox.w).collect::<Vec<_>>(), h * 0.6);
+    // 临时升降号（判据照 TS `jianpu.ts` 临时号一节）：紧贴数字左边、形状判得出 ♯ / ♭ / ♮ 的一块。
+    // 尺子用本行数字的中位高 / 宽（带高被骑在上方的记号撑大）；宽度尺子不算「1」（窄竖笔，满是 1 的行中位宽只剩竖笔宽）。
+    let med_w_all = median(&out.nums.iter().map(|n| n.bbox.w).collect::<Vec<_>>(), h * 0.6);
+    let med_h = median(&out.nums.iter().filter(|n| n.digit != 0 && n.digit != RHYTHM_DIGIT).map(|n| n.bbox.h).collect::<Vec<_>>(), h * 0.65);
+    let wide: Vec<f64> = out.nums.iter().map(|n| n.bbox.w).filter(|&w| w >= med_h * 0.45).collect();
+    let med_w = median(if wide.is_empty() { &[] } else { &wide[..] }, h * 0.6);
+    // 脚下压着减时线的是倚音的小号数字（形似 ♯）：块底两行起扫到底下 0.15 字高，有一行墨占满九成宽
+    let underlined = |b: &Rect| {
+        let (x0, x1) = (b.x.round() as i64, b.right().round() as i64);
+        (b.bottom().round() as i64 - 2..=(b.bottom() + med_h * 0.15).round() as i64).any(|y| ((x0..x1).filter(|&x| ink.at(x, y)).count() as f64) >= b.w * 0.9)
+    };
+    let bar_xs: Vec<f64> = out.barline_xs.iter().chain(&out.double_bar_xs).chain(&out.end_bar_xs).copied().collect();
+    let on_bar = |b: &Rect| row.bars().any(|c| (c.x0 as f64) <= b.right() && (c.x1 as f64) >= b.x) || bar_xs.iter().any(|&x| x >= b.x - 1.0 && x <= b.right() + 1.0);
     for i in 0..out.nums.len() {
         let nb = out.nums[i].bbox;
-        if out.nums[i].digit == 0 || out.nums[i].digit == RHYTHM_DIGIT {
+        if out.nums[i].digit == 0 || out.nums[i].digit == RHYTHM_DIGIT || nb.h < med_h * 0.85 {
             continue;
         }
-        let hit = near.iter().find(|k| {
+        let mut found: Option<(i32, &'static str)> = None;
+        for k in &near {
             let b = &k.rect;
             let gap = nb.x - b.right();
-            gap >= -h * 0.08
-                && gap <= h * 0.35
-                && b.h >= h * 0.4
-                && b.h <= h * 1.15
-                && b.w >= h * 0.18
-                && b.w <= med_w * 1.0
-                && b.cy() <= nb.cy() + h * 0.05
-                && b.bottom() >= nb.y + h * 0.1
-                && b.y >= nb.y - h * 0.7
-                && !used.contains(&k.id)
-                && !in_note(b, &out.nums)
-        });
-        let Some(k) = hit else { continue };
-        let Some(kind) = accidental_of(ink, &k.rect) else { continue };
-        // ♮ 与数字齐底的多半是别的字（「4」的右半、括号）
-        if kind == "natural" && nb.bottom() - k.rect.bottom() < h * 0.1 {
+            // 记号与右邻数字纵向得交叠一截（和弦行、上一行的字在上方）；小节线格不是记号
+            if gap < -h * 0.08 || gap > h * 1.0 || used.contains(&k.id) || in_note(b, &out.nums) || b.right() > nb.cx() || b.bottom() < nb.y + med_h * 0.1 || on_bar(b) {
+                continue;
+            }
+            let top_up = nb.y - b.y; // 顶比数字高出
+            let bot_up = nb.bottom() - b.bottom(); // 底比数字底高出
+            let shape = || accidental_of(ink, b);
+            if acc_debug {
+                eprintln!("  临时号候选 {:.0}x{:.0} @{:.0},{:.0} → 音{} {:.0}x{:.0}（中位 {med_h:.0}高 {med_w:.0}宽）缝{gap:.0} 顶高出{top_up:.0} 底高出{bot_up:.0} 形{:?} 压线{}", b.w, b.h, b.x, b.y, out.nums[i].digit, nb.w, nb.h, shape(), underlined(b));
+            }
+            let sharp = || shape() == Some("sharp") && !underlined(b);
+            // 高悬的大 ♯（比数字还高、整个悬在右邻上方）；又高又窄的 ♯（底不垂到数字底下）。只在单声部行
+            if !ctx.in_voiced_page() && b.h >= med_h * 0.95 && top_up >= med_h * 0.25 && gap >= 0.0 {
+                let tall_hung = b.h <= med_h * 1.45 && b.w <= med_w * 1.2 && bot_up >= med_h * 0.3 && gap <= h * 1.0;
+                let tall_narrow = b.h <= med_h * TALL_SHARP_H && b.w <= med_w * 0.85 && bot_up >= 0.0 && gap <= h * 0.5;
+                if (tall_hung || tall_narrow) && sharp() {
+                    found = Some((k.id, "sharp"));
+                    break;
+                }
+            }
+            if b.h > med_h * 1.25 {
+                continue;
+            }
+            let hung_low = bot_up >= med_h * 0.2;
+            let hung_both = b.h <= med_h * 1.1 && top_up >= med_h * 0.25 && bot_up >= med_h * 0.3;
+            let raised = b.h < med_h * 0.9 || hung_both;
+            let gate = match ctx {
+                RowCtx::InSystem => raised,
+                RowCtx::VoicedLoose => b.h < med_h * 0.8,
+                RowCtx::Single => hung_both,
+            };
+            let wide_sharp = gate && hung_low && b.w <= med_w * 1.5 && sharp();
+            // 上标小 ♭：矮、整个悬在右邻上半截
+            let small_flat = b.h <= med_h * 0.7 && bot_up >= med_h * 0.35 && b.w <= med_w * 1.5 && shape() == Some("flat") && !underlined(b);
+            if b.w > med_w * 0.85 && !wide_sharp && !small_flat {
+                continue;
+            }
+            if b.h < med_h * 0.45 || b.w < med_w * 0.3 {
+                continue;
+            }
+            let hung_sharp = hung_low && top_up >= med_h * 0.2 && sharp();
+            if gap > h * (if wide_sharp || small_flat || hung_sharp { 0.5 } else { 0.35 }) {
+                continue;
+            }
+            // 印在音符左上角：顶不低于数字顶下 0.15、底不垂到数字底下
+            if b.y > nb.y + med_h * 0.15 || b.bottom() > nb.bottom() + med_h * 0.1 {
+                continue;
+            }
+            let Some(kind) = shape() else { continue };
+            // ♮ 要悬高：与数字齐底的多半是别的字（「1」紧贴下一个数字、「4」的右半、括号）
+            if kind == "natural" && bot_up < med_h * 0.1 {
+                continue;
+            }
+            found = Some((k.id, kind));
+            break;
+        }
+        if found.is_none() {
+            // 粘在别的墨上的记号（弧笔从左邻数字拖到 ♯ 上，整块挂在左邻音上）：在数字左上开窗、窗里重分连通块再按形状认
+            if let Some((r, kind)) = glued_accidental(ink, &out.nums, i, med_h, med_w, h) {
+                if debug {
+                    eprintln!("临时号（粘连）{kind} x{:.0} y{:.0} {:.0}x{:.0} → 音{}", r.x, r.y, r.w, r.h, out.nums[i].digit);
+                }
+                if !underlined(&r) {
+                    out.nums[i].accidental = Some(kind);
+                }
+            }
             continue;
         }
+        let Some((id, kind)) = found else { continue };
         if debug {
-            eprintln!("临时号 {kind} x{:.0} y{:.0} {:.0}x{:.0} → 音{}", k.rect.x, k.rect.y, k.rect.w, k.rect.h, out.nums[i].digit);
+            let r = near.iter().find(|k| k.id == id).unwrap().rect;
+            eprintln!("临时号 {kind} x{:.0} y{:.0} {:.0}x{:.0} → 音{}", r.x, r.y, r.w, r.h, out.nums[i].digit);
         }
         out.nums[i].accidental = Some(kind);
-        used.push(k.id);
+        used.push(id);
     }
 
     // 倚音：小一号的数字，底边贴着行带顶，底下压着减时线，右边紧跟着主音
     let mut graces: Vec<(usize, Rect, u32, i32)> = Vec::new();
     for k in &near {
         let b = &k.rect;
-        if used.contains(&k.id) || b.h < h * 0.45 || b.h > h * 0.8 || b.w > med_w * 0.9 || b.w < h * 0.08 || in_note(b, &out.nums) {
+        if used.contains(&k.id) || b.h < h * 0.45 || b.h > h * 0.8 || b.w > med_w_all * 0.9 || b.w < h * 0.08 || in_note(b, &out.nums) {
             continue;
         }
         let top = row.top_at(b.cx());

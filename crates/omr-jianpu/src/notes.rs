@@ -93,7 +93,7 @@ pub fn dot_like(k: &Comp, h: f64) -> bool {
     w >= h * 0.08 && hh >= h * 0.08 && w <= h * 0.42 && hh <= h * 0.42 && w / hh > 0.55 && w / hh < 1.8 && k.fill() >= 0.55
 }
 
-pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
+pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowCtx) -> RowNotes {
     let h = row.h();
     let mut out = RowNotes::default();
     // 读数
@@ -204,7 +204,7 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> RowNotes {
         }
     }
     underlines(ink, row, &mut out);
-    let used = crate::marks::apply(ink, row, &mut out, ocr);
+    let used = crate::marks::apply(ink, row, &mut out, ocr, ctx);
     octave_dots(ink, row, &mut out, &used);
     out
 }

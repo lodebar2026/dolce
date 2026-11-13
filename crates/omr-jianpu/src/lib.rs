@@ -36,7 +36,7 @@ pub fn recognize_strip(src: &SourceImage, ocr: &CachedOcr, known: bool) -> Optio
     if std::env::var("OMR_JP_DEBUG").is_ok() {
         eprintln!("条 {}x{} 字号 {num_h:.1}：{} 行，各行数字 {:?}", ink.w(), ink.h(), rows.len(), rows.iter().map(|r| r.digits().count()).collect::<Vec<_>>());
     }
-    rows.iter().map(|row| notes::build(&ink, row, ocr)).max_by_key(|r| r.nums.len()).map(|r| (scale, r))
+    rows.iter().map(|row| notes::build(&ink, row, ocr, marks::RowCtx::Single)).max_by_key(|r| r.nums.len()).map(|r| (scale, r))
 }
 
 /// 识别一首（各页原图按序）。没有找到数字行回 Err。
@@ -82,7 +82,14 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     let w = ink.w() as f64;
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
     hook.step(1, STEPS, "notes")?;
-    let mut notes: Vec<notes::RowNotes> = rows.iter().map(|row| notes::build(ink, row, ocr)).collect();
+    let sys = frame::systems(ink, &rows);
+    let voiced = sys.iter().any(|s| s.is_some());
+    let ctx = |i: usize| match (sys[i], voiced) {
+        (Some(_), _) => marks::RowCtx::InSystem,
+        (None, true) => marks::RowCtx::VoicedLoose,
+        _ => marks::RowCtx::Single,
+    };
+    let mut notes: Vec<notes::RowNotes> = rows.iter().enumerate().map(|(i, row)| notes::build(ink, row, ocr, ctx(i))).collect();
     let mut labels: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     hook.step(2, STEPS, "lyrics")?;
     text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions);
@@ -98,7 +105,6 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     }
     spans::pair_halves(&mut notes, &halves);
     hook.step(5, STEPS, "beats")?;
-    let sys = frame::systems(ink, &rows);
     let tally = beats::settle(&mut notes, &sys, &mut score);
     if std::env::var("OMR_JP_DEBUG").is_ok() {
         eprintln!("字号 {num_h:.1}，页 {}x{}；拍号 {}/{}，小节 {}：满拍 {}（其中裁决改的 {}），不满 / 超拍 {}", ink.w(), ink.h(), score.beats, score.beat_type, tally.bars, tally.full, tally.fixed, tally.bad);
