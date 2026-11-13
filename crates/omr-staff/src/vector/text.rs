@@ -12,7 +12,7 @@ use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::score::Dir;
 use dolce_omr_source::vector::VecPage;
 use dolce_omr_text::header::{credits, Credit, WordLine};
-use dolce_omr_text::spaces::recover_spaces;
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
 use dolce_omr_text::Ch;
 use crate::attrs::DigitReader;
 use dolce_omr_ocr::surface::Gray;
@@ -343,30 +343,12 @@ fn read_spaced(s: &Gray, ocr: &dyn DigitReader) -> Option<Vec<Ch>> {
     let w = s.w as f64;
     let mut out: Vec<Ch> = Vec::new();
     for c in got {
-        let cs: Vec<char> = c.ch.chars().filter(|ch| !ch.is_whitespace()).collect();
-        let (a, z) = (c.x0 * w, c.x1 * w);
-        let n = cs.len().max(1) as f64;
-        for (i, ch) in cs.into_iter().enumerate() {
-            out.push(Ch { ch, x0: a + (z - a) * i as f64 / n, x1: a + (z - a) * (i + 1) as f64 / n });
-        }
+        spread(c.ch.chars().filter(|ch| !ch.is_whitespace()), c.x0 * w, c.x1 * w, &mut out);
     }
     let ink = |x: usize, y: usize| s.data[y * s.w + x] < INK_GRAY;
     let col = |x: usize| (0..s.h).any(|y| ink(x, y));
-    let (Some(ia), Some(ib)) = ((0..s.w).find(|&x| col(x)), (0..s.w).rev().find(|&x| col(x))) else { return Some(out) };
-    let (top, bot) = ((0..s.h).find(|&y| (0..s.w).any(|x| ink(x, y))).unwrap_or(0), (0..s.h).rev().find(|&y| (0..s.w).any(|x| ink(x, y))).unwrap_or(s.h - 1));
-    let mut blanks: Vec<(f64, f64)> = Vec::new();
-    let mut start: Option<usize> = None;
-    for x in ia..=ib {
-        match (col(x), start) {
-            (false, None) => start = Some(x),
-            (true, Some(s0)) => {
-                blanks.push((s0 as f64, (x - s0) as f64));
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    Some(recover_spaces(&out, &blanks, (bot + 1 - top) as f64, ia as f64, (ib + 1) as f64))
+    let Some(bi) = box_ink(0, s.w as i64, 0, s.h as i64, |x| col(x as usize), |y| (0..s.w).any(|x| ink(x, y as usize))) else { return Some(out) };
+    Some(recover_spaces(&out, &bi.blanks, bi.height, bi.left, bi.right))
 }
 
 /// 谱面大图以外的小图按行拼条（各取原分辨率、最近邻、重叠取深的）送 OCR，读出的字折回工作坐标。

@@ -10,7 +10,7 @@ use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::surface::Gray;
 use dolce_omr_source::raster::SourceImage;
-use dolce_omr_text::spaces::recover_spaces;
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
 use dolce_omr_text::Ch;
 use std::collections::HashSet;
 
@@ -196,40 +196,6 @@ fn strip(f: &PageFrame, src: &SourceImage, rect: &Rect, drop: &HashSet<i32>) -> 
     (g, x0, y0)
 }
 
-/// 框里没被抹掉的墨的空白列段 `(起, 宽)`（页内坐标）。
-fn blanks(f: &PageFrame, rect: &Rect, drop: &HashSet<i32>) -> Vec<(f64, f64)> {
-    let pw = f.ink.w;
-    let (x0, x1) = (rect.x.max(0.0) as usize, (rect.right() as usize).min(pw));
-    let (y0, y1) = (rect.y.max(0.0) as usize, (rect.bottom() as usize).min(f.ink.h));
-    let mut out = Vec::new();
-    let mut start: Option<usize> = None;
-    for x in x0..x1 {
-        let ink = (y0..y1).any(|y| f.ink.tri[y * pw + x] == INK && !drop.contains(&f.labels[y * pw + x]));
-        match (ink, start) {
-            (false, None) => start = Some(x),
-            (true, Some(s)) => {
-                if s > x0 {
-                    out.push((s as f64, (x - s) as f64));
-                }
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    out
-}
-
-/// 框里墨的左右缘（没有墨回框的两缘）。
-fn ink_span(f: &PageFrame, rect: &Rect, drop: &HashSet<i32>) -> (f64, f64) {
-    let pw = f.ink.w;
-    let (x0, x1) = (rect.x.max(0.0) as usize, (rect.right() as usize).min(pw));
-    let (y0, y1) = (rect.y.max(0.0) as usize, (rect.bottom() as usize).min(f.ink.h));
-    let col = |x: usize| (y0..y1).any(|y| f.ink.tri[y * pw + x] == INK && !drop.contains(&f.labels[y * pw + x]));
-    let a = (x0..x1).find(|&x| col(x)).unwrap_or(x0);
-    let b = (x0..x1).rev().find(|&x| col(x)).map_or(x1, |x| x + 1);
-    (a as f64, b as f64)
-}
-
 /// 读一段：送 OCR、字位折回页内坐标、补词间空格。读不出字回 None。
 fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, ocr: &dyn DigitReader) -> Option<Seg> {
     let (g, sx0, _) = strip(f, src, &rect, drop);
@@ -241,18 +207,20 @@ fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, o
     let w = g.w as f64;
     let mut chars: Vec<Ch> = Vec::new();
     for c in got {
-        let cs: Vec<char> = c.ch.chars().collect();
-        let (a, b) = ((sx0 as f64 + c.x0 * w) * up, (sx0 as f64 + c.x1 * w) * up);
-        let n = cs.len().max(1) as f64;
-        for (i, ch) in cs.into_iter().enumerate() {
-            chars.push(Ch { ch, x0: a + (b - a) * i as f64 / n, x1: a + (b - a) * (i + 1) as f64 / n });
-        }
+        spread(c.ch.chars(), (sx0 as f64 + c.x0 * w) * up, (sx0 as f64 + c.x1 * w) * up, &mut chars);
     }
     if chars.is_empty() {
         return None;
     }
-    let (ia, ib) = ink_span(f, &rect, drop);
-    let chars = recover_spaces(&chars, &blanks(f, &rect, drop), rect.h, ia, ib);
+    // 框里没被抹掉的墨：空白列段与左右缘
+    let pw = f.ink.w;
+    let (x0, x1) = (rect.x.max(0.0) as usize, (rect.right() as usize).min(pw));
+    let (y0, y1) = (rect.y.max(0.0) as usize, (rect.bottom() as usize).min(f.ink.h));
+    let col = |x: i64| (y0..y1).any(|y| f.ink.tri[y * pw + x as usize] == INK && !drop.contains(&f.labels[y * pw + x as usize]));
+    let chars = match box_ink(x0 as i64, x1 as i64, 0, 0, col, |_| false) {
+        Some(bi) => recover_spaces(&chars, &bi.blanks, rect.h, bi.left, bi.right),
+        None => recover_spaces(&chars, &[], rect.h, x0 as f64, x1 as f64),
+    };
     Some(Seg { chars, rect })
 }
 

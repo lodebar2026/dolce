@@ -135,3 +135,35 @@ mod tests {
         assert_eq!(out.iter().map(|c| c.ch).collect::<String>(), "shall speak");
     }
 }
+
+/// 一段读出的字（rec 常把几个字并成一段、只给一个位置）按字数均分 `[a, b)`，逐字追加到 `out`。
+pub fn spread(text: impl IntoIterator<Item = char>, a: f64, b: f64, out: &mut Vec<Ch>) {
+    let cs: Vec<char> = text.into_iter().collect();
+    let n = cs.len().max(1) as f64;
+    for (i, ch) in cs.into_iter().enumerate() {
+        out.push(Ch { ch, x0: a + (b - a) * i as f64 / n, x1: a + (b - a) * (i + 1) as f64 / n });
+    }
+}
+
+/// 一个框里的墨（补词间空格用）：墨列之间的空白段 `(起, 宽)`、墨的左缘、右缘（不含）、墨高。
+#[derive(Clone, Debug, PartialEq)]
+pub struct BoxInk {
+    pub blanks: Vec<(f64, f64)>,
+    pub left: f64,
+    pub right: f64,
+    pub height: f64,
+}
+
+/// 扫框 `[x0, x1) × [y0, y1)` 里的墨；`col(x)` 这一列有没有墨、`row(y)` 这一行有没有墨（都只看框里）。没有墨回 None。
+pub fn box_ink(x0: i64, x1: i64, y0: i64, y1: i64, col: impl Fn(i64) -> bool, row: impl Fn(i64) -> bool) -> Option<BoxInk> {
+    let inked: Vec<i64> = (x0..x1).filter(|&x| col(x)).collect();
+    let (&a, &z) = (inked.first()?, inked.last()?);
+    let blanks = inked.windows(2).filter(|p| p[1] > p[0] + 1).map(|p| ((p[0] + 1) as f64, (p[1] - p[0] - 1) as f64)).collect();
+    let top = (y0..y1).find(|&y| row(y));
+    let bot = (y0..y1).rev().find(|&y| row(y));
+    let height = match (top, bot) {
+        (Some(t), Some(b)) => (b - t + 1) as f64,
+        _ => 0.0,
+    };
+    Some(BoxInk { blanks, left: a as f64, right: (z + 1) as f64, height })
+}

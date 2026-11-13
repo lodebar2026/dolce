@@ -8,7 +8,7 @@ use dolce_omr_ocr::surface::{blit, Gray};
 use dolce_omr_source::raster::SourceImage;
 use dolce_omr_text::chars::{han_count, latin_count};
 use dolce_omr_text::header::{credits, Credit, WordLine};
-use dolce_omr_text::spaces::recover_spaces;
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
 use dolce_omr_text::{chords, words, Ch};
 use super::classify::Mark;
 use dolce_omr_sheet::score::Dir;
@@ -45,42 +45,16 @@ pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> 
         let Some(got) = ocr.read_line(&s) else { continue };
         let mut chars: Vec<Ch> = Vec::new();
         for c in got {
-            let cs: Vec<char> = c.ch.chars().collect();
-            let (a, z) = ((b.x + c.x0 * b.w) * up, (b.x + c.x1 * b.w) * up);
-            let n = cs.len().max(1) as f64;
-            for (i, ch) in cs.into_iter().enumerate() {
-                chars.push(Ch { ch, x0: a + (z - a) * i as f64 / n, x1: a + (z - a) * (i + 1) as f64 / n });
-            }
+            spread(c.ch.chars(), (b.x + c.x0 * b.w) * up, (b.x + c.x1 * b.w) * up, &mut chars);
         }
         // 框里的空白列（页内坐标）
         let (x0, x1) = (((b.x * up).max(0.0)) as usize, (((b.x + b.w) * up) as usize).min(pw));
         let (y0, y1) = (((b.y * up).max(0.0)) as usize, (((b.y + b.h) * up) as usize).min(f.ink.h));
-        let col = |x: usize| (y0..y1).any(|y| f.ink.tri[y * pw + x] == INK);
-        let mut blanks = Vec::new();
-        let mut start = None;
-        let (mut ink_top, mut ink_bot) = (y1, y0);
-        for x in x0..x1 {
-            match (col(x), start) {
-                (false, None) => start = Some(x),
-                (true, Some(s0)) => {
-                    if s0 > x0 {
-                        blanks.push((s0 as f64, (x - s0) as f64));
-                    }
-                    start = None;
-                }
-                _ => {}
-            }
-        }
-        for y in y0..y1 {
-            if (x0..x1).any(|x| f.ink.tri[y * pw + x] == INK) {
-                ink_top = ink_top.min(y);
-                ink_bot = ink_bot.max(y);
-            }
-        }
-        let ink_h = if ink_bot >= ink_top { (ink_bot - ink_top + 1) as f64 } else { b.h * up };
-        let ia = (x0..x1).find(|&x| col(x)).unwrap_or(x0) as f64;
-        let ib = (x0..x1).rev().find(|&x| col(x)).map_or(x1, |x| x + 1) as f64;
-        let blanks: Vec<(f64, f64)> = blanks.into_iter().filter(|b| b.0 > ia && b.0 + b.1 < ib).collect();
+        let at = |x: usize, y: usize| f.ink.tri[y * pw + x] == INK;
+        let (ink_h, ia, ib, blanks) = match box_ink(x0 as i64, x1 as i64, y0 as i64, y1 as i64, |x| (y0..y1).any(|y| at(x as usize, y)), |y| (x0..x1).any(|x| at(x, y as usize))) {
+            Some(bi) => (bi.height, bi.left, bi.right, bi.blanks),
+            None => (b.h * up, x0 as f64, x1 as f64, Vec::new()),
+        };
         let text: String = recover_spaces(&chars, &blanks, ink_h, ia, ib).iter().map(|c| c.ch).collect();
         let t = text.trim();
         if std::env::var("OMR_HEADER_DEBUG").is_ok() {

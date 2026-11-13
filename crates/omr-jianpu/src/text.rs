@@ -12,7 +12,7 @@ use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_text::chars::{han_count, is_han};
 use dolce_omr_text::header::{credits, CreditType, WordLine};
 use dolce_omr_text::lyrics::{align, syllables};
-use dolce_omr_text::spaces::recover_spaces;
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
 use dolce_omr_text::{chords, words, Ch};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -379,12 +379,7 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
         }
         let mut chars: Vec<Ch> = Vec::new();
         for c in got {
-            let cs: Vec<char> = c.ch.chars().collect();
-            let (a, b) = (x_left + c.x0 * sw, x_left + c.x1 * sw);
-            let n = cs.len().max(1) as f64;
-            for (i, ch) in cs.into_iter().enumerate() {
-                chars.push(Ch { ch: fold(ch), x0: a + (b - a) * i as f64 / n, x1: a + (b - a) * (i + 1) as f64 / n });
-            }
+            spread(c.ch.chars().map(fold), x_left + c.x0 * sw, x_left + c.x1 * sw, &mut chars);
         }
         if chars.is_empty() {
             continue;
@@ -1269,12 +1264,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         let sw = strip.w as f64;
         let mut chars: Vec<Ch> = Vec::new();
         for c in &got {
-            let cs: Vec<char> = c.ch.chars().map(fold).collect();
-            let (a, z) = (b.x + c.x0 * sw, b.x + c.x1 * sw);
-            let n = cs.len().max(1) as f64;
-            for (i, ch) in cs.into_iter().enumerate() {
-                chars.push(Ch { ch, x0: a + (z - a) * i as f64 / n, x1: a + (z - a) * (i + 1) as f64 / n });
-            }
+            spread(c.ch.chars().map(fold), b.x + c.x0 * sw, b.x + c.x1 * sw, &mut chars);
         }
         let chars = box_spaces(ink, &none, &b, &chars);
         let mut text: String = chars.iter().map(|c| c.ch).collect();
@@ -1874,24 +1864,11 @@ fn dash_between(ink: &Ink, x0: f64, x1: f64, y0: f64, y1: f64) -> bool {
 fn box_spaces(ink: &Ink, none: &Claims, b: &Rect, chars: &[Ch]) -> Vec<Ch> {
     let (x0, x1) = (b.x.floor().max(0.0) as i64, ((b.x + b.w).ceil() as i64).min(ink.w() as i64));
     let (y0, y1) = (b.y.floor().max(0.0) as i64, ((b.y + b.h).ceil() as i64).min(ink.h() as i64) - 1);
-    let col = |x: i64| (y0..=y1).any(|y| none.free(ink, x, y));
-    let spans: Vec<i64> = (x0..x1).filter(|&x| col(x)).collect();
-    let (Some(&ia), Some(&ib)) = (spans.first(), spans.last()) else { return chars.to_vec() };
-    let mut blanks: Vec<(f64, f64)> = Vec::new();
-    for p in spans.windows(2) {
-        if p[1] > p[0] + 1 {
-            blanks.push(((p[0] + 1) as f64, (p[1] - p[0] - 1) as f64));
-        }
-    }
-    let rows: Vec<i64> = (y0..=y1).filter(|&y| (ia..=ib).any(|x| none.free(ink, x, y))).collect();
-    let ink_h = match (rows.first(), rows.last()) {
-        (Some(a), Some(z)) => (z - a + 1) as f64,
-        _ => b.h,
-    };
+    let Some(bi) = box_ink(x0, x1, y0, y1 + 1, |x| (y0..=y1).any(|y| none.free(ink, x, y)), |y| (x0..x1).any(|x| none.free(ink, x, y))) else { return chars.to_vec() };
     if std::env::var("OMR_JP_DEBUG").is_ok() {
-        eprintln!("  框空白 墨高{ink_h} {:?}", blanks.iter().map(|b| b.1 as i64).collect::<Vec<_>>());
+        eprintln!("  框空白 墨高{} {:?}", bi.height, bi.blanks.iter().map(|b| b.1 as i64).collect::<Vec<_>>());
     }
-    recover_spaces(chars, &blanks, ink_h, ia as f64, (ib + 1) as f64)
+    recover_spaces(chars, &bi.blanks, bi.height, bi.left, bi.right)
 }
 
 /// 署名行里的职能词（有它才在汉字之间按空当补空格）。
