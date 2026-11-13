@@ -32,6 +32,23 @@ pub fn split_gaps(ws: &[f64], h: f64) -> f64 {
     (v[k - 1] * v[k]).sqrt()
 }
 
+/// 词间白的门：[`split_gaps`]；分不开两簇时，字母多半挨着、只有词间留了白（`Lordforme` 只有两道 9~10 像素的白，
+/// 字母间是 0~1 像素、不进统计）——宽过 0.3 墨高的白不到字数三分之一的，这几道就是词界（匀开的一串大写每个字母间都有白，到不了）。
+fn word_gap(ws: &[f64], h: f64, n_chars: usize) -> f64 {
+    let t = split_gaps(ws, h);
+    if t.is_finite() {
+        return t;
+    }
+    let big: Vec<f64> = ws.iter().copied().filter(|&w| w >= h * 0.3).collect();
+    let small = ws.iter().copied().filter(|&w| w < h * 0.3).fold(1.0, f64::max);
+    let lo = big.iter().copied().fold(f64::INFINITY, f64::min);
+    // 还得比字母间最宽的白宽出 2.5 倍（与两簇的分界同一个比）
+    if !big.is_empty() && big.len() * 3 <= n_chars && lo >= small * 2.5 {
+        return lo;
+    }
+    t
+}
+
 fn wordy(c: char) -> bool {
     c.is_ascii_alphanumeric() || crate::chars::is_latin(c) || c == '\'' || c == '’'
 }
@@ -45,7 +62,7 @@ pub fn recover_spaces(chars0: &[Ch], blanks: &[(f64, f64)], ink_h: f64, x0: f64,
     // rec 给的字位是按时间步折回来的，常整体偏一点（窄字母旁边差半个字，空格就落到邻字的另一侧：`shall speak` → `shal lspeak`）。
     // 先估这一行的整体偏移：挪多少能让最多的字心落在墨上（不落在宽空白里、不出行的两头），并列取挪得少的
     let unit = (x1 - x0) / chars0.len() as f64;
-    let wide = split_gaps(&blanks.iter().map(|b| b.1).collect::<Vec<_>>(), ink_h).max(ink_h * 0.14);
+    let wide = word_gap(&blanks.iter().map(|b| b.1).collect::<Vec<_>>(), ink_h, chars0.len()).max(ink_h * 0.14);
     let on_ink = |x: f64| x >= x0 && x <= x1 && !blanks.iter().any(|&(bx, bw)| bw >= wide && x > bx && x < bx + bw);
     let mut best = (0usize, 0.0f64);
     for k in -6i32..=6 {
@@ -67,7 +84,7 @@ pub fn recover_spaces(chars0: &[Ch], blanks: &[(f64, f64)], ink_h: f64, x0: f64,
     let pair_ok = |i: usize| wordy(chars[i].ch) && wordy(chars[i + 1].ch) && !(digit(chars[i].ch) && digit(chars[i + 1].ch));
     let word_ws: Vec<f64> = blanks.iter().filter(|&&(x, w)| left_of(x, w).is_some_and(pair_ok)).map(|b| b.1).collect();
     let all: Vec<f64> = blanks.iter().map(|b| b.1).collect();
-    let thr = split_gaps(if word_ws.is_empty() { &all } else { &word_ws }, ink_h).max(ink_h * 0.14);
+    let thr = word_gap(if word_ws.is_empty() { &all } else { &word_ws }, ink_h, chars0.len()).max(ink_h * 0.14);
     let mut after: Vec<Option<(f64, f64)>> = vec![None; chars.len()];
     let mut gap: Vec<f64> = vec![0.0; chars.len()];
     for &(bx, bw) in blanks {

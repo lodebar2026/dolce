@@ -751,7 +751,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let lines = joined;
     // 曲号不比标题小多少（拍号的分子、速度数字小得多）
     let max_h = lines.iter().map(|l| l.h).fold(0.0, f64::max);
-    let title_y = lines.iter().find(|l| l.h == max_h).map_or(0.0, |l| l.y);
+    // 标题：不是书眉、曲号的行里最大的那行
+    let plain = || lines.iter().filter(|l| !BOOK_NUMBER.is_match(&l.text) && !NUMBER.is_match(&l.text));
+    let title_h = plain().map(|l| l.h).fold(0.0, f64::max);
+    let title_y = plain().find(|l| l.h == title_h).map_or(0.0, |l| l.y);
     let mut rest: Vec<WordLine> = Vec::new();
     let mut number: Option<(String, f64, f64)> = None;
     for l in lines {
@@ -760,7 +763,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             // 书眉在页顶：整行在最大那行字（标题）顶上（署名「戴克斯曲1861」「合译1932」与标题同排或在下面）
             if l.y + l.h <= title_y {
                 if number.as_ref().is_none_or(|n| n.2 < l.h) {
-                    number = Some((c[1].to_string(), l.x + l.w / 2.0, l.h));
+                    // 书眉里的曲号不记印在哪侧（不是标题旁的曲号）
+                    number = Some((c[1].to_string(), f64::NAN, l.h));
                 }
                 continue;
             }
@@ -848,7 +852,9 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             score.header_regions.push(TextRegion { text: c.text.clone(), bbox: Rect::new(c.rect.0, c.rect.1, c.rect.2, c.rect.3) });
         }
         if let Some((n, x, _)) = number {
-            score.number_side = Some(if x > t.rect.0 + t.rect.2 / 2.0 { "right" } else { "left" });
+            if !x.is_nan() {
+                score.number_side = Some(if x > t.rect.0 + t.rect.2 / 2.0 { "right" } else { "left" });
+            }
             score.number = Some(n);
         }
     } else if let Some((n, _, _)) = number {
@@ -874,6 +880,9 @@ fn box_spaces(ink: &Ink, none: &Claims, b: &Rect, chars: &[Ch]) -> Vec<Ch> {
         (Some(a), Some(z)) => (z - a + 1) as f64,
         _ => b.h,
     };
+    if std::env::var("OMR_JP_DEBUG").is_ok() {
+        eprintln!("  框空白 墨高{ink_h} {:?}", blanks.iter().map(|b| b.1 as i64).collect::<Vec<_>>());
+    }
     recover_spaces(chars, &blanks, ink_h, ia as f64, (ib + 1) as f64)
 }
 
@@ -954,6 +963,14 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("上方带 y{y0}-{y1}: {text}");
         }
+        // 升号印在小写 m 后面的小调和弦（「Fm♯」= F♯m）：♯ 后面是空格或行末的，原地换成 `#m`（字数不变，下标对得上）
+        let mut cs: Vec<char> = text.chars().collect();
+        for i in 1..cs.len().saturating_sub(1) {
+            if cs[i] == 'm' && "#♯".contains(cs[i + 1]) && ('A'..='G').contains(&cs[i - 1]) && cs.get(i + 2).is_none_or(|c| c.is_whitespace()) {
+                cs.swap(i, i + 1);
+            }
+        }
+        let text: String = cs.into_iter().collect();
         // 括号里的备选和弦（移调的另一套）不收
         let mut depth = 0;
         let no_paren: String = text
