@@ -1348,7 +1348,14 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             let ov = (j.y + j.h).min(l.y + l.h) - j.y.max(l.y);
             let hh = j.h.min(l.h);
             let gap = l.x - (j.x + j.w);
-            let same_row = ov >= hh * 0.6 && (j.h - l.h).abs() <= hh * 0.3 && !NUMBER.is_match(&j.text) && !NUMBER.is_match(&l.text);
+            // 两框横向交叠一大截（窄框宽的四分之一以上）的是 det 把一行切开（个人上传 7606「同」57 高、「伴」的框撑到 74），不比高差；
+            // 矮框的竖中线落在高框里就算同排。只擦着边的不算（赞美诗歌1384 942 署名框右端伸进标题框 53px，占署名框一成）
+            let lapped = -gap >= j.w.min(l.w) * 0.25 && {
+                let (ay, ah, by, bh) = if j.h <= l.h { (j.y, j.h, l.y, l.h) } else { (l.y, l.h, j.y, j.h) };
+                let cy = ay + ah / 2.0;
+                cy >= by && cy <= by + bh
+            };
+            let same_row = ov >= hh * 0.6 && ((j.h - l.h).abs() <= hh * 0.3 || lapped) && !NUMBER.is_match(&j.text) && !NUMBER.is_match(&l.text);
             // 切开的框是叠着或贴着的（隔开的是两行字：曲号与标题、署名与副标题）
             if same_row && gap <= hh * 0.1 && gap >= -hh {
                 return true;
