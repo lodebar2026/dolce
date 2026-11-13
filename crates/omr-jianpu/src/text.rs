@@ -1331,6 +1331,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let mut key_found = false;
     let mut meter_bands: Vec<(f64, f64)> = Vec::new();
     let key_boxes: Vec<WordLine> = lines.iter().filter(|k| KEY.is_match(&k.text)).cloned().collect();
+    let mixed_word = lines.iter().any(|l| l.text.contains("混合拍"));
     for l in lines {
         // 书眉「青年诗歌—015」「青年诗歌073」：书名带曲号，记曲号、不当标题
         if let Some(c) = BOOK_NUMBER.captures(&l.text) {
@@ -1404,7 +1405,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                 }
             }
         }
-        if let Some((bpm, _)) = words::metronome(&l.text) {
+        // 速度与调号、「混合拍」挤在一框（迦南 1727「1=C 4 混合拍 ♩=75」，rec 在「=」后多读一道「-」）：取最后一个汉字之后那段、去掉「=」后的横
+        let tail: String = l.text.rsplit(is_han).next().unwrap_or("").replace("=-", "=").replace("=—", "=");
+        let metro = words::metronome(&l.text).or_else(|| if tail.len() < l.text.len() || tail.contains("=") { words::metronome(&tail) } else { None });
+        if let Some((bpm, _)) = metro {
             score.tempo = Some(bpm);
             // 音符后带附点的（`♩.=60`，rec 读成「J.=60」）：拍单位是附点四分
             if DOTTED_BEAT.is_match(&l.text) {
@@ -1447,6 +1451,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
     }
     stacked_meter(ink, top, num_h, ocr, score);
+    // 「混合拍」与调号、速度挤在一框（迦南 1727），拍号是竖排叠印另行读出的
+    if mixed_word && score.meters.len() >= 2 && score.meter_note.is_none() {
+        score.meter_note = Some("混合拍".into());
+    }
     // 整行包在方括号里、带汉字的是谱面说明（`[共2张：A（原调）、G调]`），不是署名、标题
     rest.retain(|l| {
         let t = l.text.trim();
