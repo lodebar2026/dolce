@@ -156,8 +156,50 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     }
     // 嵌套双弧（迦南诗选「((5_ (6_) 6))」）：外弧罩三个音，底下两道小弧从外弧上分出来、往中间那个音头顶落成一个 V，
     // 与外弧粘成一块，追笔画只追出外弧。中间那个音两侧各一个字号内逐列从数字顶往上数墨段（到外弧顶），一侧有 0.3 字号、另一侧 0.2 字号以上的列数出两段就是（八度点只占一两列）
+    // 罩四个音的「((2 3) (3 2))」同理：左内弧往第二个音头顶落、右内弧从第三个音头顶起，各在那个音朝外弧中段的一侧数出两段（迦南 1782）
     for k in 0..found.len() {
         let (i, j, _, (_, my)) = found[k];
+        let has_l = found.iter().any(|f| f.0 == i && f.1 == i + 1);
+        let has_r = found.iter().any(|f| f.0 == i + 2 && f.1 == j);
+        if j == i + 3 && !(has_l && has_r) {
+            let cx = |n: usize| rn.nums[n].bbox.cx();
+            let two_runs = |x: i64| {
+                let mut runs = 0;
+                let mut prev = false;
+                let mut y = (row.top_at(x as f64) - 1.0).floor() as i64;
+                while y as f64 >= my - h * 0.25 {
+                    let on = ink.at(x, y);
+                    if on && !prev {
+                        runs += 1;
+                    }
+                    prev = on;
+                    y -= 1;
+                }
+                runs >= 2
+            };
+            let side = |a: f64, b: f64| (a.ceil() as i64..=b.floor() as i64).filter(|&x| two_runs(x)).count() as f64;
+            let (b, c) = (cx(i + 1), cx(i + 2));
+            let (l, r) = (side((b - h).max((cx(i) + b) / 2.0), b - 1.0), side(c + 1.0, (c + h).min((c + cx(j)) / 2.0)));
+            if std::env::var("OMR_ARC_DEBUG").is_ok() {
+                eprintln!("  嵌套四 {i}-{j} 两段列 左{l} 右{r}");
+            }
+            // 一侧的内弧已单独追出来的，另一侧够 0.3 字号就补
+            let (add_l, add_r) = match (has_l, has_r) {
+                (false, false) => {
+                    let ok = l.min(r) >= h * 0.2 && l.max(r) >= h * 0.3;
+                    (ok, ok)
+                }
+                (true, _) => (false, r >= h * 0.3),
+                (_, true) => (l >= h * 0.3, false),
+            };
+            if add_l {
+                found.push((i, i + 1, 0.0, ((cx(i) + b) / 2.0, my)));
+            }
+            if add_r {
+                found.push((i + 2, j, 0.0, ((c + cx(j)) / 2.0, my)));
+            }
+            continue;
+        }
         if j != i + 2 || found.iter().any(|f| (f.0 == i && f.1 == i + 1) || (f.0 == i + 1 && f.1 == j)) {
             continue;
         }
