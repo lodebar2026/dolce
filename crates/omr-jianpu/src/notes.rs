@@ -479,11 +479,18 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32]) {
             // 第一个点贴着数字（或减时线），第二个贴着第一个
             let mut edge = 0.0;
             let mut cnt: i32 = 0;
+            let mut first_cx: Option<f64> = None;
             for t in mine {
                 let first = if up { h * 0.45 } else { h * 0.38 };
                 if t.3 - edge > if cnt == 0 { first } else { h * 0.3 } || cnt >= 2 {
                     break;
                 }
+                // 第二个点正落在第一个点的正上 / 下方（错开半个点以上的是旁边的标点、别的记号）
+                let d = dots[t.0];
+                if first_cx.is_some_and(|c| (d.cx - c).abs() > d.rect.w * 0.5) {
+                    break;
+                }
+                first_cx.get_or_insert(d.cx);
                 cnt += 1;
                 n.oct_dots.push((dots[t.0].id, up, t.3));
                 edge = t.3 + dots[t.0].rect.h;
