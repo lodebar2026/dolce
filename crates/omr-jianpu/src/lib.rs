@@ -125,7 +125,19 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             eprintln!("行{i} y{:.0}-{:.0} 高{:.1} 数字{} 线{} 音{} 系统{:?}", r.top_at(w / 2.0), r.bottom_at(w / 2.0), r.h(), r.digits().count(), r.bars().count(), notes[i].nums.len(), sys[i]);
         }
     }
-    for (((row, rn), labels), sv) in rows.iter().zip(notes).zip(labels).zip(sys) {
+    // 末行（多声部谱是末系统的各声部行）行末并排两根不作他想，就是终止线——细粗之别常印不出来
+    let last_sys = sys.last().copied().flatten().map(|s| s.0);
+    let mut thin_end = vec![false; rows.len()];
+    for (i, rn) in notes.iter_mut().enumerate() {
+        let last = i + 1 == rows.len() || (last_sys.is_some() && sys[i].map(|s| s.0) == last_sys);
+        let tail = rn.nums.last().map_or(f64::MIN, |n| n.bbox.right());
+        if last && !rn.final_end && rn.double_bar_xs.last().is_some_and(|&x| x > tail) {
+            rn.double_bar_xs.pop();
+            rn.final_end = true;
+            thin_end[i] = true;
+        }
+    }
+    for ((((row, rn), labels), sv), thin) in rows.iter().zip(notes).zip(labels).zip(sys).zip(thin_end) {
         score.rows.push(StaffRow {
             system: sv.map(|s| s.0),
             voice: sv.map(|s| s.1),
@@ -135,6 +147,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             nums: rn.nums,
             barline_xs: rn.barline_xs,
             final_barline: rn.final_end.then_some("end"),
+            final_barline_thin: thin,
             double_bar_xs: rn.double_bar_xs,
             end_bar_xs: rn.end_bar_xs,
             ..Default::default()

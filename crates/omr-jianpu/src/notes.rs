@@ -197,7 +197,8 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
         if (b.x0 - a.x1) as f64 > h * 0.35 {
             continue;
         }
-        let thick = matches!(b.kind, CellKind::Bar { thick: true });
+        // 声部行（连谱号括着）粗细按两根彼此比：同一道 ‖ 的细粗之比比对全行中位稳（四声部 5px + 9px、4px + 7px）
+        let thick = matches!(b.kind, CellKind::Bar { thick: true }) || (ctx == crate::marks::RowCtx::InSystem && b.w() >= a.w() * 1.3);
         let at_end = b.cx() > last_num_right && std::ptr::eq(b, *bars.last().unwrap());
         let repeat = out.nums.iter().any(|n| n.repeat_backward && n.bbox.right() < a.cx() && a.cx() - n.bbox.right() < h * 3.0)
             || out.nums.iter().any(|n| n.repeat_forward && n.bbox.x > b.cx() && n.bbox.x - b.cx() < h * 3.0);

@@ -175,6 +175,9 @@ pub struct StaffRow {
     /// `end`：行末是终止线
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_barline: Option<&'static str>,
+    /// 终止线只按位置认的（两根没分出粗细）：跳转曲写出端据此写细细双线
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub final_barline_thin: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub double_bar_xs: Vec<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
