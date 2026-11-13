@@ -132,8 +132,34 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
             *cont = hyphen;
         }
     };
-    for c in cs {
+    // 第 i 个字之后第一个不是空格的字是拉丁字母
+    let latin_next = |i: usize| cs[i + 1..].iter().find(|c| c.ch != ' ').is_some_and(|c| is_latin(c.ch));
+    let last_latin = |row: &LyricRow| row.syls.last().is_some_and(|s| s.text.chars().last().is_some_and(is_latin));
+    let mut skip = 0;
+    for (i, c) in cs.iter().enumerate() {
+        if skip > 0 {
+            skip -= 1;
+            continue;
+        }
         let ch = c.ch;
+        // 撇号前读出了空格（`it 's`）：后面跟着的是缩写词尾（s t d m ll re ve）就并回前一个词
+        if (ch == '\'' || ch == '’') && cur.is_none() && last_latin(&row) {
+            let tail: String = cs[i + 1..].iter().map(|c| c.ch).take_while(|c| is_latin(*c)).collect();
+            if ["s", "t", "d", "m", "ll", "re", "ve"].contains(&tail.to_ascii_lowercase().as_str()) {
+                let s = row.syls.last_mut().unwrap();
+                s.text.push(ch);
+                s.text.push_str(&tail);
+                skip = tail.chars().count();
+                continue;
+            }
+        }
+        // 两边留空的「一」夹在拉丁字母之间（`e 一 cono`）：连字符读成的，同 `thou - sand`
+        if ch == '一' && cur.is_none() && !cont && last_latin(&row) && latin_next(i) {
+            let s = row.syls.last_mut().unwrap();
+            s.syllabic = if s.syllabic == Syllabic::End { Syllabic::Middle } else { Syllabic::Begin };
+            cont = true;
+            continue;
+        }
         if ch == '一' && cur.is_some() {
             // 夹在拉丁字母后的「一」是连字符读成的（`e一cono`）
             flush(&mut row, &mut cur, &mut cont, true);
