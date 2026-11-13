@@ -573,6 +573,43 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     for c in &mut out {
         c.kind = classify(ink, band, c);
     }
+    // 增时线粘着小节线成一格（迦南 1771 行末「6 -|」读成「6 1」）：格右端一段贯穿全格高、伸出行带的竖墨（不宽过 0.25 字号），
+    // 左边那截只有中腰一道扁横（高不过 0.3 字号、在带高 0.3~0.75 之间）——劈成增时线与小节线
+    let mut k = 0;
+    while k < out.len() {
+        let c = out[k];
+        if c.kind != CellKind::Digit || c.w() < h * 0.4 || c.h() < h * 0.9 {
+            k += 1;
+            continue;
+        }
+        let full = |x: i64| (c.y0..=c.y1).filter(|&y| ink.at(x, y)).count() as f64 >= c.h() * 0.9;
+        let mut a = c.x1;
+        while a > c.x0 && full(a - 1) {
+            a -= 1;
+        }
+        let bar_w = (c.x1 - a + 1) as f64;
+        let over = (a..=c.x1).filter_map(|x| overshoot(ink, band, x)).any(|(up, dn)| up + dn >= h * 0.2);
+        if !full(c.x1) || bar_w > h * 0.25 || a <= c.x0 + 2 || !over {
+            k += 1;
+            continue;
+        }
+        let left = Cell { x1: a - 1, ..c };
+        let rows: Vec<i64> = (c.y0..=c.y1).filter(|&y| (left.x0..=left.x1).any(|x| ink.at(x, y))).collect();
+        let (Some(&ty), Some(&by)) = (rows.first(), rows.last()) else {
+            k += 1;
+            continue;
+        };
+        let top = band.top(c.cx());
+        let flat = ((by - ty + 1) as f64) <= h * 0.3 && (ty as f64 - top) >= h * 0.3 && (by as f64 - top) <= h * 0.75 && left.w() >= h * 0.28;
+        if flat {
+            let dash = Cell { y0: ty, y1: by, kind: CellKind::Dash, ..left };
+            let bar = Cell { x0: a, kind: CellKind::Bar { thick: false }, ..c };
+            out.splice(k..=k, [dash, bar]);
+            k += 2;
+            continue;
+        }
+        k += 1;
+    }
     // 拉得比行带还开的反复冒号（爱主颂 92「‖: 」「:‖」：上点在带外、下点被带底切成一个「点」）：贴着小节线（0.6 字号内）的点格、
     // 带上下各放 0.6 字号重数这几列的墨，恰是上下两团、各不过 0.42 字号、中间空出 0.3 字号以上，就是冒号
     for k in 0..out.len() {
