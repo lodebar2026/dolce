@@ -898,6 +898,8 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-Ga-g])").unwrap());
 /// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
 static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
+/// 整框只是个调名（可带「/调名」，变调夹谱的另一套调）：`Em/Bm`、`bE`。
+static KEY_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?)?\s*$").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
 static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*([一-鿿].*)$").unwrap());
@@ -1022,6 +1024,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let title_y = plain().find(|l| l.h == title_h).map_or(0.0, |l| l.y);
     let mut rest: Vec<WordLine> = Vec::new();
     let mut number: Option<(String, f64, f64)> = None;
+    let mut key_found = false;
+    let mut meter_bands: Vec<(f64, f64)> = Vec::new();
     for l in lines {
         // 书眉「青年诗歌—015」「青年诗歌073」：书名带曲号，记曲号、不当标题
         if let Some(c) = BOOK_NUMBER.captures(&l.text) {
@@ -1045,6 +1049,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             score.fifths = fifths_of(letter, alter);
             score.key = format!("{letter}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" });
             used = true;
+            key_found = true;
         }
         if !used {
             if let Some(c) = KEY_BARE.captures(&l.text) {
@@ -1061,6 +1066,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                 score.minor = minor;
                 score.key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
                 used = true;
+                key_found = true;
             }
         }
         // 并排印着几个拍号的是混合拍：头一个作主拍号，全部记进 `meters`；后面跟着的「混合拍」记说明
@@ -1078,6 +1084,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                     }
                     score.meter_read = true;
                     used = true;
+                    meter_bands.push((l.y, l.y + l.h));
                     if l.text.contains("混合拍") {
                         score.meter_note = Some("混合拍".into());
                     }
@@ -1100,6 +1107,24 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
         if !used {
             rest.push(l);
+        }
+    }
+    // 调名单独一框、拍号在同一排另一框（青年诗歌 79「Em/Bm」…「4/4」）：没读到调号时，与拍号同排、整框只是个调名（可带「/调名」）的认调号
+    if !key_found {
+        if let Some(k) = rest.iter().position(|l| KEY_ALONE.is_match(&l.text) && meter_bands.iter().any(|&(a, b)| (l.y + l.h).min(b) - l.y.max(a) >= l.h.min(b - a) * 0.5)) {
+            let c = KEY_ALONE.captures(&rest[k].text).unwrap();
+            let alt = |t: &str| match t {
+                "b" | "♭" => -1,
+                "#" | "♯" => 1,
+                _ => 0,
+            };
+            let alter = alt(&c[1]) + alt(&c[3]);
+            let letter = c[2].chars().next().unwrap();
+            let minor = &c[4] == "m";
+            score.fifths = fifths_of(letter, alter) - if minor { 3 } else { 0 };
+            score.minor = minor;
+            score.key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
+            rest.remove(k);
         }
     }
     stacked_meter(ink, top, num_h, ocr, score);
