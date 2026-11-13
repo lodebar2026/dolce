@@ -388,11 +388,15 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             let near_next = !last && (yb - y1) as f64 <= h * 1.3;
             let (cov, cnt) = chords::coverage(&text);
             let chordish = chords::is_chord_coverage(cov, cnt) && !text.chars().any(is_han);
-            if (!last && chordish) || (near_next && han_count(&text) < 2) {
+            // 英文歌词：至少三个三字母以上的小写词（和弦行、跳转记号、段落名到不了）
+            let words = text.split(|c: char| !c.is_ascii_lowercase()).filter(|w| w.len() >= 3).count();
+            if (!last && chordish) || (near_next && han_count(&text) < 2 && words < 3) {
                 continue;
             }
             // 没认全的减时线、弧凑成的一截：比一行字矮得多，或读出来只有横杠
-            let junk = text.chars().filter(|&c| is_han(c)).all(|c| "一二三".contains(c)) && (((y1 - y0 + 1) as f64) < one * 0.75 || !text.chars().any(|c| c.is_ascii_alphabetic()));
+            // 英文歌词行比汉字行矮，不按行高丢
+            let junk = text.chars().filter(|&c| is_han(c)).all(|c| "一二三".contains(c))
+                && ((((y1 - y0 + 1) as f64) < one * 0.75 && words < 3) || !text.chars().any(|c| c.is_ascii_alphabetic()));
             if junk || note_xs.is_empty() {
                 continue;
             }
