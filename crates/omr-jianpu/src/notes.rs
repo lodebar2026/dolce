@@ -185,6 +185,13 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
     // 按 x 走一遍各格：数字起一个音，增时线、附点记到前一个音上，小节线与冒号记结构
     let mut di = 0;
     let mut pending_forward = false;
+    // 本行附近小圆块（八度点、附点）的点径中位：比它小一半的「点」是纸上的污点（青年诗歌 98「3·5」「6·6」2~3 像素对点 10 像素）
+    let dot_ref = {
+        let w = ink.w() as f64;
+        let (ya, yb) = (row.top_at(0.0).min(row.top_at(w)) - h * 1.2, row.bottom_at(0.0).max(row.bottom_at(w)) + h * 1.6);
+        let ds: Vec<f64> = ink.comps().iter().filter(|k| k.cy > ya && k.cy < yb && dot_like(k, h)).map(|k| (k.rect.w + k.rect.h) / 2.0).collect();
+        if ds.len() >= 3 { dolce_omr_core::geom::median(&ds, 0.0) } else { 0.0 }
+    };
     let mut bars: Vec<&Cell> = Vec::new();
     let mut last_bar_x1: Option<i64> = None;
     for &c in &cells {
@@ -208,6 +215,9 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
                 }
             }
             CellKind::Dot => {
+                if ((c.w() + c.h()) / 2.0) < dot_ref * 0.5 {
+                    continue;
+                }
                 if let Some(n) = out.nums.last_mut() {
                     let after_bar = last_bar_x1.is_some_and(|b| b as f64 > n.bbox.right());
                     let gap = c.x0 as f64 - n.bbox.right();
