@@ -615,6 +615,39 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
                 c.kind = CellKind::Bar { thick: false };
             }
         }
+        // 声部行之间贯通的小节线只画到下一行的半腰（四声部谱 `5 | 1` 跨两行的线），比数字矮，过不了上面的等高门：
+        // 同样细、逐行墨宽一致，又顺着同一列竖直伸出行带半个字号以上的也是小节线——「1」不会伸出自己的行
+        for c in out.iter_mut().filter(|c| c.kind == CellKind::Digit && c.h() >= h * 0.5 && c.w() <= mb * 1.3) {
+            let ws: Vec<f64> = (c.y0..=c.y1)
+                .filter_map(|y| {
+                    let a = (c.x0..=c.x1).find(|&x| ink.at(x, y))?;
+                    let b = (c.x0..=c.x1).rev().find(|&x| ink.at(x, y))?;
+                    Some((b - a + 1) as f64)
+                })
+                .collect();
+            let med = median(&ws, 0.0);
+            let max = ws.iter().copied().fold(0.0, f64::max);
+            if (ws.len() as f64) < c.h() * 0.95 || max > med + 1.0 {
+                continue;
+            }
+            let reach = |dir: i64| {
+                (c.x0..=c.x1)
+                    .map(|x| {
+                        let mut y = if dir < 0 { c.y0 - 1 } else { c.y1 + 1 };
+                        let mut n = 0;
+                        while ink.at(x, y) && (n as f64) < h {
+                            y += dir;
+                            n += 1;
+                        }
+                        n
+                    })
+                    .max()
+                    .unwrap_or(0) as f64
+            };
+            if reach(-1).max(reach(1)) >= h * 0.5 {
+                c.kind = CellKind::Bar { thick: false };
+            }
+        }
     }
     // 粗线：比本行细线宽的中位粗一倍以上
     let bw: Vec<f64> = out.iter().filter(|c| matches!(c.kind, CellKind::Bar { .. })).map(|c| c.w()).collect();
