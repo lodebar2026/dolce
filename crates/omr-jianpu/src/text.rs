@@ -964,7 +964,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             eprintln!("页眉 {:.0},{:.0} {:.0}x{:.0}: {text}", b.x, b.y, b.w, b.h);
         }
         // 首行谱头顶上的和弦行不是页眉
-        if top - (b.y + b.h) <= num_h * 3.0 && chords::is_annotation_line(&text) {
+        // 调名紧跟拍号的（「Em4/4」「Em 3/4」）是调号拍号，不是和弦
+        if top - (b.y + b.h) <= num_h * 3.0 && chords::is_annotation_line(&text) && !(KEY_BARE.is_match(&text) && METER.is_match(&text)) {
             continue;
         }
         if !text.trim().is_empty() {
