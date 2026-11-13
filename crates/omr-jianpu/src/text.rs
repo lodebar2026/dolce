@@ -293,13 +293,15 @@ fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
     if c.ch == '副' && chars.get(j).is_some_and(|d| (CN_NUM.contains(d.ch) || d.ch == '歌') && d.cx() < first_x - h * 0.4) {
         j += 1;
     }
+    // 段号照谱面记：后面印着的顿号、点一并记（「一、」）
+    let sep: String = chars.get(j).filter(|d| "、.．".contains(d.ch)).map(|d| if d.ch == '．' { '.' } else { d.ch }).into_iter().collect();
     while chars.get(j).is_some_and(|c| ")）、.．:： ".contains(c.ch)) {
         j += 1;
     }
     if !chars.get(j).is_some_and(|c| is_han(c.ch) || "“‘\"".contains(c.ch)) {
         return (None, chars);
     }
-    ((c.ch != '副').then(|| c.ch.to_string()), &chars[j..])
+    ((c.ch != '副').then(|| format!("{}{sep}", c.ch)), &chars[j..])
 }
 
 
@@ -443,6 +445,21 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             let mut lr = syllables(body);
             if margin.is_some() {
                 lr.label = margin;
+            } else if let Some(l) = lr.label.as_mut() {
+                // 数字段号后面的点读丢时一律补了点；回原图看数字与后一个字之间有没有一团墨，没有就照谱面不带点
+                if l.ends_with('.') && !chars.iter().any(|c| c.ch == '.' || c.ch == '．') {
+                    let k = chars.iter().position(|c| c.ch.is_ascii_digit());
+                    if let Some(k) = k {
+                        let d = &chars[k + l.len() - 2];
+                        if let Some(nx) = chars.get(k + l.len() - 1) {
+                            let (xa, xb) = (d.x1.ceil() as i64 + 1, nx.x0.floor() as i64 - 1);
+                            let ymid = (y0 + y1) / 2;
+                            if xb > xa && !(xa..xb).any(|x| (ymid..=y1).any(|y| claims.free(ink, x, y))) {
+                                l.pop();
+                            }
+                        }
+                    }
+                }
             }
             if lr.syls.is_empty() {
                 continue;
