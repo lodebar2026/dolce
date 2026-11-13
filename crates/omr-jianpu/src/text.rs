@@ -36,6 +36,31 @@ impl Claims {
         }
         Claims { w, mask }
     }
+    /// 竖着连续不短于 `min_len` 的墨（连谱号、系统线、贯穿几行的小节线）也记成占用：字的竖笔不过一行字高，
+    /// 这种竖线在投影里每行都留几个像素，把上下几行歌词连成一截、切不开。
+    pub fn tall_runs(mut self, ink: &Ink, min_len: f64) -> Claims {
+        let (w, h) = (ink.w(), ink.h());
+        let min_len = min_len.max(2.0) as usize;
+        for x in 0..w {
+            let mut y = 0;
+            while y < h {
+                if !ink.at(x as i64, y as i64) {
+                    y += 1;
+                    continue;
+                }
+                let a = y;
+                while y < h && ink.at(x as i64, y as i64) {
+                    y += 1;
+                }
+                if y - a >= min_len {
+                    for yy in a..y {
+                        self.mask[yy * w + x] = 1;
+                    }
+                }
+            }
+        }
+        self
+    }
     fn free(&self, ink: &Ink, x: i64, y: i64) -> bool {
         ink.at(x, y) && self.mask[y as usize * self.w + x as usize] == 0
     }
@@ -44,8 +69,8 @@ impl Claims {
 /// 一条带 `[ya, yb)` 里的字行（纵向范围）。`slope`：行带斜率，投影时折掉。
 /// 一截墨行不矮于 `min_h`、墨够密才算字行；几行挤成一截的在投影的谷里切开。
 /// `one`：本页一行字的高（没给就不切挤在一起的行，回的是原始的各截——第一遍估行高用）。
-fn cut_lines(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f64, one: Option<f64>) -> Vec<(i64, i64)> {
-    cut_lines_at(ink, claims, slope, ya, yb, min_h, one, LINE_INK)
+fn cut_lines(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, xr: (i64, i64), min_h: f64, one: Option<f64>) -> Vec<(i64, i64)> {
+    cut_lines_at(ink, claims, slope, ya, yb, xr, min_h, one, LINE_INK)
 }
 
 /// 一行字的墨至少占「行高 × 页宽」的这么多（弧、点凑的一截到不了）。
@@ -55,15 +80,16 @@ const LABEL_INK: f64 = 0.0006;
 
 /// 同 [`cut_lines`]，墨的密度门由 `min_ink` 给。
 #[allow(clippy::too_many_arguments)]
-fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h: f64, one: Option<f64>, min_ink: f64) -> Vec<(i64, i64)> {
+fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, xr: (i64, i64), min_h: f64, one: Option<f64>, min_ink: f64) -> Vec<(i64, i64)> {
     let w = ink.w() as i64;
+    let (xa, xb) = (xr.0.max(0), xr.1.min(w));
     if yb <= ya {
         return Vec::new();
     }
     let n = (yb - ya) as usize;
     let mut proj = vec![0u32; n];
     for y in ya.max(0)..yb.min(ink.h() as i64) {
-        for x in 0..w {
+        for x in xa..xb {
             if claims.free(ink, x, y) {
                 let yy = y - (slope * (x - w / 2) as f64).round() as i64 - ya;
                 if yy >= 0 && (yy as usize) < n {
@@ -85,13 +111,45 @@ fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, min_h:
         }
         runs.push((a, i - 1));
     }
-    let dense = |a: usize, b: usize| proj[a..=b].iter().sum::<u32>() as f64 >= (b - a + 1) as f64 * w as f64 * min_ink;
+    let dense = |a: usize, b: usize| proj[a..=b].iter().sum::<u32>() as f64 >= (b - a + 1) as f64 * (xb - xa).max(1) as f64 * min_ink;
     let Some(one) = one else {
         return runs.into_iter().filter(|&(a, b)| (b - a + 1) as f64 >= min_h && dense(a, b)).map(|(a, b)| (ya + a as i64, ya + b as i64)).collect();
     };
-    let mut out = Vec::new();
+    // 高过一行半的截先在深谷处切开：谷底的墨不到本截字身墨（九成分位）的二十分之一（连谱号的钩、贴边的残墨留下的那几个像素）
+    let mut pieces: Vec<(usize, usize)> = Vec::new();
     for (a, b) in runs {
+        if ((b - a + 1) as f64) < one * 1.5 {
+            pieces.push((a, b));
+            continue;
+        }
+        let mut vals: Vec<f64> = proj[a..=b].iter().map(|&v| v as f64).collect();
+        vals.sort_by(f64::total_cmp);
+        let floor = vals[(vals.len() * 9 / 10).min(vals.len() - 1)] / 20.0;
+        let mut from = a;
+        let mut i = a;
+        while i <= b {
+            if proj[i] as f64 > floor {
+                i += 1;
+                continue;
+            }
+            let v0 = i;
+            while i <= b && proj[i] as f64 <= floor {
+                i += 1;
+            }
+            // 切下的两边都得够半行字高（一个字顶上伸出的一笔、行间的残墨不单成一截）
+            if v0 > from && i <= b && (v0 - from) as f64 >= one * 0.5 && (b + 1 - i) as f64 >= one * 0.5 {
+                pieces.push((from, v0 - 1));
+                from = i;
+            }
+        }
+        pieces.push((from, b));
+    }
+    let mut out = Vec::new();
+    for (a, b) in pieces {
         let hh = (b - a + 1) as f64;
+        if std::env::var("OMR_JP_DEBUG").is_ok() {
+            eprintln!("  截 y{}-{} 高{hh} 密{}", ya + a as i64, ya + b as i64, dense(a, b));
+        }
         if hh < min_h || !dense(a, b) {
             continue;
         }
@@ -243,12 +301,24 @@ fn fold(c: char) -> char {
     }
 }
 
+/// 一行谱的歌词在横向上的范围：词不出行的左右太远（左边留出段号的地方），与短行同排的谱旁附注不收。
+fn lyric_span(ink: &Ink, row: &RowFrame) -> (i64, i64) {
+    let h = row.h();
+    match (row.cells.first(), row.cells.last()) {
+        (Some(a), Some(b)) => ((a.x0 as f64 - h * 3.0).max(0.0) as i64, ((b.x1 as f64 + h * 2.0) as i64).min(ink.w() as i64)),
+        _ => (0, ink.w() as i64),
+    }
+}
+
 /// 各谱行下面的歌词：切行、读字、对音，写进各音的 `lyrics` 与行的段号。回各行歌词带的行（供叠加与排查）。
 /// `stanza_regions`：谱后附段落到音上的那几段，各行原文与源框（识别模式按原位叠加）。
 pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>) {
-    let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied()));
     let w = ink.w() as f64;
+    let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
+    let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(ink, num_h0 * 2.2);
     let mut max_verses = 0usize;
+    // 各行歌词头一行顶离谱行底的距离
+    let mut first_gaps: Vec<f64> = Vec::new();
     let mut stanza_lines: Vec<(i64, i64)> = Vec::new();
     let zone = |i: usize| {
         let ya = rows[i].bottom_at(w / 2.0).ceil() as i64 + 1;
@@ -261,7 +331,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             let (ya, yb) = zone(i);
             // 歌词字不比数字小多少：矮的一截（减时线没认全剩下的、弧与点凑的）不参加估行高
             let h = rows[i].h();
-            cut_lines(ink, &claims, rows[i].band.slope, ya, yb, h * 0.5, None).into_iter().map(|l| (l.1 - l.0 + 1) as f64).filter(move |&v| v >= h * 0.9)
+            cut_lines(ink, &claims, rows[i].band.slope, ya, yb, lyric_span(ink, &rows[i]), h * 0.5, None).into_iter().map(|l| (l.1 - l.0 + 1) as f64).filter(move |&v| v >= h * 0.9)
         })
         .collect();
     let num_h = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
@@ -272,14 +342,17 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         let h = row.h();
         let (ya, yb) = zone(i);
         let last = i + 1 == rows.len();
-        let mut lines = cut_lines(ink, &claims, row.band.slope, ya, yb, h * 0.5, (one > 0.0).then_some(one));
+        let (xa, xb) = lyric_span(ink, row);
+        let mut lines = cut_lines(ink, &claims, row.band.slope, ya, yb, (xa, xb), h * 0.5, (one > 0.0).then_some(one));
         if last {
             // 谱后：只收紧跟着的几行（行距不过一行高），至多收到前面各行见过的段数
             // 段数从头一截够一行字高的数起：贴着谱行的低音点、没认全的减时线凑成的矮截不占名额
             let (mut keep, mut full) = (0, 0);
             for (k, l) in lines.iter().enumerate() {
                 let gap = if k == 0 { l.0 - ya } else { l.0 - lines[k - 1].1 };
-                if gap as f64 > h * 1.6 || (max_verses > 0 && full >= max_verses) {
+                // 头一行离谱行的距离照前面各行歌词头一行的（本页排得疏的，词离谱行一个半字号开外）
+                let reach = if k == 0 { (median(&first_gaps, 0.0) * 1.25).max(h * 1.6) } else { h * 1.6 };
+                if gap as f64 > reach || (max_verses > 0 && full >= max_verses) {
                     break;
                 }
                 full += (full > 0 || ((l.1 - l.0 + 1) as f64) >= h * 0.9) as usize;
@@ -288,14 +361,14 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             lines.truncate(keep);
             // 谱后的诗行另切一遍：独占一行的段号墨少，按字行的密度门进不来
             let from = lines.last().map_or(ya, |l| l.1 + 1);
-            stanza_lines = cut_lines_at(ink, &claims, row.band.slope, from, yb, h * 0.25, (one > 0.0).then_some(one), LABEL_INK);
+            stanza_lines = cut_lines_at(ink, &claims, row.band.slope, from, yb, (0, ink.w() as i64), h * 0.25, (one > 0.0).then_some(one), LABEL_INK);
         }
         let note_ix: Vec<usize> = (0..notes[i].nums.len()).filter(|&k| notes[i].nums[k].digit != 0).collect();
         let note_xs: Vec<f64> = note_ix.iter().map(|&k| notes[i].nums[k].bbox.cx()).collect();
         let mut verse = 0usize;
         for (y0, y1) in lines {
             let mut doubt_xs: Vec<f64> = Vec::new();
-            let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64, Some(&mut doubt_xs));
+            let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut doubt_xs));
             let text: String = chars.iter().map(|c| c.ch).collect();
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("行{i} 词带 y{y0}-{y1}: {text}");
@@ -311,6 +384,28 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             let junk = text.chars().filter(|&c| is_han(c)).all(|c| "一二三".contains(c)) && (((y1 - y0 + 1) as f64) < one * 0.75 || !text.chars().any(|c| c.is_ascii_alphabetic()));
             if junk || note_xs.is_empty() {
                 continue;
+            }
+            // 弧、穿过弧的小节线、点凑出来的「字」：读出的汉字多，行里够一个字身大小的块却少（字至少有一块够半个字高）
+            let han = han_count(&text);
+            if han > 0 {
+                let mid = w / 2.0;
+                // 画在图框里的字（谱尾的徽标）不算：块落在一个比两行字还大的块的外框里
+                let big: Vec<&Rect> = ink.comps().iter().filter(|k| k.rect.h >= one * 2.0 && k.rect.w >= one * 2.0).map(|k| &k.rect).collect();
+                let blobs = ink
+                    .comps()
+                    .iter()
+                    .filter(|k| {
+                        let cy = k.cy - row.band.slope * (k.cx - mid);
+                        cy >= y0 as f64 && cy <= y1 as f64 && k.rect.h >= one * 0.4 && k.rect.h <= one * 1.4 && k.rect.w <= one * 1.6
+                    })
+                    .filter(|k| !big.iter().any(|b| b.x <= k.rect.x && b.right() >= k.rect.right() && b.y <= k.rect.y && b.bottom() >= k.rect.bottom()))
+                    .count();
+                if blobs * 2 < han {
+                    if std::env::var("OMR_JP_DEBUG").is_ok() {
+                        eprintln!("  丢：字身块 {blobs}、汉字 {han}");
+                    }
+                    continue;
+                }
             }
             let (margin, body) = margin_label(&chars, note_xs[0] - notes[i].nums[note_ix[0]].bbox.w / 2.0, h);
             let mut lr = syllables(body);
@@ -336,6 +431,9 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 labels[i].resize(verse + 1, String::new());
             }
             labels[i][verse] = lr.label.unwrap_or_default();
+            if verse == 0 {
+                first_gaps.push((y0 - ya) as f64);
+            }
             regions.push(TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64) });
             verse += 1;
         }
@@ -644,7 +742,7 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         return;
     }
     let claims = Claims::new(ink, std::iter::empty());
-    for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, h * 0.35, None) {
+    for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, (0, ink.w() as i64), h * 0.35, None) {
         let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64, None);
         let text: String = chars.iter().map(|c| c.ch).collect();
         if std::env::var("OMR_JP_DEBUG").is_ok() {

@@ -227,11 +227,41 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     // 各行数字格里真读得出数字的比例
     let mut ratios: Vec<f64> = Vec::new();
     for l in lines {
-        let digits: Vec<Rect> = l.iter().filter(|&&i| read[i].is_some()).map(|&i| cand[i].rect).collect();
+        let mut digits: Vec<Rect> = l.iter().filter(|&&i| read[i].is_some()).map(|&i| cand[i].rect).collect();
         if std::env::var("OMR_JP_DEBUG").is_ok() && l.len() >= 3 {
             eprintln!("排 y{:.0} 块{} 读出数字{}", cand[l[0]].rect.cy(), l.len(), digits.len());
         }
-        if digits.is_empty() || (!known && (digits.len() as f64) < l.len() as f64 * 0.5) {
+        // 与旋律同排、隔着一大段空白的一段说明文字（谱旁的附注）把整排的数字比例拉低：按大空白分簇，各簇自己论
+        let mut span: Option<(f64, f64)> = None;
+        if !known && !digits.is_empty() && (digits.len() as f64) < l.len() as f64 * 0.5 {
+            let mut by_x: Vec<usize> = l.clone();
+            by_x.sort_by(|&a, &b| cand[a].rect.x.total_cmp(&cand[b].rect.x));
+            let mut clusters: Vec<Vec<usize>> = Vec::new();
+            for i in by_x {
+                match clusters.last_mut() {
+                    Some(c) if cand[i].rect.x - cand[*c.last().unwrap()].rect.right() <= num_h * CLUSTER_GAP => c.push(i),
+                    _ => clusters.push(vec![i]),
+                }
+            }
+            let ok = |c: &Vec<usize>| {
+                let d = c.iter().filter(|&&i| read[i].is_some()).count();
+                d >= 3 && d as f64 >= c.len() as f64 * 0.5
+            };
+            if std::env::var("OMR_JP_DEBUG").is_ok() {
+                for c in &clusters {
+                    eprintln!("   簇 x{:.0}-{:.0} 块{} 数字{}", cand[c[0]].rect.x, cand[*c.last().unwrap()].rect.right(), c.len(), c.iter().filter(|&&i| read[i].is_some()).count());
+                }
+            }
+            // 只认一簇读得出数字的：行的左右界收到邻簇半个字号以外（行末的反复线、增时线留在行里）
+            if clusters.len() >= 2 && clusters.iter().filter(|c| ok(c)).count() == 1 {
+                let k = clusters.iter().position(ok).unwrap();
+                let lo = if k == 0 { f64::NEG_INFINITY } else { cand[*clusters[k - 1].last().unwrap()].rect.right() + num_h * 0.5 };
+                let hi = if k + 1 == clusters.len() { f64::INFINITY } else { cand[clusters[k + 1][0]].rect.x - num_h * 0.5 };
+                digits.retain(|r| r.x >= lo && r.right() <= hi);
+                span = Some((lo, hi));
+            }
+        }
+        if digits.is_empty() || (!known && span.is_none() && (digits.len() as f64) < l.len() as f64 * 0.5) {
             continue;
         }
         // 同一排里高度离群的不参加定带（拍号、曲号的大字）
@@ -245,6 +275,9 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
             continue;
         }
         let mut row = RowFrame { band, cells: cut_cells(ink, &band) };
+        if let Some((lo, hi)) = span {
+            row.cells.retain(|c| c.x0 as f64 >= lo && c.x1 as f64 <= hi);
+        }
         drop_aside(&mut row);
         let nd = row.digits().count();
         let nb = row.bars().count();
@@ -285,6 +318,8 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
     rows
 }
 
+/// 同排的墨按这么宽（字号的倍数）的空白分簇：旋律里音与音之间、说明文字的字与字之间都到不了。
+const CLUSTER_GAP: f64 = 3.0;
 /// 一行旋律里不会有这么宽（带高的倍数）的空白。
 const ASIDE_GAP: f64 = 8.0;
 /// 隔在大空白外头的一小簇至多这么多格。
