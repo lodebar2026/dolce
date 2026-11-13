@@ -152,6 +152,14 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             rn.final_end = true;
             thin_end[i] = true;
         }
+        // 末音之后还有两根单线、中间什么都没有：小节不会是空的，是隔得开的终止线（青年诗歌 98 两根隔一个字号）
+        let n = rn.barline_xs.len();
+        let h = rows[i].h();
+        if last && !rn.final_end && n >= 2 && rn.barline_xs[n - 2] > tail && rn.barline_xs[n - 1] - rn.barline_xs[n - 2] <= h * 1.5 {
+            rn.barline_xs.pop();
+            rn.final_end = true;
+            thin_end[i] = true;
+        }
     }
     for ((((row, rn), labels), sv), thin) in rows.iter().zip(notes).zip(labels).zip(sys).zip(thin_end) {
         score.rows.push(StaffRow {
