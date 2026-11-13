@@ -508,6 +508,7 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
     // 本行低音点顶离行带底的中位：页面歪斜时个别数字框高出一截、点又低一截，按「离数字多远」过不了门，按与同行别的低音点同高收
     let low_rel: Vec<f64> = hits.iter().filter(|t| !t.2 && t.3 <= h * 0.38).map(|t| dots[t.0].rect.y - row.bottom_at(dots[t.0].cx)).collect();
     let low_rel_med = if low_rel.len() >= 3 { Some(dolce_omr_core::geom::median(&low_rel, 0.0)) } else { None };
+    let lyric_top = lyric_top_line(ink, out, h);
     for (ni, n) in out.nums.iter_mut().enumerate() {
         for up in [true, false] {
             let mut mine: Vec<&(usize, usize, bool, f64)> = hits.iter().filter(|t| t.1 == ni && t.2 == up).collect();
@@ -545,6 +546,17 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
                 if !up && cnt > 0 && ink_below(ink, &d.rect, h) >= 0.12 {
                     break;
                 }
+                // 头一个下点：单声部行下面就是歌词，字顶的点画（「永」的丶、「怜」的竖心旁点）落在数字正下方、离减时线也不远，
+                // 下方紧挨着字身。点下方有墨、又不在本行歌词字顶线之上的是字的笔画；真低音点要么整个在字顶线之上，
+                // 要么压着字顶线却高出它一截、紧贴数字（歌词排得紧的行，点下 1px 就是字）
+                if !up && cnt == 0 && !voiced && ink_below(ink, &d.rect, h) >= 0.12 {
+                    let above = lyric_top.is_some_and(|lt| {
+                        d.rect.bottom() <= lt - 2.0 || (d.rect.y < lt && d.rect.bottom() <= lt + 4.0 && d.rect.y <= lt - h * 0.15 && t.3 < h * 0.45)
+                    });
+                    if !above {
+                        break;
+                    }
+                }
                 first_cx.get_or_insert(d.cx);
                 cnt += 1;
                 n.oct_dots.push((dots[t.0].id, up, t.3));
@@ -570,6 +582,29 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
             n.octave = 0;
         }
     }
+}
+
+/// 本行歌词字顶线（同 TS `lyricTop`）：数字底（中位）下面 0.9 字号内（不足三块放到 1.4）起头、整字高（≥0.7 字号）、横向在本行音符范围内的块，
+/// 顶的中位数；不足三块回 `None`。
+fn lyric_top_line(ink: &Ink, out: &RowNotes, h: f64) -> Option<f64> {
+    if out.nums.is_empty() {
+        return None;
+    }
+    let bots: Vec<f64> = out.nums.iter().map(|n| n.bbox.bottom()).collect();
+    let row_bot = dolce_omr_core::geom::median(&bots, 0.0);
+    let x0 = out.nums.iter().map(|n| n.bbox.x).fold(f64::INFINITY, f64::min);
+    let x1 = out.nums.iter().map(|n| n.bbox.right()).fold(f64::NEG_INFINITY, f64::max);
+    let tops = |reach: f64| -> Vec<f64> {
+        ink.comps().iter().filter(|k| k.rect.h >= h * 0.7 && k.rect.y > row_bot && k.rect.y < row_bot + h * reach && k.rect.right() > x0 && k.rect.x < x1).map(|k| k.rect.y).collect()
+    };
+    let mut t = tops(0.9);
+    if t.len() < 3 {
+        t = tops(1.4);
+    }
+    (t.len() >= 3).then(|| {
+        t.sort_by(f64::total_cmp);
+        t[t.len() / 2]
+    })
 }
 
 /// 点正下方紧挨着的一小条（0.18 字号高、左右各宽出 0.2 字号）里墨的占比（同 TS `inkBelow`）：字顶笔画与字身之间几乎不留空，
