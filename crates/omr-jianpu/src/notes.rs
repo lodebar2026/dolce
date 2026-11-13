@@ -142,6 +142,10 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
 /// 横墨是一块字形的顶横（下一行数字「5」「7」的顶、「2」「3」的顶弧）：它所在的连通块顶不比这道横高出半个字号（逐列量时侧边列的顶比弧顶低）、往下伸出 0.4 字号以上。
 /// 减时线自成一块，或粘着上面的数字（块往上伸）。
 fn glyph_top(ink: &Ink, x0: i64, x1: i64, y0: i64, y1: i64, h: f64) -> bool {
+    // 字顶横不宽过 1.2 字号；更长的是减时线，底下粘着下一声部的弧（四声部马槽歌「2̲ 3̲」）也还是线
+    if ((x1 - x0 + 1) as f64) > h * 1.2 {
+        return false;
+    }
     ink.comps().iter().any(|k| {
         let r = &k.rect;
         r.x <= x0 as f64 + 1.0 && r.right() >= x1 as f64 && r.y >= y0 as f64 - h * 0.5 && r.y <= y0 as f64 + 1.0 && r.bottom() >= y1 as f64 + h * 0.4
