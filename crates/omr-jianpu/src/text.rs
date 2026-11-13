@@ -1201,7 +1201,7 @@ static DYN_TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)cresc|dim|
 static KEY_GLYPHS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([b#♭♯]?)\s*([A-Ga-g])\s*([b#♭♯]?)$").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
 /// 标题框开头的曲号：数字后面直接接汉字曲名。
-static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*([一-鿿].*)$").unwrap());
+static TITLE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*([一-鿿].*)$").unwrap());
 /// 书眉：书名后接曲号（`青年诗歌—015`），或曲号在前、隔着破折号接书名（`060—青年诗歌`；不带破折号的「1942我们是一家人」是曲号加曲名）。曲号去掉前导零。
 static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})|0*(\d{1,4})\s*[—\-－–_]+\s*[一-鿿]{2,8})\s*$").unwrap());
 static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【].*[\]］】]$").unwrap());
@@ -1330,6 +1330,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let mut number: Option<(String, f64, f64)> = None;
     let mut key_found = false;
     let mut meter_bands: Vec<(f64, f64)> = Vec::new();
+    let key_boxes: Vec<WordLine> = lines.iter().filter(|k| KEY.is_match(&k.text)).cloned().collect();
     for l in lines {
         // 书眉「青年诗歌—015」「青年诗歌073」：书名带曲号，记曲号、不当标题
         if let Some(c) = BOOK_NUMBER.captures(&l.text) {
@@ -1411,7 +1412,11 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             }
             used = true;
         }
-        if let Some(c) = NUMBER.captures(&l.text) {
+        // 紧贴调号框右边的纯数字框是叠排拍号（「1=G」后的 4/4 读成一个「4」，诗歌本 1），不是曲号
+        let beside_key = key_boxes.iter().any(|k| {
+            l.x - (k.x + k.w) <= num_h * 0.5 && l.x + l.w > k.x + k.w && (l.y + l.h).min(k.y + k.h) - l.y.max(k.y) >= l.h.min(k.h) * 0.5
+        });
+        if let Some(c) = NUMBER.captures(&l.text).filter(|_| !beside_key) {
             if l.h >= num_h * 0.6 && l.h >= max_h * 0.6 && number.as_ref().is_none_or(|n| n.2 < l.h) {
                 number = Some((c[1].trim_start_matches('0').to_string(), l.x + l.w / 2.0, l.h));
             }
