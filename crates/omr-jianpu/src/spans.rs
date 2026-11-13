@@ -348,6 +348,10 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         if !ok {
             continue;
         }
+        // 连音数字先被记号段当成了倚音（赞美诗歌 936「⌒3⌒」）：摘掉
+        for n in rn.nums.iter_mut() {
+            n.grace.retain(|g| !(g.bbox.right() > rect.x && g.bbox.x < rect.right() && g.bbox.bottom() > rect.y && g.bbox.y < rect.bottom()));
+        }
         let actual = cnt as u32;
         let normal = if actual == 3 { 2 } else { 4 };
         for (k, n) in rn.nums[i..=j].iter_mut().enumerate() {
