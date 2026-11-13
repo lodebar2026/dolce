@@ -451,6 +451,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(ink, num_h0 * 2.2);
     let mut max_verses = 0usize;
+    // 写下的各行词：(谱行, 段, 歌词区下标, 字数, 汉字数)
+    let mut written: Vec<(usize, usize, usize, usize, usize)> = Vec::new();
     // 歌词带里读到的跳转记号：(行, 记号, x, y)
     let mut jumps: Vec<(usize, &'static str, f64, f64)> = Vec::new();
     // 各行歌词头一行顶离谱行底的距离
@@ -651,6 +653,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
                 }
                 continue;
             }
+            written.push((i, verse, regions.len(), p.syls.iter().map(|x| x.1.chars().count()).sum(), p.syls.iter().map(|x| han_count(&x.1)).sum()));
             for (ni, t, doubt) in p.syls {
                 let n = &mut notes[i].nums[ni];
                 if n.lyrics.len() <= verse {
@@ -676,6 +679,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         }
         max_verses = max_verses.max(verse);
     }
+    drop_pseudo_verses(notes, labels, regions, &written);
     // 跳转记号落位：作用于小节末，归 x 处或其左边最近的那个音；行按 y 就近取（`D.C. al Fine` 常印在下一行的右上方），印在音符带下方的记 below
     for (ri, word, x, y) in jumps {
         let mut r = ri;
@@ -698,6 +702,67 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         }
     }
     stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions, footnotes);
+}
+
+/// 剔伪段（同 TS）：谱行下方的噪声、记号（弧与「渐慢 rit.」凑成的一截，迦南 1775）被当成额外的一段词。真段有字的谱行横跨全曲：
+/// 有字谱行数不到主段（有字谱行最多的那段）一半的，在它出现的那一行还得是完整一行——字数到主段同一谱行的六成——才留
+/// （多段谱的第 2..N 段只印在主歌那几行）。主段是汉字词的只比汉字数（拉丁碎字凑不成一行中文词）。
+/// 按视觉行序整体决定去留；剔掉的连歌词区一起去（认弧时按歌词区封顶）。
+fn drop_pseudo_verses(notes: &mut [RowNotes], labels: &mut [Vec<String>], regions: &mut Vec<TextRegion>, written: &[(usize, usize, usize, usize, usize)]) {
+    use std::collections::{HashMap, HashSet};
+    let mut rows_of: HashMap<usize, HashSet<usize>> = HashMap::new();
+    for &(r, v, _, n, _) in written {
+        if n > 0 {
+            rows_of.entry(v).or_default().insert(r);
+        }
+    }
+    let primary = rows_of.values().map(|s| s.len()).max().unwrap_or(0);
+    let Some(pv) = rows_of.iter().max_by_key(|(v, s)| (s.len(), std::cmp::Reverse(**v))).map(|(v, _)| *v) else { return };
+    let count = |r: usize, v: usize, han: bool| written.iter().filter(|w| w.0 == r && w.1 == v).map(|w| if han { w.4 } else { w.3 }).sum::<usize>();
+    let mut real: HashSet<usize> = HashSet::new();
+    for &(r, v, _, _, _) in written {
+        if rows_of.get(&v).map_or(0, |s| s.len()) * 2 >= primary {
+            real.insert(v);
+            continue;
+        }
+        let han = count(r, pv, true) * 2 >= count(r, pv, false);
+        let rf = count(r, pv, han);
+        if rf > 0 && count(r, v, han) as f64 >= rf as f64 * 0.6 {
+            real.insert(v);
+        }
+    }
+    let mut gone: Vec<usize> = Vec::new();
+    for &(r, v, ri, _, _) in written {
+        if real.contains(&v) {
+            continue;
+        }
+        if std::env::var("OMR_JP_DEBUG").is_ok() {
+            eprintln!("  丢伪段 行{r} 段{v}: {}", regions[ri].text);
+        }
+        for n in notes[r].nums.iter_mut() {
+            if let Some(t) = n.lyrics.get_mut(v) {
+                t.clear();
+            }
+            n.lyric_doubt.retain(|&d| d != v);
+            n.word_ext.retain(|e| e.0 != v);
+        }
+        if let Some(l) = labels[r].get_mut(v) {
+            l.clear();
+        }
+        gone.push(ri);
+    }
+    // 各行末尾空下来的段截掉
+    for (r, rn) in notes.iter_mut().enumerate() {
+        let keep = rn.nums.iter().map(|n| n.lyrics.iter().rposition(|t| !t.is_empty()).map_or(0, |k| k + 1)).max().unwrap_or(0);
+        for n in rn.nums.iter_mut() {
+            n.lyrics.truncate(keep);
+        }
+        labels[r].truncate(keep.max(labels[r].iter().rposition(|l| !l.is_empty()).map_or(0, |k| k + 1)).min(labels[r].len()));
+    }
+    gone.sort_unstable();
+    for ri in gone.into_iter().rev() {
+        regions.remove(ri);
+    }
 }
 
 /// 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：按拼写切成那么多段（同 TS `splitSpanningWords`）。
