@@ -302,7 +302,9 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
         let mut under: Vec<usize> = (0..lines.len())
             .filter(|&i| {
                 let l = &lines[i];
-                l.x0 as f64 - slack <= cx && cx <= l.x1 as f64 + slack && l.y0 as f64 >= bottom - h * 0.02
+                // 数字底粘着减时线、框把线包了进去（马槽歌下声部「7̣ 1」）：线横出数字框、压在框底那几行的也算
+                let glued = (l.y1 as f64) >= n.bbox.bottom() - 1.5 && l.y0 as f64 >= n.bbox.bottom() - h * 0.2 && ((l.x1 - l.x0 + 1) as f64) >= n.bbox.w * 1.5;
+                l.x0 as f64 - slack <= cx && cx <= l.x1 as f64 + slack && (l.y0 as f64 >= bottom - h * 0.02 || glued)
             })
             .collect();
         under.sort_by_key(|&i| lines[i].y0);
