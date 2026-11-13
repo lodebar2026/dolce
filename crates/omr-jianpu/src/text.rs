@@ -366,6 +366,15 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
     out
 }
 
+/// 读好、对好音的一行歌词，等同行各段比过对位再写进音里。
+struct Pending {
+    syls: Vec<(usize, String, bool)>,
+    label: Option<String>,
+    region: TextRegion,
+    ratio: Option<f64>,
+    gap: f64,
+}
+
 const CN_NUM: &str = "一二三四五六七八九十";
 
 /// 行首的边注：汉字段号（`一`、`二、`）与「副」「(副)」，印在首音左边。回 (段号, 去掉边注后的字)。
@@ -391,7 +400,17 @@ fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
     if !chars.get(j).is_some_and(|c| is_han(c.ch) || "“‘\"".contains(c.ch)) {
         return (None, chars);
     }
-    ((c.ch != '副').then(|| format!("{}{sep}", c.ch)), &chars[j..])
+    // 带括号的副歌标签「(副一)」「(副)」「(副歌)」照原样记成行首标签（同 TS `SIDE_LABEL_RE`）；不带括号的「副」是边注、不记
+    if c.ch == '副' {
+        let open = chars[..i].iter().any(|d| "(（".contains(d.ch));
+        let close = chars[i + 1..j].iter().any(|d| ")）".contains(d.ch));
+        if open && close {
+            let body: String = chars[i..j].iter().map(|d| d.ch).filter(|&ch| ch == '副' || ch == '歌' || CN_NUM.contains(ch) || ch.is_ascii_digit()).collect();
+            return (Some(format!("({body})")), &chars[j..]);
+        }
+        return (None, &chars[j..]);
+    }
+    (Some(format!("{}{sep}", c.ch)), &chars[j..])
 }
 
 
@@ -479,7 +498,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
         }
         let note_ix: Vec<usize> = (0..notes[i].nums.len()).filter(|&k| notes[i].nums[k].digit != 0).collect();
         let note_xs: Vec<f64> = note_ix.iter().map(|&k| notes[i].nums[k].bbox.cx()).collect();
-        let mut verse = 0usize;
+        let mut pend: Vec<Pending> = Vec::new();
         for (y0, y1) in lines {
             let mut doubt_xs: Vec<f64> = Vec::new();
             let mut chars: Vec<Ch> = Vec::new();
@@ -610,25 +629,53 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut
             }
             let at: Vec<usize> = placed.iter().map(|p| p.1).collect();
             lr.syls = placed.into_iter().map(|p| p.0).collect();
-            for (s, &k) in lr.syls.iter().zip(&at) {
-                let n = &mut notes[i].nums[note_ix[k]];
+            // (音下标, 字, 把握不大)
+            let syls: Vec<(usize, String, bool)> = lr
+                .syls
+                .iter()
+                .zip(&at)
+                .map(|(s, &k)| (note_ix[k], s.text.clone(), s.text.chars().any(is_han) && doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5)))
+                .collect();
+            // 字落在音正下方（0.4 字号内）的比例：夹在谱行间的普通文字与同行各段词错开（见下）
+            let han: Vec<&Ch> = chars.iter().filter(|c| is_han(c.ch)).collect();
+            let ratio = (han.len() >= 4).then(|| han.iter().filter(|c| note_xs.iter().any(|&x| (x - c.cx()).abs() <= h * 0.4)).count() as f64 / han.len() as f64);
+            let region = TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64) };
+            pend.push(Pending { syls, label: lr.label, region, ratio, gap: (y0 - ya) as f64 });
+        }
+        // 与同谱行别的歌词行错开、字不落在音下的一行是夹在谱行间的普通文字（青年诗歌 16《神圣罗曼史》第 4 行词下
+        // 「(副歌接下一页 注：…)」只有 0.42，同行四段词都是 1.00；同 TS `misaligned`）。只比同一谱行：四声部谱的词对的是另一声部的音，整行几段一起低
+        let ratios: Vec<Option<f64>> = pend.iter().map(|p| p.ratio).collect();
+        let misaligned = |k: usize| {
+            let Some(a) = ratios[k].filter(|&a| a < 0.6) else { return false };
+            let sib: Vec<f64> = ratios.iter().enumerate().filter(|&(j, v)| j != k && v.is_some_and(|v| v >= 0.8)).map(|(_, v)| v.unwrap()).collect();
+            sib.len() >= 2 && median(&sib, 0.0) - a >= 0.35
+        };
+        let mut verse = 0usize;
+        for (k, p) in pend.into_iter().enumerate() {
+            if misaligned(k) {
+                if std::env::var("OMR_JP_DEBUG").is_ok() {
+                    eprintln!("  丢：与同行各段词错开 {}", p.region.text);
+                }
+                continue;
+            }
+            for (ni, t, doubt) in p.syls {
+                let n = &mut notes[i].nums[ni];
                 if n.lyrics.len() <= verse {
                     n.lyrics.resize(verse + 1, String::new());
                 }
-                n.lyrics[verse].push_str(&s.text);
-                // 音节的字墨范围里落着把握不大的字
-                if s.text.chars().any(is_han) && doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5) && !n.lyric_doubt.contains(&verse) {
+                n.lyrics[verse].push_str(&t);
+                if doubt && !n.lyric_doubt.contains(&verse) {
                     n.lyric_doubt.push(verse);
                 }
             }
             if labels[i].len() <= verse {
                 labels[i].resize(verse + 1, String::new());
             }
-            labels[i][verse] = lr.label.unwrap_or_default();
+            labels[i][verse] = p.label.unwrap_or_default();
             if verse == 0 {
-                first_gaps.push((y0 - ya) as f64);
+                first_gaps.push(p.gap);
             }
-            regions.push(TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64) });
+            regions.push(p.region);
             verse += 1;
         }
         max_verses = max_verses.max(verse);
