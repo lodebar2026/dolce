@@ -219,6 +219,12 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             runs >= 2
         };
         let m = cx(i + 1);
+        // 弧顶中间立着小号数字的是三连音括线（数字也数得出两段），不按单侧内弧收
+        let mx = (cx(i) + cx(j)) / 2.0;
+        let numbered = ink.comps().iter().any(|k| {
+            let b = &k.rect;
+            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.8 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
+        });
         let side = |a: f64, b: f64| (a.ceil() as i64..=b.floor() as i64).filter(|&x| two_runs(x)).count() as f64;
         let (l, r) = (side((m - h).max((cx(i) + m) / 2.0), m - 1.0), side(m + 1.0, (m + h).min((m + cx(j)) / 2.0)));
         if std::env::var("OMR_ARC_DEBUG").is_ok() {
@@ -226,6 +232,11 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         if l.max(r) >= h * 0.3 && l.min(r) >= h * 0.2 {
             found.push((i, i + 1, 0.0, ((cx(i) + m) / 2.0, my)));
+            found.push((i + 1, j, 0.0, ((m + cx(j)) / 2.0, my)));
+        } else if l >= h * 0.3 && r < h * 0.1 && !numbered {
+            // 只一侧分出内弧（迦南 2252「(2_ (3_) 3)」：外弧下只有中间到末音那一道延音线）
+            found.push((i, i + 1, 0.0, ((cx(i) + m) / 2.0, my)));
+        } else if r >= h * 0.3 && l < h * 0.1 && !numbered {
             found.push((i + 1, j, 0.0, ((m + cx(j)) / 2.0, my)));
         }
     }
