@@ -664,8 +664,10 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
 
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-Ga-g])").unwrap());
 /// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
-static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
+static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
 static METER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d{1,2})\s*[/／]\s*(16|2|4|8)").unwrap());
+/// 书眉：书名后接曲号（`青年诗歌—015`），曲号去掉前导零。
+static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[一-鿿]{2,8}\s*[—\-－–_]*\s*0*(\d{1,4})\s*$").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,4})\s*[.．、]?\s*$").unwrap());
 
 /// 调名 → 五度圈位置。
@@ -724,9 +726,45 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             lines.push(WordLine { text, x: b.x, y: b.y, w: b.w, h: b.h });
         }
     }
-    let mut rest: Vec<WordLine> = Vec::new();
-    let mut number: Option<(String, f64)> = None;
+    // det 把一行切成几框的（「祂來」|「過」、「泥土音乐《脚步》」|「（2007）」）：同高、同一横排、挨着的并回一行
+    lines.sort_by(|a, b| a.x.total_cmp(&b.x));
+    let mut joined: Vec<WordLine> = Vec::new();
     for l in lines {
+        let hit = joined.iter_mut().find(|j| {
+            let ov = (j.y + j.h).min(l.y + l.h) - j.y.max(l.y);
+            let hh = j.h.min(l.h);
+            // 切开的框是叠着或贴着的（隔开的是两行字：曲号与标题、署名与副标题）
+            ov >= hh * 0.6 && (j.h - l.h).abs() <= hh * 0.3 && l.x - (j.x + j.w) <= hh * 0.1 && l.x - (j.x + j.w) >= -hh && !NUMBER.is_match(&j.text) && !NUMBER.is_match(&l.text)
+        });
+        match hit {
+            Some(j) => {
+                let latin = j.text.chars().last().is_some_and(|c| c.is_ascii_alphanumeric()) && l.text.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
+                j.text = format!("{}{}{}", j.text, if latin { " " } else { "" }, l.text);
+                let (x1, y1) = ((j.x + j.w).max(l.x + l.w), (j.y + j.h).max(l.y + l.h));
+                j.y = j.y.min(l.y);
+                j.w = x1 - j.x;
+                j.h = y1 - j.y;
+            }
+            None => joined.push(l),
+        }
+    }
+    let lines = joined;
+    // 曲号不比标题小多少（拍号的分子、速度数字小得多）
+    let max_h = lines.iter().map(|l| l.h).fold(0.0, f64::max);
+    let title_y = lines.iter().find(|l| l.h == max_h).map_or(0.0, |l| l.y);
+    let mut rest: Vec<WordLine> = Vec::new();
+    let mut number: Option<(String, f64, f64)> = None;
+    for l in lines {
+        // 书眉「青年诗歌—015」「青年诗歌073」：书名带曲号，记曲号、不当标题
+        if let Some(c) = BOOK_NUMBER.captures(&l.text) {
+            // 书眉在页顶：整行在最大那行字（标题）顶上（署名「戴克斯曲1861」「合译1932」与标题同排或在下面）
+            if l.y + l.h <= title_y {
+                if number.as_ref().is_none_or(|n| n.2 < l.h) {
+                    number = Some((c[1].to_string(), l.x + l.w / 2.0, l.h));
+                }
+                continue;
+            }
+        }
         let mut used = false;
         if let Some(c) = KEY.captures(&l.text) {
             let alter = match &c[1] {
@@ -782,8 +820,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             used = true;
         }
         if let Some(c) = NUMBER.captures(&l.text) {
-            if l.h >= num_h * 0.6 {
-                number = Some((c[1].to_string(), l.x + l.w / 2.0));
+            if l.h >= num_h * 0.6 && l.h >= max_h * 0.6 && number.as_ref().is_none_or(|n| n.2 < l.h) {
+                number = Some((c[1].trim_start_matches('0').to_string(), l.x + l.w / 2.0, l.h));
             }
             used = true;
         }
@@ -809,11 +847,11 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             }
             score.header_regions.push(TextRegion { text: c.text.clone(), bbox: Rect::new(c.rect.0, c.rect.1, c.rect.2, c.rect.3) });
         }
-        if let Some((n, x)) = number {
+        if let Some((n, x, _)) = number {
             score.number_side = Some(if x > t.rect.0 + t.rect.2 / 2.0 { "right" } else { "left" });
             score.number = Some(n);
         }
-    } else if let Some((n, _)) = number {
+    } else if let Some((n, _, _)) = number {
         score.number = Some(n);
     }
 }
