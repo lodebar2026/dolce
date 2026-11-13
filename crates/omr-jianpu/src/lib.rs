@@ -241,6 +241,24 @@ fn system_end_bars(notes: &mut [notes::RowNotes], sys: &[Option<(u32, u32)>], ro
         }
     }
     for idx in groups.values() {
+        // 行末终止线：同系统别的声部认出了，本行末条线落在同一处、后面没音的也记终止线（马槽歌下声部细粗两根粘成一格、或两根都按细线认）
+        let finals: Vec<f64> = idx.iter().filter(|&&i| notes[i].final_end).filter_map(|&i| notes[i].barline_xs.last().copied()).collect();
+        for &i in idx {
+            let h = rows[i].h();
+            let rn = &mut notes[i];
+            if rn.final_end {
+                continue;
+            }
+            let Some(&last) = rn.barline_xs.last() else { continue };
+            if finals.iter().any(|&f| (f - last).abs() <= h * 0.6) && !rn.nums.iter().any(|n| n.bbox.cx() > last) {
+                rn.final_end = true;
+                if let Some(&prev) = rn.barline_xs.iter().rev().nth(1) {
+                    if last - prev <= h {
+                        rn.double_bar_xs.retain(|&d| (d - prev).abs() > 1.0 && (d - last).abs() > 1.0);
+                    }
+                }
+            }
+        }
         let ends: Vec<f64> = idx.iter().flat_map(|&i| notes[i].end_bar_xs.clone()).collect();
         for &i in idx {
             let h = rows[i].h();
