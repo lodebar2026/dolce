@@ -1091,6 +1091,15 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             score.title = Some(c[2].to_string());
         }
         for c in &cs {
+            // 引题：标题上方印一行汉字、以破折号引出标题（青年诗歌 77、125「新耶路撒冷——」，同 TS subtitle.leadIn），不与标题居中；
+            // 破折号 det 没框进去，看框右边两个字宽里有没有一道横墨，有就补回「——」记副标题
+            let (cx0, cy0, cw, ch) = c.rect;
+            if !std::ptr::eq(c, t) && score.subtitle.is_none() && cy0 + ch <= t.rect.1 && c.text.trim().chars().all(is_han) && c.text.trim().chars().count() >= 2 && dash_between(ink, cx0 + cw, cx0 + cw + ch * 2.2, cy0, cy0 + ch) {
+                let text = format!("{}——", c.text.trim());
+                score.header_regions.push(TextRegion { text: text.clone(), bbox: Rect::new(cx0, cy0, cw, ch) });
+                score.subtitle = Some(text);
+                continue;
+            }
             match c.kind {
                 Some(CreditType::Title) if !std::ptr::eq(c, t) && score.subtitle.is_none() => score.subtitle = Some(c.text.clone()),
                 Some(CreditType::Subtitle) if score.subtitle.is_none() => score.subtitle = Some(c.text.clone()),
