@@ -87,6 +87,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     arc_dots(ink, row, rn, &strokes, ya);
     // 候选弧：(左端音, 右端音, 宽, 弧顶中点)
     let mut found: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
+    let mut flats: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
     let dbg = std::env::var("OMR_ARC_DEBUG").is_ok();
     for s in &strokes {
         if dbg && s.width() >= h * 0.3 {
@@ -141,6 +142,20 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             continue;
         }
         if !up || arch < h * MIN_ARCH || arch < s.width() * 0.025 || arch > h * 1.3 || sh.back() > arch * 0.35 || sh.thick > h * 0.2 || sh.peak < 0.12 || sh.peak > 0.88 {
+            // 平直的方括号式连音括线「┌3┐」（青年诗歌 21 箭之歌）：拱不够、不是弧，只留作多连音候选——顶上读得出罩着的音数才算
+            if arch < h * MIN_ARCH && s.width() >= h * 1.2 && sh.thick <= h * 0.2 && sh.slope().abs() <= 0.15 {
+                let (ax, ay) = (sh.a.0, sh.a.1 + ya as f64);
+                let (bx, by) = (sh.b.0, sh.b.1 + ya as f64);
+                let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
+                let top = ay.min(by) - if up { arch } else { 0.0 };
+                if row.top_at(ax) - ay <= h * 1.5 && row.top_at(bx) - by <= h * 1.5 {
+                    if let (Some(i), Some(j)) = (near(ax), near(bx)) {
+                        if j >= i + 2 {
+                            flats.push((i, j, s.width(), ((ax + bx) / 2.0, top)));
+                        }
+                    }
+                }
+            }
             continue;
         }
         // 两端离数字顶不远（端上的音头顶有高音点的，弧架在点上方，再让出半个字号：爱主颂 95「(2̇ 3̇)」）
@@ -270,6 +285,9 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     }
     // 多连音：弧顶上（或嵌在弧顶里）立着一个小号数字，读出来正是弧罩着的音数——组里各音记同一份比例，不再当圆滑线
     let mut tuplets: Vec<usize> = Vec::new();
+    let n_arcs = found.len();
+    let flats: Vec<_> = flats.into_iter().filter(|f| !found.iter().any(|g| g.0 == f.0 && g.1 == f.1)).collect();
+    found.extend(flats);
     for (fi, &(i, j, _, (mx, my))) in found.iter().enumerate() {
         let cnt = j - i + 1;
         if !(3..=7).contains(&cnt) || rn.nums[i..=j].iter().any(|n| n.tuplet.is_some()) {
@@ -303,7 +321,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         tuplets.push(fi);
     }
     for (fi, (i, j, _, _)) in found.into_iter().enumerate() {
-        if tuplets.contains(&fi) {
+        if tuplets.contains(&fi) || fi >= n_arcs {
             continue;
         }
         let (a, b) = (&rn.nums[i], &rn.nums[j]);
