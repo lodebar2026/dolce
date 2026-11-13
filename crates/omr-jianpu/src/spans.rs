@@ -141,7 +141,9 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             }
             continue;
         }
-        if !up || arch < h * MIN_ARCH || arch < s.width() * 0.025 || arch > h * 1.3 || sh.back() > arch * 0.35 || sh.thick > h * 0.2 || sh.peak < 0.12 || sh.peak > 0.88 {
+        // 弧尾粘着小号波音（记号段已认出、挂在端上的音上，1771「(3 2̃)」）：波音的锯齿把回折量撑大，不看回折
+        let orn_end = [sh.a.0, sh.b.0].iter().any(|&x| rn.nums.iter().any(|n| n.ornament.is_some() && (n.bbox.cx() - x).abs() <= h * 0.9));
+        if !up || arch < h * MIN_ARCH || arch < s.width() * 0.025 || arch > h * 1.3 || (sh.back() > arch * 0.35 && !orn_end) || sh.thick > h * 0.2 || sh.peak < 0.12 || sh.peak > 0.88 {
             // 平直的方括号式连音括线「┌3┐」（青年诗歌 21 箭之歌）：拱不够、不是弧，只留作多连音候选——顶上读得出罩着的音数才算
             if arch < h * MIN_ARCH && s.width() >= h * 1.2 && sh.thick <= h * 0.2 && sh.slope().abs() <= 0.15 {
                 let (ax, ay) = (sh.a.0, sh.a.1 + ya as f64);
