@@ -627,7 +627,8 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
                 .collect();
             let med = median(&ws, 0.0);
             let max = ws.iter().copied().fold(0.0, f64::max);
-            if (ws.len() as f64) < c.h() * 0.95 || max > med + 1.0 {
+            // 伸出行带这条证据够硬，墨宽只挡「1」的旗（宽出半倍以上）：扫描件的线边参差一两像素
+            if (ws.len() as f64) < c.h() * 0.95 || max > med * 1.5 + 1.0 {
                 continue;
             }
             let reach = |dir: i64| {
@@ -778,4 +779,90 @@ pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
         }
     }
     out
+}
+
+/// 格里逐行墨宽的中位与最宽、有墨的行数（看是不是一根光竖条：「1」顶上的旗那几行宽出一截）。
+fn stroke_widths(ink: &Ink, c: &Cell) -> (f64, f64, usize) {
+    let ws: Vec<f64> = (c.y0..=c.y1)
+        .filter_map(|y| {
+            let a = (c.x0..=c.x1).find(|&x| ink.at(x, y))?;
+            let b = (c.x0..=c.x1).rev().find(|&x| ink.at(x, y))?;
+            Some((b - a + 1) as f64)
+        })
+        .collect();
+    (median(&ws, 0.0), ws.iter().copied().fold(0.0, f64::max), ws.len())
+}
+
+/// 小节线多声部互证（同 TS `barline.mutual`）：小节线管一个时间点，同一系统各声部的线横向位置相同。
+/// 别的声部有两行以上在这个位置有线时：本行这里读成数字的光竖条（窄、没有旗）改成小节线；本行这里没有格挡着的补一根。
+/// 只管行内（首尾两个数字之间）；本行已有的线不少于别的行中位根数的一半（至少两根），夹在连谱号里的歌词行不算声部。
+pub fn mutual_bars(ink: &Ink, rows: &mut [RowFrame], sys: &[Option<(u32, u32)>]) {
+    let mut groups: std::collections::BTreeMap<u32, Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, s) in sys.iter().enumerate() {
+        if let Some((g, _)) = s {
+            groups.entry(*g).or_default().push(i);
+        }
+    }
+    let bar_xs = |r: &RowFrame| r.bars().map(|c| c.cx()).collect::<Vec<f64>>();
+    for idx in groups.values() {
+        if idx.len() < 3 {
+            continue;
+        }
+        let xs: Vec<Vec<f64>> = idx.iter().map(|&i| bar_xs(&rows[i])).collect();
+        let mut edits: Vec<(usize, Vec<f64>)> = Vec::new();
+        for (k, &i) in idx.iter().enumerate() {
+            let r = &rows[i];
+            let h = r.h();
+            let tol = h * 0.4;
+            let others = median(&xs.iter().enumerate().filter(|(j, _)| *j != k).map(|(_, v)| v.len() as f64).collect::<Vec<_>>(), 0.0);
+            if xs[k].len() < 2 || (xs[k].len() as f64) < others * 0.5 {
+                continue;
+            }
+            let (Some(x0), Some(x1)) = (r.digits().map(|c| c.x0).min(), r.digits().map(|c| c.x1).max()) else { continue };
+            let mut seen: Vec<f64> = Vec::new();
+            for (j, v) in xs.iter().enumerate() {
+                if j == k {
+                    continue;
+                }
+                for &x in v {
+                    if seen.iter().any(|t| (t - x).abs() <= tol) {
+                        continue;
+                    }
+                    seen.push(x);
+                    if x <= x0 as f64 || x >= x1 as f64 || xs[k].iter().any(|t| (t - x).abs() <= tol) {
+                        continue;
+                    }
+                    let votes = xs.iter().enumerate().filter(|(jj, vv)| *jj != k && vv.iter().any(|t| (t - x).abs() <= tol)).count();
+                    if votes >= 2 {
+                        edits.push((i, vec![x]));
+                    }
+                }
+            }
+        }
+        for (i, xs) in edits {
+            let r = &mut rows[i];
+            let h = r.h();
+            for x in xs {
+                // 这个位置上的格
+                let hit: Vec<usize> = (0..r.cells.len()).filter(|&c| r.cells[c].x0 as f64 - h * 0.1 < x && r.cells[c].x1 as f64 + h * 0.1 > x).collect();
+                if hit.is_empty() {
+                    let (t, b) = (r.top_at(x).round() as i64, r.bottom_at(x).round() as i64 - 1);
+                    let xi = x.round() as i64;
+                    let at = r.cells.iter().position(|c| c.x0 > xi).unwrap_or(r.cells.len());
+                    r.cells.insert(at, Cell { x0: xi - 1, x1: xi + 1, y0: t, y1: b, kind: CellKind::Bar { thick: false } });
+                    continue;
+                }
+                if let [c] = hit[..] {
+                    let cell = r.cells[c];
+                    if cell.kind != CellKind::Digit || cell.w() > h * 0.3 || cell.h() < h * 0.5 {
+                        continue;
+                    }
+                    let (med, max, n) = stroke_widths(ink, &cell);
+                    if (n as f64) >= cell.h() * 0.95 && max <= med * 1.5 + 1.0 {
+                        r.cells[c].kind = CellKind::Bar { thick: false };
+                    }
+                }
+            }
+        }
+    }
 }

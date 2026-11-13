@@ -75,7 +75,7 @@ const STEPS: usize = 6;
 
 pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook) -> Result<RecognizedScore, String> {
     hook.step(0, STEPS, "rows")?;
-    let rows = frame::find_rows(ink, num_h, ocr);
+    let mut rows = frame::find_rows(ink, num_h, ocr);
     if rows.is_empty() {
         return Err("没有找到数字行".into());
     }
@@ -83,6 +83,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     let mut score = RecognizedScore { key: "C".into(), beats: 4, beat_type: 4, ..Default::default() };
     hook.step(1, STEPS, "notes")?;
     let sys = frame::systems(ink, &rows);
+    frame::mutual_bars(ink, &mut rows, &sys);
     let voiced = sys.iter().any(|s| s.is_some());
     let ctx = |i: usize| match (sys[i], voiced) {
         (Some(_), _) => marks::RowCtx::InSystem,
