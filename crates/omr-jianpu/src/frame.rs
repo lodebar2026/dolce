@@ -691,6 +691,26 @@ fn overshoot(ink: &Ink, band: &Band, x: i64) -> Option<(f64, f64)> {
     Some((t - up as f64, dn as f64 + 1.0 - b))
 }
 
+/// 格里有墨的行连成的几截（自上而下）。
+fn ink_groups(ink: &Ink, c: &Cell) -> Vec<(i64, i64)> {
+    let mut groups: Vec<(i64, i64)> = Vec::new();
+    for y in c.y0..=c.y1 {
+        if ink.row_ink(y, c.x0, c.x1 + 1) {
+            match groups.last_mut() {
+                Some(g) if g.1 == y - 1 => g.1 = y,
+                _ => groups.push((y, y)),
+            }
+        }
+    }
+    groups
+}
+
+/// 格里的墨分上下两截、各不过 0.32 字号高（冒号的两点）。
+fn colon_like(ink: &Ink, c: &Cell, h: f64) -> bool {
+    let groups = ink_groups(ink, c);
+    groups.len() == 2 && groups.iter().all(|g| ((g.1 - g.0 + 1) as f64) <= h * 0.32 && ((g.1 - g.0 + 1) as f64) >= h * 0.08)
+}
+
 fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     let h = band.h();
     let (cw, ch) = (c.w(), c.h());
@@ -712,6 +732,10 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     if ch >= h * 0.9 && cw <= h * 0.6 && ink.count(&c.rect()) as f64 >= cw * ch * SOLID {
         return CellKind::Bar { thick: false };
     }
+    // 印得大的冒号（反复记号的两点，青年诗歌 5 一点就 0.2 字号、上下拉开 0.7 字号）：窄格里上下两团近方的墨，中间空着
+    if cw <= h * 0.3 && ch >= h * 0.35 && colon_like(ink, c, h) {
+        return CellKind::Colon;
+    }
     if ch >= h * 0.72 && cw >= h * 0.1 {
         return CellKind::Digit;
     }
@@ -720,19 +744,10 @@ fn classify(ink: &Ink, band: &Band, c: &Cell) -> CellKind {
     }
     if cw <= h * 0.42 {
         // 上下两截墨：冒号
-        let mut groups: Vec<(i64, i64)> = Vec::new();
-        for y in c.y0..=c.y1 {
-            if ink.row_ink(y, c.x0, c.x1 + 1) {
-                match groups.last_mut() {
-                    Some(g) if g.1 == y - 1 => g.1 = y,
-                    _ => groups.push((y, y)),
-                }
-            }
-        }
-        if groups.len() == 2 && groups.iter().all(|g| ((g.1 - g.0 + 1) as f64) <= h * 0.32 && ((g.1 - g.0 + 1) as f64) >= h * 0.08) && ch >= h * 0.35 {
+        if colon_like(ink, c, h) && ch >= h * 0.35 {
             return CellKind::Colon;
         }
-        if groups.len() == 1 && ch <= h * 0.42 && ch >= h * 0.08 && cw >= h * 0.08 && rel > 0.3 {
+        if ink_groups(ink, c).len() == 1 && ch <= h * 0.42 && ch >= h * 0.08 && cw >= h * 0.08 && rel > 0.3 {
             return CellKind::Dot;
         }
     }
