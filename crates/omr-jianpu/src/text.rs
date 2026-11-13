@@ -968,7 +968,12 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
         return;
     }
     // 贯穿几行的竖墨（扫描件纸边、连谱号）不算，否则上方带连成一截切不开
-    let claims = Claims::new(ink, std::iter::empty()).tall_runs(ink, h * 2.2);
+    // 弧（扁宽、墨稀，粘连的「Am」墨实）与高音点、附点（小圆块）也不算：和弦字常与下面的弧、点上下挨着连成一截，取条就把弧切进字里读乱
+    let marks = ink.comps().iter().filter(|k| {
+        let r = &k.rect;
+        r.bottom() > ya as f64 && r.y < yb as f64 && ((r.w >= h * 1.2 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
+    });
+    let claims = Claims::new(ink, marks.map(|k| k.rect)).tall_runs(ink, h * 2.2);
     for (y0, y1) in cut_lines(ink, &claims, row.band.slope, ya, yb, (0, ink.w() as i64), h * 0.35, None) {
         let chars = read_line(ink, &claims, ocr, row.band.slope, y0, y1, 0, ink.w() as i64, None);
         let text: String = chars.iter().map(|c| c.ch).collect();
