@@ -152,3 +152,7 @@ w:我罪已_得赦免_
 本项目代码以 MIT 授权（见 [LICENSE](LICENSE)）。随附 Bravura 字体按 SIL OFL 授权
 （见 `public/redist`），试听的钢琴音色（FluidR3 GM）按 CC BY 3.0 授权
 （见 `public/redist/soundfont/LICENSE.txt`）；各第三方依赖的许可以其自身声明为准。
+
+### 多张简谱图片
+
+简谱识别支持一次选择多张图片，按文件名自然排序（1、2、10），合成为一张纵向对照图。最多 10 张、总计 30 MiB；单张原图与合成图不超过 2500 万像素。`.dolce` 保存所有原图和合成图。多个 PDF 或 PDF/图片混选暂不支持；单 PDF 保持原有流程。

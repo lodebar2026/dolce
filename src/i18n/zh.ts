@@ -1,6 +1,10 @@
 // 界面文案（中文，同时是键的权威清单）。新增文字两边同加：en.ts 漏键 tsc 报错。
 // 占位写 {name}，由 t(key, { name }) 替换。
 export const zh = {
+  "omr.stackLimit": "一次最多 10 张图片、总计 30 MiB，请分批整理。",
+  "omr.stackPixels": "图片过大，合成后需小于 2500 万像素、高度小于 30000 像素。请裁掉空白或分段识别。",
+  "omr.stackCanvas": "无法创建图片画布。",
+  "omr.stackPdf": "多文件简谱请全部选择图片；PDF 请一次打开一份。",
   // 应用与页头
   "app.windowTitle": "悦谱",
   "header.home": "返回开始",

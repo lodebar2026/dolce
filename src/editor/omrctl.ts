@@ -1,3 +1,4 @@
+import { stackImages } from "../omrkit/image-stack";
 // 简谱 OMR 的编辑器侧控制器：识别 → 出文本 → 叠加核对视图 → 点选定位。
 //
 // 从 App 里整体切出来的一块。它自己拿着识别产物（二值图 / RecognizedScore / 代码区间映射 /
@@ -285,7 +286,7 @@ export class OmrController implements FormatSource {
   /**
    * 识别一份或几份输入（拖进来、选进来的图片 / PDF；几份时按文件名排好、合成一首）。分流：
    * 文字层完整的五线谱 PDF → 矢量路；有五线谱表的位图（`kind` 为自动时按 `detect.ts` 判）→ 位图五线谱路；其余 → 简谱路。
-   * 简谱一次识别一张（几张时只认第一张，状态栏说明）。
+   * 简谱多图按调用方页序合成一张长图，保留原文件用于后续调序与项目保存。
    */
   async recognizeFiles(files: readonly RecogInput[]): Promise<boolean> {
     const g = ++this.gen;
@@ -327,9 +328,15 @@ export class OmrController implements FormatSource {
         console.warn("五线谱判定失败，按简谱识别", e);
       }
     }
-    const ok = await this.recognizeJianpu({ bytes: first.bytes, mime: first.mime }, g);
-    if (ok && files.length > 1) this.host.setStatus(this.host.status + t("omr.firstOnly", { n: files.length }));
-    return ok;
+    try {
+      if (files.length > 1 && files.some(f => isPdf(f.bytes, f.mime))) throw new Error(t("omr.stackPdf"));
+      const composite = files.length > 1 ? await stackImages(files) : undefined;
+      if (g !== this.gen) return false;
+      return await this.recognizeJianpu(composite ? { bytes: composite, mime: "image/png", composite } : first, g);
+    } catch (e) {
+      if (g === this.gen) this.host.setStatus(t("omr.failed", { error: e instanceof Error ? e.message : String(e) }));
+      return false;
+    }
   }
 
   /** 位图五线谱：在线 OCR 跑整曲识别，产物是 MusicXML，落地同打开 `.musicxml`（无代码区、谱面上改模型）。 */
@@ -393,6 +400,8 @@ export class OmrController implements FormatSource {
 
   /** 这次识别走的哪条路（识别项目按它存与还原）；没有识别会话为 null */
   sessionKind: ProjectKind | null = null;
+  private composite: Uint8Array | null = null;
+  private compositeUrl: string | null = null;
 
   /** 识别会话的快照（存 `.dolce` 与自动保存用）；没有会话为 null。 */
   snapshot(): ProjectSnapshot | null {
@@ -404,7 +413,7 @@ export class OmrController implements FormatSource {
       omrFormat: this.format, recogKind: this.kind, recogView: this.view,
       sources: this.lastInputs.map((f, k) => ({ name: f.name ?? `source-${k + 1}`, ...(f.mime ? { mime: f.mime } : {}), bytes: f.bytes })),
     };
-    if (this.sessionKind === "jianpu" && this.score && this.bin) base.jianpu = { score: this.score, bin: this.bin, meta: this.meta };
+    if (this.sessionKind === "jianpu" && this.score && this.bin) base.jianpu = { score: this.score, bin: this.bin, meta: this.meta, composite: this.composite ?? undefined };
     const cur = this.host.formats.source?.current();
     if (this.staffSession && docFormat !== "musicxml" && cur) base.staffText = { format: cur, links: this.staffLinks?.entries() ?? [] };
     return base;
@@ -423,6 +432,7 @@ export class OmrController implements FormatSource {
     this.lastInputs = s.sources.map((x) => ({ bytes: x.bytes, ...(x.mime ? { mime: x.mime } : {}), name: x.name }));
     if (s.kind === "jianpu" && s.jianpu) {
       this.emit(s.jianpu.score, s.jianpu.bin);
+      this.composite = s.jianpu.composite ?? null;
       if (this.host.getText() !== s.text) this.host.setText(s.text);
       this.meta = s.jianpu.meta;
       this.idMap = null;
@@ -993,6 +1003,12 @@ export class OmrController implements FormatSource {
 
   /** 第 `si` 份原图第 `pn` 页**整页**铺满位图 `bin`（简谱：位图就是整页缩放来的）；画不出为 null */
   private async wholePageView(si: number, pn: number, bin: Binary): Promise<PageView> {
+    if (this.composite) {
+      this.compositeUrl ??= URL.createObjectURL(new Blob([this.composite as BlobPart], { type: "image/png" }));
+      return { url: this.compositeUrl, x: 0, y: 0, w: bin.w, h: bin.h };
+    }
+    // PDF recognition uses all pages; never stretch just its first page over the result.
+    if (this.lastInputs[si] && isPdf(this.lastInputs[si]!.bytes, this.lastInputs[si]!.mime)) return null;
     const src = this.prerenderOriginals(this.lastInputs).sources[si];
     const got = src ? await src.catch(() => null) : null;
     if (got === null) return null;
@@ -1153,7 +1169,7 @@ export class OmrController implements FormatSource {
   }
 
   /** 简谱识别（`recognizeFiles` 判完了走这里）。 */
-  private async recognizeJianpu(picked: { bytes: Uint8Array; mime?: string }, g: number): Promise<boolean> {
+  private async recognizeJianpu(picked: { bytes: Uint8Array; mime?: string; composite?: Uint8Array }, g: number): Promise<boolean> {
     this.host.setStatus(t("omr.running"));
     void this.showPending([this.lastInputs[0] ?? picked], g);
     try {
@@ -1162,6 +1178,7 @@ export class OmrController implements FormatSource {
       if (g !== this.gen) return false;
       this.endPending(true);
       this.emit(score, bin);
+      this.composite = picked.composite ?? null;
       this.host.setContextControl(this.kindField(), true);
       await this.enterAfterRecognize("original"); // 简谱进简谱档，对照方式按用户上次的选择（没选过就并排）
       const n = this.beatMarks.length;
@@ -2344,6 +2361,9 @@ export class OmrController implements FormatSource {
 
   /** 清掉本次 OMR 的识别叠加产物并禁用识别按钮；若正处识别模式则退回简谱模式。 */
   clear(): void {
+    if (this.compositeUrl) URL.revokeObjectURL(this.compositeUrl);
+    this.compositeUrl = null;
+    this.composite = null;
     this.gen++;
     this.fromProject = false;
     this.bin = null;
