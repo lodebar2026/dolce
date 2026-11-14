@@ -42,6 +42,31 @@ export interface PlaySongOptions {
  *  简谱形状走 `playSourceOfSong`。拼不出（这首没有曲行）返回 null。
  *  多声部按各声部共用的时间轴叠（`timeaxis.ts`：文本谱一组不一定含全部声部，按组号落格，缺席处不补任何东西）。 */
 export function playSourceOf(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlaySource | null {
+  const src = playSourceWithoutSignatures(doc, songIdx, options);
+  const song = doc.songs[songIdx];
+  if (!src || !song) return src;
+  const byId = new Map<ElementId, NonNullable<Song["key"]>>();
+  for (const part of song.parts) {
+    let key = song.key ?? { fifths: 0 };
+    for (const m of part.measures) {
+      key = m.attrs?.key ?? key;
+      for (const el of m.elements) byId.set(el.id, key);
+    }
+  }
+  return { ...src, parts: src.parts.map(part => {
+    let key = song.key ?? { fifths: 0 };
+    return { ...part, measures: part.measures.map(m => {
+      if (!m) return m;
+      for (const e of m.entries) {
+        const id = (e as { id?: ElementId }).id;
+        if (id !== undefined && byId.has(id)) { key = byId.get(id)!; break; }
+      }
+      return { entries: m.entries, time: m.time, key, get duration() { return m.duration; } };
+    }) };
+  }) };
+}
+
+function playSourceWithoutSignatures(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlaySource | null {
   const song = doc.songs[songIdx];
   if (!song) return null;
   if (isXmlShaped(song)) return playSourceOfDoc(song);
