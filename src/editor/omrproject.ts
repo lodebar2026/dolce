@@ -37,7 +37,7 @@ export interface ProjectSnapshot {
   recogView?: string;
   sources: { name: string; mime?: string; bytes: Uint8Array }[];
   /** 简谱识别的产物 */
-  jianpu?: { score: RecognizedScore; bin: Binary; meta: JpwMeta | null };
+  jianpu?: { score: RecognizedScore; bin: Binary; meta: JpwMeta | null; composite?: Uint8Array };
   /** 五线谱识别的原文换成了文本格式：格式下拉里是哪一项（`abc` / `123` / `tomato`…）与识别 id 旁表（原文起点 → 各音 id，`omrlinks.ts`） */
   staffText?: { format: string; links: [number, (string | undefined)[]][] };
 }
@@ -77,6 +77,7 @@ export function packProject(s: ProjectSnapshot, appVersion: string, fast = false
   if (s.jianpu) {
     files["result/recognized.json"] = strToU8(JSON.stringify(s.jianpu.score, replacer));
     files["result/bin.raw"] = fast ? [s.jianpu.bin.data, { level: 0 }] : s.jianpu.bin.data;
+    if (s.jianpu.composite) files["result/composite.png"] = [s.jianpu.composite, { level: 0 }];
     if (s.jianpu.meta) files["result/meta.json"] = strToU8(JSON.stringify(s.jianpu.meta, replacer));
   }
   return zipSync(files, { level: fast ? 1 : 6 });
@@ -116,6 +117,7 @@ export function unpackProject(bytes: Uint8Array): ProjectSnapshot {
   if (manifest.kind === "jianpu" && rec && raw && manifest.bin && raw.length === manifest.bin.w * manifest.bin.h) {
     jianpu = {
       score: JSON.parse(strFromU8(rec), reviver) as RecognizedScore,
+      composite: files["result/composite.png"],
       bin: { w: manifest.bin.w, h: manifest.bin.h, data: raw },
       meta: files["result/meta.json"] ? (JSON.parse(strFromU8(files["result/meta.json"]), reviver) as JpwMeta) : null,
     };

@@ -226,3 +226,7 @@ Regression scripts and test corpora are not part of this repository.
 The code is licensed under MIT (see [LICENSE](LICENSE)). The bundled Bravura font is licensed under the SIL OFL
 (see `public/redist`), and the bundled piano sound (FluidR3 GM) under CC BY 3.0
 (see `public/redist/soundfont/LICENSE.txt`). Third-party dependencies are licensed under their own terms.
+
+### Multiple numbered-notation images
+
+Jianpu recognition accepts multiple images in natural filename order (1, 2, 10), stacked into one comparison image. Limits: 10 images, 30 MiB input, 25 million pixels per original and composite. `.dolce` retains the originals and composite. Multiple PDFs or mixed PDF/image input are not supported; single-PDF recognition is unchanged.

@@ -2,6 +2,10 @@
 import type { MsgKey } from "./zh";
 
 export const en: Record<MsgKey, string> = {
+  "omr.stackLimit": "Select up to 10 images, totaling at most 30 MiB.",
+  "omr.stackPixels": "Images exceed 25 million pixels or 30000 pixels in height. Crop margins or split the score.",
+  "omr.stackCanvas": "Unable to create an image canvas.",
+  "omr.stackPdf": "For multiple numbered-notation files select images only. Open one PDF at a time.",
   // 应用与页头
   "app.windowTitle": "Dolce",
   "header.home": "Home",
