@@ -2,6 +2,22 @@
 import type { MsgKey } from "./zh";
 
 export const en: Record<MsgKey, string> = {
+  "midi.invalid": "Invalid MIDI: use a standard Type 0/1 file up to 10 MiB.",
+  "midi.limit": "No pitched notes, or score exceeds 20000 notes, 32 parts or 2000 bars.",
+  "midi.quantized": "Notes were quantized; velocities are regenerated from notation. The original MIDI is unchanged.",
+  "midi.tempoWarning": "Tempo changes are currently flattened to the first tempo.",
+  "midi.drumsWarning": "Percussion channel omitted.",
+  "midi.controlWarning": "Pedal, controllers and pitch bends are not transcribed.",
+  "midi.danglingWarning": "Unclosed notes were omitted.",
+  "midi.import": "Import MIDI",
+  "midi.help": "Convert MIDI to editable numbered notation. Auto uses file metadata, falling back to C major and 4/4.",
+  "midi.grid": "Rhythm grid",
+  "midi.key": "Key",
+  "midi.meter": "Meter",
+  "midi.autoKey": "Auto (default C major)",
+  "midi.autoMeter": "Auto (default 4/4)",
+  "midi.triplet": "Eighth-note triplets",
+  "midi.cancel": "Cancel",
   // 应用与页头
   "app.windowTitle": "Dolce",
   "header.home": "Home",
