@@ -226,3 +226,7 @@ Regression scripts and test corpora are not part of this repository.
 The code is licensed under MIT (see [LICENSE](LICENSE)). The bundled Bravura font is licensed under the SIL OFL
 (see `public/redist`), and the bundled piano sound (FluidR3 GM) under CC BY 3.0
 (see `public/redist/soundfont/LICENSE.txt`). Third-party dependencies are licensed under their own terms.
+
+### MIDI to editable numbered notation
+
+“Import MIDI” accepts SMF Type 0/1 with PPQ timing. Choose a 1/16, 1/32 or eighth-note-triplet grid and automatic or explicit key/meter. Track/channel parts retain quantized pitches, rests, chords, cross-bar ties and the initial tempo. Quantization changes performance details; tempo changes are flattened, pedal/controllers/pitch bends/percussion are omitted, and velocities are regenerated. The original MIDI file is unchanged. Limits: 10 MiB, 20000 notes, 32 parts, 16 concurrent voices per part and 2000 bars.
