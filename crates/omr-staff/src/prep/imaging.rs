@@ -79,26 +79,32 @@ pub fn image_page(src: &SourceImage) -> Imaged {
         }
         return Imaged { bin, up: 1, soft: None, faint: false, halftone: halftone.unwrap_or(0.0), staves: found };
     }
-    // 某档阈值的 (二值图, 松档, 放大倍数, 谱表)
-    let mut build = |k: f64| -> (Binary, Binary, usize, Option<(Unit, Vec<Staff>)>) {
-        let pair = |bz: &mut Binarizer, up: usize| {
-            let mut v = bz.binarize(&[k, K_FAINT], up);
-            let mut soft = v.pop().unwrap();
-            let mut bin = v.pop().unwrap();
+    // 某档阈值的 (二值图, 松档, 放大倍数, 谱表)；`pre`：原分辨率这档的二值图与松档已经算好（还没校极性）
+    let build = |bz: &mut Binarizer, k: f64, pre: Option<(Binary, Binary)>| -> (Binary, Binary, usize, Option<(Unit, Vec<Staff>)>) {
+        let finish = |mut bin: Binary, mut soft: Binary, up: usize| {
             if fix_polarity(&mut bin) {
                 fix_polarity(&mut soft);
             }
             let f = find_staves(&bin);
             (bin, soft, up, f)
         };
-        let one = pair(&mut bz, 1);
+        let pair = |bz: &mut Binarizer, up: usize| {
+            let mut v = bz.binarize(&[k, K_FAINT], up);
+            let soft = v.pop().unwrap();
+            let bin = v.pop().unwrap();
+            finish(bin, soft, up)
+        };
+        let one = match pre {
+            Some((bin, soft)) => finish(bin, soft, 1),
+            None => pair(bz, 1),
+        };
         let Some((u, _)) = &one.3 else { return one };
         if u.space >= UPSCALE_SPACE {
             return one;
         }
         let thin = u.thick / u.space < UPSCALE_THIN;
         let space1 = u.space;
-        let big = pair(&mut bz, 2);
+        let big = pair(bz, 2);
         if std::env::var("OMR_STAFF_DEBUG").is_ok() {
             let ext = |f: &Option<(Unit, Vec<Staff>)>| f.as_ref().map(|(_, s)| s.iter().map(|s| (s.left as i64, s.right as i64)).collect::<Vec<_>>());
             eprintln!("放大前 {:?}\n放大后 {:?}", ext(&one.3), ext(&big.3));
@@ -111,11 +117,16 @@ pub fn image_page(src: &SourceImage) -> Imaged {
             one
         }
     };
-    let mut got = build(K);
-    // 一行谱都找不出来的，逐档放松阈值重来；只在一行都找不出时才换（松一档能多找出谱行就换，会在歌词带、底纹里多出假谱行）
+    let mut got = build(&mut bz, K, None);
+    // 一行谱都找不出来的，逐档放松阈值重来；只在一行都找不出时才换（松一档能多找出谱行就换，会在歌词带、底纹里多出假谱行）。
+    // 几档原分辨率的二值图一趟算出（局部均值、方差各档共用，只差最后一比；简谱页走到这里，大图每档省一遍整页统计）
     if count(&got.3) == 0 {
-        for k2 in K_RETRY {
-            let g2 = build(k2);
+        let mut ks: Vec<f64> = K_RETRY.to_vec();
+        ks.push(K_FAINT);
+        let mut pre = bz.binarize(&ks, 1);
+        let soft = pre.pop().unwrap();
+        for (k2, bin) in K_RETRY.into_iter().zip(pre) {
+            let g2 = build(&mut bz, k2, Some((bin, soft.clone())));
             if count(&g2.3) > 0 {
                 got = g2;
                 break;

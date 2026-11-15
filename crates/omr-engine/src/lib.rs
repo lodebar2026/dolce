@@ -176,6 +176,17 @@ fn binarize(gray: &[u8], w: usize, h: usize) -> Binary {
     Binary { w, h, data: gray.iter().map(|&v| (v <= t) as u8).collect() }
 }
 
+/// 简谱准备好的墨层按哪几页存：所选页里有像素图的那些。
+fn raster_key(srcs: &[(usize, PageSource)]) -> Vec<usize> {
+    srcs.iter().filter(|s| s.1.raster.is_some()).map(|s| s.0).collect()
+}
+
+/// 这几页准备好的简谱墨层（之前某轮做过的）。
+fn memo_jianpu(doc: &Doc, srcs: &[(usize, PageSource)]) -> Option<Arc<dolce_omr_jianpu::Prepared>> {
+    let key = raster_key(srcs);
+    doc.memo.jianpu.lock().ok().and_then(|m| m.as_ref().filter(|(k, _)| *k == key).map(|(_, p)| p.clone()))
+}
+
 /// 识别：五线谱各页先认（页级并行），一页谱表都没有（且没指定五线谱）就走简谱。
 pub fn recognize(doc: &Doc, ocr: &CachedOcr, opts: &Opts, hook: &Hook) -> Result<Recognition, String> {
     let srcs = doc.sources(&opts.pages)?;
@@ -183,7 +194,22 @@ pub fn recognize(doc: &Doc, ocr: &CachedOcr, opts: &Opts, hook: &Hook) -> Result
     let key: Vec<usize> = srcs.iter().map(|s| s.0).collect();
     let staffless = opts.kind == Kind::Auto && doc.memo.staffless.lock().is_ok_and(|v| v.contains(&key));
     if opts.kind != Kind::Jianpu && !staffless {
-        let pages = staff_pages(&srcs, ocr, hook)?;
+        // 自动档头一回试五线谱时，简谱的准备（只看图）在另一个线程同时做：没有谱表就接着用，有就丢掉
+        #[cfg(feature = "parallel")]
+        let (pages, prep) = if opts.kind == Kind::Auto && memo_jianpu(doc, &srcs).is_none() && srcs.iter().any(|s| s.1.raster.is_some()) {
+            let imgs: Vec<SourceImage> = srcs.iter().filter_map(|s| s.1.raster.clone()).collect();
+            let (pages, prep) = rayon::join(|| staff_pages(&srcs, ocr, hook), || dolce_omr_jianpu::prepare(&imgs));
+            (pages?, prep.ok())
+        } else {
+            (staff_pages(&srcs, ocr, hook)?, None)
+        };
+        #[cfg(not(feature = "parallel"))]
+        let (pages, prep): (_, Option<dolce_omr_jianpu::Prepared>) = (staff_pages(&srcs, ocr, hook)?, None);
+        if let (true, Some(p)) = (pages.is_empty(), prep) {
+            if let Ok(mut m) = doc.memo.jianpu.lock() {
+                *m = Some((raster_key(&srcs), Arc::new(p)));
+            }
+        }
         // 没找到谱表、且这一轮试五线谱时没缺 OCR：结论只取决于图与已缓存的读数，后面各轮不必再试
         if pages.is_empty() && opts.kind == Kind::Auto && !ocr.stalled() {
             if let Ok(mut v) = doc.memo.staffless.lock() {
@@ -235,9 +261,8 @@ fn jianpu(doc: &Doc, srcs: Vec<(usize, PageSource)>, ocr: &CachedOcr, hook: &Hoo
         let grays = idx.iter().map(|&i| doc.render(i, dolce_omr_jianpu::vector::PAGE_W / width).map(|r| gray_of(&r))).collect::<Result<Vec<_>, _>>()?;
         return Ok(Recognition::Jianpu { score, binary: stack(&grays) });
     }
-    let key: Vec<usize> = srcs.iter().filter(|s| s.1.raster.is_some()).map(|s| s.0).collect();
-    let hit = doc.memo.jianpu.lock().ok().and_then(|m| m.as_ref().filter(|(k, _)| *k == key).map(|(_, p)| p.clone()));
-    let prep = match hit {
+    let key = raster_key(&srcs);
+    let prep = match memo_jianpu(doc, &srcs) {
         Some(p) => p,
         None => {
             let imgs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.1.raster).collect();
