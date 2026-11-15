@@ -1050,7 +1050,6 @@ dependencies = [
 name = "dolce"
 version = "0.8.7"
 dependencies = [
- "bytemuck",
  "dolce-omr-core",
  "dolce-omr-engine",
  "dolce-omr-ocr",

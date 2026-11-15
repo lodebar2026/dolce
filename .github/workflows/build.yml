@@ -1,8 +1,12 @@
 name: Build
 
+# 发布（release published）时编桌面版、识谱命令行分发包并传到同一个 release，网页版部署到 Pages。
+# 手动触发（Actions 页面 Run workflow，或 gh workflow run build.yml --ref <分支>）时只编、不发：
+# 桌面版与命令行包作为本次 run 的 artifact，网页版只构建不部署——发布前在分支上先验一遍整条链路。
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -49,7 +53,7 @@ jobs:
       # 先单独编一遍 exe 校验：ort 静态链进来的 ONNX Runtime 是 /MD 编的，exe 直接导入
       # MSVCP140*/VCRUNTIME140*，这些 DLL 随包内置（src-tauri/tauri.windows.conf.json 的
       # resources）。清单漏了要在**上传之前**红，而不是等用户在干净的 Windows 上撞见
-      # 「找不到 MSVCP140_1.dll」。下面 tauri-action 那步是增量编译，不会重来一遍。
+      # 「找不到 MSVCP140_1.dll」。下面 tauri 那步是增量编译，不会重来一遍。
       - name: 校验 Windows 包内置的 VC++ 运行库
         if: matrix.os == 'windows-latest'
         env:
@@ -61,6 +65,7 @@ jobs:
           node scripts/win-crt.mjs --verify=src-tauri/target/${{ matrix.target }}/release/dolce.exe
 
       - name: Build and upload to release
+        if: github.event_name == 'release'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,6 +77,86 @@ jobs:
           prerelease: ${{ github.event.release.prerelease }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
+      - name: Build only (manual run)
+        if: github.event_name != 'release'
+        run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Upload bundle (manual run)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # 识谱命令行分发包（scripts/pack-omr.mjs）：Rust 识别程序 omr-cli + PDFium + OCR 模型 + 写出端。
+  # 识别程序与 PDFium 都是原生的、不能交叉打包，各平台在自己的 runner 上编。
+  omr-cli:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            pkg: darwin-arm64
+          - os: windows-latest
+            pkg: win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+      - name: Install dependencies
+        run: npm ci
+      - name: Build writer (omrfmt.js)
+        run: npm run build:cli
+      - name: Build omr-cli
+        working-directory: crates
+        run: cargo build --release -p dolce-omr-cli
+      - name: Pack
+        run: node scripts/pack-omr.mjs --targets=${{ matrix.pkg }}
+      # 冒烟：解开的包在干净目录里能起来、载得到 OCR 模型与 ONNX Runtime，真识别一张图（截图里的简谱，只看能跑通）
+      - name: Smoke test (macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir smoke && tar xzf out/pkg/*.tar.gz -C smoke
+          node smoke/*/omr-cli.mjs docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out
+          ls -la smoke/out && test -n "$(ls smoke/out)"
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive (Get-Item out/pkg/*.zip).FullName -DestinationPath smoke
+          $d = (Get-ChildItem smoke -Directory)[0].FullName
+          node "$d/omr-cli.mjs" docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem smoke/out
+          if (-not (Get-ChildItem smoke/out)) { exit 1 }
+      - name: Upload to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" out/pkg/dolce-omr-* --clobber
+      - name: Upload artifact (manual run)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: omr-cli-${{ matrix.pkg }}
+          path: out/pkg/dolce-omr-*
+          if-no-files-found: error
 
   # Web 版随同一 release 部署到 GitHub Pages
   pages-build:
@@ -105,12 +190,15 @@ jobs:
         run: npm run build
         env:
           BASE_PATH: /dolce/
+      - name: 校验网页版识别产物
+        run: ls -la out/dist/redist/omr && test -s out/dist/redist/omr/dolce_omr_wasm_bg.wasm && test -s out/dist/redist/omr/dolce_omr_wasm_relaxed_bg.wasm
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
           path: out/dist
 
   pages-deploy:
+    if: github.event_name == 'release'
     needs: pages-build
     runs-on: ubuntu-latest
     permissions:

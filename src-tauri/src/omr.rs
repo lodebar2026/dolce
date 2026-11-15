@@ -1,7 +1,7 @@
 //! Rust 识别接进桌面版（迁移计划 P12）：文档、识别（进度经 Channel、可取消）、五线谱会话、核对底图。
 //! 识别、会话都在 `crates/omr-engine`；这里只管句柄表、线程与 IPC。重活一律 `spawn_blocking`，二进制走 `ipc::Response`。
 //!
-//! OCR 与 TS 识别路的推理命令（`omr_onnx*` / `omr_det`，P13 随 TS 识别删）共用一套原生会话池（[`infer`]）。
+//! OCR 走一套原生会话池（[`infer`]）。
 use dolce_omr_core::progress::{Hook, Step};
 use dolce_omr_engine::{Handle, Opts};
 use dolce_omr_ocr::cache::CachedOcr;
