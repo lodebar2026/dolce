@@ -375,12 +375,16 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     // dispatch triggers updateListener -> scheduleReload, but reload now for snappiness
     // （防抖那一遍撤掉：同一份文本不必 200ms 后再排一次）
     clearTimeout(this.debounceTimer);
+    this.debounceTimer = undefined;
     void this.reload(editorText);
   }
 
   private scheduleReload(): void {
     clearTimeout(this.debounceTimer);
-    this.debounceTimer = setTimeout(() => void this.reload(this.getText()), 200);
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = undefined;
+      void this.reload(this.getText());
+    }, 200);
   }
 
   /** 解析 → 建索引 → 排版 → 铺页。**解析、源码同步索引与诊断在返回前同步做完**（可视化编辑按索引改原文，不能落后一拍）；
@@ -688,6 +692,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 马上按当前原文重排（撤掉防抖）。索引在返回前已跟上；Promise 在谱面铺好后落定。 */
   async reloadNow(): Promise<void> {
     clearTimeout(this.debounceTimer);
+    this.debounceTimer = undefined;
     await this.reload(this.getText());
   }
 
@@ -1984,8 +1989,14 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     else this.syncView.cursorToScore();
   }
 
-  /** 等在途的排版落定、谱面铺好、元素绑好（索引在 `reload` 返回前就已跟上原文）。无头校验脚本与要读谱面元素的动作用。 */
+  /** 等在途的排版落定、谱面铺好、元素绑好（索引在 `reload` 返回前就已跟上原文）。无头校验脚本与要读谱面元素的动作用。
+   *  打字后还在防抖的那一遍不等 200 ms，当即排。 */
   async whenIdle(): Promise<void> {
+    if (this.debounceTimer !== undefined) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = undefined;
+      void this.reload(this.getText());
+    }
     while (this._pendingLayout) await this._pendingLayout.catch(() => undefined);
   }
 
