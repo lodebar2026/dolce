@@ -68,6 +68,7 @@ export interface TimelineChord {
 }
 
 export interface TimelineMeasure {
+  readonly key?: { readonly fifths: number; readonly mode?: string };
   /** 和弦与其它条目混排；只取 `isTimelineChord` 为真的那些。 */
   readonly entries: readonly object[];
   /** 小节时值（末和弦的位置 + 时值）。**没有和弦时抛错**，与 `layout/input.ts::measureDuration` 同口径。 */
@@ -149,6 +150,7 @@ export interface Anchor {
 }
 
 export interface Timeline {
+  signatures: { t: number; time: TimelineMeasure["time"]; key?: TimelineMeasure["key"] }[];
   notes: TimedNote[];
   anchors: Anchor[]; // melody (`PlaySource.lead`) sounding chords, ascending by t0 — for cursor
   /** 所有声部、所有 voice 的起音和弦（按 t0 升序，同刻主旋律在前、其余按声部序）。五线谱的竖直播放线跟它走：女高音休止、别的声部在唱也照走 */
@@ -215,6 +217,7 @@ function chordEnd(src: PlaySource, mid: number, limit: number): number {
 
 export function buildTimeline(src: PlaySource): Timeline {
   const notes: TimedNote[] = [];
+  const signatures: Timeline["signatures"] = [];
   const anchors: Anchor[] = [];
   const allAnchors: Anchor[] = [];
   const clicks: Timeline["clicks"] = [];
@@ -261,6 +264,11 @@ export function buildTimeline(src: PlaySource): Timeline {
     for (let mid = range.mid; mid < range.end; mid++) {
       const startOffset = mid === range.mid ? range.offset : 0;
       const endOffset = mid === range.end - 1 ? range.until : Number.POSITIVE_INFINITY;
+      const signature = leadMeasure(src, mid);
+      const previous = signatures[signatures.length - 1];
+      if (signature && (!previous || previous.time.beats !== signature.time.beats || previous.time.beatType !== signature.time.beatType || previous.key?.fifths !== signature.key?.fifths || previous.key?.mode !== signature.key?.mode)) {
+        signatures.push({ t: pos, time: signature.time, key: signature.key });
+      }
       for (let pi = 0; pi < src.parts.length; pi++) {
         const m = src.parts[pi]!.measures[mid];
         if (!m) continue;
@@ -345,5 +353,5 @@ export function buildTimeline(src: PlaySource): Timeline {
       if (n > 0) a.occ = n;
     }
   }
-  return { notes, anchors, allAnchors, clicks, duration: pos };
+  return { notes, anchors, allAnchors, clicks, signatures, duration: pos };
 }
