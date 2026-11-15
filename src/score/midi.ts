@@ -45,14 +45,23 @@ function metaText(type: number, text: string): number[] {
   return [0xff, type, ...varLen(bytes.length), ...bytes];
 }
 
-function tempoTrack(bpm: number): number[] {
+function tempoTrack(bpm: number, signatures: Timeline["signatures"]): number[] {
   const mpqn = Math.round(60000000 / bpm);
   const ev: Ev = {
     tick: 0,
     order: 0,
     data: [0xff, 0x51, 0x03, (mpqn >> 16) & 0xff, (mpqn >> 8) & 0xff, mpqn & 0xff],
   };
-  return trackChunk([ev]);
+  const events: Ev[] = [ev];
+  for (const s of signatures) {
+    const tick = Math.round(s.t * PPQ);
+    const denominator = Math.log2(s.time.beatType);
+    if (Number.isInteger(denominator) && s.time.beats > 0 && s.time.beats <= 255)
+      events.push({ tick, order: 1, data: [0xff, 0x58, 4, s.time.beats, denominator, 24, 8] });
+    if (s.key && s.key.fifths >= -7 && s.key.fifths <= 7)
+      events.push({ tick, order: 2, data: [0xff, 0x59, 2, s.key.fifths & 0xff, s.key.mode === "minor" ? 1 : 0] });
+  }
+  return trackChunk(events);
 }
 
 /** GM 的打击乐通道（第 10 通道）：声部不占它，节拍器的嘀嗒写在这儿。 */
@@ -105,7 +114,7 @@ function clickTrack(clicks: Timeline["clicks"]): number[] {
  * 导出的 MIDI 各声部轨带轨名与歌词事件（按演唱顺序逐遍取段，见 `timeline.ts::lyricOfPass`）；试听那份不带歌词。
  */
 export function toMidi(src: PlaySource, opts?: PlayOptions, click = false): Uint8Array {
-  const { notes, clicks } = buildTimeline(src);
+  const { notes, clicks, signatures } = buildTimeline(src);
   const withClick = click && opts?.metronome === true && clicks.length > 0;
   const ntracks = 1 + src.parts.length + (withClick ? 1 : 0);
   const header = [
@@ -114,7 +123,7 @@ export function toMidi(src: PlaySource, opts?: PlayOptions, click = false): Uint
     (ntracks >> 8) & 0xff, ntracks & 0xff,
     (PPQ >> 8) & 0xff, PPQ & 0xff, // division (ticks per quarter)
   ];
-  const out: number[] = [...header, ...tempoTrack(playTempo(src, opts))];
+  const out: number[] = [...header, ...tempoTrack(playTempo(src, opts), signatures)];
   for (let i = 0; i < src.parts.length; i++) out.push(...partTrack(notes, i, opts, src.parts[i]!.name, !click));
   if (withClick) out.push(...clickTrack(clicks));
   return new Uint8Array(out);
