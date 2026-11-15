@@ -1028,6 +1028,8 @@ export const en: Record<MsgKey, string> = {
   "ve.noTempo": "This measure has no tempo marking",
   "ve.measUnsupported": "This measure operation isn't supported for this format yet",
   "ve.xmlUnreadable": "This MusicXML can't be read, so it can't be edited on the score",
+  "ve.modelUnreadable": "This source can't be read, so it can't be edited on the score",
+  "ve.modelUnsupported": "This format can't be edited through the model",
   "ve.cantInsert": "Can't insert a note here",
   "ve.bridgeTitle": "Rewrite the whole source",
   "ve.bridgeBody": "In ABC / 123 this action rewrites the whole source in the standard layout (comments, hand-made line breaks and spacing are re-laid out; the music is unchanged). You won’t be asked again for this score. Continue?",

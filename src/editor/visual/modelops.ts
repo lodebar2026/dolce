@@ -9,18 +9,19 @@ import type { EditorView } from "@codemirror/view";
 import type { Chord, ElementId, ScoreDoc } from "../../model/doc";
 import {
   addBeat, addChordNote, type BarKind, chordAtPos, chordOnset, deleteChords, deleteMeasures, insertChord, insertInVoice, insertMeasure,
-  isEditError, type JumpKind, locate, mergeMeasures, midiOf, type ChordPos, type EditHooks, type InsertAnchor, type ModelEdit, posOf,
+  isEditError, type JumpKind, locate, mergeMeasures, midiOf, type ChordPos, type InsertAnchor, type ModelEdit, posOf,
   removeChordNote, scaleDuration, setBarKind, setBreakBefore, setDegree, setKeyAt, setTempoAt, setTimeAt, shiftOctave, splitMeasure,
   pasteClip, type ClipItem, setDirectionText, toggleTuplet, setHarmony, setLyric, shiftSemitones, transposeScore, stepDegree, stepSemitone, setStep, degreeOfStep, anchorFifths, toggleAccidental, toggleDeco, toggleDot, toggleEnding, toggleJump, toggleSlur, toggleTie,
   type DecoKind, deleteDirection, removeNotation, insertPitch, staffOfVoice, staffVoice, newDurationOf, dirPartner, moveDirection, moveHarmony, moveMarkEnd, type MovedMark, rereadKeyAt, setClefAt, shiftLyrics, toggleGrace, toggleOctaveShift, toggleWedge,
 } from "../../model/edit";
 import { parseClefInput, parseKeyInput, parseTempoInput, parseTimeInput } from "./measureinput";
-import { dropEmbeddedLayout, forgetNoteLayout } from "../../model/xmlsurface";
+import { EDIT_HOOKS } from "../modelbridge";
 import type { SyncEntry, SyncIndex } from "../sync";
 import type { NoteDuration } from "./dialect";
 import type { VisualAction } from "./keys";
 import { t as tr } from "../../i18n";
 import { msg, msgText } from "../../model/msg";
+import { diffRegion } from "../../common/lines";
 
 /** 模型那一路向控制器要的东西。 */
 export interface ModelActionCtx {
@@ -50,7 +51,6 @@ export interface ModelActionCtx {
   prompt(hint: string, initial: string): Promise<string | null>;
 }
 
-const HOOKS: EditHooks = { forgetStem: forgetNoteLayout, forgetLayout: dropEmbeddedLayout };
 
 /** 记号动作 → `toggleDeco` 的记号名 */
 const DECO_OF: Record<string, DecoKind> = {
@@ -58,14 +58,6 @@ const DECO_OF: Record<string, DecoKind> = {
   "deco.fermataInv": "fermata-inverted", "deco.trill": "trill-mark", "deco.mordent": "mordent", "deco.turn": "turn",
 };
 
-/** 两份原文前后相同的部分去掉，剩下中间不同的那一段。 */
-function diffRegion(a: string, b: string): { from: number; to: number; insert: string } {
-  let p = 0;
-  while (p < a.length && p < b.length && a[p] === b[p]) p++;
-  let q = 0;
-  while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
-  return { from: p, to: a.length - q, insert: b.slice(p, b.length - q) };
-}
 
 type Target =
   | { select: ChordPos[] } | { caretAfter: ChordPos } | { caretBefore: ChordPos }
@@ -209,23 +201,23 @@ function insertNote(ctx: ModelActionCtx, degreeAt: (doc: ScoreDoc, at: InsertAnc
     if (!at) return { error: msg("ve.cantInsert") };
     const d = degreeAt(doc, at);
     const k = ctx.curVoice;
-    if (k === null) return insertChord(doc, at, d, ctx.curDur, HOOKS);
+    if (k === null) return insertChord(doc, at, d, ctx.curDur, EDIT_HOOKS);
     if ("after" in at) {
       const ref = locate(doc, at.after);
       const voice = ref ? staffVoice(ref.part, ref.chord.staff, k) : null;
       if (ref && voice !== null && ref.chord.voice !== voice) {
         const onset = (chordOnset(doc, ref.chord.id) ?? 0) + ref.chord.duration.divisions;
-        return insertInVoice(doc, { si: ref.si, pi: ref.pi, mi: ref.mi, onset, staff: ref.chord.staff }, voice, d, ctx.curDur, HOOKS, k);
+        return insertInVoice(doc, { si: ref.si, pi: ref.pi, mi: ref.mi, onset, staff: ref.chord.staff }, voice, d, ctx.curDur, EDIT_HOOKS, k);
       }
-      return insertChord(doc, at, d, ctx.curDur, HOOKS);
+      return insertChord(doc, at, d, ctx.curDur, EDIT_HOOKS);
     }
     const m = at.measureStart;
     const part = doc.songs[m.si]?.parts[m.pi];
     if (!part) return { error: msg("ve.cantInsert") };
     const staff = staffOfVoice(part, m.voice);
     const voice = staffVoice(part, staff, k);
-    if (voice !== m.voice) return insertInVoice(doc, { si: m.si, pi: m.pi, mi: m.mi, onset: 0, staff }, voice, d, ctx.curDur, HOOKS, k);
-    return insertChord(doc, at, d, ctx.curDur, HOOKS);
+    if (voice !== m.voice) return insertInVoice(doc, { si: m.si, pi: m.pi, mi: m.mi, onset: 0, staff }, voice, d, ctx.curDur, EDIT_HOOKS, k);
+    return insertChord(doc, at, d, ctx.curDur, EDIT_HOOKS);
   }, true);
 }
 
@@ -244,7 +236,7 @@ export function insertAtSourceModel(ctx: ModelActionCtx, at: { after: ElementId 
       const l = locate(doc, at.before);
       if (l) anchor = { measureStart: { si: l.si, pi: l.pi, mi: l.mi, voice: l.chord.voice } };
     }
-    return anchor ? insertPitch(doc, anchor, pitch, dur, HOOKS) : { error: msg("ve.cantInsert") };
+    return anchor ? insertPitch(doc, anchor, pitch, dur, EDIT_HOOKS) : { error: msg("ve.cantInsert") };
   }, true);
 }
 
@@ -253,20 +245,20 @@ export function pasteModel(ctx: ModelActionCtx, items: readonly ClipItem[]): boo
   const insert = ctx.view.state.selection.main.empty;
   return commit(ctx, (doc) => {
     const at = insertAnchor(ctx, doc);
-    const r = at ? pasteClip(doc, at, items, HOOKS) : { error: msg("ve.cantPaste") };
+    const r = at ? pasteClip(doc, at, items, EDIT_HOOKS) : { error: msg("ve.cantPaste") };
     return insert && "select" in r ? { caretAfter: r.select[r.select.length - 1]! } : r;
   });
 }
 
 /** 移调（`transpose.ts` 的对话框）：全曲换调（音、调号一起移），或选中的音移几个半音。 */
 export function transposeModel(ctx: ModelActionCtx, whole: boolean, n: number): boolean {
-  if (whole) return commit(ctx, (doc) => transposeScore(doc, n, HOOKS));
+  if (whole) return commit(ctx, (doc) => transposeScore(doc, n, EDIT_HOOKS));
   const ids = selectedNotes(ctx);
   if (!ids.length) {
     ctx.setStatus(tr("ve.selectToMove"));
     return true;
   }
-  return commit(ctx, (doc) => shiftSemitones(doc, ids, n, HOOKS), true);
+  return commit(ctx, (doc) => shiftSemitones(doc, ids, n, EDIT_HOOKS), true);
 }
 
 /** 歌词录入：和弦 `id` 第 `verse` 段写成 `text`（`model/edit.ts::setLyric`），写完选中这个音。 */
@@ -393,11 +385,11 @@ function removeEntries(ctx: ModelActionCtx, targets: SyncEntry[]): boolean {
   const brk = targets.find((e) => e.kind === "break");
   const slur = targets.find((e) => e.kind === "mark" && e.markKind === "slur");
   const notes = targets.filter((e) => e.kind === "note").map((e) => e.id);
-  if (notes.length) return commit(ctx, (doc) => deleteChords(doc, notes, HOOKS));
+  if (notes.length) return commit(ctx, (doc) => deleteChords(doc, notes, EDIT_HOOKS));
   if (bar) {
     return commit(ctx, (doc) => {
       const l = locate(doc, bar.id);
-      return l ? mergeMeasures(doc, l.si, l.mi, HOOKS) : { error: msg("ve.noBarline") };
+      return l ? mergeMeasures(doc, l.si, l.mi, EDIT_HOOKS) : { error: msg("ve.noBarline") };
     });
   }
   if (brk) {
@@ -442,11 +434,11 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
   switch (a.id) {
     case "note.digit": {
       const d = Number(key);
-      if (edit) return need((doc, l) => setDegree(doc, l, d, HOOKS), true);
+      if (edit) return need((doc, l) => setDegree(doc, l, d, EDIT_HOOKS), true);
       return insertNote(ctx, () => d);
     }
     case "note.letter": {
-      if (edit) return need((doc, l) => setStep(doc, l, key, HOOKS), true);
+      if (edit) return need((doc, l) => setStep(doc, l, key, EDIT_HOOKS), true);
       return insertNote(ctx, (doc, at) => degreeOfStep(key, anchorFifths(doc, at)));
     }
     case "chord.add": {
@@ -456,20 +448,20 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
         ctx.setStatus(tr("ve.selectNote"));
         return true;
       }
-      return commit(ctx, (doc) => addChordNote(doc, id, d, HOOKS), true);
+      return commit(ctx, (doc) => addChordNote(doc, id, d, EDIT_HOOKS), true);
     }
     case "voice.set": return null; // 控制器记下当前声部
     case "meas.append":
-      return commit(ctx, (doc) => insertMeasure(doc, 0, doc.songs[0]?.parts[0]?.measures.length ?? 0, HOOKS));
+      return commit(ctx, (doc) => insertMeasure(doc, 0, doc.songs[0]?.parts[0]?.measures.length ?? 0, EDIT_HOOKS));
     case "meas.insert":
       return commit(ctx, (doc) => {
         const r = selectedMeasures(ctx, doc);
-        return insertMeasure(doc, r?.si ?? 0, r?.from ?? 0, HOOKS);
+        return insertMeasure(doc, r?.si ?? 0, r?.from ?? 0, EDIT_HOOKS);
       });
     case "meas.delete":
       return commit(ctx, (doc) => {
         const r = selectedMeasures(ctx, doc);
-        return r ? deleteMeasures(doc, r.si, r.from, r.to, HOOKS) : { error: msg("ve.selectMeasToDelete") };
+        return r ? deleteMeasures(doc, r.si, r.from, r.to, EDIT_HOOKS) : { error: msg("ve.selectMeasToDelete") };
       });
     case "meas.key":
     case "meas.time":
@@ -482,11 +474,11 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
           if (!r) return { error: msg("ve.selectInMeasure") };
           if (a.id === "meas.key") {
             const f = parseKeyInput(v);
-            return f === null ? { error: msg("ve.badKey", { v }) } : setKeyAt(doc, r.si, r.from, f, HOOKS);
+            return f === null ? { error: msg("ve.badKey", { v }) } : setKeyAt(doc, r.si, r.from, f, EDIT_HOOKS);
           }
           if (a.id === "meas.time") {
             const t = parseTimeInput(v);
-            return t ? setTimeAt(doc, r.si, r.from, t.beats, t.beatType, HOOKS) : { error: msg("ve.badTime", { v }) };
+            return t ? setTimeAt(doc, r.si, r.from, t.beats, t.beatType, EDIT_HOOKS) : { error: msg("ve.badTime", { v }) };
           }
           const bpm = parseTempoInput(v);
           return bpm === null ? { error: msg("ve.badTempo", { v }) } : setTempoAt(doc, r.si, r.from, bpm);
@@ -523,18 +515,18 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
         if (!r) return { error: msg("ve.selectInMeasure") };
         return toggleJump(doc, r.si, kind === "segno" || kind === "coda" ? r.from : r.to, kind);
       });
-    case "oct.up": return pitch((doc, l) => shiftOctave(doc, l, 1, HOOKS));
-    case "oct.down": return pitch((doc, l) => shiftOctave(doc, l, -1, HOOKS));
-    case "step.up": return pitch((doc, l) => stepDegree(doc, l, 1, HOOKS));
-    case "step.down": return pitch((doc, l) => stepDegree(doc, l, -1, HOOKS));
-    case "semi.up": return pitch((doc, l) => stepSemitone(doc, l, 1, HOOKS));
-    case "semi.down": return pitch((doc, l) => stepSemitone(doc, l, -1, HOOKS));
-    case "acc.sharp": return need((doc, l) => toggleAccidental(doc, l, "sharp", HOOKS), true);
-    case "acc.flat": return need((doc, l) => toggleAccidental(doc, l, "flat", HOOKS), true);
-    case "acc.natural": return need((doc, l) => toggleAccidental(doc, l, "natural", HOOKS), true);
-    case "dur.dot": return need((doc, l) => toggleDot(doc, l, HOOKS));
-    case "dur.halve": return edit ? need((doc, l) => scaleDuration(doc, l, 0.5, HOOKS)) : null;
-    case "dur.double": return edit ? need((doc, l) => scaleDuration(doc, l, 2, HOOKS)) : null;
+    case "oct.up": return pitch((doc, l) => shiftOctave(doc, l, 1, EDIT_HOOKS));
+    case "oct.down": return pitch((doc, l) => shiftOctave(doc, l, -1, EDIT_HOOKS));
+    case "step.up": return pitch((doc, l) => stepDegree(doc, l, 1, EDIT_HOOKS));
+    case "step.down": return pitch((doc, l) => stepDegree(doc, l, -1, EDIT_HOOKS));
+    case "semi.up": return pitch((doc, l) => stepSemitone(doc, l, 1, EDIT_HOOKS));
+    case "semi.down": return pitch((doc, l) => stepSemitone(doc, l, -1, EDIT_HOOKS));
+    case "acc.sharp": return need((doc, l) => toggleAccidental(doc, l, "sharp", EDIT_HOOKS), true);
+    case "acc.flat": return need((doc, l) => toggleAccidental(doc, l, "flat", EDIT_HOOKS), true);
+    case "acc.natural": return need((doc, l) => toggleAccidental(doc, l, "natural", EDIT_HOOKS), true);
+    case "dur.dot": return need((doc, l) => toggleDot(doc, l, EDIT_HOOKS));
+    case "dur.halve": return edit ? need((doc, l) => scaleDuration(doc, l, 0.5, EDIT_HOOKS)) : null;
+    case "dur.double": return edit ? need((doc, l) => scaleDuration(doc, l, 2, EDIT_HOOKS)) : null;
     case "sus.add": {
       // 模型里没有独立的增时线：给选中的（插入模式：光标前那个）音多一拍
       const id = edit ? ids().pop() : (() => {
@@ -545,7 +537,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
         ctx.setStatus(tr("ve.selectNote"));
         return true;
       }
-      return commit(ctx, (doc) => addBeat(doc, id, HOOKS));
+      return commit(ctx, (doc) => addBeat(doc, id, EDIT_HOOKS));
     }
     case "slur.toggle": {
       const l = ids();
@@ -555,7 +547,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
       }
       return commit(ctx, (doc) => toggleSlur(doc, l[0]!, l[l.length - 1]!));
     }
-    case "tuplet.toggle": return need((doc, l) => toggleTuplet(doc, l, HOOKS));
+    case "tuplet.toggle": return need((doc, l) => toggleTuplet(doc, l, EDIT_HOOKS));
     case "move.prev": return moveSelected(ctx, -1, false);
     case "move.next": return moveSelected(ctx, 1, false);
     case "move.measPrev": return moveSelected(ctx, -1, true);
@@ -577,7 +569,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
       if (l.length < 2) return status(ctx, tr("ve.ottavaTwo"));
       return commit(ctx, (doc) => toggleOctaveShift(doc, l[0]!, l[l.length - 1]!, a.id === "ottava.up" ? "8va" : "8vb"));
     }
-    case "grace.toggle": return need((doc, l) => toggleGrace(doc, l, HOOKS));
+    case "grace.toggle": return need((doc, l) => toggleGrace(doc, l, EDIT_HOOKS));
     case "meas.keyReread":
       void ctx.prompt(tr("ve.hint.keyReread"), "").then((v) => {
         if (v === null) return;
@@ -585,7 +577,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
           const r = selectedMeasures(ctx, doc);
           if (!r) return { error: msg("ve.selectInMeasure") };
           const f = parseKeyInput(v);
-          return f === null ? { error: msg("ve.badKey", { v }) } : rereadKeyAt(doc, r.si, r.from, f, HOOKS);
+          return f === null ? { error: msg("ve.badKey", { v }) } : rereadKeyAt(doc, r.si, r.from, f, EDIT_HOOKS);
         });
       });
       return true;
@@ -604,7 +596,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
           const sel = ctx.view.state.selection.main;
           const before = sel.empty ? entryBeforeCaret(ctx) : null;
           const mi = before && (before.kind === "barline" || before.kind === "break") ? l.mi + 1 : l.mi;
-          return setClefAt(doc, l.si, l.pi, mi, l.chord.staff, clef, reread, HOOKS);
+          return setClefAt(doc, l.si, l.pi, mi, l.chord.staff, clef, reread, EDIT_HOOKS);
         });
       });
       return true;
@@ -615,7 +607,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
     case "bar.insert": {
       const id = anchorNote(ctx);
       if (id === null) return true;
-      return commit(ctx, (doc) => splitMeasure(doc, id, HOOKS));
+      return commit(ctx, (doc) => splitMeasure(doc, id, EDIT_HOOKS));
     }
     case "brk.line":
     case "brk.page": {
@@ -634,7 +626,7 @@ export function runModelAction(ctx: ModelActionCtx, a: VisualAction, key: string
     case "del.back": {
       // Alt+点击单独选中的和弦音：只删它
       const pn = ctx.pickedChordNote;
-      if (edit && pn) return commit(ctx, (doc) => removeChordNote(doc, pn.id, pn.index, HOOKS));
+      if (edit && pn) return commit(ctx, (doc) => removeChordNote(doc, pn.id, pn.index, EDIT_HOOKS));
       // 选中的是一段文字（歌词、标题）：直接改原文里那几个字
       const text = edit ? ctx.sync.range(sel.from, sel.to).find((e) => (e.kind === "lyric" || e.kind === "header") && e.from === sel.from && e.to === sel.to) : undefined;
       if (text) return removeText(ctx, text);

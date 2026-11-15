@@ -34,12 +34,11 @@ import { docFormatOfName, hasLines, isMultiPartXml, jianpuLineStarts, jianpuPain
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../convert/targets";
-import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
-import { assignDegrees } from "../model/jianpu";
 import { t } from "../i18n";
 import { diagText, targetLabel, type DiagLike } from "../i18n/labels";
 import { buildMusicXml, sourceMusicXmlBare } from "./export";
 import { scoreDocToMusicXml } from "../model/toxml";
+import { isBridgeFormat, readBridgeModel, writeBridgeModel } from "./modelbridge";
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { PlaybackController, type PlaybackHost } from "./playback";
 import type { PlayPoint } from "./player";
@@ -643,34 +642,15 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return scoreDocToMusicXml(doc);
   }
 
-  /** VisualHost：ABC / 123 借道改模型——原文读成 MusicXML 形状（元素 id 与索引的相同，`projectForMusicXml` 不换 id）。 */
+  /** VisualHost：ABC / 123 借道改模型——原文读成 MusicXML 形状（`modelbridge.ts`）。 */
   get bridgeModel(): (() => ScoreDoc | null) | undefined {
-    if (this.docFormat !== "abc" && this.docFormat !== "123") return undefined;
-    return () => {
-      try {
-        const doc = this.adapter.toScoreDoc?.(this.getText());
-        if (!doc) return null;
-        const songs = doc.songs.map((s) => (isXmlShaped(s) ? s : projectForMusicXml(s, { slurTies: !hasTieSyntax(doc) })));
-        // 模型那一路改的是音高；123 读进来的唱名留着就是旧的（写出端按唱名写），去掉让写出端按音高重推
-        for (const s of songs) for (const p of s.parts) for (const m of p.measures) for (const el of m.elements) {
-          if (el.kind === "chord") for (const n of el.notes) if (n.pitch) delete n.degree;
-        }
-        return { ...doc, songs };
-      } catch {
-        return null;
-      }
-    };
+    const fmt = this.docFormat;
+    return isBridgeFormat(fmt) ? () => readBridgeModel(fmt, this.getText()) : undefined;
   }
 
   /** VisualHost：借道改完整份写回当前格式（123 / ABC 的写出端） */
   bridgeWrite(doc: ScoreDoc): string | null {
-    try {
-      // 唱名按改过的音高重推（`bridgeModel` 去掉了旧的；ABC 不用唱名，推了也无妨）
-      for (const s of doc.songs) for (const p of s.parts) assignDegrees(p, s.key ?? { fifths: 0 });
-      return targetSpec(this.docFormat === "abc" ? "abc" : "123").emit(doc);
-    } catch {
-      return null;
-    }
+    return writeBridgeModel(this.docFormat === "abc" ? "abc" : "123", doc);
   }
 
   /** 谱面是哪一路画的：简谱（旧简谱引擎 / 原样文档）还是五线谱 / 混排。几何命中（减时线、附点）只有简谱那一路有。 */

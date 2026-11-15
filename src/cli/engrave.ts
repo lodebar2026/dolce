@@ -82,6 +82,8 @@ export const xmlout = { ...xmllayout, ...jianpuinput, ...fromxml, ...fromjpw, ..
 export const mixedModel = { ...mixedModelMod, GlyphCodes: smufl.GlyphCodes, MetaData: smufl.MetaData, ...mixedLayout, formatMixedScore: staffpages.formatMixedScore };
 
 export { HeadlessSession, type HeadlessView } from "../editor/headless";
+export { TsEngine } from "../engine/tsengine";
+export { isStale, StaleRevision, EngineFailure } from "../engine/api";
 export { ScorePainter, PaintResources, staffOptionsOf } from "../layout/painter";
 export { SvgNode } from "../layout/svgnode";
 export { outlinedSvg } from "./outline.node";

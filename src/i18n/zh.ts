@@ -1027,6 +1027,8 @@ export const zh = {
   "ve.noTempo": "这一小节没有速度记号",
   "ve.measUnsupported": "这个小节操作这种格式还不支持",
   "ve.xmlUnreadable": "这份 MusicXML 读不出来，没法在谱面上改",
+  "ve.modelUnreadable": "这份原文读不出来，没法在谱面上改",
+  "ve.modelUnsupported": "这种格式不能在模型上改",
   "ve.cantInsert": "这里插不进音符",
   "ve.bridgeTitle": "整份重写原文",
   "ve.bridgeBody": "这个动作在 ABC / 123 里要把原文整份按标准写法重写（注释、手排的换行与空格会重排；音乐内容不变）。这份谱之后不再问。要继续吗？",

@@ -90,19 +90,43 @@ export class HeadlessSession implements StyleStateHost {
       const sniffed = sniffDialect(text);
       if (sniffed.dialect === null) throw new Error(`不是文本谱：${sniffed.reason}`);
     }
-    this.docFormat = fmt;
     this.filePath = name;
+    this.setSource(text, fmt);
+    if (fmt === "musicxml" && isMultiPartXml(this.text)) this.mode = "mixed";
+  }
+
+  /** 换一份原文（已解码；`load` 与引擎的 `update` 共用）。MusicXML 读不了抛错。 */
+  setSource(text: string, fmt: DocFormatId): void {
+    this.docFormat = fmt;
     this.scoreDoc = null;
     this.jpw = null;
     this.mixedDoc = null;
     if (fmt === "musicxml") {
       const xml = normalizeEol(text);
       this.mixedDoc = musicXmlFormat.toScoreDoc(xml);
-      if (isMultiPartXml(xml)) this.mode = "mixed";
       this.text = xml;
     } else {
       this.text = text;
     }
+  }
+
+  /** 这份原文的模型（`.jpwabc` 是排版器那份，其余是适配器解析的）。读不出为 null。 */
+  model(): ScoreDoc | null {
+    if (this.docFormat === "jpwabc") {
+      try {
+        return this.jpwSource()?.doc ?? null;
+      } catch {
+        return null;
+      }
+    }
+    return this.currentScoreDoc();
+  }
+
+  /** 简谱视图此刻会排出的各行首音（同 `App.jianpuLineStarts`）；这一路不用另给时为 null。 */
+  lineStarts(mode: JianpuLayoutMode = this.layoutMode): ReadonlySet<number> | null {
+    const src = this.jianpuSource();
+    const req = src && lineStartsRequest(src, mode, (m) => this.style.styleOf(m));
+    return req ? jianpuLineStarts(this.painter.resources, req) : null;
   }
 
   /** 同 `App.importBytes`：打开以后按当前档重排（还没切过档就不排）。 */
@@ -220,7 +244,12 @@ export class HeadlessSession implements StyleStateHost {
   /** 各页 SVG（`outerHTML`，同浏览器里铺到页面上的那份 `<svg>`）。 */
   pages(): string[] {
     const out: string[] = [];
-    for (let k = 0; k < this.painter.pageCount; k++) out.push((this.painter.renderPage(k) as unknown as { outerHTML: string }).outerHTML);
+    for (let k = 0; k < this.painter.pageCount; k++) out.push(this.page(k));
     return out;
+  }
+
+  /** 第 `k` 页的 SVG。 */
+  page(k: number): string {
+    return (this.painter.renderPage(k) as unknown as { outerHTML: string }).outerHTML;
   }
 }
