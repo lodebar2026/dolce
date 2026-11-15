@@ -173,6 +173,7 @@ In the lyrics, CJK characters take one note each and need no spaces. Latin words
 | Plain-text jianpu | `.jps` `.pu` `.fq` `.txt` | ✅ | ✅ | ✅ | Fanqie and Shigeben dialects, detected automatically |
 | ABC | `.abc` | ✅ | ✅ | ✅ | Voices, repeats, endings, chords, ornaments… |
 | MusicXML | `.xml` `.musicxml` | ✅ | ✅ (directly on the score) | ✅ | Notes, measures, lyrics and titles can be edited on the score in every view; opened as ABC source by default (Settings can pick 123 etc. or keep MusicXML), and the format menu switches back to the original |
+| MIDI | `.mid` `.midi` | Quantized to notation | — | — | Standard MIDI files (Type 0/1): pick a grid on opening (1/16 and triplets, best fit per beat; or 1/16, 1/32) and take key and meter from the file or set them; one part per track and channel, keeping chords, voices, ties across bar lines and the first tempo, then converted to an editing format as set for opening MusicXML. Tempo changes are flattened; pedal, controllers, pitch bends and percussion are not transcribed; velocities are not kept |
 | Image / PDF | `.png` `.jpg` `.webp` `.pdf` | OMR | — | — | Jianpu images and scanned PDFs; staff PDFs, scanned or photographed staff notation |
 | jianpu-ly | `.jly` | ✅ | ✅ | ✅ (Save; use Export to write `.jly`, Save As does not offer it) | Upstream [jianpu-ly](https://github.com/ssb22/jianpu-ly) text scores: opened and edited as jianpu — notes, durations, octaves, accidentals, marks, lyrics and line breaks can be changed on the score (measures and chord names in the source pane); export hands the file to the upstream preprocessor for LilyPond (`.ly`) |
 | Muse jianpu | `.jcx` | ✅ | ✅ | ✅ | Muse score editor scripts (an ABC dialect): reads files from old and new Muse versions (GBK / BIG5 / UTF-8) and saves GBK files that both can open, so recognition can output Muse jianpu directly (click-to-compare with the source image still works) and the checked score can be handed to Muse. Only jianpu and staff tracks are read |
@@ -227,7 +228,3 @@ Regression scripts and test corpora are not part of this repository.
 The code is licensed under MIT (see [LICENSE](LICENSE)). The bundled Bravura font is licensed under the SIL OFL
 (see `public/redist`), and the bundled piano sound (FluidR3 GM) under CC BY 3.0
 (see `public/redist/soundfont/LICENSE.txt`). Third-party dependencies are licensed under their own terms.
-
-### MIDI to editable numbered notation
-
-“Import MIDI” accepts SMF Type 0/1 with PPQ timing. Choose a 1/16, 1/32 or eighth-note-triplet grid and automatic or explicit key/meter. Track/channel parts retain quantized pitches, rests, chords, cross-bar ties and the initial tempo. Quantization changes performance details; tempo changes are flattened, pedal/controllers/pitch bends/percussion are omitted, and velocities are regenerated. The original MIDI file is unchanged. Limits: 10 MiB, 20000 notes, 32 parts, 16 concurrent voices per part and 2000 bars.

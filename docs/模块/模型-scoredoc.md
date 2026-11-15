@@ -46,6 +46,7 @@
 | `src/jianpu/slots.ts` | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId` |
 | `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
 | `src/model/fromjpw.ts` | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
+| `src/midi/import.ts` | ← MIDI（SMF 读取在 `smf.ts`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在私有仓库 `tests/midiimport.test.ts` |
 | `src/omr/todoc.ts` | ← 简谱识别结果（`RecognizedScore` 直出简谱形状，与 `abcfamily/parse.ts` 同口径；不经 MusicXML） |
 | `src/model/tojpw.ts` | → `.jpwabc`（`emitJpwabc`；写出端只经输入接口读谱，两侧输入由 `playdoc.ts::jpwInputOfDoc` / `playsong.ts::jpwInputOfSong` 拼） |
 | `src/model/phrasedoc.ts` / `src/jianpu/phrasesong.ts` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |

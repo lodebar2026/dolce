@@ -1,64 +1,57 @@
+// 打开 MIDI：问量化网格与调号拍号 → `midi/import.ts` 建模型 → 唯一写出端 `toxml.ts` 写成 MusicXML →
+// 按打开 MusicXML 的流程落地（转成设置里的默认编辑格式，多声部进五线谱）。原 .mid 不动，存盘走另存为。
 import type { App } from "./app";
-import { midiToMusicXml, type MidiImportOptions } from "../midi/import";
-import { loadScoreDoc } from "../model/fromxml";
-import { emit123 } from "../abcfamily/emit123.entry";
+import { midiToScoreDoc, type MidiGrid, type MidiImportOptions } from "../midi/import";
+import { scoreDocToMusicXml } from "../model/toxml";
+import { labeled, showFormDialog } from "./dialogs";
 import { t } from "../i18n";
 
-export function installMidiImport(app: App, reveal: () => void): void {
-  const button = document.createElement("button"); button.className = "button"; button.textContent = t("midi.import");
-  button.onclick = () => {
-    const picker = document.createElement("input"); picker.type = "file"; picker.accept = ".mid,.midi,audio/midi";
-    picker.onchange = async () => {
-      const file = picker.files?.[0];
-      if (!file || !(await app.confirmReplace())) return;
-      try {
-        if (await importMidiInto(app, new Uint8Array(await file.arrayBuffer()), file.name)) reveal();
-      } catch (e) { app.setStatus(e instanceof Error ? e.message : String(e)); }
-    };
-    picker.click();
-  };
-  document.getElementById("btn-export")?.before(button);
+const KEY_NAMES = ["Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#"];
+const METERS = ["2/4", "3/4", "4/4", "6/8", "9/8", "12/8"];
+
+function select(options: readonly [string, string][]): HTMLSelectElement {
+  const sel = document.createElement("select");
+  for (const [value, label] of options) sel.add(new Option(label, value));
+  return sel;
 }
 
-export function midiOptions(): Promise<MidiImportOptions | null> {
-  return new Promise(resolve => {
-    const dialog = document.createElement("dialog");
-    dialog.style.cssText = "max-width:480px;padding:24px;border:1px solid #ccc;border-radius:12px";
-    const title = document.createElement("h3"); title.textContent = t("midi.import");
-    const help = document.createElement("p"); help.textContent = t("midi.help");
-    const grid = document.createElement("select"); grid.setAttribute("aria-label", t("midi.grid"));
-    for (const [value, label] of [["16", "1/16"], ["32", "1/32"], ["12", t("midi.triplet")]]) grid.add(new Option(label, value));
-    const key = document.createElement("select"); key.setAttribute("aria-label", t("midi.key"));
-    key.add(new Option(t("midi.autoKey"), "auto"));
-    ["Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#"].forEach((name, i) => key.add(new Option(`1=${name}`, String(i - 7))));
-    const meter = document.createElement("select"); meter.setAttribute("aria-label", t("midi.meter"));
-    meter.add(new Option(t("midi.autoMeter"), "auto"));
-    for (const m of ["2/4", "3/4", "4/4", "6/8", "9/8", "12/8"]) meter.add(new Option(m, m));
-    for (const [text, control] of [[t("midi.grid"), grid], [t("midi.key"), key], [t("midi.meter"), meter]] as const) {
-      const label = document.createElement("label"); label.textContent = text + " "; label.style.cssText = "display:block;margin:12px 0"; label.append(control); dialog.append(label);
-    }
-    dialog.prepend(title, help);
-    const finish = (result: MidiImportOptions | null) => { dialog.close(); dialog.remove(); resolve(result); };
-    const ok = document.createElement("button"); ok.textContent = t("midi.import"); ok.onclick = () => {
-      const options: MidiImportOptions = { division: Number(grid.value) as MidiImportOptions["division"] };
+/** 导入选项对话框；取消返回 null。 */
+export function midiImportOptions(): Promise<MidiImportOptions | null> {
+  return new Promise((resolve) => {
+    const grid = select([["16t", t("midi.gridMixed")], ["16", "1/16"], ["32", "1/32"]]);
+    const key = select([["auto", t("midi.autoKey")], ...KEY_NAMES.map((n, i): [string, string] => [String(i - 7), `1=${n}`])]);
+    const meter = select([["auto", t("midi.autoMeter")], ...METERS.map((m): [string, string] => [m, m])]);
+    const body = document.createElement("div");
+    const help = document.createElement("div");
+    help.className = "modal-row";
+    help.textContent = t("midi.help");
+    body.append(help, labeled(t("midi.grid"), grid), labeled(t("midi.key"), key), labeled(t("midi.meter"), meter));
+    showFormDialog(t("midi.import"), body, () => {
+      const options: MidiImportOptions = { grid: grid.value as MidiGrid };
       if (key.value !== "auto") options.fifths = Number(key.value);
       if (meter.value !== "auto") [options.beats, options.beatType] = meter.value.split("/").map(Number);
-      finish(options);
-    };
-    const cancel = document.createElement("button"); cancel.textContent = t("midi.cancel"); cancel.onclick = () => finish(null);
-    dialog.oncancel = e => { e.preventDefault(); finish(null); };
-    dialog.append(ok, cancel); document.body.append(dialog); dialog.showModal();
+      resolve(options);
+    }, t("midi.import"), () => resolve(null));
   });
 }
 
-export async function importMidiInto(app: App, bytes: Uint8Array, name: string): Promise<boolean> {
-  const options = await midiOptions();
+/** 打开一份 MIDI（打开对话框、拖入都走这里；替换前的确认由调用方做过）。落地了返回 true。 */
+export async function openMidi(app: App, bytes: Uint8Array, path: string): Promise<boolean> {
+  const options = await midiImportOptions();
   if (!options) return false;
-  const result = midiToMusicXml(bytes, name, options);
-  const text = emit123(loadScoreDoc(result.xml));
-  app.importBytes(new TextEncoder().encode(text), name.replace(/\.midi?$/i, ".123"));
-  app.filePath = null;
-  await app.setViewMode("original");
-  app.setStatus(result.warnings.join(" "));
+  const name = path.split(/[\\/]/).pop()!.replace(/\.midi?$/i, "");
+  let xml: string;
+  let warnings: string[];
+  try {
+    const r = midiToScoreDoc(bytes, name, options);
+    xml = scoreDocToMusicXml(r.doc);
+    warnings = r.warnings;
+  } catch (e) {
+    app.setStatus(e instanceof Error ? e.message : String(e));
+    return false;
+  }
+  app.importBytes(new TextEncoder().encode(xml), `${name}.musicxml`);
+  app.filePath = null; // 存不回 .mid：保存走另存为
+  await app.onDocumentOpened(warnings);
   return true;
 }

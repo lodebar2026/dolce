@@ -12,11 +12,13 @@ export const J123_EXT = ["123"] as const;
 export const JLY_EXT = ["jly"] as const;
 /** Muse 曲谱软件的 `.jcx`（ABC 方言，`%MUSE2` 是 GBK、`%MUSE3` 是 UTF-8，见 `common/jcxcodec.ts`）。 */
 export const JCX_EXT = ["jcx"] as const;
+/** 标准 MIDI 文件：打开时量化成谱（`editor/midi-import.ts`），不走 `importBytes`。 */
+export const MIDI_EXT = ["mid", "midi"] as const;
 /** 识别项目（原图 + 识别结果 + 在改的原文，`editor/omrproject.ts`）。 */
 export const PROJECT_EXT = ["dolce"] as const;
 /** 乐谱文档（编辑器直接打开的）。 */
 export const DOC_EXT = [
-  "jpwabc", ...J123_EXT, ...JLY_EXT, ...FANQIE_EXT, "xml", "musicxml", "abc", ...JCX_EXT, ...PROJECT_EXT,
+  "jpwabc", ...J123_EXT, ...JLY_EXT, ...FANQIE_EXT, "xml", "musicxml", "abc", ...JCX_EXT, ...MIDI_EXT, ...PROJECT_EXT,
 ] as const;
 // **以前这里有个 `CONVERTED_EXT`**：`.xml`/`.musicxml`/`.abc` 导入后要强制另存为别的格式，
 // 所以不记文件路径。现在五种源格式都原生打开、存回原格式，这个概念没有了。
@@ -33,6 +35,7 @@ export const isJlyFile = (name: string): boolean => re(JLY_EXT).test(name);
 export const isDocFile = (name: string): boolean => re(DOC_EXT).test(name);
 export const isImageFile = (name: string): boolean => re(IMAGE_EXT).test(name);
 export const isProjectFile = (name: string): boolean => re(PROJECT_EXT).test(name);
+export const isMidiFile = (name: string): boolean => re(MIDI_EXT).test(name);
 
 /** 几份原图按文件名排页序：数字按数值比（1、2、10，不是 1、10、2），不分大小写。路径也可直接比（同一目录下拖、选进来的）。 */
 export const byFileName = (a: string, b: string): number => a.localeCompare(b, "zh", { numeric: true, sensitivity: "base" });

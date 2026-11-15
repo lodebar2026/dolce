@@ -5,7 +5,7 @@
 // `openProject` / `adoptText`）也仍是 App 的事。
 
 import { isTauriRuntime, saveBytes } from "./fileio";
-import { DOC_EXT, acceptAttr, isProjectFile } from "../common/filetypes";
+import { DOC_EXT, acceptAttr, isMidiFile, isProjectFile } from "../common/filetypes";
 import { clearDraft, loadDraft, saveDraft, type Draft } from "./autosave";
 import { formatOf, type DocFormatId, type FormatAdapter } from "./formats";
 import { describeLosses, planSave } from "../convert/capability";
@@ -26,6 +26,8 @@ export interface FileHost {
   getText(): string;
   setStatus(s: string): void;
   importBytes(bytes: Uint8Array, name: string): void;
+  /** MIDI 不走 `importBytes`：先问量化选项，落地后不记路径（存不回 .mid） */
+  openMidi(bytes: Uint8Array, path: string): Promise<boolean>;
   openProject(bytes: Uint8Array, name: string, opts?: { draft?: boolean }): Promise<boolean>;
   adoptText(format: DocFormatId, text: string, filePath: string | null): void;
   readonly style: { loadBookSheet(): Promise<void> };
@@ -86,6 +88,7 @@ export class FileSession {
       });
       if (typeof sel !== "string") return false;
       const bytes = await readFile(sel);
+      if (isMidiFile(sel)) return await this.host.openMidi(bytes, sel);
       this.host.importBytes(bytes, sel);
       this.host.filePath = sel;
       this.rememberLastFile(sel);
@@ -109,6 +112,10 @@ export class FileSession {
         const file = input.files?.[0];
         if (!file) { finish(false); return; }
         const buf = new Uint8Array(await file.arrayBuffer());
+        if (isMidiFile(file.name)) {
+          finish(await this.host.openMidi(buf, file.name));
+          return;
+        }
         this.host.importBytes(buf, file.name);
         this.host.filePath = file.name;
         finish(true);

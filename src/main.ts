@@ -1,11 +1,10 @@
-import { installMidiImport } from "./editor/midi-import";
 import "./styles.css";
 import { MetaData } from "./smufl/smufl";
 import { setMeasureBackend } from "./common/measure";
 import { browserMeasure, ensureFontsReady } from "./common/measure.browser";
 import { asset } from "./common/asset";
 import { App, type ViewMode } from "./editor/app";
-import { IMAGE_EXT, IMAGE_ACCEPT, byFileName, isDocFile, isImageFile } from "./common/filetypes";
+import { IMAGE_EXT, IMAGE_ACCEPT, byFileName, isDocFile, isImageFile, isMidiFile } from "./common/filetypes";
 import { showOptionsDialog, showHanConvDialog } from "./editor/dialogs";
 import { showPartsPanel } from "./editor/parts";
 import { showExportDialog, showSaveAsDialog } from "./editor/export";
@@ -390,7 +389,6 @@ async function boot() {
   if (await app.tryRestoreLastFile()) revealWorkspace();
   // 草稿：问要不要恢复
   if (await app.offerDraftRestore(draft)) revealWorkspace();
-  installMidiImport(app, revealWorkspace);
 
   // 静默检查新版本（仅桌面版，自身还会判开关与 24h 节流）。延后是为了不和
   // 启动页、OMR 模型加载抢资源；查不到就什么都不做。
@@ -511,6 +509,10 @@ async function wireDragDrop(app: App, dropTarget: HTMLElement, hooks: DropHooks)
         }
         if (!isDocFile(path)) return;
         const bytes = await readFile(path);
+        if (isMidiFile(path)) {
+          if (await app.openMidi(bytes, path)) hooks.onOpened();
+          return;
+        }
         app.importBytes(bytes, path);
         app.filePath = path;
         app.rememberLastFile(path);
@@ -556,6 +558,10 @@ async function wireDragDrop(app: App, dropTarget: HTMLElement, hooks: DropHooks)
       }
       // 与 Tauri 分支同一套白名单：以前这里不判，拖进任意文件都会试着导入。
       if (!isDocFile(file.name)) return;
+      if (isMidiFile(file.name)) {
+        if (await app.openMidi(buf, file.name)) hooks.onOpened();
+        return;
+      }
       app.importBytes(buf, file.name);
       hooks.onOpened();
       void app.onDocumentOpened();

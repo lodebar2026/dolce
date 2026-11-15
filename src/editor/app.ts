@@ -58,6 +58,7 @@ export type { OmrFormat } from "../omr";
 
 export type { PaperEngine, PaperChoice } from "./stylestate";
 import type { PaperChoice } from "./stylestate";
+import { openMidi } from "./midi-import";
 
 /** 谱面区的四档排版模式。见 `App.setViewModeButtons` 的注释：这是两组正交状态的组合。 */
 export type ViewMode = JianpuLayoutMode | "staff" | "mixed";
@@ -153,10 +154,16 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.mode === "mixed" && this.docFormat === "musicxml") void this._renderMixedPages();
   }
 
-  /** 用户打开文件之后（打开对话框、拖入）：找诗集样式，单声部 MusicXML 再问要不要转简谱。 */
-  async onDocumentOpened(): Promise<void> {
+  /** 用户打开文件之后（打开对话框、拖入）：找诗集样式，单声部 MusicXML 再问要不要转简谱。
+   *  `notes`：导入时另有的提示（MIDI 量化），与格式转换的说明一起上状态栏。 */
+  async onDocumentOpened(notes: readonly string[] = []): Promise<void> {
     await this.style.loadBookSheet();
-    await this.promptMusicXmlImport();
+    await this.promptMusicXmlImport(notes);
+  }
+
+  /** 打开 MIDI（FileHost / 拖入）：量化成谱后按打开 MusicXML 落地（`midi-import.ts`）。 */
+  openMidi(bytes: Uint8Array, path: string): Promise<boolean> {
+    return openMidi(this, bytes, path);
   }
 
   /** 简谱档换纸（「长图」也是其中一档）。 */
@@ -1256,11 +1263,12 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 用户**亲手打开** MusicXML 之后调（打开对话框、拖入；重开上次文件与回归脚本不走这里）：按设置转成默认编辑格式
    *  （`openInEditFormat`）；保持 MusicXML 的，单声部进五线谱档。 */
-  async promptMusicXmlImport(): Promise<void> {
+  async promptMusicXmlImport(notes: readonly string[] = []): Promise<void> {
     if (this.docFormat !== "musicxml") return;
     const note = this.openInEditFormat();
     if (this.docFormat === "musicxml" && this.mode !== "mixed") await this.setViewMode("staff");
-    if (note) this.setStatus(note);
+    const all = [note, ...notes].filter(Boolean);
+    if (all.length) this.setStatus(all.join(" "));
   }
 
   /**
