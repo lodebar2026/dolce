@@ -926,7 +926,6 @@ export const en: Record<MsgKey, string> = {
   "proj.openFailed": "Could not open the recognition project: {error}",
   "proj.opened": "Opened recognition project ({kind}, {n} source images)",
   "omr.staffFailed": "Staff recognition failed: {error}",
-  "omr.firstOnly": "; jianpu recognizes one image at a time, only the first was used ({n} images)",
   "omr.staffRunning": "Recognizing staff notation… (Esc to cancel)",
   "omr.escCancel": " (Esc to cancel)",
   "omr.cancelled": "Recognition cancelled",

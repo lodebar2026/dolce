@@ -925,7 +925,6 @@ export const zh = {
   "proj.openFailed": "打不开识别项目：{error}",
   "proj.opened": "已打开识别项目（{kind}，{n} 份原图）",
   "omr.staffFailed": "五线谱识别失败：{error}",
-  "omr.firstOnly": "；简谱一次识别一张，只认了第一张（{n} 张）",
   "omr.staffRunning": "五线谱识别中…（按 Esc 取消）",
   "omr.escCancel": "（按 Esc 取消）",
   "omr.cancelled": "已取消识别",

@@ -38,8 +38,10 @@ import { reviewFromRust, type RustReviewResult, type RustSessionOp } from "../om
 import { attachPinchZoom } from "./pinchzoom";
 
 /** 一份识别输入（拖进来、选进来的图片或 PDF）。 */
-/** 并排原图一页的整页底图：图的地址与它在识别位图坐标里的位置（见 `placePageView`） */
-type PageView = { url: string; x: number; y: number; w: number; h: number } | null;
+/** 一张整页原图：图的地址与它在识别位图坐标里的位置 */
+type PageTile = { url: string; x: number; y: number; w: number; h: number };
+/** 并排原图一页的底图：显示范围（识别位图坐标，可伸出位图）与铺在上面的整页原图（简谱几张图拼的有几张）；画不出为 null */
+type PageView = { x: number; y: number; w: number; h: number; tiles: PageTile[] } | null;
 /** 原图一页：尺寸（PDF 是点，图片是像素）与整页渲染图（画不出为 null） */
 type OriginalPage = { w: number; h: number; rendered: Promise<{ url: string; w: number; h: number } | null> };
 /** 并排原图整页渲染的目标宽（像素）与每点至多几像素 */
@@ -867,7 +869,7 @@ export class OmrController implements FormatSource {
       svg.setAttribute("class", "omr-side-page");
       svg.setAttribute("viewBox", `0 0 ${bin.w} ${bin.h}`);
       if (view) {
-        // 整页原图（见 `placePageView`）画好之前先铺白纸（不然面板黑着），画好了换上：框仍按位图坐标，viewBox 把页面伸出去的那截框进来
+        // 整页原图画好之前先铺白纸（不然面板黑着），画好了铺上（白纸留着垫几张图宽窄不齐的空当）：框仍按位图坐标，viewBox 把页面伸出去的那截框进来
         const paper = document.createElementNS(NS, "rect");
         for (const [k, v] of [["x", 0], ["y", 0], ["width", bin.w], ["height", bin.h]] as const) paper.setAttribute(k, String(v));
         paper.setAttribute("fill", "#fff");
@@ -875,12 +877,14 @@ export class OmrController implements FormatSource {
         void view.then((v) => {
           if (!v) return void paper.replaceWith(baseImage(bin));
           svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
-          const img = document.createElementNS(NS, "image");
-          for (const [k, n] of [["x", v.x], ["y", v.y], ["width", v.w], ["height", v.h]] as const) img.setAttribute(k, String(n));
-          img.setAttribute("href", v.url);
-          img.setAttribute("preserveAspectRatio", "none");
-          img.style.setProperty("image-orientation", "none"); // 识别时 JPEG 原样包进 PDF、不认 EXIF 方向，底图也不转
-          paper.replaceWith(img);
+          paper.after(...v.tiles.map((tl) => {
+            const img = document.createElementNS(NS, "image");
+            for (const [k, n] of [["x", tl.x], ["y", tl.y], ["width", tl.w], ["height", tl.h]] as const) img.setAttribute(k, String(n));
+            img.setAttribute("href", tl.url);
+            img.setAttribute("preserveAspectRatio", "none");
+            img.style.setProperty("image-orientation", "none"); // 识别时 JPEG 原样包进 PDF、不认 EXIF 方向，底图也不转
+            return img;
+          }));
         });
       } else {
         svg.appendChild(baseImage(bin));
@@ -915,7 +919,7 @@ export class OmrController implements FormatSource {
       const b = flat[i]?.bbox;
       return id !== undefined && b ? [{ id, x: b.x, y: b.y, w: b.w, h: b.h }] : [];
     }) : [];
-    // 简谱的位图就是整张原图（PDF 是第一页整页）等比缩放来的、没纠斜：原图铺满位图范围就对得上
+    // 简谱的位图就是各张原图上下拼起、等比缩放来的、没纠斜：各张按拼的位置铺上就对得上
     return [page(bin, boxes, this.wholePageView(bin))];
   }
 
@@ -968,13 +972,23 @@ export class OmrController implements FormatSource {
     });
   }
 
-  /** 简谱：单张图片的原图整页铺满位图 `bin`（位图就是那张图缩放来的）；PDF（位图取的是页里的内嵌图）、几张图拼的画不了，为 null */
+  /** 简谱：各张原图按识别时的拼法铺到位图 `bin` 上（Rust `RasterInk::load`：左对齐、上下接着、不留缝，整体过宽才统一缩）；
+   *  PDF（位图取的是页里的内嵌图）画不了、哪张没画出来也不画，为 null */
   private async wholePageView(bin: Binary): Promise<PageView> {
     const o = this.prerenderOriginals(this.lastInputs);
     const d = await o.doc.catch(() => null);
-    if (!d || d.pdf || d.sizes.length !== 1) return null;
-    const r = await ((await o.pages.catch(() => [] as OriginalPage[]))[0]?.rendered ?? Promise.resolve(null));
-    return r ? { url: r.url, x: 0, y: 0, w: bin.w, h: bin.h } : null;
+    if (!d || d.pdf || !d.sizes.length) return null;
+    const rendered = await Promise.all((await o.pages.catch(() => [] as OriginalPage[])).map((p) => p.rendered));
+    if (rendered.length !== d.sizes.length || rendered.some((r) => !r)) return null;
+    const sx = bin.w / Math.max(...d.sizes.map((s) => s.w));
+    const sy = bin.h / d.sizes.reduce((n, s) => n + s.h, 0);
+    let y = 0;
+    const tiles = d.sizes.map((s, i): PageTile => {
+      const tl = { url: rendered[i]!.url, x: 0, y: y * sy, w: s.w * sx, h: s.h * sy };
+      y += s.h;
+      return tl;
+    });
+    return { x: 0, y: 0, w: bin.w, h: bin.h, tiles };
   }
 
   /** 并排原图各页的整页底图：整页渲染图按底图在页上的位置（Rust `staff_binary` 交来的）摆到底图坐标里。逐页一个 promise，画好一页先给一页；
@@ -989,7 +1003,8 @@ export class OmrController implements FormatSource {
       const r = await ((await o.pages.catch(() => [] as OriginalPage[]))[dp]?.rendered ?? Promise.resolve(null));
       if (!r) return null;
       const sx = bin.w / place.rect.w, sy = bin.h / place.rect.h;
-      return { url: r.url, x: -place.rect.x * sx, y: -place.rect.y * sy, w: place.pageW * sx, h: place.pageH * sy };
+      const tile = { url: r.url, x: -place.rect.x * sx, y: -place.rect.y * sy, w: place.pageW * sx, h: place.pageH * sy };
+      return { ...tile, tiles: [tile] };
     });
   }
 

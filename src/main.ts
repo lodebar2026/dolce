@@ -4,7 +4,7 @@ import { setMeasureBackend } from "./common/measure";
 import { browserMeasure, ensureFontsReady } from "./common/measure.browser";
 import { asset } from "./common/asset";
 import { App, type ViewMode } from "./editor/app";
-import { IMAGE_EXT, IMAGE_ACCEPT, isDocFile, isImageFile } from "./common/filetypes";
+import { IMAGE_EXT, IMAGE_ACCEPT, byFileName, isDocFile, isImageFile } from "./common/filetypes";
 import { showOptionsDialog, showHanConvDialog } from "./editor/dialogs";
 import { showPartsPanel } from "./editor/parts";
 import { showExportDialog, showSaveAsDialog } from "./editor/export";
@@ -437,7 +437,7 @@ async function pickRecognitionFile(app: App, hooks: RecognitionPickerHooks): Pro
       multiple: true,
       filters: [{ name: t("start.filterImage"), extensions: [...IMAGE_EXT] }],
     });
-    const paths = (Array.isArray(sel) ? sel : typeof sel === "string" ? [sel] : []).sort();
+    const paths = (Array.isArray(sel) ? sel : typeof sel === "string" ? [sel] : []).sort(byFileName);
     if (!paths.length) return;
     const raw = [];
     for (const p of paths) raw.push({ bytes: await readFile(p), name: p });
@@ -458,7 +458,7 @@ async function pickRecognitionFile(app: App, hooks: RecognitionPickerHooks): Pro
   input.accept = IMAGE_ACCEPT;
   input.multiple = true;
   input.onchange = async () => {
-    const picked = [...(input.files ?? [])].sort((a, b) => a.name.localeCompare(b.name, "zh"));
+    const picked = [...(input.files ?? [])].sort((a, b) => byFileName(a.name, b.name));
     if (!picked.length) return;
     const raw = [];
     for (const f of picked) raw.push({ bytes: new Uint8Array(await f.arrayBuffer()), mime: f.type, name: f.name });
@@ -493,7 +493,7 @@ async function wireDragDrop(app: App, dropTarget: HTMLElement, hooks: DropHooks)
         if (!(await app.confirmReplace())) return;
         if (isImageFile(path)) {
           // 拖入图片 → 本地 OMR 识别，完成后默认显示可编辑的排版结果。一次拖几张（五线谱的多页）按文件名排成一首
-          const imgs = event.payload.paths.filter((p) => isImageFile(p)).sort();
+          const imgs = event.payload.paths.filter((p) => isImageFile(p)).sort(byFileName);
           const raw = [];
           for (const p of imgs) raw.push({ bytes: await readFile(p), name: p });
           const files = await app.omr.prepareInputs(raw);
@@ -538,7 +538,7 @@ async function wireDragDrop(app: App, dropTarget: HTMLElement, hooks: DropHooks)
       if (isImageFile(file.name) || file.type.startsWith("image/")) {
         // 一次拖几张（五线谱的多页）按文件名排成一首
         const all = dropped.filter((f) => isImageFile(f.name) || f.type.startsWith("image/"))
-          .sort((a, b) => a.name.localeCompare(b.name, "zh"));
+          .sort((a, b) => byFileName(a.name, b.name));
         const raw = [];
         for (const f of all) raw.push({ bytes: f === file ? buf : new Uint8Array(await f.arrayBuffer()), mime: f.type, name: f.name });
         const files = await app.omr.prepareInputs(raw);

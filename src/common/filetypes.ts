@@ -34,6 +34,9 @@ export const isDocFile = (name: string): boolean => re(DOC_EXT).test(name);
 export const isImageFile = (name: string): boolean => re(IMAGE_EXT).test(name);
 export const isProjectFile = (name: string): boolean => re(PROJECT_EXT).test(name);
 
+/** 几份原图按文件名排页序：数字按数值比（1、2、10，不是 1、10、2），不分大小写。路径也可直接比（同一目录下拖、选进来的）。 */
+export const byFileName = (a: string, b: string): number => a.localeCompare(b, "zh", { numeric: true, sensitivity: "base" });
+
 /** `<input type=file accept>` 用的串。 */
 export const acceptAttr = (exts: readonly string[]): string => exts.map((e) => `.${e}`).join(",");
 
