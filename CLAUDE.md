@@ -3,12 +3,12 @@
 简谱与五线谱的编辑、识谱与排版（123 / JP-Word `.jpwabc` / 文本谱 / ABC / MusicXML）：Tauri 2 + TypeScript + SVG。
 旧名 jpeditor 已全部改掉：仓库、在线版地址、桌面版标识符 `io.github.lodebar2026.dolce`、Cargo 包名 `dolce`、localStorage 键前缀 `dolce-*`、
 草稿库 IndexedDB 名 `dolce`、MusicXML 写出端署名 `Dolce`。旧名下的设置与草稿不迁移。
-排版、渲染、模型、编辑全在前端 TS；Rust 只做原生加速（见架构决策 A3/A4）。
+排版、渲染、模型、编辑全在前端 TS；识别全在 Rust（`crates/`，桌面原生、网页 wasm、命令行 `omr-cli`），TS 只做结果落地（见架构决策 A3/A4）。
 
 文档分四层，**动某一块之前先翻对应那层**——那些阈值和判据多半是拿具体曲子换来的，别照直觉改：
 
 - [docs/需求.md](docs/需求.md) 做什么 · [docs/架构.md](docs/架构.md) 怎么分层、哪些决策不要推翻
-- [docs/模块/](docs/模块/) 每个模块一页：职责/入口/判据/回归/限制（22 篇）
+- [docs/模块/](docs/模块/) 每个模块一页：职责/入口/判据/回归/限制（18 篇；识别见 [识别-Rust](docs/模块/识别-Rust.md)）
 - [docs/格式/](docs/格式/) 格式规范：[123格式](docs/格式/123格式.md)（简谱主格式）、[jpwabc](docs/格式/jpwabc.md)、[Muse jcx](docs/格式/jcx.md)；
   样式定制见 [docs/样式机制.md](docs/样式机制.md)
 - [docs/实现/](docs/实现/) 判据与踩坑全录（各模块页开头有指向对应篇的链接；没有单独实现篇的写明判据在本页）
@@ -19,6 +19,7 @@
 构建、类型检查、桌面调试命令见 [docs/架构.md](docs/架构.md)「技术栈与构建」。
 回归脚本、语料与基线不在本仓库（本地私有仓库，从本仓库根跑 `node ../dev/scripts/xxx.mjs`）；
 `scripts/` 只留构建与发布链路：`release.sh`、`pack-omr.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm），外加随 OMR 包分发的 `omr-cli.mjs`。
+识别回归走 `cd crates && cargo run --release -p dolce-omr-cli -- regress <档>`（判分脚本、语料、基线在私有仓库，见 [识别-Rust](docs/模块/识别-Rust.md)「回归」）。
 文档里写的 `../dev/scripts/xxx.mjs` 都在私有仓库。
 
 ## 约定
@@ -26,8 +27,7 @@
 - 测试语料与 GT（`testdata/`）只留本地，不入库；`testdata/` 只放语料与 GT，回归基线、快照、报告等派生数据放本地私有仓库。
   各模块页的「回归」一节同此。
 - 提交信息用简要中文，不要 `Co-Authored-By` 尾注。
-- **尽量抽成模块 / 函数，不写重复代码**：新路子先找现成的判据、工具函数复用（如转曲矢量路的谱号、调号直接调位图路
-  `rasterglyphs.ts` 的自举判据）；要用的函数没导出就导出，夹着 DOM / Tauri 依赖的就把纯逻辑挪进无依赖的模块再两边引用，不另抄一份。
+- **尽量抽成模块 / 函数，不写重复代码**：新路子先找现成的判据、工具函数复用（识别里两条路线、三档共用的放 `omr-core` / `omr-sheet` / `omr-text`）；要用的函数没导出就导出，夹着 DOM / Tauri 依赖的就把纯逻辑挪进无依赖的模块再两边引用，不另抄一份。
 - TS 严格模式 + `noUnusedLocals/Parameters`。
 - **识别阈值不能为单曲设，只能按特性或上下文特征设**：判据用符号自身的结构特征（笔画、孔、走向），或本页、本行的统计
   （与本页已认出的同类记号比尺寸、按本页线距归一）。不照某几首曲子的读数在两类之间切一个常数；文档里举的曲目只当病例，不当定阈值的依据。

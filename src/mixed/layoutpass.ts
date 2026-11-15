@@ -71,7 +71,7 @@ export function parseEndingNums(s: string): Set<number> {
 
 // ---- 自动版面（无内嵌坐标时，如 OMR 生成的 MusicXML）----
 // 真实制谱软件（Sibelius/Finale）导出的 MusicXML 自带 <measure width>、音符 default-x、
-// <print new-system/new-page>，本工程默认信任之。识别产出的 MusicXML（staffomr/toxml.ts）
+// <print new-system/new-page>，本工程默认信任之。识别产出的 MusicXML 若没写源谱版面
 // 只有音高/时值、没有任何版面坐标 → 所有音符坍缩到 x≈0、谱表零宽。此处按节奏自动计算
 // 小节宽度、折行、并把音符横向铺开，使无坐标的谱也能正常混排显示。
 
@@ -1130,7 +1130,7 @@ function settleSourceMarks(score: StaffLayout): void {
           if (!t.sourceY || t.y >= 0) continue;
           const size = Math.max(0, ...t.data.map((it) => it.font.size));
           const x0 = mif.xpos() + entX(mif, t.offset) + t.x;
-          // Bravura 力度字母的墨迹约在基线下 0.15 em、上 0.45 em（`staffomr/toxml.ts::DYNAMIC_INK`）
+          // Bravura 力度字母的墨迹约在基线下 0.15 em、上 0.45 em
           const w = t.width();
           const low = lowestHit(t.staff, x0, x0 + w, t.y - size * 0.15, t.y + size * 0.45);
           if (low === null) continue;
@@ -1661,7 +1661,7 @@ export function finishMixedScore(score: StaffLayout, input: LayoutInput, partGro
 
   // Layout pass。无内嵌版面坐标（OMR 生成谱）时自动计算小节宽度/折行/音符横向位置。
   const autoLayout = score.autoLayout; // layoutStaff 读谱前已按 hasEmbeddedLayout 定好
-  // 源谱版面档的页眉带着原图的位置与字号（`staffomr/toxml.ts::creditsXml`）：照原样排，不重排
+  // 源谱版面档的页眉带着原图的位置与字号（Rust 写出端 `omr-sheet::score` 的 `<credit>`）：照原样排，不重排
   const placedHeader = score.keepBreaks && score.credits.some((c) => c.type === "title") && score.credits.every((c) => c.y > 0);
   if (autoLayout && !placedHeader) autoLayoutHeader(score);
   const autoBreaks = !autoLayout

@@ -281,7 +281,7 @@ function drawBeatIssue(svg: SVGSVGElement, box: Box, title: string, tag?: string
   const layer = layerOf(svg);
   layer.insertBefore(r, layer.firstChild);
   if (tag) {
-    // 对照视图的音名标在符头正上方（`rasteromr/overlay.ts`）：差额再抬过它，不压字
+    // 对照视图的音名标在符头正上方（`omr/staffoverlay.ts`）：差额再抬过它，不压字
     const lift = staffRec ? u * 0.75 : 0;
     const tx = el("text", { class: "vis-beat-tag", x: box.x + box.w + pad, y: box.y - pad * 1.2 - lift, "text-anchor": "end", "font-size": u * 0.55 });
     tx.textContent = tag;

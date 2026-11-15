@@ -562,7 +562,7 @@ button:focus-visible, select:focus-visible {
 .omr-overlay .omr-inserted-box { fill: rgba(8, 127, 91, 0.08); stroke: #087f5b; stroke-dasharray: 4 3; stroke-width: 1.5; }
 .omr-overlay .omr-lyric-mask { fill: #fff; }
 .omr-overlay text.omr-lyric-fixed { fill: #087f5b; }
-/* 五线谱识别对照（`rasteromr/overlay.ts`） */
+/* 五线谱识别对照（`omr/staffoverlay.ts`） */
 .omr-staff-overlay .omr-staff-box { fill: rgba(212, 20, 90, 0.06); stroke: #d4145a; }
 .omr-staff-overlay .omr-num-edited .omr-staff-box { fill: rgba(8, 127, 91, 0.10); stroke: #087f5b; }
 .omr-staff-overlay .omr-num-deleted .omr-staff-box { stroke: #868e96; }

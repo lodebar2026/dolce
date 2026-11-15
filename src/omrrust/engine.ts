@@ -1,6 +1,6 @@
 // Rust 识别的前端入口（迁移计划 P12）：桌面版走 Tauri 命令（`src-tauri/src/omr.rs`），网页版走 wasm Worker（`worker.ts`）。
 // 两边一个接口：打开文档 → 渲染 / 核对底图 / 识别（进度、取消）→ 五线谱会话。识别、判路、会话都在 Rust（`crates/omr-engine`）。
-import type { Binary, RecognizedScore } from "../omrkit/types";
+import type { Binary, RecognizedScore } from "../omr/types";
 
 export interface EngineProgress {
   done: number;

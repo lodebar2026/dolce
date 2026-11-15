@@ -6,18 +6,26 @@
 // 所以先把识别结果按演唱顺序展开（与投影档排版、试听同一条路：recognizedToDoc → jianpuInputOfDoc
 // → walkPlay），再与参照整篇对齐；展开不出来或展开后反而对不上时，退回谱面印的顺序（逐段串起各谱行）。
 //
-// 挂在 jianpu.ts 的歌词落位之后、弧裁决与「有词的 0」复原之前：补上的字要喂给那几步（都看音符有没有词）。
+// 识别在 Rust：命令行 / 编辑器拿到识别结果后在这里补（`rustLyricHooks` 回查 Rust 交出的逐字候选）。
 // **无 DOM 依赖**（Node CLI 要 import 它）。
-import type { JpNum, LyricCheck, LyricCheckItem, RecognizedScore, Rect, StaffRow, TextRegion } from "../omrkit/types";
-import { rcx } from "../omrkit/types";
-import type { LyricCharRef, LyricHooks } from "./lyrics";
+import type { JpNum, LyricCheck, LyricCheckItem, RecognizedScore, Rect, StaffRow, TextRegion } from "./types";
+import { rcx } from "./types";
 import { simplifiedOf } from "./hanvariant";
 import { recognizedToDoc } from "./todoc";
 import type { ElementId } from "../model/doc";
 import { jianpuInputOfDoc } from "../jianpu/jianpuinput";
 import type { JChord } from "../layout/input";
 import { walkPlay } from "../jianpu/expand";
-import { probe } from "./probe";
+
+/** 某个歌词字的 OCR 候选（置信度降序，含首选本身），`scores` 与 alts 同序。 */
+export interface LyricAlts { alts: string[]; scores: number[] }
+/** 歌词字 = (音符, 段, 该段歌词串里第几个汉字)。 */
+export interface LyricCharRef { n: JpNum; verse: number; idx: number }
+/** 参照歌词选字用的回查口：`rankAlts` 取 OCR 候选，取不到为 null；`regionOf` 取该字的叠加定位框（改字时一并改它的 text）。 */
+export interface LyricHooks {
+  rankAlts(reqs: LyricCharRef[]): Promise<(LyricAlts | null)[]>;
+  regionOf(ref: LyricCharRef): TextRegion | undefined;
+}
 
 const isHanzi = (c: string) => /[一-鿿]/.test(c);
 /** 比较口径：繁简归一（繁体谱对简体词不算不同）。 */
@@ -381,7 +389,6 @@ export async function applyRefLyrics(score: RecognizedScore, refText: string, ho
   let seq = expanded, al = eAl, matched = eM;
   if (!expanded || !eAl || pF > eF + 0.1) {
     if (expanded && eAl) {
-      probe("refLyrics.repeatSuspect");
       items.push({ kind: "repeatSuspect", detail: `按演唱顺序展开：同字 ${eM}/识别 ${hz(expanded)} 字；按谱面顺序：同字 ${pM}/识别 ${hz(printed)} 字（参照 ${ref.length} 字）——反复/房号/跳转记号可能认错或漏认` });
     }
     order = "printed"; seq = printed; al = pAl; matched = pM;
@@ -475,7 +482,6 @@ export async function applyRefLyrics(score: RecognizedScore, refText: string, ho
       const refCh = j !== undefined ? ref[j]! : undefined;
       const phrase = `${chAt(-1)}${want}${chAt(1)}`;
       if (want !== it.ch) {
-        probe("refLyrics.phrase");
         it.n.lyrics![it.verse] = replaceHanzi(text, it.idx, want);
         const region = hooks.regionOf({ n: it.n, verse: it.verse, idx: it.idx });
         if (region) region.text = replaceHanzi(region.text, 0, want);
@@ -574,7 +580,6 @@ export async function applyRefLyrics(score: RecognizedScore, refText: string, ho
         items.push({ kind: "missingNote", verse: it.verse, ...at(it.n), ref: r.ch, context: r.line, detail: "参照在此有字，但这个音在弧/连音线里（弧多认了，或漏读了字）" });
         continue;
       }
-      probe("refLyrics.filled");
       const lyr = (it.n.lyrics ??= []);
       for (let v = lyr.length; v < it.verse; v++) lyr[v] = "";
       lyr[it.verse] = r.ch;
@@ -638,7 +643,6 @@ export async function applyRefLyrics(score: RecognizedScore, refText: string, ho
       }
       // 用候选里那个字形（谱面是繁体就留繁体、印的是祂就取祂），候选与参照同形时就是参照字
       const ch = al.alts[k]!;
-      probe("refLyrics.fixed");
       const text = it.n.lyrics?.[it.verse];
       if (text) it.n.lyrics![it.verse] = replaceHanzi(text, it.idx, ch);
       const region = hooks.regionOf(reqs[q]!);

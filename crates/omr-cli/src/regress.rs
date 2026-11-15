@@ -34,7 +34,7 @@ impl Opts {
             jobs: val("jobs").and_then(|v| v.parse().ok()).unwrap_or(0),
             out: val("out").map(PathBuf::from),
             reference: val("ref").map(PathBuf::from).unwrap_or_else(|| sibling("dev/data/rust-omr/ref-c7c02820")),
-            web: val("web").map(PathBuf::from).unwrap_or_else(|| sibling("web")),
+            web: val("web").map(PathBuf::from).unwrap_or_else(|| crate::checkout(".")),
             replay: val("replay").map(PathBuf::from),
             area: val("area"),
             judge_only: args.iter().any(|a| a == "--judge-only"),

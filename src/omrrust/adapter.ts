@@ -1,4 +1,4 @@
-// Rust 识别（`crates/omr-staff`）→ 编辑器的**核对数据**（`staffomr/review.ts::StaffReviewResult`）。
+// Rust 识别（`crates/omr-staff`）→ 编辑器的**核对数据**（`omr/review.ts::StaffReviewResult`）。
 //
 // 过渡件（迁移计划 P10 方案 A）：乐谱本身走带识别 id 的 MusicXML（Rust `Score::to_musicxml`，编辑器照旧 `adoptStaffXml` → `fromxml`，
 // `xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改）；MusicXML 表达不了的——各页谱行几何、系统表、关联表、源框、
@@ -8,9 +8,9 @@
 // 改关联表、改系统切分不重认：转调 Rust 会话（`omr-staff::session`），会话回新的 MusicXML 与核对 JSON。
 // 页面几何（谱行、小节、音框）不随这两样变，适配器只换系统表与关联表，系统里引用的谱行、页对象与 `pages[].result.page` 保持同一个
 // （编辑器按引用比，见 `ReviewGeometry`）。
-import type { Binary } from "../omrkit/types";
-import type { MarkBox, ReviewGeometry, ReviewPageGeom, ReviewStaff, StaffReviewPage, StaffReviewResult, StaffReviewStats } from "../staffomr/review";
-import type { SystemOp } from "../staffomr/score";
+import type { Binary } from "../omr/types";
+import type { MarkBox, ReviewGeometry, ReviewPageGeom, ReviewStaff, StaffReviewPage, StaffReviewResult, StaffReviewStats } from "../omr/review";
+import type { SystemOp } from "../omr/review";
 
 type LrtbBox = { left: number; right: number; top: number; bottom: number };
 

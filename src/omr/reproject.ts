@@ -11,8 +11,8 @@
 
 import type { Chord, ElementId, Harmony, ScoreDoc } from "../model/doc";
 import { harmonyText } from "../model/jianpu";
-import type { JpNum, RecognizedScore, Rect } from "../omrkit/types";
-import { RHYTHM_DIGIT } from "../omrkit/types";
+import type { JpNum, RecognizedScore, Rect } from "./types";
+import { RHYTHM_DIGIT } from "./types";
 import { chordPlacesOf, type ChordPlace } from "./todoc";
 
 export type NumState = "edited" | "deleted";

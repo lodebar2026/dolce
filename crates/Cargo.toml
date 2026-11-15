@@ -2,6 +2,8 @@
 [workspace]
 resolver = "2"
 members = ["omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-wasm"]
+# omr-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
+default-members = ["omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,4 +1,4 @@
-// 和弦符号 → MusicXML `<harmony>`。写出端（model/toxml.ts，简谱来源只有和弦原文）与五线谱识别（staffomr/toxml.ts）共用。
+// 和弦符号 → MusicXML `<harmony>`。写出端（model/toxml.ts）用。
 //
 // 和弦在本项目里一律以**字符串**形态流转（`"Cm"` / `"B♭7"` / `"Fm/A♭"` / `"Cadd9"`），
 // 排版走 engrave/chord.ts 的 chordTextSegs，导出走这里。两边都认 ASCII 与全角升降号，升降号前置（`#Fm`）后置都认。

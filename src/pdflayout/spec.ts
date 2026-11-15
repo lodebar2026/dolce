@@ -7,10 +7,10 @@
 // `coverage.unplaced` 是硬指标。
 //
 // 无 DOM 依赖（Node CLI 要用）。
-import type { Rect } from "../omrkit/types";
-import type { ClassifiedObj, ObjClass, PageInventory } from "../omr/inventory";
-import { toSvgPathTransformed } from "../omrkit/vector";
-import type { VecPage } from "../omrkit/vector";
+import type { Rect } from "../omr/types";
+import type { ClassifiedObj, ObjClass, PageInventory } from "./inventory";
+import { toSvgPathTransformed } from "./vector";
+import type { VecPage } from "./vector";
 
 /** 一段文字：位置、字号、逐字 x（重排时逐字定位要用）。 */
 export interface TextRun {

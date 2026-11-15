@@ -2,12 +2,12 @@
 // 背景为二值化源图、其上按**源图像素坐标**半透明叠加识别出的数字/八度点/减时线/
 // 附点/增时线/小节线/歌词，供用户逐音核对识别准确度。坐标与二值图同空间，直接用。
 
-import type { Binary, RecognizedScore, JpNum, Rect } from "../omrkit/types";
+import type { Binary, RecognizedScore, JpNum, Rect } from "./types";
 import { type MsgKey, t as tr } from "../i18n";
 import { chordSlots, type Reprojected, type ShownNum } from "./reproject";
-import { rcx, rcy, rright, RHYTHM_DIGIT } from "../omrkit/types";
-import { SVG_NS, baseImage, pageSvg, svgRect } from "../omrkit/svgkit";
-import { clusterRectsByY, median } from "../omrkit/geom";
+import { rcx, rcy, rright, RHYTHM_DIGIT } from "./types";
+import { SVG_NS, baseImage, pageSvg, svgRect } from "./svgkit";
+import { clusterRectsByY, median } from "./geom";
 import { measureGlyphText } from "../common/measure";
 
 // 叠加数字用的字体（须与 styles.css 的 .omr-overlay text 一致，含 700 粗细）。

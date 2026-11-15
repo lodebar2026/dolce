@@ -67,7 +67,12 @@ fn main() -> ExitCode {
     }
 }
 
-/// 仓库同级目录：编译时记下的本 crate 位置往上两级是 web 检出（`web-rust/`），它的父目录放着 `web/`、`dev/`。
+/// 本检出里的路径：编译时记下的本 crate 位置往上两级是 web 检出的根。
+pub fn checkout(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(name)
+}
+
+/// 仓库同级目录：web 检出的父目录放着私有仓库 `dev/`。
 pub fn sibling(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").join(name)
+    checkout("..").join(name)
 }

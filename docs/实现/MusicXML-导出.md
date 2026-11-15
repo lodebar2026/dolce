@@ -15,8 +15,8 @@
 
 只有这一份写出端、不做底本增量 patch：语义在 `ScoreDoc`，表层在原节点（`model/xmlsurface.ts`），整份重写不是降采样。
 
-五线谱识别（`staffomr/toxml.ts`，矢量、位图、转曲三路）也走这一份：识别那边建一棵 MusicXML 树（`score/xmltree.ts::h`，不拼字符串），
-`fromxml.ts::scoreDocFromXml` 读成 `ScoreDoc`、表层绑在树上（符干端点、原图位置、识别 id），再由这里写出——识别结果与「存成文件再打开」一模一样。
+五线谱识别在 Rust（`omr-sheet::score` 写出 MusicXML 文本），编辑器按打开 `.musicxml` 的同一条路读进来（`loadScoreDoc`，表层绑在原节点：符干端点、原图位置、识别 id），
+之后改动由这里整份重写——识别结果与「存成文件再打开」一模一样。
 简谱识别直出 `ScoreDoc`、写成 `.123`，不经 MusicXML。
 
 ### 调度

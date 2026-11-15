@@ -15,7 +15,7 @@ import { STAFF_PAPER_DEFAULT, isPaper } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import type { BarsOverflow, FitMeasure } from "../jianpu/phrase";
-import type { JpwMeta, JpwRange } from "../omrkit/types";
+import type { JpwMeta, JpwRange } from "../omr/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";

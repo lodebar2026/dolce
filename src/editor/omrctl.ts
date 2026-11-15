@@ -10,7 +10,7 @@
 import { recognizedBeatIssues, type RecognizedBeatIssue } from "../omr/beats";
 import { beatTag } from "../model/beatcheck";
 import { deleteChords, locate, measureCtx, respellMeasure } from "../model/edit";
-import type { SystemOp } from "../staffomr/score";
+import type { SystemOp } from "../omr/review";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import {
@@ -20,18 +20,18 @@ import {
 } from "../omr";
 import type { Binary, JpwMeta, RecognizedScore } from "../omr";
 import type { Chord, ElementId, ScoreDoc } from "../model/doc";
-import type { StaffBarMark, StaffMark, StaffSourceMark } from "../rasteromr/overlay";
+import type { StaffBarMark, StaffMark, StaffSourceMark } from "../omr/staffoverlay";
 import type { PlayPoint } from "./player";
 import type { SyncEntry } from "./sync";
 import type { DocFormatId } from "./formats";
 import { confirmDiscardEdits, type FormatOption, type FormatSource, type FormatSwitch } from "./formatswitch";
 import { harmonyPlacesOf, reprojectRecognized, type Reprojected } from "../omr/reproject";
 import { doubtBox, doubtItems, doubtTitle } from "../omr/overlay";
-import { baseImage } from "../omrkit/svgkit";
+import { baseImage } from "../omr/svgkit";
 import type { ProjectKind, ProjectSnapshot } from "./omrproject";
 import { t } from "../i18n";
 import { COMPARE_VALUES, type CompareValue } from "./comparemode";
-import type { StaffReviewResult } from "../staffomr/review";
+import type { StaffReviewResult } from "../omr/review";
 import { carryIds, COVERED, markEntryKey, pitchAt, stampXmlIds, StaffLinks, staffMarksOf, surfaceIds, textView, xmlShape, type StaffView } from "./omrlinks";
 import { isCancelled, omrEngine, renderPageUrl, type OmrDocHandle, type PageBinary, type RecognizeResult } from "../omrrust/engine";
 import { reviewFromRust, type RustReviewResult, type RustSessionOp } from "../omrrust/adapter";
@@ -184,7 +184,7 @@ export class OmrController implements FormatSource {
   }
 
   // ---------------- 识别类型（分流） ----------------
-  /** 识别为：自动判断（按有没有五线谱表，`rasteromr/detect.ts`）/ 简谱 / 五线谱。持久化 */
+  /** 识别为：自动判断（按有没有五线谱表，Rust 判路）/ 简谱 / 五线谱。持久化 */
   kind: "auto" | "jianpu" | "staff" = "auto";
   private kindSelects: HTMLSelectElement[] = [];
   /** 上一次识别的输入（改判时拿它重识别，不必再选一次文件） */
@@ -454,6 +454,7 @@ export class OmrController implements FormatSource {
     this.staffEmitted = s.emitted;
     this.sessionKind = s.kind;
     this.fromProject = true;
+    this.staleIds = !!s.staleIds;
     this.host.setContextControl(this.kindField(), true);
     this.syncPagesBtn();
     if ((s.kind === "staff" || s.kind === "vector") && this.lastInputs.length) {
@@ -467,6 +468,8 @@ export class OmrController implements FormatSource {
 
   /** 这个会话是重开的项目（`restore`），对照数据要从原图补；识别出来的会话为 false */
   private fromProject = false;
+  /** 重开的是旧版（TS 识别）存的五线谱项目：原文的识别 id 与重跑识别编的对不上，不补对照数据（框会错位、手改会回放到别的音上） */
+  private staleIds = false;
 
   /** 五线谱项目重开后第一次进对照：从原图重跑识别补回逐页位图与音符坐标（不动原文）。 */
   private ensureStaffResult(): Promise<boolean> {
@@ -482,6 +485,10 @@ export class OmrController implements FormatSource {
   private async loadStaffResult(): Promise<boolean> {
     const g = this.gen;
     if (this.sessionKind !== "staff" && this.sessionKind !== "vector") return false;
+    if (this.staleIds) {
+      this.host.setStatus(t("omr.staleProject"));
+      return false;
+    }
     // 重跑一遍识别拿框与会话（不动原文）；补的途中打开了别的文档，补回来的不能挂到新文档上
     this.progress(t("omr.loadingImg"));
     try {
@@ -1333,7 +1340,7 @@ export class OmrController implements FormatSource {
     this.host.setStatus(t("omr.doubtAt", { i: this.doubtAt + 1, n: items.length }) + `${hit.closest("svg")?.querySelector(`.omr-doubt-box[data-i="${it.i}"]${it.verse === null ? ":not([data-verse])" : `[data-verse="${it.verse}"]`} title`)?.textContent ?? ""}`);
   }
 
-  // ---------------- 五线谱识别的对照（位图路，`rasteromr/overlay.ts`） ----------------
+  // ---------------- 五线谱识别的对照（`omr/staffoverlay.ts`） ----------------
   /** 当前模型的和弦 id → 它写在 `<note id>` 里的识别 id（对照框按它认） */
   private staffIdOf = new Map<ElementId, string>();
   /** 识别 id（和弦里每个音各一个）→ 现在是哪个和弦的第几个音（Alt+点补音按它取参照音高） */
@@ -1398,7 +1405,7 @@ export class OmrController implements FormatSource {
   private async renderStaffPages(): Promise<void> {
     const res = this.staffResult;
     if (!res) return;
-    const { renderStaffRecognitionPage } = await import("../rasteromr/overlay");
+    const { renderStaffRecognitionPage } = await import("../omr/staffoverlay");
     const { loadScoreDoc } = await import("../model/fromxml");
     const sv = this.staffViewOf(this.host.currentScoreDoc());
     const base0 = this.staffBaseOf(loadScoreDoc);
@@ -1830,7 +1837,7 @@ export class OmrController implements FormatSource {
     });
   }
 
-  private async rebuildStaffWith(make: () => import("../staffomr/review").Rebuilt | Promise<import("../staffomr/review").Rebuilt>): Promise<boolean> {
+  private async rebuildStaffWith(make: () => import("../omr/review").Rebuilt | Promise<import("../omr/review").Rebuilt>): Promise<boolean> {
     const edits = await this.captureStaffEdits();
     if (edits && edits.lost > 0 && !(await confirmDiscardEdits())) return false;
     if (edits) await this.pinStaffEdits(edits);
@@ -2387,6 +2394,7 @@ export class OmrController implements FormatSource {
   clear(): void {
     this.gen++;
     this.fromProject = false;
+    this.staleIds = false;
     this.bin = null;
     this.score = null;
     this.beatMarks = [];

@@ -20,8 +20,9 @@ import type { DocFormatId } from "./formats";
 import { t } from "../i18n";
 
 export const PROJECT_EXT = "dolce";
-/** 包格式版本：读到比这新的拒绝（让用户升级），旧的按能读多少读多少 */
-export const PROJECT_VERSION = 1;
+/** 包格式版本：读到比这新的拒绝（让用户升级），旧的按能读多少读多少。
+ *  2：识别换成 Rust 之后存的。1 的五线谱项目是旧 TS 识别写的 `<note id>`，从原图重跑（Rust）编出的号对不上，不再补对照数据（`staleIds`）。 */
+export const PROJECT_VERSION = 2;
 
 export type ProjectKind = "jianpu" | "staff" | "vector";
 
@@ -40,6 +41,8 @@ export interface ProjectSnapshot {
   jianpu?: { score: RecognizedScore; bin: Binary; meta: JpwMeta | null };
   /** 五线谱识别的原文换成了文本格式：格式下拉里是哪一项（`abc` / `123` / `tomato`…）与识别 id 旁表（原文起点 → 各音 id，`omrlinks.ts`） */
   staffText?: { format: string; links: [number, (string | undefined)[]][] };
+  /** 旧版（TS 识别）存的五线谱项目：原文里的识别 id 与重跑识别对不上，对照框、按 id 回放都不可用（只在读包时给） */
+  staleIds?: boolean;
 }
 
 /** JSON 里的 `Map`（`JpwMeta.lyricRanges` 是一串 Map）写成 `{ "__map": [[k, v], …] }`。 */
@@ -130,6 +133,7 @@ export function unpackProject(bytes: Uint8Array): ProjectSnapshot {
   return {
     kind: manifest.kind, docFormat: manifest.docFormat, text, emitted, sources,
     ...(staffText ? { staffText } : {}),
+    ...(manifest.version < 2 && manifest.kind !== "jianpu" ? { staleIds: true } : {}),
     ...(manifest.omrFormat ? { omrFormat: manifest.omrFormat } : {}),
     ...(manifest.recogKind ? { recogKind: manifest.recogKind } : {}),
     ...(manifest.recogView ? { recogView: manifest.recogView } : {}),

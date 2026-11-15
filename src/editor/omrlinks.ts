@@ -1,6 +1,6 @@
 // 五线谱识别的**识别 id ↔ 文档里的音**，任何源格式都认得（issue 23 源码问题 P3）。
 //
-// 识别时每个 `<note>` 写 `id="omr<k>"`（`rasteromr/song.ts`），原图对照、并排原图、重建回放都按它认框。
+// 识别时每个 `<note>` 写 `id="omr<k>"`（Rust `omr-sheet::result` 编号），原图对照、并排原图、重建回放都按它认框。
 // MusicXML 原文里 id 就在 `<note>` 上（`xmlsurface.ts::surfaceOf`）；ABC / 123 这些文本里没有地方写，改记一张旁表：
 // **和弦记号在原文里的起点 → 各音的识别 id**（`StaffLinks`），随编辑迁移起点（同简谱识别的 `JpwMeta`）。
 //

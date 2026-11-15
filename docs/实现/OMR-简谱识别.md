@@ -1,5 +1,7 @@
 # 简谱图像识别（OMR，`src/omr/`）
 
+> **旧 TS 识别的判据记录**：这套 TS 实现发布前已删，识别现在全在 Rust（见 [识别-Rust](../模块/识别-Rust.md)）。本篇留作追分时的参照——判据多是拿具体曲子换来的；文中的文件路径、函数名指删除前那一版。
+
 把简谱图片（PNG/JPG）识别成 `RecognizedScore`，直出 `ScoreDoc`（`todoc.ts`）再写成 123 进编辑器核对（`App.importOmrDoc`）。
 工具栏「识图」按钮 → `showRecognizeDialog`（[src/editor/dialogs.ts](../../src/editor/dialogs.ts)）选方式 →
 `App.recognizeFromImage`（[src/editor/app.ts](../../src/editor/app.ts)）。**两种方式**：

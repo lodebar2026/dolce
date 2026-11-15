@@ -263,7 +263,7 @@ fn decode_sig(b64: &str) -> Sig {
 fn dict() -> &'static [Class] {
     static D: OnceLock<Vec<Class>> = OnceLock::new();
     D.get_or_init(|| {
-        let raw: RawDict = serde_json::from_str(include_str!("../../../src/staffomr/glyphmap.json")).expect("glyphmap.json");
+        let raw: RawDict = serde_json::from_str(include_str!("../data/glyphmap.json")).expect("glyphmap.json");
         raw.classes
             .into_iter()
             .filter_map(|c| {

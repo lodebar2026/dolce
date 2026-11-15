@@ -936,6 +936,7 @@ export const en: Record<MsgKey, string> = {
   "omr.loadingPdf": "Loading comparison data from the source PDF…",
   "omr.loadFailed": "Loading comparison data failed: {error}",
   "omr.loadingImg": "Loading comparison data from the source images…",
+  "omr.staleProject": "This project was saved by the old recognizer: the source comparison, staff ↔ part table and system splits need a fresh recognition; the text stays editable",
   "omr.loadingImgPages": "Loading comparison data from the source images… {done}/{total} pages",
   "omr.pagePending": "Recognizing page {n}…",
   "omr.pageDone": "Page {n} recognized, assembling the score…",

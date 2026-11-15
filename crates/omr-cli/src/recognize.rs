@@ -55,7 +55,7 @@ pub fn model_dir() -> PathBuf {
     if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("models"))).filter(|d| d.join(REC_FILE).exists()) {
         return d;
     }
-    crate::sibling("web-rust/public/redist/ocr")
+    crate::checkout("public/redist/ocr")
 }
 
 /// 识别用的 OCR：模型取 [`model_dir`]，给了 `cache` 就把结果按送检画面内容寻址落在那里（第二次起不推理），否则只在内存里。

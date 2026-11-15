@@ -935,6 +935,7 @@ export const zh = {
   "omr.loadingPdf": "正在从原 PDF 载入对照数据…",
   "omr.loadFailed": "载入对照数据失败：{error}",
   "omr.loadingImg": "正在从原图载入对照数据…",
+  "omr.staleProject": "这个项目是旧版识别存的，原图对照、声部关联表与系统切分要重新识别后才能用；原文照常可改",
   "omr.loadingImgPages": "正在从原图载入对照数据… {done}/{total} 页",
   "omr.pagePending": "第 {n} 页识别中…",
   "omr.pageDone": "第 {n} 页已识别，等整曲合成…",

@@ -895,8 +895,7 @@ export function loadScoreDoc(xmlText: string): ScoreDoc {
   return doc;
 }
 
-/** 建好的 MusicXML 树（`score/xmltree.ts`）→ `ScoreDoc`，表层绑在树上。五线谱识别建树后走这里、再经 `toxml.ts` 写出文本
- *（`staffomr/toxml.ts`），读法与读文件同一份。 */
+/** 建好的 MusicXML 树（`score/xmltree.ts`）→ `ScoreDoc`，表层绑在树上。读法与读文件同一份。 */
 export function scoreDocFromXml(root: XmlEl): ScoreDoc {
   const doc = emptyDoc("musicxml");
   const song: Song = emptySong();

@@ -1,6 +1,6 @@
 // 识别命令行（`scripts/omr-cli.mjs`）的写出端：识别本身在 Rust（`omr-cli run` / `split`），这里只把它的产物写成各输出格式。
 // 由 `npm run build:cli` 打成 out/cli/omrfmt.js，随 OMR 分发包走——**不引识别、图像解码、推理与 pdf.js**（包里不再带 sharp / onnxruntime-node / pdfjs-dist）。
-import type { RecognizedScore } from "../omrkit/types";
+import type { RecognizedScore } from "../omr/types";
 import { recognizedToDoc } from "../omr/todoc";
 import { omrEmitter } from "../omr/emit";
 import { scoreDocToMusicXml } from "../model/toxml";
@@ -9,6 +9,7 @@ import { DOC_EXT, encodeDocText, utf8 } from "../convert/docfile";
 import { XML_OUT_FORMATS, encodeXmlAs, isXmlOutFormat, type XmlOutFormat } from "../convert/xmlformats";
 import { applyRefLyrics, rustLyricHooks } from "../omr/reflyrics";
 export { decodeLyricsBytes, formatLyricCheckItem } from "../omr/reflyrics";
+export { omrEmitter } from "../omr/emit";
 
 /** 输出格式：MusicXML 加上各可编辑格式（`convert/targets.ts`），顺序即帮助里的顺序。 */
 export const OUT_FORMATS = XML_OUT_FORMATS;
