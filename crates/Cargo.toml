@@ -1,9 +1,9 @@
 # Rust 工作区：识别（omr-*，职责见 docs/模块/识别-Rust.md）与模型 / 格式 / 排版（dolce-*，迁移中）。
 [workspace]
 resolver = "2"
-members = ["dolce-base", "dolce-cli", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-wasm"]
-# omr-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
-default-members = ["dolce-base", "dolce-cli", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text"]
+members = ["dolce-base", "dolce-cli", "dolce-session", "dolce-wasm", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-wasm"]
+# omr-wasm、dolce-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
+default-members = ["dolce-base", "dolce-cli", "dolce-session", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +14,7 @@ publish = false
 serde = { version = "1", features = ["derive", "rc"] }
 bincode = "1.3"
 sha2 = "0.10"
+ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 
 [profile.release]
 lto = "thin"

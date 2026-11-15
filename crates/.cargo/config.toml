@@ -1,0 +1,3 @@
+# ts-rs 生成的 TS 类型落到 web/src/engine/gen/（`npm run gen:types`；dev 的 tsgen 测试核对生成物与入库的一致）
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/engine/gen", relative = true }

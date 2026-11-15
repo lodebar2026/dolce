@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// 参数值：文字、数、或另一条提示（声部名缺省是「另一声部」，也要按语言出）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "base.gen.ts"))]
 #[serde(untagged)]
 pub enum MsgArg {
     Str(String),
@@ -12,10 +13,12 @@ pub enum MsgArg {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "base.gen.ts"))]
 pub struct Msg {
     pub key: String,
     /// 按给出的次序（TS 对象字面的键序）；没有参数时不写
     #[serde(default, skip_serializing_if = "Vec::is_empty", with = "ordered_args")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<std::collections::HashMap<String, MsgArg>>", optional))]
     pub args: Vec<(String, MsgArg)>,
 }
 

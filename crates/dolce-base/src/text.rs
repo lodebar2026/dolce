@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// 源码区间（同 `model/doc.ts::SourceSpan`）：0 基行号、行内 0 基列、全文 0 基偏移与长度，都按 UTF-16 码元。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "base.gen.ts"))]
 pub struct SourceSpan {
     pub line: u32,
     pub column: u32,

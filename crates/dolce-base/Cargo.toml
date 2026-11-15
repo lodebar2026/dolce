@@ -7,3 +7,8 @@ publish.workspace = true
 
 [dependencies]
 serde.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[features]
+# 派生 TS 类型（`npm run gen:types` 开它跑 `cargo test`，生成 src/engine/gen/*.gen.ts）
+ts = ["dep:ts-rs"]

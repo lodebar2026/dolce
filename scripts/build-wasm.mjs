@@ -1,4 +1,5 @@
-// 网页版识别的 wasm（crates/omr-wasm）与 PDFium 的 wasm 版 → public/redist/omr/（不入库）。
+// 网页版识别的 wasm（crates/omr-wasm）与 PDFium 的 wasm 版 → public/redist/omr/；
+// 模型 / 格式 / 排版的 wasm（crates/dolce-wasm，迁 Rust 进行中）→ public/redist/dolce/（Node 门面 out/cli/dolce.js 也载这一份）。都不入库。
 // vite 的 dev 与 build 开头调它（vite.config.ts）；桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）与设了 DOLCE_NO_WASM 的跳过。
 //
 // 要：rustup target add wasm32-unknown-unknown；cargo install wasm-bindgen-cli --version <与 crates/Cargo.lock 一致>。
@@ -15,12 +16,15 @@ const crates = join(root, "crates");
 const out = join(root, "public/redist/omr");
 const PDFIUM_BUILD = "7881";
 const NAME = "dolce_omr_wasm";
+const DOLCE_OUT = join(root, "public/redist/dolce");
+const DOLCE_NAME = "dolce_wasm";
 
-function newest(dir, acc = 0) {
+function newest(dir, acc = 0, only = null) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (only && dir === crates && e.isDirectory() && !only(e.name)) continue;
     if (e.name === "target" || e.name.startsWith("target-") || e.name.startsWith(".")) continue;
     const p = join(dir, e.name);
-    if (e.isDirectory()) acc = newest(p, acc);
+    if (e.isDirectory()) acc = newest(p, acc, only);
     else if (/\.(rs|toml|lock)$/.test(e.name)) acc = Math.max(acc, statSync(p).mtimeMs);
   }
   return acc;
@@ -52,6 +56,12 @@ const VARIANTS = [
   { name: `${NAME}_relaxed`, features: "+simd128,+relaxed-simd", target: "target/wasm-relaxed", opt: ["--enable-relaxed-simd"] },
 ];
 
+function checkBindgen() {
+  const want = bindgenVersion();
+  const got = has("wasm-bindgen") ? execFileSync("wasm-bindgen", ["--version"], { encoding: "utf8" }).trim().split(" ")[1] : null;
+  if (got !== want) throw new Error(`要 wasm-bindgen-cli ${want}（现在 ${got ?? "没有"}）：cargo install wasm-bindgen-cli --version ${want}`);
+}
+
 function buildOmr() {
   const srcTime = Math.max(newest(crates), statSync(fileURLToPath(import.meta.url)).mtimeMs);
   const todo = VARIANTS.filter((v) => {
@@ -59,9 +69,7 @@ function buildOmr() {
     return !(existsSync(stamp) && statSync(stamp).mtimeMs > srcTime);
   });
   if (!todo.length) return;
-  const want = bindgenVersion();
-  const got = has("wasm-bindgen") ? execFileSync("wasm-bindgen", ["--version"], { encoding: "utf8" }).trim().split(" ")[1] : null;
-  if (got !== want) throw new Error(`要 wasm-bindgen-cli ${want}（现在 ${got ?? "没有"}）：cargo install wasm-bindgen-cli --version ${want}`);
+  checkBindgen();
   mkdirSync(out, { recursive: true });
   for (const v of todo) {
     console.log(`[build-wasm] 编 omr-wasm（${v.features}）…`);
@@ -76,6 +84,22 @@ function buildOmr() {
     const stamp = join(out, `${v.name}_bg.wasm`);
     if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-simd", ...v.opt, "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", stamp, "-o", stamp]);
   }
+}
+
+/** 模型 / 格式 / 排版的 wasm：一份（不用 SIMD 特性），自己的 target 目录；只看 dolce-* 与锁文件的修改时间。
+ *  `--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
+export function buildDolce() {
+  const srcTime = Math.max(newest(crates, 0, (n) => n.startsWith("dolce-")), statSync(join(crates, "Cargo.lock")).mtimeMs, statSync(fileURLToPath(import.meta.url)).mtimeMs);
+  const stamp = join(DOLCE_OUT, `${DOLCE_NAME}_bg.wasm`);
+  if (existsSync(stamp) && statSync(stamp).mtimeMs > srcTime) return;
+  checkBindgen();
+  mkdirSync(DOLCE_OUT, { recursive: true });
+  console.log("[build-wasm] 编 dolce-wasm …");
+  const target = join(crates, "target/wasm-dolce");
+  run("cargo", ["build", "-p", "dolce-wasm", "--release", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
+  const wasm = join(target, `wasm32-unknown-unknown/release/${DOLCE_NAME}.wasm`);
+  run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-producers-section", "--out-dir", DOLCE_OUT, "--out-name", DOLCE_NAME]);
+  if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", stamp, "-o", stamp]);
 }
 
 /** pdfium-binaries 的 wasm 包（pdfium.js + pdfium.wasm），缓存在 ~/.cache/dolce-pdfium/<构建号>/wasm/。 */
@@ -100,6 +124,7 @@ export function buildWasm() {
   if (process.env.TAURI_ENV_PLATFORM || process.env.DOLCE_NO_WASM) return;
   buildOmr();
   fetchPdfium();
+  buildDolce();
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) buildWasm();

@@ -37,6 +37,7 @@
     "release": "bash scripts/release.sh",
     "build:cli": "vite build --config vite.cli.config.ts",
     "build:wasm": "node scripts/build-wasm.mjs",
+    "gen:types": "cd crates && cargo test -q --features ts -p dolce-base export_bindings",
     "build:native": "cargo build --release --manifest-path native/textmeasure/Cargo.toml && node native/textmeasure/install.mjs",
     "pack:omr": "node scripts/pack-omr.mjs",
     "test": "node -e \"require('fs').existsSync('../dev/vitest.config.ts')||(console.error('单元测试用例在同级的本地私有仓库 ../dev，没有它就没有可跑的测试；识别的测试是 cd crates && cargo test'),process.exit(1))\" && vitest run --config ../dev/vitest.config.ts"
