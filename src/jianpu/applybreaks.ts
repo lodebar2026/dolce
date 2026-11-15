@@ -6,7 +6,7 @@
 import type { Chord, ElementId, Measure, Song } from "../model/doc";
 import { applyBreaks, type LineStart } from "../model/breaks";
 import { chordsOf, type PhraseChord, type PhrasePart } from "../score/phraseinput";
-import { headFpOf, lyricPunctScore, mainLyricText, type CutCandidate, type FitMetric, type PhraseBreaks } from "../score/phrase";
+import { headFpOf, lyricPunctScore, mainLyricText, type CutCandidate, type FitMetric, type PhraseBreaks } from "../score/play";
 
 export type { FitMetric };
 
@@ -163,7 +163,7 @@ export function enforceLineCapacity(part: PhrasePart, breaks: PhraseBreaks, cell
  */
 /** 工整性权重：一段的时值偏离目标 20% 约值 5 分（与一个中等强度的断点凭据相当）。 */
 const EVEN_W = 60;
-/** 「后带小节线」的加分。与 `phrase.ts::breakCost` 里「行内弱断点 +6」同量级。 */
+/** 「后带小节线」的加分。与 crates/dolce-play `phrase.rs::break_cost` 里「行内弱断点 +6」同量级。 */
 const BAR_END_BONUS = 3;
 /**
  * **切开之后下一行是平行乐句开头**的加分（`CutCandidate.parallel`，按公共前缀长度折算）。
@@ -576,7 +576,7 @@ export interface LineInfo {
   beats: number;
   head: LineHead;
   tail: LineTail;
-  /** 行首的旋律指纹（`phrase.ts::headFpOf`）：两行相同 = 平行乐句开头。 */
+  /** 行首的旋律指纹（`score/play.ts::headFpOf`）：两行相同 = 平行乐句开头。 */
   headFp: string;
   mi: number | null;
   chord: PhraseChord | null;
@@ -938,7 +938,7 @@ export function mergeSliverLines(part: PhrasePart, breaks: PhraseBreaks, useMidB
 /**
  * **整首的排版模式阶梯**（成书那条路）。
  *
- * 「排不排得下」只在这里用——断句本身只看内容（见 `phrase.ts::PhraseOptions.contentOnly`）。
+ * 「排不排得下」只在这里用——断句本身只看内容（见 `score/play.ts::PhraseOptions.contentOnly`）。
  * 按 **B → A → C** 取第一个可行的（原书绝大多数是一行两句，所以两句一行是首选；
  * 一句一行是它放不下时的退让；均匀排版是乐句根本排不下时的兜底）：
  *

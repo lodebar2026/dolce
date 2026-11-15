@@ -1,0 +1,10 @@
+[package]
+name = "dolce-formats"
+description = "悦谱 Dolce 各源格式的读写（迁移中：目前只有 Muse .jcx 的字节编解码）"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+encoding_rs = "0.8"

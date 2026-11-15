@@ -7,8 +7,11 @@
 // 简谱形状（文本谱 / 123 / ABC / `.jpwabc`）在 `jianpu/playsong.ts`。
 
 import { Fraction } from "../common/fraction";
-import { JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition, playOrderFromSpec, playOrderOf, sectionPlayOrder, singPlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
-import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart } from "../score/timeline";
+import {
+  DEFAULT_VELOCITY, JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
+  type PlayOrder, type PlaySource, type SectionMark, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart,
+} from "../score/playtypes";
+import { playOrderFromSpec, playOrderOf, sectionPlayOrder, singPlayOrder } from "../score/play";
 import type { Accidental, Barline, Chord, Direction, ElementId, Key as DocKey, Measure, Note, Part, Song } from "./doc";
 import { isMinorKey, keyFifths, soundingFifths } from "./keyshift";
 import { midiPitch, topNote } from "./jianpu";
@@ -140,7 +143,7 @@ export interface PlaySourceOptions {
   melodyOnly?: boolean;
 }
 
-/** 试听/MIDI 的输入（`score/timeline.ts::PlaySource`）。缺省带全部声部（`part` 下标 = `Part` 序）、
+/** 试听/MIDI 的输入（`score/playtypes.ts::PlaySource`）。缺省带全部声部（`part` 下标 = `Part` 序）、
  *  各 voice、和弦全部音与力度记号；光标只跟主旋律声部（`leadPartOf`）的 voice ≤ 1。 */
 export function playSourceOfDoc(song: Song, options: PlaySourceOptions = {}): PlaySource {
   if (options.melodyOnly) {

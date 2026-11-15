@@ -1,6 +1,6 @@
 // 文本谱的「按乐句重排」——**把断点换算到文本谱自己的行上**。
 //
-// 断句本身不在这里：它是格式无关的（`score/phrase.ts::computePhraseBreaks` 只经断句输入接口读谱），
+// 断句本身不在这里：它是格式无关的（`score/play.ts::computePhraseBreaks` 只经断句输入接口读谱，判据在 crates/dolce-play/src/phrase.rs），
 // `.jpwabc` 与文本谱共用同一套权重、同一套分页口径（`applybreaks.ts::pageBreakLines`）。
 // 这里只做两件 `.jpwabc` 那条路不需要的事：
 //
@@ -17,7 +17,7 @@
 
 import { Fraction } from "../common/fraction";
 import { chooseLineLayout, fitForIds, mergeSliverLines, pageBreakLines, tidyLineHeads, tidyLineTails } from "./applybreaks";
-import { computePhraseBreaks, type FitMetric, type PhraseBreaks } from "../score/phrase";
+import { computePhraseBreaks, type FitMetric, type PhraseBreaks } from "../score/play";
 import type { PhrasePart } from "../score/phraseinput";
 import { phraseJumpMeasures } from "../model/phrasedoc";
 import { defaultBookStyle } from "../style/bookstyle";

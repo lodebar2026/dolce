@@ -46,7 +46,7 @@ export const CONVERT_TARGETS: readonly TargetSpec[] = [
   { id: "shige", get label() { return t("fmt.target.shige"); }, docFormat: "fanqie", emit: (doc) => emitFanqie(doc, "shige") },
   // jianpu-ly：能读能写，导出端是 `jly/tojly.ts`（`%` 注释里带着"装不下什么"的说明，写在文本里随文件走）
   { id: "jly", get label() { return t("fmt.target.jly"); }, docFormat: "jly", emit: (doc) => emitJly(doc).text },
-  // Muse 曲谱软件：存盘按 `%MUSE2` + GBK（`common/jcxcodec.ts`），新旧版 Muse 都能开
+  // Muse 曲谱软件：存盘按 `%MUSE2` + GBK（`common/jcx.ts`），新旧版 Muse 都能开
   { id: "jcx", get label() { return t("fmt.target.jcx"); }, docFormat: "jcx", emit: (doc) => emitJcx(doc) },
 ];
 

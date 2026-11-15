@@ -2,10 +2,11 @@
 // 把识谱命令行打成**自包含**分发包：解压即用，不联网、不装依赖（只要机器上有 Node ≥ 20，用来转输出格式）。
 //
 // 包里：Rust 识别程序 `omr-cli`（crates/omr-cli，ONNX Runtime 静态链在里面）+ PDFium 动态库 + `models/`（OCR 模型）
-//      + `omr-cli.mjs`（入口：起识别程序、转格式）+ `omrfmt.js` 及其 chunk（编辑器同一套写出端，只依赖 Node 内置模块）。
+//      + `omr-cli.mjs`（入口：起识别程序、转格式）+ `omrfmt.js` 及其 chunk（编辑器同一套写出端，只依赖 Node 内置模块）
+//      + `dolce/`（写出端用的 dolce-wasm：jcx 编码、`.jpwabc` 的演唱顺序等，`node scripts/build-wasm.mjs dolce` 产出）。
 // 不再带 node_modules（以前的 onnxruntime-node、sharp、pdfjs-dist 都没了）。
 //
-// 用法（从仓库根跑，先 npm run build:cli）：
+// 用法（从仓库根跑，先 npm run build:cli 与 node scripts/build-wasm.mjs dolce）：
 //   node scripts/pack-omr.mjs                                 # 当前平台（识别程序没编就当场 cargo build --release）
 //   node scripts/pack-omr.mjs --targets=linux-x64,win32-x64   # 别的平台：识别程序要先在那个平台（或 CI）编好，见下
 //   node scripts/pack-omr.mjs --no-crt                        # Windows 包不内置 VC++ 运行库
@@ -60,6 +61,11 @@ for (const t of targets) {
 }
 if (!existsSync(join(ROOT, "out", "cli", "omrfmt.js"))) {
   console.error("缺 out/cli/omrfmt.js —— 先跑 npm run build:cli");
+  process.exit(1);
+}
+const DOLCE_WASM = ["dolce_wasm.js", "dolce_wasm_bg.wasm"];
+if (!DOLCE_WASM.every((f) => existsSync(join(ROOT, "public", "redist", "dolce", f)))) {
+  console.error("缺 public/redist/dolce/ 的 dolce-wasm —— 先跑 node scripts/build-wasm.mjs dolce");
   process.exit(1);
 }
 
@@ -162,7 +168,7 @@ async function installCrt(dir, cpu) {
 
 async function verify(dir, os, exe, lib) {
   const problems = [];
-  for (const f of [exe, lib, "omrfmt.js", "omr-cli.mjs", "models/ppocrv6_dict.txt"]) {
+  for (const f of [exe, lib, "omrfmt.js", "omr-cli.mjs", "models/ppocrv6_dict.txt", ...DOLCE_WASM.map((f) => `dolce/${f}`)]) {
     if (!existsSync(join(dir, f))) problems.push(`缺 ${f}`);
   }
   if (CRT && os === "win32") {
@@ -243,6 +249,9 @@ async function build(target) {
   const chunks = await copyWithChunks(dir, "omrfmt.js");
   await cp(join(ROOT, "scripts", "omr-cli.mjs"), join(dir, "omr-cli.mjs"));
   await chmod(join(dir, "omr-cli.mjs"), 0o755);
+  // 写出端载的 dolce-wasm：`cli/dolcewasm.node.ts` 先找同目录的 dolce/
+  await mkdir(join(dir, "dolce"), { recursive: true });
+  for (const f of DOLCE_WASM) await cp(join(ROOT, "public", "redist", "dolce", f), join(dir, "dolce", f));
   // 3. 模型
   await mkdir(join(dir, "models"), { recursive: true });
   for (const f of await readdir(join(ROOT, "public", "redist", "ocr"))) await cp(join(ROOT, "public", "redist", "ocr", f), join(dir, "models", f));

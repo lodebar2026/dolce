@@ -1,6 +1,9 @@
 // 网页版识别的 wasm（crates/omr-wasm）与 PDFium 的 wasm 版 → public/redist/omr/；
-// 模型 / 格式 / 排版的 wasm（crates/dolce-wasm，迁 Rust 进行中）→ public/redist/dolce/（Node 门面 out/cli/dolce.js 也载这一份）。都不入库。
-// vite 的 dev 与 build 开头调它（vite.config.ts）；桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）与设了 DOLCE_NO_WASM 的跳过。
+// 模型 / 格式 / 排版的 wasm（crates/dolce-wasm，迁 Rust 进行中）→ public/redist/dolce/。都不入库。
+// dolce-wasm 是编辑器开机就要的（演唱顺序、断句、时间轴、MIDI、jcx 编解码已在里面，网页与桌面 WebView 都载它，
+// Node 的 out/cli 各入口与识谱分发包也载它），一律要编；识别那份桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）
+// 与设了 DOLCE_NO_WASM 的跳过（桌面识别走原生）。
+// vite 的 dev 与 build 开头调它（vite.config.ts）；`node scripts/build-wasm.mjs dolce` 只编 dolce-wasm（识谱分发包、桌面 CI 用）。
 //
 // 要：rustup target add wasm32-unknown-unknown；cargo install wasm-bindgen-cli --version <与 crates/Cargo.lock 一致>。
 // 有 wasm-opt（binaryen）就再压一遍。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
@@ -86,7 +89,7 @@ function buildOmr() {
   }
 }
 
-/** 模型 / 格式 / 排版的 wasm：一份（不用 SIMD 特性），自己的 target 目录；只看 dolce-* 与锁文件的修改时间。
+/** 模型 / 格式 / 排版的 wasm：一份（不用 SIMD 特性），自己的 target 目录；只看 dolce-* 与锁文件、本脚本的修改时间。
  *  `--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
 export function buildDolce() {
   const srcTime = Math.max(newest(crates, 0, (n) => n.startsWith("dolce-")), statSync(join(crates, "Cargo.lock")).mtimeMs, statSync(fileURLToPath(import.meta.url)).mtimeMs);
@@ -98,7 +101,8 @@ export function buildDolce() {
   const target = join(crates, "target/wasm-dolce");
   run("cargo", ["build", "-p", "dolce-wasm", "--release", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
   const wasm = join(target, `wasm32-unknown-unknown/release/${DOLCE_NAME}.wasm`);
-  run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-producers-section", "--out-dir", DOLCE_OUT, "--out-name", DOLCE_NAME]);
+  // 去掉名字段（编辑器开机就载，0.93 → 0.79 MB；panic 信息照打，只是栈上没函数名）
+  run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", DOLCE_OUT, "--out-name", DOLCE_NAME]);
   if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", stamp, "-o", stamp]);
 }
 
@@ -121,10 +125,14 @@ function fetchPdfium() {
 }
 
 export function buildWasm() {
-  if (process.env.TAURI_ENV_PLATFORM || process.env.DOLCE_NO_WASM) return;
-  buildOmr();
-  fetchPdfium();
+  if (!process.env.TAURI_ENV_PLATFORM && !process.env.DOLCE_NO_WASM) {
+    buildOmr();
+    fetchPdfium();
+  }
   buildDolce();
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) buildWasm();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  if (process.argv[2] === "dolce") buildDolce();
+  else buildWasm();
+}

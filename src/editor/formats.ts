@@ -29,7 +29,7 @@ import { DIALECT_JLY } from "./visual/dialects/jly";
 import { emit123 } from "../abcfamily/emit123.entry";
 import { emitAbc } from "../abcfamily/emitabc.entry";
 import { emitJcx } from "../abcfamily/emitjcx.entry";
-import { decodeJcx, encodeJcx } from "../common/jcxcodec";
+import { decodeJcx, encodeJcx } from "../common/jcx";
 import type { ScoreDoc } from "../model/doc";
 import { loadScoreDoc } from "../model/fromxml";
 import { fillDegreesFromPitch } from "../model/jianpu";
@@ -143,7 +143,7 @@ type RelayoutPart =
     caps: FormatCaps & { phraseRelayout: true };
     /**
      * 重排（「按乐句重排」/「每行 N 小节」）怎么写回原文。分行本身与格式无关
-     * （`score/phrase.ts`），各格式的差别只在写回那一步：文本谱只搬原文片段（`fanqie/relayout.ts`），
+     * （crates/dolce-play `phrase.rs`），各格式的差别只在写回那一步：文本谱只搬原文片段（`fanqie/relayout.ts`），
      * 123/ABC 把断点写进模型再整份重出，`.jpwabc` 只挪 `.Voice` 里的 `$`（见 `jianpu/docrelayout.ts`）。
      *
      * @param plan 新行怎么分（`jianpu/phrase.ts::LinePlan`）。按乐句时带行长尺子（文本谱与多声部的简谱档不给，

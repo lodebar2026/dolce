@@ -1361,7 +1361,7 @@ export function parseAbc(text: string, options: ParseOptions = {}): ScoreDoc {
 }
 
 /** Muse 曲谱软件的 `.jcx` 文本 → `ScoreDoc`（原生解析，ABC 家族的第三个方言）。
- *  见 `docs/格式/jcx.md`；字节 → 文本的编码判断在 `common/jcxcodec.ts`。 */
+ *  见 `docs/格式/jcx.md`；字节 → 文本的编码判断在 `common/jcx.ts`（Rust dolce-formats）。 */
 export function parseJcx(text: string, options: ParseOptions = {}): ScoreDoc {
   return parseAbcFamily(text, DIALECT_JCX, options);
 }

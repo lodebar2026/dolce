@@ -1,5 +1,6 @@
 // 识别命令行（`scripts/omr-cli.mjs`）的写出端：识别本身在 Rust（`omr-cli run` / `split`），这里只把它的产物写成各输出格式。
 // 由 `npm run build:cli` 打成 out/cli/omrfmt.js，随 OMR 分发包走——**不引识别、图像解码、推理与 pdf.js**（包里不再带 sharp / onnxruntime-node / pdfjs-dist）。
+import "./dolcewasm.node"; // jcx 编码、`.jpwabc` 写出的演唱顺序在 dolce-wasm
 import type { RecognizedScore } from "../omr/types";
 import { recognizedToDoc } from "../omr/todoc";
 import { omrEmitter } from "../omr/emit";

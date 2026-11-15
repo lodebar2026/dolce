@@ -612,7 +612,7 @@ function writtenBreaks(score: StaffLayout, input: LayoutInput): Set<number> {
 const squeezeOf = new WeakMap<MeasureLayout, Squeeze>();
 
 /**
- * **五线谱的断句尺子**（`score/phrase.ts::FitMetric` 的原料）：各和弦在整首连排时的自然横向区间，
+ * **五线谱的断句尺子**（`score/play.ts::FitMetric` 的原料）：各和弦在整首连排时的自然横向区间，
  * 与 `autoLayoutWidths` 折行同一套小节自然宽，键是源元素 id（`Chord.srcId`，文本格式派生时 `sourceIds` 写的）。
  * `width` 是一行放得下的跨度：版心减行首谱号调号拍号（`autoLead`），再减首音前、末音后那点小节内留白。
  * 要在自动铺排（`finishMixedScore`）之后调——小节 `offset` 那时才定。

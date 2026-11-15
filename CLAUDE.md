@@ -4,6 +4,7 @@
 旧名 jpeditor 已全部改掉：仓库、在线版地址、桌面版标识符 `io.github.lodebar2026.dolce`、Cargo 包名 `dolce`、localStorage 键前缀 `dolce-*`、
 草稿库 IndexedDB 名 `dolce`、MusicXML 写出端署名 `Dolce`。旧名下的设置与草稿不迁移。
 排版、渲染、模型、编辑全在前端 TS；识别全在 Rust（`crates/`，桌面原生、网页 wasm、命令行 `omr-cli`），TS 只做结果落地（见架构决策 A3/A4）。
+模型 / 格式 / 排版正迁 Rust（分支 `rust-model`）：演唱顺序、断句、时间轴、MIDI、`.jcx` 编解码已在 `crates/dolce-*`，经 dolce-wasm 同步调（网页 `main.ts` 开机载、Node 由 `cli/dolcewasm.node.ts` 载），TS 只留门面。
 
 文档分四层，**动某一块之前先翻对应那层**——那些阈值和判据多半是拿具体曲子换来的，别照直觉改：
 
@@ -18,7 +19,7 @@
 
 构建、类型检查、桌面调试命令见 [docs/架构.md](docs/架构.md)「技术栈与构建」。
 回归脚本、语料与基线不在本仓库（本地私有仓库，从本仓库根跑 `node ../dev/scripts/xxx.mjs`）；
-`scripts/` 只留构建与发布链路：`release.sh`、`pack-omr.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm），外加随 OMR 包分发的 `omr-cli.mjs`。
+`scripts/` 只留构建与发布链路：`release.sh`、`pack-omr.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm），外加随 OMR 包分发的 `omr-cli.mjs`。
 识别回归走 `cd crates && cargo run --release -p dolce-omr-cli -- regress <档>`（判分脚本、语料、基线在私有仓库，见 [识别-Rust](docs/模块/识别-Rust.md)「回归」）。
 文档里写的 `../dev/scripts/xxx.mjs` 都在私有仓库。
 

@@ -1,0 +1,10 @@
+[package]
+name = "dolce-play"
+description = "悦谱 Dolce 的演唱顺序（反复 / 房号 / 跳转 / 段落 / 逐遍顺序）、断句、试听时间轴与 MIDI 写出。只读格式无关的输入形状，不依赖模型"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+serde.workspace = true

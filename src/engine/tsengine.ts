@@ -12,7 +12,7 @@ import type { MetaData } from "../smufl/smufl";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { targetSpec } from "../convert/targets";
 import { playSourceOf } from "../jianpu/playsong";
-import { toMidi } from "../score/midi";
+import { toMidi } from "../score/play";
 import { diffRegion } from "../common/lines";
 import { HeadlessSession } from "../editor/headless";
 import { EDIT_HOOKS, isBridgeFormat, readEditModel, writeEditModel } from "../editor/modelbridge";

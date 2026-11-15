@@ -5,7 +5,7 @@
 //
 // 点选 / 高亮部分移植自 mp/layout/draw.kt。
 
-import type { PlayItem } from "../score/playorder";
+import type { PlayItem } from "../score/playtypes";
 import { Group, PageItem, TextFrame } from "../pagetree/pageitem";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { headerPartsOf, mixedVisitor, renderPageSvg, type HeaderPart } from "./render";

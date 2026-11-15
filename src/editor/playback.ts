@@ -4,7 +4,8 @@
 // （`ScorePainter.highlight`），那属于「谁在画谱面」，由 App 转给排版器。
 // 控制器只通过 PlaybackHost 要「当前该播哪份谱」（由 ScoreDoc 拼的 `PlaySource`）与「高亮到这个元素」。
 import { anchorSeconds, ScorePlayer, spanSeconds, timelineSeconds, type PlayPoint, type PlayState } from "./player";
-import { SPEED_STEPS, TEMPO, type PlayOptions, type PlaySource, type Timeline } from "../score/timeline";
+import { SPEED_STEPS, type PlayOptions, type PlaySource, type Timeline } from "../score/playtypes";
+import { tempoBpm } from "../score/play";
 import type { ElementId } from "../model/doc";
 import { t } from "../i18n";
 
@@ -191,7 +192,7 @@ export class PlaybackController {
     sel.value = String(this.speed);
     const src = this.host.playable();
     const tempo = src?.playData.tempo ?? 0;
-    const bpm = Math.round((tempo > 0 ? tempo : TEMPO) * clampSpeed(this.speed)); // 同 `playTempo`
+    const bpm = Math.round(tempoBpm(tempo, { speed: clampSpeed(this.speed) }));
     const marked = tempo > 0 ? t("play.marked", { tempo }) : t("play.unmarked");
     sel.title = t("play.speedTitle", { marked, bpm });
   }

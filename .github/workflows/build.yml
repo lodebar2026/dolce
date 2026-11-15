@@ -34,15 +34,21 @@ jobs:
           node-version: 22
           cache: npm
 
+      # 编辑器开机要的 dolce-wasm（crates/dolce-wasm，vite build 开头由 scripts/build-wasm.mjs 编）：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.target }},wasm32-unknown-unknown
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            crates
+
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' crates/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')" --locked
 
       - name: Install dependencies
         run: npm ci
@@ -114,14 +120,21 @@ jobs:
           cache: npm
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: crates
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' crates/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')" --locked
       - name: Install dependencies
         run: npm ci
       - name: Build writer (omrfmt.js)
         run: npm run build:cli
+      # 写出端载的 dolce-wasm（jcx 编码、.jpwabc 的演唱顺序等），pack-omr.mjs 拷进包里的 dolce/
+      - name: Build dolce-wasm
+        run: node scripts/build-wasm.mjs dolce
       - name: Build omr-cli
         working-directory: crates
         run: cargo build --release -p dolce-omr-cli
@@ -172,7 +185,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      # 网页版识别的 wasm（crates/omr-wasm，scripts/build-wasm.mjs 在 vite build 开头编）：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
+      # 网页版识别的 wasm（crates/omr-wasm）与编辑器开机要的 dolce-wasm（scripts/build-wasm.mjs 在 vite build 开头编）：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
       - name: Setup Rust (wasm)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -190,8 +203,8 @@ jobs:
         run: npm run build
         env:
           BASE_PATH: /dolce/
-      - name: 校验网页版识别产物
-        run: ls -la out/dist/redist/omr && test -s out/dist/redist/omr/dolce_omr_wasm_bg.wasm && test -s out/dist/redist/omr/dolce_omr_wasm_relaxed_bg.wasm
+      - name: 校验网页版 wasm 产物
+        run: ls -la out/dist/redist/omr out/dist/redist/dolce && test -s out/dist/redist/omr/dolce_omr_wasm_bg.wasm && test -s out/dist/redist/omr/dolce_omr_wasm_relaxed_bg.wasm && test -s out/dist/redist/dolce/dolce_wasm_bg.wasm
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:

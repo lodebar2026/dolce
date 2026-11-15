@@ -19,6 +19,7 @@ import { setupCompareSelect } from "./editor/comparemode";
 import { attachPinchZoom } from "./editor/pinchzoom";
 import { setupSplitters } from "./editor/splitters";
 import { SAMPLE } from "./editor/sample";
+import { loadDolce } from "./common/dolce";
 
 /** 工具栏「每行 N 小节」上次选的 N */
 const BARS_PER_LINE_KEY = "dolce-bars-per-line";
@@ -44,7 +45,8 @@ async function boot() {
   // 界面语言最先定：之后建的对话框、状态栏文字都按它走。
   initLang();
   setMeasureBackend(browserMeasure);
-  await registerBravura();
+  // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm：排版与试听都同步调它，先载好
+  await Promise.all([loadDolce(import.meta.env.BASE_URL), registerBravura()]);
   await ensureFontsReady([
     { family: "Bravura", size: 40 },
     { family: "Bravura Text", size: 20 },
@@ -92,13 +94,13 @@ async function boot() {
   // 成书重排（BookStyle 注入 + 页面树 → DrawList）暴露，供 scripts/rebuild.mjs 用。
   win.__book = Promise.all([
     import("./pdflayout/browser"), import("./style/book"), import("./layout/painter"),
-    import("./score/phrase"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
+    import("./score/play"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
     import("./jpword/parse"), import("./jianpu/jianpuinput"), import("./fanqie"),
-    import("./model/fromxml"), import("./model/phrasedoc"), import("./score/timeline"), import("./model/playdoc"),
-    import("./score/midi"), import("./layout/input"),
-  ]).then(([book, bookStyle, painter, phrase, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, phrasedoc, timeline, playdoc, midi, input]) => ({
-    ...book, ...bookStyle, ...painter, ...phrase, ...applybreaks, ...jpwfile, ...parse, ...jianpuinput, fanqie,
-    ...fromxml, ...phrasedoc, ...timeline, ...playdoc, ...midi, ...input,
+    import("./model/fromxml"), import("./model/phrasedoc"), import("./score/playtypes"), import("./model/playdoc"),
+    import("./layout/input"),
+  ]).then(([book, bookStyle, painter, play, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, phrasedoc, playtypes, playdoc, input]) => ({
+    ...book, ...bookStyle, ...painter, ...play, ...applybreaks, ...jpwfile, ...parse, ...jianpuinput, fanqie,
+    ...fromxml, ...phrasedoc, ...playtypes, ...playdoc, ...input,
   }));
   // 混排歌本（清单 + .ss → DrawPage[]）暴露，供 scripts/kl2020-book.mjs 用。
   win.__songbook = Promise.all([import("./pdflayout/songbook"), import("./style/ss")])

@@ -6,7 +6,7 @@
 // （演唱顺序的 `mid` 就是按它数的），只排一个声部：带歌词的那个（同 `songMeasures` 的 `forExpanded`）。
 import { walkPlay } from "../../../jianpu/expand";
 import { Fraction } from "../../../common/fraction";
-import type { PlayItem } from "../../../score/playorder";
+import type { PlayItem } from "../../../score/playtypes";
 import { distinctVerses } from "../../../jianpu/phrasesong";
 import type { Measure as DocMeasure } from "../../../model/doc";
 import { REFRAIN_WORD_RE, sectionMarkOf } from "../../../model/helpers";
@@ -356,7 +356,7 @@ function plainBarline(el: BarlineElement): BarlineElement {
   return { ...el, type: repeat ? "normal" : el.type, repeatForwardAfter: false };
 }
 
-/** 第 `v` 段在段落 `scope` 里最后一个字之后（判据同 `afterVerseEnd`，只数这一段的小节，同 `timeline.ts`） */
+/** 第 `v` 段在段落 `scope` 里最后一个字之后（判据同 `afterVerseEnd`，只数这一段的小节，同 crates/dolce-play `timeline.rs`） */
 function afterVerseEndIn(
   scope: ReadonlySet<number>, slices: readonly Slot[][], cursorOf: readonly (readonly number[])[],
   lyricsOf: readonly (readonly LyricLine[])[], v: number, row: number, k: number,

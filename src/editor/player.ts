@@ -8,8 +8,8 @@
 
 import { Soundfont } from "smplr";
 import type { ElementId } from "../model/doc";
-import { buildTimeline, partGain, PlayOptions, PlaySource, playTempo, type Timeline } from "../score/timeline";
-import { toMidi } from "../score/midi";
+import type { PlayOptions, PlaySource, Timeline } from "../score/playtypes";
+import { buildTimeline, partGain, playTempo, toMidi } from "../score/play";
 import { isTauriRuntime } from "./fileio";
 import { asset } from "../common/asset";
 
@@ -19,7 +19,7 @@ interface Anchor {
   t: number; // seconds
   id: ElementId | undefined;
   pass: number;
-  /** 同一个音同一遍号第几次出现（见 `timeline.ts::Anchor.occ`） */
+  /** 同一个音同一遍号第几次出现（见 `score/playtypes.ts::Anchor.occ`） */
   occ: number;
 }
 

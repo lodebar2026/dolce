@@ -6,6 +6,7 @@
 //   - SVG 出口：`layout/svgnode.ts` 的轻量节点（`outerHTML` 同浏览器序列化）；
 //   - SMuFL 元数据：读 `public/redist/bravura_metadata.json`。
 // 排版件（依赖 common/measure.ts 的那些）只许经这个入口进 Node：别的 CLI 入口不装测量后端，碰了会抛「测量后端未装配」。
+import "./dolcewasm.node"; // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { setMeasureBackend } from "../common/measure";
@@ -40,7 +41,7 @@ export function useFonts(files: Record<string, string>): void {
 import * as pdflayoutBrowser from "../pdflayout/browser";
 import * as bookStyle from "../style/book";
 import * as painterMod from "../layout/painter";
-import * as phrase from "../score/phrase";
+import * as play from "../score/play";
 import * as applybreaks from "../jianpu/applybreaks";
 import * as jpwfile from "../jpword/jpwfile";
 import * as jpwparse from "../jpword/parse";
@@ -48,9 +49,8 @@ import * as jianpuinput from "../jianpu/jianpuinput";
 import * as fanqieMod from "../fanqie";
 import * as fromxml from "../model/fromxml";
 import * as phrasedoc from "../model/phrasedoc";
-import * as timeline from "../score/timeline";
+import * as playtypes from "../score/playtypes";
 import * as playdoc from "../model/playdoc";
-import * as midi from "../score/midi";
 import * as layoutInput from "../layout/input";
 import * as songbookMod from "../pdflayout/songbook";
 import * as ss from "../style/ss";
@@ -67,8 +67,8 @@ pptxMod.provideBravuraOtf(readFileSync(fileURLToPath(new URL("../../public/redis
 
 /** 同 `__book`：成书重排（BookStyle 注入 + 页面树 → DrawList）。 */
 export const book = {
-  ...pdflayoutBrowser, ...bookStyle, ...painterMod, ...phrase, ...applybreaks, ...jpwfile, ...jpwparse, ...jianpuinput, fanqie: fanqieMod,
-  ...fromxml, ...phrasedoc, ...timeline, ...playdoc, ...midi, ...layoutInput,
+  ...pdflayoutBrowser, ...bookStyle, ...painterMod, ...play, ...applybreaks, ...jpwfile, ...jpwparse, ...jianpuinput, fanqie: fanqieMod,
+  ...fromxml, ...phrasedoc, ...playtypes, ...playdoc, ...layoutInput,
 };
 /** 同 `__songbook`：混排歌本（清单 + .ss → DrawPage[]）。 */
 export const songbook = { ...songbookMod, ...ss };

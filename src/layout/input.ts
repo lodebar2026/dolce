@@ -5,7 +5,7 @@
 
 import type { Fraction } from "../common/fraction";
 import type { BarStyle, StartStopDiscontinue } from "../score/enums";
-import { PlayData } from "../score/playorder";
+import { PlayData } from "../score/playtypes";
 import type { ElementId } from "../model/doc";
 
 export interface JKey {

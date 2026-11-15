@@ -11,8 +11,7 @@
 import { Fraction } from "../common/fraction";
 import type { BarStyle, StartStopDiscontinue } from "../score/enums";
 import type { PhraseChord, PhraseMeasure } from "../score/phraseinput";
-import type { PlayMeasure } from "../score/playorder";
-import type { TimelineMeasure } from "../score/timeline";
+import type { PlayMeasure, TimelineMeasure } from "../score/playtypes";
 import type { Chord, ElementId, Measure, Part, Song } from "./doc";
 import { sectionMarkOf } from "./helpers";
 import { midiPitch, topNote } from "./jianpu";
@@ -45,7 +44,7 @@ interface MeasureOut {
   repeatForward: boolean;
   keyChange: boolean;
   endingLeft: boolean;
-  /** 房号适用的遍数（演唱顺序用，`score/playorder.ts::PlayMeasure`） */
+  /** 房号适用的遍数（演唱顺序用，`score/playtypes.ts::PlayMeasure`） */
   endingNum: Set<number> | null;
   endingRight: StartStopDiscontinue | null;
   sectionMark: string | null;
@@ -58,7 +57,7 @@ interface MeasureOut {
 }
 
 export interface PhraseDocView {
-  /** 同时满足演唱顺序的输入（`score/playorder.ts::PlayPart`） */
+  /** 同时满足演唱顺序的输入（`score/playtypes.ts::PlayPart`） */
   part: { readonly measures: readonly (PhraseMeasure & PlayMeasure & TimelineMeasure)[] };
   /** 断句输入的和弦 → 元素 id */
   idOf: Map<PhraseChord, ElementId>;

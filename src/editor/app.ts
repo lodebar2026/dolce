@@ -43,9 +43,9 @@ import { isBridgeFormat, readBridgeModel, writeBridgeModel } from "./modelbridge
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { PlaybackController, type PlaybackHost } from "./playback";
 import type { PlayPoint } from "./player";
-import type { PlaySource } from "../score/timeline";
+import type { PlaySource } from "../score/playtypes";
 import { playSourceOf } from "../jianpu/playsong";
-import { unplayedMeasures } from "../score/playorder";
+import { unplayedMeasures } from "../score/play";
 import { OmrController, type OmrHost } from "./omrctl";
 import { FileSession } from "./filesession";
 import { MixedSession } from "./mixedsession";
@@ -1343,7 +1343,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.setText(formatOf("jly").decode(bytes));
       return;
     }
-    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcxcodec.ts` 判断
+    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcx.ts`（Rust dolce-formats）判断
     if (fmt === "jcx") {
       this.mixed._dropMixedDoc();
       this._setDocFormat("jcx");

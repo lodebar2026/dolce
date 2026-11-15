@@ -1,18 +1,19 @@
 // Node CLI 侧的 123 格式入口：`.123` 文本 ↔ `ScoreDoc` ↔ 其它格式，**不起浏览器**。
-// 由 `npm run build:cli` 打成 out/cli/j123.js，供 scripts/j123-*.mjs import。
+// 由 `npm run build:cli` 打成 out/cli/j123.js，供 scripts/j123-*.mjs import。载入时读 dolce-wasm（`cli/dolcewasm.node.ts`）。
 //
 // 与另两个入口的分工：`cli/index.ts` 是矢量 PDF 版面那一摊、`cli/omrfmt.ts` 是识别结果的写出端，
 // 这个是**格式与语义模型**这一条。
 //
 // **只能汇出不碰 DOM 的模块**——排版件（依赖 common/measure.ts 的那些）不进这条链，
 // 所以这里没有排版器 / layout。需要排版的走 `cli/engrave.ts`（它装测量后端，并把这里的导出一并转出）。
+import "./dolcewasm.node"; // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm
 export * from "../model/doc";
 export * from "../abcfamily/lex123";
 export * from "../abcfamily/parse";
 export * from "../abcfamily/emit123.entry";
 export { emitAbc } from "../abcfamily/emitabc.entry";
 export { emitJcx } from "../abcfamily/emitjcx.entry";
-export { decodeJcx, encodeJcx } from "../common/jcxcodec";
+export { decodeJcx, encodeJcx } from "../common/jcx";
 export * from "../convert/capability";
 export * from "../abcfamily/fields";
 export * from "../model/helpers";
@@ -35,7 +36,7 @@ export { AccidentalCarry } from "../model/jianpu";
 // 文本谱与 `.jpwabc` 读入：迁移工具要拿它们当输入
 export { parseFanqie, parseFanqieAst, sniffDialect } from "../fanqie";
 export { JpwFile, RepeatSection } from "../jpword/jpwfile";
-// 按乐句重排（写回原文那一步；断句本身在 score/phrase.ts）
+// 按乐句重排（写回原文那一步；断句本身在 crates/dolce-play，经 score/play.ts）
 export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 export { applyBreaks, breaksOf } from "../model/breaks";
 export { barLines, phraseCuts, fanqiePhraseLines } from "../jianpu/phrase";
@@ -45,8 +46,7 @@ export { checkMeasureDurations, describeBeatIssue } from "../model/beatcheck";
 export * as modelEdit from "../model/edit";
 // 试听/MIDI（私有仓库的 `chorus-midi.mjs` 拿识别结果与 GT 各导一份 MIDI 逐音比）
 export { playSourceOf } from "../jianpu/playsong";
-export { buildTimeline } from "../score/timeline";
-export { toMidi } from "../score/midi";
+export { buildTimeline, toMidi } from "../score/play";
 // 只读写模型的回归脚本（`playorder-check.mjs`、`jianpu-shape-check.mjs`、`phrase-dual-check.mjs` 等）在 Node 下直接跑用
 export { playSourceOfDoc } from "../model/playdoc";
 export { jianpuInputOfDoc } from "../jianpu/jianpuinput";

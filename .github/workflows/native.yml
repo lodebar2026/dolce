@@ -22,8 +22,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      # 冒烟里载 out/cli/engrave.js，它开头要载 dolce-wasm：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -31,6 +34,10 @@ jobs:
           workspaces: |
             native/textmeasure
             native/omrkernels
+            crates
+
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' crates/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')" --locked
 
       - name: Install dependencies
         run: npm ci
@@ -40,6 +47,9 @@ jobs:
 
       - name: Build CLI
         run: npm run build:cli
+
+      - name: Build dolce-wasm
+        run: node scripts/build-wasm.mjs dolce
 
       - name: Smoke test (textmeasure)
         run: node native/textmeasure/smoke.mjs

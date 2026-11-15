@@ -1,4 +1,4 @@
-// `.jcx` 写出端的函数入口（与 `emitabc.entry.ts` 对称）。落盘编码见 `common/jcxcodec.ts`。
+// `.jcx` 写出端的函数入口（与 `emitabc.entry.ts` 对称）。落盘编码见 `common/jcx.ts`。
 
 import type { ScoreDoc } from "../model/doc";
 import { EMITTER_JCX } from "./emitjcx";

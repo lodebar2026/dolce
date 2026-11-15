@@ -124,7 +124,7 @@ export interface TitleBlock {
 export interface BookLayoutOpts {
   linesPerPage: number;
   phrase: boolean;
-  /** 乐句排版的目标行长（小节数）。**0 = 按版心容量折算**（`phrase.ts::targetMeasForCells`），
+  /** 乐句排版的目标行长（小节数）。**0 = 按版心容量折算**（crates/dolce-play `phrase.rs::target_meas_for_cells`），
    *  成书走这个：容量由版心宽 ÷ 音符步距实测（见 scripts/rebuild.mjs），除以本曲「每小节几格」
    *  就是一行该放几小节。给死一个小节数（原来是 4）就得靠「两两并短行」去凑满版心，
    *  而并行只能成对，段里落单的那一行并不进去——377《我宁愿有耶稣》副歌因此排成
@@ -140,26 +140,26 @@ export interface BookLayoutOpts {
    *  第二遍把目标改成「本段小节数 ÷ 行数」——原书每行都差不多长，只按容量排会
    *  一行顶格、一行半幅（051《赞美我主君王》12/14/24 格）。 */
   phraseEvenWeight?: number;
-  /** 「别把一句话的最后一小截甩到下一行开头」的权重（`phrase.ts::headPenalty`；0 = 关）。 */
+  /** 「别把一句话的最后一小截甩到下一行开头」的权重（crates/dolce-play `phrase.rs::head_penalty`；0 = 关）。 */
   phraseTailWeight?: number;
   /** **断句只看内容**（默认开）：与纸张有关的分（行长目标、行数、稀疏/密排）一律不进评分，
-   *  版心宽度只剩「超容量是硬约束」这一个作用。见 `phrase.ts::PhraseOptions.contentOnly`
+   *  版心宽度只剩「超容量是硬约束」这一个作用。见 `score/play.ts::PhraseOptions.contentOnly`
    *  与 `applybreaks.ts::chooseLineLayout` 的模式阶梯。 */
   phraseContentOnly?: boolean;
   /** **平行乐句开头**的加分（0 = 关，默认 6）。一行的头几个音与另一行相同时，把它们各自
    *  排成行首，两行就对齐得上（070 副歌两行、077 的 `13|5565|`、175 的一二行）。
-   *  见 `phrase.ts::headFpOf`。 */
+   *  见 `score/play.ts::headFpOf`。 */
   phraseParallelWeight?: number;
   /** **行末收在长音上**的加分（0 = 关，成书 3；编辑器那 15 首的基线不开）。
    *  与 `phraseParallelWeight` 是一对——那条管「下一行从哪儿起」，这条管「本行在哪儿收」。
-   *  见 `phrase.ts::PhraseOptions.tailLongWeight`。 */
+   *  见 `score/play.ts::PhraseOptions.tailLongWeight`。 */
   phraseTailLongWeight?: number;
   /** **行数多的方案优先**的容差（内容层，与版心无关；0 = 关，成书 4）。
    *  并回去是 B 档 `mergePairsUniform` 的活，而把一行劈开谁也补不回来。
-   *  见 `phrase.ts::PhraseOptions.moreRowsSlack`。 */
+   *  见 `score/play.ts::PhraseOptions.moreRowsSlack`。 */
   phraseMoreRowsSlack?: number;
   /** **纸张当平局裁判**的容差（0 = 关，成书就是 0：版心不影响断句）。
-   *  见 `phrase.ts::PhraseOptions.fitSlack`。 */
+   *  见 `score/play.ts::PhraseOptions.fitSlack`。 */
   phraseFitSlack?: number;
   /** 是否允许在小节中间换行。**默认允许**：原书每行都在小节线上收尾，但那是固定版式的结果——
    *  弱起谱（005《荣耀归与天父》）每句都收在小节中间的长音上，只认小节线就一条乐句断点都找不到，

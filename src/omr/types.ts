@@ -48,7 +48,7 @@ export interface JpNum {
   lyricDoubt?: number[];
   lyrics?: string[]; // 歌词：按声部(verse)索引，lyrics[0]=第一段(W1)、lyrics[1]=第二段……
   // 段落标记（Intro/Verse/Chorus/Coda…，谱面上多印成方框）：标在该段起始音符上。
-  // → `Chord.sectionWord`（123 写成 `"^…"`），下游供乐句排版按段落硬换行（见 score/phrase.ts）。
+  // → `Chord.sectionWord`（123 写成 `"^…"`），下游供乐句排版按段落硬换行（见 crates/dolce-play/src/phrase.rs）。
   sectionMark?: string;
   // 力度（`p`…`fff`）与渐强渐弱的文字（`cresc.` / `dim.`），印在音符上方的小号斜体字，标在它起作用的那个音上，按 x 排序。
   // 力度 → `notations.articulations`（123 `!mf!`，与 .jly 读入同一个落点）；`cresc.` / `dim.` 是谱上文字 → `sectionWord`（`"^cresc."`）。

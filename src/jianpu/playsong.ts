@@ -16,14 +16,12 @@
 import type { Chord, ElementId, Part, PlayPass, ScoreDoc, Song } from "../model/doc";
 import { writtenOctaveOf } from "../model/jianpu";
 import { Fraction } from "../common/fraction";
-import {
-  JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition,
-  playOrderByVerses, playOrderFromSpec, playOrderOf, sectionPlayOrder, singPlayOrder, type SectionMark,
-} from "../score/playorder";
+import { JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition, type SectionMark } from "../score/playtypes";
+import { playOrderByVerses, playOrderFromSpec, playOrderOf, sectionPlayOrder, singPlayOrder } from "../score/play";
 import { linesOfVoice, voiceNumbers, type MusicElement, type FanqieSong } from "./ast";
 import { Key, MusicCommon } from "../score/jppitch";
 import { fifthsOfSpelling, isMinorKey, keyFifths } from "../model/keyshift";
-import type { PlaySource, TimelineKey } from "../score/timeline";
+import type { PlaySource, TimelineKey } from "../score/playtypes";
 import type { JpwChordIn, JpwMeasureIn, JpwScoreIn } from "../model/tojpw";
 import { buildMeasures, type JumpOut, type MeasureOut } from "./phrasesong";
 import { docView } from "./slots";
@@ -61,7 +59,7 @@ export function playDataOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySongOpti
   return built && foldToFirstPart(playDataOf(doc, songIdx, built), built);
 }
 
-/** 试听/MIDI 的输入（`score/timeline.ts::PlaySource`）：各声部小节序列 + 演唱顺序 + 速度，和弦带元素 id。
+/** 试听/MIDI 的输入（`score/playtypes.ts::PlaySource`）：各声部小节序列 + 演唱顺序 + 速度，和弦带元素 id。
  *  口径同 `jianpuInputOfDoc`（声部顺序；音高换算 `applyJpPitch`、速度取 `meta.tempos` 首个 20..400 的数）。 */
 export function playSourceOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlaySource | null {
   const built = songMeasures(doc, songIdx, options, true);

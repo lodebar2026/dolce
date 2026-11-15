@@ -1,6 +1,6 @@
 // Export: PNG (rasterize page SVG), PDF, MIDI (SMF), PPTX.
 import type { App } from "./app";
-import { toMidi } from "../score/midi";
+import { toMidi } from "../score/play";
 import { buildPptx } from "./pptx";
 import { pptxPainter } from "./paintreq";
 import { ScorePainter } from "../layout/painter";

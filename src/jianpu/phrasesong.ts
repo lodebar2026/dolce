@@ -12,7 +12,7 @@ import { sectionMarkOf } from "../model/helpers";
 import { BarStyle, StartStopDiscontinue } from "../score/enums";
 import { MusicCommon, applyJpPitch, type JpKeyState } from "../score/jppitch";
 import type { PhraseChord, PhraseMeasure, PhrasePart } from "../score/phraseinput";
-import type { TimelineKey } from "../score/timeline";
+import type { TimelineKey } from "../score/playtypes";
 import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "./ast";
 import type { LyricLine, Mark, NoteElement, ScoreLine } from "./ast";
 import { docView, type SlotRef } from "./slots";
@@ -215,7 +215,7 @@ export function buildMeasures(
       const noteJumps = (mea: MeasureOut, onBarline: boolean): void => {
         if (!("ornaments" in el)) return;
         for (const orn of el.ornaments) {
-          // MusicXML direction 投过来的 D.C. / Fine、123 左线上的 segno 也算（多段词 × D.C. 的展开口径见 `playorder.ts::jumpByVerse`）
+          // MusicXML direction 投过来的 D.C. / Fine、123 左线上的 segno 也算（多段词 × D.C. 的展开口径见 crates/dolce-play `playorder.rs::jump_by_verse`）
           if (JUMP_NAMES.has(orn.name)) jumps.push({ name: orn.name, measure: measures.indexOf(mea), onBarline });
         }
       };

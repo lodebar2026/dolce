@@ -77,3 +77,154 @@ pub fn xml_digest(text: &str) -> String {
         Err(e) => serde_json::json!({ "ok": false, "message": e.message, "at": e.at }).to_string(),
     }
 }
+
+// ───────────────────────── 演唱顺序、断句、时间轴、MIDI（dolce-play）─────────────────────────
+//
+// 入参、回值都是 JSON（形状见 dolce-play 各输入 / 产物类型；TS 侧编解码在 src/engine/play.ts）。
+// TS 原实现会抛错的输入（没有和弦的小节取时值等）这里抛 `Error`，message 是说明文字。
+
+fn parse<T: serde::de::DeserializeOwned>(what: &str, json: &str) -> Result<T, JsValue> {
+    serde_json::from_str(json).map_err(|e| js_sys_error(&format!("{what}：{e}")))
+}
+
+fn json<T: serde::Serialize>(v: &T) -> String {
+    serde_json::to_string(v).expect("序列化")
+}
+
+fn play_err(e: dolce_play::PlayError) -> JsValue {
+    js_sys_error(&e.0)
+}
+
+use dolce_play::{phrase, phraseinput, playorder, timeline};
+
+#[wasm_bindgen(js_name = playOrderOf)]
+pub fn play_order_of(parts: &str, jumps: &str) -> Result<String, JsValue> {
+    let parts: Vec<playorder::PlayPart> = parse("parts", parts)?;
+    let jumps: playorder::PlayJumps = parse("jumps", jumps)?;
+    playorder::play_order_of(&parts, &jumps).map(|o| json(&o)).map_err(play_err)
+}
+
+/// 回 `PlayOrder` 的 JSON，或 `"null"`（`seq` 里的段落一个都不存在）
+#[wasm_bindgen(js_name = sectionPlayOrder)]
+pub fn section_play_order(parts: &str, jumps: &str, seq: &str, marks: &str) -> Result<String, JsValue> {
+    let parts: Vec<playorder::PlayPart> = parse("parts", parts)?;
+    let jumps: playorder::PlayJumps = parse("jumps", jumps)?;
+    let seq: Vec<String> = parse("seq", seq)?;
+    let marks: Vec<playorder::SectionMark> = parse("marks", marks)?;
+    playorder::section_play_order(&parts, &jumps, &seq, &marks).map(|o| json(&o)).map_err(play_err)
+}
+
+#[wasm_bindgen(js_name = singPlayOrder)]
+pub fn sing_play_order(parts: &str, marks: &str, pages: &str) -> Result<String, JsValue> {
+    let parts: Vec<playorder::PlayPart> = parse("parts", parts)?;
+    let marks: Vec<playorder::SectionMark> = parse("marks", marks)?;
+    let pages: Vec<playorder::SingPassSpec> = parse("pages", pages)?;
+    playorder::sing_play_order(&parts, &marks, &pages).map(|o| json(&o)).map_err(play_err)
+}
+
+/// `part0` 是 `PlayPart` 的 JSON 或 `"null"`
+#[wasm_bindgen(js_name = playOrderFromSpec)]
+pub fn play_order_from_spec(items: &str, part0: &str) -> Result<String, JsValue> {
+    let items: Vec<playorder::RepeatSpecItem> = parse("items", items)?;
+    let part0: Option<playorder::PlayPart> = parse("part0", part0)?;
+    Ok(json(&playorder::play_order_from_spec(&items, part0.as_ref())))
+}
+
+#[wasm_bindgen(js_name = playOrderByVerses)]
+pub fn play_order_by_verses(measure_count: f64, passes: f64) -> String {
+    json(&playorder::play_order_by_verses(measure_count, passes))
+}
+
+/// `items` 只要各项的 `mid` / `end`
+#[wasm_bindgen(js_name = unplayedMeasures)]
+pub fn unplayed_measures(items: &str, measure_count: usize) -> Result<String, JsValue> {
+    let items: Vec<playorder::PlayItem> = parse("items", items)?;
+    Ok(json(&playorder::unplayed_measures(&items, measure_count)))
+}
+
+#[wasm_bindgen(js_name = buildTimeline)]
+pub fn build_timeline(src: &str) -> Result<String, JsValue> {
+    let src: timeline::PlaySource = parse("PlaySource", src)?;
+    Ok(json(&timeline::build_timeline(&src)))
+}
+
+/// `opts` 是 `PlayOptions` 的 JSON 或 `"null"`
+#[wasm_bindgen(js_name = toMidi)]
+pub fn to_midi(src: &str, opts: &str, click: bool) -> Result<Vec<u8>, JsValue> {
+    let src: timeline::PlaySource = parse("PlaySource", src)?;
+    let opts: Option<timeline::PlayOptions> = parse("PlayOptions", opts)?;
+    Ok(dolce_play::midi::to_midi(&src, opts.as_ref(), click))
+}
+
+#[wasm_bindgen(js_name = playTempo)]
+pub fn play_tempo(tempo: f64, opts: &str) -> Result<f64, JsValue> {
+    let opts: Option<timeline::PlayOptions> = parse("PlayOptions", opts)?;
+    Ok(timeline::play_tempo(tempo, opts.as_ref()))
+}
+
+#[wasm_bindgen(js_name = partGain)]
+pub fn part_gain(opts: &str, part: usize) -> Result<f64, JsValue> {
+    let opts: Option<timeline::PlayOptions> = parse("PlayOptions", opts)?;
+    Ok(timeline::part_gain(opts.as_ref(), part))
+}
+
+#[wasm_bindgen(js_name = computePhraseBreaks)]
+pub fn compute_phrase_breaks(part: &str, opts: &str) -> Result<String, JsValue> {
+    let part: phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    let opts: phrase::PhraseOptions = parse("PhraseOptions", opts)?;
+    Ok(json(&phrase::compute_phrase_breaks(&part, &opts)))
+}
+
+#[wasm_bindgen(js_name = targetMeasForCells)]
+pub fn target_meas_for_cells(part: &str, cells: f64) -> Result<f64, JsValue> {
+    let part: phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    Ok(phrase::target_meas_for_cells(&part, cells))
+}
+
+/// 断句的逐和弦事实（`applybreaks.ts` 还在 TS，经这里取）：`[主歌词, 标点分, 旋律键]`
+#[wasm_bindgen(js_name = phraseChordFacts)]
+pub fn phrase_chord_facts(chord: &str) -> Result<String, JsValue> {
+    let c: phraseinput::PhraseChord = parse("PhraseChord", chord)?;
+    Ok(json(&(phrase::main_lyric_text(&c), phrase::lyric_punct_score(&c), phrase::note_key_of(&c))))
+}
+
+/// 一行开头的旋律指纹（`chords` 是 `PhraseChord[]` 的 JSON）
+#[wasm_bindgen(js_name = headFpOf)]
+pub fn head_fp_of(chords: &str) -> Result<String, JsValue> {
+    let cs: Vec<phraseinput::PhraseChord> = parse("PhraseChord[]", chords)?;
+    let refs: Vec<&phraseinput::PhraseChord> = cs.iter().collect();
+    Ok(phrase::head_fp_of(&refs))
+}
+
+// ───────────────────────── Muse .jcx 字节编解码（dolce-formats）─────────────────────────
+
+#[wasm_bindgen(js_name = decodeJcx)]
+pub fn decode_jcx(bytes: &[u8]) -> String {
+    dolce_formats::jcxcodec::decode_jcx(bytes)
+}
+
+/// `encodeJcx` 的结果：字节与 GBK 写不出的字
+#[wasm_bindgen]
+pub struct JcxBytes {
+    bytes: Vec<u8>,
+    missing: Vec<char>,
+}
+
+#[wasm_bindgen]
+impl JcxBytes {
+    #[wasm_bindgen(getter)]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+    /// 写成 `?` 的字，接成一串（按出现先后、不重复）
+    #[wasm_bindgen(getter)]
+    pub fn missing(&self) -> String {
+        self.missing.iter().collect()
+    }
+}
+
+#[wasm_bindgen(js_name = encodeJcx)]
+pub fn encode_jcx(text: &str) -> JcxBytes {
+    let (bytes, missing) = dolce_formats::jcxcodec::encode_jcx(text);
+    JcxBytes { bytes, missing }
+}

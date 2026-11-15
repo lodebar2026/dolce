@@ -13,7 +13,7 @@ import { TERMS } from "../model/marknames";
 import { BarStyle, StartStopDiscontinue } from "../score/enums";
 import { MusicCommon } from "../score/jppitch";
 import { fifthsOfSpelling } from "../model/keyshift";
-import { PlayData } from "../score/playorder";
+import { PlayData } from "../score/playtypes";
 import type {
   JBreak, JChord, JCredit, JKey, JLyric, JMeasure, JNote, JScore, JTime,
 } from "../layout/input";

@@ -4,7 +4,7 @@
 //   临时记号相对调号直写（`^` 升、`_` 降、`=` 还原），与简谱的记法一一对应，不用 ABC 那套绝对音名换算。
 // - 头部照 Muse 自己存出来的样子排：`T:` 起、`K:` 收，`V:` 声明随后，正文每段前 `[V: n]`（说明书 §3.2.3.1）。
 // - 时值与 ABC 写出端同一口径：固定 `L:1/8`、分数后缀；倚音、多连音、tie 同 ABC。
-// - 落盘编码（`%MUSE2` + GBK）在 `common/jcxcodec.ts`，这里只出文本。
+// - 落盘编码（`%MUSE2` + GBK）在 `common/jcx.ts`，这里只出文本。
 
 import { directionsAsMarks } from "../model/directionmarks";
 import { SIMPLE_DIVISIONS, type Chord, type Element, type Key, type Measure, type Note, type Song } from "../model/doc";
@@ -93,7 +93,7 @@ export class EmitterJcx extends AbcFamilyEmitter {
   }
 
   protected override readonly bowAndTremolo = false;
-  /** Muse 3.1 以前的版本号；文件按 GBK 落盘（`jcxcodec.ts`），新旧版 Muse 都能开 */
+  /** Muse 3.1 以前的版本号；文件按 GBK 落盘（`common/jcx.ts`），新旧版 Muse 都能开 */
   protected readonly versionLine = "%MUSE2";
 
   /** 度数 → 字母（C=1）+ 八度：第 0 个八度大写、高一个八度小写，再往外用 `'` 与 `,`（与读入端 ABC 词法同口径）。 */
@@ -246,7 +246,7 @@ export class EmitterJcx extends AbcFamilyEmitter {
   /** 整份文档 → 文本。**Muse 一个文件一首**：多曲文档只写第一首（`capability.ts` 报 `multiSong` 丢失）。 */
   override emitDoc(doc: Parameters<AbcFamilyEmitter["emitDoc"]>[0]): string {
     const first = doc.songs[0];
-    // 读进来的就是 `%MUSE3`（UTF-8）文件：照原版本号写（按乐句重排等整份重写的路），存盘随之按 UTF-8（`jcxcodec.ts`），不降级成 GBK
+    // 读进来的就是 `%MUSE3`（UTF-8）文件：照原版本号写（按乐句重排等整份重写的路），存盘随之按 UTF-8（`common/jcx.ts`），不降级成 GBK
     const version = doc.sourceFormat === "jcx" && /^\s*%MUSE3/.test(doc.source ?? "") ? "%MUSE3" : this.versionLine;
     // 简谱口径的来源相邻同音的括号是延音线，Muse 有 `-`（同 ABC 写出端）
     return [version, first ? this.emitSong(hasTieSyntax(doc) ? first : slursAsTies(first)) : "T:\nK:C"].join("\n") + "\n";

@@ -14,7 +14,7 @@ import type * as EditFns from "../model/edit";
 import type { DocFormatId } from "../editor/formats";
 import type { RenderSettings } from "../editor/stylestate";
 import type { ConvertTarget } from "../convert/targets";
-import type { PlayOptions, PlaySource } from "../score/timeline";
+import type { PlayOptions, PlaySource } from "../score/playtypes";
 
 /** 编辑器的四档：简谱两档（投影 / 简谱）与五线谱、混排。 */
 export type EngineView = "expanded" | "original" | "staff" | "mixed";

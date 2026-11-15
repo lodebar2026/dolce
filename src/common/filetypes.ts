@@ -10,7 +10,7 @@ export const J123_EXT = ["123"] as const;
  *  也是判"这是不是 jianpu-ly"的**唯一决定性依据** —— 它的输入里没有版本行 / 签名 / 必需项，
  *  内容嗅探只能是特征猜测，所以不做（详见 `jly/fromjly.ts` 文件头）。 */
 export const JLY_EXT = ["jly"] as const;
-/** Muse 曲谱软件的 `.jcx`（ABC 方言，`%MUSE2` 是 GBK、`%MUSE3` 是 UTF-8，见 `common/jcxcodec.ts`）。 */
+/** Muse 曲谱软件的 `.jcx`（ABC 方言，`%MUSE2` 是 GBK、`%MUSE3` 是 UTF-8，见 `common/jcx.ts`）。 */
 export const JCX_EXT = ["jcx"] as const;
 /** 标准 MIDI 文件：打开时量化成谱（`editor/midi-import.ts`），不走 `importBytes`。 */
 export const MIDI_EXT = ["mid", "midi"] as const;

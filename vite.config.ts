@@ -7,8 +7,9 @@ import { en } from "./src/i18n/en";
 // @ts-expect-error import.meta.dirname 在 Vite 的 ESM 配置里可用（node ≥20 亦有）
 const here = typeof import.meta.dirname === "string" ? import.meta.dirname : dirname(fileURLToPath(import.meta.url));
 
-// 网页版识别的 wasm（Rust 识别 + PDFium 的 wasm 版）→ public/redist/omr/（不入库，见 scripts/build-wasm.mjs）。
-// 开发时编不出来只警告（网页版识别用不了，其余照常）；构建时编不出来就失败。桌面版（TAURI_ENV_PLATFORM）与 DOLCE_NO_WASM 跳过。
+// wasm（不入库，见 scripts/build-wasm.mjs）：网页版识别（Rust 识别 + PDFium）→ public/redist/omr/，桌面版（TAURI_ENV_PLATFORM）与 DOLCE_NO_WASM 跳过；
+// 模型 / 格式 / 排版的 dolce-wasm → public/redist/dolce/，编辑器开机就载，一律要编。
+// 开发时编不出来只警告（缺 dolce-wasm 编辑器起不来，缺识别的网页版识别用不了）；构建时编不出来就失败。
 function buildOmrWasm(): Plugin {
   const run = async (strict: boolean) => {
     // @ts-expect-error 构建脚本是无类型的 .mjs
@@ -17,7 +18,7 @@ function buildOmrWasm(): Plugin {
       buildWasm();
     } catch (e) {
       if (strict) throw e;
-      console.warn(`[build-wasm] ${(e as Error).message}——网页版识别用不了`);
+      console.warn(`[build-wasm] ${(e as Error).message}`);
     }
   };
   return { name: "build-omr-wasm", buildStart: () => run(true), configureServer: () => run(false) };

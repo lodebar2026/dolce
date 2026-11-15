@@ -118,6 +118,20 @@ impl Fraction {
     }
 }
 
+/// 过边界写成 `[分子, 分母]`（TS 侧 `[f.numerator, f.denominator]`），读回不再约分——原样保留两边的 f64。
+impl serde::Serialize for Fraction {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        (self.numerator, self.denominator).serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Fraction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let (numerator, denominator) = <(f64, f64)>::deserialize(d)?;
+        Ok(Fraction { numerator, denominator })
+    }
+}
+
 impl std::fmt::Display for Fraction {
     /// `"3"` 或 `"3/4"`，数字按 `String(n)` 写。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
