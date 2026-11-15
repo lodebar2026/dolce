@@ -17,6 +17,7 @@ use dolce_omr_source::{ContentOpts, PdfDoc, Rendered};
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::session::Session;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 mod handle;
 
@@ -28,6 +29,17 @@ pub struct Doc {
     parts: Vec<Part>,
     /// 各页：(第几个文件, 文件内页号)
     index: Vec<(usize, usize)>,
+    /// 分轮预取时各轮都从头识别，只看图、各轮不变的中间结果留在这里共用（见 [`Memo`]）
+    memo: Memo,
+}
+
+/// 跨轮共用的中间结果，按所选页（`Opts::pages` 展开后的文档页号）存。
+#[derive(Default)]
+struct Memo {
+    /// 自动档试过五线谱、没找到谱表的页组（试的那一轮没缺 OCR，结论各轮相同）
+    staffless: Mutex<Vec<Vec<usize>>>,
+    /// 简谱像素页准备好的墨层
+    jianpu: Mutex<Option<(Vec<usize>, Arc<dolce_omr_jianpu::Prepared>)>>,
 }
 
 enum Part {
@@ -85,7 +97,7 @@ impl Doc {
         if index.is_empty() {
             return Err("没有页面".into());
         }
-        Ok(Doc { parts, index })
+        Ok(Doc { parts, index, memo: Memo::default() })
     }
 
     pub fn is_pdf(&self) -> bool {
@@ -168,8 +180,16 @@ fn binarize(gray: &[u8], w: usize, h: usize) -> Binary {
 pub fn recognize(doc: &Doc, ocr: &CachedOcr, opts: &Opts, hook: &Hook) -> Result<Recognition, String> {
     let srcs = doc.sources(&opts.pages)?;
     hook.step(0, srcs.len() + 1, "page")?;
-    if opts.kind != Kind::Jianpu {
+    let key: Vec<usize> = srcs.iter().map(|s| s.0).collect();
+    let staffless = opts.kind == Kind::Auto && doc.memo.staffless.lock().is_ok_and(|v| v.contains(&key));
+    if opts.kind != Kind::Jianpu && !staffless {
         let pages = staff_pages(&srcs, ocr, hook)?;
+        // 没找到谱表、且这一轮试五线谱时没缺 OCR：结论只取决于图与已缓存的读数，后面各轮不必再试
+        if pages.is_empty() && opts.kind == Kind::Auto && !ocr.stalled() {
+            if let Ok(mut v) = doc.memo.staffless.lock() {
+                v.push(key.clone());
+            }
+        }
         if !pages.is_empty() || opts.kind == Kind::Staff {
             if pages.is_empty() {
                 return Err("没有找到谱表".into());
@@ -215,8 +235,20 @@ fn jianpu(doc: &Doc, srcs: Vec<(usize, PageSource)>, ocr: &CachedOcr, hook: &Hoo
         let grays = idx.iter().map(|&i| doc.render(i, dolce_omr_jianpu::vector::PAGE_W / width).map(|r| gray_of(&r))).collect::<Result<Vec<_>, _>>()?;
         return Ok(Recognition::Jianpu { score, binary: stack(&grays) });
     }
-    let imgs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.1.raster).collect();
-    let (score, binary) = dolce_omr_jianpu::recognize_hooked(&imgs, ocr, hook)?;
+    let key: Vec<usize> = srcs.iter().filter(|s| s.1.raster.is_some()).map(|s| s.0).collect();
+    let hit = doc.memo.jianpu.lock().ok().and_then(|m| m.as_ref().filter(|(k, _)| *k == key).map(|(_, p)| p.clone()));
+    let prep = match hit {
+        Some(p) => p,
+        None => {
+            let imgs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.1.raster).collect();
+            let p = Arc::new(dolce_omr_jianpu::prepare(&imgs)?);
+            if let Ok(mut m) = doc.memo.jianpu.lock() {
+                *m = Some((key, p.clone()));
+            }
+            p
+        }
+    };
+    let (score, binary) = dolce_omr_jianpu::recognize_prepared(&prep, ocr, hook)?;
     Ok(Recognition::Jianpu { score, binary })
 }
 

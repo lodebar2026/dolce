@@ -70,8 +70,13 @@ pub fn rank(logits: &[f32], t: usize, c: usize, chars: &[String], k: usize) -> V
         .filter_map(|(cls, a, b)| {
             let ch = chars.get(cls).filter(|s| !s.is_empty())?.clone();
             let mut best: Vec<(usize, f32)> = (1..c).map(|j| (j, (a..b).map(|tt| logits[tt * c + j]).fold(f32::NEG_INFINITY, f32::max))).collect();
-            best.sort_by(|x, y| y.1.total_cmp(&x.1).then(x.0.cmp(&y.0)));
-            best.truncate(k);
+            // 只要前 k 名：先挑出来再排这 k 个（整张字典近两万类逐字全排，一行歌词光排序就几十毫秒）。比较是全序，结果同全排
+            let cmp = |x: &(usize, f32), y: &(usize, f32)| y.1.total_cmp(&x.1).then(x.0.cmp(&y.0));
+            if k < best.len() {
+                best.select_nth_unstable_by(k, cmp);
+                best.truncate(k);
+            }
+            best.sort_by(cmp);
             let (alts, scores) = best.into_iter().filter_map(|(j, v)| chars.get(j).filter(|s| !s.is_empty()).map(|s| (s.clone(), v))).unzip();
             Some(RankedChar { ch, alts, scores })
         })

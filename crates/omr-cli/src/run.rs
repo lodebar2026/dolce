@@ -49,7 +49,7 @@ fn one(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress:
     let title = path.file_stem().map(|s| s.to_string_lossy().into_owned());
     let opts = Opts { kind, pages: Vec::new(), title };
     // 分轮预取：各轮缺的 OCR 一批分给会话池的 3 个会话（冷启动时多开会话的加载开销抵掉并行的收益，3 个最快，同桌面版缺省）
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(3);
+    let threads = std::env::var("DOLCE_OCR_SESS").ok().and_then(|v| v.parse().ok()).filter(|&v: &usize| v > 0).unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(3));
     let rec = ocr.rounds(|| dolce_omr_engine::recognize(&doc, ocr, &opts, &Hook { on: Some(&send), cancel: None }), |o, q| o.fill_local(q, threads))?;
     Ok(match rec {
         Recognition::Staff { session, .. } => json!({ "file": file, "kind": "staff", "xml": dolce_omr_engine::staff_output(&session).0 }),

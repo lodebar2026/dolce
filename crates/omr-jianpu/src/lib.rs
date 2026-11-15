@@ -46,11 +46,27 @@ pub fn recognize(srcs: &[SourceImage], ocr: &CachedOcr) -> Result<RecognizedScor
 
 /// 同 [`recognize`]，带进度与取消；另交出识别用的二值图（各页上下拼起、过宽的已缩，结果坐标就在它上面；编辑器核对视图拿它当底图）。
 pub fn recognize_hooked(srcs: &[SourceImage], ocr: &CachedOcr, hook: &Hook) -> Result<(RecognizedScore, Binary), String> {
+    recognize_prepared(&prepare(srcs)?, ocr, hook)
+}
+
+/// 像素页识别前的准备：各页上下拼起、二值化、连通块、估数字字号、去噪点。只看图、不用 OCR——
+/// 分轮预取时各轮都从头识别，调用方可以留着它各轮共用（见 `omr-engine` 的 `Doc`）。
+pub struct Prepared {
+    ink: prep::RasterInk,
+    num_h: f64,
+}
+
+pub fn prepare(srcs: &[SourceImage]) -> Result<Prepared, String> {
     let mut ink = prep::RasterInk::load(srcs).ok_or("没有页面")?;
     let num_h = frame::estimate_num_h(ink.comps());
     ink.despeckle(num_h);
-    let score = recognize_ink_hooked(&ink, num_h, ocr, hook)?;
-    Ok((score, ink.bin.clone()))
+    Ok(Prepared { ink, num_h })
+}
+
+/// 在准备好的墨层上识别（同 [`recognize_hooked`]）。
+pub fn recognize_prepared(p: &Prepared, ocr: &CachedOcr, hook: &Hook) -> Result<(RecognizedScore, Binary), String> {
+    let score = recognize_ink_hooked(&p.ink, p.num_h, ocr, hook)?;
+    Ok((score, p.ink.bin.clone()))
 }
 
 /// 识别一首纯矢量的简谱（各页的路径与文字层，按序）：证据换成对象库（[`vector::VecJpInk`]），判据同像素路。

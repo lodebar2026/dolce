@@ -63,7 +63,9 @@ pub fn open_ocr(cache: Option<&Path>) -> Result<CachedOcr, String> {
     let dir = model_dir();
     let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).map_err(|e| format!("读 OCR 字典（{}）：{e}", dir.display()))?;
     let cache = cache.map_or_else(OcrCache::memory, OcrCache::open);
-    Ok(CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, 8, 1)), &dict)), cache))
+    // 会话池与桌面版同名的环境变量可调（桌面缺省 3 × 3，见 src-tauri/src/omr.rs），测速时照桌面配置跑
+    let env = |k: &str, d: usize| std::env::var(k).ok().and_then(|v| v.parse().ok()).filter(|&v| v > 0).unwrap_or(d);
+    Ok(CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, env("DOLCE_OCR_SESS", 8), env("DOLCE_OCR_THREADS", 1))), &dict)), cache))
 }
 
 /// `omr-cli recognize staff 文件 [--out=目录]`：识别一个五线谱文件，写出 `<曲>.musicxml`（带识别 id）与 `<曲>.review.json`（核对 JSON，交 web `omrrust/adapter.ts`）。
