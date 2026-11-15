@@ -67,14 +67,21 @@ export interface TimelineChord {
   readonly slurEnds?: number;
 }
 
+/** 小节的调号（导出 MIDI 写 `FF 59` 用）：实际发声的调（移调乐器已换算），`minor` 是小调 */
+export interface TimelineKey {
+  readonly fifths: number;
+  readonly minor: boolean;
+}
+
 export interface TimelineMeasure {
-  readonly key?: { readonly fifths: number; readonly mode?: string };
   /** 和弦与其它条目混排；只取 `isTimelineChord` 为真的那些。 */
   readonly entries: readonly object[];
   /** 小节时值（末和弦的位置 + 时值）。**没有和弦时抛错**，与 `layout/input.ts::measureDuration` 同口径。 */
   readonly duration: Fraction;
   /** 没有和弦时按拍号算小节长 */
   readonly time: { readonly beats: number; readonly beatType: number };
+  /** 调号（随曲中转调）。不给就不写调号事件 */
+  readonly key?: TimelineKey;
 }
 
 export interface TimelinePart {
@@ -150,7 +157,8 @@ export interface Anchor {
 }
 
 export interface Timeline {
-  signatures: { t: number; time: TimelineMeasure["time"]; key?: TimelineMeasure["key"] }[];
+  /** 拍号 / 调号的变化点（按演唱顺序展开，首项在 t=0；读主旋律声部的小节），导出 MIDI 写 `FF 58` / `FF 59` */
+  signatures: { t: number; time: TimelineMeasure["time"]; key?: TimelineKey }[];
   notes: TimedNote[];
   anchors: Anchor[]; // melody (`PlaySource.lead`) sounding chords, ascending by t0 — for cursor
   /** 所有声部、所有 voice 的起音和弦（按 t0 升序，同刻主旋律在前、其余按声部序）。五线谱的竖直播放线跟它走：女高音休止、别的声部在唱也照走 */
@@ -266,7 +274,7 @@ export function buildTimeline(src: PlaySource): Timeline {
       const endOffset = mid === range.end - 1 ? range.until : Number.POSITIVE_INFINITY;
       const signature = leadMeasure(src, mid);
       const previous = signatures[signatures.length - 1];
-      if (signature && (!previous || previous.time.beats !== signature.time.beats || previous.time.beatType !== signature.time.beatType || previous.key?.fifths !== signature.key?.fifths || previous.key?.mode !== signature.key?.mode)) {
+      if (signature && (!previous || previous.time.beats !== signature.time.beats || previous.time.beatType !== signature.time.beatType || previous.key?.fifths !== signature.key?.fifths || previous.key?.minor !== signature.key?.minor)) {
         signatures.push({ t: pos, time: signature.time, key: signature.key });
       }
       for (let pi = 0; pi < src.parts.length; pi++) {

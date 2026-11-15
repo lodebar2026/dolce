@@ -64,3 +64,16 @@ export function degreeOfKey(home: number, fifths: number): string {
   const base = acc === "#" ? d - 7 : acc === "b" ? d + 7 : d;
   return acc + String(DEGREE_FIFTHS.indexOf(base) + 1);
 }
+
+/** 是不是小调（导出 MIDI 调号事件的 mi 位）：调式写了 minor / aeolian，或没写调式、主音唱名是 6（`6=A`） */
+export function isMinorKey(k: Key): boolean {
+  return k.mode !== undefined ? MODE_DEGREE[k.mode] === 6 : k.tonicDegree === "6";
+}
+
+/** 移调乐器（`<transpose>`）的记谱调号 → 实际发声的调号：每升一个半音加 7 个五度，越过 ±7 的按同音换回 ±7 以内 */
+export function soundingFifths(written: number, chromatic: number): number {
+  let f = written + 7 * chromatic;
+  while (f > 7) f -= 12;
+  while (f < -7) f += 12;
+  return f;
+}

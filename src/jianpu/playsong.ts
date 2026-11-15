@@ -22,8 +22,8 @@ import {
 } from "../score/playorder";
 import { linesOfVoice, voiceNumbers, type MusicElement, type FanqieSong } from "./ast";
 import { Key, MusicCommon } from "../score/jppitch";
-import { fifthsOfSpelling } from "../model/keyshift";
-import type { PlaySource } from "../score/timeline";
+import { fifthsOfSpelling, isMinorKey, keyFifths } from "../model/keyshift";
+import type { PlaySource, TimelineKey } from "../score/timeline";
 import type { JpwChordIn, JpwMeasureIn, JpwScoreIn } from "../model/tojpw";
 import { buildMeasures, type JumpOut, type MeasureOut } from "./phrasesong";
 import { docView } from "./slots";
@@ -42,31 +42,6 @@ export interface PlaySongOptions {
  *  简谱形状走 `playSourceOfSong`。拼不出（这首没有曲行）返回 null。
  *  多声部按各声部共用的时间轴叠（`timeaxis.ts`：文本谱一组不一定含全部声部，按组号落格，缺席处不补任何东西）。 */
 export function playSourceOf(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlaySource | null {
-  const src = playSourceWithoutSignatures(doc, songIdx, options);
-  const song = doc.songs[songIdx];
-  if (!src || !song) return src;
-  const byId = new Map<ElementId, NonNullable<Song["key"]>>();
-  for (const part of song.parts) {
-    let key = song.key ?? { fifths: 0 };
-    for (const m of part.measures) {
-      key = m.attrs?.key ?? key;
-      for (const el of m.elements) byId.set(el.id, key);
-    }
-  }
-  return { ...src, parts: src.parts.map(part => {
-    let key = song.key ?? { fifths: 0 };
-    return { ...part, measures: part.measures.map(m => {
-      if (!m) return m;
-      for (const e of m.entries) {
-        const id = (e as { id?: ElementId }).id;
-        if (id !== undefined && byId.has(id)) { key = byId.get(id)!; break; }
-      }
-      return { entries: m.entries, time: m.time, key, get duration() { return m.duration; } };
-    }) };
-  }) };
-}
-
-function playSourceWithoutSignatures(doc: ScoreDoc, songIdx = 0, options: PlaySongOptions = {}): PlaySource | null {
   const song = doc.songs[songIdx];
   if (!song) return null;
   if (isXmlShaped(song)) return playSourceOfDoc(song);
@@ -135,18 +110,18 @@ function partOfVoice(song: Song, voice: number): Part | undefined {
 
 /** 曲中转调：模型小节上的调号（第二小节起，口径同 `jianpuinput.ts` 与 `playdoc.ts`）按元素 id 交给 `buildMeasures`。
  *  全曲没有转调时不给（`buildMeasures` 照头部调号算）。文本谱后几组才出场的声部，头一小节上的调号也算（缺席时转了调，`fromfanqie.ts` 补在它上面）。 */
-function keyChangesOf(view: ReturnType<typeof docView>, part: Part | undefined): { fifthsOf?: (el: MusicElement) => number | undefined } {
+function keyChangesOf(view: ReturnType<typeof docView>, part: Part | undefined): { keyOf?: (el: MusicElement) => TimelineKey | undefined } {
   const changes = (m: Part["measures"][number], i: number): boolean => !!m.attrs?.key && (i > 0 || (m.print?.system ?? 0) > 0);
   if (!part || !part.measures.some(changes)) return {};
-  const byId = new Map<ElementId, number>();
-  let fifths: number | undefined;
+  const byId = new Map<ElementId, TimelineKey>();
+  let key: TimelineKey | undefined;
   part.measures.forEach((m, i) => {
-    if (changes(m, i)) fifths = m.attrs!.key!.fifths;
-    if (fifths === undefined) return;
-    for (const el of m.elements) if (el.kind === "chord") byId.set(el.id, fifths);
+    if (changes(m, i)) key = { fifths: keyFifths(m.attrs!.key!), minor: isMinorKey(m.attrs!.key!) };
+    if (key === undefined) return;
+    for (const el of m.elements) if (el.kind === "chord") byId.set(el.id, key);
   });
   return {
-    fifthsOf: (el) => {
+    keyOf: (el) => {
       const id = view.idOf.get(el);
       return id === undefined ? undefined : byId.get(id);
     },
@@ -188,7 +163,8 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
   const time = meter ? { beats: meter.numerator, beatType: meter.denominator } : { beats: 4, beatType: 4 };
   const key = new Key();
   // 调名缺省时取模型的 fifths：`.jpwabc` 来源只记 fifths、不记调名拼写（`.Title` 的调号）
-  const fifths = doc.songs[songIdx]!.key?.fifths;
+  const docKey = doc.songs[songIdx]!.key;
+  const fifths = docKey?.fifths;
   key.fifths = meta.mode === undefined && fifths !== undefined ? fifths : (fifthsOfSpelling(meta.mode ?? "C", meta.tonic) ?? MusicCommon.keyNameToFifth(meta.mode ?? "C"));
   const parts: MeasureOut[][] = [];
   const models: (Part | undefined)[] = [];
@@ -201,7 +177,7 @@ function songMeasures(doc: ScoreDoc, songIdx: number, options: PlaySongOptions, 
     if (lines.length === 0) continue;
     const first = parts.length === 0;
     const pitch = withPitch
-      ? { key: { basePitch: MusicCommon.getBasePitchOfKey(key), fifths: key.fifths, alter: {} }, time, ...keyChangesOf(view, partOfVoice(doc.songs[songIdx]!, v)), slurTies: !hasTieSyntax(doc) }
+      ? { key: { basePitch: MusicCommon.getBasePitchOfKey(key), fifths: key.fifths, alter: {} }, time, minor: !!docKey && isMinorKey(docKey), ...keyChangesOf(view, partOfVoice(doc.songs[songIdx]!, v)), slurTies: !hasTieSyntax(doc) }
       : undefined;
     const built = buildMeasures(lines, (ch, el) => {
       const id = view.idOf.get(el);

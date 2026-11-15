@@ -12,6 +12,7 @@ import { sectionMarkOf } from "../model/helpers";
 import { BarStyle, StartStopDiscontinue } from "../score/enums";
 import { MusicCommon, applyJpPitch, type JpKeyState } from "../score/jppitch";
 import type { PhraseChord, PhraseMeasure, PhrasePart } from "../score/phraseinput";
+import type { TimelineKey } from "../score/timeline";
 import { linesOfVoice, marksAt, nextSyllables, takesLyric, voiceNumbers } from "./ast";
 import type { LyricLine, Mark, NoteElement, ScoreLine } from "./ast";
 import { docView, type SlotRef } from "./slots";
@@ -55,8 +56,10 @@ export interface MeasureOut {
   sectionMark: string | null;
   /** 和弦、小节线、行末换行按原次序（`.jpwabc` 写出端要，同 `jianpuinput.ts::rowsPart` 往小节条目里放的次序） */
   seq: (ChordOut | "barline" | "break")[];
-  /** 拍号（小节里没有和弦时试听按它算小节长，同引擎输入的 `JMeasure.time`） */
+  /** 拍号（小节里没有和弦时试听按它算小节长、节拍器按它数拍、导出 MIDI 写拍号）：曲首的接着模型小节 `attrs.time` 的曲中转拍号 */
   time: { beats: number; beatType: number };
+  /** 调号（导出 MIDI 写调号）：只在给了 `pitch` 时有，随曲中转调 */
+  key?: TimelineKey;
   /** 末和弦的终点。没有和弦时抛错（同 `layout/input.ts::measureDuration`） */
   readonly duration: Fraction;
 }
@@ -156,8 +159,10 @@ export function buildMeasures(
   renumberVerses = true,
   pitch?: {
     key: JpKeyState; time: { beats: number; beatType: number };
-    /** 曲中转调：这个音所在小节的调号（fifths）。不给就全曲一个调（`pitch.key`） */
-    fifthsOf?: (el: NoteElement) => number | undefined;
+    /** 曲首是不是小调（`MeasureOut.key`） */
+    minor?: boolean;
+    /** 曲中转调：这个音所在小节的调号。不给就全曲一个调（`pitch.key`） */
+    keyOf?: (el: NoteElement) => TimelineKey | undefined;
     /** 括住相邻两个同音的弧当延音线（缺省是；ABC / Muse 原文的括号就是圆滑线，`xmlproject.ts::hasTieSyntax`） */
     slurTies?: boolean;
   },
@@ -173,12 +178,15 @@ export function buildMeasures(
   let pendingRepeatForward = false;
   let pendingEnding: Mark | null = null;
   const tupletNotes: ChordOut[] = [];
+  let curTime = pitch?.time ?? { beats: 4, beatType: 4 };
+  let curKey: TimelineKey | undefined = pitch && { fifths: pitch.key.fifths, minor: !!pitch.minor };
   const open = (): MeasureOut => {
     const m: MeasureOut = {
       entries: [], barline: null, repeatBackward: false, repeatForward: false, keyChange: false,
       endingLeft: false, endingNum: null, endingRight: null, sectionMark: null,
       seq: [],
-      time: pitch?.time ?? { beats: 4, beatType: 4 },
+      time: curTime,
+      key: curKey,
       get duration(): Fraction {
         const last = this.entries[this.entries.length - 1];
         if (!last?.duration) throw new Error("measure has no chord");
@@ -286,6 +294,9 @@ export function buildMeasures(
       if (dm && !sectionSeen.has(dm)) {
         sectionSeen.add(dm);
         mea.sectionMark ??= sectionMarkOf(dm);
+        // 曲中转拍号（口径同 `jianpuinput.ts::rowsPart` 按 `SlotRef.measure` 读模型小节）
+        const t = dm.attrs?.time;
+        if (t) mea.time = curTime = { beats: t.beats, beatType: t.beatType };
       }
 
       const number = el.sound === "rhythm" ? "0" : String(el.pitch);
@@ -304,11 +315,12 @@ export function buildMeasures(
         tuplet: false,
       };
       if (pitch) {
-        const fifths = pitch.fifthsOf?.(el);
-        if (fifths !== undefined && fifths !== pitch.key.fifths) {
-          pitch.key = { basePitch: MusicCommon.getBasePitchOfKey({ fifths }), fifths, alter: {} };
+        const k = pitch.keyOf?.(el);
+        if (k && k.fifths !== pitch.key.fifths) {
+          pitch.key = { basePitch: MusicCommon.getBasePitchOfKey({ fifths: k.fifths }), fifths: k.fifths, alter: {} };
           mea.keyChange = true;
         }
+        if (k && (k.fifths !== curKey?.fifths || k.minor !== curKey.minor)) mea.key = curKey = k;
         const nt = { number, jpOctave: el.octave, jpAlter: jpAlterOf(el), pitch: 0, step: " ", rest: false, chord: { rest: false } };
         applyJpPitch(pitch.key, nt);
         ch.notes[0]!.pitch = nt.pitch;

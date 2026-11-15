@@ -45,6 +45,7 @@ function metaText(type: number, text: string): number[] {
   return [0xff, type, ...varLen(bytes.length), ...bytes];
 }
 
+/** 指挥轨：速度，外加拍号（`FF 58`，分母不是 2 的幂的不写）与调号（`FF 59`）的变化点。 */
 function tempoTrack(bpm: number, signatures: Timeline["signatures"]): number[] {
   const mpqn = Math.round(60000000 / bpm);
   const ev: Ev = {
@@ -59,7 +60,7 @@ function tempoTrack(bpm: number, signatures: Timeline["signatures"]): number[] {
     if (Number.isInteger(denominator) && s.time.beats > 0 && s.time.beats <= 255)
       events.push({ tick, order: 1, data: [0xff, 0x58, 4, s.time.beats, denominator, 24, 8] });
     if (s.key && s.key.fifths >= -7 && s.key.fifths <= 7)
-      events.push({ tick, order: 2, data: [0xff, 0x59, 2, s.key.fifths & 0xff, s.key.mode === "minor" ? 1 : 0] });
+      events.push({ tick, order: 2, data: [0xff, 0x59, 2, s.key.fifths & 0xff, s.key.minor ? 1 : 0] });
   }
   return trackChunk(events);
 }

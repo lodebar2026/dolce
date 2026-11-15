@@ -9,7 +9,8 @@
 import { Fraction } from "../common/fraction";
 import { JumpSpec, PlayData, PlaySpecKind, RepeatSpecItem, TimePosition, playOrderFromSpec, playOrderOf, sectionPlayOrder, singPlayOrder, type PlayOrder, type SectionMark } from "../score/playorder";
 import { DEFAULT_VELOCITY, type PlaySource, type TimelineChord, type TimelineLyric, type TimelineMeasure, type TimelineNote, type TimelinePart } from "../score/timeline";
-import type { Accidental, Barline, Chord, Direction, ElementId, Measure, Note, Part, Song } from "./doc";
+import type { Accidental, Barline, Chord, Direction, ElementId, Key as DocKey, Measure, Note, Part, Song } from "./doc";
+import { isMinorKey, keyFifths, soundingFifths } from "./keyshift";
 import { midiPitch, topNote } from "./jianpu";
 import type { JpwChordIn, JpwLineBreakIn, JpwMeasureIn, JpwPitchIn, JpwScoreIn } from "./tojpw";
 import { BarStyle } from "../score/enums";
@@ -151,7 +152,7 @@ export function playSourceOfDoc(song: Song, options: PlaySourceOptions = {}): Pl
   const playData = playDataOfDoc(song, { lead, distinct: true });
   playData.tempo = tempoOfDoc(song);
   const slurs = slursOf(song);
-  return { parts: song.parts.map((p, i) => timelinePartOf(p, i === lead, slurs, lyricsOfPart(song, i))), playData, lead };
+  return { parts: song.parts.map((p, i) => timelinePartOf(p, i === lead, slurs, lyricsOfPart(song, i), song.key)), playData, lead };
 }
 
 /** 连音弧的起止和弦（`TimelineChord.slurStart` / `slurEnds`，判一字多音用；同 `phrasedoc.ts` 的统计）。 */
@@ -211,6 +212,7 @@ function timelinePartOf(
   part: Part, lead: boolean,
   slurs?: { starts: ReadonlySet<ElementId>; ends: ReadonlyMap<ElementId, number> },
   lyrics?: ReadonlyMap<ElementId, TimelineLyric[]>,
+  songKey?: DocKey,
 ): TimelinePart {
   // 时值按首小节 divisions 折算，与演唱顺序的落点（`playDataOfDoc`）同口径
   const div = part.measures[0]?.attrs?.divisions ?? 1;
@@ -218,11 +220,14 @@ function timelinePartOf(
   let velocity = DEFAULT_VELOCITY;
   /** 移调乐器（`<transpose>`）：记谱音高加这么多半音才是实际发声 */
   let shift = 0;
+  /** 记谱调号（小节 `attrs.key` 接着曲首的）；交出去的是换算成实际发声的 */
+  let written = songKey;
   const measures: TimelineMeasure[] = [];
   const mainVoice = mainVoiceOf(part);
   for (const m of part.measures) {
     if (m.attrs?.time) time = { beats: m.attrs.time.beats, beatType: m.attrs.time.beatType };
     if (m.attrs?.transpose) shift = m.attrs.transpose.chromatic + 12 * (m.attrs.transpose.octaveChange ?? 0);
+    if (m.attrs?.key) written = m.attrs.key;
     const dyn = (m.directions ?? [])
       .filter((d) => d.type === "dynamics" && d.text !== undefined && VELOCITY[d.text] !== undefined)
       .map((d) => ({ at: cursorAt(m, d).toFloat() + (d.offset ?? 0), v: VELOCITY[d.text!]! }))
@@ -254,6 +259,7 @@ function timelinePartOf(
     measures.push({
       entries,
       time: t,
+      key: written && { fifths: soundingFifths(keyFifths(written), shift), minor: isMinorKey(written) },
       get duration(): Fraction {
         if (entries.length === 0) throw new Error("measure has no chord");
         let end = entries[0]!.position.plus(entries[0]!.duration);
