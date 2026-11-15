@@ -95,7 +95,8 @@ export interface VisualHost {
   /** 建索引用的那份模型（与 `sync` 同一版） */
   syncDoc(): ScoreDoc | null;
   /** 改完原文马上重排（不等输入防抖） */
-  reloadNow(): void;
+  /** 马上按当前原文重排：索引在返回前已跟上原文；Promise 在谱面铺好、元素绑好后落定 */
+  reloadNow(): Promise<void>;
   /** 等在途的异步排版（五线谱 / 混排）落定、谱面元素绑好 */
   whenIdle(): Promise<void>;
   /** 正在试听：按键发声让路 */
@@ -845,7 +846,7 @@ export class VisualEditController {
           changes: targets.map((x) => ({ from: x.from, to: x.to, insert: escapeXml(value) })),
           userEvent: "input.visual",
         });
-        this.host.reloadNow();
+        void this.host.reloadNow();
       }
       const list = this.host.sync.ordered().filter(sameVerse);
       const next = nextId !== undefined ? list.find((x) => x.id === nextId) : undefined;
@@ -1200,7 +1201,7 @@ export class VisualEditController {
    *  页眉字段里结束改字，回到谱面选中这个字段。光标不在文字里时返回 false，代码区照常插换行。 */
   textEnter(page: boolean): boolean {
     if (!this.textEditing || !this.host.visualEnabled() || this.host.modelEditing()) return false;
-    if (!this.host.syncFresh()) this.host.reloadNow();
+    if (!this.host.syncFresh()) void this.host.reloadNow();
     const sel = this.host.view.state.selection.main;
     if (!sel.empty) return false;
     const head = sel.head;
@@ -1475,7 +1476,7 @@ export class VisualEditController {
   /** 键盘、面板、菜单共用的入口：模式不对不做；索引落后于原文（刚撤销、刚在代码区打过字）先重排，免得按旧偏移改错地方。 */
   private runChecked(a: VisualAction, key = ""): boolean {
     if (a.modes && !a.modes.includes(this.mode)) return false;
-    if (!this.host.syncFresh()) this.host.reloadNow();
+    if (!this.host.syncFresh()) void this.host.reloadNow();
     return this.run(a, key);
   }
 
@@ -1569,7 +1570,7 @@ export class VisualEditController {
     if (!this.host.visualEnabled()) return;
     ev.preventDefault();
     this.host.scorePane.focus({ preventScroll: true });
-    if (!this.host.syncFresh()) this.host.reloadNow();
+    if (!this.host.syncFresh()) void this.host.reloadNow();
     const entry = this.host.entryAtTarget(hitThroughOverlay(ev));
     const sel = this.host.view.state.selection.main;
     let target: MenuTarget = "other";
@@ -1854,7 +1855,7 @@ export class VisualEditController {
 
   private onClipboardEvent(ev: ClipboardEvent, kind: "copy" | "cut" | "paste"): void {
     if (!this.host.visualEnabled() || inlineEditing()) return;
-    if (!this.host.syncFresh()) this.host.reloadNow();
+    if (!this.host.syncFresh()) void this.host.reloadNow();
     ev.preventDefault();
     if (kind === "paste") {
       const text = ev.clipboardData?.getData("text/plain") ?? "";
@@ -2018,7 +2019,7 @@ export class VisualEditController {
   }
 
   private writeLyric(idx: number, verse: number, text: string, hyphen: boolean, extend: boolean): void {
-    if (!this.host.syncFresh()) this.host.reloadNow();
+    if (!this.host.syncFresh()) void this.host.reloadNow();
     const note = this.lyricNotes()[idx];
     if (!note) return;
     if (this.host.modelEditing()) {
@@ -2078,7 +2079,7 @@ export class VisualEditController {
     }
     const value = d.value.trim();
     if (value !== old) {
-      if (!this.host.syncFresh()) this.host.reloadNow();
+      if (!this.host.syncFresh()) void this.host.reloadNow();
       const note = this.chordNotes()[idx];
       if (note && this.host.modelEditing()) harmonyModel(this.modelCtx, note.id, value);
       else if (note) {
@@ -2132,7 +2133,7 @@ export class VisualEditController {
         return;
       }
       if (value !== cur) {
-        if (!this.host.syncFresh()) this.host.reloadNow();
+        if (!this.host.syncFresh()) void this.host.reloadNow();
         const n = this.chordNotes()[idx];
         if (n && this.host.modelEditing()) directionModel(this.modelCtx, n.id, type, value);
         else if (n) {
@@ -2164,7 +2165,7 @@ export class VisualEditController {
     const hasSel = !sel.empty && this.selectedEntries().some((e) => e.kind === "note");
     showTransposeDialog(fifths, hasSel, (whole, n) => {
       this.host.scorePane.focus({ preventScroll: true });
-      if (!this.host.syncFresh()) this.host.reloadNow();
+      if (!this.host.syncFresh()) void this.host.reloadNow();
       if (this.host.modelEditing()) {
         transposeModel(this.modelCtx, whole, n);
         return;
@@ -2298,7 +2299,7 @@ export class VisualEditController {
 
   /** 撤销/重做之后马上重排（谱面与索引跟上）。 */
   private afterHistory(done: boolean): boolean {
-    if (done) this.host.reloadNow();
+    if (done) void this.host.reloadNow();
     return done;
   }
 
@@ -2343,7 +2344,7 @@ export class VisualEditController {
       userEvent: "input.visual",
       scrollIntoView: true,
     });
-    this.host.reloadNow();
+    void this.host.reloadNow();
     if (sound) this.sound();
     return true;
   }

@@ -53,8 +53,8 @@ export interface FormatHost {
   readonly fanqieDialectName: string | null;
   /** 当前谱面排版器认得的标题（`.jpwabc` 那路由引擎输入给）。 */
   readonly painterTitle: string;
-  /** `.jpwabc` 重排/重渲染。 */
-  reloadJpwabc(text: string): boolean;
+  /** `.jpwabc` 重排/重渲染（读入与索引同步，排版异步，见 `App.reload`）。 */
+  reloadJpwabc(text: string): Promise<boolean>;
   /** 五线谱/混排那份模型跟上这份 MusicXML 原文（原文没变就不重读）。 */
   syncMixedXml(text: string): void;
 }
@@ -134,7 +134,7 @@ type LayoutPart =
     toScoreDoc?: undefined;
     reloadSpec?: undefined;
     /** 解析 → 排版 → 渲染。失败返回 false（文本保留不动）。 */
-    reload(host: FormatHost, text: string): boolean;
+    reload(host: FormatHost, text: string): Promise<boolean>;
   };
 
 /** `caps.phraseRelayout` 与 `relayoutText` 的搭配：声明了能重排就必须给写回的办法。 */

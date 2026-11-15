@@ -33,7 +33,7 @@ export interface ModelActionCtx {
   writeModel(doc: ScoreDoc): string;
   /** 索引用的那份模型（重排后按它认回选区） */
   syncDoc(): ScoreDoc | null;
-  reloadNow(): void;
+  reloadNow(): Promise<void>;
   setStatus(text: string): void;
   select(from: number, to: number): void;
   /** 按原文顺序、方向键能停的条目 */
@@ -97,7 +97,7 @@ function commit(ctx: ModelActionCtx, fn: (doc: ScoreDoc) => ModelEdit & { moved?
   const old = ctx.view.state.doc.toString();
   if (xml !== old) {
     ctx.view.dispatch({ changes: [diffRegion(old, xml)], userEvent: "input.visual", scrollIntoView: false });
-    ctx.reloadNow();
+    void ctx.reloadNow();
   }
   reselect(ctx, target);
   if (sound) {
@@ -301,7 +301,7 @@ function removeText(ctx: ModelActionCtx, e: SyncEntry): boolean {
     changes = ctx.sync.ordered().filter((x) => x.kind === "header" && doc.sliceString(x.from, x.to) === raw).map((x) => ({ from: x.from, to: x.to, insert: "" }));
   }
   ctx.view.dispatch({ changes, userEvent: "input.visual" });
-  ctx.reloadNow();
+  void ctx.reloadNow();
   const at = changes[0]!.from;
   ctx.select(at, at);
   return true;

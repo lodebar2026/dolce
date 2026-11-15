@@ -124,7 +124,7 @@ export async function exportMidi(app: App): Promise<void> {
 export async function exportPptx(app: App): Promise<void> {
   // 一律按**投影档**出片（两种格式同一条投影档排版）：屏幕在简谱档也导得出 PPT 观感，
   // 切到投影档预览则是所见即所得。字号/纸张取投影档那一套设置。
-  const bytes = await buildPptx(pptxPainter(app).pptxSource, app.style.colorsOf("expanded").bg);
+  const bytes = await buildPptx((await pptxPainter(app)).pptxSource, app.style.colorsOf("expanded").bg);
   await saveBytes(
     bytes,
     `${baseName(app)}.pptx`,
@@ -217,13 +217,13 @@ const isExpanded = (app: App): boolean => !isStaffSession(app) && app.layoutMode
 const isLongImage = (app: App): boolean => (isStaffSession(app) ? app.staffPage.heightPt === null : app.jpLongImage);
 
 /** 简谱档排版器。屏幕上已是简谱档就直接用；识别模式（谱面区是核对视图、不随改动重排）与别的档另排一份。 */
-function originalPainter(app: App): ScorePainter {
+async function originalPainter(app: App): Promise<ScorePainter> {
   const cur = app.painter;
   if (app.mode === "jp" && cur.renderer === "jianpu" && cur.jianpuView === "original") return cur;
   const req = app.originalRequest();
   if (!req) throw new Error(t("export.noLines"));
   const p = new ScorePainter(cur.resources);
-  p.loadSync(req);
+  await p.load(req);
   return p;
 }
 
@@ -239,7 +239,7 @@ async function staffPainter(app: App): Promise<ScorePainter> {
 
 /** 按排版效果出图的那个排版器与文件名（不带扩展名）。 */
 async function layoutPainter(app: App): Promise<{ painter: ScorePainter; name: string }> {
-  const painter = isStaffSession(app) ? await staffPainter(app) : originalPainter(app);
+  const painter = isStaffSession(app) ? await staffPainter(app) : await originalPainter(app);
   if (painter.pageCount === 0) throw new Error(t("export.noSvg"));
   return { painter, name: painter.title.split("\n")[0] || baseName(app) };
 }

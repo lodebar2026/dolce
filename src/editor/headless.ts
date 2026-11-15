@@ -234,7 +234,7 @@ export class HeadlessSession implements StyleStateHost {
     this.layoutMode = view;
     const req = this.jianpuRequest(view);
     if (!req) throw new Error("没有可排的曲行");
-    this.painter.loadSync(req);
+    await this.painter.load(req);
   }
 
   get pageCount(): number {

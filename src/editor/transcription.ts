@@ -25,6 +25,7 @@ import { type EditCtx, noteCtx } from "./visual/ops";
 import { keyFields } from "./visual/transpose";
 import { labeled, showFormDialog } from "./dialogs";
 import { t } from "../i18n";
+import { diffRegion } from "../common/lines";
 
 export interface TranscriptionPreset extends TranscriptionOptions {
   id: string;
@@ -93,7 +94,7 @@ export function runTranscription(host: VisualHost, settings: TranscriptionSettin
     },
     (options) => {
       host.scorePane.focus({ preventScroll: true });
-      if (!host.syncFresh()) host.reloadNow();
+      if (!host.syncFresh()) void host.reloadNow();
       const source = host.modelEditing() ? host.freshModel() : host.syncDoc();
       if (!source) {
         host.setStatus(t("tx.unreadable"));
@@ -113,8 +114,8 @@ export function runTranscription(host: VisualHost, settings: TranscriptionSettin
           ? host.writeModel(doc)
           : transcribedText(host.docFormat, editCtx(), before, source, doc, options.fifths);
         if (after !== before) {
-          host.view.dispatch({ changes: [sourceDiff(before, after)], userEvent: "input.visual", scrollIntoView: false });
-          host.reloadNow();
+          host.view.dispatch({ changes: [diffRegion(before, after)], userEvent: "input.visual", scrollIntoView: false });
+          void host.reloadNow();
         }
         host.setStatus(t("tx.done", { key: keySpelling({ fifths: options.fifths }) }));
       } catch (error) {
@@ -346,15 +347,6 @@ export function emitTranscribedSource(format: DocFormatId, oldText: string, oldD
   if (!family) throw new Error(`unsupported source format: ${format}`);
   const out = family.emit(doc);
   return spliceComments(oldText, oldDoc, out, family.parse(out));
-}
-
-/** 两份原文只替换中间不同的一段；CodeMirror 仍只收到一个事务，因此撤销一次即可恢复。 */
-export function sourceDiff(before: string, after: string): { from: number; to: number; insert: string } {
-  let prefix = 0;
-  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
-  let suffix = 0;
-  while (suffix < before.length - prefix && suffix < after.length - prefix && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix++;
-  return { from: prefix, to: before.length - suffix, insert: after.slice(prefix, after.length - suffix) };
 }
 
 export interface TranscriptionDialogState {

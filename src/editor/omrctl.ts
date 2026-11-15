@@ -82,7 +82,7 @@ export interface OmrHost {
   /** 当前文本解析出的模型（试听播的就是它；播放高亮按它的元素 id 找识别框）。 */
   currentScoreDoc(): ScoreDoc | null;
   /** 重新解析并排版（退出识别模式时回到排版稿）。 */
-  reload(text: string): void;
+  reload(text: string): Promise<boolean>;
   /**
    * 五线谱识别产物落地：与打开 `.musicxml` 同一个模式（无代码区），默认进**混排视图**。
    * 不走 `importOmrDoc`：五线谱的和弦、多声部、slur 在 `.jpwabc` 与旧简谱引擎里装不下。
@@ -656,7 +656,7 @@ export class OmrController implements FormatSource {
     if (ok) return;
     this.side = pend.side;
     this.syncSide(null);
-    this.host.reload(this.host.getText());
+    void this.host.reload(this.host.getText());
     const score = this.shown?.score ?? this.score;
     if (score) this.syncDoubtEl(doubtItems(score, this.shown?.lyricFixes ?? []).length);
   }
@@ -1198,8 +1198,8 @@ export class OmrController implements FormatSource {
       this.host.setRecognizeMode(false);
       this.setLayout(false);
       if (this.btnEl) this.btnEl.textContent = t("omr.compare");
-      this.host.reload(this.host.getText());
-      this.syncSide(null); // 回到排版稿：并排原图（开着的话）铺回来
+      await this.host.reload(this.host.getText());
+      this.syncSide(null); // 回到排版稿：并排原图（开着的话）铺回来（等谱面铺好再铺）
       this.syncDoubtEl(0);
     } else {
       this.followSelection(null); // 核对视图本身就是原图，小窗收起

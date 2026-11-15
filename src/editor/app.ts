@@ -20,6 +20,7 @@ import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";
 import { isProjectFile } from "../common/filetypes";
+import { diffRegion } from "../common/lines";
 import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost, type ScoreDocAdapter } from "./formats";
 import type { SyncIndex, SyncEntry } from "./sync";
@@ -119,8 +120,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   mixedSourceDoc(): ScoreDoc | null {
     return this.docFormat === "jpwabc" ? this.jpwDoc : this.currentScoreDoc();
   }
-  /** 在途的五线谱 / 混排排版（异步），`whenIdle` 等它。 */
-  private _pendingStaff: Promise<void> | null = null;
+  /** 在途的排版（简谱、五线谱 / 混排都是异步排、排完铺页），`whenIdle` 等它。只记最近一份，旧的已被排版器的版本号作废。 */
+  private _pendingLayout: Promise<unknown> | null = null;
   /** 排版模式切换（投影 / 简谱 / 五线谱 / 混排）的四个按钮，见 `ViewMode`。 */
   private _viewBtns = new Map<ViewMode, HTMLButtonElement>();
   private _viewSwitchEl: HTMLElement | null = null;
@@ -149,7 +150,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 样式变了：简谱重排，五线谱/混排重铺（`.musicxml` 不经 reload）。 */
   rerender(): void {
     this._applyPageBg();
-    this.reload(this.getText());
+    void this.reload(this.getText());
     if (this.mode === "mixed" && this.docFormat === "musicxml") void this._renderMixedPages();
   }
 
@@ -201,25 +202,27 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 简谱版面切换（原版 / PPT）。投影档 = 2026-08 排版重构之前的笔画观感，
    *  也是「导出 PPTX」用的那一档，见 style/jianpu.ts 的 `pptx` 预设。 */
-  setJpProfile(profile: JpProfileName): void {
-    if (this.jpProfile === profile) return;
+  setJpProfile(profile: JpProfileName): Promise<void> {
+    if (this.jpProfile === profile) return this.whenIdle();
     this.jpProfile = profile;
     // 换档连字号与配色也换了一套（两档各记各的，排版时按档取样式）；
     // 纸底那层是 CSS 变量、不经排版器，得单独刷一次
     this._applyPageBg();
     this._syncViewModeButtons();
     this.saveSettings();
-    if (this.adapter.profileKnob === "jp") this.reload(this.getText());
+    if (this.adapter.profileKnob === "jp") void this.reload(this.getText());
+    return this.whenIdle();
   }
 
-  /** 面板那几项设置落进**样式层的用户层**（`StyleState.apply`）并重排。签名沿用（回归脚本也走它）。 */
-  applyRenderSettings(opts: RenderSettings): void {
+  /** 面板那几项设置落进**样式层的用户层**（`StyleState.apply`）并重排；排好落定。签名沿用（回归脚本也走它）。 */
+  applyRenderSettings(opts: RenderSettings): Promise<void> {
     this.style.apply(opts);
     this._applyPageBg();
     this.saveSettings();
-    this.reload(this.getText());
+    void this.reload(this.getText());
     // `.musicxml` 的五线谱/混排不经 reload 重排；谱里没写纸的要跟设置里的纸走
     if (this.mode === "mixed" && this.docFormat === "musicxml") void this._renderMixedPages();
+    return this.whenIdle();
   }
 
   /** 前景色与纸色（当前档）。设置面板走 `style`；这两个留着给回归脚本（`style-snapshot.mjs` 读 `__app.color`）。 */
@@ -235,7 +238,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.style.resetMode(this.layoutMode);
     this._applyPageBg();
     this.saveSettings();
-    this.reload(this.getText());
+    void this.reload(this.getText());
     // `.musicxml` 的五线谱/混排不经 reload 重排；谱里没写纸的要跟设置里的纸走
     if (this.mode === "mixed" && this.docFormat === "musicxml") void this._renderMixedPages();
   }
@@ -354,7 +357,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       }),
     });
     this.files._cleanText = initialText; // 启动时的示例不算没存的内容
-    this.reload(initialText);
+    void this.reload(initialText);
   }
 
   getText(): string {
@@ -372,20 +375,23 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     // dispatch triggers updateListener -> scheduleReload, but reload now for snappiness
     // （防抖那一遍撤掉：同一份文本不必 200ms 后再排一次）
     clearTimeout(this.debounceTimer);
-    this.reload(editorText);
+    void this.reload(editorText);
   }
 
   private scheduleReload(): void {
     clearTimeout(this.debounceTimer);
-    this.debounceTimer = setTimeout(() => this.reload(this.getText()), 200);
+    this.debounceTimer = setTimeout(() => void this.reload(this.getText()), 200);
   }
 
-  /** parse -> import -> layout -> render. Returns false on parse failure (text kept). */
-  reload(text: string): boolean {
-    const ok = this._reload(text);
+  /** 解析 → 建索引 → 排版 → 铺页。**解析、源码同步索引与诊断在返回前同步做完**（可视化编辑按索引改原文，不能落后一拍）；
+   *  排版异步，Promise 在铺好页、绑好元素后落定。读不出、排不了、被更新的重排取代时为 false（原文照留）。 */
+  reload(text: string): Promise<boolean> {
+    const done = this._reload(text);
     this.playback.sourceChanged(); // 识别核对视图不重排、不停试听：旧谱的会话在这里作废
-    if (ok) this._reportPlayHint();
-    return ok;
+    return done.then((ok) => {
+      if (ok) this._reportPlayHint();
+      return ok;
+    });
   }
 
   /** 状态栏说一声：谱面有、试听和导出没有的小节，或按漏写 `:|` 处理的房。解析告警优先；识别核对视图不报解析告警，只报这个。 */
@@ -414,7 +420,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return src.playData.impliedRepeat >= 0 ? t("status.playImpliedRepeat", { n: src.playData.impliedRepeat + 1 }) : null;
   }
 
-  private _reload(text: string): boolean {
+  private async _reload(text: string): Promise<boolean> {
     this.formats.refreshNote(); // 改过没有：下拉旁「回到原稿」的提示跟着变
     // 识别模式：谱面区是核对视图，不重排成排版稿；但索引跟着原文重建、叠加层按当前模型重画（改过的标出来）
     if (this.mode === "recognize") {
@@ -429,7 +435,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       if (this.docFormat === "musicxml") {
         if (this.mixed._mixedXmlText !== text && !this.mixed._setMixedXml(text)) return false;
         if (this.mixedDoc) this.syncView.buildIndex(this.mixedDoc);
-        void this._renderMixedPages();
+        await this._renderMixedPages();
         return true;
       }
       if (this.adapter.caps.layout === "jpwabc") this._refreshJpwDoc(text); // 导出 MIDI 读它
@@ -437,7 +443,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       // 索引跟原文同步建（可视化编辑按它改原文），谱面元素等五线谱排完再绑（`_layoutStaff`）
       const src = this.adapter.caps.layout === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
       if (src && this.adapter.caps.textEditor) this.syncView.buildIndex(src);
-      void this._renderMixedPages();
+      await this._renderMixedPages();
       return true;
     }
     const a = this.adapter;
@@ -495,45 +501,53 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.style.staffPage;
   }
 
-  reloadJpwabc(text: string): boolean {
+  /** `.jpwabc` 的重排：读入与索引同步做，排版异步（同 `_reloadScoreDoc`）。 */
+  reloadJpwabc(text: string): Promise<boolean> {
     let f: JpwFile | null;
     try {
       f = JpwFile.fromString(text);
     } catch {
-      return false;
+      return Promise.resolve(false);
     }
-    if (!f) return false;
+    if (!f) return Promise.resolve(false);
     let doc: ScoreDoc;
     try {
       doc = jpwToScoreDoc(f);
     } catch (e) {
       console.error("import failed", e);
       this._jpwDoc = null;
-      return false;
+      return Promise.resolve(false);
     }
     this._jpwDoc = doc;
-    if (!doc.songs[0]?.parts[0]) return false;
+    if (!doc.songs[0]?.parts[0]) return Promise.resolve(false);
     this._syncPhraseBase(text);
 
     const breakDesc = f.getSection(LayoutSection)?.desc ?? null;
     this._breakDesc = breakDesc; // 导出 PPTX 时另排一遍要用同一份分页描述
-    try {
-      this.painter.loadSync(jianpuPaintRequest({ format: "jpwabc", doc, breakDesc }, this.layoutMode, this.style.styleOf(this.layoutMode))!);
-    } catch (e) {
-      console.error("layout failed", e);
-      return false;
-    }
-    this.renderPages();
-    this.syncView.build(doc);
+    this.syncView.buildIndex(doc);
     this.playback.refreshSpeedUi(); // 谱面 ♩= 随文本走，速度提示要跟着换（读 `_jpwDoc`）
-    return true;
+    const req = jianpuPaintRequest({ format: "jpwabc", doc, breakDesc }, this.layoutMode, this.style.styleOf(this.layoutMode))!;
+    return this._layoutJianpu(req, (e) => console.error("layout failed", e));
   }
 
-
+  /** 简谱两档排版并铺页、绑元素（索引已由调用方按这份文档建好）。被更新的请求取代或排版失败时为 false，失败交给 `onError`。 */
+  private _layoutJianpu(req: SyncPaintRequest, onError: (e: unknown) => void): Promise<boolean> {
+    return this._trackLayout((async () => {
+      try {
+        if ((await this.painter.load(req)) === "superseded") return false;
+      } catch (e) {
+        onError(e);
+        return false;
+      }
+      this.renderPages();
+      this.syncView.bindEls();
+      return true;
+    })());
+  }
 
   /** `scoredoc` 那一路（文本谱、123、ABC、jcx、jianpu-ly、MusicXML）的重排：解析 → 闸门 → 排版 → 报诊断。
    *  各格式的差异在适配器的 `reloadSpec`（`formats.ts`），排版都交给同一个旧简谱引擎。 */
-  private _reloadScoreDoc(adapter: ScoreDocAdapter, text: string): boolean {
+  private async _reloadScoreDoc(adapter: ScoreDocAdapter, text: string): Promise<boolean> {
     const spec = adapter.reloadSpec;
     const what = spec.what();
     spec.before?.(this, text);
@@ -558,10 +572,18 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     // 只有文本谱的解析带方言（代码区标签要它），别的格式归 null
     this._fanqieDialect = (doc.fanqieDialect ?? (adapter.id === "fanqie" ? "tomato" : null)) as Dialect | null;
     this._syncFormatLabel();
-    if (!this._layoutScoreDoc(doc, what)) return false;
-    // 解析告警不拦排版，但要让用户看得见（谱面往往仍然是对的）
+    const req = jianpuPaintRequest(this._jianpuSource(doc)!, this.layoutMode, this.style.styleOf(this.layoutMode));
+    if (!req) {
+      this.setStatus(t("status.noLines", { what }));
+      return false;
+    }
+    this.syncView.buildIndex(doc);
+    // 解析告警不拦排版，但要让用户看得见（谱面往往仍然是对的）；排版失败的话由失败提示盖过
     this._reportDiagnostics(diagLabel, doc.diagnostics);
-    return true;
+    return this._layoutJianpu(req, (e) => {
+      console.error(`${what}排版失败`, e);
+      this.setStatus(t("status.layoutFailed", { what, error: (e instanceof Error ? e.message : String(e)) }));
+    });
   }
 
   /** 简谱两档排的那份源（`.jpwabc` 是排版器那份模型）。没有文档时返回 null。 */
@@ -585,25 +607,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 简谱档的纸是不是长图（导出给 PNG 还是 PDF 按它分）。 */
   get jpLongImage(): boolean {
     return resolvePaper(this.style.styleOf("original").page) === null;
-  }
-
-  /** 经 `ScoreDoc` 排版并铺页（文本谱、123、ABC、jcx、jianpu-ly、MusicXML 共用，同一个旧简谱引擎）。 */
-  private _layoutScoreDoc(doc: ScoreDoc, what: string): boolean {
-    try {
-      const req = jianpuPaintRequest(this._jianpuSource(doc)!, this.layoutMode, this.style.styleOf(this.layoutMode));
-      if (!req) {
-        this.setStatus(t("status.noLines", { what }));
-        return false;
-      }
-      this.painter.loadSync(req);
-    } catch (e) {
-      console.error(`${what}排版失败`, e);
-      this.setStatus(t("status.layoutFailed", { what, error: (e instanceof Error ? e.message : String(e)) }));
-      return false;
-    }
-    this.renderPages();
-    this.syncView.build(doc);
-    return true;
   }
 
   // ---- VisualHost（可视化编辑向 App 要的能力，见 `visual/controller.ts`）----
@@ -682,9 +685,10 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.syncView.fresh();
   }
 
-  reloadNow(): void {
+  /** 马上按当前原文重排（撤掉防抖）。索引在返回前已跟上；Promise 在谱面铺好后落定。 */
+  async reloadNow(): Promise<void> {
     clearTimeout(this.debounceTimer);
-    this.reload(this.getText());
+    await this.reload(this.getText());
   }
 
   entryAtTarget(target: EventTarget | null): SyncEntry | null {
@@ -779,20 +783,21 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   /** 文本谱版面切换（原版 / PPT）。 */
-  setOriginalProfile(profile: "print" | "slide"): void {
-    if (this.originalProfile === profile) return;
+  setOriginalProfile(profile: "print" | "slide"): Promise<void> {
+    if (this.originalProfile === profile) return this.whenIdle();
     this.originalProfile = profile;
     this._applyPageBg(); // 同 setJpProfile：配色两档各记各的，纸底那层不经排版器
     this._syncViewModeButtons();
     this.saveSettings();
-    if (this.adapter.profileKnob === "original") this.reload(this.getText());
+    if (this.adapter.profileKnob === "original") void this.reload(this.getText());
+    return this.whenIdle();
   }
 
   /** 当前档下切「投影」/「简谱」该做什么——按文档格式分派：文本谱换整套 metrics
    *  （print/slide），简谱只换笔画常量（normal/pptx）。 */
-  setProfile(slide: boolean): void {
-    if (this.adapter.profileKnob === "original") this.setOriginalProfile(slide ? "slide" : "print");
-    else this.setJpProfile(slide ? "pptx" : "normal");
+  setProfile(slide: boolean): Promise<void> {
+    if (this.adapter.profileKnob === "original") return this.setOriginalProfile(slide ? "slide" : "print");
+    return this.setJpProfile(slide ? "pptx" : "normal");
   }
 
   /** 当前是哪一种排版输出（原样文档布局那几种格式看 originalProfile，简谱看 jpProfile——那两个只是引擎内部的尺寸档名）。 */
@@ -1160,12 +1165,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   replaceText(next: string, userEvent = "input"): boolean {
     const text = this.getText();
     if (next === text) return false;
-    let p = 0;
-    while (p < text.length && p < next.length && text[p] === next[p]) p++;
-    let q = 0;
-    while (q < text.length - p && q < next.length - p && text[text.length - 1 - q] === next[next.length - 1 - q]) q++;
-    this.view.dispatch({ changes: { from: p, to: text.length - q, insert: next.slice(p, next.length - q) }, userEvent });
-    this.reloadNow();
+    this.view.dispatch({ changes: diffRegion(text, next), userEvent });
+    void this.reloadNow();
     return true;
   }
 
@@ -1186,7 +1187,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.lyricPart = j >= 0 ? j : null;
     }
     this.playback.remapParts(map);
-    this.reloadNow();
+    void this.reloadNow();
     if (this.mode === "mixed") void this._renderMixedPages();
   }
 
@@ -1199,14 +1200,14 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   setLyricPart(i: number | null): void {
     if (this.lyricPart === i) return;
     this.lyricPart = i;
-    this.reloadNow();
+    void this.reloadNow();
   }
 
   /** 改「简谱旋律取自」：混排与 MusicXML 的简谱档跟着重排。 */
   setMelodyPart(i: number): void {
     if (this.melodyPart === i) return;
     this.melodyPart = i;
-    this.reloadNow();
+    void this.reloadNow();
     if (this.mode === "mixed") void this._renderMixedPages();
   }
 
@@ -1224,12 +1225,10 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   // ---------------- file I/O ----------------
   /** 按扩展名落地：.abc / .123 / .jcx / 文本谱 / .musicxml（无代码区）各进原生格式；其余按 UTF-16 .jpwabc 读。 */
-  importBytes(bytes: Uint8Array, name: string): void {
+  /** 打开一个文件的字节；读入后发起重排，Promise 在排好铺好后落定（识别项目在还原完后落定）。 */
+  importBytes(bytes: Uint8Array, name: string): Promise<void> {
     // 识别项目：还原整个识别会话（原图、识别结果、在改的原文），不重跑识别
-    if (isProjectFile(name)) {
-      void this.openProject(bytes, name);
-      return;
-    }
+    if (isProjectFile(name)) return this.openProject(bytes, name).then(() => this.whenIdle());
     // 任何新导入都使上一次的识别叠加产物失效（识别结果由 OmrController 在本调用之后重设）。
     this.omr.clear();
     this._documentLoaded();
@@ -1239,6 +1238,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     // 原文是真身：代码区标题栏的格式下拉可以换成别的格式看、切回来逐字还原（`DocFormatSource`）
     const origin = this._originFormat();
     if (origin) this._useDocSource(origin);
+    return this.whenIdle();
   }
 
   /** 用户**亲手打开** MusicXML 之后调（打开对话框、拖入；重开上次文件与回归脚本不走这里）：按设置转成默认编辑格式
@@ -1474,7 +1474,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this.style.carryHeaderFonts(headerFonts);
     if (!page && !staffMm && !lyricPt && !Object.keys(headerFonts).length) return;
     this.saveSettings();
-    this.reload(this.getText());
+    void this.reload(this.getText());
   }
 
   /** 每次重排/重渲染后同步乐句重排的基准文本与按钮可用性。
@@ -1731,9 +1731,10 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       await this.showStaffPreview();
     } else {
       // 反过来：先换版面档（此时 mode 还是 mixed，reload 直接返回、不白排一遍），再回简谱
-      this.setProfile(mode === "expanded");
+      void this.setProfile(mode === "expanded");
       await this.showJpPreview();
     }
+    await this.whenIdle();
     this._syncViewModeButtons();
   }
 
@@ -1848,7 +1849,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this.mode === "jp") return;
     this.stopPlayback();
     this._setMode("jp");
-    this.reload(this.getText());
+    await this.reload(this.getText());
   }
 
   async showStaffPreview(): Promise<void> {
@@ -1925,11 +1926,15 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   }
 
   private _renderMixedPages(): Promise<void> {
-    const job = this._layoutStaff();
-    this._pendingStaff = job;
+    return this._trackLayout(this._layoutStaff());
+  }
+
+  /** 记下在途的排版（`whenIdle` 等它），原样返回。 */
+  private _trackLayout<T>(job: Promise<T>): Promise<T> {
+    this._pendingLayout = job;
     void job.finally(() => {
-      if (this._pendingStaff === job) this._pendingStaff = null;
-    });
+      if (this._pendingLayout === job) this._pendingLayout = null;
+    }).catch(() => undefined);
     return job;
   }
 
@@ -1979,9 +1984,9 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     else this.syncView.cursorToScore();
   }
 
-  /** 等在途的异步排版（五线谱 / 混排）落定。简谱这一路是同步的，调用返回时已铺好。无头校验脚本用。 */
+  /** 等在途的排版落定、谱面铺好、元素绑好（索引在 `reload` 返回前就已跟上原文）。无头校验脚本与要读谱面元素的动作用。 */
   async whenIdle(): Promise<void> {
-    while (this._pendingStaff) await this._pendingStaff.catch(() => undefined);
+    while (this._pendingLayout) await this._pendingLayout.catch(() => undefined);
   }
 
   // ---------------- 文件会话（`filesession.ts`）：打开 / 保存 / 草稿 / 未保存保护，这里只留转发 ----------------
