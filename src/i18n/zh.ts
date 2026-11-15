@@ -1,6 +1,22 @@
 // 界面文案（中文，同时是键的权威清单）。新增文字两边同加：en.ts 漏键 tsc 报错。
 // 占位写 {name}，由 t(key, { name }) 替换。
 export const zh = {
+  "midi.invalid": "MIDI 无效，或不是标准 Type 0/1 文件（上限 10 MiB）。",
+  "midi.limit": "没有可识别的旋律音符，或曲目过大（最多 20000 音符、32 轨、2000 小节）。",
+  "midi.quantized": "已按所选网格量化，音符力度按谱面重新生成；原 MIDI 不变。",
+  "midi.tempoWarning": "曲中变速暂按首个速度处理。",
+  "midi.drumsWarning": "已略过打击乐通道。",
+  "midi.controlWarning": "踏板、控制器和弯音未转为谱面。",
+  "midi.danglingWarning": "缺少结束事件的音符已略过。",
+  "midi.import": "导入 MIDI",
+  "midi.help": "将 MIDI 转为可修改的数字简谱。自动选项优先读取文件，缺省为 C 调、4/4；可手动纠正。",
+  "midi.grid": "节奏网格",
+  "midi.key": "调号",
+  "midi.meter": "拍号",
+  "midi.autoKey": "自动（缺省 C 调）",
+  "midi.autoMeter": "自动（缺省 4/4）",
+  "midi.triplet": "八分三连音",
+  "midi.cancel": "取消",
   // 应用与页头
   "app.windowTitle": "悦谱",
   "header.home": "返回开始",

@@ -51,6 +51,7 @@
     "codemirror": "^6.0.2",
     "fflate": "^0.8.3",
     "jspdf": "^4.2.1",
+    "midi-file": "^1.2.4",
     "onnxruntime-web": "^1.30.0",
     "opencc-js": "^1.4.2",
     "opentype.js": "^2.0.0",

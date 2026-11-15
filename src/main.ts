@@ -1,3 +1,4 @@
+import { installMidiImport } from "./editor/midi-import";
 import "./styles.css";
 import { MetaData } from "./smufl/smufl";
 import { setMeasureBackend } from "./common/measure";
@@ -393,6 +394,7 @@ async function boot() {
   if (await app.tryRestoreLastFile()) revealWorkspace();
   // 草稿：问要不要恢复
   if (await app.offerDraftRestore(draft)) revealWorkspace();
+  installMidiImport(app, revealWorkspace);
 
   // 静默检查新版本（仅桌面版，自身还会判开关与 24h 节流）。延后是为了不和
   // 启动页、OMR 模型加载抢资源；查不到就什么都不做。
