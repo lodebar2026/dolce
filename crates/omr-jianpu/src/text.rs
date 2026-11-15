@@ -53,32 +53,51 @@ impl Claims {
         Claims { w, mask }
     }
     /// 竖着连续不短于 `min_len` 的墨（连谱号、系统线、贯穿几行的小节线）也记成占用：字的竖笔不过一行字高，
-    /// 这种竖线在投影里每行都留几个像素，把上下几行歌词连成一截、切不开。
-    pub fn tall_runs(mut self, ink: &Ink, min_len: f64) -> Claims {
-        let (w, h) = (ink.w(), ink.h());
+    /// 这种竖线在投影里每行都留几个像素，把上下几行歌词连成一截、切不开。竖墨段整页扫一遍存在 `runs` 里，各处按自己的门槛挑。
+    pub fn tall_runs(mut self, runs: &VRuns, min_len: f64) -> Claims {
         let min_len = min_len.max(2.0) as usize;
-        for x in 0..w {
-            let mut y = 0;
-            while y < h {
-                if !ink.at(x as i64, y as i64) {
-                    y += 1;
-                    continue;
-                }
-                let a = y;
-                while y < h && ink.at(x as i64, y as i64) {
-                    y += 1;
-                }
-                if y - a >= min_len {
-                    for yy in a..y {
-                        self.mask[yy * w + x] = 1;
-                    }
-                }
+        debug_assert!(min_len >= runs.min);
+        for &(x, a, b) in runs.runs.iter().filter(|r| (r.2 - r.1) as usize >= min_len) {
+            for y in a..b {
+                self.mask[y as usize * self.w + x as usize] = 1;
             }
         }
         self
     }
     fn free(&self, ink: &Ink, x: i64, y: i64) -> bool {
         ink.at(x, y) && self.mask[y as usize * self.w + x as usize] == 0
+    }
+}
+
+/// 整页竖着连续不短于 `min` 像素的墨段 `(x, 起, 止)`（[`Claims::tall_runs`] 用）。一页扫一遍：原先各行上方带各扫整页，
+/// 31 MP 的页一遍识别光这个就九十毫秒，分轮时每轮都跑。
+pub struct VRuns {
+    min: usize,
+    runs: Vec<(u32, u32, u32)>,
+}
+
+impl VRuns {
+    /// 门槛同 [`Claims::tall_runs`] 的取法（`min_len` 不到 2 按 2）；之后挑的门槛不能比它低。按行扫（逐列扫跨步访问，大图慢）。
+    pub fn scan(ink: &Ink, min_len: f64) -> VRuns {
+        let (w, h) = (ink.w(), ink.h());
+        let min = min_len.max(2.0) as usize;
+        let mut start = vec![u32::MAX; w];
+        let mut runs = Vec::new();
+        for y in 0..=h {
+            for (x, st) in start.iter_mut().enumerate() {
+                if y < h && ink.at(x as i64, y as i64) {
+                    if *st == u32::MAX {
+                        *st = y as u32;
+                    }
+                } else if *st != u32::MAX {
+                    if y - *st as usize >= min {
+                        runs.push((x as u32, *st, y as u32));
+                    }
+                    *st = u32::MAX;
+                }
+            }
+        }
+        VRuns { min, runs }
     }
 }
 
@@ -501,10 +520,10 @@ fn lyric_span(ink: &Ink, row: &RowFrame) -> (i64, i64) {
 
 /// 各谱行下面的歌词：切行、读字、对音，写进各音的 `lyrics` 与行的段号。回各行歌词带的行（供叠加与排查）。
 /// `stanza_regions`：谱后附段落到音上的那几段，各行原文与源框（识别模式按原位叠加）。
-pub fn lyrics(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>) {
+pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>) {
     let w = ink.w() as f64;
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
-    let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(ink, num_h0 * 2.2);
+    let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(vruns, num_h0 * 2.2);
     let mut max_verses = 0usize;
     // 写下的各行词：(谱行, 段, 歌词区下标起止, 字数, 汉字数)
     let mut written: Vec<(usize, usize, usize, usize, usize, usize)> = Vec::new();
@@ -1996,7 +2015,7 @@ fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut R
 
 /// 一行谱头顶上的和弦行：上方带里切行读字，整行是和弦记号的，各记号按左缘挂到它底下（或左边最近）的音上；
 /// 一个音上已有和弦的记成这个音时值内后面换的和弦。
-pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOcr, y_min: f64, regions: &mut Vec<TextRegion>) {
+pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes, ocr: &CachedOcr, y_min: f64, regions: &mut Vec<TextRegion>) {
     let h = row.h();
     let w = ink.w() as f64;
     let top = row.top_at(w / 2.0);
@@ -2016,7 +2035,7 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, ocr: &CachedOc
     });
     // segno 的墨也不读（`·S·D` 读成 `S·D`、和弦 D 跟着丢）
     let marks: Vec<&Comp> = marks.chain(ink.comps().iter().filter(|k| rn.segno_ink.contains(&k.id))).collect();
-    let mut claims = Claims::comps(ink, marks.iter().copied()).tall_runs(ink, h * 2.2);
+    let mut claims = Claims::comps(ink, marks.iter().copied()).tall_runs(vruns, h * 2.2);
     // 弧顶粘着上方和弦字的块（青年诗歌 91 `F(C)⌒Dm(Am)` 弧尾连着 D，整块 164×44 过不了上面的弧门，D 读成 R、整行和弦全丢）：只扣弧那几像素
     for k in ink.comps().iter().filter(|k| k.rect.bottom() > ya as f64 && k.rect.y < yb as f64 && !marks.iter().any(|m| m.id == k.id)) {
         for (x, y) in under_glyph_arc(ink, k, h) {

@@ -117,10 +117,17 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     hook.step(2, STEPS, "lyrics")?;
     text::stacked_meters(ink, &rows, &mut notes, ocr);
     marks::segno(ink, &rows, &mut notes, num_h);
-    text::lyrics(ink, &rows, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes);
+    // 竖墨段整页扫一遍，歌词与各行上方带按各自的门槛（行高 × 2.2）挑
+    let vruns = text::VRuns::scan(ink, rows.iter().map(|r| r.h()).fold(f64::INFINITY, f64::min) * 2.2);
+    text::lyrics(ink, &rows, &vruns, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes);
+    // 下面的上方带按歌词区定界，要等歌词读齐；页眉只写页眉那几样、跟上方带互不相干，它缺的 OCR 不拦上方带，
+    // 两样同一轮送检（页眉先检测、再读检出的行，常比歌词晚一轮齐）
+    let lyrics_done = !ocr.stalled();
     hook.step(3, STEPS, "header")?;
     text::header(ink, &rows, num_h, ocr, &mut score);
-    ocr.barrier()?;
+    if !lyrics_done {
+        ocr.barrier()?;
+    }
     hook.step(4, STEPS, "spans")?;
     let mut halves = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {
@@ -135,7 +142,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             between.iter().map(|b| if between.len() >= 2 { b.bottom().min(b.y + med * 1.15) } else { b.bottom() }).fold(lo, f64::max)
         };
         halves.push(spans::arcs(ink, &rows[i], &mut notes[i], y_min, ocr));
-        text::chords_above(ink, &rows[i], &mut notes[i], ocr, y_min, &mut score.chord_regions);
+        text::chords_above(ink, &rows[i], &vruns, &mut notes[i], ocr, y_min, &mut score.chord_regions);
     }
     spans::pair_halves(&mut notes, &halves);
     text::split_spanning_words(&mut notes);
