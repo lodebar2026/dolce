@@ -973,15 +973,20 @@ export class OmrController implements FormatSource {
   }
 
   /** 简谱：各张原图按识别时的拼法铺到位图 `bin` 上（Rust `RasterInk::load`：左对齐、上下接着、不留缝，整体过宽才统一缩）；
-   *  PDF（位图取的是页里的内嵌图）画不了、哪张没画出来也不画，为 null */
+   *  PDF 的转曲矢量页（Rust `stack`：各页整页按同一缩放渲出、同样拼起）也这样铺。位图取页里内嵌图的 PDF 底图框不住整页，
+   *  与整页拼图宽高比对不上（跳过的空白页同此），不铺；哪张没画出来也不画，为 null */
   private async wholePageView(bin: Binary): Promise<PageView> {
     const o = this.prerenderOriginals(this.lastInputs);
     const d = await o.doc.catch(() => null);
-    if (!d || d.pdf || !d.sizes.length) return null;
+    if (!d || !d.sizes.length) return null;
+    const maxW = Math.max(...d.sizes.map((s) => s.w));
+    const sumH = d.sizes.reduce((n, s) => n + s.h, 0);
+    // 各页渲图取整，几页累下来差几个像素；差到 0.5% 就不是同一种拼法
+    if (d.pdf && Math.abs((bin.h / bin.w) / (sumH / maxW) - 1) > 0.005) return null;
     const rendered = await Promise.all((await o.pages.catch(() => [] as OriginalPage[])).map((p) => p.rendered));
     if (rendered.length !== d.sizes.length || rendered.some((r) => !r)) return null;
-    const sx = bin.w / Math.max(...d.sizes.map((s) => s.w));
-    const sy = bin.h / d.sizes.reduce((n, s) => n + s.h, 0);
+    const sx = bin.w / maxW;
+    const sy = bin.h / sumH;
     let y = 0;
     const tiles = d.sizes.map((s, i): PageTile => {
       const tl = { url: rendered[i]!.url, x: 0, y: y * sy, w: s.w * sx, h: s.h * sy };
