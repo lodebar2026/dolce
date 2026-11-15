@@ -1,0 +1,9 @@
+[package]
+name = "dolce-base"
+description = "悦谱 Dolce 模型与排版的最底层：JS 数值口径、分数、UTF-16 位置表与原文区间、诊断消息。无平台依赖，能编到 wasm"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true

@@ -335,6 +335,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-base"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "dolce-cli"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-xml",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "dolce-omr-book"
 version = "0.1.0"
 dependencies = [
@@ -377,6 +394,7 @@ name = "dolce-omr-core"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "dolce-base",
  "serde",
  "sha2",
 ]
@@ -483,6 +501,13 @@ dependencies = [
  "js-sys",
  "serde_json",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "dolce-xml"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
 ]
 
 [[package]]

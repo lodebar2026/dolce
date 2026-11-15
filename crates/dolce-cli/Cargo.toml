@@ -1,0 +1,16 @@
+[package]
+name = "dolce-cli"
+description = "悦谱 Dolce 模型 / 格式 / 排版的命令行（迁移期对拍、回归用；做完后回归脚本统一走它）"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "dolce"
+path = "src/main.rs"
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+dolce-xml = { path = "../dolce-xml" }
+serde_json = "1"
+sha2.workspace = true

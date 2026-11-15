@@ -1069,10 +1069,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-base"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "dolce-omr-core"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "dolce-base",
  "serde",
  "sha2 0.10.9",
 ]

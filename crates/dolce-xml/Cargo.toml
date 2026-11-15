@@ -1,0 +1,9 @@
+[package]
+name = "dolce-xml"
+description = "悦谱 Dolce 的 XML 树（照 src/score/xmltree.ts）：arena 树、属性与子节点保原序、原文区间（UTF-16）、序列化"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
