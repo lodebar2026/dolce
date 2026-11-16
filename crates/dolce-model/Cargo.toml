@@ -11,6 +11,8 @@ dolce-xml = { path = "../dolce-xml" }
 dolce-play = { path = "../dolce-play" }
 serde.workspace = true
 indexmap = { version = "2", features = ["serde"] }
+# `\p{P}`（署名比对去标点，`jianpuproject::loose_norm`）
+unicode-general-category = "1"
 ts-rs = { workspace = true, optional = true, features = ["indexmap-impl"] }
 
 [dev-dependencies]

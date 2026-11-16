@@ -4,12 +4,14 @@ pub mod strenum;
 
 pub mod breaks;
 pub mod deconames;
+pub mod directionmarks;
 pub mod doc;
 pub mod fromxml;
 pub mod harmony;
 pub mod helpers;
 pub mod innervoice;
 pub mod jianpu;
+pub mod jianpuproject;
 pub mod keyshift;
 pub mod marknames;
 pub mod metakeys;

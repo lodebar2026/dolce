@@ -361,6 +361,9 @@ pub fn project_digest(doc: &ScoreDoc) -> Value {
             "page": page,
             "sizes": [dolce_model::pagemeta::song_staff_size(s), dolce_model::pagemeta::song_lyric_size(s)],
             "fonts": fonts,
+            "jianpu": song_json(&dolce_model::jianpuproject::project_for_jianpu(s)),
+            "asMarks": song_json(&dolce_model::directionmarks::directions_as_marks(s)),
+            "leadTempo": dolce_model::directionmarks::lead_tempo(s).map(|(n, b)| json!([n, b.num, b.den])),
         }));
     }
     let mut paged = serde_json::to_value(dolce_model::pagemeta::with_page_meta(doc, None).as_ref()).expect("序列化");
