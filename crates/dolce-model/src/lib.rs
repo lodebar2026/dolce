@@ -8,6 +8,7 @@ pub mod directionmarks;
 pub mod edit;
 pub mod doc;
 pub mod fromxml;
+pub mod hanconv;
 pub mod harmony;
 pub mod helpers;
 pub mod innervoice;

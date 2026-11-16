@@ -18,4 +18,5 @@ serde = { workspace = true }
 # 分数、时刻过边界要逐位还原（TS 侧 JSON.stringify 出的是最短往返写法）
 serde_json = { version = "1", features = ["float_roundtrip"] }
 wasm-bindgen = "=0.2.120"
+js-sys = "0.3"
 console_error_panic_hook = "0.1"

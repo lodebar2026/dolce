@@ -233,6 +233,13 @@ pub fn edit_digest(text: &str, script: &str) -> Result<String, JsValue> {
     Ok(json(&probe::edit_digest(text, &s)))
 }
 
+/// 对拍用：简繁转换（口径见 dev `rs-diff.mjs hanconv`）。`doc` 是读好的 ScoreDoc JSON，`text` 是原文（空串 = 不做原文写回）；
+/// `parse(text) → ScoreDoc JSON`、`s2t` / `t2s` 是 TS 那边的读入与词表
+#[wasm_bindgen(js_name = hanconvDigest)]
+pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_sys::Function, t2s: &js_sys::Function) -> String {
+    json(&probe::hanconv_digest(doc, text, parse, s2t, t2s))
+}
+
 /// 对拍用：编辑层的纯函数小表
 #[wasm_bindgen(js_name = editTables)]
 pub fn edit_tables() -> String {

@@ -562,3 +562,46 @@ pub fn edit_tables() -> Value {
     }
     Value::Array(v)
 }
+
+// ───────────────────────── 简繁（第 7 步） ─────────────────────────
+
+fn js_conv(f: &js_sys::Function) -> impl Fn(&str) -> String + '_ {
+    move |s: &str| f.call1(&wasm_bindgen::JsValue::NULL, &wasm_bindgen::JsValue::from_str(s)).ok().and_then(|v| v.as_string()).unwrap_or_default()
+}
+
+/// 简繁的摘要：分组、方向判断、两个方向的整份转换（片数 + 模型），文本来源再加两个方向的原文写回
+pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_sys::Function, t2s: &js_sys::Function) -> Value {
+    use dolce_model::hanconv::*;
+    let parse_fn = |t: &str| -> Result<dolce_model::doc::ScoreDoc, dolce_base::Msg> {
+        let v = parse.call1(&wasm_bindgen::JsValue::NULL, &wasm_bindgen::JsValue::from_str(t)).map_err(|_| dolce_base::Msg::new("parse"))?;
+        let s = v.as_string().ok_or_else(|| dolce_base::Msg::new("parse"))?;
+        serde_json::from_str(&s).map_err(|_| dolce_base::Msg::new("json"))
+    };
+    let doc = match serde_json::from_str::<dolce_model::doc::ScoreDoc>(doc) {
+        Ok(d) => d,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+    let (cs, ct) = (js_conv(s2t), js_conv(t2s));
+    let whole = |conv: &dyn HanConv| {
+        let mut d = doc.clone();
+        let n = convert_score_doc(&mut d, conv);
+        let mut v = serde_json::to_value(&d.songs).expect("序列化");
+        strip_oids(&mut v);
+        json!({ "n": n, "songs": v })
+    };
+    let mut out = json!({
+        "groups": text_groups(&doc),
+        "dir": detect_han_direction(&doc, &ct),
+        "s2t": whole(&cs),
+        "t2s": whole(&ct),
+    });
+    if !text.is_empty() {
+        for (k, conv) in [("srcS2t", &cs as &dyn HanConv), ("srcT2s", &ct as &dyn HanConv)] {
+            out[k] = match convert_source_text(text, &parse_fn, conv) {
+                Ok(r) => serde_json::to_value(r).expect("序列化"),
+                Err(m) => json!({ "error": m.key }),
+            };
+        }
+    }
+    out
+}

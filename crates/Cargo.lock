@@ -367,6 +367,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-hanconv"
+version = "0.1.0"
+dependencies = [
+ "dolce-model",
+]
+
+[[package]]
 name = "dolce-jcx-wasm"
 version = "0.1.0"
 dependencies = [
@@ -567,6 +574,7 @@ dependencies = [
  "dolce-play",
  "dolce-session",
  "dolce-xml",
+ "js-sys",
  "serde",
  "serde_json",
  "wasm-bindgen",
