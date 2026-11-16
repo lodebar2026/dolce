@@ -370,3 +370,75 @@ pub fn project_digest(doc: &ScoreDoc) -> Value {
     strip_oids(&mut paged);
     json!({ "songs": songs, "paged": paged })
 }
+
+// ───────────────────────── 编辑（第 6 步） ─────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct EditScript {
+    cmds: Vec<Value>,
+    #[serde(rename = "probeIds")]
+    probe_ids: Vec<ElementId>,
+}
+
+/// 第 6 步编辑的摘要（口径见 dev `rs-diff.mjs edit`）：载入 MusicXML（带表层）→ 逐条执行 → 每步结果 + 最后的模型与写出
+pub fn edit_digest(text: &str, script: &EditScript) -> Value {
+    use dolce_model::edit::*;
+    let mut r = match dolce_model::fromxml::load_score_doc(text) {
+        Err(m) => return json!({ "error": m.key }),
+        Ok(r) => r,
+    };
+    // 动作前的查询
+    let mut queries = vec![];
+    for &id in &script.probe_ids {
+        let pos = pos_of(&r.doc, id);
+        queries.push(json!({
+            "pos": pos,
+            "back": pos.and_then(|p| chord_at_pos(&r.doc, &p)),
+            "onset": chord_onset(&r.doc, id),
+            "midi": midi_of(&r.doc, id),
+            "fifths": anchor_fifths(&r.doc, &InsertAnchor::After(id)),
+        }));
+    }
+    if let Some(p) = r.doc.songs.first().and_then(|s| s.parts.first()) {
+        queries.push(json!([1, 2, 3, 5].iter().map(|&k| staff_voice(p, 1.0, k)).chain([1, 2].iter().map(|&k| staff_voice(p, 2.0, k))).collect::<Vec<_>>()));
+    }
+    let mut results = vec![];
+    for c in &script.cmds {
+        let cmd: EditCmd = match serde_json::from_value(c.clone()) {
+            Ok(x) => x,
+            Err(e) => {
+                results.push(json!({ "badCmd": e.to_string() }));
+                continue;
+            }
+        };
+        let res = apply(&mut r.doc, &cmd, &mut r.surface);
+        results.push(serde_json::to_value(&res).expect("序列化"));
+    }
+    let mut doc = serde_json::to_value(&r.doc).expect("序列化");
+    strip_oids(&mut doc);
+    let xml = match dolce_model::toxml::score_doc_to_music_xml(&r.doc, Some(&r.surface), &Default::default()) {
+        Ok(x) => json!(x),
+        Err(m) => json!({ "error": m.key }),
+    };
+    json!({ "queries": queries, "results": results, "doc": doc, "xml": xml })
+}
+
+/// 纯函数小表：`degreeOfStep`、`transposeFifths`、`keyAlter`、`typeOfDivisions`
+pub fn edit_tables() -> Value {
+    use dolce_model::edit::*;
+    let mut v = vec![];
+    for f in -7..=7 {
+        let f = f as f64;
+        let row: Vec<Value> = ["C", "d", "E", "f", "G", "a", "B", "x"]
+            .iter()
+            .map(|l| json!([degree_of_step(l, f), key_alter(&l.to_uppercase(), f)]))
+            .chain((-13..=13).map(|n| json!(transpose_fifths(f, n as f64))))
+            .collect();
+        v.push(json!(row));
+    }
+    for dpq in [1.0, 2.0, 3.0, 4.0, 48.0, 480.0] {
+        let row: Vec<Value> = (0..=40).map(|k| json!(type_of_divisions(k as f64 * dpq / 8.0, dpq).map(|(t, d)| json!([t.as_str(), d])))).collect();
+        v.push(json!(row));
+    }
+    Value::Array(v)
+}

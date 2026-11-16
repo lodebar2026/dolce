@@ -226,6 +226,19 @@ pub fn to_xml_digest(text: &str) -> String {
     json(&probe::to_xml_digest(text))
 }
 
+/// 对拍用：MusicXML 上执行一串编辑动作（口径见 dev `rs-diff.mjs edit`）
+#[wasm_bindgen(js_name = editDigest)]
+pub fn edit_digest(text: &str, script: &str) -> Result<String, JsValue> {
+    let s: probe::EditScript = parse("EditScript", script)?;
+    Ok(json(&probe::edit_digest(text, &s)))
+}
+
+/// 对拍用：编辑层的纯函数小表
+#[wasm_bindgen(js_name = editTables)]
+pub fn edit_tables() -> String {
+    json(&probe::edit_tables())
+}
+
 /// 对拍用：文本来源投成 MusicXML 形状及周边（口径见 dev `rs-diff.mjs project`）
 #[wasm_bindgen(js_name = projectDigest)]
 pub fn project_digest(doc: &str) -> Result<String, JsValue> {

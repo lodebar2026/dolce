@@ -5,6 +5,7 @@ pub mod strenum;
 pub mod breaks;
 pub mod deconames;
 pub mod directionmarks;
+pub mod edit;
 pub mod doc;
 pub mod fromxml;
 pub mod harmony;
