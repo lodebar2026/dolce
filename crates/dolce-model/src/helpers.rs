@@ -99,6 +99,19 @@ impl Element {
             Element::Space(s) => s.source,
         }
     }
+    /// 占的时值（倚音、`y` 等不写时值的不占）。
+    pub fn span(&self) -> f64 {
+        match self {
+            Element::Chord(c) => {
+                if c.grace.is_some() {
+                    0.0
+                } else {
+                    c.duration.divisions
+                }
+            }
+            Element::Space(s) => s.duration.as_ref().map_or(0.0, |d| d.divisions),
+        }
+    }
     pub fn as_chord(&self) -> Option<&Chord> {
         match self {
             Element::Chord(c) => Some(c),
@@ -560,6 +573,52 @@ pub fn distinct_numbers(lyrics: &[Lyric]) -> Vec<Lyric> {
 // ───────────────────────── 对象身份 ─────────────────────────
 
 /// 整首所有对象的 `Oid` 清零：TS 那边 `structuredClone` 出来的副本不再挂表层 / 版面（WeakMap 按对象认）
+/// 小节里各元素的起点：和弦写了 `onset` 照它，否则接在同一声线前一个元素之后（同 TS `onsets`）。
+pub fn voice_onsets(m: &Measure) -> Vec<f64> {
+    let mut at: Vec<(f64, f64)> = vec![];
+    let mut out = Vec::with_capacity(m.elements.len());
+    for el in &m.elements {
+        let start = match el {
+            Element::Chord(c) => c.onset,
+            _ => None,
+        }
+        .or_else(|| at.iter().find(|(v, _)| *v == el.voice()).map(|x| x.1))
+        .unwrap_or(0.0);
+        let end = start + el.span();
+        match at.iter_mut().find(|(v, _)| *v == el.voice()) {
+            Some(x) => x.1 = end,
+            None => at.push((el.voice(), end)),
+        }
+        out.push(start);
+    }
+    out
+}
+
+/// 小节实际长度：`duration` 与各声线终点的最大值。
+pub fn voice_length(m: &Measure) -> f64 {
+    let on = voice_onsets(m);
+    m.elements.iter().enumerate().fold(m.duration.unwrap_or(0.0), |len, (i, el)| dolce_base::js::max(len, on[i] + el.span()))
+}
+
+impl MeasureAttrs {
+    /// 一项都没有（TS `Object.keys(attrs).length === 0`）
+    pub fn is_empty(&self) -> bool {
+        self.divisions.is_none()
+            && self.key.is_none()
+            && self.time.is_none()
+            && self.clefs.is_none()
+            && self.staves.is_none()
+            && self.transpose.is_none()
+            && self.multi_rest.is_none()
+    }
+}
+
+/// 一个声部的表层身份全清（同 TS 深拷贝后挂不上表层）。
+pub fn clear_part_oids(p: &mut Part) {
+    p.oid = Oid::NONE;
+    clear_measure_oids(&mut p.measures);
+}
+
 pub fn clear_oids(song: &mut Song) {
     song.oid = Oid::NONE;
     for c in song.credits.iter_mut().flatten() {

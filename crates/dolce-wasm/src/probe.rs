@@ -382,25 +382,108 @@ pub struct EditScript {
     beam_ids: Vec<ElementId>,
     #[serde(rename = "dirRefs", default)]
     dir_refs: Vec<dolce_model::edit::DirRef>,
+    /// `text` 是 ScoreDoc 的 JSON（文本来源，没有表层）而不是 MusicXML
+    #[serde(default)]
+    json: bool,
+    /// 动作后再比声部面板的视图与查询（`parts.ts`）
+    #[serde(default)]
+    views: bool,
+    /// 提示键 → 文案模板（TS 那边当前语言的；缺省声部名等按它出字）
+    #[serde(default)]
+    texts: std::collections::HashMap<String, String>,
+}
+
+/// 编辑钩子外面套一层翻译（同 TS `modelMsgText`：`{name}` 按参数替换，参数里套的提示也翻）
+struct TrHooks<'a> {
+    inner: &'a mut dyn dolce_model::edit::EditHooks,
+    texts: &'a std::collections::HashMap<String, String>,
+}
+
+impl TrHooks<'_> {
+    fn render(&self, m: &dolce_base::Msg) -> String {
+        use dolce_base::msg::MsgArg;
+        let s = self.texts.get(&m.key).cloned().unwrap_or_else(|| m.key.clone());
+        if m.args.is_empty() {
+            return s;
+        }
+        let mut out = String::new();
+        let mut rest = s.as_str();
+        while let Some(i) = rest.find('{') {
+            out.push_str(&rest[..i]);
+            let tail = &rest[i + 1..];
+            let end = tail.find('}').filter(|&j| j > 0 && tail[..j].chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+            match end.and_then(|j| m.args.iter().find(|(k, _)| k == &tail[..j]).map(|(_, v)| (j, v))) {
+                Some((j, v)) => {
+                    out.push_str(&match v {
+                        MsgArg::Str(x) => x.clone(),
+                        MsgArg::Num(n) => dolce_base::js::num_to_string(*n),
+                        MsgArg::Msg(x) => self.render(x),
+                    });
+                    rest = &tail[j + 1..];
+                }
+                None => {
+                    out.push('{');
+                    rest = tail;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+}
+
+impl dolce_model::edit::EditHooks for TrHooks<'_> {
+    fn forget_stem(&mut self, ch: &dolce_model::doc::Chord) {
+        self.inner.forget_stem(ch);
+    }
+    fn forget_layout(&mut self, song: &dolce_model::doc::Song) {
+        self.inner.forget_layout(song);
+    }
+    fn text(&self, m: &dolce_base::Msg) -> String {
+        self.render(m)
+    }
+}
+
+/// 声部视图与查询（口径见 dev `rs-diff.mjs parts`）
+fn parts_views(doc: &dolce_model::doc::ScoreDoc) -> Value {
+    use dolce_model::parts::*;
+    let plain = |d: &dolce_model::doc::ScoreDoc| {
+        let mut v = serde_json::to_value(d).expect("序列化");
+        strip_oids(&mut v);
+        v
+    };
+    json!({
+        "meta": doc.songs.iter().map(|s| s.parts.iter().map(|p| json!([transpose_key_of(p), staves_of(p), clef_name_of(p)])).collect::<Vec<_>>()).collect::<Vec<_>>(),
+        "visible": plain(&with_visible_parts(doc, &[1])),
+        "lyricsFrom": plain(&with_lyrics_from(doc, 1, 0)),
+        "melody": plain(&with_melody_first(doc, 1)),
+    })
 }
 
 /// 第 6 步编辑的摘要（口径见 dev `rs-diff.mjs edit`）：载入 MusicXML（带表层）→ 逐条执行 → 每步结果 + 最后的模型与写出
 pub fn edit_digest(text: &str, script: &EditScript) -> Value {
     use dolce_model::edit::*;
-    let mut r = match dolce_model::fromxml::load_score_doc(text) {
-        Err(m) => return json!({ "error": m.key }),
-        Ok(r) => r,
+    let (mut doc, mut surface) = if script.json {
+        match serde_json::from_str::<dolce_model::doc::ScoreDoc>(text) {
+            Err(e) => return json!({ "error": e.to_string() }),
+            Ok(doc) => (doc, None),
+        }
+    } else {
+        match dolce_model::fromxml::load_score_doc(text) {
+            Err(m) => return json!({ "error": m.key }),
+            Ok(r) => (r.doc, Some(r.surface)),
+        }
     };
     // 动作前的查询
     let mut queries = vec![];
     for &id in &script.probe_ids {
-        let pos = pos_of(&r.doc, id);
+        let pos = pos_of(&doc, id);
         queries.push(json!({
             "pos": pos,
-            "back": pos.and_then(|p| chord_at_pos(&r.doc, &p)),
-            "onset": chord_onset(&r.doc, id),
-            "midi": midi_of(&r.doc, id),
-            "fifths": anchor_fifths(&r.doc, &InsertAnchor::After(id)),
+            "back": pos.and_then(|p| chord_at_pos(&doc, &p)),
+            "onset": chord_onset(&doc, id),
+            "midi": midi_of(&doc, id),
+            "fifths": anchor_fifths(&doc, &InsertAnchor::After(id)),
         }));
     }
     let post = |doc: &dolce_model::doc::ScoreDoc| {
@@ -418,12 +501,19 @@ pub fn edit_digest(text: &str, script: &EditScript) -> Value {
             "partners": script.dir_refs.iter().map(|r| dir_partner(doc, r)).collect::<Vec<_>>(),
         })
     };
-    queries.push(post(&r.doc));
-    if let Some(p) = r.doc.songs.first().and_then(|s| s.parts.first()) {
+    queries.push(post(&doc));
+    if let Some(p) = doc.songs.first().and_then(|s| s.parts.first()) {
         queries.push(json!([1, 2, 3, 5].iter().map(|&k| staff_voice(p, 1.0, k)).chain([1, 2].iter().map(|&k| staff_voice(p, 2.0, k))).collect::<Vec<_>>()));
     }
     let mut results = vec![];
     for c in &script.cmds {
+        // 对拍用的伪动作：记下此刻的模型（后面的动作会盖掉的差别在这里看得到）
+        if c.get("op").and_then(|x| x.as_str()) == Some("snapshot") {
+            let mut v = serde_json::to_value(&doc.songs).expect("序列化");
+            strip_oids(&mut v);
+            results.push(json!({ "snapshot": v }));
+            continue;
+        }
         let cmd: EditCmd = match serde_json::from_value(c.clone()) {
             Ok(x) => x,
             Err(e) => {
@@ -431,17 +521,26 @@ pub fn edit_digest(text: &str, script: &EditScript) -> Value {
                 continue;
             }
         };
-        let res = apply(&mut r.doc, &cmd, &mut r.surface);
+        let mut no = NoHooks;
+        let hooks: &mut dyn EditHooks = match surface.as_mut() {
+            Some(s) => s,
+            None => &mut no,
+        };
+        let mut tr = TrHooks { inner: hooks, texts: &script.texts };
+        let res = apply(&mut doc, &cmd, &mut tr);
         results.push(serde_json::to_value(&res).expect("序列化"));
     }
-    queries.push(post(&r.doc));
-    let mut doc = serde_json::to_value(&r.doc).expect("序列化");
-    strip_oids(&mut doc);
-    let xml = match dolce_model::toxml::score_doc_to_music_xml(&r.doc, Some(&r.surface), &Default::default()) {
+    queries.push(post(&doc));
+    if script.views {
+        queries.push(parts_views(&doc));
+    }
+    let mut out = serde_json::to_value(&doc).expect("序列化");
+    strip_oids(&mut out);
+    let xml = match dolce_model::toxml::score_doc_to_music_xml(&doc, surface.as_ref(), &Default::default()) {
         Ok(x) => json!(x),
         Err(m) => json!({ "error": m.key }),
     };
-    json!({ "queries": queries, "results": results, "doc": doc, "xml": xml })
+    json!({ "queries": queries, "results": results, "doc": out, "xml": xml })
 }
 
 /// 纯函数小表：`degreeOfStep`、`transposeFifths`、`keyAlter`、`typeOfDivisions`

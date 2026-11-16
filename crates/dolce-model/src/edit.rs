@@ -8,6 +8,9 @@
 
 use crate::doc::*;
 use crate::jianpu::{degree_from_pitch, pitch_from_degree};
+use crate::helpers::voice_length;
+use crate::parts::{self, PartProps};
+use crate::transcribe::{transcribe_score, TranscriptionOptions};
 use crate::xmlsurface::Surface;
 use dolce_base::{js, Msg};
 use std::collections::{HashMap, HashSet};
@@ -140,6 +143,8 @@ pub enum ModelEdit {
     Error(Msg),
     /// 挪了记号：选中这些，并告诉调用方挪到了哪（同 TS `ModelEdit & { moved }`）
     Moved { select: Vec<ElementId>, moved: MovedMark },
+    /// 声部与转记那几样的返回值：新声部下标（-1 = 没做）、成没成（1 / 0）、抄了几个字、转了几个音
+    Number(f64),
 }
 
 fn err(key: &str) -> ModelEdit {
@@ -152,6 +157,10 @@ pub trait EditHooks {
     fn forget_stem(&mut self, _ch: &Chord) {}
     /// 小节的内容变了：整曲的版面坐标作废
     fn forget_layout(&mut self, _song: &Song) {}
+    /// 提示按界面语言的文字（缺省声部名等）；没给翻译时给键本身（同 TS 没注册翻译时的 `msgText`）
+    fn text(&self, m: &Msg) -> String {
+        m.key.clone()
+    }
 }
 
 /// 不挂表层
@@ -933,34 +942,8 @@ pub fn delete_chords(doc: &mut ScoreDoc, ids: &[ElementId], hooks: &mut dyn Edit
 
 /// 小节里各和弦的起点（divisions，按元素下标）。
 fn onsets(m: &Measure) -> HashMap<usize, f64> {
-    let mut out = HashMap::new();
-    let mut voice_at: Vec<(f64, f64)> = vec![];
-    for (i, el) in m.elements.iter().enumerate() {
-        let start = match el {
-            Element::Chord(c) => c.onset,
-            _ => None,
-        }
-        .or_else(|| voice_at.iter().find(|(v, _)| *v == el.voice()).map(|(_, p)| *p))
-        .unwrap_or(0.0);
-        let dur = match el {
-            Element::Chord(c) => {
-                if c.grace.is_some() {
-                    0.0
-                } else {
-                    c.duration.divisions
-                }
-            }
-            Element::Space(s) => s.duration.as_ref().map_or(0.0, |d| d.divisions),
-        };
-        match voice_at.iter_mut().find(|(v, _)| *v == el.voice()) {
-            Some(e) => e.1 = start + dur,
-            None => voice_at.push((el.voice(), start + dur)),
-        }
-        if matches!(el, Element::Chord(_)) {
-            out.insert(i, start);
-        }
-    }
-    out
+    let on = crate::helpers::voice_onsets(m);
+    m.elements.iter().enumerate().filter(|(_, el)| matches!(el, Element::Chord(_))).map(|(i, _)| (i, on[i])).collect()
 }
 
 /// 音的位置次序变了之后（和弦里加、删、排序）：挂在「第几个音」上的弧与延音线跟着那个音走。
@@ -1364,36 +1347,6 @@ pub fn anchor_fifths(doc: &ScoreDoc, anchor: &InsertAnchor) -> f64 {
 
 // ───────────────────────── 小节结构 ─────────────────────────
 
-/// 小节的实际长度：各声线终点的最大值。
-fn measure_length(m: &Measure) -> f64 {
-    let mut len = m.duration.unwrap_or(0.0);
-    let mut voice_at: Vec<(f64, f64)> = vec![];
-    for el in &m.elements {
-        let start = match el {
-            Element::Chord(c) => c.onset,
-            _ => None,
-        }
-        .or_else(|| voice_at.iter().find(|(v, _)| *v == el.voice()).map(|(_, p)| *p))
-        .unwrap_or(0.0);
-        let end = start
-            + match el {
-                Element::Chord(c) => {
-                    if c.grace.is_some() {
-                        0.0
-                    } else {
-                        c.duration.divisions
-                    }
-                }
-                Element::Space(s) => s.duration.as_ref().map_or(0.0, |d| d.divisions),
-            };
-        match voice_at.iter_mut().find(|(v, _)| *v == el.voice()) {
-            Some(e) => e.1 = end,
-            None => voice_at.push((el.voice(), end)),
-        }
-        len = js::max(len, end);
-    }
-    len
-}
 
 fn all_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
@@ -1438,7 +1391,7 @@ fn set_onset(e: &mut Element, o: Option<f64>) {
 pub fn split_measure(doc: &mut ScoreDoc, after_id: ElementId, hooks: &mut dyn EditHooks) -> ModelEdit {
     let Some(l) = locate(doc, after_id) else { return err("me.noInsertPos") };
     let cut0 = onsets(l.measure(doc)).get(&l.index).copied().unwrap_or(0.0) + l.chord(doc).duration.divisions;
-    if cut0 >= measure_length(l.measure(doc)) {
+    if cut0 >= voice_length(l.measure(doc)) {
         return err("me.atMeasureEnd");
     }
     let song = l.song(doc);
@@ -1560,15 +1513,6 @@ fn attrs_without_divisions(a: &MeasureAttrs) -> MeasureAttrs {
     MeasureAttrs { oid: Oid::NONE, divisions: None, ..a.clone() }
 }
 
-fn attrs_empty(a: &MeasureAttrs) -> bool {
-    a.divisions.is_none()
-        && a.key.is_none()
-        && a.time.is_none()
-        && a.clefs.is_none()
-        && a.staves.is_none()
-        && a.transpose.is_none()
-        && a.multi_rest.is_none()
-}
 
 /// 删小节线：第 `mi` 小节与下一小节并成一节（所有声部一起并）。下一小节换了调号 / 拍号的不并。
 pub fn merge_measures(doc: &mut ScoreDoc, si: usize, mi: usize, hooks: &mut dyn EditHooks) -> ModelEdit {
@@ -1590,7 +1534,7 @@ pub fn merge_measures(doc: &mut ScoreDoc, si: usize, mi: usize, hooks: &mut dyn 
         let part = &mut song.parts[pi];
         let mut b = part.measures.remove(mi + 1);
         let a = &mut part.measures[mi];
-        let len = measure_length(a);
+        let len = voice_length(a);
         let on_b = onsets(&b);
         let mut seen: Vec<f64> = vec![];
         for (i, e) in b.elements.iter_mut().enumerate() {
@@ -1621,7 +1565,7 @@ pub fn merge_measures(doc: &mut ScoreDoc, si: usize, mi: usize, hooks: &mut dyn 
         }));
         a.directions = if dirs.is_empty() { None } else { Some(dirs) };
         // 下一小节开头换的谱号（等）成了这一小节中间的属性；它中间的属性、小节线照挪
-        let battrs = b.attrs.as_ref().map(attrs_without_divisions).filter(|x| !attrs_empty(x));
+        let battrs = b.attrs.as_ref().map(attrs_without_divisions).filter(|x| !x.is_empty());
         let mut later: Vec<LaterAttrs> = a.later_attrs.clone().unwrap_or_default();
         if let Some(ba) = battrs {
             later.push(LaterAttrs { after_elements: a_n, onset: Some(len), attrs: ba });
@@ -1862,7 +1806,7 @@ fn nominal_length(song: &Song, part: &Part, mi: usize) -> f64 {
     let MeasureCtx { time, dpq, .. } = measure_ctx(song, part, mi);
     match time {
         Some(t) => (dpq * 4.0 * t.beats) / t.beat_type,
-        None => part.measures.get(mi).map_or(dpq * 4.0, measure_length),
+        None => part.measures.get(mi).map_or(dpq * 4.0, voice_length),
     }
 }
 
@@ -3470,6 +3414,7 @@ pub fn insert_pitch(doc: &mut ScoreDoc, anchor: &InsertAnchor, pitch: &StepOctav
         ModelEdit::Error(_) => return r,
         ModelEdit::CaretAfter(id) | ModelEdit::CaretBefore(id) => Some(*id),
         ModelEdit::Select(v) | ModelEdit::Moved { select: v, .. } => v.first().copied(),
+        ModelEdit::Number(_) => None,
     };
     let Some(l) = ch.and_then(|id| locate(doc, id)) else { return r };
     let key = ctx_of(doc, &l).key;
@@ -3549,9 +3494,27 @@ pub enum EditCmd {
     RemoveNotation { id: ElementId, name: String },
     DeleteDirection { r: DirRef },
     InsertPitch { anchor: InsertAnchor, pitch: StepOctave, dur: NewDuration },
+    SetPartProps { si: usize, pi: usize, props: PartProps },
+    AddPart { si: usize, #[serde(default)] props: PartProps, at: Option<f64> },
+    DuplicatePart { si: usize, pi: usize },
+    DeletePart { si: usize, pi: usize },
+    MovePart { si: usize, from: usize, to: usize },
+    SplitByVoice { si: usize, pi: usize, #[serde(default)] props: PartProps },
+    SplitByChord { si: usize, pi: usize, #[serde(default)] props: PartProps },
+    MergeInto { si: usize, pi: usize, pj: usize },
+    CopyLyrics { si: usize, from: usize, to: usize },
+    Transcribe { options: TranscriptionOptions },
 }
 
 /// 执行一个编辑动作
+fn index(i: Option<usize>) -> ModelEdit {
+    ModelEdit::Number(i.map_or(-1.0, |i| i as f64))
+}
+
+fn flag(b: bool) -> ModelEdit {
+    ModelEdit::Number(if b { 1.0 } else { 0.0 })
+}
+
 pub fn apply(doc: &mut ScoreDoc, cmd: &EditCmd, hooks: &mut dyn EditHooks) -> ModelEdit {
     use EditCmd as C;
     match cmd {
@@ -3607,5 +3570,20 @@ pub fn apply(doc: &mut ScoreDoc, cmd: &EditCmd, hooks: &mut dyn EditHooks) -> Mo
         C::RemoveNotation { id, name } => remove_notation(doc, *id, name),
         C::DeleteDirection { r } => delete_direction(doc, *r),
         C::InsertPitch { anchor, pitch, dur } => insert_pitch(doc, anchor, pitch, *dur, hooks),
+        C::SetPartProps { si, pi, props } => {
+            if let Some(song) = doc.songs.get_mut(*si) {
+                parts::set_part_props(song, *pi, props);
+            }
+            ModelEdit::Select(vec![])
+        }
+        C::AddPart { si, props, at } => index(parts::add_part(doc, *si, props, *at, &*hooks)),
+        C::DuplicatePart { si, pi } => index(parts::duplicate_part(doc, *si, *pi, &*hooks)),
+        C::DeletePart { si, pi } => flag(parts::delete_part(doc, *si, *pi)),
+        C::MovePart { si, from, to } => flag(parts::move_part(doc, *si, *from, *to)),
+        C::SplitByVoice { si, pi, props } => index(parts::split_by_voice(doc, *si, *pi, props, &*hooks)),
+        C::SplitByChord { si, pi, props } => index(parts::split_by_chord(doc, *si, *pi, props, &*hooks)),
+        C::MergeInto { si, pi, pj } => flag(parts::merge_into(doc, *si, *pi, *pj)),
+        C::CopyLyrics { si, from, to } => ModelEdit::Number(parts::copy_lyrics(doc, *si, *from, *to)),
+        C::Transcribe { options } => ModelEdit::Number(transcribe_score(doc, options, hooks)),
     }
 }

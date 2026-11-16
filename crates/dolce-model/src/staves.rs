@@ -21,19 +21,6 @@ fn or1(x: f64) -> f64 {
     }
 }
 
-/// 元素占的时值（倚音、`y` 不占）。
-fn length_of(el: &Element) -> f64 {
-    match el {
-        Element::Chord(c) => {
-            if c.grace.is_some() {
-                0.0
-            } else {
-                c.duration.divisions
-            }
-        }
-        Element::Space(s) => s.duration.as_ref().map_or(0.0, |d| d.divisions),
-    }
-}
 
 /// 小节里各元素的起点（`onset` 缺省 = 前一个元素的终点）。
 fn starts_of(m: &Measure) -> Vec<f64> {
@@ -42,7 +29,7 @@ fn starts_of(m: &Measure) -> Vec<f64> {
     for el in &m.elements {
         let s = el.onset().unwrap_or(end);
         out.push(s);
-        end = s + length_of(el);
+        end = s + el.span();
     }
     out
 }
@@ -55,7 +42,7 @@ fn time_at(m: &Measure, starts: &[f64], after: Option<f64>, onset: Option<f64>) 
     let k = after.unwrap_or(0.0);
     if k > 0.0 {
         match js::index(k - 1.0) {
-            Some(i) if i < starts.len() => starts[i] + length_of(&m.elements[i]),
+            Some(i) if i < starts.len() => starts[i] + m.elements[i].span(),
             _ => f64::NAN,
         }
     } else {
@@ -126,15 +113,6 @@ pub fn has_cross_staff(song: &Song) -> bool {
     })
 }
 
-fn attrs_empty(a: &MeasureAttrs) -> bool {
-    a.divisions.is_none()
-        && a.key.is_none()
-        && a.time.is_none()
-        && a.clefs.is_none()
-        && a.staves.is_none()
-        && a.transpose.is_none()
-        && a.multi_rest.is_none()
-}
 
 /// 把元素子集挑出来另成一个小节：元素按需补 `onset`，`Direction` / `laterAttrs` / 中间小节线重算挂在第几个元素之后。
 fn sub_measure(
@@ -156,17 +134,17 @@ fn sub_measure(
             Element::Chord(c) => c.onset = on,
             Element::Space(x) => x.onset = on,
         }
-        end = s + length_of(&el);
+        end = s + el.span();
         elements.push(el);
     }
     let relocate = |after: Option<f64>, onset: Option<f64>| -> (f64, Option<f64>) {
         let t = time_at(m, &starts, after, onset);
         let a = after.unwrap_or(0.0);
         let k = idx.iter().filter(|&&j| (j as f64) < a).count();
-        let def = if k > 0 { starts[idx[k - 1]] + length_of(&m.elements[idx[k - 1]]) } else { 0.0 };
+        let def = if k > 0 { starts[idx[k - 1]] + m.elements[idx[k - 1]].span() } else { 0.0 };
         (k as f64, if t != def { Some(t) } else { None })
     };
-    let full_of = || m.elements.iter().enumerate().fold(m.duration.unwrap_or(0.0), |a, (j, el)| js::max(a, starts[j] + length_of(el)));
+    let full_of = || m.elements.iter().enumerate().fold(m.duration.unwrap_or(0.0), |a, (j, el)| js::max(a, starts[j] + el.span()));
     // 这条谱表这一小节一个音都没有：补一个不可见的整小节休止占住
     if elements.is_empty() && !m.elements.is_empty() {
         let len = full_of();
@@ -179,7 +157,7 @@ fn sub_measure(
     // 留下的音比整小节短：记下原小节长
     let full = full_of();
     let sub_starts = starts_of(&out);
-    let sub_end = out.elements.iter().enumerate().fold(0.0, |a, (j, el)| js::max(a, sub_starts[j] + length_of(el)));
+    let sub_end = out.elements.iter().enumerate().fold(0.0, |a, (j, el)| js::max(a, sub_starts[j] + el.span()));
     if full > sub_end {
         out.duration = Some(full);
     }
@@ -233,7 +211,7 @@ fn attrs_for_staff(a: &MeasureAttrs, k: f64) -> Option<MeasureAttrs> {
         let v: Vec<Clef> = clefs.iter().filter(|c| c.staff.unwrap_or(1.0) == k).map(|c| Clef { staff: None, ..c.clone() }).collect();
         out.clefs = if v.is_empty() { None } else { Some(v) };
     }
-    if attrs_empty(&out) {
+    if out.is_empty() {
         None
     } else {
         Some(out)
@@ -420,7 +398,7 @@ pub fn merge_staff_parts(song: &mut Song) {
                 let hm = &mut host.measures[mi];
                 let host_starts = starts_of(hm);
                 let host_end = match hm.elements.last() {
-                    Some(last) => host_starts[host_starts.len() - 1] + length_of(last),
+                    Some(last) => host_starts[host_starts.len() - 1] + last.span(),
                     None => 0.0,
                 };
                 let g_starts = starts_of(gm);
@@ -443,7 +421,7 @@ pub fn merge_staff_parts(song: &mut Song) {
                             x.onset = on;
                         }
                     }
-                    end = s + length_of(&ne);
+                    end = s + ne.span();
                     hm.elements.push(ne);
                 }
                 let fix = |after_el: Option<f64>, onset: Option<f64>| -> (f64, Option<f64>) {
@@ -452,7 +430,7 @@ pub fn merge_staff_parts(song: &mut Song) {
                     let def = if after > 0.0 {
                         if after > offset {
                             match js::index(after - offset - 1.0) {
-                                Some(i) if i < g_starts.len() => g_starts[i] + length_of(&gm.elements[i]),
+                                Some(i) if i < g_starts.len() => g_starts[i] + gm.elements[i].span(),
                                 _ => f64::NAN,
                             }
                         } else {

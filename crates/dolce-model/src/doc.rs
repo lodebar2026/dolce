@@ -240,6 +240,7 @@ pub struct ExplicitAccidental {
 /// 调号。**简谱要首调、五线谱要记谱调，两者并存**：`fifths` 是升降号数（-7..7），`tonic_degree` 是简谱主音唱名。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Key {
     pub fifths: f64,
@@ -289,6 +290,7 @@ pub struct Clef {
 /// [五线谱] `<transpose>`：移调乐器
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Transpose {
     #[serde(skip_serializing_if = "Option::is_none")] pub diatonic: Option<f64>,

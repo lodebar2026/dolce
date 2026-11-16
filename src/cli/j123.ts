@@ -44,6 +44,9 @@ export { barLines, phraseCuts, fanqiePhraseLines } from "../jianpu/phrase";
 export { checkMeasureDurations, describeBeatIssue } from "../model/beatcheck";
 // 模型编辑动作（可视化编辑的 MusicXML 那一路；`ops-actions-check.mjs` 按识别手动操作的口径逐个验）
 export * as modelEdit from "../model/edit";
+export * as modelParts from "../model/parts";
+export { msgText } from "../model/msg";
+export * as modelTranscribe from "../model/transcribe";
 // 试听/MIDI（私有仓库的 `chorus-midi.mjs` 拿识别结果与 GT 各导一份 MIDI 逐音比）
 export { playSourceOf } from "../jianpu/playsong";
 export { buildTimeline, toMidi } from "../score/play";
