@@ -261,3 +261,109 @@ pub fn to_xml_digest(text: &str) -> Value {
     };
     json!({ "plain": plain, "bare": write(&r.doc, None, false), "again": again, "ids": write(&r.doc, Some(&r.surface), true) })
 }
+
+// ───────────────────────── 投影（第 5 步） ─────────────────────────
+
+fn song_json(s: &Song) -> Value {
+    let mut v = serde_json::to_value(s).expect("序列化");
+    strip_oids(&mut v);
+    v
+}
+
+/// 第一声部起逐声部、每第 3 个（下标 % 3 == 1）正经和弦的 id：拿来当「行首」试断行
+fn probe_line_starts(s: &Song) -> Vec<ElementId> {
+    let mut out = vec![];
+    let mut k = 0;
+    for p in &s.parts {
+        for m in &p.measures {
+            for el in &m.elements {
+                if let Element::Chord(c) = el {
+                    if c.grace.is_none() {
+                        if k % 3 == 1 {
+                            out.push(c.id);
+                        }
+                        k += 1;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 第 5 步投影的摘要（口径见 dev `rs-diff.mjs project`）
+pub fn project_digest(doc: &ScoreDoc) -> Value {
+    use dolce_model::breaks::*;
+    use dolce_model::toxml::{score_doc_to_music_xml, ToXmlOptions};
+    use dolce_model::xmlproject::ProjectOptions;
+    let xml = |i: usize, project: ProjectOptions| -> Value {
+        let o = ToXmlOptions { song: i, project, ..Default::default() };
+        match score_doc_to_music_xml(doc, None, &o) {
+            Ok(x) => json!(x),
+            Err(m) => json!({ "error": m.key }),
+        }
+    };
+    let mut songs = vec![];
+    for (i, s) in doc.songs.iter().enumerate() {
+        let ls = probe_line_starts(s);
+        let mut breaks = serde_json::Map::new();
+        for (tag, mid, pages) in [
+            ("inline-write", MidMode::Inline, PageMode::Write),
+            ("snap-keep", MidMode::Snap, PageMode::Keep),
+            ("source-keep", MidMode::Source, PageMode::Keep),
+            ("inline-keep", MidMode::Inline, PageMode::Keep),
+        ] {
+            let mut c = s.clone();
+            let starts: Vec<LineStart> = ls.iter().enumerate().map(|(k, &id)| LineStart { id, page: k % 4 == 3 }).collect();
+            let ok = apply_breaks(&mut c, &starts, &ApplyBreaksOptions { mid_in_any_part: tag == "inline-keep", mid, pages });
+            breaks.insert(tag.into(), json!({ "ok": ok, "song": song_json(&c), "of": breaks_of(&c).iter().map(|b| json!([b.id, b.page])).collect::<Vec<_>>() }));
+        }
+        let mut cleared = s.clone();
+        clear_song_breaks(&mut cleared);
+        let fonts: serde_json::Map<String, Value> = dolce_model::pagemeta::song_header_fonts(s, None)
+            .into_iter()
+            .map(|(r, f)| {
+                let mut o = serde_json::Map::new();
+                if let Some(x) = f.family {
+                    o.insert("family".into(), json!(x));
+                }
+                if let Some(x) = f.size {
+                    o.insert("size".into(), json!(x));
+                }
+                if f.bold {
+                    o.insert("bold".into(), json!(true));
+                }
+                (r.as_str().to_owned(), Value::Object(o))
+            })
+            .collect();
+        let page = dolce_model::pagemeta::song_page(s).map(|p| {
+            let mut o = json!({ "w": p.w, "h": p.h });
+            if let Some(m) = p.margins {
+                o["margins"] = json!(m);
+            }
+            o
+        });
+        songs.push(json!({
+            "xml": xml(i, ProjectOptions::default()),
+            "xmlNoTie": xml(i, ProjectOptions { slur_ties: Some(false), ..Default::default() }),
+            "xmlLines": xml(i, ProjectOptions { line_starts: Some(ls.clone()), ..Default::default() }),
+            "xmlLinesMid": xml(i, ProjectOptions { line_starts: Some(ls.clone()), mid_line_starts: true, ..Default::default() }),
+            "split": song_json(&dolce_model::staves::split_staves(s)),
+            "fillEmpty": song_json(&dolce_model::staves::fill_empty_measures(s)),
+            "fillAbsent": song_json(&dolce_model::timeaxis::fill_absent_groups(s)),
+            "toLayers": song_json(&dolce_model::innervoice::voices_to_layers(s, |_, _| false)),
+            "toVoices": song_json(&dolce_model::innervoice::layers_to_voices(s)),
+            "slursAsTies": song_json(&dolce_model::xmlproject::slurs_as_ties(s)),
+            "flags": [dolce_model::staves::has_cross_staff(s), dolce_model::staves::has_extra_staves(s), dolce_model::xmlproject::has_voice_overlay(s)],
+            "voltas": dolce_model::xmlproject::voltas_of_play_order(s).iter().map(|(m, v)| json!([m, v.start, v.stop, v.repeat_back])).collect::<Vec<_>>(),
+            "breaks": breaks,
+            "cleared": song_json(&cleared),
+            "page": page,
+            "sizes": [dolce_model::pagemeta::song_staff_size(s), dolce_model::pagemeta::song_lyric_size(s)],
+            "fonts": fonts,
+        }));
+    }
+    let mut paged = serde_json::to_value(dolce_model::pagemeta::with_page_meta(doc, None).as_ref()).expect("序列化");
+    strip_oids(&mut paged);
+    json!({ "songs": songs, "paged": paged })
+}

@@ -45,6 +45,8 @@ export interface DolceWasm {
   fromXmlDigest(text: string): string;
   /** MusicXML 写出摘要（口径见 dev `rs-diff.mjs toxml`） */
   toXmlDigest(text: string): string;
+  /** 投影摘要（口径见 dev `rs-diff.mjs project`） */
+  projectDigest(doc: string): string;
 }
 
 /** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */

@@ -225,3 +225,10 @@ pub fn from_xml_digest(text: &str) -> String {
 pub fn to_xml_digest(text: &str) -> String {
     json(&probe::to_xml_digest(text))
 }
+
+/// 对拍用：文本来源投成 MusicXML 形状及周边（口径见 dev `rs-diff.mjs project`）
+#[wasm_bindgen(js_name = projectDigest)]
+pub fn project_digest(doc: &str) -> Result<String, JsValue> {
+    let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
+    Ok(json(&probe::project_digest(&d)))
+}

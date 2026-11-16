@@ -11,6 +11,7 @@ use crate::deconames::rehearsal_bracketed;
 use crate::doc::*;
 use crate::harmony::harmony_xml as chord_text_xml;
 use crate::helpers::SOURCE_ID_PREFIX;
+use crate::timeaxis::{axis_of_song, TimeAxis};
 use crate::xmlproject::{has_tie_syntax, project_for_music_xml, ProjectOptions};
 use crate::xmlsurface::{EngravedLayout, Position, PrintLayout, Slot, Surface, SystemLayout};
 use dolce_base::js;
@@ -1254,7 +1255,7 @@ fn measure_xml(o: &mut Out, m: &Measure, by_start: &MarksBy, by_end: &MarksBy, m
     o.close();
 }
 
-fn part_xml(o: &mut Out, part: &Part, song: &Song, cx: &Ctx, projected: bool) -> Result<(), Msg> {
+fn part_xml(o: &mut Out, pi: usize, part: &Part, song: &Song, cx: &Ctx, axis: Option<&TimeAxis>) {
     let mut by_start: MarksBy = HashMap::new();
     let mut by_end: MarksBy = HashMap::new();
     for (i, m) in song.marks.iter().enumerate() {
@@ -1266,15 +1267,158 @@ fn part_xml(o: &mut Out, part: &Part, song: &Song, cx: &Ctx, projected: bool) ->
         by_end.entry(m.end).or_default().push(i);
     }
     o.open("part", vec![("id", s(&part.id))], cx.sur(part.oid), false);
-    if projected {
-        // 文本谱一组不一定含全部声部：按共用时间轴逐格写（M2 第 5 步移植）
-        return Err(Msg::new("engine.unimplemented"));
-    }
-    for m in &part.measures {
-        measure_xml(o, m, &by_start, &by_end, &song.marks, cx, AxisOpts::default());
+    match axis {
+        Some(ax) if ax.grouped => axis_measures_xml(o, pi, part, song, ax, &by_start, &by_end, cx),
+        _ => {
+            for m in &part.measures {
+                measure_xml(o, m, &by_start, &by_end, &song.marks, cx, AxisOpts::default());
+            }
+        }
     }
     o.close();
-    Ok(())
+}
+
+/// 按各声部共用的时间轴逐格写：这个声部在某格没有小节就写一个只有 `<forward>`（整小节时长）的空小节；
+/// 整组缺席的那几组把谱表藏起来（`<staff-details print-object="no">`），回到有它的组再显示。
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+fn axis_measures_xml(o: &mut Out, pi: usize, part: &Part, song: &Song, axis: &TimeAxis, by_start: &MarksBy, by_end: &MarksBy, cx: &Ctx) {
+    let local = &axis.local[pi];
+    // 轴上这一格排在最前的声部的小节：各 part 的小节号照它；空小节的时长、换行也照它
+    let other = |g: usize| -> Option<&Measure> {
+        for (k, p) in song.parts.iter().enumerate() {
+            let li = axis.local[k][g];
+            if li >= 0 {
+                return p.measures.get(li as usize);
+            }
+        }
+        None
+    };
+    let first = part.measures.first();
+    let mut shown = true;
+    let mut first_written = false;
+    // 轴上走到这一格时生效的调号、拍号；这个 part 已经写出的调号、拍号
+    let (mut now_key, mut now_time): (Option<&Key>, Option<&Time>) = (None, None);
+    let (mut w_key, mut w_time): (Option<Key>, Option<Time>) = (None, None);
+    let note = |a: Option<&MeasureAttrs>, wk: &mut Option<Key>, wt: &mut Option<Time>| {
+        if let Some(a) = a {
+            if let Some(k) = &a.key {
+                *wk = Some(k.clone());
+            }
+            if let Some(t) = &a.time {
+                *wt = Some(t.clone());
+            }
+        }
+    };
+    for grp in &axis.groups {
+        let present = (grp.start..grp.start + grp.length).any(|g| local[g] >= 0);
+        for g in grp.start..grp.start + grp.length {
+            let toggle = if g == grp.start && present != shown { Some(present) } else { None };
+            if let Some(t) = toggle {
+                shown = t;
+            }
+            let li = local[g];
+            let rf = other(g);
+            if let Some(a) = rf.and_then(|r| r.attrs.as_ref()) {
+                if a.key.is_some() {
+                    now_key = a.key.as_ref();
+                }
+                if a.time.is_some() {
+                    now_time = a.time.as_ref();
+                }
+            }
+            if li >= 0 {
+                // 头一小节的 `<attributes>` 照写，与已写出的相同的那几项去掉
+                let m = &part.measures[li as usize];
+                let mut replaced: Option<Option<MeasureAttrs>> = None;
+                if li == 0 && first_written {
+                    if let Some(a) = &m.attrs {
+                        let key_new = a.key.as_ref().is_some_and(|k| Some(k.fifths) != w_key.as_ref().map(|w| w.fifths));
+                        let time_new = a.time.as_ref().is_some_and(|t| {
+                            Some(t.beats) != w_time.as_ref().map(|w| w.beats) || Some(t.beat_type) != w_time.as_ref().map(|w| w.beat_type)
+                        });
+                        replaced = Some(if key_new || time_new {
+                            Some(MeasureAttrs {
+                                key: if key_new { a.key.clone() } else { None },
+                                time: if time_new { a.time.clone() } else { None },
+                                ..Default::default()
+                            })
+                        } else {
+                            None
+                        });
+                    }
+                }
+                match &replaced {
+                    Some(r) => note(r.as_ref(), &mut w_key, &mut w_time),
+                    None => note(m.attrs.as_ref(), &mut w_key, &mut w_time),
+                }
+                let opts = AxisOpts { shown: toggle, number: rf.map(|r| r.number.clone()), attrs: replaced.as_ref().map(|r| r.as_ref()) };
+                measure_xml(o, m, by_start, by_end, &song.marks, cx, opts);
+                first_written = true;
+                continue;
+            }
+            let number = rf.map_or_else(|| (g + 1).to_string(), |r| r.number.clone());
+            o.open("measure", vec![("number", Some(number))], None, false);
+            if let Some(p) = rf.and_then(|r| r.print.as_ref()) {
+                let ns = p.new_system == Some(true);
+                let np = p.new_page == Some(true);
+                if ns || np {
+                    let pr = Print { new_system: ns.then_some(true), new_page: np.then_some(true), ..Default::default() };
+                    print_xml(o, Some(&pr), None, cx);
+                }
+            }
+            // 声部还没写过小节：先写 divisions、谱号（取头一小节的），调号拍号取轴上此刻生效的；之后的空小节只跟着这一格的拍号、调号走
+            let meter = rf.and_then(|r| r.attrs.as_ref()).filter(|a| a.time.is_some() || a.key.is_some()).map(|a| MeasureAttrs {
+                key: a.key.clone(),
+                time: a.time.clone(),
+                ..Default::default()
+            });
+            let attrs = if !first_written {
+                let mut a = first.and_then(|f| f.attrs.clone()).unwrap_or_default();
+                a.oid = Oid::NONE;
+                if let Some(k) = now_key {
+                    a.key = Some(k.clone());
+                }
+                if let Some(t) = now_time {
+                    a.time = Some(t.clone());
+                }
+                Some(a)
+            } else {
+                meter
+            };
+            note(attrs.as_ref(), &mut w_key, &mut w_time);
+            if attrs.is_some() || toggle.is_some() {
+                attributes_xml(o, attrs.as_ref().unwrap_or(&MeasureAttrs::default()), toggle, cx);
+            }
+            first_written = true;
+            let len = rf.map_or(0.0, measure_length);
+            if len > 0.0 {
+                o.open0("forward");
+                o.num("duration", len);
+                o.close();
+            }
+            o.close();
+        }
+    }
+}
+
+/// 小节时长（divisions），同 `measure_xml` 的游标走法
+fn measure_length(m: &Measure) -> f64 {
+    let mut end = 0.0;
+    let mut max = 0.0;
+    for el in &m.elements {
+        let onset = el.onset().unwrap_or(end);
+        let d = match el {
+            Element::Chord(c) if c.grace.is_none() => Some(c.duration.divisions),
+            Element::Space(sp) if sp.spacer == Spacer::X => sp.duration.as_ref().map(|d| d.divisions),
+            _ => None,
+        };
+        if let Some(d) = d {
+            let cursor = onset + js::max(0.0, js::round(d));
+            end = cursor;
+            max = js::max(max, cursor);
+        }
+    }
+    js::max(max, m.duration.unwrap_or(0.0))
 }
 
 /// 写出选项
@@ -1403,8 +1547,10 @@ pub fn score_doc_to_music_xml(doc: &ScoreDoc, surface: Option<&Surface>, options
     }
     o.close();
 
-    for p in &song.parts {
-        part_xml(&mut o, p, &song, &cx, projected)?;
+    // 文本谱一组不一定含全部声部：按共用时间轴逐格写
+    let axis = if projected { Some(axis_of_song(&song)) } else { None };
+    for (pi, p) in song.parts.iter().enumerate() {
+        part_xml(&mut o, pi, p, &song, &cx, axis.as_ref());
     }
     o.close();
     Ok(o.finish() + "\n")

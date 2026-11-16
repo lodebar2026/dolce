@@ -420,6 +420,238 @@ pub fn primary_song(doc: &ScoreDoc) -> Option<&Song> {
 /// 派生五线谱时 `<note>` 上的源 id 前缀（`toxml` 写、`fromxml` 认）。
 pub const SOURCE_ID_PREFIX: &str = "jp";
 
+impl Barline {
+    /// 只带位置的小节线
+    pub fn at(location: BarLocation) -> Barline {
+        Barline {
+            oid: Oid::NONE,
+            location,
+            style: None,
+            repeat: None,
+            repeat_times: None,
+            ending: None,
+            jump: None,
+            also_forward: None,
+            no_width: None,
+            ornaments: None,
+            time: None,
+            annotation: None,
+            before: None,
+            line_break_after: None,
+            after_elements: None,
+            source: None,
+        }
+    }
+}
+
+impl Ending {
+    pub fn new(numbers: Vec<f64>, kind: EndingType, text: Option<String>) -> Ending {
+        Ending {
+            numbers,
+            text,
+            kind,
+            level: None,
+            continuation_levels: None,
+            lead_in_previous_line: None,
+            start_offset: None,
+            end_offset: None,
+            pair: None,
+            dangling_lead: None,
+            captionless: None,
+            collapsed: None,
+            print_object: None,
+        }
+    }
+}
+
+impl Mark {
+    pub fn new(kind: MarkType, start: ElementId, end: ElementId) -> Mark {
+        Mark {
+            oid: Oid::NONE,
+            kind,
+            number: None,
+            start,
+            end,
+            start_note: None,
+            end_note: None,
+            level: None,
+            placement: None,
+            orientation: None,
+            bracket: None,
+            dashed: None,
+            wedge_type: None,
+            continuation_levels: None,
+            start_lead: None,
+            end_trail: None,
+            collapsed: None,
+            lead_in_previous_line: None,
+            lead_back: None,
+            tuplet_actual: None,
+            tuplet_normal: None,
+            continues_to_next: None,
+            continues_from_previous: None,
+            source: None,
+            open_source: None,
+            close_source: None,
+        }
+    }
+}
+
+impl Direction {
+    pub fn of(kind: &str) -> Direction {
+        Direction { kind: kind.to_owned(), ..Default::default() }
+    }
+}
+
+/// 不可见休止（`{ kind: "chord", notes: [], rest: {}, printObject: false, … }`）
+pub fn hidden_rest(id: ElementId, duration: Duration, voice: f64, staff: f64, measure: bool) -> Chord {
+    Chord {
+        id,
+        rest: Some(RestInfo { measure: if measure { Some(true) } else { None }, ..Default::default() }),
+        print_object: Some(false),
+        duration,
+        voice,
+        staff,
+        ..Default::default()
+    }
+}
+
+/// 文档里用到的最大元素 id（顶层元素；不含增时线与层）
+pub fn max_top_element_id(song: &Song) -> ElementId {
+    let mut max = 0;
+    for p in &song.parts {
+        for m in &p.measures {
+            for el in &m.elements {
+                max = max.max(el.id());
+            }
+        }
+    }
+    max
+}
+
+/// 这个和弦（或它的增时线）之后原位换行吗（同 `emitutil.ts::inlineBreakOf`）
+pub fn inline_break_of(el: &Element) -> Option<BreakKind> {
+    let Element::Chord(c) = el else { return None };
+    if let Some(k) = &c.line_break_after {
+        return Some(k.clone());
+    }
+    c.sustains.iter().flatten().find_map(|su| su.line_break_after.clone())
+}
+
+/// 同一个音底下段号重复的依次挪到下一个空号（同 `phrasedoc.ts::distinctNumbers`）
+pub fn distinct_numbers(lyrics: &[Lyric]) -> Vec<Lyric> {
+    let mut used: std::collections::HashSet<js::NumKey> = std::collections::HashSet::new();
+    let mut max: f64 = 0.0;
+    lyrics
+        .iter()
+        .map(|l| {
+            let number = if used.contains(&js::NumKey::new(l.number)) { max + 1.0 } else { l.number };
+            used.insert(js::NumKey::new(number));
+            max = js::max(max, number);
+            if number == l.number {
+                l.clone()
+            } else {
+                Lyric { number, ..l.clone() }
+            }
+        })
+        .collect()
+}
+
+// ───────────────────────── 对象身份 ─────────────────────────
+
+/// 整首所有对象的 `Oid` 清零：TS 那边 `structuredClone` 出来的副本不再挂表层 / 版面（WeakMap 按对象认）
+pub fn clear_oids(song: &mut Song) {
+    song.oid = Oid::NONE;
+    for c in song.credits.iter_mut().flatten() {
+        c.oid = Oid::NONE;
+    }
+    for mk in &mut song.marks {
+        mk.oid = Oid::NONE;
+    }
+    for p in &mut song.parts {
+        p.oid = Oid::NONE;
+        clear_measure_oids(&mut p.measures);
+    }
+}
+
+fn clear_harmony(h: &mut Harmony) {
+    h.oid = Oid::NONE;
+}
+
+fn clear_lyrics(ls: &mut Option<Vec<Lyric>>) {
+    for l in ls.iter_mut().flatten() {
+        l.oid = Oid::NONE;
+    }
+}
+
+fn clear_inline(items: &mut Option<Vec<InlineItem>>) {
+    for it in items.iter_mut().flatten() {
+        if let InlineItem::Layer { measures, marks, .. } = it {
+            clear_measure_oids(measures);
+            for mk in marks {
+                mk.oid = Oid::NONE;
+            }
+        }
+    }
+}
+
+fn clear_measure_oids(ms: &mut [Measure]) {
+    for m in ms {
+        m.oid = Oid::NONE;
+        if let Some(a) = &mut m.attrs {
+            a.oid = Oid::NONE;
+        }
+        for la in m.later_attrs.iter_mut().flatten() {
+            la.attrs.oid = Oid::NONE;
+        }
+        for b in m.barlines.iter_mut().flatten() {
+            b.oid = Oid::NONE;
+            clear_inline(&mut b.before);
+        }
+        for d in m.directions.iter_mut().flatten() {
+            d.oid = Oid::NONE;
+            for x in d.more.iter_mut().flatten() {
+                x.oid = Oid::NONE;
+            }
+        }
+        if let Some(pr) = &mut m.print {
+            pr.oid = Oid::NONE;
+        }
+        clear_inline(&mut m.trailing);
+        for el in &mut m.elements {
+            match el {
+                Element::Chord(c) => {
+                    c.oid = Oid::NONE;
+                    for n in &mut c.notes {
+                        n.oid = Oid::NONE;
+                    }
+                    if let Some(h) = &mut c.harmony {
+                        clear_harmony(h);
+                    }
+                    for h in c.later_harmonies.iter_mut().flatten() {
+                        clear_harmony(h);
+                    }
+                    clear_lyrics(&mut c.lyrics);
+                    clear_inline(&mut c.before);
+                    for su in c.sustains.iter_mut().flatten() {
+                        if let Some(h) = &mut su.harmony {
+                            clear_harmony(h);
+                        }
+                        clear_lyrics(&mut su.lyrics);
+                        clear_inline(&mut su.before);
+                    }
+                }
+                Element::Space(sp) => {
+                    if let Some(h) = &mut sp.harmony {
+                        clear_harmony(h);
+                    }
+                    clear_lyrics(&mut sp.lyrics);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

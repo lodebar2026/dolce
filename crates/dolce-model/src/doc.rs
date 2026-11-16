@@ -118,7 +118,7 @@ str_enum! {
 
 /// `<credit>`：带版式与坐标的标题块文字。导出 MusicXML 时照原样写回
 /// （有任何 `<credit>` 就不再用 `<work-title>` 生成标题）。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Credit {
@@ -354,7 +354,7 @@ pub struct TimeMod {
 }
 
 /// 时值。`divisions` 相对所在小节 `MeasureAttrs.divisions`；简谱来源分母是 `SIMPLE_DIVISIONS`。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Duration {
@@ -434,7 +434,7 @@ str_enum! {
     pub enum Syllabic { Single = "single", Begin = "begin", Middle = "middle", End = "end" }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Lyric {
@@ -624,7 +624,7 @@ pub struct RestInfo {
 }
 
 /// 一个时间位置上的内容：一个音、一组同时发声的音（和弦音）、或一个休止。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Chord {
@@ -907,7 +907,7 @@ pub struct Sound {
 }
 
 /// `<direction>`：挂在小节某个时间点上的指示。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Direction {
@@ -942,7 +942,7 @@ pub struct Direction {
 }
 
 /// `Direction.more` 的一项：`<direction-type>` 下的一个子元素。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct DirectionPart {
@@ -1018,7 +1018,7 @@ pub struct LaterAttrs {
     pub attrs: MeasureAttrs,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Measure {
@@ -1046,7 +1046,7 @@ pub struct Measure {
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Part {
