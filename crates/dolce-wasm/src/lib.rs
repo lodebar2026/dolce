@@ -204,3 +204,12 @@ pub fn doc_roundtrip(doc: &str) -> Result<String, JsValue> {
     let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
     Ok(json(&d))
 }
+
+mod probe;
+
+/// 对拍用：查询层（`model/jianpu.ts` 等）在这份谱上的摘要（口径见 dev `rs-diff.mjs query`）
+#[wasm_bindgen(js_name = queryDigest)]
+pub fn query_digest(doc: &str) -> Result<String, JsValue> {
+    let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
+    Ok(json(&probe::query_digest(&d)))
+}

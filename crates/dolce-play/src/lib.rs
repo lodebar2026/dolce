@@ -11,6 +11,7 @@
 //! 与 TS 的口径：`Math.round` / 稳定排序 / `Map` 与 `Set` 的插入次序一律照搬（`dolce_base::js`）；
 //! TS 里会抛错的输入（没有和弦的小节取时值、越界取小节）这里回 `Err`，由 TS 侧照样抛出。
 
+pub mod jppitch;
 pub mod midi;
 pub mod phrase;
 pub mod phraseinput;

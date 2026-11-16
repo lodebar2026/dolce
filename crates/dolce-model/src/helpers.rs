@@ -211,31 +211,12 @@ pub fn verse_count(song: &Song) -> f64 {
     let mut max = 0.0f64;
     for (_, _, c) in each_chord(song) {
         for l in c.lyrics.iter().flatten() {
-            max = js_max(max, l.number_to.unwrap_or(l.number));
+            max = js::max(max, l.number_to.unwrap_or(l.number));
         }
     }
     max
 }
 
-/// `Math.max(a, b)`（有 NaN 回 NaN）。
-#[inline]
-pub fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.max(b)
-    }
-}
-
-/// `Math.min(a, b)`（有 NaN 回 NaN）。
-#[inline]
-pub fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        f64::NAN
-    } else {
-        a.min(b)
-    }
-}
 
 /// 取某一段的歌词。副歌（`refrain`）对所有段都算命中。
 pub fn lyric_of_verse(lyrics: Option<&[Lyric]>, verse: f64) -> Option<&Lyric> {
@@ -254,27 +235,17 @@ pub fn lyric_of_verse(lyrics: Option<&[Lyric]>, verse: f64) -> Option<&Lyric> {
 
 /// 小节的总时值（divisions）。取各 voice 的最大值——和弦音与多声部不能累加。
 pub fn measure_duration(measure: &Measure) -> f64 {
-    // 声部按首次出现的次序（Map 插入序），与 TS 逐个取 max 结果相同
-    let mut per_voice: Vec<(f64, f64)> = Vec::new();
+    let mut per_voice: indexmap::IndexMap<js::NumKey, f64> = indexmap::IndexMap::new();
     for el in &measure.elements {
         let d = match el {
             Element::Chord(c) => c.duration.divisions,
             Element::Space(s) => s.duration.as_ref().map_or(0.0, |d| d.divisions),
         };
-        let v = el.voice();
-        match per_voice.iter_mut().find(|(k, _)| same_key(*k, v)) {
-            Some(e) => e.1 += d,
-            None => per_voice.push((v, d)),
-        }
+        *per_voice.entry(js::NumKey::new(el.voice())).or_insert(0.0) += d;
     }
-    per_voice.iter().fold(0.0, |m, &(_, d)| js_max(m, d))
+    per_voice.values().fold(0.0, |m, &d| js::max(m, d))
 }
 
-/// JS `Map` 的键相等（SameValueZero：NaN 等于 NaN，+0 等于 -0）。
-#[inline]
-pub fn same_key(a: f64, b: f64) -> bool {
-    a == b || (a.is_nan() && b.is_nan())
-}
 
 // ───────────────────────── 段落标记 ─────────────────────────
 

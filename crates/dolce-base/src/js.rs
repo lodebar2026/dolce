@@ -7,6 +7,67 @@
 //! `inf` / `nan` 这些字面上与 JS 不同，写出端与解析器一律走这里。
 use std::cmp::Ordering;
 
+/// JS `Map` / `Set` 的数字键（SameValueZero：`+0` 与 `-0` 同键、NaN 与 NaN 同键），可作 `HashMap` 的键。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NumKey(u64);
+
+impl NumKey {
+    pub fn new(x: f64) -> NumKey {
+        if x.is_nan() {
+            NumKey(f64::NAN.to_bits())
+        } else if x == 0.0 {
+            NumKey(0)
+        } else {
+            NumKey(x.to_bits())
+        }
+    }
+    pub fn get(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
+impl From<f64> for NumKey {
+    fn from(x: f64) -> NumKey {
+        NumKey::new(x)
+    }
+}
+
+/// `Math.max(a, b)`：有 NaN 回 NaN
+#[inline]
+pub fn max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
+}
+
+/// `Math.min(a, b)`：有 NaN 回 NaN
+#[inline]
+pub fn min(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b)
+    }
+}
+
+/// `arr[i]` 的下标：只有非负整数（且在 usize 内）才算数，其余（小数、负数、NaN）是取不到（undefined）
+#[inline]
+pub fn index(i: f64) -> Option<usize> {
+    (i >= 0.0 && i.fract() == 0.0 && i < 9007199254740992.0).then_some(i as usize)
+}
+
+/// `"x".repeat(n)` 的次数（ToIntegerOrInfinity；负数 TS 抛 RangeError，调用方已排除）
+#[inline]
+pub fn repeat_count(n: f64) -> usize {
+    if n.is_nan() || n <= 0.0 {
+        0
+    } else {
+        n.trunc() as usize
+    }
+}
+
 /// `Math.round`：半数向正无穷（`-2.5 → -2`、`2.5 → 3`）。
 #[inline]
 pub fn round(x: f64) -> f64 {

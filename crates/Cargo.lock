@@ -380,6 +380,7 @@ name = "dolce-model"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-play",
  "dolce-xml",
  "indexmap",
  "serde",

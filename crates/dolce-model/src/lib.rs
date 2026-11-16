@@ -4,8 +4,13 @@ pub mod strenum;
 
 pub mod deconames;
 pub mod doc;
+pub mod harmony;
 pub mod helpers;
+pub mod jianpu;
+pub mod keyshift;
 pub mod marknames;
 pub mod metakeys;
+pub mod multirest;
+pub mod tuplets;
 
 pub use doc::*;
