@@ -470,8 +470,8 @@ pub struct MusicLineResult {
 fn make_mark(open: &OpenMark, end: usize, ctx: &mut Ctx, to_next: bool) -> Mark {
     Mark {
         kind: open.kind,
-        start: open.start,
-        end,
+        start: open.start as i64,
+        end: end as i64,
         level: open.level,
         caption: open.caption.clone(),
         open_end: if open.open_end { Some(true) } else { None },

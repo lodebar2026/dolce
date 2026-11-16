@@ -597,13 +597,13 @@ fn convert_marks(
         let level = if m.level != 0.0 { Some(m.level) } else { None };
         let to_next = m.continuation_to_next == Some(true);
         let from_prev = m.continuation_from_previous == Some(true);
-        let start_i = nearest_index(&r.id_at, m.start, 1);
-        let end_i = nearest_index(&r.id_at, m.end, -1);
+        let start_i = nearest_index(&r.id_at, m.start as usize, 1);
+        let end_i = nearest_index(&r.id_at, m.end as usize, -1);
         let start = start_i.map(|i| r.id_at[&i]);
         let end = end_i.map(|i| r.id_at[&i]);
         // 端点离最近符号的偏移（`Mark.startLead/endTrail`）
-        let lead = start_i.map_or(0, |i| i - m.start);
-        let trail = end_i.map_or(0, |i| m.end - i);
+        let lead = start_i.map_or(0, |i| i - (m.start as usize));
+        let trail = end_i.map_or(0, |i| (m.end as usize) - i);
         let set_trail = |mk: &mut Mark| {
             mk.end_trail = if trail > 0 && !to_next { Some(trail as f64) } else { None };
         };
@@ -613,8 +613,8 @@ fn convert_marks(
             lm.lead_in_previous_line = Some(true);
             lm.continues_to_next = Some(true);
             lm.level = level;
-            if r.length as isize - m.start as isize > 0 {
-                lm.lead_back = Some((r.length - m.start) as f64);
+            if r.length as isize - (m.start as usize) as isize > 0 {
+                lm.lead_back = Some((r.length - (m.start as usize)) as f64);
             }
             lm.wedge_type = wedge.clone();
             cross.pending.entry(m.kind as u8).or_default().push(Queued::Detached(Box::new(lm)));
@@ -800,7 +800,7 @@ fn apply_volta(r: &LineResult, m: &FanqieMark, measures: &mut [Measure], base: u
                 measures[ph.measure].barlines = None;
             }
             // 上一行行尾起头的：房号挂到本行首小节，标明上一行有一段空起头
-            let Some(k) = nearest_measure(r, m.start, 1) else { return };
+            let Some(k) = nearest_measure(r, m.start as usize, 1) else { return };
             let mut e = make_start(&lead.caption, lead.level);
             e.lead_in_previous_line = Some(true);
             e.continuation_levels = Some(vec![m.level]);
@@ -810,7 +810,7 @@ fn apply_volta(r: &LineResult, m: &FanqieMark, measures: &mut [Measure], base: u
     let start = match start {
         Some(s) => s,
         None => {
-            let Some(k) = nearest_measure(r, m.start, 1) else {
+            let Some(k) = nearest_measure(r, m.start as usize, 1) else {
                 if to_next {
                     // 先挂个占位：后面若再没有续行接上，它就是解析器留下的孤段（`Ending.danglingLead`）
                     if measures.len() <= base {
@@ -830,12 +830,12 @@ fn apply_volta(r: &LineResult, m: &FanqieMark, measures: &mut [Measure], base: u
             };
             let mut e = make_start(&caption, m.level);
             if let Some(first) = measure_edge(r, k, true) {
-                if m.start != first {
+                if (m.start as usize) != first {
                     e.start_offset = Some(m.start as f64 - first as f64);
                 }
             }
             let s = put_start(measures, base + k, e, conv);
-            let k_end = if to_next { None } else { nearest_measure(r, m.end, -1) };
+            let k_end = if to_next { None } else { nearest_measure(r, m.end as usize, -1) };
             if k_end.is_some_and(|ke| ke < k) {
                 ending_mut(measures, s).collapsed = Some(true);
                 return;
@@ -847,13 +847,13 @@ fn apply_volta(r: &LineResult, m: &FanqieMark, measures: &mut [Measure], base: u
         open.push(OpenVolta { start: Some(start), lead: None });
         return;
     }
-    let Some(k) = nearest_measure(r, m.end, -1) else { return };
+    let Some(k) = nearest_measure(r, m.end as usize, -1) else { return };
     let se = ending_mut(measures, start);
     let pair = *se.pair.get_or_insert_with(|| (VOLTA_PAIR.fetch_add(1, Ordering::Relaxed) + 1) as f64);
     let mut ending = Ending::new(se.numbers.clone(), stop_type, Some(se.text.clone().unwrap_or(caption)));
     ending.pair = Some(pair);
     if let Some(last) = measure_edge(r, k, false) {
-        if m.end != last {
+        if (m.end as usize) != last {
             ending.end_offset = Some(m.end as f64 - last as f64);
         }
     }

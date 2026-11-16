@@ -64,6 +64,8 @@ export interface DolceWasm {
   modelApplyBreaks(song: string, starts: string, opts: string): string;
   modelClearSongBreaks(song: string): string;
   modelBreaksOf(song: string): string;
+  /** 排版行视图（`jianpu/slots.ts`）：id 化的 `DocView` JSON（`refs` 存下标，投影改过曲子的另带 `song`）；`source` 空串 = 用 `doc.source` */
+  modelDocView(doc: string, source: string): string;
 
   // ABC 家族与丢失清单（crates/dolce-wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）
   /** `dialect`：`123` / `abc` / `jcx`；回 ScoreDoc 的 JSON（带 `source`） */

@@ -9,6 +9,7 @@ publish.workspace = true
 dolce-base = { path = "../dolce-base" }
 dolce-model = { path = "../dolce-model" }
 dolce-play = { path = "../dolce-play" }
+dolce-view = { path = "../dolce-view" }
 indexmap = "2"
 serde.workspace = true
 encoding_rs = "0.8"

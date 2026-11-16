@@ -365,6 +365,7 @@ dependencies = [
  "dolce-base",
  "dolce-model",
  "dolce-play",
+ "dolce-view",
  "encoding_rs",
  "indexmap",
  "serde",
@@ -571,6 +572,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-view"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-model",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dolce-wasm"
 version = "0.1.0"
 dependencies = [
@@ -580,6 +591,7 @@ dependencies = [
  "dolce-model",
  "dolce-play",
  "dolce-session",
+ "dolce-view",
  "dolce-xml",
  "js-sys",
  "serde",

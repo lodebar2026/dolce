@@ -43,7 +43,7 @@
 | `src/model/deconames.ts` | 音符记号的别名表（`decoKey`）：拼音短名 / ABC 名 / MusicXML 名 / 中文名 → 文本谱短名。模型里原名照存，简谱排版、文本谱写出、MusicXML 投影用前先归一 |
 | `src/model/jianpuproject.ts` | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
 | `crates/dolce-formats/src/fanqie/fromfanqie.rs`（门面 `src/fanqie/parse.ts`） | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
-| `src/jianpu/slots.ts` | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId` |
+| `crates/dolce-view/src/slots.rs`（门面 `src/jianpu/slots.ts`） | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId`。Rust 回 id 化的视图（`refs` 存下标、投影改过的曲子另带一份），门面认回对象、建 `idOf` / `elementOf` / `syllableOwner` |
 | `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
 | `crates/dolce-formats/src/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
 | `crates/dolce-formats/src/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |

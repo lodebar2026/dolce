@@ -533,3 +533,12 @@ pub fn model_breaks_of(song: &str) -> Result<String, JsValue> {
     let out: Vec<Value> = breaks::breaks_of(&song).into_iter().map(|s| if s.page { json!({ "id": s.id, "page": true }) } else { json!({ "id": s.id }) }).collect();
     Ok(to_json(&out))
 }
+
+/// `docView`：排版行视图（`dolce_view::slots::doc_view`）。`source`：原文（文本谱来源取各行 `raw`；空串当没有）。
+/// 回 id 化的视图（`refs` 存下标、投影改过曲子的另带 `song`），对象由门面 `jianpu/slots.ts` 认回。
+#[wasm_bindgen(js_name = modelDocView)]
+pub fn model_doc_view(doc: &str, source: &str) -> Result<String, JsValue> {
+    let d: ScoreDoc = parse("ScoreDoc", doc)?;
+    let src = (!source.is_empty()).then_some(source);
+    Ok(to_json(&dolce_view::slots::doc_view(&d, src)))
+}
