@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod dialect;
+pub mod emit;
 pub mod fromfanqie;
 pub mod parse;
 pub mod plan;

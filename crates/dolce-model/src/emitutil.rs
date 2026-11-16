@@ -86,6 +86,49 @@ pub fn part_ranges(ranges: &[SystemRange], lead: &Part, part: &Part, same: bool)
         .collect()
 }
 
+/// 同 `part_ranges`，按组排的歌（`timeaxis`：某声部在有的组里缺席）：第一声部的小节落在轴上第几格，本声部就取同一格起止的小节；
+/// 这一段里本声部一个小节都没有就给空段（`from > to`，写出端跳过；TS 的 `to = -1` 记成 `from = usize::MAX, to = 0`）。
+/// 小节中间的切点只在两边同一格时照拍位对过去。`lead_slots` / `part_slots` 是两声部各小节在轴上的格号
+pub fn part_ranges_on_axis(ranges: &[SystemRange], lead: &Part, part: &Part, lead_slots: &[usize], part_slots: &[usize]) -> Vec<SystemRange> {
+    const INF: usize = usize::MAX;
+    let onset_at = |p: &Part, mi: usize, el: usize| -> f64 {
+        let Some(m) = p.measures.get(mi) else { return 0.0 };
+        m.elements.iter().take(el).filter_map(|e| if let Element::Chord(c) = e { c.grace.is_none().then_some(c.duration.divisions) } else { None }).sum()
+    };
+    let index_at = |mi: usize, t: f64| -> usize {
+        let len = part.measures.get(mi).map_or(0, |m| m.elements.len());
+        (0..=len).find(|&j| onset_at(part, mi, j) >= t).unwrap_or(len)
+    };
+    let map = |mi: usize, el: usize, pmi: usize| -> usize {
+        if el == 0 || el == INF {
+            el
+        } else {
+            index_at(pmi, onset_at(lead, mi, el))
+        }
+    };
+    let at_or_after = |slot: usize| part_slots.iter().position(|&g| g >= slot).unwrap_or(part.measures.len());
+    let at_or_before = |slot: usize| part_slots.iter().rposition(|&g| g <= slot);
+    ranges
+        .iter()
+        .map(|r| {
+            let sf = lead_slots.get(r.from).copied().unwrap_or(INF);
+            let st = if r.to >= lead.measures.len() { INF } else { lead_slots[r.to] };
+            let from = if sf == INF { part.measures.len() } else { at_or_after(sf) };
+            let to = if st == INF { Some(INF) } else { at_or_before(st) };
+            let Some(to) = to else {
+                return SystemRange { from: INF, to: 0, from_el: 0, to_el: INF, ..r.clone() };
+            };
+            SystemRange {
+                from,
+                to,
+                from_el: if sf != INF && part_slots.get(from) == Some(&sf) { map(r.from, r.from_el, from) } else { 0 },
+                to_el: if st != INF && part_slots.get(to) == Some(&st) { map(r.to, r.to_el, to) } else { INF },
+                ..r.clone()
+            }
+        })
+        .collect()
+}
+
 /// 本声部里写得出来的元素 id（含增时线）。`emits` 判哪些元素写
 pub fn own_ids(part: &Part, emits: impl Fn(&Element, usize) -> bool) -> HashSet<ElementId> {
     let mut own = HashSet::new();
