@@ -364,8 +364,11 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-model",
+ "dolce-play",
  "encoding_rs",
+ "indexmap",
  "serde",
+ "serde_json",
  "unicode-general-category",
 ]
 

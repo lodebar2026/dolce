@@ -205,6 +205,8 @@ pub fn head_fp_of(chords: &str) -> Result<String, JsValue> {
 
 #[cfg(feature = "probe")]
 mod probe;
+#[cfg(feature = "probe")]
+mod probe_jpw;
 
 #[cfg(feature = "probe")]
 mod probe_fanqie;

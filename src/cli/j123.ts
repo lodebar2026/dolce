@@ -32,6 +32,14 @@ export { AccidentalCarry } from "../model/jianpu";
 // 文本谱与 `.jpwabc` 读入：迁移工具要拿它们当输入
 export { parseFanqie, parseFanqieAst, sniffDialect } from "../fanqie";
 export { JpwFile, RepeatSection } from "../jpword/jpwfile";
+// `.jpwabc` 迁 Rust 对拍（dev `rs-diff.mjs jpw`）：词法、分节、源文小节、写出端的两种输入形状
+export { VoiceSection, WordsSection, TitleSection, LayoutSection } from "../jpword/jpwfile";
+export { lexVoice } from "../jpword/lex";
+export { parseVoiceText } from "../jpword/parse";
+export { readJpwSource, convertRepeat } from "../model/fromjpw";
+export { jpwInputOfDoc } from "../model/playdoc";
+export { jpwInputOfSong } from "../jianpu/playsong";
+export { isXmlShaped } from "../model/xmlproject";
 // 按乐句重排（写回原文那一步；断句本身在 crates/dolce-play，经 score/play.ts）
 export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 export { applyBreaks, breaksOf } from "../model/breaks";
