@@ -122,9 +122,6 @@ str_enum! {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Credit {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     /// `credit-type`：title / subtitle / composer / lyricist / rights…
     #[serde(skip_serializing_if = "Option::is_none")] #[serde(rename = "type")]
     pub kind: Option<String>,
@@ -146,6 +143,10 @@ pub struct Credit {
     /// `<credit-words valign>`：`default-y` 是字顶、中线、底还是基线（缺省）
     #[serde(skip_serializing_if = "Option::is_none")] pub valign: Option<VAlign>,
     #[serde(skip_serializing_if = "Option::is_none")] pub page: Option<f64>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 /// 字体属性（`font-family` / `font-size`（pt）/ `font-weight`）。
@@ -409,9 +410,6 @@ pub struct HarmonyDegree {
 #[derive(Default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Harmony {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     pub root: HarmonyStep,
     /// `<kind>`：major / minor / dominant / major-seventh…
     pub kind: String,
@@ -432,6 +430,10 @@ pub struct Harmony {
     #[serde(skip_serializing_if = "Option::is_none")] pub staff: Option<f64>,
     /// [五线谱] 见 `Chord.onset`。缺省 = 所挂元素的起点
     #[serde(skip_serializing_if = "Option::is_none")] pub onset: Option<f64>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 str_enum! {
@@ -442,9 +444,6 @@ str_enum! {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Lyric {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     /// 段号。MusicXML 的 `number`；123 里由 `w:` 的出现顺序定
     pub number: f64,
     /// 段号区间的上界：`.jpwabc` 的 `W1-6:`、文本谱 `C1-2:` 用；单段时缺省
@@ -474,6 +473,10 @@ pub struct Lyric {
     /// 文本谱同一行曲下同一段号出现多行歌词时，这个字属于 `Print.lyricLines` 的第几行。只在有歧义时写
     #[serde(skip_serializing_if = "Option::is_none")] pub line_index: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 /// 全音符震音斜线的位置（tenths；x 相对符头左缘、y 相对谱表顶线向上为正）
@@ -632,9 +635,6 @@ pub struct RestInfo {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Chord {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     pub id: ElementId,
     /// 派生来的模型里，这个和弦在**源模型**里的 id（`<note id="jp…">` 带回来）
     #[serde(skip_serializing_if = "Option::is_none")] pub src_id: Option<ElementId>,
@@ -682,6 +682,10 @@ pub struct Chord {
     #[serde(skip_serializing_if = "Option::is_none")] pub onset: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub attached_sources: Option<Vec<AttachedSource>>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -708,9 +712,6 @@ pub struct Unpitched {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 #[derive(Default)]
 pub struct Note {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     #[serde(skip_serializing_if = "Option::is_none")] pub pitch: Option<Pitch>,
     #[serde(skip_serializing_if = "Option::is_none")] pub degree: Option<Degree>,
     /// 面上要印的临时记号（与 `pitch.alter` 不同：这个是**是否画出来**）
@@ -725,6 +726,10 @@ pub struct Note {
     #[serde(skip_serializing_if = "Option::is_none")] pub unpitched: Option<Unpitched>,
     /// [五线谱] 这个音自己的 `<type size>`
     #[serde(skip_serializing_if = "Option::is_none")] pub type_size: Option<String>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 str_enum! {
@@ -817,9 +822,6 @@ str_enum! {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Barline {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     pub location: BarLocation,
     #[serde(skip_serializing_if = "Option::is_none")] pub style: Option<BarStyle>,
     /// `|:` / `:|`
@@ -844,6 +846,10 @@ pub struct Barline {
     /// `location === "middle"` 时：它排在本小节第几个元素之后
     #[serde(skip_serializing_if = "Option::is_none")] pub after_elements: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -851,9 +857,6 @@ pub struct Barline {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 #[derive(Default)]
 pub struct MeasureAttrs {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     #[serde(skip_serializing_if = "Option::is_none")] pub divisions: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub key: Option<Key>,
     #[serde(skip_serializing_if = "Option::is_none")] pub time: Option<Time>,
@@ -865,6 +868,10 @@ pub struct MeasureAttrs {
     #[serde(skip_serializing_if = "Option::is_none")] pub transpose: Option<Transpose>,
     /// 多小节休止：从本小节起 n 个整小节休止合成一个印（`<multiple-rest>`，123 的 `Zn`）
     #[serde(skip_serializing_if = "Option::is_none")] pub multi_rest: Option<f64>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 /// `<metronome>`：♩=76
@@ -915,9 +922,6 @@ pub struct Sound {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Direction {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     /// 相对小节起点的 divisions 偏移
     #[serde(skip_serializing_if = "Option::is_none")] pub offset: Option<f64>,
     /// 它排在本小节第几个元素之后。缺省 = 小节开头
@@ -943,6 +947,10 @@ pub struct Direction {
     /// [五线谱] 见 `Chord.onset`
     #[serde(skip_serializing_if = "Option::is_none")] pub onset: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 /// `Direction.more` 的一项：`<direction-type>` 下的一个子元素。
@@ -950,9 +958,6 @@ pub struct Direction {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct DirectionPart {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     #[serde(rename = "type")]
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")] pub text: Option<String>,
@@ -961,6 +966,10 @@ pub struct DirectionPart {
     #[serde(skip_serializing_if = "Option::is_none")] pub wedge_type: Option<WedgeType>,
     #[serde(skip_serializing_if = "Option::is_none")] pub line: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")] pub shift: Option<OctaveShift>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 str_enum! {
@@ -973,9 +982,6 @@ str_enum! {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 #[derive(Default)]
 pub struct Print {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     #[serde(skip_serializing_if = "Option::is_none")] pub new_system: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")] pub new_page: Option<bool>,
     /// 本系统是全曲第几个系统（0 基），多声部文本谱靠它把各声部的行对回同一组
@@ -992,6 +998,10 @@ pub struct Print {
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
     /// 与 `texts` 平行：各条 `W:` 行的原文区间
     #[serde(skip_serializing_if = "Option::is_none")] pub text_sources: Option<Vec<SourceSpan>>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 /// 见 `Print.lyric_lines`
@@ -1026,9 +1036,6 @@ pub struct LaterAttrs {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Measure {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     /// 小节号**原文**——可能是 "12a"
     pub number: String,
     /// [五线谱] `<measure implicit="yes">`
@@ -1048,15 +1055,16 @@ pub struct Measure {
     /// 行末（最后一个符号之后）的 `InlineItem`
     #[serde(skip_serializing_if = "Option::is_none")] pub trailing: Option<Vec<InlineItem>>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Part {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     /// `<score-part id>`
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")] pub name: Option<String>,
@@ -1074,6 +1082,10 @@ pub struct Part {
     #[serde(skip_serializing_if = "Option::is_none")] pub break_sources: Option<Vec<BreakSource>>,
     /// Muse `.jcx` 的 `V:` 声明里 style 与名字以外的参数原文，只为写回 `.jcx` 时照写
     #[serde(skip_serializing_if = "Option::is_none")] pub muse_attrs: Option<String>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 // ───────────────────────── 跨元素的东西 ─────────────────────────
@@ -1094,9 +1106,6 @@ str_enum! {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Mark {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     #[serde(rename = "type")]
     pub kind: MarkType,
     /// MusicXML 的 `number` 属性：同类记号重叠时靠它配对
@@ -1138,6 +1147,10 @@ pub struct Mark {
     /// 起止符号各自在原文里的位置（`(` 与 `)`）。只给编辑用
     #[serde(skip_serializing_if = "Option::is_none")] pub open_source: Option<SourceSpan>,
     #[serde(skip_serializing_if = "Option::is_none")] pub close_source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 /// 演唱顺序的一遍。← `.jpwabc` 的 `.Repeat` 段（只读的旧扩展）。
@@ -1269,9 +1282,6 @@ pub struct SectionMark {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Song {
-    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
-    #[cfg_attr(feature = "ts", ts(skip))]
-    pub oid: Oid,
     pub work: Work,
     #[serde(skip_serializing_if = "Option::is_none")] pub identification: Option<Identification>,
     #[serde(skip_serializing_if = "Option::is_none")] pub credits: Option<Vec<Credit>>,
@@ -1309,6 +1319,10 @@ pub struct Song {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<SongMeta>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
+    /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
+    #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub oid: Oid,
 }
 
 str_enum! {

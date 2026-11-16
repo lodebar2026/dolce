@@ -6,7 +6,7 @@ import type { StyleSheet } from "../style/sheet";
 import type { JianpuLayoutMode } from "../jianpu/profile";
 import { ScorePainter, type PaintResources, type StaffPaintRequest, type SyncPaintRequest } from "../layout/painter";
 import { is123File, isFanqieFile, isJcxFile, isJlyFile } from "../common/filetypes";
-import { parseXml } from "../score/xmltree";
+import { dolce } from "../common/dolce";
 import { docView } from "../jianpu/slots";
 import { voiceNumbers } from "../jianpu/ast";
 import { withLyricsFrom, withMelodyFirst, withVisibleParts } from "../model/parts";
@@ -27,21 +27,7 @@ export function docFormatOfName(name: string): DocFormatId {
 
 /** 判断 MusicXML 是否多声部（≥2 part、单 part 多谱表、或 ≥2 voice）→ 默认混排。 */
 export function isMultiPartXml(xml: string): boolean {
-  try {
-    const doc = parseXml(xml);
-    if (doc.getElementsByTagName("score-part").length >= 2) return true;
-    for (const s of doc.getElementsByTagName("staves")) {
-      if (parseInt(s.textContent ?? "1", 10) >= 2) return true;
-    }
-    const voices = new Set<string>();
-    for (const v of doc.getElementsByTagName("voice")) {
-      const t = v.textContent.trim();
-      if (t) voices.add(t);
-    }
-    return voices.size >= 2;
-  } catch {
-    return false;
-  }
+  return dolce().xmlIsMultiPart(xml);
 }
 
 /** 这份文档有没有可排的曲行（首曲至少一行）。 */

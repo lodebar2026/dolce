@@ -13,13 +13,15 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
 | 函数 | 文件 | 作用 |
 |---|---|---|
 | `layoutStaff(doc)` | `src/mixed/layout.ts` | `ScoreDoc` → `StaffLayout`（五线谱/混排的版面态，只读 `ScoreDoc` 与其表层 `xmlsurface.ts`） |
-| `loadScoreDoc(xml)` | `src/model/fromxml.ts` | → `ScoreDoc`（**直通**：语义进模型，表层绑在原节点上，见 `model/xmlsurface.ts`） |
-| `scoreDocToMusicXml(doc)` | `src/model/toxml.ts` | **唯一写出端**；简谱来源先经 `model/xmlproject.ts` 投影 |
+| `loadScoreDoc(xml)` | `src/model/fromxml.ts`（门面；实现 `crates/dolce-model/src/fromxml.rs`） | → `ScoreDoc`（**直通**：语义进模型，表层绑在原节点上，见 `model/xmlsurface.ts`） |
+| `scoreDocToMusicXml(doc)` | `src/model/toxml.ts`（门面；实现 `crates/dolce-model/src/toxml.rs`） | **唯一写出端**；简谱来源先投影成 MusicXML 形状（Rust `xmlproject`） |
 | `projectForJianpu(song)` | `src/model/jianpuproject.ts` | MusicXML 形状 → 简谱形状（简谱档排版、转 123 之前） |
 | `engraveScoreDoc(doc, page)` | `src/editor/xmllayout.ts` | 导出的版面坐标：五线谱引擎排一遍（与屏幕同一套），坐标装进 `EngravedLayout` 交给写出端，不写进模型 |
 
-`src/score/xmltree.ts` 是自有的 XML 树（解析、序列化，浏览器与 Node 同一份，不用浏览器 `DOMParser`；每个元素记原文区间）；
-`src/score/xmldom.ts` 是它上面的读取小工具（`child`/`children`/`childText`），`fromxml.ts` 用。
+读写都在 Rust（2026-11-16 M2-8 起）：`crates/dolce-xml` 是自有的 XML 树（解析、序列化，不用浏览器 `DOMParser`；每个元素记原文区间，按 UTF-16），
+`crates/dolce-model` 的 `fromxml` / `toxml` / `xmlsurface` / `xmlsync`（`.musicxml` 的源码同步索引）在它上面。
+TS 侧拿到的模型是 JSON 镜像：可绑对象的身份 `_oid` 摘下记在 `model/rustdoc.ts` 的旁表里，表层（原树 + 绑定表）留在 Rust 按句柄取；
+`{ ...obj }`、`structuredClone` 出来的对象没有身份，同以前的表层 WeakMap。句柄在镜像回收后释放，另有上限（原文总量 16 MB，淘汰最久没用的，至少留 8 个）防同步批处理里回收不及。
 
 ## 吃什么吐什么
 

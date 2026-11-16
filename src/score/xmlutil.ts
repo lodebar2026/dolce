@@ -1,15 +1,5 @@
-// MusicXML 写出端（model/toxml.ts）的转义，与投影（model/xmlproject.ts）用的 `<type>` 反推。
-// 建树、解析、序列化在 ./xmltree.ts，读树的小工具在 ./xmldom.ts。
+// 投影（model/xmlproject.ts）用的 `<type>` 反推。MusicXML 的读写树与写出端的转义在 Rust（crates/dolce-xml、dolce-model）。
 import { Fraction } from "../common/fraction";
-
-// XML 1.0 不许出现的控制字符一并剔掉：矢量识别从没有 ToUnicode 的音乐字体里取文字，
-// 会吐出 \x03 之类（牵我的手的速度「= 60」），原样写进去整份文件就读不开了
-export const escapeXml = (s: string): string =>
-  s
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g, "")
-    .replace(/[<>&]/g, (c) => (c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"));
-
-export const escapeAttr = (s: string): string => escapeXml(s).replace(/"/g, "&quot;");
 
 const BASES: Array<[string, number]> = [
   ["whole", 4], ["half", 2], ["quarter", 1], ["eighth", 0.5],

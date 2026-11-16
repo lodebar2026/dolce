@@ -3,7 +3,8 @@
 // dolce-wasm 是编辑器开机就要的（演唱顺序、断句、时间轴、MIDI 已在里面，网页与桌面 WebView 都载它，
 // Node 的 out/cli 各入口与识谱分发包也载它），一律要编；.jcx 编解码（GBK / BIG5 码表大）单出一份 dolce_jcx_wasm，同目录、按需载入。识别那份桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）
 // 与设了 DOLCE_NO_WASM 的跳过（桌面识别走原生）。
-// vite 的 dev 与 build 开头调它（vite.config.ts）；`node scripts/build-wasm.mjs dolce` 只编 dolce 那两份（识谱分发包、桌面 CI 用）。
+// vite 的 dev 与 build 开头调它（vite.config.ts）；`node scripts/build-wasm.mjs dolce` 只编 dolce 那两份（识谱分发包、桌面 CI 用）；
+// `probe` 另编一份带对拍探针的 dolce-wasm 到 out/dolce-probe/（只给 dev 对拍脚本，不进打包）。
 //
 // 要：rustup target add wasm32-unknown-unknown；cargo install wasm-bindgen-cli --version <与 crates/Cargo.lock 一致>。
 // 有 wasm-opt（binaryen）就再压一遍。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
@@ -110,6 +111,18 @@ export function buildDolce() {
   }
 }
 
+/** 带对拍探针的那份 dolce-wasm（`--features probe`）：只给 dev `rs-diff.mjs` 用，编到 out/dolce-probe/（不进打包、不入库）。
+ *  `node scripts/build-wasm.mjs probe`；与开机那份各用自己的 target 目录。 */
+export function buildDolceProbe() {
+  checkBindgen();
+  const outDir = join(root, "out/dolce-probe");
+  mkdirSync(outDir, { recursive: true });
+  console.log("[build-wasm] 编 dolce-wasm（带对拍探针）…");
+  const target = join(crates, "target/wasm-dolce-probe");
+  run("cargo", ["build", "-p", "dolce-wasm", "--features", "probe", "--release", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
+  run("wasm-bindgen", [join(target, `wasm32-unknown-unknown/release/${DOLCE_NAME}.wasm`), "--target", "web", "--no-typescript", "--out-dir", outDir, "--out-name", DOLCE_NAME]);
+}
+
 /** pdfium-binaries 的 wasm 包（pdfium.js + pdfium.wasm），缓存在 ~/.cache/dolce-pdfium/<构建号>/wasm/。 */
 function fetchPdfium() {
   if (existsSync(join(out, "pdfium.wasm")) && existsSync(join(out, "pdfium.js"))) return;
@@ -138,5 +151,6 @@ export function buildWasm() {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (process.argv[2] === "dolce") buildDolce();
+  else if (process.argv[2] === "probe") buildDolceProbe();
   else buildWasm();
 }

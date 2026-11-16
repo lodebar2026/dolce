@@ -3,6 +3,8 @@
 //!
 //! 迁移期另出几样对拍用的纯函数（`xmlDigest` 等），Node 门面 `out/cli/dolce.js` 与 dev `rs-diff.mjs` 用。
 
+mod model;
+
 use dolce_session::{EngineError, UpdateRequest};
 use wasm_bindgen::prelude::*;
 
@@ -59,8 +61,10 @@ impl Session {
     }
 }
 
+#[cfg(feature = "probe")]
 /// XML 树对拍原料（同 `dolce xml-dump` 的口径，哈希由调用方算）：解析成功回
 /// `{"ok":true,"xml":序列化文本,"spans":"start-end,…"}`（各元素原文区间，UTF-16、文档序）；读不出回 `{"ok":false,"message":…,"at":…}`。
+#[cfg(feature = "probe")]
 #[wasm_bindgen(js_name = xmlDigest)]
 pub fn xml_digest(text: &str) -> String {
     match dolce_xml::parse(text) {
@@ -196,59 +200,68 @@ pub fn head_fp_of(chords: &str) -> Result<String, JsValue> {
     Ok(phrase::head_fp_of(&refs))
 }
 
-// ───────────────────────── 模型（dolce-model，M2 迁移中）─────────────────────────
+// ───────────────────────── 模型对拍探针（dolce-model）─────────────────────────
 
-/// 对拍用：`ScoreDoc` 的 JSON 读进 Rust 类型再写回（核对类型与 `doc.ts` 逐字段对得上）。读不进抛 `Error`。
-#[wasm_bindgen(js_name = docRoundtrip)]
-pub fn doc_roundtrip(doc: &str) -> Result<String, JsValue> {
-    let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(json(&d))
-}
-
+#[cfg(feature = "probe")]
 mod probe;
 
-/// 对拍用：查询层（`model/jianpu.ts` 等）在这份谱上的摘要（口径见 dev `rs-diff.mjs query`）
-#[wasm_bindgen(js_name = queryDigest)]
-pub fn query_digest(doc: &str) -> Result<String, JsValue> {
-    let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(json(&probe::query_digest(&d)))
-}
+#[cfg(feature = "probe")]
+mod probes {
+    //! 对拍探针（dev `rs-diff.mjs` 各档的 Rust 一侧），只在 `--features probe` 的那份里（`build-wasm.mjs probe` → out/dolce-probe/，不进打包）。
+    use super::{json, parse, probe};
+    use wasm_bindgen::prelude::*;
 
-/// 对拍用：MusicXML 读入的摘要（模型、绑定表、读后的树；口径见 dev `rs-diff.mjs fromxml`）
-#[wasm_bindgen(js_name = fromXmlDigest)]
-pub fn from_xml_digest(text: &str) -> String {
-    json(&probe::from_xml_digest(text))
-}
+    /// 对拍用：`ScoreDoc` 的 JSON 读进 Rust 类型再写回（核对类型与 `doc.ts` 逐字段对得上）。读不进抛 `Error`。
+    #[wasm_bindgen(js_name = docRoundtrip)]
+    pub fn doc_roundtrip(doc: &str) -> Result<String, JsValue> {
+        let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
+        Ok(json(&d))
+    }
 
-/// 对拍用：MusicXML 写出的摘要（口径见 dev `rs-diff.mjs toxml`）
-#[wasm_bindgen(js_name = toXmlDigest)]
-pub fn to_xml_digest(text: &str) -> String {
-    json(&probe::to_xml_digest(text))
-}
 
-/// 对拍用：MusicXML 上执行一串编辑动作（口径见 dev `rs-diff.mjs edit`）
-#[wasm_bindgen(js_name = editDigest)]
-pub fn edit_digest(text: &str, script: &str) -> Result<String, JsValue> {
-    let s: probe::EditScript = parse("EditScript", script)?;
-    Ok(json(&probe::edit_digest(text, &s)))
-}
+    /// 对拍用：查询层（`model/jianpu.ts` 等）在这份谱上的摘要（口径见 dev `rs-diff.mjs query`）
+    #[wasm_bindgen(js_name = queryDigest)]
+    pub fn query_digest(doc: &str) -> Result<String, JsValue> {
+        let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
+        Ok(json(&probe::query_digest(&d)))
+    }
 
-/// 对拍用：简繁转换（口径见 dev `rs-diff.mjs hanconv`）。`doc` 是读好的 ScoreDoc JSON，`text` 是原文（空串 = 不做原文写回）；
-/// `parse(text) → ScoreDoc JSON`、`s2t` / `t2s` 是 TS 那边的读入与词表
-#[wasm_bindgen(js_name = hanconvDigest)]
-pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_sys::Function, t2s: &js_sys::Function) -> String {
-    json(&probe::hanconv_digest(doc, text, parse, s2t, t2s))
-}
+    /// 对拍用：MusicXML 读入的摘要（模型、绑定表、读后的树；口径见 dev `rs-diff.mjs fromxml`）
+    #[wasm_bindgen(js_name = fromXmlDigest)]
+    pub fn from_xml_digest(text: &str) -> String {
+        json(&probe::from_xml_digest(text))
+    }
 
-/// 对拍用：编辑层的纯函数小表
-#[wasm_bindgen(js_name = editTables)]
-pub fn edit_tables() -> String {
-    json(&probe::edit_tables())
-}
+    /// 对拍用：MusicXML 写出的摘要（口径见 dev `rs-diff.mjs toxml`）
+    #[wasm_bindgen(js_name = toXmlDigest)]
+    pub fn to_xml_digest(text: &str) -> String {
+        json(&probe::to_xml_digest(text))
+    }
 
-/// 对拍用：文本来源投成 MusicXML 形状及周边（口径见 dev `rs-diff.mjs project`）
-#[wasm_bindgen(js_name = projectDigest)]
-pub fn project_digest(doc: &str) -> Result<String, JsValue> {
-    let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(json(&probe::project_digest(&d)))
+    /// 对拍用：MusicXML 上执行一串编辑动作（口径见 dev `rs-diff.mjs edit`）
+    #[wasm_bindgen(js_name = editDigest)]
+    pub fn edit_digest(text: &str, script: &str) -> Result<String, JsValue> {
+        let s: probe::EditScript = parse("EditScript", script)?;
+        Ok(json(&probe::edit_digest(text, &s)))
+    }
+
+    /// 对拍用：简繁转换（口径见 dev `rs-diff.mjs hanconv`）。`doc` 是读好的 ScoreDoc JSON，`text` 是原文（空串 = 不做原文写回）；
+    /// `parse(text) → ScoreDoc JSON`、`s2t` / `t2s` 是 TS 那边的读入与词表
+    #[wasm_bindgen(js_name = hanconvDigest)]
+    pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_sys::Function, t2s: &js_sys::Function) -> String {
+        json(&probe::hanconv_digest(doc, text, parse, s2t, t2s))
+    }
+
+    /// 对拍用：编辑层的纯函数小表
+    #[wasm_bindgen(js_name = editTables)]
+    pub fn edit_tables() -> String {
+        json(&probe::edit_tables())
+    }
+
+    /// 对拍用：文本来源投成 MusicXML 形状及周边（口径见 dev `rs-diff.mjs project`）
+    #[wasm_bindgen(js_name = projectDigest)]
+    pub fn project_digest(doc: &str) -> Result<String, JsValue> {
+        let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
+        Ok(json(&probe::project_digest(&d)))
+    }
 }

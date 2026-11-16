@@ -1,11 +1,11 @@
 // 结构化和弦符号（`ScoreDoc` 的 `Harmony`，读自 `<harmony>`）→ 和弦文本（"Am7"、"G/B"、"Fsus4"）。
 //
-// 是 score/harmonyxml.ts 的反向：那边把文本写成 MusicXML，这边读回来。
+// 是 MusicXML 写出端和弦那段（Rust `crates/dolce-model/src/harmony.rs::harmony_xml`）的反向：那边把文本写成 MusicXML，这边读回来。
 // 两边的 kind 映射必须对得上，否则往返一趟和弦就变了样。
 //
 // **无 DOM 依赖**。
 
-/** kind 值 → 后缀。与 harmonyxml.ts::kindOf 互逆（那边是后缀 → kind）。 */
+/** kind 值 → 后缀。与 Rust `harmony.rs` 的 kind 表互逆（那边是后缀 → kind）。 */
 const KIND_SUFFIX: Record<string, string> = {
   major: "",
   minor: "m",

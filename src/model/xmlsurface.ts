@@ -4,19 +4,15 @@
 //
 // 版面坐标（`default-x/-y`、`relative-x/-y`）、小节宽、符干、对齐、字体、`<system-layout>`、`<staff-details>`、
 // slur 贝塞尔、`<supports>`、`repeat winged`……只有两个用处：`.musicxml` 改动后整份重写不丢、五线谱引擎照原版面排。
-// 以前逐项往模型里加字段，加一项丢一项（`layout-attr-check` 的「仍丢」表就是这么来的）。
-// 现在与简谱那套同理——**不存进模型、经查询层取**（简谱的是 `jianpu.ts`，那边是由语义派生，这边是从原文现读）：
+// 所以不存进模型、经查询层取（简谱的是 `jianpu.ts`，那边是由语义派生，这边是从原文现读）。
 //
-// - `fromxml.ts` 读语义进模型，同时把每个模型对象**绑**到它的原始节点（`score/xmltree.ts` 的树，本文件的 WeakMap，不在模型里）；
-// - 五线谱引擎要的坐标、符干、对齐、字体经下面的查询函数从原节点现读；
-// - 写出端 `toxml.ts` 按「写出端认得的属性/子节点」之外，把原节点其余的属性与子节点**通用回填**。
-//
-// 克隆出来的对象没有表层（= 文本来源），一律照常；对象被丢弃时旁表随之回收。
-// 导出时五线谱引擎排出来的版面（`editor/xmllayout.ts`）是另一个来源，形如 `EngravedLayout`，经 `ToXmlOptions.layout` 交给写出端，同样不写进模型。
+// 表层在 Rust（crates/dolce-model/src/xmlsurface.rs）：读入时每个模型对象按身份（`_oid`）绑到原节点，原树与绑定表留在 Rust 里，
+// 这里的查询按镜像对象的身份（`rustdoc.ts` 的旁表）去问。克隆出来的对象没有身份（= 文本来源），一律照常。
+// 导出时五线谱引擎排出来的版面（`editor/xmllayout.ts`）是另一个来源，形如 `EngravedLayout`，经 `ToXmlOptions.layout` 交给写出端。
 
-import type { FontSpec, HAlign, Measure, MeasureAttrs, Note, Print, Song } from "./doc";
-import { child, children } from "../score/xmldom";
-import type { XmlEl } from "../score/xmltree";
+import type { Chord, FontSpec, HAlign, Measure, MeasureAttrs, Note, Print, ScoreDoc, Song } from "./doc";
+import { dolce } from "../common/dolce";
+import { boundOf } from "./rustdoc";
 
 /** 版面坐标（tenths，口径同 MusicXML 的 `default-x/-y`、`relative-x/-y`）。 */
 export interface Position {
@@ -35,270 +31,139 @@ export interface PrintLayout {
 
 export type StemDir = "up" | "down" | "none" | "double";
 
-// ───────────────────────── 绑定 ─────────────────────────
-
-/** 对象 → 槽位 → 原节点。槽位：缺省 `""`；`Part` 另有 `"score-part"`；`Mark` 有 `"start"` / `"stop"`；
- *  `Direction` 另有 `"part"`（它自己那条 `<direction-type>` 子元素，`more` 里的各绑各的缺省槽）。 */
-const SURFACE = new WeakMap<object, Map<string, XmlEl>>();
-
-export function bindSurface(obj: object, el: XmlEl, slot = ""): void {
-  let m = SURFACE.get(obj);
-  if (!m) SURFACE.set(obj, (m = new Map()));
-  if (!m.has(slot)) m.set(slot, el);
+/** 有表层的对象问一样东西（没有表层回 null） */
+function ask<T>(obj: object | null | undefined, what: string): T | null {
+  const b = boundOf(obj);
+  if (!b?.s) return null;
+  return JSON.parse(dolce().modelSurface(b.s.h, what, b.oid)) as T | null;
 }
 
-export function surfaceOf(obj: object | null | undefined, slot = ""): XmlEl | undefined {
-  return obj ? SURFACE.get(obj)?.get(slot) : undefined;
-}
-
-// ───────────────────────── 查询层 ─────────────────────────
-
-const attrNum = (el: XmlEl | null | undefined, name: string): number | undefined => {
-  const t = el?.getAttribute(name);
-  if (t === null || t === undefined || t === "") return undefined;
-  const v = Number(t);
-  return Number.isFinite(v) ? v : undefined;
-};
-
-const childNum = (el: XmlEl | null, tag: string): number | undefined => {
-  const t = el ? child(el, tag)?.textContent : undefined;
-  if (t === undefined || t === null) return undefined;
-  const v = Number(t);
-  return Number.isFinite(v) ? v : undefined;
-};
-
-/** 版面坐标元素：`DirectionPart` 取它那条 direction-type 子元素，其余取绑定的节点本身。 */
-const posHost = (obj: object): XmlEl | undefined => surfaceOf(obj, "part") ?? surfaceOf(obj);
-
-function readPos(el: XmlEl | undefined): Position | undefined {
-  if (!el) return undefined;
-  const p: Position = {};
-  const dx = attrNum(el, "default-x");
-  const dy = attrNum(el, "default-y");
-  const rx = attrNum(el, "relative-x");
-  const ry = attrNum(el, "relative-y");
-  if (dx !== undefined) p.defaultX = dx;
-  if (dy !== undefined) p.defaultY = dy;
-  if (rx !== undefined) p.relativeX = rx;
-  if (ry !== undefined) p.relativeY = ry;
-  return Object.keys(p).length ? p : undefined;
-}
+const opt = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
 
 /** 原文的版面坐标：`Note`（所在 `<note>`）、无音的 `Chord`、`Lyric`、`Harmony`、`DirectionPart`。 */
 export function xmlPos(obj: object | null | undefined): Position | undefined {
-  return obj ? readPos(posHost(obj)) : undefined;
+  return opt(ask<Position>(obj, "pos"));
 }
 
 /** `<wedge spread>`（tenths，开口那一端的开口高）。 */
 export function wedgeSpread(obj: object | null | undefined): number | undefined {
-  return obj ? attrNum(posHost(obj), "spread") : undefined;
+  return opt(ask<number>(obj, "spread"));
 }
 
 /** `<measure width>`（tenths）。 */
 export function measureWidth(m: Measure): number | undefined {
-  return attrNum(surfaceOf(m), "width");
+  return opt(ask<number>(m, "width"));
 }
 
 /** `<stem>` 的方向与 `default-y`（符干末端）。 */
 export function noteStem(note: Note | null | undefined): { dir: StemDir; y?: number } | undefined {
-  const el = note ? surfaceOf(note) : undefined;
-  const st = el ? child(el, "stem") : null;
-  const dir = st?.textContent?.trim();
-  if (dir !== "up" && dir !== "down" && dir !== "none" && dir !== "double") return undefined;
-  const y = attrNum(st, "default-y");
-  return y === undefined ? { dir } : { dir, y };
+  return opt(ask<{ dir: StemDir; y?: number }>(note, "stem"));
 }
-
-const align = (el: XmlEl | undefined, name: string): HAlign | undefined => {
-  const v = el?.getAttribute(name);
-  return v === "left" || v === "center" || v === "right" ? v : undefined;
-};
 
 /** `justify` / `halign` / `valign`（`Lyric`、`DirectionPart`）。 */
 export function xmlAlign(obj: object): { justify?: HAlign; halign?: HAlign; valign?: string } {
-  const el = posHost(obj);
-  const out: { justify?: HAlign; halign?: HAlign; valign?: string } = {};
-  const j = align(el, "justify");
-  const h = align(el, "halign");
-  const v = el?.getAttribute("valign");
-  if (j) out.justify = j;
-  if (h) out.halign = h;
-  if (v) out.valign = v;
-  return out;
+  return ask<{ justify?: HAlign; halign?: HAlign; valign?: string }>(obj, "align") ?? {};
 }
 
-/** 中文字面名结尾词 → 字重 / 字形；常规体只去掉不记。
- *  西文不拆：`Times New Roman`、`Arial Black`、`Segoe UI Light` 本身就是族名。 */
-const FACE_WORDS: Record<string, { weight?: string; style?: string }> = {
-  常规体: {}, 常规: {}, 标准: {},
-  细体: { weight: "300" }, 中等: { weight: "500" }, 中黑: { weight: "500" }, 半粗体: { weight: "600" },
-  粗体: { weight: "bold" }, 特粗: { weight: "900" }, 斜体: { style: "italic" },
-};
-
-/** 把「族名 + 字面名」的全名（Finale 写出的 `宋体-简 常规体`、`楷体-简 粗体`）拆回族名与字重/字形。
+/** 把「族名 + 字面名」的全名（`宋体-简 常规体`、`楷体-简 粗体`）拆回族名与字重/字形。
  *  浏览器与系统文字引擎都只按族名匹配，全名一个都认不出、落到回退字体。逗号分开的每一项各拆；
  *  属性里已写的字重/字形优先；只有一个词（`黑体`）不拆。 */
 export function splitFaceName(f: FontSpec): FontSpec {
   if (!f.family) return f;
-  const out = { ...f };
-  out.family = f.family.split(",").map((item) => {
-    const name = item.trim();
-    const sp = name.lastIndexOf(" ");
-    const face = sp > 0 ? FACE_WORDS[name.slice(sp + 1)] : undefined;
-    if (!face) return name;
-    if (face.weight && out.weight === undefined) out.weight = face.weight;
-    if (face.style && out.style === undefined) out.style = face.style;
-    return name.slice(0, sp).trim();
-  }).join(",");
-  return out;
-}
-
-function readFont(el: XmlEl | null | undefined): FontSpec | undefined {
-  if (!el) return undefined;
-  const f: FontSpec = {};
-  const fam = el.getAttribute("font-family");
-  if (fam !== null) f.family = fam;
-  const size = attrNum(el, "font-size");
-  if (size !== undefined) f.size = size;
-  const w = el.getAttribute("font-weight");
-  if (w !== null) f.weight = w;
-  const st = el.getAttribute("font-style");
-  if (st !== null) f.style = st;
-  return Object.keys(f).length ? splitFaceName(f) : undefined;
+  return JSON.parse(dolce().modelSplitFaceName(JSON.stringify(f))) as FontSpec;
 }
 
 /** 文字的字体属性：`Lyric` 取首个 `<text>`，`DirectionPart` 取它那条子元素。 */
 export function xmlFont(obj: object): FontSpec | undefined {
-  const own = surfaceOf(obj, "part");
-  if (own) return readFont(own);
-  const el = surfaceOf(obj);
-  if (!el) return undefined;
-  return readFont(el.tagName === "lyric" ? child(el, "text") : el);
+  return opt(ask<FontSpec>(obj, "font"));
 }
 
 /** `<attributes>` 里的 `<staff-details number print-object>`。 */
 export function staffDetailsOf(attrs: MeasureAttrs | undefined): { staff?: number; printObject?: boolean }[] {
-  const el = attrs ? surfaceOf(attrs) : undefined;
-  if (!el) return [];
-  return children(el, "staff-details").map((sd) => {
-    const out: { staff?: number; printObject?: boolean } = {};
-    const n = sd.getAttribute("number");
-    if (n) out.staff = Number(n);
-    const po = sd.getAttribute("print-object");
-    if (po) out.printObject = po !== "no";
-    return out;
-  });
+  return ask<{ staff?: number; printObject?: boolean }[]>(attrs, "staffDetails") ?? [];
 }
 
 /** `<attributes>` 里的 `<part-symbol top-staff bottom-staff>`：多谱表声部左侧的符号。没写返回 undefined（规范缺省为 brace）。 */
 export function partSymbolOf(attrs: MeasureAttrs | undefined): { symbol: string; top?: number; bottom?: number } | undefined {
-  const el = attrs ? surfaceOf(attrs) : undefined;
-  const ps = el ? child(el, "part-symbol") : null;
-  if (!ps) return undefined;
-  const out: { symbol: string; top?: number; bottom?: number } = { symbol: (ps.textContent ?? "").trim() || "brace" };
-  const t = ps.getAttribute("top-staff");
-  const b = ps.getAttribute("bottom-staff");
-  if (t) out.top = Number(t);
-  if (b) out.bottom = Number(b);
-  return out;
+  return opt(ask<{ symbol: string; top?: number; bottom?: number }>(attrs, "partSymbol"));
 }
 
 /** 原文 `<print>` 的系统与谱表间距。 */
 export function printLayout(p: Print | undefined): PrintLayout | undefined {
-  const el = p ? surfaceOf(p) : undefined;
-  if (!el) return undefined;
-  const out: PrintLayout = {};
-  const sl = child(el, "system-layout");
-  if (sl) {
-    const sys: NonNullable<PrintLayout["systemLayout"]> = {};
-    const sd = childNum(sl, "system-distance");
-    const td = childNum(sl, "top-system-distance");
-    if (sd !== undefined) sys.systemDistance = sd;
-    if (td !== undefined) sys.topSystemDistance = td;
-    const mg = child(sl, "system-margins");
-    const lm = childNum(mg, "left-margin");
-    const rm = childNum(mg, "right-margin");
-    if (lm !== undefined) sys.leftMargin = lm;
-    if (rm !== undefined) sys.rightMargin = rm;
-    if (Object.keys(sys).length) out.systemLayout = sys;
-  }
-  const staffLayouts = children(el, "staff-layout").map((s) => {
-    const o: { staff?: number; staffDistance?: number } = {};
-    const n = attrNum(s, "number");
-    if (n !== undefined) o.staff = n;
-    const sd = childNum(s, "staff-distance");
-    if (sd !== undefined) o.staffDistance = sd;
-    return o;
-  });
-  if (staffLayouts.length) out.staffLayouts = staffLayouts;
-  return Object.keys(out).length ? out : undefined;
+  return opt(ask<PrintLayout>(p, "print"));
 }
 
 /** `<defaults>` 里模型不存的两种字体（五线谱引擎用：记号字号、文字缺省字体）。 */
 export function defaultsFonts(song: Song): { musicFont?: FontSpec; wordFont?: FontSpec } {
-  const root = surfaceOf(song);
-  const def = root ? child(root, "defaults") : null;
-  if (!def) return {};
-  const out: { musicFont?: FontSpec; wordFont?: FontSpec } = {};
-  const mf = child(def, "music-font");
-  const wf = child(def, "word-font");
-  // 元素在就算（属性全缺也要：五线谱引擎按「有这个元素」取缺省）
-  if (mf) out.musicFont = readFont(mf) ?? {};
-  if (wf) out.wordFont = readFont(wf) ?? {};
-  return out;
+  return ask<{ musicFont?: FontSpec; wordFont?: FontSpec }>(song, "defaultsFonts") ?? {};
+}
+
+/** 元素上原文写的 `id`（识别 id，`omrlinks.ts`）：`slot` 取弧的起止两端。 */
+export function surfaceId(obj: object | null | undefined, slot?: "start" | "stop"): string | undefined {
+  return opt(ask<string>(obj, slot === "start" ? "idStart" : slot === "stop" ? "idStop" : "id"));
+}
+
+/** `.musicxml` 的源码同步索引（`editor/sync.ts::SyncIndex.buildXml`）：条目区间取表层原节点记的区间，按推入次序给。
+ *  模型不是读进来的那份、或原节点对不上这份原文为 null（宁可不能编辑，也不按错位的偏移改）。 */
+export function xmlSyncOf<E, B>(doc: ScoreDoc, text: string): { entries: E[]; breaks: B[] } | null {
+  const b = boundOf(doc.songs[0]);
+  if (!b?.s) return null;
+  return JSON.parse(dolce().modelXmlSync(b.s.h, text)) as { entries: E[]; breaks: B[] } | null;
+}
+
+/** 把识别 id 写进各对象原节点的 `id`（`omrlinks.ts::stampXmlIds`），回写好的整份 XML；一个也没写上（都没有表层）为 null。 */
+export function stampSurfaceIds(stamps: readonly [object, string][]): string | null {
+  let h = 0;
+  const oids: number[] = [];
+  const ids: string[] = [];
+  for (const [o, id] of stamps) {
+    const b = boundOf(o);
+    if (!b?.s) continue;
+    h ||= b.s.h;
+    if (b.s.h !== h) continue;
+    oids.push(b.oid);
+    ids.push(id);
+  }
+  return h ? dolce().modelStampIds(h, Uint32Array.from(oids), ids) ?? null : null;
 }
 
 /** 这份 MusicXML 是否自带版面坐标（任一小节有 width 或任一音符有 default-x）。 */
 export function hasEmbeddedLayout(song: Song): boolean {
+  const measures: number[] = [];
+  const positioned: number[] = [];
+  let h = 0;
+  const oid = (o: object): number => {
+    const b = boundOf(o);
+    if (!b?.s) return 0;
+    h ||= b.s.h;
+    return b.s.h === h ? b.oid : 0;
+  };
   for (const part of song.parts) {
     for (const m of part.measures) {
-      const w = measureWidth(m);
-      if (w !== undefined && w > 0) return true;
+      measures.push(oid(m));
       for (const el of m.elements) {
         if (el.kind !== "chord") continue;
-        const has = el.notes.length === 0
-          ? xmlPos(el)?.defaultX !== undefined
-          : el.notes.some((n) => xmlPos(n)?.defaultX !== undefined);
-        if (has) return true;
+        if (el.notes.length === 0) positioned.push(oid(el));
+        else for (const n of el.notes) positioned.push(oid(n));
       }
     }
   }
-  return false;
+  return h !== 0 && dolce().modelHasEmbeddedLayout(h, Uint32Array.from(measures), Uint32Array.from(positioned));
 }
 
 // ───────────────────────── 编辑后作废的表层 ─────────────────────────
 //
-// 谱面上改谱（`model/edit.ts`）时，原节点上有些版面信息跟着改动失效。编辑是在**新读出来的一份**模型上做的
-// （它的原节点只为这次重写而活），所以直接从原节点上删掉，写出端就不会回填。
+// 谱面上改谱时，原节点上有些版面信息跟着改动失效。作废在 Rust 的编辑动作里做（`EditCmd` 带着钩子开关）；
+// 这两个只作钩子的记号交给编辑门面（`edit.ts`），表示「这次改动要作废表层」。
 
 /** 音高变了：这个和弦各音原文的符干方向（`<stem>`）与纵坐标（`default-y`）作废，交给五线谱引擎按新音高推。 */
-export function forgetNoteLayout(chord: { notes: readonly Note[] }): void {
-  const nodes = new Set<XmlEl>();
-  const own = surfaceOf(chord);
-  if (own) nodes.add(own);
-  for (const n of chord.notes) {
-    const el = surfaceOf(n);
-    if (el) nodes.add(el);
-  }
-  for (const el of nodes) {
-    el.removeAttribute("default-y");
-    for (const st of children(el, "stem")) st.remove();
-  }
+export function forgetNoteLayout(_chord: Chord): void {
+  // 只当钩子记号用：见上
 }
 
-/** 小节内容变了（增删音、改时值、拆并小节）：整曲的版面坐标作废——小节宽与音符横坐标一律去掉，
- *  五线谱引擎见不到坐标就自动铺排（`hasEmbeddedLayout`）。只改一小节的坐标会与邻近照原坐标排的小节打架，所以整曲一起丢。 */
-export function dropEmbeddedLayout(song: Song): void {
-  for (const part of song.parts) {
-    for (const m of part.measures) {
-      surfaceOf(m)?.removeAttribute("width");
-      for (const el of m.elements) {
-        if (el.kind !== "chord") continue;
-        surfaceOf(el)?.removeAttribute("default-x");
-        for (const n of el.notes) surfaceOf(n)?.removeAttribute("default-x");
-      }
-    }
-  }
+/** 小节内容变了（增删音、改时值、拆并小节）：整曲的版面坐标作废——小节宽与音符横坐标一律去掉。 */
+export function dropEmbeddedLayout(_song: Song): void {
+  // 只当钩子记号用：见上
 }
 
 // ───────────────────────── 导出版面 ─────────────────────────

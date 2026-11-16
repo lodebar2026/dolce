@@ -217,7 +217,7 @@ export function showPartsPanel(app: App): void {
             return;
           }
         }
-        void structural(what, (d) => setPartProps(d.songs[0]!, pi, p), false);
+        void structural(what, (d) => setPartProps(d, 0, pi, p), false);
       }
       const tdClef = el("td");
       tdClef.append(clefSel);

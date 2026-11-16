@@ -1,7 +1,7 @@
 // 五线谱识别的**识别 id ↔ 文档里的音**，任何源格式都认得（issue 23 源码问题 P3）。
 //
 // 识别时每个 `<note>` 写 `id="omr<k>"`（Rust `omr-sheet::result` 编号），原图对照、并排原图、重建回放都按它认框。
-// MusicXML 原文里 id 就在 `<note>` 上（`xmlsurface.ts::surfaceOf`）；ABC / 123 这些文本里没有地方写，改记一张旁表：
+// MusicXML 原文里 id 就在 `<note>` 上（`xmlsurface.ts::surfaceId`）；ABC / 123 这些文本里没有地方写，改记一张旁表：
 // **和弦记号在原文里的起点 → 各音的识别 id**（`StaffLinks`），随编辑迁移起点（同简谱识别的 `JpwMeta`）。
 //
 // 换格式时（格式下拉、重建后切回原来的格式）旁表从**换之前那份**带过来：两边都投成 MusicXML 形状（`xmlproject.ts`，
@@ -11,8 +11,7 @@
 
 import type { Chord, ElementId, Measure, ScoreDoc, Song } from "../model/doc";
 import { hasTieSyntax, isXmlShaped, projectForMusicXml } from "../model/xmlproject";
-import { surfaceOf } from "../model/xmlsurface";
-import { serializeXml, type XmlDoc } from "../score/xmltree";
+import { stampSurfaceIds, surfaceId } from "../model/xmlsurface";
 
 /** 接着前一个识别休止的一段（简谱拆开的休止）：不对应识别框，也不算新插的 */
 export const COVERED = "";
@@ -45,7 +44,7 @@ export function pitchAt(doc: ScoreDoc, id: ElementId, k = 0): Chord["notes"][num
 
 /** MusicXML 原文：id 读 `<note id>`（和弦各音各一个；休止读它自己的）。 */
 export function surfaceIds(el: Chord): StaffIds {
-  const attr = (o: object | undefined): string | undefined => (o ? surfaceOf(o)?.getAttribute("id") ?? undefined : undefined);
+  const attr = (o: object | undefined): string | undefined => surfaceId(o);
   return el.notes.length ? el.notes.map((n) => attr(n) ?? attr(el)) : [attr(el)];
 }
 
@@ -213,24 +212,22 @@ export function stampXmlIds(xml: string, from: StaffView, load: (xml: string) =>
   const song = doc.songs[0];
   if (!song) return xml;
   const ids = carryIds(from, song);
-  let root: XmlDoc | null = null;
+  const stamps: [object, string][] = [];
   for (const part of song.parts) {
     for (const m of part.measures) {
       for (const el of m.elements) {
         if (el.kind !== "chord") continue;
         const got = ids.get(el.id);
         if (!got) continue;
-        const nodes = el.notes.length ? el.notes.map((n) => surfaceOf(n)) : [surfaceOf(el)];
+        const nodes: object[] = el.notes.length ? el.notes : [el];
         nodes.forEach((node, k) => {
           const id = got[k];
-          if (!node || !id) return;
-          node.setAttribute("id", id);
-          root ??= node.ownerDocument;
+          if (id) stamps.push([node, id]);
         });
       }
     }
   }
-  return root ? serializeXml(root) : xml;
+  return stampSurfaceIds(stamps) ?? xml;
 }
 
 /**
@@ -281,7 +278,7 @@ function chordOnsets(m: Measure): Map<Chord, number> {
 
 export function staffMarksOf(view: StaffView, withIds: boolean): StaffMarkNow[] {
   const out: StaffMarkNow[] = [];
-  const attr = (o: object | undefined, role?: string): string | undefined => (withIds && o ? surfaceOf(o, role)?.getAttribute("id") ?? undefined : undefined);
+  const attr = (o: object | undefined, role?: "start" | "stop"): string | undefined => (withIds ? surfaceId(o, role) : undefined);
   const omrOf = new Map<ElementId, string>();
   const nth = new Map<string, number>();
   const keyOf = (pre: string, host: string | undefined): string | null => {

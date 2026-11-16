@@ -28,5 +28,6 @@ pub mod toxml;
 pub mod tuplets;
 pub mod xmlproject;
 pub mod xmlsurface;
+pub mod xmlsync;
 
 pub use doc::*;

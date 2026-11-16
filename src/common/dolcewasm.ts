@@ -1,5 +1,6 @@
 // dolce-wasm（crates/dolce-wasm）与 dolce-jcx-wasm（crates/dolce-jcx-wasm）的绑定形状，`scripts/build-wasm.mjs` 编到 public/redist/dolce/。
 // 胶水是 wasm-bindgen `--target web` 出的，网页主线程（`common/dolce.ts::loadDolce`）与 Node（`cli/dolcewasm.node.ts`）载同一份；不入库、不进打包，按运行时路径动态载入。
+// 对拍探针（`xmlDigest`、`editDigest`…）不在这份里：挂在 cargo feature `probe` 下，只编进 out/dolce-probe/ 给 dev 对拍脚本。
 // 数据过边界一律 JSON 字符串；会话调用失败抛 `Error`，`message` 是 `dolce_session::EngineError` 的 JSON。
 
 export interface DolceSessionWasm {
@@ -14,8 +15,6 @@ export interface DolceWasm {
   default(init?: { module_or_path: string | URL }): Promise<object>;
   initSync(init: { module: BufferSource | WebAssembly.Module }): object;
   version(): string;
-  /** XML 树对拍原料：`{"ok":true,"xml","spans"}` 或 `{"ok":false,"message","at"}` */
-  xmlDigest(text: string): string;
   Session: new () => DolceSessionWasm;
 
   // 演唱顺序、断句、时间轴、MIDI（crates/dolce-play）：入参回值是 JSON，编解码在 `score/play.ts`
@@ -36,21 +35,31 @@ export interface DolceWasm {
   phraseChordFacts(chord: string): string;
   headFpOf(chords: string): string;
 
-  // 模型（crates/dolce-model，M2 迁移中，对拍用）
-  /** `ScoreDoc` 的 JSON 读进 Rust 类型再写回 */
-  docRoundtrip(doc: string): string;
-  /** 查询层摘要（口径见 dev `rs-diff.mjs query`） */
-  queryDigest(doc: string): string;
-  /** MusicXML 读入摘要（口径见 dev `rs-diff.mjs fromxml`） */
-  fromXmlDigest(text: string): string;
-  /** MusicXML 写出摘要（口径见 dev `rs-diff.mjs toxml`） */
-  toXmlDigest(text: string): string;
-  /** 投影摘要（口径见 dev `rs-diff.mjs project`） */
-  projectDigest(doc: string): string;
-  /** MusicXML 上执行一串编辑动作的摘要（口径见 dev `rs-diff.mjs edit`） */
-  editDigest(text: string, script: string): string;
-  /** 编辑层纯函数小表 */
-  editTables(): string;
+  // 模型簇给编辑器的门面（crates/dolce-wasm/src/model.rs；TS 侧在 `model/rustdoc.ts` 与各模块门面）
+  /** MusicXML → `[表层句柄, ScoreDoc 的 JSON]` */
+  modelLoadXml(text: string): [number, string];
+  modelRelease(h: number): void;
+  modelHandleCount(): number;
+  /** `SyncIndex.buildXml` 的条目与换行表（JSON），对不上原文为 `"null"` */
+  modelXmlSync(h: number, text: string): string;
+  /** 表层查询，回 JSON */
+  modelSurface(h: number, what: string, oid: number): string;
+  modelHasEmbeddedLayout(h: number, measures: Uint32Array, positioned: Uint32Array): boolean;
+  modelStampIds(h: number, oids: Uint32Array, ids: string[]): string | undefined;
+  modelSplitFaceName(font: string): string;
+  modelToXml(doc: string, h: number, opts: string): string;
+  /** `{"edit": …, "doc": …}`；`tr` 把 `Msg` 的 JSON 翻成界面文字 */
+  modelEdit(doc: string, h: number, cmd: string, hooks: boolean, tr?: (msg: string) => string): string;
+  modelRespellMeasure(measure: string, key: string): string;
+  /** `{"doc": …, "changed": n}` */
+  modelHanconvDoc(doc: string, conv: (s: string) => string): string;
+  modelHanDirection(doc: string, t2s: (s: string) => string): string;
+  /** `SourceConvResult` 的 JSON；`parse` 回 ScoreDoc 的 JSON，读不出就抛 */
+  modelHanconvSource(text: string, parse: (text: string) => string, conv: (s: string) => string): string;
+  /** 歌词视图（`withLyricsFrom`），同一声部回 `"null"` */
+  modelWithLyricsFrom(doc: string, from: number, to: number): string;
+  /** MusicXML 是否多声部（打开时默认混排） */
+  xmlIsMultiPart(xml: string): boolean;
 }
 
 /** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */

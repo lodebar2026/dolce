@@ -73,7 +73,6 @@ export * as modelXmlproject from "../model/xmlproject";
 export * as modelJianpuproject from "../model/jianpuproject";
 export * as modelDirectionmarks from "../model/directionmarks";
 // 自有 XML 树：脚本里数 MusicXML 元素用（不靠浏览器 DOM）
-export { parseXml, serializeXml } from "../score/xmltree";
 // Rust 识别的核对 JSON → 编辑器核对数据（`rust-omr/adapter-check.mjs` 用），识别 id 按表层读
 export { reviewFromRust, systemOpToRust } from "../omrrust/adapter";
 export { surfaceIds } from "../editor/omrlinks";

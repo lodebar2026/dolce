@@ -8,6 +8,10 @@ publish.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# 对拍探针（dev rs-diff.mjs 用）：只编进 out/dolce-probe/ 那份，网页与桌面载的 public/redist/dolce/ 不带
+probe = []
+
 [dependencies]
 dolce-base = { path = "../dolce-base" }
 dolce-xml = { path = "../dolce-xml" }

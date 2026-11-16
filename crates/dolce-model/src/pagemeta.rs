@@ -298,7 +298,7 @@ pub fn header_fonts_of_credits(song: &Song, surface: Option<&Surface>) -> IndexM
         let family = c
             .font_family
             .clone()
-            .or_else(|| surface.and_then(|s| s.defaults_fonts(song).1).and_then(|w| w.family));
+            .or_else(|| surface.and_then(|s| s.defaults_fonts(song.oid).1).and_then(|w| w.family));
         if let Some(fam) = family.filter(|x| !x.is_empty()) {
             f.family = Some(fam);
         }

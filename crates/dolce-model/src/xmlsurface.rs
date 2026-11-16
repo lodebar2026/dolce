@@ -125,33 +125,49 @@ pub fn child_num(t: &Tree, el: Option<NodeId>, tag: &str) -> Option<f64> {
 // ───────────────────────── 查询层 ─────────────────────────
 
 /// 版面坐标（tenths，口径同 MusicXML 的 `default-x/-y`、`relative-x/-y`）。
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Position {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_y: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub relative_x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub relative_y: Option<f64>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct SystemLayout {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub system_distance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_system_distance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub left_margin: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub right_margin: Option<f64>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct StaffLayout {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub staff: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub staff_distance: Option<f64>,
 }
 
 /// `<print>` 里的版式（系统与谱表间距）。
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct PrintLayout {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub system_layout: Option<SystemLayout>,
     /// `<staff-layout number>`：本系统各谱表离上一谱表的距离
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub staff_layouts: Option<Vec<StaffLayout>>,
 }
 
@@ -184,14 +200,14 @@ impl Surface {
     }
 
     /// `<measure width>`（tenths）
-    pub fn measure_width(&self, m: &Measure) -> Option<f64> {
-        attr_num(self.tree(), self.of0(m.oid), "width")
+    pub fn measure_width(&self, m: Oid) -> Option<f64> {
+        attr_num(self.tree(), self.of0(m), "width")
     }
 
     /// `<stem>` 的方向与 `default-y`
-    pub fn note_stem(&self, note: &Note) -> Option<(String, Option<f64>)> {
+    pub fn note_stem(&self, note: Oid) -> Option<(String, Option<f64>)> {
         let t = self.tree();
-        let st = child(t, self.of0(note.oid)?, "stem")?;
+        let st = child(t, self.of0(note)?, "stem")?;
         let text = t.text_content(st);
         let dir = js::trim(&text);
         if !matches!(dir, "up" | "down" | "none" | "double") {
@@ -220,9 +236,9 @@ impl Surface {
     }
 
     /// `<attributes>` 里的 `<staff-details number print-object>`
-    pub fn staff_details_of(&self, attrs: Option<&MeasureAttrs>) -> Vec<(Option<f64>, Option<bool>)> {
+    pub fn staff_details_of(&self, attrs: Option<Oid>) -> Vec<(Option<f64>, Option<bool>)> {
         let t = self.tree();
-        let Some(el) = attrs.and_then(|a| self.of0(a.oid)) else { return vec![] };
+        let Some(el) = attrs.and_then(|a| self.of0(a)) else { return vec![] };
         children(t, el, "staff-details")
             .into_iter()
             .map(|sd| {
@@ -234,9 +250,9 @@ impl Surface {
     }
 
     /// `<attributes>` 里的 `<part-symbol top-staff bottom-staff>`
-    pub fn part_symbol_of(&self, attrs: Option<&MeasureAttrs>) -> Option<(String, Option<f64>, Option<f64>)> {
+    pub fn part_symbol_of(&self, attrs: Option<Oid>) -> Option<(String, Option<f64>, Option<f64>)> {
         let t = self.tree();
-        let ps = child(t, self.of0(attrs?.oid)?, "part-symbol")?;
+        let ps = child(t, self.of0(attrs?)?, "part-symbol")?;
         let text = t.text_content(ps);
         let sym = js::trim(&text);
         let num = |n: &str| t.get_attribute(ps, n).filter(|v| !v.is_empty()).map(js::number);
@@ -244,9 +260,9 @@ impl Surface {
     }
 
     /// 原文 `<print>` 的系统与谱表间距
-    pub fn print_layout(&self, p: Option<&Print>) -> Option<PrintLayout> {
+    pub fn print_layout(&self, p: Option<Oid>) -> Option<PrintLayout> {
         let t = self.tree();
-        let el = self.of0(p?.oid)?;
+        let el = self.of0(p?)?;
         let mut out = PrintLayout::default();
         if let Some(sl) = child(t, el, "system-layout") {
             let mg = child(t, sl, "system-margins");
@@ -271,9 +287,9 @@ impl Surface {
     }
 
     /// `<defaults>` 里模型不存的两种字体（记号字号、文字缺省字体）：`(music-font, word-font)`
-    pub fn defaults_fonts(&self, song: &Song) -> (Option<FontSpec>, Option<FontSpec>) {
+    pub fn defaults_fonts(&self, song: Oid) -> (Option<FontSpec>, Option<FontSpec>) {
         let t = self.tree();
-        let Some(def) = self.of0(song.oid).and_then(|r| child(t, r, "defaults")) else { return (None, None) };
+        let Some(def) = self.of0(song).and_then(|r| child(t, r, "defaults")) else { return (None, None) };
         // 元素在就算（属性全缺也要）
         let f = |tag: &str| child(t, def, tag).map(|e| read_font_opt(t, Some(e)).unwrap_or_default());
         (f("music-font"), f("word-font"))
@@ -283,7 +299,7 @@ impl Surface {
     pub fn has_embedded_layout(&self, song: &Song) -> bool {
         for part in &song.parts {
             for m in &part.measures {
-                if self.measure_width(m).is_some_and(|w| w > 0.0) {
+                if self.measure_width(m.oid).is_some_and(|w| w > 0.0) {
                     return true;
                 }
                 for el in &m.elements {

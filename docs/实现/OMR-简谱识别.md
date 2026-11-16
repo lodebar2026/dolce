@@ -981,7 +981,7 @@ y380 的碎块行，歌词带算出 `yBot < yTop`、整条带直接 `continue`�
 吉他和弦（`Am` / `G/B` / `Gsus4` / `F#m7`）印在谱行音符**上方**，与段落方框同处歌词带。文法判定
 （`isAnnotationLine` / `CHORD_TOKEN_RE` / `chordCoverage`，见上）连同切词、归一、落位一并搬进
 `src/omr/chordline.ts`；`lyrics.ts` 只调不判。识别到的和弦挂上 `JpNum.chord`，经模型输出：
-`todoc.ts` → `Chord.harmony` / `Sustain.harmony`（原文，导出 MusicXML 时由 `score/harmonyxml.ts` 解析），文本谱写出端再写成 `"hx:…"`。
+`todoc.ts` → `Chord.harmony` / `Sustain.harmony`（原文，导出 MusicXML 时由写出端（Rust `harmony.rs::harmony_xml`）解析），文本谱写出端再写成 `"hx:…"`。
 **`.jpwabc` 装不下和弦**，jpwabc 那路输出会丢（与力度、渐强渐弱现状一致）——这是有意的，
 不为和弦扩 jpwabc 语法。
 

@@ -31,7 +31,7 @@
 // ## `.musicxml` 另一种建法（`buildXml`）
 //
 // MusicXML 的模型不记原文位置，但编辑器里存的就是 XML 原文，`fromxml.ts` 又把每个模型对象绑在它的原节点上
-// （`model/xmlsurface.ts`），而原节点记着自己在原文里的区间（`score/xmltree.ts` 的 `start`/`end`），直接取就是。
+// （表层，在 Rust：`crates/dolce-model/src/xmlsync.rs`），而原节点记着自己在原文里的区间（`crates/dolce-xml` 的 `start`/`end`），直接取就是。
 // 条目区间是整个元素（`<note>…</note>`），歌词取 `<text>` 里那几个字，
 // 小节线取 `</measure>`（MusicXML 里普通小节线没有元素，小节边界就是它），弧取 `<slur type="start">`。
 // 选区仍只存一份（代码区选区，只是代码区不显示），撤销还原选区也是代码区自带。
@@ -43,8 +43,7 @@
 
 import type { AttachedSource, Chord, ElementId, Measure, Part, ScoreDoc, SourceSpan } from "../model/doc";
 import { breakAfter } from "../model/helpers";
-import { surfaceOf } from "../model/xmlsurface";
-import type { XmlEl } from "../score/xmltree";
+import { xmlSyncOf } from "../model/xmlsurface";
 import { docView } from "../jianpu/slots";
 
 export type SyncKind = "note" | "lyric" | "sustain" | "barline" | "mark" | "break" | "header";
@@ -176,105 +175,13 @@ export class SyncIndex {
     this.entries = [];
     this.byNote.clear();
     this.breakList = [];
-    const root = surfaceOf(doc.songs[0]);
-    if (!root || root.start < 0 || root.end > text.length || text[root.end - 1] !== ">" || !text.startsWith(`<${root.tagName}`, root.start)) return false;
-    /** 节点在原文里的区间：开标签起，到配对的闭标签止（自闭合的到 `/>`）。新建、克隆的节点没有 */
-    const spanOf = (el: XmlEl | undefined, tag: string): { from: number; to: number } | null =>
-      el && el.start >= 0 && el.tagName === tag && text.startsWith(`<${tag}`, el.start) ? { from: el.start, to: el.end } : null;
-    const out: SyncEntry[] = [];
-    for (const song of doc.songs) {
-      for (const [pi, part] of song.parts.entries()) {
-        let lastId: ElementId | null = null;
-        for (const [mi, m] of part.measures.entries()) {
-          for (const el of m.elements) {
-            if (el.kind !== "chord") continue;
-            const head = spanOf(surfaceOf(el), "note");
-            const tailNode = el.notes.length ? surfaceOf(el.notes[el.notes.length - 1]) : undefined;
-            const tail = tailNode ? spanOf(tailNode, "note") : head;
-            if (head && tail) {
-              // 歌词写在 `<note>` 里面：音符的区间截到第一个 `<lyric` 之前，免得选中音符时连歌词条目一起算进选区
-              let to = Math.max(head.to, tail.to);
-              const ly = text.indexOf("<lyric", head.from);
-              if (ly >= 0 && ly < to) to = ly;
-              const e: SyncEntry = { kind: "note", from: head.from, to, id: el.id, verse: null };
-              out.push(e);
-              this.byNote.set(el.id, e);
-            }
-            for (const ly of el.lyrics ?? []) {
-              const box = spanOf(surfaceOf(ly), "lyric");
-              if (!box) continue;
-              const m2 = /<text\b[^>]*>([^<]*)<\/text>/.exec(text.slice(box.from, box.to));
-              if (!m2 || !m2[1]) continue;
-              const from = box.from + m2.index + m2[0].indexOf(">") + 1;
-              out.push({ kind: "lyric", from, to: from + m2[1].length, id: el.id, verse: ly.number - 1, verseNo: ly.number });
-            }
-            // 音符上的记号（`<notations>` 里的奏法、装饰、延长号）：一个记号一条，名字同 `model/edit.ts::DecoKind`
-            for (const n of el.notes) {
-              const ne = surfaceOf(n) ?? (n === el.notes[0] ? surfaceOf(el) : undefined);
-              for (const nt of [...(ne?.children ?? [])].filter((c) => c.tagName === "notations")) {
-                for (const c of [...nt.children]) {
-                  const items = c.tagName === "articulations" || c.tagName === "ornaments" ? [...c.children] : c.tagName === "fermata" ? [c] : [];
-                  for (const it of items) {
-                    const sp = spanOf(it, it.tagName);
-                    if (!sp) continue;
-                    const name = it.tagName === "fermata" && it.getAttribute("type") === "inverted" ? "fermata-inverted" : it.tagName;
-                    out.push({ kind: "mark", ...sp, id: el.id, verse: null, markKind: "deco", name });
-                  }
-                }
-              }
-            }
-            if (el.harmony) {
-              const sp = spanOf(surfaceOf(el.harmony), "harmony");
-              if (sp) out.push({ kind: "mark", ...sp, id: el.id, verse: null, markKind: "harmony", name: el.harmony.text ?? "" });
-            }
-            lastId = el.id;
-          }
-          // `<direction>`：挂在 `afterElements` 指的那个音前（之后第一个和弦；小节末的借最后一个和弦）
-          (m.directions ?? []).forEach((d, index) => {
-            const sp = spanOf(surfaceOf(d), "direction");
-            const k = Math.max(0, d.afterElements ?? 0);
-            const after = m.elements.slice(k).find((e) => e.kind === "chord" && (d.voice === undefined || e.voice === d.voice));
-            const host = after ?? [...m.elements].reverse().find((e) => e.kind === "chord" && (d.voice === undefined || e.voice === d.voice)) ??
-              [...m.elements].reverse().find((e) => e.kind === "chord");
-            if (!sp || !host) return;
-            const markKind = d.type === "dynamics" ? "dynamic" : d.type === "words" || d.type === "rehearsal" ? "annotation" : "dir";
-            out.push({ kind: "mark", ...sp, id: host.id, verse: null, markKind, name: markKind === "dir" ? d.type : d.text ?? d.type, dir: { pi, mi, index }, ...(after ? {} : { dirEnd: true }) });
-          });
-          // 小节边界就是这一小节的 `</measure>`
-          const box = spanOf(surfaceOf(m), "measure");
-          if (box && lastId !== null) out.push({ kind: "barline", from: box.to - "</measure>".length, to: box.to, id: lastId, verse: null, edge: "after" });
-          // 换行 / 换页记在下一小节的 `<print new-system|new-page>` 上，只按第一声部显示
-          const next = part.measures[mi + 1];
-          const kind = next?.print?.newPage ? "page" : next?.print?.newSystem ? "system" : null;
-          if (pi === 0 && kind && lastId !== null) {
-            const pr = [...(surfaceOf(next!)?.children ?? [])].find((c) => c.tagName === "print");
-            const ps = pr ? spanOf(pr, "print") : null;
-            const span = ps ? { from: ps.from, to: text.indexOf(">", ps.from) + 1 } : null;
-            this.breakList.push({ page: kind === "page", after: lastId, span });
-            if (span) out.push({ kind: "break", ...span, id: lastId, verse: null, page: kind === "page" });
-          }
-        }
-      }
-      for (const mk of song.marks) {
-        if (mk.type !== "slur" && mk.type !== "tied") continue;
-        const tag: "slur" | "tied" = mk.type === "slur" ? "slur" : "tied";
-        const open = spanOf(surfaceOf(mk, "start"), tag);
-        const close = spanOf(surfaceOf(mk, "stop"), tag);
-        if (!open) continue;
-        const base = { kind: "mark" as const, id: mk.start, end: mk.end, verse: null, markKind: tag, name: tag };
-        out.push({ ...base, ...open, ...(close ? { pair: close } : {}) });
-        if (close) out.push({ ...base, ...close, pair: open });
-      }
-    }
-    // 页眉：`<work-title>` / `<movement-title>` 与各条 `<credit-words>` 里的字（谱面上按字对上，`App._bindHeader`）
-    for (const tag of ["work-title", "movement-title", "credit-words"]) {
-      for (const m of text.matchAll(new RegExp(`<${tag}\\b[^>]*>([^<]+)</${tag}>`, "g"))) {
-        const from = m.index! + m[0].indexOf(">") + 1;
-        if (m[1]!.trim()) out.push({ kind: "header", from, to: from + m[1]!.length, id: -1, verse: null });
-      }
-    }
-    out.sort((a, b) => a.from - b.from || a.to - b.to);
-    this.entries = out;
+    const r = xmlSyncOf<SyncEntry, BreakMark>(doc, text);
+    if (!r) return false;
+    for (const e of r.entries) if (e.kind === "note") this.byNote.set(e.id, e);
+    this.breakList = r.breaks;
+    // **按偏移排序**——`at()` 的二分依赖它。同起点时短的在前。
+    r.entries.sort((a, b) => a.from - b.from || a.to - b.to);
+    this.entries = r.entries;
     return true;
   }
 
