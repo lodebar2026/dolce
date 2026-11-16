@@ -363,7 +363,9 @@ name = "dolce-formats"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-model",
  "encoding_rs",
+ "serde",
 ]
 
 [[package]]
@@ -570,6 +572,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "dolce-base",
+ "dolce-formats",
  "dolce-model",
  "dolce-play",
  "dolce-session",

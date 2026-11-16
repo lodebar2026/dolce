@@ -264,4 +264,10 @@ mod probes {
         let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
         Ok(json(&probe::project_digest(&d)))
     }
+
+    /// 对拍用：ABC 家族音乐体词法（口径见 dev `rs-diff.mjs lex`）：全文按 `\n` 切行、逐行扫，回各行的 token 与报错
+    #[wasm_bindgen(js_name = lexDigest)]
+    pub fn lex_digest(dialect: &str, text: &str) -> String {
+        json(&probe::lex_digest(dialect, text))
+    }
 }

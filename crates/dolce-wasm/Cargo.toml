@@ -18,6 +18,7 @@ dolce-xml = { path = "../dolce-xml" }
 dolce-session = { path = "../dolce-session" }
 dolce-play = { path = "../dolce-play" }
 dolce-model = { path = "../dolce-model" }
+dolce-formats = { path = "../dolce-formats" }
 serde = { workspace = true }
 # 分数、时刻过边界要逐位还原（TS 侧 JSON.stringify 出的是最短往返写法）
 serde_json = { version = "1", features = ["float_roundtrip"] }

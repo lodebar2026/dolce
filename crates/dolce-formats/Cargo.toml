@@ -7,4 +7,6 @@ publish.workspace = true
 
 [dependencies]
 dolce-base = { path = "../dolce-base" }
+dolce-model = { path = "../dolce-model" }
+serde.workspace = true
 encoding_rs = "0.8"

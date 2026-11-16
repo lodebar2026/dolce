@@ -9,6 +9,10 @@
 import "./dolcewasm.node"; // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm
 export * from "../model/doc";
 export * from "../abcfamily/lex123";
+// 对拍（dev rs-diff.mjs lex）：三种方言的词法器
+export { LEXER_123 } from "../abcfamily/dialect123";
+export { LEXER_ABC } from "../abcfamily/dialectabc";
+export { LEXER_JCX } from "../abcfamily/dialectjcx";
 export * from "../abcfamily/parse";
 export * from "../abcfamily/emit123.entry";
 export { emitAbc } from "../abcfamily/emitabc.entry";

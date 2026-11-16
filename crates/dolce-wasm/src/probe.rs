@@ -605,3 +605,22 @@ pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_
     }
     out
 }
+
+// ───────────────────────── ABC 家族（M3）─────────────────────────
+
+pub fn lex_digest(dialect: &str, text: &str) -> Value {
+    use dolce_formats::abc::{lex, u16s};
+    let lx = match dialect {
+        "abc" => lex::LEXER_ABC,
+        "jcx" => lex::LEXER_JCX,
+        _ => lex::LEXER_123,
+    };
+    let all = u16s::enc(text);
+    let mut out = vec![];
+    let mut off = 0usize;
+    for (no, line) in all.split(|&u| u == b'\n' as u16).enumerate() {
+        out.push(serde_json::to_value(lx.lex_line(line, no as u32, off as u32, 0)).unwrap());
+        off += line.len() + 1;
+    }
+    Value::Array(out)
+}
