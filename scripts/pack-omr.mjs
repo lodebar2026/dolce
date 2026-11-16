@@ -63,7 +63,7 @@ if (!existsSync(join(ROOT, "out", "cli", "omrfmt.js"))) {
   console.error("缺 out/cli/omrfmt.js —— 先跑 npm run build:cli");
   process.exit(1);
 }
-const DOLCE_WASM = ["dolce_wasm.js", "dolce_wasm_bg.wasm"];
+const DOLCE_WASM = ["dolce_wasm.js", "dolce_wasm_bg.wasm", "dolce_jcx_wasm.js", "dolce_jcx_wasm_bg.wasm"];
 if (!DOLCE_WASM.every((f) => existsSync(join(ROOT, "public", "redist", "dolce", f)))) {
   console.error("缺 public/redist/dolce/ 的 dolce-wasm —— 先跑 node scripts/build-wasm.mjs dolce");
   process.exit(1);

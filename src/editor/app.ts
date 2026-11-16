@@ -20,6 +20,7 @@ import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
 import { isTauriRuntime } from "./fileio";
 import { isProjectFile } from "../common/filetypes";
+import { ensureJcx, jcxReady } from "../common/jcx";
 import { diffRegion } from "../common/lines";
 import type { Draft } from "./autosave";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter, type FormatHost, type ScoreDocAdapter } from "./formats";
@@ -1234,6 +1235,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   importBytes(bytes: Uint8Array, name: string): Promise<void> {
     // 识别项目：还原整个识别会话（原图、识别结果、在改的原文），不重跑识别
     if (isProjectFile(name)) return this.openProject(bytes, name).then(() => this.whenIdle());
+    // .jcx 的编解码那份 wasm 按需载：没载好就先等它，再动文档状态
+    if (docFormatOfName(name) === "jcx" && !jcxReady()) return ensureJcx().then(() => this.importBytes(bytes, name));
     // 任何新导入都使上一次的识别叠加产物失效（识别结果由 OmrController 在本调用之后重设）。
     this.omr.clear();
     this._documentLoaded();
@@ -1343,7 +1346,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.setText(formatOf("jly").decode(bytes));
       return;
     }
-    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcx.ts`（Rust dolce-formats）判断
+    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcx.ts`（Rust dolce-formats，`importBytes` 已等它载好）判断
     if (fmt === "jcx") {
       this.mixed._dropMixedDoc();
       this._setDocFormat("jcx");

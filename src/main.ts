@@ -20,6 +20,7 @@ import { attachPinchZoom } from "./editor/pinchzoom";
 import { setupSplitters } from "./editor/splitters";
 import { SAMPLE } from "./editor/sample";
 import { loadDolce } from "./common/dolce";
+import { preloadJcx } from "./common/jcx";
 
 /** 工具栏「每行 N 小节」上次选的 N */
 const BARS_PER_LINE_KEY = "dolce-bars-per-line";
@@ -45,8 +46,10 @@ async function boot() {
   // 界面语言最先定：之后建的对话框、状态栏文字都按它走。
   initLang();
   setMeasureBackend(browserMeasure);
-  // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm：排版与试听都同步调它，先载好
+  // 演唱顺序、断句、时间轴、MIDI 在 dolce-wasm：排版与试听都同步调它，先载好；
+  // .jcx 编解码那份码表大，空闲时后台取（开 / 存 .jcx 的入口再兜底等）
   await Promise.all([loadDolce(import.meta.env.BASE_URL), registerBravura()]);
+  preloadJcx(import.meta.env.BASE_URL);
   await ensureFontsReady([
     { family: "Bravura", size: 40 },
     { family: "Bravura Text", size: 20 },

@@ -1,0 +1,14 @@
+[package]
+name = "dolce-jcx-wasm"
+description = "悦谱 Dolce 的 Muse .jcx 字节编解码 wasm 绑定：GBK / BIG5 码表大（gzip 约 130 KB），从 dolce-wasm 拆出来按需载入，开机不载"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+dolce-formats = { path = "../dolce-formats" }
+wasm-bindgen = "=0.2.120"
+console_error_panic_hook = "0.1"

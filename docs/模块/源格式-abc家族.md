@@ -32,7 +32,7 @@
 | `src/abcfamily/emit.ts` | **写出基类** `AbcFamilyEmitter`：字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展 |
 | `src/abcfamily/dialectjcx.ts` | Muse 的音乐体（ABC 词法的子类：`@` 隐形休止、`x`/`X` 节奏音符、`(<` `<)` 渐强渐弱、`{@…}` 后倚音）、字母 ↔ 度数表、`K:` 读法 |
 | `src/abcfamily/emit123.ts` / `emitabc.ts` / `emitjcx.ts` | 三个方言的写出 |
-| `crates/dolce-formats/src/jcxcodec.rs` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF |
+| `crates/dolce-formats/src/jcxcodec.rs` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF。码表大，绑定单出 `crates/dolce-jcx-wasm`，网页开机后空闲时预取、开 / 存 .jcx 前 `common/jcx.ts::ensureJcx` 兜底等 |
 | `src/abcfamily/abcpitch.ts` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolveAbcPitches` / 写 `withAbcPitches`），见下「关键判据」 |
 | `src/abcfamily/lex123.ts` / `emit123.entry.ts` | **入口**，保留 `lexMusicLine` / `emit123` / `emitSong` 的函数形态给既有调用方 |
 | `src/abcfamily/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |

@@ -13,6 +13,7 @@ import { packProject, PROJECT_EXT, type ProjectSnapshot } from "./omrproject";
 import { clearLastFile, loadLastFile, saveLastFile } from "./settings";
 import { targetSpec, type ConvertTarget } from "../convert/targets";
 import { showConfirmDialog } from "./dialogs";
+import { ensureJcx } from "../common/jcx";
 import { t } from "../i18n";
 import { targetLabel } from "../i18n/labels";
 import type { ScoreDoc } from "../model/doc";
@@ -145,7 +146,7 @@ export class FileSession {
 
   async saveFileAs(): Promise<void> {
     // 落盘细节（对话框 / a[download]）统一在 fileio.saveBytes，这里只管记住路径。
-    const dest = await saveBytes(this.encodeForSave(), this.defaultSaveName());
+    const dest = await saveBytes(await this.encodeForSave(), this.defaultSaveName());
     // 桌面版没给路径 = 对话框里取消了，没存
     if (!dest && isTauriRuntime()) return;
     // 浏览器版下载不回路径，也算存过了
@@ -172,6 +173,7 @@ export class FileSession {
       return;
     }
     const adapter = formatOf(targetSpec(target).docFormat);
+    if (adapter.id === "jcx") await ensureJcx();
     const dest = await saveBytes(adapter.encode(text), (this.host.documentTitle() || t("file.untitled")) + adapter.defaultExt);
     if (!dest) return;
     const warn = adapter.encodeWarning?.(text);
@@ -274,7 +276,9 @@ export class FileSession {
   }
 
   /** 存盘编码：文本谱等是 UTF-8 原文，`.jpwabc` 是 JP-Word 的 UTF-16LE+BOM。 */
-  private encodeForSave(): Uint8Array {
+  private async encodeForSave(): Promise<Uint8Array> {
+    // .jcx 的编解码那份 wasm 按需载（开机后空闲时已在后台取）
+    if (this.host.adapter.id === "jcx") await ensureJcx();
     const text = this.host.getText();
     // 编码装不下的字（Muse `.jcx` 的 GBK）：照存，但要说
     const warn = this.host.adapter.encodeWarning?.(text);
@@ -292,10 +296,10 @@ export class FileSession {
     // `.musicxml` 那一档：文档里就是 XML（未改动是原文，改过的已由 `editScoreDoc` 整份重写）。
     // 其余格式存到 XML 路径上：由唯一写出端整份重写。
     const bytes = this.host.docFormat === "musicxml"
-      ? this.encodeForSave()
+      ? await this.encodeForSave()
       : this.onDiskIsXml
         ? new TextEncoder().encode(await this.host.musicXmlForSave())
-        : this.encodeForSave();
+        : await this.encodeForSave();
     await writeFile(path, bytes);
   }
 }

@@ -367,6 +367,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-jcx-wasm"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "dolce-formats",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "dolce-omr-book"
 version = "0.1.0"
 dependencies = [
@@ -540,7 +549,6 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "dolce-base",
- "dolce-formats",
  "dolce-play",
  "dolce-session",
  "dolce-xml",

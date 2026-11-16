@@ -204,7 +204,7 @@ jobs:
         env:
           BASE_PATH: /dolce/
       - name: 校验网页版 wasm 产物
-        run: ls -la out/dist/redist/omr out/dist/redist/dolce && test -s out/dist/redist/omr/dolce_omr_wasm_bg.wasm && test -s out/dist/redist/omr/dolce_omr_wasm_relaxed_bg.wasm && test -s out/dist/redist/dolce/dolce_wasm_bg.wasm
+        run: ls -la out/dist/redist/omr out/dist/redist/dolce && test -s out/dist/redist/omr/dolce_omr_wasm_bg.wasm && test -s out/dist/redist/omr/dolce_omr_wasm_relaxed_bg.wasm && test -s out/dist/redist/dolce/dolce_wasm_bg.wasm && test -s out/dist/redist/dolce/dolce_jcx_wasm_bg.wasm
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:

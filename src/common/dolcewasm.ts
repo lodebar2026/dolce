@@ -1,4 +1,4 @@
-// dolce-wasm（crates/dolce-wasm，`scripts/build-wasm.mjs` 编到 public/redist/dolce/）的绑定形状。
+// dolce-wasm（crates/dolce-wasm）与 dolce-jcx-wasm（crates/dolce-jcx-wasm）的绑定形状，`scripts/build-wasm.mjs` 编到 public/redist/dolce/。
 // 胶水是 wasm-bindgen `--target web` 出的，网页主线程（`common/dolce.ts::loadDolce`）与 Node（`cli/dolcewasm.node.ts`）载同一份；不入库、不进打包，按运行时路径动态载入。
 // 数据过边界一律 JSON 字符串；会话调用失败抛 `Error`，`message` 是 `dolce_session::EngineError` 的 JSON。
 
@@ -35,8 +35,12 @@ export interface DolceWasm {
   /** `[主歌词, 标点分, 旋律键]` */
   phraseChordFacts(chord: string): string;
   headFpOf(chords: string): string;
+}
 
-  // Muse .jcx（crates/dolce-formats）
+/** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */
+export interface JcxWasm {
+  default(init?: { module_or_path: string | URL }): Promise<object>;
+  initSync(init: { module: BufferSource | WebAssembly.Module }): object;
   decodeJcx(bytes: Uint8Array): string;
   encodeJcx(text: string): { readonly bytes: Uint8Array; readonly missing: string; free(): void };
 }
