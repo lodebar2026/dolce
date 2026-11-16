@@ -7,7 +7,7 @@
 // `probe` 另编一份带对拍探针的 dolce-wasm 到 out/dolce-probe/（只给 dev 对拍脚本，不进打包）。
 //
 // 要：rustup target add wasm32-unknown-unknown；cargo install wasm-bindgen-cli --version <与 crates/Cargo.lock 一致>。
-// 有 wasm-opt（binaryen）就再压一遍。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
+// 识别那份有 wasm-opt（binaryen）就再压一遍；dolce 两份走 `wasm-dolce` 编译档、不过 wasm-opt。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
 // PDFium 的构建号与 crates/omr-source/build.rs 同一个（绑定按那一版的符号表取函数）。
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -101,13 +101,12 @@ export function buildDolce() {
   mkdirSync(DOLCE_OUT, { recursive: true });
   console.log("[build-wasm] 编 dolce-wasm、dolce-jcx-wasm …");
   const target = join(crates, "target/wasm-dolce");
-  run("cargo", ["build", "-p", "dolce-wasm", "-p", "dolce-jcx-wasm", "--release", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
+  // crates/Cargo.toml 的 `wasm-dolce` 档（fat LTO）；不过 wasm-opt——实测它让 gzip 后反而变大（按体积编也量过，太慢，见该档注释）
+  run("cargo", ["build", "-p", "dolce-wasm", "-p", "dolce-jcx-wasm", "--profile", "wasm-dolce", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
   for (const name of [DOLCE_NAME, JCX_NAME]) {
-    const wasm = join(target, `wasm32-unknown-unknown/release/${name}.wasm`);
-    const out = join(DOLCE_OUT, `${name}_bg.wasm`);
-    // 去掉名字段（编辑器开机就载，dolce_wasm 0.93 → 0.79 MB；panic 信息照打，只是栈上没函数名）
+    const wasm = join(target, `wasm32-unknown-unknown/wasm-dolce/${name}.wasm`);
+    // 去掉名字段（编辑器开机就载；panic 信息照打，只是栈上没函数名）
     run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", DOLCE_OUT, "--out-name", name]);
-    if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", out, "-o", out]);
   }
 }
 
