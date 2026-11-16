@@ -213,3 +213,9 @@ pub fn query_digest(doc: &str) -> Result<String, JsValue> {
     let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
     Ok(json(&probe::query_digest(&d)))
 }
+
+/// 对拍用：MusicXML 读入的摘要（模型、绑定表、读后的树；口径见 dev `rs-diff.mjs fromxml`）
+#[wasm_bindgen(js_name = fromXmlDigest)]
+pub fn from_xml_digest(text: &str) -> String {
+    json(&probe::from_xml_digest(text))
+}

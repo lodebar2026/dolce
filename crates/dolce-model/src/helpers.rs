@@ -381,6 +381,7 @@ pub const ZERO_SPAN: SourceSpan = SourceSpan { line: 0, column: 0, offset: 0, le
 
 pub fn empty_song() -> Song {
     Song {
+        oid: Oid::NONE,
         work: Work { number: None, title: None, movement_title: None, subtitles: vec![], version: None },
         identification: None,
         credits: None,

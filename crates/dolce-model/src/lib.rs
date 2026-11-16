@@ -4,6 +4,7 @@ pub mod strenum;
 
 pub mod deconames;
 pub mod doc;
+pub mod fromxml;
 pub mod harmony;
 pub mod helpers;
 pub mod jianpu;
@@ -12,5 +13,6 @@ pub mod marknames;
 pub mod metakeys;
 pub mod multirest;
 pub mod tuplets;
+pub mod xmlsurface;
 
 pub use doc::*;

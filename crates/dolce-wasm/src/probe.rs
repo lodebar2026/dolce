@@ -180,3 +180,59 @@ fn synth_digest(doc: &ScoreDoc) -> Value {
 pub fn query_digest(doc: &ScoreDoc) -> Value {
     json!({ "songs": doc.songs.iter().map(song_digest).collect::<Vec<_>>(), "synth": synth_digest(doc) })
 }
+
+// ───────────────────────── fromxml ─────────────────────────
+
+/// 绑定表摘要：按模型 JSON 的路径，`路径|槽位` → `标签@起-止`（同 rs-diff 的 TS 一侧）
+fn bindings_of(v: &Value, s: &dolce_model::xmlsurface::Surface, path: &str, out: &mut serde_json::Map<String, Value>) {
+    match v {
+        Value::Array(a) => {
+            for (i, x) in a.iter().enumerate() {
+                bindings_of(x, s, &format!("{path}[{i}]"), out);
+            }
+        }
+        Value::Object(o) => {
+            if let Some(oid) = o.get("_oid").and_then(Value::as_u64) {
+                for slot in dolce_model::xmlsurface::Slot::ALL {
+                    if let Some(n) = s.of(Oid(oid as u32), slot) {
+                        let t = s.tree();
+                        out.insert(format!("{path}|{}", slot.name()), json!(format!("{}@{}-{}", t.tag(n), t.start(n), t.end(n))));
+                    }
+                }
+            }
+            for (k, x) in o {
+                if k != "_oid" {
+                    bindings_of(x, s, &format!("{path}.{k}"), out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 去掉 `_oid`
+fn strip_oids(v: &mut Value) {
+    match v {
+        Value::Array(a) => a.iter_mut().for_each(strip_oids),
+        Value::Object(o) => {
+            o.remove("_oid");
+            o.values_mut().for_each(strip_oids);
+        }
+        _ => {}
+    }
+}
+
+/// 第 3 步读入的摘要：模型（去掉 `_oid`）、绑定表、读后的树（合并 `<attributes>` 会往树上挪节点）
+pub fn from_xml_digest(text: &str) -> Value {
+    match dolce_model::fromxml::load_score_doc(text) {
+        Err(m) => json!({ "ok": false, "error": m.key }),
+        Ok(r) => {
+            let mut doc = serde_json::to_value(&r.doc).expect("序列化");
+            let mut b = serde_json::Map::new();
+            bindings_of(&doc, &r.surface, "", &mut b);
+            strip_oids(&mut doc);
+            let tree = r.surface.tree().serialize(r.surface.xml.root);
+            json!({ "ok": true, "doc": doc, "bindings": b, "tree": tree })
+        }
+    }
+}
