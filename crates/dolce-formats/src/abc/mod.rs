@@ -3,6 +3,8 @@
 //! - [`lex`]：音乐体词法（基类 + 三方言钩子）
 //! - [`token`]：词法产物
 
+pub mod dialect;
+pub mod fields;
 pub mod lex;
 pub mod token;
 pub mod u16s;

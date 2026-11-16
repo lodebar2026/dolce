@@ -624,3 +624,58 @@ pub fn lex_digest(dialect: &str, text: &str) -> Value {
     }
     Value::Array(out)
 }
+
+fn field_values(v: &str) -> Value {
+    use dolce_formats::abc::fields::*;
+    let mut bad = vec![];
+    let sing = parse_sing(v, |b| bad.push(b.to_string()));
+    json!({
+        "k123": parse_key(v), "kabc": parse_key_abc(v), "kjcx": parse_key_jcx(v),
+        "t": parse_time(v), "ts": parse_times(v), "q": parse_tempo(v), "qb": parse_tempo_beat(v),
+        "i": parse_instruction(v), "lb": parse_linebreak(v), "vc": parse_voice_clef(v), "ns": normalize_spelling(v),
+        "sing": { "page": sing, "bad": bad }, "jump": jump_ornament_name(v),
+    })
+}
+
+pub fn fields_digest(text: &str) -> Value {
+    use dolce_formats::abc::{fields, u16s};
+    let all = u16s::enc(text);
+    let mut out = vec![];
+    let mut off = 0usize;
+    for (no, line) in all.split(|&u| u == b'\n' as u16).enumerate() {
+        let f = fields::parse_field_line(line, no as u32, off as u32);
+        let v = match &f {
+            Some(f) => field_values(&f.value),
+            None if line.len() < 200 => field_values(&u16s::text(line)),
+            None => Value::Null,
+        };
+        out.push(json!({ "f": f, "v": v }));
+        off += line.len() + 1;
+    }
+    Value::Array(out)
+}
+
+pub fn dialect_tables() -> Value {
+    use dolce_formats::abc::dialect::*;
+    let mut tad = vec![];
+    for k in 0..800 {
+        let d = k as f64 / 2.0;
+        let (t, dots) = type_and_dots(d);
+        tad.push(json!([t, dots]));
+    }
+    let mut d123 = vec![];
+    for b in 0..9 {
+        for d in 0..5 {
+            for s in 0..4 {
+                d123.push(json!(duration_123(b, d, s)));
+            }
+        }
+    }
+    let times: [Option<(f64, f64)>; 6] = [None, Some((3.0, 4.0)), Some((6.0, 8.0)), Some((9.0, 8.0)), Some((3.0, 8.0)), Some((12.0, 8.0))];
+    let mut tn = vec![];
+    for n in 0..21 {
+        let n = n as f64;
+        tn.push(json!([tuplet_normal_123(n), times.iter().map(|t| tuplet_normal_abc(n, *t)).collect::<Vec<_>>()]));
+    }
+    json!({ "tad": tad, "d123": d123, "tn": tn })
+}

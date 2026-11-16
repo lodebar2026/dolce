@@ -270,4 +270,16 @@ mod probes {
     pub fn lex_digest(dialect: &str, text: &str) -> String {
         json(&probe::lex_digest(dialect, text))
     }
+
+    /// 对拍用：字段行与各字段值的读法（口径见 dev `rs-diff.mjs fields`）
+    #[wasm_bindgen(js_name = fieldsDigest)]
+    pub fn fields_digest(text: &str) -> String {
+        json(&probe::fields_digest(text))
+    }
+
+    /// 对拍用：方言时值换算等小表
+    #[wasm_bindgen(js_name = dialectTables)]
+    pub fn dialect_tables() -> String {
+        json(&probe::dialect_tables())
+    }
 }

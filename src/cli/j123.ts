@@ -12,7 +12,10 @@ export * from "../abcfamily/lex123";
 // 对拍（dev rs-diff.mjs lex）：三种方言的词法器
 export { LEXER_123 } from "../abcfamily/dialect123";
 export { LEXER_ABC } from "../abcfamily/dialectabc";
-export { LEXER_JCX } from "../abcfamily/dialectjcx";
+export { LEXER_JCX, parseKeyJcx } from "../abcfamily/dialectjcx";
+export { parseKeyAbc, typeAndDots, duration123, tupletNormal123, tupletNormalAbc } from "../abcfamily/parsedialect";
+export { parseSing } from "../abcfamily/sing";
+export { jumpOrnamentName } from "../abcfamily/jumpmarks";
 export * from "../abcfamily/parse";
 export * from "../abcfamily/emit123.entry";
 export { emitAbc } from "../abcfamily/emitabc.entry";
