@@ -219,3 +219,9 @@ pub fn query_digest(doc: &str) -> Result<String, JsValue> {
 pub fn from_xml_digest(text: &str) -> String {
     json(&probe::from_xml_digest(text))
 }
+
+/// 对拍用：MusicXML 写出的摘要（口径见 dev `rs-diff.mjs toxml`）
+#[wasm_bindgen(js_name = toXmlDigest)]
+pub fn to_xml_digest(text: &str) -> String {
+    json(&probe::to_xml_digest(text))
+}

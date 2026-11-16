@@ -12,7 +12,9 @@ pub mod keyshift;
 pub mod marknames;
 pub mod metakeys;
 pub mod multirest;
+pub mod toxml;
 pub mod tuplets;
+pub mod xmlproject;
 pub mod xmlsurface;
 
 pub use doc::*;

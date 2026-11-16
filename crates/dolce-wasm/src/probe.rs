@@ -236,3 +236,28 @@ pub fn from_xml_digest(text: &str) -> Value {
         }
     }
 }
+
+// ───────────────────────── toxml ─────────────────────────
+
+fn write(doc: &ScoreDoc, s: Option<&dolce_model::xmlsurface::Surface>, ids: bool) -> Value {
+    let o = dolce_model::toxml::ToXmlOptions { source_ids: ids, ..Default::default() };
+    match dolce_model::toxml::score_doc_to_music_xml(doc, s, &o) {
+        Ok(x) => json!(x),
+        Err(m) => json!({ "error": m.key }),
+    }
+}
+
+/// 第 4 步写出的摘要：原样写出、清表层写出、写出后读回再写、带源 id 写出
+pub fn to_xml_digest(text: &str) -> Value {
+    let r = match dolce_model::fromxml::load_score_doc(text) {
+        Err(m) => return json!({ "error": m.key }),
+        Ok(r) => r,
+    };
+    let plain = write(&r.doc, Some(&r.surface), false);
+    let again = match plain.as_str().map(dolce_model::fromxml::load_score_doc) {
+        Some(Ok(r2)) => write(&r2.doc, Some(&r2.surface), false),
+        Some(Err(m)) => json!({ "error": m.key }),
+        None => Value::Null,
+    };
+    json!({ "plain": plain, "bare": write(&r.doc, None, false), "again": again, "ids": write(&r.doc, Some(&r.surface), true) })
+}

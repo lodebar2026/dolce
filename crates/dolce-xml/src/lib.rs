@@ -426,6 +426,20 @@ fn esc_attr(s: &str, out: &mut String) {
     }
 }
 
+/// 文字转义（同 `xmlutil.ts::escapeXml`：`<>&` 转实体、剔掉 XML 1.0 不许出现的控制字符）
+pub fn escape_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    esc_text(s, &mut out);
+    out
+}
+
+/// 属性值转义（同 `xmlutil.ts::escapeAttr`，另转 `"`）
+pub fn escape_attr(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    esc_attr(s, &mut out);
+    out
+}
+
 /// 整份文档：树、根、根前根后的原文。
 #[derive(Clone, Debug)]
 pub struct XmlDoc {
