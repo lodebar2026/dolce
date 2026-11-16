@@ -801,6 +801,41 @@ pub fn parse_sing(body: &str, mut bad: impl FnMut(&str)) -> Option<SingPass> {
     Some(page)
 }
 
+/// `Song.singOrder` → `%%sing` 行（同 `sing.ts::singLines`）
+pub fn sing_lines(song: &dolce_model::Song) -> Vec<String> {
+    song.sing_order
+        .iter()
+        .flatten()
+        .map(|pg| {
+            let mut toks: Vec<String> = vec![];
+            if let Some(r) = pg.rows.filter(|r| *r != 0.0 && !r.is_nan()) {
+                toks.push(format!("[rows={}]", js::num_to_string(r)));
+            }
+            let n = pg.items.len();
+            for (i, it) in pg.items.iter().enumerate() {
+                let v = it.verse.unwrap_or(1.0);
+                toks.push(if v != 1.0 { format!("{}@{}", it.section, js::num_to_string(v)) } else { it.section.clone() });
+                if it.line_after == Some(true) && i + 1 < n {
+                    toks.push("/".into());
+                }
+            }
+            format!("%%sing {}", toks.join(" "))
+        })
+        .collect()
+}
+
+/// 内部短名 → 123 记号名（`jumpmarks.ts::BARLINE_ORNAMENT_NAME`）
+pub fn barline_ornament_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "hs" => "segno",
+        "ty" => "coda",
+        "ds" => "D.S.",
+        "dc" => "D.C.",
+        "fine" => "fine",
+        _ => return None,
+    })
+}
+
 /// 123 的 `!xx!` 是不是小节线上的跳转记号；是则给出内部短名（`jumpmarks.ts`）
 pub fn jump_ornament_name(deco: &str) -> Option<&'static str> {
     let k: String = js::trim(deco).to_lowercase().chars().filter(|&c| c != '.' && !js::is_space(c)).collect();

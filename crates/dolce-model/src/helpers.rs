@@ -377,7 +377,7 @@ pub fn breaks_after_to_start(part: &mut Part, after: &HashMap<usize, BreakKind>)
 
 /// `breaks_after_to_start` 的反向：第 `i` 小节**之后**要不要换行（写出端用）。
 pub fn break_after(part: &Part, i: usize) -> Option<BreakKind> {
-    let Some(next) = part.measures.get(i + 1) else { return part.end_break.clone() };
+    let Some(next) = i.checked_add(1).and_then(|k| part.measures.get(k)) else { return part.end_break.clone() };
     let p = next.print.as_ref();
     if p.and_then(|p| p.new_page) == Some(true) {
         return Some(BreakKind::Page);

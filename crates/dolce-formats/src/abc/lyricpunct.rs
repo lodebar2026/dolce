@@ -35,3 +35,49 @@ pub fn is_lyric_apostrophe(text: &[u16], i: usize) -> bool {
             matches!(get_general_category(c), G::UppercaseLetter | G::LowercaseLetter | G::TitlecaseLetter | G::ModifierLetter | G::OtherLetter)
         })
 }
+
+/// CJK 字（按码位，含增补平面 2 万–2EBEF；`isLyricCjk` 对整个字 `codePointAt(0)` 判的那几处用）
+pub fn is_lyric_cjk_cp(c: char) -> bool {
+    let c = c as u32;
+    (0x3400..=0x4dbf).contains(&c) || (0x4e00..=0x9fff).contains(&c) || (0xf900..=0xfaff).contains(&c) || (0x20000..=0x2ebef).contains(&c)
+}
+
+fn bmp(c: char) -> Option<u16> {
+    u16::try_from(c as u32).ok()
+}
+
+/// `/[\p{L}\p{N}']/u`
+fn latin_ch(c: char) -> bool {
+    c == '\'' || is_letter(c) || is_number(c)
+}
+
+fn is_letter(c: char) -> bool {
+    matches!(get_general_category(c), G::UppercaseLetter | G::LowercaseLetter | G::TitlecaseLetter | G::ModifierLetter | G::OtherLetter)
+}
+
+fn is_number(c: char) -> bool {
+    matches!(get_general_category(c), G::DecimalNumber | G::LetterNumber | G::OtherNumber)
+}
+
+/// 拉丁音节（非 CJK 的字母/数字）起头——歌词读入端的拉丁分支会把它和前面的拉丁词粘在一起（`emitutil.ts::isLatinStart`）
+pub fn is_latin_start(text: &str) -> bool {
+    let first = text.chars().next();
+    first.is_some_and(|c| latin_ch(c) && !is_lyric_cjk_cp(c)) || is_lyric_apostrophe(&text.encode_utf16().collect::<Vec<_>>(), 0)
+}
+
+pub fn is_latin_end(text: &str) -> bool {
+    text.chars().last().is_some_and(|c| latin_ch(c) && !is_lyric_cjk_cp(c))
+}
+
+/// 「至多一个左引号 + 一个 CJK 字 + 若干收尾标点」——不包 `{}` 也读成**一个**音节的形状
+pub fn is_one_cjk_with_punct(text: &str) -> bool {
+    let cs: Vec<char> = text.chars().collect();
+    let mut k = 0;
+    if cs.len() > 1 && bmp(cs[0]).is_some_and(is_lyric_open_quote) {
+        k = 1;
+    }
+    if !cs.get(k).is_some_and(|&c| is_lyric_cjk_cp(c)) {
+        return false;
+    }
+    cs[k + 1..].iter().all(|&c| bmp(c).is_some_and(is_lyric_trailing_punct))
+}

@@ -1,5 +1,6 @@
 pub mod abcpitch;
 pub mod dialect;
+pub mod emit;
 pub mod fields;
 pub mod lex;
 pub mod lyricline;

@@ -336,6 +336,29 @@ fn text_name(name: &str) -> Option<&'static str> {
     }
 }
 
+/// TS 的 `staves.ts::splitStaves` 拆出的几条谱表，同一小节**共用**原小节的 `barlines`（`{ ...m }` 浅拷贝，`structuredClone` 也保留共用）：
+/// 往一条谱表的小节线上加跳转记号，别的谱表跟着有。这里照这个行为：同一声部拆出的几条谱表（`staff_of` 连着），
+/// 同一小节的小节线一开始就相同的算共用，改一处同步到其余几处。（声部, 小节）→ 共用的别的声部
+fn shared_barlines(song: &Song) -> std::collections::HashMap<(usize, usize), Vec<usize>> {
+    let mut out: std::collections::HashMap<(usize, usize), Vec<usize>> = std::collections::HashMap::new();
+    let root = |p: &crate::Part| p.staff_of.clone().unwrap_or_else(|| p.id.clone());
+    for (pi, p) in song.parts.iter().enumerate() {
+        let fam: Vec<usize> = (0..song.parts.len()).filter(|&q| q != pi && root(&song.parts[q]) == root(p)).collect();
+        if fam.is_empty() || (p.staff_of.is_none() && !fam.iter().any(|&q| song.parts[q].staff_of.is_some())) {
+            continue;
+        }
+        for (mi, m) in p.measures.iter().enumerate() {
+            let Some(b) = &m.barlines else { continue };
+            let same: Vec<usize> =
+                fam.iter().copied().filter(|&q| song.parts[q].measures.get(mi).and_then(|x| x.barlines.as_ref()) == Some(b)).collect();
+            if !same.is_empty() {
+                out.insert((pi, mi), same);
+            }
+        }
+    }
+    out
+}
+
 /// 简谱文本写出端（123 / ABC / jcx）用：小节里的 `<direction>` 换成简谱那套写法，之后删掉 `directions`。没有 direction 的歌原样返回。
 pub fn directions_as_marks(src: &Song) -> std::borrow::Cow<'_, Song> {
     if !src.parts.iter().any(|p| p.measures.iter().any(|m| m.directions.as_ref().is_some_and(|d| !d.is_empty()))) {
@@ -346,13 +369,16 @@ pub fn directions_as_marks(src: &Song) -> std::borrow::Cow<'_, Song> {
     lift_lead_tempo(&mut song);
     carry_late_directions(&mut song);
     let mut new_marks: Vec<Mark> = vec![];
-    for part in &mut song.parts {
+    let shared = shared_barlines(&song);
+    for pi in 0..song.parts.len() {
         // 渐强渐弱常跨小节：起点留着等后面小节的收尾
         let mut open: std::collections::VecDeque<(WedgeType, ElementId)> = std::collections::VecDeque::new();
-        for mea in &mut part.measures {
+        for mi in 0..song.parts[pi].measures.len() {
+            let mea = &mut song.parts[pi].measures[mi];
             if mea.directions.as_ref().is_none_or(|d| d.is_empty()) {
                 continue;
             }
+            let bars_before = mea.barlines.clone();
             let dm = direction_marks(mea);
             for (i, orns) in &dm.by_element {
                 let i = *i;
@@ -429,6 +455,12 @@ pub fn directions_as_marks(src: &Song) -> std::borrow::Cow<'_, Song> {
                 }
             }
             mea.directions = None;
+            if mea.barlines != bars_before {
+                let bars = mea.barlines.clone();
+                for &q in shared.get(&(pi, mi)).into_iter().flatten() {
+                    song.parts[q].measures[mi].barlines = bars.clone();
+                }
+            }
         }
     }
     song.marks.extend(new_marks);

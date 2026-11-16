@@ -2,10 +2,12 @@
 
 pub mod strenum;
 
+pub mod beatgroup;
 pub mod breaks;
 pub mod deconames;
 pub mod directionmarks;
 pub mod edit;
+pub mod emitutil;
 pub mod doc;
 pub mod fromxml;
 pub mod hanconv;

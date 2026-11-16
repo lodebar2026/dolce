@@ -3,7 +3,7 @@
 
 use dolce_base::js::num_to_string;
 use dolce_model::edit::key_alter;
-use dolce_model::jianpu::{acc_by_offset, assign_degrees, c_major, continues_measure, offset_by_acc};
+use dolce_model::jianpu::{acc_by_offset, assign_degrees, c_major, continues_measure, offset_by_acc, AccidentalCarry};
 use dolce_model::keyshift::key_fifths;
 use dolce_model::{Accidental, Element, Key, Measure, Pitch, Song};
 use std::collections::HashMap;
@@ -81,4 +81,81 @@ pub fn resolve_abc_pitches(song: &mut Song) {
     for part in song.parts.iter_mut() {
         assign_degrees(part, &key);
     }
+}
+
+/// 有没有只给度数、没有绝对音高的音（简谱形状的来源）
+fn has_degree_only(song: &Song) -> bool {
+    song.parts.iter().any(|p| {
+        p.measures.iter().any(|m| {
+            m.elements.iter().any(|el| {
+                el.as_chord().is_some_and(|c| c.notes.iter().any(|n| n.pitch.is_none() && n.degree.as_ref().is_some_and(|d| d.number > 0.0)))
+            })
+        })
+    })
+}
+
+/// ABC 写出前：简谱形状的歌在克隆上补实际音高（按唱名延续），再按 ABC 规则重定面上的记号。已经带音高的歌原样返回
+pub fn with_abc_pitches(src: &Song) -> std::borrow::Cow<'_, Song> {
+    if !has_degree_only(src) {
+        return std::borrow::Cow::Borrowed(src);
+    }
+    let mut song = src.clone();
+    let mut jp = AccidentalCarry::default();
+    let mut abc = AbcCarry::new(0.0);
+    each_measure(&mut song, |m, key, fresh| {
+        let k = Key { fifths: key_fifths(key), ..key.clone() };
+        if fresh {
+            jp = AccidentalCarry::default();
+            abc = AbcCarry::new(k.fifths);
+        }
+        for el in m.elements.iter_mut() {
+            let Element::Chord(c) = el else { continue };
+            for n in c.notes.iter_mut() {
+                let from_degree = n.degree.as_ref().filter(|d| d.number > 0.0).map(|d| jp.pitch(d, &k));
+                if n.pitch.is_none() {
+                    n.pitch = from_degree;
+                }
+                let Some(p) = &n.pitch else { continue };
+                n.accidental = abc.written(p);
+            }
+        }
+    });
+    std::borrow::Cow::Owned(song)
+}
+
+/// 声部按首次出现的先后归并后的元素下标（写出端 `voiceOrder` 同一个次序）
+pub fn voice_grouped(m: &Measure) -> Vec<usize> {
+    let mut groups: Vec<(f64, Vec<usize>)> = vec![];
+    for (j, el) in m.elements.iter().enumerate() {
+        let v = if el.voice() > 1.0 { el.voice() } else { 1.0 };
+        match groups.iter_mut().find(|g| g.0 == v) {
+            Some(g) => g.1.push(j),
+            None => groups.push((v, vec![j])),
+        }
+    }
+    groups.into_iter().flat_map(|g| g.1).collect()
+}
+
+/// MusicXML 读进来的歌（已带音高）写 ABC 前：面上的记号按 **ABC 读回的次序**重定（读回会带偏的补上，原有的照留）。在克隆上改
+pub fn with_abc_accidentals(src: &Song) -> Song {
+    let mut song = src.clone();
+    let mut carry = AbcCarry::new(0.0);
+    each_measure(&mut song, |m, key, fresh| {
+        if fresh {
+            carry = AbcCarry::new(key_fifths(key));
+        }
+        for j in voice_grouped(m) {
+            let Element::Chord(c) = &mut m.elements[j] else { continue };
+            if c.rest.is_some() {
+                continue;
+            }
+            for n in c.notes.iter_mut() {
+                let Some(p) = &n.pitch else { continue };
+                if let Some(need) = carry.written(p) {
+                    n.accidental = Some(need);
+                }
+            }
+        }
+    });
+    song
 }

@@ -289,6 +289,35 @@ mod probes {
         json(&parse::parse_abc_family(text, d))
     }
 
+    /// 对拍用：ScoreDoc（JSON）→ 123 / ABC / jcx 文本（口径见 dev `rs-diff.mjs emit`）
+    #[wasm_bindgen(js_name = emitAbcFamily)]
+    pub fn emit_abc_family(dialect: &str, doc: &str) -> Result<String, JsValue> {
+        use dolce_formats::abc::emit;
+        let doc: dolce_model::ScoreDoc = super::parse("ScoreDoc", doc)?;
+        Ok(match dialect {
+            "abc" => emit::emit_abc(&doc),
+            "jcx" => emit::emit_jcx(&doc),
+            _ => emit::emit_123(&doc),
+        })
+    }
+
+    /// 对拍用：文本按 `from` 方言解析、再按 `to` 方言写出（全走 Rust）
+    #[wasm_bindgen(js_name = convertAbcFamily)]
+    pub fn convert_abc_family(from: &str, to: &str, text: &str) -> String {
+        use dolce_formats::abc::{emit, lex::Dialect, parse};
+        let d = match from {
+            "abc" => Dialect::Abc,
+            "jcx" => Dialect::Jcx,
+            _ => Dialect::J123,
+        };
+        let doc = parse::parse_abc_family(text, d);
+        match to {
+            "abc" => emit::emit_abc(&doc),
+            "jcx" => emit::emit_jcx(&doc),
+            _ => emit::emit_123(&doc),
+        }
+    }
+
     /// 对拍用：方言时值换算等小表
     #[wasm_bindgen(js_name = dialectTables)]
     pub fn dialect_tables() -> String {
