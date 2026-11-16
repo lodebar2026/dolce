@@ -35,6 +35,10 @@ export interface DolceWasm {
   /** `[主歌词, 标点分, 旋律键]` */
   phraseChordFacts(chord: string): string;
   headFpOf(chords: string): string;
+
+  // 模型（crates/dolce-model，M2 迁移中，对拍用）
+  /** `ScoreDoc` 的 JSON 读进 Rust 类型再写回 */
+  docRoundtrip(doc: string): string;
 }
 
 /** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */

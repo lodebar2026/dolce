@@ -195,3 +195,12 @@ pub fn head_fp_of(chords: &str) -> Result<String, JsValue> {
     let refs: Vec<&phraseinput::PhraseChord> = cs.iter().collect();
     Ok(phrase::head_fp_of(&refs))
 }
+
+// ───────────────────────── 模型（dolce-model，M2 迁移中）─────────────────────────
+
+/// 对拍用：`ScoreDoc` 的 JSON 读进 Rust 类型再写回（核对类型与 `doc.ts` 逐字段对得上）。读不进抛 `Error`。
+#[wasm_bindgen(js_name = docRoundtrip)]
+pub fn doc_roundtrip(doc: &str) -> Result<String, JsValue> {
+    let d: dolce_model::ScoreDoc = parse("ScoreDoc", doc)?;
+    Ok(json(&d))
+}

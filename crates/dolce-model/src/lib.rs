@@ -1,0 +1,11 @@
+//! 语义模型 `ScoreDoc` 与围绕它的查询、MusicXML 读写、投影、编辑（迁自 `src/model/`，忠实移植语义）。
+
+pub mod strenum;
+
+pub mod deconames;
+pub mod doc;
+pub mod helpers;
+pub mod marknames;
+pub mod metakeys;
+
+pub use doc::*;
