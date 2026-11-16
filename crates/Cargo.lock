@@ -366,6 +366,7 @@ dependencies = [
  "dolce-model",
  "encoding_rs",
  "serde",
+ "unicode-general-category",
 ]
 
 [[package]]

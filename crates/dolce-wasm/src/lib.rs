@@ -277,6 +277,18 @@ mod probes {
         json(&probe::fields_digest(text))
     }
 
+    /// 对拍用：ABC 家族整篇解析成 `ScoreDoc`（口径见 dev `rs-diff.mjs parse`）
+    #[wasm_bindgen(js_name = parseAbcFamily)]
+    pub fn parse_abc_family(dialect: &str, text: &str) -> String {
+        use dolce_formats::abc::{lex::Dialect, parse};
+        let d = match dialect {
+            "abc" => Dialect::Abc,
+            "jcx" => Dialect::Jcx,
+            _ => Dialect::J123,
+        };
+        json(&parse::parse_abc_family(text, d))
+    }
+
     /// 对拍用：方言时值换算等小表
     #[wasm_bindgen(js_name = dialectTables)]
     pub fn dialect_tables() -> String {

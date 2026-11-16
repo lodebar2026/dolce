@@ -34,7 +34,7 @@ pub fn degree_from_pitch(pitch: &Pitch, key: &Key, accidental: Option<Accidental
     Degree { number, octave_shift, accidental }
 }
 
-fn acc_by_offset(o: f64) -> Option<Accidental> {
+pub fn acc_by_offset(o: f64) -> Option<Accidental> {
     Some(if o == -2.0 {
         Accidental::DoubleFlat
     } else if o == -1.0 {
@@ -51,7 +51,7 @@ fn acc_by_offset(o: f64) -> Option<Accidental> {
 }
 
 /// `OFFSET_BY_ACC[acc]`：认不得的记号名取不到（undefined）
-fn offset_by_acc(a: &Accidental) -> Option<f64> {
+pub fn offset_by_acc(a: &Accidental) -> Option<f64> {
     match a {
         Accidental::DoubleFlat => Some(-2.0),
         Accidental::Flat => Some(-1.0),
