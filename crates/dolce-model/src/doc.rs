@@ -378,6 +378,7 @@ str_enum! {
 /// 和弦根音 / 低音
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct HarmonyStep {
     pub step: String,
@@ -403,6 +404,7 @@ pub struct HarmonyDegree {
 /// 和弦符号 `<harmony>`。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct Harmony {
     #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]

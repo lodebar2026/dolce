@@ -301,8 +301,8 @@ pub fn respell_measure(measure: &mut Measure, key: &Key) {
 }
 
 /// 唱名 → 音高：八度点照 `octave_shift`，升降照 `acc`（相对调号）。
-fn pitch_of_degree(number: f64, octave_shift: f64, key: &Key) -> Option<Pitch> {
-    pitch_from_degree(&Degree { number, octave_shift, accidental: None }, key)
+fn pitch_of_degree(number: f64, octave_shift: f64, key: &Key, acc: Option<Accidental>) -> Option<Pitch> {
+    pitch_from_degree(&Degree { number, octave_shift, accidental: acc }, key)
 }
 
 // ───────────────────────── 时值 ─────────────────────────
@@ -559,7 +559,7 @@ pub fn set_degree(doc: &mut ScoreDoc, ids: &[ElementId], degree: f64, hooks: &mu
         }
         let old = l.chord(doc).notes.first().and_then(|n| n.pitch.clone());
         let shift = old.as_ref().map_or(0.0, |o| degree_from_pitch(o, &key, None).octave_shift);
-        let Some(mut p) = pitch_of_degree(degree, shift, &key) else { continue };
+        let Some(mut p) = pitch_of_degree(degree, shift, &key, None) else { continue };
         if old.is_none() {
             let near = neighbour_midi(l.part(doc), l.mi, l.index, l.chord(doc).voice);
             p = nearest_octave(&p, near);
@@ -809,7 +809,7 @@ pub fn insert_chord(doc: &mut ScoreDoc, anchor: &InsertAnchor, degree: f64, dur:
     if degree == 0.0 {
         ch.rest = Some(RestInfo::default());
     } else {
-        let Some(p) = pitch_of_degree(degree, 0.0, &key) else { return err("me.degree07") };
+        let Some(p) = pitch_of_degree(degree, 0.0, &key, None) else { return err("me.degree07") };
         let near = neighbour_midi(&doc.songs[si].parts[pi], mi, index, voice);
         ch.notes = vec![Note { pitch: Some(nearest_octave(&p, near)), ..Default::default() }];
     }
@@ -999,7 +999,7 @@ pub fn add_chord_note(doc: &mut ScoreDoc, id: ElementId, degree: f64, hooks: &mu
     }
     let key = ctx_of(doc, &l).key;
     let top = c.notes.iter().fold(f64::NEG_INFINITY, |a, n| js::max(a, note_midi_or0(n)));
-    let Some(p0) = pitch_of_degree(degree, 0.0, &key) else { return err("me.degree17") };
+    let Some(p0) = pitch_of_degree(degree, 0.0, &key, None) else { return err("me.degree17") };
     let mut p = nearest_octave(&p0, top + 6.0);
     while midi_of_pitch(&p) <= top {
         p.octave += 1.0;
@@ -1074,7 +1074,7 @@ pub fn insert_in_voice(
     if degree == 0.0 {
         ch.rest = Some(RestInfo::default());
     } else {
-        let Some(p) = pitch_of_degree(degree, 0.0, &key) else { return err("me.degree07") };
+        let Some(p) = pitch_of_degree(degree, 0.0, &key, None) else { return err("me.degree07") };
         let part = &doc.songs[at.si].parts[at.pi];
         let near = neighbour_midi(part, at.mi, part.measures[at.mi].elements.len(), voice);
         ch.notes = vec![Note { pitch: Some(nearest_octave(&p, near)), ..Default::default() }];
@@ -1148,7 +1148,7 @@ pub fn step_degree(doc: &mut ScoreDoc, ids: &[ElementId], delta: f64, hooks: &mu
                 num = 7.0;
                 shift -= 1.0;
             }
-            if let Some(p) = pitch_of_degree(num, shift, &key) {
+            if let Some(p) = pitch_of_degree(num, shift, &key, None) {
                 n.pitch = Some(p);
             }
         }
@@ -2220,6 +2220,304 @@ pub fn toggle_jump(doc: &mut ScoreDoc, si: usize, mi: usize, kind: &str) -> Mode
     ModelEdit::Select(vec![])
 }
 
+// ───────────────────────── 连音 ─────────────────────────
+
+/// 连音的默认比例：二连、四连占 3，其余占小于 n 的最大 2 的幂（3→2、5→4、6→4、7→4），同 123 的表。
+pub fn tuplet_normal(n: f64) -> f64 {
+    if n == 2.0 || n == 4.0 {
+        return 3.0;
+    }
+    let mut p = 1.0;
+    while p * 2.0 < n {
+        p *= 2.0;
+    }
+    p
+}
+
+/// 选中的几个音（同一小节、同一声线）做成连音，已经是同一组连音就拆回去。
+pub fn toggle_tuplet(doc: &mut ScoreDoc, ids: &[ElementId], hooks: &mut dyn EditHooks) -> ModelEdit {
+    let mut locs: Vec<ChordLoc> = chords_of(doc, ids).into_iter().filter(|l| l.chord(doc).grace.is_none()).collect();
+    locs.sort_by_key(|l| l.index);
+    if locs.len() < 2 {
+        return err("ve.tupletTwo");
+    }
+    let f = locs[0];
+    let fv = f.chord(doc).voice;
+    if locs.iter().any(|l| l.mkey() != f.mkey() || l.chord(doc).voice != fv) {
+        return err("me.tupletSame");
+    }
+    let (first, last) = (f.chord(doc).id, locs[locs.len() - 1].chord(doc).id);
+    let mark = doc.songs[f.si].marks.iter().position(|m| m.kind == MarkType::Tuplet && m.start == first && m.end == last);
+    if let Some(mk) = mark {
+        // 拆回去：时值还原、去掉比例与括号
+        for l in &locs {
+            let Some(tm) = l.chord(doc).duration.time_mod.clone() else { continue };
+            let want = (l.chord(doc).duration.divisions * tm.actual) / tm.normal;
+            let v = fit_divisions(&mut doc.songs[l.si].parts[l.pi], want);
+            let d = &mut l.chord_mut(doc).duration;
+            d.divisions = v;
+            d.time_mod = None;
+        }
+        doc.songs[f.si].marks.remove(mk);
+    } else {
+        if locs.iter().any(|l| l.chord(doc).duration.time_mod.is_some()) {
+            return err("me.tupletAlready");
+        }
+        let n = locs.len() as f64;
+        let normal = tuplet_normal(n);
+        for l in &locs {
+            // 放大单位（`fit_divisions` 可能整声部乘一倍）后再按当前值算，前面改过的也一起放大了，比例不变
+            let want = (l.chord(doc).duration.divisions * normal) / n;
+            let v = fit_divisions(&mut doc.songs[l.si].parts[l.pi], want);
+            let d = &mut l.chord_mut(doc).duration;
+            d.divisions = v;
+            d.time_mod = Some(TimeMod { actual: n, normal, normal_type: None });
+        }
+        let mut mk = Mark::new(MarkType::Tuplet, first, last);
+        mk.tuplet_actual = Some(n);
+        mk.tuplet_normal = Some(normal);
+        doc.songs[f.si].marks.push(mk);
+    }
+    let song = &doc.songs[f.si];
+    let MeasureCtx { time, dpq, .. } = measure_ctx(song, &song.parts[f.pi], f.mi);
+    let m = f.measure_mut(doc);
+    rebeam(m, fv, time.as_ref(), dpq);
+    m.duration = None;
+    hooks.forget_layout(&doc.songs[f.si]);
+    ModelEdit::Select(ids_of(doc, &locs))
+}
+
+// ───────────────────────── 歌词 ─────────────────────────
+
+/// 同声部同声线、`l` 之前最近的一个和弦（找连字符的前一半）。
+fn prev_in_voice(doc: &ScoreDoc, l: &ChordLoc) -> Option<ChordLoc> {
+    let part = l.part(doc);
+    let voice = l.chord(doc).voice;
+    for mi in (0..=l.mi).rev() {
+        let els = &part.measures[mi].elements;
+        let to = if mi == l.mi { l.index } else { els.len() };
+        for i in (0..to).rev() {
+            if let Element::Chord(c) = &els[i] {
+                if c.voice == voice && c.grace.is_none() {
+                    return Some(ChordLoc { si: l.si, pi: l.pi, mi, index: i });
+                }
+            }
+        }
+    }
+    None
+}
+
+fn hyphen_after(ly: Option<&Lyric>) -> bool {
+    matches!(ly.and_then(|x| x.syllabic.as_ref()), Some(Syllabic::Begin) | Some(Syllabic::Middle))
+}
+
+/// 前面那个字接不接连字符变了：这个字的 syllabic 跟着改（自己后面接不接不变）
+fn relink_syllabic(ly: Option<&mut Lyric>, joined_before: bool) {
+    let Some(ly) = ly else { return };
+    let hy = hyphen_after(Some(ly));
+    ly.syllabic = Some(match (joined_before, hy) {
+        (true, true) => Syllabic::Middle,
+        (true, false) => Syllabic::End,
+        (false, true) => Syllabic::Begin,
+        (false, false) => Syllabic::Single,
+    });
+}
+
+fn verse_lyric(doc: &mut ScoreDoc, l: Option<ChordLoc>, verse: f64) -> Option<&mut Lyric> {
+    l?.chord_mut(doc).lyrics.as_mut()?.iter_mut().find(|x| x.number == verse)
+}
+
+/// 歌词录入：和弦 `id` 第 `verse` 段的字写成 `text`（空串 = 去掉这一段的字）。`hyphen` = 后面接连字符；`extend` = 一字多音的续线。
+pub fn set_lyric(doc: &mut ScoreDoc, id: ElementId, verse: f64, text: &str, hyphen: bool, extend: bool) -> ModelEdit {
+    let Some(l) = locate(doc, id) else { return err("me.noNote") };
+    let rest: Vec<Lyric> = l.chord(doc).lyrics.iter().flatten().filter(|x| x.number != verse).cloned().collect();
+    let prev = prev_in_voice(doc, &l);
+    let next = next_in_voice(doc, &l);
+    let cid = l.chord(doc).id;
+    if text.is_empty() {
+        l.chord_mut(doc).lyrics = if rest.is_empty() { None } else { Some(rest) };
+        // 字去掉了：前一个字不再连到这儿、后一个字也不再接着这个字
+        if let Some(p) = verse_lyric(doc, prev, verse) {
+            if hyphen_after(Some(p)) {
+                p.syllabic = Some(if p.syllabic == Some(Syllabic::Middle) { Syllabic::End } else { Syllabic::Single });
+            }
+        }
+        relink_syllabic(verse_lyric(doc, next, verse), false);
+        return ModelEdit::Select(vec![cid]);
+    }
+    let joined = hyphen_after(verse_lyric(doc, prev, verse).map(|x| &*x));
+    relink_syllabic(verse_lyric(doc, next, verse), hyphen);
+    let old = l.chord(doc).lyrics.iter().flatten().find(|x| x.number == verse).cloned();
+    // `{ ...old, number, text, syllabic }`：新对象
+    let mut ly = old.unwrap_or_default();
+    ly.oid = Oid::NONE;
+    ly.number = verse;
+    ly.text = text.to_owned();
+    ly.syllabic = Some(match (joined, hyphen) {
+        (true, true) => Syllabic::Middle,
+        (true, false) => Syllabic::End,
+        (false, true) => Syllabic::Begin,
+        (false, false) => Syllabic::Single,
+    });
+    ly.extend = if extend { Some(true) } else { None };
+    ly.extend_type = None;
+    let mut all = rest;
+    all.push(ly);
+    js::sort_by(&mut all, |a, b| a.number - b.number);
+    l.chord_mut(doc).lyrics = Some(all);
+    ModelEdit::Select(vec![cid])
+}
+
+/// 和弦名录入：和弦 `id` 的和弦名写成 `text`（空串 = 去掉）。只记原文，结构由写出端按文字解析。
+pub fn set_harmony(doc: &mut ScoreDoc, id: ElementId, text: &str) -> ModelEdit {
+    let Some(l) = locate(doc, id) else { return err("me.noNote") };
+    let c = l.chord_mut(doc);
+    c.harmony = if text.is_empty() {
+        None
+    } else {
+        Some(Harmony { root: HarmonyStep { step: "C".into(), alter: 0.0, alter_left: None }, kind: String::new(), text: Some(text.into()), ..Default::default() })
+    };
+    ModelEdit::Select(vec![c.id])
+}
+
+/// 文字 / 力度录入：和弦 `id` 前面挂一条 `<direction>`（文字在上方、力度在下方）；`text` 空串 = 去掉。
+pub fn set_direction_text(doc: &mut ScoreDoc, id: ElementId, kind: &str, text: &str) -> ModelEdit {
+    let Some(l) = locate(doc, id) else { return err("me.noNote") };
+    let (voice, staff, cid) = {
+        let c = l.chord(doc);
+        (c.voice, c.staff, c.id)
+    };
+    let idx = l.index as f64;
+    let m = l.measure_mut(doc);
+    let mut rest: Vec<Direction> = m
+        .directions
+        .take()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|d| !(d.kind == kind && d.after_elements.unwrap_or(0.0) == idx && d.voice.is_none_or(|v| v == voice)))
+        .collect();
+    if !text.is_empty() {
+        let mut d = Direction::of(kind);
+        d.text = Some(text.into());
+        d.after_elements = Some(idx);
+        d.placement = Some(if kind == "dynamics" { Placement::Below } else { Placement::Above });
+        d.voice = Some(voice);
+        d.staff = Some(staff);
+        rest.push(d);
+    }
+    m.directions = if rest.is_empty() { None } else { Some(rest) };
+    ModelEdit::Select(vec![cid])
+}
+
+/// 和弦 `id` 前面那条文字 / 力度现在的值。
+pub fn direction_text_of(doc: &ScoreDoc, id: ElementId, kind: &str) -> String {
+    let Some(l) = locate(doc, id) else { return String::new() };
+    let idx = l.index as f64;
+    l.measure(doc)
+        .directions
+        .iter()
+        .flatten()
+        .find(|x| x.kind == kind && x.after_elements.unwrap_or(0.0) == idx)
+        .and_then(|d| d.text.clone())
+        .unwrap_or_default()
+}
+
+// ───────────────────────── 剪贴板 ─────────────────────────
+
+/// 剪贴板里的一样东西：与格式无关。音按唱名记（相对调号），时值按简谱口径（减时线条数 + 附点，四分以上拆成增时线）。
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ClipItem {
+    Note { degree: f64, octave: f64, acc: Option<Accidental>, halvings: f64, dots: f64 },
+    Sustain,
+    Bar,
+}
+
+fn halvings_of(t: &NoteType) -> Option<f64> {
+    match t {
+        NoteType::Quarter => Some(0.0),
+        NoteType::Eighth => Some(1.0),
+        NoteType::N16th => Some(2.0),
+        NoteType::N32nd => Some(3.0),
+        NoteType::N64th => Some(4.0),
+        _ => None,
+    }
+}
+
+/// 选中的和弦 → 剪贴板（和弦取最上面那个音；连音、写不出的时值按最近的四分拍数拆）。
+pub fn clip_of_chords(doc: &ScoreDoc, ids: &[ElementId]) -> Vec<ClipItem> {
+    let mut out = vec![];
+    for l in chords_of(doc, ids) {
+        let MeasureCtx { key, dpq, .. } = ctx_of(doc, &l);
+        let ch = l.chord(doc);
+        let top = top_note(ch).map(|i| &ch.notes[i]);
+        let d = top.and_then(|n| n.pitch.as_ref().map(|p| degree_from_pitch(p, &key, n.accidental.clone())));
+        let t = type_of_divisions(ch.duration.divisions, dpq);
+        let h = t.as_ref().and_then(|(ty, _)| halvings_of(ty));
+        let (mut halvings, mut dots, mut sustains) = (0.0, 0.0, 0.0);
+        match (t, h) {
+            (Some((_, d)), Some(h)) => {
+                halvings = h;
+                dots = d;
+            }
+            _ => sustains = js::max(0.0, js::round(ch.duration.divisions / dpq) - 1.0),
+        }
+        out.push(ClipItem::Note {
+            degree: d.as_ref().map_or(0.0, |d| d.number),
+            octave: d.as_ref().map_or(0.0, |d| d.octave_shift),
+            acc: d.and_then(|d| d.accidental),
+            halvings,
+            dots,
+        });
+        let mut k = 0.0;
+        while k < sustains {
+            out.push(ClipItem::Sustain);
+            k += 1.0;
+        }
+    }
+    out
+}
+
+/// 剪贴板贴到锚点处（同一声线、接着往后插）；增时线并进前一个音（多一拍），小节线不贴。返回贴进来的那些音。
+pub fn paste_clip(doc: &mut ScoreDoc, anchor: &InsertAnchor, items: &[ClipItem], hooks: &mut dyn EditHooks) -> ModelEdit {
+    let mut at = anchor.clone();
+    let mut last: Option<ElementId> = None;
+    let mut added: Vec<ElementId> = vec![];
+    for it in items {
+        match it {
+            ClipItem::Bar => continue,
+            ClipItem::Sustain => {
+                if let Some(id) = last {
+                    let r = add_beat(doc, id, hooks);
+                    if matches!(r, ModelEdit::Error(_)) {
+                        return r;
+                    }
+                }
+            }
+            ClipItem::Note { degree, octave, acc, halvings, dots } => {
+                let r = insert_chord(doc, &at, *degree, NewDuration { halvings: *halvings, dots: *dots }, hooks);
+                let ModelEdit::CaretAfter(id) = r else { return r };
+                last = Some(id);
+                added.push(id);
+                if *degree > 0.0 {
+                    let l = locate(doc, id).expect("刚插的音");
+                    let key = ctx_of(doc, &l).key;
+                    if let Some(p) = pitch_of_degree(*degree, *octave, &key, acc.clone()) {
+                        l.chord_mut(doc).notes = vec![Note { pitch: Some(p), ..Default::default() }];
+                    }
+                    touched(doc, &[l], hooks);
+                }
+                at = InsertAnchor::After(id);
+            }
+        }
+    }
+    if added.is_empty() {
+        err("me.clipNoNotes")
+    } else {
+        ModelEdit::Select(added)
+    }
+}
+
 // ───────────────────────── 命令 ─────────────────────────
 
 /// 一个编辑动作（JSON `{"op": "setDegree", …}`，`op` 与字段名同 TS 函数与参数名）。会话与对拍都按它发。
@@ -2256,6 +2554,11 @@ pub enum EditCmd {
     SetBarKind { si: usize, mi: usize, kind: String },
     ToggleEnding { si: usize, from: usize, to: usize, n: f64 },
     ToggleJump { si: usize, mi: usize, kind: String },
+    ToggleTuplet { ids: Vec<ElementId> },
+    SetLyric { id: ElementId, verse: f64, text: String, hyphen: bool, extend: bool },
+    SetHarmony { id: ElementId, text: String },
+    SetDirectionText { id: ElementId, kind: String, text: String },
+    PasteClip { anchor: InsertAnchor, items: Vec<ClipItem> },
 }
 
 /// 执行一个编辑动作
@@ -2297,5 +2600,10 @@ pub fn apply(doc: &mut ScoreDoc, cmd: &EditCmd, hooks: &mut dyn EditHooks) -> Mo
         C::SetBarKind { si, mi, kind } => set_bar_kind(doc, *si, *mi, kind),
         C::ToggleEnding { si, from, to, n } => toggle_ending(doc, *si, *from, *to, *n),
         C::ToggleJump { si, mi, kind } => toggle_jump(doc, *si, *mi, kind),
+        C::ToggleTuplet { ids } => toggle_tuplet(doc, ids, hooks),
+        C::SetLyric { id, verse, text, hyphen, extend } => set_lyric(doc, *id, *verse, text, *hyphen, *extend),
+        C::SetHarmony { id, text } => set_harmony(doc, *id, text),
+        C::SetDirectionText { id, kind, text } => set_direction_text(doc, *id, kind, text),
+        C::PasteClip { anchor, items } => paste_clip(doc, anchor, items, hooks),
     }
 }

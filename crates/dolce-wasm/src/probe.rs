@@ -399,6 +399,13 @@ pub fn edit_digest(text: &str, script: &EditScript) -> Value {
             "fifths": anchor_fifths(&r.doc, &InsertAnchor::After(id)),
         }));
     }
+    let post = |doc: &dolce_model::doc::ScoreDoc| {
+        json!({
+            "clip": clip_of_chords(doc, &script.probe_ids),
+            "texts": script.probe_ids.iter().map(|&id| [direction_text_of(doc, id, "words"), direction_text_of(doc, id, "dynamics")]).collect::<Vec<_>>(),
+        })
+    };
+    queries.push(post(&r.doc));
     if let Some(p) = r.doc.songs.first().and_then(|s| s.parts.first()) {
         queries.push(json!([1, 2, 3, 5].iter().map(|&k| staff_voice(p, 1.0, k)).chain([1, 2].iter().map(|&k| staff_voice(p, 2.0, k))).collect::<Vec<_>>()));
     }
@@ -414,6 +421,7 @@ pub fn edit_digest(text: &str, script: &EditScript) -> Value {
         let res = apply(&mut r.doc, &cmd, &mut r.surface);
         results.push(serde_json::to_value(&res).expect("序列化"));
     }
+    queries.push(post(&r.doc));
     let mut doc = serde_json::to_value(&r.doc).expect("序列化");
     strip_oids(&mut doc);
     let xml = match dolce_model::toxml::score_doc_to_music_xml(&r.doc, Some(&r.surface), &Default::default()) {
