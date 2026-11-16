@@ -318,6 +318,37 @@ mod probes {
         }
     }
 
+    /// 对拍用：丢失清单。`{"used":[…],"loss":{目标:[…]}}`，各列表按名字排（口径见 dev `rs-diff.mjs capability`）
+    fn capability_digest(doc: &dolce_model::ScoreDoc, surface: Option<&dolce_model::xmlsurface::Surface>) -> String {
+        use dolce_formats::capability::{features_used, plan_save, TargetFormat};
+        let names = |v: Vec<dolce_formats::capability::Feature>| {
+            let mut s: Vec<&str> = v.into_iter().map(|f| f.as_str()).collect();
+            s.sort();
+            s
+        };
+        let mut loss = serde_json::Map::new();
+        for t in ["123", "abc", "jpwabc", "tomato", "shige", "jly", "jcx", "musicxml"] {
+            loss.insert(t.into(), serde_json::json!(names(plan_save(doc, TargetFormat::parse(t).unwrap(), surface))));
+        }
+        json(&serde_json::json!({ "used": names(features_used(doc, surface)), "loss": loss }))
+    }
+
+    /// 对拍用：ScoreDoc（JSON，无表层）的丢失清单
+    #[wasm_bindgen(js_name = capabilityDoc)]
+    pub fn capability_doc(doc: &str) -> Result<String, JsValue> {
+        let doc: dolce_model::ScoreDoc = super::parse("ScoreDoc", doc)?;
+        Ok(capability_digest(&doc, None))
+    }
+
+    /// 对拍用：MusicXML 原文（Rust 自己读，带表层）的丢失清单
+    #[wasm_bindgen(js_name = capabilityXml)]
+    pub fn capability_xml(text: &str) -> String {
+        match dolce_model::fromxml::load_score_doc(text) {
+            Ok(l) => capability_digest(&l.doc, Some(&l.surface)),
+            Err(e) => json(&serde_json::json!({ "error": e.key })),
+        }
+    }
+
     /// 对拍用：方言时值换算等小表
     #[wasm_bindgen(js_name = dialectTables)]
     pub fn dialect_tables() -> String {

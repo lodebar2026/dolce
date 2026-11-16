@@ -2,6 +2,10 @@
 //!
 //! - [`jcxcodec`]：Muse `.jcx` 的字节 ↔ 文本（GBK / BIG5 / UTF-8 / UTF-16）
 //! - [`abc`]：ABC 家族（123 / ABC / jcx）
+//! - [`capability`]：格式能力表与丢失清单
+//! - [`fanqie`]：文本谱（迁移中）
 
 pub mod jcxcodec;
 pub mod abc;
+pub mod capability;
+pub mod fanqie;
