@@ -15,8 +15,9 @@ export const typeChecks: {
   astSpan: Same<GenSpan, AstSpan>;
   /** 手写的 `key` 是 i18n 键的并集，生成的只能是 string：只核手写 → 生成这一向 */
   msg: Sub<ModelMsg, Msg>;
-  /** 整个 `ScoreDoc` 逐层结构相同（M2 切换后手写的 `model/doc.ts` 改引生成的） */
-  scoreDoc: Same<GenDoc.ScoreDoc, Doc.ScoreDoc>;
+  /** 整个 `ScoreDoc` 逐层结构相同（M2 切换后手写的 `model/doc.ts` 改引生成的）；诊断的 `msg.key` 同上只核一向，单列 */
+  scoreDoc: Same<Omit<GenDoc.ScoreDoc, "diagnostics">, Omit<Doc.ScoreDoc, "diagnostics">>;
+  diagnostic: Sub<Doc.Diagnostic, GenDoc.Diagnostic>;
   element: Same<GenDoc.Element, Doc.Element>;
   inlineItem: Same<GenDoc.InlineItem, Doc.InlineItem>;
-} = { span: true, astSpan: true, msg: true, scoreDoc: true, element: true, inlineItem: true };
+} = { span: true, astSpan: true, msg: true, scoreDoc: true, diagnostic: true, element: true, inlineItem: true };

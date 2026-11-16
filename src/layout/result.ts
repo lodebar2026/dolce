@@ -3,6 +3,7 @@
 // `readonly` 是消费契约，不是深冻结：页面树内部可变，发布前已 `update()` 归一化，之后谁都不改。
 
 import type { ElementId, SourceSpan } from "../model/doc";
+import type { ModelMsg } from "../model/msg";
 import type { StaffLayout, Sys } from "../mixed/model";
 import type { Group } from "../pagetree/pageitem";
 
@@ -24,7 +25,7 @@ export interface LayoutPage {
 export interface LayoutDiagnostic {
   readonly severity: "warning" | "error";
   readonly code: string;
-  readonly message: string;
+  readonly msg: ModelMsg;
   readonly source?: SourceSpan;
 }
 

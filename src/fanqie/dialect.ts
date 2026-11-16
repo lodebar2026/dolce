@@ -11,7 +11,7 @@
 // 靠扩展名分不开（两家都可能是 .txt），但头部字段互不兼容，够判。
 
 import type { Accidental } from "../jianpu/ast";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 
 export type Dialect = "tomato" | "shige";
 
@@ -216,8 +216,8 @@ const SHIGE_KEY_METER = /^\s*1\s*=/;
 
 export interface SniffResult {
   dialect: Dialect | null;
-  /** 判据说明，认不出时用于报错 */
-  reason: string;
+  /** 判据说明，认不出时用于报错（显示时 `msgText` 出字） */
+  reason: ModelMsg;
 }
 
 /**
@@ -242,12 +242,12 @@ export function sniffDialect(text: string): SniffResult {
     return {
       dialect: null,
       reason: hasBody
-        ? tr("sniff.noHeader")
-        : tr("sniff.notFanqie"),
+        ? msg("sniff.noHeader")
+        : msg("sniff.notFanqie"),
     };
   }
-  if (tomato > shige) return { dialect: "tomato", reason: tr("sniff.tomato", { n: tomato }) };
-  if (shige > tomato) return { dialect: "shige", reason: tr("sniff.shige", { n: shige }) };
+  if (tomato > shige) return { dialect: "tomato", reason: msg("sniff.tomato", { n: tomato }) };
+  if (shige > tomato) return { dialect: "shige", reason: msg("sniff.shige", { n: shige }) };
   // 打平时偏番茄：它是原始规范，有谱是其变种。
-  return { dialect: "tomato", reason: tr("sniff.tie") };
+  return { dialect: "tomato", reason: msg("sniff.tie") };
 }

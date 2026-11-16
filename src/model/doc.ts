@@ -35,6 +35,8 @@
 //
 // **无 DOM 依赖**（Node CLI 要 import 它）。
 
+import type { ModelMsg } from "./msg";
+
 // ───────────────────────── 基础 ─────────────────────────
 
 /** 源码区间。语法高亮、谱面点选定位、诊断报错全靠它。
@@ -55,7 +57,8 @@ export interface Diagnostic {
   severity: DiagnosticSeverity;
   /** 机器可读短代码，如 "unknown-field" */
   code: string;
-  message: string;
+  /** 给人看的提示：只有键与参数，显示时按界面语言出字（`msgText`；没有原文回退） */
+  msg: ModelMsg;
   source: SourceSpan;
 }
 

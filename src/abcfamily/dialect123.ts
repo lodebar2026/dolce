@@ -10,7 +10,7 @@
 import type { Accidental } from "../model/doc";
 import { AbcFamilyLexer } from "./lex";
 import type { DurationScan, NoteScan } from "./types";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 
 const ACCIDENTALS: Readonly<Record<string, Accidental>> = {
   "#": "sharp",
@@ -42,14 +42,14 @@ export class Lexer123 extends AbcFamilyLexer {
    *  123 音乐体里 A–G 没有别的用处（音符是数字、节奏音符是 `X`、行内字段以 `[` 起头），不会撞；
    *  音符的升降号后面跟的是数字（`#4`、`b7`），跟大写字母的只能是和弦。
    *  到空白为止是为了切得开：`G71`、`Bb3` 这种粘连读不出是 `G7`+`1` 还是 `B`+`b3`。 */
-  protected override scanBareChord(line: string, i: number): { len: number; error?: string } | null {
+  protected override scanBareChord(line: string, i: number): { len: number; error?: ModelMsg } | null {
     if (!/[A-G]/.test(line[i] ?? "") && !/^[#b][A-G]/.test(line.slice(i, i + 2))) return null;
     let j = i + 1;
     while (j < line.length && line[j] !== " " && line[j] !== "\t") j++;
     const body = line.slice(i, j);
-    const res: { len: number; error?: string } = { len: j - i };
-    if (j >= line.length) res.error = tr("diag.abc.chordSpace", { body });
-    else if (!BARE_CHORD_RE.test(body)) res.error = tr("diag.abc.badChord", { body });
+    const res: { len: number; error?: ModelMsg } = { len: j - i };
+    if (j >= line.length) res.error = msg("diag.abc.chordSpace", { body });
+    else if (!BARE_CHORD_RE.test(body)) res.error = msg("diag.abc.badChord", { body });
     return res;
   }
 
@@ -102,10 +102,10 @@ export class Lexer123 extends AbcFamilyLexer {
   }
 
   /** `[` 后不留空格一直写到 `]`、又不是合规和音的（`[03]` `[1X]` `[13_]` `[1]`）：房号后面总跟空格，这只能是写错的和音 */
-  protected override malformedChordGroup(line: string, i: number): { message: string; len: number } | null {
+  protected override malformedChordGroup(line: string, i: number): { msg: ModelMsg; len: number } | null {
     const m = /^\[[\d#bnX][^\s[\]|"!]*\]/.exec(line.slice(i));
     if (!m || this.scanChordGroup(line, i)) return null;
-    return { message: tr("diag.j123.badChordGroup", { text: m[0] }), len: m[0].length };
+    return { msg: msg("diag.j123.badChordGroup", { text: m[0] }), len: m[0].length };
   }
 
   /** 音符：`[#b n]数字['`,]*[_.]*`。变音记号**前置**（简谱惯例，与 ABC 的 `^_=` 不同）。 */

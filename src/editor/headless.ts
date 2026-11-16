@@ -21,6 +21,7 @@ import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter } from "./formats";
 import { StyleState, type RenderSettings, type StyleStateHost } from "./stylestate";
+import { msgText } from "../model/msg";
 import {
   docFormatOfName, hasLines, isMultiPartXml, jianpuLineStarts, jianpuPaintRequest, lineStartsRequest, staffPaintRequest, visibleStaffDoc,
   type JianpuSource,
@@ -88,7 +89,7 @@ export class HeadlessSession implements StyleStateHost {
     const text = formatOf(fmt).decode(bytes);
     if (fmt === "fanqie") {
       const sniffed = sniffDialect(text);
-      if (sniffed.dialect === null) throw new Error(`不是文本谱：${sniffed.reason}`);
+      if (sniffed.dialect === null) throw new Error(`不是文本谱：${msgText(sniffed.reason)}`);
     }
     this.filePath = name;
     this.setSource(text, fmt);

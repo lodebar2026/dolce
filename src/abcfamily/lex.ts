@@ -15,7 +15,7 @@
 
 import type { SourceSpan } from "../model/doc";
 import type { DurationScan, LexError, LexResult, NoteScan, Token } from "./types";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 
 /** 小节线写法 → 归一名。**按从长到短匹配**，否则 `||` 永远匹配不到。
  *  `[|]` 是不可见小节线——与 `.jpwabc` 和 ABC 都同形同义（语料 3.2%）。 */
@@ -133,7 +133,7 @@ export abstract class AbcFamilyLexer {
   }
 
   /** 看着是和音、却写错了的方括号（123）：返回诊断与要跳过的长度；不是返回 null。 */
-  protected malformedChordGroup(line: string, i: number): { message: string; len: number } | null {
+  protected malformedChordGroup(line: string, i: number): { msg: ModelMsg; len: number } | null {
     void line;
     void i;
     return null;
@@ -151,7 +151,7 @@ export abstract class AbcFamilyLexer {
 
   /** 不带引号的和弦（123 扩展：`Am7 1`）。ABC 里 A–G 是音名，这一档没有。
    *  返回和弦文本的长度与可选的诊断；**有诊断也照样当和弦**（半截文本也要给出大部分结果）。 */
-  protected scanBareChord(line: string, i: number): { len: number; error?: string } | null {
+  protected scanBareChord(line: string, i: number): { len: number; error?: ModelMsg } | null {
     void line;
     void i;
     return null;
@@ -226,7 +226,7 @@ export abstract class AbcFamilyLexer {
         const run = /^&+/.exec(line.slice(i))![0];
         if (run.length > 1) {
           i += run.length;
-          errors.push({ message: tr("diag.abc.multiVoice", { run }), source: span(start, run.length) });
+          errors.push({ msg: msg("diag.abc.multiVoice", { run }), source: span(start, run.length) });
           push({ kind: "unknown", text: run }, start, run.length);
           continue;
         }
@@ -264,7 +264,7 @@ export abstract class AbcFamilyLexer {
       if (ch === "[" && /^\[[A-Za-z]\s*[:：]/.test(line.slice(i))) {
         const close = line.indexOf("]", i);
         if (close < 0) {
-          errors.push({ message: tr("diag.abc.inlineOpen"), source: span(start, line.length - start) });
+          errors.push({ msg: msg("diag.abc.inlineOpen"), source: span(start, line.length - start) });
           i = line.length;
           continue;
         }
@@ -277,7 +277,7 @@ export abstract class AbcFamilyLexer {
       // 写错了的和音（`[03]` 放了休止、`[1X]` 混了节奏音符、`[13_]` 时值写进括号）：报清楚、整段跳过，不落成房号
       const badGroup = this.malformedChordGroup(line, i);
       if (badGroup) {
-        errors.push({ message: badGroup.message, source: span(start, badGroup.len) });
+        errors.push({ msg: badGroup.msg, source: span(start, badGroup.len) });
         i += badGroup.len;
         continue;
       }
@@ -345,7 +345,7 @@ export abstract class AbcFamilyLexer {
       if (ch === "!") {
         const close = line.indexOf("!", i + 1);
         if (close < 0) {
-          errors.push({ message: tr("diag.abc.decoOpen"), source: span(start, line.length - start) });
+          errors.push({ msg: msg("diag.abc.decoOpen"), source: span(start, line.length - start) });
           i = line.length;
           continue;
         }
@@ -359,7 +359,7 @@ export abstract class AbcFamilyLexer {
       if (ch === '"') {
         const close = line.indexOf('"', i + 1);
         if (close < 0) {
-          errors.push({ message: tr("diag.abc.quoteOpen"), source: span(start, line.length - start) });
+          errors.push({ msg: msg("diag.abc.quoteOpen"), source: span(start, line.length - start) });
           i = line.length;
           continue;
         }
@@ -378,7 +378,7 @@ export abstract class AbcFamilyLexer {
       const bare = this.scanBareChord(line, i);
       if (bare) {
         const body = line.slice(i, i + bare.len);
-        if (bare.error) errors.push({ message: bare.error, source: span(start, bare.len) });
+        if (bare.error) errors.push({ msg: bare.error, source: span(start, bare.len) });
         i += bare.len;
         push({ kind: "chord", text: body, value: body }, start, bare.len);
         continue;
@@ -388,7 +388,7 @@ export abstract class AbcFamilyLexer {
       if (ch === "{") {
         const close = line.indexOf("}", i);
         if (close < 0) {
-          errors.push({ message: tr("diag.abc.graceOpen"), source: span(start, line.length - start) });
+          errors.push({ msg: msg("diag.abc.graceOpen"), source: span(start, line.length - start) });
           i = line.length;
           continue;
         }
@@ -546,7 +546,7 @@ export abstract class AbcFamilyLexer {
 
       // 认不出来的字符——报一条、往前走一格，**不要停**（半截文本也要能给出大部分结果）
       i++;
-      errors.push({ message: tr("diag.abc.badChar", { ch }), source: span(start, 1) });
+      errors.push({ msg: msg("diag.abc.badChar", { ch }), source: span(start, 1) });
       push({ kind: "unknown", text: ch }, start, 1);
     }
 

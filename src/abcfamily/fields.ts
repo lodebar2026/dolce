@@ -9,7 +9,7 @@
 import type { Clef, Key, SourceSpan, Time } from "../model/doc";
 import { clefFromName } from "../model/jianpu";
 import { fifthsOfSpelling } from "../model/keyshift";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 
 /** ASCII 规范形的字段名。 */
 export type FieldName =
@@ -165,7 +165,7 @@ export function normalizeSpelling(s: string): string {
  *               不必自造语法（规范 §3）
  *   `K:none`    无调号
  */
-export function parseKey(value: string): { key: Key; error?: string } {
+export function parseKey(value: string): { key: Key; error?: ModelMsg } {
   const v = value.trim();
   if (v === "" || /^none$/i.test(v)) return { key: { fifths: 0, spelling: "none" } };
 
@@ -182,7 +182,7 @@ export function parseKey(value: string): { key: Key; error?: string } {
 
   // 音名 + 可选 mode：`bB`、`Bb`、`Em`、`F# mixolydian`
   const m = /^([#b♯♭]?)([A-Ga-g])([#b♯♭]?)\s*([A-Za-z]*)$/.exec(body.trim());
-  if (!m) return { key: { fifths: 0 }, error: tr("diag.badKey", { v: value }) };
+  if (!m) return { key: { fifths: 0 }, error: msg("diag.badKey", { v: value }) };
   const letter = m[2]!.toUpperCase();
   const acc = (m[1] || m[3] || "").replace("♯", "#").replace("♭", "b");
   const spelling = normalizeSpelling(acc + letter);
@@ -192,7 +192,7 @@ export function parseKey(value: string): { key: Key; error?: string } {
     // **保留原文拼写**，不要退成 C：退了就把信息丢了，而且往返不幂等
     const key: Key = { fifths: 0, spelling };
     if (tonicDegree !== undefined && tonicDegree !== "1") key.tonicDegree = tonicDegree;
-    return { key, error: tr("diag.noSuchKey", { v: spelling }) };
+    return { key, error: msg("diag.noSuchKey", { v: spelling }) };
   }
 
   // mode 只取前三字母（ABC §3.1.14：「only the first three letters of each mode are parsed」），
@@ -216,20 +216,20 @@ export function parseKey(value: string): { key: Key; error?: string } {
 
 // ───────────────────────── M: 拍号 ─────────────────────────
 
-export function parseTime(value: string): { time?: Time; error?: string } {
+export function parseTime(value: string): { time?: Time; error?: ModelMsg } {
   const v = value.trim();
   if (/^C\|$/i.test(v)) return { time: { beats: 2, beatType: 2, symbol: "cut" } };
   if (/^C$/i.test(v)) return { time: { beats: 4, beatType: 4, symbol: "common" } };
   if (/^none$/i.test(v)) return {};
   const m = /^(\d+)\s*\/\s*(\d+)$/.exec(v);
-  if (!m) return { error: tr("diag.badTime", { v: value }) };
+  if (!m) return { error: msg("diag.badTime", { v: value }) };
   return { time: { beats: Number(m[1]), beatType: Number(m[2]) } };
 }
 
 /** 头部的 `M:`：并排几个拍号（混合拍，规范 §3）＋可跟一段说明文字（`M:3/4 4/4 混合拍`）。
  *  辅助拍号可包在括号里（`M:4/4 (2/4 1/4)`，同文本谱 `P: 4/4 ( 2/4 1/4 )`）。
  *  单个拍号与 `C`/`C|`/`none` 仍走 `parseTime`；曲中的行内 `[M:]` 只认单个，也走它。 */
-export function parseTimes(value: string): { times: Time[]; note?: string; error?: string } {
+export function parseTimes(value: string): { times: Time[]; note?: string; error?: ModelMsg } {
   const v = value.trim();
   const times: Time[] = [];
   let inParen = false;

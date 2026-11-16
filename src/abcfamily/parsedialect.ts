@@ -17,7 +17,7 @@ import { LEXER_ABC } from "./dialectabc";
 import { DEGREE_OF_LETTER, LEXER_JCX, parseKeyJcx } from "./dialectjcx";
 import type { LyricSlotRule } from "./lyricslot";
 import type { LexResult, Token } from "./types";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 
 const TYPE_BY_BEAMS = ["quarter", "eighth", "16th", "32nd", "64th", "128th", "256th"] as const;
 
@@ -38,7 +38,7 @@ export interface ParseDialect {
   note(t: Token): Note;
   /** 这个 token 是不是休止。 */
   isRest(t: Token): boolean;
-  parseKey(value: string): { key: Key; error?: string };
+  parseKey(value: string): { key: Key; error?: ModelMsg };
   /** `-` 的语义。 */
   hyphen: "sustain" | "tie";
   /** 出厂默认音长。ABC 规范 §3.1.7：没写 `L:` 时按 `M:` 推（≥0.75 用 1/8，否则 1/16）。 */
@@ -183,16 +183,16 @@ const MODE_NAME: Readonly<Record<string, string>> = {
   mix: "mixolydian", dor: "dorian", phr: "phrygian", lyd: "lydian", loc: "locrian",
 };
 
-export function parseKeyAbc(value: string): { key: Key; error?: string } {
+export function parseKeyAbc(value: string): { key: Key; error?: ModelMsg } {
   const raw = value.trim();
   if (raw === "" || /^none$/i.test(raw)) return { key: { fifths: 0 } };
   // 主音 + 可选调式 + 后面的一串修饰（clef=、bass、exp …），修饰这里先不读
   const m = /^([A-G])([#b]?)\s*([A-Za-z]*)/.exec(raw);
-  if (!m) return { key: { fifths: 0 }, error: tr("diag.badKey", { v: raw }) };
+  if (!m) return { key: { fifths: 0 }, error: msg("diag.badKey", { v: raw }) };
   const tonic = m[1]! + (m[2] ?? "");
   const modeWord = (m[3] ?? "").toLowerCase().slice(0, 3);
   const base = FIFTHS_MAJOR[tonic];
-  if (base === undefined) return { key: { fifths: 0 }, error: tr("diag.badKey", { v: raw }) };
+  if (base === undefined) return { key: { fifths: 0 }, error: msg("diag.badKey", { v: raw }) };
   const shift = modeWord === "" ? 0 : MODE_SHIFT[modeWord];
   if (shift === undefined) {
     // `K:D bass` 这类：后面那个词是 clef/修饰，不是调式

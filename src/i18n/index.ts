@@ -32,11 +32,6 @@ function modelMsgText(m: ModelMsg): string {
 }
 setMsgTranslator(modelMsgText);
 
-/** 键存在才译（用于 code→文案 的查表，如诊断）。 */
-export function tOpt(key: string, params?: Record<string, string | number>): string | undefined {
-  return key in zh ? t(key as MsgKey, params) : undefined;
-}
-
 export function onLangChange(fn: (lang: Lang) => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);

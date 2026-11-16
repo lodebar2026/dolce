@@ -9,6 +9,7 @@
 // 所以这两套 token 最后汇到同一个模型里，不需要第二个模型。
 
 import type { Accidental, SourceSpan } from "../model/doc";
+import type { ModelMsg } from "../model/msg";
 
 export type TokenKind =
   | "note"        // 123: 1-7 / 0（休止）　ABC: A-G a-g
@@ -80,7 +81,7 @@ export interface Token {
 }
 
 export interface LexError {
-  message: string;
+  msg: ModelMsg;
   source: SourceSpan;
 }
 

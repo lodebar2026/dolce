@@ -18,6 +18,7 @@
 import { LexerAbc } from "./dialectabc";
 import type { Key } from "../model/doc";
 import { parseKey as parseKey123 } from "./fields";
+import type { ModelMsg } from "../model/msg";
 
 /** 字母 → 简谱度数（C=1 … B=7）。 */
 export const DEGREE_OF_LETTER: Readonly<Record<string, number>> = {
@@ -44,7 +45,7 @@ export const LEXER_JCX = new LexerJcx();
  * 野外还见过 `K: G、F`（转调的说明）。只取开头的「升降号 + 字母 + 升降号 + 调式词」，
  * 后面的谱号与说明不管——简谱只要知道 1 是哪个音。拼写按 123 的口径归一成前置形（`bE`）。
  */
-export function parseKeyJcx(value: string): { key: Key; error?: string } {
+export function parseKeyJcx(value: string): { key: Key; error?: ModelMsg } {
   const v = value.trim();
   if (v === "" || /^none$/i.test(v)) return { key: { fifths: 0, spelling: "none" } };
   const m = /^([#b♯♭]?[A-Ga-g][#b♯♭]?)(?:\s*(maj|min|ion|aeo|mix|dor|phr|lyd|loc|m)[A-Za-z]*)?(?![A-Za-z])/i.exec(v);

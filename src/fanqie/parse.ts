@@ -38,7 +38,7 @@ import { dialectSpec, sniffDialect, type Dialect, type DialectSpec } from "./dia
 import { fanqieToScoreDoc } from "./fromfanqie";
 import type { ScoreDoc } from "../model/doc";
 import { FANQIE_LYRIC_PUNCTUATION, FANQIE_LYRIC_QUOTES } from "../common/cjkpunct";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 import { DYNAMIC_NAMES } from "../model/marknames";
 
 /** 音符后可跟的记号名（`&xx`）。不在表里的会报 unknown-command 但仍保留。 */
@@ -75,8 +75,8 @@ function span(ctx: Ctx, column: number, length = 1): SourceSpan {
   return { line: ctx.line, column, offset: ctx.lineOffset + column, length };
 }
 
-function report(ctx: Ctx, code: string, message: string, column: number, length = 1): void {
-  ctx.diagnostics.push({ severity: "warning", code, message, source: span(ctx, column, length) });
+function report(ctx: Ctx, code: string, m: ModelMsg, column: number, length = 1): void {
+  ctx.diagnostics.push({ severity: "warning", code, msg: m, source: span(ctx, column, length) });
 }
 
 // ---------------- 音符 ----------------
@@ -172,7 +172,7 @@ function scanGraceNotes(ctx: Ctx, body: string, columnBase: number): NoteElement
       continue;
     }
     if (!/\s/.test(ch)) {
-      report(ctx, "unsupported-grace-token", tr("diag.fanqie.graceChar", { ch }), columnBase + cursor);
+      report(ctx, "unsupported-grace-token", msg("diag.fanqie.graceChar", { ch }), columnBase + cursor);
     }
     cursor += 1;
   }
@@ -213,7 +213,7 @@ function interpretQuoted(ctx: Ctx, body: string, columnBase: number): QuotedMean
   if (meter) {
     const parsed = parseMeter(body.slice(meter[0].length));
     if (parsed) return { meter: parsed };
-    report(ctx, "bad-temporary-meter", tr("diag.fanqie.tempMeter", { body }), columnBase, body.length);
+    report(ctx, "bad-temporary-meter", msg("diag.fanqie.tempMeter", { body }), columnBase, body.length);
     return { annotation: body };
   }
   const kc = /^k:\s*([#b]?[1-7])\s*(?:;(.*))?$/i.exec(body);
@@ -395,7 +395,7 @@ export function parseMusicLine(
         prev.code += "@";
         prev.source.length += 1;
       } else {
-        report(ctx, "orphan-lyric-anchor", tr("diag.fanqie.orphanAnchor"), i);
+        report(ctx, "orphan-lyric-anchor", msg("diag.fanqie.orphanAnchor"), i);
       }
       i += 1;
       continue;
@@ -429,7 +429,7 @@ export function parseMusicLine(
         i += code.length;
         continue;
       }
-      report(ctx, "bad-barline", tr("diag.fanqie.badBarline", { ch }), i);
+      report(ctx, "bad-barline", msg("diag.fanqie.badBarline", { ch }), i);
       i += 1;
       continue;
     }
@@ -452,7 +452,7 @@ export function parseMusicLine(
       // 参考渲染画的是 206→304、306→400、402→500 三条短弧）。
       const open = curves.shift();
       if (open === undefined) {
-        report(ctx, "unmatched-slur-end", tr("diag.fanqie.extraParen"), i);
+        report(ctx, "unmatched-slur-end", msg("diag.fanqie.extraParen"), i);
       } else {
         // 队首闭合，它前面没有别的未闭合弧线，所以层号固定在第一层——
         // 链式 tie 的几条弧因此等高（原版如此）
@@ -481,7 +481,7 @@ export function parseMusicLine(
     }
     if (ch === "!") {
       const open = wedges.pop();
-      if (open === undefined) report(ctx, "unmatched-wedge-end", tr("diag.fanqie.extraBang"), i);
+      if (open === undefined) report(ctx, "unmatched-wedge-end", msg("diag.fanqie.extraBang"), i);
       else marks.push(makeMark(open, Math.max(0, elements.length - 1), ctx));
       i += 1;
       continue;
@@ -496,7 +496,7 @@ export function parseMusicLine(
       if (adjacent) {
         const end = src.indexOf("]", i + 1);
         if (end < 0) {
-          report(ctx, "unterminated-grace", tr("diag.fanqie.graceOpen"), i);
+          report(ctx, "unterminated-grace", msg("diag.fanqie.graceOpen"), i);
           i += 1;
           continue;
         }
@@ -545,7 +545,7 @@ export function parseMusicLine(
       }
       const open = voltas.pop();
       if (open === undefined) {
-        report(ctx, "unmatched-volta-end", tr("diag.fanqie.extraBracket"), i);
+        report(ctx, "unmatched-volta-end", msg("diag.fanqie.extraBracket"), i);
       } else {
         const end = Math.max(0, elements.length - 1);
         if (openEnd) open.openEnd = true;
@@ -589,13 +589,13 @@ export function parseMusicLine(
       const target = lastAttachable(elements);
       const orn: Ornament = { name, level, source: span(ctx, i, next - i) };
       if (target === undefined) {
-        report(ctx, "orphan-command", tr("diag.fanqie.orphanCommand", { name: rawName }), i, next - i);
+        report(ctx, "orphan-command", msg("diag.fanqie.orphanCommand", { name: rawName }), i, next - i);
       } else if (ctx.dialect.jumpWords && JUMP_WORD_COMMANDS.has(name)) {
         // 诗歌本的跳转字只认小节线文字 `"ff:Fine"`，记号写法不认
-        report(ctx, "unknown-command", tr("diag.fanqie.unknownCommand", { name: rawName }), i, next - i);
+        report(ctx, "unknown-command", msg("diag.fanqie.unknownCommand", { name: rawName }), i, next - i);
       } else {
         if (!NOTE_COMMANDS.has(name) && !BARLINE_COMMANDS.has(name)) {
-          report(ctx, "unknown-command", tr("diag.fanqie.unknownCommand", { name: rawName }), i, next - i);
+          report(ctx, "unknown-command", msg("diag.fanqie.unknownCommand", { name: rawName }), i, next - i);
         }
         target.ornaments.push(orn);
       }
@@ -611,7 +611,7 @@ export function parseMusicLine(
     if (ch === '"') {
       const quoted = readQuotedRun(src, i);
       if (!quoted) {
-        report(ctx, "unterminated-quote", tr("diag.fanqie.quoteOpen"), i);
+        report(ctx, "unterminated-quote", msg("diag.fanqie.quoteOpen"), i);
         i = src.length;
         continue;
       }
@@ -619,11 +619,11 @@ export function parseMusicLine(
       const target = lastAttachable(elements);
       // 转调只认写在小节线上的；挂到音符上的照普通注释印出来，并提示
       if (meaning.key !== undefined && target !== undefined && target.kind !== "barline") {
-        report(ctx, "key-change-off-barline", tr("diag.fanqie.keyOffBarline", { body: quoted.body }), i + 1, quoted.body.length);
+        report(ctx, "key-change-off-barline", msg("diag.fanqie.keyOffBarline", { body: quoted.body }), i + 1, quoted.body.length);
         meaning = { annotation: quoted.body };
       }
       if (target === undefined) {
-        report(ctx, "orphan-annotation", tr("diag.fanqie.orphanAnnotation", { body: quoted.body }), i);
+        report(ctx, "orphan-annotation", msg("diag.fanqie.orphanAnnotation", { body: quoted.body }), i);
       } else {
         applyQuoted(target, meaning, span(ctx, i, quoted.next - i));
       }
@@ -635,7 +635,7 @@ export function parseMusicLine(
     if (ch === "{") {
       const end = src.indexOf("}", i + 1);
       if (end < 0) {
-        report(ctx, "unterminated-layer", tr("diag.fanqie.layerOpen"), i);
+        report(ctx, "unterminated-layer", msg("diag.fanqie.layerOpen"), i);
         i = src.length;
         continue;
       }
@@ -686,7 +686,7 @@ export function parseMusicLine(
       continue;
     }
 
-    report(ctx, "unexpected-char", tr("diag.fanqie.badChar", { ch }), i);
+    report(ctx, "unexpected-char", msg("diag.fanqie.badChar", { ch }), i);
     i += 1;
   }
 
@@ -699,7 +699,7 @@ export function parseMusicLine(
   }
   for (const open of voltas) marks.push(makeMark(open, lastIndex, ctx, true));
   for (const open of wedges) {
-    report(ctx, "unclosed-wedge", tr("diag.fanqie.wedgeOpen"), open.column);
+    report(ctx, "unclosed-wedge", msg("diag.fanqie.wedgeOpen"), open.column);
     marks.push(makeMark(open, lastIndex, ctx));
   }
 
@@ -791,7 +791,7 @@ export function parseLyricBody(ctx: Ctx, src: string, startColumn: number): Lyri
     if (ch === "<") {
       const end = src.indexOf(">", i + 1);
       if (end < 0) {
-        report(ctx, "unterminated-lyric-annotation", tr("diag.fanqie.lyricNoteOpen"), i);
+        report(ctx, "unterminated-lyric-annotation", msg("diag.fanqie.lyricNoteOpen"), i);
         i += 1;
         continue;
       }
@@ -819,7 +819,7 @@ export function parseLyricBody(ctx: Ctx, src: string, startColumn: number): Lyri
     if (ch === "{") {
       const end = src.indexOf("}", i + 1);
       if (end < 0) {
-        report(ctx, "unterminated-lyric-group", tr("diag.fanqie.lyricGroupOpen"), i);
+        report(ctx, "unterminated-lyric-group", msg("diag.fanqie.lyricGroupOpen"), i);
         i += 1;
         continue;
       }
@@ -877,7 +877,7 @@ export function parseLyricBody(ctx: Ctx, src: string, startColumn: number): Lyri
     const chLen = cp > 0xffff ? 2 : 1;
     const text = src.slice(i, i + chLen);
     if (!isCjk(text) && cp < 0x7f) {
-      report(ctx, "unexpected-lyric-char", tr("diag.fanqie.lyricChar", { text }), i, chLen);
+      report(ctx, "unexpected-lyric-char", msg("diag.fanqie.lyricChar", { text }), i, chLen);
     }
     // 并字连接号（番茄的 `~`）：把本字并到前一个音节
     if (d.joinToken !== undefined && text === d.joinToken) {
@@ -915,7 +915,7 @@ function stripLyricAnnotation(
   const close = open === '"' ? '"' : ">";
   const end = src.indexOf(close, i + 1);
   if (end < 0) {
-    report(ctx, "unterminated-lyric-annotation", tr("diag.fanqie.lyricNoteOpen"), i);
+    report(ctx, "unterminated-lyric-annotation", msg("diag.fanqie.lyricNoteOpen"), i);
     return { gap: 20, next: startColumn };
   }
   let body = src.slice(i + 1, end);
@@ -980,7 +980,7 @@ function applyMetadata(ctx: Ctx, meta: Metadata, key: string, value: string, col
       break;
     case "D": {
       if (!/^(?:[A-G][#$b♭♯]?|[#$b♭♯][A-G])$/.test(v)) {
-        report(ctx, "bad-mode", tr("diag.fanqie.badKey", { v }), column, v.length);
+        report(ctx, "bad-mode", msg("diag.fanqie.badKey", { v }), column, v.length);
       }
       meta.mode = v;
       break;
@@ -995,7 +995,7 @@ function applyMetadata(ctx: Ctx, meta: Metadata, key: string, value: string, col
         if (tok.endsWith(")")) inParen = false;
       }
       if (meta.meters.length === 0) {
-        report(ctx, "bad-meter", tr("diag.fanqie.badMeter", { v }), column, v.length);
+        report(ctx, "bad-meter", msg("diag.fanqie.badMeter", { v }), column, v.length);
       }
       break;
     }
@@ -1025,7 +1025,7 @@ function applyMetadata(ctx: Ctx, meta: Metadata, key: string, value: string, col
       meta.options.push({ key: key.toUpperCase(), value: v });
       break;
     default:
-      report(ctx, "unknown-metadata", tr("diag.fanqie.unknownField", { key }), column, key.length);
+      report(ctx, "unknown-metadata", msg("diag.fanqie.unknownField", { key }), column, key.length);
   }
 }
 
@@ -1065,7 +1065,7 @@ export function parseFanqieAst(text: string, options: ParseOptions = {}): Fanqie
           {
             severity: "error",
             code: "unknown-dialect",
-            message: sniffed.reason,
+            msg: sniffed.reason,
             source: { line: 0, column: 0, offset: 0, length: 0 },
           },
         ],
@@ -1227,14 +1227,14 @@ export function parseFanqieAst(text: string, options: ParseOptions = {}): Fanqie
         report(
           ctx,
           "lyric-without-music",
-          tr("diag.fanqie.lyricNoMusic"),
+          msg("diag.fanqie.lyricNoMusic"),
           0,
           raw.length,
         );
         continue;
       }
       if (lastVoice === null) {
-        report(ctx, "orphan-lyric", tr("diag.fanqie.orphanLyric"), 0, raw.length);
+        report(ctx, "orphan-lyric", msg("diag.fanqie.orphanLyric"), 0, raw.length);
         continue;
       }
       const ann = stripLyricAnnotation(ctx, raw, contentAt);
@@ -1263,7 +1263,7 @@ export function parseFanqieAst(text: string, options: ParseOptions = {}): Fanqie
     // 无前缀的自由文字：注记、勘误、引用之类，原样收着即可。
     // 只有「像谱却没写前缀」的行才值得报警——那多半是漏了 `Q:`。
     if (/[|]/.test(trimmed) && /[0-9]/.test(trimmed)) {
-      report(ctx, "unrecognized-line", tr("diag.fanqie.noQ", { text: trimmed.slice(0, 20) }), 0, raw.length);
+      report(ctx, "unrecognized-line", msg("diag.fanqie.noQ", { text: trimmed.slice(0, 20) }), 0, raw.length);
     } else {
       metadata.remarks.push(trimmed);
     }

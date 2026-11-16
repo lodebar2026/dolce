@@ -11,7 +11,7 @@
 //! - TS 的 `Record` 一律 `IndexMap`（迭代次序 = 插入次序）。
 
 use crate::str_enum;
-use dolce_base::SourceSpan;
+use dolce_base::{Msg, SourceSpan};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +28,8 @@ pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     /// 机器可读短代码，如 "unknown-field"
     pub code: String,
-    pub message: String,
+    /// 给人看的提示：只有键与参数，显示时按界面语言出字（没有原文回退）
+    pub msg: Msg,
     pub source: SourceSpan,
 }
 

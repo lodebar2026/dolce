@@ -7,6 +7,7 @@
 // divisions（见 toxml.ts）。
 
 import type { Dialect } from "../fanqie/dialect";
+import type { ModelMsg } from "../model/msg";
 import { Fraction } from "../common/fraction";
 
 export interface SourceSpan {
@@ -25,7 +26,8 @@ export interface Diagnostic {
   severity: DiagnosticSeverity;
   /** 机器可读的短代码，如 "unknown-command" */
   code: string;
-  message: string;
+  /** 给人看的提示：键与参数，显示时按界面语言出字 */
+  msg: ModelMsg;
   source: SourceSpan;
 }
 

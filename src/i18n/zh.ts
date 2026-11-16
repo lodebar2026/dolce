@@ -700,6 +700,8 @@ export const zh = {
   "diag.j123.oldSkip": "歌词跳音符已改用 `/`，`*` 暂按跳音符读",
   "diag.j123.orphanSustain": "增时线前面没有音符",
   "diag.j123.orphanTie": "延音线前面没有音符",
+  "diag.j123.arcNextNoAfter": "`~` 后面没有音符",
+  "diag.j123.arcNextNoBefore": "`~` 前面没有音符",
   "diag.j123.badChordGroup": "和音 `{text}` 写法不对：方括号里放两个以上的音（或全是节奏音符 `X`），不放休止、不带时值（时值写在 `]` 后面）",
   "diag.j123.chordTieNoMatch": "和音里单连的音（123 的 `~`、ABC 的 `-`），下一个和音里没有同音",
   "diag.j123.emptyTuplet": "多连音里没有音符",

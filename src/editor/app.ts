@@ -5,7 +5,7 @@ import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { Compartment, EditorState, MapMode, Prec } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { sniffDialect, type Dialect } from "../fanqie";
-import type { ElementId, ScoreDoc } from "../model/doc";
+import type { Diagnostic, ElementId, ScoreDoc } from "../model/doc";
 import { applyBreaks } from "../model/breaks";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { measureDocument, PaintResources, ScorePainter, type StaffPaintRequest, type SyncPaintRequest } from "../layout/painter";
@@ -37,7 +37,8 @@ import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../convert/targets";
 import { t } from "../i18n";
-import { diagText, targetLabel, type DiagLike } from "../i18n/labels";
+import { diagText, targetLabel } from "../i18n/labels";
+import { msgText } from "../model/msg";
 import { buildMusicXml, sourceMusicXmlBare } from "./export";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { isBridgeFormat, readBridgeModel, writeBridgeModel } from "./modelbridge";
@@ -779,7 +780,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   /** 解析诊断 → 状态栏。不拦排版：谱面往往仍然是对的，但要让用户看得见。 */
   private _reportDiagnostics(
     what: string,
-    diags: readonly DiagLike[],
+    diags: readonly Diagnostic[],
   ): void {
     this.setStatus(
       diags.length === 0
@@ -1359,7 +1360,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       const sniffed = sniffDialect(fanqieText);
       if (sniffed.dialect === null) {
         // `.txt` 太泛，认不出宁可不动——硬解只会得到一首乱谱
-        this.setStatus(t("status.notFanqie", { reason: sniffed.reason }));
+        this.setStatus(t("status.notFanqie", { reason: msgText(sniffed.reason) }));
         return;
       }
       this.mixed._dropMixedDoc();

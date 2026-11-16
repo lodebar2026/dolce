@@ -67,7 +67,7 @@ import {
   DIALECT_123, DIALECT_ABC, DIALECT_JCX, typeAndDots, type DefaultLen, type ParseDialect,
 } from "./parsedialect";
 import { LETTER_OF_DEGREE } from "./dialectjcx";
-import { t as tr } from "../i18n";
+import { msg, type ModelMsg } from "../model/msg";
 import { clefFromName } from "../model/jianpu";
 import { parseSing } from "./sing";
 
@@ -241,8 +241,8 @@ interface Ctx {
   sectionMarks: NonNullable<Song["sectionMarks"]>;
 }
 
-function report(ctx: Ctx, code: string, message: string, source: SourceSpan): void {
-  ctx.diagnostics.push({ severity: "warning", code, message, source });
+function report(ctx: Ctx, code: string, m: ModelMsg, source: SourceSpan): void {
+  ctx.diagnostics.push({ severity: "warning", code, msg: m, source });
 }
 
 /** 小节线归一名 → MusicXML 的 bar-style + repeat。 */
@@ -285,7 +285,7 @@ export function parseLyricLine(
   source: SourceSpan,
   valueOffset?: number,
   skip: "/" | "*" = "/",
-  warn?: (code: string, message: string) => void,
+  warn?: (code: string, m: ModelMsg) => void,
   joinTilde = false,
   tildeLabel = false,
 ): { syllables: Lyric[]; label?: string; starts: number[] } {
@@ -364,7 +364,7 @@ export function parseLyricLine(
     // 跳一个音符（该音符不配字）
     if (ch === skip) { push(mk("")); i++; continue; }
     if (ch === "*") {
-      warn?.("lyric-old-skip", tr("diag.j123.oldSkip"));
+      warn?.("lyric-old-skip", msg("diag.j123.oldSkip"));
       push(mk(""));
       i++;
       continue;
@@ -565,7 +565,7 @@ function buildMusicLine(
     if (open?.start && end !== undefined) {
       marks.push({ type: "wedge", start: open.start, end, wedgeType: type, ...(open.openSource ? { openSource: open.openSource } : {}), closeSource: source });
     } else {
-      report(ctx, "unmatched-wedge", tr(abc ? "diag.abc.wedge" : "diag.jcx.wedge"), source);
+      report(ctx, "unmatched-wedge", msg(abc ? "diag.abc.wedge" : "diag.jcx.wedge"), source);
     }
   };
   const attach = (el: Element): void => {
@@ -630,7 +630,7 @@ function buildMusicLine(
           ? a.degree.number === b.degree.number && a.degree.octaveShift === b.degree.octaveShift && (b.degree.accidental ?? a.degree.accidental) === a.degree.accidental
           : !!a.pitch && !!b.pitch && a.pitch.step === b.pitch.step && a.pitch.octave === b.pitch.octave);
         if (j < 0) {
-          report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
+          report(ctx, "chord-tie-no-match", msg("diag.j123.chordTieNoMatch"), nt.source);
           continue;
         }
         (a.tie ??= {}).start = true;
@@ -710,7 +710,7 @@ function buildMusicLine(
         // 增时线并进前一个和弦的时值，但**自己有 id**——和弦可以挂在它上面（规范 §8.1，语料 190 次）
         const host = cur.sustainHost;
         if (!host) {
-          report(ctx, "orphan-sustain", tr("diag.j123.orphanSustain"), t.source);
+          report(ctx, "orphan-sustain", msg("diag.j123.orphanSustain"), t.source);
           break;
         }
         const s: Sustain = { id: ctx.ids.next(), source: t.source };
@@ -787,11 +787,11 @@ function buildMusicLine(
 
       case "arcNext":
         // 123 的后置 `~`：从前一个音连一条弧到下一个音，不进括号栈（规范 §4.1）
-        if (pb.arcNext) report(ctx, "orphan-arc-next", "`~` 后面没有音符", pb.arcNext.source);
+        if (pb.arcNext) report(ctx, "orphan-arc-next", msg("diag.j123.arcNextNoAfter"), pb.arcNext.source);
         if (cur.sustainHost && !cur.sustainHost.grace) pb.arcNext = { from: cur.sustainHost.id, source: t.source };
         else {
           pb.arcNext = null;
-          report(ctx, "orphan-arc-next", "`~` 前面没有音符", t.source);
+          report(ctx, "orphan-arc-next", msg("diag.j123.arcNextNoBefore"), t.source);
         }
         break;
 
@@ -801,7 +801,7 @@ function buildMusicLine(
           for (const n of cur.sustainHost.notes) n.tie = { ...(n.tie ?? {}), start: true };
           pb.abcTie = true;
         } else {
-          report(ctx, "orphan-tie", tr("diag.j123.orphanTie"), t.source);
+          report(ctx, "orphan-tie", msg("diag.j123.orphanTie"), t.source);
         }
         break;
 
@@ -957,7 +957,7 @@ function buildMusicLine(
                 tupletNormal: tp.tupletNormal!,
               });
             } else {
-              report(ctx, "empty-tuplet", tr("diag.j123.emptyTuplet"), t.source);
+              report(ctx, "empty-tuplet", msg("diag.j123.emptyTuplet"), t.source);
             }
             break;
           }
@@ -983,12 +983,12 @@ function buildMusicLine(
               });
             }
           } else {
-            report(ctx, "unmatched-slur", tr("diag.j123.extraParen"), t.source);
+            report(ctx, "unmatched-slur", msg("diag.j123.extraParen"), t.source);
           }
           break;
         }
         if (openSlurs.length === 0) {
-          report(ctx, "unmatched-slur", tr("diag.j123.extraParen"), t.source);
+          report(ctx, "unmatched-slur", msg("diag.j123.extraParen"), t.source);
           break;
         }
         // 一个音符**收一条又起一条**（ABC §4.11 `(c d (e) f g a)` = c→e、e→a 两条）：栈顶那条正是
@@ -1004,7 +1004,7 @@ function buildMusicLine(
           && !(ctx.d.tupletClose === "paren" && innerTuplet && openOffset(innerTuplet) > openOffset(below));
         const open = chain ? openSlurs.splice(openSlurs.length - 2, 1)[0] : openSlurs.pop();
         if (!open) {
-          report(ctx, "unmatched-slur", tr("diag.j123.extraParen"), t.source);
+          report(ctx, "unmatched-slur", msg("diag.j123.extraParen"), t.source);
           break;
         }
         // `open.start` 由 `attach` 回填；同音起止（`(1)`）时起点就是终点，合法（ABC §4.11）
@@ -1016,7 +1016,7 @@ function buildMusicLine(
           const su = host && host === cur.last && !cur.lastGrace ? host.sustains?.[host.sustains.length - 1] : undefined;
           if (host && su) cur.arcEnds.push({ mk, host, su });
         } else {
-          report(ctx, "empty-slur", tr("diag.j123.emptySlur"), t.source);
+          report(ctx, "empty-slur", msg("diag.j123.emptySlur"), t.source);
         }
         break;
       }
@@ -1123,7 +1123,7 @@ function buildMusicLine(
         cur.sustainHost = null;
         // 多连音跨不过小节线，收掉。123 要求 `)`，走到这里就是漏写了
         if (ctx.d.tupletClose === "paren") {
-          for (const tp of openTuplets) report(ctx, "unclosed-tuplet", tr("diag.j123.tupletOpen"), tp.openSource ?? t.source);
+          for (const tp of openTuplets) report(ctx, "unclosed-tuplet", msg("diag.j123.tupletOpen"), tp.openSource ?? t.source);
         }
         openTuplets.length = 0;
         break;
@@ -1135,11 +1135,11 @@ function buildMusicLine(
         // 由投影按每声部的游标算（`model/xmlproject.ts`），因为那时才折算完多连音与 divisions。
         // 开着的弧、欠着的 `~` 归本分支，存下来等下一小节的同一分支接着（`switchBranch`）
         if (openTuplets.length) {
-          report(ctx, "overlay-open-tuplet", tr("diag.j123.tupletOverlay"), t.source);
+          report(ctx, "overlay-open-tuplet", msg("diag.j123.tupletOverlay"), t.source);
           openTuplets.length = 0;
         }
         if (!pb.measure.elements.some((el) => el.voice === pb.voice)) {
-          report(ctx, "empty-overlay", tr("diag.j123.overlayBefore"), t.source);
+          report(ctx, "empty-overlay", msg("diag.j123.overlayBefore"), t.source);
         }
         switchBranch(pb, pb.voice + 1);
         pb.voice++;
@@ -1156,7 +1156,7 @@ function buildMusicLine(
       }
 
       case "break": {
-        if (t.text === "$$") report(ctx, "page-break-removed", tr("diag.pageBreakRemoved"), t.source);
+        if (t.text === "$$") report(ctx, "page-break-removed", msg("diag.pageBreakRemoved"), t.source);
         markBreak(ctx, pb, "system", t.source);
         break;
       }
@@ -1177,14 +1177,14 @@ function buildMusicLine(
         if (clefOnly && ctx.d.id === "abc" && pb.measure.elements.length) {
           const c = clefFromName(clefOnly[1]!);
           if (c) (pb.measure.laterAttrs ??= []).push({ afterElements: mainElementsBefore(pb.measure, pb.voice), attrs: { clefs: [c] } });
-          else report(ctx, "bad-clef", tr("diag.j123.badClef", { v: clefOnly[1]! }), t.source);
+          else report(ctx, "bad-clef", msg("diag.j123.badClef", { v: clefOnly[1]! }), t.source);
           break;
         }
         pb.measure.attrs ??= {};
         if (clefOnly) {
           const c = clefFromName(clefOnly[1]!);
           if (c) pb.measure.attrs.clefs = [c];
-          else report(ctx, "bad-clef", tr("diag.j123.badClef", { v: clefOnly[1]! }), t.source);
+          else report(ctx, "bad-clef", msg("diag.j123.badClef", { v: clefOnly[1]! }), t.source);
         } else if (name === "K") {
           const r = ctx.d.parseKey(val);
           if (r.error) report(ctx, "bad-key", r.error, t.source);
@@ -1201,7 +1201,7 @@ function buildMusicLine(
           // 曲中改默认音长（ABC §3.1.7；Muse 的 FAQ 就教这么写：一段一拍、一段半拍的谱）。123 的时值不看它
           const lm = /^(\d+)\s*\/\s*(\d+)$/.exec(val.trim());
           if (lm && Number(lm[2]) > 0) ctx.len = pb.len = { num: Number(lm[1]), den: Number(lm[2]) };
-          else report(ctx, "bad-length", tr("diag.j123.badLength", { v: val }), t.source);
+          else report(ctx, "bad-length", msg("diag.j123.badLength", { v: val }), t.source);
         }
         break;
       }
@@ -1276,7 +1276,7 @@ function closeMeasure(ctx: Ctx, pb: PartBuild): void {
   if (pb.measure.elements.length === 0 && !pb.measure.barlines?.length) return;
   // 末尾那个分支是空的（`… & |`）：`&` 写了却没有音，多半是漏了内容
   if (pb.voice > 1 && pb.overlaySource && !pb.measure.elements.some((el) => el.voice === pb.voice)) {
-    report(ctx, "empty-overlay", tr("diag.j123.overlayAfter"), pb.overlaySource);
+    report(ctx, "empty-overlay", msg("diag.j123.overlayAfter"), pb.overlaySource);
   }
   pb.overlaySource = undefined;
   pb.part.measures.push(pb.measure);
@@ -1385,7 +1385,7 @@ function museVoiceAttrs(ctx: Ctx, b: PartBuild, f: FieldLine): void {
   else if (style === "jianpu") b.museStyle = "jianpu";
   else {
     b.museStyle = "skip";
-    report(ctx, "jcx-track-skipped", tr("diag.jcx.trackSkipped", { style }), f.source);
+    report(ctx, "jcx-track-skipped", msg("diag.jcx.trackSkipped", { style }), f.source);
   }
   const name = museParam(rest, ["name", "nm"]);
   if (name !== undefined && b.part.name === undefined) b.part.name = name;
@@ -1472,7 +1472,7 @@ export function parseAbcFamily(
       return;
     }
     const seq = expandSectionOrder(f.value);
-    if (!seq) report(ctx, "bad-section-order", tr("diag.part.badOrder", { v: f.value }), f.source);
+    if (!seq) report(ctx, "bad-section-order", msg("diag.part.badOrder", { v: f.value }), f.source);
     ensureSong().sectionOrder = { text: f.value, seq: seq ?? [] };
     orderSource = f.source;
   };
@@ -1483,7 +1483,7 @@ export function parseAbcFamily(
     if (ctx.sectionMarks.length) song.sectionMarks = ctx.sectionMarks;
     const known = new Set(ctx.sectionMarks.map((m) => m.name));
     for (const name of new Set(song.sectionOrder?.seq ?? [])) {
-      if (!known.has(name)) report(ctx, "missing-section", tr("diag.part.missing", { v: name }), orderSource!);
+      if (!known.has(name)) report(ctx, "missing-section", msg("diag.part.missing", { v: name }), orderSource!);
     }
     ctx.pendingSections = [];
     ctx.sectionMarks = [];
@@ -1492,21 +1492,21 @@ export function parseAbcFamily(
     orderSource = null;
     for (const b of builds.values()) {
       if (ctx.d.tupletClose === "paren") {
-        for (const tp of b.openTuplets) report(ctx, "unclosed-tuplet", tr("diag.j123.tupletOpen"), tp.openSource!);
+        for (const tp of b.openTuplets) report(ctx, "unclosed-tuplet", msg("diag.j123.tupletOpen"), tp.openSource!);
         b.openTuplets.length = 0;
       }
       // 当前分支与别的分支存下的都算：曲末还欠着的 `~` 没有音可连
       for (const s of [{ arcNext: b.arcNext, noteTies: b.noteTies }, ...b.branchArcs.values()]) {
-        for (const nt of s.noteTies) report(ctx, "chord-tie-no-match", tr("diag.j123.chordTieNoMatch"), nt.source);
-        if (s.arcNext) report(ctx, "orphan-arc-next", "`~` 后面没有音符", s.arcNext.source);
+        for (const nt of s.noteTies) report(ctx, "chord-tie-no-match", msg("diag.j123.chordTieNoMatch"), nt.source);
+        if (s.arcNext) report(ctx, "orphan-arc-next", msg("diag.j123.arcNextNoAfter"), s.arcNext.source);
       }
       b.noteTies = [];
       b.arcNext = null;
       b.branchArcs.clear();
-      for (const w of b.openWedges) report(ctx, "unmatched-wedge", tr(w.abcDeco ? "diag.abc.wedge" : "diag.jcx.wedge"), w.openSource!);
+      for (const w of b.openWedges) report(ctx, "unmatched-wedge", msg(w.abcDeco ? "diag.abc.wedge" : "diag.jcx.wedge"), w.openSource!);
       b.openWedges.length = 0;
       // 写在最后、后面再没有音符可挂的收尾装饰（`!crescendo)!`）
-      for (const w of b.wedgeCloseNext) report(ctx, "unmatched-wedge", tr("diag.abc.wedge"), w.source);
+      for (const w of b.wedgeCloseNext) report(ctx, "unmatched-wedge", msg("diag.abc.wedge"), w.source);
       b.wedgeCloseNext = [];
       closeMeasure(ctx, b);
       markLastEndings(b.part);
@@ -1526,7 +1526,7 @@ export function parseAbcFamily(
         report(
           ctx,
           "lyric-overflow",
-          tr("diag.j123.lyricOverflow", { verse, left }),
+          msg("diag.j123.lyricOverflow", { verse, left }),
           f.source,
         );
       }
@@ -1535,10 +1535,10 @@ export function parseAbcFamily(
     if (singRows.length) {
       const known = new Set((song.sectionMarks ?? []).map((m) => m.name));
       const pages = singRows.flatMap((r) => {
-        const bad = (v: string): void => report(ctx, "bad-sing", tr("diag.j123.badSing", { v }), r.source);
+        const bad = (v: string): void => report(ctx, "bad-sing", msg("diag.j123.badSing", { v }), r.source);
         const pg = parseSing(r.body, bad);
         if (!pg) return [];
-        for (const it of pg.items) if (!known.has(it.section)) report(ctx, "missing-section", tr("diag.j123.singMissing", { v: it.section }), r.source);
+        for (const it of pg.items) if (!known.has(it.section)) report(ctx, "missing-section", msg("diag.j123.singMissing", { v: it.section }), r.source);
         return [pg];
       });
       if (pages.length) song.singOrder = pages;
@@ -1693,7 +1693,7 @@ export function parseAbcFamily(
       if (f.cont) {
         if (lastField === "w") addLyricLine(ctx, ensurePart(), f, pendingLyrics);
         else {
-          report(ctx, "cont-unsupported", tr("diag.j123.contUnsupported"), f.source);
+          report(ctx, "cont-unsupported", msg("diag.j123.contUnsupported"), f.source);
         }
         continue;
       }
@@ -1742,7 +1742,7 @@ export function parseAbcFamily(
       p.afterLyrics = false;
     }
     const lex = ctx.d.lex(raw.slice(musicFrom), ln, lineOffset, musicFrom);
-    for (const e of lex.errors) report(ctx, "lex", e.message, e.source);
+    for (const e of lex.errors) report(ctx, "lex", e.msg, e.source);
     // 这个声部自己的默认音长（行内 `[L:]` 改过的）只在读它的行时生效，读完还回头部那一份
     const headerLen = ctx.len;
     if (p.len) ctx.len = p.len;
@@ -1767,7 +1767,7 @@ export function parseAbcFamily(
   }
   // 文字块没收尾：后面的全被当成文字吞了，曲谱多半读不出音符——指到那条 `%%begintext`，别只报「没读出音符」
   if (textBlock) {
-    report(ctx, "jcx-text-open", tr("diag.jcx.textOpen"), textBlock.source);
+    report(ctx, "jcx-text-open", msg("diag.jcx.textOpen"), textBlock.source);
     (ensureSong().remarks ??= []).push(textBlock.lines.join("\n"));
   }
   finishSong();
@@ -1795,7 +1795,7 @@ function addLyricLine(ctx: Ctx, pb: PartBuild, f: FieldLine, pendingLyrics: Pend
     report(
       ctx,
       "lyric-verse-number",
-      tr("diag.j123.verseNumber", { n: f.legacyVerse }),
+      msg("diag.j123.verseNumber", { n: f.legacyVerse }),
       f.source,
     );
     return;
@@ -1808,7 +1808,7 @@ function addLyricLine(ctx: Ctx, pb: PartBuild, f: FieldLine, pendingLyrics: Pend
   block.lastVerse = from;
   const { syllables, label } = parseLyricLine(
     f.value, from, f.source, f.valueOffset, ctx.d.lyricSkip,
-    (code, message) => report(ctx, code, message, f.source),
+    (code, m) => report(ctx, code, m, f.source),
     ctx.d.id === "jcx",
     ctx.d.id === "abc",
   );
@@ -1865,7 +1865,7 @@ function applyField(
         ctx.len = { num: Number(m[1]), den: Number(m[2]) };
         ctx.sawL = true;
       } else {
-        report(ctx, "bad-length", tr("diag.j123.badLength", { v: f.value }), f.source);
+        report(ctx, "bad-length", msg("diag.j123.badLength", { v: f.value }), f.source);
       }
       break;
     }
@@ -1950,7 +1950,7 @@ function applyInstruction(
   switch (name) {
     case "playorder":
       // 已去掉（用户定 2026-10-31）。不留进 `style.raw`：留着是静默失效，写回还带着
-      report(ctx, "playorder-removed", tr("diag.playOrderRemoved"), source);
+      report(ctx, "playorder-removed", msg("diag.playOrderRemoved"), source);
       break;
     case "style":
       (song.style ??= {}).sheetRef = ins.value.trim();

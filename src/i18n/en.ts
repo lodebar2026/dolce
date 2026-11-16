@@ -701,6 +701,8 @@ export const en: Record<MsgKey, string> = {
   "diag.j123.oldSkip": "Lyric skips now use `/`; `*` is read as a skip for now",
   "diag.j123.orphanSustain": "Extension dash has no note before it",
   "diag.j123.orphanTie": "Tie has no note before it",
+  "diag.j123.arcNextNoAfter": "`~` has no note after it",
+  "diag.j123.arcNextNoBefore": "`~` has no note before it",
   "diag.j123.badChordGroup": "Malformed chord `{text}`: put two or more notes (or only rhythm notes `X`) inside the brackets, no rests and no durations (write the duration after `]`)",
   "diag.j123.chordTieNoMatch": "The note tied on its own inside a chord (`~` in 123, `-` in ABC) has no matching note in the next chord",
   "diag.j123.emptyTuplet": "Tuplet has no notes",
