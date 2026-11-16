@@ -212,6 +212,14 @@ mod tests {
     }
 
     #[test]
+    fn alien_chunk_and_trailing_padding() {
+        let t: &[u8] = &[0, 0x90, 67, 100, 0x83, 0x60, 0x80, 67, 0];
+        let mut b = smf(&[t]);
+        b.extend_from_slice(b"XFIH\0\0\0\x03\x01\x02\x03\0\0\0");
+        assert_eq!(parse_smf(&b).unwrap().tracks.len(), 1);
+    }
+
+    #[test]
     fn gbk_track_name() {
         // 「中文」的 GBK
         let t: &[u8] = &[0, 0xff, 0x03, 4, 0xd6, 0xd0, 0xce, 0xc4];

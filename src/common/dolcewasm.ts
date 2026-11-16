@@ -80,6 +80,39 @@ export interface DolceWasm {
   /** 回 `Duration` 的 JSON */
   formatsDuration123(beams: number, dots: number, sustains: number): string;
   formatsNormalizeSpelling(s: string): string;
+
+  // 文本谱、.jpwabc、jianpu-ly、MIDI 导入（crates/dolce-wasm/src/textformats.rs；TS 侧门面 `fanqie/*`、`jpword/*`、`model/{fromjpw,tojpw}.ts`、`jly/*`、`midi/import.ts`）
+  /** `dialect` 空串 = 嗅探；回语法树 / ScoreDoc 的 JSON */
+  fanqieParseAst(text: string, dialect: string): string;
+  fanqieParse(text: string, dialect: string): string;
+  fanqieToScoreDoc(ast: string): string;
+  /** `{ dialect, reason: Msg }` */
+  fanqieSniff(text: string): string;
+  fanqieDialectSpec(dialect: string): string;
+  /** `phraseCuts(songJson)` 回各刀行首 id 的 JSON 数组或 `"null"` */
+  fanqieEmit(doc: string, dialect: string, phraseCuts: (song: string) => string): string;
+  fanqieEmitSong(song: string, dialect: string, fromFanqie: boolean, fromAbc: boolean, phraseCuts: (song: string) => string): string;
+  fanqieKeyNameOf(fifths: number, suffix: boolean): string;
+  /** `[嵌套, 奇数连音, 倚音弧]` */
+  fanqieArcLosses(song: string): Uint32Array;
+  /** 每个 token `[类型, 原文, 起, 止, 行, 列]` */
+  jpwLex(text: string): string;
+  /** 分节；读不出 `"null"` */
+  jpwFile(text: string): string;
+  /** `{ doc }` / `{ error: { model: Msg } | { fail } }`；分节读不出 `"null"` */
+  jpwToScoreDoc(text: string): string;
+  jpwSource(text: string): string;
+  jpwWrite(input: string): string;
+  /** `{ doc, losses: Msg[], unknown }` */
+  jlyParse(text: string): string;
+  jlyRewrap(text: string, measuresPerLine: number, skipPickup: boolean): string;
+  jlyIsMusicLine(line: string): boolean;
+  jlyChordTimeline(tokens: string, fallback: number): string;
+  jlyHarmonyToChordToken(text: string, whole: number): string | undefined;
+  /** `[文字, 是否精确]` */
+  jlyWholeToDuration(whole: number): string;
+  /** `{ doc, warnings: Msg[] }` / `{ error: Msg }` */
+  midiImport(bytes: Uint8Array, title: string, opts: string): string;
 }
 
 /** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */

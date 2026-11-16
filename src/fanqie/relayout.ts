@@ -22,8 +22,10 @@ import type { LyricLine, FanqieSong, ScoreLine, SourceSpan } from "../jianpu/ast
 import type { ScoreDoc } from "../model/doc";
 import { docView, type RowView } from "../jianpu/slots";
 import { dialectSpec, type Dialect } from "./dialect";
-import { BODY_PREFIX } from "./parse";
 import { planLines, fanqieLinesEdited, voiceStream, type LinePlan, type FanqieNewLine, type VoiceStream } from "../jianpu/phrase";
+
+/** 曲行 / 歌词行 / 说明行的行首（`Q2"女高":`、`C1-2:` 等，口径同读入端 `fanqie::parse::body_prefix`）：字母、变体、段号或区间、变体、声部名 */
+const BODY_PREFIX = /^\s*([QCW])([!+-]?)(\d*)(?:-(\d+))?([!+-]?)(?:"([^"]*)"|<([^>]*)>)?\s*[:：]/;
 
 /** 起头的记号：它们属于**后面**那个元素，切行时归下一行。 */
 const OPENERS = new Set(["(", "["]);

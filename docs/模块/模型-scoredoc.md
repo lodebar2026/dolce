@@ -42,13 +42,13 @@
 | `src/model/xmlproject.ts` | 简谱来源 → MusicXML 形状的投影（音高、divisions、记号原名、跨行小节…），`toxml.ts` 先过它 |
 | `src/model/deconames.ts` | 音符记号的别名表（`decoKey`）：拼音短名 / ABC 名 / MusicXML 名 / 中文名 → 文本谱短名。模型里原名照存，简谱排版、文本谱写出、MusicXML 投影用前先归一 |
 | `src/model/jianpuproject.ts` | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
-| `src/fanqie/fromfanqie.ts` | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
+| `crates/dolce-formats/src/fanqie/fromfanqie.rs`（门面 `src/fanqie/parse.ts`） | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
 | `src/jianpu/slots.ts` | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId` |
 | `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
-| `src/model/fromjpw.ts` | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
-| `src/midi/import.ts` | ← MIDI（SMF 读取在 `smf.ts`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在私有仓库 `tests/midiimport.test.ts` |
+| `crates/dolce-formats/src/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
+| `crates/dolce-formats/src/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |
 | `src/omr/todoc.ts` | ← 简谱识别结果（`RecognizedScore` 直出简谱形状，与 `abcfamily/parse.ts` 同口径；不经 MusicXML） |
-| `src/model/tojpw.ts` | → `.jpwabc`（`emitJpwabc`；写出端只经输入接口读谱，两侧输入由 `playdoc.ts::jpwInputOfDoc` / `playsong.ts::jpwInputOfSong` 拼） |
+| `crates/dolce-formats/src/jpw/write.rs`（门面 `src/model/tojpw.ts`） | → `.jpwabc`（`emitJpwabc`；写出端只经输入接口读谱，两侧输入由 `playdoc.ts::jpwInputOfDoc` / `playsong.ts::jpwInputOfSong` 拼） |
 | `src/model/phrasedoc.ts` / `src/jianpu/phrasesong.ts` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
 | `src/model/playdoc.ts` / `src/jianpu/playsong.ts` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/dolce-play/src/playorder.rs`。回归 `playorder-check --cmp` |
 | `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么）。判据在 Rust `crates/dolce-formats/src/capability.rs`，这里是门面与界面文字 |
@@ -116,7 +116,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
 - **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `timeaxis.ts`）、
   `Chord.continued`、`Mark.startLead/endTrail/leadInPreviousLine/continuationLevels`、`Ending.startOffset/endOffset/pair`…）
   **是排版信息，不是给导出用的**：没有它们谱面就少画或画错（例如弧线端点落在小节线上时简谱引擎认为没收口，弧会接到下一行）。
-  改 `fromfanqie.ts` 后必须跑 `fanqie-scoredoc-check`。
+  改 `fanqie/fromfanqie.rs` 后必须跑 `fanqie-scoredoc-check`。
 - **`source: SourceSpan` 不是可有可无的**：编辑器的双向光标/选择同步（`editor/sync.ts`）
   按它建「源文本偏移 → 元素 id」的索引。新增元素类型时**一定要把 span 填对**。
 - **只给编辑用的原文位置**：`Chord/Sustain/Space.attachedSources`（和弦名、装饰、注记各自的原文）、`Mark.openSource/closeSource`

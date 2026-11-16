@@ -1,20 +1,18 @@
-// 文本谱的两种方言与自动嗅探。
+// 文本谱的两种方言与自动嗅探：方言表与嗅探判据在 Rust（crates/dolce-formats/src/fanqie/dialect.rs），这里是门面。
 //
 // - tomato：番茄简谱脚本 v1.0
 // - shige ：诗歌本文本谱，番茄的变种
 //
-// 两家在**同一个字符上给了不同含义**，所以解析器必须先定方言再动手：
-//   高低音   番茄 `'`/`,`     有谱 `g`/`d`
-//   升降还原 番茄 `#`/`$`/`=` 有谱 `#♯`/`b♭`/`♮`（另有重升 `𝄪` 重降 `𝄫`）
-//   数字 9   番茄是**节奏音符 X**；有谱是**隐藏休止（不跟词）**
-//   节奏音符 番茄 `9`；有谱字母 `X`
+// 两家在**同一个字符上给了不同含义**（高低音、升降还原、数字 9、节奏音符），所以解析器必须先定方言再动手；
 // 靠扩展名分不开（两家都可能是 .txt），但头部字段互不兼容，够判。
 
 import type { Accidental } from "../jianpu/ast";
-import { msg, type ModelMsg } from "../model/msg";
+import type { ModelMsg } from "../model/msg";
+import { dolce } from "../common/dolce";
 
 export type Dialect = "tomato" | "shige";
 
+/** 方言表里编辑器要用的那几样（写出端要的头部、曲行写法只在 Rust 那边） */
 export interface DialectSpec {
   id: Dialect;
   /** 完整显示名（诊断信息里用） */
@@ -33,190 +31,26 @@ export interface DialectSpec {
   nineIsRhythm: boolean;
   /** 歌词里表示「跳过一个音符」的字符；**第一个是写出去时用的那个**，其余只认不写 */
   lyricSkip: readonly string[];
-  /** 小节线写法，按**从长到短**匹配 */
-  barlines: ReadonlyArray<readonly [string, import("../jianpu/ast").BarlineType]>;
   /** 歌词里分隔两个音节的字符（番茄用 `/`，诗歌本用空格） */
   wordSeparator: string;
-  /** 并字连接号：把本字并到前一个音节。没有这种写法就留空 */
-  joinToken?: string;
-  /** 跳转字 Fine / D.C. / D.S. 写成小节线上的文字（诗歌本 `|"ff:Fine"` 在下方、`"ffs:D.C."` 在上方、`"ff++:"` / `"ff+6:"` 再偏几层，
-   *  一条里 `|` 分行），`&fine` / `&dc` / `&ds` 不认；否则写成记号 `&fine`（番茄）。`&ty` / `&hs` 两家都是记号 */
-  jumpWords: boolean;
-  /** 跳房子不封口（`]/`）只在罩两小节以上时生效、单小节的照样封口（番茄官方；诗歌本二房后单小节不封口是常用写法） */
-  openVoltaNeedsTwoMeasures: boolean;
-  /** 头部字段的写法。**只有 emitter 用**——解析侧两边字段都认，不需要分方言。 */
-  header: HeaderStyle;
-  /** 曲行/歌词行的写法。**只有 emitter 用**（`fanqie/tofanqie.ts`）。 */
-  emit: EmitStyle;
+  /** 并字连接号：把本字并到前一个音节。没有这种写法为 null */
+  joinToken: string | null;
 }
 
-/** 写出端在两家之间不同的那几处。加第三种方言时补一份数据，而不是在 emitter 里再写一个 if。 */
-export interface EmitStyle {
-  /** 曲行符号之间的分隔：番茄空格，诗歌本紧排（`3/5/|"p:5/4"6-7/`） */
-  tokenGap: string;
-  /** 头部之后、组与组之间空一行（诗歌本紧排不留） */
-  blankBetweenGroups: boolean;
-  /** 房号收口写在小节线**之后**（诗歌本 `…3|]`）；否则写在之前（番茄 `3 ] |`） */
-  voltaCloseAfterBarline: boolean;
-  /** 房号起头落在行首时先补一条虚拟小节线 `|/` 把左端立住（诗歌本谱本的写法） */
-  voltaLeadBarline: boolean;
-  /** 声部名与歌词行说明的括号：番茄 `"女高"`、诗歌本 `<女高>` */
-  labelWrap: readonly [string, string];
-  /** 不跟词的隐藏休止怎么写（诗歌本 `9`）。没有这种写法的方言只能写成显形休止 `0`——
-   *  写成 `8` 会多吃一个字，后面整行歌词错位 */
-  hiddenRestNoLyric?: string;
-  /** 写不写页眉页脚（`XL/XR/TL/TR/BL/BC/BR`）与版面指令（`FontSize:`/`Margin:`…）。
-   *  番茄没有这些字段，写了会被 `sniffDialect` 判成诗歌本 */
-  pageFields: boolean;
-  /** 中英对照谱（第 1 段汉字、其余几段全是拉丁字母的译词）各行都写不带段号的 `C:`：诗歌本把译词与中文同算第一段。
-   *  解析端裸 `C:` 按出现顺序编段，读回来段号不变。
-   *  逐段中英交替的（第 1、3、5… 段汉字，紧跟的第 2、4、6… 段是它的英译）两两写同一个段号：`C1:` `C1:` `C2:` `C2:`… */
-  bareTranslationVerses?: boolean;
-  /** 不补切分处的断线记号 `^`（诗歌本谱本按拍断线，用不着写；原文就有的照写） */
-  noAutoBreak?: boolean;
-}
-
-/** 头部字段怎么写。加第三种方言时补一份数据，而不是在 emitter 里再写一个 if。 */
-export interface HeaderStyle {
-  /** 版本行（番茄的 `V:1.0`）。没有就不写 */
-  versionLine?: string;
-  /** 标题字段名 */
-  titleField: string;
-  /** 曲号字段名（印在标题左/右侧各一个，诗歌本 `XL:`/`XR:`）。没有就把曲号拼回标题前 */
-  indexFields?: { left: string; right: string };
-  /** 著作者字段名 */
-  creditField: string;
-  /** 速度字段名 */
-  tempoField: string;
-  /** 调号+拍号：split=各占一行（番茄 `D:` / `P:`），combined=合成一行（诗歌本 `1=C4/4`） */
-  keyMeter: "split" | "combined";
-  /** split 时的调号 / 拍号字段名 */
-  keyField?: string;
-  meterField?: string;
-  /** 调号写法：prefix=`bB`（降号在前），suffix=`Bb`（降号在后） */
-  keyStyle: "prefix" | "suffix";
-}
-
-const TOMATO: DialectSpec = {
-  id: "tomato",
-  name: "番茄简谱",
-  shortName: "番茄",
-  octaveUp: "'",
-  octaveDown: ",",
-  accidentals: { "#": "sharp", $: "flat", "=": "natural" },
-  rhythmToken: "9",
-  nineIsRhythm: true,
-  lyricSkip: ["@"],
-  // `||/` 必须排在 `||` 之前，否则永远匹配不到两边细双线。
-  barlines: [
-    [":|:", "repeat-both"],
-    [":||", "repeat-end"],
-    ["||:", "repeat-start"], // 与 `|:` 同义（曲首/段首常见的粗细写法）
-    ["||/", "double"],
-    ["|:", "repeat-start"],
-    [":|", "repeat-end"],
-    ["||", "end"],
-    ["|/", "hidden"],
-    ["|*", "invisible"],
-    ["|", "normal"],
-  ],
-  wordSeparator: "/",
-  joinToken: "~",
-  jumpWords: false,
-  openVoltaNeedsTwoMeasures: true,
-  header: {
-    versionLine: "V:1.0", // 与 D:/P: 一同构成 sniffDialect 的番茄特征
-    titleField: "B",
-    creditField: "Z",
-    tempoField: "J",
-    keyMeter: "split",
-    keyField: "D",
-    meterField: "P",
-    keyStyle: "prefix",
-  },
-  emit: {
-    tokenGap: " ",
-    blankBetweenGroups: true,
-    voltaCloseAfterBarline: false,
-    voltaLeadBarline: false,
-    labelWrap: ['"', '"'],
-    pageFields: false,
-  },
-};
-
-const SHIGE: DialectSpec = {
-  id: "shige",
-  name: "诗歌本文本谱",
-  shortName: "诗歌本",
-  octaveUp: "g",
-  octaveDown: "d",
-  accidentals: {
-    "#": "sharp",
-    "\u266F": "sharp", // ♯
-    b: "flat",
-    "\u266D": "flat", // ♭
-    "\u266E": "natural", // ♮
-    "\u{1D12A}": "double-sharp", // 𝄪
-    "\u{1D12B}": "double-flat", // 𝄫
-  },
-  rhythmToken: "X",
-  nineIsRhythm: false,
-  // 规范里的占位符是 `/`（写出去用它）；`@` 是实际谱面里也见得到的写法，只认不写。
-  lyricSkip: ["/", "@"],
-  // 诗歌本的小节线是 `| || ||| |: :| :|:`：`|||` 才是左细右粗的终止线。
-  barlines: [
-    [":|:", "repeat-both"],
-    [":||", "repeat-end"], // 与 `:|` 同义
-    ["||:", "repeat-start"], // 与 `|:` 同义
-    ["|||", "end"],
-    // 规范未列 `||/`，但实际谱面里大量使用（沿用番茄的「两边细双线」）。
-    ["||/", "double"],
-    ["|:", "repeat-start"],
-    [":|", "repeat-end"],
-    ["||", "double"],
-    ["|/", "hidden"],
-    ["|*", "invisible"],
-    ["|", "normal"],
-  ],
-  wordSeparator: " ",
-  jumpWords: true,
-  openVoltaNeedsTwoMeasures: false,
-  header: {
-    titleField: "T",
-    indexFields: { left: "XL", right: "XR" },
-    creditField: "Z",
-    tempoField: "J",
-    keyMeter: "combined", // 诗歌本把调号与拍号写在一行：`1=G4/4`
-    keyStyle: "suffix",
-  },
-  emit: {
-    tokenGap: "",
-    blankBetweenGroups: false,
-    voltaCloseAfterBarline: true,
-    voltaLeadBarline: true,
-    labelWrap: ["<", ">"],
-    hiddenRestNoLyric: "9",
-    pageFields: true,
-    bareTranslationVerses: true,
-    noAutoBreak: true,
-  },
-};
-
-export const DIALECTS: Readonly<Record<Dialect, DialectSpec>> = { tomato: TOMATO, shige: SHIGE };
+const specs = new Map<Dialect, DialectSpec>();
 
 export function dialectSpec(d: Dialect): DialectSpec {
-  return DIALECTS[d];
+  let s = specs.get(d);
+  if (!s) {
+    s = JSON.parse(dolce().fanqieDialectSpec(d)) as DialectSpec;
+    specs.set(d, s);
+  }
+  return s;
 }
-
-/** 头部字段名 → 哪个方言独有。两边都有的（Z/J/Q/C/W）不计分。 */
-const TOMATO_KEYS = /^\s*(V|B|D|P)\s*:/;
-const SHIGE_KEYS = /^\s*(T|XL|XR|TL|TR|BL|BC|BR|FontSize|Margin)\s*:/i;
-/** 有谱的调号拍号写成 `1=C4/4`，番茄拆成 `D:` + `P:` */
-const SHIGE_KEY_METER = /^\s*1\s*=/;
 
 export interface SniffResult {
   dialect: Dialect | null;
-  /** 判据说明，认不出时用于报错（显示时 `msgText` 出字） */
+  /** 判据说明，认不出时用于报错 */
   reason: ModelMsg;
 }
 
@@ -225,29 +59,5 @@ export interface SniffResult {
  * 由调用方报错——`.txt` 扩展名太泛，宁可不认也别硬解成一首乱谱。
  */
 export function sniffDialect(text: string): SniffResult {
-  let tomato = 0;
-  let shige = 0;
-  let hasBody = false;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line.length === 0 || line.startsWith("#")) continue;
-    if (TOMATO_KEYS.test(line)) tomato++;
-    if (SHIGE_KEYS.test(line)) shige++;
-    if (SHIGE_KEY_METER.test(line)) shige += 2; // `1=G4/4` 是有谱的强特征
-    if (/^\s*[QCW]\d*\s*[<"]?/.test(line) && /^\s*[QCW]\d*(?:"[^"]*"|<[^>]*>)?\s*:/.test(line)) {
-      hasBody = true;
-    }
-  }
-  if (tomato === 0 && shige === 0) {
-    return {
-      dialect: null,
-      reason: hasBody
-        ? msg("sniff.noHeader")
-        : msg("sniff.notFanqie"),
-    };
-  }
-  if (tomato > shige) return { dialect: "tomato", reason: msg("sniff.tomato", { n: tomato }) };
-  if (shige > tomato) return { dialect: "shige", reason: msg("sniff.shige", { n: shige }) };
-  // 打平时偏番茄：它是原始规范，有谱是其变种。
-  return { dialect: "tomato", reason: msg("sniff.tie") };
+  return JSON.parse(dolce().fanqieSniff(text)) as SniffResult;
 }

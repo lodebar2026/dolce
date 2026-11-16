@@ -5,6 +5,7 @@
 
 mod formats;
 mod model;
+mod textformats;
 
 use dolce_session::{EngineError, UpdateRequest};
 use wasm_bindgen::prelude::*;
@@ -208,8 +209,6 @@ mod probe;
 #[cfg(feature = "probe")]
 mod probe_jpw;
 
-#[cfg(feature = "probe")]
-mod probe_fanqie;
 
 #[cfg(feature = "probe")]
 mod probe_jly;

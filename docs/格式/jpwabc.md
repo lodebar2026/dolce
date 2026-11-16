@@ -10,10 +10,10 @@
 
 | 位置 | 性质 |
 |---|---|
-| `src/jpword/lex.ts` | **唯一形式定义**：`.Voice` 段的词法规则（沿用原 JP-Word 的 ANTLR 文法，见 §4 词法表） |
-| `src/jpword/jpwfile.ts` | **段落层规范**：哪些段头合法、各段的行语法 |
+| `crates/dolce-formats/src/jpw/lex.rs` | **唯一形式定义**：`.Voice` 段的词法规则（沿用原 JP-Word 的 ANTLR 文法，见 §4 词法表） |
+| `crates/dolce-formats/src/jpw/file.rs` | **段落层规范**：哪些段头合法、各段的行语法 |
 | `src/editor/help.ts` 的 `NOTATION` | 面向用户的记谱法说明（帮助「JPWABC 记谱」页） |
-| `src/model/tojpw.ts` / `fromjpw.ts` | **事实上的可用子集**：写出端只产生哪些记号、读入端只处理哪些 |
+| `crates/dolce-formats/src/jpw/write.rs` / `read.rs` | **事实上的可用子集**：写出端只产生哪些记号、读入端只处理哪些 |
 
 - 文件头签名：`// ************** JPW-ABC File Ver 1.0 (for JP-Word v5.50m) **************`
 - 编码：读时 BOM 探测（回退 UTF-16LE/UTF-8），**存 UTF-16LE + BOM**
@@ -45,7 +45,7 @@
 ## 4. 音乐体（`.Voice`）
 
 `.Voice` 正文是一串平铺的 token，空白分隔、`//` 起行尾注释，**取最长匹配，等长按下表先后**
-（原 JP-Word 的 ANTLR 文法，实现在 `src/jpword/lex.ts`）：
+（原 JP-Word 的 ANTLR 文法，实现在 `crates/dolce-formats/src/jpw/lex.rs`）：
 
 | token | 定义 |
 |---|---|
@@ -124,7 +124,7 @@ W(\d+)(-(\d+))?(\([0-9a-zA-Z.,]+\))?(@(\d+),(\d+))?(\([0-9a-zA-Z.,]+\))?:
 也只贴到下一个音节、不自成一格（语料 5 首，旧实现留下空格，整段错一个音、写出再读回每轮再错一格）。
 
 JP-Word 存的是 **Windows 换行（`\r\n`）**，读入端按行切完要去掉行尾 `\r`：否则歌词段把每个行尾的 `\r`
-当成一个音节，整段往后错一格、段末丢字（语料 567 份，`jpwfile.ts::JpwFile.parse`）。
+当成一个音节，整段往后错一格、段末丢字（语料 567 份，`jpw/file.rs::JpwFile::from_str`）。
 
 ## 6. `.Repeat`：演唱顺序表（本格式最独特的一层）
 
@@ -141,8 +141,8 @@ JP-Word 存的是 **Windows 换行（`\r\n`）**，读入端按行切完要去�
 | 逗号 | 可当行分隔 | — |
 
 **小节号有 0 起与 1 起两种写法**：500 首里带 `.Repeat` 的 7 份 JP-Word 文件一律 **0 起**（`0-22V1`，最大号 = 小节数 − 1），
-本仓库测试语料与写出端（`tojpw.ts`）是 1 起；文件头版本相同，看不出由什么决定。0 在 1 起写法里不可能出现、
-第一遍总从头唱故 0 起写法必有 `0-`，读入端（`fromjpw.ts::convertRepeat`）据此「出现 0 就整份按 0 起」，模型里一律 1 起。
+本仓库测试语料与写出端（`jpw/write.rs`）是 1 起；文件头版本相同，看不出由什么决定。0 在 1 起写法里不可能出现、
+第一遍总从头唱故 0 起写法必有 `0-`，读入端（`jpw/read.rs::convert_repeat`）据此「出现 0 就整份按 0 起」，模型里一律 1 起。
 按 1 起硬读 0 起文件，演唱顺序里有第 −1 小节，排版抛错。
 
 - 遍数分布：0 遍 98.8%、3/4/5/7/9 遍各 1–2 首。

@@ -667,6 +667,14 @@ mod tests {
         assert_eq!((p.step, p.alter, p.octave), (Step::D, -1.0, 4.0));
         let p = spell(70.0, -2.0);
         assert_eq!((p.step, p.alter), (Step::B, -1.0));
+        let name = |m: f64, f: f64| {
+            let p = spell(m, f);
+            (p.step, p.alter, p.octave)
+        };
+        assert_eq!(name(70.0, -1.0), (Step::B, -1.0, 4.0));
+        assert_eq!(name(65.0, 6.0), (Step::E, 1.0, 4.0)); // 升 F 大调的 E#
+        assert_eq!(name(59.0, -7.0), (Step::C, -1.0, 4.0)); // 降 C 大调的 Cb
+        assert_eq!(name(66.0, -2.0), (Step::G, -1.0, 4.0));
     }
 
     #[test]

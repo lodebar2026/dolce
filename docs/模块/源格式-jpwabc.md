@@ -10,25 +10,26 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 
 | 函数 | 文件 | 作用 |
 |---|---|---|
-| `JpwFile.fromString(s)` | `src/jpword/jpwfile.ts` | 文本 → 分段（失败返回 null） |
-| `lexVoice(text)` | `src/jpword/lex.ts` | `.Voice` 正文 → token 序列（含空白/注释，带偏移与行列） |
-| `parseVoiceText(text)` | `src/jpword/parse.ts` | 去掉空白/注释的 token 序列；落单 `[` `]` 返回 null |
-| `jpwToScoreDoc(f)` | `src/model/fromjpw.ts` | `JpwFile` → `ScoreDoc`（音符/小节线带 `SourceSpan`）。谱面、试听、转 123/ABC、导出、能力表、双向定位索引都走它 |
+| `JpwFile.fromString(s)` | 门面 `src/jpword/jpwfile.ts` → `crates/dolce-formats/src/jpw/file.rs` | 文本 → 分段（失败返回 null）；编辑器按节取行（`.Layout` 断行描述、`.Voice` 挪 `$`、`.Words` 重算锚点） |
+| `lexVoice(text)` | 门面 `src/jpword/lex.ts` → `jpw/lex.rs` | `.Voice` 正文 → token 序列（含空白/注释，带偏移与行列）；`.Voice` 节去掉空白/注释、落单 `[` `]` 判解析失败（`parse_voice_text`） |
+| `jpwToScoreDoc(f)` | 门面 `src/model/fromjpw.ts` → `jpw/read.rs` | `JpwFile` → `ScoreDoc`（音符/小节线带 `SourceSpan`）。谱面、试听、转 123/ABC、导出、能力表、双向定位索引都走它 |
 | `jianpuInputOfJpw(doc)` | `src/jianpu/jianpuinput.ts` | `ScoreDoc` → 简谱引擎输入（按原文小节；小节中间的 `$` 照原位换行） |
-| `emitJpwabc(doc)` | `src/model/tojpw.ts` | `ScoreDoc` → `.jpwabc` 文本（只写第一声部）。写出端 `writeJpwabc` 只经输入接口读谱 |
+| `emitJpwabc(doc)` | `src/convert/jpwabc.ts`；写出端门面 `src/model/tojpw.ts` → `jpw/write.rs` | `ScoreDoc` → `.jpwabc` 文本（只写第一声部）。写出端 `writeJpwabc` 只经输入接口读谱（门面把输入打成 JSON：条目打 `kind`、`Set` → 数组、`Fraction` → `[分子, 分母]`） |
 | `TokenData` | `src/jpword/tokens.ts` | 整份文件的行级分词，**仅供语法高亮**（`.Voice` 段复用 `lexVoice`） |
 
 `.Voice` 正文只是一串平铺的 token（音符、小节线、换行、字符串、拍号、前奏括号），没有嵌套结构，
-所以只有词法、没有语法树；音符内部的拆解在 `fromjpw.ts::readNote` 按 token 文本再做。词法规则见
+所以只有词法、没有语法树；音符内部的拆解在 `jpw/read.rs::read_note` 按 token 文本再做。词法规则见
 [../格式/jpwabc.md](../格式/jpwabc.md)「4. 音乐体」的词法表。
+
+读写判据全在 Rust（`crates/dolce-formats/src/jpw/`），经 dolce-wasm（`crates/dolce-wasm/src/textformats.rs`）同步调；TS 只留门面与高亮分词。
 
 ## 吃什么吐什么
 
 ```
 .jpwabc 文本（UTF-16LE+BOM 或 UTF-8）
   → JpwFile（TitleSection / VoiceSection / WordsSection / RepeatSection / LayoutSection）
-  → .Voice token 序列（lex.ts）
-  → ScoreDoc（fromjpw.ts：先切「源文小节」、歌词按它落点，再落成模型小节）
+  → .Voice token 序列（jpw/lex.rs）
+  → ScoreDoc（jpw/read.rs：先切「源文小节」、歌词按它落点，再落成模型小节）
   ├→ jianpuInputOfJpw → ScorePainter（简谱 / 投影），和弦带元素 id
   ├→ playSourceOfSong → 试听 / MIDI
   └→ emit123 / emitAbc / scoreDocToMusicXml / emitJpwabc
@@ -47,14 +48,14 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 - **演唱顺序**：有 `.Repeat` 照它；没有时谱里有 `|: :|` 的照反复记号推（`playsong.ts::playDataOf`，用户定 2026-10-14：
   020《向主歌唱》的 `.Layout` 时值总长对得上「走反复」），没有反复记号的整曲按段数逐遍（JP-Word 本来就这么唱）。
   推出来的顺序不置 `hasRepeat`，写出端不另补 `.Repeat`（重读照样推得出，往返定点）。简谱档照画 `|: :|`。
-- **一房二房没有写法，读入时推**（`fromjpw.ts::inferEndings`，没有 `.Repeat` 时）：`:|` 那一小节与紧跟的一小节**节奏逐音相同、
+- **一房二房没有写法，读入时推**（`jpw/read.rs::infer_endings`，没有 `.Repeat` 时）：`:|` 那一小节与紧跟的一小节**节奏逐音相同、
   首个音的第 1 段词（去标点）也相同**，前者记一房、后者记二房（右端敞口）。命中 009、020、116、144、164；
   447《我灵之光》`1-- :|1--` 底下是「阿/们」，是结尾的阿们、不算。只等长不算（`|1 2 3 4 :| 5- 6 7|` 是照常往下唱）。
 - **词曲一条写了多行**（`作词：…\n作曲：…`）：作者条为写 123 的 `C:` 拼成一行，行视图取 credit 原文照分行（`jianpu/slots.ts::toMetadata`），
   投影档标题页、简谱档页眉都分行。
 - `fromjpw` **不填绝对音高**（`.jpwabc` 只有度数），导出 MusicXML 由投影层按度数 + 调号推。
 - **歌词段锚点 `W2@m,n` 的小节序号**：只有小节**中间**的换行才算开出一个小节，小节末的不算——读入端（`assignLyrics`）
-  与写出端（`tojpw.ts::LyricProcessor`）必须同口径，否则多段歌词起点在第一行之后错位。
+  与写出端（`jpw/write.rs::Lyrics`）必须同口径，否则多段歌词起点在第一行之后错位。
 - **`jpToStep` 按调号拼写**，不按 fifths：否则 `1=#C`/`1=bD`/`1=#F`/`1=bG` 四个调整首排不出来。
 - **按乐句重排只挪 `$`**（`jianpu/docrelayout.ts::relayoutJpwabcText`）：`.jpwabc` 是分节文件，
   整份按 `emitJpwabc` 重出会把写出端装不下的东西（样式、`.Layout` 的分页描述）一并抹掉；
@@ -74,7 +75,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 
 ## 词法器
 
-`lex.ts` 忠实复刻原 JP-Word 的词法定义（原为 ANTLR 文法，已改手写、去掉依赖）：每条规则一个 sticky 正则，
+`jpw/lex.rs` 忠实复刻原 JP-Word 的词法定义（原为 ANTLR 文法，已改手写、去掉依赖）：每条规则一个 sticky 正则，
 在当前位置全部试一遍，**取最长匹配，等长按规则先后**。几处要靠这条规矩才切得对：
 
 - 单独的 `(` 是前奏开始，`(1` 是带弧起的音符（长者胜）；单独的 `)` 等长时归前奏结束（规则在前）。
@@ -87,4 +88,4 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 
 ## 与原 Kotlin 的对应
 
-`jpwfile.kt→jpword/jpwfile.ts`、`jpw.kt→model/fromjpw.ts`（读源文那一步）由原 Kotlin/JVM 桌面版（不在本仓库）近乎逐行翻译而来。
+`jpwfile.kt→jpw/file.rs`、`jpw.kt→jpw/read.rs`（读源文那一步）由原 Kotlin/JVM 桌面版（不在本仓库）近乎逐行翻译而来（先译成 TS，M4 再照 TS 搬进 Rust）。

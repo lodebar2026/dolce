@@ -7,9 +7,9 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/jly/fromjly.ts` | **读入**：`scanWord` / `scanMusicLine` / `isJlyMusicLine`（词法）、`syllablesOf`（歌词音节，含占位与连写）、`parseJly`（装配成 `ScoreDoc`）、`rewrapJlyText`（曲行重断） |
-| `src/jly/tojly.ts` | **写出**：`planJly`（歌词位置 + 圆滑线分组）、`ornamentsBefore` / `ornamentsAfter` / `chordBody` / `sustainOf`、`lyricLines`、`emitJlyOfScore`、`emitJly(doc)` |
-| `src/jly/jlychords.ts` | **和弦符号**两个方向的转换：LilyPond 和弦语法 ↔ 谱上印的文字（`c2.:m7/bes` ↔ `Cm7/Bb`），以及整音符分数 ↔ LilyPond 时值串 |
+| `crates/dolce-formats/src/jly/fromjly.rs`（门面 `src/jly/fromjly.ts`） | **读入**：`scan_word` / `scan_music_line` / `is_jly_music_line`（词法）、`syllables_of`（歌词音节，含占位与连写）、`parse_jly`（装配成 `ScoreDoc`）、`rewrap_jly_text`（曲行重断）；损失清单只出 `Msg` 键，门面按界面语言出字 |
+| `src/jly/tojly.ts` | **写出**（吃简谱引擎输入 `JScore`，随 `jianpuinput` 留到 M5 迁）：`planJly`（歌词位置 + 圆滑线分组）、`ornamentsBefore` / `ornamentsAfter` / `chordBody` / `sustainOf`、`lyricLines`、`emitJlyOfScore`、`emitJly(doc)` |
+| `crates/dolce-formats/src/jly/chords.rs`（门面 `src/jly/jlychords.ts`，只给写出端与可视化编辑要的三样） | **和弦符号**两个方向的转换：LilyPond 和弦语法 ↔ 谱上印的文字（`c2.:m7/bes` ↔ `Cm7/Bb`），以及整音符分数 ↔ LilyPond 时值串 |
 | `src/editor/visual/dialects/jly.ts` | **可视化编辑方言**（`DIALECT_JLY`）：顺序无关的 `scan`、规范 `printNote`、`deco`/`annotationText`/`dynamicText`、`tuplet`、`slurNesting`、`lineBreak`；`chordEdit` —— 和弦在 `chords=` 行上，按**时间线**改那一行（点一个音算出它落在第几拍，插进去，并把相邻格的时值切成两段） |
 | `src/editor/formats.ts` | 适配器 `JLY`：`defaultExt ".jly"`、`caps`、`toScoreDoc → parseJly`、`reloadSpec`（读不出音符就拦、先报诊断）、`relayoutText → rewrapJlyText`、`editDialect` |
 | `src/common/filetypes.ts` | `.jly` 进 `DOC_EXT` 白名单（`JLY_EXT`、`isJlyFile`） |
@@ -44,7 +44,7 @@
 | `NextScore` / `NextPart` | 新的 `Song` / 新的 `Part` |
 
 反向（写出）走 `jianpuInputOfDoc(doc) ?? jianpuInputOfJpw(doc)` 拿引擎输入（`JScore`），
-与 `tojpw.ts` 同一套口径：**写出端不认 `ScoreDoc` 的类，只看简谱引擎输入**。
+与 `.jpwabc` 写出端（`jpw/write.rs`）同一套口径：**写出端不认 `ScoreDoc` 的类，只看简谱引擎输入**。
 
 ## 判据（改之前先读代码里那段注释）
 

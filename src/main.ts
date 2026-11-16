@@ -98,7 +98,7 @@ async function boot() {
   win.__book = Promise.all([
     import("./pdflayout/browser"), import("./style/book"), import("./layout/painter"),
     import("./score/play"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
-    import("./jpword/parse"), import("./jianpu/jianpuinput"), import("./fanqie"),
+    import("./jpword/lex"), import("./jianpu/jianpuinput"), import("./fanqie"),
     import("./model/fromxml"), import("./model/phrasedoc"), import("./score/playtypes"), import("./model/playdoc"),
     import("./layout/input"),
   ]).then(([book, bookStyle, painter, play, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, phrasedoc, playtypes, playdoc, input]) => ({
@@ -111,7 +111,7 @@ async function boot() {
   // 123 格式与语义模型暴露，供要在页面里排版出图的回归脚本用（只读写模型的走 Node 侧的 `out/cli/j123.js`）。
   win.__j123 = Promise.all([
     import("./abcfamily/parse"), import("./abcfamily/emit"),
-    import("./model/fromjpw"), import("./fanqie/fromfanqie"), import("./model/helpers"),
+    import("./model/fromjpw"), import("./fanqie/parse"), import("./model/helpers"),
     import("./jianpu/jianpuinput"), import("./fanqie"),
     import("./model/fromxml"), import("./model/toxml"), import("./convert/capability"),
     import("./model/jianpuproject"), import("./model/jianpu"), import("./model/tojpw"), import("./model/xmlproject"),
@@ -127,7 +127,7 @@ async function boot() {
   // （写出端只有 `model/toxml.ts`，在 `__j123` 里）。
   win.__xmlout = Promise.all([
     import("./editor/xmllayout"), import("./jianpu/jianpuinput"), import("./model/fromxml"),
-    import("./model/fromjpw"), import("./jpword/jpwfile"), import("./jpword/parse"),
+    import("./model/fromjpw"), import("./jpword/jpwfile"), import("./jpword/lex"),
   ]).then(([layout, jianpuinput, fromxml, fromjpw, jpwfile, parse]) =>
     ({ ...layout, ...jianpuinput, ...fromxml, ...fromjpw, ...jpwfile, ...parse }));
 

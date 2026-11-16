@@ -10,23 +10,6 @@ fn s(v: &Value) -> String {
     serde_json::to_string(v).expect("序列化")
 }
 
-/// 整篇读入：`{ doc, losses, unknown }`
-#[wasm_bindgen(js_name = jlyParse)]
-pub fn jly_parse(text: &str) -> String {
-    serde_json::to_string(&fromjly::parse_jly(text)).expect("序列化")
-}
-
-/// 按每行 N 小节重排
-#[wasm_bindgen(js_name = jlyRewrap)]
-pub fn jly_rewrap(text: &str, measures_per_line: f64, skip_pickup: bool) -> String {
-    fromjly::rewrap_jly_text(text, measures_per_line, skip_pickup)
-}
-
-#[wasm_bindgen(js_name = jlyIsMusicLine)]
-pub fn jly_is_music_line(line: &str) -> bool {
-    fromjly::is_jly_music_line(line)
-}
-
 fn losses_json(l: &fromjly::JlyLosses) -> Value {
     json!({ "list": l.list(), "diagnostics": l.diagnostics() })
 }
@@ -71,9 +54,3 @@ pub fn jly_duration(whole: f64) -> String {
     s(&json!([{ "text": text, "exact": exact }, chords::duration_text(whole)]))
 }
 
-/// 一串 token 的时间线（`tokens` 是 JSON 字符串数组）
-#[wasm_bindgen(js_name = jlyChordTimeline)]
-pub fn jly_chord_timeline(tokens: &str, fallback: f64) -> String {
-    let toks: Vec<String> = serde_json::from_str(tokens).expect("tokens");
-    s(&json!(chords::chord_timeline(&toks, fallback)))
-}

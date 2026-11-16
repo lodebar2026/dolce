@@ -16,7 +16,7 @@ export * from "../model/helpers";
 export * from "../model/metakeys";
 export { decoKey } from "../model/deconames";
 export { docView } from "../jianpu/slots";
-export { fanqieToScoreDoc } from "../fanqie/fromfanqie";
+export { fanqieToScoreDoc } from "../fanqie/parse";
 export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
 export { slursAsTies, voltasOfPlayOrder } from "../model/xmlproject";
@@ -25,11 +25,8 @@ export { writeJpwabc } from "../model/tojpw";
 export { emitJpwabc } from "../convert/jpwabc";
 export { emitFanqie, emitFanqieSong, keyNameOf, fanqieArcLosses } from "../fanqie/tofanqie";
 export { emitJly } from "../jly/tojly";
-export { scanMusicLine, scanWord, JlyLosses, parseJly, isJlyMusicLine, rewrapJlyText } from "../jly/fromjly";
-export {
-  lyPitchToText, textPitchToLy, lySuffixToText, textSuffixToLy, parseChordToken, chordTokenToText,
-  wholeToDuration, harmonyToChordToken, durationText, chordTimeline,
-} from "../jly/jlychords";
+export { parseJly, isJlyMusicLine, rewrapJlyText } from "../jly/fromjly";
+export { wholeToDuration, harmonyToChordToken, chordTimeline } from "../jly/jlychords";
 export { projectForJianpu } from "../model/jianpuproject";
 export { songFifths } from "../model/keyshift";
 export { AccidentalCarry } from "../model/jianpu";
@@ -39,8 +36,7 @@ export { JpwFile, RepeatSection } from "../jpword/jpwfile";
 // `.jpwabc` 迁 Rust 对拍（dev `rs-diff.mjs jpw`）：词法、分节、源文小节、写出端的两种输入形状
 export { VoiceSection, WordsSection, TitleSection, LayoutSection } from "../jpword/jpwfile";
 export { lexVoice } from "../jpword/lex";
-export { parseVoiceText } from "../jpword/parse";
-export { readJpwSource, convertRepeat } from "../model/fromjpw";
+export { readJpwSource } from "../model/fromjpw";
 export { jpwInputOfDoc } from "../model/playdoc";
 export { jpwInputOfSong } from "../jianpu/playsong";
 export { isXmlShaped } from "../model/xmlproject";
@@ -61,7 +57,6 @@ export { playSourceOf } from "../jianpu/playsong";
 export { buildTimeline, toMidi } from "../score/play";
 // MIDI 导入（迁 Rust 对拍 dev `rs-diff.mjs midiimport`）
 export { midiToScoreDoc } from "../midi/import";
-export { parseSmf } from "../midi/smf";
 // 只读写模型的回归脚本（`playorder-check.mjs`、`jianpu-shape-check.mjs`、`phrase-dual-check.mjs` 等）在 Node 下直接跑用
 export { playSourceOfDoc } from "../model/playdoc";
 export { jianpuInputOfDoc } from "../jianpu/jianpuinput";

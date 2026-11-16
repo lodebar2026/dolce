@@ -44,7 +44,7 @@ import * as painterMod from "../layout/painter";
 import * as play from "../score/play";
 import * as applybreaks from "../jianpu/applybreaks";
 import * as jpwfile from "../jpword/jpwfile";
-import * as jpwparse from "../jpword/parse";
+import * as jpwparse from "../jpword/lex";
 import * as jianpuinput from "../jianpu/jianpuinput";
 import * as fanqieMod from "../fanqie";
 import * as fromxml from "../model/fromxml";
