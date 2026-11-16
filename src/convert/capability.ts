@@ -1,31 +1,12 @@
-// **格式能力表**：每种源格式装得下什么。
+// **格式能力表**：每种源格式装得下什么。表与判据在 Rust（crates/dolce-formats/src/capability.rs，依据逐条写在那边），这里是门面：
+// 特性的名字（按界面语言）、目标格式名、丢失清单排序与给人看的那段话。
 //
 // 用途只有一个：另存为别的格式之前，算出「这份文档里用到、但目标格式装不下」的东西，
 // 列给用户，确认后再写（`editor/dialogs.ts::showConfirmDialog`）。
-//
-// ## 表里的内容不是凭空写的
-//
-// 每一条都来自既有的实测与各模块文档的「已知限制」：
-//
-// | 来源 | 得到的条目 |
-// |---|---|
-// | `../dev/docs/待办/格式与语料迁移.md`（私有仓库）「无法表达」的全语料实测 | 文字行 `W:` / 圆滑线 / 多段歌词 / 印刷段号 / 多声部 / 分曲 / 倚音 / 房号 |
-// | `docs/模块/模型-scoredoc.md` | `playOrder`（`.Repeat`）只有 `.jpwabc` 装得下（`<ending>` 只能整小节），`style` MusicXML 装不下 |
-// | `docs/模块/源格式-abc家族.md` | ABC 那一档的 clef/修饰、`Q:` 参照音符长度 |
-// | `break-roundtrip-check`（断点写回 → 各写出端 → 读回） | 换页（ABC 装不下）；换行含小节中间的，六种都装得下，不列 |
-//
-// **改这张表之前先去改那几处的实测**——这里只是它们的汇总。
 
-import type { Mark, ScoreDoc, Song } from "../model/doc";
-import { arcsToNextNote, beamLevel1, inlineBreakOf, nestArcsInTuplets } from "../model/emitutil";
-import { eachChord, verseCount } from "../model/helpers";
-import { projectForJianpu } from "../model/jianpuproject";
-import { melodyLane } from "../model/jianpu";
-import { hasCrossStaff } from "../model/staves";
-import { beatGroupIndex, beatGroupSize } from "../engrave/beatgroup";
-import { fanqieArcLosses, shortOpenVoltas } from "../fanqie/tofanqie";
-import { chordNotehead, decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "../model/deconames";
-import { songHeaderFonts, songLyricSize, songPage, songStaffSize } from "../model/pagemeta";
+import type { ScoreDoc } from "../model/doc";
+import { dolce } from "../common/dolce";
+import { call, docJson } from "../model/rustdoc";
 import { getLang, t } from "../i18n";
 
 /** 一项「文档里可能用到、格式可能装不下」的特性。 */
@@ -142,213 +123,28 @@ export const TARGET_LABEL: Readonly<Record<TargetFormat, string>> = {
   musicxml: "MusicXML",
 };
 
-/** 文本谱两种方言都装不下的。依据见 `fanqie/tofanqie.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
- *  样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
- *  音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。 */
-const FANQIE_GONE: Feature[] = [
-  // `{dsb…}` 并排块里不跟词（`tofanqie.ts`）
-  "innerVoiceLyrics",
-  "beamGroup", "octaveShift", "style", "playOrder", "singOrder", "sectionOrder", "harmonyOffset", "meta", "paper", "noteStack", "extraStaff", "rhythmStack", "rhythmPosition", "graceArc", "nestedArc", "oddTuplet",
-  // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
-  "tremolo", "bowing", "rehearsal", "multiRest", "arpeggio", "notehead",
-  // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
-  "staccatissimo",
-];
-/** 只有 123 与 MusicXML 装得下的（123 的扩展写法，规范 §8.3/§9）。 */
-const EXT_123: Feature[] = ["tremolo", "bowing", "rehearsal", "multiRest", "arpeggio", "notehead"];
+const TARGETS = Object.keys(TARGET_LABEL) as TargetFormat[];
 
-const ALL: Feature[] = Object.keys(FEATURE_NAMES) as Feature[];
-/** 「除了这几样，其余都装得下」。 */
-const allBut = (...gone: Feature[]): Set<Feature> => new Set(ALL.filter((f) => !gone.includes(f)));
-
-/** 每种格式装得下哪些。**装不下的写在 `allBut(...)` 里，并在注释里写清依据。** */
-export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> = {
-  // 123 是按「装得下全部」设计的（`docs/格式/123格式.md`），实测全语料只有 0.17% 表达不了，
-  // 那些是转换层的账不是格式的账。
-  // 嵌套弧与任意比例的多连音（`(5:4:`）都写得出；弧与多连音的括号只许嵌套（从组里连到组外下一个音写 `~`，
-  // 跨得更远的写不出）、可见休止不跟词（规范 §4.1、§5.1）
-  // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 照 ABC §7.4 写 `&`、
-  // 节奏音符的谱表位置与同时敲的几个写 `X@E5` / `[X@E5X@F5]`（§4.2、§4.3，用户定 2026-10-21 加）；
-  // 一个声部的几条谱表各写一个 `V:`、第二条起 `part=`（§7，`staves.ts`，用户定 2026-10-24），跨谱表的东西写不出
-  // 八度线（8va）两种格式都没有写法（abc2svg 的 `!8va(!` 是扩展，用户定不扩），音照实际音高写
-  // 符杠一律按拍自动连（§11「语料高频但刻意不做」），写明的跨拍连杠写不出
-  // `w:` 只跟 `&` 的第一支（§7.4），第二支自己的歌词写不出
-  // `.Repeat` 的演唱顺序写不出（`I:playorder` 用户定 2026-10-31 去掉）；分段跳着唱写 `P:`，投影逐页逐行定死写 `%%sing`（用户定 2026-11-03）
-  "123": allBut("playOrder", "harmonyOffset", "crossStaff", "innerVoiceLyrics", "slurCrossTuplet", "lyricOnRest", "octaveShift", "beamGroup"),
-  // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式
-  // 另走样式表；`.Repeat` 的演唱顺序同 123 写不出。
-  // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
-  // 换页写 `%%newpage`（§11.4.7 排版指令，`emitabc.ts::pageBreakLine`）；换行本身含小节中间的都装得下（`break-roundtrip-check` 实测）
-  // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
-  // 大谱表同 123：每条谱表一个 `V:`、第二条起 `part=`（`staves.ts`），跨谱表的东西写不出
-  abc: allBut("style", "playOrder", "singOrder", "innerVoiceLyrics", "rhythmNote", "rhythmStack", "rhythmPosition", "crossStaff", "octaveShift", "harmonyOffset", "lyricOnRest", "rehearsal", "multiRest"),
-  // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。
-  // 音符堆：写出端只留最高音、删 voice > 1
-  // `P:` 不展开进 `.Repeat`（用户定 2026-10-31：`.Repeat` 是旧私有扩展，只读不写新东西）
-  jpwabc: allBut("sectionOrder", "singOrder", "beamGroup", "octaveShift", "tonicDegree", "harmony", "harmonyOffset", "slur", "dynamics", "multiVoice", "noteStack", "innerVoice", "extraStaff", "rhythmStack", "rhythmPosition", "style", "layoutDirectives", "multiSong", "grace", "meta", "paper", "nestedArc", "oddTuplet", ...EXT_123),
-  // 文本谱：投影档谱面不画和弦/力度/多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
-  // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
-  // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `fanqie/dialect.ts::EmitStyle.pageFields`）
-  // 番茄的调号字段 `D:` 只有音名、没有主音唱名（诗歌本的 `6=E4/4` 写得出）
-  // 只罩一小节的房 `]/` 不生效、照样封口（番茄官方，`fanqie/dialect.ts::openVoltaNeedsTwoMeasures`）
-  tomato: allBut(...FANQIE_GONE, "pageText", "layoutDirectives", "tonicDegree", "shortOpenVolta"),
-  shige: allBut(...FANQIE_GONE),
-  // jianpu-ly 装不下什么，依据 `docs/格式/jianpu-ly.md` 与 `tojly.ts` 的 `warnings`：
-  //   · 多声部/多曲只写第一路（`NextScore` 本版不写）；扩展 meta、纸、样式表、页面文字没有字段；
-  //   · 演唱顺序只认跳转裸词（`Fine`/`DC`/`Segno`/`ToCoda`），`playOrder` 的自定义跳转写不出；
-  //   · 演奏法（`articulations` 里不是力度名的那批）、拉丁歌词的连字符（`syllabic`）写不出；
-  //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
-  //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
-  jly: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiVoice", "multiSong", "meta", "paper", "style", "pageText", "playOrder", "singOrder", "sectionOrder",
-    "layoutDirectives", "dynamics", "verseLabel", "tonicDegree", ...EXT_123),
-  // Muse `.jcx`（`emitjcx.ts`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
-  // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
-  // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
-  jcx: allBut("beamGroup", "octaveShift", "rhythmStack", "rhythmPosition", "innerVoice", "extraStaff", "multiSong", "style", "playOrder", "singOrder", "sectionOrder", "meta", "paper", "pageText", "layoutDirectives", "dynamics",
-    "verseLabel", "lyricOnRest", "harmonyOffset", "pageBreak", "tonicDegree", ...EXT_123),
-  // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
-  // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
-  // jianpu-ly、Muse、`.jpwabc` 的调号也只写 `1=` 大调 / 调号，主音唱名同样写不出。
-  musicxml: allBut("playOrder", "singOrder", "sectionOrder", "style", "layoutDirectives", "nestedArc", "oddTuplet", "tonicDegree"),
-};
-
-/** 文本谱认的版面指令（`fanqie/parse.ts` 的头部字段）。123/ABC 读进来是小写（`I:fontsize`）。 */
-const LAYOUT_DIRECTIVE = /^(fontsize|margin|space|off)$/i;
-
-function keyDiffers(a: NonNullable<Song["key"]>, b: NonNullable<Song["key"]>): boolean {
-  return a.fifths !== b.fifths || (a.spelling ?? "") !== (b.spelling ?? "") || (a.tonicDegree ?? "1") !== (b.tonicDegree ?? "1");
-}
-
-/**
- * MusicXML 写明的符杠分组与按拍自动连的不一样（跨拍连成一组、或一拍里断开）：简谱各格式的减时线按拍连（`autoBeams` 同口径），写不出。
- * 只看第一层；拍长同 `engrave/beatgroup.ts`（x/8 且拍数是 3 的倍数按附点四分，其余四分）。
- */
-function irregularBeams(song: Song): boolean {
-  for (const part of song.parts) {
-    let divisions = 1;
-    let time = { beats: 4, beatType: 4 };
-    for (const m of part.measures) {
-      if (m.attrs?.divisions) divisions = m.attrs.divisions;
-      if (m.attrs?.time) time = m.attrs.time;
-      const size = beatGroupSize(time.beats, time.beatType);
-      let end = 0;
-      /** 各声部：上一个连杠音的（组号、拍号） */
-      const prev = new Map<number, { group: number; beat: number }>();
-      let group = 0;
-      for (const el of m.elements) {
-        const s = el.onset ?? end;
-        end = s + (el.kind === "chord" ? (el.grace ? 0 : el.duration.divisions) : el.duration?.divisions ?? 0);
-        if (el.kind !== "chord" || el.grace) continue;
-        const b = beamLevel1(el.beams);
-        if (b === undefined) {
-          prev.delete(el.voice);
-          continue;
-        }
-        if (b === "begin") group++;
-        const beat = beatGroupIndex(s / divisions, 0, size);
-        const p = prev.get(el.voice);
-        if (p) {
-          if (b !== "begin" && p.beat !== beat) return true; // 一组跨了拍
-          if (b === "begin" && p.beat === beat) return true; // 同一拍里断开另起
-        }
-        prev.set(el.voice, { group, beat });
-        if (b === "end") prev.set(el.voice, { group: -1, beat });
-      }
-    }
+/** 每种格式装得下哪些（能力表那一行；按需向 Rust 取一次）。 */
+export const FORMAT_CAPS: Readonly<Record<TargetFormat, ReadonlySet<Feature>>> = (() => {
+  const out = {} as Record<TargetFormat, ReadonlySet<Feature>>;
+  for (const target of TARGETS) {
+    let caps: ReadonlySet<Feature> | undefined;
+    Object.defineProperty(out, target, {
+      enumerable: true,
+      get: () => (caps ??= ((): ReadonlySet<Feature> => {
+        const gone = new Set(JSON.parse(dolce().formatsGone(target)) as Feature[]);
+        return new Set((Object.keys(FEATURE_NAMES) as Feature[]).filter((f) => !gone.has(f)));
+      })()),
+    });
   }
-  return false;
-}
+  return out;
+})();
 
 /** 这份文档实际用到了哪些特性。 */
 export function featuresUsed(doc: ScoreDoc): Set<Feature> {
-  const used = new Set<Feature>();
-  if (doc.songs.length > 1) used.add("multiSong");
-  for (const song of doc.songs) {
-    if (song.parts.length > 1) used.add("multiVoice");
-    if (song.playOrder?.length) used.add("playOrder");
-    if (song.singOrder?.length) used.add("singOrder");
-    if (song.sectionOrder) used.add("sectionOrder");
-    if (song.style?.sheetRef || song.style?.inline?.length) used.add("style");
-    for (const r of song.style?.raw ?? []) used.add(LAYOUT_DIRECTIVE.test(r.key) ? "layoutDirectives" : "style");
-    // MusicXML 的页脚只写在 `<credit>` 里：转简谱文本时才落成页面文字（`jianpuproject.ts::headerFromCredits`），照转出的算
-    if (song.pageText || projectForJianpu(song).pageText) used.add("pageText");
-    if (song.meta && Object.keys(song.meta).length) used.add("meta");
-    if (songPage(song) || songStaffSize(song) || songLyricSize(song) || Object.keys(songHeaderFonts(song)).length) used.add("paper");
-    if (song.remarks?.length) used.add("textLine");
-    if (verseCount(song) > 1) used.add("multiVerse");
-    if (song.key?.tonicDegree && song.key.tonicDegree !== "1") used.add("tonicDegree");
-    for (const m of song.marks ?? []) {
-      if (m.type === "slur") used.add("slur");
-      if (m.type === "wedge") used.add("dynamics"); // 渐强渐弱
-    }
-    for (const part of song.parts) {
-      part.measures.forEach((mea, mi) => {
-        if (mi > 0 && mea.attrs?.key && song.key && keyDiffers(mea.attrs.key, song.key)) used.add("keyChange");
-        if (mi > 0 && mea.print?.newPage) used.add("pageBreak");
-        if (mea.elements.some((el) => inlineBreakOf(el) === "page")) used.add("pageBreak");
-      });
-      for (const mea of part.measures) {
-        const lane = melodyLane(mea);
-        for (const b of mea.barlines ?? []) if (b.ending) used.add("volta");
-        // 力度与渐强渐弱走 `<direction>`
-        for (const d of mea.directions ?? []) {
-          if (d.type === "dynamics" || d.type === "wedge") used.add("dynamics");
-          if ([d, ...(d.more ?? [])].some((x) => x.type === "rehearsal")) used.add("rehearsal");
-          if (d.type === "octave-shift") used.add("octaveShift");
-        }
-        if (mea.attrs?.multiRest) used.add("multiRest");
-        for (const el of mea.elements) {
-          if (el.kind === "space" && el.spacer === "x") used.add("invisibleRest");
-          // MusicXML 读进来的和弦是结构化的、没有 text，所以按有无判
-          if (el.harmony) used.add("harmony");
-          if (el.kind === "chord") {
-            const n = el.notations;
-            if (n?.tremolo || n?.articulations?.some((a) => tremoloStrokes(a) !== undefined)) used.add("tremolo");
-            if (n?.technical?.some((x) => x === "up-bow" || x === "down-bow") || n?.articulations?.some((a) => decoKey(a) === "sg" || decoKey(a) === "xg")) used.add("bowing");
-            if (n?.articulations?.some((a) => rehearsalOf(a) !== undefined)) used.add("rehearsal");
-            if (n?.articulations?.some((a) => a === "staccatissimo" || a === "wedge")) used.add("staccatissimo");
-            if (n?.arpeggiate || n?.articulations?.some((a) => decoKey(a) === "arp")) used.add("arpeggio");
-            if (chordNotehead(el.notes) && chordNotehead(el.notes) !== "slash" || n?.articulations?.some((a) => noteheadOf(a))) used.add("notehead");
-            if (el.notes.length > 1) used.add(el.rhythm ? "rhythmStack" : "noteStack");
-            if (el.rhythm && el.notes.some((x) => x.unpitched?.step)) used.add("rhythmPosition");
-            if (lane && el.staff !== lane.staff) used.add("extraStaff");
-            else if (lane && el.voice !== lane.voice) {
-              used.add("innerVoice");
-              if (el.lyrics?.some((l) => l.text !== "")) used.add("innerVoiceLyrics");
-            }
-            if (el.grace) used.add("grace");
-            if (el.rhythm) used.add("rhythmNote");
-            if (el.sectionWord) used.add("textLine");
-            if (el.printObject === false && el.rest) used.add("invisibleRest");
-            if (el.rest && el.printObject !== false && el.lyrics?.some((l) => l.text !== "")) used.add("lyricOnRest");
-            for (const l of el.lyrics ?? []) if (l.verseLabel !== undefined) used.add("verseLabel");
-          }
-        }
-      }
-    }
-    if (hasCrossStaff(song)) used.add("crossStaff");
-    if (irregularBeams(song)) used.add("beamGroup");
-    for (const { chord } of eachChord(song)) {
-      for (const su of chord.sustains ?? []) if (su.harmony) used.add("harmony");
-    }
-    // 长音中途换和弦：进简谱形状后还挂不到增时线上的才算（`jianpuproject.ts`）
-    if ([...eachChord(song)].some(({ chord }) => chord.laterHarmonies?.length)) {
-      if ([...eachChord(projectForJianpu(song))].some(({ chord }) => chord.laterHarmonies?.length)) used.add("harmonyOffset");
-    }
-    // 跨出多连音的弧（123 的括号只许嵌套）：连到下一个音的写成 `~`，不算；判据与写出端同一份（`abcfamily/emit.ts`）
-    for (const part of song.parts) {
-      const isArc = (m: Mark): boolean => m.type === "slur" || m.type === "tied";
-      const marks = song.marks ?? [];
-      const nest = nestArcsInTuplets(part, marks, isArc);
-      if (nest.crossedMarks.size > arcsToNextNote(part, marks, isArc).size) used.add("slurCrossTuplet");
-    }
-    if (song.parts.some((part) => shortOpenVoltas(part).size)) used.add("shortOpenVolta");
-    const arcs = fanqieArcLosses(song);
-    if (arcs.nested) used.add("nestedArc");
-    if (arcs.oddTuplet) used.add("oddTuplet");
-    if (arcs.graceArc) used.add("graceArc");
-  }
-  return used;
+  const { json, h } = docJson(doc);
+  return new Set(JSON.parse(call(() => dolce().formatsFeaturesUsed(json, h))) as Feature[]);
 }
 
 export interface Loss {
@@ -358,9 +154,8 @@ export interface Loss {
 
 /** 存成 `target` 会丢掉什么 = 用到的 ∖ 目标装得下的。空数组 = 无损。 */
 export function planSave(doc: ScoreDoc, target: TargetFormat): Loss[] {
-  const caps = FORMAT_CAPS[target];
-  return [...featuresUsed(doc)]
-    .filter((f) => !caps.has(f))
+  const { json, h } = docJson(doc);
+  return (JSON.parse(call(() => dolce().formatsPlanSave(json, h, target))) as Feature[])
     .map((f) => ({ feature: f, name: t(`feat.${f}`) }))
     .sort((a, b) => a.name.localeCompare(b.name, getLang()));
 }

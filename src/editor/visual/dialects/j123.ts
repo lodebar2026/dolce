@@ -1,7 +1,7 @@
-// 123 的音符 token：`[#b n ## bb]数字[',]*[_.]*`（`abcfamily/dialect123.ts::scanNote` 的写法），
+// 123 的音符 token：`[#b n ## bb]数字[',]*[_.]*`（Rust `dolce-formats` 123 词法 `scan_note` 的写法），
 // 增时线 `-`、小节线 `|`、换行 `$`、圆滑线 `( )` 都是独立 token。
 
-import { BARE_CHORD_RE } from "../../../abcfamily/dialect123";
+import { isBareChord } from "../../../abcfamily/parse";
 import type { Accidental } from "../../../model/doc";
 import { dotsRange, type EditDialect, type NoteDuration, type NoteToken, runRange } from "../dialect";
 import { colonFields } from "../header";
@@ -64,7 +64,7 @@ export const DIALECT_123: EditDialect = {
   slurNesting: true,
   lyricsFollowBreaks: true,
   deco: { names: { fermata: "fermata", accent: "accent" }, text: (n) => `!${n}!`, place: "before" },
-  chordText: (name) => (BARE_CHORD_RE.test(name) ? `${name} ` : `"${name}"`),
+  chordText: (name) => (isBareChord(name) ? `${name} ` : `"${name}"`),
   annotationText: (t) => `"^${t}"`,
   dynamicText: (n) => `!${n}!`,
   tuplet: { open: (n) => `(${n}: `, close: ")", openRe: /\(\d+(?::\d+)?:\s*$/ },

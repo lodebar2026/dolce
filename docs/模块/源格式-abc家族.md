@@ -18,24 +18,26 @@
 
 所以 `.abc` 要原生解析直出 `ScoreDoc`。而这与写出端的继承复用正好对称：
 123 与 ABC 的头部字段、`V:`/`w:`/`P:`、小节线与房号、装饰、和弦与注记、倚音、多连音
-**全部同源**，`abcfamily/lex123.ts` + `parse.ts` 实现的正是这些。
+**全部同源**，`crates/dolce-formats/src/abc/` 的 `lex.rs` + `parse.rs` 实现的正是这些。
 
 ## 入口
 
+读写判据全在 Rust（`crates/dolce-formats/src/abc/`），经 dolce-wasm（`crates/dolce-wasm/src/formats.rs`）同步调；TS 只留门面与高亮。
+
 | 文件 | 作用 |
 |---|---|
-| `src/abcfamily/types.ts` | 共用的 token 形状。`note` 这一种按方言携带 `degree` 或 `step`/`alter` |
-| `src/abcfamily/lex.ts` | **词法基类** `AbcFamilyLexer`：空白与反引号、注释、小节线族、房号、行内字段、圆滑线、多连音、装饰、和弦与注记、倚音、占位符 |
-| `src/abcfamily/dialect123.ts` | 123 的音乐体：度数 `1-7`/`0`、前置 `#b n`、`'`/`,` 八度点、`_` 减时线、`.` 附点 |
-| `src/abcfamily/dialectabc.ts` | ABC 的音乐体：音名 `A-G`/`a-g`、前置 `^_=`、分数时值、`z`/`Z` 休止、`[CEG]` 和弦、`>`/`<` 破碎节奏、单字符装饰 |
-| `src/abcfamily/parsedialect.ts` | **组装期钩子**：时值换算、token→`Note`、`K:` 解析、`-` 的语义、默认音长、代码换行算不算谱面换行 |
-| `src/abcfamily/emit.ts` | **写出基类** `AbcFamilyEmitter`：字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展 |
-| `src/abcfamily/dialectjcx.ts` | Muse 的音乐体（ABC 词法的子类：`@` 隐形休止、`x`/`X` 节奏音符、`(<` `<)` 渐强渐弱、`{@…}` 后倚音）、字母 ↔ 度数表、`K:` 读法 |
-| `src/abcfamily/emit123.ts` / `emitabc.ts` / `emitjcx.ts` | 三个方言的写出 |
+| `abc/token.rs` | 共用的 token 形状。`note` 这一种按方言携带 `degree` 或 `step`/`alter` |
+| `abc/lex.rs` | **词法**：基类（空白与反引号、注释、小节线族、房号、行内字段、圆滑线、多连音、装饰、和弦与注记、倚音、占位符）+ 三个方言的音乐体——123（度数 `1-7`/`0`、前置 `#b n`、`'`/`,` 八度点、`_` 减时线、`.` 附点、不带引号的和弦 `is_bare_chord`）、ABC（音名、前置 `^_=`、分数时值、`z`/`Z`、`[CEG]`、`>`/`<` 破碎节奏、单字符装饰）、Muse（`@` 隐形休止、`x`/`X` 节奏音符、`(<` `<)`、`{@…}` 后倚音）。按 UTF-16 码元扫，偏移与 JS 一致 |
+| `abc/dialect.rs` | **组装期钩子**：时值换算、token→`Note`、`K:` 读法、`-` 的语义、默认音长、多连音缺省比例、代码换行算不算谱面换行 |
+| `abc/fields.rs` | 字段表、中文别名、`K:`/`M:`/`Q:` 解析、`I:` 指令、`%%sing`（`parse_sing`）、小节线上跳转记号的名字表（`jump_ornament_name`） |
+| `abc/parse.rs` + `lyricline.rs` / `lyricpunct.rs` | 组装：小节切分、时值累计、符杠分组、Mark 配对、`&` 与 `V:` 多声部、歌词切音节与对位。三方言同一份 |
+| `abc/lyricslot.rs` | 歌词对位格判据 `is_lyric_slot`（读写两端与可视化编辑共用） |
+| `abc/abcpitch.rs` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolve_abc_pitches` / 写 `with_abc_pitches`），见下「关键判据」 |
+| `abc/emit.rs` | **写出**：一个 `Emitter` 按方言分支——字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展；Muse 按声部分块（`body_lines`）。系统切分 `system_ranges` 在 `dolce-model/src/emitutil.rs`（文本谱写出端共用） |
 | `crates/dolce-formats/src/jcxcodec.rs` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF。码表大，绑定单出 `crates/dolce-jcx-wasm`，网页开机后空闲时预取、开 / 存 .jcx 前 `common/jcx.ts::ensureJcx` 兜底等 |
-| `src/abcfamily/abcpitch.ts` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolveAbcPitches` / 写 `withAbcPitches`），见下「关键判据」 |
-| `src/abcfamily/lex123.ts` / `emit123.entry.ts` | **入口**，保留 `lexMusicLine` / `emit123` / `emitSong` 的函数形态给既有调用方 |
-| `src/abcfamily/parse.ts` | 组装：小节切分、时值累计、符杠分组、Mark 配对、歌词对位。`parse123` 与 `parseAbc` 都是 `parseAbcFamily` 的薄壳 |
+| `src/abcfamily/parse.ts` / `emit.ts` | TS 门面：`parse123` / `parseAbc` / `parseJcx`（原文 `source` 换回 JS 那份）、`emit123` / `emitAbc` / `emitJcx`，外加编辑器要的小判据 `lyricStarts`、`lyricSlotsBetween`、`isBareChord`、`duration123`、`normalizeSpelling` |
+| `src/abcfamily/highlight.ts` | 123 语法高亮（独立轻量扫描，留在 TS） |
+| `src/editor/metaedit.ts` | 头字段改写（编辑器用） |
 
 ## 方言差在哪（**只有这张表里的**）
 
@@ -67,11 +69,11 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
 ## 关键判据
 
 - **倚音时值相对倚音单位（八分）**，三种写法同一口径（ABC §4.12 只规定花括号里照普通音符写长度、单位由软件定）：
-  123 `{2_}`、ABC `{d/}`、文本谱 `{2/}` 都是十六分，什么都不写是八分；记在 `Chord.duration.type`（`parse.ts::graceType`），不占拍。
+  123 `{2_}`、ABC `{d/}`、文本谱 `{2/}` 都是十六分，什么都不写是八分；记在 `Chord.duration.type`（`parse.rs::grace_type`），不占拍。
   四分倚音 ABC 写 `{d2}`，123 写不出、退成八分。
 - **读不动就报错，不回落**：`parseAbc` 抛异常或一个音符都没读出时，`App._reloadScoreDoc`（闸门见 `formats.ts` 的 ABC `reloadSpec`）在状态栏报「ABC 解析失败」。
   早先留着的 abc2xml 回落只兜这种整首读崩，下面「已知限制」里那些写法它本来也不接（原生解析能读出音符就不回落），已退役。
-- **ABC 只给音名，简谱那侧要度数；两边的临时记号口径不同**，换算都在 `abcfamily/abcpitch.ts`，读写共用一份状态规则：
+- **ABC 只给音名，简谱那侧要度数；两边的临时记号口径不同**，换算都在 `abc/abcpitch.rs`，读写共用一份状态规则：
   ABC 的记号是**绝对**的、管到本小节末、只管**同音名同八度**（§4.2：`K:F` 里 `B` 是 B♭、`=B` 是 B 本位、`^B` 是 B♯）；
   简谱的记号**相对调号**、按**唱名**延续（`jianpu.ts::AccidentalCarry`）。
   读入：`resolveAbcPitches` 把音名 + 面上记号换成实际音高，度数再由 `assignDegrees` 推（面上的简谱记号由 `AccidentalCarry.mark` 定）。
@@ -88,14 +90,14 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   只认前缀数字会让几个声部全归声部 1、拼成一串。
 - **歌词行不带段号**：`w:` 按出现顺序编段（ABC §5.1），同段拆几条写用 `+:` 续行（ABC §3.1.18）；
   段号区间与副歌行写出时**逐段各抄一遍**，中间空着的段写一条空 `w:` 顶住段位。
-- **`V:n` 再次出现是续写**（ABC 语义）：`parse.ts` 按声部号存 `PartBuild`，开着的弧/多连音/房号/欠着的和弦记号
+- **`V:n` 再次出现是续写**（ABC 语义）：`parse.rs` 按声部号存 `PartBuild`，开着的弧/多连音/房号/欠着的和弦记号
   **各声部一份**——交错写法里 `V:1` 的弧跨行、中间隔着 `V:2` 的行，共用一份会配错对。
 - **`P:` 不进 `remarks`**：头部进 `Song.sectionOrder`（原文 + 展开），曲内 `P:A` / 行内 `[P:A]` 进 `Song.sectionMarks`（挂在下一个非倚音和弦的 id 上），语义见 [123 格式](../格式/123格式.md) §6.1。写出时顺序写在 `K:` 前，标记写成行内。Muse 的 `P:` 不接这层语义，仍是 `remarks` 里的原文。
 - **`&` 是小节内的临时多声部**（ABC §7.4，issue #9）：`&` 把音乐时间退回**本小节起点**，
   后面是与前一分支并行的声部；小节线一到就回主声部。既不是 `[CEG]`（那是同时值的和弦），
   也不是新开一整行谱表的 `V:`。一条链上五处各管一段，缺一处就串音：
   ① 词法只在 ABC 方言认单个 `&`（`overlay` token；`&&`、`(& … &)` 这些 2.2 扩展整体报不支持，
-  不按单个 `&` 误读）；② `parse.ts` 每遇 `&` 把 `PartBuild.voice` 加一、元素照原文顺序留在**同一个小节**里，
+  不按单个 `&` 误读）；② `parse.rs` 每遇 `&` 把 `PartBuild.voice` 加一、元素照原文顺序留在**同一个小节**里，
   分支间不继承 tie、破碎节奏、增时线宿主与符杠分组，开着的弧/多连音报诊断后丢掉；
   ③ **小节内起点在投影时才算**（`xmlproject.ts`）——那时才折算完多连音与 divisions 放大，
   各声部一把游标，小节长度取各分支**最远终点**而不是相加，`onset` 落成 `<backup>`；
@@ -103,13 +105,13 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   自动分组的符杠不再按音高把两层统一回一个方向；⑤ 写出端按声部分段、段间写 `&`。
   分支不等长由拍数自检逐分支报（`model/beatcheck.ts`），不静默补齐。
 - **简谱只印主分支**：一个简谱声部行装不下同一小节的两条并行旋律，`projectForJianpu` 删掉 `voice > 1`
-  的元素（口径同 MusicXML 那一路的 `voice <= 1`），歌词对位格也不含它们（`lyricslot.ts`，读写两端共用）。
+  的元素（口径同 MusicXML 那一路的 `voice <= 1`），歌词对位格也不含它们（`abc/lyricslot.rs`，读写两端共用）。
   五线谱、MusicXML 导出、试听那三条路仍是完整的多声部——**试听要先投影**（`playsong.ts`），
   简谱那条播放路会把并行分支当成接着唱的音。
 - **行首 `[V:x]` 切声部**（ABC §7、Muse 说明书 §3.2.3.1），同一行后面接着的是这个声部的音乐；行内 `[L:]` 改默认音长。
   ABC 只认数字声部号，Muse 的标志按首次出现编号。行内 `[L:]` 只管写它的那个声部（`PartBuild.len`）。
 - **`||:` 读成反复起**：ABC 规范没有，Muse 谱例 45 首里 12 首这么写。
-- **Muse 的写出按声部分块**（`emitjcx.ts::bodyLines`），不照基类按第一声部切系统交错写：各声部断行不同，
+- **Muse 的写出按声部分块**（`emit.rs::body_lines`），不照基类按第一声部切系统交错写：各声部断行不同，
   `w:` 又只对紧挨在前的那行，交错写会把别的声部几行并成一行。歌词多字一音写 `~`、没有印刷段号、延长位写 `*`（`LyricStyle`）。
 - **ABC 的印刷段号写 `w:1.~道`**（数字加点、`~` 并进首字，ABC 的惯例写法；§5.3「首词以数字开头即段号」规范自己标 VOLATILE，
   这里只认 `N.~` 这一种，以数字开头的词不会被误吞）。读进 `Lyric.verseLabel`、不占音符格（`parseLyricLine` 的 `tildeLabel`）；
@@ -118,8 +120,8 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   ABC 每个代码行都是换行，所以一条音乐行就是一块，正是标准语义；以前从全曲第一个音起挂，交错写的 ABC 读进来全错位。
   写出端两种方言都逐系统交错写。
 
-- **写 ABC 时按拍连写**（`emit.ts::autoBeamGroups`）：源里没有空白分组（123、文本谱、MusicXML 来源）时，带减时线、
-  不超过一拍的音按拍位归组连写（与简谱减时线同一份判据 `engrave/beatgroup.ts`；多连音整组按起点那拍）。
+- **写 ABC 时按拍连写**（`emit.rs::auto_beam_groups`）：源里没有空白分组（123、文本谱、MusicXML 来源）时，带减时线、
+  不超过一拍的音按拍位归组连写（与简谱减时线同一份判据 `engrave/beatgroup.ts`，Rust 一份在 `dolce-model/src/beatgroup.rs`；多连音整组按起点那拍）。
   以前一律空格隔开，读回来全是单独的符尾。
 
 ## 回归
@@ -140,9 +142,9 @@ node ../dev/scripts/jcx-roundtrip.mjs   # Muse 谱例 45 首往返逐音一致 +
   全角标点照中文不空。回归 `abc-roundtrip` 的「拉丁歌词 → 123」
 - `%%score`（同 `I:score`）读最外层的 `[…]` / `{…}` 落成声部组；大谱表按 123 同一写法（`V:2 clef=bass part=1`，见 [123格式](../格式/123格式.md) §7），
   ABC 也读写 `V: clef=` 与曲中 `[K:clef=…]`（音名是记谱音高，谱号只管画在哪条线上）；**小节中间的换谱号写在原位**（钢琴下谱表半小节处转低音谱号，
-  `emit.ts::midClefs` 按时刻插在第一支对应的音前），读回记成 `laterAttrs`（`&` 后面分支里的按那一支的时值折算到第一支）。123 只有小节级的谱号。
+  `emit.rs::mid_clefs` 按时刻插在第一支对应的音前），读回记成 `laterAttrs`（`&` 后面分支里的按那一支的时值折算到第一支）。123 只有小节级的谱号。
   和弦里只连其中几个音写 `[C-E]`（§4.11），读写都认；整和弦都连的仍写 `[CE]-`。写出 MusicXML 来源的 ABC 时，面上的临时记号按读回的文字次序重定
-  （`abcpitch.ts::withAbcAccidentals`：`&` 后一段的同名音不被前一段的记号带偏）。
+  （`abcpitch.rs::with_abc_accidentals`：`&` 后一段的同名音不被前一段的记号带偏）。
 - ABC 的 `%%staves`、`U:` 自定义符号、宏 `m:` 不支持，**静默忽略**：`U:` 重定义过的符号按默认表读，宏不展开按字面读
 - `&` 只支持 2.1 的小节内写法：`&&`、`(& … &)` 这些 2.2 的跨行扩展报诊断、当作不支持
 - 临时多声部的分支在简谱视图里印不出来（只印主分支），源码定位、可视化编辑也只认主分支

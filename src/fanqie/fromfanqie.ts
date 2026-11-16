@@ -49,7 +49,7 @@ import type {
   Sustain,
 } from "../model/doc";
 import { SIMPLE_DIVISIONS } from "../model/doc";
-import { normalizeSpelling } from "../abcfamily/fields";
+import { normalizeSpelling } from "../abcfamily/parse";
 import { IdGen, emptyDoc, emptySong } from "../model/helpers";
 import { creatorOf } from "../model/metakeys";
 import { keyOfDegree, songFifths } from "../model/keyshift";

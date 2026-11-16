@@ -34,7 +34,7 @@
 | `src/model/helpers.ts` | 遍历/查询/构造 |
 | `src/model/msg.ts` | **给界面的提示只给键与参数**（`ModelMsg`）：`edit.ts` 的报错（`{ error: ModelMsg }`）、`ModelError`（读写失败）、解析诊断（`Diagnostic.msg`）、节拍提示与默认声部名都经它；翻译函数由 `i18n/index.ts` 加载时注册（`setMsgTranslator`），显示时 `msgText` 取当前语言的字。模型层对 i18n 只许类型引用（`deps-check.mjs` 守门） |
 | `src/model/marknames.ts` | 记号名字表（力度名、术语）：文本谱 / 123 / ABC / jianpu-ly / MusicXML 投影共用；字形在 `engrave/jpglyph.ts` |
-| `src/model/breaks.ts` | 断行读写对：`breaksOf`（模型 → 行首元素）/ `applyBreaks`（行首元素 → 模型，替换原有断行） |
+| `src/model/breaks.ts` | 断行读写对（Rust `crates/dolce-model/src/breaks.rs` 的门面，补丁就地改）：`breaksOf`（模型 → 行首元素）/ `applyBreaks`（行首元素 → 模型，替换原有断行） |
 | `src/model/jianpu.ts` | **简谱语义层**：音高↔度数、相对调号临时记号延续（`AccidentalCarry`，两个方向共用）、`attrsAt`、减时线/增时线/附点（`jianpuShape`）、和弦原文、旋律取音、延音线/跨元素记号按 id 找对端 |
 | `src/model/fromxml.ts` | ← MusicXML（**直通**：语义进模型，每个模型对象绑到原节点） |
 | `src/model/xmlsurface.ts` | **MusicXML 表层**：模型外的旁表（WeakMap，对象 → 原节点）+ 查询函数（`xmlPos`、`measureWidth`、`noteStem`、`xmlAlign`、`xmlFont`、`staffDetailsOf`、`printLayout`、`defaultsFonts`），五线谱引擎从这里读；导出版面的 `EngravedLayout` 也定义在这 |
@@ -51,7 +51,7 @@
 | `src/model/tojpw.ts` | → `.jpwabc`（`emitJpwabc`；写出端只经输入接口读谱，两侧输入由 `playdoc.ts::jpwInputOfDoc` / `playsong.ts::jpwInputOfSong` 拼） |
 | `src/model/phrasedoc.ts` / `src/jianpu/phrasesong.ts` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
 | `src/model/playdoc.ts` / `src/jianpu/playsong.ts` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/dolce-play/src/playorder.rs`。回归 `playorder-check --cmp` |
-| `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么） |
+| `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么）。判据在 Rust `crates/dolce-formats/src/capability.rs`，这里是门面与界面文字 |
 | `src/model/hanconv.ts` | **简繁转换**（五种格式通用）：`textGroups` 枚举人读的文字、`convertScoreDoc` 改模型、`convertSourceText` 只改原文里的字；词表加载在 `src/common/hanconv.ts`（opencc-js 按方向动态 import） |
 
 Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`）。

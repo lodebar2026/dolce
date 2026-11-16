@@ -110,19 +110,18 @@ async function boot() {
     .then(([songbook, ss]) => ({ ...songbook, ...ss }));
   // 123 格式与语义模型暴露，供要在页面里排版出图的回归脚本用（只读写模型的走 Node 侧的 `out/cli/j123.js`）。
   win.__j123 = Promise.all([
-    import("./abcfamily/parse"), import("./abcfamily/emit123.entry"),
+    import("./abcfamily/parse"), import("./abcfamily/emit"),
     import("./model/fromjpw"), import("./fanqie/fromfanqie"), import("./model/helpers"),
     import("./jianpu/jianpuinput"), import("./fanqie"),
-    import("./abcfamily/emitabc.entry"),
     import("./model/fromxml"), import("./model/toxml"), import("./convert/capability"),
     import("./model/jianpuproject"), import("./model/jianpu"), import("./model/tojpw"), import("./model/xmlproject"),
     import("./model/breaks"), import("./convert/jpwabc"),
   ]).then((
-    [parse, emit, fromjpw, fromfanqie, helpers, jianpuinput, fanqie, emitabc,
+    [parse, emit, fromjpw, fromfanqie, helpers, jianpuinput, fanqie,
      fromxml, toxml, capability, jianpuproject, jianpu, tojpw, xmlproject, breaks, jpwabc],
   ) => ({
     ...parse, ...emit, ...fromjpw, ...fromfanqie, ...helpers, ...jianpuinput, fanqie,
-    ...emitabc, ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...tojpw, ...xmlproject, ...breaks, ...jpwabc,
+    ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...tojpw, ...xmlproject, ...breaks, ...jpwabc,
   }));
   // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engraveScoreDoc`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归
   // （写出端只有 `model/toxml.ts`，在 `__j123` 里）。

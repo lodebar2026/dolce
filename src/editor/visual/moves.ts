@@ -8,8 +8,7 @@
 // 邻居按模型找（同一声部同一声线，`model/edit.ts::neighbourChord`），再按索引取它在原文里的位置。
 // 文本谱、`.jpwabc` 的词行与记号写法各不相同，这几样拒绝并说明（同歌词录入只改已有字的口径）。
 
-import { parseLyricLine } from "../../abcfamily/parse";
-import { ZERO_SPAN } from "../../model/helpers";
+import { lyricStarts } from "../../abcfamily/parse";
 import { neighbourChord } from "../../model/edit";
 import type { SyncEntry } from "../sync";
 import { blockStart, lastMusicLine, lyricBody, lyricLinesAfter, slotsBetween } from "./breaks";
@@ -36,7 +35,7 @@ export function shiftLyricText(ctx: EditCtx, ly: SyncEntry, delta: number, count
   const line = lines.find((l) => ly.from >= l.from && ly.from <= l.to);
   if (!line) return { error: tr("me.noLyric") };
   const { body, bodyFrom } = lyricBody(line);
-  const starts = parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, ctx.doc?.sourceFormat === "jcx").starts;
+  const starts = lyricStarts(body, skip, ctx.doc?.sourceFormat === "jcx");
   // 各格的原文（连同后面的分隔）；格前的段号留在 `lead`
   const lead = body.slice(0, starts[0] ?? body.length);
   const toks = starts.map((s, i) => body.slice(s, i + 1 < starts.length ? starts[i + 1]! : body.length));
@@ -75,7 +74,7 @@ export function shiftLyricText(ctx: EditCtx, ly: SyncEntry, delta: number, count
   const joined = lead + toks.join("").replace(/\s+$/, "");
   const changes = [{ from: bodyFrom, to: line.to, insert: joined }];
   // 选中挪过去的那个字
-  const ns = parseLyricLine(joined.slice(lead.length), 1, ZERO_SPAN, undefined, skip, undefined, ctx.doc?.sourceFormat === "jcx").starts;
+  const ns = lyricStarts(joined.slice(lead.length), skip, ctx.doc?.sourceFormat === "jcx");
   const from = bodyFrom + lead.length + (ns[k] ?? 0);
   const text = state.doc.sliceString(ly.from, ly.to);
   return { changes, anchor: from, head: from + text.length };

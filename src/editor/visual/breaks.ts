@@ -10,14 +10,12 @@
 // ABC 同一个道理，只是换行不是符号：`w:` 对的是紧挨在前的那条**代码行**，代码行末就是谱面换行
 // （`EditDialect.lyricBlockByCodeLine`）。插入换行 = 拆代码行，删除 = 把下一条代码行接上来，歌词照样拆并。
 //
-// 对位格按解析器同一份口径数（`abcfamily/lyricslot.ts::isLyricSlot` 数音符，`parseLyricLine` 数词行），
+// 对位格按解析器同一份口径数（Rust `lyricslot.rs::is_lyric_slot` 数音符，`lyricline.rs::parse_lyric_line` 数词行，经 `abcfamily/parse.ts` 门面），
 // 不在这里另立规则。碰上 `+:` 续行这种拆不清的写法就不动手、说明原因。
 
 import type { EditorState, Line } from "@codemirror/state";
-import type { Element, ScoreDoc } from "../../model/doc";
-import { isLyricSlot } from "../../abcfamily/lyricslot";
-import { parseLyricLine } from "../../abcfamily/parse";
-import { ZERO_SPAN } from "../../model/helpers";
+import type { ScoreDoc } from "../../model/doc";
+import { lyricSlotsBetween, lyricStarts } from "../../abcfamily/parse";
 import type { SyncEntry } from "../sync";
 import { type EditCtx, type EditOutcome, spaceAround } from "./ops";
 import { t } from "../../i18n";
@@ -43,13 +41,13 @@ function slotOffset(body: string, k: number, skip: "/" | "*", joinTilde = false)
     const label = /^\s*(?:<[^>]*>|"[^"]*")\s*/.exec(body);
     return label ? label[0].length : 0;
   }
-  const { starts } = parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, joinTilde);
+  const starts = lyricStarts(body, skip, joinTilde);
   return k < starts.length ? starts[k]! : body.length;
 }
 
 /** 词行 body 占几个对位格。 */
 export function slotCount(body: string, skip: "/" | "*", joinTilde = false): number {
-  return parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, joinTilde).starts.length;
+  return lyricStarts(body, skip, joinTilde).length;
 }
 
 /** 这一行曲从哪个偏移开始：往上找最近的 `$` 或 `w:`/`+:` 行（都结束上一行曲）。 */
@@ -69,21 +67,8 @@ export function blockStart(state: EditorState, pos: number, breaks: readonly Syn
 
 /** `[from, to)` 里的对位格数（按模型里元素的原文位置数）。 */
 export function slotsBetween(doc: ScoreDoc | null, from: number, to: number): number {
-  // 休止占不占格按方言分（`lyricslot.ts::LyricSlotRule`）
-  const rule = doc?.sourceFormat === "abc" || doc?.sourceFormat === "jcx" ? "abc" : "123";
-  let n = 0;
-  for (const song of doc?.songs ?? []) {
-    for (const part of song.parts) {
-      for (const m of part.measures) {
-        for (const el of m.elements as Element[]) {
-          const off = el.source?.offset;
-          if (off === undefined || off < from || off >= to) continue;
-          if (isLyricSlot(el, rule)) n++;
-        }
-      }
-    }
-  }
-  return n;
+  // 休止占不占格按方言分（123 可见休止不占、`x` 占；ABC / jcx 都不占）
+  return doc ? lyricSlotsBetween(doc, from, to) : 0;
 }
 
 /** 从第 `n` 行起往下，这一行曲最后一条音乐代码行（遇到行末 `$` 或下一行不是音乐行就停）。 */

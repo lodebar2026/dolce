@@ -1,10 +1,9 @@
 // Muse `.jcx` 的音符 token：`[^ _ =]*字母[' ,]*[时值]`，休止 `z[时值]`——写法同 ABC（`dialects/abc.ts`），
-// **但简谱轨的字母就是唱名**（C=1，`abcfamily/dialectjcx.ts`）：不经调号换算，升降号也直接是简谱的（相对调号）。
+// **但简谱轨的字母就是唱名**（C=1，同 Rust `dolce-formats` jcx 方言）：不经调号换算，升降号也直接是简谱的（相对调号）。
 // 所以只有时值那一半借 ABC 的（相对 `L:`、没有增时线，二分音符 `C4` 在动作层里当作「带一条增时线」）。
 // 换行就是代码行末，`w:` 对紧挨在前的那条代码行；延音线写 `-`。
 
 import type { Accidental } from "../../../model/doc";
-import { DEGREE_OF_LETTER, LETTER_OF_DEGREE } from "../../../abcfamily/dialectjcx";
 import { type EditDialect, keyFifthsAt, type NoteCtx, type NoteDuration, type NoteToken } from "../dialect";
 import { colonFields } from "../header";
 import { abcFamilyMeasure } from "../measureops";
@@ -14,6 +13,10 @@ import { lenOf, lenText, quartersOf, split, unitAt } from "./abc";
 
 const ACC_OF: Record<string, Accidental> = { "^^": "double-sharp", __: "double-flat", "^": "sharp", _: "flat", "=": "natural" };
 const ACC_TEXT: Record<Accidental, string> = { "double-sharp": "^^", "double-flat": "__", sharp: "^", flat: "_", natural: "=" };
+
+/** 简谱轨字母 ↔ 唱名（C=1 … B=7） */
+const LETTER_OF_DEGREE = "CDEFGAB";
+const DEGREE_OF_LETTER: Readonly<Record<string, number>> = Object.fromEntries([...LETTER_OF_DEGREE].map((l, i) => [l, i + 1]));
 
 const NOTE_RE = /^(\^\^|__|\^|_|=)?([A-Ga-g])([',]*)(\d*)(\/*)(\d*)$/;
 const REST_RE = /^z(\d*)(\/*)(\d*)$/;

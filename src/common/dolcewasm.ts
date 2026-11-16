@@ -60,6 +60,26 @@ export interface DolceWasm {
   modelWithLyricsFrom(doc: string, from: number, to: number): string;
   /** MusicXML 是否多声部（打开时默认混排） */
   xmlIsMultiPart(xml: string): boolean;
+  /** 断行（`model/breaks.ts`）：改模型的回补丁 JSON（`applyBreaks` 没落下换行回 `"null"`） */
+  modelApplyBreaks(song: string, starts: string, opts: string): string;
+  modelClearSongBreaks(song: string): string;
+  modelBreaksOf(song: string): string;
+
+  // ABC 家族与丢失清单（crates/dolce-wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）
+  /** `dialect`：`123` / `abc` / `jcx`；回 ScoreDoc 的 JSON（带 `source`） */
+  formatsParse(dialect: string, text: string): string;
+  formatsEmit(dialect: string, doc: string): string;
+  /** 回特性名数组的 JSON */
+  formatsFeaturesUsed(doc: string, h: number): string;
+  formatsPlanSave(doc: string, h: number, target: string): string;
+  formatsGone(target: string): string;
+  formatsAllFeatures(): string;
+  formatsLyricStarts(body: string, skip: string, joinTilde: boolean): Uint32Array;
+  formatsSlotsBetween(doc: string, from: number, to: number): number;
+  formatsIsBareChord(name: string): boolean;
+  /** 回 `Duration` 的 JSON */
+  formatsDuration123(beams: number, dots: number, sustains: number): string;
+  formatsNormalizeSpelling(s: string): string;
 }
 
 /** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */

@@ -98,16 +98,16 @@ fn bad_input(what: &str, e: impl std::fmt::Display) -> JsValue {
     super::js_sys_error(&serde_json::to_string(&Msg::new("engine.badInput").arg("what", what).arg("error", e.to_string())).unwrap_or_default())
 }
 
-fn parse<T: for<'de> Deserialize<'de>>(what: &str, s: &str) -> Result<T, JsValue> {
+pub(crate) fn parse<T: for<'de> Deserialize<'de>>(what: &str, s: &str) -> Result<T, JsValue> {
     serde_json::from_str(s).map_err(|e| bad_input(what, e))
 }
 
-fn to_json<T: Serialize + ?Sized>(v: &T) -> String {
+pub(crate) fn to_json<T: Serialize + ?Sized>(v: &T) -> String {
     serde_json::to_string(v).expect("序列化")
 }
 
 /// 句柄 0 = 没有表层（文本来源）
-fn with_surface<R>(h: u32, f: impl FnOnce(Option<&mut Surface>) -> R) -> R {
+pub(crate) fn with_surface<R>(h: u32, f: impl FnOnce(Option<&mut Surface>) -> R) -> R {
     with_handle(h, |x| f(x.map(|x| &mut x.surface)))
 }
 
@@ -434,4 +434,102 @@ pub fn model_with_lyrics_from(doc: &str, from: usize, to: usize) -> Result<Strin
         std::borrow::Cow::Borrowed(_) => "null".into(),
         std::borrow::Cow::Owned(d) => to_json(&d),
     })
+}
+
+// ───────────────────────── 断行（`model/breaks.ts` 的门面） ─────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LineStartWire {
+    id: ElementId,
+    #[serde(default)]
+    page: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyBreaksWire {
+    #[serde(default)]
+    mid_in_any_part: bool,
+    mid: String,
+    pages: String,
+}
+
+/// 断行改动的补丁：TS 就地改原对象（保住对象身份）。`measures`：`[声部, 小节, print 里断行三项或 null = 删掉 print]`；
+/// `hosts`：`[和弦或增时线 id, 换行种类或 null]`；`barlines`：`[声部, 小节, 第几根, 换行种类或 null]`
+fn breaks_patch(before: &Song, after: &Song) -> Value {
+    fn brk(k: &Option<BreakKind>) -> Option<String> {
+        k.as_ref().map(|k| k.as_str().to_owned())
+    }
+    let mut measures = vec![];
+    let mut hosts = vec![];
+    let mut barlines = vec![];
+    for (pi, (pa, pb)) in before.parts.iter().zip(&after.parts).enumerate() {
+        for (mi, (ma, mb)) in pa.measures.iter().zip(&pb.measures).enumerate() {
+            let three = |p: &Option<Print>| p.as_ref().map(|p| (p.new_system, p.new_page, p.system));
+            if ma.print.is_some() != mb.print.is_some() || three(&ma.print) != three(&mb.print) {
+                measures.push(match &mb.print {
+                    None => json!([pi, mi, null]),
+                    Some(p) => json!([pi, mi, { "newSystem": p.new_system, "newPage": p.new_page, "system": p.system }]),
+                });
+            }
+            for (ea, eb) in ma.elements.iter().zip(&mb.elements) {
+                let (Element::Chord(ca), Element::Chord(cb)) = (ea, eb) else { continue };
+                if ca.line_break_after != cb.line_break_after {
+                    hosts.push(json!([cb.id, brk(&cb.line_break_after)]));
+                }
+                for (sa, sb) in ca.sustains.iter().flatten().zip(cb.sustains.iter().flatten()) {
+                    if sa.line_break_after != sb.line_break_after {
+                        hosts.push(json!([sb.id, brk(&sb.line_break_after)]));
+                    }
+                }
+            }
+            for (bi, (ba, bb)) in ma.barlines.iter().flatten().zip(mb.barlines.iter().flatten()).enumerate() {
+                if ba.line_break_after != bb.line_break_after {
+                    barlines.push(json!([pi, mi, bi, brk(&bb.line_break_after)]));
+                }
+            }
+        }
+    }
+    json!({ "measures": measures, "hosts": hosts, "barlines": barlines })
+}
+
+/// `applyBreaks`：一组行首写进这首歌，回补丁（一个都对不上、没落下换行时回 `"null"`）
+#[wasm_bindgen(js_name = modelApplyBreaks)]
+pub fn model_apply_breaks(song: &str, starts: &str, opts: &str) -> Result<String, JsValue> {
+    let before: Song = parse("Song", song)?;
+    let starts: Vec<LineStartWire> = parse("LineStart[]", starts)?;
+    let o: ApplyBreaksWire = parse("ApplyBreaksOptions", opts)?;
+    let opt = breaks::ApplyBreaksOptions {
+        mid_in_any_part: o.mid_in_any_part,
+        mid: match o.mid.as_str() {
+            "snap" => breaks::MidMode::Snap,
+            "source" => breaks::MidMode::Source,
+            _ => breaks::MidMode::Inline,
+        },
+        pages: if o.pages == "keep" { breaks::PageMode::Keep } else { breaks::PageMode::Write },
+    };
+    let starts: Vec<breaks::LineStart> = starts.into_iter().map(|s| breaks::LineStart { id: s.id, page: s.page }).collect();
+    let mut after = before.clone();
+    if !breaks::apply_breaks(&mut after, &starts, &opt) {
+        return Ok("null".into());
+    }
+    Ok(to_json(&breaks_patch(&before, &after)))
+}
+
+/// `clearSongBreaks`：清掉整首的换行与换页，回补丁
+#[wasm_bindgen(js_name = modelClearSongBreaks)]
+pub fn model_clear_song_breaks(song: &str) -> Result<String, JsValue> {
+    let before: Song = parse("Song", song)?;
+    let mut after = before.clone();
+    breaks::clear_song_breaks(&mut after);
+    Ok(to_json(&breaks_patch(&before, &after)))
+}
+
+/// `breaksOf`：读出现有断行（`[{id, page?}]`）
+#[wasm_bindgen(js_name = modelBreaksOf)]
+pub fn model_breaks_of(song: &str) -> Result<String, JsValue> {
+    let song: Song = parse("Song", song)?;
+    let out: Vec<Value> = breaks::breaks_of(&song).into_iter().map(|s| if s.page { json!({ "id": s.id, "page": true }) } else { json!({ "id": s.id }) }).collect();
+    Ok(to_json(&out))
 }

@@ -9,7 +9,7 @@
 import { SIMPLE_DIVISIONS as Q, type Barline, type Chord, type ElementId, type Harmony, type Mark, type Measure, type Note, type ScoreDoc, type Song, type Sustain } from "../model/doc";
 import { IdGen, emptyDoc } from "../model/helpers";
 import { creatorOf } from "../model/metakeys";
-import { duration123 } from "../abcfamily/parsedialect";
+import { duration123 } from "../abcfamily/parse";
 import { jpPitch } from "../score/jppitch";
 import type { RecognizedScore, JpNum, StaffRow } from "./types";
 import { rright, RHYTHM_DIGIT } from "./types";

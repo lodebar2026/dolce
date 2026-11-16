@@ -1,8 +1,18 @@
 //! **格式能力表**：每种目标格式装得下什么（同 `src/convert/capability.ts`）。
 //!
-//! 另存为别的格式之前，算出「这份文档里用到、但目标格式装不下」的东西列给用户。表里每一条的依据
-//! （全语料实测、各模块文档的「已知限制」、`break-roundtrip-check`）写在 TS 那份开头与各格式条目旁；
-//! **改这张表之前先去改那几处的实测**。名字与排序（按界面语言）留在 TS 门面。
+//! 另存为别的格式之前，算出「这份文档里用到、但目标格式装不下」的东西列给用户（`editor/dialogs.ts::showConfirmDialog`）。
+//! 名字与排序（按界面语言）留在 TS 门面 `convert/capability.ts`。
+//!
+//! 表里的内容不是凭空写的，每一条都来自既有的实测与各模块文档的「已知限制」：
+//!
+//! | 来源 | 得到的条目 |
+//! |---|---|
+//! | dev `docs/待办/格式与语料迁移.md`「无法表达」的全语料实测 | 文字行 `W:` / 圆滑线 / 多段歌词 / 印刷段号 / 多声部 / 分曲 / 倚音 / 房号 |
+//! | `docs/模块/模型-scoredoc.md` | `playOrder`（`.Repeat`）只有 `.jpwabc` 装得下（`<ending>` 只能整小节），`style` MusicXML 装不下 |
+//! | `docs/模块/源格式-abc家族.md` | ABC 那一档的 clef/修饰、`Q:` 参照音符长度 |
+//! | `break-roundtrip-check`（断点写回 → 各写出端 → 读回） | 换页（ABC 装不下）；换行含小节中间的，六种都装得下，不列 |
+//!
+//! **改这张表之前先去改那几处的实测**——这里只是它们的汇总。
 
 use crate::fanqie::plan::{fanqie_arc_losses, short_open_voltas};
 use dolce_model::beatgroup::{beat_group_index, beat_group_size};
@@ -75,23 +85,47 @@ impl TargetFormat {
 
 use Feature as F;
 
-/// 文本谱两种方言都装不下的（依据见 TS `FANQIE_GONE`）
+/// 文本谱两种方言都装不下的。依据见 `fanqie/tofanqie.ts` 开头与 `docs/模块/源格式-文本谱.md` 的已知限制：
+/// 样式表引用、演唱顺序、扩展 meta 没有字段可落（文本谱只有按位置的 XL/XR/TL/TR/BL/BC/BR，不往里猜）；
+/// 音符堆（和音）只写简谱印的那个音（同谱表的第二声部写 `{dsb…}` 并排块，写得出）；弧线与多连音共用一个先开先闭的括号队列。
 const FANQIE_GONE: &[Feature] = &[
-    F::InnerVoiceLyrics, F::BeamGroup, F::OctaveShift, F::Style, F::PlayOrder, F::SingOrder, F::SectionOrder, F::HarmonyOffset,
+    // `{dsb…}` 并排块里不跟词
+    F::InnerVoiceLyrics,
+    F::BeamGroup, F::OctaveShift, F::Style, F::PlayOrder, F::SingOrder, F::SectionOrder, F::HarmonyOffset,
     F::Meta, F::Paper, F::NoteStack, F::ExtraStaff, F::RhythmStack, F::RhythmPosition, F::GraceArc, F::NestedArc, F::OddTuplet,
-    F::Tremolo, F::Bowing, F::Rehearsal, F::MultiRest, F::Arpeggio, F::Notehead, F::Staccatissimo,
+    // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
+    F::Tremolo, F::Bowing, F::Rehearsal, F::MultiRest, F::Arpeggio, F::Notehead,
+    // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
+    F::Staccatissimo,
 ];
-/// 只有 123 与 MusicXML 装得下的（123 的扩展写法）
+/// 只有 123 与 MusicXML 装得下的（123 的扩展写法，规范 §8.3 / §9）
 const EXT_123: &[Feature] = &[F::Tremolo, F::Bowing, F::Rehearsal, F::MultiRest, F::Arpeggio, F::Notehead];
 
-/// 目标格式装不下的特性（TS `FORMAT_CAPS` 的 `allBut(...)` 参数；依据见 TS 各条注释）
+/// 目标格式装不下的特性（能力表「除了这几样，其余都装得下」）。**装不下的写在这里，并在注释里写清依据。**
 pub fn gone(target: TargetFormat) -> Vec<Feature> {
     let list: &[&[Feature]] = match target {
+        // 123 是按「装得下全部」设计的（`docs/格式/123格式.md`），实测全语料只有 0.17% 表达不了，那些是转换层的账不是格式的账。
+        // 嵌套弧与任意比例的多连音（`(5:4:`）都写得出；弧与多连音的括号只许嵌套（从组里连到组外下一个音写 `~`，
+        // 跨得更远的写不出）、可见休止不跟词（规范 §4.1、§5.1）
+        // 和音写 `[13]`（§4.2，照 ABC 的 `[CEG]`；民乐分谱的双音，用户定 2026-10-21 加）；同一谱表上的第二 voice 照 ABC §7.4 写 `&`、
+        // 节奏音符的谱表位置与同时敲的几个写 `X@E5` / `[X@E5X@F5]`（§4.2、§4.3，用户定 2026-10-21 加）；
+        // 一个声部的几条谱表各写一个 `V:`、第二条起 `part=`（§7，`staves.rs`，用户定 2026-10-24），跨谱表的东西写不出
+        // 八度线（8va）两种格式都没有写法（abc2svg 的 `!8va(!` 是扩展，用户定不扩），音照实际音高写
+        // 符杠一律按拍自动连（§11「语料高频但刻意不做」），写明的跨拍连杠写不出
+        // `w:` 只跟 `&` 的第一支（§7.4），第二支自己的歌词写不出
+        // `.Repeat` 的演唱顺序写不出（`I:playorder` 用户定 2026-10-31 去掉）；分段跳着唱写 `P:`，投影逐页逐行定死写 `%%sing`（用户定 2026-11-03）
         TargetFormat::J123 => &[&[F::PlayOrder, F::HarmonyOffset, F::CrossStaff, F::InnerVoiceLyrics, F::SlurCrossTuplet, F::LyricOnRest, F::OctaveShift, F::BeamGroup]],
+        // 标准 ABC：样式被规范标为 VOLATILE（§11，「not standardised」），所以 123 才把样式另走样式表；`.Repeat` 的演唱顺序同 123 写不出。
+        // 休止不跟词（ABC §5.1「syllables are not aligned on … rests」）；
+        // 换页写 `%%newpage`（§11.4.7 排版指令）；换行本身含小节中间的都装得下（`break-roundtrip-check` 实测）
+        // 弓法、震音是 ABC 的标准装饰（写得出）；排练号、`Zn` 多小节休止写出端只给 123
+        // 大谱表同 123：每条谱表一个 `V:`、第二条起 `part=`，跨谱表的东西写不出
         TargetFormat::Abc => &[&[
             F::Style, F::PlayOrder, F::SingOrder, F::InnerVoiceLyrics, F::RhythmNote, F::RhythmStack, F::RhythmPosition, F::CrossStaff,
             F::OctaveShift, F::HarmonyOffset, F::LyricOnRest, F::Rehearsal, F::MultiRest,
         ]],
+        // `.jpwabc` 的语法**刻意不扩**：和弦、力度、多声部都写不进去。音符堆：写出端只留最高音、删 voice > 1。
+        // `P:` 不展开进 `.Repeat`（用户定 2026-10-31：`.Repeat` 是旧私有扩展，只读不写新东西）
         TargetFormat::Jpwabc => &[
             &[
                 F::SectionOrder, F::SingOrder, F::BeamGroup, F::OctaveShift, F::TonicDegree, F::Harmony, F::HarmonyOffset, F::Slur, F::Dynamics,
@@ -100,8 +134,19 @@ pub fn gone(target: TargetFormat) -> Vec<Feature> {
             ],
             EXT_123,
         ],
+        // 文本谱：投影档谱面不画和弦 / 力度 / 多声部，但文本谱**原文**装得下和弦、力度（`&f`、`<`…`!`）——
+        // 这里算的是「另存为之后还在不在」，所以按解析器的能力写。
+        // 番茄另外没有页眉页脚与版面指令字段（写了会被嗅探成诗歌本，见 `fanqie/dialect.ts::EmitStyle.pageFields`）；
+        // 番茄的调号字段 `D:` 只有音名、没有主音唱名（诗歌本的 `6=E4/4` 写得出）；
+        // 只罩一小节的房 `]/` 不生效、照样封口（番茄官方，`fanqie/dialect.ts::openVoltaNeedsTwoMeasures`）
         TargetFormat::Tomato => &[FANQIE_GONE, &[F::PageText, F::LayoutDirectives, F::TonicDegree, F::ShortOpenVolta]],
         TargetFormat::Shige => &[FANQIE_GONE],
+        // jianpu-ly 装不下什么，依据 `docs/格式/jianpu-ly.md` 与 `tojly.ts` 的 `warnings`：
+        //   · 多声部 / 多曲只写第一路（`NextScore` 本版不写）；扩展 meta、纸、样式表、页面文字没有字段；
+        //   · 演唱顺序只认跳转裸词（`Fine`/`DC`/`Segno`/`ToCoda`），`playOrder` 的自定义跳转写不出；
+        //   · 演奏法（`articulations` 里不是力度名的那批）、拉丁歌词的连字符（`syllabic`）写不出；
+        //   · 房号只能两房（第 3 房起退化）；换页能写 `\pageBreak`，但**再读回来**会降级成换行；
+        //   · 版面指令只认它自己那几个开关（`NoBarNums` 等），文本谱那套 `fontsize`/`margin` 写不出。
         TargetFormat::Jly => &[
             &[
                 F::BeamGroup, F::OctaveShift, F::RhythmStack, F::RhythmPosition, F::InnerVoice, F::ExtraStaff, F::MultiVoice, F::MultiSong, F::Meta,
@@ -110,6 +155,9 @@ pub fn gone(target: TargetFormat) -> Vec<Feature> {
             ],
             EXT_123,
         ],
+        // Muse `.jcx`（`emit.rs`，说明书 §3.2）：一个文件一首；没有样式表、演唱顺序、扩展 meta（只留「来源」`S:`）、
+        // 纸张字段（Muse 的 `%%` 排版参数与本项目的不是一套）；页面文字只有左上 `I:` 与右上 `C:`，页脚没有；
+        // 力度没有对应的装饰名（渐强渐弱的 `(<` `<)` 写得出）；歌词没有印刷段号、休止不跟词（同 ABC）；换页退成换行
         TargetFormat::Jcx => &[
             &[
                 F::BeamGroup, F::OctaveShift, F::RhythmStack, F::RhythmPosition, F::InnerVoice, F::ExtraStaff, F::MultiSong, F::Style, F::PlayOrder,
@@ -118,6 +166,9 @@ pub fn gone(target: TargetFormat) -> Vec<Feature> {
             ],
             EXT_123,
         ],
+        // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
+        // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
+        // jianpu-ly、Muse、`.jpwabc` 的调号也只写 `1=` 大调 / 调号，主音唱名同样写不出。
         TargetFormat::MusicXml => &[&[F::PlayOrder, F::SingOrder, F::SectionOrder, F::Style, F::LayoutDirectives, F::NestedArc, F::OddTuplet, F::TonicDegree]],
     };
     list.iter().flat_map(|l| l.iter().copied()).collect()

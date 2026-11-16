@@ -1,13 +1,12 @@
 // **歌词录入**的文本那一路：把某个音第 `verse` 段的字写成 `text`。
 //
 // 123 / ABC（`EditDialect.measure` 有写法表的那一族）按对位格写 `w:` 行：这个音在它那一行曲里是第 k 个对位格
-// （`breaks.ts::slotsBetween`，与解析器同一份口径），`w:` 行里第 k 格（`parseLyricLine` 的 `starts`）换成新字，
+// （`breaks.ts::slotsBetween`，与解析器同一份口径），`w:` 行里第 k 格（`lyricStarts`）换成新字，
 // 不够 k 格先用跳格符补齐，这一段还没有 `w:` 行就新起一行。连字符写成 `字-`，续记号（一字多音）在下一格写 `_`。
 // 文本谱、`.jpwabc` 的词行写法各不相同，只改已经有字的格（索引里的歌词条目），没字的格请在源码里补。
 
 import type { EditorState } from "@codemirror/state";
-import { parseLyricLine } from "../../abcfamily/parse";
-import { ZERO_SPAN } from "../../model/helpers";
+import { lyricStarts } from "../../abcfamily/parse";
 import type { SyncEntry } from "../sync";
 import { blockStart, lastMusicLine, lyricBody, lyricLinesAfter, slotsBetween } from "./breaks";
 import type { EditCtx, EditOutcome } from "./ops";
@@ -35,7 +34,7 @@ function sepAfter(oldSep: string, text: string, next: string | null, hyphen: boo
 
 /** 词行 body 里各格的起点（与解析器同一份口径）。 */
 const parseStarts = (body: string, skip: "/" | "*", joinTilde = false): number[] =>
-  parseLyricLine(body, 1, ZERO_SPAN, undefined, skip, undefined, joinTilde).starts;
+  lyricStarts(body, skip, joinTilde);
 
 /**
  * 把音 `note` 第 `verse` 段（1 起）的字写成 `text`（空串 = 这格改成跳格）。`hyphen` 后面接连字符；

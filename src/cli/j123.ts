@@ -8,21 +8,10 @@
 // 所以这里没有排版器 / layout。需要排版的走 `cli/engrave.ts`（它装测量后端，并把这里的导出一并转出）。
 import "./dolcewasm.node"; // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm
 export * from "../model/doc";
-export * from "../abcfamily/lex123";
-// 对拍（dev rs-diff.mjs lex）：三种方言的词法器
-export { LEXER_123 } from "../abcfamily/dialect123";
-export { LEXER_ABC } from "../abcfamily/dialectabc";
-export { LEXER_JCX, parseKeyJcx } from "../abcfamily/dialectjcx";
-export { parseKeyAbc, typeAndDots, duration123, tupletNormal123, tupletNormalAbc } from "../abcfamily/parsedialect";
-export { parseSing } from "../abcfamily/sing";
-export { jumpOrnamentName } from "../abcfamily/jumpmarks";
 export * from "../abcfamily/parse";
-export * from "../abcfamily/emit123.entry";
-export { emitAbc } from "../abcfamily/emitabc.entry";
-export { emitJcx } from "../abcfamily/emitjcx.entry";
+export * from "../abcfamily/emit";
 export { decodeJcx, encodeJcx } from "../common/jcx";
 export * from "../convert/capability";
-export * from "../abcfamily/fields";
 export * from "../model/helpers";
 export * from "../model/metakeys";
 export { decoKey } from "../model/deconames";

@@ -2,9 +2,7 @@
 
 import type { Chord, ScoreDoc } from "../model/doc";
 import type { DocFormatId } from "./formats";
-import { emit123 } from "../abcfamily/emit123.entry";
-import { emitAbc } from "../abcfamily/emitabc.entry";
-import { emitJcx } from "../abcfamily/emitjcx.entry";
+import { emit123, emitAbc, emitJcx } from "../abcfamily/emit";
 import { parse123, parseAbc, parseJcx } from "../abcfamily/parse";
 import { emitJpwabc } from "../convert/jpwabc";
 import { emitJly } from "../jly/tojly";
