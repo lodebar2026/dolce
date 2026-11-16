@@ -212,6 +212,9 @@ mod probe_jpw;
 mod probe_fanqie;
 
 #[cfg(feature = "probe")]
+mod probe_jly;
+
+#[cfg(feature = "probe")]
 mod probes {
     //! 对拍探针（dev `rs-diff.mjs` 各档的 Rust 一侧），只在 `--features probe` 的那份里（`build-wasm.mjs probe` → out/dolce-probe/，不进打包）。
     use super::{json, parse, probe};

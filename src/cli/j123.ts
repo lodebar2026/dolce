@@ -26,6 +26,10 @@ export { emitJpwabc } from "../convert/jpwabc";
 export { emitFanqie, emitFanqieSong, keyNameOf, fanqieArcLosses } from "../fanqie/tofanqie";
 export { emitJly } from "../jly/tojly";
 export { scanMusicLine, scanWord, JlyLosses, parseJly, isJlyMusicLine, rewrapJlyText } from "../jly/fromjly";
+export {
+  lyPitchToText, textPitchToLy, lySuffixToText, textSuffixToLy, parseChordToken, chordTokenToText,
+  wholeToDuration, harmonyToChordToken, durationText, chordTimeline,
+} from "../jly/jlychords";
 export { projectForJianpu } from "../model/jianpuproject";
 export { songFifths } from "../model/keyshift";
 export { AccidentalCarry } from "../model/jianpu";
