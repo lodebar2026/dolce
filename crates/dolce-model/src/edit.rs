@@ -138,6 +138,8 @@ pub enum ModelEdit {
     CaretAfter(ElementId),
     CaretBefore(ElementId),
     Error(Msg),
+    /// 挪了记号：选中这些，并告诉调用方挪到了哪（同 TS `ModelEdit & { moved }`）
+    Moved { select: Vec<ElementId>, moved: MovedMark },
 }
 
 fn err(key: &str) -> ModelEdit {
@@ -2518,6 +2520,982 @@ pub fn paste_clip(doc: &mut ScoreDoc, anchor: &InsertAnchor, items: &[ClipItem],
     }
 }
 
+// ───────────────────────── 识别修正：重读与挪动 ─────────────────────────
+//
+// 识谱软件里改谱号、改调号是**纠正认错**（默认符头不动、按新谱号 / 调号重读音高），与打谱软件的「保音高、挪符头」相反，
+// 两种都给（`reread`）。挪动类（连线端点、力度文字、和弦名、歌词）一次挪一个音。
+
+fn diatonic(s: &Step) -> f64 {
+    STEPS.iter().position(|x| x == s).map_or(f64::NAN, |i| i as f64)
+}
+
+fn acc_alter(a: &Accidental) -> f64 {
+    match a {
+        Accidental::DoubleFlat => -2.0,
+        Accidental::Flat => -1.0,
+        Accidental::Natural => 0.0,
+        Accidental::Sharp => 1.0,
+        Accidental::DoubleSharp => 2.0,
+        // TS 查表落空是 undefined
+        Accidental::Other(_) => f64::NAN,
+    }
+}
+
+/// 谱号最下面那条线是第几个自然音级（八度 × 7 + 音级）：G 谱号第二线 G4、F 谱号第四线 F3、C 谱号第三线 C4。
+fn clef_bottom(c: &Clef) -> f64 {
+    let (r, l) = match c.sign {
+        ClefSign::F => (3.0 * 7.0 + 3.0, 4.0),
+        ClefSign::C => (4.0 * 7.0, 3.0),
+        _ => (4.0 * 7.0 + 4.0, 2.0),
+    };
+    let line = c.line.unwrap_or(l);
+    r + 7.0 * c.octave_change.unwrap_or(0.0) - 2.0 * (line - 1.0)
+}
+
+fn staff_of_clef(c: &Clef) -> f64 {
+    c.staff.unwrap_or(1.0)
+}
+
+/// 第 `mi` 小节开头第 `staff` 谱表生效的谱号（含本小节 `attrs`、不含小节中间的）。
+fn clef_at(part: &Part, mi: usize, staff: f64) -> Clef {
+    let mut cur = Clef { sign: ClefSign::G, line: Some(2.0), octave_change: None, staff: None };
+    for i in 0..=mi.min(part.measures.len().saturating_sub(1)) {
+        if i >= part.measures.len() {
+            break;
+        }
+        if i > 0 {
+            for la in part.measures[i - 1].later_attrs.iter().flatten() {
+                for c in la.attrs.clefs.iter().flatten() {
+                    if staff_of_clef(c) == staff {
+                        cur = c.clone();
+                    }
+                }
+            }
+        }
+        for c in part.measures[i].attrs.iter().flat_map(|a| a.clefs.iter().flatten()) {
+            if staff_of_clef(c) == staff {
+                cur = c.clone();
+            }
+        }
+    }
+    cur
+}
+
+/// 重读一小节里（某谱表上、`keep` 放行的）音的升降：印了临时记号的照记号，没印的按本小节前面同音级同八度印过的、
+/// 再按延音线接过来的（`carry`），最后按调号。返回本小节末仍连着的音，给下一小节当 `carry`。
+fn reread_alters(m: &mut Measure, key: &Key, staff: Option<f64>, keep: impl Fn(f64) -> bool, carry: &HashMap<String, f64>) -> HashMap<String, f64> {
+    let at = onsets(m);
+    // (起点, 元素序, 元素下标, 音下标, 谱表)
+    let mut items: Vec<(f64, usize, usize, usize, f64)> = vec![];
+    for (order, el) in m.elements.iter().enumerate() {
+        let Element::Chord(c) = el else { continue };
+        if staff.is_some_and(|s| c.staff != s) {
+            continue;
+        }
+        for (ni, n) in c.notes.iter().enumerate() {
+            if n.pitch.is_some() {
+                items.push((at.get(&order).copied().unwrap_or(0.0), order, order, ni, c.staff));
+            }
+        }
+    }
+    js::sort_by(&mut items, |a, b| {
+        let d = a.0 - b.0;
+        if d != 0.0 && !d.is_nan() {
+            d
+        } else {
+            a.1 as f64 - b.1 as f64
+        }
+    });
+    let mut state: HashMap<String, f64> = HashMap::new();
+    let mut out: HashMap<String, f64> = HashMap::new();
+    for &(t, _, ei, ni, st) in &items {
+        let Element::Chord(c) = &mut m.elements[ei] else { continue };
+        let n = &mut c.notes[ni];
+        let p = n.pitch.as_ref().unwrap();
+        let k = format!("{}:{}:{}", js::num_to_string(st), p.step.as_str(), js::num_to_string(p.octave));
+        if keep(t) {
+            let alter = match &n.accidental {
+                Some(a) => acc_alter(a),
+                None => {
+                    let stop = n.tie.as_ref().is_some_and(|x| x.stop == Some(true));
+                    match carry.get(&k) {
+                        Some(&v) if stop => v,
+                        _ => state.get(&k).copied().unwrap_or_else(|| key_alter(p.step.as_str(), key.fifths)),
+                    }
+                }
+            };
+            n.pitch.as_mut().unwrap().alter = alter;
+        }
+        let alter = n.pitch.as_ref().unwrap().alter;
+        state.insert(k.clone(), alter);
+        if n.tie.as_ref().is_some_and(|x| x.start == Some(true)) {
+            out.insert(k, alter);
+        }
+    }
+    out
+}
+
+/// 换谱号：第 `pi` 声部第 `staff` 谱表自第 `mi` 小节起改成 `clef`，到这一谱表下一次换谱号为止。
+/// `reread`：符头在谱表上的位置不动、按新谱号重读音高（识别认错谱号的纠正）；否则音高不动。
+#[allow(clippy::too_many_arguments)]
+pub fn set_clef_at(doc: &mut ScoreDoc, si: usize, pi: usize, mi: usize, staff: f64, clef: &Clef, reread: bool, hooks: &mut dyn EditHooks) -> ModelEdit {
+    let Some(part) = doc.songs.get(si).and_then(|s| s.parts.get(pi)) else { return err("me.noMeasure") };
+    if part.measures.get(mi).is_none() {
+        return err("me.noMeasure");
+    }
+    let old = clef_at(part, mi, staff);
+    let mut nc = clef.clone();
+    if staff > 1.0 || part.staff_count.unwrap_or(1.0) > 1.0 {
+        nc.staff = Some(staff);
+    }
+    let m0 = &mut doc.songs[si].parts[pi].measures[mi];
+    let mut a = m0.attrs.clone().unwrap_or_default();
+    a.oid = Oid::NONE;
+    let mut clefs: Vec<Clef> = a.clefs.take().unwrap_or_default().into_iter().filter(|c| staff_of_clef(c) != staff).collect();
+    clefs.push(nc.clone());
+    a.clefs = Some(clefs);
+    m0.attrs = Some(a);
+    if reread {
+        let shift = clef_bottom(&nc) - clef_bottom(&old);
+        let mut carry: HashMap<String, f64> = HashMap::new();
+        let n = doc.songs[si].parts[pi].measures.len();
+        for i in mi..n {
+            let song = &doc.songs[si];
+            let m = &song.parts[pi].measures[i];
+            if i > mi && m.attrs.as_ref().and_then(|a| a.clefs.as_ref()).is_some_and(|cs| cs.iter().any(|c| staff_of_clef(c) == staff)) {
+                break;
+            }
+            // 小节中间换了这一谱表的谱号：那之后的音不归这一段
+            let cut: Vec<f64> = m
+                .later_attrs
+                .iter()
+                .flatten()
+                .filter(|la| la.attrs.clefs.as_ref().is_some_and(|cs| cs.iter().any(|c| staff_of_clef(c) == staff)))
+                .map(|la| la.onset.unwrap_or_else(|| default_onset_before(m, la.after_elements)))
+                .collect();
+            let stop = if cut.is_empty() { f64::INFINITY } else { cut.iter().copied().fold(f64::INFINITY, js::min) };
+            let key = measure_ctx(song, &song.parts[pi], i).key;
+            let at = onsets(m);
+            let m = &mut doc.songs[si].parts[pi].measures[i];
+            for (ei, el) in m.elements.iter_mut().enumerate() {
+                let Element::Chord(c) = el else { continue };
+                if c.staff != staff || at.get(&ei).copied().unwrap_or(0.0) >= stop {
+                    continue;
+                }
+                for nt in &mut c.notes {
+                    let Some(p) = &nt.pitch else { continue };
+                    let d = p.octave * 7.0 + diatonic(&p.step) + shift;
+                    let idx = ((d % 7.0) + 7.0) % 7.0;
+                    let step = js::index(idx).and_then(|i| STEPS.get(i)).cloned().unwrap_or(Step::C);
+                    nt.pitch = Some(Pitch { step, alter: p.alter, octave: (d / 7.0).floor() });
+                }
+                hooks.forget_stem(c);
+            }
+            // 印出来的临时记号就是谱面上的，重读不改它的印法（不跑 `respell_measure`）
+            carry = reread_alters(m, &key, Some(staff), |t| t < stop, &carry);
+            if stop != f64::INFINITY {
+                break;
+            }
+        }
+    }
+    hooks.forget_layout(&doc.songs[si]);
+    ModelEdit::Select(vec![])
+}
+
+/// 换调号并**重读**：自第 `mi` 小节起各声部改成 `fifths`，到下一次换调号为止，没印临时记号的音按新调号重读升降。
+pub fn reread_key_at(doc: &mut ScoreDoc, si: usize, mi: usize, fifths: f64, hooks: &mut dyn EditHooks) -> ModelEdit {
+    let Some(song) = doc.songs.get_mut(si) else { return err("me.noMeasure") };
+    for pi in 0..song.parts.len() {
+        let Some(m0) = song.parts[pi].measures.get_mut(mi) else { continue };
+        let mut a = m0.attrs.clone().unwrap_or_default();
+        a.oid = Oid::NONE;
+        let mut k = a.key.clone().unwrap_or_else(|| fifths_key(fifths));
+        k.fifths = fifths;
+        a.key = Some(k);
+        m0.attrs = Some(a);
+        if mi == 0 {
+            let mut k = song.key.clone().unwrap_or_else(|| fifths_key(fifths));
+            k.fifths = fifths;
+            song.key = Some(k);
+        }
+        let mut carry: HashMap<String, f64> = HashMap::new();
+        for i in mi..song.parts[pi].measures.len() {
+            if i > mi && song.parts[pi].measures[i].attrs.as_ref().is_some_and(|a| a.key.is_some()) {
+                break;
+            }
+            let key = measure_ctx(song, &song.parts[pi], i).key;
+            let m = &mut song.parts[pi].measures[i];
+            carry = reread_alters(m, &key, None, |_| true, &carry);
+            for el in &m.elements {
+                if let Element::Chord(c) = el {
+                    hooks.forget_stem(c);
+                }
+            }
+        }
+    }
+    hooks.forget_layout(&doc.songs[si]);
+    ModelEdit::Select(vec![])
+}
+
+/// 同一声部同一声线里 `l` 前 / 后第 |`delta`| 个和弦（可跨小节；`skip` 放过的不算，如休止、倚音）。
+fn step_in_voice(doc: &ScoreDoc, l: &ChordLoc, delta: f64, skip: impl Fn(&Chord) -> bool) -> Option<ChordLoc> {
+    let part = l.part(doc);
+    let voice = l.chord(doc).voice;
+    let dir: isize = if delta > 0.0 { 1 } else { -1 };
+    let mut cur = *l;
+    let mut n = delta.abs();
+    while n > 0.0 {
+        let mut mi = cur.mi as isize;
+        let mut i = cur.index as isize + dir;
+        let found;
+        loop {
+            let m = &part.measures[mi as usize];
+            if i < 0 || i >= m.elements.len() as isize {
+                mi += dir;
+                if mi < 0 || mi as usize >= part.measures.len() {
+                    return None;
+                }
+                i = if dir > 0 { 0 } else { part.measures[mi as usize].elements.len() as isize - 1 };
+                continue;
+            }
+            if let Element::Chord(e) = &m.elements[i as usize] {
+                if e.voice == voice && !skip(e) {
+                    found = ChordLoc { si: l.si, pi: l.pi, mi: mi as usize, index: i as usize };
+                    break;
+                }
+            }
+            i += dir;
+        }
+        cur = found;
+        n -= 1.0;
+    }
+    Some(cur)
+}
+
+/// 先后：同一声部里谁在前（小节、小节内下标）。
+fn loc_before(a: &ChordLoc, b: &ChordLoc) -> bool {
+    a.mi < b.mi || (a.mi == b.mi && a.index < b.index)
+}
+
+/// 选中的记号挪了之后要选回它：挂在哪个和弦上、是什么。
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(untagged, rename_all_fields = "camelCase")]
+pub enum MovedMark {
+    Mark {
+        mark_on: ElementId,
+        kind: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dir_type: Option<String>,
+    },
+    Lyric {
+        lyric_of: ElementId,
+        verse: f64,
+    },
+}
+
+/// 连线一端挪一个音：`which` 哪一端（start / end / both）、`delta` 往后 +1 / 往前 −1。挪到的音不能越过另一端；延音线不挪。
+pub fn move_mark_end(doc: &mut ScoreDoc, kind: &MarkType, start_id: ElementId, end_id: ElementId, which: &str, delta: f64) -> ModelEdit {
+    let (Some(a), Some(b)) = (locate(doc, start_id), locate(doc, end_id)) else { return err("me.noNote") };
+    let Some(mk) = doc.songs[a.si].marks.iter().position(|m| m.kind == *kind && m.start == start_id && m.end == end_id) else { return err("me.noMark") };
+    if *kind == MarkType::Tied {
+        return err("me.tieNoMove");
+    }
+    let skip = |c: &Chord| c.grace.is_some() || c.rest.is_some();
+    let (mut na, mut nb) = (a, b);
+    if which != "end" {
+        let Some(x) = step_in_voice(doc, &a, delta, skip) else { return err("me.noNeighbour") };
+        na = x;
+    }
+    if which != "start" {
+        let Some(x) = step_in_voice(doc, &b, delta, skip) else { return err("me.noNeighbour") };
+        nb = x;
+    }
+    if !loc_before(&na, &nb) {
+        return err("me.markCollapse");
+    }
+    let (ia, ib) = (na.chord(doc).id, nb.chord(doc).id);
+    let m = &mut doc.songs[a.si].marks[mk];
+    m.start = ia;
+    m.end = ib;
+    m.start_note = None;
+    m.end_note = None;
+    ModelEdit::Moved { select: vec![ia, ib], moved: MovedMark::Mark { mark_on: ia, kind: "slur".into(), dir_type: None } }
+}
+
+/// 小节里第 `i` 个元素之前、按写出端的游标（文档序）缺省落在哪一刻。
+fn default_onset_before(m: &Measure, i: f64) -> f64 {
+    let mut cursor = 0.0;
+    for (k, el) in m.elements.iter().enumerate() {
+        if (k as f64) >= i {
+            break;
+        }
+        let start = el.onset().unwrap_or(cursor);
+        cursor = start
+            + match el {
+                Element::Chord(c) => {
+                    if c.grace.is_some() {
+                        0.0
+                    } else {
+                        c.duration.divisions
+                    }
+                }
+                Element::Space(s) => s.duration.as_ref().map_or(0.0, |d| d.divisions),
+            };
+    }
+    cursor
+}
+
+/// 一条 `<direction>` 的位置：第几首、第几声部、第几小节、`directions` 里第几条。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DirRef {
+    pub si: usize,
+    pub pi: usize,
+    pub mi: usize,
+    pub index: usize,
+}
+
+impl DirRef {
+    fn dir<'a>(&self, doc: &'a ScoreDoc) -> Option<&'a Direction> {
+        doc.songs.get(self.si)?.parts.get(self.pi)?.measures.get(self.mi)?.directions.as_ref()?.get(self.index)
+    }
+}
+
+struct DirAnchor {
+    loc: ChordLoc,
+    at_end: bool,
+}
+
+/// 这条记号挂在哪个音前；`at_end`：挂在小节里最后一个（同声线）和弦**之后**，`loc` 借那最后一个和弦。
+fn dir_anchor(doc: &ScoreDoc, r: &DirRef) -> Option<DirAnchor> {
+    let dir = r.dir(doc)?;
+    let m = &doc.songs[r.si].parts[r.pi].measures[r.mi];
+    let len = m.elements.len() as f64;
+    let ae = dir.after_elements.unwrap_or(0.0);
+    let k = js::min(ae, len - 1.0);
+    let loc = |i: usize| ChordLoc { si: r.si, pi: r.pi, mi: r.mi, index: i };
+    let fits = |e: &Element| matches!(e, Element::Chord(c) if dir.voice.is_none_or(|v| c.voice == v));
+    let start = if k > 0.0 { k.ceil() as usize } else { 0 };
+    for (i, e) in m.elements.iter().enumerate().skip(start) {
+        if (i as f64) < k {
+            continue;
+        }
+        if fits(e) {
+            return Some(DirAnchor { loc: loc(i), at_end: ae > i as f64 });
+        }
+    }
+    for i in (0..m.elements.len()).rev() {
+        if fits(&m.elements[i]) {
+            return Some(DirAnchor { loc: loc(i), at_end: true });
+        }
+    }
+    for i in (0..m.elements.len()).rev() {
+        if matches!(m.elements[i], Element::Chord(_)) {
+            return Some(DirAnchor { loc: loc(i), at_end: true });
+        }
+    }
+    None
+}
+
+/// 挂点在声部里的先后：挂在第 `index` 个元素前为 `index`，挂在它之后（小节末）再加半格。
+fn dir_pos(loc: &ChordLoc, at_end: bool) -> f64 {
+    loc.mi as f64 * 1e6 + loc.index as f64 + if at_end { 0.5 } else { 0.0 }
+}
+
+/// 把 `from` 那条 `<direction>` 挂到 `to` 那个和弦前（可换小节）。返回它挪到的位置。
+fn place_direction(doc: &mut ScoreDoc, from: DirRef, to: &ChordLoc) -> DirRef {
+    let fm = &mut doc.songs[from.si].parts[from.pi].measures[from.mi];
+    let mut dirs = fm.directions.take().unwrap_or_default();
+    let mut dir = dirs.remove(from.index);
+    fm.directions = if dirs.is_empty() { None } else { Some(dirs) };
+    dir.after_elements = Some(to.index as f64);
+    dir.offset = None;
+    let tm = to.measure(doc);
+    let want = onsets(tm).get(&to.index).copied().unwrap_or(0.0);
+    dir.onset = if want == default_onset_before(tm, to.index as f64) { None } else { Some(want) };
+    let list = to.measure_mut(doc).directions.get_or_insert_with(Vec::new);
+    list.push(dir);
+    DirRef { si: to.si, pi: to.pi, mi: to.mi, index: list.len() - 1 }
+}
+
+/// 力度、表情文字、速度、渐强渐弱的一端挪一个音：`delta` +1 往后、−1 往前，`by_measure` 时挪到前 / 后一小节的同一拍。
+/// `pair` 给了就两条一起挪（整条挪）；只挪一端时与另一端（`guard`）比，不能越过。
+pub fn move_direction(doc: &mut ScoreDoc, r: DirRef, delta: f64, by_measure: bool, pair: Option<DirRef>, guard: Option<DirRef>) -> ModelEdit {
+    let refs: Vec<DirRef> = std::iter::once(r).chain(pair).collect();
+    let anchors: Vec<Option<DirAnchor>> = refs.iter().map(|x| dir_anchor(doc, x)).collect();
+    if anchors.iter().any(|x| x.is_none()) {
+        return err("me.noMark");
+    }
+    let anchors: Vec<DirAnchor> = anchors.into_iter().flatten().collect();
+    let mut targets: Vec<ChordLoc> = vec![];
+    for an in &anchors {
+        let to = if by_measure {
+            let mi = an.loc.mi as f64 + delta;
+            let part = an.loc.part(doc);
+            let Some(m) = js::index(mi).and_then(|i| part.measures.get(i)) else { return err("me.noNeighbour") };
+            let mi = mi as usize;
+            let want = onsets(an.loc.measure(doc)).get(&an.loc.index).copied().unwrap_or(0.0);
+            let voice = an.loc.chord(doc).voice;
+            let os = onsets(m);
+            let mut best = None;
+            let mut bd = f64::INFINITY;
+            for (i, e) in m.elements.iter().enumerate() {
+                let Element::Chord(c) = e else { continue };
+                if c.grace.is_some() || c.voice != voice {
+                    continue;
+                }
+                let d = (os.get(&i).copied().unwrap_or(0.0) - want).abs();
+                if d < bd {
+                    bd = d;
+                    best = Some(ChordLoc { mi, index: i, ..an.loc });
+                }
+            }
+            best
+        } else {
+            // 挂在最后一个音之后的（小节末）：往后挪是挂到后面第 delta 个音前，往前挪一格是挂到最后那个音前
+            let steps = if an.at_end && delta <= 0.0 { delta + 1.0 } else { delta };
+            if steps == 0.0 {
+                Some(an.loc)
+            } else {
+                step_in_voice(doc, &an.loc, steps, |c| c.grace.is_some())
+            }
+        };
+        let Some(to) = to else { return err("me.noNeighbour") };
+        targets.push(to);
+    }
+    if pair.is_some() && !loc_before(&targets[0], &targets[1]) && targets[0] != targets[1] {
+        return err("me.markCollapse");
+    }
+    if let Some(g) = guard {
+        let is_start = r.dir(doc).and_then(|d| d.span_type.as_ref()) == Some(&SpanType::Start);
+        if let Some(other) = dir_anchor(doc, &g) {
+            let mine = dir_pos(&targets[0], false);
+            let theirs = dir_pos(&other.loc, other.at_end);
+            if if is_start { mine >= theirs } else { mine <= theirs } {
+                return err("me.markCollapse");
+            }
+        }
+    }
+    let dir_type = r.dir(doc).map(|d| d.kind.clone()).unwrap_or_default();
+    // 依次挪；前一条从同一小节摘走时，后一条的下标跟着前移
+    let mut pending = refs.clone();
+    for k in 0..pending.len() {
+        let from = pending[k];
+        place_direction(doc, from, &targets[k]);
+        for p in pending.iter_mut().skip(k + 1) {
+            if (p.si, p.pi, p.mi) == (from.si, from.pi, from.mi) && p.index > from.index {
+                p.index -= 1;
+            }
+        }
+    }
+    let id = targets[0].chord(doc).id;
+    ModelEdit::Moved { select: vec![id], moved: MovedMark::Mark { mark_on: id, kind: "dir".into(), dir_type: Some(dir_type) } }
+}
+
+/// 和弦名挪一个音（同声线，休止也能挂）；那个音已有和弦名就拒绝。
+pub fn move_harmony(doc: &mut ScoreDoc, id: ElementId, delta: f64) -> ModelEdit {
+    let Some(l) = locate(doc, id).filter(|l| l.chord(doc).harmony.is_some()) else { return err("me.noMark") };
+    let Some(to) = step_in_voice(doc, &l, delta, |c| c.grace.is_some()) else { return err("me.noNeighbour") };
+    if to.chord(doc).harmony.is_some() {
+        return err("me.harmonyTaken");
+    }
+    let mut h = l.chord_mut(doc).harmony.take();
+    if let Some(h) = &mut h {
+        h.onset = None;
+        h.offset = None;
+    }
+    let t = to.chord_mut(doc);
+    t.harmony = h;
+    let tid = t.id;
+    ModelEdit::Moved { select: vec![tid], moved: MovedMark::Mark { mark_on: tid, kind: "harmony".into(), dir_type: None } }
+}
+
+/// 歌词挪格：`delta` +1 = 在这个字前空出一格，这个字连同后面紧接着的字各往后挪一个音，挪到本段第一个空着的音为止；
+/// −1 = 前一个音空着时，这个字连同后面紧接着的字各往前挪一格。`count`：只挪从这个字起的几个字。
+pub fn shift_lyrics(doc: &mut ScoreDoc, id: ElementId, verse: f64, delta: f64, count: Option<f64>) -> ModelEdit {
+    let mut at = id;
+    let mut last = err("me.noLyric");
+    let mut n = delta.abs();
+    while n > 0.0 {
+        last = shift_lyrics_once(doc, at, verse, if delta > 0.0 { 1.0 } else { -1.0 }, count);
+        match &last {
+            ModelEdit::Error(_) => return last,
+            ModelEdit::Moved { moved: MovedMark::Lyric { lyric_of, .. }, .. } => at = *lyric_of,
+            _ => {}
+        }
+        n -= 1.0;
+    }
+    last
+}
+
+fn shift_lyrics_once(doc: &mut ScoreDoc, id: ElementId, verse: f64, delta: f64, count: Option<f64>) -> ModelEdit {
+    let Some(l) = locate(doc, id) else { return err("me.noNote") };
+    let voice = l.chord(doc).voice;
+    let mut seq: Vec<ChordLoc> = vec![];
+    for (mi, m) in l.part(doc).measures.iter().enumerate() {
+        for (i, e) in m.elements.iter().enumerate() {
+            let Element::Chord(c) = e else { continue };
+            if c.voice != voice || c.grace.is_some() {
+                continue;
+            }
+            let anchor = c.lyric_anchor.unwrap_or(c.rest.is_none() || c.lyrics.as_ref().is_some_and(|x| !x.is_empty()));
+            if anchor {
+                seq.push(ChordLoc { si: l.si, pi: l.pi, mi, index: i });
+            }
+        }
+    }
+    let has = |doc: &ScoreDoc, c: Option<&ChordLoc>| c.is_some_and(|c| c.chord(doc).lyrics.iter().flatten().any(|x| x.number == verse));
+    let Some(k) = seq.iter().position(|x| *x == l) else { return err("me.noLyric") };
+    if !has(doc, Some(&l)) {
+        return err("me.noLyric");
+    }
+    let take = |doc: &mut ScoreDoc, c: &ChordLoc| -> Lyric {
+        let ch = c.chord_mut(doc);
+        let mut list = ch.lyrics.take().unwrap_or_default();
+        let i = list.iter().position(|x| x.number == verse).expect("有这一段的字");
+        let ly = list.remove(i);
+        ch.lyrics = if list.is_empty() { None } else { Some(list) };
+        ly
+    };
+    let put = |doc: &mut ScoreDoc, c: &ChordLoc, ly: Lyric| {
+        let ch = c.chord_mut(doc);
+        let mut list = ch.lyrics.take().unwrap_or_default();
+        list.push(ly);
+        js::sort_by(&mut list, |a, b| a.number - b.number);
+        ch.lyrics = Some(list);
+    };
+    let mut j = k;
+    let lim = match count {
+        Some(c) if c > 0.0 => k as f64 + c - 1.0,
+        _ => f64::INFINITY,
+    };
+    while j + 1 < seq.len() && has(doc, seq.get(j + 1)) && ((j as f64) < lim || delta > 0.0) {
+        j += 1;
+    }
+    if delta > 0.0 {
+        if j + 1 >= seq.len() {
+            return err("me.lyricNoRoom");
+        }
+        for i in (k..=j).rev() {
+            let ly = take(doc, &seq[i]);
+            put(doc, &seq[i + 1], ly);
+        }
+        let id = seq[k + 1].chord(doc).id;
+        return ModelEdit::Moved { select: vec![id], moved: MovedMark::Lyric { lyric_of: id, verse } };
+    }
+    if k == 0 || has(doc, seq.get(k - 1)) {
+        return err("me.lyricNoRoom");
+    }
+    for i in k..=j {
+        let ly = take(doc, &seq[i]);
+        put(doc, &seq[i - 1], ly);
+    }
+    let id = seq[k - 1].chord(doc).id;
+    ModelEdit::Moved { select: vec![id], moved: MovedMark::Lyric { lyric_of: id, verse } }
+}
+
+/// 倚音 ↔ 正音：倚音改成正音按它印的时值占拍；正音改成倚音不占拍（照印的时值，八分的带斜线）。
+pub fn toggle_grace(doc: &mut ScoreDoc, ids: &[ElementId], hooks: &mut dyn EditHooks) -> ModelEdit {
+    let locs: Vec<ChordLoc> = chords_of(doc, ids).into_iter().filter(|l| l.chord(doc).rest.is_none()).collect();
+    if locs.is_empty() {
+        return err("ve.selectNote");
+    }
+    let on = locs.iter().all(|l| l.chord(doc).grace.is_some());
+    for l in &locs {
+        let dpq = ctx_of(doc, l).dpq;
+        if on {
+            let (kind, dots) = {
+                let c = l.chord_mut(doc);
+                c.grace = None;
+                (c.duration.kind.clone().unwrap_or(NoteType::Eighth), c.duration.dots)
+            };
+            let base = TYPES.iter().find(|(t, _)| *t == kind).map_or(0.5, |x| x.1);
+            let div = fit_divisions(&mut doc.songs[l.si].parts[l.pi], base * dpq * dot_factor(dots));
+            l.chord_mut(doc).duration.divisions = div;
+        } else {
+            let c = l.chord_mut(doc);
+            c.grace = Some(if c.duration.kind == Some(NoteType::Eighth) { GraceInfo { slash: Some(true), ..Default::default() } } else { GraceInfo::default() });
+            if c.duration.kind.is_none() {
+                c.duration.kind = Some(NoteType::Eighth);
+            }
+        }
+        let MeasureCtx { time, dpq, .. } = ctx_of(doc, l);
+        let voice = l.chord(doc).voice;
+        let m = l.measure_mut(doc);
+        rebeam(m, voice, time.as_ref(), dpq);
+        m.duration = None;
+    }
+    for si in songs_of(&locs) {
+        hooks.forget_layout(&doc.songs[si]);
+    }
+    ModelEdit::Select(ids_of(doc, &locs))
+}
+
+/// 符杠组：选中音所在的那一组连杠的音（同小节同声线、`beams` 连着的一串）。原文没写 `<beam>` 时按 `rebeam` 同一口径划。
+pub fn beam_group_of(doc: &ScoreDoc, id: ElementId) -> Vec<ElementId> {
+    let Some(l) = locate(doc, id) else { return vec![] };
+    let me = l.chord(doc);
+    let m = l.measure(doc);
+    let run: Vec<(usize, &Chord)> =
+        m.elements.iter().enumerate().filter_map(|(i, e)| e.as_chord().filter(|c| c.voice == me.voice && c.grace.is_none()).map(|c| (i, c))).collect();
+    let Some(k) = run.iter().position(|(i, _)| *i == l.index) else { return vec![me.id] };
+    let has_beams = |c: &Chord| c.beams.as_ref().is_some_and(|b| !b.is_empty());
+    let ids = |a: usize, b: usize| run[a..=b].iter().map(|(_, c)| c.id).collect::<Vec<_>>();
+    if run.iter().any(|(_, c)| has_beams(c)) {
+        if !has_beams(me) {
+            return vec![me.id];
+        }
+        let first = |c: &Chord| c.beams.as_ref().and_then(|b| b.first()).cloned();
+        let mut a = k;
+        while a > 0 && first(run[a].1) != Some(BeamVal::Begin) && has_beams(run[a - 1].1) {
+            a -= 1;
+        }
+        let mut b = k;
+        while b + 1 < run.len() && first(run[b].1) != Some(BeamVal::End) && has_beams(run[b + 1].1) {
+            b += 1;
+        }
+        return ids(a, b);
+    }
+    let MeasureCtx { time, dpq, .. } = ctx_of(doc, &l);
+    let group = match &time {
+        Some(t) if t.beat_type == 8.0 && t.beats % 3.0 == 0.0 => dpq * 1.5,
+        _ => dpq,
+    };
+    let os = onsets(m);
+    let flagged = |c: &Chord| c.rest.is_none() && c.duration.time_mod.is_none() && c.duration.divisions < dpq;
+    if !flagged(me) {
+        return vec![me.id];
+    }
+    let beat = |i: usize| (os.get(&i).copied().unwrap_or(0.0) / group).floor();
+    let mine = beat(l.index);
+    let mut a = k;
+    while a > 0 && flagged(run[a - 1].1) && beat(run[a - 1].0) == mine {
+        a -= 1;
+    }
+    let mut b = k;
+    while b + 1 < run.len() && flagged(run[b + 1].1) && beat(run[b + 1].0) == mine {
+        b += 1;
+    }
+    ids(a, b)
+}
+
+/// 删掉某声部里的几条 direction（按位置；删空的小节去掉 `directions`）。
+fn remove_dirs(part: &mut Part, gone: &[(usize, usize)]) {
+    for (mi, m) in part.measures.iter_mut().enumerate() {
+        if !gone.iter().any(|g| g.0 == mi) {
+            continue;
+        }
+        let Some(list) = m.directions.take() else { continue };
+        let keep: Vec<Direction> = list.into_iter().enumerate().filter(|(i, _)| !gone.contains(&(mi, *i))).map(|(_, d)| d).collect();
+        m.directions = if keep.is_empty() { None } else { Some(keep) };
+    }
+}
+
+/// 渐强 / 渐弱：选中的头尾两个音之间加一条（起点挂头一个音前、终点挂尾一个音后）。已有同起点的就去掉。
+pub fn toggle_wedge(doc: &mut ScoreDoc, first_id: ElementId, last_id: ElementId, kind: &WedgeType) -> ModelEdit {
+    let (Some(a), Some(b)) = (locate(doc, first_id), locate(doc, last_id)) else { return err("me.noNote") };
+    if a.pi != b.pi || !loc_before(&a, &b) {
+        return err("ve.slurTwo");
+    }
+    let (ia, ib) = (a.chord(doc).id, b.chord(doc).id);
+    let ai = a.index as f64;
+    let cur = a.measure(doc).directions.iter().flatten().position(|d| d.kind == "wedge" && d.span_type != Some(SpanType::Stop) && d.after_elements.unwrap_or(0.0) == ai);
+    if let Some(ci) = cur {
+        let m = a.measure_mut(doc);
+        let cur = m.directions.as_mut().unwrap().remove(ci);
+        // 配对的终点：同声部往后第一条 wedge stop
+        let part = &mut doc.songs[a.si].parts[a.pi];
+        for mi in a.mi..part.measures.len() {
+            let m = &mut part.measures[mi];
+            let stop = m.directions.iter().flatten().position(|d| {
+                d.kind == "wedge" && d.span_type == Some(SpanType::Stop) && (mi > a.mi || d.after_elements.unwrap_or(0.0) >= ai)
+            });
+            if let Some(si) = stop {
+                let list = m.directions.as_mut().unwrap();
+                list.remove(si);
+                if list.is_empty() {
+                    m.directions = None;
+                }
+                break;
+            }
+        }
+        let m = a.measure_mut(doc);
+        if m.directions.as_ref().is_some_and(|d| d.is_empty()) {
+            m.directions = None;
+        }
+        if cur.wedge_type.as_ref() == Some(kind) {
+            return ModelEdit::Select(vec![ia, ib]);
+        }
+    }
+    let (av, ast) = (a.chord(doc).voice, a.chord(doc).staff);
+    let mut start = Direction::of("wedge");
+    start.span_type = Some(SpanType::Start);
+    start.wedge_type = Some(kind.clone());
+    start.after_elements = Some(ai);
+    start.placement = Some(Placement::Below);
+    start.voice = Some(av);
+    start.staff = Some(ast);
+    a.measure_mut(doc).directions.get_or_insert_with(Vec::new).push(start);
+    let (bv, bst, bdiv) = {
+        let c = b.chord(doc);
+        (c.voice, c.staff, c.duration.divisions)
+    };
+    let mut stop = Direction::of("wedge");
+    stop.span_type = Some(SpanType::Stop);
+    stop.after_elements = Some(b.index as f64 + 1.0);
+    stop.placement = Some(Placement::Below);
+    stop.voice = Some(bv);
+    stop.staff = Some(bst);
+    let bm = b.measure(doc);
+    let end_at = onsets(bm).get(&b.index).copied().unwrap_or(0.0) + bdiv;
+    if end_at != default_onset_before(bm, b.index as f64 + 1.0) {
+        stop.onset = Some(end_at);
+    }
+    b.measure_mut(doc).directions.get_or_insert_with(Vec::new).push(stop);
+    ModelEdit::Select(vec![ia, ib])
+}
+
+/// 八度线挪的八度数：8va / 15ma 实际比记谱高（down），8vb / 15mb 低（up）。
+fn octave_of(d: &Direction) -> f64 {
+    let n = if d.shift.as_ref().map_or(8.0, |s| s.size) >= 15.0 { 2.0 } else { 1.0 };
+    if d.shift.as_ref().is_some_and(|s| s.dir == ShiftDir::Up) {
+        -n
+    } else {
+        n
+    }
+}
+
+/// 方向记号在小节里的游标（divisions）。
+fn dir_onset(m: &Measure, d: &Direction) -> f64 {
+    d.onset.unwrap_or_else(|| default_onset_before(m, d.after_elements.unwrap_or(0.0)))
+}
+
+/// 谱表 `staff` 上 `[from, to)`（小节下标 + 小节内游标）里的音实际音高挪 `oct` 个八度（符头不动）。
+fn shift_octave_span(part: &mut Part, staff: f64, from: (usize, f64), to: (usize, f64), oct: f64) {
+    let mut mi = from.0;
+    while mi <= to.0 && mi < part.measures.len() {
+        let m = &mut part.measures[mi];
+        let on = onsets(m);
+        for (i, e) in m.elements.iter_mut().enumerate() {
+            let Element::Chord(c) = e else { continue };
+            if c.staff != staff {
+                continue;
+            }
+            let t = on.get(&i).copied().unwrap_or(0.0);
+            if (mi == from.0 && t < from.1) || (mi == to.0 && t >= to.1) {
+                continue;
+            }
+            for n in &mut c.notes {
+                if let Some(p) = &mut n.pitch {
+                    p.octave += oct;
+                }
+            }
+        }
+        mi += 1;
+    }
+}
+
+/// 一对八度线起止去掉前，范围里的音挪回记谱那个八度。
+fn undo_octave_shift(part: &mut Part, start: &DirRef, stop: &DirRef) {
+    let ms = &part.measures[start.mi];
+    let d = &ms.directions.as_ref().unwrap()[start.index];
+    let me = &part.measures[stop.mi];
+    let from = (start.mi, dir_onset(ms, d));
+    let to = (stop.mi, dir_onset(me, &me.directions.as_ref().unwrap()[stop.index]));
+    let (staff, oct) = (d.staff.unwrap_or(1.0), -octave_of(d));
+    shift_octave_span(part, staff, from, to, oct);
+}
+
+/// 选中的头尾两个音之间加 / 去一条八度线（`8va` 印在上方、`8vb` 在下方）。**符头留在谱面原位**，范围里本谱表的音音高跟着挪；去掉时挪回。
+pub fn toggle_octave_shift(doc: &mut ScoreDoc, first_id: ElementId, last_id: ElementId, kind: &str) -> ModelEdit {
+    let (Some(a), Some(b)) = (locate(doc, first_id), locate(doc, last_id)) else { return err("me.noNote") };
+    if a.pi != b.pi || !loc_before(&a, &b) {
+        return err("ve.slurTwo");
+    }
+    let (ia, ib) = (a.chord(doc).id, b.chord(doc).id);
+    let staff = a.chord(doc).staff;
+    let am = a.measure(doc);
+    // 第二声线等写了 onset 的和弦：起点照它的游标
+    let at = onsets(am).get(&a.index).copied().unwrap_or_else(|| default_onset_before(am, a.index as f64));
+    let ci = am
+        .directions
+        .iter()
+        .flatten()
+        .position(|d| d.kind == "octave-shift" && d.span_type != Some(SpanType::Stop) && d.staff.unwrap_or(1.0) == staff && dir_onset(am, d) == at);
+    if let Some(ci) = ci {
+        let r = DirRef { si: a.si, pi: a.pi, mi: a.mi, index: ci };
+        let cur_up = r.dir(doc).and_then(|d| d.shift.as_ref()).is_some_and(|s| s.dir == ShiftDir::Up);
+        let pair = dir_partner(doc, &r);
+        let part = &mut doc.songs[a.si].parts[a.pi];
+        if let Some(p) = &pair {
+            undo_octave_shift(part, &r, p);
+        }
+        let mut gone = vec![(r.mi, r.index)];
+        if let Some(p) = pair {
+            gone.push((p.mi, p.index));
+        }
+        remove_dirs(part, &gone);
+        if cur_up == (kind == "8vb") {
+            return ModelEdit::Select(vec![ia, ib]);
+        }
+    }
+    let placement = if kind == "8va" { Placement::Above } else { Placement::Below };
+    let mut start = Direction::of("octave-shift");
+    start.span_type = Some(SpanType::Start);
+    start.shift = Some(OctaveShift { dir: if kind == "8va" { ShiftDir::Down } else { ShiftDir::Up }, size: 8.0 });
+    start.after_elements = Some(a.index as f64);
+    start.placement = Some(placement.clone());
+    start.staff = Some(staff);
+    let mut stop = Direction::of("octave-shift");
+    stop.span_type = Some(SpanType::Stop);
+    stop.after_elements = Some(b.index as f64 + 1.0);
+    stop.placement = Some(placement);
+    stop.staff = Some(staff);
+    if at != default_onset_before(a.measure(doc), a.index as f64) {
+        start.onset = Some(at);
+    }
+    let bm = b.measure(doc);
+    let end_at = onsets(bm).get(&b.index).copied().unwrap_or(0.0) + b.chord(doc).duration.divisions;
+    if end_at != default_onset_before(bm, b.index as f64 + 1.0) {
+        stop.onset = Some(end_at);
+    }
+    let oct = octave_of(&start);
+    a.measure_mut(doc).directions.get_or_insert_with(Vec::new).push(start);
+    b.measure_mut(doc).directions.get_or_insert_with(Vec::new).push(stop);
+    shift_octave_span(&mut doc.songs[a.si].parts[a.pi], staff, (a.mi, at), (b.mi, end_at), oct);
+    ModelEdit::Select(vec![ia, ib])
+}
+
+/// 渐强渐弱、踏板、八度线的起点 / 终点各是一条 `<direction>`：给一条，找配对的另一条（同声部、同类、按先后最近的那条）。
+pub fn dir_partner(doc: &ScoreDoc, r: &DirRef) -> Option<DirRef> {
+    let d = r.dir(doc)?;
+    let part = &doc.songs[r.si].parts[r.pi];
+    let st = d.span_type.as_ref()?;
+    if *st == SpanType::Continue {
+        return None;
+    }
+    // 同谱表、同声线（都写了才比）、同类；按先后排好，从它往后（终点往前）数，套着的同类一对对跳过
+    let same = |x: &Direction| {
+        x.kind == d.kind
+            && x.staff.unwrap_or(1.0) == d.staff.unwrap_or(1.0)
+            && (x.voice.is_none() || d.voice.is_none() || x.voice == d.voice)
+            && matches!(x.span_type, Some(SpanType::Start) | Some(SpanType::Stop))
+    };
+    let mut list: Vec<(DirRef, f64, bool)> = vec![];
+    for (mi, m) in part.measures.iter().enumerate() {
+        for (index, x) in m.directions.iter().flatten().enumerate() {
+            if same(x) {
+                let is_stop = x.span_type == Some(SpanType::Stop);
+                let pos = mi as f64 * 1e6 + x.after_elements.unwrap_or(0.0) * 2.0 + if is_stop { 0.0 } else { 1.0 };
+                list.push((DirRef { si: r.si, pi: r.pi, mi, index }, pos, is_stop));
+            }
+        }
+    }
+    js::sort_by(&mut list, |a, b| a.1 - b.1);
+    let k = list.iter().position(|x| x.0 == *r)? as isize;
+    let fwd = *st == SpanType::Start;
+    let me_stop = *st == SpanType::Stop;
+    let mut depth = 0;
+    let mut i = k + if fwd { 1 } else { -1 };
+    while i >= 0 && (i as usize) < list.len() {
+        let x = &list[i as usize];
+        if x.2 == me_stop {
+            depth += 1;
+        } else if depth == 0 {
+            return Some(x.0);
+        } else {
+            depth -= 1;
+        }
+        i += if fwd { 1 } else { -1 };
+    }
+    None
+}
+
+/// 删音符上的一个记号（`<notations>` 里按名字：奏法、装饰、延长号都行）。
+pub fn remove_notation(doc: &mut ScoreDoc, id: ElementId, name: &str) -> ModelEdit {
+    let Some(l) = locate(doc, id) else { return err("me.noNote") };
+    let c = l.chord_mut(doc);
+    let mut n = c.notations.clone().unwrap_or_default();
+    if name == "fermata" || name == "fermata-inverted" {
+        n.fermata = None;
+        n.fermata_inverted = None;
+    } else {
+        for field in [&mut n.articulations, &mut n.ornaments, &mut n.technical] {
+            let list: Vec<String> = field.take().unwrap_or_default().into_iter().filter(|a| a != name).collect();
+            *field = if list.is_empty() { None } else { Some(list) };
+        }
+    }
+    c.notations = if notations_empty(&n) { None } else { Some(n) };
+    ModelEdit::Select(vec![c.id])
+}
+
+/// 删一条 `<direction>`（渐强渐弱这类成对的连配对那条一起删）。
+pub fn delete_direction(doc: &mut ScoreDoc, r: DirRef) -> ModelEdit {
+    let Some(an) = dir_anchor(doc, &r) else { return err("me.noMark") };
+    let pair = dir_partner(doc, &r);
+    let d = r.dir(doc).unwrap();
+    let is_oct = d.kind == "octave-shift";
+    let is_stop = d.span_type == Some(SpanType::Stop);
+    let id = an.loc.chord(doc).id;
+    let part = &mut doc.songs[an.loc.si].parts[an.loc.pi];
+    // 删八度线：符头不动，范围里的音挪回记谱那个八度
+    if let (true, Some(p)) = (is_oct, &pair) {
+        let (s, e) = if is_stop { (p, &r) } else { (&r, p) };
+        undo_octave_shift(part, s, e);
+    }
+    let mut gone = vec![(r.mi, r.index)];
+    if let Some(p) = pair {
+        gone.push((p.mi, p.index));
+    }
+    remove_dirs(part, &gone);
+    ModelEdit::Select(vec![id])
+}
+
+/// 同一声部同一声线里前 / 后一个音（可跨小节，倚音不算；`skip_rests` 时休止也跳过）。
+pub fn neighbour_chord(doc: &ScoreDoc, id: ElementId, delta: f64, skip_rests: bool) -> Option<ElementId> {
+    let l = locate(doc, id)?;
+    step_in_voice(doc, &l, delta, |c| c.grace.is_some() || (skip_rests && c.rest.is_some())).map(|x| x.chord(doc).id)
+}
+
+/// 给定音高（音名 + 八度）。
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct StepOctave {
+    pub step: Step,
+    pub octave: f64,
+}
+
+/// 在锚点处插一个**给定音高**的音（升降按那里的调号，印法重算）：Alt+点原图补漏识的音用。
+pub fn insert_pitch(doc: &mut ScoreDoc, anchor: &InsertAnchor, pitch: &StepOctave, dur: NewDuration, hooks: &mut dyn EditHooks) -> ModelEdit {
+    let r = insert_chord(doc, anchor, 1.0, dur, hooks);
+    let ch = match &r {
+        ModelEdit::Error(_) => return r,
+        ModelEdit::CaretAfter(id) | ModelEdit::CaretBefore(id) => Some(*id),
+        ModelEdit::Select(v) | ModelEdit::Moved { select: v, .. } => v.first().copied(),
+    };
+    let Some(l) = ch.and_then(|id| locate(doc, id)) else { return r };
+    let key = ctx_of(doc, &l).key;
+    let c = l.chord_mut(doc);
+    c.notes = vec![Note { pitch: Some(Pitch { step: pitch.step.clone(), octave: pitch.octave, alter: key_alter(pitch.step.as_str(), key.fifths) }), ..Default::default() }];
+    c.rest = None;
+    respell_measure(l.measure_mut(doc), &key);
+    hooks.forget_stem(l.chord(doc));
+    ModelEdit::Select(vec![l.chord(doc).id])
+}
+
+/// 和弦现在的时值换成「新音」的写法（减半次数 + 附点）。
+pub fn new_duration_of(ch: &Chord) -> NewDuration {
+    let h = match ch.duration.kind.as_ref().unwrap_or(&NoteType::Quarter) {
+        NoteType::Whole => -2.0,
+        NoteType::Half => -1.0,
+        NoteType::Quarter => 0.0,
+        NoteType::Eighth => 1.0,
+        NoteType::N16th => 2.0,
+        NoteType::N32nd => 3.0,
+        NoteType::N64th => 4.0,
+        _ => 0.0,
+    };
+    NewDuration { halvings: h, dots: ch.duration.dots }
+}
+
 // ───────────────────────── 命令 ─────────────────────────
 
 /// 一个编辑动作（JSON `{"op": "setDegree", …}`，`op` 与字段名同 TS 函数与参数名）。会话与对拍都按它发。
@@ -2559,6 +3537,18 @@ pub enum EditCmd {
     SetHarmony { id: ElementId, text: String },
     SetDirectionText { id: ElementId, kind: String, text: String },
     PasteClip { anchor: InsertAnchor, items: Vec<ClipItem> },
+    SetClefAt { si: usize, pi: usize, mi: usize, staff: f64, clef: Clef, reread: bool },
+    RereadKeyAt { si: usize, mi: usize, fifths: f64 },
+    MoveMarkEnd { kind: MarkType, start_id: ElementId, end_id: ElementId, which: String, delta: f64 },
+    MoveDirection { r: DirRef, delta: f64, #[serde(default)] by_measure: bool, pair: Option<DirRef>, guard: Option<DirRef> },
+    MoveHarmony { id: ElementId, delta: f64 },
+    ShiftLyrics { id: ElementId, verse: f64, delta: f64, count: Option<f64> },
+    ToggleGrace { ids: Vec<ElementId> },
+    ToggleWedge { first_id: ElementId, last_id: ElementId, kind: WedgeType },
+    ToggleOctaveShift { first_id: ElementId, last_id: ElementId, kind: String },
+    RemoveNotation { id: ElementId, name: String },
+    DeleteDirection { r: DirRef },
+    InsertPitch { anchor: InsertAnchor, pitch: StepOctave, dur: NewDuration },
 }
 
 /// 执行一个编辑动作
@@ -2605,5 +3595,17 @@ pub fn apply(doc: &mut ScoreDoc, cmd: &EditCmd, hooks: &mut dyn EditHooks) -> Mo
         C::SetHarmony { id, text } => set_harmony(doc, *id, text),
         C::SetDirectionText { id, kind, text } => set_direction_text(doc, *id, kind, text),
         C::PasteClip { anchor, items } => paste_clip(doc, anchor, items, hooks),
+        C::SetClefAt { si, pi, mi, staff, clef, reread } => set_clef_at(doc, *si, *pi, *mi, *staff, clef, *reread, hooks),
+        C::RereadKeyAt { si, mi, fifths } => reread_key_at(doc, *si, *mi, *fifths, hooks),
+        C::MoveMarkEnd { kind, start_id, end_id, which, delta } => move_mark_end(doc, kind, *start_id, *end_id, which, *delta),
+        C::MoveDirection { r, delta, by_measure, pair, guard } => move_direction(doc, *r, *delta, *by_measure, *pair, *guard),
+        C::MoveHarmony { id, delta } => move_harmony(doc, *id, *delta),
+        C::ShiftLyrics { id, verse, delta, count } => shift_lyrics(doc, *id, *verse, *delta, *count),
+        C::ToggleGrace { ids } => toggle_grace(doc, ids, hooks),
+        C::ToggleWedge { first_id, last_id, kind } => toggle_wedge(doc, *first_id, *last_id, kind),
+        C::ToggleOctaveShift { first_id, last_id, kind } => toggle_octave_shift(doc, *first_id, *last_id, kind),
+        C::RemoveNotation { id, name } => remove_notation(doc, *id, name),
+        C::DeleteDirection { r } => delete_direction(doc, *r),
+        C::InsertPitch { anchor, pitch, dur } => insert_pitch(doc, anchor, pitch, *dur, hooks),
     }
 }

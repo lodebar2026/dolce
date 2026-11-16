@@ -378,6 +378,10 @@ pub struct EditScript {
     cmds: Vec<Value>,
     #[serde(rename = "probeIds")]
     probe_ids: Vec<ElementId>,
+    #[serde(rename = "beamIds", default)]
+    beam_ids: Vec<ElementId>,
+    #[serde(rename = "dirRefs", default)]
+    dir_refs: Vec<dolce_model::edit::DirRef>,
 }
 
 /// 第 6 步编辑的摘要（口径见 dev `rs-diff.mjs edit`）：载入 MusicXML（带表层）→ 逐条执行 → 每步结果 + 最后的模型与写出
@@ -403,6 +407,15 @@ pub fn edit_digest(text: &str, script: &EditScript) -> Value {
         json!({
             "clip": clip_of_chords(doc, &script.probe_ids),
             "texts": script.probe_ids.iter().map(|&id| [direction_text_of(doc, id, "words"), direction_text_of(doc, id, "dynamics")]).collect::<Vec<_>>(),
+            "beams": script
+                .beam_ids
+                .iter()
+                .filter(|&&id| locate(doc, id).is_none_or(|l| l.chord(doc).grace.is_none()))
+                .map(|&id| beam_group_of(doc, id))
+                .collect::<Vec<_>>(),
+            "nb": script.probe_ids.iter().map(|&id| [neighbour_chord(doc, id, 1.0, false), neighbour_chord(doc, id, -1.0, true), neighbour_chord(doc, id, 3.0, false)]).collect::<Vec<_>>(),
+            "nd": script.probe_ids.iter().map(|&id| locate(doc, id).map(|l| new_duration_of(l.chord(doc)))).collect::<Vec<_>>(),
+            "partners": script.dir_refs.iter().map(|r| dir_partner(doc, r)).collect::<Vec<_>>(),
         })
     };
     queries.push(post(&r.doc));
