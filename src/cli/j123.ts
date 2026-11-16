@@ -59,6 +59,9 @@ export * as modelTranscribe from "../model/transcribe";
 // 试听/MIDI（私有仓库的 `chorus-midi.mjs` 拿识别结果与 GT 各导一份 MIDI 逐音比）
 export { playSourceOf } from "../jianpu/playsong";
 export { buildTimeline, toMidi } from "../score/play";
+// MIDI 导入（迁 Rust 对拍 dev `rs-diff.mjs midiimport`）
+export { midiToScoreDoc } from "../midi/import";
+export { parseSmf } from "../midi/smf";
 // 只读写模型的回归脚本（`playorder-check.mjs`、`jianpu-shape-check.mjs`、`phrase-dual-check.mjs` 等）在 Node 下直接跑用
 export { playSourceOfDoc } from "../model/playdoc";
 export { jianpuInputOfDoc } from "../jianpu/jianpuinput";
