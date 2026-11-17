@@ -1,4 +1,4 @@
-//! 多连音的时值（同 `src/model/tuplets.ts`）：组内各音的 `duration.timeMod` 一律按 `tuplet` Mark 补，各解析端收尾时都调这一份。
+//! 多连音的时值：组内各音的 `duration.timeMod` 一律按 `tuplet` Mark 补，各解析端收尾时都调这一份。
 //! 组内**所有**占时值的元素（音符、休止）都按比例折算，倚音不算；多连音嵌套时比例相乘。
 
 use crate::doc::*;

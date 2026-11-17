@@ -1,4 +1,4 @@
-//! MusicXML 形状的 `Song` → **简谱形状**的 `Song`：简谱排版与 123 写出端之前的投影（同 `src/model/jianpuproject.ts`）。
+//! MusicXML 形状的 `Song` → **简谱形状**的 `Song`：简谱排版与 123 写出端之前的投影（`src/model/jianpuproject.ts` 是门面）。
 //! 与 `xmlproject` 方向相反，判据同一条（`is_xml_shaped`）。原生 ABC（时值只在 `divisions`、不带 `beams` / `sustains`）同走这一层。
 //!
 //! TS 按 `Song` 对象缓存（WeakMap）；这里不缓存，调用方自己留结果。

@@ -9,6 +9,7 @@ use dolce_model::metakeys::creator_type_of;
 use dolce_model::multirest::compress_multi_rests;
 use dolce_model::tuplets::{apply_tuplet_time_mods_default, default_tuplet_normal};
 use dolce_model::*;
+use crate::model::{header_fonts_json, page_json, song_json, strip_oids};
 use serde_json::{json, Value};
 use std::borrow::Cow;
 
@@ -211,16 +212,6 @@ fn bindings_of(v: &Value, s: &dolce_model::xmlsurface::Surface, path: &str, out:
 }
 
 /// 去掉 `_oid`
-fn strip_oids(v: &mut Value) {
-    match v {
-        Value::Array(a) => a.iter_mut().for_each(strip_oids),
-        Value::Object(o) => {
-            o.remove("_oid");
-            o.values_mut().for_each(strip_oids);
-        }
-        _ => {}
-    }
-}
 
 /// 第 3 步读入的摘要：模型（去掉 `_oid`）、绑定表、读后的树（合并 `<attributes>` 会往树上挪节点）
 pub fn from_xml_digest(text: &str) -> Value {
@@ -264,11 +255,6 @@ pub fn to_xml_digest(text: &str) -> Value {
 
 // ───────────────────────── 投影（第 5 步） ─────────────────────────
 
-fn song_json(s: &Song) -> Value {
-    let mut v = serde_json::to_value(s).expect("序列化");
-    strip_oids(&mut v);
-    v
-}
 
 /// 第一声部起逐声部、每第 3 个（下标 % 3 == 1）正经和弦的 id：拿来当「行首」试断行
 fn probe_line_starts(s: &Song) -> Vec<ElementId> {
@@ -320,29 +306,6 @@ pub fn project_digest(doc: &ScoreDoc) -> Value {
         }
         let mut cleared = s.clone();
         clear_song_breaks(&mut cleared);
-        let fonts: serde_json::Map<String, Value> = dolce_model::pagemeta::song_header_fonts(s, None)
-            .into_iter()
-            .map(|(r, f)| {
-                let mut o = serde_json::Map::new();
-                if let Some(x) = f.family {
-                    o.insert("family".into(), json!(x));
-                }
-                if let Some(x) = f.size {
-                    o.insert("size".into(), json!(x));
-                }
-                if f.bold {
-                    o.insert("bold".into(), json!(true));
-                }
-                (r.as_str().to_owned(), Value::Object(o))
-            })
-            .collect();
-        let page = dolce_model::pagemeta::song_page(s).map(|p| {
-            let mut o = json!({ "w": p.w, "h": p.h });
-            if let Some(m) = p.margins {
-                o["margins"] = json!(m);
-            }
-            o
-        });
         songs.push(json!({
             "xml": xml(i, ProjectOptions::default()),
             "xmlNoTie": xml(i, ProjectOptions { slur_ties: Some(false), ..Default::default() }),
@@ -358,9 +321,9 @@ pub fn project_digest(doc: &ScoreDoc) -> Value {
             "voltas": dolce_model::xmlproject::voltas_of_play_order(s).iter().map(|(m, v)| json!([m, v.start, v.stop, v.repeat_back])).collect::<Vec<_>>(),
             "breaks": breaks,
             "cleared": song_json(&cleared),
-            "page": page,
+            "page": page_json(dolce_model::pagemeta::song_page(s)),
             "sizes": [dolce_model::pagemeta::song_staff_size(s), dolce_model::pagemeta::song_lyric_size(s)],
-            "fonts": fonts,
+            "fonts": header_fonts_json(dolce_model::pagemeta::song_header_fonts(s, None)),
             "jianpu": song_json(&dolce_model::jianpuproject::project_for_jianpu(s)),
             "asMarks": song_json(&dolce_model::directionmarks::directions_as_marks(s)),
             "leadTempo": dolce_model::directionmarks::lead_tempo(s).map(|(n, b)| json!([n, b.num, b.den])),

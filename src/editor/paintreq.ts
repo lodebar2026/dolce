@@ -68,7 +68,7 @@ export function jianpuPaintRequest(src: JianpuSource, mode: JianpuLayoutMode, st
 }
 
 /**
- * 量「简谱视图此刻会排出的各行首音」要排的那一份（五线谱自动铺排拿行首当优选断点，`xmlproject.ts::applyLineStarts`）。
+ * 量「简谱视图此刻会排出的各行首音」要排的那一份（五线谱自动铺排拿行首当优选断点，`ProjectOptions.lineStarts`）。
  * 文本谱、MusicXML 与多声部的简谱档返回 null：那一路一行就是 `ScoreDoc` 里的一行，不用另给。
  */
 export function lineStartsRequest(src: JianpuSource, mode: JianpuLayoutMode, styleOf: (m: JianpuLayoutMode) => StyleSheet): SyncPaintRequest | null {

@@ -69,6 +69,22 @@ export interface DolceWasm {
   modelBreaksOf(song: string): string;
   /** 小节时值自检；`opts` 是 `{meters?, pickup?: boolean[][]}` 的 JSON，回 `BeatIssue[]` 的 JSON */
   modelBeatCheck(doc: string, opts: string): string;
+  /** 简谱来源投成 MusicXML 形状（不带身份）；`opts` 是 `{lineStarts?, midLineStarts?, slurTies?}` 的 JSON */
+  modelProjectForMusicXml(song: string, opts: string): string;
+  /** 同音弧改记延音线；没有要改的回 undefined */
+  modelSlursAsTies(song: string): string | undefined;
+  /** `[[小节下标, {start?, stop, repeatBack}]]` 的 JSON */
+  modelVoltasOfPlayOrder(song: string): string;
+  /** 投成简谱形状；不必投的回 undefined */
+  modelProjectForJianpu(song: string): string | undefined;
+  /** `{page, staffSize, lyricSize, headerFonts}` 的 JSON；`h` 是表层句柄（0 = 没有） */
+  modelPageInfo(song: string, h: number): string;
+  modelStandardPaperOf(w: number, h: number): string;
+  modelHeaderRoleOfCredit(kind: string | undefined, justify: string | undefined, biggest: boolean): string | undefined;
+  /** 没有要写进 meta 的回 undefined，有就回整份新文档（带身份） */
+  modelWithPageMeta(doc: string, h: number): string | undefined;
+  /** 各首要设的演唱顺序字段 `[{playOrder?, sectionOrder?, singOrder?, sectionMarks?}]` 的 JSON */
+  modelCarryPlayOrder(from: string, to: string): string;
   /** 排版行视图（`jianpu/slots.ts`）：id 化的 `DocView` JSON（`refs` 存下标，投影改过曲子的另带 `song`）；`source` 空串 = 用 `doc.source` */
   modelDocView(doc: string, source: string): string;
   /** 由 `ScoreDoc` 拼试听输入（crates/dolce-view，门面 `score/play.ts`）：回 `{source: PlaySource, playData: PlayData}`，没有曲行回 `"null"` */

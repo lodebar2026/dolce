@@ -1,4 +1,4 @@
-//! 谱里自带的纸：MusicXML 的 `<page-layout>`（tenths）与 123/ABC 的 `I:meta page …`（pt）互转（同 `src/model/pagemeta.ts`）。
+//! 谱里自带的纸：MusicXML 的 `<page-layout>`（tenths）与 123/ABC 的 `I:meta page …`（pt）互转（`src/model/pagemeta.ts` 是门面，纸张表 `STANDARD_PAPERS` 两边各一份）。
 //!
 //! meta 键：`page`、`page-orientation`、`page-margin`、`staff-size`、`lyric-size`、`font-title` / `font-subtitle` / `font-scripture` / `font-credit`。
 

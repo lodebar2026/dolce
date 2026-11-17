@@ -12,12 +12,6 @@ export function gcd(numerator: number, denominator: number): number {
   return Math.abs(a);
 }
 
-/** 最小公倍数。任一为 0 时返回另一个的绝对值（避免除零）——divisions 收集用得上。 */
-export function lcm(a: number, b: number): number {
-  const g = gcd(a, b);
-  return g === 0 ? Math.abs(a || b) : Math.abs((a / g) * b);
-}
-
 export class Fraction {
   numerator = 0;
   denominator = 1;

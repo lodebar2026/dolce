@@ -7,12 +7,6 @@ export const DYNAMIC_NAMES: readonly string[] = [
   "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff", "sf", "fp", "sfp", "sfz", "sffz", "fz", "rf", "rfz",
 ];
 
-const DYNAMIC_SET: ReadonlySet<string> = new Set(DYNAMIC_NAMES);
-
-export function isDynamicName(name: string): boolean {
-  return DYNAMIC_SET.has(name);
-}
-
 /** 术语类记号：直接排文字。 */
 export const TERMS: Readonly<Record<string, string>> = {
   cresc: "cresc.",

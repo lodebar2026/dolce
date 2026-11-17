@@ -1,4 +1,4 @@
-//! 段落与演唱顺序（同 `src/model/sections.ts`，M2 先迁投影要用的部分）。
+//! 段落与演唱顺序（`src/model/sections.ts` 只留 `carryPlayOrder` 的门面）。
 
 use crate::doc::*;
 use crate::jianpu::melody_chords;
@@ -96,4 +96,90 @@ pub fn looks_like_order(text: &str) -> bool {
         return false;
     }
     expand_section_order(text).is_some_and(|s| s.len() > 1)
+}
+
+/// [`carry_play_order`] 给读回那份某一首要设的字段（`None` = 不动）
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CarriedOrder {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub play_order: Option<Vec<PlayPass>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_order: Option<SectionOrder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sing_order: Option<Vec<SingPass>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_marks: Option<Vec<SectionMark>>,
+}
+
+/// 源 id → 读回那份里第一个、最后一个对应的和弦（跨小节的音读回是几个）
+fn chords_by_src(song: &Song) -> (std::collections::HashMap<ElementId, ElementId>, std::collections::HashMap<ElementId, ElementId>) {
+    let mut first = std::collections::HashMap::new();
+    let mut last = std::collections::HashMap::new();
+    for part in &song.parts {
+        for m in &part.measures {
+            for el in &m.elements {
+                let Element::Chord(c) = el else { continue };
+                let Some(src) = c.src_id else { continue };
+                first.entry(src).or_insert(c.id);
+                last.insert(src, c.id);
+            }
+        }
+    }
+    (first, last)
+}
+
+/// 写明的演唱顺序搬到读回的那份模型上（同 TS `carryPlayOrder`）：MusicXML 写不下 `.Repeat`、`P:` 与逐遍演唱顺序，
+/// 小节会拆、元素 id 也换了，按 `Chord.srcId` 对回去。回读回那份各首要设的字段（与 `to.songs` 平行，多出来的源曲子不管）。
+pub fn carry_play_order(from: &ScoreDoc, to: &ScoreDoc) -> Vec<CarriedOrder> {
+    let mut out: Vec<CarriedOrder> = vec![CarriedOrder::default(); to.songs.len()];
+    for (i, src) in from.songs.iter().enumerate() {
+        let Some(dst) = to.songs.get(i) else { continue };
+        let patch = &mut out[i];
+        if src.play_order.as_ref().is_some_and(|p| !p.is_empty()) {
+            let (first, last) = chords_by_src(dst);
+            let passes: Vec<PlayPass> = anchor_play_order(src)
+                .into_iter()
+                .filter_map(|p| {
+                    let from_anchor = first.get(&p.from_anchor?).copied()?;
+                    let to_anchor = last.get(&p.to_anchor?).copied()?;
+                    Some(PlayPass { from_element: None, to_element: None, from_anchor: Some(from_anchor), to_anchor: Some(to_anchor), ..p })
+                })
+                .collect();
+            if !passes.is_empty() {
+                patch.play_order = Some(passes);
+            }
+            continue;
+        }
+        let sing = src.sing_order.as_ref().filter(|s| !s.is_empty());
+        if src.section_order.is_none() && sing.is_none() {
+            continue;
+        }
+        patch.section_order = src.section_order.clone();
+        patch.sing_order = sing.cloned();
+        let (first, _) = chords_by_src(dst);
+        let marks: Vec<SectionMark> = src
+            .section_marks
+            .iter()
+            .flatten()
+            .filter_map(|m| first.get(&m.before).map(|&before| SectionMark { name: m.name.clone(), before }))
+            .collect();
+        if !marks.is_empty() {
+            patch.section_marks = Some(marks);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_limits_and_syntax() {
+        assert_eq!(expand_section_order("((AB)3.(CD)3)2").map(|v| v.len()), Some(24));
+        assert_eq!(expand_section_order("((((A9)9)9)9)"), None);
+        assert_eq!(expand_section_order("A)"), None);
+        assert_eq!(expand_section_order("中"), None);
+    }
 }

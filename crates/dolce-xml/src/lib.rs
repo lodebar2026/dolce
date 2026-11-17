@@ -395,7 +395,7 @@ impl Tree {
     }
 }
 
-/// XML 1.0 不许出现的控制字符（同 `xmlutil.ts::escapeXml`）：识别从音乐字体里取到的文字会带，写进去整份文件读不开。
+/// XML 1.0 不许出现的控制字符：识别从音乐字体里取到的文字会带，写进去整份文件读不开。
 #[inline]
 fn banned(c: char) -> bool {
     matches!(c, '\u{0}'..='\u{8}' | '\u{b}' | '\u{c}' | '\u{e}'..='\u{1f}' | '\u{fffe}' | '\u{ffff}')
@@ -426,14 +426,14 @@ fn esc_attr(s: &str, out: &mut String) {
     }
 }
 
-/// 文字转义（同 `xmlutil.ts::escapeXml`：`<>&` 转实体、剔掉 XML 1.0 不许出现的控制字符）
+/// 文字转义（`<>&` 转实体、剔掉 XML 1.0 不许出现的控制字符）
 pub fn escape_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     esc_text(s, &mut out);
     out
 }
 
-/// 属性值转义（同 `xmlutil.ts::escapeAttr`，另转 `"`）
+/// 属性值转义（另转 `"`）
 pub fn escape_attr(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     esc_attr(s, &mut out);

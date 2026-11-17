@@ -121,23 +121,6 @@ export class AccidentalCarry {
   }
 }
 
-/** 一小节里一条谱表上**按线/间延续**的临时记号（五线谱口径）：同字母同八度沿用前一个音的变音，起点是调号；
- *  记号按绝对变音命名。与 `AccidentalCarry` 的简谱口径两处不同：`1=F` 的 `#4` 是 B 本位，谱表上印还原号；
- *  `#4 4'` 简谱后一个沿用升半音，谱表上是另一条线，要再印一次。 */
-export class StaffAccidentalCarry {
-  private alters = new Map<string, number>();
-  constructor(private readonly fifths: number) {}
-
-  /** 这个音在谱表上要印的记号；`tied` 是延音线接过来的音：不印，也不改延续状态 */
-  mark(pitch: Pitch, tied = false): Accidental | undefined {
-    if (tied) return undefined;
-    const k = pitch.step + pitch.octave;
-    const expected = this.alters.get(k) ?? keyAlter(STEPS.indexOf(pitch.step), this.fifths);
-    this.alters.set(k, pitch.alter);
-    return pitch.alter !== expected ? ACC_BY_OFFSET[pitch.alter] : undefined;
-  }
-}
-
 // ───────────────────────── 调号拼写 ─────────────────────────
 
 /** 调号的主音拼写（前置形：`"D"`、`"bB"`、`"#F"`）。来源给了 `spelling`（文本谱/123/ABC）就用它；
@@ -238,7 +221,7 @@ function onsets(m: Measure, divisions: number): Map<Element, number> {
  *    赞美之泉 085《复兴的火》第 6 小节 `F A♭ C D` 和弦之后旋律的 A♭，旧简谱引擎与混排都印 `b6`。
  *    123 也只写这一路（`emit123.ts::emits`），读回时 `AccidentalCarry.pitch` 同样只沿旋律延续，两边对得上
  *  - 其余音（内声部、第二 voice）跟全部音延续，只供五线谱侧与导出参考 */
-/** 小节中间换行拆成的后半（前一小节右线隐藏、本小节 `implicit`，`xmlproject.ts::splitInlineBreaks`）：
+/** 小节中间换行拆成的后半（前一小节右线隐藏、本小节 `implicit`，`dolce-model::xmlproject::split_inline_breaks`）：
  *  仍是同一个小节，临时记号接着前半延续。 */
 export function continuesMeasure(prev: Measure | undefined, m: Measure): boolean {
   return !!m.implicit && !!prev?.barlines?.some((b) => b.location === "right" && b.style === "none");

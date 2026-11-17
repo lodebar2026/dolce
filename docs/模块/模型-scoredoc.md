@@ -39,9 +39,9 @@
 | `src/model/fromxml.ts` | ← MusicXML（**直通**：语义进模型，每个模型对象绑到原节点） |
 | `src/model/xmlsurface.ts` | **MusicXML 表层**：模型外的旁表（WeakMap，对象 → 原节点）+ 查询函数（`xmlPos`、`measureWidth`、`noteStem`、`xmlAlign`、`xmlFont`、`staffDetailsOf`、`printLayout`、`defaultsFonts`），五线谱引擎从这里读；导出版面的 `EngravedLayout` 也定义在这 |
 | `src/model/toxml.ts` | → MusicXML（**唯一写出端**，全量序列化） |
-| `src/model/xmlproject.ts` | 简谱来源 → MusicXML 形状的投影（音高、divisions、记号原名、跨行小节…），`toxml.ts` 先过它 |
+| `crates/dolce-model/src/xmlproject.rs`（门面 `src/model/xmlproject.ts`） | 简谱来源 → MusicXML 形状的投影（音高、divisions、记号原名、跨行小节…），`toxml.ts` 先过它 |
 | `src/model/deconames.ts` | 音符记号的别名表（`decoKey`）：拼音短名 / ABC 名 / MusicXML 名 / 中文名 → 文本谱短名。模型里原名照存，简谱排版、文本谱写出、MusicXML 投影用前先归一 |
-| `src/model/jianpuproject.ts` | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
+| `crates/dolce-model/src/jianpuproject.rs`（门面 `src/model/jianpuproject.ts`） | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
 | `crates/dolce-formats/src/fanqie/fromfanqie.rs`（门面 `src/fanqie/parse.ts`） | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
 | `crates/dolce-view/src/slots.rs`（门面 `src/jianpu/slots.ts`） | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId`。Rust 回 id 化的视图（`refs` 存下标、投影改过的曲子另带一份），门面认回对象、建 `idOf` / `elementOf` / `syllableOwner` |
 | `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
@@ -72,7 +72,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   （判据与定性清单在 `jianpu.ts` 文件头）。
   已验：`fifths -7..7` 的无点「1」与 `jppitch.ts` 注释记载的值逐个吻合（bB=58、bA=68、#C=61、
   bD=61、#F=bG=66、bE=63、bC=59；A 调不降八度、B 调降八度）。
-- **简谱来源的谱表记号（`Note.accidental` = `<accidental>`）在投影时按五线谱口径另算**（`xmlproject.ts` → `jianpu.ts::StaffAccidentalCarry`）：
+- **简谱来源的谱表记号（`Note.accidental` = `<accidental>`）在投影时按五线谱口径另算**（`crates/dolce-model/src/xmlproject.rs` → `jianpu.rs::StaffAccidentalCarry`）：
   同字母同八度在一小节内延续、起点是调号、按绝对变音命名，延音线接过来的音不印。源文的简谱记号相对调号、按唱名延续，
   照抄过去在非 C 调错（`1=F` 的 `#4` 是 B 本位，印还原号不是升号）、跨八度漏（`#4 4'` 后一个要再印）；
   `.jpwabc`/文本谱只写在 `degree.accidental` 上，不另算谱表上就一个记号都没有。五线谱引擎只印 `Note.accidental`，自己不推。
@@ -113,7 +113,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   写回（替换原有断行；小节中间的按 `inline` / `snap` / `source` 三种口径落，多声部一律顺延，多声部文本谱不重断）。
   乐句重排（`relayout.ts`）、导出 MusicXML 照简谱视图重断（`xmlproject.ts`）、跨格式另存为（`App.convertTo`）都经它。
   回归 `break-roundtrip-check`：写回 → 六种写出端 → 读回，断点集合不变（能力表记了 `pageBreak` 的格式只比断行位置；ABC 写 `%%newpage`，换页也比）。
-- **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `timeaxis.ts`）、
+- **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `crates/dolce-model/src/timeaxis.rs`）、
   `Chord.continued`、`Mark.startLead/endTrail/leadInPreviousLine/continuationLevels`、`Ending.startOffset/endOffset/pair`…）
   **是排版信息，不是给导出用的**：没有它们谱面就少画或画错（例如弧线端点落在小节线上时简谱引擎认为没收口，弧会接到下一行）。
   改 `fanqie/fromfanqie.rs` 后必须跑 `fanqie-scoredoc-check`。

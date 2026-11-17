@@ -542,7 +542,7 @@ pub fn max_top_element_id(song: &Song) -> ElementId {
     max
 }
 
-/// 这个和弦（或它的增时线）之后原位换行吗（同 `emitutil.ts::inlineBreakOf`）
+/// 这个和弦（或它的增时线）之后原位换行吗
 pub fn inline_break_of(el: &Element) -> Option<BreakKind> {
     let Element::Chord(c) = el else { return None };
     if let Some(k) = &c.line_break_after {

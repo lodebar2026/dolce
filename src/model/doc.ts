@@ -689,7 +689,7 @@ export type DirectionPart = Pick<
 export interface Print {
   newSystem?: boolean;
   newPage?: boolean;
-  /** 本系统是全曲第几个系统（0 基）。文本谱**一组不一定含全部声部**，多声部时靠它把各声部的行对回同一组（各声部共用的时间轴，`timeaxis.ts`） */
+  /** 本系统是全曲第几个系统（0 基）。文本谱**一组不一定含全部声部**，多声部时靠它把各声部的行对回同一组（各声部共用的时间轴，`dolce-model::timeaxis`） */
   system?: number;
   /** 印在本系统上方的说明文字行（文本谱 `W:`）。挂在该系统第一个声部的首小节 */
   texts?: string[];
@@ -756,7 +756,7 @@ export interface Part {
   /** [五线谱] 多谱表（钢琴谱） */
   staffCount?: number;
   /** 123 / ABC 的 `V:n part=m`：这个声部其实是声部 `m` 的下一条谱表（钢琴大谱表的左手）。值是那个声部的 id。
-   *  写 MusicXML 时并回去成 `<staves>`（`staves.ts::mergeStaffParts`），写 ABC 家族时反过来拆（`splitStaves`） */
+   *  写 MusicXML 时并回去成 `<staves>`（`dolce-model::staves::merge_staff_parts`），写 ABC 家族时反过来拆（`split_staves`） */
   staffOf?: string;
   measures: Measure[];
   /** 最后一小节**之后**的换行/换页（123 行末的 `$`）。见 `Print` 的口径说明 */
@@ -842,7 +842,7 @@ export interface PlayPass {
   verse?: number;
   /** 这一遍唱完换页（`.Repeat` 的 `P` 后缀）。投影档逐遍成页时用 */
   pageBreakAfter?: boolean;
-  /** 这一项第一个、最后一个和弦。投影与读回 MusicXML 后小节会拆会并，小节号对不上，那条路靠它们定位（`sections.ts::anchorPlayOrder`） */
+  /** 这一项第一个、最后一个和弦。投影与读回 MusicXML 后小节会拆会并，小节号对不上，那条路靠它们定位（`dolce-model::sections::anchor_play_order`） */
   fromAnchor?: ElementId;
   toAnchor?: ElementId;
 }

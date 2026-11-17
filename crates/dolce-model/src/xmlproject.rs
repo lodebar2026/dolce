@@ -1,4 +1,4 @@
-//! 简谱来源的 `Song` → **MusicXML 形状**的 `Song`：`toxml` 序列化之前的投影（同 `src/model/xmlproject.ts`）。
+//! 简谱来源的 `Song` → **MusicXML 形状**的 `Song`：`toxml` 序列化之前的投影（`src/model/xmlproject.ts` 是门面）。
 //!
 //! 判据：首小节带 `attrs.divisions` 的是 MusicXML 形状，原样返回；其余在副本上投影。
 //! 小节中间换行（源文写明的）拆成两个小节、中间隐藏线。
@@ -1280,7 +1280,7 @@ const BASES: [(NoteType, f64); 7] = [
     (NoteType::N64th, 0.0625),
 ];
 
-/// 由总时值（四分音符为 1）反推 `<type>` + 附点数，Fraction 精确比较（同 `score/xmlutil.ts::typeOfDuration`）。
+/// 由总时值（四分音符为 1）反推 `<type>` + 附点数，Fraction 精确比较。
 pub fn type_of_duration(q: &Fraction) -> (NoteType, f64) {
     let frac = |v: f64| Fraction::new(js::round(v * 16.0), 16.0);
     for (t, v) in BASES.iter() {

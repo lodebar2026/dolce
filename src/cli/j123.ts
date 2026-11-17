@@ -62,19 +62,14 @@ export { fillDegreesFromPitch } from "../model/jianpu";
 // 迁 Rust 对拍（dev `rs-diff.mjs query`）用的查询层
 export * as modelJianpu from "../model/jianpu";
 export * as modelKeyshift from "../model/keyshift";
-export * as modelTuplets from "../model/tuplets";
 export * as modelMultirest from "../model/multirest";
 export * as modelDeconames from "../model/deconames";
 export * as harmonyParse from "../score/harmonyparse";
 export * as xmlSurface from "../model/xmlsurface";
-export * as modelStaves from "../model/staves";
-export * as modelTimeaxis from "../model/timeaxis";
-export * as modelInnervoice from "../model/innervoice";
 export * as modelPagemeta from "../model/pagemeta";
 export * as modelBreaks from "../model/breaks";
 export * as modelXmlproject from "../model/xmlproject";
 export * as modelJianpuproject from "../model/jianpuproject";
-export * as modelDirectionmarks from "../model/directionmarks";
 // 自有 XML 树：脚本里数 MusicXML 元素用（不靠浏览器 DOM）
 // Rust 识别的核对 JSON → 编辑器核对数据（`rust-omr/adapter-check.mjs` 用），识别 id 按表层读
 export { reviewFromRust, systemOpToRust } from "../omrrust/adapter";

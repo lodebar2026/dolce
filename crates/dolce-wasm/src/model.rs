@@ -526,6 +526,161 @@ pub fn model_clear_song_breaks(song: &str) -> Result<String, JsValue> {
     Ok(to_json(&breaks_patch(&before, &after)))
 }
 
+// ───────────────────────── 投影、纸与页眉、段落（M5-5） ─────────────────────────
+
+/// 去掉 `_oid`：投影、改写出来的新对象没有表层身份（Rust 现发的号回 TS 会跟表层的号撞上）
+pub(crate) fn strip_oids(v: &mut Value) {
+    match v {
+        Value::Array(a) => a.iter_mut().for_each(strip_oids),
+        Value::Object(o) => {
+            o.remove("_oid");
+            o.values_mut().for_each(strip_oids);
+        }
+        _ => {}
+    }
+}
+
+/// 一首曲子的 JSON（不带身份）
+pub(crate) fn song_json(s: &Song) -> Value {
+    let mut v = serde_json::to_value(s).expect("序列化");
+    strip_oids(&mut v);
+    v
+}
+
+/// 页眉字体表 → `{title?: {family?, size?, bold?}, …}`（同 TS `Partial<Record<HeaderRole, HeaderFontSpec>>`）
+pub(crate) fn header_fonts_json(fonts: impl IntoIterator<Item = (pagemeta::HeaderRole, pagemeta::HeaderFontSpec)>) -> Value {
+    let map: serde_json::Map<String, Value> = fonts
+        .into_iter()
+        .map(|(r, f)| {
+            let mut o = serde_json::Map::new();
+            if let Some(x) = f.family {
+                o.insert("family".into(), json!(x));
+            }
+            if let Some(x) = f.size {
+                o.insert("size".into(), json!(x));
+            }
+            if f.bold {
+                o.insert("bold".into(), json!(true));
+            }
+            (r.as_str().to_owned(), Value::Object(o))
+        })
+        .collect();
+    Value::Object(map)
+}
+
+/// 纸 → `{w, h, margins?}`（同 TS `PagePt`）
+pub(crate) fn page_json(p: Option<pagemeta::PagePt>) -> Value {
+    p.map_or(Value::Null, |p| {
+        let mut o = json!({ "w": p.w, "h": p.h });
+        if let Some(m) = p.margins {
+            o["margins"] = json!(m);
+        }
+        o
+    })
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ProjectWire {
+    line_starts: Option<Vec<ElementId>>,
+    mid_line_starts: bool,
+    slur_ties: Option<bool>,
+}
+
+/// `projectForMusicXml`：简谱来源的曲子投成 MusicXML 形状（不带身份；MusicXML 形状的门面不送来）。`opts`：`{lineStarts?, midLineStarts?, slurTies?}`
+#[wasm_bindgen(js_name = modelProjectForMusicXml)]
+pub fn model_project_for_music_xml(song: &str, opts: &str) -> Result<String, JsValue> {
+    let song: Song = parse("Song", song)?;
+    let w: ProjectWire = parse("ProjectOptions", opts)?;
+    let o = xmlproject::ProjectOptions { line_starts: w.line_starts, mid_line_starts: w.mid_line_starts, slur_ties: w.slur_ties };
+    let out = xmlproject::project_for_music_xml(&song, &o).map_err(|e| msg_err(&e))?;
+    Ok(song_json(&out).to_string())
+}
+
+/// 改写结果：没改回 undefined（门面原样用入参），改了回新曲子（不带身份）
+fn changed_song(c: std::borrow::Cow<'_, Song>) -> Option<String> {
+    match c {
+        std::borrow::Cow::Borrowed(_) => None,
+        std::borrow::Cow::Owned(s) => Some(song_json(&s).to_string()),
+    }
+}
+
+/// `slursAsTies`：简谱口径括住相邻两个同音的弧改记延音线；没有要改的回 undefined
+#[wasm_bindgen(js_name = modelSlursAsTies)]
+pub fn model_slurs_as_ties(song: &str) -> Result<Option<String>, JsValue> {
+    let song: Song = parse("Song", song)?;
+    Ok(changed_song(xmlproject::slurs_as_ties(&song)))
+}
+
+/// `voltasOfPlayOrder`：`[[小节号, {start?, stop, repeatBack}]]`
+#[wasm_bindgen(js_name = modelVoltasOfPlayOrder)]
+pub fn model_voltas_of_play_order(song: &str) -> Result<String, JsValue> {
+    let song: Song = parse("Song", song)?;
+    let out: Vec<Value> = xmlproject::voltas_of_play_order(&song)
+        .into_iter()
+        .map(|(m, v)| {
+            let mut o = json!({ "stop": v.stop, "repeatBack": v.repeat_back });
+            if let Some(s) = v.start {
+                o["start"] = json!(s);
+            }
+            json!([m, o])
+        })
+        .collect();
+    Ok(to_json(&out))
+}
+
+/// `projectForJianpu`：MusicXML 形状（与只记 `divisions` 的原生 ABC）投成简谱形状；不必投的回 undefined
+#[wasm_bindgen(js_name = modelProjectForJianpu)]
+pub fn model_project_for_jianpu(song: &str) -> Result<Option<String>, JsValue> {
+    let song: Song = parse("Song", song)?;
+    Ok(changed_song(jianpuproject::project_for_jianpu(&song)))
+}
+
+/// 谱里自带的纸、谱表高、歌词字号、页眉字体一趟出：`{page, staffSize, lyricSize, headerFonts}`。
+/// `song` 只需 `meta` / `defaults` / `credits` 与身份（页眉字体缺族时按身份到表层 `h` 取 `<word-font>`）
+#[wasm_bindgen(js_name = modelPageInfo)]
+pub fn model_page_info(song: &str, h: u32) -> Result<String, JsValue> {
+    let song: Song = parse("Song", song)?;
+    let fonts = with_surface(h, |s| pagemeta::song_header_fonts(&song, s.map(|s| &*s)));
+    Ok(to_json(&json!({
+        "page": page_json(pagemeta::song_page(&song)),
+        "staffSize": pagemeta::song_staff_size(&song),
+        "lyricSize": pagemeta::song_lyric_size(&song),
+        "headerFonts": header_fonts_json(fonts),
+    })))
+}
+
+/// `standardPaperOf`：`{name, landscape}` 或 null
+#[wasm_bindgen(js_name = modelStandardPaperOf)]
+pub fn model_standard_paper_of(w: f64, h: f64) -> String {
+    to_json(&pagemeta::standard_paper_of(w, h).map(|(name, landscape)| json!({ "name": name, "landscape": landscape })))
+}
+
+/// `headerRoleOfCredit`：`<credit>` 归到页眉角色（`""` 当没写）；归不上为 undefined
+#[wasm_bindgen(js_name = modelHeaderRoleOfCredit)]
+pub fn model_header_role_of_credit(kind: Option<String>, justify: Option<String>, biggest: bool) -> Option<String> {
+    pagemeta::header_role_of_credit(kind.as_deref(), justify.as_deref(), biggest).map(|r| r.as_str().to_owned())
+}
+
+/// `withPageMeta`：MusicXML 的纸、谱表大小、歌词字号、页眉字体写进 meta。没有要写的回 undefined（门面原样用入参）；
+/// 有就回整份新文档（带身份，门面按同一份表层认回）
+#[wasm_bindgen(js_name = modelWithPageMeta)]
+pub fn model_with_page_meta(doc: &str, h: u32) -> Result<Option<String>, JsValue> {
+    let doc: ScoreDoc = parse("ScoreDoc", doc)?;
+    Ok(with_surface(h, |s| match pagemeta::with_page_meta(&doc, s.map(|s| &*s)) {
+        std::borrow::Cow::Borrowed(_) => None,
+        std::borrow::Cow::Owned(d) => Some(to_json(&d)),
+    }))
+}
+
+/// `carryPlayOrder`：写明的演唱顺序搬到读回的那份上，回各首要设的字段（与 `to.songs` 平行）
+#[wasm_bindgen(js_name = modelCarryPlayOrder)]
+pub fn model_carry_play_order(from: &str, to: &str) -> Result<String, JsValue> {
+    let from: ScoreDoc = parse("ScoreDoc", from)?;
+    let to: ScoreDoc = parse("ScoreDoc", to)?;
+    Ok(to_json(&sections::carry_play_order(&from, &to)))
+}
+
 /// `checkMeasureDurations`：小节时值自检（`dolce_model::beatcheck`）。`opts`：`{meters?, pickup?: [首][声部]}`
 #[wasm_bindgen(js_name = modelBeatCheck)]
 pub fn model_beat_check(doc: &str, opts: &str) -> Result<String, JsValue> {

@@ -59,7 +59,7 @@ fn is_number(c: char) -> bool {
     matches!(get_general_category(c), G::DecimalNumber | G::LetterNumber | G::OtherNumber)
 }
 
-/// 拉丁音节（非 CJK 的字母/数字）起头——歌词读入端的拉丁分支会把它和前面的拉丁词粘在一起（`emitutil.ts::isLatinStart`）
+/// 拉丁音节（非 CJK 的字母/数字）起头——歌词读入端的拉丁分支会把它和前面的拉丁词粘在一起
 pub fn is_latin_start(text: &str) -> bool {
     let first = text.chars().next();
     first.is_some_and(|c| latin_ch(c) && !is_lyric_cjk_cp(c)) || is_lyric_apostrophe(&text.encode_utf16().collect::<Vec<_>>(), 0)

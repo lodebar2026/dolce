@@ -173,7 +173,7 @@ pub(crate) fn zero() -> Fraction {
     Fraction::int(0.0)
 }
 
-/// 段落标记按 `locate` 落到 (声部排位, 小节, 第几个和弦)；只留排位最前的那个声部上的（同 `model/sections.ts::locateSectionMarks`）
+/// 段落标记按 `locate` 落到 (声部排位, 小节, 第几个和弦)；只留排位最前的那个声部上的
 pub(crate) fn locate_section_marks(song: &Song, locate: impl Fn(ElementId) -> Option<(usize, f64, f64)>) -> Vec<SectionMark> {
     let found: Vec<(String, (usize, f64, f64))> = song.section_marks.iter().flatten().filter_map(|m| locate(m.before).map(|at| (m.name.clone(), at))).collect();
     let Some(rank) = found.iter().map(|(_, at)| at.0).min() else { return vec![] };

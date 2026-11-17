@@ -1,5 +1,4 @@
-//! 小节里的 `<direction>`（MusicXML / `.jpwabc` 来的力度、术语、跳转、文字、渐强渐弱）→ 简谱那套「挂在符号上的记号」
-//! （同 `src/model/directionmarks.ts`）。
+//! 小节里的 `<direction>`（MusicXML / `.jpwabc` 来的力度、术语、跳转、文字、渐强渐弱）→ 简谱那套「挂在符号上的记号」。
 //!
 //!   - 挂哪个符号：按**拍位**找——力度、术语、segno/coda、文字、渐强起点挂在拍位上（或之后）的第一个占时值的符号；
 //!     渐强收尾挂在拍位**之前**的最后一个；
@@ -336,7 +335,7 @@ fn text_name(name: &str) -> Option<&'static str> {
     }
 }
 
-/// TS 的 `staves.ts::splitStaves` 拆出的几条谱表，同一小节**共用**原小节的 `barlines`（`{ ...m }` 浅拷贝，`structuredClone` 也保留共用）：
+/// `staves::split_staves` 拆出的几条谱表，同一小节**共用**原小节的 `barlines`（`{ ...m }` 浅拷贝，`structuredClone` 也保留共用）：
 /// 往一条谱表的小节线上加跳转记号，别的谱表跟着有。这里照这个行为：同一声部拆出的几条谱表（`staff_of` 连着），
 /// 同一小节的小节线一开始就相同的算共用，改一处同步到其余几处。（声部, 小节）→ 共用的别的声部
 fn shared_barlines(song: &Song) -> std::collections::HashMap<(usize, usize), Vec<usize>> {

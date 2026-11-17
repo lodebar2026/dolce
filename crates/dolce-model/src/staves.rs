@@ -1,4 +1,4 @@
-//! **一个声部的几条谱表**（钢琴大谱表）在 ABC 家族文本与 MusicXML 两种形状之间互转（同 `src/model/staves.ts`）。
+//! **一个声部的几条谱表**（钢琴大谱表）在 ABC 家族文本与 MusicXML 两种形状之间互转。
 //!
 //! MusicXML 形状：一个 `Part` 带 `<staves>`，元素 `staff` 是 1、2…，第 k 条谱表上的 voice 按每谱表 4 个编；
 //! 123 / ABC 形状：每条谱表各是一个 `Part`，第二条起 `staffOf` 指向首条的 id。

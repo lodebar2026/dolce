@@ -138,7 +138,7 @@ function pairArcs(notes: JpNum[], fifths: number): ArcPairs {
   return { slur, tie };
 }
 
-/** 跳转记号 → 小节线上的记号原名（`xmlproject.ts::directionOf` 认的那几个，导出 MusicXML 时落成 `<direction>`+`<sound>`）。 */
+/** 跳转记号 → 小节线上的记号原名（`dolce-model::xmlproject::direction_of` 认的那几个，导出 MusicXML 时落成 `<direction>`+`<sound>`）。 */
 /** 倚音底下的减时线条数 → 符号时值 */
 const GRACE_TYPE: Readonly<Record<number, Chord["duration"]["type"]>> = { 1: "eighth", 2: "16th", 3: "32nd" };
 
@@ -216,7 +216,7 @@ export function recognizedToDoc(score: RecognizedScore, numOf?: Map<ElementId, J
   const voices = [...new Set(score.rows.map((r) => r.voice ?? 0))].sort((a, b) => a - b);
   // 局部多声部（946《大地音韵飘》前两行单声部、副歌两个系统分两声部）：没归系统的行只进第 1 声部，各声部的小节数就对不上了。
   // 按谱面自上而下给每行编组号（同一系统的几行一组，单声部行各成一组），挂在行首小节的 `print.system` 上，
-  // 共用时间轴按组对齐（`timeaxis.ts`，同文本谱一组只写 `Q:` 的口径）。整页都分了声部的不挂，照旧按小节序号一一对应。
+  // 共用时间轴按组对齐（`crates/dolce-model/src/timeaxis.rs`，同文本谱一组只写 `Q:` 的口径）。整页都分了声部的不挂，照旧按小节序号一一对应。
   let groupOf: Map<StaffRow, number> | undefined;
   if (voices.length > 1 && score.rows.some((r) => r.voice === undefined)) {
     groupOf = new Map();
