@@ -375,6 +375,7 @@ dependencies = [
  "dolce-engrave",
  "dolce-geom",
  "dolce-layout-jianpu",
+ "dolce-layout-staff",
  "dolce-model",
  "dolce-scene",
  "dolce-smufl",
@@ -456,6 +457,23 @@ dependencies = [
  "dolce-style",
  "dolce-text",
  "dolce-view",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dolce-layout-staff"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-engrave",
+ "dolce-geom",
+ "dolce-model",
+ "dolce-scene",
+ "dolce-smufl",
+ "dolce-style",
+ "dolce-text",
  "regex",
  "serde",
  "serde_json",

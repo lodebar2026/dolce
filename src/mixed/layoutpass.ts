@@ -1620,7 +1620,7 @@ function updateLayoutByPrint(score: StaffLayout, input: LayoutInput): void {
  * 各声部读完之后的收尾：全局 tick、跨小节对象的绝对 tick、简谱符杠、整个版面 pass、声部分组、Sibelius 修正。
  * 与来源无关。
  */
-export function finishMixedScore(score: StaffLayout, input: LayoutInput, partGroups: PartGroup[]): void {
+export function finishMixedScore(score: StaffLayout, input: LayoutInput, partGroups: PartGroup[], probe?: (stage: "systems", score: StaffLayout) => void): void {
   // Staff order
   let ord = 0;
   for (const part of score.parts) for (const st of part.staves) st.order = ord++;
@@ -1672,6 +1672,7 @@ export function finishMixedScore(score: StaffLayout, input: LayoutInput, partGro
   updateLayoutByPrint(score, input);
   if (autoLayout) autoJustifySystems(score);
   layoutAttr(score);
+  probe?.("systems", score);
   if (autoLayout) autoPlaceNotes(score);
   if (autoLayout) autoPlaceTuplets(score);
   if (autoLayout) autoPlaceWedges(score);

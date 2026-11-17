@@ -1428,11 +1428,14 @@ function partGroupsOf(score: StaffLayout, song: Song): PartGroup[] {
 
 // ---------------- 入口 ----------------
 
+/** 排版迁 Rust 对拍取中间 dump 的探针（`cli/staffref.ts`）：`read` 读入建树后、`systems` 分系统与 `layoutAttr` 之后 */
+export type StaffProbe = (stage: "read" | "systems", score: StaffLayout) => void;
+
 /**
  * `ScoreDoc`（MusicXML 形状）→ `StaffLayout`。只取第一首。
  * 调用方给好 `MixedOptions`（含已加载的 MetaData）。
  */
-export function layoutStaff(doc: ScoreDoc, options: MixedOptions): StaffLayout {
+export function layoutStaff(doc: ScoreDoc, options: MixedOptions, probe?: StaffProbe): StaffLayout {
   const first = doc.songs[0];
   if (!first) throw new Error("这份文档里没有曲子");
   // 多小节休止在谱面上并成一小节（模型不动，见 `model/multirest.ts`）
@@ -1563,7 +1566,8 @@ export function layoutStaff(doc: ScoreDoc, options: MixedOptions): StaffLayout {
   });
   autoVerseNumbers(score);
 
-  finishMixedScore(score, layoutInputOf(song), partGroupsOf(score, song));
+  probe?.("read", score);
+  finishMixedScore(score, layoutInputOf(song), partGroupsOf(score, song), probe);
   return score;
 }
 

@@ -1,0 +1,19 @@
+[package]
+name = "dolce-layout-staff"
+description = "悦谱 Dolce 的五线谱 / 混排引擎（照 src/mixed/）：读入建树 → 横向 / 分系统 / 纵向 → 画系统与简谱叠层 → 装页"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+dolce-geom = { path = "../dolce-geom" }
+dolce-smufl = { path = "../dolce-smufl" }
+dolce-text = { path = "../dolce-text" }
+dolce-scene = { path = "../dolce-scene" }
+dolce-model = { path = "../dolce-model" }
+dolce-style = { path = "../dolce-style" }
+dolce-engrave = { path = "../dolce-engrave" }
+serde.workspace = true
+serde_json = { version = "1", features = ["float_roundtrip"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }

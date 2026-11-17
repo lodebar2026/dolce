@@ -25,7 +25,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// 数差容差：回放下 1e-6（开发门）；`--native` 自量时 0.5（验收门）
-static TOL: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+pub(crate) static TOL: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
 
 fn tol() -> f64 {
     *TOL.get().unwrap_or(&1e-6)
@@ -201,7 +201,7 @@ fn diff(path: &str, a: &Value, b: &Value, d: &mut Diff) {
 }
 
 /// 一段的比对结果
-enum Verdict {
+pub(crate) enum Verdict {
     Same(f64),
     /// 数超差（骨架一致）：最大差与出处
     Num(f64, String),
@@ -209,7 +209,7 @@ enum Verdict {
     Missing,
 }
 
-fn judge_json(want: &Value, got: Option<&Value>) -> Verdict {
+pub(crate) fn judge_json(want: &Value, got: Option<&Value>) -> Verdict {
     let Some(got) = got else { return Verdict::Missing };
     let mut d = Diff::default();
     diff("", want, got, &mut d);
@@ -222,7 +222,7 @@ fn judge_json(want: &Value, got: Option<&Value>) -> Verdict {
     }
 }
 
-fn judge_pages(want: &Value, got: Option<&Vec<Page>>) -> Verdict {
+pub(crate) fn judge_pages(want: &Value, got: Option<&Vec<Page>>) -> Verdict {
     let Some(got) = got else { return Verdict::Missing };
     let want: Vec<Page> = match serde_json::from_value(want.clone()) {
         Ok(p) => p,
@@ -252,16 +252,16 @@ fn judge_pages(want: &Value, got: Option<&Vec<Page>>) -> Verdict {
 }
 
 #[derive(Default)]
-struct Tally {
-    same: usize,
-    num: usize,
-    skeleton: usize,
-    missing: usize,
-    max: f64,
-    max_at: String,
+pub(crate) struct Tally {
+    pub(crate) same: usize,
+    pub(crate) num: usize,
+    pub(crate) skeleton: usize,
+    pub(crate) missing: usize,
+    pub(crate) max: f64,
+    pub(crate) max_at: String,
 }
 
-fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
+pub(crate) fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
     p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
 }
 
