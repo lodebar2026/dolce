@@ -428,15 +428,34 @@ impl Reader {
     }
 
     /// `<notations>` 读进 `into`（和弦音的记号并进同一个 `Chord`）。
+    /// 一个 `<note>` 里可有几个 `<notations>`（如上下两条连线各写一个）：逐个读，奏法 / 装饰 / 技法在同一个音里接着往后并。
     fn read_notations(&mut self, note_el: NodeId, id: ElementId, into: Option<Notations>, note_index: f64) -> Option<Notations> {
-        let t = self.s.tree();
-        let Some(nots) = child(t, note_el, "notations") else { return into };
+        let all = children(self.s.tree(), note_el, "notations");
+        if all.is_empty() {
+            return into;
+        }
         let mut n = into.unwrap_or_default();
+        for (k, nots) in all.into_iter().enumerate() {
+            self.read_notations_el(nots, &mut n, k > 0, id, note_index);
+        }
+        (n != Notations::default()).then_some(n)
+    }
+
+    /// 读一个 `<notations>`；`more` = 同一个音里的第二个及以后（列表接着并，不顶掉前面的）。
+    fn read_notations_el(&mut self, nots: NodeId, n: &mut Notations, more: bool, id: ElementId, note_index: f64) {
+        let t = self.s.tree();
+        let put = |slot: &mut Option<Vec<String>>, list: Vec<String>| {
+            if list.is_empty() {
+                return;
+            }
+            match slot {
+                Some(v) if more => v.extend(list),
+                _ => *slot = Some(list),
+            }
+        };
         if let Some(art) = child(t, nots, "articulations") {
             let list: Vec<String> = t.children(art).map(|c| t.tag(c).to_owned()).collect();
-            if !list.is_empty() {
-                n.articulations = Some(list);
-            }
+            put(&mut n.articulations, list);
             for c in t.children(art) {
                 if let Some(pl) = attr(t, c, "placement").and_then(Placement::known) {
                     n.artic_placement.get_or_insert_with(Default::default).insert(t.tag(c).to_owned(), pl);
@@ -460,15 +479,11 @@ impl Reader {
                 }
             }
             let list: Vec<String> = t.children(orn).filter(|&c| Some(c) != trem).map(|c| t.tag(c).to_owned()).collect();
-            if !list.is_empty() {
-                n.ornaments = Some(list);
-            }
+            put(&mut n.ornaments, list);
         }
         if let Some(tech) = child(t, nots, "technical") {
             let list: Vec<String> = t.children(tech).map(|c| t.tag(c).to_owned()).collect();
-            if !list.is_empty() {
-                n.technical = Some(list);
-            }
+            put(&mut n.technical, list);
         }
         if let Some(fer) = child(t, nots, "fermata") {
             n.fermata = Some(true);
@@ -496,7 +511,6 @@ impl Reader {
                 }
             }
         }
-        (n != Notations::default()).then_some(n)
     }
 }
 

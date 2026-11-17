@@ -941,7 +941,11 @@ fn direction_part_xml(o: &mut Out, dir: &PartView, sur: Option<NodeId>, cx: &Ctx
             o.text(dir.kind, text, a, sur);
         }
         "wedge" => {
-            let ty = if dir.span_type == Some(&SpanType::Stop) { "stop".to_owned() } else { dir.wedge_type.map_or("crescendo", |w| w.as_str()).to_owned() };
+            let ty = match dir.span_type {
+                Some(SpanType::Stop) => "stop".to_owned(),
+                Some(SpanType::Continue) => "continue".to_owned(),
+                _ => dir.wedge_type.map_or("crescendo", |w| w.as_str()).to_owned(),
+            };
             let mut a: Attrs = vec![("type", Some(ty))];
             a.extend(pos);
             o.leaf("wedge", a, sur);

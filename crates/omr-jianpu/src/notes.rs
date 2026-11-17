@@ -22,6 +22,8 @@ pub struct RowNotes {
     pub meters: Vec<crate::result::RowMeter>,
     /// 认作 segno 的墨（主体与两颗点；读和弦带前抹掉）
     pub segno_ink: Vec<i32>,
+    /// 读出是括号的数字格（前奏括号）：不当临时号
+    pub parens: Vec<Rect>,
 }
 
 /// 细长横墨：列范围与行范围（都含端点）。
@@ -177,8 +179,13 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
     let mut read: Vec<Option<u8>> = Vec::with_capacity(texts.len());
     for (i, t) in texts.iter().enumerate() {
         let mut d = digit_of(t);
-        if d.is_none() && !t.trim().is_empty() {
+        // 读出括号的不往候选里找数字（前奏括号「(5 … 1)」的括号候选里排着 1，issue 41）
+        if d.is_none() && !t.trim().is_empty() && !t.trim().chars().all(|c| "()（）".contains(c)) {
             d = crate::frame::alt_digit(ocr, &imgs[i]);
+        }
+        if std::env::var("OMR_JP_CELLTXT").is_ok() {
+            let r = digit_cells[i].rect();
+            eprintln!("  格读 x{:.0} y{:.0} {:.0}x{:.0} {:?} → {:?}", r.x, r.y, r.w, r.h, t, d);
         }
         read.push(d);
     }
@@ -198,7 +205,11 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
         match c.kind {
             CellKind::Digit => {
                 let d = read[di];
+                let paren = texts[di].trim();
                 di += 1;
+                if !paren.is_empty() && paren.chars().all(|c| "()（）".contains(c)) {
+                    out.parens.push(c.rect());
+                }
                 let Some(d) = d else { continue };
                 let mut n = JpNum { digit: d, bbox: c.rect(), bar_like: d == 1 && bar_like(ink, c, h), ..Default::default() };
                 n.repeat_forward = std::mem::take(&mut pending_forward);

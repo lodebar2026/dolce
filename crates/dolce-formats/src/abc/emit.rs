@@ -196,6 +196,8 @@ pub fn lyric_lines(
         let mut body = String::new();
         let mut label: Option<String> = None;
         let mut label_inline = false;
+        // 这一行已写出过字：ABC 的 `1.~` 只在段首（前面只有跳格）读成段号，行中间的段号退回行首 `<…>`
+        let mut wrote = false;
         let mut pending_skips = String::new();
         let mut extend_consumes = false;
         let mut prev_syllabic: Option<dolce_model::Syllabic> = None;
@@ -274,6 +276,7 @@ pub fn lyric_lines(
                 && hit.verse_label == label
                 && is_numeric_label(label.as_deref().unwrap())
                 && !label_inline
+                && !wrote
             {
                 body.push_str(label.as_deref().unwrap());
                 body.push('~');
@@ -281,6 +284,7 @@ pub fn lyric_lines(
             }
             body.push_str(hit.leading_punctuation.as_deref().unwrap_or(""));
             body.push_str(&joined);
+            wrote = true;
             body.push_str(hit.trailing_punctuation.as_deref().unwrap_or(""));
             prev_syllabic = hit.syllabic.clone();
             let tail: Option<&str> = match &hit.trailing_punctuation {
@@ -1503,7 +1507,11 @@ impl Emitter {
             let last_ending = lefts.iter().rposition(|b| b.ending.as_ref().is_some_and(|e| e.kind == EndingType::Start));
             for (li, left) in lefts.iter().enumerate() {
                 if left.style.is_some() || left.repeat.is_some() {
-                    if left.repeat == Some(RepeatDir::Forward) && left.style.is_none() && out.last().is_some_and(|x| x == "|") {
+                    // 反复起的左线（MusicXML 形状里带 `heavy-light`）并进前一小节的右线写：`| |:` → `|:`
+                    if left.repeat == Some(RepeatDir::Forward)
+                        && matches!(left.style, None | Some(BarStyle::HeavyLight))
+                        && out.last().is_some_and(|x| x == "|")
+                    {
                         out.pop();
                     }
                     out.push(barline_text(left).into());

@@ -2818,6 +2818,15 @@ fn dir_anchor(doc: &ScoreDoc, r: &DirRef) -> Option<DirAnchor> {
     let k = js::min(ae, len - 1.0);
     let loc = |i: usize| ChordLoc { si: r.si, pi: r.pi, mi: r.mi, index: i };
     let fits = |e: &Element| matches!(e, Element::Chord(c) if dir.voice.is_none_or(|v| c.voice == v));
+    // 带显式时刻的（`<backup>` / `<forward>` 后插进来的，元素下标与时刻对不上）：挂在这个时刻上或其后的第一个音
+    if let Some(on) = dir.onset {
+        let os = onsets(m);
+        for (i, e) in m.elements.iter().enumerate() {
+            if fits(e) && os.get(&i).copied().unwrap_or(0.0) >= on - 1e-9 {
+                return Some(DirAnchor { loc: loc(i), at_end: false });
+            }
+        }
+    }
     let start = if k > 0.0 { k.ceil() as usize } else { 0 };
     for (i, e) in m.elements.iter().enumerate().skip(start) {
         if (i as f64) < k {

@@ -38,6 +38,9 @@ TS 侧拿到的模型是 JSON 镜像：可绑对象的身份 `_oid` 摘下记在
 - 单音震音 `<tremolo type="single">n` 进 `Notations.tremolo`（道数），`default-x/default-y` 进 `tremoloPos`（本仓按斜线墨迹中心记：x 相对符头左缘、y 相对谱表顶线，tenths），双音震音仍按元素名留在 `ornaments`；
 - 奏法记号的 `placement`（`<accent placement="below"/>`）进 `Notations.articPlacement`（按记号名），写出端原样写回；五线谱照它定上下；
   `<measure-style><multiple-rest>` 进 `MeasureAttrs.multiRest`（只记首小节，后面那几个小节照原样在）。
+- **一个 `<note>` 里可有几个 `<notations>`**（圣诞颂歌同一个音上下两条连线各写一个）：逐个读，奏法 / 装饰 / 技法在同一个音里接着并（`fromxml.rs::read_notations`）；
+  只读第一个会丢第二条弧，那首 GT 读进来 37 条弧只剩 30 条。
+- **`<wedge type="continue">` 原样写回**（`toxml.rs`）：以前非 stop 一律写成 `crescendo`，跨行的渐强续段读回成了新起的一条。
 - **slur 的起止按小节内的时刻配，不按文档序**（`fromxml.ts::MarkSink`）：一小节里先写完谱表 1 再 `<backup>` 写谱表 2，
   钢琴跨谱表弧的止端（右手小节后半的和弦）在文档里排在起端（左手小节头的音）前面，按文档序会把这个止端配给上一条、起端留给下一条的止端，
   一整排弧全错开一个（宁静的伯利恒钢琴每小节一条，GT 与识别稿都这样写）。所以起止先攒着，小节读完按时刻排（同一时刻保持文档序：倚音弧起在倚音、止在同一时刻的主音上）再配。

@@ -135,11 +135,9 @@ fn parse_track(b: &[u8]) -> Vec<SmfEvent> {
             continue;
         }
         if status == 0xf0 || status == 0xf7 {
-            // 照搬 TS `at += varlen()`：左边的 `at` 先取值，varlen 读长度字节时的推进被盖掉，
-            // 落点是「长度字节的起点 + 长度」（比规范少跳了长度字节本身）。迁移期旧 bug 照搬，切换后另修。
-            let from = at;
+            // 系统专用：变长长度之后跟 len 字节数据，整段跳过
             let len = varlen(b, &mut at);
-            at = from + len;
+            at += len;
             continue;
         }
         if status >= 0xf0 {
@@ -225,6 +223,17 @@ mod tests {
         let t: &[u8] = &[0, 0xff, 0x03, 4, 0xd6, 0xd0, 0xce, 0xc4];
         let s = parse_smf(&smf(&[t])).unwrap();
         assert_eq!(s.tracks[0][0], SmfEvent::TrackName { tick: 0.0, text: "中文".into() });
+    }
+
+    #[test]
+    fn sysex_skips_length_and_data() {
+        // F0 长度 5（数据 7E 7F 09 01 F7），之后的音符要照常读到
+        let t: &[u8] = &[0, 0xf0, 5, 0x7e, 0x7f, 0x09, 0x01, 0xf7, 0, 0x90, 60, 100, 0x60, 0x80, 60, 0, 0, 0xff, 0x2f, 0];
+        let s = parse_smf(&smf(&[t])).unwrap();
+        assert_eq!(s.tracks[0], vec![
+            SmfEvent::NoteOn { tick: 0.0, channel: 0, pitch: 60, velocity: 100 },
+            SmfEvent::NoteOff { tick: 96.0, channel: 0, pitch: 60, velocity: 0 },
+        ]);
     }
 
     #[test]

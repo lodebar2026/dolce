@@ -864,6 +864,9 @@ pub fn systems(ink: &Ink, rows: &[RowFrame]) -> Vec<Option<(u32, u32)>> {
                 rows[i].bottom_at(k.cx) > k.rect.y - h && rows[i].top_at(k.cx) < k.rect.bottom() + h
             })
             .collect();
+        if std::env::var("OMR_JP_SYS").is_ok() {
+            eprintln!("  连谱号候选 x{:.0} y{:.0} {:.0}x{:.0} 括着 {:?} 首数字 {:?}", k.rect.x, k.rect.y, k.rect.w, k.rect.h, inside, inside.iter().map(|&i| first_x[i] as i64).collect::<Vec<_>>());
+        }
         if inside.len() < 2 || (inside.len() == rows.len() && rows.len() >= 5) || inside.iter().any(|&i| k.rect.x > first_x[i]) {
             continue;
         }

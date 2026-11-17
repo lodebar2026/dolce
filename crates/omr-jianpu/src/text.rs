@@ -618,6 +618,10 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
             if (!last && chordish) || (near_next && han_count(&text) < 2 && words < 3) {
                 continue;
             }
+            // 下一行头顶的表情记号行（「17 （合唱）mf poco rit.」，issue 41：缺声部系统的下一截谱行离得远，过了上面的 near_next）
+            if !last && expression_line(&text) {
+                continue;
+            }
             // 没认全的减时线、弧凑成的一截：比一行字矮得多，或读出来只有横杠
             // 英文歌词行比汉字行矮，不按行高丢
             let junk = text.chars().filter(|&c| is_han(c)).all(|c| "一二三".contains(c))
@@ -1320,6 +1324,46 @@ fn fifths_of(letter: char, alter: i32) -> i32 {
 }
 
 /// 页眉：首行谱以上。DBNet 检出文本行，逐行读字；调号、拍号、速度、曲号按内容认，其余交 `omr-text` 分标题与署名。
+/// 整行是表情记号：括号里的说明（`（合唱）`）去掉后，各词都是小节号、力度或速度表情术语（`poco rit.`、`a tempo`），且至少有一个力度或术语。
+fn expression_line(text: &str) -> bool {
+    let mut depth = 0;
+    let rest: String = text
+        .chars()
+        .map(|c| {
+            if "(（".contains(c) {
+                depth += 1;
+            }
+            let r = if depth > 0 { ' ' } else { c };
+            if ")）".contains(c) && depth > 0 {
+                depth -= 1;
+            }
+            r
+        })
+        .collect();
+    let toks: Vec<&str> = rest.split_whitespace().collect();
+    let marked = |t: &str| words::dynamic(t).is_some() || words::has_term(t);
+    toks.iter().any(|t| marked(t)) && toks.iter().all(|t| t.chars().all(|c| c.is_ascii_digit()) || marked(t) || *t == "a")
+}
+
+/// 页眉区的一框是不是力度：去掉括号里的说明（`(女声)`）后剩下的是力度记号，或只是一两三个小写字母（斜体力度常读错一个字母：`mf`→`mt`）。
+fn head_dynamic(text: &str) -> bool {
+    let mut depth = 0;
+    let rest: String = text
+        .chars()
+        .filter(|&c| {
+            if "(（".contains(c) {
+                depth += 1;
+            }
+            let keep = depth == 0 && !c.is_whitespace();
+            if ")）".contains(c) && depth > 0 {
+                depth -= 1;
+            }
+            keep
+        })
+        .collect();
+    !rest.is_empty() && (words::dynamic(&rest).is_some() || (rest.chars().count() <= 3 && rest.chars().all(|c| c.is_ascii_lowercase())))
+}
+
 pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: &mut RecognizedScore) {
     let w = ink.w() as f64;
     let top = rows[0].top_at(w / 2.0);
@@ -1353,6 +1397,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         // 首行谱头顶上的和弦行不是页眉
         // 调名紧跟拍号的（「Em4/4」「Em 3/4」）是调号拍号，不是和弦
         if top - (b.y + b.h) <= num_h * 3.0 && chords::is_annotation_line(&text) && !(KEY_BARE.is_match(&text) && METER.is_match(&text)) {
+            continue;
+        }
+        // 紧贴首行谱头顶的力度（「mf」读成「mt」、「(女声)mf」，issue 41）：括号里的声部说明去掉后只剩力度或两三个小写字母，是谱里的记号不是署名
+        if top - (b.y + b.h) <= num_h * 3.0 && head_dynamic(&text) {
             continue;
         }
         if !text.trim().is_empty() {
@@ -1499,7 +1547,11 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
         // 速度与调号、「混合拍」挤在一框（迦南 1727「1=C 4 混合拍 ♩=75」，rec 在「=」后多读一道「-」）：取最后一个汉字之后那段、去掉「=」后的横
         let tail: String = l.text.rsplit(is_han).next().unwrap_or("").replace("=-", "=").replace("=—", "=");
-        let metro = words::metronome(&l.text).or_else(|| if tail.len() < l.text.len() || tail.contains("=") { words::metronome(&tail) } else { None });
+        // 速度在前、汉字表情跟在后面（「♩=88 富有感情的」，issue 41）：取头一个汉字之前那段
+        let head: &str = l.text.split(is_han).next().unwrap_or("");
+        let metro = words::metronome(&l.text)
+            .or_else(|| if tail.len() < l.text.len() || tail.contains("=") { words::metronome(&tail) } else { None })
+            .or_else(|| if head.len() < l.text.len() { words::metronome(head) } else { None });
         if let Some((bpm, _)) = metro {
             score.tempo = Some(bpm);
             // 音符后带附点的（`♩.=60`，rec 读成「J.=60」）：拍单位是附点四分

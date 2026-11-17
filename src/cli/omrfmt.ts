@@ -11,6 +11,9 @@ import { XML_OUT_FORMATS, encodeXmlAs, isXmlOutFormat, type XmlOutFormat } from 
 import { applyRefLyrics, rustLyricHooks } from "../omr/reflyrics";
 export { decodeLyricsBytes, formatLyricCheckItem } from "../omr/reflyrics";
 export { omrEmitter } from "../omr/emit";
+// 识别结果自检（私有仓库 `beat-check.mjs`、`omr-fanqie-check.mjs` 吃 `omr-cli run` 的产物用）
+export { recognizedToDoc } from "../omr/todoc";
+export { recognizedBeatIssues } from "../omr/beats";
 
 /** 输出格式：MusicXML 加上各可编辑格式（`convert/targets.ts`），顺序即帮助里的顺序。 */
 export const OUT_FORMATS = XML_OUT_FORMATS;

@@ -60,6 +60,29 @@ fn word_gap(ws: &[f64], h: f64, n_chars: usize) -> f64 {
     t
 }
 
+/// 第 `j` 道空白两侧墨段的字心距（墨段 = 相邻两道空白之间的墨，行两头以墨的左右缘为界）。
+fn run_pitch(blanks: &[(f64, f64)], j: usize, x0: f64, x1: f64) -> f64 {
+    let (bx, bw) = blanks[j];
+    let la = if j == 0 { x0 } else { blanks[j - 1].0 + blanks[j - 1].1 };
+    let rb = blanks.get(j + 1).map_or(x1, |b| b.0);
+    (bx + bw + rb) / 2.0 - (la + bx) / 2.0
+}
+
+/// 等宽字体的字距（[`recover_spaces`] 拿它否决窄字母两侧的宽白）：字母间各道空白（`letter(起, 宽)` 选出两侧都是字母的）两侧墨段的字心距，
+/// 不到 1.5 倍中位数的那些里九成以上都落在中位数 ±10% 以内（比例字体 `l`、`m` 的字心距差一倍多，到不了；小号字母粘连的 `Lesson of love` 也只有八成）、
+/// 且至少 5 道，才回中位数；否则 None。
+fn mono_pitch(blanks: &[(f64, f64)], x0: f64, x1: f64, letter: impl Fn(f64, f64) -> bool) -> Option<f64> {
+    let mut d: Vec<f64> = (0..blanks.len()).filter(|&j| letter(blanks[j].0, blanks[j].1)).map(|j| run_pitch(blanks, j, x0, x1)).collect();
+    d.sort_by(f64::total_cmp);
+    let med = *d.get(d.len() / 2)?;
+    let near: Vec<f64> = d.into_iter().filter(|&v| v < med * 1.5).collect();
+    let tight = near.iter().filter(|&&v| (v - med).abs() <= med * 0.1).count();
+    if std::env::var("OMR_SPACE_DEBUG").is_ok() {
+        eprintln!("  字心距 中位{med:.1} 近{} 紧{} {:?}", near.len(), tight, near.iter().map(|v| *v as i64).collect::<Vec<_>>());
+    }
+    (near.len() >= 5 && tight * 10 >= near.len() * 9).then_some(med)
+}
+
 fn wordy(c: char) -> bool {
     c.is_ascii_alphanumeric() || crate::chars::is_latin(c) || c == '\'' || c == '’'
 }
@@ -96,12 +119,16 @@ pub fn recover_spaces(chars0: &[Ch], blanks: &[(f64, f64)], ink_h: f64, x0: f64,
     let word_ws: Vec<f64> = blanks.iter().filter(|&&(x, w)| left_of(x, w).is_some_and(pair_ok)).map(|b| b.1).collect();
     let all: Vec<f64> = blanks.iter().map(|b| b.1).collect();
     let thr = word_gap(if word_ws.is_empty() { &all } else { &word_ws }, ink_h, chars0.len()).max(ink_h * 0.14);
+    let pitch = mono_pitch(blanks, x0, x1, |bx, bw| left_of(bx, bw).is_some_and(pair_ok));
     let mut after: Vec<Option<(f64, f64)>> = vec![None; chars.len()];
     let mut gap: Vec<f64> = vec![0.0; chars.len()];
-    for &(bx, bw) in blanks {
+    for (j, &(bx, bw)) in blanks.iter().enumerate() {
         let Some(i) = left_of(bx, bw) else { continue };
         gap[i] = gap[i].max(bw);
-        if bw >= thr && pair_ok(i) {
+        // 等宽字体：窄字母（i、l）两边的白也宽，过了门也要看两侧墨段的字心距——不到 1.25 倍字距的没隔出一格，不是词界
+        // （只否决、不新增：加了字距的比例字体词间字心距也只有 1.46 倍，空白宽本就分得开，迦南 2252 `Song of the Libega`）
+        let word = bw >= thr && pitch.is_none_or(|p| run_pitch(blanks, j, x0, x1) >= p * 1.25);
+        if word && pair_ok(i) {
             after[i] = Some((bx, bx + bw));
         }
     }
@@ -138,6 +165,16 @@ mod tests {
         let blanks = [(6.0, 2.0), (14.0, 2.0), (22.0, 2.0), (26.0, 2.0), (32.0, 12.0), (50.0, 2.0), (58.0, 2.0), (66.0, 2.0), (74.0, 2.0)];
         let out = recover_spaces(&cs, &blanks, 16.0, 0.0, 84.0);
         assert_eq!(out.iter().map(|c| c.ch).collect::<String>(), "shall speak");
+    }
+
+    #[test]
+    fn monospace_narrow_letters() {
+        // 等宽字体 `Christmas Guace`（issue 41 副标题的读数）：i 两边的白 15/14 比别的字母间宽，词间 31，字心距一律约 26、词间 51
+        let blanks = [(918.0, 5.0), (943.0, 8.0), (966.0, 15.0), (987.0, 14.0), (1020.0, 5.0), (1045.0, 5.0), (1074.0, 3.0), (1098.0, 6.0), (1123.0, 31.0), (1175.0, 6.0), (1201.0, 5.0), (1227.0, 5.0), (1253.0, 5.0)];
+        let centers = [912.0, 930.0, 957.0, 984.0, 1012.0, 1039.0, 1066.0, 1093.0, 1120.0, 1165.0, 1192.0, 1219.0, 1246.0, 1273.0];
+        let cs: Vec<Ch> = "ChristmasGuace".chars().zip(centers).map(|(ch, c)| Ch { ch, x0: c - 8.0, x1: c + 8.0 }).collect();
+        let out = recover_spaces(&cs, &blanks, 35.0, 896.0, 1279.0);
+        assert_eq!(out.iter().map(|c| c.ch).collect::<String>(), "Christmas Guace");
     }
 }
 

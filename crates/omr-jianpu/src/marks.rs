@@ -310,7 +310,8 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             let b = &k.rect;
             let gap = nb.x - b.right();
             // 记号与右邻数字纵向得交叠一截（和弦行、上一行的字在上方）；小节线格不是记号
-            if gap < -h * 0.08 || gap > h * 1.0 || used.contains(&k.id) || in_note(b, &out.nums) || b.right() > nb.cx() || b.bottom() < nb.y + med_h * 0.1 || on_bar(b) {
+            let paren = out.parens.iter().any(|p| p.x < b.right() && p.right() > b.x && p.y < b.bottom() && p.bottom() > b.y);
+            if gap < -h * 0.08 || gap > h * 1.0 || used.contains(&k.id) || in_note(b, &out.nums) || b.right() > nb.cx() || b.bottom() < nb.y + med_h * 0.1 || on_bar(b) || paren {
                 continue;
             }
             let top_up = nb.y - b.y; // 顶比数字高出
