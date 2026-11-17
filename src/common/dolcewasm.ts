@@ -83,6 +83,10 @@ export interface DolceWasm {
   modelPhraseLineStarts(song: string, part: string, ids: string, breaks: string, opts: string): string;
   /** 成书段落词挂到哪个和弦：回 `[[元素 id, 词]]` */
   modelSectionWordTargets(song: string, part: string, ids: string, rows: string): string;
+  /** 按乐句 / 每行 n 小节重排：回 `{cuts, lines, kept, overflow}` */
+  modelPhraseCuts(doc: string, song: number, plan: string, measured: string): string;
+  /** 照原有行结构在某元素后加 / 去一刀：回新行或 `null` */
+  modelPhraseLinesEdited(doc: string, song: number, afterId: number, add: boolean, page: boolean): string;
   modelEmitJpwabc(doc: string, song: number): string | undefined;
 
   // ABC 家族与丢失清单（crates/dolce-wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）

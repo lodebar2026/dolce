@@ -40,7 +40,8 @@ export { isXmlShaped } from "../model/xmlproject";
 // 按乐句重排（写回原文那一步；断句本身在 crates/dolce-play，经 score/play.ts）
 export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 export { applyBreaks, breaksOf } from "../model/breaks";
-export { barLines, phraseCuts, fanqiePhraseLines } from "../jianpu/phrase";
+export { barLines, phraseCuts, fanqiePhraseLines, planLines, fanqieLinesEdited } from "../jianpu/phrase";
+export { relayoutFanqieBreak, relayoutFanqieText } from "../fanqie/relayout";
 // 小节时值自检（私有仓库的对比报告拿它查手工谱各小节满不满）
 export { checkMeasureDurations, describeBeatIssue } from "../model/beatcheck";
 // 模型编辑动作（可视化编辑的 MusicXML 那一路；`ops-actions-check.mjs` 按识别手动操作的口径逐个验）

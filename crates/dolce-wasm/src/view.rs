@@ -2,7 +2,7 @@
 //! `dolce_formats::jpw::input`）。门面 `score/play.ts`。推理出错抛 `Error`，`message` 是说明原文（同 `playOrderOf` 等）。
 
 use dolce_model::{ScoreDoc, Song};
-use dolce_view::{phrasedoc, phrasesong, playdoc, playsong, slots};
+use dolce_view::{phrasedoc, phraselines, phrasesong, playdoc, playsong, slots};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -133,4 +133,59 @@ pub fn model_section_word_targets(song: &str, part: &str, ids: &str, rows: &str)
     let rows: Vec<Row> = parse("rows", rows)?;
     let rows: Vec<(String, f64)> = rows.into_iter().map(|r| (r.text, r.note_ordinal)).collect();
     Ok(to_json(&dolce_view::bookbreaks::section_word_targets(&s, &part, &ids, &rows)))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanIn {
+    /// `"phrase"` / `"bars"`
+    kind: String,
+    #[serde(default)]
+    n: f64,
+    /// 按乐句、有尺子时的断句参数（成书出厂值，门面从样式表取）
+    #[serde(default)]
+    content: Option<dolce_play::phrase::PhraseOptions>,
+    #[serde(default)]
+    mid: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct MeasuredIn {
+    width: f64,
+    spans: Vec<(i64, dolce_play::phrase::Span)>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PhraseCutsOut {
+    cuts: Option<Vec<phraselines::PhraseCut>>,
+    lines: Option<Vec<phraselines::NewLine>>,
+    kept: bool,
+    overflow: Option<usize>,
+}
+
+/// 按乐句 / 每行 n 小节重排的新行与断点（`phraseCuts` / `planLines`）。`plan`：`{kind, n?, content?, mid?}`；
+/// `measured`：`{width, spans: [[元素 id, {x0, x1, x1b?}]]}` 或 `"null"`（没有尺子）。回 `{cuts, lines, kept, overflow}`
+#[wasm_bindgen(js_name = modelPhraseCuts)]
+pub fn model_phrase_cuts(doc: &str, song: usize, plan: &str, measured: &str) -> Result<String, JsValue> {
+    let d: ScoreDoc = parse("ScoreDoc", doc)?;
+    let p: PlanIn = parse("LinePlan", plan)?;
+    let m: Option<MeasuredIn> = parse("Measured", measured)?;
+    let m = m.map(|m| phraselines::Measured { width: m.width, spans: m.spans.into_iter().collect() });
+    let content = p.content.unwrap_or_default();
+    let plan = match p.kind.as_str() {
+        "bars" => phraselines::LinePlan::Bars(p.n),
+        _ => phraselines::LinePlan::Phrase { content: &content, mid: p.mid },
+    };
+    let view = slots::doc_view(&d, None);
+    let (cuts, out) = phraselines::phrase_cuts(&d, &view, song, &plan, m.as_ref()).map_err(view_err)?;
+    Ok(to_json(&PhraseCutsOut { cuts, lines: out.lines, kept: out.kept, overflow: out.overflow }))
+}
+
+/// 照原文现有的行结构，在元素 `afterId` 之后加一刀 / 去掉它后面那一刀（`fanqieLinesEdited`）：回新行或 `"null"`
+#[wasm_bindgen(js_name = modelPhraseLinesEdited)]
+pub fn model_phrase_lines_edited(doc: &str, song: usize, after_id: f64, add: bool, page: bool) -> Result<String, JsValue> {
+    let d: ScoreDoc = parse("ScoreDoc", doc)?;
+    let view = slots::doc_view(&d, None);
+    Ok(to_json(&phraselines::lines_edited(&view, song, after_id as i64, add, page)))
 }
