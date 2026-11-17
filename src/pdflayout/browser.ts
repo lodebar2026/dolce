@@ -25,7 +25,7 @@ import { keepFirstPart } from "../model/melodyonly";
 import { clearSongBreaks } from "../model/breaks";
 import { jianpuStyleOf } from "../style/jianpu";
 import type { JianpuStyle } from "../engrave/jianpustyle";
-import { layoutJianpu, type JianpuLayout } from "../layout/jianpu/compose";
+import { layoutJianpu, type JianpuLayout, type JianpuLayoutConfig } from "../layout/jianpu/compose";
 
 /** 2D 仿射：[a b c d e f]，与 SVG 的 matrix(a b c d e f) 同序。 */
 type Mat6 = [number, number, number, number, number, number];
@@ -309,15 +309,20 @@ function dropSectionWords(d: Direction): Direction[] {
  * 断点由调用方先写进 `doc`（`applyPhraseBreaksToDoc`）；单行放不下引擎自己折。`naturalH` 是首页谱行自然叠起来的高（半页起排、紧排用）。
  */
 export function layoutBookDoc(doc: ScoreDoc, style: BookStyle, pageH: number, measure = false): JianpuLayout & { naturalH: number } {
-  const r = layoutJianpu(doc, {
+  const r = layoutJianpu(doc, bookCfgOf(style, pageH, measure));
+  return Object.assign(r, { naturalH: r.placed.pages[0]?.natural ?? 0 });
+}
+
+/** 成书这一路交给简谱引擎的配置（`layoutBookDoc`；排版迁 Rust 的对拍 dev `jianpu-rs-diff.mjs` 也取它）。 */
+export function bookCfgOf(style: BookStyle, pageH: number, measure = false): JianpuLayoutConfig {
+  return {
     style: bookStyleOf(style),
     page: { width: style.page.w, height: pageH, continuous: false },
     userMargins: false,
     foot: null,
     book: true,
     measure,
-  });
-  return Object.assign(r, { naturalH: r.placed.pages[0]?.natural ?? 0 });
+  };
 }
 
 /** 成书这一路的尺子（简谱引擎吃的那份 `JianpuStyle`；dev 的 style-snapshot 快照它）。 */

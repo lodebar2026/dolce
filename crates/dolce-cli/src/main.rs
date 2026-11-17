@@ -5,8 +5,11 @@
 //!   `{"file", "ok", "hash"}`（序列化文本 + 各元素原文区间的 SHA-256）或 `{"file", "ok": false, "message", "at"}`。
 //! - `scene-svg` / `measure-check` / `diff-scene` / `scene-dump`：排版迁移的对拍（见 `layout.rs`）。
 //! - `style-check`：样式层的对拍（见 `style.rs`）。
+//! - `engrave-check`：图元层的对拍（见 `engrave.rs`）。
+//! - `jianpu-check`：简谱引擎的对拍（见 `jianpu.rs`）。
 
 mod engrave;
+mod jianpu;
 mod layout;
 mod style;
 
@@ -23,8 +26,9 @@ fn main() {
         Some("scene-dump") => std::process::exit(layout::scene_dump(&args[1..])),
         Some("style-check") => std::process::exit(style::style_check(&args[1..])),
         Some("engrave-check") => std::process::exit(engrave::engrave_check(&args[1..])),
+        Some("jianpu-check") => std::process::exit(jianpu::jianpu_check(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check> …");
             std::process::exit(2);
         }
     }

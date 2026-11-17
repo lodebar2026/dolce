@@ -1,0 +1,21 @@
+[package]
+name = "dolce-layout-jianpu"
+description = "悦谱 Dolce 的简谱引擎（照 src/layout/jianpu/）：排版行视图 → 定位结构（place）→ 场景节点（compose）"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+dolce-geom = { path = "../dolce-geom" }
+dolce-smufl = { path = "../dolce-smufl" }
+dolce-text = { path = "../dolce-text" }
+dolce-scene = { path = "../dolce-scene" }
+dolce-model = { path = "../dolce-model" }
+dolce-view = { path = "../dolce-view" }
+dolce-play = { path = "../dolce-play" }
+dolce-style = { path = "../dolce-style" }
+dolce-engrave = { path = "../dolce-engrave" }
+serde.workspace = true
+serde_json = { version = "1", features = ["float_roundtrip"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }

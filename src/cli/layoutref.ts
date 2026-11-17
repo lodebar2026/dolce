@@ -177,3 +177,131 @@ export function recordMeasure(inner: MeasureBackend): () => MeasureRecord[] {
     return out;
   };
 }
+
+// ---- L3/L4 简谱引擎对拍（dev `jianpu-rs-diff.mjs`）：定位结构规范化成两边同一口径（Rust 那份在 `dolce-layout-jianpu::placedjson`） ----
+import type { JianpuPaintRequest } from "../layout/painter";
+import { jianpuCfgOf, measureRequestOf } from "../layout/painter";
+import { layoutJianpu } from "../layout/jianpu/compose";
+import { bookCfgOf } from "../pdflayout/browser";
+import { defaultBookStyle } from "../style/bookstyle";
+import { computeStyleForPaper, THEMES, themeOfMode } from "../style/themes";
+import type { ScoreDoc } from "../model/doc";
+import type { PlacedItem, PlacedMark, PlacedText, PlacedUnderline, PlacedScore } from "../layout/jianpu/place/model";
+import type { MusicElement, LyricSyllable } from "../jianpu/ast";
+
+/** 数：非有限数写成 `"NaN"` / `"Inf"` / `"-Inf"`（同 engrave-rs-diff 的口径） */
+const jn = (x: number | undefined | null): Json =>
+  x === undefined || x === null ? null : Number.isFinite(x) ? x : Number.isNaN(x) ? "NaN" : x > 0 ? "Inf" : "-Inf";
+const clone = (v: unknown): Json => (v === undefined ? null : (JSON.parse(JSON.stringify(v)) as Json));
+
+/** `PlacedScore` → 规范化 JSON（键与形见 `dolce-layout-jianpu/src/placedjson.rs` 文件头） */
+export function placedJson(
+  placed: PlacedScore, idOf: ReadonlyMap<unknown, unknown>, owners: ReadonlyMap<unknown, unknown>,
+): Json {
+  const idJ = (el: unknown): Json => {
+    const id = el === undefined ? undefined : idOf.get(el);
+    return id === undefined ? null : (id as number);
+  };
+  const item = (it: PlacedItem): Json => ({
+    i: it.index, s: it.srcIndex, x: jn(it.x), a: jn(it.advance), b: jn(it.beat), n: jn(it.beats),
+    e: clone(it.element), id: idJ(it.element), dy: jn(it.dy), nb: !!it.noBarline,
+    syl: it.syllables.map((s: LyricSyllable | null) => (s ? [s.text, s.trailingPunctuation ?? null, (owners.get(s) as number | undefined) ?? null] : null)),
+  });
+  const ul = (u: PlacedUnderline): Json => [jn(u.level), jn(u.x0), jn(u.x1), jn(u.dy)];
+  const mark = (m: PlacedMark): Json => ({
+    mark: clone(m.mark), x0: jn(m.x0), x1: jn(m.x1), y: jn(m.y), flat: !!m.flat, below: !!m.below, level: jn(m.level),
+    ol: m.openLeft, or: m.openRight, dy: jn(m.dy), ends: m.startEl !== undefined || m.endEl !== undefined,
+    sid: idJ(m.startEl), eid: idJ(m.endEl),
+  });
+  const text = (t: PlacedText, items: readonly PlacedItem[]): Json => ({
+    k: t.kind, at: items.findIndex((it) => it.element === t.el), text: t.text, face: t.face, size: jn(t.size),
+    x: jn(t.x), y: jn(t.y), ink: [jn(t.ink.left), jn(t.ink.top), jn(t.ink.right), jn(t.ink.bottom)],
+    xs: t.xs ? t.xs.map(jn) : null, boxed: !!t.boxed, bold: !!t.bold,
+  });
+  return {
+    pages: placed.pages.map((p) => ({
+      song: p.song, firstOfSong: p.firstOfSong, titlePage: !!p.titlePage, natural: jn(p.natural),
+      headers: p.headers ? p.headers.map((h) => [h.song, jn(h.dy)]) : null,
+      groups: p.groups.map((g) => ({
+        system: jn((g.group as { system?: number }).system), textY: jn(g.textY), braceTop: jn(g.braceTop), braceBottom: jn(g.braceBottom),
+        hasBrace: g.hasBrace, braceFromX: jn(g.braceFromX), song: g.song,
+        voices: g.voices.map((v) => ({
+          y: jn(v.y), top: jn(v.top), textTop: jn(v.textTop), bottom: jn(v.bottom), lyricY: v.lyricY.map(jn),
+          items: v.items.map(item), underlines: v.underlines.map(ul), marks: v.marks.map(mark),
+          layers: v.layers.map((l) => ({
+            at: v.voice.elements.indexOf(l.layer as MusicElement), items: l.items.map(item), underlines: l.underlines.map(ul), y: jn(l.y),
+            split: l.split
+              ? {
+                dy: jn(l.split.dy), braceLeftX: jn(l.split.braceLeftX), braceRightX: jn(l.split.braceRightX),
+                braceTop: jn(l.split.braceTop), braceBottom: jn(l.split.braceBottom), marks: l.split.marks.map(mark),
+                band: l.split.band ? l.split.band.map((t) => text(t, l.items)) : null,
+              }
+              : null,
+          })),
+          band: v.band.map((t) => text(t, v.items)),
+        })),
+      })),
+    })),
+    contentBottom: jn(placed.contentBottom),
+    contentRight: jn(placed.contentRight),
+  };
+}
+
+type JianpuCfg = ReturnType<typeof jianpuCfgOf>;
+type JianpuResult = NonNullable<ScorePainter["jianpuLayout"]>;
+
+/** 一档用例：交给引擎的文档、外部配置与 TS 排出的期望（栅格、规范化定位结构、页宽高、行首、量宽时的自然跨度） */
+function caseOf(doc: unknown, c: JianpuCfg, r: JianpuResult): { doc: Json; config: Json; expect: Record<string, Json> } {
+  return {
+    doc: clone(doc),
+    config: {
+      style: clone(c.style), page: { width: c.page.width, height: c.page.height, continuous: c.page.continuous },
+      userMargins: c.userMargins, foot: clone(c.foot), noReflow: !!c.noReflow, expanded: !!c.expanded, breakDesc: c.breakDesc ?? null,
+      book: !!c.book, measure: !!c.measure, snippet: !!c.snippet, ink: c.ink ?? null,
+    },
+    expect: {
+      grid: plainOf(r.metrics),
+      placed: placedJson(r.placed, r.view.idOf as ReadonlyMap<unknown, unknown>, r.view.syllableOwner as ReadonlyMap<unknown, unknown>),
+      width: jn(r.width), height: jn(r.height), lineStarts: r.lineStarts as unknown as Json,
+      // 按插入序：[id, {x0, x1, x1b|null}]
+      spans: r.spans
+        ? { width: jn(r.spans.width), spans: [...r.spans.spans].map(([id, s]) => [id, { x0: jn(s.x0), x1: jn(s.x1), x1b: jn(s.x1b) }]) }
+        : null,
+    },
+  };
+}
+
+/** 简谱这一路最近一次的输入（文档与外部配置）与 TS 排出的期望；别的路为 null。场景另取 `pageScenes`。 */
+export function jianpuCase(painter: ScorePainter, req: JianpuPaintRequest): { doc: Json; config: Json; expect: Record<string, Json> } | null {
+  const r = painter.jianpuLayout;
+  return r ? caseOf(req.doc, jianpuCfgOf(req), r) : null;
+}
+
+/** 编辑器预览之外几种调法（以 `req` 那份文档为料，配置照各调用处现拼，自己排一遍，场景随期望一起给）：
+ *  - `snippet`：帮助页谱例（`editor/help.ts::renderExampleScore`：出厂简谱档样式、760×540 纸、压暗墨色、只排谱行）；
+ *  - `measure`：量自然宽（`painter.ts::measureDocument`，纸宽取 `req` 那档；投影档按成书量）；
+ *  - `book`：成书（`pdflayout/browser.ts::layoutBookDoc`，出厂 BookStyle）。 */
+export function jianpuModeCase(mode: "snippet" | "measure" | "book", req: JianpuPaintRequest): { doc: Json; config: Json; expect: Record<string, Json> } | null {
+  // 新克隆一份：简谱的文档视图按对象缓存（jianpu/slots.ts），排版会就地改视图（自动段号、段尾词挪位），
+  // 同一对象先排过别的档会把那次的改动带进来；Rust 端每例都从 JSON 新读，这里也得从干净的文档起排
+  let doc: ScoreDoc = structuredClone(req.doc);
+  let c: JianpuCfg;
+  if (mode === "snippet") {
+    // 同 help.ts::exampleStyleSheet（那个文件带 DOM，Node 里不能引）
+    const style = computeStyleForPaper([THEMES[themeOfMode("original")]], { mode: "original", engine: "jianpu" });
+    c = jianpuCfgOf({ view: "original", doc, breakDesc: null, style, ink: 0xff1a1a1a, page: { w: 760, h: 540 }, snippet: true });
+  } else if (mode === "measure") {
+    const sheet = req.style ?? computeStyleForPaper([THEMES.print], { mode: "original", engine: "jianpu" });
+    const q = measureRequestOf(doc, sheet, jianpuCfgOf(req).page.width, req.view === "expanded");
+    if (!q) return null;
+    doc = q.doc;
+    c = q.cfg;
+  } else {
+    const bs = defaultBookStyle();
+    c = bookCfgOf(bs, bs.page.h);
+  }
+  const r = layoutJianpu(doc, c);
+  const out = caseOf(doc, c, r);
+  out.expect.pages = r.pages.map((root) => ({ dialect: "jianpu", cls: "score-page", w: r.width, h: r.height, root: sceneNode(root) }));
+  return out;
+}

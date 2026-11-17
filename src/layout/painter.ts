@@ -21,7 +21,7 @@ import { MixedOptions, type StaffLayout, type Sys } from "../mixed/model";
 import { layoutStaff } from "../mixed/layout";
 import { layoutStaffPages, PAGE_HEIGHT_FALLBACK } from "../mixed/staffpages";
 import type { StaffChordData, StaffSystemData } from "../mixed/prims";
-import { layoutJianpu, type JianpuLayout } from "./jianpu/compose";
+import { layoutJianpu, type JianpuLayout, type JianpuLayoutConfig } from "./jianpu/compose";
 import { clearSongBreaks } from "../model/breaks";
 import type { PlacedPage } from "./jianpu/place";
 import type { JianpuGrid } from "./jianpu/metrics";
@@ -118,23 +118,36 @@ export class PaintResources {
 export function measureDocument(
   doc: ScoreDoc, sheet: StyleSheet, width: number, slide = false, song = 0,
 ): { width: number; spans: Map<string | number, { x0: number; x1: number; x1b?: number }> } {
+  const q = measureRequestOf(doc, sheet, width, slide, song);
+  if (!q) return { width: 0, spans: new Map() };
+  const r = layoutJianpu(q.doc, q.cfg);
+  return r.spans ?? { width: 0, spans: new Map() };
+}
+
+/** `measureDocument` 交给简谱引擎的那份文档与配置（只留断句的旋律声部、清掉换行）；没有可量的为 null。
+ *  排版迁 Rust 的对拍（dev `jianpu-rs-diff.mjs`）也取它。 */
+export function measureRequestOf(
+  doc: ScoreDoc, sheet: StyleSheet, width: number, slide = false, song = 0,
+): { doc: ScoreDoc; cfg: JianpuLayoutConfig } | null {
   const one = doc.songs[song];
-  if (!one) return { width: 0, spans: new Map() };
+  if (!one) return null;
   // 只量断句的那条旋律：带歌词的声部（同断句输入的 `forExpanded`），没有就第一个。
   // 文本谱不清换行（歌词挂在每行源头，并成一行就丢了），逐行接着量（`naturalSpans`）
   const lead = one.parts.find((p) => p.measures.some((m) => m.elements.some((e) => e.kind === "chord" && (e.lyrics?.length ?? 0) > 0))) ?? one.parts[0];
-  if (!lead) return { width: 0, spans: new Map() };
+  if (!lead) return null;
   const clone = structuredClone({ ...doc, songs: [{ ...one, parts: [lead] }] });
   if (doc.sourceFormat !== "fanqie") for (const song of clone.songs) clearSongBreaks(song);
-  const r = layoutJianpu(clone, {
-    style: jianpuStyleOf(sheet),
-    page: { width, height: width, continuous: true },
-    userMargins: pageMargins(sheet.page) !== undefined,
-    foot: null,
-    measure: true,
-    ...(slide ? { book: true } : {}),
-  });
-  return r.spans ?? { width: 0, spans: new Map() };
+  return {
+    doc: clone,
+    cfg: {
+      style: jianpuStyleOf(sheet),
+      page: { width, height: width, continuous: true },
+      userMargins: pageMargins(sheet.page) !== undefined,
+      foot: null,
+      measure: true,
+      ...(slide ? { book: true } : {}),
+    },
+  };
 }
 
 // ---------------------------------------------------------------- 排版器
@@ -158,6 +171,28 @@ export function staffOptionsOf(meta: MetaData, style?: StyleSheet): MixedOptions
   const options = new MixedOptions(meta);
   applyStaffStyle(options, style ?? defaultStaffStyle());
   return options;
+}
+
+/** 简谱这一路的请求 → 简谱引擎的外部配置（纸、尺子、页脚模板）。排版迁 Rust 的对拍（dev `jianpu-rs-diff.mjs`）也取它。 */
+export function jianpuCfgOf(req: JianpuPaintRequest): JianpuLayoutConfig {
+  const sheet = req.style ?? computeStyleForPaper([THEMES.print], { mode: "original", engine: "jianpu" });
+  const paper = resolvePaper(sheet.page);
+  // 投影档：投影片纸（投影档样式的 `page.size`）
+  const slide = req.view === "expanded" ? { width: sheet.page.size?.[0] ?? 960, height: sheet.page.size?.[1] ?? 540, continuous: false } : null;
+  return {
+    style: jianpuStyleOf(sheet),
+    // 长图：宽与旧简谱引擎的长图同一张（500 首那张纸的宽），高由内容定
+    page: slide ?? (req.page
+      ? { width: req.page.w, height: req.snippet ? req.page.w : req.page.h, continuous: !!req.snippet }
+      : paper ? { width: paper.w, height: paper.h, continuous: false } : { width: LONG_IMAGE_WIDTH, height: LONG_IMAGE_WIDTH, continuous: true }),
+    userMargins: pageMargins(sheet.page) !== undefined,
+    foot: (sheet.template?.regions?.["song-foot"] as Region | undefined) ?? null,
+    noReflow: req.noReflow,
+    expanded: req.view === "expanded",
+    breakDesc: req.breakDesc ?? null,
+    ...(req.snippet ? { snippet: true } : {}),
+    ...(req.ink !== undefined ? { ink: req.ink } : {}),
+  };
 }
 
 export class ScorePainter {
@@ -243,24 +278,7 @@ export class ScorePainter {
 
   /** 简谱这一路（简谱 / 投影档）：整份文档排好（不等资源，`Font` 同步量字），返回提交动作。 */
   private _jianpuCommit(req: JianpuPaintRequest): () => void {
-    const sheet = req.style ?? computeStyleForPaper([THEMES.print], { mode: "original", engine: "jianpu" });
-    const paper = resolvePaper(sheet.page);
-    // 投影档：投影片纸（投影档样式的 `page.size`）
-    const slide = req.view === "expanded" ? { width: sheet.page.size?.[0] ?? 960, height: sheet.page.size?.[1] ?? 540, continuous: false } : null;
-    const r = layoutJianpu(req.doc, {
-      style: jianpuStyleOf(sheet),
-      // 长图：宽与旧简谱引擎的长图同一张（500 首那张纸的宽），高由内容定
-      page: slide ?? (req.page
-        ? { width: req.page.w, height: req.snippet ? req.page.w : req.page.h, continuous: !!req.snippet }
-        : paper ? { width: paper.w, height: paper.h, continuous: false } : { width: LONG_IMAGE_WIDTH, height: LONG_IMAGE_WIDTH, continuous: true }),
-      userMargins: pageMargins(sheet.page) !== undefined,
-      foot: (sheet.template?.regions?.["song-foot"] as Region | undefined) ?? null,
-      noReflow: req.noReflow,
-      expanded: req.view === "expanded",
-      breakDesc: req.breakDesc ?? null,
-      ...(req.snippet ? { snippet: true } : {}),
-      ...(req.ink !== undefined ? { ink: req.ink } : {}),
-    });
+    const r = layoutJianpu(req.doc, jianpuCfgOf(req));
     const result: LayoutResult = {
       title: r.view.songs[0]?.metadata.titles[0] ?? "",
       pages: r.pages.map((root, i) => ({

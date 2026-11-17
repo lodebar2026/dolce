@@ -374,6 +374,7 @@ dependencies = [
  "dolce-base",
  "dolce-engrave",
  "dolce-geom",
+ "dolce-layout-jianpu",
  "dolce-model",
  "dolce-scene",
  "dolce-smufl",
@@ -439,6 +440,25 @@ dependencies = [
  "console_error_panic_hook",
  "dolce-formats",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "dolce-layout-jianpu"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-engrave",
+ "dolce-geom",
+ "dolce-model",
+ "dolce-play",
+ "dolce-scene",
+ "dolce-smufl",
+ "dolce-style",
+ "dolce-text",
+ "dolce-view",
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
