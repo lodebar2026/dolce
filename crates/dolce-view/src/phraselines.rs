@@ -16,7 +16,7 @@ use dolce_model::{ElementId, ScoreDoc};
 use dolce_play::applybreaks::{choose_line_layout, merge_sliver_lines, page_break_lines, tidy_line_heads, tidy_line_tails, LayoutMode};
 use dolce_play::phrase::{compute_phrase_breaks, FitMetric, PhraseBreaks, PhraseOptions, Span};
 use dolce_play::phraseinput::PhrasePart;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ast::{BarlineType, MarkType, MusicElement};
 use crate::phrasedoc::phrase_jump_measures;
@@ -29,7 +29,7 @@ const PAGE_LINES: usize = 4;
 // ───────────────────────── 输出形状 ─────────────────────────
 
 /// 一个声部在某一新行上占的元素区间（半开区间，下标是该声部整曲元素流的下标）。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LineSeg {
     pub voice: f64,
     pub from: usize,
@@ -37,7 +37,7 @@ pub struct LineSeg {
 }
 
 /// 重排后的一行（一个「系统」：同组各声部各一条）。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewLine {
     pub segs: Vec<LineSeg>,
@@ -47,7 +47,7 @@ pub struct NewLine {
 
 /// 一个断点：新行从这个元素起。写回模型的那条路按 `id` 找元素，改写原文的那条路按 `source` 下刀；
 /// `|:` 领起的新行 `id` 取它后面那个音（小节线不是模型元素），`source` 仍是 `|:` 自己的。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhraseCut {
     pub id: Option<i64>,
     pub source: Option<SourceSpan>,

@@ -1,4 +1,5 @@
 pub mod abcpitch;
+pub mod comments;
 pub mod dialect;
 pub mod emit;
 pub mod fields;

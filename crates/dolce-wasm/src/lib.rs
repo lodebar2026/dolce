@@ -254,6 +254,39 @@ pub fn page_break_lines(lines: usize, section_ends: Vec<u32>, page_lines: usize)
     dolce_play::applybreaks::page_break_lines(lines, &ends, page_lines).into_iter().map(|x| x as u32).collect()
 }
 
+/// 演唱顺序项（每项 8 个数：mid, end, pass, skip, limit, endOfPass, sectionEntry, glueFrom）
+fn walk_items(items: &[f64]) -> Vec<dolce_play::walk::WalkItem> {
+    items
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|c| dolce_play::walk::WalkItem { mid: c[0], end: c[1], pass: c[2], skip: c[3], limit: c[4], end_of_pass: c[5] != 0.0, section_entry: c[6] != 0.0, glue_from: c[7] })
+        .collect()
+}
+
+/// 逐遍走小节（`jianpu/expand.ts::walkPlay`）：回扁平的步骤——放小节 `0, mid, pass, skip, limit, last, glue, 项下标`、换页 `1`、往回跳只换行 `2`
+#[wasm_bindgen(js_name = walkPlay)]
+pub fn walk_play(items: &[f64], jump_back: bool) -> Vec<f64> {
+    use dolce_play::walk::Step;
+    let mut out = Vec::new();
+    for s in dolce_play::walk::walk_play(&walk_items(items), jump_back) {
+        match s {
+            Step::Measure { mid, pass, skip, limit, last, glue, item } => {
+                out.extend([0.0, mid, pass, skip, limit, last as u8 as f64, glue as u8 as f64, item as f64]);
+            }
+            Step::PassEnd => out.push(1.0),
+            Step::JumpBack => out.push(2.0),
+        }
+    }
+    out
+}
+
+/// 投影档应有几遍（`countPasses`）
+#[wasm_bindgen(js_name = countPasses)]
+pub fn count_passes(items: &[f64]) -> usize {
+    dolce_play::walk::count_passes(&walk_items(items))
+}
+
 // ───────────────────────── 模型对拍探针（dolce-model）─────────────────────────
 
 #[cfg(feature = "probe")]

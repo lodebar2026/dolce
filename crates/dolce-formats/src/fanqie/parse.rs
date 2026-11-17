@@ -1368,6 +1368,9 @@ fn split_ws(s: &U16) -> Vec<&U16> {
 pub struct BodyPrefix {
     pub kind: char,
     pub variant: String,
+    /// 段号前、段号后那两处变体各自的原文（`variant` 取先出现的那个；重排拼 `Q1:` 标签要两处分开）
+    pub variant_before: String,
+    pub variant_after: String,
     pub number: String,
     pub range_end: Option<String>,
     pub caption: Option<String>,
@@ -1434,6 +1437,8 @@ pub fn body_prefix(s: &U16) -> Option<BodyPrefix> {
                         return Some(BodyPrefix {
                             kind,
                             variant,
+                            variant_before: if take_v1 { unit_str(s[p0]) } else { String::new() },
+                            variant_after: if take_v2 { unit_str(s[p3]) } else { String::new() },
                             number: u16s::text(&s[p1..p2]),
                             range_end: range.map(|n| u16s::text(&s[p2 + 1..p2 + 1 + n])),
                             caption,

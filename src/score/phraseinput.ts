@@ -1,8 +1,8 @@
-// 断句的输入形状。
+// 断句的输入形状（门面认回的对象）。
 //
-// `phrase.ts` / `applybreaks.ts` 只经这组接口读谱。实现由 `ScoreDoc` 拼：MusicXML 形状 `dolce-view/src/phrasedoc.rs`、
-// 简谱形状 `dolce-view/src/phrasesong.rs`（门面 `score/play.ts`）；断点集合与 `FitMetric.spans` 以拼出的对象为键，`idOf` 把它们换回元素 id
-// （写回简谱输入模型、回原文都按 id）。字段名与简谱输入模型（`layout/input.ts`）同一套。
+// 断句与之后的几步全在 Rust（`dolce-play`），输入由 `ScoreDoc` 拼：MusicXML 形状 `dolce-view/src/phrasedoc.rs`、
+// 简谱形状 `dolce-view/src/phrasesong.rs`（门面 `score/play.ts`）。门面把回来的 JSON 认回成这组对象：断点集合与 `FitMetric.spans`
+// 以它们为键（成书、回归脚本按对象读），`idOf` 把它们换回元素 id。字段名与简谱输入模型（`layout/input.ts`）同一套。
 
 import type { Fraction } from "../common/fraction";
 import type { BarStyle, StartStopDiscontinue } from "./enums";

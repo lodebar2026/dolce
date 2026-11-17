@@ -6,3 +6,4 @@ pub mod emit;
 pub mod fromfanqie;
 pub mod parse;
 pub mod plan;
+pub mod relayout;

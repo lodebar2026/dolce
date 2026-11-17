@@ -8,8 +8,8 @@
 //!
 //! 方言差异一律从 `DialectSpec` 取（`header` 管头部、`emit` 管曲行与歌词行），**不要在两套方言之间写 if**。
 //!
-//! 按乐句断行要排版行视图（`jianpu/phrase.ts::phraseCuts`，M5 才迁）：经 `EmitHooks::phrase_cuts` 由门面算好断点，
-//! 换行本身（`apply_breaks`）在这边落。TS 按对象身份记的「已并进上一小节右线的左线」「只罩一小节的不封口房号」改记 (小节, 小节线) 下标。
+//! 按乐句断行走排版行视图（`dolce_view::phraselines::phrase_cuts`，缺省分法：按乐句、不量宽），换行本身由 `apply_breaks` 落。
+//! TS 按对象身份记的「已并进上一小节右线的左线」「只罩一小节的不封口房号」改记 (小节, 小节线) 下标。
 
 use super::ast::BarlineType;
 use super::dialect::{Dialect, DialectSpec, KeyMeter, KeyStyle};
@@ -31,18 +31,14 @@ use std::collections::{HashMap, HashSet};
 
 const INF: usize = usize::MAX;
 
-/// 写出端要门面帮忙的那一处
-pub trait EmitHooks {
-    /// 按乐句断行（`jianpu/phrase.ts::phraseCuts`，缺省分法）：各新行行首元素 id（拿不到 id 的为 `None`）；断不出来回 `None`
-    fn phrase_cuts(&self, song: &Song) -> Option<Vec<Option<ElementId>>>;
-}
-
-/// 不断句（只走每 4 小节一行的兜底）
-pub struct NoHooks;
-impl EmitHooks for NoHooks {
-    fn phrase_cuts(&self, _: &Song) -> Option<Vec<Option<ElementId>>> {
-        None
-    }
+/// 按乐句断行（缺省分法：按乐句、不量宽）：各新行行首元素 id（拿不到 id 的为 `None`）；断不出来、或有行首 id 是负的临时号回 `None`
+fn phrase_cuts(song: &Song) -> Option<Vec<Option<ElementId>>> {
+    let doc = ScoreDoc { source_format: SourceFormat::S123, fanqie_dialect: None, source: None, songs: vec![song.clone()], diagnostics: vec![] };
+    let view = dolce_view::slots::doc_view(&doc, None);
+    let content = dolce_play::phrase::PhraseOptions::default();
+    let plan = dolce_view::phraselines::LinePlan::Phrase { content: &content, mid: false };
+    let (cuts, _) = dolce_view::phraselines::phrase_cuts(&doc, &view, 0, &plan, None).ok()?;
+    cuts?.into_iter().map(|c| c.id.map(ElementId::try_from).transpose().ok()).collect()
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1243,14 +1239,14 @@ fn has_breaks(s: &Song) -> bool {
 }
 
 /// 模型里没有任何行结构的曲子：先按乐句断行（文本谱一行 `Q:` 就是谱面一行、不自动断行）；断不出来的每 4 小节断一行。
-fn with_lines(song: Song, hooks: &dyn EmitHooks) -> Song {
+fn with_lines(song: Song) -> Song {
     let Some(part) = song.parts.first() else { return song };
     if part.measures.len() <= 8 || has_breaks(&song) {
         return song;
     }
     let mut phrased = song;
     let mut changed = false;
-    if let Some(cuts) = hooks.phrase_cuts(&phrased).filter(|c| !c.is_empty()) {
+    if let Some(cuts) = phrase_cuts(&phrased).filter(|c| !c.is_empty()) {
         let starts: Vec<LineStart> = cuts.into_iter().flatten().map(|id| LineStart { id, page: false }).collect();
         changed = apply_breaks(&mut phrased, &starts, &ApplyBreaksOptions { mid_in_any_part: false, mid: MidMode::Snap, pages: PageMode::Keep });
     }
@@ -1327,11 +1323,11 @@ fn range_skipped(sys: &SystemRange, len: usize) -> bool {
 }
 
 /// 一首歌 → 文本谱原文（不带结尾换行）。
-pub fn emit_fanqie_song(src: &Song, dialect: Dialect, opts: EmitFanqieOptions, hooks: &dyn EmitHooks) -> String {
+pub fn emit_fanqie_song(src: &Song, dialect: Dialect, opts: EmitFanqieOptions) -> String {
     let d = dialect.spec();
     // 小节里的 `<direction>` 先换成简谱那套挂在符号上的写法；同一谱表的第二声部写成 `{dsb…}` 并排块，按行断开
     let projected = project_for_jianpu(&directions_as_marks(src)).into_owned();
-    let song = with_degrees(with_inner_layers(with_lines(projected, hooks)));
+    let song = with_degrees(with_inner_layers(with_lines(projected)));
     let mut l = header_lines(&song, d, opts);
     if d.emit.blank_between_groups {
         l.push(String::new());
@@ -1462,8 +1458,8 @@ pub fn emit_fanqie_song(src: &Song, dialect: Dialect, opts: EmitFanqieOptions, h
 }
 
 /// 整份文档 → 文本谱原文。多首之间用整行 `-----` 分隔。
-pub fn emit_fanqie(doc: &ScoreDoc, dialect: Dialect, hooks: &dyn EmitHooks) -> String {
+pub fn emit_fanqie(doc: &ScoreDoc, dialect: Dialect) -> String {
     let opts = EmitFanqieOptions { from_fanqie: doc.source_format == SourceFormat::Fanqie, from_abc: doc.source_format == SourceFormat::Abc };
-    let songs: Vec<String> = doc.songs.iter().map(|s| emit_fanqie_song(s, dialect, opts, hooks)).collect();
+    let songs: Vec<String> = doc.songs.iter().map(|s| emit_fanqie_song(s, dialect, opts)).collect();
     songs.join("\n-----\n") + "\n"
 }

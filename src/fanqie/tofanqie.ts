@@ -1,20 +1,11 @@
 // `ScoreDoc` → 文本谱原文（番茄简谱 / 诗歌本文本谱）：写出端在 Rust（crates/dolce-formats/src/fanqie/emit.rs），这里是门面。
 //
-// 模型里没有行结构的曲子要先按乐句断行（文本谱一行 `Q:` 就是谱面一行），断点要排版行视图（`jianpu/phrase.ts::phraseCuts`，
-// M5 才迁）：写出端回调这边算，换行本身在 Rust 落。
+// 模型里没有行结构的曲子先按乐句断行（文本谱一行 `Q:` 就是谱面一行），断点与换行都在 Rust（`dolce_view::phraselines`）。
 
 import type { ScoreDoc, Song } from "../model/doc";
 import { dolce } from "../common/dolce";
 import { call, docJson, plainJson } from "../model/rustdoc";
-import { phraseCuts } from "../jianpu/phrase";
 import type { Dialect } from "./dialect";
-
-/** 写出端回调：一首（JSON）按缺省分法（按乐句、不量宽）的各刀行首 id */
-function cutsOf(songJson: string): string {
-  const doc: ScoreDoc = { sourceFormat: "123", songs: [JSON.parse(songJson) as Song], diagnostics: [] };
-  const cuts = phraseCuts(doc, 0, { kind: "phrase", measure: null });
-  return cuts ? JSON.stringify(cuts.map((c) => c.id)) : "null";
-}
 
 /**
  * fifths → 调号名。升降号写在哪一侧**由方言决定，不能通用**：番茄 `D:` 两种顺序都收（`bB`/`Bb`），
@@ -39,10 +30,10 @@ export interface EmitFanqieOptions {
 
 /** 一首歌 → 文本谱原文（不带结尾换行）。 */
 export function emitFanqieSong(src: Song, dialect: Dialect, opts: EmitFanqieOptions = {}): string {
-  return call(() => dolce().fanqieEmitSong(plainJson(src), dialect, !!opts.fromFanqie, !!opts.fromAbc, cutsOf));
+  return call(() => dolce().fanqieEmitSong(plainJson(src), dialect, !!opts.fromFanqie, !!opts.fromAbc));
 }
 
 /** 整份文档 → 文本谱原文。多首之间用整行 `-----` 分隔（两家的解析端都认）。 */
 export function emitFanqie(doc: ScoreDoc, dialect: Dialect): string {
-  return call(() => dolce().fanqieEmit(docJson(doc).json, dialect, cutsOf));
+  return call(() => dolce().fanqieEmit(docJson(doc).json, dialect));
 }

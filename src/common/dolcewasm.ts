@@ -85,6 +85,9 @@ export interface DolceWasm {
   modelSectionWordTargets(song: string, part: string, ids: string, rows: string): string;
   /** 按乐句 / 每行 n 小节重排：回 `{cuts, lines, kept, overflow}` */
   modelPhraseCuts(doc: string, song: number, plan: string, measured: string): string;
+  /** 逐遍走小节：扁平步骤（放小节 `0, mid, pass, skip, limit, last, glue, 项下标`、换页 `1`、往回跳只换行 `2`） */
+  walkPlay(items: Float64Array, jumpBack: boolean): Float64Array;
+  countPasses(items: Float64Array): number;
   /** 照原有行结构在某元素后加 / 去一刀：回新行或 `null` */
   modelPhraseLinesEdited(doc: string, song: number, afterId: number, add: boolean, page: boolean): string;
   modelEmitJpwabc(doc: string, song: number): string | undefined;
@@ -114,8 +117,16 @@ export interface DolceWasm {
   fanqieSniff(text: string): string;
   fanqieDialectSpec(dialect: string): string;
   /** `phraseCuts(songJson)` 回各刀行首 id 的 JSON 数组或 `"null"` */
-  fanqieEmit(doc: string, dialect: string, phraseCuts: (song: string) => string): string;
-  fanqieEmitSong(song: string, dialect: string, fromFanqie: boolean, fromAbc: boolean, phraseCuts: (song: string) => string): string;
+  fanqieEmit(doc: string, dialect: string): string;
+  fanqieEmitSong(song: string, dialect: string, fromFanqie: boolean, fromAbc: boolean): string;
+  /** 文本谱按逐首新行重排原文 */
+  fanqieRelayoutText(text: string, doc: string, plans: string): string;
+  /** 文本谱增删一处换行：加不上 / 去不掉回 undefined */
+  fanqieRelayoutBreak(text: string, doc: string, afterId: number, add: boolean, page: boolean): string | undefined;
+  /** `.jpwabc` 按断点只挪 `.Voice` 的 `$` */
+  jpwRelayoutText(text: string, cuts: string): string;
+  /** 123 / ABC 重排后把原文注释缝回 */
+  abcSpliceComments(oldText: string, oldDoc: string, newText: string, newDoc: string): string;
   fanqieKeyNameOf(fifths: number, suffix: boolean): string;
   /** `[嵌套, 奇数连音, 倚音弧]` */
   fanqieArcLosses(song: string): Uint32Array;

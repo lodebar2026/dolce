@@ -6,7 +6,7 @@ use crate::model::{parse, to_json};
 use dolce_formats::abc::u16s;
 use dolce_formats::fanqie::ast::FanqieDoc;
 use dolce_formats::fanqie::dialect::{sniff_dialect, Dialect};
-use dolce_formats::fanqie::emit::{emit_fanqie, emit_fanqie_song, key_name_of, EmitFanqieOptions, EmitHooks};
+use dolce_formats::fanqie::emit::{emit_fanqie, emit_fanqie_song, key_name_of, EmitFanqieOptions};
 use dolce_formats::fanqie::fromfanqie::fanqie_to_score_doc;
 use dolce_formats::fanqie::dialect::KeyStyle;
 use dolce_formats::fanqie::{parse as fparse, plan};
@@ -15,7 +15,7 @@ use dolce_formats::jpw::file::{JpwFile, SectionKind, WordsSegment};
 use dolce_formats::jpw::lex::{lex_voice, JpwToken};
 use dolce_formats::jpw::read::{jpw_to_score_doc, read_jpw_source, JpwError};
 use dolce_formats::midi::import;
-use dolce_model::{ElementId, ScoreDoc, Song};
+use dolce_model::{ScoreDoc, Song};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
@@ -67,32 +67,22 @@ pub fn fanqie_dialect_spec(dialect: &str) -> Result<String, JsValue> {
     .to_string())
 }
 
-/// 门面算乐句断点：`f(songJson)` 回 `phraseCuts` 各刀行首 id 的 JSON 数组（拿不到 id 的为 null）或 `"null"`
-struct JsCuts<'a>(&'a js_sys::Function);
-
-impl EmitHooks for JsCuts<'_> {
-    fn phrase_cuts(&self, song: &Song) -> Option<Vec<Option<ElementId>>> {
-        let v = self.0.call1(&JsValue::NULL, &JsValue::from_str(&to_json(song))).ok()?;
-        serde_json::from_str(&v.as_string()?).ok()?
-    }
-}
-
 fn dialect_or_tomato(d: &str) -> Dialect {
     Dialect::parse(d).unwrap_or(Dialect::Tomato)
 }
 
-/// `ScoreDoc`（JSON）→ 文本谱原文。`phrase_cuts` 见 `JsCuts`
+/// `ScoreDoc`（JSON）→ 文本谱原文（没有行结构的曲子先按乐句断行）
 #[wasm_bindgen(js_name = fanqieEmit)]
-pub fn fanqie_emit(doc: &str, dialect: &str, phrase_cuts: &js_sys::Function) -> Result<String, JsValue> {
+pub fn fanqie_emit(doc: &str, dialect: &str) -> Result<String, JsValue> {
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(emit_fanqie(&doc, dialect_or_tomato(dialect), &JsCuts(phrase_cuts)))
+    Ok(emit_fanqie(&doc, dialect_or_tomato(dialect)))
 }
 
 /// 一首（JSON）→ 文本谱原文（不带结尾换行）
 #[wasm_bindgen(js_name = fanqieEmitSong)]
-pub fn fanqie_emit_song(song: &str, dialect: &str, from_fanqie: bool, from_abc: bool, phrase_cuts: &js_sys::Function) -> Result<String, JsValue> {
+pub fn fanqie_emit_song(song: &str, dialect: &str, from_fanqie: bool, from_abc: bool) -> Result<String, JsValue> {
     let song: Song = parse("Song", song)?;
-    Ok(emit_fanqie_song(&song, dialect_or_tomato(dialect), EmitFanqieOptions { from_fanqie, from_abc }, &JsCuts(phrase_cuts)))
+    Ok(emit_fanqie_song(&song, dialect_or_tomato(dialect), EmitFanqieOptions { from_fanqie, from_abc }))
 }
 
 /// fifths → 调号名（`suffix`：升降号写在字母后）
@@ -232,4 +222,36 @@ pub fn midi_import(bytes: &[u8], title: &str, opts: &str) -> Result<String, JsVa
         Ok(r) => to_json(&r),
         Err(m) => to_json(&json!({ "error": m })),
     })
+}
+
+// ───────────────────────── 重排写回原文 ─────────────────────────
+
+/// 文本谱按乐句 / 每行 n 小节重排（`relayoutFanqieText`）：`plans` 是逐首的新行（`planLines` 的结果，`null` = 这首不动）
+#[wasm_bindgen(js_name = fanqieRelayoutText)]
+pub fn fanqie_relayout_text(text: &str, doc: &str, plans: &str) -> Result<String, JsValue> {
+    let d: ScoreDoc = parse("ScoreDoc", doc)?;
+    let p: Vec<Option<Vec<dolce_view::phraselines::NewLine>>> = parse("FanqieNewLine[][]", plans)?;
+    Ok(dolce_formats::fanqie::relayout::relayout_fanqie_text(text, &d, &p))
+}
+
+/// 文本谱增删一处换行（`relayoutFanqieBreak`）：加不上 / 去不掉回 `undefined`
+#[wasm_bindgen(js_name = fanqieRelayoutBreak)]
+pub fn fanqie_relayout_break(text: &str, doc: &str, after_id: f64, add: bool, page: bool) -> Result<Option<String>, JsValue> {
+    let d: ScoreDoc = parse("ScoreDoc", doc)?;
+    Ok(dolce_formats::fanqie::relayout::relayout_fanqie_break(text, &d, after_id as i64, add, page))
+}
+
+/// `.jpwabc` 按断点只挪 `.Voice` 的 `$`（`relayoutJpwabcText`）：`cuts` 是 `phraseCuts` 的结果
+#[wasm_bindgen(js_name = jpwRelayoutText)]
+pub fn jpw_relayout_text(text: &str, cuts: &str) -> Result<String, JsValue> {
+    let c: Vec<dolce_view::phraselines::PhraseCut> = parse("PhraseCut[]", cuts)?;
+    Ok(dolce_formats::jpw::relayout::relayout_jpwabc_text(text, &c))
+}
+
+/// 123 / ABC 重排后把原文注释缝回（`spliceComments`）
+#[wasm_bindgen(js_name = abcSpliceComments)]
+pub fn abc_splice_comments(old_text: &str, old_doc: &str, new_text: &str, new_doc: &str) -> Result<String, JsValue> {
+    let o: ScoreDoc = parse("ScoreDoc", old_doc)?;
+    let n: ScoreDoc = parse("ScoreDoc", new_doc)?;
+    Ok(dolce_formats::abc::comments::splice_comments(old_text, &o, new_text, &n))
 }

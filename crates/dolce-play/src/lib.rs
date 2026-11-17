@@ -6,6 +6,7 @@
 //! - [`playorder`]：反复、房号、D.C./D.S./Coda、`P:` 段落、逐遍演唱顺序、`.Repeat` → `PlayItem` 序列
 //! - [`phrase`]：乐句断点（歌词标点 + 音乐信号 + 重复旋律，DP 选行）
 //! - [`applybreaks`]：断句之后的容量补刀、并行、行首行尾收拾、排版模式阶梯、按乐句行分页
+//! - [`walk`]：按演唱顺序逐遍走小节（首尾裁切、遍末与往回跳换页），投影档排版与识别歌词对照共用
 //! - [`timeline`]：按演唱顺序展开的发声音符、光标锚点、节拍器、拍号调号变化点
 //! - [`midi`]：标准 MIDI 文件（format 1）
 //!
@@ -19,6 +20,7 @@ pub mod phrase;
 pub mod phraseinput;
 pub mod playorder;
 pub mod timeline;
+pub mod walk;
 
 /// TS 那边会抛错的情形（消息只给开发者看，界面上不显示）。
 #[derive(Debug, Clone, PartialEq)]

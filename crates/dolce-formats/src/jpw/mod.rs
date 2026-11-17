@@ -10,4 +10,5 @@ pub mod file;
 pub mod input;
 pub mod lex;
 pub mod read;
+pub mod relayout;
 pub mod write;

@@ -8,12 +8,10 @@
 //
 // 无 DOM 依赖。
 
-import { Fraction } from "../common/fraction";
 import { dolce } from "../common/dolce";
 import { call } from "../model/rustdoc";
 import { defaultBookStyle } from "../style/bookstyle";
-import { elementQuarters, linesOfVoice, tupletRatios } from "./ast";
-import type { MusicElement, FanqieSong, ScoreLine, SourceSpan } from "./ast";
+import type { SourceSpan } from "./ast";
 import type { ElementId, ScoreDoc } from "../model/doc";
 
 /** 一个声部在某一新行上占的元素区间（半开区间，下标是该声部**整曲元素流**的下标）。 */
@@ -28,36 +26,6 @@ export interface FanqieNewLine {
   segs: FanqieLineSeg[];
   /** 本行行尾换页（下一行另起一页）。 */
   pageAfter: boolean;
-}
-
-/** 某个声部整曲的元素流：把它的各条 `ScoreLine` 首尾接起来。 */
-export interface VoiceStream {
-  voice: number;
-  lines: readonly ScoreLine[];
-  /** 平行于元素流：每个元素属于哪一条源行、在源行里是第几个。 */
-  origin: Array<{ lineIdx: number; elIdx: number }>;
-  elements: MusicElement[];
-  /** 平行于元素流：该元素**之前**的累计时值（四分音符为 1）。 */
-  ticks: Fraction[];
-}
-
-/** 把一个声部的所有曲行接成一条元素流（含累计时值，多连音按比例折算；同 Rust `phraselines::voice_stream`）。 */
-export function voiceStream(song: FanqieSong, voice: number): VoiceStream {
-  const lines = linesOfVoice(song, voice);
-  const st: VoiceStream = { voice, lines, origin: [], elements: [], ticks: [] };
-  let tick = new Fraction(0);
-  lines.forEach((line, lineIdx) => {
-    const ratios = tupletRatios(line);
-    line.elements.forEach((el, elIdx) => {
-      st.origin.push({ lineIdx, elIdx });
-      st.elements.push(el);
-      st.ticks.push(tick);
-      const r = ratios[elIdx];
-      const q = elementQuarters(el);
-      tick = tick.plus(r ? q.timesInt(r.num).divInt(r.den) : q);
-    });
-  });
-  return st;
 }
 
 /** 量行长的尺子：量这份文档第 `song` 首各音的自然跨度（键是元素 id，按 id 对回断句输入）。 */
@@ -115,14 +83,13 @@ function contentOptions(): { content: object; mid: boolean } {
   };
 }
 
-/** 尺子量出的跨度换成 Rust 吃的 `[元素 id, 跨度]`（键不是数的对不上元素 id，略去）。 */
+/** 尺子量出的跨度换成 Rust 吃的 `[元素 id, 跨度]`（元素 id 是数，字符串键本来就按 id 查不到，略去）。 */
 function measuredIn(m: ReturnType<FitMeasure>): string {
   if (!m) return "null";
   const spans: Array<[number, { x0: number; x1: number; x1b?: number }]> = [];
   for (const [k, sp] of m.spans) {
-    const id = typeof k === "number" ? k : Number(k);
-    if (!Number.isInteger(id)) continue;
-    spans.push([id, sp.x1b === undefined ? { x0: sp.x0, x1: sp.x1 } : { x0: sp.x0, x1: sp.x1, x1b: sp.x1b }]);
+    if (typeof k !== "number" || !Number.isInteger(k)) continue;
+    spans.push([k, sp.x1b === undefined ? { x0: sp.x0, x1: sp.x1 } : { x0: sp.x0, x1: sp.x1, x1b: sp.x1b }]);
   }
   return JSON.stringify({ width: m.width, spans });
 }
