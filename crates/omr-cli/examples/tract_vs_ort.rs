@@ -124,6 +124,6 @@ fn run(kind: &str, f: &str, ocr: &CachedOcr) -> String {
     } else {
         let pages: Vec<_> = srcs.iter().filter_map(|s| recognize_source(s, Some(ocr))).collect();
         let song = dolce_omr_staff::song::assemble(&pages, None);
-        format!("{} 页、{} 字节 MusicXML", pages.len(), song.score.to_musicxml().len())
+        format!("{} 页、{} 字节 MusicXML", pages.len(), dolce_omr_todoc::staff::score_to_music_xml(&song.score).len())
     }
 }

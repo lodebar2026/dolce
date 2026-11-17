@@ -61,6 +61,7 @@ function harmonyAt(ch: Chord, place: ChordPlace): Harmony | undefined {
 export function chordSlots(rec: RecognizedScore): ({ i: number; place: ChordPlace } | null)[] {
   const flat = rec.rows.flatMap((row, ri) => row.nums.map((n) => ({ n, ri })));
   const used = new Set<string>();
+  let places: ChordPlace[][] | undefined;
   return (rec.chordRegions ?? []).map((r) => {
     let best: { i: number; slot: number } | null = null;
     let bestD = Infinity;
@@ -80,7 +81,8 @@ export function chordSlots(rec: RecognizedScore): ({ i: number; place: ChordPlac
     if (!best) return null;
     const { i, slot } = best as { i: number; slot: number };
     used.add(`${i}:${slot}`);
-    const place = chordPlacesOf(flat[i]!.n)[slot];
+    places ??= chordPlacesOf(rec);
+    const place = places[i]?.[slot];
     return place === undefined ? null : { i, place };
   });
 }

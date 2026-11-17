@@ -165,6 +165,12 @@ export interface DolceWasm {
   jlyWholeToDuration(whole: number): string;
   /** `{ doc, warnings: Msg[] }` / `{ error: Msg }` */
   midiImport(bytes: Uint8Array, title: string, opts: string): string;
+
+  // 识别结果建模（crates/omr-todoc）：入参是 `RecognizedScore` 的 JSON
+  /** `{ doc, numOf: [元素 id, 拍平后的音符下标][] }` */
+  omrJianpuDoc(score: string): string;
+  /** 各音符（拍平序）的和弦落点 `"h"` / `"s<k>"` / `"l<k>"` */
+  omrChordPlaces(score: string): string;
 }
 
 /** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */

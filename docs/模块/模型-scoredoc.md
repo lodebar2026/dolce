@@ -47,7 +47,7 @@
 | `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
 | `crates/dolce-formats/src/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
 | `crates/dolce-formats/src/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |
-| `src/omr/todoc.ts` | ← 简谱识别结果（`RecognizedScore` 直出简谱形状，与 `abcfamily/parse.ts` 同口径；不经 MusicXML） |
+| `crates/omr-todoc`（门面 `src/omr/todoc.ts`） | ← 识别结果：简谱 `RecognizedScore` 直出简谱形状（与 123 解析同口径；不经 MusicXML）；五线谱 `Score` 直出模型 + 识别 id / 符干附件 |
 | `crates/dolce-formats/src/jpw/write.rs`（门面 `src/convert/jpwabc.ts`） | → `.jpwabc`（`emitJpwabc`；写出端只经输入形状读谱，两种形状的输入由 `jpw/input.rs::jpw_input_of_doc` / `jpw_input_of_song` 拼） |
 | `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
 | `dolce-view/src/playdoc.rs` / `dolce-view/src/playsong.rs` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/dolce-play/src/playorder.rs`。回归 `playorder-check --cmp` |

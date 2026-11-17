@@ -20,6 +20,8 @@ dolce-play = { path = "../dolce-play" }
 dolce-model = { path = "../dolce-model" }
 dolce-formats = { path = "../dolce-formats" }
 dolce-view = { path = "../dolce-view" }
+dolce-omr-sheet = { path = "../omr-sheet" }
+dolce-omr-todoc = { path = "../omr-todoc" }
 serde = { workspace = true }
 # 分数、时刻过边界要逐位还原（TS 侧 JSON.stringify 出的是最短往返写法）
 serde_json = { version = "1", features = ["float_roundtrip"] }

@@ -253,7 +253,7 @@ fn alter_left(t: &Tree, parent: NodeId, tag: &str) -> bool {
 }
 
 /// `/^(\d+(?:\s*[-–—~]\s*\d+)?[.．、]|\d+(?=\s))\s*(\S.*)$/su`：首字前的印刷段号 → (段号, 正文)
-fn split_verse_label(text: &str) -> Option<(String, String)> {
+pub fn split_verse_label(text: &str) -> Option<(String, String)> {
     let digits = |s: &str| s.bytes().take_while(u8::is_ascii_digit).count();
     let d = digits(text);
     if d == 0 {

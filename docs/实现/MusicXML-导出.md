@@ -30,7 +30,7 @@
 
 文本格式导出时再经 `engraveScoreDoc` 补版面坐标（`export.ts::sourceMusicXml`）；带版面的原样不动。
 
-简谱识别产物（`App.importOmrDoc`）：识别结果直出 `ScoreDoc`（`omr/todoc.ts`）、`emit123` 成 123 文本进代码区，
+简谱识别产物（`App.importOmrDoc`）：识别结果直出 `ScoreDoc`（`omr-todoc::jianpu`）、`emit123` 成 123 文本进代码区，
 之后就是普通 123 文档，没有 MusicXML 底本；点选映射由 `omr/meta.ts` 重解析 123 取源区间。
 
 ## 反方向：MusicXML → 简谱形状（`crates/dolce-model/src/jianpuproject.rs`）
@@ -169,7 +169,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 
 `<part-name>` 一律留空并带 `print-object="no"`：Dorico/MuseScore 会把它当乐器名显示在谱前，简谱没有这个概念。
 
-## 简谱识别的弧线配对（`omr/todoc.ts::pairArcs`）
+## 简谱识别的弧线配对（`omr-todoc::jianpu::pair_arcs`）
 
 识别出的弧线端点难免出错，建模型时先配对（导出 MusicXML 时模型里已经是配好的 Mark）：
 

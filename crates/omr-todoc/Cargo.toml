@@ -1,0 +1,15 @@
+[package]
+name = "dolce-omr-todoc"
+description = "悦谱 Dolce 识别结果直出 ScoreDoc：简谱（RecognizedScore → 简谱形状的模型）与五线谱（Score → MusicXML 形状的模型 + 识别 id 附件），MusicXML 一律由 dolce-model::toxml 写"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+dolce-model = { path = "../dolce-model" }
+dolce-play = { path = "../dolce-play" }
+dolce-formats = { path = "../dolce-formats" }
+dolce-omr-sheet = { path = "../omr-sheet" }
+dolce-omr-text = { path = "../omr-text" }
+serde.workspace = true

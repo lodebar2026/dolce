@@ -97,12 +97,7 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     let report = out.join("ops.json");
     let reps = report.to_string_lossy().to_string();
     let log = match o.kind.as_str() {
-        "jianpu" => {
-            if o.replay.is_none() {
-                node(&o.web, &["../dev/scripts/rust-omr/rec-to-123.mjs", &outs])?;
-            }
-            node(&o.web, &["../dev/scripts/solo-ops.mjs", "--jianpu", &format!("--from={outs}"), &format!("--out={reps}")])?
-        }
+        "jianpu" => node(&o.web, &["../dev/scripts/solo-ops.mjs", "--jianpu", &format!("--from={outs}"), &format!("--out={reps}")])?,
         "solo" => node(&o.web, &["../dev/scripts/solo-ops.mjs", "--staff", &format!("--from={outs}"), &format!("--out={reps}")])?,
         "xinbian" => node_env(&o.web, &[("STAFFIMG", "testdata/新编赞美诗五线谱")], &["../dev/scripts/solo-ops.mjs", "--staff", &format!("--from={outs}"), &format!("--out={reps}")])?,
         "vector" => node_env(&o.web, &[("CHORUS", "testdata/矢量谱")], &["../dev/scripts/chorus-ops.mjs", &format!("--from={outs}"), &format!("--out-dir={outs}")])?,
@@ -133,7 +128,10 @@ fn write(dir: &Path, base: &str, r: RecOutput) -> Result<(), String> {
             w("rec.musicxml", &musicxml)?;
             w("rec.json", &layout)
         }
-        RecOutput::Jianpu { recognized } => w("rec.json", &recognized),
+        RecOutput::Jianpu { recognized, text123 } => {
+            w("rec.json", &recognized)?;
+            w("rec.123", &text123)
+        }
     }
 }
 

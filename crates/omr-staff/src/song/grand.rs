@@ -119,7 +119,5 @@ mod tests {
         let low = &out[1].measures[0].events[1];
         assert_eq!((low.staff, low.voice), (2, 6));
         assert_eq!(out[1].measures[0].staff_attrs[0].clef, Some(Clef::BASS));
-        let x = Score { parts: out, ..Score::default() }.to_musicxml();
-        assert!(x.contains("<staves>2</staves>") && x.contains("<clef number=\"2\"><sign>F</sign>") && x.contains("<staff>2</staff>"));
     }
 }

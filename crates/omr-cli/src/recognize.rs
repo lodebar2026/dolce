@@ -6,6 +6,7 @@ use dolce_omr_source::raster::SourceImage;
 use dolce_omr_source::PdfDoc;
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::song::assemble;
+use dolce_omr_todoc::staff::score_to_music_xml;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -13,8 +14,8 @@ use std::path::{Path, PathBuf};
 pub enum RecOutput {
     /// 五线谱：MusicXML 与版面摘要（形状见私有仓库 `chorus-opslib.mjs::recLayoutOf`；独唱谱只要 `notes` / `rowSp`）
     Staff { musicxml: String, layout: String },
-    /// 简谱：识别结果（形状同 web `omrkit/types.ts::RecognizedScore`），由私有仓库 `rec-to-123.mjs` 转 123 再判
-    Jianpu { recognized: String },
+    /// 简谱：识别结果（形状同 web `omr/types.ts::RecognizedScore`）与直出模型写成的 123（同编辑器落地：`omr-todoc::jianpu` → `emit_123`）
+    Jianpu { recognized: String, text123: String },
 }
 
 /// 一个输入文件的各页（取数走 `omr-engine`，与桌面版、网页版同一份）。
@@ -32,19 +33,27 @@ pub fn recognize(kind: &str, inputs: &[String], ocr: &CachedOcr) -> Result<RecOu
         // 没有内嵌图的纯矢量页（转曲简谱）走对象库证据
         if srcs.iter().all(|s| s.raster.is_none()) && srcs.iter().any(|s| s.content.is_some()) {
             let pcs: Vec<_> = srcs.into_iter().filter_map(|s| s.content).collect();
-            let score = dolce_omr_jianpu::recognize_vector(&pcs, ocr)?;
-            return Ok(RecOutput::Jianpu { recognized: serde_json::to_string(&score).map_err(|e| e.to_string())? });
+            return jianpu_output(&dolce_omr_jianpu::recognize_vector(&pcs, ocr)?);
         }
         let srcs: Vec<SourceImage> = srcs.into_iter().filter_map(|s| s.raster).collect();
-        let score = dolce_omr_jianpu::recognize(&srcs, ocr)?;
-        return Ok(RecOutput::Jianpu { recognized: serde_json::to_string(&score).map_err(|e| e.to_string())? });
+        return jianpu_output(&dolce_omr_jianpu::recognize(&srcs, ocr)?);
     }
     let pages: Vec<Page> = srcs.par_iter().filter_map(|s| recognize_source(s, Some(ocr))).collect();
     if pages.is_empty() {
         return Err("没有找到谱表".into());
     }
     let song = assemble(&pages, None);
-    Ok(RecOutput::Staff { musicxml: song.score.to_musicxml(), layout: song.layout_json() })
+    Ok(RecOutput::Staff { musicxml: score_to_music_xml(&song.score), layout: song.layout_json() })
+}
+
+fn jianpu_output(score: &dolce_omr_jianpu::result::RecognizedScore) -> Result<RecOutput, String> {
+    Ok(RecOutput::Jianpu { recognized: serde_json::to_string(score).map_err(|e| e.to_string())?, text123: jianpu_123(score) })
+}
+
+/// 简谱识别结果 → 123（同编辑器识别的缺省输出格式 `convert/targets.ts` 的 123：直出模型、补纸张 meta、`emit_123`）。
+pub fn jianpu_123(score: &dolce_omr_jianpu::result::RecognizedScore) -> String {
+    let doc = dolce_omr_todoc::jianpu::recognized_to_doc(score).doc;
+    dolce_formats::abc::emit::emit_123(&dolce_model::pagemeta::with_page_meta(&doc, None))
 }
 
 /// OCR 模型目录：环境变量 `OMR_MODELS` → 可执行文件旁的 `models/`（分发包）→ 本检出的 `public/redist/ocr`（开发、回归）。
@@ -82,7 +91,7 @@ fn one_staff(file: &str, out: &str) -> Result<(), String> {
     let stem = Path::new(file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "score".into());
     let out = Path::new(out);
     std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
-    std::fs::write(out.join(format!("{stem}.musicxml")), song.score.to_musicxml()).map_err(|e| e.to_string())?;
+    std::fs::write(out.join(format!("{stem}.musicxml")), score_to_music_xml(&song.score)).map_err(|e| e.to_string())?;
     std::fs::write(out.join(format!("{stem}.review.json")), song.review_json()).map_err(|e| e.to_string())?;
     println!("{stem}：{} 页、{} 个声部、{} 个系统，{:.1} s", pages.len(), song.score.parts.len(), song.systems.len(), t0.elapsed().as_secs_f64());
     Ok(())
@@ -159,10 +168,10 @@ pub fn session(args: &[String]) -> Result<(), String> {
     }
     let ids = |x: &str| -> std::collections::BTreeSet<String> { x.split(" id=\"").skip(1).filter_map(|s| s.split('"').next()).map(str::to_string).collect() };
     let mut s = Session::new(pages, None);
-    let mut prev = ids(&s.song().score.to_musicxml());
+    let mut prev = ids(&score_to_music_xml(&s.song().score));
     let dump = |k: usize, s: &Session, prev: &std::collections::BTreeSet<String>, what: &str| -> Result<std::collections::BTreeSet<String>, String> {
         let song = s.song();
-        let x = song.score.to_musicxml();
+        let x = score_to_music_xml(&song.score);
         std::fs::write(out.join(format!("{k}.musicxml")), &x).map_err(|e| e.to_string())?;
         std::fs::write(out.join(format!("{k}.rec.json")), song.layout_json()).map_err(|e| e.to_string())?;
         std::fs::write(out.join(format!("{k}.review.json")), s.review_json()).map_err(|e| e.to_string())?;

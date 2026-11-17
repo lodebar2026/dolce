@@ -2,7 +2,7 @@
 
 > **旧 TS 识别的判据记录**：这套 TS 实现发布前已删，识别现在全在 Rust（见 [识别-Rust](../模块/识别-Rust.md)）。本篇留作追分时的参照——判据多是拿具体曲子换来的；文中的文件路径、函数名指删除前那一版。
 
-把简谱图片（PNG/JPG）识别成 `RecognizedScore`，直出 `ScoreDoc`（`todoc.ts`）再写成 123 进编辑器核对（`App.importOmrDoc`）。
+把简谱图片（PNG/JPG）识别成 `RecognizedScore`，直出 `ScoreDoc`（`omr-todoc::jianpu`）再写成 123 进编辑器核对（`App.importOmrDoc`）。
 工具栏「识图」按钮 → `showRecognizeDialog`（[src/editor/dialogs.ts](../../src/editor/dialogs.ts)）选方式 →
 `App.recognizeFromImage`（[src/editor/app.ts](../../src/editor/app.ts)）。**两种方式**：
 
@@ -18,7 +18,7 @@
 （原生像素；JPEG 按原始字节交 sharp 解；ImageMask 与 1 位灰度图按数据长度认、整页墨过半就翻极性），同样竖向拼接，两端口径一致。
 
 识别只有**一条路**：**完全本地**，浏览器/桌面均可、可离线。`decode.ts`(图→二值) → `jianpu.ts`
-  (连通域/几何启发式：数字块拆分、下划线 div、八度点、增时线) → `todoc.ts`(→简谱形状的 `ScoreDoc`)；
+  (连通域/几何启发式：数字块拆分、下划线 div、八度点、增时线) → `omr-todoc::jianpu`(→简谱形状的 `ScoreDoc`)；
   数字/歌词/页眉 OCR 走本地 **PaddleOCR PP-OCRv6_small**（`paddleocr.ts`，onnxruntime-web 浏览器离线推理，
   逐数字格 / 歌词条 rec→CTC）。模型/字典在
   `public/redist/ocr/`（rec onnx `ch_PP-OCRv6_small_rec_infer.onnx` **~21MB** + `ppocrv6_dict.txt` **18708 字**
@@ -346,7 +346,7 @@ numH 47），0.55 把**清清楚楚的 4 和 7** 一并改成了 1（《祷告�
   故分隔符可选、连写数字**逐位**拆号。房括号上的号码（`1.2.3.5.`）也会落进歌词带被当一行，
   按「号后须跟 ≥2 个汉字」剔掉。整套映射还要过「首行标 1 + 号不重复 + 至少两行有标签」才生效，
   否则作废退回"行序即段号"。标签通常只印在第一谱行，后续谱行按同一视觉行序共用该映射。
-- **段号还要原样输出**（`StaffRow.lyricLabels` → `todoc.ts` 的 `Lyric.verseLabel` → `fanqie/emit.rs`）：文本谱有「歌词行前置说明」这个位置
+- **段号还要原样输出**（`StaffRow.lyricLabels` → `omr-todoc::jianpu` 的 `Lyric.verseLabel` → `fanqie/emit.rs`）：文本谱有「歌词行前置说明」这个位置
   （`fanqie/parse.rs::strip_lyric_annotation`，排在细竖线与首字之间），谱面印的 `1.` `3.5.` 就写在那儿：
   诗歌本方言 `C1:<1.>…`、番茄方言 `C1:"1."…`。它不是唱词、不对位音符，故不进 `lyricRanges`。
   **逐谱行各记各的**——号只印在哪几行就只写哪几行（73《我主耶稣是生命源》前三谱行有 `1.`~`4.`、
@@ -648,7 +648,7 @@ lt .81 rt .38 lb .63 rb .68，原先 0.45 的门把它判成了 ♯）。♮ 早
 → 右线 `light-light`（123 `||`、文本谱诗歌本 `||`）。76《天上有粮》一房末实测两根各 6px、中心距
 9px、字号 44（等粗，原判据一条都不认，整道退化成普通小节线）。
 - 并排两根中间切出的空小节被 `measuresOfRow` 滤掉，**右界要顺延给前一小节**（记的是右边那根的
-  x），否则小节右界停在左边那根上、认不出这道线（`todoc.ts::measuresOfRow`）。
+  x），否则小节右界停在左边那根上、认不出这道线（`omr-todoc::jianpu::measures_of_row`）。
 - **复纵线与房尾可以叠**（`[1 … ||`，76 的一房末图上就没画反复冒号），故它不像终止线那样给
   `endingStop` 让位；反复线 `:‖` 的两根也会落进 `doubleBarXs`，一律 `repeatBackward` 优先。
 - 写出端 `fanqie/emit.rs::barline_code` 对 double **取表里最后一条**匹配：诗歌本表里规范外写法 `||/`
@@ -981,7 +981,7 @@ y380 的碎块行，歌词带算出 `yBot < yTop`、整条带直接 `continue`�
 吉他和弦（`Am` / `G/B` / `Gsus4` / `F#m7`）印在谱行音符**上方**，与段落方框同处歌词带。文法判定
 （`isAnnotationLine` / `CHORD_TOKEN_RE` / `chordCoverage`，见上）连同切词、归一、落位一并搬进
 `src/omr/chordline.ts`；`lyrics.ts` 只调不判。识别到的和弦挂上 `JpNum.chord`，经模型输出：
-`todoc.ts` → `Chord.harmony` / `Sustain.harmony`（原文，导出 MusicXML 时由写出端（Rust `harmony.rs::harmony_xml`）解析），文本谱写出端再写成 `"hx:…"`。
+`omr-todoc::jianpu` → `Chord.harmony` / `Sustain.harmony`（原文，导出 MusicXML 时由写出端（Rust `harmony.rs::harmony_xml`）解析），文本谱写出端再写成 `"hx:…"`。
 **`.jpwabc` 装不下和弦**，jpwabc 那路输出会丢（与力度、渐强渐弱现状一致）——这是有意的，
 不为和弦扩 jpwabc 语法。
 
@@ -1297,7 +1297,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 不按行中心判——连谱号下钩常只画到末行半腰（78 第 2 系统末行中心低出下钩 18px）。**验收**：每条谱行都归了
 系统、≥2 个系统、各系统行数相同且声部号连续，缺一条就整曲当单声部（1811 谱后正文左边碰巧也有高竖块）。
 验收在伪行剔除**前**先做一次（`bracedOk`）：成立时连谱号括着的行休止占比放到 0.8（伴奏声部 `5 5 0 0 | 0 0 6…`
-过半是 0，按单声部的 0.5 会被当成和弦字母伪行删掉）。`todoc.ts` 按声部各建一个 part，歌词挂在歌词带上方
+过半是 0，按单声部的 0.5 会被当成和弦字母伪行删掉）。`omr-todoc::jianpu` 按声部各建一个 part，歌词挂在歌词带上方
 那一行（第 2 声部），与文本谱 `Q2` 后跟 `C1:` 的约定一致。
 
 **两声部挨得近带出来的**（都只在连谱号括着的声部行上开，单声部不受影响）：
@@ -1317,7 +1317,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 - **静默声部行**（12《颂主化功歌》第 3 系统 B 声部只印行首 `0` 和几根线）：核不到 3 个被当噪声剔掉，这个系统少一行，
   验收不过、整曲退回单声部（音符 52%）。至少两个系统行数一样、本系统比它们少时，连谱号范围内的 1~2 核短行救回来——
   首核在声部行首音那一列（一字号内）、至少两根线与同系统谱行的线对齐、不与已有谱行纵向相交（`voices.silentRow`）。
-  `todoc.ts` 里**整行只有休止**的声部行逐根切小节，首音之后宽过 1.5 行高的空小节写成按拍的隐形休止 `x`，
+  `omr-todoc::jianpu` 里**整行只有休止**的声部行逐根切小节，首音之后宽过 1.5 行高的空小节写成按拍的隐形休止 `x`，
   占住小节、各声部小节数才对得上。别的声部行不这么补：末小节空着多是音没读出来，补 `x` 反把小节对位搅乱（144、396、f32）；
   首音之前的空档也不算（页边、连谱号会被收成线，56）。
 - 系统行末线只画到上面几个声部（同首第 3 系统下两声部右端无线）：分组验收通过后，缺行末线的声部行借本系统最右那根
@@ -1781,7 +1781,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 
 - **分组**：补救第 ②条（一段没归系统的行、行数正好等于众数就自成一个系统）把前两行硬配成了双声部系统。这条只给三行以上的系统补；
   验收放开「每行都归了系统」：系统是两声部的、没归系统的行都像正经谱行（两根以上小节线）时，这些行照单声部留着（`voices.partial`）。
-- **组号**（`todoc.ts`）：单声部行只进第 1 声部，各声部小节数对不上。按谱面自上而下给每行编组号（同系统几行一组、单声部行各成一组），
+- **组号**（`omr-todoc::jianpu`）：单声部行只进第 1 声部，各声部小节数对不上。按谱面自上而下给每行编组号（同系统几行一组、单声部行各成一组），
   挂在行首小节的 `print.system` 上，共用时间轴按组对齐（`crates/dolce-model/src/timeaxis.rs`，同文本谱 issue 11 的口径）；只在局部多声部时挂。
 - **系统末通高线压掉下声部的线**：下声部那几根 54px 的小节线被「不到行内最高线六成是伪线」剔掉——尺子取到了系统末那道从上声部画到下声部的
   终止线（203px，行高 53）。取尺子只看行内（首音右、末音左）的线，至少两根时才这样取。
@@ -1809,7 +1809,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
   本音符底下逐列数层：中间隔白的按墨段数，糊死的按墨厚折成本页单道线厚（横线高度中位）的几倍；列中位 ≥2 就按层拆开，交给逐层验距去数。
 - **曲中细粗终止线要 Fine 作证**（`jianpu.ts`，`barline.fineEnd`）：单声部行中间的「细+粗」原先一律当普通线。先记成候选，跳转记号落位后，
   线前两个小节以内挂着 Fine 的认作终止线，Fine 挪到线前末音上（60 Fine 印在 `1-` 的增时线上方，按 x 归音挂到了前一小节的 1）。
-- **行首 segno 不并跨行小节**（`todoc.ts`）：60 第 4 行末 `| 1` 不收线、第 5 行行首印 𝄋。segno 只能挂小节线，并成跨行小节就挂到 `1` 前、
+- **行首 segno 不并跨行小节**（`omr-todoc::jianpu`）：60 第 4 行末 `| 1` 不收线、第 5 行行首印 𝄋。segno 只能挂小节线，并成跨行小节就挂到 `1` 前、
   D.S. 回来多唱一个音。上一行末记不可见线 `[|]`，segno 挂本行首小节左线（GT 同此记）。
 - **左右夹点的 segno 旁边紧挨和弦**（`segno.ts`）：「segno 单独印着」那条只查两颗点以内，点外的 `D` 不算。
 - **弧上悬数字的三连音**（`slur.ts::tupletCandidates`，`tuplet.overArc`）：除了「⌒3⌒」，还有整条弧、小号数字居中悬在弧顶上方的印法（60 `1̇1̇1̇`）。
@@ -1860,7 +1860,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
   斜杠和弦那一排不会单独印拍号）；字形路只读音名、读出 E 就顶掉了文本路的 E 小调，读出的正是这个小调的主音字母时以文本路为准。
 - **空心花体英文标题**（79「I HEARD THE VOICE OF JESUS SAY」）rec 读成汉字字母交错的乱码、比真标题宽：汉字与字母切换四次以上的行整行不要（`header.garbledLatin`）。
   副标题因此缺着（GT 记了）。
-- **全曲末小节的细细双线**是终止线（`todoc.ts`）：79 末段英文「I' l l walk」的 l 读成小节线、凑出排在最后的伪谱行，真末行行末那道 ‖ 被当成曲中复纵线。
+- **全曲末小节的细细双线**是终止线（`omr-todoc::jianpu`）：79 末段英文「I' l l walk」的 l 读成小节线、凑出排在最后的伪谱行，真末行行末那道 ‖ 被当成曲中复纵线。
 
 剩下的（均已按图写进 GT）：79 英文按音节对位还差三十来步（印刷把词按音机械切开，`hea - d upon`、`loo ked`，跨音的词没拆：freely、giving、water）、
 副标题缺；77 标题上方的「新耶路撒冷——」没认、首行 `7̣ 2 2-` 被「隐含延音」补了一条谱面没有的弧；78 行首不带分隔符的中文段号「一」「二」没读出；
@@ -1873,7 +1873,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 挂在各段歌词落位（含谱后附段）之后、`resolveSlurRefits` 与「有词的 0」复原之前——补上的字要喂给这几步。
 
 - **参照按演唱顺序写全**（反复段、每段后的副歌都照唱写一遍），谱面只印一遍、多段叠印。所以识别侧先**按演唱顺序展开**：
-  `recognizedToDoc(score, numOf)` → `jianpuInputOfDoc({ forExpanded: true })` → `walkPlay`，第 pass 遍取第 pass 段、
+  `recognizedToDoc(score, numOf)`（门面，实现 `omr-todoc::jianpu`） → `jianpuInputOfDoc({ forExpanded: true })` → `walkPlay`，第 pass 遍取第 pass 段、
   副歌（`refrain`）每遍都取，与投影档排版 `NoteEntry.addLyric` 同口径。另按谱面顺序（逐段串起各谱行）也对一遍，
   两者按 **F1**（同字 ×2 ÷ 两边字数和）比，谱面顺序高出 0.1 以上就改用它并报 `repeatSuspect`。只比同字数不行：
   展开错了会把同一段唱好几遍，同字数照样高（《天上有粮》展开出 821 字、参照 118 字）。
@@ -1931,7 +1931,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 - **只有谱行音符那一路开 `{ rhythm: true }`**。拍号、倚音、连音数字、房号都复用 `recognizeDigits`，
   其中拍号的合法值里有 9（`9/8`），不能让 X 混进去。
 - 只认**整格就是** `X`/`x`/`Ｘ`/`×`，不认夹在别的字里的 x。
-- 同音判断要排除它：隐含 tie 补检、`slur.ts` 的 tie/slur 分流、`todoc.ts` 的 tie 配对——两个 X 挨着不是延音。
+- 同音判断要排除它：隐含 tie 补检、`slur.ts` 的 tie/slur 分流、`omr-todoc::jianpu` 的 tie 配对——两个 X 挨着不是延音。
 - 输出：模型 `Chord.rhythm`（123 `X`，导出 MusicXML 时 `model/toxml.ts` 写 `<unpitched>` + `<notehead>slash</notehead>`，
   `fromxml.ts` 读回 `Chord.rhythm`）；文本谱按方言写 `rhythmToken`（诗歌本 `X`、番茄 `9`）。
 
@@ -2091,7 +2091,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 见 [编辑器](../模块/编辑器.md)「源码格式下拉」）——切的本来就是代码区这份文本是什么格式，
 摆在工具条上离得远、还得另加一条「核对」标签解释。选择存在 `dolce-render-settings` 的 `omrFormat`，下次识别沿用。
 
-**各格式一条路**：`todoc.ts::recognizedToDoc` → `ScoreDoc` → 转换目标表 `convert/targets.ts` 的写出端
+**各格式一条路**：`omr-todoc::jianpu::recognized_to_doc` → `ScoreDoc` → 转换目标表 `convert/targets.ts` 的写出端
 （`emit123` / `emitJpwabc` / `emitAbc` / `emitFanqie`）。123 交 `App.importOmrDoc`（报 123 装不下的东西），其余交 `App.adoptText`。
 
 以前文本谱另有一个直接从 `RecognizedScore` 写的 emitter（`omr/tofanqie.ts`，理由是 `rows` 天然对上「一行 `Q:` 一行谱」），
@@ -2123,7 +2123,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
   同理，要紧跟小节线写，挂到音符上会画在音符头顶而不是小节线上。
 - 圆滑线与连音线在文本谱里同写作 `(…)`。配对**用队列（先开先闭）不是栈**——`parse.ts` 的
   `)` 就是 `curves.shift()`，照它配才能「写出去什么样、读回来就什么样」；配不上对的整条丢弃，
-  端点落在休止符上的（识别错误）两端一起丢，与 `todoc.ts::pairArcs` 同一取向。
+  端点落在休止符上的（识别错误）两端一起丢，与 `omr-todoc::jianpu::pair_arcs` 同一取向。
 - 右侧小节线不当场写、攒到下一小节的左侧再落笔：`:|` 紧接 `|:` 要合成一条 `:|:`，
   分开写会连着画出两道线。
 - 歌词行末尾落单的 `}` 会被读成「联合括号」（`parse.ts` 只看行尾字符，不管它是不是并字括号

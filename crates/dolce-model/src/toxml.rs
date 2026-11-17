@@ -396,6 +396,7 @@ struct Ctx<'a> {
     surface: Option<&'a Surface>,
     layout: Option<&'a EngravedLayout>,
     source_ids: bool,
+    rids: Option<&'a HashMap<(Oid, Slot), String>>,
 }
 
 impl Ctx<'_> {
@@ -404,6 +405,10 @@ impl Ctx<'_> {
     }
     fn sur_at(&self, oid: Oid, slot: Slot) -> Option<NodeId> {
         self.surface.and_then(|s| s.of(oid, slot))
+    }
+    /// 识别 id
+    fn rid(&self, oid: Oid, slot: Slot) -> Option<String> {
+        self.rids.and_then(|r| r.get(&(oid, slot))).cloned()
     }
     fn pos(&self, oid: Oid) -> Option<&Position> {
         if oid.is_none() {
@@ -586,7 +591,7 @@ fn lyric_xml(o: &mut Out, l: &Lyric, cx: &Ctx) {
         None if l.refrain == Some(true) => "chorus".into(),
         None => js::num_to_string(l.number),
     };
-    let mut a: Attrs = vec![("number", Some(number)), ("name", l.name.clone()), ("placement", l.placement.as_ref().and_then(|p| ne(Some(p.as_str()))))];
+    let mut a: Attrs = vec![("number", Some(number)), ("name", l.name.clone()), ("placement", l.placement.as_ref().and_then(|p| ne(Some(p.as_str())))), ("id", cx.rid(l.oid, Slot::Default))];
     a.extend(pos_attrs(cx.pos(l.oid)));
     o.open("lyric", a, cx.sur(l.oid), false);
     if let Some(sy) = &l.syllabic {
@@ -675,7 +680,7 @@ fn notations_xml(o: &mut Out, nt: Option<&Notations>, starts: &[usize], stops: &
         match m.kind {
             MarkType::Slur | MarkType::Tied => {
                 let ori = m.orientation.as_ref().and_then(|p| ne(Some(p.as_str())));
-                o.leaf(m.kind.as_str(), vec![("type", s("start")), ("number", number), ("placement", placement), ("orientation", ori)], sur);
+                o.leaf(m.kind.as_str(), vec![("type", s("start")), ("number", number), ("placement", placement), ("orientation", ori), ("id", cx.rid(m.oid, Slot::Start))], sur);
             }
             MarkType::Tuplet => {
                 let bracket = m.bracket.map(|b| if b { "yes".to_owned() } else { "no".to_owned() });
@@ -726,14 +731,14 @@ fn chord_xml(o: &mut Out, ch: &Chord, starts: &[usize], stops: &[usize], marks: 
     let mut k = 0usize;
     let mut write_one = |o: &mut Out, ni: Option<usize>, is_chord_note: bool, with_notations: bool| {
         let note = ni.map(|i| &ch.notes[i]);
+        let host_oid = note.map_or(ch.oid, |n| n.oid);
         let id = if cx.source_ids {
             let s = format!("{SOURCE_ID_PREFIX}{}{}", ch.id, if k > 0 { format!("-{k}") } else { String::new() });
             k += 1;
             Some(s)
         } else {
-            None
+            cx.rid(host_oid, Slot::Default)
         };
-        let host_oid = note.map_or(ch.oid, |n| n.oid);
         let mut a: Attrs = vec![("id", id)];
         a.extend(pos_attrs(cx.pos(host_oid)));
         a.push(("print-object", (ch.print_object == Some(false)).then(|| "no".into())));
@@ -901,7 +906,7 @@ fn direction_xml(o: &mut Out, dir: &Direction, cx: &Ctx) {
         }
         return;
     }
-    o.open("direction", vec![("placement", dir.placement.as_ref().and_then(|p| ne(Some(p.as_str()))))], cx.sur(dir.oid), false);
+    o.open("direction", vec![("placement", dir.placement.as_ref().and_then(|p| ne(Some(p.as_str())))), ("id", cx.rid(dir.oid, Slot::Default))], cx.sur(dir.oid), false);
     o.open0("direction-type");
     direction_part_xml(o, &view_of_direction(dir), cx.sur_at(dir.oid, Slot::Part), cx);
     for part in dir.more.iter().flatten() {
@@ -1435,6 +1440,8 @@ pub struct ToXmlOptions<'a> {
     pub source_ids: bool,
     /// 导出版面
     pub layout: Option<&'a EngravedLayout>,
+    /// 识别 id 附件（对象 + 槽位 → id）：写成音（`Note`，休止取 `Chord`）、弧起端（`Mark` 的 `Start`）、歌词、方向记号元素的 `id`
+    pub rids: Option<&'a HashMap<(Oid, Slot), String>>,
 }
 
 /// `ScoreDoc` → MusicXML 文本（含 XML 声明与 DOCTYPE）。**MusicXML 的唯一写出端**。
@@ -1445,7 +1452,7 @@ pub fn score_doc_to_music_xml(doc: &ScoreDoc, surface: Option<&Surface>, options
     popts.slur_ties = Some(popts.slur_ties.unwrap_or(!has_tie_syntax(doc)));
     let song = project_for_music_xml(src, &popts)?;
     let projected = matches!(song, std::borrow::Cow::Owned(_));
-    let cx = Ctx { surface, layout: options.layout, source_ids: options.source_ids };
+    let cx = Ctx { surface, layout: options.layout, source_ids: options.source_ids, rids: options.rids };
     let mut o = Out::new(surface.map(|s| s.tree()));
     o.raw(r#"<?xml version="1.0" encoding="UTF-8"?>"#.into());
     o.raw(r#"<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">"#.into());

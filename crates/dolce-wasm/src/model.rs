@@ -309,6 +309,7 @@ pub fn model_to_xml(doc: &str, h: u32, opts: &str) -> Result<String, JsValue> {
         song: w.song,
         source_ids: w.source_ids,
         layout: layout.as_ref(),
+        rids: None,
     };
     with_surface(h, |s| toxml::score_doc_to_music_xml(&doc, s.map(|s| &*s), &o).map_err(|e| msg_err(&e)))
 }

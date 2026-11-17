@@ -23,9 +23,10 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 | `crates/omr-source` | 取数层：`pdf.rs`（PDFium：页数、内嵌图原始像素与矩阵、路径、文字层、字形轮廓、整页渲染）、`raster.rs`（取页图：最大块 / 拼图页 / 按矩阵转正、图片文件按 EXIF 转正；`Binarizer` 灰度各倍数只算一次、几档 Sauvola 共用积分图；极性自检） |
 | `crates/omr-ocr` | PP-OCR：识别（CTC、逐字位置、前 K 候选）、DBNet 检测（含分块）、原生推理（ort 会话池）、按条内容指纹的落盘缓存 |
 | `crates/omr-text` | 两条路线共用的文字处理（纯文本与纯几何，不碰像素、不调 OCR）：`chords`（和弦文法：切词、覆盖率、归一、拆成根音 / 性质 / 低音）、`header`（页眉各行分类）、`spaces`（按空白列补词间空格）、`lyrics`（歌词切音节、段号、标点归属、对音）、`words`（节拍器、术语、力度、跳转的词表） |
-| `crates/omr-sheet` | 谱面元素公共件：`Staff`（五条线位、各线带厚、共用偏移曲线、左右端、单线谱）与谱表局部坐标（`pos` / `y_of`：第一线 0、往下每半格 +1）、`music`（谱号调号拍号、音高）、`meter`（满拍验收与候选组合）、`curves`（细长笔画的追踪、拼接、量形状）、`score`（结果模型与 MusicXML 写出） |
+| `crates/omr-sheet` | 谱面元素公共件：`Staff`（五条线位、各线带厚、共用偏移曲线、左右端、单线谱）与谱表局部坐标（`pos` / `y_of`：第一线 0、往下每半格 +1）、`music`（谱号调号拍号、音高）、`meter`（满拍验收与候选组合）、`curves`（细长笔画的追踪、拼接、量形状）、`score`（五线谱结果模型）、`jianpu`（简谱结果 `RecognizedScore`，形状同 web `omr/types.ts`；可读回，TS 按参照歌词改过的结果也交回 Rust 建模） |
+| `crates/omr-todoc` | 识别结果直出 `ScoreDoc`（M6）：`jianpu`（简谱形状，与 123 解析同口径；`chord_places` 是点选落点）、`staff`（五线谱：模型与读进识别写出的 MusicXML 所得逐字段相同，识别 id 与符干是模型旁的附件 `Rids` / `EngravedLayout.stems`，要 MusicXML 经唯一写出端 `dolce-model::toxml` 写） |
 | `crates/omr-staff` | 五线谱路线：`prep/`（成像、网点网纹）、`frame/`（找谱表、墨层、系统、小节线）、`attrs/`（谱号、调号、拍号）、`notes/`（符头候选、加线作证、符干挂头、裁决、休止、符杠符尾、临时记号与附点、满拍裁决与修正提案）、`text/`（文字行、分类与归属、页眉）、`spans/`（线性符号：弧、松叶、房子）、`mixed/`（混排简谱互证：简谱行定位与划出、交 `omr-jianpu` 认、逐小节配对纠错；本路线唯一依赖 `omr-jianpu` 的地方）、`song/`（整曲拼接：识别 id 预发、声部指派、花括号合大谱表、文字与线性符号按 x 挂到拍点、约束、核对 JSON）、`session.rs`（会话：改关联表 / 系统切分、钉住事实、换候选，只重跑拼接）。`examples/` 是对 TS 阶段快照的对账与排查工具（`vs_ts_staves`、`vs_ts_bars`、`vs_ts_heads`、`vs_ts_rests`、`vs_ts_durs`、`dbg_heads`、`dbg_tri`、`dbg_systems`、`dbg_bars`、`dbg_crop`、`dbg_text`：某页各条带切出的行与读出的字、各谱行挂上的歌词与记号、页眉；`dbg_spans`：某页认出的弧、松叶、房子，给了点就列那附近的细笔画与形状） |
-| `crates/omr-jianpu` | 简谱路线（位图）：`prep`（成像、连通块）、`frame`（数字高、数字行与行带、带内切格、连谱号分系统与声部）、`notes`（读数、增时线、附点、减时线、八度点、小节线与反复冒号）、`marks`（临时升降号、倚音、顿音 / 重音 / 波音 / 延长记号）、`beats`（满拍裁决与可疑清单）、`text`（歌词带切行与对音、谱后附段、和弦行、页眉与调号 / 拍号 / 速度）、`spans`（弧）、`result`（`RecognizedScore`，形状同 web `omr/types.ts`，交 TS 的 `recognizedToDoc`） |
+| `crates/omr-jianpu` | 简谱路线（位图）：`prep`（成像、连通块）、`frame`（数字高、数字行与行带、带内切格、连谱号分系统与声部）、`notes`（读数、增时线、附点、减时线、八度点、小节线与反复冒号）、`marks`（临时升降号、倚音、顿音 / 重音 / 波音 / 延长记号）、`beats`（满拍裁决与可疑清单）、`text`（歌词带切行与对音、谱后附段、和弦行、页眉与调号 / 拍号 / 速度）、`spans`（弧）、`result`（再导出 `omr-sheet::jianpu`；交 `omr-todoc::jianpu` 建模） |
 | `crates/omr-core` | 基础层，不依赖平台（要能编到 wasm）：`image`（二值图、灰度图、矩形）、`geom`（几何统计）、`pixel`（像素内核）、`js`（数值口径）、`stage`（阶段缓存） |
 
 ## 关键判据
@@ -417,7 +418,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 | `Measure { attrs, mid, events, implicit, … }` | `Measure { attrs, laterAttrs, elements, implicit, barlines }` | 行中改谱号 / 调号记 `mid` ↔ `laterAttrs` |
 | `Event`（`pitches` 空 = 休止） | `Chord` / `Rest` | `Event::src` 每个头一份出处（`HeadSrc`：音高、`Src { rid, at }`） |
 | `Lyric` / `Dir` / `SpanMark` | `Lyric` / `Direction` / `Mark`（`start` / `end`） | 弧在识别结果里是两端各一个 `SpanMark`，ScoreDoc 是一条 `Mark` |
-| `Rid`（元素自身的字段） | 现在写进 MusicXML 的 `id` 属性，读入后在 `xmlsurface` 旁表 | ScoreDoc 进 Rust 后 id 直接做成模型字段 |
+| `Rid`（元素自身的字段） | 建模时记进附件 `omr-todoc::staff::Rids`（对象 + 槽位 → id），写 MusicXML 时写成 `id` 属性，编辑器读入后在 `xmlsurface` 旁表 | id 不进模型：会话进 Rust（H 期）后附件直接随文档走 |
 
 - **识别 id**（`result::Rid`，10b / 10f）：种类 + 序号，前缀同 TS `review.ts::numberOmrIds`——音与休止 `omr12`、歌词字 `omrL3`、文字指示与节拍器 `omrW`、力度 `omrD`、
   延音线 `omrT` 与圆滑线 `omrS`（两样共用序号）。**在整曲拼接之前按识别产物预发**（`song/ids.rs`）：按页序、页内全部谱行自上而下（不经系统表）、行内按 x 编，
@@ -442,10 +443,12 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
   `pages[{pn, scale, staves[{lineYs, bars[{right, notes[{box}]}]}], jianpu}]`、`systems[{page, staves}]`（页内谱行下标）、`assignment`（与 `systems` 同形）、
   `noteBoxes{id: {page, box, step, octave, alter, rest}}`、`markBoxes{id: {page, box, kind}}`、`doubts`、`alts{事件第一个音的 id: [...]}`、`stats`。
   `noteBoxes` 照写出端 `Event::src_of` 取：同音高叠着的两个头只有一个 id 写进 XML。坐标取整是因为 OCR 现推与读缓存的字框末几位不同，不取整同一份底本两遍不逐字相同。
-- **TS 适配器**（方案 A 的过渡件）：乐谱走带 id 的 MusicXML，编辑器照旧 `adoptStaffXml` → `fromxml`，`xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改；
+- **建模与写出**（M6，`omr-todoc::staff`）：`Score` 直接建 `ScoreDoc` + 识别 id / 符干附件，经唯一写出端 `toxml`（`ToXmlOptions.rids`）写成带 id 的 MusicXML；
+  原先 `Score` 自带的第二个 MusicXML 写出端已删。口径与 `fromxml` 读旧写出端产物所得逐字段对拍过、各档全同；房子止端没有表层时写出端照写房号（文本格式投影同此），读回多出 `text`，取房号时与 `number` 一致、不影响。
+- **TS 适配器**：乐谱走带 id 的 MusicXML（编辑器的原文就是它），编辑器照旧 `adoptStaffXml` → `fromxml`，`xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改；
   `src/omrrust/adapter.ts::reviewFromRust(json, xml, {rasters, call})` 把核对 JSON 包成 `StaffReviewResult`，`rebuild` / `restructure` 转调会话。
   `StaffReviewResult.score` 收窄成 `review.ts::ReviewGeometry`（编辑器只读系统表：各系统在哪页、哪几行谱，按引用与 `pages[].result.page.staves` 比），
-  TS 识别路的 `StaffScore` 原样满足。ScoreDoc 迁进 Rust 后，识别结果直接建模型，适配器与 JSON 中转一并退役。
+  TS 识别路的 `StaffScore` 原样满足。会话与文档进 Rust（H 期）后，模型与附件直接交会话，适配器与 JSON 中转一并退役。
 - 命令行：`omr-cli recognize staff 文件 --out=目录`（`<曲>.musicxml` + `<曲>.review.json`）、`omr-cli session 文件 --ops=操作.jsonl --out=目录`（逐步写 MusicXML、`rec.json`、`review.json`，
   报识别 id 比上一步留 / 没 / 新的个数）。核对：私有仓库 `rust-omr/adapter-check.mjs`（两遍逐字相同、id 与框一一对上、`loadScoreDoc` 后按表层取得到 id、
   rebuild 回原指派与拆开再合回 XML 不变）、`rust-omr/session-破碎.jsonl`、`rust-omr/jianpu-fields.mjs`（简谱结果对 `omr/types.ts` 逐字段）、`rust-omr/doubt-cover.mjs`（错步落在可疑小节的比例）。
@@ -580,7 +583,7 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 
 ## 接入（P12）
 
-三端同一个入口 `omr-engine`，识别、判路、会话都在 Rust；TS 只剩结果的落地（`omrrust/adapter.ts` 把会话产物包成核对视图要的 `StaffReviewResult`，简谱交 `recognizedToDoc` / `emit`）与格式写出。
+三端同一个入口 `omr-engine`，识别、判路、会话都在 Rust；TS 只剩结果的落地（`omrrust/adapter.ts` 把会话产物包成核对视图要的 `StaffReviewResult`，简谱经门面 `omr/todoc.ts` 调 `omr-todoc::jianpu` 建模、`emit` 写出）与格式写出。
 
 | 端 | 外壳 | 前端 / 调用方 |
 |---|---|---|
@@ -620,8 +623,8 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 
 | 文件 | 作用 |
 |---|---|
-| `src/omr/types.ts` | 简谱结果 `RecognizedScore`（Rust `omr-jianpu::result` 照它的形状写出） |
-| `src/omr/todoc.ts` | 简谱结果 → 简谱形状的 `ScoreDoc`；四声部时第 3、4 声部标八度谱号 `treble-8` |
+| `src/omr/types.ts` | 简谱结果 `RecognizedScore`（Rust `omr-sheet::jianpu` 照它的形状写出、读回） |
+| `src/omr/todoc.ts` | 门面：简谱结果 → 简谱形状的 `ScoreDoc`（wasm `omrJianpuDoc` → `omr-todoc::jianpu`；四声部时第 3、4 声部标八度谱号 `treble-8`）、点选落点（`omrChordPlaces`） |
 | `src/omr/emit.ts` / `meta.ts` | 输出格式：经 `todoc.ts` 的模型按转换目标表（`convert/targets.ts`）写成 123 / JPWABC / ABC / 文本谱 / jianpu-ly / Muse `.jcx`；点选映射（重解析写出的 123 / 文本谱 / `.jcx`，按元素序取源区间） |
 | `src/omr/beats.ts` | 小节时值自检：结果 → 模型 → `dolce-model::beatcheck`（门面 `model/beatcheck.ts`，与编辑器同一份判据），问题小节对回源图坐标 |
 | `src/omr/overlay.ts` / `reproject.ts` | 简谱核对叠加层（可疑项黄框、时值不对的小节虚线红框）；随编辑把当前模型投回原识别框（改过 / 删掉 / 新插） |
@@ -662,7 +665,7 @@ cargo run --release -p dolce-omr-cli -- split <歌本> --dry-run --report r.json
 `regress` 的流程：
 1. 曲目由私有仓库 `rust-omr/corpus.mjs` 列（照判分脚本同一套找曲规则，不在 Rust 里另抄）。
 2. 各曲并行识别，产物落盘到 `dev/data/rust-omr/runs/<档>/`：五线谱 `<曲>.rec.musicxml` + `<曲>.rec.json`（版面摘要，形状见私有仓库 `chorus-opslib.mjs::recLayoutOf`），
-   简谱 `<曲>.rec.json`（`RecognizedScore`，由 `rust-omr/rec-to-123.mjs` 走 `omrEmitter("123")` 转成 `.rec.123`）。
+   简谱 `<曲>.rec.json`（`RecognizedScore`）+ `<曲>.rec.123`（`omr-todoc::jianpu` 建模 → `with_page_meta` → `emit_123`，同编辑器落地的那份）。
 3. 判分脚本离线读（`solo-ops.mjs --from`、`chorus-ops.mjs --from --out-dir`），不碰 `dev/data` 下别的报告。
 4. 与 TS 基线逐曲比：基线是 `rust-omr/archive-baseline.sh` 在分支起点（main `c7c02820`）归档的读数与识别产物（`dev/data/rust-omr/ref-c7c02820/`）。
    `--replay=<归档目录下某档>` 不识别、拿归档的 TS 产物走一遍，用来自测流程（读数应与基线逐曲相同）。

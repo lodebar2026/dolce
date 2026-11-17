@@ -5,6 +5,7 @@
 
 mod formats;
 mod model;
+mod omr;
 mod textformats;
 mod view;
 

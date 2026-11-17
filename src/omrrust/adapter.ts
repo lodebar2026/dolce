@@ -1,9 +1,10 @@
 // Rust 识别（`crates/omr-staff`）→ 编辑器的**核对数据**（`omr/review.ts::StaffReviewResult`）。
 //
-// 过渡件（迁移计划 P10 方案 A）：乐谱本身走带识别 id 的 MusicXML（Rust `Score::to_musicxml`，编辑器照旧 `adoptStaffXml` → `fromxml`，
-// `xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改）；MusicXML 表达不了的——各页谱行几何、系统表、关联表、源框、
+// 乐谱本身是编辑器的原文：识别结果在 Rust 里直接建模（`omr-todoc::staff`，识别 id 与符干是模型旁的附件），
+// 经唯一写出端 `dolce-model::toxml` 写成带识别 id 的 MusicXML，编辑器照旧 `adoptStaffXml` → `fromxml`
+// （`xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改）；MusicXML 表达不了的——各页谱行几何、系统表、关联表、源框、
 // 可疑清单、落选候选——走核对 JSON（Rust `Song::review_json_with`，`omr-cli recognize staff` 写成 `<曲>.review.json`）。
-// ScoreDoc 以后若迁进 Rust，识别结果直接建模型，这份适配器连同 JSON 中转一并退役。
+// 会话与文档都进 Rust（H 期）后，模型与附件直接交会话，这份适配器连同 JSON 中转一并退役。
 //
 // 改关联表、改系统切分不重认：转调 Rust 会话（`omr-staff::session`），会话回新的 MusicXML 与核对 JSON。
 // 页面几何（谱行、小节、音框）不随这两样变，适配器只换系统表与关联表，系统里引用的谱行、页对象与 `pages[].result.page` 保持同一个

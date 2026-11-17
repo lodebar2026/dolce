@@ -428,6 +428,8 @@ dependencies = [
 name = "dolce-omr-cli"
 version = "0.1.0"
 dependencies = [
+ "dolce-formats",
+ "dolce-model",
  "dolce-omr-book",
  "dolce-omr-core",
  "dolce-omr-engine",
@@ -436,6 +438,7 @@ dependencies = [
  "dolce-omr-sheet",
  "dolce-omr-source",
  "dolce-omr-staff",
+ "dolce-omr-todoc",
  "rayon",
  "serde",
  "serde_json",
@@ -461,6 +464,7 @@ dependencies = [
  "dolce-omr-sheet",
  "dolce-omr-source",
  "dolce-omr-staff",
+ "dolce-omr-todoc",
  "rayon",
  "serde",
  "serde_json",
@@ -541,6 +545,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-omr-todoc"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-formats",
+ "dolce-model",
+ "dolce-omr-sheet",
+ "dolce-omr-text",
+ "dolce-play",
+ "serde",
+]
+
+[[package]]
 name = "dolce-omr-wasm"
 version = "0.1.0"
 dependencies = [
@@ -590,6 +607,8 @@ dependencies = [
  "dolce-base",
  "dolce-formats",
  "dolce-model",
+ "dolce-omr-sheet",
+ "dolce-omr-todoc",
  "dolce-play",
  "dolce-session",
  "dolce-view",

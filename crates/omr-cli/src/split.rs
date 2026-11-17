@@ -198,7 +198,7 @@ fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Pa
             }
             let title = Some(plan.songs[k].title.clone()).filter(|t| !t.is_empty());
             let song = assemble(&pages, title);
-            std::fs::write(out.join(format!("{}.musicxml", names[k])), song.score.to_musicxml()).map_err(|e| e.to_string())
+            std::fs::write(out.join(format!("{}.musicxml", names[k])), dolce_omr_todoc::staff::score_to_music_xml(&song.score)).map_err(|e| e.to_string())
         })();
         match r {
             Ok(()) => {

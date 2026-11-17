@@ -323,9 +323,9 @@ pub fn staff_binary(doc: &Doc, page: usize) -> Result<(Binary, f64, Placement), 
     Ok((binarize(&g.data, g.w, g.h), k, at))
 }
 
-/// 五线谱会话的当前产物：带识别 id 的 MusicXML 与核对 JSON。
+/// 五线谱会话的当前产物：带识别 id 的 MusicXML（直出模型、经唯一写出端写）与核对 JSON。
 pub fn staff_output(session: &Session) -> (String, String) {
-    (session.song().score.to_musicxml(), session.review_json())
+    (dolce_omr_todoc::staff::score_to_music_xml(&session.song().score), session.review_json())
 }
 
 /// 识别用的二值图打成字节：前 8 字节宽高（小端 u32），其后每像素一字节 0 / 1。
