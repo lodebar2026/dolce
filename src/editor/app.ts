@@ -46,8 +46,7 @@ import { jpwToScoreDoc } from "../model/fromjpw";
 import { PlaybackController, type PlaybackHost } from "./playback";
 import type { PlayPoint } from "./player";
 import type { PlaySource } from "../score/playtypes";
-import { playSourceOf } from "../jianpu/playsong";
-import { unplayedMeasures } from "../score/play";
+import { playSourceOf, unplayedMeasures } from "../score/play";
 import { OmrController, type OmrHost } from "./omrctl";
 import { FileSession } from "./filesession";
 import { MixedSession } from "./mixedsession";
@@ -417,7 +416,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const src = this.playable();
     if (!src || this._playDoc()?.songs[0]?.playOrder?.length) return null; // 写明了演唱顺序：不唱哪几小节是作者定的
     // `P:` 没排进去的段落也是作者定的
-    const gaps = src.playData.fromSections ? [] : unplayedMeasures(src.playData.measures, src.parts[0]?.measures.length ?? 0);
+    const gaps = src.playData.fromSections ? [] : unplayedMeasures(src.playData.measures, src.parts[0]?.measureCount ?? 0);
     if (gaps.length) {
       let last = gaps[0]!;
       while (gaps.includes(last + 1)) last++;

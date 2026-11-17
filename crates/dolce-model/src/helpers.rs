@@ -551,23 +551,25 @@ pub fn inline_break_of(el: &Element) -> Option<BreakKind> {
     c.sustains.iter().flatten().find_map(|su| su.line_break_after.clone())
 }
 
-/// 同一个音底下段号重复的依次挪到下一个空号（同 `phrasedoc.ts::distinctNumbers`）
-pub fn distinct_numbers(lyrics: &[Lyric]) -> Vec<Lyric> {
+/// 同一个音底下段号重复的依次挪到下一个空号（同 `phrasedoc.ts::distinctNumbers`）：段号序列 → 挪过的段号
+pub fn distinct_number_seq(numbers: impl IntoIterator<Item = f64>) -> Vec<f64> {
     let mut used: std::collections::HashSet<js::NumKey> = std::collections::HashSet::new();
     let mut max: f64 = 0.0;
-    lyrics
-        .iter()
-        .map(|l| {
-            let number = if used.contains(&js::NumKey::new(l.number)) { max + 1.0 } else { l.number };
+    numbers
+        .into_iter()
+        .map(|n| {
+            let number = if used.contains(&js::NumKey::new(n)) { max + 1.0 } else { n };
             used.insert(js::NumKey::new(number));
             max = js::max(max, number);
-            if number == l.number {
-                l.clone()
-            } else {
-                Lyric { number, ..l.clone() }
-            }
+            number
         })
         .collect()
+}
+
+/// [`distinct_number_seq`] 落到模型歌词上
+pub fn distinct_numbers(lyrics: &[Lyric]) -> Vec<Lyric> {
+    let numbers = distinct_number_seq(lyrics.iter().map(|l| l.number));
+    lyrics.iter().zip(numbers).map(|(l, number)| if number == l.number { l.clone() } else { Lyric { number, ..l.clone() } }).collect()
 }
 
 // ───────────────────────── 对象身份 ─────────────────────────

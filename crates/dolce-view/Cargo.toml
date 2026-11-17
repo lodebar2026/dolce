@@ -1,6 +1,6 @@
 [package]
 name = "dolce-view"
-description = "悦谱 Dolce 的排版行视图（同 src/jianpu/slots.ts::docView）与文本谱 AST 形状（同 src/jianpu/ast.ts）"
+description = "悦谱 Dolce 的排版行视图（同 src/jianpu/slots.ts::docView）、文本谱 AST 形状，以及由 ScoreDoc 拼演唱顺序 / 试听 / 断句的输入"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 dolce-base = { path = "../dolce-base" }
 dolce-model = { path = "../dolce-model" }
+dolce-play = { path = "../dolce-play" }
 serde.workspace = true
 
 [dev-dependencies]

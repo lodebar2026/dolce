@@ -13,7 +13,7 @@ use dolce_base::Msg;
 use dolce_model::helpers::{breaks_after_to_start, empty_doc, empty_song, IdGen};
 use dolce_model::metakeys::creator_type_of;
 use dolce_model::*;
-use dolce_play::jppitch::{key_name, key_name_to_fifth};
+use dolce_play::jppitch::{self, base_pitch_of_key, key_name_to_fifth, JpKeyState};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -244,79 +244,28 @@ fn span_of(sec: &Section, t: &JpwToken) -> Option<SourceSpan> {
     Some(SourceSpan { line: line_no, column: t.column as u32, offset: line_offset + t.column as u32, length: (t.end - t.start) as u32 })
 }
 
-/// 小节内的调号状态（`JpKeyState`）
+/// 小节内的调号状态（`JpKeyState`）与读 `.Voice` 时的两项跨音状态
 struct KeyState {
-    base_pitch: f64,
-    fifths: f64,
-    /// 小节内延续的临时记号（按简谱数字键，插入次序无关）
-    alter: HashMap<String, f64>,
+    key: JpKeyState,
     in_tuplet: bool,
     slur_depth: f64,
 }
 
-/// `MusicCommon.stepToPitch`（认不出 TS 抛错）
-fn step_to_pitch(st: &str) -> Result<f64, JpwError> {
-    Ok(match st {
-        "C" | "1" => 0.0,
-        "D" | "2" => 2.0,
-        "E" | "3" => 4.0,
-        "F" | "4" => 5.0,
-        "G" | "5" => 7.0,
-        "A" | "6" => 9.0,
-        "B" | "7" => 11.0,
-        _ => return fail("stepToPitch"),
-    })
-}
-
-/// `MusicCommon.getBasePitch(MusicCommon.keys[fifths + 7])`（调名取不到 TS 是 TypeError）
+/// `MusicCommon.getBasePitchOfKey`（调名取不到 TS 是 TypeError）
 fn base_pitch(fifths: f64) -> Result<f64, JpwError> {
-    let Some(key) = key_name(fifths) else { return fail("getBasePitch(undefined)") };
-    let mut res = 0.0;
-    let mut step = key.to_string();
-    if step.contains('b') {
-        res = -1.0;
-        step = step.replace('b', "");
-    }
-    if step.contains('#') {
-        res = 1.0;
-        step = step.replace('#', "");
-    }
-    let first: String = step.chars().take(1).collect();
-    res += step_to_pitch(&first)?;
-    res += if first == "B" { 48.0 } else { 60.0 };
-    Ok(res)
+    base_pitch_of_key(fifths).or_else(|e| fail(e))
 }
 
-/// `MusicCommon.jpToStep`
-fn jp_to_step(num: &str, fifths: f64) -> Result<String, JpwError> {
-    let Some(tonic) = key_name(fifths) else { return fail("jpToStep") };
-    let letter = tonic.chars().last().unwrap();
-    let steps = "CDEFGAB";
-    let idx = steps.find(letter).map_or(-1.0, |i| i as f64) + (num.encode_utf16().next().map_or(f64::NAN, |u| u as f64) - 49.0);
-    Ok(js::index(idx % 7.0).and_then(|i| steps.get(i..i + 1)).unwrap_or("").to_string())
-}
-
-/// `applyJpPitch`：回（pitch、step、rest）；`step` 在休止时不动
+/// `applyJpPitch`：回（pitch、rest）；`step` 在休止时不动
 fn apply_jp_pitch(stat: &mut KeyState, number: &str, jp_octave: f64, jp_alter: &str, step: &mut String) -> Result<(f64, bool), JpwError> {
-    if number == "0" {
-        return Ok((0.0, true));
+    match jppitch::apply_jp_pitch(&mut stat.key, number, jp_octave, jp_alter) {
+        Ok(None) => Ok((0.0, true)),
+        Ok(Some((pitch, st))) => {
+            *step = st;
+            Ok((pitch, false))
+        }
+        Err(e) => fail(e),
     }
-    let mut res = stat.base_pitch + jp_octave * 12.0 + step_to_pitch(number)?;
-    *step = jp_to_step(number, stat.fifths)?;
-    match jp_alter {
-        "b" => {
-            stat.alter.insert(number.to_string(), -1.0);
-        }
-        "n" => {
-            stat.alter.remove(number);
-        }
-        "#" => {
-            stat.alter.insert(number.to_string(), 1.0);
-        }
-        _ => {}
-    }
-    res += stat.alter.get(number).copied().unwrap_or(0.0);
-    Ok((res, false))
 }
 
 fn find_sub(s: &[u16], pat: &[u16]) -> Option<usize> {
@@ -515,7 +464,7 @@ fn read_voice(sec: &Section, tokens: &[JpwToken], fifths: f64, time: &SrcTime) -
     let mut out: Vec<SrcMeasure> = vec![];
     let mut cur: Option<usize> = None;
     let mut new_measure = false;
-    let mut stat = KeyState { base_pitch: base_pitch(fifths)?, fifths, alter: HashMap::new(), in_tuplet: false, slur_depth: 0.0 };
+    let mut stat = KeyState { key: JpKeyState { base_pitch: base_pitch(fifths)?, fifths, alter: HashMap::new() }, in_tuplet: false, slur_depth: 0.0 };
     // 三连音首尾（tupletBegin, tupletEnd）
     let mut tup_notes: Vec<(bool, bool)> = vec![];
     let mut pending_time: Option<SrcTime> = None;
@@ -538,9 +487,9 @@ fn read_voice(sec: &Section, tokens: &[JpwToken], fifths: f64, time: &SrcTime) -
                     if let Some(k) = pending_key.take() {
                         out[mi].fifths = k;
                         out[mi].key_change = true;
-                        stat.base_pitch = base_pitch(k)?;
-                        stat.fifths = k;
-                        stat.alter.clear();
+                        stat.key.base_pitch = base_pitch(k)?;
+                        stat.key.fifths = k;
+                        stat.key.alter.clear();
                     }
                 }
                 let mut nt = read_note(&tok.text, &mut stat)?;
@@ -569,7 +518,7 @@ fn read_voice(sec: &Section, tokens: &[JpwToken], fifths: f64, time: &SrcTime) -
                 let m = &mut out[cur.unwrap()];
                 m.entries.push(SrcEntry::Bar { style, repeat, also_forward: also, source: span_of(sec, tok) });
                 new_measure = m.entries.len() > 1;
-                stat.alter.clear();
+                stat.key.alter.clear();
             }
             JpwTok::Timesig => {
                 // /^(\d+)\/(\d+)/

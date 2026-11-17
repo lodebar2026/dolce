@@ -6,7 +6,7 @@
 //
 //   1. **断点 → AST 位置**。断点是「第 n 小节之前」/「某个和弦之后」，
 //      而文本谱的行是 `ScoreLine`，落点得是「某个声部的第 k 个元素之前」。
-//      断句直接吃 `ScoreDoc` 拼出的输入（`phrasesong.ts`），桥是它的 `idOf`（和弦 → 元素 id）
+//      断句直接吃 `ScoreDoc` 拼出的输入（`dolce-view/src/phrasesong.rs`，门面 `score/play.ts`），桥是它的 `idOf`（和弦 → 元素 id）
 //      再经排版行视图的 `elementOf` 回到行里的元素（元素带原文区间，重排据此切原文）。
 //   2. **多声部对齐**。断点只按主旋律（`parts[0]`）算，但合唱谱四个声部得在**同一拍位**
 //      断行，否则各声部行长不一、`layout/jianpu/place/spacing.ts` 同拍位归列时会把它们拧成一团。
@@ -19,12 +19,11 @@ import { Fraction } from "../common/fraction";
 import { chooseLineLayout, fitForIds, mergeSliverLines, pageBreakLines, tidyLineHeads, tidyLineTails } from "./applybreaks";
 import { computePhraseBreaks, type FitMetric, type PhraseBreaks } from "../score/play";
 import type { PhrasePart } from "../score/phraseinput";
-import { phraseJumpMeasures } from "../model/phrasedoc";
+import { phraseJumpMeasures, phrasePartOfSong } from "../score/play";
 import { defaultBookStyle } from "../style/bookstyle";
 import { chordsOf, type PhraseChord } from "../score/phraseinput";
 import { elementQuarters, linesOfVoice, tupletRatios, voiceNumbers } from "./ast";
 import type { MusicElement, NoteElement, FanqieSong, ScoreLine, SourceSpan } from "./ast";
-import { phrasePartOfSong } from "./phrasesong";
 import type { ElementId, ScoreDoc } from "../model/doc";
 import { docView } from "./slots";
 

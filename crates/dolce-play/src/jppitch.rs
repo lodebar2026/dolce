@@ -89,6 +89,89 @@ pub fn key_name_to_fifth(n: &str) -> f64 {
     KEYS.iter().position(|k| *k == nn).map_or(-1.0, |i| i as f64) - 7.0
 }
 
+// ───────────────────────── 简谱数字落成 MIDI 音高（`applyJpPitch`） ─────────────────────────
+
+/// 一个声部在小节内的调号状态（`JpKeyState`）。`alter` 是**小节内延续**的临时记号（按简谱数字键）。
+#[derive(Debug, Clone, Default)]
+pub struct JpKeyState {
+    pub base_pitch: f64,
+    pub fifths: f64,
+    pub alter: std::collections::HashMap<String, f64>,
+}
+
+impl JpKeyState {
+    /// 调号起头的状态（`{ basePitch: getBasePitchOfKey(key), fifths, alter: {} }`）
+    pub fn of_fifths(fifths: f64) -> Result<JpKeyState, &'static str> {
+        Ok(JpKeyState { base_pitch: base_pitch_of_key(fifths)?, fifths, alter: Default::default() })
+    }
+}
+
+/// `MusicCommon.stepToPitch`（认不出 TS 抛错）
+pub fn step_to_pitch(st: &str) -> Result<f64, &'static str> {
+    Ok(match st {
+        "C" | "1" => 0.0,
+        "D" | "2" => 2.0,
+        "E" | "3" => 4.0,
+        "F" | "4" => 5.0,
+        "G" | "5" => 7.0,
+        "A" | "6" => 9.0,
+        "B" | "7" => 11.0,
+        _ => return Err("stepToPitch"),
+    })
+}
+
+/// `MusicCommon.getBasePitchOfKey`：`getBasePitch(keys[fifths + 7])`（调名取不到 TS 是 TypeError）
+pub fn base_pitch_of_key(fifths: f64) -> Result<f64, &'static str> {
+    let Some(key) = key_name(fifths) else { return Err("getBasePitch(undefined)") };
+    let mut res = 0.0;
+    let mut step = key.to_string();
+    if step.contains('b') {
+        res = -1.0;
+        step = step.replace('b', "");
+    }
+    if step.contains('#') {
+        res = 1.0;
+        step = step.replace('#', "");
+    }
+    let first: String = step.chars().take(1).collect();
+    res += step_to_pitch(&first)?;
+    res += if first == "B" { 48.0 } else { 60.0 };
+    Ok(res)
+}
+
+/// `MusicCommon.jpToStep`：简谱数字 → 音名字母（字母取自调名拼写）
+pub fn jp_to_step(num: &str, fifths: f64) -> Result<String, &'static str> {
+    let Some(tonic) = key_name(fifths) else { return Err("jpToStep") };
+    let letter = tonic.chars().last().unwrap();
+    let steps = "CDEFGAB";
+    let idx = steps.find(letter).map_or(-1.0, |i| i as f64) + (num.encode_utf16().next().map_or(f64::NAN, |u| u as f64) - 49.0);
+    Ok(js::index(idx % 7.0).and_then(|i| steps.get(i..i + 1)).unwrap_or("").to_string())
+}
+
+/// `applyJpPitch`：简谱表述（数字 / 八度点 / 面上记号）落成 MIDI 音高，并更新小节内的临时记号。
+/// 回 `(音高, 音名字母)`；`0` 是休止，回 None。
+pub fn apply_jp_pitch(stat: &mut JpKeyState, number: &str, jp_octave: f64, jp_alter: &str) -> Result<Option<(f64, String)>, &'static str> {
+    if number == "0" {
+        return Ok(None);
+    }
+    let mut res = stat.base_pitch + jp_octave * 12.0 + step_to_pitch(number)?;
+    let step = jp_to_step(number, stat.fifths)?;
+    match jp_alter {
+        "b" => {
+            stat.alter.insert(number.to_string(), -1.0);
+        }
+        "n" => {
+            stat.alter.remove(number);
+        }
+        "#" => {
+            stat.alter.insert(number.to_string(), 1.0);
+        }
+        _ => {}
+    }
+    res += stat.alter.get(number).copied().unwrap_or(0.0);
+    Ok(Some((res, step)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -34,7 +34,7 @@ import { footerSpan, layoutFooters } from "./footer";
 import { headerMeasurer, paintSlideLines } from "./header";
 import { placeHeader, placeSlideFooter, placeTitlePage } from "../place/header";
 import { expandView } from "../place/expand";
-import { playDataOfSong } from "../../../jianpu/playsong";
+import { playDataOfSong } from "../../../score/play";
 import type { PlayItem } from "../../../score/playtypes";
 
 /** 原样文档排版的外部配置：尺子（`style/jianpu.ts::jianpuStyleOf`，与旧简谱引擎同一份）、纸、页脚模板。 */

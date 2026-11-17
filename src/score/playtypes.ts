@@ -1,11 +1,8 @@
-// 演唱顺序、试听时间轴的数据类与输入 / 产物形状。判据在 Rust（crates/dolce-play），TS 侧经 `score/play.ts` 调；
-// 这里只留胶水要用的类型：`ScoreDoc` 两侧拼输入（MusicXML 形状 `model/playdoc.ts`、简谱形状 `jianpu/playsong.ts`），
-// 消费者读产物（试听 `editor/player.ts`、投影档 `jianpu/expand.ts::walkPlay`、`.jpwabc` 写出端）。
-// 拼输入搬进 Rust（迁移计划 M5）后这些形状随之删掉。
+// 演唱顺序、试听时间轴的数据类与产物形状。判据在 Rust（crates/dolce-play；由 `ScoreDoc` 拼输入在 crates/dolce-view），
+// TS 侧经 `score/play.ts` 调；消费者读产物（试听 `editor/player.ts`、投影档 `jianpu/expand.ts::walkPlay`、断行档 `layout/input.ts`）。
 
 import { Fraction } from "../common/fraction";
 import type { ElementId } from "../model/doc";
-import type { BarStyle, StartStopDiscontinue } from "./enums";
 
 // ───────────────────────── 演唱顺序：产物 ─────────────────────────
 
@@ -95,102 +92,6 @@ export class PlayData {
   }
 }
 
-// ───────────────────────── 演唱顺序：输入形状 ─────────────────────────
-
-export interface PlayLyric {
-  readonly number: number;
-  /** 字面（行首可能带印刷段号「1.2.」，见 dolce-play `playorder::label_passes`） */
-  readonly text?: string;
-}
-
-export interface PlayNote {
-  readonly tieStart: boolean;
-  readonly tieEnd: boolean;
-  readonly lyrics: readonly PlayLyric[];
-}
-
-export interface PlayChord {
-  readonly notes: readonly PlayNote[];
-  /** 小节内位置（四分音符为 1） */
-  readonly position: Fraction;
-  readonly slurStart: boolean;
-  readonly slurEnds: number;
-}
-
-export interface PlayMeasure {
-  /** 和弦与其它条目混排；只取 `isPlayChord` 为真的那些。 */
-  readonly entries: readonly object[];
-  /** 小节时值（末和弦的位置 + 时值）。**没有和弦时抛错**，与 `layout/input.ts::measureDuration` 同口径。 */
-  readonly duration: Fraction;
-  readonly repeatBackward: boolean;
-  readonly repeatForward: boolean;
-  readonly endingLeft: boolean;
-  readonly endingNum: ReadonlySet<number> | null;
-  readonly endingRight: StartStopDiscontinue | null;
-  /** 小节右边的小节线样式（没写 = 普通细线） */
-  readonly barline?: BarStyle | null;
-}
-
-export interface PlayPart {
-  /** 按各声部共用的时间轴排（`model/timeaxis.ts`）：这一声部在某格没有小节就是 undefined。
-   *  `parts[0]` 读反复、房号、小节线，须每格都有（简谱形状给的是「每格的代表小节」，见 `jianpu/playsong.ts`） */
-  readonly measures: readonly (PlayMeasure | undefined)[];
-}
-
-/** 跳转记号与其落点。键的**插入次序**有意义（同一小节几个记号按它先后判）。 */
-export interface PlayJumps {
-  readonly coda: ReadonlyMap<string, TimePosition>;
-  readonly segno: ReadonlyMap<string, TimePosition>;
-  readonly jumpTo: ReadonlyMap<TimePosition, JumpSpec>;
-}
-
-export function isPlayChord(e: object): e is PlayChord {
-  return "notes" in e && "slurEnds" in e;
-}
-
-export interface PlayOrder {
-  measures: PlayItem[];
-  /** 没有反复、只是多段歌词逐段一遍 */
-  isSimple: boolean;
-  /** 谱面有 `:|` */
-  hasRepeat: boolean;
-  /** 第一处封口却没写 `:|`、紧跟着下一房的房（小节下标），按反复回头唱；没有为 -1 */
-  impliedRepeat: number;
-}
-
-/** 曲内段落标记：从第 `mid` 小节第 `skip` 个和弦起（`skip` 大于 0 = 写在小节中间） */
-export interface SectionMark {
-  readonly name: string;
-  readonly mid: number;
-  readonly skip: number;
-}
-
-/** 逐遍演唱顺序的一遍（`model/doc.ts::SingPass` 的形状）：段落名、配第几行词、之后换行 */
-export interface SingPassSpec {
-  readonly items: readonly { readonly section: string; readonly verse?: number; readonly lineAfter?: boolean }[];
-  readonly rows?: number;
-}
-
-/** `.Repeat` 的一条 */
-export class RepeatSpecItem {
-  constructor(
-    public first: number,
-    public last: number,
-    public verse: number,
-    /** 首小节跳过的和弦个数（`11.2-20V4` → skip=1）。 */
-    public skip = 0,
-    /** 段末换页：这一段（主歌/副歌）唱完起新页，写作 `1-10V1P`。 */
-    public page = false,
-    /** 末小节只取前 n 个和弦（-1 = 整节），写作 `11.1-11.1V1`。 */
-    public limit = -1,
-  ) {}
-  toString(): string {
-    const head = this.skip > 0 ? `${this.first}.${this.skip + 1}` : `${this.first}`;
-    const tail = this.limit >= 0 ? `${this.last}.${this.limit}` : `${this.last}`;
-    return `${head}-${tail}V${this.verse}${this.page ? "P" : ""}`;
-  }
-}
-
 // ───────────────────────── 试听时间轴 ─────────────────────────
 
 /** 力度缺省（没有力度记号时的 note-on velocity）。 */
@@ -209,7 +110,7 @@ export interface PlayOptions {
   speed?: number;
 }
 
-// ───────────────────────── 输入形状 ─────────────────────────
+// ───────────────────────── 试听输入 ─────────────────────────
 
 /** 一个音底下的一段歌词（一个字，收尾标点已并进 `text`）。 */
 export interface TimelineLyric {
@@ -254,35 +155,18 @@ export interface TimelineKey {
   readonly minor: boolean;
 }
 
-export interface TimelineMeasure {
-  /** 和弦与其它条目混排；只取 `isTimelineChord` 为真的那些。 */
-  readonly entries: readonly object[];
-  /** 小节时值（末和弦的位置 + 时值）。**没有和弦时抛错**，与 `layout/input.ts::measureDuration` 同口径。 */
-  readonly duration: Fraction;
-  /** 没有和弦时按拍号算小节长 */
-  readonly time: { readonly beats: number; readonly beatType: number };
-  /** 调号（随曲中转调）。不给就不写调号事件 */
-  readonly key?: TimelineKey;
-}
-
-export interface TimelinePart {
-  /** 按各声部共用的时间轴排（`model/timeaxis.ts`）：这一声部在某格没有小节（文本谱一组没写这个声部）就是 undefined */
-  readonly measures: readonly (TimelineMeasure | undefined)[];
-  /** 声部名（MIDI 轨名） */
-  readonly name?: string;
-}
-
-/** 一份可播的谱：各声部 + 演唱顺序（含速度）。 */
+/** 一份可播的谱（Rust `PlaySource`，由 `score/play.ts::playSourceOf` 拼）：时间轴、MIDI 直接吃 `json`，产物里的和弦按 `chords` 认回。 */
 export interface PlaySource {
-  /** 按模型的声部序（声部面板、MIDI 轨序都按它） */
-  readonly parts: readonly TimelinePart[];
+  /** Rust `PlaySource` 的 JSON（各声部按共用时间轴排的小节 + 演唱顺序 + 速度） */
+  readonly json: string;
+  /** 和弦按 Rust 发的号（出场次序）排 */
+  readonly chords: readonly TimelineChord[];
+  /** 推出来的演唱顺序（含跳转表与各标志、速度） */
   readonly playData: PlayData;
+  /** 按模型的声部序（声部面板、MIDI 轨序都按它）：声部名（MIDI 轨名）、共用时间轴上的格数 */
+  readonly parts: readonly { readonly name?: string; readonly measureCount: number }[];
   /** 主旋律声部（带歌词的那个；演唱顺序按它推、光标跟它、同刻起音先取它）。缺省 0 */
   readonly lead?: number;
-}
-
-export function isTimelineChord(e: object): e is TimelineChord {
-  return "notes" in e && "rest" in e && "position" in e;
 }
 
 // ───────────────────────── 产物 ─────────────────────────
@@ -311,7 +195,7 @@ export interface Anchor {
 
 export interface Timeline {
   /** 拍号 / 调号的变化点（按演唱顺序展开，首项在 t=0；读主旋律声部的小节），导出 MIDI 写 `FF 58` / `FF 59` */
-  signatures: { t: number; time: TimelineMeasure["time"]; key?: TimelineKey }[];
+  signatures: { t: number; time: { readonly beats: number; readonly beatType: number }; key?: TimelineKey }[];
   notes: TimedNote[];
   anchors: Anchor[]; // melody (`PlaySource.lead`) sounding chords, ascending by t0 — for cursor
   /** 所有声部、所有 voice 的起音和弦（按 t0 升序，同刻主旋律在前、其余按声部序）。五线谱的竖直播放线跟它走：女高音休止、别的声部在唱也照走 */

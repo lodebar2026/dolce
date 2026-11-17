@@ -1,7 +1,7 @@
 // 断句的输入形状。
 //
-// `phrase.ts` / `applybreaks.ts` 只经这组接口读谱。实现由 `ScoreDoc` 拼：MusicXML 形状 `model/phrasedoc.ts`、
-// 简谱形状 `jianpu/phrasesong.ts`；断点集合与 `FitMetric.spans` 以拼出的对象为键，`idOf` 把它们换回元素 id
+// `phrase.ts` / `applybreaks.ts` 只经这组接口读谱。实现由 `ScoreDoc` 拼：MusicXML 形状 `dolce-view/src/phrasedoc.rs`、
+// 简谱形状 `dolce-view/src/phrasesong.rs`（门面 `score/play.ts`）；断点集合与 `FitMetric.spans` 以拼出的对象为键，`idOf` 把它们换回元素 id
 // （写回简谱输入模型、回原文都按 id）。字段名与简谱输入模型（`layout/input.ts`）同一套。
 
 import type { Fraction } from "../common/fraction";

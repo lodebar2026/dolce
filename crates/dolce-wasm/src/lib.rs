@@ -6,6 +6,7 @@
 mod formats;
 mod model;
 mod textformats;
+mod view;
 
 use dolce_session::{EngineError, UpdateRequest};
 use wasm_bindgen::prelude::*;

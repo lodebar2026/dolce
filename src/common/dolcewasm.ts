@@ -66,6 +66,17 @@ export interface DolceWasm {
   modelBreaksOf(song: string): string;
   /** 排版行视图（`jianpu/slots.ts`）：id 化的 `DocView` JSON（`refs` 存下标，投影改过曲子的另带 `song`）；`source` 空串 = 用 `doc.source` */
   modelDocView(doc: string, source: string): string;
+  /** 由 `ScoreDoc` 拼试听输入（crates/dolce-view，门面 `score/play.ts`）：回 `{source: PlaySource, playData: PlayData}`，没有曲行回 `"null"` */
+  modelPlaySource(doc: string, song: number, forExpanded: boolean): string;
+  modelPlaySourceOfDoc(song: string, melodyOnly: boolean): string;
+  /** 简谱形状的演唱顺序（已折回第一份声部）：`PlayData` 的 JSON，没有曲行回 `"null"` */
+  modelPlayData(doc: string, song: number, forExpanded: boolean): string;
+  /** 断句输入：`{part: PhrasePart, ids: (number|null)[]}`（`ids` 按拍平下标），没有曲行回 `"null"` */
+  modelPhrasePart(doc: string, song: number): string;
+  modelPhrasePartOfDoc(song: string, partIndex: number, distinct: boolean): string;
+  modelPhraseJumpMeasures(song: string, partIndex: number): Uint32Array;
+  /** `ScoreDoc` → `.jpwabc`（`convert/jpwabc.ts`）；没有曲行回 undefined */
+  modelEmitJpwabc(doc: string, song: number): string | undefined;
 
   // ABC 家族与丢失清单（crates/dolce-wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）
   /** `dialect`：`123` / `abc` / `jcx`；回 ScoreDoc 的 JSON（带 `source`） */
@@ -83,7 +94,7 @@ export interface DolceWasm {
   formatsDuration123(beams: number, dots: number, sustains: number): string;
   formatsNormalizeSpelling(s: string): string;
 
-  // 文本谱、.jpwabc、jianpu-ly、MIDI 导入（crates/dolce-wasm/src/textformats.rs；TS 侧门面 `fanqie/*`、`jpword/*`、`model/{fromjpw,tojpw}.ts`、`jly/*`、`midi/import.ts`）
+  // 文本谱、.jpwabc、jianpu-ly、MIDI 导入（crates/dolce-wasm/src/textformats.rs；TS 侧门面 `fanqie/*`、`jpword/*`、`model/fromjpw.ts`、`convert/jpwabc.ts`、`jly/*`、`midi/import.ts`）
   /** `dialect` 空串 = 嗅探；回语法树 / ScoreDoc 的 JSON */
   fanqieParseAst(text: string, dialect: string): string;
   fanqieParse(text: string, dialect: string): string;
@@ -104,7 +115,6 @@ export interface DolceWasm {
   /** `{ doc }` / `{ error: { model: Msg } | { fail } }`；分节读不出 `"null"` */
   jpwToScoreDoc(text: string): string;
   jpwSource(text: string): string;
-  jpwWrite(input: string): string;
   /** `{ doc, losses: Msg[], unknown }` */
   jlyParse(text: string): string;
   jlyRewrap(text: string, measuresPerLine: number, skipPickup: boolean): string;

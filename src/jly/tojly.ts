@@ -15,7 +15,7 @@
 //   判断依据永远是上游 README，而不是某份语料样本。
 //
 // **输入形状**：只经旧简谱引擎的输入接口（`layout/input.ts` 的 `JScore`），由 `jianpu/jianpuinput.ts`
-// 从 `ScoreDoc` 投影出来——与 `tojpw.ts` 同一条原则：写出端不认 `ScoreDoc` 的类，口径与谱面一致。
+// 从 `ScoreDoc` 投影出来——与 `.jpwabc` 写出端（`dolce-formats/src/jpw/input.rs`）同一条原则：写出端不认 `ScoreDoc` 的类，口径与谱面一致。
 //
 // **单向导出**：不承诺能把 jianpu-ly 文本再读回编辑器（回读要另加方言与高亮，见 `docs/模块/导出.md`）。
 // 装不下的东西走 `warnings` 报出来（多声部、和弦符号、演奏法、反复跳跃…），**不静默丢**。
@@ -528,7 +528,7 @@ export function emitJlyOfScore(score: JScore, warnings: Set<string> = new Set())
 
 /** `ScoreDoc` → jianpu-ly 文本。投影不出来时抛错（与其它写出端一致，调用方翻成界面文案）。
  *
- *  **两种输入形状都收**（与 `tojpw.ts` 同一套口径）：`caps.layout === "scoredoc"` 的那几种
+ *  **两种输入形状都收**（与 `dolce-formats/src/jpw/input.rs` 同一套口径）：`caps.layout === "scoredoc"` 的那几种
  *  （文本谱 / 123 / ABC / MusicXML）走 `jianpuInputOfDoc`，`.jpwabc` 走 `jianpuInputOfJpw`。
  *  第一版只用了前者，于是 `.jpwabc` 文档会抛 `noLines` ✗（是端到端点出来的）。 */
 export function emitJly(doc: ScoreDoc): JlyExport {

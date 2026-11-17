@@ -20,8 +20,8 @@
 | 简谱引擎（`layout/jianpu/`：各格式的简谱 / 投影档、PPTX、成书） | 排版行视图 `jianpu/slots.ts::docView` | `layout/jianpu/place/` 的定位结构（`PlacedPage` / `PlacedGroup` / `PlacedVoice`） |
 | jianpu-ly 写出、断句量宽、识别对歌词 | `jianpu/jianpuinput.ts` 投影出的 `JScore`（`layout/input.ts`；简谱形状 / `.jpwabc` 两个分支） | — |
 | 五线谱混排（`mixed/`） | `mixed/layout.ts::layoutStaff` 建版面态；MusicXML 原文的坐标/符干/字体经 `xmlsurface.ts` 查询 | `StaffLayout` 及各 `*Layout` 节点（`src` 引用模型元素） |
-| 试听 / MIDI | `playdoc.ts::playSourceOfDoc` / `playsong.ts::playSourceOfSong` | `crates/dolce-play/src/timeline.rs` |
-| 断句 | `phrasedoc.ts` / `phrasesong.ts` 拼断句输入（带 `idOf`） | `crates/dolce-play/src/phrase.rs` |
+| 试听 / MIDI | `dolce-view/src/playdoc.rs::play_source_of_doc` / `dolce-view/src/playsong.rs::play_source_of_song` | `crates/dolce-play/src/timeline.rs` |
+| 断句 | `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` 拼断句输入（带 `idOf`） | `crates/dolce-play/src/phrase.rs` |
 
 `FanqieDoc`（`src/jianpu/ast.ts`）已退役：只是 `parseFanqieAst` → `fanqieToScoreDoc` 之间的中间结果，`parseFanqie` 直出 `ScoreDoc`。
 乐句重排改写原文要的行号/列号在模型上（`Print.source` / `textSources`、`LyricLineInfo.source` / `sources`）。
@@ -48,9 +48,9 @@
 | `crates/dolce-formats/src/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
 | `crates/dolce-formats/src/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |
 | `src/omr/todoc.ts` | ← 简谱识别结果（`RecognizedScore` 直出简谱形状，与 `abcfamily/parse.ts` 同口径；不经 MusicXML） |
-| `crates/dolce-formats/src/jpw/write.rs`（门面 `src/model/tojpw.ts`） | → `.jpwabc`（`emitJpwabc`；写出端只经输入接口读谱，两侧输入由 `playdoc.ts::jpwInputOfDoc` / `playsong.ts::jpwInputOfSong` 拼） |
-| `src/model/phrasedoc.ts` / `src/jianpu/phrasesong.ts` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
-| `src/model/playdoc.ts` / `src/jianpu/playsong.ts` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/dolce-play/src/playorder.rs`。回归 `playorder-check --cmp` |
+| `crates/dolce-formats/src/jpw/write.rs`（门面 `src/convert/jpwabc.ts`） | → `.jpwabc`（`emitJpwabc`；写出端只经输入形状读谱，两种形状的输入由 `jpw/input.rs::jpw_input_of_doc` / `jpw_input_of_song` 拼） |
+| `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
+| `dolce-view/src/playdoc.rs` / `dolce-view/src/playsong.rs` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/dolce-play/src/playorder.rs`。回归 `playorder-check --cmp` |
 | `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么）。判据在 Rust `crates/dolce-formats/src/capability.rs`，这里是门面与界面文字 |
 | `src/model/hanconv.ts` | **简繁转换**（五种格式通用）：`textGroups` 枚举人读的文字、`convertScoreDoc` 改模型、`convertSourceText` 只改原文里的字；词表加载在 `src/common/hanconv.ts`（opencc-js 按方向动态 import） |
 
@@ -87,7 +87,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   读这个模型的地方要按 `voice` 分轨算时间，别把一小节的时值一路加下去（见 [源格式-abc家族](源格式-abc家族.md)）。
 - **`playOrder` 只来自 `.jpwabc` 的 `.Repeat`**（只读的旧扩展）：MusicXML 的 `<ending>` 只能整小节，123 / ABC 只有段落顺序 `P:`，转过去走保存前丢失提示。
 - **逐遍演唱顺序 `Song.singOrder`**（123 `%%sing`，[123格式](../格式/123格式.md) §6.3）：逐遍列段落名、配第几行词、哪里换行与本遍参数，段由 `sectionMarks` 切出；
-  演唱顺序在用到时才展开（`playsong.ts::playDataOf` → `crates/dolce-play/src/playorder.rs::sing_play_order`），优先于 `playOrder` 与 `sectionOrder`。只有 123 装得下（能力表 `singOrder`）。`style` 也是 MusicXML 装不下。
+  演唱顺序在用到时才展开（`dolce-view/src/playsong.rs::play_data_of` → `crates/dolce-play/src/playorder.rs::sing_play_order`），优先于 `playOrder` 与 `sectionOrder`。只有 123 装得下（能力表 `singOrder`）。`style` 也是 MusicXML 装不下。
 - 五线谱侧字段（`clef`/`staves`/`transpose`/`pedal`/`octaveShift`/`partGroups`/`defaults`/`technical`）
   **已由 `fromxml.ts` 填充**（`../dev/scripts/staff-fields-check.mjs` 的合成夹具逐样断言过，
   真实语料的填充率也在那里）。

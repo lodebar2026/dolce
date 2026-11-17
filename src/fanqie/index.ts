@@ -6,8 +6,7 @@ export { eachNoteInElements, emptyMetadata } from "../jianpu/ast";
 export { jianpuInputOfDoc, type JianpuInputOptions } from "../jianpu/jianpuinput";
 export { relayoutFanqieText } from "./relayout";
 export { fanqiePhraseLines, type FanqieNewLine } from "../jianpu/phrase";
-export { phrasePartOfSong } from "../jianpu/phrasesong";
-export { playDataOfSong, playSourceOf, playSourceOfSong } from "../jianpu/playsong";
+export { phrasePartOfSong, playDataOfSong, playSourceOf } from "../score/play";
 // 投影档应有几遍（两种格式共用的判据；回归脚本经 window.__fanqie 取用）
 export { countPasses } from "../jianpu/expand";
 export { docView, type DocView, type SongView, type RowView, type SlotRef } from "../jianpu/slots";

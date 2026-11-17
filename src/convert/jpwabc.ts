@@ -1,18 +1,12 @@
-// `ScoreDoc` → `.jpwabc`：按形状选写出端的输入——MusicXML 形状走 `model/playdoc.ts::jpwInputOfDoc`，
-// 简谱形状（文本谱 / 123 / ABC / `.jpwabc`）走排版行视图那一路 `jianpu/playsong.ts::jpwInputOfSong`，再交 `model/tojpw.ts::writeJpwabc`。
-// 放在 model 之上：简谱形状那一路要用投影层，模型层不反过来依赖它。
+// `ScoreDoc` → `.jpwabc`：写出端的输入按形状拼（MusicXML 形状 / 简谱形状经排版行视图）、写出，都在 Rust
+// （crates/dolce-formats/src/jpw/input.rs、write.rs，wasm `modelEmitJpwabc`），这里是门面。
 
+import { dolce } from "../common/dolce";
 import type { ScoreDoc } from "../model/doc";
-import { jpwInputOfDoc } from "../model/playdoc";
-import { writeJpwabc } from "../model/tojpw";
-import { isXmlShaped } from "../model/xmlproject";
-import { jpwInputOfSong } from "../jianpu/playsong";
+import { call } from "../model/rustdoc";
 
 /** `ScoreDoc` → `.jpwabc` 文本（第 `songIdx` 首）。MusicXML 形状照 `loadMusicXml` 的口径，简谱形状照 `scoreDocToScore`。
- *  这首没有曲行时返回 null。 */
+ *  这首没有曲行时返回 null；写不出（坏 jpAlter、heavy-light 线、多房号……）抛错。 */
 export function emitJpwabc(doc: ScoreDoc, songIdx = 0): string | null {
-  const song = doc.songs[songIdx];
-  if (!song) return null;
-  const src = isXmlShaped(song) ? jpwInputOfDoc(song) : jpwInputOfSong(doc, songIdx);
-  return src ? writeJpwabc(src) : null;
+  return call(() => dolce().modelEmitJpwabc(JSON.stringify(doc), songIdx)) ?? null;
 }

@@ -245,3 +245,16 @@ export function primarySong(doc: ScoreDoc): Song | null {
 
 /** 派生五线谱时 `<note>` 上的源 id 前缀（`toxml.ts::ToXmlOptions.sourceIds` 写、`fromxml.ts` 认）。 */
 export const SOURCE_ID_PREFIX = "jp";
+
+/** 同一个音底下**段号重复**的词，后来的依次挪到下一个空号（试听用；同投影档的 `jianpu/ast.ts::distinctVerses`）。
+ *  文本谱同一段曲下写了两行 `C1:`（其实是第 1、2 段），投成五线谱后两行都是第 1 段，不挪就只唱一遍、第二行词丢掉。 */
+export function distinctNumbers<L extends { number: number }>(lyrics: readonly L[]): L[] {
+  const used = new Set<number>();
+  let max = 0;
+  return lyrics.map((l) => {
+    const number = used.has(l.number) ? max + 1 : l.number;
+    used.add(number);
+    max = Math.max(max, number);
+    return number === l.number ? l : { ...l, number };
+  });
+}

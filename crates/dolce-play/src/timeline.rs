@@ -72,6 +72,9 @@ pub struct TimelineNote {
 pub struct TimelineChord {
     /// 和弦的身份（TS 侧按对象编的号）：产物里用它指和弦，光标锚点的 `occ` 也按它数
     pub ident: usize,
+    /// 模型里的元素 id（高亮、起播点按它认；判据不读）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<u32>,
     pub notes: Vec<TimelineNote>,
     pub rest: bool,
     /// 小节内位置（四分音符为 1）
@@ -607,6 +610,7 @@ mod tests {
 
     fn chord(ident: usize, pos: f64, pitch: f64, lyric: Option<&str>) -> TimelineChord {
         TimelineChord {
+            id: None,
             ident,
             notes: vec![TimelineNote {
                 pitch,

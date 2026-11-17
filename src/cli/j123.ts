@@ -21,7 +21,6 @@ export { jpwToScoreDoc } from "../model/fromjpw";
 export { scoreDocToMusicXml } from "../model/toxml";
 export { slursAsTies, voltasOfPlayOrder } from "../model/xmlproject";
 export { loadScoreDoc } from "../model/fromxml";
-export { writeJpwabc } from "../model/tojpw";
 export { emitJpwabc } from "../convert/jpwabc";
 export { emitFanqie, emitFanqieSong, keyNameOf, fanqieArcLosses } from "../fanqie/tofanqie";
 export { emitJly } from "../jly/tojly";
@@ -37,8 +36,6 @@ export { JpwFile, RepeatSection } from "../jpword/jpwfile";
 export { VoiceSection, WordsSection, TitleSection, LayoutSection } from "../jpword/jpwfile";
 export { lexVoice } from "../jpword/lex";
 export { readJpwSource } from "../model/fromjpw";
-export { jpwInputOfDoc } from "../model/playdoc";
-export { jpwInputOfSong } from "../jianpu/playsong";
 export { isXmlShaped } from "../model/xmlproject";
 // 按乐句重排（写回原文那一步；断句本身在 crates/dolce-play，经 score/play.ts）
 export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
@@ -53,14 +50,13 @@ export * as modelHanconv from "../model/hanconv";
 export { msgText } from "../model/msg";
 export * as modelTranscribe from "../model/transcribe";
 // 试听/MIDI（私有仓库的 `chorus-midi.mjs` 拿识别结果与 GT 各导一份 MIDI 逐音比）
-export { playSourceOf } from "../jianpu/playsong";
-export { buildTimeline, toMidi } from "../score/play";
+export { playSourceOf, buildTimeline, toMidi } from "../score/play";
 // MIDI 导入（迁 Rust 对拍 dev `rs-diff.mjs midiimport`）
 export { midiToScoreDoc } from "../midi/import";
 // 只读写模型的回归脚本（`playorder-check.mjs`、`jianpu-shape-check.mjs`、`phrase-dual-check.mjs` 等）在 Node 下直接跑用
-export { playSourceOfDoc } from "../model/playdoc";
+export { playSourceOfDoc } from "../score/play";
 export { jianpuInputOfDoc } from "../jianpu/jianpuinput";
-export { phrasePartOfSong } from "../jianpu/phrasesong";
+export { phrasePartOfSong } from "../score/play";
 export { fillDegreesFromPitch } from "../model/jianpu";
 // 迁 Rust 对拍（dev `rs-diff.mjs query`）用的查询层
 export * as modelJianpu from "../model/jianpu";

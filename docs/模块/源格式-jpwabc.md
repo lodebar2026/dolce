@@ -14,7 +14,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 | `lexVoice(text)` | 门面 `src/jpword/lex.ts` → `jpw/lex.rs` | `.Voice` 正文 → token 序列（含空白/注释，带偏移与行列）；`.Voice` 节去掉空白/注释、落单 `[` `]` 判解析失败（`parse_voice_text`） |
 | `jpwToScoreDoc(f)` | 门面 `src/model/fromjpw.ts` → `jpw/read.rs` | `JpwFile` → `ScoreDoc`（音符/小节线带 `SourceSpan`）。谱面、试听、转 123/ABC、导出、能力表、双向定位索引都走它 |
 | `jianpuInputOfJpw(doc)` | `src/jianpu/jianpuinput.ts` | `ScoreDoc` → 简谱引擎输入（按原文小节；小节中间的 `$` 照原位换行） |
-| `emitJpwabc(doc)` | `src/convert/jpwabc.ts`；写出端门面 `src/model/tojpw.ts` → `jpw/write.rs` | `ScoreDoc` → `.jpwabc` 文本（只写第一声部）。写出端 `writeJpwabc` 只经输入接口读谱（门面把输入打成 JSON：条目打 `kind`、`Set` → 数组、`Fraction` → `[分子, 分母]`） |
+| `emitJpwabc(doc)` | 门面 `src/convert/jpwabc.ts` → `jpw/input.rs::emit_jpwabc` → `jpw/write.rs` | `ScoreDoc` → `.jpwabc` 文本（只写第一声部）。写出端 `write_jpwabc` 只经输入形状（`JpwScoreIn`）读谱，形状由 `jpw/input.rs` 按 MusicXML / 简谱两种形状拼 |
 | `TokenData` | `src/jpword/tokens.ts` | 整份文件的行级分词，**仅供语法高亮**（`.Voice` 段复用 `lexVoice`） |
 
 `.Voice` 正文只是一串平铺的 token（音符、小节线、换行、字符串、拍号、前奏括号），没有嵌套结构，
@@ -45,7 +45,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
   另在前一个和弦上记 `Chord.lineBreakAfter`，简谱引擎据此原位换行；`$` 与小节线的先后（`$ |` / `| $`）不区分，换行一律落在小节线之后。
 - **往返三样用词法里已有的 token**（不扩语法，原版 JP-Word 读到会忽略、不报错）：曲中**转拍号**写 `4/4`、
   **转调**写 `"1=G"`（同步更新调号状态，否则转调后半首音高全错）、**倚音**写 `{6,}`。
-- **演唱顺序**：有 `.Repeat` 照它；没有时谱里有 `|: :|` 的照反复记号推（`playsong.ts::playDataOf`，用户定 2026-10-14：
+- **演唱顺序**：有 `.Repeat` 照它；没有时谱里有 `|: :|` 的照反复记号推（`dolce-view/src/playsong.rs::play_data_of`，用户定 2026-10-14：
   020《向主歌唱》的 `.Layout` 时值总长对得上「走反复」），没有反复记号的整曲按段数逐遍（JP-Word 本来就这么唱）。
   推出来的顺序不置 `hasRepeat`，写出端不另补 `.Repeat`（重读照样推得出，往返定点）。简谱档照画 `|: :|`。
 - **一房二房没有写法，读入时推**（`jpw/read.rs::infer_endings`，没有 `.Repeat` 时）：`:|` 那一小节与紧跟的一小节**节奏逐音相同、

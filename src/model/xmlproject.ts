@@ -31,7 +31,7 @@ import { applyPageMetaToDefaults } from "./pagemeta";
 import { decoKey, noteheadOf, rehearsalOf, tremoloStrokes } from "./deconames";
 import { applyBreaks } from "./breaks";
 import { keyFifths, songFifths } from "./keyshift";
-import { distinctNumbers } from "./phrasedoc";
+import { distinctNumbers } from "./helpers";
 import { mergeStaffParts } from "./staves";
 
 

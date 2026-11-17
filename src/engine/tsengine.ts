@@ -11,7 +11,7 @@ import { msgText } from "../model/msg";
 import type { MetaData } from "../smufl/smufl";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { targetSpec } from "../convert/targets";
-import { playSourceOf } from "../jianpu/playsong";
+import { playSourceOf } from "../score/play";
 import { toMidi } from "../score/play";
 import { diffRegion } from "../common/lines";
 import { HeadlessSession } from "../editor/headless";

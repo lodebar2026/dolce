@@ -14,7 +14,6 @@ use dolce_formats::jly::{chords, fromjly};
 use dolce_formats::jpw::file::{JpwFile, SectionKind, WordsSegment};
 use dolce_formats::jpw::lex::{lex_voice, JpwToken};
 use dolce_formats::jpw::read::{jpw_to_score_doc, read_jpw_source, JpwError};
-use dolce_formats::jpw::write::{write_jpwabc, JpwScoreIn};
 use dolce_formats::midi::import;
 use dolce_model::{ElementId, ScoreDoc, Song};
 use serde_json::{json, Value};
@@ -182,13 +181,6 @@ pub fn jpw_source(text: &str) -> String {
         Ok(s) => json!({ "src": s }).to_string(),
         Err(e) => jpw_err(&e).to_string(),
     }
-}
-
-/// 写出：输入形状（门面打好 `kind` 的 JSON）→ `.jpwabc` 文本；写不出抛 `Error`
-#[wasm_bindgen(js_name = jpwWrite)]
-pub fn jpw_write(input: &str) -> Result<String, JsValue> {
-    let scr: JpwScoreIn = parse("JpwScoreIn", input)?;
-    write_jpwabc(&scr).map_err(|e| crate::js_sys_error(&e.0))
 }
 
 // ───────────────────────── jianpu-ly ─────────────────────────

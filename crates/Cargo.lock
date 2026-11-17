@@ -577,6 +577,7 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-model",
+ "dolce-play",
  "serde",
  "serde_json",
 ]

@@ -1,21 +1,20 @@
-// 演唱顺序、断句、试听时间轴、MIDI 的门面：判据在 Rust（crates/dolce-play，经 dolce-wasm），这里只做编解码——
-// 把胶水拼好的输入形状（`score/playtypes.ts`、`score/phraseinput.ts`）编成 JSON 过边界，产物里指输入对象的下标认回对象，
-// 签名与原 TS 实现（`score/{playorder,phrase,timeline,midi}.ts`，迁移计划 M1 删）相同，调用方不用改。
+// 演唱顺序、试听、断句、MIDI 的门面：判据在 Rust（crates/dolce-play；由 `ScoreDoc` 拼输入在 crates/dolce-view，经 dolce-wasm），
+// 这里只做编解码——`ScoreDoc` 过边界、产物认回 TS 对象（`PlayData` / `PlayItem`、断句输入的和弦对象）。
 //
 // 认回的口径：
 //   - 断句：和弦一律用「拍平下标」（各小节和弦按小节次序首尾相接）；
-//   - 时间轴：和弦按对象编号（同一个对象同一个号），光标锚点的 `occ` 也按它数；
+//   - 时间轴：和弦按 `PlaySource.chords` 的下标（Rust 按出场次序发的号），光标锚点的 `occ` 也按它数；
 //   - 演唱顺序：按 `P:` 排的项共用段落小节表（`scope`），认回成共用的 Set。
 // 文中提到的判据函数名（`scoreAt`、`headPenalty`、`computePhraseBreaks` 的局部量……）都在 crates/dolce-play/src/phrase.rs。
 
 import { Fraction } from "../common/fraction";
 import { dolce } from "../common/dolce";
+import type { ElementId, ScoreDoc, Song } from "../model/doc";
 import {
-  isPlayChord, isTimelineChord, PlayItem,
-  type Anchor, type JumpSpec, type PlayJumps, type PlayMeasure, type PlayOptions, type PlayOrder, type PlayPart, type PlaySource,
-  type RepeatSpecItem, type SectionMark, type SingPassSpec, type TimedNote, type Timeline, type TimelineChord, type TimelineMeasure,
+  JumpSpec, PlayData, PlayItem, TimePosition,
+  type Anchor, type PlayOptions, type PlaySource, type PlaySpecKind, type TimedNote, type Timeline, type TimelineChord,
 } from "./playtypes";
-import { chordsOf, type PhraseChord, type PhrasePart } from "./phraseinput";
+import { chordsOf, type PhraseChord, type PhraseMeasure, type PhrasePart } from "./phraseinput";
 
 const frac = (f: Fraction): [number, number] => [f.numerator, f.denominator];
 const fracOf = (a: [number, number]): Fraction => {
@@ -26,47 +25,7 @@ const fracOf = (a: [number, number]): Fraction => {
   return f;
 };
 
-/** 小节时值的 getter 在没有和弦时抛错：编成 null，Rust 那边取到时照样报错 */
-function durationOf(m: { readonly duration: Fraction }): [number, number] | null {
-  try {
-    return frac(m.duration);
-  } catch {
-    return null;
-  }
-}
-
 // ───────────────────────── 演唱顺序 ─────────────────────────
-
-function playMeasureIn(m: PlayMeasure | undefined): object | null {
-  if (!m) return null;
-  return {
-    chords: m.entries.filter(isPlayChord).map((c) => ({
-      notes: c.notes.map((n) => ({ tieStart: n.tieStart, tieEnd: n.tieEnd, lyrics: n.lyrics.map((l) => ({ number: l.number, text: l.text ?? null })) })),
-      position: frac(c.position),
-      slurStart: c.slurStart,
-      slurEnds: c.slurEnds,
-    })),
-    duration: durationOf(m),
-    repeatBackward: m.repeatBackward,
-    repeatForward: m.repeatForward,
-    endingLeft: m.endingLeft,
-    endingNum: m.endingNum ? [...m.endingNum] : null,
-    endingRight: m.endingRight ?? null,
-    barline: m.barline ?? null,
-  };
-}
-
-const partsIn = (parts: readonly PlayPart[]): string => JSON.stringify(parts.map((p) => ({ measures: p.measures.map(playMeasureIn) })));
-
-const posIn = (t: { mid: number; offset: Fraction }) => ({ mid: t.mid, offset: frac(t.offset) });
-
-function jumpsIn(j: PlayJumps): string {
-  return JSON.stringify({
-    coda: [...j.coda].map(([k, t]) => [k, posIn(t)]),
-    segno: [...j.segno].map(([k, t]) => [k, posIn(t)]),
-    jumpTo: [...j.jumpTo].map(([t, v]: [unknown, JumpSpec]) => [posIn(t as { mid: number; offset: Fraction }), { kind: v.kind, value: v.value == null ? null : String(v.value) }]),
-  });
-}
 
 interface ItemOut {
   mid: number; pass: number; offset: [number, number]; end: number; endOfPass: boolean; skip: number; limit: number; glueFrom: number;
@@ -120,100 +79,187 @@ function itemsIn(items: readonly PlayItem[], scopes: number[][]): object[] {
   });
 }
 
-function orderOut(json: string): PlayOrder {
-  const o = JSON.parse(json) as { measures: ItemOut[]; isSimple: boolean; hasRepeat: boolean; impliedRepeat: number; scopes: number[][] };
-  return { measures: itemsOut(o.measures, o.scopes), isSimple: o.isSimple, hasRepeat: o.hasRepeat, impliedRepeat: o.impliedRepeat };
-}
-
-/** 由谱面结构推演唱顺序（反复记号、房号、跳转）。反复与跳转只看 `parts[0]`，歌词段数取各声部最大值。推不了抛错。 */
-export function playOrderOf(parts: readonly PlayPart[], jumps: PlayJumps): PlayOrder {
-  return orderOut(dolce().playOrderOf(partsIn(parts), jumpsIn(jumps)));
-}
-
-/** 按头部 `P:` 排的演唱顺序（ABC §3.1.9）。`seq` 里的段落一个都不存在时返回 null，交回 `playOrderOf`。 */
-export function sectionPlayOrder(parts: readonly PlayPart[], jumps: PlayJumps, seq: readonly string[], marks: readonly SectionMark[]): PlayOrder | null {
-  const r = dolce().sectionPlayOrder(partsIn(parts), jumpsIn(jumps), JSON.stringify(seq), JSON.stringify(marks.map(({ name, mid, skip }) => ({ name, mid, skip }))));
-  return r === "null" ? null : orderOut(r);
-}
-
-/** 按逐遍演唱顺序（123 `%%sing`）排：每项是一段直着唱，`pass` 是这一段的第几行词。 */
-export function singPlayOrder(parts: readonly PlayPart[], marks: readonly SectionMark[], pages: readonly SingPassSpec[]): PlayItem[] {
-  const pg = pages.map((p) => ({
-    items: p.items.map((it) => ({ section: it.section, ...(it.verse !== undefined ? { verse: it.verse } : {}), ...(it.lineAfter !== undefined ? { lineAfter: it.lineAfter } : {}) })),
-    ...(p.rows !== undefined ? { rows: p.rows } : {}),
-  }));
-  return itemsOut(JSON.parse(dolce().singPlayOrder(partsIn(parts), JSON.stringify(marks.map(({ name, mid, skip }) => ({ name, mid, skip }))), JSON.stringify(pg))) as ItemOut[]);
-}
-
-/** 显式给定的演唱顺序（`.Repeat` 段）。`part0` 用来把 skip 换成小节内位置。 */
-export function playOrderFromSpec(repeat: { readonly items: readonly RepeatSpecItem[] }, part0: PlayPart | undefined): PlayItem[] {
-  const items = repeat.items.map(({ first, last, verse, skip, page, limit }) => ({ first, last, verse, skip, page, limit }));
-  const p0 = part0 ? JSON.stringify({ measures: part0.measures.map(playMeasureIn) }) : "null";
-  return itemsOut(JSON.parse(dolce().playOrderFromSpec(JSON.stringify(items), p0)) as ItemOut[]);
-}
-
-/** 不推、按段数整曲逐遍（没有反复信息时的退路）。`passes` 为 0 时返回空表。 */
-export function playOrderByVerses(measureCount: number, passes: number): PlayItem[] {
-  return itemsOut(JSON.parse(dolce().playOrderByVerses(measureCount, passes)) as ItemOut[]);
-}
-
 /** 演唱顺序里一遍都没有的小节（下标升序）。 */
 export function unplayedMeasures(items: readonly PlayItem[], measureCount: number): number[] {
   return JSON.parse(dolce().unplayedMeasures(JSON.stringify(itemsIn(items, [])), measureCount)) as number[];
 }
 
-// ───────────────────────── 试听时间轴、MIDI ─────────────────────────
+// ───────────────────────── 由 ScoreDoc 拼（crates/dolce-view）：试听输入、演唱顺序 ─────────────────────────
 
-/** `PlaySource` → 输入 JSON；`chords[k]` 是编号 k 的和弦对象（产物按号认回） */
-function sourceIn(src: PlaySource): { json: string; chords: TimelineChord[] } {
-  const ident = new Map<TimelineChord, number>();
-  const chords: TimelineChord[] = [];
-  const chordIn = (c: TimelineChord): object => {
-    let k = ident.get(c);
-    if (k === undefined) {
-      ident.set(c, (k = chords.length));
-      chords.push(c);
-    }
-    return {
-      ident: k,
-      notes: c.notes.map((n) => ({
-        pitch: n.pitch,
-        ...(n.tieStop ? { tieStop: true } : {}),
-        ...(n.lyrics?.length ? { lyrics: n.lyrics.map((l) => ({ text: l.text, number: l.number, ...(l.refrain ? { refrain: true } : {}), ...(l.extend ? { extend: true } : {}) })) } : {}),
-      })),
-      rest: c.rest,
-      position: frac(c.position),
-      ...(c.duration ? { duration: frac(c.duration) } : {}),
-      ...(c.velocity !== undefined ? { velocity: c.velocity } : {}),
-      ...(c.cursor !== undefined ? { cursor: c.cursor } : {}),
-      ...(c.slurStart ? { slurStart: true } : {}),
-      ...(c.slurEnds ? { slurEnds: c.slurEnds } : {}),
-    };
-  };
-  const measureIn = (m: TimelineMeasure | undefined): object | null =>
-    m
-      ? {
-          chords: m.entries.filter(isTimelineChord).map(chordIn),
-          duration: durationOf(m),
-          time: { beats: m.time.beats, beatType: m.time.beatType },
-          ...(m.key ? { key: { fifths: m.key.fifths, minor: m.key.minor } } : {}),
-        }
-      : null;
-  const scopes: number[][] = [];
-  const json = JSON.stringify({
-    parts: src.parts.map((p) => ({ measures: p.measures.map(measureIn), ...(p.name !== undefined ? { name: p.name } : {}) })),
-    playData: { measures: itemsIn(src.playData.measures, scopes), tempo: src.playData.tempo, scopes },
-    ...(src.lead !== undefined ? { lead: src.lead } : {}),
-  });
-  return { json, chords };
+type PosOut = { mid: number; offset: [number, number] };
+
+/** Rust `PlayData` 的 JSON 形状（`crates/dolce-view/src/playdata.rs`） */
+interface PlayDataOut {
+  coda: [string, PosOut][];
+  segno: [string, PosOut][];
+  jumpTo: [PosOut, { kind: PlaySpecKind; value: string | null }][];
+  measures: ItemOut[];
+  scopes: number[][];
+  hasRepeat: boolean;
+  isSimpple: boolean;
+  impliedRepeat: number;
+  fromSections: boolean;
+  fromSing: boolean;
+  tempo: number;
 }
+
+const posOut = (p: PosOut): TimePosition => new TimePosition(p.mid, fracOf(p.offset));
+
+function playDataOut(o: PlayDataOut): PlayData {
+  const pd = new PlayData();
+  for (const [k, t] of o.coda) pd.coda.set(k, posOut(t));
+  for (const [k, t] of o.segno) pd.segno.set(k, posOut(t));
+  for (const [t, v] of o.jumpTo) {
+    const j = new JumpSpec(v.kind);
+    j.value = v.value;
+    pd.jumpTo.set(posOut(t), j);
+  }
+  pd.measures = itemsOut(o.measures, o.scopes);
+  pd.hasRepeat = o.hasRepeat;
+  pd.isSimpple = o.isSimpple;
+  pd.impliedRepeat = o.impliedRepeat;
+  pd.fromSections = o.fromSections;
+  pd.fromSing = o.fromSing;
+  pd.tempo = o.tempo;
+  return pd;
+}
+
+/** Rust `PlaySource` 的 JSON 形状（只列门面认回要读的） */
+interface SourceWire {
+  parts: { name?: string; measures: ({ chords: ChordWire[] } | null)[] }[];
+  lead?: number;
+}
+interface ChordWire {
+  ident: number;
+  id?: ElementId;
+  notes: { pitch: number; tieStop?: boolean; lyrics?: { text: string; number: number; refrain?: boolean; extend?: boolean }[] }[];
+  rest: boolean;
+  position: [number, number];
+  duration?: [number, number] | null;
+  velocity?: number | null;
+  cursor?: boolean | null;
+  slurStart?: boolean;
+  slurEnds?: number;
+}
+
+function sourceOut(r: string): PlaySource | null {
+  if (r === "null") return null;
+  const o = JSON.parse(r) as { source: SourceWire; playData: PlayDataOut };
+  const chords: TimelineChord[] = [];
+  for (const p of o.source.parts) {
+    for (const m of p.measures) {
+      for (const c of m?.chords ?? []) {
+        chords[c.ident] = {
+          notes: c.notes,
+          rest: c.rest,
+          position: fracOf(c.position),
+          ...(c.duration ? { duration: fracOf(c.duration) } : {}),
+          ...(c.id !== undefined ? { id: c.id } : {}),
+          ...(c.velocity != null ? { velocity: c.velocity } : {}),
+          ...(c.cursor != null ? { cursor: c.cursor } : {}),
+          ...(c.slurStart ? { slurStart: true } : {}),
+          ...(c.slurEnds ? { slurEnds: c.slurEnds } : {}),
+        };
+      }
+    }
+  }
+  return {
+    json: JSON.stringify(o.source),
+    chords,
+    playData: playDataOut(o.playData),
+    parts: o.source.parts.map((p) => ({ ...(p.name !== undefined && p.name !== null ? { name: p.name } : {}), measureCount: p.measures.length })),
+    ...(o.source.lead !== undefined && o.source.lead !== null ? { lead: o.source.lead } : {}),
+  };
+}
+
+export interface PlaySourceOptions {
+  /** 见 `ToScoreOptions.forExpanded`：带歌词的声部当主旋律、同号歌词顺延 */
+  forExpanded?: boolean;
+}
+
+/** **试听/MIDI 的统一入口**（各格式共用）：MusicXML 形状带全部声部、voice 与力度，简谱形状按排版行视图拼。
+ *  这首没有曲行返回 null；推演唱顺序出错抛错。 */
+export function playSourceOf(doc: ScoreDoc, songIdx = 0, options: PlaySourceOptions = {}): PlaySource | null {
+  return sourceOut(dolce().modelPlaySource(JSON.stringify(doc), songIdx, !!options.forExpanded));
+}
+
+/** MusicXML 形状的一首（`melodyOnly`：只取第一声部主分支、和弦取最高音、不带力度——光标跟的旋律档，口径同引擎输入） */
+export function playSourceOfDoc(song: Song, options: { melodyOnly?: boolean } = {}): PlaySource {
+  return sourceOut(dolce().modelPlaySourceOfDoc(JSON.stringify(song), !!options.melodyOnly))!;
+}
+
+/** 简谱形状的演唱顺序（下标是第一份声部——`forExpanded` 时是带歌词的那个——自己的小节序）。这首没有曲行返回 null。 */
+export function playDataOfSong(doc: ScoreDoc, songIdx = 0, options: PlaySourceOptions = {}): PlayData | null {
+  const r = dolce().modelPlayData(JSON.stringify(doc), songIdx, !!options.forExpanded);
+  return r === "null" ? null : playDataOut(JSON.parse(r) as PlayDataOut);
+}
+
+// ───────────────────────── 断句输入 ─────────────────────────
+
+/** 断句输入连同和弦 → 元素 id（断点写回文档要按 id 对上） */
+export interface PhraseView {
+  part: PhrasePart;
+  idOf: Map<PhraseChord, ElementId>;
+}
+
+interface PhraseChordWire {
+  notes: PhraseChord["notes"];
+  rest: boolean;
+  beats: number;
+  beams: number;
+  dot: number;
+  duration?: [number, number] | null;
+  position: [number, number];
+  fermata: boolean;
+  slurStart: boolean;
+  slurEnds: number;
+}
+interface PhraseWire {
+  part: { measures: (Omit<PhraseMeasure, "entries"> & { chords: PhraseChordWire[] })[] };
+  ids: (ElementId | null)[];
+}
+
+function phraseOut(r: string): PhraseView | null {
+  if (r === "null") return null;
+  const o = JSON.parse(r) as PhraseWire;
+  const idOf = new Map<PhraseChord, ElementId>();
+  let k = 0;
+  const measures: PhraseMeasure[] = o.part.measures.map(({ chords, ...m }) => ({
+    ...m,
+    entries: chords.map((c) => {
+      const { duration, position, ...rest } = c;
+      const ch: PhraseChord = { ...rest, position: fracOf(position), ...(duration ? { duration: fracOf(duration) } : {}) };
+      const id = o.ids[k++];
+      if (id !== null && id !== undefined) idOf.set(ch, id);
+      return ch;
+    }),
+  }));
+  return { part: { measures }, idOf };
+}
+
+/** 简谱形状的断句输入（主旋律那一个声部：带歌词的声部优先；口径同引擎输入投影档那一份）。这首没有曲行返回 null。 */
+export function phrasePartOfSong(doc: ScoreDoc, songIdx = 0): PhraseView | null {
+  return phraseOut(dolce().modelPhrasePart(JSON.stringify(doc), songIdx));
+}
+
+/** MusicXML 形状的断句输入（`partIndex` 缺省第一声部）。`distinctLyrics` = 同音同号的词顺延（只试听要）。 */
+export function phrasePartOfDoc(song: Song, partIndex = 0, distinctLyrics = false): PhraseView {
+  return phraseOut(dolce().modelPhrasePartOfDoc(JSON.stringify(song), partIndex, distinctLyrics))!;
+}
+
+/** 跳转记号（Fine / D.C. / D.S. / To Coda）所在的小节下标（0 基）。`segno` / `coda` 是跳转的目标、不算。 */
+export function phraseJumpMeasures(song: Song, partIndex = 0): Set<number> {
+  return new Set(dolce().modelPhraseJumpMeasures(JSON.stringify(song), partIndex));
+}
+
+// ───────────────────────── 试听时间轴、MIDI ─────────────────────────
 
 const optsIn = (opts: PlayOptions | undefined): string =>
   opts ? JSON.stringify({ partVolumes: opts.partVolumes, metronome: opts.metronome, speed: opts.speed }) : "null";
 
 /** 按展开的演唱顺序拍平成发声音符、光标锚点、节拍器、拍号调号变化点（试听与 MIDI 共用）。 */
 export function buildTimeline(src: PlaySource): Timeline {
-  const { json, chords } = sourceIn(src);
+  const { json, chords } = src;
   type AnchorOut = Omit<Anchor, "chord"> & { chord: number };
   const o = JSON.parse(dolce().buildTimeline(json)) as Omit<Timeline, "notes" | "anchors" | "allAnchors"> & {
     notes: (Omit<TimedNote, "chord"> & { chord: number })[];
@@ -248,7 +294,7 @@ export function partGain(opts: PlayOptions | undefined, part: number): number {
 
 /** 标准 MIDI 文件（format 1）。`click` = 带节拍器轨（原生音源试听用；导出不传）；导出的各声部轨带轨名与歌词事件。 */
 export function toMidi(src: PlaySource, opts?: PlayOptions, click = false): Uint8Array {
-  return dolce().toMidi(sourceIn(src).json, optsIn(opts), click);
+  return dolce().toMidi(src.json, optsIn(opts), click);
 }
 
 // ───────────────────────── 断句 ─────────────────────────

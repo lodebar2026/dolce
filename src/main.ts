@@ -99,11 +99,11 @@ async function boot() {
     import("./pdflayout/browser"), import("./style/book"), import("./layout/painter"),
     import("./score/play"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
     import("./jpword/lex"), import("./jianpu/jianpuinput"), import("./fanqie"),
-    import("./model/fromxml"), import("./model/phrasedoc"), import("./score/playtypes"), import("./model/playdoc"),
+    import("./model/fromxml"), import("./score/playtypes"),
     import("./layout/input"),
-  ]).then(([book, bookStyle, painter, play, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, phrasedoc, playtypes, playdoc, input]) => ({
+  ]).then(([book, bookStyle, painter, play, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, playtypes, input]) => ({
     ...book, ...bookStyle, ...painter, ...play, ...applybreaks, ...jpwfile, ...parse, ...jianpuinput, fanqie,
-    ...fromxml, ...phrasedoc, ...playtypes, ...playdoc, ...input,
+    ...fromxml, ...playtypes, ...input,
   }));
   // 混排歌本（清单 + .ss → DrawPage[]）暴露，供 scripts/kl2020-book.mjs 用。
   win.__songbook = Promise.all([import("./pdflayout/songbook"), import("./style/ss")])
@@ -114,14 +114,14 @@ async function boot() {
     import("./model/fromjpw"), import("./fanqie/parse"), import("./model/helpers"),
     import("./jianpu/jianpuinput"), import("./fanqie"),
     import("./model/fromxml"), import("./model/toxml"), import("./convert/capability"),
-    import("./model/jianpuproject"), import("./model/jianpu"), import("./model/tojpw"), import("./model/xmlproject"),
+    import("./model/jianpuproject"), import("./model/jianpu"), import("./model/xmlproject"),
     import("./model/breaks"), import("./convert/jpwabc"),
   ]).then((
     [parse, emit, fromjpw, fromfanqie, helpers, jianpuinput, fanqie,
-     fromxml, toxml, capability, jianpuproject, jianpu, tojpw, xmlproject, breaks, jpwabc],
+     fromxml, toxml, capability, jianpuproject, jianpu, xmlproject, breaks, jpwabc],
   ) => ({
     ...parse, ...emit, ...fromjpw, ...fromfanqie, ...helpers, ...jianpuinput, fanqie,
-    ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...tojpw, ...xmlproject, ...breaks, ...jpwabc,
+    ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...xmlproject, ...breaks, ...jpwabc,
   }));
   // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engraveScoreDoc`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归
   // （写出端只有 `model/toxml.ts`，在 `__j123` 里）。

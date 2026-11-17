@@ -106,7 +106,7 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   分支不等长由拍数自检逐分支报（`model/beatcheck.ts`），不静默补齐。
 - **简谱只印主分支**：一个简谱声部行装不下同一小节的两条并行旋律，`projectForJianpu` 删掉 `voice > 1`
   的元素（口径同 MusicXML 那一路的 `voice <= 1`），歌词对位格也不含它们（`abc/lyricslot.rs`，读写两端共用）。
-  五线谱、MusicXML 导出、试听那三条路仍是完整的多声部——**试听要先投影**（`playsong.ts`），
+  五线谱、MusicXML 导出、试听那三条路仍是完整的多声部——**试听要先投影**（`dolce-view/src/playsong.rs`），
   简谱那条播放路会把并行分支当成接着唱的音。
 - **行首 `[V:x]` 切声部**（ABC §7、Muse 说明书 §3.2.3.1），同一行后面接着的是这个声部的音乐；行内 `[L:]` 改默认音长。
   ABC 只认数字声部号，Muse 的标志按首次出现编号。行内 `[L:]` 只管写它的那个声部（`PartBuild.len`）。

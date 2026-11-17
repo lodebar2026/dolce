@@ -48,9 +48,7 @@ import * as jpwparse from "../jpword/lex";
 import * as jianpuinput from "../jianpu/jianpuinput";
 import * as fanqieMod from "../fanqie";
 import * as fromxml from "../model/fromxml";
-import * as phrasedoc from "../model/phrasedoc";
 import * as playtypes from "../score/playtypes";
-import * as playdoc from "../model/playdoc";
 import * as layoutInput from "../layout/input";
 import * as songbookMod from "../pdflayout/songbook";
 import * as ss from "../style/ss";
@@ -68,7 +66,7 @@ pptxMod.provideBravuraOtf(readFileSync(fileURLToPath(new URL("../../public/redis
 /** 同 `__book`：成书重排（BookStyle 注入 + 页面树 → DrawList）。 */
 export const book = {
   ...pdflayoutBrowser, ...bookStyle, ...painterMod, ...play, ...applybreaks, ...jpwfile, ...jpwparse, ...jianpuinput, fanqie: fanqieMod,
-  ...fromxml, ...phrasedoc, ...playtypes, ...playdoc, ...layoutInput,
+  ...fromxml, ...playtypes, ...layoutInput,
 };
 /** 同 `__songbook`：混排歌本（清单 + .ss → DrawPage[]）。 */
 export const songbook = { ...songbookMod, ...ss };

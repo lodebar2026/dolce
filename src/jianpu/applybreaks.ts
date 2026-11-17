@@ -102,7 +102,7 @@ export function applyPhraseBreaksToDoc(
 /**
  * 成书的段落词（原书印在和弦带里的「（副歌）」）：按原书音符序号（`note_ordinal`，数的是正经和弦、休止也算，倚音不算）
  * 写到文档的和弦上（`Chord.sectionWord`），排版引擎自己去摆。副歌那一条优先挂到断句输入里**副歌的起句**
- * （`phrasedoc.ts` 推的 `refrain`）：重排后序号常差几个音（023 首曾落在副歌前一行）。
+ * （`dolce-view/src/phrasedoc.rs` 推的 `refrain`）：重排后序号常差几个音（023 首曾落在副歌前一行）。
  */
 export function putSectionWords(
   song: Song, input: PhrasePart, idOf: ReadonlyMap<PhraseChord, ElementId>, rows: ReadonlyArray<{ text: string; note_ordinal: number }>,

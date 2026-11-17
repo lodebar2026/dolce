@@ -2,12 +2,12 @@
 // 每遍接成一长行、只挂这一遍的歌词，再按版心宽逐行装满（同旧简谱引擎 `layout.ts::Line.doLineBreak`），
 // 拼成一份「展开后的」行视图交给 `layoutSong` 照常排——横向、纵向、上方带全是简谱档那一套。
 //
-// 逐遍怎么走（首尾裁切、遍末与往回跳换页）复用 `jianpu/expand.ts::walkPlay`；小节的切法同 `jianpu/phrasesong.ts::buildMeasures`
+// 逐遍怎么走（首尾裁切、遍末与往回跳换页）复用 `jianpu/expand.ts::walkPlay`；小节的切法同 `dolce-view/src/phrasesong.rs::build_measures`
 // （演唱顺序的 `mid` 就是按它数的），只排一个声部：带歌词的那个（同 `songMeasures` 的 `forExpanded`）。
 import { walkPlay } from "../../../jianpu/expand";
 import { Fraction } from "../../../common/fraction";
 import type { PlayItem } from "../../../score/playtypes";
-import { distinctVerses } from "../../../jianpu/phrasesong";
+import { distinctVerses } from "../../../jianpu/ast";
 import type { Measure as DocMeasure } from "../../../model/doc";
 import { REFRAIN_WORD_RE, sectionMarkOf } from "../../../model/helpers";
 import { elementQuarters, takesLyric, tupletRatios, voiceNumbers, type BarlineElement, type ScoreLine, type LyricLine, type LyricSyllable, type Mark, type MusicElement } from "../../../jianpu/ast";
@@ -786,7 +786,7 @@ export function expandSong(
   /** 演唱顺序是写定的逐遍演唱顺序（123 `%%sing`）：逐页逐行照写的排，源里的换行换页与推断都不用（`singSong`） */
   sing = false,
 ): SongView {
-  // 只排一个声部：带歌词的那个（同 `playsong.ts::songMeasures` 的 forExpanded），没有就第一个
+  // 只排一个声部：带歌词的那个（同 `dolce-view/src/playsong.rs::song_measures` 的 forExpanded），没有就第一个
   const voices = voiceNumbers(song);
   const rowsOfVoice = (v: number): RowView[] => song.pages.flatMap((p) => p.groups.flatMap((g) => g.voices.filter((r) => r.voice === v)));
   const lead = voices.find((v) => rowsOfVoice(v).some((r) => r.lyrics.length > 0)) ?? voices[0]!;
