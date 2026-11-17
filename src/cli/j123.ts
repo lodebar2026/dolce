@@ -79,3 +79,5 @@ export * as modelDirectionmarks from "../model/directionmarks";
 // Rust 识别的核对 JSON → 编辑器核对数据（`rust-omr/adapter-check.mjs` 用），识别 id 按表层读
 export { reviewFromRust, systemOpToRust } from "../omrrust/adapter";
 export { surfaceIds } from "../editor/omrlinks";
+// 双向定位索引（原文偏移 ↔ 谱面元素；条目在 Rust 建）：核对脚本比条目表用
+export { SyncIndex } from "../editor/sync";

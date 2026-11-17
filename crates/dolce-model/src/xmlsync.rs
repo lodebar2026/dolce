@@ -1,13 +1,15 @@
 //! `.musicxml` 的源码同步索引（同 `src/editor/sync.ts::SyncIndex.buildXml`）：模型不记原文位置，条目区间取表层原节点记的区间。
 //!
 //! 条目形状同 TS `SyncEntry`（JSON 直接给编辑器），按推入次序给（排序在 TS）；区间一律 UTF-16 码元。原节点不是从这份原文读出来的（区间对不上）就整份不建，回 `None`。
+//! 有原文位置的那几种格式另一种建法在 `dolce-view::sync`（要排版行视图），条目形状共用这里的。
 
 use crate::doc::*;
+use std::borrow::Cow;
 use crate::xmlsurface::{Slot, Surface};
 use dolce_xml::{NodeId, Tree};
 use serde::Serialize;
 
-/// 同 TS `SyncEntry`（只出 `buildXml` 会填的字段）
+/// 同 TS `SyncEntry`（页眉那几样字段在 TS 并进来，这里不出）
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncEntry {
@@ -19,7 +21,7 @@ pub struct SyncEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verse_no: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mark_kind: Option<&'static str>,
+    pub mark_kind: Option<Cow<'static, str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,6 +36,12 @@ pub struct SyncEntry {
     pub pair: Option<Span>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<bool>,
+    /// 增时线自己的 id；挂在增时线上的记号，那条增时线的 id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub own: Option<ElementId>,
+    /// 增时线是宿主音符的第几条
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
@@ -65,7 +73,7 @@ pub struct XmlSync {
 }
 
 impl SyncEntry {
-    fn new(kind: &'static str, sp: Span, id: i64) -> SyncEntry {
+    pub fn new(kind: &'static str, sp: Span, id: i64) -> SyncEntry {
         SyncEntry {
             kind,
             from: sp.from,
@@ -81,6 +89,8 @@ impl SyncEntry {
             end: None,
             pair: None,
             page: None,
+            own: None,
+            ord: None,
         }
     }
 }
@@ -231,7 +241,7 @@ pub fn build_xml_sync(doc: &ScoreDoc, surface: &Surface, text: &str) -> Option<X
                                     let Some(sp) = cx.span_of(Some(it), &itag) else { continue };
                                     let name = if itag == "fermata" && cx.t.get_attribute(it, "type") == Some("inverted") { "fermata-inverted".to_owned() } else { itag };
                                     let mut e = SyncEntry::new("mark", sp, id);
-                                    e.mark_kind = Some("deco");
+                                    e.mark_kind = Some("deco".into());
                                     e.name = Some(name);
                                     out.push(e);
                                 }
@@ -241,7 +251,7 @@ pub fn build_xml_sync(doc: &ScoreDoc, surface: &Surface, text: &str) -> Option<X
                     if let Some(h) = &ch.harmony {
                         if let Some(sp) = cx.span_of(cx.sur(h.oid, Slot::Default), "harmony") {
                             let mut e = SyncEntry::new("mark", sp, id);
-                            e.mark_kind = Some("harmony");
+                            e.mark_kind = Some("harmony".into());
                             e.name = Some(h.text.clone().unwrap_or_default());
                             out.push(e);
                         }
@@ -264,7 +274,7 @@ pub fn build_xml_sync(doc: &ScoreDoc, surface: &Surface, text: &str) -> Option<X
                         _ => "dir",
                     };
                     let mut e = SyncEntry::new("mark", sp, host.id() as i64);
-                    e.mark_kind = Some(mark_kind);
+                    e.mark_kind = Some(mark_kind.into());
                     e.name = Some(if mark_kind == "dir" { d.kind.clone() } else { d.text.clone().unwrap_or_else(|| d.kind.clone()) });
                     e.dir = Some(DirAt { pi, mi, index });
                     if after.is_none() {
@@ -312,7 +322,7 @@ pub fn build_xml_sync(doc: &ScoreDoc, surface: &Surface, text: &str) -> Option<X
             let base = |sp: Span, pair: Option<Span>| {
                 let mut e = SyncEntry::new("mark", sp, mk.start as i64);
                 e.end = Some(mk.end);
-                e.mark_kind = Some(tag);
+                e.mark_kind = Some(tag.into());
                 e.name = Some(tag.to_owned());
                 e.pair = pair;
                 e

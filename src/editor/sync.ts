@@ -10,6 +10,9 @@
 // `.jpwabc`）共用同一套代码。条目按**元素 id** 认，谱面那一侧（`ScorePainter.entryEl(id)` /
 // `lyricEl` / `partEls`）也按 id 取，两路页面树的差别由排版器自己消化。
 //
+// 建表在 Rust：有原文位置的四种格式走 `crates/dolce-view/src/sync.rs`（随排版行视图一趟出，`docView(doc).sync`），
+// `.musicxml` 走 `crates/dolce-model/src/xmlsync.rs`；两路都按推入次序给，排序、音符反查表与查询留在这里。
+//
 // 这里不碰页面树，只经 App（VisualHost）拿排版器给的 `<g>`，
 // 高亮靠加 CSS 类完成，**不重渲染**（沿用编辑器既有判据）。
 //
@@ -41,8 +44,7 @@
 // 走排版行视图（`jianpu/slots.ts::docView`）：音节配给哪个音符在视图里已经定好（`syllableOwner`），
 // 与排版器、简谱输入模型用的是**同一份**，不在这里另算。
 
-import type { AttachedSource, Chord, ElementId, Measure, Part, ScoreDoc, SourceSpan } from "../model/doc";
-import { breakAfter } from "../model/helpers";
+import type { AttachedSource, ElementId, ScoreDoc } from "../model/doc";
 import { xmlSyncOf } from "../model/xmlsurface";
 import { docView } from "../jianpu/slots";
 
@@ -93,9 +95,6 @@ export interface BreakMark {
   span: { from: number; to: number } | null;
 }
 
-const spanEnd = (s: SourceSpan): number => s.offset + s.length;
-const hasSpan = (s: SourceSpan | undefined): s is SourceSpan => !!s && s.length > 0;
-
 /** 源文本偏移 ↔ 谱面元素的双向索引。`build` 之后两个方向都是 O(log n) / O(1)。 */
 export class SyncIndex {
   /** 按 `from` 升序；同起点时短的在前（歌词音节的区间比曲行短） */
@@ -108,63 +107,9 @@ export class SyncIndex {
     return this.entries.length;
   }
 
-  /** 从模型重建。文本一变就要重建——偏移全变了。 */
+  /** 从模型重建。文本一变就要重建——偏移全变了。条目在 Rust 随排版行视图一趟建好（`docView(doc).sync`）。 */
   build(doc: ScoreDoc): void {
-    const view = docView(doc);
-    const out: SyncEntry[] = [];
-    this.byNote.clear();
-    for (const song of view.songs) {
-      for (const page of song.pages) {
-        for (const group of page.groups) {
-          for (const row of group.voices) {
-            // 同一谱表的第二声部（123 / ABC 的 `&`）并在块里：块里的音也进索引
-            for (const el of row.elements.flatMap((x) => (x.kind === "inline-layer" && x.role === "voice" ? x.elements : [x]))) {
-              if (el.kind !== "note") continue;
-              const id = view.idOf.get(el);
-              if (id === undefined) continue;
-              const e: SyncEntry = { kind: "note", from: el.source.offset, to: spanEnd(el.source), id, verse: null };
-              // 零长区间（转换来的元素可能没有真实 span）不进索引：二分会退化成乱命中
-              if (e.to > e.from) {
-                out.push(e);
-                this.byNote.set(id, e);
-              }
-            }
-            row.lyrics.forEach((line, verse) => {
-              for (const syl of line.syllables) {
-                if (syl.text.length === 0) continue; // 空音节是「跳过一个音符」，没有原文可指
-                const id = view.syllableOwner.get(syl);
-                if (id === undefined || view.elementOf.get(id)?.kind !== "note") continue;
-                const to = spanEnd(syl.source);
-                if (to > syl.source.offset) out.push({ kind: "lyric", from: syl.source.offset, to, id, verse, verseNo: line.verseFrom });
-              }
-            });
-          }
-        }
-      }
-    }
-    // 音符以外的东西直接从模型取（视图里它们不带原文区间）
-    this.breakList = [];
-    for (const song of doc.songs) {
-      song.parts.forEach((part, pi) => {
-        this.addPartExtras(part, out);
-        // 换行符只按第一声部显示：多声部各行一起换，画一遍就够
-        if (pi === 0) this.breakList.push(...partBreaks(part));
-      });
-      for (const mk of song.marks ?? []) {
-        if (mk.type !== "slur" || !hasSpan(mk.openSource)) continue;
-        const open = { from: mk.openSource.offset, to: spanEnd(mk.openSource) };
-        const close = hasSpan(mk.closeSource) ? { from: mk.closeSource.offset, to: spanEnd(mk.closeSource) } : undefined;
-        const base = { kind: "mark" as const, id: mk.start, end: mk.end, verse: null, markKind: "slur" as const, name: "slur" };
-        out.push({ ...base, ...open, ...(close ? { pair: close } : {}) });
-        if (close) out.push({ ...base, ...close, pair: open });
-      }
-    }
-    for (const b of this.breakList) {
-      if (b.span) out.push({ kind: "break", ...b.span, id: b.after, verse: null, page: b.page });
-    }
-    // **按偏移排序**——`at()` 的二分依赖它。同起点时短的在前。
-    out.sort((a, b) => a.from - b.from || a.to - b.to);
-    this.entries = out;
+    this.adopt(docView(doc).sync as { entries: SyncEntry[]; breaks: BreakMark[] });
   }
 
   /**
@@ -172,44 +117,19 @@ export class SyncIndex {
    * 原节点不是从这份原文读出来的（区间对不上原文）就不建，返回 false——宁可不能编辑，也不按错位的偏移改。
    */
   buildXml(doc: ScoreDoc, text: string): boolean {
-    this.entries = [];
-    this.byNote.clear();
-    this.breakList = [];
     const r = xmlSyncOf<SyncEntry, BreakMark>(doc, text);
-    if (!r) return false;
+    this.adopt(r ?? { entries: [], breaks: [] });
+    return !!r;
+  }
+
+  /** 收下 Rust 按推入次序给的条目：音符反查表照推入次序建（同 id 后来的覆盖先来的），再排序。
+   *  拷一份再排：`docView` 按文档缓存，同一份文档可能再建一次索引。 */
+  private adopt(r: { entries: SyncEntry[]; breaks: BreakMark[] }): void {
+    this.byNote.clear();
     for (const e of r.entries) if (e.kind === "note") this.byNote.set(e.id, e);
     this.breakList = r.breaks;
     // **按偏移排序**——`at()` 的二分依赖它。同起点时短的在前。
-    r.entries.sort((a, b) => a.from - b.from || a.to - b.to);
-    this.entries = r.entries;
-    return true;
-  }
-
-  /** 一个声部里的增时线、小节线、挂载记号。 */
-  private addPartExtras(part: Part, out: SyncEntry[]): void {
-    let lastId: ElementId | null = null;
-    for (const m of part.measures) {
-      for (const bl of m.barlines ?? []) {
-        if (bl.location !== "left" || !hasSpan(bl.source)) continue;
-        const first = m.elements[0]?.id ?? lastId;
-        if (first !== null) out.push({ kind: "barline", from: bl.source.offset, to: spanEnd(bl.source), id: first, verse: null, edge: "before" });
-      }
-      for (const el of m.elements) {
-        pushAttached(el.attachedSources, el.id, out);
-        if (el.kind !== "chord") continue;
-        (el.sustains ?? []).forEach((su, ord) => {
-          if (hasSpan(su.source)) {
-            out.push({ kind: "sustain", from: su.source.offset, to: spanEnd(su.source), id: el.id, own: su.id, ord, verse: null });
-          }
-          pushAttached(su.attachedSources, el.id, out, su.id);
-        });
-        lastId = el.id;
-      }
-      for (const bl of m.barlines ?? []) {
-        if (bl.location === "left" || !hasSpan(bl.source) || lastId === null) continue;
-        out.push({ kind: "barline", from: bl.source.offset, to: spanEnd(bl.source), id: lastId, verse: null, edge: "after" });
-      }
-    }
+    this.entries = [...r.entries].sort((a, b) => a.from - b.from || a.to - b.to);
   }
 
   /** 并进页眉字段（原文里认出来的，见 `EditDialect.headerFields`）。重建索引后调一次。 */
@@ -287,55 +207,4 @@ export class SyncIndex {
   breaks(): readonly BreakMark[] {
     return this.breakList;
   }
-}
-
-/** `own`：挂在增时线上时那条增时线的 id（条目仍记在宿主音符名下，谱面按 `own` 认图元）。 */
-function pushAttached(list: AttachedSource[] | undefined, id: ElementId, out: SyncEntry[], own?: ElementId): void {
-  for (const a of list ?? []) {
-    if (!hasSpan(a.source)) continue;
-    out.push({ kind: "mark", from: a.source.offset, to: spanEnd(a.source), id, verse: null, markKind: a.kind, name: a.name, ...(own !== undefined ? { own } : {}) });
-  }
-}
-
-/** 一个声部里的全部换行：小节级（`Print` / `Part.endBreak`）与小节中间（`lineBreakAfter`），
- *  再按「符号前面那个元素」对上原文里记下的符号位置（`Part.breakSources`）。 */
-function partBreaks(part: Part): BreakMark[] {
-  const spans = new Map<ElementId | null, SourceSpan[]>();
-  for (const b of part.breakSources ?? []) {
-    const list = spans.get(b.after) ?? [];
-    list.push(b.source);
-    spans.set(b.after, list);
-  }
-  const take = (after: ElementId): { from: number; to: number } | null => {
-    const s = spans.get(after)?.shift();
-    return s ? { from: s.offset, to: spanEnd(s) } : null;
-  };
-  const out: BreakMark[] = [];
-  const lastOf = (m: Measure): ElementId | null => m.elements[m.elements.length - 1]?.id ?? null;
-  part.measures.forEach((m, i) => {
-    let inline = false;
-    for (const el of m.elements) {
-      if (el.kind !== "chord") continue;
-      const kind = inlineBreakOf(el);
-      if (!kind) continue;
-      out.push({ page: kind === "page", after: el.id, span: take(el.id) });
-      inline = true;
-    }
-    // 小节中间换过行的，下一小节那份小节级换行是同一处（`Chord.lineBreakAfter` 的口径），不重复画
-    const kind = breakAfter(part, i);
-    const after = lastOf(m);
-    if (!kind || inline || after === null) return;
-    // 声部末尾的换行（`Part.endBreak`）只在原文里真有符号时画：文本谱每行行尾都记了一份
-    const span = take(after);
-    if (i === part.measures.length - 1 && !span) return;
-    out.push({ page: kind === "page", after, span });
-  });
-  return out;
-}
-
-/** 和弦（或它的某条增时线）后面的小节中间换行。 */
-function inlineBreakOf(ch: Chord): "system" | "page" | null {
-  if (ch.lineBreakAfter) return ch.lineBreakAfter;
-  for (const su of ch.sustains ?? []) if (su.lineBreakAfter) return su.lineBreakAfter;
-  return null;
 }

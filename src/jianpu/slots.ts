@@ -11,6 +11,7 @@
 // 铺排在 Rust（`crates/dolce-view/src/slots.rs`，wasm `modelDocView`）：回来的是 id 化的视图——`refs` 存下标
 // （小节在投影后声部里第几个、元素第几个、增时线 / 小节线第几条），投影改过曲子（MusicXML 形状、多小节休止）的另带投影后那份 `song`。
 // 这里只把下标认回对象、建 `idOf` / `elementOf` / `syllableOwner` 三张表。没投影的曲子 `refs` 直接指 `doc.songs[i]` 里的对象。
+// 双向定位索引的条目（`crates/dolce-view/src/sync.rs`）同一趟带回，存在 `sync`（`editor/sync.ts::SyncIndex.build` 取用）。
 //
 // 视图里符号的形状沿用 `jianpu/ast.ts` 的元素类型（排版器与导出的几何代码按这些字段写成，原样复用）。
 
@@ -62,6 +63,8 @@ export interface DocView {
   elementOf: Map<ElementId, MusicElement>;
   /** 歌词音节 → 它跟的那个符号的 id */
   syllableOwner: Map<LyricSyllable, ElementId>;
+  /** 双向定位索引的条目与换行符（形状见 `editor/sync.ts` 的 `SyncEntry` / `BreakMark`），按推入次序 */
+  sync: { entries: object[]; breaks: object[] };
 }
 
 /** Rust 回来的形状（`dolce_view::slots::DocView`） */
@@ -105,8 +108,8 @@ const views = new WeakMap<ScoreDoc, DocView>();
 export function docView(doc: ScoreDoc): DocView {
   const hit = views.get(doc);
   if (hit) return hit;
-  const wire = JSON.parse(call(() => dolce().modelDocView(JSON.stringify(doc), ""))) as { songs: WireSong[] };
-  const view: DocView = { doc, songs: [], idOf: new Map(), elementOf: new Map(), syllableOwner: new Map() };
+  const wire = JSON.parse(call(() => dolce().modelDocView(JSON.stringify(doc), ""))) as { songs: WireSong[]; sync: DocView["sync"] };
+  const view: DocView = { doc, songs: [], idOf: new Map(), elementOf: new Map(), syllableOwner: new Map(), sync: wire.sync };
   for (const [i, ws] of wire.songs.entries()) {
     const song = ws.song ?? doc.songs[i]!;
     const pages: PageView[] = ws.pages.map((pg) => ({

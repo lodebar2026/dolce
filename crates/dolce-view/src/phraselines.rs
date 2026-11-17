@@ -91,7 +91,7 @@ pub struct RowKey {
 
 /// 视图里一个元素的身份：行里第几个，或行里第 `.1` 个并排块里的第 `.2` 个
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum ElKey {
+pub(crate) enum ElKey {
     Top(usize, RowKey, usize),
     Sub(usize, RowKey, usize, usize),
 }
@@ -257,7 +257,7 @@ fn segs_of(streams: &[VoiceStream], lead: usize, from: usize, to: usize) -> Vec<
 }
 
 /// 视图里元素 id → 元素（全文档头一次出现的那个；并排块里的元素先于块本身登记，补拍位的临时负号不登记）。同 `slots.ts` 的 `elementOf`
-fn element_table(view: &DocView) -> HashMap<i64, ElKey> {
+pub(crate) fn element_table(view: &DocView) -> HashMap<i64, ElKey> {
     let mut out: HashMap<i64, ElKey> = HashMap::new();
     for (si, sv) in view.songs.iter().enumerate() {
         for (key, row) in rows_of(sv) {
@@ -333,10 +333,10 @@ fn lead_of<'a>(doc: &ScoreDoc, view: &'a DocView, song_idx: usize) -> ViewResult
 fn row_at(view: &DocView, s: usize, key: RowKey) -> Option<&RowView> {
     view.songs.get(s)?.pages.get(key.page)?.groups.get(key.group)?.voices.get(key.row)
 }
-fn top_element(view: &DocView, s: usize, key: RowKey, ei: usize) -> Option<&MusicElement> {
+pub(crate) fn top_element(view: &DocView, s: usize, key: RowKey, ei: usize) -> Option<&MusicElement> {
     row_at(view, s, key)?.line.elements.get(ei)
 }
-fn sub_element(view: &DocView, s: usize, key: RowKey, ei: usize, k: usize) -> Option<&MusicElement> {
+pub(crate) fn sub_element(view: &DocView, s: usize, key: RowKey, ei: usize, k: usize) -> Option<&MusicElement> {
     match top_element(view, s, key, ei)? {
         MusicElement::InlineLayer(l) => l.elements.get(k),
         _ => None,
