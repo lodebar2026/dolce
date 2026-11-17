@@ -67,6 +67,8 @@ export interface DolceWasm {
   modelApplyBreaks(song: string, starts: string, opts: string): string;
   modelClearSongBreaks(song: string): string;
   modelBreaksOf(song: string): string;
+  /** 小节时值自检；`opts` 是 `{meters?, pickup?: boolean[][]}` 的 JSON，回 `BeatIssue[]` 的 JSON */
+  modelBeatCheck(doc: string, opts: string): string;
   /** 排版行视图（`jianpu/slots.ts`）：id 化的 `DocView` JSON（`refs` 存下标，投影改过曲子的另带 `song`）；`source` 空串 = 用 `doc.source` */
   modelDocView(doc: string, source: string): string;
   /** 由 `ScoreDoc` 拼试听输入（crates/dolce-view，门面 `score/play.ts`）：回 `{source: PlaySource, playData: PlayData}`，没有曲行回 `"null"` */

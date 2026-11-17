@@ -526,6 +526,14 @@ pub fn model_clear_song_breaks(song: &str) -> Result<String, JsValue> {
     Ok(to_json(&breaks_patch(&before, &after)))
 }
 
+/// `checkMeasureDurations`：小节时值自检（`dolce_model::beatcheck`）。`opts`：`{meters?, pickup?: [首][声部]}`
+#[wasm_bindgen(js_name = modelBeatCheck)]
+pub fn model_beat_check(doc: &str, opts: &str) -> Result<String, JsValue> {
+    let d: ScoreDoc = parse("ScoreDoc", doc)?;
+    let o: beatcheck::BeatCheckOptions = parse("BeatCheckOptions", opts)?;
+    Ok(to_json(&beatcheck::check_measure_durations(&d, &o)))
+}
+
 /// `breaksOf`：读出现有断行（`[{id, page?}]`）
 #[wasm_bindgen(js_name = modelBreaksOf)]
 pub fn model_breaks_of(song: &str) -> Result<String, JsValue> {

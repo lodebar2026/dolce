@@ -2,6 +2,7 @@
 
 pub mod strenum;
 
+pub mod beatcheck;
 pub mod beatgroup;
 pub mod breaks;
 pub mod deconames;

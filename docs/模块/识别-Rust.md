@@ -623,7 +623,7 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 | `src/omr/types.ts` | 简谱结果 `RecognizedScore`（Rust `omr-jianpu::result` 照它的形状写出） |
 | `src/omr/todoc.ts` | 简谱结果 → 简谱形状的 `ScoreDoc`；四声部时第 3、4 声部标八度谱号 `treble-8` |
 | `src/omr/emit.ts` / `meta.ts` | 输出格式：经 `todoc.ts` 的模型按转换目标表（`convert/targets.ts`）写成 123 / JPWABC / ABC / 文本谱 / jianpu-ly / Muse `.jcx`；点选映射（重解析写出的 123 / 文本谱 / `.jcx`，按元素序取源区间） |
-| `src/omr/beats.ts` | 小节时值自检：结果 → 模型 → `model/beatcheck.ts`（与编辑器同一份判据），问题小节对回源图坐标 |
+| `src/omr/beats.ts` | 小节时值自检：结果 → 模型 → `dolce-model::beatcheck`（门面 `model/beatcheck.ts`，与编辑器同一份判据），问题小节对回源图坐标 |
 | `src/omr/overlay.ts` / `reproject.ts` | 简谱核对叠加层（可疑项黄框、时值不对的小节虚线红框）；随编辑把当前模型投回原识别框（改过 / 删掉 / 新插） |
 | `src/omr/reflyrics.ts` | 参照歌词互证（命令行 `--lyrics`）：按演唱顺序展开识别歌词、与参照整篇对齐，形近字选字、补漏字，其余报到 `lyricCheck` |
 | `src/omr/staffoverlay.ts` / `review.ts` | 五线谱原图对照（`omr<k>` 框、音名、改过 / 删掉的标记）与核对数据的形状（`StaffReviewResult`，`omrrust/adapter.ts` 由会话产物包成） |
