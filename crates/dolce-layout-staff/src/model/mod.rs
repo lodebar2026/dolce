@@ -634,6 +634,8 @@ pub struct StaffLayout<'d> {
     pub data_x_placed: bool,
     /// 长图：不分页，页高由内容定
     pub long_image: bool,
+    /// 版面 pass 的节奏槽缓存与压缩档（TS `layoutpass.ts` 里按对象作键的 `slotCache` / `squeezeOf`）
+    pub pass_cache: crate::pass::PassCache,
 }
 
 impl<'d> StaffLayout<'d> {
@@ -675,6 +677,7 @@ impl<'d> StaffLayout<'d> {
             hard_breaks: false,
             data_x_placed: false,
             long_image: false,
+            pass_cache: crate::pass::PassCache::default(),
         }
     }
 
