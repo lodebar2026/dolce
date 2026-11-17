@@ -31,20 +31,20 @@ struct SceneLine {
     page_data: Page,
 }
 
-fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+pub(crate) fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     let pre = format!("--{name}=");
     args.iter().find_map(|a| a.strip_prefix(&pre))
 }
 
-fn show_n(args: &[String]) -> usize {
+pub(crate) fn show_n(args: &[String]) -> usize {
     flag(args, "show").and_then(|v| v.parse().ok()).unwrap_or(10)
 }
 
-fn positional(args: &[String]) -> Vec<&str> {
+pub(crate) fn positional(args: &[String]) -> Vec<&str> {
     args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect()
 }
 
-fn lines(path: &str) -> impl Iterator<Item = String> {
+pub(crate) fn lines(path: &str) -> impl Iterator<Item = String> {
     let f = std::fs::File::open(path).unwrap_or_else(|e| panic!("读 {path}：{e}"));
     std::io::BufReader::new(f).lines().map(|l| l.expect("读行")).filter(|l| !l.trim().is_empty())
 }

@@ -67,6 +67,9 @@ import * as mixedModelMod from "../mixed/model";
 import * as smufl from "../smufl/smufl";
 import * as mixedLayout from "../mixed/layout";
 import * as staffpages from "../mixed/staffpages";
+import * as styleJianpu from "../style/jianpu";
+import * as styleHeader from "../style/header";
+import * as stylePaper from "../style/paper";
 
 pptxMod.provideBravuraOtf(readFileSync(fileURLToPath(new URL("../../public/redist/Bravura.otf", import.meta.url))).buffer as ArrayBuffer);
 
@@ -85,6 +88,9 @@ export const fanqie = fanqieMod;
 export const xmlout = { ...xmllayout, ...jianpuinput, ...fromxml, ...fromjpw, ...jpwfile, ...jpwparse };
 /** 同 `__mixedModel`。 */
 export const mixedModel = { ...mixedModelMod, GlyphCodes: smufl.GlyphCodes, MetaData: smufl.MetaData, ...mixedLayout, formatMixedScore: staffpages.formatMixedScore };
+
+/** 样式层的适配器（迁 Rust L1 对拍 `style-rs-diff.mjs` 用）：简谱尺子、页眉字体、纸与曲内层。 */
+export const style = { ...styleJianpu, ...styleHeader, ...stylePaper };
 
 export { HeadlessSession, type HeadlessView } from "../editor/headless";
 export { TsEngine } from "../engine/tsengine";

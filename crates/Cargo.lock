@@ -372,7 +372,9 @@ name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-model",
  "dolce-scene",
+ "dolce-style",
  "dolce-text",
  "dolce-text-native",
  "dolce-xml",
@@ -634,6 +636,19 @@ dependencies = [
 name = "dolce-smufl"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dolce-style"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-geom",
+ "dolce-model",
+ "dolce-text",
+ "indexmap",
  "serde",
  "serde_json",
 ]
