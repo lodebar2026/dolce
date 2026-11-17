@@ -1632,6 +1632,24 @@ impl Emitter {
         }
         let overlay = self.overlay_text();
         let nk = js::NumKey::new;
+        // 记号写的多连音（简谱来源：名义时值、不带 `time_mod`）组内各元素的折算比例，补齐 `&` 分支时按实际时值算。
+        // 只有带 `)` 收尾的方言（123 / jcx）建了收尾索引
+        let mut tup_scale: HashMap<usize, f64> = HashMap::new();
+        if self.tuplet_closes() {
+            let mut stack: Vec<f64> = vec![];
+            for &j in &order {
+                let id = mea.elements[j].id();
+                if let Some(ts) = mi.tuplet_start.get(&id) {
+                    stack.extend(ts.ratios.iter().map(|(a, n)| n / a));
+                }
+                if !stack.is_empty() {
+                    tup_scale.insert(j, stack.iter().product());
+                }
+                if let Some(te) = mi.tuplet_end.get(&id) {
+                    stack.truncate(stack.len().saturating_sub(te.count));
+                }
+            }
+        }
 
         macro_rules! push_clefs {
             ($until:expr) => {{
@@ -1700,7 +1718,7 @@ impl Emitter {
             }
             if !ch.is_some_and(|c| c.grace.is_some()) {
                 if let Some(d) = el.duration() {
-                    let ratio = d.time_mod.as_ref().map_or(1.0, |t| t.normal / t.actual);
+                    let ratio = d.time_mod.as_ref().map_or_else(|| tup_scale.get(&j).copied().unwrap_or(1.0), |t| t.normal / t.actual);
                     let cur = branch_len.get(&nk(voice)).copied().unwrap_or(0.0);
                     branch_len.insert(nk(voice), cur + d.divisions * ratio);
                 }
@@ -2409,4 +2427,28 @@ pub fn emit_abc(doc: &ScoreDoc) -> String {
 /// 整份文档 → Muse `.jcx` 文本（未编码；多曲只写第一首）
 pub fn emit_jcx(doc: &ScoreDoc) -> String {
     Emitter::new(Dialect::Jcx).emit_doc(doc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abc::parse::parse_123;
+
+    /// `&` 第二支按第一支的实际时值补齐：只靠记号写的三连音（名义 1.5 拍、不带 `time_mod`，MusicXML 投成简谱后就是这样）只占 1 拍
+    #[test]
+    fn overlay_pad_counts_tuplet_marks() {
+        let mut doc = parse_123("X:1\nK:1=C\nM:2/4\n(3:1_ 2_ 3_) 4 & x 5 |\n");
+        for p in &mut doc.songs[0].parts {
+            for m in &mut p.measures {
+                for el in &mut m.elements {
+                    if let Some(c) = el.as_chord_mut() {
+                        c.duration.time_mod = None;
+                    }
+                }
+            }
+        }
+        let out = emit_123(&doc);
+        let body = out.lines().find(|l| l.contains('&')).unwrap();
+        assert!(body.contains("& x 5 |"), "{body}");
+    }
 }

@@ -280,6 +280,9 @@ struct Ctx {
     len: DefaultLen,
     saw_l: bool,
     time: Option<Time>,
+    /// 曲中换拍号：从声部里第几小节起（`PartBuild::cur_index`）换成什么。各声部一行一行轮流读，
+    /// `time` 是最后读到的那次——上一个声部行尾的 `[M:3/4]` 还没轮到本声部；按小节定拍号的（`Z` 的时值）查这张表
+    time_changes: Vec<(usize, Time)>,
     pending_sections: Vec<String>,
     section_marks: Vec<SectionMark>,
     blocks: Vec<LyricBlock>,
@@ -289,8 +292,21 @@ impl Ctx {
     fn report(&mut self, code: &str, msg: Msg, source: SourceSpan) {
         self.diagnostics.push(Diagnostic { severity: DiagnosticSeverity::Warning, code: code.into(), msg, source });
     }
-    fn time_pair(&self) -> Option<(f64, f64)> {
-        self.time.as_ref().map(|t| (t.beats, t.beat_type))
+    /// 声部第 `at` 小节的拍号：表里（曲首的 `M:` 记在第 0 小节）在它之前（含）最晚的那次换拍号
+    fn time_at(&self, at: usize) -> Option<&Time> {
+        if self.time_changes.is_empty() {
+            return self.time.as_ref();
+        }
+        let mut best: Option<&(usize, Time)> = None;
+        for c in &self.time_changes {
+            if c.0 <= at && best.is_none_or(|b| c.0 >= b.0) {
+                best = Some(c);
+            }
+        }
+        best.map(|c| &c.1)
+    }
+    fn time_pair(&self, at: usize) -> Option<(f64, f64)> {
+        self.time_at(at).map(|t| (t.beats, t.beat_type))
     }
     fn slot_rule(&self) -> LyricSlotRule {
         if self.d.lyric_slot_123() { LyricSlotRule::J123 } else { LyricSlotRule::Abc }
@@ -829,7 +845,7 @@ fn build_music_line(ctx: &mut Ctx, pb: &mut PartBuild, tokens: &[Token], marks: 
                         pb.extra_rest_bars = Some(b - 1.0);
                     }
                 }
-                let dur = if bars.is_some() { whole_measure(ctx.time.as_ref()) } else { ctx.d.duration(t, ctx.len, 0) };
+                let dur = if bars.is_some() { whole_measure(ctx.time_at(pb.cur_index())) } else { ctx.d.duration(t, ctx.len, 0) };
                 let mut ch = new_chord(ctx.ids.next(), pb.voice, dur, t.source);
                 ch.rest = Some(RestInfo { measure: bars.map(|_| true), ..Default::default() });
                 apply_tie_and_broken(ctx, pb, &mut cur, &mut ch);
@@ -1065,7 +1081,7 @@ fn build_music_line(ctx: &mut Ctx, pb: &mut PartBuild, tokens: &[Token], marks: 
                 let mut o = OpenMark::new(0.0, t.source);
                 o.tuplet_actual = Some(actual);
                 o.tuplet_normal =
-                    Some(truthy(t.numbers.as_ref().and_then(|n| n.get(1).copied())).unwrap_or_else(|| ctx.d.tuplet_normal(actual, ctx.time_pair())));
+                    Some(truthy(t.numbers.as_ref().and_then(|n| n.get(1).copied())).unwrap_or_else(|| ctx.d.tuplet_normal(actual, ctx.time_pair(pb.cur_index()))));
                 o.remaining = Some(truthy(t.numbers.as_ref().and_then(|n| n.get(2).copied())).unwrap_or(actual));
                 pb.open_tuplets.push(o);
             }
@@ -1341,6 +1357,7 @@ fn inline_field(ctx: &mut Ctx, pb: &mut PartBuild, t: &Token) {
             ctx.report("bad-time", e, t.source);
         } else if let Some(tm) = r.time {
             pb.measure.attrs.as_mut().unwrap().time = Some(tm.clone());
+            ctx.time_changes.push((pb.cur_index(), tm.clone()));
             ctx.time = Some(tm);
         }
     } else if name == 'L' {
@@ -1948,6 +1965,7 @@ impl Parser {
                 if let Some(first) = times.next() {
                     let rest: Vec<Time> = times.collect();
                     self.ctx.time = Some(first.clone());
+                    self.ctx.time_changes.push((0, first.clone()));
                     if !self.ctx.saw_l {
                         self.ctx.len = self.ctx.d.default_len(first.beats, first.beat_type);
                     }
@@ -2047,6 +2065,8 @@ impl Parser {
         self.settle_head_section(false);
         let mut song = self.song.take().unwrap();
         let ctx = &mut self.ctx;
+        // 换拍号表按声部小节下标记，下一首从头数（`time` 照旧沿用到下一首）
+        ctx.time_changes.clear();
         if !ctx.section_marks.is_empty() {
             song.section_marks = Some(ctx.section_marks.clone());
         }
@@ -2259,6 +2279,7 @@ pub fn parse_abc_family(text: &str, d: Dialect) -> ScoreDoc {
             len: d.default_len(4.0, 4.0),
             saw_l: false,
             time: None,
+            time_changes: vec![],
             pending_sections: vec![],
             section_marks: vec![],
             blocks: vec![],
@@ -2478,4 +2499,19 @@ pub fn parse_abc(text: &str) -> ScoreDoc {
 }
 pub fn parse_jcx(text: &str) -> ScoreDoc {
     parse_abc_family(text, Dialect::Jcx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 各声部一行一行轮流读：上一个声部行尾换了拍号，本声部行首的 `Z` 还在换之前的小节里
+    #[test]
+    fn measure_rest_takes_its_own_bars_meter() {
+        let doc = parse_123("X:1\nK:1=C\nM:4/4\nV:1\n1 2 3 4 | [M:3/4] 1 2 3 |\nV:2\nZ | [M:3/4] Z |\n");
+        let bass = &doc.songs[0].parts[1];
+        let rest = |mi: usize| bass.measures[mi].elements[0].as_chord().unwrap().duration.divisions;
+        assert_eq!(rest(0), SIMPLE_DIVISIONS * 4.0);
+        assert_eq!(rest(1), SIMPLE_DIVISIONS * 3.0);
+    }
 }
