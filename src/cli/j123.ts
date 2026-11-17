@@ -6,7 +6,7 @@
 //
 // **只能汇出不碰 DOM 的模块**——排版件（依赖 common/measure.ts 的那些）不进这条链，
 // 所以这里没有排版器 / layout。需要排版的走 `cli/engrave.ts`（它装测量后端，并把这里的导出一并转出）。
-import "./dolcewasm.node"; // 演唱顺序、断句、时间轴、MIDI、jcx 编解码在 dolce-wasm
+import "./dolcewasm.node"; // 已迁 Rust 的模型、格式与排版行视图都在 dolce-wasm：这里转出的就是门面，脚本照旧 import 这一份
 export * from "../model/doc";
 export * from "../abcfamily/parse";
 export * from "../abcfamily/emit";
@@ -59,17 +59,8 @@ export { playSourceOfDoc } from "../score/play";
 export { jianpuInputOfDoc } from "../jianpu/jianpuinput";
 export { phrasePartOfSong } from "../score/play";
 export { fillDegreesFromPitch } from "../model/jianpu";
-// 迁 Rust 对拍（dev `rs-diff.mjs query`）用的查询层
-export * as modelJianpu from "../model/jianpu";
-export * as modelKeyshift from "../model/keyshift";
-export * as modelMultirest from "../model/multirest";
-export * as modelDeconames from "../model/deconames";
-export * as harmonyParse from "../score/harmonyparse";
+// 表层旁表（dev `rs-diff.mjs xmlsync` / `edit` 用）
 export * as xmlSurface from "../model/xmlsurface";
-export * as modelPagemeta from "../model/pagemeta";
-export * as modelBreaks from "../model/breaks";
-export * as modelXmlproject from "../model/xmlproject";
-export * as modelJianpuproject from "../model/jianpuproject";
 // 自有 XML 树：脚本里数 MusicXML 元素用（不靠浏览器 DOM）
 // Rust 识别的核对 JSON → 编辑器核对数据（`rust-omr/adapter-check.mjs` 用），识别 id 按表层读
 export { reviewFromRust, systemOpToRust } from "../omrrust/adapter";

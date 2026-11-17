@@ -3,7 +3,6 @@
 //   out/cli/index.js —— 矢量 PDF 版面那一摊（page-report.mjs / pdf-diff.mjs 等）
 //   out/cli/omrfmt.js —— 识别命令行的写出端（omr-cli.mjs 与 OMR 分发包；识别在 Rust 的 omr-cli）
 //   out/cli/j123.js  —— 123 格式与语义模型（j123-check.mjs、j123-migrate.mjs）
-//   out/cli/dolce.js —— 同 j123.js 的签名，已迁 Rust 的部分走 dolce-wasm（模型排版迁 Rust 期间的对拍门面）
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -15,7 +14,7 @@ export default defineConfig({
     target: "node20",
     minify: false,
     rollupOptions: {
-      input: { index: "src/cli/index.ts", omrfmt: "src/cli/omrfmt.ts", j123: "src/cli/j123.ts", dolce: "src/cli/dolce.ts", engrave: "src/cli/engrave.ts" },
+      input: { index: "src/cli/index.ts", omrfmt: "src/cli/omrfmt.ts", j123: "src/cli/j123.ts", engrave: "src/cli/engrave.ts" },
       output: { entryFileNames: "[name].js", chunkFileNames: "[name].js" },
     },
   },
