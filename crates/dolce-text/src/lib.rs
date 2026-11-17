@@ -19,9 +19,10 @@ use serde::{Deserialize, Serialize};
 pub mod cjkpunct;
 mod compat;
 mod replay;
+pub mod syllable;
 
 pub use cjkpunct::CompressMode;
-pub use compat::{BrowserCompat, Measured, Platform, RawFontMetrics, SystemText};
+pub use compat::{browser_path_bounds, BrowserCompat, Measured, Platform, RawFontMetrics, SystemText};
 pub use replay::{MeasureRecord, ReplayMeasurer};
 
 use cjkpunct::{code_points, compress_run, pair_trim_px, trim_left, SlackLR};

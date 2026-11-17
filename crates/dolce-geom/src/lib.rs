@@ -134,6 +134,11 @@ impl Default for Matrix33 {
 impl Matrix33 {
     pub const IDENTITY: Matrix33 = Matrix33 { mat: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] };
 
+    /// `setAffine`：Skija 的仿射六元次序 `[scaleX skewY skewX scaleY transX transY]`（与 JSON 那六元不同）。
+    pub fn from_affine(a: [f64; 6]) -> Matrix33 {
+        Matrix33 { mat: [a[0], a[2], a[4], a[1], a[3], a[5], 0.0, 0.0, 1.0] }
+    }
+
     pub fn translate_x(&self) -> f64 {
         self.mat[2]
     }

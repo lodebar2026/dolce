@@ -6,6 +6,7 @@
 //! - `scene-svg` / `measure-check` / `diff-scene` / `scene-dump`：排版迁移的对拍（见 `layout.rs`）。
 //! - `style-check`：样式层的对拍（见 `style.rs`）。
 
+mod engrave;
 mod layout;
 mod style;
 
@@ -21,8 +22,9 @@ fn main() {
         Some("diff-scene") => std::process::exit(layout::diff_scene(&args[1..])),
         Some("scene-dump") => std::process::exit(layout::scene_dump(&args[1..])),
         Some("style-check") => std::process::exit(style::style_check(&args[1..])),
+        Some("engrave-check") => std::process::exit(engrave::engrave_check(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check> …");
             std::process::exit(2);
         }
     }

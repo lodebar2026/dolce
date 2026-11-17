@@ -100,3 +100,45 @@ export { SvgNode } from "../layout/svgnode";
 export { outlinedSvg } from "./outline.node";
 export { SAMPLE } from "../editor/sample";
 export * from "./j123";
+
+// ---- 图元层迁 Rust（L2）的对拍 `engrave-rs-diff.mjs`：逐元素现算 ----
+import * as elAccidental from "../engrave/accidental";
+import * as elArc from "../engrave/arc";
+import * as elArpeggio from "../engrave/arpeggio";
+import * as elArticulation from "../engrave/articulation";
+import * as elAugdot from "../engrave/augdot";
+import * as elBarline from "../engrave/barline";
+import * as elBeatgroup from "../engrave/beatgroup";
+import * as elBreath from "../engrave/breath";
+import * as elChord from "../engrave/chord";
+import * as elDash from "../engrave/dash";
+import * as elDot from "../engrave/dot";
+import * as elDynamics from "../engrave/dynamics";
+import * as elEnding from "../engrave/ending";
+import * as elGrace from "../engrave/grace";
+import * as elHairpin from "../engrave/hairpin";
+import * as elHeader from "../engrave/header";
+import * as elJpglyph from "../engrave/jpglyph";
+import * as elJpnumber from "../engrave/jpnumber";
+import * as elJpslide from "../engrave/jpslide";
+import * as elJptremolo from "../engrave/jptremolo";
+import * as elKeysig from "../engrave/keysig";
+import * as elPrims from "../engrave/prims";
+import * as elSectionword from "../engrave/sectionword";
+import * as elStack from "../engrave/stack";
+import * as elSyllable from "../engrave/syllable";
+import * as elTimesig from "../engrave/timesig";
+import * as elTuplet from "../engrave/tuplet";
+import * as elUpperband from "../engrave/upperband";
+import { Font as ElFont } from "../pagetree/font";
+import { Point as ElPoint, Rect as ElRect } from "../common/geom";
+import { Group as ElGroup } from "../pagetree/pageitem";
+
+/** 图元层各模块与它们要的几个基础类。 */
+export const els = {
+  ...elAccidental, ...elArc, ...elArpeggio, ...elArticulation, ...elAugdot, ...elBarline, ...elBeatgroup, ...elBreath,
+  ...elChord, ...elDash, ...elDot, ...elDynamics, ...elEnding, ...elGrace, ...elHairpin, ...elHeader, ...elJpglyph,
+  ...elJpnumber, ...elJpslide, ...elJptremolo, ...elKeysig, ...elPrims, ...elSectionword, ...elStack, ...elSyllable,
+  ...elTimesig, ...elTuplet, ...elUpperband,
+  Font: ElFont, Point: ElPoint, Rect: ElRect, Group: ElGroup,
+};

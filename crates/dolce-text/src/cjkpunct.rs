@@ -84,6 +84,29 @@ pub enum CompressMode {
     None,
 }
 
+impl CompressMode {
+    /// 样式值 → 挤压档（`clreq` / `halfwidth` / `none`）；认不出的按 `clreq`（同 TS 走了特性那条路以外的缺省）。
+    pub fn parse(s: &str) -> CompressMode {
+        match s {
+            "halfwidth" => CompressMode::Halfwidth,
+            "none" => CompressMode::None,
+            _ => CompressMode::Clreq,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CompressMode::Clreq => "clreq",
+            CompressMode::Halfwidth => "halfwidth",
+            CompressMode::None => "none",
+        }
+    }
+}
+
+/// 歌词首尾切出去的标点（旧简谱引擎那份，含数字与半角标点；`common/cjkpunct.ts::LYRIC_SPLIT_PUNCT`）。
+pub const LYRIC_SPLIT_PUNCT: &str = "1234567890.,;:'\"!?。：，；！？“”｡､";
+/// 混排歌词首尾当标点的字（`MIXED_PUNCT`）。
+pub const MIXED_PUNCT: &str = "「」（），。！；：、“”？｡";
+
 /// 一个字两侧的实际留白（px，advance 减墨迹）。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SlackLR {

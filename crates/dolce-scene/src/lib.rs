@@ -4,13 +4,14 @@
 //! 外加可选的 [`Role`]（TS 里那几个派生类：简谱数字、八度点、减时线、歌词、弧），消费者按 `Role` 分派，
 //! 不再 `instanceof`。[`Identity`] 是「画的是谁」（播放高亮、点选、可视化编辑按它认），不进 SVG。
 //!
-//! L0 期这里只有**冻结的场景**：读 TS 导出的页面树（`dev/data/ref-layout/` 的 `scene.jsonl`）、
+//! 冻结的场景：读 TS 导出的页面树（`dev/data/ref-layout/` 的 `scene.jsonl`）、
 //! 按两种方言出 SVG（[`svg`]，与 TS `outerHTML` 逐字节相同）、规范化 dump 与比对（[`dump`]）。
-//! 构建期的 `update` / 规范化语义跟谱面元素（L2）一起搬。
+//! 构建期的造法与 `update` / 规范化语义在 [`build`]（L2 起）。
 
 use dolce_geom::{Matrix33, Point, Rect};
 use serde::{Deserialize, Serialize};
 
+pub mod build;
 pub mod dump;
 pub mod svg;
 

@@ -118,12 +118,27 @@ impl MeasureRecord {
 pub struct ReplayMeasurer {
     table: HashMap<String, MeasureRecord>,
     misses: RefCell<Vec<String>>,
+    /// 路径盒没录到时照 TS 后端同一算式现算（[`crate::browser_path_bounds`]），不记作未录到
+    path_fallback: bool,
+    path_fallbacks: std::cell::Cell<usize>,
 }
 
 impl ReplayMeasurer {
     pub fn new(records: impl IntoIterator<Item = MeasureRecord>) -> Self {
         let table = records.into_iter().map(|r| (r.key(), r)).collect();
-        ReplayMeasurer { table, misses: RefCell::default() }
+        ReplayMeasurer { table, ..Default::default() }
+    }
+
+    /// 路径盒没录到时现算。TS 的 Node 后端路径盒本就是纯算（`f32(pathBounds(d))`），录的键是 `d` 串——
+    /// 弧的坐标经 `cos` / `atan2` / `log10`，Rust 与 V8 末位可能不同，串就对不上；现算与回放同一算式，不掩盖排版差。
+    pub fn with_path_fallback(mut self) -> Self {
+        self.path_fallback = true;
+        self
+    }
+
+    /// 走了现算的路径盒次数。
+    pub fn path_fallbacks(&self) -> usize {
+        self.path_fallbacks.get()
     }
 
     /// 读 `measure.jsonl`（空行跳过）。
@@ -179,7 +194,12 @@ impl TextMeasurer for ReplayMeasurer {
         }
     }
     fn path_bounds(&self, d: &str) -> Rect {
-        match self.get(format!("d\x01{d}")) {
+        let key = format!("d\x01{d}");
+        if self.path_fallback && !self.table.contains_key(&key) {
+            self.path_fallbacks.set(self.path_fallbacks.get() + 1);
+            return crate::browser_path_bounds(d);
+        }
+        match self.get(key) {
             Some(MeasureRecord::PathBounds { bbox, .. }) => *bbox,
             _ => Rect::default(),
         }

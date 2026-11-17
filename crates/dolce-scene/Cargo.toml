@@ -9,5 +9,6 @@ publish.workspace = true
 dolce-base = { path = "../dolce-base" }
 dolce-geom = { path = "../dolce-geom" }
 dolce-text = { path = "../dolce-text" }
+dolce-smufl = { path = "../dolce-smufl" }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }

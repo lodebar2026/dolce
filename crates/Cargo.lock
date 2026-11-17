@@ -372,8 +372,11 @@ name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-engrave",
+ "dolce-geom",
  "dolce-model",
  "dolce-scene",
+ "dolce-smufl",
  "dolce-style",
  "dolce-text",
  "dolce-text-native",
@@ -381,6 +384,22 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "dolce-engrave"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-geom",
+ "dolce-model",
+ "dolce-play",
+ "dolce-scene",
+ "dolce-smufl",
+ "dolce-style",
+ "dolce-text",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -619,6 +638,7 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-geom",
+ "dolce-smufl",
  "dolce-text",
  "serde",
  "serde_json",

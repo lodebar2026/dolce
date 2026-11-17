@@ -258,9 +258,14 @@ impl<S: SystemText> TextMeasurer for BrowserCompat<S> {
     }
 
     fn path_bounds(&self, d: &str) -> Rect {
-        let r = path_bounds(d);
-        Rect::new(fround(r.left), fround(r.top), fround(r.right), fround(r.bottom))
+        browser_path_bounds(d)
     }
+}
+
+/// 路径紧包围盒的浏览器口径：纯算（同 `getBBox()`）再过 f32（同 TS `nodeMeasure().pathBounds`）。
+pub fn browser_path_bounds(d: &str) -> Rect {
+    let r = path_bounds(d);
+    Rect::new(fround(r.left), fround(r.top), fround(r.right), fround(r.bottom))
 }
 
 /// 浏览器给的 ascent/descent 是取整过的；macOS 上 Times / Helvetica / Courier 的 ascent 再加 15% 行高。
