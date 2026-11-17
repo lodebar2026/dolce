@@ -130,6 +130,9 @@ impl<'d> NoteLayout<'d> {
     pub fn jp_accidental(&self) -> Option<f64> {
         let acc = self.src.and_then(|s| s.degree.as_ref()).and_then(|d| d.accidental.as_ref())?;
         let a = acc.as_str();
+        if a.is_empty() {
+            return None;
+        }
         Some(if a.contains("sharp") {
             1.0
         } else if a.contains("flat") {
