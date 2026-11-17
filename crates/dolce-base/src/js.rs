@@ -187,7 +187,22 @@ fn shortest_digits(x: f64) -> (String, i32) {
     let e = format!("{:e}", x);
     let (mant, exp) = e.split_once('e').expect("{:e} 必有 e");
     let digits: String = mant.chars().filter(|c| *c != '.').collect();
-    (digits, exp.parse::<i32>().expect("指数") + 1)
+    let n = exp.parse::<i32>().expect("指数") + 1;
+    // 两个同样短的候选离精确值一样近时，ECMAScript（V8）取末位为偶的那个，Rust 取大的：按精确展开看是不是恰在中间
+    let k = digits.len();
+    let exact = format!("{:.80e}", x);
+    let (em, ee) = exact.split_once('e').expect("{:.80e} 必有 e");
+    if ee.parse::<i32>().expect("指数") + 1 == n {
+        let ed: String = em.chars().filter(|c| *c != '.').collect();
+        let (head, tail) = ed.split_at(k);
+        if tail.starts_with('5') && tail[1..].bytes().all(|b| b == b'0') && head != digits && (head.as_bytes()[k - 1] - b'0').is_multiple_of(2) {
+            let cand = format!("{}.{}e{}", &head[..1], &head[1..], n - 1);
+            if cand.parse::<f64>() == Ok(x) {
+                return (head.trim_end_matches('0').to_string(), n);
+            }
+        }
+    }
+    (digits, n)
 }
 
 /// `String(x)`：ECMAScript Number::toString（基数 10）。
@@ -458,6 +473,8 @@ mod tests {
     fn number_to_string_like_js() {
         for (x, s) in [
             (0.0, "0"), (-0.0, "0"), (1.0, "1"), (-1.5, "-1.5"), (0.1 + 0.2, "0.30000000000000004"),
+            (0.90000152587890625, "0.9000015258789062"), (516.99884033203125, "516.9988403320312"),
+            (214.341583251953125, "214.34158325195312"),
             (1e21, "1e+21"), (1.5e21, "1.5e+21"), (123456789012345680000.0, "123456789012345680000"),
             (1e-6, "0.000001"), (1e-7, "1e-7"), (1.25e-7, "1.25e-7"), (100.0, "100"), (12.5, "12.5"),
             (f64::NAN, "NaN"), (f64::INFINITY, "Infinity"), (f64::NEG_INFINITY, "-Infinity"),

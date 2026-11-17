@@ -12,7 +12,8 @@ use windows::Win32::Graphics::DirectWrite::*;
 use windows_numerics::Vector2;
 use windows_core::{IUnknown, Ref};
 
-use crate::{cp_positions, Ink, Measured, Metrics};
+use crate::{cp_positions, Ink};
+use dolce_text::{Measured, RawFontMetrics as Metrics};
 
 struct Dw {
     factory: IDWriteFactory2,

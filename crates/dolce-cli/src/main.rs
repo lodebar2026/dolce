@@ -3,6 +3,9 @@
 //! 子命令：
 //! - `xml-dump`：标准输入每行一个 XML 文件路径，逐份解析，每份出一行 JSON：
 //!   `{"file", "ok", "hash"}`（序列化文本 + 各元素原文区间的 SHA-256）或 `{"file", "ok": false, "message", "at"}`。
+//! - `scene-svg` / `measure-check` / `diff-scene` / `scene-dump`：排版迁移的对拍（见 `layout.rs`）。
+
+mod layout;
 
 use sha2::{Digest, Sha256};
 use std::io::{self, BufRead, Write};
@@ -11,8 +14,12 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("xml-dump") => xml_dump(),
+        Some("scene-svg") => std::process::exit(layout::scene_svg(&args[1..])),
+        Some("measure-check") => std::process::exit(layout::measure_check(&args[1..])),
+        Some("diff-scene") => std::process::exit(layout::diff_scene(&args[1..])),
+        Some("scene-dump") => std::process::exit(layout::scene_dump(&args[1..])),
         _ => {
-            eprintln!("用法：dolce xml-dump < 文件列表");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump> …");
             std::process::exit(2);
         }
     }

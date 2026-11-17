@@ -15,6 +15,7 @@ import { setSvgDocument } from "../layout/render";
 import { svgNodeDocument } from "../layout/svgnode";
 import { MetaData } from "../smufl/smufl";
 import { PaintResources, staffOptionsOf } from "../layout/painter";
+import { recordMeasure, type MeasureRecord } from "./layoutref";
 
 setMeasureBackend(nodeMeasure());
 setSvgDocument(svgNodeDocument);
@@ -31,6 +32,12 @@ export const measure = (): string => measureKind;
 /** 同浏览器侧 `__paint`：统一排版器与出厂资源。 */
 export const resources = PaintResources.fixed(meta);
 export const staffOptions = () => staffOptionsOf(meta);
+
+/** 排版迁 Rust 的参考导出（dev `layout-ref.mjs`）：从此处起量字调用逐条录下，返回取走已录条目的函数。 */
+export function recordMeasureLog(files: Record<string, string> = {}): () => MeasureRecord[] {
+  return recordMeasure(nodeMeasure(files));
+}
+export { sceneNode, pageScenes, plainOf, jianpuRefs } from "./layoutref";
 
 /** 换测量后端的字体（成书注册的字体按族名给文件）：重新装配，之前的度量缓存作废。 */
 export function useFonts(files: Record<string, string>): void {

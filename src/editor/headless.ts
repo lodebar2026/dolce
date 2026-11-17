@@ -12,7 +12,7 @@
 import type { ScoreDoc } from "../model/doc";
 import type { JianpuLayoutMode } from "../jianpu/profile";
 import { MetaData } from "../smufl/smufl";
-import { PaintResources, ScorePainter, type SyncPaintRequest } from "../layout/painter";
+import { PaintResources, ScorePainter, type PaintRequest, type SyncPaintRequest } from "../layout/painter";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { carryPlayOrder } from "../model/sections";
 import { normalizeEol } from "../common/lines";
@@ -212,6 +212,9 @@ export class HeadlessSession implements StyleStateHost {
     return doc;
   }
 
+  /** 最近一次切档排版的请求（参考导出取样式表用，dev `layout-ref.mjs`）。 */
+  lastRequest: PaintRequest | null = null;
+
   /** 切档并排好（同 `App.setViewMode`）。 */
   async setViewMode(view: HeadlessView): Promise<void> {
     this.viewMode = view;
@@ -228,6 +231,7 @@ export class HeadlessSession implements StyleStateHost {
         hideBarNumber: this.hideBarNumber,
         sourceBreaks: this.docFormat === "abc",
       });
+      this.lastRequest = req;
       await this.painter.load(req);
       return;
     }
@@ -235,6 +239,7 @@ export class HeadlessSession implements StyleStateHost {
     this.layoutMode = view;
     const req = this.jianpuRequest(view);
     if (!req) throw new Error("没有可排的曲行");
+    this.lastRequest = req;
     await this.painter.load(req);
   }
 

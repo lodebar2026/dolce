@@ -16,7 +16,8 @@ use objc2_core_text::{
     kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue, CTFont, CTFontDescriptor, CTFontManagerCreateFontDescriptorsFromURL, CTFontSymbolicTraits, CTLine, CTRun,
 };
 
-use crate::{cp_positions, Ink, Measured, Metrics};
+use crate::{cp_positions, Ink};
+use dolce_text::{Measured, RawFontMetrics as Metrics};
 
 thread_local! {
     /// (族, 粗, 斜) → 解析到的字体（字号 1，用时按字号复制）；None = 系统里没有这个族

@@ -327,6 +327,11 @@ export class ScorePainter {
     return this.original?.metrics ?? null;
   }
 
+  /** 简谱这一路提交的整份结果（参考导出用，`cli/layoutref.ts`）；别的路为 null。 */
+  get jianpuLayout(): JianpuLayout | null {
+    return this.original;
+  }
+
   /** 原样文档的定位结构（回归脚本核对几何用）；别的路为空。 */
   placedPages(): PlacedPage[] {
     return this.original?.placed.pages ?? [];

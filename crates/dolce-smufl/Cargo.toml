@@ -1,0 +1,10 @@
+[package]
+name = "dolce-smufl"
+description = "悦谱 Dolce 的 SMuFL（Bravura）字形码位表与元数据（照 src/smufl/smufl.ts）：紧包围盒、锚点。无平台依赖，能编到 wasm"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = "1"
