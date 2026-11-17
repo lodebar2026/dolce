@@ -549,6 +549,64 @@ export function computePhraseBreaks(part: PhrasePart, opts: PhraseOptions = {}):
   };
 }
 
+/**
+ * 断句之后那几步的通道（`jianpu/applybreaks.ts` 门面用，判据在 crates/dolce-play/src/applybreaks.rs）：
+ * 编输入、调 Rust，再把 Rust 改过的三个集合（`measureBreaks` / `midBreaks` / `capacityCuts`，按 Rust 的插入次序）**原地写回** `breaks`。
+ * 回 Rust 的结果与拍平的和弦（结果里的和弦是拍平下标，调用方按 `flat` 认回）。
+ */
+export function phraseLayoutOp(
+  op: string, part: PhrasePart, breaks: PhraseBreaks, opts: Record<string, unknown> & { fit?: FitMetric },
+): { out: unknown; flat: PhraseChord[] } {
+  const { json, flat } = phrasePartIn(part);
+  const idx = new Map<PhraseChord, number>();
+  flat.forEach((c, i) => idx.set(c, i));
+  const at = (c: PhraseChord): number => {
+    const i = idx.get(c);
+    if (i === undefined) throw new Error("断点和弦不在断句输入里");
+    return i;
+  };
+  const bIn = {
+    measureBreaks: [...breaks.measureBreaks],
+    midBreaks: [...breaks.midBreaks].map(at),
+    sectionStarts: [...breaks.sectionStarts],
+    sectionCutChords: [...breaks.sectionCutChords].map(at),
+    refrainCut: breaks.refrainCut,
+    cuts: breaks.cuts.map((c) => ({ ...c, chord: at(c.chord) })),
+    forced: [...breaks.forced],
+    capacityCuts: [...breaks.capacityCuts].map((k) => (typeof k === "number" ? { measure: k } : { chord: at(k) })),
+  };
+  const { fit, ...rest } = opts;
+  const optIn = { ...rest, ...(fit ? { fit: { width: fit.width, spans: flat.map((c) => spanIn(fit.spans.get(c))) } } : {}) };
+  const o = JSON.parse(dolce().phraseLayoutOp(op, json, JSON.stringify(bIn), JSON.stringify(optIn))) as {
+    out: unknown; breaks: { measureBreaks: number[]; midBreaks: number[]; capacityCuts: ({ measure: number } | { chord: number })[] };
+  };
+  breaks.measureBreaks.clear();
+  for (const v of o.breaks.measureBreaks) breaks.measureBreaks.add(v);
+  breaks.midBreaks.clear();
+  for (const v of o.breaks.midBreaks) breaks.midBreaks.add(flat[v]!);
+  breaks.capacityCuts.clear();
+  for (const k of o.breaks.capacityCuts) breaks.capacityCuts.add("measure" in k ? k.measure : flat[k.chord]!);
+  return { out: o.out, flat };
+}
+
+/** 成书断点写回与段落词的输入（`applybreaks.ts` 门面用）：断句输入 JSON、拍平下标 → 元素 id、断点集合 JSON */
+export function phraseBookIn(part: PhrasePart, idOf: ReadonlyMap<PhraseChord, ElementId>, breaks?: PhraseBreaks): { part: string; ids: string; breaks: string } {
+  const { json, flat } = phrasePartIn(part);
+  const idx = new Map<PhraseChord, number>();
+  flat.forEach((c, i) => idx.set(c, i));
+  const at = (c: PhraseChord): number => idx.get(c) ?? -1;
+  const bIn = breaks ? {
+    measureBreaks: [...breaks.measureBreaks],
+    midBreaks: [...breaks.midBreaks].map(at),
+    sectionStarts: [...breaks.sectionStarts],
+    sectionCutChords: [...breaks.sectionCutChords].map(at),
+    refrainCut: breaks.refrainCut,
+    cuts: [],
+    forced: [...breaks.forced],
+  } : null;
+  return { part: json, ids: JSON.stringify(flat.map((c) => idOf.get(c) ?? null)), breaks: JSON.stringify(bIn) };
+}
+
 /** 一行放得下 `cells` 格时，行长目标该定几小节（按本曲实测的每小节格数折算）。 */
 export function targetMeasForCells(part: PhrasePart, cells: number): number {
   return dolce().targetMeasForCells(phrasePartIn(part).json, cells);

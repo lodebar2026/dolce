@@ -1,12 +1,17 @@
-// 把乐句分析的断点写进文档（成书重排用），以及断句要的「放不放得下」换键。
+// 把乐句分析的断点写进文档（成书重排用），以及断句之后的那几步：容量补刀、两两并行、收拾行首行尾休止、并碎行、
+// 整首的排版模式阶梯、逐行事实与按乐句行分页。
 //
+// 判据在 Rust（crates/dolce-play/src/applybreaks.rs；改模型的两步在 crates/dolce-view/src/bookbreaks.rs），这里是门面：
+// 断点集合原地改（`score/play.ts::phraseLayoutOp` 把 Rust 改过的集合写回），和弦按拍平下标认回对象。
 // 断句在 `ScoreDoc` 拼出的断句输入（`phraseinput.ts`）上跑，两边的和弦**按元素 id 对上**，断点经 `model/breaks.ts::applyBreaks` 写回。
 //
 // 无 DOM 依赖。
-import type { Chord, ElementId, Measure, Song } from "../model/doc";
-import { applyBreaks, type LineStart } from "../model/breaks";
-import { chordsOf, type PhraseChord, type PhrasePart } from "../score/phraseinput";
-import { headFpOf, lyricPunctScore, mainLyricText, type CutCandidate, type FitMetric, type PhraseBreaks } from "../score/play";
+import type { ElementId, Song } from "../model/doc";
+import { applyBreaks } from "../model/breaks";
+import type { PhraseChord, PhrasePart } from "../score/phraseinput";
+import { phraseBookIn, phraseLayoutOp, type FitMetric, type PhraseBreaks } from "../score/play";
+import { dolce } from "../common/dolce";
+import { call } from "../model/rustdoc";
 
 export type { FitMetric };
 
@@ -16,9 +21,7 @@ export interface ApplyBreakOptions {
   linesPerPage?: number;
   /** 段落起点（主歌/副歌…）是否另起一页。成书里一首歌通常连排，默认不换。 */
   sectionNewPage?: boolean;
-  /** 是否采用**行内断点**（`midBreaks`：在小节中间的和弦后换行）。
-   *  弱起谱里乐句尾常被并进下一小节，行内断点就是为那种情形留的；
-   *  但成书要的是**每行都在小节线上收尾**（原书就是这样），所以那边关掉它。 */
+  /** 是否采用**行内断点**（`midBreaks`：在小节中间的和弦后换行）。成书要每行都在小节线上收尾，那边关掉它。 */
   useMidBreaks?: boolean;
 }
 
@@ -40,498 +43,78 @@ export function fitForIds(
   return { width: fit.width, spans };
 }
 
-/** 小节里第 `from` 个元素起第一个正经和弦（不是倚音）的 id：新行从它起 */
-function chordIdFrom(m: Measure, from: number): ElementId | null {
-  for (let i = from; i < m.elements.length; i++) {
-    const el = m.elements[i]!;
-    if (el.kind === "chord" && !el.grace) return el.id;
-  }
-  return null;
-}
-
 /**
  * 断句的断点写进文档（成书在简谱引擎上排，`song` 是 `ScoreDoc` 克隆里的那首）：换成行首交 `model/breaks.ts::applyBreaks`，
- * **替换**原有的换行。口径同 `applyPhraseBreaks`（小节一一对应、和弦按元素 id 对上，对不上抛错；`linesPerPage` 0 = 不按行数换页）。
+ * **替换**原有的换行（小节一一对应、和弦按元素 id 对上，对不上抛错；`linesPerPage` 0 = 不按行数换页）。
  */
 export function applyPhraseBreaksToDoc(
   song: Song, input: PhrasePart, idOf: ReadonlyMap<PhraseChord, ElementId>, breaks: PhraseBreaks,
   opt: ApplyBreakOptions = {},
 ): ApplyBreakResult {
-  const measures = song.parts[0]?.measures ?? [];
-  if (measures.length !== input.measures.length) {
-    throw new Error(`断句输入与文档小节数对不上：${input.measures.length} / ${measures.length}`);
-  }
-  const linesPerPage = opt.linesPerPage ?? 4;
-  const sectionNewPage = opt.sectionNewPage ?? false;
-  const useMidBreaks = opt.useMidBreaks ?? true;
-  const starts: LineStart[] = [];
-  let lines = 0;
-  let pages = 1;
-  let justPaged = false;
-  const brk = (id: ElementId | null, forcePage: boolean): void => {
-    if (id === null) return;
-    lines++;
-    const page = forcePage || (linesPerPage > 0 && !justPaged && lines % linesPerPage === 0);
-    starts.push(page ? { id, page } : { id });
-    if (page) {
-      pages++;
-      lines = 0;
-    }
-    justPaged = page;
+  const i = phraseBookIn(input, idOf, breaks);
+  const r = JSON.parse(call(() => dolce().modelPhraseLineStarts(JSON.stringify(song), i.part, i.ids, i.breaks, JSON.stringify(opt)))) as {
+    starts: { id: ElementId; page?: boolean }[]; lines: number; pages: number;
   };
-  for (let i = 0; i < measures.length; i++) {
-    const m = measures[i]!;
-    if (useMidBreaks) {
-      for (const c of chordsOf(input.measures[i]!)) {
-        if (!breaks.midBreaks.has(c) && !breaks.sectionCutChords.has(c)) continue;
-        const id = idOf.get(c);
-        const at = m.elements.findIndex((el) => el.id === id);
-        if (at < 0) throw new Error(`断句输入的和弦在文档里找不到（id ${id}）`);
-        brk(chordIdFrom(m, at + 1), sectionNewPage && breaks.sectionCutChords.has(c));
-      }
-    }
-    const next = i + 1;
-    if (next < measures.length && (breaks.measureBreaks.has(next) || breaks.sectionStarts.has(next))) {
-      brk(chordIdFrom(measures[next]!, 0), sectionNewPage && breaks.sectionStarts.has(next));
-    }
-  }
-  applyBreaks(song, starts, { mid: "inline", pages: "write" });
-  return { lines, pages };
+  applyBreaks(song, r.starts, { mid: "inline", pages: "write" });
+  return { lines: r.lines, pages: r.pages };
 }
 
 /**
  * 成书的段落词（原书印在和弦带里的「（副歌）」）：按原书音符序号（`note_ordinal`，数的是正经和弦、休止也算，倚音不算）
- * 写到文档的和弦上（`Chord.sectionWord`），排版引擎自己去摆。副歌那一条优先挂到断句输入里**副歌的起句**
- * （`dolce-view/src/phrasedoc.rs` 推的 `refrain`）：重排后序号常差几个音（023 首曾落在副歌前一行）。
+ * 写到文档的和弦上（`Chord.sectionWord`），排版引擎自己去摆。副歌那一条优先挂到断句输入里**副歌的起句**。
  */
 export function putSectionWords(
   song: Song, input: PhrasePart, idOf: ReadonlyMap<PhraseChord, ElementId>, rows: ReadonlyArray<{ text: string; note_ordinal: number }>,
 ): void {
   if (!rows.length) return;
-  const chords: Chord[] = [];
-  for (const m of song.parts[0]?.measures ?? []) for (const el of m.elements) if (el.kind === "chord" && !el.grace) chords.push(el);
-  let refrainId: ElementId | undefined;
-  for (const m of input.measures) {
-    for (const c of chordsOf(m)) {
-      if (refrainId !== undefined) break;
-      if (c.notes[0]?.lyrics.some((l) => l.refrain && l.text)) refrainId = idOf.get(c);
+  const i = phraseBookIn(input, idOf);
+  const got = JSON.parse(dolce().modelSectionWordTargets(JSON.stringify(song), i.part, i.ids, JSON.stringify(rows))) as [ElementId, string][];
+  const byId = new Map(got);
+  for (const m of song.parts[0]?.measures ?? []) {
+    for (const el of m.elements) {
+      if (el.kind !== "chord") continue;
+      const w = byId.get(el.id);
+      if (w !== undefined) el.sectionWord = w;
     }
-  }
-  const refrainAt = refrainId === undefined ? -1 : chords.findIndex((c) => c.id === refrainId);
-  for (const r of rows) {
-    const at = /副歌/.test(r.text) && refrainAt >= 0 ? refrainAt : Math.min(r.note_ordinal, chords.length - 1);
-    const c = chords[at];
-    if (c) c.sectionWord = r.text;
   }
 }
 
 /**
- * 容量保险：把**放不下的行**按乐句子句断点切开。
+ * 容量保险：把**放不下的行**按乐句子句断点切开（落点由 Rust `pick_cuts` 挑）。
  *
- * 乐句分析给的是「哪里断最自然」，但断点凭据稀疏时（弱起、整段连着圆滑线）它会交出
- * 一个九小节的长行；排版器随后按宽度硬折，甩出一个只剩两三个音的尾巴
- * （实测 006《颂赞归与耶稣圣名》就是这样：一行塞满 + 一行 "3 2 1--"）。
- * 所以在写 LineBreak 之前先按容量补几刀，落点由 `pickCuts` 挑。
- *
- * @param cells 一行放得下几格（由排版器实测，见 browser.ts::measureCellsPerLine）
- * @param useMidBreaks 调用方是否会采用行内断点（与 applyPhraseBreaks 的同名选项保持一致）。
- *        不采用时行内断点不切行，这里也不能把它当行边界、更不能往那儿落刀。
+ * @param cells 一行放得下几格（由排版器实测）
+ * @param useMidBreaks 调用方是否会采用行内断点（与 applyPhraseBreaks 的同名选项保持一致）
  */
 export function enforceLineCapacity(part: PhrasePart, breaks: PhraseBreaks, cells: number, targetMeas = 4,
                                     useMidBreaks = true, fit?: FitMetric): void {
   applyCapacityCuts(part, breaks, cells, { targetMeas, useMidBreaks, avoidSpans: false, fit });
 }
 
-/**
- * **一行内部的落点选择**：把 [from,to] 这一行切成 k 段，返回 k−1 个落点。
- *
- * 原来是 `splitEvenly`：在「理想位置 ±22% 的硬窗口」里按凭据挑一条**小节线**，贪心逐刀落。
- * 那条路走到头了——补刀口径在「挑好落点」与「行长别悬殊」之间对角摆动，扫过六档参数
- * 没有拐点（λ=1 时行长悬殊 7 → 80 首，λ=6 时行首带标点 0 → 71 处；换成硬窗口也只是
- * 把两头的数字对调）。根子有两条，这里一起改掉：
- *
- *   1. **落点不该只在小节线上**。乐句的自然子句断点常落在小节中间（弱起谱尤其如此），
- *      而 `PhraseBreaks.cuts` 原来只带小节末的候选。现在行内候选一并带出，
- *      「后带小节线」降格成一项**加分**（`BAR_END_BONUS`），不再是硬约束。
- *   2. **贪心逐刀落不出整体工整**。改成一次 DP 把 k−1 个落点一起挑：
- *      工整性（各段时值偏离目标多少）与乐句凭据（标点/长音/休止/小节线）同场竞价，
- *      不再靠一个硬窗口把两件事隔开。
- *
- * 代价 = Σ 工整项 − Σ 凭据；容量是**不可行标记**而不是事后再验：`k = ⌈格数/容量⌉` 只保证
- * 平均放得下，落点一旦被强凭据拉离中点（句号在 2/3 处）前半段照样超。整条行怎么切都超
- * （k 给小了）时退化成软罚，保证总有解。
- */
-/** 工整性权重：一段的时值偏离目标 20% 约值 5 分（与一个中等强度的断点凭据相当）。 */
-const EVEN_W = 60;
-/** 「后带小节线」的加分。与 crates/dolce-play `phrase.rs::break_cost` 里「行内弱断点 +6」同量级。 */
-const BAR_END_BONUS = 3;
-/**
- * **切开之后下一行是平行乐句开头**的加分（`CutCandidate.parallel`，按公共前缀长度折算）。
- *
- * 原书的分行大量是「平行乐句各自成行、对齐着排」，而强度分里平行只值 2 分
- * （`scoreAt` 拿它打平局）。补刀这一层尤其需要它：一行要切两半时，两个候选的
- * 标点/长音凭据常常一模一样（144《求圣灵吹我》的 `m1|`「气，」与 `m3|`「气：」都是
- * 10 分、行首罚也都是 16），这时候「切完两行开头旋律一样」就是决定性的一票。
- */
-const PARALLEL_BONUS = 12;
-/** 乐句凭据的倍率。补刀这一层比 DP **更该听凭据的**：DP 已经把整首排匀了，这里是
- *  「这一行放不下、非切不可」，切在哪儿决定的正是行首行末好不好看（D3/D4/D5/D6 全是
- *  头尾判据）。凭据的量程（0~24）本来是按 DP 的代价盘调的，直接拿来与工整项同场竞价太轻。 */
-const EVIDENCE_W = 4;
-/** 切出来的两段各自不许短于原行的这个比例（时值）。照搬已删除的 `phrase.ts::splitLongest`。 */
-const SPLIT_MIN_FRAC = 0.3;
-/** 切出来的每一段也不该短于容量的这个比例（格数）。与 D7「中间行不足容量四成」同口径
- *  ——拆完甩出个短行反而更难看（`splitLongest` 实测：不设这道闸全书 D7 会 2 → 13 处）。 */
-const SPLIT_MIN_CELLS_FRAC = 0.4;
-
-interface CutPos { cand: CutCandidate; i: number }
-
-/** 全曲拍平的和弦序列 + 前缀量（格数/时值）。补刀入口建一次，逐行共用。 */
-interface FlatBook {
-  chords: PhraseChord[];
-  /** 每个和弦是不是所在小节的最后一个（`tidyLineHeads` 找行首残小节要用）。 */
-  isLast: boolean[];
-  idxOf: Map<PhraseChord, number>;
-  cellUpto: number[];
-  durUpto: number[];
-}
-
-function flattenBook(part: PhrasePart): FlatBook {
-  const chords: PhraseChord[] = [];
-  const isLast: boolean[] = [];
-  for (const m of part.measures) {
-    const cs = chordsOf(m);
-    cs.forEach((c, k) => { chords.push(c); isLast.push(k === cs.length - 1); });
-  }
-  const idxOf = new Map<PhraseChord, number>();
-  chords.forEach((c, i) => idxOf.set(c, i));
-  const cellUpto = [0];
-  const durUpto = [0];
-  chords.forEach((c, i) => {
-    cellUpto[i + 1] = cellUpto[i] + cellsOfChord(c);
-    durUpto[i + 1] = durUpto[i] + (c.duration?.toFloat() ?? 0);
-  });
-  return { chords, isLast, idxOf, cellUpto, durUpto };
-}
-
-function pickCuts(part: PhrasePart, book: FlatBook, line: LineInfo, k: number, breaks: PhraseBreaks,
-                  f: Fit, useMidBreaks: boolean, avoidSpans: boolean, allowSoft = true): CutCandidate[] {
-  if (k <= 1) return [];
-  const { durUpto, idxOf } = book;
-  const cells = f.capacity;
-  // 候选：本行**内部**的乐句断点（行末那个不算——它已经是断点了）
-  const pool: CutPos[] = [];
-  for (const cand of breaks.cuts) {
-    const i = idxOf.get(cand.chord);
-    if (i === undefined || i <= line.from || i >= line.to) continue;
-    if (!cand.isLast && !useMidBreaks) continue;                    // 行内断点不采用时落不了刀
-    if (cand.isLast && avoidSpans && cutsThroughSpan(part, cand.mi + 1)) continue;
-    pool.push({ cand, i });
-  }
-  // 一段 `(a, b]` 有多宽：**真实坐标**（`Fit`），不是格数
-  const cellsOfSeg = (a: number, b: number) => f.spanOf(a + 1, b);
-  const durOfSeg = (a: number, b: number) => durUpto[b + 1] - durUpto[a + 1];
-  const total = durOfSeg(line.from - 1, line.to);
-  const target = total / k;
-  const minDur = total * SPLIT_MIN_FRAC * (2 / k);          // k=2 时就是「各占三成」
-  const minCells = cells > 0 ? cells * SPLIT_MIN_CELLS_FRAC : 0;
-  if (!pool.length) return [];
-
-  // 一段（a,b] 的代价：工整项 + 超容量罚。
-  //
-  // `hard` 那一遍**两条硬闸都验**（切出来的两半都不许太短、都得放得下），
-  // 软的那一遍只留「不许太短」——「这一行怎么切都超容量」（k 给小了）时总得有个解。
-  const segCost = (a: number, b: number, hard: boolean): number => {
-    const d = durOfSeg(a, b);
-    const c = cellsOfSeg(a, b);
-    if (d < minDur) return Infinity;
-    let v = target > 0 ? EVEN_W * ((d - target) / target) ** 2 : 0;
-    // 「切出来的一半不足版心四成」是**硬闸**（与 D7「中间行过短」同口径）：切完甩出个短行
-    // 比刀落得不好还难看。试过改成重罚、让强落点买下一个略短的一半（438《祢是我藏身处》
-    // 那条 +14 分的「中。」），全书 D7 立刻 0 → 18~38 处，不划算——**别再试**。
-    // 那类曲子真正缺的是版心（见「补刀补不了的」一节）。
-    if (hard && minCells > 0 && c < minCells) return Infinity;
-    const over = f.fitOf(a + 1, b) - cells;
-    if (cells > 0 && over > 0) {
-      if (hard) return Infinity;
-      v += 100 + over ** 2 * 8;
-    }
-    return v;
-  };
-
-  const run = (hard: boolean): CutCandidate[] | null => {
-    // dp[j][t] = 已落 j 刀、最后一刀落在 pool[t] 时的最小代价
-    const N = pool.length;
-    const dp: number[][] = [];
-    const from: number[][] = [];
-    for (let j = 0; j <= k - 1; j++) { dp.push(new Array<number>(N).fill(Infinity)); from.push(new Array<number>(N).fill(-1)); }
-    for (let t = 0; t < N; t++) dp[0][t] = segCost(line.from - 1, pool[t].i, hard) - value(pool[t].cand);
-    for (let j = 1; j < k - 1; j++) {
-      for (let t = 0; t < N; t++) {
-        for (let u = 0; u < t; u++) {
-          if (!isFinite(dp[j - 1][u])) continue;
-          const v = dp[j - 1][u] + segCost(pool[u].i, pool[t].i, hard) - value(pool[t].cand);
-          if (v < dp[j][t]) { dp[j][t] = v; from[j][t] = u; }
-        }
-      }
-    }
-    let best = Infinity;
-    let bestT = -1;
-    for (let t = 0; t < N; t++) {
-      if (!isFinite(dp[k - 2][t])) continue;
-      const v = dp[k - 2][t] + segCost(pool[t].i, line.to, hard);
-      if (v < best) { best = v; bestT = t; }
-    }
-    if (bestT < 0 || !isFinite(best)) return null;
-    const out: CutCandidate[] = [];
-    for (let j = k - 2, t = bestT; j >= 0 && t >= 0; t = from[j][t], j--) out.unshift(pool[t].cand);
-    return out;
-  };
-  // `allowSoft` = 排不下也非切不可（容量补刀）；整段统一断那一路不许退让——切不出像样的
-  // 两半就整段放弃，宁可维持原样（`applyCapacityCuts` 的第 3 步）。
-  const got = run(true) ?? (allowSoft ? run(false) : null) ?? [];
-  // @ts-ignore 调试钩子：这一行的候选落点与各自的分。页面里先 `window.__pickDebug = []`。
-  //「为什么切在这儿不切在那儿」光看结果猜不出来——009 的「天上众军」就是靠它看出
-  // 那个 15 分的平行落点被「两半都不许太短」的硬闸挡在外面。
-  if (typeof window !== "undefined" && Array.isArray((window as any).__pickDebug))
-    (window as any).__pickDebug.push({
-      k, from: line.from, to: line.to, dur: line.dur,
-      pool: pool.map((p) => ({ i: p.i, mi: p.cand.mi, isLast: p.cand.isLast, score: p.cand.score,
-        par: p.cand.parallel, v: Math.round(value(p.cand) * 10) / 10 })),
-      got: got.map((c) => c.mi),
-    });
-  return got;
-}
-
-/** 一个候选断点值多少分：乐句凭据（标点/长音/休止/延长号/反复…，已减行首罚）+ 收在小节线上。 */
-// **「落在句号上」不再另外加分**：试过给 `CutCandidate.end` 加 8~14 分（强度分里句号与逗号
-// 只差 2 分，「短分句减半」还会把句号折成 3），全书七档没有收益、D8 反而 +1 处，
-// 168《爱喜乐生命》那处「忧愁不再。」也没被拉过来（用户核对后表示两种断法都可接受）。
-const value = (c: CutCandidate): number =>
-  EVIDENCE_W * c.score + (c.isLast ? BAR_END_BONUS : 0) + PARALLEL_BONUS * (c.parallel / 12);
-
-/**
- * **容量补刀**：一行放不下就在它内部切开，落点由 `pickCuts` 按乐句凭据 + 工整性挑。
- *
- * 两条口径：
- *
- * 1. **工整的段落要整段一起断**（用户口径：「工整的段落如果有一句排不下断成两句，
- *    要求整段每一行都断成两句」）。逐行独立补刀的话，段里只有一行被切成两截、
- *    其余行不动，行长立刻悬殊。这与 `mergePairsUniform`「全首一个口径」是同一条道理的反向；
- *    已删除的 `phrase.ts::splitLongest` 也早写着同一条实测结论——「一条一条来会把同一段
- *    拆得参差：374《跟随救主》段 2 两行各 16 拍、都是段 1 的两倍，只拆一条就成了 16/8/8」。
- * 2. **只拆一轮**。拆完行长全变了，再判一次很容易把本来正常的行也判成过长
- *    （`splitLongest` 实测：142《圣灵请来》被连拆四轮成了 8 行）。真还超容量，
- *    交给 `scripts/rebuild.mjs` 的容量收敛循环下一轮。
- */
+/** **容量补刀**：一行放不下就在它内部切开；工整段整段一起断、一样满的行跟着切，只拆一轮。 */
 export function applyCapacityCuts(part: PhrasePart, breaks: PhraseBreaks, cells: number,
                                   opt: { targetMeas?: number; useMidBreaks: boolean; avoidSpans: boolean; fit?: FitMetric }): void {
-  const ms = part.measures;
-  const { useMidBreaks, avoidSpans } = opt;
-  const book = flattenBook(part);
-  const f = new Fit(opt.fit, cells).bind(book);
-  if (!ms.length || !f.on) return;
-  // 小节数也设一道闸：**真实坐标只管宽度**，管不到「九小节一行」这种——006 的主歌
-  // 每小节只有两三个音，宽度上放得下，可一行九小节读起来就是不像话。
-  // C 档（avoidSpans）只看宽度，与原 evenLayout 一致。
-  const targetMeas = opt.targetMeas ?? 0;
-  const hardMeas = targetMeas > 0 ? Math.max(targetMeas + 1, Math.ceil(targetMeas * 1.5)) : 0;
-  // **照真正的行来判**（`describeLines`），别拿小节下标去重建行边界：行内断点落在小节中间，
-  // 按「该小节归上一行」近似出来的边界与真实的行差着一格，于是一条本来放得下的行被判成超容量
-  // 又切一刀，甩出个六格的小尾巴（286《耶和华祝福满满》的第 3 行）。
-  const lines = describeLines(part, breaks, useMidBreaks);
-  /**
-   * 这一行要切成几段。宽度按**真实坐标**（`Fit`）判——排版器折不折行看的就是这个。
-   * **只超一丁点的不切**（`CUT_TOL`，按版心宽度的比例）：切开的代价是段内立刻悬殊
-   * （061《坚固保障》三行各 24 拍，第 1 行只超一点点，切开就成了 13/11/24/24 拍），
-   * 而 justify 一挤就下去了。
-   */
-  const kOf = (l: LineInfo): number => {
-    const w = f.fitLine(l);
-    return Math.max(w >= f.capacity * (1 + CUT_TOL) ? Math.max(2, Math.ceil(w / f.capacity)) : 1,
-      hardMeas > 0 ? Math.ceil(l.bars / hardMeas) : 1);
-  };
-
-  const write = (cand: CutCandidate): void => {
-    if (cand.isLast) {
-      breaks.measureBreaks.add(cand.mi + 1);
-      breaks.capacityCuts.add(cand.mi + 1);
-    } else {
-      breaks.midBreaks.add(cand.chord);
-      breaks.capacityCuts.add(cand.chord);
-    }
-  };
-
-  // 按段分组（段界 = 该行的行末是段界），与 line-check 的 D8 同一口径
-  const segs: LineInfo[][] = [[]];
-  for (const l of lines) {
-    segs[segs.length - 1].push(l);
-    if (l.section) segs.push([]);
-  }
-  /** 这一行切成 k 段：`hard` 一遍（两半都得放得下、都不许太短）切不出来就返回空。 */
-  const cutsFor = (l: LineInfo, k: number, allowSoft: boolean): CutCandidate[] =>
-    pickCuts(part, book, l, k, breaks, f, useMidBreaks, avoidSpans, allowSoft);
-  /**
-   * **k 不够就加 k**，别指望「先切两半、下一轮再各切一半」。
-   *
-   * `k = ⌈格数/容量⌉` 只是下限：60 格 / 容量 30 要求切得分毫不差的 30+30，落点上根本没有
-   * 那条小节线，于是这一刀切不出来（或勉强切出 31 格的一半），下一轮再各切一半——
-   * 224《献上你虔诚的祈祷》就是这么从「12 小节一行」一路劈成 3 小节一行的（原书是 4 小节）。
-   * 让 k 自己往上找一格，60 格就是 20/20/20，正好每行 4 小节。
-   */
-  const K_SLACK = 2;
-  const bestCuts = (l: LineInfo): CutCandidate[] => {
-    const k0 = kOf(l);
-    for (let k = k0; k <= k0 + K_SLACK; k++) {
-      const p = cutsFor(l, k, false);
-      if (p.length === k - 1) return p;
-    }
-    return cutsFor(l, k0, true);   // 怎么切都放不下（容量给死了）→ 退让，至少切开
-  };
-
-  const done = new Set<LineInfo>();
-  /** 段内统一那一步真切下去的「行宽 → 用的 k」，给下面「别的段也跟着切」用。 */
-  const cutAs: { w: number; k: number }[] = [];
-  for (const seg of segs) {
-    if (seg.length < 2) continue;
-    if (!seg.some((l) => kOf(l) > 1)) continue;            // 这一段没有排不下的行
-    // **工整段**：段内各行长短本来就相近（按时值，与 line-check 的 D8 同一把尺子）
-    const ds = seg.map((l) => l.dur);
-    const lo = Math.min(...ds);
-    const hi = Math.max(...ds);
-    if (!(hi > 0 && lo / hi >= UNIFORM_RATIO)) continue;
-    // **整段一个 k**：段内每行都断成同样的份数，否则又不齐了。k 从「最长那行至少要几段」
-    // 起往上找，找到第一个**段内每行都断得出来**的（都不许太短、都得放得下）。
-    const k0 = Math.max(2, ...seg.map(kOf));
-    let picks: CutCandidate[][] | null = null;
-    let used = 0;
-    for (let k = k0; k <= k0 + K_SLACK && !picks; k++) {
-      const got = seg.map((l) => cutsFor(l, k, false));
-      if (got.every((p) => p.length === k - 1)) { picks = got; used = k; }
-    }
-    // @ts-ignore 调试钩子：整段统一断这一步为什么成/为什么没成
-    //（页面里先 `window.__cutDebug = []`，排完读它。光看结果猜不出是哪一行卡住的。）
-    if (typeof window !== "undefined" && Array.isArray((window as any).__cutDebug))
-      (window as any).__cutDebug.push({
-        seg: seg.map((l) => ({ dur: l.dur, cells: l.cells, k: kOf(l) })),
-        uniform: lo / hi, k0, used, ok: !!picks,
-      });
-    if (!picks) continue;                                  // 有一行断不出来 → 整段放弃统一
-    picks.forEach((p) => p.forEach(write));
-    seg.forEach((l) => done.add(l));
-    for (const l of seg) cutAs.push({ w: f.ofLine(l), k: used });
-  }
-  // **别的段切了，本来就一样长的这一行也得跟着切**：段内统一只管一个段，段与段之间
-  // 同样要齐——446《迦勒看见主》断句给的是三行各 32 拍（314 / 310 / 311 宽），
-  // 主歌那两行在上一步按 k=2 切成四行各 16 拍，副歌那一行 311 宽、卡着版心刚好放得下，
-  // 于是原样留着：一页上主歌四行各 155 宽、副歌一行 311 宽，长了整整一倍。
-  // 段内统一那一步对**只有一行的段**（`seg.length < 2`）本来就直接跳过，够不着它。
-  // **按行宽比，不按时值**，门槛也比段内那把尺子严得多（`SAME_WIDTH_RATIO` 0.97 vs
-  // `UNIFORM_RATIO` 0.8）：段内是「长短相近就统一」，这里是「本来就一样满的才跟着切」。
-  // 时值分不开这两首——436《信靠亲爱救主》主歌两行 24 拍、副歌两行 24 / 30 拍，
-  // 357《祈祷》主歌四行 16 拍、副歌两行 16 / 20 拍，形状一模一样，可
-  //   436 主歌 300 / 301 宽、副歌那条被切的也是 300 宽（一样满 → 该跟着切）；
-  //   357 主歌 288 / 268 宽、副歌那条被切的是 309 宽（差着一截 → 不该跟）。
-  // 「这一行有多满」本来就是决定切不切的那个量，拿它比才对得上。
-  // 副歌本来就可以比主歌长（用户口径），这里只管「一样满的要一样切」。
-  if (cutAs.length) for (const l of lines) {
-    if (done.has(l)) continue;
-    const lw = f.ofLine(l);
-    const m = cutAs.find((c) => lw > 0 && c.w > 0
-      && Math.min(c.w, lw) / Math.max(c.w, lw) >= SAME_WIDTH_RATIO);
-    if (!m) continue;
-    const p = cutsFor(l, m.k, false);
-    if (p.length !== m.k - 1) continue;
-    p.forEach(write);
-    done.add(l);
-  }
-  for (const l of lines) {
-    if (done.has(l)) continue;
-    if (kOf(l) <= 1) continue;
-    for (const cand of bestCuts(l)) write(cand);
-  }
-}
-
-/**
- * 补刀的容差（版心宽度的比例）。
- *
- * **真实坐标下应当是 0**：排版器的判据就是「自然宽度 < 版心宽」（`layout.ts::doLineBreak`），
- * justify 只会往空档里**加**距离、不会压缩，所以超出一点点也一定会折行。
- * 留这个常量是给退化那条路（按格数估）用的——格数本来就不准，卡死反而多切。
- */
-const CUT_TOL = 0;
-
-/** 「工整段」的门槛：段内最短行 ÷ 最长行（按时值）到这个比例才算工整，才要求整段一起断。 */
-const UNIFORM_RATIO = 0.8;
-/** 「本来就一样满」——跨段跟着切那一步的门槛（按行宽比，见 `applyCapacityCuts` 里那段注释）。 */
-const SAME_WIDTH_RATIO = 0.97;
-
-/**
- * 「放不放得下」的两把尺子：有真实坐标就用它，没有就退回按格数估（编辑器那条路、
- * 以及量不出坐标的场合）。**成书一律走真实坐标。**
- */
-class Fit {
-  constructor(private readonly metric: FitMetric | undefined, private readonly cells: number) {}
-  /** 版心「装得下多少」的量纲：真实坐标下是宽度，退化时是格数。 */
-  get capacity(): number {
-    return this.metric ? this.metric.width : this.cells;
-  }
-  get on(): boolean {
-    return this.capacity > 0;
-  }
-  /** 拍平序列（由 `bind` 注入）。 */
-  book: FlatBook = { chords: [], isLast: [], idxOf: new Map(), cellUpto: [0], durUpto: [0] };
-  bind(book: FlatBook): this {
-    this.book = book;
-    return this;
-  }
-  /** 一行有多宽。 */
-  ofLine(l: LineInfo): number {
-    return this.spanOf(l.from, l.to);
-  }
-  /** 全曲拍平序列里 `[from, to]`（含端点）这一段有多宽。`withBar`：量到行末小节线（`FitMetric.spans` 的 `x1b`），
-   *  与 `capacity` 比「放不放得下」的地方用它（`fitOf` / `fitLine`）；行宽比、过短判据量到音为止。 */
-  spanOf(from: number, to: number, withBar = false): number {
-    const b = this.book;
-    if (from > to) return 0;
-    if (this.metric) {
-      const a = this.metric.spans.get(b.chords[from]);
-      const z = this.metric.spans.get(b.chords[to]);
-      if (a && z) return (withBar ? z.x1b ?? z.x1 : z.x1) - a.x0;
-    }
-    return b.cellUpto[to + 1] - b.cellUpto[from];
-  }
-  /** 同 `spanOf`，量到行末小节线：与 `capacity` 比用 */
-  fitOf(from: number, to: number): number {
-    return this.spanOf(from, to, true);
-  }
-  /** 同 `ofLine`，量到行末小节线：与 `capacity` 比用 */
-  fitLine(l: LineInfo): number {
-    return this.fitOf(l.from, l.to);
-  }
+  phraseLayoutOp("applyCapacityCuts", part, breaks, { cells, targetMeas: opt.targetMeas ?? 0, useMidBreaks: opt.useMidBreaks, avoidSpans: opt.avoidSpans, fit: opt.fit });
 }
 
 /** 一行的行首「残小节」：从行首到第一条小节线之间的那点内容。 */
 export interface LineHead {
-  /** 残小节的**时值**（`Chord.duration` 之和；`Chord.beats` 是增时线格数，不是时值）。
-   *  整小节起头时就是该小节的全长。 */
+  /** 残小节的**时值**（整小节起头时就是该小节的全长） */
   dur: number;
   /** 行首是不是小节起点（false = 从小节中间起头，弱起/长音收尾之后） */
   full: boolean;
   /** 残小节里有没有音符（false = 只有休止） */
   hasNote: boolean;
-  /** 残小节占多少**格**（`tidyLineHeads` 判「并到上一行放不放得下」要用它，
-   *  不能拿整行的格数——那会把「并两拍休止」误判成「并一整行」）。 */
+  /** 残小节占多少**格** */
   cells: number;
   /** 行首第一个和弦：是不是休止、几条符杠、几拍 */
   rest: boolean;
   beams: number;
   firstBeats: number;
-  /** 行首第一个和弦的**时值**（判「行首是不是半拍休止」用） */
+  /** 行首第一个和弦的**时值** */
   firstDur: number;
   /** 行首第一个和弦的歌词标点分：**带标点的长音**是上一句的收尾，不该出现在行首（373） */
   firstPunct: number;
-  /** 行首第一个和弦的主歌词（「这一行从哪个字起唱」，line-check 的定点断言要用） */
+  /** 行首第一个和弦的主歌词 */
   text: string;
 }
 
@@ -540,417 +123,83 @@ export interface LineTail {
   text: string;
   punct: number;
   beats: number;
-  /** 行末往前**最近的那个有词的字**。行末落在延音（tie）或休止上时 `text` 是空的，
-   *  可这一句唱到哪儿是明摆着的——往前找到那个字才知道「这一行收在哪里」。
-   *  断句方案快照记的就是它。 */
+  /** 行末往前**最近的那个有词的字** */
   lastWord: string;
-  /** 同上，那个字的标点分。行末落在无词的拖腔上时 `text` 是空的，光看它分不出
-   *  「乐句唱完了、行末是收尾的长音」与「句子没唱完、断在了拖腔中间」
-   *  ——后者会把词从中间劈开（077《耶稣我主荣耀王》的「殷｜勤」）。 */
+  /** 同上，那个字的标点分 */
   lastWordPunct: number;
-  /**
-   * **行末的残小节里只有休止**（行末那条小节线之后到行尾，一个音符都没有）。
-   *
-   * 用户口径（2026-08-28）：「避免残小节全是休止，不管是在行首还是行尾」。行首那半边
-   * 由 `LineHead.hasNote` / `tidyLineHeads` 管着，这是对称的另一半：下一句的弱起休止
-   * 被留在了上一行行尾，行末于是挂着个空拍（J09《祢的话》的 `|]0` 那两处）。
-   */
+  /** **行末的残小节里只有休止** */
   restOnlyBar: boolean;
-  /** 行末残小节的时值（`restOnlyBar` 那一截有多少拍；不是残小节收尾的行为 0）。
-   *  `line-check` 的 D10 要拿它算「推到下一行之后，那一行的弱起有多长」。 */
+  /** 行末残小节的时值（`restOnlyBar` 那一截有多少拍；否则 0） */
   restBarDur: number;
 }
 
-/** 断点把曲子切成的一行。`mi`/`chord` 是**这一行末尾**那个断点（小节末 `mi`：在第 mi 小节后换行；
- *  行内：`chord`）；末行没有断点，两者皆 null。 */
+/** 断点把曲子切成的一行。`mi`/`chord` 是**这一行末尾**那个断点；末行没有断点，两者皆 null。 */
 export interface LineInfo {
   cells: number;
-  /** 这一行的**时值**（Σ `Chord.duration`，即多少拍）。
-   *  `beats` 是增时线格数、`cells` 是视觉宽度，都不是时长；断句方案快照记的是这个。 */
+  /** 这一行的**时值** */
   dur: number;
-  /** 这一行覆盖的小节下标区间（含端点；从小节中间起头/收尾时与相邻行共享一个小节） */
+  /** 这一行覆盖的小节下标区间（含端点） */
   fromMi: number;
   toMi: number;
-  /** 整小节数（行内收在小节线上的次数） */
+  /** 整小节数 */
   bars: number;
   beats: number;
   head: LineHead;
   tail: LineTail;
-  /** 行首的旋律指纹（`score/play.ts::headFpOf`）：两行相同 = 平行乐句开头。 */
+  /** 行首的旋律指纹：两行相同 = 平行乐句开头。 */
   headFp: string;
   mi: number | null;
   chord: PhraseChord | null;
   /** 段界（另起一页）不可合并。 */
   section: boolean;
-  /** 这一行覆盖的和弦在**全曲拍平序列**里的下标区间（含端点）。补刀要在行内部找落点。 */
+  /** 这一行覆盖的和弦在**全曲拍平序列**里的下标区间（含端点）。 */
   from: number;
   to: number;
-  /** 这一行的**行首**那个断点是不是**容量补刀**落的（`applyCapacityCuts`）。
-   *  补刀是为了「这一行放不下」才在行内部落刀，落点由乐句凭据定，后半截的行首残小节
-   *  自然可能与本段其余行不一样长——那不是断句挑错了地方，`scripts/line-check.mjs` 的 D2
-   *  据此豁免（用户口径：拆分导致的弱起不一致不算错误）。 */
+  /** 这一行的**行首**那个断点是不是**容量补刀**落的（line-check 的 D2 据此豁免） */
   fromCut: boolean;
 }
 
-/** 一个和弦占多少格（一个音符 1 格，长音的每根增时线各占 1 格）。 */
-const cellsOfChord = (c: PhraseChord): number => Math.max(1, Math.floor(c.beats) || 1);
-
-/**
- * 按断点把 part 切成行，并把**判断版面好坏要用的事实**一并算出来
- * （行首残小节、行末歌词标点、格数、小节数）。
- *
- * `mergeShortLines` / `tidyLineHeads` / `scripts/rebuild.mjs` 的逐行报告共用这一份——
- * 各数各的就会出现「检查脚本说没问题、排出来还是难看」。
- */
+/** 按断点把 part 切成行，并把**判断版面好坏要用的事实**一并算出来（行首残小节、行末歌词标点、格数、小节数）。 */
 export function describeLines(part: PhrasePart, breaks: PhraseBreaks, useMidBreaks: boolean): LineInfo[] {
-  interface FC { chord: PhraseChord; mi: number; k: number; isLast: boolean }
-  const flat: FC[] = [];
-  part.measures.forEach((m, i) => {
-    const cs = chordsOf(m);
-    cs.forEach((c, k) => flat.push({ chord: c, mi: i, k, isLast: k === cs.length - 1 }));
-  });
-  const out: LineInfo[] = [];
-  let start = 0;
-  const emit = (end: number, mi: number | null, chord: PhraseChord | null, section: boolean): void => {
-    const seg = flat.slice(start, end + 1);
-    if (!seg.length) return;
-    const from = start;
-    start = end + 1;
-    // 行首残小节：从行首到第一条小节线（整行都在一个小节里时就是整行）
-    const headEnd = seg.findIndex((f) => f.isLast);
-    const head = seg.slice(0, headEnd < 0 ? seg.length : headEnd + 1);
-    const last = seg[seg.length - 1];
-    const text = mainLyricText(last.chord);
-    out.push({
-      cells: seg.reduce((n, f) => n + cellsOfChord(f.chord), 0),
-      dur: seg.reduce((n, f) => n + (f.chord.duration?.toFloat() ?? 0), 0),
-      fromMi: seg[0].mi,
-      toMi: last.mi,
-      bars: seg.filter((f) => f.isLast).length,
-      beats: seg.reduce((n, f) => n + f.chord.beats, 0),
-      head: {
-        dur: head.reduce((n, f) => n + (f.chord.duration?.toFloat() ?? 0), 0),
-        full: seg[0].k === 0,
-        hasNote: head.some((f) => !f.chord.rest),
-        cells: head.reduce((n, f) => n + cellsOfChord(f.chord), 0),
-        rest: seg[0].chord.rest,
-        beams: seg[0].chord.beams,
-        firstBeats: seg[0].chord.beats,
-        firstDur: seg[0].chord.duration?.toFloat() ?? 0,
-        firstPunct: lyricPunctScore(seg[0].chord),
-        text: mainLyricText(seg[0].chord),
-      },
-      tail: (() => {
-        // 行末落在延音／休止上时 `text` 是空的，往前找到最后一个有词的字
-        let lastWord = "";
-        let lastWordPunct = 0;
-        for (let j = seg.length - 1; j >= 0; j--) {
-          const t = mainLyricText(seg[j].chord);
-          if (!t) continue;
-          lastWord = t;
-          lastWordPunct = lyricPunctScore(seg[j].chord);
-          break;
-        }
-        // 行末残小节（本行内最后一条小节线之后的那一截）里有没有音符。
-        // 收在小节末的行没有这一截，自然不算。
-        let p = seg.length - 1;
-        while (p >= 0 && !seg[p].isLast) p--;
-        const tailBar = seg.slice(p + 1);
-        const restOnlyBar = tailBar.length > 0 && tailBar.every((f) => f.chord.rest);
-        const restBarDur = restOnlyBar ? tailBar.reduce((n, f) => n + (f.chord.duration?.toFloat() ?? 0), 0) : 0;
-        return { text, punct: lyricPunctScore(last.chord), beats: last.chord.beats, lastWord, lastWordPunct,
-                 restOnlyBar, restBarDur };
-      })(),
-      headFp: headFpOf(seg.map((f) => f.chord)),
-      mi,
-      chord,
-      section,
-      from,
-      to: end,
-      fromCut: from > 0
-        && (breaks.capacityCuts.has(flat[from - 1].chord)
-          || (flat[from - 1].isLast && breaks.capacityCuts.has(flat[from - 1].mi + 1))),
-    });
-  };
-  flat.forEach((f, idx) => {
-    if (useMidBreaks && (breaks.midBreaks.has(f.chord) || breaks.sectionCutChords.has(f.chord)))
-      return emit(idx, null, f.chord, breaks.sectionCutChords.has(f.chord));
-    if (f.isLast && (breaks.measureBreaks.has(f.mi + 1) || breaks.sectionStarts.has(f.mi + 1)))
-      emit(idx, f.mi + 1, null, breaks.sectionStarts.has(f.mi + 1));
-  });
-  emit(flat.length - 1, null, null, false);
-  return out;
+  const { out, flat } = phraseLayoutOp("describeLines", part, breaks, { useMidBreaks });
+  return (out as (Omit<LineInfo, "chord"> & { chord: number | null })[]).map((l) => ({ ...l, chord: l.chord === null ? null : flat[l.chord]! }));
 }
 
-/**
- * 逐行的**真实宽度**（自然坐标，未 justify）与版心宽度。
- *
- * 给 `scripts/rebuild.mjs` 的逐行事实用——`scripts/line-check.mjs` 判「这一行是不是太短 / 放不放得下」
- * 也要按真实宽度，不能按格数（用户口径，见 `FitMetric`）。
- */
+/** 逐行的**真实宽度**（自然坐标，未 justify）与版心宽度（`scripts/rebuild.mjs` 的逐行事实用）。 */
 export function measureLines(part: PhrasePart, lines: LineInfo[], fit?: FitMetric): { width: number; widths: number[] } {
-  const f = new Fit(fit, 0).bind(flattenBook(part));
-  return { width: f.capacity, widths: lines.map((l) => f.ofLine(l)) };
+  const empty: PhraseBreaks = {
+    measureBreaks: new Set(), midBreaks: new Set(), sectionStarts: new Set(), sectionCutChords: new Set(),
+    cuts: [], capacityCuts: new Set(), refrainCut: false, forced: new Set(),
+  };
+  return phraseLayoutOp("measureLines", part, empty, { ranges: lines.map((l) => [l.from, l.to]), fit }).out as { width: number; widths: number[] };
 }
 
-/**
- * **行首不留半个小节的休止**：一行从「休止 + 小节线」起头（残小节里一个音符都没有）时，
- * 把那点休止并到上一行去——下一行开头是个空拍，唱的人不知道要等谁
- * （020《向主歌唱》、193《主恩更多》第二行）。整小节的休止同理（整节挂到上一行；
- * 用户口径：完整的休止小节放上一行或下一行都行，有问题的是**半个小节**的休止）。
- *
- * 这是**兜底**：断句本身在 phrase.ts 的 DP 里就按同一条判据罚过了，但
- * `enforceLineCapacity` / `mergeShortLines` 会在 DP 之后造出新的行首，那些 DP 管不到。
- *
- * @param cells 退化时的容量（格数）；有 `fit` 时一律按**真实坐标**判「并过去放不放得下」
- */
+/** **行首不留半个小节的休止**：把那点休止并到上一行去（并过去放不下就不并）。回挪了几行。 */
 export function tidyLineHeads(part: PhrasePart, breaks: PhraseBreaks,
                               opt: { useMidBreaks?: boolean; cells?: number; fit?: FitMetric } = {}): number {
-  const useMidBreaks = opt.useMidBreaks ?? true;
-  const f = new Fit(opt.fit, opt.cells ?? 0).bind(flattenBook(part));
-  const lines = describeLines(part, breaks, useMidBreaks);
-  let moved = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const prev = lines[i - 1];
-    const cur = lines[i];
-    if (cur.head.hasNote) continue;
-    if (prev.section) continue;          // 段界（另起一页）不能挪
-    if (cur.fromMi === cur.toMi && cur.bars === 0) continue; // 整行都在一个小节里：没有小节线可挪到
-    // 并过去的**只是行首那个残小节**，不是整行——原来这里拿的是 `cur.cells`（整行格数），
-    // 于是「并两拍休止」被算成「并一整行」，放不下就不并了
-    //（282《我的灯需要油》第 3 行：上一行 32 格 + 本行 22 格 = 54 > 容量 33，
-    //   实际要并过去的只有 2 格）。
-    // 并过去之后那一行有多宽：**真实坐标**（行首残小节的最后一个和弦到 prev 的行首）
-    let headEnd = cur.from;
-    while (headEnd < cur.to && !f.book.isLast[headEnd]) headEnd++;
-    if (f.on && f.fitOf(prev.from, headEnd) >= f.capacity) continue;
-    if (prev.mi !== null) breaks.measureBreaks.delete(prev.mi);
-    if (prev.chord) breaks.midBreaks.delete(prev.chord);
-    breaks.measureBreaks.add(cur.fromMi + 1);
-    moved++;
-  }
-  return moved;
+  return phraseLayoutOp("tidyLineHeads", part, breaks, { useMidBreaks: opt.useMidBreaks ?? true, cells: opt.cells ?? 0, fit: opt.fit }).out as number;
 }
 
-/**
- * **行末不留半个小节的休止**：一行收在「小节线 + 只有休止」的残小节上时，把那点休止推到
- * 下一行去——那是下一句的弱起，留在上一行行尾就成了一个没人唱的空拍
- * （J09《祢的话》第 4 行末尾的 `|]0`）。
- *
- * 与 `tidyLineHeads` 是**对称的一对**（用户口径 2026-08-28：「避免残小节全是休止，
- * 不管是在行首还是行尾」）：那条把行首的空拍并到上一行，这条把行末的空拍推到下一行。
- * 推过去之后下一行的行首残小节里有音符（`0 1' 7. 6_`），并不违反行首那一条。
- *
- * 同样是**兜底**：`enforceLineCapacity` / 并行会在 DP 之后造出新的行末，那些 DP 管不到。
- * 推过去要是把下一行撑得放不下，就不推。
- *
- * @returns 推走的休止行数
- */
+/** **行末不留半个小节的休止**：把那点休止推到下一行去（与 `tidyLineHeads` 对称）。回推了几行。 */
 export function tidyLineTails(part: PhrasePart, breaks: PhraseBreaks,
                               opt: { useMidBreaks?: boolean; cells?: number; fit?: FitMetric } = {}): number {
-  const useMidBreaks = opt.useMidBreaks ?? true;
-  const f = new Fit(opt.fit, opt.cells ?? 0).bind(flattenBook(part));
-  const lines = describeLines(part, breaks, useMidBreaks);
-  let moved = 0;
-  for (let i = 0; i + 1 < lines.length; i++) {
-    const cur = lines[i];
-    const next = lines[i + 1];
-    if (!cur.tail.restOnlyBar) continue;
-    if (cur.section || next.section) continue;   // 段界（另起一页）不能挪
-    // 残小节从哪儿起：本行内最后一条小节线之后。整行都在这一截里就没得推
-    //（推走等于把这一行整个删掉）。
-    let barStart = cur.to;
-    while (barStart > cur.from && !f.book.isLast[barStart - 1]) barStart--;
-    if (barStart <= cur.from) continue;
-    // 推过去之后下一行有多宽：**真实坐标**（残小节的头一个和弦到 next 的行末）
-    if (f.on && f.fitOf(barStart, next.to) >= f.capacity) continue;
-    // **上一句的收气休止也照推**（用户口径 2026-08-28：「139 的休止改在行首」）。
-    // 原来这里照 D5 挡了一道——`|5-多 5-深？|0 3主 1恩 3有|` 的那个 `0` 是上一句唱完的
-    // 那口气，留在行末才对（139《主爱有多少》原书四行行末就都是 `|0`）。用户后来定了新口径：
-    // **残小节全是休止，行首行尾都不许**，那口气宁可挪到下一行行首去。D5 因此只管
-    // **不在小节头**的行首休止（见 line-check 的 D5）。
-    if (cur.mi !== null) breaks.measureBreaks.delete(cur.mi);
-    if (cur.chord) breaks.midBreaks.delete(cur.chord);
-    // 新断点落在那个残小节**之前**（`measureBreaks` 的语义是「在这个下标的小节前起新行」）
-    breaks.measureBreaks.add(cur.toMi);
-    moved++;
-  }
-  return moved;
+  return phraseLayoutOp("tidyLineTails", part, breaks, { useMidBreaks: opt.useMidBreaks ?? true, cells: opt.cells ?? 0, fit: opt.fit }).out as number;
 }
 
-/**
- * **每两句并一行**（B 档，见 `chooseLineLayout`）。
- *
- * 乐句分析给的是「一句一行」，而原书绝大多数是**一行两句**：005《荣耀归与天父》每小节才
- * 3.2 格，4 小节只有 13 格，版心却放得下 27 格——一句一行每行只用半幅版心，还要被 justify
- * 拉开，看着空。反过来 001《圣哉，圣哉，圣哉》一句 16 格、两句 32 格 > 容量 31，两句一行
- * 就放不下，那首本来也确实是一句一行。
- *
- * 与旧的 `mergeShortLines` 的差别：那个是**逐对局部判**（两行都短于容量六成才并），
- * 同一首里于是有的地方并了、有的地方没并，行长反而更不齐。这里改成**全首一个口径**：
- * 段内从头起两两并，段界处重新起对，段内落单的末行留着。放不放得下由调用方统一验。
- *
- * 只删断点、不新造断点。但**并出来的行末必须仍是乐句边界**——删掉 a 的断点等于让
- * a+b 合成一行，那一行的行末就是 b 的行末，b 收在哪儿决定了并出来好不好看。
- * 096《哈利路亚！感谢主》的「哈利路亚」唱好几遍，某个断点正落在「哈利｜路亚」中间，
- * 一并行就把「哈利」留在了行末。判据是**行末收在标点上、或收在长音上**——
- * 长音收尾（一字多音唱完、行末那个音没有词）同样是乐句的落点，只认标点会把它们也挡掉。
- *
- * @returns 并掉的断点数
- */
+/** **每两句并一行**（B 档）：全首一个口径，并不齐就整档放弃（回 0）。回并掉的断点数。 */
 export function mergePairsUniform(part: PhrasePart, breaks: PhraseBreaks, useMidBreaks: boolean): number {
-  const lines = describeLines(part, breaks, useMidBreaks);
-  // **先看能不能全首一致地并**：一半并一半不并，行长反而更不齐——020《向主歌唱》
-  // 前四行各 4~5 小节没并、末两行并成 8 小节，那一行就明显比谁都长。
-  // 并不齐就整档放弃（`chooseLineLayout` 会退到一句一行）。
-  const canPairAt = (i: number): boolean => {
-    const a = lines[i];
-    const b = lines[i + 1];
-    if (!b) return false;
-    if (a.section) return false;
-    if (a.mi !== null && breaks.forced?.has(a.mi)) return false;
-    if (a.mi === null && a.chord === null) return false;
-    // b 是并出来那一行的行末：它没收在乐句落点上就别并（末行除外，末行本来就是曲末）
-    const bIsLast = i + 1 === lines.length - 1;
-    // **标点要往前找到那个字**：行末那个音常常是没有词的收尾（拖腔、句末的收气休止），
-    // 它自己既没标点也不是长音，可乐句明明收得好好的——312《我真快乐》第 6 行收在
-    // 「…平安；」后面那个八分休止上（`tail.punct` 0、`tail.beats` 1），
-    // 一条 `canPairAt` 判否，整首八行 2 小节（134 / 312）就全并不成了。
-    // 与 096《哈利路亚！感谢主》那个坑不冲突：那里行末的「利」自己带词却没有标点，
-    // `lastWordPunct` 照样是 0，仍旧挡得住。
-    return bIsLast || b.tail.punct > 0 || b.tail.beats >= 2 || b.tail.lastWordPunct > 0;
-  };
-  for (let i = 0; i + 1 < lines.length; i += 2) if (!canPairAt(i)) return 0;
-  let merged = 0;
-  for (let i = 0; i + 1 < lines.length; i += 2) {
-    const a = lines[i];
-    if (a.mi !== null) breaks.measureBreaks.delete(a.mi);
-    if (a.chord) breaks.midBreaks.delete(a.chord);
-    merged++;
-  }
-  return merged;
+  return phraseLayoutOp("mergePairsUniform", part, breaks, { useMidBreaks }).out as number;
 }
 
-/** 一行放不放得下、是不是碎行——`chooseLineLayout` 判「这一档可不可行」的两条。 */
-function linesAreOk(lines: LineInfo[], f: Fit): boolean {
-  for (let i = 0; i < lines.length; i++) {
-    // 「放不放得下」按**真实坐标**判——排版器折不折行看的就是这个（用户口径）
-    if (f.on && f.fitLine(lines[i]) >= f.capacity) return false;
-    // 中间行只剩一小节（且不足四拍/八拍）= 碎行。末行本来就可以短。
-    if (i < lines.length - 1 && !lines[i].section) {
-      const l = lines[i];
-      if (l.bars <= 1 && l.beats < (l.head.full ? 4 : 8)) return false;
-    }
-  }
-  return true;
-}
-
-/** `PhraseBreaks` 的浅拷贝（Chord 引用共享，只复制四个 Set）。 */
-function cloneBreaks(b: PhraseBreaks): PhraseBreaks {
-  return {
-    measureBreaks: new Set(b.measureBreaks),
-    midBreaks: new Set(b.midBreaks),
-    sectionStarts: new Set(b.sectionStarts),
-    sectionCutChords: new Set(b.sectionCutChords),
-    cuts: b.cuts,           // 只读的候选断点表，拷贝时共享
-    capacityCuts: new Set(b.capacityCuts),
-    refrainCut: b.refrainCut,
-    forced: new Set(b.forced),
-  };
-}
-
-/** 在第 mi 小节**之前**断行会不会切断一条圆滑线／连音线／反复房。 */
-function cutsThroughSpan(part: PhrasePart, mi: number): boolean {
-  const ms = part.measures;
-  if (mi <= 0 || mi >= ms.length) return false;
-  // 反复房：房整体不可拆，只有房的收尾处才能断
-  let inEnding = false;
-  for (let i = 0; i < mi; i++) {
-    if (ms[i].endingLeft) inEnding = true;
-    if (ms[i].endingRight !== null) inEnding = false;
-  }
-  if (inEnding) return true;
-  // 弧线：上一小节最后一个和弦起了弧／连音线，而本小节头一个和弦收它
-  const prev = chordsOf(ms[mi - 1]);
-  const cur = chordsOf(ms[mi]);
-  const a = prev[prev.length - 1];
-  const b = cur[0];
-  if (!a || !b) return false;
-  if (a.slurStart && b.slurEnds > 0) return true;
-  if (a.notes[0]?.tieStart && b.notes[0]?.tieEnd) return true;
-  return false;
-}
-
-/**
- * **均匀排版**（C 档）：乐句断点排出来的行放不下版心时的兜底。
- *
- * **不丢开乐句断点**——试过完全按容量机械均分（169《全新的你》排出 13 行、215 甩出一行
- * 只有 9 格），比原样还难看。做法是在乐句断点的基础上收拾两件事：
- *   1. 放不下的行在**行内部**补刀（`applyCapacityCuts`，与 `enforceLineCapacity` 同一份），
- *      落点按乐句凭据 + 工整性挑；会切断圆滑线／反复房的小节线一律不选
- *      ——用户口径「尽量避免 slur/ending 等跨行」；
- *   2. 补出来的**碎行**（只剩一小节）并回上一行。
- * 段界（主歌↔副歌）自始至终保留——「尽量主歌副歌不同行」。
- */
-function evenLayout(part: PhrasePart, breaks: PhraseBreaks, cells: number, fit?: FitMetric): PhraseBreaks {
-  const out = cloneBreaks(breaks);
-  // 有真实尺子时格数可以是 0（编辑器那条路只给尺子）：照尺子切，别原样返回——否则放不下的乐句行原样交出去，
-  // 简谱档整首按宽度重断、乐句全丢（「脚步」123 在简谱档）
-  if (!new Fit(fit, cells).on || !part.measures.length) return out;
-  applyCapacityCuts(part, out, cells, { useMidBreaks: true, avoidSpans: true, fit });
-  mergeSliverLines(part, out, true, cells, fit);
-  return out;
-}
-
-/**
- * **碎行并回上一行**：只剩一小节、又唱不满一句的行（497《这世界非我家》曾切出一行 2 格）。
- *
- * 碎行是**按容量补刀**留下的（`enforceLineCapacity` / `evenLayout` 都按格数均分，
- * 遇上格数分布不均的段就会切出个尾巴），断句本身不会这么断。所以这是一道**收尾**：
- * 排版模式定下来、容量保险也补完刀之后再跑一次。
- *
- * 段界与跳转记号处的断点（`PhraseBreaks.forced`）不动。并过去放不下就维持原判——
- * 宁可留个短行，也别撑爆版心。
- *
- * @param cells 退化时的容量（格数）；有 `fit` 时按**真实坐标**判「并过去放不放得下」
- * @returns 并掉的断点数
- */
+/** **碎行并回上一行**：只剩一小节、又唱不满一句的行。回并掉的断点数。 */
 export function mergeSliverLines(part: PhrasePart, breaks: PhraseBreaks, useMidBreaks: boolean, cells = 0,
                                  fit?: FitMetric): number {
-  const lines = describeLines(part, breaks, useMidBreaks);
-  const f = new Fit(fit, cells).bind(flattenBook(part));
-  let merged = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const prev = lines[i - 1];
-    const cur = lines[i];
-    if (prev.section) continue;
-    if (cur.bars > 1 || cur.beats >= (cur.head.full ? 4 : 8)) continue;
-    if (prev.mi !== null && breaks.forced.has(prev.mi)) continue;
-    if (f.on && f.fitOf(prev.from, cur.to) >= f.capacity) continue;   // 并过去放不下就维持原判
-    if (prev.mi !== null) breaks.measureBreaks.delete(prev.mi);
-    else if (prev.chord) breaks.midBreaks.delete(prev.chord);
-    else continue;
-    merged++;
-  }
-  return merged;
+  return phraseLayoutOp("mergeSliverLines", part, breaks, { useMidBreaks, cells, fit }).out as number;
 }
 
 /**
- * **整首的排版模式阶梯**（成书那条路）。
- *
- * 「排不排得下」只在这里用——断句本身只看内容（见 `score/play.ts::PhraseOptions.contentOnly`）。
- * 按 **B → A → C** 取第一个可行的（原书绝大多数是一行两句，所以两句一行是首选；
- * 一句一行是它放不下时的退让；均匀排版是乐句根本排不下时的兜底）：
- *
- *   B  每 2 句一行（`mergePairsUniform`）
- *   A  按乐句排版（断点原样用）
- *   C  均匀排版（`evenLayout`）
- *
- * 「可行」= 每行都放得下，且中间没有只剩一小节的碎行。
+ * **整首的排版模式阶梯**（B 两句一行 → A 一句一行 → C 均匀排版，取第一个可行的）。
  * 选中的那一档**写回 `breaks`**（原地改，调用方拿到的就是最终断点）。
- *
- * @param cells 一行放得下几格（`browser.ts::measureCellsPerLine` 实测）
- * @returns 选中的档
  */
 export function chooseLineLayout(
   part: PhrasePart,
@@ -958,93 +207,19 @@ export function chooseLineLayout(
   cells: number,
   opt: { useMidBreaks?: boolean; allowPairs?: boolean; fit?: FitMetric } = {},
 ): "pairs" | "phrase" | "even" {
-  const useMidBreaks = opt.useMidBreaks ?? true;
-  const allowPairs = opt.allowPairs ?? true;
-  const f = new Fit(opt.fit, cells).bind(flattenBook(part));
-  const write = (from: PhraseBreaks): void => {
-    breaks.measureBreaks.clear();
-    for (const v of from.measureBreaks) breaks.measureBreaks.add(v);
-    breaks.midBreaks.clear();
-    for (const v of from.midBreaks) breaks.midBreaks.add(v);
-    // **补刀记号也要写回**：C 档是在克隆上补的刀，不带回来的话 `LineInfo.fromCut` 全是 false，
-    // line-check 的 D2 豁免（补刀造出来的行首不算弱起不一致）就永远用不上。
-    breaks.capacityCuts.clear();
-    for (const v of from.capacityCuts) breaks.capacityCuts.add(v);
-  };
-  const phrase = cloneBreaks(breaks);
-  const phraseLines = describeLines(part, phrase, useMidBreaks);
-  // **只在一句一行明显太稀时才考虑两句一行**。用户口径：「排不排得下只用于……是否采用
-  // 每 2 句放在一行的按乐句排版」。不设这道闸的话，凡是并得下的都会去并——实测全书
-  // 184 首改走 pairs、行数直接减半，那不是「原书一行两句」，那是把谱压扁。
-  // 判据取中位行长：多数行还不到版心六成，才说明一句一行确实空。
-  const medCells = (() => {
-    const cs = phraseLines.map((l) => f.ofLine(l)).sort((x, y) => x - y);
-    return cs.length ? cs[Math.floor(cs.length / 2)] : 0;
-  })();
-  const sparse = f.on && medCells > 0 && medCells < f.capacity * 0.6;
-  if (allowPairs && sparse) {
-    const pairs = cloneBreaks(breaks);
-    // 返回 0 = 并不成（不能全首一致地并），那就不是 pairs 档——原来这里不看返回值，
-    // 于是「没并」也被标成 pairs，行数一行没少（全书 40 首都这样）。
-    const merged = mergePairsUniform(part, pairs, useMidBreaks);
-    // **并完也要真实排一遍**（用户口径：「合并时也真实排一下，如果合并后放不下就保持原版」）
-    if (merged > 0 && linesAreOk(describeLines(part, pairs, useMidBreaks), f)) {
-      write(pairs);
-      return "pairs";
-    }
-  }
-  if (linesAreOk(phraseLines, f)) return "phrase";
-  write(evenLayout(part, phrase, cells, opt.fit));
-  return "even";
+  return phraseLayoutOp("chooseLineLayout", part, breaks, {
+    cells, useMidBreaks: opt.useMidBreaks ?? true, allowPairs: opt.allowPairs ?? true, fit: opt.fit,
+  }).out as "pairs" | "phrase" | "even";
 }
 
 /**
  * **乐句行 → 换页行号**（`.jpwabc` 与文本谱共用同一套口径）。
  *
- * 纯计算：两种源格式的「按乐句重排」都要按同一个
- * 尺子分页，否则同一首歌导出 `.jpwabc` 与文本谱会分出不一样的页。写回是各写各的
- * （`.jpwabc` 写 `$(true,0,0,true)`，文本谱另起一个 `ScorePage`），这里只管**算在哪儿换**。
- *
  * @param lines       乐句行总数
- * @param sectionEnds 段末行号（1 基；主歌/副歌分界，见 `JpScore._pageLines`）
+ * @param sectionEnds 段末行号（1 基；主歌/副歌分界）
  * @param pageLines   一页至多几行
  * @returns 1 基行号集合：该行行尾换页（末行必定在内，段末收尾）
  */
-export function pageBreakLines(
-  lines: number, sectionEnds: ReadonlySet<number>, pageLines: number,
-): Set<number> {
-  const pageAt = new Set<number>(); // 1 基乐句行号：其行尾为换页
-  if (lines <= 0) return pageAt;
-  // 主歌 / 副歌各自成段（sectionEnds 记的是段末行号），段内再按每页至多 pageLines 行分。
-  const rawBounds = [0, ...[...sectionEnds].filter((n) => n > 0 && n < lines).sort((a, b) => a - b), lines];
-  // 只有 1 行的段（如前奏 Intro）单独占一页太空 → 并入下一段（丢掉它的段界）。
-  const merged = [rawBounds[0]];
-  for (let i = 1; i < rawBounds.length; i++) {
-    if (i < rawBounds.length - 1 && rawBounds[i] - merged[merged.length - 1] < 2) continue;
-    merged.push(rawBounds[i]);
-  }
-  // **段界换页是「放不下才换」，不是逢段必换**（用户口径：「主歌和副歌无法在一页内排下时
-  // 才在副歌前换页」）。006《颂赞归与耶稣圣名》主歌 2 行 + 副歌 2 行正好一页，逢段必换
-  // 会把一遍拆成两页各 2 行；005《荣耀归与天父》主歌 4 行 + 副歌 4 行放不下，那才该换。
-  // 相邻的段能凑进同一页就并成一组，组界才是换页处。
-  const bounds = [merged[0]];
-  for (let i = 1; i < merged.length; i++) {
-    const start = bounds[bounds.length - 1];
-    // 把第 i 段也并进当前组就超出一页了 → 当前组到上一段末为止，本段另起一组。
-    if (merged[i] - start > pageLines && merged[i - 1] > start) bounds.push(merged[i - 1]);
-  }
-  const last = merged[merged.length - 1];
-  if (bounds[bounds.length - 1] !== last) bounds.push(last);
-  for (let s = 0; s + 1 < bounds.length; s++) {
-    const beg = bounds[s];
-    const len = bounds[s + 1] - beg;
-    for (let p = pageLines; p <= len - 1; p += pageLines) pageAt.add(beg + p);
-    pageAt.add(beg + len); // 段末收尾（分隔主歌/副歌、反复段）
-    // 末页仅剩 1 行的 4+1 情形把最后一个换页上移一行 → 3+2
-    if (len % pageLines === 1 && len >= pageLines + 1) {
-      pageAt.delete(beg + len - 1);
-      pageAt.add(beg + len - 2);
-    }
-  }
-  return pageAt;
+export function pageBreakLines(lines: number, sectionEnds: ReadonlySet<number>, pageLines: number): Set<number> {
+  return new Set(dolce().pageBreakLines(lines, Uint32Array.from(sectionEnds), pageLines));
 }

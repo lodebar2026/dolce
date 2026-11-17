@@ -5,12 +5,14 @@
 //!
 //! - [`playorder`]：反复、房号、D.C./D.S./Coda、`P:` 段落、逐遍演唱顺序、`.Repeat` → `PlayItem` 序列
 //! - [`phrase`]：乐句断点（歌词标点 + 音乐信号 + 重复旋律，DP 选行）
+//! - [`applybreaks`]：断句之后的容量补刀、并行、行首行尾收拾、排版模式阶梯、按乐句行分页
 //! - [`timeline`]：按演唱顺序展开的发声音符、光标锚点、节拍器、拍号调号变化点
 //! - [`midi`]：标准 MIDI 文件（format 1）
 //!
 //! 与 TS 的口径：`Math.round` / 稳定排序 / `Map` 与 `Set` 的插入次序一律照搬（`dolce_base::js`）；
 //! TS 里会抛错的输入（没有和弦的小节取时值、越界取小节）这里回 `Err`，由 TS 侧照样抛出。
 
+pub mod applybreaks;
 pub mod jppitch;
 pub mod midi;
 pub mod phrase;

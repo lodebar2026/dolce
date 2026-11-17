@@ -203,6 +203,57 @@ pub fn head_fp_of(chords: &str) -> Result<String, JsValue> {
     Ok(phrase::head_fp_of(&refs))
 }
 
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct LayoutOpIn {
+    use_mid_breaks: Option<bool>,
+    cells: f64,
+    target_meas: f64,
+    avoid_spans: bool,
+    allow_pairs: Option<bool>,
+    fit: Option<phrase::FitMetric>,
+    ranges: Vec<(usize, usize)>,
+}
+
+/// 断句之后的那几步（`applybreaks.ts` 门面，判据在 `dolce_play::applybreaks`）：`op` 选哪一步，`breaks` 原地改后连同结果一起回
+/// `{breaks, out}`。`op`：`describeLines` / `measureLines` / `applyCapacityCuts` / `tidyLineHeads` / `tidyLineTails` /
+/// `mergePairsUniform` / `mergeSliverLines` / `chooseLineLayout`。
+#[wasm_bindgen(js_name = phraseLayoutOp)]
+pub fn phrase_layout_op(op: &str, part: &str, breaks: &str, opts: &str) -> Result<String, JsValue> {
+    use dolce_play::applybreaks as ab;
+    let part: phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    let mut b: phrase::PhraseBreaks = parse("PhraseBreaks", breaks)?;
+    let o: LayoutOpIn = parse("LayoutOp", opts)?;
+    let fit = o.fit.as_ref();
+    let mid = o.use_mid_breaks.unwrap_or(true);
+    // 回值逐个按结构体序列化（字段次序照声明，与 TS 对象字面量同序）
+    let out = match op {
+        "describeLines" => json(&ab::describe_lines(&part, &b, mid)),
+        "measureLines" => {
+            let (width, widths) = ab::measure_lines(&part, &o.ranges, fit);
+            json(&serde_json::json!({ "width": width, "widths": widths }))
+        }
+        "applyCapacityCuts" => {
+            ab::apply_capacity_cuts(&part, &mut b, o.cells, &ab::CapacityOptions { target_meas: o.target_meas, use_mid_breaks: mid, avoid_spans: o.avoid_spans, fit });
+            "null".into()
+        }
+        "tidyLineHeads" => json(&ab::tidy_line_heads(&part, &mut b, mid, o.cells, fit)),
+        "tidyLineTails" => json(&ab::tidy_line_tails(&part, &mut b, mid, o.cells, fit)),
+        "mergePairsUniform" => json(&ab::merge_pairs_uniform(&part, &mut b, mid)),
+        "mergeSliverLines" => json(&ab::merge_sliver_lines(&part, &mut b, mid, o.cells, fit)),
+        "chooseLineLayout" => json(&ab::choose_line_layout(&part, &mut b, o.cells, mid, o.allow_pairs.unwrap_or(true), fit)),
+        _ => return Err(js_sys_error(&format!("phraseLayoutOp: 没有 {op}"))),
+    };
+    Ok(format!("{{\"breaks\":{},\"out\":{}}}", json(&b), out))
+}
+
+/// 乐句行 → 换页行号（1 基，按插入次序；`applybreaks.ts::pageBreakLines`）
+#[wasm_bindgen(js_name = pageBreakLines)]
+pub fn page_break_lines(lines: usize, section_ends: Vec<u32>, page_lines: usize) -> Vec<u32> {
+    let ends: Vec<usize> = section_ends.into_iter().map(|x| x as usize).collect();
+    dolce_play::applybreaks::page_break_lines(lines, &ends, page_lines).into_iter().map(|x| x as u32).collect()
+}
+
 // ───────────────────────── 模型对拍探针（dolce-model）─────────────────────────
 
 #[cfg(feature = "probe")]

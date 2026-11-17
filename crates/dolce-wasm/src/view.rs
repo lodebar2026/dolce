@@ -83,3 +83,54 @@ pub fn model_emit_jpwabc(doc: &str, song: usize) -> Result<Option<String>, JsVal
     let d: ScoreDoc = parse("ScoreDoc", doc)?;
     dolce_formats::jpw::input::emit_jpwabc(&d, song).map_err(|e| super::js_sys_error(&e))
 }
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyBreakOptionsIn {
+    lines_per_page: Option<f64>,
+    section_new_page: Option<bool>,
+    use_mid_breaks: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct LineStartOut {
+    id: dolce_model::ElementId,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    page: bool,
+}
+
+/// 成书：断句断点 → 行首（`applyPhraseBreaksToDoc`，写回由门面经 `applyBreaks` 做）。`part` 是断句输入、`ids` 拍平下标 → 元素 id。
+/// 回 `{starts: [{id, page?}], lines, pages}`
+#[wasm_bindgen(js_name = modelPhraseLineStarts)]
+pub fn model_phrase_line_starts(song: &str, part: &str, ids: &str, breaks: &str, opts: &str) -> Result<String, JsValue> {
+    let s: Song = parse("Song", song)?;
+    let part: dolce_play::phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    let ids: Vec<Option<dolce_model::ElementId>> = parse("ids", ids)?;
+    let b: dolce_play::phrase::PhraseBreaks = parse("PhraseBreaks", breaks)?;
+    let o: ApplyBreakOptionsIn = parse("ApplyBreakOptions", opts)?;
+    let d = dolce_view::bookbreaks::ApplyBreakOptions::default();
+    let opt = dolce_view::bookbreaks::ApplyBreakOptions {
+        lines_per_page: o.lines_per_page.unwrap_or(d.lines_per_page),
+        section_new_page: o.section_new_page.unwrap_or(d.section_new_page),
+        use_mid_breaks: o.use_mid_breaks.unwrap_or(d.use_mid_breaks),
+    };
+    let (starts, lines, pages) = dolce_view::bookbreaks::phrase_line_starts(&s, &part, &ids, &b, opt).map_err(view_err)?;
+    let starts: Vec<LineStartOut> = starts.into_iter().map(|l| LineStartOut { id: l.id, page: l.page }).collect();
+    Ok(to_json(&serde_json::json!({ "starts": starts, "lines": lines, "pages": pages })))
+}
+
+/// 成书段落词挂到哪个和弦（`putSectionWords`）：`rows` 是 `[{text, note_ordinal}]`，回 `[[元素 id, 词]]`
+#[wasm_bindgen(js_name = modelSectionWordTargets)]
+pub fn model_section_word_targets(song: &str, part: &str, ids: &str, rows: &str) -> Result<String, JsValue> {
+    #[derive(serde::Deserialize)]
+    struct Row {
+        text: String,
+        note_ordinal: f64,
+    }
+    let s: Song = parse("Song", song)?;
+    let part: dolce_play::phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    let ids: Vec<Option<dolce_model::ElementId>> = parse("ids", ids)?;
+    let rows: Vec<Row> = parse("rows", rows)?;
+    let rows: Vec<(String, f64)> = rows.into_iter().map(|r| (r.text, r.note_ordinal)).collect();
+    Ok(to_json(&dolce_view::bookbreaks::section_word_targets(&s, &part, &ids, &rows)))
+}

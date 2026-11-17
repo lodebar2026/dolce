@@ -128,7 +128,7 @@ pub struct FitMetric {
 
 impl FitMetric {
     /// TS `spans.get(flat[i]?.chord)`：越界（`undefined` 作键）或没量到都是 None。
-    fn span(&self, i: i64) -> Option<Span> {
+    pub(crate) fn span(&self, i: i64) -> Option<Span> {
         if i < 0 {
             return None;
         }
@@ -176,6 +176,18 @@ pub struct PhraseBreaks {
     pub cuts: Vec<CutCandidate>,
     /// **不许删的断点**（小节下标）：跳转记号（Fine / D.C. / D.S. / To Coda）所在的小节末、转调与前奏之后。
     pub forced: Vec<usize>,
+    /// **容量补刀落下的断点**（`applybreaks::apply_capacity_cuts` 写，两种键按插入次序混排，同 TS 的 `Set<number | PhraseChord>`）：
+    /// 小节前（`measure`）或和弦后（`chord`）。断句本身不产，`describe_lines` 据此给 `LineInfo.from_cut` 打记号。
+    #[serde(default)]
+    pub capacity_cuts: Vec<CapKey>,
+}
+
+/// `PhraseBreaks.capacity_cuts` 的键：小节下标（在它之前起新行）或和弦拍平下标（在它之后起新行）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CapKey {
+    Measure(usize),
+    Chord(usize),
 }
 
 /// 行长参数（TS `PhraseOptions`）。默认值是拿具体曲子调出来的，**别随手改默认**；成书排版按需收紧。

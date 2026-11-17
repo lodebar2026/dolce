@@ -31,6 +31,9 @@ export interface DolceWasm {
   partGain(opts: string, part: number): number;
   computePhraseBreaks(part: string, opts: string): string;
   targetMeasForCells(part: string, cells: number): number;
+  /** 断句之后的那几步（`applybreaks.ts` 门面）：回 `{breaks, out}` */
+  phraseLayoutOp(op: string, part: string, breaks: string, opts: string): string;
+  pageBreakLines(lines: number, sectionEnds: Uint32Array, pageLines: number): Uint32Array;
   /** `[主歌词, 标点分, 旋律键]` */
   phraseChordFacts(chord: string): string;
   headFpOf(chords: string): string;
@@ -76,6 +79,10 @@ export interface DolceWasm {
   modelPhrasePartOfDoc(song: string, partIndex: number, distinct: boolean): string;
   modelPhraseJumpMeasures(song: string, partIndex: number): Uint32Array;
   /** `ScoreDoc` → `.jpwabc`（`convert/jpwabc.ts`）；没有曲行回 undefined */
+  /** 成书断点 → 行首：回 `{starts, lines, pages}` */
+  modelPhraseLineStarts(song: string, part: string, ids: string, breaks: string, opts: string): string;
+  /** 成书段落词挂到哪个和弦：回 `[[元素 id, 词]]` */
+  modelSectionWordTargets(song: string, part: string, ids: string, rows: string): string;
   modelEmitJpwabc(doc: string, song: number): string | undefined;
 
   // ABC 家族与丢失清单（crates/dolce-wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）
