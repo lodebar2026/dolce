@@ -6,7 +6,8 @@
 //!   依次是读入建树后、分系统与 `layoutAttr` 之后、`layoutStaff` 返回、装页之后（另带 `placed`）；
 //! - `scene`：各页场景（`dolce_scene::dump::diff_pages`）。
 //!
-//! 表层：用例带了 MusicXML 原文的，Rust 重读一遍拿表层（`_oid` 由读入次序定，两边同号）；重读出的文档与用例的对不上时记「文档不符」。
+//! 表层：用例带了 MusicXML 原文的，Rust 重读一遍拿表层（`_oid` 由读入次序定，两边同号）；重读出的文档与用例的对不上时记「文档不符」
+//! （混排歌本用例带 `docEdited`：清单改过页眉、可能裁过声部，不比）。
 //! 比法、容差、`--native` 验收门同 `jianpu-check`（见 `jianpu.rs`）。
 //!
 //! 选项：`--stage=read,systems,layout,pages,scene`（缺省全比）、`--limit=N`、`--key=子串`、`--cfg=档名`、`--show=N`、`--redist=<目录>`。
@@ -47,7 +48,27 @@ fn run(case: &Value, env: &Env) -> Result<Got, String> {
             if let Some(o) = v.as_object_mut() {
                 o.remove("source");
             }
-            got.doc_mismatch = v != case["doc"];
+            // 演唱顺序（jpwabc 自带、不进 MusicXML）与表层身份无关，不比
+            let mut want = case["doc"].clone();
+            for d in [&mut want, &mut v] {
+                for sg in d["songs"].as_array_mut().into_iter().flatten() {
+                    if let Some(o) = sg.as_object_mut() {
+                        o.remove("playOrder");
+                    }
+                }
+            }
+            // 歌本用例（`docEdited`）的文档是清单改过的，重读对不上是预期的
+            got.doc_mismatch = !case["docEdited"].as_bool().unwrap_or(false)
+                && match judge_json(&want, Some(&v)) {
+                    Verdict::Same(_) => false,
+                    Verdict::Skeleton(xs) => {
+                        if std::env::var_os("STAFF_DOC_DIFF").is_some() {
+                            eprintln!("文档不符：{}", xs.iter().take(5).cloned().collect::<Vec<_>>().join("；"));
+                        }
+                        true
+                    }
+                    _ => true,
+                };
             doc.source = l.doc.source.clone();
             Some(l)
         }

@@ -9,10 +9,13 @@ import { layoutStaffPages, PAGE_HEIGHT_FALLBACK } from "../mixed/staffpages";
 import type { Fraction } from "../common/fraction";
 import type { Font } from "../pagetree/font";
 import type {
-  ChordLayout, LyricLayout, MeasureLayout, PartLayout, PartMeasureLayout, StaffLayout, Sys, TextBlock, TickMap,
+  ChordLayout, LyricLayout, MeasureLayout, MixedOptions, PartLayout, PartMeasureLayout, StaffLayout, Sys, TextBlock, TickMap,
 } from "../mixed/model";
 import { sceneNode } from "./layoutref";
 import type { MetaData } from "../smufl/smufl";
+import type { StyleRule } from "../style/cascade";
+import type { ManifestSong } from "../pdflayout/manifest";
+import { songbookStaffInput } from "../pdflayout/songbook";
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -166,18 +169,29 @@ const optionsJson = (o: unknown): Json => JSON.parse(JSON.stringify(o, (k, v) =>
  * `read`（读入建树后、`finishMixedScore` 之前）、`systems`（分系统、两端对齐、`layoutAttr` 之后）、`layout`（`layoutStaff` 返回）、
  * `pages`（`layoutStaffPages` 之后，含 `placed`）——与整页场景。
  */
-export function staffCase(req: StaffPaintRequest, meta: MetaData): { doc: Json; xml: string | null; options: Json; mixed: boolean; jianpuPart: number; expect: Record<string, Json> } {
-  const doc: ScoreDoc = req.doc;
+type StaffCase = { docEdited?: boolean; doc: Json; xml: string | null; options: Json; mixed: boolean; jianpuPart: number; expect: Record<string, Json> };
+
+export function staffCase(req: StaffPaintRequest, meta: MetaData): StaffCase {
   const options = staffOptionsOf(meta, req.style);
   options.hideBarNumber = req.hideBarNumber;
   options.page = req.page;
   options.sourceBreaks = req.sourceBreaks ?? false;
+  return staffCaseOf(req.doc, options, req.view === "mixed", req.jianpuPart ?? 0);
+}
+
+/** 混排歌本一首（`pdflayout/songbook.ts::songbookStaffInput` 拼的文档与选项），按混排排。 */
+export function songbookStaffCase(xml: string, entry: ManifestSong, rules: StyleRule[], meta: MetaData): StaffCase {
+  const { doc, options } = songbookStaffInput(xml, entry, rules, meta);
+  // 清单改过页眉、可能裁过声部：重读原文对不上是预期的（`_oid` 仍是读入时那套）
+  return { ...staffCaseOf(doc, options, true, 0), docEdited: true };
+}
+
+function staffCaseOf(doc: ScoreDoc, options: MixedOptions, mixed: boolean, jianpuPart: number): StaffCase {
   const optJson = optionsJson(options);
   const expect: Record<string, Json> = {};
   const score = layoutStaff(doc, options, (stage, s) => (expect[stage] = staffDump(s)));
   expect.layout = staffDump(score);
-  const mixed = req.view === "mixed";
-  const { pages, placed } = layoutStaffPages(score, mixed, req.jianpuPart ?? 0);
+  const { pages, placed } = layoutStaffPages(score, mixed, jianpuPart);
   const sysOf = new Map(score.systems.map((s, i) => [s, i] as [Sys, number]));
   const pagesDump = staffDump(score) as Record<string, Json>;
   pagesDump.placed = placed.map((p) => ({ sys: sysOf.get(p.sys) ?? -1, page: p.page, top: jn(p.top) }));
@@ -192,7 +206,7 @@ export function staffCase(req: StaffPaintRequest, meta: MetaData): { doc: Json; 
     xml: dj.s && doc.sourceFormat === "musicxml" && typeof doc.source === "string" ? doc.source : null,
     options: optJson,
     mixed,
-    jianpuPart: req.jianpuPart ?? 0,
+    jianpuPart,
     expect,
   };
 }

@@ -18,7 +18,7 @@ import { MetaData } from "../smufl/smufl";
 import { loadScoreDoc } from "../model/fromxml";
 import { metaFlag } from "../model/metakeys";
 import { keepFirstPart } from "../model/melodyonly";
-import type { Song } from "../model/doc";
+import type { ScoreDoc, Song } from "../model/doc";
 import { MixedOptions, type Sys } from "../mixed/model";
 import { layoutStaff } from "../mixed/layout";
 import { drawSystem } from "../mixed/render";
@@ -100,13 +100,13 @@ function fontOfRole(sheet: StyleSheet, families: Record<string, string>, role: s
   return roleFont(sheet, role as StyleRole, new Font(BOOK_FALLBACK_FAMILY, size), { size, families });
 }
 
-function songLayout(xml: string, entry: ManifestSong, input: SongbookInput, meta: MetaData, index: number): SongLayout {
+/** 一首歌交给五线谱引擎的文档、样式表与选项（排版迁 Rust 的对拍 `cli/staffref.ts` 也取它）。 */
+export function songbookStaffInput(xml: string, entry: ManifestSong, rules: StyleRule[], meta: MetaData): { doc: ScoreDoc; song: Song; sheet: StyleSheet; options: MixedOptions } {
   const doc = loadScoreDoc(xml);
   const song: Song = doc.songs[0]!;
   applyManifestSong(song, entry);
-  const title = song.work.title ?? "";
   const ctx: StyleContext = { engine: "staff", mode: "mixed" };
-  const sheet = computeStyleForPaper([THEMES.staff, input.rules], ctx);
+  const sheet = computeStyleForPaper([THEMES.staff, rules], ctx);
   // 只留旋律第一步：裁到 P1（删非旋律音要等混排引擎读完整条，见 model/melodyonly.ts）
   if (metaFlag(song, "layout.melody-only")) keepFirstPart(song);
 
@@ -127,6 +127,12 @@ function songLayout(xml: string, entry: ManifestSong, input: SongbookInput, meta
   if (metaFlag(song, "layout.chinese-hyphen")) options.chineseHyphen = true;
   // 只留旋律第二步：读完整条后删非旋律音 → 重猜符干（musicpp removeNoneMelody → guessStemDir）
   if (metaFlag(song, "layout.melody-only")) options.melodyOnly = true;
+  return { doc, song, sheet, options };
+}
+
+function songLayout(xml: string, entry: ManifestSong, input: SongbookInput, meta: MetaData, index: number): SongLayout {
+  const { doc, song, sheet, options } = songbookStaffInput(xml, entry, input.rules, meta);
+  const title = song.work.title ?? "";
   const score = layoutStaff(doc, options);
   formatMixedScore(score);
   const scaling = score.scaling;

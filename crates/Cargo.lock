@@ -474,7 +474,6 @@ dependencies = [
  "dolce-smufl",
  "dolce-style",
  "dolce-text",
- "regex",
  "serde",
  "serde_json",
 ]
