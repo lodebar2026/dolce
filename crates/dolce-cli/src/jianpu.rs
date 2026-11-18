@@ -7,7 +7,7 @@
 //! - `size`：页宽高、各行首音 id（`lineStarts`）与量宽档的自然跨度（`spans`：版心宽 + 按插入序的 `[id, {x0, x1, x1b}]`）。
 //!
 //! JSON 两段的比法：键、串、布尔、数组长要一样（缺键与 `null` 视同），数差 ≤ 1e-6（回放下两边吃同一份量字）。
-//! `--native` 代替 `--measure`：验收门，Rust 自己量字（`dolce_text_native::node_measure`），数差容差放到 0.5。
+//! `--native` 代替 `--measure`：验收门，Rust 自己量字（`dolce_text::native::node_measure`），数差容差放到 0.5。
 //! 每档 `catch_unwind` 包住：`todo!()` 记「未实现」、别的 panic 记「报错」，不中断。
 //!
 //! 选项：`--stage=grid|placed|scene|size`（逗号分隔，缺省全比）、`--limit=N`、`--key=子串`、`--cfg=档名`、`--show=N`、`--redist=<目录>`。
@@ -18,7 +18,7 @@ use dolce_layout_jianpu::grid::GridPage;
 use dolce_model::doc::ScoreDoc;
 use dolce_scene::dump::diff_pages;
 use dolce_scene::Page;
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 use dolce_style::jianpustyle::JianpuStyle;
 use dolce_text::{MeasureCtx, ReplayMeasurer};
 use serde_json::Value;
@@ -284,7 +284,7 @@ pub fn jianpu_check(args: &[String]) -> i32 {
     let replay: Option<ReplayMeasurer> = (!native).then(|| {
         ReplayMeasurer::from_jsonl(&std::fs::read_to_string(mpath.unwrap()).expect("读量字录制")).expect("量字录制").with_path_fallback()
     });
-    let native_backend = native.then(|| dolce_text_native::node_measure(Some(&redist), &[]));
+    let native_backend = native.then(|| dolce_text::native::node_measure(Some(&redist), &[]));
     if native {
         TOL.get_or_init(|| 0.5);
     }

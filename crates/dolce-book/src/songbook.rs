@@ -6,7 +6,7 @@
 
 use std::cell::RefCell;
 
-use dolce_geom::Matrix33;
+use dolce_base::geom::Matrix33;
 use dolce_layout_staff::model::{StaffLayout, SysId};
 use dolce_layout_staff::pages::format_mixed_score;
 use dolce_layout_staff::read;

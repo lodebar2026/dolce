@@ -403,7 +403,7 @@ impl hanconv::HanConv for JsConv<'_> {
 #[wasm_bindgen(js_name = xmlIsMultiPart)]
 pub fn xml_is_multi_part(xml: &str) -> bool {
     use dolce_base::js;
-    let Ok(d) = dolce_xml::parse(xml) else { return false };
+    let Ok(d) = dolce_model::xml::parse(xml) else { return false };
     if d.get_elements_by_tag_name("score-part").len() >= 2 {
         return true;
     }

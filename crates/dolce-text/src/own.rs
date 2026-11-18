@@ -6,7 +6,7 @@
 //!
 //! 交回宿主量的：串里有字体里没有的码点、有会连成一个字形的序列（连字后的宽与墨迹另算，罕见）、带了 `-kern` 以外的 OpenType 特性。
 
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 
 use crate::{FontMetrics, Positions, TextMetrics};
 

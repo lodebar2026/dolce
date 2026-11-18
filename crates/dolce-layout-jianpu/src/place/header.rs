@@ -2,7 +2,7 @@
 //! 投影档的标题页与页脚。`compose/header.rs` 只照它画。
 
 use dolce_base::js::trim;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_model::Tempo;
 use dolce_view::ast::{Metadata, Meter};
 

@@ -14,7 +14,7 @@ use dolce_engrave::jpslide::{jp_slide_arrow, jp_slide_of};
 use dolce_engrave::stack::{stack_bottom, stack_top as stack_top_of, StackStyle};
 use dolce_engrave::tuplet::tuplet_digits;
 use dolce_engrave::upperband::{stack_upper_band, BandItem};
-use dolce_geom::{Point, Rect};
+use dolce_base::geom::{Point, Rect};
 use dolce_model::deconames::{rehearsal_bracketed, rehearsal_of};
 use dolce_model::marknames::term_text;
 use dolce_view::ast::{MarkType, MusicElement};

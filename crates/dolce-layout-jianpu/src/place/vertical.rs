@@ -7,7 +7,7 @@ use dolce_engrave::jpglyph::ornament;
 use dolce_engrave::jpslide::jp_slide_of;
 use dolce_engrave::jptremolo::jp_tremolo_count;
 use dolce_engrave::stack::{low_dot_y, stack_bottom, stack_top as stack_top_of};
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_model::Accidental;
 use dolce_view::ast::{MusicElement, NoteElement};
 

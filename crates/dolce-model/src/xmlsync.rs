@@ -6,7 +6,7 @@
 use crate::doc::*;
 use std::borrow::Cow;
 use crate::xmlsurface::{Slot, Surface};
-use dolce_xml::{NodeId, Tree};
+use crate::xml::{NodeId, Tree};
 use serde::Serialize;
 
 /// 同 TS `SyncEntry`（页眉那几样字段在 TS 并进来，这里不出）

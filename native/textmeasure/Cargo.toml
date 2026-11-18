@@ -11,9 +11,8 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "3", default-features = false, features = ["napi4"] }
 napi-derive = "3"
-# 系统文字引擎本体在工作区 crates/dolce-text-native（Rust 排版也用它），这里只是 N-API 外壳
-dolce-text-native = { path = "../../crates/dolce-text-native" }
-dolce-text = { path = "../../crates/dolce-text" }
+# 系统文字引擎本体在工作区 crates/dolce-text 的 native 特性（Rust 排版也用它），这里只是 N-API 外壳
+dolce-text = { path = "../../crates/dolce-text", features = ["native"] }
 
 [build-dependencies]
 napi-build = "2"

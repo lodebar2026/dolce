@@ -5,7 +5,7 @@ use dolce_base::js;
 use dolce_engrave::accidental::{accidental_rise, AccidentalKind};
 use dolce_engrave::arc::{arc_clear_shift, arc_rise, calc_slur_points, jp_arc_y, ArcObstacle, SlurStyle};
 use dolce_engrave::stack::stack_top;
-use dolce_geom::Point;
+use dolce_base::geom::Point;
 
 use super::*;
 use crate::jprow::main_row;

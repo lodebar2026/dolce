@@ -6,7 +6,7 @@
 //! 所以 `x` 仍排第一个。
 
 use dolce_base::js::{num_to_string, to_fixed};
-use dolce_geom::color_to_css;
+use dolce_base::geom::color_to_css;
 
 use crate::{Dialect, Node, Page, Shape, TextShape};
 

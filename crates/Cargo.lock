@@ -433,13 +433,11 @@ dependencies = [
  "dolce-base",
  "dolce-engrave",
  "dolce-formats",
- "dolce-geom",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
  "dolce-play",
  "dolce-scene",
- "dolce-smufl",
  "dolce-style",
  "dolce-text",
  "dolce-view",
@@ -458,18 +456,14 @@ dependencies = [
  "dolce-book",
  "dolce-engrave",
  "dolce-export",
- "dolce-geom",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
  "dolce-omr-source",
  "dolce-scene",
  "dolce-session",
- "dolce-smufl",
  "dolce-style",
  "dolce-text",
- "dolce-text-native",
- "dolce-xml",
  "indexmap",
  "serde",
  "serde_json",
@@ -482,11 +476,9 @@ name = "dolce-engrave"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
- "dolce-geom",
  "dolce-model",
  "dolce-play",
  "dolce-scene",
- "dolce-smufl",
  "dolce-style",
  "dolce-text",
  "serde",
@@ -500,7 +492,6 @@ dependencies = [
  "crc32fast",
  "dolce-base",
  "dolce-book",
- "dolce-geom",
  "dolce-scene",
  "dolce-text",
  "flate2",
@@ -539,14 +530,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-geom"
-version = "0.1.0"
-dependencies = [
- "dolce-base",
- "serde",
-]
-
-[[package]]
 name = "dolce-hanconv"
 version = "0.1.0"
 dependencies = [
@@ -568,11 +551,9 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
- "dolce-geom",
  "dolce-model",
  "dolce-play",
  "dolce-scene",
- "dolce-smufl",
  "dolce-style",
  "dolce-text",
  "dolce-view",
@@ -587,10 +568,8 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
- "dolce-geom",
  "dolce-model",
  "dolce-scene",
- "dolce-smufl",
  "dolce-style",
  "dolce-text",
  "serde",
@@ -603,7 +582,6 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-play",
- "dolce-xml",
  "indexmap",
  "serde",
  "serde_json",
@@ -623,13 +601,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dolce-omr-build"
-version = "0.1.0"
-dependencies = [
- "sha2",
 ]
 
 [[package]]
@@ -793,8 +764,6 @@ name = "dolce-scene"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
- "dolce-geom",
- "dolce-smufl",
  "dolce-text",
  "serde",
  "serde_json",
@@ -806,7 +775,6 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
- "dolce-geom",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
@@ -818,19 +786,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-smufl"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-style"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
- "dolce-geom",
  "dolce-model",
  "dolce-text",
  "indexmap",
@@ -843,20 +802,12 @@ name = "dolce-text"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
- "dolce-geom",
- "serde",
- "serde_json",
- "ttf-parser",
-]
-
-[[package]]
-name = "dolce-text-native"
-version = "0.1.0"
-dependencies = [
- "dolce-text",
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-text",
+ "serde",
+ "serde_json",
+ "ttf-parser",
  "windows",
  "windows-core",
  "windows-numerics",
@@ -882,29 +833,19 @@ dependencies = [
  "dolce-base",
  "dolce-engrave",
  "dolce-formats",
- "dolce-geom",
  "dolce-layout-jianpu",
  "dolce-model",
  "dolce-omr-sheet",
  "dolce-omr-todoc",
  "dolce-play",
+ "dolce-scene",
  "dolce-session",
- "dolce-smufl",
  "dolce-text",
  "dolce-view",
- "dolce-xml",
  "js-sys",
  "serde",
  "serde_json",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "dolce-xml"
-version = "0.1.0"
-dependencies = [
- "dolce-base",
- "serde",
 ]
 
 [[package]]

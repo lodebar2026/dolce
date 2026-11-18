@@ -30,6 +30,7 @@ pub mod timeaxis;
 pub mod transcribe;
 pub mod toxml;
 pub mod tuplets;
+pub mod xml;
 pub mod xmlproject;
 pub mod xmlsurface;
 pub mod xmlsync;

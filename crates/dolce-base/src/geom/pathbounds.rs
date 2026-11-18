@@ -1,7 +1,7 @@
 //! SVG path `d` 的紧包围盒，照 `src/common/pathbounds.ts`：曲线按极值点算（不含控制点），同浏览器 `getBBox()`。
 //! 支持 M L H V C S Q T Z（含相对写法）；A 只计端点（页面树不产生弧）。算式次序与 TS 相同，结果逐位一致。
 
-use crate::Rect;
+use super::Rect;
 
 /// 三次 / 二次贝塞尔一个坐标分量在 (0,1) 内的极值参数。
 fn cubic_extrema(p0: f64, p1: f64, p2: f64, p3: f64) -> Vec<f64> {

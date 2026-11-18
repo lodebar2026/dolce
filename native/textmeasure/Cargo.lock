@@ -56,32 +56,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-geom"
-version = "0.1.0"
-dependencies = [
- "dolce-base",
- "serde",
-]
-
-[[package]]
 name = "dolce-text"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
- "dolce-geom",
- "serde",
- "serde_json",
- "ttf-parser",
-]
-
-[[package]]
-name = "dolce-text-native"
-version = "0.1.0"
-dependencies = [
- "dolce-text",
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-text",
+ "serde",
+ "serde_json",
+ "ttf-parser",
  "windows",
  "windows-core",
  "windows-numerics",
@@ -92,7 +76,6 @@ name = "dolce-textmeasure"
 version = "0.1.0"
 dependencies = [
  "dolce-text",
- "dolce-text-native",
  "napi",
  "napi-build",
  "napi-derive",

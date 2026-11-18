@@ -11,7 +11,7 @@ use dolce_engrave::jptremolo::{jp_tremolo_count, jp_tremolo_strokes};
 use dolce_engrave::prims::music_text;
 use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{high_dot_y, low_dot_y};
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_model::Accidental;
 use dolce_scene::{Identity, IdentityKind, Node, Role};
 use dolce_view::ast::{NoteElement, Ornament, Sound};

@@ -18,7 +18,7 @@ use dolce_engrave::Env;
 use dolce_model::doc::ScoreDoc;
 use dolce_scene::build::freeze;
 use dolce_scene::{Dialect, Page};
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 use dolce_style::staff::MixedOptions;
 use dolce_text::{MeasureCtx, ReplayMeasurer};
 use serde_json::Value;
@@ -120,7 +120,7 @@ pub fn staff_check(args: &[String]) -> i32 {
     let replay: Option<ReplayMeasurer> = (!native).then(|| {
         ReplayMeasurer::from_jsonl(&std::fs::read_to_string(mpath.unwrap()).expect("读量字录制")).expect("量字录制").with_path_fallback()
     });
-    let native_backend = native.then(|| dolce_text_native::node_measure(Some(&redist), &[]));
+    let native_backend = native.then(|| dolce_text::native::node_measure(Some(&redist), &[]));
     if native {
         TOL.get_or_init(|| 0.5);
     }

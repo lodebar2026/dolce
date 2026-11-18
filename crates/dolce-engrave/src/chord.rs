@@ -1,7 +1,7 @@
 //! 和弦符号的富文本分段与绘制（`engrave/chord.ts`）：SMuFL 和弦（缺省）与简单文本两种风格。
 //! 根音升降号用 csym 小号字形、后缀上标、`m` 留在基线、低音 `/G` 跟在后面。
 
-use dolce_geom::{Matrix33, Rect};
+use dolce_base::geom::{Matrix33, Rect};
 use dolce_model::harmony::chord_step_alter;
 use dolce_scene::{IdentityKind, Node};
 use dolce_text::Font;

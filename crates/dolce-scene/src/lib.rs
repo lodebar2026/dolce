@@ -8,12 +8,13 @@
 //! 按两种方言出 SVG（[`svg`]，与 TS `outerHTML` 逐字节相同）、规范化 dump 与比对（[`dump`]）。
 //! 构建期的造法与 `update` / 规范化语义在 [`build`]（L2 起）。
 
-use dolce_geom::{Matrix33, Point, Rect};
+use dolce_base::geom::{Matrix33, Point, Rect};
 use serde::{Deserialize, Serialize};
 
 pub mod build;
 pub mod dump;
 pub mod index;
+pub mod smufl;
 pub mod svg;
 
 /// 模型元素 id（`ScoreDoc` 的 `ElementId`）。

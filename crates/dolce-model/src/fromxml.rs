@@ -10,7 +10,7 @@ use crate::metakeys::add_meta;
 use crate::xmlsurface::{attr_num, child, child_num as num, child_text, children, read_font, split_face_name, Slot, Surface};
 use dolce_base::js;
 use dolce_base::Msg;
-use dolce_xml::{NodeId, Tree, XmlDoc};
+use crate::xml::{NodeId, Tree, XmlDoc};
 use std::collections::HashMap;
 
 /// 读好的一份：模型与它的表层（原树 + 绑定）
@@ -21,7 +21,7 @@ pub struct LoadedXml {
 
 /// MusicXML 文本 → `ScoreDoc`。读不出（XML 坏）回 `err.xmlParse`。
 pub fn load_score_doc(xml_text: &str) -> Result<LoadedXml, Msg> {
-    let xml = dolce_xml::parse(xml_text).map_err(|_| Msg::new("err.xmlParse"))?;
+    let xml = crate::xml::parse(xml_text).map_err(|_| Msg::new("err.xmlParse"))?;
     let mut r = score_doc_from_xml(xml);
     r.doc.source = Some(xml_text.to_owned());
     Ok(r)

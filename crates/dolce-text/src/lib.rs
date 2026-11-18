@@ -3,7 +3,7 @@
 //!
 //! 分三层，各自可换：
 //! - [`TextMeasurer`]：后端——「这串字在这个字体下多宽、墨在哪」，不缓存。实现有
-//!   [`BrowserCompat`]（套在系统文字引擎上，把结果折成浏览器的口径；桌面 / CLI 用 `dolce-text-native` 的 CoreText / DirectWrite）、
+//!   [`BrowserCompat`]（套在系统文字引擎上，把结果折成浏览器的口径；桌面 / CLI 用 `native` 模块（`native` 特性）的 CoreText / DirectWrite）、
 //!   [`ReplayMeasurer`]（回放 TS 录下的量字，迁移期把逻辑差与量字差分开），在线版将来是 wasm 导入的浏览器量法；
 //! - [`MeasureCtx`]：一次排版贯穿两引擎的量字上下文——按键缓存、`chws` 探测、挤压后的逐字笔位（取代 TS 全局的 `setMeasureBackend`）；
 //! - [`Font`]：族串 + 字号 + 粗斜，量法都经 `MeasureCtx`。
@@ -13,11 +13,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use serde::{Deserialize, Serialize};
 
 pub mod cjkpunct;
 mod compat;
+#[cfg(feature = "native")]
+pub mod native;
 pub mod own;
 mod replay;
 pub mod syllable;

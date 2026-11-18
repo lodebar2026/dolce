@@ -113,15 +113,15 @@ pub fn measure_check(args: &[String]) -> i32 {
         eprintln!("用法：dolce measure-check <measure.jsonl> [--redist=<目录>] [--show=N] [--webview]");
         return 2;
     };
-    if !dolce_text_native::NativeText::available() {
+    if !dolce_text::native::NativeText::available() {
         eprintln!("本平台没有系统文字引擎");
         return 2;
     }
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
     let backend = if args.iter().any(|a| a == "--webview") {
-        dolce_text_native::webview_measure(Some(&redist), &[])
+        dolce_text::native::webview_measure(Some(&redist), &[])
     } else {
-        dolce_text_native::node_measure(Some(&redist), &[])
+        dolce_text::native::node_measure(Some(&redist), &[])
     };
     let show = show_n(args);
     let mut by_op: HashMap<&'static str, (usize, usize, f64)> = HashMap::new();

@@ -18,7 +18,7 @@
 //!
 //! ## 量字与场景
 //!
-//! 量字走 `dolce_text::MeasureCtx`、SMuFL 元数据走 `dolce_smufl::MetaData`，两样合在 `dolce_scene::build::Env`。
+//! 量字走 `dolce_text::MeasureCtx`、SMuFL 元数据走 `dolce_scene::smufl::MetaData`，两样合在 `dolce_scene::build::Env`。
 //! 画出来的是 `dolce_scene::Node`（子节点次序与 TS 页面树一致，`dolce_engrave` 里已有的画法直接用）。
 //! 浮点运算的次序照 TS 写（回放下要逐位一致）；`Math.round` 用 `dolce_base::js::round`，`String(n)` 用 `dolce_base::js::num_to_string`。
 

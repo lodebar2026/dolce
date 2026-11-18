@@ -12,8 +12,8 @@ use windows::Win32::Graphics::DirectWrite::*;
 use windows_numerics::Vector2;
 use windows_core::{IUnknown, Ref};
 
-use crate::{cp_positions, Ink};
-use dolce_text::{Measured, RawFontMetrics as Metrics};
+use super::{cp_positions, Ink};
+use crate::{Measured, RawFontMetrics as Metrics};
 
 struct Dw {
     factory: IDWriteFactory2,
@@ -223,7 +223,7 @@ fn draw_runs(dw: &Dw, units: &[u16], families: &[String], size: f64, bold: bool,
 
 pub fn measure(text: &str, families: &[String], size: f64, bold: bool, italic: bool, features: &[String]) -> Measured {
     // WebView2 是 Chromium，不走 WebKit 口径；万一带了「不做字距调整」也只去掉（不是 OpenType 特性）
-    let (_, features) = dolce_text::split_no_kern(features);
+    let (_, features) = crate::split_no_kern(features);
     let features = &features[..];
     let n = text.chars().count();
     if text.is_empty() {
@@ -360,7 +360,7 @@ impl ID2D1SimplifiedGeometrySink_Impl for PathSink_Impl {
 
 pub fn outline(text: &str, families: &[String], size: f64, bold: bool, italic: bool, features: &[String]) -> String {
     // WebView2 是 Chromium，不走 WebKit 口径；万一带了「不做字距调整」也只去掉（不是 OpenType 特性）
-    let (_, features) = dolce_text::split_no_kern(features);
+    let (_, features) = crate::split_no_kern(features);
     let features = &features[..];
     if text.is_empty() {
         return String::new();

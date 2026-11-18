@@ -67,7 +67,7 @@ fn main() {
 }
 
 /// 序列化文本、`\0`、按文档序各元素的 `start-end,`（UTF-16）——与 `rs-diff.mjs` 的 TS 侧同口径。
-fn xml_digest(d: &dolce_xml::XmlDoc) -> String {
+fn xml_digest(d: &dolce_model::xml::XmlDoc) -> String {
     let mut h = Sha256::new();
     h.update(d.serialize().as_bytes());
     h.update(b"\0");
@@ -92,7 +92,7 @@ fn xml_dump() {
         }
         let bytes = std::fs::read(&file).unwrap_or_else(|e| panic!("读 {file}：{e}"));
         let text = String::from_utf8_lossy(&bytes);
-        let row = match dolce_xml::parse(&text) {
+        let row = match dolce_model::xml::parse(&text) {
             Ok(d) => serde_json::json!({ "file": file, "ok": true, "hash": xml_digest(&d) }),
             Err(e) => serde_json::json!({ "file": file, "ok": false, "message": e.message, "at": e.at }),
         };

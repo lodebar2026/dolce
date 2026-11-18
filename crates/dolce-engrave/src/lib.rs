@@ -39,7 +39,7 @@ pub mod upperband;
 
 /// SMuFL 字形名 → 一个字的串（`GlyphCodes.xxx`）。名字写错是编程错误，直接 panic。
 pub fn glyph(name: &str) -> String {
-    dolce_smufl::glyph_code(name).unwrap_or_else(|| panic!("没有这个 SMuFL 字形名：{name}")).to_string()
+    dolce_scene::smufl::glyph_code(name).unwrap_or_else(|| panic!("没有这个 SMuFL 字形名：{name}")).to_string()
 }
 
 /// 码位 → 一个字的串（`String.fromCharCode`，PUA 码位不在源码里写字面字符）。

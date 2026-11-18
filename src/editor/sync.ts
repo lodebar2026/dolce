@@ -34,7 +34,7 @@
 // ## `.musicxml` 另一种建法（`buildXml`）
 //
 // MusicXML 的模型不记原文位置，但编辑器里存的就是 XML 原文，`fromxml.ts` 又把每个模型对象绑在它的原节点上
-// （表层，在 Rust：`crates/dolce-model/src/xmlsync.rs`），而原节点记着自己在原文里的区间（`crates/dolce-xml` 的 `start`/`end`），直接取就是。
+// （表层，在 Rust：`crates/dolce-model/src/xmlsync.rs`），而原节点记着自己在原文里的区间（`crates/dolce-model/src/xml` 的 `start`/`end`），直接取就是。
 // 条目区间是整个元素（`<note>…</note>`），歌词取 `<text>` 里那几个字，
 // 小节线取 `</measure>`（MusicXML 里普通小节线没有元素，小节边界就是它），弧取 `<slur type="start">`。
 // 选区仍只存一份（代码区选区，只是代码区不显示），撤销还原选区也是代码区自带。

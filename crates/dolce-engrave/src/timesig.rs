@@ -1,6 +1,6 @@
 //! 分数式简谱拍号（`engrave/timesig.ts`）。一切长度都是小节线高 H 的比例；两个数字各离分数线一格（墨迹到墨迹）。
 
-use dolce_geom::{Point, Rect};
+use dolce_base::geom::{Point, Rect};
 use dolce_scene::Node;
 use dolce_text::Font;
 

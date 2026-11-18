@@ -15,7 +15,7 @@ use dolce_engrave::prims::text_item;
 use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{beam_y, high_dot_y, low_dot_y, stack_bottom};
 use dolce_engrave::timesig::{TimeSigGlyph, TimeSigStyle};
-use dolce_geom::Matrix33;
+use dolce_base::geom::Matrix33;
 use dolce_scene::build::Env;
 use dolce_scene::Node;
 use dolce_text::Font;

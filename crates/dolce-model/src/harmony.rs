@@ -159,8 +159,8 @@ fn sa_bytes(s: &str, sa: &ChordStepAlter) -> usize {
 }
 
 /// `"C♯m"` → `<harmony>` 树（解析不出根音就退回 `<direction><words>`）。`offset` 为本音符时值内的 divisions 数。
-pub fn harmony_el(t: &mut dolce_xml::Tree, chord: &str, offset: f64, font_size: Option<f64>) -> dolce_xml::NodeId {
-    use dolce_xml::Kid;
+pub fn harmony_el(t: &mut crate::xml::Tree, chord: &str, offset: f64, font_size: Option<f64>) -> crate::xml::NodeId {
+    use crate::xml::Kid;
     let src = js::trim(chord);
     let fs = font_size.filter(|f| *f != 0.0 && !f.is_nan()).map(js::num_to_string);
     let fs_attr = [("font-size", fs.as_deref())];
@@ -176,7 +176,7 @@ pub fn harmony_el(t: &mut dolce_xml::Tree, chord: &str, offset: f64, font_size: 
         rest = &rest[..slash];
     }
     let b = chord_step_alter(bass);
-    let alter_el = |t: &mut dolce_xml::Tree, tag: &str, sa: &ChordStepAlter| -> Option<dolce_xml::NodeId> {
+    let alter_el = |t: &mut crate::xml::Tree, tag: &str, sa: &ChordStepAlter| -> Option<crate::xml::NodeId> {
         let a = alter_of(&sa.acc);
         (a != 0.0).then(|| t.h(tag, &[("location", sa.left.then_some("left"))], [js::num_to_string(a)]))
     };
@@ -204,7 +204,7 @@ pub fn harmony_el(t: &mut dolce_xml::Tree, chord: &str, offset: f64, font_size: 
 
 /// 同 `harmony_el`，序列化成文本
 pub fn harmony_xml(chord: &str, offset: f64, font_size: Option<f64>) -> String {
-    let mut t = dolce_xml::Tree::new();
+    let mut t = crate::xml::Tree::new();
     let el = harmony_el(&mut t, chord, offset, font_size);
     t.serialize(el)
 }

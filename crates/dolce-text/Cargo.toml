@@ -1,15 +1,28 @@
 [package]
 name = "dolce-text"
-description = "悦谱 Dolce 排版的量字层（照 src/common/measure.ts、cjkpunct.ts、cli/textmeasure.node.ts 的口径层）：量字 trait、按键缓存的 MeasureCtx、标点挤压、浏览器口径层 BrowserCompat、回放 ReplayMeasurer。无平台依赖，能编到 wasm"
+description = "悦谱 Dolce 排版的量字层（照 src/common/measure.ts、cjkpunct.ts、cli/textmeasure.node.ts 的口径层）：量字 trait、按键缓存的 MeasureCtx、标点挤压、浏览器口径层 BrowserCompat、回放 ReplayMeasurer；native 特性带系统文字引擎（macOS CoreText / Windows DirectWrite）。不开 native 时无平台依赖，能编到 wasm"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
 dolce-base = { path = "../dolce-base" }
-dolce-geom = { path = "../dolce-geom" }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[features]
+# 系统文字引擎（`native` 模块）：桌面与命令行开；wasm 不开，量字回调浏览器
+native = ["dep:objc2-core-foundation", "dep:objc2-core-graphics", "dep:objc2-core-text", "dep:windows", "dep:windows-core", "dep:windows-numerics"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = { version = "0.3", optional = true, features = ["CFArray", "CFAttributedString", "CFDictionary", "CFError", "CFNumber", "CFString", "CFCGTypes", "CFURL"] }
+objc2-core-graphics = { version = "0.3", optional = true, features = ["CGPath"] }
+objc2-core-text = { version = "0.3", optional = true, features = ["CTFont", "CTFontDescriptor", "CTFontManager", "CTFontTraits", "CTLine", "CTRun", "CTStringAttributes", "objc2-core-graphics"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite", "Win32_System_Com"] }
+windows-core = { version = "0.62", optional = true }
+windows-numerics = { version = "0.3", optional = true }
 
 [build-dependencies]
 # 编译期读仓库带的乐谱字体抽表（build.rs），运行时不带

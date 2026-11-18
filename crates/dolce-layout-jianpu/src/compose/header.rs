@@ -5,7 +5,7 @@ use dolce_engrave::prims::text_item;
 use dolce_engrave::spacing::{AccidentalSide, EQ_PAD_EM};
 use dolce_engrave::timesig::{TimeSigGlyph, TimeSigStyle};
 use dolce_engrave::Env;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_scene::Node;
 use dolce_style::jianpustyle::HeaderFace;
 use dolce_text::Font;

@@ -3,12 +3,12 @@
 //! ascent/descent 取整（macOS 的 Times/Helvetica/Courier 再加 15% 行高）、单字 advance 向上取到 1/64 px、
 //! 相邻全角标点的缺省挤压（`text-spacing-trim`）、结果过一道 f32。
 //!
-//! 系统文字引擎本身在 `dolce-text-native`（实现 [`SystemText`]）；这里不碰平台。
+//! 系统文字引擎本身在 `native` 模块（`native` 特性，实现 [`SystemText`]）；这里不碰平台。
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use dolce_geom::{fround, path_bounds, Rect};
+use dolce_base::geom::{fround, path_bounds, Rect};
 
 use crate::cjkpunct::{code_points, punct_class, PunctClass};
 use crate::{svg_collapsed_text, FontMetrics, FontStyle, Positions, TextMeasurer, TextMetrics, Weight, HALT};

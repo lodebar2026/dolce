@@ -18,7 +18,7 @@ use dolce_base::fraction::Fraction;
 use dolce_base::js;
 use dolce_engrave::header::header_role_font;
 use dolce_engrave::upperband::{stack_upper_band, BandItem};
-use dolce_geom::Matrix33;
+use dolce_base::geom::Matrix33;
 use dolce_model::doc::Placement;
 use dolce_model::pagemeta::header_role_of_credit;
 use dolce_scene::{Identity, IdentityKind, Node};

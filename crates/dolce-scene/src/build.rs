@@ -14,8 +14,8 @@
 //!
 //! 盒只有 SMuFL 字会取不到（码位不在元数据里，TS 抛错）：[`bound`] 给 `None`，[`update`] 碰上就报 [`SceneError`]。
 
-use dolce_geom::{colors, Matrix33, Point, Rect};
-use dolce_smufl::MetaData;
+use dolce_base::geom::{colors, Matrix33, Point, Rect};
+use crate::smufl::MetaData;
 use dolce_text::{syllable::syllable_run, CompressMode, Font, MeasureCtx};
 
 use crate::{LineShape, Node, PathOp, PathSeg, PathShape, Role, Shape, SmuflShape, TextShape};
@@ -237,8 +237,8 @@ pub fn bound(n: &Node, env: &Env) -> Option<Rect> {
 fn bound_or_err(n: &Node, env: &Env) -> Result<Rect, SceneError> {
     bound(n, env).ok_or_else(|| {
         let c = n.text_ref().and_then(|t| t.text.chars().next());
-        match c.map(dolce_smufl::glyph_code_name) {
-            Some(None) => SceneError(dolce_smufl::UnknownGlyph(c.unwrap()).to_string()),
+        match c.map(crate::smufl::glyph_code_name) {
+            Some(None) => SceneError(crate::smufl::UnknownGlyph(c.unwrap()).to_string()),
             _ => SceneError("no smufl bbox".into()),
         }
     })

@@ -12,7 +12,7 @@ use dolce_engrave::jpslide::{jp_slide_arrow, jp_slide_of};
 use dolce_engrave::jptremolo::{jp_tremolo_count, jp_tremolo_strokes};
 use dolce_engrave::syllable::latin_word_break;
 use dolce_engrave::timesig::time_sig_width;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_view::ast::{BarlineElement, Meter, MusicElement, Sound};
 
 use crate::barspec::fanqie_barline_spec;

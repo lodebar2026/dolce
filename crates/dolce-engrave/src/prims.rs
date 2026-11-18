@@ -1,6 +1,6 @@
 //! 落笔小件（`engrave/prims.ts`）：文字、直线、填充矩形、描边路径、SMuFL 字形文字与它的墨迹盒。
 
-use dolce_geom::{Point, Rect};
+use dolce_base::geom::{Point, Rect};
 use dolce_scene::Node;
 use dolce_text::{CompressMode, Font};
 

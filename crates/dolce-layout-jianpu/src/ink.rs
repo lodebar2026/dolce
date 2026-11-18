@@ -4,7 +4,7 @@ use dolce_engrave::chord::{chord_text_segs, harmony_ink, harmony_width};
 use dolce_engrave::sectionword::section_word_run;
 use dolce_engrave::spacing::AccidentalSide;
 use dolce_engrave::Env;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_text::syllable::syllable_run;
 use dolce_text::{CompressMode, Font};
 use dolce_view::ast::LyricSyllable;

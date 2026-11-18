@@ -4,7 +4,7 @@ use dolce_engrave::arc::{slur_tie, ArcKind, SlurStyle};
 use dolce_engrave::ending::{add_ending_bracket, ending_drop, ending_label_dx, EndingBracket, EndingLabel};
 use dolce_engrave::hairpin::{hairpin_path, jp_hairpin, jp_hairpin_halves, jp_hairpin_line_width, HairpinSpec};
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
-use dolce_geom::Point;
+use dolce_base::geom::Point;
 use dolce_scene::build::update;
 use dolce_scene::{Identity, IdentityKind, Node};
 use dolce_view::ast::MarkType;

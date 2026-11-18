@@ -15,7 +15,6 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 
 | crate | 作用 |
 |---|---|
-| `crates/omr-build` | 构建脚本工具：`fingerprint(名, 目录…)` 按源码目录算阶段代码指纹，导出 `OMR_CODE_<名>`（阶段缓存键的一部分；上游 crate 的目录要一并列上） |
 | `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout；web 的 `scripts/omr-cli.mjs` 与 OMR 分发包起它、再用 TS 写出端转格式）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
 | `crates/omr-engine` | 三端共用的入口：`Doc`（打开 PDF / 图片，几个文件合成一份；页尺寸、整页渲染）、`recognize`（判路：先按五线谱认，一页谱表都没有再走简谱；进度与取消）、`staff_binary`（核对底图）、`insert` / `region`（点图补认、框选重认）；`Handle`（文档句柄：桌面版 Tauri 命令与网页版 wasm 都是它外面的薄壳，请求与回应的字节 / JSON 格式两边一样）。页级并行在特性 `parallel` 后面，wasm 下关 |
 | `crates/omr-wasm` | 网页版绑定（wasm-bindgen，`scripts/build-wasm.mjs` 编进 `public/redist/omr/`，Worker `src/omrrust/worker.ts` 里跑）：`OmrDoc`（与 Tauri 命令一一对应）、`load_ocr`（OCR 用 tract 推理同一份 ONNX）、`set_pdfium_module` |

@@ -16,7 +16,7 @@ use dolce_engrave::hairpin::{hairpin_path, HairpinSpec};
 use dolce_engrave::prims::{fill_rect, text_item};
 use dolce_engrave::spacing::AccidentalSide;
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
-use dolce_geom::{Matrix33, Point};
+use dolce_base::geom::{Matrix33, Point};
 use dolce_model::doc::BarStyle;
 use dolce_scene::build::Env;
 use dolce_scene::{Edge, ElementId, Identity, IdentityKind, Node};

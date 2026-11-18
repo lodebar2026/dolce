@@ -1,7 +1,7 @@
 //! 花括号（连谱号、并排块、词括号）的轮廓路径（照 `compose/brace.ts` 与 `braceglyphs.ts`）。
 
 use dolce_engrave::jpglyph::bracket;
-use dolce_geom::Matrix33;
+use dolce_base::geom::Matrix33;
 use dolce_scene::{Node, PathOp, PathSeg};
 
 use super::ctx::{font, rect, text, Ctx};

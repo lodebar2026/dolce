@@ -35,9 +35,7 @@ dolce-scene = { path = "../crates/dolce-scene" }
 dolce-session = { path = "../crates/dolce-session" }
 dolce-model = { path = "../crates/dolce-model" }
 dolce-engrave = { path = "../crates/dolce-engrave" }
-dolce-smufl = { path = "../crates/dolce-smufl" }
-dolce-text = { path = "../crates/dolce-text" }
-dolce-text-native = { path = "../crates/dolce-text-native" }
+dolce-text = { path = "../crates/dolce-text", features = ["native"] }
 dolce-layout-jianpu = { path = "../crates/dolce-layout-jianpu" }
 bincode = "1.3"
 # OCR 推理走原生 onnxruntime（crates/omr-ocr 的 native 特性；比浏览器 wasm 多线程快 ~3×），会话池在 src/omr.rs。

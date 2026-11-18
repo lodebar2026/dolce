@@ -11,7 +11,7 @@ use dolce_engrave::Env;
 use dolce_model::doc::ScoreDoc;
 use dolce_model::xmlsurface::Surface;
 use dolce_session::layout::{layout_jianpu_doc, layout_staff_doc, Laid};
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 use dolce_text::{MeasureCtx, SystemText};
 use serde::Deserialize;
 use serde_json::json;
@@ -37,7 +37,7 @@ fn unhex(s: &str) -> Result<Vec<u8>, String> {
 
 /// 页上 `font-family="…"` 里各族都不在系统（也不是泛称）的那些族串。
 fn missing_families(svgs: &[String]) -> Vec<String> {
-    let sys = dolce_text_native::NativeText;
+    let sys = dolce_text::native::NativeText;
     let mut out: Vec<String> = Vec::new();
     for svg in svgs {
         for part in svg.split("font-family=\"").skip(1) {
@@ -77,9 +77,9 @@ pub fn layout_wire(args: &[String]) -> i32 {
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
     let backend = if args.iter().any(|a| a == "--webview") {
-        dolce_text_native::webview_measure(Some(&redist), &[])
+        dolce_text::native::webview_measure(Some(&redist), &[])
     } else {
-        dolce_text_native::node_measure(Some(&redist), &[])
+        dolce_text::native::node_measure(Some(&redist), &[])
     };
     let mc = MeasureCtx::new(&backend);
     let meta = MetaData::from_json(&std::fs::read_to_string(redist.join("bravura_metadata.json")).expect("读 SMuFL 元数据")).expect("SMuFL 元数据");

@@ -10,10 +10,10 @@
 use std::cell::RefCell;
 
 use dolce_engrave::Env;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_model::doc::ScoreDoc;
 use dolce_session::layout::{self, JianpuRequest, Laid, StaffRequest};
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 use dolce_text::{FontMetrics, FontStyle, MeasureCtx, Positions, TextMeasurer, TextMetrics, Weight};
 use wasm_bindgen::prelude::*;
 

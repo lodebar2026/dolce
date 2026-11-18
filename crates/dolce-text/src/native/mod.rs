@@ -4,13 +4,13 @@
 //!
 //! 其它平台没有实现（[`NativeText::available`] 为 false，量什么都给 0）；字体文件回退（fontdb）留到导出期一起做。
 //!
-//! 坐标口径同 `dolce-text`：基线 y = 0、向下为正，单位 px。原先是 `native/textmeasure` 的 N-API 模块，
+//! `native` 特性才编。坐标口径同本 crate：基线 y = 0、向下为正，单位 px。原先是 `native/textmeasure` 的 N-API 模块，
 //! 现在那边只剩 napi 外壳调这里（Node 侧 TS 排版在 H 期前仍用它）。
 //!
-//! 浏览器口径（泛称展开、取整、1/64、缺省挤压）不在这层，见 `dolce_text::BrowserCompat`；
+//! 浏览器口径（泛称展开、取整、1/64、缺省挤压）不在这层，见 [`crate::BrowserCompat`]；
 //! [`node_measure`] 装好两层，等价于 TS 的 `nodeMeasure()`。
 
-use dolce_text::{BrowserCompat, Engine, Measured, Platform, RawFontMetrics, SystemText};
+use crate::{BrowserCompat, Engine, Measured, Platform, RawFontMetrics, SystemText};
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -178,7 +178,7 @@ impl Ink {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
-    use dolce_text::{FontStyle, TextMeasurer, Weight};
+    use crate::{FontStyle, TextMeasurer, Weight};
 
     #[test]
     fn pingfang_digit() {

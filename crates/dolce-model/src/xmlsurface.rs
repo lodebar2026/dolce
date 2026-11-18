@@ -6,7 +6,7 @@
 
 use crate::doc::*;
 use dolce_base::js;
-use dolce_xml::{NodeId, Tree, XmlDoc};
+use crate::xml::{NodeId, Tree, XmlDoc};
 use std::collections::HashMap;
 
 /// 绑定槽位：缺省 `""`；`Part` 另有 `"score-part"`；`Mark` 有 `"start"` / `"stop"`；`Direction` 另有 `"part"`。

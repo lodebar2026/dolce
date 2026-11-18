@@ -1,7 +1,7 @@
 //! 简谱临时记号（数字左边的 ♭ ♯ ♮，`engrave/accidental.ts`）。两种样子：`csym`（缺省，按**数字墨迹盒**的比例定位，
 //! 换字体字号都跟着走）与 `classic`（原先旧简谱引擎那样，成书照原书用它）。位置一律按墨迹。
 
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_scene::Node;
 use dolce_text::Font;
 

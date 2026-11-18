@@ -228,7 +228,7 @@ mod tests {
         fn font_metrics(&self, _: &str, _: f64, _: dolce_text::Weight, _: dolce_text::FontStyle) -> dolce_text::FontMetrics {
             unreachable!()
         }
-        fn path_bounds(&self, _: &str) -> dolce_geom::Rect {
+        fn path_bounds(&self, _: &str) -> dolce_base::geom::Rect {
             unreachable!()
         }
     }

@@ -1,6 +1,6 @@
 //! 增时线「-」（`engrave/dash.ts`）：矢量横线，尺寸取数字字体「-」的墨迹（线宽 = 墨迹高、半长 = 墨迹半宽），墨心落在 (cx, cy)。
 
-use dolce_geom::Point;
+use dolce_base::geom::Point;
 use dolce_scene::Node;
 use dolce_text::Font;
 

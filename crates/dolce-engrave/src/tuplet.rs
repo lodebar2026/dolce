@@ -1,6 +1,6 @@
 //! 连音（三连音等）的画法（`engrave/tuplet.ts`）：括号 / 两段弧 / 只印数字。数字是 SMuFL tuplet 字形，按墨迹居中。
 
-use dolce_geom::{Point, Rect};
+use dolce_base::geom::{Point, Rect};
 use dolce_scene::build::update;
 use dolce_scene::Node;
 use dolce_text::Font;

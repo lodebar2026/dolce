@@ -1,7 +1,7 @@
 //! 混排渲染的落笔小工具（线、SMuFL 字形、平移组）（照 `prims.ts`）。五线谱层（`render`）与简谱叠层（`overlay`）共用。
 
 use dolce_engrave::prims::{line_item, text_item};
-use dolce_geom::Matrix33;
+use dolce_base::geom::Matrix33;
 use dolce_scene::build::Env;
 use dolce_scene::{ElementId, Identity, IdentityKind, Node};
 use dolce_text::Font;

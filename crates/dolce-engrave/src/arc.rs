@@ -1,7 +1,7 @@
 //! 弧线（圆滑线 / 延音线，及三连音的两段弧，`engrave/arc.ts`）：样式参数、弧高与控制点两个纯函数、简谱弧的定位小件，
 //! 以及月牙形图元本身（`Slur` / `Tie`：填充 + 描边、扁平长连音线、断口）。
 
-use dolce_geom::Point;
+use dolce_base::geom::Point;
 use dolce_scene::{Node, Role};
 
 use crate::Env;

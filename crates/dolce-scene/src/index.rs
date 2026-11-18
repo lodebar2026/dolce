@@ -14,7 +14,7 @@
 //! `m` 本地 → 页面（SVG 用户坐标）的仿射，`bound` 子树各图元排版盒的并（文字取字体盒，同 DOM `getBBox` 的口径），
 //! `ink` 子树墨迹的并（文字按字形实量、SMuFL 字按元数据紧盒、线与路径同 `bound`），都是页面坐标。
 
-use dolce_geom::{Matrix33, Rect};
+use dolce_base::geom::{Matrix33, Rect};
 use serde::Serialize;
 
 use crate::build::{bound, Env};
@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(ink, Some(Rect::new(17.0, 6.0, 40.0, 28.0)));
         let note = &hits[0];
         // 本地 (x, y) → (2x + 15, 2y + 20)
-        assert_eq!(note.m.unwrap().map_point(1.0, 1.0), dolce_geom::Point::new(17.0, 22.0));
+        assert_eq!(note.m.unwrap().map_point(1.0, 1.0), dolce_base::geom::Point::new(17.0, 22.0));
         assert_eq!(note.bound, Some(Rect::new(15.0, 2.0, 27.0, 26.0))); // 字体盒 [0,-9,6,3]
         assert_eq!(note.ink, Some(Rect::new(17.0, 6.0, 25.0, 20.0))); // 墨迹 [1,-7,5,0]
         let bar = &hits[1];

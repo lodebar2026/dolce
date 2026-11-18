@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use dolce_base::fraction::Fraction;
 use dolce_base::js;
 use dolce_engrave::arc::calc_slur_points;
-use dolce_geom::Point;
+use dolce_base::geom::Point;
 
 use super::*;
 use crate::jprow::grace_block_top;

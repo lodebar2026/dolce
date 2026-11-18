@@ -203,7 +203,7 @@ pub fn style_check(args: &[String]) -> i32 {
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
-    let backend = dolce_text_native::node_measure(Some(&redist), &[]);
+    let backend = dolce_text::native::node_measure(Some(&redist), &[]);
     let mc = MeasureCtx::new(&backend);
     let show = show_n(args);
     let mut by_kind: BTreeMap<String, (usize, usize)> = BTreeMap::new();

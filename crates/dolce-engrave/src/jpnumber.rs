@@ -1,7 +1,7 @@
 //! 简谱数字与挂在数字上的图元（`engrave/jpnumber.ts`）：数字 `JpNumber`、八度点 / 附点 `JpOctaveDot`、减时线 `BeamLine`。
 //! 在场景里是带角色的叶子；TS 记的「附点挂在哪个数字上」「减时线两端接哪两个数字」只给 PPTX 用，到导出期（L7）再定怎么带。
 
-use dolce_geom::{Point, Rect};
+use dolce_base::geom::{Point, Rect};
 use dolce_scene::{Node, Role};
 use dolce_text::Font;
 

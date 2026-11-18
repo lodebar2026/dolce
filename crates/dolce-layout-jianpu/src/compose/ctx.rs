@@ -10,7 +10,7 @@ use dolce_engrave::dot::jp_dot;
 use dolce_engrave::jpnumber::{jp_number, jp_octave_dot};
 use dolce_engrave::prims::{fill_rect, stroke_path, text_item};
 use dolce_engrave::Env;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_scene::{Identity, IdentityKind, Node};
 use dolce_style::ss::Region;
 use dolce_text::Font;

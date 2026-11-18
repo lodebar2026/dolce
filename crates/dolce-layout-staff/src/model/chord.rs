@@ -4,7 +4,7 @@ use dolce_base::fraction::Fraction;
 use dolce_base::js;
 use dolce_model::doc::{Chord as DocChord, Element, Note as DocNote};
 use dolce_model::jianpu::beam_count;
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 
 use super::*;
 

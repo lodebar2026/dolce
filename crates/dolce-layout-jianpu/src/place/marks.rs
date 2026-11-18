@@ -4,7 +4,7 @@ use dolce_engrave::arc::{arc_clear_shift, arc_rise, jp_arc_y, slur_tie, ArcKind,
 use dolce_engrave::dynamics::DYNAMIC_SIZE;
 use dolce_engrave::hairpin::jp_hairpin;
 use dolce_engrave::jpglyph::dynamic;
-use dolce_geom::Point;
+use dolce_base::geom::Point;
 use dolce_view::ast::{Mark, MarkType, MusicElement, ScoreLine};
 
 use crate::grid::{jianpu_slur_rise, jianpu_slur_style, JianpuGrid};

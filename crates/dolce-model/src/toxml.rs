@@ -16,7 +16,7 @@ use crate::xmlproject::{has_tie_syntax, project_for_music_xml, ProjectOptions};
 use crate::xmlsurface::{EngravedLayout, Position, PrintLayout, Slot, Surface, SystemLayout};
 use dolce_base::js;
 use dolce_base::Msg;
-use dolce_xml::{escape_attr, escape_text, NodeId, Tree};
+use crate::xml::{escape_attr, escape_text, NodeId, Tree};
 use std::collections::HashMap;
 
 /// 一层缩进两格

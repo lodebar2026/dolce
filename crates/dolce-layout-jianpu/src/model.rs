@@ -6,7 +6,7 @@
 
 use std::rc::Rc;
 
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_view::ast::{InlineLayerElement, LyricSyllable, Mark, MusicElement, ScoreLine};
 
 use crate::grid::JianpuGrid;

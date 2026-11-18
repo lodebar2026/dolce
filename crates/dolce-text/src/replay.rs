@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use serde::{Deserialize, Serialize};
 
 use crate::{feature_settings, FontMetrics, FontStyle, Positions, TextMeasurer, TextMetrics, Weight};

@@ -1,7 +1,7 @@
 //! 简谱调号「1=♭B」/ 曲中转调「转1=D」（`engrave/keysig.ts`）。画法照混排：「1=」是文字，升降号是 SMuFL 的 csym 小号字形、抬高；
 //! 缺省写在音名**之前**，`accidental-side: after` 写在后。
 
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_scene::Node;
 use dolce_text::Font;
 

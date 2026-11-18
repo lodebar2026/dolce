@@ -15,15 +15,11 @@ oldpdf = ["dep:svg2pdf"]
 
 [dependencies]
 dolce-base = { path = "../dolce-base" }
-dolce-xml = { path = "../dolce-xml" }
 dolce-scene = { path = "../dolce-scene" }
-dolce-text = { path = "../dolce-text" }
-dolce-text-native = { path = "../dolce-text-native" }
+dolce-text = { path = "../dolce-text", features = ["native"] }
 dolce-style = { path = "../dolce-style" }
 dolce-model = { path = "../dolce-model" }
 dolce-engrave = { path = "../dolce-engrave" }
-dolce-geom = { path = "../dolce-geom" }
-dolce-smufl = { path = "../dolce-smufl" }
 dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
 dolce-layout-staff = { path = "../dolce-layout-staff" }
 dolce-book = { path = "../dolce-book" }

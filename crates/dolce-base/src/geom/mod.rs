@@ -7,7 +7,7 @@
 //!   `isIdentity` 只看前 6 元，`toSvg` 按 `a b c d e f` 次序写、数按 JS `String(number)`；
 //! - 颜色是 ARGB 整数，按 `>>>` 取各分量（负数、超 2^32 的都按 ToUint32 回绕）。
 
-use dolce_base::js::{num_to_string, to_fixed};
+use crate::js::{num_to_string, to_fixed};
 use serde::{Deserialize, Serialize};
 
 mod pathbounds;
@@ -98,7 +98,7 @@ impl Rect {
         if self.is_empty() {
             return *rr;
         }
-        use dolce_base::js::{max, min};
+        use crate::js::{max, min};
         Rect::new(min(self.left, rr.left), min(self.top, rr.top), max(self.right, rr.right), max(self.bottom, rr.bottom))
     }
     pub fn contains(&self, x: f64, y: f64) -> bool {
@@ -203,7 +203,7 @@ pub mod colors {
 
 /// ToUint32（`x >>> 0`）。
 fn to_uint32(x: f64) -> u32 {
-    dolce_base::js::to_int32(x) as u32
+    crate::js::to_int32(x) as u32
 }
 
 /// `colorToCss`：不透明写 `rgb(r,g,b)`，否则 `rgba(r,g,b,a)`（a 取三位小数）。

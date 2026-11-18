@@ -7,8 +7,6 @@ publish.workspace = true
 
 [dependencies]
 dolce-base = { path = "../dolce-base" }
-dolce-geom = { path = "../dolce-geom" }
-dolce-smufl = { path = "../dolce-smufl" }
 dolce-text = { path = "../dolce-text" }
 dolce-scene = { path = "../dolce-scene" }
 dolce-model = { path = "../dolce-model" }

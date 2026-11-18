@@ -2,7 +2,7 @@
 //! 这里只把一行里的符号换算成它要的几何——横向撑开（spacing）与真正摆（band）用同一个换算。
 
 use dolce_engrave::sectionword::{place_section_word, section_word_hang_left, SectionChord, SectionWordGeom, SectionWordSlot};
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_view::ast::MusicElement;
 
 use crate::grid::JianpuGrid;

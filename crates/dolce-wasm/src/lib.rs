@@ -72,7 +72,7 @@ impl Session {
 #[cfg(feature = "probe")]
 #[wasm_bindgen(js_name = xmlDigest)]
 pub fn xml_digest(text: &str) -> String {
-    match dolce_xml::parse(text) {
+    match dolce_model::xml::parse(text) {
         Ok(d) => {
             let mut spans = String::new();
             let mut stack = vec![d.root];

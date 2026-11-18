@@ -16,8 +16,8 @@ use objc2_core_text::{
     kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue, CTFont, CTFontDescriptor, CTFontManagerCreateFontDescriptorsFromURL, CTFontSymbolicTraits, CTLine, CTRun,
 };
 
-use crate::{cp_positions, Ink};
-use dolce_text::{Measured, RawFontMetrics as Metrics};
+use super::{cp_positions, Ink};
+use crate::{Measured, RawFontMetrics as Metrics};
 
 thread_local! {
     /// (族, 粗, 斜) → 解析到的字体（字号 1，用时按字号复制）；None = 系统里没有这个族
@@ -171,7 +171,7 @@ fn line_for(text: &str, font: &CTFont, features: &[String], no_kern: bool) -> CF
 }
 
 pub fn measure(text: &str, families: &[String], size: f64, bold: bool, italic: bool, features: &[String]) -> Measured {
-    let (no_kern, features) = dolce_text::split_no_kern(features);
+    let (no_kern, features) = crate::split_no_kern(features);
     let features = &features[..];
     let n = text.chars().count();
     let Some(font) = font_for(families, size, bold, italic, features) else {
@@ -289,7 +289,7 @@ unsafe extern "C-unwind" fn push_element(info: *mut std::ffi::c_void, el: NonNul
 }
 
 pub fn outline(text: &str, families: &[String], size: f64, bold: bool, italic: bool, features: &[String]) -> String {
-    let (no_kern, features) = dolce_text::split_no_kern(features);
+    let (no_kern, features) = crate::split_no_kern(features);
     let features = &features[..];
     let Some(font) = font_for(families, size, bold, italic, features) else { return String::new() };
     if text.is_empty() {

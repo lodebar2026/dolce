@@ -14,7 +14,7 @@ use crate::layout::{flag, positional, show_n};
 use dolce_book::measure::ReplayBookMeasure;
 use dolce_book::rebuild::{rebuild, RebuildInput};
 use dolce_engrave::Env;
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 use dolce_text::{MeasureCtx, ReplayMeasurer};
 use serde_json::Value;
 use std::path::Path;
@@ -81,7 +81,7 @@ pub fn book_rebuild(args: &[String]) -> i32 {
         }
         None => vec![],
     };
-    let native_backend = native.then(|| dolce_text_native::node_measure(Some(&redist), &files));
+    let native_backend = native.then(|| dolce_text::native::node_measure(Some(&redist), &files));
     if native {
         TOL.get_or_init(|| 0.5);
     }

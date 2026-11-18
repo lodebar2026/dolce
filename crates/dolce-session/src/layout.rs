@@ -7,7 +7,7 @@
 //! 宿主无关：量字上下文与 SMuFL 元数据由宿主给（[`Env`]）——网页 wasm 接浏览器量字、桌面原生量字、命令行原生或回放。
 
 use dolce_engrave::Env;
-use dolce_geom::Rect;
+use dolce_base::geom::Rect;
 use dolce_layout_jianpu::compose::{layout_jianpu, JianpuConfig, JianpuLayout};
 use dolce_layout_jianpu::grid::GridPage;
 use dolce_layout_jianpu::place::reflow::NaturalSpan;

@@ -7,7 +7,6 @@ publish.workspace = true
 
 [dependencies]
 dolce-base = { path = "../dolce-base" }
-dolce-xml = { path = "../dolce-xml" }
 dolce-play = { path = "../dolce-play" }
 serde.workspace = true
 indexmap = { version = "2", features = ["serde"] }

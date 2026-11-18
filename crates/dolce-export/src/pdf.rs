@@ -54,7 +54,7 @@ impl Affine {
         Affine([s, 0.0, 0.0, s, 0.0, 0.0])
     }
     /// 场景节点的矩阵（`Matrix33` 行主序 9 元）
-    pub fn of_matrix(m: &dolce_geom::Matrix33) -> Affine {
+    pub fn of_matrix(m: &dolce_base::geom::Matrix33) -> Affine {
         let a = &m.mat;
         Affine([a[0], a[3], a[1], a[4], a[2], a[5]])
     }

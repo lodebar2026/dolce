@@ -1,6 +1,6 @@
 //! 琶音（`engrave/arpeggio.ts`）：竖着的波浪线，`wiggleTrillSlow` 一段段横着拼、整串转 90°。
 
-use dolce_geom::Matrix33;
+use dolce_base::geom::Matrix33;
 use dolce_scene::Node;
 use dolce_text::Font;
 

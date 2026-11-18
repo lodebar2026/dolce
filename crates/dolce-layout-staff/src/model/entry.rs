@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use dolce_base::fraction::Fraction;
 use dolce_base::js::{self, NumKey};
-use dolce_smufl::MetaData;
+use dolce_scene::smufl::MetaData;
 
 use super::*;
 
