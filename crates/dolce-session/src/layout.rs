@@ -284,3 +284,270 @@ pub fn measure_document(doc: &ScoreDoc, style: &Option<Value>, width: f64, slide
     let r = layout_jianpu(&clone, &cfg, env);
     Ok(r.spans.unwrap_or((0.0, Vec::new())))
 }
+
+// ---------------------------------------------------------------- 导出 MusicXML 的版面
+
+/// 导出版面请求（TS `sourceMusicXml` → `engraveScoreDoc`）：纸同屏幕上的五线谱；`sourceBreaks` 同 `StaffRequest`。
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct EngraveRequest {
+    pub page: Option<StaffPage>,
+    pub source_breaks: bool,
+}
+
+/// 导出版面给没有身份的对象现发的号（与表层的号错开，同 TS `rustdoc.ts::freshOid`）
+const FRESH_OID: u32 = 0x4000_0000;
+
+/// `doc` 第一首经唯一写出端投成 MusicXML，带上五线谱引擎排出来的版面（与屏幕上的五线谱同一套分行、坐标）：
+/// 纸、标题块、换行、弧朝向写回（拷贝的）模型，坐标、小节宽、系统间距、符干交给写出端（`EngravedLayout`）。
+/// 谱里已带版面（`<defaults>`）、或排出来不是自动铺排的，不加版面原样写。
+pub fn engraved_music_xml(doc: &ScoreDoc, surface: Option<&Surface>, req: &EngraveRequest, env: &Env) -> Result<String, String> {
+    use dolce_model::toxml::{score_doc_to_music_xml, ToXmlOptions};
+    let mut doc = doc.clone();
+    let mut layout = None;
+    if let Some(song) = doc.songs.first_mut().filter(|s| s.defaults.is_none()) {
+        dolce_model::helpers::stamp_oids(song, FRESH_OID);
+        if let Some((patch, lay)) = engrave_song(song, surface, req, env)? {
+            patch.apply(song);
+            layout = Some(lay);
+        }
+    }
+    let o = ToXmlOptions { project: Default::default(), song: 0, source_ids: false, layout: layout.as_ref(), rids: None };
+    score_doc_to_music_xml(&doc, surface, &o).map_err(|m| m.key)
+}
+
+/// 要写回模型的那几样（排版借着模型，排完才能改）。
+struct SongPatch {
+    defaults: dolce_model::doc::Defaults,
+    credits: Vec<dolce_model::doc::Credit>,
+    /// 各系统首小节（全曲下标）与换不换页（`None` = 第一个系统）
+    breaks: Vec<(usize, Option<bool>)>,
+    /// 没写朝向的圆滑线（`song.marks` 下标）排在上方没有
+    slurs: Vec<(usize, bool)>,
+}
+
+impl SongPatch {
+    fn apply(self, song: &mut dolce_model::doc::Song) {
+        use dolce_model::doc::{Placement, Print};
+        song.defaults = Some(self.defaults);
+        song.credits = Some(self.credits);
+        // 换行一律按排出来的，源文带来的换行先清掉
+        for m in song.parts.iter_mut().flat_map(|p| p.measures.iter_mut()) {
+            if let Some(pr) = &mut m.print {
+                pr.new_system = None;
+                pr.new_page = None;
+                if *pr == (Print { oid: pr.oid, ..Print::default() }) {
+                    m.print = None;
+                }
+            }
+        }
+        for (mi, new_page) in self.breaks {
+            for part in &mut song.parts {
+                let Some(m) = part.measures.get_mut(mi) else { continue };
+                let pr = m.print.get_or_insert_with(Print::default);
+                match new_page {
+                    Some(true) => pr.new_page = Some(true),
+                    Some(false) => pr.new_system = Some(true),
+                    None => {}
+                }
+            }
+        }
+        for (i, above) in self.slurs {
+            song.marks[i].placement = Some(if above { Placement::Above } else { Placement::Below });
+        }
+    }
+}
+
+fn r1(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
+/// 排一遍、读出导出版面（TS `xmllayout.ts::writeLayout`）。排出来不是自动铺排、或多小节休止并过（排的不是这份模型）时回 None。
+fn engrave_song(
+    song: &dolce_model::doc::Song,
+    surface: Option<&Surface>,
+    req: &EngraveRequest,
+    env: &Env,
+) -> Result<Option<(SongPatch, dolce_model::xmlsurface::EngravedLayout)>, String> {
+    use dolce_layout_staff::model::Lcr;
+    use dolce_layout_staff::{pages, read};
+    use dolce_model::doc::{Credit, Defaults, HAlign, MarkType, PageLayout, PageMargins, OddEven, Scaling};
+    use dolce_model::xmlsurface::{EngravedLayout, Position, PrintLayout, StaffLayout as StaffSpacing, SystemLayout};
+    use std::collections::HashMap;
+
+    let std::borrow::Cow::Borrowed(song) = read::prepare_song(song) else { return Ok(None) };
+    let meta = env.meta.ok_or("没有 SMuFL 元数据")?;
+    let mut options = staff_options_of(None);
+    options.hide_bar_number = false;
+    options.page = req.page.clone();
+    options.source_breaks = req.source_breaks;
+    let mut score = read::layout_staff(song, surface, options, meta, env.mc, &mut |_, _| {});
+    let (_, placed) = pages::layout_staff_pages(&mut score, false, 0);
+    if !score.auto_layout {
+        return Ok(None);
+    }
+
+    let mut out = EngravedLayout::default();
+    fn at(out: &mut EngravedLayout, oid: dolce_model::doc::Oid, set: Position) {
+        let p = out.pos.entry(oid).or_default();
+        if set.default_x.is_some() {
+            p.default_x = set.default_x;
+        }
+        if set.default_y.is_some() {
+            p.default_y = set.default_y;
+        }
+    }
+    let d = &score.defaults;
+    let defaults = Defaults {
+        scaling: Some(Scaling { millimeters: 7.0, tenths: 40.0 }), // = DEFAULT_SCALING：自动铺排的谱都按它排
+        page_layout: Some(PageLayout {
+            page_width: Some(r1(d.page_width)),
+            page_height: Some(r1(d.page_height)),
+            margins: Some(vec![PageMargins { left: d.left_margin, right: d.right_margin, top: d.top_margin, bottom: d.bottom_margin, odd_even: Some(OddEven::Both) }]),
+        }),
+        ..Defaults::default()
+    };
+    out.system_layout = Some(SystemLayout { left_margin: Some(0.0), right_margin: Some(0.0), ..SystemLayout::default() });
+    // 标题块：`autoLayoutHeader` 排的，已含标题那条（MuseScore 只要有 <credit> 就不再看 <work-title>）
+    let credits = score
+        .credits
+        .iter()
+        .map(|c| Credit {
+            kind: c.r#type.clone(),
+            text: c.text.clone(),
+            x: Some(r1(c.x)),
+            y: Some(r1(c.y)),
+            font_size: (c.font_size > 0.0).then_some(c.font_size),
+            justify: Some(match c.justify {
+                Lcr::Center => HAlign::Center,
+                Lcr::Right => HAlign::Right,
+                Lcr::Left => HAlign::Left,
+            }),
+            page: Some(c.page + 1.0),
+            ..Credit::default()
+        })
+        .collect();
+
+    // 分行分页与系统间距
+    let mut breaks = Vec::new();
+    for (i, pl) in placed.iter().enumerate() {
+        let sys = &score[pl.sys];
+        let prev = i.checked_sub(1).map(|j| &placed[j]);
+        let new_page = i > 0 && prev.is_some_and(|p| p.page != pl.page);
+        breaks.push((sys.first_measure, if i == 0 { None } else { Some(new_page) }));
+        let mut staff = 0;
+        for (pi, part) in song.parts.iter().enumerate() {
+            let Some(m) = part.measures.get(sys.first_measure) else { continue };
+            let layout = &score.parts[pi];
+            let staff_layouts: Vec<StaffSpacing> = (0..layout.staves.len())
+                .filter_map(|k| {
+                    let st = sys.staves.get(staff + k)?;
+                    (staff + k > 0 && st.distance > 0.0).then(|| StaffSpacing { staff: Some((k + 1) as f64), staff_distance: Some(r1(st.distance)) })
+                })
+                .collect();
+            staff += layout.staves.len();
+            let mut pr = PrintLayout::default();
+            if pi == 0 {
+                pr.system_layout = Some(match prev {
+                    Some(p) if !new_page => SystemLayout { system_distance: Some(r1(pl.top - (p.top + score[p.sys].height()))), ..SystemLayout::default() },
+                    _ => SystemLayout { top_system_distance: Some(r1(pl.top - d.top_margin)), ..SystemLayout::default() },
+                });
+            }
+            if !staff_layouts.is_empty() {
+                pr.staff_layouts = Some(staff_layouts);
+            }
+            if pr != PrintLayout::default() {
+                out.prints.insert(m.oid, pr);
+            }
+        }
+    }
+
+    // 没写朝向的圆滑线按排出来的方向写明（`arcsAbove`），第三方软件不另猜；没对上排版的仍写上方
+    let key = |m: &dolce_model::doc::Mark| (m.start, m.end, m.start_note.unwrap_or(0.0).to_bits(), m.end_note.unwrap_or(0.0).to_bits());
+    let mut slur_above = HashMap::new();
+    for pl in &score.parts {
+        for &sl in &pl.slurs {
+            if let Some(mk) = score[sl].mark {
+                slur_above.insert(key(mk), score[sl].span.above);
+            }
+        }
+    }
+    let slurs = song
+        .marks
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.kind == MarkType::Slur && m.placement.is_none() && m.orientation.is_none())
+        .map(|(i, m)| (i, slur_above.get(&key(m)).copied().unwrap_or(true)))
+        .collect();
+
+    // 小节宽、音符横向位置与符干方向、歌词与和弦与文字的高度
+    let text_pt = r1(score.defaults.lyric_font.size * score.scaling);
+    for (pi, part) in song.parts.iter().enumerate() {
+        let layout = &score.parts[pi];
+        for (mi, m) in part.measures.iter().enumerate() {
+            if let Some(mif) = score.measures.get(mi) {
+                out.widths.insert(m.oid, r1(mif.width));
+            }
+            let Some(&md) = layout.measures.get(mi) else { continue };
+            let md = &score[md];
+            for &c in &md.chords {
+                let ch = &score[c];
+                for &n in &ch.notes {
+                    let nt = &score[n];
+                    if nt.x < 0.0 {
+                        continue;
+                    }
+                    at(&mut out, nt.src.map_or(ch.src.oid, |s| s.oid), Position { default_x: Some(r1(nt.x)), ..Position::default() });
+                    // 统一过的符杠组方向写明，第三方软件不另猜（原文写了 `<stem>` 的由表层回填）
+                    if let Some(src) = nt.src {
+                        if !ch.rest() && ch.note_type().to_float() < 4.0 && surface.and_then(|s| s.note_stem(src.oid)).is_none() {
+                            out.stems.insert(src.oid, (if ch.stem_up { "up" } else { "down" }).into());
+                        }
+                    }
+                }
+            }
+            for &l in &md.lyrics {
+                at(&mut out, score[l].src.oid, Position { default_y: Some(r1(score[l].y)), ..Position::default() });
+            }
+            for &h in &md.harmonies {
+                at(&mut out, score[h].src.oid, Position { default_y: Some(r1(score[h].y)), ..Position::default() });
+            }
+            // 自动放置的速度/文字记号：高度，连同自动铺排统一过的字号（歌词字号，pt）
+            for &t in &md.text_blocks {
+                let t = &score[t];
+                let Some(src) = t.src.filter(|_| t.auto_y) else { continue };
+                let y = Position { default_y: Some(r1(t.block.y)), ..Position::default() };
+                let items = std::iter::once((src.kind.as_str(), src.oid)).chain(src.more.iter().flatten().map(|x| (x.kind.as_str(), x.oid)));
+                for (kind, oid) in items {
+                    if kind != "words" && kind != "metronome" {
+                        continue;
+                    }
+                    at(&mut out, oid, y);
+                    out.font_size.insert(oid, text_pt);
+                }
+            }
+        }
+    }
+    Ok(Some((SongPatch { defaults, credits, breaks, slurs }, out)))
+}
+
+/// 五线谱的断句尺子请求（TS `MixedSession.staffPhraseLineStarts`）：屏幕上五线谱的纸与样式。
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct StaffSpansRequest {
+    pub style: Option<Value>,
+    pub page: Option<StaffPage>,
+}
+
+/// 不带换行投出来的那份（`doc`）按五线谱引擎排一遍，量各和弦的自然跨度（`staff_chord_spans`）：版心宽与 `[源元素 id, x0, x1]`。
+pub fn staff_chord_spans(doc: &ScoreDoc, surface: Option<&Surface>, req: &StaffSpansRequest, env: &Env) -> Result<dolce_layout_staff::pass::ChordSpans, String> {
+    use dolce_layout_staff::{pass, read};
+    let sheet = req.style.as_ref().filter(|v| !v.is_null()).map(|v| StyleSheet(v.clone()));
+    let mut options = staff_options_of(sheet.as_ref());
+    options.page = req.page.clone();
+    let song0 = doc.songs.first().ok_or("这份文档里没有曲子")?;
+    let song = read::prepare_song(song0);
+    let meta = env.meta.ok_or("没有 SMuFL 元数据")?;
+    let mut score = read::layout_staff(&song, surface, options, meta, env.mc, &mut |_, _| {});
+    Ok(pass::staff_chord_spans(&mut score))
+}

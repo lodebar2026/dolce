@@ -8,7 +8,9 @@
 import { dolce } from "../common/dolce";
 import type { WasmMeasure } from "../common/dolcewasm";
 import { bindWasmMeasure, type MeasureBackend } from "../common/measure";
-import type { ElementId } from "../model/doc";
+import type { ElementId, ScoreDoc } from "../model/doc";
+import { docJson } from "../model/rustdoc";
+import type { StyleSheet } from "../style/sheet";
 import type { PlayItem } from "../score/playtypes";
 
 const weight = (bold: boolean): "bold" | "normal" => (bold ? "bold" : "normal");
@@ -47,6 +49,18 @@ export function installLayoutHost(smufl: string): void {
     set: (b) => dolce().setLayoutHost(wasmMeasure(b), smufl),
     clear: () => dolce().clearMeasureCache(),
   });
+}
+
+/** 五线谱的断句尺子（乐句档五线谱按它断句）：`doc`（不带换行投出来、`sourceIds` 读回的那份）按五线谱引擎排一遍，
+ *  各和弦的自然横向区间（键是源元素 id）与版心宽（Rust `dolce_session::layout::staff_chord_spans`）。 */
+export function staffChordSpans(
+  doc: ScoreDoc,
+  style: StyleSheet,
+  page: { widthPt: number; heightPt: number | null } | null,
+): { width: number; byId: Map<ElementId, { x0: number; x1: number }> } {
+  const { json, h } = docJson(doc);
+  const r = JSON.parse(dolce().staffChordSpans(json, h, JSON.stringify({ style, page }))) as { width: number; spans: [ElementId, number, number][] };
+  return { width: r.width, byId: new Map(r.spans.map(([id, x0, x1]) => [id, { x0, x1 }] as const)) };
 }
 
 // ---------------------------------------------------------------- 过边界的形状

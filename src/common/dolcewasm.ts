@@ -50,6 +50,8 @@ export interface DolceWasm {
   layoutStaff(doc: string, surface: number, req: string): DolceLayoutWasm;
   /** `{width, spans: [[id, {x0, x1, x1b}]]}` 的 JSON */
   measureDocument(doc: string, style: string, width: number, slide: boolean, song: number): string;
+  engravedMusicXml(doc: string, surface: number, req: string): string;
+  staffChordSpans(doc: string, surface: number, req: string): string;
 
   default(init?: { module_or_path: string | URL }): Promise<object>;
   initSync(init: { module: BufferSource | WebAssembly.Module }): object;

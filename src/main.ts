@@ -127,7 +127,7 @@ async function boot() {
     ...parse, ...emit, ...fromjpw, ...fromfanqie, ...helpers, ...jianpuinput, fanqie,
     ...fromxml, ...toxml, ...capability, ...jianpuproject, ...jianpu, ...xmlproject, ...breaks, ...jpwabc,
   }));
-  // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engraveScoreDoc`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归
+  // `.jpwabc` ↔ MusicXML 的读入与导出版面（`engravedMusicXml`：五线谱引擎排出导出版面，交给写出端）暴露，供 scripts/xml-roundtrip.mjs 回归
   // （写出端只有 `model/toxml.ts`，在 `__j123` 里）。
   win.__xmlout = Promise.all([
     import("./editor/xmllayout"), import("./jianpu/jianpuinput"), import("./model/fromxml"),

@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn codes() {
-        assert_eq!(GLYPHS.len(), 102);
+        assert_eq!(GLYPHS.len(), 110);
         assert_eq!(glyph_code("noteheadBlack"), char::from_u32(0xE0A4));
         assert_eq!(glyph_code_name(char::from_u32(0xE0A4).unwrap()), Some("noteheadBlack"));
         // 码位表有、反查表没有

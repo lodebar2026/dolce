@@ -166,3 +166,22 @@ pub fn measure_document(doc: &str, style: &str, width: f64, slide: bool, song: u
     let spans: Vec<_> = xs.iter().map(|(id, s)| serde_json::json!([id, { "x0": s.x0, "x1": s.x1, "x1b": s.x1b }])).collect();
     Ok(to_json(&serde_json::json!({ "width": w, "spans": spans })))
 }
+
+/// 导出 MusicXML（带五线谱引擎排的版面）：`doc` + 表层句柄 `surface`，`req` 是 `EngraveRequest` JSON。
+#[wasm_bindgen(js_name = engravedMusicXml)]
+pub fn engraved_music_xml(doc: &str, surface: u32, req: &str) -> Result<String, JsValue> {
+    let h = host()?;
+    let doc: ScoreDoc = parse("ScoreDoc", doc)?;
+    let req: layout::EngraveRequest = parse("EngraveRequest", req)?;
+    with_surface(surface, |s| layout::engraved_music_xml(&doc, s.map(|s| &*s), &req, &env(h))).map_err(fail)
+}
+
+/// 五线谱的断句尺子：回 `{"width": 版心宽, "spans": [[源元素 id, x0, x1], …]}`。
+#[wasm_bindgen(js_name = staffChordSpans)]
+pub fn staff_chord_spans(doc: &str, surface: u32, req: &str) -> Result<String, JsValue> {
+    let h = host()?;
+    let doc: ScoreDoc = parse("ScoreDoc", doc)?;
+    let req: layout::StaffSpansRequest = parse("StaffSpansRequest", req)?;
+    let s = with_surface(surface, |s| layout::staff_chord_spans(&doc, s.map(|s| &*s), &req, &env(h))).map_err(fail)?;
+    Ok(to_json(&serde_json::json!({ "width": s.width, "spans": s.by_id })))
+}

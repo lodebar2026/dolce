@@ -5,11 +5,8 @@
 // （`App._renderMixedPages` / `_layoutStaff`）与模式切换仍在 App，这里只管模型，经 `MixedHost` 向 App 要设置。
 
 import type { ElementId, ScoreDoc } from "../model/doc";
-import type { MetaData } from "../smufl/smufl";
-import { staffOptionsOf } from "../layout/legacy";
 import { phraseCuts, type FitMeasure } from "../jianpu/phrase";
-import { layoutStaff } from "../mixed/layout";
-import { staffChordSpans } from "../mixed/layoutpass";
+import { staffChordSpans } from "../layout/rustlayout";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { carryPlayOrder } from "../model/sections";
 import { musicXmlFormat, type DocFormatId } from "./formats";
@@ -20,7 +17,6 @@ import type { App } from "./app";
 
 /** 混排会话向 App 要的那些能力（**列全**）。类型照 App 的取，免得两边各写一份。 */
 export interface MixedHost {
-  readonly meta: MetaData;
   readonly docFormat: DocFormatId;
   readonly layoutMode: App["layoutMode"];
   /** 渲染设置（纸、字号、五线谱样式表） */
@@ -56,16 +52,14 @@ export class MixedSession {
 
   /**
    * 乐句档的五线谱行首：同一套断句（`jianpu/phrase.ts::phraseCuts`），**尺子换成五线谱引擎**——
-   * 不带换行投一份、按当前五线谱纸与样式排一遍，量各和弦的自然跨度（`mixed/layoutpass.ts::staffChordSpans`）。
+   * 不带换行投一份、按当前五线谱纸与样式排一遍，量各和弦的自然跨度（Rust `dolce_session::layout::staff_chord_spans`）。
    * 小节中间的断点也要（`midLineStarts`：拆小节、中间隐藏线）；分页交给五线谱自己，`PhraseCut.page` 不用。
    * `doc` 须与投影的那份同一个（`sourceMusicXmlBare` 里那份），元素 id 才对得上。量不出来返回 null，调用方退回简谱行首。
    */
   staffPhraseLineStarts(doc: ScoreDoc): ReadonlySet<ElementId> | null {
     try {
       const bare = musicXmlFormat.toScoreDoc(scoreDocToMusicXml(doc, { sourceIds: true }));
-      const options = staffOptionsOf(this.host.meta, this.host.style.staffStyle());
-      options.page = this.host.staffPage;
-      const { width, byId } = staffChordSpans(layoutStaff(bare, options));
+      const { width, byId } = staffChordSpans(bare, this.host.style.staffStyle(), this.host.staffPage);
       if (byId.size === 0) return null;
       const measure: FitMeasure = () => ({ width, spans: byId });
       const cuts = phraseCuts(doc, 0, { kind: "phrase", measure });

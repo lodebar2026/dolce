@@ -8,7 +8,7 @@
 //
 // 表层在 Rust（crates/dolce-model/src/xmlsurface.rs）：读入时每个模型对象按身份（`_oid`）绑到原节点，原树与绑定表留在 Rust 里，
 // 这里的查询按镜像对象的身份（`rustdoc.ts` 的旁表）去问。克隆出来的对象没有身份（= 文本来源），一律照常。
-// 导出时五线谱引擎排出来的版面（`editor/xmllayout.ts`）是另一个来源，形如 `EngravedLayout`，经 `ToXmlOptions.layout` 交给写出端。
+// 导出时五线谱引擎排出来的版面（`editor/xmllayout.ts`）是另一个来源，在 Rust 里排好直接交给写出端（`EngravedLayout`）。
 
 import type { Chord, FontSpec, HAlign, Measure, MeasureAttrs, Note, Print, ScoreDoc, Song } from "./doc";
 import { dolce } from "../common/dolce";
@@ -164,27 +164,4 @@ export function forgetNoteLayout(_chord: Chord): void {
 /** 小节内容变了（增删音、改时值、拆并小节）：整曲的版面坐标作废——小节宽与音符横坐标一律去掉。 */
 export function dropEmbeddedLayout(_song: Song): void {
   // 只当钩子记号用：见上
-}
-
-// ───────────────────────── 导出版面 ─────────────────────────
-
-/** 五线谱引擎给导出排出来的版面（`editor/xmllayout.ts`），经 `ToXmlOptions.layout` 交给写出端。
- *  纸、scaling、标题块、换行这些模型本来就有的仍写进模型，这里只装表层的。 */
-export interface EngravedLayout {
-  /** `<defaults><system-layout>` */
-  systemLayout?: NonNullable<PrintLayout["systemLayout"]>;
-  /** 各小节宽（tenths） */
-  widths: Map<Measure, number>;
-  /** 行首小节的 `<print>` 版式 */
-  prints: Map<Measure, PrintLayout>;
-  /** `Note` / 无音 `Chord` / `Lyric` / `Harmony` / `DirectionPart` 的坐标 */
-  pos: Map<object, Position>;
-  /** 排出来的符干方向（原文没写的） */
-  stems: Map<Note, "up" | "down">;
-  /** 自动放置的文字记号统一过的字号（pt） */
-  fontSize: Map<object, number>;
-}
-
-export function emptyEngravedLayout(): EngravedLayout {
-  return { widths: new Map(), prints: new Map(), pos: new Map(), stems: new Map(), fontSize: new Map() };
 }

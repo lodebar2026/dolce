@@ -618,95 +618,107 @@ impl MeasureAttrs {
 /// 一个声部的表层身份全清（同 TS 深拷贝后挂不上表层）。
 pub fn clear_part_oids(p: &mut Part) {
     p.oid = Oid::NONE;
-    clear_measure_oids(&mut p.measures);
+    each_measure_oid(&mut p.measures, &mut |o| *o = Oid::NONE);
 }
 
 pub fn clear_oids(song: &mut Song) {
-    song.oid = Oid::NONE;
+    each_oid(song, &mut |o| *o = Oid::NONE);
+}
+
+/// 没有身份的对象从 `start` 起逐个发号（导出版面要按身份交给写出端，同 TS `ensureOid`；已有的不动）。
+pub fn stamp_oids(song: &mut Song, start: u32) {
+    let mut next = start;
+    each_oid(song, &mut |o| {
+        if o.is_none() {
+            *o = Oid(next);
+            next += 1;
+        }
+    });
+}
+
+/// 一首里所有可绑表层的对象的身份，逐个交给 `f`。
+pub fn each_oid(song: &mut Song, f: &mut impl FnMut(&mut Oid)) {
+    f(&mut song.oid);
     for c in song.credits.iter_mut().flatten() {
-        c.oid = Oid::NONE;
+        f(&mut c.oid);
     }
     for mk in &mut song.marks {
-        mk.oid = Oid::NONE;
+        f(&mut mk.oid);
     }
     for p in &mut song.parts {
-        p.oid = Oid::NONE;
-        clear_measure_oids(&mut p.measures);
+        f(&mut p.oid);
+        each_measure_oid(&mut p.measures, f);
     }
 }
 
-fn clear_harmony(h: &mut Harmony) {
-    h.oid = Oid::NONE;
-}
-
-fn clear_lyrics(ls: &mut Option<Vec<Lyric>>) {
+fn each_lyric_oid(ls: &mut Option<Vec<Lyric>>, f: &mut impl FnMut(&mut Oid)) {
     for l in ls.iter_mut().flatten() {
-        l.oid = Oid::NONE;
+        f(&mut l.oid);
     }
 }
 
-fn clear_inline(items: &mut Option<Vec<InlineItem>>) {
+fn each_inline_oid(items: &mut Option<Vec<InlineItem>>, f: &mut impl FnMut(&mut Oid)) {
     for it in items.iter_mut().flatten() {
         if let InlineItem::Layer { measures, marks, .. } = it {
-            clear_measure_oids(measures);
+            each_measure_oid(measures, f);
             for mk in marks {
-                mk.oid = Oid::NONE;
+                f(&mut mk.oid);
             }
         }
     }
 }
 
-fn clear_measure_oids(ms: &mut [Measure]) {
+fn each_measure_oid(ms: &mut [Measure], f: &mut impl FnMut(&mut Oid)) {
     for m in ms {
-        m.oid = Oid::NONE;
+        f(&mut m.oid);
         if let Some(a) = &mut m.attrs {
-            a.oid = Oid::NONE;
+            f(&mut a.oid);
         }
         for la in m.later_attrs.iter_mut().flatten() {
-            la.attrs.oid = Oid::NONE;
+            f(&mut la.attrs.oid);
         }
         for b in m.barlines.iter_mut().flatten() {
-            b.oid = Oid::NONE;
-            clear_inline(&mut b.before);
+            f(&mut b.oid);
+            each_inline_oid(&mut b.before, f);
         }
         for d in m.directions.iter_mut().flatten() {
-            d.oid = Oid::NONE;
+            f(&mut d.oid);
             for x in d.more.iter_mut().flatten() {
-                x.oid = Oid::NONE;
+                f(&mut x.oid);
             }
         }
         if let Some(pr) = &mut m.print {
-            pr.oid = Oid::NONE;
+            f(&mut pr.oid);
         }
-        clear_inline(&mut m.trailing);
+        each_inline_oid(&mut m.trailing, f);
         for el in &mut m.elements {
             match el {
                 Element::Chord(c) => {
-                    c.oid = Oid::NONE;
+                    f(&mut c.oid);
                     for n in &mut c.notes {
-                        n.oid = Oid::NONE;
+                        f(&mut n.oid);
                     }
                     if let Some(h) = &mut c.harmony {
-                        clear_harmony(h);
+                        f(&mut h.oid);
                     }
                     for h in c.later_harmonies.iter_mut().flatten() {
-                        clear_harmony(h);
+                        f(&mut h.oid);
                     }
-                    clear_lyrics(&mut c.lyrics);
-                    clear_inline(&mut c.before);
+                    each_lyric_oid(&mut c.lyrics, f);
+                    each_inline_oid(&mut c.before, f);
                     for su in c.sustains.iter_mut().flatten() {
                         if let Some(h) = &mut su.harmony {
-                            clear_harmony(h);
+                            f(&mut h.oid);
                         }
-                        clear_lyrics(&mut su.lyrics);
-                        clear_inline(&mut su.before);
+                        each_lyric_oid(&mut su.lyrics, f);
+                        each_inline_oid(&mut su.before, f);
                     }
                 }
                 Element::Space(sp) => {
                     if let Some(h) = &mut sp.harmony {
-                        clear_harmony(h);
+                        f(&mut h.oid);
                     }
-                    clear_lyrics(&mut sp.lyrics);
+                    each_lyric_oid(&mut sp.lyrics, f);
                 }
             }
         }

@@ -6,7 +6,7 @@
 
 use dolce_base::Msg;
 use dolce_model::edit::{self, EditCmd, EditHooks};
-use dolce_model::xmlsurface::{EngravedLayout, Position, PrintLayout, Surface, SystemLayout};
+use dolce_model::xmlsurface::Surface;
 use dolce_model::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -259,34 +259,6 @@ pub fn model_split_face_name(font: &str) -> Result<String, JsValue> {
     Ok(to_json(&xmlsurface::split_face_name(f)))
 }
 
-/// 导出版面（`EngravedLayout`）过边界的形状：映射写成 `[oid, 值]` 对
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-struct LayoutWire {
-    system_layout: Option<SystemLayout>,
-    widths: Vec<(u32, f64)>,
-    prints: Vec<(u32, PrintLayout)>,
-    pos: Vec<(u32, Position)>,
-    stems: Vec<(u32, String)>,
-    font_size: Vec<(u32, f64)>,
-}
-
-impl From<LayoutWire> for EngravedLayout {
-    fn from(w: LayoutWire) -> EngravedLayout {
-        fn map<T>(v: Vec<(u32, T)>) -> HashMap<Oid, T> {
-            v.into_iter().map(|(k, x)| (Oid(k), x)).collect()
-        }
-        EngravedLayout {
-            system_layout: w.system_layout,
-            widths: map(w.widths),
-            prints: map(w.prints),
-            pos: map(w.pos),
-            stems: map(w.stems),
-            font_size: map(w.font_size),
-        }
-    }
-}
-
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct ToXmlWire {
@@ -295,7 +267,6 @@ struct ToXmlWire {
     line_starts: Option<Vec<ElementId>>,
     mid_line_starts: bool,
     slur_ties: Option<bool>,
-    layout: Option<LayoutWire>,
 }
 
 /// `ScoreDoc`（JSON，带 `_oid`）→ MusicXML 文本（`scoreDocToMusicXml`）。`h` 是表层句柄（0 = 不回填）。
@@ -303,12 +274,11 @@ struct ToXmlWire {
 pub fn model_to_xml(doc: &str, h: u32, opts: &str) -> Result<String, JsValue> {
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
     let w: ToXmlWire = parse("ToXmlOptions", opts)?;
-    let layout: Option<EngravedLayout> = w.layout.map(Into::into);
     let o = toxml::ToXmlOptions {
         project: xmlproject::ProjectOptions { line_starts: w.line_starts, mid_line_starts: w.mid_line_starts, slur_ties: w.slur_ties },
         song: w.song,
         source_ids: w.source_ids,
-        layout: layout.as_ref(),
+        layout: None,
         rids: None,
     };
     with_surface(h, |s| toxml::score_doc_to_music_xml(&doc, s.map(|s| &*s), &o).map_err(|e| msg_err(&e)))

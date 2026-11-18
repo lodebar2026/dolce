@@ -29,21 +29,9 @@ interface Bound {
 
 const BOUND = new WeakMap<object, Bound>();
 
-/** 导出版面给没有身份的对象现发的号（与表层的号错开） */
-let freshOid = 0x40000000;
-
 /** 对象的身份：有表层的给句柄与号；没有为 null。 */
 export function boundOf(obj: object | null | undefined): Bound | null {
   return (obj && BOUND.get(obj)) ?? null;
-}
-
-/** 给对象一个身份（导出版面要按身份交给写出端；已有的不动）。 */
-export function ensureOid(obj: object): number {
-  const b = BOUND.get(obj);
-  if (b) return b.oid;
-  const oid = freshOid++;
-  BOUND.set(obj, { s: null, oid });
-  return oid;
 }
 
 /** Rust 回来的 JSON → 镜像对象（`_oid` 摘下记进旁表，挂表层 `s`）。

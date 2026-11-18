@@ -100,6 +100,7 @@ export { HeadlessSession, type HeadlessView } from "../editor/headless";
 export { TsEngine } from "../engine/tsengine";
 export { isStale, StaleRevision, EngineFailure } from "../engine/api";
 export { ScorePainter, PaintResources } from "../layout/painter";
+export { staffChordSpans } from "../layout/rustlayout";
 export { staffOptionsOf, jianpuCfgOf } from "../layout/legacy";
 export { SvgNode } from "../layout/svgnode";
 export { outlinedSvg } from "./outline.node";
