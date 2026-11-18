@@ -210,7 +210,7 @@ pub fn bound(n: &Node, env: &Env) -> Option<Rect> {
     match &n.shape {
         Shape::Group | Shape::Item | Shape::Line(_) => Some(Rect::wh(n.w, n.h)),
         Shape::Path(_) => match n.role {
-            Some(Role::JpOctaveDot { radius }) => Some(Rect::wh(2.0 * radius, 2.0 * radius)),
+            Some(Role::JpOctaveDot { radius, .. }) => Some(Rect::wh(2.0 * radius, 2.0 * radius)),
             _ => Some(Rect::wh(n.w, n.h)),
         },
         Shape::Text(t) => {
@@ -282,7 +282,7 @@ pub fn update(n: &mut Node, env: &Env) -> Result<(), SceneError> {
             n.h = bnd.height();
         }
         Shape::Path(p) => {
-            if let Some(Role::JpOctaveDot { radius }) = n.role {
+            if let Some(Role::JpOctaveDot { radius, .. }) = n.role {
                 n.w = 2.0 * radius;
                 n.h = 2.0 * radius;
                 return Ok(());
@@ -323,7 +323,7 @@ pub fn update(n: &mut Node, env: &Env) -> Result<(), SceneError> {
             role => {
                 let t = n.text_ref().unwrap();
                 let extra = match role {
-                    Some(Role::JpNumber { aug_dot_advance }) => aug_dot_advance,
+                    Some(Role::JpNumber { aug_dot_advance, .. }) => aug_dot_advance,
                     _ => 0.0,
                 };
                 // TS：先 `width = measureText()`，数字再加附点留的宽

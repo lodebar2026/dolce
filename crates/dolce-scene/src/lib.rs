@@ -155,13 +155,28 @@ pub struct SmuflShape {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "k")]
 pub enum Role {
-    /// 简谱数字（`JpNumber`）：附点是画上去的圆，宽里另留 `augDotAdvance`
+    /// 简谱数字（`JpNumber`）：附点是画上去的圆，宽里另留 `augDotAdvance`；`cx` 是首字墨迹中心（`JpNumber.cx`，
+    /// 导出 PPTX 按目标字体重摆数字时以它为心）
     #[serde(rename_all = "camelCase")]
-    JpNumber { aug_dot_advance: f64 },
-    /// 八度点 / 附点（`JpOctaveDot`）：实心圆，盒按解析式
-    JpOctaveDot { radius: f64 },
-    /// 减时线（`BeamLine`），第 `level` 层（1 起）
-    BeamLine { level: f64 },
+    JpNumber {
+        aug_dot_advance: f64,
+        #[serde(default)]
+        cx: f64,
+    },
+    /// 八度点 / 附点（`JpOctaveDot`）：实心圆，盒按解析式。附点记 `aug` = 第几个附点，挂的数字是**父组的头一个子节点**
+    /// （导出 PPTX 按目标字体的数字宽重摆附点）
+    JpOctaveDot {
+        radius: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        aug: Option<u32>,
+    },
+    /// 减时线（`BeamLine`），第 `level` 层（1 起）。`ends` = 两端所接数字所在音符组在**同一父节点**里的下标
+    /// （数字是那组的头一个子节点；导出 PPTX 按目标字体的数字宽把两端接回数字盒）
+    BeamLine {
+        level: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ends: Option<[u32; 2]>,
+    },
     /// 歌词音节（`Lyric`）：前标点 / 主体 / 后标点三段宽、挤压档、段号
     Lyric { widths: [f64; 3], compress: String, verse: f64 },
     /// 圆滑线（简谱引擎 `engrave/arc.ts::Slur`）

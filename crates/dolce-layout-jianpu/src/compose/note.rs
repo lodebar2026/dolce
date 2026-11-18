@@ -13,7 +13,7 @@ use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{high_dot_y, low_dot_y};
 use dolce_geom::Rect;
 use dolce_model::Accidental;
-use dolce_scene::{Identity, IdentityKind, Node};
+use dolce_scene::{Identity, IdentityKind, Node, Role};
 use dolce_view::ast::{NoteElement, Ornament, Sound};
 
 use super::ctx::{digit_item, digit_origin, dot, eid, font, ident, octave_dot, rect, stroke, text, Ctx, ItemsKey};
@@ -139,9 +139,10 @@ fn names(note: &NoteElement) -> Vec<&str> {
     note.ornaments.iter().map(|o| o.name.as_str()).collect()
 }
 
-/// 一个音符。`key` / `at`：在哪串 items 的第几个（查上方带用）
-pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: usize, x: f64, baseline: f64) {
-    let dolce_view::ast::MusicElement::Note(note) = &it.element else { return };
+/// 一个音符。`key` / `at`：在哪串 items 的第几个（查上方带用）。
+/// 画了主数字（TS `paintNote` 返回的 `num`）时返回这组在 `root` 里的下标——数字是组的头一个子节点，减时线记两端接哪两组。
+pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: usize, x: f64, baseline: f64) -> Option<usize> {
+    let dolce_view::ast::MusicElement::Note(note) = &it.element else { return None };
     let m = c.m;
     let mut g = Node::group();
     g.add_class("entry");
@@ -150,9 +151,11 @@ pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: 
 
     // TS 按真值判（0 不算多小节休止）
     let multi = note.multi_rest.filter(|v| *v != 0.0 && !v.is_nan());
+    let mut has_num = false;
     if let (Some(mr), false) = (multi, note.hidden) {
         paint_multi_rest(c, &mut g, mr, x, baseline);
     } else if !note.hidden {
+        has_num = true;
         let ch = if note.sound == Sound::Rhythm { "X".to_string() } else { note.pitch.to_string() };
         let (dx, dy, _) = digit_origin(c, &ch);
         g.push(digit_item(&ch, x + dx, baseline + dy, c.digit_font.clone(), c.ink));
@@ -209,6 +212,9 @@ pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: 
     for i in 0..note.dots {
         let (cx, cy) = aug_dot_center(&digit_ink, i as f64, m.style.dot.aug, m.ink.stack.gap);
         let mut d = octave_dot(c.ink, cx, cy, m.style.dot.aug);
+        if let (true, Some(Role::JpOctaveDot { aug, .. })) = (has_num, &mut d.role) {
+            *aug = Some(i);
+        }
         d.add_class("aug-dot");
         d.id = Some(ident(IdentityKind::AugDot));
         g.push(d);
@@ -233,6 +239,7 @@ pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: 
         g.id = Some(Identity { id: Some(eid(id)), pass: c.pass.map(|p| p as u32), ..ident(IdentityKind::Note) });
     }
     root.push(g);
+    has_num.then(|| root.k.len() - 1)
 }
 
 /// 附点（或数字）右缘：震音、滑音从这里起

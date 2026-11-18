@@ -293,6 +293,7 @@ fn one_pass<'e>(source: &ScoreDoc, cfg: &JianpuConfig, no_reflow: bool, left_ind
     }
     for p in &mut pages {
         update(p, env).unwrap_or_else(|e| panic!("{}", e.0));
+        dolce_engrave::jpnumber::fill_number_cx(p, env);
     }
     let (width, height) = (c.page_width, c.page_height);
     let digit_font_size = c.digit_font.size;

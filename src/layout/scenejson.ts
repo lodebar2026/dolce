@@ -10,10 +10,24 @@ export type Json = null | boolean | number | string | Json[] | { [k: string]: Js
 
 const mat6 = (it: PageItem): number[] => it.matrix.mat.slice(0, 6);
 
+/** 数字所在音符组在减时线父节点里的下标（数字须是那组的头一个子节点，同 Rust `paint_note` 的返回）。 */
+function numGroupIndex(line: BeamLine, num: JpNumber): number {
+  const g = num.parent;
+  if (!g || g.children[0] !== num || g.parent !== line.parent) throw new Error("减时线两端的数字不在同级音符组的头一个");
+  return line.parent!.children.indexOf(g);
+}
+
 function roleOf(it: PageItem): Json | undefined {
-  if (it instanceof JpNumber) return { k: "JpNumber", augDotAdvance: it.augDotAdvance };
-  if (it instanceof JpOctaveDot) return { k: "JpOctaveDot", radius: it.radius };
-  if (it instanceof BeamLine) return { k: "BeamLine", level: it.level };
+  if (it instanceof JpNumber) return { k: "JpNumber", augDotAdvance: it.augDotAdvance, cx: it.cx };
+  if (it instanceof JpOctaveDot) {
+    if (!it.aug) return { k: "JpOctaveDot", radius: it.radius };
+    if (it.parent?.children[0] !== it.aug.num) throw new Error("附点挂的数字不是父组的头一个");
+    return { k: "JpOctaveDot", radius: it.radius, aug: it.aug.index };
+  }
+  if (it instanceof BeamLine) {
+    if (!it.leftNum || !it.rightNum) return { k: "BeamLine", level: it.level };
+    return { k: "BeamLine", level: it.level, ends: [numGroupIndex(it, it.leftNum), numGroupIndex(it, it.rightNum)] };
+  }
   if (it instanceof Lyric) return { k: "Lyric", widths: [...it._widths], compress: it.compress, verse: it.verse };
   if (it instanceof Tie) return { k: "Tie", flatHx: it.flatHx, startId: it.startId, endId: it.endId };
   if (it instanceof Slur) return { k: "Slur", flatHx: it.flatHx };

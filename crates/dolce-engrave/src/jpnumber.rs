@@ -18,7 +18,7 @@ pub fn jp_octave_dot(r: f64, color: f64) -> Node {
     p.stroke = false;
     p.fill_color = color;
     n.sel = true;
-    n.role = Some(Role::JpOctaveDot { radius: r });
+    n.role = Some(Role::JpOctaveDot { radius: r, aug: None });
     n.w = 2.0 * r;
     n.h = 2.0 * r;
     n
@@ -28,7 +28,7 @@ pub fn jp_octave_dot(r: f64, color: f64) -> Node {
 pub fn jp_number(text: &str, font: Font) -> Node {
     let mut n = Node::text(text, font);
     n.sel = true;
-    n.role = Some(Role::JpNumber { aug_dot_advance: 0.0 });
+    n.role = Some(Role::JpNumber { aug_dot_advance: 0.0, cx: 0.0 });
     n
 }
 
@@ -36,7 +36,7 @@ pub fn jp_number(text: &str, font: Font) -> Node {
 pub fn beam_line(level: f64, x0: f64, x1: f64, y: f64, width: f64, color: f64) -> Node {
     let mut n = Node::line();
     n.sel = true;
-    n.role = Some(Role::BeamLine { level });
+    n.role = Some(Role::BeamLine { level, ends: None });
     n.set_x(x0);
     let l = n.line_mut();
     l.p0 = Point::new(0.0, y);
@@ -75,7 +75,7 @@ fn measure16(n: &Node, env: &Env, beg: usize, len: Option<usize>) -> f64 {
 
 fn aug_adv(n: &Node) -> f64 {
     match n.role {
-        Some(Role::JpNumber { aug_dot_advance }) => aug_dot_advance,
+        Some(Role::JpNumber { aug_dot_advance, .. }) => aug_dot_advance,
         _ => 0.0,
     }
 }
@@ -110,4 +110,17 @@ pub fn jp_number_pos(n: &Node, env: &Env) -> f64 {
 /// 数字墨迹盒（`JpNumber.bound` 的上下沿 + 宽）。
 pub fn jp_number_bound(n: &Node, env: &Env) -> Rect {
     dolce_scene::build::bound(n, env).unwrap_or_default()
+}
+
+/// 给整棵树里的数字记上 `cx`（场景角色里带着，导出 PPTX 用；排版本身随用随量）。排完、`update` 之后调。
+pub fn fill_number_cx(n: &mut Node, env: &Env) {
+    if matches!(n.role, Some(Role::JpNumber { .. })) {
+        let v = jp_number_cx(n, env);
+        if let Some(Role::JpNumber { cx, .. }) = &mut n.role {
+            *cx = v;
+        }
+    }
+    for k in &mut n.k {
+        fill_number_cx(k, env);
+    }
 }

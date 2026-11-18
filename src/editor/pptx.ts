@@ -2,11 +2,14 @@
 // Walks the page tree into shapes (text boxes / custGeom freeforms), assembles a
 // minimal valid .pptx deck, and zips with fflate. SMuFL glyphs become outline
 // freeforms via opentype.js (Bravura.otf).
+//
+// 编辑器「导出 → PPTX」已改走 Rust 写出端（`crates/dolce-export/src/pptx.rs`，料由 `editor/pptxexport.ts` 拼，迁移计划 L7）；
+// 这份只留作对拍参照（dev `pptx-rs-diff.mjs`），到 H 期连同 opentype.js 一起删。
 
 import { zipSync, type Zippable } from "fflate";
 import * as opentype from "opentype.js";
 import { asset } from "../common/asset";
-import { GraphicLine, GraphicPath, Group, PageItem, SmuflText, TextFrame, type PathSeg } from "../pagetree/pageitem";
+import { GraphicLine, GraphicPath, PageItem, SmuflText, TextFrame, type PathSeg } from "../pagetree/pageitem";
 import { BeamLine, JpNumber, JpOctaveDot } from "../engrave/jpnumber";
 import { STACK_GAP_DEFAULT } from "../engrave/stack";
 import { walkPageItem, type ItemVisitor } from "../pagetree/walk";
@@ -402,16 +405,9 @@ function buildDeck(slides: string[], wEmu: number, hEmu: number): Zippable {
   return z;
 }
 
-/** buildPptx 只用到页面树与页面尺寸，与哪个引擎排的无关（`ScorePainter.pptxSource`：旧简谱引擎或简谱引擎那一份）。 */
-export interface PptxSource {
-  pages: readonly Group[];
-  /** 附点离数字的那道空（engrave/stack.ts）；没有就取缺省。 */
-  stackGap?: number;
-  pageWidth: number;
-  pageHeight: number;
-}
+export type { PptxSource } from "./pptxexport";
 
-export async function buildPptx(src: PptxSource, bgColor = 0xffffffff): Promise<Uint8Array> {
+export async function buildPptx(src: import("./pptxexport").PptxSource, bgColor = 0xffffffff): Promise<Uint8Array> {
   const font = await loadBravura();
   const slides = src.pages.map((pg) => {
     const shapes: Shape[] = [];

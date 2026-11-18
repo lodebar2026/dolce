@@ -95,7 +95,7 @@ impl Walker<'_> {
                 let (col, a) = if self.mixed { black } else { argb(t.color) };
                 let expect = match &n.role {
                     None if n.w > 0.0 => Some(n.w),
-                    Some(Role::JpNumber { aug_dot_advance }) => Some(n.w - aug_dot_advance),
+                    Some(Role::JpNumber { aug_dot_advance, .. }) => Some(n.w - aug_dot_advance),
                     _ => None,
                 };
                 c.push(&m);

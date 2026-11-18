@@ -63,6 +63,7 @@ import * as songbookMod from "../pdflayout/songbook";
 import * as ss from "../style/ss";
 import * as pptxMod from "../editor/pptx";
 import { pptxPainter } from "../editor/paintreq";
+import { pptxInput } from "../editor/pptxexport";
 import * as xmllayout from "../editor/xmllayout";
 import * as fromjpw from "../model/fromjpw";
 import * as mixedModelMod from "../mixed/model";
@@ -83,7 +84,7 @@ export const book = {
 /** 同 `__songbook`：混排歌本（清单 + .ss → DrawPage[]）。 */
 export const songbook = { ...songbookMod, ...ss };
 /** 同 `__pptx`：PPTX 序列化器与投影档排版器。 */
-export const pptx = { ...pptxMod, pptxPainter };
+export const pptx = { ...pptxMod, pptxPainter, pptxInput };
 /** 同 `__fanqie`。 */
 export const fanqie = fanqieMod;
 /** 同 `__xmlout`。 */

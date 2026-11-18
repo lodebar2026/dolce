@@ -27,6 +27,8 @@ interface ExportWasm {
   default(init: { module_or_path: string }): Promise<object>;
   PdfFonts: new (platform: string) => PdfFontsW;
   RasterPdf: new () => RasterPdfW;
+  /** 场景 → .pptx（`editor/pptxexport.ts`） */
+  pptx(input: string, bravura: Uint8Array): Uint8Array;
 }
 
 /** `queryLocalFonts()` 给的一个字体面 */
@@ -39,7 +41,8 @@ interface LocalFont {
 
 let mod: Promise<ExportWasm> | null = null;
 
-function exportWasm(): Promise<ExportWasm> {
+/** 按需载入导出 wasm（PDF 与 PPTX 共用一份）。 */
+export function exportWasm(): Promise<ExportWasm> {
   mod ??= importDolceWasm<ExportWasm>(import.meta.env.BASE_URL, "dolce_export_wasm").catch((e: unknown) => {
     mod = null;
     throw e;

@@ -10,5 +10,6 @@
 pub mod book;
 pub mod fonts;
 pub mod pdf;
+pub mod pptx;
 pub mod probe;
 pub mod scene;

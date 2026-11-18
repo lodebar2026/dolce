@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use dolce_engrave::dash::{sustain_dash, DashStyle};
 use dolce_engrave::jpnumber::beam_line;
 use dolce_engrave::stack::{beam_y, high_dot_y, low_dot_y, StackStyle};
-use dolce_scene::{Edge, Identity, IdentityKind, Node};
+use dolce_scene::{Edge, Identity, IdentityKind, Node, Role};
 use dolce_text::syllable::syllable_run;
 use dolce_text::CompressMode;
 use dolce_view::ast::{LyricLine, MusicElement};
@@ -261,6 +261,8 @@ pub fn paint_voice(c: &mut Ctx, root: &mut Node, voice: &VoiceArgs, page_index: 
     c.band_origin = (left, baseline);
     let mut lyric_right: Vec<f64> = vec![];
     let mut prev: Option<i64> = None;
+    // 画了主数字的音符：(落点 x, 组在 root 里的下标)；减时线按它记两端接哪两个数字（TS `nums`）
+    let mut nums: Vec<(f64, usize)> = vec![];
 
     for (at, it) in voice.items.iter().enumerate() {
         c.pass = voice.passes.and_then(|p| if it.src_index < 0 { None } else { p.get(it.src_index as usize).copied() });
@@ -293,7 +295,9 @@ pub fn paint_voice(c: &mut Ctx, root: &mut Node, voice: &VoiceArgs, page_index: 
             }
             _ => {}
         }
-        paint_note(c, root, it, key, at, x, base);
+        if let Some(gi) = paint_note(c, root, it, key, at, x, base) {
+            nums.push((it.x, gi));
+        }
         prev = it.id.or(prev);
         paint_syllables(c, root, it, x, voice.lyric_y, Some(&mut lyric_right));
     }
@@ -302,7 +306,12 @@ pub fn paint_voice(c: &mut Ctx, root: &mut Node, voice: &VoiceArgs, page_index: 
     for u in voice.underlines {
         let dy = if voice.zero_dy { 0.0 } else { u.dy.unwrap_or(0.0) };
         let y = baseline + dy + beam_y(m.ink.note_height / 2.0, u.level, &m.ink.stack);
-        root.push(beam_line(u.level, left + u.x0, left + u.x1, y, m.style.stroke.beam, c.ink));
+        let mut b = beam_line(u.level, left + u.x0, left + u.x1, y, m.style.stroke.beam, c.ink);
+        let mut under = nums.iter().filter(|n| n.0 >= u.x0 - 0.5 && n.0 <= u.x1 + 0.5).map(|n| n.1 as u32);
+        if let (Some(l), Some(Role::BeamLine { ends, .. })) = (under.next(), &mut b.role) {
+            *ends = Some([l, under.next_back().unwrap_or(l)]);
+        }
+        root.push(b);
     }
 
     paint_lyric_annotations(c, root, voice.lyrics, voice.items, voice.lyric_y, left);

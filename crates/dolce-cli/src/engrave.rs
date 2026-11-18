@@ -274,7 +274,7 @@ fn run(kind: &str, a: &Value, env: &Env) -> Result<Value, String> {
         "octaveDot" => raw_upd(el::jpnumber::jp_octave_dot(f(a, "r"), f(a, "color")), env),
         "jpNumber" => {
             let mut it = el::jpnumber::jp_number(s(a, "text"), font(&a["font"]));
-            if let Some(dolce_scene::Role::JpNumber { aug_dot_advance }) = &mut it.role {
+            if let Some(dolce_scene::Role::JpNumber { aug_dot_advance, .. }) = &mut it.role {
                 *aug_dot_advance = f(a, "augDotAdvance");
             }
             upd(&mut it, env);

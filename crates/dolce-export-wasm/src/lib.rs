@@ -4,6 +4,7 @@
 //! - [`PdfFonts`]：字体由宿主给字节（本地字体访问授权拿到的系统字体 + 随站点的 Bravura），按场景用到的族串挑着给
 //!   （[`PdfFonts::families`] 列出族串展开后要的族，含平台末位回退）；[`PdfFonts::scene_pdf`] 出矢量 PDF。
 //! - [`RasterPdf`]：逐页 PNG 铺满出栅格 PDF（没授权时）。
+//! - [`pptx`]：场景 → `.pptx`（`editor/pptxexport.ts`；网页与桌面同走这一份）。
 
 use dolce_export::fonts::{FontBook, Platform};
 use wasm_bindgen::prelude::*;
@@ -119,4 +120,12 @@ impl RasterPdf {
         let pages = std::mem::take(&mut self.pages);
         dolce_export::pdf::raster_pdf(&pages, (!title.is_empty()).then_some(title)).map_err(|e| JsError::new(&e))
     }
+}
+
+/// 场景 → `.pptx` 字节。`input` 是 `PptxInput` 的 JSON，`bravura` 是 Bravura.otf 的字节（SMuFL 字转曲用）。
+#[wasm_bindgen]
+pub fn pptx(input: &str, bravura: Vec<u8>) -> Result<Vec<u8>, JsError> {
+    let input: dolce_export::pptx::PptxInput = serde_json::from_str(input).map_err(|e| JsError::new(&format!("PPTX 料：{e}")))?;
+    let face = dolce_export::fonts::Face::parse(std::sync::Arc::new(bravura), 0, "Bravura.otf".into()).ok_or_else(|| JsError::new("Bravura.otf 读不了"))?;
+    Ok(dolce_export::pptx::pptx(&input, &face))
 }
