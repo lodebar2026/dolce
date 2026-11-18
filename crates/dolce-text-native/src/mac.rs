@@ -12,7 +12,7 @@ use objc2_core_foundation::{
 };
 use objc2_core_graphics::{CGPath, CGPathElement, CGPathElementType};
 use objc2_core_text::{
-    kCTFontAttributeName, kCTFontCascadeListAttribute, kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute,
+    kCTFontAttributeName, kCTFontCascadeListAttribute, kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTKernAttributeName,
     kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue, CTFont, CTFontDescriptor, CTFontManagerCreateFontDescriptorsFromURL, CTFontSymbolicTraits, CTLine, CTRun,
 };
 
@@ -133,11 +133,17 @@ fn font_for(families: &[String], size: f64, bold: bool, italic: bool, features: 
     font
 }
 
-fn line_for(text: &str, font: &CTFont, features: &[String]) -> CFRetained<CTLine> {
+fn line_for(text: &str, font: &CTFont, features: &[String], no_kern: bool) -> CFRetained<CTLine> {
     unsafe {
         let s = cfstr(text);
         let k: &CFString = kCTFontAttributeName;
-        let attrs = CFDictionary::<CFString, CFType>::from_slices(&[k], &[font.as_ref()]);
+        let zero = CFNumber::new_f64(0.0);
+        let kk: &CFString = kCTKernAttributeName;
+        let attrs = if no_kern {
+            CFDictionary::<CFString, CFType>::from_slices(&[k, kk], &[font.as_ref(), zero.as_ref()])
+        } else {
+            CFDictionary::<CFString, CFType>::from_slices(&[k], &[font.as_ref()])
+        };
         let astr = CFAttributedString::new(None, Some(&s), Some(attrs.as_opaque())).expect("CFAttributedStringCreate");
         let line = CTLine::with_attributed_string(&astr);
         if features.is_empty() {
@@ -165,6 +171,8 @@ fn line_for(text: &str, font: &CTFont, features: &[String]) -> CFRetained<CTLine
 }
 
 pub fn measure(text: &str, families: &[String], size: f64, bold: bool, italic: bool, features: &[String]) -> Measured {
+    let (no_kern, features) = dolce_text::split_no_kern(features);
+    let features = &features[..];
     let n = text.chars().count();
     let Some(font) = font_for(families, size, bold, italic, features) else {
         return Ink::default().into_measured(0.0, vec![0.0; n]);
@@ -172,7 +180,7 @@ pub fn measure(text: &str, families: &[String], size: f64, bold: bool, italic: b
     if text.is_empty() {
         return Ink::default().into_measured(0.0, vec![]);
     }
-    let line = line_for(text, &font, features);
+    let line = line_for(text, &font, features, no_kern);
     let mut ink = Ink::default();
     let mut glyph_pos: Vec<(usize, f64)> = Vec::new();
     // 逐字笔位按 base advance 累加（同浏览器 getStartPositionOfChar）：run 的 position 含 GPOS 的定位偏移
@@ -281,11 +289,13 @@ unsafe extern "C-unwind" fn push_element(info: *mut std::ffi::c_void, el: NonNul
 }
 
 pub fn outline(text: &str, families: &[String], size: f64, bold: bool, italic: bool, features: &[String]) -> String {
+    let (no_kern, features) = dolce_text::split_no_kern(features);
+    let features = &features[..];
     let Some(font) = font_for(families, size, bold, italic, features) else { return String::new() };
     if text.is_empty() {
         return String::new();
     }
-    let line = line_for(text, &font, features);
+    let line = line_for(text, &font, features, no_kern);
     let mut d = String::new();
     unsafe {
         let runs = line.glyph_runs();

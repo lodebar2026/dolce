@@ -1,9 +1,10 @@
-//! `dolce layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>]`：按编辑器录下的排版请求原生重排（系统量字），出各页 SVG。
+//! `dolce layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>] [--webview]`：按编辑器录下的排版请求原生重排（系统量字），出各页 SVG。
 //! 宿主对账（dev `layout-node-parity.mjs`）用：浏览器 / 桌面 WebView 里排的一份对它比。
 //!
 //! 入行（编辑器 `rustlayout.ts::wireDump` 的形状）：`{key, cfg, kind: "jianpu"|"staff", doc: "<ScoreDoc JSON>", req: "<请求 JSON>", surface: "<表层快照 hex>"|null}`；
 //! 出行：`{key, cfg, svgs: [...], missing: [...]}`，排不出为 `{key, cfg, error}`。`missing` 是页上 `font-family` 里一个都找不到的族串
-//! （浏览器量宽与量墨迹会落到不同的回退字体，这类差已知不追，对账脚本单独归类）。量字同桌面版（`dolce_text_native::node_measure`，字体取 `--redist`，缺省 `public/redist`）。
+//! （浏览器量宽与量墨迹会落到不同的回退字体，这类差已知不追，对账脚本单独归类）。量字是系统文字引擎 + 浏览器口径层（字体取 `--redist`，缺省 `public/redist`）：
+//! 缺省 Chromium 口径（`node_measure`，对网页），`--webview` 照本平台桌面版的 WebView（`webview_measure`，对桌面版）。
 
 use crate::layout::{flag, lines, positional};
 use dolce_engrave::Env;
@@ -71,11 +72,15 @@ fn lay(w: &Wire, env: &Env) -> Result<Laid, String> {
 pub fn layout_wire(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(src), Some(out)) = (pos.first(), flag(args, "out")) else {
-        eprintln!("用法：dolce layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>]");
+        eprintln!("用法：dolce layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>] [--webview]");
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
-    let backend = dolce_text_native::node_measure(Some(&redist), &[]);
+    let backend = if args.iter().any(|a| a == "--webview") {
+        dolce_text_native::webview_measure(Some(&redist), &[])
+    } else {
+        dolce_text_native::node_measure(Some(&redist), &[])
+    };
     let mc = MeasureCtx::new(&backend);
     let meta = MetaData::from_json(&std::fs::read_to_string(redist.join("bravura_metadata.json")).expect("读 SMuFL 元数据")).expect("SMuFL 元数据");
     let env = Env { mc: &mc, meta: Some(&meta) };

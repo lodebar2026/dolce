@@ -59,7 +59,7 @@ pub fn setup(app: &tauri::AppHandle) {
     std::thread::Builder::new()
         .name("dolce-layout".into())
         .spawn(move || {
-            let backend = Box::leak(Box::new(dolce_text_native::node_measure(redist.as_deref(), &[])));
+            let backend = Box::leak(Box::new(dolce_text_native::webview_measure(redist.as_deref(), &[])));
             let meta = MetaData::from_json(include_str!("../../public/redist/bravura_metadata.json")).expect("bravura_metadata.json");
             let mut host = Host { mc: MeasureCtx::new(backend), meta, surfaces: HashMap::new(), laid: HashMap::new(), next: 0, tick: 0 };
             for job in rx {

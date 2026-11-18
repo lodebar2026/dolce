@@ -2,8 +2,8 @@
 //!
 //! - `scene-svg <scene.jsonl> [--show=N]`：读 TS 页面树出 SVG，与 TS 那页的 sha256 比（逐字节相同才算过）；
 //!   行里带 `svg`（导出时加 `--svg`）的，不同处给出头一处差异的上下文。
-//! - `measure-check <measure.jsonl> [--redist=<目录>] [--show=N]`：原生量字（系统文字引擎 + 浏览器口径层）把每条录下的调用再量一遍，
-//!   逐键逐位比（等同 TS `nodeMeasure()`）。`--redist` 缺省 `public/redist`（Bravura 字体文件所在）。
+//! - `measure-check <measure.jsonl> [--redist=<目录>] [--show=N] [--webview]`：原生量字（系统文字引擎 + 浏览器口径层）把每条录下的调用再量一遍，
+//!   逐键逐位比（等同 TS `nodeMeasure()`；`--webview` 改照本平台桌面版 WebView 的口径）。`--redist` 缺省 `public/redist`（Bravura 字体文件所在）。
 //! - `diff-scene <a.jsonl> <b.jsonl> [--show=N]`：两份场景按 (key, cfg, page) 配对，先比骨架、再看数与页面绝对坐标的最大差。
 //! - `scene-dump <scene.jsonl> --key=<子串> [--page=N]`：打印一页的规范化记录（查 diff-scene 报的差在哪）。
 
@@ -110,7 +110,7 @@ fn same_num(a: f64, b: f64) -> bool {
 pub fn measure_check(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(path) = pos.first() else {
-        eprintln!("用法：dolce measure-check <measure.jsonl> [--redist=<目录>] [--show=N]");
+        eprintln!("用法：dolce measure-check <measure.jsonl> [--redist=<目录>] [--show=N] [--webview]");
         return 2;
     };
     if !dolce_text_native::NativeText::available() {
@@ -118,7 +118,11 @@ pub fn measure_check(args: &[String]) -> i32 {
         return 2;
     }
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
-    let backend = dolce_text_native::node_measure(Some(&redist), &[]);
+    let backend = if args.iter().any(|a| a == "--webview") {
+        dolce_text_native::webview_measure(Some(&redist), &[])
+    } else {
+        dolce_text_native::node_measure(Some(&redist), &[])
+    };
     let show = show_n(args);
     let mut by_op: HashMap<&'static str, (usize, usize, f64)> = HashMap::new();
     let mut shown = 0;

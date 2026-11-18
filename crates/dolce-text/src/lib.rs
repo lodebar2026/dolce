@@ -22,7 +22,7 @@ mod replay;
 pub mod syllable;
 
 pub use cjkpunct::CompressMode;
-pub use compat::{browser_path_bounds, css_families, han_kern_shifts, BrowserCompat, Measured, Platform, RawFontMetrics, SystemText};
+pub use compat::{browser_path_bounds, css_families, han_kern_shifts, BrowserCompat, Engine, Measured, Platform, RawFontMetrics, SystemText};
 pub use replay::{MeasureRecord, ReplayMeasurer};
 
 use cjkpunct::{code_points, compress_run, pair_trim_px, trim_left, SlackLR};
@@ -122,6 +122,15 @@ pub fn svg_collapsed_text(text: &str) -> String {
 pub const CHWS: &str = "chws";
 /// 无条件半角标点。
 pub const HALT: &str = "halt";
+/// 伪特性「不做字距调整」：WebKit 的 SVG 文字不 kern（`BrowserCompat` 在 WebKit 口径下给每次量字带上），
+/// 系统后端见到它就去掉、改关字距（CoreText `kCTKernAttributeName = 0`）。不是 OpenType 特性，不进 `font-feature-settings`。
+pub const NO_KERN: &str = "-kern";
+
+/// 拆出 [`NO_KERN`]：(要不要关字距, 余下的真特性)。
+pub fn split_no_kern(features: &[String]) -> (bool, Vec<String>) {
+    let off = features.iter().any(|f| f == NO_KERN);
+    (off, features.iter().filter(|f| *f != NO_KERN).cloned().collect())
+}
 
 /// 挤压档 → OpenType 特性。
 pub fn features_for(mode: CompressMode) -> Vec<String> {

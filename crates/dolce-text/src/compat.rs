@@ -71,6 +71,17 @@ pub trait SystemText {
     fn has_family(&self, family: &str) -> bool;
 }
 
+/// 画字的是哪种浏览器内核：网页 / Node 回归与 Windows 桌面版（WebView2）是 Chromium，macOS 桌面版（WKWebView）是 WebKit。
+/// 两家量字口径的差别：单字宽 Chromium 向上取到 1/64 px，WebKit 不取（`getComputedTextLength` 原样是浮点）；
+/// 相邻全角标点 Chromium 缺省挤掉半个字（`text-spacing-trim`），WebKit 不挤；WebKit 的 SVG 文字不做字距调整（kerning），Chromium 做。
+/// 还有一处不学：WebKit 给苹方粗体（Semibold）按屏幕像素字号套 `trak` 字距（随缩放、屏幕倍率变），原生按字号排、不套。
+/// 墨迹不分：WebKit 页面里自己量的墨迹是离屏画布逐像素量的（台阶约 1/200 em），原生量的才是真墨迹，不去学它。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine {
+    Chromium,
+    WebKit,
+}
+
 /// 泛称表与标准字体按哪个平台的浏览器取（`process.platform`；别的平台按 macOS）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Platform {
@@ -150,12 +161,18 @@ pub fn css_families(css: &str, platform: Platform) -> Vec<String> {
 pub struct BrowserCompat<S: SystemText> {
     sys: S,
     platform: Platform,
+    engine: Engine,
     lists: RefCell<HashMap<String, Vec<String>>>,
 }
 
 impl<S: SystemText> BrowserCompat<S> {
+    /// Chromium 口径（网页、Node 回归）。
     pub fn new(sys: S, platform: Platform) -> Self {
-        BrowserCompat { sys, platform, lists: RefCell::default() }
+        Self::with_engine(sys, platform, Engine::Chromium)
+    }
+
+    pub fn with_engine(sys: S, platform: Platform, engine: Engine) -> Self {
+        BrowserCompat { sys, platform, engine, lists: RefCell::default() }
     }
 
     pub fn sys(&self) -> &S {
@@ -179,7 +196,17 @@ impl<S: SystemText> BrowserCompat<S> {
 
     // ---- 原生那一层（`nativeMeasure`）：f32、宽度按折叠空白后的串量 ----
 
+    /// 交给系统后端的特性：WebKit 口径添上「不做字距调整」。
+    fn sys_features(&self, features: &[String]) -> Vec<String> {
+        let mut f = features.to_vec();
+        if self.engine == Engine::WebKit {
+            f.push(crate::NO_KERN.to_string());
+        }
+        f
+    }
+
     fn raw_glyph(&self, text: &str, family: &str, size: f64, weight: Weight, features: &[String], style: FontStyle) -> TextMetrics {
+        let features = &self.sys_features(features);
         let fams = self.families_of(family);
         let bold = weight == Weight::Bold;
         let italic = style == FontStyle::Italic;
@@ -191,7 +218,7 @@ impl<S: SystemText> BrowserCompat<S> {
     }
 
     fn raw_positions(&self, text: &str, family: &str, size: f64, weight: Weight, features: &[String]) -> Positions {
-        let m = self.sys.measure(text, &self.families_of(family), size, weight == Weight::Bold, false, features);
+        let m = self.sys.measure(text, &self.families_of(family), size, weight == Weight::Bold, false, &self.sys_features(features));
         Positions { xs: m.xs.iter().map(|&x| fround(x)).collect(), width: fround(m.width) }
     }
 
@@ -214,10 +241,10 @@ impl<S: SystemText> BrowserCompat<S> {
         han_kern_shifts(&code_points(text), |c| self.is_full(c, family, size, weight, style), |c| self.half_of(c, family, size, weight, style))
     }
 
-    /// `browserLike` 的 glyph（量化前）。
+    /// `browserLike` 的 glyph（量化前）。WebKit 不挤标点，原样回。
     fn kerned_glyph(&self, text: &str, family: &str, size: f64, weight: Weight, features: &[String], style: FontStyle) -> TextMetrics {
         let m = self.raw_glyph(text, family, size, weight, features, style);
-        if !features.is_empty() {
+        if !features.is_empty() || self.engine == Engine::WebKit {
             return m;
         }
         let shown = svg_collapsed_text(text);
@@ -243,9 +270,9 @@ impl<S: SystemText> BrowserCompat<S> {
 impl<S: SystemText> TextMeasurer for BrowserCompat<S> {
     fn glyph(&self, text: &str, family: &str, size: f64, weight: Weight, features: &[String], style: FontStyle) -> TextMetrics {
         let mut m = self.kerned_glyph(text, family, size, weight, features, style);
-        // 单字（非空白）的 advance 向上取到 1/64（Chromium 的量法）
+        // 单字（非空白）的 advance 向上取到 1/64（Chromium 的量法；WebKit 不取）
         let mut it = text.chars();
-        if let (Some(c), None) = (it.next(), it.next()) {
+        if let (Some(c), None, Engine::Chromium) = (it.next(), it.next(), self.engine) {
             if !dolce_base::js::is_space(c) {
                 m.width = ceil64(m.width);
             }

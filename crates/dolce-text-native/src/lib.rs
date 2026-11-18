@@ -10,7 +10,7 @@
 //! 浏览器口径（泛称展开、取整、1/64、缺省挤压）不在这层，见 `dolce_text::BrowserCompat`；
 //! [`node_measure`] 装好两层，等价于 TS 的 `nodeMeasure()`。
 
-use dolce_text::{BrowserCompat, Measured, Platform, RawFontMetrics, SystemText};
+use dolce_text::{BrowserCompat, Engine, Measured, Platform, RawFontMetrics, SystemText};
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -85,8 +85,17 @@ impl SystemText for NativeText {
 /// 本仓库按文件给的字体（不在系统里）：族名 → 文件名，在 `public/redist/` 下。
 pub const REPO_FONTS: &[(&str, &str)] = &[("Bravura", "Bravura.otf"), ("Bravura Text", "BravuraText.otf")];
 
-/// TS `nodeMeasure(files)` 的原生那条路：注册仓库字体（`redist` 目录下）与额外的字体文件，套上浏览器口径层。
+/// TS `nodeMeasure(files)` 的原生那条路：注册仓库字体（`redist` 目录下）与额外的字体文件，套上浏览器口径层（Chromium）。
 pub fn node_measure(redist: Option<&std::path::Path>, files: &[(String, String)]) -> BrowserCompat<NativeText> {
+    measure_for(redist, files, Engine::Chromium)
+}
+
+/// 桌面版的量字：同 [`node_measure`]，口径照本平台的 WebView（macOS WKWebView 是 WebKit，Windows WebView2 是 Chromium）。
+pub fn webview_measure(redist: Option<&std::path::Path>, files: &[(String, String)]) -> BrowserCompat<NativeText> {
+    measure_for(redist, files, if cfg!(target_os = "macos") { Engine::WebKit } else { Engine::Chromium })
+}
+
+fn measure_for(redist: Option<&std::path::Path>, files: &[(String, String)], engine: Engine) -> BrowserCompat<NativeText> {
     let sys = NativeText;
     let mut paths: Vec<String> = Vec::new();
     if let Some(dir) = redist {
@@ -100,7 +109,7 @@ pub fn node_measure(redist: Option<&std::path::Path>, files: &[(String, String)]
             sys.register_font(&p);
         }
     }
-    BrowserCompat::new(sys, Platform::current())
+    BrowserCompat::with_engine(sys, Platform::current(), engine)
 }
 
 /// 把 UTF-16 下标换成码点下标。
