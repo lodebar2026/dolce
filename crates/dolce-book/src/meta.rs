@@ -703,41 +703,7 @@ pub struct OrnamentTile {
     pub path: String,
 }
 
-static PATH_NUM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-?[0-9]*\.?[0-9]+(?:e[-+]?[0-9]+)?").expect("正则"));
-
-/// 把绝对坐标的路径平移（矢量抽取器只产出绝对的 M/L/C/Z；TS `translatePath`）
-pub fn translate_path(d: &str, dx: f64, dy: f64) -> String {
-    let b = d.as_bytes();
-    let mut i = 0usize;
-    let mut out = String::new();
-    while i < d.len() {
-        let c = b[i];
-        if matches!(c.to_ascii_uppercase(), b'M' | b'L' | b'C' | b'Z') {
-            out.push(c as char);
-            i += 1;
-            let up = c.to_ascii_uppercase();
-            if up == b'Z' {
-                continue;
-            }
-            let n = if up == b'C' { 6 } else { 2 };
-            let mut vals: Vec<f64> = vec![];
-            for _ in 0..n {
-                let Some(m) = PATH_NUM.find(&d[i..]) else { break };
-                vals.push(js::number(m.as_str()));
-                i += m.end();
-                while i < d.len() && (b[i] == b' ' || b[i] == b',') {
-                    i += 1;
-                }
-            }
-            let parts: Vec<String> = vals.iter().enumerate().map(|(k, v)| js::to_fixed(if k % 2 == 0 { v + dx } else { v + dy }, 2)).collect();
-            out.push_str(&parts.join(" "));
-        } else {
-            // 跳过一个字（非 ASCII 整字跳过，与 JS 逐码元跳过同效）
-            i += d[i..].chars().next().map_or(1, char::len_utf8);
-        }
-    }
-    out
-}
+pub use crate::parts::translate_path;
 
 /// 短哈希（djb2 + sdbm，与 glyphdict 的 `hash2` 同法；TS `hashHex`）
 fn hash_hex(s: &str) -> String {

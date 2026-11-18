@@ -10,8 +10,10 @@
 //! - `staff-check`：五线谱 / 混排引擎的对拍（见 `staff.rs`）。
 //! - `book-parts-check`：成书部件的对拍（见 `bookparts.rs`）。
 //! - `book-meta-check`：成书书级元数据与书籍样式统计的对拍（见 `bookmeta.rs`）。
+//! - `book-rebuild`：成书 B 路整本的对拍（见 `book.rs`）。
 //! - `book-draw-check`：成书（`browser.ts` / `songbook.ts`）的对拍（见 `bookdraw.rs`）。
 
+mod book;
 mod bookdraw;
 mod bookmeta;
 mod bookparts;
@@ -39,8 +41,9 @@ fn main() {
         Some("book-parts-check") => std::process::exit(bookparts::book_parts_check(&args[1..])),
         Some("book-meta-check") => std::process::exit(bookmeta::book_meta_check(&args[1..])),
         Some("book-draw-check") => std::process::exit(bookdraw::book_draw_check(&args[1..])),
+        Some("book-rebuild") => std::process::exit(book::book_rebuild(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild> …");
             std::process::exit(2);
         }
     }

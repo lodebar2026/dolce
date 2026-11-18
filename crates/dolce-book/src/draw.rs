@@ -134,11 +134,17 @@ pub struct DrawPage {
     /// rebuild 装订时挂上的印刷页码（`dp.label`）；TS 里是动态加的属性，写 drawlist.json 时带出
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// rebuild 装箱时挂上的分类名（`dp.cat`，页眉用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cat: Option<String>,
+    /// rebuild 装箱时挂上的各角色字号（`dp.sizes`，页眉页脚用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sizes: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl DrawPage {
     pub fn new(page_no: i64, w: f64, h: f64, meta: PageMeta) -> DrawPage {
-        DrawPage { page_no, w, h, meta, items: Vec::new(), label: None }
+        DrawPage { page_no, w, h, meta, items: Vec::new(), label: None, cat: None, sizes: None }
     }
 }
 

@@ -11,9 +11,9 @@ use dolce_layout_staff::model::{StaffLayout, SysId};
 use dolce_layout_staff::pages::format_mixed_score;
 use dolce_layout_staff::read;
 use dolce_layout_staff::render::draw_system;
-use dolce_model::doc::{Creator, Identification, ScoreDoc, Song, SongMeta};
+use dolce_model::doc::{ScoreDoc, Song};
 use dolce_model::melodyonly::keep_first_part;
-use dolce_model::metakeys::{meta_flag, overlay_meta};
+use dolce_model::metakeys::meta_flag;
 use dolce_model::xmlsurface::Surface;
 use dolce_scene::build::Env;
 use dolce_scene::{Node, TextShape};
@@ -35,46 +35,8 @@ use serde_json::Value;
 use crate::draw::{DrawItem, DrawPage, DrawText, PageMeta};
 use crate::scenedraw::{page_items_to_draw_page, RoleOf, ToDrawOptions};
 
-// ───────────────────────── 清单（临时私有版本） ─────────────────────────
-// TS `pdflayout/manifest.ts` 的 `ManifestSong` / `applyManifestSong`。`manifest.rs` 另有人在搬，合并时收拢到那边。
-
-/// 清单里一首歌（`book.json` 的 `songs[]`）
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct ManifestSong {
-    pub file: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub number: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub creators: Option<Vec<Creator>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rights: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<SongMeta>,
-}
-
-/// 清单项覆盖到读进来的谱上（就地改）。
-fn apply_manifest_song(song: &mut Song, entry: &ManifestSong) {
-    if let Some(t) = &entry.title {
-        song.work.title = Some(t.clone());
-    }
-    if let Some(n) = &entry.number {
-        song.work.number = Some(n.clone());
-    }
-    if entry.creators.is_some() || entry.rights.is_some() {
-        let id = song.identification.get_or_insert_with(|| Identification { creators: vec![], rights: None, software: None });
-        if let Some(cs) = &entry.creators {
-            id.creators = cs.clone();
-        }
-        if let Some(r) = &entry.rights {
-            id.rights = Some(r.clone());
-        }
-    }
-    if let Some(m) = overlay_meta(song.meta.as_ref(), entry.meta.as_ref()) {
-        song.meta = Some(m);
-    }
-}
+pub use crate::manifest::ManifestSong;
+use crate::manifest::apply_manifest_song;
 
 // ───────────────────────── 入口与结果 ─────────────────────────
 

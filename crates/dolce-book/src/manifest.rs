@@ -8,7 +8,7 @@ use dolce_model::metakeys::overlay_meta;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ManifestSong {
     /// 谱文件，相对清单里的 `root`（或清单文件所在目录）
     pub file: String,

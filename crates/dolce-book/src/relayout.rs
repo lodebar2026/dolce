@@ -57,15 +57,7 @@ pub fn chord_line_role(run: &TextRun) -> &'static str {
     }
 }
 
-/// 升序排序后取 `floor(n/2)` 那个；空为 0
-fn median(v: &[f64]) -> f64 {
-    if v.is_empty() {
-        return 0.0;
-    }
-    let mut s = v.to_vec();
-    js::sort_num(&mut s);
-    s[s.len() / 2]
-}
+use crate::meta::median;
 
 /// 一行的主字高（剔掉标点与上标）（`bodyHeight`；与 stats 的 `runBodyHeight` 同义）
 pub fn body_height(run: &TextRun) -> f64 {
