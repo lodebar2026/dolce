@@ -1,7 +1,7 @@
 //! `omr-cli split`：歌本切分（`omr-book`）。整本分页歌谱（PDF 取每页内嵌源图，或页图文件夹按文件名自然序）→ 输出目录里一首一张
 //! `曲号 曲名.jpg`；转曲矢量 PDF 整页渲成图来扫描，出 `曲号 曲名.png`（`--dpi`，缺省 300）；`--recognize` 切完逐首识别，
-//! 回原书取矢量对象，写 `曲号 曲名.musicxml`。核对报告写到 `输出目录/切分报告.txt`（及 `--report` JSON）。
-//! 有缺号、重号或识别失败时退出码 1。参数与报告照 web `scripts/omr-cli.mjs split`。
+//! 回原书取矢量对象，写 `曲号 曲名` 的 MusicXML（或 `-f` 选的格式）。核对报告写到 `输出目录/切分报告.txt`（及 `--report` JSON）。
+//! 有缺号、重号或识别失败时退出码 1。
 use crate::recognize::open_ocr;
 use dolce_omr_book::recognize::song_clips;
 use dolce_omr_book::report::{check_against_toc, song_file_names};
@@ -17,13 +17,16 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use dolce_formats::capability::TargetFormat;
+use dolce_formats::targets::{message_zh, write_music_xml_as};
+
 pub const USAGE: &str = "  omr-cli split <歌本.pdf | 页图目录> -o <输出目录> [--report 报告.json] [--quality 92] [--dpi 300] [--toc-pages 3-15] [--dry-run]
-              [--recognize [-f musicxml]] [--cache=OCR缓存.json]
+              [--recognize [-f 格式]] [--cache=OCR缓存.json]
       歌本切分：一页多首按标题切开、一首跨页按序拼接，去页码，按书内目录核对缺漏
       --toc-pages  目录页（按源页序，1 起；如 3-15 或 3,5,7-9）；不给则自动认歌谱区之前全是字行的页
       --dry-run    只扫描、核对并打印报告，不写图片
       --quality    位图歌本出 JPEG 的质量；--dpi 转曲矢量歌本出 PNG 的分辨率
-      --recognize  切完逐首识别（只收转曲矢量歌本，取原书矢量对象）；-f 本期只有 musicxml
+      --recognize  切完逐首识别（只收转曲矢量歌本，取原书矢量对象），-f 选输出格式（同 omr-cli 识谱，缺省 musicxml）
       --cache      OCR 结果缓存（缺省 ../dev/data/rust-omr/ocr-cache/book-<书名>.json）";
 
 struct Opts {
@@ -35,12 +38,12 @@ struct Opts {
     toc_pages: Option<String>,
     dry_run: bool,
     recognize: bool,
-    format: String,
+    format: TargetFormat,
     cache: Option<String>,
 }
 
 fn parse(args: &[String]) -> Result<Opts, String> {
-    let mut o = Opts { input: None, out: None, report: None, quality: 92, dpi: None, toc_pages: None, dry_run: false, recognize: false, format: "musicxml".into(), cache: None };
+    let mut o = Opts { input: None, out: None, report: None, quality: 92, dpi: None, toc_pages: None, dry_run: false, recognize: false, format: TargetFormat::MusicXml, cache: None };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut val = || it.next().cloned().ok_or_else(|| format!("{a} 后面缺值"));
@@ -52,7 +55,7 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--toc-pages" => o.toc_pages = Some(val()?),
             "--dry-run" => o.dry_run = true,
             "--recognize" => o.recognize = true,
-            "-f" | "--format" => o.format = val()?,
+            "-f" | "--format" => o.format = crate::cli::parse_format(&val()?)?,
             _ if a.starts_with("--cache=") => o.cache = Some(a["--cache=".len()..].to_string()),
             _ if a.starts_with('-') => return Err(format!("不认识的参数 {a}")),
             _ => o.input = Some(a.clone()),
@@ -106,9 +109,6 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
     if o.dpi.is_some_and(|d| !(36.0..=1200.0).contains(&d)) {
         return Err("--dpi 要在 36–1200".into());
     }
-    if o.recognize && o.format != "musicxml" {
-        return Err(format!("-f {}：Rust 版本期只写 musicxml（别的格式由 web 的 omr-cli.mjs 转）", o.format));
-    }
     let toc_pages = o.toc_pages.as_deref().map(parse_ranges).transpose()?;
     let t0 = std::time::Instant::now();
     let path = Path::new(input);
@@ -140,9 +140,9 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
         let write_tick = ticker("写出");
         write_songs(&src, &plan.layouts, &names, out, &WriteOpts { quality: o.quality as u8, dpi: o.dpi, on_progress: Some(&write_tick) })?;
         if o.recognize {
-            (rec_ok, rec_failed) = recognize_songs(&src, &plan, &names, out, &ocr);
+            (rec_ok, rec_failed) = recognize_songs(&src, &plan, &names, out, &ocr, o.format);
             ocr.cache.save()?;
-            let mut l = vec![format!("识别（musicxml，取原书矢量）：成功 {rec_ok} 首{}", if rec_failed.is_empty() { " ✓".to_string() } else { format!("，失败 {} 首", rec_failed.len()) })];
+            let mut l = vec![format!("识别（{}，取原书矢量）：成功 {rec_ok} 首{}", o.format.id(), if rec_failed.is_empty() { " ✓".to_string() } else { format!("，失败 {} 首", rec_failed.len()) })];
             l.extend(rec_failed.iter().map(|(n, r)| format!("  {n}：{r}")));
             rec_text = l.join("\n") + "\n";
         }
@@ -177,7 +177,7 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
 }
 
 /// 逐首识别：各段取那一页的矢量对象裁出那一截（剔页码）当一页，走五线谱 / 混排路线拼整曲，曲名用切分认出的。
-fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Path, ocr: &dolce_omr_ocr::cache::CachedOcr) -> (usize, Vec<(String, String)>) {
+fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Path, ocr: &dolce_omr_ocr::cache::CachedOcr, format: TargetFormat) -> (usize, Vec<(String, String)>) {
     let tick = ticker("识别");
     let done = AtomicUsize::new(0);
     let failed = Mutex::new(Vec::new());
@@ -198,7 +198,16 @@ fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Pa
             }
             let title = Some(plan.songs[k].title.clone()).filter(|t| !t.is_empty());
             let song = assemble(&pages, title);
-            std::fs::write(out.join(format!("{}.musicxml", names[k])), dolce_omr_todoc::staff::score_to_music_xml(&song.score)).map_err(|e| e.to_string())
+            let xml = dolce_omr_todoc::staff::score_to_music_xml(&song.score);
+            let write = |ext: &str, bytes: &[u8]| std::fs::write(out.join(format!("{}{ext}", names[k])), bytes).map_err(|e| e.to_string());
+            match write_music_xml_as(format, &xml) {
+                Ok(enc) => write(format.ext(), &enc.bytes),
+                // 转不成就把 MusicXML 留下
+                Err(e) => {
+                    write(TargetFormat::MusicXml.ext(), xml.as_bytes())?;
+                    Err(format!("转 {} 失败：{}（MusicXML 留着）", format.id(), message_zh(&e)))
+                }
+            }
         })();
         match r {
             Ok(()) => {

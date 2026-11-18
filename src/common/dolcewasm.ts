@@ -200,6 +200,8 @@ export interface DolceWasm {
   /** `{ doc }` / `{ error: { model: Msg } | { fail } }`；分节读不出 `"null"` */
   jpwToScoreDoc(text: string): string;
   jpwSource(text: string): string;
+  /** `ScoreDoc` JSON → `{ text, warnings }`；投影不出来抛 `noLines` */
+  jlyEmit(doc: string): string;
   /** `{ doc, losses: Msg[], unknown }` */
   jlyParse(text: string): string;
   jlyRewrap(text: string, measuresPerLine: number, skipPickup: boolean): string;

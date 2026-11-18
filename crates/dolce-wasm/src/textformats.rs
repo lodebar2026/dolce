@@ -181,6 +181,14 @@ pub fn jly_parse(text: &str) -> String {
     to_json(&fromjly::parse_jly(text))
 }
 
+/// `ScoreDoc`（JSON）→ jianpu-ly 文本：`{ text, warnings }`（提示已写进文本开头的 `%` 注释）。投影不出来抛 `noLines`
+#[wasm_bindgen(js_name = jlyEmit)]
+pub fn jly_emit(doc: &str) -> Result<String, JsValue> {
+    let doc: ScoreDoc = parse("ScoreDoc", doc)?;
+    let out = dolce_formats::jly::emit_jly(&doc).map_err(|e| crate::js_sys_error(&e))?;
+    Ok(json!({ "text": out.text, "warnings": out.warnings }).to_string())
+}
+
 /// 按每行 N 小节重排
 #[wasm_bindgen(js_name = jlyRewrap)]
 pub fn jly_rewrap(text: &str, measures_per_line: f64, skip_pickup: bool) -> String {

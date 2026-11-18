@@ -672,7 +672,7 @@ lt .81 rt .38 lb .63 rb .68，原先 0.45 的门把它判成了 ♯）。♮ 早
 `[2`「和平的福音已扎根」，谱面上都在第 1 行。「第几遍唱哪行词」交给演唱顺序层（`crates/dolce-play/src/playorder.rs`，
 `.Repeat` 的 `Vn` 就指第 n 行词）。旧版按房号首号迁到 W[n-1]，上述三份 GT 据此订回 w1。
 
-**整页简体里的孤立繁体字按候选改判**（2026-09-20，`src/omr/hanvariant.ts` + `lyrics.ts::simplifyStrayTraditional`）：
+**整页简体里的孤立繁体字按候选改判**（2026-09-20，`src/omr/hanvariant.ts` + `lyrics.ts::simplifyStrayTraditional`；繁 → 简表现在是 `omr-text::hanvariant`）：
 PP-OCR 的字典繁简同收，字形只差一角的一对常读错边——76《天上有粮》十来行歌词里只有「别」被读成
 「別」（而同一页的署名「詞曲：巧兒」倒真是繁体，所以**只按歌词区统计、页眉不参与**）。两条判据叠起来：
 - **孤立**：整页歌词至多 2 个繁体字，且简体字数 ≥ 繁体的 10 倍（繁体谱面整页都是繁体，碰不到）；
@@ -1866,11 +1866,12 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 副标题缺；77 标题上方的「新耶路撒冷——」没认、首行 `7̣ 2 2-` 被「隐含延音」补了一条谱面没有的弧；78 行首不带分隔符的中文段号「一」「二」没读出；
 83 挤在一起的「F(B♭)G(C)」F 挂到了前一个音上。
 
-## 参照歌词互证（`reflyrics.ts`）
+## 参照歌词互证（`omr-todoc::reflyrics`）
 
-给了同一首诗歌的歌词文本（CLI `--lyrics`、库 `recognizeImage({ lyrics })` → `recognizeJianpu(bin, ocr, { refLyrics })`）时，
-拿它与识别歌词逐字对照：形近字按参照选字、补回漏读的字；其余不一致只报告（`RecognizedScore.lyricCheck`），不擅改。
-挂在各段歌词落位（含谱后附段）之后、`resolveSlurRefits` 与「有词的 0」复原之前——补上的字要喂给这几步。
+给了同一首诗歌的歌词文本（命令行 `omr-cli 图 -l 歌词.txt`）时，拿它与识别歌词逐字对照：形近字按参照选字（候选取识别时挂在音上的
+`JpNum.lyric_alts`）、补回漏读的字；其余不一致只报告（`apply_ref_lyrics` 回的 `LyricCheck`），不擅改。
+TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有词的 0」复原之前（补上的字喂给这几步）；迁 Rust 后在识别完成之后做，
+那几步已做完，补字不再回喂（原在 TS `omr/reflyrics.ts`，2026-11-19 迁 Rust，与 TS 逐项对拍一致）。
 
 - **参照按演唱顺序写全**（反复段、每段后的副歌都照唱写一遍），谱面只印一遍、多段叠印。所以识别侧先**按演唱顺序展开**：
   `recognizedToDoc(score, numOf)`（门面，实现 `omr-todoc::jianpu`） → `jianpuInputOfDoc({ forExpanded: true })` → `walkPlay`，第 pass 遍取第 pass 段、
@@ -2147,7 +2148,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 
 ## 无浏览器管线（Node CLI）
 
-`node scripts/omr-cli.mjs 图片.jpg -f shige` —— 图片进、文本谱出，全程不起浏览器，
+（TS 识别时代的记录；现在命令行全在 Rust，见下「命令行」。）`node scripts/omr-cli.mjs 图片.jpg -f shige` —— 图片进、文本谱出，全程不起浏览器，
 给第三方打谱软件当命令行工具用。识别逻辑与网页端**同一份源码**，只换后端。
 
 ### 三个注入点
@@ -2169,7 +2170,7 @@ CLI 识别吃带内嵌位图的 PDF（每页取源图，同上；歌本切分 `s
 （歌本切分例外：转曲矢量歌本自己把对象画成 SVG 交 sharp，见下）。矢量那一摊
 （`vector.ts`/`vectext.ts`/`inventory.ts` + `pdflayout/`）仍只在浏览器与 `cli/index.ts` 那条链上。
 
-### 歌本切分（`omr-cli.mjs split`，`src/omr/booksplit/`）
+### 歌本切分（原 `omr-cli.mjs split`、`src/omr/booksplit/`，现 `omr-cli split`、`omr-book`）
 
 整本分页简谱 → 一首一张图。两遍：第一遍逐页只留几何与文字（几百页的像素不常驻），第二遍按摆放回源图裁拼。
 判据先是拿《哈利路亚》（438 页扫描、551 首，一页多首与跨页都很多）换来的，后又拿转曲矢量的《裴克圣经经文诗歌歌谱》
@@ -2300,42 +2301,42 @@ rec 全被按在一个弱核上、按歌词条数累积的形状。
 `OMR_THREADS` / `--threads=N` 定多线程时用几个核（默认 4）。`--profile` 会把实际生效的
 `模式/线程数` 一并打出来。**换机器请先用这三种跑一遍对比再定**，别照搬默认值。
 
-### 命令行（`scripts/omr-cli.mjs`，2026-11 起识别走 Rust）
+### 命令行（Rust `omr-cli`，2026-11 起全在 Rust、不要 Node）
 
-识别迁 Rust（P12）后，`omr-cli.mjs` 不再 import TS 识别：它起 Rust 的 `omr-cli run`（批量识别，一个文件一首，判路同编辑器），
-逐行收 JSON（五线谱是带识别 id 的 MusicXML，简谱是 `RecognizedScore`），再用编辑器同一套写出端（`src/cli/omrfmt.ts` → `out/cli/omrfmt.js`，
-只依赖 Node 内置模块）转成要的格式；`split` 原样转给 Rust 的 `omr-cli split`，`--recognize -f` 选 MusicXML 以外的格式时先写 MusicXML 再逐首转。
-上面几节（ORT 线程、预热）讲的是 TS 识别在 Node 里的推理，只剩回归脚本经 `out/cli/omr.js` 用，P13 随 TS 识别删。
+识别迁 Rust（P12）后，命令行先是 `scripts/omr-cli.mjs` 起 Rust 的 `omr-cli run`、再用 TS 写出端转格式；模型、格式迁 Rust 之后（2026-11-19）
+这层 Node 也去掉了：`omr-cli` 不带子命令就是给人用的识谱（`crates/omr-cli/src/cli.rs`），识别后直接按输出格式表（`dolce-formats::targets`，
+与编辑器的转换目标表同一份口径，外加 MusicXML）写出；简谱的 MusicXML 走 `omr-todoc::jianpu` 建模 → `toxml`，五线谱的 MusicXML 原样去识别 id、
+别的格式读回模型再写。参照歌词互证（`-l`）也在 Rust（`omr-todoc::reflyrics`，见上「参照歌词互证」）。
+上面几节（ORT 线程、预热）讲的是 TS 识别在 Node 里的推理，已随 TS 识别删。
 
 ```bash
-npm run build:cli && node scripts/omr-cli.mjs <图…|PDF…|目录…> [-f 格式] [-o 出] [--kind=auto|staff|jianpu] [--profile]
-node scripts/omr-cli.mjs split 歌本.pdf -o 歌谱/ [--recognize -f 123]
+cd crates && cargo build --release -p dolce-omr-cli
+target/release/omr-cli <图…|PDF…|目录…> [-f 格式] [-o 出] [--kind=auto|staff|jianpu] [--profile] [-l 歌词 [--lyrics-report 核对.json]]
+target/release/omr-cli split 歌本.pdf -o 歌谱/ [--recognize -f 123]
 ```
 
-- 识别程序按 包内同目录 → `DOLCE_OMR_BIN` → 仓库 `crates/target/release` 找；模型按 `OMR_MODELS` → 识别程序旁的 `models/` → 仓库 `public/redist/ocr` 找。
-- 输入多了 PDF 与五线谱（以前只吃位图简谱）；格式多了 `musicxml`（五线谱写出时去掉识别 id）。
-- `-l / --lyrics` 参照歌词互证还没迁到 Rust，报「暂不支持」退出；`--threads` / `--thread-mode` 不再用（推理线程由识别程序自己定）。
+- 模型按 `OMR_MODELS` → 识别程序旁的 `models/` → 仓库 `public/redist/ocr` 找；PDFium 在识别程序旁边找。
+- 参数、提示、退出码照旧 mjs（`--threads` / `--thread-mode` 只提示不用）；与 mjs + TS 写出端对拍过：8 种格式 × 简谱 / 五线谱 12 首逐字节相同，
+  参照歌词互证 485 例（GT 歌词、改字删字加衬字、LRC、颠倒段序、不相干）核对报告与改后写出逐项相同。
 - 批量仍比逐张起进程快：OCR 模型加载与推理会话初始化每个进程付一次。
 
 ### 打包分发（`scripts/pack-omr.mjs`）
 
-打成**自包含**分发包：解压即用，不联网、不装依赖，目标机要 Node ≥ 20（只用来转输出格式）。
+打成**自包含**分发包：解压即用，不联网、不装依赖，也不要 Node。
 
 ```bash
-npm run build:cli && node scripts/pack-omr.mjs                     # 当前平台（识别程序没编就当场 cargo build --release）
+node scripts/pack-omr.mjs                                          # 当前平台（识别程序没编就当场 cargo build --release）
 node scripts/pack-omr.mjs --targets=linux-x64 --bin-dir=… --pdfium-dir=…   # 别的平台：识别程序与 PDFium 要先在那个平台编好
 node scripts/pack-omr.mjs --targets=win32-x64 --no-crt             # Windows 不内置 VC++ 运行库
 ```
 
-包里：Rust 识别程序 `omr-cli`（ONNX Runtime 静态链在里面）、PDFium 动态库（识别程序在自己旁边找）、`models/`、
-`omr-cli.mjs`（Windows 另附 `omr-cli.cmd`）、`omrfmt.js` 及其 chunk。**不再带 node_modules**（onnxruntime-node、sharp、pdfjs-dist 都去掉了）。
-darwin-arm64：目录 69M、tar.gz 36M（以前 96M / 46M）。
+包里：识谱程序 `omr-cli`（ONNX Runtime 静态链在里面）、PDFium 动态库（识谱程序在自己旁边找）、`models/`、README（Windows 另内置 VC++ 运行库）。
+darwin-arm64：目录 72M（以前带 Node 入口与写出端时 69M、更早带 node_modules 时 96M）。
 
-识别程序与 PDFium 都是原生的，**不能交叉打包**（以前靠 npm 预编译包交叉打，现在不行）：别的平台的识别程序按
+识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的识别程序按
 `crates/target/<三元组>/release/` → `--bin-dir` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`（omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir` 找，缺了报错不打。
-产物 `out/pkg/dolce-omr-<版本>-<os>-<cpu>.{tar.gz|zip}`（Windows 出 zip）。打 zip 不用 `zip` 命令（Windows 没有）：bsdtar 能产 zip，
+产物 `out/pkg/omr-cli-<版本>-<os>-<cpu>.{tar.gz|zip}`（Windows 出 zip，解出来是同名目录）。打 zip 不用 `zip` 命令（Windows 没有）：bsdtar 能产 zip，
 但要显式 `--options zip:compression=deflate`；GNU tar 不认 zip，那种环境才回退到 `zip`。
-生成的 `package.json` 不能写 `os` / `cpu` 字段（npm 会拿它跟宿主比），用自定义的 `target` 字段记录。
 
 ### Windows 包内置 VC++ 运行库（`scripts/vcredist.mjs`）
 

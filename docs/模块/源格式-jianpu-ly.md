@@ -8,7 +8,8 @@
 | 文件 | 职责 |
 |---|---|
 | `crates/dolce-formats/src/jly/fromjly.rs`（门面 `src/jly/fromjly.ts`） | **读入**：`scan_word` / `scan_music_line` / `is_jly_music_line`（词法）、`syllables_of`（歌词音节，含占位与连写）、`parse_jly`（装配成 `ScoreDoc`）、`rewrap_jly_text`（曲行重断）；损失清单只出 `Msg` 键，门面按界面语言出字 |
-| `src/jly/tojly.ts` | **写出**（吃简谱引擎输入 `JScore`，随 `jianpuinput` 留到 M5 迁）：`planJly`（歌词位置 + 圆滑线分组）、`ornamentsBefore` / `ornamentsAfter` / `chordBody` / `sustainOf`、`lyricLines`、`emitJlyOfScore`、`emitJly(doc)` |
+| `crates/dolce-formats/src/jly/emit.rs`（门面 `src/jly/tojly.ts`） | **写出**：`plan_jly`（歌词位置 + 圆滑线分组）、`ornaments_before` / `ornaments_after` / `chord_body` / `sustain_of`、`lyric_lines`、`emit_jly_of_score`、`emit_jly(doc)`；装不下的提示以 `%` 注释写进文本、另回 `warnings` |
+| `crates/dolce-formats/src/jly/input.rs` | 写出端吃的**简谱输入模型** `JScore`：`jly_input_of_doc`（简谱形状走投影档小节、`.jpwabc` 按原文小节，口径同 TS `jianpu/jianpuinput.ts`） |
 | `crates/dolce-formats/src/jly/chords.rs`（门面 `src/jly/jlychords.ts`，只给写出端与可视化编辑要的三样） | **和弦符号**两个方向的转换：LilyPond 和弦语法 ↔ 谱上印的文字（`c2.:m7/bes` ↔ `Cm7/Bb`），以及整音符分数 ↔ LilyPond 时值串 |
 | `src/editor/visual/dialects/jly.ts` | **可视化编辑方言**（`DIALECT_JLY`）：顺序无关的 `scan`、规范 `printNote`、`deco`/`annotationText`/`dynamicText`、`tuplet`、`slurNesting`、`lineBreak`；`chordEdit` —— 和弦在 `chords=` 行上，按**时间线**改那一行（点一个音算出它落在第几拍，插进去，并把相邻格的时值切成两段） |
 | `src/editor/formats.ts` | 适配器 `JLY`：`defaultExt ".jly"`、`caps`、`toScoreDoc → parseJly`、`reloadSpec`（读不出音符就拦、先报诊断）、`relayoutText → rewrapJlyText`、`editDialect` |
@@ -67,7 +68,7 @@
 - 词法**认得出但不当记号读**的写法见格式页「本版不收」；写不出的（和弦符号、多声部、
   多乐章、拉丁连字符）以 `%` 注释写进导出文件。
 - 跳转裸词按**小节线**收（`Barline.ornaments`），写在小节中间的裸词位置会挪到小节线。
-- `\pageBreak` 能读进模型、导到 123 是 `%%newpage`，但**导出到 `.jly` 时会降级成 `\break`**：页末那一跳在共享的引擎输入里没带过来（`jianpu/slots.ts` 的页面切分按 `bySystem` 走；`jianpuinput.ts` 里已把 `pageEnds` 在两种视图都传上）。
+- `\pageBreak` 能读进模型、导到 123 是 `%%newpage`，但**读进来再导出到 `.jly` 时会降级成 `\break`**（123 的 `%%newpage` 导出是 `\pageBreak`，写出端 `jly/emit.rs` 认 `Break { new_page }`）：读入那条路记下的分页没被简谱输入模型（`jly/input.rs`）认成换页，根因未查。
 - 可视化编辑方言没给 `measure`：谱面上不能插删小节（和弦名能改，见 `chordEdit`）。
 - 「按乐句重排」用的是**出厂值**（每 4 小节一行），还没接排版尺子（`FitMeasure`）。
 - `(` 与 `\(` **交叠**（`1 ( 2 \( 3 ) 4 \)`）读得进，写出时配对会乱（引擎输入里一个音只有一个弧终点）。

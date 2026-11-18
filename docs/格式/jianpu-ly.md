@@ -64,7 +64,7 @@
 ## 最容易踩的三个坑（都是拿真工具量出来的）
 
 这一节的每条都有「真 `jianpu-ly` + 真 LilyPond + 读产出 SVG 坐标」的实测支撑，
-判据写在 `src/jly/tojly.ts` / `crates/dolce-formats/src/jly/fromjly.rs` 的注释里（改之前先读那段注释）。
+判据写在 `crates/dolce-formats/src/jly/emit.rs` / `fromjly.rs` 的注释里（改之前先读那段注释）。
 
 1. **某一段在这个音上没词，必须写 `""`**。音节是按顺序落到音上的，少一个占位，后面**整行左移一格**。
    实测：`1 2 3 4` 上"缺一格"的谱，7 个音节里 6 个落错音；补上 `""` 后逐个对上。

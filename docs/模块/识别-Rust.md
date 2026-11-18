@@ -15,14 +15,15 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 
 | crate | 作用 |
 |---|---|
-| `crates/omr-cli` | 命令行 `omr-cli`：`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout；web 的 `scripts/omr-cli.mjs` 与 OMR 分发包起它、再用 TS 写出端转格式）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/omr-cli` | 命令行 `omr-cli`：不带子命令是给人用的识谱（`cli.rs`：图片 / PDF → 各格式，格式表 `dolce-formats::targets`；简谱可带 `-l` 参照歌词，`omr-todoc::reflyrics`；OMR 分发包就是它，不要 Node）、`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout，私有仓库自检脚本吃它）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/omr-todoc` | 识别结果直出 `ScoreDoc`（简谱 `jianpu`、五线谱 `staff`）；参照歌词互证 `reflyrics`（按演唱顺序展开识别歌词、与参照整篇对齐，形近字按逐字候选选字、补漏字，其余报出来；繁简归一用 `omr-text::hanvariant`） |
 | `crates/omr-engine` | 三端共用的入口：`Doc`（打开 PDF / 图片，几个文件合成一份；页尺寸、整页渲染）、`recognize`（判路：先按五线谱认，一页谱表都没有再走简谱；进度与取消）、`staff_binary`（核对底图）、`insert` / `region`（点图补认、框选重认）；`Handle`（文档句柄：桌面版 Tauri 命令与网页版 wasm 都是它外面的薄壳，请求与回应的字节 / JSON 格式两边一样）。页级并行在特性 `parallel` 后面，wasm 下关 |
 | `crates/omr-wasm` | 网页版绑定（wasm-bindgen，`scripts/build-wasm.mjs` 编进 `public/redist/omr/`，Worker `src/omrrust/worker.ts` 里跑）：`OmrDoc`（与 Tauri 命令一一对应）、`load_ocr`（OCR 用 tract 推理同一份 ONNX）、`set_pdfium_module` |
 | `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `omr-cli`，本 crate 不依赖识别路线） |
 | `crates/omr-source` | 取数层：`pdf.rs`（PDFium：页数、内嵌图原始像素与矩阵、路径、文字层、字形轮廓、整页渲染）、`raster.rs`（取页图：最大块 / 拼图页 / 按矩阵转正、图片文件按 EXIF 转正；`Binarizer` 灰度各倍数只算一次、几档 Sauvola 共用积分图；极性自检） |
 | `crates/omr-ocr` | PP-OCR：识别（CTC、逐字位置、前 K 候选）、DBNet 检测（含分块）、原生推理（ort 会话池）、按条内容指纹的落盘缓存 |
 | `crates/omr-text` | 两条路线共用的文字处理（纯文本与纯几何，不碰像素、不调 OCR）：`chords`（和弦文法：切词、覆盖率、归一、拆成根音 / 性质 / 低音）、`header`（页眉各行分类）、`spaces`（按空白列补词间空格）、`lyrics`（歌词切音节、段号、标点归属、对音）、`words`（节拍器、术语、力度、跳转的词表） |
-| `crates/omr-sheet` | 谱面元素公共件：`Staff`（五条线位、各线带厚、共用偏移曲线、左右端、单线谱）与谱表局部坐标（`pos` / `y_of`：第一线 0、往下每半格 +1）、`music`（谱号调号拍号、音高）、`meter`（满拍验收与候选组合）、`curves`（细长笔画的追踪、拼接、量形状）、`score`（五线谱结果模型）、`jianpu`（简谱结果 `RecognizedScore`，形状同 web `omr/types.ts`；可读回，TS 按参照歌词改过的结果也交回 Rust 建模） |
+| `crates/omr-sheet` | 谱面元素公共件：`Staff`（五条线位、各线带厚、共用偏移曲线、左右端、单线谱）与谱表局部坐标（`pos` / `y_of`：第一线 0、往下每半格 +1）、`music`（谱号调号拍号、音高）、`meter`（满拍验收与候选组合）、`curves`（细长笔画的追踪、拼接、量形状）、`score`（五线谱结果模型）、`jianpu`（简谱结果 `RecognizedScore`，形状同 web `omr/types.ts`；可读回，改过的结果也交回 Rust 建模） |
 | `crates/omr-todoc` | 识别结果直出 `ScoreDoc`（M6）：`jianpu`（简谱形状，与 123 解析同口径；`chord_places` 是点选落点）、`staff`（五线谱：模型与读进识别写出的 MusicXML 所得逐字段相同，识别 id 与符干是模型旁的附件 `Rids` / `EngravedLayout.stems`，要 MusicXML 经唯一写出端 `dolce-model::toxml` 写） |
 | `crates/omr-staff` | 五线谱路线：`prep/`（成像、网点网纹）、`frame/`（找谱表、墨层、系统、小节线）、`attrs/`（谱号、调号、拍号）、`notes/`（符头候选、加线作证、符干挂头、裁决、休止、符杠符尾、临时记号与附点、满拍裁决与修正提案）、`text/`（文字行、分类与归属、页眉）、`spans/`（线性符号：弧、松叶、房子）、`mixed/`（混排简谱互证：简谱行定位与划出、交 `omr-jianpu` 认、逐小节配对纠错；本路线唯一依赖 `omr-jianpu` 的地方）、`song/`（整曲拼接：识别 id 预发、声部指派、花括号合大谱表、文字与线性符号按 x 挂到拍点、约束、核对 JSON）、`session.rs`（会话：改关联表 / 系统切分、钉住事实、换候选，只重跑拼接）。`examples/` 是对 TS 阶段快照的对账与排查工具（`vs_ts_staves`、`vs_ts_bars`、`vs_ts_heads`、`vs_ts_rests`、`vs_ts_durs`、`dbg_heads`、`dbg_tri`、`dbg_systems`、`dbg_bars`、`dbg_crop`、`dbg_text`：某页各条带切出的行与读出的字、各谱行挂上的歌词与记号、页眉；`dbg_spans`：某页认出的弧、松叶、房子，给了点就列那附近的细笔画与形状） |
 | `crates/omr-jianpu` | 简谱路线（位图）：`prep`（成像、连通块）、`frame`（数字高、数字行与行带、带内切格、连谱号分系统与声部）、`notes`（读数、增时线、附点、减时线、八度点、小节线与反复冒号）、`marks`（临时升降号、倚音、顿音 / 重音 / 波音 / 延长记号）、`beats`（满拍裁决与可疑清单）、`text`（歌词带切行与对音、谱后附段、和弦行、页眉与调号 / 拍号 / 速度）、`spans`（弧）、`result`（再导出 `omr-sheet::jianpu`；交 `omr-todoc::jianpu` 建模） |
@@ -537,7 +538,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 没做（留后）：
 - 功能：下滑音、被数字断成两截的三连音、倚音串与倚音的低八度点、粘成一块的延长记号；裁决里的歌词纠休止、0 复原、小节线读成 1 的反向、同系统各声部拍位对齐；
   换候选 / 钉住事实的会话接口（`JpNum::alts` 已写出）；房子、连音括线、跨行的半条弧、嵌套弧的拆分；
-  段落标记、力度文字、跳转（D.S. / Fine）与 segno；行中转拍号、混合拍的几个拍号；副标题与书眉的细分、页脚注；参照歌词互证；
+  段落标记、力度文字、跳转（D.S. / Fine）与 segno；行中转拍号、混合拍的几个拍号；副标题与书眉的细分、页脚注；
   矢量档（7j）；按数字高归一的工作分辨率与 OCR 并发（单曲提速）。
 - 精度：**高音点粘在弧上、不粘数字的**（弧的两端正落在点上，迦南 1850 一串 1' 读成 1）——试过「隔一段空白往上找坠着的圆头」，
   弧的端头、弧谷凑出假点伤了 27 首，撤了；要等弧先认下来、再看弧端有没有鼓出圆头；数字粘小节线；
@@ -549,7 +550,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 
 ### 歌本切分（P11，`omr-book`，`omr-cli split`）
 
-分页的简谱诗歌集（扫描 PDF、页图文件夹或转曲矢量 PDF）→ 输出目录里一首一张图，只在命令行（`omr-cli split`，`scripts/omr-cli.mjs split` 转交）。一页多首按标题切开，
+分页的简谱诗歌集（扫描 PDF、页图文件夹或转曲矢量 PDF）→ 输出目录里一首一张图，只在命令行（`omr-cli split`）。一页多首按标题切开，
 一首跨页按序竖着拼，去掉页脚页码；书内目录自动整页 OCR，用来给标题配号并报缺号、重号、起始页不符，写到 `切分报告.txt`。
 `--recognize`（只收转曲矢量歌本）切完逐首识别：回原书取矢量对象交五线谱路线的转曲档。
 判据照旧 TS 版（`src/omr/booksplit/`，判据见 [../实现/OMR-简谱识别.md](../实现/OMR-简谱识别.md)「歌本切分」）搬过来，参数、报告形状不变。与 TS 不同的地方：
@@ -565,7 +566,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
   - 首尾点号只在拼好的整个曲名上去（框常在逗号处切开，「神啊，」「愿列邦称赞祢」）；整段重读（只留汉字）读出的与原曲名汉字相同时留原曲名，不丢逗号、叹号。
 - **出图**：位图歌本写 JPEG（`image` 的编码器，同质量下比 sharp 大约三成），本首用到的页有彩色的出彩色、否则灰度；矢量歌本写灰度 PNG。按首分块并行，每块留最近 4 页源图。
 - **逐首识别**（`--recognize`，只收转曲矢量歌本）：每段取那一页的对象按 `PageContent::clip`（中心落在裁框里、不落在页码框里）裁出一截当一页，走五线谱 / 混排路线、`assemble` 带上切分认出的曲名，写 `<文件名>.musicxml`。
-  `-f` 只有 musicxml；别的格式由 `omr-cli.mjs split` 在 Rust 写完 MusicXML 后逐首转（TS 写出端）。
+  `-f` 选别的格式时由同一份 MusicXML 读回模型再按格式表（`dolce-formats::targets`）写出，转不成的留下 MusicXML、记进失败。
 - 排查：`OMR_BOOK_DEBUG=<页序号，0 起>` 打出那一页各标题候选带的检测框、逐字位置与解析结果、整段重读。
 
 读数（2026-11-12，对曲目清单 GT `dev/testdata/歌本切分/<书>.gt.json`，`rust-omr/book-check.mjs`）：
@@ -582,13 +583,13 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 
 ## 接入（P12）
 
-三端同一个入口 `omr-engine`，识别、判路、会话都在 Rust；TS 只剩结果的落地（`omrrust/adapter.ts` 把会话产物包成核对视图要的 `StaffReviewResult`，简谱经门面 `omr/todoc.ts` 调 `omr-todoc::jianpu` 建模、`emit` 写出）与格式写出。
+三端同一个入口 `omr-engine`，识别、判路、会话都在 Rust；TS 只剩结果的落地（`omrrust/adapter.ts` 把会话产物包成核对视图要的 `StaffReviewResult`，简谱经门面 `omr/todoc.ts` 调 `omr-todoc::jianpu` 建模、`emit` 写出）与格式写出的门面。
 
 | 端 | 外壳 | 前端 / 调用方 |
 |---|---|---|
 | 桌面版 | `src-tauri/src/omr.rs`：`omr_open` / `render` / `binary` / `recognize`（进度走 `Channel`）/ `cancel` / `session` / `close`，OCR 是 `ort` 原生会话池（`DOLCE_OCR_SESS` × `DOLCE_OCR_THREADS`，缺省 3 × 3），PDFium 动态库随包 | `src/omrrust/engine.ts`（`omrEngine()` 判宿主）→ `editor/omrctl.ts` |
 | 网页版 | `crates/omr-wasm`（`OmrDoc` 与 Tauri 命令一一对应、`load_ocr` 用 tract、`set_pdfium_module`）跑在 Worker `src/omrrust/worker.ts` 里；`scripts/build-wasm.mjs` 编进 `public/redist/omr/`（不入库，vite dev / build 开头调） | `src/omrrust/webengine.ts`（取消走 SharedArrayBuffer 标志） |
-| 命令行 | `omr-cli run`（一首一行 JSON）/ `split` | `scripts/omr-cli.mjs` 起它、用 `out/cli/omrfmt.js` 转格式；`scripts/pack-omr.mjs` 打分发包（识别程序 + PDFium + 模型 + 写出端） |
+| 命令行 | `omr-cli <图…>`（识谱出各格式、参照歌词）/ `split` / `run`（一首一行 JSON） | 用户直接跑；`scripts/pack-omr.mjs` 打分发包 `omr-cli-<版本>-<os>-<cpu>`（识谱程序 + PDFium + 模型，不带 Node） |
 
 - **请求与回应的格式两端一样**（`omr-engine::Handle`）：打开是 `u32 个数` + 各 `u32 长度` + 字节；渲染回 `u32 宽高` + RGBA；核对底图回宽高、倍数（核对坐标乘它是底图像素）、底图在页上的框与页宽高 + 0 / 1 像素；识别与会话回 JSON。
 - **会话操作**：`omr-staff::session::Op` 各种（rebuild / restructure / pin / unpin / choose / context），外加 `insert`（点原图补音）与 `region`（框选重读歌词 / 文字指示）。编辑器重建前把删音、改音高、改时值记成钉住（同一音上不同种事实并存），其余手改照旧按识别 id 回放。
@@ -614,7 +615,7 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 - **网页版两份 wasm**（`scripts/build-wasm.mjs`）：`dolce_omr_wasm` 只开 simd128，`dolce_omr_wasm_relaxed` 另开 relaxed-simd（tract 的 8×8 矩阵内核改用融合乘加，
   Chromium 里一页快一成多）；`worker.ts` 按 `WebAssembly.validate` 探到的支持挑一份（Safari 没有 relaxed-simd）。两份各用自己的 cargo target 目录。
 - **PDF 只走 PDFium**：编辑器、网页版、命令行都不再用 pdf.js（P12 删了 `pdfjs-dist`）。dev 脚本里还要 pdf.js 的（矢量版面核对、截图）单独装在 dev 的 `tools/pdfjs/`。
-- 留后：`pdflayout/inventory.ts` / `bookprofile.ts` 的 `VecPage` 仍由 dev 脚本经 pdf.js 取（计划里的 `omr-cli vecdump` 没做）；参照歌词互证还在 TS（`omr/reflyrics.ts`，命令行 `--lyrics`，回查 Rust 交出的逐字候选）。
+- 留后：`pdflayout/inventory.ts` / `bookprofile.ts` 的 `VecPage` 仍由 dev 脚本经 pdf.js 取（计划里的 `omr-cli vecdump` 没做）。
 
 ## 编辑器侧（TS：结果落地、核对与改动）
 
@@ -627,7 +628,6 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 | `src/omr/emit.ts` / `meta.ts` | 输出格式：经 `todoc.ts` 的模型按转换目标表（`convert/targets.ts`）写成 123 / JPWABC / ABC / 文本谱 / jianpu-ly / Muse `.jcx`；点选映射（重解析写出的 123 / 文本谱 / `.jcx`，按元素序取源区间） |
 | `src/omr/beats.ts` | 小节时值自检：结果 → 模型 → `dolce-model::beatcheck`（门面 `model/beatcheck.ts`，与编辑器同一份判据），问题小节对回源图坐标 |
 | `src/omr/overlay.ts` / `reproject.ts` | 简谱核对叠加层（可疑项黄框、时值不对的小节虚线红框）；随编辑把当前模型投回原识别框（改过 / 删掉 / 新插） |
-| `src/omr/reflyrics.ts` | 参照歌词互证（命令行 `--lyrics`）：按演唱顺序展开识别歌词、与参照整篇对齐，形近字选字、补漏字，其余报到 `lyricCheck` |
 | `src/omr/staffoverlay.ts` / `review.ts` | 五线谱原图对照（`omr<k>` 框、音名、改过 / 删掉的标记）与核对数据的形状（`StaffReviewResult`，`omrrust/adapter.ts` 由会话产物包成） |
 | `src/editor/omrctl.ts` | 编辑器侧控制器：识别 → 出文本 → 进简谱档或混排视图、对照 / 并排原图、点选定位、可疑项逐个跳（F8）、关联表与系统切分 |
 | `src/editor/omrlinks.ts` | 五线谱识别 id 在文本格式（ABC / 123）里的旁表 |
@@ -709,4 +709,4 @@ cargo run --release -p dolce-omr-cli -- split <歌本> --dry-run --report r.json
   人声对（两行间有词）的拆分判据；会话里钉住改音高只改头的位置与临时记号、混排互证还会动钉住的和弦；改上下文只到系统粒度、改切分后按系统号记的上下文清掉；
   简谱路线的会话（换候选 / 钉住）没接；会话回调现在是同步的（Node 里调 CLI 测），P12 接 Tauri 时改异步；适配器的 `stats` 只有音数、小节、满拍、声部、系统几样。
 - 简谱结果对 `omr/types.ts` 还没写出的字段（功能没做）：行内转拍号 `StaffRow.meters` / `JpNum.timeChange`、`finalBarlineThin`、页眉逐字源位 `TextRegion.chars`、
-  `subtitlesMore`、`headerNotes`、`tempoBeat`、`footnotes`、参照歌词互证 `lyricCheck`。
+  `subtitlesMore`、`headerNotes`、`tempoBeat`、`footnotes`（参照歌词互证不挂在结果上，`reflyrics::apply_ref_lyrics` 另回 `LyricCheck`）。

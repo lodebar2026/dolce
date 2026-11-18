@@ -2,6 +2,7 @@
 //!
 //! - [`chars`]：字的种类（汉字 / 拉丁 / 数字 / 标点）
 //! - [`chords`]：和弦记号文法（切词、覆盖率、归一、拆成根音 / 性质 / 低音）
+//! - [`hanvariant`]：繁 → 简单字表（参照歌词互证按繁简归一比字）
 //! - [`header`]：页眉各行的分类（标题 / 副标题 / 词 / 曲 / 版权 / 书眉）
 //! - [`spaces`]：按空白列补词间空格
 //! - [`lyrics`]：歌词行切成音节、段号、标点归属、对到音上
@@ -9,6 +10,7 @@
 pub mod chars;
 pub mod chords;
 pub mod ensyllable;
+pub mod hanvariant;
 pub mod header;
 pub mod lyrics;
 pub mod spaces;

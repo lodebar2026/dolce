@@ -730,9 +730,13 @@ dependencies = [
  "dolce-base",
  "dolce-formats",
  "dolce-model",
+ "dolce-omr-core",
  "dolce-omr-sheet",
  "dolce-omr-text",
  "dolce-play",
+ "dolce-view",
+ "encoding_rs",
+ "regex",
  "serde",
 ]
 

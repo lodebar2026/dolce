@@ -134,7 +134,7 @@ export async function exportMusicXml(app: App): Promise<void> {
 /** 导出 jianpu-ly 文本（`.jly`），交给上游 `jianpu-ly` 预处理器生成 LilyPond（`jianpu-ly 文件.jly > 文件.ly`）。
  *
  *  **单向**：不承诺能再读回编辑器（回读要另加方言，见 `docs/模块/导出.md`）。
- *  **装不下的东西写在文件里当 `%` 注释**（`tojly.ts` 的 warnings），随文件走，不静默丢。 */
+ *  **装不下的东西写在文件里当 `%` 注释**（写出端的 warnings），随文件走，不静默丢。 */
 export async function exportJly(app: App): Promise<void> {
   // ⚠ 这里必须是 `app.scoreDoc()`（它认 `.jpwabc`，会自己解析原文），**不能**用 `app.currentScoreDoc()`：
   //   JPWABC 适配器没有 `toScoreDoc`，那个访问器对 `.jpwabc` 恒返回 null →
@@ -278,8 +278,8 @@ const isMixed = (app: App): boolean => app.mode === "mixed";
 /** 走 `ScoreDoc` 排版的格式（文本谱、123、ABC、MusicXML 的简谱档）：导出项与 `.jpwabc` 那档不同。 */
 const isFanqie = (app: App): boolean => app.adapter.caps.layout === "scoredoc" && !isMixed(app);
 const isJp = (app: App): boolean => !isFanqie(app) && !isMixed(app);
-/** jianpu-ly 文本**哪一种非混排档都能写**（`tojly.ts` 同时收 `jianpuInputOfDoc` 与
- *  `jianpuInputOfJpw`），所以不能挂在 `isFanqie` 或 `isJp` 单独一边：`isJp` 只在 `.jpwabc` 下为真，
+/** jianpu-ly 文本**哪一种非混排档都能写**（写出端 `jly/emit.rs` 同时收简谱形状与
+ *  `.jpwabc` 两种投影），所以不能挂在 `isFanqie` 或 `isJp` 单独一边：`isJp` 只在 `.jpwabc` 下为真，
  *  挂它会让 123 / 文本谱 / ABC 文档都看不到这一项（第一版就是这么错的，用户当场撞上）。 */
 const canJly = (app: App): boolean => !isMixed(app);
 

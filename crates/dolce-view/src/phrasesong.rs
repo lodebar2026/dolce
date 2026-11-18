@@ -194,12 +194,12 @@ pub fn jp_alter_of_accidental(acc: Option<&Accidental>) -> &'static str {
     }
 }
 
-fn marks_at(marks: &[Mark], index: i64, kind: MarkType) -> impl Iterator<Item = &Mark> {
+pub fn marks_at(marks: &[Mark], index: i64, kind: MarkType) -> impl Iterator<Item = &Mark> {
     marks.iter().filter(move |m| m.kind == kind && (m.start == index || m.end == index))
 }
 
 /// 同 `jianpuinput.ts::marksEdgeAt`：跨行的续接端不是真端点。
-fn edge_at(marks: &[Mark], index: i64, kind: MarkType) -> (bool, bool) {
+pub fn edge_at(marks: &[Mark], index: i64, kind: MarkType) -> (bool, bool) {
     let starts = marks_at(marks, index, kind).any(|m| m.start == index && m.continuation_from_previous != Some(true));
     let ends = marks_at(marks, index, kind).any(|m| m.end == index && m.continuation_to_next != Some(true));
     (starts, ends)
@@ -214,7 +214,7 @@ fn chord_duration(ch: &ChordOut) -> Fraction {
 }
 
 /// 每条歌词行的下一个音节（`nextSyllables`）：`(段号, 字 + 收尾标点)`
-fn next_syllables(lyrics: &[LyricLine], cursors: &mut [usize]) -> Vec<(f64, String)> {
+pub fn next_syllables(lyrics: &[LyricLine], cursors: &mut [usize]) -> Vec<(f64, String)> {
     let mut out = vec![];
     for (li, line) in lyrics.iter().enumerate() {
         let syl = line.syllables.get(cursors[li]);
@@ -233,7 +233,7 @@ fn next_syllables(lyrics: &[LyricLine], cursors: &mut [usize]) -> Vec<(f64, Stri
     out
 }
 
-fn takes_lyric(el: &MusicElement) -> bool {
+pub fn takes_lyric(el: &MusicElement) -> bool {
     match el {
         MusicElement::Note(n) => n.lyric_anchor,
         MusicElement::Sustain(s) => s.lyric_anchor,
@@ -576,7 +576,7 @@ pub fn build_measures(song: &Song, lines: &[&RowView], renumber_verses: bool, mu
 }
 
 /// `new Set(xs)` 的次序：重复的只留第一个
-pub(crate) fn dedup(xs: Vec<f64>) -> Vec<f64> {
+pub fn dedup(xs: Vec<f64>) -> Vec<f64> {
     let mut out: Vec<f64> = vec![];
     for x in xs {
         if !out.contains(&x) {
@@ -587,7 +587,7 @@ pub(crate) fn dedup(xs: Vec<f64>) -> Vec<f64> {
 }
 
 /// `text.match(/\d+/g)` 各段按十进制读；没有数字回 None
-pub(crate) fn digit_runs(text: &str) -> Option<Vec<f64>> {
+pub fn digit_runs(text: &str) -> Option<Vec<f64>> {
     let mut out = vec![];
     let mut cur = String::new();
     for c in text.chars().chain(std::iter::once(' ')) {

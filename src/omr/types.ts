@@ -200,46 +200,6 @@ export interface RecognizedScore {
   // 谱后的注（「注：此首诗辞采自…」，青年诗歌 20）：一条一段，→ `pageText.bottomLeft`（文本谱 `BL:`）
   footnotes?: string[];
   dotDiam?: number; // 八度点/附点在源图的统计直径（识别模式按原图大小画点，非按字号推算）
-  // 给了参照歌词时的词谱互证结果（reflyrics.ts）：改了哪些字、补了哪些字、哪里两边对不上。
-  lyricCheck?: LyricCheck;
-}
-
-/** 参照歌词核对的一条。位置字段取自识别结果：谱行、段（0 基）、行内第几音（0 基）、小节（1 基）、音符源图框。 */
-export interface LyricCheckItem {
-  /** fixed 形近字按参照改了 · filled 补上漏读的字 · variant 版本用字不同（他/祂…，只报）· mismatch 字不同且不像（只报）·
-   *  missingNote 参照多出字、谱上没有可落的音 · extraChar 识别多出参照没有的字 · slurSuspect 一字多音却没认出弧 ·
-   *  repeatSuspect 按演唱顺序反而对不上（反复/房号/跳转可能认错）· noMatch 整首词对不上题（不做任何改动） */
-  kind: "fixed" | "filled" | "variant" | "mismatch" | "missingNote" | "extraChar" | "slurSuspect" | "repeatSuspect" | "noMatch";
-  row?: number;
-  verse?: number;
-  note?: number;
-  bar?: number;
-  /** 谱面（识别）字 */
-  ocr?: string;
-  /** 参照字 */
-  ref?: string;
-  /** 参照里所在的那一句，供人对照 */
-  context?: string;
-  bbox?: Rect;
-  /** 该字自己的源图框（音符框下方那个字；补字没有） */
-  charBox?: Rect;
-  /** 参照字在 OCR 候选里的名次（0 基）与得分、首选得分：选字门槛看的就是 score / top */
-  cand?: { rank: number; score: number; top: number };
-  /** 已改/已补但可疑、建议人工复查的原因（识别本来读得很有把握、歌词文本自相矛盾……）；不可疑为空 */
-  review?: string;
-  detail?: string;
-}
-
-export interface LyricCheck {
-  /** 按哪种顺序对上的：演唱顺序展开（反复写全）还是谱面印的顺序 */
-  order: "expanded" | "printed";
-  refChars: number;
-  ocrChars: number;
-  /** 识别字里与参照同字的个数（按演唱顺序，同一字唱几遍记几遍） */
-  matched: number;
-  items: LyricCheckItem[];
-  /** 参照里整段没对上的字区间 [起, 止)（参照多写的段、谱面没印的段） */
-  unmatchedRef: { from: number; to: number; text: string }[];
 }
 
 /** 编辑器文本里的一段字符区间（点选定位用）。 */

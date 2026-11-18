@@ -1,4 +1,6 @@
-//! `omr-cli`：识别的命令行：回归（`regress`）、批量识别（`run`，web 的 omr-cli.mjs 与分发包用）、识别一个文件（`recognize`）、五线谱会话（`session`）、歌本切分（`split`）。
+//! `omr-cli`：识别的命令行：识谱出各格式（不带子命令，[`cli`]，分发包给人用的就是它）、歌本切分（`split`）、
+//! 批量识别出 JSON（`run`，私有仓库的自检脚本用）、识别一个文件（`recognize`）、五线谱会话（`session`）、回归（`regress`）。
+mod cli;
 mod recognize;
 mod regress;
 mod run;
@@ -7,8 +9,7 @@ mod split;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USAGE: &str = "用法：
-  omr-cli regress <jianpu|solo|chorus|vector|xinbian> [--only=子串] [--jobs=N] [--out=目录] [--ref=目录] [--web=目录] [--replay=目录] [--area=结构] [--judge-only]
+const USAGE: &str = "  omr-cli regress <jianpu|solo|chorus|vector|xinbian> [--only=子串] [--jobs=N] [--out=目录] [--ref=目录] [--web=目录] [--replay=目录] [--area=结构] [--judge-only]
       跑识别（各曲并行）→ 产物落盘到 --out → 调私有仓库判分（solo-ops / chorus-ops 的 --from）→ 与 --ref 的 TS 基线逐曲比
       缺省：--out=../dev/data/rust-omr/runs/<档>，--ref=../dev/data/rust-omr/ref-c7c02820，--web=../web（判分脚本与 out/cli 所在的检出）
       --replay：不识别，拷那个目录里同名的产物来判（拿 TS 归档自测回归流程）
@@ -60,10 +61,19 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
-        _ => {
-            eprintln!("{USAGE}{}{}", run::USAGE, split::USAGE);
-            ExitCode::from(2)
+        None | Some("-h" | "--help" | "help") => {
+            // 开发用的子命令只在仓库检出里列（分发包没有私有仓库，列了也跑不了）
+            let dev = if checkout("crates/omr-cli").is_dir() { format!("\n开发用：\n{}{USAGE}", run::USAGE) } else { String::new() };
+            eprintln!("用法：\n{}{}{dev}", cli::usage(), split::USAGE);
+            ExitCode::from(if args.is_empty() { 2 } else { 0 })
         }
+        Some(_) => match cli::run(&args) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(1)
+            }
+        },
     }
 }
 

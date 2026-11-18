@@ -2,7 +2,7 @@
 //! 另加可疑清单。字段含义见那边的注释，这里只留与识别有关的说明。
 //!
 //! 能读回（`Deserialize`）：编辑器核对时会改它（参照歌词改字），换输出格式时把改过的那份送回 Rust 建模（`omr-todoc::jianpu`）。
-//! 只在识别中途用的字段（`#[serde(skip)]`）读回取缺省；TS 多出来的字段（`lyricCheck`）忽略。
+//! 只在识别中途用的字段（`#[serde(skip)]`）读回取缺省。
 /// 可疑项：两条路线共用的那份（`result`）；`at.row` 是全曲第几行、`at.note` 是行内第几个音。
 pub use crate::result::Doubt;
 use dolce_omr_core::image::Rect;

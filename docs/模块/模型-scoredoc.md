@@ -18,7 +18,7 @@
 | 消费者 | 取法 | 引擎内部结构 |
 |---|---|---|
 | 简谱引擎（`crates/dolce-layout-jianpu`：各格式的简谱 / 投影档、PPTX、成书） | 排版行视图 `crates/dolce-view/src/slots.rs::doc_view`（门面 `jianpu/slots.ts::docView`） | `dolce-layout-jianpu/src/place/` 的定位结构（`PlacedPage` / `PlacedGroup` / `PlacedVoice`） |
-| jianpu-ly 写出、断句量宽、识别对歌词 | `jianpu/jianpuinput.ts` 投影出的 `JScore`（`jianpu/input.ts`；简谱形状 / `.jpwabc` 两个分支） | — |
+| jianpu-ly 写出 | `crates/dolce-formats/src/jly/input.rs` 投影出的 `JScore`（简谱形状 / `.jpwabc` 两个分支；TS `jianpu/jianpuinput.ts` 同口径，只剩无头校验在用） | — |
 | 五线谱混排（`crates/dolce-layout-staff`） | `read.rs::layout_staff` 建版面态；MusicXML 原文的坐标/符干/字体经 `xmlsurface.ts` 查询 | `StaffLayout` 及各 `*Layout` 节点（`src` 引用模型元素） |
 | 试听 / MIDI | `dolce-view/src/playdoc.rs::play_source_of_doc` / `dolce-view/src/playsong.rs::play_source_of_song` | `crates/dolce-play/src/timeline.rs` |
 | 断句 | `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` 拼断句输入（带 `idOf`） | `crates/dolce-play/src/phrase.rs` |
@@ -44,7 +44,7 @@
 | `crates/dolce-model/src/jianpuproject.rs`（门面 `src/model/jianpuproject.ts`） | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
 | `crates/dolce-formats/src/fanqie/fromfanqie.rs`（门面 `src/fanqie/parse.ts`） | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
 | `crates/dolce-view/src/slots.rs`（门面 `src/jianpu/slots.ts`） | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId`。Rust 回 id 化的视图（`refs` 存下标、投影改过的曲子另带一份），门面认回对象、建 `idOf` / `elementOf` / `syllableOwner` |
-| `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不再喂排版引擎，给 jianpu-ly 写出、识别对歌词用 |
+| `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不喂排版引擎、jianpu-ly 写出也已走 Rust（`dolce-formats/src/jly/input.rs`），只剩无头校验（`window.__app`、`out/cli`）与帮助谱例自检在用 |
 | `crates/dolce-formats/src/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
 | `crates/dolce-formats/src/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |
 | `crates/omr-todoc`（门面 `src/omr/todoc.ts`） | ← 识别结果：简谱 `RecognizedScore` 直出简谱形状（与 123 解析同口径；不经 MusicXML）；五线谱 `Score` 直出模型 + 识别 id / 符干附件 |

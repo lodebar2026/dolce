@@ -97,8 +97,8 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
           if-no-files-found: error
 
-  # 识谱命令行分发包（scripts/pack-omr.mjs）：Rust 识别程序 omr-cli + PDFium + OCR 模型 + 写出端。
-  # 识别程序与 PDFium 都是原生的、不能交叉打包，各平台在自己的 runner 上编。
+  # 识谱命令行分发包（scripts/pack-omr.mjs）：Rust 识谱程序 omr-cli（识别、各格式写出、参照歌词都在里面）+ PDFium + OCR 模型，不带 Node。
+  # 识谱程序与 PDFium 都是原生的、不能交叉打包，各平台在自己的 runner 上编。产物 omr-cli-<版本>-<os>-<cpu>。
   omr-cli:
     permissions:
       contents: write
@@ -113,62 +113,56 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      # 只给打包脚本用（pack-omr.mjs 只依赖 Node 内置模块，不用 npm ci）
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: crates
-      - name: Install wasm-bindgen
-        run: cargo install wasm-bindgen-cli --version "$(grep -A1 '^name = "wasm-bindgen"$' crates/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')" --locked
-      - name: Install dependencies
-        run: npm ci
-      - name: Build writer (omrfmt.js)
-        run: npm run build:cli
-      # 写出端载的 dolce-wasm（jcx 编码、.jpwabc 的演唱顺序等），pack-omr.mjs 拷进包里的 dolce/
-      - name: Build dolce-wasm
-        run: node scripts/build-wasm.mjs dolce
       - name: Build omr-cli
         working-directory: crates
         run: cargo build --release -p dolce-omr-cli
       - name: Pack
         run: node scripts/pack-omr.mjs --targets=${{ matrix.pkg }}
-      # 冒烟：解开的包在干净目录里能起来、载得到 OCR 模型与 ONNX Runtime，真识别一张图（截图里的简谱，只看能跑通）
+      # 冒烟：解开的包在干净目录里能起来、载得到 OCR 模型与 ONNX Runtime，真识别一张图（截图里的简谱，只看能跑通），
+      # 再从同一张图写一份 jcx（GBK 编码、Rust 写出端）
       - name: Smoke test (macOS)
         if: runner.os != 'Windows'
         run: |
           mkdir smoke && tar xzf out/pkg/*.tar.gz -C smoke
-          node smoke/*/omr-cli.mjs docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out
-          ls -la smoke/out && test -n "$(ls smoke/out)"
+          smoke/*/omr-cli docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
+          smoke/*/omr-cli docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
+          ls -la smoke/out && test -s smoke/out/a.123 && test -s smoke/out/a.jcx
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Expand-Archive (Get-Item out/pkg/*.zip).FullName -DestinationPath smoke
           $d = (Get-ChildItem smoke -Directory)[0].FullName
-          node "$d/omr-cli.mjs" docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out
+          New-Item -ItemType Directory smoke/out | Out-Null
+          & "$d/omr-cli.exe" docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "$d/omr-cli.exe" docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-ChildItem smoke/out
-          if (-not (Get-ChildItem smoke/out)) { exit 1 }
+          if ((Get-Item smoke/out/a.123).Length -eq 0 -or (Get-Item smoke/out/a.jcx).Length -eq 0) { exit 1 }
       - name: Upload to release
         if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" out/pkg/dolce-omr-* --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" out/pkg/omr-cli-* --clobber
       - name: Upload artifact (manual run)
         if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: omr-cli-${{ matrix.pkg }}
-          path: out/pkg/dolce-omr-*
+          path: out/pkg/omr-cli-*
           if-no-files-found: error
 
   # Web 版随同一 release 部署到 GitHub Pages

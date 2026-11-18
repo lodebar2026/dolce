@@ -1,5 +1,5 @@
 // jianpu-ly 的 `chords=` 行（LilyPond 和弦语法 ↔ 谱上印的文字）：在 Rust（crates/dolce-formats/src/jly/chords.rs），这里是门面。
-// 读写同一张表（对称），表外的后缀保留原文、写出时报出来。写出端 `tojly.ts`（M5 迁）与可视化编辑要这几样。
+// 读写同一张表（对称），表外的后缀保留原文、写出时报出来。写出端（Rust `jly/emit.rs`）与可视化编辑要这几样。
 
 import { dolce } from "../common/dolce";
 

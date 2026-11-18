@@ -1,10 +1,12 @@
-//! `omr-cli run`：批量识别，给 web 的 `scripts/omr-cli.mjs`（与分发包）用。每个文件一首，判路同编辑器（`omr-engine::recognize`：先按五线谱认，一页谱表都没有再走简谱）。
+//! `omr-cli run`：批量识别、出 JSON（私有仓库的自检脚本吃它）。每个文件一首，判路同编辑器（`omr-engine::recognize`：先按五线谱认，一页谱表都没有再走简谱）。
 //!
 //! 每认完一首往 stdout 写一行 JSON：`{"file", "kind": "staff", "xml"}`（带识别 id 的 MusicXML）、`{"file", "kind": "jianpu", "score"}`（`RecognizedScore`）
-//! 或 `{"file", "error"}`；各步进度写 stderr（`{"file", "done", "total", "stage"}` 一行一条，`--progress` 时才写）。格式转换在 mjs 那边（TS 写出端）。
+//! 或 `{"file", "error"}`；各步进度写 stderr（`{"file", "done", "total", "stage"}` 一行一条，`--progress` 时才写）。
+//! 给人用的识别（出各格式、参照歌词）在 [`crate::cli`]。
 use crate::recognize::open_ocr;
 use dolce_omr_core::progress::{Hook, Step};
 use dolce_omr_engine::{Doc, Kind, Opts, Recognition};
+use dolce_omr_sheet::jianpu::RecognizedScore;
 use serde_json::json;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -19,7 +21,7 @@ pub const USAGE: &str = "  omr-cli run <文件…|目录…> [--kind=auto|staff|
 pub const EXTS: [&str; 8] = ["jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff", "pdf"];
 
 /// 展开输入：目录 → 里面能识别的文件（不递归，按名排序）。
-fn expand(inputs: &[String]) -> Vec<PathBuf> {
+pub fn expand(inputs: &[String]) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for p in inputs.iter().map(PathBuf::from) {
         if !p.is_dir() {
@@ -38,7 +40,14 @@ fn expand(inputs: &[String]) -> Vec<PathBuf> {
     out
 }
 
-fn one(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress: bool) -> Result<serde_json::Value, String> {
+/// 认完一首：五线谱给带识别 id 的 MusicXML，简谱给识别结果。
+pub enum Got {
+    Staff(String),
+    Jianpu(Box<RecognizedScore>),
+}
+
+/// 识别一个文件（判路同编辑器）；`progress`：各步进度按 JSON 一行一条写 stderr。
+pub fn recognize_file(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress: bool) -> Result<Got, String> {
     let doc = Doc::open(std::fs::read(path).map_err(|e| format!("读不了：{e}"))?)?;
     let file = path.display().to_string();
     let send = |s: Step| {
@@ -52,8 +61,16 @@ fn one(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress:
     let threads = std::env::var("DOLCE_OCR_SESS").ok().and_then(|v| v.parse().ok()).filter(|&v: &usize| v > 0).unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(3));
     let rec = ocr.rounds(|| dolce_omr_engine::recognize(&doc, ocr, &opts, &Hook { on: Some(&send), cancel: None }), |o, q| o.fill_local(q, threads))?;
     Ok(match rec {
-        Recognition::Staff { session, .. } => json!({ "file": file, "kind": "staff", "xml": dolce_omr_engine::staff_output(&session).0 }),
-        Recognition::Jianpu { score, .. } => json!({ "file": file, "kind": "jianpu", "score": score }),
+        Recognition::Staff { session, .. } => Got::Staff(dolce_omr_engine::staff_output(&session).0),
+        Recognition::Jianpu { score, .. } => Got::Jianpu(Box::new(score)),
+    })
+}
+
+fn one(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress: bool) -> Result<serde_json::Value, String> {
+    let file = path.display().to_string();
+    Ok(match recognize_file(path, kind, ocr, progress)? {
+        Got::Staff(xml) => json!({ "file": file, "kind": "staff", "xml": xml }),
+        Got::Jianpu(score) => json!({ "file": file, "kind": "jianpu", "score": score }),
     })
 }
 
