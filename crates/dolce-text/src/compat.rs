@@ -13,6 +13,29 @@ use dolce_geom::{fround, path_bounds, Rect};
 use crate::cjkpunct::{code_points, punct_class, PunctClass};
 use crate::{svg_collapsed_text, FontMetrics, FontStyle, Positions, TextMeasurer, TextMetrics, Weight, HALT};
 
+/// 浏览器缺省的相邻全角标点挤压（`text-spacing-trim`）：各码点往左挪多少（它前面累计挤掉的），一处都不挤给 None。
+/// `is_full`：这个字是全角宽的标点；`half_of`：它开 `halt` 能省下的宽。量字（[`BrowserCompat`]）与 PDF 写出端共用。
+pub fn han_kern_shifts(chars: &[&str], is_full: impl Fn(&str) -> bool, half_of: impl Fn(&str) -> f64) -> Option<Vec<f64>> {
+    if chars.len() < 2 {
+        return None;
+    }
+    let mut shift = vec![0.0; chars.len()];
+    let mut acc = 0.0;
+    for i in 1..chars.len() {
+        let (a, c) = (chars[i - 1], chars[i]);
+        let (ka, kc) = (punct_class(a), punct_class(c));
+        if ka != PunctClass::None && kc != PunctClass::None && is_full(a) && is_full(c) {
+            if kc == PunctClass::Open {
+                acc += half_of(c);
+            } else if matches!(ka, PunctClass::Close | PunctClass::Stop) && matches!(kc, PunctClass::Close | PunctClass::Stop | PunctClass::Middle) {
+                acc += half_of(a);
+            }
+        }
+        shift[i] = acc;
+    }
+    (acc > 0.0).then_some(shift)
+}
+
 /// 系统文字引擎量一串字的结果（`native/textmeasure` 的 `Measured`）。
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Measured {
@@ -103,6 +126,26 @@ fn unquote(s: &str) -> &str {
     }
 }
 
+/// CSS 族串 → 具体族名（泛称按 `platform` 的浏览器展开，末尾补标准字体）。量字与导出（PDF 选字体）共用这一份。
+pub fn css_families(css: &str, platform: Platform) -> Vec<String> {
+    let mut hit: Vec<String> = Vec::new();
+    for part in css.split(',') {
+        let name = unquote(dolce_base::js::trim(part));
+        if name.is_empty() {
+            continue;
+        }
+        match platform.generic(&name.to_lowercase()) {
+            Some(g) => hit.push(g.to_string()),
+            None => hit.push(name.to_string()),
+        }
+    }
+    let std = platform.standard().to_string();
+    if !hit.contains(&std) {
+        hit.push(std);
+    }
+    hit
+}
+
 /// 系统文字引擎 + 浏览器口径（`nodeMeasure()` 原生那条路 = `browserLike(nativeMeasure(...))`）。
 pub struct BrowserCompat<S: SystemText> {
     sys: S,
@@ -124,21 +167,7 @@ impl<S: SystemText> BrowserCompat<S> {
         if let Some(hit) = self.lists.borrow().get(css) {
             return hit.clone();
         }
-        let mut hit: Vec<String> = Vec::new();
-        for part in css.split(',') {
-            let name = unquote(dolce_base::js::trim(part));
-            if name.is_empty() {
-                continue;
-            }
-            match self.platform.generic(&name.to_lowercase()) {
-                Some(g) => hit.push(g.to_string()),
-                None => hit.push(name.to_string()),
-            }
-        }
-        let std = self.platform.standard().to_string();
-        if !hit.contains(&std) {
-            hit.push(std);
-        }
+        let hit = css_families(css, self.platform);
         self.lists.borrow_mut().insert(css.to_string(), hit.clone());
         hit
     }
@@ -182,31 +211,7 @@ impl<S: SystemText> BrowserCompat<S> {
 
     /// 各码点往左挪多少（它前面累计挤掉的）；一处都不挤给 None。
     fn kern(&self, text: &str, family: &str, size: f64, weight: Weight, style: FontStyle) -> Option<Vec<f64>> {
-        let chars = code_points(text);
-        if chars.len() < 2 {
-            return None;
-        }
-        let mut shift = vec![0.0; chars.len()];
-        let mut acc = 0.0;
-        for i in 1..chars.len() {
-            let (a, c) = (chars[i - 1], chars[i]);
-            let (ka, kc) = (punct_class(a), punct_class(c));
-            if ka != PunctClass::None
-                && kc != PunctClass::None
-                && self.is_full(a, family, size, weight, style)
-                && self.is_full(c, family, size, weight, style)
-            {
-                if kc == PunctClass::Open {
-                    acc += self.half_of(c, family, size, weight, style);
-                } else if matches!(ka, PunctClass::Close | PunctClass::Stop)
-                    && matches!(kc, PunctClass::Close | PunctClass::Stop | PunctClass::Middle)
-                {
-                    acc += self.half_of(a, family, size, weight, style);
-                }
-            }
-            shift[i] = acc;
-        }
-        (acc > 0.0).then_some(shift)
+        han_kern_shifts(&code_points(text), |c| self.is_full(c, family, size, weight, style), |c| self.half_of(c, family, size, weight, style))
     }
 
     /// `browserLike` 的 glyph（量化前）。

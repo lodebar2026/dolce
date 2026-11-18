@@ -12,12 +12,16 @@
 //! - `book-meta-check`：成书书级元数据与书籍样式统计的对拍（见 `bookmeta.rs`）。
 //! - `book-rebuild`：成书 B 路整本的对拍（见 `book.rs`）。
 //! - `book-draw-check`：成书（`browser.ts` / `songbook.ts`）的对拍（见 `bookdraw.rs`）。
+//! - `book-pdf` / `book-measure-check` / `pdf-compare`：成书 DrawList → PDF、书级量字原生 ↔ 录制、两份 PDF 栅格比（见 `bookpdf.rs`）。
+//! - `font-probe` / `scene-pdf`：导出的字体样本验证、场景 → PDF 与旧链栅格比对（见 `export.rs`）。
 
 mod book;
 mod bookdraw;
+mod bookpdf;
 mod bookmeta;
 mod bookparts;
 mod engrave;
+mod export;
 mod jianpu;
 mod layout;
 mod staff;
@@ -41,9 +45,14 @@ fn main() {
         Some("book-parts-check") => std::process::exit(bookparts::book_parts_check(&args[1..])),
         Some("book-meta-check") => std::process::exit(bookmeta::book_meta_check(&args[1..])),
         Some("book-draw-check") => std::process::exit(bookdraw::book_draw_check(&args[1..])),
+        Some("book-pdf") => std::process::exit(bookpdf::book_pdf_cmd(&args[1..])),
+        Some("book-measure-check") => std::process::exit(bookpdf::book_measure_check(&args[1..])),
+        Some("pdf-compare") => std::process::exit(bookpdf::pdf_compare(&args[1..])),
         Some("book-rebuild") => std::process::exit(book::book_rebuild(&args[1..])),
+        Some("font-probe") => std::process::exit(export::font_probe(&args[1..])),
+        Some("scene-pdf") => std::process::exit(export::scene_pdf(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare> …");
             std::process::exit(2);
         }
     }

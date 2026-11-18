@@ -1,9 +1,9 @@
 # Rust 工作区：识别（omr-*，职责见 docs/模块/识别-Rust.md）与模型 / 格式 / 排版（dolce-*，迁移中）。
 [workspace]
 resolver = "2"
-members = ["dolce-base", "dolce-book", "dolce-cli", "dolce-engrave", "dolce-formats", "dolce-geom", "dolce-hanconv", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "dolce-model", "dolce-play", "dolce-scene", "dolce-session", "dolce-smufl", "dolce-style", "dolce-text", "dolce-text-native", "dolce-view", "dolce-wasm", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc", "omr-wasm"]
-# omr-wasm、dolce-wasm、dolce-jcx-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
-default-members = ["dolce-base", "dolce-book", "dolce-cli", "dolce-engrave", "dolce-formats", "dolce-geom", "dolce-hanconv", "dolce-layout-jianpu", "dolce-layout-staff", "dolce-model", "dolce-play", "dolce-scene", "dolce-session", "dolce-smufl", "dolce-style", "dolce-text", "dolce-text-native", "dolce-view", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc"]
+members = ["dolce-base", "dolce-book", "dolce-cli", "dolce-engrave", "dolce-export", "dolce-export-wasm", "dolce-formats", "dolce-geom", "dolce-hanconv", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "dolce-model", "dolce-play", "dolce-scene", "dolce-session", "dolce-smufl", "dolce-style", "dolce-text", "dolce-text-native", "dolce-view", "dolce-wasm", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc", "omr-wasm"]
+# omr-wasm、dolce-wasm、dolce-jcx-wasm、dolce-export-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
+default-members = ["dolce-base", "dolce-book", "dolce-cli", "dolce-engrave", "dolce-export", "dolce-formats", "dolce-geom", "dolce-hanconv", "dolce-layout-jianpu", "dolce-layout-staff", "dolce-model", "dolce-play", "dolce-scene", "dolce-session", "dolce-smufl", "dolce-style", "dolce-text", "dolce-text-native", "dolce-view", "dolce-xml", "omr-book", "omr-build", "omr-cli", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc"]
 
 [workspace.package]
 version = "0.1.0"

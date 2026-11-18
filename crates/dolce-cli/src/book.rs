@@ -3,7 +3,7 @@
 //! `expect-rebuild-drawlist.json` / `expect-rebuild-lines.json`（TS 产物）。
 //!
 //! 逐页比 drawlist（`pages[i]`）、逐首比 `songs`（两份），判法同 `jianpu-check`：骨架（键、串、数组长）要一样、数差 ≤ 1e-6；
-//! `--native` 时排版引擎改 Rust 自量（书级量字仍回放，原生实现在 L7），数差放到 0.5。
+//! `--native` 时排版引擎改 Rust 自量，数差放到 0.5；`--book-native` 时书级量字也改原生（`dolce_export::book::BookFonts`）。
 //! 选项：`--show=N`（列几条差异）、`--out=<目录>`（把 Rust 产物写出来）、`--redist=<目录>`。
 
 use crate::jianpu::{judge_json, Verdict, TOL};
@@ -63,7 +63,7 @@ fn judge_list(what: &str, want: &[Value], got: &[Value], label: impl Fn(usize, &
 pub fn book_rebuild(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(dir) = pos.first().map(Path::new) else {
-        eprintln!("用法：dolce book-rebuild <目录> [--native] [--show=N] [--out=<目录>] [--redist=<目录>]");
+        eprintln!("用法：dolce book-rebuild <目录> [--native] [--book-native] [--show=N] [--out=<目录>] [--redist=<目录>]");
         return 2;
     };
     let native = args.iter().any(|a| a == "--native");
@@ -81,11 +81,25 @@ pub fn book_rebuild(args: &[String]) -> i32 {
         _ => unreachable!(),
     };
     let env = Env { mc: &mc, meta: Some(&meta) };
-    let bm = ReplayBookMeasure::from_jsonl(&read(dir, "book-measure.jsonl")).expect("书级量字录制");
     let input: RebuildInput = serde_json::from_str(&read(dir, "input.json")).expect("input.json");
+    let replay_bm = ReplayBookMeasure::from_jsonl(&read(dir, "book-measure.jsonl")).expect("书级量字录制");
+    // `--book-native`：书级量字也走原生（读样式表指的字体文件、整形 + 挤压，与 PDF 写出端同一份）
+    let font_book = dolce_export::fonts::FontBook::system();
+    let native_bm = args.iter().any(|a| a == "--book-native").then(|| {
+        let (_, st) = dolce_book::rebuild::book_style_files(&input.style_files).expect("成书样式");
+        let f = dolce_export::book::BookFonts::resolve(&st, &font_book, Path::new("."));
+        for (id, fam, why) in &f.missing {
+            println!("⚠ 字体 {id}（{fam}）：{why}");
+        }
+        f
+    });
+    let bm: &dyn dolce_book::measure::BookMeasure = match &native_bm {
+        Some(f) => f,
+        None => &replay_bm,
+    };
     std::panic::set_hook(Box::new(|_| {}));
     let t0 = std::time::Instant::now();
-    let out = match rebuild(&input, &env, &bm) {
+    let out = match rebuild(&input, &env, bm) {
         Ok(o) => o,
         Err(e) => {
             println!("✗ 排不出：{e}");
@@ -96,9 +110,9 @@ pub fn book_rebuild(args: &[String]) -> i32 {
     for l in &out.log {
         println!("{l}");
     }
-    if bm.miss_count() > 0 {
-        println!("⚠ 书级量字没录到 {} 次：", bm.miss_count());
-        for m in bm.misses.borrow().iter().take(show.max(5)) {
+    if native_bm.is_none() && replay_bm.miss_count() > 0 {
+        println!("⚠ 书级量字没录到 {} 次：", replay_bm.miss_count());
+        for m in replay_bm.misses.borrow().iter().take(show.max(5)) {
             println!("    {m}");
         }
     }

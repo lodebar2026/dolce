@@ -1,0 +1,27 @@
+[package]
+name = "dolce-export"
+description = "悦谱 Dolce 导出：场景 / 成书 DrawList → PDF（krilla），场景 → PPTX；字体定位、嵌入与转曲"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+default = ["system", "book"]
+# 系统字体（fontdb 扫系统目录）。桌面与命令行开；wasm 不开，字体由宿主给字节
+system = ["fontdb/fs", "fontdb/memmap"]
+# 成书 DrawList → PDF 与书级量字（引 dolce-book；wasm 不要）
+book = ["system", "dep:dolce-book"]
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+dolce-geom = { path = "../dolce-geom" }
+dolce-scene = { path = "../dolce-scene" }
+dolce-text = { path = "../dolce-text" }
+dolce-book = { path = "../dolce-book", optional = true }
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
+rustybuzz = "0.20.1"
+flate2 = "1"
+crc32fast = "1"
+fontdb = { version = "0.23", default-features = false, features = ["std"] }
+serde.workspace = true
+serde_json = "1"

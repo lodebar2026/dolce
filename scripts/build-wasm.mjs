@@ -1,7 +1,7 @@
 // 网页版识别的 wasm（crates/omr-wasm）与 PDFium 的 wasm 版 → public/redist/omr/；
 // 模型 / 格式 / 排版的 wasm（crates/dolce-wasm，迁 Rust 进行中）→ public/redist/dolce/。都不入库。
 // dolce-wasm 是编辑器开机就要的（演唱顺序、断句、时间轴、MIDI 已在里面，网页与桌面 WebView 都载它，
-// Node 的 out/cli 各入口与识谱分发包也载它），一律要编；.jcx 编解码（GBK / BIG5 码表大）单出一份 dolce_jcx_wasm，同目录、按需载入。识别那份桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）
+// Node 的 out/cli 各入口与识谱分发包也载它），一律要编；.jcx 编解码（GBK / BIG5 码表大）单出一份 dolce_jcx_wasm、导出 PDF（krilla 与整形）单出一份 dolce_export_wasm，同目录、按需载入。识别那份桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）
 // 与设了 DOLCE_NO_WASM 的跳过（桌面识别走原生）。
 // vite 的 dev 与 build 开头调它（vite.config.ts）；`node scripts/build-wasm.mjs dolce` 只编 dolce 那两份（识谱分发包、桌面 CI 用）；
 // `probe` 另编一份带对拍探针的 dolce-wasm 到 out/dolce-probe/（只给 dev 对拍脚本，不进打包）。
@@ -23,6 +23,7 @@ const NAME = "dolce_omr_wasm";
 const DOLCE_OUT = join(root, "public/redist/dolce");
 const DOLCE_NAME = "dolce_wasm";
 const JCX_NAME = "dolce_jcx_wasm";
+const EXPORT_NAME = "dolce_export_wasm";
 
 function newest(dir, acc = 0, only = null) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -91,22 +92,22 @@ function buildOmr() {
   }
 }
 
-/** 模型 / 格式 / 排版的 wasm：dolce_wasm 与按需载入的 dolce_jcx_wasm 两份（不用 SIMD 特性），共用自己的 target 目录；
+/** 模型 / 格式 / 排版的 wasm：dolce_wasm 与按需载入的 dolce_jcx_wasm、dolce_export_wasm 三份（不用 SIMD 特性），共用自己的 target 目录；
  *  只看 dolce-*、它引的那几个 omr-*（识别结果建模 omr-todoc 及其依赖）与锁文件、本脚本的修改时间。`--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
 /** dolce-wasm 依赖的识别 crate（目录名） */
 const DOLCE_OMR_DEPS = ["omr-todoc", "omr-sheet", "omr-text", "omr-core"];
 
 export function buildDolce() {
   const srcTime = Math.max(newest(crates, 0, (n) => n.startsWith("dolce-") || DOLCE_OMR_DEPS.includes(n)), statSync(join(crates, "Cargo.lock")).mtimeMs, statSync(fileURLToPath(import.meta.url)).mtimeMs);
-  const stamps = [DOLCE_NAME, JCX_NAME].map((n) => join(DOLCE_OUT, `${n}_bg.wasm`));
+  const stamps = [DOLCE_NAME, JCX_NAME, EXPORT_NAME].map((n) => join(DOLCE_OUT, `${n}_bg.wasm`));
   if (stamps.every((f) => existsSync(f) && statSync(f).mtimeMs > srcTime)) return;
   checkBindgen();
   mkdirSync(DOLCE_OUT, { recursive: true });
-  console.log("[build-wasm] 编 dolce-wasm、dolce-jcx-wasm …");
+  console.log("[build-wasm] 编 dolce-wasm、dolce-jcx-wasm、dolce-export-wasm …");
   const target = join(crates, "target/wasm-dolce");
   // crates/Cargo.toml 的 `wasm-dolce` 档（fat LTO）；不过 wasm-opt——实测它让 gzip 后反而变大（按体积编也量过，太慢，见该档注释）
-  run("cargo", ["build", "-p", "dolce-wasm", "-p", "dolce-jcx-wasm", "--profile", "wasm-dolce", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
-  for (const name of [DOLCE_NAME, JCX_NAME]) {
+  run("cargo", ["build", "-p", "dolce-wasm", "-p", "dolce-jcx-wasm", "-p", "dolce-export-wasm", "--profile", "wasm-dolce", "--target", "wasm32-unknown-unknown", "--target-dir", target], { cwd: crates });
+  for (const name of [DOLCE_NAME, JCX_NAME, EXPORT_NAME]) {
     const wasm = join(target, `wasm32-unknown-unknown/wasm-dolce/${name}.wasm`);
     // 去掉名字段（编辑器开机就载；panic 信息照打，只是栈上没函数名）
     run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", DOLCE_OUT, "--out-name", name]);

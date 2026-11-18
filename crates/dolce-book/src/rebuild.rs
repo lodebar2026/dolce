@@ -1032,19 +1032,24 @@ fn region_items(sheet: &Value, name: &str, row: Option<usize>, env: &dyn RegionE
     crate::template::placed_to_draw_items(&res.items).expect("模板图元")
 }
 
-/// 整本（`rebuild.mjs` 自读样式起、写文件止的那一段）
-pub fn rebuild(input: &RebuildInput, env: &Env, bm: &dyn BookMeasure) -> Result<RebuildOut, String> {
-    // 成书样式：歌本样式表（实测部分 + 模板与手调）按序叠
+/// 成书样式：歌本样式表（实测部分 + 模板与手调）按序叠，id 取最后一份的文件名。返回（层叠后的表, BookStyle）
+pub fn book_style_files(files: &[StyleFile]) -> Result<(dolce_style::sheet::StyleSheet, Value), String> {
     let mut rules = vec![];
-    for f in &input.style_files {
+    for f in files {
         rules.extend(dolce_style::ss::parse_ss(&f.text).map_err(|e| format!("{}：{}", f.name, e.message))?);
     }
     let mut ctx = dolce_style::cascade::StyleContext::new();
     ctx.insert("engine".into(), json!("book"));
     let sheet = dolce_style::cascade::compute_style(&[&rules], &ctx);
-    let last = input.style_files.last().map_or("", |f| f.name.as_str());
+    let last = files.last().map_or("", |f| f.name.as_str());
     let id = last.rsplit('/').next().unwrap_or(last).trim_end_matches(".ss");
     let st = dolce_style::bookss::book_style_of(&sheet, id).map_err(|e| e.to_string())?;
+    Ok((sheet, st))
+}
+
+/// 整本（`rebuild.mjs` 自读样式起、写文件止的那一段）
+pub fn rebuild(input: &RebuildInput, env: &Env, bm: &dyn BookMeasure) -> Result<RebuildOut, String> {
+    let (sheet, st) = book_style_files(&input.style_files)?;
     let style_id = st["id"].clone();
     let cx = Ctx { st: &st, sheet: sheet.value(), env, bm };
     let mut log = vec![];

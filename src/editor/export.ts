@@ -4,6 +4,7 @@ import { toMidi } from "../score/play";
 import { buildPptx } from "./pptx";
 import { pptxPainter } from "./paintreq";
 import { ScorePainter } from "../layout/painter";
+import { pageScenes } from "../layout/scenejson";
 import { isTauriRuntime, saveBytes } from "./fileio";
 import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../convert/targets";
 import { asset } from "../common/asset";
@@ -46,22 +47,6 @@ async function musicFontDataUrl(file: string): Promise<string> {
       }));
   }
   return musicFontDataUrls.get(file)!;
-}
-
-/** 给一页 SVG 铺上纸张底色（插一个满幅 rect 到最底层）。
- *  页面树里没有背景这一层——屏幕上靠 CSS 铺（见 App._applyPageBg），
- *  而 SVG 一旦离开浏览器（直出 PDF）就只剩透明底，所以导出时要显式铺一次。
- *  白底不铺：PDF 的纸本来就是白的，少一个无用图元。 */
-function paintBg(svg: SVGSVGElement, bgColor: number): void {
-  if (((bgColor >>> 0) & 0xffffff) === 0xffffff) return;
-  const { width: w, height: h } = svgSize(svg);
-  const rect = document.createElementNS(SVG_NS, "rect");
-  rect.setAttribute("x", "0");
-  rect.setAttribute("y", "0");
-  rect.setAttribute("width", String(w));
-  rect.setAttribute("height", String(h));
-  rect.setAttribute("fill", colorToCss(bgColor));
-  svg.insertBefore(rect, svg.firstChild);
 }
 
 /** Serialize a page <svg> with Bravura embedded so it rasterizes faithfully.
@@ -254,40 +239,31 @@ export async function exportLayoutPng(app: App): Promise<void> {
   }
 }
 
-/** 分页纸：全部页出一份 PDF。桌面版走原生矢量（`export_pdf_cmd`），浏览器版逐页栅格化进 jsPDF。 */
+/** 分页纸：全部页出一份 PDF。桌面版走原生矢量（`export_scene_pdf`）；网页版有本地字体授权出矢量、否则逐页栅格（`pdfexport.ts`）。 */
 export async function exportLayoutPdf(app: App): Promise<void> {
   const { painter, name } = await layoutPainter(app);
-  const { w: wPt, h: hPt } = painter.pageSize(0);
 
   if (isTauriRuntime()) {
     const { invoke } = await import("@tauri-apps/api/core");
     const { save } = await import("@tauri-apps/plugin-dialog");
     const outPath = await save({ defaultPath: `${name}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
     if (!outPath) return;
-    const pages: string[] = [];
-    for (let i = 0; i < painter.pageCount; i++) {
-      const { w, h } = painter.pageSize(i);
-      const svg = painter.renderPage(i);
-      svg.setAttribute("xmlns", SVG_NS);
-      // 不带单位：usvg 把 `pt` 按 96 dpi 折成 px（×4/3），svg2pdf 又按 72 dpi 把 px 当 pt，
-      // 带 `pt` 整页放大 4/3（A5 出来成了近 A4）。无单位的用户单位在这条链上正好 1:1 落成 pt
-      svg.setAttribute("width", String(w));
-      svg.setAttribute("height", String(h));
-      paintBg(svg, app.style.bgColor);
-      pages.push(new XMLSerializer().serializeToString(svg));
-    }
-    await invoke("export_pdf_cmd", { pagesSvg: pages, widthPt: wPt, heightPt: hPt, outPath });
+    // 场景交 Rust 写出端（`dolce_export::scene`）：真文字（可选可搜）、字体嵌子集，嵌不了的转曲并叠不可见文字层
+    const scenes = pageScenes(painter);
+    const pages = scenes.map((scene, i) => ({ scene, ...painter.pageSize(i) }));
+    await invoke("export_scene_pdf", { pages, bg: app.style.bgColor, title: name, outPath });
   } else {
-    const { jsPDF } = await import("jspdf");
-    const orient = (w: number, h: number) => (w >= h ? "landscape" : "portrait");
-    const pdf = new jsPDF({ unit: "pt", format: [wPt, hPt], orientation: orient(wPt, hPt), compress: true });
-    for (let i = 0; i < painter.pageCount; i++) {
-      const { w, h } = painter.pageSize(i);
-      const png = await svgToBytes(painter.renderPage(i), 2, colorToCss(app.style.bgColor));
-      if (i > 0) pdf.addPage([w, h], orient(w, h));
-      pdf.addImage(png, "PNG", 0, 0, w, h, undefined, "FAST");
+    // 写出端在 Rust（dolce-export-wasm，按需载入）：给了本地字体出矢量，否则逐页栅格
+    const { vectorPdf, rasterPdf } = await import("./pdfexport");
+    let bytes = await vectorPdf(painter, app.style.bgColor, name);
+    if (!bytes) {
+      const pages = [];
+      for (let i = 0; i < painter.pageCount; i++) {
+        pages.push({ png: await svgToBytes(painter.renderPage(i), 2, colorToCss(app.style.bgColor)), ...painter.pageSize(i) });
+      }
+      bytes = await rasterPdf(pages, name);
     }
-    await saveBytes(new Uint8Array(pdf.output("arraybuffer")), `${name}.pdf`, "application/pdf");
+    await saveBytes(bytes, `${name}.pdf`, "application/pdf");
   }
 }
 

@@ -1,0 +1,17 @@
+[package]
+name = "dolce-export-wasm"
+description = "悦谱 Dolce 导出 PDF 的 wasm 绑定（网页版）：场景 → 矢量 PDF（字体由本地字体访问授权给字节）、逐页 PNG → 栅格 PDF。krilla 与整形占体积，按需载入，开机不载"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+dolce-export = { path = "../dolce-export", default-features = false }
+dolce-scene = { path = "../dolce-scene" }
+dolce-text = { path = "../dolce-text" }
+serde_json = "1"
+wasm-bindgen = "=0.2.120"
+console_error_panic_hook = "0.1"

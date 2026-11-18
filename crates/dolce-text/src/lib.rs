@@ -22,7 +22,7 @@ mod replay;
 pub mod syllable;
 
 pub use cjkpunct::CompressMode;
-pub use compat::{browser_path_bounds, BrowserCompat, Measured, Platform, RawFontMetrics, SystemText};
+pub use compat::{browser_path_bounds, css_families, han_kern_shifts, BrowserCompat, Measured, Platform, RawFontMetrics, SystemText};
 pub use replay::{MeasureRecord, ReplayMeasurer};
 
 use cjkpunct::{code_points, compress_run, pair_trim_px, trim_left, SlackLR};

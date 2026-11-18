@@ -4,107 +4,12 @@
 //     Rust 的回放后端（`ReplayMeasurer`）照它答，原生后端拿它逐键对；
 //   - 简谱定位结构（PlacedScore）与栅格（JianpuGrid）、样式表：给后面几期的中间对拍当参照（元素换成 `{"@el": id}`）。
 // 只给 dev `layout-ref.mjs` 用；排版迁完（H 期）随 TS 排版一起删。
-import { GraphicLine, GraphicPath, Group, PageItem, SmuflText, TextFrame } from "../pagetree/pageitem";
-import { JpNumber, JpOctaveDot, BeamLine } from "../engrave/jpnumber";
-import { Lyric } from "../engrave/syllable";
-import { Slur, Tie, SlurTieBase } from "../engrave/arc";
+import { PageItem } from "../pagetree/pageitem";
 import { setMeasureBackend, type MeasureBackend } from "../common/measure";
 import type { ScorePainter } from "../layout/painter";
+import { pageScenes, sceneNode, type Json } from "../layout/scenejson";
 
-type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
-
-const mat6 = (it: PageItem): number[] => it.matrix.mat.slice(0, 6);
-
-function roleOf(it: PageItem): Json | undefined {
-  if (it instanceof JpNumber) return { k: "JpNumber", augDotAdvance: it.augDotAdvance };
-  if (it instanceof JpOctaveDot) return { k: "JpOctaveDot", radius: it.radius };
-  if (it instanceof BeamLine) return { k: "BeamLine", level: it.level };
-  if (it instanceof Lyric) return { k: "Lyric", widths: [...it._widths], compress: it.compress, verse: it.verse };
-  if (it instanceof Tie) return { k: "Tie", flatHx: it.flatHx, startId: it.startId, endId: it.endId };
-  if (it instanceof Slur) return { k: "Slur", flatHx: it.flatHx };
-  if (it instanceof SlurTieBase) throw new Error("未知的弧类");
-  return undefined;
-}
-
-/** `data` 只收全是数的平铺对象（五线谱系统的谱表带、和弦组的 cx）；挂的模型对象不收（身份标签已经说了是谁）。 */
-function plainData(d: unknown): Json | undefined {
-  if (!d || typeof d !== "object" || Array.isArray(d)) return undefined;
-  const out: Record<string, Json> = {};
-  for (const [k, v] of Object.entries(d)) {
-    if (typeof v !== "number") return undefined;
-    out[k] = v;
-  }
-  return out;
-}
-
-function textOf(it: TextFrame): Record<string, Json> {
-  const f = it.font;
-  return {
-    text: it.text,
-    font: { family: f.family, size: f.size, bold: f.bold, italic: f.italic },
-    color: it.color,
-    charXs: it.charXs ? [...it.charXs] : null,
-    inkBound: it.inkBound,
-  };
-}
-
-/** 页面树 → 场景节点。 */
-export function sceneNode(it: PageItem): Json {
-  const n: Record<string, Json> = {};
-  if (it instanceof Group) n.t = "g";
-  else if (it instanceof GraphicPath) {
-    n.t = "p";
-    n.segs = it.segs.map((s) => [s.op, ...s.pts]);
-    n.strokeWidth = it.strokeWidth;
-    n.strokeColor = it.strokeColor;
-    n.fillColor = it.fillColor;
-    n.stroke = it.stroke;
-    n.fill = it.fill;
-  } else if (it instanceof GraphicLine) {
-    n.t = "l";
-    n.p0 = [it.p0.x, it.p0.y];
-    n.p1 = [it.p1.x, it.p1.y];
-    n.strokeWidth = it.strokeWidth;
-    n.strokeColor = it.strokeColor;
-  } else if (it instanceof SmuflText) {
-    n.t = "s";
-    Object.assign(n, textOf(it));
-    n.asPath = it.asPath;
-  } else if (it instanceof TextFrame) {
-    n.t = "x";
-    Object.assign(n, textOf(it));
-  } else n.t = "i";
-  const role = roleOf(it);
-  if (role) n.role = role;
-  n.m = mat6(it);
-  n.w = it.width;
-  n.h = it.height;
-  try {
-    const b = it.bound;
-    n.b = [b.left, b.top, b.right, b.bottom];
-  } catch {
-    // SMuFL 字的码位不在元数据里：TS 取盒就抛（排版没用到它的盒），记成没有
-  }
-  if (it.classes.size) n.cls = [...it.classes];
-  if (it.ident) n.id = JSON.parse(JSON.stringify(it.ident)) as Json;
-  if (it.selectable) n.sel = true;
-  const data = plainData(it.data);
-  if (data) n.data = data;
-  if (it.children.length) n.k = it.children.map(sceneNode);
-  return n;
-}
-
-/** 当前结果的各页场景（同 `ScorePainter.renderPage` 的外壳：方言、class、viewBox）。 */
-export function pageScenes(painter: ScorePainter): Json[] {
-  const staff = painter.renderer === "staff";
-  return (painter.result?.pages ?? []).map((p) => ({
-    dialect: staff ? "mixed" : "jianpu",
-    cls: staff ? "score-page mixed-page" : "score-page",
-    w: p.geometry.viewBox.w,
-    h: p.geometry.viewBox.h,
-    root: p.root ? sceneNode(p.root) : null,
-  }));
-}
+export { pageScenes, sceneNode };
 
 /** 任意排版中间结构 → JSON：模型元素换成 `{"@el": id}`，视图里的行 / 组等共享对象第二次出现起换成 `{"@ref": n}`，
  *  Map 写成 `{"@map": [[k, v]…]}`、Set 写成数组。 */
