@@ -110,6 +110,27 @@ export async function layoutAsync(w: LayoutWire): Promise<LaidHandle> {
   return core ? nativeLayout(core, w) : layoutSync(w);
 }
 
+/** 宿主对账（dev `layout-node-parity.mjs`）：一份请求录成 `dolce layout-wire` 吃的一行（表层快照写 hex）。 */
+export function wireDump(w: LayoutWire, key: string, cfg: string): string {
+  const { json, h } = docJson(w.doc);
+  let surface: string | null = null;
+  if (w.kind === "staff" && h) {
+    const b = dolce().modelSurfaceSnapshot(h);
+    surface = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  return JSON.stringify({ key, cfg, kind: w.kind, doc: json, req: JSON.stringify(w.req), surface });
+}
+
+/** 宿主对账：同一份请求在本页的 wasm 上（本页量字后端）同步排一遍，回各页 SVG。 */
+export function wasmPages(w: LayoutWire): string[] {
+  const l = layoutSync(w);
+  try {
+    return l.info.pages.map((_, i) => l.svg(i));
+  } finally {
+    l.free();
+  }
+}
+
 /** 原生那边已有的表层代号（句柄 → 代号）；原生按最近用到的淘汰，排版报「没有表层」时作废重送。 */
 const nativeSurfaces = new Map<number, number>();
 

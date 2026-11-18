@@ -453,6 +453,7 @@ dependencies = [
 name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "dolce-base",
  "dolce-book",
  "dolce-engrave",
@@ -463,6 +464,7 @@ dependencies = [
  "dolce-model",
  "dolce-omr-source",
  "dolce-scene",
+ "dolce-session",
  "dolce-smufl",
  "dolce-style",
  "dolce-text",

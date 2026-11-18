@@ -27,6 +27,8 @@ dolce-smufl = { path = "../dolce-smufl" }
 dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
 dolce-layout-staff = { path = "../dolce-layout-staff" }
 dolce-book = { path = "../dolce-book" }
+dolce-session = { path = "../dolce-session" }
+bincode.workspace = true
 indexmap = "2"
 serde.workspace = true
 serde_json = "1"

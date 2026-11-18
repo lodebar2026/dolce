@@ -3,12 +3,65 @@
 //
 // 配置：{ "out": "结果 JSON 路径", "rust": [{ "files": ["绝对路径", …], "kind": "auto|staff|jianpu", "ops": [会话操作, …] }, …] }
 // 走编辑器真实入口（`OmrController.recognizeFiles` → Rust 识别），记状态栏、会话种类、核对数据、各会话操作的回话与关联表原样重建。
+//
+// 排版宿主对账（dev `layout-node-parity.mjs --host=desktop`）：配置带 `layout`（`{ dir, jobs: [{ key, path, name, configs }] }`）时逐份打开、逐档排，
+// 每份写 `<dir>/<序号>.json`：各档原生排的页（编辑器真实走的那路）、同一份请求在 WebView 的 wasm 上（WebView 量字）重排的页、请求原样（交 `dolce layout-wire`）。
 import { invoke } from "@tauri-apps/api/core";
 import type { RustReviewResult, RustSessionOp } from "../omrrust/adapter";
+import { wasmPages, wireDump } from "../layout/rustlayout";
+import { recordMeasure } from "../common/measure";
+import type { App } from "./app";
+
+interface LayoutJob {
+  key: string;
+  path: string;
+  name: string;
+  configs: string[];
+}
 
 interface BenchConfig {
   rust?: { files: string[]; kind?: "auto" | "staff" | "jianpu"; ops?: RustSessionOp[] }[];
+  /** `measure`：录下 WebView 量字的调用，写 `<dir>/measure.jsonl`（交 `dolce measure-check`） */
+  layout?: { dir: string; jobs: LayoutJob[]; measure?: boolean };
   out: string;
+}
+
+/** 对账的一档 → 编辑器那几步（与 dev `layout-node-parity.mjs::applyConfig` 同一套） */
+async function applyConfig(app: App, cfg: string): Promise<void> {
+  if (cfg === "五线谱" || cfg === "混排") return app.setViewMode(cfg === "五线谱" ? "staff" : "mixed");
+  const expanded = cfg === "展开";
+  if (expanded) await app.applyRenderSettings({ pageW: 960, pageH: 540, fontSize: 28 });
+  else {
+    const paper = cfg.replace("原样 ", "");
+    await app.applyRenderSettings({ jpPaper: paper === "分页" ? "150×216mm" : paper, fontSize: 12 });
+  }
+  return app.setViewMode(expanded ? "expanded" : "original");
+}
+
+async function layoutJob(app: App, job: LayoutJob): Promise<unknown> {
+  const out: Record<string, unknown> = { key: job.key };
+  try {
+    await app.setViewMode("expanded");
+    await app.importBytes(await readBytes(job.path), job.name);
+  } catch (e) {
+    return { ...out, error: String(e) };
+  }
+  for (const cfg of job.configs) {
+    try {
+      await applyConfig(app, cfg);
+      await app.whenIdle();
+      const p = app.painter;
+      const w = p.wire;
+      out[cfg] = {
+        host: Array.from({ length: p.pageCount }, (_, k) => p.pageSvg(k)),
+        wasm: w ? wasmPages(w) : null,
+        wire: w ? wireDump(w, job.key, cfg) : null,
+      };
+    } catch (e) {
+      out[cfg] = `!${String(e)}`;
+    }
+  }
+  return out;
 }
 
 const readBytes = async (path: string): Promise<Uint8Array> => new Uint8Array(await invoke<ArrayBuffer>("bench_read", { path }));
@@ -70,6 +123,19 @@ export async function maybeRunDesktopBench(): Promise<void> {
       rows.push(row);
       await step(`rust ${item.files.map((f) => f.split("/").pop()).join("+")} ${String(row.ok)} ${String(row.ms)}ms`);
       await saveRows(true);
+    }
+  }
+  if (cfg.layout) {
+    const app = (window as unknown as { __app: App }).__app;
+    const take = cfg.layout.measure ? recordMeasure() : null;
+    for (const [i, job] of cfg.layout.jobs.entries()) {
+      const r = await layoutJob(app, job);
+      await invoke("bench_write", { path: `${cfg.layout.dir}/${i}.json`, text: JSON.stringify(r) }).catch(() => undefined);
+      await step(`layout ${job.key}`);
+    }
+    if (take) {
+      const text = take().map((r) => JSON.stringify(r)).join("\n") + "\n";
+      await invoke("bench_write", { path: `${cfg.layout.dir}/measure.jsonl`, text }).catch(() => undefined);
     }
   }
   await invoke("bench_exit");

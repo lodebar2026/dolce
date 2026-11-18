@@ -1,6 +1,6 @@
 import "./styles.css";
 import { MetaData } from "./smufl/smufl";
-import { setMeasureBackend } from "./common/measure";
+import { recordMeasure, setMeasureBackend } from "./common/measure";
 import { browserMeasure, ensureFontsReady } from "./common/measure.browser";
 import { asset } from "./common/asset";
 import { App, type ViewMode } from "./editor/app";
@@ -13,7 +13,7 @@ import { encodeJpwabc, isTauriRuntime } from "./editor/fileio";
 import { maybeAutoCheck } from "./editor/update";
 import { PaintResources, ScorePainter } from "./layout/painter";
 import { staffOptionsOf } from "./layout/legacy";
-import { installLayoutHost } from "./layout/rustlayout";
+import { installLayoutHost, wasmPages, wireDump } from "./layout/rustlayout";
 import type { MixedOptions } from "./mixed/model";
 import { initLang, onLangChange, t } from "./i18n";
 import { setupPopover } from "./editor/toolpop";
@@ -593,5 +593,10 @@ function paintProbe(meta: MetaData) {
     ScorePainter,
     resources: PaintResources.fixed(meta),
     staffOptions: (): MixedOptions => staffOptionsOf(meta),
+    // 宿主对账（dev layout-node-parity.mjs）：录下当前请求、在本页 wasm 上重排
+    wireDump,
+    wasmPages,
+    // 录下此后的量字调用（交 `dolce measure-check` 对原生）
+    recordMeasure: () => recordMeasure(),
   };
 }

@@ -28,6 +28,7 @@ mod jianpu;
 mod layout;
 mod staff;
 mod style;
+mod wire;
 
 use sha2::{Digest, Sha256};
 use std::io::{self, BufRead, Write};
@@ -54,8 +55,9 @@ fn main() {
         Some("book-rebuild") => std::process::exit(book::book_rebuild(&args[1..])),
         Some("font-probe") => std::process::exit(export::font_probe(&args[1..])),
         Some("scene-pdf") => std::process::exit(export::scene_pdf(&args[1..])),
+        Some("layout-wire") => std::process::exit(wire::layout_wire(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare | pptx> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare | pptx | layout-wire> …");
             std::process::exit(2);
         }
     }

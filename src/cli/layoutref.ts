@@ -5,7 +5,6 @@
 //   - 简谱定位结构（PlacedScore）与栅格（JianpuGrid）、样式表：给后面几期的中间对拍当参照（元素换成 `{"@el": id}`）。
 // 只给 dev `layout-ref.mjs` 用；排版迁完（H 期）随 TS 排版一起删。
 import { PageItem } from "../pagetree/pageitem";
-import { setMeasureBackend, type MeasureBackend } from "../common/measure";
 import type { ScorePainter } from "../layout/painter";
 import { pageScenes, sceneNode, type Json } from "../layout/scenejson";
 
@@ -43,44 +42,7 @@ export function jianpuRefs(_painter: ScorePainter, req: JianpuPaintRequest): { p
   return { placed: plainOf(r.placed.pages, idOf), grid: plainOf(r.metrics, idOf) };
 }
 
-/** 录下的一次后端调用（`dolce-text::MeasureRecord`）。 */
-export type MeasureRecord = Record<string, Json>;
-
-/**
- * 给测量后端套一层录制：每次调用写一条（去重靠上面 `measure.ts` 的缓存，同一进程里同一调用只到后端一次）。
- * 装上即 `setMeasureBackend`（会清缓存）；返回取走已录条目的函数。
- */
-export function recordMeasure(inner: MeasureBackend): () => MeasureRecord[] {
-  let log: MeasureRecord[] = [];
-  const rect = (r: { left: number; top: number; right: number; bottom: number }) => [r.left, r.top, r.right, r.bottom];
-  setMeasureBackend({
-    glyph(text, family, size, weight, features, style) {
-      const m = inner.glyph(text, family, size, weight, features, style);
-      log.push({ op: "glyph", text, family, size, weight, features: [...(features ?? [])], style, width: m.width, bbox: rect(m.bbox) });
-      return m;
-    },
-    positions(text, family, size, weight, features) {
-      const p = inner.positions(text, family, size, weight, features);
-      log.push({ op: "positions", text, family, size, weight, features: [...features], xs: [...p.xs], width: p.width });
-      return p;
-    },
-    fontMetrics(family, size, weight, style) {
-      const m = inner.fontMetrics(family, size, weight, style);
-      log.push({ op: "fontMetrics", family, size, weight, style, ascent: m.ascent, descent: m.descent });
-      return m;
-    },
-    pathBounds(d) {
-      const r = inner.pathBounds(d);
-      log.push({ op: "pathBounds", d, bbox: rect(r) });
-      return r;
-    },
-  });
-  return () => {
-    const out = log;
-    log = [];
-    return out;
-  };
-}
+export { recordMeasure, type MeasureRecord } from "../common/measure";
 
 // ---- L3/L4 简谱引擎对拍（dev `jianpu-rs-diff.mjs`）：定位结构规范化成两边同一口径（Rust 那份在 `dolce-layout-jianpu::placedjson`） ----
 import type { JianpuPaintRequest } from "../layout/painter";

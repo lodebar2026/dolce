@@ -63,6 +63,45 @@ export function bindWasmMeasure(sync: WasmMeasureSync): void {
   if (backend) sync.set(backend);
 }
 
+/** 录下的一次后端调用（`dolce-text::MeasureRecord`：`dolce measure-check` 拿原生量字逐条对）。 */
+export type MeasureRecord = Record<string, unknown>;
+
+/**
+ * 给测量后端（缺省当前装的那个）套一层录制：每次调用写一条（同一调用只到后端一次，去重靠缓存）。
+ * 装上即 `setMeasureBackend`（会清缓存）；返回取走已录条目的函数。排版参照导出（dev `layout-ref.mjs`）与宿主对账（`layout-node-parity.mjs`）用。
+ */
+export function recordMeasure(inner: MeasureBackend = be()): () => MeasureRecord[] {
+  let log: MeasureRecord[] = [];
+  const rect = (r: { left: number; top: number; right: number; bottom: number }) => [r.left, r.top, r.right, r.bottom];
+  setMeasureBackend({
+    glyph(text, family, size, weight, features, style) {
+      const m = inner.glyph(text, family, size, weight, features, style);
+      log.push({ op: "glyph", text, family, size, weight, features: [...(features ?? [])], style, width: m.width, bbox: rect(m.bbox) });
+      return m;
+    },
+    positions(text, family, size, weight, features) {
+      const p = inner.positions(text, family, size, weight, features);
+      log.push({ op: "positions", text, family, size, weight, features: [...features], xs: [...p.xs], width: p.width });
+      return p;
+    },
+    fontMetrics(family, size, weight, style) {
+      const m = inner.fontMetrics(family, size, weight, style);
+      log.push({ op: "fontMetrics", family, size, weight, style, ascent: m.ascent, descent: m.descent });
+      return m;
+    },
+    pathBounds(d) {
+      const r = inner.pathBounds(d);
+      log.push({ op: "pathBounds", d, bbox: rect(r) });
+      return r;
+    },
+  });
+  return () => {
+    const out = log;
+    log = [];
+    return out;
+  };
+}
+
 function be(): MeasureBackend {
   if (!backend) throw new Error("测量后端未装配：浏览器侧应先 setMeasureBackend(browserMeasure)，Node 侧走 cli/engrave");
   return backend;

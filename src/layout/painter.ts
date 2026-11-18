@@ -170,6 +170,8 @@ export class ScorePainter {
   pageWidth = 0;
   pageHeight = 0;
   private cur: LaidHandle | null = null;
+  /** 当前结果的排版请求（宿主对账脚本取它在别的宿主上重排） */
+  private curWire: LayoutWire | null = null;
   /** 身份索引（按排版给的身份表建）：试听高亮、点选、可视化编辑查它。简谱、五线谱 / 混排同一份。 */
   private index: ScoreIndex = ScoreIndex.empty();
   /** 试听的竖直播放线（各视图同一种，当前在哪页的 svg 里就挂在哪页）。 */
@@ -193,6 +195,11 @@ export class ScorePainter {
     return { pages: jp ? await this.scenes() : [], stackGap: this.cur?.info.stackGap, pageWidth: this.pageWidth, pageHeight: this.pageHeight };
   }
 
+  /** 当前结果的排版请求（宿主对账：`rustlayout.ts::wireDump` 录下、交别的宿主重排）；还没排为 null。 */
+  get wire(): LayoutWire | null {
+    return this.curWire;
+  }
+
   /** 当前结果是哪一路画的。 */
   get renderer(): "jianpu" | "staff" | null {
     return this.cur?.info.renderer ?? null;
@@ -210,8 +217,9 @@ export class ScorePainter {
     await this.resources.prepare();
     if (v !== this.version) return "superseded";
     let laid: LaidHandle;
+    const wire = wireOf(request);
     try {
-      laid = await layoutAsync(wireOf(request));
+      laid = await layoutAsync(wire);
     } catch (e) {
       if (v !== this.version) return "superseded";
       throw e;
@@ -220,7 +228,7 @@ export class ScorePainter {
       laid.free();
       return "superseded";
     }
-    this.commit(laid, request);
+    this.commit(laid, request, wire);
     return "committed";
   }
 
@@ -228,13 +236,15 @@ export class ScorePainter {
   loadSync(request: SyncPaintRequest): void {
     if (!this.resources.ready()) throw new Error("排版资源还没准备好");
     ++this.version;
-    this.commit(layoutSync(wireOf(request)), request);
+    const wire = wireOf(request);
+    this.commit(layoutSync(wire), request, wire);
   }
 
-  private commit(laid: LaidHandle, req: PaintRequest): void {
+  private commit(laid: LaidHandle, req: PaintRequest, wire: LayoutWire): void {
     const info = laid.info;
     this.cur?.free();
     this.cur = laid;
+    this.curWire = wire;
     if (info.renderer === "jianpu") {
       this.jianpuView = req.view as "original" | "expanded";
       this.pageWidth = info.pages[0]?.w ?? 0;
@@ -251,6 +261,7 @@ export class ScorePainter {
     ++this.version;
     this.cur?.free();
     this.cur = null;
+    this.curWire = null;
     this.pageEls = [];
     this.nodeOfEl = new WeakMap();
     this.index = ScoreIndex.empty();
