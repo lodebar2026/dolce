@@ -292,6 +292,10 @@ impl<S: SystemText> TextMeasurer for BrowserCompat<S> {
     fn path_bounds(&self, d: &str) -> Rect {
         browser_path_bounds(d)
     }
+
+    fn svg_kerning(&self) -> bool {
+        self.engine != Engine::WebKit
+    }
 }
 
 /// 路径紧包围盒的浏览器口径：纯算（同 `getBBox()`）再过 f32（同 TS `nodeMeasure().pathBounds`）。

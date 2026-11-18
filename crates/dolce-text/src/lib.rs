@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod cjkpunct;
 mod compat;
+pub mod own;
 mod replay;
 pub mod syllable;
 
@@ -87,6 +88,10 @@ pub trait TextMeasurer {
     fn positions(&self, text: &str, family: &str, size: f64, weight: Weight, features: &[String]) -> Positions;
     fn font_metrics(&self, family: &str, size: f64, weight: Weight, style: FontStyle) -> FontMetrics;
     fn path_bounds(&self, d: &str) -> Rect;
+    /// 宿主画 SVG 文字时做不做字偶距（WebKit 不做）。Rust 自量的字体（[`own`]）按它定量不量字偶距。
+    fn svg_kerning(&self) -> bool {
+        true
+    }
 }
 
 /// JS `\s`（码点级）。
@@ -194,9 +199,26 @@ impl<'a> MeasureCtx<'a> {
         if let Some(m) = self.text_cache.borrow().get(&key) {
             return *m;
         }
-        let m = self.backend.glyph(text, family, size, weight, features, style);
+        let m = match self.own(family, weight, style, features) {
+            Some((face, kern)) => face.metrics(text, size, kern),
+            None => None,
+        };
+        let m = m.unwrap_or_else(|| self.backend.glyph(text, family, size, weight, features, style));
         self.text_cache.borrow_mut().insert(key, m);
         m
+    }
+
+    /// 这个字体由 Rust 自量（[`own`]）时给出字体与量不量字偶距；粗斜体、带了 `-kern` 以外的特性的交宿主。
+    fn own(&self, family: &str, weight: Weight, style: FontStyle, features: &[String]) -> Option<(&'static own::OwnFace, bool)> {
+        let face = own::own_face(family)?;
+        if weight != Weight::Normal || style != FontStyle::Normal {
+            return None;
+        }
+        let (no_kern, rest) = split_no_kern(features);
+        if !rest.is_empty() {
+            return None;
+        }
+        Some((face, !no_kern && self.backend.svg_kerning()))
     }
 
     /// `pathTightBounds`。
@@ -215,7 +237,10 @@ impl<'a> MeasureCtx<'a> {
         if let Some(m) = self.metrics_cache.borrow().get(&key) {
             return *m;
         }
-        let m = self.backend.font_metrics(family, size, weight, style);
+        let m = match self.own(family, weight, style, &[]) {
+            Some((face, _)) => face.font_metrics(size),
+            None => self.backend.font_metrics(family, size, weight, style),
+        };
         self.metrics_cache.borrow_mut().insert(key, m);
         m
     }
@@ -257,7 +282,8 @@ impl<'a> MeasureCtx<'a> {
             let (xs, width) = compress_run(&chars, &adv, size, mode, Some(&slack));
             return Positions { xs, width };
         }
-        let Positions { mut xs, width } = self.backend.positions(text, family, size, weight, &features);
+        let own = self.own(family, weight, FontStyle::Normal, &features).and_then(|(f, k)| f.positions(text, size, k));
+        let Positions { mut xs, width } = own.unwrap_or_else(|| self.backend.positions(text, family, size, weight, &features));
         // 起始类标点把笔位往左挪回压掉的那截（绘制端画的是全宽字形），见 TS 注释
         for (i, ch) in chars.iter().enumerate() {
             if trim_left(ch) <= 0.0 {

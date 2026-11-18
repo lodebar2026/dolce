@@ -10,3 +10,7 @@ dolce-base = { path = "../dolce-base" }
 dolce-geom = { path = "../dolce-geom" }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[build-dependencies]
+# 编译期读仓库带的乐谱字体抽表（build.rs），运行时不带
+ttf-parser = "0.25.1"
