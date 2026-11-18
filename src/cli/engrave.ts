@@ -8,6 +8,8 @@ import "./dolcewasm.node"; // 演唱顺序、断句、时间轴、MIDI、jcx 编
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { recordMeasure, setMeasureBackend, type MeasureRecord } from "../common/measure";
+/** 量一串字的墨迹（基线 y = 0；page-check 这类按场景量几何的脚本用）。 */
+export { measureGlyphText } from "../common/measure";
 import { nodeMeasure } from "./textmeasure.node";
 import { MetaData } from "../smufl/smufl";
 import { PaintResources } from "../layout/painter";
