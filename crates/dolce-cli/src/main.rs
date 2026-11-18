@@ -8,7 +8,9 @@
 //! - `engrave-check`：图元层的对拍（见 `engrave.rs`）。
 //! - `jianpu-check`：简谱引擎的对拍（见 `jianpu.rs`）。
 //! - `staff-check`：五线谱 / 混排引擎的对拍（见 `staff.rs`）。
+//! - `book-draw-check`：成书（`browser.ts` / `songbook.ts`）的对拍（见 `bookdraw.rs`）。
 
+mod bookdraw;
 mod engrave;
 mod jianpu;
 mod layout;
@@ -30,8 +32,9 @@ fn main() {
         Some("engrave-check") => std::process::exit(engrave::engrave_check(&args[1..])),
         Some("jianpu-check") => std::process::exit(jianpu::jianpu_check(&args[1..])),
         Some("staff-check") => std::process::exit(staff::staff_check(&args[1..])),
+        Some("book-draw-check") => std::process::exit(bookdraw::book_draw_check(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-draw-check> …");
             std::process::exit(2);
         }
     }

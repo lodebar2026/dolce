@@ -395,6 +395,7 @@ name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-book",
  "dolce-engrave",
  "dolce-geom",
  "dolce-layout-jianpu",

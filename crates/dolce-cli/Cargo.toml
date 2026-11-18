@@ -22,6 +22,7 @@ dolce-geom = { path = "../dolce-geom" }
 dolce-smufl = { path = "../dolce-smufl" }
 dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
 dolce-layout-staff = { path = "../dolce-layout-staff" }
+dolce-book = { path = "../dolce-book" }
 serde.workspace = true
 serde_json = "1"
 sha2.workspace = true

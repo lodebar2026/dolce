@@ -39,6 +39,7 @@ export function recordMeasureLog(files: Record<string, string> = {}): () => Meas
 }
 export { sceneNode, pageScenes, plainOf, jianpuRefs, placedJson, jianpuCase, jianpuModeCase } from "./layoutref";
 export { staffCase, songbookStaffCase, staffDump } from "./staffref";
+export { bookDrawCase, songbookCase } from "./bookdrawref";
 
 /** 换测量后端的字体（成书注册的字体按族名给文件）：重新装配，之前的度量缓存作废。 */
 export function useFonts(files: Record<string, string>): void {
