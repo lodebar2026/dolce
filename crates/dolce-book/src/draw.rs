@@ -171,7 +171,7 @@ pub fn shift_draw_page_x(page: &mut DrawPage, dx: f64) {
                 // /-?\d*\.?\d+/g
                 let mut i = 0usize;
                 p.d = replace_numbers(&p.d, |m| {
-                    let out = if i % 2 == 0 { round2_str(dolce_base::js::number(m) + dx) } else { m.to_string() };
+                    let out = if i.is_multiple_of(2) { round2_str(dolce_base::js::number(m) + dx) } else { m.to_string() };
                     i += 1;
                     out
                 });
@@ -201,7 +201,7 @@ pub fn replace_numbers(s: &str, mut f: impl FnMut(&str) -> String) -> String {
 }
 
 /// 在 `i` 处试匹配 `-?\d*\.?\d+`（贪婪、回溯同 JS），返回终点
-fn match_number(b: &[u8], i: usize) -> Option<usize> {
+pub(crate) fn match_number(b: &[u8], i: usize) -> Option<usize> {
     let try_from = |start: usize| -> Option<usize> {
         let mut j = start;
         while j < b.len() && b[j].is_ascii_digit() {
