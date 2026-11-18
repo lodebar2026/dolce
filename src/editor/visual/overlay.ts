@@ -4,6 +4,7 @@
 // 每次重排页面节点全换，叠加层跟着 `VisualEditController.refresh()` 重画。
 
 import { inkOf } from "../../common/measure.browser";
+import { nodeOfEl, type PageBox } from "../../layout/scoreindex";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const LAYER_CLASS = "vis-overlay";
@@ -15,10 +16,15 @@ export interface Box {
   h: number;
 }
 
-/** 元素在它所在页面 SVG 用户坐标里的包围盒（含各级 transform）。没挂在页面上时为 null。 */
+const asBox = (b: PageBox): Box => ({ x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 });
+
+/** 元素在它所在页面 SVG 用户坐标里的包围盒（含各级 transform）。没挂在页面上时为 null。
+ *  带身份的元素取排版给的排版盒（同 `getBBox` 的口径），不回 DOM 量；别的（组里的子图元、叠加层自己画的）照 DOM 量。 */
 export function boxInPage(el: SVGGraphicsElement): { svg: SVGSVGElement; box: Box } | null {
   const svg = el.ownerSVGElement;
   if (!svg) return null;
+  const node = nodeOfEl(el);
+  if (node?.m) return node.bound ? { svg, box: asBox(node.bound) } : null;
   let bb: DOMRect;
   try {
     bb = el.getBBox();
@@ -38,6 +44,24 @@ export function boxInPage(el: SVGGraphicsElement): { svg: SVGSVGElement; box: Bo
   return { svg, box: { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y } };
 }
 
+/** 元素在屏幕（client）坐标里的盒，同 `getBoundingClientRect`：带身份的按排版给的排版盒经页面 CTM 换算，
+ *  别的（子图元、叠加层自己画的）照 DOM 量。没画出东西的身份元素为 null。 */
+export function clientBoxOf(el: Element | null | undefined): DOMRect | null {
+  if (!el) return null;
+  const node = nodeOfEl(el);
+  const svg = (el as SVGElement).ownerSVGElement;
+  if (!node?.m || !svg) return el.getBoundingClientRect();
+  const m = svg.getScreenCTM();
+  if (!node.bound || !m) return null;
+  const b = node.bound;
+  const pts = [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+  const xs = pts.map((q) => q.x);
+  const ys = pts.map((q) => q.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return new DOMRect(x, y, Math.max(...xs) - x, Math.max(...ys) - y);
+}
+
 let inkCtx: CanvasRenderingContext2D | null | undefined;
 
 /**
@@ -47,6 +71,8 @@ let inkCtx: CanvasRenderingContext2D | null | undefined;
  * 线与路径照 `getBBox()`。同 `editor/help.ts::inkBox` 的口径。
  */
 export function inkBoxInPage(el: SVGGraphicsElement): { svg: SVGSVGElement; box: Box } | null {
+  const node = nodeOfEl(el);
+  if (node?.m && el.ownerSVGElement) return node.ink ? { svg: el.ownerSVGElement, box: asBox(node.ink) } : null;
   const svg = el.ownerSVGElement;
   const toSvg = svg?.getScreenCTM()?.inverse();
   if (!svg || !toSvg) return null;

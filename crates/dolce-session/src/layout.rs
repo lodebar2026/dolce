@@ -7,13 +7,14 @@
 //! 宿主无关：量字上下文与 SMuFL 元数据由宿主给（[`Env`]）——网页 wasm 接浏览器量字、桌面原生量字、命令行原生或回放。
 
 use dolce_engrave::Env;
+use dolce_geom::Rect;
 use dolce_layout_jianpu::compose::{layout_jianpu, JianpuConfig, JianpuLayout};
 use dolce_layout_jianpu::grid::GridPage;
 use dolce_layout_jianpu::place::reflow::NaturalSpan;
 use dolce_model::doc::{Element, ScoreDoc};
 use dolce_model::xmlsurface::Surface;
 use dolce_scene::build::freeze;
-use dolce_scene::index::{page_hits, Hit};
+use dolce_scene::index::{page_hits_geom, Hit};
 use dolce_scene::svg::page_svg;
 use dolce_scene::{Dialect, Page};
 use dolce_style::cascade::ctx;
@@ -81,6 +82,9 @@ pub struct PageGeom {
     pub pt_per_unit: f64,
     /// 这页是第几首
     pub song: usize,
+    /// 整页画出来的墨迹盒（页面坐标；帮助页谱例按它裁）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ink: Option<Rect>,
 }
 
 /// 排好的一份：各页场景与几何，外加两路各自的附带结果（不含页面 SVG 与身份表，那两样按页现取）。
@@ -92,6 +96,8 @@ pub struct Laid {
     pub geom: Vec<PageGeom>,
     /// 简谱这一路：引擎的整份结果（行首、量宽、演唱顺序、栅格、定位结构）
     pub jianpu: Option<JianpuLayout>,
+    /// 各页身份表（带页面几何，排完时一并算好：要量字环境）
+    pub hits: Vec<Vec<Hit>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -141,8 +147,8 @@ impl Laid {
     }
 
     /// 第 `i` 页的身份表。
-    pub fn hits(&self, i: usize) -> Option<Vec<Hit>> {
-        self.pages.get(i).map(page_hits)
+    pub fn hits(&self, i: usize) -> Option<&[Hit]> {
+        self.hits.get(i).map(Vec::as_slice)
     }
 }
 
@@ -201,13 +207,26 @@ pub fn jianpu_config(req: &JianpuRequest, env: &Env) -> Result<JianpuConfig, Str
     })
 }
 
+/// 各页身份表（带几何），顺手把整页墨迹记进页几何
+fn with_ink(pages: &[Page], geom: &mut [PageGeom], env: &Env) -> Vec<Vec<Hit>> {
+    pages
+        .iter()
+        .zip(geom.iter_mut())
+        .map(|(p, g)| {
+            let (hits, ink) = page_hits_geom(p, env);
+            g.ink = ink;
+            hits
+        })
+        .collect()
+}
+
 /// 简谱 / 投影档整份排好。
 pub fn layout_jianpu_doc(doc: &ScoreDoc, req: &JianpuRequest, env: &Env) -> Result<Laid, String> {
     let cfg = jianpu_config(req, env)?;
     let r = layout_jianpu(doc, &cfg, env);
     let title = r.view.songs.first().and_then(|s| s.metadata.titles.first()).cloned().unwrap_or_default();
-    let geom = (0..r.pages.len())
-        .map(|i| PageGeom { w: r.width, h: r.height, pt_per_unit: 1.0, song: r.placed.pages.get(i).map_or(0, |p| p.song) })
+    let mut geom: Vec<PageGeom> = (0..r.pages.len())
+        .map(|i| PageGeom { w: r.width, h: r.height, pt_per_unit: 1.0, song: r.placed.pages.get(i).map_or(0, |p| p.song), ink: None })
         .collect();
     let mut r = r;
     let pages = std::mem::take(&mut r.pages)
@@ -216,8 +235,9 @@ pub fn layout_jianpu_doc(doc: &ScoreDoc, req: &JianpuRequest, env: &Env) -> Resu
             freeze(&mut root, env);
             Page { dialect: Dialect::Jianpu, cls: "score-page".into(), w: r.width, h: r.height, root: Some(root) }
         })
-        .collect();
-    Ok(Laid { renderer: Renderer::Jianpu, title, pages, geom, jianpu: Some(r) })
+        .collect::<Vec<_>>();
+    let hits = with_ink(&pages, &mut geom, env);
+    Ok(Laid { renderer: Renderer::Jianpu, title, pages, geom, jianpu: Some(r), hits })
 }
 
 /// 五线谱 / 混排整份排好（`staffOptionsOf` + `_staffCommit`）。`surface`：MusicXML 读来的那份表层（按 `_oid` 问原文属性）。
@@ -235,15 +255,16 @@ pub fn layout_staff_doc(doc: &ScoreDoc, surface: Option<&Surface>, req: &StaffRe
     let (roots, _placed) = pages::layout_staff_pages(&mut score, req.view == "mixed", req.jianpu_part);
     let (w, h, scaling) = (score.defaults.page_width, score.defaults.page_height, score.scaling);
     let title = score.title();
-    let geom = roots.iter().map(|_| PageGeom { w, h, pt_per_unit: scaling, song: 0 }).collect();
+    let mut geom: Vec<PageGeom> = roots.iter().map(|_| PageGeom { w, h, pt_per_unit: scaling, song: 0, ink: None }).collect();
     let pages = roots
         .into_iter()
         .map(|mut root| {
             freeze(&mut root, env);
             Page { dialect: Dialect::Mixed, cls: "score-page mixed-page".into(), w, h, root: Some(root) }
         })
-        .collect();
-    Ok(Laid { renderer: Renderer::Staff, title, pages, geom, jianpu: None })
+        .collect::<Vec<_>>();
+    let hits = with_ink(&pages, &mut geom, env);
+    Ok(Laid { renderer: Renderer::Staff, title, pages, geom, jianpu: None, hits })
 }
 
 /// 自然量宽的结果（TS `measureDocument`）：版心宽与按插入序的 `[元素 id, 区间]`。

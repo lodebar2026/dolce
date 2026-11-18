@@ -13,8 +13,8 @@ import { MetaData } from "../smufl/smufl";
 import type { StyleSheet } from "../style/sheet";
 import { dolce } from "../common/dolce";
 import { docJson } from "../model/rustdoc";
-import { ScoreIndex, type Hit, type IndexNode } from "./scoreindex";
-import { Playhead, spanIn, svgBox } from "./playhead";
+import { bindNode, nodeOfEl, ScoreIndex, toPage, type Hit, type IndexNode, type PageBox } from "./scoreindex";
+import { Playhead, type Span } from "./playhead";
 import { layoutAsync, layoutSync, type LaidHandle, type LayoutWire } from "./rustlayout";
 
 /** 页眉里画出来的一项：文字（标题、署名…）、调号、拍号。 */
@@ -26,6 +26,20 @@ export interface HeaderPart {
 
 /** 五线谱播放线的宽（tenths，线距 10）：两个符头宽上下，各音一样宽 */
 const PLAYHEAD_W = 24;
+
+/** 节点本地的竖向范围 [top, bottom] → 页面坐标。 */
+function spanOf(node: IndexNode, top: number, bottom: number): Span {
+  const a = toPage(node, 0, top).y;
+  const b = toPage(node, 0, bottom).y;
+  return { y0: Math.min(a, b), y1: Math.max(a, b) };
+}
+
+/** 节点本地以 `cx` 为心、宽 `w` 的横向范围 → 页面坐标（竖向不用，给 0）。 */
+function fixedBoxOf(node: IndexNode, cx: number, w: number): PageBox {
+  const a = toPage(node, cx - w / 2, 0).x;
+  const b = toPage(node, cx + w / 2, 0).x;
+  return { x0: Math.min(a, b), x1: Math.max(a, b), y0: 0, y1: 0 };
+}
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -184,8 +198,6 @@ export class ScorePainter {
   private playhead = new Playhead();
   /** 各页挂出来的 SVG 里的元素（先序，身份表的 `el` 是下标）；还没渲染的页没有。 */
   private pageEls: (Element[] | undefined)[] = [];
-  /** 渲染出来的带身份元素 → 身份节点（点选按事件目标往上认）。 */
-  private nodeOfEl = new WeakMap<Element, IndexNode>();
   private version = 0;
 
   constructor(readonly resources: PaintResources = PaintResources.shared()) {}
@@ -257,7 +269,6 @@ export class ScorePainter {
       this.pageHeight = info.pages[0]?.h ?? 0;
     }
     this.pageEls = [];
-    this.nodeOfEl = new WeakMap();
     this.playhead.reset();
     this.index = ScoreIndex.build(laid.hits);
   }
@@ -269,7 +280,6 @@ export class ScorePainter {
     this.cur = null;
     this.curWire = null;
     this.pageEls = [];
-    this.nodeOfEl = new WeakMap();
     this.index = ScoreIndex.empty();
   }
 
@@ -335,28 +345,26 @@ export class ScorePainter {
       const hit = this.index.note(id);
       const sys = hit ? this.index.systemOf(hit.item)?.system : undefined;
       if (!hit || !sys) return null;
-      const sysEl = this.svgOf(sys);
       const band = sys.data;
+      const span = band ? spanOf(sys, band.top!, band.bottom!) : null;
       const cx = hit.item.data?.cx;
-      this.playhead.move(
-        this.svgOf(hit.item),
-        sysEl && band ? spanIn(sysEl, band.top!, band.bottom!) : null,
-        cx !== undefined ? { cx, w: PLAYHEAD_W } : undefined,
-      );
+      // 五线谱一音一宽：以和弦组的 `cx` 为心定宽，不随符尾、错开的头撑宽
+      const box = cx !== undefined ? fixedBoxOf(hit.item, cx, PLAYHEAD_W) : hit.item.bound;
+      this.playhead.move(this.svgOf(hit.item)?.ownerSVGElement, box, span, cx !== undefined);
       return hit.page;
     }
     const hit = this.index.note(id, pass, occ);
     const el = hit ? this.svgOf(hit.item) : undefined;
     if (!hit || !el) return null;
-    const span = this.playhead.systemSpan(this.index, hit.item, (it) => this.svgOf(it));
-    this.playhead.move(el, span ?? svgBox(el));
+    const span = this.playhead.systemSpan(this.index, hit.item) ?? (hit.item.ink ? { y0: hit.item.ink.y0, y1: hit.item.ink.y1 } : null);
+    this.playhead.move(el.ownerSVGElement, hit.item.bound, span);
     return hit.page;
   }
 
   /** 点中的元素（事件目标）落在哪个音符格 / 和弦组里 → 元素 id；不在音符上为 null。 */
   noteAt(target: Element | null): ElementId | null {
     for (let el = target; el && !(el instanceof SVGSVGElement); el = el.parentElement) {
-      const ident = this.nodeOfEl.get(el)?.ident;
+      const ident = nodeOfEl(el)?.ident;
       if (ident?.kind === "note" && ident.id !== undefined) return ident.id;
     }
     return null;
@@ -387,15 +395,11 @@ export class ScorePainter {
   staffBand(id: ElementId): { svg: SVGSVGElement; y: number; h: number } | null {
     const hit = this.index.note(id);
     const sys = hit ? this.index.systemOf(hit.item)?.system : undefined;
-    const g = sys ? this.svgOf(sys) : undefined;
-    const svg = g?.ownerSVGElement;
+    const svg = sys ? this.svgOf(sys)?.ownerSVGElement : undefined;
     const d = sys?.data;
-    if (!sys || !g || !svg || !d || this.renderer !== "staff") return null;
-    const m = svg.getScreenCTM()?.inverse().multiply(g.getScreenCTM() ?? new DOMMatrix());
-    if (!m) return null;
-    const y0 = new DOMPoint(0, d.top).matrixTransform(m).y;
-    const y1 = new DOMPoint(0, d.bottom).matrixTransform(m).y;
-    return { svg, y: Math.min(y0, y1), h: Math.abs(y1 - y0) };
+    if (!sys || !svg || !d || this.renderer !== "staff") return null;
+    const s = spanOf(sys, d.top!, d.bottom!);
+    return { svg, y: s.y0, h: s.y1 - s.y0 };
   }
 
   /** 元素 `id` 第一次出现在第几页（光标同步翻页用）；没画出来为 null。 */
@@ -489,9 +493,15 @@ export class ScorePainter {
     for (const h of this.index.all) {
       if (h.page !== pageIndex || h.item.el < 0) continue;
       const el = els[h.item.el];
-      if (el) this.nodeOfEl.set(el, h.item);
+      if (el) bindNode(el, h.item);
     }
     return svg;
+  }
+
+  /** 第 `i` 页画出来的墨迹盒（页面坐标）；空页或没排为 undefined。 */
+  pageInk(i: number): PageBox | undefined {
+    const r = this.cur?.info.pages[i]?.ink;
+    return r ? { x0: r[0], y0: r[1], x1: r[2], y1: r[3] } : undefined;
   }
 
   get pageCount(): number {

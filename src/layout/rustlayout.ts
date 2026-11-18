@@ -205,6 +205,12 @@ export interface SceneHit {
   hdr?: "hdr" | "hdr-keysig" | "hdr-time";
   text?: string;
   data?: Record<string, number>;
+  /** 本地坐标 → 页面坐标（SVG 用户坐标）的仿射 `[a, c, e, b, d, f]`：x' = a·x + c·y + e，y' = b·x + d·y + f */
+  m?: [number, number, number, number, number, number];
+  /** 页面坐标的排版盒 `[left, top, right, bottom]`（子树各图元 `bound` 的并：文字取字体盒，同 DOM `getBBox`）；什么都没画时缺 */
+  bound?: [number, number, number, number];
+  /** 页面坐标的墨迹盒（文字按字形实量、SMuFL 字按元数据紧盒、线与路径同排版盒） */
+  ink?: [number, number, number, number];
 }
 
 /** 一页的几何（原生坐标宽高；一个原生单位合多少 pt：简谱 1，五线谱取谱里的 scaling）。 */
@@ -213,6 +219,8 @@ export interface LaidPage {
   h: number;
   ptPerUnit: number;
   song: number;
+  /** 整页画出来的墨迹盒 `[left, top, right, bottom]`（页面坐标）；空页缺 */
+  ink?: [number, number, number, number];
 }
 
 /** 排好的一份的概要（`dolce_session::layout::LaidInfo`）。 */

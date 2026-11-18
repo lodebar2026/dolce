@@ -1,9 +1,9 @@
 // 帮助对话框：四个标签页（功能帮助、可视化编辑、记谱法、关于）。只读，外框走 dialogs.ts 的
 // openModal（遮罩、Esc、点遮罩关闭），内容用本文件专属的 .help-* 样式。
 // 功能帮助 = 可展开主题列表（<details>）；记谱法 = 分节说明 + 实时渲染的 SVG 示例。
-import { inkOf } from "../common/measure.browser";
 import type { App } from "./app";
 import { PaintResources, ScorePainter } from "../layout/painter";
+import type { PageBox } from "../layout/scoreindex";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { parse123 } from "../abcfamily/parse";
@@ -32,8 +32,7 @@ import {
  * Render a standalone `.jpwabc` snippet to its own `<svg>` for the help /
  * notation documentation examples. Returns null on parse/layout failure so
  * the caller can silently drop unsupported examples.
- * The svg keeps the full page viewBox; crop to content via getBBox after it
- * is attached to the DOM.
+ * The svg's viewBox is cropped to the page's ink box (from the layout).
  *
  * `titlePage: true` renders the standalone title page (Title/SubTitle/credit/
  * expression layout); otherwise renders the first content page with its
@@ -102,7 +101,9 @@ function renderExampleScore(
       snippet: !opts.titlePage,
     });
     if (p.pageCount === 0) return null;
-    return p.renderPage(0);
+    const svg = p.renderPage(0);
+    cropToInk(svg, p.pageInk(0));
+    return svg;
   } catch {
     return null;
   }
@@ -789,59 +790,18 @@ function buildExamplePane(o: {
   return pane;
 }
 
-/** 渲染出的示例 svg 默认是整页 viewBox；attach 到 DOM 后裁剪到**墨迹**的紧包围盒，按 1:1 显示、超宽按比例缩。
- *  不能直接用 `svg.getBBox()`：`<text>` 的盒是字体的整行盒，Bravura 的行盒有两个字号高，
- *  一个升降号、三连音数字就把裁出来的一块撑出一大片空白。 */
-function cropExamples(root: HTMLElement): void {
-  const ctx = document.createElement("canvas").getContext("2d");
-  for (const svg of Array.from(root.querySelectorAll<SVGSVGElement>("svg.help-svg"))) {
-    const bb = inkBox(svg, ctx);
-    if (!bb || bb.w <= 0 || bb.h <= 0) continue;
-    const pad = 6;
-    const vw = bb.w + pad * 2;
-    const vh = bb.h + pad * 2;
-    svg.setAttribute("viewBox", `${bb.x - pad} ${bb.y - pad} ${vw} ${vh}`);
-    svg.style.width = `${vw}px`;
-    svg.style.maxWidth = "100%";
-    svg.style.height = "auto";
-    svg.style.aspectRatio = `${vw} / ${vh}`;
-  }
-}
-
-/** 各图元墨迹盒的并集（svg 用户坐标）。文字按 canvas 量出的实际墨迹上下沿，横向仍取字符前进宽度。 */
-function inkBox(svg: SVGSVGElement, ctx: CanvasRenderingContext2D | null): { x: number; y: number; w: number; h: number } | null {
-  const toSvg = svg.getScreenCTM()?.inverse();
-  if (!toSvg) return null;
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const e of Array.from(svg.querySelectorAll<SVGGraphicsElement>("text, path, line, rect, polyline, polygon, circle, ellipse, use, image"))) {
-    let b: DOMRect;
-    try {
-      b = e.getBBox();
-    } catch {
-      continue;
-    }
-    let top = b.y, bottom = b.y + b.height;
-    if (e instanceof SVGTextElement && ctx && e.textContent) {
-      const cs = getComputedStyle(e);
-      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      const ink = inkOf(ctx, e.textContent);
-      // 文字基线在本地 y = 0（layout/render.ts 一律这么画）
-      top = ink.top;
-      bottom = ink.bottom;
-    }
-    if (b.width <= 0 && bottom - top <= 0) continue;
-    const ctm = e.getScreenCTM();
-    if (!ctm) continue;
-    const m = toSvg.multiply(ctm);
-    for (const [px, py] of [[b.x, top], [b.x + b.width, top], [b.x, bottom], [b.x + b.width, bottom]]) {
-      const q = new DOMPoint(px, py).matrixTransform(m);
-      x0 = Math.min(x0, q.x);
-      y0 = Math.min(y0, q.y);
-      x1 = Math.max(x1, q.x);
-      y1 = Math.max(y1, q.y);
-    }
-  }
-  return x0 < x1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+/** 示例 svg 默认是整页 viewBox：裁到整页**墨迹**的紧包围盒（排版给的，文字按字形实量、SMuFL 字按元数据紧盒），
+ *  按 1:1 显示、超宽按比例缩。不能按字体盒裁：Bravura 的行盒有两个字号高，一个升降号、三连音数字就把裁出来的一块撑出一大片空白。 */
+function cropToInk(svg: SVGSVGElement, ink: PageBox | undefined): void {
+  if (!ink || ink.x1 <= ink.x0 || ink.y1 <= ink.y0) return;
+  const pad = 6;
+  const vw = ink.x1 - ink.x0 + pad * 2;
+  const vh = ink.y1 - ink.y0 + pad * 2;
+  svg.setAttribute("viewBox", `${ink.x0 - pad} ${ink.y0 - pad} ${vw} ${vh}`);
+  svg.style.width = `${vw}px`;
+  svg.style.maxWidth = "100%";
+  svg.style.height = "auto";
+  svg.style.aspectRatio = `${vw} / ${vh}`;
 }
 
 // ---- 关于页 ----------------------------------------------------------------
@@ -922,16 +882,11 @@ export function showHelpDialog(app: App): void {
   // 标签页：{ 标签, 内容, 首次显示时的补做 }
   const notationPane = buildNotationHelp(app);
   const pane123 = build123Help(app);
-  const pages: { label: string; pane: HTMLElement; onFirstShow?: () => void }[] = [
+  const pages: { label: string; pane: HTMLElement }[] = [
     { label: t("help.tab.features"), pane: buildFeatureHelp() },
     { label: t("help.tab.visual"), pane: buildVisualHelp() },
-    { label: t("help.tab.123"), pane: pane123, onFirstShow: () => cropExamples(pane123) },
-    {
-      label: t("help.tab.notation"),
-      pane: notationPane,
-      // getBBox only works once the pane is visible; crop on first reveal.
-      onFirstShow: () => cropExamples(notationPane),
-    },
+    { label: t("help.tab.123"), pane: pane123 },
+    { label: t("help.tab.notation"), pane: notationPane },
     { label: t("help.tab.about"), pane: buildAboutPane() },
   ];
 
@@ -945,16 +900,11 @@ export function showHelpDialog(app: App): void {
     return btn;
   });
 
-  const shown = new Set<number>([0]);
   const activate = (idx: number) => {
     pages.forEach((pg, i) => {
       tabBtns[i].classList.toggle("active", i === idx);
       pg.pane.style.display = i === idx ? "" : "none";
     });
-    if (!shown.has(idx)) {
-      shown.add(idx);
-      pages[idx].onFirstShow?.();
-    }
     content.scrollTop = 0;
   };
   tabBtns.forEach((btn, i) => (btn.onclick = () => activate(i)));

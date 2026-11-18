@@ -36,7 +36,7 @@ import { type InlineDone, inlineEditing, openInlineEditor } from "./inline";
 import { measureEdit } from "./measureops";
 import { directionModel, harmonyModel, insertAtSourceModel, lyricModel, moveSelected, pasteModel, runModelAction, transposeModel, type ModelActionCtx } from "./modelops";
 import {
-  type Box, boxInPage, charIndexAt, inkBoxInPage, clearDragHints, clearOverlay, drawBlock, drawBreak, caretWidth, drawCaret, drawDragHint, hitThroughOverlay, musicBox, rightEdgeInBand,
+  type Box, boxInPage, charIndexAt, clientBoxOf, inkBoxInPage, clearDragHints, clearOverlay, drawBlock, drawBreak, caretWidth, drawCaret, drawDragHint, hitThroughOverlay, musicBox, rightEdgeInBand,
   sameRow, setBeatIssues, textCaretInPage,
 } from "./overlay";
 import { t as tr } from "../../i18n";
@@ -984,7 +984,7 @@ export class VisualEditController {
       const inside = this.navigable().filter((e) => {
         if (e.kind === "break") return false;
         const el = this.elOf(e);
-        const b = el?.getBoundingClientRect();
+        const b = clientBoxOf(el);
         if (!b || (b.width === 0 && b.height === 0)) return false;
         const cx = (b.left + b.right) / 2;
         const cy = (b.top + b.bottom) / 2;
@@ -1043,7 +1043,7 @@ export class VisualEditController {
       let e = this.host.entryAtTarget(hitThroughOverlay(ev));
       const cur = this.host.sync.ordered().find((x) => x.from === sel.from && x.to === sel.to && movable(x));
       if (cur && e !== cur) {
-        const r = (cur.kind === "mark" && cur.markKind === "slur" ? this.host.slurEl(cur) : null)?.getBoundingClientRect() ?? this.elOf(cur)?.getBoundingClientRect();
+        const r = clientBoxOf(cur.kind === "mark" && cur.markKind === "slur" ? this.host.slurEl(cur) : null) ?? clientBoxOf(this.elOf(cur));
         const pad = r ? Math.max(r.height, 6) * 0.3 : 0;
         if (r && ev.clientX >= r.left - pad && ev.clientX <= r.right + pad && ev.clientY >= r.top - pad && ev.clientY <= r.bottom + pad) e = cur;
       }
@@ -1054,7 +1054,7 @@ export class VisualEditController {
       let anchor = e.id;
       if (e.kind === "mark" && e.markKind === "slur" && e.end !== undefined) {
         // 按在弧的右半边拖终点、左半边拖起点（短弧两头的音挨得近，按离哪个音近判会判反）
-        const r = (this.host.slurEl(e) ?? this.elOf(e))?.getBoundingClientRect();
+        const r = clientBoxOf(this.host.slurEl(e) ?? this.elOf(e));
         which = !r || ev.clientX >= r.left + r.width / 2 ? "end" : "start";
         anchor = which === "end" ? e.end : e.id;
       }
@@ -1256,7 +1256,8 @@ export class VisualEditController {
       // 只认它自己的 `<g>`：取不到时 `elOf` 会退回宿主音符，那个框大得会乱抢点击
       const el = this.ownEl(e);
       if (!el) continue;
-      const r = el.getBoundingClientRect();
+      const r = clientBoxOf(el);
+      if (!r) continue;
       const dx = Math.max(0, r.left - cx, cx - r.right);
       const dy = Math.max(0, r.top - cy, cy - r.bottom);
       if (dx > PAD || dy > PAD) continue;
@@ -1275,7 +1276,8 @@ export class VisualEditController {
       const els = this.host.augDotEls(e.id);
       if (els.length === 0) continue;
       const hit = els.some((el) => {
-        const r = el.getBoundingClientRect();
+        const r = clientBoxOf(el);
+        if (!r) return false;
         const pad = Math.max(4, r.height);
         return cx >= r.left - pad && cx <= r.right + pad && cy >= r.top - pad && cy <= r.bottom + pad;
       });
@@ -1449,7 +1451,8 @@ export class VisualEditController {
       if (e.kind === "break") continue;
       const el = this.host.entryEl(e);
       if (!el) continue;
-      const r = el.getBoundingClientRect();
+      const r = clientBoxOf(el);
+      if (!r) continue;
       const pad = r.height * 0.6;
       if (cy < r.top - pad || cy > r.bottom + pad) continue;
       const d = cx < r.left ? r.left - cx : cx > r.right ? cx - r.right : 0;

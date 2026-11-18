@@ -7,6 +7,14 @@ import type { SceneHit, SceneIdentity } from "./rustlayout";
 
 export type IdentityKind = SceneIdentity["kind"];
 
+/** 页面坐标（页面 SVG 的用户坐标）里的一个盒。 */
+export interface PageBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 /** 身份表的一个节点（只含表里的项；`up` / `children` 是表内最近的祖先 / 子孙）。 */
 export interface IndexNode {
   readonly page: number;
@@ -16,8 +24,43 @@ export interface IndexNode {
   readonly hdr: SceneHit["hdr"];
   readonly text: string | undefined;
   readonly data: Record<string, number> | undefined;
+  /** 本地 → 页面的仿射（`SceneHit.m`）；排版没给几何时缺 */
+  readonly m: SceneHit["m"];
+  /** 页面坐标的排版盒（同 DOM `getBBox` 的口径）与墨迹盒；没画东西时缺 */
+  readonly bound: PageBox | undefined;
+  readonly ink: PageBox | undefined;
   readonly parent: IndexNode | null;
   readonly children: IndexNode[];
+}
+
+const boxOf = (r: SceneHit["bound"]): PageBox | undefined => (r ? { x0: r[0], y0: r[1], x1: r[2], y1: r[3] } : undefined);
+
+/** 节点本地坐标的点换到页面坐标（没给几何时原样）。 */
+export function toPage(node: IndexNode, x: number, y: number): { x: number; y: number } {
+  const m = node.m;
+  return m ? { x: m[0] * x + m[1] * y + m[2], y: m[3] * x + m[4] * y + m[5] } : { x, y };
+}
+
+/** 挂出来的带身份元素 → 身份节点（各排版器挂页时登记；元素随页换掉，表跟着失效）。 */
+const nodeByEl = new WeakMap<Element, IndexNode>();
+
+export function bindNode(el: Element, node: IndexNode): void {
+  nodeByEl.set(el, node);
+}
+
+/** 元素是哪个身份节点画的（不是身份元素为 undefined）。 */
+export function nodeOfEl(el: Element): IndexNode | undefined {
+  return nodeByEl.get(el);
+}
+
+/** 几个盒的并（全缺为 undefined）。 */
+export function unionBox(boxes: readonly (PageBox | undefined)[]): PageBox | undefined {
+  let out: PageBox | undefined;
+  for (const b of boxes) {
+    if (!b) continue;
+    out = out ? { x0: Math.min(out.x0, b.x0), y0: Math.min(out.y0, b.y0), x1: Math.max(out.x1, b.x1), y1: Math.max(out.y1, b.y1) } : { ...b };
+  }
+  return out;
 }
 
 export interface Hit {
@@ -27,11 +70,14 @@ export interface Hit {
 
 /** 一页的身份表 → 节点树的根（多个根挂在一个虚根下，虚根不带身份）。 */
 function treeOf(table: readonly SceneHit[], page: number): IndexNode {
-  const root: IndexNode = { page, el: -1, ident: undefined, hdr: undefined, text: undefined, data: undefined, parent: null, children: [] };
+  const root: IndexNode = { page, el: -1, ident: undefined, hdr: undefined, text: undefined, data: undefined, m: undefined, bound: undefined, ink: undefined, parent: null, children: [] };
   const nodes: IndexNode[] = [];
   for (const h of table) {
     const parent = h.up >= 0 ? nodes[h.up]! : root;
-    const n: IndexNode = { page, el: h.el, ident: h.id, hdr: h.hdr, text: h.text, data: h.data, parent: h.up >= 0 ? parent : null, children: [] };
+    const n: IndexNode = {
+      page, el: h.el, ident: h.id, hdr: h.hdr, text: h.text, data: h.data, m: h.m, bound: boxOf(h.bound), ink: boxOf(h.ink),
+      parent: h.up >= 0 ? parent : null, children: [],
+    };
     parent.children.push(n);
     nodes.push(n);
   }
