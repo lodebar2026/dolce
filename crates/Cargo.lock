@@ -368,6 +368,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-book"
+version = "0.1.0"
+dependencies = [
+ "dolce-base",
+ "dolce-engrave",
+ "dolce-formats",
+ "dolce-geom",
+ "dolce-layout-jianpu",
+ "dolce-layout-staff",
+ "dolce-model",
+ "dolce-play",
+ "dolce-scene",
+ "dolce-smufl",
+ "dolce-style",
+ "dolce-text",
+ "dolce-view",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dolce-cli"
 version = "0.1.0"
 dependencies = [

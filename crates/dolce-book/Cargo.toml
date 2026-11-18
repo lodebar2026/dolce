@@ -1,0 +1,25 @@
+[package]
+name = "dolce-book"
+description = "悦谱 Dolce 的成书排版（照 src/pdflayout/）：DrawList、书级部件、页面树扁平化、成书重排、混排歌本"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dolce-base = { path = "../dolce-base" }
+dolce-geom = { path = "../dolce-geom" }
+dolce-smufl = { path = "../dolce-smufl" }
+dolce-text = { path = "../dolce-text" }
+dolce-scene = { path = "../dolce-scene" }
+dolce-model = { path = "../dolce-model" }
+dolce-view = { path = "../dolce-view" }
+dolce-play = { path = "../dolce-play" }
+dolce-formats = { path = "../dolce-formats" }
+dolce-style = { path = "../dolce-style" }
+dolce-engrave = { path = "../dolce-engrave" }
+dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
+dolce-layout-staff = { path = "../dolce-layout-staff" }
+serde.workspace = true
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+indexmap = { version = "2", features = ["serde"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
