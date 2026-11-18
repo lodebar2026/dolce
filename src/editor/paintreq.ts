@@ -82,7 +82,9 @@ export function lineStartsRequest(src: JianpuSource, mode: JianpuLayoutMode, sty
 export function jianpuLineStarts(resources: PaintResources, req: SyncPaintRequest): ReadonlySet<number> {
   const p = new ScorePainter(resources);
   p.loadSync(req);
-  return new Set(p.result?.jianpuLineStarts ?? []);
+  const starts = new Set(p.lineStarts ?? []);
+  p.dispose();
+  return starts;
 }
 
 /** 五线谱 / 混排档的排版请求要的设置。 */

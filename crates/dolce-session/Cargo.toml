@@ -8,3 +8,11 @@ publish.workspace = true
 [dependencies]
 dolce-base = { path = "../dolce-base" }
 serde.workspace = true
+dolce-model = { path = "../dolce-model" }
+dolce-play = { path = "../dolce-play" }
+dolce-scene = { path = "../dolce-scene" }
+dolce-style = { path = "../dolce-style" }
+dolce-engrave = { path = "../dolce-engrave" }
+dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
+dolce-layout-staff = { path = "../dolce-layout-staff" }
+serde_json = { version = "1", features = ["float_roundtrip"] }

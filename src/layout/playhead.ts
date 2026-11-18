@@ -3,8 +3,7 @@
 // 音符所在那一行（`system` 标签，多声部是连谱号括起的整组）里各音符格、增时线格与歌词格墨迹的并集
 // （不取行组本身的包围盒：组里有落在原点的空图元，弧、和弦也会把线撑得忽高忽低）。
 
-import type { PageItem } from "../pagetree/pageitem";
-import type { ScoreIndex } from "./scoreindex";
+import type { IndexNode, ScoreIndex } from "./scoreindex";
 
 export interface Span {
   y0: number;
@@ -14,7 +13,7 @@ export interface Span {
 export class Playhead {
   private rect: SVGRectElement | null = null;
   /** 每行谱量一次（换了排版结果——`index` 变了——就作废） */
-  private spans: { index: ScoreIndex; bySystem: Map<PageItem, Span | null> } | null = null;
+  private spans: { index: ScoreIndex; bySystem: Map<IndexNode, Span | null> } | null = null;
 
   /** 撤掉（换页面、换排版结果时）。 */
   reset(): void {
@@ -52,7 +51,7 @@ export class Playhead {
   }
 
   /** 音符格 `cell` 所在那一行的竖向范围（svg 用户坐标）：行里各格墨迹的并集。不在任何行里为 null。 */
-  systemSpan(index: ScoreIndex, cell: PageItem, nodeOf: (it: PageItem) => SVGGraphicsElement | undefined): Span | null {
+  systemSpan(index: ScoreIndex, cell: IndexNode, nodeOf: (it: IndexNode) => SVGGraphicsElement | undefined): Span | null {
     const sys = index.systemOf(cell);
     if (!sys) return null;
     if (this.spans?.index !== index) this.spans = { index, bySystem: new Map() };

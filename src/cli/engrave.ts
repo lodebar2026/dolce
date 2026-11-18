@@ -14,17 +14,20 @@ import { nodeMeasure, measureKind } from "./textmeasure.node";
 import { setSvgDocument } from "../layout/render";
 import { svgNodeDocument } from "../layout/svgnode";
 import { MetaData } from "../smufl/smufl";
-import { PaintResources, staffOptionsOf } from "../layout/painter";
+import { PaintResources } from "../layout/painter";
+import { staffOptionsOf } from "../layout/legacy";
+import { installLayoutHost } from "../layout/rustlayout";
 import { recordMeasure, type MeasureRecord } from "./layoutref";
 
 setMeasureBackend(nodeMeasure());
 setSvgDocument(svgNodeDocument);
 
 /** 缺省那份 SMuFL 元数据（全进程一份）。 */
-export const meta: MetaData = MetaData.fromJson(
-  JSON.parse(readFileSync(fileURLToPath(new URL("../../public/redist/bravura_metadata.json", import.meta.url)), "utf8")),
-);
+const smuflText = readFileSync(fileURLToPath(new URL("../../public/redist/bravura_metadata.json", import.meta.url)), "utf8");
+export const meta: MetaData = MetaData.fromJson(JSON.parse(smuflText));
 MetaData.provide(meta);
+// 排版在 dolce-wasm：量字回调上面装的 Node 后端（之后 `useFonts` 换后端也跟着换）
+installLayoutHost(smuflText);
 
 /** 量字走的是哪条路：`native`（系统文字引擎）或 `font`（字体文件）。 */
 export const measure = (): string => measureKind;
@@ -61,7 +64,6 @@ import * as playtypes from "../score/playtypes";
 import * as layoutInput from "../layout/input";
 import * as songbookMod from "../pdflayout/songbook";
 import * as ss from "../style/ss";
-import * as pptxMod from "../editor/pptx";
 import { pptxPainter } from "../editor/paintreq";
 import { pptxInput } from "../editor/pptxexport";
 import * as xmllayout from "../editor/xmllayout";
@@ -74,7 +76,6 @@ import * as styleJianpu from "../style/jianpu";
 import * as styleHeader from "../style/header";
 import * as stylePaper from "../style/paper";
 
-pptxMod.provideBravuraOtf(readFileSync(fileURLToPath(new URL("../../public/redist/Bravura.otf", import.meta.url))).buffer as ArrayBuffer);
 
 /** 同 `__book`：成书重排（BookStyle 注入 + 页面树 → DrawList）。 */
 export const book = {
@@ -84,7 +85,7 @@ export const book = {
 /** 同 `__songbook`：混排歌本（清单 + .ss → DrawPage[]）。 */
 export const songbook = { ...songbookMod, ...ss };
 /** 同 `__pptx`：PPTX 序列化器与投影档排版器。 */
-export const pptx = { ...pptxMod, pptxPainter, pptxInput };
+export const pptx = { pptxPainter, pptxInput };
 /** 同 `__fanqie`。 */
 export const fanqie = fanqieMod;
 /** 同 `__xmlout`。 */
@@ -98,7 +99,8 @@ export const style = { ...styleJianpu, ...styleHeader, ...stylePaper };
 export { HeadlessSession, type HeadlessView } from "../editor/headless";
 export { TsEngine } from "../engine/tsengine";
 export { isStale, StaleRevision, EngineFailure } from "../engine/api";
-export { ScorePainter, PaintResources, staffOptionsOf, jianpuCfgOf } from "../layout/painter";
+export { ScorePainter, PaintResources } from "../layout/painter";
+export { staffOptionsOf, jianpuCfgOf } from "../layout/legacy";
 export { SvgNode } from "../layout/svgnode";
 export { outlinedSvg } from "./outline.node";
 export { SAMPLE } from "../editor/sample";

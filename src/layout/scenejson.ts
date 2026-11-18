@@ -103,15 +103,8 @@ export function sceneNode(it: PageItem): Json {
   return n;
 }
 
-/** 当前结果的各页场景（同 `ScorePainter.renderPage` 的外壳：方言、class、viewBox）。 */
+/** 当前结果的各页场景（排版在 Rust，场景直接取 wasm 那份）。 */
 export function pageScenes(painter: ScorePainter): Json[] {
-  const staff = painter.renderer === "staff";
-  return (painter.result?.pages ?? []).map((p) => ({
-    dialect: staff ? "mixed" : "jianpu",
-    cls: staff ? "score-page mixed-page" : "score-page",
-    w: p.geometry.viewBox.w,
-    h: p.geometry.viewBox.h,
-    root: p.root ? sceneNode(p.root) : null,
-  }));
+  return painter.scenes();
 }
 

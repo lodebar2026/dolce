@@ -11,7 +11,9 @@ import { showExportDialog, showSaveAsDialog } from "./editor/export";
 import { showHelpDialog } from "./editor/help";
 import { encodeJpwabc, isTauriRuntime } from "./editor/fileio";
 import { maybeAutoCheck } from "./editor/update";
-import { PaintResources, ScorePainter, staffOptionsOf } from "./layout/painter";
+import { PaintResources, ScorePainter } from "./layout/painter";
+import { staffOptionsOf } from "./layout/legacy";
+import { installLayoutHost } from "./layout/rustlayout";
 import type { MixedOptions } from "./mixed/model";
 import { initLang, onLangChange, t } from "./i18n";
 import { setupPopover } from "./editor/toolpop";
@@ -56,6 +58,8 @@ async function boot() {
     { family: "PingFang SC", size: 28 },
   ]);
   const meta = await MetaData.shared();
+  // 排版在 dolce-wasm：量字回调浏览器后端，SMuFL 元数据原文交过去（同一个文件，HTTP 缓存里取）
+  installLayoutHost(await (await fetch(asset("redist/bravura_metadata.json"))).text());
 
   const codePane = document.getElementById("code-pane")!;
   const scorePane = document.getElementById("score-pane")!;
@@ -82,17 +86,17 @@ async function boot() {
   win.__app = app;
   // 统一排版器暴露（`new __paint.ScorePainter(__paint.resources)` + 请求），供混排 / 原样文档的无头回归脚本用。
   win.__paint = paintProbe(meta);
-  // 混排模型（`AccidentalStat` / `GlyphCodes`）暴露，供 scripts/jianpu-semantic-check.mjs 三方比简谱语义。
+  // 混排模型（`AccidentalStat` / `GlyphCodes` 与 TS 混排引擎）暴露，供 scripts/jianpu-semantic-check.mjs 三方比简谱语义（H6 随 TS 排版一起删）。
   win.__mixedModel = Promise.all([import("./mixed/model"), import("./smufl/smufl"), import("./mixed/layout"), import("./mixed/staffpages")])
-    .then(([model, smufl, layout, pages]) => ({ ...model, GlyphCodes: smufl.GlyphCodes, MetaData: smufl.MetaData, ...layout, formatMixedScore: pages.formatMixedScore }));
+    .then(([model, smufl, layout, pages]) => ({ ...model, GlyphCodes: smufl.GlyphCodes, MetaData: smufl.MetaData, ...layout, formatMixedScore: pages.formatMixedScore, layoutStaffPages: pages.layoutStaffPages }));
   // 桌面测速构建（VITE_DOLCE_BENCH=1）：按 DOLCE_BENCH 配置自动识别、量 OCR 各段后退出；正式构建整段剔除
   if (import.meta.env.VITE_DOLCE_BENCH) void import("./editor/desktopbench").then((b) => b.maybeRunDesktopBench());
   // 识别项目打包 / 自动保存草稿：`omr-project-check.mjs` 拿字节做存—开往返
   win.__project = Promise.all([import("./editor/omrproject"), import("./editor/autosave")]).then(([p, a]) => ({ ...p, ...a }));
   // 文本谱（番茄 / 有谱）解析与排版暴露，供 fanqie-*.mjs 回归。
   win.__fanqie = import("./fanqie");
-  // PPTX 导出（TS 序列化器——对拍参照，编辑器已改走 Rust——+ 投影档另排一遍那个 painter）暴露。
-  win.__pptx = Promise.all([import("./editor/pptx"), import("./editor/export")])
+  // PPTX 导出（拼料 + 投影档另排一遍那个 painter）暴露。
+  win.__pptx = Promise.all([import("./editor/pptxexport"), import("./editor/export")])
     .then(([pptx, exp]) => ({ ...pptx, pptxPainter: exp.pptxPainter }));
   // 成书重排（BookStyle 注入 + 页面树 → DrawList）暴露，供 scripts/rebuild.mjs 用。
   win.__book = Promise.all([

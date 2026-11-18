@@ -36,10 +36,9 @@ export function plainOf(root: unknown, idOf?: ReadonlyMap<unknown, number>): Jso
   return go(root);
 }
 
-/** 简谱档的定位结构与栅格；别的路为 null。 */
-export function jianpuRefs(painter: ScorePainter): { placed: Json; grid: Json } | null {
-  const r = painter.jianpuLayout;
-  if (!r) return null;
+/** 简谱档的定位结构与栅格（TS 引擎按 `req` 现排一遍；编辑器已改走 Rust）。 */
+export function jianpuRefs(_painter: ScorePainter, req: JianpuPaintRequest): { placed: Json; grid: Json } | null {
+  const r = layoutJianpu(structuredClone(req.doc), jianpuCfgOf(req));
   const idOf = r.view.idOf as ReadonlyMap<unknown, number>;
   return { placed: plainOf(r.placed.pages, idOf), grid: plainOf(r.metrics, idOf) };
 }
@@ -85,7 +84,7 @@ export function recordMeasure(inner: MeasureBackend): () => MeasureRecord[] {
 
 // ---- L3/L4 简谱引擎对拍（dev `jianpu-rs-diff.mjs`）：定位结构规范化成两边同一口径（Rust 那份在 `dolce-layout-jianpu::placedjson`） ----
 import type { JianpuPaintRequest } from "../layout/painter";
-import { jianpuCfgOf, measureRequestOf } from "../layout/painter";
+import { jianpuCfgOf, measureRequestOf } from "../layout/legacy";
 import { layoutJianpu } from "../layout/jianpu/compose";
 import { bookCfgOf } from "../pdflayout/browser";
 import { defaultBookStyle } from "../style/bookstyle";
@@ -153,7 +152,7 @@ export function placedJson(
 }
 
 type JianpuCfg = ReturnType<typeof jianpuCfgOf>;
-type JianpuResult = NonNullable<ScorePainter["jianpuLayout"]>;
+type JianpuResult = ReturnType<typeof layoutJianpu>;
 
 /** 一档用例：交给引擎的文档、外部配置与 TS 排出的期望（栅格、规范化定位结构、页宽高、行首、量宽时的自然跨度） */
 function caseOf(doc: unknown, c: JianpuCfg, r: JianpuResult): { doc: Json; config: Json; expect: Record<string, Json> } {
@@ -177,9 +176,10 @@ function caseOf(doc: unknown, c: JianpuCfg, r: JianpuResult): { doc: Json; confi
 }
 
 /** 简谱这一路最近一次的输入（文档与外部配置）与 TS 排出的期望；别的路为 null。场景另取 `pageScenes`。 */
-export function jianpuCase(painter: ScorePainter, req: JianpuPaintRequest): { doc: Json; config: Json; expect: Record<string, Json> } | null {
-  const r = painter.jianpuLayout;
-  return r ? caseOf(req.doc, jianpuCfgOf(req), r) : null;
+export function jianpuCase(_painter: ScorePainter, req: JianpuPaintRequest): { doc: Json; config: Json; expect: Record<string, Json> } | null {
+  const doc = structuredClone(req.doc);
+  const c = jianpuCfgOf(req);
+  return caseOf(doc, c, layoutJianpu(doc, c));
 }
 
 /** 编辑器预览之外几种调法（以 `req` 那份文档为料，配置照各调用处现拼，自己排一遍，场景随期望一起给）：

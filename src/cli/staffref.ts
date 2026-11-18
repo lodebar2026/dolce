@@ -3,7 +3,8 @@
 // 只给对拍用；排版迁完（H 期）随 TS 排版一起删。
 import type { ScoreDoc } from "../model/doc";
 import { docJson } from "../model/rustdoc";
-import { staffOptionsOf, type StaffPaintRequest } from "../layout/painter";
+import { type StaffPaintRequest } from "../layout/painter";
+import { staffOptionsOf } from "../layout/legacy";
 import { layoutStaff } from "../mixed/layout";
 import { layoutStaffPages, PAGE_HEIGHT_FALLBACK } from "../mixed/staffpages";
 import type { Fraction } from "../common/fraction";

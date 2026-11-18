@@ -6,7 +6,7 @@
 
 import type { ElementId, ScoreDoc } from "../model/doc";
 import type { MetaData } from "../smufl/smufl";
-import { staffOptionsOf } from "../layout/painter";
+import { staffOptionsOf } from "../layout/legacy";
 import { phraseCuts, type FitMeasure } from "../jianpu/phrase";
 import { layoutStaff } from "../mixed/layout";
 import { staffChordSpans } from "../mixed/layoutpass";

@@ -4,6 +4,7 @@
 //! 迁移期另出几样对拍用的纯函数（`xmlDigest` 等），Node 门面 `out/cli/dolce.js` 与 dev `rs-diff.mjs` 用。
 
 mod formats;
+mod layout;
 mod model;
 mod omr;
 mod textformats;

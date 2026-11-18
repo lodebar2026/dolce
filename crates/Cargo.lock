@@ -803,7 +803,15 @@ name = "dolce-session"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-engrave",
+ "dolce-layout-jianpu",
+ "dolce-layout-staff",
+ "dolce-model",
+ "dolce-play",
+ "dolce-scene",
+ "dolce-style",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -867,12 +875,17 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "dolce-base",
+ "dolce-engrave",
  "dolce-formats",
+ "dolce-geom",
+ "dolce-layout-jianpu",
  "dolce-model",
  "dolce-omr-sheet",
  "dolce-omr-todoc",
  "dolce-play",
  "dolce-session",
+ "dolce-smufl",
+ "dolce-text",
  "dolce-view",
  "dolce-xml",
  "js-sys",

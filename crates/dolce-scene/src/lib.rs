@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod build;
 pub mod dump;
+pub mod index;
 pub mod svg;
 
 /// 模型元素 id（`ScoreDoc` 的 `ElementId`）。

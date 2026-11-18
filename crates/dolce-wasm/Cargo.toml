@@ -20,6 +20,11 @@ dolce-play = { path = "../dolce-play" }
 dolce-model = { path = "../dolce-model" }
 dolce-formats = { path = "../dolce-formats" }
 dolce-view = { path = "../dolce-view" }
+dolce-engrave = { path = "../dolce-engrave" }
+dolce-geom = { path = "../dolce-geom" }
+dolce-smufl = { path = "../dolce-smufl" }
+dolce-text = { path = "../dolce-text" }
+dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
 dolce-omr-sheet = { path = "../omr-sheet" }
 dolce-omr-todoc = { path = "../omr-todoc" }
 serde = { workspace = true }

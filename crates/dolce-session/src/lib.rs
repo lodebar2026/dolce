@@ -7,6 +7,8 @@
 //! **M0 只是骨架**：`update` 记下原文、推进修订号；模型（M2）、排版（L 期）接上之前，取页、编辑、写出、试听一律回
 //! `engine.unimplemented`。
 
+pub mod layout;
+
 use dolce_base::Msg;
 use serde::{Deserialize, Serialize};
 

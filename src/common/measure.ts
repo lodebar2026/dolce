@@ -43,10 +43,24 @@ export function svgCollapsedText(text: string): string {
 
 let backend: MeasureBackend | null = null;
 
+/** wasm 里的排版（`layout/rustlayout.ts::installLayoutHost`）：换后端、清缓存都同步过去。 */
+interface WasmMeasureSync {
+  set(b: MeasureBackend): void;
+  clear(): void;
+}
+let wasmSync: WasmMeasureSync | null = null;
+
 /** 装配测量后端（app 启动时、CLI 入口各调一次）。换后端会清掉已有缓存。 */
 export function setMeasureBackend(b: MeasureBackend): void {
   backend = b;
   clearMeasureCache();
+  wasmSync?.set(b);
+}
+
+/** 接上 wasm 排版的量字（已装的后端立即交过去）。 */
+export function bindWasmMeasure(sync: WasmMeasureSync): void {
+  wasmSync = sync;
+  if (backend) sync.set(backend);
 }
 
 function be(): MeasureBackend {
@@ -67,6 +81,7 @@ export function clearMeasureCache(): void {
   pathCache.clear();
   metricsCache.clear();
   featureCache.clear();
+  wasmSync?.clear();
 }
 
 export function measureGlyphText(

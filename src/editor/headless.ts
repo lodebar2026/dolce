@@ -256,6 +256,6 @@ export class HeadlessSession implements StyleStateHost {
 
   /** 第 `k` 页的 SVG。 */
   page(k: number): string {
-    return (this.painter.renderPage(k) as unknown as { outerHTML: string }).outerHTML;
+    return this.painter.pageSvg(k);
   }
 }

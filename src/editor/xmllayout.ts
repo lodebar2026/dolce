@@ -11,7 +11,10 @@
 import type { HAlign, ScoreDoc, Song } from "../model/doc";
 import { emptyEngravedLayout, noteStem, type EngravedLayout, type Position } from "../model/xmlsurface";
 import { LCR, type MixedOptions, type StaffLayout, type Sys } from "../mixed/model";
-import { ScorePainter } from "../layout/painter";
+import { layoutStaff } from "../mixed/layout";
+import { layoutStaffPages } from "../mixed/staffpages";
+import { staffOptionsOf } from "../layout/legacy";
+import { MetaData } from "../smufl/smufl";
 
 const r1 = (v: number): number => Math.round(v * 10) / 10;
 
@@ -21,12 +24,15 @@ const r1 = (v: number): number => Math.round(v * 10) / 10;
 export async function engraveScoreDoc(doc: ScoreDoc, page: MixedOptions["page"], sourceBreaks = false): Promise<EngravedLayout | null> {
   const song = doc.songs[0];
   if (!song || song.defaults) return null;
-  const mp = new ScorePainter();
-  await mp.load({ view: "staff", doc, page, hideBarNumber: false, sourceBreaks });
-  const placed = mp.staffPlacement;
-  mp.dispose();
-  if (!placed?.score.autoLayout || placed.score.song !== song) return null;
-  return writeLayout(song, placed.score, placed.systems);
+  // 屏幕上的排版已在 Rust；导出版面这一路还读 TS 引擎的版面态（H 期迁 Rust 前的过渡）
+  const options = staffOptionsOf(await MetaData.shared());
+  options.hideBarNumber = false;
+  options.page = page;
+  options.sourceBreaks = sourceBreaks;
+  const score = layoutStaff(doc, options);
+  const { placed } = layoutStaffPages(score, false, 0);
+  if (!score.autoLayout || score.song !== song) return null;
+  return writeLayout(song, score, placed);
 }
 
 function writeLayout(

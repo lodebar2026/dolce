@@ -1,13 +1,41 @@
-// 谱面的身份索引：遍历页面树，按图元上的身份标签（`identity.ts`）收起来，供播放高亮、点选、可视化编辑查。
-// 引擎只管打标签；这里不认任何引擎内部的类型。
+// 谱面的身份索引：排版（Rust）给的各页身份表（`rustlayout.ts::SceneHit`，带身份标签或页眉类名的节点，前序），
+// 按标签收起来，供播放高亮、点选、可视化编辑查。引擎只管打标签；这里不认任何引擎内部的类型。
+// 表里每项记着 SVG 里画出来的元素先序号（`el`），挂载后由排版器对上 DOM 元素。
 
 import type { ElementId } from "../model/doc";
-import type { PageItem } from "../pagetree/pageitem";
-import type { IdentityKind } from "../pagetree/identity";
+import type { SceneHit, SceneIdentity } from "./rustlayout";
+
+export type IdentityKind = SceneIdentity["kind"];
+
+/** 身份表的一个节点（只含表里的项；`up` / `children` 是表内最近的祖先 / 子孙）。 */
+export interface IndexNode {
+  readonly page: number;
+  /** SVG 元素先序号；没画出来为 -1 */
+  readonly el: number;
+  readonly ident: SceneIdentity | undefined;
+  readonly hdr: SceneHit["hdr"];
+  readonly text: string | undefined;
+  readonly data: Record<string, number> | undefined;
+  readonly parent: IndexNode | null;
+  readonly children: IndexNode[];
+}
 
 export interface Hit {
   page: number;
-  item: PageItem;
+  item: IndexNode;
+}
+
+/** 一页的身份表 → 节点树的根（多个根挂在一个虚根下，虚根不带身份）。 */
+function treeOf(table: readonly SceneHit[], page: number): IndexNode {
+  const root: IndexNode = { page, el: -1, ident: undefined, hdr: undefined, text: undefined, data: undefined, parent: null, children: [] };
+  const nodes: IndexNode[] = [];
+  for (const h of table) {
+    const parent = h.up >= 0 ? nodes[h.up]! : root;
+    const n: IndexNode = { page, el: h.el, ident: h.id, hdr: h.hdr, text: h.text, data: h.data, parent: h.up >= 0 ? parent : null, children: [] };
+    parent.children.push(n);
+    nodes.push(n);
+  }
+  return root;
 }
 
 /** 同一元素的音符格与增时线格（投影档每遍各一组），按页面树顺序。 */
@@ -23,8 +51,10 @@ export class ScoreIndex {
   /** 同一条弧 / 同一个字可能画成几段（跨系统的弧、混排两层），按页面树顺序 */
   private slurs = new Map<string, Hit[]>();
   private syllables = new Map<string, Hit[]>();
-  private systems = new Map<PageItem, PageItem[]>();
+  private systems = new Map<IndexNode, IndexNode[]>();
   private headerHits: Hit[] = [];
+  /** 各页标了页眉类名（`hdr` / `hdr-keysig` / `hdr-time`）的节点，前序 */
+  private hdrNodes: IndexNode[][] = [];
   /** 不在音符格里、标签自带 id 的部件（增时线上的和弦），按「种类:id」收 */
   private ownParts = new Map<string, Hit[]>();
   /** 带身份的全部图元（渲染后把 DOM 元素反查回图元用） */
@@ -32,9 +62,10 @@ export class ScoreIndex {
 
   private constructor() {}
 
-  static build(pages: readonly PageItem[]): ScoreIndex {
+  /** 各页的身份表（前序）建索引。 */
+  static build(pages: readonly (readonly SceneHit[])[]): ScoreIndex {
     const ix = new ScoreIndex();
-    pages.forEach((pg, i) => ix.walk(pg, i));
+    pages.forEach((tbl, i) => ix.walk(treeOf(tbl, i), i));
     return ix;
   }
 
@@ -48,10 +79,13 @@ export class ScoreIndex {
   /** 还等着后面那个音符来认领的小节线（`‖:` 画在小节第一个音符之前） */
   private pendingBefore: Hit[] = [];
 
-  private walk(root: PageItem, page: number): void {
-    let system: PageItem | null = null;
-    const go = (item: PageItem): void => {
+  private walk(root: IndexNode, page: number): void {
+    let system: IndexNode | null = null;
+    const hdr: IndexNode[] = [];
+    this.hdrNodes[page] = hdr;
+    const go = (item: IndexNode): void => {
       const outer = system;
+      if (item.hdr) hdr.push(item);
       const ident = item.ident;
       if (ident) {
         const hit = { page, item };
@@ -180,6 +214,11 @@ export class ScoreIndex {
     return list?.[list.length - 1] ?? null;
   }
 
+  /** 简谱各页的页眉项（`hdr` 类名的节点），按页面树顺序。 */
+  headerNodes(): readonly (readonly IndexNode[])[] {
+    return this.hdrNodes;
+  }
+
   /** 页眉里的字（`header` 标签），按页面树顺序。 */
   headers(): readonly Hit[] {
     return this.headerHits;
@@ -197,8 +236,8 @@ export class ScoreIndex {
   }
 
   /** 图元所在那一行谱（`system` 标签）与行里的音符、增时线、歌词格。不在任何行里为 null。 */
-  systemOf(item: PageItem): { system: PageItem; members: readonly PageItem[] } | null {
-    for (let cur: PageItem | null = item; cur; cur = cur.parent) {
+  systemOf(item: IndexNode): { system: IndexNode; members: readonly IndexNode[] } | null {
+    for (let cur: IndexNode | null = item; cur; cur = cur.parent) {
       const members = this.systems.get(cur);
       if (members) return { system: cur, members };
     }
@@ -207,9 +246,9 @@ export class ScoreIndex {
 }
 
 /** 子树里某种标签的图元，按页面树顺序；命中的项不再往下找。 */
-export function findByKind(root: PageItem, kind: IdentityKind): PageItem[] {
-  const out: PageItem[] = [];
-  const walk = (it: PageItem): void => {
+export function findByKind(root: IndexNode, kind: IdentityKind): IndexNode[] {
+  const out: IndexNode[] = [];
+  const walk = (it: IndexNode): void => {
     if (it !== root && it.ident?.kind === kind) {
       out.push(it);
       return;
@@ -221,8 +260,8 @@ export function findByKind(root: PageItem, kind: IdentityKind): PageItem[] {
 }
 
 /** 从点中的图元往上找它所在的音符格 / 增时线格（带 `note` / `sustain` 标签的那一层）。 */
-export function cellOf(item: PageItem): PageItem | null {
-  for (let cur: PageItem | null = item; cur; cur = cur.parent) {
+export function cellOf(item: IndexNode): IndexNode | null {
+  for (let cur: IndexNode | null = item; cur; cur = cur.parent) {
     const k = cur.ident?.kind;
     if (k === "note" || k === "sustain") return cur;
   }

@@ -11,7 +11,46 @@ export interface DolceSessionWasm {
   free(): void;
 }
 
+/** 排版结果句柄（`crates/dolce-wasm/src/layout.rs::Layout`）：排好的一份留在 wasm 里，按页取 SVG、身份表、场景。 */
+export interface DolceLayoutWasm {
+  /** `LaidInfo` 的 JSON（`layout/rustlayout.ts::LaidInfo`） */
+  info(): string;
+  pageCount(): number;
+  /** 第 `i` 页的 SVG（`outerHTML` 口径） */
+  svg(i: number): string;
+  /** 第 `i` 页的身份表（`SceneHit[]` 的 JSON） */
+  hits(i: number): string;
+  /** 第 `i` 页的场景 JSON（导出 PDF / PPTX） */
+  scene(i: number): string;
+  /** 简谱：定稿栅格 / 定位结构的 JSON；五线谱回空串 */
+  gridJson(): string;
+  placedJson(): string;
+  free(): void;
+}
+
+/** 交给 wasm 的量字适配器（`layout/rustlayout.ts::wasmMeasure`）：结果一律是数组。 */
+export interface WasmMeasure {
+  /** `[advance, l, t, r, b]` */
+  glyph(text: string, family: string, size: number, bold: boolean, features: string, italic: boolean): Float64Array;
+  /** `[x0, x1, …, 总宽]` */
+  positions(text: string, family: string, size: number, bold: boolean, features: string): Float64Array;
+  /** `[ascent, descent]` */
+  fontMetrics(family: string, size: number, bold: boolean, italic: boolean): Float64Array;
+  /** `[l, t, r, b]` */
+  pathBounds(d: string): Float64Array;
+}
+
 export interface DolceWasm {
+  // 排版（crates/dolce-session/src/layout.rs）：宿主设一次量字与 SMuFL 元数据，之后同步排
+  setLayoutHost(measure: WasmMeasure, smufl: string): void;
+  clearMeasureCache(): void;
+  /** `doc` 是 ScoreDoc JSON，`req` 是 `JianpuRequest` JSON */
+  layoutJianpu(doc: string, req: string): DolceLayoutWasm;
+  /** `surface` 是 MusicXML 表层句柄（0 = 没有） */
+  layoutStaff(doc: string, surface: number, req: string): DolceLayoutWasm;
+  /** `{width, spans: [[id, {x0, x1, x1b}]]}` 的 JSON */
+  measureDocument(doc: string, style: string, width: number, slide: boolean, song: number): string;
+
   default(init?: { module_or_path: string | URL }): Promise<object>;
   initSync(init: { module: BufferSource | WebAssembly.Module }): object;
   version(): string;
