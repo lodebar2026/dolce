@@ -17,6 +17,7 @@ use crate::render::{draw_system, ending_place, harmony_width_of};
 use dolce_base::fraction::Fraction;
 use dolce_base::js;
 use dolce_engrave::header::header_role_font;
+use dolce_engrave::upperband::{stack_upper_band, BandItem};
 use dolce_geom::Matrix33;
 use dolce_model::doc::Placement;
 use dolce_model::pagemeta::header_role_of_credit;
@@ -171,6 +172,38 @@ struct RBox {
     x1: f64,
     y0: f64,
     y1: f64,
+}
+
+/// 一条文字（墨迹横跨 `[x0, x1]`、底在 `y`、高 `h`，y 向上为正）让开已排好的 `placed`，返回让完的 y。
+/// 走上方带共用求解器（`dolce_engrave::upperband`）：已排好的同在第 0 层、同一种类，彼此不动；
+/// 这条在第 1 层，压着谁就抬到谁的顶上再空 `MIXED_TEXT_CLEAR / 2`。
+/// 横向判撞照混排口径：各盒右缘多让 `MIXED_TEXT_CLEAR / 2`、两边各收 `TOUCH_TOL / 2`（交叠不过 `TOUCH_TOL` 不算撞）。
+fn rise_clear_of(placed: &[PBox], x0: f64, x1: f64, y: f64, h: f64) -> f64 {
+    let item = |key: usize, x0: f64, x1: f64, y0: f64, y1: f64, layer: f64, kind: Option<String>| BandItem {
+        key,
+        x0: x0 + TOUCH_TOL / 2.0,
+        x1: x1 + MIXED_TEXT_CLEAR / 2.0 - TOUCH_TOL / 2.0,
+        top: -y1,
+        bottom: -y0,
+        layer,
+        rank: None,
+        kind,
+        spread: None,
+        top_at: None,
+        gap_scale: None,
+        skip_kinds: Vec::new(),
+    };
+    let mut items: Vec<BandItem> =
+        placed.iter().enumerate().map(|(i, b)| item(i, b.x0, b.x1, b.y0, b.y1, 0.0, Some("placed".into()))).collect();
+    let me = placed.len();
+    items.push(item(me, x0, x1, y, y + h, 1.0, None));
+    let dy = stack_upper_band(&items, MIXED_TEXT_CLEAR / 2.0);
+    let d = dy.get(&me).copied().unwrap_or(0.0);
+    if d == 0.0 {
+        y
+    } else {
+        -(-y + d)
+    }
 }
 
 /// 轮廓上 `[x0, x1]` 那几段的最高（`localFloor` 里的循环；下标按浮点走，同 JS）
@@ -451,21 +484,7 @@ fn place_part_above_staff(score: &mut StaffLayout, p: PartId, mixed: bool, hosti
                     x1 += shift;
                     score[t].y = host.y0 + (host.y1 - host.y0 - h) / 2.0;
                 }
-                let mut again = true;
-                while again {
-                    again = false;
-                    for b in &placed {
-                        if b.x1 + MIXED_TEXT_CLEAR / 2.0 - TOUCH_TOL <= x0 || b.x0 + TOUCH_TOL >= x1 + MIXED_TEXT_CLEAR / 2.0 {
-                            continue;
-                        }
-                        let ty = score[t].y;
-                        if ty + h <= b.y0 || ty >= b.y1 {
-                            continue;
-                        }
-                        score[t].y = b.y1 + MIXED_TEXT_CLEAR / 2.0;
-                        again = true;
-                    }
-                }
+                score[t].y = rise_clear_of(&placed, x0, x1, score[t].y, h);
                 let ty = score[t].y;
                 placed.push(PBox { x0, x1, y0: ty, y1: ty + h });
                 let set = |ra: &mut Vec<(String, RBox)>, v: RBox| match ra.iter_mut().find(|(kk, _)| *kk == beat_key) {
