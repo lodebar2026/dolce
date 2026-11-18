@@ -28,10 +28,12 @@ pub fn layer_line(voice: &ScoreLine, el: &InlineLayerElement) -> ScoreLine {
     }
 }
 
-/// 排好的并排下行与它从第几小节起
+/// 先排好、与主行一起归列的内联层行，与它从主行第几小节起
 pub struct BelowLine {
     pub laid: VoiceLine,
     pub bar_base: f64,
+    /// 字号相对主旋律（`{bz}` 伴奏行是 `size.cue`）
+    pub scale: f64,
 }
 
 fn host_at(items: &[PlacedItem], src: usize) -> Option<usize> {
@@ -43,21 +45,30 @@ fn layout_layer(row: &LRow, src: usize, el: &InlineLayerElement, m: &JianpuGrid,
     layout_voice_line(&layer_line(&row.line, el), &ids, m, &BeatCtx { meter: ctx.meter.clone(), ..BeatCtx::default() })
 }
 
-/// 同一谱表第二声部的并排下行（`below`）：先按自己的节奏排好，与主行一起归列。键为层在 `voice.elements` 里的下标
+/// 与主行一起归列的内联层：同一谱表第二声部的并排下行（`below`）与 `{bz}` 临时伴奏行，
+/// 先按自己的节奏排好，层首那一小节的拍位接着宿主音的拍位，再与主行同拍位归列。键为层在 `voice.elements` 里的下标
 pub fn below_layer_lines(row: &LRow, items: &[PlacedItem], m: &JianpuGrid, ctx: &BeatCtx) -> Vec<(usize, BelowLine)> {
     let mut out = vec![];
     for (src, el) in row.line.elements.iter().enumerate() {
         let MusicElement::InlineLayer(l) = el else { continue };
-        if l.role != LayerRole::Voice || l.below != Some(true) {
+        let cue = l.role != LayerRole::Voice;
+        if !cue && l.below != Some(true) {
             continue;
         }
         let Some(h) = host_at(items, src) else { continue };
         let mut laid = layout_layer(row, src, l, m, ctx);
+        let lead = if matches!(items[h].element, MusicElement::Barline(_)) { 0.0 } else { items[h].beat };
         for it in &mut laid.items {
             it.syllables = vec![];
         }
+        for it in laid.items.iter_mut() {
+            if matches!(it.element, MusicElement::Barline(_)) {
+                break;
+            }
+            it.beat += lead;
+        }
         let bar_base = items[..h].iter().filter(|it| matches!(it.element, MusicElement::Barline(_))).count() as f64;
-        out.push((src, BelowLine { laid, bar_base }));
+        out.push((src, BelowLine { laid, bar_base, scale: if cue { m.style.size.cue } else { 1.0 } }));
     }
     out
 }
@@ -86,10 +97,13 @@ pub fn place_layers(
         let mut laid = pre.unwrap_or_else(|| layout_layer(row, src, layer, m, ctx));
 
         let Some(host_at) = host.filter(|_| layer.role == LayerRole::Voice) else {
-            // `{bz}`：上方另排一小行，按 layerScale 缩小
+            // `{bz}`：上方另排一小行。有宿主音的已与主行同拍位归过列（`below_layer_lines`），x 照用；
+            // 行尾没有宿主音的，从行末那个符号起按自己的步距缩小排
             for it in &mut laid.items {
-                it.x = origin_x + it.x * m.style.size.cue;
-                it.advance *= m.style.size.cue;
+                if !had_pre {
+                    it.x = origin_x + it.x * m.style.size.cue;
+                    it.advance *= m.style.size.cue;
+                }
                 it.syllables = vec![];
             }
             let underlines = compute_underlines(&inner, &laid.items, m, &laid.groups);

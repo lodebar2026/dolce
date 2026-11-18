@@ -53,7 +53,7 @@ pub fn reflow_line_starts(songs: &[LSong], m: &JianpuGrid, ink: &Ink) -> Option<
             for page in &song.pages {
                 for group in &page.groups {
                     let laid_out: Vec<VoiceLine> = group.voices.iter().map(|row| laid_row(row, song, m)).collect();
-                    let lines: Vec<SpacedLine> = laid_out.iter().map(|l| SpacedLine { items: &l.items, pad: &l.pad, bar_base: None }).collect();
+                    let lines: Vec<SpacedLine> = laid_out.iter().map(|l| SpacedLine::main(&l.items, &l.pad)).collect();
                     let nat = natural_columns(&lines, m, ink, 0.0);
                     let Some(lead) = laid_out.first() else { continue };
                     if nat.width > width {
@@ -199,7 +199,7 @@ pub fn natural_spans(song: &LSong, m: &JianpuGrid, ink: &Ink) -> Vec<(i64, Natur
             let mut right = base;
             let laid = laid_row(row, song, m);
             let items: &[PlacedItem] = &laid.items;
-            let nat = natural_columns(&[SpacedLine { items, pad: &laid.pad, bar_base: None }], m, ink, 0.0);
+            let nat = natural_columns(&[SpacedLine::main(items, &laid.pad)], m, ink, 0.0);
             let mut owner: Option<i64> = None;
             for (k, it) in items.iter().enumerate() {
                 match &it.element {

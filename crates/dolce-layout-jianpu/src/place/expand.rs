@@ -796,7 +796,7 @@ pub fn fill_lines(row: &ScoreLine, forced: &HashMap<usize, bool>, m: &JianpuGrid
         it.syllables = vec![None; row.lyrics.len()];
     }
     assign_lyrics(&mut laid.items, &row.lyrics, &[]);
-    let lines = [SpacedLine { items: &laid.items, pad: &laid.pad, bar_base: None }];
+    let lines = [SpacedLine::main(&laid.items, &laid.pad)];
     let nat = natural_columns(&lines, m, ink, 0.0);
     let mut tight: Option<crate::place::spacing::Natural> = None;
     let items = &laid.items;

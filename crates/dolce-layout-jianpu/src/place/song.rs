@@ -149,10 +149,10 @@ pub fn layout_song(song: &LSong, m: &JianpuGrid, song_index: usize, header_botto
             let mut below: Vec<Vec<(usize, crate::place::layers::BelowLine)>> =
                 laid_out.iter().enumerate().map(|(vi, l)| below_layer_lines(&group.voices[vi], &l.items, m, &beat_ctx)).collect();
             {
-                let mut lines: Vec<SpacedLine> = laid_out.iter().map(|l| SpacedLine { items: &l.items, pad: &l.pad, bar_base: None }).collect();
+                let mut lines: Vec<SpacedLine> = laid_out.iter().map(|l| SpacedLine::main(&l.items, &l.pad)).collect();
                 for b in &below {
                     for (_, bl) in b {
-                        lines.push(SpacedLine { items: &bl.laid.items, pad: &bl.laid.pad, bar_base: Some(bl.bar_base) });
+                        lines.push(SpacedLine { items: &bl.laid.items, pad: &bl.laid.pad, bar_base: Some(bl.bar_base), scale: bl.scale });
                     }
                 }
                 let (_, placed) = place_columns(&lines, m, ink, width);

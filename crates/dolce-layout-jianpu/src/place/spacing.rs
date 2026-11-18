@@ -158,11 +158,20 @@ fn item_box(it: &PlacedItem, m: &JianpuGrid, ink: &Ink) -> ItemBox {
     ItemBox { left: center, right, lead, want, over }
 }
 
-/// 参加归列的一行：各声部的主行，外加并排下行（`bar_base` = 它从主行第几小节起）
+/// 参加归列的一行：各声部的主行，外加内联层（并排下行、`{bz}` 伴奏行；`bar_base` = 它从主行第几小节起）
 pub struct SpacedLine<'a> {
     pub items: &'a [PlacedItem],
     pub pad: &'a [f64],
     pub bar_base: Option<f64>,
+    /// 这一行的字号相对主旋律（`{bz}` 伴奏行是 `size.cue`，其余 1）：占位盒与 pad 按它缩
+    pub scale: f64,
+}
+
+impl<'a> SpacedLine<'a> {
+    /// 主旋律那样的一整行
+    pub fn main(items: &'a [PlacedItem], pad: &'a [f64]) -> Self {
+        SpacedLine { items, pad, bar_base: None, scale: 1.0 }
+    }
 }
 
 struct ColKey {
@@ -194,7 +203,11 @@ fn columns_of(lines: &[SpacedLine], m: &JianpuGrid, ink: &Ink) -> Vec<Column> {
                 });
                 entries.len() - 1
             });
-            let b = item_box(it, m, ink);
+            let mut b = item_box(it, m, ink);
+            if l.scale != 1.0 {
+                let k = l.scale;
+                b = ItemBox { left: b.left * k, right: b.right * k, lead: b.lead * k, want: b.want * k, over: b.over * k };
+            }
             let c = &mut entries[e].col;
             c.members.push((v, i));
             c.left = max(c.left, b.left);
@@ -202,7 +215,7 @@ fn columns_of(lines: &[SpacedLine], m: &JianpuGrid, ink: &Ink) -> Vec<Column> {
             c.lead = max(c.lead, b.lead);
             c.want = max(c.want, b.want);
             c.over = max(c.over, b.over);
-            c.pad = max(c.pad, l.pad.get(i).copied().unwrap_or(0.0));
+            c.pad = max(c.pad, l.pad.get(i).copied().unwrap_or(0.0) * l.scale);
             if is_bar {
                 bar += 1.0;
             }
