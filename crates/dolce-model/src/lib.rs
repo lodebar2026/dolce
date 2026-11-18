@@ -19,6 +19,7 @@ pub mod jianpu;
 pub mod jianpuproject;
 pub mod keyshift;
 pub mod marknames;
+pub mod melodyonly;
 pub mod metakeys;
 pub mod multirest;
 pub mod pagemeta;
