@@ -24,10 +24,10 @@
 //   （`CLAUDE.md` 那条约束的是界面；123 格式本身也写中文，如 `标题：奇异恩典`）。
 //   真要让界面提示，调用方可以自己 `t()`——`capability.ts` 的 losses 就是那种结构化形态。
 
-import type { JChord, JMeasure, JNote, JScore } from "../layout/input";
+import type { JChord, JMeasure, JNote, JScore } from "../jianpu/input";
 import type { ScoreDoc } from "../model/doc";
 import { jianpuInputOfDoc, jianpuInputOfJpw } from "../jianpu/jianpuinput";
-import { DYNAMICS } from "../engrave/jpglyph";
+import { DYNAMICS } from "../jianpu/marks";
 import { Fraction } from "../common/fraction";
 import { harmonyToChordToken, wholeToDuration } from "./jlychords";
 import { GlyphCodes } from "../smufl/smufl";
@@ -112,7 +112,7 @@ const JUMP_OUT: Readonly<Record<string, string>> = {
   fine: "Fine", dc: "DC", "d.c.": "DC", ds: "DS", "d.s.": "DS", segno: "Segno", tocoda: "ToCoda",
 };
 
-/** 力度字形串 → 名字（`engrave/jpglyph.ts::DYNAMICS` 的反查）：把字形写回 jianpu-ly 的 `\mf`。
+/** 力度字形串 → 名字（`jianpu/marks.ts::DYNAMICS` 的反查）：把字形写回 jianpu-ly 的 `\mf`。
  *  不反查就会把私有区字形当成文字写成 `^"<PUA>"` —— 实测过，印出来是一团乱码。 */
 const DYNAMIC_NAME: ReadonlyMap<string, string> = new Map(Object.entries(DYNAMICS).map(([k, v]) => [v, k]));
 

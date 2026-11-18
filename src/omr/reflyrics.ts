@@ -14,7 +14,7 @@ import { simplifiedOf } from "./hanvariant";
 import { recognizedToDoc } from "./todoc";
 import type { ElementId } from "../model/doc";
 import { jianpuInputOfDoc } from "../jianpu/jianpuinput";
-import type { JChord } from "../layout/input";
+import type { JChord } from "../jianpu/input";
 import { walkPlay } from "../jianpu/expand";
 
 /** 某个歌词字的 OCR 候选（置信度降序，含首选本身），`scores` 与 alts 同序。 */

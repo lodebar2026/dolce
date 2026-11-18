@@ -8,7 +8,7 @@
 // 每个和弦带元素 id：点选、试听高亮、断句量宽都按它认。
 
 import { Fraction } from "../common/fraction";
-import { BARLINE_MARKS, DYNAMICS } from "../engrave/jpglyph";
+import { BARLINE_MARKS, DYNAMICS } from "./marks";
 import { TERMS } from "../model/marknames";
 import { BarStyle, StartStopDiscontinue } from "../score/enums";
 import { MusicCommon } from "../score/jppitch";
@@ -16,7 +16,7 @@ import { fifthsOfSpelling } from "../model/keyshift";
 import { PlayData } from "../score/playtypes";
 import type {
   JBreak, JChord, JCredit, JKey, JLyric, JMeasure, JNote, JScore, JTime,
-} from "../layout/input";
+} from "./input";
 import { quarterTempos } from "../model/jianpu";
 import type { ElementId, Measure as DocMeasure, Mark as DocMark, ScoreDoc, Song } from "../model/doc";
 import { docView, type SlotRef } from "./slots";

@@ -4,7 +4,10 @@
 //!
 //! 逐页比 drawlist（`pages[i]`）、逐首比 `songs`（两份），判法同 `jianpu-check`：骨架（键、串、数组长）要一样、数差 ≤ 1e-6；
 //! `--native` 时排版引擎改 Rust 自量，数差放到 0.5；`--book-native` 时书级量字也改原生（`dolce_export::book::BookFonts`）。
-//! 选项：`--show=N`（列几条差异）、`--out=<目录>`（把 Rust 产物写出来）、`--redist=<目录>`。
+//! 选项：`--show=N`（列几条差异）、`--out=<目录>`（把 Rust 产物写出来）、`--redist=<目录>`、
+//! `--fonts=<族名→文件.json>`（`--native` 时排版量字先注册这些字体文件，同 PDF 嵌入的那份）。
+//!
+//! **出书**（dev `rebuild.mjs`）：目录里只有 `input.json`、带 `--native --book-native --out=` 跑——没有期望文件就不比，只写产物。
 
 use crate::jianpu::{judge_json, Verdict, TOL};
 use crate::layout::{flag, positional, show_n};
@@ -63,7 +66,7 @@ fn judge_list(what: &str, want: &[Value], got: &[Value], label: impl Fn(usize, &
 pub fn book_rebuild(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(dir) = pos.first().map(Path::new) else {
-        eprintln!("用法：dolce book-rebuild <目录> [--native] [--book-native] [--show=N] [--out=<目录>] [--redist=<目录>]");
+        eprintln!("用法：dolce book-rebuild <目录> [--native] [--book-native] [--show=N] [--out=<目录>] [--redist=<目录>] [--fonts=<族名→文件.json>]");
         return 2;
     };
     let native = args.iter().any(|a| a == "--native");
@@ -71,7 +74,14 @@ pub fn book_rebuild(args: &[String]) -> i32 {
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
     let meta = MetaData::from_json(&std::fs::read_to_string(redist.join("bravura_metadata.json")).expect("读 SMuFL 元数据")).expect("SMuFL 元数据");
     let replay = (!native).then(|| ReplayMeasurer::from_jsonl(&read(dir, "measure.jsonl")).expect("量字录制").with_path_fallback());
-    let native_backend = native.then(|| dolce_text_native::node_measure(Some(&redist), &[]));
+    let files: Vec<(String, String)> = match flag(args, "fonts") {
+        Some(f) => {
+            let v: std::collections::BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(f).expect("读字体表")).expect("字体表要是 {族名: 路径}");
+            v.into_iter().collect()
+        }
+        None => vec![],
+    };
+    let native_backend = native.then(|| dolce_text_native::node_measure(Some(&redist), &files));
     if native {
         TOL.get_or_init(|| 0.5);
     }
@@ -82,10 +92,11 @@ pub fn book_rebuild(args: &[String]) -> i32 {
     };
     let env = Env { mc: &mc, meta: Some(&meta) };
     let input: RebuildInput = serde_json::from_str(&read(dir, "input.json")).expect("input.json");
-    let replay_bm = ReplayBookMeasure::from_jsonl(&read(dir, "book-measure.jsonl")).expect("书级量字录制");
+    let book_native = args.iter().any(|a| a == "--book-native");
+    let replay_bm = if book_native { ReplayBookMeasure::from_jsonl("").expect("空录制") } else { ReplayBookMeasure::from_jsonl(&read(dir, "book-measure.jsonl")).expect("书级量字录制") };
     // `--book-native`：书级量字也走原生（读样式表指的字体文件、整形 + 挤压，与 PDF 写出端同一份）
     let font_book = dolce_export::fonts::FontBook::system();
-    let native_bm = args.iter().any(|a| a == "--book-native").then(|| {
+    let native_bm = book_native.then(|| {
         let (_, st) = dolce_book::rebuild::book_style_files(&input.style_files).expect("成书样式");
         let f = dolce_export::book::BookFonts::resolve(&st, &font_book, Path::new("."));
         for (id, fam, why) in &f.missing {
@@ -121,6 +132,10 @@ pub fn book_rebuild(args: &[String]) -> i32 {
         std::fs::create_dir_all(o).expect("建输出目录");
         std::fs::write(o.join("rebuild-drawlist.json"), serde_json::to_string(&out.drawlist).unwrap()).expect("写 drawlist");
         std::fs::write(o.join("rebuild-lines.json"), serde_json::to_string(&out.lines).unwrap()).expect("写 lines");
+    }
+    if !dir.join("expect-rebuild-drawlist.json").exists() {
+        // 出书：没有期望就不比
+        return 0;
     }
     let want_d: Value = serde_json::from_str(&read(dir, "expect-rebuild-drawlist.json")).expect("期望 drawlist");
     let want_l: Value = serde_json::from_str(&read(dir, "expect-rebuild-lines.json")).expect("期望 lines");

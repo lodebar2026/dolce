@@ -16,7 +16,13 @@ import { docJson } from "../model/rustdoc";
 import { ScoreIndex, type Hit, type IndexNode } from "./scoreindex";
 import { Playhead, spanIn, svgBox } from "./playhead";
 import { layoutAsync, layoutSync, type LaidHandle, type LayoutWire } from "./rustlayout";
-import type { HeaderPart } from "./render";
+
+/** 页眉里画出来的一项：文字（标题、署名…）、调号、拍号。 */
+export interface HeaderPart {
+  el: SVGGraphicsElement;
+  text: string;
+  role: "text" | "key" | "time";
+}
 
 /** 五线谱播放线的宽（tenths，线距 10）：两个符头宽上下，各音一样宽 */
 const PLAYHEAD_W = 24;

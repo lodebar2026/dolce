@@ -142,11 +142,10 @@ w:我罪已_得赦免_
   [Tauri 2](https://tauri.app/)、[Vite](https://vite.dev/)、[TypeScript](https://www.typescriptlang.org/)
   —— 编辑器 / 桌面外壳 / 构建
 - [opencc-js](https://github.com/nk2028/opencc-js)（简繁转换）、
-  [jsPDF](https://github.com/parallax/jsPDF)（PDF 导出）、
   [smplr](https://github.com/danigb/smplr)（试听音源）、
   [FluidR3 GM](https://github.com/gleitz/midi-js-soundfonts)（试听的钢琴音色，CC BY 3.0）、
-  [fflate](https://github.com/101arrowz/fflate)（PPTX 打包）、
-  [opentype.js](https://opentype.js.org/)（字形轮廓）
+  [fflate](https://github.com/101arrowz/fflate)（识别项目打包）
+- [krilla](https://github.com/LaurenzV/krilla)、[rustybuzz](https://github.com/harfbuzz/rustybuzz)、[fontdb](https://github.com/RazrFalcon/fontdb)—— PDF 导出（写 PDF、整形、找系统字体）
 
 ## 许可
 

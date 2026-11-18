@@ -1,6 +1,6 @@
-// 简谱排版引擎（`layout/`）的**输入接口**：引擎实际读到的字段，一个不多。
+// 简谱的中间结构（原 TS 简谱引擎的输入接口；排版已迁 Rust，现由文本谱、jianpu-ly 写出、识别歌词沿用）。
 //
-// 引擎只读不写（断句落下的换行由排版之前的那一步插进 `entries`，见 `jianpu/applybreaks.ts`）。
+// 断句落下的换行插在 `entries` 里（`jianpu/applybreaks.ts`，Rust 同名）。
 // 输入由 `ScoreDoc` 投影出来（`jianpu/jianpuinput.ts`）；字段名沿用从 mp/score/score.kt 移植来的那一套。
 
 import type { Fraction } from "../common/fraction";
@@ -30,7 +30,7 @@ export interface JDirection {
   text: string;
   /** 走乐谱字体（力度记号）还是文本字体（`rit.` / `Fine` / `D.S.`）。 */
   music: boolean;
-  /** 力度记号（字号另按 `engrave/dynamics.ts::DYNAMIC_SIZE` 放大）。 */
+  /** 力度记号。 */
   dynamic?: boolean;
   /** 原文标的斜体。 */
   italic: boolean;

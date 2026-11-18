@@ -226,14 +226,6 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.whenIdle();
   }
 
-  /** 前景色与纸色（当前档）。设置面板走 `style`；这两个留着给回归脚本（`style-snapshot.mjs` 读 `__app.color`）。 */
-  get color(): number {
-    return this.style.color;
-  }
-  get bgColor(): number {
-    return this.style.bgColor;
-  }
-
   /** 恢复当前档的主题默认（清掉那一档的用户层）。 */
   resetRenderSettings(): void {
     this.style.resetMode(this.layoutMode);

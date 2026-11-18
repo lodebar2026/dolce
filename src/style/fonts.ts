@@ -10,7 +10,6 @@
 // 角色的 `size` 该怎么折由适配器自己算，这里只在明确传了 `size` 时用。
 //
 // 无 DOM 依赖。
-import { Font } from "../pagetree/font";
 import type { StyleRole, StyleSheet, TemplateRole } from "./sheet";
 
 /** `@font-face` 名 → 页面里已注册的 CSS 族（Node 侧读字体文件、`FontFace` 注册后给进来）。 */
@@ -29,19 +28,6 @@ export function familyOfRole(
   const bold = decl.weight === "bold" || face?.bold === true;
   if (family === undefined) return decl.weight === "bold" ? { family: "", bold } : undefined;
   return { family, bold };
-}
-
-/** 角色 → `Font`：族与字重按角色，字号用 `size`（不给就沿用 `base` 的）。 */
-export function fontOfRole(
-  sheet: StyleSheet,
-  role: StyleRole | TemplateRole,
-  base: Font,
-  opts: { size?: number; families?: FamilyMap } = {},
-): Font {
-  const f = familyOfRole(sheet, role, opts.families);
-  const size = opts.size ?? base.size;
-  if (!f) return base.size === size ? base : base.makeWithSize(size);
-  return new Font(f.family || base.family, size, f.bold || base.bold, base.italic);
 }
 
 /** 设置面板「音符字体」能选的：字体族串与要不要加粗（空串 = 默认，按 print 主题）。 */

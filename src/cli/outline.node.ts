@@ -14,7 +14,7 @@ function attrsOf(tag: string): Map<string, string> {
 
 const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-/** 换掉所有 `<text>`；没有原生模块（量字退回字体文件那条路）时抛错。根上补 `xmlns`，成为独立的 `.svg`。 */
+/** 换掉所有 `<text>`；没有原生模块时抛错。根上补 `xmlns`，成为独立的 `.svg`。 */
 export function outlinedSvg(svg: string): string {
   const out = svg.replace(/<text\b([^>]*)>([^<]*)<\/text>/g, (_m, attrStr: string, content: string) => {
     const a = attrsOf(attrStr);
@@ -27,11 +27,7 @@ export function outlinedSvg(svg: string): string {
     const tf = a.get("transform");
     const xs = (a.get("x") ?? "0").trim().split(/\s+/).map(Number);
     const y = Number(a.get("y") ?? 0);
-    const outline = (s: string): string => {
-      const d = textOutline(s, family, size, bold, italic);
-      if (d === null) throw new Error("没有原生量字模块，出不了轮廓（npm run build:native）");
-      return d;
-    };
+    const outline = (s: string): string => textOutline(s, family, size, bold, italic);
     let body: string;
     if (xs.length > 1) {
       const chars = [...text];

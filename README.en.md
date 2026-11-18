@@ -217,11 +217,10 @@ Regression scripts and test corpora are not part of this repository.
   [Vite](https://vite.dev/) and [TypeScript](https://www.typescriptlang.org/).
 - Libraries:
   - [opencc-js](https://github.com/nk2028/opencc-js): Simplified/Traditional conversion
-  - [jsPDF](https://github.com/parallax/jsPDF): PDF export
   - [smplr](https://github.com/danigb/smplr): playback sampler
   - [FluidR3 GM](https://github.com/gleitz/midi-js-soundfonts): the piano sound used for playback (CC BY 3.0)
-  - [fflate](https://github.com/101arrowz/fflate): PPTX packaging
-  - [opentype.js](https://opentype.js.org/): glyph outlines
+  - [fflate](https://github.com/101arrowz/fflate): OMR project packaging
+- PDF export: [krilla](https://github.com/LaurenzV/krilla) (PDF writing), [rustybuzz](https://github.com/harfbuzz/rustybuzz) (shaping) and [fontdb](https://github.com/RazrFalcon/fontdb) (system fonts).
 
 ## License
 

@@ -12,9 +12,7 @@ import { showHelpDialog } from "./editor/help";
 import { encodeJpwabc, isTauriRuntime } from "./editor/fileio";
 import { maybeAutoCheck } from "./editor/update";
 import { PaintResources, ScorePainter } from "./layout/painter";
-import { staffOptionsOf } from "./layout/legacy";
 import { installLayoutHost, wasmPages, wireDump } from "./layout/rustlayout";
-import type { MixedOptions } from "./mixed/model";
 import { initLang, onLangChange, t } from "./i18n";
 import { setupPopover } from "./editor/toolpop";
 import { setupCompareSelect } from "./editor/comparemode";
@@ -81,14 +79,11 @@ async function boot() {
     paletteBtn: document.getElementById("btn-palette") as HTMLButtonElement | null,
   });
   app.mountEditor(codePane, SAMPLE);
-  const win = window as unknown as { __app: App; __paint: ReturnType<typeof paintProbe>; __mixedModel: unknown; __project: unknown; __xmlout: unknown; __fanqie: unknown; __book: unknown;
-    __j123: unknown; __pptx: unknown; __songbook: unknown };
+  const win = window as unknown as { __app: App; __paint: ReturnType<typeof paintProbe>; __project: unknown; __xmlout: unknown; __fanqie: unknown;
+    __j123: unknown; __pptx: unknown; __play: unknown };
   win.__app = app;
   // 统一排版器暴露（`new __paint.ScorePainter(__paint.resources)` + 请求），供混排 / 原样文档的无头回归脚本用。
   win.__paint = paintProbe(meta);
-  // 混排模型（`AccidentalStat` / `GlyphCodes` 与 TS 混排引擎）暴露，供 scripts/jianpu-semantic-check.mjs 三方比简谱语义（H6 随 TS 排版一起删）。
-  win.__mixedModel = Promise.all([import("./mixed/model"), import("./smufl/smufl"), import("./mixed/layout"), import("./mixed/staffpages")])
-    .then(([model, smufl, layout, pages]) => ({ ...model, GlyphCodes: smufl.GlyphCodes, MetaData: smufl.MetaData, ...layout, formatMixedScore: pages.formatMixedScore, layoutStaffPages: pages.layoutStaffPages }));
   // 桌面测速构建（VITE_DOLCE_BENCH=1）：按 DOLCE_BENCH 配置自动识别、量 OCR 各段后退出；正式构建整段剔除
   if (import.meta.env.VITE_DOLCE_BENCH) void import("./editor/desktopbench").then((b) => b.maybeRunDesktopBench());
   // 识别项目打包 / 自动保存草稿：`omr-project-check.mjs` 拿字节做存—开往返
@@ -98,20 +93,8 @@ async function boot() {
   // PPTX 导出（拼料 + 投影档另排一遍那个 painter）暴露。
   win.__pptx = Promise.all([import("./editor/pptxexport"), import("./editor/export")])
     .then(([pptx, exp]) => ({ ...pptx, pptxPainter: exp.pptxPainter }));
-  // 成书重排（BookStyle 注入 + 页面树 → DrawList）暴露，供 scripts/rebuild.mjs 用。
-  win.__book = Promise.all([
-    import("./pdflayout/browser"), import("./style/book"), import("./layout/painter"),
-    import("./score/play"), import("./jianpu/applybreaks"), import("./jpword/jpwfile"),
-    import("./jpword/lex"), import("./jianpu/jianpuinput"), import("./fanqie"),
-    import("./model/fromxml"), import("./score/playtypes"),
-    import("./layout/input"),
-  ]).then(([book, bookStyle, painter, play, applybreaks, jpwfile, parse, jianpuinput, fanqie, fromxml, playtypes, input]) => ({
-    ...book, ...bookStyle, ...painter, ...play, ...applybreaks, ...jpwfile, ...parse, ...jianpuinput, fanqie,
-    ...fromxml, ...playtypes, ...input,
-  }));
-  // 混排歌本（清单 + .ss → DrawPage[]）暴露，供 scripts/kl2020-book.mjs 用。
-  win.__songbook = Promise.all([import("./pdflayout/songbook"), import("./style/ss")])
-    .then(([songbook, ss]) => ({ ...songbook, ...ss }));
+  // 试听（PlaySource / 时间轴 / MIDI）与 MusicXML 读入暴露，供 play-check.mjs、sections-check.mjs 回归。
+  win.__play = Promise.all([import("./score/play"), import("./model/fromxml")]).then(([play, fromxml]) => ({ ...play, ...fromxml }));
   // 123 格式与语义模型暴露，供要在页面里排版出图的回归脚本用（只读写模型的走 Node 侧的 `out/cli/j123.js`）。
   win.__j123 = Promise.all([
     import("./abcfamily/parse"), import("./abcfamily/emit"),
@@ -592,7 +575,6 @@ function paintProbe(meta: MetaData) {
   return {
     ScorePainter,
     resources: PaintResources.fixed(meta),
-    staffOptions: (): MixedOptions => staffOptionsOf(meta),
     // 宿主对账（dev layout-node-parity.mjs）：录下当前请求、在本页 wasm 上重排
     wireDump,
     wasmPages,

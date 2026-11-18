@@ -105,11 +105,11 @@ fn run_song(case: &Value, env: &Env) -> Result<BTreeMap<&'static str, Value>, St
     Ok(got)
 }
 
-/// 混排歌本整本
-fn run_songbook(case: &Value, env: &Env) -> Result<Value, String> {
+/// 用例 / 输入 JSON（`{songs: [{xml, entry}], rules, songStart, families}`）→ `SongbookInput`
+fn songbook_input(case: &Value) -> Result<SongbookInput, String> {
     let songs = case["songs"]
         .as_array()
-        .ok_or("用例缺 songs")?
+        .ok_or("缺 songs")?
         .iter()
         .map(|s| -> Result<SongSource, String> {
             Ok(SongSource {
@@ -120,12 +120,51 @@ fn run_songbook(case: &Value, env: &Env) -> Result<Value, String> {
         .collect::<Result<Vec<_>, _>>()?;
     let rules = dolce_style::cascade::layer_from_json(&case["rules"]).map_err(|e| format!("规则读不进：{e}"))?;
     let families = case["families"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect()).unwrap_or_default();
-    let input = SongbookInput { songs, rules, song_start: case["songStart"].as_str().map(str::to_string), families };
-    let r = layout_mixed_songbook(&input, env)?;
+    Ok(SongbookInput { songs, rules, song_start: case["songStart"].as_str().map(str::to_string), families })
+}
+
+/// 混排歌本整本
+fn run_songbook(case: &Value, env: &Env) -> Result<Value, String> {
+    let r = layout_mixed_songbook(&songbook_input(case)?, env)?;
     let mut v = to_json(&r);
     // 报错只比标题（错误文本是各自的栈）
     v["errors"] = Value::Array(r.errors.iter().map(|e| json!({ "title": e.title })).collect());
     Ok(v)
+}
+
+/// `dolce songbook <input.json> --out=<result.json> [--fonts=<族名→文件.json>] [--redist=<目录>]`：混排歌本整本排版（dev `kl2020-book.mjs` 用）。
+/// 输入同 `book-draw-check` 的 `songbook` 用例（`{songs: [{xml, entry}], rules, songStart, families}`，`rules` 是 `.ss` 解析出的规则）；
+/// 出 `SongbookResult` JSON（目录页、谱面页、各曲起始页、用到的族…）。量字是系统文字引擎（Chromium 口径），`--fonts` 给的字体文件先注册。
+pub fn songbook(args: &[String]) -> i32 {
+    let pos = positional(args);
+    let (Some(path), Some(out)) = (pos.first(), flag(args, "out")) else {
+        eprintln!("用法：dolce songbook <input.json> --out=<result.json> [--fonts=<族名→文件.json>] [--redist=<目录>]");
+        return 2;
+    };
+    let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
+    let files: Vec<(String, String)> = match flag(args, "fonts") {
+        Some(f) => {
+            let v: BTreeMap<String, String> = serde_json::from_str(&std::fs::read_to_string(f).expect("读字体表")).expect("字体表要是 {族名: 路径}");
+            v.into_iter().collect()
+        }
+        None => vec![],
+    };
+    let backend = dolce_text_native::node_measure(Some(&redist), &files);
+    let mc = MeasureCtx::new(&backend);
+    let meta = MetaData::from_json(&std::fs::read_to_string(redist.join("bravura_metadata.json")).expect("读 SMuFL 元数据")).expect("SMuFL 元数据");
+    let env = Env { mc: &mc, meta: Some(&meta) };
+    let case: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("读输入")).expect("输入不是 JSON");
+    let r = songbook_input(&case).and_then(|inp| layout_mixed_songbook(&inp, &env));
+    match r {
+        Ok(r) => {
+            std::fs::write(out, serde_json::to_string(&r).expect("出 JSON")).expect("写出");
+            0
+        }
+        Err(e) => {
+            eprintln!("排不出：{e}");
+            1
+        }
+    }
 }
 
 pub fn book_draw_check(args: &[String]) -> i32 {

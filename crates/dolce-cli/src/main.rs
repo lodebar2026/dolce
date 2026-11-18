@@ -11,7 +11,7 @@
 //! - `book-parts-check`：成书部件的对拍（见 `bookparts.rs`）。
 //! - `book-meta-check`：成书书级元数据与书籍样式统计的对拍（见 `bookmeta.rs`）。
 //! - `book-rebuild`：成书 B 路整本的对拍（见 `book.rs`）。
-//! - `book-draw-check`：成书（`browser.ts` / `songbook.ts`）的对拍（见 `bookdraw.rs`）。
+//! - `book-draw-check`：成书（`browser.ts` / `songbook.ts`）的对拍（见 `bookdraw.rs`）；`songbook`：混排歌本整本排版（同文件）。
 //! - `book-pdf` / `book-measure-check` / `pdf-compare`：成书 DrawList → PDF、书级量字原生 ↔ 录制、两份 PDF 栅格比（见 `bookpdf.rs`）。
 //! - `pptx`：场景 → `.pptx`（见 `pptx.rs`）。
 //! - `font-probe` / `scene-pdf`：导出的字体样本验证、场景 → PDF 与旧链栅格比对（见 `export.rs`）。
@@ -56,8 +56,11 @@ fn main() {
         Some("font-probe") => std::process::exit(export::font_probe(&args[1..])),
         Some("scene-pdf") => std::process::exit(export::scene_pdf(&args[1..])),
         Some("layout-wire") => std::process::exit(wire::layout_wire(&args[1..])),
+        Some("songbook") => std::process::exit(bookdraw::songbook(&args[1..])),
+        Some("relayout") => std::process::exit(bookpdf::relayout_cmd(&args[1..])),
+        Some("annotation-blocks") => std::process::exit(bookpdf::annotation_blocks_cmd(&args[1..])),
         _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare | pptx | layout-wire> …");
+            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare | pptx | layout-wire | songbook | relayout | annotation-blocks> …");
             std::process::exit(2);
         }
     }

@@ -198,3 +198,58 @@ pub fn pdf_compare(args: &[String]) -> i32 {
     }
     0
 }
+
+/// `dolce relayout --in=<input.json> --out=<result.json> [--base=<目录>]`：成书 A 路（原位替换）的版面规格 → DrawList（dev `relayout.mjs --mode=text` 用）。
+/// 输入 `{style, fallback: {形状键: 字 | null}, specs: [PageSpec…], lyric2Cut?}`（`style` 是校验过的 BookStyle）；
+/// 各角色「墨迹高 ÷ 字号」按样式表指的字体原生量（`BookFonts`，与 `book-pdf` 写出端同一份）。出 `[SpecToDrawResult…]`（逐页同序）。
+pub fn relayout_cmd(args: &[String]) -> i32 {
+    let (Some(inp), Some(out)) = (flag(args, "in"), flag(args, "out")) else {
+        eprintln!("用法：dolce relayout --in=<input.json> --out=<result.json> [--base=<目录>]");
+        return 2;
+    };
+    let run = || -> Result<(), String> {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(inp).map_err(|e| format!("读 {inp}：{e}"))?).map_err(|e| format!("{inp}：{e}"))?;
+        let style = v["style"].clone();
+        let specs: Vec<dolce_book::spec::PageSpec> = serde_json::from_value(v["specs"].clone()).map_err(|e| format!("specs：{e}"))?;
+        let fallback: std::collections::HashMap<String, Option<String>> = serde_json::from_value(v["fallback"].clone()).unwrap_or_default();
+        let book = FontBook::system();
+        let fonts = BookFonts::resolve(&style, &book, Path::new(flag(args, "base").unwrap_or(".")));
+        let ink = |role: &str| fonts.ink_ratio(role, dolce_style::bookstyle::ink_sample_of(role));
+        let fb = |key: &str| fallback.get(key).cloned().flatten();
+        let opt = dolce_book::relayout::SpecToDrawOptions { ink_ratio: &ink, fallback_char: Some(&fb), lyric2_cut: v["lyric2Cut"].as_f64() };
+        let res: Vec<_> = specs.iter().map(|s| dolce_book::relayout::spec_to_draw_page(s, &style, &opt)).collect();
+        std::fs::write(out, serde_json::to_string(&res).map_err(|e| e.to_string())?).map_err(|e| format!("写 {out}：{e}"))
+    };
+    match run() {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("✗ {e}");
+            1
+        }
+    }
+}
+
+/// `dolce annotation-blocks --in=<input.json> --out=<result.json> [--base=<目录>]`：成书注解块逐条排（dev `gen-annocheck.mjs` 用）。
+/// 输入 `{style, blocks: [AnnotationOptions…]}`（`style` 是校验过的 BookStyle）；书级量字原生（`BookFonts`）。出 `[AnnotationBlock…]`（同序）。
+pub fn annotation_blocks_cmd(args: &[String]) -> i32 {
+    let (Some(inp), Some(out)) = (flag(args, "in"), flag(args, "out")) else {
+        eprintln!("用法：dolce annotation-blocks --in=<input.json> --out=<result.json> [--base=<目录>]");
+        return 2;
+    };
+    let run = || -> Result<(), String> {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(inp).map_err(|e| format!("读 {inp}：{e}"))?).map_err(|e| format!("{inp}：{e}"))?;
+        let style = v["style"].clone();
+        let blocks: Vec<dolce_book::parts::AnnotationOptions> = serde_json::from_value(v["blocks"].clone()).map_err(|e| format!("blocks：{e}"))?;
+        let book = FontBook::system();
+        let fonts = BookFonts::resolve(&style, &book, Path::new(flag(args, "base").unwrap_or(".")));
+        let res: Vec<_> = blocks.iter().map(|o| dolce_book::parts::annotation_block(&style, o, &fonts)).collect();
+        std::fs::write(out, serde_json::to_string(&res).map_err(|e| e.to_string())?).map_err(|e| format!("写 {out}：{e}"))
+    };
+    match run() {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("✗ {e}");
+            1
+        }
+    }
+}
