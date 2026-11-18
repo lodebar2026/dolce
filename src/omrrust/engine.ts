@@ -1,6 +1,7 @@
 // Rust 识别的前端入口（迁移计划 P12）：桌面版走 Tauri 命令（`src-tauri/src/omr.rs`），网页版走 wasm Worker（`worker.ts`）。
 // 两边一个接口：打开文档 → 渲染 / 核对底图 / 识别（进度、取消）→ 五线谱会话。识别、判路、会话都在 Rust（`crates/omr-engine`）。
 import type { Binary, RecognizedScore } from "../omr/types";
+import { asBuffer, tauriCore, type TauriCore } from "../common/tauricore";
 
 export interface EngineProgress {
   done: number;
@@ -90,18 +91,6 @@ export function parseRendered(buf: ArrayBuffer): { w: number; h: number; rgba: U
 }
 
 // ---------------- 桌面版（Tauri） ----------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TauriCore = { invoke: (cmd: string, args?: unknown) => Promise<any>; Channel: new <T>() => { onmessage: (m: T) => void } };
-
-function tauriCore(): TauriCore | null {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ((globalThis as any).__TAURI__?.core as TauriCore | undefined) ?? null;
-}
-
-function asBuffer(raw: ArrayBuffer | ArrayBufferView): ArrayBuffer {
-  if (raw instanceof ArrayBuffer) return raw;
-  return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer;
-}
 
 function tauriEngine(core: TauriCore): OmrEngine {
   return {

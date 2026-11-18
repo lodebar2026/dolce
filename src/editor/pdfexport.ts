@@ -77,7 +77,7 @@ export async function vectorPdf(painter: ScorePainter, bg: number, title: string
   const w = await exportWasm();
   const fonts = new w.PdfFonts(/win/i.test(navigator.platform) ? "win32" : "darwin");
   try {
-    const scenes = pageScenes(painter);
+    const scenes = await pageScenes(painter);
     const want = new Set(fonts.families(familyCss(scenes).join("\n")));
     // 同一文件（.ttc）的各面 blob 是同一份字节：按大小去重，一份只加一次
     const added = new Set<number>();

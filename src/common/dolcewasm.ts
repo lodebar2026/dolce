@@ -90,6 +90,10 @@ export interface DolceWasm {
   modelSurface(h: number, what: string, oid: number): string;
   modelHasEmbeddedLayout(h: number, measures: Uint32Array, positioned: Uint32Array): boolean;
   modelStampIds(h: number, oids: Uint32Array, ids: string[]): string | undefined;
+  /** 表层改过几次（桌面版原生排版据此判断要不要重送快照） */
+  modelSurfaceGen(h: number): number;
+  /** 表层整份快照（bincode，交给原生排版） */
+  modelSurfaceSnapshot(h: number): Uint8Array;
   modelSplitFaceName(font: string): string;
   modelToXml(doc: string, h: number, opts: string): string;
   /** `{"edit": …, "doc": …}`；`tr` 把 `Msg` 的 JSON 翻成界面文字 */

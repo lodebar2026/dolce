@@ -27,6 +27,9 @@ fn export_scene_pdf(pages: Vec<ScenePageIn>, bg: Option<f64>, title: Option<Stri
 // ── 识别（`crates/omr-engine`）：Tauri 命令在 omr.rs ─────────────────────────────
 mod omr;
 
+// ── 排版（`crates/dolce-session`）：原生排版线程与命令在 layout.rs ─────────────────
+mod layout;
+
 // 会话池在 `omr::infer`（每个模型 `DOLCE_OCR_SESS` 个会话 × `DOLCE_OCR_THREADS` 线程，缺省 3 × 3）。
 // 实测（10 核 Mac，现跑合唱谱）1×4 → 3×3：宁静 19.2→17.1 s、破碎扫描 37.8→32.1 s；2×4、2×2 介于其间。会话按需建（没争用不建第二个）。
 
@@ -134,6 +137,7 @@ pub fn run() {
         .manage(omr::OmrState::default())
         .setup(|app| {
             omr::setup(app.handle());
+            layout::setup(app.handle());
             Ok(())
         });
     #[cfg(target_os = "macos")]
@@ -141,6 +145,12 @@ pub fn run() {
     #[cfg(not(feature = "bench"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         export_scene_pdf,
+        layout::layout_surface,
+        layout::layout_surface_gen,
+        layout::layout_run,
+        layout::layout_get,
+        layout::layout_free,
+        layout::layout_clear_measure,
         omr::omr_open,
         omr::omr_close,
         omr::omr_render,
@@ -154,6 +164,12 @@ pub fn run() {
     #[cfg(feature = "bench")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         export_scene_pdf,
+        layout::layout_surface,
+        layout::layout_surface_gen,
+        layout::layout_run,
+        layout::layout_get,
+        layout::layout_free,
+        layout::layout_clear_measure,
         omr::omr_open,
         omr::omr_close,
         omr::omr_render,

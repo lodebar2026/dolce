@@ -153,7 +153,7 @@ pub fn layout_staff(doc: &str, surface: u32, req: &str) -> Result<Layout, JsValu
     let h = host()?;
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
     let req: StaffRequest = parse("StaffRequest", req)?;
-    with_surface(surface, |s| layout::layout_staff_doc(&doc, s.map(|s| &*s), &req, &env(h))).map(Layout).map_err(fail)
+    with_surface(surface, |s| layout::layout_staff_doc(&doc, s, &req, &env(h))).map(Layout).map_err(fail)
 }
 
 /// 自然量宽（乐句重排的尺子）：回 `{"width": 版心宽, "spans": [[id, {x0, x1, x1b}], …]}`。
@@ -173,7 +173,7 @@ pub fn engraved_music_xml(doc: &str, surface: u32, req: &str) -> Result<String, 
     let h = host()?;
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
     let req: layout::EngraveRequest = parse("EngraveRequest", req)?;
-    with_surface(surface, |s| layout::engraved_music_xml(&doc, s.map(|s| &*s), &req, &env(h))).map_err(fail)
+    with_surface(surface, |s| layout::engraved_music_xml(&doc, s, &req, &env(h))).map_err(fail)
 }
 
 /// 五线谱的断句尺子：回 `{"width": 版心宽, "spans": [[源元素 id, x0, x1], …]}`。
@@ -182,6 +182,6 @@ pub fn staff_chord_spans(doc: &str, surface: u32, req: &str) -> Result<String, J
     let h = host()?;
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
     let req: layout::StaffSpansRequest = parse("StaffSpansRequest", req)?;
-    let s = with_surface(surface, |s| layout::staff_chord_spans(&doc, s.map(|s| &*s), &req, &env(h))).map_err(fail)?;
+    let s = with_surface(surface, |s| layout::staff_chord_spans(&doc, s, &req, &env(h))).map_err(fail)?;
     Ok(to_json(&serde_json::json!({ "width": s.width, "spans": s.by_id })))
 }

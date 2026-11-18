@@ -20,6 +20,8 @@ struct Handle {
     surface: Surface,
     /// 原文长度（按它估占用）
     size: usize,
+    /// 表层改过几次（桌面版原生排版按它判断要不要重送快照，`modelSurfaceGen`）
+    gen: u32,
     /// 最近一次用到的时刻（淘汰用）
     last: u64,
 }
@@ -50,7 +52,7 @@ impl Registry {
         self.tick += 1;
         let h = self.next;
         self.total += size;
-        self.map.insert(h, Handle { doc, surface, size, last: self.tick });
+        self.map.insert(h, Handle { doc, surface, size, gen: 0, last: self.tick });
         while self.total > BUDGET && self.map.len() > KEEP {
             let Some((&old, _)) = self.map.iter().filter(|(&k, _)| k != h).min_by_key(|(_, x)| x.last) else { break };
             self.remove(old);
@@ -107,8 +109,30 @@ pub(crate) fn to_json<T: Serialize + ?Sized>(v: &T) -> String {
 }
 
 /// 句柄 0 = 没有表层（文本来源）
-pub(crate) fn with_surface<R>(h: u32, f: impl FnOnce(Option<&mut Surface>) -> R) -> R {
-    with_handle(h, |x| f(x.map(|x| &mut x.surface)))
+pub(crate) fn with_surface<R>(h: u32, f: impl FnOnce(Option<&Surface>) -> R) -> R {
+    with_handle(h, |x| f(x.map(|x| &x.surface)))
+}
+
+/// 要改表层的（改完代号加一）
+fn with_surface_mut<R>(h: u32, f: impl FnOnce(Option<&mut Surface>) -> R) -> R {
+    with_handle(h, |x| {
+        f(x.map(|x| {
+            x.gen += 1;
+            &mut x.surface
+        }))
+    })
+}
+
+/// 表层的代号（改一次加一；句柄没了回 0）。
+#[wasm_bindgen(js_name = modelSurfaceGen)]
+pub fn model_surface_gen(h: u32) -> u32 {
+    with_handle(h, |x| x.map_or(0, |x| x.gen))
+}
+
+/// 表层整份快照（bincode，桌面版交给原生排版；句柄没了回空）。
+#[wasm_bindgen(js_name = modelSurfaceSnapshot)]
+pub fn model_surface_snapshot(h: u32) -> Vec<u8> {
+    with_surface(h, |s| s.map(|s| bincode::serialize(s).expect("表层可序列化")).unwrap_or_default())
 }
 
 /// MusicXML 文本 → `[句柄, ScoreDoc 的 JSON]`（`doc.source` 不带，门面自己记）。读不出抛 `err.xmlParse`。
@@ -226,7 +250,7 @@ pub fn model_surface(h: u32, what: &str, oid: u32) -> String {
 /// 把识别 id 写进表层原节点的 `id` 属性（`oids[k]` 的节点写 `ids[k]`），回整份 XML；一个也没写上回 `null`（`omrlinks.ts::stampXmlIds`）。
 #[wasm_bindgen(js_name = modelStampIds)]
 pub fn model_stamp_ids(h: u32, oids: Vec<u32>, ids: Vec<String>) -> Option<String> {
-    with_surface(h, |s| {
+    with_surface_mut(h, |s| {
         let s = s?;
         let mut any = false;
         for (o, id) in oids.iter().zip(&ids) {
@@ -281,7 +305,7 @@ pub fn model_to_xml(doc: &str, h: u32, opts: &str) -> Result<String, JsValue> {
         layout: None,
         rids: None,
     };
-    with_surface(h, |s| toxml::score_doc_to_music_xml(&doc, s.map(|s| &*s), &o).map_err(|e| msg_err(&e)))
+    with_surface(h, |s| toxml::score_doc_to_music_xml(&doc, s, &o).map_err(|e| msg_err(&e)))
 }
 
 /// 编辑钩子：表层作废落到句柄的表层上（`hooks` 为假时不作废，同 TS 没传钩子）；提示文字回调 TS 的 `msgText`。
@@ -313,7 +337,7 @@ impl EditHooks for JsHooks<'_> {
 pub fn model_edit(doc: &str, h: u32, cmd: &str, hooks: bool, tr: Option<js_sys::Function>) -> Result<String, JsValue> {
     let mut doc: ScoreDoc = parse("ScoreDoc", doc)?;
     let cmd: EditCmd = parse("EditCmd", cmd)?;
-    let r = with_surface(if hooks { h } else { 0 }, |surface| {
+    let r = with_surface_mut(if hooks { h } else { 0 }, |surface| {
         let mut hk = JsHooks { surface, tr: tr.as_ref() };
         edit::apply(&mut doc, &cmd, &mut hk)
     });
@@ -612,7 +636,7 @@ pub fn model_project_for_jianpu(song: &str) -> Result<Option<String>, JsValue> {
 #[wasm_bindgen(js_name = modelPageInfo)]
 pub fn model_page_info(song: &str, h: u32) -> Result<String, JsValue> {
     let song: Song = parse("Song", song)?;
-    let fonts = with_surface(h, |s| pagemeta::song_header_fonts(&song, s.map(|s| &*s)));
+    let fonts = with_surface(h, |s| pagemeta::song_header_fonts(&song, s));
     Ok(to_json(&json!({
         "page": page_json(pagemeta::song_page(&song)),
         "staffSize": pagemeta::song_staff_size(&song),
@@ -638,7 +662,7 @@ pub fn model_header_role_of_credit(kind: Option<String>, justify: Option<String>
 #[wasm_bindgen(js_name = modelWithPageMeta)]
 pub fn model_with_page_meta(doc: &str, h: u32) -> Result<Option<String>, JsValue> {
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(with_surface(h, |s| match pagemeta::with_page_meta(&doc, s.map(|s| &*s)) {
+    Ok(with_surface(h, |s| match pagemeta::with_page_meta(&doc, s) {
         std::borrow::Cow::Borrowed(_) => None,
         std::borrow::Cow::Owned(d) => Some(to_json(&d)),
     }))

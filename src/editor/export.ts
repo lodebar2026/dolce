@@ -109,7 +109,7 @@ export async function exportMidi(app: App): Promise<void> {
 export async function exportPptx(app: App): Promise<void> {
   // 一律按**投影档**出片（两种格式同一条投影档排版）：屏幕在简谱档也导得出 PPT 观感，
   // 切到投影档预览则是所见即所得。字号/纸张取投影档那一套设置。
-  const bytes = await buildPptx((await pptxPainter(app)).pptxSource, app.style.colorsOf("expanded").bg);
+  const bytes = await buildPptx(await (await pptxPainter(app)).pptxSource(), app.style.colorsOf("expanded").bg);
   await saveBytes(
     bytes,
     `${baseName(app)}.pptx`,
@@ -247,7 +247,7 @@ export async function exportLayoutPdf(app: App): Promise<void> {
     const outPath = await save({ defaultPath: `${name}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
     if (!outPath) return;
     // 场景交 Rust 写出端（`dolce_export::scene`）：真文字（可选可搜）、字体嵌子集，嵌不了的转曲并叠不可见文字层
-    const scenes = pageScenes(painter);
+    const scenes = await pageScenes(painter);
     const pages = scenes.map((scene, i) => ({ scene, ...painter.pageSize(i) }));
     await invoke("export_scene_pdf", { pages, bg: app.style.bgColor, title: name, outPath });
   } else {

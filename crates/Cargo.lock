@@ -873,6 +873,7 @@ dependencies = [
 name = "dolce-wasm"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "console_error_panic_hook",
  "dolce-base",
  "dolce-engrave",
@@ -899,6 +900,7 @@ name = "dolce-xml"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "serde",
 ]
 
 [[package]]

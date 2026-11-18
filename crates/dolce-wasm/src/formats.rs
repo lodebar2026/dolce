@@ -49,7 +49,7 @@ fn names(v: impl IntoIterator<Item = Feature>) -> String {
 #[wasm_bindgen(js_name = formatsFeaturesUsed)]
 pub fn formats_features_used(doc: &str, h: u32) -> Result<String, JsValue> {
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(with_surface(h, |s| names(capability::features_used(&doc, s.map(|s| &*s)))))
+    Ok(with_surface(h, |s| names(capability::features_used(&doc, s))))
 }
 
 /// 存成 `target` 会丢掉的特性（JSON 字符串数组；名字与排序门面按界面语言做）
@@ -57,7 +57,7 @@ pub fn formats_features_used(doc: &str, h: u32) -> Result<String, JsValue> {
 pub fn formats_plan_save(doc: &str, h: u32, target_name: &str) -> Result<String, JsValue> {
     let t = target(target_name)?;
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(with_surface(h, |s| names(capability::plan_save(&doc, t, s.map(|s| &*s)))))
+    Ok(with_surface(h, |s| names(capability::plan_save(&doc, t, s))))
 }
 
 /// 目标格式装不下的特性（能力表那一行）

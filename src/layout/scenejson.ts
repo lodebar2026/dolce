@@ -104,7 +104,7 @@ export function sceneNode(it: PageItem): Json {
 }
 
 /** 当前结果的各页场景（排版在 Rust，场景直接取 wasm 那份）。 */
-export function pageScenes(painter: ScorePainter): Json[] {
+export function pageScenes(painter: ScorePainter): Promise<Json[]> {
   return painter.scenes();
 }
 

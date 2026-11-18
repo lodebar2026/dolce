@@ -1,8 +1,8 @@
 // 唯一的排版器 `ScorePainter`：按请求排版（简谱 / 投影、五线谱 / 混排），持有提交后的结果、
 // 页面渲染（DOM 映射）、点选与播放高亮索引。
 //
-// 排版在 Rust（`crates/dolce-session/src/layout.rs`，经 dolce-wasm 同步调；量字回调 TS 的量字后端，见 `rustlayout.ts`）：
-// 这里只管请求版本、结果提交与交互状态。排好的一份留在 wasm 里（`DolceLayoutWasm` 句柄），按页取 SVG 字符串挂载，
+// 排版在 Rust（`crates/dolce-session/src/layout.rs`；网页经 dolce-wasm、桌面版异步那路走原生，见 `rustlayout.ts`）：
+// 这里只管请求版本、结果提交与交互状态。排好的一份留在宿主那边（`LaidHandle`），按页取 SVG 字符串挂载，
 // 身份表（每项记着 SVG 里的元素先序号）建 `ScoreIndex`，挂载后对上 DOM 元素。
 //
 // 点选 / 高亮部分移植自 mp/layout/draw.kt。
@@ -12,11 +12,10 @@ import type { PlayItem } from "../score/playtypes";
 import { MetaData } from "../smufl/smufl";
 import type { StyleSheet } from "../style/sheet";
 import { dolce } from "../common/dolce";
-import type { DolceLayoutWasm } from "../common/dolcewasm";
 import { docJson } from "../model/rustdoc";
 import { ScoreIndex, type Hit, type IndexNode } from "./scoreindex";
 import { Playhead, spanIn, svgBox } from "./playhead";
-import type { LaidInfo, SceneHit } from "./rustlayout";
+import { layoutAsync, layoutSync, type LaidHandle, type LayoutWire } from "./rustlayout";
 import type { HeaderPart } from "./render";
 
 /** 五线谱播放线的宽（tenths，线距 10）：两个符头宽上下，各音一样宽 */
@@ -128,28 +127,35 @@ export function measureDocument(
 
 const isStaffRequest = (r: PaintRequest): r is StaffPaintRequest => r.view === "staff" || r.view === "mixed";
 
-/** 一份请求交给 wasm 排（同步）。 */
-function layoutOf(req: PaintRequest): DolceLayoutWasm {
+/** 一份请求过边界的形状（Rust `StaffRequest` / `JianpuRequest`）。 */
+function wireOf(req: PaintRequest): LayoutWire {
   if (isStaffRequest(req)) {
-    const { json, h } = docJson(req.doc);
-    return dolce().layoutStaff(json, h, JSON.stringify({
-      view: req.view,
-      style: req.style ?? null,
-      page: req.page ?? null,
-      hideBarNumber: req.hideBarNumber,
-      jianpuPart: req.jianpuPart ?? 0,
-      sourceBreaks: req.sourceBreaks ?? false,
-    }));
+    return {
+      kind: "staff",
+      doc: req.doc,
+      req: {
+        view: req.view,
+        style: req.style ?? null,
+        page: req.page ?? null,
+        hideBarNumber: req.hideBarNumber,
+        jianpuPart: req.jianpuPart ?? 0,
+        sourceBreaks: req.sourceBreaks ?? false,
+      },
+    };
   }
-  return dolce().layoutJianpu(docJson(req.doc).json, JSON.stringify({
-    view: req.view,
-    style: req.style,
-    noReflow: req.noReflow ?? false,
-    breakDesc: req.breakDesc ?? null,
-    page: req.page ?? null,
-    snippet: req.snippet ?? false,
-    ...(req.ink !== undefined ? { ink: req.ink } : {}),
-  }));
+  return {
+    kind: "jianpu",
+    doc: req.doc,
+    req: {
+      view: req.view,
+      style: req.style,
+      noReflow: req.noReflow ?? false,
+      breakDesc: req.breakDesc ?? null,
+      page: req.page ?? null,
+      snippet: req.snippet ?? false,
+      ...(req.ink !== undefined ? { ink: req.ink } : {}),
+    },
+  };
 }
 
 // ---------------------------------------------------------------- 排版器
@@ -157,18 +163,13 @@ function layoutOf(req: PaintRequest): DolceLayoutWasm {
 /** 可视化编辑选中挂在音符上的子项的角色（就是身份标签的 kind）。 */
 export type VisualPartRole = "aug-dot" | "harmony" | "deco" | "annotation";
 
-/** 一份提交的结果（wasm 句柄 + 概要 + 各页身份表）。 */
-interface Committed {
-  laid: DolceLayoutWasm;
-  info: LaidInfo;
-}
 
 export class ScorePainter {
   /** 最近一次提交的简谱档；还没排过简谱为 null。 */
   jianpuView: "original" | "expanded" | null = null;
   pageWidth = 0;
   pageHeight = 0;
-  private cur: Committed | null = null;
+  private cur: LaidHandle | null = null;
   /** 身份索引（按排版给的身份表建）：试听高亮、点选、可视化编辑查它。简谱、五线谱 / 混排同一份。 */
   private index: ScoreIndex = ScoreIndex.empty();
   /** 试听的竖直播放线（各视图同一种，当前在哪页的 svg 里就挂在哪页）。 */
@@ -187,9 +188,9 @@ export class ScorePainter {
   }
 
   /** 导出 PPTX 用的页面（`editor/pptxexport.ts::buildPptx`）：简谱排的那一份；还没排过简谱时为空。 */
-  get pptxSource(): { pages: Json[]; stackGap: number | undefined; pageWidth: number; pageHeight: number } {
+  async pptxSource(): Promise<{ pages: Json[]; stackGap: number | undefined; pageWidth: number; pageHeight: number }> {
     const jp = this.cur?.info.renderer === "jianpu";
-    return { pages: jp ? this.scenes() : [], stackGap: this.cur?.info.stackGap, pageWidth: this.pageWidth, pageHeight: this.pageHeight };
+    return { pages: jp ? await this.scenes() : [], stackGap: this.cur?.info.stackGap, pageWidth: this.pageWidth, pageHeight: this.pageHeight };
   }
 
   /** 当前结果是哪一路画的。 */
@@ -208,9 +209,9 @@ export class ScorePainter {
     const v = ++this.version;
     await this.resources.prepare();
     if (v !== this.version) return "superseded";
-    let laid: DolceLayoutWasm;
+    let laid: LaidHandle;
     try {
-      laid = layoutOf(request);
+      laid = await layoutAsync(wireOf(request));
     } catch (e) {
       if (v !== this.version) return "superseded";
       throw e;
@@ -227,15 +228,13 @@ export class ScorePainter {
   loadSync(request: SyncPaintRequest): void {
     if (!this.resources.ready()) throw new Error("排版资源还没准备好");
     ++this.version;
-    this.commit(layoutOf(request), request);
+    this.commit(layoutSync(wireOf(request)), request);
   }
 
-  private commit(laid: DolceLayoutWasm, req: PaintRequest): void {
-    const info = JSON.parse(laid.info()) as LaidInfo;
-    const tables: SceneHit[][] = [];
-    for (let i = 0; i < info.pages.length; i++) tables.push(JSON.parse(laid.hits(i)) as SceneHit[]);
-    this.cur?.laid.free();
-    this.cur = { laid, info };
+  private commit(laid: LaidHandle, req: PaintRequest): void {
+    const info = laid.info;
+    this.cur?.free();
+    this.cur = laid;
     if (info.renderer === "jianpu") {
       this.jianpuView = req.view as "original" | "expanded";
       this.pageWidth = info.pages[0]?.w ?? 0;
@@ -244,13 +243,13 @@ export class ScorePainter {
     this.pageEls = [];
     this.nodeOfEl = new WeakMap();
     this.playhead.reset();
-    this.index = ScoreIndex.build(tables);
+    this.index = ScoreIndex.build(laid.hits);
   }
 
   /** 让未完成的请求作废，放掉持有的结果与 DOM 引用。 */
   dispose(): void {
     ++this.version;
-    this.cur?.laid.free();
+    this.cur?.free();
     this.cur = null;
     this.pageEls = [];
     this.nodeOfEl = new WeakMap();
@@ -264,20 +263,18 @@ export class ScorePainter {
 
   /** 简谱这一路定稿的栅格（样式快照脚本核对用，JSON）；别的路为 null。 */
   get documentMetrics(): Json | null {
-    const s = this.cur?.laid.gridJson();
-    return s ? (JSON.parse(s) as Json) : null;
+    return this.cur?.grid() ?? null;
   }
 
   /** 简谱这一路的规范化定位结构（回归脚本核对几何用，JSON）；别的路为 null。 */
   placedJson(): Json | null {
-    const s = this.cur?.laid.placedJson();
-    return s ? (JSON.parse(s) as Json) : null;
+    return this.cur?.placed() ?? null;
   }
 
   /** 各页场景（`crates/dolce-scene` 的 `Page` JSON；导出 PDF / PPTX 交 Rust 写出端）。 */
-  scenes(): Json[] {
+  scenes(): Promise<Json[]> {
     const c = this.cur;
-    return c ? c.info.pages.map((_, i) => JSON.parse(c.laid.scene(i)) as Json) : [];
+    return c ? Promise.all(c.info.pages.map((_, i) => c.scene(i))) : Promise.resolve([]);
   }
 
   /** 元素 `id` 的音符格：简谱两条路按第 `pass` 遍（找不到那一遍取第一个），五线谱 / 混排取五线谱层那一组。 */
@@ -460,7 +457,7 @@ export class ScorePainter {
   pageSvg(pageIndex: number): string {
     const c = this.cur;
     if (!c || pageIndex < 0 || pageIndex >= c.info.pages.length) throw new Error(`ScorePainter: 没有第 ${pageIndex + 1} 页`);
-    return c.laid.svg(pageIndex);
+    return c.svg(pageIndex);
   }
 
   /** 第 `pageIndex` 页渲染成独立的 `<svg>`（viewBox 是原生坐标：简谱排版单位 / 五线谱 tenths）。 */

@@ -10,7 +10,7 @@ use dolce_xml::{NodeId, Tree, XmlDoc};
 use std::collections::HashMap;
 
 /// 绑定槽位：缺省 `""`；`Part` 另有 `"score-part"`；`Mark` 有 `"start"` / `"stop"`；`Direction` 另有 `"part"`。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Slot {
     Default,
     ScorePart,
@@ -33,11 +33,25 @@ impl Slot {
 }
 
 /// 一份 MusicXML 的表层：原树与「对象 → 槽位 → 原节点」旁表。
-#[derive(Clone, Debug)]
+/// 可序列化（桌面版网页侧 wasm 里的表层整份快照给原生排版，`dolce-wasm::modelSurfaceSnapshot`）；旁表写成键值对数组。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Surface {
     pub xml: XmlDoc,
+    #[serde(with = "table_pairs")]
     table: HashMap<(Oid, Slot), NodeId>,
     next_oid: u32,
+}
+
+mod table_pairs {
+    use super::{NodeId, Oid, Slot};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+    pub fn serialize<S: Serializer>(m: &HashMap<(Oid, Slot), NodeId>, s: S) -> Result<S::Ok, S::Error> {
+        m.iter().collect::<Vec<_>>().serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<(Oid, Slot), NodeId>, D::Error> {
+        Ok(Vec::<((Oid, Slot), NodeId)>::deserialize(d)?.into_iter().collect())
+    }
 }
 
 impl Surface {

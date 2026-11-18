@@ -34,11 +34,11 @@ impl fmt::Display for XmlError {
 
 impl std::error::Error for XmlError {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct NodeId(pub u32);
 
 /// 元素之外的节点种类（`data` 是正文；处理指令是 `<?` 与 `?>` 之间的原文）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TextKind {
     Text,
     Cdata,
@@ -46,13 +46,13 @@ pub enum TextKind {
     Pi,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Attr {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Element {
     pub tag: String,
     pub attrs: Vec<Attr>,
@@ -63,13 +63,13 @@ pub struct Element {
     pub end: i64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NodeData {
     Element(Element),
     Text { kind: TextKind, data: String },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     pub parent: Option<NodeId>,
     pub data: NodeData,
@@ -98,7 +98,7 @@ impl From<String> for Kid {
 }
 
 /// 节点 arena。
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Tree {
     nodes: Vec<Node>,
 }
@@ -441,7 +441,7 @@ pub fn escape_attr(s: &str) -> String {
 }
 
 /// 整份文档：树、根、根前根后的原文。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct XmlDoc {
     pub tree: Tree,
     pub root: NodeId,
