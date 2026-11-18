@@ -26,3 +26,4 @@ export * from "../pdflayout/booktemplate";
 export * from "../pdflayout/manifest";
 export { creatorOf, creatorTypeOf, META_KEYS } from "../model/metakeys";
 export type { Binary, Component, Rect, JpNum, StaffRow, RecognizedScore, TextRegion } from "../omr/types";
+export { bookMetaCases, pageRuns } from "./bookmetaref";
