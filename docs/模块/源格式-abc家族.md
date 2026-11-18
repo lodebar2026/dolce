@@ -101,7 +101,7 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   分支间不继承 tie、破碎节奏、增时线宿主与符杠分组，开着的弧/多连音报诊断后丢掉；
   ③ **小节内起点在投影时才算**（`xmlproject.ts`）——那时才折算完多连音与 divisions 放大，
   各声部一把游标，小节长度取各分支**最远终点**而不是相加，`onset` 落成 `<backup>`；
-  ④ 五线谱按声部定符干（主分支朝上、其余朝下，`mixed/layout.ts::loadVoiceStems`），
+  ④ 五线谱按声部定符干（主分支朝上、其余朝下，`crates/dolce-layout-staff/src/read.rs::load_voice_stems`），
   自动分组的符杠不再按音高把两层统一回一个方向；⑤ 写出端按声部分段、段间写 `&`。
   分支不等长由拍数自检逐分支报（`dolce-model::beatcheck`），不静默补齐。
   写出端给短的分支补 `x` 时按**实际时值**量各分支（`emit.rs::measure_body`）：简谱来源的多连音只写在记号上（名义时值、不带 `time_mod`），
@@ -129,7 +129,7 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   写出端两种方言都逐系统交错写。
 
 - **写 ABC 时按拍连写**（`emit.rs::auto_beam_groups`）：源里没有空白分组（123、文本谱、MusicXML 来源）时，带减时线、
-  不超过一拍的音按拍位归组连写（与简谱减时线同一份判据 `engrave/beatgroup.ts`，Rust 一份在 `dolce-model/src/beatgroup.rs`；多连音整组按起点那拍）。
+  不超过一拍的音按拍位归组连写（与简谱减时线同一份判据 `dolce-model/src/beatgroup.rs`，排版经 `dolce-engrave/src/beatgroup.rs` 引用；多连音整组按起点那拍）。
   以前一律空格隔开，读回来全是单独的符尾。
 
 ## 回归

@@ -17,9 +17,9 @@
 
 | 消费者 | 取法 | 引擎内部结构 |
 |---|---|---|
-| 简谱引擎（`layout/jianpu/`：各格式的简谱 / 投影档、PPTX、成书） | 排版行视图 `jianpu/slots.ts::docView` | `layout/jianpu/place/` 的定位结构（`PlacedPage` / `PlacedGroup` / `PlacedVoice`） |
-| jianpu-ly 写出、断句量宽、识别对歌词 | `jianpu/jianpuinput.ts` 投影出的 `JScore`（`layout/input.ts`；简谱形状 / `.jpwabc` 两个分支） | — |
-| 五线谱混排（`mixed/`） | `mixed/layout.ts::layoutStaff` 建版面态；MusicXML 原文的坐标/符干/字体经 `xmlsurface.ts` 查询 | `StaffLayout` 及各 `*Layout` 节点（`src` 引用模型元素） |
+| 简谱引擎（`crates/dolce-layout-jianpu`：各格式的简谱 / 投影档、PPTX、成书） | 排版行视图 `crates/dolce-view/src/slots.rs::doc_view`（门面 `jianpu/slots.ts::docView`） | `dolce-layout-jianpu/src/place/` 的定位结构（`PlacedPage` / `PlacedGroup` / `PlacedVoice`） |
+| jianpu-ly 写出、断句量宽、识别对歌词 | `jianpu/jianpuinput.ts` 投影出的 `JScore`（`jianpu/input.ts`；简谱形状 / `.jpwabc` 两个分支） | — |
+| 五线谱混排（`crates/dolce-layout-staff`） | `read.rs::layout_staff` 建版面态；MusicXML 原文的坐标/符干/字体经 `xmlsurface.ts` 查询 | `StaffLayout` 及各 `*Layout` 节点（`src` 引用模型元素） |
 | 试听 / MIDI | `dolce-view/src/playdoc.rs::play_source_of_doc` / `dolce-view/src/playsong.rs::play_source_of_song` | `crates/dolce-play/src/timeline.rs` |
 | 断句 | `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` 拼断句输入（带 `idOf`） | `crates/dolce-play/src/phrase.rs` |
 
@@ -33,7 +33,7 @@
 | `src/model/doc.ts` | 类型定义。层级：`ScoreDoc → Song → Part → Measure → Element` |
 | `src/model/helpers.ts` | 遍历/查询/构造 |
 | `src/model/msg.ts` | **给界面的提示只给键与参数**（`ModelMsg`）：`edit.ts` 的报错（`{ error: ModelMsg }`）、`ModelError`（读写失败）、解析诊断（`Diagnostic.msg`）、节拍提示与默认声部名都经它；翻译函数由 `i18n/index.ts` 加载时注册（`setMsgTranslator`），显示时 `msgText` 取当前语言的字。模型层对 i18n 只许类型引用（`deps-check.mjs` 守门） |
-| `src/model/marknames.ts` | 记号名字表（力度名、术语）：文本谱 / 123 / ABC / jianpu-ly / MusicXML 投影共用；字形在 `engrave/jpglyph.ts` |
+| `src/model/marknames.ts` | 记号名字表（力度名、术语）：文本谱 / 123 / ABC / jianpu-ly / MusicXML 投影共用；字形在 `crates/dolce-engrave/src/jpglyph.rs` |
 | `src/model/breaks.ts` | 断行读写对（Rust `crates/dolce-model/src/breaks.rs` 的门面，补丁就地改）：`breaksOf`（模型 → 行首元素）/ `applyBreaks`（行首元素 → 模型，替换原有断行） |
 | `src/model/jianpu.ts` | **简谱语义层**：音高↔度数、相对调号临时记号延续（`AccidentalCarry`，两个方向共用）、`attrsAt`、减时线/增时线/附点（`jianpuShape`）、和弦原文、旋律取音、延音线/跨元素记号按 id 找对端 |
 | `src/model/fromxml.ts` | ← MusicXML（**直通**：语义进模型，每个模型对象绑到原节点） |
@@ -67,7 +67,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
 - **绝对音高与简谱度数并存、可互推**。`Note.pitch`（MusicXML 侧）+ `Note.degree`（123 侧），
   换算走简谱语义层 `jianpu.ts::pitchFromDegree` / `degreeFromPitch`，正向**直接转调
   `score/jppitch.ts::jpPitch`**——那个文件开头就立了规矩「两份实现一旦漂移，往返数字就会错，故只留这一处」。
-  简谱引擎输入与混排简谱叠层都调语义层（`jianpu-semantic-check` 三方逐音比）。
+  简谱引擎输入与混排简谱叠层都调语义层。
 - **临时记号只按音高延续判，不照抄来源的提醒记号**；旋律音与全部音各一份延续状态，任一要印就印
   （判据与定性清单在 `jianpu.ts` 文件头）。
   已验：`fifths -7..7` 的无点「1」与 `jppitch.ts` 注释记载的值逐个吻合（bB=58、bA=68、#C=61、

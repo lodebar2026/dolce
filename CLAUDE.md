@@ -1,10 +1,12 @@
 # 悦谱 Dolce
 
-简谱与五线谱的编辑、识谱与排版（123 / JP-Word `.jpwabc` / 文本谱 / ABC / MusicXML）：Tauri 2 + TypeScript + SVG。
+简谱与五线谱的编辑、识谱与排版（123 / JP-Word `.jpwabc` / 文本谱 / ABC / MusicXML）：Tauri 2 + Rust + TypeScript + SVG。
 旧名 jpeditor 已全部改掉：仓库、在线版地址、桌面版标识符 `io.github.lodebar2026.dolce`、Cargo 包名 `dolce`、localStorage 键前缀 `dolce-*`、
 草稿库 IndexedDB 名 `dolce`、MusicXML 写出端署名 `Dolce`。旧名下的设置与草稿不迁移。
-排版、渲染、模型、编辑全在前端 TS；识别全在 Rust（`crates/`，桌面原生、网页 wasm、命令行 `omr-cli`），TS 只做结果落地（见架构决策 A3/A4）。
-模型 / 格式 / 排版正迁 Rust（分支 `rust-model`）：演唱顺序、断句、时间轴、MIDI、`.jcx` 编解码、ABC 家族（123/ABC/jcx）读写、格式能力表、断行、简谱排版行视图、由 `ScoreDoc` 拼演唱顺序 / 试听 / 断句输入与 `.jpwabc` 写出输入、断句之后的收拾与选档、断点落行与重排写回原文、逐遍走小节、双向定位索引建表、小节时值自检、MusicXML ↔ 简谱两向投影、谱里的纸与页眉字号、段落顺序搬运已在 `crates/dolce-*`，识别结果直出模型（简谱 / 五线谱建模器，五线谱的 MusicXML 也由唯一写出端写）在 `crates/omr-todoc`，经 dolce-wasm 同步调（网页 `main.ts` 开机载、Node 由 `cli/dolcewasm.node.ts` 载），TS 只留门面。
+模型、格式、排版、渲染、成书、导出在 Rust（`crates/dolce-*`），识别也在 Rust（`crates/omr-*`；桌面原生、网页 wasm、命令行 `dolce` / `omr-cli`）；
+TS 只留编辑器界面、交互与门面（见架构决策 A3/A4）。网页排版走 dolce-wasm（`main.ts` 开机载，量字回调浏览器 canvas），桌面版走 Tauri 原生排版线程（系统量字），
+Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量字回调原生模块 `native/textmeasure`（Rust 浏览器口径层，`npm run build:native`）。
+识别结果直出模型在 `crates/omr-todoc`。
 
 文档分四层，**动某一块之前先翻对应那层**——那些阈值和判据多半是拿具体曲子换来的，别照直觉改：
 
@@ -37,9 +39,9 @@
 - 数 XML 元素的正则一律写 `<name[ >]`（否则 `<note>` 会命中 `<notehead>`）。
 - **Bravura（SMuFL）的字体盒不能当墨迹盒用**：它的全局 ascent−descent 约 4 em，按字体度量算高度、
   或对 `<text>` 调 `getBBox()`（得到的是整行字体盒），一个升降号、三连音数字、力度字形就把行高/裁剪框撑出几个字号的空白。
-  排版期用紧包围盒——`SmuflText` 自带 bound、音乐段 `TextFrame.inkBound`、字形盒走 `smuflMeta.getBBox(glyph)`；
+  排版期用紧包围盒——场景里 SMuFL 字（`dolce-scene` 的 `Smufl`）只用元数据紧盒、文字节点 `ink_bound`、字形盒走 `dolce-smufl` 的 `MetaData::bbox`；
   DOM 侧量墨迹一律走 `common/measure.browser.ts::inkOf`（canvas `measureText` 的 `actualBoundingBox*`，文字基线在本地 y=0）。
   **WebKit（桌面版 WKWebView、Safari）的 `actualBoundingBox*` 不是墨迹**（左恒 0、右是前进宽、上下沿截到基线，「-」量成 0.29 em 高），
   `inkOf` 探到这种实现就改成离屏画布逐像素量；别再直接调 `measureText` 取墨迹。
-- `window.__app` / `window.__book` 运行时暴露（`src/main.ts`）供无头校验用。
+- `window.__app` / `window.__play` 等运行时暴露（`src/main.ts`）供无头校验用。
 - Tauri 新增插件要同改的四处见 [编辑器](docs/模块/编辑器.md)「Tauri 外壳」；其余见各模块页。

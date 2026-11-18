@@ -277,7 +277,7 @@ block 用 `line-height`（倍数）那两套已经合并——同一件事分两
 
 | 属性 | 值 | 谁读 |
 |---|---|---|
-| `song-start` | `new-page` \| `continue` | 混排歌本（`pdflayout/songbook.ts`）：每首另起一页 / 接排，放不下才换页；接排时逐曲按清单 `meta["layout.new-page"]` |
+| `song-start` | `new-page` \| `continue` | 混排歌本（`crates/dolce-book/src/songbook.rs`）：每首另起一页 / 接排，放不下才换页；接排时逐曲按清单 `meta["layout.new-page"]` |
 | `number-baseline` | 数（pt） | 成书：曲号基线，半页起排时标题块整体下移的参照 |
 | `first-system-top` / `cont-system-top` | 数（pt） | 成书：首页 / 续页第一条谱行的音符墨迹上缘 |
 | `mid-start-gap` | 数（pt） | 成书：半页起排时上一首墨迹底到本首曲号基线的净距 |

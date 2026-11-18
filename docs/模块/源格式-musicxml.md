@@ -12,7 +12,7 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
 
 | 函数 | 文件 | 作用 |
 |---|---|---|
-| `layoutStaff(doc)` | `src/mixed/layout.ts` | `ScoreDoc` → `StaffLayout`（五线谱/混排的版面态，只读 `ScoreDoc` 与其表层 `xmlsurface.ts`） |
+| `layout_staff(doc)` | `crates/dolce-layout-staff/src/read.rs` | `ScoreDoc` → `StaffLayout`（五线谱/混排的版面态，只读 `ScoreDoc` 与其表层 `xmlsurface.ts`） |
 | `loadScoreDoc(xml)` | `src/model/fromxml.ts`（门面；实现 `crates/dolce-model/src/fromxml.rs`） | → `ScoreDoc`（**直通**：语义进模型，表层绑在原节点上，见 `model/xmlsurface.ts`） |
 | `scoreDocToMusicXml(doc)` | `src/model/toxml.ts`（门面；实现 `crates/dolce-model/src/toxml.rs`） | **唯一写出端**；简谱来源先投影成 MusicXML 形状（Rust `xmlproject`） |
 | `projectForJianpu(song)` | `src/model/jianpuproject.ts` | MusicXML 形状 → 简谱形状（简谱档排版、转 123 之前） |
