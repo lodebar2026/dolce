@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 static METRO: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[=＝]\s*(c(?:a|irca)?\s*\.?\s*)?(\d ?\d ?\d?)").unwrap());
 /// 表情与速度术语。
 static TERM: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(rit|rall|riten|ritard|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|andante|allegro|allegretto|moderato|adagio|largo|lento|maestoso|vivace|presto|pizz|arco)\b|\bd\. ?[sc]\b").unwrap()
+    Regex::new(r"(?i)\b(rit|rall|riten|ritard|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|espr|expr|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|andante|allegro|allegretto|moderato|adagio|largo|lento|maestoso|vivace|presto|pizz|arco|delicately|freely|pedal|ped|harmonically|gently|smoothly|quietly|tenderly|prayerfully|reverently|majestically|expressively|gradually)\b|\bd\. ?[sc]\b").unwrap()
 });
 static DYNAMIC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(ppp|pp|p|mp|mf|fff|ff|f|sfz|sf|fz|fp)$").unwrap());
 static JUMP_MARK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:D\.?\s*[SC]\b.*|fine\.?|to\s*coda.*|coda)$").unwrap());

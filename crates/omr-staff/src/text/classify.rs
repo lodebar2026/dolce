@@ -136,6 +136,28 @@ fn unspaced(t: &str) -> String {
     t.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
+/// 整行都是音乐术语 / 力度 / 跳转记号（不是歌词）。
+fn is_term_line(text: &str) -> bool {
+    if han_count(text) > 0 || text.chars().count() > 32 || !words::has_term(text) && words::dynamic(text).is_none() && words::jump(text).is_none() {
+        return false;
+    }
+    let words: Vec<&str> = text
+        .split(|c: char| c.is_whitespace() || c == '.' || c == ',' || c == ';' || c == ':' || c == '(' || c == ')')
+        .filter(|w| !w.is_empty())
+        .collect();
+    !words.is_empty()
+        && words.iter().all(|w| {
+            words::has_term(w)
+                || words::dynamic(w).is_some()
+                || words::jump(w).is_some()
+                || w.chars().all(|c| c.is_ascii_digit())
+                || matches!(
+                    w.to_lowercase().as_str(),
+                    "a" | "al" | "dal" | "da" | "con" | "e" | "ed" | "et" | "ma" | "non" | "troppo" | "in" | "del" | "alla" | "col" | "senza" | "more" | "less" | "very" | "with" | "and" | "or" | "s" | "t" | "b"
+                )
+        })
+}
+
 /// 像歌词的一行：两个以上汉字，或以拉丁字母为主的一串词。
 fn lyric_like(text: &str) -> bool {
     let total = text.chars().filter(|c| !c.is_whitespace()).count();
@@ -248,7 +270,7 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
             if std::env::var("OMR_TEXT_DEBUG").is_ok() {
                 eprintln!("分类 y{:.0} {text:?}：距上 {d_above:?} 距下 {d_below:?} 高够 {tall} 像歌词 {} 和弦行 {chord_line} 链 {}", l.y0, lyric_like(&text), chain.len());
             }
-            if b.above.is_some() && !chord_line && tall && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
+            if b.above.is_some() && !chord_line && tall && !is_term_line(&text) && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
                 // 横向盖得住它的上方歌词行：没有就是这一栏的头一行（看离谱表多远），有就看与最下面那行的空隙
                 let mut prev: Vec<(f64, f64, f64, f64, bool)> = chain.iter().filter(|c| over(c.0, c.1)).copied().collect();
                 let gap_ok = |prev: &[(f64, f64, f64, f64, bool)]| match prev.iter().map(|c| (c.2, c.3)).max_by(|p, q| p.0.total_cmp(&q.0)) {

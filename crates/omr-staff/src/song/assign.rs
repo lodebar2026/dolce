@@ -96,8 +96,10 @@ fn fit(t: &StaffProfile, s: &Slot, labels: bool) -> f64 {
             CLEF_MISS
         };
     }
-    if let (Some(a), Some(b)) = (t.brace, s.brace) {
-        v += if a == b { BRACE_HIT } else { BRACE_MISS };
+    match (t.brace, s.brace) {
+        (Some(a), Some(b)) => v += if a == b { BRACE_HIT } else { BRACE_MISS },
+        (Some(_), None) => v += BRACE_MISS,
+        _ => {}
     }
     v += if t.lyric == s.lyric { LYRIC_HIT } else { -LYRIC_HIT };
     if let (Some(a), Some(b)) = (t.pitch, s.pitch) {
