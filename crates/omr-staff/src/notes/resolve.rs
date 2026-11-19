@@ -9,8 +9,11 @@ use crate::frame::ink::Probe;
 use crate::page::Layout;
 
 /// 符杠端头当成的假头：离干端不到 `BEAM_END`、所在行横向墨宽过 `BEAM_WIDE`（相对线距）。
+/// 十六分音符的断杠在内层，离干端可达 `INNER_BEAM_END`（外层还有一条主杠）。
 const BEAM_END: f64 = 0.6;
+const INNER_BEAM_END: f64 = 1.5;
 const BEAM_WIDE: f64 = 1.6;
+const OUTER_BEAM_WIDE: f64 = 0.8;
 
 /// 已经归了框架层的墨：各行谱定下的小节线（不带存疑标记、由本行竖段认出的）占的列。
 pub struct Claims {
@@ -96,28 +99,47 @@ pub fn pick(heads: &[Head], w: &[f64], sp_of: &dyn Fn(usize) -> f64) -> Vec<usiz
 /// 同一根干上的假头。
 pub fn chord_rules<P: Probe + ?Sized>(f: &Layout, ink: &P, c: &mut Chord) {
     // 干的两端各贴着一个「头」：真和弦的干总要伸出最外面的头一截，贴着干端的那个是符杠的端头（杠够厚时撑得满种子框）
-    // 或两层杠之间的白缝，它上下两行横向都连着一长条墨
-    if let (Some(st), true) = (c.stem, c.heads.len() >= 2) {
+    // 或两层杠之间的白缝，它上下两行横向都连着一长条墨；内层断杠离干端稍远、外侧干端处还有一条外层主杠。
+    if let Some(st) = c.stem {
         let sp = f.staves[c.heads[0].staff].space();
-        let (near, wide) = (BEAM_END * sp, (BEAM_WIDE * sp) as i64);
+        let (near, inner, wide, outer_w) = (BEAM_END * sp, INNER_BEAM_END * sp, (BEAM_WIDE * sp) as i64, (OUTER_BEAM_WIDE * sp) as i64);
         // 实心的量头里的两行；「空心」的（两层杠与两根干围出的白缝被当成孔）量孔外上下两层杠所在的行
         let is_bar = |h: &Head| {
             let off = ((if h.kind == HeadKind::Filled { 0.2 } else { 0.35 }) * sp).round() as i64;
             [-off, off].iter().any(|d| (-1..=1).any(|dx| stems::width_at(ink, h.x.round() as i64 + dx * (sp * 0.3) as i64, h.y.round() as i64 + d, wide) > wide))
         };
-        let (top, bot) = (c.heads[0].clone(), c.heads.last().unwrap().clone());
-        if (top.y - st.top as f64).abs() < near && (bot.y - st.bottom as f64).abs() < near {
-            if is_bar(&top) {
-                c.heads.remove(0);
-            } else if is_bar(&bot) {
-                c.heads.pop();
-            } else if top.kind == HeadKind::Filled && bot.kind == HeadKind::Filled {
-                // 斜杠在每一行上只有短短一截，量不出长条：两个里模板分低的那个是杠端
-                if top.score < bot.score {
+        let has_outer_beam = |h: &Head, y0: i64, y1: i64| {
+            let cx = h.x.round() as i64;
+            let step = (sp * 0.25).round().max(1.0) as i64;
+            (y0..=y1).any(|y| (-1..=1).any(|dx| stems::width_at(ink, cx + dx * step, y, outer_w) > outer_w))
+        };
+        while c.heads.len() >= 2 {
+            let (top, bot) = (c.heads[0].clone(), c.heads.last().unwrap().clone());
+            let (dt, db) = ((top.y - st.top as f64).abs(), (bot.y - st.bottom as f64).abs());
+            if dt >= inner || db >= inner {
+                break;
+            }
+            if dt < near && db < near {
+                if is_bar(&top) {
                     c.heads.remove(0);
-                } else {
+                } else if is_bar(&bot) {
                     c.heads.pop();
+                } else if top.kind == HeadKind::Filled && bot.kind == HeadKind::Filled {
+                    // 斜杠在每一行上只有短短一截，量不出长条：两个里模板分低的那个是杠端
+                    if top.score < bot.score {
+                        c.heads.remove(0);
+                    } else {
+                        c.heads.pop();
+                    }
+                } else {
+                    break;
                 }
+            } else if db < near && has_outer_beam(&top, st.top, (top.y - 0.65 * sp).round() as i64) {
+                c.heads.remove(0);
+            } else if dt < near && has_outer_beam(&bot, (bot.y + 0.65 * sp).round() as i64, st.bottom) {
+                c.heads.pop();
+            } else {
+                break;
             }
         }
     }

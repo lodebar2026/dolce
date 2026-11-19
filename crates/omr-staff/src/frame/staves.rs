@@ -124,7 +124,7 @@ pub fn find_staves(bin: &Binary) -> Option<(Unit, Vec<Staff>)> {
         if std::env::var("OMR_STAFF_DEBUG").is_ok() {
             eprintln!("谱行候选 cy {:.0} x{}~{}：{} 列（要 {need}）", r.cy, r.x0, r.x1, xs.len());
         }
-        if xs.len() < need {
+        if xs.len() < need && (xs.len() < MIN_COLS || r.x1 - r.x0 < bin.w / 3) {
             continue;
         }
         staves.push(make_staff(bin, &r.hits, r.x0, r.x1, cols));

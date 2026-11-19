@@ -15,7 +15,7 @@ use dolce_omr_core::pixel::contour::find_holes_area;
 
 /// 孔的宽高范围（相对线距）。
 const HOLE_W: (f64, f64) = (0.3, 1.25);
-const HOLE_H: (f64, f64) = (0.2, 1.0);
+const HOLE_H: (f64, f64) = (0.2, 1.1);
 /// 比最小的孔还小的白块（面积，相对线距的平方）不是头的内腔：实心头找候选时当墨（[`super::page_notes`]）。
 pub const SLIT_AREA: f64 = HOLE_W.0 * HOLE_H.0;
 /// 孔心离音级格点最远多少（半格为 1）。
@@ -214,6 +214,11 @@ pub fn hollow_heads_traced(f: &PageFrame, holes: &Holes, claims: &Claims, si: us
         let down_v = down.1.min(wall_v).min(shared(true).unwrap_or(i64::MAX));
         let outer_h = (hh + up_v + down_v) as f64 / sp;
         let (xl, xr) = (hx - left.1, hx + hw - 1 + right.1);
+        // 原图上小节线（已被框架层认下）与旁边的竖笔 / 琶音线在谱线间夹出的空当不是空心头
+        if which == 1 && ((xl..hx).any(|x| claims.bar_col(si, x)) || (hx + hw..=xr).any(|x| claims.bar_col(si, x))) {
+            trace(hole, "原图上的孔一侧贴着小节线".into());
+            continue;
+        }
         let outer_w = (xr - xl + 1) as f64 / sp;
         if outer_h < OUTER_H.0 || outer_h > OUTER_H.1 * scale || outer_w < OUTER_W.0 || outer_w > OUTER_W.1 * scale {
             trace(hole, format!("外圈 {outer_w:.2} × {outer_h:.2} 格不像（壁 上{} 下{} 左{} 右{}）", up.1, down.1, left.1, right.1));

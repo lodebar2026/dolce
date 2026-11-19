@@ -64,7 +64,7 @@ pub fn acc_kind(f: &PageFrame, u: &Unit, sp: f64) -> Option<Acc> {
             if xb < xa {
                 return None;
             }
-            let ym = (y0 + h * 0.45) as i64;
+            let ym = (y0 + h * 0.35) as i64;
             let up = ink_in(f, xa, xb, y0 as i64, ym);
             let down = ink_in(f, xa, xb, ym + 1, y1 as i64);
             return (down > up * 2 && down as f64 >= sp * sp * 0.08).then_some(Acc::Flat);
@@ -87,12 +87,29 @@ pub fn acc_kind(f: &PageFrame, u: &Unit, sp: f64) -> Option<Acc> {
     (a_short && b_short && (out as f64) < sp * sp * 0.06).then_some(Acc::Natural)
 }
 
-/// 升降号在谱表上「指着」的音级位置：升号、还原号是中心，降号是肚子的中心（下沿往上半格）。
+/// 升降号在谱表上「指着」的音级位置：升号、还原号是中心，降号是肚子的中心（有竖笔时量竖笔右侧肚子的上下沿中点，否则下沿往上半格）。
 pub fn acc_pos(u: &Unit, kind: Acc) -> f64 {
     match kind {
         Acc::Flat => u.bottom - 1.0,
         _ => u.mid(),
     }
+}
+
+fn flat_pos(f: &PageFrame, s: &Staff, u: &Unit) -> f64 {
+    let st = stems(f, u, 0.72);
+    if let Some(stem) = st.first() {
+        let xa = stem.1 + 2;
+        let xb = u.rect.right().ceil() as i64 - 1;
+        if xb >= xa {
+            let (y0, y1) = (u.rect.y.floor() as i64, u.rect.bottom().ceil() as i64);
+            let mut rows = (y0..=y1).filter(|&y| (xa..=xb).any(|x| f.ink.at(x, y) == crate::frame::ink::INK));
+            if let Some(top) = rows.next() {
+                let bot = rows.last().unwrap_or(top);
+                return s.pos(u.rect.cx(), (top + bot) as f64 / 2.0);
+            }
+        }
+    }
+    u.bottom - 1.0
 }
 
 /// 认出的谱号。
@@ -243,12 +260,17 @@ pub struct KeyHit {
 pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, start: f64) -> KeyHit {
     let sp = s.space();
     // 降号的竖笔与肚子分了家（肚子只在谱线上连着竖笔，线上那几像素是存疑的）：细竖笔右边紧挨着一个下沿对齐的小块，并回一个
+    // 纵向不沾谱表的（谱表上方的和弦字、下方的字）不在调号串里，先跳过以免夹在竖笔与肚子之间挡住合并
+    let on_staff = |u: &Unit| u.bottom >= -3.0 && u.top <= 9.5;
     let mut joined: Vec<Unit> = Vec::new();
     for u in &us[from.min(us.len())..] {
+        if !on_staff(u) || (u.w(sp) < 0.4 && u.h(sp) < 0.7) {
+            continue;
+        }
         if let Some(a) = joined.last() {
             let stem = a.w(sp) < 0.45 && (1.5..=3.3).contains(&a.h(sp));
             let bowl = (0.6..=1.7).contains(&u.h(sp)) && (0.3..=1.0).contains(&u.w(sp));
-            if stem && bowl && u.rect.x - a.rect.right() <= sp * 0.25 && u.rect.x >= a.rect.x && (u.rect.bottom() - a.rect.bottom()).abs() <= sp * 0.35 {
+            if stem && bowl && u.rect.x - a.rect.right() <= sp * 0.4 && u.rect.x >= a.rect.x && (u.rect.bottom() - a.rect.bottom()).abs() <= sp * 0.4 {
                 let m = merged(s, a, u);
                 *joined.last_mut().unwrap() = m;
                 continue;
@@ -258,8 +280,6 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
     }
     let (us, from) = (&joined[..], 0usize);
     let mut best = KeyHit { fifths: 0, sure: true, right: start, used: 0 };
-    // 纵向不沾谱表的（谱表上方的和弦字、下方的字）不在调号串里
-    let on_staff = |u: &Unit| u.bottom >= -3.0 && u.top <= 9.5;
     let dbg = std::env::var("OMR_KEY_DEBUG").is_ok();
     let mut why: Vec<String> = Vec::new();
     for sharp in [true, false] {
@@ -297,9 +317,10 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
             for p in &parts {
                 let want = clef.key_pos(sharp, n);
                 let kind = acc_kind(f, p, sp);
+                let pos = if sharp { p.mid() } else { flat_pos(f, s, p) };
                 let fits = acc_sized(p, sp)
                     && n < 7
-                    && want.is_some_and(|w| (acc_pos(p, if sharp { Acc::Sharp } else { Acc::Flat }) - w as f64).abs() <= KEY_POS_TOL)
+                    && want.is_some_and(|w| (pos - w as f64).abs() <= KEY_POS_TOL)
                     && match kind {
                         Some(Acc::Sharp) => sharp,
                         Some(Acc::Flat) => !sharp,

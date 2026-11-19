@@ -46,8 +46,8 @@ const SEG_GAP: f64 = 2.0;
 const TEXT_ROW: usize = 3;
 /// 横向分栏的白道：整条带都空着、宽过字高这么多倍。
 const GUTTER: f64 = 3.0;
-/// 两栏的行中心相差不过较矮那行行高的这个比例，算同一行。
-const SAME_ROW: f64 = 0.2;
+/// 两栏的行中心相差不过全带正常行高（`one_h`）的这个比例，算同一行（短截无上下延笔画时中心可偏出两三成，仍远小于行距或插空副歌行）。
+const SAME_ROW: f64 = 0.32;
 /// 送检条四周留的白边（原图像素）。
 const PAD: usize = 3;
 
@@ -272,7 +272,7 @@ fn band_lines(f: &PageFrame, src: &SourceImage, cx: &mut Ctx, ref_si: usize, y0:
     for b in blocks {
         for l in block_lines(f, src, cx, &b, &off, sp, char_h, one_h, y0, y1, ocr) {
             let same = out.iter_mut().find(|o| {
-                ((o.y0 + o.y1) / 2.0 - (l.y0 + l.y1) / 2.0).abs() <= SAME_ROW * o.h().min(l.h())
+                ((o.y0 + o.y1) / 2.0 - (l.y0 + l.y1) / 2.0).abs() <= SAME_ROW * one_h
             });
             match same {
                 Some(o) => {
