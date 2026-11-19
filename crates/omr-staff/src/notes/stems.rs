@@ -48,25 +48,30 @@ pub(crate) fn width_at<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, cap: i64) -> 
     b - a + 1
 }
 
-/// 从 (x, y) 沿列往 `dir` 方向走到墨断开（不过 `gap` 像素的白缝接上），回最后一个墨像素的 y。
+/// 从 (x, y) 沿列往 `dir` 方向走到墨断开（不过 `gap` 像素的白缝接上），回 `(最后一个墨像素的 y, 离开 cy ± half 后的细墨行数)`。
+/// 扫描件有轻微倾斜时竖干会逐行横向偏移一像素，允许在 `x ± max_drift` 内顺着细墨跟过去。
 /// `wide`：扫描件的干常断成几截（头与干之间、干中段），断口宽过 `gap`、不过 `wide.0` 像素时，
 /// 断口这头是细墨（顺着干走过来的）就接；这头是头的，那头接着的要是细墨（横向墨宽不过 `wide.1`；看 `wide.2` 行，那截先断了的要有两行以上）才接上——接着的是另一个头（上下贴着的两个头之间的缝）不接。
-fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64, wide: (i64, i64, i64), long: (i64, i64, i64)) -> i64 {
+#[allow(clippy::too_many_arguments)]
+fn run_end<P: Probe + ?Sized>(ink: &P, x0: i64, y: i64, dir: i64, cy: i64, half: i64, gap: i64, max_drift: i64, wide: (i64, i64, i64), long: (i64, i64, i64)) -> (i64, i64) {
     let mut end = y;
     let mut cur = y;
+    let mut x = x0;
+    let mut last_shift_y = y;
+    let mut thin_n = 0i64;
     let h = ink.height() as i64;
     // 从 y0 往 d 方向连着的细墨有几行（谱线上的存疑像素算连着、不计数；不过 `gap` 像素的白缝接上）
-    let thin_run = |y0: i64, d: i64| {
+    let thin_run = |cx: i64, y0: i64, d: i64| {
         let (mut k, mut n) = (0, 0);
         loop {
-            if ink.at(x, y0 + d * k) == BG {
-                match (1..=gap).find(|&j| ink.at(x, y0 + d * (k + j)) != BG) {
+            if ink.at(cx, y0 + d * k) == BG {
+                match (1..=gap).find(|&j| ink.at(cx, y0 + d * (k + j)) != BG) {
                     Some(j) => k += j,
                     None => break,
                 }
             }
-            if ink.at(x, y0 + d * k) == INK {
-                if width_at(ink, x, y0 + d * k, wide.1) > wide.1 {
+            if ink.at(cx, y0 + d * k) == INK {
+                if width_at(ink, cx, y0 + d * k, wide.1) > wide.1 {
                     break;
                 }
                 n += 1;
@@ -76,9 +81,23 @@ fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64, wide:
         n
     };
     loop {
-        let near = (1..=gap + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG);
+        let mut next = (1..=gap + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG);
+        // 扫描件歪斜时竖干横向移了一像素：当前列断成白/线，而邻列连着两行以上细墨就跟过去（限斜率不超过 1:5，不追斜弧/符杠）
+        if max_drift > 0 && (cur - last_shift_y).abs() >= 5 && ink.at(x, cur + dir) != INK {
+            if let Some(nx) = [-1, 1].into_iter().map(|dx| x + dx).find(|&nx| {
+                (nx - x0).abs() <= max_drift
+                    && ink.at(nx, cur + dir) == INK
+                    && width_at(ink, nx, cur + dir, wide.1) <= wide.1
+                    && ink.at(nx, cur + 2 * dir) == INK
+                    && width_at(ink, nx, cur + 2 * dir, wide.1) <= wide.1
+            }) {
+                x = nx;
+                last_shift_y = cur + dir;
+                next = Some(cur + dir);
+            }
+        }
         // 扫描件印淡的干：断口不过一格、松阈值图上同一列（容左右一列）整段有墨的接上
-        let soft = near.is_none().then(|| (gap + 2..=long.2 + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG)).flatten().filter(|&yy| {
+        let soft = next.is_none().then(|| (gap + 2..=long.2 + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG)).flatten().filter(|&yy| {
             let mut y = cur + dir;
             while y != yy {
                 if !(x - 1..=x + 1).any(|xx| ink.faint(xx, y)) {
@@ -88,11 +107,11 @@ fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64, wide:
             }
             true
         });
-        let next = near.or(soft).or_else(|| {
+        let next = next.or(soft).or_else(|| {
             if (gap + 2..=wide.0 + 1).map(|d| cur + dir * d).all(|yy| ink.at(x, yy) == BG) {
                 // 长断口：两头都是长的细墨
                 let yy = (wide.0 + 2..=long.0 + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG)?;
-                return (thin_run(cur, -dir) >= wide.2 && thin_run(yy, dir) >= long.1).then_some(yy);
+                return (thin_run(x, cur, -dir) >= wide.2 && thin_run(x, yy, dir) >= long.1).then_some(yy);
             }
             let yy = (gap + 2..=wide.0 + 1).map(|d| cur + dir * d).find(|&yy| ink.at(x, yy) != BG)?;
             // 断口这头是细墨（顺着干走过来）：那头接着什么都接（干断开后接着和弦的另一个头）
@@ -115,10 +134,13 @@ fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64, wide:
         });
         match next {
             Some(yy) if yy >= 0 && yy < h => {
+                if (yy - cy) * dir > half && ink.at(x, yy) == INK && width_at(ink, x, yy, wide.1) <= wide.1 {
+                    thin_n += 1;
+                }
                 end = yy;
                 cur = yy;
             }
-            _ => return end,
+            _ => return (end, thin_n),
         }
     }
 }
@@ -128,7 +150,9 @@ fn run_end<P: Probe + ?Sized>(ink: &P, x: i64, y: i64, dir: i64, gap: i64, wide:
 pub fn find_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, edges: Option<(i64, i64)>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
     let cy = h.y.round() as i64;
     let (xl, xr) = edges.unwrap_or_else(|| head_edges(ink, h, sp));
-    scan_stem(ink, cy, sp, thick, xl, xr, None, taken)
+    let drift = (0.35 * sp).round().max(3.0) as i64;
+    scan_stem(ink, cy, sp, thick, xl, xr, None, 0, taken)
+        .or_else(|| scan_stem(ink, cy, sp, thick, xl, xr, None, drift, taken))
 }
 
 /// 头的左右缘：在中心上下各 [`EDGE_ROW`] 格的两行上数连着的墨。
@@ -163,7 +187,7 @@ pub fn unison_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, ed
         return None;
     }
     let (a, b) = if st.up { (xl - tol, xl + tol) } else { (xr - tol, xr + tol) };
-    let other = scan_stem(ink, cy, sp, thick, a, b, Some(!st.up), taken)?;
+    let other = scan_stem(ink, cy, sp, thick, a, b, Some(!st.up), 0, taken)?;
     let half = (0.5 * sp).round() as i64;
     // 反方向那根不越过头：朝下的上端、朝上的下端都在头里
     let ok = if other.up { other.bottom <= cy + half } else { other.top >= cy - half };
@@ -172,7 +196,7 @@ pub fn unison_stem<P: Probe + ?Sized>(ink: &P, h: &Head, sp: f64, thick: f64, ed
 
 /// 在 `[xl, xr]`（外扩 [`EDGE_OUT`]）的列里找干；`want`：只要这个朝向的（细段在头的那一侧）。
 #[allow(clippy::too_many_arguments)]
-fn scan_stem<P: Probe + ?Sized>(ink: &P, cy: i64, sp: f64, thick: f64, xl: i64, xr: i64, want: Option<bool>, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
+fn scan_stem<P: Probe + ?Sized>(ink: &P, cy: i64, sp: f64, thick: f64, xl: i64, xr: i64, want: Option<bool>, max_drift: i64, taken: &dyn Fn(i64) -> bool) -> Option<Stem> {
     let off = ((EDGE_ROW * sp).round() as i64).max(1);
     let rows = [cy - off, cy + off];
     let gap = (thick.ceil() as i64).max(1);
@@ -191,15 +215,14 @@ fn scan_stem<P: Probe + ?Sized>(ink: &P, cy: i64, sp: f64, thick: f64, xl: i64, 
         let inside = (xl..=xr).contains(&x);
         let r0 = rows.iter().copied().find(|&r| inside && ink.at(x, r) == INK).or_else(|| (0..=half).flat_map(|d| [cy - d, cy + d]).find(|&r| ink.at(x, r) == INK));
         let Some(r0) = r0 else { continue };
-        let (top, bottom) = (run_end(ink, x, r0, -1, gap, wide, long), run_end(ink, x, r0, 1, gap, wide, long));
+        let (top, tu) = run_end(ink, x, r0, -1, cy, half, gap, max_drift, wide, long);
+        let (bottom, td) = run_end(ink, x, r0, 1, cy, half, gap, max_drift, wide, long);
         if std::env::var("OMR_STEM_DEBUG").is_ok() {
             eprintln!("干 列 {x} 起 {r0}：上 {top} 下 {bottom}（宽口 {:?} 长口 {:?}）", wide, long);
         }
         if ((cy - top).max(bottom - cy) as f64) < MIN_LEN * sp {
             continue;
         }
-        let thin = |a: i64, b: i64| (a..=b).filter(|&y| ink.at(x, y) == INK && width_at(ink, x, y, thin_w) <= thin_w).count() as i64;
-        let (tu, td) = (thin(top, cy - half), thin(cy + half, bottom));
         let t = match want {
             Some(true) => tu,
             Some(false) => td,

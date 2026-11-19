@@ -142,13 +142,30 @@ pub fn chord_rules<P: Probe + ?Sized>(f: &Layout, ink: &P, c: &mut Chord) {
                 break;
             }
         }
+        // 先按头定干的朝向，供 `beams::tails` 探对自由端；混有假空心头时按实心头定
+        let mixed = c.heads.iter().any(|h| h.kind == HeadKind::Filled) && c.heads.iter().any(|h| h.kind != HeadKind::Filled);
+        let hi = c.heads.iter().filter(|h| !mixed || h.kind == HeadKind::Filled).map(|h| h.y).fold(f64::MAX, f64::min);
+        let lo = c.heads.iter().filter(|h| !mixed || h.kind == HeadKind::Filled).map(|h| h.y).fold(f64::MIN, f64::max);
+        c.stem.as_mut().unwrap().up = hi - st.top as f64 >= st.bottom as f64 - lo;
     }
-    // 一根干上实心、空心混着：干是从最贴着干端的那个头起的，它是真的；头型与它不同的丢掉
-    // （符尾与干、谱线围出的白被当成孔，在同一根干上添一个「空心头」）
+}
+
+/// 同一根干上实心、空心混着（如符尾/弧线与谱线围出的白被当成空心头）：
+/// 有符尾或符杠的必是实心；光干的按最贴干端的头型留（干是从它起的）。
+pub fn resolve_mixed_kinds(c: &mut Chord) {
     if let (Some(st), true) = (c.stem, c.heads.len() >= 2) {
-        let end_dist = |h: &Head| (h.y - st.top as f64).abs().min((h.y - st.bottom as f64).abs());
-        let base = c.heads.iter().min_by(|a, b| end_dist(a).total_cmp(&end_dist(b))).unwrap().kind;
+        let base = if c.tails > 0 || c.beamed {
+            if c.heads.iter().any(|h| h.kind == HeadKind::Filled) {
+                HeadKind::Filled
+            } else {
+                return;
+            }
+        } else {
+            let end_dist = |h: &Head| (h.y - st.top as f64).abs().min((h.y - st.bottom as f64).abs());
+            c.heads.iter().min_by(|a, b| end_dist(a).total_cmp(&end_dist(b))).unwrap().kind
+        };
         c.heads.retain(|h| h.kind == base);
+        c.x = c.heads.iter().map(|h| h.x).sum::<f64>() / c.heads.len() as f64;
     }
     // 干的朝向按整个和弦定：自由端是离头远的那一端（单看一个头时，和弦里两个头之间那截细干会被当成伸出去的一段）
     if let Some(st) = c.stem.as_mut() {

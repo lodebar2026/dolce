@@ -386,7 +386,18 @@ pub fn read_key_strokes(f: &PageFrame, s: &Staff, clef: Clef, start: f64) -> (i8
                 break;
             }
             let Some(want) = clef.key_pos(false, n) else { break };
-            let p = s.pos(k.cx(), k.bottom as f64) - 1.0;
+            // 肚子中心：竖笔右下方的墨块重心，比固定 bottom - 1 格更准
+            let (mut sy, mut sn) = (0.0, 0usize);
+            for y in k.bottom - (sp * 1.3) as i64..=k.bottom {
+                for x in k.x1 + 1..=k.x1 + (sp * 0.7) as i64 {
+                    if f.ink.at(x, y) == crate::frame::ink::INK {
+                        sy += y as f64;
+                        sn += 1;
+                    }
+                }
+            }
+            let cy = if sn > 0 { sy / sn as f64 } else { k.bottom as f64 - sp };
+            let p = s.pos(k.cx(), cy);
             // 肚子：竖笔下半截右边有墨，上端右边没有
             let down = ink_in(f, k.x1 + 1, k.x1 + (sp * 0.6) as i64, k.bottom - (sp * 0.9) as i64, k.bottom);
             let up = ink_in(f, k.x1 + 1, k.x1 + (sp * 0.3) as i64, k.top, k.top + (sp * 0.5) as i64);

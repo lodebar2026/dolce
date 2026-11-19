@@ -220,6 +220,11 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
         row.rests = rests::rests(f, si, from_of(si));
     }
     beams::tails(&f.ink, &mut rows, &f.staves, f.unit.thick);
+    for row in rows.iter_mut() {
+        for c in row.chords.iter_mut() {
+            resolve::resolve_mixed_kinds(c);
+        }
+    }
     for (si, row) in rows.iter_mut().enumerate() {
         marks::marks(f, si, from_of(si), row);
     }

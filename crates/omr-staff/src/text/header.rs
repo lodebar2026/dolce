@@ -15,8 +15,9 @@ use dolce_omr_sheet::score::Dir;
 
 /// 行底离第一行谱至少这么多格（再近的是和弦、速度、压着谱表的杂墨）。
 const CLEAR: f64 = 0.3;
-/// 离谱表这么多格以内的行，像和弦 / 节拍器 / 力度 / 速度术语的不进页眉。
+/// 离谱表这么多格以内的行，像节拍器 / 力度 / 速度术语的不进页眉；和弦记号可达 `CHORD_NEAR` 格（同 `classify::CHORD_REACH`）。
 const NEAR: f64 = 6.0;
+const CHORD_NEAR: f64 = 9.0;
 /// 图片文件没有可信的页面尺寸：按 A4 宽折算字号。
 const A4_W: f64 = 595.0;
 
@@ -97,7 +98,10 @@ pub fn header_line_ok(t: &str, gap: f64) -> bool {
     if han_count(t) == 0 && latin_count(t) < 3 && !t.chars().any(|c| c.is_ascii_digit()) {
         return false;
     }
-    !(gap <= NEAR && (chords::is_annotation_line(t) || words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)))
+    if gap <= CHORD_NEAR && chords::is_annotation_line(t) {
+        return false;
+    }
+    !(gap <= NEAR && (words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)))
 }
 
 /// 第一行谱（最上面那行）的下标。

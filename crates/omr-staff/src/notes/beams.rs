@@ -6,7 +6,7 @@
 //!
 //! 探的是原图（谱线上的存疑像素算墨：杠压着线的地方本来就连着）；孤零零的谱线比杠薄得多，过不了厚度下限。
 use super::{Chord, RowNotes};
-use crate::frame::ink::{Probe, BG};
+use crate::frame::ink::{Probe, BG, INK};
 use dolce_omr_sheet::Staff;
 
 /// 探测列离干多远（相对线距）：出了干的宽度、还在符尾根部最厚的那一段里。
@@ -16,7 +16,7 @@ const FLAG_PROBE: f64 = 0.26;
 /// 厚墨段的纵向厚度范围（相对线距）。下限另不低于谱线线宽的 `OVER_LINE` 倍多一像素：朝下的干上斜着扫上去的符尾，
 /// 根部纵向只有 0.2 格出头，仍比谱线厚得多。
 const THICK: (f64, f64) = (0.18, 1.0);
-const OVER_LINE: f64 = 1.6;
+const OVER_LINE: f64 = 1.25;
 /// 自由端外多探这么多、往头的方向最多探这么多（相对线距）；离最近的头留这么多。
 const BEYOND: f64 = 0.3;
 const REACH: f64 = 3.2;
@@ -52,7 +52,8 @@ fn thick_runs<P: Probe + ?Sized>(ink: &P, x: i64, y0: i64, y1: i64, sp: f64, lin
             b += 1;
         }
         let t = (b - a + 1) as f64;
-        if t >= min_t && t <= THICK.1 * sp && a >= y0 && b <= y1 {
+        let has_ink = (a..=b).any(|yy| ink.at(x, yy) == INK);
+        if has_ink && t >= min_t && t <= THICK.1 * sp && a >= y0 && b <= y1 {
             out.push((a + b) as f64 / 2.0);
         }
         y = b + 1;
@@ -78,11 +79,14 @@ fn probe_at<P: Probe + ?Sized>(ink: &P, c: &Chord, sp: f64, line: f64, d: i64) -
     let st = c.stem.unwrap();
     let x = st.x + d;
     let (beyond, reach, clear) = ((BEYOND * sp) as i64, (REACH * sp) as i64, (HEAD_CLEAR * sp) as i64);
+    // 实心与空心混着时（干端符杠/尾围出的假空心头），看实心头的位置，免得假头把探杠区截断
+    let mixed = c.heads.iter().any(|h| h.kind == super::heads::HeadKind::Filled) && c.heads.iter().any(|h| h.kind != super::heads::HeadKind::Filled);
+    let ys = || c.heads.iter().filter(|h| !mixed || h.kind == super::heads::HeadKind::Filled).map(|h| h.y);
     let (y0, y1) = if st.up {
-        let head = c.heads.iter().map(|h| h.y).fold(f64::MAX, f64::min) as i64;
+        let head = ys().fold(f64::MAX, f64::min) as i64;
         (st.top - beyond, (st.top + reach).min(head - clear))
     } else {
-        let head = c.heads.iter().map(|h| h.y).fold(f64::MIN, f64::max) as i64;
+        let head = ys().fold(f64::MIN, f64::max) as i64;
         ((st.bottom - reach).max(head + clear), st.bottom + beyond)
     };
     // 从干端起一层挨一层
