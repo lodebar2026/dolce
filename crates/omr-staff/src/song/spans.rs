@@ -66,12 +66,35 @@ pub(super) fn expand_multi_rests(ms: &mut Vec<Measure>, extra: &[(usize, usize)]
     }
 }
 
+/// 跨谱表弧（两端在不同谱行、合并成大谱表后挂到事件上）。
+pub(super) struct CrossSpan {
+    pub(super) p1: usize,
+    pub(super) m1: usize,
+    pub(super) e1: usize,
+    pub(super) p2: usize,
+    pub(super) m2: usize,
+    pub(super) e2: usize,
+    pub(super) above: bool,
+    pub(super) src: Src,
+}
+
+pub(super) fn find_anchor(anchors: &[Anchor], c: ChordRef, sp: f64) -> Option<usize> {
+    let off = |i: usize| (anchors[i].x - c.x).abs() + (anchors[i].y - c.y).abs();
+    (0..anchors.len()).filter(|&i| (anchors[i].x - c.x).abs() <= ARC_CHORD * sp).min_by(|&a, &b| off(a).total_cmp(&off(b)))
+}
+
+pub(super) fn arc_rect(arc: &Arc, sp: f64) -> Rect {
+    let (x0, x1) = (arc.a.0.min(arc.b.0), arc.a.0.max(arc.b.0));
+    let (y0, y1) = (arc.a.1.min(arc.b.1), arc.a.1.max(arc.b.1));
+    let (y0, y1) = if arc.above { (y0 - sp, y1) } else { (y0, y1 + sp) };
+    Rect::new(x0, y0, x1 - x0, y1 - y0)
+}
+
 /// 一行谱的弧挂到事件上：两端都有的直接记；画到行尾的留给下一个系统同一声部从行首来的那半条接。
 #[allow(clippy::too_many_arguments)]
 pub(super) fn row_arcs(arcs: &[(usize, &Arc)], anchors: &[Anchor], ms: &[Measure], from: usize, sp: f64, sys: usize, pending: &mut Vec<Pending>, recs: &mut Vec<SpanRec>, ids: &mut Ids) {
     pending.retain(|p| p.sys + 1 >= sys);
-    let off = |i: usize, c: ChordRef| (anchors[i].x - c.x).abs() + (anchors[i].y - c.y).abs();
-    let find = |c: ChordRef| (0..anchors.len()).filter(|&i| (anchors[i].x - c.x).abs() <= ARC_CHORD * sp).min_by(|&a, &b| off(a, c).total_cmp(&off(b, c)));
+    let find = |c: ChordRef| find_anchor(anchors, c, sp);
     let end = |i: usize| {
         let a = &anchors[i];
         let e = &ms[a.bar].events[a.event];
@@ -80,20 +103,14 @@ pub(super) fn row_arcs(arcs: &[(usize, &Arc)], anchors: &[Anchor], ms: &[Measure
     let same = |i: usize, j: usize| anchors[i].bar == anchors[j].bar && anchors[i].event == anchors[j].event;
     // 一段拍点里有没有与第 i 个同声部的别的音
     let voiced = |range: std::ops::Range<usize>, i: usize| range.into_iter().any(|k| anchors[k].voice == anchors[i].voice && !same(k, i));
-    // 弧的框：两端连线，往拱的一侧放一格
-    let rect = |arc: &Arc| {
-        let (x0, x1) = (arc.a.0.min(arc.b.0), arc.a.0.max(arc.b.0));
-        let (y0, y1) = (arc.a.1.min(arc.b.1), arc.a.1.max(arc.b.1));
-        let (y0, y1) = if arc.above { (y0 - sp, y1) } else { (y0, y1 + sp) };
-        Rect::new(x0, y0, x1 - x0, y1 - y0)
-    };
     for &(ak, arc) in arcs {
+        let rect = arc_rect(arc, sp);
         match (arc.start.and_then(find), arc.end.and_then(find)) {
             (Some(i), Some(j)) if i < j && !same(i, j) => {
                 let adjacent = !voiced(i + 1..j, i) && !voiced(i + 1..j, j);
-                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent, src: ids.src(ids.arc(ak), RidKind::Slur, rect(arc)) });
+                recs.push(SpanRec { a: end(i), b: end(j), above: arc.above, adjacent, src: ids.src(ids.arc(ak), RidKind::Slur, rect) });
             }
-            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i), src: ids.src(ids.arc(ak), RidKind::Slur, rect(arc)) }),
+            (Some(i), None) if arc.end.is_none() => pending.push(Pending { end: end(i), above: arc.above, sys, last: !voiced(i + 1..anchors.len(), i), src: ids.src(ids.arc(ak), RidKind::Slur, rect) }),
             (None, Some(j)) if arc.start.is_none() => {
                 let from_prev = |p: &Pending| p.sys + 1 == sys;
                 let Some(n) = pending.iter().position(|p| from_prev(p) && p.above == arc.above).or_else(|| pending.iter().position(from_prev)) else { continue };

@@ -61,8 +61,8 @@ pub(super) fn grand_pairs(pages: &[Page], slots_all: &[Vec<usize>], profiles: &[
     out
 }
 
-/// 合并：`pairs` 是上面那个槽位的下标。回合并后的声部，与各槽位落到（第几声部, 第几谱表）。
-pub(super) fn merge(parts: Vec<Part>, pairs: &[usize]) -> (Vec<Part>, Vec<(usize, u8)>) {
+/// 合并：`pairs` 是上面那个槽位的下标；`cross` 是跨谱表弧。回合并后的声部，与各槽位落到（第几声部, 第几谱表）。
+pub(super) fn merge(parts: Vec<Part>, pairs: &[usize], cross: &[super::spans::CrossSpan]) -> (Vec<Part>, Vec<(usize, u8)>) {
     let n = parts.len();
     let mut out: Vec<Part> = Vec::new();
     let mut at = vec![(0usize, 1u8); n];
@@ -74,7 +74,9 @@ pub(super) fn merge(parts: Vec<Part>, pairs: &[usize]) -> (Vec<Part>, Vec<(usize
             if let Some((l, lower)) = it.next() {
                 at[l] = (out.len(), 2);
                 upper.staves = 2;
+                let mut upper_lens: Vec<usize> = Vec::with_capacity(upper.measures.len());
                 for (m, low) in upper.measures.iter_mut().zip(lower.measures) {
+                    upper_lens.push(m.events.len());
                     // 调号、拍号两谱表共用：上面那行没读出、下面那行读出了的取下面的（不然合成大谱表后丢了）
                     m.attrs.key = m.attrs.key.or(low.attrs.key);
                     m.attrs.time = m.attrs.time.or(low.attrs.time);
@@ -90,6 +92,23 @@ pub(super) fn merge(parts: Vec<Part>, pairs: &[usize]) -> (Vec<Part>, Vec<(usize
                         }
                         e
                     }));
+                }
+                let mut open: Vec<(u8, usize, usize)> = Vec::new();
+                for cs in cross.iter().filter(|cs| (cs.p1 == u && cs.p2 == l) || (cs.p1 == l && cs.p2 == u)) {
+                    let e1 = if cs.p1 == l { upper_lens[cs.m1] + cs.e1 } else { cs.e1 };
+                    let e2 = if cs.p2 == l { upper_lens[cs.m2] + cs.e2 } else { cs.e2 };
+                    let Some(m1) = upper.measures.get(cs.m1) else { continue };
+                    let Some(m2) = upper.measures.get(cs.m2) else { continue };
+                    if e1 >= m1.events.len() || e2 >= m2.events.len() {
+                        continue;
+                    }
+                    open.retain(|&(_, _, end_m)| end_m >= cs.m1);
+                    let base = SLUR_NUMBERS * 2 + 1;
+                    let Some(number) = (base..base + SLUR_NUMBERS).find(|n| !open.iter().any(|o| o.0 == *n)) else { continue };
+                    open.push((number, cs.m1, cs.m2));
+                    let mark = SpanMark { kind: SpanKind::Slur, start: true, number, above: cs.above, pitch: None, src: cs.src.clone() };
+                    upper.measures[cs.m1].events[e1].spans.push(mark.clone());
+                    upper.measures[cs.m2].events[e2].spans.push(SpanMark { start: false, ..mark });
                 }
             }
         }
@@ -112,7 +131,7 @@ mod tests {
             Part { measures: vec![m(ev(1), Clef::TREBLE)], staves: 1 },
             Part { measures: vec![m(ev(2), Clef::BASS)], staves: 1 },
         ];
-        let (out, at) = merge(parts, &[1]);
+        let (out, at) = merge(parts, &[1], &[]);
         assert_eq!(out.len(), 2);
         assert_eq!(at, vec![(0, 1), (1, 1), (1, 2)]);
         assert_eq!(out[1].staves, 2);

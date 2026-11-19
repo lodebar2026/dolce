@@ -15,13 +15,17 @@ const BACK_PER_ARCH: f64 = 0.3;
 /// 墨厚（各列中位）不过这么多（相对线距）；两端连线的斜率上限；拱顶不在最外这一截里。
 const THICK_MAX: f64 = 0.32;
 const SLOPE_MAX: f64 = 1.2;
+const SLOPE_MAX_CROSS: f64 = 2.2;
 const PEAK_EDGE: f64 = 0.12;
 /// 挂端：弧端在和弦左 / 右多远以内（相对线距；起端在头心稍右、止端在头心稍左是常态）。
 const END_OUT: f64 = 1.0;
 const END_IN: f64 = 2.0;
 const END_BIAS: f64 = 0.6;
-/// 弧端离和弦（各头、干端）纵向不过这么多（相对线距）。
+/// 弧端离和弦（各头、干端）纵向不过这么多（相对线距）；宽弧躲中间高/低音时端头离得更远。
 const END_DY: f64 = 2.6;
+const END_DY_WIDE: f64 = 4.5;
+const END_DY_CROSS: f64 = 7.5;
+const WIDE_W: f64 = 7.0;
 /// 跨行的半条：空着的那一端要越过本行最外的和弦这么多、离谱表端不过这么多（相对线距）。
 const OPEN_PAST: f64 = 0.8;
 const OPEN_EDGE: f64 = 3.5;
@@ -43,6 +47,8 @@ impl ChordRef {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arc {
     pub staff: usize,
+    /// 止端所在谱行（同谱行弧与 `staff` 相同；跨谱表弧为另一行）。
+    pub end_staff: usize,
     /// 两端（像素）。
     pub a: (f64, f64),
     pub b: (f64, f64),
@@ -60,29 +66,40 @@ fn dy_to(c: &Chord, y: f64) -> f64 {
 }
 
 /// 弧的一端 `(x, y)` 在这一行里挂哪个和弦：回 `(和弦下标, 花费)`。`start`：起端（和弦在弧端左边一点）。
-fn anchor(chords: &[Chord], sp: f64, (x, y): (f64, f64), start: bool) -> Option<(usize, f64)> {
-    let (lo, hi) = if start { (x - END_IN * sp, x + END_OUT * sp) } else { (x - END_OUT * sp, x + END_IN * sp) };
+fn anchor_with(chords: &[Chord], sp: f64, (x, y): (f64, f64), start: bool, out: f64, max_dy: f64, above: Option<bool>) -> Option<(usize, f64)> {
+    let (lo, hi) = if start { (x - END_IN * sp, x + out * sp) } else { (x - out * sp, x + END_IN * sp) };
     let want = if start { x - END_BIAS * sp } else { x + END_BIAS * sp };
     chords
         .iter()
         .enumerate()
         .filter(|(_, c)| c.x >= lo && c.x <= hi)
         .map(|(i, c)| (i, c, dy_to(c, y)))
-        .filter(|&(_, _, dy)| dy <= END_DY * sp)
+        .filter(|&(_, c, dy)| {
+            dy <= max_dy * sp
+                && (dy <= END_DY * sp
+                    || above.is_none_or(|ab| c.heads.iter().any(|h| if ab { y < h.y } else { y > h.y })))
+        })
         .map(|(i, c, dy)| (i, ((c.x - want).abs() + 0.4 * dy) / sp))
         .min_by(|a, b| a.1.total_cmp(&b.1))
 }
 
+fn anchor(chords: &[Chord], sp: f64, p: (f64, f64), start: bool, wide: bool, above: bool) -> Option<(usize, f64)> {
+    anchor_with(chords, sp, p, start, END_OUT, END_DY, None)
+        .or_else(|| wide.then(|| anchor_with(chords, sp, p, start, END_OUT, END_DY_WIDE, Some(above))).flatten())
+}
+
 /// 像不像弧。
-fn arch_like(p: &Piece, sp: f64) -> bool {
+fn arch_like(p: &Piece, sp: f64, slope_max: f64, perp: bool) -> bool {
     let (arch, _) = p.shape.arch();
     let w = p.width();
+    let slope = p.shape.slope();
+    let thick = if perp { p.shape.thick / (1.0 + slope * slope).sqrt() } else { p.shape.thick };
     w >= MIN_W * sp
         && arch >= (MIN_ARCH * sp).max(ARCH_PER_W * w)
         && arch <= ARCH_MAX_PER_W * w
         && p.shape.back() <= (BACK_MAX * sp).max(BACK_PER_ARCH * arch)
-        && p.shape.thick <= THICK_MAX * sp
-        && p.shape.slope().abs() <= SLOPE_MAX
+        && thick <= THICK_MAX * sp
+        && slope.abs() <= slope_max
         && p.shape.peak > PEAK_EDGE
         && p.shape.peak < 1.0 - PEAK_EDGE
 }
@@ -90,7 +107,7 @@ fn arch_like(p: &Piece, sp: f64) -> bool {
 pub fn arcs(f: &Layout, attrs: &[RowAttrs], notes: &[RowNotes], pieces: &[Piece]) -> Vec<Arc> {
     let mut out: Vec<(Arc, f64)> = Vec::new();
     for p in pieces {
-        if !arch_like(p, f.unit.space) {
+        if !arch_like(p, f.unit.space, SLOPE_MAX_CROSS, true) {
             continue;
         }
         let (a, b) = (p.shape.a, p.shape.b);
@@ -101,11 +118,12 @@ pub fn arcs(f: &Layout, attrs: &[RowAttrs], notes: &[RowNotes], pieces: &[Piece]
             let sp = st.space();
             let my = (a.1 + b.1) / 2.0;
             let mx = (a.0 + b.0) / 2.0;
-            if my < st.top(mx) - 7.0 * sp || my > st.bottom(mx) + 7.0 * sp || !arch_like(p, sp) {
+            if my < st.top(mx) - 7.0 * sp || my > st.bottom(mx) + 7.0 * sp || !arch_like(p, sp, SLOPE_MAX, false) {
                 continue;
             }
+            let wide = p.width() >= WIDE_W * sp;
             let chords = &notes[si].chords;
-            let (s, e) = (anchor(chords, sp, a, true), anchor(chords, sp, b, false));
+            let (s, e) = (anchor(chords, sp, a, true, wide, above), anchor(chords, sp, b, false, wide, above));
             let cand = match (s, e) {
                 (Some((i, ci)), Some((j, cj))) if chords[i].x < chords[j].x => Some((Some(ChordRef::of(&chords[i])), Some(ChordRef::of(&chords[j])), ci + cj)),
                 (Some((i, ci)), _) => {
@@ -123,13 +141,50 @@ pub fn arcs(f: &Layout, attrs: &[RowAttrs], notes: &[RowNotes], pieces: &[Piece]
             };
             if let Some((start, end, cost)) = cand {
                 if best.as_ref().is_none_or(|b| cost < b.1) {
-                    best = Some((Arc { staff: si, a, b, above, start, end }, cost));
+                    best = Some((Arc { staff: si, end_staff: si, a, b, above, start, end }, cost));
+                }
+            }
+        }
+        // 跨谱表弧：花括号大谱表两行之间（如钢琴左右手琶音圆滑线）
+        if best.is_none() {
+            let mx = (a.0 + b.0) / 2.0;
+            let my = (a.1 + b.1) / 2.0;
+            for sys in &f.systems {
+                for &bi in &sys.braces {
+                    let Some((&u, &l)) = sys.staves.get(bi).zip(sys.staves.get(bi + 1)) else { continue };
+                    let sp = (f.staves[u].space() + f.staves[l].space()) / 2.0;
+                    if p.width() < 2.0 * sp || my < f.staves[u].top(mx) - 7.0 * sp || my > f.staves[l].bottom(mx) + 7.0 * sp || !arch_like(p, sp, SLOPE_MAX_CROSS, true) {
+                        continue;
+                    }
+                    let wide = p.width() >= WIDE_W * sp;
+                    for (s1, s2) in [(u, l), (l, u)] {
+                        let c1 = &notes[s1].chords;
+                        let c2 = &notes[s2].chords;
+                        let s = anchor(c1, sp, a, true, wide, above).or_else(|| {
+                            (a.1 >= f.staves[u].top(a.0) - 2.0 * sp && a.1 <= f.staves[l].bottom(a.0) + 2.0 * sp)
+                                .then(|| anchor_with(c1, sp, a, true, END_OUT, END_DY_CROSS, None))
+                                .flatten()
+                        });
+                        let e = anchor(c2, sp, b, false, wide, above).or_else(|| {
+                            (b.1 >= f.staves[u].top(b.0) - 2.0 * sp && b.1 <= f.staves[l].bottom(b.0) + 2.0 * sp)
+                                .then(|| anchor_with(c2, sp, b, false, END_OUT, END_DY_CROSS, None))
+                                .flatten()
+                        });
+                        if let (Some((i, ci)), Some((j, cj))) = (s, e) {
+                            if c2[j].x > c1[i].x + 0.8 * sp {
+                                let cost = ci + cj;
+                                if best.as_ref().is_none_or(|b| cost < b.1) {
+                                    best = Some((Arc { staff: s1, end_staff: s2, a, b, above, start: Some(ChordRef::of(&c1[i])), end: Some(ChordRef::of(&c2[j])) }, cost));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
         if let Some((arc, _)) = best {
             // 同样两端的只留最宽的一条（没接上的碎段）
-            match out.iter_mut().find(|(o, _)| o.staff == arc.staff && o.start == arc.start && o.end == arc.end && o.above == arc.above) {
+            match out.iter_mut().find(|(o, _)| o.staff == arc.staff && o.end_staff == arc.end_staff && o.start == arc.start && o.end == arc.end && o.above == arc.above) {
                 Some(o) if p.width() > o.1 => *o = (arc, p.width()),
                 Some(_) => {}
                 None => out.push((arc, p.width())),

@@ -345,6 +345,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
     // 各声部的弧（两端定了的）与等下一个系统接的半条
     let mut span_recs: Vec<Vec<SpanRec>> = (0..nparts).map(|_| Vec::new()).collect();
     let mut pending: Vec<Vec<Pending>> = (0..nparts).map(|_| Vec::new()).collect();
+    let mut cross_spans: Vec<spans::CrossSpan> = Vec::new();
     // 各声部画到行尾、还没收的房子
     let mut open_volta: Vec<Option<Ending>> = vec![None; nparts];
     // 各声部画到行尾、等下一个系统接着的松叶
@@ -468,6 +469,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                     doubts.push(Doubt::new(Locus { page: pn + 1, system: sys_i, row: k, measure: Some(from), note: None }, lead_rect(k), codes::CLEF_CARRIED));
                 }
             }
+            let mut sys_anchors: Vec<Vec<Anchor>> = vec![Vec::new(); rows.len()];
             for (k, &i) in rows.iter().enumerate() {
                 let p = slots[k];
                 used[p] = true;
@@ -641,8 +643,9 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                 // 线性符号：弧、松叶按 x 挂到和弦上
                 anchors.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.voice.cmp(&b.voice)));
                 let sp_row = f.staves[i].space();
-                let arcs: Vec<(usize, &Arc)> = page.spans.arcs.iter().enumerate().filter(|(_, a)| a.staff == i).collect();
+                let arcs: Vec<(usize, &Arc)> = page.spans.arcs.iter().enumerate().filter(|(_, a)| a.staff == i && a.end_staff == i).collect();
                 row_arcs(&arcs, &anchors, &ms, from, sp_row, sys_i, &mut pending[p], &mut span_recs[p], &mut ids);
+                sys_anchors[k] = anchors.clone();
                 let wedges: Vec<&Wedge> = page.spans.wedges.iter().filter(|w| w.staff == i).collect();
                 let rests: Vec<Anchor> = beats.clone();
                 beats.extend(anchors.iter().copied());
@@ -702,6 +705,27 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                     part.measures.extend(ms);
                 }
             }
+            for (ak, arc) in page.spans.arcs.iter().enumerate().filter(|(_, a)| a.staff != a.end_staff) {
+                let Some(k1) = rows.iter().position(|&r| r == arc.staff) else { continue };
+                let Some(k2) = rows.iter().position(|&r| r == arc.end_staff) else { continue };
+                let (Some(cs), Some(ce)) = (arc.start, arc.end) else { continue };
+                let sp1 = f.staves[arc.staff].space();
+                let sp2 = f.staves[arc.end_staff].space();
+                let Some(i1) = spans::find_anchor(&sys_anchors[k1], cs, sp1) else { continue };
+                let Some(i2) = spans::find_anchor(&sys_anchors[k2], ce, sp2) else { continue };
+                let (a1, a2) = (&sys_anchors[k1][i1], &sys_anchors[k2][i2]);
+                let rect = spans::arc_rect(arc, (sp1 + sp2) / 2.0);
+                cross_spans.push(spans::CrossSpan {
+                    p1: slots[k1],
+                    m1: from + shifted(a1.bar),
+                    e1: a1.event,
+                    p2: slots[k2],
+                    m2: from + shifted(a2.bar),
+                    e2: a2.event,
+                    above: arc.above,
+                    src: ids.src(ids.arc(ak), RidKind::Slur, rect),
+                });
+            }
             if let Some(t) = read {
                 if from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal) {
                     time = Some(t);
@@ -720,7 +744,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
     split_bars(&mut parts);
     // 花括号括着的两个槽位合成大谱表
     let pairs = grand_pairs(pages, &slots_all, &profs, nparts);
-    let (parts, slot_at) = merge(parts, &pairs);
+    let (parts, slot_at) = merge(parts, &pairs, &cross_spans);
     if std::env::var("OMR_MIXED_DEBUG").is_ok() {
         eprintln!("互证 {fused:?}");
     }
