@@ -138,7 +138,7 @@ fn unspaced(t: &str) -> String {
 
 /// 整行都是音乐术语 / 力度 / 跳转记号（不是歌词）。
 fn is_term_line(text: &str) -> bool {
-    if han_count(text) > 0 || text.chars().count() > 32 || !words::has_term(text) && words::dynamic(text).is_none() && words::jump(text).is_none() {
+    if han_count(text) > 0 || text.chars().count() > 32 || !words::has_staff_term(text) && words::dynamic(text).is_none() && words::jump(text).is_none() {
         return false;
     }
     let words: Vec<&str> = text
@@ -147,7 +147,7 @@ fn is_term_line(text: &str) -> bool {
         .collect();
     !words.is_empty()
         && words.iter().all(|w| {
-            words::has_term(w)
+            words::has_staff_term(w)
                 || words::dynamic(w).is_some()
                 || words::jump(w).is_some()
                 || w.chars().all(|c| c.is_ascii_digit())
@@ -204,7 +204,7 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
             None => pre,
         };
         let han_hint = (2..=12).contains(&han_count(pre)) && !pre.chars().any(|c| c.is_ascii_digit());
-        if (words::has_term(pre) && latin_count(pre) >= 3 && han_count(pre) == 0) || han_hint {
+        if (words::has_staff_term(pre) && latin_count(pre) >= 3 && han_count(pre) == 0) || han_hint {
             out.insert(0, Mark { x, rect: span(0, start), dir: Dir::Words { text: pre.to_string(), above, jump: None } });
         }
         return out;
@@ -226,7 +226,7 @@ fn mark_of(seg: &Seg, above: bool, chord_ok: bool) -> Vec<Mark> {
             })
             .collect();
     }
-    if words::has_term(t) && latin_count(t) >= 3 && t.chars().count() <= 32 && han_count(t) == 0 {
+    if words::has_staff_term(t) && latin_count(t) >= 3 && t.chars().count() <= 32 && han_count(t) == 0 {
         return vec![Mark { x, rect: r, dir: Dir::Words { text: t.to_string(), above, jump: None } }];
     }
     Vec::new()

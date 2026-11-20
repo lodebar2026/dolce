@@ -101,7 +101,7 @@ pub fn header_line_ok(t: &str, gap: f64) -> bool {
     if gap <= CHORD_NEAR && chords::is_annotation_line(t) {
         return false;
     }
-    !(gap <= NEAR && (words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_term(t) && han_count(t) == 0)))
+    !(gap <= NEAR && (words::metronome(t).is_some() || words::dynamic(t).is_some() || (words::has_staff_term(t) && han_count(t) == 0)))
 }
 
 /// 第一行谱（最上面那行）的下标。

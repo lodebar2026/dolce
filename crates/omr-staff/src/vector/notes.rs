@@ -362,6 +362,12 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
             }
         }
     }
+    // 同干混型裁决等符尾 / 符杠定了再做（同位图路）
+    for row in rows.iter_mut() {
+        for c in row.chords.iter_mut() {
+            crate::notes::resolve::resolve_mixed_kinds(c);
+        }
+    }
     // 临时记号（调号与行中调号串用掉的不算：它们在行首区之内或紧跟小节线，右边挂不上头）、附点、奏法
     for (si, row) in rows.iter_mut().enumerate() {
         let st = &f.staves[si];

@@ -61,6 +61,9 @@ pub(super) fn grand_pairs(pages: &[Page], slots_all: &[Vec<usize>], profiles: &[
     out
 }
 
+/// MusicXML 圆滑线号（`number-level`）的上限。
+const SLUR_NUMBER_MAX: u8 = 16;
+
 /// 合并：`pairs` 是上面那个槽位的下标；`cross` 是跨谱表弧。回合并后的声部，与各槽位落到（第几声部, 第几谱表）。
 pub(super) fn merge(parts: Vec<Part>, pairs: &[usize], cross: &[super::spans::CrossSpan]) -> (Vec<Part>, Vec<(usize, u8)>) {
     let n = parts.len();
@@ -93,21 +96,19 @@ pub(super) fn merge(parts: Vec<Part>, pairs: &[usize], cross: &[super::spans::Cr
                         e
                     }));
                 }
-                let mut open: Vec<(u8, usize, usize)> = Vec::new();
+                // 跨谱表弧另用一段号（上谱表 1..=N、下谱表 N+1..=2N 之后到 MusicXML 的上限 16）；开着的按（小节, 拍位）收，同一小节里前一条收了号就能再用
+                let mut open: Vec<(u8, (usize, u32))> = Vec::new();
                 for cs in cross.iter().filter(|cs| (cs.p1 == u && cs.p2 == l) || (cs.p1 == l && cs.p2 == u)) {
-                    let e1 = if cs.p1 == l { upper_lens[cs.m1] + cs.e1 } else { cs.e1 };
-                    let e2 = if cs.p2 == l { upper_lens[cs.m2] + cs.e2 } else { cs.e2 };
-                    let Some(m1) = upper.measures.get(cs.m1) else { continue };
-                    let Some(m2) = upper.measures.get(cs.m2) else { continue };
-                    if e1 >= m1.events.len() || e2 >= m2.events.len() {
-                        continue;
-                    }
-                    open.retain(|&(_, _, end_m)| end_m >= cs.m1);
-                    let base = SLUR_NUMBERS * 2 + 1;
-                    let Some(number) = (base..base + SLUR_NUMBERS).find(|n| !open.iter().any(|o| o.0 == *n)) else { continue };
-                    open.push((number, cs.m1, cs.m2));
-                    let mark = SpanMark { kind: SpanKind::Slur, start: true, number, above: cs.above, pitch: None, src: cs.src.clone() };
-                    upper.measures[cs.m1].events[e1].spans.push(mark.clone());
+                    let (Some(&n1), Some(&n2)) = (upper_lens.get(cs.m1), upper_lens.get(cs.m2)) else { continue };
+                    let e1 = if cs.p1 == l { n1 + cs.e1 } else { cs.e1 };
+                    let e2 = if cs.p2 == l { n2 + cs.e2 } else { cs.e2 };
+                    let (Some(a), Some(b)) = (upper.measures[cs.m1].events.get(e1), upper.measures[cs.m2].events.get(e2)) else { continue };
+                    let (start, end) = ((cs.m1, a.onset), (cs.m2, b.onset));
+                    open.retain(|o| o.1 >= start);
+                    let Some(number) = (SLUR_NUMBERS * 2 + 1..=SLUR_NUMBER_MAX).find(|n| !open.iter().any(|o| o.0 == *n)) else { continue };
+                    open.push((number, end));
+                    let mark = SpanMark { kind: SpanKind::Slur, start: true, number, above: cs.above, pitch: None, src: cs.src };
+                    upper.measures[cs.m1].events[e1].spans.push(mark);
                     upper.measures[cs.m2].events[e2].spans.push(SpanMark { start: false, ..mark });
                 }
             }

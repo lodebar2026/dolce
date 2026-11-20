@@ -26,6 +26,8 @@ const END_DY: f64 = 2.6;
 const END_DY_WIDE: f64 = 4.5;
 const END_DY_CROSS: f64 = 7.5;
 const WIDE_W: f64 = 7.0;
+/// 跨谱表弧两端朝另一行谱方向的高差下限（相对线距）。
+const CROSS_RISE: f64 = 2.0;
 /// 跨行的半条：空着的那一端要越过本行最外的和弦这么多、离谱表端不过这么多（相对线距）。
 const OPEN_PAST: f64 = 0.8;
 const OPEN_EDGE: f64 = 3.5;
@@ -158,6 +160,12 @@ pub fn arcs(f: &Layout, attrs: &[RowAttrs], notes: &[RowNotes], pieces: &[Piece]
                     }
                     let wide = p.width() >= WIDE_W * sp;
                     for (s1, s2) in [(u, l), (l, u)] {
+                        // 跨谱表弧从一行谱的音斜着通到另一行谱的音：止端比起端朝另一行谱那边挪过 `CROSS_RISE` 格；
+                        // 两端差不多高的是挂在某一行谱上的弧（另一端没挂上），不在这里硬挂到另一行
+                        let rise = if s1 == u { b.1 - a.1 } else { a.1 - b.1 };
+                        if rise < CROSS_RISE * sp {
+                            continue;
+                        }
                         let c1 = &notes[s1].chords;
                         let c2 = &notes[s2].chords;
                         let s = anchor(c1, sp, a, true, wide, above).or_else(|| {

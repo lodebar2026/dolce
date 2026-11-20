@@ -87,7 +87,7 @@ pub fn acc_kind(f: &PageFrame, u: &Unit, sp: f64) -> Option<Acc> {
     (a_short && b_short && (out as f64) < sp * sp * 0.06).then_some(Acc::Natural)
 }
 
-/// 升降号在谱表上「指着」的音级位置：升号、还原号是中心，降号是肚子的中心（有竖笔时量竖笔右侧肚子的上下沿中点，否则下沿往上半格）。
+/// 升降号在谱表上「指着」的音级位置：升号、还原号是中心，降号是肚子的中心（下沿往上半格）。调号里的降号另用 [`flat_pos`] 量。
 pub fn acc_pos(u: &Unit, kind: Acc) -> f64 {
     match kind {
         Acc::Flat => u.bottom - 1.0,
@@ -95,6 +95,7 @@ pub fn acc_pos(u: &Unit, kind: Acc) -> f64 {
     }
 }
 
+/// 调号里降号指着的音级位置：有竖笔时量竖笔右侧肚子的上下沿中点（竖笔与肚子并回的单元下沿不一定是肚子下沿），否则同 [`acc_pos`]。
 fn flat_pos(f: &PageFrame, s: &Staff, u: &Unit) -> f64 {
     let st = stems(f, u, 0.72);
     if let Some(stem) = st.first() {
@@ -104,7 +105,7 @@ fn flat_pos(f: &PageFrame, s: &Staff, u: &Unit) -> f64 {
             let (y0, y1) = (u.rect.y.floor() as i64, u.rect.bottom().ceil() as i64);
             let mut rows = (y0..=y1).filter(|&y| (xa..=xb).any(|x| f.ink.at(x, y) == crate::frame::ink::INK));
             if let Some(top) = rows.next() {
-                let bot = rows.last().unwrap_or(top);
+                let bot = rows.next_back().unwrap_or(top);
                 return s.pos(u.rect.cx(), (top + bot) as f64 / 2.0);
             }
         }
@@ -396,7 +397,7 @@ pub fn read_key_strokes(f: &PageFrame, s: &Staff, clef: Clef, start: f64) -> (i8
                     }
                 }
             }
-            let cy = if sn > 0 { sy / sn as f64 } else { k.bottom as f64 - sp };
+            let cy = if sn > 0 { sy / sn as f64 } else { k.bottom as f64 - sp * 0.5 };
             let p = s.pos(k.cx(), cy);
             // 肚子：竖笔下半截右边有墨，上端右边没有
             let down = ink_in(f, k.x1 + 1, k.x1 + (sp * 0.6) as i64, k.bottom - (sp * 0.9) as i64, k.bottom);

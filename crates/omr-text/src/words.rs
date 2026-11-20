@@ -6,7 +6,12 @@ use std::sync::LazyLock;
 static METRO: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[=＝]\s*(c(?:a|irca)?\s*\.?\s*)?(\d ?\d ?\d?)").unwrap());
 /// 表情与速度术语。
 static TERM: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(rit|rall|riten|ritard|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|espr|expr|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|andante|allegro|allegretto|moderato|adagio|largo|lento|maestoso|vivace|presto|pizz|arco|delicately|freely|pedal|ped|harmonically|gently|smoothly|quietly|tenderly|prayerfully|reverently|majestically|expressively|gradually)\b|\bd\. ?[sc]\b").unwrap()
+    Regex::new(r"(?i)\b(rit|rall|riten|ritard|accel|tempo|cresc|decresc|dim|poco|molto|dolce|legato|unis|unison|solo|tutti|div|sim|sub|piu|meno|mosso|espress|cantabile|sost|marc|stacc|fine|coda|segno|slower|faster|broadly|andante|allegro|allegretto|moderato|adagio|largo|lento|maestoso|vivace|presto|pizz|arco)\b|\bd\. ?[sc]\b").unwrap()
+});
+/// 五线谱谱面上另有的表情词：缩写（`espr.`、`Ped.`）与英文副词（诗歌本、合唱谱的「Gently」「Freely」）。
+/// 英文副词也是常见的歌词词，只在五线谱路线（文字带分得出谱表上下的记号行）连同 [`TERM`] 一起用（[`has_staff_term`]）。
+static EXPR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(espr|expr|pedal|ped|delicately|freely|harmonically|gently|smoothly|quietly|tenderly|prayerfully|reverently|majestically|expressively|gradually)\b").unwrap()
 });
 static DYNAMIC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(ppp|pp|p|mp|mf|fff|ff|f|sfz|sf|fz|fp)$").unwrap());
 static JUMP_MARK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:D\.?\s*[SC]\b.*|fine\.?|to\s*coda.*|coda)$").unwrap());
@@ -24,6 +29,11 @@ pub fn metronome(text: &str) -> Option<(u32, bool)> {
 /// 含表情 / 速度术语。
 pub fn has_term(text: &str) -> bool {
     TERM.is_match(text)
+}
+
+/// 含表情 / 速度术语，连同五线谱谱面上的表情缩写与英文表情副词（[`EXPR`]）。
+pub fn has_staff_term(text: &str) -> bool {
+    TERM.is_match(text) || EXPR.is_match(text)
 }
 
 /// 整串是力度记号（小写比）。
