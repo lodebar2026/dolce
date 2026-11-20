@@ -110,6 +110,10 @@ jobs:
             pkg: darwin-arm64
           - os: windows-latest
             pkg: win32-x64
+          # 用 22.04 不用 latest：产物的 glibc 下限随 runner（22.04 = 2.35），老发行版也能跑。
+          # linux-arm64 暂不出；pack-omr.mjs 已支持，要时加 { os: ubuntu-22.04-arm, pkg: linux-arm64 }
+          - os: ubuntu-22.04
+            pkg: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -131,13 +135,17 @@ jobs:
         run: node scripts/pack-omr.mjs --targets=${{ matrix.pkg }}
       # 冒烟：解开的包在干净目录里能起来、载得到 OCR 模型与 ONNX Runtime，真识别一张图（截图里的简谱，只看能跑通），
       # 再从同一张图写一份 jcx（GBK 编码、Rust 写出端）
-      - name: Smoke test (macOS)
+      - name: Smoke test (macOS / Linux)
         if: runner.os != 'Windows'
         run: |
           mkdir smoke && tar xzf out/pkg/*.tar.gz -C smoke
           smoke/*/omr-cli docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
           smoke/*/omr-cli docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
           ls -la smoke/out && test -s smoke/out/a.123 && test -s smoke/out/a.jcx
+      # 只打印：包里二进制要求的最高 glibc 版本，即 Linux 包的运行下限
+      - name: glibc floor (Linux)
+        if: runner.os == 'Linux'
+        run: objdump -T smoke/*/omr-cli smoke/*/libpdfium.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

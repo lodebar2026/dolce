@@ -96,7 +96,7 @@ The interface is available in **English and Chinese**: it follows your browser l
   images and PDFs into text notation, 123, ABC, MusicXML and the other formats, with the same recognizer and writers
   as the editor. For jianpu, `-l lyrics.txt` cross-checks against the song's lyric text (look-alike characters are
   corrected, dropped ones filled in, and the rest reported). The `omr-cli-<version>-<platform>` packages on the
-  releases page run as-is, without Node.
+  releases page (macOS arm64, Windows x64, Linux x64) run as-is, without Node.
 - **Hymnal splitting.** `omr-cli split book.pdf -o songs/` turns a paged jianpu hymnal (scanned PDF or a
   folder of page images) into one `number title.jpg` per song: pages holding several songs are cut at the titles,
   songs running over pages are joined into one image with page numbers removed and system spacing kept even, and

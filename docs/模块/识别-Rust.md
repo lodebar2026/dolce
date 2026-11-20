@@ -589,7 +589,7 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 |---|---|---|
 | 桌面版 | `src-tauri/src/omr.rs`：`omr_open` / `render` / `binary` / `recognize`（进度走 `Channel`）/ `cancel` / `session` / `close`，OCR 是 `ort` 原生会话池（`DOLCE_OCR_SESS` × `DOLCE_OCR_THREADS`，缺省 3 × 3），PDFium 动态库随包 | `src/omrrust/engine.ts`（`omrEngine()` 判宿主）→ `editor/omrctl.ts` |
 | 网页版 | `crates/omr-wasm`（`OmrDoc` 与 Tauri 命令一一对应、`load_ocr` 用 tract、`set_pdfium_module`）跑在 Worker `src/omrrust/worker.ts` 里；`scripts/build-wasm.mjs` 编进 `public/redist/omr/`（不入库，vite dev / build 开头调） | `src/omrrust/webengine.ts`（取消走 SharedArrayBuffer 标志） |
-| 命令行 | `omr-cli <图…>`（识谱出各格式、参照歌词）/ `split` / `run`（一首一行 JSON） | 用户直接跑；`scripts/pack-omr.mjs` 打分发包 `omr-cli-<版本>-<os>-<cpu>`（识谱程序 + PDFium + 模型，不带 Node） |
+| 命令行 | `omr-cli <图…>`（识谱出各格式、参照歌词）/ `split` / `run`（一首一行 JSON） | 用户直接跑；`scripts/pack-omr.mjs` 打分发包 `omr-cli-<版本>-<os>-<cpu>`（识谱程序 + PDFium + 模型，不带 Node；CI 出 darwin-arm64 / win32-x64 / linux-x64） |
 
 - **请求与回应的格式两端一样**（`omr-engine::Handle`）：打开是 `u32 个数` + 各 `u32 长度` + 字节；渲染回 `u32 宽高` + RGBA；核对底图回宽高、倍数（核对坐标乘它是底图像素）、底图在页上的框与页宽高 + 0 / 1 像素；识别与会话回 JSON。
 - **会话操作**：`omr-staff::session::Op` 各种（rebuild / restructure / pin / unpin / choose / context），外加 `insert`（点原图补音）与 `region`（框选重读歌词 / 文字指示）。编辑器重建前把删音、改音高、改时值记成钉住（同一音上不同种事实并存），其余手改照旧按识别 id 回放。
