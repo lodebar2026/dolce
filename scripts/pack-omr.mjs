@@ -209,7 +209,7 @@ ${run} --help                         ${c} 全部参数
 \`-f\` 选格式（缺省 \`musicxml\`），与图片同名放在一起。
 
 环境变量：\`OMR_MODELS\` 指定模型目录（缺省包内 \`models/\`）。
-${win ? `\n${CRT ? "识谱程序动态链接 VC++ 运行库，本包已把它们放在同目录内置，不必另装 Microsoft Visual C++ 可再发行组件。" : "需要 Microsoft Visual C++ 2015–2022 可再发行组件。"}\n输出编码为 UTF-8，用 \`-o\` 写文件最稳；直接看 stdout 的话先 \`chcp 65001\`。\n` : ""}${linux ? "\n要求 glibc 2.35 及以上（Ubuntu 22.04、Debian 12 及更新的发行版）与系统自带的 libstdc++。\n" : ""}`;
+${win ? `\n${CRT ? "识谱程序动态链接 VC++ 运行库，本包已把它们放在同目录内置，不必另装 Microsoft Visual C++ 可再发行组件。" : "需要 Microsoft Visual C++ 2015–2022 可再发行组件。"}\n输出编码为 UTF-8，用 \`-o\` 写文件最稳；直接看 stdout 的话先 \`chcp 65001\`。\n` : ""}${linux ? "\n要求 glibc 2.38 及以上（Ubuntu 24.04、Debian 13、Fedora 39 及更新的发行版）与系统自带的 libstdc++。\n" : ""}`;
 }
 
 async function build(target) {

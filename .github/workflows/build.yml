@@ -110,9 +110,9 @@ jobs:
             pkg: darwin-arm64
           - os: windows-latest
             pkg: win32-x64
-          # 用 22.04 不用 latest：产物的 glibc 下限随 runner（22.04 = 2.35），老发行版也能跑。
-          # linux-arm64 暂不出；pack-omr.mjs 已支持，要时加 { os: ubuntu-22.04-arm, pkg: linux-arm64 }
-          - os: ubuntu-22.04
+          # ort 预编译的静态 onnxruntime 用到 glibc 2.38 / GCC 13 的符号，22.04 链不过，至少 24.04；包的 glibc 下限因此是 2.38。
+          # linux-arm64 暂不出；pack-omr.mjs 已支持，要时加 { os: ubuntu-24.04-arm, pkg: linux-arm64 }
+          - os: ubuntu-24.04
             pkg: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
