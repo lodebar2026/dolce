@@ -130,9 +130,12 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
     };
     // -o 是目录（多个输入、给了目录，或路径本身就是已存在的目录）时逐个写文件，否则当单个输出文件
     let out_is_dir = o.out.as_ref().is_some_and(|out| o.inputs.len() > 1 || any_dir || out.is_dir());
-    if out_is_dir {
-        let out = o.out.as_ref().unwrap();
-        std::fs::create_dir_all(out).map_err(|e| format!("建不了目录 {}：{e}", out.display()))?;
+    // 输出目录（或单个输出文件的上级目录）不存在就建
+    if let Some(out) = &o.out {
+        let dir = if out_is_dir { Some(out.as_path()) } else { out.parent().filter(|p| !p.as_os_str().is_empty()) };
+        if let Some(d) = dir {
+            std::fs::create_dir_all(d).map_err(|e| format!("建不了目录 {}：{e}", d.display()))?;
+        }
     }
     let multi = o.inputs.len() > 1 || any_dir;
     let files = expand(&o.inputs);
