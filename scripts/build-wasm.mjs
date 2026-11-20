@@ -52,7 +52,8 @@ function has(cmd) {
 /** Cargo.lock 里 wasm-bindgen 的版本（CLI 要同一版）。 */
 function bindgenVersion() {
   const lock = readFileSync(join(crates, "Cargo.lock"), "utf8");
-  return /name = "wasm-bindgen"\nversion = "([^"]+)"/.exec(lock)?.[1] ?? "?";
+  // Windows 检出可能是 CRLF
+  return /name = "wasm-bindgen"\r?\nversion = "([^"]+)"/.exec(lock)?.[1] ?? "?";
 }
 
 /** 两份：`dolce_omr_wasm` 只用 simd128（Safari 没有 relaxed-simd）；`dolce_omr_wasm_relaxed` 另开 relaxed-simd——tract 的矩阵内核

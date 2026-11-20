@@ -62,6 +62,8 @@ jobs:
       # 「找不到 MSVCP140_1.dll」。下面 tauri 那步是增量编译，不会重来一遍。
       - name: 校验 Windows 包内置的 VC++ 运行库
         if: matrix.os == 'windows-latest'
+        # bash（-e）：任一条失败即停；pwsh 不因原生命令非零退出而停，前面坏了会一路跑到最后才红、报错也指错地方
+        shell: bash
         env:
           DOLCE_NO_WASM: "1"
         run: |
