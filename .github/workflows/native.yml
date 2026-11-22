@@ -1,6 +1,6 @@
 name: Native modules
 
-# Node 侧的原生模块：排版量字（native/textmeasure：macOS CoreText / Windows DirectWrite）与位图识别像素内核（native/omrkernels）。
+# Node 侧的原生模块：排版量字（native/textmeasure：macOS CoreText / Windows DirectWrite）。（原位图识别像素内核 native/omrkernels 随 TS 识别删了，内核在 crates/omr-core::pixel。）
 # 本机只有 macOS，Windows 那份靠这里编译并跑冒烟测试（各自的 smoke.mjs）。
 # 只手动触发：Actions 页面选这个工作流点 Run workflow，或 gh workflow run native.yml。
 on:
@@ -33,7 +33,6 @@ jobs:
         with:
           workspaces: |
             native/textmeasure
-            native/omrkernels
             crates
 
       - name: Install wasm-bindgen
@@ -54,5 +53,3 @@ jobs:
       - name: Smoke test (textmeasure)
         run: node native/textmeasure/smoke.mjs
 
-      - name: Smoke test (omrkernels)
-        run: node native/omrkernels/smoke.mjs
