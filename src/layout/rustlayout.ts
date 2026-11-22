@@ -110,7 +110,7 @@ export async function layoutAsync(w: LayoutWire): Promise<LaidHandle> {
   return core ? nativeLayout(core, w) : layoutSync(w);
 }
 
-/** 宿主对账（dev `layout-node-parity.mjs`）：一份请求录成 `dolce layout-wire` 吃的一行（表层快照写 hex）。 */
+/** 宿主对账（dev `layout-node-parity.mjs`）：一份请求录成 `dolce-dev layout-wire` 吃的一行（表层快照写 hex）。 */
 export function wireDump(w: LayoutWire, key: string, cfg: string): string {
   const { json, h } = docJson(w.doc);
   let surface: string | null = null;

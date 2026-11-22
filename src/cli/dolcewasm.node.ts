@@ -1,5 +1,5 @@
 // Node 宿主载 dolce-wasm 与 dolce-jcx-wasm（out/cli 各入口、vitest 的 setup 都 import 它；网页在 `main.ts::loadDolce`）。
-// wasm 找两处：同目录 `dolce/`（识谱命令行分发包，`scripts/pack-omr.mjs` 拷进去）、仓库的 `public/redist/dolce/`
+// wasm 找两处：同目录 `dolce/`（识谱命令行分发包，`scripts/pack-cli.mjs` 拷进去）、仓库的 `public/redist/dolce/`
 // （本文件在 src/cli/ 或打包后的 out/cli/，往上两级都是 web 根）。`npm run build:wasm` 产出。
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";

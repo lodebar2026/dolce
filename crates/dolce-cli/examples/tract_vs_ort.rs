@@ -1,5 +1,5 @@
 //! tract 与 ort 对账：同一首曲子识别时每次推理两个后端都跑，比输出张量与贪心解码，各计耗时。
-//! `cargo run --release -p dolce-omr-cli --example tract_vs_ort -- jianpu|staff 文件…`
+//! `cargo run --release -p dolce-cli --example tract_vs_ort -- jianpu|staff 文件…`
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_ocr::native::NativeInfer;
 use dolce_omr_ocr::tract::TractInfer;

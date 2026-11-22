@@ -1,4 +1,4 @@
-//! 样式层对拍（迁 Rust L1）：`dolce style-check <cases.jsonl> [--redist=<目录>] [--show=N]`。
+//! 样式层对拍（迁 Rust L1）：`dolce-dev style-check <cases.jsonl> [--redist=<目录>] [--show=N]`。
 //!
 //! 每行一个用例（dev `style-rs-diff.mjs` 由 TS 现算导出）：`{ key, kind, …输入, expect | error }`，Rust 重算后逐字段比
 //! （对象不看键序；数逐位相等；TS 的 `undefined` 不进 JSON、Rust 的 `None` 同样不写）。`kind`：
@@ -199,7 +199,7 @@ fn run(case: &Value, mc: &MeasureCtx) -> Result<Value, String> {
 pub fn style_check(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(path) = pos.first() else {
-        eprintln!("用法：dolce style-check <cases.jsonl> [--redist=<目录>] [--show=N]");
+        eprintln!("用法：dolce-dev style-check <cases.jsonl> [--redist=<目录>] [--show=N]");
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));

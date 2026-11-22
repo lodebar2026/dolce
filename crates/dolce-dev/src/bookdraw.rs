@@ -1,4 +1,4 @@
-//! `dolce book-draw-check <cases.jsonl> --measure=<measure.jsonl>`：成书迁 Rust（L6）的 `browser.ts` / `songbook.ts` 对拍。
+//! `dolce-dev book-draw-check <cases.jsonl> --measure=<measure.jsonl>`：成书迁 Rust（L6）的 `browser.ts` / `songbook.ts` 对拍。
 //! 用例由 dev `book-draw-rs-diff.mjs` 让 TS 现算（`cli/bookdrawref.ts`）；这里在量字回放下用 `dolce-book` 重算，逐段比：
 //!
 //! - 成书一首（`kind: "song"`）：`doc`（`book_doc_of`，去掉 `source` 与身份 `_oid`）、`cells`（`book_cells_per_line`）、
@@ -132,13 +132,13 @@ fn run_songbook(case: &Value, env: &Env) -> Result<Value, String> {
     Ok(v)
 }
 
-/// `dolce songbook <input.json> --out=<result.json> [--fonts=<族名→文件.json>] [--redist=<目录>]`：混排歌本整本排版（dev `kl2020-book.mjs` 用）。
+/// `dolce-dev songbook <input.json> --out=<result.json> [--fonts=<族名→文件.json>] [--redist=<目录>]`：混排歌本整本排版（dev `kl2020-book.mjs` 用）。
 /// 输入同 `book-draw-check` 的 `songbook` 用例（`{songs: [{xml, entry}], rules, songStart, families}`，`rules` 是 `.ss` 解析出的规则）；
 /// 出 `SongbookResult` JSON（目录页、谱面页、各曲起始页、用到的族…）。量字是系统文字引擎（Chromium 口径），`--fonts` 给的字体文件先注册。
 pub fn songbook(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(path), Some(out)) = (pos.first(), flag(args, "out")) else {
-        eprintln!("用法：dolce songbook <input.json> --out=<result.json> [--fonts=<族名→文件.json>] [--redist=<目录>]");
+        eprintln!("用法：dolce-dev songbook <input.json> --out=<result.json> [--fonts=<族名→文件.json>] [--redist=<目录>]");
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
@@ -172,7 +172,7 @@ pub fn book_draw_check(args: &[String]) -> i32 {
     let native = args.iter().any(|a| a == "--native");
     let mpath = flag(args, "measure");
     let (Some(path), true) = (pos.first(), native || mpath.is_some()) else {
-        eprintln!("用法：dolce book-draw-check <cases.jsonl> (--measure=<measure.jsonl> | --native) [--stage=doc,cells,spans,draw,songbook] [--limit=N] [--key=子串] [--show=N] [--redist=<目录>]");
+        eprintln!("用法：dolce-dev book-draw-check <cases.jsonl> (--measure=<measure.jsonl> | --native) [--stage=doc,cells,spans,draw,songbook] [--limit=N] [--key=子串] [--show=N] [--redist=<目录>]");
         return 2;
     };
     let stages: Vec<&str> = flag(args, "stage").map_or(STAGES.to_vec(), |s| s.split(',').collect());

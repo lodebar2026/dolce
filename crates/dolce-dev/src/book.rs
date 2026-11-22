@@ -1,4 +1,4 @@
-//! `dolce book-rebuild <目录>`：成书 B 路整本迁 Rust（L6）的对拍。目录由 dev `rebuild.mjs --rs-input=<目录>` 写：
+//! `dolce-dev book-rebuild <目录>`：成书 B 路整本迁 Rust（L6）的对拍。目录由 dev `rebuild.mjs --rs-input=<目录>` 写：
 //! `input.json`（样式表原文、曲目与 musicxml、书级元数据行）、`measure.jsonl`（排版引擎量字录制）、`book-measure.jsonl`（书级量字录制）、
 //! `expect-rebuild-drawlist.json` / `expect-rebuild-lines.json`（TS 产物）。
 //!
@@ -66,7 +66,7 @@ fn judge_list(what: &str, want: &[Value], got: &[Value], label: impl Fn(usize, &
 pub fn book_rebuild(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(dir) = pos.first().map(Path::new) else {
-        eprintln!("用法：dolce book-rebuild <目录> [--native] [--book-native] [--show=N] [--out=<目录>] [--redist=<目录>] [--fonts=<族名→文件.json>]");
+        eprintln!("用法：dolce-dev book-rebuild <目录> [--native] [--book-native] [--show=N] [--out=<目录>] [--redist=<目录>] [--fonts=<族名→文件.json>]");
         return 2;
     };
     let native = args.iter().any(|a| a == "--native");

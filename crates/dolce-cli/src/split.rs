@@ -1,4 +1,4 @@
-//! `omr-cli split`：歌本切分（`omr-book`）。整本分页歌谱（PDF 取每页内嵌源图，或页图文件夹按文件名自然序）→ 输出目录里一首一张
+//! `dolce split`：歌本切分（`omr-book`）。整本分页歌谱（PDF 取每页内嵌源图，或页图文件夹按文件名自然序）→ 输出目录里一首一张
 //! `曲号 曲名.jpg`；转曲矢量 PDF 整页渲成图来扫描，出 `曲号 曲名.png`（`--dpi`，缺省 300）；`--recognize` 切完逐首识别，
 //! 回原书取矢量对象，写 `曲号 曲名` 的 MusicXML（或 `-f` 选的格式）。核对报告写到 `输出目录/切分报告.txt`（及 `--report` JSON）。
 //! 有缺号、重号或识别失败时退出码 1。
@@ -20,13 +20,13 @@ use std::sync::Mutex;
 use dolce_formats::capability::TargetFormat;
 use dolce_formats::targets::{message_zh, write_music_xml_as};
 
-pub const USAGE: &str = "  omr-cli split <歌本.pdf | 页图目录> -o <输出目录> [--report 报告.json] [--quality 92] [--dpi 300] [--toc-pages 3-15] [--dry-run]
+pub const USAGE: &str = "  dolce split <歌本.pdf | 页图目录> -o <输出目录> [--report 报告.json] [--quality 92] [--dpi 300] [--toc-pages 3-15] [--dry-run]
               [--recognize [-f 格式]] [--cache=OCR缓存.json]
       歌本切分：一页多首按标题切开、一首跨页按序拼接，去页码，按书内目录核对缺漏
       --toc-pages  目录页（按源页序，1 起；如 3-15 或 3,5,7-9）；不给则自动认歌谱区之前全是字行的页
       --dry-run    只扫描、核对并打印报告，不写图片
       --quality    位图歌本出 JPEG 的质量；--dpi 转曲矢量歌本出 PNG 的分辨率
-      --recognize  切完逐首识别（只收转曲矢量歌本，取原书矢量对象），-f 选输出格式（同 omr-cli 识谱，缺省 musicxml）
+      --recognize  切完逐首识别（只收转曲矢量歌本，取原书矢量对象），-f 选输出格式（同 dolce omr 识谱，缺省 musicxml）
       --cache      OCR 结果缓存（缺省 ../dev/data/rust-omr/ocr-cache/book-<书名>.json）";
 
 struct Opts {
@@ -114,7 +114,7 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
     let path = Path::new(input);
     let src = BookSource::open(path)?;
     if o.recognize && !src.is_vector() {
-        return Err("--recognize 只收转曲矢量歌本；位图歌本请先 split 出图，再用 omr-cli 批量识别图片目录".into());
+        return Err("--recognize 只收转曲矢量歌本；位图歌本请先 split 出图，再用 dolce omr 批量识别图片目录".into());
     }
     if src.is_vector() {
         eprintln!("转曲矢量 PDF：出 PNG（{} dpi）", o.dpi.unwrap_or(300.0));

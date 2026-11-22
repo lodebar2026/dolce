@@ -92,12 +92,12 @@ The interface is available in **English and Chinese**: it follows your browser l
   every format. Dropped images are routed to jianpu or staff recognition automatically (by looking for five-line staves),
   or you can choose explicitly. If staves are assigned to the wrong parts, fix the mapping in the parts panel and
   the score is rebuilt without re-recognizing.
-- **Command-line recognition.** `omr-cli images-or-PDFs… -f format -o out` batch-recognizes jianpu and staff
+- **Command-line recognition.** `dolce omr images-or-PDFs… -f format -o out` batch-recognizes jianpu and staff
   images and PDFs into text notation, 123, ABC, MusicXML and the other formats, with the same recognizer and writers
   as the editor. For jianpu, `-l lyrics.txt` cross-checks against the song's lyric text (look-alike characters are
-  corrected, dropped ones filled in, and the rest reported). The `omr-cli-<version>-<platform>` packages on the
+  corrected, dropped ones filled in, and the rest reported). The `dolce-cli-<version>-<platform>` packages on the
   releases page (macOS arm64, Windows x64, Linux x64) run as-is, without Node.
-- **Hymnal splitting.** `omr-cli split book.pdf -o songs/` turns a paged jianpu hymnal (scanned PDF or a
+- **Hymnal splitting.** `dolce split book.pdf -o songs/` turns a paged jianpu hymnal (scanned PDF or a
   folder of page images) into one `number title.jpg` per song: pages holding several songs are cut at the titles,
   songs running over pages are joined into one image with page numbers removed and system spacing kept even, and
   the result is checked against the book's own table of contents for missing or duplicate numbers.

@@ -1,4 +1,4 @@
-//! `dolce jianpu-check <cases.jsonl> --measure=<measure.jsonl>`：简谱引擎迁 Rust（L3 place / L4 compose）的对拍。
+//! `dolce-dev jianpu-check <cases.jsonl> --measure=<measure.jsonl>`：简谱引擎迁 Rust（L3 place / L4 compose）的对拍。
 //! 用例由 dev `jianpu-rs-diff.mjs` 让 TS 整份排出（文档 + 外部配置 + 期望）；这里在量字回放下用 `dolce-layout-jianpu` 重排，逐档比四段：
 //!
 //! - `grid`：定稿栅格（`JianpuGrid::to_json`，TS `plainOf(metrics)`）；
@@ -270,7 +270,7 @@ pub fn jianpu_check(args: &[String]) -> i32 {
     let native = args.iter().any(|a| a == "--native");
     let mpath = flag(args, "measure");
     let (Some(path), true) = (pos.first(), native || mpath.is_some()) else {
-        eprintln!("用法：dolce jianpu-check <cases.jsonl> (--measure=<measure.jsonl> | --native) [--stage=grid,placed,scene,size] [--limit=N] [--key=子串] [--cfg=档名] [--show=N] [--redist=<目录>]");
+        eprintln!("用法：dolce-dev jianpu-check <cases.jsonl> (--measure=<measure.jsonl> | --native) [--stage=grid,placed,scene,size] [--limit=N] [--key=子串] [--cfg=档名] [--show=N] [--redist=<目录>]");
         return 2;
     };
     let stages: Vec<&str> = flag(args, "stage").map_or(STAGES.to_vec(), |s| s.split(',').collect());

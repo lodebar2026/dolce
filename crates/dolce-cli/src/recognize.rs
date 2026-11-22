@@ -77,7 +77,7 @@ pub fn open_ocr(cache: Option<&Path>) -> Result<CachedOcr, String> {
     Ok(CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, env("DOLCE_OCR_SESS", 8), env("DOLCE_OCR_THREADS", 1))), &dict)), cache))
 }
 
-/// `omr-cli recognize staff 文件 [--out=目录]`：识别一个五线谱文件，写出 `<曲>.musicxml`（带识别 id）与 `<曲>.review.json`（核对 JSON，交 web `omrrust/adapter.ts`）。
+/// `dolce recognize staff 文件 [--out=目录]`：识别一个五线谱文件，写出 `<曲>.musicxml`（带识别 id）与 `<曲>.review.json`（核对 JSON，交 web `omrrust/adapter.ts`）。
 fn one_staff(file: &str, out: &str) -> Result<(), String> {
     let ocr = open_ocr(Some(&crate::sibling("dev/data/rust-omr/ocr-cache/session.json")))?;
     let t0 = std::time::Instant::now();
@@ -97,7 +97,7 @@ fn one_staff(file: &str, out: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// `omr-cli recognize jianpu 文件 [--render] [--out=文件]`：识别一个简谱文件，打出各项计数（没有 GT 时两条路对照用）。
+/// `dolce recognize jianpu 文件 [--render] [--out=文件]`：识别一个简谱文件，打出各项计数（没有 GT 时两条路对照用）。
 pub fn one(args: &[String]) -> Result<(), String> {
     let (kind, file) = (args.first().ok_or("缺档")?, args.get(1).ok_or("缺文件")?);
     if kind == "staff" {
@@ -142,7 +142,7 @@ pub fn one(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `omr-cli session 文件 --ops=操作.jsonl [--out=目录]`：识别一个五线谱文件，开会话，逐条做操作（每行一条 JSON，形状见 `omr-staff::session::Op`），
+/// `dolce session 文件 --ops=操作.jsonl [--out=目录]`：识别一个五线谱文件，开会话，逐条做操作（每行一条 JSON，形状见 `omr-staff::session::Op`），
 /// 每一步写出 `<步>.musicxml` 与 `<步>.rec.json`，报声部数、小节数、钉住几条，以及识别 id 比上一步留下 / 没了 / 新出的个数（查号码稳定）。
 pub fn session(args: &[String]) -> Result<(), String> {
     use dolce_omr_staff::session::{Op, Session};

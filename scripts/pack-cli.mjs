@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 // 把识谱命令行打成**自包含**分发包：解压即用，不联网、不装依赖，也不要 Node。
 //
-// 包里：Rust 识谱程序 `omr-cli`（crates/omr-cli：识别、各格式写出、参照歌词互证、歌本切分都在里面，ONNX Runtime 静态链入）
+// 包里：Rust 命令行 `dolce`（crates/dolce-cli：识别、各格式写出、参照歌词互证、歌本切分都在里面，ONNX Runtime 静态链入）
 //      + PDFium 动态库 + `models/`（OCR 模型）+ README（Windows 另内置 VC++ 运行库）。
 //
 // 用法（从仓库根跑）：
-//   node scripts/pack-omr.mjs                                 # 当前平台（识别程序没编就当场 cargo build --release）
-//   node scripts/pack-omr.mjs --targets=linux-x64,win32-x64   # 别的平台：识别程序要先在那个平台（或 CI）编好，见下
-//   node scripts/pack-omr.mjs --no-crt                        # Windows 包不内置 VC++ 运行库
-//   node scripts/pack-omr.mjs --keep                          # 保留目录、不打压缩包
+//   node scripts/pack-cli.mjs                                 # 当前平台（识别程序没编就当场 cargo build --release）
+//   node scripts/pack-cli.mjs --targets=linux-x64,win32-x64   # 别的平台：识别程序要先在那个平台（或 CI）编好，见下
+//   node scripts/pack-cli.mjs --no-crt                        # Windows 包不内置 VC++ 运行库
+//   node scripts/pack-cli.mjs --keep                          # 保留目录、不打压缩包
 //
-// 识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的 `omr-cli` 按
+// 识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的 `dolce` 按
 // `crates/target/<三元组>/release/` → `--bin-dir=目录` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`
 // （omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir=目录` 找；缺了就报错，不打半成品。
 //
-// 产物：out/pkg/omr-cli-<版本>-<os>-<cpu>.{tar.gz|zip}（解出来是同名目录）
+// 产物：out/pkg/dolce-cli-<版本>-<os>-<cpu>.{tar.gz|zip}（解出来是同名目录）
 import { readFile, writeFile, mkdir, rm, cp, readdir, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 import { crtLibrary, crtClosure, peImports } from "./vcredist.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const NAME = "omr-cli";
+const NAME = "dolce-cli";
 const OUT = join(ROOT, "out/pkg");
 /** 与 crates/omr-source/build.rs 同一个构建号 */
 const PDFIUM_BUILD = "7881";
@@ -77,15 +77,15 @@ const du = async (p) => human(await bytesOf(p));
 /** 识别程序：别的平台按三元组目录 / --bin-dir；本机没编就当场编。 */
 function findBin(target) {
   const { triple } = TARGETS[target];
-  const exe = target.startsWith("win32") ? "omr-cli.exe" : "omr-cli";
+  const exe = target.startsWith("win32") ? "dolce.exe" : "dolce";
   const cands = [BIN_DIR && join(BIN_DIR, exe), join(ROOT, "crates/target", triple, "release", exe), target === HOST && join(ROOT, "crates/target/release", exe)].filter(Boolean);
   let hit = cands.find((p) => existsSync(p));
   if (!hit && target === HOST) {
-    console.log("编识别程序（cargo build --release -p dolce-omr-cli）…");
-    execFileSync("cargo", ["build", "--release", "-p", "dolce-omr-cli"], { cwd: join(ROOT, "crates"), stdio: "inherit" });
+    console.log("编识别程序（cargo build --release -p dolce-cli）…");
+    execFileSync("cargo", ["build", "--release", "-p", "dolce-cli"], { cwd: join(ROOT, "crates"), stdio: "inherit" });
     hit = cands.find((p) => existsSync(p));
   }
-  if (!hit) throw new Error(`缺 ${target} 的识别程序（找过：${cands.join("、")}）——在那个平台或 CI 上 cargo build --release -p dolce-omr-cli，再用 --bin-dir 指过来`);
+  if (!hit) throw new Error(`缺 ${target} 的识别程序（找过：${cands.join("、")}）——在那个平台或 CI 上 cargo build --release -p dolce-cli，再用 --bin-dir 指过来`);
   return { path: hit, exe };
 }
 
@@ -175,7 +175,7 @@ function archive(file, dirName, asZip) {
 function readme(os, cpu) {
   const win = os === "win32";
   const linux = os === "linux";
-  const run = win ? "omr-cli.exe" : "./omr-cli";
+  const run = win ? "dolce.exe" : "./dolce";
   const c = win ? "::" : "#";
   const sep = win ? "\\" : "/";
   return `# ${NAME} ${VER}
@@ -184,12 +184,12 @@ function readme(os, cpu) {
 本包目标平台 **${os}/${cpu}**。
 
 \`\`\`${win ? "bat" : "bash"}
-${run} 图片.jpg                       ${c} 默认输出诗歌本文本谱到 stdout
-${run} 图片.jpg -f 123 -o 曲.123      ${c} 换格式、写文件
-${run} 合唱.pdf -f musicxml -o 合唱.musicxml   ${c} 五线谱
-${run} a.jpg b.pdf 谱子目录${sep} -o 出目录${sep}   ${c} 批量：一个进程跑完（一个文件一首）
-${run} 图片.jpg --kind=jianpu --profile   ${c} 指定路线、附带每首耗时
-${run} 图片.jpg -l 歌词.txt --lyrics-report 核对.json   ${c} 简谱参照歌词互证
+${run} omr 图片.jpg                   ${c} 默认输出诗歌本文本谱到 stdout
+${run} omr 图片.jpg -f 123 -o 曲.123      ${c} 换格式、写文件
+${run} omr 合唱.pdf -f musicxml -o 合唱.musicxml   ${c} 五线谱
+${run} omr a.jpg b.pdf 谱子目录${sep} -o 出目录${sep}   ${c} 批量：一个进程跑完（一个文件一首）
+${run} omr 图片.jpg --kind=jianpu --profile   ${c} 指定路线、附带每首耗时
+${run} omr 图片.jpg -l 歌词.txt --lyrics-report 核对.json   ${c} 简谱参照歌词互证
 ${run} split 歌本.pdf -o 歌谱${sep}        ${c} 歌本切分：整本 PDF / 页图目录 → 一首一张图，按目录核对缺漏
 ${run} --help                         ${c} 全部参数
 \`\`\`

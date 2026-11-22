@@ -5,7 +5,7 @@
 // 走编辑器真实入口（`OmrController.recognizeFiles` → Rust 识别），记状态栏、会话种类、核对数据、各会话操作的回话与关联表原样重建。
 //
 // 排版宿主对账（dev `layout-node-parity.mjs --host=desktop`）：配置带 `layout`（`{ dir, jobs: [{ key, path, name, configs }] }`）时逐份打开、逐档排，
-// 每份写 `<dir>/<序号>.json`：各档原生排的页（编辑器真实走的那路）、同一份请求在 WebView 的 wasm 上（WebView 量字）重排的页、请求原样（交 `dolce layout-wire`）。
+// 每份写 `<dir>/<序号>.json`：各档原生排的页（编辑器真实走的那路）、同一份请求在 WebView 的 wasm 上（WebView 量字）重排的页、请求原样（交 `dolce-dev layout-wire`）。
 import { invoke } from "@tauri-apps/api/core";
 import type { RustReviewResult, RustSessionOp } from "../omrrust/adapter";
 import { wasmPages, wireDump } from "../layout/rustlayout";
@@ -21,7 +21,7 @@ interface LayoutJob {
 
 interface BenchConfig {
   rust?: { files: string[]; kind?: "auto" | "staff" | "jianpu"; ops?: RustSessionOp[] }[];
-  /** `measure`：录下 WebView 量字的调用，写 `<dir>/measure.jsonl`（交 `dolce measure-check`） */
+  /** `measure`：录下 WebView 量字的调用，写 `<dir>/measure.jsonl`（交 `dolce-dev measure-check`） */
   layout?: { dir: string; jobs: LayoutJob[]; measure?: boolean };
   out: string;
 }

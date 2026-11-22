@@ -1868,7 +1868,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 
 ## 参照歌词互证（`omr-todoc::reflyrics`）
 
-给了同一首诗歌的歌词文本（命令行 `omr-cli 图 -l 歌词.txt`）时，拿它与识别歌词逐字对照：形近字按参照选字（候选取识别时挂在音上的
+给了同一首诗歌的歌词文本（命令行 `dolce omr 图 -l 歌词.txt`）时，拿它与识别歌词逐字对照：形近字按参照选字（候选取识别时挂在音上的
 `JpNum.lyric_alts`）、补回漏读的字；其余不一致只报告（`apply_ref_lyrics` 回的 `LyricCheck`），不擅改。
 TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有词的 0」复原之前（补上的字喂给这几步）；迁 Rust 后在识别完成之后做，
 那几步已做完，补字不再回喂（原在 TS `omr/reflyrics.ts`，2026-11-19 迁 Rust，与 TS 逐项对拍一致）。
@@ -2170,7 +2170,7 @@ CLI 识别吃带内嵌位图的 PDF（每页取源图，同上；歌本切分 `s
 （歌本切分例外：转曲矢量歌本自己把对象画成 SVG 交 sharp，见下）。矢量那一摊
 （`vector.ts`/`vectext.ts`/`inventory.ts` + `pdflayout/`）仍只在浏览器与 `cli/index.ts` 那条链上。
 
-### 歌本切分（原 `omr-cli.mjs split`、`src/omr/booksplit/`，现 `omr-cli split`、`omr-book`）
+### 歌本切分（原 `omr-cli.mjs split`、`src/omr/booksplit/`，现 `dolce split`、`omr-book`）
 
 整本分页简谱 → 一首一张图。两遍：第一遍逐页只留几何与文字（几百页的像素不常驻），第二遍按摆放回源图裁拼。
 判据先是拿《哈利路亚》（438 页扫描、551 首，一页多首与跨页都很多）换来的，后又拿转曲矢量的《裴克圣经经文诗歌歌谱》
@@ -2301,18 +2301,18 @@ rec 全被按在一个弱核上、按歌词条数累积的形状。
 `OMR_THREADS` / `--threads=N` 定多线程时用几个核（默认 4）。`--profile` 会把实际生效的
 `模式/线程数` 一并打出来。**换机器请先用这三种跑一遍对比再定**，别照搬默认值。
 
-### 命令行（Rust `omr-cli`，2026-11 起全在 Rust、不要 Node）
+### 命令行（Rust `dolce`，2026-11 起全在 Rust、不要 Node）
 
 识别迁 Rust（P12）后，命令行先是 `scripts/omr-cli.mjs` 起 Rust 的 `omr-cli run`、再用 TS 写出端转格式；模型、格式迁 Rust 之后（2026-11-19）
-这层 Node 也去掉了：`omr-cli` 不带子命令就是给人用的识谱（`crates/omr-cli/src/cli.rs`），识别后直接按输出格式表（`dolce-formats::targets`，
+这层 Node 也去掉了：识谱命令行改名 `dolce`（crate `dolce-cli`，原 `omr-cli`），`dolce omr` 就是给人用的识谱（`crates/dolce-cli/src/cli.rs`；省掉 `omr` 的旧写法照认），识别后直接按输出格式表（`dolce-formats::targets`，
 与编辑器的转换目标表同一份口径，外加 MusicXML）写出；简谱的 MusicXML 走 `omr-todoc::jianpu` 建模 → `toxml`，五线谱的 MusicXML 原样去识别 id、
 别的格式读回模型再写。参照歌词互证（`-l`）也在 Rust（`omr-todoc::reflyrics`，见上「参照歌词互证」）。
 上面几节（ORT 线程、预热）讲的是 TS 识别在 Node 里的推理，已随 TS 识别删。
 
 ```bash
-cd crates && cargo build --release -p dolce-omr-cli
-target/release/omr-cli <图…|PDF…|目录…> [-f 格式] [-o 出] [--kind=auto|staff|jianpu] [--profile] [-l 歌词 [--lyrics-report 核对.json]]
-target/release/omr-cli split 歌本.pdf -o 歌谱/ [--recognize -f 123]
+cd crates && cargo build --release -p dolce-cli
+target/release/dolce omr <图…|PDF…|目录…> [-f 格式] [-o 出] [--kind=auto|staff|jianpu] [--profile] [-l 歌词 [--lyrics-report 核对.json]]
+target/release/dolce split 歌本.pdf -o 歌谱/ [--recognize -f 123]
 ```
 
 - 模型按 `OMR_MODELS` → 识别程序旁的 `models/` → 仓库 `public/redist/ocr` 找；PDFium 在识别程序旁边找。
@@ -2320,27 +2320,27 @@ target/release/omr-cli split 歌本.pdf -o 歌谱/ [--recognize -f 123]
   参照歌词互证 485 例（GT 歌词、改字删字加衬字、LRC、颠倒段序、不相干）核对报告与改后写出逐项相同。
 - 批量仍比逐张起进程快：OCR 模型加载与推理会话初始化每个进程付一次。
 
-### 打包分发（`scripts/pack-omr.mjs`）
+### 打包分发（`scripts/pack-cli.mjs`）
 
 打成**自包含**分发包：解压即用，不联网、不装依赖，也不要 Node。
 
 ```bash
-node scripts/pack-omr.mjs                                          # 当前平台（识别程序没编就当场 cargo build --release）
-node scripts/pack-omr.mjs --targets=linux-x64 --bin-dir=… --pdfium-dir=…   # 别的平台：识别程序与 PDFium 要先在那个平台编好
-node scripts/pack-omr.mjs --targets=win32-x64 --no-crt             # Windows 不内置 VC++ 运行库
+node scripts/pack-cli.mjs                                          # 当前平台（识别程序没编就当场 cargo build --release）
+node scripts/pack-cli.mjs --targets=linux-x64 --bin-dir=… --pdfium-dir=…   # 别的平台：识别程序与 PDFium 要先在那个平台编好
+node scripts/pack-cli.mjs --targets=win32-x64 --no-crt             # Windows 不内置 VC++ 运行库
 ```
 
-包里：识谱程序 `omr-cli`（ONNX Runtime 静态链在里面）、PDFium 动态库（识谱程序在自己旁边找）、`models/`、README（Windows 另内置 VC++ 运行库）。
+包里：命令行程序 `dolce`（ONNX Runtime 静态链在里面）、PDFium 动态库（识谱程序在自己旁边找）、`models/`、README（Windows 另内置 VC++ 运行库）。
 darwin-arm64：目录 72M（以前带 Node 入口与写出端时 69M、更早带 node_modules 时 96M）。
 
 识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的识别程序按
 `crates/target/<三元组>/release/` → `--bin-dir` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`（omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir` 找，缺了报错不打。
-产物 `out/pkg/omr-cli-<版本>-<os>-<cpu>.{tar.gz|zip}`（Windows 出 zip，解出来是同名目录）。打 zip 不用 `zip` 命令（Windows 没有）：bsdtar 能产 zip，
+产物 `out/pkg/dolce-cli-<版本>-<os>-<cpu>.{tar.gz|zip}`（Windows 出 zip，解出来是同名目录）。打 zip 不用 `zip` 命令（Windows 没有）：bsdtar 能产 zip，
 但要显式 `--options zip:compression=deflate`；GNU tar 不认 zip，那种环境才回退到 `zip`。
 
 ### Windows 包内置 VC++ 运行库（`scripts/vcredist.mjs`）
 
-（下面是 TS 识别时代的包：`onnxruntime.dll` 与 `onnxruntime_binding.node`。现在包里是 Rust 识别程序 `omr-cli.exe`，ORT 静态链入、同样 `/MD` 编，
+（下面是 TS 识别时代的包：`onnxruntime.dll` 与 `onnxruntime_binding.node`。现在包里是 Rust 命令行程序 `dolce.exe`，ORT 静态链入、同样 `/MD` 编，
 导入的是同一批 CRT，与桌面版同理；按目录算需求、闭包、校验这一套照用。）
 
 `onnxruntime.dll` 与 `onnxruntime_binding.node` 动态链接 VC++ 运行库——查导入表，实际要的是

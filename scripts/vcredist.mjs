@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 从微软官方 vc_redist.<arch>.exe 里抽出 VC++ 运行库 DLL，供 pack-omr 做 **app-local 部署**
+// 从微软官方 vc_redist.<arch>.exe 里抽出 VC++ 运行库 DLL，供 pack-cli 做 **app-local 部署**
 // （把 CRT 放到用它的二进制旁边，用户就不必先装 vc_redist）。
 //
 //   node scripts/vcredist.mjs x64              # 列出该架构能提供的 CRT

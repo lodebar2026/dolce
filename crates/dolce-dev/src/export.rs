@@ -25,7 +25,7 @@ pub fn read_back(doc: &PdfDoc, i: usize, scale: f64) -> Result<PageBack, String>
     Ok(PageBack { text, ink, w: r.w, h: r.h, gray })
 }
 
-/// `dolce font-probe [--out=样本.pdf] [--outline] [--font=文件 …] [族:粗:斜:字 …]`（`--outline` 全部转曲，验退路）：缺省样本见 `dolce_export::probe::default_samples`。
+/// `dolce-dev font-probe [--out=样本.pdf] [--outline] [--font=文件 …] [族:粗:斜:字 …]`（`--outline` 全部转曲，验退路）：缺省样本见 `dolce_export::probe::default_samples`。
 /// 每个样本出一行 JSON：定位、轮廓种类、可变、AAT、合成粗斜、能否嵌，外加读回的文字层是否等于样本字、墨迹像素数。
 pub fn font_probe(args: &[String]) -> i32 {
     let mut book = FontBook::system();
@@ -109,7 +109,7 @@ fn old_page_pdf(page: &dolce_scene::Page, w: f64, h: f64, opt: &svg2pdf::usvg::O
     svg2pdf::to_pdf(&tree, svg2pdf::ConversionOptions::default(), svg2pdf::PageOptions::default()).map_err(|e| format!("svg2pdf: {e}"))
 }
 
-/// `dolce scene-pdf --in=scene.jsonl [--filter=键子串] [--limit=份数] [--out=目录] [--compare] [--font=文件 …]`
+/// `dolce-dev scene-pdf --in=scene.jsonl [--filter=键子串] [--limit=份数] [--out=目录] [--compare] [--font=文件 …]`
 ///
 /// 场景导出（`ref-layout` 的 `scene.jsonl`：一行一页，按 `key`+`cfg` 归成一份）逐份写 PDF。简谱 viewBox 即 pt；五线谱 tenths 按宽 595pt 折。
 /// 每份核对：读回的文字层里有没有场景里的每个字（私用区 SMuFL 字除外）。`--compare`（要 `oldpdf` 特性）另用旧链

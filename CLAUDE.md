@@ -3,7 +3,7 @@
 简谱与五线谱的编辑、识谱与排版（123 / JP-Word `.jpwabc` / 文本谱 / ABC / MusicXML）：Tauri 2 + Rust + TypeScript + SVG。
 旧名 jpeditor 已全部改掉：仓库、在线版地址、桌面版标识符 `io.github.lodebar2026.dolce`、Cargo 包名 `dolce`、localStorage 键前缀 `dolce-*`、
 草稿库 IndexedDB 名 `dolce`、MusicXML 写出端署名 `Dolce`。旧名下的设置与草稿不迁移。
-模型、格式、排版、渲染、成书、导出在 Rust（`crates/dolce-*`），识别也在 Rust（`crates/omr-*`；桌面原生、网页 wasm、命令行 `dolce` / `omr-cli`）；
+模型、格式、排版、渲染、成书、导出在 Rust（`crates/dolce-*`），识别也在 Rust（`crates/omr-*`；桌面原生、网页 wasm、命令行 `dolce`，crate `dolce-cli`；开发用对拍工具另在 `dolce-dev`）；
 TS 只留编辑器界面、交互与门面（见架构决策 A3/A4）。网页排版走 dolce-wasm（`main.ts` 开机载，量字回调浏览器 canvas），桌面版走 Tauri 原生排版线程（系统量字），
 Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量字回调原生模块 `native/textmeasure`（Rust 浏览器口径层，`npm run build:native`）。
 识别结果直出模型在 `crates/omr-todoc`。
@@ -21,8 +21,8 @@ Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量
 
 构建、类型检查、桌面调试命令见 [docs/架构.md](docs/架构.md)「技术栈与构建」。
 回归脚本、语料与基线不在本仓库（本地私有仓库，从本仓库根跑 `node ../dev/scripts/xxx.mjs`）；
-`scripts/` 只留构建与发布链路：`release.sh`、`pack-omr.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm）；识谱命令行全在 Rust `omr-cli`（分发包不带 Node）。
-识别回归走 `cd crates && cargo run --release -p dolce-omr-cli -- regress <档>`（判分脚本、语料、基线在私有仓库，见 [识别-Rust](docs/模块/识别-Rust.md)「回归」）。
+`scripts/` 只留构建与发布链路：`release.sh`、`pack-cli.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm）；命令行全在 Rust `dolce`（`crates/dolce-cli`，分发包不带 Node）。
+识别回归走 `cd crates && cargo run --release -p dolce-cli -- regress <档>`（判分脚本、语料、基线在私有仓库，见 [识别-Rust](docs/模块/识别-Rust.md)「回归」）。
 文档里写的 `../dev/scripts/xxx.mjs` 都在私有仓库。
 
 ## 约定

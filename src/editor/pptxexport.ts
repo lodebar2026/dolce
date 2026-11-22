@@ -18,7 +18,7 @@ export interface PptxSource {
   pageHeight: number;
 }
 
-/** Rust `PptxInput` 的 JSON 料（命令行 `dolce pptx --in=` 吃同一份）。 */
+/** Rust `PptxInput` 的 JSON 料（命令行 `dolce-dev pptx --in=` 吃同一份）。 */
 export function pptxInput(src: PptxSource, bg = 0xffffffff): Json {
   const metrics = new Map<string, Json>();
   // 场景里的文字节点（`t: "x"`；SMuFL 字是 `s`，不量）用到的字体

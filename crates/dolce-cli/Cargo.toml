@@ -1,6 +1,6 @@
 [package]
 name = "dolce-cli"
-description = "悦谱 Dolce 模型 / 格式 / 排版的命令行（迁移期对拍、回归用；做完后回归脚本统一走它）"
+description = "悦谱 Dolce 的命令行：识谱、歌本切分、回归（跑识别 → 落盘 → 调私有仓库判分 → 对照基线）"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -9,26 +9,21 @@ publish.workspace = true
 name = "dolce"
 path = "src/main.rs"
 
-[features]
-# 旧编辑器 PDF 链（usvg + svg2pdf）只给 `scene-pdf --compare` 当参照；H 期删
-oldpdf = ["dep:svg2pdf"]
-
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-text = { path = "../dolce-text", features = ["native"] }
-dolce-style = { path = "../dolce-style" }
-dolce-model = { path = "../dolce-model" }
-dolce-engrave = { path = "../dolce-engrave" }
-dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
-dolce-layout-staff = { path = "../dolce-layout-staff" }
-dolce-book = { path = "../dolce-book" }
-dolce-session = { path = "../dolce-session" }
-bincode.workspace = true
-indexmap = "2"
-serde.workspace = true
-serde_json = "1"
-sha2.workspace = true
-dolce-export = { path = "../dolce-export" }
+dolce-omr-book = { path = "../omr-book" }
+dolce-omr-core = { path = "../omr-core" }
+dolce-omr-engine = { path = "../omr-engine" }
+dolce-omr-jianpu = { path = "../omr-jianpu" }
+dolce-omr-ocr = { path = "../omr-ocr" }
+dolce-omr-sheet = { path = "../omr-sheet" }
 dolce-omr-source = { path = "../omr-source" }
-svg2pdf = { version = "0.13", optional = true }
+dolce-omr-staff = { path = "../omr-staff" }
+dolce-omr-todoc = { path = "../omr-todoc" }
+dolce-model = { path = "../dolce-model" }
+dolce-formats = { path = "../dolce-formats" }
+serde = { workspace = true }
+serde_json = "1"
+rayon = "1.10"
+
+[dev-dependencies]
+dolce-omr-ocr = { path = "../omr-ocr", features = ["tract"] }

@@ -1,4 +1,4 @@
-//! `omr-cli run`：批量识别、出 JSON（私有仓库的自检脚本吃它）。每个文件一首，判路同编辑器（`omr-engine::recognize`：先按五线谱认，一页谱表都没有再走简谱）。
+//! `dolce run`：批量识别、出 JSON（私有仓库的自检脚本吃它）。每个文件一首，判路同编辑器（`omr-engine::recognize`：先按五线谱认，一页谱表都没有再走简谱）。
 //!
 //! 每认完一首往 stdout 写一行 JSON：`{"file", "kind": "staff", "xml"}`（带识别 id 的 MusicXML）、`{"file", "kind": "jianpu", "score"}`（`RecognizedScore`）
 //! 或 `{"file", "error"}`；各步进度写 stderr（`{"file", "done", "total", "stage"}` 一行一条，`--progress` 时才写）。
@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub const USAGE: &str = "  omr-cli run <文件…|目录…> [--kind=auto|staff|jianpu] [--cache=OCR缓存.json] [--progress]
+pub const USAGE: &str = "  dolce run <文件…|目录…> [--kind=auto|staff|jianpu] [--cache=OCR缓存.json] [--progress]
       批量识别（图片 jpg/png/webp/bmp/tif 与 PDF，一个文件一首；目录取里面这些文件，不递归、按名排序），每首往 stdout 写一行 JSON：
       {file, kind: \"staff\", xml} / {file, kind: \"jianpu\", score} / {file, error}；--progress 时 stderr 逐步写 {file, done, total, stage}
 ";

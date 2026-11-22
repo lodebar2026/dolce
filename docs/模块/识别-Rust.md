@@ -15,11 +15,11 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 
 | crate | 作用 |
 |---|---|
-| `crates/omr-cli` | 命令行 `omr-cli`：不带子命令是给人用的识谱（`cli.rs`：图片 / PDF → 各格式，格式表 `dolce-formats::targets`；简谱可带 `-l` 参照歌词，`omr-todoc::reflyrics`；OMR 分发包就是它，不要 Node）、`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout，私有仓库自检脚本吃它）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/dolce-cli` | 命令行 `dolce`：`omr` 是给人用的识谱（第一个参数是选项或已有文件 / 目录时省掉 `omr` 也行；`cli.rs`：图片 / PDF → 各格式，格式表 `dolce-formats::targets`；简谱可带 `-l` 参照歌词，`omr-todoc::reflyrics`；OMR 分发包就是它，不要 Node）、`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout，私有仓库自检脚本吃它）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
 | `crates/omr-todoc` | 识别结果直出 `ScoreDoc`（简谱 `jianpu`、五线谱 `staff`）；参照歌词互证 `reflyrics`（按演唱顺序展开识别歌词、与参照整篇对齐，形近字按逐字候选选字、补漏字，其余报出来；繁简归一用 `omr-text::hanvariant`） |
 | `crates/omr-engine` | 三端共用的入口：`Doc`（打开 PDF / 图片，几个文件合成一份；页尺寸、整页渲染）、`recognize`（判路：先按五线谱认，一页谱表都没有再走简谱；进度与取消）、`staff_binary`（核对底图）、`insert` / `region`（点图补认、框选重认）；`Handle`（文档句柄：桌面版 Tauri 命令与网页版 wasm 都是它外面的薄壳，请求与回应的字节 / JSON 格式两边一样）。页级并行在特性 `parallel` 后面，wasm 下关 |
 | `crates/omr-wasm` | 网页版绑定（wasm-bindgen，`scripts/build-wasm.mjs` 编进 `public/redist/omr/`，Worker `src/omrrust/worker.ts` 里跑）：`OmrDoc`（与 Tauri 命令一一对应）、`load_ocr`（OCR 用 tract 推理同一份 ONNX）、`set_pdfium_module` |
-| `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `omr-cli`，本 crate 不依赖识别路线） |
+| `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `dolce`，本 crate 不依赖识别路线） |
 | `crates/omr-source` | 取数层：`pdf.rs`（PDFium：页数、内嵌图原始像素与矩阵、路径、文字层、字形轮廓、整页渲染）、`raster.rs`（取页图：最大块 / 拼图页 / 按矩阵转正、图片文件按 EXIF 转正；`Binarizer` 灰度各倍数只算一次、几档 Sauvola 共用积分图；极性自检） |
 | `crates/omr-ocr` | PP-OCR：识别（CTC、逐字位置、前 K 候选）、DBNet 检测（含分块）、原生推理（ort 会话池）、按条内容指纹的落盘缓存 |
 | `crates/omr-text` | 两条路线共用的文字处理（纯文本与纯几何，不碰像素、不调 OCR）：`chords`（和弦文法：切词、覆盖率、归一、拆成根音 / 性质 / 低音）、`header`（页眉各行分类）、`spaces`（按空白列补词间空格）、`lyrics`（歌词切音节、段号、标点归属、对音）、`words`（节拍器、术语、力度、跳转的词表） |
@@ -368,7 +368,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
     像素实现就是原来的 `Ink`（改名 `RasterInk`），各模块签名的 `&Ink` 是 `dyn JpInk`，判据一行没改（J1，简谱 98 首逐首不变）。
   - 矢量实现 `VecJpInk`：`at` 按对象几何作答（对象库逐点查询）；块表就是对象（路径按子路径外框拆块，`omr-source::vector::path_pieces`，不做连通块）；
     裁条只把与条相交的对象画进去（`omr-source::vector::draw_obj`，与混排的简谱条、转曲字块共用）；多页竖排，页宽折成 2200 单位（同像素路工作图宽）。
-  - 入口 `omr_jianpu::recognize_vector`；`regress` 的简谱档与 `omr-cli recognize jianpu 文件 [--render]` 遇到没有内嵌图的 PDF 自动走它。
+  - 入口 `omr_jianpu::recognize_vector`；`regress` 的简谱档与 `dolce recognize jianpu 文件 [--render]` 遇到没有内嵌图的 PDF 自动走它。
   - 读数（`~/Downloads/03.pdf`，3 页纯路径，没有 GT）：矢量 40 行、623 个音、265 条小节线、满拍 175/186；PDFium 渲染后走像素路 40 行、620 个音、264 条、176/187，
     八度、减时线计数逐个对得上；耗时都是 10 秒上下。歌词音节矢量路少三成（419 对 582），少的是渲染路切出来的假行（「I」「II」、乱字），真歌词行两边一样。
   - 留后：`at` 每次走对象库查询，判据里逐列扫的地方多，整页 10 秒（同像素路）；转曲页的字没有文字层，歌词靠裁条 OCR，与像素路同一水平。
@@ -475,7 +475,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
   `src/omrrust/adapter.ts::reviewFromRust(json, xml, {rasters, call})` 把核对 JSON 包成 `StaffReviewResult`，`rebuild` / `restructure` 转调会话。
   `StaffReviewResult.score` 收窄成 `review.ts::ReviewGeometry`（编辑器只读系统表：各系统在哪页、哪几行谱，按引用与 `pages[].result.page.staves` 比），
   TS 识别路的 `StaffScore` 原样满足。会话与文档进 Rust（H 期）后，模型与附件直接交会话，适配器与 JSON 中转一并退役。
-- 命令行：`omr-cli recognize staff 文件 --out=目录`（`<曲>.musicxml` + `<曲>.review.json`）、`omr-cli session 文件 --ops=操作.jsonl --out=目录`（逐步写 MusicXML、`rec.json`、`review.json`，
+- 命令行：`dolce recognize staff 文件 --out=目录`（`<曲>.musicxml` + `<曲>.review.json`）、`dolce session 文件 --ops=操作.jsonl --out=目录`（逐步写 MusicXML、`rec.json`、`review.json`，
   报识别 id 比上一步留 / 没 / 新的个数）。核对：私有仓库 `rust-omr/adapter-check.mjs`（两遍逐字相同、id 与框一一对上、`loadScoreDoc` 后按表层取得到 id、
   rebuild 回原指派与拆开再合回 XML 不变）、`rust-omr/session-破碎.jsonl`、`rust-omr/jianpu-fields.mjs`（简谱结果对 `omr/types.ts` 逐字段）、`rust-omr/doubt-cover.mjs`（错步落在可疑小节的比例）。
 
@@ -574,9 +574,9 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
   附段分两栏且段号单独成列的版式；页眉里被检测切成两截的标题、英文署名的词间空格。
 - 重复：`text.rs` 的取条、空白列、分段读字与五线谱 `text/lines.rs` 是同一机制的两份（那边绑着 `PageFrame`），P10 定结果模型时下沉到共用层。
 
-### 歌本切分（P11，`omr-book`，`omr-cli split`）
+### 歌本切分（P11，`omr-book`，`dolce split`）
 
-分页的简谱诗歌集（扫描 PDF、页图文件夹或转曲矢量 PDF）→ 输出目录里一首一张图，只在命令行（`omr-cli split`）。一页多首按标题切开，
+分页的简谱诗歌集（扫描 PDF、页图文件夹或转曲矢量 PDF）→ 输出目录里一首一张图，只在命令行（`dolce split`）。一页多首按标题切开，
 一首跨页按序竖着拼，去掉页脚页码；书内目录自动整页 OCR，用来给标题配号并报缺号、重号、起始页不符，写到 `切分报告.txt`。
 `--recognize`（只收转曲矢量歌本）切完逐首识别：回原书取矢量对象交五线谱路线的转曲档。
 判据照旧 TS 版（`src/omr/booksplit/`，判据见 [../实现/OMR-简谱识别.md](../实现/OMR-简谱识别.md)「歌本切分」）搬过来，参数、报告形状不变。与 TS 不同的地方：
@@ -615,7 +615,7 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 |---|---|---|
 | 桌面版 | `src-tauri/src/omr.rs`：`omr_open` / `render` / `binary` / `recognize`（进度走 `Channel`）/ `cancel` / `session` / `close`，OCR 是 `ort` 原生会话池（`DOLCE_OCR_SESS` × `DOLCE_OCR_THREADS`，缺省 3 × 3），PDFium 动态库随包 | `src/omrrust/engine.ts`（`omrEngine()` 判宿主）→ `editor/omrctl.ts` |
 | 网页版 | `crates/omr-wasm`（`OmrDoc` 与 Tauri 命令一一对应、`load_ocr` 用 tract、`set_pdfium_module`）跑在 Worker `src/omrrust/worker.ts` 里；`scripts/build-wasm.mjs` 编进 `public/redist/omr/`（不入库，vite dev / build 开头调） | `src/omrrust/webengine.ts`（取消走 SharedArrayBuffer 标志） |
-| 命令行 | `omr-cli <图…>`（识谱出各格式、参照歌词）/ `split` / `run`（一首一行 JSON） | 用户直接跑；`scripts/pack-omr.mjs` 打分发包 `omr-cli-<版本>-<os>-<cpu>`（识谱程序 + PDFium + 模型，不带 Node；CI 出 darwin-arm64 / win32-x64 / linux-x64） |
+| 命令行 | `dolce omr <图…>`（识谱出各格式、参照歌词）/ `split` / `run`（一首一行 JSON） | 用户直接跑；`scripts/pack-cli.mjs` 打分发包 `dolce-cli-<版本>-<os>-<cpu>`（识谱程序 + PDFium + 模型，不带 Node；CI 出 darwin-arm64 / win32-x64 / linux-x64） |
 
 - **请求与回应的格式两端一样**（`omr-engine::Handle`）：打开是 `u32 个数` + 各 `u32 长度` + 字节；渲染回 `u32 宽高` + RGBA；核对底图回宽高、倍数（核对坐标乘它是底图像素）、底图在页上的框与页宽高 + 0 / 1 像素；识别与会话回 JSON。
 - **会话操作**：`omr-staff::session::Op` 各种（rebuild / restructure / pin / unpin / choose / context），外加 `insert`（点原图补音）与 `region`（框选重读歌词 / 文字指示）。编辑器重建前把删音、改音高、改时值记成钉住（同一音上不同种事实并存），其余手改照旧按识别 id 回放。
@@ -641,7 +641,7 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 - **网页版两份 wasm**（`scripts/build-wasm.mjs`）：`dolce_omr_wasm` 只开 simd128，`dolce_omr_wasm_relaxed` 另开 relaxed-simd（tract 的 8×8 矩阵内核改用融合乘加，
   Chromium 里一页快一成多）；`worker.ts` 按 `WebAssembly.validate` 探到的支持挑一份（Safari 没有 relaxed-simd）。两份各用自己的 cargo target 目录。
 - **PDF 只走 PDFium**：编辑器、网页版、命令行都不再用 pdf.js（P12 删了 `pdfjs-dist`）。dev 脚本里还要 pdf.js 的（矢量版面核对、截图）单独装在 dev 的 `tools/pdfjs/`。
-- 留后：`pdflayout/inventory.ts` / `bookprofile.ts` 的 `VecPage` 仍由 dev 脚本经 pdf.js 取（计划里的 `omr-cli vecdump` 没做）。
+- 留后：`pdflayout/inventory.ts` / `bookprofile.ts` 的 `VecPage` 仍由 dev 脚本经 pdf.js 取（计划里的 `dolce vecdump` 没做）。
 
 ## 编辑器侧（TS：结果落地、核对与改动）
 
@@ -682,9 +682,9 @@ P13a 追到音符 96.78、歌词 88.21、速度 97.21（见「已知限制」）
 
 ```bash
 cd crates && cargo test                                   # 单元测试
-cargo run --release -p dolce-omr-cli -- regress <jianpu|solo|chorus|vector|xinbian> [--only=子串] [--jobs=N]   # vector：矢量民乐分谱（八段锦，testdata/矢量谱）
+cargo run --release -p dolce-cli -- regress <jianpu|solo|chorus|vector|xinbian> [--only=子串] [--jobs=N]   # vector：矢量民乐分谱（八段锦，testdata/矢量谱）
 cargo run --release -p dolce-omr-staff --example vs_ts_bars -- chorus|solo   # 框架结构对 TS 阶段快照（线索，不当对错）
-cargo run --release -p dolce-omr-cli -- split <歌本> --dry-run --report r.json && node ../dev/scripts/rust-omr/book-check.mjs r.json ../dev/testdata/歌本切分/<书>.gt.json   # 歌本切分对曲目清单
+cargo run --release -p dolce-cli -- split <歌本> --dry-run --report r.json && node ../dev/scripts/rust-omr/book-check.mjs r.json ../dev/testdata/歌本切分/<书>.gt.json   # 歌本切分对曲目清单
 ```
 
 `regress` 的流程：

@@ -1,4 +1,4 @@
-//! `dolce engrave-check <cases.jsonl> <measure.jsonl>`：图元层迁 Rust（L2）的对拍。
+//! `dolce-dev engrave-check <cases.jsonl> <measure.jsonl>`：图元层迁 Rust（L2）的对拍。
 //! 夹具由 dev `engrave-rs-diff.mjs` 让 TS（`src/engrave/`）逐元素现算；这里在量字回放下用 `dolce-engrave` 重算，
 //! 场景节点先读进 [`Node`] 再写回（两边同一口径），然后逐字段比：结构（键、类型、串、布尔、数组长）要一样，数差 ≤ 1e-6。
 //!
@@ -682,7 +682,7 @@ fn run(kind: &str, a: &Value, env: &Env) -> Result<Value, String> {
 pub fn engrave_check(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(path), Some(mpath)) = (pos.first(), pos.get(1)) else {
-        eprintln!("用法：dolce engrave-check <cases.jsonl> <measure.jsonl> [--redist=<目录>] [--show=N]");
+        eprintln!("用法：dolce-dev engrave-check <cases.jsonl> <measure.jsonl> [--redist=<目录>] [--show=N]");
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));

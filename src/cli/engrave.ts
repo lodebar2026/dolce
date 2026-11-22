@@ -30,7 +30,7 @@ export const measure = (): string => "native";
 /** 同浏览器侧 `__paint`：统一排版器与出厂资源。 */
 export const resources = PaintResources.fixed(meta);
 
-/** 从此处起量字调用逐条录下（交 `dolce measure-check` 对原生），返回取走已录条目的函数。 */
+/** 从此处起量字调用逐条录下（交 `dolce-dev measure-check` 对原生），返回取走已录条目的函数。 */
 export function recordMeasureLog(files: Record<string, string> = {}): () => MeasureRecord[] {
   return recordMeasure(nodeMeasure(files));
 }

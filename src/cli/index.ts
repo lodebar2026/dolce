@@ -1,5 +1,5 @@
 // Node CLI 侧的入口：汇出矢量 PDF 版面与样式表那一摊，由 `npm run build:cli`（vite --ssr）打成
-// out/cli/index.js 供脚本 import（识别在 Rust 的 omr-cli，不经这里）。
+// out/cli/index.js 供脚本 import（识别在 Rust 的 dolce 命令行，不经这里）。
 //
 // **这里只能汇出不碰 DOM 的模块**——page-report / pdf-diff 一类脚本不起浏览器。
 // 排版件（依赖 common/measure.ts 的）走 `cli/engrave.ts`（它装测量后端），也不进这里。

@@ -1,5 +1,5 @@
 //! 输出格式表：同一份 `ScoreDoc` 能写成哪几种格式，各自的显示名、扩展名、写出端与落盘编码。
-//! 与编辑器的转换目标表（TS `convert/targets.ts`，加上 MusicXML）同一份口径；识别命令行（`omr-cli`）与歌本切分按它出各格式。
+//! 与编辑器的转换目标表（TS `convert/targets.ts`，加上 MusicXML）同一份口径；命令行 `dolce`（`dolce-cli`）与歌本切分按它出各格式。
 
 use std::borrow::Cow;
 

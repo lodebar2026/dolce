@@ -1,4 +1,4 @@
-//! `dolce pptx --in=<料.json> --out=<x.pptx> [--bravura=public/redist/Bravura.otf]`：场景 → `.pptx`（`dolce_export::pptx`）。
+//! `dolce-dev pptx --in=<料.json> --out=<x.pptx> [--bravura=public/redist/Bravura.otf]`：场景 → `.pptx`（`dolce_export::pptx`）。
 //! 料是 `PptxInput`（`{pages: [场景页], stackGap, pageWidth, pageHeight, bg, metrics}`，TS `editor/pptxexport.ts::pptxInput` 拼）。
 
 use std::sync::Arc;
@@ -12,7 +12,7 @@ fn flag<'a>(args: &'a [String], k: &str) -> Option<&'a str> {
 
 pub fn pptx_cmd(args: &[String]) -> i32 {
     let (Some(inp), Some(out)) = (flag(args, "in"), flag(args, "out")) else {
-        eprintln!("用法：dolce pptx --in=<料.json> --out=<x.pptx> [--bravura=<Bravura.otf>]");
+        eprintln!("用法：dolce-dev pptx --in=<料.json> --out=<x.pptx> [--bravura=<Bravura.otf>]");
         return 2;
     };
     let run = || -> Result<usize, String> {

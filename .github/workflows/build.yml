@@ -99,9 +99,9 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
           if-no-files-found: error
 
-  # 识谱命令行分发包（scripts/pack-omr.mjs）：Rust 识谱程序 omr-cli（识别、各格式写出、参照歌词都在里面）+ PDFium + OCR 模型，不带 Node。
-  # 识谱程序与 PDFium 都是原生的、不能交叉打包，各平台在自己的 runner 上编。产物 omr-cli-<版本>-<os>-<cpu>。
-  omr-cli:
+  # 命令行分发包（scripts/pack-cli.mjs）：Rust 命令行 dolce（识别、各格式写出、参照歌词都在里面）+ PDFium + OCR 模型，不带 Node。
+  # 识谱程序与 PDFium 都是原生的、不能交叉打包，各平台在自己的 runner 上编。产物 dolce-cli-<版本>-<os>-<cpu>。
+  dolce-cli:
     permissions:
       contents: write
     strategy:
@@ -113,13 +113,13 @@ jobs:
           - os: windows-latest
             pkg: win32-x64
           # ort 预编译的静态 onnxruntime 用到 glibc 2.38 / GCC 13 的符号，22.04 链不过，至少 24.04；包的 glibc 下限随之是 2.39（下面 glibc floor 一步的读数）。
-          # linux-arm64 暂不出；pack-omr.mjs 已支持，要时加 { os: ubuntu-24.04-arm, pkg: linux-arm64 }
+          # linux-arm64 暂不出；pack-cli.mjs 已支持，要时加 { os: ubuntu-24.04-arm, pkg: linux-arm64 }
           - os: ubuntu-24.04
             pkg: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-      # 只给打包脚本用（pack-omr.mjs 只依赖 Node 内置模块，不用 npm ci）
+      # 只给打包脚本用（pack-cli.mjs 只依赖 Node 内置模块，不用 npm ci）
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
@@ -130,24 +130,24 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: crates
-      - name: Build omr-cli
+      - name: Build dolce-cli
         working-directory: crates
-        run: cargo build --release -p dolce-omr-cli
+        run: cargo build --release -p dolce-cli
       - name: Pack
-        run: node scripts/pack-omr.mjs --targets=${{ matrix.pkg }}
+        run: node scripts/pack-cli.mjs --targets=${{ matrix.pkg }}
       # 冒烟：解开的包在干净目录里能起来、载得到 OCR 模型与 ONNX Runtime，真识别一张图（截图里的简谱，只看能跑通），
-      # 再从同一张图写一份 jcx（GBK 编码、Rust 写出端）
+      # 再从同一张图写一份 jcx（GBK 编码、Rust 写出端；这一条走不带 omr 子命令的旧写法，验兜底）
       - name: Smoke test (macOS / Linux)
         if: runner.os != 'Windows'
         run: |
           mkdir smoke && tar xzf out/pkg/*.tar.gz -C smoke
-          smoke/*/omr-cli docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
-          smoke/*/omr-cli docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
+          smoke/*/dolce omr docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
+          smoke/*/dolce docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
           ls -la smoke/out && test -s smoke/out/a.123 && test -s smoke/out/a.jcx
       # 只打印：包里二进制要求的最高 glibc 版本，即 Linux 包的运行下限
       - name: glibc floor (Linux)
         if: runner.os == 'Linux'
-        run: objdump -T smoke/*/omr-cli smoke/*/libpdfium.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+        run: objdump -T smoke/*/dolce smoke/*/libpdfium.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -155,9 +155,9 @@ jobs:
           Expand-Archive (Get-Item out/pkg/*.zip).FullName -DestinationPath smoke
           $d = (Get-ChildItem smoke -Directory)[0].FullName
           New-Item -ItemType Directory smoke/out | Out-Null
-          & "$d/omr-cli.exe" docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
+          & "$d/dolce.exe" omr docs/screenshot-zh.png --kind=jianpu -f 123 -o smoke/out/a.123
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          & "$d/omr-cli.exe" docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
+          & "$d/dolce.exe" docs/screenshot-zh.png --kind=jianpu -f jcx -o smoke/out/a.jcx
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-ChildItem smoke/out
           if ((Get-Item smoke/out/a.123).Length -eq 0 -or (Get-Item smoke/out/a.jcx).Length -eq 0) { exit 1 }
@@ -166,13 +166,13 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" out/pkg/omr-cli-* --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" out/pkg/dolce-cli-* --clobber
       - name: Upload artifact (manual run)
         if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: omr-cli-${{ matrix.pkg }}
-          path: out/pkg/omr-cli-*
+          name: dolce-cli-${{ matrix.pkg }}
+          path: out/pkg/dolce-cli-*
           if-no-files-found: error
 
   # Web 版随同一 release 部署到 GitHub Pages

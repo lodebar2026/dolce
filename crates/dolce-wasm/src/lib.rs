@@ -67,7 +67,7 @@ impl Session {
 }
 
 #[cfg(feature = "probe")]
-/// XML 树对拍原料（同 `dolce xml-dump` 的口径，哈希由调用方算）：解析成功回
+/// XML 树对拍原料（同 `dolce-dev xml-dump` 的口径，哈希由调用方算）：解析成功回
 /// `{"ok":true,"xml":序列化文本,"spans":"start-end,…"}`（各元素原文区间，UTF-16、文档序）；读不出回 `{"ok":false,"message":…,"at":…}`。
 #[cfg(feature = "probe")]
 #[wasm_bindgen(js_name = xmlDigest)]

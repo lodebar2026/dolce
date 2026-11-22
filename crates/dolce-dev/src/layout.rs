@@ -74,7 +74,7 @@ fn first_diff(a: &str, b: &str) -> String {
 pub fn scene_svg(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(path) = pos.first() else {
-        eprintln!("用法：dolce scene-svg <scene.jsonl> [--show=N]");
+        eprintln!("用法：dolce-dev scene-svg <scene.jsonl> [--show=N]");
         return 2;
     };
     let show = show_n(args);
@@ -110,7 +110,7 @@ fn same_num(a: f64, b: f64) -> bool {
 pub fn measure_check(args: &[String]) -> i32 {
     let pos = positional(args);
     let Some(path) = pos.first() else {
-        eprintln!("用法：dolce measure-check <measure.jsonl> [--redist=<目录>] [--show=N] [--webview]");
+        eprintln!("用法：dolce-dev measure-check <measure.jsonl> [--redist=<目录>] [--show=N] [--webview]");
         return 2;
     };
     if !dolce_text::native::NativeText::available() {
@@ -169,7 +169,7 @@ fn parse_scene(path: &str, l: &str) -> SceneLine {
 pub fn diff_scene(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(a), Some(b)) = (pos.first(), pos.get(1)) else {
-        eprintln!("用法：dolce diff-scene <a.jsonl> <b.jsonl> [--show=N]");
+        eprintln!("用法：dolce-dev diff-scene <a.jsonl> <b.jsonl> [--show=N]");
         return 2;
     };
     let show = show_n(args);
@@ -216,7 +216,7 @@ pub fn diff_scene(args: &[String]) -> i32 {
 pub fn scene_dump(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(path), Some(key)) = (pos.first(), flag(args, "key")) else {
-        eprintln!("用法：dolce scene-dump <scene.jsonl> --key=<子串> [--page=N]");
+        eprintln!("用法：dolce-dev scene-dump <scene.jsonl> --key=<子串> [--page=N]");
         return 2;
     };
     let page: usize = flag(args, "page").and_then(|v| v.parse().ok()).unwrap_or(1);

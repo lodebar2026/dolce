@@ -1,9 +1,9 @@
 //! 成书 PDF（L7 第三步）的命令：
-//! - `dolce book-pdf --in=<drawlist.json> --out=<x.pdf> [--style=a.ss,b.ss] [--title=] [--base=<目录>]`：DrawList → PDF。
+//! - `dolce-dev book-pdf --in=<drawlist.json> --out=<x.pdf> [--style=a.ss,b.ss] [--title=] [--base=<目录>]`：DrawList → PDF。
 //!   输入 `{style, pages, title?, outline?: [{title, page}]}`；`style` 是 BookStyle 对象，或只是 id（rebuild 的产物）时
 //!   用 `--style=` 指的样式表现算。相对路径的字体文件相对 `--base`（缺省当前目录）。stdout 出一行 JSON 报账。
-//! - `dolce book-measure-check <book-measure.jsonl> --style=a.ss,b.ss`：书级量字原生实现 ↔ TS 录制（`textmetrics.mjs`）。
-//! - `dolce pdf-compare <a.pdf> <b.pdf> [--scale=1] [--worst=N]`：两份 PDF 逐页栅格比（墨迹像素里灰度差过 96 的占比）与文字层比。
+//! - `dolce-dev book-measure-check <book-measure.jsonl> --style=a.ss,b.ss`：书级量字原生实现 ↔ TS 录制（`textmetrics.mjs`）。
+//! - `dolce-dev pdf-compare <a.pdf> <b.pdf> [--scale=1] [--worst=N]`：两份 PDF 逐页栅格比（墨迹像素里灰度差过 96 的占比）与文字层比。
 
 use std::path::{Path, PathBuf};
 
@@ -37,7 +37,7 @@ fn style_from_files(list: &str) -> Result<Value, String> {
 
 pub fn book_pdf_cmd(args: &[String]) -> i32 {
     let (Some(inp), Some(out)) = (flag(args, "in"), flag(args, "out")) else {
-        eprintln!("用法：dolce book-pdf --in=<drawlist.json> --out=<x.pdf> [--style=a.ss,b.ss] [--title=] [--base=<目录>]");
+        eprintln!("用法：dolce-dev book-pdf --in=<drawlist.json> --out=<x.pdf> [--style=a.ss,b.ss] [--title=] [--base=<目录>]");
         return 2;
     };
     let run = || -> Result<Value, String> {
@@ -92,7 +92,7 @@ pub fn book_pdf_cmd(args: &[String]) -> i32 {
 
 pub fn book_measure_check(args: &[String]) -> i32 {
     let (Some(rec), Some(list)) = (positional(args).first().copied(), flag(args, "style")) else {
-        eprintln!("用法：dolce book-measure-check <book-measure.jsonl> --style=a.ss,b.ss [--base=<目录>] [--show=N]");
+        eprintln!("用法：dolce-dev book-measure-check <book-measure.jsonl> --style=a.ss,b.ss [--base=<目录>] [--show=N]");
         return 2;
     };
     let style = match style_from_files(list) {
@@ -146,7 +146,7 @@ pub fn book_measure_check(args: &[String]) -> i32 {
 pub fn pdf_compare(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(a), Some(b)) = (pos.first(), pos.get(1)) else {
-        eprintln!("用法：dolce pdf-compare <a.pdf> <b.pdf> [--scale=1] [--worst=N]");
+        eprintln!("用法：dolce-dev pdf-compare <a.pdf> <b.pdf> [--scale=1] [--worst=N]");
         return 2;
     };
     let scale: f64 = flag(args, "scale").and_then(|s| s.parse().ok()).unwrap_or(1.0);
@@ -199,12 +199,12 @@ pub fn pdf_compare(args: &[String]) -> i32 {
     0
 }
 
-/// `dolce relayout --in=<input.json> --out=<result.json> [--base=<目录>]`：成书 A 路（原位替换）的版面规格 → DrawList（dev `relayout.mjs --mode=text` 用）。
+/// `dolce-dev relayout --in=<input.json> --out=<result.json> [--base=<目录>]`：成书 A 路（原位替换）的版面规格 → DrawList（dev `relayout.mjs --mode=text` 用）。
 /// 输入 `{style, fallback: {形状键: 字 | null}, specs: [PageSpec…], lyric2Cut?}`（`style` 是校验过的 BookStyle）；
 /// 各角色「墨迹高 ÷ 字号」按样式表指的字体原生量（`BookFonts`，与 `book-pdf` 写出端同一份）。出 `[SpecToDrawResult…]`（逐页同序）。
 pub fn relayout_cmd(args: &[String]) -> i32 {
     let (Some(inp), Some(out)) = (flag(args, "in"), flag(args, "out")) else {
-        eprintln!("用法：dolce relayout --in=<input.json> --out=<result.json> [--base=<目录>]");
+        eprintln!("用法：dolce-dev relayout --in=<input.json> --out=<result.json> [--base=<目录>]");
         return 2;
     };
     let run = || -> Result<(), String> {
@@ -229,11 +229,11 @@ pub fn relayout_cmd(args: &[String]) -> i32 {
     }
 }
 
-/// `dolce annotation-blocks --in=<input.json> --out=<result.json> [--base=<目录>]`：成书注解块逐条排（dev `gen-annocheck.mjs` 用）。
+/// `dolce-dev annotation-blocks --in=<input.json> --out=<result.json> [--base=<目录>]`：成书注解块逐条排（dev `gen-annocheck.mjs` 用）。
 /// 输入 `{style, blocks: [AnnotationOptions…]}`（`style` 是校验过的 BookStyle）；书级量字原生（`BookFonts`）。出 `[AnnotationBlock…]`（同序）。
 pub fn annotation_blocks_cmd(args: &[String]) -> i32 {
     let (Some(inp), Some(out)) = (flag(args, "in"), flag(args, "out")) else {
-        eprintln!("用法：dolce annotation-blocks --in=<input.json> --out=<result.json> [--base=<目录>]");
+        eprintln!("用法：dolce-dev annotation-blocks --in=<input.json> --out=<result.json> [--base=<目录>]");
         return 2;
     };
     let run = || -> Result<(), String> {

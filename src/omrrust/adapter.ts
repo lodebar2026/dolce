@@ -3,7 +3,7 @@
 // 乐谱本身是编辑器的原文：识别结果在 Rust 里直接建模（`omr-todoc::staff`，识别 id 与符干是模型旁的附件），
 // 经唯一写出端 `dolce-model::toxml` 写成带识别 id 的 MusicXML，编辑器照旧 `adoptStaffXml` → `fromxml`
 // （`xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改）；MusicXML 表达不了的——各页谱行几何、系统表、关联表、源框、
-// 可疑清单、落选候选——走核对 JSON（Rust `Song::review_json_with`，`omr-cli recognize staff` 写成 `<曲>.review.json`）。
+// 可疑清单、落选候选——走核对 JSON（Rust `Song::review_json_with`，`dolce recognize staff` 写成 `<曲>.review.json`）。
 // 会话与文档都进 Rust（H 期）后，模型与附件直接交会话，这份适配器连同 JSON 中转一并退役。
 //
 // 改关联表、改系统切分不重认：转调 Rust 会话（`omr-staff::session`），会话回新的 MusicXML 与核对 JSON。

@@ -1,4 +1,4 @@
-//! `dolce staff-check <cases.jsonl> --measure=<measure.jsonl>`：五线谱 / 混排引擎迁 Rust（L5）的对拍。
+//! `dolce-dev staff-check <cases.jsonl> --measure=<measure.jsonl>`：五线谱 / 混排引擎迁 Rust（L5）的对拍。
 //! 用例由 dev `staff-rs-diff.mjs` 让 TS 整份排出（文档 + MusicXML 原文 + 选项 + 各阶段 dump + 整页场景）；这里在量字回放下用
 //! `dolce-layout-staff` 重排，逐档比五段：
 //!
@@ -107,7 +107,7 @@ pub fn staff_check(args: &[String]) -> i32 {
     let native = args.iter().any(|a| a == "--native");
     let mpath = flag(args, "measure");
     let (Some(path), true) = (pos.first(), native || mpath.is_some()) else {
-        eprintln!("用法：dolce staff-check <cases.jsonl> (--measure=<measure.jsonl> | --native) [--stage=read,systems,layout,pages,scene] [--limit=N] [--key=子串] [--cfg=档名] [--show=N] [--redist=<目录>]");
+        eprintln!("用法：dolce-dev staff-check <cases.jsonl> (--measure=<measure.jsonl> | --native) [--stage=read,systems,layout,pages,scene] [--limit=N] [--key=子串] [--cfg=档名] [--show=N] [--redist=<目录>]");
         return 2;
     };
     let stages: Vec<&str> = flag(args, "stage").map_or(STAGES.to_vec(), |s| s.split(',').collect());

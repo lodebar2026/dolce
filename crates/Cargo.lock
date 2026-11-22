@@ -451,6 +451,26 @@ dependencies = [
 name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
+ "dolce-formats",
+ "dolce-model",
+ "dolce-omr-book",
+ "dolce-omr-core",
+ "dolce-omr-engine",
+ "dolce-omr-jianpu",
+ "dolce-omr-ocr",
+ "dolce-omr-sheet",
+ "dolce-omr-source",
+ "dolce-omr-staff",
+ "dolce-omr-todoc",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dolce-dev"
+version = "0.1.0"
+dependencies = [
  "bincode",
  "dolce-base",
  "dolce-book",
@@ -599,26 +619,6 @@ dependencies = [
  "image",
  "rayon",
  "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dolce-omr-cli"
-version = "0.1.0"
-dependencies = [
- "dolce-formats",
- "dolce-model",
- "dolce-omr-book",
- "dolce-omr-core",
- "dolce-omr-engine",
- "dolce-omr-jianpu",
- "dolce-omr-ocr",
- "dolce-omr-sheet",
- "dolce-omr-source",
- "dolce-omr-staff",
- "dolce-omr-todoc",
- "rayon",
  "serde",
  "serde_json",
 ]

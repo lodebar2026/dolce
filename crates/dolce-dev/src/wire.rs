@@ -1,4 +1,4 @@
-//! `dolce layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>] [--webview]`：按编辑器录下的排版请求原生重排（系统量字），出各页 SVG。
+//! `dolce-dev layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>] [--webview]`：按编辑器录下的排版请求原生重排（系统量字），出各页 SVG。
 //! 宿主对账（dev `layout-node-parity.mjs`）用：浏览器 / 桌面 WebView 里排的一份对它比。
 //!
 //! 入行（编辑器 `rustlayout.ts::wireDump` 的形状）：`{key, cfg, kind: "jianpu"|"staff", doc: "<ScoreDoc JSON>", req: "<请求 JSON>", surface: "<表层快照 hex>"|null}`；
@@ -72,7 +72,7 @@ fn lay(w: &Wire, env: &Env) -> Result<Laid, String> {
 pub fn layout_wire(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(src), Some(out)) = (pos.first(), flag(args, "out")) else {
-        eprintln!("用法：dolce layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>] [--webview]");
+        eprintln!("用法：dolce-dev layout-wire <wires.jsonl> --out=<pages.jsonl> [--redist=<目录>] [--webview]");
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));

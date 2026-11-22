@@ -1,4 +1,4 @@
-//! 成书部件对拍（迁 Rust L6）：`dolce book-parts-check <cases.jsonl> --measure=<book-measure.jsonl> [--layout=<pdf-layout.json>] [--kind=…] [--show=N]`。
+//! 成书部件对拍（迁 Rust L6）：`dolce-dev book-parts-check <cases.jsonl> --measure=<book-measure.jsonl> [--layout=<pdf-layout.json>] [--kind=…] [--show=N]`。
 //!
 //! 用例由 dev `book-parts-rs-diff.mjs` 让 TS 现算导出（`{ kind, key, …输入, expect | error }`），书级量字录成 `book-measure.jsonl`
 //! （格式见 `dolce_book::measure`）回放；Rust 用 `dolce-book` 重算后逐字段比：骨架（键、串、数组长）一致、数差 ≤ 1e-6，缺键与 `null` 视同。
@@ -150,7 +150,7 @@ fn run(case: &Value, kind: &str, cx: &mut Ctx, m: &dyn BookMeasure) -> Result<Va
 pub fn book_parts_check(args: &[String]) -> i32 {
     let pos = positional(args);
     let (Some(path), Some(mpath)) = (pos.first(), flag(args, "measure")) else {
-        eprintln!("用法：dolce book-parts-check <cases.jsonl> --measure=<book-measure.jsonl> [--layout=<pdf-layout.json>] [--kind=…] [--key=子串] [--show=N]");
+        eprintln!("用法：dolce-dev book-parts-check <cases.jsonl> --measure=<book-measure.jsonl> [--layout=<pdf-layout.json>] [--kind=…] [--key=子串] [--show=N]");
         return 2;
     };
     let measure = ReplayBookMeasure::from_jsonl(&std::fs::read_to_string(mpath).expect("读量字录制")).expect("量字录制");

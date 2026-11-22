@@ -1,101 +1,99 @@
-//! `dolce`：模型 / 格式 / 排版的命令行。迁移期给 dev 的对拍脚本（`rs-diff.mjs`）出可比的摘要。
-//!
-//! 子命令：
-//! - `xml-dump`：标准输入每行一个 XML 文件路径，逐份解析，每份出一行 JSON：
-//!   `{"file", "ok", "hash"}`（序列化文本 + 各元素原文区间的 SHA-256）或 `{"file", "ok": false, "message", "at"}`。
-//! - `scene-svg` / `measure-check` / `diff-scene` / `scene-dump`：排版迁移的对拍（见 `layout.rs`）。
-//! - `style-check`：样式层的对拍（见 `style.rs`）。
-//! - `engrave-check`：图元层的对拍（见 `engrave.rs`）。
-//! - `jianpu-check`：简谱引擎的对拍（见 `jianpu.rs`）。
-//! - `staff-check`：五线谱 / 混排引擎的对拍（见 `staff.rs`）。
-//! - `book-parts-check`：成书部件的对拍（见 `bookparts.rs`）。
-//! - `book-meta-check`：成书书级元数据与书籍样式统计的对拍（见 `bookmeta.rs`）。
-//! - `book-rebuild`：成书 B 路整本的对拍（见 `book.rs`）。
-//! - `book-draw-check`：成书（`browser.ts` / `songbook.ts`）的对拍（见 `bookdraw.rs`）；`songbook`：混排歌本整本排版（同文件）。
-//! - `book-pdf` / `book-measure-check` / `pdf-compare`：成书 DrawList → PDF、书级量字原生 ↔ 录制、两份 PDF 栅格比（见 `bookpdf.rs`）。
-//! - `pptx`：场景 → `.pptx`（见 `pptx.rs`）。
-//! - `font-probe` / `scene-pdf`：导出的字体样本验证、场景 → PDF 与旧链栅格比对（见 `export.rs`）。
+//! `dolce`：悦谱的命令行。给人用的：识谱出各格式（`omr`，[`cli`]；第一个参数是选项或已有的文件 / 目录时也按识谱，兼容旧写法）、
+//! 歌本切分（`split`）；开发用的：批量识别出 JSON（`run`，私有仓库的自检脚本用）、识别一个文件（`recognize`）、
+//! 五线谱会话（`session`）、回归（`regress`）。格式转换与排版以后也加在这里。
+mod cli;
+mod recognize;
+mod regress;
+mod run;
+mod split;
 
-mod book;
-mod bookdraw;
-mod bookpdf;
-mod pptx;
-mod bookmeta;
-mod bookparts;
-mod engrave;
-mod export;
-mod jianpu;
-mod layout;
-mod staff;
-mod style;
-mod wire;
+use std::path::PathBuf;
+use std::process::ExitCode;
 
-use sha2::{Digest, Sha256};
-use std::io::{self, BufRead, Write};
+const USAGE: &str = "  dolce regress <jianpu|solo|chorus|vector|xinbian> [--only=子串] [--jobs=N] [--out=目录] [--ref=目录] [--web=目录] [--replay=目录] [--area=结构] [--judge-only]
+      跑识别（各曲并行）→ 产物落盘到 --out → 调私有仓库判分（solo-ops / chorus-ops 的 --from）→ 与 --ref 的 TS 基线逐曲比
+      缺省：--out=../dev/data/rust-omr/runs/<档>，--ref=../dev/data/rust-omr/ref-c7c02820，--web=../web（判分脚本与 out/cli 所在的检出）
+      --replay：不识别，拷那个目录里同名的产物来判（拿 TS 归档自测回归流程）
+      --area：只比这一档的步数（结构 / 音符 / 记号 / 歌词 / 文字 / 页眉）；--judge-only：产物不动，只重新判分对比
+  dolce recognize jianpu 文件 [--render] [--out=文件]
+      识别一个简谱文件，打出行数、音数、小节数与满拍率；--render：PDF 页先用 PDFium 渲染再走像素路（对照纯矢量页那条路）
+  dolce recognize staff 文件 [--out=目录]
+      识别一个五线谱文件，写出 <曲>.musicxml（带识别 id）与 <曲>.review.json（核对 JSON：各页谱行几何、系统、关联表、源框、可疑、候选）
+  dolce session 五线谱文件 --ops=操作.jsonl [--out=目录]
+      识别后开会话，逐条做操作（每行一条 JSON：rebuild / restructure / pin / unpin / choose / context，见 omr-staff::session::Op），
+      每一步写出 <步>.musicxml、<步>.rec.json 与 <步>.review.json，报声部数、小节数与识别 id 比上一步留下 / 没了 / 新出的个数
+";
 
-fn main() {
+fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("xml-dump") => xml_dump(),
-        Some("scene-svg") => std::process::exit(layout::scene_svg(&args[1..])),
-        Some("measure-check") => std::process::exit(layout::measure_check(&args[1..])),
-        Some("diff-scene") => std::process::exit(layout::diff_scene(&args[1..])),
-        Some("scene-dump") => std::process::exit(layout::scene_dump(&args[1..])),
-        Some("style-check") => std::process::exit(style::style_check(&args[1..])),
-        Some("engrave-check") => std::process::exit(engrave::engrave_check(&args[1..])),
-        Some("jianpu-check") => std::process::exit(jianpu::jianpu_check(&args[1..])),
-        Some("staff-check") => std::process::exit(staff::staff_check(&args[1..])),
-        Some("book-parts-check") => std::process::exit(bookparts::book_parts_check(&args[1..])),
-        Some("book-meta-check") => std::process::exit(bookmeta::book_meta_check(&args[1..])),
-        Some("book-draw-check") => std::process::exit(bookdraw::book_draw_check(&args[1..])),
-        Some("book-pdf") => std::process::exit(bookpdf::book_pdf_cmd(&args[1..])),
-        Some("book-measure-check") => std::process::exit(bookpdf::book_measure_check(&args[1..])),
-        Some("pdf-compare") => std::process::exit(bookpdf::pdf_compare(&args[1..])),
-        Some("pptx") => std::process::exit(pptx::pptx_cmd(&args[1..])),
-        Some("book-rebuild") => std::process::exit(book::book_rebuild(&args[1..])),
-        Some("font-probe") => std::process::exit(export::font_probe(&args[1..])),
-        Some("scene-pdf") => std::process::exit(export::scene_pdf(&args[1..])),
-        Some("layout-wire") => std::process::exit(wire::layout_wire(&args[1..])),
-        Some("songbook") => std::process::exit(bookdraw::songbook(&args[1..])),
-        Some("relayout") => std::process::exit(bookpdf::relayout_cmd(&args[1..])),
-        Some("annotation-blocks") => std::process::exit(bookpdf::annotation_blocks_cmd(&args[1..])),
-        _ => {
-            eprintln!("用法：dolce <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare | pptx | layout-wire | songbook | relayout | annotation-blocks> …");
-            std::process::exit(2);
+        Some("regress") => match regress::run(&regress::Opts::parse(&args[1..])) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some("session") => match recognize::session(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some("recognize") => match recognize::one(&args[1..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some("run") => match run::run(&args[1..]) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some("split") => match split::run(&args[1..]) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(1)
+            }
+        },
+        None | Some("-h" | "--help" | "help") => {
+            // 开发用的子命令只在仓库检出里列（分发包没有私有仓库，列了也跑不了）
+            let dev = if checkout("crates/dolce-cli").is_dir() { format!("\n开发用：\n{}{USAGE}", run::USAGE) } else { String::new() };
+            eprintln!("用法：\n{}{}{dev}", cli::usage(), split::USAGE);
+            ExitCode::from(if args.is_empty() { 2 } else { 0 })
+        }
+        Some("omr") => recognize_cli(&args[1..]),
+        // 旧写法 `dolce 图片… -f 格式`：第一个参数是选项或已有的文件 / 目录就按识谱；别的词当拼错的子命令，不拿去当文件名
+        Some(a) if a.starts_with('-') || std::path::Path::new(a).exists() => recognize_cli(&args),
+        Some(a) => {
+            eprintln!("✗ 未知子命令 {a}（dolce --help 看用法）");
+            ExitCode::from(2)
         }
     }
 }
 
-/// 序列化文本、`\0`、按文档序各元素的 `start-end,`（UTF-16）——与 `rs-diff.mjs` 的 TS 侧同口径。
-fn xml_digest(d: &dolce_model::xml::XmlDoc) -> String {
-    let mut h = Sha256::new();
-    h.update(d.serialize().as_bytes());
-    h.update(b"\0");
-    let mut stack = vec![d.root];
-    let mut spans = String::new();
-    while let Some(id) = stack.pop() {
-        spans.push_str(&format!("{}-{},", d.tree.start(id), d.tree.end(id)));
-        let kids: Vec<_> = d.tree.children(id).collect();
-        stack.extend(kids.into_iter().rev());
+fn recognize_cli(args: &[String]) -> ExitCode {
+    match cli::run(args) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("✗ {e}");
+            ExitCode::from(1)
+        }
     }
-    h.update(spans.as_bytes());
-    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn xml_dump() {
-    let stdin = io::stdin();
-    let mut out = io::BufWriter::new(io::stdout().lock());
-    for line in stdin.lock().lines() {
-        let file = line.expect("读标准输入");
-        if file.is_empty() {
-            continue;
-        }
-        let bytes = std::fs::read(&file).unwrap_or_else(|e| panic!("读 {file}：{e}"));
-        let text = String::from_utf8_lossy(&bytes);
-        let row = match dolce_model::xml::parse(&text) {
-            Ok(d) => serde_json::json!({ "file": file, "ok": true, "hash": xml_digest(&d) }),
-            Err(e) => serde_json::json!({ "file": file, "ok": false, "message": e.message, "at": e.at }),
-        };
-        writeln!(out, "{row}").expect("写标准输出");
-    }
+/// 本检出里的路径：编译时记下的本 crate 位置往上两级是 web 检出的根。
+pub fn checkout(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(name)
+}
+
+/// 仓库同级目录：web 检出的父目录放着私有仓库 `dev/`。
+pub fn sibling(name: &str) -> PathBuf {
+    checkout("..").join(name)
 }

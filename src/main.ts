@@ -578,7 +578,7 @@ function paintProbe(meta: MetaData) {
     // 宿主对账（dev layout-node-parity.mjs）：录下当前请求、在本页 wasm 上重排
     wireDump,
     wasmPages,
-    // 录下此后的量字调用（交 `dolce measure-check` 对原生）
+    // 录下此后的量字调用（交 `dolce-dev measure-check` 对原生）
     recordMeasure: () => recordMeasure(),
   };
 }
