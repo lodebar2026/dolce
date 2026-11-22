@@ -31,6 +31,11 @@ cd "$(dirname "$0")/.."
 GH_TOKEN="$(gh auth token --user lodebar2026)" || { echo "!! 取不到 lodebar2026 的 token，先 gh auth login"; exit 1; }
 export GH_TOKEN
 
+# 只从 main 发：脚本把版本提交推到 main、release 也建在 main 上；在别的分支跑会把版本提交落错地方
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+[ "${BRANCH}" = main ] || { echo "!! 当前在 ${BRANCH}，发布要在 main 上（先把分支合回 main）"; exit 1; }
+git diff --quiet && git diff --cached --quiet || { echo "!! 工作区有未提交改动，先提交或收起"; exit 1; }
+
 if [ "${CHECK}" = 1 ]; then
   echo "==> 发布前验证（scripts/release-check.mjs）"
   node scripts/release-check.mjs ${CHECK_ARGS[@]+"${CHECK_ARGS[@]}"} || { echo "!! 发布前验证不过，已中止（确认无碍可加 --force-check，或 --skip-check 跳过）"; exit 1; }
