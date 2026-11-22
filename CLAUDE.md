@@ -21,7 +21,7 @@ Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量
 
 构建、类型检查、桌面调试命令见 [docs/架构.md](docs/架构.md)「技术栈与构建」。
 回归脚本、语料与基线不在本仓库（本地私有仓库，从本仓库根跑 `node ../dev/scripts/xxx.mjs`）；
-`scripts/` 只留构建与发布链路：`release.sh`、`pack-cli.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm）；命令行全在 Rust `dolce`（`crates/dolce-cli`，分发包不带 Node）。
+`scripts/` 只留构建与发布链路：`release.sh`、`release-check.mjs`（发布前验证 wasm 体积、识别耗时与内存，对比上次发布；读数记在私有仓库 `data/release-bench/`）、`pack-cli.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm）；命令行全在 Rust `dolce`（`crates/dolce-cli`，分发包不带 Node）。
 识别回归走 `cd crates && cargo run --release -p dolce-cli -- regress <档>`（判分脚本、语料、基线在私有仓库，见 [识别-Rust](docs/模块/识别-Rust.md)「回归」）。
 文档里写的 `../dev/scripts/xxx.mjs` 都在私有仓库。
 

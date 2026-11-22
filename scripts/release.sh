@@ -2,12 +2,24 @@
 # 本地发布脚本：bump 版本 → 提交推送 → 建 release（触发 Build）→ 等 run 跑完 → 自动 gh run delete。
 # 「发布完成后自动删 run」在本地做，不用 CI 工作流（run 无法自删，且约定不改 .github/workflows/*.yml）。
 #
-# 用法：  scripts/release.sh <version> [发布说明...]
+# 用法：  scripts/release.sh [--skip-check|--force-check] <version> [发布说明...]
 #   scripts/release.sh 0.4.2
 #   scripts/release.sh 0.4.2 "修复 X" "新增 Y"
+# 改版本号之前先跑发布前验证（scripts/release-check.mjs：wasm 体积、识别耗时、内存），不过就中止；
+# --skip-check 不跑，--force-check 跑但不拦。
 set -euo pipefail
 
-VER="${1:?用法: scripts/release.sh <version> [notes...]}"
+CHECK=1
+CHECK_ARGS=()
+while [ "${1:-}" != "" ] && [ "${1#--}" != "$1" ]; do
+  case "$1" in
+    --skip-check) CHECK=0 ;;
+    --force-check) CHECK_ARGS+=(--force) ;;
+    *) echo "!! 未知选项 $1"; exit 1 ;;
+  esac
+  shift
+done
+VER="${1:?用法: scripts/release.sh [--skip-check|--force-check] <version> [notes...]}"
 shift || true
 TAG="v${VER}"
 REPO="lodebar2026/dolce"
@@ -18,6 +30,11 @@ cd "$(dirname "$0")/.."
 # gh 各命令优先读 GH_TOKEN，git push 走的 `gh auth git-credential` 同样认它。
 GH_TOKEN="$(gh auth token --user lodebar2026)" || { echo "!! 取不到 lodebar2026 的 token，先 gh auth login"; exit 1; }
 export GH_TOKEN
+
+if [ "${CHECK}" = 1 ]; then
+  echo "==> 发布前验证（scripts/release-check.mjs）"
+  node scripts/release-check.mjs ${CHECK_ARGS[@]+"${CHECK_ARGS[@]}"} || { echo "!! 发布前验证不过，已中止（确认无碍可加 --force-check，或 --skip-check 跳过）"; exit 1; }
+fi
 
 echo "==> bump 版本 → ${VER}"
 sed -i '' "s/\"version\": \"[0-9][0-9.]*\"/\"version\": \"${VER}\"/" package.json src-tauri/tauri.conf.json
@@ -101,4 +118,6 @@ fi
 
 echo "==> 删除 run ${RUN_ID}"
 gh run delete "${RUN_ID}" --repo "${REPO}"
+# 发布成功：本次识别耗时 / 内存读数记为下一次发布的对照
+[ "${CHECK}" = 1 ] && { node scripts/release-check.mjs --save="${VER}" || true; }
 echo "==> 完成：${TAG} 已发布，run ${RUN_ID} 已删除"

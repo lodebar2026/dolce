@@ -7,7 +7,7 @@
 // `probe` 另编一份带对拍探针的 dolce-wasm 到 out/dolce-probe/（只给 dev 对拍脚本，不进打包）。
 //
 // 要：rustup target add wasm32-unknown-unknown；cargo install wasm-bindgen-cli --version <与 crates/Cargo.lock 一致>。
-// 识别那份有 wasm-opt（binaryen）就再压一遍；dolce 两份走 `wasm-dolce` 编译档、不过 wasm-opt。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
+// 都不过 wasm-opt（压缩后反而变大，见 buildOmr 里的注释）；dolce 几份走 `wasm-dolce` 编译档。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
 // PDFium 的构建号与 crates/omr-source/build.rs 同一个（绑定按那一版的符号表取函数）。
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -59,8 +59,8 @@ function bindgenVersion() {
 /** 两份：`dolce_omr_wasm` 只用 simd128（Safari 没有 relaxed-simd）；`dolce_omr_wasm_relaxed` 另开 relaxed-simd——tract 的矩阵内核
  *  改用融合乘加，Chromium 里 OCR 快一成多。Worker 按浏览器支持挑一份（`worker.ts::loadOmr`）。两份各用自己的 target 目录，免得来回全量重编。 */
 const VARIANTS = [
-  { name: NAME, features: "+simd128", target: "target", opt: [] },
-  { name: `${NAME}_relaxed`, features: "+simd128,+relaxed-simd", target: "target/wasm-relaxed", opt: ["--enable-relaxed-simd"] },
+  { name: NAME, features: "+simd128", target: "target" },
+  { name: `${NAME}_relaxed`, features: "+simd128,+relaxed-simd", target: "target/wasm-relaxed" },
 ];
 
 function checkBindgen() {
@@ -88,8 +88,8 @@ function buildOmr() {
     const wasm = join(target, `wasm32-unknown-unknown/release/${NAME}.wasm`);
     // 去掉名字段（30 → 21 MB；panic 信息照打，只是栈上没函数名）
     run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", out, "--out-name", v.name]);
-    const stamp = join(out, `${v.name}_bg.wasm`);
-    if (has("wasm-opt")) run("wasm-opt", ["-O2", "--enable-simd", ...v.opt, "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", stamp, "-o", stamp]);
+    // 不过 wasm-opt：2026-11-23 量过 -O2 让原始体积小一成多，但 brotli / gzip 后反而大 8% / 2%（3714 → 4031 KB），
+    // 网上传的是压缩后的；CI（Pages）本来也没装 binaryen，本机再过一遍只会让发布前验证对不上线上
   }
 }
 
