@@ -27,6 +27,7 @@ pub fn read_back(doc: &PdfDoc, i: usize, scale: f64) -> Result<PageBack, String>
 
 /// `dolce-dev font-probe [--out=样本.pdf] [--outline] [--font=文件 …] [族:粗:斜:字 …]`（`--outline` 全部转曲，验退路）：缺省样本见 `dolce_export::probe::default_samples`。
 /// 每个样本出一行 JSON：定位、轮廓种类、可变、AAT、合成粗斜、能否嵌，外加读回的文字层是否等于样本字、墨迹像素数。
+/// `--require=族,族…`（CI 用）：这些族本机必须找得到，找不到也算不过（缺省样本里别的平台的字体找不到不算错）。
 pub fn font_probe(args: &[String]) -> i32 {
     let mut book = FontBook::system();
     for f in args.iter().filter_map(|a| a.strip_prefix("--font=")) {
@@ -62,7 +63,14 @@ pub fn font_probe(args: &[String]) -> i32 {
             return 1;
         }
     };
+    let required: Vec<&str> = flag(args, "require").map(|s| s.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()).unwrap_or_default();
     let mut bad = 0;
+    for f in &required {
+        if !rows.iter().any(|r| r.found && r.family == *f) {
+            eprintln!("✗ 要求的字体族 {f} 本机没找到（或不在样本里）");
+            bad += 1;
+        }
+    }
     for (i, r) in rows.iter().enumerate() {
         let back = read_back(&doc, i, 2.0).unwrap_or(PageBack { text: String::new(), ink: 0, w: 0, h: 0, gray: Vec::new() });
         let want: String = r.text.chars().filter(|c| !c.is_whitespace()).collect();
@@ -78,7 +86,7 @@ pub fn font_probe(args: &[String]) -> i32 {
         v["ok"] = serde_json::json!(ok);
         println!("{v}");
     }
-    eprintln!("样本 {} 个，读回不对 {bad} 个；嵌入 {} 面、转曲 {} 面、合成 {} 面、重试 {} 次", rows.len(), report.embedded.len(), report.outlined.len(), report.synthesized.len(), report.retries);
+    eprintln!("样本 {} 个，不过 {bad} 个（读回不对或要求的族没找到）；嵌入 {} 面、转曲 {} 面、合成 {} 面、重试 {} 次", rows.len(), report.embedded.len(), report.outlined.len(), report.synthesized.len(), report.retries);
     if bad > 0 { 1 } else { 0 }
 }
 

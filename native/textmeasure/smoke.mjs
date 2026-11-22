@@ -20,6 +20,9 @@ const CJK = process.platform === "win32" ? ["Microsoft YaHei"] : ["PingFang SC"]
 const LATIN = process.platform === "win32" ? ["Times New Roman"] : ["Times New Roman"];
 check("系统里有中文字体", tm.hasFamily(CJK[0]), CJK[0]);
 check("没有的族报没有", !tm.hasFamily("Dolce No Such Font"));
+// 浏览器口径层的通用族名 → 实名表（crates/dolce-text/src/compat.rs）：落到的字体本机都得有，否则量的是回退字体
+const GENERIC = process.platform === "win32" ? ["Microsoft YaHei", "SimSun", "Consolas", "Microsoft YaHei UI"] : ["PingFang SC", "Songti SC", "Menlo"];
+for (const f of GENERIC) check(`通用族名落到的 ${f} 本机有`, tm.hasFamily(f));
 
 const han = tm.measure("圣", CJK, 20, false, false, []);
 check("汉字一个字身宽", Math.abs(han.width - 20) < 0.5, han.width);
@@ -47,6 +50,7 @@ check("字体度量", m.ascent > 10 && m.descent > 0 && m.family === CJK[0], m);
 
 const bravura = join(web, "public", "redist", "Bravura.otf");
 check("注册 Bravura", tm.registerFont(bravura));
+check("注册 Bravura Text", tm.registerFont(join(web, "public", "redist", "BravuraText.otf")));
 const clef = tm.measure("", ["Bravura"], 40, false, false, []);
 check("Bravura 高音谱号", clef.ink && clef.width > 10 && clef.bottom > 10, [clef.width, clef.top, clef.bottom]);
 
