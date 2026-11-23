@@ -545,6 +545,7 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             out.nums[i].fermata = true;
             used.push(k.id);
             used.push(dot.id);
+            out.mark_ink.extend([k.id, dot.id]);
         }
     }
     // 下滑音 ↘（同 TS fallOf，迦南诗选 2252「5⌒6↘ 3」）：数字右上紧挨着一笔向右下弯的细线、末端带箭头。与数字靠笔画粗细分——
@@ -711,7 +712,7 @@ pub fn segno(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], num_h: f64) {
         let rn = &mut notes[ri];
         for (best, ids) in hits {
             rn.nums[best].segno = true;
-            rn.segno_ink.extend(ids);
+            rn.mark_ink.extend(ids);
         }
     }
 }

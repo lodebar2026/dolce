@@ -2085,8 +2085,8 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes,
         // 伸进音符带半个字号以上的窄块是小节线（顶上粘着行末半弧，「主祢真伟大」读成 T、整行和弦丢）：和弦字不往下伸
         r.bottom() > ya as f64 && r.y < yb as f64 && ((r.bottom() > top + h * 0.5 && r.w <= h * 1.5) || (r.w >= h * 0.8 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
     });
-    // segno 的墨也不读（`·S·D` 读成 `S·D`、和弦 D 跟着丢）
-    let marks: Vec<&Comp> = marks.chain(ink.comps().iter().filter(|k| rn.segno_ink.contains(&k.id))).collect();
+    // 认出的 segno、延长记号的墨也不读（`·S·D` 读成 `S·D`、和弦 D 跟着丢；延长记号的弧读成 `n`，`G Em nG G` 覆盖率不够整行丢）
+    let marks: Vec<&Comp> = marks.chain(ink.comps().iter().filter(|k| rn.mark_ink.contains(&k.id))).collect();
     let mut claims = Claims::comps(ink, marks.iter().copied()).tall_runs(vruns, h * 2.2);
     // 弧顶粘着上方和弦字的块（青年诗歌 91 `F(C)⌒Dm(Am)` 弧尾连着 D，整块 164×44 过不了上面的弧门，D 读成 R、整行和弦全丢）：只扣弧那几像素
     for k in ink.comps().iter().filter(|k| k.rect.bottom() > ya as f64 && k.rect.y < yb as f64 && !marks.iter().any(|m| m.id == k.id)) {

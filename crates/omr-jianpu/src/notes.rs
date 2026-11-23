@@ -20,8 +20,8 @@ pub struct RowNotes {
     pub claimed: Vec<Rect>,
     /// 行里印的转拍号
     pub meters: Vec<crate::result::RowMeter>,
-    /// 认作 segno 的墨（主体与两颗点；读和弦带前抹掉）
-    pub segno_ink: Vec<i32>,
+    /// 认作音符上方记号的墨（segno 主体与两颗点、延长记号的弧与点）：读和弦带前抹掉，免得读成字
+    pub mark_ink: Vec<i32>,
     /// 读出是括号的数字格（前奏括号）：不当临时号
     pub parens: Vec<Rect>,
 }
