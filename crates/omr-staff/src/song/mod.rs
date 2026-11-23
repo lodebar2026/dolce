@@ -726,10 +726,9 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                     src: ids.src(ids.arc(ak), RidKind::Slur, rect),
                 });
             }
-            if let Some(t) = read {
-                if from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal) {
-                    time = Some(t);
-                }
+            // 沿用到下一系统的是本系统末的现行拍号：行首够格的读数，加上行中（小节线后）的切换（裴克经文诗歌 036 第三行 `|:` 后换 3/4，之后各行都是 3/4）
+            if now.is_some() {
+                time = now;
             }
             prev_open = open && !bs.is_empty();
             // 末小节的宽度折成「本行常见小节宽」的倍数，留给下一行比（各行线距、疏密不同，不直接比像素）

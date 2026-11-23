@@ -29,28 +29,33 @@ pub struct TupletCand {
 pub fn tuplets(f: &PageFrame, rows: &mut [RowNotes], ocr: Option<&dyn DigitReader>) {
     let Some(ocr) = ocr else { return };
     for (si, row) in rows.iter_mut().enumerate() {
-        let s = &f.staves[si];
-        let sp = s.space();
-        let mut found: Vec<TupletCand> = Vec::new();
-        for b in &f.blobs {
-            let (w, h) = (b.rect.w / sp, b.rect.h / sp);
-            if b.cx < s.left || b.cx > s.right || w < DIGIT_W.0 || w > DIGIT_W.1 || h < DIGIT_H.0 || h > DIGIT_H.1 || h < w {
-                continue;
-            }
-            // 含着头的墨块是音符自己
-            if row.chords.iter().any(|c| c.heads.iter().any(|hd| hd.x >= b.rect.x && hd.x <= b.rect.right() && hd.y >= b.rect.y && hd.y <= b.rect.bottom())) {
-                continue;
-            }
-            let Some(w) = group_at(&f.layout, si, row, b.rect) else { continue };
-            if found.iter().any(|t| t.chords.iter().any(|i| w.contains(i))) {
-                continue;
-            }
-            let g = cell(f, b.rect.x as i64, b.rect.right() as i64, b.rect.y as i64, b.rect.bottom() as i64);
-            if ocr.read_digit(&g).and_then(|alts| digits_of(&alts, |d| d == 3)) == Some(3) {
-                found.push(TupletCand { chords: w, actual: 3, normal: 2 });
-            }
+        row.tuplets = Vec::new();
+        add_by_blobs(f, si, row, ocr);
+    }
+}
+
+/// 按页框墨块找第 `si` 行的连音候选，追加到 `row.tuplets`（已有候选占着的和弦不重复收）。
+/// 位图页直接用；转曲矢量页的「3」是路径、不在文字层，画成像素后也走这一份。
+pub fn add_by_blobs(f: &PageFrame, si: usize, row: &mut RowNotes, ocr: &dyn DigitReader) {
+    let s = &f.staves[si];
+    let sp = s.space();
+    for b in &f.blobs {
+        let (w, h) = (b.rect.w / sp, b.rect.h / sp);
+        if b.cx < s.left || b.cx > s.right || w < DIGIT_W.0 || w > DIGIT_W.1 || h < DIGIT_H.0 || h > DIGIT_H.1 || h < w {
+            continue;
         }
-        row.tuplets = found;
+        // 含着头的墨块是音符自己
+        if row.chords.iter().any(|c| c.heads.iter().any(|hd| hd.x >= b.rect.x && hd.x <= b.rect.right() && hd.y >= b.rect.y && hd.y <= b.rect.bottom())) {
+            continue;
+        }
+        let Some(w) = group_at(&f.layout, si, row, b.rect) else { continue };
+        if row.tuplets.iter().any(|t| t.chords.iter().any(|i| w.contains(i))) {
+            continue;
+        }
+        let g = cell(f, b.rect.x as i64, b.rect.right() as i64, b.rect.y as i64, b.rect.bottom() as i64);
+        if ocr.read_digit(&g).and_then(|alts| digits_of(&alts, |d| d == 3)) == Some(3) {
+            row.tuplets.push(TupletCand { chords: w, actual: 3, normal: 2 });
+        }
     }
 }
 

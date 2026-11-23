@@ -96,6 +96,8 @@ pub fn acc_pos(u: &Unit, kind: Acc) -> f64 {
 }
 
 /// 调号里降号指着的音级位置：有竖笔时量竖笔右侧肚子的上下沿中点（竖笔与肚子并回的单元下沿不一定是肚子下沿），否则同 [`acc_pos`]。
+/// 肚子取竖笔右侧最下面那段连着的有墨行（容一像素断口）：上方穿过外框的谱线、上细下粗竖笔（转曲字体）贴在右边的墨与肚子之间隔着空白，
+/// 不连进来——取外框里右侧全部有墨行的上下沿会把上沿量到谱线或竖笔顶。
 fn flat_pos(f: &PageFrame, s: &Staff, u: &Unit) -> f64 {
     let st = stems(f, u, 0.72);
     if let Some(stem) = st.first() {
@@ -103,9 +105,16 @@ fn flat_pos(f: &PageFrame, s: &Staff, u: &Unit) -> f64 {
         let xb = u.rect.right().ceil() as i64 - 1;
         if xb >= xa {
             let (y0, y1) = (u.rect.y.floor() as i64, u.rect.bottom().ceil() as i64);
-            let mut rows = (y0..=y1).filter(|&y| (xa..=xb).any(|x| f.ink.at(x, y) == crate::frame::ink::INK));
-            if let Some(top) = rows.next() {
-                let bot = rows.next_back().unwrap_or(top);
+            let has = |y: i64| (xa..=xb).any(|x| f.ink.at(x, y) == crate::frame::ink::INK);
+            if let Some(bot) = (y0..=y1).rev().find(|&y| has(y)) {
+                let mut top = bot;
+                let mut y = bot - 1;
+                while y >= y0 && (has(y) || (y > y0 && has(y - 1))) {
+                    if has(y) {
+                        top = y;
+                    }
+                    y -= 1;
+                }
                 return s.pos(u.rect.cx(), (top + bot) as f64 / 2.0);
             }
         }
@@ -330,7 +339,6 @@ pub fn read_key(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, 
                     };
                 if !fits {
                     if dbg {
-                        let pos = acc_pos(p, if sharp { Acc::Sharp } else { Acc::Flat });
                         let r = if !acc_sized(p, sp) { "尺寸" } else if want.is_none_or(|w| (pos - w as f64).abs() > KEY_POS_TOL) { "位置" } else { "种类" };
                         brk = format!("{r}（宽{:.2} 高{:.2} 位{:.1}..{:.1} 指{:.1} 要{:?} 认{:?} 粘{}）", p.w(sp), p.h(sp), p.top, p.bottom, pos, want, kind.map(|k| format!("{k:?}")), parts.len());
                     }

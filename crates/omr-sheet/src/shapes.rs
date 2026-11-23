@@ -302,6 +302,12 @@ const SIG_SAME: u32 = 20;
 const SIZE_LOOSE: f64 = 0.25;
 const DOT_SIG_MAX: u32 = 100;
 const DOT_MAX_EM: f64 = 0.175;
+/// 尺寸差 [`OUTLINE_CLEAR_SIZE`] em 内签名最近的过了 [`OUTLINE_SIG_MAX`] 但不过 [`OUTLINE_SIG_CLEAR`]、且同一尺寸窗里次近的另一种字形
+/// 远出 [`OUTLINE_CLEAR_RATIO`] 倍的，也收：形状与尺寸都只像这一种，只是字体画法差得多些
+/// （裴克经文诗歌 CorelDRAW 转曲的八分休止离 rest8th 72~75、高差 0.09 em；窗里次近的要到 180）。
+const OUTLINE_SIG_CLEAR: u32 = 75;
+const OUTLINE_CLEAR_RATIO: f64 = 1.25;
+const OUTLINE_CLEAR_SIZE: f64 = 0.12;
 
 /// 转曲对象（一个字形块）的身份。`rings`：页面上的轮廓（y 朝下）；`size`：外框宽高（em，1 em = 4 线距）。认不出（多半是文字）回 None。
 pub fn identify_outline(rings: &[Vec<(f64, f64)>], size: (f64, f64)) -> Option<(&'static str, u32)> {
@@ -316,12 +322,16 @@ pub fn identify_outline_in(rings: &[Vec<(f64, f64)>], size: (f64, f64), bounds: 
     let (w, h) = size;
     let s = sig(rings, bounds, true);
     let (mut best, mut loose): (Option<(&'static str, u32)>, Option<(&'static str, u32)>) = (None, None);
+    let mut near: Vec<(&'static str, u32)> = Vec::new();
     for c in dict() {
         let (dw, dh) = ((c.w - w).abs(), (c.h - h).abs());
         if dw > SIZE_LOOSE || dh > SIZE_LOOSE {
             continue;
         }
         let d = sig_distance(&s, &c.sig);
+        if dw <= OUTLINE_CLEAR_SIZE && dh <= OUTLINE_CLEAR_SIZE {
+            near.push((c.smufl, d));
+        }
         if dw <= OUTLINE_SIZE_TOL && dh <= OUTLINE_SIZE_TOL && best.is_none_or(|b| d < b.1) {
             best = Some((c.smufl, d));
         }
@@ -332,10 +342,16 @@ pub fn identify_outline_in(rings: &[Vec<(f64, f64)>], size: (f64, f64), bounds: 
     if let Some(l) = loose.filter(|l| l.1 <= SIG_SAME) {
         return Some(l);
     }
-    let b = best?;
-    if b.1 <= OUTLINE_SIG_MAX {
+    if let Some(b) = best.filter(|b| b.1 <= OUTLINE_SIG_MAX) {
         return Some(b);
     }
+    if let Some(&c) = near.iter().min_by_key(|c| c.1).filter(|c| c.1 <= OUTLINE_SIG_CLEAR) {
+        let second = near.iter().filter(|o| o.0 != c.0).map(|o| o.1).min().unwrap_or(u32::MAX);
+        if second as f64 >= c.1 as f64 * OUTLINE_CLEAR_RATIO {
+            return Some(c);
+        }
+    }
+    let b = best?;
     let round = (w - h).abs() <= w.max(h) * 0.25 && w <= DOT_MAX_EM;
     (b.0 == "augmentationDot" && b.1 <= DOT_SIG_MAX && round).then_some(b)
 }

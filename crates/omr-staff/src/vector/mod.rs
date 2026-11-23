@@ -284,6 +284,13 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     let mid_time = |si: usize, a: f64, b: f64| crate::attrs::lead::read_time_between(lead_frame_of(), si, a, b, ocr);
     let attrs = notes::page_attrs(&f.layout, &syms, Some(&lead), Some(&mid_time));
     let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
+    // 转曲页（文字层里没有正文的字）：连音的「3」也是路径，在画成像素的页框上按位图同一份墨块读数字找候选
+    let outlined = !vp.chars.iter().any(|c| !c.generated && glyphs::music_family(&c.font).is_none());
+    if let (true, Some(o)) = (outlined, ocr) {
+        for (si, row) in notes.iter_mut().enumerate() {
+            crate::notes::tuplets::add_by_blobs(lead_frame_of(), si, row, o);
+        }
+    }
     // 多小节休止：粗横段 + 两端竖段 + 上方的数字（共用判据 `notes::rests::multi_rests`）
     let sp = f.layout.unit.space;
     let bars: Vec<dolce_omr_core::image::Rect> = vp
@@ -306,7 +313,6 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
         .collect();
     // 转曲页（文字层里没有正文的字）：字都是路径，字大小的块画成像素（[`text_frame`]）走位图同一份文字读法 `text::page_text`
     // ——带里的墨块按字身框收字、投影切行切段、裁条送 OCR，页眉同样
-    let outlined = !vp.chars.iter().any(|c| !c.generated && glyphs::music_family(&c.font).is_none());
     let text = if outlined {
         let mut full = text_frame(&vp, &f.layout, &in_band);
         // 像素就画在工作坐标上：位图读法按「页内坐标 = 原图像素 × up」裁条，这里 up 是 1

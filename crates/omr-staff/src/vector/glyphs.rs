@@ -203,7 +203,8 @@ pub fn stroke_accidentals(vp: &VecPage, space: f64, have: &[VSym], skip: &dyn Fn
     let mut pairs: Vec<(u32, u32)> = Vec::new();
     for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && matches!(o.src, dolce_omr_source::vector::ObjSrc::Path(_))) {
         let r = o.rect;
-        if r.w > sp * 1.5 || r.h > sp * 1.5 || skip(&r) {
+        // 横梁框高放到 2 格：转曲字体的升号横梁斜得陡，两道合起来 1.7 格高（裴克经文诗歌 181）；仍要两根竖笔夹着
+        if r.w > sp * 1.5 || r.h > sp * 2.0 || skip(&r) {
             continue;
         }
         let ss = near(&r);
