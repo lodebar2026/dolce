@@ -30,11 +30,11 @@ pub fn tuplet_normal_123(n: f64) -> f64 {
 /// ABC §4.13 原表；`(5`/`(7`/`(9` 复拍子取 3，否则 2
 pub fn tuplet_normal_abc(n: f64, time: Option<(f64, f64)>) -> f64 {
     match n {
-        x if x == 2.0 => 3.0,
-        x if x == 3.0 => 2.0,
-        x if x == 4.0 => 3.0,
-        x if x == 6.0 => 2.0,
-        x if x == 8.0 => 3.0,
+        2.0 => 3.0,
+        3.0 => 2.0,
+        4.0 => 3.0,
+        6.0 => 2.0,
+        8.0 => 3.0,
         _ => {
             let compound = time.is_some_and(|(b, _)| b % 3.0 == 0.0 && b > 3.0);
             if compound { 3.0 } else { 2.0 }

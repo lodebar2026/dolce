@@ -75,6 +75,7 @@ pub struct JChord {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum JEntry {
     Chord(JChord),
     Break { new_page: bool },
@@ -299,7 +300,7 @@ fn page_ends(song: &SongView, voice: f64) -> Vec<*const RowView> {
         if i + 1 == n {
             continue;
         }
-        if let Some(r) = pg.groups.iter().flat_map(|g| g.voices.iter()).filter(|r| r.line.voice == voice).last() {
+        if let Some(r) = pg.groups.iter().flat_map(|g| g.voices.iter()).rfind(|r| r.line.voice == voice) {
             out.push(r as *const RowView);
         }
     }

@@ -15,7 +15,7 @@ fn root() -> PathBuf {
 fn ocr() -> CachedOcr {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../public/redist/ocr");
     let dict = std::fs::read_to_string(dir.join("ppocrv6_dict.txt")).unwrap();
-    CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, 2, 1)), &dict)), OcrCache::open(&root().join("dev/data/rust-omr/ocr-cache/session.json")))
+    CachedOcr::new(Some(Ocr::new(Box::new(NativeInfer::new(&dir, 2, 1)), &dict)), OcrCache::open(root().join("dev/data/rust-omr/ocr-cache/session.json")))
 }
 
 /// 破碎（干净版）第 2 页开会话。

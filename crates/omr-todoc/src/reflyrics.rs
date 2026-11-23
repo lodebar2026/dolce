@@ -1268,9 +1268,7 @@ pub fn apply_ref_lyrics(score: &mut RecognizedScore, ref_text: &str) -> LyricChe
                 let (ks, kr) = (idx_of(special), idx_of(r.norm));
                 let ok_at = |i: i64| i >= 0 && ratio_at(i) >= ALT_SCORE_RATIO;
                 let misread = special_misreads(special).contains(ch);
-                k = if ks >= 0 && misread {
-                    ks
-                } else if ok_at(ks) && (r.norm == special || count(special) >= 2) {
+                k = if (ks >= 0 && misread) || (ok_at(ks) && (r.norm == special || count(special) >= 2)) {
                     ks
                 } else if ok_at(kr) {
                     kr

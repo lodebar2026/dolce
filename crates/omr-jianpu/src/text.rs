@@ -439,11 +439,14 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
     out
 }
 
+/// 一个汉字的 OCR 候选、得分与字框
+type CharAlts = (Vec<String>, Vec<f32>, Rect);
+
 /// 读好、对好音的一行歌词，等同行各段比过对位再写进音里。
 struct Pending {
     syls: Vec<(usize, String, bool)>,
     /// 与 `syls` 对齐：音节里那个汉字的 OCR 候选、得分与字框
-    alts: Vec<Option<(Vec<String>, Vec<f32>, Rect)>>,
+    alts: Vec<Option<CharAlts>>,
     /// 逐音节的源框（识别模式按原位逐字叠加，同 TS 歌词单字的 `lyricRegions`）
     cells: Vec<TextRegion>,
     /// 英文词：(音下标, 字迹左缘, 右缘)，弧认完后按拼写拆（`split_spanning_words`）
@@ -714,7 +717,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
             let ratio = (han.len() >= 4).then(|| han.iter().filter(|c| note_xs.iter().any(|&x| (x - c.cx()).abs() <= h * 0.4)).count() as f64 / han.len() as f64);
             let region = TextRegion { text, bbox: Rect::new(chars.first().map_or(0.0, |c| c.x0), y0 as f64, chars.last().map_or(0.0, |c| c.x1) - chars.first().map_or(0.0, |c| c.x0), (y1 - y0 + 1) as f64), chars: Vec::new() };
             // 各音节里汉字的候选（音节里只一个汉字的才挂；按字心就近对上逐字候选）
-            let alts: Vec<Option<(Vec<String>, Vec<f32>, Rect)>> = lr
+            let alts: Vec<Option<CharAlts>> = lr
                 .syls
                 .iter()
                 .map(|s| {

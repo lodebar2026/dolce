@@ -107,7 +107,7 @@ impl AccidentalCarry {
         if let Some(acc) = &degree.accidental {
             // `OFFSET_BY_ACC[acc]` 取不到时 TS 存 undefined
             match offset_by_acc(acc) {
-                Some(off) if off == 0.0 => {
+                Some(0.0) => {
                     self.offsets.remove(&NumKey::new(degree.number));
                 }
                 off => {

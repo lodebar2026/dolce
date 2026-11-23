@@ -19,9 +19,12 @@ use objc2_core_text::{
 use super::{cp_positions, Ink};
 use crate::{Measured, RawFontMetrics as Metrics};
 
+/// (族, 粗, 斜)
+type FontKey = (String, bool, bool);
+
 thread_local! {
     /// (族, 粗, 斜) → 解析到的字体（字号 1，用时按字号复制）；None = 系统里没有这个族
-    static BASE: RefCell<HashMap<(String, bool, bool), Option<CFRetained<CTFont>>>> = RefCell::new(HashMap::new());
+    static BASE: RefCell<HashMap<FontKey, Option<CFRetained<CTFont>>>> = RefCell::new(HashMap::new());
     /// (族串, 字号, 粗, 斜, 特性) → 挂好回退表与特性的那支字
     /// `register_font` 按文件建的字体：族名（小写）→ 各字面（字号 1）
     static FILE_FONTS: RefCell<HashMap<String, Vec<CFRetained<CTFont>>>> = RefCell::new(HashMap::new());
@@ -252,7 +255,7 @@ pub fn register_font(path: &str) -> bool {
     let descs: &CFArray<CTFontDescriptor> = unsafe { descs.cast_unchecked() };
     let mut any = false;
     for i in 0..descs.len() {
-        let font = unsafe { CTFont::with_font_descriptor(&descs.get_unchecked(i as CFIndex), 1.0, ptr::null()) };
+        let font = unsafe { CTFont::with_font_descriptor(descs.get_unchecked(i as CFIndex), 1.0, ptr::null()) };
         let family = unsafe { font.family_name() }.to_string().to_lowercase();
         FILE_FONTS.with(|m| m.borrow_mut().entry(family).or_default().push(font));
         any = true;

@@ -146,12 +146,12 @@ fn main() {
             None => per.push((key.to_string(), ts.len(), miss.len(), extra.len())),
         }
     });
-    per.sort_by(|a, b| (b.2 + b.3).cmp(&(a.2 + a.3)));
+    per.sort_by_key(|a| std::cmp::Reverse(a.2 + a.3));
     for (k, n, m, e) in per.iter().take(70) {
         println!("  {k}：TS {n}，漏 {m}，多 {e}");
     }
     let mut why: Vec<(String, usize)> = why.into_iter().collect();
-    why.sort_by(|a, b| b.1.cmp(&a.1));
+    why.sort_by_key(|a| std::cmp::Reverse(a.1));
     for (k, n) in &why {
         println!("  漏在：{k} {n}");
     }

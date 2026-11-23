@@ -349,7 +349,7 @@ fn underlines(ink: &Ink, row: &RowFrame, out: &mut RowNotes) {
             let lim = if prev.is_none() { h * 0.4 } else { h * 0.25 };
             let fits = prev.is_none_or(|p| l.y0 > p.y1 && l.x0 as f64 >= p.x0 as f64 - slack && l.x1 as f64 <= p.x1 as f64 + slack);
             // 数字格切短了时它自己的底横（「2」）贴着格底、横向不出数字框
-            if prev.is_none() && blank < 1.0 && l.x0 as f64 >= n.bbox.x - 2.0 && l.x1 as f64 <= n.bbox.right() + 2.0 && ink.at(((l.x0 + l.x1) / 2) as i64, l.y0 - 1) {
+            if prev.is_none() && blank < 1.0 && l.x0 as f64 >= n.bbox.x - 2.0 && l.x1 as f64 <= n.bbox.right() + 2.0 && ink.at((l.x0 + l.x1) / 2, l.y0 - 1) {
                 break;
             }
             if blank > lim || !fits {
@@ -530,7 +530,7 @@ fn octave_dots(ink: &Ink, row: &RowFrame, out: &mut RowNotes, skip: &[i32], voic
             let mut first_cx: Option<f64> = None;
             for t in mine {
                 // 声部行的低音点下面没有歌词挤着，声部间留得宽、点离数字远些（新编赞美诗 78 上声部 0.4 字号）；单声部行下方紧挨歌词，收紧
-                let first = if up { h * 0.45 } else if voiced { h * 0.45 } else { h * 0.38 };
+                let first = if up || voiced { h * 0.45 } else { h * 0.38 };
                 let d0 = dots[t.0];
                 let level = !up && cnt == 0 && t.3 <= h * 0.6 && low_rel_med.is_some_and(|m| (d0.rect.y - row.bottom_at(d0.cx) - m).abs() <= h * 0.15);
                 if (t.3 - edge > if cnt == 0 { first } else { h * 0.3 } && !level) || cnt >= 2 {

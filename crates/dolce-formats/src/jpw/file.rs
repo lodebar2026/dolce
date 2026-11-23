@@ -366,6 +366,7 @@ pub struct JpwFile {
 
 impl JpwFile {
     /// `JpwFile.fromString`：解析不了（正文在任何节头之前、节名不认得、某节解析失败）回 `None`
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<JpwFile> {
         Self::from_u16(&u16s::enc(s))
     }

@@ -134,7 +134,7 @@ pub fn merge_horizontal(bin: &mut [u8], soft: &[u8], w: usize, h: usize, min_run
         while b + 1 < h && soft[(b + 1) * w + x] != 0 && b - y < max_thick {
             b += 1;
         }
-        b - a + 1 <= max_thick
+        b - a < max_thick
     };
     let mut fill: Vec<usize> = Vec::new();
     for y in 0..h {

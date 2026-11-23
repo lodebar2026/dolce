@@ -168,7 +168,7 @@ impl Doc {
 }
 
 fn gray_of(r: &Rendered) -> Gray {
-    Gray { w: r.w, h: r.h, data: r.rgba.chunks_exact(4).map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect() }
+    Gray { w: r.w, h: r.h, data: r.rgba.as_chunks::<4>().0.iter().map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect() }
 }
 
 fn binarize(gray: &[u8], w: usize, h: usize) -> Binary {

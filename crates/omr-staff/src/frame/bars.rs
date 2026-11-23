@@ -88,7 +88,7 @@ pub fn staff_barlines<P: Probe + ?Sized>(ink: &P, segs: &[VSeg], s: &Staff, unit
             up_ok && down_ok && if snapped { !(off_line && head_at_end_near(ink, v, sp, (s.thick[0].ceil() as i64).max(2))) } else { !head_at_end(ink, v, s, sp) }
         })
         .collect();
-    cands.sort_by(|a, b| a.x0.cmp(&b.x0));
+    cands.sort_by_key(|a| a.x0);
     let thin = {
         let mut w: Vec<usize> = cands.iter().map(|v| v.cols).collect();
         w.sort();

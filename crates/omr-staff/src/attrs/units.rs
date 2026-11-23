@@ -175,6 +175,7 @@ pub struct Stroke {
     pub bottom: i64,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl Stroke {
     pub fn cx(&self) -> f64 {
         (self.x0 + self.x1) as f64 / 2.0
@@ -197,7 +198,7 @@ pub fn strokes(f: &PageFrame, x0: i64, x1: i64, y0: i64, y1: i64, min_len: i64, 
         b.sort();
         st.top = t[t.len() / 2];
         st.bottom = b[b.len() / 2];
-        if st.x1 - st.x0 + 1 <= max_w {
+        if st.x1 - st.x0 < max_w {
             done.push(st);
         }
     };

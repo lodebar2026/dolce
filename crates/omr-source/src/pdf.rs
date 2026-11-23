@@ -310,7 +310,7 @@ unsafe fn image_obj(l: &Lib, page: FPDF_PAGE, obj: FPDF_PAGEOBJECT, m_page: &M) 
     } else {
         ImageKind::Color
     };
-    let rgb = if kind == ImageKind::Color { r.rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect() } else { Vec::new() };
+    let rgb = if kind == ImageKind::Color { r.rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect() } else { Vec::new() };
     // 图像空间单位正方形在 PDF 里 (0,0) 是左下；换成 (0,0) 左上、v 向下
     let ctm = [m_page[0], m_page[1], -m_page[2], -m_page[3], m_page[4] + m_page[2], m_page[5] + m_page[3]];
     let rect = bbox_of([(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)].into_iter().map(|(u, v)| apply(&ctm, u, v)));

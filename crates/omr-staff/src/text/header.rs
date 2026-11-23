@@ -25,7 +25,7 @@ const A4_W: f64 = 595.0;
 /// 离首行谱远、首行上方那条带收不到，同 TS 转曲路 `findTempoMark`）。
 pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> (Vec<Credit>, Vec<Mark>) {
     let Some(first) = f.staves.iter().min_by(|a, b| a.ys[0].total_cmp(&b.ys[0])) else { return (Vec::new(), Vec::new()) };
-    let up = f.up as f64;
+    let up = f.up;
     let sp = first.space();
     let top = (first.left as usize..first.right as usize).step_by(8).map(|x| first.top(x as f64)).fold(f64::MAX, f64::min);
     let h = ((top / up) as usize).min(src.h);

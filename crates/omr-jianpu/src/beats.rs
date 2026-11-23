@@ -225,8 +225,8 @@ pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut Re
         // 候选：(行, 音, 候选)
         let mut cands: Vec<(usize, usize, Alt)> = Vec::new();
         for &(r, a, b) in &bar.parts {
-            for i in a..b {
-                for alt in &notes[r].nums[i].alts {
+            for (i, num) in notes[r].nums.iter().enumerate().take(b).skip(a) {
+                for alt in &num.alts {
                     if !cands.iter().any(|c| c.0 == r && c.1 == i && c.2.kind == alt.kind) {
                         cands.push((r, i, *alt));
                     }
@@ -238,12 +238,12 @@ pub fn settle(notes: &mut [RowNotes], sys: &[Option<(u32, u32)>], score: &mut Re
         let try_set = |set: &[usize], hits: &mut Vec<(f64, Vec<usize>)>| {
             let mut delta = 0;
             for &(r, a, b) in &bar.parts {
-                for i in a..b {
+                for (i, num) in notes[r].nums.iter().enumerate().take(b).skip(a) {
                     let mine: Vec<&(usize, usize, Alt)> = set.iter().map(|&k| &cands[k]).filter(|c| c.0 == r && c.1 == i).collect();
                     if mine.is_empty() {
                         continue;
                     }
-                    let mut n = notes[r].nums[i].clone();
+                    let mut n = num.clone();
                     let before = dur(&n);
                     if !mine.iter().all(|c| apply(&mut n, c.2.kind)) {
                         return;

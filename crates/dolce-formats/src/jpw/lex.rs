@@ -318,9 +318,7 @@ fn string(s: &U16, i: usize) -> Option<usize> {
         let n = u16s::at(s, j + 1);
         if u16s::one_of(n, "sbtnfr\"'\\") {
             j += 2;
-        } else if n == Some(b'x' as u16) && (2..6).all(|k| s.get(j + k).is_some_and(|&u| hex(u))) {
-            j += 6;
-        } else if n == Some(b'0' as u16) && (2..6).all(|k| s.get(j + k).is_some_and(|&u| u16s::digit(u))) {
+        } else if (n == Some(b'x' as u16) && (2..6).all(|k| s.get(j + k).is_some_and(|&u| hex(u)))) || (n == Some(b'0' as u16) && (2..6).all(|k| s.get(j + k).is_some_and(|&u| u16s::digit(u)))) {
             j += 6;
         } else {
             return None;
@@ -345,7 +343,9 @@ fn ws(s: &U16, i: usize) -> Option<usize> {
 }
 
 /// 规则次序即等长时的优先级
-const RULES: [(JpwTok, fn(&U16, usize) -> Option<usize>); 12] = [
+/// 从某位置起试读一种词元，读得到回结束位置
+type Rule = fn(&U16, usize) -> Option<usize>;
+const RULES: [(JpwTok, Rule); 12] = [
     (JpwTok::PreludeBeg, |s, i| word(s, i, "(").map(|j| control(s, j).unwrap_or(j))),
     (JpwTok::PreludeEnd, |s, i| word(s, i, ")").map(|j| control(s, j).unwrap_or(j))),
     (JpwTok::Note, note),

@@ -554,11 +554,11 @@ fn grace_len(t: &str) -> &'static str {
 
 fn abc_fixed_tuplet(actual: f64) -> Option<f64> {
     Some(match actual {
-        x if x == 2.0 => 3.0,
-        x if x == 3.0 => 2.0,
-        x if x == 4.0 => 3.0,
-        x if x == 6.0 => 2.0,
-        x if x == 8.0 => 3.0,
+        2.0 => 3.0,
+        3.0 => 2.0,
+        4.0 => 3.0,
+        6.0 => 2.0,
+        8.0 => 3.0,
         _ => return None,
     })
 }
@@ -1237,7 +1237,7 @@ impl Emitter {
         } else {
             0
         };
-        if n == 0 || (i + n - 1) as u128 > to as u128 || i + n - 1 >= part.measures.len() {
+        if n == 0 || (i + n - 1) as u128 > to as u128 || i + n > part.measures.len() {
             return 0;
         }
         for j in i..i + n {

@@ -119,40 +119,6 @@ pub fn find_line_by_y(lines: &[Vec<usize>], keys: &[f64], y: f64, tol: f64) -> O
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stats() {
-        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0], 0.0), 3.0);
-        assert_eq!(median(&[], 7.0), 7.0);
-        assert_eq!(quantile(&[1.0, 2.0, 3.0, 4.0], 0.5), 3.0);
-        assert_eq!(quantile(&[1.0, 2.0, 3.0, 4.0], 1.0), 4.0);
-        assert_eq!(mean_finite(&[1.0, f64::NAN, 3.0]), 2.0);
-        assert!(mean_finite(&[f64::NAN]).is_nan());
-    }
-
-    #[test]
-    fn rects() {
-        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
-        let b = Rect::new(5.0, 5.0, 10.0, 2.0);
-        assert_eq!(union_rect(&a, &b), Rect::new(0.0, 0.0, 15.0, 10.0));
-        assert_eq!(overlap_x(&a, &b), 5.0);
-        assert_eq!(overlap_ratio_y(&a, &b), 1.0);
-        assert_eq!(overlap_frac(&a, &b), 0.1);
-        assert_eq!(overlap_frac(&b, &a), 0.5);
-        assert_eq!(union_rects(&[]), Rect::default());
-    }
-
-    #[test]
-    fn cluster() {
-        let ys = [10.0, 50.0, 11.0, 52.0, 9.0];
-        let lines = cluster_by_y(&ys, |&y| y, 5.0);
-        assert_eq!(lines, vec![vec![4, 0, 2], vec![1, 3]]);
-    }
-}
-
 /// 扫描线填充（非零环绕、按像素心取样）：`rs` 是已换到像素坐标的闭合环，`w × h` 的格子里落在墨里的格逐个交给 `set(x, y)`。
 /// 字形签名、转曲字块成图（送 OCR）、矢量对象画进格子共用。
 pub fn fill_rings(rs: &[Vec<(f64, f64)>], w: usize, h: usize, set: &mut dyn FnMut(usize, usize)) {
@@ -191,5 +157,39 @@ pub fn fill_rings(rs: &[Vec<(f64, f64)>], w: usize, h: usize, set: &mut dyn FnMu
                 set(px, py);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stats() {
+        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0], 0.0), 3.0);
+        assert_eq!(median(&[], 7.0), 7.0);
+        assert_eq!(quantile(&[1.0, 2.0, 3.0, 4.0], 0.5), 3.0);
+        assert_eq!(quantile(&[1.0, 2.0, 3.0, 4.0], 1.0), 4.0);
+        assert_eq!(mean_finite(&[1.0, f64::NAN, 3.0]), 2.0);
+        assert!(mean_finite(&[f64::NAN]).is_nan());
+    }
+
+    #[test]
+    fn rects() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(5.0, 5.0, 10.0, 2.0);
+        assert_eq!(union_rect(&a, &b), Rect::new(0.0, 0.0, 15.0, 10.0));
+        assert_eq!(overlap_x(&a, &b), 5.0);
+        assert_eq!(overlap_ratio_y(&a, &b), 1.0);
+        assert_eq!(overlap_frac(&a, &b), 0.1);
+        assert_eq!(overlap_frac(&b, &a), 0.5);
+        assert_eq!(union_rects(&[]), Rect::default());
+    }
+
+    #[test]
+    fn cluster() {
+        let ys = [10.0, 50.0, 11.0, 52.0, 9.0];
+        let lines = cluster_by_y(&ys, |&y| y, 5.0);
+        assert_eq!(lines, vec![vec![4, 0, 2], vec![1, 3]]);
     }
 }

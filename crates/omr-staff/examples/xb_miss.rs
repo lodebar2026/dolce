@@ -152,7 +152,7 @@ fn main() {
         }
     });
     let mut v: Vec<_> = tally.into_iter().collect();
-    v.sort_by(|p, q| q.1.cmp(&p.1));
+    v.sort_by_key(|p| std::cmp::Reverse(p.1));
     for (k, n) in v {
         println!("{n:6}  {k}");
     }

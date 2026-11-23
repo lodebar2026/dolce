@@ -143,7 +143,8 @@ pub(super) fn mark_spans(part: &mut Part, mut recs: Vec<SpanRec>) {
     // 开着的圆滑线：(号, 止端)
     let mut open: Vec<(u8, (usize, u32, u8, usize))> = Vec::new();
     // 已记的延音线：(起端事件, 止端事件, 起端的音, 止端的音)
-    let mut tied: Vec<((usize, usize), (usize, usize), Pitch, Pitch)> = Vec::new();
+    type Tied = ((usize, usize), (usize, usize), Pitch, Pitch);
+    let mut tied: Vec<Tied> = Vec::new();
     let mut slurred: Vec<((usize, usize), (usize, usize))> = Vec::new();
     for r in &recs {
         let (ka, kb) = ((r.a.measure, r.a.event), (r.b.measure, r.b.event));

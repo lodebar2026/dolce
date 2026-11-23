@@ -412,7 +412,10 @@ fn path_lines(segs: &[Seg], tx: &dyn Fn(f64, f64) -> (f64, f64), obj: u32, lw: f
 }
 
 /// 细长的轴向矩形：中线两端与短边（长边过短边 3 倍以上）。
-fn thin_rect(p: &[(f64, f64)]) -> Option<((f64, f64), (f64, f64), f64)> {
+/// 细长矩形：(一端, 另一端, 宽)
+type ThinRect = ((f64, f64), (f64, f64), f64);
+
+fn thin_rect(p: &[(f64, f64)]) -> Option<ThinRect> {
     let xs: Vec<f64> = p.iter().map(|q| q.0).collect();
     let ys: Vec<f64> = p.iter().map(|q| q.1).collect();
     let (x0, x1) = (xs.iter().cloned().fold(f64::MAX, f64::min), xs.iter().cloned().fold(f64::MIN, f64::max));

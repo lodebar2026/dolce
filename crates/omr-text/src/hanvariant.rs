@@ -114,7 +114,7 @@ fn table() -> &'static HashMap<char, char> {
         let mut m = HashMap::new();
         for t in [PAIRS, JP_PAIRS] {
             let cs: Vec<char> = t.iter().flat_map(|s| s.chars()).collect();
-            for p in cs.chunks_exact(2) {
+            for p in cs.as_chunks::<2>().0 {
                 m.insert(p[0], p[1]);
             }
         }

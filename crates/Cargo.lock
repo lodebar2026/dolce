@@ -433,7 +433,6 @@ version = "0.1.0"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
- "dolce-formats",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",

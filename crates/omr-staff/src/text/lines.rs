@@ -203,7 +203,7 @@ fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, o
         let _ = std::fs::write(format!("{dir}/{:.0}_{:.0}.pgm", rect.y, rect.x), [format!("P5 {} {} 255\n", g.w, g.h).as_bytes(), &g.data].concat());
     }
     let got = ocr.read_line(&g)?;
-    let up = f.up as f64;
+    let up = f.up;
     let w = g.w as f64;
     let mut chars: Vec<Ch> = Vec::new();
     for c in got {

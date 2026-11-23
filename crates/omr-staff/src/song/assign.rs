@@ -290,8 +290,8 @@ pub(super) fn settle<T: Copy + PartialEq>(read: &[Option<(T, bool)>], prefix: im
                 _ => None,
             };
             if let Some(v) = to {
-                for t in i..=j {
-                    k[t] = v;
+                for x in k.iter_mut().take(j + 1).skip(i) {
+                    *x = v;
                 }
                 changed = true;
             }

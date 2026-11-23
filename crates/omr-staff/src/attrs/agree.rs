@@ -25,7 +25,7 @@ pub fn system_agree(f: &Layout, rows: &mut [RowAttrs]) {
             }
         }
         // 行数多的；并列取把握大的行多的、再取记号多的（少读比多读常见：位置对不上的不会算进来）
-        tally.sort_by(|a, b| (b.1, b.2, b.0.fifths.unsigned_abs()).cmp(&(a.1, a.2, a.0.fifths.unsigned_abs())));
+        tally.sort_by_key(|a| std::cmp::Reverse((a.1, a.2, a.0.fifths.unsigned_abs())));
         if let Some(&(k, _, sure)) = tally.first() {
             for &i in &pitched {
                 rows[i].key = Some(k);
@@ -42,7 +42,7 @@ pub fn system_agree(f: &Layout, rows: &mut [RowAttrs]) {
                 }
             }
         }
-        tt.sort_by(|a, b| b.1.cmp(&a.1));
+        tt.sort_by_key(|a| std::cmp::Reverse(a.1));
         if let Some(&(t, n)) = tt.first() {
             let tie = tt.get(1).is_some_and(|x| x.1 == n);
             if !tie {

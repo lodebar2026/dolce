@@ -191,6 +191,7 @@ impl Reader {
     }
 }
 
+#[derive(Default)]
 struct PartName {
     name: Option<String>,
     abbrev: Option<String>,
@@ -1336,11 +1337,6 @@ impl Reader {
     }
 }
 
-impl Default for PartName {
-    fn default() -> Self {
-        PartName { name: None, abbrev: None, size: None }
-    }
-}
 
 #[cfg(test)]
 mod tests {

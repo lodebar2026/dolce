@@ -37,7 +37,7 @@ pub fn compress_multi_rests(song: &Song) -> Cow<'_, Song> {
     let mut i = 0usize;
     while i < len {
         let n = lead.measures[i].attrs.as_ref().and_then(|a| a.multi_rest).unwrap_or(0.0);
-        if !(n >= 2.0) || i as f64 + n > len as f64 {
+        if n.is_nan() || n < 2.0 || i as f64 + n > len as f64 {
             i += 1;
             continue;
         }

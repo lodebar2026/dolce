@@ -125,8 +125,8 @@ pub fn check_against_toc(plan: &BookPlan, names: &[String], src_name: &dyn Fn(us
     }
     let mut no_footer = Vec::new();
     let mut bad_footer = Vec::new();
-    for i in region.first..=region.last {
-        match plan.pages[i].printed {
+    for (i, pg) in plan.pages.iter().enumerate().take(region.last + 1).skip(region.first) {
+        match pg.printed {
             None => no_footer.push(i),
             Some(p) => {
                 if region.offset.is_some_and(|o| p as i64 != i as i64 - o) {

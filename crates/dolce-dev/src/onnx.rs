@@ -53,7 +53,7 @@ pub fn onnx_fp16(args: &[String]) -> i32 {
 /// 张量的 f32 值（`raw_data` 小端或 `float_data`）。
 fn floats(t: &TensorProto) -> Vec<f32> {
     if !t.raw_data.is_empty() {
-        t.raw_data.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+        t.raw_data.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect()
     } else {
         t.float_data.clone()
     }

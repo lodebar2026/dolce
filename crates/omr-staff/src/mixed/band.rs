@@ -127,7 +127,7 @@ pub fn find(bin: &dyn Probe, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barli
             }
         }
     }
-    out.sort_by(|a, b| a.staff.cmp(&b.staff));
+    out.sort_by_key(|a| a.staff);
     out
 }
 

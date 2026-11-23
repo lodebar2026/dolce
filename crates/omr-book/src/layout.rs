@@ -79,7 +79,7 @@ pub fn page_comps(bin: &Binary) -> PageComps {
     let flat = connected_components(&bin.data, bin.w, bin.h, 4.0, &mut labels);
     drop(labels);
     let all: Vec<Comp> = flat
-        .chunks_exact(8)
+        .as_chunks::<8>().0.iter()
         .map(|c| Comp { bbox: Rect::new(c[1], c[2], c[3], c[4]), cy: c[7] })
         .filter(|c| !touches_edge(&c.bbox, w, h))
         .collect();

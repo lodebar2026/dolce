@@ -358,7 +358,7 @@ fn plan_jly(order: &[&JChord], warnings: &mut Warnings) -> JlyPlan {
         .into_iter()
         .map(|mut list| {
             // 内层（后开）先收
-            list.sort_by(|a, b| b.0.cmp(&a.0));
+            list.sort_by_key(|a| std::cmp::Reverse(a.0));
             list.iter().map(|&(_, m)| if m { " )" } else { " \\)" }).collect::<String>()
         })
         .collect();

@@ -116,7 +116,7 @@ pub fn one(args: &[String]) -> Result<(), String> {
         let srcs: Vec<SourceImage> = (0..doc.page_count())
             .filter_map(|i| {
                 let r = doc.render(i, 300.0 / 72.0).ok()?;
-                let gray: Vec<u8> = r.rgba.chunks_exact(4).map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect();
+                let gray: Vec<u8> = r.rgba.as_chunks::<4>().0.iter().map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect();
                 Some(SourceImage { w: r.w, h: r.h, gray, rgb: Vec::new(), kind: dolce_omr_source::model::ImageKind::Gray, rect: dolce_omr_core::image::Rect::new(0.0, 0.0, r.w as f64, r.h as f64), page_w: r.w as f64, page_h: r.h as f64, size_known: false })
             })
             .collect();

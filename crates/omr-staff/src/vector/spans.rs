@@ -118,9 +118,9 @@ fn curve_groups(vp: &VecPage, sp: f64) -> Vec<Vec<&VObj>> {
         }
     }
     let mut groups: std::collections::BTreeMap<usize, Vec<&VObj>> = std::collections::BTreeMap::new();
-    for i in 0..cs.len() {
+    for (i, &c) in cs.iter().enumerate() {
         let r = root(&mut up, i);
-        groups.entry(r).or_default().push(cs[i]);
+        groups.entry(r).or_default().push(c);
     }
     groups.into_values().collect()
 }

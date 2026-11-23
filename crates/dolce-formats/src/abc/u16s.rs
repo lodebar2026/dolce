@@ -27,14 +27,7 @@ pub fn is(s: &U16, i: usize, c: char) -> bool {
 
 /// `line.startsWith(p, i)`（`p` 只含 BMP 字符）
 pub fn starts(s: &U16, i: usize, p: &str) -> bool {
-    let mut k = i;
-    for c in p.chars() {
-        if !is(s, k, c) {
-            return false;
-        }
-        k += 1;
-    }
-    true
+    (i..).zip(p.chars()).all(|(k, c)| is(s, k, c))
 }
 
 /// `line.indexOf(c, from)`

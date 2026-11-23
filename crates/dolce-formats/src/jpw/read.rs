@@ -253,7 +253,7 @@ struct KeyState {
 
 /// `MusicCommon.getBasePitchOfKey`（调名取不到 TS 是 TypeError）
 fn base_pitch(fifths: f64) -> Result<f64, JpwError> {
-    base_pitch_of_key(fifths).or_else(|e| fail(e))
+    base_pitch_of_key(fifths).or_else(fail)
 }
 
 /// `applyJpPitch`：回（pitch、rest）；`step` 在休止时不动

@@ -28,7 +28,7 @@ pub fn ledger_ok(f: &PageFrame, h: &Head, half_w: f64) -> bool {
         while d - py <= max_t && f.ink.at(px, d + 1) == INK {
             d += 1;
         }
-        d - u + 1 <= max_t
+        d - u < max_t
     };
     let lines: Vec<i32> = if h.pos < 0 { (last..=-2).step_by(2).collect() } else { (10..=last).step_by(2).collect() };
     lines.iter().all(|&line| {

@@ -796,6 +796,7 @@ pub struct Space {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts"))]
+#[allow(clippy::large_enum_variant)]
 pub enum Element {
     Chord(Chord),
     Space(Space),

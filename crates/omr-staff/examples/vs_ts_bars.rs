@@ -71,7 +71,7 @@ fn main() {
     });
     let real = ts_n - lead;
     println!("{corpus}：{staves_n} 行谱，TS 小节线 {ts_n}（行首 {lead} 根不计），Rust {rs_n}，配上 {hit}（召回 {:.1}%，Rust 多出 {}）；其中存疑 {weak_n}（配上 {weak_hit}）", hit as f64 * 100.0 / real.max(1) as f64, rs_n - hit);
-    worst.sort_by(|a, b| b.0.cmp(&a.0));
+    worst.sort_by_key(|a| std::cmp::Reverse(a.0));
     for (_, w) in worst.iter().take(12) {
         println!("  {w}");
     }

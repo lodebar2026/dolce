@@ -181,7 +181,7 @@ pub struct JoinTol {
 /// 把断开的笔画从左到右接起来：右边那条的起点落在左边那条走向的延长线附近、断口不过宽、且 `passable(左, 右)` 认可
 /// （调用方回原图看断口里是什么：谱线、符干可以过，空白与别的墨不行）。一条左笔画有几条可接的取纵向差最小的。
 pub fn join_all(mut strokes: Vec<Stroke>, tol: JoinTol, passable: &dyn Fn(&Stroke, &Stroke) -> bool) -> Vec<Stroke> {
-    strokes.sort_by(|a, b| a.x0.cmp(&b.x0));
+    strokes.sort_by_key(|a| a.x0);
     let mut used = vec![false; strokes.len()];
     let mut out = Vec::new();
     for i in 0..strokes.len() {

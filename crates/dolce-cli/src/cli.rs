@@ -200,7 +200,7 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
             None => {
                 let mut s = stdout.lock();
                 if multi {
-                    write!(s, "# ===== {name} =====\n").map_err(|e| e.to_string())?;
+                    writeln!(s, "# ===== {name} =====").map_err(|e| e.to_string())?;
                 }
                 s.write_all(enc.text.as_bytes()).map_err(|e| e.to_string())?;
                 if !enc.text.ends_with('\n') {

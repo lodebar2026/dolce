@@ -20,7 +20,7 @@ fn image_is_one_page() {
     assert_eq!((at.page_w, at.page_h), (w, h));
     assert_eq!(k, 1.0);
     assert_eq!((bin.w as f64, bin.h as f64), (w, h));
-    assert!(bin.data.iter().any(|&v| v == 1) && bin.data.iter().any(|&v| v == 0));
+    assert!(bin.data.contains(&1) && bin.data.contains(&0));
 }
 
 #[test]

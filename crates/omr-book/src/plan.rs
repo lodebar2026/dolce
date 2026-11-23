@@ -157,8 +157,7 @@ pub fn assign_numbers(pages: &[PageInfo], region: &BookRegion, toc: &Toc) -> Has
     }
     let mut out = HashMap::new();
     let mut prev = 0u32;
-    for i in region.first..=region.last {
-        let p = &pages[i];
+    for (i, p) in pages.iter().enumerate().take(region.last + 1).skip(region.first) {
         if p.titles.is_empty() {
             continue;
         }
@@ -217,8 +216,7 @@ pub struct SongSegs {
 pub fn segment_songs(pages: &[PageInfo], region: &BookRegion, nums: &HashMap<TitleKey, Assigned>) -> (Vec<SongSegs>, Vec<usize>) {
     let mut songs: Vec<SongSegs> = Vec::new();
     let mut orphans: Vec<usize> = Vec::new();
-    for i in region.first..=region.last {
-        let p = &pages[i];
+    for (i, p) in pages.iter().enumerate().take(region.last + 1).skip(region.first) {
         let mut seg: Option<Segment> = (!songs.is_empty()).then(|| Segment { page: i, bands: Vec::new() });
         for b in 0..p.body().len() {
             if let Some(k) = p.titles.iter().position(|t| t.band == b) {

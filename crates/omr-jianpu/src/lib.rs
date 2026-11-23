@@ -210,7 +210,6 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             double_bar_xs: rn.double_bar_xs,
             end_bar_xs: rn.end_bar_xs,
             meters: rn.meters,
-            ..Default::default()
         });
     }
     Ok(score)

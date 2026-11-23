@@ -63,7 +63,7 @@ fn main() {
             None => per.push((key.to_string(), ts.len(), miss.len(), extra.len())),
         }
     });
-    per.sort_by(|a, b| (b.2 + b.3).cmp(&(a.2 + a.3)));
+    per.sort_by_key(|a| std::cmp::Reverse(a.2 + a.3));
     for (k, n, m, e) in per.iter().take(70) {
         println!("  {k}：TS {n}，漏 {m}，多 {e}");
     }

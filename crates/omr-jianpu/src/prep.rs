@@ -63,7 +63,7 @@ impl RasterInk {
         fix_polarity(&mut bin);
         let mut labels = vec![0i32; w * h];
         let flat = connected_components(&bin.data, w, h, 1.0, &mut labels);
-        let comps = flat.chunks_exact(8).map(|c| Comp { id: c[0] as i32, rect: Rect::new(c[1], c[2], c[3], c[4]), area: c[5], cx: c[6], cy: c[7] }).collect();
+        let comps = flat.as_chunks::<8>().0.iter().map(|c| Comp { id: c[0] as i32, rect: Rect::new(c[1], c[2], c[3], c[4]), area: c[5], cx: c[6], cy: c[7] }).collect();
         Some(RasterInk { gray, bin, labels, comps })
     }
 

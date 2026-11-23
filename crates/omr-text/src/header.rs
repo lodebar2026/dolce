@@ -205,6 +205,11 @@ pub fn credits(lines: &[WordLine], band_x: f64, band_w: f64) -> Vec<Credit> {
     out
 }
 
+/// 版权声明（`Copyright`、`©`、`版權所有` 起头）。
+pub fn is_rights(t: &str) -> bool {
+    RIGHTS.is_match(t)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,9 +249,4 @@ mod tests {
         assert_eq!(split_text("數算主恩 Count Your Blessings"), ["數算主恩", "Count Your Blessings"]);
         assert_eq!(split_text("B RO K E N"), ["BROKEN"]);
     }
-}
-
-/// 版权声明（`Copyright`、`©`、`版權所有` 起头）。
-pub fn is_rights(t: &str) -> bool {
-    RIGHTS.is_match(t)
 }

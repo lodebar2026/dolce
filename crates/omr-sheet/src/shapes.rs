@@ -321,7 +321,8 @@ pub fn identify_outline_in(rings: &[Vec<(f64, f64)>], size: (f64, f64), bounds: 
     }
     let (w, h) = size;
     let s = sig(rings, bounds, true);
-    let (mut best, mut loose): (Option<(&'static str, u32)>, Option<(&'static str, u32)>) = (None, None);
+    let mut best: Option<(&'static str, u32)> = None;
+    let mut loose: Option<(&'static str, u32)> = None;
     let mut near: Vec<(&'static str, u32)> = Vec::new();
     for c in dict() {
         let (dw, dh) = ((c.w - w).abs(), (c.h - h).abs());

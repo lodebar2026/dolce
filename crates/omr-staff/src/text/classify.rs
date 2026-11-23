@@ -270,7 +270,7 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
             if std::env::var("OMR_TEXT_DEBUG").is_ok() {
                 eprintln!("分类 y{:.0} {text:?}：距上 {d_above:?} 距下 {d_below:?} 高够 {tall} 像歌词 {} 和弦行 {chord_line} 链 {}", l.y0, lyric_like(&text), chain.len());
             }
-            if b.above.is_some() && !chord_line && tall && !is_term_line(&text) && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1)) {
+            if let Some(a) = b.above.filter(|_| !chord_line && tall && !is_term_line(&text) && lyric_like(&text) && !blocked.iter().any(|&(a0, a1)| over(a0, a1))) {
                 // 横向盖得住它的上方歌词行：没有就是这一栏的头一行（看离谱表多远），有就看与最下面那行的空隙
                 let mut prev: Vec<(f64, f64, f64, f64, bool)> = chain.iter().filter(|c| over(c.0, c.1)).copied().collect();
                 let gap_ok = |prev: &[(f64, f64, f64, f64, bool)]| match prev.iter().map(|c| (c.2, c.3)).max_by(|p, q| p.0.total_cmp(&q.0)) {
@@ -282,7 +282,6 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
                 if !ok && !prev.is_empty() && d_above.is_some_and(|d| d <= LYRIC_FIRST) {
                     let weak: usize = chain.iter().zip(&chain_at).filter(|(c, _)| over(c.0, c.1)).map(|(_, a)| a.1).sum();
                     if weak <= WEAK_SYLS {
-                        let a = b.above.unwrap();
                         for (c, at) in chain.iter().zip(&chain_at) {
                             if over(c.0, c.1) {
                                 rows[a].lyrics[at.0].row.syls.clear();
@@ -298,7 +297,6 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
                     }
                 }
                 if ok {
-                    let a = b.above.unwrap();
                     // 行里夹着的跳转记号（行尾的 Fine、D.C.）单独挂
                     let mut lyric_chars: Vec<Ch> = Vec::new();
                     for s in &l.segs {

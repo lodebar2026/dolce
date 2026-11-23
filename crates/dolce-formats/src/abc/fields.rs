@@ -777,11 +777,7 @@ pub fn parse_sing(body: &str, mut bad: impl FnMut(&str)) -> Option<SingPass> {
         let tail = &tok[name_end..];
         let verse = if tail.is_empty() {
             Some(None)
-        } else if let Some(d) = tail.strip_prefix('@').filter(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())) {
-            Some(Some(d))
-        } else {
-            None
-        };
+        } else { tail.strip_prefix('@').filter(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())).map(Some) };
         let Some(verse) = verse.filter(|_| name_end > 0) else {
             bad(&tok);
             continue;

@@ -28,7 +28,7 @@ fn main() {
             let v = if ink.at(x0 + x / k, y0 + y / k) { 0 } else { 255 };
             out.extend_from_slice(&[v, v, v]);
         }
-        out.extend(std::iter::repeat(0).take((stride - w * 3) as usize));
+        out.extend(std::iter::repeat_n(0, (stride - w * 3) as usize));
     }
     std::fs::write(&a[6], out).unwrap();
 }

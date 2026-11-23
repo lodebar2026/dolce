@@ -35,7 +35,7 @@ fn vowel_groups(w: &[char]) -> Vec<(usize, usize)> {
     }
     if out.len() >= 2 {
         let last = out[out.len() - 1];
-        if last.0 == w.len() - 1 && w[last.0].to_ascii_lowercase() == 'e' && last.1 - last.0 == 1 {
+        if last.0 == w.len() - 1 && w[last.0].eq_ignore_ascii_case(&'e') && last.1 - last.0 == 1 {
             out.pop();
         }
     }

@@ -29,8 +29,8 @@ pub fn system_ranges(part: Option<&Part>) -> Vec<SystemRange> {
     for i in 0..n {
         let els = &part.measures[i].elements;
         let mut inline_here = false;
-        for j in 0..els.len().saturating_sub(1) {
-            let Some(kind) = inline_break_of(&els[j]) else { continue };
+        for (j, el) in els.iter().enumerate().take(els.len().saturating_sub(1)) {
+            let Some(kind) = inline_break_of(el) else { continue };
             out.push(SystemRange { from, to: i, from_el, to_el: j + 1, inline: Some(kind) });
             from = i;
             from_el = j + 1;

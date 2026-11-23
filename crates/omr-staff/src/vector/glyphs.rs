@@ -184,7 +184,8 @@ const WHOLE_W: f64 = 1.5;
 /// 照 TS 转曲那一路（`accidentalByStrokes`）：
 /// - 两道竖笔夹着无曲线的横杠：两笔上下错开（左笔朝上伸、右笔朝下伸，错开过笔长 [`NATURAL_STAGGER`]）是还原号，否则是升号；
 /// - 一道竖笔在带曲线的肚子左半边、肚子底与竖笔下端差不过笔长 [`FLAT_FOOT`]、竖笔上端高出肚子顶过笔长 [`FLAT_FOOT`]：降号
-///  （倚音的符尾挂在符干上端往下弯，不是）。
+///   （倚音的符尾挂在符干上端往下弯，不是）。
+///
 /// 竖笔长 1.5~3.3 格（同位图路调号的竖笔窗）。`skip`：不收的框（简谱带里的）。已有同位置升降号字形的不重复出。
 pub fn stroke_accidentals(vp: &VecPage, space: f64, have: &[VSym], skip: &dyn Fn(&Rect) -> bool) -> Vec<VSym> {
     use dolce_omr_source::vector::VKind;

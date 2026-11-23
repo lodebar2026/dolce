@@ -36,8 +36,8 @@ pub fn clean_texture(bin: &mut Binary, staves: &[Staff], allow_descreen: bool) -
         let xs = [s.left, (s.left + s.right) / 2.0, s.right];
         let a = xs.iter().map(|&x| s.top(x)).fold(f64::INFINITY, f64::min) - sp * HALFTONE_BAND;
         let b = xs.iter().map(|&x| s.bottom(x)).fold(f64::NEG_INFINITY, f64::max) + sp * HALFTONE_BAND;
-        for y in (a.ceil().max(0.0) as usize)..(b.floor().max(0.0) as usize).min(h) {
-            rows[y] = 1;
+        for r in rows.iter_mut().take((b.floor().max(0.0) as usize).min(h)).skip(a.ceil().max(0.0) as usize) {
+            *r = 1;
         }
     }
     // 压在谱线上的像素不算孤点：细线扫描件的谱线断成一串点，全算进来网点率虚抬过门槛

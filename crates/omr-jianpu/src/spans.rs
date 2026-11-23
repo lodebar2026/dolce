@@ -512,13 +512,12 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
                         continue;
                     }
                     let j = ny as usize * ww + nx as usize;
-                    if dx == 0 || dy == 0 {
-                        if res[j] == 1 && !seen[j] {
+                    if (dx == 0 || dy == 0)
+                        && res[j] == 1 && !seen[j] {
                             seen[j] = true;
                             stack.push(j);
                             continue;
                         }
-                    }
                     if res[j] == 0 && ink.at(xa + nx, wa + ny) {
                         touch = true;
                     }
@@ -536,7 +535,7 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
                             t -= 1;
                         }
                         let mut b = gy;
-                        while ink.at(gx, b + 1) && b + 1 <= wb && b - gy < (h * 0.5) as i64 {
+                        while ink.at(gx, b + 1) && b < wb && b - gy < (h * 0.5) as i64 {
                             b += 1;
                         }
                         ft = ft.min(t);

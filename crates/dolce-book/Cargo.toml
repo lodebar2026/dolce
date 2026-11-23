@@ -12,7 +12,6 @@ dolce-scene = { path = "../dolce-scene" }
 dolce-model = { path = "../dolce-model" }
 dolce-view = { path = "../dolce-view" }
 dolce-play = { path = "../dolce-play" }
-dolce-formats = { path = "../dolce-formats" }
 dolce-style = { path = "../dolce-style" }
 dolce-engrave = { path = "../dolce-engrave" }
 dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }

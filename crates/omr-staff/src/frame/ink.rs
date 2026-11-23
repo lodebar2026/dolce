@@ -85,7 +85,7 @@ impl InkLayers {
                         while bin.ink(x as i64, b + 1) {
                             b += 1;
                         }
-                        if b - a + 1 <= max_run && a >= yc - reach && b <= yc + reach {
+                        if b - a < max_run && a >= yc - reach && b <= yc + reach {
                             for yy in a..=b {
                                 tri[yy as usize * w + x] = LINE;
                             }
@@ -169,7 +169,7 @@ impl InkLayers {
         let mut labels = vec![0i32; self.w * self.h];
         let flat = connected_components(&ink.data, self.w, self.h, min_area, &mut labels);
         let blobs = flat
-            .chunks_exact(8)
+            .as_chunks::<8>().0.iter()
             .map(|c| Blob { id: c[0] as u32, rect: Rect::new(c[1], c[2], c[3], c[4]), area: c[5] as u32, cx: c[6], cy: c[7] })
             .collect();
         (blobs, labels)
@@ -209,7 +209,7 @@ impl InkLayers {
             }
             let mut next = Vec::new();
             for (a, b) in runs {
-                let hit = open.iter().position(|s| s.x1 + 1 == x && overlap(s.y0, s.y1, a, b) * 2 >= (s.y1 - s.y0).min(b - a) + 1);
+                let hit = open.iter().position(|s| s.x1 + 1 == x && overlap(s.y0, s.y1, a, b) * 2 > (s.y1 - s.y0).min(b - a));
                 match hit {
                     Some(i) => {
                         let mut s = open.swap_remove(i);

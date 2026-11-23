@@ -51,8 +51,11 @@ pub struct Holes {
     /// 0：符号墨抹掉加线样的细横线（压在线上的头：孔里那截线不算墨）；1：原图（间里的头：环的上下沿并在谱线里，谱线当环壁）。
     pub imgs: [Binary; 2],
     /// `(x, y, w, h)`（像素）、面积、出自哪张图。原图上的孔与第一张图的孔交叠的不重复收（压线的头在原图上被线劈成两半）。
-    pub list: Vec<((i64, i64, i64, i64), i64, usize)>,
+    pub list: Vec<Hole>,
 }
+
+/// 一个孔：`(x, y, w, h)`、面积、出自哪张图
+pub type Hole = ((i64, i64, i64, i64), i64, usize);
 
 pub fn page_holes(f: &PageFrame) -> Holes {
     let mut ink = f.ink.symbol_ink();
@@ -120,7 +123,7 @@ pub fn page_holes(f: &PageFrame) -> Holes {
         }
     }
     let min_area = (f.unit.space * f.unit.space * 0.06).max(4.0) as u32;
-    let rects = |img: &Binary| -> Vec<((i64, i64, i64, i64), i64)> { find_holes_area(&img.data, w, h, min_area).chunks_exact(5).map(|c| ((c[0] as i64, c[1] as i64, c[2] as i64, c[3] as i64), c[4] as i64)).collect() };
+    let rects = |img: &Binary| -> Vec<((i64, i64, i64, i64), i64)> { find_holes_area(&img.data, w, h, min_area).as_chunks::<5>().0.iter().map(|c| ((c[0] as i64, c[1] as i64, c[2] as i64, c[3] as i64), c[4] as i64)).collect() };
     let first = rects(&ink);
     let cross = |a: &(i64, i64, i64, i64), b: &(i64, i64, i64, i64)| a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3;
     let second: Vec<_> = rects(&f.bin).into_iter().filter(|r| !first.iter().any(|a| cross(&a.0, &r.0))).collect();
@@ -270,7 +273,7 @@ fn isolated_ring(f: &PageFrame, holes: &Holes, hole: (i64, i64, i64, i64), y: i6
     let ids = [side(hx, -1, reach.0), side(hx + hw - 1, 1, reach.1)];
     let union = f.blobs.iter().filter(|b| b.id as i32 != 0 && ids.contains(&(b.id as i32))).fold(None::<(f64, f64, f64, f64)>, |u, b| {
         let r = b.rect;
-        let (x0, y0, x1, y1) = (r.x as f64, r.y as f64, (r.x + r.w) as f64, (r.y + r.h) as f64);
+        let (x0, y0, x1, y1) = (r.x, r.y, (r.x + r.w), (r.y + r.h));
         Some(u.map_or((x0, y0, x1, y1), |u| (u.0.min(x0), u.1.min(y0), u.2.max(x1), u.3.max(y1))))
     });
     let stacked = union.is_some_and(|u| {

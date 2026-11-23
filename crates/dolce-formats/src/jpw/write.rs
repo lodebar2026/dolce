@@ -523,7 +523,7 @@ fn meta_data(scr: &JpwScoreIn, lines: &mut Vec<String>) -> R<()> {
             1
         }
     };
-    authors.sort_by(|a, b| order(b).cmp(&order(a)));
+    authors.sort_by_key(|a| std::cmp::Reverse(order(a)));
     lines.push(format!("WordsByAndMusicBy = {}", authors.join("\\n")));
     if scr.play_data.tempo > 0.0 {
         lines.push(format!("Expression = {{♩={}}}", n(scr.play_data.tempo)));

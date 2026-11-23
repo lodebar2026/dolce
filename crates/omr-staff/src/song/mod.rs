@@ -207,7 +207,7 @@ fn split_bars(parts: &mut [Part]) {
     for mi in 0..n {
         for p in parts.iter() {
             if let Some(m) = p.measures.get(mi) {
-                if let Some(t) = std::iter::once(&m.attrs).chain(&m.mid).filter_map(|a| a.time).last() {
+                if let Some(t) = std::iter::once(&m.attrs).chain(&m.mid).filter_map(|a| a.time).next_back() {
                     now = Some(t);
                 }
             }
@@ -222,7 +222,7 @@ fn split_bars(parts: &mut [Part]) {
     // 各声部各小节的内容时值
     let pds: Vec<Vec<u32>> = parts.iter().map(|p| p.measures.iter().map(|m| m.events.iter().map(|e| e.onset + e.divisions()).max().unwrap_or(0)).collect()).collect();
     let mut set = |mi: usize, v: bool| parts.iter_mut().filter_map(|p| p.measures.get_mut(mi)).for_each(|m| m.implicit = v);
-    if n > 1 && want[0] > 0 && ds[0] > 0 && ds[0] < want[0] && ds[0] % beat[0] == 0 {
+    if n > 1 && want[0] > 0 && ds[0] > 0 && ds[0] < want[0] && ds[0].is_multiple_of(beat[0]) {
         set(0, true);
     }
     for mi in 1..n {

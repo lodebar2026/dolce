@@ -130,7 +130,7 @@ fn with_hook<R>(progress: &js_sys::Function, f: impl FnOnce(&Hook) -> R) -> R {
 pub fn ocr_exec(job: &[u8]) -> Result<String, JsError> {
     let reqs = decode_reqs(job).ok_or_else(|| err("OCR 活的字节坏了".into()))?;
     let o = ocr().map_err(err)?.ocr.as_ref().ok_or_else(|| err("没有 OCR".into()))?;
-    Ok(serde_json::to_string(&exec(o, &reqs).map_err(err)?).map_err(|e| err(e.to_string()))?)
+    serde_json::to_string(&exec(o, &reqs).map_err(err)?).map_err(|e| err(e.to_string()))
 }
 
 /// [`ocr_exec`] 的结果写进本 Worker 的 OCR 缓存。
