@@ -802,11 +802,10 @@ cargo run --release -p dolce-cli -- split <歌本> --dry-run --report r.json && 
   比 TS 多出的算量主要在送检的量：找数字行时整页数字大小的块都读（TS 只读行内的），歌词按真实空当切段（TS 把一行的字压紧拼条），都牵涉判据。
   wasm 21 MB（gzip 5.0 MB），PDFium 5.2 MB（gzip 2.4 MB，打开的文件里有 PDF 才取）。
 - **OCR 模型的权重存 FP16**（`dolce-dev onnx-fp16`：大于 1024 元素的 FLOAT 权重改存 FLOAT16、后接 `Cast`，tract / ort 编图时把常量 Cast 折掉，推理仍是 FP32）：
-  det（`public/redist/ocr/`）三端共用 FP16，4.7 → 2.4 MB；简谱、独唱、合唱三档回归与 FP32 逐曲相同。
-  rec 只给网页版用 FP16（`public/redist/ocr-web/`，21.2 → 10.7 MB、gzip 18.1 → 9.1 MB），桌面版与命令行仍读 `public/redist/ocr/` 的 FP32：
-  2026-11-23 量过：权重舍入只在读数贴着判据边的地方翻转——青年诗歌 53 延长记号的弧 FP16 读成 `n`（`G Em nG G` 覆盖率不够、整行和弦丢），
+  det 与 rec 都是三端（网页、桌面、命令行）共用 `public/redist/ocr/` 的一份：det 4.7 → 2.4 MB（简谱、独唱、合唱三档回归与 FP32 逐曲相同），
+  rec 21.2 → 10.7 MB（gzip 18.1 → 9.1 MB）。2026-11-23 量 rec：权重舍入只在读数贴着判据边的地方翻转——青年诗歌 53 延长记号的弧 FP16 读成 `n`（`G Em nG G` 覆盖率不够、整行和弦丢），
   已改成认出的延长记号墨不进和弦带（同 segno），之后简谱档 98 首两边逐曲相同；独唱档 47 首剩数算主恩署名行一个字（FP32「词」、FP16「詞」，整行繁体、FP16 对），
-  所以网页版与桌面版的识别结果可能有极个别单字差异。tract 与 ort 读 FP16 模型照样逐位相符（`tract_vs_ort` 翻转 0）。
+  合唱档 61 首 4 首步数变了、两个方向都有（歌词分音节与选字，干净档 1561 → 1564、扫描档 32146 → 32148、矢量档不变），当噪声收下；回归 OCR 缓存已换成 FP16 的读数。tract 与 ort 读 FP16 模型照样逐位相符（`tract_vs_ort` 翻转 0）。
   比较模型用 `OMR_MODELS=<目录> dolce regress <档> --out=<另一目录> --ocr-cache=<另一份缓存>`（缓存按画面寻址、不认模型，不另指就读到旧模型的结果）；
   `--out` 给绝对路径（判分脚本在 web 目录下跑）。
 - 某声部整小节没有音时（破碎前几个系统还没出现的钢琴声部），写出的 MusicXML 小节里一个 `<note>` 都没有、不补整小节休止，编辑器试听报「measure has no chord」拼不出。

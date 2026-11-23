@@ -9,8 +9,6 @@
 const BASE = import.meta.env.BASE_URL;
 const OMR_DIR = `${BASE}redist/omr/`;
 const OCR_DIR = `${BASE}redist/ocr/`;
-/** 网页版专用的 rec 模型（权重存 FP16、小一半，`dolce-dev onnx-fp16` 转）：与桌面版 / 命令行的 FP32 读数有极个别差异，所以分开放，见识别-Rust「OCR 模型」 */
-const OCR_WEB_DIR = `${BASE}redist/ocr-web/`;
 
 /** omr-wasm 的导出（wasm-bindgen 生成的胶水，不带类型声明）。 */
 interface OmrDocWasm {
@@ -148,7 +146,7 @@ function ocr(m: OmrWasm): Promise<void> {
   if (m.ocr_loaded()) return Promise.resolve();
   ocrReady ??= (async () => {
     const [rec, det, dict] = await Promise.all([
-      bytes(`${OCR_WEB_DIR}ch_PP-OCRv6_small_rec_infer.onnx`),
+      bytes(`${OCR_DIR}ch_PP-OCRv6_small_rec_infer.onnx`),
       bytes(`${OCR_DIR}ch_PP-OCRv4_det_infer.onnx`),
       bytes(`${OCR_DIR}ppocrv6_dict.txt`).then((b) => new TextDecoder().decode(b)),
     ]);

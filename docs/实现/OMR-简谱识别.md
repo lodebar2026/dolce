@@ -21,7 +21,7 @@
   (连通域/几何启发式：数字块拆分、下划线 div、八度点、增时线) → `omr-todoc::jianpu`(→简谱形状的 `ScoreDoc`)；
   数字/歌词/页眉 OCR 走本地 **PaddleOCR PP-OCRv6_small**（`paddleocr.ts`，onnxruntime-web 浏览器离线推理，
   逐数字格 / 歌词条 rec→CTC）。模型/字典在
-  `public/redist/ocr/`（rec onnx `ch_PP-OCRv6_small_rec_infer.onnx` **~21MB**（网页版另用 `public/redist/ocr-web/` 的权重 FP16 版 ~10.7MB，见识别-Rust「已知限制」）+ `ppocrv6_dict.txt` **18708 字**
+  `public/redist/ocr/`（rec onnx `ch_PP-OCRv6_small_rec_infer.onnx` **~10.7MB**（权重存 FP16，三端共用，见识别-Rust「已知限制」）+ `ppocrv6_dict.txt` **18708 字**
   + **det onnx ~2.4MB**（DBNet，仍 PP-OCRv4，页眉用；权重存 FP16；det 头与 rec 无关故可跨版混用）），wasm 运行时由 npm 包经 Vite `?url`
   引入（`omrkit/runtime.browser.ts`，纯 wasm 单线程，免 COOP/COEP；不放 `public/`，见该文件注释）；`onnxruntime-web/wasm` 子入口避开 26MB 的 jsep 构建。
   - **模型选型**：rec 用 v6_small，因为赞美诗的「祂」——v4 字典里没有、只能读成「他」；v5_mobile 字典有但视觉偏向高频「他」；
