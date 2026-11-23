@@ -23,8 +23,8 @@ fn main() -> Result<(), String> {
             println!(
                 "P{i} [{:.2},{:.2} {:.2}×{:.2}] 段{} 曲{} 子路径{} {}{} lw{:.2}{}",
                 b.x, b.y, b.w, b.h, p.segs.len(), cub, mv,
-                if p.fill.is_some() { "填" } else { "" },
-                if p.stroke.is_some() { "描" } else { "" },
+                p.fill.map_or(String::new(), |c| format!("填{c:?}")),
+                p.stroke.map_or(String::new(), |c| format!("描{c:?}")),
                 p.line_width,
                 if p.dashed { " 虚" } else { "" }
             );
