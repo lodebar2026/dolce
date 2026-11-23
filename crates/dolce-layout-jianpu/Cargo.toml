@@ -16,4 +16,7 @@ dolce-style = { path = "../dolce-style" }
 dolce-engrave = { path = "../dolce-engrave" }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[dev-dependencies]
+# 只给单测对拍手写扫描（grid.rs / compose/brace.rs 原是正则）
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }

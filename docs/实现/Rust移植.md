@@ -57,6 +57,8 @@ TS 靠对象引用认的东西（`WeakMap` 缓存、`Set<Note>`、`Map<Element>`
   用 `#[serde(remote = "Self")]` 派生外部标签的固有函数、交 `TagEnum` 适配，不逐个写。2026-11-23 实测 dolce_wasm 7735 → 7296 KB（gzip 2803 → 2666 KB）；
   入口改成先解成 `Value` 再 `from_value` 反而大 160 KB（缓冲那份还在、又多一份）。剩下的 `ss::Expr` 等约 60 KB 没改。
   核对办法：本地语料 1460 份 `ScoreDoc` / 文本谱 AST 往返（含键倒序走慢路）与派生版逐字相同；`modelEdit` 两千多次编辑与改前那份 wasm 逐字相同（只有缺字段的报错多了「at line … column …」）。
+- **开机那份 wasm 不带正则引擎**：regex 连同它的 Unicode 表约 700 KB（gzip 260 KB），简谱排版里只用了三个简单式子（SVG path 切记号、`FontSize:` / `Margin:` 版面指令），
+  改成手写扫描（`compose/brace.rs::tokens`、`grid.rs::font_size_pairs` / `margin_pairs`），单测里拿原正则对拍几千个伪随机串。dolce-wasm 依赖链里再引正则前先想想有没有别的写法。
 - **编译档**（`crates/Cargo.toml` 的 `wasm-dolce`）：`opt-level = 3` + fat LTO + 单代码单元。`s` 档 gzip 小两成多但慢 10~22%、`z` 档慢 30~60%，开机排版计算都在这份里，不换；
   wasm-opt 在这之上让 gzip 变大，不调。`.jcx` 码表（encoding_rs 约 180 KB）单出一份 `dolce_jcx_wasm` 按需载。
 - **ts-rs**：`crates/.cargo/config.toml` 设 `TS_RS_EXPORT_DIR` → `src/engine/gen/`，多类型并进一个 `*.gen.ts`；每个进程第一次写会覆盖整份文件，所以 `gen:types` 先跑 dolce-model 再跑 dolce-base。

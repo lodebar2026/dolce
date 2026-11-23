@@ -1007,7 +1007,6 @@ dependencies = [
  "dolce-style",
  "dolce-text",
  "dolce-view",
- "regex",
  "serde",
  "serde_json",
 ]

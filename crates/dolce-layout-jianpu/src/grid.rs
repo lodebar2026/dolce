@@ -169,13 +169,12 @@ pub fn content_width(m: &JianpuGrid) -> f64 {
 
 /// `FontSize: T2=65%;TL=80%` → 键（小写）→ 比例
 pub fn parse_font_sizes(lines: &[String]) -> HashMap<String, f64> {
-    let re = regex::Regex::new(r"([A-Za-z][A-Za-z0-9]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*%").unwrap();
     let mut out = HashMap::new();
     for line in lines {
-        for c in re.captures_iter(line) {
-            let pct: f64 = c[2].parse().unwrap_or(f64::NAN);
+        for (key, num) in font_size_pairs(line) {
+            let pct: f64 = num.parse().unwrap_or(f64::NAN);
             if pct > 0.0 && pct < 1000.0 {
-                out.insert(c[1].to_ascii_lowercase(), pct / 100.0);
+                out.insert(key.to_ascii_lowercase(), pct / 100.0);
             }
         }
     }
@@ -184,14 +183,105 @@ pub fn parse_font_sizes(lines: &[String]) -> HashMap<String, f64> {
 
 /// `Margin: left=100;top=30` → pt
 pub fn parse_margins(lines: &[String]) -> HashMap<String, f64> {
-    let re = regex::Regex::new(r"(?i)(?-u:\b)(left|right|top|bottom)\s*=\s*(-?[0-9]+(?:\.[0-9]+)?)").unwrap();
     let mut out = HashMap::new();
     for line in lines {
-        for c in re.captures_iter(line) {
-            let v: f64 = c[2].parse().unwrap_or(f64::NAN);
+        for (key, num) in margin_pairs(line) {
+            let v: f64 = num.parse().unwrap_or(f64::NAN);
             if v.is_finite() && (0.0..=400.0).contains(&v) {
-                out.insert(c[1].to_ascii_lowercase(), v);
+                out.insert(key.to_ascii_lowercase(), v);
             }
+        }
+    }
+    out
+}
+
+// 下面两个手写扫描与正则同义（开机那份 wasm 不带正则引擎），`\s` 同正则按 Unicode 空白。
+
+/// 跳过空白，回下一个非空白的位置。
+fn skip_ws(s: &str, i: usize) -> usize {
+    s[i..].char_indices().find(|(_, c)| !c.is_whitespace()).map_or(s.len(), |(k, _)| i + k)
+}
+
+/// 从 `i` 起的 `-?[0-9]+(?:\.[0-9]+)?`（`neg` 允许负号）到哪。
+fn decimal_end(b: &[u8], i: usize, neg: bool) -> Option<usize> {
+    let digits = |mut j: usize| {
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        j
+    };
+    let j = if neg && b.get(i) == Some(&b'-') { i + 1 } else { i };
+    let mut e = digits(j);
+    if e == j {
+        return None;
+    }
+    if b.get(e) == Some(&b'.') && b.get(e + 1).is_some_and(u8::is_ascii_digit) {
+        e = digits(e + 1);
+    }
+    Some(e)
+}
+
+/// 同正则 `([A-Za-z][A-Za-z0-9]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*%` 逐个匹配的两个分组。
+fn font_size_pairs(s: &str) -> Vec<(&str, &str)> {
+    let b = s.as_bytes();
+    let mut out = vec![];
+    let mut i = 0;
+    while i < b.len() {
+        let hit = (|| {
+            if !b[i].is_ascii_alphabetic() {
+                return None;
+            }
+            let mut k = i + 1;
+            while k < b.len() && b[k].is_ascii_alphanumeric() {
+                k += 1;
+            }
+            let eq = skip_ws(s, k);
+            if b.get(eq) != Some(&b'=') {
+                return None;
+            }
+            let n0 = skip_ws(s, eq + 1);
+            let n1 = decimal_end(b, n0, false)?;
+            let pct = skip_ws(s, n1);
+            (b.get(pct) == Some(&b'%')).then(|| ((&s[i..k], &s[n0..n1]), pct + 1))
+        })();
+        match hit {
+            Some((pair, end)) => {
+                out.push(pair);
+                i = end;
+            }
+            None => i += s[i..].chars().next().map_or(1, char::len_utf8),
+        }
+    }
+    out
+}
+
+/// 同正则 `(?i)(?-u:\b)(left|right|top|bottom)\s*=\s*(-?[0-9]+(?:\.[0-9]+)?)` 逐个匹配的两个分组（词界按 ASCII）。
+fn margin_pairs(s: &str) -> Vec<(&str, &str)> {
+    let b = s.as_bytes();
+    let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    let mut out = vec![];
+    let mut i = 0;
+    while i < b.len() {
+        let hit = (|| {
+            if i > 0 && word(b[i - 1]) {
+                return None;
+            }
+            let kw = ["left", "right", "top", "bottom"].into_iter().find(|w| b.len() >= i + w.len() && b[i..i + w.len()].eq_ignore_ascii_case(w.as_bytes()))?;
+            let k = i + kw.len();
+            let eq = skip_ws(s, k);
+            if b.get(eq) != Some(&b'=') {
+                return None;
+            }
+            let n0 = skip_ws(s, eq + 1);
+            let n1 = decimal_end(b, n0, true)?;
+            Some(((&s[i..k], &s[n0..n1]), n1))
+        })();
+        match hit {
+            Some((pair, end)) => {
+                out.push(pair);
+                i = end;
+            }
+            None => i += s[i..].chars().next().map_or(1, char::len_utf8),
         }
     }
     out
@@ -305,4 +395,42 @@ pub fn jianpu_grace_notes(els: &[NoteElement]) -> Vec<GraceNote> {
             alter: gn.accidental.as_ref().and_then(|a| AccidentalKind::parse(a.as_str())),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod doc_option_tests {
+    use super::*;
+
+    fn cases(alpha: &[&str], seed: u64) -> Vec<String> {
+        let mut x = seed;
+        (0..4000)
+            .map(|_| {
+                let mut t = String::new();
+                for _ in 0..(x % 16) {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    t.push_str(alpha[((x >> 33) % alpha.len() as u64) as usize]);
+                }
+                t
+            })
+            .collect()
+    }
+
+    /// 与原正则逐个比（正则只留在 dev-dependencies）
+    #[test]
+    fn same_as_regex() {
+        let fs = regex::Regex::new(r"([A-Za-z][A-Za-z0-9]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*%").unwrap();
+        let mg = regex::Regex::new(r"(?i)(?-u:\b)(left|right|top|bottom)\s*=\s*(-?[0-9]+(?:\.[0-9]+)?)").unwrap();
+        let mut fs_cases = cases(&["T", "2", "L", "=", "6", "5", ".", "%", " ", "\u{3000}", ";", "汉", "_", "-"], 7);
+        fs_cases.extend(["FontSize: T2=65%;TL=80%", "T2 = 65.5 %", "9ab=5%", "a=5.%", "x=1.2.3%", "名T=50%"].map(String::from));
+        let mut mg_cases = cases(&["left", "Right", "TOP", "bottom", "x", "_", "=", "-", "1", ".", "0", " ", "\u{3000}", "汉", ";"], 11);
+        mg_cases.extend(["Margin: left=100;top=30", "xleft=5", "_top=5", "汉top=5", "LEFT = -3.5", "lefty=5", "leftright=5", "top=1.", "bottom=-"].map(String::from));
+        for c in &fs_cases {
+            let want: Vec<(&str, &str)> = fs.captures_iter(c).map(|m| (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str())).collect();
+            assert_eq!(font_size_pairs(c), want, "{c:?}");
+        }
+        for c in &mg_cases {
+            let want: Vec<(&str, &str)> = mg.captures_iter(c).map(|m| (m.get(1).unwrap().as_str(), m.get(2).unwrap().as_str())).collect();
+            assert_eq!(margin_pairs(c), want, "{c:?}");
+        }
+    }
 }

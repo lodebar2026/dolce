@@ -37,10 +37,49 @@ const LYRIC_RIGHT: BraceGlyph = BraceGlyph {
     bx: [-3.75, -4.98, 6.94, 9.99],
 };
 
-/// 记号串：`[MmLlHhVvCcSsZz]|-?\d*\.?\d+(?:e-?\d+)?`
+/// 记号串：同正则 `[MmLlHhVvCcSsZz]|-?\d*\.?\d+(?:e-?\d+)?` 的逐个匹配（手写，开机那份 wasm 不带正则引擎；`d` 都是本文件的 ASCII 常量）。
 fn tokens(d: &str) -> Vec<String> {
-    let re = regex::Regex::new(r"[MmLlHhVvCcSsZz]|-?\d*\.?\d+(?:e-?\d+)?").expect("正则");
-    re.find_iter(d).map(|m| m.as_str().to_string()).collect()
+    let b = d.as_bytes();
+    let mut out = vec![];
+    let mut i = 0;
+    while i < b.len() {
+        if b"MmLlHhVvCcSsZz".contains(&b[i]) {
+            out.push(d[i..i + 1].to_string());
+            i += 1;
+        } else if let Some(e) = number_end(b, i) {
+            out.push(d[i..e].to_string());
+            i = e;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 从 `i` 起的 `-?\d*\.?\d+(?:e-?\d+)?` 匹配到哪（不匹配回 `None`）。
+fn number_end(b: &[u8], i: usize) -> Option<usize> {
+    let digits = |mut j: usize| {
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        j
+    };
+    let mut j = if b.get(i) == Some(&b'-') { i + 1 } else { i };
+    let int_end = digits(j);
+    if b.get(int_end) == Some(&b'.') && b.get(int_end + 1).is_some_and(u8::is_ascii_digit) {
+        j = digits(int_end + 1);
+    } else if int_end > j {
+        j = int_end;
+    } else {
+        return None;
+    }
+    if b.get(j) == Some(&b'e') {
+        let k = if b.get(j + 1) == Some(&b'-') { j + 2 } else { j + 1 };
+        if b.get(k).is_some_and(u8::is_ascii_digit) {
+            j = digits(k);
+        }
+    }
+    Some(j)
 }
 
 /// SVG path 的 `d` → 路径段（只认 m/l/h/v/c/s/z）
@@ -175,4 +214,31 @@ pub fn paint_brace(c: &Ctx, root: &mut Node, x: f64, top: f64, bottom: f64) {
     let g = |cp: u32| char::from_u32(cp).expect("码位").to_string();
     root.push(text(&g(bracket::TOP), x - thick / 2.0, y0, f.clone(), c.ink, c.env));
     root.push(text(&g(bracket::BOTTOM), x - thick / 2.0, y1, f, c.ink, c.env));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 与原正则逐个比（正则只留在 dev-dependencies）
+    #[test]
+    fn tokens_same_as_regex() {
+        let re = regex::Regex::new(r"[MmLlHhVvCcSsZz]|-?\d*\.?\d+(?:e-?\d+)?").unwrap();
+        let mut cases: Vec<String> = [LYRIC_RIGHT.d, "m1.5-2e3l.5.5c-.1,1e-2 3e 4. .", "M-1-2-.3e-4z", "1..2--3e-e5 x9", "", "-", "e5", "1.e5"].iter().map(|s| s.to_string()).collect();
+        // 伪随机串
+        let alpha = b"0123456789.-e,MmlLcsz ";
+        let mut x: u64 = 12345;
+        for _ in 0..3000 {
+            let mut t = String::new();
+            for _ in 0..(x % 24) {
+                x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                t.push(alpha[((x >> 33) % alpha.len() as u64) as usize] as char);
+            }
+            cases.push(t);
+        }
+        for c in &cases {
+            let want: Vec<String> = re.find_iter(c).map(|m| m.as_str().to_string()).collect();
+            assert_eq!(tokens(c), want, "{c:?}");
+        }
+    }
 }
