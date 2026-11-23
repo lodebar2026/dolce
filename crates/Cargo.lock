@@ -484,11 +484,14 @@ dependencies = [
  "dolce-session",
  "dolce-style",
  "dolce-text",
+ "half",
  "indexmap",
+ "prost",
  "serde",
  "serde_json",
  "sha2",
  "svg2pdf",
+ "tract-onnx",
 ]
 
 [[package]]

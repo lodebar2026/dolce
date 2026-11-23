@@ -32,3 +32,7 @@ sha2.workspace = true
 dolce-export = { path = "../dolce-export" }
 dolce-omr-source = { path = "../omr-source" }
 svg2pdf = { version = "0.13", optional = true }
+# onnx-fp16：读写 ONNX 用 tract-onnx 带的 protobuf 定义（prost 与它同一版）
+tract-onnx = "0.23"
+prost = "0.14"
+half = "2"

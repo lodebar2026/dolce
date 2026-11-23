@@ -800,7 +800,14 @@ cargo run --release -p dolce-cli -- split <歌本> --dry-run --report r.json && 
 - 网页版 OCR 用 tract：wasm 里的矩阵内核是四路 SIMD，一条 320 宽的文本条约 40 ms（原生 7 ms，原生走 Apple SME），矩阵乘占九成；靠分轮预取 + 帮手 Worker 并行，
   一页简谱 1.1~3.3 秒（Chromium，十核机；TS 旧版 1.2~3.4 秒，合计慢一成多），Safari 1.5~4.9 秒、比 TS 旧版快。onnxruntime-web 单线程一条 43 ms，不值得换回。
   比 TS 多出的算量主要在送检的量：找数字行时整页数字大小的块都读（TS 只读行内的），歌词按真实空当切段（TS 把一行的字压紧拼条），都牵涉判据。
-  wasm 21 MB（gzip 5.0 MB），PDFium 5.2 MB（gzip 2.4 MB）。
+  wasm 21 MB（gzip 5.0 MB），PDFium 5.2 MB（gzip 2.4 MB，打开的文件里有 PDF 才取）。
+- **OCR 模型的权重存 FP16**（`dolce-dev onnx-fp16`：大于 1024 元素的 FLOAT 权重改存 FLOAT16、后接 `Cast`，tract / ort 编图时把常量 Cast 折掉，推理仍是 FP32）：
+  det（`public/redist/ocr/`）三端共用 FP16，4.7 → 2.4 MB；简谱、独唱、合唱三档回归与 FP32 逐曲相同。
+  rec 只给网页版用 FP16（`public/redist/ocr-web/`，21.2 → 10.7 MB、gzip 18.1 → 9.1 MB），桌面版与命令行仍读 `public/redist/ocr/` 的 FP32：
+  2026-11-23 量过，FP16 rec 简谱档 98 首只有青年诗歌 53 变了（1 → 5 步，一行和弦行没认出），独唱档 47 首只有数算主恩变了（27 → 26 步），
+  所以网页版与桌面版的识别结果可能有极个别差异。tract 与 ort 读 FP16 模型照样逐位相符（`tract_vs_ort` 翻转 0）。
+  比较模型用 `OMR_MODELS=<目录> dolce regress <档> --out=<另一目录> --ocr-cache=<另一份缓存>`（缓存按画面寻址、不认模型，不另指就读到旧模型的结果）；
+  `--out` 给绝对路径（判分脚本在 web 目录下跑）。
 - 某声部整小节没有音时（破碎前几个系统还没出现的钢琴声部），写出的 MusicXML 小节里一个 `<note>` 都没有、不补整小节休止，编辑器试听报「measure has no chord」拼不出。
 - 《裴克圣经经文诗歌歌谱》逐首识别对 pu.db（P13a 后）：音符 96.78、歌词 88.21、对位 92.08、调号 91.94、拍号 97.21、速度 97.21（TS 同口径音符 97.68、歌词 88.59、对位 93.47、速度 97.21）；
   房号 `[1 [2` 没认、和弦行个别漏、036 行首多一个空小节，行末小逗号单字条上 OCR 偶尔漏读（TS 按每点 6 像素画条，这里 4 像素）。

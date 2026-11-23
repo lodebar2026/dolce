@@ -69,7 +69,8 @@ impl Infer for Dual {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let kind = args[0].clone();
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../public/redist/ocr");
+    // 同 `dolce` 的 `model_dir`：`OMR_MODELS` 优先（比两份模型时指过去）
+    let dir = std::env::var_os("OMR_MODELS").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../public/redist/ocr"));
     let rec = std::fs::read(dir.join("ch_PP-OCRv6_small_rec_infer.onnx")).unwrap();
     let det = std::fs::read(dir.join("ch_PP-OCRv4_det_infer.onnx")).unwrap();
     let t0 = Instant::now();

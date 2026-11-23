@@ -23,6 +23,8 @@ pub struct Opts {
     area: Option<String>,
     /// 不清产物目录、不识别，只重新判分对比
     judge_only: bool,
+    /// OCR 结果缓存文件（缺省 `dev/data/rust-omr/ocr-cache/<档>.json`）；缓存按送检画面寻址、不认模型，换模型比较时要另指一份
+    ocr_cache: Option<PathBuf>,
 }
 
 impl Opts {
@@ -38,6 +40,7 @@ impl Opts {
             replay: val("replay").map(PathBuf::from),
             area: val("area"),
             judge_only: args.iter().any(|a| a == "--judge-only"),
+            ocr_cache: val("ocr-cache").map(PathBuf::from),
         }
     }
 }
@@ -69,7 +72,8 @@ pub fn run(o: &Opts) -> Result<ExitCode, String> {
     }
     println!("{}：{} 首，产物 → {}", o.kind, songs.len(), out.display());
 
-    let ocr = open_ocr(Some(&sibling(&format!("dev/data/rust-omr/ocr-cache/{}.json", o.kind))))?;
+    let cache = o.ocr_cache.clone().unwrap_or_else(|| sibling(&format!("dev/data/rust-omr/ocr-cache/{}.json", o.kind)));
+    let ocr = open_ocr(Some(&cache))?;
     let t0 = Instant::now();
     let fails: Vec<(String, String)> = songs
         .par_iter()
