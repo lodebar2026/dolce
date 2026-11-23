@@ -284,6 +284,7 @@ pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of:
             let mut line = base_line(&items, dx);
             // 连音候选：原判不满拍、折算后正好满拍的收下（先全收，再逐个试）
             if !line.fits(want) {
+                let quarter = NoteType::Quarter.dotted(0);
                 let at = |i: usize| ops.iter().position(|(t, _)| *t == Target::Chord(i));
                 let cands: Vec<(&TupletCand, Vec<usize>)> = row.tuplets.iter().filter_map(|t| t.chords.iter().map(|&i| at(i)).collect::<Option<Vec<usize>>>().map(|ns| (t, ns))).collect();
                 let tries: Vec<Vec<usize>> = std::iter::once((0..cands.len()).collect()).chain((0..cands.len()).map(|n| vec![n])).filter(|v: &Vec<usize>| !v.is_empty()).collect();
@@ -297,7 +298,9 @@ pub fn settle_system(f: &Layout, rows: &[usize], notes: &mut [RowNotes], bar_of:
                         }
                     }
                     let l = base_line(&scaled, dx);
-                    if l.fits(want) {
+                    // 弱起、段落收尾这种验不了满拍的小节：原判停在半拍上、折算后正好停在四分拍上的也收
+                    let on_beat = |l: &Line| l.even().is_some_and(|e| e % quarter == 0);
+                    if l.fits(want) || (bar.loose && l.even().is_some_and(|e| e < want) && on_beat(&l) && line.even().is_some() && !on_beat(&line)) {
                         for &n in &pick {
                             let (t, ns) = &cands[n];
                             for (m, &it) in ns.iter().enumerate() {

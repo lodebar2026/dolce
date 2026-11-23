@@ -42,6 +42,9 @@ const BOUND_XTOL: f64 = 1.6;
 /// 最后一条小节线之后还剩这么多格的谱线，算没印右线的半截小节。
 const OPEN_TAIL: f64 = 3.0;
 
+/// 行首区右缘到第一条小节线不过这么多格、中间又没有音的，这条线是系统的起始线（调号后才印的反复开始线）。
+const LEAD_BAR_GAP: f64 = 4.0;
+
 /// 版面摘要里一行谱（形状见私有仓库 `chorus-opslib.mjs::recLayoutOf`）。
 pub struct RowLayout {
     pub row: usize,
@@ -381,6 +384,20 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
             let rows = &sys.staves;
             let ra: Vec<&RowAttrs> = rows.iter().map(|&i| &page.attrs[i]).collect();
             let (mut bs, open) = bounds(page, rows);
+            // 行首区后面紧跟的小节线（调号后才印的反复开始线等）前面一个音、一个休止都没有：是系统的起始线，不另开一个空小节；
+            // 它的反复开始记在第一小节上
+            let lead0 = rows.iter().map(|&i| page.attrs[i].lead_end).fold(f64::MIN, f64::max);
+            let mut lead_rep = false;
+            if let Some(b0) = bs.first().filter(|b| b.x - lead0 <= f.unit.space * LEAD_BAR_GAP && !b.rep_end) {
+                let empty = rows.iter().all(|&i| {
+                    let n = &ids.notes[pn][i];
+                    !n.chords.iter().any(|c| c.x < b0.x) && !n.rests.iter().any(|r| r.x < b0.x)
+                });
+                if empty && bs.len() >= 2 {
+                    lead_rep = b0.rep_start;
+                    bs.remove(0);
+                }
+            }
             // 单独一根粗线不成样式（行末收尾的线扫出来常偏粗）：全曲最后一条当终止线，其余当普通线
             let last_sys = pn + 1 == pages.len() && si + 1 == f.systems.len();
             let nb = bs.len();
@@ -681,6 +698,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                 ms[0].new_system = true;
                 ms[0].new_page = si == 0 && pn > 0;
                 ms[0].implicit = implicit;
+                ms[0].repeat_start |= lead_rep;
                 parts[p].measures.extend(ms);
                 layout.push(RowLayout { row: row_no, part: p, from, to: from + count + added - 1, space: f.staves[i].space(), seq_len });
                 row_no += 1;

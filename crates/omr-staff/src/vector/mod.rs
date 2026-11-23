@@ -282,7 +282,8 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     let lead_frame_of = || lead_frame.get_or_init(|| raster_frame(&vp, &f.layout, &|o| !in_band(&o.rect)));
     let lead = |si: usize| crate::attrs::lead::read_lead(lead_frame_of(), si, ocr);
     let mid_time = |si: usize, a: f64, b: f64| crate::attrs::lead::read_time_between(lead_frame_of(), si, a, b, ocr);
-    let attrs = notes::page_attrs(&f.layout, &syms, Some(&lead), Some(&mid_time));
+    let mid_key = |si: usize, c: dolce_omr_sheet::music::Clef, a: f64| crate::attrs::lead::read_key_after(lead_frame_of(), si, c, a);
+    let attrs = notes::page_attrs(&f.layout, &syms, Some(&lead), Some(&mid_time), Some(&mid_key));
     let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
     // 转曲页（文字层里没有正文的字）：连音的「3」也是路径，在画成像素的页框上按位图同一份墨块读数字找候选
     let outlined = !vp.chars.iter().any(|c| !c.generated && glyphs::music_family(&c.font).is_none());

@@ -616,6 +616,29 @@ pub fn read_time_between(f: &PageFrame, row: usize, start: f64, end: f64, ocr: O
     read_time(f, s, &us, start, end, ocr).and_then(|t| t.time)
 }
 
+/// 调号按单元读、按竖笔读，取数出来多的那份（墨连成片时单元读不全，竖笔照样数得清）。回 (升降数, 串收得干净, 右缘)。
+fn key_units_or_strokes(f: &PageFrame, s: &Staff, clef: Clef, us: &[Unit], from: usize, start: f64) -> (i8, bool, f64) {
+    let k = read_key(f, s, clef, us, from, start);
+    let (n2, r2) = read_key_strokes(f, s, clef, start);
+    if n2.unsigned_abs() > k.fifths.unsigned_abs() {
+        (n2, true, r2)
+    } else {
+        (k.fifths, k.sure, k.right)
+    }
+}
+
+/// 行中 `start`（小节线后还原号串的右缘）起的调号串：同行首调号一份读法。回 (升降数, 右缘)。
+pub fn read_key_after(f: &PageFrame, row: usize, clef: Clef, start: f64) -> (i8, f64) {
+    let s = &f.staves[row];
+    let sp = s.space();
+    let us = units_in(f, s, start - sp * 0.3, start + sp * 10.0, -6.0, 16.0);
+    // 像素里还原号的墨比给的起点宽一点，开头的还原号单元先跳过
+    let from = us.iter().take_while(|u| acc_kind(f, u, sp) == Some(Acc::Natural)).count();
+    let start = us[..from].iter().map(|u| u.rect.right()).fold(start, f64::max);
+    let (n, _, r) = key_units_or_strokes(f, s, clef, &us, from, start);
+    (n, r)
+}
+
 /// 一行谱的行首区。
 pub fn read_lead(f: &PageFrame, row: usize, ocr: Option<&dyn DigitReader>) -> RowAttrs {
     let s = &f.staves[row];
@@ -637,18 +660,10 @@ pub fn read_lead(f: &PageFrame, row: usize, ocr: Option<&dyn DigitReader>) -> Ro
         out.clef_sure = true;
     }
     if clef != Clef::PERCUSSION {
-        let k = read_key(f, s, clef, &us, from, right);
-        let (n2, r2) = read_key_strokes(f, s, clef, right);
-        if n2.unsigned_abs() > k.fifths.unsigned_abs() {
-            // 按竖笔数出来的更多：墨连成片，单元读不全
-            out.key = Some(Key { fifths: n2 });
-            out.key_sure = out.clef_sure;
-            right = r2;
-        } else {
-            out.key = Some(Key { fifths: k.fifths });
-            out.key_sure = k.sure && out.clef_sure;
-            right = k.right;
-        }
+        let (n, sure, r) = key_units_or_strokes(f, s, clef, &us, from, right);
+        out.key = Some(Key { fifths: n });
+        out.key_sure = sure && out.clef_sure;
+        right = r;
     }
     // 行首区的右界：左端十四格以内、第一条小节线之前
     let end = f.bars[row].iter().map(|b| b.x0).find(|&x| x > right + sp).unwrap_or(f64::MAX).min(s.left + sp * 14.0);

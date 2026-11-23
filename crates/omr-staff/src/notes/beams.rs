@@ -33,6 +33,11 @@ const SAMPLES: usize = 7;
 const PATH_TOL: f64 = 0.2;
 /// 一条杠相邻两根干最远隔这么多（相对线距）。
 const SPAN_MAX: f64 = 12.0;
+/// 杠横穿中间一根干时，干端最多越过杠这么多（相对线距）还算挂在这条杠上。
+const CROSS_OVER: f64 = 2.0;
+
+/// 连上的一条杠：(左干, 右干, 左端 (x, y), 右端 (x, y))，下标指按 x 排好的干。
+type Joined = (usize, usize, (i64, f64), (i64, f64));
 
 /// 列 `x` 上 [y0, y1] 里够厚的墨段的中心 y。
 fn thick_runs<P: Probe + ?Sized>(ink: &P, x: i64, y0: i64, y1: i64, sp: f64, line: f64) -> Vec<f64> {
@@ -125,6 +130,7 @@ pub fn tails<P: Probe + ?Sized>(ink: &P, rows: &mut [RowNotes], staves: &[Staff]
     let mut full: Vec<Vec<f64>> = vec![Vec::new(); stemmed.len()];
     let mut right_used: Vec<Vec<bool>> = right.iter().map(|r| vec![false; r.1.len()]).collect();
     let mut left_used: Vec<Vec<bool>> = left.iter().map(|l| vec![false; l.1.len()]).collect();
+    let mut crossed: Vec<Joined> = Vec::new();
     for a in 0..stemmed.len() {
         let sp = stemmed[a].2;
         for (ia, &ya) in right[a].1.iter().enumerate() {
@@ -139,8 +145,35 @@ pub fn tails<P: Probe + ?Sized>(ink: &P, rows: &mut [RowNotes], staves: &[Staff]
                         full[b].push(yb);
                         right_used[a][ia] = true;
                         left_used[b][ib] = true;
+                        crossed.push((a, b, (right[a].0, ya), (left[b].0, yb)));
                         break 'next;
                     }
+                }
+            }
+        }
+    }
+    // 杠从中间一根同行干的干身上穿过去（干端越过杠没多远、干端探不到杠：干顶粘着连音数字之类）：这根干也挂在这条杠上
+    for &(a, b, (xa, ya), (xb, yb)) in &crossed {
+        for m in a + 1..b {
+            let (r, i, sp) = stemmed[m];
+            if r != stemmed[a].0 || r != stemmed[b].0 || !full[m].is_empty() {
+                continue;
+            }
+            let st = rows[r].chords[i].stem.unwrap();
+            let y = ya + (yb - ya) * (st.x - xa) as f64 / (xb - xa).max(1) as f64;
+            let over = if st.up { y - st.top as f64 } else { st.bottom as f64 - y };
+            // 干左右两侧紧挨着都有杠的墨（连通只是借这根干的墨连过去的不算）
+            let d = (PROBE * sp).round() as i64;
+            let tol = (PATH_TOL * sp).round() as i64;
+            let beam_at = |x: i64| (-tol..=tol).any(|dy| ink.at(x, y.round() as i64 + dy) == INK);
+            if over > 0.0 && over <= CROSS_OVER * sp && y > st.top as f64 && y < st.bottom as f64 && beam_at(st.x - d) && beam_at(st.x + d) {
+                full[m].push(y);
+                // 干停在杠上：越过去的那截是别的墨，截掉
+                let s = rows[r].chords[i].stem.as_mut().unwrap();
+                if s.up {
+                    s.top = y.round() as i64;
+                } else {
+                    s.bottom = y.round() as i64;
                 }
             }
         }
