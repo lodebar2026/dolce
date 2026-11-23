@@ -10,6 +10,7 @@ pub mod fraction;
 pub mod geom;
 pub mod js;
 pub mod msg;
+pub mod tagged;
 pub mod text;
 
 pub use fraction::Fraction;

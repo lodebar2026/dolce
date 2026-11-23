@@ -3453,8 +3453,11 @@ pub fn new_duration_of(ch: &Chord) -> NewDuration {
 // ───────────────────────── 命令 ─────────────────────────
 
 /// 一个编辑动作（JSON `{"op": "setDegree", …}`，`op` 与字段名同 TS 函数与参数名）。会话与对拍都按它发。
+///
+/// 反序列化：派生成外部标记的固有函数（`remote = "Self"`），`Deserialize` 手写成「`op` 标记 + 剩下的键」（`dolce_base::tagged`）——
+/// 派生的内部标记要先把对象读进缓冲，各变体里的 `Measure` 等整棵子树会多编一份反序列化代码。
 #[derive(Clone, Debug, PartialEq, serde::Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum EditCmd {
     SetDegree { ids: Vec<ElementId>, degree: f64 },
     ShiftOctave { ids: Vec<ElementId>, delta: f64 },
@@ -3513,6 +3516,20 @@ pub enum EditCmd {
     MergeInto { si: usize, pi: usize, pj: usize },
     CopyLyrics { si: usize, from: usize, to: usize },
     Transcribe { options: TranscriptionOptions },
+}
+
+impl dolce_base::tagged::TaggedDe for EditCmd {
+    const TAG: &'static str = "op";
+    const NAME: &'static str = "EditCmd";
+    fn fast<'de, D: serde::Deserializer<'de>>(tag: &str, d: D) -> Result<Self, D::Error> {
+        EditCmd::deserialize(dolce_base::tagged::TagEnum::new(tag, d))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EditCmd {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        dolce_base::tagged::deserialize_tagged(d)
+    }
 }
 
 /// 执行一个编辑动作

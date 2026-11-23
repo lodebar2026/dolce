@@ -535,7 +535,8 @@ str_enum! {
 }
 
 /// 文本谱里**夹在符号之间**、自己不占时值的东西，挂在紧随其后的那个符号上（行末的挂 `Measure.trailing`）。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// 反序列化手写（`dolce_base::tagged`，各变体经同形的 `*De` 结构体读）：派生的内部标记要先把对象读进缓冲，`Layer` 里整组 `Measure` 会多编一份反序列化代码。
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub enum InlineItem {
@@ -551,6 +552,40 @@ pub enum InlineItem {
         marks: Vec<Mark>,
         #[serde(skip_serializing_if = "Option::is_none")] source: Option<SourceSpan>,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BoundaryDe {
+    behavior: BoundaryBehavior,
+    source: Option<SourceSpan>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LayerDe {
+    role: LayerRole,
+    measures: Vec<Measure>,
+    marks: Vec<Mark>,
+    source: Option<SourceSpan>,
+}
+
+impl dolce_base::tagged::TaggedDe for InlineItem {
+    const TAG: &'static str = "kind";
+    const NAME: &'static str = "InlineItem";
+    fn fast<'de, D: serde::Deserializer<'de>>(tag: &str, d: D) -> Result<Self, D::Error> {
+        match tag {
+            "boundary" => BoundaryDe::deserialize(d).map(|b| InlineItem::Boundary { behavior: b.behavior, source: b.source }),
+            "layer" => LayerDe::deserialize(d).map(|l| InlineItem::Layer { role: l.role, measures: l.measures, marks: l.marks, source: l.source }),
+            _ => Err(serde::de::Error::unknown_variant(tag, &["boundary", "layer"])),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for InlineItem {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        dolce_base::tagged::deserialize_tagged(d)
+    }
 }
 
 str_enum! {
@@ -757,12 +792,31 @@ pub struct Space {
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// 反序列化手写（`dolce_base::tagged`）：派生的内部标记要先把对象读进缓冲，整棵 `Chord` 子树会多编一份反序列化代码。
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts"))]
 pub enum Element {
     Chord(Chord),
     Space(Space),
+}
+
+impl dolce_base::tagged::TaggedDe for Element {
+    const TAG: &'static str = "kind";
+    const NAME: &'static str = "Element";
+    fn fast<'de, D: serde::Deserializer<'de>>(tag: &str, d: D) -> Result<Self, D::Error> {
+        match tag {
+            "chord" => Chord::deserialize(d).map(Element::Chord),
+            "space" => Space::deserialize(d).map(Element::Space),
+            _ => Err(serde::de::Error::unknown_variant(tag, &["chord", "space"])),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Element {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        dolce_base::tagged::deserialize_tagged(d)
+    }
 }
 
 // ───────────────────────── 小节 ─────────────────────────

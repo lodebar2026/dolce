@@ -186,7 +186,8 @@ pub struct InlineLayerElement {
     pub source: SourceSpan,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// 反序列化手写（`dolce_base::tagged`）：派生的内部标记要先把对象读进缓冲，各元素子树会多编一份反序列化代码。
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum MusicElement {
     Note(NoteElement),
@@ -194,6 +195,27 @@ pub enum MusicElement {
     Barline(BarlineElement),
     BeatBoundary(BeatBoundaryElement),
     InlineLayer(InlineLayerElement),
+}
+
+impl dolce_base::tagged::TaggedDe for MusicElement {
+    const TAG: &'static str = "kind";
+    const NAME: &'static str = "MusicElement";
+    fn fast<'de, D: serde::Deserializer<'de>>(tag: &str, d: D) -> Result<Self, D::Error> {
+        match tag {
+            "note" => NoteElement::deserialize(d).map(MusicElement::Note),
+            "sustain" => SustainElement::deserialize(d).map(MusicElement::Sustain),
+            "barline" => BarlineElement::deserialize(d).map(MusicElement::Barline),
+            "beat-boundary" => BeatBoundaryElement::deserialize(d).map(MusicElement::BeatBoundary),
+            "inline-layer" => InlineLayerElement::deserialize(d).map(MusicElement::InlineLayer),
+            _ => Err(serde::de::Error::unknown_variant(tag, &["note", "sustain", "barline", "beat-boundary", "inline-layer"])),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MusicElement {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        dolce_base::tagged::deserialize_tagged(d)
+    }
 }
 
 impl MusicElement {
