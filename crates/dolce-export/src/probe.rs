@@ -46,7 +46,8 @@ pub fn default_samples() -> Vec<Sample> {
         Sample::new("Microsoft YaHei", false, false, zh),
         Sample::new("SimSun", false, false, zh),
         Sample::new("Bravura", false, false, "\u{e050}\u{e062}\u{e0a4}\u{e260}\u{e262}"),
-        Sample::new("Bravura Text", false, false, "\u{e050}\u{e0a4}"),
+        // 随包的 BravuraText.otf 是子集，只有和弦用的小号升降还原（U+ED60–ED62）与和弦记号（U+E870–E872）
+        Sample::new("Bravura Text", false, false, "\u{ed60}\u{ed62}\u{e870}"),
     ]
 }
 
