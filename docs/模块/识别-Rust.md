@@ -130,7 +130,8 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
   pdfium-render 的 `font.glyphs()` 拿 0 号试探字形数，符号字体（Maestro）试出 0，之后 `get` 全失败——不能用它。
   实测（2026-11-10）：Anastasia 1684/1685（差的是空格）、Maestro 225/225 与 214/214；子集字体 `LNFFGN+Maestro` 0/54（字符码 0x87 之类没有 Unicode 映射，PDFium 回的就是码本身，反查不回字符码）。
   这类字先按字框渲染取位图签名兜底，大量出现再解字体程序（`FPDFFont_GetFontData`）。
-- **PDFium 的 wasm 版**（pdfium-binaries 同一构建号的 `pdfium-wasm.tgz`，emscripten 非模块脚本）：Worker 把脚本当函数体跑、`Module` 由参数交进去；
+- **PDFium 的 wasm 版**（pdfium-binaries 同一构建号的 `pdfium-wasm.tgz`，emscripten 非模块脚本）：打开的文件里有 `%PDF` 开头的才取（`worker.ts::hasPdf`；图片的取数、二值化、识别都不经 PDFium，省 gzip 约 2.3 MB）；
+  Worker 把脚本当函数体跑、`Module` 由参数交进去；
   pdfium-render 0.9.5 的 wasm 绑定要 `Module.wasmExports`（脚本里是局部量，要挂出来）、认 `PDFium_Init`（这一版只导出 `FPDF_InitLibrary`，补别名）。
   绑定有两处毛病，`omr-source/src/pdfium_wasm.rs` 绕开、直接调模块：`FPDFPageObj_GetMatrix` 先在本模块内存上开视图再分配，内存一长就报 detached ArrayBuffer（八段锦必现）；
   `FPDFText_GetCharBox` 出参次序交错（左上右下 对 左右下上），字框读反（破碎页眉字号读成 −394）。
