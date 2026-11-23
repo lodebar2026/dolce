@@ -131,6 +131,18 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
     没有区间的（头部多数字段）在原文里找第一处没被占的原字符串，整串找不到（原文有转义，`.jpwabc` 署名的 `\n`）就按非 ASCII 连续段依次找。
     改完重新解析、逐片对期望：对不上时只留有区间的编辑，搜来的按片逐个试加，结构不变且对上的片变多才留
     （误改中文键名之类会被撤回）。原文里不进模型的字（注释、模型丢掉的内容）不转。
+- **模型在 Rust（`crates/dolce-model`），是从 TS 忠实移植的**（迁移时全语料逐字段零差异，[../架构.md](../架构.md) §8）。移植时定下、改模型要守的：
+  - **`ElementId` 的分配顺序与旧 TS `IdGen` 逐一相同**：重解析重编、编辑后按 `ChordPos` 认回，不借机改语义。TS `number` 一律 `f64`（读 XML 用 `Number()` 什么都可能进来），只有 `ElementId` 是 `u32`。
+  - **对象身份用 `Oid`**（JSON `_oid`，0 = 无身份）：可绑表层的那十几类对象带它，表层旁表与导出版面按 `(Oid, 槽位)` 键；
+    TS 里 `{ ...obj }`、`structuredClone` 出来的新对象在 Rust 里一律 `Oid::NONE`（表层绑定随之丢，同旧 WeakMap）。TS 按对象身份记的旁表、集合（`Set<Note>`、`Map<Measure>`）改按下标或 id。
+  - **源区间与 XML 节点区间按 UTF-16 码元**（喂 CodeMirror）；解析器把原文转成 UTF-16 码元扫，原文不过边界，读入后门面换回 JS 那份。
+  - **识别 id、符干等附件不进模型**，同 MusicXML 表层一样作文档附件（`omr-todoc::staff::Rids`、`EngravedLayout`）。
+  - **认不得的枚举值原样留**：字符串字面量联合在 Rust 里是「认得的进具名变体、认不得的进 `Other(String)`」（TS 读 XML 多处只断言不校验）；输入结构一律拒未知字段，字段名拼错报错而不是静默取缺省。
+  - **类型由 Rust 生成给 TS**：ts-rs 出 `src/engine/gen/*.gen.ts`（`npm run gen:types`），`check.ts` 让 tsc 核生成物与手写 `doc.ts` 互相可赋值，私有仓库的单测比生成物与入库的逐字相同。
+  - **简繁词表两份同源**：网页版用 opencc-js 的词表，桌面 / 命令行用 Rust `dolce-hanconv`（数据从网页版所用的同一份导出，转换链同它），迁移时全表金标两个方向零差异；`HanConv` 由宿主注入。
+  - **TS 侧现在还持有模型的 JSON 镜像**（`model/rustdoc.ts`：`_oid` 摘下记进旁表、送回 Rust 时补回；MusicXML 表层与读入时的模型留在 Rust 句柄里，句柄表按原文总量淘汰，见 [源格式-musicxml](源格式-musicxml.md)）。
+    这是迁移期的过渡，终态是文档留在 Rust 会话、TS 拿句柄；`NaN` 过 JSON 成 `null`（`f64` 字段读不进报 `engine.badInput`）。
+  - 移植时的 JS 口径与踩坑见 [../实现/Rust移植.md](../实现/Rust移植.md)。
 - **`Chord.srcId`（派生模型才有）**：文本格式进五线谱/混排时写成 MusicXML 再读回，元素 id 另编一套；写出时 `<note id="jp<源 id>">`
   （`ToXmlOptions.sourceIds`，只这条内部路径开）、`fromxml` 读回成 `srcId`，五线谱与代码区靠它互相定位。导出文件不带。
 
