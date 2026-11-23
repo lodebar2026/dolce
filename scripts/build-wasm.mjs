@@ -90,6 +90,8 @@ function buildOmr() {
     run("wasm-bindgen", [wasm, "--target", "web", "--no-typescript", "--remove-name-section", "--remove-producers-section", "--out-dir", out, "--out-name", v.name]);
     // 不过 wasm-opt：2026-11-23 量过 -O2 让原始体积小一成多，但 brotli / gzip 后反而大 8% / 2%（3714 → 4031 KB），
     // 网上传的是压缩后的；CI（Pages）本来也没装 binaryen，本机再过一遍只会让发布前验证对不上线上
+    // 也不用 fat LTO（lto = "fat"、codegen-units = 1）：2026-11-23 量过原始体积 22.1 → 19.9 MB，gzip 只小 1%（5389 → 5338 KB），
+    // 网页识别不快（两首各测两遍，持平或略慢），编译却慢好几倍
   }
 }
 
