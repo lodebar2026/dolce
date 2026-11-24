@@ -177,7 +177,6 @@ export const en: Record<MsgKey, string> = {
   "sing.hint": "Paste the lyrics written out in the order they are sung (blank lines between stanzas; labels like \"Chorus\" are fine; .txt / .lrc files can be loaded). Where the lyrics disagree with the repeats on the page the lyrics win; differences are listed, notes are not changed. In 123 files section marks [P:x] and %%sing lines are written into the source (song at the cursor); other formats can't hold them, so the order is kept with the open document for projection, playback and export.",
   "sing.placeholder": "Paste lyrics here…",
   "sing.file": "Load file…",
-  "sing.generate": "Generate",
   "sing.apply": "Apply",
   "sing.busy": "Generating…",
   "sing.failed": "Generation failed",

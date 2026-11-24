@@ -176,7 +176,6 @@ export const zh = {
   "sing.hint": "粘贴按实际唱法逐段写全的歌词（空行分段，可带「副歌」等标注；也可读 .txt / .lrc）。与谱面反复对不上时以歌词为准，差异只列出、不改音符。123 在原文里插入段落标记 [P:x]、写出 %%sing（光标所在的那一首）；别的格式写不下，挂在当前文档上供投影、试听、导出用。",
   "sing.placeholder": "在此粘贴歌词……",
   "sing.file": "读取文件…",
-  "sing.generate": "生成",
   "sing.apply": "写入",
   "sing.busy": "生成中…",
   "sing.failed": "生成失败",

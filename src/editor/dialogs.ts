@@ -262,7 +262,9 @@ export function showSingDialog(app: App): void {
   fileBtn.type = "button";
   fileBtn.textContent = t("sing.file");
   const loadFile = async (f: File | undefined) => {
-    if (f) area.value = decodeLyricsFile(new Uint8Array(await f.arrayBuffer()));
+    if (!f) return;
+    area.value = decodeLyricsFile(new Uint8Array(await f.arrayBuffer()));
+    schedule(0);
   };
   fileBtn.onclick = () => fileInput.click();
   fileInput.onchange = () => void loadFile(fileInput.files?.[0]);
@@ -277,10 +279,6 @@ export function showSingDialog(app: App): void {
   result.className = "sing-result";
   body.append(hint, area, fileBtn, fileInput, result);
 
-  const gen = document.createElement("button");
-  gen.type = "button";
-  gen.textContent = t("sing.generate");
-  gen.style.marginRight = "auto";
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.textContent = t("dlg.cancel");
@@ -289,21 +287,34 @@ export function showSingDialog(app: App): void {
   apply.className = "modal-button-primary";
   apply.textContent = t("sing.apply");
   apply.disabled = true;
-  const { close } = openModal({ title: t("sing.title"), boxClass: "settings-box sing-box", body: [body], footer: [gen, cancel, apply] });
-  cancel.onclick = close;
-
-  let pending: SingPreview | null = null;
-  area.oninput = () => {
-    pending = null;
-    apply.disabled = true;
+  const { close } = openModal({ title: t("sing.title"), boxClass: "settings-box sing-box", body: [body], footer: [cancel, apply] });
+  cancel.onclick = () => {
+    clearTimeout(timer);
+    seq++;
+    close();
   };
-  gen.onclick = async () => {
-    gen.disabled = true;
-    apply.disabled = true;
+
+  // 歌词一改就重新预览（停顿片刻再跑），不另设「生成」按钮；`seq` 丢掉过时的结果
+  let pending: SingPreview | null = null;
+  let seq = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = (delay = 400) => {
+    clearTimeout(timer);
     pending = null;
+    apply.disabled = true;
+    const my = ++seq;
+    if (!area.value.trim()) {
+      result.replaceChildren();
+      return;
+    }
+    timer = setTimeout(() => void preview(my), delay);
+  };
+  area.oninput = () => schedule();
+  const preview = async (my: number) => {
     result.textContent = t("sing.busy");
     try {
       const r = await app.previewSingFromLyrics(area.value);
+      if (my !== seq) return;
       result.replaceChildren();
       const line = (text: string, cls = "") => {
         const d = document.createElement("div");
@@ -340,14 +351,14 @@ export function showSingDialog(app: App): void {
       pending = r.report.sing ? r : null;
       apply.disabled = pending?.apply == null;
     } catch (e) {
+      if (my !== seq) return;
       console.error("sing from lyrics failed", e);
       result.textContent = t("sing.failed");
-    } finally {
-      gen.disabled = false;
     }
   };
   apply.onclick = () => {
     if (!pending?.apply) return;
+    clearTimeout(timer);
     pending.apply();
     app.setStatus(t(pending.inSource ? "sing.applied" : "sing.appliedModel"));
     close();
