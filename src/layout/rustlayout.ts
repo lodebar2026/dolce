@@ -11,7 +11,7 @@ import { dolce } from "../common/dolce";
 import type { DolceLayoutWasm, WasmMeasure } from "../common/dolcewasm";
 import { asBuffer, tauriCore, type TauriCore } from "../common/tauricore";
 import { bindWasmMeasure, type MeasureBackend } from "../common/measure";
-import type { ElementId, ScoreDoc } from "../model/doc";
+import type { ElementId, ScoreDoc, SingPass } from "../model/doc";
 import { docJson } from "../model/rustdoc";
 import type { StyleSheet } from "../style/sheet";
 import type { PlayItem } from "../score/playtypes";
@@ -241,6 +241,8 @@ export interface LaidInfo {
 export interface SingFitReport {
   /** 段落标记：段名、插在哪个和弦前（整套换掉谱里原有的） */
   marks: { name: string; before: ElementId }[];
+  /** 逐遍演唱顺序（模型形状，同 `Song.singOrder`） */
+  order: SingPass[];
   /** `%%sing` 原文（一遍一行）；对不上时为空串 */
   sing: string;
   notes: SingFitNote[];

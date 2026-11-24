@@ -32,6 +32,8 @@ export interface MixedHost {
   mixedSourceXml(): string;
   /** 投成 MusicXML 的那份源模型（`.Repeat`、`P:` 写不进 MusicXML，从它搬） */
   mixedSourceDoc(): ScoreDoc | null;
+  /** 读出的模型补上挂在模型上的演唱顺序（`singoverlay.ts`；`.musicxml` 在五线谱档直接读原文，不经源模型搬） */
+  withSing(doc: ScoreDoc): ScoreDoc;
 }
 
 export class MixedSession {
@@ -130,7 +132,7 @@ export class MixedSession {
     xml = normalizeEol(xml);
     this._mixedDerivedText = null;
     try {
-      this.mixedDoc = musicXmlFormat.toScoreDoc(xml);
+      this.mixedDoc = this.host.withSing(musicXmlFormat.toScoreDoc(xml));
       this._mixedXmlText = xml;
       this._indexMixedSrcIds(this.mixedDoc); // 小节线按小节认（`_mixedMeasureOf`）
       return true;

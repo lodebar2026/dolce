@@ -9,6 +9,7 @@ import { CONVERT_TARGETS } from "../convert/targets";
 import { getLangPref, setLangPref, t, type LangPref, type MsgKey } from "../i18n";
 import { targetLabel } from "../i18n/labels";
 import type { SingFitNote } from "../layout/rustlayout";
+import type { SingPreview } from "./app";
 
 /** 模态框的底座：遮罩 + 盒（标题 / 内容 / 页脚）、Esc 与点遮罩关闭。按钮与内容由调用方给。
  *  `close` 可重复调用，`onClose` 只回一次（不论是按钮、Esc 还是点遮罩关的）。 */
@@ -246,15 +247,13 @@ function singNoteText(n: SingFitNote): string {
 /** 按歌词生成演唱顺序：粘贴 / 读文件 → 生成预览（`%%sing` 与差异）→ 写入（改 123 原文，一次可撤销）。 */
 export function showSingDialog(app: App): void {
   const body = document.createElement("div");
-  body.className = "settings-form";
-  body.style.cssText = "display:flex;flex-direction:column;gap:8px;min-width:min(560px,80vw)";
+  body.className = "settings-form sing-form";
   const hint = document.createElement("div");
-  hint.style.cssText = "opacity:0.75;font-size:12px;line-height:1.6";
+  hint.className = "modal-hint sing-hint";
   hint.textContent = t("sing.hint");
   const area = document.createElement("textarea");
   area.rows = 12;
   area.placeholder = t("sing.placeholder");
-  area.style.cssText = "width:100%;box-sizing:border-box;font:inherit;resize:vertical";
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = ".txt,.lrc,text/plain";
@@ -262,7 +261,6 @@ export function showSingDialog(app: App): void {
   const fileBtn = document.createElement("button");
   fileBtn.type = "button";
   fileBtn.textContent = t("sing.file");
-  fileBtn.style.alignSelf = "flex-start";
   const loadFile = async (f: File | undefined) => {
     if (f) area.value = decodeLyricsFile(new Uint8Array(await f.arrayBuffer()));
   };
@@ -276,7 +274,7 @@ export function showSingDialog(app: App): void {
     void loadFile(f);
   });
   const result = document.createElement("div");
-  result.style.cssText = "display:flex;flex-direction:column;gap:6px;font-size:13px";
+  result.className = "sing-result";
   body.append(hint, area, fileBtn, fileInput, result);
 
   const gen = document.createElement("button");
@@ -291,26 +289,26 @@ export function showSingDialog(app: App): void {
   apply.className = "modal-button-primary";
   apply.textContent = t("sing.apply");
   apply.disabled = true;
-  const { close } = openModal({ title: t("sing.title"), boxClass: "settings-box", body: [body], footer: [gen, cancel, apply] });
+  const { close } = openModal({ title: t("sing.title"), boxClass: "settings-box sing-box", body: [body], footer: [gen, cancel, apply] });
   cancel.onclick = close;
 
-  let next: string | null = null;
+  let pending: SingPreview | null = null;
   area.oninput = () => {
-    next = null;
+    pending = null;
     apply.disabled = true;
   };
   gen.onclick = async () => {
     gen.disabled = true;
     apply.disabled = true;
-    next = null;
+    pending = null;
     result.textContent = t("sing.busy");
     try {
       const r = await app.previewSingFromLyrics(area.value);
       result.replaceChildren();
-      const line = (text: string, css = "") => {
+      const line = (text: string, cls = "") => {
         const d = document.createElement("div");
         d.textContent = text;
-        d.style.cssText = css;
+        d.className = cls;
         result.append(d);
         return d;
       };
@@ -323,12 +321,10 @@ export function showSingDialog(app: App): void {
       if (r.report.sing) {
         const pre = document.createElement("pre");
         pre.textContent = r.report.sing;
-        pre.style.cssText = "margin:0;padding:6px 8px;background:rgba(127,127,127,0.12);border-radius:4px;white-space:pre-wrap";
         result.append(pre);
       }
       if (r.report.notes.length) {
         const ul = document.createElement("ul");
-        ul.style.cssText = "margin:0;padding-left:18px;max-height:9em;overflow:auto";
         for (const n of r.report.notes) {
           const li = document.createElement("li");
           li.textContent = singNoteText(n);
@@ -336,10 +332,13 @@ export function showSingDialog(app: App): void {
         }
         result.append(ul);
       }
-      if (r.report.sing && r.text === null) line(t("sing.unplaced"), "color:#c0392b");
-      else if (r.report.sing && r.replaces) line(t("sing.replaces"), "opacity:0.75");
-      next = r.report.sing ? r.text : null;
-      apply.disabled = next === null;
+      if (r.report.sing && r.apply === null) line(t("sing.unplaced"), "sing-error");
+      else if (r.report.sing) {
+        if (!r.inSource) line(t("sing.modelOnly"), "modal-hint");
+        if (r.replaces) line(t("sing.replaces"), "modal-hint");
+      }
+      pending = r.report.sing ? r : null;
+      apply.disabled = pending?.apply == null;
     } catch (e) {
       console.error("sing from lyrics failed", e);
       result.textContent = t("sing.failed");
@@ -348,9 +347,9 @@ export function showSingDialog(app: App): void {
     }
   };
   apply.onclick = () => {
-    if (next === null) return;
-    app.setText(next);
-    app.setStatus(t("sing.applied"));
+    if (!pending?.apply) return;
+    pending.apply();
+    app.setStatus(t(pending.inSource ? "sing.applied" : "sing.appliedModel"));
     close();
   };
   area.focus();

@@ -167,6 +167,8 @@ export interface FileSwitchHost {
   readonly filePath: string | null;
   /** 按当前格式解析当前文本（App 那边有缓存）；读不出返回 null */
   scoreDoc(): ScoreDoc | null;
+  /** 补上挂在模型上的演唱顺序（非 123 按歌词生成的，`singoverlay.ts`）：转格式时从真身模型写出，要带上它 */
+  withSing(doc: ScoreDoc): ScoreDoc;
   /** 换成某种源格式的文本：切格式、设文件路径、设文本 */
   adoptText(format: DocFormatId, text: string, filePath: string | null): void;
   setStatus(text: string): void;
@@ -287,7 +289,7 @@ export class DocFormatSource implements FormatSource {
       this.host.setStatus(t(this.truth === this.origin ? "fs.backToOrigin" : "fs.backTo", { format: originName(target) }));
       return true;
     }
-    const doc = this.truth.doc!;
+    const doc = this.host.withSing(this.truth.doc!);
     let losses = planSave(doc, target);
     if (losses.length) {
       const pick = await this.confirmLosses(doc, target, losses);

@@ -1037,6 +1037,17 @@ button:focus-visible, select:focus-visible {
 }
 .settings-box .modal-title { margin-bottom: 20px; }
 .settings-form { display: flex; flex-direction: column; gap: 12px; }
+/* 按歌词生成演唱顺序（dialogs.ts::showSingDialog）：比设置框宽些，歌词框、预览都随框宽 */
+.sing-box { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box; }
+.sing-form { gap: 8px; }
+.sing-form > * { min-width: 0; }
+.sing-hint { font-size: 12px; line-height: 1.6; }
+.sing-form textarea { width: 100%; box-sizing: border-box; font: inherit; resize: vertical; }
+.sing-form > button { align-self: flex-start; }
+.sing-result { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.sing-result pre { margin: 0; padding: 6px 8px; background: rgba(127,127,127,0.12); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sing-result ul { margin: 0; padding-left: 18px; max-height: 9em; overflow: auto; }
+.sing-error { color: #e74c3c; }
 .settings-tabs { display: flex; gap: 4px; margin: -8px 0 16px; border-bottom: 1px solid var(--border); }
 .settings-tabs button {
   padding: 6px 12px;

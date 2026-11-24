@@ -39,6 +39,18 @@ import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from
 import { t } from "../i18n";
 import { singFromLyrics, type SingFitReport } from "../layout/rustlayout";
 import { applySingFit, songAtOffset } from "./singapply";
+import { applyOverlay, overlayOf, type SingOverlay } from "./singoverlay";
+
+/** 按歌词生成演唱顺序的预览（`App.previewSingFromLyrics`）。 */
+export interface SingPreview {
+  report: SingFitReport;
+  /** 写入；生成不出或原文定不了位为 null */
+  apply: (() => void) | null;
+  /** 这一首原来有段落 / 演唱顺序（写入会换掉） */
+  replaces: boolean;
+  /** 写进原文（123）还是挂在模型上 */
+  inSource: boolean;
+}
 import { diagText, targetLabel } from "../i18n/labels";
 import { msgText } from "../model/msg";
 import { buildMusicXml, sourceMusicXmlBare } from "./export";
@@ -123,6 +135,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   mixedSourceDoc(): ScoreDoc | null {
     return this.docFormat === "jpwabc" ? this.jpwDoc : this.currentScoreDoc();
   }
+  /** 非 123 按歌词生成的演唱顺序（挂在模型上，见 `withSing`）；换文档时清掉 */
+  private _singOverlay: SingOverlay | null = null;
   /** 在途的排版（简谱、五线谱 / 混排都是异步排、排完铺页），`whenIdle` 等它。只记最近一份，旧的已被排版器的版本号作废。 */
   private _pendingLayout: Promise<unknown> | null = null;
   /** 排版模式切换（投影 / 简谱 / 五线谱 / 混排）的四个按钮，见 `ViewMode`。 */
@@ -453,7 +467,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _refreshJpwDoc(text: string): void {
     try {
       const f = JpwFile.fromString(text);
-      this._jpwDoc = f ? jpwToScoreDoc(f) : null;
+      this._jpwDoc = f ? this.withSing(jpwToScoreDoc(f)) : null;
     } catch {
       this._jpwDoc = null;
     }
@@ -511,7 +525,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (!f) return Promise.resolve(false);
     let doc: ScoreDoc;
     try {
-      doc = jpwToScoreDoc(f);
+      doc = this.withSing(jpwToScoreDoc(f));
     } catch (e) {
       console.error("import failed", e);
       this._jpwDoc = null;
@@ -552,7 +566,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     spec.before?.(this, text);
     let doc: ScoreDoc;
     try {
-      doc = adapter.toScoreDoc(text);
+      doc = this.withSing(adapter.toScoreDoc(text));
     } catch (e) {
       console.error(`${what} 解析失败`, e);
       const error = e instanceof Error ? e.message : String(e);
@@ -814,7 +828,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const text = this.getText();
     if (this._scoreDoc?.text === text) return this._scoreDoc.doc;
     try {
-      const doc = toScoreDoc(text);
+      const doc = this.withSing(toScoreDoc(text));
       this._scoreDoc = { text, doc };
       return doc;
     } catch {
@@ -854,6 +868,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _setDocFormat(format: DocFormatId): void {
     if (this.docFormat === format) return;
     this.docFormat = format;
+    // 换成 123 时挂着的演唱顺序已随转换写进原文；换成别的格式按元素位置照样对得上，留着
+    if (format === "123") this._singOverlay = null;
     this.view.dispatch({
       effects: this._highlightCompartment.reconfigure(this.adapter.highlighter),
     });
@@ -1111,6 +1127,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 换了一份文档（打开、导入、识别落地、转格式）：弱起重新认、简谱旋律回到第一声部、静音独奏作废。 */
   private _documentLoaded(): void {
+    this._singOverlay = null;
     this.visual.documentLoaded();
     this.melodyPart = 0;
     this.lyricPart = null;
@@ -1638,19 +1655,51 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /**
    * 按参照歌词生成段落标记与逐遍演唱顺序（只 123：`[P:x]` + `%%sing`，`singapply.ts`）。生成在 Rust（`layout/rustlayout.ts::singFromLyrics`），
-   * 分遍按当前投影档样式试排。回报告、写回后的原文（定不了位为 null，生成失败时也为 null）与这一首原来有没有段落 / 演唱顺序；
-   * 不是 123、读不了原文时为 null。只预览，写回由调用方 `setText`（一次改动，可撤销）。
+   * 分遍按当前投影档样式试排。123 写进原文（`singapply.ts`，一次改动可撤销，光标所在那一首）；别的格式写不下 `%%sing`，
+   * 挂在模型上（`singoverlay.ts`，第一首；投影、试听、导出照它，存原格式走丢失提示，用户定 2026-11-24）。
+   * 回报告、写入动作（生成失败或定不了位为 null）与这一首原来有没有段落 / 演唱顺序；读不了原文时为 null。
    */
-  async previewSingFromLyrics(lyrics: string): Promise<{ report: SingFitReport; text: string | null; replaces: boolean } | null> {
-    if (this.docFormat !== "123" || this.mode === "recognize" || !this.adapter.toScoreDoc) return null;
+  async previewSingFromLyrics(lyrics: string): Promise<SingPreview | null> {
+    if (this.mode === "recognize") return null;
+    const parse = this._hanParser();
     const text = this.getText();
-    const doc = this._tryParse(this.adapter.toScoreDoc.bind(this.adapter), text);
+    // 拿原文新读一份（不带挂着的演唱顺序：重新生成就是要换掉它）
+    const doc = parse ? this._tryParse(parse, text) : null;
     if (!doc || doc.songs.length === 0) return null;
-    const song = songAtOffset(text, doc, this.view.state.selection.main.head);
+    const inSource = this.docFormat === "123";
+    const song = inSource ? songAtOffset(text, doc, this.view.state.selection.main.head) : 0;
     const report = await singFromLyrics(doc, song, lyrics, this.style.styleOf("expanded"));
     const s = doc.songs[song];
-    const replaces = !!(s?.singOrder?.length || s?.sectionMarks?.length || s?.sectionOrder);
-    return { report, text: applySingFit(text, doc, song, report), replaces };
+    const replaces = !!(s?.singOrder?.length || s?.sectionMarks?.length || s?.sectionOrder || (!inSource && this._singOverlay));
+    if (!report.sing) return { report, apply: null, replaces, inSource };
+    if (inSource) {
+      const next = applySingFit(text, doc, song, report);
+      return { report, apply: next === null ? null : () => this.setText(next), replaces, inSource };
+    }
+    const ov = overlayOf(doc, song, report);
+    return {
+      report,
+      apply: ov === null ? null : () => {
+        this._singOverlay = ov;
+        // 读出的模型都要重读一遍才带上它：源模型的缓存、五线谱档派生 / 读入的那份
+        this._scoreDoc = null;
+        this.mixed._mixedDerivedText = null;
+        this.mixed._mixedXmlText = null;
+        void this.reload(this.getText());
+      },
+      replaces,
+      inSource,
+    };
+  }
+
+  /** 挂在模型上的演唱顺序（非 123 按歌词生成的，`singoverlay.ts`）补进刚读出的模型；改了原文对不上了就作废。 */
+  withSing(doc: ScoreDoc): ScoreDoc {
+    const ov = this._singOverlay;
+    if (ov && !applyOverlay(doc, ov)) {
+      this._singOverlay = null;
+      this.setStatus(t("sing.overlayLost"));
+    }
+    return doc;
   }
 
   /** 注册工具栏「简繁」按钮，供转换期间切换加载中状态。 */
@@ -2037,7 +2086,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     try {
       if (this.adapter.caps.layout === "scoredoc") return this.currentScoreDoc();
       const f = JpwFile.fromString(text);
-      return f ? jpwToScoreDoc(f) : null;
+      return f ? this.withSing(jpwToScoreDoc(f)) : null;
     } catch {
       return null;
     }

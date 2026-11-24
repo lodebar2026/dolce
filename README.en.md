@@ -106,7 +106,7 @@ The interface is available in **English and Chinese**: it follows your browser l
 
 **Typesetting**
 - **Four views:**
-  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%sing` order can pin down, pass by pass and line by line, which sections appear and with which verse; pasting the lyrics written out in singing order generates the section marks and `%%sing` automatically.
+  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%sing` order can pin down, pass by pass and line by line, which sections appear and with which verse; pasting the lyrics written out in singing order generates the sections and sing order automatically, in any format (written into the source for 123).
   - *Jianpu*: laid out as printed, with verses stacked under the notes, for print.
   - *Staff*: Western staff notation.
   - *Mixed*: staff notation with a jianpu layer on top.
