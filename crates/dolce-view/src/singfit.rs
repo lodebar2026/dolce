@@ -102,6 +102,9 @@ pub struct SingFit {
     /// 参照字数、对上的字数
     pub ref_chars: usize,
     pub matched: usize,
+    /// 照参照唱法走过的音（按先后，同一音唱几遍记几遍）与这一遍配的词号（0 = 这一遍没词）；参照歌词互证按它展开识别结果
+    #[serde(skip)]
+    pub walk: Vec<(ElementId, u32)>,
 }
 
 impl SingFit {
@@ -695,7 +698,7 @@ struct Visit {
 
 /// 生成。`rows_of`：试排一份演唱顺序、回这一首每遍占几行（投影档；拿不到排版时给 None，按角色分遍）。
 pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn Fn(&ScoreDoc) -> Option<Vec<usize>>) -> SingFit {
-    let no_match = |ref_chars: usize| SingFit { marks: vec![], order: vec![], notes: vec![FitNote::new(FitKind::NoMatch)], ref_chars, matched: 0 };
+    let no_match = |ref_chars: usize| SingFit { marks: vec![], order: vec![], notes: vec![FitNote::new(FitKind::NoMatch)], ref_chars, matched: 0, walk: vec![] };
     let lines = ref_lines(ref_text);
     let mut refs: Vec<RefTok> = vec![];
     for (li, l) in lines.iter().enumerate() {
@@ -832,6 +835,7 @@ pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn F
 
     // ── 按参照段界切开
     let visits = split_at_paragraphs(&sc, &refs, visits);
+    let walk: Vec<(ElementId, u32)> = visits.iter().flat_map(|v| (v.s..v.e).filter_map(|g| sc.slots[g].id.map(|id| (id, v.line)))).collect();
 
     // ── 所有切点 → 谱面上的小段（piece），路 = 小段 × 词号
     let mut bounds: Vec<usize> = sc.atoms.iter().flat_map(|a| [a.s, a.e]).chain(visits.iter().flat_map(|v| [v.s, v.e])).collect();
@@ -897,6 +901,9 @@ pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn F
         line: u32,
         first: Option<usize>,
         last: Option<usize>,
+        /// 首尾两块的下标
+        p0: usize,
+        p1: usize,
     }
     let mut items: Vec<Item> = vec![];
     for (w, st) in path.iter().enumerate() {
@@ -909,18 +916,25 @@ pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn F
                 }
                 it.first = it.first.or(st.first);
                 it.last = st.last.or(it.last);
+                it.p1 = st.piece;
             }
-            _ => items.push(Item { sec: s, line: st.line, first: st.first, last: st.last }),
+            _ => items.push(Item { sec: s, line: st.line, first: st.first, last: st.last, p0: st.piece, p1: st.piece }),
         }
     }
 
-    // ── 分组：项的交界正是参照段界的地方另起一组（组内接着唱、组间 `/` 换行）；没词的项随后面那组
+    // ── 分组：项的交界正是参照段界的地方另起一组（组内接着唱、组间 `/` 换行）；没词的项随后面那组（前奏、间奏），
+    // 但唱完它就跳走（D.S. / D.C.）的是前面那段的尾巴（末小节的长音），随前面那组
     let mut groups: Vec<Vec<usize>> = vec![];
     let mut pending: Vec<usize> = vec![];
     let mut cur_last: Option<usize> = None;
     for (i, it) in items.iter().enumerate() {
         if it.first.is_none() {
-            pending.push(i);
+            let tail = pending.is_empty() && !groups.is_empty() && i > 0 && items[i - 1].p1 + 1 == it.p0 && items.get(i + 1).is_some_and(|nx| nx.p0 != it.p1 + 1);
+            if tail {
+                groups.last_mut().unwrap().push(i);
+            } else {
+                pending.push(i);
+            }
             continue;
         }
         let new_group = groups.is_empty() || cur_last.is_some_and(|l| Some(l) != it.first);
@@ -1075,7 +1089,7 @@ pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn F
     let rows: Option<Vec<usize>> = trial(sing_groups.iter().map(|g| SingPass { items: g.clone(), rows: Some(99.0) }).collect()).filter(|r| r.len() == sing_groups.len());
     let order = paginate(&sing_groups, &roles.iter().map(|r| *r == Role::C).collect::<Vec<_>>(), rows.as_deref(), DEFAULT_ROWS);
 
-    SingFit { marks, order, notes, ref_chars: refs.len(), matched }
+    SingFit { marks, order, notes, ref_chars: refs.len(), matched, walk }
 }
 
 /// 两项的词号能否接成一段（无词的随旁边）

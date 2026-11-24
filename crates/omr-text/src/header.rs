@@ -8,6 +8,8 @@ static CREDIT_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[作�
 static CREDIT_SUFFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*([一-鿿·]{2,4}?(?:\s*[、，,]\s*[一-鿿·]{2,4}?)*)\s*((?:[作編编]?[詞词曲])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲]))*)\s*$").unwrap());
 static ROLE_TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"((?:[作編编]?[詞词曲])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲]))*)\s*$").unwrap());
+/// 名单后的职能词（含「译」）
+static NAMES_ROLE_TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*(?:合译|[作編编]?[詞词曲譯译])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲譯译]))*\s*$").unwrap());
 static LATIN_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9 .,'’&·()（）\-]*$").unwrap());
 static CREDIT_YEAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[一-鿿·]{2,10}?\s*(?:合译|[作編编]?[詞词曲譯译])\s*\d{4}(?:\s*[-–—]\s*\d{4})?\s*$").unwrap());
 static LATIN_PAREN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*[(（][A-Za-z][A-Za-z .'’\-]*[)）]\s*$").unwrap());
@@ -117,6 +119,17 @@ pub fn is_credit(text: &str, smaller: bool) -> bool {
                 return true;
             }
         }
+        // 几个人名用「&」「、」连起来、中英混排，后跟职能词（`Evelyn Kong & Nelson Ng & 赵治德 译`）
+        if let Some(m) = NAMES_ROLE_TAIL.find(t) {
+            let names: Vec<&str> = t[..m.start()].split(['&', '＆', '、']).map(str::trim).collect();
+            let name_like = |n: &str| {
+                let hz = n.chars().filter(|&c| is_han(c)).count();
+                (hz == 0 && LATIN_NAME.is_match(n) && n.chars().filter(|c| c.is_ascii_alphabetic()).count() >= 2) || ((2..=4).contains(&hz) && n.chars().all(|c| is_han(c) || c == '·'))
+            };
+            if names.len() >= 2 && names.iter().all(|n| name_like(n)) {
+                return true;
+            }
+        }
     }
     LATIN_CREDIT.is_match(t)
 }
@@ -152,7 +165,10 @@ pub fn split_text(t: &str) -> Vec<String> {
 
 /// 页眉带读出来的行 → 页眉各条。`band`：页眉带的左缘与宽（定居中用）。
 pub fn credits(lines: &[WordLine], band_x: f64, band_w: f64) -> Vec<Credit> {
-    let mut ls: Vec<&WordLine> = lines.iter().filter(|l| keep_line(&l.text)).collect();
+    // 接续行合成的一条：判字号照单行的高，源框（`rect`）罩住两行
+    let joined = join_continued(lines.iter().filter(|l| keep_line(&l.text)).cloned().collect());
+    let bottom_of = |l: &WordLine| joined.iter().find(|(j, _)| std::ptr::eq(j, l)).map_or(l.y + l.h, |j| j.1);
+    let mut ls: Vec<&WordLine> = joined.iter().map(|j| &j.0).collect();
     ls.sort_by(|a, b| a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)));
     if ls.is_empty() {
         return Vec::new();
@@ -199,10 +215,48 @@ pub fn credits(lines: &[WordLine], band_x: f64, band_w: f64) -> Vec<Credit> {
             })
         };
         for text in split_text(&l.text) {
-            out.push(Credit { text, kind, justify: j, rect: (l.x, l.y, l.w, l.h), size: effective_h(l) });
+            out.push(Credit { text, kind, justify: j, rect: (l.x, l.y, l.w, bottom_of(l) - l.y), size: effective_h(l) });
         }
     }
     out
+}
+
+/// 以「&」收尾的行（`Reuben Morgan &`）没写完（逗号收尾的不算：`REGINALD HEBER,` 下一行是生卒年，另成一条）：接上紧挨在它下面、横向与它交叠的那一行（`Jonas Myrin 词曲`）。
+/// 回各行与其底边（合成的一条底边是下一行的底，行高仍是单行的）。
+fn join_continued(ls: Vec<WordLine>) -> Vec<(WordLine, f64)> {
+    let mut ls: Vec<(WordLine, f64)> = ls.into_iter().map(|l| {
+        let b = l.y + l.h;
+        (l, b)
+    }).collect();
+    ls.sort_by(|a, b| a.0.y.total_cmp(&b.0.y).then(a.0.x.total_cmp(&b.0.x)));
+    let mut i = 0;
+    while i < ls.len() {
+        let t = ls[i].0.text.trim_end().to_string();
+        let Some(conn) = t.chars().last().filter(|c| "&＆".contains(*c)) else {
+            i += 1;
+            continue;
+        };
+        let (a, a_bot) = (&ls[i].0, ls[i].1);
+        let next = (0..ls.len()).filter(|&k| k != i).find(|&k| {
+            let b = &ls[k].0;
+            let gap = b.y - a_bot;
+            gap >= -a.h * 0.3 && gap <= a.h.min(b.h) * 0.8 && b.x < a.x + a.w && b.x + b.w > a.x
+        });
+        let Some(k) = next else {
+            i += 1;
+            continue;
+        };
+        let (b, b_bot) = ls.remove(k);
+        let (a, a_bot) = &mut ls[if k < i { i - 1 } else { i }];
+        *a_bot = a_bot.max(b_bot);
+        let head = t[..t.len() - conn.len_utf8()].trim_end();
+        a.text = format!("{head} {conn} {}", b.text.trim_start());
+        // 合成一行：框取两行的横向并，行高照字高大的那行（字号判据看它）
+        let (x0, x1) = (a.x.min(b.x), (a.x + a.w).max(b.x + b.w));
+        (a.x, a.w, a.h) = (x0, x1 - x0, a.h.max(b.h));
+        i = 0;
+    }
+    ls
 }
 
 /// 版权声明（`Copyright`、`©`、`版權所有` 起头）。
@@ -238,12 +292,26 @@ mod tests {
     }
 
     #[test]
+    fn joins_line_ending_with_connector() {
+        let ls = [
+            wl("基督是我满足", 400.0, 40.0, 200.0, 40.0),
+            wl("Reuben Morgan&", 700.0, 100.0, 170.0, 22.0),
+            wl("Jonas Myrin 词曲", 710.0, 128.0, 160.0, 22.0),
+        ];
+        let c = credits(&ls, 0.0, 900.0);
+        assert!(c.iter().any(|c| c.text == "Reuben Morgan & Jonas Myrin 词曲" && c.kind == Some(CreditType::Composer)), "{c:?}");
+        assert_eq!(c.len(), 2);
+    }
+
+    #[test]
     fn credit_text_and_split() {
         assert!(is_credit("作词：某某", false));
         assert!(is_credit("盛晓玫 词曲", true) && !is_credit("盛晓玫 词曲", false));
         assert!(is_credit("John Laudon 词曲", true));
         assert!(is_credit("希伯词 1826", true));
         assert!(is_credit("Words by X", false));
+        assert!(is_credit("Evelyn Kong&Nelson Ng&Debbie Wang&Zon Shih&赵治德译", true));
+        assert!(!is_credit("约书亚乐团《点燃》（2015）/Hillsong(2013)", true));
         assert_eq!(split_text("望 十 架"), ["望十架"]);
         assert_eq!(split_text("23.有一位神"), ["有一位神"]);
         assert_eq!(split_text("數算主恩 Count Your Blessings"), ["數算主恩", "Count Your Blessings"]);

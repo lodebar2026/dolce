@@ -18,6 +18,8 @@ pub use dolce_view::reflyrics::decode_lyrics_bytes;
 use dolce_view::reflyrics::{is_hanzi, ref_lines};
 use dolce_view::playsong::{play_data_of_song, song_measures, PlaySongOptions};
 use dolce_view::slots::doc_view;
+use dolce_view::singfit::fit_sing;
+use dolce_model::{Element, Lyric};
 use serde::Serialize;
 
 use crate::jianpu::recognized_to_doc;
@@ -145,7 +147,7 @@ pub struct UnmatchedRef {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LyricCheck {
-    /// 按哪种顺序对上的：`expanded` 演唱顺序展开（反复写全）/ `printed` 谱面印的顺序
+    /// 按哪种顺序对上的：`expanded` 演唱顺序展开（反复写全）/ `sung` 照参照的唱法走（同生成演唱顺序）/ `printed` 谱面印的顺序
     pub order: &'static str,
     pub ref_chars: usize,
     pub ocr_chars: usize,
@@ -355,6 +357,40 @@ fn expanded_items(score: &RecognizedScore, held: &[Vec<bool>]) -> Option<Vec<Ite
             }
             b.push(n, verse, lyric_of(nm, verse), ch.rest);
         }
+    }
+    Some(b.out)
+}
+
+/// 照参照的唱法展开：参照的段序与谱面反复对不上时（桥段谱面 AABB、实际 ABAB，D.S. 套着反复推不全），
+/// 用生成演唱顺序那条路（`dolce-view::singfit`）走过的音与每遍配的词号。走不出来返回 None
+fn sung_items(score: &RecognizedScore, held: &[Vec<bool>], ref_text: &str) -> Option<Vec<Item>> {
+    let built = recognized_to_doc(score);
+    let flat: Vec<NoteAt> = score.rows.iter().enumerate().flat_map(|(ri, r)| (0..r.nums.len()).map(move |ni| (ri, ni))).collect();
+    let num_of: HashMap<u32, NoteAt> = built.num_of.iter().filter_map(|&(id, i)| Some((id, *flat.get(i)?))).collect();
+    let fit = fit_sing(&built.doc, 0, ref_text, &|_| None);
+    if fit.walk.is_empty() {
+        return None;
+    }
+    let mut chords: HashMap<u32, (&[Lyric], bool)> = HashMap::new();
+    for part in &built.doc.songs.first()?.parts {
+        for m in &part.measures {
+            for el in &m.elements {
+                if let Element::Chord(c) = el {
+                    chords.insert(c.id, (c.lyrics.as_deref().unwrap_or(&[]), c.rest.is_some()));
+                }
+            }
+        }
+    }
+    let mut b = Builder { score, held, out: vec![] };
+    for &(id, line) in &fit.walk {
+        let (Some(&n), Some(&(ls, rest))) = (num_of.get(&id), chords.get(&id)) else { continue };
+        let nm = num(score, n);
+        let l = ls.iter().find(|x| x.number == line as f64);
+        let verse = match l {
+            Some(l) => nm.lyrics.iter().position(|t| *t == l.text).map_or((l.number - 1.0) as i64, |i| i as i64),
+            None => line.max(1) as i64 - 1,
+        };
+        b.push(n, verse, if line == 0 { None } else { lyric_of(nm, verse) }, rest);
     }
     Some(b.out)
 }
@@ -677,6 +713,7 @@ pub fn apply_ref_lyrics(score: &mut RecognizedScore, ref_text: &str) -> LyricChe
 
     let printed = printed_items(score, &held);
     let expanded = expanded_items(score, &held);
+    let sung = sung_items(score, &held, ref_text);
     let p_al = align(&printed, &rf);
     let e_al = expanded.as_ref().map(|e| align(e, &rf));
     let p_m = matched_of(&printed, &rf, &p_al);
@@ -689,9 +726,20 @@ pub fn apply_ref_lyrics(score: &mut RecognizedScore, ref_text: &str) -> LyricChe
     let f1 = |mt: f64, xs: &[Item]| 2.0 * mt / (hz(xs) + rf.len()).max(1) as f64;
     let p_f = f1(p_m as f64, &printed);
     let e_f = expanded.as_ref().map_or(-1.0, |e| f1(e_m as f64, e));
+    // 照参照唱法走的那条比谱面默认的演唱顺序对得好，就用它（参照的段序与谱面反复对不上：以参照为准）
+    let s_al = sung.as_ref().map(|e| align(e, &rf));
+    let s_m = match (&sung, &s_al) {
+        (Some(e), Some(al)) => matched_of(e, &rf, al) as i64,
+        _ => -1,
+    };
+    let s_f = sung.as_ref().map_or(-1.0, |e| f1(s_m as f64, e));
+    let (expanded, e_al, e_m, e_f, e_order) = match (sung, s_al) {
+        (Some(s), Some(al)) if s_f > e_f + 0.05 => (Some(s), Some(al), s_m, s_f, "sung"),
+        _ => (expanded, e_al, e_m, e_f, "expanded"),
+    };
     // 按演唱顺序展开是正路；展开后反而明显对得更差 → 反复 / 房号 / 跳转多半认错，退回谱面顺序并报出来
     let (order, a, pairs, matched) = match (expanded, e_al) {
-        (Some(e), Some(al)) if p_f <= e_f + 0.1 => ("expanded", e, al, e_m as usize),
+        (Some(e), Some(al)) if p_f <= e_f + 0.1 => (e_order, e, al, e_m as usize),
         (e, _) => {
             if let Some(e) = &e {
                 items.push(LyricCheckItem::new(CheckKind::RepeatSuspect).detail(format!(

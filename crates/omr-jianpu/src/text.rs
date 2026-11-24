@@ -285,12 +285,28 @@ fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, xr: (i
         }
         let k = (hh / one).round() as usize;
         if hh > one * 1.7 && k >= 2 {
-            // 挤在一起的几行：在各等分点附近投影最小处切
+            // 挤在一起的几行：在各等分点附近切，切线尽量不穿过字——穿过的块按切下较小那头的墨计，取最少的，一样少再看投影
+            // （本截里小字注记与歌词错开半行并排时，投影没有谷，按投影切会把一排字切成上下两半各读一行）
+            let comps: Vec<(f64, f64, f64)> = ink
+                .comps()
+                .iter()
+                .filter(|c| c.rect.right() > xa as f64 && c.rect.x < xb as f64)
+                .map(|c| {
+                    let off = slope * (c.cx - (w / 2) as f64) + ya as f64;
+                    (c.rect.y - off, c.rect.bottom() - off, c.area)
+                })
+                .filter(|&(t, bt, _)| bt > a as f64 && t < (b + 1) as f64)
+                .collect();
+            let cost = |y: usize| -> f64 {
+                let y = y as f64 + 0.5;
+                comps.iter().filter(|&&(t, bt, _)| t < y && bt > y).map(|&(t, bt, ar)| ar * (y - t).min(bt - y) / (bt - t)).sum()
+            };
             let mut from = a;
             for j in 1..k {
                 let t = a + (b - a) * j / k;
-                let r = (one * 0.3) as usize;
-                let cut = (t.saturating_sub(r)..=(t + r).min(b)).min_by_key(|&y| proj[y]).unwrap_or(t);
+                let r = (one * 0.5) as usize;
+                let lo = t.saturating_sub(r).max(from + (one * 0.5) as usize);
+                let cut = (lo..=(t + r).min(b)).min_by(|&p, &q| cost(p).total_cmp(&cost(q)).then(proj[p].cmp(&proj[q]))).unwrap_or(t);
                 out.push((ya + from as i64, ya + cut as i64));
                 from = cut + 1;
             }
@@ -305,7 +321,7 @@ fn cut_lines_at(ink: &Ink, claims: &Claims, slope: f64, ya: i64, yb: i64, xr: (i
 /// 读一行：行里的墨按宽空当分段，各段从灰度图取条送 rec，字位折回页内坐标、补词间空格；段与段之间隔一个空格。
 fn read_line(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, doubts: Option<&mut LineRanks>) -> Vec<Ch> {
     let mut out: Vec<Ch> = Vec::new();
-    for seg in read_segs(ink, claims, ocr, slope, y0, y1, xa, xb, doubts) {
+    for seg in read_segs(ink, claims, ocr, slope, y0, y1, xa, xb, doubts, None) {
         if let Some(l) = out.last() {
             let x = l.x1;
             out.push(Ch { ch: ' ', x0: x, x1: x });
@@ -329,7 +345,9 @@ struct LineRanks {
 const RANK_K: usize = 10;
 
 /// 同 [`read_line`]，各段分开回。`doubts` 给了：再取逐字前几名（同一条画面，走内容缓存），把握不大的汉字的中心 x 与各汉字的候选记进去。
-fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, mut doubts: Option<&mut LineRanks>) -> Vec<Vec<Ch>> {
+/// `spill`：给了一行字高，就先剔掉别行的字露进来的列段（[`spills_in`]），剔掉的段数记进去；剔掉处断开分段。
+#[allow(clippy::too_many_arguments)]
+fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y1: i64, xa: i64, xb: i64, mut doubts: Option<&mut LineRanks>, mut spill: Option<(f64, &mut usize)>) -> Vec<Vec<Ch>> {
     let w = ink.w() as i64;
     let hh = (y1 - y0 + 1) as f64;
     let shift = |x: i64| (slope * (x - w / 2) as f64).round() as i64;
@@ -350,11 +368,20 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
     }
     // 隔着 1.6 行高以上空当的分成两段
     let mut segs: Vec<Vec<(i64, i64)>> = Vec::new();
+    let mut cut = false;
     for s in spans {
+        if let Some((one, n)) = spill.as_mut() {
+            if spills_in(ink, slope, (s.0 as f64, (s.1 + 1) as f64), (y0, y1), *one) {
+                **n += 1;
+                cut = true;
+                continue;
+            }
+        }
         match segs.last_mut() {
-            Some(g) if (s.0 - g.last().unwrap().1) as f64 <= hh * 1.6 => g.push(s),
+            Some(g) if !cut && (s.0 - g.last().unwrap().1) as f64 <= hh * 1.6 => g.push(s),
             _ => segs.push(vec![s]),
         }
+        cut = false;
     }
     let mut out: Vec<Vec<Ch>> = Vec::new();
     for g in segs {
@@ -593,7 +620,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
         for (y0, y1) in lines {
             let mut ranks = LineRanks::default();
             let mut chars: Vec<Ch> = Vec::new();
-            for mut seg in read_segs(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut ranks)) {
+            let mut foreign = 0;
+            for mut seg in read_segs(ink, &claims, ocr, row.band.slope, y0, y1, xa, xb, Some(&mut ranks), Some((one, &mut foreign))) {
                 // 跳转记号（Fine、D.S. al Fine）不是词：记下位置挂到音上，从行里拿掉
                 if let Some((word, x, keep)) = jump_in(&seg) {
                     jumps.push((i, word, x, (y0 + y1) as f64 / 2.0));
@@ -608,9 +636,14 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
                 }
                 chars.extend(seg);
             }
+            // 几行挤成一截、按等分切开时，切线会穿过字：下一行读到的是上一行字的下半截（「需在于你」读成「而任了你」）。
             let text: String = chars.iter().map(|c| c.ch).collect();
             if std::env::var("OMR_JP_DEBUG").is_ok() {
-                eprintln!("行{i} 词带 y{y0}-{y1}: {text}");
+                eprintln!("行{i} 词带 y{y0}-{y1}: {text}{}", if foreign > 0 { format!("（剔别行露进来的 {foreign} 段）") } else { String::new() });
+            }
+            // 整行只是一组圆括号里的说明（「(4个*小节第3拍和弦可挪至第2.5拍)」）：不是歌词
+            if paren_note(&text) {
+                continue;
             }
             // 下一行谱头顶上的和弦行、弧与点凑成的一截不是歌词
             let near_next = !last && (yb - y1) as f64 <= h * 1.3;
@@ -1134,7 +1167,7 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
     // 各段文字，带栏位（段左缘）与行的上下沿
     let mut segs: Vec<(f64, i64, Vec<Ch>, i64)> = Vec::new();
     for &(y0, y1) in lines {
-        for seg in read_segs(ink, claims, ocr, slope, y0, y1, 0, ink.w() as i64, None) {
+        for seg in read_segs(ink, claims, ocr, slope, y0, y1, 0, ink.w() as i64, None, None) {
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("谱后 y{y0}: {}", seg.iter().map(|c| c.ch).collect::<String>());
             }
@@ -1300,8 +1333,9 @@ static BOOK_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[一-
 static RUNNING_HEAD_NODASH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\d{1,4}\s*[一-鿿]{2,8}\s*$").unwrap());
 /// 署名末尾紧贴汉字的年份（可带「-」接卒年）。
 static CREDIT_YEAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([一-鿿])(\d{4}(?:\s*[-–—]\s*\d{4})?)\s*$").unwrap());
+static AMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*&\s*").unwrap());
 /// 署名末尾的职能词组（「词曲」「作词、作曲」「译」）：1 是前面的名字。
-static CREDIT_ROLE_TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*?[^\s：:])((?:[作編编]?[詞词曲])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲]))*)\s*$").unwrap());
+static CREDIT_ROLE_TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*?[^\s：:])((?:[作編编]?[詞词曲譯译])(?:\s*[、，,/／]?\s*(?:[作編编]?[詞词曲譯译]))*)\s*$").unwrap());
 static BRACKET_NOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[［【].*[\]］】]$").unwrap());
 static BRACKET_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([\[［])\s*").unwrap());
 static BRACKET_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*([\]］])$").unwrap());
@@ -1324,6 +1358,40 @@ fn fifths_of(letter: char, alter: i32) -> i32 {
         _ => -1,
     };
     base + alter * 7
+}
+
+/// `[x0, x1)` × 行 `[y0, y1]` 里的墨是别行的字露进来的：落在行里的墨，属于块心在行外的字身（够半行高、不过一行半高）的比块心在行里的多。
+/// 贯穿几行的竖线（连谱号、小节线）不算哪一行的字；块按外框估行内的墨。
+fn spills_in(ink: &Ink, slope: f64, (x0, x1): (f64, f64), (y0, y1): (i64, i64), one: f64) -> bool {
+    let mid = ink.w() as f64 / 2.0;
+    let (y0, y1) = (y0 as f64, y1 as f64 + 1.0);
+    let (mut own, mut foreign) = (0.0, 0.0);
+    for k in ink.comps() {
+        let off = slope * (k.cx - mid);
+        let (ka, kb) = (k.rect.y - off, k.rect.bottom() - off);
+        if k.rect.right() <= x0 || k.rect.x >= x1 || kb <= y0 || ka >= y1 || k.rect.h > one * 1.6 {
+            continue;
+        }
+        let inside = k.area * ((kb.min(y1) - ka.max(y0)) / k.rect.h).clamp(0.0, 1.0);
+        let cy = k.cy - off;
+        if cy >= y0 && cy <= y1 {
+            own += inside;
+        } else if k.rect.h >= one * 0.5 {
+            foreign += inside;
+        }
+    }
+    foreign > own
+}
+
+/// 整行是一组圆括号括着的说明，里头带数字或星号（`(4个*小节第3拍和弦可挪至第2.5拍)`）：歌词括起来的（`(哈利路亚)`）不带这些。
+fn paren_note(text: &str) -> bool {
+    let t = text.trim();
+    let (Some(a), Some(z)) = (t.chars().next(), t.chars().last()) else { return false };
+    if t.chars().count() < 3 {
+        return false;
+    }
+    let inner = &t[a.len_utf8()..t.len() - z.len_utf8()];
+    "(（".contains(a) && ")）".contains(z) && !inner.contains([')', '）', '(', '（']) && inner.chars().any(|c| c.is_ascii_digit() || c == '*')
 }
 
 /// 页眉：首行谱以上。DBNet 检出文本行，逐行读字；调号、拍号、速度、曲号按内容认，其余交 `omr-text` 分标题与署名。
@@ -1672,16 +1740,30 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         score.number = Some(n);
     }
     // 页眉区挂逐字位置：区里的字数与落在区里的那几个 det 框的字数对得上才挂（识别模式逐字对位，同 TS `TextRegion.chars`）
+    // 接续行合成的一条（署名「…&」接下一行）罩着上下两行：按行从上到下、行内从左到右排
     for r in score.header_regions.iter_mut() {
-        let mut cs: Vec<crate::result::RegionChar> = line_chars
+        let mut boxes: Vec<&(Rect, Vec<crate::result::RegionChar>)> = line_chars
             .iter()
             .filter(|(b, _)| {
                 let ov = (b.right().min(r.bbox.right()) - b.x.max(r.bbox.x)).max(0.0) * (b.bottom().min(r.bbox.bottom()) - b.y.max(r.bbox.y)).max(0.0);
                 ov >= b.w * b.h * 0.6
             })
-            .flat_map(|(_, c)| c.iter().filter(|c| c.cx >= r.bbox.x - 1.0 && c.cx <= r.bbox.right() + 1.0).cloned())
             .collect();
-        cs.sort_by(|a, b| a.cx.total_cmp(&b.cx));
+        boxes.sort_by(|a, b| a.0.cy().total_cmp(&b.0.cy()));
+        let mut rows: Vec<Vec<crate::result::RegionChar>> = Vec::new();
+        let mut last: Option<Rect> = None;
+        for (b, c) in boxes {
+            let same = last.is_some_and(|l| b.bottom().min(l.bottom()) - b.y.max(l.y) >= b.h.min(l.h) * 0.5);
+            if !same {
+                rows.push(Vec::new());
+            }
+            last = Some(*b);
+            rows.last_mut().unwrap().extend(c.iter().filter(|c| c.cx >= r.bbox.x - 1.0 && c.cx <= r.bbox.right() + 1.0).cloned());
+        }
+        for row in rows.iter_mut() {
+            row.sort_by(|a, b| a.cx.total_cmp(&b.cx));
+        }
+        let mut cs: Vec<crate::result::RegionChar> = rows.into_iter().flatten().collect();
         if !cs.is_empty() && cs.len() == r.text.chars().filter(|c| !c.is_whitespace()).count() {
             for (c, t) in cs.iter_mut().zip(r.text.chars().filter(|c| !c.is_whitespace())) {
                 c.text = t.to_string();
@@ -1716,9 +1798,13 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             score.title = Some(v);
         }
     }
-    // 署名末尾的年份与汉字之间补空格（「贾迪尼曲 1769」「柯克帕特里克曲 1838-1921」，同 GT 口径）；署名里人名之间的空白按字距切会误切，不切
+    // 署名末尾的年份与汉字之间补空格（「贾迪尼曲 1769」「柯克帕特里克曲 1838-1921」，同 GT 口径）；署名里人名之间的空白按字距切会误切，不切。
+    // 连着几个人名的「&」两边照印的留空格（CTC 不吐空格：`Evelyn Kong&Nelson Ng`）
     for c in score.credits.iter_mut().chain(score.credits_top_left.iter_mut()) {
         *c = CREDIT_YEAR.replace(c, "$1 $2").into_owned();
+        if c.contains('&') {
+            *c = AMP.replace_all(c, " & ").into_owned();
+        }
     }
     // 署名里的空当（同 TS spaceIfGap，回源图量墨列）：名字与职能词之间（「林婉容 词曲」有、沧海一声笑「黄 霑作词」没有）、
     // 全是汉字的署名里两个人名之间（「刘廷芳 杨荫浏合译」）。两字之间最长的空白列比本框字间空白中位宽出八成、又够 0.2 字高才补
@@ -1727,7 +1813,13 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         let compact: Vec<char> = c.chars().filter(|ch| !ch.is_whitespace()).collect();
         let cs: String = compact.iter().collect();
         let Some(r) = regions.iter().find(|r| r.chars.iter().map(|x| x.text.as_str()).collect::<String>() == cs) else { continue };
+        // 接续行合成的一条（「Reuben Morgan &」接「Jonas Myrin词曲」）罩着上下两行，字按行排：字心往回跳处是末行起头，
+        // 量空当只看末行（职能词在末行），字下标从末行起
+        let off = (1..r.chars.len()).rev().find(|&k| r.chars[k].cx < r.chars[k - 1].cx).unwrap_or(0);
         let (y0, y1) = (r.bbox.y.round() as i64, r.bbox.bottom().round() as i64);
+        let y0 = if off > 0 { (y0 + y1) / 2 } else { y0 };
+        let rc = &r.chars[off..];
+        let line_h = if off > 0 { r.bbox.h / 2.0 } else { r.bbox.h };
         let blank = |xa: f64, xb: f64| {
             let (mut best, mut run) = (0, 0);
             for x in xa.round() as i64..=xb.round() as i64 {
@@ -1740,8 +1832,8 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             }
             best as f64
         };
-        let han_pair = |k: usize| r.chars[k - 1].text.chars().all(is_han) && r.chars[k].text.chars().all(is_han);
-        let all: Vec<(usize, f64)> = (1..r.chars.len()).map(|k| (k, blank(r.chars[k - 1].cx, r.chars[k].cx))).collect();
+        let han_pair = |k: usize| rc[k - 1].text.chars().all(is_han) && rc[k].text.chars().all(is_han);
+        let all: Vec<(usize, f64)> = (1..rc.len()).map(|k| (k, blank(rc[k - 1].cx, rc[k].cx))).collect();
         let latin = c.chars().any(|ch| ch.is_ascii_alphabetic());
         // 汉字署名比汉字字间；带拉丁字母的比全行字间（字母间空白小）
         let gaps: Vec<(usize, f64)> = all.iter().copied().filter(|&(k, _)| latin || han_pair(k)).collect();
@@ -1751,10 +1843,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         // 比的是别处字间空白的中位（不含这一处）
         let wide = |k: usize| {
             let typical = median(&gaps.iter().filter(|g| g.0 != k).map(|g| g.1).collect::<Vec<_>>(), 0.0);
-            gaps.iter().any(|&(j, g)| j == k && g >= (typical * 1.8).max(r.bbox.h * 0.2))
+            gaps.iter().any(|&(j, g)| j == k && g >= (typical * 1.8).max(line_h * 0.2))
         };
         let role_at = CREDIT_ROLE_TAIL.captures(c).map(|m| m.get(1).unwrap().as_str().chars().filter(|ch| !ch.is_whitespace()).count());
-        if c.chars().all(|ch| is_han(ch) || ch.is_ascii_digit() || ch.is_whitespace() || "-–—、，,·".contains(ch)) {
+        if off == 0 && c.chars().all(|ch| is_han(ch) || ch.is_ascii_digit() || ch.is_whitespace() || "-–—、，,·".contains(ch)) {
             // 全汉字署名：按空当重排
             let mut out = String::new();
             for (k, ch) in compact.iter().enumerate() {
@@ -1764,7 +1856,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
                 out.push(*ch);
             }
             *c = CREDIT_YEAR.replace(&out, "$1 $2").into_owned();
-        } else if let Some(at) = role_at.filter(|&at| at > 0 && at < compact.len() && wide(at)) {
+        } else if let Some(at) = role_at.filter(|&at| at > off && at < compact.len() && wide(at - off)) {
             // 带拉丁字母的只补职能词前那一处
             let name_len = c.char_indices().filter(|(_, ch)| !ch.is_whitespace()).nth(at).map_or(c.len(), |(i, _)| i);
             if !c[..name_len].ends_with(' ') {
@@ -2085,8 +2177,9 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes,
     // 弧（扁宽、墨稀，粘连的「Am」墨实）与高音点、附点（小圆块）也不算：和弦字常与下面的弧、点上下挨着连成一截，取条就把弧切进字里读乱
     let marks = ink.comps().iter().filter(|k| {
         let r = &k.rect;
-        // 伸进音符带半个字号以上的窄块是小节线（顶上粘着行末半弧，「主祢真伟大」读成 T、整行和弦丢）：和弦字不往下伸
-        r.bottom() > ya as f64 && r.y < yb as f64 && ((r.bottom() > top + h * 0.5 && r.w <= h * 1.5) || (r.w >= h * 0.8 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
+        // 伸进音符带半个字号以上的块是小节线之类（顶上粘着行末半弧，「主祢真伟大」读成 T、整行和弦丢；粘着房内起头的半截弧、
+        // 宽过一个半字号的也是，基督是我满足二房那道粗线读成 D）：和弦字不往下伸
+        r.bottom() > ya as f64 && r.y < yb as f64 && (r.bottom() > top + h * 0.5 || (r.w >= h * 0.8 && r.h <= r.w * 0.5 && r.h <= h * 0.8 && k.fill() < 0.3) || (r.w <= h * 0.3 && r.h <= h * 0.3))
     });
     // 认出的 segno、延长记号的墨也不读（`·S·D` 读成 `S·D`、和弦 D 跟着丢；延长记号的弧读成 `n`，`G Em nG G` 覆盖率不够整行丢）
     let marks: Vec<&Comp> = marks.chain(ink.comps().iter().filter(|k| rn.mark_ink.contains(&k.id))).collect();
@@ -2117,8 +2210,20 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes,
         if y_min > 0.0 {
             let x_of = |i: usize| chars.get(i).map_or(0.0, |c| c.x0);
             let cn = CN_SECTION.find(&text).map(|m| (m.start(), m.end(), "(副歌)".to_string()));
+            // 方括号里除了段落词还有别的字的是说明（「[接Chorus]」= 接副歌，同「[接第2段]」），不是段落名
+            let in_note = |m: &regex::Match| {
+                let open = text[..m.start()].rfind(['[', '【', '［']).filter(|&o| !text[o..m.start()].contains([']', '】', '］']));
+                let close = text[m.end()..].find([']', '】', '］']).map(|c| m.end() + c);
+                match (open, close) {
+                    (Some(o), Some(c)) => {
+                        let inner = &text[o..c];
+                        inner.chars().skip(1).filter(|c| !c.is_whitespace()).count() > m.as_str().chars().count()
+                    }
+                    _ => false,
+                }
+            };
             let hit = cn.or_else(|| {
-                SECTION.find(&text).map(|m| {
+                SECTION.find(&text).filter(|m| !in_note(m)).map(|m| {
                     let before = text[..m.start()].chars().last().unwrap_or(' ');
                     let after = text[m.end()..].chars().next().unwrap_or(' ');
                     let body = if m.as_str().chars().any(|c| c.is_ascii_uppercase()) {

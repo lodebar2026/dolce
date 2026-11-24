@@ -672,7 +672,8 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
 
 /// segno 𝄋（跳转目标，同 TS `detectSegno`）：不是文字，OCR 够不着，按形认——主体是一块空心的 S（一个字号上下、窄于高、墨占框 28%~62%），
 /// 斜笔两侧各扣一颗小圆点（对角两侧），或直立的 S 左右齐半高夹着两颗点（`·S·`，青年诗歌 4）。上方带里别的东西（和弦、段落词、房号、倚音）
-/// 都凑不出「一块空心斜体 + 两颗孤立圆点」。左右一个字号内另有字号级墨块的是字的一半（选本 375 书眉「难」的「又」）。
+/// 都凑不出「一块空心斜体 + 两颗孤立圆点」。左右一个字号内另有与它一般高、或贴着它（空当不到 0.4 字号）的墨块的是字的一半
+/// （选本 375 书眉「难」的「又」、1790「过」的「寸」）；隔开半个字号以上又矮一截的是旁边的和弦字母，不算（基督是我满足 𝄋 右边的「G」）。
 /// 锚到正下方最近的音（写出端提升为该小节左线上的记号：D.S. 跳回来落在这条线上）。
 pub fn segno(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], num_h: f64) {
     let comps = ink.comps();
@@ -697,9 +698,11 @@ pub fn segno(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], num_h: f64) {
                 continue;
             }
             let aspect = b.w / b.h;
-            if !(0.45..=1.0).contains(&aspect) || !(0.28..=0.62).contains(&k.fill()) {
+            if !(0.45..=1.0).contains(&aspect) || !(0.18..=0.62).contains(&k.fill()) {
                 continue;
             }
+            // 带斜杠的 𝄋：斜杠把外框撑大、墨占得少（不到 28%），两颗点就落在框里斜杠两侧——墨占少的只认这种
+            let slashed = k.fill() < 0.28;
             let cy = b.cy();
             let side: Vec<&Comp> = comps.iter().filter(|d| d.id != k.id && small(d) && (d.rect.cy() - cy).abs() <= b.h * 0.3).collect();
             let l = side.iter().filter(|d| d.rect.right() <= b.x && d.rect.right() >= b.x - num_h * 0.7).map(|d| d.rect.x).fold(f64::MAX, f64::min);
@@ -715,11 +718,14 @@ pub fn segno(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], num_h: f64) {
             if !form_side && !form_diag {
                 continue;
             }
+            if slashed && !(form_diag && near.iter().filter(|d| d.rect.cx() > b.x && d.rect.cx() < b.right() && d.rect.cy() > b.y && d.rect.cy() < b.bottom()).count() >= 2) {
+                continue;
+            }
             if form_diag && b.y < y_diag {
                 continue;
             }
             let (sx0, sx1) = if form_side { (l, r) } else { (b.x - num_h, b.right() + num_h) };
-            if comps.iter().any(|o| o.id != k.id && o.rect.w.max(o.rect.h) > num_h * 0.4 && o.rect.bottom().min(b.bottom()) - o.rect.y.max(b.y) > b.h * 0.3 && o.rect.x < sx1 && o.rect.right() > sx0) {
+            if comps.iter().any(|o| o.id != k.id && o.rect.w.max(o.rect.h) > num_h * 0.4 && (o.rect.h >= b.h * 0.8 || o.rect.x.max(b.x) - o.rect.right().min(b.right()) <= num_h * 0.4) && o.rect.bottom().min(b.bottom()) - o.rect.y.max(b.y) > b.h * 0.3 && o.rect.x < sx1 && o.rect.right() > sx0) {
                 continue;
             }
             let cx = b.cx();
