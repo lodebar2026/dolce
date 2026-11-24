@@ -25,6 +25,8 @@ pub struct JpNote {
     pub div: u32,
     pub dots: u32,
     pub aug: u32,
+    /// 数字前的升降号，相对本调音阶的那一级（♯ +1、♭ −1、♮ 0）。
+    pub acc: Option<i8>,
 }
 
 /// 一条简谱行的读数。
@@ -54,7 +56,7 @@ fn read_strip(b: &Band, s: &Strip, ocr: &CachedOcr, known: bool) -> Option<JpRow
         .nums
         .iter()
         .filter(|n| n.digit <= 7)
-        .map(|n| JpNote { x: s.x as f64 + (n.bbox.x + n.bbox.w / 2.0) / scale, digit: n.digit, octave: n.octave, div: n.div, dots: n.dot, aug: n.augment })
+        .map(|n| JpNote { x: s.x as f64 + (n.bbox.x + n.bbox.w / 2.0) / scale, digit: n.digit, octave: n.octave, div: n.div, dots: n.dot, aug: n.augment, acc: n.accidental.and_then(|a| match a { "sharp" => Some(1), "flat" => Some(-1), "natural" => Some(0), _ => None }) })
         .collect();
     (notes.len() >= b.bars.len() * MIN_NOTES_PER_BAR).then_some(JpRow { staff: b.staff, notes })
 }

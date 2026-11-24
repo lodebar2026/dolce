@@ -272,6 +272,15 @@ pub fn apply(c: &Ctx, notes: &mut RowNotes, bounds: &[f64], wants: &[Option<u32>
                     }
                     stats.pitch += 1;
                 }
+                // 两边都印了临时记号、合出来的音不一样：照简谱改（降号调里该印还原号的地方印成了升号，简谱写 ♯4）
+                let h = &mut ch.heads[hi];
+                if let (Some(ja), Some(sa)) = (n.acc, h.acc) {
+                    let want = c.key.alter_of(c.clef.pitch_at(h.pos).step) + ja;
+                    if want != sa {
+                        h.acc = Some(want);
+                        stats.pitch += 1;
+                    }
+                }
                 if !poly && ch.heads.len() > 1 {
                     stats.removed += ch.heads.len() - 1;
                     let keep = ch.heads[hi].clone();
@@ -353,7 +362,7 @@ mod tests {
     }
 
     fn jp(xs: &[(f64, u8, i32)]) -> JpRow {
-        JpRow { staff: 0, notes: xs.iter().map(|&(x, digit, octave)| JpNote { x, digit, octave, div: 0, dots: 0, aug: 0 }).collect() }
+        JpRow { staff: 0, notes: xs.iter().map(|&(x, digit, octave)| JpNote { x, digit, octave, div: 0, dots: 0, aug: 0, acc: None }).collect() }
     }
 
     fn ctx<'a>(st: &'a Staff, jp: &'a JpRow) -> Ctx<'a> {
@@ -411,5 +420,20 @@ mod tests {
         let s = apply(&ctx(&st, &row), &mut notes, &[], &[Some(2 * DIVISIONS)], &[false], &cal);
         assert_eq!(notes.chords.iter().map(|c| c.heads.iter().map(|h| h.pos).collect::<Vec<_>>()).collect::<Vec<_>>(), vec![vec![5, 10], vec![6, 10]]);
         assert_eq!((s.pitch, s.removed, s.inserted), (1, 0, 0));
+    }
+
+    #[test]
+    fn accidental_follows_jianpu_when_both_print_one() {
+        let st = staff();
+        // F 大调：简谱 ♯4 是还原 B；五线谱 B4（pos 4）印成升号的改成还原号，没印临时记号的那个不动
+        let mut row = jp(&[(100.0, 4, 0), (300.0, 4, 0)]);
+        row.notes[0].acc = Some(1);
+        row.notes[1].acc = Some(1);
+        let mut notes = RowNotes { chords: vec![chord(100.0, &[4]), chord(300.0, &[4])], ..Default::default() };
+        notes.chords[0].heads[0].acc = Some(1);
+        let c = Ctx { key: Key { fifths: -1 }, ..ctx(&st, &row) };
+        let cal = Calib { shift: 0.0, base: Some(28), poly: false };
+        let s = apply(&c, &mut notes, &[], &[Some(2 * DIVISIONS)], &[false], &cal);
+        assert_eq!((notes.chords[0].heads[0].acc, notes.chords[1].heads[0].acc, s.pitch), (Some(0), None, 1));
     }
 }

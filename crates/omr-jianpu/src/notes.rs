@@ -189,6 +189,16 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
         }
         read.push(d);
     }
+    // 又高又窄的 ♯ 自成一格、读成「1」：整块（格子被行带截过，取格里最大的连通块）顶比紧挨着的右邻数字高出两成字高、
+    // 缝不过半个字号、形状判得出 ♯ 的不是数字，留给临时号（`marks::apply`）
+    for i in 0..read.len().saturating_sub(1) {
+        let (c, nr) = (digit_cells[i].rect(), digit_cells[i + 1].rect());
+        let Some(r) = ink.comps().iter().map(|k| k.rect).filter(|k| k.x < c.right() && k.right() > c.x && k.y < c.bottom() && k.bottom() > c.y).max_by(|a, b| (a.w * a.h).total_cmp(&(b.w * b.h))) else { continue };
+        let gap = nr.x - r.right();
+        if read[i] == Some(1) && read[i + 1].is_some_and(|d| d != 0) && gap >= 0.0 && gap <= h * 0.5 && nr.y - r.y >= nr.h * 0.2 && r.bottom() <= nr.bottom() + nr.h * 0.1 && crate::marks::accidental_of(ink, &r) == Some("sharp") {
+            read[i] = None;
+        }
+    }
     // 按 x 走一遍各格：数字起一个音，增时线、附点记到前一个音上，小节线与冒号记结构
     let mut di = 0;
     let mut pending_forward = false;
