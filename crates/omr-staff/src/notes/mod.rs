@@ -3,6 +3,7 @@
 //! 满拍裁决（[`meter`]）要小节与拍号，在整曲拼接时逐系统做（[`crate::song`]）。
 pub mod artics;
 pub mod beams;
+pub mod graces;
 pub mod heads;
 pub mod hollow;
 pub mod ledgers;
@@ -233,6 +234,11 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
     }
     artics::artics(f, &mut rows);
     tuplets::tuplets(f, &mut rows, ocr);
+    let sum = InkSum::new(&solid);
+    for (si, row) in rows.iter_mut().enumerate() {
+        let gs = graces::raster(f, &solid, &sum, &claims, si, from_of(si), row);
+        graces::attach(row, f.staves[si].space(), &gs);
+    }
     rows
 }
 

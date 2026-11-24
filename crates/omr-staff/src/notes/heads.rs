@@ -106,8 +106,13 @@ pub(crate) fn band(f: &PageFrame, si: usize) -> (f64, f64) {
 
 /// 一行谱的种子。`ink` / `sum`：量满不满用的墨层（封过口的，见 [`InkLayers::sealed`]）与它的积分图。（`x_from` 之右：行首区的谱号、调号、拍号不进候选）。同一处墨在相邻音级上都撑得满的各出一个，不在这里取舍。
 pub fn seeds(f: &PageFrame, ink: &InkLayers, sum: &InkSum, si: usize, x_from: f64) -> Vec<Head> {
+    seeds_scaled(f, ink, sum, si, x_from, 1.0)
+}
+
+/// 同 [`seeds`]，种子框、可挪范围、实心块宽度上限都乘 `k`（倚音的小号符头，[`super::graces`]）。
+pub fn seeds_scaled(f: &PageFrame, ink: &InkLayers, sum: &InkSum, si: usize, x_from: f64, k: f64) -> Vec<Head> {
     let s = &f.staves[si];
-    let sp = s.space();
+    let sp = s.space() * k;
     let (bw, bh) = (((SEED_W * sp).round() as i64).max(3), ((SEED_H * sp).round() as i64).max(3));
     let area = (bw * bh) as f64;
     let slack = ((SEED_SLACK * sp).round() as i64).max(1);

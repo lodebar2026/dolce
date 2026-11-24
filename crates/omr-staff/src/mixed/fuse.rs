@@ -116,14 +116,11 @@ fn top_dia(c: &Chord, clef: Clef) -> i32 {
     c.heads.iter().map(|h| dia(clef, h.pos)).max().unwrap()
 }
 
-/// 倚音挂不到配上的音时，往右找主音最多找这么远（相对线距）。
-const GRACE_REACH: f64 = 4.0;
-
 /// 简谱行的倚音挂到五线谱上：主音数字扣掉平移后配上的和弦（[`PAIR_DX`] 格以内最近的）收下它；
-/// 配不上的（五线谱这里漏了头、数字与头错开）挂右边最近的和弦（[`GRACE_REACH`] 格以内），不丢。
-/// 与本小节拍数自不自洽无关——倚音不占拍。音高按全曲校准落位，升降随调号。先清掉本行旧的，重跑拼接不重复挂。
+/// 配不上的（五线谱这里漏了头、数字与头错开）挂右边最近的和弦（[`crate::notes::graces::REACH`] 格以内），不丢。
+/// 与本小节拍数自不自洽无关——倚音不占拍。音高按全曲校准落位，升降随调号。五线谱上自己认出了倚音（小号符头）的和弦不再挂。
 pub fn attach_graces(c: &Ctx, notes: &mut RowNotes, cal: &Calib) -> usize {
-    notes.chords.iter_mut().for_each(|ch| ch.graces.clear());
+    let had: Vec<bool> = notes.chords.iter().map(|ch| !ch.graces.is_empty()).collect();
     let Some(base) = cal.base else { return 0 };
     let sp = c.st.space();
     let off = cal.shift * sp;
@@ -133,8 +130,8 @@ pub fn attach_graces(c: &Ctx, notes: &mut RowNotes, cal: &Calib) -> usize {
         let near = |i: &usize| (notes.chords[*i].x - x).abs();
         let idx: Vec<usize> = (0..notes.chords.len()).collect();
         let paired = idx.iter().copied().filter(|i| near(i) <= sp * PAIR_DX).min_by(|a, b| near(a).total_cmp(&near(b)));
-        let right = || idx.iter().copied().filter(|&i| notes.chords[i].x >= x - sp * PAIR_DX && notes.chords[i].x - x <= sp * GRACE_REACH).min_by(|a, b| near(a).total_cmp(&near(b)));
-        let Some(ci) = paired.or_else(right) else { continue };
+        let right = || idx.iter().copied().filter(|&i| notes.chords[i].x >= x - sp * PAIR_DX && notes.chords[i].x - x <= sp * crate::notes::graces::REACH).min_by(|a, b| near(a).total_cmp(&near(b)));
+        let Some(ci) = paired.or_else(right).filter(|&i| !had[i]) else { continue };
         let pos = dia(c.clef, 0) - (base + tonic(c.key) + g.digit as i32 - 1 + 7 * g.octave);
         notes.chords[ci].graces.push(pos);
         n += 1;

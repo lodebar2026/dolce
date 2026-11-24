@@ -259,14 +259,22 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
     let mut all: Vec<(Head, Option<Stem>)> = Vec::new();
     // 同一个符头印了两遍（同一字形、同一位置）只收一个
     let mut seen: Vec<(i64, i64, &str)> = Vec::new();
-    // 倚音：字号比本页符头字号的中位数小两成以上（与本页同类比，不设绝对值）；现在不出倚音（位图路同），先不收
+    // 倚音：字号比本页符头字号的中位数小两成以上（与本页同类比，不设绝对值）；另记下来，成和弦之后挂到右边的主音上
     let ems: Vec<f64> = syms.iter().filter(|s| is_head(s.name)).map(|s| s.em).collect();
     let grace_em = dolce_omr_core::geom::median(&ems, 0.0) * GRACE_EM;
-    for s in syms.iter().filter(|s| is_head(s.name) && s.em >= grace_em) {
+    let mut grace_heads: Vec<(usize, f64, i32)> = Vec::new();
+    for s in syms.iter().filter(|s| is_head(s.name)) {
         let Some(si) = staff_of(f, s, POS_MIN as f64 - 0.5, POS_MAX as f64 + 0.5) else { continue };
         let st = &f.staves[si];
         let from = attrs.get(si).map_or(st.left, |a| a.lead_end);
         if s.cx() < from {
+            continue;
+        }
+        if s.em < grace_em {
+            if std::env::var("OMR_GRACE_DEBUG").is_ok() {
+                eprintln!("矢量倚音 si{si} x{:.0} y{:.0} {} em{:.2}/{:.2}", s.cx(), s.cy(), s.name, s.em, grace_em);
+            }
+            grace_heads.push((si, s.cx(), st.pos(s.cx(), s.cy()).round() as i32));
             continue;
         }
         let key = ((s.cx() * 2.0).round() as i64, (s.cy() * 2.0).round() as i64, s.name);
@@ -423,6 +431,10 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
     }
     for s in syms.iter().filter(|s| s.name.starts_with("fermata")) {
         attach_fermata(f, &mut rows, s.rect, s.name == "fermataAbove");
+    }
+    for (si, row) in rows.iter_mut().enumerate() {
+        let hs: Vec<(f64, i32)> = grace_heads.iter().filter(|g| g.0 == si).map(|g| (g.1, g.2)).collect();
+        crate::notes::graces::attach(row, f.staves[si].space(), &hs);
     }
     rows
 }
