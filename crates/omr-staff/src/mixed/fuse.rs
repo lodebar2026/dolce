@@ -116,6 +116,32 @@ fn top_dia(c: &Chord, clef: Clef) -> i32 {
     c.heads.iter().map(|h| dia(clef, h.pos)).max().unwrap()
 }
 
+/// 倚音挂不到配上的音时，往右找主音最多找这么远（相对线距）。
+const GRACE_REACH: f64 = 4.0;
+
+/// 简谱行的倚音挂到五线谱上：主音数字扣掉平移后配上的和弦（[`PAIR_DX`] 格以内最近的）收下它；
+/// 配不上的（五线谱这里漏了头、数字与头错开）挂右边最近的和弦（[`GRACE_REACH`] 格以内），不丢。
+/// 与本小节拍数自不自洽无关——倚音不占拍。音高按全曲校准落位，升降随调号。先清掉本行旧的，重跑拼接不重复挂。
+pub fn attach_graces(c: &Ctx, notes: &mut RowNotes, cal: &Calib) -> usize {
+    notes.chords.iter_mut().for_each(|ch| ch.graces.clear());
+    let Some(base) = cal.base else { return 0 };
+    let sp = c.st.space();
+    let off = cal.shift * sp;
+    let mut n = 0;
+    for g in c.jp.graces.iter().filter(|g| g.x > c.lead) {
+        let x = g.x + off;
+        let near = |i: &usize| (notes.chords[*i].x - x).abs();
+        let idx: Vec<usize> = (0..notes.chords.len()).collect();
+        let paired = idx.iter().copied().filter(|i| near(i) <= sp * PAIR_DX).min_by(|a, b| near(a).total_cmp(&near(b)));
+        let right = || idx.iter().copied().filter(|&i| notes.chords[i].x >= x - sp * PAIR_DX && notes.chords[i].x - x <= sp * GRACE_REACH).min_by(|a, b| near(a).total_cmp(&near(b)));
+        let Some(ci) = paired.or_else(right) else { continue };
+        let pos = dia(c.clef, 0) - (base + tonic(c.key) + g.digit as i32 - 1 + 7 * g.octave);
+        notes.chords[ci].graces.push(pos);
+        n += 1;
+    }
+    n
+}
+
 /// 全曲校准：先估平移（各数字到最近的音的 x 差取中位数），再让扣掉平移后配上的对给「1」的位置投票。
 pub fn calibrate(rows: &[(Ctx, &RowNotes)]) -> Calib {
     let mut ds = Vec::new();
@@ -224,7 +250,7 @@ pub fn apply(c: &Ctx, notes: &mut RowNotes, bounds: &[f64], wants: &[Option<u32>
                     let pos = dia(c.clef, 0) - (base + tonic(c.key) + n.digit as i32 - 1 + 7 * n.octave);
                     let (kind, tails) = shape_of(t);
                     let head = Head { staff: c.si, x, y: c.st.y_of(x, pos as f64), pos, kind, fill: 1.0, score: 1.0, acc: None, rid: None };
-                    new_chords.push(Chord { x, heads: vec![head], stem: None, tails, beamed: false, dots, arts: Vec::new(), tuplet: None, pinned: false });
+                    new_chords.push(Chord { x, heads: vec![head], stem: None, tails, beamed: false, dots, arts: Vec::new(), tuplet: None, pinned: false, graces: Vec::new() });
                 }
                 stats.inserted += 1;
             }
@@ -358,11 +384,11 @@ mod tests {
 
     fn chord(x: f64, pos: &[i32]) -> Chord {
         let heads = pos.iter().map(|&p| Head { staff: 0, x, y: 100.0 + p as f64 * 5.0, pos: p, kind: HeadKind::Filled, fill: 1.0, score: 1.0, acc: None, rid: None }).collect();
-        Chord { x, heads, stem: None, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false }
+        Chord { x, heads, stem: None, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false, graces: Vec::new() }
     }
 
     fn jp(xs: &[(f64, u8, i32)]) -> JpRow {
-        JpRow { staff: 0, notes: xs.iter().map(|&(x, digit, octave)| JpNote { x, digit, octave, div: 0, dots: 0, aug: 0, acc: None }).collect() }
+        JpRow { staff: 0, graces: Vec::new(), notes: xs.iter().map(|&(x, digit, octave)| JpNote { x, digit, octave, div: 0, dots: 0, aug: 0, acc: None }).collect() }
     }
 
     fn ctx<'a>(st: &'a Staff, jp: &'a JpRow) -> Ctx<'a> {

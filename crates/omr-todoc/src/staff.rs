@@ -494,6 +494,18 @@ impl Builder {
                 for d in &e.pre {
                     self.place(d, &at, &mut harmonies, &mut directions);
                 }
+                // 倚音：带斜杠的小音符，不占拍，排在它修饰的那个音前面
+                for g in &e.graces {
+                    let id = self.ids.next();
+                    let mut gc = Chord { id, duration: Duration { divisions: 0.0, kind: Some(NoteType::Eighth), dots: 0.0, time_mod: None }, voice: e.voice.max(1) as f64, staff: if multi { e.staff.max(1) as f64 } else { 1.0 }, ..Chord::default() };
+                    gc.oid = self.oid();
+                    gc.grace = Some(GraceInfo { slash: Some(true), ..Default::default() });
+                    gc.notes.push(Note { pitch: Some(pitch_of(g)), ..Default::default() });
+                    if cursor != end {
+                        gc.onset = Some(cursor);
+                    }
+                    out.elements.push(Element::Chord(gc));
+                }
                 let mut ch = self.chord_of(e, *perc, multi, cursor);
                 if cursor != end {
                     ch.onset = Some(cursor);

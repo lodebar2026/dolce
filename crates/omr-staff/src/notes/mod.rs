@@ -75,6 +75,9 @@ pub struct Chord {
     /// 用户钉住的（时值、音高照钉的；满拍裁决不再动它，见 `song::Constraints`）。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    /// 挂在前面的倚音（各自的谱位，自左而右；混排页取自简谱行，`mixed::fuse::attach_graces`）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graces: Vec<i32>,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -247,7 +250,7 @@ pub fn build_rows<P: crate::frame::ink::Probe + ?Sized>(f: &crate::page::Layout,
                 cs.bottom = cs.bottom.max(st.bottom);
                 c.heads.push(h);
             }
-            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false }),
+            _ => row.chords.push(Chord { x: h.x, heads: vec![h], stem: st, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false, graces: Vec::new() }),
         }
     }
     for row in rows.iter_mut() {
@@ -297,7 +300,7 @@ pub fn head_near(f: &PageFrame, attrs: &[RowAttrs], si: usize, x: f64, y: f64) -
     let (score, hx, hy, pos) = best.filter(|b| b.0 >= floor)?;
     let head = Head { staff: si, x: hx, y: hy, pos, kind: heads::HeadKind::Filled, fill: 1.0, score, acc: None, rid: None };
     let stem = stems::find_stem(&f.stem_ink(), &head, sp, f.unit.thick, None, &|_| false);
-    let chord = Chord { x: hx, heads: vec![head.clone()], stem, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false };
+    let chord = Chord { x: hx, heads: vec![head.clone()], stem, tails: 0, beamed: false, dots: 0, arts: Vec::new(), tuplet: None, pinned: false, graces: Vec::new() };
     let tails = beams::lone_tails(&f.ink, &chord, sp, f.unit.thick);
     Some((head, stem, tails))
 }

@@ -86,7 +86,7 @@ pub(super) fn apply_adds(notes: &mut [Vec<RowNotes>], adds: &[Added]) {
     for Added { rid, note: a } in adds {
         let Some(row) = notes.get_mut(a.page).and_then(|p| p.get_mut(a.staff)) else { continue };
         let head = Head { staff: a.staff, x: a.x, y: a.y, pos: a.pos, kind: a.kind, fill: 1.0, score: 1.0, acc: None, rid: Some(*rid) };
-        row.chords.push(Chord { x: a.x, heads: vec![head], stem: a.stem, tails: a.tails, beamed: false, dots: a.dots, arts: Vec::new(), tuplet: None, pinned: true });
+        row.chords.push(Chord { x: a.x, heads: vec![head], stem: a.stem, tails: a.tails, beamed: false, dots: a.dots, arts: Vec::new(), tuplet: None, pinned: true, graces: Vec::new() });
         row.chords.sort_by(|a, b| a.x.total_cmp(&b.x));
     }
 }

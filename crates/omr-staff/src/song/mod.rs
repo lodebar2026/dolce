@@ -446,6 +446,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                     let c = clefs[slots[k]][sys_i].unwrap_or(Clef::TREBLE);
                     let cx = fuse::Ctx { si: i, st: &f.staves[i], lead: lead_of(page, i), jp, clef: c, key: sys_key };
                     fused += fuse::apply(&cx, &mut sys_notes[k], &xs, &wants, &loose, &calib);
+                    fuse::attach_graces(&cx, &mut sys_notes[k], &calib);
                 }
             }
             let head_med = page_med(page);
@@ -572,6 +573,11 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                             c_at = x.attrs.clef.unwrap_or(c_at);
                             k_at = x.attrs.key.unwrap_or(k_at);
                         }
+                        let mut gs: Vec<Pitch> = ch.graces.iter().map(|&pos| {
+                            let mut p = c_at.pitch_at(pos);
+                            p.alter = held.get(&(p.step, p.octave)).copied().unwrap_or(k_at.alter_of(p.step));
+                            p
+                        }).collect();
                         let mut shown: Vec<(Pitch, i8)> = Vec::new();
                         let mut ps: Vec<_> = ch.heads.iter().map(|h| {
                             let mut p = c_at.pitch_at(h.pos);
@@ -593,6 +599,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                                 let e = &mut ms[j].events[n];
                                 e.pitches.append(&mut ps);
                                 e.src.append(&mut hs);
+                                e.graces.append(&mut gs);
                                 e.stem_up = None;
                                 n
                             }
@@ -602,7 +609,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                                     let h = &ch.heads[0];
                                     doubts.push(Doubt { rid: hs[0].src.rid, ..Doubt::new(at, ids.at(head_rect(h.x, h.y, sp)).rect, codes::HEAD_WEAK) });
                                 }
-                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, src: hs, alts: meter::chord_menu(ch, head_med), ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
+                                ms[j].events.push(Event { onset, voice, tuplet: ch.tuplet, src: hs, graces: gs, alts: meter::chord_menu(ch, head_med), ..Event::new(ps, ch.ntype(), ch.dots, ch.stem.map(|s| s.up)) });
                                 ms[j].events.len() - 1
                             }
                         };

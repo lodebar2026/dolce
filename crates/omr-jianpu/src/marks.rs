@@ -80,6 +80,13 @@ fn center_stroke(ink: &Ink, b: &Rect, h: f64) -> Option<(i64, i64)> {
     s.filter(|s| ((s.1 - s.0 + 1) as f64) <= (h * 0.12).max(3.0))
 }
 
+/// 块里最宽的一行比各行宽度的中位数（竖笔粗）宽出六成：「1」的旗或底座。光竖条没有。
+fn flagged(ink: &Ink, b: &Rect) -> bool {
+    let ws: Vec<f64> = (b.y.round() as i64..b.bottom().round() as i64).map(|y| (b.x.round() as i64..b.right().round() as i64).filter(|&x| ink.at(x, y)).count() as f64).filter(|&w| w > 0.0).collect();
+    let stroke = median(&ws, 0.0);
+    ws.iter().any(|&w| w >= stroke * 1.6)
+}
+
 /// 变音记号的形状（判据照 TS `omr/accidental.ts`）：♯ 四象限都有墨；♭ 右上空、左竖到底；♮ 左竖高、右竖低。
 pub fn accidental_of(ink: &Ink, b: &Rect) -> Option<&'static str> {
     accidental_of_by(&|x, y| ink.at(x, y), b)
@@ -399,9 +406,15 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             continue;
         }
         let Some(owner) = out.nums.iter().position(|n| n.bbox.x >= b.right() - 2.0 && n.bbox.x - b.right() < h * 0.9) else { continue };
+        // 正对着某个数字头顶的是连音数字（三连音的「3」在中间那个音上方）；倚音在主音左上的空当里
+        if out.nums.iter().any(|n| b.cx() > n.bbox.x && b.cx() < n.bbox.right()) {
+            continue;
+        }
         // 底下压着几道减时线：逐行看有没有横贯小数字的墨段（≥ 0.8 宽），连着的几行算一道
         let (xa, xb) = ((b.x - b.w * 0.4).round() as i64, (b.right() + b.w * 0.4).round() as i64);
-        let (mut div, mut in_run) = (0u32, false);
+        // 横墨往左右两边都伸出去 0.7 个字号开外的是连音弧、括线的顶（三连音头上的小「3」），不是减时线
+        let reach = (h * 0.7).round() as i64;
+        let (mut div, mut in_run, mut arched) = (0u32, false, false);
         for y in b.bottom().round() as i64 + 1..(b.bottom() + h * 0.6).round() as i64 {
             let (mut best, mut cur) = (0, 0);
             for x in xa..=xb {
@@ -416,9 +429,12 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             if wide && !in_run {
                 div += 1;
             }
+            if wide && (1..=reach).all(|d| ink.at(xa - d, y)) && (1..=reach).all(|d| ink.at(xb + d, y)) {
+                arched = true;
+            }
             in_run = wide;
         }
-        if div == 0 || div > 3 {
+        if div == 0 || div > 3 || arched {
             continue;
         }
         let dot = dots.iter().any(|o| (o.cx - b.cx()).abs() <= (b.w * 0.5).max(h * 0.2) && b.y - o.rect.bottom() >= -2.0 && b.y - o.rect.bottom() < h * 0.5);
@@ -431,6 +447,10 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
         for (g, t) in graces.iter().zip(texts) {
             let t = t.trim();
             let Some(d) = t.chars().next().filter(|c| ('1'..='7').contains(c) && t.chars().count() == 1) else { continue };
+            // 读成「1」的光竖条（谱表伸下来的符干尖）不是倚音：「1」总有一行比竖笔宽出六成（旗、底座）
+            if d == '1' && !flagged(ink, &g.1) {
+                continue;
+            }
             if debug {
                 eprintln!("倚音 {d} x{:.0} y{:.0} 线{} → 音{}", g.1.x, g.1.y, g.2, out.nums[g.0].digit);
             }

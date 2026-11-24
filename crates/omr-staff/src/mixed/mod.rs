@@ -35,6 +35,17 @@ pub struct JpRow {
     /// 是哪一行谱的旋律（页内下标）。
     pub staff: usize,
     pub notes: Vec<JpNote>,
+    /// 倚音：修饰的那个数字的中心 x、倚音的级数与八度（自左而右）。
+    pub graces: Vec<JpGrace>,
+}
+
+/// 简谱行里的一个倚音（小号数字，挂在右边紧跟的主音上）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct JpGrace {
+    /// 主音数字中心 x（页面像素坐标）。
+    pub x: f64,
+    pub digit: u8,
+    pub octave: i32,
 }
 
 /// 一条读出的音至少是它小节线数的这么多倍才算认出来了（一小节一个音都不到的不是简谱行）。
@@ -52,13 +63,18 @@ fn read_strip(b: &Band, s: &Strip, ocr: &CachedOcr, known: bool) -> Option<JpRow
     }
     let src = SourceImage { w, h, gray, rgb: Vec::new(), kind: ImageKind::Gray, rect: Rect::new(0.0, 0.0, w as f64, h as f64), page_w: w as f64, page_h: h as f64, size_known: false };
     let (scale, row) = dolce_omr_jianpu::recognize_strip(&src, ocr, known)?;
+    let graces: Vec<JpGrace> = row
+        .nums
+        .iter()
+        .flat_map(|n| n.grace.iter().filter(|g| (1..=7).contains(&g.digit)).map(move |g| JpGrace { x: s.x as f64 + (n.bbox.x + n.bbox.w / 2.0) / scale, digit: g.digit, octave: g.octave }))
+        .collect();
     let notes: Vec<JpNote> = row
         .nums
         .iter()
         .filter(|n| n.digit <= 7)
         .map(|n| JpNote { x: s.x as f64 + (n.bbox.x + n.bbox.w / 2.0) / scale, digit: n.digit, octave: n.octave, div: n.div, dots: n.dot, aug: n.augment, acc: n.accidental.and_then(|a| match a { "sharp" => Some(1), "flat" => Some(-1), "natural" => Some(0), _ => None }) })
         .collect();
-    (notes.len() >= b.bars.len() * MIN_NOTES_PER_BAR).then_some(JpRow { staff: b.staff, notes })
+    (notes.len() >= b.bars.len() * MIN_NOTES_PER_BAR).then_some(JpRow { staff: b.staff, notes, graces })
 }
 
 /// 认领一页的简谱行：候选带（[`band::find`]）先切条试认，**一页要么是混排要么不是**——过半的系统带着候选带、

@@ -226,11 +226,14 @@ pub struct Event {
     /// 落选候选（花费从小到大）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<EventAlt>,
+    /// 挂在前面的倚音（自左而右；写出成带斜杠的小音符）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graces: Vec<Pitch>,
 }
 
 impl Event {
     pub fn new(pitches: Vec<Pitch>, ntype: NoteType, dots: u8, stem_up: Option<bool>) -> Self {
-        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, staff: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new(), alts: Vec::new() }
+        Event { pitches, ntype, dots, stem_up, onset: 0, voice: 1, staff: 1, arts: Vec::new(), tuplet: None, lyrics: Vec::new(), pre: Vec::new(), post: Vec::new(), spans: Vec::new(), shown: Vec::new(), src: Vec::new(), alts: Vec::new(), graces: Vec::new() }
     }
 
     /// 这个音（休止为 None）的识别出处。
