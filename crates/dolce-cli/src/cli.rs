@@ -1,5 +1,5 @@
 //! `dolce omr <图片…|PDF…|目录…>`：给人用的识谱——识别后直接写成各格式（文本谱 / 123 / MusicXML …，写出端同编辑器：`dolce-formats::targets`），
-//! 简谱可带参照歌词互证（`-l`，`omr-todoc::reflyrics`）。不要 Node：分发包里只有这一个程序、PDFium 与模型。
+//! 简谱可带参照歌词互证（`-l`，`omr-todoc::reflyrics`），并按歌词的段落与唱法切段落、写逐遍演唱顺序（`dolce-view::singfit`，写 123 时）。不要 Node：分发包里只有这一个程序、PDFium 与模型。
 //!
 //! 批量：多个文件或目录一起给，一个进程跑完（OCR 模型只加载一次）；`-o` 给目录则逐个写文件，否则写 stdout。
 use crate::run::{expand, recognize_file, Got};
@@ -10,6 +10,8 @@ use dolce_omr_engine::Kind;
 use dolce_omr_sheet::jianpu::RecognizedScore;
 use dolce_omr_todoc::jianpu::recognized_to_doc;
 use dolce_omr_todoc::reflyrics::{apply_ref_lyrics, decode_lyrics_bytes, CheckKind, LyricCheck};
+use dolce_session::sing::{fit_sing_doc, projection_request};
+use dolce_view::singfit::{apply_sing_fit, FitKind, SingFit};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -18,13 +20,15 @@ use std::time::Instant;
 pub fn usage() -> String {
     let list = OUT_FORMATS.iter().map(|f| format!("{}（{}）", f.id(), f.label())).collect::<Vec<_>>().join("、");
     format!(
-        "  dolce omr <图片…|PDF…|目录…> [-f 格式] [-o 输出] [--kind=auto|staff|jianpu] [--profile] [-l 歌词文件 [--lyrics-report 核对.json]]
+        "  dolce omr <图片…|PDF…|目录…> [-f 格式] [-o 输出] [--kind=auto|staff|jianpu] [--profile] [-l 歌词文件 [--lyrics-report 核对.json] [--no-sing]]
       识谱：简谱 / 五线谱的图片（jpg/png/webp/bmp/tif）或 PDF → 各格式
       格式：{list}；缺省 shige
       路线：缺省自动（先按五线谱认，一页谱表都没有再走简谱），--kind 指定
       批量：多个文件或目录一起给，同一进程跑完（一个文件一首；目录取里面的图片与 PDF，不递归）；-o 给目录则逐个写文件
       歌词：-l/--lyrics 给同一首诗歌的歌词文本（.txt/.lrc），只配单张简谱；形近字按歌词选字、补漏字，
-            两边不一致处打到 stderr，--lyrics-report 另落 JSON
+            两边不一致处打到 stderr，--lyrics-report 另落 JSON；
+            写 123 时还按歌词的段落与唱法在谱上切段落 [P:x]、写逐遍演唱顺序 %%sing
+            （歌词与谱面反复对不上时以歌词为准，差异打到 stderr；--no-sing 不生成）
 "
     )
 }
@@ -34,14 +38,53 @@ pub fn parse_format(s: &str) -> Result<TargetFormat, String> {
     TargetFormat::parse(s).ok_or_else(|| format!("未知格式 {s}，可选：{}", OUT_FORMATS.map(|f| f.id()).join(" / ")))
 }
 
-/// 简谱识别结果 → 指定格式（一律先直出模型，再走格式表）
-fn write_jianpu(score: &RecognizedScore, format: TargetFormat) -> Result<Encoded, String> {
-    let doc = recognized_to_doc(score).doc;
+/// 简谱识别结果 → 指定格式（一律先直出模型，再走格式表）。`sing`：参照歌词，写 123 时据它生成段落与演唱顺序
+fn write_jianpu(score: &RecognizedScore, format: TargetFormat, sing: Option<&str>) -> Result<(Encoded, Option<SingFit>), String> {
+    let mut doc = recognized_to_doc(score).doc;
+    let fit = match sing {
+        Some(text) if format == TargetFormat::J123 && !doc.songs.is_empty() => {
+            let fit = with_native_env(|env| fit_sing_doc(&doc, 0, text, &projection_request(None), env));
+            if !fit.order.is_empty() {
+                apply_sing_fit(&mut doc.songs[0], &fit);
+            }
+            Some(fit)
+        }
+        _ => None,
+    };
     if format == TargetFormat::MusicXml {
         let xml = score_doc_to_music_xml(&doc, None, &ToXmlOptions::default()).map_err(|e| e.key)?;
-        return Ok(format.encode(xml));
+        return Ok((format.encode(xml), fit));
     }
-    format.write(&doc, None)
+    Ok((format.write(&doc, None)?, fit))
+}
+
+/// 系统量字的排版环境（投影档算行数用；没有 SMuFL 元数据，只影响记号的紧包围盒、不影响行数）
+fn with_native_env<R>(f: impl FnOnce(&dolce_engrave::Env) -> R) -> R {
+    let backend = dolce_text::native::webview_measure(None, &[]);
+    let mc = dolce_text::MeasureCtx::new(&backend);
+    f(&dolce_engrave::Env { mc: &mc, meta: None })
+}
+
+fn sing_summary(fit: &SingFit) {
+    if fit.order.is_empty() {
+        eprintln!("[演唱顺序] 参照歌词与谱面歌词对不上（同字 {}/{}），没有生成", fit.matched, fit.ref_chars);
+        return;
+    }
+    let off = fit.notes.iter().filter(|n| n.kind == FitKind::OffScore).count();
+    eprintln!(
+        "[演唱顺序] 同字 {}/{}，切 {} 段、{} 遍{}：",
+        fit.matched,
+        fit.ref_chars,
+        fit.marks.len(),
+        fit.order.len(),
+        if off > 0 { format!("，{off} 处不照谱面反复") } else { String::new() }
+    );
+    for l in fit.sing_text().lines() {
+        eprintln!("  {l}");
+    }
+    for n in &fit.notes {
+        eprintln!("  {}", n.format());
+    }
 }
 
 struct Opts {
@@ -52,10 +95,11 @@ struct Opts {
     inputs: Vec<String>,
     lyrics: Option<PathBuf>,
     lyrics_report: Option<PathBuf>,
+    no_sing: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<Option<Opts>, String> {
-    let mut o = Opts { format: TargetFormat::Shige, out: None, profile: false, kind: Kind::Auto, inputs: vec![], lyrics: None, lyrics_report: None };
+    let mut o = Opts { format: TargetFormat::Shige, out: None, profile: false, kind: Kind::Auto, inputs: vec![], lyrics: None, lyrics_report: None, no_sing: false };
     let mut it = args.iter();
     let need = |a: &str, v: Option<&String>| v.cloned().ok_or_else(|| format!("{a} 后面要跟值"));
     while let Some(a) = it.next() {
@@ -65,6 +109,7 @@ fn parse_args(args: &[String]) -> Result<Option<Opts>, String> {
             "--profile" => o.profile = true,
             "-l" | "--lyrics" => o.lyrics = Some(need(a, it.next())?.into()),
             "--lyrics-report" => o.lyrics_report = Some(need(a, it.next())?.into()),
+            "--no-sing" => o.no_sing = true,
             "-h" | "--help" => return Ok(None),
             _ if a.starts_with("--kind=") => {
                 o.kind = match &a[7..] {
@@ -162,6 +207,7 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
         };
         // 参照歌词互证：改字、补字要在写出之前
         let mut lc = None;
+        let mut fit = None;
         let staff = matches!(got, Got::Staff(_));
         let enc = match got {
             Got::Staff(xml) => {
@@ -174,7 +220,11 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
                 if let Some(r) = &ref_lyrics {
                     lc = Some(apply_ref_lyrics(&mut score, r));
                 }
-                write_jianpu(&score, o.format)
+                let sing = if o.no_sing { None } else { ref_lyrics.as_deref() };
+                write_jianpu(&score, o.format, sing).map(|(e, f)| {
+                    fit = f;
+                    e
+                })
             }
         };
         let enc = match enc {
@@ -220,6 +270,11 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
                 std::fs::write(p, j).map_err(|e| format!("写不了 {}：{e}", p.display()))?;
                 eprintln!("已写入 {}", p.display());
             }
+        }
+        if let Some(f) = &fit {
+            sing_summary(f);
+        } else if ref_lyrics.is_some() && !staff && !o.no_sing && o.format != TargetFormat::J123 {
+            eprintln!("[演唱顺序] 段落与 %%sing 只写进 123（-f 123）");
         }
         if o.profile {
             eprintln!("[OMR] {name} {} {ms}ms", if staff { "五线谱" } else { "简谱" });

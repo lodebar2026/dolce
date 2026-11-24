@@ -15,6 +15,7 @@
 //! - `book-pdf` / `book-measure-check` / `pdf-compare`：成书 DrawList → PDF、书级量字原生 ↔ 录制、两份 PDF 栅格比（见 `bookpdf.rs`）。
 //! - `pptx`：场景 → `.pptx`（见 `pptx.rs`）。
 //! - `font-probe` / `scene-pdf`：导出的字体样本验证、场景 → PDF 与旧链栅格比对（见 `export.rs`）。
+//! - `sing-fit`：按参照歌词切段落、排 `%%sing`（见 `singfit.rs`）。
 //! - `onnx-fp16`：OCR 模型权重改存 FP16（见 `onnx.rs`）。
 
 mod book;
@@ -28,6 +29,7 @@ mod export;
 mod jianpu;
 mod layout;
 mod onnx;
+mod singfit;
 mod staff;
 mod style;
 mod wire;
@@ -61,6 +63,7 @@ fn main() {
         Some("songbook") => std::process::exit(bookdraw::songbook(&args[1..])),
         Some("relayout") => std::process::exit(bookpdf::relayout_cmd(&args[1..])),
         Some("annotation-blocks") => std::process::exit(bookpdf::annotation_blocks_cmd(&args[1..])),
+        Some("sing-fit") => std::process::exit(singfit::sing_fit(&args[1..])),
         Some("onnx-fp16") => std::process::exit(onnx::onnx_fp16(&args[1..])),
         _ => {
             eprintln!("用法：dolce-dev <xml-dump | scene-svg | measure-check | diff-scene | scene-dump | style-check | engrave-check | jianpu-check | staff-check | book-parts-check | book-meta-check | book-draw-check | book-rebuild | font-probe | scene-pdf | book-pdf | book-measure-check | pdf-compare | pptx | layout-wire | songbook | relayout | annotation-blocks | onnx-fp16> …");

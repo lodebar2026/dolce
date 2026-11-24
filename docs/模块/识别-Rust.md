@@ -104,8 +104,8 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
 
 | crate | 作用 |
 |---|---|
-| `crates/dolce-cli` | 命令行 `dolce`：`omr` 是给人用的识谱（第一个参数是选项或已有文件 / 目录时省掉 `omr` 也行；`cli.rs`：图片 / PDF → 各格式，格式表 `dolce-formats::targets`；简谱可带 `-l` 参照歌词，`omr-todoc::reflyrics`；OMR 分发包就是它，不要 Node）、`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout，私有仓库自检脚本吃它）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
-| `crates/omr-todoc` | 识别结果直出 `ScoreDoc`（简谱 `jianpu`、五线谱 `staff`）；参照歌词互证 `reflyrics`（按演唱顺序展开识别歌词、与参照整篇对齐，形近字按逐字候选选字、补漏字，其余报出来；繁简归一用 `omr-text::hanvariant`） |
+| `crates/dolce-cli` | 命令行 `dolce`：`omr` 是给人用的识谱（第一个参数是选项或已有文件 / 目录时省掉 `omr` 也行；`cli.rs`：图片 / PDF → 各格式，格式表 `dolce-formats::targets`；简谱可带 `-l` 参照歌词，`omr-todoc::reflyrics`，写 123 时顺带按它生成段落与 `%%sing`（[播放](播放.md)「按参照歌词生成段落与 `%%sing`」，`--no-sing` 关掉）；OMR 分发包就是它，不要 Node）、`regress`（见「回归」）、`run`（批量识别，一个文件一首，每首一行 JSON 写 stdout，私有仓库自检脚本吃它）、`recognize jianpu|staff`（识别一个文件；五线谱写带 id 的 MusicXML 与核对 JSON）、`session`（五线谱会话，逐条做操作，见「整曲与结果模型」）、`split`（歌本切分，见「歌本切分」） |
+| `crates/omr-todoc` | 识别结果直出 `ScoreDoc`（简谱 `jianpu`、五线谱 `staff`）；参照歌词互证 `reflyrics`（按演唱顺序展开识别歌词、与参照整篇对齐，形近字按逐字候选选字、补漏字，其余报出来；繁简归一用 `dolce-base::hanvariant`；参照文本解析与生成演唱顺序共用 `dolce-view::reflyrics`） |
 | `crates/omr-engine` | 三端共用的入口：`Doc`（打开 PDF / 图片，几个文件合成一份；页尺寸、整页渲染）、`recognize`（判路：先按五线谱认，一页谱表都没有再走简谱；进度与取消）、`staff_binary`（核对底图）、`insert` / `region`（点图补认、框选重认）；`Handle`（文档句柄：桌面版 Tauri 命令与网页版 wasm 都是它外面的薄壳，请求与回应的字节 / JSON 格式两边一样）。页级并行在特性 `parallel` 后面，wasm 下关 |
 | `crates/omr-wasm` | 网页版绑定（wasm-bindgen，`scripts/build-wasm.mjs` 编进 `public/redist/omr/`，Worker `src/omrrust/worker.ts` 里跑）：`OmrDoc`（与 Tauri 命令一一对应）、`load_ocr`（OCR 用 tract 推理同一份 ONNX）、`set_pdfium_module` |
 | `crates/omr-book` | 歌本切分：`source`（取页）、`layout` / `scan`（逐页版面带、页码、标题、目录）、`plan`（歌谱区、目录投票、配号、分段、摆放，纯计算）、`report`（文件名与核对报告）、`write`（裁拼写出）、`recognize`（转曲矢量歌本逐首的裁段；识别本身在 `dolce`，本 crate 不依赖识别路线） |

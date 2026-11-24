@@ -236,3 +236,35 @@ export interface LaidInfo {
   /** 简谱：附点离数字的那道空（导出 PPTX 重摆附点） */
   stackGap?: number;
 }
+
+/** 按参照歌词生成的段落与演唱顺序（Rust `dolce_session::sing::fit_report`）。 */
+export interface SingFitReport {
+  /** 段落标记：段名、插在哪个和弦前（整套换掉谱里原有的） */
+  marks: { name: string; before: ElementId }[];
+  /** `%%sing` 原文（一遍一行）；对不上时为空串 */
+  sing: string;
+  notes: SingFitNote[];
+  refChars: number;
+  matched: number;
+}
+
+/** 生成时发现的差异：`refExtra` 歌词多出、`scoreExtra` 谱面多出、`mismatch` 字不同、`offScore` 不照谱面反复走、`noMatch` 整篇对不上 */
+export interface SingFitNote {
+  kind: "refExtra" | "scoreExtra" | "mismatch" | "offScore" | "noMatch";
+  bar?: number;
+  ref?: string;
+  score?: string;
+  context?: string;
+  fromBar?: number;
+}
+
+/** 按参照歌词给第 `song` 首生成段落标记与 `%%sing`；分遍要试排投影档（`style` 是投影档样式表）。桌面版走原生排版线程，别处走 wasm。 */
+export async function singFromLyrics(doc: ScoreDoc, song: number, lyrics: string, style: StyleSheet): Promise<SingFitReport> {
+  const { json } = docJson(doc);
+  const req = JSON.stringify({ view: "expanded", style });
+  const core = tauriCore();
+  const raw = core
+    ? new TextDecoder().decode(asBuffer(await core.invoke("layout_sing_from_lyrics", { doc: json, song, lyrics, req })))
+    : dolce().singFromLyrics(json, song, lyrics, req);
+  return JSON.parse(raw) as SingFitReport;
+}

@@ -10,6 +10,7 @@ dolce-base = { path = "../dolce-base" }
 serde.workspace = true
 dolce-model = { path = "../dolce-model" }
 dolce-play = { path = "../dolce-play" }
+dolce-view = { path = "../dolce-view" }
 dolce-scene = { path = "../dolce-scene" }
 dolce-style = { path = "../dolce-style" }
 dolce-engrave = { path = "../dolce-engrave" }

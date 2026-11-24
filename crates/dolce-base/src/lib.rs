@@ -4,10 +4,12 @@
 //! - [`fraction`]：`common/fraction.ts` 的分数（分子分母照 TS 用 f64）
 //! - [`text`]：UTF-16 位置表与源码区间（`SourceSpan` 的偏移是 UTF-16 码元，喂 CodeMirror）
 //! - [`geom`]：排版几何（照 `src/common/geom.ts`、`pathbounds.ts`）：点、矩形、3×3 矩阵、颜色、SVG 路径紧包围盒
+//! - [`hanvariant`]：繁 → 简单字表（参照歌词与谱面歌词按繁简归一比字）
 //! - [`msg`]：交给界面的提示——只给键与参数，文字由 TS 的 `t()` 出
 
 pub mod fraction;
 pub mod geom;
+pub mod hanvariant;
 pub mod js;
 pub mod msg;
 pub mod tagged;

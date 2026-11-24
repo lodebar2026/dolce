@@ -21,6 +21,10 @@ dolce-omr-staff = { path = "../omr-staff" }
 dolce-omr-todoc = { path = "../omr-todoc" }
 dolce-model = { path = "../dolce-model" }
 dolce-formats = { path = "../dolce-formats" }
+dolce-view = { path = "../dolce-view" }
+dolce-session = { path = "../dolce-session" }
+dolce-engrave = { path = "../dolce-engrave" }
+dolce-text = { path = "../dolce-text", features = ["native"] }
 serde = { workspace = true }
 serde_json = "1"
 rayon = "1.10"

@@ -95,7 +95,7 @@ The interface is available in **English and Chinese**: it follows your browser l
 - **Command-line recognition.** `dolce omr images-or-PDFs… -f format -o out` batch-recognizes jianpu and staff
   images and PDFs into text notation, 123, ABC, MusicXML and the other formats, with the same recognizer and writers
   as the editor. For jianpu, `-l lyrics.txt` cross-checks against the song's lyric text (look-alike characters are
-  corrected, dropped ones filled in, and the rest reported). The `dolce-cli-<version>-<platform>` packages on the
+  corrected, dropped ones filled in, and the rest reported); when writing 123 it also generates section marks and `%%sing` from the lyrics' singing order. The `dolce-cli-<version>-<platform>` packages on the
   releases page (macOS arm64, Windows x64, Linux x64) run as-is, without Node.
 - **Hymnal splitting.** `dolce split book.pdf -o songs/` turns a paged jianpu hymnal (scanned PDF or a
   folder of page images) into one `number title.jpg` per song: pages holding several songs are cut at the titles,
@@ -106,7 +106,7 @@ The interface is available in **English and Chinese**: it follows your browser l
 
 **Typesetting**
 - **Four views:**
-  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%sing` order can pin down, pass by pass and line by line, which sections appear and with which verse.
+  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%sing` order can pin down, pass by pass and line by line, which sections appear and with which verse; pasting the lyrics written out in singing order generates the section marks and `%%sing` automatically.
   - *Jianpu*: laid out as printed, with verses stacked under the notes, for print.
   - *Staff*: Western staff notation.
   - *Mixed*: staff notation with a jianpu layer on top.

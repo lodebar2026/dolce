@@ -37,6 +37,8 @@ import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../convert/targets";
 import { t } from "../i18n";
+import { singFromLyrics, type SingFitReport } from "../layout/rustlayout";
+import { applySingFit, songAtOffset } from "./singapply";
 import { diagText, targetLabel } from "../i18n/labels";
 import { msgText } from "../model/msg";
 import { buildMusicXml, sourceMusicXmlBare } from "./export";
@@ -1632,6 +1634,23 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const sheet = this.style.styleOf(view);
     const width = this.style.layoutPage.w;
     return (doc, song) => measureDocument(doc, sheet, width, view === "expanded", song);
+  }
+
+  /**
+   * 按参照歌词生成段落标记与逐遍演唱顺序（只 123：`[P:x]` + `%%sing`，`singapply.ts`）。生成在 Rust（`layout/rustlayout.ts::singFromLyrics`），
+   * 分遍按当前投影档样式试排。回报告、写回后的原文（定不了位为 null，生成失败时也为 null）与这一首原来有没有段落 / 演唱顺序；
+   * 不是 123、读不了原文时为 null。只预览，写回由调用方 `setText`（一次改动，可撤销）。
+   */
+  async previewSingFromLyrics(lyrics: string): Promise<{ report: SingFitReport; text: string | null; replaces: boolean } | null> {
+    if (this.docFormat !== "123" || this.mode === "recognize" || !this.adapter.toScoreDoc) return null;
+    const text = this.getText();
+    const doc = this._tryParse(this.adapter.toScoreDoc.bind(this.adapter), text);
+    if (!doc || doc.songs.length === 0) return null;
+    const song = songAtOffset(text, doc, this.view.state.selection.main.head);
+    const report = await singFromLyrics(doc, song, lyrics, this.style.styleOf("expanded"));
+    const s = doc.songs[song];
+    const replaces = !!(s?.singOrder?.length || s?.sectionMarks?.length || s?.sectionOrder);
+    return { report, text: applySingFit(text, doc, song, report), replaces };
   }
 
   /** 注册工具栏「简繁」按钮，供转换期间切换加载中状态。 */

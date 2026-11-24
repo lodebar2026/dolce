@@ -15,5 +15,3 @@ dolce-omr-core = { path = "../omr-core" }
 dolce-omr-sheet = { path = "../omr-sheet" }
 dolce-omr-text = { path = "../omr-text" }
 serde.workspace = true
-encoding_rs = "0.8"
-regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }

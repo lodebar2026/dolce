@@ -178,3 +178,13 @@ pub async fn layout_clear_measure() -> Result<(), String> {
     })
     .await
 }
+
+/// 按参照歌词生成段落标记与 `%%sing`（同 wasm `singFromLyrics`；试排投影档要量字，所以也在排版线程上跑）。回 JSON 字节。
+#[tauri::command]
+pub async fn layout_sing_from_lyrics(doc: String, song: u32, lyrics: String, req: String) -> Result<Response, String> {
+    run(move |host| {
+        let v = dolce_session::sing::sing_from_lyrics_json(&doc, song as usize, &lyrics, &req, &host.env())?;
+        Ok(Response::new(serde_json::to_vec(&v).map_err(|e| e.to_string())?))
+    })
+    .await
+}

@@ -672,7 +672,7 @@ lt .81 rt .38 lb .63 rb .68，原先 0.45 的门把它判成了 ♯）。♮ 早
 `[2`「和平的福音已扎根」，谱面上都在第 1 行。「第几遍唱哪行词」交给演唱顺序层（`crates/dolce-play/src/playorder.rs`，
 `.Repeat` 的 `Vn` 就指第 n 行词）。旧版按房号首号迁到 W[n-1]，上述三份 GT 据此订回 w1。
 
-**整页简体里的孤立繁体字按候选改判**（2026-09-20，`src/omr/hanvariant.ts` + `lyrics.ts::simplifyStrayTraditional`；繁 → 简表现在是 `omr-text::hanvariant`）：
+**整页简体里的孤立繁体字按候选改判**（2026-09-20，`src/omr/hanvariant.ts` + `lyrics.ts::simplifyStrayTraditional`；繁 → 简表现在是 `dolce-base::hanvariant`（`omr-text` 转引））：
 PP-OCR 的字典繁简同收，字形只差一角的一对常读错边——76《天上有粮》十来行歌词里只有「别」被读成
 「別」（而同一页的署名「詞曲：巧兒」倒真是繁体，所以**只按歌词区统计、页眉不参与**）。两条判据叠起来：
 - **孤立**：整页歌词至多 2 个繁体字，且简体字数 ≥ 繁体的 10 倍（繁体谱面整页都是繁体，碰不到）；

@@ -5,7 +5,7 @@ import { browserMeasure, ensureFontsReady } from "./common/measure.browser";
 import { asset } from "./common/asset";
 import { App, type ViewMode } from "./editor/app";
 import { IMAGE_EXT, IMAGE_ACCEPT, byFileName, isDocFile, isImageFile, isMidiFile } from "./common/filetypes";
-import { showOptionsDialog, showHanConvDialog } from "./editor/dialogs";
+import { showOptionsDialog, showHanConvDialog, showSingDialog } from "./editor/dialogs";
 import { showPartsPanel } from "./editor/parts";
 import { showExportDialog, showSaveAsDialog } from "./editor/export";
 import { showHelpDialog } from "./editor/help";
@@ -208,6 +208,7 @@ async function boot() {
     app.setHanziButton(hanziBtn);
     hanziBtn.addEventListener("click", () => showHanConvDialog(app));
   }
+  on("btn-sing", () => showSingDialog(app));
   on("btn-export", () => showExportDialog(app));
   on("btn-help", () => showHelpDialog(app));
   // 顶栏的应用级四项在手机宽度收进「⋯」（电脑上那个钮不显示，四项照常排在顶栏）

@@ -52,6 +52,8 @@ export interface DolceWasm {
   measureDocument(doc: string, style: string, width: number, slide: boolean, song: number): string;
   engravedMusicXml(doc: string, surface: number, req: string): string;
   staffChordSpans(doc: string, surface: number, req: string): string;
+  /** 按参照歌词生成段落与 `%%sing`（`dolce_session::sing`）：`req` 是投影档 `JianpuRequest` JSON，回 `SingFitReport` JSON */
+  singFromLyrics(doc: string, song: number, lyrics: string, req: string): string;
 
   default(init?: { module_or_path: string | URL }): Promise<object>;
   initSync(init: { module: BufferSource | WebAssembly.Module }): object;

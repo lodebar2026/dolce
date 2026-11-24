@@ -6,5 +6,6 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+dolce-base = { path = "../dolce-base" }
 serde.workspace = true
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }

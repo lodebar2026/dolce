@@ -451,6 +451,7 @@ dependencies = [
 name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
+ "dolce-engrave",
  "dolce-formats",
  "dolce-model",
  "dolce-omr-book",
@@ -462,6 +463,9 @@ dependencies = [
  "dolce-omr-source",
  "dolce-omr-staff",
  "dolce-omr-todoc",
+ "dolce-session",
+ "dolce-text",
+ "dolce-view",
  "rayon",
  "serde",
  "serde_json",
@@ -476,6 +480,7 @@ dependencies = [
  "dolce-book",
  "dolce-engrave",
  "dolce-export",
+ "dolce-formats",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
@@ -484,6 +489,7 @@ dependencies = [
  "dolce-session",
  "dolce-style",
  "dolce-text",
+ "dolce-view",
  "half",
  "indexmap",
  "prost",
@@ -722,6 +728,7 @@ dependencies = [
 name = "dolce-omr-text"
 version = "0.1.0"
 dependencies = [
+ "dolce-base",
  "regex",
  "serde",
 ]
@@ -738,8 +745,6 @@ dependencies = [
  "dolce-omr-text",
  "dolce-play",
  "dolce-view",
- "encoding_rs",
- "regex",
  "serde",
 ]
 
@@ -788,6 +793,7 @@ dependencies = [
  "dolce-play",
  "dolce-scene",
  "dolce-style",
+ "dolce-view",
  "serde",
  "serde_json",
 ]
@@ -825,8 +831,11 @@ name = "dolce-view"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "dolce-formats",
  "dolce-model",
  "dolce-play",
+ "encoding_rs",
+ "regex",
  "serde",
  "serde_json",
 ]

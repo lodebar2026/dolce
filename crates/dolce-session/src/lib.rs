@@ -8,6 +8,7 @@
 //! `engine.unimplemented`。
 
 pub mod layout;
+pub mod sing;
 
 use dolce_base::Msg;
 use serde::{Deserialize, Serialize};

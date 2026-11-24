@@ -10,6 +10,9 @@ dolce-base = { path = "../dolce-base" }
 dolce-model = { path = "../dolce-model" }
 dolce-play = { path = "../dolce-play" }
 serde.workspace = true
+encoding_rs = "0.8"
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
 
 [dev-dependencies]
+dolce-formats = { path = "../dolce-formats" }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }

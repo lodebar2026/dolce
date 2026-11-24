@@ -8,6 +8,7 @@ import { ORIGINAL_PAPERS, PAGE_RATIOS, PAPER_SIZES } from "../style/themes";
 import { CONVERT_TARGETS } from "../convert/targets";
 import { getLangPref, setLangPref, t, type LangPref, type MsgKey } from "../i18n";
 import { targetLabel } from "../i18n/labels";
+import type { SingFitNote } from "../layout/rustlayout";
 
 /** 模态框的底座：遮罩 + 盒（标题 / 内容 / 页脚）、Esc 与点遮罩关闭。按钮与内容由调用方给。
  *  `close` 可重复调用，`onClose` 只回一次（不论是按钮、Esc 还是点遮罩关的）。 */
@@ -217,6 +218,142 @@ export function showHanConvDialog(app: App): void {
     } catch { /* 隐私模式下忽略 */ }
     void app.convertHanzi(dir);
   });
+}
+
+/** 歌词文件字节 → 文本：带 BOM 的 UTF-16 / UTF-8，否则先按 UTF-8 严格解、解不了退 GBK（老 .txt / .lrc 多是 GBK；同 Rust `decode_lyrics_bytes`）。 */
+function decodeLyricsFile(b: Uint8Array): string {
+  if (b[0] === 0xff && b[1] === 0xfe) return new TextDecoder("utf-16le").decode(b.subarray(2));
+  if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder("utf-16be").decode(b.subarray(2));
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(b);
+  } catch {
+    return new TextDecoder("gbk").decode(b);
+  }
+}
+
+function singNoteText(n: SingFitNote): string {
+  const bar = n.bar ?? "?";
+  const ctx = n.context ? `  〔${n.context}〕` : "";
+  switch (n.kind) {
+    case "refExtra": return t("sing.note.refExtra", { bar, ref: n.ref ?? "" }) + ctx;
+    case "scoreExtra": return t("sing.note.scoreExtra", { bar, score: n.score ?? "" }) + ctx;
+    case "mismatch": return t("sing.note.mismatch", { bar, score: n.score ?? "", ref: n.ref ?? "" }) + ctx;
+    case "offScore": return t("sing.note.offScore", { from: n.fromBar ?? "?", bar }) + ctx;
+    case "noMatch": return t("sing.note.noMatch");
+  }
+}
+
+/** 按歌词生成演唱顺序：粘贴 / 读文件 → 生成预览（`%%sing` 与差异）→ 写入（改 123 原文，一次可撤销）。 */
+export function showSingDialog(app: App): void {
+  const body = document.createElement("div");
+  body.className = "settings-form";
+  body.style.cssText = "display:flex;flex-direction:column;gap:8px;min-width:min(560px,80vw)";
+  const hint = document.createElement("div");
+  hint.style.cssText = "opacity:0.75;font-size:12px;line-height:1.6";
+  hint.textContent = t("sing.hint");
+  const area = document.createElement("textarea");
+  area.rows = 12;
+  area.placeholder = t("sing.placeholder");
+  area.style.cssText = "width:100%;box-sizing:border-box;font:inherit;resize:vertical";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".txt,.lrc,text/plain";
+  fileInput.hidden = true;
+  const fileBtn = document.createElement("button");
+  fileBtn.type = "button";
+  fileBtn.textContent = t("sing.file");
+  fileBtn.style.alignSelf = "flex-start";
+  const loadFile = async (f: File | undefined) => {
+    if (f) area.value = decodeLyricsFile(new Uint8Array(await f.arrayBuffer()));
+  };
+  fileBtn.onclick = () => fileInput.click();
+  fileInput.onchange = () => void loadFile(fileInput.files?.[0]);
+  area.addEventListener("dragover", (e) => e.preventDefault());
+  area.addEventListener("drop", (e) => {
+    const f = e.dataTransfer?.files?.[0];
+    if (!f) return;
+    e.preventDefault();
+    void loadFile(f);
+  });
+  const result = document.createElement("div");
+  result.style.cssText = "display:flex;flex-direction:column;gap:6px;font-size:13px";
+  body.append(hint, area, fileBtn, fileInput, result);
+
+  const gen = document.createElement("button");
+  gen.type = "button";
+  gen.textContent = t("sing.generate");
+  gen.style.marginRight = "auto";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = t("dlg.cancel");
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.className = "modal-button-primary";
+  apply.textContent = t("sing.apply");
+  apply.disabled = true;
+  const { close } = openModal({ title: t("sing.title"), boxClass: "settings-box", body: [body], footer: [gen, cancel, apply] });
+  cancel.onclick = close;
+
+  let next: string | null = null;
+  area.oninput = () => {
+    next = null;
+    apply.disabled = true;
+  };
+  gen.onclick = async () => {
+    gen.disabled = true;
+    apply.disabled = true;
+    next = null;
+    result.textContent = t("sing.busy");
+    try {
+      const r = await app.previewSingFromLyrics(area.value);
+      result.replaceChildren();
+      const line = (text: string, css = "") => {
+        const d = document.createElement("div");
+        d.textContent = text;
+        d.style.cssText = css;
+        result.append(d);
+        return d;
+      };
+      if (!r) {
+        line(t("sing.notApplicable"));
+        return;
+      }
+      const passes = r.report.sing ? r.report.sing.split("\n").length : 0;
+      line(t("sing.summary", { matched: r.report.matched, total: r.report.refChars, passes }));
+      if (r.report.sing) {
+        const pre = document.createElement("pre");
+        pre.textContent = r.report.sing;
+        pre.style.cssText = "margin:0;padding:6px 8px;background:rgba(127,127,127,0.12);border-radius:4px;white-space:pre-wrap";
+        result.append(pre);
+      }
+      if (r.report.notes.length) {
+        const ul = document.createElement("ul");
+        ul.style.cssText = "margin:0;padding-left:18px;max-height:9em;overflow:auto";
+        for (const n of r.report.notes) {
+          const li = document.createElement("li");
+          li.textContent = singNoteText(n);
+          ul.append(li);
+        }
+        result.append(ul);
+      }
+      if (r.report.sing && r.text === null) line(t("sing.unplaced"), "color:#c0392b");
+      else if (r.report.sing && r.replaces) line(t("sing.replaces"), "opacity:0.75");
+      next = r.report.sing ? r.text : null;
+      apply.disabled = next === null;
+    } catch (e) {
+      console.error("sing from lyrics failed", e);
+      result.textContent = t("sing.failed");
+    } finally {
+      gen.disabled = false;
+    }
+  };
+  apply.onclick = () => {
+    if (next === null) return;
+    app.setText(next);
+    app.setStatus(t("sing.applied"));
+    close();
+  };
+  area.focus();
 }
 
 /** ARGB → <input type="color">。取色器只认 #rrggbb，alpha 一律当不透明处理

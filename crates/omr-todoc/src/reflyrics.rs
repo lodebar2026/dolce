@@ -8,16 +8,16 @@
 //! 逐字候选取识别时挂在音上的 `lyric_alts`；判据与门槛的来历见 docs/实现/OMR-简谱识别.md「参照歌词互证」。
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
 
 use dolce_base::js;
 use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::jianpu::{JpNum, LyricAlt, RecognizedScore, StaffRow};
-use dolce_omr_text::hanvariant::simplified_of;
+use dolce_base::hanvariant::simplified_of;
 use dolce_play::walk::{walk_play, Step, WalkItem};
+pub use dolce_view::reflyrics::decode_lyrics_bytes;
+use dolce_view::reflyrics::{is_hanzi, ref_lines};
 use dolce_view::playsong::{play_data_of_song, song_measures, PlaySongOptions};
 use dolce_view::slots::doc_view;
-use regex::Regex;
 use serde::Serialize;
 
 use crate::jianpu::recognized_to_doc;
@@ -158,10 +158,6 @@ pub struct LyricCheck {
 
 // ───────────────────────── 小工具 ─────────────────────────
 
-fn is_hanzi(c: char) -> bool {
-    ('\u{4e00}'..='\u{9fff}').contains(&c)
-}
-
 /// 比较口径：繁简归一（繁体谱对简体词不算不同）
 fn norm_ch(c: char) -> char {
     simplified_of(c).unwrap_or(c)
@@ -185,31 +181,6 @@ fn rcx(r: &Rect) -> f64 {
     r.x + r.w / 2.0
 }
 
-/// JS 正则 `\s`
-const WS: &str = r"[\t\n\x0B\x0C\r \x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]";
-
-fn re(cell: &'static OnceLock<Regex>, pat: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(&pat.replace("WS", WS)).expect("正则"))
-}
-
-/// 歌词文件字节 → 文本。歌本配套的歌词编码混杂：带 BOM 的 UTF-16LE / BE、UTF-8，否则先按 UTF-8 严格解码、解不了退 GBK（老 .txt / .lrc 多是 GBK）
-pub fn decode_lyrics_bytes(b: &[u8]) -> String {
-    use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
-    if b.starts_with(&[0xff, 0xfe]) {
-        return UTF_16LE.decode_without_bom_handling(&b[2..]).0.into_owned();
-    }
-    if b.starts_with(&[0xfe, 0xff]) {
-        return UTF_16BE.decode_without_bom_handling(&b[2..]).0.into_owned();
-    }
-    if b.starts_with(&[0xef, 0xbb, 0xbf]) {
-        return String::from_utf8_lossy(&b[3..]).into_owned();
-    }
-    match std::str::from_utf8(b) {
-        Ok(s) => s.to_string(),
-        Err(_) => GBK.decode_without_bom_handling(b).0.into_owned(),
-    }
-}
-
 // ───────────────────────── 参照歌词解析 ─────────────────────────
 
 #[derive(Clone, Debug)]
@@ -231,106 +202,17 @@ fn context_of(line: &str, pos: usize) -> String {
     format!("{}{}{}", if a > 0 { "…" } else { "" }, cs[a..b].iter().collect::<String>(), if b < cs.len() { "…" } else { "" })
 }
 
-// 结构标注：`(副歌)`、`【副歌】`、`[Chorus]`、`副歌：`、单独一行的 `1.` / `一、`
-const LABEL_WORDS: &str = "副歌|副|和|合|间奏|尾声|结尾|重复|重唱|独唱|齐唱|合唱|领|众|男|女|男声|女声|chorus|refrain|verse|bridge|coda|intro|outro|ending";
-
-fn label_re() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(&format!(r"(?i)^(?:{LABEL_WORDS}){WS}*[0-9]*$")).expect("正则"))
-}
-
-/// 歌词文本 → 逐字 token（只收汉字；标点、段号、结构标注、lrc 时间戳与信息行都去掉）。
+/// 歌词文本 → 逐字 token（只收汉字；标点、段号、结构标注、lrc 时间戳与信息行都去掉，见 [`ref_lines`]）。
 /// lrc 一句带几个时间戳 = 这句唱几遍，按时间展开排序（就是演唱顺序）
 pub fn parse_ref_lyrics(text: &str) -> Vec<RefToken> {
-    static LRC_LINE: OnceLock<Regex> = OnceLock::new();
-    static LRC_TS: OnceLock<Regex> = OnceLock::new();
-    static TAG: OnceLock<Regex> = OnceLock::new();
-    static META: OnceLock<Regex> = OnceLock::new();
-    static BRACKET: OnceLock<Regex> = OnceLock::new();
-    static NUM: OnceLock<Regex> = OnceLock::new();
-    static HEAD_LABEL: OnceLock<Regex> = OnceLock::new();
-    static HEAD_NUM: OnceLock<Regex> = OnceLock::new();
-    static HEAD_NUM2: OnceLock<Regex> = OnceLock::new();
-    let lrc_ts = re(&LRC_TS, r"\[([0-9]+):([0-9]+(?:\.[0-9]+)?)\]");
-
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let mut lines: Vec<String> = split_lines(text);
-    let lrc_line = re(&LRC_LINE, r"^WS*\[[0-9]+:[0-9]");
-    if lines.iter().any(|l| lrc_line.is_match(l)) {
-        let mut timed: Vec<(f64, String)> = vec![];
-        for l in &lines {
-            let s = lrc_ts.replace_all(l, "").into_owned();
-            for m in lrc_ts.captures_iter(l) {
-                timed.push((js::number(&m[1]) * 60.0 + js::number(&m[2]), s.clone()));
-            }
-        }
-        timed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        lines = timed.into_iter().map(|x| x.1).collect();
-    }
-    let tag = re(&TAG, r"^\[[a-zA-Z]+:.*\]$");
-    let meta = re(&META, r"(?i)^(?:歌曲|歌名|曲名|专辑|作词|作曲|词|曲|词曲|演唱|歌手|编曲|原唱|ti|ar|al|by|offset)WS*[:：]");
-    let bracket = re(&BRACKET, r"[(（【\[<《]WS*([^)）】\]>》]{1,8}?)WS*[)）】\]>》]");
-    let num = re(&NUM, r"^(?:[0-9]+|[一二三四五六七八九十]+)$");
-    let head_label = re(&HEAD_LABEL, r"(?i)^[（(]?WS*(?:副歌|副|和|合|chorus|refrain)WS*[:：)）]WS*");
-    let head_num = re(&HEAD_NUM, r"^WS*(?:[0-9]{1,2}|[一二三四五六七八九十])WS*[.．、:：)）]WS*");
-    let head_num2 = re(&HEAD_NUM2, r"^WS*[0-9]{1,2}WS+");
-    let label = label_re();
-
     let mut out = vec![];
-    for raw in &lines {
-        let l = js::trim(raw);
-        if l.is_empty() || tag.is_match(l) || meta.is_match(l) {
-            continue;
-        }
-        // 括起来的结构标注整个去掉；括号里是词（`(阿们)`）的保留
-        let l = bracket.replace_all(l, |c: &regex::Captures| {
-            let inner = js::trim(&c[1]);
-            if label.is_match(inner) || num.is_match(inner) {
-                String::new()
-            } else {
-                c[0].to_string()
-            }
-        });
-        // 行首的结构标注：`副歌：` `副)` `副）`（只有半边括号，上面那条配不上）
-        let l = head_label.replacen(&l, 1, "").into_owned();
-        // 行首段号 `1.` `一、`
-        let l = head_num.replacen(&l, 1, "").into_owned();
-        // `1 我主…`
-        let l = match head_num2.find(&l) {
-            Some(m) if l[m.end()..].chars().next().is_some_and(is_hanzi) => l[m.end()..].to_string(),
-            _ => l,
-        };
-        let l = js::trim(&l);
-        if l.is_empty() || label.is_match(l) {
-            continue;
-        }
-        for (pos, c) in l.chars().enumerate() {
+    for l in ref_lines(text) {
+        for (pos, c) in l.text.chars().enumerate() {
             if is_hanzi(c) {
-                out.push(RefToken { ch: c, norm: norm_ch(c), line: context_of(l, pos) });
+                out.push(RefToken { ch: c, norm: norm_ch(c), line: context_of(&l.text, pos) });
             }
         }
     }
-    out
-}
-
-/// `split(/\r\n|\r|\n/)`
-fn split_lines(text: &str) -> Vec<String> {
-    let mut out = vec![];
-    let mut cur = String::new();
-    let mut it = text.chars().peekable();
-    while let Some(c) = it.next() {
-        match c {
-            '\r' => {
-                if it.peek() == Some(&'\n') {
-                    it.next();
-                }
-                out.push(std::mem::take(&mut cur));
-            }
-            '\n' => out.push(std::mem::take(&mut cur)),
-            _ => cur.push(c),
-        }
-    }
-    out.push(cur);
     out
 }
 
