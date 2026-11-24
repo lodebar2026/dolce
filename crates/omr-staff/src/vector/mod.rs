@@ -183,6 +183,18 @@ pub fn frame_vector(vp: &VecPage) -> Option<VecFrame> {
     Some(VecFrame { layout, staff_lines, segs })
 }
 
+/// 一个路径对象在外框 `r` 里的那部分画成白底黑字的小图（四周垫白，同位图读数字的 `attrs::lead::cell`）：只画这一个对象，
+/// 压着的谱线、穿过的干都不进图。
+fn piece_cell(vp: &VecPage, o: &dolce_omr_source::vector::VObj, r: &dolce_omr_core::image::Rect) -> dolce_omr_ocr::surface::Gray {
+    let (x0, y0) = (r.x.floor() as i64, r.y.floor() as i64);
+    let (w, h) = ((r.right().ceil() as i64 - x0 + 1).max(1) as usize, (r.bottom().ceil() as i64 - y0 + 1).max(1) as usize);
+    let pad = (h / 5).max(2);
+    let mut g = dolce_omr_ocr::surface::Gray::new(w + 2 * pad, h + 2 * pad, 255);
+    let gw = g.w;
+    dolce_omr_source::vector::draw_obj(vp, o, x0 as f64, y0 as f64, 1.0, w, h, &mut |x, y| g.data[(y + pad) * gw + x + pad] = 0);
+    g
+}
+
 /// 矢量页画成像素的页框：`keep` 收下的对象按工作坐标画进二值图，版面照搬矢量的。
 /// 字形字典在行首认不出谱号的行（转曲页换了一套字体，谱号、调号、拍号都不在字典里）把整页（简谱带里的不画）画成像素，
 /// 行首读法（谱号自举、调号按竖笔数、拍号读数字）与行中拍号走位图同一份 `attrs::lead`，不另写一套矢量判据。
@@ -285,11 +297,18 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     let mid_key = |si: usize, c: dolce_omr_sheet::music::Clef, a: f64| crate::attrs::lead::read_key_after(lead_frame_of(), si, c, a);
     let attrs = notes::page_attrs(&f.layout, &syms, Some(&lead), Some(&mid_time), Some(&mid_key));
     let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
-    // 转曲页（文字层里没有正文的字）：连音的「3」也是路径，在画成像素的页框上按位图同一份墨块读数字找候选
+    // 转曲页（文字层里没有正文的字）：连音的「3」也是路径。候选取路径对象的块（外框精确，不与谱线、干粘连），
+    // 读数时只把这一个对象画成小图送 OCR，成组与收不收同位图（`notes::tuplets::add_by_rects`）
     let outlined = !vp.chars.iter().any(|c| !c.generated && glyphs::music_family(&c.font).is_none());
     if let (true, Some(o)) = (outlined, ocr) {
+        let rects: Vec<dolce_omr_core::image::Rect> = pieces.iter().map(|p| p.rect).collect();
+        let is3 = |r: &dolce_omr_core::image::Rect| {
+            let Some(p) = pieces.iter().find(|p| p.rect == *r) else { return false };
+            let g = piece_cell(&vp, &vp.objs[p.obj as usize], r);
+            o.read_digit(&g).and_then(|alts| crate::attrs::lead::digits_of(&alts, |d| d == 3)) == Some(3)
+        };
         for (si, row) in notes.iter_mut().enumerate() {
-            crate::notes::tuplets::add_by_blobs(lead_frame_of(), si, row, o);
+            crate::notes::tuplets::add_by_rects(&f.layout, si, row, &rects, &is3);
         }
     }
     // 多小节休止：粗横段 + 两端竖段 + 上方的数字（共用判据 `notes::rests::multi_rests`）

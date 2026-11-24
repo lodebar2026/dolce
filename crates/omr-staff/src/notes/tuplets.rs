@@ -6,6 +6,7 @@ use super::RowNotes;
 use crate::attrs::lead::{cell, digits_of};
 use crate::attrs::DigitReader;
 use crate::page::PageFrame;
+use dolce_omr_core::image::Rect;
 use serde::{Deserialize, Serialize};
 
 /// 数字的宽、高范围（相对线距）。
@@ -34,33 +35,41 @@ pub fn tuplets(f: &PageFrame, rows: &mut [RowNotes], ocr: Option<&dyn DigitReade
     }
 }
 
-/// 按页框墨块找第 `si` 行的连音候选，追加到 `row.tuplets`（已有候选占着的和弦不重复收）。
-/// 位图页直接用；转曲矢量页的「3」是路径、不在文字层，画成像素后也走这一份。
+/// 按页框墨块找第 `si` 行的连音候选，追加到 `row.tuplets`（已有候选占着的和弦不重复收）。位图页用。
 pub fn add_by_blobs(f: &PageFrame, si: usize, row: &mut RowNotes, ocr: &dyn DigitReader) {
+    let rects: Vec<Rect> = f.blobs.iter().map(|b| b.rect).collect();
+    add_by_rects(&f.layout, si, row, &rects, &|r: &Rect| {
+        let g = cell(f, r.x as i64, r.right() as i64, r.y as i64, r.bottom() as i64);
+        ocr.read_digit(&g).and_then(|alts| digits_of(&alts, |d| d == 3)) == Some(3)
+    });
+}
+
+/// 给定的候选外框里找第 `si` 行的连音候选，追加到 `row.tuplets`：数字大小、不含着头、正对着一组和弦、`is3` 读出 3 的收下。
+/// 位图页的外框是墨块（[`add_by_blobs`]）；转曲矢量页的「3」是一个路径对象，外框取对象的块，读数只画这一个对象（不与谱线、干粘连）。
+pub fn add_by_rects(f: &crate::page::Layout, si: usize, row: &mut RowNotes, rects: &[Rect], is3: &dyn Fn(&Rect) -> bool) {
     let s = &f.staves[si];
     let sp = s.space();
-    for b in &f.blobs {
-        let (w, h) = (b.rect.w / sp, b.rect.h / sp);
-        if b.cx < s.left || b.cx > s.right || w < DIGIT_W.0 || w > DIGIT_W.1 || h < DIGIT_H.0 || h > DIGIT_H.1 || h < w {
+    for r in rects {
+        let (w, h) = (r.w / sp, r.h / sp);
+        if r.cx() < s.left || r.cx() > s.right || w < DIGIT_W.0 || w > DIGIT_W.1 || h < DIGIT_H.0 || h > DIGIT_H.1 || h < w {
             continue;
         }
         // 含着头的墨块是音符自己
-        if row.chords.iter().any(|c| c.heads.iter().any(|hd| hd.x >= b.rect.x && hd.x <= b.rect.right() && hd.y >= b.rect.y && hd.y <= b.rect.bottom())) {
+        if row.chords.iter().any(|c| c.heads.iter().any(|hd| hd.x >= r.x && hd.x <= r.right() && hd.y >= r.y && hd.y <= r.bottom())) {
             continue;
         }
-        let Some(w) = group_at(&f.layout, si, row, b.rect) else { continue };
+        let Some(w) = group_at(f, si, row, *r) else { continue };
         if row.tuplets.iter().any(|t| t.chords.iter().any(|i| w.contains(i))) {
             continue;
         }
-        let g = cell(f, b.rect.x as i64, b.rect.right() as i64, b.rect.y as i64, b.rect.bottom() as i64);
-        if ocr.read_digit(&g).and_then(|alts| digits_of(&alts, |d| d == 3)) == Some(3) {
+        if is3(r) {
             row.tuplets.push(TupletCand { chords: w, actual: 3, normal: 2 });
         }
     }
 }
 
 /// 数字（外框 `r`）上方 / 下方挨着的和弦里，挨着的三个、时值相同、不隔小节线、正中对着数字的那一组。两种证据共用。
-pub fn group_at(f: &crate::page::Layout, si: usize, row: &RowNotes, r: dolce_omr_core::image::Rect) -> Option<Vec<usize>> {
+pub fn group_at(f: &crate::page::Layout, si: usize, row: &RowNotes, r: Rect) -> Option<Vec<usize>> {
     let sp = f.staves[si].space();
     let (cx, cy) = (r.cx(), r.y + r.h / 2.0);
     let bar_between = |a: f64, b: f64| f.bars.get(si).is_some_and(|bs| bs.iter().any(|l| l.x > a && l.x < b));
