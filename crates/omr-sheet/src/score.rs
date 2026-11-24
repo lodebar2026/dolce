@@ -226,9 +226,9 @@ pub struct Event {
     /// 落选候选（花费从小到大）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alts: Vec<EventAlt>,
-    /// 挂在前面的倚音（自左而右；写出成带斜杠的小音符）。
+    /// 挂在前面的倚音（自左而右；每个是一个小音符或倚音和弦的各音；写出成带斜杠的小音符）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub graces: Vec<Pitch>,
+    pub graces: Vec<Vec<Pitch>>,
 }
 
 impl Event {

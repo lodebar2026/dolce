@@ -76,9 +76,9 @@ pub struct Chord {
     /// 用户钉住的（时值、音高照钉的；满拍裁决不再动它，见 `song::Constraints`）。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
-    /// 挂在前面的倚音（各自的谱位，自左而右；混排页取自简谱行，`mixed::fuse::attach_graces`）。
+    /// 挂在前面的倚音，自左而右；每个倚音是一根干上的几个头（谱位；倚音和弦不止一个）。混排页取自简谱行，`mixed::fuse::attach_graces`。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub graces: Vec<i32>,
+    pub graces: Vec<Vec<i32>>,
 }
 
 /// 一行谱的音符（按 x 排）。
@@ -236,7 +236,8 @@ pub fn page_notes(f: &PageFrame, attrs: &[RowAttrs], ocr: Option<&dyn crate::att
     tuplets::tuplets(f, &mut rows, ocr);
     let sum = InkSum::new(&solid);
     for (si, row) in rows.iter_mut().enumerate() {
-        let gs = graces::raster(f, &solid, &sum, &claims, si, from_of(si), row);
+        let mut gs = graces::from_chords(f, si, row);
+        gs.extend(graces::raster(f, &solid, &sum, &claims, si, from_of(si), row));
         graces::attach(row, f.staves[si].space(), &gs);
     }
     rows

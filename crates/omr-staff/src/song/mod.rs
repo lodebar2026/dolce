@@ -573,11 +573,11 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                             c_at = x.attrs.clef.unwrap_or(c_at);
                             k_at = x.attrs.key.unwrap_or(k_at);
                         }
-                        let mut gs: Vec<Pitch> = ch.graces.iter().map(|&pos| {
+                        let mut gs: Vec<Vec<Pitch>> = ch.graces.iter().map(|g| g.iter().map(|&pos| {
                             let mut p = c_at.pitch_at(pos);
                             p.alter = held.get(&(p.step, p.octave)).copied().unwrap_or(k_at.alter_of(p.step));
                             p
-                        }).collect();
+                        }).collect()).collect();
                         let mut shown: Vec<(Pitch, i8)> = Vec::new();
                         let mut ps: Vec<_> = ch.heads.iter().map(|h| {
                             let mut p = c_at.pitch_at(h.pos);

@@ -133,7 +133,7 @@ pub fn attach_graces(c: &Ctx, notes: &mut RowNotes, cal: &Calib) -> usize {
         let right = || idx.iter().copied().filter(|&i| notes.chords[i].x >= x - sp * PAIR_DX && notes.chords[i].x - x <= sp * crate::notes::graces::REACH).min_by(|a, b| near(a).total_cmp(&near(b)));
         let Some(ci) = paired.or_else(right).filter(|&i| !had[i]) else { continue };
         let pos = dia(c.clef, 0) - (base + tonic(c.key) + g.digit as i32 - 1 + 7 * g.octave);
-        notes.chords[ci].graces.push(pos);
+        notes.chords[ci].graces.push(vec![pos]);
         n += 1;
     }
     n

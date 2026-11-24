@@ -434,7 +434,8 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
     }
     for (si, row) in rows.iter_mut().enumerate() {
         let hs: Vec<(f64, i32)> = grace_heads.iter().filter(|g| g.0 == si).map(|g| (g.1, g.2)).collect();
-        crate::notes::graces::attach(row, f.staves[si].space(), &hs);
+        let sp = f.staves[si].space();
+        crate::notes::graces::attach(row, sp, &crate::notes::graces::group_by_x(sp, &hs));
     }
     rows
 }

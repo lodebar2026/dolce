@@ -500,7 +500,7 @@ impl Builder {
                     let mut gc = Chord { id, duration: Duration { divisions: 0.0, kind: Some(NoteType::Eighth), dots: 0.0, time_mod: None }, voice: e.voice.max(1) as f64, staff: if multi { e.staff.max(1) as f64 } else { 1.0 }, ..Chord::default() };
                     gc.oid = self.oid();
                     gc.grace = Some(GraceInfo { slash: Some(true), ..Default::default() });
-                    gc.notes.push(Note { pitch: Some(pitch_of(g)), ..Default::default() });
+                    gc.notes.extend(g.iter().map(|p| Note { pitch: Some(pitch_of(p)), ..Default::default() }));
                     if cursor != end {
                         gc.onset = Some(cursor);
                     }
