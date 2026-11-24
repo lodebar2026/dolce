@@ -494,7 +494,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
   }
 
-  /** 「按乐句重排」开着没有。开着时五线谱另按乐句断（`staffPhraseLineStarts`），不跟简谱视图的行。 */
+  /** 「按乐句重排」开着没有。开着时五线谱另按乐句断（`staffPhraseLineStarts`），不跟简谱视图的行；
+   *  写了 `%%sing` 的投影档逐遍按乐句断行（`JianpuPaintRequest.singPhrase`，不进原文、不存文件，用户定 2026-11-24）。 */
   get phraseOn(): boolean {
     return this._lineMode === "phrase";
   }
@@ -539,7 +540,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._breakDesc = breakDesc; // 导出 PPTX 时另排一遍要用同一份分页描述
     this.syncView.buildIndex(doc);
     this.playback.refreshSpeedUi(); // 谱面 ♩= 随文本走，速度提示要跟着换（读 `_jpwDoc`）
-    const req = jianpuPaintRequest({ format: "jpwabc", doc, breakDesc }, this.layoutMode, this.style.styleOf(this.layoutMode))!;
+    const req = jianpuPaintRequest({ format: "jpwabc", doc, breakDesc, singPhrase: this.phraseOn }, this.layoutMode, this.style.styleOf(this.layoutMode))!;
     return this._layoutJianpu(req, (e) => console.error("layout failed", e));
   }
 
@@ -601,7 +602,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 简谱两档排的那份源（`.jpwabc` 是排版器那份模型）。没有文档时返回 null。 */
   private _jianpuSource(doc = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc()): JianpuSource | null {
-    return doc ? { format: this.docFormat, doc, breakDesc: this._breakDesc, melodyPart: this.melodyPart, lyricPart: this.lyricPart } : null;
+    return doc ? { format: this.docFormat, doc, breakDesc: this._breakDesc, melodyPart: this.melodyPart, lyricPart: this.lyricPart, singPhrase: this.phraseOn } : null;
   }
 
   /** 投影档的排版请求（导出 PPTX 在别的档另排一份用，`export.ts::pptxPainter`）。没有曲行时返回 null。 */
@@ -1590,10 +1591,13 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (this._lineMode === mode && (mode !== "bars" || bars === this._barsAt)) return;
     const base = this._lineMode === "original" ? this.getText() : this._origLayoutText;
     if (base === null) return;
+    // 写了 `%%sing` 的投影档逐遍断行跟着档位走、不在原文里：原文没变也要切档重排
+    const sing = this._hasSing();
     if (mode === "original") {
       this._lineMode = "original";
       this._setPhraseActive();
-      this.setText(base);
+      if (base !== this.getText()) this.setText(base);
+      else if (sing) void this.reload(base);
       return;
     }
     const relayout = this.adapter.relayoutText;
@@ -1609,7 +1613,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       const overflowText = (at: BarsOverflow): string => at.songs > 1
         ? t("status.barsOverflowSong", { n: bars, song: at.song + 1, line: at.line })
         : t("status.barsOverflow", { n: bars, line: at.line });
-      if (out === base && this._lineMode === "original") {
+      if (out === base && this._lineMode === "original" && !(mode === "phrase" && sing)) {
         this.setStatus(overflow !== null ? overflowText(overflow)
           : kept ? t("status.phraseKeep")
           : t(mode === "phrase" ? "status.phraseSame" : "status.barsSame", { n: bars }));
@@ -1621,11 +1625,17 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this._barsAt = mode === "bars" ? bars : null;
       this._setPhraseActive();
       if (out !== this.getText()) this.setText(out);
+      else if (sing) void this.reload(out);
       if (overflow !== null) this.setStatus(overflowText(overflow));
     } catch (e) {
       console.error("重排失败", e);
       this.setStatus(t("status.phraseFailed", { error: (e instanceof Error ? e.message : String(e)) }));
     }
+  }
+
+  /** 当前文档有没有逐遍演唱顺序 `%%sing`（含挂在模型上的） */
+  private _hasSing(): boolean {
+    return !!this._jianpuSource()?.doc.songs.some((s) => s.singOrder?.length);
   }
 
   /** 「每行 N 小节」的 N（工具栏下拉，记住上次选的）。 */
@@ -1668,13 +1678,18 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (!doc || doc.songs.length === 0) return null;
     const inSource = this.docFormat === "123";
     const song = inSource ? songAtOffset(text, doc, this.view.state.selection.main.head) : 0;
-    const report = await singFromLyrics(doc, song, lyrics, this.style.styleOf("expanded"));
+    const report = await singFromLyrics(doc, song, lyrics, this.style.styleOf("expanded"), this.phraseOn);
     const s = doc.songs[song];
     const replaces = !!(s?.singOrder?.length || s?.sectionMarks?.length || s?.sectionOrder || (!inSource && this._singOverlay));
     if (!report.sing) return { report, apply: null, replaces, inSource };
     if (inSource) {
       const next = applySingFit(text, doc, song, report);
-      return { report, apply: next === null ? null : () => this.setText(next), replaces, inSource };
+      // 开着「按乐句重排」写入的：写入后的原文就是两档的基准（档位不掉回原始排版，切回原始排版也不丢刚写进的 `%%sing`）
+      const apply = (next: string) => {
+        if (this.phraseOn) this._origLayoutText = this._phraseText = next;
+        this.setText(next);
+      };
+      return { report, apply: next === null ? null : () => apply(next), replaces, inSource };
     }
     const ov = overlayOf(doc, song, report);
     return {

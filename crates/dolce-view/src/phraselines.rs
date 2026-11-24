@@ -485,9 +485,29 @@ fn source_lines(lead: &VoiceStream) -> Vec<NewLine> {
     lines
 }
 
+/// 编辑器「按乐句重排」的断句参数：缺省成书样式那几项（`src/style/bookstyle.ts` 默认值，TS 侧 `jianpu/phrase.ts::contentOptions` 从样式取同一套）。
+/// 排版引擎拿不到样式表的那几处（`%%sing` 投影逐遍断句）用它。回（参数，是否采用行内断点）。
+pub fn default_content_options() -> (PhraseOptions, bool) {
+    let opts = PhraseOptions {
+        content_only: Some(true),
+        len_weight: Some(0.25),
+        break_weight: Some(3.0),
+        parallel_weight: Some(6.0),
+        tail_long_weight: Some(3.0),
+        short_sentence_words: Some(4.0),
+        repeat_len_bonus: Some(true),
+        even_weight: Some(1.0),
+        tail_weight: Some(1.0),
+        fit_slack: Some(0.0),
+        more_rows_slack: Some(4.0),
+        ..Default::default()
+    };
+    (opts, true)
+}
+
 /// 有尺子时的断句：与成书同一套——断句只看内容，行长只在最后一步用（选档、收拾行首行尾、并碎行）。
 /// 有行放不下就整个放弃（`ok` false，`breaks` 是均匀排版那一档），调用方先看原始排版放不放得下。
-fn content_breaks(part: &PhrasePart, fit: &FitMetric, jump_measures: Vec<usize>, content: &PhraseOptions, mid: bool) -> (PhraseBreaks, bool) {
+pub fn content_breaks(part: &PhrasePart, fit: &FitMetric, jump_measures: Vec<usize>, content: &PhraseOptions, mid: bool) -> (PhraseBreaks, bool) {
     let mut opts = content.clone();
     opts.jump_measures = Some(jump_measures);
     let mut breaks = compute_phrase_breaks(part, &opts);

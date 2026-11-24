@@ -220,7 +220,8 @@ export interface BookStyle {
 
 /** 本机可用的一套默认字体（原书是转曲的，PDF 里没有字体资源，只能按面貌配同族替代）。 */
 export function defaultFonts(): Record<string, FontRef> {
-  const FZ = `${process.env.HOME ?? ""}/Library/Fonts`;
+  // 浏览器里没有 `process`（正式构建把 `process.env` 换成 `{}`，开发服务器不换，直接读会抛错、按乐句重排失败）
+  const FZ = `${(typeof process !== "undefined" ? process.env.HOME : undefined) ?? ""}/Library/Fonts`;
   return {
     // 原书那四款方正字体（装在用户字体目录）。都是 TrueType，能正常子集嵌入，
     // 所以走文字不走轮廓——可选中可搜索。

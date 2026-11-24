@@ -65,6 +65,8 @@ pub struct JianpuConfig {
     pub snippet: bool,
     /// 覆盖墨色，缺省取尺子的 `page.color`
     pub ink: Option<f64>,
+    /// 投影档：写了 `%%sing` 的逐遍按乐句断行（`expand.rs::sing_song`）
+    pub sing_phrase: bool,
 }
 
 /// 一份文档排好的原样页面与定位结构（TS `JianpuLayout`）
@@ -156,7 +158,7 @@ fn one_pass<'e>(source: &ScoreDoc, cfg: &JianpuConfig, no_reflow: bool, left_ind
     let header_bottoms: Vec<f64> = heads.iter().map(|h| h.bottom).collect();
     let ink = Ink::new(&m, env);
     let doc = match &plays {
-        Some(p) => expand_view(&input, source, p, &m, &ink, cfg.break_desc.as_deref()),
+        Some(p) => expand_view(&input, source, p, &m, &ink, cfg.break_desc.as_deref(), cfg.sing_phrase),
         None => input,
     };
 

@@ -18,7 +18,7 @@ pub fn default_projection_style() -> Value {
 
 /// 投影档请求；`style` 为 None 用出厂投影样式
 pub fn projection_request(style: Option<Value>) -> JianpuRequest {
-    JianpuRequest { view: "expanded".into(), style: Some(style.unwrap_or_else(default_projection_style)), no_reflow: false, break_desc: None, page: None, snippet: false, ink: None }
+    JianpuRequest { view: "expanded".into(), style: Some(style.unwrap_or_else(default_projection_style)), no_reflow: false, break_desc: None, page: None, snippet: false, ink: None, sing_phrase: false }
 }
 
 /// 按投影档排一遍，回第 `song` 首每页几行（标题页不算）。`%%sing` 每遍写 `[rows=99]` 时一遍正好一页。

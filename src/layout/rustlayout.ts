@@ -261,9 +261,9 @@ export interface SingFitNote {
 }
 
 /** 按参照歌词给第 `song` 首生成段落标记与 `%%sing`；分遍要试排投影档（`style` 是投影档样式表）。桌面版走原生排版线程，别处走 wasm。 */
-export async function singFromLyrics(doc: ScoreDoc, song: number, lyrics: string, style: StyleSheet): Promise<SingFitReport> {
+export async function singFromLyrics(doc: ScoreDoc, song: number, lyrics: string, style: StyleSheet, phrase: boolean): Promise<SingFitReport> {
   const { json } = docJson(doc);
-  const req = JSON.stringify({ view: "expanded", style });
+  const req = JSON.stringify({ view: "expanded", style, singPhrase: phrase });
   const core = tauriCore();
   const raw = core
     ? new TextDecoder().decode(asBuffer(await core.invoke("layout_sing_from_lyrics", { doc: json, song, lyrics, req })))

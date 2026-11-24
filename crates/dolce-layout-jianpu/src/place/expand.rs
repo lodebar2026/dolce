@@ -16,14 +16,16 @@ use dolce_model::{BreakKind, ScoreDoc, SourceFormat};
 use dolce_play::playorder::PlayItem;
 use dolce_play::walk::{walk_play, Step, WalkItem};
 use dolce_view::ast::{BarlineElement, BarlineType, LyricLine, LyricSyllable, Mark, MarkType, Meter, MusicElement, ScoreLine, Sound};
-use dolce_view::phraselines::element_quarters;
-use dolce_view::phrasesong::distinct_verses;
+use dolce_play::phrase::{FitMetric, Span};
+use dolce_view::phraselines::{content_breaks, default_content_options, element_quarters};
+use dolce_view::phrasesong::{build_measures, distinct_verses, phrase_part_of};
+use dolce_view::slots::RowView;
 use dolce_view::playdata::PlayData;
 
 use crate::grid::{content_width, JianpuGrid};
 use crate::ink::Ink;
-use crate::place::spacing::{natural_columns, SpacedLine};
-use crate::place::voice::{assign_lyrics, layout_voice_line, takes_lyric, tuplet_ratios, BeatCtx};
+use crate::place::spacing::{natural_columns, Natural, SpacedLine};
+use crate::place::voice::{assign_lyrics, layout_voice_line, takes_lyric, tuplet_ratios, BeatCtx, VoiceLine};
 use crate::util::{max, max_of, min, min_of};
 use crate::view::{LDoc, LGroup, LPage, LRow, LSong};
 
@@ -34,6 +36,8 @@ pub struct FillOpts {
     pub jump_in: HashSet<usize>,
     pub soft: HashSet<usize>,
     pub glue: HashSet<usize>,
+    /// 强制换行切出的纯休止行（按乐句断出的间奏小节）单独成行，不并进下一行
+    pub keep_rest_lines: bool,
 }
 
 /// 一行的起点（行内元素下标）与是否在此换页
@@ -790,14 +794,20 @@ fn row_of(src: &Src, pass: &Pass, a: usize, b: usize, pos: &PosOf, bars: Bars) -
 const SQUEEZE_OVERHANG: f64 = 0.03;
 
 /// 逐行装满（`fillLines`）：返回各行在这一行里的起点（元素下标）
-pub fn fill_lines(row: &ScoreLine, forced: &HashMap<usize, bool>, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>, opts: &FillOpts) -> Vec<LineCut> {
+/// 一行不折、按自然间距排（`fill_lines` 与 `%%sing` 逐遍断句的尺子共用）
+fn laid_natural(row: &ScoreLine, m: &JianpuGrid, ink: &Ink, meter: Option<&Meter>) -> (VoiceLine, Natural) {
     let mut laid = layout_voice_line(row, &[], m, &BeatCtx { meter: meter.cloned(), ..Default::default() });
     for it in laid.items.iter_mut() {
         it.syllables = vec![None; row.lyrics.len()];
     }
     assign_lyrics(&mut laid.items, &row.lyrics, &[]);
+    let nat = natural_columns(&[SpacedLine::main(&laid.items, &laid.pad)], m, ink, 0.0);
+    (laid, nat)
+}
+
+pub fn fill_lines(row: &ScoreLine, forced: &HashMap<usize, bool>, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>, opts: &FillOpts) -> Vec<LineCut> {
+    let (laid, nat) = laid_natural(row, m, ink, meter);
     let lines = [SpacedLine::main(&laid.items, &laid.pad)];
-    let nat = natural_columns(&lines, m, ink, 0.0);
     let mut tight: Option<crate::place::spacing::Natural> = None;
     let items = &laid.items;
     let n_items = items.len();
@@ -918,7 +928,8 @@ pub fn fill_lines(row: &ScoreLine, forced: &HashMap<usize, bool>, m: &JianpuGrid
             LineCut { start, page: page_at.contains(&k) }
         })
         .collect();
-    // 只剩小节线的行并回上一行；只有休止的行并到下一行
+    // 只剩小节线的行并回上一行；只有休止的行并到下一行（`keep_rest_lines` 时强制换行切出的除外）
+    let forced_start = |start: usize| forced.contains_key(&start);
     let mut out: Vec<LineCut> = vec![];
     let mut carry: Option<LineCut> = None;
     for (n, s) in at.iter().enumerate() {
@@ -929,7 +940,8 @@ pub fn fill_lines(row: &ScoreLine, forced: &HashMap<usize, bool>, m: &JianpuGrid
         if n > 0 && !has_note {
             continue;
         }
-        if has_note && !sung && n < at.len() - 1 {
+        let kept = opts.keep_rest_lines && at.get(n + 1).is_some_and(|x| forced_start(x.start));
+        if has_note && !sung && n < at.len() - 1 && !kept {
             if carry.is_none() {
                 carry = Some(*s);
             }
@@ -1180,6 +1192,8 @@ struct SongOpts<'a> {
     row_is_line: bool,
     end_break: Option<BreakKind>,
     sing: bool,
+    /// `%%sing` 逐遍按乐句断行
+    sing_phrase: bool,
 }
 
 /// 投影档：一首曲子 → 逐遍展开、逐行装满的行视图（`expandSong`）
@@ -1283,7 +1297,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
     let width = content_width(m);
     let meter = song.metadata.meters.first();
     if o.sing {
-        return sing_song(song, plan, &src, m, ink, width, meter);
+        return sing_song(song, plan, &src, m, ink, width, meter, o.sing_phrase);
     }
     let mut measure_of: HashMap<Slot, usize> = HashMap::new();
     for (k, sl) in slices.iter().enumerate() {
@@ -1474,7 +1488,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
                 }
             }
         }
-        let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), jump_in, soft, glue: pass.glue.clone() };
+        let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), jump_in, soft, glue: pass.glue.clone(), keep_rest_lines: false };
         let mut lines = fill_lines(&whole.line, &pass.breaks, m, ink, width, meter, &opts);
         if o.layout.is_none() {
             let starts: Vec<usize> = lines.iter().map(|l| l.start).collect();
@@ -1526,7 +1540,90 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
 }
 
 /// 逐遍演唱顺序（123 `%%sing`，`singSong`）
-fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>) -> LSong {
+/// `%%sing` 一遍展开后的那一行按乐句断：与编辑器「按乐句重排」同一套（`phraselines::content_breaks`，断句只看内容、
+/// 行长按这一行自然排开的真实宽度选档与收拾），歌词取这一遍配上的那行词。回「在第几个元素之前换行」，交 `fill_lines` 当强制换行
+/// （一句还放不下仍按版宽折）。`/` 隔开的一段（`hard`，在第几个元素之前必换行）一行放得下的照写的不动，只在放不下要折的段里按乐句切——
+/// 照片子写的 `%%sing`（每行末都写 `/`）因此不变。
+fn phrase_cuts_of(row: &LRow, song: &dm::Song, hard: &HashSet<usize>, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>) -> HashMap<usize, bool> {
+    let rv = RowView { part: row.part, measures: row.measures.clone(), refs: row.refs.clone(), line: row.line.clone() };
+    let Ok((measures, _)) = build_measures(song, &[&rv], true, None) else { return HashMap::new() };
+    let (part, _) = phrase_part_of(&measures);
+    let els = &row.line.elements;
+    // 断句输入的和弦与行里的音一一对应（`build_measures` 每个音一个和弦、次序不变）
+    let notes: Vec<usize> = els.iter().enumerate().filter(|(_, e)| matches!(e, MusicElement::Note(_))).map(|(i, _)| i).collect();
+    if notes.is_empty() || notes.len() != part.flat_chords().count() {
+        return HashMap::new();
+    }
+    // 尺子：各音的自然横向区间，跟着的增时线算进 `x1b`
+    let (laid, nat) = laid_natural(&row.line, m, ink, meter);
+    let item_of: HashMap<i64, usize> = laid.items.iter().enumerate().map(|(k, it)| (it.src_index, k)).collect();
+    let spans = notes
+        .iter()
+        .map(|&i| {
+            let &k = item_of.get(&(i as i64))?;
+            let mut last = k;
+            while last + 1 < laid.items.len() && matches!(laid.items[last + 1].element, MusicElement::Sustain(_)) {
+                last += 1;
+            }
+            Some(Span { x0: nat.left[0][k], x1: nat.right[0][k], x1b: (last > k).then(|| nat.right[0][last]) })
+        })
+        .collect();
+    let (content, mid) = default_content_options();
+    let (breaks, _) = content_breaks(&part, &FitMetric { width, spans }, vec![], &content, mid);
+    // 按自然间距一行放得下的 `/` 段：(起, 止) 元素区间。只靠压字距才塞得下的不算——那正是挤的那种
+    let mut bounds: Vec<usize> = hard.iter().copied().filter(|&h| h > 0 && h < els.len()).collect();
+    bounds.sort_unstable();
+    bounds.insert(0, 0);
+    bounds.push(els.len());
+    let one_line: Vec<(usize, usize)> = bounds
+        .windows(2)
+        .filter(|w| {
+            let ks: Vec<usize> = laid.items.iter().enumerate().filter(|(_, it)| it.src_index >= w[0] as i64 && it.src_index < w[1] as i64).map(|(k, _)| k).collect();
+            match (ks.first(), ks.last()) {
+                (Some(&a), Some(&b)) => nat.right[0][b] - nat.left[0][a] <= width,
+                _ => true,
+            }
+        })
+        .map(|w| (w[0], w[1]))
+        .collect();
+    let mut out = HashMap::new();
+    let mut put = |at: usize| {
+        if !one_line.iter().any(|&(a, b)| at > a && at < b) {
+            out.insert(at, false);
+        }
+    };
+    let mut flat = 0;
+    for (mi, mea) in part.measures.iter().enumerate() {
+        if mi > 0 && breaks.measure_breaks.contains(&mi) {
+            if let Some(&first) = notes.get(flat) {
+                // 小节线留在上一行行尾：退到它后面
+                let mut at = first;
+                while at > 0 && !matches!(els[at - 1], MusicElement::Barline(_) | MusicElement::Note(_) | MusicElement::Sustain(_)) {
+                    at -= 1;
+                }
+                put(at);
+            }
+        }
+        flat += mea.chords.len();
+    }
+    if mid {
+        for &k in &breaks.mid_breaks {
+            let Some(&i) = notes.get(k) else { continue };
+            // 在这个音之后换行；跟着的增时线属于它
+            let mut at = i + 1;
+            while at < els.len() && matches!(els[at], MusicElement::Sustain(_)) {
+                at += 1;
+            }
+            if at < els.len() {
+                put(at);
+            }
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>, phrase: bool) -> LSong {
     let rows = &src.rows;
     let mut pages: Vec<(Pass, f64)> = vec![];
     let mut cur: Option<(Pass, f64)> = None;
@@ -1563,8 +1660,10 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
         let tail = if Some(pi) == last { Some(pass.slots[end]) } else { None };
         let bars = Bars { plain: false, final_at: if tail.is_some_and(|t| matches!(rows[t.0].line.elements[t.1], MusicElement::Barline(_))) { end as i64 } else { -1 } };
         let whole = row_of(src, pass, 0, pass.slots.len(), &pos, bars);
-        let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), ..Default::default() };
-        let mut lines = fill_lines(&whole.line, &HashMap::new(), m, ink, width, meter, &opts);
+        // 按乐句时断句给强制换行，其余照版心宽装满
+        let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), keep_rest_lines: phrase, ..Default::default() };
+        let forced = if phrase { phrase_cuts_of(&whole, &song.song, &opts.hard, m, ink, width, meter) } else { HashMap::new() };
+        let mut lines = fill_lines(&whole.line, &forced, m, ink, width, meter, &opts);
         page_by_rows(&mut lines, &|_| false, *max_rows);
         let mut groups: Vec<Rc<LGroup>> = vec![];
         for (n, l) in lines.iter().enumerate() {
@@ -1584,7 +1683,7 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
 }
 
 /// 投影档：按演唱顺序逐遍切出、逐行装满（`expandView`）。`plays` 与 `view.songs` 平行；推不出演唱顺序的那首照原样
-pub fn expand_view(view: &LDoc, doc: &ScoreDoc, plays: &[Option<PlayData>], m: &JianpuGrid, ink: &Ink, break_desc: Option<&str>) -> LDoc {
+pub fn expand_view(view: &LDoc, doc: &ScoreDoc, plays: &[Option<PlayData>], m: &JianpuGrid, ink: &Ink, break_desc: Option<&str>, sing_phrase: bool) -> LDoc {
     let songs = view
         .songs
         .iter()
@@ -1598,6 +1697,7 @@ pub fn expand_view(view: &LDoc, doc: &ScoreDoc, plays: &[Option<PlayData>], m: &
                 row_is_line: doc.source_format == SourceFormat::Fanqie,
                 end_break: doc.songs.get(i).and_then(|s| s.parts.first()).and_then(|p| p.end_break.clone()),
                 sing: pd.from_sing,
+                sing_phrase,
             };
             expand_song(song, pd, m, ink, &opts)
         })

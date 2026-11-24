@@ -50,6 +50,8 @@ export interface JianpuSource {
   /** MusicXML：旋律声部与歌词来源（声部面板） */
   melodyPart?: number;
   lyricPart?: number | null;
+  /** 投影档：`%%sing` 逐遍按乐句断行（「按乐句重排」开着） */
+  singPhrase?: boolean;
 }
 
 /** 投影档排的那份文档：MusicXML 按声部面板换旋律声部与歌词来源（元素 id 不变）。 */
@@ -62,8 +64,9 @@ export function expandedDocOf(src: JianpuSource): ScoreDoc {
 
 /** 简谱两档（简谱 / 投影）的排版请求。投影档没有曲行时返回 null。 */
 export function jianpuPaintRequest(src: JianpuSource, mode: JianpuLayoutMode, style: StyleSheet): SyncPaintRequest | null {
-  if (src.format === "jpwabc") return { view: mode, doc: src.doc, style, breakDesc: src.breakDesc ?? null };
-  if (mode === "expanded") return hasLines(src.doc) ? { view: "expanded", doc: expandedDocOf(src), style } : null;
+  const phrase = mode === "expanded" && src.singPhrase ? { singPhrase: true } : {};
+  if (src.format === "jpwabc") return { view: mode, doc: src.doc, style, breakDesc: src.breakDesc ?? null, ...phrase };
+  if (mode === "expanded") return hasLines(src.doc) ? { view: "expanded", doc: expandedDocOf(src), style, ...phrase } : null;
   return { view: "original", doc: src.doc, style };
 }
 
