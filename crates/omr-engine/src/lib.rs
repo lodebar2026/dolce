@@ -194,22 +194,9 @@ pub fn recognize(doc: &Doc, ocr: &CachedOcr, opts: &Opts, hook: &Hook) -> Result
     let key: Vec<usize> = srcs.iter().map(|s| s.0).collect();
     let staffless = opts.kind == Kind::Auto && doc.memo.staffless.lock().is_ok_and(|v| v.contains(&key));
     if opts.kind != Kind::Jianpu && !staffless {
-        // 自动档头一回试五线谱时，简谱的准备（只看图）在另一个线程同时做：没有谱表就接着用，有就丢掉
-        #[cfg(feature = "parallel")]
-        let (pages, prep) = if opts.kind == Kind::Auto && memo_jianpu(doc, &srcs).is_none() && srcs.iter().any(|s| s.1.raster.is_some()) {
-            let imgs: Vec<SourceImage> = srcs.iter().filter_map(|s| s.1.raster.clone()).collect();
-            let (pages, prep) = rayon::join(|| staff_pages(&srcs, ocr, hook), || dolce_omr_jianpu::prepare(&imgs));
-            (pages?, prep.ok())
-        } else {
-            (staff_pages(&srcs, ocr, hook)?, None)
-        };
-        #[cfg(not(feature = "parallel"))]
-        let (pages, prep): (_, Option<dolce_omr_jianpu::Prepared>) = (staff_pages(&srcs, ocr, hook)?, None);
-        if let (true, Some(p)) = (pages.is_empty(), prep) {
-            if let Ok(mut m) = doc.memo.jianpu.lock() {
-                *m = Some((raster_key(&srcs), Arc::new(p)));
-            }
-        }
+        // 简谱的准备不跟着试五线谱并行预做：简谱页试五线谱很快就判出没有谱表，并行省不出时间；
+        // 五线谱页却白占各页整页墨层、还与五线谱各页抢核
+        let pages = staff_pages(&srcs, ocr, hook)?;
         // 没找到谱表、且这一轮试五线谱时没缺 OCR：结论只取决于图与已缓存的读数，后面各轮不必再试
         if pages.is_empty() && opts.kind == Kind::Auto && !ocr.stalled() {
             if let Ok(mut v) = doc.memo.staffless.lock() {
