@@ -9,10 +9,14 @@
 //   await s.setViewMode("original");      // setViewMode：排好
 //   s.pages()                             // 各页 SVG（outerHTML）
 
-import type { ScoreDoc } from "../model/doc";
+import type { LayoutSpec, ScoreDoc } from "../model/doc";
+import { activeLayout, applyLayoutBreaks } from "../jianpu/layoutdoc";
 import type { JianpuLayoutMode } from "../jianpu/profile";
 import { MetaData } from "../smufl/smufl";
-import { PaintResources, ScorePainter, type SyncPaintRequest } from "../layout/painter";
+import { measureDocument, PaintResources, ScorePainter, type SyncPaintRequest } from "../layout/painter";
+import type { FitMeasure } from "../jianpu/phrase";
+import { resolvePaper } from "../style/paper";
+import { LONG_IMAGE_WIDTH } from "../style/themes";
 import { scoreDocToMusicXml } from "../model/toxml";
 import { carryPlayOrder } from "../model/sections";
 import { normalizeEol } from "../common/lines";
@@ -20,10 +24,10 @@ import { sniffDialect } from "../fanqie";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { formatOf, musicXmlFormat, type DocFormatId, type FormatAdapter } from "./formats";
-import { StyleState, type RenderSettings, type StyleStateHost } from "./stylestate";
+import { StyleState, type LayoutKind, type RenderSettings, type StyleStateHost } from "./stylestate";
 import { msgText } from "../model/msg";
 import {
-  docFormatOfName, hasLines, isMultiPartXml, jianpuLineStarts, jianpuPaintRequest, lineStartsRequest, staffPaintRequest, visibleStaffDoc,
+  docFormatOfName, hasLines, isMultiPartXml, jianpuLineStarts, jianpuPaintRequest, lineStartsRequest, singleVoice, staffPaintRequest, visibleStaffDoc,
   type JianpuSource,
 } from "./paintreq";
 
@@ -55,7 +59,14 @@ export class HeadlessSession implements StyleStateHost {
     this.style = new StyleState(this);
   }
 
+  /** 照哪个自定义版面排（123 `%%layout`；null = 各档的内置版面） */
+  customLayout: string | null = null;
+
   // ---- StyleStateHost ----
+  layoutFor(kind: LayoutKind): { name: string; spec?: LayoutSpec; custom: boolean } {
+    const view = kind === "staff" ? (this.mode === "mixed" ? "mixed" : "staff") : kind;
+    return activeLayout(this.currentScoreDoc()?.songs[0], view, this.customLayout);
+  }
   get adapter(): FormatAdapter {
     return formatOf(this.docFormat);
   }
@@ -183,7 +194,15 @@ export class HeadlessSession implements StyleStateHost {
       return j ? { format: "jpwabc", doc: j.doc, breakDesc: j.breakDesc } : null;
     }
     const doc = this.currentScoreDoc();
-    return doc ? { format: this.docFormat, doc } : null;
+    if (!doc) return null;
+    const layoutName = { expanded: this.layoutFor("expanded").name, original: this.layoutFor("original").name };
+    if (this.docFormat !== "123" && this.docFormat !== "abc") return { format: this.docFormat, doc, layoutName };
+    // 123 / ABC 的简谱档按版面在副本上落断行（同 `App._layoutDocs`；行长尺子同 `App._phraseMeasureFor`）
+    const sheet = this.style.styleOf("original");
+    const width = resolvePaper(sheet.page)?.w ?? LONG_IMAGE_WIDTH;
+    const measure: FitMeasure | null = singleVoice(doc) ? (d, song) => measureDocument(d, sheet, width, false, song) : null;
+    const original = applyLayoutBreaks(doc, layoutName.original, measure);
+    return { format: this.docFormat, doc, layoutName, ...(original ? { docFor: { original } } : {}) };
   }
 
   /** 投影档的排版请求（`pptxPainter` 另排用，同 `App.expandedRequest`）。 */

@@ -194,6 +194,7 @@ export interface DolceWasm {
   abcSpliceComments(oldText: string, oldDoc: string, newText: string, newDoc: string): string;
   /** 123 / ABC 原文里第 `song` 首版面 `layout` 的整体选项 `key` 设成 `value`（空串 = 去掉），只改 `%%layout` 行 */
   abcSetLayoutOption(text: string, song: number, layout: string, key: string, value: string): string;
+  abcRemoveLayout(text: string, song: number, layout: string): string;
   /** `pass` 0 = 每一遍 */
   abcLayoutAddBreak(text: string, song: number, layout: string, pass: number, section: string, nth: number, page: boolean): string;
   abcLayoutRemoveBreak(text: string, song: number, layout: string, pass: number, section: string, nth: number): string;

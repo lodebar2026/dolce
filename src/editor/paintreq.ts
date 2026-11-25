@@ -52,6 +52,8 @@ export interface JianpuSource {
   lyricPart?: number | null;
   /** 某一档实际排的那份（版面的断行先落在副本上，`jianpu/layoutdoc.ts`）；没有就排 `doc` */
   docFor?: Partial<Record<JianpuLayoutMode, ScoreDoc>>;
+  /** 某一档当前排的版面名（123 `%%layout`；投影档的版面在 Rust 展开时落）；没有就是那一档的内置版面 */
+  layoutName?: Partial<Record<JianpuLayoutMode, string>>;
 }
 
 /** 投影档排的那份文档：MusicXML 按声部面板换旋律声部与歌词来源（元素 id 不变）。 */
@@ -66,7 +68,8 @@ export function expandedDocOf(src: JianpuSource): ScoreDoc {
 export function jianpuPaintRequest(src: JianpuSource, mode: JianpuLayoutMode, style: StyleSheet): SyncPaintRequest | null {
   const doc = src.docFor?.[mode] ?? src.doc;
   if (src.format === "jpwabc") return { view: mode, doc, style, breakDesc: src.breakDesc ?? null };
-  if (mode === "expanded") return hasLines(doc) ? { view: "expanded", doc: expandedDocOf({ ...src, doc }), style } : null;
+  const layout = src.layoutName?.[mode];
+  if (mode === "expanded") return hasLines(doc) ? { view: "expanded", doc: expandedDocOf({ ...src, doc }), style, ...(layout ? { layout } : {}) } : null;
   return { view: "original", doc, style };
 }
 

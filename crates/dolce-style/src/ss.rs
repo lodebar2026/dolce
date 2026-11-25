@@ -119,7 +119,7 @@ const COMPONENTS: [&str; 2] = ["key-meter", "leader"];
 const ROLE_PROPS: [&str; 8] = ["size", "color", "family", "font", "weight", "features", "align-mode", "baseline-adjust"];
 const FONT_FACE_PROPS: [&str; 5] = ["family", "file", "face", "mode", "bold"];
 const PAGE_PROPS: [&str; 7] = ["paper", "orientation", "size", "margin", "mirror", "ink", "background"];
-const MEDIA_DIMS: [&str; 5] = ["mode", "engine", "paged", "page", "verse"];
+const MEDIA_DIMS: [&str; 6] = ["mode", "engine", "paged", "page", "verse", "layout"];
 
 /// 角色声明里 kebab-case 的属性 → `RoleDecl` 字段。
 const ROLE_PROP_FIELD: [(&str, &str); 2] = [("align-mode", "alignMode"), ("baseline-adjust", "baselineAdjust")];

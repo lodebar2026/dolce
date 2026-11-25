@@ -230,6 +230,8 @@ async function boot() {
     }
   }
   if (viewSwitch) app.setViewModeButtons(viewSwitch, viewBtns);
+  const layoutSel = document.getElementById("sel-layout") as HTMLSelectElement | null;
+  if (layoutSel) app.setLayoutSelect(layoutSel);
   const recognizeBtn = document.getElementById("btn-recognize") as HTMLButtonElement | null;
   if (recognizeBtn) {
     app.omr.setRecognizeBtn(recognizeBtn);

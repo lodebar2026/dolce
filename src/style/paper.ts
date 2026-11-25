@@ -5,11 +5,11 @@
 // 面板上显示「跟随文件」，用户选了具体纸才盖过它。
 //
 // 无 DOM 依赖。
-import type { Song } from "../model/doc";
+import type { LayoutSpec, Song } from "../model/doc";
 import { songPage, standardPaperOf } from "../model/pagemeta";
 import type { StyleRule } from "./cascade";
-import type { PageDecl } from "./sheet";
-import { PAPER_SIZES } from "./themes";
+import type { DeepPartial, PageDecl, StyleSheet } from "./sheet";
+import { PAGE_RATIOS, PAPER_SIZES } from "./themes";
 
 export type Orientation = "portrait" | "landscape";
 
@@ -59,4 +59,25 @@ export function songPageDecl(song: Song): PageDecl | null {
 export function docPageLayer(song: Song | undefined): StyleRule[] {
   const page = song ? songPageDecl(song) : null;
   return page ? [{ set: { page } }] : [];
+}
+
+/**
+ * 版面层：123 `%%layout` 写的纸与音符字号（规范 123格式 §9.1）→ 一条不带限定的规则。
+ * 投影系的纸是投影片比例（`16:9` / `4:3`），其余是纸名（`PAPER_SIZES`）加方向；五线谱系的 `note-size` 不认（谱表大小另有一套）。
+ * 级联里排在面板的不限定那层之后、按版面限定的用户规则之前：版面写明的纸与字号不被基础档的面板设置盖掉，面板在这个版面里再改的照改。
+ */
+export function layoutSpecLayer(spec: LayoutSpec | undefined, kind: "projection" | "print" | "staff"): StyleRule[] {
+  if (!spec) return [];
+  const set: DeepPartial<StyleSheet> = {};
+  if (spec.paper) {
+    if (kind === "projection") {
+      const r = PAGE_RATIOS[spec.paper];
+      if (r) set.page = { size: [...r] };
+    } else if (PAPER_SIZES[spec.paper] !== undefined) {
+      const o = spec.pageOrientation;
+      set.page = { paper: spec.paper, ...(o === "portrait" || o === "landscape" ? { orientation: o } : {}) };
+    }
+  }
+  if (spec.noteSize && kind !== "staff") set.roles = { note: { size: spec.noteSize } };
+  return Object.keys(set).length ? [{ set }] : [];
 }

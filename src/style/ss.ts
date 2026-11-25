@@ -225,7 +225,7 @@ const FONT_FACE_PROPS = new Set(["family", "file", "face", "mode", "bold"]);
 const PAGE_PROPS = new Set(["paper", "orientation", "size", "margin", "mirror", "ink", "background"]);
 
 /** `@media` 认得的维度（`StyleContext`）。 */
-const MEDIA_DIMS = new Set(["mode", "engine", "paged", "page", "verse"]);
+const MEDIA_DIMS = new Set(["mode", "engine", "paged", "page", "verse", "layout"]);
 
 export interface ParseResult {
   rules: StyleRule[];

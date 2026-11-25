@@ -9,9 +9,31 @@ import type { FitMeasure, LinePlan } from "./phrase";
 /** 编辑器四档各自的内置版面名（写进原文的规范名） */
 export const VIEW_LAYOUT = { expanded: "投影", original: "简谱", staff: "五线谱", mixed: "混排" } as const;
 
+/** 编辑器的四档 */
+export type LayoutView = keyof typeof VIEW_LAYOUT;
+
 /** 这一首叫这个名字的版面（读入时内置名已归一成中文名） */
 export function layoutOf(song: Song | undefined, name: string): LayoutSpec | undefined {
   return song?.layouts?.find((l) => l.name === name);
+}
+
+/** 版面照哪一档排：内置版面是它自己那档，自定义版面看 `base`（没写或写错回 null，读入时已报 `layout-no-base`） */
+export function viewOfLayout(spec: LayoutSpec): LayoutView | null {
+  const base = spec.base ?? spec.name;
+  return (Object.keys(VIEW_LAYOUT) as LayoutView[]).find((v) => VIEW_LAYOUT[v] === base) ?? null;
+}
+
+/** 这一首的自定义版面（有 `base` 的） */
+export function customLayouts(song: Song | undefined): LayoutSpec[] {
+  const builtin = new Set<string>(Object.values(VIEW_LAYOUT));
+  return (song?.layouts ?? []).filter((l) => !builtin.has(l.name) && viewOfLayout(l) !== null);
+}
+
+/** 档 `view` 当前排的版面：选了照这一档排的自定义版面 `custom` 就是它，否则是这一档的内置版面 */
+export function activeLayout(song: Song | undefined, view: LayoutView, custom: string | null): { name: string; spec?: LayoutSpec; custom: boolean } {
+  const c = custom !== null ? customLayouts(song).find((l) => l.name === custom) : undefined;
+  if (c && viewOfLayout(c) === view) return { name: c.name, spec: c, custom: true };
+  return { name: VIEW_LAYOUT[view], spec: layoutOf(song, VIEW_LAYOUT[view]), custom: false };
 }
 
 /** `linebreak=` → 重排方案；照源（`source` / 没写）与装满不是重排，回 null */

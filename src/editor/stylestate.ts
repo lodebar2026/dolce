@@ -2,14 +2,16 @@
 //
 // 级联：内置主题 → 诗集样式表（歌本 `.ss`）→ 曲内层（谱里自带的纸与页眉字体）→ 用户层（设置面板）。
 // 用户层每个主题一层规则，投影 / 简谱 / 五线谱各记一套，页眉四项各档共用一层。
+// 版面（123 `%%layout`）：写明的纸与音符字号是一层（`style/paper.ts::layoutSpecLayer`），排在用户层不限定版面的那半之后；
+// 在自定义版面里改纸、字号、配色记成限定这个版面的规则（`when layout=名`），切回基础档不受影响。
 // 这里只管「样式表怎么算、面板的值落到哪条规则」；重排、持久化、纸底色这些副作用在 App（`applyRenderSettings` 等）。
 
-import type { ScoreDoc } from "../model/doc";
+import type { LayoutSpec, ScoreDoc } from "../model/doc";
 import { songLyricSize, songStaffSize } from "../model/pagemeta";
-import { computeStyle, sanitizeLayer, upsertRule, type StyleRule } from "../style/cascade";
+import { computeStyle, sanitizeLayer, upsertRule, type StyleContext, type StyleRule } from "../style/cascade";
 import type { Length } from "../style/units";
 import { NOTE_FONTS } from "../style/fonts";
-import { docPageLayer, pageMargins, resolvePaper, songPageDecl } from "../style/paper";
+import { docPageLayer, layoutSpecLayer, pageMargins, resolvePaper, songPageDecl } from "../style/paper";
 import { headerFontsOf, headerLayerOfSong, type HeaderFonts, type HeaderRole } from "../style/header";
 import type { DeepPartial, PageDecl, StyleSheet } from "../style/sheet";
 import { jianpuSizes } from "../style/jianpu";
@@ -52,6 +54,16 @@ export interface StyleStateHost {
   saveSettings(): void;
   /** 样式变了：重排并重铺 */
   rerender(): void;
+  /** 这一档当前排的版面：名字（内置四档的中文名或自定义名）、谱里写的选项、是不是自定义版面 */
+  layoutFor(kind: LayoutKind): { name: string; spec?: LayoutSpec; custom: boolean };
+}
+
+/** 三把尺子：投影、简谱、五线谱（混排同五线谱） */
+export type LayoutKind = "expanded" | "original" | "staff";
+
+/** 用户层按版面拆两半：不限定版面的规则、限定版面 `name` 的规则（别的版面的不要） */
+function splitByLayout(layer: readonly StyleRule[], name: string): [StyleRule[], StyleRule[]] {
+  return [layer.filter((r) => r.when?.layout === undefined), layer.filter((r) => r.when?.layout === name)];
 }
 
 export class StyleState {
@@ -67,10 +79,22 @@ export class StyleState {
   styleOf(mode: JianpuLayoutMode): StyleSheet {
     const theme = themeOfMode(mode);
     const page = theme === "print" && !this.userSetsPaper("jianpu") ? this._docLayer() : [];
+    const lay = this.host.layoutFor(mode);
+    const [plain, scoped] = splitByLayout(this.layers[theme], lay.name);
     return computeStyleForPaper(
-      [THEMES[theme], this._bookLayer, page, this._docHeaderLayer(theme === "print", theme !== "print"), this.layers[theme], this.layers.header],
-      { mode, engine: "jianpu" },
+      [THEMES[theme], this._bookLayer, page, this._docHeaderLayer(theme === "print", theme !== "print"), plain, layoutSpecLayer(lay.spec, theme), scoped, this.layers.header],
+      { mode, engine: "jianpu", layout: lay.name },
     );
+  }
+
+  /** 面板改动写进哪条规则的限定：自定义版面里限定这个版面，其余不限定 */
+  private _scope(kind: LayoutKind): StyleContext | undefined {
+    const lay = this.host.layoutFor(kind);
+    return lay.custom ? { layout: lay.name } : undefined;
+  }
+
+  private static _sameScope(r: StyleRule, scope: StyleContext | undefined): boolean {
+    return scope ? r.when?.layout === scope.layout && Object.keys(r.when ?? {}).length === 1 : !r.when;
   }
 
   /** 五线谱/混排看到的 computed 样式表（主题 staff → 曲内层 → 它自己那层用户规则）。
@@ -89,9 +113,11 @@ export class StyleState {
 
   staffStyle(): StyleSheet {
     const page = this.userSetsPaper("staff") ? [] : this._docLayer();
+    const lay = this.host.layoutFor("staff");
+    const [plain, scoped] = splitByLayout(this.layers.staff, lay.name);
     return computeStyleForPaper(
-      [THEMES.staff, this._bookLayer, page, this._docHeaderLayer(), this.layers.staff, this.layers.header],
-      { mode: "staff", engine: "staff" },
+      [THEMES.staff, this._bookLayer, page, this._docHeaderLayer(), plain, layoutSpecLayer(lay.spec, "staff"), scoped, this.layers.header],
+      { mode: "staff", engine: "staff", layout: lay.name },
     );
   }
 
@@ -297,9 +323,10 @@ export class StyleState {
   /** 设纸：`follow` = 跟随文件（清掉用户层里的纸、方向、边距；谱里没写纸就回到出厂那张）。 */
   setPaper(engine: PaperEngine, choice: PaperChoice): void {
     const key = engine === "staff" ? "staff" : "print";
+    const scope = this._scope(engine === "staff" ? "staff" : "original");
     if (choice === "follow") {
       this.layers[key] = this.layers[key].map((r) => {
-        if (!r.set.page) return r;
+        if (!r.set.page || !StyleState._sameScope(r, scope)) return r;
         const { paper: _p, orientation: _o, margin: _m, ...rest } = r.set.page;
         return { ...r, set: { ...r.set, page: rest } };
       });
@@ -307,9 +334,9 @@ export class StyleState {
     }
     if (!isPaper(choice.paper)) return;
     const page: DeepPartial<PageDecl> = { paper: choice.paper, orientation: choice.orientation };
-    this.layers[key] = upsertRule(this.layers[key], undefined, { page });
+    this.layers[key] = upsertRule(this.layers[key], scope, { page });
     // 边距整组替换（深合并会把数组整体换掉）；null = 清掉，回到各排版器自己的缺省
-    const hit = this.layers[key].find((r) => !r.when);
+    const hit = this.layers[key].find((r) => StyleState._sameScope(r, scope));
     if (hit?.set.page) {
       if (choice.margin) hit.set.page.margin = [...choice.margin];
       else delete hit.set.page.margin;
@@ -367,7 +394,7 @@ export class StyleState {
   /** 往某一档的用户层写一条规则（限定相同的就地合并）。 */
   private _setStyle(mode: JianpuLayoutMode, set: DeepPartial<StyleSheet>): void {
     const theme = themeOfMode(mode);
-    this.layers[theme] = upsertRule(this.layers[theme], undefined, set);
+    this.layers[theme] = upsertRule(this.layers[theme], this._scope(mode), set);
   }
 
   /** 投影档的投影片尺寸（`PAGE_RATIOS` 那几张）。 */
@@ -453,9 +480,11 @@ export class StyleState {
     this._applySizes(mode, opts);
   }
 
-  /** 清掉某一档的用户层（回到主题默认）。 */
+  /** 清掉某一档的用户层（回到主题默认）。自定义版面里只清限定这个版面的那几条；基础档清不限定版面的，别的版面的留着 */
   resetMode(mode: JianpuLayoutMode): void {
-    this.layers[themeOfMode(mode)] = [];
+    const theme = themeOfMode(mode);
+    const lay = this.host.layoutFor(mode);
+    this.layers[theme] = this.layers[theme].filter((r) => (lay.custom ? r.when?.layout !== lay.name : r.when?.layout !== undefined));
   }
 
   /** 从持久化设置读回：用户层、诗集样式表的手动指定（旧版散存的字号/纸/配色字段不读——不做存量迁移）。 */

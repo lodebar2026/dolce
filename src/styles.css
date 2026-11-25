@@ -416,6 +416,8 @@ button:focus-visible, select:focus-visible {
 }
 .preview-mode-switch button:hover { color: var(--text); }
 .preview-mode-switch button.active { background: var(--panel-hover); color: var(--text); }
+.layout-select { height: 26px; margin-left: 6px; max-width: 9em; font-size: 11px; }
+.layout-select[hidden] { display: none; }
 .preview-mode-switch button:disabled { color: #555; cursor: not-allowed; }
 #code-pane { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--panel); }
 

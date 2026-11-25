@@ -270,6 +270,12 @@ pub fn abc_set_layout_option(text: &str, song: usize, layout: &str, key: &str, v
     dolce_formats::abc::layoutedit::set_layout_option(text, song, layout, key, (!value.is_empty()).then_some(value))
 }
 
+/// 删掉 123 / ABC 原文里第 `song` 首版面 `layout` 的全部 `%%layout` 行
+#[wasm_bindgen(js_name = abcRemoveLayout)]
+pub fn abc_remove_layout(text: &str, song: usize, layout: &str) -> String {
+    dolce_formats::abc::layoutedit::remove_layout(text, song, layout)
+}
+
 /// 谱面上加版面断点：第 `pass` 遍（0 = 每一遍）在段 `section` 第 `nth` 次之后换行（`page` 换页），只改 `%%layout` 行
 #[wasm_bindgen(js_name = abcLayoutAddBreak)]
 pub fn abc_layout_add_break(text: &str, song: usize, layout: &str, pass: u32, section: &str, nth: u32, page: bool) -> String {

@@ -147,6 +147,18 @@ pub fn layout_option(text: &str, song: usize, layout: &str, key: &str) -> Option
     val
 }
 
+/// 删掉第 `song` 首版面 `layout` 的全部 `%%layout` 行（编辑器「删除版面」）；没有回原文
+pub fn remove_layout(text: &str, song: usize, layout: &str) -> String {
+    let lines = lines_of(text);
+    let Some(&(from, to)) = song_line_ranges(text).get(song) else { return text.to_string() };
+    let name = norm_name(layout);
+    let edits: Vec<(usize, Option<String>)> = (from..to).filter(|&i| layout_line_body(lines[i]).is_some_and(|b| split_line(b).0 == name)).map(|i| (i, None)).collect();
+    if edits.is_empty() {
+        return text.to_string();
+    }
+    rejoin(&lines, text, edits, vec![])
+}
+
 // ───────────────────────── 谱面上增删断点（规范 §9.1「在谱面上增删断点」） ─────────────────────────
 
 /// 这一行 `%%layout` 管第几遍（`pass=N`；不带的为 None）
@@ -473,6 +485,15 @@ mod tests {
     }
 
     const S: &str = "X:1\nK:C\n[P:A]1 2 3 4 | 5 6 7 1' | [P:B]2 2 2 2 |]\n%%sing A B\n%%sing A@2 B A@2\n";
+
+    #[test]
+    fn create_and_remove_layout() {
+        let t = set_layout_option(S, 0, "大字版", "base", Some("简谱"));
+        let t = set_layout_option(&t, 0, "大字版", "note-size", Some("24"));
+        assert!(t.contains("%%layout 大字版 base=简谱 note-size=24\n"), "{t}");
+        assert_eq!(remove_layout(&t, 0, "大字版"), S);
+        assert_eq!(remove_layout(S, 0, "大字版"), S);
+    }
 
     #[test]
     fn add_remove_break() {

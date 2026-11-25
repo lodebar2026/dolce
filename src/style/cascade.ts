@@ -5,7 +5,7 @@
 //       → 曲内局部覆盖（文本谱 `FontSize:`/`Margin:` 是乘法，留在 fanqie 适配器里，不走深合并）
 //         → 用户面板（编辑器，localStorage）
 //
-// 没有 DOM 树，所以不做 CSS 全量选择器：规则只按上下文限定（档位 / 引擎 / 页位 / 段号）过滤。
+// 没有 DOM 树，所以不做 CSS 全量选择器：规则只按上下文限定（档位 / 引擎 / 页位 / 段号 / 版面名）过滤。
 // `page` / `verse` 目前只实现匹配，还没有消费者。
 //
 // 无 DOM 依赖。
@@ -23,6 +23,8 @@ export interface StyleContext {
   paged?: boolean;
   page?: "left" | "right" | "first";
   verse?: number;
+  /** 版面名（123 `%%layout`：内置四档的中文名，或自定义版面名）。自定义版面的 `mode` 取它 `base` 那一档，写给那一档的规则照样吃到 */
+  layout?: string;
 }
 
 export interface StyleRule {

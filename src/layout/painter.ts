@@ -79,6 +79,8 @@ export interface JianpuPaintRequest {
   readonly noReflow?: boolean;
   /** 投影档：`.jpwabc` 的 `.Layout` 分页描述（其他格式没有） */
   readonly breakDesc?: string | null;
+  /** 投影档：照哪个版面展开（123 `%%layout` 的名字；不给是内置的「投影」） */
+  readonly layout?: string;
   /** 简谱档的纸（pt），不给按样式表的纸。`snippet` 时只取宽、高随内容 */
   readonly page?: { w: number; h: number };
   /** 只排谱行、不放页眉页脚（帮助页的谱例片段） */
@@ -171,6 +173,7 @@ function wireOf(req: PaintRequest): LayoutWire {
       style: req.style,
       noReflow: req.noReflow ?? false,
       breakDesc: req.breakDesc ?? null,
+      ...(req.layout ? { layout: req.layout } : {}),
       page: req.page ?? null,
       snippet: req.snippet ?? false,
       ...(req.ink !== undefined ? { ink: req.ink } : {}),

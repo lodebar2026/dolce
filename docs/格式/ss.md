@@ -47,7 +47,7 @@
 | `@template 区域 { … }` | 模板区域（§4） | `StyleSheet.template` |
 | `@flow { … }` | 装页（§6） | `StyleSheet.template.flow` |
 | `@toc { … }` | 成书目录与索引页的几何（§10） | `StyleSheet.template.toc` |
-| `@media (维度: 值) and (…) { … }` | 按 mode / engine / paged / page / verse 限定（§2.2） | `StyleRule.when` |
+| `@media (维度: 值) and (…) { … }` | 按 mode / engine / paged / page / verse / layout 限定（§2.2） | `StyleRule.when` |
 | `@jianpu` `@staff { 键: 值; }` | 简谱 / 五线谱内容的几何与开关（§2.1） | `StyleSheet.jianpu/staff` |
 | `@break { 键: 值; }` | 断句（§2.3），与谱式无关 | `StyleSheet.break` |
 
@@ -99,6 +99,7 @@
 | `engine` | `jianpu` `book` `staff` | 哪个排版器在吃样式：简谱（编辑器里两个简谱引擎同取一份）、成书、五线谱/混排 |
 | `paged` | `true` `false` | 分页（有实际纸张）还是长图。由算出来的 `@page` 纸反推（级联两趟，见 `themes.ts::computeStyleForPaper`） |
 | `page` / `verse` | `left` `right` `first` / 段号 | 只实现了匹配，还没有消费者 |
+| `layout` | 版面名（`投影` `简谱` `五线谱` `混排` 或 123 `%%layout` 自定义的名字，如 `@media (layout: 大字版)`） | 编辑器当前排的版面（[123格式](123格式.md) §9.1）。自定义版面的 `mode` 取它 `base` 那一档，所以写给 `mode` 的规则照样吃到 |
 
 认不出的维度、`paged` 写了 `true`/`false` 以外的值，都报 `行:列`。
 

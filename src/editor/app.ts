@@ -5,7 +5,7 @@ import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { Compartment, EditorState, MapMode, Prec } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { sniffDialect, type Dialect } from "../fanqie";
-import type { Diagnostic, ElementId, ScoreDoc } from "../model/doc";
+import type { Diagnostic, ElementId, LayoutSpec, ScoreDoc } from "../model/doc";
 import { applyBreaks } from "../model/breaks";
 import { JpwFile, LayoutSection } from "../jpword/jpwfile";
 import { measureDocument, PaintResources, ScorePainter, type StaffPaintRequest, type SyncPaintRequest } from "../layout/painter";
@@ -15,7 +15,9 @@ import { STAFF_PAPER_DEFAULT, isPaper } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import type { BarsOverflow, FitMeasure } from "../jianpu/phrase";
-import { applyLayoutBreaks, layoutOf, VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
+import { activeLayout, applyLayoutBreaks, customLayouts, viewOfLayout, layoutOf, VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
+import type { LayoutKind } from "./stylestate";
+import { LayoutPicker } from "./layoutpick";
 import { applyBreakPlan, jianpuAddPlan, jianpuRemovePlan, projAddPlan, projRemovePlan, type BreakPlan } from "../jianpu/layoutbreak";
 import { spliceComments } from "../jianpu/docrelayout";
 import { emit123, emitAbc } from "../abcfamily/emit";
@@ -443,6 +445,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   private async _reload(text: string): Promise<boolean> {
     this.formats.refreshNote(); // 改过没有：下拉旁「回到原稿」的提示跟着变
+    this._layoutPicker?.sync();
     // 识别模式：谱面区是核对视图，不重排成排版稿；但索引跟着原文重建、叠加层按当前模型重画（改过的标出来）
     if (this.mode === "recognize") {
       if (this.adapter.caps.layout === "jpwabc") this._refreshJpwDoc(text);
@@ -514,19 +517,50 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.docFormat === "123" || this.docFormat === "abc";
   }
 
-  /** 当前档的版面名（内置四档） */
+  /** 当前档的版面名：选了照这一档排的自定义版面就是它，否则内置四档 */
   private get _viewLayout(): string {
-    return VIEW_LAYOUT[this.viewMode];
+    return activeLayout(this.currentScoreDoc()?.songs[0], this.viewMode, this._customLayout).name;
+  }
+
+  /** 选中的自定义版面名（123 `%%layout 名 base=…`，规范 §9.1）；null = 用各档内置版面。只在内存，不进原文 */
+  private _customLayout: string | null = null;
+
+  get customLayout(): string | null {
+    return this._customLayout;
+  }
+
+  /** 选自定义版面（null = 回内置）：先切到它照的那一档，再重排 */
+  async setCustomLayout(name: string | null): Promise<void> {
+    this._customLayout = name;
+    this._layoutDocCache = null;
+    const spec = name !== null ? customLayouts(this.currentScoreDoc()?.songs[0]).find((l) => l.name === name) : undefined;
+    const view = spec ? viewOfLayout(spec) : null;
+    if (view && view !== this.viewMode) await this.setViewMode(view, true);
+    else {
+      await this.reload(this.getText());
+      this.syncLineModeToView();
+    }
+  }
+
+  /** StyleStateHost：某一类档当前排的版面（名、选项、是不是自定义），样式按它分层 */
+  layoutFor(kind: LayoutKind): { name: string; spec?: LayoutSpec; custom: boolean } {
+    const view = kind === "staff" ? (this.mode === "mixed" && this.mixedShowJianpuLayer ? "mixed" : "staff") : kind;
+    return activeLayout(this.currentScoreDoc()?.songs[0], view, this._customLayout);
+  }
+
+  /** 某档当前排的版面名 */
+  private _layoutName(view: "expanded" | "original"): string {
+    return activeLayout(this.currentScoreDoc()?.songs[0], view, this._customLayout).name;
   }
 
   /** 各档实际排的那份：123 / ABC 的简谱档按 `%%layout 简谱` 在副本上落断行；别的格式开着「按乐句重排」时投影档挂按乐句断行的投影版面 */
   private _layoutDocs(doc: ScoreDoc): JianpuSource["docFor"] {
     const hit = this._layoutDocCache;
-    const key = this._layoutInText ? "text" : this.phraseOn ? "phrase" : "";
+    const key = this._layoutInText ? `text:${this._layoutName("original")}` : this.phraseOn ? "phrase" : "";
     if (hit && hit.doc === doc && hit.key === key) return hit.docFor;
     let docFor: JianpuSource["docFor"];
     if (this._layoutInText) {
-      const original = applyLayoutBreaks(doc, VIEW_LAYOUT.original, this._phraseMeasureFor("original"));
+      const original = applyLayoutBreaks(doc, this._layoutName("original"), this._phraseMeasureFor("original"));
       docFor = original ? { original } : undefined;
     } else if (this.phraseOn && doc.songs.some((s) => s.singOrder?.length)) {
       docFor = { expanded: withLinebreak(doc, VIEW_LAYOUT.expanded, "phrase") };
@@ -638,7 +672,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 简谱两档排的那份源（`.jpwabc` 是排版器那份模型）。没有文档时返回 null。 */
   private _jianpuSource(doc = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc()): JianpuSource | null {
-    return doc ? { format: this.docFormat, doc, breakDesc: this._breakDesc, melodyPart: this.melodyPart, lyricPart: this.lyricPart, docFor: this._layoutDocs(doc) } : null;
+    return doc ? { format: this.docFormat, doc, breakDesc: this._breakDesc, melodyPart: this.melodyPart, lyricPart: this.lyricPart, docFor: this._layoutDocs(doc), layoutName: { expanded: this._layoutName("expanded"), original: this._layoutName("original") } } : null;
   }
 
   /** 投影档的排版请求（导出 PPTX 在别的档另排一份用，`export.ts::pptxPainter`）。没有曲行时返回 null。 */
@@ -1705,7 +1739,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.setStatus(t(plan.key as MsgKey));
       return true;
     }
-    const layout = expanded ? VIEW_LAYOUT.expanded : VIEW_LAYOUT.original;
+    const layout = this._layoutName(expanded ? "expanded" : "original");
     const out = applyBreakPlan(this.getText(), song, layout, pass, plan, op === "page", (x) => this._markInsertAt(x));
     if (out === null) {
       this.setStatus(t(remove ? "status.layoutBreakAuto" : "status.layoutBreakPick"));
@@ -1728,7 +1762,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   bakeLineBreaks(): void {
     if (!this._layoutInText || this.layoutMode !== "original") return;
     const doc = this.currentScoreDoc();
-    const laid = doc && applyLayoutBreaks(doc, VIEW_LAYOUT.original, this._phraseMeasureFor("original"));
+    const name = this._layoutName("original");
+    const laid = doc && applyLayoutBreaks(doc, name, this._phraseMeasureFor("original"));
     if (!doc || !laid) {
       this.setStatus(t("status.bakeNothing"));
       return;
@@ -1736,7 +1771,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     const emit = this.docFormat === "123" ? emit123 : emitAbc;
     let out = spliceComments(this.getText(), doc, emit(laid), (this.docFormat === "123" ? parse123 : parseAbc)(emit(laid)));
     for (let i = 0; i < laid.songs.length; i++) {
-      out = dolce().abcSetLayoutOption(out, i, VIEW_LAYOUT.original, "linebreak", "");
+      out = dolce().abcSetLayoutOption(out, i, name, "linebreak", "");
     }
     this.setText(out);
   }
@@ -1971,8 +2006,18 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     return this.layoutMode;
   }
 
-  /** 切档。**唯一入口**：两组状态该怎么配由这里说了算。 */
-  async setViewMode(mode: ViewMode): Promise<void> {
+  /** 切档。**唯一入口**：两组状态该怎么配由这里说了算。点档位按钮回这一档的内置版面（`keepLayout` 是选自定义版面时自己调的） */
+  async setViewMode(mode: ViewMode, keepLayout = false): Promise<void> {
+    if (!keepLayout && this._customLayout !== null) {
+      this._customLayout = null;
+      this._layoutDocCache = null;
+      if (mode === this.viewMode) {
+        await this.reload(this.getText());
+        this._syncViewModeButtons();
+        this.syncLineModeToView();
+        return;
+      }
+    }
     if (mode === "staff" || mode === "mixed") {
       if (!this.mixed._ensureMixedDoc()) return;
       // 先定简谱层再进混排：setStaffJianpuLayer 会作废 painter，进去后只排一遍
@@ -1993,7 +2038,15 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._syncViewModeButtons();
   }
 
+  /** 档位旁的版面下拉（`layoutpick.ts`） */
+  setLayoutSelect(sel: HTMLSelectElement): void {
+    this._layoutPicker = new LayoutPicker(this, sel);
+    this._layoutPicker.sync();
+  }
+  private _layoutPicker: LayoutPicker | null = null;
+
   private _syncViewModeButtons(): void {
+    this._layoutPicker?.sync();
     if (this._viewSwitchEl) this._viewSwitchEl.hidden = this._viewBtns.size === 0;
     const active = this.viewMode;
     for (const [mode, btn] of this._viewBtns) {
