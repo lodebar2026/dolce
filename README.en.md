@@ -106,10 +106,15 @@ The interface is available in **English and Chinese**: it follows your browser l
 
 **Typesetting**
 - **Four views:**
-  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%sing` order can pin down, pass by pass and line by line, which sections appear and with which verse; pasting the lyrics written out in singing order generates the sections and sing order automatically, in any format (written into the source for 123).
+  - *Projection*: repeats and verses are unrolled pass by pass, one verse per slide, for projection. In 123 files a `%%sing` order can pin down, pass by pass, which sections appear and with which verse; pasting the lyrics written out in singing order generates the sections and sing order automatically, in any format (written into the source for 123).
   - *Jianpu*: laid out as printed, with verses stacked under the notes, for print.
   - *Staff*: Western staff notation.
   - *Mixed*: staff notation with a jianpu layer on top.
+- **Layouts** (`%%layout` in 123 / ABC, modelled on Dorico's layouts): each view keeps its own line-break mode (as written, by phrase,
+  N bars per line, or filled), rows per page and its own line and page breaks. Breaks refer to sections and may fall mid-bar; in Projection
+  they can apply to one pass only. Select a note on the score and press `Enter` / `Shift+Enter` to add a line or page break (a section is split
+  automatically when needed); Backspace at the start of a line removes it. Custom layouts (e.g. a large-print edition based on one view, with
+  its own paper and note size) are picked from the drop-down next to the view buttons.
 - **Phrase-aware re-layout.** Lines are re-broken using lyric punctuation and musical cues (fermatas, final
   barlines, long notes, rests, slurs), or with a fixed number of bars per line (pickup bar not counted, existing
   page breaks kept). The original line breaks can be restored with one click.
