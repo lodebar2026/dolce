@@ -9,6 +9,7 @@ import { isTauriRuntime, saveBytes } from "./fileio";
 import { CONVERT_TARGETS, targetSpec, type ConvertTarget } from "../convert/targets";
 import { asset } from "../common/asset";
 import { scoreDocToMusicXml } from "../model/toxml";
+import { sectionLineStarts, staffLayoutDoc } from "../jianpu/layoutdoc";
 import { loadScoreDoc } from "../model/fromxml";
 import { jpwToScoreDoc } from "../model/fromjpw";
 import { emitJly } from "../jly/tojly";
@@ -179,7 +180,12 @@ export function sourceMusicXmlBare(app: App, opts: { sourceIds?: boolean } = {})
   }
   // 换行：乐句档按五线谱自己量宽断句（小节中间的也原位断）；ABC 照源文的换行（`App.staffRequest` 当硬断点）；
   // 否则照简谱视图实际排出的行。后两种以外都是自动铺排的优选断点
-  const phrase = app.phraseOn ? app.staffPhraseLineStarts(doc) : null;
+  // 123 / ABC 的五线谱系版面写了照源、每行 N 小节、装满或段落断点：落在副本上、照写的换行（`App.staffRequest` 当硬断点）
+  const inText = app.docFormat === "123" || app.docFormat === "abc";
+  const laid = inText ? staffLayoutDoc(doc, app.staffLayoutName) : null;
+  if (laid) return scoreDocToMusicXml(laid, { lineStarts: null, midLineStarts: false, sourceIds: opts.sourceIds });
+  let phrase = app.phraseOn ? app.staffPhraseLineStarts(doc) : null;
+  if (phrase && inText) phrase = new Set([...phrase, ...sectionLineStarts(doc, app.staffLayoutName)]);
   const lineStarts = phrase ?? (app.docFormat === "abc" ? null : app.jianpuLineStarts());
   // `sourceIds`：`<note>` 带源元素 id，读回的五线谱模型靠它对回代码区（只给 `App._ensureMixedDoc`，导出不带）
   return scoreDocToMusicXml(doc, { lineStarts, midLineStarts: phrase !== null, sourceIds: opts.sourceIds });

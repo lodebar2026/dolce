@@ -15,7 +15,7 @@ import { STAFF_PAPER_DEFAULT, isPaper } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import type { BarsOverflow, FitMeasure } from "../jianpu/phrase";
-import { activeLayout, applyLayoutBreaks, customLayouts, viewOfLayout, layoutOf, VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
+import { activeLayout, applyLayoutBreaks, customLayouts, staffLayoutHard, viewOfLayout, layoutOf, VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
 import type { LayoutKind } from "./stylestate";
 import { LayoutPicker } from "./layoutpick";
 import { applyBreakPlan, jianpuAddPlan, jianpuRemovePlan, projAddPlan, projRemovePlan, type BreakPlan } from "../jianpu/layoutbreak";
@@ -544,8 +544,19 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** StyleStateHost：某一类档当前排的版面（名、选项、是不是自定义），样式按它分层 */
   layoutFor(kind: LayoutKind): { name: string; spec?: LayoutSpec; custom: boolean } {
-    const view = kind === "staff" ? (this.mode === "mixed" && this.mixedShowJianpuLayer ? "mixed" : "staff") : kind;
+    const view = kind === "staff" ? (this.mixedShowJianpuLayer ? "mixed" : "staff") : kind;
     return activeLayout(this.currentScoreDoc()?.songs[0], view, this._customLayout);
+  }
+
+  /** MixedHost：五线谱 / 混排档当前排的版面名 */
+  get staffLayoutName(): string {
+    return this.layoutFor("staff").name;
+  }
+
+  /** 五线谱 / 混排档按版面当硬断点排（123 / ABC 写了照源、每行 N 小节、装满或段落断点，`layoutdoc.ts::staffLayoutDoc`） */
+  get staffLayoutHard(): boolean {
+    const doc = this._layoutInText ? this.currentScoreDoc() : null;
+    return !!doc && staffLayoutHard(doc, this.staffLayoutName);
   }
 
   /** 某档当前排的版面名 */
@@ -2251,7 +2262,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       hideBarNumber: this.mixedHideBarNumber,
       hiddenParts: this.hiddenParts,
       melodyPart: this.melodyPart,
-      sourceBreaks: this.docFormat === "abc" && !this.phraseOn,
+      sourceBreaks: (this.docFormat === "abc" && !this.phraseOn) || this.staffLayoutHard,
     });
   }
 

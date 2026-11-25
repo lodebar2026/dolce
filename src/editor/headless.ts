@@ -10,7 +10,7 @@
 //   s.pages()                             // 各页 SVG（outerHTML）
 
 import type { LayoutSpec, ScoreDoc } from "../model/doc";
-import { activeLayout, applyLayoutBreaks } from "../jianpu/layoutdoc";
+import { activeLayout, applyLayoutBreaks, staffLayoutDoc, staffLayoutHard } from "../jianpu/layoutdoc";
 import type { JianpuLayoutMode } from "../jianpu/profile";
 import { MetaData } from "../smufl/smufl";
 import { measureDocument, PaintResources, ScorePainter, type SyncPaintRequest } from "../layout/painter";
@@ -64,7 +64,7 @@ export class HeadlessSession implements StyleStateHost {
 
   // ---- StyleStateHost ----
   layoutFor(kind: LayoutKind): { name: string; spec?: LayoutSpec; custom: boolean } {
-    const view = kind === "staff" ? (this.mode === "mixed" ? "mixed" : "staff") : kind;
+    const view = kind === "staff" ? (this.jianpuLayer ? "mixed" : "staff") : kind;
     return activeLayout(this.currentScoreDoc()?.songs[0], view, this.customLayout);
   }
   get adapter(): FormatAdapter {
@@ -223,9 +223,11 @@ export class HeadlessSession implements StyleStateHost {
     if (this.mixedDoc) return this.mixedDoc;
     const src = this.jianpuSource();
     if (!src) throw new Error("没有可排的文档");
-    const req = this.docFormat === "abc" ? null : lineStartsRequest(src, this.layoutMode, (m) => this.style.styleOf(m));
+    // 五线谱系版面写了断行 / 段落断点：落在副本上当硬断点（同 `export.ts::sourceMusicXmlBare`）
+    const laid = this.docFormat === "123" || this.docFormat === "abc" ? staffLayoutDoc(src.doc, this.layoutFor("staff").name) : null;
+    const req = this.docFormat === "abc" || laid ? null : lineStartsRequest(src, this.layoutMode, (m) => this.style.styleOf(m));
     const lineStarts = req ? jianpuLineStarts(this.painter.resources, req) : null;
-    const doc = musicXmlFormat.toScoreDoc(scoreDocToMusicXml(src.doc, { lineStarts, midLineStarts: false, sourceIds: true }));
+    const doc = musicXmlFormat.toScoreDoc(scoreDocToMusicXml(laid ?? src.doc, { lineStarts, midLineStarts: false, sourceIds: true }));
     carryPlayOrder(src.doc, doc);
     this.mixedDoc = doc;
     return doc;
@@ -245,7 +247,7 @@ export class HeadlessSession implements StyleStateHost {
         style: this.style.staffStyle(),
         page: this.style.staffPage,
         hideBarNumber: this.hideBarNumber,
-        sourceBreaks: this.docFormat === "abc",
+        sourceBreaks: this.docFormat === "abc" || (this.docFormat === "123" && staffLayoutHard(this.currentScoreDoc()!, this.layoutFor("staff").name)),
       });
       await this.painter.load(req);
       return;

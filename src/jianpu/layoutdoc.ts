@@ -1,7 +1,7 @@
 // 版面（123 `%%layout`，规范 123格式 §9.1）在简谱档的落法：断行方式（`linebreak=`）与段落断点（`break=` / `newpage=`）
 // 先在文档**副本**上落成换行再交排版器，原文不动。投影档的版面在 Rust 展开时落（`place/expand.rs`），不走这里。
 
-import type { LayoutSpec, ScoreDoc, Song } from "../model/doc";
+import type { ElementId, LayoutSpec, ScoreDoc, Song } from "../model/doc";
 import { applyBreaks, breaksOf, clearSongBreaks, type LineStart } from "../model/breaks";
 import { relayoutDocBreaks } from "./docrelayout";
 import type { FitMeasure, LinePlan } from "./phrase";
@@ -99,4 +99,38 @@ export function withLinebreak(doc: ScoreDoc, name: string, linebreak: string): S
     else layouts.push({ name, linebreak });
   }
   return clone;
+}
+
+/** 五线谱系版面要不要当硬断点排：写了照源、每行 N 小节、装满或段落断点（按乐句的五线谱自己量宽断，不算） */
+function staffHard(spec: LayoutSpec | undefined): boolean {
+  if (!spec || spec.linebreak === "phrase") return false;
+  return spec.linebreak === "source" || spec.linebreak === "fill" || planOf(spec.linebreak, null) !== null || !!spec.breaks?.length;
+}
+
+/** 五线谱 / 混排档的版面 `name` 要不要把换行当硬断点（`sourceBreaks`） */
+export function staffLayoutHard(doc: ScoreDoc, name: string): boolean {
+  return doc.songs.some((s) => staffHard(layoutOf(s, name)));
+}
+
+/**
+ * 五线谱 / 混排档（规范 §9.1）：版面写了照源（`source`）、每行 N 小节、装满或段落断点时，落好换行的副本，交五线谱当硬断点
+ * （`sourceBreaks`；一行压不下的五线谱再均分）。只写了段落断点、没写断行方式的，别处按装满（交五线谱均分）。
+ * 没写这些（自动，照简谱视图排出的行当优选断点）与按乐句（`MixedSession.staffPhraseLineStarts`）回 null。
+ */
+export function staffLayoutDoc(doc: ScoreDoc, name: string): ScoreDoc | null {
+  if (!staffLayoutHard(doc, name)) return null;
+  const tmp = structuredClone(doc);
+  for (const song of tmp.songs) {
+    const spec = layoutOf(song, name);
+    if (staffHard(spec) && (!spec!.linebreak || spec!.linebreak === "auto")) spec!.linebreak = "fill";
+  }
+  return applyLayoutBreaks(tmp, name, null) ?? tmp;
+}
+
+/** 按乐句的五线谱另加上版面的段落断点（行首音 id） */
+export function sectionLineStarts(doc: ScoreDoc, name: string): ElementId[] {
+  return doc.songs.flatMap((s) => {
+    const spec = layoutOf(s, name);
+    return spec ? sectionStarts(s, spec).map((x) => x.id) : [];
+  });
 }
