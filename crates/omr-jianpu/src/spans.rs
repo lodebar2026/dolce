@@ -629,10 +629,11 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
 /// 房子（判据照 TS `repeats.ts::endingCandidates`）：谱行上方一道够长（≥ 6 字号）、与本行音的横向范围交叠过半的横墨，
 /// 左端有下垂的立脚（房括号 ⌐ 必有；歌词、弧、减时线这些长横墨没有）。窗口从数字顶上 3.4 字号起（行内有弧时括线被顶得很高），
 /// 不越过上一行音底下半个字号（那里是上一行的减时线）。房号是括线左端内侧连着的一串小块，逐块读数；读不出时按阅读序 1、2 轮。
+/// 立脚短到二值化后没了的（青年诗歌 178「⌐1」只剩一道横线）：左端紧挨着读得出 1~7 的房号才收，读不出号就不当房子。
 /// 括线罩着的头一个音记 `ending_start`、末一个音记 `ending_stop`。
 pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &CachedOcr) {
     let w = ink.w() as i64;
-    let mut found: Vec<(usize, Rect, Vec<Rect>)> = Vec::new();
+    let mut found: Vec<(usize, Rect, Vec<Rect>, bool)> = Vec::new();
     for (ri, rn) in notes.iter().enumerate() {
         if rn.nums.is_empty() {
             continue;
@@ -674,18 +675,28 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
             }
         }
         for b in uniq {
-            // 左端下垂的立脚
-            let need = (num_h * 0.35).round().max(2.0) as i64;
+            // 左端下垂的立脚。b.y 是横线里最长那一像素行，未必是线顶：从 b.y - 4 起往下数竖墨，
+            // 竖墨要比横线本身厚（在括线正中量）多出立脚那么长，否则粗横线自己就凑够了
+            let need = (num_h * 0.14).round().max(3.0) as i64;
+            let y_top = (b.y as i64 - 4).max(0);
+            let mid = (b.x + b.w / 2.0) as i64;
+            let thick = {
+                let (mut t, mut d) = (b.y as i64, b.y as i64);
+                while t > y_top && ink.at(mid, t - 1) {
+                    t -= 1;
+                }
+                while d - t < (num_h * 0.3) as i64 && ink.at(mid, d + 1) {
+                    d += 1;
+                }
+                d - t + 1
+            };
             let hook = (b.x as i64..=(b.x as i64 + (num_h * 0.25).round().max(1.0) as i64)).any(|x| {
                 let mut run = 0;
-                (b.y as i64..(b.y + num_h * 1.6) as i64).any(|y| {
+                (y_top..(b.y + num_h * 1.6) as i64).any(|y| {
                     run = if ink.at(x, y) { run + 1 } else { 0 };
-                    run >= need
+                    run >= thick + need
                 })
             });
-            if !hook {
-                continue;
-            }
             // 长而平的延音弧（青年诗歌 206「2 - - - | 2 - -」）：弧顶那段也够长，弧脚往下弯像立脚；但弧过了这段两头还往外、往下接着走，
             // 房子的括线到头是直角（左端立脚下垂，外边没墨）。从两头沿笔画往外追（每列在上一列墨顶上 2、下 4 像素内找墨），
             // 两头都连着走出 0.3 字号、且往下落了的是弧；挨着却不相连的数字、小节线追不上来
@@ -708,7 +719,7 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
                 .comps()
                 .iter()
                 .map(|k| &k.rect)
-                .filter(|r| r.cx() >= b.x - num_h * 0.1 && r.cx() <= b.x + num_h * 5.0 && r.cy() >= b.y - num_h * 0.2 && r.cy() <= b.y + num_h * 0.9 && r.h >= num_h * 0.18 && r.h <= num_h * 0.9 && r.w <= num_h * 0.9)
+                .filter(|r| r.cx() >= b.x - num_h * 1.5 && r.cx() <= b.x + num_h * 5.0 && r.cy() >= b.y - num_h * 0.2 && r.cy() <= b.y + num_h * 0.65 && r.h >= num_h * 0.18 && r.h <= num_h * 0.95 && r.w <= num_h * 0.9)
                 .collect();
             near.sort_by(|a, b| a.x.total_cmp(&b.x));
             // 号与号之间的点（`1.`）只有数字三成高；断在头一个大空当
@@ -723,14 +734,19 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
                 }
                 labels.push(*r);
             }
-            found.push((ri, b, labels));
+            // 没有立脚的：头一个号要紧挨括线左端
+            if !hook && !labels.first().is_some_and(|l| l.cx() <= b.x + num_h * 1.5) {
+                continue;
+            }
+            found.push((ri, b, labels, hook));
         }
     }
     found.sort_by(|a, b| a.1.y.total_cmp(&b.1.y).then(a.1.x.total_cmp(&b.1.x)));
     let imgs: Vec<_> = found.iter().flat_map(|f| f.2.iter().map(|r| digit_cell(ink, r))).collect();
     let texts = ocr.read_cells(&imgs).unwrap_or_else(|_| vec![String::new(); imgs.len()]);
     let mut at = 0;
-    for (i, (ri, b, labels)) in found.iter().enumerate() {
+    let mut nth = 0;
+    for (ri, b, labels, hook) in found.iter() {
         let mut nums: Vec<u8> = Vec::new();
         for t in &texts[at..at + labels.len()] {
             if let Some(d) = crate::frame::digit_of(t).filter(|d| (1..=7).contains(d)) {
@@ -741,8 +757,12 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
         }
         at += labels.len();
         if nums.is_empty() {
-            nums.push((i % 2) as u8 + 1);
+            if !hook {
+                continue;
+            }
+            nums.push((nth % 2) as u8 + 1);
         }
+        nth += 1;
         let number = nums.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
         let rn = &mut notes[*ri];
         let num_h = rows[*ri].h();
@@ -750,6 +770,17 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
         let (Some(&a), Some(&z)) = (covered.first(), covered.last()) else { continue };
         rn.nums[a].ending_start = Some(number.clone());
         rn.nums[z].ending_stop = Some(number);
+        // 房号、号后的点（`1.`，读号时按高矮剔了）与括线本身不让上方带当和弦读：
+        // 号的墨只在找号的那块地方（同 `near`）里、到最后一个号为止，号外的和弦字不碰
+        let label_end = labels.iter().map(|l| l.right()).fold(f64::MIN, f64::max);
+        for k in ink.comps() {
+            let r = &k.rect;
+            let label_ink = r.x >= b.x - num_h * 1.5 && r.right() <= label_end + num_h * 0.3 && r.cy() >= b.y - num_h * 0.2 && r.cy() <= b.y + num_h * 0.65 && r.h <= num_h * 0.95 && r.w <= num_h * 0.9;
+            let bracket = r.w >= num_h * 3.0 && r.x < b.right() && r.right() > b.x && r.y <= b.y + 1.0 && r.bottom() >= b.y - 1.0 && r.y >= b.y - num_h * 0.5;
+            if label_ink || bracket {
+                rn.mark_ink.push(k.id);
+            }
+        }
     }
 }
 
