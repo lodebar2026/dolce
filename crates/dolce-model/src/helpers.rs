@@ -410,6 +410,7 @@ pub fn empty_song() -> Song {
         marks: vec![],
         play_order: None,
         sing_order: None,
+        layouts: None,
         section_order: None,
         section_marks: None,
         style: None,

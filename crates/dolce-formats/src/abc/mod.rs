@@ -3,6 +3,7 @@ pub mod comments;
 pub mod dialect;
 pub mod emit;
 pub mod fields;
+pub mod layoutedit;
 pub mod lex;
 pub mod lyricline;
 pub mod lyricpunct;

@@ -192,6 +192,8 @@ export interface DolceWasm {
   jpwRelayoutText(text: string, cuts: string): string;
   /** 123 / ABC 重排后把原文注释缝回 */
   abcSpliceComments(oldText: string, oldDoc: string, newText: string, newDoc: string): string;
+  /** 123 / ABC 原文里第 `song` 首版面 `layout` 的整体选项 `key` 设成 `value`（空串 = 去掉），只改 `%%layout` 行 */
+  abcSetLayoutOption(text: string, song: number, layout: string, key: string, value: string): string;
   fanqieKeyNameOf(fifths: number, suffix: boolean): string;
   /** `[嵌套, 奇数连音, 倚音弧]` */
   fanqieArcLosses(song: string): Uint32Array;

@@ -53,9 +53,9 @@ pub struct JianpuRequest {
     pub snippet: bool,
     #[serde(default)]
     pub ink: Option<f64>,
-    /// 投影档：写了 `%%sing` 的逐遍按乐句断行（编辑器开着「按乐句重排」时）
+    /// 活动的版面名（`%%layout`）；不写 = 档位自己的内置版面
     #[serde(default)]
-    pub sing_phrase: bool,
+    pub layout: Option<String>,
 }
 
 /// 五线谱 / 混排的请求（TS `StaffPaintRequest` 去掉 `doc`）。
@@ -207,7 +207,7 @@ pub fn jianpu_config(req: &JianpuRequest, env: &Env) -> Result<JianpuConfig, Str
         measure: false,
         snippet: req.snippet,
         ink: req.ink,
-        sing_phrase: req.sing_phrase,
+        layout: req.layout.clone(),
     })
 }
 
@@ -305,7 +305,7 @@ pub fn measure_document(doc: &ScoreDoc, style: &Option<Value>, width: f64, slide
         measure: true,
         snippet: false,
         ink: None,
-        sing_phrase: false,
+        layout: None,
     };
     let r = layout_jianpu(&clone, &cfg, env);
     Ok(r.spans.unwrap_or((0.0, Vec::new())))

@@ -470,6 +470,45 @@ export type LaterAttrs = { afterElements: number, onset?: number, attrs: Measure
 
 export type LayerRole = "accompaniment" | "voice";
 
+/**
+ * 版面里一处写明的断点：在段 `section` 的第 `nth` 次出现之后换行 / 换页（123 `%%layout … break=A` / `newpage=A*2`）
+ */
+export type LayoutBreak = { 
+/**
+ * 只管第几遍（1 起）；缺省每一遍
+ */
+pass?: number, section: string, 
+/**
+ * 这一遍里第几次出现（1 起），缺省 1
+ */
+nth?: number, 
+/**
+ * 换页（否则换行）
+ */
+page?: boolean, };
+
+/**
+ * 某一遍自己的版面选项（`%%layout 投影 pass=2 rows=5`）
+ */
+export type LayoutPass = { pass: number, rows?: number, };
+
+/**
+ * 一个版面（123 `%%layout`，规范 §9.1）：内置四档（投影 / 简谱 / 五线谱 / 混排）或带 `base` 的自定义版面
+ */
+export type LayoutSpec = { 
+/**
+ * 规范名：内置版面用中文名
+ */
+name: string, 
+/**
+ * 自定义版面照哪一档排（内置版面名）
+ */
+base?: string, 
+/**
+ * `source` / `phrase` / `bars:N` / `fill` / `auto`
+ */
+linebreak?: string, rows?: number, pairPages?: boolean, noIntro?: boolean, paper?: string, pageOrientation?: string, noteSize?: number, style?: string, breaks?: Array<LayoutBreak>, passes?: Array<LayoutPass>, };
+
 export type Lyric = { 
 /**
  * 段号。MusicXML 的 `number`；123 里由 `w:` 的出现顺序定
@@ -926,20 +965,12 @@ export type SingItem = { section: string,
 /**
  * 配第几条 `w:`（段内计，同 `P:`），缺省 1
  */
-verse?: number, 
-/**
- * 这一项之后换行（`/`）
- */
-lineAfter?: boolean, };
+verse?: number, };
 
 /**
- * 逐遍演唱顺序的一遍（123 `%%sing`）
+ * 逐遍演唱顺序的一遍（123 `%%sing`）。只管顺序；这一遍怎么断行、换页写在版面里（`Song.layouts`）
  */
-export type SingPass = { items: Array<SingItem>, 
-/**
- * 投影这一遍一页最多几行（缺省 4）
- */
-rows?: number, };
+export type SingPass = { items: Array<SingItem>, };
 
 /**
  * 一首歌。多曲文件是 `ScoreDoc.songs` 多项。
@@ -977,6 +1008,10 @@ partGroups?: Array<PartGroup>, parts: Array<Part>, marks: Array<Mark>, playOrder
  * 逐遍演唱顺序（123 `%%sing`）
  */
 singOrder?: Array<SingPass>, 
+/**
+ * 各版面的断行、分页与纸（123 `%%layout`）
+ */
+layouts?: Array<LayoutSpec>, 
 /**
  * 头部 `P:` 的段落顺序：`text` 原文照写回，`seq` 展开后的段落名
  */

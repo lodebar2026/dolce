@@ -7,7 +7,7 @@
 
 use super::abcpitch::{voice_grouped, with_abc_accidentals, with_abc_pitches};
 use super::dialect::tuplet_normal_123;
-use super::fields::{barline_ornament_name, sing_lines};
+use super::fields::{barline_ornament_name, layout_lines, sing_lines};
 use super::lex::{is_bare_chord, Dialect};
 use super::lyricline::parse_lyric_line;
 use super::lyricpunct::{is_latin_end, is_latin_start, is_lyric_apostrophe, is_lyric_trailing_punct, is_one_cjk_with_punct};
@@ -1975,6 +1975,9 @@ impl Emitter {
         l.extend(body);
         if self.d == Dialect::J123 {
             l.extend(sing_lines(song));
+        }
+        if matches!(self.d, Dialect::J123 | Dialect::Abc) {
+            l.extend(layout_lines(song));
         }
         l.join("\n")
     }

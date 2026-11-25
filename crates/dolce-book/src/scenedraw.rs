@@ -467,7 +467,7 @@ pub fn book_cfg_of(style: &Value, page_h: f64, measure: bool, env: &Env) -> Resu
         measure,
         snippet: false,
         ink: None,
-        sing_phrase: false,
+        layout: None,
     })
 }
 

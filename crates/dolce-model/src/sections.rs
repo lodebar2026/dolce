@@ -109,6 +109,8 @@ pub struct CarriedOrder {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sing_order: Option<Vec<SingPass>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub layouts: Option<Vec<crate::doc::LayoutSpec>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub section_marks: Option<Vec<SectionMark>>,
 }
 
@@ -152,11 +154,13 @@ pub fn carry_play_order(from: &ScoreDoc, to: &ScoreDoc) -> Vec<CarriedOrder> {
             continue;
         }
         let sing = src.sing_order.as_ref().filter(|s| !s.is_empty());
-        if src.section_order.is_none() && sing.is_none() {
+        let layouts = src.layouts.as_ref().filter(|s| !s.is_empty());
+        if src.section_order.is_none() && sing.is_none() && layouts.is_none() {
             continue;
         }
         patch.section_order = src.section_order.clone();
         patch.sing_order = sing.cloned();
+        patch.layouts = layouts.cloned();
         let (first, _) = chords_by_src(dst);
         let marks: Vec<SectionMark> = src
             .section_marks

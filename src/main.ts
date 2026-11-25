@@ -293,6 +293,11 @@ async function boot() {
       if (last && [...barsSel.options].some((o) => o.value === last)) barsSel.value = last;
     } catch { /* 存储不可用：用出厂的 4 */ }
     app.setPhraseButtons(originalLayoutBtn, phraseBtn, barsBtn, barsSel);
+    const bakeBtn = document.getElementById("btn-bake-lines") as HTMLButtonElement | null;
+    if (bakeBtn) {
+      app.setBakeButton(bakeBtn);
+      bakeBtn.addEventListener("click", () => app.bakeLineBreaks());
+    }
     originalLayoutBtn.addEventListener("click", () => app.setLineMode("original"));
     phraseBtn.addEventListener("click", () => app.setLineMode("phrase"));
     barsBtn.addEventListener("click", () => app.setLineMode("bars"));

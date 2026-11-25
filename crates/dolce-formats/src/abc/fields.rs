@@ -726,98 +726,257 @@ pub fn parse_linebreak(value: &str) -> &'static str {
 
 // ───────────────────────── %%sing ─────────────────────────
 
-/// 一行 `%%sing` 的正文 → 一遍。写错的项、参数报给 `bad` 并跳过；一项都没有回 `None`
+/// 段落名能不能用：不能有空白、`@`、`/`、`,`、`*`、方括号（`,` `*` 留给 `%%layout` 的断点引用）
+pub fn is_section_name(name: &str) -> bool {
+    !name.is_empty() && !name.chars().any(|c| js::is_space(c) || matches!(c, '@' | '/' | ',' | '*' | '[' | ']'))
+}
+
+/// 一行 `%%sing` 的正文 → 一遍。写错的项报给 `bad` 并跳过；一项都没有回 `None`
 pub fn parse_sing(body: &str, mut bad: impl FnMut(&str)) -> Option<SingPass> {
-    let mut rest = js::trim(body);
-    let mut page = SingPass { items: vec![], rows: None };
-    // `^\[([^\]]*)\]\s*`
-    if rest.starts_with('[') {
-        if let Some(c) = rest.find(']') {
-            let opts = &rest[1..c];
-            rest = rest[c + 1..].trim_start_matches(js::is_space);
-            for kv in opts.split(|c: char| js::is_space(c) || c == ',').filter(|s| !s.is_empty()) {
-                // `^(\w+)=(\d+)$`
-                let ok = kv.split_once('=').filter(|(k, d)| {
-                    !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') && !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())
-                });
-                match ok {
-                    Some(("rows", d)) if js::number(d) > 0.0 => page.rows = Some(js::number(d)),
-                    _ => bad(kv),
-                }
-            }
-        }
-    }
-    // `split(/(\/)|\s+/)` 去空：按空白切，`/` 单独成项
-    let mut toks: Vec<String> = vec![];
-    let mut cur = String::new();
-    for c in rest.chars() {
-        if c == '/' || js::is_space(c) {
-            if !cur.is_empty() {
-                toks.push(std::mem::take(&mut cur));
-            }
-            if c == '/' {
-                toks.push("/".into());
-            }
-        } else {
-            cur.push(c);
-        }
-    }
-    if !cur.is_empty() {
-        toks.push(cur);
-    }
-    for tok in toks {
-        if tok == "/" {
-            if let Some(last) = page.items.last_mut() {
-                last.line_after = Some(true);
-            }
-            continue;
-        }
-        // `^([^@\s/[\]]+)(?:@(\d+))?$`
-        let name_end = tok.find(|c: char| c == '@' || js::is_space(c) || c == '/' || c == '[' || c == ']').unwrap_or(tok.len());
-        let tail = &tok[name_end..];
-        let verse = if tail.is_empty() {
-            Some(None)
-        } else { tail.strip_prefix('@').filter(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())).map(Some) };
-        let Some(verse) = verse.filter(|_| name_end > 0) else {
-            bad(&tok);
-            continue;
+    let mut page = SingPass { items: vec![] };
+    for tok in js::trim(body).split(js::is_space).filter(|t| !t.is_empty()) {
+        // `^([^@\s/,*[\]]+)(?:@(\d+))?$`
+        let (name, verse) = match tok.split_once('@') {
+            Some((n, d)) => (n, Some(d)),
+            None => (tok, None),
         };
-        if verse.is_some_and(|d| js::number(d) < 1.0) {
-            bad(&tok);
+        let verse_ok = verse.is_none_or(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()) && js::number(d) >= 1.0);
+        if !is_section_name(name) || !verse_ok {
+            bad(tok);
             continue;
         }
-        page.items.push(SingItem {
-            section: tok[..name_end].to_string(),
-            verse: verse.filter(|d| *d != "1").map(js::number),
-            line_after: None,
-        });
+        page.items.push(SingItem { section: name.to_string(), verse: verse.filter(|d| *d != "1").map(js::number) });
     }
-    let last = page.items.last_mut()?;
-    last.line_after = None;
+    if page.items.is_empty() {
+        return None;
+    }
     Some(page)
 }
 
-/// `Song.singOrder` → `%%sing` 行（同 `sing.ts::singLines`）
+/// `Song.singOrder` → `%%sing` 行
 pub fn sing_lines(song: &dolce_model::Song) -> Vec<String> {
     song.sing_order
         .iter()
         .flatten()
         .map(|pg| {
-            let mut toks: Vec<String> = vec![];
-            if let Some(r) = pg.rows.filter(|r| *r != 0.0 && !r.is_nan()) {
-                toks.push(format!("[rows={}]", js::num_to_string(r)));
-            }
-            let n = pg.items.len();
-            for (i, it) in pg.items.iter().enumerate() {
-                let v = it.verse.unwrap_or(1.0);
-                toks.push(if v != 1.0 { format!("{}@{}", it.section, js::num_to_string(v)) } else { it.section.clone() });
-                if it.line_after == Some(true) && i + 1 < n {
-                    toks.push("/".into());
-                }
-            }
+            let toks: Vec<String> = pg
+                .items
+                .iter()
+                .map(|it| {
+                    let v = it.verse.unwrap_or(1.0);
+                    if v != 1.0 { format!("{}@{}", it.section, js::num_to_string(v)) } else { it.section.clone() }
+                })
+                .collect();
             format!("%%sing {}", toks.join(" "))
         })
         .collect()
+}
+
+// ───────────────────────── %%layout ─────────────────────────
+
+pub use dolce_model::layouts::{builtin_layout, layout_base, BUILTIN_LAYOUTS};
+
+/// `linebreak=` 的取值是否合法：`source` / `phrase` / `fill` / `auto` / `bars:N`
+pub fn is_linebreak_value(v: &str) -> bool {
+    dolce_model::layouts::LineBreak::parse(v).is_some()
+}
+
+/// `A` / `A*2` → (段名, 第几次)
+fn parse_section_ref(tok: &str) -> Option<(String, Option<f64>)> {
+    let (name, nth) = match tok.split_once('*') {
+        Some((n, k)) => {
+            if k.is_empty() || !k.bytes().all(|b| b.is_ascii_digit()) || js::number(k) < 1.0 {
+                return None;
+            }
+            (n, Some(js::number(k)).filter(|k| *k != 1.0))
+        }
+        None => (tok, None),
+    };
+    is_section_name(name).then(|| (name.to_string(), nth))
+}
+
+fn section_ref_text(b: &dolce_model::LayoutBreak) -> String {
+    match b.nth.filter(|k| *k != 1.0) {
+        Some(k) => format!("{}*{}", b.section, js::num_to_string(k)),
+        None => b.section.clone(),
+    }
+}
+
+fn positive_int(v: &str) -> Option<f64> {
+    (!v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) && js::number(v) >= 1.0).then(|| js::number(v))
+}
+
+/// 一行 `%%layout` 的正文并进 `layouts`（同名版面写几行按序合并）。写错的项报给 `bad`（原文片段）并跳过
+pub fn parse_layout(body: &str, layouts: &mut Vec<dolce_model::LayoutSpec>, mut bad: impl FnMut(&str)) {
+    use dolce_model::{LayoutBreak, LayoutPass, LayoutSpec};
+    let mut toks = js::trim(body).split(js::is_space).filter(|t| !t.is_empty());
+    let Some(raw_name) = toks.next() else {
+        bad(body);
+        return;
+    };
+    if raw_name.contains('=') {
+        bad(raw_name);
+        return;
+    }
+    let name = builtin_layout(raw_name).map(str::to_string).unwrap_or_else(|| raw_name.to_string());
+    let opts: Vec<(&str, &str)> = toks
+        .filter_map(|t| match t.split_once('=') {
+            Some((k, v)) if !k.is_empty() => Some((k, v)),
+            _ => {
+                bad(t);
+                None
+            }
+        })
+        .collect();
+    let idx = match layouts.iter().position(|l| l.name == name) {
+        Some(i) => i,
+        None => {
+            layouts.push(LayoutSpec { name: name.clone(), ..Default::default() });
+            layouts.len() - 1
+        }
+    };
+    let spec = &mut layouts[idx];
+    // `base=` 先看，选项适用表要按它定档
+    for (k, v) in &opts {
+        if k.eq_ignore_ascii_case("base") {
+            match builtin_layout(v) {
+                Some(b) if builtin_layout(&name).is_none_or(|own| own == b) => spec.base = builtin_layout(&name).is_none().then(|| b.to_string()),
+                _ => bad(&format!("{k}={v}")),
+            }
+        }
+    }
+    let projection = layout_base(spec) == Some("投影") || (builtin_layout(&name).is_none() && spec.base.is_none());
+    let mut pass: Option<f64> = None;
+    for (k, v) in &opts {
+        if k.eq_ignore_ascii_case("pass") {
+            match positive_int(v) {
+                Some(n) if projection => pass = Some(n),
+                _ => bad(&format!("{k}={v}")),
+            }
+        }
+    }
+    for (k, v) in opts {
+        let key = k.to_ascii_lowercase();
+        let ok = match key.as_str() {
+            "base" | "pass" => true,
+            "linebreak" if pass.is_none() && is_linebreak_value(v) => {
+                spec.linebreak = Some(v.to_string());
+                true
+            }
+            "rows" if projection => match positive_int(v) {
+                Some(n) => {
+                    match pass {
+                        Some(p) => {
+                            let ps = spec.passes.get_or_insert_with(Vec::new);
+                            match ps.iter_mut().find(|x| x.pass == p) {
+                                Some(x) => x.rows = Some(n),
+                                None => ps.push(LayoutPass { pass: p, rows: Some(n) }),
+                            }
+                        }
+                        None => spec.rows = Some(n),
+                    }
+                    true
+                }
+                None => false,
+            },
+            "pair-pages" | "no-intro" if projection && pass.is_none() && (v == "on" || v == "off") => {
+                let on = Some(v == "on");
+                if key == "pair-pages" { spec.pair_pages = on } else { spec.no_intro = on }
+                true
+            }
+            "paper" if pass.is_none() && !v.is_empty() => {
+                spec.paper = Some(v.to_string());
+                true
+            }
+            "page-orientation" if pass.is_none() && !v.is_empty() => {
+                spec.page_orientation = Some(v.to_string());
+                true
+            }
+            "note-size" if pass.is_none() => match v.parse::<f64>() {
+                Ok(n) if n > 0.0 => {
+                    spec.note_size = Some(n);
+                    true
+                }
+                _ => false,
+            },
+            "style" if pass.is_none() && !v.is_empty() => {
+                spec.style = Some(v.to_string());
+                true
+            }
+            "break" | "newpage" => {
+                let refs: Vec<_> = v.split(',').map(parse_section_ref).collect();
+                if refs.is_empty() || refs.iter().any(Option::is_none) {
+                    false
+                } else {
+                    let page = (key == "newpage").then_some(true);
+                    let bs = spec.breaks.get_or_insert_with(Vec::new);
+                    for (section, nth) in refs.into_iter().flatten() {
+                        let b = LayoutBreak { pass, section, nth, page };
+                        if !bs.contains(&b) {
+                            bs.push(b);
+                        }
+                    }
+                    true
+                }
+            }
+            _ => false,
+        };
+        if !ok {
+            bad(&format!("{k}={v}"));
+        }
+    }
+    if let Some(ps) = spec.passes.as_mut() {
+        ps.sort_by(|a, b| a.pass.total_cmp(&b.pass));
+    }
+}
+
+/// `Song.layouts` → `%%layout` 行：每个版面一行整体选项（含不限遍的断点），再每遍一行
+pub fn layout_lines(song: &dolce_model::Song) -> Vec<String> {
+    let mut out = vec![];
+    for spec in song.layouts.iter().flatten() {
+        let breaks = spec.breaks.as_deref().unwrap_or_default();
+        let refs = |pass: Option<f64>, page: bool| -> Option<String> {
+            let v: Vec<String> = breaks.iter().filter(|b| b.pass == pass && b.page.unwrap_or(false) == page).map(section_ref_text).collect();
+            (!v.is_empty()).then(|| v.join(","))
+        };
+        let mut head = vec![format!("%%layout {}", spec.name)];
+        let mut push = |k: &str, v: Option<String>| {
+            if let Some(v) = v {
+                head.push(format!("{k}={v}"));
+            }
+        };
+        push("base", spec.base.clone());
+        push("linebreak", spec.linebreak.clone());
+        push("rows", spec.rows.map(js::num_to_string));
+        push("pair-pages", spec.pair_pages.map(|b| if b { "on" } else { "off" }.to_string()));
+        push("no-intro", spec.no_intro.map(|b| if b { "on" } else { "off" }.to_string()));
+        push("paper", spec.paper.clone());
+        push("page-orientation", spec.page_orientation.clone());
+        push("note-size", spec.note_size.map(js::num_to_string));
+        push("style", spec.style.clone());
+        push("break", refs(None, false));
+        push("newpage", refs(None, true));
+        let mut passes: Vec<f64> = breaks.iter().filter_map(|b| b.pass).chain(spec.passes.iter().flatten().map(|p| p.pass)).collect();
+        passes.sort_by(f64::total_cmp);
+        passes.dedup();
+        if head.len() > 1 || passes.is_empty() {
+            out.push(head.join(" "));
+        }
+        for p in passes {
+            let mut line = vec![format!("%%layout {} pass={}", spec.name, js::num_to_string(p))];
+            if let Some(r) = spec.passes.iter().flatten().find(|x| x.pass == p).and_then(|x| x.rows) {
+                line.push(format!("rows={}", js::num_to_string(r)));
+            }
+            if let Some(v) = refs(Some(p), false) {
+                line.push(format!("break={v}"));
+            }
+            if let Some(v) = refs(Some(p), true) {
+                line.push(format!("newpage={v}"));
+            }
+            out.push(line.join(" "));
+        }
+    }
+    out
 }
 
 /// 内部短名 → 123 记号名（`jumpmarks.ts::BARLINE_ORNAMENT_NAME`）

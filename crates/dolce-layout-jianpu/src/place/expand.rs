@@ -12,7 +12,8 @@ use dolce_base::fraction::Fraction;
 use dolce_base::js::{self, NumKey};
 use dolce_model as dm;
 use dolce_model::helpers::{is_refrain_word, section_mark_of};
-use dolce_model::{BreakKind, ScoreDoc, SourceFormat};
+use dolce_model::layouts::{find_layout, LineBreak, PROJECTION};
+use dolce_model::{BreakKind, LayoutSpec, ScoreDoc, SourceFormat};
 use dolce_play::playorder::PlayItem;
 use dolce_play::walk::{walk_play, Step, WalkItem};
 use dolce_view::ast::{BarlineElement, BarlineType, LyricLine, LyricSyllable, Mark, MarkType, Meter, MusicElement, ScoreLine, Sound};
@@ -990,7 +991,7 @@ fn page_by_rows(lines: &mut [LineCut], refrain_at: &dyn Fn(usize) -> bool, max_r
 }
 
 /// 多段两两并页（`pairPages`）
-fn pair_pages(pages: &[LPage], pass_starts: &HashSet<usize>) -> Vec<LPage> {
+fn pair_pages(pages: &[LPage], pass_starts: &HashSet<usize>, max_rows: f64) -> Vec<LPage> {
     let mut merged: Vec<LPage> = vec![];
     let mut paired = false;
     let mut i = 0usize;
@@ -1002,7 +1003,7 @@ fn pair_pages(pages: &[LPage], pass_starts: &HashSet<usize>) -> Vec<LPage> {
             continue;
         }
         let Some(b) = pages.get(i + 1) else { return pages.to_vec() };
-        if !pass_starts.contains(&(i + 1)) || (a.groups.len() + b.groups.len()) as f64 > MAX_ROWS {
+        if !pass_starts.contains(&(i + 1)) || (a.groups.len() + b.groups.len()) as f64 > max_rows {
             return pages.to_vec();
         }
         let mut groups = a.groups.clone();
@@ -1185,6 +1186,129 @@ fn voice_numbers(song: &LSong) -> Vec<f64> {
     }
 }
 
+/// 各源符号属于哪一段（`[P:x]`，按谱面先后；第一个标记之前是空串），与各符号在谱面上的先后序号（认往回跳）
+struct SecTags {
+    name: HashMap<Slot, Rc<str>>,
+    ord: HashMap<Slot, usize>,
+}
+
+/// 段落标记落到源符号上（切法同 `dolce-play::sections_of`：标记音之前的非音符号仍归上一段；标记在小节第一个音上的整小节归新段）。
+/// 写在主旋律以外声部的标记贴到那一小节头。没有段落标记回 None
+fn section_tags(src: &Src) -> Option<SecTags> {
+    let marks = src.song.section_marks.as_ref().filter(|m| !m.is_empty())?;
+    let mut by_id: HashMap<dm::ElementId, Rc<str>> = marks.iter().map(|m| (m.before, Rc::from(m.name.as_str()))).collect();
+    let mut on_lead: HashMap<dm::ElementId, Rc<str>> = HashMap::new();
+    for sl in src.slices.iter().flatten() {
+        if let Some(c) = src.chord_at(sl.0, sl.1) {
+            if let Some(n) = by_id.remove(&c.id) {
+                on_lead.insert(c.id, n);
+            }
+        }
+    }
+    let mut at_measure: HashMap<usize, Rc<str>> = HashMap::new();
+    for p in &src.song.parts {
+        for (mi, mm) in p.measures.iter().enumerate() {
+            for el in &mm.elements {
+                if let Some(n) = by_id.get(&el.id()) {
+                    at_measure.entry(mi).or_insert_with(|| n.clone());
+                }
+            }
+        }
+    }
+    let mut tags = SecTags { name: HashMap::new(), ord: HashMap::new() };
+    let mut cur: Rc<str> = Rc::from("");
+    let mut started: HashSet<usize> = HashSet::new();
+    let mut ord = 0usize;
+    for sl in &src.slices {
+        let mut starts: Vec<(usize, Rc<str>)> = vec![];
+        if let Some(m) = sl.first().and_then(|&s| src.measure_key(s)).map(|k| k.1) {
+            if let Some(n) = at_measure.get(&m).filter(|_| started.insert(m)) {
+                starts.push((0, n.clone()));
+            }
+        }
+        let mut first_note = true;
+        for (j, &s) in sl.iter().enumerate() {
+            if !src.is_note(s) {
+                continue;
+            }
+            if let Some(n) = src.chord_at(s.0, s.1).and_then(|c| on_lead.get(&c.id)) {
+                starts.push((if first_note { 0 } else { j }, n.clone()));
+            }
+            first_note = false;
+        }
+        for (j, &s) in sl.iter().enumerate() {
+            if let Some((_, n)) = starts.iter().rev().find(|(at, _)| *at == j) {
+                cur = n.clone();
+            }
+            tags.name.insert(s, cur.clone());
+            tags.ord.insert(s, ord);
+            ord += 1;
+        }
+    }
+    Some(tags)
+}
+
+/// 一遍里各段的每一次出现：(段名, 这一遍里第几次, 末符号在这一遍的下标)。段名变了或往回跳就是新的一次
+fn section_runs(slots: &[Slot], tags: &SecTags) -> Vec<(Rc<str>, usize, usize)> {
+    let mut out: Vec<(Rc<str>, usize, usize)> = vec![];
+    let mut count: HashMap<Rc<str>, usize> = HashMap::new();
+    for (i, s) in slots.iter().enumerate() {
+        let name = tags.name.get(s).cloned().unwrap_or_else(|| Rc::from(""));
+        let back = i > 0 && matches!((tags.ord.get(s), tags.ord.get(&slots[i - 1])), (Some(a), Some(b)) if a <= b);
+        match out.last_mut() {
+            Some(last) if !back && last.0 == name => last.2 = i,
+            _ => {
+                let n = count.entry(name.clone()).or_insert(0);
+                *n += 1;
+                out.push((name, *n, i));
+            }
+        }
+    }
+    out
+}
+
+/// 版面里管第 `pass` 遍的断点（`break=` / `newpage=`）落成「在第几个符号之前换行 → 是否换页」；断在这一遍末尾的不算
+fn layout_cuts(spec: Option<&LayoutSpec>, pass: usize, slots: &[Slot], tags: Option<&SecTags>) -> HashMap<usize, bool> {
+    let mut out: HashMap<usize, bool> = HashMap::new();
+    let (Some(spec), Some(tags)) = (spec, tags) else { return out };
+    if spec.breaks.as_ref().is_none_or(|b| b.is_empty()) {
+        return out;
+    }
+    let runs = section_runs(slots, tags);
+    for b in spec.breaks_for(pass) {
+        let nth = b.nth.map_or(1, |n| n as usize);
+        let Some(run) = runs.iter().find(|r| &*r.0 == b.section.as_str() && r.1 == nth) else { continue };
+        let at = run.2 + 1;
+        if at < slots.len() {
+            let page = out.entry(at).or_insert(false);
+            *page |= b.page == Some(true);
+        }
+    }
+    out
+}
+
+/// 每行 N 小节：每数满 N 条（前面有音的）小节线，在它之后换行
+fn bar_cuts(line: &ScoreLine, n: usize) -> HashMap<usize, bool> {
+    let mut out = HashMap::new();
+    let els = &line.elements;
+    let mut count = 0usize;
+    let mut notes = false;
+    for (i, el) in els.iter().enumerate() {
+        match el {
+            MusicElement::Note(_) => notes = true,
+            MusicElement::Barline(_) if notes => {
+                notes = false;
+                count += 1;
+                if count % n == 0 && i + 1 < els.len() {
+                    out.insert(i + 1, false);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// `expandSong` 的选项
 struct SongOpts<'a> {
     layout: Option<(&'a str, bool)>,
@@ -1192,8 +1316,8 @@ struct SongOpts<'a> {
     row_is_line: bool,
     end_break: Option<BreakKind>,
     sing: bool,
-    /// `%%sing` 逐遍按乐句断行
-    sing_phrase: bool,
+    /// 活动的投影系版面（`%%layout`；没写为 None）
+    spec: Option<&'a LayoutSpec>,
 }
 
 /// 投影档：一首曲子 → 逐遍展开、逐行装满的行视图（`expandSong`）
@@ -1296,9 +1420,18 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
     let breaks = source_breaks(slices, rows, &page_end_rows, o.end_break.is_some(), &|r| o.exact_breaks || o.row_is_line || inline_end(r));
     let width = content_width(m);
     let meter = song.metadata.meters.first();
+    let tags = section_tags(&src);
+    // `.jpwabc` 的 `.Layout` 分页描述照它自己的，不看 `%%layout`
+    let spec = if o.layout.is_none() { o.spec } else { None };
     if o.sing {
-        return sing_song(song, plan, &src, m, ink, width, meter, o.sing_phrase);
+        return sing_song(song, plan, &src, m, ink, width, meter, spec, tags.as_ref());
     }
+    let lb = spec.and_then(|s| s.line_break()).unwrap_or(LineBreak::Auto);
+    // 副歌换行换页、弱起挪页等投影推断只在 `auto`（缺省）
+    let infer = o.layout.is_none() && lb == LineBreak::Auto;
+    let rows_of = |pass: usize| spec.and_then(|s| s.rows_for(pass)).unwrap_or(MAX_ROWS);
+    let pair = spec.and_then(|s| s.pair_pages).unwrap_or(m.style.look.pair_pages);
+    let no_intro = spec.and_then(|s| s.no_intro).unwrap_or(m.style.look.no_intro);
     let mut measure_of: HashMap<Slot, usize> = HashMap::new();
     for (k, sl) in slices.iter().enumerate() {
         for &x in sl {
@@ -1388,11 +1521,17 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
     let mut pass_starts: HashSet<usize> = HashSet::new();
     let mut system = 0.0;
     let mut groups: Vec<Rc<LGroup>> = vec![];
-    let intro = if o.layout.is_none() && m.style.look.no_intro { intro_slots(&src) } else { HashSet::new() };
+    let intro = if o.layout.is_none() && no_intro { intro_slots(&src) } else { HashSet::new() };
     let mut passes = match o.layout {
         Some((desc, simple)) => passes_by_dur(&src, plan, desc, simple),
         None => passes_of(&src, plan, &breaks, &intro),
     };
+    // 装满、按乐句、每行 N 小节：源里的换行不算（往回跳必断的照旧）
+    if matches!(lb, LineBreak::Fill | LineBreak::Phrase | LineBreak::Bars(_)) {
+        for p in passes.iter_mut() {
+            p.breaks.clear();
+        }
+    }
     // 曲中转调另起一页；临时离调不换
     if o.layout.is_none() {
         let mut key_at: Vec<String> = vec![];
@@ -1454,8 +1593,9 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
         Bars { plain: o.exact_breaks, final_at: if tail.is_some_and(|t| matches!(src.el(t), MusicElement::Barline(_))) { end } else { -1 } }
     };
     for pi in 0..passes.len() {
+        let max_rows = rows_of(pi + 1);
         if o.layout.is_none() && mid_verses.contains(&passes[pi].verses[0]) {
-            if m.style.look.pair_pages {
+            if pair {
                 passes[pi].after_repeat = true;
             }
             passes[pi].mid_verse = true;
@@ -1463,7 +1603,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
         let pos = pos_of(&passes[pi]);
         // 副歌起头也换行（短行照样不断）
         let mut soft: HashSet<usize> = HashSet::new();
-        if o.layout.is_none() && rows.len() == 1 {
+        if infer && rows.len() == 1 {
             let pass = &mut passes[pi];
             let mut prev = -1i64;
             for i in 0..pass.slots.len() {
@@ -1474,6 +1614,13 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
                 }
                 prev = k;
             }
+        }
+        // 版面写明的断点
+        for (at, page) in layout_cuts(spec, pi + 1, &passes[pi].slots, tags.as_ref()) {
+            let pass = &mut passes[pi];
+            let v = pass.breaks.entry(at).or_insert(false);
+            *v |= page;
+            pass.hard.add(at);
         }
         let pass = &passes[pi];
         let bars = bars_of(pi, pass);
@@ -1488,9 +1635,21 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
                 }
             }
         }
-        let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), jump_in, soft, glue: pass.glue.clone(), keep_rest_lines: false };
-        let mut lines = fill_lines(&whole.line, &pass.breaks, m, ink, width, meter, &opts);
-        if o.layout.is_none() {
+        let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), jump_in, soft, glue: pass.glue.clone(), keep_rest_lines: lb == LineBreak::Phrase };
+        let mut forced = match lb {
+            LineBreak::Phrase if o.layout.is_none() => phrase_cuts_of(&whole, &song.song, &opts.hard, m, ink, width, meter),
+            LineBreak::Bars(n) if o.layout.is_none() => bar_cuts(&whole.line, n),
+            _ => HashMap::new(),
+        };
+        for (&at, &page) in &pass.breaks {
+            let v = forced.entry(at).or_insert(false);
+            *v |= page;
+        }
+        let mut lines = fill_lines(&whole.line, &forced, m, ink, width, meter, &opts);
+        if o.layout.is_none() && !infer {
+            page_by_rows(&mut lines, &|_| false, max_rows);
+        }
+        if infer {
             let starts: Vec<usize> = lines.iter().map(|l| l.start).collect();
             let start_measure = |n: usize| -> i64 { pass.slots.get(starts[n]).map_or(-1, |&s| measure_at(s)) };
             let mut mark_heads: HashSet<usize> = HashSet::new();
@@ -1508,7 +1667,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
                 }
                 pass.slots.get(starts[n] - 1).is_some_and(|&p| measure_at(p) > start_measure(n))
             };
-            page_by_rows(&mut lines, &|n| mark_heads.contains(&n) || refrain_start.contains(&start_measure(n)) || back_head(n), MAX_ROWS);
+            page_by_rows(&mut lines, &|n| mark_heads.contains(&n) || refrain_start.contains(&start_measure(n)) || back_head(n), max_rows);
         }
         // 一遍一页起头；只回头一次的这一遍首页放得下就接在上一遍那页
         let first_page_rows = lines.iter().enumerate().position(|(n, l)| n > 0 && l.page);
@@ -1517,7 +1676,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
             let prev_tail = prev.slots.last().copied();
             prev.breaks.get(&prev.slots.len()) == Some(&true) && !pass.slots.iter().any(|&s| Some(s) == prev_tail)
         };
-        let joinable = pass.after_repeat && !page_written && (groups.len() + first_page_rows.unwrap_or(lines.len())) as f64 <= MAX_ROWS;
+        let joinable = pass.after_repeat && !page_written && (groups.len() + first_page_rows.unwrap_or(lines.len())) as f64 <= max_rows;
         if !joinable && !groups.is_empty() {
             pages.push(LPage { index: pages.len(), groups: std::mem::take(&mut groups) });
             pass_starts.insert(pages.len());
@@ -1535,15 +1694,15 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
     if !groups.is_empty() {
         pages.push(LPage { index: pages.len(), groups });
     }
-    let pages = if o.layout.is_none() && m.style.look.pair_pages { pair_pages(&pages, &pass_starts) } else { pages };
+    let pages = if o.layout.is_none() && pair { pair_pages(&pages, &pass_starts, rows_of(1)) } else { pages };
     LSong { pages, ..song.clone() }
 }
 
 /// 逐遍演唱顺序（123 `%%sing`，`singSong`）
-/// `%%sing` 一遍展开后的那一行按乐句断：与编辑器「按乐句重排」同一套（`phraselines::content_breaks`，断句只看内容、
+/// 投影一遍展开后的那一行按乐句断（`%%layout 投影 linebreak=phrase`）：与简谱档按乐句断行同一套（`phraselines::content_breaks`，断句只看内容、
 /// 行长按这一行自然排开的真实宽度选档与收拾），歌词取这一遍配上的那行词。回「在第几个元素之前换行」，交 `fill_lines` 当强制换行
-/// （一句还放不下仍按版宽折）。`/` 隔开的一段（`hard`，在第几个元素之前必换行）一行放得下的照写的不动，只在放不下要折的段里按乐句切——
-/// 照片子写的 `%%sing`（每行末都写 `/`）因此不变。
+/// （一句还放不下仍按版宽折）。必断处（`hard`：版面写明的断点、往回跳）隔开的一段一行放得下的照写的不动，只在放不下要折的段里按乐句切——
+/// 照片子逐行写了断点的因此不变。
 fn phrase_cuts_of(row: &LRow, song: &dm::Song, hard: &HashSet<usize>, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>) -> HashMap<usize, bool> {
     let rv = RowView { part: row.part, measures: row.measures.clone(), refs: row.refs.clone(), line: row.line.clone() };
     let Ok((measures, _)) = build_measures(song, &[&rv], true, None) else { return HashMap::new() };
@@ -1622,49 +1781,75 @@ fn phrase_cuts_of(row: &LRow, song: &dm::Song, hard: &HashSet<usize>, m: &Jianpu
     out
 }
 
+/// `%%sing` 逐遍排：一遍一页起头，按活动版面断行（缺省装满）、落 `break=` / `newpage=`、每页 `rows` 行
 #[allow(clippy::too_many_arguments)]
-fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>, phrase: bool) -> LSong {
+fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>, spec: Option<&LayoutSpec>, tags: Option<&SecTags>) -> LSong {
     let rows = &src.rows;
-    let mut pages: Vec<(Pass, f64)> = vec![];
-    let mut cur: Option<(Pass, f64)> = None;
+    let lb = spec.and_then(|s| s.line_break()).unwrap_or(LineBreak::Auto);
+    let phrase = lb == LineBreak::Phrase;
+    // 前奏、两两并页：样式表的缺省不管 `%%sing`（逐遍写定的），版面写明了才照办
+    let intro = if spec.and_then(|s| s.no_intro) == Some(true) { intro_slots(src) } else { HashSet::new() };
+    let pair = spec.and_then(|s| s.pair_pages) == Some(true);
+    // (这一遍, 第几遍)
+    let mut pages: Vec<(Pass, usize)> = vec![];
+    let mut cur: Option<Pass> = None;
+    let mut pass_no = 1usize;
     for (n, it) in plan.iter().enumerate() {
-        let c = cur.get_or_insert_with(|| (Pass::default(), it.page_rows.unwrap_or(MAX_ROWS)));
+        let c = cur.get_or_insert_with(Pass::default);
         let mut mid = it.mid;
         while mid < it.end {
             let slice = (mid >= 0.0).then(|| src.slices.get(mid as usize)).flatten().map_or(&[][..], |v| &v[..]);
             let skip = if mid == it.mid { it.skip } else { 0.0 };
             let limit = if mid == it.end - 1.0 { it.limit } else { -1.0 };
             for sl in cut_slots(slice, src, skip, limit) {
-                c.0.slots.push(sl);
-                c.0.verses.push(it.pass);
+                if !intro.contains(&sl) {
+                    c.slots.push(sl);
+                    c.verses.push(it.pass);
+                }
             }
             mid += 1.0;
         }
-        if it.line_after {
-            let len = c.0.slots.len();
-            c.0.hard.add(len);
-        }
         if it.end_of_pass || n == plan.len() - 1 {
             let c = cur.take().unwrap();
-            if !c.0.slots.is_empty() {
-                pages.push(c);
+            if !c.slots.is_empty() {
+                pages.push((c, pass_no));
             }
+            pass_no += 1;
         }
     }
     let last = pages.len().checked_sub(1);
     let mut out: Vec<LPage> = vec![];
+    let mut pass_starts: HashSet<usize> = HashSet::new();
     let mut system = 0.0;
-    for (pi, (pass, max_rows)) in pages.iter().enumerate() {
+    for (pi, (pass, no)) in pages.iter_mut().enumerate() {
+        let max_rows = spec.and_then(|s| s.rows_for(*no)).unwrap_or(MAX_ROWS);
+        // 版面写明的断点必断（也记进这一遍：断点前的双纵线照样画）
+        let cuts = layout_cuts(spec, *no, &pass.slots, tags);
+        for &at in cuts.keys() {
+            pass.hard.add(at);
+        }
+        let pass = &*pass;
         let pos = pos_of(pass);
         let end = pass.slots.len() - 1;
         let tail = if Some(pi) == last { Some(pass.slots[end]) } else { None };
         let bars = Bars { plain: false, final_at: if tail.is_some_and(|t| matches!(rows[t.0].line.elements[t.1], MusicElement::Barline(_))) { end as i64 } else { -1 } };
         let whole = row_of(src, pass, 0, pass.slots.len(), &pos, bars);
-        // 按乐句时断句给强制换行，其余照版心宽装满
+        // 按乐句 / 每行 N 小节给强制换行，其余照版心宽装满
         let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), keep_rest_lines: phrase, ..Default::default() };
-        let forced = if phrase { phrase_cuts_of(&whole, &song.song, &opts.hard, m, ink, width, meter) } else { HashMap::new() };
+        let mut forced = match lb {
+            LineBreak::Phrase => phrase_cuts_of(&whole, &song.song, &opts.hard, m, ink, width, meter),
+            LineBreak::Bars(n) => bar_cuts(&whole.line, n),
+            _ => HashMap::new(),
+        };
+        for (&at, &page) in &cuts {
+            let v = forced.entry(at).or_insert(false);
+            *v |= page;
+        }
         let mut lines = fill_lines(&whole.line, &forced, m, ink, width, meter, &opts);
-        page_by_rows(&mut lines, &|_| false, *max_rows);
+        page_by_rows(&mut lines, &|_| false, max_rows);
+        if pi > 0 {
+            pass_starts.insert(out.len());
+        }
         let mut groups: Vec<Rc<LGroup>> = vec![];
         for (n, l) in lines.iter().enumerate() {
             if l.page && !groups.is_empty() {
@@ -1679,11 +1864,13 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
             out.push(LPage { index: out.len(), groups });
         }
     }
+    let out = if pair { pair_pages(&out, &pass_starts, spec.and_then(|s| s.rows).unwrap_or(MAX_ROWS)) } else { out };
     LSong { pages: out, ..song.clone() }
 }
 
 /// 投影档：按演唱顺序逐遍切出、逐行装满（`expandView`）。`plays` 与 `view.songs` 平行；推不出演唱顺序的那首照原样
-pub fn expand_view(view: &LDoc, doc: &ScoreDoc, plays: &[Option<PlayData>], m: &JianpuGrid, ink: &Ink, break_desc: Option<&str>, sing_phrase: bool) -> LDoc {
+/// `layout_name`：活动的投影系版面名（`%%layout`；None = 内置「投影」）
+pub fn expand_view(view: &LDoc, doc: &ScoreDoc, plays: &[Option<PlayData>], m: &JianpuGrid, ink: &Ink, break_desc: Option<&str>, layout_name: Option<&str>) -> LDoc {
     let songs = view
         .songs
         .iter()
@@ -1697,7 +1884,7 @@ pub fn expand_view(view: &LDoc, doc: &ScoreDoc, plays: &[Option<PlayData>], m: &
                 row_is_line: doc.source_format == SourceFormat::Fanqie,
                 end_break: doc.songs.get(i).and_then(|s| s.parts.first()).and_then(|p| p.end_break.clone()),
                 sing: pd.from_sing,
-                sing_phrase,
+                spec: doc.songs.get(i).and_then(|s| find_layout(s, layout_name.unwrap_or(PROJECTION))),
             };
             expand_song(song, pd, m, ink, &opts)
         })

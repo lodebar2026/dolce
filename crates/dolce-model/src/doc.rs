@@ -1237,18 +1237,59 @@ pub struct SingItem {
     pub section: String,
     /// 配第几条 `w:`（段内计，同 `P:`），缺省 1
     #[serde(skip_serializing_if = "Option::is_none")] pub verse: Option<f64>,
-    /// 这一项之后换行（`/`）
-    #[serde(skip_serializing_if = "Option::is_none")] pub line_after: Option<bool>,
 }
 
-/// 逐遍演唱顺序的一遍（123 `%%sing`）
+/// 逐遍演唱顺序的一遍（123 `%%sing`）。只管顺序；这一遍怎么断行、换页写在版面里（`Song.layouts`）
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
 pub struct SingPass {
     pub items: Vec<SingItem>,
-    /// 投影这一遍一页最多几行（缺省 4）
+}
+
+/// 版面里一处写明的断点：在段 `section` 的第 `nth` 次出现之后换行 / 换页（123 `%%layout … break=A` / `newpage=A*2`）
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
+pub struct LayoutBreak {
+    /// 只管第几遍（1 起）；缺省每一遍
+    #[serde(skip_serializing_if = "Option::is_none")] pub pass: Option<f64>,
+    pub section: String,
+    /// 这一遍里第几次出现（1 起），缺省 1
+    #[serde(skip_serializing_if = "Option::is_none")] pub nth: Option<f64>,
+    /// 换页（否则换行）
+    #[serde(skip_serializing_if = "Option::is_none")] pub page: Option<bool>,
+}
+
+/// 某一遍自己的版面选项（`%%layout 投影 pass=2 rows=5`）
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
+pub struct LayoutPass {
+    pub pass: f64,
     #[serde(skip_serializing_if = "Option::is_none")] pub rows: Option<f64>,
+}
+
+/// 一个版面（123 `%%layout`，规范 §9.1）：内置四档（投影 / 简谱 / 五线谱 / 混排）或带 `base` 的自定义版面
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
+pub struct LayoutSpec {
+    /// 规范名：内置版面用中文名
+    pub name: String,
+    /// 自定义版面照哪一档排（内置版面名）
+    #[serde(skip_serializing_if = "Option::is_none")] pub base: Option<String>,
+    /// `source` / `phrase` / `bars:N` / `fill` / `auto`
+    #[serde(skip_serializing_if = "Option::is_none")] pub linebreak: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub rows: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub pair_pages: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub no_intro: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub paper: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub page_orientation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub note_size: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub breaks: Option<Vec<LayoutBreak>>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub passes: Option<Vec<LayoutPass>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1361,6 +1402,8 @@ pub struct Song {
     #[serde(skip_serializing_if = "Option::is_none")] pub play_order: Option<Vec<PlayPass>>,
     /// 逐遍演唱顺序（123 `%%sing`）
     #[serde(skip_serializing_if = "Option::is_none")] pub sing_order: Option<Vec<SingPass>>,
+    /// 各版面的断行、分页与纸（123 `%%layout`）
+    #[serde(skip_serializing_if = "Option::is_none")] pub layouts: Option<Vec<LayoutSpec>>,
     /// 头部 `P:` 的段落顺序：`text` 原文照写回，`seq` 展开后的段落名
     #[serde(skip_serializing_if = "Option::is_none")] pub section_order: Option<SectionOrder>,
     /// 曲内 `P:A` / `[P:A]` 的段落标记

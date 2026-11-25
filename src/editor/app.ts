@@ -15,6 +15,11 @@ import { STAFF_PAPER_DEFAULT, isPaper } from "../style/themes";
 import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import type { BarsOverflow, FitMeasure } from "../jianpu/phrase";
+import { applyLayoutBreaks, layoutOf, VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
+import { spliceComments } from "../jianpu/docrelayout";
+import { emit123, emitAbc } from "../abcfamily/emit";
+import { parse123, parseAbc } from "../abcfamily/parse";
+import { dolce } from "../common/dolce";
 import type { JpwMeta, JpwRange } from "../omr/types";
 import { loadConverter, type HanDirection } from "../common/hanconv";
 import { convertScoreDoc, convertSourceText, detectHanDirection } from "../model/hanconv";
@@ -494,11 +499,39 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
   }
 
-  /** 「按乐句重排」开着没有。开着时五线谱另按乐句断（`staffPhraseLineStarts`），不跟简谱视图的行；
-   *  写了 `%%sing` 的投影档逐遍按乐句断行（`JianpuPaintRequest.singPhrase`，不进原文、不存文件，用户定 2026-11-24）。 */
+  /** 「按乐句重排」开着没有。开着时五线谱另按乐句断（`staffPhraseLineStarts`），不跟简谱视图的行。
+   *  123 / ABC 看当前档那个版面写的 `linebreak=phrase`（`%%layout`）；别的格式看工具栏档位，写了 `%%sing` 的投影档逐遍按乐句断行
+   *  （在副本上挂投影版面，不进原文、不存文件，用户定 2026-11-24）。 */
   get phraseOn(): boolean {
     return this._lineMode === "phrase";
   }
+
+  /** 分行写在原文的 `%%layout` 里（123 / ABC），不改写 `$` */
+  private get _layoutInText(): boolean {
+    return this.docFormat === "123" || this.docFormat === "abc";
+  }
+
+  /** 当前档的版面名（内置四档） */
+  private get _viewLayout(): string {
+    return VIEW_LAYOUT[this.viewMode];
+  }
+
+  /** 各档实际排的那份：123 / ABC 的简谱档按 `%%layout 简谱` 在副本上落断行；别的格式开着「按乐句重排」时投影档挂按乐句断行的投影版面 */
+  private _layoutDocs(doc: ScoreDoc): JianpuSource["docFor"] {
+    const hit = this._layoutDocCache;
+    const key = this._layoutInText ? "text" : this.phraseOn ? "phrase" : "";
+    if (hit && hit.doc === doc && hit.key === key) return hit.docFor;
+    let docFor: JianpuSource["docFor"];
+    if (this._layoutInText) {
+      const original = applyLayoutBreaks(doc, VIEW_LAYOUT.original, this._phraseMeasureFor("original"));
+      docFor = original ? { original } : undefined;
+    } else if (this.phraseOn && doc.songs.some((s) => s.singOrder?.length)) {
+      docFor = { expanded: withLinebreak(doc, VIEW_LAYOUT.expanded, "phrase") };
+    }
+    this._layoutDocCache = { doc, key, docFor };
+    return docFor;
+  }
+  private _layoutDocCache: { doc: ScoreDoc; key: string; docFor: JianpuSource["docFor"] } | null = null;
 
   /** `.jpwabc` 当前源文的模型（与简谱排版器、导出同一份，元素 id 对得上）。 */
   get jpwDoc(): ScoreDoc | null {
@@ -540,7 +573,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._breakDesc = breakDesc; // 导出 PPTX 时另排一遍要用同一份分页描述
     this.syncView.buildIndex(doc);
     this.playback.refreshSpeedUi(); // 谱面 ♩= 随文本走，速度提示要跟着换（读 `_jpwDoc`）
-    const req = jianpuPaintRequest({ format: "jpwabc", doc, breakDesc, singPhrase: this.phraseOn }, this.layoutMode, this.style.styleOf(this.layoutMode))!;
+    const req = jianpuPaintRequest({ format: "jpwabc", doc, breakDesc, docFor: this._layoutDocs(doc) }, this.layoutMode, this.style.styleOf(this.layoutMode))!;
     return this._layoutJianpu(req, (e) => console.error("layout failed", e));
   }
 
@@ -602,7 +635,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 简谱两档排的那份源（`.jpwabc` 是排版器那份模型）。没有文档时返回 null。 */
   private _jianpuSource(doc = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc()): JianpuSource | null {
-    return doc ? { format: this.docFormat, doc, breakDesc: this._breakDesc, melodyPart: this.melodyPart, lyricPart: this.lyricPart, singPhrase: this.phraseOn } : null;
+    return doc ? { format: this.docFormat, doc, breakDesc: this._breakDesc, melodyPart: this.melodyPart, lyricPart: this.lyricPart, docFor: this._layoutDocs(doc) } : null;
   }
 
   /** 投影档的排版请求（导出 PPTX 在别的档另排一份用，`export.ts::pptxPainter`）。没有曲行时返回 null。 */
@@ -1506,6 +1539,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this._disablePhrase();
       return;
     }
+    if (this._layoutInText) {
+      this._syncLineModeFromText();
+      this._setPhraseAvailable(true);
+      return;
+    }
     if (this._lineMode !== "original" && text !== this._phraseText) {
       this._lineMode = "original";
       this._setPhraseActive();
@@ -1563,7 +1601,16 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     this._syncContextGroup(switchEl);
   }
 
+  private _bakeBtnEl: HTMLButtonElement | null = null;
+
+  /** 「固化断行」按钮：123 / ABC 的简谱档写了 `linebreak=` 按乐句或每行 N 小节时才露出 */
+  setBakeButton(el: HTMLButtonElement): void {
+    this._bakeBtnEl = el;
+    this._setPhraseActive();
+  }
+
   private _setPhraseActive(): void {
+    if (this._bakeBtnEl) this._bakeBtnEl.hidden = !(this._layoutInText && this.layoutMode === "original" && this.mode !== "mixed" && this._lineMode !== "original");
     const pairs: Array<[HTMLElement | null, LineMode]> = [
       [this._originalLayoutBtnEl, "original"], [this._phraseBtnEl, "phrase"], [this._barsBtnEl, "bars"],
     ];
@@ -1576,7 +1623,56 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
 
   /** 切分行档：原始排版 / 按乐句重排 / 每行 `n` 小节。 */
   setLineMode(mode: LineMode, n?: number): void {
-    if (this.adapter.caps.phraseRelayout) this._setLineMode(mode, n);
+    if (!this.adapter.caps.phraseRelayout) return;
+    if (this._layoutInText) this._setLayoutLinebreak(mode, n);
+    else this._setLineMode(mode, n);
+  }
+
+  /** 123 / ABC：档位按钮照当前档那个版面写的 `linebreak=`（第一首）亮 */
+  private _syncLineModeFromText(): void {
+    const doc = this.currentScoreDoc();
+    const lb = layoutOf(doc?.songs[0], this._viewLayout)?.linebreak;
+    const bars = lb?.startsWith("bars:") ? Number(lb.slice(5)) : NaN;
+    this._lineMode = lb === "phrase" ? "phrase" : Number.isInteger(bars) ? "bars" : "original";
+    this._barsAt = this._lineMode === "bars" ? bars : null;
+    if (this._barsAt !== null && this._barsSelEl && [...this._barsSelEl.options].some((o) => o.value === String(bars))) this._barsSelEl.value = String(bars);
+    this._setPhraseActive();
+  }
+
+  /** 切档（视图）后按钮跟着这一档的版面亮 */
+  syncLineModeToView(): void {
+    if (this._layoutInText && this.adapter.caps.phraseRelayout) this._syncLineModeFromText();
+  }
+
+  /**
+   * 123 / ABC 的分行三档：写当前档那个版面的 `linebreak=`（`%%layout`，规范 §9.1），每一首都写，`$` 不动；排版时在副本上落断行
+   * （简谱档 `jianpu/layoutdoc.ts`，投影档 Rust 展开时）。「原始排版」= 去掉 `linebreak=`（简谱照 `$`，投影回缺省推断）。一次改动一步撤销。
+   */
+  private _setLayoutLinebreak(mode: LineMode, n?: number): void {
+    const bars = n ?? this._barsN;
+    const value = mode === "phrase" ? "phrase" : mode === "bars" ? `bars:${bars}` : "";
+    const text = this.getText();
+    const songs = Math.max(1, this.currentScoreDoc()?.songs.length ?? 1);
+    let out = text;
+    for (let i = 0; i < songs; i++) out = dolce().abcSetLayoutOption(out, i, this._viewLayout, "linebreak", value);
+    if (out !== text) this.setText(out);
+  }
+
+  /** 123 / ABC 的简谱档：把当前按版面排出的行写成 `$`（转给只认 `$` 的程序时用），简谱版面的 `linebreak=` 去掉 */
+  bakeLineBreaks(): void {
+    if (!this._layoutInText || this.layoutMode !== "original") return;
+    const doc = this.currentScoreDoc();
+    const laid = doc && applyLayoutBreaks(doc, VIEW_LAYOUT.original, this._phraseMeasureFor("original"));
+    if (!doc || !laid) {
+      this.setStatus(t("status.bakeNothing"));
+      return;
+    }
+    const emit = this.docFormat === "123" ? emit123 : emitAbc;
+    let out = spliceComments(this.getText(), doc, emit(laid), (this.docFormat === "123" ? parse123 : parseAbc)(emit(laid)));
+    for (let i = 0; i < laid.songs.length; i++) {
+      out = dolce().abcSetLayoutOption(out, i, VIEW_LAYOUT.original, "linebreak", "");
+    }
+    this.setText(out);
   }
 
   /**
@@ -1653,7 +1749,11 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    * 多声部的简谱档不给尺子（文本谱多声部不重断）。
    */
   private _fanqiePhraseMeasure(): FitMeasure | null {
-    const view = this.layoutMode;
+    return this._phraseMeasureFor(this.layoutMode);
+  }
+
+  /** 某一档的乐句重排尺子（见上） */
+  private _phraseMeasureFor(view: JianpuLayoutMode): FitMeasure | null {
     if (view === "original") {
       const doc = this.docFormat === "jpwabc" ? this._jpwDoc : this.currentScoreDoc();
       if (!doc || !singleVoice(doc)) return null;
@@ -1678,7 +1778,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     if (!doc || doc.songs.length === 0) return null;
     const inSource = this.docFormat === "123";
     const song = inSource ? songAtOffset(text, doc, this.view.state.selection.main.head) : 0;
-    const report = await singFromLyrics(doc, song, lyrics, this.style.styleOf("expanded"), this.phraseOn);
+    const report = await singFromLyrics(doc, song, lyrics, this.style.styleOf("expanded"), this.phraseOn && !this._layoutInText);
     const s = doc.songs[song];
     const replaces = !!(s?.singOrder?.length || s?.sectionMarks?.length || s?.sectionOrder || (!inSource && this._singOverlay));
     if (!report.sing) return { report, apply: null, replaces, inSource };
@@ -1686,7 +1786,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       const next = applySingFit(text, doc, song, report);
       // 开着「按乐句重排」写入的：写入后的原文就是两档的基准（档位不掉回原始排版，切回原始排版也不丢刚写进的 `%%sing`）
       const apply = (next: string) => {
-        if (this.phraseOn) this._origLayoutText = this._phraseText = next;
+        if (this.phraseOn && !this._layoutInText) this._origLayoutText = this._phraseText = next;
         this.setText(next);
       };
       return { report, apply: next === null ? null : () => apply(next), replaces, inSource };
@@ -1819,6 +1919,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     }
     await this.whenIdle();
     this._syncViewModeButtons();
+    this.syncLineModeToView();
   }
 
   _setMixedAvailable(available: boolean): void {

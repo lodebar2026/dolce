@@ -9,6 +9,7 @@ interface CarriedOrder {
   playOrder?: PlayPass[];
   sectionOrder?: Song["sectionOrder"];
   singOrder?: Song["singOrder"];
+  layouts?: Song["layouts"];
   sectionMarks?: Song["sectionMarks"];
 }
 
@@ -22,6 +23,7 @@ export function carryPlayOrder(from: ScoreDoc, to: ScoreDoc): void {
     if (p.playOrder) dst.playOrder = p.playOrder;
     if (p.sectionOrder) dst.sectionOrder = p.sectionOrder;
     if (p.singOrder) dst.singOrder = p.singOrder;
+    if (p.layouts) dst.layouts = p.layouts;
     if (p.sectionMarks) dst.sectionMarks = p.sectionMarks;
   });
 }

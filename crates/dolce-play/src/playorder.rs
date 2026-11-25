@@ -177,14 +177,12 @@ pub struct SectionMark {
     pub skip: f64,
 }
 
-/// 逐遍演唱顺序的一遍（`model/doc.ts::SingPass`）：段落名、配第几行词、之后换行
+/// 逐遍演唱顺序的一遍（`model/doc.ts::SingPass`）：段落名、配第几行词（版面在 `%%layout`，不在这里）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub struct SingPassSpec {
     pub items: Vec<SingItem>,
-    #[serde(default)]
-    pub rows: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,8 +192,6 @@ pub struct SingItem {
     pub section: String,
     #[serde(default)]
     pub verse: Option<f64>,
-    #[serde(default)]
-    pub line_after: Option<bool>,
 }
 
 /// `.Repeat` 的一条（TS `RepeatSpecItem`）
@@ -238,12 +234,6 @@ pub struct PlayItem {
     /// 按 `P:` 排的：这一项是进入一个段落
     #[serde(default, skip_serializing_if = "is_false")]
     pub section_entry: bool,
-    /// 逐遍演唱顺序：这一项之后换行
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub line_after: bool,
-    /// 逐遍演唱顺序：一遍的第一项带这一遍单独改的行数（`[rows=5]`）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub page_rows: Option<f64>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -263,8 +253,6 @@ impl Default for PlayItem {
             glue_from: -1.0,
             scope: None,
             section_entry: false,
-            line_after: false,
-            page_rows: None,
         }
     }
 }
@@ -602,7 +590,8 @@ fn js_max(a: f64, b: f64) -> f64 {
 }
 
 /// 按逐遍演唱顺序（123 `%%sing`）排的演唱顺序：每项是一段（`[P:x]` 切出来的，同 `P:`）**直着唱**——段内的反复、房号、跳转都不走；
-/// `pass` 是这一段的第几行词（`@段`）。项末 `line_after`、页末 `end_of_pass`、页首带 `page_rows`。不存在的段跳过（读入时已报诊断）。
+/// `pass` 是这一段的第几行词（`@段`）；一遍末项带 `end_of_pass`。不存在的段跳过（读入时已报诊断）。
+/// 断行换页不在这里（`%%layout`，排版自己按段落落）。
 pub fn sing_play_order(parts: &[PlayPart], marks: &[SectionMark], pages: &[SingPassSpec]) -> PlayResult<Vec<PlayItem>> {
     let p0 = first_part(parts)?;
     let by_name = sections_of(marks, p0.measures.len() as f64);
@@ -613,7 +602,6 @@ pub fn sing_play_order(parts: &[PlayPart], marks: &[SectionMark], pages: &[SingP
             let Some((_, s)) = by_name.iter().find(|(k, _)| *k == it.section) else { continue };
             // 同名多处拼成的段：下标连续的才是一项
             let mut from = 0usize;
-            let start = out.len();
             for (i, &mid) in s.mids.iter().enumerate() {
                 if i + 1 < s.mids.len() && s.mids[i + 1] == mid + 1.0 {
                     continue;
@@ -630,19 +618,9 @@ pub fn sing_play_order(parts: &[PlayPart], marks: &[SectionMark], pages: &[SingP
                 out.push(p);
                 from = i + 1;
             }
-            if it.line_after == Some(true) && out.len() > start {
-                out.last_mut().expect("非空").line_after = true;
-            }
         }
         if out.len() > head {
-            let last = out.last_mut().expect("非空");
-            last.line_after = false;
-            last.end_of_pass = true;
-            if let Some(rows) = pg.rows {
-                if rows != 0.0 && !rows.is_nan() {
-                    out[head].page_rows = Some(rows);
-                }
-            }
+            out.last_mut().expect("非空").end_of_pass = true;
         }
     }
     Ok(out)

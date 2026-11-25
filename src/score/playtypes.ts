@@ -44,10 +44,6 @@ export class PlayItem extends TimePosition {
   scope?: ReadonlySet<number>;
   /** 按 `P:` 排的：这一项是进入一个段落（投影档进段不换页，`walkPlay`） */
   sectionEntry?: boolean;
-  /** 逐遍演唱顺序（123 `%%sing` 的 `/`）：这一项之后换行 */
-  lineAfter?: boolean;
-  /** 逐遍演唱顺序：一遍的第一项带这一遍单独改的参数（`[rows=5]`） */
-  page?: { rows?: number };
   clone(): PlayItem {
     const p = new PlayItem();
     p.mid = this.mid;
@@ -58,8 +54,6 @@ export class PlayItem extends TimePosition {
     p.skip = this.skip;
     p.glueFrom = this.glueFrom;
     if (this.sectionEntry) p.sectionEntry = true;
-    if (this.lineAfter) p.lineAfter = true;
-    if (this.page) p.page = this.page;
     p.limit = this.limit;
     p.scope = this.scope;
     return p;
@@ -77,7 +71,7 @@ export class PlayData {
   impliedRepeat = -1;
   /** 顺序来自头部 `P:`：没唱的小节是作者定的 */
   fromSections = false;
-  /** 顺序来自逐遍演唱顺序（123 `%%sing`）：投影档照 `endOfPass` / `lineAfter` 逐页逐行排，不再推断 */
+  /** 顺序来自逐遍演唱顺序（123 `%%sing`）：投影档逐遍一页起头，断行换页照 `%%layout`，不再推断 */
   fromSing = false;
   /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用默认值（crates/dolce-play `timeline::TEMPO`）。
    *  来源：MusicXML `<sound tempo>` / OMR 页眉的 `♩=76` / .jpwabc `.Title` 的 `Tempo`。 */

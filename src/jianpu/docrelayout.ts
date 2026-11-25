@@ -36,6 +36,8 @@ export interface DocRelayoutOptions {
   plan?: LinePlan;
   /** 小节中间的断点怎么落：`inline` 原位记在和弦上；`snap` 挪到下一根小节线。 */
   midBreaks: "inline" | "snap";
+  /** 只排这几首（不给就全排） */
+  songs?: readonly number[];
 }
 
 /**
@@ -50,6 +52,7 @@ export interface DocRelayoutOptions {
 export function relayoutDocBreaks(sdoc: ScoreDoc, opt: DocRelayoutOptions): boolean {
   let changed = false;
   sdoc.songs.forEach((song, si) => {
+    if (opt.songs && !opt.songs.includes(si)) return;
     const cuts = phraseCuts(sdoc, si, opt.plan ?? PHRASE);
     if (!cuts || cuts.length === 0) return;
     const starts: LineStart[] = [];

@@ -1,5 +1,6 @@
-// 按参照歌词生成的段落与演唱顺序写回 123 原文（无 DOM）：只动三样——曲内 `[P:x]`（整套换成生成的、插在段首和弦及其前置记号之前）、
-// 整行的 `P:`（头部段落顺序与行首段落标记，写了 `%%sing` 就不起作用了，留着指向旧段名）、`%%sing` 行（换成生成的、写在这一首末尾）。
+// 按参照歌词生成的段落与演唱顺序写回 123 原文（无 DOM）：只动四样——曲内 `[P:x]`（整套换成生成的、插在段首和弦及其前置记号之前）、
+// 整行的 `P:`（头部段落顺序与行首段落标记，写了 `%%sing` 就不起作用了，留着指向旧段名）、`%%sing` 行（换成生成的、写在这一首末尾）、
+// 投影版面里引用段落的断点（`%%layout 投影` 带 `pass=` 的行整行换成生成的；不带的只去掉 `break=` / `newpage=`，别的选项留着）。
 // 其余原文一个字不动。生成本身在 Rust（`crates/dolce-view/src/singfit.rs`，门面 `layout/rustlayout.ts::singFromLyrics`）。
 
 import type { ElementId, ScoreDoc, Song } from "../model/doc";
@@ -57,8 +58,14 @@ export function applySingFit(text: string, doc: ScoreDoc, song: number, fit: Sin
   let off = 0;
   for (const line of region.split("\n")) {
     const end = off + line.length + 1;
-    if (/^(P:|%%sing\b)/.test(line)) changes.push({ from: off, to: Math.min(end, region.length), insert: "" });
-    else if (!/^(%|[wW]:)/.test(line)) {
+    const proj = /^(?:%%|I:)layout\s+(?:投影|projection)(?:\s|$)/i.test(line);
+    if (/^(P:|%%sing\b)/.test(line) || (proj && /(?:^|\s)pass=/.test(line))) changes.push({ from: off, to: Math.min(end, region.length), insert: "" });
+    else if (proj) {
+      const kept = line.split(/\s+/).filter((t) => t && !/^(break|newpage)=/.test(t));
+      if (kept.length !== line.trim().split(/\s+/).length) {
+        changes.push({ from: off, to: Math.min(end, region.length), insert: kept.length > 2 ? `${kept.join(" ")}\n` : "" });
+      }
+    } else if (!/^(%|[wW]:)/.test(line)) {
       for (const m of line.matchAll(/\[P:[^\]\n]*\]/g)) changes.push({ from: off + (m.index ?? 0), to: off + (m.index ?? 0) + m[0].length, insert: "" });
     }
     off = end;

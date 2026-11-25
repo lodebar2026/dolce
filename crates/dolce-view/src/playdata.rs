@@ -184,9 +184,6 @@ pub(crate) fn sing_specs(song: &Song) -> Vec<SingPassSpec> {
     song.sing_order
         .iter()
         .flatten()
-        .map(|p| SingPassSpec {
-            items: p.items.iter().map(|it| SingItem { section: it.section.clone(), verse: it.verse, line_after: it.line_after }).collect(),
-            rows: p.rows,
-        })
+        .map(|p| SingPassSpec { items: p.items.iter().map(|it| SingItem { section: it.section.clone(), verse: it.verse }).collect() })
         .collect()
 }

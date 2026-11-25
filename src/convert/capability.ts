@@ -28,6 +28,7 @@ export type Feature =
   | "playOrder"      // 演唱顺序（含 skip/limit）
   | "singOrder"         // 逐遍演唱顺序（123 `%%sing`：逐页逐行写明排哪几段、配哪段词）
   | "sectionOrder"   // 段落顺序（ABC §3.1.9 的 `P:` 与曲内标记）
+  | "layouts"        // 版面（123 `%%layout`：断行方式、断点、每页行数、自定义版面）
   | "style"          // 样式表引用
   | "layoutDirectives" // 文档内的版面指令（文本谱的 `FontSize:` / `Margin:` / `Space:` / `Off:`）
   | "keyChange"      // 曲中转调
@@ -77,6 +78,7 @@ export const FEATURE_NAMES: Readonly<Record<Feature, string>> = {
   playOrder: "演唱顺序 .Repeat（会改成按谱面的反复记号唱）",
   singOrder: "逐遍演唱顺序 %%sing（投影会改成按谱面的反复记号逐遍排）",
   sectionOrder: "段落顺序（P:，会改成按谱面的反复记号唱）",
+  layouts: "版面 %%layout（断行方式、断点、每页行数与自定义版面，只留谱里写的换行）",
   style: "样式表引用",
   layoutDirectives: "版面指令（字号、页边距等）",
   keyChange: "曲中转调",

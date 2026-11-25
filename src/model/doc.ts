@@ -847,13 +847,30 @@ export interface PlayPass {
   toAnchor?: ElementId;
 }
 
-/** 逐遍演唱顺序的一遍（123 `%%sing`，一行一遍、投影一页）：按次序排哪几段、配第几段词、哪里换行，外加这一遍单独改的参数。
+/** 逐遍演唱顺序的一遍（123 `%%sing`，一行一遍）：按次序唱哪几段、配第几段词。只管顺序，断行换页写在版面里（`Song.layouts`）。
  *  段是曲内段落标记 `[P:x]` 切出来的（`sectionMarks`，同名多处拼成一段），演唱顺序用到时才按标记位置展开（crates/dolce-play `playorder::sing_play_order`），
  *  所以改了谱面也不失效。 */
 export interface SingPass {
-  items: { section: string; /** 配第几条 `w:`（段内计，同 `P:`），缺省 1 */ verse?: number; /** 这一项之后换行（`/`） */ lineAfter?: boolean }[];
-  /** 投影这一遍一页最多几行（缺省 4）：多出来的才另起一页（`[rows=5]`） */
+  items: { section: string; /** 配第几条 `w:`（段内计，同 `P:`），缺省 1 */ verse?: number }[];
+}
+
+/** 版面（123 `%%layout`，规范 §9.1）：内置四档（投影 / 简谱 / 五线谱 / 混排）或带 `base` 的自定义版面。同 Rust `LayoutSpec` */
+export interface LayoutSpec {
+  /** 规范名：内置版面用中文名 */
+  name: string;
+  base?: string;
+  /** `source` / `phrase` / `bars:N` / `fill` / `auto` */
+  linebreak?: string;
   rows?: number;
+  pairPages?: boolean;
+  noIntro?: boolean;
+  paper?: string;
+  pageOrientation?: string;
+  noteSize?: number;
+  style?: string;
+  /** 写明的断点：段 `section` 第 `nth` 次出现之后换行 / 换页，`pass` 限定第几遍 */
+  breaks?: { pass?: number; section: string; nth?: number; page?: boolean }[];
+  passes?: { pass: number; rows?: number }[];
 }
 
 /** 样式引用。← 123 的 `I:style` 与 inline `[I:style …]`。
@@ -913,6 +930,8 @@ export interface Song {
   playOrder?: PlayPass[];
   /** 逐遍演唱顺序（123 `%%sing`）：写了就投影档、试听都照它逐遍逐行走，不再按反复与遍次推断（优先于 `playOrder`、`sectionOrder`） */
   singOrder?: SingPass[];
+  /** 各版面的断行、分页与纸（123 `%%layout`） */
+  layouts?: LayoutSpec[];
   /** 头部 `P:` 的段落顺序（ABC §3.1.9）：`text` 原文照写回，`seq` 展开后的段落名（写错了为空，退回按谱面推） */
   sectionOrder?: { text: string; seq: string[] };
   /** 曲内 `P:A` / `[P:A]` 的段落标记：`before` 是标记后第一个非倚音和弦 */

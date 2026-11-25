@@ -263,3 +263,9 @@ pub fn abc_splice_comments(old_text: &str, old_doc: &str, new_text: &str, new_do
     let n: ScoreDoc = parse("ScoreDoc", new_doc)?;
     Ok(dolce_formats::abc::comments::splice_comments(old_text, &o, new_text, &n))
 }
+
+/// 123 / ABC 原文里第 `song` 首版面 `layout` 的整体选项 `key` 设成 `value`（空串 = 去掉），只改 `%%layout` 行（`layoutedit.rs`）
+#[wasm_bindgen(js_name = abcSetLayoutOption)]
+pub fn abc_set_layout_option(text: &str, song: usize, layout: &str, key: &str, value: &str) -> String {
+    dolce_formats::abc::layoutedit::set_layout_option(text, song, layout, key, (!value.is_empty()).then_some(value))
+}

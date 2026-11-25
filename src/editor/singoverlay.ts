@@ -5,7 +5,7 @@
 // 段落标记按位置记（第几声部第几小节第几个元素），不按元素 id：改了原文元素 id 会重编，位置在没动的地方照样对得上；
 // 有标记的位置没了（删了那几小节）就整份作废。
 
-import type { ScoreDoc, SingPass } from "../model/doc";
+import type { LayoutSpec, ScoreDoc, SingPass } from "../model/doc";
 import type { SingFitReport } from "../layout/rustlayout";
 
 interface Pos {
@@ -18,6 +18,8 @@ export interface SingOverlay {
   song: number;
   marks: { name: string; at: Pos }[];
   order: SingPass[];
+  /** 投影版面里一遍之内的换行（段名引用，跟着 `order`） */
+  breaks: NonNullable<LayoutSpec["breaks"]>;
 }
 
 function posOf(doc: ScoreDoc, song: number, id: number): Pos | null {
@@ -42,7 +44,7 @@ export function overlayOf(doc: ScoreDoc, song: number, fit: SingFitReport): Sing
     if (!at) return null;
     marks.push({ name: m.name, at });
   }
-  return { song, marks, order: fit.order };
+  return { song, marks, order: fit.order, breaks: fit.breaks ?? [] };
 }
 
 /** 照挂着的那份补进刚读出的模型（就地改）：段落标记整套换掉、演唱顺序换上、头部 `P:` 去掉。位置对不上返回 false、不改。 */
@@ -58,5 +60,11 @@ export function applyOverlay(doc: ScoreDoc, ov: SingOverlay): boolean {
   s.sectionMarks = marks;
   s.singOrder = ov.order.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it })) }));
   delete s.sectionOrder;
+  // 投影版面的断点换成生成的（段名都换过了），别的选项与别的版面留着
+  const layouts = (s.layouts ??= []);
+  let proj = layouts.find((l) => l.name === "投影");
+  if (!proj) layouts.push((proj = { name: "投影" }));
+  proj.breaks = ov.breaks.map((b) => ({ ...b }));
+  delete proj.passes;
   return true;
 }

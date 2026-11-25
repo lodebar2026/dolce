@@ -1,6 +1,6 @@
 //! `sing-fit <谱.123> <歌词.txt> [--redist=<目录>] [--json] [--svg=<目录>] [--ss=<样式.ss>] [--phrase]`：按参照歌词切段落、排 `%%sing`（`dolce-view::singfit`），
 //! 把写回后的 123 打到 stdout、差异打到 stderr（`--json` 改出生成结果 JSON；`--svg` 另把写回后的投影档逐页出 SVG 核对）。投影行数用本平台桌面版的量字口径。
-//! 歌词给 `-`：不生成，只把谱面照现有的 `%%sing` 排投影档出 SVG（对比排版改动用）；`--ss=<样式.ss>` 叠在出厂投影样式上；`--phrase` 同编辑器开着「按乐句重排」（`%%sing` 逐遍按乐句断行，生成时也照它试排行数）。
+//! 歌词给 `-`：不生成，只把谱面照现有的 `%%sing` 排投影档出 SVG（对比排版改动用）；`--ss=<样式.ss>` 叠在出厂投影样式上；`--phrase` 给投影版面加 `linebreak=phrase`（逐遍按乐句断行，生成时也照它试排行数，写回的 123 里也带着）。
 
 use dolce_formats::abc::emit::emit_123;
 use dolce_formats::abc::parse::parse_123;
@@ -25,8 +25,10 @@ pub fn sing_fit(args: &[String]) -> i32 {
         let ctx = dolce_style::cascade::ctx(&[("mode", serde_json::Value::String("expanded".into())), ("engine", serde_json::Value::String("jianpu".into()))]);
         dolce_style::themes::compute_style_for_paper(&[dolce_style::themes::theme(dolce_style::themes::ThemeId::Projection), &rules], &ctx).0
     });
-    let mut req = projection_request(style);
-    req.sing_phrase = args.iter().any(|a| a == "--phrase");
+    let req = projection_request(style);
+    if args.iter().any(|a| a == "--phrase") {
+        set_projection_linebreak(&mut doc.songs[0], "phrase");
+    }
     if lyrics.as_str() == "-" {
         let dir = args.iter().find_map(|a| a.strip_prefix("--svg=")).unwrap_or(".");
         return write_svgs(&doc, &req, &env, dir);
@@ -50,6 +52,16 @@ pub fn sing_fit(args: &[String]) -> i32 {
     }
     print!("{}", emit_123(&doc));
     0
+}
+
+/// 投影版面的断行方式（没有投影版面就加一个）
+fn set_projection_linebreak(song: &mut dolce_model::Song, v: &str) {
+    use dolce_model::layouts::PROJECTION;
+    let layouts = song.layouts.get_or_insert_with(Vec::new);
+    match layouts.iter_mut().find(|l| l.name == PROJECTION) {
+        Some(l) => l.linebreak = Some(v.into()),
+        None => layouts.push(dolce_model::LayoutSpec { name: PROJECTION.into(), linebreak: Some(v.into()), ..Default::default() }),
+    }
 }
 
 /// 投影档逐页出 SVG（`01.svg`…）

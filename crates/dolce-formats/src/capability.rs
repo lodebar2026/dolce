@@ -51,7 +51,7 @@ features! {
     VerseLabel = "verseLabel", RhythmNote = "rhythmNote", InvisibleRest = "invisibleRest", NestedArc = "nestedArc",
     OddTuplet = "oddTuplet", SlurCrossTuplet = "slurCrossTuplet", LyricOnRest = "lyricOnRest", PageBreak = "pageBreak",
     Tremolo = "tremolo", Bowing = "bowing", Rehearsal = "rehearsal", MultiRest = "multiRest", Notehead = "notehead",
-    Arpeggio = "arpeggio", Staccatissimo = "staccatissimo",
+    Arpeggio = "arpeggio", Staccatissimo = "staccatissimo", Layouts = "layouts",
 }
 
 /// 目标格式（文本谱两种方言各算一种）
@@ -91,13 +91,15 @@ use Feature as F;
 const FANQIE_GONE: &[Feature] = &[
     // `{dsb…}` 并排块里不跟词
     F::InnerVoiceLyrics,
-    F::BeamGroup, F::OctaveShift, F::Style, F::PlayOrder, F::SingOrder, F::SectionOrder, F::HarmonyOffset,
+    F::BeamGroup, F::OctaveShift, F::Style, F::PlayOrder, F::SingOrder, F::SectionOrder, F::HarmonyOffset, F::Layouts,
     F::Meta, F::Paper, F::NoteStack, F::ExtraStaff, F::RhythmStack, F::RhythmPosition, F::GraceArc, F::NestedArc, F::OddTuplet,
     // 文本谱的记号表里没有这几样（番茄脚本规范同；用户定 2026-10-21 不扩，要的走 123）
     F::Tremolo, F::Bowing, F::Rehearsal, F::MultiRest, F::Arpeggio, F::Notehead,
     // 顿音只有一个 `dy`：楔形与点状并成一个，读回来都是点状
     F::Staccatissimo,
 ];
+// 版面（123 `%%layout`，规范 §9.1）是 ABC 的 `%%` 指令：123 与 ABC 写得下，别的格式只留音乐体的 `$` / `%%newpage`
+
 /// 只有 123 与 MusicXML 装得下的（123 的扩展写法，规范 §8.3 / §9）
 const EXT_123: &[Feature] = &[F::Tremolo, F::Bowing, F::Rehearsal, F::MultiRest, F::Arpeggio, F::Notehead];
 
@@ -130,7 +132,7 @@ pub fn gone(target: TargetFormat) -> Vec<Feature> {
             &[
                 F::SectionOrder, F::SingOrder, F::BeamGroup, F::OctaveShift, F::TonicDegree, F::Harmony, F::HarmonyOffset, F::Slur, F::Dynamics,
                 F::MultiVoice, F::NoteStack, F::InnerVoice, F::ExtraStaff, F::RhythmStack, F::RhythmPosition, F::Style, F::LayoutDirectives,
-                F::MultiSong, F::Grace, F::Meta, F::Paper, F::NestedArc, F::OddTuplet,
+                F::MultiSong, F::Grace, F::Meta, F::Paper, F::NestedArc, F::OddTuplet, F::Layouts,
             ],
             EXT_123,
         ],
@@ -151,7 +153,7 @@ pub fn gone(target: TargetFormat) -> Vec<Feature> {
             &[
                 F::BeamGroup, F::OctaveShift, F::RhythmStack, F::RhythmPosition, F::InnerVoice, F::ExtraStaff, F::MultiVoice, F::MultiSong, F::Meta,
                 F::Paper, F::Style, F::PageText, F::PlayOrder, F::SingOrder, F::SectionOrder, F::LayoutDirectives, F::Dynamics, F::VerseLabel,
-                F::TonicDegree,
+                F::TonicDegree, F::Layouts,
             ],
             EXT_123,
         ],
@@ -162,14 +164,14 @@ pub fn gone(target: TargetFormat) -> Vec<Feature> {
             &[
                 F::BeamGroup, F::OctaveShift, F::RhythmStack, F::RhythmPosition, F::InnerVoice, F::ExtraStaff, F::MultiSong, F::Style, F::PlayOrder,
                 F::SingOrder, F::SectionOrder, F::Meta, F::Paper, F::PageText, F::LayoutDirectives, F::Dynamics, F::VerseLabel, F::LyricOnRest,
-                F::HarmonyOffset, F::PageBreak, F::TonicDegree,
+                F::HarmonyOffset, F::PageBreak, F::TonicDegree, F::Layouts,
             ],
             EXT_123,
         ],
         // MusicXML 装不下的两样：`playOrder` 的 skip/limit（`<ending>` 只能整小节）与样式引用。
         // 见 `docs/模块/模型-scoredoc.md` 的关键判据。主音唱名（`6=E`）只有 `<fifths>`/`<mode>`，读回不记唱名。
         // jianpu-ly、Muse、`.jpwabc` 的调号也只写 `1=` 大调 / 调号，主音唱名同样写不出。
-        TargetFormat::MusicXml => &[&[F::PlayOrder, F::SingOrder, F::SectionOrder, F::Style, F::LayoutDirectives, F::NestedArc, F::OddTuplet, F::TonicDegree]],
+        TargetFormat::MusicXml => &[&[F::PlayOrder, F::SingOrder, F::SectionOrder, F::Style, F::LayoutDirectives, F::NestedArc, F::OddTuplet, F::TonicDegree, F::Layouts]],
     };
     list.iter().flat_map(|l| l.iter().copied()).collect()
 }
@@ -273,6 +275,9 @@ pub fn features_used(doc: &ScoreDoc, surface: Option<&Surface>) -> Vec<Feature> 
         }
         if song.section_order.is_some() {
             add(F::SectionOrder);
+        }
+        if song.layouts.as_ref().is_some_and(|v| !v.is_empty()) {
+            add(F::Layouts);
         }
         if let Some(st) = &song.style {
             if st.sheet_ref.as_deref().is_some_and(|s| !s.is_empty()) || st.inline.as_ref().is_some_and(|v| !v.is_empty()) {

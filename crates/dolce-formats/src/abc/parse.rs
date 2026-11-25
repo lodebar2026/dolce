@@ -10,7 +10,7 @@
 use super::abcpitch::resolve_abc_pitches;
 use super::dialect::{type_and_dots, DefaultLen};
 use super::fields::{
-    cjk_instruction_alias, jump_ornament_name, parse_field_line, parse_instruction, parse_linebreak, parse_sing, parse_tempo,
+    cjk_instruction_alias, jump_ornament_name, parse_field_line, parse_instruction, parse_layout, layout_base, parse_linebreak, parse_sing, parse_tempo,
     parse_tempo_beat, parse_time, parse_times, parse_voice_clef, FieldLine, Instruction, TempoPart,
 };
 use super::lex::{Dialect, Lexer};
@@ -1796,6 +1796,8 @@ struct Parser {
     head_section: Option<FieldLine>,
     order_source: Option<SourceSpan>,
     sing_rows: Vec<(String, SourceSpan)>,
+    /// `%%layout` / `I:layout` 的正文：段落标记落位后才解析（要查段名）
+    layout_rows: Vec<(String, SourceSpan)>,
     voice_ids: Vec<String>,
 }
 
@@ -2037,6 +2039,10 @@ impl Parser {
                 if self.ctx.d == Dialect::Jcx {
                     let v = f.value.clone();
                     page_text(self.ensure_song()).top_left.push(v);
+                } else if matches!(self.ctx.d, Dialect::J123 | Dialect::Abc) && parse_instruction(&f.value).name == "layout" {
+                    self.ensure_song();
+                    let body = parse_instruction(&f.value).value;
+                    self.layout_rows.push((body, f.source));
                 } else {
                     let ins = parse_instruction(&f.value);
                     let mut song = self.song.take().unwrap_or_else(empty_song);
@@ -2177,6 +2183,55 @@ impl Parser {
                 song.sing_order = Some(pages);
             }
         }
+        if !self.layout_rows.is_empty() {
+            let known: Vec<String> = song.section_marks.iter().flatten().map(|m| m.name.clone()).collect();
+            let mut layouts = vec![];
+            let mut first_src: Vec<SourceSpan> = vec![];
+            for (body, src) in std::mem::take(&mut self.layout_rows) {
+                let mut bad: Vec<String> = vec![];
+                let before: Vec<usize> = layouts.iter().map(|l: &dolce_model::LayoutSpec| l.breaks.as_ref().map_or(0, Vec::len)).collect();
+                parse_layout(&body, &mut layouts, |v: &str| bad.push(v.to_string()));
+                // 这一行新加的断点：段名要有标记，`*n` 不超过那一遍的出现次数
+                for (li, l) in layouts.iter_mut().enumerate() {
+                    let from = before.get(li).copied().unwrap_or(0);
+                    let Some(bs) = l.breaks.as_mut() else { continue };
+                    let mut k = from;
+                    while k < bs.len() {
+                        let b = &bs[k];
+                        let nth = b.nth.unwrap_or(1.0) as usize;
+                        let over = b.pass.zip(song.sing_order.as_ref()).is_some_and(|(p, order)| {
+                            order.get(p as usize - 1).is_none_or(|pg| pg.items.iter().filter(|it| it.section == b.section).count() < nth)
+                        });
+                        if !known.contains(&b.section) || over {
+                            bad.push(b.section.clone());
+                            bs.remove(k);
+                        } else {
+                            k += 1;
+                        }
+                    }
+                    if bs.is_empty() {
+                        l.breaks = None;
+                    }
+                }
+                for v in bad {
+                    ctx.report("bad-layout", Msg::new("diag.j123.badLayout").arg("v", v), src);
+                }
+                first_src.resize(layouts.len(), src);
+            }
+            // 缺 `base=` 的自定义版面不出现
+            let mut kept = vec![];
+            for (l, src) in layouts.into_iter().zip(first_src) {
+                if layout_base(&l).is_none() {
+                    ctx.report("bad-layout", Msg::new("diag.j123.layoutNoBase").arg("v", l.name.as_str()), src);
+                } else {
+                    kept.push(l);
+                }
+            }
+            let layouts = kept;
+            if !layouts.is_empty() {
+                song.layouts = Some(layouts);
+            }
+        }
         if ctx.d == Dialect::Abc || any_staff {
             resolve_abc_pitches(&mut song);
         }
@@ -2295,6 +2350,7 @@ pub fn parse_abc_family(text: &str, d: Dialect) -> ScoreDoc {
         head_section: None,
         order_source: None,
         sing_rows: vec![],
+        layout_rows: vec![],
         voice_ids: vec![],
     };
     let lexer = Lexer { dialect: d };
@@ -2360,6 +2416,13 @@ pub fn parse_abc_family(text: &str, d: Dialect) -> ScoreDoc {
                 if let Some(at) = directive(&line, "sing").filter(|&at| word_boundary_after(&line, at)) {
                     p.ensure_song();
                     p.sing_rows.push((line[at..].to_string(), whole));
+                    continue;
+                }
+            }
+            if matches!(d, Dialect::J123 | Dialect::Abc) {
+                if let Some(at) = directive(&line, "layout").filter(|&at| word_boundary_after(&line, at)) {
+                    p.ensure_song();
+                    p.layout_rows.push((line[at..].to_string(), whole));
                     continue;
                 }
             }
@@ -2513,5 +2576,75 @@ mod tests {
         let rest = |mi: usize| bass.measures[mi].elements[0].as_chord().unwrap().duration.divisions;
         assert_eq!(rest(0), SIMPLE_DIVISIONS * 4.0);
         assert_eq!(rest(1), SIMPLE_DIVISIONS * 3.0);
+    }
+
+    const LAYOUT_SONG: &str = "X:1\nT:例\nK:1=C\nM:4/4\n[P:A]1 2 3 4 | 5 6 [P:A2]7 1' | [P:B]5 5 6 6 | 1 - - - |]\n";
+
+    fn layout_text(doc: &ScoreDoc) -> Vec<String> {
+        crate::abc::emit::emit_123(doc).lines().filter(|l| l.starts_with("%%layout") || l.starts_with("%%sing")).map(String::from).collect()
+    }
+
+    fn codes(doc: &ScoreDoc) -> Vec<String> {
+        doc.diagnostics.iter().map(|d| d.code.clone()).collect()
+    }
+
+    /// 规范 §9.1 的例子：读→写→读逐字不变，同名几行合并、ASCII 名写回中文名
+    #[test]
+    fn layout_roundtrip() {
+        let src = format!(
+            "{LAYOUT_SONG}%%sing A A2 B\n%%sing A A2 B B@2\n%%layout jianpu linebreak=phrase\n%%layout 投影 linebreak=fill rows=4\n\
+             %%layout projection pass=1 newpage=A\n%%layout 投影 pass=2 rows=5 break=A2,B\n%%layout 大字版 base=简谱 paper=A4 note-size=24 linebreak=bars:4\n"
+        );
+        let doc = parse_123(&src);
+        assert!(codes(&doc).is_empty(), "{:?}", doc.diagnostics);
+        let out = layout_text(&doc);
+        assert_eq!(
+            out,
+            vec![
+                "%%sing A A2 B",
+                "%%sing A A2 B B@2",
+                "%%layout 简谱 linebreak=phrase",
+                "%%layout 投影 linebreak=fill rows=4",
+                "%%layout 投影 pass=1 newpage=A",
+                "%%layout 投影 pass=2 rows=5 break=A2,B",
+                "%%layout 大字版 base=简谱 linebreak=bars:4 paper=A4 note-size=24",
+            ]
+        );
+        let again = parse_123(&crate::abc::emit::emit_123(&doc));
+        assert_eq!(again.songs[0].layouts, doc.songs[0].layouts);
+        // 不写成头部的 `I:layout`
+        assert!(!crate::abc::emit::emit_123(&doc).contains("I:layout"));
+    }
+
+    /// 写错的：不认识的键、投影专用键写给简谱、引用不存在的段、`*n` 超出、自定义版面缺 base
+    #[test]
+    fn layout_bad_items() {
+        let src = format!(
+            "{LAYOUT_SONG}%%sing A A2 B\n%%layout 简谱 rows=3 foo=1\n%%layout 投影 break=C\n%%layout 投影 pass=1 break=B*2\n%%layout 大字版 paper=A4\n%%layout 投影 linebreak=bars:0\n"
+        );
+        let doc = parse_123(&src);
+        let bad = codes(&doc).iter().filter(|c| *c == "bad-layout").count();
+        assert_eq!(bad, 6, "{:?}", doc.diagnostics);
+        let names: Vec<&str> = doc.songs[0].layouts.iter().flatten().map(|l| l.name.as_str()).collect();
+        assert!(!names.contains(&"大字版"), "{names:?}");
+        assert!(doc.songs[0].layouts.iter().flatten().all(|l| l.breaks.is_none()), "{:?}", doc.songs[0].layouts);
+    }
+
+    /// 旧写法 `/` 与 `[rows=]` 不再认：报 `bad-sing`、不迁移
+    #[test]
+    fn old_sing_layout_is_bad_item() {
+        let doc = parse_123(&format!("{LAYOUT_SONG}%%sing [rows=3] A / B\n"));
+        assert!(codes(&doc).iter().any(|c| c == "bad-sing"), "{:?}", doc.diagnostics);
+        assert_eq!(layout_text(&doc), vec!["%%sing A B"]);
+    }
+
+    /// ABC 同样截住 `%%layout`、写回原样
+    #[test]
+    fn layout_abc_roundtrip() {
+        let doc = parse_abc("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nP:A\n[P:A]CDEF|[P:B]GABc|]\n%%layout staff break=A\n");
+        assert!(codes(&doc).iter().all(|c| c != "bad-layout"), "{:?}", doc.diagnostics);
+        let out = crate::abc::emit::emit_abc(&doc);
+        assert!(out.contains("%%layout 五线谱 break=A"), "{out}");
+        assert!(!out.contains("I:layout"), "{out}");
     }
 }

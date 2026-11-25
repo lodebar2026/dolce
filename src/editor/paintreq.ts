@@ -50,8 +50,8 @@ export interface JianpuSource {
   /** MusicXML：旋律声部与歌词来源（声部面板） */
   melodyPart?: number;
   lyricPart?: number | null;
-  /** 投影档：`%%sing` 逐遍按乐句断行（「按乐句重排」开着） */
-  singPhrase?: boolean;
+  /** 某一档实际排的那份（版面的断行先落在副本上，`jianpu/layoutdoc.ts`）；没有就排 `doc` */
+  docFor?: Partial<Record<JianpuLayoutMode, ScoreDoc>>;
 }
 
 /** 投影档排的那份文档：MusicXML 按声部面板换旋律声部与歌词来源（元素 id 不变）。 */
@@ -64,10 +64,10 @@ export function expandedDocOf(src: JianpuSource): ScoreDoc {
 
 /** 简谱两档（简谱 / 投影）的排版请求。投影档没有曲行时返回 null。 */
 export function jianpuPaintRequest(src: JianpuSource, mode: JianpuLayoutMode, style: StyleSheet): SyncPaintRequest | null {
-  const phrase = mode === "expanded" && src.singPhrase ? { singPhrase: true } : {};
-  if (src.format === "jpwabc") return { view: mode, doc: src.doc, style, breakDesc: src.breakDesc ?? null, ...phrase };
-  if (mode === "expanded") return hasLines(src.doc) ? { view: "expanded", doc: expandedDocOf(src), style, ...phrase } : null;
-  return { view: "original", doc: src.doc, style };
+  const doc = src.docFor?.[mode] ?? src.doc;
+  if (src.format === "jpwabc") return { view: mode, doc, style, breakDesc: src.breakDesc ?? null };
+  if (mode === "expanded") return hasLines(doc) ? { view: "expanded", doc: expandedDocOf({ ...src, doc }), style } : null;
+  return { view: "original", doc, style };
 }
 
 /**
@@ -78,7 +78,7 @@ export function lineStartsRequest(src: JianpuSource, mode: JianpuLayoutMode, sty
   if (src.format === "jpwabc") return jianpuPaintRequest(src, mode, styleOf(mode));
   if (mode === "expanded") return jianpuPaintRequest(src, "expanded", styleOf("expanded"));
   if (src.format === "fanqie" || src.format === "musicxml" || !singleVoice(src.doc)) return null;
-  return { view: "original", doc: src.doc, style: styleOf("original") };
+  return { view: "original", doc: src.docFor?.original ?? src.doc, style: styleOf("original") };
 }
 
 /** 另造一个排版器排一遍，取各行首音（和弦 id）。 */

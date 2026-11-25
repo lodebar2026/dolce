@@ -422,6 +422,7 @@ pub fn recognized_to_doc(score: &RecognizedScore) -> Built {
         marks,
         play_order: None,
         sing_order: None,
+        layouts: None,
         section_order: None,
         section_marks: None,
         style: None,

@@ -107,7 +107,7 @@ fn run(doc: &ScoreDoc, c: CaseConfig, env: &Env) -> Got {
         measure: c.measure,
         snippet: c.snippet,
         ink: c.ink,
-        sing_phrase: false,
+        layout: None,
     };
     let r = layout_jianpu(doc, &cfg, env);
     let pages = r

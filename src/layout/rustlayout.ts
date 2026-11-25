@@ -11,8 +11,9 @@ import { dolce } from "../common/dolce";
 import type { DolceLayoutWasm, WasmMeasure } from "../common/dolcewasm";
 import { asBuffer, tauriCore, type TauriCore } from "../common/tauricore";
 import { bindWasmMeasure, type MeasureBackend } from "../common/measure";
-import type { ElementId, ScoreDoc, SingPass } from "../model/doc";
+import type { ElementId, LayoutSpec, ScoreDoc, SingPass } from "../model/doc";
 import { docJson } from "../model/rustdoc";
+import { VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
 import type { StyleSheet } from "../style/sheet";
 import type { PlayItem } from "../score/playtypes";
 
@@ -243,7 +244,9 @@ export interface SingFitReport {
   marks: { name: string; before: ElementId }[];
   /** 逐遍演唱顺序（模型形状，同 `Song.singOrder`） */
   order: SingPass[];
-  /** `%%sing` 原文（一遍一行）；对不上时为空串 */
+  /** 投影版面里一遍之内段与段之间的换行（`%%layout 投影 pass=N break=…`） */
+  breaks: NonNullable<LayoutSpec["breaks"]>;
+  /** `%%sing` 与投影版面断点的原文（`%%sing` 一遍一行，后跟 `%%layout 投影 pass=…`）；对不上时为空串 */
   sing: string;
   notes: SingFitNote[];
   refChars: number;
@@ -260,10 +263,11 @@ export interface SingFitNote {
   fromBar?: number;
 }
 
-/** 按参照歌词给第 `song` 首生成段落标记与 `%%sing`；分遍要试排投影档（`style` 是投影档样式表）。桌面版走原生排版线程，别处走 wasm。 */
+/** 按参照歌词给第 `song` 首生成段落标记与 `%%sing`；分遍要试排投影档（`style` 是投影档样式表，投影版面照 `doc` 里写的）。
+ *  `phrase`：写不下 `%%layout` 的格式开着「按乐句重排」时，投影版面临时按乐句断行。桌面版走原生排版线程，别处走 wasm。 */
 export async function singFromLyrics(doc: ScoreDoc, song: number, lyrics: string, style: StyleSheet, phrase: boolean): Promise<SingFitReport> {
-  const { json } = docJson(doc);
-  const req = JSON.stringify({ view: "expanded", style, singPhrase: phrase });
+  const { json } = docJson(phrase ? withLinebreak(doc, VIEW_LAYOUT.expanded, "phrase") : doc);
+  const req = JSON.stringify({ view: "expanded", style });
   const core = tauriCore();
   const raw = core
     ? new TextDecoder().decode(asBuffer(await core.invoke("layout_sing_from_lyrics", { doc: json, song, lyrics, req })))

@@ -29,7 +29,7 @@ const fracOf = (a: [number, number]): Fraction => {
 
 interface ItemOut {
   mid: number; pass: number; offset: [number, number]; end: number; endOfPass: boolean; skip: number; limit: number; glueFrom: number;
-  scope?: number; sectionEntry?: boolean; lineAfter?: boolean; pageRows?: number;
+  scope?: number; sectionEntry?: boolean;
 }
 
 /** 产物 → `PlayItem`。`scopes`：段落小节表，同一下标认回同一个 Set */
@@ -51,8 +51,6 @@ function itemsOut(items: readonly ItemOut[], scopes: readonly number[][] = []): 
       p.scope = s;
     }
     if (o.sectionEntry) p.sectionEntry = true;
-    if (o.lineAfter) p.lineAfter = true;
-    if (o.pageRows !== undefined) p.page = { rows: o.pageRows };
     return p;
   });
 }
@@ -73,8 +71,6 @@ function itemsIn(items: readonly PlayItem[], scopes: number[][]): object[] {
       mid: p.mid, pass: p.pass, offset: frac(p.offset), end: p.end, endOfPass: p.endOfPass, skip: p.skip, limit: p.limit, glueFrom: p.glueFrom,
       ...(scope !== undefined ? { scope } : {}),
       ...(p.sectionEntry ? { sectionEntry: true } : {}),
-      ...(p.lineAfter ? { lineAfter: true } : {}),
-      ...(p.page?.rows ? { pageRows: p.page.rows } : {}),
     };
   });
 }

@@ -85,8 +85,6 @@ export interface JianpuPaintRequest {
   readonly snippet?: boolean;
   /** 覆盖墨色（帮助页的谱例画在压暗的纸上） */
   readonly ink?: number;
-  /** 投影档：写了 `%%sing` 的逐遍按乐句断行（编辑器开着「按乐句重排」时） */
-  readonly singPhrase?: boolean;
 }
 
 export type PaintRequest = JianpuPaintRequest | StaffPaintRequest;
@@ -176,7 +174,6 @@ function wireOf(req: PaintRequest): LayoutWire {
       page: req.page ?? null,
       snippet: req.snippet ?? false,
       ...(req.ink !== undefined ? { ink: req.ink } : {}),
-      ...(req.singPhrase ? { singPhrase: true } : {}),
     },
   };
 }

@@ -18,6 +18,7 @@ pub mod innervoice;
 pub mod jianpu;
 pub mod jianpuproject;
 pub mod keyshift;
+pub mod layouts;
 pub mod marknames;
 pub mod melodyonly;
 pub mod metakeys;

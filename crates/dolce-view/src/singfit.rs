@@ -8,12 +8,13 @@
 //!
 //! 走出来的路再按参照的段界切开（弱起句头切在弱起音前的休止处、优先切在小节线上），所有切点合成谱面上的段落；
 //! 总是前后相连、配同一条词的相邻段并成一段；段落名按角色（主歌 `V`、副歌 `C`、桥段 `B`、没唱到的 `X`），同角色多段 `V2`、`V3`…；
-//! 分遍按投影行数密排（一页缺省 4 行），副歌唱完优先换页，段界处 `/` 换行。判据与限制见 docs/模块/播放.md「按参照歌词生成段落与 `%%sing`」。
+//! 分遍按投影行数密排（一页缺省 4 行），副歌唱完优先换页，段界处换行（`%%layout 投影 pass=N break=…`）。判据与限制见 docs/模块/播放.md「按参照歌词生成段落与 `%%sing`」。
 
 use std::collections::{HashMap, HashSet};
 
 use dolce_base::hanvariant::simplified_of;
-use dolce_model::{Element, ElementId, ScoreDoc, SectionMark, SingItem, SingPass, Song};
+use dolce_model::layouts::PROJECTION;
+use dolce_model::{Element, ElementId, LayoutBreak, LayoutSpec, ScoreDoc, SectionMark, SingItem, SingPass, Song};
 use dolce_play::walk::{walk_play, Step, WalkItem};
 use serde::Serialize;
 
@@ -98,6 +99,8 @@ impl FitNote {
 pub struct SingFit {
     pub marks: Vec<SectionMark>,
     pub order: Vec<SingPass>,
+    /// 投影版面里一遍之内段与段之间的换行（`pass=` 逐遍）
+    pub breaks: Vec<LayoutBreak>,
     pub notes: Vec<FitNote>,
     /// 参照字数、对上的字数
     pub ref_chars: usize,
@@ -108,29 +111,38 @@ pub struct SingFit {
 }
 
 impl SingFit {
-    /// `%%sing` 的写法（预览与报告用；正式写出走格式写出端）
+    /// `%%sing` 与投影版面断点的写法（预览与报告用；正式写出走格式写出端）
     pub fn sing_text(&self) -> String {
-        self.order
+        let mut lines: Vec<String> = self
+            .order
             .iter()
             .map(|p| {
-                let mut s = String::from("%%sing ");
-                if let Some(r) = p.rows {
-                    s.push_str(&format!("[rows={r}] "));
-                }
                 let items: Vec<String> = p
                     .items
                     .iter()
                     .map(|it| {
                         let v = it.verse.filter(|&v| v != 1.0).map(|v| format!("@{v}")).unwrap_or_default();
-                        let br = if it.line_after == Some(true) { " /" } else { "" };
-                        format!("{}{v}{br}", it.section)
+                        format!("{}{v}", it.section)
                     })
                     .collect();
-                s.push_str(&items.join(" "));
-                s
+                format!("%%sing {}", items.join(" "))
             })
-            .collect::<Vec<_>>()
-            .join("\n")
+            .collect();
+        let mut passes: Vec<f64> = self.breaks.iter().filter_map(|b| b.pass).collect();
+        passes.dedup();
+        for p in passes {
+            let refs: Vec<String> = self
+                .breaks
+                .iter()
+                .filter(|b| b.pass == Some(p))
+                .map(|b| match b.nth {
+                    Some(n) if n > 1.0 => format!("{}*{n}", b.section),
+                    _ => b.section.clone(),
+                })
+                .collect();
+            lines.push(format!("%%layout {PROJECTION} pass={p} break={}", refs.join(",")));
+        }
+        lines.join("\n")
     }
 }
 
@@ -139,6 +151,24 @@ pub fn apply_sing_fit(song: &mut Song, fit: &SingFit) {
     song.section_marks = Some(fit.marks.clone());
     song.sing_order = Some(fit.order.clone());
     song.section_order = None;
+    // 投影版面的断点换成生成的（段名都换过了，旧断点指不到）；其余选项与别的版面留着
+    let layouts = song.layouts.get_or_insert_with(Vec::new);
+    let at = match layouts.iter().position(|l| l.name == PROJECTION) {
+        Some(i) => i,
+        None => {
+            layouts.push(LayoutSpec { name: PROJECTION.into(), ..LayoutSpec::default() });
+            layouts.len() - 1
+        }
+    };
+    let spec = &mut layouts[at];
+    spec.breaks = (!fit.breaks.is_empty()).then(|| fit.breaks.clone());
+    spec.passes = None;
+    if *spec == (LayoutSpec { name: PROJECTION.into(), ..LayoutSpec::default() }) {
+        layouts.remove(at);
+    }
+    if layouts.is_empty() {
+        song.layouts = None;
+    }
 }
 
 // ───────────────────────── 谱面侧 ─────────────────────────
@@ -698,7 +728,7 @@ struct Visit {
 
 /// 生成。`rows_of`：试排一份演唱顺序、回这一首每遍占几行（投影档；拿不到排版时给 None，按角色分遍）。
 pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn Fn(&ScoreDoc) -> Option<Vec<usize>>) -> SingFit {
-    let no_match = |ref_chars: usize| SingFit { marks: vec![], order: vec![], notes: vec![FitNote::new(FitKind::NoMatch)], ref_chars, matched: 0, walk: vec![] };
+    let no_match = |ref_chars: usize| SingFit { marks: vec![], order: vec![], breaks: vec![], notes: vec![FitNote::new(FitKind::NoMatch)], ref_chars, matched: 0, walk: vec![] };
     let lines = ref_lines(ref_text);
     let mut refs: Vec<RefTok> = vec![];
     for (li, l) in lines.iter().enumerate() {
@@ -1073,7 +1103,7 @@ pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn F
                 .map(|&i| {
                     let it = &items[i];
                     let verse = (it.line > 1 || (it.line == 1 && multi_line(&sc, &bounds, &section_of, it.sec))).then_some(it.line as f64);
-                    SingItem { section: names[it.sec].clone(), verse, line_after: None }
+                    SingItem { section: names[it.sec].clone(), verse }
                 })
                 .collect()
         })
@@ -1084,12 +1114,20 @@ pub fn fit_sing(doc: &ScoreDoc, song_idx: usize, ref_text: &str, rows_of: &dyn F
         s.section_marks = Some(marks.clone());
         s.sing_order = Some(order);
         s.section_order = None;
+        // 每段单独一遍、一页不限行数地试排，量各段占几行（投影版面的断行方式照写了的）
+        let layouts = s.layouts.get_or_insert_with(Vec::new);
+        layouts.retain(|l| l.name != PROJECTION);
+        let mut spec = doc.songs[song_idx].layouts.iter().flatten().find(|l| l.name == PROJECTION).cloned().unwrap_or(LayoutSpec { name: PROJECTION.into(), ..LayoutSpec::default() });
+        spec.rows = Some(99.0);
+        spec.breaks = None;
+        spec.passes = None;
+        layouts.push(spec);
         rows_of(&d)
     };
-    let rows: Option<Vec<usize>> = trial(sing_groups.iter().map(|g| SingPass { items: g.clone(), rows: Some(99.0) }).collect()).filter(|r| r.len() == sing_groups.len());
-    let order = paginate(&sing_groups, &roles.iter().map(|r| *r == Role::C).collect::<Vec<_>>(), rows.as_deref(), DEFAULT_ROWS);
+    let rows: Option<Vec<usize>> = trial(sing_groups.iter().map(|g| SingPass { items: g.clone() }).collect()).filter(|r| r.len() == sing_groups.len());
+    let (order, breaks) = paginate(&sing_groups, &roles.iter().map(|r| *r == Role::C).collect::<Vec<_>>(), rows.as_deref(), DEFAULT_ROWS);
 
-    SingFit { marks, order, notes, ref_chars: refs.len(), matched, walk }
+    SingFit { marks, order, breaks, notes, ref_chars: refs.len(), matched, walk }
 }
 
 /// 两项的词号能否接成一段（无词的随旁边）
@@ -1145,8 +1183,9 @@ fn split_at_paragraphs(sc: &Score, refs: &[RefTok], visits: Vec<Visit>) -> Vec<V
     out
 }
 
-/// 分遍。`rows`：每段参照单独一遍时占几行（拿不到时每个角色单位一遍）。段与段之间 `/` 换行。
-fn paginate(groups: &[Vec<SingItem>], chorus: &[bool], rows: Option<&[usize]>, max_rows: usize) -> Vec<SingPass> {
+/// 分遍。`rows`：每段参照单独一遍时占几行（拿不到时每个角色单位一遍）。一遍里段与段之间换行：回投影版面的断点
+/// （`pass=` 这一遍，在前一段的末项之后；同一遍里那段已出现过的写第几次）。
+fn paginate(groups: &[Vec<SingItem>], chorus: &[bool], rows: Option<&[usize]>, max_rows: usize) -> (Vec<SingPass>, Vec<LayoutBreak>) {
     let mut passes: Vec<Vec<usize>> = vec![];
     let mut used = 0usize;
     for g in 0..groups.len() {
@@ -1176,22 +1215,25 @@ fn paginate(groups: &[Vec<SingItem>], chorus: &[bool], rows: Option<&[usize]>, m
             used += rows.map_or(0, |r| r[g]);
         }
     }
-    passes
+    let mut breaks: Vec<LayoutBreak> = vec![];
+    let order = passes
         .into_iter()
-        .map(|gs| {
+        .enumerate()
+        .map(|(pi, gs)| {
             let mut items: Vec<SingItem> = vec![];
             for (n, &g) in gs.iter().enumerate() {
-                let mut its = groups[g].clone();
+                items.extend(groups[g].iter().cloned());
                 if n + 1 < gs.len() {
-                    if let Some(last) = its.last_mut() {
-                        last.line_after = Some(true);
+                    if let Some(last) = items.last() {
+                        let nth = items.iter().filter(|it| it.section == last.section).count() as f64;
+                        breaks.push(LayoutBreak { pass: Some((pi + 1) as f64), section: last.section.clone(), nth: (nth > 1.0).then_some(nth), page: None });
                     }
                 }
-                items.extend(its);
             }
-            SingPass { items, rows: None }
+            SingPass { items }
         })
-        .collect()
+        .collect();
+    (order, breaks)
 }
 
 #[cfg(test)]
@@ -1217,7 +1259,8 @@ mod tests {
         let (f, text) = fit("甲乙丙丁\n戊己庚辛\n壬癸子丑\n\n春夏秋冬\n东南西北金木水火\n\n天地玄黄\n宇宙洪荒日月盈昃\n\n春夏秋冬东南西北金木水火");
         assert_eq!(f.matched, f.ref_chars);
         assert!(f.notes.iter().all(|n| n.kind != FitKind::OffScore), "{:?}", f.notes);
-        assert_eq!(f.sing_text(), "%%sing V / C\n%%sing V@2 / C");
+        assert_eq!(f.sing_text(), "%%sing V C\n%%sing V@2 C\n%%layout 投影 pass=1 break=V\n%%layout 投影 pass=2 break=V");
+        assert!(text.contains("%%layout 投影 pass=2 break=V"), "{text}");
         assert!(text.contains("[P:V]") && text.contains("[P:C]"), "{text}");
     }
 
@@ -1247,12 +1290,13 @@ mod tests {
 
     #[test]
     fn paginate_prefers_break_after_chorus() {
-        let g = |n: &str| vec![SingItem { section: n.into(), verse: None, line_after: None }];
+        let g = |n: &str| vec![SingItem { section: n.into(), verse: None }];
         let groups = vec![g("V"), g("C"), g("V2"), g("C")];
         // 主歌 2 行、副歌 1 行，一页 4 行：V+C 3 行后，下一段主歌 2 行装不下 → 副歌后换页
-        let order = paginate(&groups, &[false, true, false, true], Some(&[2, 1, 2, 1]), 4);
+        let (order, breaks) = paginate(&groups, &[false, true, false, true], Some(&[2, 1, 2, 1]), 4);
         let names: Vec<Vec<&str>> = order.iter().map(|p| p.items.iter().map(|i| i.section.as_str()).collect()).collect();
         assert_eq!(names, vec![vec!["V", "C"], vec!["V2", "C"]]);
-        assert_eq!(order[0].items[0].line_after, Some(true));
+        let at: Vec<(Option<f64>, &str)> = breaks.iter().map(|b| (b.pass, b.section.as_str())).collect();
+        assert_eq!(at, vec![(Some(1.0), "V"), (Some(2.0), "V2")]);
     }
 }
