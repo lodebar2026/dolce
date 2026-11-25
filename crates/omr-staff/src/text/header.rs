@@ -8,8 +8,8 @@ use dolce_omr_ocr::surface::{blit, Gray};
 use dolce_omr_source::raster::SourceImage;
 use dolce_omr_text::chars::{han_count, latin_count};
 use dolce_omr_text::header::{credits, Credit, WordLine};
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
-use dolce_omr_text::{chords, words, Ch};
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
+use dolce_omr_text::{chords, words};
 use super::classify::Mark;
 use dolce_omr_sheet::score::Dir;
 
@@ -44,10 +44,7 @@ pub fn page_credits(f: &PageFrame, src: &SourceImage, ocr: &dyn DigitReader) -> 
         let mut s = Gray::new(b.w.round() as usize, b.h.round() as usize, 255);
         blit(&mut s, &g, b, Rect::new(0.0, 0.0, b.w.round(), b.h.round()));
         let Some(got) = ocr.read_line(&s) else { continue };
-        let mut chars: Vec<Ch> = Vec::new();
-        for c in got {
-            spread(c.ch.chars(), (b.x + c.x0 * b.w) * up, (b.x + c.x1 * b.w) * up, &mut chars);
-        }
+        let chars = spread_all(got.iter().map(|c| (c.ch.as_str(), c.x0, c.x1)), |r| (b.x + r * b.w) * up, Some);
         // 框里的空白列（页内坐标）
         let (x0, x1) = (((b.x * up).max(0.0)) as usize, (((b.x + b.w) * up) as usize).min(pw));
         let (y0, y1) = (((b.y * up).max(0.0)) as usize, (((b.y + b.h) * up) as usize).min(f.ink.h));

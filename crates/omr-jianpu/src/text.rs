@@ -12,7 +12,7 @@ use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_text::chars::{han_count, is_han};
 use dolce_omr_text::header::{credits, CreditType, WordLine};
 use dolce_omr_text::lyrics::{align, align_phrases, phrase_lens, syllables};
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
 use dolce_omr_text::{chords, words, Ch};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -417,9 +417,7 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
                 }
             }
         }
-        if let Ok(dir) = std::env::var("OMR_STRIPS") {
-            let _ = std::fs::write(format!("{dir}/{:.0}_{:.0}.pgm", rect.y, rect.x), [format!("P5 {} {} 255\n", strip.w, strip.h).as_bytes(), &strip.data].concat());
-        }
+        strip.dump_strip(rect.x, rect.y);
         // 要候选时贪心解码与前几名一次推理出来
         let (got, ranks) = if doubts.is_some() {
             let Ok((g, r)) = ocr.read_line_ranked(&strip, RANK_K) else { continue };
@@ -450,10 +448,7 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
                 }
             }
         }
-        let mut chars: Vec<Ch> = Vec::new();
-        for c in got {
-            spread(c.ch.chars().map(fold), x_left + c.x0 * sw, x_left + c.x1 * sw, &mut chars);
-        }
+        let chars = spread_all(got.iter().map(|c| (c.ch.as_str(), c.x0, c.x1)), |r| x_left + r * sw, |c| Some(fold(c)));
         if chars.is_empty() {
             continue;
         }
@@ -1639,10 +1634,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         let Ok(got) = ocr.read_line(&strip) else { continue };
         // 补词间空格（rec 不吐空格，`YouhavemadeapromisetotheLord`）：按框里的空白列；署名里名字与职能词之间的空当照谱面补
         let sw = strip.w as f64;
-        let mut chars: Vec<Ch> = Vec::new();
-        for c in &got {
-            spread(c.ch.chars().map(fold), b.x + c.x0 * sw, b.x + c.x1 * sw, &mut chars);
-        }
+        let chars = spread_all(got.iter().map(|c| (c.ch.as_str(), c.x0, c.x1)), |r| b.x + r * sw, |c| Some(fold(c)));
         let chars = box_spaces(ink, &none, &b, &chars);
         let mut text: String = chars.iter().map(|c| c.ch).collect();
         if CREDIT_ROLE.is_match(&text) {

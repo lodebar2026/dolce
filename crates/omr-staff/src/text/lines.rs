@@ -10,7 +10,7 @@ use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::surface::Gray;
 use dolce_omr_source::raster::SourceImage;
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
 use dolce_omr_text::Ch;
 use std::collections::HashSet;
 
@@ -199,16 +199,11 @@ fn strip(f: &PageFrame, src: &SourceImage, rect: &Rect, drop: &HashSet<i32>) -> 
 /// 读一段：送 OCR、字位折回页内坐标、补词间空格。读不出字回 None。
 fn read_seg(f: &PageFrame, src: &SourceImage, rect: Rect, drop: &HashSet<i32>, ocr: &dyn DigitReader) -> Option<Seg> {
     let (g, sx0, _) = strip(f, src, &rect, drop);
-    if let Ok(dir) = std::env::var("OMR_STRIPS") {
-        let _ = std::fs::write(format!("{dir}/{:.0}_{:.0}.pgm", rect.y, rect.x), [format!("P5 {} {} 255\n", g.w, g.h).as_bytes(), &g.data].concat());
-    }
+    g.dump_strip(rect.x, rect.y);
     let got = ocr.read_line(&g)?;
     let up = f.up;
     let w = g.w as f64;
-    let mut chars: Vec<Ch> = Vec::new();
-    for c in got {
-        spread(c.ch.chars(), (sx0 as f64 + c.x0 * w) * up, (sx0 as f64 + c.x1 * w) * up, &mut chars);
-    }
+    let chars = spread_all(got.iter().map(|c| (c.ch.as_str(), c.x0, c.x1)), |r| (sx0 as f64 + r * w) * up, Some);
     if chars.is_empty() {
         return None;
     }

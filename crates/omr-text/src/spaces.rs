@@ -187,6 +187,15 @@ pub fn spread(text: impl IntoIterator<Item = char>, a: f64, b: f64, out: &mut Ve
     }
 }
 
+/// 一条读出的各段 `(字串, 条内比例左缘, 右缘)` 逐段 [`spread`]，比例位置经 `at` 折成页内坐标；`map` 逐字换写或筛掉（回 None）。
+pub fn spread_all<'a>(segs: impl IntoIterator<Item = (&'a str, f64, f64)>, at: impl Fn(f64) -> f64, map: impl Fn(char) -> Option<char>) -> Vec<Ch> {
+    let mut out = Vec::new();
+    for (text, a, b) in segs {
+        spread(text.chars().filter_map(&map), at(a), at(b), &mut out);
+    }
+    out
+}
+
 /// 一个框里的墨（补词间空格用）：墨列之间的空白段 `(起, 宽)`、墨的左缘、右缘（不含）、墨高。
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoxInk {

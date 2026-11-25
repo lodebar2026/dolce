@@ -16,6 +16,13 @@ impl Gray {
         Gray { w, h, data: vec![fill; w * h] }
     }
 
+    /// 排查用：设了环境变量 `OMR_STRIPS`（目录）就把这条存成 `<y>_<x>.pgm`（`(x, y)` 是条在页内的位置）。
+    pub fn dump_strip(&self, x: f64, y: f64) {
+        if let Ok(dir) = std::env::var("OMR_STRIPS") {
+            let _ = std::fs::write(format!("{dir}/{y:.0}_{x:.0}.pgm"), [format!("P5 {} {} 255\n", self.w, self.h).as_bytes(), &self.data].concat());
+        }
+    }
+
     /// 二值图（1 = 墨）→ 白底黑字。
     pub fn from_binary(b: &Binary) -> Self {
         Gray { w: b.w, h: b.h, data: b.data.iter().map(|&v| if v != 0 { 0 } else { 255 }).collect() }

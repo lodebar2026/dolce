@@ -12,7 +12,7 @@ use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::score::Dir;
 use dolce_omr_source::vector::VecPage;
 use dolce_omr_text::header::{credits, Credit, WordLine};
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
+use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
 use dolce_omr_text::Ch;
 use crate::attrs::DigitReader;
 use dolce_omr_ocr::surface::Gray;
@@ -341,10 +341,7 @@ fn reread_strip(g: &Gray, ocr: &dyn DigitReader, r: &Rect) -> Option<Vec<Ch>> {
 fn read_spaced(s: &Gray, ocr: &dyn DigitReader) -> Option<Vec<Ch>> {
     let got = ocr.read_line(s)?;
     let w = s.w as f64;
-    let mut out: Vec<Ch> = Vec::new();
-    for c in got {
-        spread(c.ch.chars().filter(|ch| !ch.is_whitespace()), c.x0 * w, c.x1 * w, &mut out);
-    }
+    let out = spread_all(got.iter().map(|c| (c.ch.as_str(), c.x0, c.x1)), |r| r * w, |ch| (!ch.is_whitespace()).then_some(ch));
     let ink = |x: usize, y: usize| s.data[y * s.w + x] < INK_GRAY;
     let col = |x: usize| (0..s.h).any(|y| ink(x, y));
     let Some(bi) = box_ink(0, s.w as i64, 0, s.h as i64, |x| col(x as usize), |y| (0..s.w).any(|x| ink(x, y as usize))) else { return Some(out) };
