@@ -11,7 +11,7 @@ use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::cache::CachedOcr;
 use dolce_omr_text::chars::{han_count, is_han};
 use dolce_omr_text::header::{credits, CreditType, WordLine};
-use dolce_omr_text::lyrics::{align, syllables};
+use dolce_omr_text::lyrics::{align, align_phrases, phrase_lens, syllables};
 use dolce_omr_text::spaces::{box_ink, recover_spaces, spread};
 use dolce_omr_text::{chords, words, Ch};
 use regex::Regex;
@@ -529,6 +529,77 @@ fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
     (Some(format!("{}{sep}", c.ch)), &chars[j..])
 }
 
+/// 行中间印着的副歌起点「(副)」「（副歌）」（青年诗歌 177，副歌从行中间起）：带括号的边注，不占音、不入词。左右括号至少读出一个。
+fn strip_inline_refrain(chars: &[Ch]) -> Vec<Ch> {
+    let mut out: Vec<Ch> = Vec::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let open = "(（".contains(chars[i].ch);
+        let k = i + usize::from(open);
+        if i > 0 && chars.get(k).is_some_and(|c| c.ch == '副') {
+            let mut j = k + 1;
+            if chars.get(j).is_some_and(|c| c.ch == '歌' || CN_NUM.contains(c.ch)) {
+                j += 1;
+            }
+            let close = chars.get(j).is_some_and(|c| ")）".contains(c.ch));
+            if open || close {
+                i = j + usize::from(close);
+                continue;
+            }
+        }
+        out.push(chars[i].clone());
+        i += 1;
+    }
+    out
+}
+/// 标题中间留了大空当、det 框成两截的（青年诗歌 150B「忘記背后　直奔標杆」，左截被当成标题左边的署名）：
+/// 页眉里最大一号的两框、都是汉字、同排（竖向交叠八成以上）、等高（相差一成五以内）、隔不过一个字高，并成一行（照原图不加空格）。
+fn merge_split_title(rest: &mut Vec<WordLine>) {
+    let max_h = rest.iter().map(|l| l.h).fold(0.0, f64::max);
+    let big = |l: &WordLine| l.h >= max_h * 0.85 && l.text.trim().chars().count() >= 2 && l.text.trim().chars().all(is_han);
+    loop {
+        let mut hit = None;
+        'find: for i in 0..rest.len() {
+            for j in 0..rest.len() {
+                let (a, b) = (&rest[i], &rest[j]);
+                if i == j || !big(a) || !big(b) || b.x <= a.x {
+                    continue;
+                }
+                let ov = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
+                let gap = b.x - (a.x + a.w);
+                if ov >= a.h.min(b.h) * 0.8 && (a.h - b.h).abs() <= a.h.max(b.h) * 0.15 && gap >= 0.0 && gap <= a.h.max(b.h) {
+                    hit = Some((i, j));
+                    break 'find;
+                }
+            }
+        }
+        let Some((i, j)) = hit else { break };
+        let b = rest.remove(j);
+        let a = &mut rest[if j < i { i - 1 } else { i }];
+        a.text = format!("{}{}", a.text.trim(), b.text.trim());
+        let (x1, y1) = ((a.x + a.w).max(b.x + b.w), (a.y + a.h).max(b.y + b.h));
+        a.y = a.y.min(b.y);
+        a.w = x1 - a.x;
+        a.h = y1 - a.y;
+    }
+}
+
+/// 附段段号后面的分隔（「二、」「三.」「四·」）。
+const STANZA_SEP: &str = "、.．:：·•";
+
+/// 一段字中间以「，二.」「。三·」接着另一段段号的（左右两栏的段号在同一行、读成一段，青年诗歌 177）：在段号前切开。
+fn split_inner_labels(seg: Vec<Ch>) -> Vec<Vec<Ch>> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    for i in 1..seg.len().saturating_sub(2) {
+        if "二三四五六七八九十".contains(seg[i].ch) && STANZA_SEP.contains(seg[i + 1].ch) && "，。；！？,;!? ".contains(seg[i - 1].ch) && i > from {
+            out.push(seg[from..i].to_vec());
+            from = i;
+        }
+    }
+    out.push(seg[from..].to_vec());
+    out.into_iter().map(|p| p.into_iter().skip_while(|c| c.ch == ' ').collect::<Vec<_>>()).filter(|p| !p.is_empty()).collect()
+}
 
 /// 全角拉丁字母、数字折半角（中文标点不动）。
 fn fold(c: char) -> char {
@@ -550,7 +621,7 @@ fn lyric_span(ink: &Ink, row: &RowFrame) -> (i64, i64) {
 
 /// 各谱行下面的歌词：切行、读字、对音，写进各音的 `lyrics` 与行的段号。回各行歌词带的行（供叠加与排查）。
 /// `stanza_regions`：谱后附段落到音上的那几段，各行原文与源框（识别模式按原位叠加）。
-pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>) {
+pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>, post: &mut Vec<String>) {
     let w = ink.w() as f64;
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(vruns, num_h0 * 2.2);
@@ -688,7 +759,8 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
                 }
             }
             let (margin, body) = margin_label(&chars, note_xs[0] - notes[i].nums[note_ix[0]].bbox.w / 2.0, h);
-            let mut lr = syllables(body);
+            let body = strip_inline_refrain(body);
+            let mut lr = syllables(&body);
             if margin.is_some() {
                 lr.label = margin;
             } else if let Some(l) = lr.label.as_mut() {
@@ -838,7 +910,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
             nums[bi].jump_below.push(word.to_string());
         }
     }
-    stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions, footnotes);
+    stanzas(ink, &claims, rows, notes, labels, ocr, &stanza_lines, stanza_regions, footnotes, post);
 }
 
 /// 剔伪段（同 TS）：谱行下方的噪声、记号（弧与「渐慢 rit.」凑成的一截，迦南 1775）被当成额外的一段词。真段有字的谱行横跨全曲：
@@ -1158,7 +1230,7 @@ fn jump_in(seg: &[Ch]) -> Option<(&'static str, f64, usize)> {
 
 /// 谱后单独排版的附段歌词（诗行，不跟音符对齐）：以段号起头的一段，字数与第 1 段前几行谱的字位数对得上（差不过 2）时，
 /// 按第 1 段的字位骨架逐字落到音上。分栏排的按栏从左到右、栏内从上到下读。
-fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, lines: &[(i64, i64)], regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>) {
+fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, lines: &[(i64, i64)], regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>, post: &mut Vec<String>) {
     if lines.is_empty() || rows.is_empty() {
         return;
     }
@@ -1171,21 +1243,64 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("谱后 y{y0}: {}", seg.iter().map(|c| c.ch).collect::<String>());
             }
-            if let Some(x) = seg.first().map(|c| c.x0) {
-                segs.push((x, y0, seg, y1));
+            for part in split_inner_labels(seg) {
+                if let Some(x) = part.first().map(|c| c.x0) {
+                    segs.push((x, y0, part, y1));
+                }
             }
+        }
+    }
+    // 分栏排的附段（青年诗歌 177「二.」「三.」、202「二」「四」左右两栏各是一段）：同一行有两段以段号「二」以上起头，
+    // 这些段号的左缘是栏首，栏首上的段不当前一栏诗句的后半句接回去（左右半行连读的〔190〕每块只有一个段号，不受影响）
+    let labelish = |seg: &[Ch]| {
+        let t: Vec<char> = seg.iter().map(|c| c.ch).filter(|c| !" (（".contains(*c)).collect();
+        t.first().is_some_and(|c| CN_NUM.contains(*c) && *c != '一') && t.get(1).is_none_or(|c| STANZA_SEP.contains(*c) || is_han(*c))
+    };
+    let mut label_cols: Vec<f64> = Vec::new();
+    for s in &segs {
+        let same: Vec<f64> = segs.iter().filter(|t| t.1 == s.1 && labelish(&t.2)).map(|t| t.0).collect();
+        if same.len() >= 2 {
+            label_cols.extend(same);
         }
     }
     // 同一行里隔着不大空当的后一段是诗句中间断开的后半句（不是另一栏），接回左边那段——除非它以带分隔的段号起头
     let strict_start = |seg: &[Ch]| {
         let t: Vec<char> = seg.iter().map(|c| c.ch).filter(|c| !" (（".contains(*c)).collect();
-        t.first().is_some_and(|c| CN_NUM.contains(*c) || c.is_ascii_digit()) && t.get(1).is_some_and(|c| "、.．:：)）".contains(*c) || c.is_ascii_digit())
+        t.first().is_some_and(|c| CN_NUM.contains(*c) || c.is_ascii_digit()) && t.get(1).is_some_and(|c| STANZA_SEP.contains(*c) || ")）".contains(*c) || c.is_ascii_digit())
     };
+    // 栏里不带段号的行（177「四」「五」两栏末行同排）：起点与别的两行以上的右段起点对齐（一个行高内）的也是栏首——只在本页有并排段号时看
+    let mut right_xs: Vec<f64> = Vec::new();
+    if !label_cols.is_empty() {
+        for s in &segs {
+            if segs.iter().any(|t| t.1 == s.1 && t.0 < s.0 && s.0 - t.2.last().map_or(0.0, |c| c.x1) > hh) {
+                right_xs.push(s.0);
+            }
+        }
+    }
+    let aligned_right = |x: f64| right_xs.iter().filter(|&&rx| (rx - x).abs() <= hh).count() >= 3;
+    // 两栏末行读成一整段的（字间空当不大）：在对齐右栏起点（离段首三个行高开外）、且前面空出半个行高的字间切开
+    if !right_xs.is_empty() {
+        let mut out = Vec::with_capacity(segs.len());
+        for (x, y0, seg, y1) in std::mem::take(&mut segs) {
+            let cut = (1..seg.len()).find(|&i| seg[i].ch != ' ' && seg[i].x0 - x > hh * 3.0 && aligned_right(seg[i].x0) && seg[i].x0 - seg[..i].iter().rev().find(|c| c.ch != ' ').map_or(seg[i].x0, |c| c.x1) > hh * 0.5);
+            match cut {
+                Some(i) => {
+                    let (a, b) = seg.split_at(i);
+                    let a: Vec<Ch> = a.to_vec();
+                    out.push((x, y0, a, y1));
+                    out.push((b[0].x0, y0, b.to_vec(), y1));
+                }
+                None => out.push((x, y0, seg, y1)),
+            }
+        }
+        segs = out;
+    }
+    let col_head = |x: f64, from: f64| (label_cols.iter().any(|&lx| (lx - x).abs() <= hh * 3.0) || aligned_right(x)) && (x - from).abs() > hh * 3.0;
     segs.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.total_cmp(&b.0)));
     let mut kept: Vec<(f64, i64, Vec<Ch>, i64)> = Vec::new();
     for s in segs {
         match kept.last_mut() {
-            Some(k) if k.1 == s.1 && s.0 - k.2.last().map_or(0.0, |c| c.x1) <= hh * 3.0 && !strict_start(&s.2) => {
+            Some(k) if k.1 == s.1 && s.0 - k.2.last().map_or(0.0, |c| c.x1) <= hh * 3.0 && !strict_start(&s.2) && !col_head(s.0, k.0) => {
                 let x = k.2.last().map_or(0.0, |c| c.x1);
                 k.2.push(Ch { ch: ' ', x0: x, x1: x });
                 k.2.extend(s.2);
@@ -1233,10 +1348,10 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
         let c0 = seg[lead].ch;
         let digits = seg[lead..].iter().take_while(|c| c.ch.is_ascii_digit()).count();
         // 段号独占一行的（「二」底下才是诗行）也起一段
-        let alone = seg[lead + 1..].iter().all(|c| " 、.．:：)）".contains(c.ch));
+        let alone = seg[lead + 1..].iter().all(|c| STANZA_SEP.contains(c.ch) || " )）".contains(c.ch));
         // 汉字段号后面跟着分隔（「二、」「三.」）或独占一行；直接粘着诗行的（「二我虽忘祂」）得是接下来该到的那个段号——
         // 诗行本身常以「一」起头（「一面运行」）。头一段该到的是谱里已有段数的下一个
-        let cn_sep = seg.get(lead + 1).is_some_and(|c| " 、.．:：)）".contains(c.ch));
+        let cn_sep = seg.get(lead + 1).is_some_and(|c| STANZA_SEP.contains(c.ch) || " )）".contains(c.ch));
         let cn: Vec<char> = CN_NUM.chars().collect();
         let expect = match blocks.last() {
             Some(b) => b.0.chars().next().and_then(|c| cn.iter().position(|&d| d == c)).map(|k| k + 1),
@@ -1253,7 +1368,7 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
         match label {
             Some((l, n)) => {
                 let mut body = &seg[n..];
-                while body.first().is_some_and(|c| ")）、.．:： ".contains(c.ch)) {
+                while body.first().is_some_and(|c| STANZA_SEP.contains(c.ch) || ")） ".contains(c.ch)) {
                     body = &body[1..];
                 }
                 blocks.push((l, body.to_vec(), vec![region]));
@@ -1267,53 +1382,123 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
             }
         }
     }
+    // 分栏排的按栏读出来是「二 四 三 五」：段号都认得出时按段号排
+    let label_value = |l: &str| -> Option<usize> {
+        let c = l.chars().next()?;
+        CN_NUM.chars().position(|d| d == c).map(|k| k + 1).or_else(|| l.trim_end_matches('.').parse().ok())
+    };
+    if blocks.iter().all(|b| label_value(&b.0).is_some()) {
+        blocks.sort_by_key(|b| label_value(&b.0));
+    }
     // 第 1 段的字位骨架：各行里第 1 段有字的音
     let slots: Vec<Vec<usize>> = notes.iter().map(|rn| (0..rn.nums.len()).filter(|&k| rn.nums[k].lyrics.first().is_some_and(|t| !t.is_empty())).collect()).collect();
     let base = notes.iter().find(|rn| !rn.nums.is_empty()).map_or(1, |rn| rn.nums.iter().map(|n| n.lyrics.len()).max().unwrap_or(1)).max(1);
-    for (bi, (label, chars, rs)) in blocks.iter().enumerate() {
+    // 第 1 段逐字：(行, 音, 字)，按句对用
+    let base_syls: Vec<(usize, usize, String)> = slots.iter().enumerate().flat_map(|(ri, s)| s.iter().map(move |&ni| (ri, ni))).map(|(ri, ni)| (ri, ni, notes[ri].nums[ni].lyrics[0].clone())).collect();
+    let base_phr = phrase_lens(base_syls.iter().map(|b| b.2.as_str()));
+    // 附段能收在第 1 段的哪些句后：强句读（。！？；）或一行谱的末字（句读印法各段不一，逗号处不算收住）
+    let base_ends: Vec<bool> = {
+        let mut out = vec![false];
+        let mut k = 0;
+        for &l in &base_phr {
+            k += l;
+            let (ri, _, t) = &base_syls[k - 1];
+            let row_end = base_syls.get(k).is_none_or(|b| b.0 != *ri);
+            out.push(row_end || t.trim_end_matches(['”', '’', '"', ')', '）']).ends_with(['。', '！', '？', '；', '.', '!', '?', ';']));
+        }
+        out
+    };
+    let mut v = base;
+    for (label, chars, rs) in &blocks {
         let syls = syllables(chars).syls;
         let n = syls.len();
-        // 取前几行谱：字位数的累计最接近这段的字数
-        let mut sum = 0usize;
-        let mut best: Option<(usize, usize)> = None;
-        for (ri, s) in slots.iter().enumerate() {
-            sum += s.len();
-            if best.is_none_or(|b| sum.abs_diff(n) < b.1) {
-                best = Some((ri, sum.abs_diff(n)));
-            }
-        }
-        let Some((upto, diff)) = best else { continue };
-        if diff > 2 || n < 4 {
+        if n < 4 {
             continue;
         }
-        let v = base + bi;
-        regions.extend(rs.iter().cloned());
-        let mut k = 0;
-        'rows: for ri in 0..=upto {
-            for &ni in &slots[ri] {
-                let Some(s) = syls.get(k) else { break 'rows };
-                let num = &mut notes[ri].nums[ni];
-                if num.lyrics.len() <= v {
-                    num.lyrics.resize(v + 1, String::new());
+        // 各字落到第 1 段第几个字位（同一字位可收几个字）
+        let mut place: Vec<(usize, String)> = Vec::new();
+        let st_phr = phrase_lens(syls.iter().map(|s| s.text.as_str()));
+        if base_phr.len() >= 2 && st_phr.len() >= 2 {
+            // 按句对：差错关在句里，不往后错位
+            if let Some(groups) = align_phrases(&base_phr, &st_phr, &base_ends) {
+                let start = |lens: &[usize], k: usize| lens[..k].iter().sum::<usize>();
+                // 组里附段多出的字并进组末的音；末组多出的是段后粘上的页码之类（「第375首」），丢掉
+                let last = groups.len() - 1;
+                for (gi, (br, sr)) in groups.into_iter().enumerate() {
+                    let (b0, b1) = (start(&base_phr, br.start), start(&base_phr, br.end));
+                    let (s0, s1) = (start(&st_phr, sr.start), start(&st_phr, sr.end));
+                    let take = if gi == last { (s1 - s0).min(b1 - b0) } else { s1 - s0 };
+                    for k in 0..take {
+                        place.push(((b0 + k).min(b1 - 1), syls[s0 + k].text.clone()));
+                    }
                 }
-                num.lyrics[v] = s.text.clone();
-                k += 1;
+            }
+        } else {
+            // 没有句读可切：取前几行谱，字位数的累计最接近这段的字数（相差不过 2）就逐字落
+            let mut sum = 0usize;
+            let mut best: Option<(usize, usize)> = None;
+            for s in &slots {
+                sum += s.len();
+                if best.is_none_or(|b| sum.abs_diff(n) < b.1) {
+                    best = Some((sum, sum.abs_diff(n)));
+                }
+            }
+            if let Some((total, _)) = best.filter(|b| b.1 <= 2) {
+                place = syls.iter().take(total).enumerate().map(|(k, s)| (k, s.text.clone())).collect();
             }
         }
-        if let Some(ri) = (0..=upto).find(|&ri| !slots[ri].is_empty()) {
-            if labels[ri].len() <= v {
-                labels[ri].resize(v + 1, String::new());
+        regions.extend(rs.iter().cloned());
+        if place.is_empty() {
+            // 对不上音：照印的行原样记成曲末歌词
+            post.extend(rs.iter().map(|r| r.text.trim().to_string()).filter(|t| !t.is_empty()));
+            continue;
+        }
+        v += 1;
+        let mut first_row: Option<usize> = None;
+        for (k, text) in place {
+            let Some(&(ri, ni, _)) = base_syls.get(k) else { break };
+            let num = &mut notes[ri].nums[ni];
+            if num.lyrics.len() <= v - 1 {
+                num.lyrics.resize(v, String::new());
             }
-            labels[ri][v] = label.clone();
+            num.lyrics[v - 1].push_str(&text);
+            first_row.get_or_insert(ri);
+        }
+        if let Some(ri) = first_row {
+            if labels[ri].len() < v {
+                labels[ri].resize(v, String::new());
+            }
+            labels[ri][v - 1] = label.clone();
         }
     }
 }
 
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-Ga-g])").unwrap());
-/// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`（后面紧跟拍号或「调」字才认）。
-static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?\s*)?(?:调|大调|\d{1,2}\s*[/／]\s*\d)").unwrap());
-/// 整框只是个调名（可带「/调名」，变调夹谱的另一套调）：`Em/Bm`、`bE`。
-static KEY_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯]?)([A-G])([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?)?\s*$").unwrap());
+/// 不写「1=」的调名：`D4/4`、`bE 4/4`、`G调6/8`、小调 `Em3/4`、中文调名 `E b大調`、`f小調4/4`、`降A大调`（后面紧跟拍号或「调」字才认）。
+/// 组：1 前置升降、2 字母、3 后置升降、4 `m`、5「大 / 小」。小写字母只在带「调」字时认（`f小调`）。
+static KEY_BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯降升]?)\s*([A-Ga-g])\s*([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?\s*)?(?:([大小]?)[调調]|\d{1,2}\s*[/／]\s*\d)").unwrap());
+/// 整框只是个调名（可带「/调名」，变调夹谱的另一套调）：`Em/Bm`、`bE`、`d小調`。组同 `KEY_BARE`，6 是「调」字。
+static KEY_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([b♭#♯降升]?)\s*([A-Ga-g])\s*([b♭#♯]?)(m?)\s*(?:[/／]\s*[b♭#♯]?[A-G][b♭#♯]?m?)?\s*(?:([大小]?)([调調]))?\s*$").unwrap());
+
+/// `KEY_BARE` / `KEY_ALONE` 的捕获 → (五度圈位置〔小调记关系大调的升降号数〕, 是否小调, 调名)。小写字母不带「调」字的不认。
+fn bare_key(c: &regex::Captures) -> Option<(i32, bool, String)> {
+    let alt = |t: &str| match t {
+        "b" | "♭" | "降" => -1,
+        "#" | "♯" | "升" => 1,
+        _ => 0,
+    };
+    let raw = c[2].chars().next().unwrap();
+    let suffix = c.get(5).map(|m| m.as_str());
+    let has_diao = c.get(0).is_some_and(|m| m.as_str().contains(['调', '調']));
+    if raw.is_ascii_lowercase() && !has_diao {
+        return None;
+    }
+    let letter = raw.to_ascii_uppercase();
+    let alter = alt(&c[1]) + alt(&c[3]);
+    let minor = &c[4] == "m" || suffix == Some("小");
+    let key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
+    Some((fifths_of(letter, alter) - if minor { 3 } else { 0 }, minor, key))
+}
 /// 单字符路读出的音名组：可带前后升降号。
 /// 和弦行里的跳转记号：只认写全的（`Fine`、D 后带点的 `D.C.` / `D. C`），宽松写法在和弦行多是连写和弦的误检（`G/D C` → `DC`）。
 static CHORD_ROW_JUMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"D\s*\.\s*[CS]\b\.?|Fine(?:[^a-z]|$)").unwrap());
@@ -1442,6 +1627,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let crop = ink.strip(&zone, 0);
     let boxes = ocr.detect(&crop).unwrap_or_default();
     let mut lines: Vec<WordLine> = Vec::new();
+    let mut key_alone_boxes: Vec<WordLine> = Vec::new();
     // 各 det 框的逐字中心（页眉区按框找回来挂 `chars`）
     let mut line_chars: Vec<(Rect, Vec<crate::result::RegionChar>)> = Vec::new();
     let none = Claims::new(ink, std::iter::empty());
@@ -1468,6 +1654,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         // 首行谱头顶上的和弦行不是页眉
         // 调名紧跟拍号的（「Em4/4」「Em 3/4」）是调号拍号，不是和弦
         if top - (b.y + b.h) <= num_h * 3.0 && chords::is_annotation_line(&text) && !(KEY_BARE.is_match(&text) && METER.is_match(&text)) {
+            // 整框只是个调名的先留着：与拍号同排的是调号（青年诗歌 204「F」…「4/4（轻快）」），不是和弦
+            if KEY_ALONE.captures(&text).is_some_and(|c| bare_key(&c).is_some()) {
+                key_alone_boxes.push(WordLine { text, x: b.x, y: b.y, w: b.w, h: b.h });
+            }
             continue;
         }
         // 紧贴首行谱头顶的力度（「mf」读成「mt」、「(女声)mf」，issue 41）：括号里的声部说明去掉后只剩力度或两三个小写字母，是谱里的记号不是署名
@@ -1545,7 +1735,12 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let mut number: Option<(String, f64, f64)> = None;
     let mut key_found = false;
     let mut meter_bands: Vec<(f64, f64)> = Vec::new();
-    let key_boxes: Vec<WordLine> = lines.iter().filter(|k| KEY.is_match(&k.text)).cloned().collect();
+    // 不写「1=」的调名框（「D调」，青年诗歌 166）也算：紧贴着它的「4」是叠排拍号
+    let key_boxes: Vec<WordLine> = lines
+        .iter()
+        .filter(|k| KEY.is_match(&k.text) || KEY_BARE.captures(&k.text).or_else(|| KEY_ALONE.captures(&k.text)).is_some_and(|c| bare_key(&c).is_some()))
+        .cloned()
+        .collect();
     let mixed_word = lines.iter().any(|l| l.text.contains("混合拍"));
     for l in lines {
         // 书眉「青年诗歌—015」「青年诗歌073」「018青年诗歌」：书名带页码，不当标题、也不记曲号（是页码：13 首印在 18 页、53 首在 58 页；同 TS）
@@ -1577,19 +1772,10 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             key_found = true;
         }
         if !used {
-            if let Some(c) = KEY_BARE.captures(&l.text) {
-                let alt = |t: &str| match t {
-                    "b" | "♭" => -1,
-                    "#" | "♯" => 1,
-                    _ => 0,
-                };
-                let alter = alt(&c[1]) + alt(&c[3]);
-                let letter = c[2].chars().next().unwrap();
-                let minor = &c[4] == "m";
-                // 小调记关系大调的升降号数
-                score.fifths = fifths_of(letter, alter) - if minor { 3 } else { 0 };
+            if let Some((fifths, minor, key)) = KEY_BARE.captures(&l.text).and_then(|c| bare_key(&c)) {
+                score.fifths = fifths;
                 score.minor = minor;
-                score.key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
+                score.key = key;
                 used = true;
                 key_found = true;
             }
@@ -1649,20 +1835,16 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     }
     // 调名单独一框、拍号在同一排另一框（青年诗歌 79「Em/Bm」…「4/4」）：没读到调号时，与拍号同排、整框只是个调名（可带「/调名」）的认调号
     if !key_found {
-        if let Some(k) = rest.iter().position(|l| KEY_ALONE.is_match(&l.text) && meter_bands.iter().any(|&(a, b)| (l.y + l.h).min(b) - l.y.max(a) >= l.h.min(b - a) * 0.5)) {
-            let c = KEY_ALONE.captures(&rest[k].text).unwrap();
-            let alt = |t: &str| match t {
-                "b" | "♭" => -1,
-                "#" | "♯" => 1,
-                _ => 0,
-            };
-            let alter = alt(&c[1]) + alt(&c[3]);
-            let letter = c[2].chars().next().unwrap();
-            let minor = &c[4] == "m";
-            score.fifths = fifths_of(letter, alter) - if minor { 3 } else { 0 };
+        let beside_meter = |l: &WordLine| KEY_ALONE.captures(&l.text).is_some_and(|c| bare_key(&c).is_some()) && meter_bands.iter().any(|&(a, b)| (l.y + l.h).min(b) - l.y.max(a) >= l.h.min(b - a) * 0.5);
+        let found = match rest.iter().position(beside_meter) {
+            Some(k) => Some(rest.remove(k)),
+            None => key_alone_boxes.iter().find(|l| beside_meter(l)).cloned(),
+        };
+        if let Some(l) = found {
+            let (fifths, minor, key) = KEY_ALONE.captures(&l.text).and_then(|c| bare_key(&c)).unwrap();
+            score.fifths = fifths;
             score.minor = minor;
-            score.key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
-            rest.remove(k);
+            score.key = key;
         }
     }
     stacked_meter(ink, top, num_h, ocr, score);
@@ -1682,6 +1864,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
         }
         !note
     });
+    merge_split_title(&mut rest);
     let cs = credits(&rest, 0.0, w);
     let title = cs.iter().find(|c| c.kind == Some(CreditType::Title));
     if let Some(t) = title {

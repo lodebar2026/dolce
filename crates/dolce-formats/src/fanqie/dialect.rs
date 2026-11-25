@@ -84,7 +84,8 @@ pub struct EmitStyle {
     pub hidden_rest_no_lyric: Option<&'static str>,
     pub page_fields: bool,
     pub bare_translation_verses: bool,
-    pub no_auto_break: bool,
+    /// 不自动补减时线连断 `~` / `^`（诗歌本：识别结果里不要这两个记号，用户反馈）
+    pub no_auto_boundary: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -166,7 +167,7 @@ pub static TOMATO: DialectSpec = DialectSpec {
         hidden_rest_no_lyric: None,
         page_fields: false,
         bare_translation_verses: false,
-        no_auto_break: false,
+        no_auto_boundary: false,
     },
 };
 
@@ -226,7 +227,7 @@ pub static SHIGE: DialectSpec = DialectSpec {
         hidden_rest_no_lyric: Some("9"),
         page_fields: true,
         bare_translation_verses: true,
-        no_auto_break: true,
+        no_auto_boundary: true,
     },
 };
 

@@ -307,6 +307,9 @@ pub struct RecognizedScore {
     /// 谱后的「注：…」（注文折行的接续行并成一条），写出端记左下页文
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub footnotes: Vec<String>,
+    /// 谱后附段对不上第 1 段的音（按句、按总字数都对不上）时照印的行原样记下，写出端记曲末歌词（123 `W:`）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub post_lyrics: Vec<String>,
     /// 速度的拍单位（附点四分 `♩.=` 为 3/8）；缺省四分
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tempo_beat: Option<BeatUnit>,

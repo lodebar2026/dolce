@@ -9,9 +9,10 @@ static SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)(intro|verse
 static BRACKET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\[【][^\]】]*[\]】]").unwrap());
 /// 中文段落名，带不带圆括号都算（基督更美副歌行首下方印的「（副歌）」）。
 static CN_SECTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[(（]?\s*(副歌|主歌|前奏|间奏|尾奏|尾声|过门|引子|结束)\s*[)）]?").unwrap());
-/// 单个和弦记号：根音大写 + 可选升降号（前置后置都认）+ 性质 + 数字（不收单独的 1）+ sus/add + 转位低音。
+/// 单个和弦记号：根音大写 + 可选升降号（前置后置都认）+ 性质 + 扩展音数字 + sus/add + 转位低音。
+/// 数字只收和弦里有的（2 4 5 6 7 9 11 13 69，0 是读成零的减号圈）：「Em3」「G#31」的 3 是和弦底下三连音的数字粘进来的（青年诗歌 200、198）。
 static TOKEN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?(?:\d{2,}|[02-9])?(?:sus\d*|add\d*)?(?:/[#♯b♭]?[A-G][#♯b♭]?)?").unwrap());
+    LazyLock::new(|| Regex::new(r"^[#♯b♭]?[A-G][#♯b♭]?(?:maj|min|dim|aug|sus|add|m|M)?(?:13|11|69|[0245679])?(?:sus\d*|add\d*)?(?:/[#♯b♭]?[A-G][#♯b♭]?)?").unwrap());
 /// 跳转记号：字母恰好都是合法根音，切词前先抹掉。
 pub static JUMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)D\s*[.,·]\s*[CS]\s*[.,·]?(?:\s*al\s*[.,·]?\s*(?:Fine|Coda))?|\bFine\b|\bTo\s*Coda\b").unwrap());
 /// 调号 `1=C` 与拍号 `4/4`（连同左邻的裸根音）。
@@ -74,6 +75,10 @@ fn scan(s0: &str, x_at: Option<&dyn Fn(usize) -> f64>) -> Scan {
                 out.hit += n;
                 out.total += n;
                 i += n;
+                // 记号后面紧粘着的、和弦里没有的数字（连音数字）跳过，不算记号也不算残渣
+                while cs.get(i).is_some_and(|c| c.is_ascii_digit()) {
+                    i += 1;
+                }
             }
             None => {
                 out.total += 1;

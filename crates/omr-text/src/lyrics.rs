@@ -202,6 +202,77 @@ pub fn syllables(chars: &[Ch]) -> LyricRow {
     row
 }
 
+/// 音节以句读收住（「地，」「方？」「in.”」）：一句到此为止。
+pub fn phrase_end(text: &str) -> bool {
+    let t = text.trim_end_matches(['”', '’', ')', '）', '"', '\'']);
+    t.chars().last().is_some_and(|c| "，。、；：！？…,.;:!?".contains(c))
+}
+
+/// 按句读切成句，回各句的音节数（末尾没收住的残句也算一句）。
+pub fn phrase_lens<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut n = 0;
+    for t in texts {
+        n += 1;
+        if phrase_end(t) {
+            out.push(n);
+            n = 0;
+        }
+    }
+    if n > 0 {
+        out.push(n);
+    }
+    out
+}
+
+/// 附段按句对第 1 段：附段各句（`stanza`）依次对第 1 段开头若干句（`base`）。一组是附段连着的几句对第 1 段连着的几句
+/// （各段句读印法不同，逗号、顿号的位置不一），组内字数差不过 1、总差不过 3，附段的句要全对上。
+/// 取总差最小的，同差取分组最多的（对齐点越多，差错越关得住）。整段并成一组就是按总字数对。
+/// 整段只成一组（按总字数）时容差 2。附段收在第 1 段的哪一句后由 `ends` 定（`ends[j]`：第 1 段前 j 句之后能收——强句读或整行末）。
+/// 回各组 (第 1 段句的范围, 附段句的范围)；对不上回 `None`。
+pub fn align_phrases(base: &[usize], stanza: &[usize], ends: &[bool]) -> Option<Vec<(std::ops::Range<usize>, std::ops::Range<usize>)>> {
+    let (m, n) = (base.len(), stanza.len());
+    if n == 0 || m == 0 {
+        return None;
+    }
+    let cum = |v: &[usize]| std::iter::once(0).chain(v.iter().scan(0, |a, &x| { *a += x; Some(*a) })).collect::<Vec<usize>>();
+    let (cb, cs) = (cum(base), cum(stanza));
+    // best[i][j]：附段前 i 句对上第 1 段前 j 句的 (总差, −组数)；from 记上一格
+    let mut best: Vec<Vec<Option<(usize, i64)>>> = vec![vec![None; m + 1]; n + 1];
+    let mut from = vec![vec![(0usize, 0usize); m + 1]; n + 1];
+    best[0][0] = Some((0, 0));
+    for i in 0..n {
+        for j in 0..m {
+            let Some((c, g)) = best[i][j] else { continue };
+            for i2 in i + 1..=n {
+                for j2 in j + 1..=m {
+                    let d = (cs[i2] - cs[i]).abs_diff(cb[j2] - cb[j]);
+                    let whole = i == 0 && i2 == n;
+                    if d > if whole { 2 } else { 1 } || c + d > 3 {
+                        continue;
+                    }
+                    let cand = (c + d, g - 1);
+                    if best[i2][j2].is_none_or(|o| cand < o) {
+                        best[i2][j2] = Some(cand);
+                        from[i2][j2] = (i, j);
+                    }
+                }
+            }
+        }
+    }
+    // 附段全对上，取第 1 段对到的句数里最好的（同分取对得长的）
+    let j = (1..=m).filter(|&j| best[n][j].is_some() && ends.get(j).copied().unwrap_or(true)).min_by_key(|&j| (best[n][j].unwrap(), std::cmp::Reverse(j)))?;
+    let mut out = Vec::new();
+    let (mut i, mut j) = (n, j);
+    while i > 0 {
+        let (pi, pj) = from[i][j];
+        out.push((pj..j, pi..i));
+        (i, j) = (pi, pj);
+    }
+    out.reverse();
+    Some(out)
+}
+
 /// 音节对到音上：保序，每个音节取它后面还空着的音里横向最近的；后面没有音了的并进前一个音。
 /// 回每个音节挂的音的下标（一个音都没有时为空）。
 pub fn align(syl_xs: &[f64], note_xs: &[f64]) -> Vec<usize> {
@@ -227,6 +298,26 @@ pub fn align(syl_xs: &[f64], note_xs: &[f64]) -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn phrases_align_by_sentence() {
+        // 句式与第 1 段对不上、总数也差得远 → 对不上
+        assert!(super::align_phrases(&[7, 6, 7, 5], &[9, 9, 9, 9], &[]).is_none());
+        // 177：后半句读断法不同，并成一组照总数对上
+        let g = super::align_phrases(&[7, 6, 7, 5, 7, 8, 3, 12, 9, 3, 3, 3], &[7, 6, 7, 5, 7, 7, 7, 7, 3, 3, 3, 3], &[]).unwrap();
+        assert_eq!(&g[..5], &[(0..1, 0..1), (1..2, 1..2), (2..3, 2..3), (3..4, 3..4), (4..5, 4..5)]);
+        // 差一字关在组里
+        let g = super::align_phrases(&[7, 6, 7, 5], &[7, 5, 7, 5], &[]).unwrap();
+        assert_eq!(g, vec![(0..1, 0..1), (1..2, 1..2), (2..3, 2..3), (3..4, 3..4)]);
+        // 句读印法不同：两句并一句
+        let g = super::align_phrases(&[3, 4, 7], &[7, 7], &[]).unwrap();
+        assert_eq!(g, vec![(0..2, 0..1), (2..3, 1..2)]);
+        // 收不到强句读处的不算：只能收在第 2 句后
+        let g = super::align_phrases(&[3, 4, 7], &[3, 4], &[false, false, true, true]).unwrap();
+        assert_eq!(g, vec![(0..1, 0..1), (1..2, 1..2)]);
+        assert!(super::align_phrases(&[3, 4, 7], &[3], &[false, false, true, true]).is_none());
+        assert_eq!(super::phrase_lens(["每", "地，", "泪", "伤。", "残"]), vec![2, 2, 1]);
+    }
+
     use super::*;
 
     fn line(s: &str) -> Vec<Ch> {

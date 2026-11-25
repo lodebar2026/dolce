@@ -1107,7 +1107,14 @@ pub fn parse_lyric_body(ctx: &mut Ctx, src: &U16, start_column: usize) -> Vec<Ly
         }
         // 引号：左引号领起下一个字，右引号贴前一个字
         if c.is_some_and(|c| LYRIC_QUOTES.contains(c)) {
-            let is_open = c == Some('“') || c == Some('‘');
+            // 直引号 `"` 在词首（行首，或前面是空白、分词符、标点、并字括号）且紧跟着字母或汉字时也是左引号（`say,"Come`）
+            let word_start = i == start_column || {
+                let p = src[i - 1];
+                u16s::space(p) || u16s::ch(p).is_some_and(|p| p == d.word_separator || p == '}' || LYRIC_PUNCTUATION.contains(p))
+            };
+            let next_is_word = src.get(i + 1).is_some_and(|&u| ascii_letter_or_apos(u)) || code_point_at(src, i + 1).is_some_and(|(cp, _)| is_cjk(cp));
+            let ascii_open = c == Some('"') && word_start && next_is_word;
+            let is_open = c == Some('“') || c == Some('‘') || ascii_open;
             if is_open {
                 let start = i;
                 i += 1;
@@ -1115,9 +1122,16 @@ pub fn parse_lyric_body(ctx: &mut Ctx, src: &U16, start_column: usize) -> Vec<Ly
                     i += 1;
                 }
                 if i < src.len() {
-                    let text = unit_str(ch) + &unit_str(src[i]);
-                    push(&mut out, ctx, text, start, i + 1 - start);
-                    i += 1;
+                    // 引号领起的英文单词整个算一个音节
+                    let mut end = i + 1;
+                    if ascii_letter_or_apos(src[i]) {
+                        while end < src.len() && ascii_letter_or_apos(src[end]) {
+                            end += 1;
+                        }
+                    }
+                    let text = unit_str(ch) + &u16s::text(&src[i..end]);
+                    push(&mut out, ctx, text, start, end - start);
+                    i = end;
                 }
             } else {
                 trail(&mut out, unit_str(ch));

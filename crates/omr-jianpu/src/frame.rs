@@ -344,6 +344,7 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         rows.retain(|_| *it.next().unwrap());
     }
     rows.sort_by(|a, b| a.band.top0.total_cmp(&b.band.top0));
+    settle_high_dashes(&mut rows);
     settle_dots(&mut rows);
     settle_bars(ink, &mut rows);
     drop_bracket_cells(ink, &mut rows);
@@ -471,6 +472,48 @@ fn settle_dots(rows: &mut [RowFrame]) {
         }
     }
 }
+
+/// 印得偏上的增时线与附点（青年诗歌 192：「—」在数字高的上两成、附点也偏上，过不了 [`classify`] 的居中判据，整页的增时线全丢）：
+/// 本页有几道（≥ [`HIGH_DASH_MIN`]）形状是增时线、都落在带里上部同一高度（相差不过 [`HIGH_DASH_SPREAD`] 字号）的扁横，按本页的排法认增时线；
+/// 同一高度上下的近圆小块认附点。按本页统计定，不设书的常数。
+fn settle_high_dashes(rows: &mut [RowFrame]) {
+    let rel = |r: &RowFrame, c: &Cell| ((c.y0 + c.y1) as f64 / 2.0 - r.band.top(c.cx())) / r.h();
+    let dash_shape = |r: &RowFrame, c: &Cell| {
+        let h = r.h();
+        c.kind == CellKind::Other && c.h() as f64 <= h * 0.3 && c.w() as f64 >= h * 0.28 && c.w() as f64 >= c.h() as f64 * DASH_FLAT && (0.0..=0.25).contains(&rel(r, c))
+    };
+    let rels: Vec<f64> = rows.iter().flat_map(|r| r.cells.iter().filter(|c| dash_shape(r, c)).map(|c| rel(r, c))).collect();
+    if rels.len() < HIGH_DASH_MIN {
+        return;
+    }
+    let lo = rels.iter().copied().fold(f64::MAX, f64::min);
+    let hi = rels.iter().copied().fold(f64::MIN, f64::max);
+    if hi - lo > HIGH_DASH_SPREAD {
+        return;
+    }
+    let mid = median(&rels, 0.0);
+    for r in rows.iter_mut() {
+        let h = r.h();
+        let band = r.band;
+        let rel_of = |c: &Cell| ((c.y0 + c.y1) as f64 / 2.0 - band.top(c.cx())) / h;
+        for c in r.cells.iter_mut() {
+            if c.kind != CellKind::Other {
+                continue;
+            }
+            let (cw, ch, q) = (c.w() as f64, c.h() as f64, rel_of(c));
+            if ch <= h * 0.3 && cw >= h * 0.28 && cw >= ch * DASH_FLAT && (q - mid).abs() <= HIGH_DASH_SPREAD {
+                c.kind = CellKind::Dash;
+            } else if cw <= h * 0.42 && ch <= h * 0.42 && cw >= h * 0.08 && ch >= h * 0.08 && cw <= ch * 1.6 && ch <= cw * 1.6 && (q - mid).abs() <= HIGH_DASH_SPREAD {
+                c.kind = CellKind::Dot;
+            }
+        }
+    }
+}
+
+/// 认偏上的增时线要本页至少有这么多道。
+const HIGH_DASH_MIN: usize = 4;
+/// 偏上的增时线彼此高低相差不过这么多字号（以带高计）。
+const HIGH_DASH_SPREAD: f64 = 0.12;
 
 /// 说不准的短横宽不到本页长增时线中位宽的这么多倍才改判附点。
 const DOT_OF_DASH: f64 = 0.4;

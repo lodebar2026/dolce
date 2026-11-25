@@ -119,7 +119,7 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     marks::segno(ink, &rows, &mut notes, num_h);
     // 竖墨段整页扫一遍，歌词与各行上方带按各自的门槛（行高 × 2.2）挑
     let vruns = text::VRuns::scan(ink, rows.iter().map(|r| r.h()).fold(f64::INFINITY, f64::min) * 2.2);
-    text::lyrics(ink, &rows, &vruns, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes);
+    text::lyrics(ink, &rows, &vruns, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes, &mut score.post_lyrics);
     // 下面的上方带按歌词区定界，要等歌词读齐；页眉只写页眉那几样、跟上方带互不相干，它缺的 OCR 不拦上方带，
     // 两样同一轮送检（页眉先检测、再读检出的行，常比歌词晚一轮齐）
     let lyrics_done = !ocr.stalled();

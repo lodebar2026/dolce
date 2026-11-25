@@ -436,8 +436,10 @@ pub fn recognized_to_doc(score: &RecognizedScore) -> Built {
     if let Some(t) = &title {
         song.work.title = Some(t.clone());
     }
-    if !score.header_notes.is_empty() {
-        song.remarks = Some(score.header_notes.clone());
+    // 页眉说明与对不上音的谱后附段（照印的行，123 读写同为 `W:` / `N:` 落的 remarks）
+    let remarks: Vec<String> = score.header_notes.iter().chain(&score.post_lyrics).cloned().collect();
+    if !remarks.is_empty() {
+        song.remarks = Some(remarks);
     }
     if truthy(&score.number) {
         song.work.number = score.number.clone();

@@ -106,10 +106,12 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
     let med_h = dolce_omr_core::geom::median(&hs, row.h());
     // 从首个数字格起，贴着（隔不过 2 像素）的格并成块
     let mut blocks: Vec<(usize, usize, Rect)> = Vec::new();
+    // 段落名后的冒号（「前奏：」，青年诗歌 15）；冒号两点粘成一小竖块、没认成冒号的（落在 Other）也算
+    let colonish = |c: &Cell| c.kind == CellKind::Colon || (c.kind == CellKind::Other && c.h() <= med_h * 0.6 && c.w() <= med_h * 0.4);
     let mut i = first;
-    while i < cells.len() && matches!(cells[i].kind, CellKind::Digit | CellKind::Colon) {
-        // 段落名后的冒号（「前奏：」，青年诗歌 15）跳过，接着往后收
-        if cells[i].kind == CellKind::Colon {
+    // 其后的数字格隔着增时线、小节线照样收（只拿来数「其后三个以上的数字格」）
+    while i < cells.len() {
+        if cells[i].kind != CellKind::Digit {
             i += 1;
             continue;
         }
@@ -122,7 +124,8 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
         blocks.push((i, j, r));
         i = j + 1;
     }
-    let square = |r: &Rect| r.w >= r.h * 0.85 && r.h >= med_h * 0.95;
+    // 字比粗体数字略矮、顶又被行带截过的（「前奏：」个人上传 3797，43 对 48）：高到数字的八成就算
+    let square = |r: &Rect| r.w >= r.h * 0.85 && r.h >= med_h * 0.8;
     let k = blocks.iter().take_while(|b| square(&b.2)).count();
     if k == 0 || k >= blocks.len() {
         return None;
@@ -139,12 +142,14 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
     let pad = med_h * 0.3;
     let roi = Rect::new((r.x - pad).max(0.0), (r.y - pad).max(0.0), r.w + pad * 2.0, r.h + pad * 2.0);
     let text: String = ocr.read_line(&ink.crop_bin(&roi)).ok()?.into_iter().map(|c| c.ch).collect::<String>().split_whitespace().collect();
+    // 框边带进来的冒号（「前奏：」）不算字
+    let text = text.trim_end_matches([':', '：']).to_string();
     let n = text.chars().count();
     if !(1..=4).contains(&n) || !text.chars().all(dolce_omr_text::chars::is_han) {
         return None;
     }
     let end = blocks[k - 1].1 + 1;
-    Some((if cells.get(end).is_some_and(|c| c.kind == CellKind::Colon) { end + 1 } else { end }, text))
+    Some((if cells.get(end).is_some_and(colonish) { end + 1 } else { end }, text))
 }
 
 /// 横墨是一块字形的顶横（下一行数字「5」「7」的顶、「2」「3」的顶弧）：它所在的连通块顶不比这道横高出半个字号（逐列量时侧边列的顶比弧顶低）、往下伸出 0.4 字号以上。
@@ -211,7 +216,11 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
     };
     let mut bars: Vec<&Cell> = Vec::new();
     let mut last_bar_x1: Option<i64> = None;
+    let dump = std::env::var("OMR_CELLS").is_ok();
     for &c in &cells {
+        if dump {
+            eprintln!("格 {:?} x{}-{} y{}-{} {}x{} 字号{:.0}", c.kind, c.x0, c.x1, c.y0, c.y1, c.w(), c.h(), h);
+        }
         match c.kind {
             CellKind::Digit => {
                 let d = read[di];

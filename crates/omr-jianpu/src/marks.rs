@@ -553,8 +553,14 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
             }
         }
         // 延长记号：拱起的小弧，弧下居中扣一个点，再下面紧跟着数字；只罩一个音
-        if b.w >= h * 0.5 && b.w <= h * 1.6 && b.h <= h * 0.7 && ratio >= 1.3 && arched(ink, b, h) {
-            let dot = dots.iter().find(|o| !used.contains(&o.id) && o.id != k.id && (o.cx - b.cx()).abs() <= h * 0.25 && o.rect.y >= b.y && o.rect.bottom() <= b.bottom() + h * 0.4);
+        // 尖顶、拱得高的（青年诗歌 201，弧高近一个字号、宽高比 1.25）：点扣在弧脚之间（点心落在弧的下半截、点顶不低过弧脚）才收；
+        // 点整个在弧脚以下的是和弦字母「A」底下的高音点（个人上传 3797）
+        let flat_arc = b.h <= h * 0.7 && ratio >= 1.3;
+        let tall_arc = b.h <= h * 1.2 && ratio >= 0.9;
+        if b.w >= h * 0.5 && b.w <= h * 1.6 && (flat_arc || tall_arc) && arched(ink, b, h) {
+            let dot = dots.iter().find(|o| {
+                !used.contains(&o.id) && o.id != k.id && (o.cx - b.cx()).abs() <= h * 0.25 && o.rect.y >= b.y && o.rect.bottom() <= b.bottom() + h * 0.4 && (flat_arc || (o.cy >= b.y + b.h * 0.5 && o.rect.y <= b.bottom()))
+            });
             let Some(dot) = dot else { continue };
             let owner = out.nums.iter().position(|n| n.digit != RHYTHM_DIGIT && (n.bbox.cx() - b.cx()).abs() <= h * 0.4 && n.bbox.y - dot.rect.bottom() >= -h * 0.1 && n.bbox.y - dot.rect.bottom() <= h * 0.7);
             let Some(i) = owner else { continue };

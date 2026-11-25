@@ -634,6 +634,24 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
             if !hook {
                 continue;
             }
+            // 长而平的延音弧（青年诗歌 206「2 - - - | 2 - -」）：弧顶那段也够长，弧脚往下弯像立脚；但弧过了这段两头还往外、往下接着走，
+            // 房子的括线到头是直角（左端立脚下垂，外边没墨）。从两头沿笔画往外追（每列在上一列墨顶上 2、下 4 像素内找墨），
+            // 两头都连着走出 0.3 字号、且往下落了的是弧；挨着却不相连的数字、小节线追不上来
+            let beyond = |from: f64, dir: f64| {
+                let steps = (num_h * 0.3).round().max(2.0) as i64;
+                let mut cy = b.y as i64;
+                for k in 1..=steps {
+                    let x = (from + dir * k as f64).round() as i64;
+                    match (cy - 2..=cy + 4).find(|&y| ink.at(x, y)) {
+                        Some(y) => cy = y,
+                        None => return false,
+                    }
+                }
+                cy > b.y as i64
+            };
+            if beyond(b.x, -1.0) && beyond(b.right() - 1.0, 1.0) {
+                continue;
+            }
             let mut near: Vec<&Rect> = ink
                 .comps()
                 .iter()

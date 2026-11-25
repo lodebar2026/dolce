@@ -744,18 +744,18 @@ fn write_measure_body<'a>(mea: &'a Measure, from: usize, to: usize, line: &mut L
         }
         // 自动补的连断：两边都带减时线才有线可连断
         if let Some((pb, pbeat)) = prev {
-            if st.auto_boundaries && pb > 0 && beams > 0 && !p.is_some_and(|p| st.plan.in_tuplet.contains(&p)) {
+            if st.auto_boundaries && !d.emit.no_auto_boundary && pb > 0 && beams > 0 && !p.is_some_and(|p| st.plan.in_tuplet.contains(&p)) {
                 let same_beat = floor(pbeat) == floor(beat);
                 if group_beats != 1.0 {
                     let g = floor(beat / group_beats);
                     if floor(pbeat / group_beats) != g {
-                        if same_beat && !d.emit.no_auto_break {
+                        if same_beat {
                             line.push("^".into());
                         }
                     } else if floor(pbeat - g * group_beats) != floor(beat - g * group_beats) {
                         line.push("~".into());
                     }
-                } else if syncopated && pb != beams && !same_beat && !d.emit.no_auto_break {
+                } else if syncopated && pb != beams && !same_beat {
                     line.push("^".into());
                 }
             }
@@ -1041,7 +1041,11 @@ fn lyric_token(l: &Lyric) -> String {
         return if tail.is_empty() { String::new() } else { format!("{{{tail}}}") };
     }
     let ascii_word = core.chars().all(|c| c.is_ascii_alphabetic() || c == '\'');
-    let quote_one = (core.starts_with('“') || core.starts_with('‘')) && is_cjk_one(&core[core.chars().next().unwrap().len_utf8()..]);
+    // 左引号、左括号领起的单个汉字，左引号领起的英文单词，也裸写（解析时左引号、左括号领起后一个音节；用户反馈「{“我}」不要括号）
+    let lead = core.chars().next().unwrap();
+    let rest = &core[lead.len_utf8()..];
+    let rest_word = !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphabetic() || c == '\'') && rest.starts_with(|c: char| c.is_ascii_alphabetic());
+    let quote_one = ("“‘\"".contains(lead) && (is_cjk_one(rest) || rest_word)) || ("(（".contains(lead) && is_cjk_one(rest));
     let plain = is_cjk_one(&core) || ascii_word || quote_one;
     (if plain { core } else { format!("{{{core}}}") }) + &tail
 }
@@ -1167,6 +1171,41 @@ fn is_bilingual_pairs(slots: &[Slot], specs: &[LyricSpec]) -> bool {
             has_latin(&t) && !has_han(&t)
         }
     })
+}
+
+/// 带段号的行下面跟着不带段号的续行（青年诗歌 178「1./无/2./无」、204「一/无/二/无」：同一段反复时第二遍唱的词印在下一行）：
+/// 续行跟上一个带段号的行同号（用户定 `C1 C1 C2 C2`）。回 段号 → (写出的号, 管它的那行的段号)；不是这种排法回空。
+/// 只认整齐的排法：至少两个带段号的行，各带同样多（≥1）的续行。只用在行数相同的系统上。
+fn continuation_verses(part: &Part) -> HashMap<u64, (f64, f64)> {
+    let mut labeled: Vec<(f64, bool)> = vec![];
+    for m in &part.measures {
+        for el in &m.elements {
+            let ls = match el {
+                Element::Chord(c) => c.lyrics.as_ref(),
+                Element::Space(s) => s.lyrics.as_ref(),
+            };
+            for l in ls.into_iter().flatten() {
+                if l.number_to.is_some_and(|t| t != l.number) {
+                    return HashMap::new();
+                }
+                let has = l.verse_label.as_deref().is_some_and(|v| !v.is_empty());
+                match labeled.iter_mut().find(|(n, _)| *n == l.number) {
+                    Some((_, h)) => *h |= has,
+                    None => labeled.push((l.number, has)),
+                }
+            }
+        }
+    }
+    labeled.sort_by(|a, b| js::ordering(a.0 - b.0));
+    let heads = labeled.iter().filter(|(_, h)| *h).count();
+    if heads < 2 || heads == labeled.len() || !labeled[0].1 || !labeled.len().is_multiple_of(heads) {
+        return HashMap::new();
+    }
+    let k = labeled.len() / heads;
+    if labeled.iter().enumerate().any(|(i, (_, h))| *h != i.is_multiple_of(k)) {
+        return HashMap::new();
+    }
+    labeled.iter().enumerate().map(|(i, (n, _))| (n.to_bits(), ((i / k + 1) as f64, labeled[i - i % k].0))).collect()
 }
 
 /// `bare`：写不带段号的 `C:`；`as_num`：照这个段号写（中英两两同号）
@@ -1383,6 +1422,7 @@ pub fn emit_fanqie_song(src: &Song, dialect: Dialect, opts: EmitFanqieOptions) -
             }
         })
         .collect();
+    let conts: Vec<Option<HashMap<u64, (f64, f64)>>> = song.parts.iter().map(|p| Some(continuation_verses(p)).filter(|m| !m.is_empty())).collect();
     for ri in 0..ranges.len() {
         let mut group: Vec<String> = vec![];
         // 这一组只有第一声部：写 `Q:`，同原文
@@ -1436,9 +1476,20 @@ pub fn emit_fanqie_song(src: &Song, dialect: Dialect, opts: EmitFanqieOptions) -
             let specs = lyric_specs(&slots, infos);
             let translation = d.emit.bare_translation_verses && is_translation_set(&slots, &specs);
             let pairs = !translation && d.emit.bare_translation_verses && is_bilingual_pairs(&slots, &specs);
+            // 段号按系统内的行序编：行数不同的系统（178 后面只有两行的）照常写
+            let cont = if d.emit.bare_translation_verses && !translation && !pairs { conts[pi].as_ref().filter(|c| c.len() == specs.len()) } else { None };
             for spec in &specs {
                 let bare = translation || (specs.len() == 1 && spec.from == 1.0 && spec.to == 1.0);
-                if let Some(text) = lyric_line(&slots, spec, bare, d, if pairs { Some((spec.from / 2.0).ceil()) } else { None }) {
+                let mut spec = spec.clone();
+                let mut as_num = if pairs { Some((spec.from / 2.0).ceil()) } else { None };
+                if let Some(&(num, head)) = cont.and_then(|c| c.get(&spec.from.to_bits())) {
+                    as_num = Some(num);
+                    // 续行照抄本系统里管它的那行的段号标签
+                    if spec.label.is_none() && head != spec.from {
+                        spec.label = specs.iter().find(|s| s.from == head).and_then(|s| s.label.clone());
+                    }
+                }
+                if let Some(text) = lyric_line(&slots, &spec, bare, d, as_num) {
                     group.push(text);
                 }
             }
