@@ -392,6 +392,7 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
         }
         out.nums[i].accidental = Some(kind);
         used.push(id);
+        out.mark_ink.push(id);
     }
 
     // 倚音：小一号的数字，底边贴着行带顶，底下压着减时线，右边紧跟着主音

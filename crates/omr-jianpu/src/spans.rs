@@ -97,11 +97,13 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
     let tol = JoinTol { max_gap: (h * 0.45) as i64, dy: h * 0.12, dy_per_gap: 0.35, span: (h * 0.3).max(3.0) as usize };
     let strokes: Vec<Stroke> = join_all(raw, tol, &|_, _| true);
     arc_dots(ink, row, rn, &strokes, ya);
-    // 候选弧：(左端音, 右端音, 宽, 弧顶中点)
+    // 候选弧：(左端音, 右端音, 宽, 弧顶中点) 与对应的笔画下标
     let mut found: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
+    let mut found_strokes: Vec<Vec<usize>> = Vec::new();
     let mut flats: Vec<(usize, usize, f64, (f64, f64))> = Vec::new();
+    let mut flats_strokes: Vec<Vec<usize>> = Vec::new();
     let dbg = std::env::var("OMR_ARC_DEBUG").is_ok();
-    for s in &strokes {
+    for (si, s) in strokes.iter().enumerate() {
         if dbg && s.width() >= h * 0.3 {
             let sh = s.shape();
             let (arch, up) = sh.arch();
@@ -150,6 +152,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
                         for (p, q) in [(i, m), (m, j)] {
                             if !found.iter().any(|f| f.0 == p && f.1 == q) {
                                 found.push((p, q, 0.0, ((ax + bx) / 2.0, ay.min(by))));
+                                found_strokes.push(vec![si]);
                             }
                         }
                     }
@@ -170,6 +173,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
                     if let (Some(i), Some(j)) = (near(ax), near(bx)) {
                         if j >= i + 2 {
                             flats.push((i, j, s.width(), ((ax + bx) / 2.0, top)));
+                            flats_strokes.push(vec![si]);
                         }
                     }
                 }
@@ -213,6 +217,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
                     for (p, q) in [(i, i + 1), (i + 1, j)] {
                         if !found.iter().any(|f| f.0 == p && f.1 == q) {
                             found.push((p, q, 0.0, ((ax + bx) / 2.0, ay.min(by))));
+                            found_strokes.push(vec![si]);
                         }
                     }
                     // 谷底正上方还有墨（外弧从上面过）：是外弧底下套着 V 形两道内弧（迦南 1940「((3 (2) 2))」，笔追的是内弧），外弧也留
@@ -225,15 +230,16 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             }
         }
         found.push((i, j, s.width(), ((ax + bx) / 2.0, ay.min(by) - arch)));
+        found_strokes.push(vec![si]);
     }
-    // 中间断开、缺口里嵌小号数字的连音弧「⌒3⌒」（诗歌本 1）：左半往右升、右半往右落，缺口一个字号内、两半里端高低相近——拼成一道，只留作多连音候选
+    // 中间断开、缺口里嵌小号数字的连音弧「⌒3⌒」（诗歌本 1）：左半往右升、右半往右落，缺口两个半字号内（青年诗歌 192 缺口里的小 3 两边留白宽）、两半里端高低相近——拼成一道，只留作多连音候选
     {
         let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
-        let shapes: Vec<_> = strokes.iter().filter(|s| s.width() >= h * 0.5).map(|s| s.shape()).filter(|sh| sh.thick <= h * 0.2).collect();
-        for l in &shapes {
-            for r in &shapes {
+        let shapes: Vec<_> = strokes.iter().enumerate().filter(|(_, s)| s.width() >= h * 0.5).map(|(si, s)| (si, s.shape())).filter(|(_, sh)| sh.thick <= h * 0.2).collect();
+        for &(li, ref l) in &shapes {
+            for &(ri, ref r) in &shapes {
                 let gap = r.a.0 - l.b.0;
-                if gap < 0.0 || gap > h || l.a.1 - l.b.1 < h * 0.1 || r.b.1 - r.a.1 < h * 0.1 || (l.b.1 - r.a.1).abs() > h * 0.5 {
+                if gap < 0.0 || gap > h * 2.5 || l.a.1 - l.b.1 < h * 0.1 || r.b.1 - r.a.1 < h * 0.1 || (l.b.1 - r.a.1).abs() > h * 0.5 {
                     continue;
                 }
                 let (ay, by) = (l.a.1 + ya as f64, r.b.1 + ya as f64);
@@ -243,6 +249,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
                 if let (Some(i), Some(j)) = (near(l.a.0), near(r.b.0)) {
                     if j >= i + 2 {
                         flats.push((i, j, r.b.0 - l.a.0, ((l.b.0 + r.a.0) / 2.0, (l.b.1 + r.a.1) / 2.0 + ya as f64)));
+                        flats_strokes.push(vec![li, ri]);
                     }
                 }
             }
@@ -282,11 +289,14 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             }
             if !has_l && !has_r && mid >= (c - b) * 0.5 * 0.6 {
                 found.push((i + 1, i + 2, 0.0, ((b + c) / 2.0, my)));
+                found_strokes.push(Vec::new());
                 if l >= h * 0.3 {
                     found.push((i, i + 1, 0.0, ((cx(i) + b) / 2.0, my)));
+                    found_strokes.push(Vec::new());
                 }
                 if r >= h * 0.3 {
                     found.push((i + 2, j, 0.0, ((c + cx(j)) / 2.0, my)));
+                    found_strokes.push(Vec::new());
                 }
                 continue;
             }
@@ -301,9 +311,11 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             };
             if add_l {
                 found.push((i, i + 1, 0.0, ((cx(i) + b) / 2.0, my)));
+                found_strokes.push(Vec::new());
             }
             if add_r {
                 found.push((i + 2, j, 0.0, ((c + cx(j)) / 2.0, my)));
+                found_strokes.push(Vec::new());
             }
             continue;
         }
@@ -330,7 +342,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         let mx = (cx(i) + cx(j)) / 2.0;
         let numbered = ink.comps().iter().any(|k| {
             let b = &k.rect;
-            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.8 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
+            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.9 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
         });
         let side = |a: f64, b: f64| (a.ceil() as i64..=b.floor() as i64).filter(|&x| two_runs(x)).count() as f64;
         let (l, r) = (side((m - h).max((cx(i) + m) / 2.0), m - 1.0), side(m + 1.0, (m + h).min((m + cx(j)) / 2.0)));
@@ -339,19 +351,27 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         if l.max(r) >= h * 0.3 && l.min(r) >= h * 0.2 {
             found.push((i, i + 1, 0.0, ((cx(i) + m) / 2.0, my)));
+            found_strokes.push(Vec::new());
             found.push((i + 1, j, 0.0, ((m + cx(j)) / 2.0, my)));
+            found_strokes.push(Vec::new());
         } else if l >= h * 0.3 && r < h * 0.1 && !numbered {
             // 只一侧分出内弧（迦南 2252「(2_ (3_) 3)」：外弧下只有中间到末音那一道延音线）
             found.push((i, i + 1, 0.0, ((cx(i) + m) / 2.0, my)));
+            found_strokes.push(Vec::new());
         } else if r >= h * 0.3 && l < h * 0.1 && !numbered {
             found.push((i + 1, j, 0.0, ((m + cx(j)) / 2.0, my)));
+            found_strokes.push(Vec::new());
         }
     }
     // 多连音：弧顶上（或嵌在弧顶里）立着一个小号数字，读出来正是弧罩着的音数——组里各音记同一份比例，不再当圆滑线
     let mut tuplets: Vec<usize> = Vec::new();
     let n_arcs = found.len();
-    let flats: Vec<_> = flats.into_iter().filter(|f| !found.iter().any(|g| g.0 == f.0 && g.1 == f.1)).collect();
-    found.extend(flats);
+    for (f, fs) in flats.into_iter().zip(flats_strokes) {
+        if !found.iter().any(|g| g.0 == f.0 && g.1 == f.1) {
+            found.push(f);
+            found_strokes.push(fs);
+        }
+    }
     for (fi, &(i, j, _, (mx, my))) in found.iter().enumerate() {
         let cnt = j - i + 1;
         if !(3..=7).contains(&cnt) || rn.nums[i..=j].iter().any(|n| n.tuplet.is_some()) {
@@ -359,7 +379,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         let cand = ink.comps().iter().find(|k| {
             let b = &k.rect;
-            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.8 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
+            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.9 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
         });
         // 数字压在弧（括线）顶上、与弧粘成一块的（第一声呼求前奏「⌐3⌐」）：没有单独的块，就在弧顶居中开一个字宽的窗读，
         // 窗里两侧的弧墨读成横杠，只看读出的数字
@@ -377,7 +397,10 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         if !ok {
             continue;
         }
-        // 连音数字先被记号段当成了倚音（赞美诗歌 936「⌒3⌒」）：摘掉
+        // 连音数字先被记号段当成了倚音（赞美诗歌 936「⌒3⌒」）：摘掉；记进 mark_ink 免得上方带当成和弦读
+        if let Some(k) = cand {
+            rn.mark_ink.push(k.id);
+        }
         for n in rn.nums.iter_mut() {
             n.grace.retain(|g| !(g.bbox.right() > rect.x && g.bbox.x < rect.right() && g.bbox.bottom() > rect.y && g.bbox.y < rect.bottom()));
         }
@@ -389,12 +412,14 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         tuplets.push(fi);
     }
     let tuplet_spans: Vec<(usize, usize)> = tuplets.iter().filter(|&&fi| fi >= n_arcs).map(|&fi| (found[fi].0, found[fi].1)).collect();
+    let mut confirmed_strokes: Vec<usize> = Vec::new();
     for (fi, (i, j, _, _)) in found.into_iter().enumerate() {
-        if tuplets.contains(&fi) || fi >= n_arcs {
+        let is_tup = tuplets.contains(&fi);
+        if (!is_tup && fi >= n_arcs) || (!is_tup && tuplet_spans.iter().any(|&(ti, tj)| i >= ti && j <= tj && j - i < tj - ti)) {
             continue;
         }
-        // 拼出来的连音括线认了，它的半截不再当弧（「⌒3⌒」右半自己也罩得住两个音）
-        if tuplet_spans.iter().any(|&(ti, tj)| i >= ti && j <= tj && j - i < tj - ti) {
+        confirmed_strokes.extend(&found_strokes[fi]);
+        if is_tup {
             continue;
         }
         let (a, b) = (&rn.nums[i], &rn.nums[j]);
@@ -405,6 +430,29 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         } else {
             rn.nums[i].slur_start += 1;
             rn.nums[j].slur_stop += 1;
+        }
+    }
+    // 已认出的弧与连音括线（含端头粘着高音点、被数字劈成两半的半弧）：不让上方带误读成和弦残渣（青年诗歌 178、200）。
+    // 只遮墨过半落在笔画上的块：顶上挨着和弦字的块不遮；和弦字自己被当成弧的（青年诗歌 53「Am」的 m 拱顶）竖腿占了大半，也不遮
+    for &si in &confirmed_strokes {
+        let s = &strokes[si];
+        for k in ink.comps() {
+            if k.rect.right() <= s.x0 as f64 || k.rect.x >= s.x1() as f64 || k.rect.bottom() < (s.top() as i64 + ya) as f64 || k.rect.y > (s.bottom() as i64 + ya) as f64 || k.rect.h > h * 1.1 || rn.mark_ink.contains(&k.id) {
+                continue;
+            }
+            let xa = (k.rect.x.floor() as i64).max(s.x0);
+            let xb = (k.rect.right().ceil() as i64).min(s.x1());
+            let mut local_top = i64::MAX;
+            let mut on = 0usize;
+            for x in xa..=xb {
+                let (c0, c1) = s.cols[(x - s.x0) as usize];
+                let (gy0, gy1) = (c0 as i64 + ya, c1 as i64 + ya);
+                local_top = local_top.min(gy0);
+                on += (gy0..=gy1).filter(|&y| ink.owns(k, x, y)).count();
+            }
+            if on as f64 >= k.area * 0.5 && k.rect.y >= local_top as f64 - 3.0 {
+                rn.mark_ink.push(k.id);
+            }
         }
     }
     halves
@@ -552,12 +600,16 @@ fn arc_dots(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, strokes: &[Stroke], ya
             if std::env::var("OMR_DOT_DEBUG").is_ok() && area >= 4 && touch && !edge {
                 eprintln!("  弧点 音x{:.0} 团{bw}x{bh} 实{:.2} 隔{gap} 点宽{dot_w}", cx, area as f64 / (bw * bh));
             }
-            // 挂在括线、弧端竖钩下的点（「⌐3⌐」三连音括线两端，第一声呼求前奏）：团是棒棒糖形——底下一个本行点那么宽（九成以上，弧端的笔尖窄）的方块实而圆，上面是比点窄一半的细颈
-            let lolly = bh > bw * 1.65 && bw >= dot_w * 0.9 && {
+            // 挂在括线、弧端竖钩下的点（「⌐3⌐」三连音括线两端，第一声呼求前奏；青年诗歌 200 弯钩下的「1̇」）：团是棒棒糖形——
+            // 底下一个本行点那么宽（七成半以上，弧端的笔尖窄）的方块实而圆，上面是比点窄一半的细颈。
+            // 圆点中段总有几行墨满一个点宽；圆滑线往下收的笔尖斜着走，外框虽宽、至多一行凑到点宽，上下马上收窄（青年诗歌 178「(6,. 1) (2 3)」）
+            let lolly = bh > bw * 1.3 && bw >= dot_w * 0.75 && {
                 let (xa0, xa1) = (xa + x0 as i64, xa + x1 as i64);
-                let head = (fb - bw.round() as i64 + 1..=fb).map(|y| (xa0..=xa1).filter(|&x| ink.at(x, y)).count()).sum::<usize>() as f64;
+                let rows: Vec<f64> = (fb - bw.round() as i64 + 1..=fb).map(|y| (xa0..=xa1).filter(|&x| ink.at(x, y)).count() as f64).collect();
+                let head: f64 = rows.iter().sum();
+                let full = rows.iter().filter(|&&v| v >= dot_w * 0.8).count();
                 let neck: Vec<f64> = (ft..fb - bw.round() as i64).map(|y| (xa0..=xa1).filter(|&x| ink.at(x, y)).count() as f64).collect();
-                head >= bw * bw * 0.7 && !neck.is_empty() && dolce_omr_core::geom::median(&neck, 0.0) <= bw * 0.5
+                head >= bw * bw * 0.7 && full >= 2 && !neck.is_empty() && dolce_omr_core::geom::median(&neck, 0.0) <= bw * 0.5
             };
             // 夹在弧脚与数字顶之间、上下都粘着的点（青年诗歌 5「3̇⌒」）：团连着弧墨量，墨略稀；宽正是本行点宽、不比宽高出四成就收
             let snug = gap < 1.0 && bw >= dot_w * 0.9 && bw <= dot_w * 1.2 && bh <= bw * 1.4 && area as f64 >= bw * bh * 0.6;
