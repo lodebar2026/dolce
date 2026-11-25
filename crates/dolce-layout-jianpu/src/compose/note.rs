@@ -236,7 +236,7 @@ pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: 
     }
 
     if let Some(id) = it.id {
-        g.id = Some(Identity { id: Some(eid(id)), pass: c.pass.map(|p| p as u32), ..ident(IdentityKind::Note) });
+        g.id = Some(Identity { id: Some(eid(id)), pass: c.pass.map(|p| p as u32), slot: c.slot, ..ident(IdentityKind::Note) });
     }
     root.push(g);
     has_num.then(|| root.k.len() - 1)

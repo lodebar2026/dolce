@@ -223,6 +223,7 @@ fn same_key(a: f64, b: f64) -> bool {
 pub struct VoiceArgs<'b> {
     pub lyrics: &'b [LyricLine],
     pub passes: Option<&'b [f64]>,
+    pub slot0: Option<(u32, u32)>,
     pub y: f64,
     pub items: &'b [PlacedItem],
     pub underlines: &'b [PlacedUnderline],
@@ -239,6 +240,7 @@ impl<'b> VoiceArgs<'b> {
         VoiceArgs {
             lyrics: &v.voice.line.lyrics,
             passes: v.voice.passes.as_deref(),
+            slot0: v.voice.slot0,
             y: v.y,
             items: &v.items,
             underlines: &v.underlines,
@@ -266,6 +268,7 @@ pub fn paint_voice(c: &mut Ctx, root: &mut Node, voice: &VoiceArgs, page_index: 
 
     for (at, it) in voice.items.iter().enumerate() {
         c.pass = voice.passes.and_then(|p| if it.src_index < 0 { None } else { p.get(it.src_index as usize).copied() });
+        c.slot = voice.slot0.filter(|_| it.src_index >= 0).map(|(p, f)| [p, f + it.src_index as u32]);
         let x = left + it.x;
         let base = baseline + it.dy.unwrap_or(0.0);
         match &it.element {
@@ -302,6 +305,7 @@ pub fn paint_voice(c: &mut Ctx, root: &mut Node, voice: &VoiceArgs, page_index: 
         paint_syllables(c, root, it, x, voice.lyric_y, Some(&mut lyric_right));
     }
     c.pass = None;
+    c.slot = None;
 
     for u in voice.underlines {
         let dy = if voice.zero_dy { 0.0 } else { u.dy.unwrap_or(0.0) };
@@ -333,6 +337,7 @@ pub fn paint_layer(c: &mut Ctx, root: &mut Node, layer: &PlacedLayer, left: f64,
         let args = VoiceArgs {
             lyrics: &split.line.lyrics,
             passes: None,
+            slot0: None,
             y: baseline + split.dy,
             items: &layer.items,
             underlines: &layer.underlines,

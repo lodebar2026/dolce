@@ -16,6 +16,7 @@ import { colorToCss } from "../common/geom";
 import { MetaData } from "../smufl/smufl";
 import type { BarsOverflow, FitMeasure } from "../jianpu/phrase";
 import { applyLayoutBreaks, layoutOf, VIEW_LAYOUT, withLinebreak } from "../jianpu/layoutdoc";
+import { applyBreakPlan, jianpuAddPlan, jianpuRemovePlan, projAddPlan, projRemovePlan, type BreakPlan } from "../jianpu/layoutbreak";
 import { spliceComments } from "../jianpu/docrelayout";
 import { emit123, emitAbc } from "../abcfamily/emit";
 import { parse123, parseAbc } from "../abcfamily/parse";
@@ -41,7 +42,7 @@ import { docFormatOfName, hasLines, isMultiPartXml, jianpuLineStarts, jianpuPain
 import { unpackProject } from "./omrproject";
 import { dropEmbeddedLayout } from "../model/xmlsurface";
 import { CONVERT_TARGETS, isConvertTarget, targetSpec, type ConvertTarget } from "../convert/targets";
-import { t } from "../i18n";
+import { t, type MsgKey } from "../i18n";
 import { singFromLyrics, type SingFitReport } from "../layout/rustlayout";
 import { applySingFit, songAtOffset } from "./singapply";
 import { applyOverlay, overlayOf, type SingOverlay } from "./singoverlay";
@@ -160,6 +161,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
   private _barsSelEl: HTMLSelectElement | null = null;
   private _origLayoutText: string | null = null;
   private _lineMode: LineMode = "original";
+  /** 投影档最近点中的那一处音（`Painter.slotAt`） */
+  private _projHit: ReturnType<ScorePainter["slotAt"]> = null;
   /** 文本谱：上一次重排**产出的**那份原文。文本与它不同了就说明用户自己动过手。 */
   private _phraseText: string | null = null;
   /** 当前「每行 N 小节」排的是几小节（不在这一档时 null）。 */
@@ -991,6 +994,8 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
    *  （点在标题、小节线上都算找不到）。 */
   private _onSyncClick(ev: MouseEvent): boolean {
     if (this.mode !== "jp") return false;
+    // 投影档记下点中的是哪一处（同一个源音每遍各画一次），谱面上增删版面断点按它认
+    this._projHit = this.layoutMode === "expanded" ? this.painter.slotAt(hitThroughOverlay(ev) as Element | null) : null;
     const entry = this.syncView.entryAt(hitThroughOverlay(ev));
     const onNote = entry !== null && (entry.kind === "note" || entry.kind === "lyric" || entry.kind === "sustain");
     // 原样文档没有几何拾取：播放 / 暂停中点音符按同步条目跳过去，不进可视化编辑的选中
@@ -1656,6 +1661,67 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
     let out = text;
     for (let i = 0; i < songs; i++) out = dolce().abcSetLayoutOption(out, i, this._viewLayout, "linebreak", value);
     if (out !== text) this.setText(out);
+  }
+
+  /**
+   * VisualHost：谱面上增删版面断点（规范 123格式 §9.1）。123 / ABC 的投影档，与简谱档非照源断行（按乐句、每行 N 小节、装满）时接手：
+   * 换行 / 换页写 `%%layout` 的 `break=` / `newpage=`（段中先切段），选中行首 / 行尾的音按退格 / Delete 删掉它前 / 后的断点。
+   * 投影档缺省只管点中的那一遍（`pass=N`），`all` 管每一遍。没接手回 false（照常插 `$`、删音）。
+   */
+  layoutBreak(op: "line" | "page" | "back" | "forward", all: boolean, ids: readonly ElementId[]): boolean {
+    if (!this._layoutInText || this.mode !== "jp" || ids.length === 0) return false;
+    const expanded = this.layoutMode === "expanded";
+    if (!expanded && this._lineMode === "original") return false;
+    const doc = this.currentScoreDoc();
+    if (!doc) return false;
+    const remove = op === "back" || op === "forward";
+    let plan: BreakPlan | null;
+    let song: number;
+    let pass = 0;
+    if (expanded) {
+      const hit = this._projHit;
+      if (!hit || !ids.includes(hit.id)) {
+        if (remove) return false;
+        this.setStatus(t("status.layoutBreakPick"));
+        return true;
+      }
+      if (remove && !(op === "back" ? hit.rowFirst : hit.rowLast)) return false;
+      const passes = this.painter.projPasses?.[hit.song];
+      const pp = passes?.find((p) => p.no === hit.pass);
+      if (!passes || !pp || !doc.songs[hit.song]) return false;
+      song = hit.song;
+      // 删：管这一遍的（带 `pass=N` 与不带的）都找；加：只有一遍或要管每一遍时不写 `pass=`
+      pass = remove ? hit.pass : all || passes.length <= 1 ? 0 : hit.pass;
+      plan = remove ? projRemovePlan(pp, hit.slot, op) : projAddPlan(pp, hit.slot, doc.songs[song]!);
+    } else {
+      const id = op === "back" ? ids[0]! : ids[ids.length - 1]!;
+      song = doc.songs.findIndex((s) => s.parts.some((p) => p.measures.some((m) => m.elements.some((e) => e.id === id))));
+      if (song < 0) return false;
+      const starts = new Set(this.painter.lineStarts ?? []);
+      plan = remove ? jianpuRemovePlan(doc.songs[song]!, id, op, (x) => starts.has(x)) : jianpuAddPlan(doc.songs[song]!, id);
+      if (!plan) return false;
+    }
+    if (plan.kind === "hint") {
+      this.setStatus(t(plan.key as MsgKey));
+      return true;
+    }
+    const layout = expanded ? VIEW_LAYOUT.expanded : VIEW_LAYOUT.original;
+    const out = applyBreakPlan(this.getText(), song, layout, pass, plan, op === "page", (x) => this._markInsertAt(x));
+    if (out === null) {
+      this.setStatus(t(remove ? "status.layoutBreakAuto" : "status.layoutBreakPick"));
+      return true;
+    }
+    this.setText(out);
+    return true;
+  }
+
+  /** 段落标记插在这个音前的原文偏移：连同写在它前面的和弦名、装饰、起弧一起让到后面 */
+  private _markInsertAt(id: ElementId): number | null {
+    const span = this.sync.spanOfNote(id);
+    if (!span) return null;
+    let at = span.from;
+    for (const m of this.sync.marksOf(id)) if (m.id === id && m.from < at) at = m.from;
+    return at;
   }
 
   /** 123 / ABC 的简谱档：把当前按版面排出的行写成 `$`（转给只认 `$` 的程序时用），简谱版面的 `linebreak=` 去掉 */

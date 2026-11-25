@@ -237,6 +237,9 @@ pub struct Identity {
     pub also: Option<Vec<ElementId>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<ElementId>,
+    /// 投影档的音：(第几遍〔从 1 起，同 `%%layout … pass=`〕, 这一遍里第几个符号)；对上 `LaidInfo.projPasses` 增删版面断点用
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<[u32; 2]>,
 }
 
 /// 场景树的一个节点。

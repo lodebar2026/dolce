@@ -214,6 +214,7 @@ fn one_pass<'e>(source: &ScoreDoc, cfg: &JianpuConfig, no_reflow: bool, left_ind
         lyric_ink: ink_color,
         slide,
         pass: None,
+        slot: None,
         heads: &heads,
         foot,
     };

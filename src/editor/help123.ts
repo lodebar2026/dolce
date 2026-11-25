@@ -144,6 +144,7 @@ export const EXAMPLES_123: NotationExample[] = [
       "`linebreak=` 定断行方式：`source` 照原文的 `$`（简谱、五线谱、混排缺省），`phrase` 按乐句，`bars:4` 每行 4 小节，`fill` 照版心宽装满，`auto` 投影缺省（有 `%%sing` 同 `fill`，没有照原文换行再加投影档的推断）。工具栏「原始排版 / 按乐句重排 / 每行 N 小节」写的就是当前档这一项，原文的 `$` 不动；「固化断行」把简谱档排出的行写成 `$`。",
       "`break=A,B` 在段 A、B 之后必换行，`newpage=B` 在 B 之后换页（段由 `[P:x]` 切出，标记可以写在小节中间）；同一遍里第二次出现的写 `A*2`。投影档另有 `pass=N`（只管第 N 遍）、`rows=N`（一页最多几行，缺省 4）、`pair-pages=on|off`、`no-intro=on|off`。",
       "自己起名的版面（大字版等）要写 `base=` 照哪一档排，另可写 `paper=`、`note-size=`、`style=`。试听不看 `%%layout`。只有 123 与 ABC 存得下，另存为其他格式时会提示。",
+      "也可以在谱面上加：投影档点中一个音按 `Enter` 在它之后换行（`Shift+Enter` 换页），只管点中的那一遍，加 `Alt` 管每一遍；落在段中间时自动插 `[P:A-2]` 把段切开、`%%sing` 跟着改。选中行首的音按退格（行尾的按 `Delete`）删掉写明的断点，切出来的段合得回就合回。",
     ],
     code: "%%sing A B\n%%sing A@2 B C\n%%layout 投影 rows=4\n%%layout 投影 pass=2 break=A,B\n%%layout 简谱 linebreak=phrase\n%%layout 大字版 base=简谱 paper=A4 note-size=24",
     render: false,

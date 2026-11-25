@@ -36,7 +36,7 @@ const BLACK: f64 = 0xff000000u32 as f64;
 
 /// 只填 `kind` 的身份标签
 fn ident(kind: IdentityKind) -> Identity {
-    Identity { kind, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None }
+    Identity { kind, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None, slot: None }
 }
 
 /// SMuFL breathMarkComma（U+E4CE）。

@@ -104,6 +104,8 @@ export interface VisualHost {
   /** 索引是不是按代码区当前的原文建的（代码区刚改过、重排还在防抖里时为 false） */
   syncFresh(): boolean;
   setStatus(text: string): void;
+  /** 123 / ABC 的投影档（与简谱档非照源断行时）在谱面上增删版面断点（`jianpu/layoutbreak.ts`）；`ids` 是选中的音。没接手回 false */
+  layoutBreak?(op: "line" | "page" | "back" | "forward", all: boolean, ids: readonly ElementId[]): boolean;
   saveSettings(): void;
   /** 识别核对：Alt+点原图的那一处落在哪两个音之间（五线谱另给按位置推出的音高）；不在核对视图为 null */
   /** Alt+点原图补音交给识别会话（五线谱 Rust 识别）；处理了回 true（`OmrController.staffInsertAt`） */
@@ -1640,10 +1642,10 @@ export class VisualEditController {
       case "deco.fermata": return this.editNotes((c, f, t) => toggleDeco(c, f, t, "fermata"));
       case "deco.accent": return this.editNotes((c, f, t) => toggleDeco(c, f, t, "accent"));
       case "bar.insert": return this.insertAtCursor((c, pos) => insertToken(c, pos, c.dialect.barline));
-      case "brk.line": return this.insertBreakAt(false);
-      case "brk.page": return this.insertBreakAt(true);
-      case "del.forward": return this.remove(1);
-      case "del.back": return this.remove(-1);
+      case "brk.line": case "brk.lineAll": return this.layoutBreak("line", a.id === "brk.lineAll") || this.insertBreakAt(false);
+      case "brk.page": case "brk.pageAll": return this.layoutBreak("page", a.id === "brk.pageAll") || this.insertBreakAt(true);
+      case "del.forward": return this.layoutBreak("forward", false) || this.remove(1);
+      case "del.back": return this.layoutBreak("back", false) || this.remove(-1);
       case "mode.insert": return this.toInsert();
       case "mode.edit": return this.toEdit();
       case "nav.prev": return this.move(-1, false);
@@ -2383,6 +2385,12 @@ export class VisualEditController {
     if (sel.empty) return sel.head;
     const last = this.selectedEntries().pop();
     return last ? groupEnd(c, last) : sel.to;
+  }
+
+  /** 版面断点（宿主接手了回 true）：编辑模式选中的音 */
+  private layoutBreak(op: "line" | "page" | "back" | "forward", all: boolean): boolean {
+    const ids = this.selectedEntries().filter((e) => e.kind === "note").map((e) => e.id);
+    return this.host.layoutBreak?.(op, all, ids) ?? false;
   }
 
   /** 换行 / 换页：换行是符号的格式插符号（`breaks.ts`），不是符号的（文本谱）重切行。`at` 缺省取光标处 / 选中段之后。 */

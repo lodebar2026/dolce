@@ -15,7 +15,7 @@ import { dolce } from "../common/dolce";
 import { docJson } from "../model/rustdoc";
 import { bindNode, nodeOfEl, ScoreIndex, toPage, type Hit, type IndexNode, type PageBox } from "./scoreindex";
 import { Playhead, type Span } from "./playhead";
-import { layoutAsync, layoutSync, type LaidHandle, type LayoutWire } from "./rustlayout";
+import { layoutAsync, layoutSync, type LaidHandle, type LayoutWire, type ProjPass } from "./rustlayout";
 
 /** 页眉里画出来的一项：文字（标题、署名…）、调号、拍号。 */
 export interface HeaderPart {
@@ -205,6 +205,31 @@ export class ScorePainter {
   /** 投影档：各首实际走的演唱顺序（`page-check` 的 P5 按它数遍数）；别的结果为 null */
   get expandPlans(): ReadonlyArray<readonly PlayItem[] | null> | null {
     return this.cur?.info.plans ?? null;
+  }
+
+  /** 投影档各首各遍的段落出现表（`SceneIdentity.slot` 指进这里）；不是投影档为 null。 */
+  get projPasses(): ReadonlyArray<readonly ProjPass[] | null> | null {
+    return this.cur?.info.projPasses ?? null;
+  }
+
+  /** 投影档点中的是哪一处音：第几首、第几遍、这一遍第几个符号，以及它是不是所在行的第一个 / 最后一个音。不是投影档的音为 null。 */
+  slotAt(target: Element | null): { song: number; pass: number; slot: number; id: ElementId; rowFirst: boolean; rowLast: boolean } | null {
+    let node: IndexNode | undefined;
+    for (let el = target; el && !(el instanceof SVGSVGElement) && !node; el = el.parentElement) {
+      const n = nodeOfEl(el);
+      if (n?.ident?.kind === "note") node = n;
+    }
+    const ident = node?.ident;
+    if (!node || !ident?.slot || ident.id === undefined) return null;
+    const notes = (this.index.systemOf(node)?.members ?? []).filter((m) => m.ident?.kind === "note" && m.ident.slot);
+    return {
+      song: this.cur?.info.pages[node.page]?.song ?? 0,
+      pass: ident.slot[0],
+      slot: ident.slot[1],
+      id: ident.id,
+      rowFirst: notes[0] === node,
+      rowLast: notes[notes.length - 1] === node,
+    };
   }
 
   /** 导出 PPTX 用的页面（`editor/pptxexport.ts::buildPptx`）：简谱排的那一份；还没排过简谱时为空。 */

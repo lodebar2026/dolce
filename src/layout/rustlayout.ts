@@ -194,6 +194,18 @@ export interface SceneIdentity {
   measure?: number;
   also?: ElementId[];
   end?: ElementId;
+  /** 投影档的音：[第几遍, 这一遍里第几个符号]，指进 `LaidInfo.projPasses` */
+  slot?: [number, number];
+}
+
+/** 投影档一遍的段落出现表（Rust `dolce_layout_jianpu::view::ProjPass`）。 */
+export interface ProjPass {
+  /** 第几遍（从 1 起，同 `%%layout … pass=`） */
+  no: number;
+  /** 这一遍各段的每次出现：[段名〔第一个段落标记之前为空串〕, 这一遍里第几次, 首符号, 末符号] */
+  runs: [string, number, number, number][];
+  /** 各符号：音取它的元素 id，别的为 null */
+  ids: (ElementId | null)[];
 }
 
 /** 身份表一项（`dolce_scene::index::Hit`）：带身份或页眉类名的节点，对上 SVG 里的元素先序号 `el`。 */
@@ -233,6 +245,8 @@ export interface LaidInfo {
   lineStarts: ElementId[] | null;
   /** 投影档各首实际走的演唱顺序 */
   plans?: (PlayItem[] | null)[];
+  /** 投影档各首各遍的段落出现表（音的 `SceneIdentity.slot` 指进这里） */
+  projPasses?: (ProjPass[] | null)[];
   digitFontSize?: number;
   /** 简谱：附点离数字的那道空（导出 PPTX 重摆附点） */
   stackGap?: number;

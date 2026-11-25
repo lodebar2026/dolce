@@ -17,7 +17,7 @@ const BLACK: f64 = 0xff000000u32 as f64;
 pub fn chord_group(id: ElementId) -> Node {
     let mut g = Node::group();
     g.add_class(STAFF_CHORD);
-    g.id = Some(Identity { kind: IdentityKind::Note, id: Some(id), pass: None, verse: None, edge: None, measure: None, also: None, end: None });
+    g.id = Some(Identity { kind: IdentityKind::Note, id: Some(id), pass: None, verse: None, edge: None, measure: None, also: None, end: None, slot: None });
     g
 }
 

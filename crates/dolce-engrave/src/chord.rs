@@ -83,7 +83,7 @@ pub fn harmony_ink(segs: &[HarmonySeg], word_font: &Font, music_font: &Font, env
 pub fn layout_harmony_segs(segs: &[HarmonySeg], word_font: &Font, music_font: &Font, color: f64, env: &Env) -> Node {
     let mut grp = Node::group();
     grp.add_class("chord");
-    grp.id = Some(dolce_scene::Identity { kind: IdentityKind::Harmony, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None });
+    grp.id = Some(dolce_scene::Identity { kind: IdentityKind::Harmony, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None, slot: None });
     let mut xpos = 0.0;
     for s in segs {
         let font = if s.music { music_font } else { word_font };

@@ -47,6 +47,8 @@ pub struct Ctx<'a> {
     pub slide: bool,
     /// 投影档：正在画的符号所在那一遍的遍号
     pub pass: Option<f64>,
+    /// 投影档：正在画的符号是第几遍第几个（`Identity.slot`）
+    pub slot: Option<[u32; 2]>,
     pub heads: &'a [PlacedHeader],
     pub foot: Option<&'a Region>,
 }
@@ -66,7 +68,7 @@ pub fn font(family: &str, size: f64, bold: bool) -> Font {
 
 /// 身份标签（只给种类，其余空）
 pub fn ident(kind: IdentityKind) -> Identity {
-    Identity { kind, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None }
+    Identity { kind, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None, slot: None }
 }
 
 pub fn eid(id: i64) -> u32 {

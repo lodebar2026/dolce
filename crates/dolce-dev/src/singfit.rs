@@ -1,6 +1,7 @@
 //! `sing-fit <谱.123> <歌词.txt> [--redist=<目录>] [--json] [--svg=<目录>] [--ss=<样式.ss>] [--phrase]`：按参照歌词切段落、排 `%%sing`（`dolce-view::singfit`），
 //! 把写回后的 123 打到 stdout、差异打到 stderr（`--json` 改出生成结果 JSON；`--svg` 另把写回后的投影档逐页出 SVG 核对）。投影行数用本平台桌面版的量字口径。
-//! 歌词给 `-`：不生成，只把谱面照现有的 `%%sing` 排投影档出 SVG（对比排版改动用）；`--ss=<样式.ss>` 叠在出厂投影样式上；`--phrase` 给投影版面加 `linebreak=phrase`（逐遍按乐句断行，生成时也照它试排行数，写回的 123 里也带着）。
+//! 歌词给 `-`：不生成，只把谱面照现有的 `%%sing` 排投影档出 SVG（对比排版改动用）；`--ss=<样式.ss>` 叠在出厂投影样式上；`--phrase` 给投影版面加 `linebreak=phrase`（逐遍按乐句断行，生成时也照它试排行数，写回的 123 里也带着）；
+//! `--hits` 出 SVG 时另写 `info.json`（排版概要，含各遍段落出现表）与逐页身份表 `NN.hits.json`（核对谱面上增删断点用的槽位）。
 
 use dolce_formats::abc::emit::emit_123;
 use dolce_formats::abc::parse::parse_123;
@@ -31,7 +32,7 @@ pub fn sing_fit(args: &[String]) -> i32 {
     }
     if lyrics.as_str() == "-" {
         let dir = args.iter().find_map(|a| a.strip_prefix("--svg=")).unwrap_or(".");
-        return write_svgs(&doc, &req, &env, dir);
+        return write_svgs(&doc, &req, &env, dir, args.iter().any(|a| a == "--hits"));
     }
     let lyrics = decode_lyrics_bytes(&std::fs::read(lyrics).unwrap_or_else(|e| panic!("读不了 {lyrics}：{e}")));
     let fit = fit_sing_doc(&doc, 0, &lyrics, &req, &env);
@@ -48,7 +49,7 @@ pub fn sing_fit(args: &[String]) -> i32 {
     }
     apply_sing_fit(&mut doc.songs[0], &fit);
     if let Some(dir) = args.iter().find_map(|a| a.strip_prefix("--svg=")) {
-        write_svgs(&doc, &req, &env, dir);
+        write_svgs(&doc, &req, &env, dir, args.iter().any(|a| a == "--hits"));
     }
     print!("{}", emit_123(&doc));
     0
@@ -65,12 +66,19 @@ fn set_projection_linebreak(song: &mut dolce_model::Song, v: &str) {
 }
 
 /// 投影档逐页出 SVG（`01.svg`…）
-fn write_svgs(doc: &dolce_model::ScoreDoc, req: &dolce_session::layout::JianpuRequest, env: &dolce_engrave::Env, dir: &str) -> i32 {
+fn write_svgs(doc: &dolce_model::ScoreDoc, req: &dolce_session::layout::JianpuRequest, env: &dolce_engrave::Env, dir: &str, hits: bool) -> i32 {
     let laid = dolce_session::layout::layout_jianpu_doc(doc, req, env).unwrap_or_else(|e| panic!("投影档排不了：{e}"));
     std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("建不了 {dir}：{e}"));
     for i in 0..laid.pages.len() {
         let f = format!("{dir}/{:02}.svg", i + 1);
         std::fs::write(&f, laid.svg(i).unwrap_or_default()).unwrap_or_else(|e| panic!("写不了 {f}：{e}"));
+        if hits {
+            let h = format!("{dir}/{:02}.hits.json", i + 1);
+            std::fs::write(&h, serde_json::to_string(&laid.hits(i)).unwrap()).unwrap_or_else(|e| panic!("写不了 {h}：{e}"));
+        }
+    }
+    if hits {
+        std::fs::write(format!("{dir}/info.json"), serde_json::to_string_pretty(&laid.info()).unwrap()).unwrap_or_else(|e| panic!("写不了 info.json：{e}"));
     }
     eprintln!("投影档 {} 页 → {dir}", laid.pages.len());
     0

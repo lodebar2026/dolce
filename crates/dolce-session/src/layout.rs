@@ -122,6 +122,9 @@ pub struct LaidInfo<'a> {
     /// 投影档各首实际走的演唱顺序
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plans: Option<&'a Vec<Option<Vec<dolce_play::playorder::PlayItem>>>>,
+    /// 投影档各首各遍的段落出现表（谱面上增删版面断点用；音的 `Identity.slot` 指进这里）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proj_passes: Option<Vec<Option<&'a [dolce_layout_jianpu::view::ProjPass]>>>,
     /// 简谱档栅格的定稿基础字号（面板显示）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digit_font_size: Option<f64>,
@@ -139,6 +142,7 @@ impl Laid {
             pages: &self.geom,
             line_starts: j.map(|j| j.line_starts.as_slice()),
             plans: j.and_then(|j| j.plans.as_ref()),
+            proj_passes: j.filter(|j| j.plans.is_some()).map(|j| j.view.songs.iter().map(|s| s.proj.as_deref().map(Vec::as_slice)).collect()),
             digit_font_size: j.map(|j| j.digit_font_size),
             stack_gap: j.map(|j| j.metrics.style.vertical.stack_gap),
         }

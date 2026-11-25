@@ -798,7 +798,7 @@ struct HeadLine {
 }
 
 fn header_ident() -> Identity {
-    Identity { kind: IdentityKind::Header, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None }
+    Identity { kind: IdentityKind::Header, id: None, pass: None, verse: None, edge: None, measure: None, also: None, end: None, slot: None }
 }
 
 /// `split(/\r?\n/)`

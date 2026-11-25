@@ -269,3 +269,27 @@ pub fn abc_splice_comments(old_text: &str, old_doc: &str, new_text: &str, new_do
 pub fn abc_set_layout_option(text: &str, song: usize, layout: &str, key: &str, value: &str) -> String {
     dolce_formats::abc::layoutedit::set_layout_option(text, song, layout, key, (!value.is_empty()).then_some(value))
 }
+
+/// 谱面上加版面断点：第 `pass` 遍（0 = 每一遍）在段 `section` 第 `nth` 次之后换行（`page` 换页），只改 `%%layout` 行
+#[wasm_bindgen(js_name = abcLayoutAddBreak)]
+pub fn abc_layout_add_break(text: &str, song: usize, layout: &str, pass: u32, section: &str, nth: u32, page: bool) -> String {
+    dolce_formats::abc::layoutedit::add_break(text, song, layout, (pass > 0).then_some(pass), section, nth, page)
+}
+
+/// 删掉管第 `pass` 遍（0 = 不限遍）的版面断点「段 `section` 第 `nth` 次之后」；没有这条（自动断行）回原文
+#[wasm_bindgen(js_name = abcLayoutRemoveBreak)]
+pub fn abc_layout_remove_break(text: &str, song: usize, layout: &str, pass: u32, section: &str, nth: u32) -> String {
+    dolce_formats::abc::layoutedit::remove_break(text, song, layout, (pass > 0).then_some(pass), section, nth)
+}
+
+/// 段 `name` 在已插好的 `[P:newName]` 处切开后改 `%%sing` / `%%layout`（`A` → `A A-2`、「A 之后」的断点改指 `A-2`）
+#[wasm_bindgen(js_name = abcSplitSection)]
+pub fn abc_split_section(text: &str, song: usize, name: &str, new_name: &str) -> String {
+    dolce_formats::abc::layoutedit::split_section(text, song, name, new_name)
+}
+
+/// 界面切出来的段（`A-2`）合得回就合回 `A`（删标记、`%%sing` 合并、断点改指）；不合条件回原文
+#[wasm_bindgen(js_name = abcMergeSection)]
+pub fn abc_merge_section(text: &str, song: usize, name: &str) -> String {
+    dolce_formats::abc::layoutedit::merge_section(text, song, name)
+}

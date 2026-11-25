@@ -28,7 +28,7 @@ use crate::ink::Ink;
 use crate::place::spacing::{natural_columns, Natural, SpacedLine};
 use crate::place::voice::{assign_lyrics, layout_voice_line, takes_lyric, tuplet_ratios, BeatCtx, VoiceLine};
 use crate::util::{max, max_of, min, min_of};
-use crate::view::{LDoc, LGroup, LPage, LRow, LSong};
+use crate::view::{LDoc, LGroup, LPage, LRow, LSong, ProjPass};
 
 /// `fillLines` 的选项
 #[derive(Clone, Debug, Default)]
@@ -681,7 +681,7 @@ fn pos_of(pass: &Pass) -> PosOf {
 }
 
 /// 一遍里的符号区间 [a, b) 拼成一行（`rowOf`）
-fn row_of(src: &Src, pass: &Pass, a: usize, b: usize, pos: &PosOf, bars: Bars) -> Rc<LRow> {
+fn row_of(src: &Src, pass: &Pass, no: usize, a: usize, b: usize, pos: &PosOf, bars: Bars) -> Rc<LRow> {
     let first = &src.rows[pass.slots[a].0];
     let mut elements: Vec<MusicElement> = vec![];
     let mut refs = vec![];
@@ -788,6 +788,7 @@ fn row_of(src: &Src, pass: &Pass, a: usize, b: usize, pos: &PosOf, bars: Bars) -
     let mut row = LRow::new(line, first.part, first.measures.clone(), refs, ids);
     row.owners = if any { vec![owners] } else { vec![] };
     row.passes = Some(pass.verses[a..b].to_vec());
+    row.slot0 = Some((no as u32, a as u32));
     Rc::new(row)
 }
 
@@ -1193,9 +1194,9 @@ struct SecTags {
 }
 
 /// 段落标记落到源符号上（切法同 `dolce-play::sections_of`：标记音之前的非音符号仍归上一段；标记在小节第一个音上的整小节归新段）。
-/// 写在主旋律以外声部的标记贴到那一小节头。没有段落标记回 None
-fn section_tags(src: &Src) -> Option<SecTags> {
-    let marks = src.song.section_marks.as_ref().filter(|m| !m.is_empty())?;
+/// 写在主旋律以外声部的标记贴到那一小节头。没有段落标记时全归空串（先后序号照记，往回跳照样认得出）
+fn section_tags(src: &Src) -> SecTags {
+    let marks: &[dm::SectionMark] = src.song.section_marks.as_deref().unwrap_or(&[]);
     let mut by_id: HashMap<dm::ElementId, Rc<str>> = marks.iter().map(|m| (m.before, Rc::from(m.name.as_str()))).collect();
     let mut on_lead: HashMap<dm::ElementId, Rc<str>> = HashMap::new();
     for sl in src.slices.iter().flatten() {
@@ -1245,7 +1246,22 @@ fn section_tags(src: &Src) -> Option<SecTags> {
             ord += 1;
         }
     }
-    Some(tags)
+    tags
+}
+
+/// 投影档一遍的段落出现表（界面增删断点用，见 [`ProjPass`]）
+fn proj_pass(src: &Src, slots: &[Slot], no: usize, tags: &SecTags) -> ProjPass {
+    let mut start = 0usize;
+    let runs = section_runs(slots, tags)
+        .into_iter()
+        .map(|(name, nth, end)| {
+            let r = (name.to_string(), nth as u32, start as u32, end as u32);
+            start = end + 1;
+            r
+        })
+        .collect();
+    let ids = slots.iter().map(|&s| if src.is_note(s) { src.chord_at(s.0, s.1).map(|c| c.id as i64) } else { None }).collect();
+    ProjPass { no: no as u32, runs, ids }
 }
 
 /// 一遍里各段的每一次出现：(段名, 这一遍里第几次, 末符号在这一遍的下标)。段名变了或往回跳就是新的一次
@@ -1299,7 +1315,7 @@ fn bar_cuts(line: &ScoreLine, n: usize) -> HashMap<usize, bool> {
             MusicElement::Barline(_) if notes => {
                 notes = false;
                 count += 1;
-                if count % n == 0 && i + 1 < els.len() {
+                if count.is_multiple_of(n) && i + 1 < els.len() {
                     out.insert(i + 1, false);
                 }
             }
@@ -1420,7 +1436,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
     let breaks = source_breaks(slices, rows, &page_end_rows, o.end_break.is_some(), &|r| o.exact_breaks || o.row_is_line || inline_end(r));
     let width = content_width(m);
     let meter = song.metadata.meters.first();
-    let tags = section_tags(&src);
+    let tags = Some(section_tags(&src));
     // `.jpwabc` 的 `.Layout` 分页描述照它自己的，不看 `%%layout`
     let spec = if o.layout.is_none() { o.spec } else { None };
     if o.sing {
@@ -1592,6 +1608,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
         let tail = if Some(pi) == last_pass && end >= 0 { Some(pass.slots[end as usize]) } else { None };
         Bars { plain: o.exact_breaks, final_at: if tail.is_some_and(|t| matches!(src.el(t), MusicElement::Barline(_))) { end } else { -1 } }
     };
+    let mut proj: Vec<ProjPass> = vec![];
     for pi in 0..passes.len() {
         let max_rows = rows_of(pi + 1);
         if o.layout.is_none() && mid_verses.contains(&passes[pi].verses[0]) {
@@ -1623,8 +1640,11 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
             pass.hard.add(at);
         }
         let pass = &passes[pi];
+        if let Some(t) = &tags {
+            proj.push(proj_pass(&src, &pass.slots, pi + 1, t));
+        }
         let bars = bars_of(pi, pass);
-        let whole = row_of(&src, pass, 0, pass.slots.len(), &pos, bars);
+        let whole = row_of(&src, pass, pi + 1, 0, pass.slots.len(), &pos, bars);
         // 这一遍从哪些符号跳进了源行中间
         let mut jump_in: HashSet<usize> = HashSet::new();
         if o.layout.is_none() {
@@ -1686,7 +1706,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
                 pages.push(LPage { index: pages.len(), groups: std::mem::take(&mut groups) });
             }
             let end = lines.get(n + 1).map_or(pass.slots.len(), |x| x.start);
-            let voice = row_of(&src, pass, l.start, end, &pos, bars);
+            let voice = row_of(&src, pass, pi + 1, l.start, end, &pos, bars);
             groups.push(Rc::new(LGroup { index: groups.len(), texts: vec![], system, voices: vec![voice] }));
             system += 1.0;
         }
@@ -1695,7 +1715,7 @@ fn expand_song(song: &LSong, pd: &PlayData, m: &JianpuGrid, ink: &Ink, o: &SongO
         pages.push(LPage { index: pages.len(), groups });
     }
     let pages = if o.layout.is_none() && pair { pair_pages(&pages, &pass_starts, rows_of(1)) } else { pages };
-    LSong { pages, ..song.clone() }
+    LSong { pages, proj: Some(Rc::new(proj)), ..song.clone() }
 }
 
 /// 逐遍演唱顺序（123 `%%sing`，`singSong`）
@@ -1821,6 +1841,7 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
     let mut out: Vec<LPage> = vec![];
     let mut pass_starts: HashSet<usize> = HashSet::new();
     let mut system = 0.0;
+    let mut proj: Vec<ProjPass> = vec![];
     for (pi, (pass, no)) in pages.iter_mut().enumerate() {
         let max_rows = spec.and_then(|s| s.rows_for(*no)).unwrap_or(MAX_ROWS);
         // 版面写明的断点必断（也记进这一遍：断点前的双纵线照样画）
@@ -1829,11 +1850,14 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
             pass.hard.add(at);
         }
         let pass = &*pass;
+        if let Some(t) = tags {
+            proj.push(proj_pass(src, &pass.slots, *no, t));
+        }
         let pos = pos_of(pass);
         let end = pass.slots.len() - 1;
         let tail = if Some(pi) == last { Some(pass.slots[end]) } else { None };
         let bars = Bars { plain: false, final_at: if tail.is_some_and(|t| matches!(rows[t.0].line.elements[t.1], MusicElement::Barline(_))) { end as i64 } else { -1 } };
-        let whole = row_of(src, pass, 0, pass.slots.len(), &pos, bars);
+        let whole = row_of(src, pass, *no, 0, pass.slots.len(), &pos, bars);
         // 按乐句 / 每行 N 小节给强制换行，其余照版心宽装满
         let opts = FillOpts { hard: pass.hard.0.iter().copied().collect(), keep_rest_lines: phrase, ..Default::default() };
         let mut forced = match lb {
@@ -1856,7 +1880,7 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
                 out.push(LPage { index: out.len(), groups: std::mem::take(&mut groups) });
             }
             let end = lines.get(n + 1).map_or(pass.slots.len(), |x| x.start);
-            let voice = row_of(src, pass, l.start, end, &pos, bars);
+            let voice = row_of(src, pass, *no, l.start, end, &pos, bars);
             groups.push(Rc::new(LGroup { index: groups.len(), texts: vec![], system, voices: vec![voice] }));
             system += 1.0;
         }
@@ -1865,7 +1889,7 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
         }
     }
     let out = if pair { pair_pages(&out, &pass_starts, spec.and_then(|s| s.rows).unwrap_or(MAX_ROWS)) } else { out };
-    LSong { pages: out, ..song.clone() }
+    LSong { pages: out, proj: Some(Rc::new(proj)), ..song.clone() }
 }
 
 /// 投影档：按演唱顺序逐遍切出、逐行装满（`expandView`）。`plays` 与 `view.songs` 平行；推不出演唱顺序的那首照原样
