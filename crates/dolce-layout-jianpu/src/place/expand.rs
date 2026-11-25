@@ -1801,6 +1801,16 @@ fn phrase_cuts_of(row: &LRow, song: &dm::Song, hard: &HashSet<usize>, m: &Jianpu
     out
 }
 
+/// 照源断行（`linebreak=source`）：这一遍里换了源行、且落在那一行开头（前面没有音）的符号前断——音乐体的 `$`（含小节中间的）
+fn source_cuts(src: &Src, slots: &[(usize, usize)]) -> Vec<usize> {
+    (1..slots.len())
+        .filter(|&k| {
+            let (a, b) = (slots[k - 1], slots[k]);
+            a.0 != b.0 && !src.rows[b.0].line.elements[..b.1].iter().any(|el| matches!(el, MusicElement::Note(_)))
+        })
+        .collect()
+}
+
 /// `%%sing` 逐遍排：一遍一页起头，按活动版面断行（缺省装满）、落 `break=` / `newpage=`、每页 `rows` 行
 #[allow(clippy::too_many_arguments)]
 fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &Ink, width: f64, meter: Option<&Meter>, spec: Option<&LayoutSpec>, tags: Option<&SecTags>) -> LSong {
@@ -1865,6 +1875,11 @@ fn sing_song(song: &LSong, plan: &[PlayItem], src: &Src, m: &JianpuGrid, ink: &I
             LineBreak::Bars(n) => bar_cuts(&whole.line, n),
             _ => HashMap::new(),
         };
+        if lb == LineBreak::Source {
+            for at in source_cuts(src, &pass.slots) {
+                forced.entry(at).or_insert(false);
+            }
+        }
         for (&at, &page) in &cuts {
             let v = forced.entry(at).or_insert(false);
             *v |= page;
