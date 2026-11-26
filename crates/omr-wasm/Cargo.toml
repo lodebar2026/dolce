@@ -3,16 +3,16 @@ name = "dolce-omr-wasm"
 description = "悦谱 Dolce 识别的网页版绑定（wasm-bindgen）：文档、识别、五线谱会话与桌面版 Tauri 命令一一对应；OCR 用 tract 纯 Rust 推理，PDF 用 PDFium 的 wasm 版"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dolce-omr-core = { path = "../omr-core" }
-dolce-omr-engine = { path = "../omr-engine", default-features = false }
-dolce-omr-source = { path = "../omr-source" }
-dolce-omr-ocr = { path = "../omr-ocr", default-features = false, features = ["tract"] }
+dolce-omr-core = { workspace = true }
+dolce-omr-engine = { workspace = true }
+dolce-omr-source = { workspace = true }
+dolce-omr-ocr = { workspace = true, features = ["tract"] }
 serde_json = "1"
 wasm-bindgen = "=0.2.120"
 js-sys = "0.3"

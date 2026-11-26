@@ -3,7 +3,7 @@ name = "dolce-wasm"
 description = "悦谱 Dolce 模型 / 格式 / 排版的 wasm 绑定（wasm-bindgen）：网页版主线程用，Node 门面 out/cli/dolce.js 也载这一份"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -13,18 +13,18 @@ crate-type = ["cdylib", "rlib"]
 probe = []
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-session = { path = "../dolce-session" }
-dolce-play = { path = "../dolce-play" }
-dolce-model = { path = "../dolce-model" }
-dolce-formats = { path = "../dolce-formats" }
-dolce-view = { path = "../dolce-view" }
-dolce-engrave = { path = "../dolce-engrave" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-text = { path = "../dolce-text" }
-dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
-dolce-omr-sheet = { path = "../omr-sheet" }
-dolce-omr-todoc = { path = "../omr-todoc" }
+dolce-base = { workspace = true }
+dolce-session = { workspace = true }
+dolce-play = { workspace = true }
+dolce-model = { workspace = true }
+dolce-formats = { workspace = true }
+dolce-view = { workspace = true }
+dolce-engrave = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-text = { workspace = true }
+dolce-layout-jianpu = { workspace = true }
+dolce-omr-sheet = { workspace = true }
+dolce-omr-todoc = { workspace = true }
 serde = { workspace = true }
 bincode.workspace = true
 # 分数、时刻过边界要逐位还原（TS 侧 JSON.stringify 出的是最短往返写法）

@@ -3,14 +3,20 @@ name = "dolce-layout-staff"
 description = "悦谱 Dolce 的五线谱 / 混排引擎（照 src/mixed/）：读入建树 → 横向 / 分系统 / 纵向 → 画系统与简谱叠层 → 装页"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-text = { path = "../dolce-text" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-model = { path = "../dolce-model" }
-dolce-style = { path = "../dolce-style" }
-dolce-engrave = { path = "../dolce-engrave" }
+dolce-base = { workspace = true }
+dolce-text = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-model = { workspace = true }
+dolce-style = { workspace = true }
+dolce-engrave = { workspace = true }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }

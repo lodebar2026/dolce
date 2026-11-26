@@ -408,3 +408,12 @@ mod tests {
         assert_eq!(svg_collapsed_text("a\u{3000} b"), "a\u{3000} b");
     }
 }
+
+/// 随 crate 带的 Bravura 资产（与 `public/redist/` 同一份，`scripts/publish-crates.sh` 发布前核对）：
+/// 宿主拿不到字体文件时用（命令行导出的 PDF / PPTX 嵌字、SMuFL 元数据紧盒）。`const` 只在用到处链进去，wasm 不受影响。
+pub mod assets {
+    /// `Bravura.otf` 原文
+    pub const BRAVURA_OTF: &[u8] = include_bytes!("../assets/Bravura.otf");
+    /// `bravura_metadata.json` 原文（`smufl::MetaData::from_json` 读）
+    pub const BRAVURA_METADATA: &str = include_str!("../assets/bravura_metadata.json");
+}

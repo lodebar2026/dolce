@@ -3,7 +3,13 @@ name = "dolce-export"
 description = "悦谱 Dolce 导出：场景 / 成书 DrawList → PDF（krilla），场景 → PPTX；字体定位、嵌入与转曲"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 default = ["system", "book"]
@@ -13,10 +19,10 @@ system = ["dolce-text/fontfile-system"]
 book = ["system", "dep:dolce-book"]
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-text = { path = "../dolce-text", features = ["fontfile"] }
-dolce-book = { path = "../dolce-book", optional = true }
+dolce-base = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-text = { workspace = true, features = ["fontfile"] }
+dolce-book = { workspace = true, optional = true }
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
 flate2 = "1"
 crc32fast = "1"

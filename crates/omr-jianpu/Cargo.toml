@@ -3,14 +3,20 @@ name = "dolce-omr-jianpu"
 description = "悦谱 Dolce 简谱路线：成像、数字行与小节线、调号拍号、数字与八度点 / 减时线 / 增时线 / 附点、歌词与页眉、弧，产出 RecognizedScore（JSON）"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-omr-core = { path = "../omr-core" }
-dolce-omr-ocr = { path = "../omr-ocr", default-features = false }
-dolce-omr-sheet = { path = "../omr-sheet" }
-dolce-omr-source = { path = "../omr-source" }
-dolce-omr-text = { path = "../omr-text" }
+dolce-omr-core = { workspace = true }
+dolce-omr-ocr = { workspace = true }
+dolce-omr-sheet = { workspace = true }
+dolce-omr-source = { workspace = true }
+dolce-omr-text = { workspace = true }
 serde.workspace = true
 serde_json = "1"
-regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
+regex = { version = "1", features = ["std", "unicode-perl", "unicode-case", "perf"] }

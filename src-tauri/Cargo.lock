@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-base"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -962,7 +962,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-engrave"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-model",
@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-export"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "crc32fast",
  "dolce-base",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-formats"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-model",
@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-layout-jianpu"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-layout-staff"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
@@ -1034,7 +1034,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-model"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-play",
@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-core"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "bincode",
  "dolce-base",
@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-engine"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-jianpu",
@@ -1071,7 +1071,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-jianpu"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-ocr",
@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-ocr"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "ort",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-sheet"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-text",
@@ -1105,7 +1105,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-source"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "image",
@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-staff"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-jianpu",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-text"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "regex",
@@ -1140,7 +1140,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-todoc"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-formats",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-play"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "serde",
@@ -1163,7 +1163,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-scene"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-text",
@@ -1173,7 +1173,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-session"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-engrave",
@@ -1190,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-style"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-model",
@@ -1202,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-text"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "fontdb",
@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-view"
-version = "0.1.0"
+version = "0.8.9"
 dependencies = [
  "dolce-base",
  "dolce-model",

@@ -3,7 +3,13 @@ name = "dolce-omr-engine"
 description = "悦谱 Dolce 识别的统一入口（桌面版 Tauri、网页版 wasm、命令行共用）：打开文档（PDF / 图片）、整页渲染、判路识别（带进度与取消）、五线谱会话、核对底图"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 default = ["parallel"]
@@ -11,16 +17,16 @@ default = ["parallel"]
 parallel = ["dep:rayon"]
 
 [dependencies]
-dolce-omr-core = { path = "../omr-core" }
-dolce-omr-jianpu = { path = "../omr-jianpu" }
-dolce-omr-ocr = { path = "../omr-ocr", default-features = false }
-dolce-omr-sheet = { path = "../omr-sheet" }
-dolce-omr-source = { path = "../omr-source" }
-dolce-omr-staff = { path = "../omr-staff" }
-dolce-omr-todoc = { path = "../omr-todoc" }
+dolce-omr-core = { workspace = true }
+dolce-omr-jianpu = { workspace = true }
+dolce-omr-ocr = { workspace = true }
+dolce-omr-sheet = { workspace = true }
+dolce-omr-source = { workspace = true }
+dolce-omr-staff = { workspace = true }
+dolce-omr-todoc = { workspace = true }
 serde = { workspace = true }
 serde_json = "1"
 rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
-dolce-omr-ocr = { path = "../omr-ocr", features = ["native"] }
+dolce-omr-ocr = { workspace = true, features = ["native"] }

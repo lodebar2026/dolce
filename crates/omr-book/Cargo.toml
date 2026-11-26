@@ -3,14 +3,20 @@ name = "dolce-omr-book"
 description = "悦谱 Dolce 歌本切分：整本分页歌谱（PDF / 页图文件夹）→ 一首一张图，按书内目录核对；转曲矢量歌本可逐首识别"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-omr-core = { path = "../omr-core" }
-dolce-omr-ocr = { path = "../omr-ocr", default-features = false }
-dolce-omr-source = { path = "../omr-source" }
+dolce-omr-core = { workspace = true }
+dolce-omr-ocr = { workspace = true }
+dolce-omr-source = { workspace = true }
 serde = { workspace = true }
 serde_json = "1"
 rayon = "1.10"
-regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+regex = { version = "1", features = ["std", "unicode-perl", "unicode-case", "perf"] }
+image = { version = "0.25", features = ["jpeg", "png"] }

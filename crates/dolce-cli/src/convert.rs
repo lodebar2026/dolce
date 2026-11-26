@@ -51,8 +51,7 @@ use dolce_text::{BrowserCompat, Font, FontStyle, MeasureCtx, Weight};
 use dolce_view::playsong::{play_source_of, PlaySongOptions};
 use serde_json::{json, Value};
 
-const BRAVURA_META: &str = include_str!("../../../public/redist/bravura_metadata.json");
-const BRAVURA_OTF: &[u8] = include_bytes!("../../../public/redist/Bravura.otf");
+use dolce_text::assets::{BRAVURA_METADATA as BRAVURA_META, BRAVURA_OTF};
 
 pub fn usage() -> String {
     let text_list = OUT_FORMATS

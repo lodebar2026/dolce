@@ -3,7 +3,13 @@ name = "dolce-base"
 description = "悦谱 Dolce 模型与排版的最底层：JS 数值口径、分数、UTF-16 位置表与原文区间、诊断消息、排版几何（点、矩形、3×3 矩阵、颜色、SVG 路径紧包围盒）。无平台依赖，能编到 wasm"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 serde.workspace = true

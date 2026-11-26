@@ -3,7 +3,7 @@ name = "dolce-dev"
 description = "悦谱 Dolce 开发用命令行：模型 / 格式 / 排版 / 成书的对拍与回归工具（不进分发包）"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = false
 
 [[bin]]
 name = "dolce-dev"
@@ -14,25 +14,25 @@ path = "src/main.rs"
 oldpdf = ["dep:svg2pdf"]
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-text = { path = "../dolce-text", features = ["native"] }
-dolce-style = { path = "../dolce-style" }
-dolce-model = { path = "../dolce-model" }
-dolce-engrave = { path = "../dolce-engrave" }
-dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
-dolce-layout-staff = { path = "../dolce-layout-staff" }
-dolce-book = { path = "../dolce-book" }
-dolce-session = { path = "../dolce-session" }
-dolce-formats = { path = "../dolce-formats" }
-dolce-view = { path = "../dolce-view" }
+dolce-base = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-text = { workspace = true, features = ["native"] }
+dolce-style = { workspace = true }
+dolce-model = { workspace = true }
+dolce-engrave = { workspace = true }
+dolce-layout-jianpu = { workspace = true }
+dolce-layout-staff = { workspace = true }
+dolce-book = { workspace = true }
+dolce-session = { workspace = true }
+dolce-formats = { workspace = true }
+dolce-view = { workspace = true }
 bincode.workspace = true
 indexmap = "2"
 serde.workspace = true
 serde_json = "1"
 sha2.workspace = true
-dolce-export = { path = "../dolce-export" }
-dolce-omr-source = { path = "../omr-source" }
+dolce-export = { workspace = true, features = ["system", "book"] }
+dolce-omr-source = { workspace = true }
 svg2pdf = { version = "0.13", optional = true }
 # onnx-fp16：读写 ONNX 用 tract-onnx 带的 protobuf 定义（prost 与它同一版）
 tract-onnx = "0.23"

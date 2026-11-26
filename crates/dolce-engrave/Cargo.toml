@@ -3,14 +3,20 @@ name = "dolce-engrave"
 description = "悦谱 Dolce 的谱面元素（照 src/engrave/）：每种元素一份画法与定位判据，简谱引擎与五线谱 / 混排两条引擎共用。产出场景节点（dolce-scene）"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-text = { path = "../dolce-text" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-model = { path = "../dolce-model" }
-dolce-play = { path = "../dolce-play" }
-dolce-style = { path = "../dolce-style" }
+dolce-base = { workspace = true }
+dolce-text = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-model = { workspace = true }
+dolce-play = { workspace = true }
+dolce-style = { workspace = true }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }

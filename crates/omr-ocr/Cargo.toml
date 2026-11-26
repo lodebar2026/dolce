@@ -3,7 +3,13 @@ name = "dolce-omr-ocr"
 description = "悦谱 Dolce 识别的 OCR：PP-OCR 识别（rec）与检测（DBNet det）的前后处理、推理后端（原生 ort / 宿主注入）、按条内容寻址的结果缓存"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 default = ["native"]
@@ -13,7 +19,7 @@ native = ["dep:ort"]
 tract = ["dep:tract-onnx"]
 
 [dependencies]
-dolce-omr-core = { path = "../omr-core" }
+dolce-omr-core = { workspace = true }
 serde.workspace = true
 serde_json = "1"
 ort = { version = "=2.0.0-rc.14", optional = true }

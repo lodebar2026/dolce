@@ -3,10 +3,16 @@ name = "dolce-scene"
 description = "悦谱 Dolce 排版的中间表示 Scene（取代 TS 的 PageItem 树与 DrawList）：节点、身份、角色、两种 SVG 方言出口、规范化 dump 与比对；SMuFL（Bravura）码位表与元数据（紧包围盒、锚点）。无平台依赖，能编到 wasm"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-text = { path = "../dolce-text" }
+dolce-base = { workspace = true }
+dolce-text = { workspace = true }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }

@@ -10,6 +10,9 @@ const BUILD: &str = "7881";
 
 fn main() {
     println!("cargo:rerun-if-env-changed=PDFIUM_LIB_PATH");
+    if std::env::var_os("DOCS_RS").is_some() {
+        return;
+    }
     let target = std::env::var("TARGET").unwrap_or_default();
     if target.starts_with("wasm32") {
         return;

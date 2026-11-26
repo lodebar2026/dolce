@@ -3,10 +3,16 @@ name = "dolce-text"
 description = "悦谱 Dolce 排版的量字层（照 src/common/measure.ts、cjkpunct.ts、cli/textmeasure.node.ts 的口径层）：量字 trait、按键缓存的 MeasureCtx、标点挤压、浏览器口径层 BrowserCompat、回放 ReplayMeasurer；native 特性带系统文字引擎（macOS CoreText / Windows DirectWrite / Linux 字体文件层）；fontfile 特性带字体文件层（fontdb + rustybuzz，导出与 Linux 量字共用）。不开 native 时无平台依赖，能编到 wasm"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license = "MIT AND OFL-1.1"
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
+dolce-base = { workspace = true }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }
 fontdb = { version = "0.23", default-features = false, features = ["std"], optional = true }

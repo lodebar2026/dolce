@@ -3,11 +3,17 @@ name = "dolce-model"
 description = "悦谱 Dolce 的语义模型 ScoreDoc（同 src/model/doc.ts）、查询层、MusicXML 读写与表层、投影、编辑动作"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
-dolce-play = { path = "../dolce-play" }
+dolce-base = { workspace = true }
+dolce-play = { workspace = true }
 serde.workspace = true
 indexmap = { version = "2", features = ["serde"] }
 # `\p{P}`（署名比对去标点，`jianpuproject::loose_norm`）

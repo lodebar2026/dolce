@@ -3,32 +3,38 @@ name = "dolce-cli"
 description = "悦谱 Dolce 的命令行：识谱、格式转换（含排版导出与 MIDI 导出）、歌本切分、回归"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license = "MIT AND OFL-1.1"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories = ["command-line-utilities", "multimedia"]
 
 [[bin]]
 name = "dolce"
 path = "src/main.rs"
 
 [dependencies]
-dolce-omr-book = { path = "../omr-book" }
-dolce-omr-core = { path = "../omr-core" }
-dolce-omr-engine = { path = "../omr-engine" }
-dolce-omr-jianpu = { path = "../omr-jianpu" }
-dolce-omr-ocr = { path = "../omr-ocr" }
-dolce-omr-sheet = { path = "../omr-sheet" }
-dolce-omr-source = { path = "../omr-source" }
-dolce-omr-staff = { path = "../omr-staff" }
-dolce-omr-todoc = { path = "../omr-todoc" }
-dolce-export = { path = "../dolce-export" }
-dolce-model = { path = "../dolce-model" }
-dolce-formats = { path = "../dolce-formats" }
-dolce-play = { path = "../dolce-play" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-style = { path = "../dolce-style" }
-dolce-view = { path = "../dolce-view" }
-dolce-session = { path = "../dolce-session" }
-dolce-engrave = { path = "../dolce-engrave" }
-dolce-text = { path = "../dolce-text", features = ["native"] }
+dolce-omr-book = { workspace = true }
+dolce-omr-core = { workspace = true }
+dolce-omr-engine = { workspace = true, features = ["parallel"] }
+dolce-omr-jianpu = { workspace = true }
+dolce-omr-ocr = { workspace = true, features = ["native"] }
+dolce-omr-sheet = { workspace = true }
+dolce-omr-source = { workspace = true }
+dolce-omr-staff = { workspace = true }
+dolce-omr-todoc = { workspace = true }
+dolce-export = { workspace = true, features = ["system", "book"] }
+dolce-model = { workspace = true }
+dolce-formats = { workspace = true }
+dolce-play = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-style = { workspace = true }
+dolce-view = { workspace = true }
+dolce-session = { workspace = true }
+dolce-engrave = { workspace = true }
+dolce-text = { workspace = true, features = ["native"] }
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { workspace = true }
@@ -36,4 +42,4 @@ serde_json = "1"
 rayon = "1.10"
 
 [dev-dependencies]
-dolce-omr-ocr = { path = "../omr-ocr", features = ["tract"] }
+dolce-omr-ocr = { workspace = true, features = ["tract"] }

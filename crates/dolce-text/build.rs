@@ -170,7 +170,7 @@ fn gen(out: &mut String, name: &str, face: &Face) {
 }
 
 fn main() {
-    let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../public/redist");
+    let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("assets");
     let mut out = String::new();
     for (name, file) in [("BRAVURA", "Bravura.otf"), ("BRAVURA_TEXT", "BravuraText.otf")] {
         let p = root.join(file);

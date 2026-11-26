@@ -3,17 +3,23 @@ name = "dolce-session"
 description = "悦谱 Dolce 宿主无关的文档会话（对应 src/engine/api.ts 的 EngineSession）：修订号、过期拒绝、按修订取页 / 编辑 / 写出 / 试听。网页 wasm、桌面 Tauri、命令行三个宿主共用"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-base = { path = "../dolce-base" }
+dolce-base = { workspace = true }
 serde.workspace = true
-dolce-model = { path = "../dolce-model" }
-dolce-play = { path = "../dolce-play" }
-dolce-view = { path = "../dolce-view" }
-dolce-scene = { path = "../dolce-scene" }
-dolce-style = { path = "../dolce-style" }
-dolce-engrave = { path = "../dolce-engrave" }
-dolce-layout-jianpu = { path = "../dolce-layout-jianpu" }
-dolce-layout-staff = { path = "../dolce-layout-staff" }
+dolce-model = { workspace = true }
+dolce-play = { workspace = true }
+dolce-view = { workspace = true }
+dolce-scene = { workspace = true }
+dolce-style = { workspace = true }
+dolce-engrave = { workspace = true }
+dolce-layout-jianpu = { workspace = true }
+dolce-layout-staff = { workspace = true }
 serde_json = { version = "1", features = ["float_roundtrip"] }

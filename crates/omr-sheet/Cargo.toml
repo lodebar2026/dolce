@@ -3,10 +3,16 @@ name = "dolce-omr-sheet"
 description = "悦谱 Dolce 识别的谱面元素层：谱表与谱表局部坐标、元素库与证据、归属与互斥、空间查询（简谱、五线谱两条路线共用）"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-dolce-omr-text = { path = "../omr-text" }
-dolce-omr-core = { path = "../omr-core" }
+dolce-omr-text = { workspace = true }
+dolce-omr-core = { workspace = true }
 serde.workspace = true
 serde_json = "1"

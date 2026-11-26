@@ -2,24 +2,26 @@
 # 本地发布脚本：bump 版本 → 提交推送 → 建 release（触发 Build）→ 等 run 跑完 → 自动 gh run delete。
 # 「发布完成后自动删 run」在本地做，不用 CI 工作流（run 无法自删，且约定不改 .github/workflows/*.yml）。
 #
-# 用法：  scripts/release.sh [--skip-check|--force-check] <version> [发布说明...]
+# 用法：  scripts/release.sh [--skip-check|--force-check] [--skip-crates] <version> [发布说明...]
 #   scripts/release.sh 0.4.2
 #   scripts/release.sh 0.4.2 "修复 X" "新增 Y"
 # 改版本号之前先跑发布前验证（scripts/release-check.mjs：wasm 体积、识别耗时、内存），不过就中止；
-# --skip-check 不跑，--force-check 跑但不拦。
+# --skip-check 不跑，--force-check 跑但不拦；--skip-crates 跳过 crates.io 发布（仍会同步 crates 版本号）。
 set -euo pipefail
 
 CHECK=1
+PUBLISH_CRATES=1
 CHECK_ARGS=()
 while [ "${1:-}" != "" ] && [ "${1#--}" != "$1" ]; do
   case "$1" in
     --skip-check) CHECK=0 ;;
     --force-check) CHECK_ARGS+=(--force) ;;
+    --skip-crates) PUBLISH_CRATES=0 ;;
     *) echo "!! 未知选项 $1"; exit 1 ;;
   esac
   shift
 done
-VER="${1:?用法: scripts/release.sh [--skip-check|--force-check] <version> [notes...]}"
+VER="${1:?用法: scripts/release.sh [--skip-check|--force-check] [--skip-crates] <version> [notes...]}"
 shift || true
 TAG="v${VER}"
 REPO="lodebar2026/dolce"
@@ -43,11 +45,13 @@ fi
 
 echo "==> bump 版本 → ${VER}"
 sed -i '' "s/\"version\": \"[0-9][0-9.]*\"/\"version\": \"${VER}\"/" package.json src-tauri/tauri.conf.json
-sed -i '' "s/^version = \"[0-9][0-9.]*\"/version = \"${VER}\"/" src-tauri/Cargo.toml
+sed -i '' "s/^version = \"[0-9][0-9.]*\"/version = \"${VER}\"/" src-tauri/Cargo.toml crates/Cargo.toml
+sed -i '' -E "s/^(dolce-[a-z0-9-]+ = \{ version = \")[0-9][0-9.]*(\", path = )/\1${VER}\2/" crates/Cargo.toml
 sed -i '' "s/\"softwareVersion\": \"[0-9][0-9.]*\"/\"softwareVersion\": \"${VER}\"/" index.html seo/head.en.html
-( cd src-tauri && cargo update -p dolce --precise "${VER}" >/dev/null 2>&1 || true )
+( cd crates && cargo update --workspace >/dev/null 2>&1 || true )
+( cd src-tauri && cargo update --workspace >/dev/null 2>&1 || true )
 
-git add package.json index.html seo/head.en.html src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+git add package.json index.html seo/head.en.html src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock crates/Cargo.toml crates/Cargo.lock
 # 同一版本号重发（撤掉 release 后补改动再发）时版本文件没变，跳过版本提交，照常推送
 if git diff --cached --quiet; then
   echo "   版本号已是 ${VER}，不另提交"
@@ -125,4 +129,8 @@ echo "==> 删除 run ${RUN_ID}"
 gh run delete "${RUN_ID}" --repo "${REPO}"
 # 发布成功：本次识别耗时 / 内存读数记为下一次发布的对照
 [ "${CHECK}" = 1 ] && { node scripts/release-check.mjs --save="${VER}" || true; }
+if [ "${PUBLISH_CRATES}" = 1 ]; then
+  echo "==> 发布 Rust crates 到 crates.io（${VER}）"
+  bash scripts/publish-crates.sh
+fi
 echo "==> 完成：${TAG} 已发布，run ${RUN_ID} 已删除"
