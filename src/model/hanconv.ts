@@ -1,5 +1,5 @@
 // 简繁转换：**以 ScoreDoc 为准**决定哪些是人读的文字、按什么上下文送词表，五种源格式通用。
-// 在 Rust（crates/dolce-model/src/hanconv.rs），这里是门面；词表函数（`common/hanconv.ts`）由调用方给，Rust 回调它。
+// 在 Rust（crates/model/src/hanconv.rs），这里是门面；词表函数（`common/hanconv.ts`）由调用方给，Rust 回调它。
 //
 // - 文字槽按「一起送词表的上下文」分组：头部每个字段一组；歌词同一声部、同一段号的音节**整首**按元素顺序连成一组，
 //   词组跨音节、跨行都能按词转（`日光/之下`、行末「发」接下行「现」）。

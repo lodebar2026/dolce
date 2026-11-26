@@ -1,5 +1,5 @@
 // `.jpwabc` 的分节文件：分节、各节内容（`.Voice` 词法、`.Words` 歌词段、`.Title` 字段…）的解析在 Rust
-// （crates/dolce-formats/src/jpw/file.rs），这里是门面——编辑器按节取行（`.Layout` 的断行描述、`.Voice` 各行挪 `$`、
+// （crates/model/src/formats/jpw/file.rs），这里是门面——编辑器按节取行（`.Layout` 的断行描述、`.Voice` 各行挪 `$`、
 // `.Words` 各段行号重算锚点），读谱整份交 `model/fromjpw.ts`（原文 `text` 跟着）。
 
 import type { JpwTok, JpwToken } from "./lex";

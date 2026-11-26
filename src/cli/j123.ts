@@ -37,7 +37,7 @@ export { VoiceSection, WordsSection, TitleSection, LayoutSection } from "../jpwo
 export { lexVoice } from "../jpword/lex";
 export { readJpwSource } from "../model/fromjpw";
 export { isXmlShaped } from "../model/xmlproject";
-// 按乐句重排（写回原文那一步；断句本身在 crates/dolce-play，经 score/play.ts）
+// 按乐句重排（写回原文那一步；断句本身在 crates/model/src/play，经 score/play.ts）
 export { relayoutDocBreaks, relayoutJpwabcText, spliceComments } from "../jianpu/docrelayout";
 export { applyBreaks, breaksOf } from "../model/breaks";
 export { barLines, phraseCuts, fanqiePhraseLines, planLines, fanqieLinesEdited } from "../jianpu/phrase";

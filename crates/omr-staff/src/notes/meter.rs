@@ -97,7 +97,7 @@ pub struct Bar {
 pub struct Flag {
     pub row: usize,
     pub bar: usize,
-    /// 原因码（`omr-sheet::result::codes`）。
+    /// 原因码（`omr-core::sheet::result::codes`）。
     pub code: &'static str,
     pub note: String,
 }

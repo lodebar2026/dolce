@@ -174,7 +174,7 @@ export interface BarlineElement {
   temporaryKey?: string;
   annotation?: string;
   /** **只管画**：下一小节的左线上起反复（MusicXML / 123 的 `|:` 记在下一小节左线上，行视图不出左线），
-   *  原样文档把这条线画成 `|:`（`:|` 画成 `:|:`）。演唱顺序不读它（反复已由模型的左线表达，`dolce-view/src/phrasesong.rs`） */
+   *  原样文档把这条线画成 `|:`（`:|` 画成 `:|:`）。演唱顺序不读它（反复已由模型的左线表达，`dolce-model::view/src/phrasesong.rs`） */
   repeatForwardAfter?: boolean;
   code: string;
   source: SourceSpan;

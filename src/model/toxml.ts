@@ -1,4 +1,4 @@
-// MusicXML 写出（`ScoreDoc` → MusicXML 文本）：在 Rust（crates/dolce-model/src/toxml.rs），这里是门面。**MusicXML 的唯一写出端**：
+// MusicXML 写出（`ScoreDoc` → MusicXML 文本）：在 Rust（crates/model/src/toxml.rs），这里是门面。**MusicXML 的唯一写出端**：
 // 简谱来源先经投影成 MusicXML 形状，MusicXML 读进来的原样序列化（表层按对象身份从原节点回填）。
 // 写出端认得的属性 / 子节点之外，原节点其余的通用回填（`OWNS` 等判据见 Rust 那边）；导出版面见 `editor/xmllayout.ts`（在 Rust 里排好直接写）。
 

@@ -9,13 +9,13 @@
 | 文件 | 职责 |
 |---|---|
 | `src/model/toxml.ts::scoreDocToMusicXml` | **唯一写出端**：MusicXML 形状的 `ScoreDoc` → 文本。按固定元素次序建树，读进来的文档再按原节点回填表层（`OWNS` 之外的属性与子节点） |
-| `crates/dolce-model/src/xmlproject.rs::project_for_music_xml` | **投影**：简谱来源留空的语义字段补齐成 MusicXML 形状（见下；`src/model/xmlproject.ts` 是 wasm 门面） |
+| `crates/model/src/xmlproject.rs::project_for_music_xml` | **投影**：简谱来源留空的语义字段补齐成 MusicXML 形状（见下；`src/model/xmlproject.ts` 是 wasm 门面） |
 | `src/editor/xmllayout.ts::engraveScoreDoc` | 版面坐标：五线谱引擎按设置里的纸排一遍。纸、分行分页、标题块、弧朝向写回模型；系统/谱表间距、小节宽、音符 `default-x`、符干、歌词/和弦/文字 `default-y` 装进 `EngravedLayout`，经 `ToXmlOptions.layout` 交给写出端 |
 | `src/editor/export.ts::buildMusicXml` | 调度：有底本且没改过给底本，否则整份重写 |
 
 只有这一份写出端、不做底本增量 patch：语义在 `ScoreDoc`，表层在原节点（`model/xmlsurface.ts`），整份重写不是降采样。
 
-五线谱识别在 Rust（`omr-sheet::score` 写出 MusicXML 文本），编辑器按打开 `.musicxml` 的同一条路读进来（`loadScoreDoc`，表层绑在原节点：符干端点、原图位置、识别 id），
+五线谱识别在 Rust（`omr-core::sheet::score` 写出 MusicXML 文本），编辑器按打开 `.musicxml` 的同一条路读进来（`loadScoreDoc`，表层绑在原节点：符干端点、原图位置、识别 id），
 之后改动由这里整份重写——识别结果与「存成文件再打开」一模一样。
 简谱识别直出 `ScoreDoc`、写成 `.123`，不经 MusicXML。
 
@@ -30,10 +30,10 @@
 
 文本格式导出时再经 `engraveScoreDoc` 补版面坐标（`export.ts::sourceMusicXml`）；带版面的原样不动。
 
-简谱识别产物（`App.importOmrDoc`）：识别结果直出 `ScoreDoc`（`omr-todoc::jianpu`）、`emit123` 成 123 文本进代码区，
+简谱识别产物（`App.importOmrDoc`）：识别结果直出 `ScoreDoc`（`omr-core::todoc::jianpu`）、`emit123` 成 123 文本进代码区，
 之后就是普通 123 文档，没有 MusicXML 底本；点选映射由 `omr/meta.ts` 重解析 123 取源区间。
 
-## 反方向：MusicXML → 简谱形状（`crates/dolce-model/src/jianpuproject.rs`）
+## 反方向：MusicXML → 简谱形状（`crates/model/src/jianpuproject.rs`）
 
 `.musicxml` 的简谱档（`jianpu/slots.ts::docView`）与 123 写出端（`Emitter123.emitSong`）之前先投一次，模型本身不动。
 MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type="half"`；简谱侧读的是减时线条数、简谱附点、增时线。
@@ -52,7 +52,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 `.musicxml` 重写因此逐字节不受投影影响（568 份实测）。其余在克隆上投影，不改调用方的文档。
 简谱来源（`fromfanqie`/`j123`/`fromjpw`）一律不写 `attrs.divisions`，时值以一个四分音符 = 48 记名义时值。
 
-改 `crates/dolce-model/src/xmlproject.rs` 之前先读这几条，每条都对应一个对拍出来的问题（全部文本谱语料新旧写出端对拍）：
+改 `crates/model/src/xmlproject.rs` 之前先读这几条，每条都对应一个对拍出来的问题（全部文本谱语料新旧写出端对拍）：
 
 - **小节中间换行拆成两个小节**（`splitInlineBreaks`）。MusicXML 只能在小节线处换行：源文在小节中间换行的
   （123/`.jpwabc` 的小节中间 `$`，模型里是 `Chord.lineBreakAfter`），前半右线写隐藏线 `<bar-style>none`，
@@ -82,7 +82,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 - **增时线上的和弦**：`<harmony>` 排在所辖音符之前，拍位写进 `Harmony.offset`。
 - **符杠**：文本谱/123 的 `beams` 是减时线层数的占位（全是 continue），一个 begin 都没有的声部按拍自动分组（见下「符杠」）。
 - **歌词**：段号区间（文本谱 `C1-2:`）展开成逐段的 `<lyric>`；副歌行（`refrain`）写 `number="chorus"`，与导入端互逆。
-- **各 part 按共用时间轴逐格写**（`toxml.ts::axisMeasuresXml`，轴见 `crates/dolce-model/src/timeaxis.rs`）：文本谱一组不一定含全部声部，投影不补小节、
+- **各 part 按共用时间轴逐格写**（`toxml.ts::axisMeasuresXml`，轴见 `crates/model/src/timeaxis.rs`）：文本谱一组不一定含全部声部，投影不补小节、
   只留各小节的组号（`print.system`，不写进 `<print>`），写出端按轴逐格写，各 part 小节数才一致（issue 11；《同一首歌》三个 part 53/41/12 小节写成各 53）。
   某格这个声部没有小节：写一个只有 `<forward>`（整小节时长，取这一格最前那个声部的小节）的空 `<measure>`，不带音、小节线、房号、跳转，
   只跟着轴上这一格的拍号/调号、换行（`new-system`/`new-page`）走。后几组才出场的声部：曲首那个空小节写 divisions、谱号（取它头一小节的）和轴上此刻生效的调号拍号；出场那一小节只写与已写出的不同的调号拍号（照抄会在这个谱表上多印一个拍号）。
@@ -121,7 +121,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 ### 符杠
 
 简谱来源（文本谱/123/`.jpwabc`，含简谱识别出的 123）的 `beams` 只是减时线层数的占位，投影时**按拍自动分组**
-（`crates/dolce-model/src/xmlproject.rs::auto_beams`）——不写的话读入端各按各的规则猜，跨拍、弱起处常与原谱不一致：
+（`crates/model/src/xmlproject.rs::auto_beams`）——不写的话读入端各按各的规则猜，跨拍、弱起处常与原谱不一致：
 
 - 分组：x/8 且拍数是 3 的倍数三个八分一组，其余一拍一组；组里是起点落在同一拍、带减时线、不超过一拍的相邻元素，
   四分音符/四分休止打断。弱起小节（首小节不满）按小节末尾对齐拍位。
@@ -169,7 +169,7 @@ MusicXML 的 `beams` 是 `<beam>` 元素、`dots` 是 `<dot>`、长音是 `type=
 
 `<part-name>` 一律留空并带 `print-object="no"`：Dorico/MuseScore 会把它当乐器名显示在谱前，简谱没有这个概念。
 
-## 简谱识别的弧线配对（`omr-todoc::jianpu::pair_arcs`）
+## 简谱识别的弧线配对（`omr-core::todoc::jianpu::pair_arcs`）
 
 识别出的弧线端点难免出错，建模型时先配对（导出 MusicXML 时模型里已经是配好的 Mark）：
 

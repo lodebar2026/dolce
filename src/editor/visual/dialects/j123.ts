@@ -1,4 +1,4 @@
-// 123 的音符 token：`[#b n ## bb]数字[',]*[_.]*`（Rust `dolce-formats` 123 词法 `scan_note` 的写法），
+// 123 的音符 token：`[#b n ## bb]数字[',]*[_.]*`（Rust `dolce-model::formats` 123 词法 `scan_note` 的写法），
 // 增时线 `-`、小节线 `|`、换行 `$`、圆滑线 `( )` 都是独立 token。
 
 import { isBareChord } from "../../../abcfamily/parse";

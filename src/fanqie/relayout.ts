@@ -1,6 +1,6 @@
 // 「按乐句重排」写回文本谱原文（编辑器工具栏那个按钮的文本谱一侧）。
 //
-// 搬运原文片段在 Rust（crates/dolce-formats/src/fanqie/relayout.rs，wasm `fanqieRelayoutText` / `fanqieRelayoutBreak`），这里是门面：
+// 搬运原文片段在 Rust（crates/model/src/formats/fanqie/relayout.rs，wasm `fanqieRelayoutText` / `fanqieRelayoutBreak`），这里是门面：
 // 新行怎么分要行长尺子（`LinePlan.measure` 在 TS 量），所以逐首先经 `jianpu/phrase.ts::planLines` 算好（回调照常触发），再整份交 Rust 写回。
 //
 // **只做原文片段的搬运**：新的每一行都是原文里那几段字符接起来的，不重新生成任何记号——和弦、`&记号`、注释、并字号、跳词符都跟着原文走。

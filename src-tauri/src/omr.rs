@@ -1,5 +1,5 @@
 //! Rust 识别接进桌面版（迁移计划 P12）：文档、识别（进度经 Channel、可取消）、五线谱会话、核对底图。
-//! 识别、会话都在 `crates/omr-engine`；这里只管句柄表、线程与 IPC。重活一律 `spawn_blocking`，二进制走 `ipc::Response`。
+//! 识别、会话都在 `crates/omr`；这里只管句柄表、线程与 IPC。重活一律 `spawn_blocking`，二进制走 `ipc::Response`。
 //!
 //! OCR 走一套原生会话池（[`infer`]）。
 use dolce_omr_core::progress::{Hook, Step};
@@ -52,7 +52,7 @@ fn ocr(app: &tauri::AppHandle) -> Result<&'static CachedOcr, String> {
     .map_err(|e| e.clone())
 }
 
-/// 启动时调：PDFium 动态库指到资源目录里那份（开发时资源目录里没有就按 omr-source 的老顺序找）。
+/// 启动时调：PDFium 动态库指到资源目录里那份（开发时资源目录里没有就按 omr-core::source 的老顺序找）。
 pub fn setup(app: &tauri::AppHandle) {
     if let Ok(dir) = res(app, "pdfium") {
         for name in ["libpdfium.dylib", "pdfium.dll", "libpdfium.so"] {
@@ -84,7 +84,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// 打开文档（几个文件合成一份）。请求体见 `omr-engine::split_files`；回 `{id, pdf, sizes}`。
+/// 打开文档（几个文件合成一份）。请求体见 `dolce-omr::split_files`；回 `{id, pdf, sizes}`。
 #[tauri::command]
 pub async fn omr_open(state: tauri::State<'_, OmrState>, request: tauri::ipc::Request<'_>) -> Result<Value, String> {
     let body = match request.body() {
@@ -105,14 +105,14 @@ pub fn omr_close(state: tauri::State<'_, OmrState>, id: u32) -> Result<(), Strin
     Ok(())
 }
 
-/// 整页渲染（格式见 `omr-engine::Handle::render_bytes`）。
+/// 整页渲染（格式见 `dolce-omr::Handle::render_bytes`）。
 #[tauri::command]
 pub async fn omr_render(state: tauri::State<'_, OmrState>, id: u32, page: usize, scale: f64) -> Result<Response, String> {
     let e = entry(&state, id)?;
     Ok(Response::new(blocking(move || e.h.render_bytes(page, scale)).await?))
 }
 
-/// 核对底图（格式见 `omr-engine::Handle::binary_bytes`）。
+/// 核对底图（格式见 `dolce-omr::Handle::binary_bytes`）。
 #[tauri::command]
 pub async fn omr_binary(state: tauri::State<'_, OmrState>, id: u32, page: usize) -> Result<Response, String> {
     let e = entry(&state, id)?;
@@ -126,7 +126,7 @@ pub struct Progress {
     stage: String,
 }
 
-/// 识别：进度逐步发到 `on_progress`；回应见 `omr-engine::Handle::recognize`。
+/// 识别：进度逐步发到 `on_progress`；回应见 `dolce-omr::Handle::recognize`。
 #[tauri::command]
 pub async fn omr_recognize(app: tauri::AppHandle, state: tauri::State<'_, OmrState>, id: u32, opts: Opts, on_progress: Channel<Progress>) -> Result<Value, String> {
     let e = entry(&state, id)?;
@@ -147,7 +147,7 @@ pub fn omr_cancel(state: tauri::State<'_, OmrState>, id: u32) -> Result<(), Stri
     Ok(())
 }
 
-/// 会话操作（五线谱；各操作见 `omr-engine::Handle::session`）。
+/// 会话操作（五线谱；各操作见 `dolce-omr::Handle::session`）。
 #[tauri::command]
 pub async fn omr_session(app: tauri::AppHandle, state: tauri::State<'_, OmrState>, id: u32, op: Value) -> Result<Value, String> {
     let e = entry(&state, id)?;

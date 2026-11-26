@@ -24,10 +24,10 @@ fn export_scene_pdf(pages: Vec<ScenePageIn>, bg: Option<f64>, title: Option<Stri
     std::fs::write(&out_path, &bytes).map_err(|e| e.to_string())
 }
 
-// ── 识别（`crates/omr-engine`）：Tauri 命令在 omr.rs ─────────────────────────────
+// ── 识别（`crates/omr`）：Tauri 命令在 omr.rs ─────────────────────────────
 mod omr;
 
-// ── 排版（`crates/dolce-session`）：原生排版线程与命令在 layout.rs ─────────────────
+// ── 排版（`crates/layout`）：原生排版线程与命令在 layout.rs ─────────────────
 mod layout;
 
 // 会话池在 `omr::infer`（每个模型 `DOLCE_OCR_SESS` 个会话 × `DOLCE_OCR_THREADS` 线程，缺省 3 × 3）。

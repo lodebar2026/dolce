@@ -1,4 +1,4 @@
-//! MIDI 导入（`dolce-formats::midi`）的对拍探针（dev `rsdiff/midiimport.mjs`）。只在 `--features probe` 的那份里。
+//! MIDI 导入（`dolce-model::formats::midi`）的对拍探针（dev `rsdiff/midiimport.mjs`）。只在 `--features probe` 的那份里。
 
 use crate::json;
 use dolce_model::formats::midi::smf;

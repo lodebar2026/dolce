@@ -1,8 +1,8 @@
 // 「按乐句重排」/「每行 n 小节」——**把断点换算到排版行视图的行上**。
 //
-// 判据在 Rust（crates/dolce-view/src/phraselines.rs，wasm `modelPhraseCuts` / `modelPhraseLinesEdited`），这里是门面：
+// 判据在 Rust（crates/model/src/view/phraselines.rs，wasm `modelPhraseCuts` / `modelPhraseLinesEdited`），这里是门面：
 // 行长尺子（`FitMeasure`，要量字）在 TS 量好按元素 id 交过去，`onKeep` / `onOverflow` 回调由 Rust 回的标志触发。
-// 断句本身格式无关（crates/dolce-play/src/phrase.rs），断点经断句输入的 `ids` 与视图的元素表回到行里的元素；
+// 断句本身格式无关（crates/model/src/play/phrase.rs），断点经断句输入的 `ids` 与视图的元素表回到行里的元素；
 // 多声部按累计时值对齐同一拍位。产出是一份「新的行划分」（`FanqieNewLine[]`）或断点（`PhraseCut[]`），
 // 消费者（`fanqie/relayout.ts`、`docrelayout.ts`、文本谱写出端）据此改原文或写回换行位。
 //

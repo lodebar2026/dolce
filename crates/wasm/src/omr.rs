@@ -1,4 +1,4 @@
-//! 识别结果建模（`omr-todoc`）：简谱识别结果在编辑器里会改，换输出格式时把改过的那份送回来重建模型。
+//! 识别结果建模（`omr-core::todoc`）：简谱识别结果在编辑器里会改，换输出格式时把改过的那份送回来重建模型。
 
 use crate::{json, parse};
 use dolce_omr_core::sheet::jianpu::RecognizedScore;

@@ -1,5 +1,5 @@
 // 谱里自带的纸：MusicXML 的 `<page-layout>`（tenths）与 123/ABC 的 `I:meta page …`（pt）互转，外加谱表大小、歌词字号、页眉字体。
-// 在 Rust（`crates/dolce-model/src/pagemeta.rs`，meta 键与换算见那边文件头），这里是门面。
+// 在 Rust（`crates/model/src/pagemeta.rs`，meta 键与换算见那边文件头），这里是门面。
 //
 // 转换时把纸写成 meta（`withPageMeta`），123/ABC 写 MusicXML 时再还原成 `<page-layout>`（投影里做）。
 // 编辑器里「跟随文件」读的也是这里（`style/paper.ts::songPageDecl`）。

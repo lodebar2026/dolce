@@ -1,6 +1,6 @@
 // 网页版识别 Worker：PDFium（emscripten 的 wasm 版）与识别（crates/omr-wasm）都在这里跑，主线程只收发消息（`webengine.ts`）。
 // 两个 wasm 与 OCR 模型都在 public/redist/ 下（scripts/build-wasm.mjs 产出），用到时才取：开文档前取识别模块（打开的文件里有 PDF
-// 才另取 PDFium，图片不经它），识别 / 框选重认前取 OCR 模型。消息与 Tauri 命令一一对应，字节与 JSON 的格式同桌面版（omr-engine::Handle）。
+// 才另取 PDFium，图片不经它），识别 / 框选重认前取 OCR 模型。消息与 Tauri 命令一一对应，字节与 JSON 的格式同桌面版（dolce-omr::Handle）。
 //
 // wasm 里没有线程：识别同步跑完，进度回调里查主线程放在 SharedArrayBuffer 里的取消标志，置位就在下一步停。
 // OCR 分轮预取（`CachedOcr::rounds`）：每轮只查缓存跑一遍识别，缺的 OCR 攒成几份活，分给本 Worker 和几个帮手 Worker
@@ -125,7 +125,7 @@ function pdfium(): Promise<void> {
   return pdfiumReady;
 }
 
-/** 打开请求体（`u32 个数` 后逐个 `u32 长度` + 字节，小端，同 `omr-engine::handle::split_files`）里有没有 `%PDF` 开头的文件。 */
+/** 打开请求体（`u32 个数` 后逐个 `u32 长度` + 字节，小端，同 `dolce-omr::handle::split_files`）里有没有 `%PDF` 开头的文件。 */
 function hasPdf(body: Uint8Array): boolean {
   const v = new DataView(body.buffer, body.byteOffset, body.byteLength);
   if (body.byteLength < 4) return false;

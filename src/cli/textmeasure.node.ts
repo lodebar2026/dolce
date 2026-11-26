@@ -1,6 +1,6 @@
 // Node 侧的量字后端：原生模块 `native/textmeasure`（`npm run build:native`，macOS CoreText / Windows DirectWrite / Linux 字体文件层 fontdb + rustybuzz）。
 // 浏览器口径（CSS 族串按中文页面展开、单字宽取 1/64、全角标点挤压、ascent 取整与修正、f32）全在 Rust
-//（`crates/dolce-text` 的 `BrowserCompat`，`dolce_text_native::node_measure`），与 `dolce` 命令行同一份；这里只把它接成 `MeasureBackend`。
+//（`crates/engrave/src/text` 的 `BrowserCompat`，`dolce_text_native::node_measure`），与 `dolce` 命令行同一份；这里只把它接成 `MeasureBackend`。
 // 这三个以外的平台没有原生模块，Node 侧排不了版。
 // **只许进 Node 入口（cli/*）的 import 链。**
 

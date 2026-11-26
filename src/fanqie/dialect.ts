@@ -1,4 +1,4 @@
-// 文本谱的两种方言与自动嗅探：方言表与嗅探判据在 Rust（crates/dolce-formats/src/fanqie/dialect.rs），这里是门面。
+// 文本谱的两种方言与自动嗅探：方言表与嗅探判据在 Rust（crates/model/src/formats/fanqie/dialect.rs），这里是门面。
 //
 // - tomato：番茄简谱脚本 v1.0
 // - shige ：诗歌本文本谱，番茄的变种

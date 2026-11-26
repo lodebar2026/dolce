@@ -51,7 +51,7 @@ pub fn recognize_hooked(srcs: &[SourceImage], ocr: &CachedOcr, hook: &Hook) -> R
 }
 
 /// 像素页识别前的准备：各页上下拼起、二值化、连通块、估数字字号、去噪点。只看图、不用 OCR——
-/// 分轮预取时各轮都从头识别，调用方可以留着它各轮共用（见 `omr-engine` 的 `Doc`）。
+/// 分轮预取时各轮都从头识别，调用方可以留着它各轮共用（见 `dolce-omr` 的 `Doc`）。
 pub struct Prepared {
     ink: prep::RasterInk,
     num_h: f64,

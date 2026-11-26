@@ -1,5 +1,5 @@
 //! 网页版绑定：Worker（`src/omrrust/worker.ts`）里跑，接口与桌面版 Tauri 命令（`src-tauri/src/omr.rs`）一一对应，
-//! 都是 `omr-engine::Handle` 外面的薄壳；字节与 JSON 的格式两边相同。
+//! 都是 `dolce-omr::Handle` 外面的薄壳；字节与 JSON 的格式两边相同。
 //!
 //! 先后：Worker 加载 PDFium 的 wasm 模块后调 `initialize_pdfium_render`（pdfium-render 导出）与 [`set_pdfium_module`]，要识别前调 [`load_ocr`] 交模型字节。
 //! wasm 下没有线程：识别同步跑完，进度回调里由 JS 查取消标志（`SharedArrayBuffer`），回真就在下一步停。
@@ -30,7 +30,7 @@ fn ocr() -> Result<&'static CachedOcr, String> {
 }
 
 /// 交 PDFium 的 emscripten 模块：先调 pdfium-render 导出的 `initialize_pdfium_render(模块, 本模块导出, false)`，再调这个
-/// （取数层有两个接口绕开绑定直接调模块，见 `omr-source/src/pdfium_wasm.rs`）。
+/// （取数层有两个接口绕开绑定直接调模块，见 `omr-core::source/src/pdfium_wasm.rs`）。
 #[wasm_bindgen]
 pub fn set_pdfium_module(module: JsValue) {
     dolce_omr_core::source::set_wasm_module(module);

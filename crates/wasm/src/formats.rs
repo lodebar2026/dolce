@@ -1,4 +1,4 @@
-//! ABC 家族（123 / ABC / jcx，crates/dolce-formats::abc）与丢失清单（`capability`）给编辑器的同步门面（M3-6 起 TS 只剩门面）。
+//! ABC 家族（123 / ABC / jcx，crates/model/src/formats::abc）与丢失清单（`capability`）给编辑器的同步门面（M3-6 起 TS 只剩门面）。
 //!
 //! 模型 JSON 的口径同 `model.rs`：送进来的带 `_oid`、不带 `source`；读出的 `ScoreDoc` 带 `source`（门面换回 JS 原文，孤立代理过边界会变 U+FFFD）；
 //! 丢失清单的页眉字体要查 MusicXML 表层，按句柄给（0 = 没有）。

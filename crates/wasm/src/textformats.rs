@@ -1,4 +1,4 @@
-//! 文本谱、`.jpwabc`、jianpu-ly 读入与和弦符号、MIDI 导入（`dolce-formats::{fanqie, jpw, jly, midi}`）给编辑器的同步门面（M4 起 TS 只剩门面）。
+//! 文本谱、`.jpwabc`、jianpu-ly 读入与和弦符号、MIDI 导入（`dolce-model::formats::{fanqie, jpw, jly, midi}`）给编辑器的同步门面（M4 起 TS 只剩门面）。
 //!
 //! 模型 JSON 的口径同 `formats.rs`：读出的 `ScoreDoc` 带 `source`（门面换回 JS 原文）。提示一律只出 `Msg` 键，门面按界面语言出字。
 

@@ -1,4 +1,4 @@
-// jianpu-ly 的读入（目标语法 = 上游 jianpu-ly README v1.890）：词法与装配都在 Rust（crates/dolce-formats/src/jly/fromjly.rs），这里是门面。
+// jianpu-ly 的读入（目标语法 = 上游 jianpu-ly README v1.890）：词法与装配都在 Rust（crates/model/src/formats/jly/fromjly.rs），这里是门面。
 // 与 123 方言的差异（词内顺序无关、时值是字母、连音 `3[ … ]`）与模型口径见 `docs/格式/` 与模块页；
 // 本版不收的写法走损失清单 → `doc.diagnostics` 报出，不静默丢。
 

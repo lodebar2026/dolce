@@ -1,7 +1,7 @@
 // dolce-wasm（crates/wasm）与 dolce-jcx-wasm（crates/jcx-wasm）的绑定形状，`scripts/build-wasm.mjs` 编到 public/redist/dolce/。
 // 胶水是 wasm-bindgen `--target web` 出的，网页主线程（`common/dolce.ts::loadDolce`）与 Node（`cli/dolcewasm.node.ts`）载同一份；不入库、不进打包，按运行时路径动态载入。
 // 对拍探针（`xmlDigest`、`editDigest`…）不在这份里：挂在 cargo feature `probe` 下，只编进 out/dolce-probe/ 给 dev 对拍脚本。
-// 数据过边界一律 JSON 字符串；会话调用失败抛 `Error`，`message` 是 `dolce_session::EngineError` 的 JSON。
+// 数据过边界一律 JSON 字符串；会话调用失败抛 `Error`，`message` 是 `dolce_layout::EngineError` 的 JSON。
 
 export interface DolceSessionWasm {
   /** `UpdateRequest` 的 JSON → `UpdateReply` 的 JSON */
@@ -41,7 +41,7 @@ export interface WasmMeasure {
 }
 
 export interface DolceWasm {
-  // 排版（crates/dolce-session/src/layout.rs）：宿主设一次量字与 SMuFL 元数据，之后同步排
+  // 排版（crates/layout/src/layout.rs）：宿主设一次量字与 SMuFL 元数据，之后同步排
   setLayoutHost(measure: WasmMeasure, smufl: string): void;
   clearMeasureCache(): void;
   /** `doc` 是 ScoreDoc JSON，`req` 是 `JianpuRequest` JSON */
@@ -52,7 +52,7 @@ export interface DolceWasm {
   measureDocument(doc: string, style: string, width: number, slide: boolean, song: number): string;
   engravedMusicXml(doc: string, surface: number, req: string): string;
   staffChordSpans(doc: string, surface: number, req: string): string;
-  /** 按参照歌词生成段落与 `%%sing`（`dolce_session::sing`）：`req` 是投影档 `JianpuRequest` JSON，回 `SingFitReport` JSON */
+  /** 按参照歌词生成段落与 `%%sing`（`dolce_layout::sing`）：`req` 是投影档 `JianpuRequest` JSON，回 `SingFitReport` JSON */
   singFromLyrics(doc: string, song: number, lyrics: string, req: string): string;
 
   default(init?: { module_or_path: string | URL }): Promise<object>;
@@ -60,7 +60,7 @@ export interface DolceWasm {
   version(): string;
   Session: new () => DolceSessionWasm;
 
-  // 演唱顺序、断句、时间轴、MIDI（crates/dolce-play）：入参回值是 JSON，编解码在 `score/play.ts`
+  // 演唱顺序、断句、时间轴、MIDI（crates/model/src/play）：入参回值是 JSON，编解码在 `score/play.ts`
   playOrderOf(parts: string, jumps: string): string;
   /** 回 `PlayOrder` 或 `"null"` */
   sectionPlayOrder(parts: string, jumps: string, seq: string, marks: string): string;
@@ -134,7 +134,7 @@ export interface DolceWasm {
   modelCarryPlayOrder(from: string, to: string): string;
   /** 排版行视图（`jianpu/slots.ts`）：id 化的 `DocView` JSON（`refs` 存下标，投影改过曲子的另带 `song`）；`source` 空串 = 用 `doc.source` */
   modelDocView(doc: string, source: string): string;
-  /** 由 `ScoreDoc` 拼试听输入（crates/dolce-view，门面 `score/play.ts`）：回 `{source: PlaySource, playData: PlayData}`，没有曲行回 `"null"` */
+  /** 由 `ScoreDoc` 拼试听输入（crates/model/src/view，门面 `score/play.ts`）：回 `{source: PlaySource, playData: PlayData}`，没有曲行回 `"null"` */
   modelPlaySource(doc: string, song: number, forExpanded: boolean): string;
   modelPlaySourceOfDoc(song: string, melodyOnly: boolean): string;
   /** 简谱形状的演唱顺序（已折回第一份声部）：`PlayData` 的 JSON，没有曲行回 `"null"` */
@@ -223,7 +223,7 @@ export interface DolceWasm {
   /** `{ doc, warnings: Msg[] }` / `{ error: Msg }` */
   midiImport(bytes: Uint8Array, title: string, opts: string): string;
 
-  // 识别结果建模（crates/omr-todoc）：入参是 `RecognizedScore` 的 JSON
+  // 识别结果建模（crates/omr-core/src/todoc）：入参是 `RecognizedScore` 的 JSON
   /** `{ doc, numOf: [元素 id, 拍平后的音符下标][] }` */
   omrJianpuDoc(score: string): string;
   /** 各音符（拍平序）的和弦落点 `"h"` / `"s<k>"` / `"l<k>"` */

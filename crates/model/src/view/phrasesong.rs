@@ -1,7 +1,7 @@
 //! 简谱形状的 `ScoreDoc`（文本谱 / 123 / ABC / `.jpwabc`）→ 一个声部的小节序列（同原 `jianpu/phrasesong.ts`）。
 //!
 //! 经排版行视图（[`crate::view::slots::doc_view`]）读，和简谱档谱面、简谱输入模型是同一批行。小节序列一份三用：
-//! 断句输入（[`phrase_part_of_song`]）、试听 / 演唱顺序（[`crate::view::playsong`]）、`.jpwabc` 写出端输入（`dolce-formats::jpw::input`）。
+//! 断句输入（[`phrase_part_of_song`]）、试听 / 演唱顺序（[`crate::view::playsong`]）、`.jpwabc` 写出端输入（`dolce-model::formats::jpw::input`）。
 //! **口径逐条同 `jianpuinput.ts::rowsPart`**（`forExpanded` 那一份：带歌词的声部当主旋律、同号歌词顺延）。
 
 use std::collections::{HashMap, HashSet};

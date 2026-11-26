@@ -8,10 +8,10 @@
 // - 行里每个符号都带 `refs[i]`：它的 `ElementId` 与引用的 `ScoreDoc` 对象。播放高亮、双向定位一律按 id 认。
 // - 跨行记号按行切段（续接标记、续行 level）、房号由 `Barline.ending` 还原成行内区间、歌词按行级版式铺回。
 //
-// 铺排在 Rust（`crates/dolce-view/src/slots.rs`，wasm `modelDocView`）：回来的是 id 化的视图——`refs` 存下标
+// 铺排在 Rust（`crates/model/src/view/slots.rs`，wasm `modelDocView`）：回来的是 id 化的视图——`refs` 存下标
 // （小节在投影后声部里第几个、元素第几个、增时线 / 小节线第几条），投影改过曲子（MusicXML 形状、多小节休止）的另带投影后那份 `song`。
 // 这里只把下标认回对象、建 `idOf` / `elementOf` / `syllableOwner` 三张表。没投影的曲子 `refs` 直接指 `doc.songs[i]` 里的对象。
-// 双向定位索引的条目（`crates/dolce-view/src/sync.rs`）同一趟带回，存在 `sync`（`editor/sync.ts::SyncIndex.build` 取用）。
+// 双向定位索引的条目（`crates/model/src/view/sync.rs`）同一趟带回，存在 `sync`（`editor/sync.ts::SyncIndex.build` 取用）。
 //
 // 视图里符号的形状沿用 `jianpu/ast.ts` 的元素类型（排版器与导出的几何代码按这些字段写成，原样复用）。
 
@@ -67,7 +67,7 @@ export interface DocView {
   sync: { entries: object[]; breaks: object[] };
 }
 
-/** Rust 回来的形状（`dolce_view::slots::DocView`） */
+/** Rust 回来的形状（`dolce_model::view::slots::DocView`） */
 interface WireRef {
   id?: number;
   m: number;

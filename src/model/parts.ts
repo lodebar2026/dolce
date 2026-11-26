@@ -5,7 +5,7 @@
 // T/B 共用低音谱表），写成两个声线或和弦的上下音；拆成开放谱（每部一行）、或反过来合成闭合谱，是校谱时最常做的两件事。
 //
 // 改的都是传进来的那份模型（调用方先读一份新的，`.musicxml` 改完整份重写，123/ABC 改完整份重出）。
-// 增删拆合这几样在 Rust（crates/dolce-model/src/parts.rs，经 `EditCmd`）；视图与几个只读查询留在这里给 TS 排版用（随排版迁 Rust 再删）。
+// 增删拆合这几样在 Rust（crates/model/src/parts.rs，经 `EditCmd`）；视图与几个只读查询留在这里给 TS 排版用（随排版迁 Rust 再删）。
 
 import type { Clef, Part, ScoreDoc, Transpose } from "./doc";
 import { applyEditCmd } from "./edit";

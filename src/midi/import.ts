@@ -1,5 +1,5 @@
 // MIDI → `ScoreDoc`（**MusicXML 形状**：绝对音高 + 每小节 divisions）：SMF 读取与量化建模在 Rust
-// （crates/dolce-formats/src/midi/），这里是门面；导入对话框在 `editor/midi-import.ts`。
+// （crates/model/src/formats/midi/），这里是门面；导入对话框在 `editor/midi-import.ts`。
 //
 // 这是**量化后的记谱重建**，不是无损的事件编辑（量化按拍、声部按小节分、音名按调号拼、变速只取首个速度，
 // 踏板 / 控制器 / 弯音 / 打击乐通道不转写），口径见模块页。简谱度数等由 `jianpuproject.ts` 投影，与打开 MusicXML 同一条。

@@ -1441,7 +1441,7 @@ export class App implements OmrHost, PlaybackHost, FormatHost, FormatSwitchHost,
       this.setText(formatOf("jly").decode(bytes));
       return;
     }
-    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcx.ts`（Rust dolce-formats，`importBytes` 已等它载好）判断
+    // Muse 曲谱软件（`.jcx`）：ABC 方言，原生解析。字节编码（GBK / BIG5 / UTF-8）由 `common/jcx.ts`（Rust dolce-model::formats，`importBytes` 已等它载好）判断
     if (fmt === "jcx") {
       this.mixed._dropMixedDoc();
       this._setDocFormat("jcx");

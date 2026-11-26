@@ -1,5 +1,5 @@
 //! 矢量页的**块原语与身份**：文字层里音乐字体的字（以后加转曲路径的字形块）→ 带 SMuFL 名的符号。
-//! 身份一律经 `omr-sheet::shapes::identify`（签名字典 + 码位表），这里只管取轮廓与尺寸。
+//! 身份一律经 `omr-core::sheet::shapes::identify`（签名字典 + 码位表），这里只管取轮廓与尺寸。
 use dolce_omr_core::image::Rect;
 use dolce_omr_core::sheet::shapes::{identify, Family};
 use dolce_omr_core::source::model::Seg;

@@ -1,5 +1,5 @@
 //! `dolce-dev book-draw-check <cases.jsonl> --measure=<measure.jsonl>`：成书迁 Rust（L6）的 `browser.ts` / `songbook.ts` 对拍。
-//! 用例由 dev `book-draw-rs-diff.mjs` 让 TS 现算（`cli/bookdrawref.ts`）；这里在量字回放下用 `dolce-book` 重算，逐段比：
+//! 用例由 dev `book-draw-rs-diff.mjs` 让 TS 现算（`cli/bookdrawref.ts`）；这里在量字回放下用 `dolce-layout::book` 重算，逐段比：
 //!
 //! - 成书一首（`kind: "song"`）：`doc`（`book_doc_of`，去掉 `source` 与身份 `_oid`）、`cells`（`book_cells_per_line`）、
 //!   `spans`（`measure_book_spans`）、`draw`（各页高 × 各调法的 DrawPage、谱行数、最长谱行格数，另带 `naturalH`）；

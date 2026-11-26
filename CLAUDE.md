@@ -3,10 +3,11 @@
 简谱与五线谱的编辑、识谱与排版（123 / JP-Word `.jpwabc` / 文本谱 / ABC / MusicXML）：Tauri 2 + Rust + TypeScript + SVG。
 旧名 jpeditor 已全部改掉：仓库、在线版地址、桌面版标识符 `io.github.lodebar2026.dolce`、Cargo 包名 `dolce`、localStorage 键前缀 `dolce-*`、
 草稿库 IndexedDB 名 `dolce`、MusicXML 写出端署名 `Dolce`。旧名下的设置与草稿不迁移。
-模型、格式、排版、渲染、成书、导出在 Rust（`crates/dolce-*`），识别也在 Rust（`crates/omr-*`；桌面原生、网页 wasm、命令行 `dolce`，crate `dolce-cli`；开发用对拍工具另在 `dolce-dev`）；
+模型、格式、排版、渲染、成书、导出在 Rust（`crates/model`、`engrave`、`layout*`），识别也在 Rust（`crates/omr*`；桌面原生、网页 wasm、命令行 `dolce`，`crates/cli`；开发用对拍工具另在 `crates/dev`）；
+发布到 crates.io 的 10 个 crate 里对外入口是 `dolce-layout`（排版）与 `dolce-omr`（识别），分层见 [docs/架构.md](docs/架构.md)「目录」的 `crates/` 一行；
 TS 只留编辑器界面、交互与门面（见架构决策 A3/A4）。网页排版走 dolce-wasm（`main.ts` 开机载，量字回调浏览器 canvas），桌面版走 Tauri 原生排版线程（系统量字），
 Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量字回调原生模块 `native/textmeasure`（Rust 浏览器口径层，`npm run build:native`）。
-识别结果直出模型在 `crates/omr-todoc`。
+识别结果直出模型在 `crates/omr-core/src/todoc`。
 
 文档分四层，**动某一块之前先翻对应那层**——那些阈值和判据多半是拿具体曲子换来的，别照直觉改：
 
@@ -21,7 +22,7 @@ Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量
 
 构建、类型检查、桌面调试命令见 [docs/架构.md](docs/架构.md)「技术栈与构建」。
 回归脚本、语料与基线不在本仓库（本地私有仓库，从本仓库根跑 `node ../dev/scripts/xxx.mjs`）；
-`scripts/` 只留构建与发布链路：`release.sh`、`release-check.mjs`（发布前验证 wasm 体积、识别耗时与内存，对比上次发布；读数记在私有仓库 `data/release-bench/`）、`pack-cli.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm）；命令行全在 Rust `dolce`（`crates/dolce-cli`，分发包不带 Node）。
+`scripts/` 只留构建与发布链路：`release.sh`、`release-check.mjs`（发布前验证 wasm 体积、识别耗时与内存，对比上次发布；读数记在私有仓库 `data/release-bench/`）、`pack-cli.mjs`、`win-crt.mjs`、`vcredist.mjs`、`build-wasm.mjs`（网页版识别的 wasm 与编辑器开机要的 dolce-wasm）；命令行全在 Rust `dolce`（`crates/cli`，分发包不带 Node）。
 识别回归走 `cd crates && cargo run --release -p dolce-cli -- regress <档>`（判分脚本、语料、基线在私有仓库，见 [识别-Rust](docs/模块/识别-Rust.md)「回归」）。
 文档里写的 `../dev/scripts/xxx.mjs` 都在私有仓库。
 
@@ -30,7 +31,7 @@ Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量
 - 测试语料与 GT（`testdata/`）只留本地，不入库；`testdata/` 只放语料与 GT，回归基线、快照、报告等派生数据放本地私有仓库。
   各模块页的「回归」一节同此。
 - 提交信息用简要中文，不要 `Co-Authored-By` 尾注。
-- **尽量抽成模块 / 函数，不写重复代码**：新路子先找现成的判据、工具函数复用（识别里两条路线、三档共用的放 `omr-core` / `omr-sheet` / `omr-text`）；要用的函数没导出就导出，夹着 DOM / Tauri 依赖的就把纯逻辑挪进无依赖的模块再两边引用，不另抄一份。
+- **尽量抽成模块 / 函数，不写重复代码**：新路子先找现成的判据、工具函数复用（识别里两条路线、三档共用的放 `omr-core`（`sheet` / `text` 等模块））；要用的函数没导出就导出，夹着 DOM / Tauri 依赖的就把纯逻辑挪进无依赖的模块再两边引用，不另抄一份。
 - TS 严格模式 + `noUnusedLocals/Parameters`。
 - **识别阈值不能为单曲设，只能按特性或上下文特征设**：判据用符号自身的结构特征（笔画、孔、走向），或本页、本行的统计
   （与本页已认出的同类记号比尺寸、按本页线距归一）。不照某几首曲子的读数在两类之间切一个常数；文档里举的曲目只当病例，不当定阈值的依据。
@@ -39,7 +40,7 @@ Node 侧（回归脚本、`out/cli`）由 `cli/dolcewasm.node.ts` 载 wasm、量
 - 数 XML 元素的正则一律写 `<name[ >]`（否则 `<note>` 会命中 `<notehead>`）。
 - **Bravura（SMuFL）的字体盒不能当墨迹盒用**：它的全局 ascent−descent 约 4 em，按字体度量算高度、
   或对 `<text>` 调 `getBBox()`（得到的是整行字体盒），一个升降号、三连音数字、力度字形就把行高/裁剪框撑出几个字号的空白。
-  排版期用紧包围盒——场景里 SMuFL 字（`dolce-scene` 的 `Smufl`）只用元数据紧盒、文字节点 `ink_bound`、字形盒走 `dolce-scene` 的 `smufl::MetaData::bbox`；
+  排版期用紧包围盒——场景里 SMuFL 字（`dolce-engrave::scene` 的 `Smufl`）只用元数据紧盒、文字节点 `ink_bound`、字形盒走 `dolce-engrave::scene` 的 `smufl::MetaData::bbox`；
   DOM 侧量墨迹一律走 `common/measure.browser.ts::inkOf`（canvas `measureText` 的 `actualBoundingBox*`，文字基线在本地 y=0）。
   **WebKit（桌面版 WKWebView、Safari）的 `actualBoundingBox*` 不是墨迹**（左恒 0、右是前进宽、上下沿截到基线，「-」量成 0.29 em 高），
   `inkOf` 探到这种实现就改成离屏画布逐像素量；别再直接调 `measureText` 取墨迹。

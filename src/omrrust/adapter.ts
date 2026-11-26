@@ -1,6 +1,6 @@
 // Rust 识别（`crates/omr-staff`）→ 编辑器的**核对数据**（`omr/review.ts::StaffReviewResult`）。
 //
-// 乐谱本身是编辑器的原文：识别结果在 Rust 里直接建模（`omr-todoc::staff`，识别 id 与符干是模型旁的附件），
+// 乐谱本身是编辑器的原文：识别结果在 Rust 里直接建模（`omr-core::todoc::staff`，识别 id 与符干是模型旁的附件），
 // 经唯一写出端 `dolce-model::toxml` 写成带识别 id 的 MusicXML，编辑器照旧 `adoptStaffXml` → `fromxml`
 // （`xmlsurface` / `surfaceIds` / `carryIds` / 按 id 回放一行不改）；MusicXML 表达不了的——各页谱行几何、系统表、关联表、源框、
 // 可疑清单、落选候选——走核对 JSON（Rust `Song::review_json_with`，`dolce recognize staff` 写成 `<曲>.review.json`）。
@@ -20,7 +20,7 @@ export type RustAlt =
   | { kind: "duration"; type: string; dots: number; cost: number }
   | { kind: "drop"; cost: number };
 
-/** 可疑项（Rust `omr-sheet::result::Doubt`）：`rect` 是原图像素 xywh，`at.page` 1 起。 */
+/** 可疑项（Rust `omr-core::sheet::result::Doubt`）：`rect` 是原图像素 xywh，`at.page` 1 起。 */
 export interface RustDoubt {
   rid?: string;
   at: { page: number; system?: number; row?: number; measure?: number; note?: number };
@@ -49,7 +49,7 @@ export interface RustReviewJson {
 /** 识别音高（同 MusicXML：`step` 0..6 = C..B）。 */
 export type RustPitch = { step: number; octave: number; alter: number };
 
-/** 会话操作（Rust `omr-staff::session::Op` 与 `omr-engine` 的 insert / region）。 */
+/** 会话操作（Rust `omr-staff::session::Op` 与 `dolce-omr` 的 insert / region）。 */
 export type RustSessionOp =
   | { op: "rebuild"; slots: (number | null)[][] }
   | { op: "restructure"; change: { kind: "merge"; system: number } | { kind: "split"; system: number; row: number } }

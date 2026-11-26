@@ -11,7 +11,7 @@ Muse 曲谱软件（Windows）的脚本格式。**ABC 方言**：字段头、小
 | `%MUSE2` | Muse 3.1 以前 | 简体版 GBK、繁体版 BIG5 |
 | `%MUSE3` | Muse 3.1（2026-08）起 | UTF-8；3.1 以前的 Muse 打开是乱码 |
 
-- 读：BOM → 合法 UTF-8（含 `%MUSE3`）→ GBK 或 BIG5（`crates/dolce-formats/src/jcxcodec.rs`）。GBK 解码器把 BIG5 字节也解成「某个字」、不报错，
+- 读：BOM → 合法 UTF-8（含 `%MUSE3`）→ GBK 或 BIG5（`crates/model/src/formats/jcxcodec.rs`）。GBK 解码器把 BIG5 字节也解成「某个字」、不报错，
   所以按字节分布判：双字节字里尾字节落在 0x40–0x7E 的超过 15% 就按 BIG5（谱例 45 首简体 GBK 最高 0.75%，繁体 BIG5 文本约四成）。
 - 写：**`%MUSE2` + GBK + CRLF**，新旧版 Muse 都能开；打开的就是 `%MUSE3` 文件则按 UTF-8 存回（整份重写——按乐句重排——也保留 `%MUSE3`）。
   GBK 里没有的字存成 `?`，存盘时在状态栏列出。

@@ -1,6 +1,6 @@
-// `ScoreDoc` → 文本谱原文（番茄简谱 / 诗歌本文本谱）：写出端在 Rust（crates/dolce-formats/src/fanqie/emit.rs），这里是门面。
+// `ScoreDoc` → 文本谱原文（番茄简谱 / 诗歌本文本谱）：写出端在 Rust（crates/model/src/formats/fanqie/emit.rs），这里是门面。
 //
-// 模型里没有行结构的曲子先按乐句断行（文本谱一行 `Q:` 就是谱面一行），断点与换行都在 Rust（`dolce_view::phraselines`）。
+// 模型里没有行结构的曲子先按乐句断行（文本谱一行 `Q:` 就是谱面一行），断点与换行都在 Rust（`dolce_model::view::phraselines`）。
 
 import type { ScoreDoc, Song } from "../model/doc";
 import { dolce } from "../common/dolce";

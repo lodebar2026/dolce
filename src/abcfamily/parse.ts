@@ -1,4 +1,4 @@
-// ABC 家族（123 / ABC / Muse `.jcx`）的读入：在 Rust（crates/dolce-formats/src/abc/），这里是门面。
+// ABC 家族（123 / ABC / Muse `.jcx`）的读入：在 Rust（crates/model/src/formats/abc/），这里是门面。
 // 词法、字段与头部、正文组装、歌词对位的判据都在那边（口径见 `docs/格式/123格式.md`、`docs/模块/源格式-abc家族.md`）；
 // 编辑器还要的几样小判据（歌词行切音节、对位格、裸和弦名、123 时值、调号拼写）也经这里调同一份。
 

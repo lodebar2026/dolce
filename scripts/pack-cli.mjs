@@ -12,7 +12,7 @@
 //
 // 识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的 `dolce` 按
 // `crates/target/<三元组>/release/` → `--bin-dir=目录` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`
-// （omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir=目录` 找；缺了就报错，不打半成品。
+// （omr-core 的构建脚本（pdf 特性）编那个目标时下载）→ `--pdfium-dir=目录` 找；缺了就报错，不打半成品。
 //
 // 产物：out/pkg/dolce-cli-<版本>-<os>-<cpu>.{tar.gz|zip}（解出来是同名目录）
 import { readFile, writeFile, mkdir, rm, cp, readdir, chmod, stat } from "node:fs/promises";
@@ -93,7 +93,7 @@ function findPdfium(target) {
   const { triple, lib } = TARGETS[target];
   const cands = [PDFIUM_DIR && join(PDFIUM_DIR, lib), join(homedir(), ".cache/dolce-pdfium", PDFIUM_BUILD, triple, lib)].filter(Boolean);
   const hit = cands.find((p) => existsSync(p));
-  if (!hit) throw new Error(`缺 ${target} 的 PDFium（找过：${cands.join("、")}）——编那个目标时 omr-source 的构建脚本会下载，或用 --pdfium-dir 指过来`);
+  if (!hit) throw new Error(`缺 ${target} 的 PDFium（找过：${cands.join("、")}）——编那个目标时 omr-core 的构建脚本（pdf 特性）会下载，或用 --pdfium-dir 指过来`);
   return { path: hit, lib };
 }
 

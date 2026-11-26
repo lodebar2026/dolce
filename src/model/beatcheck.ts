@@ -1,6 +1,6 @@
 // 小节时值自检：逐小节把时值加起来，与拍号对不上的报出来。**不需要 GT**。
 //
-// 判据在 Rust（`crates/dolce-model/src/beatcheck.rs`，wasm `modelBeatCheck`；口径与合法例外见那边文件头），这里是门面，
+// 判据在 Rust（`crates/model/src/beatcheck.rs`，wasm `modelBeatCheck`；口径与合法例外见那边文件头），这里是门面，
 // 外加两样说法（`describeBeatIssue` 走界面语言、`beatTag` 是红框角上的差额）。
 //
 // 消费者：编辑器把拍数不对的小节标红（`editor/visual/`）、简谱识别核对视图（`editor/omrctl.ts`）、私有仓库 `beat-check.mjs`（经 CLI）。

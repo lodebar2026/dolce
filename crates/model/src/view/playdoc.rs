@@ -1,4 +1,4 @@
-//! `ScoreDoc`（MusicXML 形状）→ 演唱顺序、试听输入（同原 `model/playdoc.ts`）。`.jpwabc` 写出端的输入在 `dolce-formats::jpw::input`。
+//! `ScoreDoc`（MusicXML 形状）→ 演唱顺序、试听输入（同原 `model/playdoc.ts`）。`.jpwabc` 写出端的输入在 `dolce-model::formats::jpw::input`。
 //!
 //! 口径（回归 `playorder-check`）：
 //!   - 反复与跳转只读第一声部；小节、和弦、歌词段号、房号、反复经 [`crate::view::phrasedoc`] 拼（与断句同一份输入）

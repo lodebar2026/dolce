@@ -1,4 +1,4 @@
-// 排版在 Rust（crates/dolce-session/src/layout.rs）：这里只管宿主装配与过边界的形状。
+// 排版在 Rust（crates/layout/src/layout.rs）：这里只管宿主装配与过边界的形状。
 //
 // - 两种宿主：网页 / Node 是 dolce-wasm（同步）；桌面版的异步排版走 Tauri 进程里的原生 Rust（`src-tauri/src/layout.rs`，
 //   系统量字），同步的那几处（帮助页谱例、量简谱行首）仍走 wasm。排好的一份包成 `LaidHandle`，两种宿主同一个样子。
@@ -171,7 +171,7 @@ async function nativeLayout(core: TauriCore, w: LayoutWire): Promise<LaidHandle>
 }
 
 /** 五线谱的断句尺子（乐句档五线谱按它断句）：`doc`（不带换行投出来、`sourceIds` 读回的那份）按五线谱引擎排一遍，
- *  各和弦的自然横向区间（键是源元素 id）与版心宽（Rust `dolce_session::layout::staff_chord_spans`）。 */
+ *  各和弦的自然横向区间（键是源元素 id）与版心宽（Rust `dolce_layout::layout::staff_chord_spans`）。 */
 export function staffChordSpans(
   doc: ScoreDoc,
   style: StyleSheet,
@@ -184,7 +184,7 @@ export function staffChordSpans(
 
 // ---------------------------------------------------------------- 过边界的形状
 
-/** 身份标签（`crates/dolce-scene` 的 `Identity`；字段同 `pagetree/identity.ts::ItemIdentity`）。 */
+/** 身份标签（`crates/engrave/src/scene` 的 `Identity`；字段同 `pagetree/identity.ts::ItemIdentity`）。 */
 export interface SceneIdentity {
   kind: "note" | "sustain" | "barline" | "slur" | "syllable" | "system" | "harmony" | "deco" | "annotation" | "aug-dot" | "header";
   id?: ElementId;
@@ -208,7 +208,7 @@ export interface ProjPass {
   ids: (ElementId | null)[];
 }
 
-/** 身份表一项（`dolce_scene::index::Hit`）：带身份或页眉类名的节点，对上 SVG 里的元素先序号 `el`。 */
+/** 身份表一项（`dolce_engrave::scene::index::Hit`）：带身份或页眉类名的节点，对上 SVG 里的元素先序号 `el`。 */
 export interface SceneHit {
   /** `<svg>` 之下的元素先序号（`getElementsByTagName("*")` 的下标）；没画出来为 -1 */
   el: number;
@@ -236,7 +236,7 @@ export interface LaidPage {
   ink?: [number, number, number, number];
 }
 
-/** 排好的一份的概要（`dolce_session::layout::LaidInfo`）。 */
+/** 排好的一份的概要（`dolce_layout::layout::LaidInfo`）。 */
 export interface LaidInfo {
   renderer: "jianpu" | "staff";
   title: string;
@@ -252,7 +252,7 @@ export interface LaidInfo {
   stackGap?: number;
 }
 
-/** 按参照歌词生成的段落与演唱顺序（Rust `dolce_session::sing::fit_report`）。 */
+/** 按参照歌词生成的段落与演唱顺序（Rust `dolce_layout::sing::fit_report`）。 */
 export interface SingFitReport {
   /** 段落标记：段名、插在哪个和弦前（整套换掉谱里原有的） */
   marks: { name: string; before: ElementId }[];

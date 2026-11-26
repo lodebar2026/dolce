@@ -1,5 +1,5 @@
 // 写明的演唱顺序（`.Repeat`、头部 `P:` 与段落标记、`%%sing`）搬到另一份模型（五线谱档读回的 `mixedDoc`）。
-// 段落语义（`P:` 展开、锚定首尾和弦）在 Rust（`crates/dolce-model/src/sections.rs`），这里是门面。语义见 `docs/格式/123格式.md` §6。
+// 段落语义（`P:` 展开、锚定首尾和弦）在 Rust（`crates/model/src/sections.rs`），这里是门面。语义见 `docs/格式/123格式.md` §6。
 
 import type { PlayPass, ScoreDoc, Song } from "./doc";
 import { dolce } from "../common/dolce";

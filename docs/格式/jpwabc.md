@@ -1,7 +1,7 @@
 # `.jpwabc` 格式现状
 
 > JP-Word v5.50m 的简谱格式，本项目的一等源格式之一。**名字里的 abc 与 ABC notation 无关**
-> （无 `X:`/`M:`/`K:` 字段，音符是简谱数字）。真正的 ABC 支持在 `crates/dolce-formats/src/abc/`（TS 门面 `abcfamily/parse.ts::parseAbc`）。
+> （无 `X:`/`M:`/`K:` 字段，音符是简谱数字）。真正的 ABC 支持在 `crates/model/src/formats/abc/`（TS 门面 `abcfamily/parse.ts::parseAbc`）。
 > 模块实现见 [../模块/源格式-jpwabc.md](../模块/源格式-jpwabc.md)；新语义走 [123格式.md](123格式.md)。
 
 **已定决策：不扩 `.jpwabc` 语法。** 曲中转调/转拍号/倚音当年都是借文法里**现成的产生式**绕过去的。
@@ -10,10 +10,10 @@
 
 | 位置 | 性质 |
 |---|---|
-| `crates/dolce-formats/src/jpw/lex.rs` | **唯一形式定义**：`.Voice` 段的词法规则（沿用原 JP-Word 的 ANTLR 文法，见 §4 词法表） |
-| `crates/dolce-formats/src/jpw/file.rs` | **段落层规范**：哪些段头合法、各段的行语法 |
+| `crates/model/src/formats/jpw/lex.rs` | **唯一形式定义**：`.Voice` 段的词法规则（沿用原 JP-Word 的 ANTLR 文法，见 §4 词法表） |
+| `crates/model/src/formats/jpw/file.rs` | **段落层规范**：哪些段头合法、各段的行语法 |
 | `src/editor/help.ts` 的 `NOTATION` | 面向用户的记谱法说明（帮助「JPWABC 记谱」页） |
-| `crates/dolce-formats/src/jpw/write.rs` / `read.rs` | **事实上的可用子集**：写出端只产生哪些记号、读入端只处理哪些 |
+| `crates/model/src/formats/jpw/write.rs` / `read.rs` | **事实上的可用子集**：写出端只产生哪些记号、读入端只处理哪些 |
 
 - 文件头签名：`// ************** JPW-ABC File Ver 1.0 (for JP-Word v5.50m) **************`
 - 编码：读时 BOM 探测（回退 UTF-16LE/UTF-8），**存 UTF-16LE + BOM**
@@ -45,7 +45,7 @@
 ## 4. 音乐体（`.Voice`）
 
 `.Voice` 正文是一串平铺的 token，空白分隔、`//` 起行尾注释，**取最长匹配，等长按下表先后**
-（原 JP-Word 的 ANTLR 文法，实现在 `crates/dolce-formats/src/jpw/lex.rs`）：
+（原 JP-Word 的 ANTLR 文法，实现在 `crates/model/src/formats/jpw/lex.rs`）：
 
 | token | 定义 |
 |---|---|

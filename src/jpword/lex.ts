@@ -1,4 +1,4 @@
-// `.Voice` 正文的词法：在 Rust（crates/dolce-formats/src/jpw/lex.rs），这里是门面。
+// `.Voice` 正文的词法：在 Rust（crates/model/src/formats/jpw/lex.rs），这里是门面。
 // 规则沿用原 JP-Word 的词法定义（见 docs/格式/jpwabc.md §4 词法表）：在当前位置把各规则都试一遍，
 // **取最长匹配，等长按规则先后**；空白与 `//` 注释也产出（高亮要），认不出的字符静默跳过。
 

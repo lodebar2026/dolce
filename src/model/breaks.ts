@@ -1,4 +1,4 @@
-// **断行的读写对**：模型里的换行 ↔ 「新行从哪个元素起」。在 Rust（crates/dolce-model/src/breaks.rs），这里是门面。
+// **断行的读写对**：模型里的换行 ↔ 「新行从哪个元素起」。在 Rust（crates/model/src/breaks.rs），这里是门面。
 //
 // 断行是「这份谱怎么印」的事实，随文档保存、往返。模型里分两处记：
 // 小节级的在 `Measure.print.newSystem/newPage`（本小节**起**新系统，口径见 `helpers.ts::breaksAfterToStart`），

@@ -87,9 +87,9 @@ pub fn xml_digest(text: &str) -> String {
     }
 }
 
-// ───────────────────────── 演唱顺序、断句、时间轴、MIDI（dolce-play）─────────────────────────
+// ───────────────────────── 演唱顺序、断句、时间轴、MIDI（dolce-model::play）─────────────────────────
 //
-// 入参、回值都是 JSON（形状见 dolce-play 各输入 / 产物类型；TS 侧编解码在 src/engine/play.ts）。
+// 入参、回值都是 JSON（形状见 dolce-model::play 各输入 / 产物类型；TS 侧编解码在 src/engine/play.ts）。
 // TS 原实现会抛错的输入（没有和弦的小节取时值等）这里抛 `Error`，message 是说明文字。
 
 fn parse<T: serde::de::DeserializeOwned>(what: &str, json: &str) -> Result<T, JsValue> {

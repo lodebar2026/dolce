@@ -10,8 +10,8 @@
 // `.jpwabc`）共用同一套代码。条目按**元素 id** 认，谱面那一侧（`ScorePainter.entryEl(id)` /
 // `lyricEl` / `partEls`）也按 id 取，两路页面树的差别由排版器自己消化。
 //
-// 建表在 Rust：有原文位置的四种格式走 `crates/dolce-view/src/sync.rs`（随排版行视图一趟出，`docView(doc).sync`），
-// `.musicxml` 走 `crates/dolce-model/src/xmlsync.rs`；两路都按推入次序给，排序、音符反查表与查询留在这里。
+// 建表在 Rust：有原文位置的四种格式走 `crates/model/src/view/sync.rs`（随排版行视图一趟出，`docView(doc).sync`），
+// `.musicxml` 走 `crates/model/src/xmlsync.rs`；两路都按推入次序给，排序、音符反查表与查询留在这里。
 //
 // 这里不碰页面树，只经 App（VisualHost）拿排版器给的 `<g>`，
 // 高亮靠加 CSS 类完成，**不重渲染**（沿用编辑器既有判据）。
@@ -34,7 +34,7 @@
 // ## `.musicxml` 另一种建法（`buildXml`）
 //
 // MusicXML 的模型不记原文位置，但编辑器里存的就是 XML 原文，`fromxml.ts` 又把每个模型对象绑在它的原节点上
-// （表层，在 Rust：`crates/dolce-model/src/xmlsync.rs`），而原节点记着自己在原文里的区间（`crates/dolce-model/src/xml` 的 `start`/`end`），直接取就是。
+// （表层，在 Rust：`crates/model/src/xmlsync.rs`），而原节点记着自己在原文里的区间（`crates/model/src/xml` 的 `start`/`end`），直接取就是。
 // 条目区间是整个元素（`<note>…</note>`），歌词取 `<text>` 里那几个字，
 // 小节线取 `</measure>`（MusicXML 里普通小节线没有元素，小节边界就是它），弧取 `<slur type="start">`。
 // 选区仍只存一份（代码区选区，只是代码区不显示），撤销还原选区也是代码区自带。

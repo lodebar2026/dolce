@@ -4,7 +4,7 @@
 //! 生成口径：逐个单字过 opencc 的纯字形繁→简（`from:"t"`，不能用 `from:"tw"`：后者连台湾用词一起归一，「么」会被改写成「幺」），
 //! 收「转换后≠原字、且结果也在字典里、且结果自身稳定」的对，「繁简繁简…」两两一组。
 //!
-//! 用途：参照歌词互证时按繁简归一比字（繁体谱对简体词不算不同），见 `omr-todoc::reflyrics`；按参照歌词排演唱顺序（`dolce-view::singfit`）同用。
+//! 用途：参照歌词互证时按繁简归一比字（繁体谱对简体词不算不同），见 `omr-core::todoc::reflyrics`；按参照歌词排演唱顺序（`dolce-model::view::singfit`）同用。
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

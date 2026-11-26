@@ -1,6 +1,6 @@
 //! `ScoreDoc` → `.jpwabc` 写出端的输入（[`super::write::JpwScoreIn`]），按形状两条路（同原 `model/playdoc.ts::jpwInputOfDoc`、
 //! `jianpu/playsong.ts::jpwInputOfSong`），再交 [`super::write::write_jpwabc`]（[`emit_jpwabc`]，同原 `convert/jpwabc.ts`）。
-//! 小节序列、演唱顺序由视图层（`dolce-view`）拼。
+//! 小节序列、演唱顺序由视图层（`dolce-model::view`）拼。
 
 use std::collections::{HashMap, HashSet};
 

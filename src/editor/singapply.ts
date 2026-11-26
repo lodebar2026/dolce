@@ -1,7 +1,7 @@
 // 按参照歌词生成的段落与演唱顺序写回 123 原文（无 DOM）：只动四样——曲内 `[P:x]`（整套换成生成的、插在段首和弦及其前置记号之前）、
 // 整行的 `P:`（头部段落顺序与行首段落标记，写了 `%%sing` 就不起作用了，留着指向旧段名）、`%%sing` 行（换成生成的、写在这一首末尾）、
 // 投影版面里引用段落的断点（`%%layout 投影` 带 `pass=` 的行整行换成生成的；不带的只去掉 `break=` / `newpage=`，别的选项留着）。
-// 其余原文一个字不动。生成本身在 Rust（`crates/dolce-view/src/singfit.rs`，门面 `layout/rustlayout.ts::singFromLyrics`）。
+// 其余原文一个字不动。生成本身在 Rust（`crates/model/src/view/singfit.rs`，门面 `layout/rustlayout.ts::singFromLyrics`）。
 
 import type { ElementId, ScoreDoc, Song } from "../model/doc";
 import type { SingFitReport } from "../layout/rustlayout";

@@ -4,9 +4,9 @@
 > 识别是重新设计的，不在此列（见 [识别-Rust](../模块/识别-Rust.md)「设计原则」）。
 > 迁移时要与旧 TS 零差异，所以下面很多条是「照 JS 的行为算」；TS 已删，以后改这些地方不必再守旧口径，但要知道输出会变、先回归。
 
-## 数值（`dolce-base::js`）
+## 数值（`dolce-model::base::js`）
 
-JS 语义陷阱统一收在 `dolce-base::js` 并单测，别在各 crate 里各写一份。
+JS 语义陷阱统一收在 `dolce-model::base::js` 并单测，别在各 crate 里各写一份。
 
 - **数转字符串**（`num_to_string`，ECMAScript `Number::toString`）：取 Rust `{:e}` 的最短往返数字，再按规范排指数。
   两个同样短的候选离精确值一样近时**取末位为偶**（同 V8；Rust `{:e}` 取大的）：`0.90000152587890625` → `0.9000015258789062`。SVG、写出端的数字都走它。
@@ -52,7 +52,7 @@ TS 靠对象引用认的东西（`WeakMap` 缓存、`Set<Note>`、`Map<Element>`
 - 字符串字面量联合用 `str_enum!`（`dolce-model/src/strenum.rs`）：认得的进具名变体，认不得的原样进 `Other(String)`，ts-rs 只导出认得的那几个。
 - **serde 的内部标签枚举很占体积**：派生的 `#[serde(tag = "kind")]` 不知道标签在第几个键，先把整个对象读进中间缓冲（`Content`）再解一遍，
   枚举底下每个类型（`Chord` / `Note` / `Measure` …）都另编一份「从缓冲读」的解码。TS 持有模型镜像、整份 JSON 送回，所以开机那份 wasm 里这些解码都在。
-  `Element`、`InlineItem`、`MusicElement`、`EditCmd` 的 `Deserialize` 改成手写（`dolce-base/src/tagged.rs`）：第一个键就是标签走快路，剩下的键直接交给变体的派生解码；
+  `Element`、`InlineItem`、`MusicElement`、`EditCmd` 的 `Deserialize` 改成手写（`dolce-model::base/src/tagged.rs`）：第一个键就是标签走快路，剩下的键直接交给变体的派生解码；
   标签不在第一个（TS 手拼的对象）收进 `Value`、写回文本再走快路同一份代码。JSON 形状、ts-rs 生成的类型都不变；`EditCmd` 变体多、只派生 `Deserialize`，
   用 `#[serde(remote = "Self")]` 派生外部标签的固有函数、交 `TagEnum` 适配，不逐个写。2026-11-23 实测 dolce_wasm 7735 → 7296 KB（gzip 2803 → 2666 KB）；
   入口改成先解成 `Value` 再 `from_value` 反而大 160 KB（缓冲那份还在、又多一份）。剩下的 `ss::Expr` 等约 60 KB 没改。
@@ -61,7 +61,7 @@ TS 靠对象引用认的东西（`WeakMap` 缓存、`Set<Note>`、`Map<Element>`
   改成手写扫描（`compose/brace.rs::tokens`、`grid.rs::font_size_pairs` / `margin_pairs`），单测里拿原正则对拍几千个伪随机串。dolce-wasm 依赖链里再引正则前先想想有没有别的写法。
 - **编译档**（`crates/Cargo.toml` 的 `wasm-dolce`）：`opt-level = 3` + fat LTO + 单代码单元。`s` 档 gzip 小两成多但慢 10~22%、`z` 档慢 30~60%，开机排版计算都在这份里，不换；
   wasm-opt 在这之上让 gzip 变大，不调。`.jcx` 码表（encoding_rs 约 180 KB）单出一份 `dolce_jcx_wasm` 按需载。
-- **ts-rs**：`crates/.cargo/config.toml` 设 `TS_RS_EXPORT_DIR` → `src/engine/gen/`，多类型并进一个 `*.gen.ts`；每个进程第一次写会覆盖整份文件，所以 `gen:types` 先跑 dolce-model 再跑 dolce-base。
+- **ts-rs**：`crates/.cargo/config.toml` 设 `TS_RS_EXPORT_DIR` → `src/engine/gen/`，多类型并进一个 `*.gen.ts`；每个进程第一次写会覆盖整份文件，所以 `gen:types` 先跑 dolce-model 再跑 dolce-model::base。
 - **wasm 里 panic 会弄坏整个实例**（`unreachable` 陷阱，之后同一实例的调用都不可靠，网页版得刷新）；原生那边有 `catch_unwind`。缺码位、越界之类在 wasm 里要回 `Err`，别 panic。
 
 ## 构建与对拍的坑

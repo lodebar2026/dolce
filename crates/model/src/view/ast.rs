@@ -1,7 +1,7 @@
 //! 文本谱（番茄简谱 / 诗歌本文本谱）的抽象语法树（同 `jianpu/ast.ts`）。
 //!
 //! 每个节点都带 `source` 源码区间（UTF-16）。时值用 `duration` 表示**分母**（4=四分，8=八分……），`dots` 是附点个数。
-//! 文本谱解析器（`dolce-formats::fanqie`，进 `ScoreDoc` 之前的中间产物）与排版行视图（[`crate::view::slots`]）产同一套形状。
+//! 文本谱解析器（`dolce-model::formats::fanqie`，进 `ScoreDoc` 之前的中间产物）与排版行视图（[`crate::view::slots`]）产同一套形状。
 //! JSON 形状照 TS（对拍时与 `parseFanqieAst` / `docView` 逐字段比）。
 //! 行内下标（`Mark.start/end`）用 `i64`：行视图里空房号的终点在起点前一位（行首的为 −1）。
 

@@ -2,7 +2,7 @@
 
 > **旧 TS 识别的判据记录**：这套 TS 实现发布前已删，识别现在全在 Rust（见 [识别-Rust](../模块/识别-Rust.md)）。本篇留作追分时的参照——判据多是拿具体曲子换来的；文中的文件路径、函数名指删除前那一版。
 
-把简谱图片（PNG/JPG）识别成 `RecognizedScore`，直出 `ScoreDoc`（`omr-todoc::jianpu`）再写成 123 进编辑器核对（`App.importOmrDoc`）。
+把简谱图片（PNG/JPG）识别成 `RecognizedScore`，直出 `ScoreDoc`（`omr-core::todoc::jianpu`）再写成 123 进编辑器核对（`App.importOmrDoc`）。
 工具栏「识图」按钮 → `showRecognizeDialog`（[src/editor/dialogs.ts](../../src/editor/dialogs.ts)）选方式 →
 `App.recognizeFromImage`（[src/editor/app.ts](../../src/editor/app.ts)）。**两种方式**：
 
@@ -18,7 +18,7 @@
 （原生像素；JPEG 按原始字节交 sharp 解；ImageMask 与 1 位灰度图按数据长度认、整页墨过半就翻极性），同样竖向拼接，两端口径一致。
 
 识别只有**一条路**：**完全本地**，浏览器/桌面均可、可离线。`decode.ts`(图→二值) → `jianpu.ts`
-  (连通域/几何启发式：数字块拆分、下划线 div、八度点、增时线) → `omr-todoc::jianpu`(→简谱形状的 `ScoreDoc`)；
+  (连通域/几何启发式：数字块拆分、下划线 div、八度点、增时线) → `omr-core::todoc::jianpu`(→简谱形状的 `ScoreDoc`)；
   数字/歌词/页眉 OCR 走本地 **PaddleOCR PP-OCRv6_small**（`paddleocr.ts`，onnxruntime-web 浏览器离线推理，
   逐数字格 / 歌词条 rec→CTC）。模型/字典在
   `public/redist/ocr/`（rec onnx `ch_PP-OCRv6_small_rec_infer.onnx` **~10.7MB**（权重存 FP16，三端共用，见识别-Rust「已知限制」）+ `ppocrv6_dict.txt` **18708 字**
@@ -299,7 +299,7 @@ numH 47），0.55 把**清清楚楚的 4 和 7** 一并改成了 1（《祷告�
 「3」常被读成 0（正是空心环校验要复原的那种），在那里一刀切会连它的真附点一起丢（沧海一声笑行 1 的
 `3._`）。改成复原完再对仍是 0 的音符 `n.dot = 0`。
 
-**反复记号**（`repeats.ts` 识别 + `crates/dolce-play/src/playorder.rs` 展开，issue #2）：以
+**反复记号**（`repeats.ts` 识别 + `crates/model/src/play/playorder.rs` 展开，issue #2）：以
 《沧海一声笑》（`1.2.3.5.` / `4.`(带 D.C.) / `6.` 三房）为基准，识别与展开各修了几处：
 - **房括线搜索窗放深到 3.4 字号**：括线到数字顶的距离随谱面松紧变化很大，行内有圆滑线时括线
   被顶到 ~2.8 字号高处，旧的 1.8 字号窗口整片漏掉三个房。放深的误检由新增的 `hasLeftHook`
@@ -346,7 +346,7 @@ numH 47），0.55 把**清清楚楚的 4 和 7** 一并改成了 1（《祷告�
   故分隔符可选、连写数字**逐位**拆号。房括号上的号码（`1.2.3.5.`）也会落进歌词带被当一行，
   按「号后须跟 ≥2 个汉字」剔掉。整套映射还要过「首行标 1 + 号不重复 + 至少两行有标签」才生效，
   否则作废退回"行序即段号"。标签通常只印在第一谱行，后续谱行按同一视觉行序共用该映射。
-- **段号还要原样输出**（`StaffRow.lyricLabels` → `omr-todoc::jianpu` 的 `Lyric.verseLabel` → `fanqie/emit.rs`）：文本谱有「歌词行前置说明」这个位置
+- **段号还要原样输出**（`StaffRow.lyricLabels` → `omr-core::todoc::jianpu` 的 `Lyric.verseLabel` → `fanqie/emit.rs`）：文本谱有「歌词行前置说明」这个位置
   （`fanqie/parse.rs::strip_lyric_annotation`，排在细竖线与首字之间），谱面印的 `1.` `3.5.` 就写在那儿：
   诗歌本方言 `C1:<1.>…`、番茄方言 `C1:"1."…`。它不是唱词、不对位音符，故不进 `lyricRanges`。
   **逐谱行各记各的**——号只印在哪几行就只写哪几行（73《我主耶稣是生命源》前三谱行有 `1.`~`4.`、
@@ -648,7 +648,7 @@ lt .81 rt .38 lb .63 rb .68，原先 0.45 的门把它判成了 ♯）。♮ 早
 → 右线 `light-light`（123 `||`、文本谱诗歌本 `||`）。76《天上有粮》一房末实测两根各 6px、中心距
 9px、字号 44（等粗，原判据一条都不认，整道退化成普通小节线）。
 - 并排两根中间切出的空小节被 `measuresOfRow` 滤掉，**右界要顺延给前一小节**（记的是右边那根的
-  x），否则小节右界停在左边那根上、认不出这道线（`omr-todoc::jianpu::measures_of_row`）。
+  x），否则小节右界停在左边那根上、认不出这道线（`omr-core::todoc::jianpu::measures_of_row`）。
 - **复纵线与房尾可以叠**（`[1 … ||`，76 的一房末图上就没画反复冒号），故它不像终止线那样给
   `endingStop` 让位；反复线 `:‖` 的两根也会落进 `doubleBarXs`，一律 `repeatBackward` 优先。
 - 写出端 `fanqie/emit.rs::barline_code` 对 double **取表里最后一条**匹配：诗歌本表里规范外写法 `||/`
@@ -673,10 +673,10 @@ lt .81 rt .38 lb .63 rb .68，原先 0.45 的门把它判成了 ♯）。♮ 早
 **房内的歌词不迁段**（2026-09-21 订，推翻 09-20 的按房号迁段）：**段号只表示排版，与演唱无关**——
 词印在第几行就记第几段（W1/W2…），不按房号、不按第几遍唱去挪。房下只印一行词就留在 W1：
 沧海一声笑 `[4`「一襟晚照」、`[6`「痴痴笑笑」，爱是不保留二房「得主称赞已足够」，1811《心愿》同行的
-`[2`「和平的福音已扎根」，谱面上都在第 1 行。「第几遍唱哪行词」交给演唱顺序层（`crates/dolce-play/src/playorder.rs`，
+`[2`「和平的福音已扎根」，谱面上都在第 1 行。「第几遍唱哪行词」交给演唱顺序层（`crates/model/src/play/playorder.rs`，
 `.Repeat` 的 `Vn` 就指第 n 行词）。旧版按房号首号迁到 W[n-1]，上述三份 GT 据此订回 w1。
 
-**整页简体里的孤立繁体字按候选改判**（2026-09-20，`src/omr/hanvariant.ts` + `lyrics.ts::simplifyStrayTraditional`；繁 → 简表现在是 `dolce-base::hanvariant`（`omr-text` 转引））：
+**整页简体里的孤立繁体字按候选改判**（2026-09-20，`src/omr/hanvariant.ts` + `lyrics.ts::simplifyStrayTraditional`；繁 → 简表现在是 `dolce-model::base::hanvariant`（`omr-core::text` 转引））：
 PP-OCR 的字典繁简同收，字形只差一角的一对常读错边——76《天上有粮》十来行歌词里只有「别」被读成
 「別」（而同一页的署名「詞曲：巧兒」倒真是繁体，所以**只按歌词区统计、页眉不参与**）。两条判据叠起来：
 - **孤立**：整页歌词至多 2 个繁体字，且简体字数 ≥ 繁体的 10 倍（繁体谱面整页都是繁体，碰不到）；
@@ -694,7 +694,7 @@ PP-OCR 的字典繁简同收，字形只差一角的一对常读错边——76�
   只收原字**不在** GB2312、结果在 GB2312 的（筛掉「予→豫」「欠→缺」这类原字本身就是常用简体字的）。
 
 **减时线的连断（文本谱的 `~` / `^`）**：一条减时线连到哪儿，本项目的排版端是按**拍组**算的
-（`crates/dolce-layout-jianpu/src/place/voice.rs::beat_groups`，认拍号，复拍子三个八分一组），不写记号也排得对；但**诗歌本 app
+（`crates/layout-jianpu/src/place/voice.rs::beat_groups`，认拍号，复拍子三个八分一组），不写记号也排得对；但**诗歌本 app
 那边要照谱本的写法把记号写出来**，故写出端（`fanqie/emit.rs`）照它的范式生成。两种情形：
 （2026-10-30 用户定：**诗歌本方言不再补 `^`**——谱本按拍断线，用不着写，`DialectSpec.emit.noAutoBreak`；只补组内的 `~`。
 番茄方言照下面两条补。原文就有的 `~`/`^`（文本谱读进来的）照写。）
@@ -985,7 +985,7 @@ y380 的碎块行，歌词带算出 `yBot < yTop`、整条带直接 `continue`�
 吉他和弦（`Am` / `G/B` / `Gsus4` / `F#m7`）印在谱行音符**上方**，与段落方框同处歌词带。文法判定
 （`isAnnotationLine` / `CHORD_TOKEN_RE` / `chordCoverage`，见上）连同切词、归一、落位一并搬进
 `src/omr/chordline.ts`；`lyrics.ts` 只调不判。识别到的和弦挂上 `JpNum.chord`，经模型输出：
-`omr-todoc::jianpu` → `Chord.harmony` / `Sustain.harmony`（原文，导出 MusicXML 时由写出端（Rust `harmony.rs::harmony_xml`）解析），文本谱写出端再写成 `"hx:…"`。
+`omr-core::todoc::jianpu` → `Chord.harmony` / `Sustain.harmony`（原文，导出 MusicXML 时由写出端（Rust `harmony.rs::harmony_xml`）解析），文本谱写出端再写成 `"hx:…"`。
 **`.jpwabc` 装不下和弦**，jpwabc 那路输出会丢（与力度、渐强渐弱现状一致）——这是有意的，
 不为和弦扩 jpwabc 语法。
 
@@ -1301,7 +1301,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 不按行中心判——连谱号下钩常只画到末行半腰（78 第 2 系统末行中心低出下钩 18px）。**验收**：每条谱行都归了
 系统、≥2 个系统、各系统行数相同且声部号连续，缺一条就整曲当单声部（1811 谱后正文左边碰巧也有高竖块）。
 验收在伪行剔除**前**先做一次（`bracedOk`）：成立时连谱号括着的行休止占比放到 0.8（伴奏声部 `5 5 0 0 | 0 0 6…`
-过半是 0，按单声部的 0.5 会被当成和弦字母伪行删掉）。`omr-todoc::jianpu` 按声部各建一个 part，歌词挂在歌词带上方
+过半是 0，按单声部的 0.5 会被当成和弦字母伪行删掉）。`omr-core::todoc::jianpu` 按声部各建一个 part，歌词挂在歌词带上方
 那一行（第 2 声部），与文本谱 `Q2` 后跟 `C1:` 的约定一致。
 
 **两声部挨得近带出来的**（都只在连谱号括着的声部行上开，单声部不受影响）：
@@ -1321,7 +1321,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 - **静默声部行**（12《颂主化功歌》第 3 系统 B 声部只印行首 `0` 和几根线）：核不到 3 个被当噪声剔掉，这个系统少一行，
   验收不过、整曲退回单声部（音符 52%）。至少两个系统行数一样、本系统比它们少时，连谱号范围内的 1~2 核短行救回来——
   首核在声部行首音那一列（一字号内）、至少两根线与同系统谱行的线对齐、不与已有谱行纵向相交（`voices.silentRow`）。
-  `omr-todoc::jianpu` 里**整行只有休止**的声部行逐根切小节，首音之后宽过 1.5 行高的空小节写成按拍的隐形休止 `x`，
+  `omr-core::todoc::jianpu` 里**整行只有休止**的声部行逐根切小节，首音之后宽过 1.5 行高的空小节写成按拍的隐形休止 `x`，
   占住小节、各声部小节数才对得上。别的声部行不这么补：末小节空着多是音没读出来，补 `x` 反把小节对位搅乱（144、396、f32）；
   首音之前的空档也不算（页边、连谱号会被收成线，56）。
 - 系统行末线只画到上面几个声部（同首第 3 系统下两声部右端无线）：分组验收通过后，缺行末线的声部行借本系统最右那根
@@ -1374,7 +1374,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
   恰在 60% 处）；一律放宽则 1773 多出一个假附点。
 
 **弱起曲断行**：谱行末不收小节线，跨行小节合并后原图换行落在小节中间——记在上一行末音上（`Chord.lineBreakAfter`）。
-写出端别的声部从前只按整小节归系统，多声部就对不齐了：`crates/dolce-model/src/emitutil.rs::part_ranges` 按拍位把第一声部的切点对到各声部。
+写出端别的声部从前只按整小节归系统，多声部就对不齐了：`crates/model/src/emitutil.rs::part_ranges` 按拍位把第一声部的切点对到各声部。
 123 写出端的歌词对位格从前把 `voice > 1` 一律当 ABC `&` 临时声部跳过，文本谱读进来的第 2 声部元素 `voice` 就是 2，
 整声部的词全丢——改按本声部的主分支号判（`abc/lyricslot.rs`）。
 
@@ -1785,8 +1785,8 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 
 - **分组**：补救第 ②条（一段没归系统的行、行数正好等于众数就自成一个系统）把前两行硬配成了双声部系统。这条只给三行以上的系统补；
   验收放开「每行都归了系统」：系统是两声部的、没归系统的行都像正经谱行（两根以上小节线）时，这些行照单声部留着（`voices.partial`）。
-- **组号**（`omr-todoc::jianpu`）：单声部行只进第 1 声部，各声部小节数对不上。按谱面自上而下给每行编组号（同系统几行一组、单声部行各成一组），
-  挂在行首小节的 `print.system` 上，共用时间轴按组对齐（`crates/dolce-model/src/timeaxis.rs`，同文本谱 issue 11 的口径）；只在局部多声部时挂。
+- **组号**（`omr-core::todoc::jianpu`）：单声部行只进第 1 声部，各声部小节数对不上。按谱面自上而下给每行编组号（同系统几行一组、单声部行各成一组），
+  挂在行首小节的 `print.system` 上，共用时间轴按组对齐（`crates/model/src/timeaxis.rs`，同文本谱 issue 11 的口径）；只在局部多声部时挂。
 - **系统末通高线压掉下声部的线**：下声部那几根 54px 的小节线被「不到行内最高线六成是伪线」剔掉——尺子取到了系统末那道从上声部画到下声部的
   终止线（203px，行高 53）。取尺子只看行内（首音右、末音左）的线，至少两根时才这样取。
 - **淡印断线**：第 1 行「3 2 1 2 | 3 - - -」那根细线断成 19px + 34px（隔 1px），上截太短没归进小节线、下截不到行内最高线六成。
@@ -1813,7 +1813,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
   本音符底下逐列数层：中间隔白的按墨段数，糊死的按墨厚折成本页单道线厚（横线高度中位）的几倍；列中位 ≥2 就按层拆开，交给逐层验距去数。
 - **曲中细粗终止线要 Fine 作证**（`jianpu.ts`，`barline.fineEnd`）：单声部行中间的「细+粗」原先一律当普通线。先记成候选，跳转记号落位后，
   线前两个小节以内挂着 Fine 的认作终止线，Fine 挪到线前末音上（60 Fine 印在 `1-` 的增时线上方，按 x 归音挂到了前一小节的 1）。
-- **行首 segno 不并跨行小节**（`omr-todoc::jianpu`）：60 第 4 行末 `| 1` 不收线、第 5 行行首印 𝄋。segno 只能挂小节线，并成跨行小节就挂到 `1` 前、
+- **行首 segno 不并跨行小节**（`omr-core::todoc::jianpu`）：60 第 4 行末 `| 1` 不收线、第 5 行行首印 𝄋。segno 只能挂小节线，并成跨行小节就挂到 `1` 前、
   D.S. 回来多唱一个音。上一行末记不可见线 `[|]`，segno 挂本行首小节左线（GT 同此记）。
 - **左右夹点的 segno 旁边紧挨和弦**（`segno.ts`）：「segno 单独印着」那条只查两颗点以内，点外的 `D` 不算。
 - **弧上悬数字的三连音**（`slur.ts::tupletCandidates`，`tuplet.overArc`）：除了「⌒3⌒」，还有整条弧、小号数字居中悬在弧顶上方的印法（60 `1̇1̇1̇`）。
@@ -1864,7 +1864,7 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
   斜杠和弦那一排不会单独印拍号）；字形路只读音名、读出 E 就顶掉了文本路的 E 小调，读出的正是这个小调的主音字母时以文本路为准。
 - **空心花体英文标题**（79「I HEARD THE VOICE OF JESUS SAY」）rec 读成汉字字母交错的乱码、比真标题宽：汉字与字母切换四次以上的行整行不要（`header.garbledLatin`）。
   副标题因此缺着（GT 记了）。
-- **全曲末小节的细细双线**是终止线（`omr-todoc::jianpu`）：79 末段英文「I' l l walk」的 l 读成小节线、凑出排在最后的伪谱行，真末行行末那道 ‖ 被当成曲中复纵线。
+- **全曲末小节的细细双线**是终止线（`omr-core::todoc::jianpu`）：79 末段英文「I' l l walk」的 l 读成小节线、凑出排在最后的伪谱行，真末行行末那道 ‖ 被当成曲中复纵线。
 
 剩下的（均已按图写进 GT）：79 英文按音节对位还差三十来步（印刷把词按音机械切开，`hea - d upon`、`loo ked`，跨音的词没拆：freely、giving、water）、
 副标题缺；77 标题上方的「新耶路撒冷——」没认、首行 `7̣ 2 2-` 被「隐含延音」补了一条谱面没有的弧；78 行首不带分隔符的中文段号「一」「二」没读出；
@@ -1883,13 +1883,13 @@ det 漏检时退回**连通域几何法**(大/小字分层 + `splitBlocks` 按 x
 - **上方带伸进音符带的块**（`chords_above`）：二房房号的粗线粘着半条弧伸进音符带半个字号以上，原先过宽度门（≤1.5 字高）读成和弦 `D`；
   伸进来的块不再按宽度放行，一律不当和弦字母。
 - **方括号里除段落词还有别的字**（`[接Chorus]`）是跳转提示，不当段落名（与段落标注识别共用的「方括号段落词」判据加 `in_note`）。
-- **以 `&`/`＆` 结尾的署名行接下一行**（`omr-text/src/header.rs::join_continued`）：紧挨在下、横向交叠的那行并成一条（文本 `头 & 续`），字号仍按单行高判，
+- **以 `&`/`＆` 结尾的署名行接下一行**（`omr-core::text/src/header.rs::join_continued`）：紧挨在下、横向交叠的那行并成一条（文本 `头 & 续`），字号仍按单行高判，
   框罩到下一行底。只认 `&`：英文署名行尾的逗号后面常是生卒年（「REGINALD HEBER,」/「1783-1826」），接上就错。
   署名补空格时，合成的那条按字心往回跳的位置找出续行起点，只在续行那截里找职能词前的空当；`&` 两边统一成一个空格。
 - **只有名单 + 职能词的署名**（`is_credit`）：尾部是「译 / 合译 / 词 / 曲…」，前面按 `& ＆ 、` 拆开至少两个名字、每个是拉丁名或二到四个汉字，就算署名
   （「Evelyn Kong & … & 赵治德 译」）；「约书亚乐团《点燃》（2015）」这类出处带书名号、不是名单，仍归副标题。
 
-## 参照歌词互证（`omr-todoc::reflyrics`）
+## 参照歌词互证（`omr-core::todoc::reflyrics`）
 
 给了同一首诗歌的歌词文本（命令行 `dolce omr 图 -l 歌词.txt`）时，拿它与识别歌词逐字对照：形近字按参照选字（候选取识别时挂在音上的
 `JpNum.lyric_alts`）、补回漏读的字；其余不一致只报告（`apply_ref_lyrics` 回的 `LyricCheck`），不擅改。
@@ -1897,12 +1897,12 @@ TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有
 那几步已做完，补字不再回喂（原在 TS `omr/reflyrics.ts`，2026-11-19 迁 Rust，与 TS 逐项对拍一致）。
 
 - **参照按演唱顺序写全**（反复段、每段后的副歌都照唱写一遍），谱面只印一遍、多段叠印。所以识别侧先**按演唱顺序展开**：
-  `recognizedToDoc(score, numOf)`（门面，实现 `omr-todoc::jianpu`） → `jianpuInputOfDoc({ forExpanded: true })` → `walkPlay`，第 pass 遍取第 pass 段、
+  `recognizedToDoc(score, numOf)`（门面，实现 `omr-core::todoc::jianpu`） → `jianpuInputOfDoc({ forExpanded: true })` → `walkPlay`，第 pass 遍取第 pass 段、
   副歌（`refrain`）每遍都取，与投影档排版 `NoteEntry.addLyric` 同口径。另按谱面顺序（逐段串起各谱行）也对一遍，
   两者按 **F1**（同字 ×2 ÷ 两边字数和）比，谱面顺序高出 0.1 以上就改用它并报 `repeatSuspect`。只比同字数不行：
   展开错了会把同一段唱好几遍，同字数照样高（《天上有粮》展开出 821 字、参照 118 字）。
   《荣耀大君王》（敬拜赞美 18）两个房号读成 `[1`/`[2`、和弦字母混进音符，就是这样报出来的。
-  两种都不行时再按参照歌词排出演唱路线（`sung_items`：转 `ScoreDoc` 后走生成演唱顺序的对齐 `dolce-view::singfit::fit_sing`，
+  两种都不行时再按参照歌词排出演唱路线（`sung_items`：转 `ScoreDoc` 后走生成演唱顺序的对齐 `dolce-model::view::singfit::fit_sing`，
   按它的逐遍路线 `walk` 取各音各段的字），F1 比展开高出 0.05 以上就用它、报为 `sung`。桥段谱面 AABB、歌词 ABAB 这类与谱面走向对不上的，
   按谱面展开会把整段配错、按谱面顺序又缺了重唱，只有按歌词走才对得齐。
 - **对齐用 Gotoh 仿射缺口**（开 −3、延 −0.5，同字 +2、异字 −1、空音补字 −1），参照首尾免罚。线性缺口不行：
@@ -1958,7 +1958,7 @@ TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有
 - **只有谱行音符那一路开 `{ rhythm: true }`**。拍号、倚音、连音数字、房号都复用 `recognizeDigits`，
   其中拍号的合法值里有 9（`9/8`），不能让 X 混进去。
 - 只认**整格就是** `X`/`x`/`Ｘ`/`×`，不认夹在别的字里的 x。
-- 同音判断要排除它：隐含 tie 补检、`slur.ts` 的 tie/slur 分流、`omr-todoc::jianpu` 的 tie 配对——两个 X 挨着不是延音。
+- 同音判断要排除它：隐含 tie 补检、`slur.ts` 的 tie/slur 分流、`omr-core::todoc::jianpu` 的 tie 配对——两个 X 挨着不是延音。
 - 输出：模型 `Chord.rhythm`（123 `X`，导出 MusicXML 时 `model/toxml.ts` 写 `<unpitched>` + `<notehead>slash</notehead>`，
   `fromxml.ts` 读回 `Chord.rhythm`）；文本谱按方言写 `rhythmToken`（诗歌本 `X`、番茄 `9`）。
 
@@ -2079,7 +2079,7 @@ TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有
 
 **MusicXML → 123 丢波音**（`abc/emit.rs`）：MusicXML 读进来的波音、颤音挂在 `notations.ornaments`
 （`inverted-mordent`），123 写出端原先只写 `articulations`，识别核对那条路上 1677《祷告》的两个波音就这么没了。
-按 `crates/dolce-model/src/xmlproject.rs::ORNAMENT_TAG` 反查写回简谱来源的同名记号（`!sby!` / `!xby!` / `!cy!`），对不上的写原名。
+按 `crates/model/src/xmlproject.rs::ORNAMENT_TAG` 反查写回简谱来源的同名记号（`!sby!` / `!xby!` / `!cy!`），对不上的写原名。
 （识别现在直出模型、不再经 MusicXML，但波音同样记在 `notations.ornaments`，走的还是这一条。）
 
 **分子分母从「没归类的小块」里补位**：拍号数字比音符小一号，高度正卡在 `classify` 数字块门槛
@@ -2118,7 +2118,7 @@ TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有
 见 [编辑器](../模块/编辑器.md)「源码格式下拉」）——切的本来就是代码区这份文本是什么格式，
 摆在工具条上离得远、还得另加一条「核对」标签解释。选择存在 `dolce-render-settings` 的 `omrFormat`，下次识别沿用。
 
-**各格式一条路**：`omr-todoc::jianpu::recognized_to_doc` → `ScoreDoc` → 转换目标表 `convert/targets.ts` 的写出端
+**各格式一条路**：`omr-core::todoc::jianpu::recognized_to_doc` → `ScoreDoc` → 转换目标表 `convert/targets.ts` 的写出端
 （`emit123` / `emitJpwabc` / `emitAbc` / `emitFanqie`）。123 交 `App.importOmrDoc`（报 123 装不下的东西），其余交 `App.adoptText`。
 
 以前文本谱另有一个直接从 `RecognizedScore` 写的 emitter（`omr/tofanqie.ts`，理由是 `rows` 天然对上「一行 `Q:` 一行谱」），
@@ -2150,7 +2150,7 @@ TS 识别时代它挂在各段歌词落位之后、`resolveSlurRefits` 与「有
   同理，要紧跟小节线写，挂到音符上会画在音符头顶而不是小节线上。
 - 圆滑线与连音线在文本谱里同写作 `(…)`。配对**用队列（先开先闭）不是栈**——`parse.ts` 的
   `)` 就是 `curves.shift()`，照它配才能「写出去什么样、读回来就什么样」；配不上对的整条丢弃，
-  端点落在休止符上的（识别错误）两端一起丢，与 `omr-todoc::jianpu::pair_arcs` 同一取向。
+  端点落在休止符上的（识别错误）两端一起丢，与 `omr-core::todoc::jianpu::pair_arcs` 同一取向。
 - 右侧小节线不当场写、攒到下一小节的左侧再落笔：`:|` 紧接 `|:` 要合成一条 `:|:`，
   分开写会连着画出两道线。
 - 歌词行末尾落单的 `}` 会被读成「联合括号」（`parse.ts` 只看行尾字符，不管它是不是并字括号
@@ -2196,7 +2196,7 @@ CLI 识别吃带内嵌位图的 PDF（每页取源图，同上；歌本切分 `s
 （歌本切分例外：转曲矢量歌本自己把对象画成 SVG 交 sharp，见下）。矢量那一摊
 （`vector.ts`/`vectext.ts`/`inventory.ts` + `pdflayout/`）仍只在浏览器与 `cli/index.ts` 那条链上。
 
-### 歌本切分（原 `omr-cli.mjs split`、`src/omr/booksplit/`，现 `dolce split`、`omr-book`）
+### 歌本切分（原 `omr-cli.mjs split`、`src/omr/booksplit/`，现 `dolce split`、`dolce-omr::book`）
 
 整本分页简谱 → 一首一张图。两遍：第一遍逐页只留几何与文字（几百页的像素不常驻），第二遍按摆放回源图裁拼。
 判据先是拿《哈利路亚》（438 页扫描、551 首，一页多首与跨页都很多）换来的，后又拿转曲矢量的《裴克圣经经文诗歌歌谱》
@@ -2330,9 +2330,9 @@ rec 全被按在一个弱核上、按歌词条数累积的形状。
 ### 命令行（Rust `dolce`，2026-11 起全在 Rust、不要 Node）
 
 识别迁 Rust（P12）后，命令行先是 `scripts/omr-cli.mjs` 起 Rust 的 `omr-cli run`、再用 TS 写出端转格式；模型、格式迁 Rust 之后（2026-11-19）
-这层 Node 也去掉了：识谱命令行改名 `dolce`（crate `dolce-cli`，原 `omr-cli`），`dolce omr` 就是给人用的识谱（`crates/dolce-cli/src/cli.rs`；省掉 `omr` 的旧写法照认），识别后直接按输出格式表（`dolce-formats::targets`，
-与编辑器的转换目标表同一份口径，外加 MusicXML）写出；简谱的 MusicXML 走 `omr-todoc::jianpu` 建模 → `toxml`，五线谱的 MusicXML 原样去识别 id、
-别的格式读回模型再写。参照歌词互证（`-l`）也在 Rust（`omr-todoc::reflyrics`，见上「参照歌词互证」）。
+这层 Node 也去掉了：识谱命令行改名 `dolce`（crate `dolce-cli`，原 `omr-cli`），`dolce omr` 就是给人用的识谱（`crates/cli/src/cli.rs`；省掉 `omr` 的旧写法照认），识别后直接按输出格式表（`dolce-model::formats::targets`，
+与编辑器的转换目标表同一份口径，外加 MusicXML）写出；简谱的 MusicXML 走 `omr-core::todoc::jianpu` 建模 → `toxml`，五线谱的 MusicXML 原样去识别 id、
+别的格式读回模型再写。参照歌词互证（`-l`）也在 Rust（`omr-core::todoc::reflyrics`，见上「参照歌词互证」）。
 上面几节（ORT 线程、预热）讲的是 TS 识别在 Node 里的推理，已随 TS 识别删。
 
 ```bash
@@ -2360,7 +2360,7 @@ node scripts/pack-cli.mjs --targets=win32-x64 --no-crt             # Windows 不
 darwin-arm64：目录 72M（以前带 Node 入口与写出端时 69M、更早带 node_modules 时 96M）。
 
 识别程序与 PDFium 都是原生的，**不能交叉打包**：别的平台的识别程序按
-`crates/target/<三元组>/release/` → `--bin-dir` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`（omr-source 的构建脚本编那个目标时下载）→ `--pdfium-dir` 找，缺了报错不打。
+`crates/target/<三元组>/release/` → `--bin-dir` 找，PDFium 按 `~/.cache/dolce-pdfium/<构建号>/<三元组>/`（omr-core::source 的构建脚本编那个目标时下载）→ `--pdfium-dir` 找，缺了报错不打。
 产物 `out/pkg/dolce-cli-<版本>-<os>-<cpu>.{tar.gz|zip}`（Windows 出 zip，解出来是同名目录）。打 zip 不用 `zip` 命令（Windows 没有）：bsdtar 能产 zip，
 但要显式 `--options zip:compression=deflate`；GNU tar 不认 zip，那种环境才回退到 `zip`。
 

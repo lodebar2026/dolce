@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 dolce-engrave = { path = "../../crates/engrave", features = ["native"] }
 napi = { version = "3", default-features = false, features = ["napi4"] }
 napi-derive = "3"
-# 系统文字引擎本体在工作区 crates/dolce-text 的 native 特性（Rust 排版也用它），这里只是 N-API 外壳
+# 系统文字引擎本体在工作区 crates/engrave/src/text 的 native 特性（Rust 排版也用它），这里只是 N-API 外壳
 
 [build-dependencies]
 napi-build = "2"

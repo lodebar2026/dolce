@@ -564,7 +564,7 @@ export function doubtTitle(codes: readonly string[]): string {
   return tr("omr.doubt.reasons", { list: codes.map((x) => (DOUBT_CODES.has(x) ? tr(`omr.doubt.${x}` as MsgKey) : x)).join(tr("omr.doubt.sep")) });
 }
 
-/** 有译文的可疑理由码（文字在词典 `omr.doubt.<code>`）：TS 简谱的四个，Rust 两条路线共用的一张（`omr-sheet::result::codes`，简谱满拍改法细分 `beat.fix.<改法>`）。 */
+/** 有译文的可疑理由码（文字在词典 `omr.doubt.<code>`）：TS 简谱的四个，Rust 两条路线共用的一张（`omr-core::sheet::result::codes`，简谱满拍改法细分 `beat.fix.<改法>`）。 */
 const DOUBT_CODES = new Set([
   "note.offRow", "oct.inkAbove", "oct.oddShape", "oct.offCenter",
   "beat.short", "beat.over", "beat.ambiguous", "beat.misaligned", "beat.fix", "beat.fix.bar",

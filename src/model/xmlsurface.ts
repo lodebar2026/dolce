@@ -6,7 +6,7 @@
 // slur 贝塞尔、`<supports>`、`repeat winged`……只有两个用处：`.musicxml` 改动后整份重写不丢、五线谱引擎照原版面排。
 // 所以不存进模型、经查询层取（简谱的是 `jianpu.ts`，那边是由语义派生，这边是从原文现读）。
 //
-// 表层在 Rust（crates/dolce-model/src/xmlsurface.rs）：读入时每个模型对象按身份（`_oid`）绑到原节点，原树与绑定表留在 Rust 里，
+// 表层在 Rust（crates/model/src/xmlsurface.rs）：读入时每个模型对象按身份（`_oid`）绑到原节点，原树与绑定表留在 Rust 里，
 // 这里的查询按镜像对象的身份（`rustdoc.ts` 的旁表）去问。克隆出来的对象没有身份（= 文本来源），一律照常。
 // 导出时五线谱引擎排出来的版面（`editor/xmllayout.ts`）是另一个来源，在 Rust 里排好直接交给写出端（`EngravedLayout`）。
 

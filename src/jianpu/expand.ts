@@ -1,11 +1,11 @@
 // 反复展开的公共那一半：按 `PlayItem[]`（`playData.measures`）逐遍走小节。
 //
-// 「这首歌该唱成什么样」由演唱顺序（crates/dolce-play，经 `score/play.ts`）从 `ScoreDoc` 推（反复与跳转 / `.Repeat` 段），
+// 「这首歌该唱成什么样」由演唱顺序（crates/model/src/play，经 `score/play.ts`）从 `ScoreDoc` 推（反复与跳转 / `.Repeat` 段），
 // 两种格式都拿到同一种 `PlayItem[]`；这里只负责**怎么走**——逐遍、逐小节、首尾小节的裁切、
 // 遍末换页。「怎么放一个小节」由 sink 决定：排版往 Line 里装小节（layout.ts::buildLine）。
 // 投影档各格式投影成同一种引擎输入，走的是同一条路（jianpu/expanded.ts）。
 //
-// 怎么走在 Rust（crates/dolce-play/src/walk.rs，wasm `walkPlay` / `countPasses`）：这里把演唱顺序项拍成扁平数组交过去，
+// 怎么走在 Rust（crates/model/src/play/walk.rs，wasm `walkPlay` / `countPasses`）：这里把演唱顺序项拍成扁平数组交过去，
 // 按回来的步骤回放给 sink（`P:` 段落的小节集合 `scope` 按项下标从原对象取）。
 
 import { PlayItem } from "../score/playtypes";

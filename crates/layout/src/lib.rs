@@ -1,4 +1,4 @@
-//! 文档会话（`src/engine/api.ts::EngineSession` 的 Rust 侧，照 `omr-engine/src/handle.rs` 的范式）。
+//! 文档会话（`src/engine/api.ts::EngineSession` 的 Rust 侧，照 `dolce-omr/src/handle.rs` 的范式）。
 //!
 //! 一个会话对应一份打开的文档。[`Session::update`] 交原文与排版请求、回修订号；其余调用都带修订号，
 //! 会话手里已经是更新的修订时以 [`EngineError::Stale`] 拒绝（调用方丢掉结果即可，不是错误）。

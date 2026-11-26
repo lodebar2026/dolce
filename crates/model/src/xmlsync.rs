@@ -1,7 +1,7 @@
 //! `.musicxml` 的源码同步索引（同 `src/editor/sync.ts::SyncIndex.buildXml`）：模型不记原文位置，条目区间取表层原节点记的区间。
 //!
 //! 条目形状同 TS `SyncEntry`（JSON 直接给编辑器），按推入次序给（排序在 TS）；区间一律 UTF-16 码元。原节点不是从这份原文读出来的（区间对不上）就整份不建，回 `None`。
-//! 有原文位置的那几种格式另一种建法在 `dolce-view::sync`（要排版行视图），条目形状共用这里的。
+//! 有原文位置的那几种格式另一种建法在 `dolce-model::view::sync`（要排版行视图），条目形状共用这里的。
 
 use crate::doc::*;
 use std::borrow::Cow;

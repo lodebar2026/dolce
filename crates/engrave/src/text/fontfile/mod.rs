@@ -1,7 +1,7 @@
 //! 字体文件这一层（fontdb + rustybuzz）：定位（系统字体目录 / 宿主给的字节）、解析（.ttc 子字体、TrueType / CFF / CFF2、可变字体）、
 //! 整形与字形度量、紧墨迹盒、轮廓、合成粗斜的判定、族串的逐字回退。
 //!
-//! 导出（`dolce-export::fonts`，PDF 选字体、嵌入、转曲）与 Linux 的系统量字（`native::linux`）共用这一份。
+//! 导出（`dolce-layout::export::fonts`，PDF 选字体、嵌入、转曲）与 Linux 的系统量字（`native::linux`）共用这一份。
 //! 一份 [`FontBook`] 是一个 fontdb 库加字节缓存：桌面 / 命令行装系统字体（`fontfile-system` 特性），
 //! wasm 只装宿主给的字节。族名的展开（泛称、标准字体）与量字同一份（[`crate::text::css_families`]）。
 //!

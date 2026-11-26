@@ -59,7 +59,7 @@ export function bindWasmMeasure(sync: WasmMeasureSync): void {
   if (backend) sync.set(backend);
 }
 
-/** 录下的一次后端调用（`dolce-text::MeasureRecord`：`dolce-dev measure-check` 拿原生量字逐条对）。 */
+/** 录下的一次后端调用（`dolce-engrave::text::MeasureRecord`：`dolce-dev measure-check` 拿原生量字逐条对）。 */
 export type MeasureRecord = Record<string, unknown>;
 
 /**

@@ -1,4 +1,4 @@
-// 简谱字号的折算（设置面板显示用）：音符字号、标题 / 词曲字号。尺子（`JianpuStyle`）的折算在 Rust（`crates/dolce-style/src/jianpu.rs`）。
+// 简谱字号的折算（设置面板显示用）：音符字号、标题 / 词曲字号。尺子（`JianpuStyle`）的折算在 Rust（`crates/engrave/src/style/jianpu.rs`）。
 import type { StyleRole, StyleSheet } from "./sheet";
 import { PPTX_PAGE } from "./themes";
 import { resolveLength } from "./units";

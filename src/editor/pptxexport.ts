@@ -1,4 +1,4 @@
-// 「导出 PPTX」：写出端在 Rust（`crates/dolce-export/src/pptx.rs`，经按需载入的 dolce-export-wasm；网页与桌面同一份）。
+// 「导出 PPTX」：写出端在 Rust（`crates/layout/src/export/pptx.rs`，经按需载入的 dolce-export-wasm；网页与桌面同一份）。
 // 这里只拼料：投影档那份排版的各页场景（`layout/scenejson.ts`，带数字墨迹中心、附点与减时线挂哪个数字）、
 // 附点间距、页面大小、底色，外加场景里文字用到的字体度量（文本框高按它定，wasm 里没有量字器）。
 import { asset } from "../common/asset";
@@ -6,7 +6,7 @@ import { measureFontMetrics } from "../common/measure";
 import type { Json } from "../layout/painter";
 import { exportWasm } from "./pdfexport";
 
-/** 附点离数字那道空的缺省（`crates/dolce-engrave` 的 `STACK_GAP_DEFAULT`）：排版结果没给时用。 */
+/** 附点离数字那道空的缺省（`crates/engrave` 的 `STACK_GAP_DEFAULT`）：排版结果没给时用。 */
 const STACK_GAP_DEFAULT = 0.17;
 
 /** `ScorePainter.pptxSource`：简谱排的那一份（各页场景 JSON） */

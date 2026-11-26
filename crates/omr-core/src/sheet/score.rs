@@ -1,5 +1,5 @@
 //! 五线谱识别结果模型（整曲）：声部、小节、谱号 / 调号 / 拍号、小节线样式与反复、分行分页、音与记号、歌词、弧。
-//! 建 `ScoreDoc`、写 MusicXML 在 `omr-todoc::staff`（经唯一写出端 `dolce-model::toxml`）。
+//! 建 `ScoreDoc`、写 MusicXML 在 `omr-core::todoc::staff`（经唯一写出端 `dolce-model::toxml`）。
 use crate::sheet::music::{BarStyle, Clef, Key, Pitch, Time};
 use crate::sheet::result::Src;
 use crate::text::header::Credit;

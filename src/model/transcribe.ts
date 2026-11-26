@@ -1,4 +1,4 @@
-// 转记：实际音高不动，只把全曲统一到目标首调，并按指定规则重算唱名与升降号。在 Rust（crates/dolce-model/src/transcribe.rs，经 `EditCmd`），这里是门面。
+// 转记：实际音高不动，只把全曲统一到目标首调，并按指定规则重算唱名与升降号。在 Rust（crates/model/src/transcribe.rs，经 `EditCmd`），这里是门面。
 
 import type { ScoreDoc } from "./doc";
 import { applyEditCmd, type EditHooks } from "./edit";

@@ -1,5 +1,5 @@
 // 简谱记号名 → 字形 / 文字：力度、小节线上的反复 / 导航记号。文本谱 `&xx`、jianpu-ly 写出、识别歌词共用（无 DOM 依赖）。
-// 名字表在 `model/marknames.ts`；排版在 Rust（`crates/dolce-engrave` 有同一套表）。
+// 名字表在 `model/marknames.ts`；排版在 Rust（`crates/engrave` 有同一套表）。
 //
 // PUA 码位一律用 String.fromCharCode 写，**切勿在源码里写字面 PUA 字符**。
 

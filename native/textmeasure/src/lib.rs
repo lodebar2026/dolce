@@ -1,5 +1,5 @@
-//! Node 侧排版量字：同步 N-API 外壳。系统文字引擎本体在 `crates/dolce-text` 的 `native` 模块（macOS CoreText / Windows DirectWrite），
-//! 浏览器口径层在 `crates/dolce-text`（`BrowserCompat`），Rust 排版与这里用同一份。只编 macOS / Windows。
+//! Node 侧排版量字：同步 N-API 外壳。系统文字引擎本体在 `crates/engrave/src/text` 的 `native` 模块（macOS CoreText / Windows DirectWrite），
+//! 浏览器口径层在 `crates/engrave/src/text`（`BrowserCompat`），Rust 排版与这里用同一份。只编 macOS / Windows。
 //!
 //! 两组接口：
 //! - `compat*`：排版用的量字（`dolce_engrave::text::native::node_measure`，Chromium 口径：CSS 族串展开、单字宽取 1/64、全角标点挤压、f32），

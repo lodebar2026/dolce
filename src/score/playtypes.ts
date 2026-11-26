@@ -1,4 +1,4 @@
-// 演唱顺序、试听时间轴的数据类与产物形状。判据在 Rust（crates/dolce-play；由 `ScoreDoc` 拼输入在 crates/dolce-view），
+// 演唱顺序、试听时间轴的数据类与产物形状。判据在 Rust（crates/model/src/play；由 `ScoreDoc` 拼输入在 crates/model/src/view），
 // TS 侧经 `score/play.ts` 调；消费者读产物（试听 `editor/player.ts`、投影档 `jianpu/expand.ts::walkPlay`、断行档 `layout/input.ts`）。
 
 import { Fraction } from "../common/fraction";
@@ -40,7 +40,7 @@ export class PlayItem extends TimePosition {
   limit = -1;
   /** 从这一小节起接在前面同一行末尾、不另起一行（只在最后一遍唱的「阿们」结尾，`lastVerseTail`） */
   glueFrom = -1;
-  /** 按 `P:` 排的：这一项所在段落的小节。`pass` 是段内第几行词，「这一行词唱完了」只在这些小节里判（dolce-play `timeline.rs`、`place/expand.ts`） */
+  /** 按 `P:` 排的：这一项所在段落的小节。`pass` 是段内第几行词，「这一行词唱完了」只在这些小节里判（dolce-model::play `timeline.rs`、`place/expand.ts`） */
   scope?: ReadonlySet<number>;
   /** 按 `P:` 排的：这一项是进入一个段落（投影档进段不换页，`walkPlay`） */
   sectionEntry?: boolean;
@@ -73,7 +73,7 @@ export class PlayData {
   fromSections = false;
   /** 顺序来自逐遍演唱顺序（123 `%%sing`）：投影档逐遍一页起头，断行换页照 `%%layout`，不再推断 */
   fromSing = false;
-  /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用默认值（crates/dolce-play `timeline::TEMPO`）。
+  /** 谱面速度（♩= 每分钟拍数）。0 = 未标注，试听/导出用默认值（crates/model/src/play `timeline::TEMPO`）。
    *  来源：MusicXML `<sound tempo>` / OMR 页眉的 `♩=76` / .jpwabc `.Title` 的 `Tempo`。 */
   tempo = 0;
 

@@ -1,5 +1,5 @@
 // `ScoreDoc` → `.jpwabc`：写出端的输入按形状拼（MusicXML 形状 / 简谱形状经排版行视图）、写出，都在 Rust
-// （crates/dolce-formats/src/jpw/input.rs、write.rs，wasm `modelEmitJpwabc`），这里是门面。
+// （crates/model/src/formats/jpw/input.rs、write.rs，wasm `modelEmitJpwabc`），这里是门面。
 
 import { dolce } from "../common/dolce";
 import type { ScoreDoc } from "../model/doc";

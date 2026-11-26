@@ -1,4 +1,4 @@
-//! 五线谱识别结果（`omr-sheet::score::Score`）→ `ScoreDoc`，外加两份附件：识别 id（[`Rids`]）与符干。
+//! 五线谱识别结果（`omr-core::sheet::score::Score`）→ `ScoreDoc`，外加两份附件：识别 id（[`Rids`]）与符干。
 //!
 //! 模型与读进识别写出的 MusicXML 所得逐字段相同（口径照 `dolce-model::fromxml`：方向记号挂在前一个元素之后、
 //! 和弦记号等下一个音、弧按编号与声部配对、简谱度数按调号补）。识别 id 不进模型，按「对象 + 槽位」记在附件里：

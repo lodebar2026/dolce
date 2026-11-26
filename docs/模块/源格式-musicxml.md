@@ -12,14 +12,14 @@ MusicXML 双向（导入为 `ScoreDoc`；简谱档与成书经 `model/jianpuproj
 
 | 函数 | 文件 | 作用 |
 |---|---|---|
-| `layout_staff(doc)` | `crates/dolce-layout-staff/src/read.rs` | `ScoreDoc` → `StaffLayout`（五线谱/混排的版面态，只读 `ScoreDoc` 与其表层 `xmlsurface.ts`） |
-| `loadScoreDoc(xml)` | `src/model/fromxml.ts`（门面；实现 `crates/dolce-model/src/fromxml.rs`） | → `ScoreDoc`（**直通**：语义进模型，表层绑在原节点上，见 `model/xmlsurface.ts`） |
-| `scoreDocToMusicXml(doc)` | `src/model/toxml.ts`（门面；实现 `crates/dolce-model/src/toxml.rs`） | **唯一写出端**；简谱来源先投影成 MusicXML 形状（Rust `xmlproject`） |
+| `layout_staff(doc)` | `crates/layout-staff/src/read.rs` | `ScoreDoc` → `StaffLayout`（五线谱/混排的版面态，只读 `ScoreDoc` 与其表层 `xmlsurface.ts`） |
+| `loadScoreDoc(xml)` | `src/model/fromxml.ts`（门面；实现 `crates/model/src/fromxml.rs`） | → `ScoreDoc`（**直通**：语义进模型，表层绑在原节点上，见 `model/xmlsurface.ts`） |
+| `scoreDocToMusicXml(doc)` | `src/model/toxml.ts`（门面；实现 `crates/model/src/toxml.rs`） | **唯一写出端**；简谱来源先投影成 MusicXML 形状（Rust `xmlproject`） |
 | `projectForJianpu(song)` | `src/model/jianpuproject.ts` | MusicXML 形状 → 简谱形状（简谱档排版、转 123 之前） |
 | `engraveScoreDoc(doc, page)` | `src/editor/xmllayout.ts` | 导出的版面坐标：五线谱引擎排一遍（与屏幕同一套），坐标装进 `EngravedLayout` 交给写出端，不写进模型 |
 
-读写都在 Rust（2026-11-16 M2-8 起）：`crates/dolce-model/src/xml` 是自有的 XML 树（解析、序列化，不用浏览器 `DOMParser`；每个元素记原文区间，按 UTF-16），
-`crates/dolce-model` 的 `fromxml` / `toxml` / `xmlsurface` / `xmlsync`（`.musicxml` 的源码同步索引）在它上面。
+读写都在 Rust（2026-11-16 M2-8 起）：`crates/model/src/xml` 是自有的 XML 树（解析、序列化，不用浏览器 `DOMParser`；每个元素记原文区间，按 UTF-16），
+`crates/model` 的 `fromxml` / `toxml` / `xmlsurface` / `xmlsync`（`.musicxml` 的源码同步索引）在它上面。
 TS 侧拿到的模型是 JSON 镜像：可绑对象的身份 `_oid` 摘下记在 `model/rustdoc.ts` 的旁表里，表层（原树 + 绑定表）留在 Rust 按句柄取；
 `{ ...obj }`、`structuredClone` 出来的对象没有身份，同以前的表层 WeakMap。句柄在镜像回收后释放，另有上限（原文总量 16 MB，淘汰最久没用的，至少留 8 个）防同步批处理里回收不及。
 
@@ -57,21 +57,21 @@ TS 侧拿到的模型是 JSON 镜像：可绑对象的身份 `_oid` 摘下记在
   `<part-name>` 留空并 `print-object="no"`。
 
 - **简谱档的普通小节线由投影补**（`jianpuproject.ts::projectForJianpu`）：MusicXML 的普通小节不写 `<barline>`，模型里没有右线；
-  简谱这边「没有右线」是行末开口的小节，行视图（`dolce-view/src/slots.rs::build_row`）不出小节线元素。不补的话投影档与简谱档都整行并成
+  简谱这边「没有右线」是行末开口的小节，行视图（`dolce-model::view/src/slots.rs::build_row`）不出小节线元素。不补的话投影档与简谱档都整行并成
   一两个大小节、只在双线/终止线处有线，曲中转调也只在这类线上才画得出来。投影在克隆上给每个没有右线的小节补一根普通线
   （有右线对象而样式未定的填普通线），原模型不动。
 - **节奏音符（`<unpitched>`）也留着音**（`fromxml.ts`）：显示位置记 `Note.unpitched`，它的 `<tie>`、和弦里叠的第二个（钹与鼓同时）都挂在音上；
   以前 `notes` 恒为空，小钗 8 条延音线、m91 两个叠音读进来就没了，五线谱也全画在第三线。写出照显示位置写，
   只有简谱来源（没有显示位置）的才写斜线符头——以前一律写 `slash`，打击乐谱往返一趟符头全变斜线。
 - **副标题与页脚只写在 `<credit>` 里的**（《八段锦》的「（民乐合奏）」、每页「《八段锦》（民乐合奏） n」），转简谱文本时
-  照 `credit-type` 与位置落成 `T:` 第二行、`I:bottomcenter`（`crates/dolce-model/src/jianpuproject.rs::header_from_credits`，末尾页码去掉）；简谱视图同一份。
+  照 `credit-type` 与位置落成 `T:` 第二行、`I:bottomcenter`（`crates/model/src/jianpuproject.rs::header_from_credits`，末尾页码去掉）；简谱视图同一份。
   页眉里没写类型、又不是标题/副标题/署名的几条（左上的出处、右上的诗歌本名、标题下的英文标题）按 `justify` 落成 `I:topleft` / `I:topright` / 副标题
-  （`headTextFromCredits`）；投回 MusicXML 时页面文字的左上、右上写成靠左、靠右的无类型 credit，标题也补一条 title credit（`crates/dolce-model/src/xmlproject.rs::credits_of`）。
-- **署名照谱面印的写**（`crates/dolce-model/src/jianpuproject.rs::printed_creators`）：`<creator>` 的每个词（按空白与标点切、不分大小写）都出现在页眉某条 credit 里的，
+  （`headTextFromCredits`）；投回 MusicXML 时页面文字的左上、右上写成靠左、靠右的无类型 credit，标题也补一条 title credit（`crates/model/src/xmlproject.rs::credits_of`）。
+- **署名照谱面印的写**（`crates/model/src/jianpuproject.rs::printed_creators`）：`<creator>` 的每个词（按空白与标点切、不分大小写）都出现在页眉某条 credit 里的，
   `C:` 写那条印出来的文字（「Timothy Dudley-Smith词 1926」、几位合印一行的「词：… 曲：… 译：…」）；一位分印两行的（「陈尚哲编曲」/「Arranged by Ricardo Chan」，
   左右两栏交错的不相邻）两行各写一条。只含一位的沿用它的类型，合印的按标签认。ABC 写出端同走这一步（以前只有 123 经 `projectForJianpu` 走）。
   credit 与 creator 写法本身不一的（繁简、拼写）认不出，照旧各写各的。
-- **`<direction>` 落在音中间的**（`<offset>` 多是排版软件的微调）挂靠时取最近的拍位：前半段算这个音、后半段算下一个（`crates/dolce-model/src/directionmarks.rs::direction_marks`）。
+- **`<direction>` 落在音中间的**（`<offset>` 多是排版软件的微调）挂靠时取最近的拍位：前半段算这个音、后半段算下一个（`crates/model/src/directionmarks.rs::direction_marks`）。
   以前一律推到下一个音，转简谱文本读回渐强起点挪一个音（破碎 m30 的 offset 只有八分音符的 1/8）。
   **力度落在小节末、后面已没有音的**（offset 推过了最后一个音）挪到下一小节开头（`carryLateDirections`，文本写出端与简谱视图都先过它）；
   文字与渐强起点写在小节末多半就是管小节末的，不挪（望十架、破碎实测挪了更差）。

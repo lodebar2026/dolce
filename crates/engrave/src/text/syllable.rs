@@ -1,6 +1,6 @@
 //! 歌词音节的量宽（`engrave/syllable.ts::syllableRun`）：一个音节切成「前标点 / 主体 / 后标点」三段，
 //! 宽度与逐字笔位一律取**标点挤压后**的那一串（量宽与绘制同一串坐标）。
-//! 放在量字层而不是谱面元素层：场景树里歌词节点的 `update` 要用它（`dolce-scene` 在 `dolce-engrave` 之下）。
+//! 放在量字层而不是谱面元素层：场景树里歌词节点的 `update` 要用它（`dolce-engrave::scene` 在 `dolce-engrave` 之下）。
 
 use crate::text::cjkpunct::{code_points, CompressMode, LYRIC_SPLIT_PUNCT, MIXED_PUNCT};
 use crate::text::{Font, MeasureCtx};

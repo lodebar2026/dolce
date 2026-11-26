@@ -1193,7 +1193,7 @@ struct SecTags {
     ord: HashMap<Slot, usize>,
 }
 
-/// 段落标记落到源符号上（切法同 `dolce-play::sections_of`：标记音之前的非音符号仍归上一段；标记在小节第一个音上的整小节归新段）。
+/// 段落标记落到源符号上（切法同 `dolce-model::play::sections_of`：标记音之前的非音符号仍归上一段；标记在小节第一个音上的整小节归新段）。
 /// 写在主旋律以外声部的标记贴到那一小节头。没有段落标记时全归空串（先后序号照记，往回跳照样认得出）
 fn section_tags(src: &Src) -> SecTags {
     let marks: &[dm::SectionMark] = src.song.section_marks.as_deref().unwrap_or(&[]);

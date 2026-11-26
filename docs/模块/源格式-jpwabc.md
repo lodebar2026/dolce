@@ -10,7 +10,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 
 | 函数 | 文件 | 作用 |
 |---|---|---|
-| `JpwFile.fromString(s)` | 门面 `src/jpword/jpwfile.ts` → `crates/dolce-formats/src/jpw/file.rs` | 文本 → 分段（失败返回 null）；编辑器按节取行（`.Layout` 断行描述、`.Voice` 挪 `$`、`.Words` 重算锚点） |
+| `JpwFile.fromString(s)` | 门面 `src/jpword/jpwfile.ts` → `crates/model/src/formats/jpw/file.rs` | 文本 → 分段（失败返回 null）；编辑器按节取行（`.Layout` 断行描述、`.Voice` 挪 `$`、`.Words` 重算锚点） |
 | `lexVoice(text)` | 门面 `src/jpword/lex.ts` → `jpw/lex.rs` | `.Voice` 正文 → token 序列（含空白/注释，带偏移与行列）；`.Voice` 节去掉空白/注释、落单 `[` `]` 判解析失败（`parse_voice_text`） |
 | `jpwToScoreDoc(f)` | 门面 `src/model/fromjpw.ts` → `jpw/read.rs` | `JpwFile` → `ScoreDoc`（音符/小节线带 `SourceSpan`）。谱面、试听、转 123/ABC、导出、能力表、双向定位索引都走它 |
 | `jianpuInputOfJpw(doc)` | `src/jianpu/jianpuinput.ts` | `ScoreDoc` → 简谱引擎输入（按原文小节；小节中间的 `$` 照原位换行） |
@@ -21,7 +21,7 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
 所以只有词法、没有语法树；音符内部的拆解在 `jpw/read.rs::read_note` 按 token 文本再做。词法规则见
 [../格式/jpwabc.md](../格式/jpwabc.md)「4. 音乐体」的词法表。
 
-读写判据全在 Rust（`crates/dolce-formats/src/jpw/`），经 dolce-wasm（`crates/dolce-wasm/src/textformats.rs`）同步调；TS 只留门面与高亮分词。
+读写判据全在 Rust（`crates/model/src/formats/jpw/`），经 dolce-wasm（`crates/wasm/src/textformats.rs`）同步调；TS 只留门面与高亮分词。
 
 ## 吃什么吐什么
 
@@ -45,19 +45,19 @@ JP-Word `.jpwabc` 的分段、词法语法解析，`.jpwabc` → `ScoreDoc`（�
   另在前一个和弦上记 `Chord.lineBreakAfter`，简谱引擎据此原位换行；`$` 与小节线的先后（`$ |` / `| $`）不区分，换行一律落在小节线之后。
 - **往返三样用词法里已有的 token**（不扩语法，原版 JP-Word 读到会忽略、不报错）：曲中**转拍号**写 `4/4`、
   **转调**写 `"1=G"`（同步更新调号状态，否则转调后半首音高全错）、**倚音**写 `{6,}`。
-- **演唱顺序**：有 `.Repeat` 照它；没有时谱里有 `|: :|` 的照反复记号推（`dolce-view/src/playsong.rs::play_data_of`，用户定 2026-10-14：
+- **演唱顺序**：有 `.Repeat` 照它；没有时谱里有 `|: :|` 的照反复记号推（`dolce-model::view/src/playsong.rs::play_data_of`，用户定 2026-10-14：
   020《向主歌唱》的 `.Layout` 时值总长对得上「走反复」），没有反复记号的整曲按段数逐遍（JP-Word 本来就这么唱）。
   推出来的顺序不置 `hasRepeat`，写出端不另补 `.Repeat`（重读照样推得出，往返定点）。简谱档照画 `|: :|`。
 - **一房二房没有写法，读入时推**（`jpw/read.rs::infer_endings`，没有 `.Repeat` 时）：`:|` 那一小节与紧跟的一小节**节奏逐音相同、
   首个音的第 1 段词（去标点）也相同**，前者记一房、后者记二房（右端敞口）。命中 009、020、116、144、164；
   447《我灵之光》`1-- :|1--` 底下是「阿/们」，是结尾的阿们、不算。只等长不算（`|1 2 3 4 :| 5- 6 7|` 是照常往下唱）。
-- **词曲一条写了多行**（`作词：…\n作曲：…`）：作者条为写 123 的 `C:` 拼成一行，行视图取 credit 原文照分行（`dolce-view/src/slots.rs::to_metadata`），
+- **词曲一条写了多行**（`作词：…\n作曲：…`）：作者条为写 123 的 `C:` 拼成一行，行视图取 credit 原文照分行（`dolce-model::view/src/slots.rs::to_metadata`），
   投影档标题页、简谱档页眉都分行。
 - `fromjpw` **不填绝对音高**（`.jpwabc` 只有度数），导出 MusicXML 由投影层按度数 + 调号推。
 - **歌词段锚点 `W2@m,n` 的小节序号**：只有小节**中间**的换行才算开出一个小节，小节末的不算——读入端（`assignLyrics`）
   与写出端（`jpw/write.rs::Lyrics`）必须同口径，否则多段歌词起点在第一行之后错位。
 - **`jpToStep` 按调号拼写**，不按 fifths：否则 `1=#C`/`1=bD`/`1=#F`/`1=bG` 四个调整首排不出来。
-- **按乐句重排只挪 `$`**（`jianpu/docrelayout.ts::relayoutJpwabcText`，实现 `crates/dolce-formats/src/jpw/relayout.rs`）：`.jpwabc` 是分节文件，
+- **按乐句重排只挪 `$`**（`jianpu/docrelayout.ts::relayoutJpwabcText`，实现 `crates/model/src/formats/jpw/relayout.rs`）：`.jpwabc` 是分节文件，
   整份按 `emitJpwabc` 重出会把写出端装不下的东西（样式、`.Layout` 的分页描述）一并抹掉；
   歌词在 `.Words` 里按小节/音符号锚定、与行结构无关，所以只重切 `.Voice` 的行就够。
   `.Layout` 里按行号记的 `BreakPoints` 跟着行结构作废，重排时去掉（换页改由 `$(true,0,0,true)` 原位表达）。

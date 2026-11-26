@@ -1,7 +1,7 @@
 //! JM2 / JM4 文字：谱行之间的歌词行（切行、分段取条送 rec、对到音上）、页眉（标题、署名、曲号、调号、拍号、速度）。
 //!
 //! 行按像素的纵向投影切（顺着行带的斜率投影），已归了音符的墨（减时线、低音点）不算字。
-//! 字的分类、切音节、对音、页眉分类用 `omr-text`（与五线谱路线同一份）。
+//! 字的分类、切音节、对音、页眉分类用 `omr-core::text`（与五线谱路线同一份）。
 use crate::frame::{digit_cell, RowFrame};
 use crate::notes::RowNotes;
 use crate::prep::{Comp, Ink};
@@ -1672,7 +1672,7 @@ fn paren_note(text: &str) -> bool {
     "(（".contains(a) && ")）".contains(z) && !inner.contains([')', '）', '(', '（']) && inner.chars().any(|c| c.is_ascii_digit() || c == '*')
 }
 
-/// 页眉：首行谱以上。DBNet 检出文本行，逐行读字；调号、拍号、速度、曲号按内容认，其余交 `omr-text` 分标题与署名。
+/// 页眉：首行谱以上。DBNet 检出文本行，逐行读字；调号、拍号、速度、曲号按内容认，其余交 `omr-core::text` 分标题与署名。
 /// 整行是表情记号：括号里的说明（`（合唱）`）去掉后，各词都是小节号、力度或速度表情术语（`poco rit.`、`a tempo`），且至少有一个力度或术语。
 fn expression_line(text: &str) -> bool {
     let mut depth = 0;

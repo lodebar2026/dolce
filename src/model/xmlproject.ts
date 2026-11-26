@@ -1,4 +1,4 @@
-// 简谱来源的 `Song` → **MusicXML 形状**的 `Song`：`toxml.ts` 序列化之前的投影。在 Rust（`crates/dolce-model/src/xmlproject.rs`），这里是门面。
+// 简谱来源的 `Song` → **MusicXML 形状**的 `Song`：`toxml.ts` 序列化之前的投影。在 Rust（`crates/model/src/xmlproject.rs`），这里是门面。
 //
 // MusicXML 只有一份写出端，它只认 MusicXML 形状的字段（绝对音高、以 `attrs.divisions` 为分母的时值、`<notations>` 元素名、
 // 带 offset 的 `<direction>`）；简谱来源（文本谱/123/ABC/`.jpwabc`）只填了简谱那一侧，在这里投过去，**写出端就不必分两份**。

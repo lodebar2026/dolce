@@ -1,4 +1,4 @@
-// 文本谱（番茄简谱 / 诗歌本）的读入：语法树与转 ScoreDoc 都在 Rust（crates/dolce-formats/src/fanqie/{parse,fromfanqie}.rs），这里是门面。
+// 文本谱（番茄简谱 / 诗歌本）的读入：语法树与转 ScoreDoc 都在 Rust（crates/model/src/formats/fanqie/{parse,fromfanqie}.rs），这里是门面。
 // 判据口径见 `docs/格式/` 与 `docs/模块/` 的文本谱篇。
 
 import type { FanqieDoc } from "../jianpu/ast";

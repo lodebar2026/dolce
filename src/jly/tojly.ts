@@ -1,4 +1,4 @@
-// jianpu-ly 写出端：投影（简谱形状 / `.jpwabc`）与写出都在 Rust（crates/dolce-formats/src/jly/input.rs、emit.rs，wasm `jlyEmit`），这里是门面。
+// jianpu-ly 写出端：投影（简谱形状 / `.jpwabc`）与写出都在 Rust（crates/model/src/formats/jly/input.rs、emit.rs，wasm `jlyEmit`），这里是门面。
 // 口径（目标语法只认上游 README、歌词位置与圆滑线的四条实测口径、装不下的写进 `%` 注释）见 emit.rs 文件头。
 
 import { dolce } from "../common/dolce";

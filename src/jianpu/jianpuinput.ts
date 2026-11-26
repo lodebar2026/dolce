@@ -133,7 +133,7 @@ export function jianpuInputOfDoc(doc: ScoreDoc, options: JianpuInputOptions = {}
   if (!song) return null;
   const score = songInput(song, (el) => view.idOf.get(el) ?? null, !!options.forExpanded);
   if (!score) return null;
-  // 演唱顺序（反复、房号、D.C./D.S.、多段歌词逐段一遍、文档自带的 playOrder）由 ScoreDoc 推，见 `dolce-view/src/playsong.rs`
+  // 演唱顺序（反复、房号、D.C./D.S.、多段歌词逐段一遍、文档自带的 playOrder）由 ScoreDoc 推，见 `dolce-model::view/src/playsong.rs`
   const pd = playDataOfSong(doc, options.song ?? 0, options.forExpanded ? { forExpanded: true } : {});
   if (pd) {
     pd.tempo = score.playData.tempo;

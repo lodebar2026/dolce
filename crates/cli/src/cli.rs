@@ -1,5 +1,5 @@
-//! `dolce omr <图片…|PDF…|目录…>`：给人用的识谱——识别后直接写成各格式（文本谱 / 123 / MusicXML …，写出端同编辑器：`dolce-formats::targets`），
-//! 简谱可带参照歌词互证（`-l`，`omr-todoc::reflyrics`），并按歌词的段落与唱法切段落、写逐遍演唱顺序（`dolce-view::singfit`，写 123 时）。不要 Node：分发包里只有这一个程序、PDFium 与模型。
+//! `dolce omr <图片…|PDF…|目录…>`：给人用的识谱——识别后直接写成各格式（文本谱 / 123 / MusicXML …，写出端同编辑器：`dolce-model::formats::targets`），
+//! 简谱可带参照歌词互证（`-l`，`omr-core::todoc::reflyrics`），并按歌词的段落与唱法切段落、写逐遍演唱顺序（`dolce-model::view::singfit`，写 123 时）。不要 Node：分发包里只有这一个程序、PDFium 与模型。
 //!
 //! 批量：多个文件或目录一起给，一个进程跑完（OCR 模型只加载一次）；`-o` 给目录则逐个写文件，否则写 stdout。
 use crate::run::{expand, recognize_file, Got};

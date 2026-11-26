@@ -1,7 +1,7 @@
 //! `ScoreDoc` → jianpu-ly 写出端的输入（同原 `jianpu/jianpuinput.ts` 的 `jianpuInputOfDoc` 简谱档与 `jianpuInputOfJpw`）。
 //!
 //! 只留写出端（[`super::emit`]）读的字段；口径逐条照原 TS（简谱档 `decorate`：和弦、段落词、力度 / 术语 / 跳转记号、奏法；
-//! 倚音两档都有）。和 `dolce-view::phrasesong::build_measures`（试听 / 断句 / `.jpwabc` 用的那一份投影）的分歧都是原 TS 两份投影本来就有的，
+//! 倚音两档都有）。和 `dolce-model::view::phrasesong::build_measures`（试听 / 断句 / `.jpwabc` 用的那一份投影）的分歧都是原 TS 两份投影本来就有的，
 //! 不在这里抹平。
 //!
 //! 元素身份：原 TS 按对象引用认（连音组首尾、弧的终点和弦）；这里和弦按建出来的次序编号（[`JChord::ci`]），

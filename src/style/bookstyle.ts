@@ -124,7 +124,7 @@ export interface TitleBlock {
 export interface BookLayoutOpts {
   linesPerPage: number;
   phrase: boolean;
-  /** 乐句排版的目标行长（小节数）。**0 = 按版心容量折算**（crates/dolce-play `phrase.rs::target_meas_for_cells`），
+  /** 乐句排版的目标行长（小节数）。**0 = 按版心容量折算**（crates/model/src/play `phrase.rs::target_meas_for_cells`），
    *  成书走这个：容量由版心宽 ÷ 音符步距实测（见 scripts/rebuild.mjs），除以本曲「每小节几格」
    *  就是一行该放几小节。给死一个小节数（原来是 4）就得靠「两两并短行」去凑满版心，
    *  而并行只能成对，段里落单的那一行并不进去——377《我宁愿有耶稣》副歌因此排成
@@ -140,7 +140,7 @@ export interface BookLayoutOpts {
    *  第二遍把目标改成「本段小节数 ÷ 行数」——原书每行都差不多长，只按容量排会
    *  一行顶格、一行半幅（051《赞美我主君王》12/14/24 格）。 */
   phraseEvenWeight?: number;
-  /** 「别把一句话的最后一小截甩到下一行开头」的权重（crates/dolce-play `phrase.rs::head_penalty`；0 = 关）。 */
+  /** 「别把一句话的最后一小截甩到下一行开头」的权重（crates/model/src/play `phrase.rs::head_penalty`；0 = 关）。 */
   phraseTailWeight?: number;
   /** **断句只看内容**（默认开）：与纸张有关的分（行长目标、行数、稀疏/密排）一律不进评分，
    *  版心宽度只剩「超容量是硬约束」这一个作用。见 `score/play.ts::PhraseOptions.contentOnly`

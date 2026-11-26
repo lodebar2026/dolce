@@ -8,7 +8,7 @@ use dolce_omr_core::pixel::ccl::connected_components;
 use dolce_omr_core::sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
-/// 墨层里一个像素的三种状态（与矢量页同一套，见 `omr-sheet::element`）。
+/// 墨层里一个像素的三种状态（与矢量页同一套，见 `omr-core::sheet::element`）。
 pub use dolce_omr_core::sheet::element::{Probe, BG, INK, LINE};
 pub use dolce_omr_core::sheet::prims::VSeg;
 

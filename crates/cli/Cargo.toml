@@ -10,6 +10,8 @@ homepage.workspace = true
 readme = "README.md"
 keywords.workspace = true
 categories = ["command-line-utilities", "multimedia"]
+# examples 是开发排查用的（读私有仓库语料、仓库里的模型目录），不进发布包
+exclude = ["examples/"]
 
 [[bin]]
 name = "dolce"

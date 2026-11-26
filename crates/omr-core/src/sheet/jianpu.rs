@@ -1,7 +1,7 @@
 //! 简谱识别结果模型（`omr-jianpu` 产出）：形状同 web `omr/types.ts::RecognizedScore`（核对叠加视图直接吃这份 JSON），
 //! 另加可疑清单。字段含义见那边的注释，这里只留与识别有关的说明。
 //!
-//! 能读回（`Deserialize`）：编辑器核对时会改它（参照歌词改字），换输出格式时把改过的那份送回 Rust 建模（`omr-todoc::jianpu`）。
+//! 能读回（`Deserialize`）：编辑器核对时会改它（参照歌词改字），换输出格式时把改过的那份送回 Rust 建模（`omr-core::todoc::jianpu`）。
 //! 只在识别中途用的字段（`#[serde(skip)]`）读回取缺省。
 /// 可疑项：两条路线共用的那份（`result`）；`at.row` 是全曲第几行、`at.note` 是行内第几个音。
 pub use crate::sheet::result::Doubt;

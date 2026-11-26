@@ -1,5 +1,5 @@
 // 按参照歌词生成的段落与演唱顺序**挂在模型上**（无 DOM）：原文格式写不下 `%%sing` 的（ABC、文本谱、`.jpwabc`、jcx、jianpu-ly、MusicXML，
-// 见 `crates/dolce-formats/src/capability.rs::gone`）不改原文，每次读出模型后照它补上段落标记与演唱顺序——投影、试听、导出都照它走，
+// 见 `crates/model/src/formats/capability.rs::gone`）不改原文，每次读出模型后照它补上段落标记与演唱顺序——投影、试听、导出都照它走，
 // 存成原格式时照常走保存前丢失提示（用户定 2026-11-24）；123 写进原文，不走这里（`singapply.ts`）。
 //
 // 段落标记按位置记（第几声部第几小节第几个元素），不按元素 id：改了原文元素 id 会重编，位置在没动的地方照样对得上；

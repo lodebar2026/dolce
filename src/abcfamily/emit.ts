@@ -1,4 +1,4 @@
-// ABC 家族（123 / ABC / Muse `.jcx`）的写出：在 Rust（crates/dolce-formats/src/abc/emit.rs），这里是门面。
+// ABC 家族（123 / ABC / Muse `.jcx`）的写出：在 Rust（crates/model/src/formats/abc/emit.rs），这里是门面。
 
 import type { ScoreDoc } from "../model/doc";
 import { dolce } from "../common/dolce";

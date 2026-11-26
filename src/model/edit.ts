@@ -100,7 +100,7 @@ export type RawEdit =
   | { moved: { select: ElementId[]; moved: { markOn: ElementId; kind: string; dirType?: string } | { lyricOf: ElementId; verse: number } } }
   | { number: number };
 
-/** 在 Rust 里执行一个编辑动作（`EditCmd`，`crates/dolce-model/src/edit.rs`）：`doc` 就地换成改后的（表层身份照旧挂着）。
+/** 在 Rust 里执行一个编辑动作（`EditCmd`，`crates/model/src/edit.rs`）：`doc` 就地换成改后的（表层身份照旧挂着）。
  *  `hooks` 给了就作废改动碰到的表层版面（同以前传 `forgetStem` / `forgetLayout`）。 */
 export function applyEditCmd(doc: ScoreDoc, cmd: object, hooks?: EditHooks): RawEdit {
   const { json, s, h } = docJson(doc);

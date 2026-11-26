@@ -1,4 +1,4 @@
-// 网页版「导出 PDF」：写出端在 Rust（crates/dolce-export，经按需载入的 dolce-export-wasm）。
+// 网页版「导出 PDF」：写出端在 Rust（crates/layout/src/export，经按需载入的 dolce-export-wasm）。
 // - 矢量：浏览器给了本地字体访问（Chromium 的 `queryLocalFonts`，首次会问用户）就把场景要的那几个族的字体字节交给 wasm，
 //   出真文字、嵌子集的 PDF（同桌面 `export_scene_pdf`）；字体不全（有字落不了）退栅格。
 // - 栅格：逐页 PNG 铺满（取代 jsPDF）。

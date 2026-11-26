@@ -1,4 +1,4 @@
-// 模型簇（crates/dolce-model）的 TS 镜像：Rust 回来的 `ScoreDoc` JSON 读成普通对象（形状同 `doc.ts`），
+// 模型簇（crates/model）的 TS 镜像：Rust 回来的 `ScoreDoc` JSON 读成普通对象（形状同 `doc.ts`），
 // 可绑对象的身份 `_oid` 摘下来记在旁表里（对象上不留，`{ ...obj }` 展开、`structuredClone` 出来的新对象照旧没有身份——同以前的表层 WeakMap）。
 // MusicXML 读进来的那份表层（原树 + 绑定表）留在 Rust 里按句柄取；句柄挂在旁表上，镜像对象都回收了就释放。
 // 往 Rust 送模型时按旁表把 `_oid` 补回去，Rust 的写出、编辑就能照身份找原节点。

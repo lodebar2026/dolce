@@ -1,11 +1,11 @@
-// 演唱顺序、试听、断句、MIDI 的门面：判据在 Rust（crates/dolce-play；由 `ScoreDoc` 拼输入在 crates/dolce-view，经 dolce-wasm），
+// 演唱顺序、试听、断句、MIDI 的门面：判据在 Rust（crates/model/src/play；由 `ScoreDoc` 拼输入在 crates/model/src/view，经 dolce-wasm），
 // 这里只做编解码——`ScoreDoc` 过边界、产物认回 TS 对象（`PlayData` / `PlayItem`、断句输入的和弦对象）。
 //
 // 认回的口径：
 //   - 断句：和弦一律用「拍平下标」（各小节和弦按小节次序首尾相接）；
 //   - 时间轴：和弦按 `PlaySource.chords` 的下标（Rust 按出场次序发的号），光标锚点的 `occ` 也按它数；
 //   - 演唱顺序：按 `P:` 排的项共用段落小节表（`scope`），认回成共用的 Set。
-// 文中提到的判据函数名（`scoreAt`、`headPenalty`、`computePhraseBreaks` 的局部量……）都在 crates/dolce-play/src/phrase.rs。
+// 文中提到的判据函数名（`scoreAt`、`headPenalty`、`computePhraseBreaks` 的局部量……）都在 crates/model/src/play/phrase.rs。
 
 import { Fraction } from "../common/fraction";
 import { dolce } from "../common/dolce";
@@ -80,11 +80,11 @@ export function unplayedMeasures(items: readonly PlayItem[], measureCount: numbe
   return JSON.parse(dolce().unplayedMeasures(JSON.stringify(itemsIn(items, [])), measureCount)) as number[];
 }
 
-// ───────────────────────── 由 ScoreDoc 拼（crates/dolce-view）：试听输入、演唱顺序 ─────────────────────────
+// ───────────────────────── 由 ScoreDoc 拼（crates/model/src/view）：试听输入、演唱顺序 ─────────────────────────
 
 type PosOut = { mid: number; offset: [number, number] };
 
-/** Rust `PlayData` 的 JSON 形状（`crates/dolce-view/src/playdata.rs`） */
+/** Rust `PlayData` 的 JSON 形状（`crates/model/src/view/playdata.rs`） */
 interface PlayDataOut {
   coda: [string, PosOut][];
   segno: [string, PosOut][];
@@ -519,7 +519,7 @@ function phrasePartIn(part: PhrasePart): { json: string; flat: PhraseChord[] } {
 const spanIn = (s: { x0: number; x1: number; x1b?: number } | undefined): object | null =>
   s ? { x0: s.x0, x1: s.x1, ...(s.x1b !== undefined ? { x1b: s.x1b } : {}) } : null;
 
-/** 在小节边界上找乐句断点，凑成不太稀疏也不太密的行长（判据见 crates/dolce-play/src/phrase.rs）。 */
+/** 在小节边界上找乐句断点，凑成不太稀疏也不太密的行长（判据见 crates/model/src/play/phrase.rs）。 */
 export function computePhraseBreaks(part: PhrasePart, opts: PhraseOptions = {}): PhraseBreaks {
   const { json, flat } = phrasePartIn(part);
   const { fit, jumpMeasures, ...rest } = opts;
@@ -546,7 +546,7 @@ export function computePhraseBreaks(part: PhrasePart, opts: PhraseOptions = {}):
 }
 
 /**
- * 断句之后那几步的通道（`jianpu/applybreaks.ts` 门面用，判据在 crates/dolce-play/src/applybreaks.rs）：
+ * 断句之后那几步的通道（`jianpu/applybreaks.ts` 门面用，判据在 crates/model/src/play/applybreaks.rs）：
  * 编输入、调 Rust，再把 Rust 改过的三个集合（`measureBreaks` / `midBreaks` / `capacityCuts`，按 Rust 的插入次序）**原地写回** `breaks`。
  * 回 Rust 的结果与拍平的和弦（结果里的和弦是拍平下标，调用方按 `flat` 认回）。
  */

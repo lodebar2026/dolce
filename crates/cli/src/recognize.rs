@@ -14,11 +14,11 @@ use std::path::{Path, PathBuf};
 pub enum RecOutput {
     /// 五线谱：MusicXML 与版面摘要（形状见私有仓库 `chorus-opslib.mjs::recLayoutOf`；独唱谱只要 `notes` / `rowSp`）
     Staff { musicxml: String, layout: String },
-    /// 简谱：识别结果（形状同 web `omr/types.ts::RecognizedScore`）与直出模型写成的 123（同编辑器落地：`omr-todoc::jianpu` → `emit_123`）
+    /// 简谱：识别结果（形状同 web `omr/types.ts::RecognizedScore`）与直出模型写成的 123（同编辑器落地：`omr-core::todoc::jianpu` → `emit_123`）
     Jianpu { recognized: String, text123: String },
 }
 
-/// 一个输入文件的各页（取数走 `omr-engine`，与桌面版、网页版同一份）。
+/// 一个输入文件的各页（取数走 `dolce-omr`，与桌面版、网页版同一份）。
 pub fn sources(p: &Path) -> Result<Vec<PageSource>, String> {
     let doc = dolce_omr::Doc::open(std::fs::read(p).map_err(|e| format!("读 {}：{e}", p.display()))?)?;
     Ok(doc.sources(&[])?.into_iter().map(|s| s.1).collect())

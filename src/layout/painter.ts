@@ -1,7 +1,7 @@
 // 唯一的排版器 `ScorePainter`：按请求排版（简谱 / 投影、五线谱 / 混排），持有提交后的结果、
 // 页面渲染（DOM 映射）、点选与播放高亮索引。
 //
-// 排版在 Rust（`crates/dolce-session/src/layout.rs`；网页经 dolce-wasm、桌面版异步那路走原生，见 `rustlayout.ts`）：
+// 排版在 Rust（`crates/layout/src/layout.rs`；网页经 dolce-wasm、桌面版异步那路走原生，见 `rustlayout.ts`）：
 // 这里只管请求版本、结果提交与交互状态。排好的一份留在宿主那边（`LaidHandle`），按页取 SVG 字符串挂载，
 // 身份表（每项记着 SVG 里的元素先序号）建 `ScoreIndex`，挂载后对上 DOM 元素。
 //
@@ -326,7 +326,7 @@ export class ScorePainter {
     return this.cur?.placed() ?? null;
   }
 
-  /** 各页场景（`crates/dolce-scene` 的 `Page` JSON；导出 PDF / PPTX 交 Rust 写出端）。 */
+  /** 各页场景（`crates/engrave/src/scene` 的 `Page` JSON；导出 PDF / PPTX 交 Rust 写出端）。 */
   scenes(): Promise<Json[]> {
     const c = this.cur;
     return c ? Promise.all(c.info.pages.map((_, i) => c.scene(i))) : Promise.resolve([]);

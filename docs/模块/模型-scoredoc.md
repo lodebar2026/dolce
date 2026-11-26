@@ -17,11 +17,11 @@
 
 | 消费者 | 取法 | 引擎内部结构 |
 |---|---|---|
-| 简谱引擎（`crates/dolce-layout-jianpu`：各格式的简谱 / 投影档、PPTX、成书） | 排版行视图 `crates/dolce-view/src/slots.rs::doc_view`（门面 `jianpu/slots.ts::docView`） | `dolce-layout-jianpu/src/place/` 的定位结构（`PlacedPage` / `PlacedGroup` / `PlacedVoice`） |
-| jianpu-ly 写出 | `crates/dolce-formats/src/jly/input.rs` 投影出的 `JScore`（简谱形状 / `.jpwabc` 两个分支；TS `jianpu/jianpuinput.ts` 同口径，只剩无头校验在用） | — |
-| 五线谱混排（`crates/dolce-layout-staff`） | `read.rs::layout_staff` 建版面态；MusicXML 原文的坐标/符干/字体经 `xmlsurface.ts` 查询 | `StaffLayout` 及各 `*Layout` 节点（`src` 引用模型元素） |
-| 试听 / MIDI | `dolce-view/src/playdoc.rs::play_source_of_doc` / `dolce-view/src/playsong.rs::play_source_of_song` | `crates/dolce-play/src/timeline.rs` |
-| 断句 | `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` 拼断句输入（带 `idOf`） | `crates/dolce-play/src/phrase.rs` |
+| 简谱引擎（`crates/layout-jianpu`：各格式的简谱 / 投影档、PPTX、成书） | 排版行视图 `crates/model/src/view/slots.rs::doc_view`（门面 `jianpu/slots.ts::docView`） | `dolce-layout-jianpu/src/place/` 的定位结构（`PlacedPage` / `PlacedGroup` / `PlacedVoice`） |
+| jianpu-ly 写出 | `crates/model/src/formats/jly/input.rs` 投影出的 `JScore`（简谱形状 / `.jpwabc` 两个分支；TS `jianpu/jianpuinput.ts` 同口径，只剩无头校验在用） | — |
+| 五线谱混排（`crates/layout-staff`） | `read.rs::layout_staff` 建版面态；MusicXML 原文的坐标/符干/字体经 `xmlsurface.ts` 查询 | `StaffLayout` 及各 `*Layout` 节点（`src` 引用模型元素） |
+| 试听 / MIDI | `dolce-model::view/src/playdoc.rs::play_source_of_doc` / `dolce-model::view/src/playsong.rs::play_source_of_song` | `crates/model/src/play/timeline.rs` |
+| 断句 | `dolce-model::view/src/phrasedoc.rs` / `dolce-model::view/src/phrasesong.rs` 拼断句输入（带 `idOf`） | `crates/model/src/play/phrase.rs` |
 
 `FanqieDoc`（`src/jianpu/ast.ts`）已退役：只是 `parseFanqieAst` → `fanqieToScoreDoc` 之间的中间结果，`parseFanqie` 直出 `ScoreDoc`。
 乐句重排改写原文要的行号/列号在模型上（`Print.source` / `textSources`、`LyricLineInfo.source` / `sources`）。
@@ -33,25 +33,25 @@
 | `src/model/doc.ts` | 类型定义。层级：`ScoreDoc → Song → Part → Measure → Element` |
 | `src/model/helpers.ts` | 遍历/查询/构造 |
 | `src/model/msg.ts` | **给界面的提示只给键与参数**（`ModelMsg`）：`edit.ts` 的报错（`{ error: ModelMsg }`）、`ModelError`（读写失败）、解析诊断（`Diagnostic.msg`）、节拍提示与默认声部名都经它；翻译函数由 `i18n/index.ts` 加载时注册（`setMsgTranslator`），显示时 `msgText` 取当前语言的字。模型层对 i18n 只许类型引用（`deps-check.mjs` 守门） |
-| `src/model/marknames.ts` | 记号名字表（力度名、术语）：文本谱 / 123 / ABC / jianpu-ly / MusicXML 投影共用；字形在 `crates/dolce-engrave/src/jpglyph.rs` |
-| `src/model/breaks.ts` | 断行读写对（Rust `crates/dolce-model/src/breaks.rs` 的门面，补丁就地改）：`breaksOf`（模型 → 行首元素）/ `applyBreaks`（行首元素 → 模型，替换原有断行） |
+| `src/model/marknames.ts` | 记号名字表（力度名、术语）：文本谱 / 123 / ABC / jianpu-ly / MusicXML 投影共用；字形在 `crates/engrave/src/jpglyph.rs` |
+| `src/model/breaks.ts` | 断行读写对（Rust `crates/model/src/breaks.rs` 的门面，补丁就地改）：`breaksOf`（模型 → 行首元素）/ `applyBreaks`（行首元素 → 模型，替换原有断行） |
 | `src/model/jianpu.ts` | **简谱语义层**：音高↔度数、相对调号临时记号延续（`AccidentalCarry`，两个方向共用）、`attrsAt`、减时线/增时线/附点（`jianpuShape`）、和弦原文、旋律取音、延音线/跨元素记号按 id 找对端 |
 | `src/model/fromxml.ts` | ← MusicXML（**直通**：语义进模型，每个模型对象绑到原节点） |
 | `src/model/xmlsurface.ts` | **MusicXML 表层**：模型外的旁表（WeakMap，对象 → 原节点）+ 查询函数（`xmlPos`、`measureWidth`、`noteStem`、`xmlAlign`、`xmlFont`、`staffDetailsOf`、`printLayout`、`defaultsFonts`），五线谱引擎从这里读；导出版面的 `EngravedLayout` 也定义在这 |
 | `src/model/toxml.ts` | → MusicXML（**唯一写出端**，全量序列化） |
-| `crates/dolce-model/src/xmlproject.rs`（门面 `src/model/xmlproject.ts`） | 简谱来源 → MusicXML 形状的投影（音高、divisions、记号原名、跨行小节…），`toxml.ts` 先过它 |
+| `crates/model/src/xmlproject.rs`（门面 `src/model/xmlproject.ts`） | 简谱来源 → MusicXML 形状的投影（音高、divisions、记号原名、跨行小节…），`toxml.ts` 先过它 |
 | `src/model/deconames.ts` | 音符记号的别名表（`decoKey`）：拼音短名 / ABC 名 / MusicXML 名 / 中文名 → 文本谱短名。模型里原名照存，简谱排版、文本谱写出、MusicXML 投影用前先归一 |
-| `crates/dolce-model/src/jianpuproject.rs`（门面 `src/model/jianpuproject.ts`） | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
-| `crates/dolce-formats/src/fanqie/fromfanqie.rs`（门面 `src/fanqie/parse.ts`） | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
-| `crates/dolce-view/src/slots.rs`（门面 `src/jianpu/slots.ts`） | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId`。Rust 回 id 化的视图（`refs` 存下标、投影改过的曲子另带一份），门面认回对象、建 `idOf` / `elementOf` / `syllableOwner` |
-| `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不喂排版引擎、jianpu-ly 写出也已走 Rust（`dolce-formats/src/jly/input.rs`），只剩无头校验（`window.__app`、`out/cli`）与帮助谱例自检在用 |
-| `crates/dolce-formats/src/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
-| `crates/dolce-formats/src/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |
-| `crates/omr-todoc`（门面 `src/omr/todoc.ts`） | ← 识别结果：简谱 `RecognizedScore` 直出简谱形状（与 123 解析同口径；不经 MusicXML）；五线谱 `Score` 直出模型 + 识别 id / 符干附件 |
-| `crates/dolce-formats/src/jpw/write.rs`（门面 `src/convert/jpwabc.ts`） | → `.jpwabc`（`emitJpwabc`；写出端只经输入形状读谱，两种形状的输入由 `jpw/input.rs::jpw_input_of_doc` / `jpw_input_of_song` 拼） |
-| `dolce-view/src/phrasedoc.rs` / `dolce-view/src/phrasesong.rs` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
-| `dolce-view/src/playdoc.rs` / `dolce-view/src/playsong.rs` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/dolce-play/src/playorder.rs`。回归 `playorder-check --cmp` |
-| `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么）。判据在 Rust `crates/dolce-formats/src/capability.rs`，这里是门面与界面文字 |
+| `crates/model/src/jianpuproject.rs`（门面 `src/model/jianpuproject.ts`） | 反方向：MusicXML 形状 → 简谱形状（增时线、减时线、和弦原文、长音中途的和弦），`slots.ts` 与 123 写出端先过它。原生 ABC 时值只在 `divisions` 里、不带减时线/增时线，也经它投（音上的延音线配成 `tied`） |
+| `crates/model/src/formats/fanqie/fromfanqie.rs`（门面 `src/fanqie/parse.ts`） | ← 文本谱语法树（**无损**：文本谱的全部排版信息都进来，`fanqie-scoredoc-check` 全语料逐字段还原零差异） |
+| `crates/model/src/view/slots.rs`（门面 `src/jianpu/slots.ts`） | → **排版行视图**（`docView`）：线性化规则只写一次，简谱档排版器 / 投影档投影 / 双向定位共用；行里每个符号带 `ElementId`。Rust 回 id 化的视图（`refs` 存下标、投影改过的曲子另带一份），门面认回对象、建 `idOf` / `elementOf` / `syllableOwner` |
+| `src/jianpu/jianpuinput.ts` | → **简谱输入模型** `JScore`（`jianpuInputOfDoc` / `jianpuInputOfJpw`），和弦带元素 id；不喂排版引擎、jianpu-ly 写出也已走 Rust（`dolce-model::formats/src/jly/input.rs`），只剩无头校验（`window.__app`、`out/cli`）与帮助谱例自检在用 |
+| `crates/model/src/formats/jpw/read.rs`（门面 `src/model/fromjpw.ts`） | ← `.jpwabc`（`JpwFile` 直出，带 span；小节中间的 `$` 另记 `Chord.lineBreakAfter`） |
+| `crates/model/src/formats/midi/import.rs`（门面 `src/midi/import.ts`） | ← MIDI（SMF 读取在 `smf.rs`）：量化后直出 **MusicXML 形状**（绝对音高 + divisions 48），简谱形状由 `jianpuproject.ts` 投影；判据写在 `import.rs` 文件头（按拍择优三连音、按小节分声部、连奏重叠截掉、调外音按调号升降拼）。已知限制：四分三连音按拍拆成两组、变速只取首个速度。用例在 `import.rs` / `smf.rs` 的单测与私有仓库 `tests/midiimport.test.ts` |
+| `crates/omr-core/src/todoc`（门面 `src/omr/todoc.ts`） | ← 识别结果：简谱 `RecognizedScore` 直出简谱形状（与 123 解析同口径；不经 MusicXML）；五线谱 `Score` 直出模型 + 识别 id / 符干附件 |
+| `crates/model/src/formats/jpw/write.rs`（门面 `src/convert/jpwabc.ts`） | → `.jpwabc`（`emitJpwabc`；写出端只经输入形状读谱，两种形状的输入由 `jpw/input.rs::jpw_input_of_doc` / `jpw_input_of_song` 拼） |
+| `dolce-model::view/src/phrasedoc.rs` / `dolce-model::view/src/phrasesong.rs` | 断句输入（MusicXML 形状 / 简谱形状），同一份小节视图也满足演唱顺序的输入 |
+| `dolce-model::view/src/playdoc.rs` / `dolce-model::view/src/playsong.rs` | **演唱顺序**（`PlayData`）、试听输入（`PlaySource`）与 `.jpwabc` 写出端输入：反复、房号、跳转、多段歌词逐段、`Song.playOrder`、段落顺序 `Song.sectionOrder` / `sectionMarks`（`P:`，`model/sections.ts`）；推理本体在 `crates/model/src/play/playorder.rs`。回归 `playorder-check --cmp` |
+| `src/convert/capability.ts` | **格式能力表**：每种格式装得下什么 + `planSave`（另存为会丢什么）。判据在 Rust `crates/model/src/formats/capability.rs`，这里是门面与界面文字 |
 | `src/model/hanconv.ts` | **简繁转换**（五种格式通用）：`textGroups` 枚举人读的文字、`convertScoreDoc` 改模型、`convertSourceText` 只改原文里的字；词表加载在 `src/common/hanconv.ts`（opencc-js 按方向动态 import） |
 
 Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`）。
@@ -72,7 +72,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   （判据与定性清单在 `jianpu.ts` 文件头）。
   已验：`fifths -7..7` 的无点「1」与 `jppitch.ts` 注释记载的值逐个吻合（bB=58、bA=68、#C=61、
   bD=61、#F=bG=66、bE=63、bC=59；A 调不降八度、B 调降八度）。
-- **简谱来源的谱表记号（`Note.accidental` = `<accidental>`）在投影时按五线谱口径另算**（`crates/dolce-model/src/xmlproject.rs` → `jianpu.rs::StaffAccidentalCarry`）：
+- **简谱来源的谱表记号（`Note.accidental` = `<accidental>`）在投影时按五线谱口径另算**（`crates/model/src/xmlproject.rs` → `jianpu.rs::StaffAccidentalCarry`）：
   同字母同八度在一小节内延续、起点是调号、按绝对变音命名，延音线接过来的音不印。源文的简谱记号相对调号、按唱名延续，
   照抄过去在非 C 调错（`1=F` 的 `#4` 是 B 本位，印还原号不是升号）、跨八度漏（`#4 4'` 后一个要再印）；
   `.jpwabc`/文本谱只写在 `degree.accidental` 上，不另算谱表上就一个记号都没有。五线谱引擎只印 `Note.accidental`，自己不推。
@@ -87,11 +87,11 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   读这个模型的地方要按 `voice` 分轨算时间，别把一小节的时值一路加下去（见 [源格式-abc家族](源格式-abc家族.md)）。
 - **`playOrder` 只来自 `.jpwabc` 的 `.Repeat`**（只读的旧扩展）：MusicXML 的 `<ending>` 只能整小节，123 / ABC 只有段落顺序 `P:`，转过去走保存前丢失提示。
 - **逐遍演唱顺序 `Song.singOrder`**（123 `%%sing`，[123格式](../格式/123格式.md) §6.3）：逐遍列段落名、配第几行词、哪里换行与本遍参数，段由 `sectionMarks` 切出；
-  演唱顺序在用到时才展开（`dolce-view/src/playsong.rs::play_data_of` → `crates/dolce-play/src/playorder.rs::sing_play_order`），优先于 `playOrder` 与 `sectionOrder`。只有 123 装得下（能力表 `singOrder`）。`style` 也是 MusicXML 装不下。
+  演唱顺序在用到时才展开（`dolce-model::view/src/playsong.rs::play_data_of` → `crates/model/src/play/playorder.rs::sing_play_order`），优先于 `playOrder` 与 `sectionOrder`。只有 123 装得下（能力表 `singOrder`）。`style` 也是 MusicXML 装不下。
 - 五线谱侧字段（`clef`/`staves`/`transpose`/`pedal`/`octaveShift`/`partGroups`/`defaults`/`technical`）
   **已由 `fromxml.ts` 填充**（`../dev/scripts/staff-fields-check.mjs` 的合成夹具逐样断言过，
   真实语料的填充率也在那里）。
-- **派生量不存进模型、只经查询层取**（唱名、减时线条数、调号上下文、演唱顺序…，见 `model/jianpu.ts`、`crates/dolce-play/src/playorder.rs`）：
+- **派生量不存进模型、只经查询层取**（唱名、减时线条数、调号上下文、演唱顺序…，见 `model/jianpu.ts`、`crates/model/src/play/playorder.rs`）：
   存了就有同名字段两种口径（`Chord.beams` 在 MusicXML 来源是 `<beam>` 列表、在简谱来源是减时线条数，靠 `isXmlShaped` 分），
   要管编辑后的失效，指针有环不能序列化。**断行例外**——它是「这份谱怎么印」的事实，跨格式都有，随文档保存、往返。
 - **MusicXML 的表层不进模型**（与「派生量不存」同一原则）：版面坐标、小节宽、符干、
@@ -113,7 +113,7 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
   写回（替换原有断行；小节中间的按 `inline` / `snap` / `source` 三种口径落，多声部一律顺延，多声部文本谱不重断）。
   乐句重排（`relayout.ts`）、导出 MusicXML 照简谱视图重断（`xmlproject.ts`）、跨格式另存为（`App.convertTo`）都经它。
   回归 `break-roundtrip-check`：写回 → 六种写出端 → 读回，断点集合不变（能力表记了 `pageBreak` 的格式只比断行位置；ABC 写 `%%newpage`，换页也比）。
-- **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `crates/dolce-model/src/timeaxis.rs`）、
+- **文本谱专有字段**（`doc.ts` 里注释写明「文本谱」的那些：`SourceOrnament`、`InlineItem`、`Print.system/texts/lyricLines`（`system` 还是各声部共用时间轴的依据，见 `crates/model/src/timeaxis.rs`）、
   `Chord.continued`、`Mark.startLead/endTrail/leadInPreviousLine/continuationLevels`、`Ending.startOffset/endOffset/pair`…）
   **是排版信息，不是给导出用的**：没有它们谱面就少画或画错（例如弧线端点落在小节线上时简谱引擎认为没收口，弧会接到下一行）。
   改 `fanqie/fromfanqie.rs` 后必须跑 `fanqie-scoredoc-check`。
@@ -131,15 +131,15 @@ Node 侧经 `src/cli/j123.ts` → `out/cli/j123.js` 使用（`npm run build:cli`
     没有区间的（头部多数字段）在原文里找第一处没被占的原字符串，整串找不到（原文有转义，`.jpwabc` 署名的 `\n`）就按非 ASCII 连续段依次找。
     改完重新解析、逐片对期望：对不上时只留有区间的编辑，搜来的按片逐个试加，结构不变且对上的片变多才留
     （误改中文键名之类会被撤回）。原文里不进模型的字（注释、模型丢掉的内容）不转。
-- **模型在 Rust（`crates/dolce-model`），是从 TS 忠实移植的**（迁移时全语料逐字段零差异，[../架构.md](../架构.md) §8）。移植时定下、改模型要守的：
+- **模型在 Rust（`crates/model`），是从 TS 忠实移植的**（迁移时全语料逐字段零差异，[../架构.md](../架构.md) §8）。移植时定下、改模型要守的：
   - **`ElementId` 的分配顺序与旧 TS `IdGen` 逐一相同**：重解析重编、编辑后按 `ChordPos` 认回，不借机改语义。TS `number` 一律 `f64`（读 XML 用 `Number()` 什么都可能进来），只有 `ElementId` 是 `u32`。
   - **对象身份用 `Oid`**（JSON `_oid`，0 = 无身份）：可绑表层的那十几类对象带它，表层旁表与导出版面按 `(Oid, 槽位)` 键；
     TS 里 `{ ...obj }`、`structuredClone` 出来的新对象在 Rust 里一律 `Oid::NONE`（表层绑定随之丢，同旧 WeakMap）。TS 按对象身份记的旁表、集合（`Set<Note>`、`Map<Measure>`）改按下标或 id。
   - **源区间与 XML 节点区间按 UTF-16 码元**（喂 CodeMirror）；解析器把原文转成 UTF-16 码元扫，原文不过边界，读入后门面换回 JS 那份。
-  - **识别 id、符干等附件不进模型**，同 MusicXML 表层一样作文档附件（`omr-todoc::staff::Rids`、`EngravedLayout`）。
+  - **识别 id、符干等附件不进模型**，同 MusicXML 表层一样作文档附件（`omr-core::todoc::staff::Rids`、`EngravedLayout`）。
   - **认不得的枚举值原样留**：字符串字面量联合在 Rust 里是「认得的进具名变体、认不得的进 `Other(String)`」（TS 读 XML 多处只断言不校验）；输入结构一律拒未知字段，字段名拼错报错而不是静默取缺省。
   - **类型由 Rust 生成给 TS**：ts-rs 出 `src/engine/gen/*.gen.ts`（`npm run gen:types`），`check.ts` 让 tsc 核生成物与手写 `doc.ts` 互相可赋值，私有仓库的单测比生成物与入库的逐字相同。
-  - **简繁词表两份同源**：网页版用 opencc-js 的词表，桌面 / 命令行用 Rust `dolce-hanconv`（数据从网页版所用的同一份导出，转换链同它），迁移时全表金标两个方向零差异；`HanConv` 由宿主注入。
+  - **简繁词表两份同源**：网页版用 opencc-js 的词表，桌面 / 命令行用 Rust `dolce-model::hanconv_dict`（数据从网页版所用的同一份导出，转换链同它），迁移时全表金标两个方向零差异；`HanConv` 由宿主注入。
   - **TS 侧现在还持有模型的 JSON 镜像**（`model/rustdoc.ts`：`_oid` 摘下记进旁表、送回 Rust 时补回；MusicXML 表层与读入时的模型留在 Rust 句柄里，句柄表按原文总量淘汰，见 [源格式-musicxml](源格式-musicxml.md)）。
     这是迁移期的过渡，终态是文档留在 Rust 会话、TS 拿句柄；`NaN` 过 JSON 成 `null`（`f64` 字段读不进报 `engine.badInput`）。
   - 移植时的 JS 口径与踩坑见 [../实现/Rust移植.md](../实现/Rust移植.md)。

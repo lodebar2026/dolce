@@ -35,7 +35,7 @@ pub enum Evidence {
     /// 像素：墨块 / 像素框（量值留在元素自己的字段里：种子框墨占比、模板分）。
     #[default]
     Ink,
-    /// 矢量：对象组号（对象库里拆并好的一组，见 `omr-source::vector`）。
+    /// 矢量：对象组号（对象库里拆并好的一组，见 `omr-core::source::vector`）。
     Vector(u32),
     /// 推断补的（互证、满拍），没有墨也没有对象。
     Inferred,

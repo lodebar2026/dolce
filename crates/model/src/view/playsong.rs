@@ -1,5 +1,5 @@
 //! 试听统一入口 [`play_source_of`]（各格式共用），以及简谱形状的 `ScoreDoc`（文本谱 / 123 / ABC / `.jpwabc`）
-//! → 演唱顺序、试听输入（同原 `jianpu/playsong.ts`）。`.jpwabc` 写出端的输入在 `dolce-formats::jpw::input`，用这里的 [`song_measures`]。
+//! → 演唱顺序、试听输入（同原 `jianpu/playsong.ts`）。`.jpwabc` 写出端的输入在 `dolce-model::formats::jpw::input`，用这里的 [`song_measures`]。
 //!
 //! 与 [`crate::view::playdoc`]（MusicXML 形状）分工同断句那一对；小节序列与断句共用 [`crate::view::phrasesong::build_measures`]。
 //! **口径同简谱输入模型 `jianpuinput.ts::jianpuInputOfDoc`**：

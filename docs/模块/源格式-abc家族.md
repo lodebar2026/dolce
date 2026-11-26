@@ -18,11 +18,11 @@
 
 所以 `.abc` 要原生解析直出 `ScoreDoc`。而这与写出端的继承复用正好对称：
 123 与 ABC 的头部字段、`V:`/`w:`/`P:`、小节线与房号、装饰、和弦与注记、倚音、多连音
-**全部同源**，`crates/dolce-formats/src/abc/` 的 `lex.rs` + `parse.rs` 实现的正是这些。
+**全部同源**，`crates/model/src/formats/abc/` 的 `lex.rs` + `parse.rs` 实现的正是这些。
 
 ## 入口
 
-读写判据全在 Rust（`crates/dolce-formats/src/abc/`），经 dolce-wasm（`crates/dolce-wasm/src/formats.rs`）同步调；TS 只留门面与高亮。
+读写判据全在 Rust（`crates/model/src/formats/abc/`），经 dolce-wasm（`crates/wasm/src/formats.rs`）同步调；TS 只留门面与高亮。
 
 | 文件 | 作用 |
 |---|---|
@@ -34,7 +34,7 @@
 | `abc/lyricslot.rs` | 歌词对位格判据 `is_lyric_slot`（读写两端与可视化编辑共用） |
 | `abc/abcpitch.rs` | ABC 音名 + 绝对临时记号 ↔ 实际音高（读 `resolve_abc_pitches` / 写 `with_abc_pitches`），见下「关键判据」 |
 | `abc/emit.rs` | **写出**：一个 `Emitter` 按方言分支——字段头、声部、歌词对位、小节线与房号、Mark 索引、符杠分组连写、`I:` 扩展；Muse 按声部分块（`body_lines`）。系统切分 `system_ranges` 在 `dolce-model/src/emitutil.rs`（文本谱写出端共用） |
-| `crates/dolce-formats/src/jcxcodec.rs` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF。码表大，绑定单出 `crates/dolce-jcx-wasm`，网页开机后空闲时预取、开 / 存 .jcx 前 `common/jcx.ts::ensureJcx` 兜底等 |
+| `crates/model/src/formats/jcxcodec.rs` | `.jcx` 字节 ↔ 文本：`%MUSE2` GBK/BIG5、`%MUSE3` UTF-8；写出 `%MUSE2` + GBK + CRLF。码表大，绑定单出 `crates/jcx-wasm`，网页开机后空闲时预取、开 / 存 .jcx 前 `common/jcx.ts::ensureJcx` 兜底等 |
 | `src/abcfamily/parse.ts` / `emit.ts` | TS 门面：`parse123` / `parseAbc` / `parseJcx`（原文 `source` 换回 JS 那份）、`emit123` / `emitAbc` / `emitJcx`，外加编辑器要的小判据 `lyricStarts`、`lyricSlotsBetween`、`isBareChord`、`duration123`、`normalizeSpelling` |
 | `src/abcfamily/highlight.ts` | 123 语法高亮（独立轻量扫描，留在 TS） |
 | `src/editor/metaedit.ts` | 头字段改写（编辑器用） |
@@ -101,7 +101,7 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   分支间不继承 tie、破碎节奏、增时线宿主与符杠分组，开着的弧/多连音报诊断后丢掉；
   ③ **小节内起点在投影时才算**（`xmlproject.ts`）——那时才折算完多连音与 divisions 放大，
   各声部一把游标，小节长度取各分支**最远终点**而不是相加，`onset` 落成 `<backup>`；
-  ④ 五线谱按声部定符干（主分支朝上、其余朝下，`crates/dolce-layout-staff/src/read.rs::load_voice_stems`），
+  ④ 五线谱按声部定符干（主分支朝上、其余朝下，`crates/layout-staff/src/read.rs::load_voice_stems`），
   自动分组的符杠不再按音高把两层统一回一个方向；⑤ 写出端按声部分段、段间写 `&`。
   分支不等长由拍数自检逐分支报（`dolce-model::beatcheck`），不静默补齐。
   写出端给短的分支补 `x` 时按**实际时值**量各分支（`emit.rs::measure_body`）：简谱来源的多连音只写在记号上（名义时值、不带 `time_mod`），
@@ -111,7 +111,7 @@ Muse `.jcx` 与 ABC 的差别（详见 [jcx.md](../格式/jcx.md)）：简谱轨
   以前取最后读到的那次，大谱表下谱表行首的 `Z` 就被读成换拍号之后的长度。
 - **简谱只印主分支**：一个简谱声部行装不下同一小节的两条并行旋律，`projectForJianpu` 删掉 `voice > 1`
   的元素（口径同 MusicXML 那一路的 `voice <= 1`），歌词对位格也不含它们（`abc/lyricslot.rs`，读写两端共用）。
-  五线谱、MusicXML 导出、试听那三条路仍是完整的多声部——**试听要先投影**（`dolce-view/src/playsong.rs`），
+  五线谱、MusicXML 导出、试听那三条路仍是完整的多声部——**试听要先投影**（`dolce-model::view/src/playsong.rs`），
   简谱那条播放路会把并行分支当成接着唱的音。
 - **行首 `[V:x]` 切声部**（ABC §7、Muse 说明书 §3.2.3.1），同一行后面接着的是这个声部的音乐；行内 `[L:]` 改默认音长。
   ABC 只认数字声部号，Muse 的标志按首次出现编号。行内 `[L:]` 只管写它的那个声部（`PartBuild.len`）。

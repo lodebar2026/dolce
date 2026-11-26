@@ -1,5 +1,5 @@
 //! `dolce-dev book-meta-check <cases.jsonl> --measure=<book-measure.jsonl>`：成书（L6）书级元数据与书籍样式统计迁 Rust 的对拍。
-//! 用例由 dev `book-meta-rs-diff.mjs` 让 TS 现算（`src/cli/bookmetaref.ts::bookMetaCases`）；这里用 `dolce-book` 的
+//! 用例由 dev `book-meta-rs-diff.mjs` 让 TS 现算（`src/cli/bookmetaref.ts::bookMetaCases`）；这里用 `dolce-layout::book` 的
 //! `meta` / `stats` 重算逐字段比（比法同 `jianpu-check`：骨架一致、数差 ≤ 1e-6）。
 //!
 //! 用例种类（`kind`）：

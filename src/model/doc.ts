@@ -848,7 +848,7 @@ export interface PlayPass {
 }
 
 /** 逐遍演唱顺序的一遍（123 `%%sing`，一行一遍）：按次序唱哪几段、配第几段词。只管顺序，断行换页写在版面里（`Song.layouts`）。
- *  段是曲内段落标记 `[P:x]` 切出来的（`sectionMarks`，同名多处拼成一段），演唱顺序用到时才按标记位置展开（crates/dolce-play `playorder::sing_play_order`），
+ *  段是曲内段落标记 `[P:x]` 切出来的（`sectionMarks`，同名多处拼成一段），演唱顺序用到时才按标记位置展开（crates/model/src/play `playorder::sing_play_order`），
  *  所以改了谱面也不失效。 */
 export interface SingPass {
   items: { section: string; /** 配第几条 `w:`（段内计，同 `P:`），缺省 1 */ verse?: number }[];

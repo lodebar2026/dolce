@@ -1,4 +1,4 @@
-// `.jpwabc`（`JpwFile`）→ `ScoreDoc`：读法在 Rust（crates/dolce-formats/src/jpw/read.rs），这里是门面。
+// `.jpwabc`（`JpwFile`）→ `ScoreDoc`：读法在 Rust（crates/model/src/formats/jpw/read.rs），这里是门面。
 // 编辑器谱面（经 `jianpu/jianpuinput.ts::jianpuInputOfJpw`）、试听、转 123/ABC、导出 MusicXML、能力表都从这里出。
 //
 // 两步（口径见 `docs/格式/jpwabc.md`）：源文切成「源文小节」（`SrcMeasure`，歌词按它数小节），再落成模型。

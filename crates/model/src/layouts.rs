@@ -1,5 +1,5 @@
 //! 版面（123 `%%layout`，规范 123格式 §9.1）：内置四档的名字、自定义版面照哪一档排、按名取这一首的版面、断行方式。
-//! 读写在 `dolce-formats` 的 `abc/fields.rs`，排版各档在这里取值。
+//! 读写在 `dolce-model::formats` 的 `abc/fields.rs`，排版各档在这里取值。
 
 use crate::doc::{LayoutBreak, LayoutSpec, Song};
 

@@ -1,6 +1,6 @@
 // 在谱面上增删版面断点（规范 123格式 §9.1「在谱面上增删断点」）：断点一律是段落边界——
 // 光标在段末只增删一条 `break=` / `newpage=`；在段中先切段（插 `[P:A-2]`、`%%sing` 里 A 换成 `A A-2`）再加；删掉后界面切出来的段合得回就合回。
-// 这里只算「该做什么」（`BreakPlan`），原文怎么改交 Rust（`crates/dolce-formats/src/abc/layoutedit.rs`），一次 `setText` 一步撤销。
+// 这里只算「该做什么」（`BreakPlan`），原文怎么改交 Rust（`crates/model/src/formats/abc/layoutedit.rs`），一次 `setText` 一步撤销。
 // 投影档按排出来的那一处音（第几遍第几个符号，`LaidInfo.projPasses`）认段；简谱档按谱面上段落标记的先后认。
 
 import type { ElementId, Song } from "../model/doc";

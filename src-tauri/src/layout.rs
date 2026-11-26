@@ -1,4 +1,4 @@
-//! 排版接进桌面版（迁移计划 H 期）：简谱 / 五线谱排版在 Tauri 进程里跑原生 Rust（`crates/dolce-session/src/layout.rs`），
+//! 排版接进桌面版（迁移计划 H 期）：简谱 / 五线谱排版在 Tauri 进程里跑原生 Rust（`crates/layout/src/layout.rs`），
 //! 量字走系统文字引擎（`dolce_engrave::text::native`，外包浏览器口径层，与 WebView 画字对齐）。
 //!
 //! - **一条专用线程**：系统量字的字体注册与缓存是线程局部的（CoreText / DirectWrite），量字上下文、表层、排好的结果都归这条线程，

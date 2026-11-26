@@ -1,4 +1,4 @@
-//! `dolce run`：批量识别、出 JSON（私有仓库的自检脚本吃它）。每个文件一首，判路同编辑器（`omr-engine::recognize`：先按五线谱认，一页谱表都没有再走简谱）。
+//! `dolce run`：批量识别、出 JSON（私有仓库的自检脚本吃它）。每个文件一首，判路同编辑器（`dolce-omr::recognize`：先按五线谱认，一页谱表都没有再走简谱）。
 //!
 //! 每认完一首往 stdout 写一行 JSON：`{"file", "kind": "staff", "xml"}`（带识别 id 的 MusicXML）、`{"file", "kind": "jianpu", "score"}`（`RecognizedScore`）
 //! 或 `{"file", "error"}`；各步进度写 stderr（`{"file", "done", "total", "stage"}` 一行一条，`--progress` 时才写）。

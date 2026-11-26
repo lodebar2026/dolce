@@ -1,7 +1,7 @@
 //! 成书部件对拍（迁 Rust L6）：`dolce-dev book-parts-check <cases.jsonl> --measure=<book-measure.jsonl> [--layout=<pdf-layout.json>] [--kind=…] [--show=N]`。
 //!
 //! 用例由 dev `book-parts-rs-diff.mjs` 让 TS 现算导出（`{ kind, key, …输入, expect | error }`），书级量字录成 `book-measure.jsonl`
-//! （格式见 `dolce_layout::book::measure`）回放；Rust 用 `dolce-book` 重算后逐字段比：骨架（键、串、数组长）一致、数差 ≤ 1e-6，缺键与 `null` 视同。
+//! （格式见 `dolce_layout::book::measure`）回放；Rust 用 `dolce-layout::book` 重算后逐字段比：骨架（键、串、数组长）一致、数差 ≤ 1e-6，缺键与 `null` 视同。
 //!
 //! 上下文行（不计用例）：`ctx`（`style`：成书 BookStyle）、`relayoutCtx`（`style`：校验过的 BookStyle，`fallback`：形状键 → 回填字）。
 //! 用例 `kind`：

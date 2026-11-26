@@ -1,4 +1,4 @@
-//! `sing-fit <谱.123> <歌词.txt> [--redist=<目录>] [--json] [--svg=<目录>] [--ss=<样式.ss>] [--phrase]`：按参照歌词切段落、排 `%%sing`（`dolce-view::singfit`），
+//! `sing-fit <谱.123> <歌词.txt> [--redist=<目录>] [--json] [--svg=<目录>] [--ss=<样式.ss>] [--phrase]`：按参照歌词切段落、排 `%%sing`（`dolce-model::view::singfit`），
 //! 把写回后的 123 打到 stdout、差异打到 stderr（`--json` 改出生成结果 JSON；`--svg` 另把写回后的投影档逐页出 SVG 核对）。投影行数用本平台桌面版的量字口径。
 //! 歌词给 `-`：不生成，只把谱面照现有的 `%%sing` 排投影档出 SVG（对比排版改动用）；`--ss=<样式.ss>` 叠在出厂投影样式上；`--phrase` 给投影版面加 `linebreak=phrase`（逐遍按乐句断行，生成时也照它试排行数，写回的 123 里也带着）；
 //! `--hits` 出 SVG 时另写 `info.json`（排版概要，含各遍段落出现表）与逐页身份表 `NN.hits.json`（核对谱面上增删断点用的槽位）。

@@ -7,8 +7,8 @@
 //! | 钉住事实（删音、改时值、改音高） | [`Constraints::pins`]，按识别 id |
 //! | 换候选 | 取那个事件的第 k 个落选候选，折成钉住的事实 |
 //! | 从某处起改谱号 / 调号 / 拍号 | [`Constraints::contexts`] |
-//! | 补音（点原图补认） | [`Constraints::adds`]，号码从 `ADD_BASE` 起另发；找头在 `omr-engine::insert`（要回原图） |
-//! | 换字（框选重认） | [`Constraints::texts`]，按识别 id；裁图读字在 `omr-engine::region` |
+//! | 补音（点原图补认） | [`Constraints::adds`]，号码从 `ADD_BASE` 起另发；找头在 `dolce-omr::insert`（要回原图） |
+//! | 换字（框选重认） | [`Constraints::texts`]，按识别 id；裁图读字在 `dolce-omr::region` |
 //!
 //! 识别 id 在拼接前按识别产物预发（`song/ids.rs`），所以这些操作之后没变的元素号码不变（删掉的留空号）；编辑器按号把手改放回去。
 use crate::frame::systems::System;
@@ -38,7 +38,7 @@ pub enum Op {
     Unpin { rid: Rid },
     Choose { rid: Rid, alt: usize },
     Context { system: usize, context: Context },
-    /// 补一个音（点原图补认；找头在 `omr-engine::insert`，这里只记下、发号）。
+    /// 补一个音（点原图补认；找头在 `dolce-omr::insert`，这里只记下、发号）。
     Add { note: NewNote },
     /// 换文字（框选重认）：歌词字、文字指示。
     Text { rid: Rid, text: String },

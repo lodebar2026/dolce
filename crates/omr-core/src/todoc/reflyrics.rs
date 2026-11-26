@@ -362,7 +362,7 @@ fn expanded_items(score: &RecognizedScore, held: &[Vec<bool>]) -> Option<Vec<Ite
 }
 
 /// 照参照的唱法展开：参照的段序与谱面反复对不上时（桥段谱面 AABB、实际 ABAB，D.S. 套着反复推不全），
-/// 用生成演唱顺序那条路（`dolce-view::singfit`）走过的音与每遍配的词号。走不出来返回 None
+/// 用生成演唱顺序那条路（`dolce-model::view::singfit`）走过的音与每遍配的词号。走不出来返回 None
 fn sung_items(score: &RecognizedScore, held: &[Vec<bool>], ref_text: &str) -> Option<Vec<Item>> {
     let built = recognized_to_doc(score);
     let flat: Vec<NoteAt> = score.rows.iter().enumerate().flat_map(|(ri, r)| (0..r.nums.len()).map(move |ni| (ri, ni))).collect();
