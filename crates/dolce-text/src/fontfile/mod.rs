@@ -232,6 +232,12 @@ impl Face {
     /// 整形（横排、缺省特性外加 `features`，如 `halt`；前缀 `-` 的是关掉，如 `-kern`）。AAT 字体关掉竖排替换：morx 的缺省开关里常开着它，
     /// 系统排版器横排时自己关（`pdfwrite.mjs::horizontalFontkit` 同一个毛病）。
     pub fn shape(&self, text: &str, features: &[&str]) -> Vec<Shaped> {
+        self.shape_lang(text, features, "")
+    }
+
+    /// 同 [`Face::shape`]，带语言（BCP 47，如 `zh-cn`；空串不带）。语言改 `locl` 等的替换：
+    /// Noto CJK 不带语言时「a 1」里的「1」换成另一个字形（宽 550 而不是 471），浏览器整形时带页面语言。
+    pub fn shape_lang(&self, text: &str, features: &[&str], lang: &str) -> Vec<Shaped> {
         let Some(mut face) = rustybuzz::Face::from_slice(&self.data, self.index) else { return Vec::new() };
         if !self.coords.is_empty() {
             let v: Vec<rustybuzz::Variation> = self.coords.iter().map(|(t, v)| rustybuzz::Variation { tag: ttf_parser::Tag::from_bytes(t), value: *v }).collect();
@@ -240,6 +246,11 @@ impl Face {
         let mut buf = rustybuzz::UnicodeBuffer::new();
         buf.push_str(text);
         buf.set_direction(rustybuzz::Direction::LeftToRight);
+        if let Ok(l) = lang.parse::<rustybuzz::Language>() {
+            if !lang.is_empty() {
+                buf.set_language(l);
+            }
+        }
         let mut feats: Vec<rustybuzz::Feature> = features
             .iter()
             .filter_map(|f| {

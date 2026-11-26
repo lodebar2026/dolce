@@ -48,6 +48,15 @@ function textEl(): SVGTextElement {
 // outline. Canvas actualBoundingBoxAscent/Descent matches Skija getPath bounds.
 let glyphCtx: CanvasRenderingContext2D | null = null;
 
+/** 量字用的 canvas：**带上页面的 `lang`**。离文档的 canvas 没有语言，Chromium 解析泛称时不做中文页面的处理
+ *  （`sans-serif` 在 macOS 落 Helvetica 而 SVG 落苹方，Linux 落 Liberation 而 SVG 落 Noto CJK），量出的墨迹就不是画出来的那支字。 */
+function measureCanvas(): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  const lang = document.documentElement.lang;
+  if (lang) c.lang = lang;
+  return c;
+}
+
 /** Build a Canvas/FontFaceSet font shorthand without turning an entire CSS
  * fallback list into one (non-existent) quoted family name. */
 function cssFontShorthand(fontFamily: string, fontSizePx: number, fontWeight: FontWeight, fontStyle: FontStyle = "normal"): string {
@@ -102,7 +111,7 @@ export function inkOf(ctx: CanvasRenderingContext2D, text: string): InkBox {
   const pad = 200;
   const w = Math.ceil(m.width * k) + pad * 2;
   const h = pad * 3;
-  pixelCanvas ??= document.createElement("canvas");
+  pixelCanvas ??= measureCanvas();
   pixelCanvas.width = w;
   pixelCanvas.height = h;
   const c = pixelCanvas.getContext("2d", { willReadFrequently: true })!;
@@ -165,7 +174,7 @@ function glyph(
   let inkLeft = 0;
   let inkRight = width;
   if (!glyphCtx) {
-    const c = document.createElement("canvas");
+    const c = measureCanvas();
     glyphCtx = c.getContext("2d");
   }
   if (glyphCtx) {
@@ -231,7 +240,7 @@ function fontMetrics(
   fontStyle: FontStyle,
 ): { ascent: number; descent: number } {
   if (!metricsCtx) {
-    const c = document.createElement("canvas");
+    const c = measureCanvas();
     metricsCtx = c.getContext("2d");
   }
   let res = { ascent: -fontSizePx * 0.8, descent: fontSizePx * 0.2 };

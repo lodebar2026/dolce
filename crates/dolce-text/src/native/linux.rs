@@ -60,6 +60,9 @@ fn runs(book: &FontBook, chain: &[FaceRef], first: &str, text: &str, bold: bool,
     out
 }
 
+/// 整形带的语言：排版的页面是中文页面（`lang="zh-CN"`），Chromium 把它传给 HarfBuzz
+const PAGE_LANG: &str = "zh-cn";
+
 /// 字体单位（em）→ px 的系数，照 FreeType：字号先取 26.6 定点，再除以 upem 得 16.16 的缩放系数（四舍五入），
 /// advance 按它线性放大（Skia 在 Linux 上用 FreeType 的线性 advance）。upem 除不尽时比 `size` 略大或略小——
 /// 如 1000 upem 的 Noto CJK 28px 一个字 28.0001，经口径层向上取 1/64 成 28.015625，同 Chromium。
@@ -96,7 +99,7 @@ fn layout(text: &str, families: &[String], size: f64, bold: bool, italic: bool, 
         let first = families.first().map(String::as_str).unwrap_or("");
         for (range, face) in runs(book, &chain, first, text, bold, italic) {
             let adv = ft_scale(size, face.upem);
-            for g in face.shape(&text[range.clone()], &feats) {
+            for g in face.shape_lang(&text[range.clone()], &feats, PAGE_LANG) {
                 out.push(Placed { face: face.clone(), gid: g.gid, byte: range.start + g.cluster, pen, dx: g.x_offset * size, dy: -g.y_offset * size });
                 pen += g.x_advance * adv;
             }
