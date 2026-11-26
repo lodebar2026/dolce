@@ -2,10 +2,10 @@
 # 发布 Rust 工作区 crate 到 crates.io。
 #
 # 用法（从仓库根或任意目录运行）：
-#   scripts/publish-crates.sh                          # 按依赖拓扑顺序发布全部 26 个可发布 crate
-#   scripts/publish-crates.sh dolce-base               # 仅发布指定的一个或多个 crate（按传入顺序）
+#   scripts/publish-crates.sh                          # 按依赖拓扑顺序发布全部 10 个可发布 crate
+#   scripts/publish-crates.sh dolce-model              # 仅发布指定的一个或多个 crate（按传入顺序）
 #   scripts/publish-crates.sh --dry-run                # 全量本地打包校验（不上传）
-#   scripts/publish-crates.sh --dry-run dolce-base     # 仅对指定 crate 做打包校验
+#   scripts/publish-crates.sh --dry-run dolce-model    # 仅对指定 crate 做打包校验
 #   scripts/publish-crates.sh --no-wait                # 遇 crates.io HTTP 429 限流时直接退出、不等待
 #
 # 特性：
@@ -58,42 +58,27 @@ if [ -z "${CARGO_REGISTRY_TOKEN:-}" ] && [ -z "${CRATES_IO_TOKEN:-}" ] && [ -f "
   done < "${ROOT}/.env.local"
 fi
 
-# 全部 26 个可发布 crate（严格按依赖拓扑顺序排列；排除 dolce-dev 与 4 个 *-wasm 包）
+# 全部 10 个可发布 crate（严格按依赖拓扑顺序排列；排除 dolce-dev 与 4 个 *-wasm 包）。
+# 对外入口是 dolce-layout（排版）与 dolce-omr（识别），其余是内部实现
 ALL_CRATES=(
-  dolce-base
-  dolce-text
-  dolce-scene
-  dolce-play
   dolce-model
-  dolce-hanconv
-  dolce-view
-  dolce-style
   dolce-engrave
   dolce-layout-jianpu
   dolce-layout-staff
-  dolce-book
+  dolce-layout
   dolce-omr-core
-  dolce-omr-ocr
-  dolce-omr-source
-  dolce-omr-book
-  dolce-omr-text
-  dolce-omr-sheet
   dolce-omr-jianpu
   dolce-omr-staff
-  dolce-formats
-  dolce-omr-todoc
-  dolce-omr-engine
-  dolce-export
-  dolce-session
+  dolce-omr
   dolce-cli
 )
 
 # 1. 校验内置 Bravura 资产与 public/redist/ 一致
 check_assets() {
   local pairs=(
-    "public/redist/Bravura.otf:crates/dolce-text/assets/Bravura.otf"
-    "public/redist/BravuraText.otf:crates/dolce-text/assets/BravuraText.otf"
-    "public/redist/bravura_metadata.json:crates/dolce-text/assets/bravura_metadata.json"
+    "public/redist/Bravura.otf:crates/engrave/assets/Bravura.otf"
+    "public/redist/BravuraText.otf:crates/engrave/assets/BravuraText.otf"
+    "public/redist/bravura_metadata.json:crates/engrave/assets/bravura_metadata.json"
   )
   for pair in "${pairs[@]}"; do
     local src="${ROOT}/${pair%%:*}"

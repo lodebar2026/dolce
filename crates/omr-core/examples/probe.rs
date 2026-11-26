@@ -1,5 +1,5 @@
 //! OCR 冒烟：整页图分块检测文字框，读前几行。
-//! 用法：`cargo run --release -p dolce-omr-ocr --example probe -- 图.png [模型目录]`
+//! 用法：`cargo run --release -p dolce-omr-core --features native --example probe -- 图.png [模型目录]`
 use dolce_omr_core::image::Rect;
 use dolce_omr_core::ocr::native::NativeInfer;
 use dolce_omr_core::ocr::surface::{blit, Gray};

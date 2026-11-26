@@ -1,6 +1,6 @@
 //! 与 TS 位图路取的二值图逐页比（私有仓库 `data/<语料>/raster/` 里 `staffraster.ts` 落的缓存）。
 //! 1 位原图（干净位图）应逐像素相同；彩色 / 灰度页 TS 另做了放大、补线、去网，只报差多少像素。
-//! 用法：`cargo run --release -p dolce-omr-source --example vs_ts_raster -- 文件.pdf 缓存目录`
+//! 用法：`cargo run --release -p dolce-omr-core --features pdf --example vs_ts_raster -- 文件.pdf 缓存目录`
 use dolce_omr_core::image::Binary;
 use dolce_omr_core::source::raster::{fix_polarity, page_image, Binarizer};
 use dolce_omr_core::source::{ContentOpts, ImageKind, PdfDoc};

@@ -1,5 +1,5 @@
 //! 矢量页的对象清单（排查）：路径逐个列（段数、有无曲线、填 / 描、线宽、外框），字按字体列码位与框。
-//! 用法：`cargo run --release -p dolce-omr-source --example vecdump -- 文件.pdf 页号 [paths|chars|gen|all]（gen：连 PDFium 补出的空格、换行一起列） [x0 y0 x1 y1]`
+//! 用法：`cargo run --release -p dolce-omr-core --features pdf --example vecdump -- 文件.pdf 页号 [paths|chars|gen|all]（gen：连 PDFium 补出的空格、换行一起列） [x0 y0 x1 y1]`
 use dolce_omr_core::source::model::Seg;
 use dolce_omr_core::source::{ContentOpts, PdfDoc};
 

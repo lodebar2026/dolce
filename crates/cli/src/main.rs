@@ -73,7 +73,7 @@ fn main() -> ExitCode {
         },
         None | Some("-h" | "--help" | "help") => {
             // 开发用的子命令只在仓库检出里列（分发包没有私有仓库，列了也跑不了）
-            let dev = if checkout("crates/dolce-cli").is_dir() { format!("\n开发用：\n{}{USAGE}", run::USAGE) } else { String::new() };
+            let dev = if checkout("crates/cli").is_dir() { format!("\n开发用：\n{}{USAGE}", run::USAGE) } else { String::new() };
             eprintln!("用法：\n{}{}{}{dev}", cli::usage(), convert::usage(), split::USAGE);
             ExitCode::from(if args.is_empty() { 2 } else { 0 })
         }

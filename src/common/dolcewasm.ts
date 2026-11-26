@@ -1,4 +1,4 @@
-// dolce-wasm（crates/dolce-wasm）与 dolce-jcx-wasm（crates/dolce-jcx-wasm）的绑定形状，`scripts/build-wasm.mjs` 编到 public/redist/dolce/。
+// dolce-wasm（crates/wasm）与 dolce-jcx-wasm（crates/jcx-wasm）的绑定形状，`scripts/build-wasm.mjs` 编到 public/redist/dolce/。
 // 胶水是 wasm-bindgen `--target web` 出的，网页主线程（`common/dolce.ts::loadDolce`）与 Node（`cli/dolcewasm.node.ts`）载同一份；不入库、不进打包，按运行时路径动态载入。
 // 对拍探针（`xmlDigest`、`editDigest`…）不在这份里：挂在 cargo feature `probe` 下，只编进 out/dolce-probe/ 给 dev 对拍脚本。
 // 数据过边界一律 JSON 字符串；会话调用失败抛 `Error`，`message` 是 `dolce_session::EngineError` 的 JSON。
@@ -11,7 +11,7 @@ export interface DolceSessionWasm {
   free(): void;
 }
 
-/** 排版结果句柄（`crates/dolce-wasm/src/layout.rs::Layout`）：排好的一份留在 wasm 里，按页取 SVG、身份表、场景。 */
+/** 排版结果句柄（`crates/wasm/src/layout.rs::Layout`）：排好的一份留在 wasm 里，按页取 SVG、身份表、场景。 */
 export interface DolceLayoutWasm {
   /** `LaidInfo` 的 JSON（`layout/rustlayout.ts::LaidInfo`） */
   info(): string;
@@ -81,7 +81,7 @@ export interface DolceWasm {
   phraseChordFacts(chord: string): string;
   headFpOf(chords: string): string;
 
-  // 模型簇给编辑器的门面（crates/dolce-wasm/src/model.rs；TS 侧在 `model/rustdoc.ts` 与各模块门面）
+  // 模型簇给编辑器的门面（crates/wasm/src/model.rs；TS 侧在 `model/rustdoc.ts` 与各模块门面）
   /** MusicXML → `[表层句柄, ScoreDoc 的 JSON]` */
   modelLoadXml(text: string): [number, string];
   modelRelease(h: number): void;
@@ -157,7 +157,7 @@ export interface DolceWasm {
   modelPhraseLinesEdited(doc: string, song: number, afterId: number, add: boolean, page: boolean): string;
   modelEmitJpwabc(doc: string, song: number): string | undefined;
 
-  // ABC 家族与丢失清单（crates/dolce-wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）
+  // ABC 家族与丢失清单（crates/wasm/src/formats.rs；TS 侧门面 `abcfamily/parse.ts`、`abcfamily/emit.ts`、`convert/capability.ts`）
   /** `dialect`：`123` / `abc` / `jcx`；回 ScoreDoc 的 JSON（带 `source`） */
   formatsParse(dialect: string, text: string): string;
   formatsEmit(dialect: string, doc: string): string;
@@ -173,7 +173,7 @@ export interface DolceWasm {
   formatsDuration123(beams: number, dots: number, sustains: number): string;
   formatsNormalizeSpelling(s: string): string;
 
-  // 文本谱、.jpwabc、jianpu-ly、MIDI 导入（crates/dolce-wasm/src/textformats.rs；TS 侧门面 `fanqie/*`、`jpword/*`、`model/fromjpw.ts`、`convert/jpwabc.ts`、`jly/*`、`midi/import.ts`）
+  // 文本谱、.jpwabc、jianpu-ly、MIDI 导入（crates/wasm/src/textformats.rs；TS 侧门面 `fanqie/*`、`jpword/*`、`model/fromjpw.ts`、`convert/jpwabc.ts`、`jly/*`、`midi/import.ts`）
   /** `dialect` 空串 = 嗅探；回语法树 / ScoreDoc 的 JSON */
   fanqieParseAst(text: string, dialect: string): string;
   fanqieParse(text: string, dialect: string): string;
@@ -230,7 +230,7 @@ export interface DolceWasm {
   omrChordPlaces(score: string): string;
 }
 
-/** 按需载入的那份（crates/dolce-jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */
+/** 按需载入的那份（crates/jcx-wasm，同目录 `dolce_jcx_wasm.*`）：Muse .jcx 字节编解码，GBK / BIG5 码表占体积所以不进开机那份。 */
 export interface JcxWasm {
   default(init?: { module_or_path: string | URL }): Promise<object>;
   initSync(init: { module: BufferSource | WebAssembly.Module }): object;

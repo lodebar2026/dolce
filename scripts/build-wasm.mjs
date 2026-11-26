@@ -1,5 +1,5 @@
 // 网页版识别的 wasm（crates/omr-wasm）与 PDFium 的 wasm 版 → public/redist/omr/；
-// 模型 / 格式 / 排版的 wasm（crates/dolce-wasm，迁 Rust 进行中）→ public/redist/dolce/。都不入库。
+// 模型 / 格式 / 排版的 wasm（crates/wasm，迁 Rust 进行中）→ public/redist/dolce/。都不入库。
 // dolce-wasm 是编辑器开机就要的（演唱顺序、断句、时间轴、MIDI 已在里面，网页与桌面 WebView 都载它，
 // Node 的 out/cli 各入口与识谱分发包也载它），一律要编；.jcx 编解码（GBK / BIG5 码表大）单出一份 dolce_jcx_wasm、导出 PDF（krilla 与整形）单出一份 dolce_export_wasm，同目录、按需载入。识别那份桌面版（Tauri 的 before 命令带 TAURI_ENV_PLATFORM）
 // 与设了 DOLCE_NO_WASM 的跳过（桌面识别走原生）。

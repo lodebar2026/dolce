@@ -34,7 +34,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      # 编辑器开机要的 dolce-wasm（crates/dolce-wasm，vite build 开头由 scripts/build-wasm.mjs 编）：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
+      # 编辑器开机要的 dolce-wasm（crates/wasm，vite build 开头由 scripts/build-wasm.mjs 编）：wasm 目标 + 与 Cargo.lock 同版本的 wasm-bindgen
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:

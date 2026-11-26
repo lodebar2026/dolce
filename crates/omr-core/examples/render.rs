@@ -1,4 +1,4 @@
-//! 渲染一页（或一个框，页面点）成 PNG（排查）：`cargo run --release -p dolce-omr-source --example render -- 文件.pdf 页号 输出.png [倍率] [x0 y0 x1 y1]`
+//! 渲染一页（或一个框，页面点）成 PNG（排查）：`cargo run --release -p dolce-omr-core --features pdf --example render -- 文件.pdf 页号 输出.png [倍率] [x0 y0 x1 y1]`
 use dolce_omr_core::source::PdfDoc;
 
 fn main() -> Result<(), String> {

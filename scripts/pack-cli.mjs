@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 把识谱命令行打成**自包含**分发包：解压即用，不联网、不装依赖，也不要 Node。
 //
-// 包里：Rust 命令行 `dolce`（crates/dolce-cli：识别、各格式写出、参照歌词互证、歌本切分都在里面，ONNX Runtime 静态链入）
+// 包里：Rust 命令行 `dolce`（crates/cli：识别、各格式写出、参照歌词互证、歌本切分都在里面，ONNX Runtime 静态链入）
 //      + PDFium 动态库 + `models/`（OCR 模型）+ README（Windows 另内置 VC++ 运行库）。
 //
 // 用法（从仓库根跑）：

@@ -1,9 +1,9 @@
 # Rust 工作区：识别（omr-*，职责见 docs/模块/识别-Rust.md）与模型 / 格式 / 排版（dolce-*，迁移中）。
 [workspace]
 resolver = "2"
-members = ["layout", "dolce-cli", "dolce-dev", "engrave", "dolce-export-wasm", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-wasm", "omr-core", "omr", "omr-jianpu", "omr-staff", "omr-wasm"]
+members = ["cli", "dev", "engrave", "export-wasm", "jcx-wasm", "layout", "layout-jianpu", "layout-staff", "model", "omr", "omr-core", "omr-jianpu", "omr-staff", "omr-wasm", "wasm"]
 # omr-wasm、dolce-wasm、dolce-jcx-wasm、dolce-export-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
-default-members = ["layout", "dolce-cli", "dolce-dev", "engrave", "dolce-layout-jianpu", "dolce-layout-staff", "model", "omr-core", "omr", "omr-jianpu", "omr-staff"]
+default-members = ["cli", "dev", "engrave", "layout", "layout-jianpu", "layout-staff", "model", "omr", "omr-core", "omr-jianpu", "omr-staff"]
 
 [workspace.package]
 version = "0.8.9"
@@ -22,8 +22,8 @@ ts-rs = { version = "12", default-features = false, features = ["serde-compat"] 
 # 工作区内部可发布 crate（版本号与 [workspace.package].version 同步）
 dolce-engrave = { version = "0.8.9", path = "engrave" }
 dolce-layout = { version = "0.8.9", path = "layout", default-features = false }
-dolce-layout-jianpu = { version = "0.8.9", path = "dolce-layout-jianpu" }
-dolce-layout-staff = { version = "0.8.9", path = "dolce-layout-staff" }
+dolce-layout-jianpu = { version = "0.8.9", path = "layout-jianpu" }
+dolce-layout-staff = { version = "0.8.9", path = "layout-staff" }
 dolce-model = { version = "0.8.9", path = "model" }
 dolce-omr-core = { version = "0.8.9", path = "omr-core" }
 dolce-omr = { version = "0.8.9", path = "omr", default-features = false }

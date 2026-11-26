@@ -510,7 +510,7 @@ Rust 是重新设计的实现，不与它逐字相同，按各语料 GT 判分�
   位图档对 9b 逐曲比：独唱谱合计 87.36 → 87.50（3 首变好、没有变差），合唱谱扫描 74.89 → 74.95；
   多出 1~5 步的 6 首都是节拍器拆出来的术语（「a bit faster」「slightly slower」）——谱面真印着，那几份 GT 没记文字指示（唱普世欢腾的 GT 一条 `<words>` 都没有）。
 - 排查：`OMR_VEC_DEBUG=1` 打出矢量页各带的行（含到上下谱表的格数）、各行谱挂上的记号，混合页两层的页眉候选；
-  `cargo run --release -p dolce-omr-source --example vecdump -- 文件.pdf 页号 gen [x0 y0 x1 y1]` 连 PDFium 补出的空格、换行一起列字。
+  `cargo run --release -p dolce-omr-core --features pdf --example vecdump -- 文件.pdf 页号 gen [x0 y0 x1 y1]` 连 PDFium 补出的空格、换行一起列字。
 - 留后：排练号（框里的字母，矢量这边框是路径，`Dir` 还没有这一类；八段锦 85 步）、segno / coda 字形（八段锦 36）、逆波音与颤音（`Art` 没有这一类，34）、
   断奏楔挂不上头的（44，离头远、多在干端那侧）、行中换调号（「2→1」37）、中文表情不跟节拍器连印的（单独一行「渐慢」之类）；节拍器的音符单位（`Dir::Metronome` 只有每分钟拍数，牵我的手是二分音符）；
   表情术语以外的文字指示（`sul G`、音色名）；`D.S. al Coda` 落在两个系统中间时归上一行谱（GT 归下一行）；和弦 / 文字挂到哪个音的偏差（follow him 的和弦挪字 11 处）；

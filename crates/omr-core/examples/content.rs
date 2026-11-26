@@ -1,5 +1,5 @@
 //! 逐页取内容并汇总：图（形态、尺寸、页上框）、路径数、字数与字形轮廓取到的比例（按字体）、整页渲染耗时。
-//! 用法：`cargo run --release -p dolce-omr-source --example content -- 文件.pdf [最多几页]`
+//! 用法：`cargo run --release -p dolce-omr-core --features pdf --example content -- 文件.pdf [最多几页]`
 use dolce_omr_core::source::{ContentOpts, PdfDoc};
 use std::collections::BTreeMap;
 use std::time::Instant;
