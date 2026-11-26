@@ -291,6 +291,14 @@ impl<S: SystemText> TextMeasurer for BrowserCompat<S> {
                 m.width = ceil64(m.width);
             }
         }
+        // Linux 上 Chromium 的 canvas 墨迹是整像素：FreeType slight hinting 只把纵向对齐到像素格，
+        // 字形盒再向外取整——横向左 floor、右 ceil，纵向（已对齐）四舍五入
+        if self.engine == Engine::Chromium && self.platform == Platform::Linux {
+            let b = m.bbox;
+            if b.right > b.left || b.bottom > b.top {
+                m.bbox = Rect::new(b.left.floor(), b.top.round(), b.right.ceil(), b.bottom.round());
+            }
+        }
         m
     }
 

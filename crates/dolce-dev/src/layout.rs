@@ -127,6 +127,8 @@ pub fn measure_check(args: &[String]) -> i32 {
     let mut by_op: HashMap<&'static str, (usize, usize, f64)> = HashMap::new();
     let mut shown = 0;
     let mut total = 0;
+    // 差最大的几条（前 N 条之外再列，超容差的病根多半在这里）
+    let mut worst: Vec<(f64, String)> = Vec::new();
     for l in lines(path) {
         let rec: MeasureRecord = serde_json::from_str(&l).unwrap_or_else(|e| panic!("{path} 读不进：{e}\n{}", &l[..l.len().min(200)]));
         total += 1;
@@ -147,9 +149,20 @@ pub fn measure_check(args: &[String]) -> i32 {
         e.1 += 1;
         let d = if a.len() == b.len() { a.iter().zip(&b).map(|(x, y)| (x - y).abs()).fold(0.0, f64::max) } else { f64::INFINITY };
         e.2 = e.2.max(d);
+        if d > 0.5 {
+            worst.push((d, format!("✗ 差 {d:.3} {}\n    TS:   {:?}\n    Rust: {:?}", rec.key().replace('\x01', "|"), a, b)));
+            worst.sort_by(|x, y| y.0.total_cmp(&x.0));
+            worst.truncate(show);
+        }
         if shown < show {
             shown += 1;
             println!("✗ {}\n    TS:   {:?}\n    Rust: {:?}", rec.key().replace('\x01', "|"), a, b);
+        }
+    }
+    if !worst.is_empty() {
+        println!("  — 差最大的（> 0.5）：");
+        for (_, w) in &worst {
+            println!("{w}");
         }
     }
     let mut ops: Vec<_> = by_op.into_iter().collect();
