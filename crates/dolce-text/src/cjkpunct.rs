@@ -62,7 +62,7 @@ pub fn pair_trim(prev: &str, next: &str) -> f64 {
     if prev.is_empty() || next.is_empty() {
         return 0.0;
     }
-    dolce_base::js::max(0.0, trim_right(prev) + trim_left(next) - 0.5)
+    dolce_model::base::js::max(0.0, trim_right(prev) + trim_left(next) - 0.5)
 }
 
 /// 行末那个字能悬挂 / 压缩出去的量（em）。
@@ -120,7 +120,7 @@ pub const PUNCT_PAIR_GAP: f64 = 0.1;
 fn trim_left_px(ch: &str, em: f64, slack: Option<&dyn Fn(&str) -> SlackLR>) -> f64 {
     let want = trim_left(ch) * em;
     match slack {
-        Some(s) => dolce_base::js::min(want, dolce_base::js::max(0.0, s(ch).left)),
+        Some(s) => dolce_model::base::js::min(want, dolce_model::base::js::max(0.0, s(ch).left)),
         None => want,
     }
 }
@@ -128,7 +128,7 @@ fn trim_left_px(ch: &str, em: f64, slack: Option<&dyn Fn(&str) -> SlackLR>) -> f
 fn trim_right_px(ch: &str, em: f64, slack: Option<&dyn Fn(&str) -> SlackLR>) -> f64 {
     let want = trim_right(ch) * em;
     match slack {
-        Some(s) => dolce_base::js::min(want, dolce_base::js::max(0.0, s(ch).right)),
+        Some(s) => dolce_model::base::js::min(want, dolce_model::base::js::max(0.0, s(ch).right)),
         None => want,
     }
 }
@@ -144,7 +144,7 @@ pub fn pair_trim_in(mode: CompressMode, prev: &str, next: &str) -> f64 {
 
 /// 同上，出像素且受墨迹封顶。挤压量的规则出口。
 pub fn pair_trim_px(mode: CompressMode, prev: &str, next: &str, em: f64, slack: Option<&dyn Fn(&str) -> SlackLR>) -> f64 {
-    use dolce_base::js::{max, min};
+    use dolce_model::base::js::{max, min};
     if mode == CompressMode::None || prev.is_empty() || next.is_empty() {
         return 0.0;
     }
@@ -164,7 +164,7 @@ pub fn compress_run(
     mode: CompressMode,
     slack: Option<&dyn Fn(&str) -> SlackLR>,
 ) -> (Vec<f64>, f64) {
-    use dolce_base::js::max;
+    use dolce_model::base::js::max;
     let mut xs = Vec::with_capacity(chars.len());
     let mut x = 0.0f64;
     let mut prev_pad = -1.0f64;

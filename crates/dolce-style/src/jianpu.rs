@@ -16,7 +16,7 @@ use crate::sheet::StyleSheet;
 use crate::themes::PPTX_PAGE;
 use crate::units::{resolve_length, LengthContext};
 use crate::value::{get_path, num};
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_text::MeasureCtx;
 use serde_json::Value;
 
@@ -228,7 +228,7 @@ mod tests {
         fn font_metrics(&self, _: &str, _: f64, _: dolce_text::Weight, _: dolce_text::FontStyle) -> dolce_text::FontMetrics {
             unreachable!()
         }
-        fn path_bounds(&self, _: &str) -> dolce_base::geom::Rect {
+        fn path_bounds(&self, _: &str) -> dolce_model::base::geom::Rect {
             unreachable!()
         }
     }

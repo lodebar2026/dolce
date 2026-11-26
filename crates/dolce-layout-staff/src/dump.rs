@@ -3,7 +3,7 @@
 
 use crate::model::*;
 use crate::pages::Placed;
-use dolce_base::fraction::Fraction;
+use dolce_model::base::fraction::Fraction;
 use dolce_text::Font;
 use serde_json::{json, Map, Value};
 

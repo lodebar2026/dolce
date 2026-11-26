@@ -1,25 +1,25 @@
-//! 由 `ScoreDoc` 拼演唱顺序 / 试听 / 断句输入 / `.jpwabc` 写出（`dolce_view::{playsong,playdoc,phrasesong,phrasedoc}`、
-//! `dolce_formats::jpw::input`）。门面 `score/play.ts`。推理出错抛 `Error`，`message` 是说明原文（同 `playOrderOf` 等）。
+//! 由 `ScoreDoc` 拼演唱顺序 / 试听 / 断句输入 / `.jpwabc` 写出（`dolce_model::view::{playsong,playdoc,phrasesong,phrasedoc}`、
+//! `dolce_model::formats::jpw::input`）。门面 `score/play.ts`。推理出错抛 `Error`，`message` 是说明原文（同 `playOrderOf` 等）。
 
 use dolce_model::{ScoreDoc, Song};
-use dolce_view::{phrasedoc, phraselines, phrasesong, playdoc, playsong, slots};
+use dolce_model::view::{phrasedoc, phraselines, phrasesong, playdoc, playsong, slots};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::model::{parse, to_json};
 
-fn view_err(e: dolce_play::PlayError) -> JsValue {
+fn view_err(e: dolce_model::play::PlayError) -> JsValue {
     super::js_sys_error(&e.0)
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SourceOut<'a> {
-    source: &'a dolce_play::timeline::PlaySource,
-    play_data: &'a dolce_view::playdata::PlayData,
+    source: &'a dolce_model::play::timeline::PlaySource,
+    play_data: &'a dolce_model::view::playdata::PlayData,
 }
 
-fn source_out(r: Option<(dolce_play::timeline::PlaySource, dolce_view::playdata::PlayData)>) -> String {
+fn source_out(r: Option<(dolce_model::play::timeline::PlaySource, dolce_model::view::playdata::PlayData)>) -> String {
     match r {
         Some((source, pd)) => to_json(&SourceOut { source: &source, play_data: &pd }),
         None => "null".into(),
@@ -50,7 +50,7 @@ pub fn model_play_data(doc: &str, song: usize, for_expanded: bool) -> Result<Str
 
 #[derive(Serialize)]
 struct PhraseOut {
-    part: dolce_play::phraseinput::PhrasePart,
+    part: dolce_model::play::phraseinput::PhrasePart,
     /// 拍平下标 → 元素 id
     ids: Vec<Option<dolce_model::ElementId>>,
 }
@@ -81,7 +81,7 @@ pub fn model_phrase_jump_measures(song: &str, part_index: usize) -> Result<Vec<u
 #[wasm_bindgen(js_name = modelEmitJpwabc)]
 pub fn model_emit_jpwabc(doc: &str, song: usize) -> Result<Option<String>, JsValue> {
     let d: ScoreDoc = parse("ScoreDoc", doc)?;
-    dolce_formats::jpw::input::emit_jpwabc(&d, song).map_err(|e| super::js_sys_error(&e))
+    dolce_model::formats::jpw::input::emit_jpwabc(&d, song).map_err(|e| super::js_sys_error(&e))
 }
 
 #[derive(serde::Deserialize)]
@@ -104,17 +104,17 @@ struct LineStartOut {
 #[wasm_bindgen(js_name = modelPhraseLineStarts)]
 pub fn model_phrase_line_starts(song: &str, part: &str, ids: &str, breaks: &str, opts: &str) -> Result<String, JsValue> {
     let s: Song = parse("Song", song)?;
-    let part: dolce_play::phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    let part: dolce_model::play::phraseinput::PhrasePart = parse("PhrasePart", part)?;
     let ids: Vec<Option<dolce_model::ElementId>> = parse("ids", ids)?;
-    let b: dolce_play::phrase::PhraseBreaks = parse("PhraseBreaks", breaks)?;
+    let b: dolce_model::play::phrase::PhraseBreaks = parse("PhraseBreaks", breaks)?;
     let o: ApplyBreakOptionsIn = parse("ApplyBreakOptions", opts)?;
-    let d = dolce_view::bookbreaks::ApplyBreakOptions::default();
-    let opt = dolce_view::bookbreaks::ApplyBreakOptions {
+    let d = dolce_model::view::bookbreaks::ApplyBreakOptions::default();
+    let opt = dolce_model::view::bookbreaks::ApplyBreakOptions {
         lines_per_page: o.lines_per_page.unwrap_or(d.lines_per_page),
         section_new_page: o.section_new_page.unwrap_or(d.section_new_page),
         use_mid_breaks: o.use_mid_breaks.unwrap_or(d.use_mid_breaks),
     };
-    let (starts, lines, pages) = dolce_view::bookbreaks::phrase_line_starts(&s, &part, &ids, &b, opt).map_err(view_err)?;
+    let (starts, lines, pages) = dolce_model::view::bookbreaks::phrase_line_starts(&s, &part, &ids, &b, opt).map_err(view_err)?;
     let starts: Vec<LineStartOut> = starts.into_iter().map(|l| LineStartOut { id: l.id, page: l.page }).collect();
     Ok(to_json(&serde_json::json!({ "starts": starts, "lines": lines, "pages": pages })))
 }
@@ -128,11 +128,11 @@ pub fn model_section_word_targets(song: &str, part: &str, ids: &str, rows: &str)
         note_ordinal: f64,
     }
     let s: Song = parse("Song", song)?;
-    let part: dolce_play::phraseinput::PhrasePart = parse("PhrasePart", part)?;
+    let part: dolce_model::play::phraseinput::PhrasePart = parse("PhrasePart", part)?;
     let ids: Vec<Option<dolce_model::ElementId>> = parse("ids", ids)?;
     let rows: Vec<Row> = parse("rows", rows)?;
     let rows: Vec<(String, f64)> = rows.into_iter().map(|r| (r.text, r.note_ordinal)).collect();
-    Ok(to_json(&dolce_view::bookbreaks::section_word_targets(&s, &part, &ids, &rows)))
+    Ok(to_json(&dolce_model::view::bookbreaks::section_word_targets(&s, &part, &ids, &rows)))
 }
 
 #[derive(serde::Deserialize)]
@@ -144,7 +144,7 @@ struct PlanIn {
     n: f64,
     /// 按乐句、有尺子时的断句参数（成书出厂值，门面从样式表取）
     #[serde(default)]
-    content: Option<dolce_play::phrase::PhraseOptions>,
+    content: Option<dolce_model::play::phrase::PhraseOptions>,
     #[serde(default)]
     mid: bool,
 }
@@ -152,7 +152,7 @@ struct PlanIn {
 #[derive(serde::Deserialize)]
 struct MeasuredIn {
     width: f64,
-    spans: Vec<(i64, dolce_play::phrase::Span)>,
+    spans: Vec<(i64, dolce_model::play::phrase::Span)>,
 }
 
 #[derive(Serialize)]

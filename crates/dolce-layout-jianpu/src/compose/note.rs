@@ -11,10 +11,10 @@ use dolce_engrave::jptremolo::{jp_tremolo_count, jp_tremolo_strokes};
 use dolce_engrave::prims::music_text;
 use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{high_dot_y, low_dot_y};
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_model::Accidental;
 use dolce_scene::{Identity, IdentityKind, Node, Role};
-use dolce_view::ast::{NoteElement, Ornament, Sound};
+use dolce_model::view::ast::{NoteElement, Ornament, Sound};
 
 use super::ctx::{digit_item, digit_origin, dot, eid, font, ident, octave_dot, rect, stroke, text, Ctx, ItemsKey};
 use crate::model::{Face, PlacedItem, PlacedText, TextKind};
@@ -104,7 +104,7 @@ fn paint_multi_rest(c: &Ctx, g: &mut Node, bars: f64, x: f64, baseline: f64) {
     for ex in [x - w / 2.0, x + w / 2.0 - t] {
         g.push(rect(c.ink, ex, baseline - h * 0.4, t, h * 0.8));
     }
-    let label: Vec<String> = dolce_base::js::num_to_string(bars).chars().map(String::from).collect();
+    let label: Vec<String> = dolce_model::base::js::num_to_string(bars).chars().map(String::from).collect();
     let step = c.digit_font.measure_text(c.env.mc, "0");
     let n = label.len() as f64;
     for (k, ch) in label.iter().enumerate() {
@@ -142,7 +142,7 @@ fn names(note: &NoteElement) -> Vec<&str> {
 /// 一个音符。`key` / `at`：在哪串 items 的第几个（查上方带用）。
 /// 画了主数字（TS `paintNote` 返回的 `num`）时返回这组在 `root` 里的下标——数字是组的头一个子节点，减时线记两端接哪两组。
 pub fn paint_note(c: &Ctx, root: &mut Node, it: &PlacedItem, key: ItemsKey, at: usize, x: f64, baseline: f64) -> Option<usize> {
-    let dolce_view::ast::MusicElement::Note(note) = &it.element else { return None };
+    let dolce_model::view::ast::MusicElement::Note(note) = &it.element else { return None };
     let m = c.m;
     let mut g = Node::group();
     g.add_class("entry");

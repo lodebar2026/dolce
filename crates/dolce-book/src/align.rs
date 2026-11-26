@@ -69,7 +69,7 @@ pub fn align_seq(gt: &str, dec: &[Option<String>], opt: &AlignOptions) -> Option
     let n = gt.len();
     let m = dec.len();
     let (nf, mf) = (n as f64, m as f64);
-    if n == 0 || m == 0 || (nf - mf).abs() > dolce_base::js::max(o.abs_tol, nf.min(mf) * o.rel_tol) {
+    if n == 0 || m == 0 || (nf - mf).abs() > dolce_model::base::js::max(o.abs_tol, nf.min(mf) * o.rel_tol) {
         return None;
     }
     // 页面那一项与 GT 第 i 个码元相等
@@ -111,7 +111,7 @@ pub fn align_seq(gt: &str, dec: &[Option<String>], opt: &AlignOptions) -> Option
             let a = dp[i - 1][j - 1] + score(i - 1, j - 1);
             let b = dp[i - 1][j] + o.gap;
             let c = dp[i][j - 1] + o.gap;
-            dp[i][j] = dolce_base::js::max(dolce_base::js::max(a, b), c);
+            dp[i][j] = dolce_model::base::js::max(dolce_model::base::js::max(a, b), c);
         }
     }
     let mut pairs = vec![];

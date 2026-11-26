@@ -11,7 +11,7 @@
 
 use crate::cascade::{compute_style, StyleContext, StyleLayer, StyleRule};
 use crate::sheet::StyleSheet;
-use dolce_base::js::num_to_string;
+use dolce_model::base::js::num_to_string;
 use dolce_model::pagemeta::STANDARD_PAPERS;
 use serde_json::{json, Map, Value};
 use std::sync::OnceLock;

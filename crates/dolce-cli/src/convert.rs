@@ -14,25 +14,25 @@ use dolce_export::fonts::{Face, FontBook};
 use dolce_export::pdf::DocInfo;
 use dolce_export::pptx::{pptx as build_pptx, FontMetric, PptxInput};
 use dolce_export::scene::{scene_pdf, ScenePage};
-use dolce_formats::abc::lex::Dialect as AbcDialect;
-use dolce_formats::abc::parse::parse_abc_family;
-use dolce_formats::capability::TargetFormat;
-use dolce_formats::fanqie::dialect::Dialect as FanqieDialect;
-use dolce_formats::fanqie::parse::{parse_fanqie, ParseOptions as FanqieParseOptions};
-use dolce_formats::jcxcodec::decode_jcx;
-use dolce_formats::jly::fromjly::parse_jly;
-use dolce_formats::jpw::file::JpwFile;
-use dolce_formats::jpw::read::jpw_to_score_doc;
-use dolce_formats::midi::import::{midi_to_score_doc, MidiGrid, MidiImportOptions};
-use dolce_formats::targets::{message_zh, OUT_FORMATS};
+use dolce_model::formats::abc::lex::Dialect as AbcDialect;
+use dolce_model::formats::abc::parse::parse_abc_family;
+use dolce_model::formats::capability::TargetFormat;
+use dolce_model::formats::fanqie::dialect::Dialect as FanqieDialect;
+use dolce_model::formats::fanqie::parse::{parse_fanqie, ParseOptions as FanqieParseOptions};
+use dolce_model::formats::jcxcodec::decode_jcx;
+use dolce_model::formats::jly::fromjly::parse_jly;
+use dolce_model::formats::jpw::file::JpwFile;
+use dolce_model::formats::jpw::read::jpw_to_score_doc;
+use dolce_model::formats::midi::import::{midi_to_score_doc, MidiGrid, MidiImportOptions};
+use dolce_model::formats::targets::{message_zh, OUT_FORMATS};
 use dolce_model::doc::ScoreDoc;
 use dolce_model::fromxml::{load_score_doc, LoadedXml};
 use dolce_model::toxml::{score_doc_to_music_xml, ToXmlOptions};
 use dolce_model::xmlsurface::Surface;
 use dolce_omr_source::pdf::PdfDoc;
 use dolce_omr_todoc::reflyrics::decode_lyrics_bytes;
-use dolce_play::midi::to_midi;
-use dolce_play::timeline::PlayOptions;
+use dolce_model::play::midi::to_midi;
+use dolce_model::play::timeline::PlayOptions;
 use dolce_scene::smufl::MetaData;
 use dolce_scene::svg::page_svg;
 use dolce_scene::{Node, Page, Shape};
@@ -48,7 +48,7 @@ use dolce_style::themes::{
 };
 use dolce_text::native::NativeText;
 use dolce_text::{BrowserCompat, Font, FontStyle, MeasureCtx, Weight};
-use dolce_view::playsong::{play_source_of, PlaySongOptions};
+use dolce_model::view::playsong::{play_source_of, PlaySongOptions};
 use serde_json::{json, Value};
 
 use dolce_text::assets::{BRAVURA_METADATA as BRAVURA_META, BRAVURA_OTF};
@@ -1169,7 +1169,7 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dolce_formats::midi::smf::parse_smf;
+    use dolce_model::formats::midi::smf::parse_smf;
 
     const SAMPLE_123: &str = "T:小星星\nK:1=C\nM:4/4\nQ:1/4=100\n1 1 5 5 | 6 6 5 - | 4 4 3 3 | 2 2 1 - |\nw:一 闪 一 闪 亮 晶 晶 满 天 都 是 小 星 星\n";
 

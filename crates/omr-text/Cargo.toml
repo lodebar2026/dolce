@@ -12,6 +12,6 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-dolce-base = { workspace = true }
+dolce-model = { workspace = true }
 serde.workspace = true
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }

@@ -1,11 +1,11 @@
 //! slur / tied 几何（SpanObj 静态方法，model.cpp:2582-2740）与「画在哪」（绘制与避让共用）。
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::accidental::{accidental_rise, AccidentalKind};
 use dolce_engrave::arc::{arc_clear_shift, arc_rise, calc_slur_points, jp_arc_y, ArcObstacle, SlurStyle};
 use dolce_engrave::stack::stack_top;
-use dolce_base::geom::Point;
+use dolce_model::base::geom::Point;
 
 use super::*;
 use crate::jprow::main_row;

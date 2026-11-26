@@ -30,7 +30,7 @@ struct Rec {
 }
 
 fn adv_key(role: &str, text: &str, size: f64) -> String {
-    format!("a\u{1}{role}\u{1}{text}\u{1}{}", dolce_base::js::num_to_string(size))
+    format!("a\u{1}{role}\u{1}{text}\u{1}{}", dolce_model::base::js::num_to_string(size))
 }
 fn ink_key(role: &str, sample: &str) -> String {
     format!("i\u{1}{role}\u{1}{sample}")

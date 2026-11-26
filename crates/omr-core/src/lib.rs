@@ -9,7 +9,7 @@
 
 pub mod geom;
 pub mod image;
-pub use dolce_base::js;
+pub use dolce_model::base::js;
 pub mod pixel;
 pub mod progress;
 pub mod stage;

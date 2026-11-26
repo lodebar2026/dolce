@@ -1,6 +1,6 @@
 //! 连音（三连音等）的画法（`engrave/tuplet.ts`）：括号 / 两段弧 / 只印数字。数字是 SMuFL tuplet 字形，按墨迹居中。
 
-use dolce_base::geom::{Point, Rect};
+use dolce_model::base::geom::{Point, Rect};
 use dolce_scene::build::update;
 use dolce_scene::Node;
 use dolce_text::Font;
@@ -47,7 +47,7 @@ pub struct TupletStyle {
 /// 连音数字 → SMuFL 字形串（`tuplet0` 起连续编码）。
 pub fn tuplet_digits(n: f64) -> String {
     let zero = glyph("tuplet0").chars().next().unwrap() as i64;
-    dolce_base::js::num_to_string(n)
+    dolce_model::base::js::num_to_string(n)
         .encode_utf16()
         .filter_map(|c| char::from_u32((zero + c as i64 - 48) as u32))
         .collect()
@@ -75,14 +75,14 @@ impl TupletGlyph {
         let half_gap = ink.width() / 2.0 + font.size * style.gap_pad.unwrap_or(0.15);
         let cx = (p0.x + p1.x) / 2.0;
         let mut cy = (p0.y + p1.y) / 2.0;
-        let mut line_top = dolce_base::js::min(p0.y, p1.y);
+        let mut line_top = dolce_model::base::js::min(p0.y, p1.y);
         let mut items = Vec::new();
         match style.kind {
             TupletKind::Bracket => {
                 let lw = style.line_width.unwrap_or(1.0);
                 let foot = style.foot.unwrap_or(0.0);
                 let k = if p1.x != p0.x { (p1.y - p0.y) / (p1.x - p0.x) } else { 0.0 };
-                let dx = dolce_base::js::max(0.0, (p1.x - p0.x) / 2.0 - half_gap);
+                let dx = dolce_model::base::js::max(0.0, (p1.x - p0.x) / 2.0 - half_gap);
                 let mut path = Node::path();
                 path.add_class("tuplet-line");
                 let p = path.path_mut();

@@ -4,10 +4,10 @@ use dolce_engrave::chord::{chord_text_segs, harmony_ink, harmony_width};
 use dolce_engrave::sectionword::section_word_run;
 use dolce_engrave::spacing::AccidentalSide;
 use dolce_engrave::Env;
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_text::syllable::syllable_run;
 use dolce_text::{CompressMode, Font};
-use dolce_view::ast::LyricSyllable;
+use dolce_model::view::ast::LyricSyllable;
 
 use crate::grid::{key_label_size, note_font, JianpuGrid};
 use crate::model::{InkBox, InkTextRole, LyricRun};
@@ -83,8 +83,8 @@ impl<'a> Ink<'a> {
             width: run.width,
             lead: run.lead,
             body: run.body,
-            head_blank: if first.is_empty() { 0.0 } else { dolce_base::js::max(0.0, pen0 + f.char_bound(mc, &first).left) },
-            tail_blank: if last.is_empty() { 0.0 } else { dolce_base::js::max(0.0, run.width - (upto + f.char_bound(mc, &last).right)) },
+            head_blank: if first.is_empty() { 0.0 } else { dolce_model::base::js::max(0.0, pen0 + f.char_bound(mc, &first).left) },
+            tail_blank: if last.is_empty() { 0.0 } else { dolce_model::base::js::max(0.0, run.width - (upto + f.char_bound(mc, &last).right)) },
             text,
         }
     }
@@ -120,10 +120,10 @@ impl<'a> Ink<'a> {
                 None if i == 0 => 0.0,
                 None => f.measure_text(mc, &chars[..i].concat()),
             };
-            ink.left = dolce_base::js::min(ink.left, x + b.left);
-            ink.right = dolce_base::js::max(ink.right, x + b.right);
-            ink.top = dolce_base::js::min(ink.top, b.top);
-            ink.bottom = dolce_base::js::max(ink.bottom, b.bottom);
+            ink.left = dolce_model::base::js::min(ink.left, x + b.left);
+            ink.right = dolce_model::base::js::max(ink.right, x + b.right);
+            ink.top = dolce_model::base::js::min(ink.top, b.top);
+            ink.bottom = dolce_model::base::js::max(ink.bottom, b.bottom);
         }
         (width, xs, if chars.is_empty() { Rect::new(0.0, 0.0, 0.0, 0.0) } else { ink })
     }

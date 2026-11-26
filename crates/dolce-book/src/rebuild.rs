@@ -9,12 +9,12 @@
 
 use crate::draw::{DrawItem, DrawPage, PageMeta, PageSong};
 use crate::measure::BookMeasure;
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_engrave::Env;
 use dolce_model::doc::{ScoreDoc, Song};
-use dolce_play::applybreaks::{self as ab, CapacityOptions, LayoutMode};
-use dolce_play::phrase::{self, FitMetric, PhraseBreaks, PhraseOptions, Span};
-use dolce_play::phraseinput::PhrasePart;
+use dolce_model::play::applybreaks::{self as ab, CapacityOptions, LayoutMode};
+use dolce_model::play::phrase::{self, FitMetric, PhraseBreaks, PhraseOptions, Span};
+use dolce_model::play::phraseinput::PhrasePart;
 use crate::parts::{self, AnnotationOptions, FrontPageSpec, IndexItem, KeyMeterSpec, PageFrameOptions, TocItem};
 use crate::scenedraw;
 use crate::template::{BookRegionEnv, KeyMeterComponent};
@@ -301,7 +301,7 @@ impl Ctx<'_> {
         let load_score = || a_book_doc(&s.xml);
         let sdoc_song = sdoc.songs.first().ok_or("没有曲子")?;
         let mut cells = a_cells(load_score()?, st, self.env)?;
-        let (input, ids) = dolce_view::phrasedoc::phrase_part_of_doc(sdoc_song, 0, false).map_err(|e| format!("{e:?}"))?;
+        let (input, ids) = dolce_model::view::phrasedoc::phrase_part_of_doc(sdoc_song, 0, false).map_err(|e| format!("{e:?}"))?;
         let phrase_on = truthy(self.lay("phrase"));
         let mid_opt = self.lay("phraseMidBreak").as_bool();
         let mid = mid_opt.unwrap_or(true);
@@ -326,7 +326,7 @@ impl Ctx<'_> {
                 let ptm = opt_num(st, &["layout", "phraseTargetMeas"]).unwrap_or(f64::NAN);
                 let target_meas = if ptm > 0.0 { ptm } else { phrase::target_meas_for_cells(&input, cells) };
                 target_used = target_meas;
-                let jump = dolce_view::phrasedoc::phrase_jump_measures(sdoc_song, 0);
+                let jump = dolce_model::view::phrasedoc::phrase_jump_measures(sdoc_song, 0);
                 jump_seen = jump.clone();
                 let fit = fit_for_ids(a_spans(a_book_doc(&s.xml)?, st, self.env)?, &ids);
                 let lay = |k: &str| opt_num(st, &["layout", k]);
@@ -392,8 +392,8 @@ impl Ctx<'_> {
                         })
                     })
                     .collect();
-                let d = dolce_view::bookbreaks::ApplyBreakOptions::default();
-                let abo = dolce_view::bookbreaks::ApplyBreakOptions {
+                let d = dolce_model::view::bookbreaks::ApplyBreakOptions::default();
+                let abo = dolce_model::view::bookbreaks::ApplyBreakOptions {
                     lines_per_page: lay("linesPerPage").unwrap_or(d.lines_per_page),
                     section_new_page: d.section_new_page,
                     use_mid_breaks: mid_opt.unwrap_or(d.use_mid_breaks),
@@ -459,7 +459,7 @@ fn put_section_words(song: &mut Song, input: &PhrasePart, ids: &[Option<dolce_mo
     if rows.is_empty() {
         return;
     }
-    let got = dolce_view::bookbreaks::section_word_targets(song, input, ids, rows);
+    let got = dolce_model::view::bookbreaks::section_word_targets(song, input, ids, rows);
     let by: HashMap<_, _> = got.into_iter().collect();
     if let Some(p) = song.parts.first_mut() {
         for m in &mut p.measures {
@@ -476,12 +476,12 @@ fn put_section_words(song: &mut Song, input: &PhrasePart, ids: &[Option<dolce_mo
 
 /// `applyPhraseBreaksToDoc`：断点换成行首写进文档（`cuts` 不带、`capacityCuts` 不带，同 `phraseBookIn`）
 fn apply_phrase_breaks_to_doc(
-    song: &mut Song, input: &PhrasePart, ids: &[Option<dolce_model::ElementId>], brk: &PhraseBreaks, opt: dolce_view::bookbreaks::ApplyBreakOptions,
+    song: &mut Song, input: &PhrasePart, ids: &[Option<dolce_model::ElementId>], brk: &PhraseBreaks, opt: dolce_model::view::bookbreaks::ApplyBreakOptions,
 ) -> Result<f64, String> {
     let mut b = brk.clone();
     b.cuts.clear();
     b.capacity_cuts.clear();
-    let (starts, lines, _pages) = dolce_view::bookbreaks::phrase_line_starts(song, input, ids, &b, opt).map_err(|e| format!("{e:?}"))?;
+    let (starts, lines, _pages) = dolce_model::view::bookbreaks::phrase_line_starts(song, input, ids, &b, opt).map_err(|e| format!("{e:?}"))?;
     use dolce_model::breaks::{apply_breaks, ApplyBreaksOptions, MidMode, PageMode};
     apply_breaks(song, &starts, &ApplyBreaksOptions { mid_in_any_part: false, mid: MidMode::Inline, pages: PageMode::Write });
     Ok(lines)
@@ -688,7 +688,7 @@ impl<'a> Book<'a> {
 
     /// 目录条目（`tocItems`）：按曲目表生成，原书目录只提供分类标题落在哪个曲号之前
     fn toc_items(&self, page_of_song: &IndexMap<String, i64>) -> Vec<Value> {
-        let norm = |t: &str| t.chars().filter(|c| !(dolce_base::js::is_space(*c) || "（）()".contains(*c))).collect::<String>();
+        let norm = |t: &str| t.chars().filter(|c| !(dolce_model::base::js::is_space(*c) || "（）()".contains(*c))).collect::<String>();
         let cat_of: HashMap<&str, Option<&str>> = self.input.songs.iter().map(|s| (s.id.as_str(), s.category.as_deref())).collect();
         let sorted = self.sorted_blocks();
         let mut first_of_cat: HashMap<String, String> = HashMap::new();

@@ -96,12 +96,13 @@ function buildOmr() {
 }
 
 /** 模型 / 格式 / 排版的 wasm：dolce_wasm 与按需载入的 dolce_jcx_wasm、dolce_export_wasm 三份（不用 SIMD 特性），共用自己的 target 目录；
- *  只看 dolce-*、它引的那几个 omr-*（识别结果建模 omr-todoc 及其依赖）与锁文件、本脚本的修改时间。`--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
-/** dolce-wasm 依赖的识别 crate（目录名） */
+ *  只看非识别 crate（除命令行与开发工具）、它引的那几个识别 crate（识别结果建模 omr-todoc 及其依赖）与锁文件、本脚本的修改时间。`--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
+/** dolce-wasm 依赖的识别 crate（目录名）；不进 wasm 的非识别 crate */
 const DOLCE_OMR_DEPS = ["omr-todoc", "omr-sheet", "omr-text", "omr-core"];
+const DOLCE_SKIP = ["dolce-cli", "dolce-dev", "cli", "dev"];
 
 export function buildDolce() {
-  const srcTime = Math.max(newest(crates, 0, (n) => n.startsWith("dolce-") || DOLCE_OMR_DEPS.includes(n)), statSync(join(crates, "Cargo.lock")).mtimeMs, statSync(fileURLToPath(import.meta.url)).mtimeMs);
+  const srcTime = Math.max(newest(crates, 0, (n) => (n.startsWith("omr") ? DOLCE_OMR_DEPS.includes(n) : !DOLCE_SKIP.includes(n))), statSync(join(crates, "Cargo.lock")).mtimeMs, statSync(fileURLToPath(import.meta.url)).mtimeMs);
   const stamps = [DOLCE_NAME, JCX_NAME, EXPORT_NAME].map((n) => join(DOLCE_OUT, `${n}_bg.wasm`));
   if (stamps.every((f) => existsSync(f) && statSync(f).mtimeMs > srcTime)) return;
   checkBindgen();

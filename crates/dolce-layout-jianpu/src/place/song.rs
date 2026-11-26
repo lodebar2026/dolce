@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use dolce_view::ast::{LayerRole, Meter, MusicElement};
+use dolce_model::view::ast::{LayerRole, Meter, MusicElement};
 
 use crate::grid::{content_width, JianpuGrid};
 use crate::ink::Ink;
@@ -508,12 +508,12 @@ fn move_trailing_section_words(pages: &mut [Vec<LGroup>]) {
     }
 }
 
-fn sung(l: &dolce_view::ast::LyricLine) -> bool {
+fn sung(l: &dolce_model::view::ast::LyricLine) -> bool {
     l.syllables.iter().any(|x| !x.text.is_empty())
 }
 
 /// 首字自带印刷段号（`1.圣`）
-fn printed(l: &dolce_view::ast::LyricLine) -> bool {
+fn printed(l: &dolce_model::view::ast::LyricLine) -> bool {
     let t = l.syllables.iter().find(|x| !x.text.is_empty()).map_or("", |x| x.text.as_str());
     let digits = t.chars().take_while(|c| c.is_ascii_digit()).count();
     digits > 0 && t[digits..].starts_with('.')

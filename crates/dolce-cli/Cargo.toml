@@ -27,11 +27,8 @@ dolce-omr-staff = { workspace = true }
 dolce-omr-todoc = { workspace = true }
 dolce-export = { workspace = true, features = ["system", "book"] }
 dolce-model = { workspace = true }
-dolce-formats = { workspace = true }
-dolce-play = { workspace = true }
 dolce-scene = { workspace = true }
 dolce-style = { workspace = true }
-dolce-view = { workspace = true }
 dolce-session = { workspace = true }
 dolce-engrave = { workspace = true }
 dolce-text = { workspace = true, features = ["native"] }

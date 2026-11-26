@@ -12,11 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-dolce-base = { workspace = true }
 dolce-model = { workspace = true }
-dolce-play = { workspace = true }
-dolce-formats = { workspace = true }
-dolce-view = { workspace = true }
 dolce-omr-core = { workspace = true }
 dolce-omr-sheet = { workspace = true }
 dolce-omr-text = { workspace = true }

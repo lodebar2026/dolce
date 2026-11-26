@@ -6,7 +6,7 @@
 
 use std::cell::RefCell;
 
-use dolce_base::geom::Matrix33;
+use dolce_model::base::geom::Matrix33;
 use dolce_layout_staff::model::{StaffLayout, SysId};
 use dolce_layout_staff::pages::format_mixed_score;
 use dolce_layout_staff::read;
@@ -314,7 +314,7 @@ fn flow(frames: &mut [Frame], content_height: f64) {
     let mut ypos = content_height * 2.0;
     let mut last_mrg = 0.0;
     for frm in frames {
-        let mrg = dolce_base::js::max(last_mrg, FRAME_MARGIN);
+        let mrg = dolce_model::base::js::max(last_mrg, FRAME_MARGIN);
         let mut np = frm.force_new_page;
         if ypos + frm.height + mrg > content_height {
             np = true;
@@ -596,7 +596,7 @@ impl TocEnv<'_> {
         let to = eval_num(call.args.get(1), &e0, None)?.expect("有表达式");
         let (role, size, y) = (call.role, call.size, call.y);
         // 贴着左边最靠右的那段字；减法顺序照原式
-        let space = call.row.iter().filter(|p| p.x < to).map(|p| to - self.measure_text(&p.role, &p.text, p.size) - p.x).fold(to, dolce_base::js::min);
+        let space = call.row.iter().filter(|p| p.x < to).map(|p| to - self.measure_text(&p.role, &p.text, p.size) - p.x).fold(to, dolce_model::base::js::min);
         let mut dots = String::new();
         let mut j = 0.0;
         while j < (space * 5.0) / size {

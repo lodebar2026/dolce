@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js::{self, NumKey};
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js::{self, NumKey};
 use dolce_model::doc::Mark as DocMark;
 
 use super::*;

@@ -150,7 +150,7 @@ impl DrawPage {
 
 /// `Math.round(v * 100) / 100` 再按 JS 口径转串
 fn round2_str(v: f64) -> String {
-    dolce_base::js::num_to_string((v * 100.0 + 0.5).floor() / 100.0)
+    dolce_model::base::js::num_to_string((v * 100.0 + 0.5).floor() / 100.0)
 }
 
 /// 整页横向平移（对开页镜像；照 `shiftDrawPageX`）：路径 `d` 里的数按下标奇偶加（x/y 交替）。
@@ -177,7 +177,7 @@ pub fn shift_draw_page_x(page: &mut DrawPage, dx: f64) {
                 // /-?\d*\.?\d+/g
                 let mut i = 0usize;
                 p.d = replace_numbers(&p.d, |m| {
-                    let out = if i.is_multiple_of(2) { round2_str(dolce_base::js::number(m) + dx) } else { m.to_string() };
+                    let out = if i.is_multiple_of(2) { round2_str(dolce_model::base::js::number(m) + dx) } else { m.to_string() };
                     i += 1;
                     out
                 });

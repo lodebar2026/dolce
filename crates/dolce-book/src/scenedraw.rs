@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use dolce_base::js::{self, NumKey};
+use dolce_model::base::js::{self, NumKey};
 use dolce_layout_jianpu::compose::{layout_jianpu, JianpuConfig, JianpuLayout};
 use dolce_layout_jianpu::grid::GridPage;
 use dolce_layout_jianpu::place::reflow::NaturalSpan;

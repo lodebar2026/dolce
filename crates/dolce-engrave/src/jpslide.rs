@@ -26,7 +26,7 @@ pub fn jp_slide_arrow(up: bool, h: f64) -> JpSlideArrow {
     let back = (y0 - y1).atan2(x0 - x1);
     let arm = |s: f64| [x1 + h * ARM * (back + s).cos(), y1 + h * ARM * (back + s).sin()];
     let arms = [arm(-spread), arm(spread)];
-    let right = dolce_base::js::max(dolce_base::js::max(x1, arms[0][0]), arms[1][0]);
+    let right = dolce_model::base::js::max(dolce_model::base::js::max(x1, arms[0][0]), arms[1][0]);
     JpSlideArrow { x0, y0, x1, y1, arms, line_width, width: right + line_width / 2.0 }
 }
 

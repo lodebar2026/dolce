@@ -29,8 +29,8 @@ pub use part::*;
 pub use sys::*;
 pub use text::*;
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_model::doc::Song;
 use dolce_model::xmlsurface::Surface;
 use dolce_scene::build::Env;

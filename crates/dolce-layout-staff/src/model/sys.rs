@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::arc::calc_slur_points;
-use dolce_base::geom::Point;
+use dolce_model::base::geom::Point;
 
 use super::*;
 use crate::jprow::grace_block_top;

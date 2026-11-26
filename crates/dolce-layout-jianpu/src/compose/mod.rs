@@ -19,14 +19,14 @@ use std::collections::HashMap;
 use dolce_engrave::Env;
 use dolce_model::breaks::{apply_breaks, ApplyBreaksOptions, LineStart, MidMode, PageMode};
 use dolce_model::ScoreDoc;
-use dolce_play::playorder::PlayItem;
+use dolce_model::play::playorder::PlayItem;
 use dolce_scene::build::update;
 use dolce_scene::Node;
 use dolce_style::jianpustyle::JianpuStyle;
 use dolce_style::ss::Region;
-use dolce_view::playdata::PlayData;
-use dolce_view::playsong::{play_data_of_song, PlaySongOptions};
-use dolce_view::slots::doc_view;
+use dolce_model::view::playdata::PlayData;
+use dolce_model::view::playsong::{play_data_of_song, PlaySongOptions};
+use dolce_model::view::slots::doc_view;
 
 use crate::grid::{apply_doc_options, content_width, grid_of, note_font, GridPage, JianpuGrid};
 use crate::ink::Ink;
@@ -311,7 +311,7 @@ fn line_starts_of(placed: &PlacedScore) -> Vec<i64> {
     for page in &placed.pages {
         for g in &page.groups {
             let Some(v) = g.voices.first() else { continue };
-            if let Some(id) = v.items.iter().find(|x| matches!(x.element, dolce_view::ast::MusicElement::Note(_)) && x.id.is_some()).and_then(|x| x.id) {
+            if let Some(id) = v.items.iter().find(|x| matches!(x.element, dolce_model::view::ast::MusicElement::Note(_)) && x.id.is_some()).and_then(|x| x.id) {
                 out.push(id);
             }
         }

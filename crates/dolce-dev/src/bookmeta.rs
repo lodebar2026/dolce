@@ -95,7 +95,7 @@ fn page_case(spec: &PageSpec, ov: CharOverride, note_h: f64) -> Value {
         "annGroups": groups,
         "stories": stories,
         "indexLines": if is_index {
-            Value::Array(spec.text_lines.iter().map(|l| to_json(&meta::parse_index_line(dolce_base::js::trim(&meta::run_text(Some(l), ov))))).collect())
+            Value::Array(spec.text_lines.iter().map(|l| to_json(&meta::parse_index_line(dolce_model::base::js::trim(&meta::run_text(Some(l), ov))))).collect())
         } else {
             Value::Null
         },

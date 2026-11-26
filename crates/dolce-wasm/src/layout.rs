@@ -10,7 +10,7 @@
 use std::cell::RefCell;
 
 use dolce_engrave::Env;
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_model::doc::ScoreDoc;
 use dolce_session::layout::{self, JianpuRequest, Laid, StaffRequest};
 use dolce_scene::smufl::MetaData;

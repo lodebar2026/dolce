@@ -10,7 +10,7 @@ use crate::keys::{keys_of_block, lookup, FLOW_KEYS, TOC_KEYS};
 use crate::sheet::is_known_role;
 use crate::template::FILTER_NAMES;
 use crate::value::{js_json, js_to_string, json_quote, num, to_uint32};
-use dolce_base::js::{is_space, num_to_string, number};
+use dolce_model::base::js::{is_space, num_to_string, number};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -1048,7 +1048,7 @@ pub fn parse_interp(s: &str, tok: Option<(u32, u32)>) -> R<Vec<TextPart>> {
                 parts.push(TextPart::Lit(std::mem::take(&mut lit)));
             }
             let inner: String = c[i + 1..end].iter().collect();
-            let mut segs = inner.split('|').map(|x| dolce_base::js::trim(x).to_string());
+            let mut segs = inner.split('|').map(|x| dolce_model::base::js::trim(x).to_string());
             let path = segs.next().unwrap_or_default();
             let mut filters = vec![];
             for f in segs.filter(|f| !f.is_empty()) {

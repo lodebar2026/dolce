@@ -1,4 +1,4 @@
-//! 按参照歌词生成段落标记与 `%%sing`（[`dolce_view::singfit`]）接上投影档排版：分遍要知道每段歌词在投影片上占几行。
+//! 按参照歌词生成段落标记与 `%%sing`（[`dolce_model::view::singfit`]）接上投影档排版：分遍要知道每段歌词在投影片上占几行。
 //! 网页（wasm）、桌面（Tauri 排版线程）、命令行（系统量字）三处都走这里。
 
 use dolce_engrave::Env;
@@ -6,7 +6,7 @@ use dolce_layout_jianpu::compose::layout_jianpu;
 use dolce_model::doc::ScoreDoc;
 use dolce_style::cascade::ctx;
 use dolce_style::themes::{compute_style_for_paper, theme, ThemeId};
-use dolce_view::singfit::{fit_sing, SingFit};
+use dolce_model::view::singfit::{fit_sing, SingFit};
 use serde_json::Value;
 
 use crate::layout::{jianpu_config, JianpuRequest};
@@ -30,7 +30,7 @@ pub fn projection_rows(doc: &ScoreDoc, song: usize, req: &JianpuRequest, env: &E
     Some(r.placed.pages.iter().filter(|p| p.song == song && !p.title_page).map(|p| p.groups.len()).collect())
 }
 
-/// 拿参照歌词给第 `song` 首生成段落标记与逐遍演唱顺序（不改 `doc`；写回用 [`dolce_view::singfit::apply_sing_fit`]）
+/// 拿参照歌词给第 `song` 首生成段落标记与逐遍演唱顺序（不改 `doc`；写回用 [`dolce_model::view::singfit::apply_sing_fit`]）
 pub fn fit_sing_doc(doc: &ScoreDoc, song: usize, lyrics: &str, req: &JianpuRequest, env: &Env) -> SingFit {
     fit_sing(doc, song, lyrics, &|d: &ScoreDoc| projection_rows(d, song, req, env))
 }

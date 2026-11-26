@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use dolce_base::js::NumKey;
+use dolce_model::base::js::NumKey;
 use dolce_engrave::accidental::ACCIDENTAL_CLEARANCE;
 use dolce_engrave::barline::{BarlineGlyph, BarlineStyle};
 use dolce_engrave::grace::grace_advance;
@@ -12,8 +12,8 @@ use dolce_engrave::jpslide::{jp_slide_arrow, jp_slide_of};
 use dolce_engrave::jptremolo::{jp_tremolo_count, jp_tremolo_strokes};
 use dolce_engrave::syllable::latin_word_break;
 use dolce_engrave::timesig::time_sig_width;
-use dolce_base::geom::Rect;
-use dolce_view::ast::{BarlineElement, Meter, MusicElement, Sound};
+use dolce_model::base::geom::Rect;
+use dolce_model::view::ast::{BarlineElement, Meter, MusicElement, Sound};
 
 use crate::barspec::fanqie_barline_spec;
 use crate::grid::{barline_span, jianpu_grace_metrics, jianpu_grace_notes, JianpuGrid};
@@ -189,7 +189,7 @@ fn columns_of(lines: &[SpacedLine], m: &JianpuGrid, ink: &Ink) -> Vec<Column> {
         let mut seen: HashMap<(NumKey, NumKey), usize> = HashMap::new();
         for (i, it) in l.items.iter().enumerate() {
             let is_bar = matches!(it.element, MusicElement::Barline(_));
-            let beat = if is_bar { f64::INFINITY } else { dolce_base::js::round(it.beat * 1e4) / 1e4 };
+            let beat = if is_bar { f64::INFINITY } else { dolce_model::base::js::round(it.beat * 1e4) / 1e4 };
             let base = (NumKey::new(bar), NumKey::new(beat));
             let occ = *seen.get(&base).unwrap_or(&0);
             seen.insert(base, occ + 1);
@@ -222,7 +222,7 @@ fn columns_of(lines: &[SpacedLine], m: &JianpuGrid, ink: &Ink) -> Vec<Column> {
         }
     }
     let mut order: Vec<usize> = (0..entries.len()).collect();
-    dolce_base::js::sort_by(&mut order, |&a, &b| {
+    dolce_model::base::js::sort_by(&mut order, |&a, &b| {
         let (a, b) = (&entries[a], &entries[b]);
         or_else(or_else(a.bar - b.bar, a.beat - b.beat), a.occ - b.occ)
     });
@@ -349,7 +349,7 @@ fn justify(cols: &[Column], xs: &mut [f64], extra: f64, even: bool) {
         xs[n] += moved;
         return;
     }
-    dolce_base::js::sort_by(&mut infos, |p, q| {
+    dolce_model::base::js::sort_by(&mut infos, |p, q| {
         let diff = p.dist * q.rate - q.dist * p.rate;
         if diff < 0.0 {
             -1.0
@@ -686,7 +686,7 @@ impl BarEndRoom {
         let bar_x = x_of(k.bar);
         let mut right_most = f64::NEG_INFINITY;
         let mut chords = preview_chords(items, &x_of, ink);
-        dolce_base::js::sort_by(&mut chords, |a, b| a.x0 - b.x0);
+        dolce_model::base::js::sort_by(&mut chords, |a, b| a.x0 - b.x0);
         for i in 1..chords.len() {
             let need = chords[i - 1].x1 + self.size * 0.28 - chords[i].x0;
             if need <= 0.0 {

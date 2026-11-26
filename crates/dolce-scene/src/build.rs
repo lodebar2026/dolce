@@ -14,7 +14,7 @@
 //!
 //! 盒只有 SMuFL 字会取不到（码位不在元数据里，TS 抛错）：[`bound`] 给 `None`，[`update`] 碰上就报 [`SceneError`]。
 
-use dolce_base::geom::{colors, Matrix33, Point, Rect};
+use dolce_model::base::geom::{colors, Matrix33, Point, Rect};
 use crate::smufl::MetaData;
 use dolce_text::{syllable::syllable_run, CompressMode, Font, MeasureCtx};
 
@@ -220,7 +220,7 @@ pub fn bound(n: &Node, env: &Env) -> Option<Rect> {
             }
             if t.ink_bound {
                 let b = t.font.char_bound(env.mc, &t.text);
-                return Some(Rect::new(0.0, dolce_base::js::min(b.top, 0.0), n.w, dolce_base::js::max(b.bottom, 0.0)));
+                return Some(Rect::new(0.0, dolce_model::base::js::min(b.top, 0.0), n.w, dolce_model::base::js::max(b.bottom, 0.0)));
             }
             let fm = t.font.metrics(env.mc);
             Some(Rect::new(0.0, fm.ascent, n.w, fm.descent))

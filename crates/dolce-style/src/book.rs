@@ -118,7 +118,7 @@ pub fn book_jianpu_style(s: &Value, mc: &MeasureCtx) -> JianpuStyle {
 
 /// JS `Math.max`（有 NaN 即 NaN）。
 fn js_max(a: f64, b: f64) -> f64 {
-    dolce_base::js::max(a, b)
+    dolce_model::base::js::max(a, b)
 }
 
 /// 角色引用的字体族；缺 = `serif`。

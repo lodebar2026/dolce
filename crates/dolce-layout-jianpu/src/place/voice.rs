@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use dolce_engrave::accidental::ACCIDENTAL_CLEARANCE;
 use dolce_engrave::beatgroup::{beat_group_index, beat_group_size, pickup_offset};
 use dolce_engrave::grace::grace_advance;
-use dolce_view::ast::{BarlineElement, BarlineType, LyricLine, MarkType, Meter, MusicElement, ScoreLine};
-use dolce_view::phraselines::element_quarters;
+use dolce_model::view::ast::{BarlineElement, BarlineType, LyricLine, MarkType, Meter, MusicElement, ScoreLine};
+use dolce_model::view::phraselines::element_quarters;
 
 use crate::grid::{jianpu_grace_metrics, jianpu_grace_notes, JianpuGrid};
 use crate::model::{PlacedItem, PlacedUnderline, Syl};
@@ -16,7 +16,7 @@ use crate::util::max;
 /// 并排块右花括号的字形宽（`BRACE_GLYPHS.splitRight.box[2]`）
 pub const SPLIT_BRACE_W: f64 = 9.61;
 
-const ZERO_SPAN: dolce_base::SourceSpan = dolce_base::SourceSpan { line: 0, column: 0, offset: 0, length: 0 };
+const ZERO_SPAN: dolce_model::base::SourceSpan = dolce_model::base::SourceSpan { line: 0, column: 0, offset: 0, length: 0 };
 
 /// 音符/增时线的时值（拍）
 pub fn element_beats(el: &MusicElement) -> f64 {
@@ -223,7 +223,7 @@ pub fn layout_voice_line(voice: &ScoreLine, ids: &[Option<i64>], m: &JianpuGrid,
     let mut split_end: HashSet<usize> = HashSet::new();
     for (i, el) in els.iter().enumerate() {
         let MusicElement::InlineLayer(l) = el else { continue };
-        if l.role != dolce_view::ast::LayerRole::Voice {
+        if l.role != dolce_model::view::ast::LayerRole::Voice {
             continue;
         }
         split_at.push(i as i64);
@@ -440,7 +440,7 @@ pub fn compute_underlines(voice: &ScoreLine, items: &[PlacedItem], m: &JianpuGri
         match el {
             MusicElement::Note(_) | MusicElement::Sustain(_) | MusicElement::Barline(_) => seen += 1,
             MusicElement::BeatBoundary(b) => {
-                if b.behavior == dolce_view::ast::Behavior::Join {
+                if b.behavior == dolce_model::view::ast::Behavior::Join {
                     force_join.insert(seen - 1);
                 } else {
                     force_split.insert(seen - 1);

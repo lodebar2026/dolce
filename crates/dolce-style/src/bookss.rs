@@ -12,7 +12,7 @@ use crate::keys::{KeyDef, KeyKind, BREAK_KEYS, FLOW_KEYS, JIANPU_KEYS, TOC_KEYS}
 use crate::sheet::{is_style_role, StyleSheet};
 use crate::units::is_js_decimal;
 use crate::value::{json_quote, num, to_uint32};
-use dolce_base::js::{num_to_string, number};
+use dolce_model::base::js::{num_to_string, number};
 use serde_json::{Map, Value};
 
 type R<T> = Result<T, String>;

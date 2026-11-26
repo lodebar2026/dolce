@@ -19,7 +19,7 @@ use dolce_engrave::timesig::{TimeSigGlyph, TimeSigStyle};
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
 use dolce_engrave::upperband::BandItem;
 use dolce_engrave::Env;
-use dolce_base::geom::{Point, Rect};
+use dolce_model::base::geom::{Point, Rect};
 use dolce_scene::build::{freeze, update};
 use dolce_scene::Node;
 use dolce_scene::smufl::MetaData;

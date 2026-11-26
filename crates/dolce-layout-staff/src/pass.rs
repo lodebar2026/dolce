@@ -11,8 +11,8 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::syllable::latin_word_break;
 use dolce_model::doc::{Oid, Placement};
 use dolce_model::xmlsurface::Position;

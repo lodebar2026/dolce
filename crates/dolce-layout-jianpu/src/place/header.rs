@@ -1,10 +1,10 @@
 //! 页眉定位（照 `place/header.ts`）：标题、副标题、经文、词曲、TL/TR、XL/XR、调号拍号行、`J:` 速度文字；
 //! 投影档的标题页与页脚。`compose/header.rs` 只照它画。
 
-use dolce_base::js::trim;
-use dolce_base::geom::Rect;
+use dolce_model::base::js::trim;
+use dolce_model::base::geom::Rect;
 use dolce_model::Tempo;
-use dolce_view::ast::{Metadata, Meter};
+use dolce_model::view::ast::{Metadata, Meter};
 
 use crate::grid::JianpuGrid;
 use crate::util::max;

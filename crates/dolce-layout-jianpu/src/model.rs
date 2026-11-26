@@ -6,8 +6,8 @@
 
 use std::rc::Rc;
 
-use dolce_base::geom::Rect;
-use dolce_view::ast::{InlineLayerElement, LyricSyllable, Mark, MusicElement, ScoreLine};
+use dolce_model::base::geom::Rect;
+use dolce_model::view::ast::{InlineLayerElement, LyricSyllable, Mark, MusicElement, ScoreLine};
 
 use crate::grid::JianpuGrid;
 use crate::view::{LGroup, LRow};

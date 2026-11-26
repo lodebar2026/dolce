@@ -4,8 +4,8 @@ use dolce_engrave::arc::{arc_clear_shift, arc_rise, jp_arc_y, slur_tie, ArcKind,
 use dolce_engrave::dynamics::DYNAMIC_SIZE;
 use dolce_engrave::hairpin::jp_hairpin;
 use dolce_engrave::jpglyph::dynamic;
-use dolce_base::geom::Point;
-use dolce_view::ast::{Mark, MarkType, MusicElement, ScoreLine};
+use dolce_model::base::geom::Point;
+use dolce_model::view::ast::{Mark, MarkType, MusicElement, ScoreLine};
 
 use crate::grid::{jianpu_slur_rise, jianpu_slur_style, JianpuGrid};
 use crate::ink::Ink;
@@ -144,7 +144,7 @@ pub fn place_marks(voice: &ScoreLine, items: &[PlacedItem], m: &JianpuGrid, ink:
     }
     // 弧套弧：从短的排起，外层才看得到里层定下的高度
     let mut arcs: Vec<usize> = (0..out.len()).filter(|&k| out[k].y.is_some() && is_arc_mark(&out[k].mark) && !out[k].below).collect();
-    dolce_base::js::sort_by(&mut arcs, |&p, &q| {
+    dolce_model::base::js::sort_by(&mut arcs, |&p, &q| {
         ((out[p].mark.end - out[p].mark.start) - (out[q].mark.end - out[q].mark.start)) as f64
     });
     let capped = jianpu_slur_rise(m);

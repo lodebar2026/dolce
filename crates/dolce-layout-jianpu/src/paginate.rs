@@ -50,7 +50,7 @@ pub fn paginate(blocks: &[SystemBlock], spec: &PaginateSpec) -> Vec<Vec<(usize, 
                 for &(b, _) in pg.iter() {
                     total += blocks[b].bottom - blocks[b].top;
                 }
-                let dd = dolce_base::js::min(max_gap, (spec.bottom - top - total) / (pg.len() - 1) as f64);
+                let dd = dolce_model::base::js::min(max_gap, (spec.bottom - top - total) / (pg.len() - 1) as f64);
                 let mut y = top;
                 for p in pg.iter_mut() {
                     let b = &blocks[p.0];

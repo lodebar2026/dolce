@@ -33,7 +33,7 @@ dolce-export = { path = "../crates/dolce-export", default-features = false, feat
 dolce-scene = { path = "../crates/dolce-scene" }
 # 排版（迁移计划 H 期）：简谱 / 五线谱排版与原生量字，排版线程在 src/layout.rs
 dolce-session = { path = "../crates/dolce-session" }
-dolce-model = { path = "../crates/dolce-model" }
+dolce-model = { path = "../crates/model" }
 dolce-engrave = { path = "../crates/dolce-engrave" }
 dolce-text = { path = "../crates/dolce-text", features = ["native"] }
 dolce-layout-jianpu = { path = "../crates/dolce-layout-jianpu" }

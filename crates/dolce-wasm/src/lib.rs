@@ -100,11 +100,11 @@ fn json<T: serde::Serialize>(v: &T) -> String {
     serde_json::to_string(v).expect("序列化")
 }
 
-fn play_err(e: dolce_play::PlayError) -> JsValue {
+fn play_err(e: dolce_model::play::PlayError) -> JsValue {
     js_sys_error(&e.0)
 }
 
-use dolce_play::{phrase, phraseinput, playorder, timeline};
+use dolce_model::play::{phrase, phraseinput, playorder, timeline};
 
 #[wasm_bindgen(js_name = playOrderOf)]
 pub fn play_order_of(parts: &str, jumps: &str) -> Result<String, JsValue> {
@@ -162,7 +162,7 @@ pub fn build_timeline(src: &str) -> Result<String, JsValue> {
 pub fn to_midi(src: &str, opts: &str, click: bool) -> Result<Vec<u8>, JsValue> {
     let src: timeline::PlaySource = parse("PlaySource", src)?;
     let opts: Option<timeline::PlayOptions> = parse("PlayOptions", opts)?;
-    Ok(dolce_play::midi::to_midi(&src, opts.as_ref(), click))
+    Ok(dolce_model::play::midi::to_midi(&src, opts.as_ref(), click))
 }
 
 #[wasm_bindgen(js_name = playTempo)]
@@ -217,12 +217,12 @@ struct LayoutOpIn {
     ranges: Vec<(usize, usize)>,
 }
 
-/// 断句之后的那几步（`applybreaks.ts` 门面，判据在 `dolce_play::applybreaks`）：`op` 选哪一步，`breaks` 原地改后连同结果一起回
+/// 断句之后的那几步（`applybreaks.ts` 门面，判据在 `dolce_model::play::applybreaks`）：`op` 选哪一步，`breaks` 原地改后连同结果一起回
 /// `{breaks, out}`。`op`：`describeLines` / `measureLines` / `applyCapacityCuts` / `tidyLineHeads` / `tidyLineTails` /
 /// `mergePairsUniform` / `mergeSliverLines` / `chooseLineLayout`。
 #[wasm_bindgen(js_name = phraseLayoutOp)]
 pub fn phrase_layout_op(op: &str, part: &str, breaks: &str, opts: &str) -> Result<String, JsValue> {
-    use dolce_play::applybreaks as ab;
+    use dolce_model::play::applybreaks as ab;
     let part: phraseinput::PhrasePart = parse("PhrasePart", part)?;
     let mut b: phrase::PhraseBreaks = parse("PhraseBreaks", breaks)?;
     let o: LayoutOpIn = parse("LayoutOp", opts)?;
@@ -253,25 +253,25 @@ pub fn phrase_layout_op(op: &str, part: &str, breaks: &str, opts: &str) -> Resul
 #[wasm_bindgen(js_name = pageBreakLines)]
 pub fn page_break_lines(lines: usize, section_ends: Vec<u32>, page_lines: usize) -> Vec<u32> {
     let ends: Vec<usize> = section_ends.into_iter().map(|x| x as usize).collect();
-    dolce_play::applybreaks::page_break_lines(lines, &ends, page_lines).into_iter().map(|x| x as u32).collect()
+    dolce_model::play::applybreaks::page_break_lines(lines, &ends, page_lines).into_iter().map(|x| x as u32).collect()
 }
 
 /// 演唱顺序项（每项 8 个数：mid, end, pass, skip, limit, endOfPass, sectionEntry, glueFrom）
-fn walk_items(items: &[f64]) -> Vec<dolce_play::walk::WalkItem> {
+fn walk_items(items: &[f64]) -> Vec<dolce_model::play::walk::WalkItem> {
     items
         .as_chunks::<8>()
         .0
         .iter()
-        .map(|c| dolce_play::walk::WalkItem { mid: c[0], end: c[1], pass: c[2], skip: c[3], limit: c[4], end_of_pass: c[5] != 0.0, section_entry: c[6] != 0.0, glue_from: c[7] })
+        .map(|c| dolce_model::play::walk::WalkItem { mid: c[0], end: c[1], pass: c[2], skip: c[3], limit: c[4], end_of_pass: c[5] != 0.0, section_entry: c[6] != 0.0, glue_from: c[7] })
         .collect()
 }
 
 /// 逐遍走小节（`jianpu/expand.ts::walkPlay`）：回扁平的步骤——放小节 `0, mid, pass, skip, limit, last, glue, 项下标`、换页 `1`、往回跳只换行 `2`
 #[wasm_bindgen(js_name = walkPlay)]
 pub fn walk_play(items: &[f64], jump_back: bool) -> Vec<f64> {
-    use dolce_play::walk::Step;
+    use dolce_model::play::walk::Step;
     let mut out = Vec::new();
-    for s in dolce_play::walk::walk_play(&walk_items(items), jump_back) {
+    for s in dolce_model::play::walk::walk_play(&walk_items(items), jump_back) {
         match s {
             Step::Measure { mid, pass, skip, limit, last, glue, item } => {
                 out.extend([0.0, mid, pass, skip, limit, last as u8 as f64, glue as u8 as f64, item as f64]);
@@ -286,7 +286,7 @@ pub fn walk_play(items: &[f64], jump_back: bool) -> Vec<f64> {
 /// 投影档应有几遍（`countPasses`）
 #[wasm_bindgen(js_name = countPasses)]
 pub fn count_passes(items: &[f64]) -> usize {
-    dolce_play::walk::count_passes(&walk_items(items))
+    dolce_model::play::walk::count_passes(&walk_items(items))
 }
 
 // ───────────────────────── 模型对拍探针（dolce-model）─────────────────────────
@@ -378,7 +378,7 @@ mod probes {
     /// 对拍用：ABC 家族整篇解析成 `ScoreDoc`（口径见 dev `rs-diff.mjs parse`）
     #[wasm_bindgen(js_name = parseAbcFamily)]
     pub fn parse_abc_family(dialect: &str, text: &str) -> String {
-        use dolce_formats::abc::{lex::Dialect, parse};
+        use dolce_model::formats::abc::{lex::Dialect, parse};
         let d = match dialect {
             "abc" => Dialect::Abc,
             "jcx" => Dialect::Jcx,
@@ -390,7 +390,7 @@ mod probes {
     /// 对拍用：ScoreDoc（JSON）→ 123 / ABC / jcx 文本（口径见 dev `rs-diff.mjs emit`）
     #[wasm_bindgen(js_name = emitAbcFamily)]
     pub fn emit_abc_family(dialect: &str, doc: &str) -> Result<String, JsValue> {
-        use dolce_formats::abc::emit;
+        use dolce_model::formats::abc::emit;
         let doc: dolce_model::ScoreDoc = super::parse("ScoreDoc", doc)?;
         Ok(match dialect {
             "abc" => emit::emit_abc(&doc),
@@ -402,7 +402,7 @@ mod probes {
     /// 对拍用：文本按 `from` 方言解析、再按 `to` 方言写出（全走 Rust）
     #[wasm_bindgen(js_name = convertAbcFamily)]
     pub fn convert_abc_family(from: &str, to: &str, text: &str) -> String {
-        use dolce_formats::abc::{emit, lex::Dialect, parse};
+        use dolce_model::formats::abc::{emit, lex::Dialect, parse};
         let d = match from {
             "abc" => Dialect::Abc,
             "jcx" => Dialect::Jcx,
@@ -418,8 +418,8 @@ mod probes {
 
     /// 对拍用：丢失清单。`{"used":[…],"loss":{目标:[…]}}`，各列表按名字排（口径见 dev `rs-diff.mjs capability`）
     fn capability_digest(doc: &dolce_model::ScoreDoc, surface: Option<&dolce_model::xmlsurface::Surface>) -> String {
-        use dolce_formats::capability::{features_used, plan_save, TargetFormat};
-        let names = |v: Vec<dolce_formats::capability::Feature>| {
+        use dolce_model::formats::capability::{features_used, plan_save, TargetFormat};
+        let names = |v: Vec<dolce_model::formats::capability::Feature>| {
             let mut s: Vec<&str> = v.into_iter().map(|f| f.as_str()).collect();
             s.sort();
             s

@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use serde::{Deserialize, Serialize};
 
 use crate::{feature_settings, FontMetrics, FontStyle, Positions, TextMeasurer, TextMetrics, Weight};
@@ -52,7 +52,7 @@ pub enum MeasureRecord {
 }
 
 fn num(x: f64) -> String {
-    dolce_base::js::num_to_string(x)
+    dolce_model::base::js::num_to_string(x)
 }
 
 fn glyph_key(text: &str, family: &str, size: f64, weight: Weight, features: &[String], style: FontStyle) -> String {

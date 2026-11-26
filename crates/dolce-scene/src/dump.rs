@@ -3,7 +3,7 @@
 //! 与**数**（矩阵、宽高、盒、字号、路径坐标、线端点、逐字笔位）两半，另算节点原点的页面绝对坐标。
 //! 比对先骨架（必须一字不差），再看数的最大差与页面绝对坐标的最大差。
 
-use dolce_base::geom::Matrix33;
+use dolce_model::base::geom::Matrix33;
 
 use crate::{Node, Page, Shape};
 

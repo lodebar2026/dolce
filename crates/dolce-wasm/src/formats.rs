@@ -4,11 +4,11 @@
 //! 丢失清单的页眉字体要查 MusicXML 表层，按句柄给（0 = 没有）。
 
 use crate::model::{parse, to_json, with_surface};
-use dolce_formats::abc::lex::Dialect;
-use dolce_formats::abc::lyricslot::{is_lyric_slot, LyricSlotRule};
-use dolce_formats::abc::{dialect, emit, fields, lex, lyricline, parse as abcparse, u16s};
-use dolce_formats::capability::{self, Feature, TargetFormat};
-use dolce_base::text::SourceSpan;
+use dolce_model::formats::abc::lex::Dialect;
+use dolce_model::formats::abc::lyricslot::{is_lyric_slot, LyricSlotRule};
+use dolce_model::formats::abc::{dialect, emit, fields, lex, lyricline, parse as abcparse, u16s};
+use dolce_model::formats::capability::{self, Feature, TargetFormat};
+use dolce_model::base::text::SourceSpan;
 use dolce_model::{ScoreDoc, SourceFormat};
 use wasm_bindgen::prelude::*;
 

@@ -9,16 +9,16 @@
 
 use std::collections::{HashMap, HashSet};
 
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_omr_core::image::Rect;
 use dolce_omr_sheet::jianpu::{JpNum, LyricAlt, RecognizedScore, StaffRow};
-use dolce_base::hanvariant::simplified_of;
-use dolce_play::walk::{walk_play, Step, WalkItem};
-pub use dolce_view::reflyrics::decode_lyrics_bytes;
-use dolce_view::reflyrics::{is_hanzi, ref_lines};
-use dolce_view::playsong::{play_data_of_song, song_measures, PlaySongOptions};
-use dolce_view::slots::doc_view;
-use dolce_view::singfit::fit_sing;
+use dolce_model::base::hanvariant::simplified_of;
+use dolce_model::play::walk::{walk_play, Step, WalkItem};
+pub use dolce_model::view::reflyrics::decode_lyrics_bytes;
+use dolce_model::view::reflyrics::{is_hanzi, ref_lines};
+use dolce_model::view::playsong::{play_data_of_song, song_measures, PlaySongOptions};
+use dolce_model::view::slots::doc_view;
+use dolce_model::view::singfit::fit_sing;
 use dolce_model::{Element, Lyric};
 use serde::Serialize;
 

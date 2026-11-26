@@ -8,20 +8,20 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js::{self, NumKey};
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js::{self, NumKey};
 use dolce_model as dm;
 use dolce_model::helpers::{is_refrain_word, section_mark_of};
 use dolce_model::layouts::{find_layout, LineBreak, PROJECTION};
 use dolce_model::{BreakKind, LayoutSpec, ScoreDoc, SourceFormat};
-use dolce_play::playorder::PlayItem;
-use dolce_play::walk::{walk_play, Step, WalkItem};
-use dolce_view::ast::{BarlineElement, BarlineType, LyricLine, LyricSyllable, Mark, MarkType, Meter, MusicElement, ScoreLine, Sound};
-use dolce_play::phrase::{FitMetric, Span};
-use dolce_view::phraselines::{content_breaks, default_content_options, element_quarters};
-use dolce_view::phrasesong::{build_measures, distinct_verses, phrase_part_of};
-use dolce_view::slots::RowView;
-use dolce_view::playdata::PlayData;
+use dolce_model::play::playorder::PlayItem;
+use dolce_model::play::walk::{walk_play, Step, WalkItem};
+use dolce_model::view::ast::{BarlineElement, BarlineType, LyricLine, LyricSyllable, Mark, MarkType, Meter, MusicElement, ScoreLine, Sound};
+use dolce_model::play::phrase::{FitMetric, Span};
+use dolce_model::view::phraselines::{content_breaks, default_content_options, element_quarters};
+use dolce_model::view::phrasesong::{build_measures, distinct_verses, phrase_part_of};
+use dolce_model::view::slots::RowView;
+use dolce_model::view::playdata::PlayData;
 
 use crate::grid::{content_width, JianpuGrid};
 use crate::ink::Ink;
@@ -162,7 +162,7 @@ impl<'a> Src<'a> {
     }
 }
 
-fn chord_of<'s>(song: &'s dm::Song, part: usize, r: &dolce_view::slots::SlotRef) -> Option<&'s dm::Chord> {
+fn chord_of<'s>(song: &'s dm::Song, part: usize, r: &dolce_model::view::slots::SlotRef) -> Option<&'s dm::Chord> {
     let e = r.e?;
     match song.parts.get(part)?.measures.get(r.m)?.elements.get(e)? {
         dm::Element::Chord(c) => Some(c),

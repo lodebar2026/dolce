@@ -2,19 +2,19 @@
 
 use dolce_engrave::accidental::AccidentalKind;
 use dolce_model::Accidental;
-use dolce_view::ast::MusicElement;
+use dolce_model::view::ast::MusicElement;
 
 /// `Math.min(...xs)`
 pub fn min_of(xs: impl IntoIterator<Item = f64>) -> f64 {
-    xs.into_iter().fold(f64::INFINITY, dolce_base::js::min)
+    xs.into_iter().fold(f64::INFINITY, dolce_model::base::js::min)
 }
 
 /// `Math.max(...xs)`
 pub fn max_of(xs: impl IntoIterator<Item = f64>) -> f64 {
-    xs.into_iter().fold(f64::NEG_INFINITY, dolce_base::js::max)
+    xs.into_iter().fold(f64::NEG_INFINITY, dolce_model::base::js::max)
 }
 
-pub use dolce_base::js::{max, min};
+pub use dolce_model::base::js::{max, min};
 
 /// 模型临时记号 → 图元的临时记号
 pub fn acc_kind(a: &Accidental) -> AccidentalKind {

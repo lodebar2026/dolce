@@ -363,8 +363,8 @@ struct TrHooks<'a> {
 }
 
 impl TrHooks<'_> {
-    fn render(&self, m: &dolce_base::Msg) -> String {
-        use dolce_base::msg::MsgArg;
+    fn render(&self, m: &dolce_model::base::Msg) -> String {
+        use dolce_model::base::msg::MsgArg;
         let s = self.texts.get(&m.key).cloned().unwrap_or_else(|| m.key.clone());
         if m.args.is_empty() {
             return s;
@@ -379,7 +379,7 @@ impl TrHooks<'_> {
                 Some((j, v)) => {
                     out.push_str(&match v {
                         MsgArg::Str(x) => x.clone(),
-                        MsgArg::Num(n) => dolce_base::js::num_to_string(*n),
+                        MsgArg::Num(n) => dolce_model::base::js::num_to_string(*n),
                         MsgArg::Msg(x) => self.render(x),
                     });
                     rest = &tail[j + 1..];
@@ -402,7 +402,7 @@ impl dolce_model::edit::EditHooks for TrHooks<'_> {
     fn forget_layout(&mut self, song: &dolce_model::doc::Song) {
         self.inner.forget_layout(song);
     }
-    fn text(&self, m: &dolce_base::Msg) -> String {
+    fn text(&self, m: &dolce_model::base::Msg) -> String {
         self.render(m)
     }
 }
@@ -535,10 +535,10 @@ fn js_conv(f: &js_sys::Function) -> impl Fn(&str) -> String + '_ {
 /// 简繁的摘要：分组、方向判断、两个方向的整份转换（片数 + 模型），文本来源再加两个方向的原文写回
 pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_sys::Function, t2s: &js_sys::Function) -> Value {
     use dolce_model::hanconv::*;
-    let parse_fn = |t: &str| -> Result<dolce_model::doc::ScoreDoc, dolce_base::Msg> {
-        let v = parse.call1(&wasm_bindgen::JsValue::NULL, &wasm_bindgen::JsValue::from_str(t)).map_err(|_| dolce_base::Msg::new("parse"))?;
-        let s = v.as_string().ok_or_else(|| dolce_base::Msg::new("parse"))?;
-        serde_json::from_str(&s).map_err(|_| dolce_base::Msg::new("json"))
+    let parse_fn = |t: &str| -> Result<dolce_model::doc::ScoreDoc, dolce_model::base::Msg> {
+        let v = parse.call1(&wasm_bindgen::JsValue::NULL, &wasm_bindgen::JsValue::from_str(t)).map_err(|_| dolce_model::base::Msg::new("parse"))?;
+        let s = v.as_string().ok_or_else(|| dolce_model::base::Msg::new("parse"))?;
+        serde_json::from_str(&s).map_err(|_| dolce_model::base::Msg::new("json"))
     };
     let doc = match serde_json::from_str::<dolce_model::doc::ScoreDoc>(doc) {
         Ok(d) => d,
@@ -572,7 +572,7 @@ pub fn hanconv_digest(doc: &str, text: &str, parse: &js_sys::Function, s2t: &js_
 // ───────────────────────── ABC 家族（M3）─────────────────────────
 
 pub fn lex_digest(dialect: &str, text: &str) -> Value {
-    use dolce_formats::abc::{lex, u16s};
+    use dolce_model::formats::abc::{lex, u16s};
     let lx = match dialect {
         "abc" => lex::LEXER_ABC,
         "jcx" => lex::LEXER_JCX,
@@ -589,7 +589,7 @@ pub fn lex_digest(dialect: &str, text: &str) -> Value {
 }
 
 fn field_values(v: &str) -> Value {
-    use dolce_formats::abc::fields::*;
+    use dolce_model::formats::abc::fields::*;
     let mut bad = vec![];
     let sing = parse_sing(v, |b| bad.push(b.to_string()));
     json!({
@@ -601,7 +601,7 @@ fn field_values(v: &str) -> Value {
 }
 
 pub fn fields_digest(text: &str) -> Value {
-    use dolce_formats::abc::{fields, u16s};
+    use dolce_model::formats::abc::{fields, u16s};
     let all = u16s::enc(text);
     let mut out = vec![];
     let mut off = 0usize;
@@ -619,7 +619,7 @@ pub fn fields_digest(text: &str) -> Value {
 }
 
 pub fn dialect_tables() -> Value {
-    use dolce_formats::abc::dialect::*;
+    use dolce_model::formats::abc::dialect::*;
     let mut tad = vec![];
     for k in 0..800 {
         let d = k as f64 / 2.0;

@@ -1,7 +1,7 @@
 //! 弧线（圆滑线 / 延音线，及三连音的两段弧，`engrave/arc.ts`）：样式参数、弧高与控制点两个纯函数、简谱弧的定位小件，
 //! 以及月牙形图元本身（`Slur` / `Tie`：填充 + 描边、扁平长连音线、断口）。
 
-use dolce_base::geom::Point;
+use dolce_model::base::geom::Point;
 use dolce_scene::{Node, Role};
 
 use crate::Env;
@@ -36,12 +36,12 @@ fn pos(o: Option<f64>) -> Option<f64> {
 /// 弧高（正数）。**这是弧高的唯一算法**。
 pub fn arc_height(dist: f64, o: &SlurStyle) -> f64 {
     let floor = pos(o.min_height).unwrap_or(1.2);
-    let raw = dolce_base::js::max(dolce_base::js::max(dist, 1e-6).log10() * 17.0 - 16.0, floor);
+    let raw = dolce_model::base::js::max(dolce_model::base::js::max(dist, 1e-6).log10() * 17.0 - 16.0, floor);
     let cap = match pos(o.max_height) {
-        Some(m) => dolce_base::js::max(m, floor),
+        Some(m) => dolce_model::base::js::max(m, floor),
         None => f64::INFINITY,
     };
-    dolce_base::js::min(raw, cap) * o.height_scale.unwrap_or(1.0)
+    dolce_model::base::js::min(raw, cap) * o.height_scale.unwrap_or(1.0)
 }
 
 /// 控制点：返回 (p1, p2, cos)。
@@ -54,7 +54,7 @@ pub fn calc_slur_points(pl: Point, pr: Point, o: &SlurStyle) -> (Point, Point, f
     let theta = dy.atan2(dx);
     let cos = (-theta).cos();
     let sin = (-theta).sin();
-    let xlen = dolce_base::js::min(dist * 0.04 + 10.0, dist * 0.25);
+    let xlen = dolce_model::base::js::min(dist * 0.04 + 10.0, dist * 0.25);
     let h = arc_height(dist, o) * if o.side_down { 1.0 } else { -1.0 };
     let p1 = Point::new(xlen, h).rotate(cos, sin).offset(xl, yl);
     let p2 = Point::new(dist - xlen, h).rotate(cos, sin).offset(xl, yl);
@@ -66,7 +66,7 @@ pub const ARC_CHAIN_INSET_DIV: f64 = 14.0;
 
 /// 简谱弧的端点高度：起止两摞墨迹顶取高者，再往上一道 `gap`。
 pub fn jp_arc_y(start_top: f64, end_top: f64, gap: f64) -> f64 {
-    dolce_base::js::min(start_top, end_top) - gap
+    dolce_model::base::js::min(start_top, end_top) - gap
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,9 +90,9 @@ pub fn arc_clear_shift(x0: f64, y0: f64, x1: f64, y1: f64, rise: f64, above: boo
         let line = y0 + (y1 - y0) * u;
         let bulge = rise * 4.0 * u * (1.0 - u);
         if above {
-            shift = dolce_base::js::min(shift, o.y - gap - (line - bulge));
+            shift = dolce_model::base::js::min(shift, o.y - gap - (line - bulge));
         } else {
-            shift = dolce_base::js::max(shift, o.y + gap - (line + bulge));
+            shift = dolce_model::base::js::max(shift, o.y + gap - (line + bulge));
         }
     }
     shift
@@ -236,7 +236,7 @@ fn init_arc(g: &mut Node, pl: Point, pr: Point, style: &SlurStyle, env: &Env) {
 
 fn init_flat(g: &mut Node, pl: Point, pr: Point, dist: f64, style: &SlurStyle, env: &Env) -> f64 {
     let h = arc_height(pos(style.flat_span).unwrap_or(dist), style) * 0.75;
-    let hx = dolce_base::js::min(dist * 0.12, h * 2.5);
+    let hx = dolce_model::base::js::min(dist * 0.12, h * 2.5);
     let t = pos(style.flat_line_width).unwrap_or(style.thickness * 0.45);
     let mut obj = Node::path();
     let p = obj.path_mut();

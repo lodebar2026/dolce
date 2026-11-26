@@ -19,7 +19,7 @@ system = ["dolce-text/fontfile-system"]
 book = ["system", "dep:dolce-book"]
 
 [dependencies]
-dolce-base = { workspace = true }
+dolce-model = { workspace = true }
 dolce-scene = { workspace = true }
 dolce-text = { workspace = true, features = ["fontfile"] }
 dolce-book = { workspace = true, optional = true }

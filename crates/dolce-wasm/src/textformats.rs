@@ -3,18 +3,18 @@
 //! 模型 JSON 的口径同 `formats.rs`：读出的 `ScoreDoc` 带 `source`（门面换回 JS 原文）。提示一律只出 `Msg` 键，门面按界面语言出字。
 
 use crate::model::{parse, to_json};
-use dolce_formats::abc::u16s;
-use dolce_formats::fanqie::ast::FanqieDoc;
-use dolce_formats::fanqie::dialect::{sniff_dialect, Dialect};
-use dolce_formats::fanqie::emit::{emit_fanqie, emit_fanqie_song, key_name_of, EmitFanqieOptions};
-use dolce_formats::fanqie::fromfanqie::fanqie_to_score_doc;
-use dolce_formats::fanqie::dialect::KeyStyle;
-use dolce_formats::fanqie::{parse as fparse, plan};
-use dolce_formats::jly::{chords, fromjly};
-use dolce_formats::jpw::file::{JpwFile, SectionKind, WordsSegment};
-use dolce_formats::jpw::lex::{lex_voice, JpwToken};
-use dolce_formats::jpw::read::{jpw_to_score_doc, read_jpw_source, JpwError};
-use dolce_formats::midi::import;
+use dolce_model::formats::abc::u16s;
+use dolce_model::formats::fanqie::ast::FanqieDoc;
+use dolce_model::formats::fanqie::dialect::{sniff_dialect, Dialect};
+use dolce_model::formats::fanqie::emit::{emit_fanqie, emit_fanqie_song, key_name_of, EmitFanqieOptions};
+use dolce_model::formats::fanqie::fromfanqie::fanqie_to_score_doc;
+use dolce_model::formats::fanqie::dialect::KeyStyle;
+use dolce_model::formats::fanqie::{parse as fparse, plan};
+use dolce_model::formats::jly::{chords, fromjly};
+use dolce_model::formats::jpw::file::{JpwFile, SectionKind, WordsSegment};
+use dolce_model::formats::jpw::lex::{lex_voice, JpwToken};
+use dolce_model::formats::jpw::read::{jpw_to_score_doc, read_jpw_source, JpwError};
+use dolce_model::formats::midi::import;
 use dolce_model::{ScoreDoc, Song};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
@@ -185,7 +185,7 @@ pub fn jly_parse(text: &str) -> String {
 #[wasm_bindgen(js_name = jlyEmit)]
 pub fn jly_emit(doc: &str) -> Result<String, JsValue> {
     let doc: ScoreDoc = parse("ScoreDoc", doc)?;
-    let out = dolce_formats::jly::emit_jly(&doc).map_err(|e| crate::js_sys_error(&e))?;
+    let out = dolce_model::formats::jly::emit_jly(&doc).map_err(|e| crate::js_sys_error(&e))?;
     Ok(json!({ "text": out.text, "warnings": out.warnings }).to_string())
 }
 
@@ -238,22 +238,22 @@ pub fn midi_import(bytes: &[u8], title: &str, opts: &str) -> Result<String, JsVa
 #[wasm_bindgen(js_name = fanqieRelayoutText)]
 pub fn fanqie_relayout_text(text: &str, doc: &str, plans: &str) -> Result<String, JsValue> {
     let d: ScoreDoc = parse("ScoreDoc", doc)?;
-    let p: Vec<Option<Vec<dolce_view::phraselines::NewLine>>> = parse("FanqieNewLine[][]", plans)?;
-    Ok(dolce_formats::fanqie::relayout::relayout_fanqie_text(text, &d, &p))
+    let p: Vec<Option<Vec<dolce_model::view::phraselines::NewLine>>> = parse("FanqieNewLine[][]", plans)?;
+    Ok(dolce_model::formats::fanqie::relayout::relayout_fanqie_text(text, &d, &p))
 }
 
 /// 文本谱增删一处换行（`relayoutFanqieBreak`）：加不上 / 去不掉回 `undefined`
 #[wasm_bindgen(js_name = fanqieRelayoutBreak)]
 pub fn fanqie_relayout_break(text: &str, doc: &str, after_id: f64, add: bool, page: bool) -> Result<Option<String>, JsValue> {
     let d: ScoreDoc = parse("ScoreDoc", doc)?;
-    Ok(dolce_formats::fanqie::relayout::relayout_fanqie_break(text, &d, after_id as i64, add, page))
+    Ok(dolce_model::formats::fanqie::relayout::relayout_fanqie_break(text, &d, after_id as i64, add, page))
 }
 
 /// `.jpwabc` 按断点只挪 `.Voice` 的 `$`（`relayoutJpwabcText`）：`cuts` 是 `phraseCuts` 的结果
 #[wasm_bindgen(js_name = jpwRelayoutText)]
 pub fn jpw_relayout_text(text: &str, cuts: &str) -> Result<String, JsValue> {
-    let c: Vec<dolce_view::phraselines::PhraseCut> = parse("PhraseCut[]", cuts)?;
-    Ok(dolce_formats::jpw::relayout::relayout_jpwabc_text(text, &c))
+    let c: Vec<dolce_model::view::phraselines::PhraseCut> = parse("PhraseCut[]", cuts)?;
+    Ok(dolce_model::formats::jpw::relayout::relayout_jpwabc_text(text, &c))
 }
 
 /// 123 / ABC 重排后把原文注释缝回（`spliceComments`）
@@ -261,41 +261,41 @@ pub fn jpw_relayout_text(text: &str, cuts: &str) -> Result<String, JsValue> {
 pub fn abc_splice_comments(old_text: &str, old_doc: &str, new_text: &str, new_doc: &str) -> Result<String, JsValue> {
     let o: ScoreDoc = parse("ScoreDoc", old_doc)?;
     let n: ScoreDoc = parse("ScoreDoc", new_doc)?;
-    Ok(dolce_formats::abc::comments::splice_comments(old_text, &o, new_text, &n))
+    Ok(dolce_model::formats::abc::comments::splice_comments(old_text, &o, new_text, &n))
 }
 
 /// 123 / ABC 原文里第 `song` 首版面 `layout` 的整体选项 `key` 设成 `value`（空串 = 去掉），只改 `%%layout` 行（`layoutedit.rs`）
 #[wasm_bindgen(js_name = abcSetLayoutOption)]
 pub fn abc_set_layout_option(text: &str, song: usize, layout: &str, key: &str, value: &str) -> String {
-    dolce_formats::abc::layoutedit::set_layout_option(text, song, layout, key, (!value.is_empty()).then_some(value))
+    dolce_model::formats::abc::layoutedit::set_layout_option(text, song, layout, key, (!value.is_empty()).then_some(value))
 }
 
 /// 删掉 123 / ABC 原文里第 `song` 首版面 `layout` 的全部 `%%layout` 行
 #[wasm_bindgen(js_name = abcRemoveLayout)]
 pub fn abc_remove_layout(text: &str, song: usize, layout: &str) -> String {
-    dolce_formats::abc::layoutedit::remove_layout(text, song, layout)
+    dolce_model::formats::abc::layoutedit::remove_layout(text, song, layout)
 }
 
 /// 谱面上加版面断点：第 `pass` 遍（0 = 每一遍）在段 `section` 第 `nth` 次之后换行（`page` 换页），只改 `%%layout` 行
 #[wasm_bindgen(js_name = abcLayoutAddBreak)]
 pub fn abc_layout_add_break(text: &str, song: usize, layout: &str, pass: u32, section: &str, nth: u32, page: bool) -> String {
-    dolce_formats::abc::layoutedit::add_break(text, song, layout, (pass > 0).then_some(pass), section, nth, page)
+    dolce_model::formats::abc::layoutedit::add_break(text, song, layout, (pass > 0).then_some(pass), section, nth, page)
 }
 
 /// 删掉管第 `pass` 遍（0 = 不限遍）的版面断点「段 `section` 第 `nth` 次之后」；没有这条（自动断行）回原文
 #[wasm_bindgen(js_name = abcLayoutRemoveBreak)]
 pub fn abc_layout_remove_break(text: &str, song: usize, layout: &str, pass: u32, section: &str, nth: u32) -> String {
-    dolce_formats::abc::layoutedit::remove_break(text, song, layout, (pass > 0).then_some(pass), section, nth)
+    dolce_model::formats::abc::layoutedit::remove_break(text, song, layout, (pass > 0).then_some(pass), section, nth)
 }
 
 /// 段 `name` 在已插好的 `[P:newName]` 处切开后改 `%%sing` / `%%layout`（`A` → `A A-2`、「A 之后」的断点改指 `A-2`）
 #[wasm_bindgen(js_name = abcSplitSection)]
 pub fn abc_split_section(text: &str, song: usize, name: &str, new_name: &str) -> String {
-    dolce_formats::abc::layoutedit::split_section(text, song, name, new_name)
+    dolce_model::formats::abc::layoutedit::split_section(text, song, name, new_name)
 }
 
 /// 界面切出来的段（`A-2`）合得回就合回 `A`（删标记、`%%sing` 合并、断点改指）；不合条件回原文
 #[wasm_bindgen(js_name = abcMergeSection)]
 pub fn abc_merge_section(text: &str, song: usize, name: &str) -> String {
-    dolce_formats::abc::layoutedit::merge_section(text, song, name)
+    dolce_model::formats::abc::layoutedit::merge_section(text, song, name)
 }

@@ -4,7 +4,7 @@
 //! TS 侧镜像对象经旁表记着自己的句柄与 `_oid`（`src/model/rustdoc.ts`）。句柄由 TS 在镜像回收后释放。
 //! 失败抛 `Error`，`message` 是 `Msg` 的 JSON（`{"key":…}`），门面转成 `ModelError`。
 
-use dolce_base::Msg;
+use dolce_model::base::Msg;
 use dolce_model::edit::{self, EditCmd, EditHooks};
 use dolce_model::xmlsurface::Surface;
 use dolce_model::*;
@@ -402,7 +402,7 @@ impl hanconv::HanConv for JsConv<'_> {
 /// MusicXML 是否多声部（≥2 part、单 part 多谱表、或 ≥2 voice）→ 打开时默认混排（`paintreq.ts::isMultiPartXml`）。读不出为假。
 #[wasm_bindgen(js_name = xmlIsMultiPart)]
 pub fn xml_is_multi_part(xml: &str) -> bool {
-    use dolce_base::js;
+    use dolce_model::base::js;
     let Ok(d) = dolce_model::xml::parse(xml) else { return false };
     if d.get_elements_by_tag_name("score-part").len() >= 2 {
         return true;
@@ -692,20 +692,20 @@ pub fn model_breaks_of(song: &str) -> Result<String, JsValue> {
     Ok(to_json(&out))
 }
 
-/// `docView`：排版行视图（`dolce_view::slots::doc_view`）。`source`：原文（文本谱来源取各行 `raw`；空串当没有）。
+/// `docView`：排版行视图（`dolce_model::view::slots::doc_view`）。`source`：原文（文本谱来源取各行 `raw`；空串当没有）。
 /// 回 id 化的视图（`refs` 存下标、投影改过曲子的另带 `song`），对象由门面 `jianpu/slots.ts` 认回；
-/// 另带 `sync`：双向定位索引的条目（`dolce_view::sync::build_sync`，按推入次序），同一趟出、不必再建一遍视图。
+/// 另带 `sync`：双向定位索引的条目（`dolce_model::view::sync::build_sync`，按推入次序），同一趟出、不必再建一遍视图。
 #[wasm_bindgen(js_name = modelDocView)]
 pub fn model_doc_view(doc: &str, source: &str) -> Result<String, JsValue> {
     #[derive(Serialize)]
     struct Wire<'a> {
         #[serde(flatten)]
-        view: &'a dolce_view::slots::DocView,
+        view: &'a dolce_model::view::slots::DocView,
         sync: dolce_model::xmlsync::XmlSync,
     }
     let d: ScoreDoc = parse("ScoreDoc", doc)?;
     let src = (!source.is_empty()).then_some(source);
-    let view = dolce_view::slots::doc_view(&d, src);
-    let sync = dolce_view::sync::build_sync(&d, &view);
+    let view = dolce_model::view::slots::doc_view(&d, src);
+    let sync = dolce_model::view::sync::build_sync(&d, &view);
     Ok(to_json(&Wire { view: &view, sync }))
 }

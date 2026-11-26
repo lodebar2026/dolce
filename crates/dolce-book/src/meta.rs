@@ -6,7 +6,7 @@
 //! 稳定排序、`toFixed`）逐处照抄，对拍见 dolce-cli `book-meta-check`。
 
 use crate::spec::{FrameSpec, PageSpec, SChar, SRect, SongPlacement, TextRun};
-use dolce_base::js;
+use dolce_model::base::js;
 use indexmap::IndexMap;
 use regex::Regex;
 use serde::Serialize;

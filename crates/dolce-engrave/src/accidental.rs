@@ -1,7 +1,7 @@
 //! 简谱临时记号（数字左边的 ♭ ♯ ♮，`engrave/accidental.ts`）。两种样子：`csym`（缺省，按**数字墨迹盒**的比例定位，
 //! 换字体字号都跟着走）与 `classic`（原先旧简谱引擎那样，成书照原书用它）。位置一律按墨迹。
 
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_scene::Node;
 use dolce_text::Font;
 
@@ -167,7 +167,7 @@ pub fn accidental_lead(kind: AccidentalKind, digit_ink_height: f64, scale: f64) 
 
 /// 临时记号的墨迹顶高出数字墨迹顶多少（≥ 0）；纯算术。
 pub fn accidental_rise(kind: AccidentalKind, digit_ink_height: f64, scale: f64) -> f64 {
-    dolce_base::js::max(0.0, (BASE_ABOVE_INK_BOTTOM + kind.ink_height() * scale - 1.0) * digit_ink_height)
+    dolce_model::base::js::max(0.0, (BASE_ABOVE_INK_BOTTOM + kind.ink_height() * scale - 1.0) * digit_ink_height)
 }
 
 /// 简谱记法里的升降号字符（`b` / `#` / `n`）→ 种类。

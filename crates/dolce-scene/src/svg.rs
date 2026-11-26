@@ -5,8 +5,8 @@
 //! 属性次序有一处要留神：文字先设 `x="0"`，有逐字笔位时再**改** `x`——`Map.set` 改已有键不挪位置，
 //! 所以 `x` 仍排第一个。
 
-use dolce_base::js::{num_to_string, to_fixed};
-use dolce_base::geom::color_to_css;
+use dolce_model::base::js::{num_to_string, to_fixed};
+use dolce_model::base::geom::color_to_css;
 
 use crate::{Dialect, Node, Page, Shape, TextShape};
 

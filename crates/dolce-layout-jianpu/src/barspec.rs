@@ -2,7 +2,7 @@
 
 use dolce_engrave::barline::BarlineSpec;
 use dolce_model::doc::BarStyle;
-use dolce_view::ast::{BarlineElement, BarlineType};
+use dolce_model::view::ast::{BarlineElement, BarlineType};
 
 /// 一条小节线画成什么样（spec, final）；None = 不画线。下一小节左线上起反复的画成 `|:` / `:|:`
 pub fn fanqie_barline_spec(el: &BarlineElement) -> Option<(BarlineSpec, bool)> {

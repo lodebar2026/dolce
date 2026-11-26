@@ -1,8 +1,8 @@
 //! 对拍探针：jianpu-ly 读入与和弦符号工具（dev `rs-diff.mjs jly` 的 Rust 一侧）。
 //! 损失清单回的是 `diag.jly.example { what, raw }` 键，由 dev 那边经 TS `msgText` 出字再比。
 
-use dolce_base::text::SourceSpan;
-use dolce_formats::jly::{chords, fromjly};
+use dolce_model::base::text::SourceSpan;
+use dolce_model::formats::jly::{chords, fromjly};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 

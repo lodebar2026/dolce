@@ -4,7 +4,7 @@ use dolce_engrave::syllable::lyric;
 use dolce_scene::{Identity, IdentityKind, Node};
 use dolce_text::syllable::syllable_run;
 use dolce_text::CompressMode;
-use dolce_view::ast::LyricLine;
+use dolce_model::view::ast::LyricLine;
 
 use super::brace::{brace_item, BraceKind};
 use super::ctx::{eid, font, ident, text, Ctx};

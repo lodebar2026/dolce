@@ -6,7 +6,7 @@
 
 use crate::draw::{match_number, DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta};
 use crate::measure::BookMeasure;
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_style::bookstyle::page_margins;
 use dolce_style::value::get_path;
 use indexmap::IndexMap;

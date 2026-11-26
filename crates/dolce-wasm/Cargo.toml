@@ -13,12 +13,8 @@ crate-type = ["cdylib", "rlib"]
 probe = []
 
 [dependencies]
-dolce-base = { workspace = true }
 dolce-session = { workspace = true }
-dolce-play = { workspace = true }
 dolce-model = { workspace = true }
-dolce-formats = { workspace = true }
-dolce-view = { workspace = true }
 dolce-engrave = { workspace = true }
 dolce-scene = { workspace = true }
 dolce-text = { workspace = true }

@@ -7,7 +7,7 @@
 //! 宿主无关：量字上下文与 SMuFL 元数据由宿主给（[`Env`]）——网页 wasm 接浏览器量字、桌面原生量字、命令行原生或回放。
 
 use dolce_engrave::Env;
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_layout_jianpu::compose::{layout_jianpu, JianpuConfig, JianpuLayout};
 use dolce_layout_jianpu::grid::GridPage;
 use dolce_layout_jianpu::place::reflow::NaturalSpan;
@@ -121,7 +121,7 @@ pub struct LaidInfo<'a> {
     pub line_starts: Option<&'a [i64]>,
     /// 投影档各首实际走的演唱顺序
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub plans: Option<&'a Vec<Option<Vec<dolce_play::playorder::PlayItem>>>>,
+    pub plans: Option<&'a Vec<Option<Vec<dolce_model::play::playorder::PlayItem>>>>,
     /// 投影档各首各遍的段落出现表（谱面上增删版面断点用；音的 `Identity.slot` 指进这里）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proj_passes: Option<Vec<Option<&'a [dolce_layout_jianpu::view::ProjPass]>>>,

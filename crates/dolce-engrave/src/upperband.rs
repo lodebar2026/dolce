@@ -92,7 +92,7 @@ pub fn stack_upper_band(items: &[BandItem], gap: f64) -> HashMap<usize, f64> {
                     if me.bottom <= p_top || me.top >= pb.bottom {
                         continue;
                     }
-                    d = dolce_base::js::min(d, p_top - gap * it.gap_scale.unwrap_or(1.0) - it.bottom);
+                    d = dolce_model::base::js::min(d, p_top - gap * it.gap_scale.unwrap_or(1.0) - it.bottom);
                 }
                 if Some(d) == dy.get(&it.key).copied() {
                     break;
@@ -125,7 +125,7 @@ pub fn stack_upper_band(items: &[BandItem], gap: f64) -> HashMap<usize, f64> {
                         if lifted.len() < 2 {
                             continue;
                         }
-                        let lo = lifted.iter().map(|&i| get(&dy, items[i].key)).fold(f64::INFINITY, dolce_base::js::min);
+                        let lo = lifted.iter().map(|&i| get(&dy, items[i].key)).fold(f64::INFINITY, dolce_model::base::js::min);
                         for &i in &lifted {
                             if get(&dy, items[i].key) > lo {
                                 dy.insert(items[i].key, lo);
@@ -151,7 +151,7 @@ pub fn band_top(items: &[BandItem], x0: f64, x1: f64) -> Option<f64> {
         if it.x1 <= x0 || it.x0 >= x1 {
             continue;
         }
-        top = dolce_base::js::min(top, it.top);
+        top = dolce_model::base::js::min(top, it.top);
     }
     top.is_finite().then_some(top)
 }

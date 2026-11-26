@@ -1,7 +1,7 @@
 //! `.jpwabc` 对拍探针（词法、分节、写出已是正式入口 `textformats.rs`）（dev `rsdiff/jpw.mjs` 的 Rust 一侧，口径与该脚本里的 TS 摘要相同）。只在 `--features probe` 的那份里。
 
-use dolce_formats::jpw::file::JpwFile;
-use dolce_formats::jpw::read::{jpw_to_score_doc, read_jpw_source, JpwError};
+use dolce_model::formats::jpw::file::JpwFile;
+use dolce_model::formats::jpw::read::{jpw_to_score_doc, read_jpw_source, JpwError};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 

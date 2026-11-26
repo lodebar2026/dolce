@@ -6,7 +6,7 @@
 
 use crate::ss::{Cell, Content, Expr, Region, SsError, TextPart};
 use crate::value::js_json;
-use dolce_base::js::{is_space, trim};
+use dolce_model::base::js::{is_space, trim};
 use dolce_model::doc::Song;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -430,7 +430,7 @@ pub fn layout_region(region: Option<&Region>, env: &dyn RegionEnv) -> R<RegionRe
             let mut row_h: f64 = 0.0;
             for got in in_row_order(&row.cells, |cell, texts| layout_block_cell(region, cell, row_top, base, left, right, odd, env, texts))? {
                 items.extend(got.0);
-                row_h = dolce_base::js::max(row_h, got.1);
+                row_h = dolce_model::base::js::max(row_h, got.1);
             }
             if row_h == 0.0 {
                 continue;
@@ -459,7 +459,7 @@ pub fn layout_region(region: Option<&Region>, env: &dyn RegionEnv) -> R<RegionRe
                 any = true;
             }
             items.extend(got.0);
-            row_last = dolce_base::js::max(row_last, got.1);
+            row_last = dolce_model::base::js::max(row_last, got.1);
         }
         if !any {
             continue;
@@ -628,7 +628,7 @@ fn layout_cell(cell: &Cell, row_y: f64, left: f64, right: f64, odd: bool, env: &
                 for text in expand_text(parts, env)? {
                     let y = if i == 0 { y0 } else { y0 + i as f64 * line_lead(cell, env, role)? };
                     items.push(Placed::Text(PlacedText { text, role: role.to_string(), size, x, y, align: align.to_string() }));
-                    last_y = dolce_base::js::max(last_y, y);
+                    last_y = dolce_model::base::js::max(last_y, y);
                     i += 1;
                 }
             }

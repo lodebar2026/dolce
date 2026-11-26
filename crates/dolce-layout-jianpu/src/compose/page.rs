@@ -8,7 +8,7 @@ use dolce_engrave::stack::{beam_y, high_dot_y, low_dot_y, StackStyle};
 use dolce_scene::{Edge, Identity, IdentityKind, Node, Role};
 use dolce_text::syllable::syllable_run;
 use dolce_text::CompressMode;
-use dolce_view::ast::{LyricLine, MusicElement};
+use dolce_model::view::ast::{LyricLine, MusicElement};
 
 use super::barline::paint_barline;
 use super::brace::{brace_item, paint_brace, BraceKind};

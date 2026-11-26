@@ -3,8 +3,8 @@
 //!
 //! **逐音成柱**：每个音一个组，里面依次是临时记号、数字、八度点、附点或增时线；减时线是跨音的，各柱画完再画。
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::accidental::{AccidentalGlyph, AccidentalKind, AccidentalStyle, DigitRef};
 use dolce_engrave::augdot::aug_dot_center;
 use dolce_engrave::dash::{sustain_dash, DashStyle};
@@ -15,7 +15,7 @@ use dolce_engrave::prims::text_item;
 use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{beam_y, high_dot_y, low_dot_y, stack_bottom};
 use dolce_engrave::timesig::{TimeSigGlyph, TimeSigStyle};
-use dolce_base::geom::Matrix33;
+use dolce_model::base::geom::Matrix33;
 use dolce_scene::build::Env;
 use dolce_scene::Node;
 use dolce_text::Font;

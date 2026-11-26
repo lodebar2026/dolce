@@ -57,7 +57,7 @@ impl KeyMeterComponent<'_> {
             InkBox { x0, x1: x0 + w, bot }
         };
         let km_boxes: Vec<InkBox> = items.iter().map(box_of).collect();
-        let km_bot = km_boxes.iter().map(|b| b.bot).fold(f64::NEG_INFINITY, dolce_base::js::max);
+        let km_bot = km_boxes.iter().map(|b| b.bot).fold(f64::NEG_INFINITY, dolce_model::base::js::max);
         let mut need = 0.0;
         for it in self.page_items {
             let DrawItem::Text(t) = it else { continue };
@@ -73,7 +73,7 @@ impl KeyMeterComponent<'_> {
             if top > km_bot || !km_boxes.iter().any(|b| b.x1 > x0 && b.x0 < x1 && b.bot > top) {
                 continue;
             }
-            need = dolce_base::js::max(need, km_bot - top + av.gap);
+            need = dolce_model::base::js::max(need, km_bot - top + av.gap);
         }
         for it in &mut items {
             match it {

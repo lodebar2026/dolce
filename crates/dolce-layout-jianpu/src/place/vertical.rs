@@ -7,9 +7,9 @@ use dolce_engrave::jpglyph::ornament;
 use dolce_engrave::jpslide::jp_slide_of;
 use dolce_engrave::jptremolo::jp_tremolo_count;
 use dolce_engrave::stack::{low_dot_y, stack_bottom, stack_top as stack_top_of};
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_model::Accidental;
-use dolce_view::ast::{MusicElement, NoteElement};
+use dolce_model::view::ast::{MusicElement, NoteElement};
 
 use crate::grid::{jianpu_grace_metrics, jianpu_grace_notes, JianpuGrid};
 use crate::ink::Ink;
@@ -223,7 +223,7 @@ pub fn note_ink_bottom(note: &NoteElement, m: &JianpuGrid) -> f64 {
 
 /// 音符下面有几层减时线
 pub fn note_beams(note: &NoteElement) -> f64 {
-    max(0.0, dolce_base::js::round((note.duration as f64 / 4.0).log2()))
+    max(0.0, dolce_model::base::js::round((note.duration as f64 / 4.0).log2()))
 }
 
 /// 一行里最低的墨迹

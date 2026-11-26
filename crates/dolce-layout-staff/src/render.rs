@@ -5,8 +5,8 @@
 
 use std::collections::HashSet;
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::arc::{slur_tie, ArcKind};
 use dolce_engrave::arpeggio::arpeggio_group;
 use dolce_engrave::barline::{BarlineGlyph, BarlineSpec, BarlineStyle};
@@ -16,7 +16,7 @@ use dolce_engrave::hairpin::{hairpin_path, HairpinSpec};
 use dolce_engrave::prims::{fill_rect, text_item};
 use dolce_engrave::spacing::AccidentalSide;
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
-use dolce_base::geom::{Matrix33, Point};
+use dolce_model::base::geom::{Matrix33, Point};
 use dolce_model::doc::BarStyle;
 use dolce_scene::build::Env;
 use dolce_scene::{Edge, ElementId, Identity, IdentityKind, Node};

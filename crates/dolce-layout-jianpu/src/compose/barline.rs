@@ -2,7 +2,7 @@
 
 use dolce_engrave::barline::{BarlineGlyph, BarlineStyle};
 use dolce_scene::Node;
-use dolce_view::ast::{BarlineType, MusicElement};
+use dolce_model::view::ast::{BarlineType, MusicElement};
 
 use super::ctx::{font, Ctx, ItemsKey};
 use super::header::paint_meter;

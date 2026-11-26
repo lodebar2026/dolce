@@ -12,8 +12,8 @@
 
 use crate::model::*;
 use crate::pass::{self, LayoutInput, MeasureLayoutInput, PrintInput, Probe, StaffDetailInput, StaffLayoutInput, SystemLayoutInput};
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::articulation::artic_glyph;
 use dolce_engrave::dynamics::dynamic_glyphs;
 use dolce_engrave::spacing::EQ_PAD_EM;

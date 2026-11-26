@@ -1,7 +1,7 @@
 //! 花括号（连谱号、并排块、词括号）的轮廓路径（照 `compose/brace.ts` 与 `braceglyphs.ts`）。
 
 use dolce_engrave::jpglyph::bracket;
-use dolce_base::geom::Matrix33;
+use dolce_model::base::geom::Matrix33;
 use dolce_scene::{Node, PathOp, PathSeg};
 
 use super::ctx::{font, rect, text, Ctx};
@@ -90,7 +90,7 @@ fn parse_path_d(d: &str) -> Vec<PathSeg> {
     let (mut cx, mut cy, mut sx, mut sy, mut p2x, mut p2y) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     let mut last = String::new();
     let num = |i: &mut usize| -> f64 {
-        let v = toks.get(*i).map_or(f64::NAN, |t| dolce_base::js::number(t));
+        let v = toks.get(*i).map_or(f64::NAN, |t| dolce_model::base::js::number(t));
         *i += 1;
         v
     };

@@ -4,7 +4,7 @@
 //! 和弦记号等下一个音、弧按编号与声部配对、简谱度数按调号补）。识别 id 不进模型，按「对象 + 槽位」记在附件里：
 //! 音（`Note`；休止记在 `Chord` 上，和弦同时记第一个音的）、弧的起端（`Mark` 的 `Start`）、歌词、文字记号 / 力度 / 速度（`Direction`）。
 //! 要 MusicXML 就交唯一写出端 [`to_music_xml`]，id 与符干照附件写回元素上。
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_model::doc::*;
 use dolce_model::fromxml::split_verse_label;
 use dolce_model::helpers::{empty_doc, empty_song, IdGen};

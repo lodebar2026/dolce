@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js::{self, NumKey};
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js::{self, NumKey};
 use dolce_scene::smufl::MetaData;
 
 use super::*;

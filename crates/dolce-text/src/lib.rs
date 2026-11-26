@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use serde::{Deserialize, Serialize};
 
 pub mod cjkpunct;
@@ -100,7 +100,7 @@ pub trait TextMeasurer {
 
 /// JS `\s`（码点级）。
 fn is_js_space(c: char) -> bool {
-    dolce_base::js::is_space(c)
+    dolce_model::base::js::is_space(c)
 }
 
 /// SVG `<text>` 的空白折叠（`svgCollapsedText`）：ASCII 空格、制表、换行连成一段折成一个空格，去掉串首串尾那一个；
@@ -156,7 +156,7 @@ pub fn feature_settings(features: &[String]) -> String {
 }
 
 fn size_key(size: f64) -> String {
-    dolce_base::js::num_to_string(size)
+    dolce_model::base::js::num_to_string(size)
 }
 
 /// 一次排版的量字上下文：后端 + 按键缓存（`measure.ts` 的四张缓存表）。
@@ -312,7 +312,7 @@ impl<'a> MeasureCtx<'a> {
         if features.iter().any(|f| self.has_font_feature(family, f, size)) {
             let w = |s: &str| self.glyph_text(s, family, size, weight, &features, FontStyle::Normal).width;
             let joined = format!("{prev}{next}");
-            return dolce_base::js::max(0.0, w(prev) + w(next) - w(&joined));
+            return dolce_model::base::js::max(0.0, w(prev) + w(next) - w(&joined));
         }
         let slack = |ch: &str| self.slack(ch, family, size, weight);
         pair_trim_px(mode, prev, next, size, Some(&slack))

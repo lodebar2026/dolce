@@ -41,7 +41,7 @@ fn xml(s: &str) -> String {
 }
 
 fn hex(argb: f64) -> String {
-    format!("{:06X}", dolce_base::js::to_int32(argb) as u32 & 0xffffff)
+    format!("{:06X}", dolce_model::base::js::to_int32(argb) as u32 & 0xffffff)
 }
 
 // ── 目标字体（Microsoft YaHei，msyh.ttf 的 hmtx/hhea，与 2019 年那批成品量到的一致）──
@@ -410,7 +410,7 @@ fn slide_xml(shapes: &[ShapeOut], bg: f64) -> String {
         }
     }
     // 底色：白（没改过）不写，留给母版的 bg1
-    let bg = if dolce_base::js::to_int32(bg) as u32 & 0xffffff == 0xffffff {
+    let bg = if dolce_model::base::js::to_int32(bg) as u32 & 0xffffff == 0xffffff {
         String::new()
     } else {
         format!("<p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>", hex(bg))

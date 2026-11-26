@@ -9,6 +9,6 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dolce-formats = { workspace = true }
+dolce-model = { workspace = true }
 wasm-bindgen = "=0.2.120"
 console_error_panic_hook = "0.1"

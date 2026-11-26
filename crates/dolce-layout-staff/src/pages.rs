@@ -14,11 +14,11 @@ use crate::model::{
 };
 use crate::pass::auto_staff_distances;
 use crate::render::{draw_system, ending_place, harmony_width_of};
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::header::header_role_font;
 use dolce_engrave::upperband::{stack_upper_band, BandItem};
-use dolce_base::geom::Matrix33;
+use dolce_model::base::geom::Matrix33;
 use dolce_model::doc::Placement;
 use dolce_model::pagemeta::header_role_of_credit;
 use dolce_scene::{Identity, IdentityKind, Node};

@@ -1,4 +1,4 @@
-//! Muse .jcx 字节编解码（`dolce_formats::jcxcodec`）的 wasm 绑定。码表占体积，单出一份按需载入：
+//! Muse .jcx 字节编解码（`dolce_model::formats::jcxcodec`）的 wasm 绑定。码表占体积，单出一份按需载入：
 //! 网页开机后空闲时预取（`common/jcx.ts::loadJcx`），开 / 存 .jcx 前兜底等它；Node 由 `cli/dolcewasm.node.ts` 同步载。
 
 use wasm_bindgen::prelude::*;
@@ -10,7 +10,7 @@ fn start() {
 
 #[wasm_bindgen(js_name = decodeJcx)]
 pub fn decode_jcx(bytes: &[u8]) -> String {
-    dolce_formats::jcxcodec::decode_jcx(bytes)
+    dolce_model::formats::jcxcodec::decode_jcx(bytes)
 }
 
 /// `encodeJcx` 的结果：字节与 GBK 写不出的字
@@ -35,6 +35,6 @@ impl JcxBytes {
 
 #[wasm_bindgen(js_name = encodeJcx)]
 pub fn encode_jcx(text: &str) -> JcxBytes {
-    let (bytes, missing) = dolce_formats::jcxcodec::encode_jcx(text);
+    let (bytes, missing) = dolce_model::formats::jcxcodec::encode_jcx(text);
     JcxBytes { bytes, missing }
 }

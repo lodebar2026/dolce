@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use dolce_view::ast::MusicElement;
+use dolce_model::view::ast::MusicElement;
 
 use crate::grid::{content_width, JianpuGrid};
 use crate::ink::Ink;

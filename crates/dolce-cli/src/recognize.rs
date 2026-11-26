@@ -53,7 +53,7 @@ fn jianpu_output(score: &dolce_omr_jianpu::result::RecognizedScore) -> Result<Re
 /// 简谱识别结果 → 123（同编辑器识别的缺省输出格式 `convert/targets.ts` 的 123：直出模型、补纸张 meta、`emit_123`）。
 pub fn jianpu_123(score: &dolce_omr_jianpu::result::RecognizedScore) -> String {
     let doc = dolce_omr_todoc::jianpu::recognized_to_doc(score).doc;
-    dolce_formats::abc::emit::emit_123(&dolce_model::pagemeta::with_page_meta(&doc, None))
+    dolce_model::formats::abc::emit::emit_123(&dolce_model::pagemeta::with_page_meta(&doc, None))
 }
 
 /// OCR 模型目录：环境变量 `OMR_MODELS` → 可执行文件旁的 `models/`（分发包）→ 本检出的 `public/redist/ocr`（开发、回归）。

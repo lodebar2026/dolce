@@ -3,7 +3,7 @@
 //!
 //! 数一律存成 f64（读进来的整数也换成 f64，[`normalize`]），结构相等即 JS 的值相等。
 
-use dolce_base::js::num_to_string;
+use dolce_model::base::js::num_to_string;
 use serde_json::{Map, Number, Value};
 
 /// JS 的「普通对象」：非 null、非数组的对象。

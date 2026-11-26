@@ -1,11 +1,11 @@
 //! 页脚（BL/BC/BR 模板）的排版（照 `compose/footer.ts`）。
 
-use dolce_base::js::trim;
+use dolce_model::base::js::trim;
 use dolce_engrave::Env;
 use dolce_scene::Node;
 use dolce_style::ss::Region;
 use dolce_style::template::{layout_region, FieldValue, FontMetricsLike, Placed, RegionEnv};
-use dolce_view::ast::Metadata;
+use dolce_model::view::ast::Metadata;
 
 use super::ctx::{font, text};
 use crate::grid::JianpuGrid;

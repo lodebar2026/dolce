@@ -12,7 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-dolce-base = { workspace = true }
+dolce-model = { workspace = true }
 serde.workspace = true
 bincode.workspace = true
 sha2.workspace = true

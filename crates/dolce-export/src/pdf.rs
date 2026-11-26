@@ -17,7 +17,7 @@ use crate::fonts::{face_by_pdf_font, synth_bold_stroke, Face, FaceRef, FontBook,
 
 /// ARGB（`0xAARRGGBB`，场景里存成 f64）→ krilla 颜色与不透明度
 pub fn argb(c: f64) -> (rgb::Color, f32) {
-    let v = dolce_base::js::to_int32(c) as u32;
+    let v = dolce_model::base::js::to_int32(c) as u32;
     let a = ((v >> 24) & 0xff) as f32 / 255.0;
     (rgb::Color::new(((v >> 16) & 0xff) as u8, ((v >> 8) & 0xff) as u8, (v & 0xff) as u8), a)
 }
@@ -54,7 +54,7 @@ impl Affine {
         Affine([s, 0.0, 0.0, s, 0.0, 0.0])
     }
     /// 场景节点的矩阵（`Matrix33` 行主序 9 元）
-    pub fn of_matrix(m: &dolce_base::geom::Matrix33) -> Affine {
+    pub fn of_matrix(m: &dolce_model::base::geom::Matrix33) -> Affine {
         let a = &m.mat;
         Affine([a[0], a[3], a[1], a[4], a[2], a[5]])
     }
@@ -130,7 +130,7 @@ pub fn parse_d(d: &str) -> Vec<Seg> {
                 }
             }
             if let Some(t) = toks.last_mut() {
-                t.1.push(dolce_base::js::number(&d[s..i]));
+                t.1.push(dolce_model::base::js::number(&d[s..i]));
             }
         } else {
             i += 1;

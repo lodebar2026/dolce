@@ -6,13 +6,13 @@
 //! 速度、副标题、段落词、歌词段号在 MusicXML 读回那一步也全丢。
 //!
 //! 音符次序：`flat` 下标 = 全曲 `rows[].nums` 拍平后的第几个（`JpwMeta` 的约定），[`Built::num_of`] 与 [`chord_places`] 都按它。
-use dolce_base::js;
-use dolce_formats::abc::dialect::duration_123;
+use dolce_model::base::js;
+use dolce_model::formats::abc::dialect::duration_123;
 use dolce_model::doc::*;
 use dolce_model::helpers::{empty_doc, IdGen};
 use dolce_model::metakeys::creator_of;
 use dolce_omr_sheet::jianpu::{JpNum, RecognizedScore, StaffRow, RHYTHM_DIGIT};
-use dolce_play::jppitch::jp_pitch;
+use dolce_model::play::jppitch::jp_pitch;
 use std::collections::{HashMap, HashSet};
 
 const Q: f64 = SIMPLE_DIVISIONS;

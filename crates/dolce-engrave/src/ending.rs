@@ -38,7 +38,7 @@ pub fn label_baseline(font: &Font, text: &str, line_width: f64, env: &Env) -> f6
 
 /// 同上，墨迹顶由调用方量好。
 pub fn label_baseline_of(ink_top: f64, size: f64, line_width: f64) -> f64 {
-    line_width / 2.0 + size * LABEL_GAP - dolce_base::js::min(0.0, ink_top)
+    line_width / 2.0 + size * LABEL_GAP - dolce_model::base::js::min(0.0, ink_top)
 }
 
 /// 竖脚长：给了实测短脚就用它，否则与房号字号等长。
@@ -58,11 +58,11 @@ pub fn ending_label_dx(line_width: f64, size: f64, bracket_foot: f64) -> f64 {
 /// 房号原文规整：只由数字与分隔（逗号 / 顿号 / 中点 / 空格 / 句点）组成时，数字之间统一用半角句点，尾点照原文；
 /// 含别的字原样返回。
 pub fn norm_ending_text(text: &str) -> String {
-    let ok = |c: char| c.is_ascii_digit() || dolce_base::js::is_space(c) || matches!(c, '.' | ',' | '，' | '、' | '·');
+    let ok = |c: char| c.is_ascii_digit() || dolce_model::base::js::is_space(c) || matches!(c, '.' | ',' | '，' | '、' | '·');
     if text.is_empty() || !text.chars().all(ok) || !text.chars().any(|c| c.is_ascii_digit()) {
         return text.to_string();
     }
-    let t = dolce_base::js::trim(text);
+    let t = dolce_model::base::js::trim(text);
     let mut groups: Vec<String> = Vec::new();
     let mut cur = String::new();
     for c in t.chars() {

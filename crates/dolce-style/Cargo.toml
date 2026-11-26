@@ -12,7 +12,6 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-dolce-base = { workspace = true }
 dolce-model = { workspace = true }
 dolce-text = { workspace = true }
 serde.workspace = true

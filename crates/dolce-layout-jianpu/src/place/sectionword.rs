@@ -2,8 +2,8 @@
 //! 这里只把一行里的符号换算成它要的几何——横向撑开（spacing）与真正摆（band）用同一个换算。
 
 use dolce_engrave::sectionword::{place_section_word, section_word_hang_left, SectionChord, SectionWordGeom, SectionWordSlot};
-use dolce_base::geom::Rect;
-use dolce_view::ast::MusicElement;
+use dolce_model::base::geom::Rect;
+use dolce_model::view::ast::MusicElement;
 
 use crate::grid::JianpuGrid;
 use crate::model::PlacedItem;
@@ -60,7 +60,7 @@ pub fn section_word_slot(
 ) -> (SectionWordSlot, f64) {
     let anchor_x = x_of(i) - m.ink.note_height * 0.35;
     let mut bars: Vec<f64> = items.iter().enumerate().filter(|(_, o)| matches!(o.element, MusicElement::Barline(_))).map(|(k, _)| x_of(k)).collect();
-    dolce_base::js::sort_num(&mut bars);
+    dolce_model::base::js::sort_num(&mut bars);
     let bar_left_at = bars.iter().rev().find(|&&bx| bx <= anchor_x).copied();
     let mut own: Option<f64> = None;
     for c in chords {

@@ -1,7 +1,7 @@
 //! 歌词 / 和弦记号 / 文本块。
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::chord::HarmonySeg;
 use dolce_engrave::spacing::AccidentalSide;
 use dolce_model::doc::{DegreeType, Direction as DocDirection, Harmony as DocHarmony, HAlign, Lyric as DocLyric, Placement, Syllabic};

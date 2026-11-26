@@ -1,6 +1,6 @@
 //! 符杠组（`BeamGroup`）。组本身只存和弦表，计算都要查表，写成 `StaffLayout::beam_*`。
 
-use dolce_base::js;
+use dolce_model::base::js;
 
 use super::*;
 

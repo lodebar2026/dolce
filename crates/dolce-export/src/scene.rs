@@ -37,7 +37,7 @@ impl PageSource for SceneDoc<'_> {
     fn draw(&self, i: usize, c: &mut Canvas) {
         let p = &self.pages[i];
         if let Some(bg) = self.bg {
-            if dolce_base::js::to_int32(bg) as u32 & 0xffffff != 0xffffff {
+            if dolce_model::base::js::to_int32(bg) as u32 & 0xffffff != 0xffffff {
                 let (col, a) = argb(bg);
                 c.rect(0.0, 0.0, p.w_pt, p.h_pt, Some((col, a)), None);
             }

@@ -10,7 +10,7 @@
 pub mod layout;
 pub mod sing;
 
-use dolce_base::Msg;
+use dolce_model::base::Msg;
 use serde::{Deserialize, Serialize};
 
 /// 按键路径的一次往返（同 `UpdateRequest`；排版设置随 L 期加）。

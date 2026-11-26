@@ -1,7 +1,7 @@
 //! MIDI 导入（`dolce-formats::midi`）的对拍探针（dev `rsdiff/midiimport.mjs`）。只在 `--features probe` 的那份里。
 
 use crate::json;
-use dolce_formats::midi::smf;
+use dolce_model::formats::midi::smf;
 use wasm_bindgen::prelude::*;
 
 /// SMF 读取：事件表的 JSON（读不出为 `null`）

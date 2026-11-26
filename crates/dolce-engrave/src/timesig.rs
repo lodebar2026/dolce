@@ -1,6 +1,6 @@
 //! 分数式简谱拍号（`engrave/timesig.ts`）。一切长度都是小节线高 H 的比例；两个数字各离分数线一格（墨迹到墨迹）。
 
-use dolce_base::geom::{Point, Rect};
+use dolce_model::base::geom::{Point, Rect};
 use dolce_scene::Node;
 use dolce_text::Font;
 
@@ -27,7 +27,7 @@ pub const TIME_SIG_DIGIT_RATIO: f64 = 0.5625;
 pub const TIME_SIG_RULE_LENGTH_RATIO: f64 = 0.28125;
 
 fn digits(n: f64) -> usize {
-    dolce_base::js::num_to_string(n).encode_utf16().count()
+    dolce_model::base::js::num_to_string(n).encode_utf16().count()
 }
 
 /// 拍号占的宽（即分数线长）：只由 H 与位数定。
@@ -58,8 +58,8 @@ impl TimeSigGlyph {
             let w = tf.text_ref().unwrap().measure(env.mc);
             (tf, w, font.char_bound(env.mc, &s))
         };
-        let (mut up, up_w, up_ink) = mk(dolce_base::js::num_to_string(beats));
-        let (mut lo, lo_w, lo_ink) = mk(dolce_base::js::num_to_string(beat_type));
+        let (mut up, up_w, up_ink) = mk(dolce_model::base::js::num_to_string(beats));
+        let (mut lo, lo_w, lo_ink) = mk(dolce_model::base::js::num_to_string(beat_type));
         let width = time_sig_width(beats, beat_type, h, style.digit_ratio, style.rule_length_ratio);
         let gap = font.size * TIME_SIG_GAP_EM;
         up.set_y(y - style.rule_width / 2.0 - gap - up_ink.bottom);

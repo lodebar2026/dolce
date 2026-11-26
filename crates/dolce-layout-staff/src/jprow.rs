@@ -1,7 +1,7 @@
 //! 混排简谱层一个数字的竖向落点（主音与倚音），画（`overlay`）与量高（`model::part_calc_mixed_staff_y`）共用（照 `jprow.ts`）。
 //! 坐标系是简谱层自己的：谱表顶 y = 0、数字基线在 `mixFont.size` 处。
 
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_engrave::stack::{stack_bottom, stack_top, StackStyle};
 
 use crate::model::{ChordId, NoteId, PmId, StaffLayout};

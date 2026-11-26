@@ -11,7 +11,7 @@ use dolce_engrave::grace::{GraceMetrics, GraceNote};
 use dolce_engrave::stack::{high_dot_y, low_dot_y, StackStyle};
 use dolce_style::jianpustyle::{JianpuStyle, Margin};
 use dolce_text::{Font, MeasureCtx};
-use dolce_view::ast::NoteElement;
+use dolce_model::view::ast::NoteElement;
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -95,7 +95,7 @@ pub fn grid_of(src: &JianpuStyle, page: GridPage, mc: &MeasureCtx) -> JianpuGrid
     }
     let k = style.size.note / GRID_NOTE_SIZE;
     let mut head = HeadGrid { title_baseline: 110.0 * k, credit_baseline: 175.0 * k, credit_line_height: 21.0 * k, key_meter_baseline: 176.0 * k };
-    head.credit_line_height = dolce_base::js::max(head.credit_line_height, style.header.credit.size * (21.0 / 16.0));
+    head.credit_line_height = dolce_model::base::js::max(head.credit_line_height, style.header.credit.size * (21.0 / 16.0));
     let one = note_font(&style, 100.0).char_bound(mc, "1");
     let h = (one.bottom - one.top).abs();
     let note_height = style.size.note * ((if h == 0.0 || h.is_nan() { 71.0 } else { h }) / 100.0);

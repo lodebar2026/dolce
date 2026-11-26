@@ -953,20 +953,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-base"
-version = "0.8.9"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-engrave"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
  "dolce-model",
- "dolce-play",
  "dolce-scene",
  "dolce-style",
  "dolce-text",
@@ -979,7 +969,7 @@ name = "dolce-export"
 version = "0.8.9"
 dependencies = [
  "crc32fast",
- "dolce-base",
+ "dolce-model",
  "dolce-scene",
  "dolce-text",
  "flate2",
@@ -989,31 +979,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-formats"
-version = "0.8.9"
-dependencies = [
- "dolce-base",
- "dolce-model",
- "dolce-play",
- "dolce-view",
- "encoding_rs",
- "indexmap 2.14.2",
- "serde",
- "unicode-general-category",
-]
-
-[[package]]
 name = "dolce-layout-jianpu"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
  "dolce-engrave",
  "dolce-model",
- "dolce-play",
  "dolce-scene",
  "dolce-style",
  "dolce-text",
- "dolce-view",
  "serde",
  "serde_json",
 ]
@@ -1022,7 +995,6 @@ dependencies = [
 name = "dolce-layout-staff"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
  "dolce-engrave",
  "dolce-model",
  "dolce-scene",
@@ -1036,10 +1008,11 @@ dependencies = [
 name = "dolce-model"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
- "dolce-play",
+ "encoding_rs",
  "indexmap 2.14.2",
+ "regex",
  "serde",
+ "serde_json",
  "unicode-general-category",
 ]
 
@@ -1048,7 +1021,7 @@ name = "dolce-omr-core"
 version = "0.8.9"
 dependencies = [
  "bincode",
- "dolce-base",
+ "dolce-model",
  "serde",
  "sha2",
 ]
@@ -1133,7 +1106,7 @@ dependencies = [
 name = "dolce-omr-text"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
+ "dolce-model",
  "regex",
  "serde",
 ]
@@ -1142,22 +1115,10 @@ dependencies = [
 name = "dolce-omr-todoc"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
- "dolce-formats",
  "dolce-model",
  "dolce-omr-core",
  "dolce-omr-sheet",
  "dolce-omr-text",
- "dolce-play",
- "dolce-view",
- "serde",
-]
-
-[[package]]
-name = "dolce-play"
-version = "0.8.9"
-dependencies = [
- "dolce-base",
  "serde",
 ]
 
@@ -1165,7 +1126,7 @@ dependencies = [
 name = "dolce-scene"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
+ "dolce-model",
  "dolce-text",
  "serde",
  "serde_json",
@@ -1175,15 +1136,12 @@ dependencies = [
 name = "dolce-session"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
  "dolce-engrave",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
- "dolce-play",
  "dolce-scene",
  "dolce-style",
- "dolce-view",
  "serde",
  "serde_json",
 ]
@@ -1192,7 +1150,6 @@ dependencies = [
 name = "dolce-style"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
  "dolce-model",
  "dolce-text",
  "indexmap 2.14.2",
@@ -1204,7 +1161,7 @@ dependencies = [
 name = "dolce-text"
 version = "0.8.9"
 dependencies = [
- "dolce-base",
+ "dolce-model",
  "fontdb",
  "objc2-core-foundation",
  "objc2-core-graphics",
@@ -1217,18 +1174,6 @@ dependencies = [
  "windows-core",
  "windows-numerics",
  "yeslogic-fontconfig-sys",
-]
-
-[[package]]
-name = "dolce-view"
-version = "0.8.9"
-dependencies = [
- "dolce-base",
- "dolce-model",
- "dolce-play",
- "encoding_rs",
- "regex",
- "serde",
 ]
 
 [[package]]

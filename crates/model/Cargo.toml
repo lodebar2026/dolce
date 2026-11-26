@@ -1,0 +1,36 @@
+[package]
+name = "dolce-model"
+description = "悦谱 Dolce 的模型与格式层：语义模型 ScoreDoc（查询、MusicXML 读写与表层、投影、编辑）、底层工具（base：JS 数值口径、分数、UTF-16 区间、几何）、演唱顺序 / 断句 / 时间轴 / MIDI（play）、排版行视图（view）、各源格式读写（formats）、简繁词表引擎（hanconv-dict 特性）。无平台依赖，能编到 wasm"
+version.workspace = true
+edition.workspace = true
+publish = true
+# hanconv 词表（data/hanconv）来自 OpenCC（Apache-2.0）
+license = "MIT AND Apache-2.0"
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = "1"  # base::tagged 慢路（标记不在第一个键时收进 Value 再读）
+indexmap = { version = "2", features = ["serde"] }
+# `\p{P}`（署名比对去标点，`jianpuproject::loose_norm`；formats）
+unicode-general-category = "1"
+encoding_rs = "0.8"
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
+ts-rs = { workspace = true, optional = true, features = ["indexmap-impl"] }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+
+[features]
+# 派生 TS 类型（`npm run gen:types`，生成 src/engine/gen/）
+ts = ["dep:ts-rs"]
+# 简繁词表引擎（OpenCC 词表，s2t 约 1 MB）：界面走 TS opencc-js，这份给命令行 / 外部用
+hanconv-dict = []
+
+[[example]]
+name = "conv"
+required-features = ["hanconv-dict"]

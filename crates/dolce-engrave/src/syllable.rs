@@ -64,7 +64,7 @@ pub fn lyric_tail_blank(n: &Node, env: &Env) -> f64 {
         None => t.font.measure_text(env.mc, &t.text[..t.text.len() - last.len_utf8()]),
     };
     let lb = t.font.char_bound(env.mc, last.encode_utf8(&mut [0; 4]));
-    dolce_base::js::max(0.0, n.w - (upto + lb.right))
+    dolce_model::base::js::max(0.0, n.w - (upto + lb.right))
 }
 
 /// 首字左侧的留白，从挤压后的笔位起算。
@@ -72,5 +72,5 @@ pub fn lyric_head_blank(n: &Node, env: &Env) -> f64 {
     let t = n.text_ref().expect("歌词是文字节点");
     let Some(first) = t.text.chars().next() else { return 0.0 };
     let pen = t.char_xs.as_ref().and_then(|x| x.first().copied()).unwrap_or(0.0);
-    dolce_base::js::max(0.0, pen + t.font.char_bound(env.mc, first.encode_utf8(&mut [0; 4])).left)
+    dolce_model::base::js::max(0.0, pen + t.font.char_bound(env.mc, first.encode_utf8(&mut [0; 4])).left)
 }

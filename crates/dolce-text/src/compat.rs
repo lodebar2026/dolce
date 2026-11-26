@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use dolce_base::geom::{fround, path_bounds, Rect};
+use dolce_model::base::geom::{fround, path_bounds, Rect};
 
 use crate::cjkpunct::{code_points, punct_class, PunctClass};
 use crate::{svg_collapsed_text, FontMetrics, FontStyle, Positions, TextMeasurer, TextMetrics, Weight, HALT};
@@ -154,7 +154,7 @@ fn unquote(s: &str) -> &str {
 pub fn css_families(css: &str, platform: Platform) -> Vec<String> {
     let mut hit: Vec<String> = Vec::new();
     for part in css.split(',') {
-        let name = unquote(dolce_base::js::trim(part));
+        let name = unquote(dolce_model::base::js::trim(part));
         if name.is_empty() {
             continue;
         }
@@ -244,7 +244,7 @@ impl<S: SystemText> BrowserCompat<S> {
 
     fn half_of(&self, ch: &str, family: &str, size: f64, weight: Weight, style: FontStyle) -> f64 {
         let halt = [HALT.to_string()];
-        dolce_base::js::max(
+        dolce_model::base::js::max(
             0.0,
             self.raw_glyph(ch, family, size, weight, &[], style).width - self.raw_glyph(ch, family, size, weight, &halt, style).width,
         )
@@ -287,7 +287,7 @@ impl<S: SystemText> TextMeasurer for BrowserCompat<S> {
         // 单字（非空白）的 advance 向上取到 1/64（Chromium 的量法；WebKit 不取）
         let mut it = text.chars();
         if let (Some(c), None, Engine::Chromium) = (it.next(), it.next(), self.engine) {
-            if !dolce_base::js::is_space(c) {
+            if !dolce_model::base::js::is_space(c) {
                 m.width = ceil64(m.width);
             }
         }
@@ -328,7 +328,7 @@ pub fn browser_path_bounds(d: &str) -> Rect {
 
 /// 浏览器给的 ascent/descent 是取整过的；macOS 上 Times / Helvetica / Courier 的 ascent 再加 15% 行高。
 fn browser_metrics(asc: f64, desc: f64, family: &str, platform: Platform) -> FontMetrics {
-    use dolce_base::js::round;
+    use dolce_model::base::js::round;
     let mut a = round(asc);
     let d = round(desc);
     let f = family.to_ascii_lowercase();

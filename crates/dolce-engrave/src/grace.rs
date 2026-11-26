@@ -110,9 +110,9 @@ pub fn grace_geometry(notes: &[GraceNote], m: &GraceMetrics, x: f64, baseline: f
     let st = StackStyle { gap: m.stack_gap * g_ink, dot_radius: m.octave_dot_radius * m.scale, beam_width: ink * GRACE_BEAM_H };
     let ink_top = gy - g_ink / 2.0;
     let ink_bottom = gy + g_ink / 2.0;
-    let lv_counts: Vec<f64> = notes.iter().map(|gn| dolce_base::js::max(1.0, ((gn.duration.unwrap_or(8.0) / 4.0).log2()).ceil())).collect();
+    let lv_counts: Vec<f64> = notes.iter().map(|gn| dolce_model::base::js::max(1.0, ((gn.duration.unwrap_or(8.0) / 4.0).log2()).ceil())).collect();
     let beam_top = |lv: f64| beam_y(ink_bottom, lv + 1.0, &st) - st.beam_width / 2.0;
-    let max_lv = lv_counts.iter().copied().fold(f64::NEG_INFINITY, dolce_base::js::max);
+    let max_lv = lv_counts.iter().copied().fold(f64::NEG_INFINITY, dolce_model::base::js::max);
     let mut lv = 0.0;
     while lv < max_lv {
         let mut run_start: Option<usize> = None;
@@ -181,10 +181,10 @@ pub fn grace_hook(mid: f64, start_y: f64, g_ink: f64, toward: f64) -> ([f64; 2],
 pub fn grace_bottom(g: &GraceGeom, m: &GraceMetrics) -> f64 {
     let mut low = (m.ink * m.scale) / 2.0;
     for b in &g.beams {
-        low = dolce_base::js::max(low, b.y + b.h);
+        low = dolce_model::base::js::max(low, b.y + b.h);
     }
     for d in &g.dots {
-        low = dolce_base::js::max(low, d.cy + d.r);
+        low = dolce_model::base::js::max(low, d.cy + d.r);
     }
     low
 }

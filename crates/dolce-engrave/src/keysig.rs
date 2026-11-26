@@ -1,7 +1,7 @@
 //! 简谱调号「1=♭B」/ 曲中转调「转1=D」（`engrave/keysig.ts`）。画法照混排：「1=」是文字，升降号是 SMuFL 的 csym 小号字形、抬高；
 //! 缺省写在音名**之前**，`accidental-side: after` 写在后。
 
-use dolce_base::geom::Rect;
+use dolce_model::base::geom::Rect;
 use dolce_scene::Node;
 use dolce_text::Font;
 
@@ -19,7 +19,7 @@ pub struct KeyName {
 
 /// 调号的五度数 → 调名（`MusicCommon.keys`）。
 pub fn key_name_of_fifths(fifths: f64) -> KeyName {
-    let s = dolce_play::jppitch::key_name(fifths).unwrap_or("C");
+    let s = dolce_model::play::jppitch::key_name(fifths).unwrap_or("C");
     key_name_of(s).unwrap_or(KeyName { letter: 'C', alter: 0 })
 }
 
@@ -29,7 +29,7 @@ fn is_acc(c: char) -> bool {
 
 /// 文字写法的调名（`bE` / `Eb` / `♭E` / `$E` / `#F` / `F`）→ 调名；认不出 None。`$` 是文本谱里降号的写法。
 pub fn key_name_of(text: &str) -> Option<KeyName> {
-    let cs: Vec<char> = dolce_base::js::trim(text).chars().collect();
+    let cs: Vec<char> = dolce_model::base::js::trim(text).chars().collect();
     let (pre, letter, post) = match cs.as_slice() {
         [l] => (None, *l, None),
         [a, l] if is_acc(*a) && ('A'..='G').contains(l) => (Some(*a), *l, None),

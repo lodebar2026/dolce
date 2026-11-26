@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use dolce_base::fraction::Fraction;
-use dolce_base::js;
+use dolce_model::base::fraction::Fraction;
+use dolce_model::base::js;
 use dolce_engrave::beatgroup::{beat_group_index, beat_group_size, pickup_offset};
 use dolce_model::doc::{Chord as DocChord, Harmony as DocHarmony, Lyric as DocLyric};
 

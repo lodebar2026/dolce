@@ -1,7 +1,7 @@
 //! 和弦符号的富文本分段与绘制（`engrave/chord.ts`）：SMuFL 和弦（缺省）与简单文本两种风格。
 //! 根音升降号用 csym 小号字形、后缀上标、`m` 留在基线、低音 `/G` 跟在后面。
 
-use dolce_base::geom::{Matrix33, Rect};
+use dolce_model::base::geom::{Matrix33, Rect};
 use dolce_model::harmony::chord_step_alter;
 use dolce_scene::{IdentityKind, Node};
 use dolce_text::Font;
@@ -65,10 +65,10 @@ pub fn harmony_ink(segs: &[HarmonySeg], word_font: &Font, music_font: &Font, env
         let font = if s.music { music_font } else { word_font };
         let scl = seg_scale(s);
         let dy = seg_dy(s, scl, font.size);
-        if !dolce_base::js::trim(&s.text).is_empty() {
+        if !dolce_model::base::js::trim(&s.text).is_empty() {
             let b = font.char_bound(env.mc, &s.text);
             let r = Rect::new(xpos + b.left * scl, dy + b.top * scl, xpos + b.right * scl, dy + b.bottom * scl);
-            use dolce_base::js::{max, min};
+            use dolce_model::base::js::{max, min};
             ink = Some(match ink {
                 Some(i) => Rect::new(min(i.left, r.left), min(i.top, r.top), max(i.right, r.right), max(i.bottom, r.bottom)),
                 None => r,
@@ -201,7 +201,7 @@ fn quality_symbol(rest: &str) -> Option<(&'static str, usize)> {
 
 /// 把和弦**文字**解析成分段。`plain` 为真排成简单文本；`side` 根音 / 低音的升降号写在字母前还是后（不给照原文）。
 pub fn chord_text_segs(text: &str, plain: bool, side: Option<AccidentalSide>) -> Vec<HarmonySeg> {
-    let src = dolce_base::js::trim(text);
+    let src = dolce_model::base::js::trim(text);
     if plain {
         let mut segs: Vec<HarmonySeg> = Vec::new();
         let emit = |segs: &mut Vec<HarmonySeg>, t: &str, acc: bool| {

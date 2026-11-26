@@ -1,6 +1,6 @@
 //! 小节线（含反复点）的画法（`engrave/barline.ts`）：纯函数，只认坐标与样式。
 
-use dolce_base::geom::Point;
+use dolce_model::base::geom::Point;
 use dolce_model::doc::BarStyle;
 use dolce_scene::Node;
 

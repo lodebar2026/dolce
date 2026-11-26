@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use dolce_view::ast::{BarlineType, InlineLayerElement, LayerRole, MusicElement, ScoreLine};
+use dolce_model::view::ast::{BarlineType, InlineLayerElement, LayerRole, MusicElement, ScoreLine};
 
 use crate::grid::JianpuGrid;
 use crate::ink::Ink;

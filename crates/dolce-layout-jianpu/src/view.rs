@@ -1,13 +1,13 @@
 //! 排版的输入（照 `layout/jianpu/input.ts` 与 `jianpu/slots.ts::docView` 门面建表那一段）：
-//! [`dolce_view::slots::doc_view`] 的行视图，每行另带三张身份表——TS 按对象身份查的 `idOf` / `syllableOwner`
+//! [`dolce_model::view::slots::doc_view`] 的行视图，每行另带三张身份表——TS 按对象身份查的 `idOf` / `syllableOwner`
 //! 在这里按下标平行存：`ids[i]`（行内元素）、`sub_ids[i][k]`（并排块 / 伴奏层里的元素，只收非负）、`owners[line][k]`（歌词音节归属）。
 //! 投影档逐遍展开（`expand.rs`）造的新行照样带这三张表与各符号的遍号（TS `passesOfRow`）。
 
 use std::rc::Rc;
 
 use dolce_model as dm;
-use dolce_view::ast::{Metadata, MusicElement, ScoreLine, TextLine};
-use dolce_view::slots::{doc_view, SlotRef};
+use dolce_model::view::ast::{Metadata, MusicElement, ScoreLine, TextLine};
+use dolce_model::view::slots::{doc_view, SlotRef};
 
 /// 一份文档的排版行视图（TS `DocView`）
 #[derive(Clone, Debug)]

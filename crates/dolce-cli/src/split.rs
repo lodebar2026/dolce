@@ -17,8 +17,8 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use dolce_formats::capability::TargetFormat;
-use dolce_formats::targets::{message_zh, write_music_xml_as};
+use dolce_model::formats::capability::TargetFormat;
+use dolce_model::formats::targets::{message_zh, write_music_xml_as};
 
 pub const USAGE: &str = "  dolce split <歌本.pdf | 页图目录> -o <输出目录> [--report 报告.json] [--quality 92] [--dpi 300] [--toc-pages 3-15] [--dry-run]
               [--recognize [-f 格式]] [--cache=OCR缓存.json]

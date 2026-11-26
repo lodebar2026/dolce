@@ -68,7 +68,7 @@ pub fn place_section_word(g: &SectionWordGeom) -> SectionWordSlot {
         let cands: Vec<f64> = if let Some(r) = g.own_chord_right {
             vec![r + gap]
         } else if g.straddle {
-            vec![dolce_base::js::max(g.hang_left, g.anchor_x - g.width / 2.0), g.anchor_x]
+            vec![dolce_model::base::js::max(g.hang_left, g.anchor_x - g.width / 2.0), g.anchor_x]
         } else {
             vec![g.anchor_x]
         };
@@ -113,6 +113,6 @@ pub fn place_section_word(g: &SectionWordGeom) -> SectionWordSlot {
     if hang >= g.hang_left && hit(hang).is_none() {
         return SectionWordSlot { x: hang, lifted: false, shortfall: 0.0 };
     }
-    let lifted = dolce_base::js::max(0.0, dolce_base::js::min(g.anchor_x, g.right_limit - g.width));
-    SectionWordSlot { x: lifted, lifted: true, shortfall: dolce_base::js::max(0.0, cand + g.width - g.bar_right) }
+    let lifted = dolce_model::base::js::max(0.0, dolce_model::base::js::min(g.anchor_x, g.right_limit - g.width));
+    SectionWordSlot { x: lifted, lifted: true, shortfall: dolce_model::base::js::max(0.0, cand + g.width - g.bar_right) }
 }

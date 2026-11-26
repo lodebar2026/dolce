@@ -4,10 +4,10 @@ use dolce_engrave::arc::{slur_tie, ArcKind, SlurStyle};
 use dolce_engrave::ending::{add_ending_bracket, ending_drop, ending_label_dx, EndingBracket, EndingLabel};
 use dolce_engrave::hairpin::{hairpin_path, jp_hairpin, jp_hairpin_halves, jp_hairpin_line_width, HairpinSpec};
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
-use dolce_base::geom::Point;
+use dolce_model::base::geom::Point;
 use dolce_scene::build::update;
 use dolce_scene::{Identity, IdentityKind, Node};
-use dolce_view::ast::MarkType;
+use dolce_model::view::ast::MarkType;
 
 use super::ctx::{eid, font, ident, Ctx};
 use crate::grid::{bracket_line_width, jianpu_slur_style};
@@ -42,7 +42,7 @@ pub fn paint_mark(c: &Ctx, root: &mut Node, mk: &PlacedMark, left: f64, baseline
         }
         MarkType::Tuplet => {
             let y = baseline + mk.y.unwrap_or(-nh / 2.0);
-            let cap = mk.mark.caption.as_deref().map_or(f64::NAN, dolce_base::js::number);
+            let cap = mk.mark.caption.as_deref().map_or(f64::NAN, dolce_model::base::js::number);
             let n = if cap != 0.0 && !cap.is_nan() { cap } else { (mk.mark.end - mk.mark.start + 1) as f64 };
             let bracket = m.style.look.tuplet_style == "bracket";
             let foot = if m.style.vertical.bracket_foot > 0.0 { m.style.vertical.bracket_foot * 0.55 } else { m.style.size.note * 0.25 };

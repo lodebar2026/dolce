@@ -3,15 +3,15 @@
 //!
 //! 批量：多个文件或目录一起给，一个进程跑完（OCR 模型只加载一次）；`-o` 给目录则逐个写文件，否则写 stdout。
 use crate::run::{expand, recognize_file, Got};
-use dolce_formats::capability::TargetFormat;
-use dolce_formats::targets::{message_zh, write_music_xml_as, Encoded, OUT_FORMATS};
+use dolce_model::formats::capability::TargetFormat;
+use dolce_model::formats::targets::{message_zh, write_music_xml_as, Encoded, OUT_FORMATS};
 use dolce_model::toxml::{score_doc_to_music_xml, ToXmlOptions};
 use dolce_omr_engine::Kind;
 use dolce_omr_sheet::jianpu::RecognizedScore;
 use dolce_omr_todoc::jianpu::recognized_to_doc;
 use dolce_omr_todoc::reflyrics::{apply_ref_lyrics, decode_lyrics_bytes, CheckKind, LyricCheck};
 use dolce_session::sing::{fit_sing_doc, projection_request};
-use dolce_view::singfit::{apply_sing_fit, FitKind, SingFit};
+use dolce_model::view::singfit::{apply_sing_fit, FitKind, SingFit};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

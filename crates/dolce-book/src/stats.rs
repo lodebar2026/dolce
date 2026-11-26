@@ -7,7 +7,7 @@
 use crate::measure::BookMeasure;
 use crate::meta::{fixed, jsre, max_of, min_of, or, u16len};
 use crate::spec::{MarkSpec, PageSpec, SChar, SRect, TextRun};
-use dolce_base::js;
+use dolce_model::base::js;
 use dolce_style::bookstyle::{default_book_style, ink_sample_of, role_font_defaults};
 use dolce_style::sheet::STYLE_ROLES;
 use indexmap::IndexMap;

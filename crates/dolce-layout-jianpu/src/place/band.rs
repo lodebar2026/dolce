@@ -14,10 +14,10 @@ use dolce_engrave::jpslide::{jp_slide_arrow, jp_slide_of};
 use dolce_engrave::stack::{stack_bottom, stack_top as stack_top_of, StackStyle};
 use dolce_engrave::tuplet::tuplet_digits;
 use dolce_engrave::upperband::{stack_upper_band, BandItem};
-use dolce_base::geom::{Point, Rect};
+use dolce_model::base::geom::{Point, Rect};
 use dolce_model::deconames::{rehearsal_bracketed, rehearsal_of};
 use dolce_model::marknames::term_text;
-use dolce_view::ast::{MarkType, MusicElement};
+use dolce_model::view::ast::{MarkType, MusicElement};
 
 use crate::grid::{barline_span, bracket_line_width, jianpu_slur_style, key_label_size, JianpuGrid};
 use crate::ink::Ink;
@@ -240,7 +240,7 @@ pub fn place_band(items: &[PlacedItem], marks: &mut [PlacedMark], layers: &mut [
             boxes.push(bx);
             continue;
         }
-        let num_n = mk.mark.caption.as_deref().map_or(f64::NAN, dolce_base::js::number);
+        let num_n = mk.mark.caption.as_deref().map_or(f64::NAN, dolce_model::base::js::number);
         let n = if num_n == 0.0 || num_n.is_nan() { (mk.mark.end - mk.mark.start + 1) as f64 } else { num_n };
         let num = ink.smufl(&tuplet_digits(n), m.style.size.note);
         let half_w = num.width() / 2.0;
@@ -900,7 +900,7 @@ fn spread_chords(items: &[PlacedItem], texts: &mut [PlacedText], boxes: &mut [BB
             shift(texts, boxes, c, r + gap - ci.left);
         }
     }
-    dolce_base::js::sort_by(&mut chords, |&a, &b| texts[a].ink.left - texts[b].ink.left);
+    dolce_model::base::js::sort_by(&mut chords, |&a, &b| texts[a].ink.left - texts[b].ink.left);
     if texts[chords[0]].ink.left < 0.0 {
         let d = -texts[chords[0]].ink.left;
         shift(texts, boxes, chords[0], d);

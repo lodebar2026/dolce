@@ -2,7 +2,7 @@
 //!
 //! pt 绝对长度（裸数字也按 pt）；em 所在角色的字号；sp 线距 = 名义谱高 / 4。
 
-use dolce_base::js::{is_space, number};
+use dolce_model::base::js::{is_space, number};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

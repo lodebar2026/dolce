@@ -3,11 +3,11 @@
 //! 歌词给 `-`：不生成，只把谱面照现有的 `%%sing` 排投影档出 SVG（对比排版改动用）；`--ss=<样式.ss>` 叠在出厂投影样式上；`--phrase` 给投影版面加 `linebreak=phrase`（逐遍按乐句断行，生成时也照它试排行数，写回的 123 里也带着）；
 //! `--hits` 出 SVG 时另写 `info.json`（排版概要，含各遍段落出现表）与逐页身份表 `NN.hits.json`（核对谱面上增删断点用的槽位）。
 
-use dolce_formats::abc::emit::emit_123;
-use dolce_formats::abc::parse::parse_123;
+use dolce_model::formats::abc::emit::emit_123;
+use dolce_model::formats::abc::parse::parse_123;
 use dolce_session::sing::{fit_sing_doc, projection_request};
-use dolce_view::reflyrics::decode_lyrics_bytes;
-use dolce_view::singfit::apply_sing_fit;
+use dolce_model::view::reflyrics::decode_lyrics_bytes;
+use dolce_model::view::singfit::apply_sing_fit;
 
 pub fn sing_fit(args: &[String]) -> i32 {
     let pos: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
