@@ -1,6 +1,6 @@
 //! 点原图补认：删掉一个音，在它原来的位置点一下补回来，音高与时值要回到原样（语料、OCR 缓存在私有仓库，没有就跳过）。
 use dolce_omr_core::progress::Hook;
-use dolce_omr_engine::{insert, recognize, region, Doc, Opts, Recognition, RegionClass};
+use dolce_omr::{insert, recognize, region, Doc, Opts, Recognition, RegionClass};
 use dolce_omr_core::ocr::cache::CachedOcr;
 use dolce_omr_core::ocr::native::NativeInfer;
 use dolce_omr_core::ocr::{Ocr, OcrCache};

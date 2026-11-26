@@ -1,6 +1,6 @@
 //! 文件名与按目录核对的报告。对应 web `omr/booksplit/index.ts` 的 `songFileNames` / `checkAgainstToc`。
-use crate::plan::SongPlan;
-use crate::BookPlan;
+use crate::book::plan::SongPlan;
+use crate::book::BookPlan;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::BTreeMap;

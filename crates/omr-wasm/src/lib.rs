@@ -5,7 +5,7 @@
 //! wasm 下没有线程：识别同步跑完，进度回调里由 JS 查取消标志（`SharedArrayBuffer`），回真就在下一步停。
 use dolce_omr_core::image::Rect;
 use dolce_omr_core::progress::{Hook, Step};
-use dolce_omr_engine::{Handle, Opts};
+use dolce_omr::{Handle, Opts};
 use dolce_omr_core::ocr::cache::{decode_reqs, encode_reqs, exec, jobs, CachedOcr};
 use dolce_omr_core::ocr::surface::Gray;
 use dolce_omr_core::ocr::tract::TractInfer;

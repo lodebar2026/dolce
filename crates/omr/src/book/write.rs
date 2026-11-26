@@ -1,7 +1,7 @@
 //! 写出：按摆放从源图原分辨率裁片、贴到纸色画布上，位图歌本写 JPEG（保留原色）；转曲矢量歌本按 `dpi` 重渲整页再裁，写灰度 PNG。
 //! 对应 web `omr/booksplit/write.node.ts`。按首分块并行，每块自己留最近几页的源图。
-use crate::plan::Layout;
-use crate::source::{BookSource, PageImage, SCAN_DPI};
+use crate::book::plan::Layout;
+use crate::book::source::{BookSource, PageImage, SCAN_DPI};
 use dolce_omr_core::image::Rect;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -58,7 +58,7 @@ fn scale_layout(l: &Layout, k: f64) -> Layout {
         width: r(l.width),
         height: r(l.height),
         paper: l.paper,
-        parts: l.parts.iter().map(|p| crate::plan::Placement { page: p.page, src: rect(&p.src), dx: r(p.dx), dy: r(p.dy) }).collect(),
+        parts: l.parts.iter().map(|p| crate::book::plan::Placement { page: p.page, src: rect(&p.src), dx: r(p.dx), dy: r(p.dy) }).collect(),
         erase: l.erase.iter().map(rect).collect(),
     }
 }

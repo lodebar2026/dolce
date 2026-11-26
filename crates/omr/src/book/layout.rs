@@ -1,5 +1,5 @@
 //! 单页版面：连通块 → 横向「带」（一行字 / 一行谱及其弧线、八度点），标出页脚、标题候选与谱行。
-//! 只看几何，不跑 OCR；页脚与标题候选的真假由 [`crate::scan`] 再拿 OCR 定。对应 web `omr/booksplit/layout.ts`。
+//! 只看几何，不跑 OCR；页脚与标题候选的真假由 [`crate::book::scan`] 再拿 OCR 定。对应 web `omr/booksplit/layout.ts`。
 use dolce_omr_core::geom::{median, quantile};
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::pixel::ccl::connected_components;

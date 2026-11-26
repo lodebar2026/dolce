@@ -1,7 +1,7 @@
 //! 整本规划（纯计算，不碰像素）：印页码 → 歌谱区、目录投票、标题配号、分段、系统间距与边距、每首的摆放。
 //! 对应 web `omr/booksplit/plan.ts`。
-use crate::layout::{is_music_band, Band};
-use crate::scan::{PageInfo, TocEntry};
+use crate::book::layout::{is_music_band, Band};
+use crate::book::scan::{PageInfo, TocEntry};
 use dolce_omr_core::geom::{median, quantile};
 use dolce_omr_core::image::Rect;
 use serde::Serialize;
@@ -446,8 +446,8 @@ fn room(p: &PageInfo, pc: &Piece) -> (f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::PageLayout;
-    use crate::scan::TitleHit;
+    use crate::book::layout::PageLayout;
+    use crate::book::scan::TitleHit;
 
     fn e(n: u32, p: Option<u32>) -> TocEntry {
         TocEntry { text: format!("曲{n}"), number: n, page: p }

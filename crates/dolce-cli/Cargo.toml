@@ -17,9 +17,8 @@ path = "src/main.rs"
 
 [dependencies]
 dolce-engrave = { workspace = true, features = ["native"] }
-dolce-omr-book = { workspace = true }
 dolce-omr-core = { workspace = true, features = ["native", "pdf"] }
-dolce-omr-engine = { workspace = true, features = ["parallel"] }
+dolce-omr = { workspace = true, features = ["parallel", "native", "book"] }
 dolce-omr-jianpu = { workspace = true }
 dolce-omr-staff = { workspace = true }
 dolce-layout = { workspace = true, features = ["export-system"] }

@@ -933,8 +933,8 @@ dependencies = [
  "dolce-layout",
  "dolce-layout-jianpu",
  "dolce-model",
+ "dolce-omr",
  "dolce-omr-core",
- "dolce-omr-engine",
  "objc2",
  "objc2-avf-audio",
  "objc2-foundation",
@@ -1017,6 +1017,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dolce-omr"
+version = "0.8.9"
+dependencies = [
+ "dolce-omr-core",
+ "dolce-omr-jianpu",
+ "dolce-omr-staff",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dolce-omr-core"
 version = "0.8.9"
 dependencies = [
@@ -1031,18 +1043,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "dolce-omr-engine"
-version = "0.8.9"
-dependencies = [
- "dolce-omr-core",
- "dolce-omr-jianpu",
- "dolce-omr-staff",
- "rayon",
- "serde",
- "serde_json",
 ]
 
 [[package]]

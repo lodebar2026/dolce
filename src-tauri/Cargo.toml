@@ -37,7 +37,7 @@ bincode = "1.3"
 # Rust 识别：识别、会话、取数、OCR 都在 crates/ 工作区；OCR 推理走原生 onnxruntime（native 特性；比浏览器 wasm 多线程快 ~3×），会话池在 src/omr.rs。
 # 直接依赖 dolce-omr-core：它的构建脚本（pdf 特性）经 `links` 把 PDFium 动态库目录交给本包构建脚本（打包时拷进资源）
 dolce-omr-core = { path = "../crates/omr-core", features = ["native", "pdf"] }
-dolce-omr-engine = { path = "../crates/omr-engine" }
+dolce-omr = { path = "../crates/omr", default-features = false, features = ["parallel", "native"] }
 
 # macOS 原生 MIDI 播放：AVFoundation 的 AVMIDIPlayer（系统内置 DLS GM 音源），音色比前端采样器丰满。
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -6,7 +6,7 @@ use crate::run::{expand, recognize_file, Got};
 use dolce_model::formats::capability::TargetFormat;
 use dolce_model::formats::targets::{message_zh, write_music_xml_as, Encoded, OUT_FORMATS};
 use dolce_model::toxml::{score_doc_to_music_xml, ToXmlOptions};
-use dolce_omr_engine::Kind;
+use dolce_omr::Kind;
 use dolce_omr_core::sheet::jianpu::RecognizedScore;
 use dolce_omr_core::todoc::jianpu::recognized_to_doc;
 use dolce_omr_core::todoc::reflyrics::{apply_ref_lyrics, decode_lyrics_bytes, CheckKind, LyricCheck};

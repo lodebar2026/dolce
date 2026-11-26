@@ -20,7 +20,7 @@ pub enum RecOutput {
 
 /// 一个输入文件的各页（取数走 `omr-engine`，与桌面版、网页版同一份）。
 pub fn sources(p: &Path) -> Result<Vec<PageSource>, String> {
-    let doc = dolce_omr_engine::Doc::open(std::fs::read(p).map_err(|e| format!("读 {}：{e}", p.display()))?)?;
+    let doc = dolce_omr::Doc::open(std::fs::read(p).map_err(|e| format!("读 {}：{e}", p.display()))?)?;
     Ok(doc.sources(&[])?.into_iter().map(|s| s.1).collect())
 }
 

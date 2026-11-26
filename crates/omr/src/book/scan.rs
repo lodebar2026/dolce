@@ -1,8 +1,8 @@
 //! 第一遍逐页扫描：版面几何 + 页脚页码 OCR + 标题候选 OCR + 像目录的页整页 OCR。只留几何与文字，不留像素。
 //! 对应 web `omr/booksplit/scan.ts`。
-use crate::layout::{analyze_page, box_of, footer_words, is_music_band, is_title_candidate, page_comps, rects_box, Band, PageComps, PageLayout};
-use crate::ocr::{numerals, region, reread, OcrLine};
-use crate::source::PageImage;
+use crate::book::layout::{analyze_page, box_of, footer_words, is_music_band, is_title_candidate, page_comps, rects_box, Band, PageComps, PageLayout};
+use crate::book::ocr::{numerals, region, reread, OcrLine};
+use crate::book::source::PageImage;
 use dolce_omr_core::geom::overlap1d;
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::pixel::preprocess::{otsu, sauvola_multi, to_gray};
@@ -463,7 +463,7 @@ fn drop_overlap_twins(parts: &[&OcrLine], char_h: f64) -> Vec<OcrLine> {
         if b.bbox.x >= a.bbox.right() || !a.chars_aligned() || !b.chars_aligned() {
             continue;
         }
-        let cjk1 = |c: &crate::ocr::OChar| c.text.chars().next().is_some_and(is_cjk);
+        let cjk1 = |c: &crate::book::ocr::OChar| c.text.chars().next().is_some_and(is_cjk);
         let (Some(ia), Some(ib)) = (a.chars.iter().rposition(cjk1), b.chars.iter().position(cjk1)) else { continue };
         if (b.chars[ib].cx - a.chars[ia].cx).abs() >= char_h * 0.5 {
             continue;
@@ -653,7 +653,7 @@ fn split_numbers(l: &OcrLine, pitch: f64) -> Vec<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ocr::OChar;
+    use crate::book::ocr::OChar;
 
     fn line(text: &str, x: f64, y: f64, w: f64, h: f64) -> OcrLine {
         let n = text.chars().count() as f64;

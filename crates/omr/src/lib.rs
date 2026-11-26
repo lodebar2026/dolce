@@ -19,6 +19,8 @@ use dolce_omr_staff::session::Session;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "book")]
+pub mod book;
 mod handle;
 
 pub use dolce_omr_core::progress::{Step, CANCELLED};

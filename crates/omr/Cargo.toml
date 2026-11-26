@@ -1,0 +1,36 @@
+[package]
+name = "dolce-omr"
+description = "悦谱 Dolce 识别的对外入口（桌面版 Tauri、网页版 wasm、命令行共用）：打开文档（PDF / 图片）、整页渲染、判路识别（简谱 / 五线谱，带进度与取消）、五线谱会话、核对底图；歌本切分（book 特性：整本分页歌谱 → 一首一张图，按书内目录核对）"
+version.workspace = true
+edition.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["parallel", "native"]
+# 页级并行（rayon）；wasm 下关掉，逐页串行
+parallel = ["dep:rayon"]
+# OCR 推理走原生 onnxruntime（桌面、命令行）
+native = ["dolce-omr-core/native"]
+# OCR 推理走 tract 纯 Rust（网页 wasm）
+tract = ["dolce-omr-core/tract"]
+# 歌本切分（`book` 模块）
+book = ["parallel", "dep:regex", "dep:image"]
+
+[dependencies]
+dolce-omr-core = { workspace = true, features = ["pdf"] }
+dolce-omr-jianpu = { workspace = true }
+dolce-omr-staff = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+rayon = { version = "1.10", optional = true }
+regex = { version = "1", features = ["std", "unicode-perl", "unicode-case", "perf"], optional = true }
+image = { version = "0.25", features = ["jpeg", "png"], optional = true }
+
+[dev-dependencies]
+dolce-omr-core = { workspace = true, features = ["native"] }

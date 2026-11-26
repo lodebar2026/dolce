@@ -3,7 +3,7 @@
 //!
 //! OCR 走一套原生会话池（[`infer`]）。
 use dolce_omr_core::progress::{Hook, Step};
-use dolce_omr_engine::{Handle, Opts};
+use dolce_omr::{Handle, Opts};
 use dolce_omr_core::ocr::cache::CachedOcr;
 use dolce_omr_core::ocr::native::{NativeInfer, DET_FILE, REC_FILE};
 use dolce_omr_core::ocr::{Infer, Model, Ocr, OcrCache};

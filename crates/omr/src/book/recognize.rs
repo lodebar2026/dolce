@@ -1,7 +1,7 @@
 //! 转曲矢量歌本逐首识别的取数：每首按摆放的各段**回原书取矢量对象**（不认渲出来的图）。识别本身在 `dolce-cli`（走五线谱 / 混排路线），
 //! 这里只交每段的页号与裁框，免得本 crate 依赖识别路线。对应 web `omr/booksplit/recognize.ts`。
-use crate::source::SCAN_DPI;
-use crate::BookPlan;
+use crate::book::source::SCAN_DPI;
+use crate::book::BookPlan;
 use dolce_omr_core::image::Rect;
 
 /// 一首里的一段：页（源序号）、裁框与要剔掉的框（页码），页面点。

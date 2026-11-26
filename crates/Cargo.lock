@@ -544,9 +544,8 @@ dependencies = [
  "dolce-engrave",
  "dolce-layout",
  "dolce-model",
- "dolce-omr-book",
+ "dolce-omr",
  "dolce-omr-core",
- "dolce-omr-engine",
  "dolce-omr-jianpu",
  "dolce-omr-staff",
  "flate2",
@@ -669,10 +668,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-omr-book"
+name = "dolce-omr"
 version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
+ "dolce-omr-jianpu",
+ "dolce-omr-staff",
  "image",
  "rayon",
  "regex",
@@ -697,18 +698,6 @@ dependencies = [
  "sha2",
  "tract-onnx",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "dolce-omr-engine"
-version = "0.8.9"
-dependencies = [
- "dolce-omr-core",
- "dolce-omr-jianpu",
- "dolce-omr-staff",
- "rayon",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -737,8 +726,8 @@ name = "dolce-omr-wasm"
 version = "0.8.9"
 dependencies = [
  "console_error_panic_hook",
+ "dolce-omr",
  "dolce-omr-core",
- "dolce-omr-engine",
  "getrandom 0.4.3",
  "js-sys",
  "serde_json",

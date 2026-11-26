@@ -3,11 +3,11 @@
 //! 回原书取矢量对象，写 `曲号 曲名` 的 MusicXML（或 `-f` 选的格式）。核对报告写到 `输出目录/切分报告.txt`（及 `--report` JSON）。
 //! 有缺号、重号或识别失败时退出码 1。
 use crate::recognize::open_ocr;
-use dolce_omr_book::recognize::song_clips;
-use dolce_omr_book::report::{check_against_toc, song_file_names};
-use dolce_omr_book::source::BookSource;
-use dolce_omr_book::write::{song_image_ext, write_songs, WriteOpts};
-use dolce_omr_book::{plan_book, BookPlan, PlanOptions};
+use dolce_omr::book::recognize::song_clips;
+use dolce_omr::book::report::{check_against_toc, song_file_names};
+use dolce_omr::book::source::BookSource;
+use dolce_omr::book::write::{song_image_ext, write_songs, WriteOpts};
+use dolce_omr::book::{plan_book, BookPlan, PlanOptions};
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::song::assemble;
 use rayon::prelude::*;

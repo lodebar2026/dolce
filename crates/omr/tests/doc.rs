@@ -1,5 +1,5 @@
 //! 打开图片与 PDF、页数、页尺寸、渲染（语料在私有仓库，没有就跳过）。
-use dolce_omr_engine::{staff_binary, Doc};
+use dolce_omr::{staff_binary, Doc};
 use std::path::PathBuf;
 
 fn testdata(rel: &str) -> Option<Vec<u8>> {
