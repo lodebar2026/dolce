@@ -120,7 +120,8 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
     marks::segno(ink, &rows, &mut notes, num_h);
     // 竖墨段整页扫一遍，歌词与各行上方带按各自的门槛（行高 × 2.2）挑
     let vruns = text::VRuns::scan(ink, rows.iter().map(|r| r.h()).fold(f64::INFINITY, f64::min) * 2.2);
-    text::lyrics(ink, &rows, &vruns, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes, &mut score.post_lyrics);
+    let mut keys: Vec<text::KeyMark> = Vec::new();
+    text::lyrics(ink, &rows, &vruns, &mut notes, &mut labels, ocr, &mut score.lyric_regions, &mut score.stanza_regions, &mut score.footnotes, &mut score.post_lyrics, &mut keys);
     // 下面的上方带按歌词区定界，要等歌词读齐；页眉只写页眉那几样、跟上方带互不相干，它缺的 OCR 不拦上方带，
     // 两样同一轮送检（页眉先检测、再读检出的行，常比歌词晚一轮齐）
     let lyrics_done = !ocr.stalled();
@@ -143,8 +144,9 @@ pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook)
             between.iter().map(|b| if between.len() >= 2 { b.bottom().min(b.y + med * 1.15) } else { b.bottom() }).fold(lo, f64::max)
         };
         halves.push(spans::arcs(ink, &rows[i], &mut notes[i], y_min, ocr));
-        text::chords_above(ink, &rows[i], &vruns, &mut notes[i], ocr, y_min, &mut score.chord_regions);
+        text::chords_above(ink, &rows[i], &vruns, &mut notes[i], ocr, y_min, &mut score.chord_regions, &mut keys);
     }
+    text::place_key_changes(&rows, &sys, &mut notes, &keys, beats::QUARTER * 4 * score.beats as i64 / score.beat_type.max(1) as i64);
     spans::pair_halves(&mut notes, &halves);
     text::split_spanning_words(&mut notes);
     // 全局合理性（同 TS）：真配了和弦的谱子基本上每小节至少一个（最稀的一首 0.56 个/小节）；稀稀拉拉几个多半是弧、点、页眉读成的，整批作废

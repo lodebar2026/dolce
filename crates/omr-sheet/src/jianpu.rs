@@ -39,6 +39,15 @@ pub struct TimeSig {
     pub beat_type: u32,
 }
 
+/// 曲中转调（谱面「转1=F」「D大調」）：五度圈位置（小调记关系大调的升降号数）与是否小调。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeySig {
+    pub fifths: i32,
+    #[serde(default, skip_serializing_if = "no")]
+    pub minor: bool,
+}
+
 /// 一个歌词汉字的 OCR 候选：第几段、该段歌词串里第几个汉字、前几名与得分（降序）、字的源框。
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct LyricAlt {
@@ -192,6 +201,9 @@ pub struct JpNum {
     pub segno: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_change: Option<TimeSig>,
+    /// 曲中转调：从这个音起换调（同 `time_change` 锚在音上，建模时提升为所在小节的调号）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_change: Option<KeySig>,
     /// `sharp` / `flat` / `natural`
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "de_static")]
     pub accidental: Option<Lit>,

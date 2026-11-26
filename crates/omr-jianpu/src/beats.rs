@@ -7,7 +7,7 @@ use dolce_omr_sheet::result::{codes, Locus};
 use dolce_omr_core::image::Rect;
 
 /// 一个四分音符的时值单位（容得下四条减时线、两个附点、三连音）。
-const QUARTER: i64 = 192;
+pub(crate) const QUARTER: i64 = 192;
 /// 一个小节里最多同时改几处。
 const MAX_PICK: usize = 2;
 

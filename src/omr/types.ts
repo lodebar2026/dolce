@@ -88,6 +88,8 @@ export interface JpNum {
   // 曲中转拍号：谱面上「3/4」直接印在谱行里（多见于混合拍的曲子），锚在**其右侧第一个音符**上，
   // 建模型时提升为该小节的 `Measure.attrs.time`（123 写成行内 `[M:3/4]`）。
   timeChange?: { beats: number; beatType: number };
+  // 曲中转调（「转1=F」「D大調」）：从这个音起换调，建模型时提升为所在小节的调号（123 写成行内 `[K:1=F]`）。
+  keyChange?: { fifths: number; minor?: boolean };
   // 临时升降号（印在数字左侧的 ♯/♭/♮）。按简谱规矩在**小节内延续**到同数字的后续音符——
   // 各路都只照原样写印出来的记号，延续由读端处理（模型 `model/jianpu.ts::AccidentalCarry`、
   // .jpwabc/文本谱 jppitch.ts::applyJpPitch）。

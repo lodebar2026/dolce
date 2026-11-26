@@ -315,6 +315,15 @@ fn place_chords(n: &JpNum, ch: &mut Chord) {
     }
 }
 
+/// 调号：小调记关系大调的升降号数、主音是 6。
+fn key_sig(fifths: i32, minor: bool) -> Key {
+    if minor {
+        Key { fifths: fifths as f64, mode: Some("minor".into()), tonic_degree: Some("6".into()), ..Default::default() }
+    } else {
+        Key { fifths: fifths as f64, ..Default::default() }
+    }
+}
+
 fn truthy(s: &Option<String>) -> bool {
     s.as_deref().is_some_and(|s| !s.is_empty())
 }
@@ -401,11 +410,7 @@ pub fn recognized_to_doc(score: &RecognizedScore) -> Built {
         work.subtitles.push(score.subtitle.clone().unwrap_or_default());
         work.subtitles.extend(score.subtitles_more.iter().cloned());
     }
-    let key = if score.minor {
-        Key { fifths: score.fifths as f64, mode: Some("minor".into()), tonic_degree: Some("6".into()), ..Default::default() }
-    } else {
-        Key { fifths: score.fifths as f64, ..Default::default() }
-    };
+    let key = key_sig(score.fifths, score.minor);
     let mut song = Song {
         work,
         identification: None,
@@ -587,6 +592,7 @@ fn measures_of_rows(
     let mut tuplet_start: Option<ElementId> = None;
 
     let (mut cur_beats, mut cur_beat_type) = (score.beats, score.beat_type);
+    let mut cur_key = (score.fifths, score.minor);
     let count = all.len();
     let mut out = Vec::with_capacity(count);
     for (idx, notes) in all.iter().enumerate() {
@@ -608,6 +614,13 @@ fn measures_of_rows(
                 cur_beats = change.beats;
                 cur_beat_type = change.beat_type;
                 m.attrs = Some(MeasureAttrs { time: Some(Time { beats: cur_beats as f64, beat_type: cur_beat_type as f64, symbol: None, parenthesized: None }), ..Default::default() });
+            }
+        }
+        // 曲中转调：同上，锚在换调那个音上（可在小节中间，弱起进新段的「5 | 1̇」），提升为所在小节的 `attrs.key`
+        if let Some(change) = notes.iter().find_map(|&i| n_at(i).key_change.as_ref()) {
+            if idx > 0 && (change.fifths, change.minor) != cur_key {
+                cur_key = (change.fifths, change.minor);
+                m.attrs.get_or_insert_with(Default::default).key = Some(key_sig(change.fifths, change.minor));
             }
         }
         if silent.contains(&idx) {

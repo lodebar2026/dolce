@@ -5,7 +5,7 @@
 use crate::frame::{digit_cell, RowFrame};
 use crate::notes::RowNotes;
 use crate::prep::{Comp, Ink};
-use crate::result::{RecognizedScore, TextRegion, TimeSig};
+use crate::result::{KeySig, RecognizedScore, TextRegion, TimeSig};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
 use dolce_omr_ocr::cache::CachedOcr;
@@ -620,7 +620,7 @@ fn lyric_span(ink: &Ink, row: &RowFrame) -> (i64, i64) {
 
 /// 各谱行下面的歌词：切行、读字、对音，写进各音的 `lyrics` 与行的段号。回各行歌词带的行（供叠加与排查）。
 /// `stanza_regions`：谱后附段落到音上的那几段，各行原文与源框（识别模式按原位叠加）。
-pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>, post: &mut Vec<String>) {
+pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes], labels: &mut [Vec<String>], ocr: &CachedOcr, regions: &mut Vec<TextRegion>, stanza_regions: &mut Vec<TextRegion>, footnotes: &mut Vec<String>, post: &mut Vec<String>, keys: &mut Vec<KeyMark>) {
     let w = ink.w() as f64;
     let num_h0 = median(&rows.iter().map(|r| r.h()).collect::<Vec<_>>(), 0.0);
     let claims = Claims::new(ink, notes.iter().flat_map(|n| n.claimed.iter().copied())).tall_runs(vruns, num_h0 * 2.2);
@@ -710,6 +710,13 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
             let text: String = chars.iter().map(|c| c.ch).collect();
             if std::env::var("OMR_JP_DEBUG").is_ok() {
                 eprintln!("行{i} 词带 y{y0}-{y1}: {text}{}", if foreign > 0 { format!("（剔别行露进来的 {foreign} 段）") } else { String::new() });
+            }
+            // 带转调记号的一截（「poco rall. 转1=F（前3=后2）」，下一行谱头顶上的说明挤进词带）：不是歌词，转调记下来
+            if !last {
+                if let Some((a, b, key)) = key_change_in(&text) {
+                    keys.push(KeyMark { x: chars[a].x0, x1: chars[b - 1].x1, y: (y0 + y1) as f64 / 2.0, key });
+                    continue;
+                }
             }
             // 整行只是一组圆括号里的说明（「(4个*小节第3拍和弦可挪至第2.5拍)」）：不是歌词
             if paren_note(&text) {
@@ -1500,6 +1507,91 @@ fn bare_key(c: &regex::Captures) -> Option<(i32, bool, String)> {
     let key = format!("{letter}{}{}", if alter < 0 { "b" } else if alter > 0 { "#" } else { "" }, if minor { "m" } else { "" });
     Some((fifths_of(letter, alter) - if minor { 3 } else { 0 }, minor, key))
 }
+/// 曲中转调写「1=」的：`转1=F`、`1=♭E`、`1=Eb`（只认大写音名）。组：1 前置升降、2 字母、3 后置升降。
+static KEY_MID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:[转轉]\s*)?1\s*[=＝]\s*([b♭#♯降升]?)\s*([A-G])\s*([b♭#♯]?)").unwrap());
+/// 曲中转调写调名的：`D大調`、`降A大调`、`f小調`（必带「调」字）。组同 `KEY_BARE`。
+static KEY_MID_CN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:[转轉]\s*)?([b♭#♯降升]?)\s*([A-Ga-g])\s*([b♭#♯]?)(m?)\s*([大小]?)[调調]").unwrap());
+/// 整截只是一个拍号（谱行上方小印的「4/4」）。
+static METER_ALONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\d{1,2})\s*[/／]\s*(16|2|4|8)\s*$").unwrap());
+
+/// 一截字里的转调记号（「转1=F（前3=后2）」「D大調」「(副)降A大调」）：(起止字下标, 调)。
+pub(crate) fn key_change_in(text: &str) -> Option<(usize, usize, KeySig)> {
+    let at = |m: regex::Match| (text[..m.start()].chars().count(), text[..m.end()].chars().count());
+    if let Some(c) = KEY_MID.captures(text) {
+        let alt = |t: &str| match t {
+            "b" | "♭" | "降" => -1,
+            "#" | "♯" | "升" => 1,
+            _ => 0,
+        };
+        let letter = c[2].chars().next().unwrap();
+        let (a, b) = at(c.get(0).unwrap());
+        return Some((a, b, KeySig { fifths: fifths_of(letter, alt(&c[1]) + alt(&c[3])), minor: false }));
+    }
+    let c = KEY_MID_CN.captures(text)?;
+    let (fifths, minor, _) = bare_key(&c)?;
+    let (a, b) = at(c.get(0).unwrap());
+    Some((a, b, KeySig { fifths, minor }))
+}
+
+/// 谱面上读到的一处转调：调名字的左右缘、所在高度、调。
+pub struct KeyMark {
+    pub x: f64,
+    pub x1: f64,
+    pub y: f64,
+    pub key: KeySig,
+}
+
+/// 转调记号落到音上：印在哪一行谱的头顶上（下面最近的一行；多声部系统里各声部都换），从字左缘底下（或右边）头一个音起换调；
+/// 调名的横向范围（左右各放半个字号）罩着一道双纵线的（「转1=F」居中印在段落线上方，圣诞恩典），从线后头一个音起（段落线就是分界，不再往前找弱起）。
+/// 那个音是小节首音、前面紧挨着小节线之前是一到三个短音、再往前是休止 / 长音 / 行首（弱起进新段的「5 | 1̇」，字印在 1̇ 上方）：
+/// 从弱起音起换。行首的几个音凑不满一小节才是弱起。首行（首系统）头顶上是页眉的调号，不算。
+pub fn place_key_changes(rows: &[RowFrame], sys: &[Option<(u32, u32)>], notes: &mut [RowNotes], marks: &[KeyMark], bar_len: i64) {
+    for m in marks {
+        let Some(ri) = (0..rows.len()).find(|&i| rows[i].top_at(m.x) > m.y) else { continue };
+        let head = |i: usize| i == 0 || (sys[i].is_some() && sys[i].map(|s| s.0) == sys[0].map(|s| s.0));
+        if head(ri) {
+            continue;
+        }
+        let peers: Vec<usize> = match sys[ri] {
+            Some((g, _)) => (0..rows.len()).filter(|&i| sys[i].is_some_and(|s| s.0 == g)).collect(),
+            None => vec![ri],
+        };
+        for i in peers {
+            let rn = &mut notes[i];
+            let nums = &rn.nums;
+            let h = rows[i].h();
+            let dbl = rn.double_bar_xs.iter().copied().find(|&d| d >= m.x - h * 0.5 && d <= m.x1 + h * 0.5);
+            let Some(a) = (match dbl {
+                Some(d) => nums.iter().position(|n| n.bbox.cx() > d),
+                None => nums.iter().position(|n| n.bbox.right() >= m.x),
+            }) else {
+                continue;
+            };
+            let bar_between = |l: f64, r: f64| rn.barline_xs.iter().any(|&b| b > l && b < r);
+            let mut at = a;
+            if dbl.is_none() && a > 0 && bar_between(nums[a - 1].bbox.cx(), nums[a].bbox.cx()) {
+                let short = |n: &crate::result::JpNum| n.digit != 0 && n.augment == 0 && !n.tie_stop;
+                let mut k = a;
+                while k > 0 && a - k < 3 && short(&nums[k - 1]) && (k == a || !bar_between(nums[k - 1].bbox.cx(), nums[k].bbox.cx())) {
+                    k -= 1;
+                }
+                let bounded = if k == 0 {
+                    (0..a).map(|j| crate::beats::dur(&nums[j])).sum::<i64>() < bar_len
+                } else {
+                    k < a && !short(&nums[k - 1]) && !bar_between(nums[k - 1].bbox.cx(), nums[k].bbox.cx())
+                };
+                if k < a && bounded {
+                    at = k;
+                }
+            }
+            if std::env::var("OMR_JP_DEBUG").is_ok() {
+                eprintln!("行{i} 转调 {:?} @{:.0}-{:.0} → 第 {at} 个音", m.key, m.x, m.x1);
+            }
+            rn.nums[at].key_change.get_or_insert(m.key.clone());
+        }
+    }
+}
+
 /// 单字符路读出的音名组：可带前后升降号。
 /// 和弦行里的跳转记号：只认写全的（`Fine`、D 后带点的 `D.C.` / `D. C`），宽松写法在和弦行多是连写和弦的误检（`G/D C` → `DC`）。
 static CHORD_ROW_JUMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"D\s*\.\s*[CS]\b\.?|Fine(?:[^a-z]|$)").unwrap());
@@ -2343,7 +2435,7 @@ fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut R
 
 /// 一行谱头顶上的和弦行：上方带里切行读字，整行是和弦记号的，各记号按左缘挂到它底下（或左边最近）的音上；
 /// 一个音上已有和弦的记成这个音时值内后面换的和弦。
-pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes, ocr: &CachedOcr, y_min: f64, regions: &mut Vec<TextRegion>) {
+pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes, ocr: &CachedOcr, y_min: f64, regions: &mut Vec<TextRegion>, keys: &mut Vec<KeyMark>) {
     let h = row.h();
     let w = ink.w() as f64;
     let top = row.top_at(w / 2.0);
@@ -2386,6 +2478,29 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes,
             }
         }
         let mut text: String = cs.into_iter().collect();
+        // 曲中转调（「(副)降A大调」「D大調」）、谱行上方小印的转拍号「4/4」（首行上方带除外：那是页眉的调号拍号）
+        if y_min > 0.0 {
+            if let Some((a, b, key)) = key_change_in(&text) {
+                keys.push(KeyMark { x: chars.get(a).map_or(0.0, |c| c.x0), x1: chars.get(b - 1).map_or(0.0, |c| c.x1), y: (y0 + y1) as f64 / 2.0, key });
+                text = text.chars().enumerate().map(|(i, c)| if i >= a && i < b { ' ' } else { c }).collect();
+            }
+            if let Some(c) = METER_ALONE.captures(&text) {
+                let (Ok(bt), Ok(ty)) = (c[1].parse::<u32>(), c[2].parse::<u32>()) else { continue };
+                let x = chars.iter().find(|c| !c.ch.is_whitespace()).map_or(0.0, |c| c.x0);
+                if (1..=16).contains(&bt) && !rn.meters.iter().any(|m| (m.x - x).abs() < h) {
+                    if let Some(n) = rn.nums.iter_mut().find(|n| n.bbox.right() >= x) {
+                        if std::env::var("OMR_JP_DEBUG").is_ok() {
+                            eprintln!("上方带转拍号 {bt}/{ty} @{x:.0}");
+                        }
+                        n.time_change.get_or_insert(TimeSig { beats: bt, beat_type: ty });
+                        let x1 = chars.iter().rev().find(|c| !c.ch.is_whitespace()).map_or(x, |c| c.x1);
+                        rn.meters.push(crate::result::RowMeter { x: (x + x1) / 2.0, beats: bt, beat_type: ty, bbox: Rect::new(x, y0 as f64, x1 - x, (y1 - y0 + 1) as f64) });
+                        rn.meters.sort_by(|a, b| a.x.total_cmp(&b.x));
+                    }
+                }
+                continue;
+            }
+        }
         // 段落词与力度：和弦带也是上一行歌词带的下半截，段落方框（`Chorus`、「(副歌)」）、整块的力度常印在这里（首行上方带除外：
         // 那里收的多是页眉与音符上方的碎块，读出的噪声足以凑成段落词，同 TS）
         if y_min > 0.0 {
