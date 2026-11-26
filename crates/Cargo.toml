@@ -30,11 +30,12 @@ dolce-omr = { version = "0.8.9", path = "omr", default-features = false }
 dolce-omr-jianpu = { version = "0.8.9", path = "omr-jianpu" }
 dolce-omr-staff = { version = "0.8.9", path = "omr-staff" }
 
+# release 不开 LTO：2026-11-26 量过 thin LTO 对命令行可执行文件体积、识别耗时、识别 wasm 体积都没有作用（差别在 0.1% 内），
+# 只让改一个文件后的 release 重编从 17 s 变成 45 s
 [profile.release]
-lto = "thin"
 
 # 网页 / Node 门面载的 dolce-wasm、dolce-jcx-wasm（`scripts/build-wasm.mjs::buildDolce`）：fat LTO + 单代码单元，
-# 比 release（thin）小一点、也略快（dolce_wasm gzip 880 → 855 KB）。2026-11-16 量过按体积编：opt-level=s 663 KB、z 582 KB，
+# 比 release（当时 thin LTO）小一点、也略快（dolce_wasm gzip 880 → 855 KB）。2026-11-16 量过按体积编：opt-level=s 663 KB、z 582 KB，
 # 但读写 MusicXML、时间轴、断句慢 15~20%（s）/ 30~60%（z），排版迁进来后开机计算都在这份里，不换。wasm-opt 在这之上反而让 gzip 变大，不用。
 # 只给这两份用；识别那份和桌面原生仍走 release。
 [profile.wasm-dolce]
