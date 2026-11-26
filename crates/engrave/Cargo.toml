@@ -8,7 +8,7 @@ publish = true
 license = "MIT AND OFL-1.1"
 repository.workspace = true
 homepage.workspace = true
-readme = "../../README.md"
+readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 

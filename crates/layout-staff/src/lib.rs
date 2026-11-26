@@ -1,5 +1,5 @@
-//! 五线谱 / 混排引擎（照 `src/mixed/`，原本从 C++ musicpp 移植）。只供对拍（L5），TS 排版照旧用 TS 那份；
-//! 判据与阈值照搬（连 TS 的毛病一起），原文注释里的曲目病例留在 TS 那份。
+//! 五线谱 / 混排引擎（照 `src/mixed/`，原本从 C++ musicpp 移植）。对外经 `dolce-layout`（`layout::layout_staff_doc`）调；
+//! 判据与阈值照 TS 原版搬来（连 TS 的毛病一起），曲目病例见仓库文档。
 //!
 //! 流程同 TS：`read::layout_staff`（`layout.ts`：读入建树，末尾调 `pass::finish_mixed_score`）→
 //! `pages::layout_staff_pages`（`staffpages.ts`：混排上方带、分页、画各系统 `render::draw_system`、简谱叠层 `overlay`）。

@@ -4,8 +4,8 @@
 //! 会话手里已经是更新的修订时以 [`EngineError::Stale`] 拒绝（调用方丢掉结果即可，不是错误）。
 //! 排队由宿主做（wasm 单线程天然串行；Tauri 命令按会话加锁）。
 //!
-//! **M0 只是骨架**：`update` 记下原文、推进修订号；模型（M2）、排版（L 期）接上之前，取页、编辑、写出、试听一律回
-//! `engine.unimplemented`。
+//! **会话还只是骨架**：`update` 记下原文、推进修订号，取页、写出仍回 `engine.unimplemented`。
+//! 排版现走 [`layout`] 模块的 `layout_jianpu_doc` / `layout_staff_doc` / `engraved_music_xml`（网页 wasm、桌面、命令行都经它们）。
 
 // 并入的成书与导出（原各自一个 crate）
 pub mod book;

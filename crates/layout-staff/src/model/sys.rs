@@ -10,7 +10,7 @@ use dolce_model::base::geom::Point;
 use super::*;
 use crate::jprow::grace_block_top;
 
-/// 三次贝塞尔 B(t)（t∈[0,1]）在一个坐标分量上的最小值：比较端点与 B'(t)=0 的内部极值点。
+/// 三次贝塞尔 B(t)（t∈\[0,1\]）在一个坐标分量上的最小值：比较端点与 B'(t)=0 的内部极值点。
 pub fn cubic_min_y(p0: f64, p1: f64, p2: f64, p3: f64) -> f64 {
     let mut min = js::min(p0, p3);
     // B'(t)/3 = a t² + b t + c
