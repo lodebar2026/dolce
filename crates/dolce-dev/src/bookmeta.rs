@@ -17,10 +17,10 @@
 
 use crate::jianpu::{judge_json, panic_text, Tally, Verdict};
 use crate::layout::{flag, lines, positional, show_n};
-use dolce_book::measure::ReplayBookMeasure;
-use dolce_book::meta::{self, CharOverride, UNREAD};
-use dolce_book::spec::{PageSpec, TextRun};
-use dolce_book::stats::{self, BookProfile, InferOptions, SampleOptions};
+use dolce_layout::book::measure::ReplayBookMeasure;
+use dolce_layout::book::meta::{self, CharOverride, UNREAD};
+use dolce_layout::book::spec::{PageSpec, TextRun};
+use dolce_layout::book::stats::{self, BookProfile, InferOptions, SampleOptions};
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};

@@ -4,9 +4,9 @@
 //! BookStyle 用 `serde_json::Value` 承载（同 `dolce_engrave::style::bookstyle`），BookProfile 只读用到的几项。
 //! 判据阈值照搬 TS，量法说明与病例在 TS 原文注释里。
 
-use crate::measure::BookMeasure;
-use crate::meta::{fixed, jsre, max_of, min_of, or, u16len};
-use crate::spec::{MarkSpec, PageSpec, SChar, SRect, TextRun};
+use crate::book::measure::BookMeasure;
+use crate::book::meta::{fixed, jsre, max_of, min_of, or, u16len};
+use crate::book::spec::{MarkSpec, PageSpec, SChar, SRect, TextRun};
 use dolce_model::base::js;
 use dolce_engrave::style::bookstyle::{default_book_style, ink_sample_of, role_font_defaults};
 use dolce_engrave::style::sheet::STYLE_ROLES;

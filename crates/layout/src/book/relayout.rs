@@ -1,8 +1,8 @@
 //! A 路 relayout（原位替换，照 `src/pdflayout/drawlist.ts` 的 `specToDrawPage` / `chordLineRole` / `bodyHeight`）：
 //! `PageSpec` + BookStyle → DrawPage。位置照原件，字号取同类型中位数（偏差 25% 以上才留原字号）。
 
-use crate::draw::{DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta, PageSong};
-use crate::spec::{PageSpec, SChar, SRect, TextRun};
+use crate::book::draw::{DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta, PageSong};
+use crate::book::spec::{PageSpec, SChar, SRect, TextRun};
 use dolce_model::base::js;
 use dolce_engrave::style::bookstyle::role_of;
 use serde::{Deserialize, Serialize};
@@ -57,7 +57,7 @@ pub fn chord_line_role(run: &TextRun) -> &'static str {
     }
 }
 
-use crate::meta::median;
+use crate::book::meta::median;
 
 /// 一行的主字高（剔掉标点与上标）（`bodyHeight`；与 stats 的 `runBodyHeight` 同义）
 pub fn body_height(run: &TextRun) -> f64 {

@@ -3,7 +3,7 @@
 //! `expect-rebuild-drawlist.json` / `expect-rebuild-lines.json`（TS 产物）。
 //!
 //! 逐页比 drawlist（`pages[i]`）、逐首比 `songs`（两份），判法同 `jianpu-check`：骨架（键、串、数组长）要一样、数差 ≤ 1e-6；
-//! `--native` 时排版引擎改 Rust 自量，数差放到 0.5；`--book-native` 时书级量字也改原生（`dolce_export::book::BookFonts`）。
+//! `--native` 时排版引擎改 Rust 自量，数差放到 0.5；`--book-native` 时书级量字也改原生（`dolce_layout::export::book::BookFonts`）。
 //! 选项：`--show=N`（列几条差异）、`--out=<目录>`（把 Rust 产物写出来）、`--redist=<目录>`、
 //! `--fonts=<族名→文件.json>`（`--native` 时排版量字先注册这些字体文件，同 PDF 嵌入的那份）。
 //!
@@ -11,8 +11,8 @@
 
 use crate::jianpu::{judge_json, Verdict, TOL};
 use crate::layout::{flag, positional, show_n};
-use dolce_book::measure::ReplayBookMeasure;
-use dolce_book::rebuild::{rebuild, RebuildInput};
+use dolce_layout::book::measure::ReplayBookMeasure;
+use dolce_layout::book::rebuild::{rebuild, RebuildInput};
 use dolce_engrave::Env;
 use dolce_engrave::scene::smufl::MetaData;
 use dolce_engrave::text::{MeasureCtx, ReplayMeasurer};
@@ -95,16 +95,16 @@ pub fn book_rebuild(args: &[String]) -> i32 {
     let book_native = args.iter().any(|a| a == "--book-native");
     let replay_bm = if book_native { ReplayBookMeasure::from_jsonl("").expect("空录制") } else { ReplayBookMeasure::from_jsonl(&read(dir, "book-measure.jsonl")).expect("书级量字录制") };
     // `--book-native`：书级量字也走原生（读样式表指的字体文件、整形 + 挤压，与 PDF 写出端同一份）
-    let font_book = dolce_export::fonts::FontBook::system();
+    let font_book = dolce_layout::export::fonts::FontBook::system();
     let native_bm = book_native.then(|| {
-        let (_, st) = dolce_book::rebuild::book_style_files(&input.style_files).expect("成书样式");
-        let f = dolce_export::book::BookFonts::resolve(&st, &font_book, Path::new("."));
+        let (_, st) = dolce_layout::book::rebuild::book_style_files(&input.style_files).expect("成书样式");
+        let f = dolce_layout::export::book::BookFonts::resolve(&st, &font_book, Path::new("."));
         for (id, fam, why) in &f.missing {
             println!("⚠ 字体 {id}（{fam}）：{why}");
         }
         f
     });
-    let bm: &dyn dolce_book::measure::BookMeasure = match &native_bm {
+    let bm: &dyn dolce_layout::book::measure::BookMeasure = match &native_bm {
         Some(f) => f,
         None => &replay_bm,
     };

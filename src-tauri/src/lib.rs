@@ -8,19 +8,19 @@ struct ScenePageIn {
     h: f64,
 }
 
-/// 场景 → 矢量 PDF（`dolce_export::scene`，krilla 写、字体按系统字体库 + 随包 Bravura 选，嵌不了的转曲并叠不可见文字层）
+/// 场景 → 矢量 PDF（`dolce_layout::export::scene`，krilla 写、字体按系统字体库 + 随包 Bravura 选，嵌不了的转曲并叠不可见文字层）
 #[tauri::command]
 fn export_scene_pdf(pages: Vec<ScenePageIn>, bg: Option<f64>, title: Option<String>, out_path: String, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let mut book = dolce_export::fonts::FontBook::system();
+    let mut book = dolce_layout::export::fonts::FontBook::system();
     if let Ok(res_dir) = app_handle.path().resource_dir() {
         let bravura = res_dir.join("Bravura.otf");
         if bravura.exists() {
             book.add_file(&bravura).map_err(|e| format!("Bravura：{e}"))?;
         }
     }
-    let pages: Vec<dolce_export::scene::ScenePage> = pages.into_iter().map(|p| dolce_export::scene::ScenePage { scene: p.scene, w_pt: p.w, h_pt: p.h }).collect();
-    let info = dolce_export::pdf::DocInfo { title, outline: Vec::new() };
-    let (bytes, _report) = dolce_export::scene::scene_pdf(&book, &pages, bg, &info)?;
+    let pages: Vec<dolce_layout::export::scene::ScenePage> = pages.into_iter().map(|p| dolce_layout::export::scene::ScenePage { scene: p.scene, w_pt: p.w, h_pt: p.h }).collect();
+    let info = dolce_layout::export::pdf::DocInfo { title, outline: Vec::new() };
+    let (bytes, _report) = dolce_layout::export::scene::scene_pdf(&book, &pages, bg, &info)?;
     std::fs::write(&out_path, &bytes).map_err(|e| e.to_string())
 }
 

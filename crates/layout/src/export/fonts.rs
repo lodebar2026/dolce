@@ -59,7 +59,7 @@ impl PdfFace for Face {
         if let Some(v) = *st.embeddable.borrow() {
             return v;
         }
-        let v = self.pdf_font().is_some_and(|f| crate::pdf::trial_embed(self, f));
+        let v = self.pdf_font().is_some_and(|f| crate::export::pdf::trial_embed(self, f));
         *st.embeddable.borrow_mut() = Some(v);
         v
     }

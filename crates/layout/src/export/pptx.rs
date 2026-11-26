@@ -18,7 +18,7 @@ use dolce_engrave::scene::{Node, Page, PathOp, PathSeg, Role, Shape};
 use dolce_engrave::text::Font;
 use serde::Deserialize;
 
-use crate::fonts::Face;
+use crate::export::fonts::Face;
 
 /// 1 pt = 12700 EMU（JS `Math.round` 的舍入：.5 往正无穷）
 fn emu(v: f64) -> i64 {

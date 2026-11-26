@@ -1,5 +1,5 @@
 //! wasm 绑定。数据过边界一律 JSON 字符串（结构由 ts-rs 生成的类型说明），报错抛 `Error`，`message` 是 JSON：
-//! `{"kind":"stale",…}` / `{"kind":"failure",…}`（同 `dolce_session::EngineError`）。
+//! `{"kind":"stale",…}` / `{"kind":"failure",…}`（同 `dolce_layout::EngineError`）。
 //!
 //! 迁移期另出几样对拍用的纯函数（`xmlDigest` 等），Node 门面 `out/cli/dolce.js` 与 dev `rs-diff.mjs` 用。
 
@@ -10,7 +10,7 @@ mod omr;
 mod textformats;
 mod view;
 
-use dolce_session::{EngineError, UpdateRequest};
+use dolce_layout::{EngineError, UpdateRequest};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -40,14 +40,14 @@ fn js_sys_error(message: &str) -> JsValue {
 
 /// 文档会话（`EngineSession` 的 wasm 侧）。
 #[wasm_bindgen]
-pub struct Session(dolce_session::Session);
+pub struct Session(dolce_layout::Session);
 
 #[wasm_bindgen]
 impl Session {
     #[wasm_bindgen(constructor)]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Session {
-        Session(dolce_session::Session::new())
+        Session(dolce_layout::Session::new())
     }
 
     /// `req` 是 `UpdateRequest` 的 JSON，回 `UpdateReply` 的 JSON。

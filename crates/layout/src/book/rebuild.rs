@@ -7,17 +7,17 @@
 //! TS 靠对象引用认页（`b.pages[0] === dp`、`free` 按页作键、撤销半页起排比 `dp !== m.dp`）：这里所有页进一张表（[`Book::store`]），
 //! 乐谱页序列、各首的页、半页起排的现场一律存下标。`ownItems` 在独占页上是**活引用**（后面接排进来的曲子也在里面），照样区分。
 
-use crate::draw::{DrawItem, DrawPage, PageMeta, PageSong};
-use crate::measure::BookMeasure;
+use crate::book::draw::{DrawItem, DrawPage, PageMeta, PageSong};
+use crate::book::measure::BookMeasure;
 use dolce_model::base::js;
 use dolce_engrave::Env;
 use dolce_model::doc::{ScoreDoc, Song};
 use dolce_model::play::applybreaks::{self as ab, CapacityOptions, LayoutMode};
 use dolce_model::play::phrase::{self, FitMetric, PhraseBreaks, PhraseOptions, Span};
 use dolce_model::play::phraseinput::PhrasePart;
-use crate::parts::{self, AnnotationOptions, FrontPageSpec, IndexItem, KeyMeterSpec, PageFrameOptions, TocItem};
-use crate::scenedraw;
-use crate::template::{BookRegionEnv, KeyMeterComponent};
+use crate::book::parts::{self, AnnotationOptions, FrontPageSpec, IndexItem, KeyMeterSpec, PageFrameOptions, TocItem};
+use crate::book::scenedraw;
+use crate::book::template::{BookRegionEnv, KeyMeterComponent};
 use dolce_engrave::style::template::{FieldExtra, FieldValue, RegionEnv};
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -1029,7 +1029,7 @@ fn region_items(sheet: &Value, name: &str, row: Option<usize>, env: &dyn RegionE
         region.rows = vec![region.rows[r].clone()];
     }
     let res = dolce_engrave::style::template::layout_region(Some(&region), env).unwrap_or_else(|e| panic!("模板 {name} 排不出：{}", e.message));
-    crate::template::placed_to_draw_items(&res.items).expect("模板图元")
+    crate::book::template::placed_to_draw_items(&res.items).expect("模板图元")
 }
 
 /// 成书样式：歌本样式表（实测部分 + 模板与手调）按序叠，id 取最后一份的文件名。返回（层叠后的表, BookStyle）
@@ -1157,7 +1157,7 @@ pub fn rebuild(input: &RebuildInput, env: &Env, bm: &dyn BookMeasure) -> Result<
     // 首句
     let mut first_lines: HashMap<String, String> = HashMap::new();
     for b in &bk.blocks {
-        let mut best: Option<&crate::draw::DrawText> = None;
+        let mut best: Option<&crate::book::draw::DrawText> = None;
         for it in bk.own_items(b) {
             if let DrawItem::Text(t) = it {
                 if t.role == "lyric" && best.is_none_or(|c| t.y < c.y || (t.y == c.y && t.xs[0] < c.xs[0])) {
@@ -1232,7 +1232,7 @@ pub fn rebuild(input: &RebuildInput, env: &Env, bm: &dyn BookMeasure) -> Result<
     if mirror != 0.0 {
         for &dp in &bk.score_pages.clone() {
             if bk.store[dp].page_no.rem_euclid(2) == 0 {
-                crate::draw::shift_draw_page_x(&mut bk.store[dp], -mirror);
+                crate::book::draw::shift_draw_page_x(&mut bk.store[dp], -mirror);
             }
         }
     }

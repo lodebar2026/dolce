@@ -1,6 +1,6 @@
 //! 导出（L7）的命令：字体样本验证、PDF 读回比对。PDF 读回走识别取数层的 PDFium（`dolce-omr-source`）。
 
-use dolce_export::fonts::FontBook;
+use dolce_layout::export::fonts::FontBook;
 use dolce_omr_source::pdf::{ContentOpts, PdfDoc};
 
 fn flag<'a>(args: &'a [String], k: &str) -> Option<&'a str> {
@@ -25,7 +25,7 @@ pub fn read_back(doc: &PdfDoc, i: usize, scale: f64) -> Result<PageBack, String>
     Ok(PageBack { text, ink, w: r.w, h: r.h, gray })
 }
 
-/// `dolce-dev font-probe [--out=样本.pdf] [--outline] [--font=文件 …] [族:粗:斜:字 …]`（`--outline` 全部转曲，验退路）：缺省样本见 `dolce_export::probe::default_samples`。
+/// `dolce-dev font-probe [--out=样本.pdf] [--outline] [--font=文件 …] [族:粗:斜:字 …]`（`--outline` 全部转曲，验退路）：缺省样本见 `dolce_layout::export::probe::default_samples`。
 /// 每个样本出一行 JSON：定位、轮廓种类、可变、AAT、合成粗斜、能否嵌，外加读回的文字层是否等于样本字、墨迹像素数。
 /// `--require=族,族…`（CI 用）：这些族本机必须找得到，找不到也算不过（缺省样本里别的平台的字体找不到不算错）。
 pub fn font_probe(args: &[String]) -> i32 {
@@ -41,12 +41,12 @@ pub fn font_probe(args: &[String]) -> i32 {
             .filter(|a| !a.starts_with("--"))
             .map(|a| {
                 let p: Vec<&str> = a.splitn(4, ':').collect();
-                dolce_export::probe::Sample::new(p[0], p.get(1) == Some(&"1"), p.get(2) == Some(&"1"), p.get(3).copied().unwrap_or("Abc 一二三"))
+                dolce_layout::export::probe::Sample::new(p[0], p.get(1) == Some(&"1"), p.get(2) == Some(&"1"), p.get(3).copied().unwrap_or("Abc 一二三"))
             })
             .collect();
-        if given.is_empty() { dolce_export::probe::default_samples() } else { given }
+        if given.is_empty() { dolce_layout::export::probe::default_samples() } else { given }
     };
-    let (rows, bytes, report) = match dolce_export::probe::run(&book, &samples, args.iter().any(|a| a == "--outline")) {
+    let (rows, bytes, report) = match dolce_layout::export::probe::run(&book, &samples, args.iter().any(|a| a == "--outline")) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
@@ -154,7 +154,7 @@ pub fn scene_pdf(args: &[String]) -> i32 {
         return 2;
     }
     let file = std::fs::File::open(input).expect("读场景");
-    let mut docs: Vec<(String, Vec<dolce_export::scene::ScenePage>)> = Vec::new();
+    let mut docs: Vec<(String, Vec<dolce_layout::export::scene::ScenePage>)> = Vec::new();
     let mut seen = 0usize;
     for line in std::io::BufReader::new(file).lines() {
         let line = line.expect("读行");
@@ -186,13 +186,13 @@ pub fn scene_pdf(args: &[String]) -> i32 {
             dolce_engrave::scene::Dialect::Jianpu => (page.w, page.h),
             dolce_engrave::scene::Dialect::Mixed => (595.0, 595.0 * page.h / page.w.max(1.0)),
         };
-        docs.last_mut().unwrap().1.push(dolce_export::scene::ScenePage { scene: page, w_pt: w, h_pt: h });
+        docs.last_mut().unwrap().1.push(dolce_layout::export::scene::ScenePage { scene: page, w_pt: w, h_pt: h });
     }
     let (mut n_bad_text, mut worst) = (0usize, (0.0f64, String::new()));
-    let mut tot = dolce_export::pdf::Report::default();
+    let mut tot = dolce_layout::export::pdf::Report::default();
     let mut hist = [0usize; 6];
     for (di, (key, pages)) in docs.iter().enumerate() {
-        let (bytes, rep) = match dolce_export::scene::scene_pdf(&book, pages, None, &dolce_export::pdf::DocInfo { title: Some(key.clone()), outline: Vec::new() }) {
+        let (bytes, rep) = match dolce_layout::export::scene::scene_pdf(&book, pages, None, &dolce_layout::export::pdf::DocInfo { title: Some(key.clone()), outline: Vec::new() }) {
             Ok(v) => v,
             Err(e) => {
                 println!("{}", serde_json::json!({ "key": key, "error": e }));

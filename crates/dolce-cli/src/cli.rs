@@ -10,7 +10,7 @@ use dolce_omr_engine::Kind;
 use dolce_omr_sheet::jianpu::RecognizedScore;
 use dolce_omr_todoc::jianpu::recognized_to_doc;
 use dolce_omr_todoc::reflyrics::{apply_ref_lyrics, decode_lyrics_bytes, CheckKind, LyricCheck};
-use dolce_session::sing::{fit_sing_doc, projection_request};
+use dolce_layout::sing::{fit_sing_doc, projection_request};
 use dolce_model::view::singfit::{apply_sing_fit, FitKind, SingFit};
 use std::io::Write;
 use std::path::{Path, PathBuf};

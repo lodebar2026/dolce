@@ -5,7 +5,7 @@
 
 use dolce_model::formats::abc::emit::emit_123;
 use dolce_model::formats::abc::parse::parse_123;
-use dolce_session::sing::{fit_sing_doc, projection_request};
+use dolce_layout::sing::{fit_sing_doc, projection_request};
 use dolce_model::view::reflyrics::decode_lyrics_bytes;
 use dolce_model::view::singfit::apply_sing_fit;
 
@@ -66,8 +66,8 @@ fn set_projection_linebreak(song: &mut dolce_model::Song, v: &str) {
 }
 
 /// 投影档逐页出 SVG（`01.svg`…）
-fn write_svgs(doc: &dolce_model::ScoreDoc, req: &dolce_session::layout::JianpuRequest, env: &dolce_engrave::Env, dir: &str, hits: bool) -> i32 {
-    let laid = dolce_session::layout::layout_jianpu_doc(doc, req, env).unwrap_or_else(|e| panic!("投影档排不了：{e}"));
+fn write_svgs(doc: &dolce_model::ScoreDoc, req: &dolce_layout::layout::JianpuRequest, env: &dolce_engrave::Env, dir: &str, hits: bool) -> i32 {
+    let laid = dolce_layout::layout::layout_jianpu_doc(doc, req, env).unwrap_or_else(|e| panic!("投影档排不了：{e}"));
     std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("建不了 {dir}：{e}"));
     for i in 0..laid.pages.len() {
         let f = format!("{dir}/{:02}.svg", i + 1);

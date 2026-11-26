@@ -4,9 +4,9 @@
 //! [`BookRegionEnv`] 是 dev `rebuild.mjs::regionEnv` 那份环境（字段经 `songFields(undefined, fields)`、字号取本曲回传或样式表、
 //! 书级量字、`key-meter` 组件），整本那一层（`rebuild`）与对拍共用。
 
-use crate::draw::DrawItem;
-use crate::measure::BookMeasure;
-use crate::parts::{key_meter_items, role_size, text_item, KeyMeterSpec};
+use crate::book::draw::DrawItem;
+use crate::book::measure::BookMeasure;
+use crate::book::parts::{key_meter_items, role_size, text_item, KeyMeterSpec};
 use dolce_engrave::style::ss::{parse_avoid, Cell, SsError};
 use dolce_engrave::style::template::{song_field, ComponentCall, FieldExtra, FieldValue, Placed, RegionEnv};
 use indexmap::IndexMap;

@@ -1,11 +1,11 @@
 //! 书级元数据（照 `src/pdflayout/bookmeta.ts`）：原书上那些 musicxml 装不下的内容——调号拍号原文、段落词、
 //! 花边框 / 线框里的注解、目录、首句索引、扉页与前言、页码标签、花边纹样。
 //!
-//! 输入是原书的版面规格（[`crate::spec::PageSpec`]），外加逐字覆盖（校对.db 的 `glyph_fix`，[`CharOverride`]）。
+//! 输入是原书的版面规格（[`crate::book::spec::PageSpec`]），外加逐字覆盖（校对.db 的 `glyph_fix`，[`CharOverride`]）。
 //! 判据、阈值照搬 TS（每条的反例与病例页号在 TS 原文注释里），JS 的口径（UTF-16 长度、`\s`/`\d` 的字符集、
 //! 稳定排序、`toFixed`）逐处照抄，对拍见 dolce-cli `book-meta-check`。
 
-use crate::spec::{FrameSpec, PageSpec, SChar, SRect, SongPlacement, TextRun};
+use crate::book::spec::{FrameSpec, PageSpec, SChar, SRect, SongPlacement, TextRun};
 use dolce_model::base::js;
 use indexmap::IndexMap;
 use regex::Regex;
@@ -703,7 +703,7 @@ pub struct OrnamentTile {
     pub path: String,
 }
 
-pub use crate::parts::translate_path;
+pub use crate::book::parts::translate_path;
 
 /// 短哈希（djb2 + sdbm，与 glyphdict 的 `hash2` 同法；TS `hashHex`）
 fn hash_hex(s: &str) -> String {

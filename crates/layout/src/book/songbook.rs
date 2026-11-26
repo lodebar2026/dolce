@@ -32,11 +32,11 @@ use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::draw::{DrawItem, DrawPage, DrawText, PageMeta};
-use crate::scenedraw::{page_items_to_draw_page, RoleOf, ToDrawOptions};
+use crate::book::draw::{DrawItem, DrawPage, DrawText, PageMeta};
+use crate::book::scenedraw::{page_items_to_draw_page, RoleOf, ToDrawOptions};
 
-pub use crate::manifest::ManifestSong;
-use crate::manifest::apply_manifest_song;
+pub use crate::book::manifest::ManifestSong;
+use crate::book::manifest::apply_manifest_song;
 
 // ───────────────────────── 入口与结果 ─────────────────────────
 

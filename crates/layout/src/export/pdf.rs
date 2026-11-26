@@ -13,7 +13,7 @@ use krilla::paint::{Fill, FillRule, LineCap, Stroke};
 use krilla::surface::Surface;
 use krilla::text::{GlyphId, KrillaGlyph};
 
-use crate::fonts::{face_by_pdf_font, synth_bold_stroke, Face, FaceRef, FontBook, PdfFace, SYNTH_ITALIC_SKEW};
+use crate::export::fonts::{face_by_pdf_font, synth_bold_stroke, Face, FaceRef, FontBook, PdfFace, SYNTH_ITALIC_SKEW};
 
 /// ARGB（`0xAARRGGBB`，场景里存成 f64）→ krilla 颜色与不透明度
 pub fn argb(c: f64) -> (rgb::Color, f32) {

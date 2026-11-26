@@ -5,13 +5,13 @@
 //! - 带逐字笔位（`char_xs`）的照笔位逐字落（同 SVG 的 `x` 列表），同一字体面的连成一个 `TJ`；
 //!   字距为对位撑开（比自然宽宽出 5% 以上）且含汉字的，另叠一层紧排的不可见文字（提取器见大字距会插空格，搜不到）。
 //! - 不带的整串整形连排（空白照 SVG 折叠），整形宽与场景记的宽（排版量字的结果）差过 0.5pt 时把差额按字距摊开、
-//!   两端对齐排版位置（[`crate::pdf::Report::reconciled`] 计数）。
+//!   两端对齐排版位置（[`crate::export::pdf::Report::reconciled`] 计数）。
 //! - 选字：族串（同量字展开）里第一个有这个字的面，再试平台的末位回退；都没有记缺字。
 
 use dolce_engrave::scene::{Dialect, Node, Page, Role, Shape, TextShape};
 
-use crate::fonts::{FaceRef, FontBook, PdfFace};
-use crate::pdf::{argb, Affine, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report, Seg};
+use crate::export::fonts::{FaceRef, FontBook, PdfFace};
+use crate::export::pdf::{argb, Affine, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report, Seg};
 
 /// 一页：场景 + 纸的大小（pt；场景的 viewBox 按它缩放，五线谱的 tenths 在这里换成 pt）
 pub struct ScenePage {
@@ -244,5 +244,5 @@ pub fn search_face(book: &FontBook) -> Option<FaceRef> {
 /// 场景页 → PDF 字节
 pub fn scene_pdf(book: &FontBook, pages: &[ScenePage], bg: Option<f64>, info: &DocInfo) -> Result<(Vec<u8>, Report), String> {
     let doc = SceneDoc { book, pages, bg };
-    crate::pdf::write_pdf(book, &doc, info, search_face(book))
+    crate::export::pdf::write_pdf(book, &doc, info, search_face(book))
 }

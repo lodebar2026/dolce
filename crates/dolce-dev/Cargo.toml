@@ -18,14 +18,12 @@ dolce-engrave = { workspace = true, features = ["native"] }
 dolce-model = { workspace = true }
 dolce-layout-jianpu = { workspace = true }
 dolce-layout-staff = { workspace = true }
-dolce-book = { workspace = true }
-dolce-session = { workspace = true }
+dolce-layout = { workspace = true, features = ["export-system"] }
 bincode.workspace = true
 indexmap = "2"
 serde.workspace = true
 serde_json = "1"
 sha2.workspace = true
-dolce-export = { workspace = true, features = ["system", "book"] }
 dolce-omr-source = { workspace = true }
 svg2pdf = { version = "0.13", optional = true }
 # onnx-fp16：读写 ONNX 用 tract-onnx 带的 protobuf 定义（prost 与它同一版）

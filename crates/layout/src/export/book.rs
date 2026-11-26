@@ -1,4 +1,4 @@
-//! 成书：DrawList（`dolce_book::draw`）→ PDF，与书级量字（[`BookMeasure`] 的原生实现）。取代 dev 的
+//! 成书：DrawList（`crate::book::draw`）→ PDF，与书级量字（[`BookMeasure`] 的原生实现）。取代 dev 的
 //! `pdfwrite.mjs` / `textmetrics.mjs` / `fontres.mjs`——**量字与落字读同一份字体、同一个挤压**（`compress_run` 半身档），
 //! 折行拿的宽与画出来的宽才一致。
 //!
@@ -20,13 +20,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use dolce_book::draw::{DrawItem, DrawPage, DrawText};
-use dolce_book::measure::BookMeasure;
+use crate::book::draw::{DrawItem, DrawPage, DrawText};
+use crate::book::measure::BookMeasure;
 use dolce_engrave::text::cjkpunct::{code_points, compress_run, CompressMode, SlackLR};
 use serde_json::Value;
 
-use crate::fonts::{Face, FaceRef, FontBook, Ink, PdfFace};
-use crate::pdf::{parse_d, rgb24, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report};
+use crate::export::fonts::{Face, FaceRef, FontBook, Ink, PdfFace};
+use crate::export::pdf::{parse_d, rgb24, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report};
 
 /// 半角 CJK 标点 → 全角等价（印刷字库常没有 U+FF61 这些码位）
 const PUNCT_EQUIV: [(char, char); 7] = [('\u{ff61}', '。'), ('\u{ff62}', '「'), ('\u{ff63}', '」'), ('\u{ff64}', '、'), ('\u{ff65}', '・'), ('\u{ff0e}', '．'), ('\u{ff0c}', '，')];
@@ -90,12 +90,12 @@ pub fn find_font_file(family: &str) -> Option<PathBuf> {
 
 /// 子字体全名（nameID 4）
 fn full_name(data: &[u8], index: u32) -> Option<String> {
-    let f = crate::fonts::ttf_parser::Face::parse(data, index).ok()?;
+    let f = crate::export::fonts::ttf_parser::Face::parse(data, index).ok()?;
     let mut any = None;
     for n in f.names() {
-        if n.name_id == crate::fonts::ttf_parser::name_id::FULL_NAME {
+        if n.name_id == crate::export::fonts::ttf_parser::name_id::FULL_NAME {
             if let Some(s) = n.to_string() {
-                if n.language() == crate::fonts::ttf_parser::Language::English_UnitedStates {
+                if n.language() == crate::export::fonts::ttf_parser::Language::English_UnitedStates {
                     return Some(s);
                 }
                 any.get_or_insert(s);
@@ -107,7 +107,7 @@ fn full_name(data: &[u8], index: u32) -> Option<String> {
 
 /// `face` 字段（序号或名字）→ 子字体序号
 fn pick_index(data: &[u8], face: &Value) -> Result<u32, String> {
-    let n = crate::fonts::ttf_parser::fonts_in_collection(data).unwrap_or(1);
+    let n = crate::export::fonts::ttf_parser::fonts_in_collection(data).unwrap_or(1);
     match face {
         Value::Null => Ok(0),
         Value::Number(x) => Ok(x.as_u64().unwrap_or(0) as u32),
@@ -449,5 +449,5 @@ pub fn search_face(fonts: &BookFonts) -> Option<FaceRef> {
 /// 整本写出
 pub fn book_pdf(book: &FontBook, fonts: &BookFonts, pages: &[DrawPage], info: &DocInfo) -> Result<(Vec<u8>, Report), String> {
     let doc = BookDoc { fonts, pages, search_layer: true };
-    crate::pdf::write_pdf(book, &doc, info, search_face(fonts))
+    crate::export::pdf::write_pdf(book, &doc, info, search_face(fonts))
 }

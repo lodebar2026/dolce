@@ -10,10 +10,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use dolce_engrave::Env;
-use dolce_export::fonts::{Face, FontBook};
-use dolce_export::pdf::DocInfo;
-use dolce_export::pptx::{pptx as build_pptx, FontMetric, PptxInput};
-use dolce_export::scene::{scene_pdf, ScenePage};
+use dolce_layout::export::fonts::{Face, FontBook};
+use dolce_layout::export::pdf::DocInfo;
+use dolce_layout::export::pptx::{pptx as build_pptx, FontMetric, PptxInput};
+use dolce_layout::export::scene::{scene_pdf, ScenePage};
 use dolce_model::formats::abc::lex::Dialect as AbcDialect;
 use dolce_model::formats::abc::parse::parse_abc_family;
 use dolce_model::formats::capability::TargetFormat;
@@ -36,7 +36,7 @@ use dolce_model::play::timeline::PlayOptions;
 use dolce_engrave::scene::smufl::MetaData;
 use dolce_engrave::scene::svg::page_svg;
 use dolce_engrave::scene::{Node, Page, Shape};
-use dolce_session::layout::{
+use dolce_layout::layout::{
     engraved_music_xml, layout_jianpu_doc, layout_staff_doc, EngraveRequest, JianpuRequest, Laid, StaffRequest,
 };
 use dolce_engrave::style::cascade::{ctx, StyleRule};

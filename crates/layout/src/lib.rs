@@ -7,6 +7,10 @@
 //! **M0 只是骨架**：`update` 记下原文、推进修订号；模型（M2）、排版（L 期）接上之前，取页、编辑、写出、试听一律回
 //! `engine.unimplemented`。
 
+// 并入的成书与导出（原各自一个 crate）
+pub mod book;
+#[cfg(feature = "export")]
+pub mod export;
 pub mod layout;
 pub mod sing;
 

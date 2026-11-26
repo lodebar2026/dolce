@@ -4,8 +4,8 @@
 //! 书级量字由调用方注入（[`BookMeasure`]，与 PDF 写出端同一份字体、含标点挤压）。
 //! 浮点口径：加减乘除的结合顺序照 TS 原式（`a += b + c` 是 `a + (b + c)`），对拍要逐位一致。
 
-use crate::draw::{match_number, DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta};
-use crate::measure::BookMeasure;
+use crate::book::draw::{match_number, DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta};
+use crate::book::measure::BookMeasure;
 use dolce_model::base::js;
 use dolce_engrave::style::bookstyle::page_margins;
 use dolce_engrave::style::value::get_path;

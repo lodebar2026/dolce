@@ -26,9 +26,8 @@ dolce-omr-sheet = { workspace = true }
 dolce-omr-source = { workspace = true }
 dolce-omr-staff = { workspace = true }
 dolce-omr-todoc = { workspace = true }
-dolce-export = { workspace = true, features = ["system", "book"] }
+dolce-layout = { workspace = true, features = ["export-system"] }
 dolce-model = { workspace = true }
-dolce-session = { workspace = true }
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { workspace = true }

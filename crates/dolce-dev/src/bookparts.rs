@@ -1,7 +1,7 @@
 //! 成书部件对拍（迁 Rust L6）：`dolce-dev book-parts-check <cases.jsonl> --measure=<book-measure.jsonl> [--layout=<pdf-layout.json>] [--kind=…] [--show=N]`。
 //!
 //! 用例由 dev `book-parts-rs-diff.mjs` 让 TS 现算导出（`{ kind, key, …输入, expect | error }`），书级量字录成 `book-measure.jsonl`
-//! （格式见 `dolce_book::measure`）回放；Rust 用 `dolce-book` 重算后逐字段比：骨架（键、串、数组长）一致、数差 ≤ 1e-6，缺键与 `null` 视同。
+//! （格式见 `dolce_layout::book::measure`）回放；Rust 用 `dolce-book` 重算后逐字段比：骨架（键、串、数组长）一致、数差 ≤ 1e-6，缺键与 `null` 视同。
 //!
 //! 上下文行（不计用例）：`ctx`（`style`：成书 BookStyle）、`relayoutCtx`（`style`：校验过的 BookStyle，`fallback`：形状键 → 回填字）。
 //! 用例 `kind`：
@@ -18,13 +18,13 @@
 
 use crate::jianpu::{judge_json, panic_text, Tally, Verdict};
 use crate::layout::{flag, lines, positional, show_n};
-use dolce_book::draw::{shift_draw_page_x, DrawItem, DrawPage};
-use dolce_book::measure::{BookMeasure, ReplayBookMeasure};
-use dolce_book::parts::{self, KeyMeterSpec, PageFrameOptions};
-use dolce_book::relayout::{spec_to_draw_page, SpecToDrawOptions};
-use dolce_book::spec::PageSpec;
-use dolce_book::template::{placed_to_draw_items, BookRegionEnv, KeyMeterComponent};
-use dolce_book::{align, manifest};
+use dolce_layout::book::draw::{shift_draw_page_x, DrawItem, DrawPage};
+use dolce_layout::book::measure::{BookMeasure, ReplayBookMeasure};
+use dolce_layout::book::parts::{self, KeyMeterSpec, PageFrameOptions};
+use dolce_layout::book::relayout::{spec_to_draw_page, SpecToDrawOptions};
+use dolce_layout::book::spec::PageSpec;
+use dolce_layout::book::template::{placed_to_draw_items, BookRegionEnv, KeyMeterComponent};
+use dolce_layout::book::{align, manifest};
 use dolce_engrave::style::bookstyle::ink_sample_of;
 use dolce_engrave::style::ss::Region;
 use dolce_engrave::style::template::{layout_region, FieldExtra};

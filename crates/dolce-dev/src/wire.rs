@@ -10,7 +10,7 @@ use crate::layout::{flag, lines, positional};
 use dolce_engrave::Env;
 use dolce_model::doc::ScoreDoc;
 use dolce_model::xmlsurface::Surface;
-use dolce_session::layout::{layout_jianpu_doc, layout_staff_doc, Laid};
+use dolce_layout::layout::{layout_jianpu_doc, layout_staff_doc, Laid};
 use dolce_engrave::scene::smufl::MetaData;
 use dolce_engrave::text::{MeasureCtx, SystemText};
 use serde::Deserialize;

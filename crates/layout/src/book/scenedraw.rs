@@ -23,7 +23,7 @@ use dolce_engrave::style::themes::{theme, ThemeId};
 use dolce_engrave::text::Font;
 use serde_json::{json, Value};
 
-use crate::draw::{DrawItem, DrawLine, DrawPage, DrawPath, DrawText, PageMeta};
+use crate::book::draw::{DrawItem, DrawLine, DrawPage, DrawPath, DrawText, PageMeta};
 
 /// 2D 仿射：[a b c d e f]，与 SVG 的 matrix(a b c d e f) 同序。
 type Mat6 = [f64; 6];

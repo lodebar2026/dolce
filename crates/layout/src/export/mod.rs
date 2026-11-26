@@ -6,7 +6,7 @@
 //! - [`book`]：成书 DrawList → PDF 与书级量字（取代 dev pdfwrite / textmetrics / fontres）
 //! - [`probe`]：字体样本验证（.ttc、可变字体、CFF / CFF2、合成粗斜）
 
-#[cfg(feature = "book")]
+#[cfg(feature = "export-system")]
 pub mod book;
 pub mod fonts;
 pub mod pdf;

@@ -29,10 +29,8 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# 导出（迁移计划 L7）：场景 → 矢量 PDF
-dolce-export = { path = "../crates/dolce-export", default-features = false, features = ["system"] }
-# 排版（迁移计划 H 期）：简谱 / 五线谱排版与原生量字，排版线程在 src/layout.rs
-dolce-session = { path = "../crates/dolce-session" }
+# 排版与导出：会话（简谱 / 五线谱排版，排版线程在 src/layout.rs）、场景 → 矢量 PDF；原生量字在 dolce-engrave 的 native 特性
+dolce-layout = { path = "../crates/layout", default-features = false, features = ["export-system"] }
 dolce-model = { path = "../crates/model" }
 dolce-layout-jianpu = { path = "../crates/dolce-layout-jianpu" }
 bincode = "1.3"

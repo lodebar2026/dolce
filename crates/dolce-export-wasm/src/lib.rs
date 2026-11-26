@@ -1,4 +1,4 @@
-//! 导出 PDF（`dolce_export`）的 wasm 绑定，网页版「导出 PDF」用。体积大（krilla、整形、子集化），单出一份按需载入
+//! 导出 PDF（`dolce_layout::export`）的 wasm 绑定，网页版「导出 PDF」用。体积大（krilla、整形、子集化），单出一份按需载入
 //!（`editor/pdfexport.ts`）。
 //!
 //! - [`PdfFonts`]：字体由宿主给字节（本地字体访问授权拿到的系统字体 + 随站点的 Bravura），按场景用到的族串挑着给
@@ -6,7 +6,7 @@
 //! - [`RasterPdf`]：逐页 PNG 铺满出栅格 PDF（没授权时）。
 //! - [`pptx`]：场景 → `.pptx`（`editor/pptxexport.ts`；网页与桌面同走这一份）。
 
-use dolce_export::fonts::{FontBook, Platform};
+use dolce_layout::export::fonts::{FontBook, Platform};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -87,10 +87,10 @@ impl PdfFonts {
         let mut pages = Vec::new();
         for p in v.as_array().ok_or_else(|| JsError::new("页 JSON 要是数组"))? {
             let scene: dolce_engrave::scene::Page = serde_json::from_value(p["scene"].clone()).map_err(|e| JsError::new(&format!("场景：{e}")))?;
-            pages.push(dolce_export::scene::ScenePage { scene, w_pt: p["w"].as_f64().unwrap_or(0.0), h_pt: p["h"].as_f64().unwrap_or(0.0) });
+            pages.push(dolce_layout::export::scene::ScenePage { scene, w_pt: p["w"].as_f64().unwrap_or(0.0), h_pt: p["h"].as_f64().unwrap_or(0.0) });
         }
-        let info = dolce_export::pdf::DocInfo { title: (!title.is_empty()).then(|| title.to_string()), outline: Vec::new() };
-        let (bytes, r) = dolce_export::scene::scene_pdf(&self.book, &pages, Some(bg), &info).map_err(|e| JsError::new(&e))?;
+        let info = dolce_layout::export::pdf::DocInfo { title: (!title.is_empty()).then(|| title.to_string()), outline: Vec::new() };
+        let (bytes, r) = dolce_layout::export::scene::scene_pdf(&self.book, &pages, Some(bg), &info).map_err(|e| JsError::new(&e))?;
         let report = serde_json::json!({
             "missing": r.missing.iter().map(|(p, fam, ch)| serde_json::json!([p + 1, fam, ch])).collect::<Vec<_>>(),
             "outlined": r.outlined,
@@ -120,14 +120,14 @@ impl RasterPdf {
     }
     pub fn finish(&mut self, title: &str) -> Result<Vec<u8>, JsError> {
         let pages = std::mem::take(&mut self.pages);
-        dolce_export::pdf::raster_pdf(&pages, (!title.is_empty()).then_some(title)).map_err(|e| JsError::new(&e))
+        dolce_layout::export::pdf::raster_pdf(&pages, (!title.is_empty()).then_some(title)).map_err(|e| JsError::new(&e))
     }
 }
 
 /// 场景 → `.pptx` 字节。`input` 是 `PptxInput` 的 JSON，`bravura` 是 Bravura.otf 的字节（SMuFL 字转曲用）。
 #[wasm_bindgen]
 pub fn pptx(input: &str, bravura: Vec<u8>) -> Result<Vec<u8>, JsError> {
-    let input: dolce_export::pptx::PptxInput = serde_json::from_str(input).map_err(|e| JsError::new(&format!("PPTX 料：{e}")))?;
-    let face = dolce_export::fonts::Face::parse(std::sync::Arc::new(bravura), 0, "Bravura.otf".into()).ok_or_else(|| JsError::new("Bravura.otf 读不了"))?;
-    Ok(dolce_export::pptx::pptx(&input, &face))
+    let input: dolce_layout::export::pptx::PptxInput = serde_json::from_str(input).map_err(|e| JsError::new(&format!("PPTX 料：{e}")))?;
+    let face = dolce_layout::export::fonts::Face::parse(std::sync::Arc::new(bravura), 0, "Bravura.otf".into()).ok_or_else(|| JsError::new("Bravura.otf 读不了"))?;
+    Ok(dolce_layout::export::pptx::pptx(&input, &face))
 }

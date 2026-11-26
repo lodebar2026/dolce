@@ -1,10 +1,10 @@
-//! `dolce-dev pptx --in=<料.json> --out=<x.pptx> [--bravura=public/redist/Bravura.otf]`：场景 → `.pptx`（`dolce_export::pptx`）。
+//! `dolce-dev pptx --in=<料.json> --out=<x.pptx> [--bravura=public/redist/Bravura.otf]`：场景 → `.pptx`（`dolce_layout::export::pptx`）。
 //! 料是 `PptxInput`（`{pages: [场景页], stackGap, pageWidth, pageHeight, bg, metrics}`，TS `editor/pptxexport.ts::pptxInput` 拼）。
 
 use std::sync::Arc;
 
-use dolce_export::fonts::Face;
-use dolce_export::pptx::{pptx, PptxInput};
+use dolce_layout::export::fonts::Face;
+use dolce_layout::export::pptx::{pptx, PptxInput};
 
 fn flag<'a>(args: &'a [String], k: &str) -> Option<&'a str> {
     args.iter().find_map(|a| a.strip_prefix(&format!("--{k}=")))

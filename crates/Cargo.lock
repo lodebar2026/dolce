@@ -538,25 +538,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-book"
-version = "0.8.9"
-dependencies = [
- "dolce-engrave",
- "dolce-layout-jianpu",
- "dolce-layout-staff",
- "dolce-model",
- "indexmap",
- "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-cli"
 version = "0.8.9"
 dependencies = [
  "dolce-engrave",
- "dolce-export",
+ "dolce-layout",
  "dolce-model",
  "dolce-omr-book",
  "dolce-omr-core",
@@ -567,7 +553,6 @@ dependencies = [
  "dolce-omr-source",
  "dolce-omr-staff",
  "dolce-omr-todoc",
- "dolce-session",
  "flate2",
  "image",
  "rayon",
@@ -580,14 +565,12 @@ name = "dolce-dev"
 version = "0.8.9"
 dependencies = [
  "bincode",
- "dolce-book",
  "dolce-engrave",
- "dolce-export",
+ "dolce-layout",
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
  "dolce-omr-source",
- "dolce-session",
  "half",
  "indexmap",
  "prost",
@@ -619,26 +602,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-export"
-version = "0.8.9"
-dependencies = [
- "crc32fast",
- "dolce-book",
- "dolce-engrave",
- "dolce-model",
- "flate2",
- "krilla",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-export-wasm"
 version = "0.8.9"
 dependencies = [
  "console_error_panic_hook",
  "dolce-engrave",
- "dolce-export",
+ "dolce-layout",
  "serde_json",
  "wasm-bindgen",
 ]
@@ -650,6 +619,23 @@ dependencies = [
  "console_error_panic_hook",
  "dolce-model",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "dolce-layout"
+version = "0.8.9"
+dependencies = [
+ "crc32fast",
+ "dolce-engrave",
+ "dolce-layout-jianpu",
+ "dolce-layout-staff",
+ "dolce-model",
+ "flate2",
+ "indexmap",
+ "krilla",
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -828,29 +814,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-session"
-version = "0.8.9"
-dependencies = [
- "dolce-engrave",
- "dolce-layout-jianpu",
- "dolce-layout-staff",
- "dolce-model",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-wasm"
 version = "0.8.9"
 dependencies = [
  "bincode",
  "console_error_panic_hook",
  "dolce-engrave",
+ "dolce-layout",
  "dolce-layout-jianpu",
  "dolce-model",
  "dolce-omr-sheet",
  "dolce-omr-todoc",
- "dolce-session",
  "js-sys",
  "serde",
  "serde_json",

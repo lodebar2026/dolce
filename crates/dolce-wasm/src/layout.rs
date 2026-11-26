@@ -1,4 +1,4 @@
-//! 排版（H 期）：两条引擎经 `dolce_session::layout` 排好，结果留在 wasm 里（[`Layout`] 句柄），TS 按页取 SVG、身份表、场景。
+//! 排版（H 期）：两条引擎经 `dolce_layout::layout` 排好，结果留在 wasm 里（[`Layout`] 句柄），TS 按页取 SVG、身份表、场景。
 //!
 //! 量字由宿主给（[`setLayoutHost`]）：网页是浏览器量字（`common/measure.browser.ts`，含 WebKit 逐像素墨迹），
 //! Node 门面是 `cli/textmeasure.node.ts` 那份（系统文字引擎 + 浏览器口径层）。缓存在 Rust 的 `MeasureCtx` 里，
@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use dolce_engrave::Env;
 use dolce_model::base::geom::Rect;
 use dolce_model::doc::ScoreDoc;
-use dolce_session::layout::{self, JianpuRequest, Laid, StaffRequest};
+use dolce_layout::layout::{self, JianpuRequest, Laid, StaffRequest};
 use dolce_engrave::scene::smufl::MetaData;
 use dolce_engrave::text::{FontMetrics, FontStyle, MeasureCtx, Positions, TextMeasurer, TextMetrics, Weight};
 use wasm_bindgen::prelude::*;
@@ -186,10 +186,10 @@ pub fn staff_chord_spans(doc: &str, surface: u32, req: &str) -> Result<String, J
     Ok(to_json(&serde_json::json!({ "width": s.width, "spans": s.by_id })))
 }
 
-/// 按参照歌词生成段落标记与 `%%sing`（`dolce_session::sing`）：`req` 是投影档 `JianpuRequest` JSON（空串 = 出厂投影样式），
+/// 按参照歌词生成段落标记与 `%%sing`（`dolce_layout::sing`）：`req` 是投影档 `JianpuRequest` JSON（空串 = 出厂投影样式），
 /// 回 `{marks, order, notes, refChars, matched, sing}`。
 #[wasm_bindgen(js_name = singFromLyrics)]
 pub fn sing_from_lyrics(doc: &str, song: u32, lyrics: &str, req: &str) -> Result<String, JsValue> {
     let h = host()?;
-    dolce_session::sing::sing_from_lyrics_json(doc, song as usize, lyrics, req, &env(h)).map(|v| to_json(&v)).map_err(fail)
+    dolce_layout::sing::sing_from_lyrics_json(doc, song as usize, lyrics, req, &env(h)).map(|v| to_json(&v)).map_err(fail)
 }

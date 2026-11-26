@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::fonts::{FaceRef, FontBook, Outlines, PdfFace};
-use crate::pdf::{Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report};
+use crate::export::fonts::{FaceRef, FontBook, Outlines, PdfFace};
+use crate::export::pdf::{Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report};
 
 /// 一个样本：族名、粗斜、要画的字
 #[derive(Clone, Debug)]
@@ -118,7 +118,7 @@ fn present(f: &FaceRef, text: &str) -> String {
 /// `force_outline`：把样本面都记成转曲（验证转曲 + 不可见文字层那条退路）
 pub fn run(book: &FontBook, samples: &[Sample], force_outline: bool) -> Result<(Vec<ProbeRow>, Vec<u8>, Report), String> {
     let rows: Vec<(Sample, Option<FaceRef>)> = samples.iter().map(|s| (s.clone(), book.find(&s.family, s.bold, s.italic))).collect();
-    let search = crate::scene::search_face(book);
+    let search = crate::export::scene::search_face(book);
     if force_outline {
         for f in rows.iter().filter_map(|(_, f)| f.as_ref()) {
             if search.as_ref().is_none_or(|s| !Arc::ptr_eq(&s.face, &f.face)) {
@@ -170,6 +170,6 @@ pub fn run(book: &FontBook, samples: &[Sample], force_outline: bool) -> Result<(
         }
         out.push(r);
     }
-    let (bytes, report) = crate::pdf::write_pdf(book, &ProbeDoc { rows: &rows }, &DocInfo { title: Some("font-probe".into()), outline: Vec::new() }, search)?;
+    let (bytes, report) = crate::export::pdf::write_pdf(book, &ProbeDoc { rows: &rows }, &DocInfo { title: Some("font-probe".into()), outline: Vec::new() }, search)?;
     Ok((out, bytes, report))
 }

@@ -10,12 +10,12 @@
 
 use crate::jianpu::{judge_json, panic_text, Tally, Verdict, TOL};
 use crate::layout::{flag, lines, positional, show_n};
-use dolce_book::draw::PageMeta;
-use dolce_book::draw::PageSong;
-use dolce_book::scenedraw::{
+use dolce_layout::book::draw::PageMeta;
+use dolce_layout::book::draw::PageSong;
+use dolce_layout::book::scenedraw::{
     book_cells_per_line, book_doc_of, count_staff_rows, layout_book_doc, max_staff_row_cells, measure_book_spans, page_items_to_draw_page, RoleOf, ToDrawOptions,
 };
-use dolce_book::songbook::{layout_mixed_songbook, ManifestSong, SongSource, SongbookInput};
+use dolce_layout::book::songbook::{layout_mixed_songbook, ManifestSong, SongSource, SongbookInput};
 use dolce_engrave::Env;
 use dolce_engrave::scene::smufl::MetaData;
 use dolce_engrave::text::{MeasureCtx, ReplayMeasurer};

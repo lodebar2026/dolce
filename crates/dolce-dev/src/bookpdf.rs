@@ -7,12 +7,12 @@
 
 use std::path::{Path, PathBuf};
 
-use dolce_book::draw::DrawPage;
-use dolce_book::measure::BookMeasure;
-use dolce_book::rebuild::{book_style_files, StyleFile};
-use dolce_export::book::{book_pdf, BookFonts};
-use dolce_export::fonts::FontBook;
-use dolce_export::pdf::DocInfo;
+use dolce_layout::book::draw::DrawPage;
+use dolce_layout::book::measure::BookMeasure;
+use dolce_layout::book::rebuild::{book_style_files, StyleFile};
+use dolce_layout::export::book::{book_pdf, BookFonts};
+use dolce_layout::export::fonts::FontBook;
+use dolce_layout::export::pdf::DocInfo;
 use dolce_omr_source::pdf::PdfDoc;
 use serde_json::{json, Value};
 
@@ -210,14 +210,14 @@ pub fn relayout_cmd(args: &[String]) -> i32 {
     let run = || -> Result<(), String> {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(inp).map_err(|e| format!("读 {inp}：{e}"))?).map_err(|e| format!("{inp}：{e}"))?;
         let style = v["style"].clone();
-        let specs: Vec<dolce_book::spec::PageSpec> = serde_json::from_value(v["specs"].clone()).map_err(|e| format!("specs：{e}"))?;
+        let specs: Vec<dolce_layout::book::spec::PageSpec> = serde_json::from_value(v["specs"].clone()).map_err(|e| format!("specs：{e}"))?;
         let fallback: std::collections::HashMap<String, Option<String>> = serde_json::from_value(v["fallback"].clone()).unwrap_or_default();
         let book = FontBook::system();
         let fonts = BookFonts::resolve(&style, &book, Path::new(flag(args, "base").unwrap_or(".")));
         let ink = |role: &str| fonts.ink_ratio(role, dolce_engrave::style::bookstyle::ink_sample_of(role));
         let fb = |key: &str| fallback.get(key).cloned().flatten();
-        let opt = dolce_book::relayout::SpecToDrawOptions { ink_ratio: &ink, fallback_char: Some(&fb), lyric2_cut: v["lyric2Cut"].as_f64() };
-        let res: Vec<_> = specs.iter().map(|s| dolce_book::relayout::spec_to_draw_page(s, &style, &opt)).collect();
+        let opt = dolce_layout::book::relayout::SpecToDrawOptions { ink_ratio: &ink, fallback_char: Some(&fb), lyric2_cut: v["lyric2Cut"].as_f64() };
+        let res: Vec<_> = specs.iter().map(|s| dolce_layout::book::relayout::spec_to_draw_page(s, &style, &opt)).collect();
         std::fs::write(out, serde_json::to_string(&res).map_err(|e| e.to_string())?).map_err(|e| format!("写 {out}：{e}"))
     };
     match run() {
@@ -239,10 +239,10 @@ pub fn annotation_blocks_cmd(args: &[String]) -> i32 {
     let run = || -> Result<(), String> {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(inp).map_err(|e| format!("读 {inp}：{e}"))?).map_err(|e| format!("{inp}：{e}"))?;
         let style = v["style"].clone();
-        let blocks: Vec<dolce_book::parts::AnnotationOptions> = serde_json::from_value(v["blocks"].clone()).map_err(|e| format!("blocks：{e}"))?;
+        let blocks: Vec<dolce_layout::book::parts::AnnotationOptions> = serde_json::from_value(v["blocks"].clone()).map_err(|e| format!("blocks：{e}"))?;
         let book = FontBook::system();
         let fonts = BookFonts::resolve(&style, &book, Path::new(flag(args, "base").unwrap_or(".")));
-        let res: Vec<_> = blocks.iter().map(|o| dolce_book::parts::annotation_block(&style, o, &fonts)).collect();
+        let res: Vec<_> = blocks.iter().map(|o| dolce_layout::book::parts::annotation_block(&style, o, &fonts)).collect();
         std::fs::write(out, serde_json::to_string(&res).map_err(|e| e.to_string())?).map_err(|e| format!("写 {out}：{e}"))
     };
     match run() {

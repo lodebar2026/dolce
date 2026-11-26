@@ -9,7 +9,7 @@
 use dolce_engrave::Env;
 use dolce_model::doc::ScoreDoc;
 use dolce_model::xmlsurface::Surface;
-use dolce_session::layout::{self, JianpuRequest, Laid, StaffRequest};
+use dolce_layout::layout::{self, JianpuRequest, Laid, StaffRequest};
 use dolce_engrave::scene::smufl::MetaData;
 use dolce_engrave::text::MeasureCtx;
 use serde_json::json;
@@ -183,7 +183,7 @@ pub async fn layout_clear_measure() -> Result<(), String> {
 #[tauri::command]
 pub async fn layout_sing_from_lyrics(doc: String, song: u32, lyrics: String, req: String) -> Result<Response, String> {
     run(move |host| {
-        let v = dolce_session::sing::sing_from_lyrics_json(&doc, song as usize, &lyrics, &req, &host.env())?;
+        let v = dolce_layout::sing::sing_from_lyrics_json(&doc, song as usize, &lyrics, &req, &host.env())?;
         Ok(Response::new(serde_json::to_vec(&v).map_err(|e| e.to_string())?))
     })
     .await

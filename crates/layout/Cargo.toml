@@ -1,0 +1,32 @@
+[package]
+name = "dolce-layout"
+description = "悦谱 Dolce 排版的对外入口：宿主无关的文档会话（修订号、过期拒绝、按修订取页 / 编辑 / 写出 / 试听；网页 wasm、桌面 Tauri、命令行共用）、成书排版（book：DrawList、书级部件、成书重排、混排歌本）与导出（export 特性：场景 / 成书 → PDF（krilla）、场景 → PPTX）"
+version.workspace = true
+edition.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["export-system"]
+# 导出 PDF / PPTX（字体由宿主给字节；网页 wasm 只开这个）
+export = ["dolce-engrave/fontfile", "dep:krilla", "dep:flate2", "dep:crc32fast"]
+# 再加系统字体（fontdb 扫系统目录）与成书 DrawList → PDF、书级量字（export::book）。桌面与命令行开
+export-system = ["export", "dolce-engrave/fontfile-system"]
+
+[dependencies]
+dolce-model = { workspace = true }
+dolce-engrave = { workspace = true }
+dolce-layout-jianpu = { workspace = true }
+dolce-layout-staff = { workspace = true }
+serde.workspace = true
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+indexmap = { version = "2", features = ["serde"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"], optional = true }
+flate2 = { version = "1", optional = true }
+crc32fast = { version = "1", optional = true }

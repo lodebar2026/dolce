@@ -930,14 +930,13 @@ version = "0.8.9"
 dependencies = [
  "bincode",
  "dolce-engrave",
- "dolce-export",
+ "dolce-layout",
  "dolce-layout-jianpu",
  "dolce-model",
  "dolce-omr-core",
  "dolce-omr-engine",
  "dolce-omr-ocr",
  "dolce-omr-source",
- "dolce-session",
  "objc2",
  "objc2-avf-audio",
  "objc2-foundation",
@@ -971,14 +970,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-export"
+name = "dolce-layout"
 version = "0.8.9"
 dependencies = [
  "crc32fast",
  "dolce-engrave",
+ "dolce-layout-jianpu",
+ "dolce-layout-staff",
  "dolce-model",
  "flate2",
+ "indexmap 2.14.2",
  "krilla",
+ "regex",
  "serde",
  "serde_json",
 ]
@@ -1119,18 +1122,6 @@ dependencies = [
  "dolce-omr-sheet",
  "dolce-omr-text",
  "serde",
-]
-
-[[package]]
-name = "dolce-session"
-version = "0.8.9"
-dependencies = [
- "dolce-engrave",
- "dolce-layout-jianpu",
- "dolce-layout-staff",
- "dolce-model",
- "serde",
- "serde_json",
 ]
 
 [[package]]
