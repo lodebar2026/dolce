@@ -100,6 +100,11 @@ pub trait JpInk: Sync {
     /// 送 OCR 的灰度条（出界部分是白），四周留 `pad` 白。
     fn strip(&self, r: &Rect, pad: i64) -> Gray;
 
+    /// 文字层里中心落在 `r` 里的字（各带墨迹框，按中心 x 排）。只有带文字层的矢量页有；没有文字层、或框里一个字都没有回 None，照旧送 OCR（见 [`crate::read`]）。
+    fn text_in(&self, _r: &Rect) -> Option<Vec<(char, Rect)>> {
+        None
+    }
+
     /// 一行里 `[xa, xb)` 有没有墨。
     fn row_ink(&self, y: i64, xa: i64, xb: i64) -> bool {
         (xa..xb).any(|x| self.at(x, y))

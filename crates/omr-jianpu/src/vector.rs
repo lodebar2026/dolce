@@ -19,6 +19,8 @@ pub struct VecJpInk {
     /// 各页的对象库与它在竖排里的纵向起点。
     pages: Vec<(VecPage, f64)>,
     comps: Vec<Comp>,
+    /// 文字层的字（工作坐标的墨迹框），按 y 排；认字直接取，不送 OCR。
+    chars: Vec<(char, Rect)>,
     w: usize,
     h: usize,
 }
@@ -50,6 +52,7 @@ impl VecJpInk {
         let scale = PAGE_W / width;
         let mut pages = Vec::new();
         let mut comps: Vec<Comp> = Vec::new();
+        let mut chars: Vec<(char, Rect)> = Vec::new();
         let mut y0 = 0.0;
         for pc in pcs {
             let vp = VecPage::build(pc, scale, (0.0, 0.0));
@@ -71,11 +74,20 @@ impl VecJpInk {
                 };
                 push(o.rect, a);
             }
+            // 文字层的字：画成线的（音乐字体的谱线、符干）与私用区码位（音乐字体的记号）不算字
+            for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && o.kind == VKind::Glyph) {
+                let Some(ch) = vp.char_of(o).and_then(|c| char::from_u32(c.unicode)) else { continue };
+                if ch.is_whitespace() || ('\u{E000}'..='\u{F8FF}').contains(&ch) {
+                    continue;
+                }
+                chars.push((ch, Rect::new(o.rect.x, o.rect.y + y0, o.rect.w, o.rect.h)));
+            }
             let ph = vp.h as f64;
             pages.push((vp, y0));
             y0 += ph;
         }
-        (!comps.is_empty()).then(|| VecJpInk { pages, comps, w: PAGE_W.ceil() as usize, h: y0.ceil() as usize })
+        chars.sort_by(|a, b| a.1.cy().total_cmp(&b.1.cy()));
+        (!comps.is_empty()).then(|| VecJpInk { pages, comps, chars, w: PAGE_W.ceil() as usize, h: y0.ceil() as usize })
     }
 
     /// 竖排里的 y 落在哪一页：(页, 页内 y)。
@@ -116,5 +128,11 @@ impl JpInk for VecJpInk {
             }
         }
         g
+    }
+    fn text_in(&self, r: &Rect) -> Option<Vec<(char, Rect)>> {
+        let lo = self.chars.partition_point(|c| c.1.cy() < r.y);
+        let mut got: Vec<(char, Rect)> = self.chars[lo..].iter().take_while(|c| c.1.cy() <= r.bottom()).filter(|c| c.1.cx() >= r.x && c.1.cx() <= r.right()).copied().collect();
+        got.sort_by(|a, b| a.1.cx().total_cmp(&b.1.cx()));
+        (!got.is_empty()).then_some(got)
     }
 }

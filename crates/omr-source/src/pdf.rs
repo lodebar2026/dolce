@@ -183,6 +183,41 @@ unsafe fn char_box(_: &Lib, tp: FPDF_TEXTPAGE, i: c_int) -> [f64; 4] {
     crate::pdfium_wasm::char_box(tp as usize, i).unwrap_or([0.0; 4])
 }
 
+/// 字形轮廓各点以 `o` 为中心缩放到长边与墨迹框长边一样。
+fn rescaled(segs: &[Seg], o: (f64, f64), ink: &Rect) -> Vec<Seg> {
+    let b = bbox_of(seg_points(segs));
+    let k = ink.w.max(ink.h) / b.w.max(b.h).max(1e-9);
+    let p = |x: f64, y: f64| (o.0 + (x - o.0) * k, o.1 + (y - o.1) * k);
+    segs.iter()
+        .map(|s| match *s {
+            Seg::Move(x, y) => {
+                let (x, y) = p(x, y);
+                Seg::Move(x, y)
+            }
+            Seg::Line(x, y) => {
+                let (x, y) = p(x, y);
+                Seg::Line(x, y)
+            }
+            Seg::Cubic(a, b, c, d, x, y) => {
+                let ((a, b), (c, d), (x, y)) = (p(a, b), p(c, d), p(x, y));
+                Seg::Cubic(a, b, c, d, x, y)
+            }
+            Seg::Close => Seg::Close,
+        })
+        .collect()
+}
+
+/// 字形轮廓的外框（端点与控制点）与墨迹框对得上：中心相距不过墨迹框长边的 1/4、长边之比在 0.6~1.6。墨迹框是空的不核。
+fn outline_fits(segs: &[Seg], ink: &Rect) -> bool {
+    let d = ink.w.max(ink.h);
+    if d <= 0.0 {
+        return true;
+    }
+    let o = bbox_of(seg_points(segs));
+    let od = o.w.max(o.h);
+    (o.cx() - ink.cx()).abs() <= d * 0.25 + 0.5 && (o.cy() - ink.cy()).abs() <= d * 0.25 + 0.5 && od >= d * 0.6 && od <= d * 1.6
+}
+
 fn bbox_of(pts: impl Iterator<Item = (f64, f64)>) -> Rect {
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
     for (x, y) in pts {
@@ -405,8 +440,18 @@ unsafe fn text_chars(l: &Lib, page: FPDF_PAGE, h: f64, outlines: bool) -> Vec<Te
                     if !gp.is_null() {
                         let lin: M = [m[0], m[1], m[2], m[3], ox, oy];
                         let segs = segs_of(l, l.b.FPDFGlyphPath_CountGlyphSegments(gp), |k| l.b.FPDFGlyphPath_GetGlyphPathSegment(gp, k), &flip(&lin, h));
+                        // 轮廓外框要与 PDFium 给的墨迹框对得上。有的字体（Word 出的 PDF 里的 CID TrueType）取回的字形没乘字号、只有字号分之一大：
+                        // 以基线原点为中心按两框之比放大一次再核；还对不上（反查到别的字形）就不要，下游按墨迹框当填充块
+                        let ink = Rect::new(x0, h - y1, x1 - x0, y1 - y0);
                         if !segs.is_empty() {
-                            outline = Some(segs);
+                            if outline_fits(&segs, &ink) {
+                                outline = Some(segs);
+                            } else {
+                                let big = rescaled(&segs, (ox, h - oy), &ink);
+                                if outline_fits(&big, &ink) {
+                                    outline = Some(big);
+                                }
+                            }
                         }
                     }
                 }

@@ -168,8 +168,11 @@ pub fn digit_of(text: &str) -> Option<u8> {
     }
 }
 
-/// 粗体小图把 3 / 5 / 6 的开口糊成闭环读成 8 / B：取 OCR 候选里排最前的 0–7。
-pub fn alt_digit(ocr: &CachedOcr, img: &Gray) -> Option<u8> {
+/// 粗体小图把 3 / 5 / 6 的开口糊成闭环读成 8 / B：取 OCR 候选里排最前的 0–7（`r` 是 `img` 的框；文字层有字的格读出什么就是什么，不找候选）。
+pub fn alt_digit(ink: &Ink, ocr: &CachedOcr, r: &Rect, img: &Gray) -> Option<u8> {
+    if ink.text_in(r).is_some() {
+        return None;
+    }
     let r = ocr.rank_chars(img, 10).ok()?;
     r.first().and_then(|c| c.alts.iter().find_map(|a| a.chars().next().filter(|c| ('0'..='7').contains(c) && a.chars().count() == 1))).map(|c| c as u8 - b'0')
 }
@@ -214,8 +217,8 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         .iter()
         .filter(|k| k.rect.h >= num_h * 0.72 && k.rect.h <= num_h * 1.3 && k.rect.w >= k.rect.h * 0.18 && k.rect.w <= num_h * 1.05)
         .collect();
-    let cells: Vec<Gray> = cand.iter().map(|k| digit_cell(ink, &k.rect)).collect();
-    let read: Vec<Option<u8>> = match ocr.read_cells(&cells) {
+    let rects: Vec<Rect> = cand.iter().map(|k| k.rect).collect();
+    let read: Vec<Option<u8>> = match crate::read::cells(ink, ocr, &rects, |i| digit_cell(ink, &rects[i])) {
         Ok(v) => v.iter().map(|t| strict_digit(t)).collect(),
         Err(_) => return Vec::new(),
     };
@@ -291,10 +294,10 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         }
         let nb = row.bars().count();
         // 带内切出的数字格多数得真读得出数字（歌词行里夹着段号、汉字的竖笔伸出带外像小节线）
-        let imgs: Vec<Gray> = row.digits().map(|c| digit_cell(ink, &c.rect())).collect();
-        let good = ocr.read_cells(&imgs).map_or(0, |v| {
+        let rects: Vec<Rect> = row.digits().map(|c| c.rect()).collect();
+        let good = crate::read::cells(ink, ocr, &rects, |i| digit_cell(ink, &rects[i])).map_or(0, |v| {
             // 读成 8 / B 的照候选再认一遍（迦南诗选 1940 小图粗体，一行的 6、3 全读成 B、8，整行丢）
-            v.iter().zip(&imgs).filter(|(t, img)| strict_digit(t).is_some() || (matches!(t.trim(), "8" | "B") && alt_digit(ocr, img).is_some())).count()
+            v.iter().zip(&rects).filter(|(t, r)| strict_digit(t).is_some() || (matches!(t.trim(), "8" | "B") && alt_digit(ink, ocr, r, &digit_cell(ink, r)).is_some())).count()
         });
         if std::env::var("OMR_JP_DEBUG").is_ok() {
             eprintln!("  带 y{:.0} 高{:.0} 数字格{nd} 读出{good} 线{nb}", band.top0, band.h());
@@ -315,8 +318,8 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
             let (x0, x1) = (row.cells.iter().map(|c| c.x0).min().unwrap_or(0), row.cells.iter().map(|c| c.x1).max().unwrap_or(0));
             let y0 = row.cells.iter().map(|c| c.y0).min().unwrap_or(0);
             let y1 = row.cells.iter().map(|c| c.y1).max().unwrap_or(0);
-            let strip = ink.strip(&Rect::new(x0 as f64, y0 as f64, (x1 - x0 + 1) as f64, (y1 - y0 + 1) as f64), 4);
-            let han = ocr.read_line(&strip).map_or(0, |v| v.iter().filter(|c| c.ch.chars().any(dolce_omr_text::chars::is_han)).count());
+            let r = Rect::new(x0 as f64, y0 as f64, (x1 - x0 + 1) as f64, (y1 - y0 + 1) as f64);
+            let han = crate::read::line(ink, ocr, &crate::read::strip_frame(&r, 4), || ink.strip(&r, 4)).map_or(0, |v| v.iter().filter(|c| c.ch.chars().any(dolce_omr_text::chars::is_han)).count());
             if han >= 2 {
                 if std::env::var("OMR_JP_DEBUG").is_ok() {
                     eprintln!("  读出汉字 {han}，不收");
@@ -585,6 +588,28 @@ fn cut_cells(ink: &Ink, band: &Band) -> Vec<Cell> {
     };
     cells.iter_mut().for_each(extent);
     cells.retain(|c| c.y1 >= c.y0);
+    // 细笔画的圆头数字（衬线体的「0」「3」，比平头数字高出一点）顶、底那道细横笔落在带沿外，带内只剩左右两截、切成两格（左截上下两团还像冒号）：
+    // 两格间的空列在带沿外 0.1 字号内有墨、并起来不过 0.8 字号宽、至少一截够数字高的，并回一格
+    let reach = (h * 0.1).ceil() as i64;
+    let mut k = 0;
+    while k + 1 < cells.len() {
+        let (a, b) = (cells[k], cells[k + 1]);
+        let gap = b.x0 - a.x1 - 1;
+        let bridged = gap >= 1
+            && (gap as f64) <= h * 0.2
+            && ((b.x1 - a.x0 + 1) as f64) <= h * 0.8
+            && (a.h().max(b.h())) >= h * 0.72
+            && (a.x1 + 1..b.x0).all(|x| {
+                let (t, bt) = rows_of(x);
+                (t - reach..=bt + reach).any(|y| ink.at(x, y))
+            });
+        if bridged {
+            cells[k] = Cell { x1: b.x1, y0: a.y0.min(b.y0), y1: a.y1.max(b.y1), ..a };
+            cells.remove(k + 1);
+        } else {
+            k += 1;
+        }
+    }
     // 并排粘在一起的数字按本行数字宽切开
     let tall = |c: &Cell| c.h() >= h * 0.72;
     // 本行数字宽：近方形的宽体数字也算（只收到九成高的话，宽体页里只剩「1」定宽，个个数字被当成两个粘在一起切开）

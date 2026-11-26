@@ -417,8 +417,7 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
             Some(k) => k.rect,
             None => Rect::new(mx - h * 0.3, my - h * 0.6, h * 0.6, h * 0.85),
         };
-        let img = if cand.is_some() { digit_cell(ink, &rect) } else { strip_line_cell(ink, &rect) };
-        let Ok(t) = ocr.read_cells(&[img]) else { continue };
+        let Ok(t) = crate::read::cells(ink, ocr, &[rect], |_| if cand.is_some() { digit_cell(ink, &rect) } else { strip_line_cell(ink, &rect) }) else { continue };
         let digits: String = t[0].chars().filter(|c| c.is_ascii_digit()).collect();
         if std::env::var("OMR_ARC_DEBUG").is_ok() {
             eprintln!("  连音数字 {i}-{j} 窗 {:.0},{:.0} {:.0}x{:.0} 单块{} 读「{}」", rect.x, rect.y, rect.w, rect.h, cand.is_some(), t[0]);
@@ -772,8 +771,8 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
         }
     }
     found.sort_by(|a, b| a.1.y.total_cmp(&b.1.y).then(a.1.x.total_cmp(&b.1.x)));
-    let imgs: Vec<_> = found.iter().flat_map(|f| f.2.iter().map(|r| digit_cell(ink, r))).collect();
-    let texts = ocr.read_cells(&imgs).unwrap_or_else(|_| vec![String::new(); imgs.len()]);
+    let rects: Vec<Rect> = found.iter().flat_map(|f| f.2.iter().copied()).collect();
+    let texts = crate::read::cells(ink, ocr, &rects, |i| digit_cell(ink, &rects[i])).unwrap_or_else(|_| vec![String::new(); rects.len()]);
     let mut at = 0;
     let mut nth = 0;
     for (ri, b, labels, hook) in found.iter() {

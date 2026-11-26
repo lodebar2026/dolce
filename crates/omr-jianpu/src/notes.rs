@@ -141,7 +141,7 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
     }
     let pad = med_h * 0.3;
     let roi = Rect::new((r.x - pad).max(0.0), (r.y - pad).max(0.0), r.w + pad * 2.0, r.h + pad * 2.0);
-    let text: String = ocr.read_line(&ink.crop_bin(&roi)).ok()?.into_iter().map(|c| c.ch).collect::<String>().split_whitespace().collect();
+    let text: String = crate::read::line(ink, ocr, &crate::read::crop_frame(&roi), || ink.crop_bin(&roi)).ok()?.into_iter().map(|c| c.ch).collect::<String>().split_whitespace().collect();
     // 框边带进来的冒号（「前奏：」）不算字
     let text = text.trim_end_matches([':', '：']).to_string();
     let n = text.chars().count();
@@ -179,14 +179,14 @@ pub fn build(ink: &Ink, row: &RowFrame, ocr: &CachedOcr, ctx: crate::marks::RowC
     let cells: Vec<&Cell> = row.cells.iter().skip(skip).collect();
     // 读数
     let digit_cells: Vec<&Cell> = cells.iter().copied().filter(|c| c.kind == CellKind::Digit).collect();
-    let imgs: Vec<_> = digit_cells.iter().map(|c| digit_cell(ink, &c.rect())).collect();
-    let texts = ocr.read_cells(&imgs).unwrap_or_else(|_| vec![String::new(); imgs.len()]);
+    let rects: Vec<Rect> = digit_cells.iter().map(|c| c.rect()).collect();
+    let texts = crate::read::cells(ink, ocr, &rects, |i| digit_cell(ink, &rects[i])).unwrap_or_else(|_| vec![String::new(); rects.len()]);
     let mut read: Vec<Option<u8>> = Vec::with_capacity(texts.len());
     for (i, t) in texts.iter().enumerate() {
         let mut d = digit_of(t);
         // 读出括号的不往候选里找数字（前奏括号「(5 … 1)」的括号候选里排着 1，issue 41）
         if d.is_none() && !t.trim().is_empty() && !t.trim().chars().all(|c| "()（）".contains(c)) {
-            d = crate::frame::alt_digit(ocr, &imgs[i]);
+            d = crate::frame::alt_digit(ink, ocr, &rects[i], &digit_cell(ink, &rects[i]));
         }
         if std::env::var("OMR_JP_CELLTXT").is_ok() {
             let r = digit_cells[i].rect();

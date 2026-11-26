@@ -443,8 +443,8 @@ pub fn apply(ink: &Ink, row: &RowFrame, out: &mut RowNotes, ocr: &CachedOcr, ctx
         used.push(k.id);
     }
     if !graces.is_empty() {
-        let imgs: Vec<_> = graces.iter().map(|g| digit_cell(ink, &g.1)).collect();
-        let texts = ocr.read_cells(&imgs).unwrap_or_else(|_| vec![String::new(); imgs.len()]);
+        let rects: Vec<Rect> = graces.iter().map(|g| g.1).collect();
+        let texts = crate::read::cells(ink, ocr, &rects, |i| digit_cell(ink, &rects[i])).unwrap_or_else(|_| vec![String::new(); rects.len()]);
         for (g, t) in graces.iter().zip(texts) {
             let t = t.trim();
             let Some(d) = t.chars().next().filter(|c| ('1'..='7').contains(c) && t.chars().count() == 1) else { continue };

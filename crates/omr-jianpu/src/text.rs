@@ -419,11 +419,12 @@ fn read_segs(ink: &Ink, claims: &Claims, ocr: &CachedOcr, slope: f64, y0: i64, y
         }
         strip.dump_strip(rect.x, rect.y);
         // 要候选时贪心解码与前几名一次推理出来
+        let frame = crate::read::strip_frame(&rect, pad);
         let (got, ranks) = if doubts.is_some() {
-            let Ok((g, r)) = ocr.read_line_ranked(&strip, RANK_K) else { continue };
+            let Ok((g, r)) = crate::read::line_ranked(ink, ocr, &frame, RANK_K, || strip.clone()) else { continue };
             (g, Some(r))
         } else {
-            let Ok(g) = ocr.read_line(&strip) else { continue };
+            let Ok(g) = crate::read::line(ink, ocr, &frame, || strip.clone()) else { continue };
             (g, None)
         };
         let sw = strip.w as f64;
@@ -600,7 +601,7 @@ fn split_inner_labels(seg: Vec<Ch>) -> Vec<Vec<Ch>> {
 }
 
 /// 全角拉丁字母、数字折半角（中文标点不动）。
-fn fold(c: char) -> char {
+pub(crate) fn fold(c: char) -> char {
     match c {
         '０'..='９' | 'Ａ'..='Ｚ' | 'ａ'..='ｚ' => char::from_u32(c as u32 - 0xFEE0).unwrap_or(c),
         '＃' => '#',
@@ -1027,7 +1028,7 @@ pub fn slash_meters(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &
         diag >= 8 && off as f64 <= diag as f64 * 0.15
     };
     let read = |r: &Rect| -> Option<u32> {
-        let t = ocr.read_cells(&[crate::frame::digit_cell(ink, r)]).ok()?.remove(0);
+        let t = crate::read::cells(ink, ocr, &[*r], |_| crate::frame::digit_cell(ink, r)).ok()?.remove(0);
         let ds: String = t.chars().filter(|c| c.is_ascii_digit()).collect();
         ds.parse().ok()
     };
@@ -1079,7 +1080,7 @@ pub fn stacked_meters(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr:
     let comps = ink.comps();
     let digitish = |k: &Comp| k.rect.h >= num_h * 0.35 && k.rect.h <= num_h * 1.05 && k.rect.w >= num_h * 0.15 && k.rect.w <= num_h * 0.9;
     let read = |r: &Rect| -> Option<u32> {
-        let t = ocr.read_cells(&[crate::frame::digit_cell(ink, r)]).ok()?.remove(0);
+        let t = crate::read::cells(ink, ocr, &[*r], |_| crate::frame::digit_cell(ink, r)).ok()?.remove(0);
         let ds: String = t.chars().filter(|c| c.is_ascii_digit()).collect();
         ds.parse().ok()
     };
@@ -1357,7 +1358,9 @@ fn stanzas(ink: &Ink, claims: &Claims, rows: &[RowFrame], notes: &mut [RowNotes]
         };
         let glued = expect.and_then(|k| cn.get(k)).is_some_and(|&c| c == c0);
         let label = if CN_NUM.contains(c0) && ((seg.len() > lead + 2 && (cn_sep || glued)) || alone) {
-            Some((c0.to_string(), lead + 1))
+            // 段号照谱面记（同谱下行首的段号）：后面印着的顿号、点一并记（「二、」）
+            let sep = seg.get(lead + 1).map(|c| c.ch).filter(|&c| STANZA_SEP.contains(c));
+            Some((sep.map_or(c0.to_string(), |c| format!("{c0}{c}")), lead + 1))
         } else if (1..=2).contains(&digits) && seg.get(lead + digits).is_some_and(|c| ".．、 ".contains(c.ch) || is_han(c.ch)) {
             Some((seg[lead..lead + digits].iter().map(|c| c.ch).collect::<String>() + if seg[lead + digits].ch == '.' { "." } else { "" }, lead + digits))
         } else {
@@ -1623,7 +1626,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
     let top = rows[0].top_at(w / 2.0);
     let zone = Rect::new(0.0, 0.0, w, (top - num_h * 0.3).max(1.0));
     let crop = ink.strip(&zone, 0);
-    let boxes = ocr.detect(&crop).unwrap_or_default();
+    let boxes = crate::read::detect(ink, ocr, &crate::read::strip_frame(&zone, 0), || crop.clone()).unwrap_or_default();
     let mut lines: Vec<WordLine> = Vec::new();
     let mut key_alone_boxes: Vec<WordLine> = Vec::new();
     // 各 det 框的逐字中心（页眉区按框找回来挂 `chars`）
@@ -1634,7 +1637,7 @@ pub fn header(ink: &Ink, rows: &[RowFrame], num_h: f64, ocr: &CachedOcr, score: 
             continue;
         }
         let strip = ink.strip(&b, 0);
-        let Ok(got) = ocr.read_line(&strip) else { continue };
+        let Ok(got) = crate::read::line(ink, ocr, &crate::read::strip_frame(&b, 0), || strip.clone()) else { continue };
         // 补词间空格（rec 不吐空格，`YouhavemadeapromisetotheLord`）：按框里的空白列；署名里名字与职能词之间的空当照谱面补
         let sw = strip.w as f64;
         let chars = spread_all(got.iter().map(|c| (c.ch.as_str(), c.x0, c.x1)), |r| b.x + r * sw, |c| Some(fold(c)));
@@ -2102,7 +2105,7 @@ fn extend_spaced_title(ink: &Ink, ocr: &CachedOcr, num_h: f64, lines: &mut [Word
         return;
     }
     let u = add.iter().fold(b, |a, r| a.union(r));
-    let Ok(got) = ocr.read_line(&ink.strip(&u, 2)) else { return };
+    let Ok(got) = crate::read::line(ink, ocr, &crate::read::strip_frame(&u, 2), || ink.strip(&u, 2)) else { return };
     let txt: String = got.into_iter().map(|c| c.ch).collect::<String>().trim().to_string();
     if !all_han(&txt) || txt.chars().count() != t.text.trim().chars().count() + add.len() {
         return;
@@ -2148,7 +2151,7 @@ fn key_by_glyphs(ink: &Ink, ocr: &CachedOcr, x_max: f64, y_min: f64, y_max: f64,
             let Some(one) = one else { continue };
             // 衬线体的「1」只是一根带脚的细竖，数字模型常读不成 1：细竖本身就够
             if one.w > one.h * 0.4 {
-                let t = ocr.read_cells(&[crate::frame::digit_cell(ink, one)]).ok()?;
+                let t = crate::read::cells(ink, ocr, &[**one], |_| crate::frame::digit_cell(ink, one)).ok()?;
                 if crate::frame::digit_of(&t[0]) != Some(1) {
                     continue;
                 }
@@ -2209,7 +2212,7 @@ fn read_key_group(ink: &Ink, ocr: &CachedOcr, group: &[Rect]) -> Option<i32> {
     }
     let read = |ks: &[Rect]| -> Option<(i32, char)> {
         let r = ks.iter().skip(1).fold(ks[0], |a, b| a.union(b));
-        let t: String = ocr.read_line(&ink.strip(&r, 2)).ok()?.into_iter().map(|c| c.ch).collect();
+        let t: String = crate::read::line(ink, ocr, &crate::read::strip_frame(&r, 2), || ink.strip(&r, 2)).ok()?.into_iter().map(|c| c.ch).collect();
         let c = KEY_GLYPHS.captures(t.trim())?;
         let a = |s: &str| match s {
             "b" | "♭" => -1,
@@ -2311,7 +2314,7 @@ fn stacked_meter(ink: &Ink, top: f64, num_h: f64, ocr: &CachedOcr, score: &mut R
             if gap < num_h * 0.05 || gap > num_h * 0.6 || (a.rect.cx() - b.rect.cx()).abs() > num_h * 0.3 || (a.rect.h - b.rect.h).abs() > a.rect.h * 0.25 {
                 continue;
             }
-            let Ok(t) = ocr.read_cells(&[digit_cell(ink, &a.rect), digit_cell(ink, &b.rect)]) else { continue };
+            let Ok(t) = crate::read::cells(ink, ocr, &[a.rect, b.rect], |i| digit_cell(ink, if i == 0 { &a.rect } else { &b.rect })) else { continue };
             let d = |s: &str| s.trim().parse::<u32>().ok();
             if let (Some(x), Some(y)) = (d(&t[0]), d(&t[1])) {
                 // 分子读成 8 的按 3（分子几乎不可能是 8），分母只可能是 2 的幂
