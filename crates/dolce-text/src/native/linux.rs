@@ -35,13 +35,13 @@ fn sticks_to_prev(ch: char) -> bool {
         | 0x0900..=0x0903 | 0x093A..=0x094F | 0x0951..=0x0957 | 0x0962..=0x0963)
 }
 
-/// 这个字用哪个面：族串里第一个有的 → 末位回退 → 库里任一有的；都没有用族串首个（画缺字框）。
-fn face_for(book: &FontBook, chain: &[FaceRef], ch: char, bold: bool, italic: bool) -> Option<Arc<Face>> {
-    book.pick(chain, ch, bold, italic).or_else(|| book.pick_any(ch)).or_else(|| chain.first().cloned()).map(|f| f.face)
+/// 这个字用哪个面：族串里第一个有的 → 缺字回退（按族串首名，同 Skia）→ 库里任一有的；都没有用族串首个（画缺字框）。
+fn face_for(book: &FontBook, chain: &[FaceRef], first: &str, ch: char, bold: bool, italic: bool) -> Option<Arc<Face>> {
+    book.pick_in(chain, ch, bold, italic, first).or_else(|| book.pick_any(ch)).or_else(|| chain.first().cloned()).map(|f| f.face)
 }
 
 /// 按字选面，连续同面的码点成一段（字节区间）。
-fn runs(book: &FontBook, chain: &[FaceRef], text: &str, bold: bool, italic: bool) -> Vec<(Range<usize>, Arc<Face>)> {
+fn runs(book: &FontBook, chain: &[FaceRef], first: &str, text: &str, bold: bool, italic: bool) -> Vec<(Range<usize>, Arc<Face>)> {
     let mut out: Vec<(Range<usize>, Arc<Face>)> = Vec::new();
     for (i, ch) in text.char_indices() {
         let end = i + ch.len_utf8();
@@ -51,13 +51,25 @@ fn runs(book: &FontBook, chain: &[FaceRef], text: &str, bold: bool, italic: bool
                 continue;
             }
         }
-        let Some(face) = face_for(book, chain, ch, bold, italic) else { continue };
+        let Some(face) = face_for(book, chain, first, ch, bold, italic) else { continue };
         match out.last_mut() {
             Some(last) if last.0.end == i && Arc::ptr_eq(&last.1, &face) => last.0.end = end,
             _ => out.push((i..end, face)),
         }
     }
     out
+}
+
+/// 字体单位（em）→ px 的系数，照 FreeType：字号先取 26.6 定点，再除以 upem 得 16.16 的缩放系数（四舍五入），
+/// advance 按它线性放大（Skia 在 Linux 上用 FreeType 的线性 advance）。upem 除不尽时比 `size` 略大或略小——
+/// 如 1000 upem 的 Noto CJK 28px 一个字 28.0001，经口径层向上取 1/64 成 28.015625，同 Chromium。
+fn ft_scale(size: f64, upem: f64) -> f64 {
+    let s26 = (size * 64.0).round();
+    if s26 <= 0.0 || upem <= 0.0 {
+        return size;
+    }
+    let scale = (s26 * 65536.0 / upem).round();
+    scale * upem / 65536.0 / 64.0 * (size * 64.0 / s26)
 }
 
 /// 一个整形好的字形：所在面、字形号、笔位（px）、画字位置相对笔位的偏移（px，y 向下）。
@@ -81,10 +93,12 @@ fn layout(text: &str, families: &[String], size: f64, bold: bool, italic: bool, 
         let chain = book.chain_of(families, bold, italic);
         let mut out = Vec::new();
         let mut pen = 0.0;
-        for (range, face) in runs(book, &chain, text, bold, italic) {
+        let first = families.first().map(String::as_str).unwrap_or("");
+        for (range, face) in runs(book, &chain, first, text, bold, italic) {
+            let adv = ft_scale(size, face.upem);
             for g in face.shape(&text[range.clone()], &feats) {
                 out.push(Placed { face: face.clone(), gid: g.gid, byte: range.start + g.cluster, pen, dx: g.x_offset * size, dy: -g.y_offset * size });
-                pen += g.x_advance * size;
+                pen += g.x_advance * adv;
             }
         }
         (out, pen)

@@ -24,6 +24,10 @@ use crate::Platform;
 #[cfg(all(target_os = "linux", feature = "fontfile-system"))]
 pub mod fc;
 
+/// fontconfig 缺字回退的语言：排版的页面是中文页面（`lang="zh-CN"`），同浏览器口径层的泛称
+#[cfg(all(target_os = "linux", feature = "fontfile-system"))]
+const FALLBACK_LANG: &str = "zh-cn";
+
 /// Linux 上没有 fontconfig 时族名的替身（fontconfig 配置里常见的那几条：Chromium 泛称缺省名 → 装得最多的度量兼容字体）
 pub const LINUX_ALIASES: &[(&str, &[&str])] = &[
     ("Arial", &["Liberation Sans", "Arimo"]),
@@ -32,7 +36,10 @@ pub const LINUX_ALIASES: &[(&str, &[&str])] = &[
     ("Times", &["Liberation Serif", "Tinos"]),
     ("Courier New", &["Liberation Mono", "Cousine"]),
     ("Courier", &["Liberation Mono", "Cousine"]),
-    ("Monospace", &["DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono"]),
+    ("monospace", &["DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono"]),
+    // 中文页面的泛称（见 `fc` 模块注释）
+    ("sans-serif", &["Noto Sans CJK SC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei", "Source Han Sans SC", "DejaVu Sans"]),
+    ("serif", &["Noto Serif CJK SC", "Source Han Serif SC", "AR PL UMing CN", "Noto Sans CJK SC", "DejaVu Serif"]),
     ("Sans", &["DejaVu Sans", "Liberation Sans", "Noto Sans"]),
     ("Serif", &["DejaVu Serif", "Liberation Serif", "Noto Serif"]),
 ];
@@ -375,6 +382,9 @@ pub fn synth_bold_stroke(size: f64) -> f64 {
 /// 合成斜体的错切（Skia / CoreText 都是 tan ≈ 0.25）
 pub const SYNTH_ITALIC_SKEW: f64 = 0.25;
 
+/// fontconfig 缺字回退缓存的键：(族名, 字, 粗, 斜)
+type FcCharKey = (String, char, bool, bool);
+
 /// 可变字体实例的键：(面的来源键, 字重, 斜体)
 type InstanceKey = (String, u16, bool);
 
@@ -388,8 +398,10 @@ pub struct FontBook {
     found: RefCell<HashMap<(String, bool, bool), Option<FaceRef>>>,
     /// 直接按文件 + 子字体序号收进来的面（成书样式表指名的字体），不进 fontdb 的族名匹配
     adopted: RefCell<Vec<Arc<Face>>>,
-    /// [`FontBook::pick_any`] / fontconfig 回退的按字缓存：(字, 粗, 斜)
+    /// [`FontBook::pick_any`] 的按字缓存：(字, 粗, 斜)
     any_char: RefCell<HashMap<(char, bool, bool), Option<FaceRef>>>,
+    /// fontconfig 缺字回退的缓存：(族名, 字, 粗, 斜)
+    fc_char: RefCell<HashMap<FcCharKey, Option<FaceRef>>>,
     /// 按文件 + 序号建的面（fontconfig 给的），键 `路径#序号`
     path_faces: RefCell<HashMap<String, Option<Arc<Face>>>>,
     /// 族名匹配与缺字回退问 fontconfig（Linux 且载得到时）
@@ -411,6 +423,7 @@ impl FontBook {
             adopted: RefCell::default(),
             any_char: RefCell::default(),
             path_faces: RefCell::default(),
+            fc_char: RefCell::default(),
             fc: false,
             last_resort: last_resort(platform),
         }
@@ -557,7 +570,13 @@ impl FontBook {
         let mut face = self.db_find(family, bold, italic);
         #[cfg(all(target_os = "linux", feature = "fontfile-system"))]
         if face.is_none() && self.fc {
-            face = fc::match_family(family, bold, italic).and_then(|f| self.face_at(&f.file, f.index));
+            // 中文页面的 sans-serif / serif = 以泛称为族名对「一」的缺字回退（见 `fc` 模块注释）
+            face = if family == "sans-serif" || family == "serif" {
+                fc::fallback('\u{4E00}', family, bold, italic, FALLBACK_LANG)
+            } else {
+                fc::match_family(family, bold, italic)
+            }
+            .and_then(|f| self.face_at(&f.file, f.index));
         }
         if face.is_none() && !self.fc && self.platform == Platform::Linux {
             if let Some((_, alts)) = LINUX_ALIASES.iter().find(|(n, _)| n.eq_ignore_ascii_case(family)) {
@@ -610,26 +629,31 @@ impl FontBook {
 
     /// 这个字落在哪个字体面：族串里第一个有这个字的，都没有再试末位回退（Linux 有 fontconfig 时问它，照 Chromium）
     pub fn pick(&self, chain: &[FaceRef], ch: char, bold: bool, italic: bool) -> Option<FaceRef> {
+        self.pick_in(chain, ch, bold, italic, "")
+    }
+
+    /// 同 [`FontBook::pick`]，带族串第一个族名（CSS 原样，泛称不展开）：fontconfig 缺字回退按它分 sans / serif，同 Skia。
+    pub fn pick_in(&self, chain: &[FaceRef], ch: char, bold: bool, italic: bool, first_family: &str) -> Option<FaceRef> {
         if let Some(f) = chain.iter().find(|f| f.face.has(ch)) {
             return Some(f.clone());
         }
         if self.fc {
-            return self.fc_fallback(ch, bold, italic);
+            return self.fc_fallback(ch, first_family, bold, italic);
         }
         self.last_resort.iter().filter_map(|fam| self.find(fam, bold, italic)).find(|f| f.face.has(ch))
     }
 
-    /// fontconfig 的缺字回退（按字缓存）。语言取中文页面的 `zh-cn`（排版的页面都是中文页面，同浏览器口径层的泛称）。
-    fn fc_fallback(&self, ch: char, bold: bool, italic: bool) -> Option<FaceRef> {
-        let k = (ch, bold, italic);
-        if let Some(hit) = self.any_char.borrow().get(&k) {
+    /// fontconfig 的缺字回退（按族名 + 字缓存）
+    fn fc_fallback(&self, ch: char, family: &str, bold: bool, italic: bool) -> Option<FaceRef> {
+        let k = (family.to_string(), ch, bold, italic);
+        if let Some(hit) = self.fc_char.borrow().get(&k) {
             return hit.clone();
         }
         #[cfg(all(target_os = "linux", feature = "fontfile-system"))]
-        let hit = fc::fallback(ch, bold, italic, "zh-cn").and_then(|f| self.face_at(&f.file, f.index)).filter(|f| f.has(ch)).map(|f| self.finish(f, bold, italic));
+        let hit = fc::fallback(ch, family, bold, italic, FALLBACK_LANG).and_then(|f| self.face_at(&f.file, f.index)).filter(|f| f.has(ch)).map(|f| self.finish(f, bold, italic));
         #[cfg(not(all(target_os = "linux", feature = "fontfile-system")))]
         let hit = None;
-        self.any_char.borrow_mut().insert(k, hit.clone());
+        self.fc_char.borrow_mut().insert(k, hit.clone());
         hit
     }
 
@@ -637,7 +661,7 @@ impl FontBook {
     /// Linux 上装什么字体不定，系统量字靠这一步保证不缺字；导出不用（缺字照报）。
     pub fn pick_any(&self, ch: char) -> Option<FaceRef> {
         if self.fc {
-            return self.fc_fallback(ch, false, false);
+            return self.fc_fallback(ch, "", false, false);
         }
         let k = (ch, false, false);
         if let Some(hit) = self.any_char.borrow().get(&k) {

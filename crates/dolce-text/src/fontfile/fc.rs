@@ -5,7 +5,10 @@
 //!   替换（读系统与用户的配置：度量兼容替身、别名）、排序，取第一个可用的面；fontconfig 总会给出「某支字」，所以还要判这支算不算要的那个族——
 //!   它的族名等于替换后排第一的族名、或等于要的族名、或两者在同一组度量兼容字体里（Arial / Arimo / Liberation Sans 这类），才算；
 //!   不然当这个族没装（CSS 族串接着往下找）。`sans` / `serif` / `monospace` 这类泛称不判，落到什么都算。
-//! - **缺字回退**（[`fallback`]，照 Chromium `gfx::GetFallbackFontForChar`）：带上这个字与语言排序，取第一个有这个字、可用的面。
+//! - **缺字回退**（[`fallback`]，照 Skia `SkFontMgr_fontconfig::onMatchFamilyStyleCharacter`）：族串第一个族名连同这个字、语言交 fontconfig 排序，
+//!   取第一个有这个字、可用的面（族名经配置的别名决定走 sans 还是 serif：`Times New Roman` → serif，认不得的名字 → 缺省 sans）。
+//! - **中文页面的泛称**：Blink 对带中文语言的页面把 `sans-serif` / `serif`（及标准字体）换成「汉字代表字的回退字体」
+//!   （`FontCache::GetGenericFamilyNameForScript`，monospace 不换），即以泛称为族名对「一」做上面的缺字回退。
 //!
 //! fontconfig 不保证多线程同时调安全，调用都过一把全局锁。
 
@@ -174,8 +177,8 @@ pub fn match_family(family: &str, bold: bool, italic: bool) -> Option<FcFont> {
     ok.then_some(hit)
 }
 
-/// 族串里都没有这个字时的回退：带上这个字与语言（`zh-cn` 这类，空串不带）排序，第一个有这个字的可用面。
-pub fn fallback(ch: char, bold: bool, italic: bool, lang: &str) -> Option<FcFont> {
+/// 族串里都没有这个字时的回退：带上族名（族串第一个，空串不带）、这个字与语言（`zh-cn` 这类，空串不带）排序，第一个有这个字的可用面。
+pub fn fallback(ch: char, family: &str, bold: bool, italic: bool, lang: &str) -> Option<FcFont> {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let lib = lib()?;
     let p = base_pattern(lib, bold, italic);
@@ -184,6 +187,11 @@ pub fn fallback(ch: char, bold: bool, italic: bool, lang: &str) -> Option<FcFont
         (lib.FcCharSetAddChar)(cs, ch as u32);
         (lib.FcPatternAddCharSet)(p.1, FC_CHARSET.as_ptr(), cs);
         (lib.FcCharSetDestroy)(cs);
+        if !family.is_empty() {
+            if let Ok(f) = CString::new(family) {
+                (lib.FcPatternAddString)(p.1, FC_FAMILY.as_ptr(), f.as_ptr() as *const FcChar8);
+            }
+        }
         if !lang.is_empty() {
             if let Ok(l) = CString::new(lang) {
                 (lib.FcPatternAddString)(p.1, FC_LANG.as_ptr(), l.as_ptr() as *const FcChar8);

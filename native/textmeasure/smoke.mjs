@@ -23,8 +23,8 @@ const LATIN = byOs(["Times New Roman"], ["Times New Roman"], ["Times New Roman"]
 check("系统里有中文字体", tm.hasFamily(CJK[0]), CJK[0]);
 check("没有的族报没有", !tm.hasFamily("Dolce No Such Font"));
 // 浏览器口径层的通用族名 → 实名表（crates/dolce-text/src/compat.rs）：落到的字体本机都得有，否则量的是回退字体
-// （Linux 同 Chromium 落到 Arial / Times New Roman / Monospace，fontconfig 换成度量兼容的 Liberation 等，CI 装了 fonts-liberation）
-const GENERIC = byOs(["Microsoft YaHei", "SimSun", "Consolas", "Microsoft YaHei UI"], ["Arial", "Times New Roman", "Monospace"], ["PingFang SC", "Songti SC", "Menlo"]);
+// （Linux 泛称原样交 fontconfig：中文页面的 sans-serif / serif 取汉字的回退字体，同 Chromium）
+const GENERIC = byOs(["Microsoft YaHei", "SimSun", "Consolas", "Microsoft YaHei UI"], ["sans-serif", "serif", "monospace"], ["PingFang SC", "Songti SC", "Menlo"]);
 for (const f of GENERIC) check(`通用族名落到的 ${f} 本机有`, tm.hasFamily(f));
 
 const han = tm.measure("圣", CJK, 20, false, false, []);
