@@ -90,10 +90,11 @@ pub enum Platform {
     Linux,
 }
 
-/// Linux 上浏览器的泛称走 fontconfig，落到什么看发行版装了什么：按常见的中文环境列一串，没装的在量字 / 选字体时跳过。
-const LINUX_SANS: &[&str] = &["Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "Droid Sans Fallback", "DejaVu Sans"];
-const LINUX_SERIF: &[&str] = &["Noto Serif CJK SC", "Source Han Serif SC", "AR PL UMing CN", "DejaVu Serif"];
-const LINUX_MONO: &[&str] = &["DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Liberation Mono"];
+/// Linux 上 Chromium 泛称的缺省族（`chrome/app/resources/locale_settings_linux.grd`）：sans-serif → Arial、serif / 标准字体 → Times New Roman、
+/// monospace → Monospace，再由 fontconfig 落到度量兼容的替身（Liberation Sans / Serif、DejaVu Sans Mono 等，见 `fontfile::fc`）。
+const LINUX_SANS: &[&str] = &["Arial"];
+const LINUX_SERIF: &[&str] = &["Times New Roman"];
+const LINUX_MONO: &[&str] = &["Monospace"];
 
 impl Platform {
     pub fn current() -> Platform {
@@ -129,7 +130,7 @@ impl Platform {
         match self {
             Platform::Darwin => &["PingFang SC"],
             Platform::Win32 => &["Microsoft YaHei"],
-            Platform::Linux => LINUX_SANS,
+            Platform::Linux => LINUX_SERIF,
         }
     }
 }

@@ -5,6 +5,9 @@
 //! 一份 [`FontBook`] 是一个 fontdb 库加字节缓存：桌面 / 命令行装系统字体（`fontfile-system` 特性），
 //! wasm 只装宿主给的字节。族名的展开（泛称、标准字体）与量字同一份（[`crate::css_families`]）。
 //!
+//! **Linux 选字照 Chromium**（[`fc`]）：有 fontconfig 时族名匹配与缺字回退都问它（度量兼容替身、用户配置都跟得上），
+//! 只把注册的字体文件（Bravura 等）留在 fontdb 里先查；没有 fontconfig 时退回 fontdb 扫目录，族名查不到再试 [`LINUX_ALIASES`]。
+//!
 //! `fontfile` 特性才编；不开时本 crate 没有这些依赖。
 
 use std::any::Any;
@@ -17,6 +20,22 @@ pub use rustybuzz::ttf_parser;
 use serde::Serialize;
 
 use crate::Platform;
+
+#[cfg(all(target_os = "linux", feature = "fontfile-system"))]
+pub mod fc;
+
+/// Linux 上没有 fontconfig 时族名的替身（fontconfig 配置里常见的那几条：Chromium 泛称缺省名 → 装得最多的度量兼容字体）
+pub const LINUX_ALIASES: &[(&str, &[&str])] = &[
+    ("Arial", &["Liberation Sans", "Arimo"]),
+    ("Helvetica", &["Liberation Sans", "Arimo"]),
+    ("Times New Roman", &["Liberation Serif", "Tinos"]),
+    ("Times", &["Liberation Serif", "Tinos"]),
+    ("Courier New", &["Liberation Mono", "Cousine"]),
+    ("Courier", &["Liberation Mono", "Cousine"]),
+    ("Monospace", &["DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono"]),
+    ("Sans", &["DejaVu Sans", "Liberation Sans", "Noto Sans"]),
+    ("Serif", &["DejaVu Serif", "Liberation Serif", "Noto Serif"]),
+];
 
 /// 字形轮廓的种类（嵌入能力看它）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -356,8 +375,8 @@ pub fn synth_bold_stroke(size: f64) -> f64 {
 /// 合成斜体的错切（Skia / CoreText 都是 tan ≈ 0.25）
 pub const SYNTH_ITALIC_SKEW: f64 = 0.25;
 
-/// 可变字体实例的键：(fontdb 面, 字重, 斜体)
-type InstanceKey = (fontdb::ID, u16, bool);
+/// 可变字体实例的键：(面的来源键, 字重, 斜体)
+type InstanceKey = (String, u16, bool);
 
 /// 字体库：fontdb（族名、粗细、斜正的匹配）+ 已读字节 + 已解析的面。
 pub struct FontBook {
@@ -369,8 +388,12 @@ pub struct FontBook {
     found: RefCell<HashMap<(String, bool, bool), Option<FaceRef>>>,
     /// 直接按文件 + 子字体序号收进来的面（成书样式表指名的字体），不进 fontdb 的族名匹配
     adopted: RefCell<Vec<Arc<Face>>>,
-    /// [`FontBook::pick_any`] 的按字缓存
-    any_char: RefCell<HashMap<char, Option<FaceRef>>>,
+    /// [`FontBook::pick_any`] / fontconfig 回退的按字缓存：(字, 粗, 斜)
+    any_char: RefCell<HashMap<(char, bool, bool), Option<FaceRef>>>,
+    /// 按文件 + 序号建的面（fontconfig 给的），键 `路径#序号`
+    path_faces: RefCell<HashMap<String, Option<Arc<Face>>>>,
+    /// 族名匹配与缺字回退问 fontconfig（Linux 且载得到时）
+    fc: bool,
     /// 族串里的字体都缺这个字时依次试的族（平台的 CJK / 符号字体）
     pub last_resort: Vec<String>,
 }
@@ -387,16 +410,28 @@ impl FontBook {
             found: RefCell::default(),
             adopted: RefCell::default(),
             any_char: RefCell::default(),
+            path_faces: RefCell::default(),
+            fc: false,
             last_resort: last_resort(platform),
         }
     }
 
-    /// 系统字体库（桌面、命令行）
+    /// 系统字体库（桌面、命令行）。Linux 上有 fontconfig 就不扫目录（选字全问它），fontdb 里只放注册的字体文件。
     #[cfg(feature = "fontfile-system")]
     pub fn system() -> FontBook {
         let mut b = FontBook::empty(Platform::current());
+        #[cfg(target_os = "linux")]
+        if fc::available() {
+            b.fc = true;
+            return b;
+        }
         b.db.load_system_fonts();
         b
+    }
+
+    /// 选字走不走 fontconfig
+    pub fn uses_fontconfig(&self) -> bool {
+        self.fc
     }
 
     /// 加一个字体文件（随包的 Bravura、样式表里指名的文件）
@@ -466,44 +501,70 @@ impl FontBook {
         face
     }
 
-    /// 具体族名 + 粗斜 → 字体面。族名先按族（各语言的名字表都认）、再按 PostScript 名找。
-    pub fn find(&self, family: &str, bold: bool, italic: bool) -> Option<FaceRef> {
-        let k = (family.to_string(), bold, italic);
-        if let Some(hit) = self.found.borrow().get(&k) {
-            return hit.clone();
-        }
+    /// fontdb 里按族名（各语言的名字表都认）、再按 PostScript 名找
+    fn db_find(&self, family: &str, bold: bool, italic: bool) -> Option<Arc<Face>> {
         let q = fontdb::Query {
             families: &[fontdb::Family::Name(family)],
             weight: if bold { fontdb::Weight::BOLD } else { fontdb::Weight::NORMAL },
             stretch: fontdb::Stretch::Normal,
             style: if italic { fontdb::Style::Italic } else { fontdb::Style::Normal },
         };
-        let id = self.db.query(&q).or_else(|| self.db.faces().find(|f| f.post_script_name == family).map(|f| f.id));
-        let hit = id.and_then(|id| {
-            let mut face = self.face_of(id)?;
-            // 可变字体：fontdb 只认缺省实例，按要的字重 / 斜体取实例（如 .SF Compact 缺省是 Black）
-            if face.variable {
-                let want = if bold { 700.0 } else { 400.0 };
-                let k = (id, want as u16, italic);
-                let inst = self.instances.borrow().get(&k).cloned();
-                let inst = match inst {
-                    Some(v) => v,
-                    None => {
-                        let v = face.instance(want, italic).map(Arc::new);
-                        self.instances.borrow_mut().insert(k, v.clone());
-                        v
-                    }
-                };
-                if let Some(f) = inst {
-                    face = f;
+        let id = self.db.query(&q).or_else(|| self.db.faces().find(|f| f.post_script_name == family).map(|f| f.id))?;
+        self.face_of(id)
+    }
+
+    /// 按文件 + 子字体序号建面（同一面只建一次）
+    #[cfg(feature = "fontfile-system")]
+    #[allow(dead_code)]
+    fn face_at(&self, file: &str, index: u32) -> Option<Arc<Face>> {
+        let key = format!("{file}#{index}");
+        if let Some(f) = self.path_faces.borrow().get(&key) {
+            return f.clone();
+        }
+        let face = self.file_bytes(std::path::Path::new(file)).ok().and_then(|d| Face::parse(d, index, key.clone())).map(Arc::new);
+        self.path_faces.borrow_mut().insert(key, face.clone());
+        face
+    }
+
+    /// 选中的面 → [`FaceRef`]：可变字体按要的字重 / 斜体取实例（fontdb、fontconfig 都只给缺省实例，如 .SF Compact 缺省是 Black），判合成粗斜
+    fn finish(&self, mut face: Arc<Face>, bold: bool, italic: bool) -> FaceRef {
+        if face.variable {
+            let want = if bold { 700.0 } else { 400.0 };
+            let k = (face.key.clone(), want as u16, italic);
+            let inst = self.instances.borrow().get(&k).cloned();
+            let inst = match inst {
+                Some(v) => v,
+                None => {
+                    let v = face.instance(want, italic).map(Arc::new);
+                    self.instances.borrow_mut().insert(k, v.clone());
+                    v
                 }
+            };
+            if let Some(f) = inst {
+                face = f;
             }
-            Some(FaceRef {
-                synth_bold: bold && face.weight < 600 && !face.bold_flag,
-                synth_italic: italic && !face.italic,
-                face,
-            })
-        });
+        }
+        FaceRef { synth_bold: bold && face.weight < 600 && !face.bold_flag, synth_italic: italic && !face.italic, face }
+    }
+
+    /// 具体族名 + 粗斜 → 字体面。先查 fontdb（注册的字体文件优先，同 macOS 注册字体优先于系统里的同名族）；
+    /// Linux 上再问 fontconfig（照 Chromium 判这支算不算要的族），没有 fontconfig 时试 [`LINUX_ALIASES`]。
+    pub fn find(&self, family: &str, bold: bool, italic: bool) -> Option<FaceRef> {
+        let k = (family.to_string(), bold, italic);
+        if let Some(hit) = self.found.borrow().get(&k) {
+            return hit.clone();
+        }
+        let mut face = self.db_find(family, bold, italic);
+        #[cfg(all(target_os = "linux", feature = "fontfile-system"))]
+        if face.is_none() && self.fc {
+            face = fc::match_family(family, bold, italic).and_then(|f| self.face_at(&f.file, f.index));
+        }
+        if face.is_none() && !self.fc && self.platform == Platform::Linux {
+            if let Some((_, alts)) = LINUX_ALIASES.iter().find(|(n, _)| n.eq_ignore_ascii_case(family)) {
+                face = alts.iter().find_map(|a| self.db_find(a, bold, italic));
+            }
+        }
+        let hit = face.map(|f| self.finish(f, bold, italic));
         self.found.borrow_mut().insert(k, hit.clone());
         hit
     }
@@ -532,6 +593,7 @@ impl FontBook {
     pub fn loaded(&self) -> Vec<Arc<Face>> {
         let mut v: Vec<Arc<Face>> = self.faces.borrow().values().flatten().cloned().collect();
         v.extend(self.instances.borrow().values().flatten().cloned());
+        v.extend(self.path_faces.borrow().values().flatten().cloned());
         v.extend(self.adopted.borrow().iter().cloned());
         v
     }
@@ -546,18 +608,39 @@ impl FontBook {
         families.iter().filter_map(|f| self.find(f, bold, italic)).collect()
     }
 
-    /// 这个字落在哪个字体面：族串里第一个有这个字的，都没有再试末位回退
+    /// 这个字落在哪个字体面：族串里第一个有这个字的，都没有再试末位回退（Linux 有 fontconfig 时问它，照 Chromium）
     pub fn pick(&self, chain: &[FaceRef], ch: char, bold: bool, italic: bool) -> Option<FaceRef> {
         if let Some(f) = chain.iter().find(|f| f.face.has(ch)) {
             return Some(f.clone());
         }
+        if self.fc {
+            return self.fc_fallback(ch, bold, italic);
+        }
         self.last_resort.iter().filter_map(|fam| self.find(fam, bold, italic)).find(|f| f.face.has(ch))
     }
 
-    /// 末位回退也没有这个字时：库里任一有这个字的面（按 fontdb 的顺序取第一个，按字缓存）。
+    /// fontconfig 的缺字回退（按字缓存）。语言取中文页面的 `zh-cn`（排版的页面都是中文页面，同浏览器口径层的泛称）。
+    fn fc_fallback(&self, ch: char, bold: bool, italic: bool) -> Option<FaceRef> {
+        let k = (ch, bold, italic);
+        if let Some(hit) = self.any_char.borrow().get(&k) {
+            return hit.clone();
+        }
+        #[cfg(all(target_os = "linux", feature = "fontfile-system"))]
+        let hit = fc::fallback(ch, bold, italic, "zh-cn").and_then(|f| self.face_at(&f.file, f.index)).filter(|f| f.has(ch)).map(|f| self.finish(f, bold, italic));
+        #[cfg(not(all(target_os = "linux", feature = "fontfile-system")))]
+        let hit = None;
+        self.any_char.borrow_mut().insert(k, hit.clone());
+        hit
+    }
+
+    /// 末位回退也没有这个字时：库里任一有这个字的面（按 fontdb 的顺序取第一个，按字缓存；有 fontconfig 时同 [`FontBook::pick`] 的回退）。
     /// Linux 上装什么字体不定，系统量字靠这一步保证不缺字；导出不用（缺字照报）。
     pub fn pick_any(&self, ch: char) -> Option<FaceRef> {
-        if let Some(hit) = self.any_char.borrow().get(&ch) {
+        if self.fc {
+            return self.fc_fallback(ch, false, false);
+        }
+        let k = (ch, false, false);
+        if let Some(hit) = self.any_char.borrow().get(&k) {
             return hit.clone();
         }
         // 先就地探字表（fontdb 按需映射文件、不进字节缓存），找到了才建面——不把整库字体读进内存
@@ -573,7 +656,7 @@ impl FontBook {
             .filter_map(|id| self.face_of(id))
             .find(|f| f.outlines != Outlines::Bitmap)
             .map(|face| FaceRef { face, synth_bold: false, synth_italic: false });
-        self.any_char.borrow_mut().insert(ch, hit.clone());
+        self.any_char.borrow_mut().insert(k, hit.clone());
         hit
     }
 }
@@ -582,11 +665,12 @@ fn last_resort(p: Platform) -> Vec<String> {
     let v: &[&str] = match p {
         Platform::Darwin => &["PingFang SC", "Hiragino Sans GB", "Songti SC", "Apple Symbols", "Arial Unicode MS", "STIXGeneral"],
         Platform::Win32 => &["Microsoft YaHei", "SimSun", "Segoe UI Symbol", "Arial Unicode MS", "Cambria Math"],
+        // 没有 fontconfig 时才用
         Platform::Linux => &[
             "Noto Sans CJK SC",
-            "Source Han Sans SC",
-            "WenQuanYi Micro Hei",
             "WenQuanYi Zen Hei",
+            "WenQuanYi Micro Hei",
+            "Source Han Sans SC",
             "Droid Sans Fallback",
             "DejaVu Sans",
             "Noto Sans Symbols2",

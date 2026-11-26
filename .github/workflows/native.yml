@@ -19,7 +19,7 @@ jobs:
       # Linux runner 没有中文字体：装 Noto CJK 与 DejaVu（smoke.mjs 的 Linux 分支查这几个）
       - name: Install fonts (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-dejavu-core
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-dejavu-core fonts-liberation
 
       - name: Setup Node
         uses: actions/setup-node@v5
