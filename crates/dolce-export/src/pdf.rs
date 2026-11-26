@@ -13,7 +13,7 @@ use krilla::paint::{Fill, FillRule, LineCap, Stroke};
 use krilla::surface::Surface;
 use krilla::text::{GlyphId, KrillaGlyph};
 
-use crate::fonts::{synth_bold_stroke, Face, FaceRef, FontBook, SYNTH_ITALIC_SKEW};
+use crate::fonts::{face_by_pdf_font, synth_bold_stroke, Face, FaceRef, FontBook, PdfFace, SYNTH_ITALIC_SKEW};
 
 /// ARGB（`0xAARRGGBB`，场景里存成 f64）→ krilla 颜色与不透明度
 pub fn argb(c: f64) -> (rgb::Color, f32) {
@@ -590,7 +590,7 @@ pub fn write_pdf(book: &FontBook, src: &dyn PageSource, info: &DocInfo, search_f
                 return Ok((bytes, report));
             }
             Err(krilla::error::KrillaError::Font(font, msg)) if retries < 8 => {
-                let Some(face) = book.face_by_pdf_font(&font) else { return Err(format!("字体嵌不进：{msg}")) };
+                let Some(face) = face_by_pdf_font(book, &font) else { return Err(format!("字体嵌不进：{msg}")) };
                 face.mark_outline_only();
                 retries += 1;
             }

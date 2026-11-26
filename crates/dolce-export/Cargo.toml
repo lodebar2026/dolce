@@ -8,19 +8,17 @@ publish.workspace = true
 [features]
 default = ["system", "book"]
 # 系统字体（fontdb 扫系统目录）。桌面与命令行开；wasm 不开，字体由宿主给字节
-system = ["fontdb/fs", "fontdb/memmap"]
+system = ["dolce-text/fontfile-system"]
 # 成书 DrawList → PDF 与书级量字（引 dolce-book；wasm 不要）
 book = ["system", "dep:dolce-book"]
 
 [dependencies]
 dolce-base = { path = "../dolce-base" }
 dolce-scene = { path = "../dolce-scene" }
-dolce-text = { path = "../dolce-text" }
+dolce-text = { path = "../dolce-text", features = ["fontfile"] }
 dolce-book = { path = "../dolce-book", optional = true }
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
-rustybuzz = "0.20.1"
 flate2 = "1"
 crc32fast = "1"
-fontdb = { version = "0.23", default-features = false, features = ["std"] }
 serde.workspace = true
 serde_json = "1"

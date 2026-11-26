@@ -87,37 +87,49 @@ pub enum Engine {
 pub enum Platform {
     Darwin,
     Win32,
+    Linux,
 }
+
+/// Linux 上浏览器的泛称走 fontconfig，落到什么看发行版装了什么：按常见的中文环境列一串，没装的在量字 / 选字体时跳过。
+const LINUX_SANS: &[&str] = &["Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "Droid Sans Fallback", "DejaVu Sans"];
+const LINUX_SERIF: &[&str] = &["Noto Serif CJK SC", "Source Han Serif SC", "AR PL UMing CN", "DejaVu Serif"];
+const LINUX_MONO: &[&str] = &["DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Liberation Mono"];
 
 impl Platform {
     pub fn current() -> Platform {
         if cfg!(target_os = "windows") {
             Platform::Win32
+        } else if cfg!(target_os = "linux") {
+            Platform::Linux
         } else {
             Platform::Darwin
         }
     }
 
-    /// 泛称 → 具体族（中文页面里 SVG `<text>` 的解析结果）。
-    fn generic(self, name: &str) -> Option<&'static str> {
+    /// 泛称 → 具体族（中文页面里 SVG `<text>` 的解析结果）；Linux 上是一串候选。
+    fn generic(self, name: &str) -> Option<&'static [&'static str]> {
         match (self, name) {
-            (Platform::Darwin, "sans-serif") => Some("PingFang SC"),
-            (Platform::Darwin, "serif") => Some("Songti SC"),
-            (Platform::Darwin, "monospace") => Some("Menlo"),
-            (Platform::Darwin, "system-ui") => Some("PingFang SC"),
-            (Platform::Win32, "sans-serif") => Some("Microsoft YaHei"),
-            (Platform::Win32, "serif") => Some("SimSun"),
-            (Platform::Win32, "monospace") => Some("Consolas"),
-            (Platform::Win32, "system-ui") => Some("Microsoft YaHei UI"),
+            (Platform::Darwin, "sans-serif") => Some(&["PingFang SC"]),
+            (Platform::Darwin, "serif") => Some(&["Songti SC"]),
+            (Platform::Darwin, "monospace") => Some(&["Menlo"]),
+            (Platform::Darwin, "system-ui") => Some(&["PingFang SC"]),
+            (Platform::Win32, "sans-serif") => Some(&["Microsoft YaHei"]),
+            (Platform::Win32, "serif") => Some(&["SimSun"]),
+            (Platform::Win32, "monospace") => Some(&["Consolas"]),
+            (Platform::Win32, "system-ui") => Some(&["Microsoft YaHei UI"]),
+            (Platform::Linux, "sans-serif" | "system-ui") => Some(LINUX_SANS),
+            (Platform::Linux, "serif") => Some(LINUX_SERIF),
+            (Platform::Linux, "monospace") => Some(LINUX_MONO),
             _ => None,
         }
     }
 
-    /// 族串里一个都没有时浏览器用的标准字体。
-    fn standard(self) -> &'static str {
+    /// 族串里一个都没有时浏览器用的标准字体（Linux 上是一串候选）。
+    fn standard(self) -> &'static [&'static str] {
         match self {
-            Platform::Darwin => "PingFang SC",
-            Platform::Win32 => "Microsoft YaHei",
+            Platform::Darwin => &["PingFang SC"],
+            Platform::Win32 => &["Microsoft YaHei"],
+            Platform::Linux => LINUX_SANS,
         }
     }
 }
@@ -146,13 +158,14 @@ pub fn css_families(css: &str, platform: Platform) -> Vec<String> {
             continue;
         }
         match platform.generic(&name.to_lowercase()) {
-            Some(g) => hit.push(g.to_string()),
+            Some(g) => hit.extend(g.iter().map(|s| s.to_string())),
             None => hit.push(name.to_string()),
         }
     }
-    let std = platform.standard().to_string();
-    if !hit.contains(&std) {
-        hit.push(std);
+    for std in platform.standard() {
+        if !hit.iter().any(|h| h == std) {
+            hit.push(std.to_string());
+        }
     }
     hit
 }

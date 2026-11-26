@@ -1,4 +1,4 @@
-// 原生量字的冒烟测试（CI 在 macOS / Windows 上跑，见 .github/workflows/native.yml）：
+// 原生量字的冒烟测试（CI 在 macOS / Windows / Linux 上跑，见 .github/workflows/native.yml）：
 // 只查「系统文字引擎接上了、量出来的数合乎常理」，不比具体数值（各平台字体不同）。
 // 有 out/cli/engrave.js 时再用无头排版会话排一首小谱，查排得出页。
 // 用法：node native/textmeasure/smoke.mjs
@@ -16,12 +16,15 @@ const check = (what, ok, detail) => {
   if (!ok) failed++;
 };
 
-const CJK = process.platform === "win32" ? ["Microsoft YaHei"] : ["PingFang SC"];
-const LATIN = process.platform === "win32" ? ["Times New Roman"] : ["Times New Roman"];
+// Linux 上是字体文件层（fontdb + rustybuzz），CI 装的是 fonts-noto-cjk 与 fonts-dejavu-core
+const byOs = (win, linux, mac) => (process.platform === "win32" ? win : process.platform === "linux" ? linux : mac);
+const CJK = byOs(["Microsoft YaHei"], ["Noto Sans CJK SC"], ["PingFang SC"]);
+const LATIN = byOs(["Times New Roman"], ["DejaVu Serif"], ["Times New Roman"]);
 check("系统里有中文字体", tm.hasFamily(CJK[0]), CJK[0]);
 check("没有的族报没有", !tm.hasFamily("Dolce No Such Font"));
 // 浏览器口径层的通用族名 → 实名表（crates/dolce-text/src/compat.rs）：落到的字体本机都得有，否则量的是回退字体
-const GENERIC = process.platform === "win32" ? ["Microsoft YaHei", "SimSun", "Consolas", "Microsoft YaHei UI"] : ["PingFang SC", "Songti SC", "Menlo"];
+// （Linux 的泛称展开成一串候选，这里只查 CI 装上的那几个）
+const GENERIC = byOs(["Microsoft YaHei", "SimSun", "Consolas", "Microsoft YaHei UI"], ["Noto Sans CJK SC", "Noto Serif CJK SC", "DejaVu Sans Mono"], ["PingFang SC", "Songti SC", "Menlo"]);
 for (const f of GENERIC) check(`通用族名落到的 ${f} 本机有`, tm.hasFamily(f));
 
 const han = tm.measure("圣", CJK, 20, false, false, []);

@@ -10,7 +10,7 @@
 
 use dolce_scene::{Dialect, Node, Page, Role, Shape, TextShape};
 
-use crate::fonts::{FaceRef, FontBook};
+use crate::fonts::{FaceRef, FontBook, PdfFace};
 use crate::pdf::{argb, Affine, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report, Seg};
 
 /// 一页：场景 + 纸的大小（pt；场景的 viewBox 按它缩放，五线谱的 tenths 在这里换成 pt）

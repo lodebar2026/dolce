@@ -2,7 +2,7 @@
 name = "dolce-textmeasure"
 version = "0.1.0"
 edition = "2021"
-description = "悦谱 Dolce：Node 侧排版量字（macOS CoreText / Windows DirectWrite）"
+description = "悦谱 Dolce：Node 侧排版量字（macOS CoreText / Windows DirectWrite / Linux 字体文件层）"
 publish = false
 
 [lib]

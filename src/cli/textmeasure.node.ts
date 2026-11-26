@@ -1,7 +1,7 @@
-// Node 侧的量字后端：原生模块 `native/textmeasure`（`npm run build:native`，macOS CoreText / Windows DirectWrite）。
+// Node 侧的量字后端：原生模块 `native/textmeasure`（`npm run build:native`，macOS CoreText / Windows DirectWrite / Linux 字体文件层 fontdb + rustybuzz）。
 // 浏览器口径（CSS 族串按中文页面展开、单字宽取 1/64、全角标点挤压、ascent 取整与修正、f32）全在 Rust
 //（`crates/dolce-text` 的 `BrowserCompat`，`dolce_text_native::node_measure`），与 `dolce` 命令行同一份；这里只把它接成 `MeasureBackend`。
-// 其它平台没有原生模块，Node 侧排不了版。
+// 这三个以外的平台没有原生模块，Node 侧排不了版。
 // **只许进 Node 入口（cli/*）的 import 链。**
 
 import { createRequire } from "node:module";
@@ -27,7 +27,7 @@ function loadNative(): Native {
   ].filter((p): p is string => !!p);
   const req = createRequire(import.meta.url);
   for (const p of cands) if (existsSync(p)) return req(p) as Native;
-  throw new Error("没有原生量字模块 native/textmeasure/textmeasure.node（npm run build:native；只支持 macOS / Windows）");
+  throw new Error("没有原生量字模块 native/textmeasure/textmeasure.node（npm run build:native；只支持 macOS / Windows / Linux）");
 }
 
 let native: Native | null = null;

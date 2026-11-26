@@ -1,6 +1,6 @@
 [package]
 name = "dolce-text"
-description = "悦谱 Dolce 排版的量字层（照 src/common/measure.ts、cjkpunct.ts、cli/textmeasure.node.ts 的口径层）：量字 trait、按键缓存的 MeasureCtx、标点挤压、浏览器口径层 BrowserCompat、回放 ReplayMeasurer；native 特性带系统文字引擎（macOS CoreText / Windows DirectWrite）。不开 native 时无平台依赖，能编到 wasm"
+description = "悦谱 Dolce 排版的量字层（照 src/common/measure.ts、cjkpunct.ts、cli/textmeasure.node.ts 的口径层）：量字 trait、按键缓存的 MeasureCtx、标点挤压、浏览器口径层 BrowserCompat、回放 ReplayMeasurer；native 特性带系统文字引擎（macOS CoreText / Windows DirectWrite / Linux 字体文件层）；fontfile 特性带字体文件层（fontdb + rustybuzz，导出与 Linux 量字共用）。不开 native 时无平台依赖，能编到 wasm"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -9,10 +9,21 @@ publish.workspace = true
 dolce-base = { path = "../dolce-base" }
 serde.workspace = true
 serde_json = { version = "1", features = ["float_roundtrip"] }
+fontdb = { version = "0.23", default-features = false, features = ["std"], optional = true }
+rustybuzz = { version = "0.20.1", optional = true }
 
 [features]
-# 系统文字引擎（`native` 模块）：桌面与命令行开；wasm 不开，量字回调浏览器
-native = ["dep:objc2-core-foundation", "dep:objc2-core-graphics", "dep:objc2-core-text", "dep:windows", "dep:windows-core", "dep:windows-numerics"]
+# 字体文件层（`fontfile` 模块：fontdb 定位 + rustybuzz 整形）：导出开；Linux 的系统量字也用它
+fontfile = ["dep:fontdb", "dep:rustybuzz"]
+# 同上再加扫系统字体目录、读字体文件（桌面与命令行；wasm 不开，字体由宿主给字节）
+fontfile-system = ["fontfile", "fontdb/fs", "fontdb/memmap"]
+# 系统文字引擎（`native` 模块）：桌面与命令行开；wasm 不开，量字回调浏览器。
+# Linux 没有可用的系统排版 API，走 fontfile 层（特性不能按目标平台开，macOS / Windows 上只是多编一份）
+native = ["fontfile-system", "dep:objc2-core-foundation", "dep:objc2-core-graphics", "dep:objc2-core-text", "dep:windows", "dep:windows-core", "dep:windows-numerics"]
+
+# Linux 上 fontdb 读 fontconfig 的字体目录配置（纯 Rust 解析）
+[target.'cfg(target_os = "linux")'.dependencies]
+fontdb = { version = "0.23", default-features = false, features = ["std", "fontconfig"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-foundation = { version = "0.3", optional = true, features = ["CFArray", "CFAttributedString", "CFDictionary", "CFError", "CFNumber", "CFString", "CFCGTypes", "CFURL"] }

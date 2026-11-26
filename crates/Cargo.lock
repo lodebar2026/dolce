@@ -524,9 +524,7 @@ dependencies = [
  "dolce-scene",
  "dolce-text",
  "flate2",
- "fontdb",
  "krilla",
- "rustybuzz",
  "serde",
  "serde_json",
 ]
@@ -815,9 +813,11 @@ name = "dolce-text"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "fontdb",
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-text",
+ "rustybuzz",
  "serde",
  "serde_json",
  "ttf-parser",

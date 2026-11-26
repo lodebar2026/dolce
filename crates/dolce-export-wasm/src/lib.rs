@@ -17,6 +17,8 @@ fn start() {
 fn platform_of(p: &str) -> Platform {
     if p.eq_ignore_ascii_case("win32") || p.to_lowercase().starts_with("win") {
         Platform::Win32
+    } else if p.to_lowercase().starts_with("linux") {
+        Platform::Linux
     } else {
         Platform::Darwin
     }

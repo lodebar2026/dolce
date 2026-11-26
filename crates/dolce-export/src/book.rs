@@ -25,7 +25,7 @@ use dolce_book::measure::BookMeasure;
 use dolce_text::cjkpunct::{code_points, compress_run, CompressMode, SlackLR};
 use serde_json::Value;
 
-use crate::fonts::{Face, FaceRef, FontBook, Ink};
+use crate::fonts::{Face, FaceRef, FontBook, Ink, PdfFace};
 use crate::pdf::{parse_d, rgb24, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report};
 
 /// 半角 CJK 标点 → 全角等价（印刷字库常没有 U+FF61 这些码位）
@@ -90,12 +90,12 @@ pub fn find_font_file(family: &str) -> Option<PathBuf> {
 
 /// 子字体全名（nameID 4）
 fn full_name(data: &[u8], index: u32) -> Option<String> {
-    let f = rustybuzz::ttf_parser::Face::parse(data, index).ok()?;
+    let f = crate::fonts::ttf_parser::Face::parse(data, index).ok()?;
     let mut any = None;
     for n in f.names() {
-        if n.name_id == rustybuzz::ttf_parser::name_id::FULL_NAME {
+        if n.name_id == crate::fonts::ttf_parser::name_id::FULL_NAME {
             if let Some(s) = n.to_string() {
-                if n.language() == rustybuzz::ttf_parser::Language::English_UnitedStates {
+                if n.language() == crate::fonts::ttf_parser::Language::English_UnitedStates {
                     return Some(s);
                 }
                 any.get_or_insert(s);
@@ -107,7 +107,7 @@ fn full_name(data: &[u8], index: u32) -> Option<String> {
 
 /// `face` 字段（序号或名字）→ 子字体序号
 fn pick_index(data: &[u8], face: &Value) -> Result<u32, String> {
-    let n = rustybuzz::ttf_parser::fonts_in_collection(data).unwrap_or(1);
+    let n = crate::fonts::ttf_parser::fonts_in_collection(data).unwrap_or(1);
     match face {
         Value::Null => Ok(0),
         Value::Number(x) => Ok(x.as_u64().unwrap_or(0) as u32),

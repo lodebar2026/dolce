@@ -1,7 +1,7 @@
 name: Native modules
 
-# Node 侧的原生模块：排版量字（native/textmeasure：macOS CoreText / Windows DirectWrite）。（原位图识别像素内核 native/omrkernels 随 TS 识别删了，内核在 crates/omr-core::pixel。）
-# 本机只有 macOS，Windows 那份靠这里编译并跑冒烟测试（各自的 smoke.mjs）。
+# Node 侧的原生模块：排版量字（native/textmeasure：macOS CoreText / Windows DirectWrite / Linux 字体文件层 fontdb + rustybuzz）。（原位图识别像素内核 native/omrkernels 随 TS 识别删了，内核在 crates/omr-core::pixel。）
+# 本机只有 macOS，Windows、Linux 那份靠这里编译并跑冒烟测试（各自的 smoke.mjs）。
 # 只手动触发：Actions 页面选这个工作流点 Run workflow，或 gh workflow run native.yml。
 on:
   workflow_dispatch:
@@ -11,10 +11,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+
+      # Linux runner 没有中文字体：装 Noto CJK 与 DejaVu（smoke.mjs 的 Linux 分支查这几个）
+      - name: Install fonts (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-dejavu-core
 
       - name: Setup Node
         uses: actions/setup-node@v5

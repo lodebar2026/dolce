@@ -5,9 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const lib = { darwin: "libdolce_textmeasure.dylib", win32: "dolce_textmeasure.dll" }[process.platform];
+const lib = { darwin: "libdolce_textmeasure.dylib", win32: "dolce_textmeasure.dll", linux: "libdolce_textmeasure.so" }[process.platform];
 if (!lib) {
-  console.log(`textmeasure：${process.platform} 不编原生量字，Node 侧走字体文件后端`);
+  console.log(`textmeasure：${process.platform} 没有原生量字，Node 侧排不了版`);
   process.exit(0);
 }
 const src = join(here, "target", "release", lib);

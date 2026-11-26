@@ -974,9 +974,7 @@ dependencies = [
  "dolce-scene",
  "dolce-text",
  "flate2",
- "fontdb",
  "krilla",
- "rustybuzz",
  "serde",
  "serde_json",
 ]
@@ -1198,9 +1196,11 @@ name = "dolce-text"
 version = "0.1.0"
 dependencies = [
  "dolce-base",
+ "fontdb",
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-text",
+ "rustybuzz",
  "serde",
  "serde_json",
  "ttf-parser",
@@ -1468,11 +1468,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontconfig-parser"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbc773e24e02d4ddd8395fd30dc147524273a83e54e0f312d986ea30de5f5646"
+dependencies = [
+ "roxmltree",
+]
+
+[[package]]
 name = "fontdb"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "457e789b3d1202543297a350643cf459f836cade38934e7a4cf6a39e7cde2905"
 dependencies = [
+ "fontconfig-parser",
  "log",
  "memmap2",
  "slotmap",
@@ -3744,6 +3754,12 @@ dependencies = [
  "web-sys",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rustc-hash"

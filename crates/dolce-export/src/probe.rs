@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::fonts::{FaceRef, FontBook, Outlines};
+use crate::fonts::{FaceRef, FontBook, Outlines, PdfFace};
 use crate::pdf::{Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report};
 
 /// 一个样本：族名、粗斜、要画的字
@@ -45,6 +45,12 @@ pub fn default_samples() -> Vec<Sample> {
         Sample::new(".SF India", false, false, "\u{0915}\u{093f} 123"),
         Sample::new("Microsoft YaHei", false, false, zh),
         Sample::new("SimSun", false, false, zh),
+        // Linux（CI 装 fonts-noto-cjk、fonts-dejavu-core）
+        Sample::new("Noto Sans CJK SC", false, false, zh),
+        Sample::new("Noto Sans CJK SC", true, false, zh),
+        Sample::new("Noto Serif CJK SC", false, false, zh),
+        Sample::new("DejaVu Sans", false, false, "Words: R. Heber"),
+        Sample::new("DejaVu Serif", false, true, "Holy, holy, holy! Lord God Almighty"),
         Sample::new("Bravura", false, false, "\u{e050}\u{e062}\u{e0a4}\u{e260}\u{e262}"),
         // 随包的 BravuraText.otf 是子集，只有和弦用的小号升降还原（U+ED60–ED62）与和弦记号（U+E870–E872）
         Sample::new("Bravura Text", false, false, "\u{ed60}\u{ed62}\u{e870}"),
