@@ -1,7 +1,9 @@
 //! `dolce`：悦谱的命令行。给人用的：识谱出各格式（`omr`，[`cli`]；第一个参数是选项或已有的文件 / 目录时也按识谱，兼容旧写法）、
-//! 歌本切分（`split`）；开发用的：批量识别出 JSON（`run`，私有仓库的自检脚本用）、识别一个文件（`recognize`）、
-//! 五线谱会话（`session`）、回归（`regress`）。格式转换与排版以后也加在这里。
+//! 格式转换与排版/MIDI 导出（`convert`，[`convert`]）、歌本切分（`split`）；
+//! 开发用的：批量识别出 JSON（`run`，私有仓库的自检脚本用）、识别一个文件（`recognize`）、
+//! 五线谱会话（`session`）、回归（`regress`）。
 mod cli;
+mod convert;
 mod recognize;
 mod regress;
 mod run;
@@ -55,6 +57,13 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some("convert") => match convert::run(&args[1..]) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("✗ {e}");
+                ExitCode::from(1)
+            }
+        },
         Some("split") => match split::run(&args[1..]) {
             Ok(code) => code,
             Err(e) => {
@@ -65,7 +74,7 @@ fn main() -> ExitCode {
         None | Some("-h" | "--help" | "help") => {
             // 开发用的子命令只在仓库检出里列（分发包没有私有仓库，列了也跑不了）
             let dev = if checkout("crates/dolce-cli").is_dir() { format!("\n开发用：\n{}{USAGE}", run::USAGE) } else { String::new() };
-            eprintln!("用法：\n{}{}{dev}", cli::usage(), split::USAGE);
+            eprintln!("用法：\n{}{}{}{dev}", cli::usage(), convert::usage(), split::USAGE);
             ExitCode::from(if args.is_empty() { 2 } else { 0 })
         }
         Some("omr") => recognize_cli(&args[1..]),

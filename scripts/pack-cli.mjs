@@ -142,7 +142,7 @@ async function installCrt(dir, cpu) {
 
 async function verify(dir, os, exe, lib) {
   const problems = [];
-  for (const f of [exe, lib, "models/ppocrv6_dict.txt", "README.md"]) {
+  for (const f of [exe, lib, "Bravura.otf", "BravuraText.otf", "models/ppocrv6_dict.txt", "README.md"]) {
     if (!existsSync(join(dir, f))) problems.push(`缺 ${f}`);
   }
   if (CRT && os === "win32") {
@@ -190,6 +190,9 @@ ${run} omr 合唱.pdf -f musicxml -o 合唱.musicxml   ${c} 五线谱
 ${run} omr a.jpg b.pdf 谱子目录${sep} -o 出目录${sep}   ${c} 批量：一个进程跑完（一个文件一首）
 ${run} omr 图片.jpg --kind=jianpu --profile   ${c} 指定路线、附带每首耗时
 ${run} omr 图片.jpg -l 歌词.txt --lyrics-report 核对.json   ${c} 简谱参照歌词互证
+${run} convert 曲.123 -f musicxml -o 曲.musicxml          ${c} 格式互转（支持 -o 扩展名推断）
+${run} convert 曲.123 -o 曲.pdf                            ${c} 排版导出矢量 PDF / PNG / SVG / PPTX
+${run} convert 曲.123 -o 曲.mid                            ${c} 导出标准 MIDI（含演唱顺序与逐遍歌词）
 ${run} split 歌本.pdf -o 歌谱${sep}        ${c} 歌本切分：整本 PDF / 页图目录 → 一首一张图，按目录核对缺漏
 ${run} --help                         ${c} 全部参数
 \`\`\`
@@ -197,6 +200,10 @@ ${run} --help                         ${c} 全部参数
 输入：图片（jpg / png / webp / bmp / tif）与 PDF；一个文件一首（几页的 PDF 是一首）。路线缺省自动：先按五线谱认，
 一页谱表都没有再走简谱；\`--kind=staff|jianpu\` 指定。
 格式：\`shige\`（诗歌本文本谱，缺省）、\`tomato\`（番茄简谱）、\`123\`、\`jpwabc\`、\`abc\`、\`jly\`、\`jcx\`、\`musicxml\`。
+
+格式转换与导出（\`convert\`）：支持 \`.123\` / \`.abc\` / \`.jcx\` / \`.jpwabc\` / \`.jps\` / \`.jly\` / \`.musicxml\` / \`.mxl\` / \`.mid\`
+互转为上述谱面格式，或导出 \`midi\`（按演唱顺序展开、带声部名与逐遍歌词，\`--tempo\` / \`--no-lyrics\` / \`--metronome\`）
+以及排版成品 \`pdf\` / \`png\` / \`svg\` / \`pptx\`（\`--view=auto|jianpu|expanded|staff|mixed\`、\`--paper\`、\`--landscape\`、\`--dpi\`）。
 
 参照歌词互证（\`-l\` / \`--lyrics\`，只配单张简谱）：给同一首诗歌的歌词文本（.txt / .lrc，UTF-8 / UTF-16 / GBK 都认），
 形近字按歌词选字、补回漏读的字；两边对不上的（版本用字、字多字少、疑漏弧、反复顺序对不上）只报到 stderr、不改，
@@ -222,10 +229,13 @@ async function build(target) {
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
 
-  // 1. 识别程序 + PDFium（识别程序在自己旁边找 PDFium 与 models/）
+  // 1. 识别程序 + PDFium + Bravura 音乐字体（识别/排版程序在自己旁边找 PDFium、字体与 models/）
   await cp(bin.path, join(dir, bin.exe));
   await chmod(join(dir, bin.exe), 0o755);
   await cp(pdfium.path, join(dir, pdfium.lib));
+  for (const font of ["Bravura.otf", "BravuraText.otf"]) {
+    await cp(join(ROOT, "public", "redist", font), join(dir, font));
+  }
   // 2. 模型
   await mkdir(join(dir, "models"), { recursive: true });
   for (const f of await readdir(join(ROOT, "public", "redist", "ocr"))) await cp(join(ROOT, "public", "redist", "ocr", f), join(dir, "models", f));

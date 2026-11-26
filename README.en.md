@@ -103,6 +103,9 @@ The interface is available in **English and Chinese**: it follows your browser l
   the result is checked against the book's own table of contents for missing or duplicate numbers.
   Outlined vector PDFs come out as PNG (`--dpi` sets the resolution), and `--recognize` then recognizes each song
   from the book's vector objects (`-f` picks the format, MusicXML by default).
+- **Command-line conversion & export.** `dolce convert scores… -f format -o out` batch-converts between
+  123, ABC, jcx, JPWABC, text notation, jianpu-ly, MusicXML, MXL and MIDI, and exports standard **MIDI**
+  (expanded in singing order with part names and per-verse lyrics) as well as typeset **vector PDF, PNG, SVG, and vector PPTX** (`--view=jianpu|expanded|staff|mixed`, `--paper`, `--dpi`, etc.).
 
 **Typesetting**
 - **Four views:**

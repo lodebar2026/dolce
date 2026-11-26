@@ -461,6 +461,7 @@ name = "dolce-cli"
 version = "0.1.0"
 dependencies = [
  "dolce-engrave",
+ "dolce-export",
  "dolce-formats",
  "dolce-model",
  "dolce-omr-book",
@@ -472,9 +473,14 @@ dependencies = [
  "dolce-omr-source",
  "dolce-omr-staff",
  "dolce-omr-todoc",
+ "dolce-play",
+ "dolce-scene",
  "dolce-session",
+ "dolce-style",
  "dolce-text",
  "dolce-view",
+ "flate2",
+ "image",
  "rayon",
  "serde",
  "serde_json",
