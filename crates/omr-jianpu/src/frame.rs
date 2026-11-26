@@ -277,15 +277,18 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
             continue;
         }
         let band = Band::fit(&core);
-        if rows.iter().any(|r| (r.band.top(0.0) - band.top(0.0)).abs() < band.h() * 0.5) {
-            continue;
-        }
+        let dup = rows.iter().position(|r| (r.band.top(0.0) - band.top(0.0)).abs() < band.h() * 0.5);
         let mut row = RowFrame { band, cells: cut_cells(ink, &band) };
         if let Some((lo, hi)) = span {
             row.cells.retain(|c| c.x0 as f64 >= lo && c.x1 as f64 <= hi);
         }
         drop_aside(&mut row);
         let nd = row.digits().count();
+        // 与已收的行带叠着的是同一行：扫描糊的小字一行数字的纵向中心散开、聚成上下错开的两排，先收的那排可能只有几个数（青年诗歌 198
+        // 第 2 行先收下 4 格、同排 12 格的被丢）。数字格多出一半以上的才顶替，否则照旧丢
+        if dup.is_some_and(|k| nd * 2 <= rows[k].digits().count() * 3) {
+            continue;
+        }
         let nb = row.bars().count();
         // 带内切出的数字格多数得真读得出数字（歌词行里夹着段号、汉字的竖笔伸出带外像小节线）
         let imgs: Vec<Gray> = row.digits().map(|c| digit_cell(ink, &c.rect())).collect();
@@ -330,8 +333,13 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
         }
         let span = row.digits().map(|c| c.x1).max().unwrap_or(0) - row.digits().map(|c| c.x0).min().unwrap_or(0);
         if nd >= 1 && (nb >= 1 || (nd >= 4 && span as f64 >= ink.w() as f64 * 0.3)) {
-            rows.push(row);
-            ratios.push(good as f64 / nd as f64);
+            if let Some(k) = dup {
+                rows[k] = row;
+                ratios[k] = good as f64 / nd as f64;
+            } else {
+                rows.push(row);
+                ratios.push(good as f64 / nd as f64);
+            }
         }
     }
     // 三行以上时，比各行带高的中位矮一成半以上的排（页眉里的年份、英文署名，歌词里夹的数字）得几乎格格读得出数字、还得有小节线才算谱行

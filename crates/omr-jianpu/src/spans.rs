@@ -162,6 +162,35 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         }
         // 弧尾粘着小号波音（记号段已认出、挂在端上的音上，1771「(3 2̃)」）：波音的锯齿把回折量撑大，不看回折
         let orn_end = [sh.a.0, sh.b.0].iter().any(|&x| rn.nums.iter().any(|n| n.ornament.is_some() && (n.bbox.cx() - x).abs() <= h * 0.9));
+        // 罩着三个以上同音的长延音弧印得平（青年诗歌 206「(1' | 1'--- | 1'--)」宽 12 字号、只拱 0.16 字号）：两端的下钩追不进笔画，
+        // 只剩平顶一截、端头略垂，拱高按宽算不够、背面也鼓出同样多。平、细、两端都落在音头上方一个字号内、罩着的音全是同一音高的，收成一道弧
+        if sh.thick <= h * 0.2 && s.width() >= h * 3.0 && sh.slope().abs() <= 0.05 && sh.up.max(sh.down) <= h * 0.4 && sh.up >= h * MIN_ARCH {
+            let (ax, ay) = (sh.a.0, sh.a.1 + ya as f64);
+            let (bx, by) = (sh.b.0, sh.b.1 + ya as f64);
+            let near = |x: f64| rn.nums.iter().enumerate().map(|(i, n)| (i, (n.bbox.cx() - x).abs())).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|p| p.1 <= h * 0.9).map(|p| p.0);
+            let lim = h * if near(ax).is_some_and(|k| rn.nums[k].octave > 0) { 1.5 } else { 1.0 };
+            if let (Some(i), Some(j)) = (near(ax), near(bx)) {
+                let same = j >= i + 2 && rn.nums[i..=j].iter().all(|n| n.digit != 0 && n.digit == rn.nums[i].digit && n.octave == rn.nums[i].octave);
+                let close = (0.0..=lim).contains(&(row.top_at(ax) - ay)) && (0.0..=lim).contains(&(row.top_at(bx) - by));
+                // 中间哪个音头顶成谷（两边都比它高出 0.15 字号）的是首尾相接的几道延音线接成了一笔（主祢真伟大「(5__ | (5---) | 5)」），不收
+                let (x0, x1) = (s.x0, s.x1());
+                let r = (h * 0.3).round() as i64;
+                let peak = |a: i64, b: i64| (a..=b).map(|x| s.mid(x)).fold(f64::MAX, f64::min);
+                let valley = same
+                    && (i + 1..j).any(|k| {
+                        let xm = rn.nums[k].bbox.cx().round() as i64;
+                        xm - r > x0 && xm + r < x1 && {
+                            let low = (xm - r..=xm + r).map(|x| s.mid(x)).fold(f64::MIN, f64::max);
+                            low - peak(x0, xm - r).max(peak(xm + r, x1)) >= h * 0.15
+                        }
+                    });
+                if same && close && !valley && !found.iter().any(|f| f.0 == i && f.1 == j) {
+                    found.push((i, j, s.width(), ((ax + bx) / 2.0, ay.min(by) - sh.up)));
+                    found_strokes.push(vec![si]);
+                    continue;
+                }
+            }
+        }
         if !up || arch < h * MIN_ARCH || arch < s.width() * 0.025 || arch > h * 1.3 || (sh.back() > arch * 0.35 && !orn_end) || sh.thick > h * 0.2 || sh.peak < 0.12 || sh.peak > 0.88 {
             // 平直的方括号式连音括线「┌3┐」（青年诗歌 21 箭之歌）：拱不够、不是弧，只留作多连音候选——顶上读得出罩着的音数才算
             if arch < h * MIN_ARCH && s.width() >= h * 1.2 && sh.thick <= h * 0.2 && sh.slope().abs() <= 0.15 {
@@ -377,9 +406,10 @@ pub fn arcs(ink: &Ink, row: &RowFrame, rn: &mut RowNotes, y_min: f64, ocr: &Cach
         if !(3..=7).contains(&cnt) || rn.nums[i..=j].iter().any(|n| n.tuplet.is_some()) {
             continue;
         }
+        // 块底可比弧顶低半个字号：断开的「⌒3⌒」拼起来时弧顶取的是两半里端的中点，数字嵌在缺口里、底比里端低（青年诗歌 206 第 2 行低 0.47 字号）
         let cand = ink.comps().iter().find(|k| {
             let b = &k.rect;
-            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.9 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.45 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
+            (b.cx() - mx).abs() <= h * 0.5 && b.h >= h * 0.3 && b.h <= h * 0.9 && b.w >= h * 0.12 && b.w <= h * 0.6 && b.bottom() <= my + h * 0.5 && b.bottom() >= my - h * 0.35 && b.bottom() < row.top_at(b.cx())
         });
         // 数字压在弧（括线）顶上、与弧粘成一块的（第一声呼求前奏「⌐3⌐」）：没有单独的块，就在弧顶居中开一个字宽的窗读，
         // 窗里两侧的弧墨读成横杠，只看读出的数字

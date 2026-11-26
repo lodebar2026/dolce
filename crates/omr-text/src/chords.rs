@@ -80,6 +80,10 @@ fn scan(s0: &str, x_at: Option<&dyn Fn(usize) -> f64>) -> Scan {
                     i += 1;
                 }
             }
+            // 单独立着的一个数字（前后都是分隔或行头行尾）是连音数字，括线读成「-」「_」（青年诗歌 202「⌐2¬」读成「-2」）：同样不算残渣
+            None if cs[i].is_ascii_digit() && (i == 0 || is_sep(cs[i - 1])) && cs.get(i + 1).is_none_or(|&c| is_sep(c)) => {
+                i += 1;
+            }
             None => {
                 out.total += 1;
                 i += 1;
@@ -233,6 +237,9 @@ mod tests {
         assert!(split_tokens("D.C. al Fine", None).is_empty());
         assert!(split_tokens(&blank_non_chord("Verse 1=C 4/4"), None).is_empty());
         assert!(is_whole_chord("Bb/D") && !is_whole_chord("Be"));
+        // 和弦行里单立的连音数字（括线读成横杠）不算残渣
+        assert!(is_annotation_line("G C G -2 C"));
+        assert_eq!(coverage("G C G -2 C"), (1.0, 4));
     }
 
     #[test]

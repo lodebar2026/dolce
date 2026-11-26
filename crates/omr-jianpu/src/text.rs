@@ -511,13 +511,16 @@ fn margin_label(chars: &[Ch], first_x: f64, h: f64) -> (Option<String>, &[Ch]) {
     if !chars.get(j).is_some_and(|c| is_han(c.ch) || "“‘\"".contains(c.ch)) {
         return (None, chars);
     }
-    // 带括号的副歌标签「(副一)」「(副)」「(副歌)」照原样记成行首标签（同 TS `SIDE_LABEL_RE`）；不带括号的「副」是边注、不记
+    // 带序号的副歌标签「(副一)」「(副二)」照原样记成行首标签（同 TS `SIDE_LABEL_RE`，分得出几段副歌）；
+    // 只有「(副)」「(副歌)」、或不带括号的「副」是边注、不记（青年诗歌 190、192、198、200、202）
     if c.ch == '副' {
         let close = chars[i + 1..j].iter().any(|d| ")）".contains(d.ch));
         // 左括号常读丢（「副二) 因你爱」，青年诗歌 16）：有右括号就算带括号的标签
         if close {
             let body: String = chars[i..j].iter().map(|d| d.ch).filter(|&ch| ch == '副' || ch == '歌' || CN_NUM.contains(ch) || ch.is_ascii_digit()).collect();
-            return (Some(format!("({body})")), &chars[j..]);
+            if body.chars().any(|ch| CN_NUM.contains(ch) || ch.is_ascii_digit()) {
+                return (Some(format!("({body})")), &chars[j..]);
+            }
         }
         return (None, &chars[j..]);
     }
@@ -2447,15 +2450,38 @@ pub fn chords_above(ink: &Ink, row: &RowFrame, vruns: &VRuns, rn: &mut RowNotes,
             let n = m.as_str().chars().count();
             text = format!("{}{}{}", &text[..m.start()], " ".repeat(n), &text[m.end()..]);
         }
-        // 括号里的备选和弦（移调的另一套）不收
-        let mut depth = 0;
-        let no_paren: String = text
-            .chars()
-            .map(|c| {
-                if "(（".contains(c) {
-                    depth += 1;
+        // 括号里的备选和弦（移调的另一套）不收。落单的左括号（右括号读丢、或字读错，青年诗歌 202 行首「C」读成「(」）
+        // 只抹到下一个空白：照括号算到行末会把后面整行和弦抹光
+        let tcs: Vec<char> = text.chars().collect();
+        let mut matched = vec![false; tcs.len()];
+        let mut open: Vec<usize> = Vec::new();
+        for (i, &c) in tcs.iter().enumerate() {
+            if "(（".contains(c) {
+                open.push(i);
+            } else if ")）".contains(c) {
+                if let Some(o) = open.pop() {
+                    matched[o] = true;
+                    matched[i] = true;
                 }
-                let r = if depth > 0 { ' ' } else { c };
+            }
+        }
+        let mut depth = 0;
+        let mut loose = false;
+        let no_paren: String = tcs
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| {
+                if "(（".contains(c) {
+                    if matched[i] {
+                        depth += 1;
+                    } else {
+                        loose = true;
+                    }
+                }
+                if c.is_whitespace() {
+                    loose = false;
+                }
+                let r = if depth > 0 || loose { ' ' } else { c };
                 if ")）".contains(c) && depth > 0 {
                     depth -= 1;
                 }
