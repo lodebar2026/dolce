@@ -1,4 +1,4 @@
-# Dolce
+# Dolce: Jianpu & Staff Notation Editor, Sheet Music Recognition (OMR) & Typesetting
 
 [中文](README.md) | **English**
 

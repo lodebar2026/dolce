@@ -1,8 +1,8 @@
-# 悦谱 Dolce
+# 悦谱 Dolce：简谱 · 五线谱 · 歌谱识别与歌谱排版
 
 **中文** | [English](README.en.md)
 
-> 开源的简谱与五线谱编辑、识谱与排版工具：写谱、识谱、排版、试听、导出，浏览器即开即用，也有 Windows / macOS 桌面版；界面中英双语。
+> 开源的简谱、五线谱编辑器，带歌谱识别（图片 / PDF 识谱）与歌谱排版：写谱、识谱、排版、试听、导出，浏览器即开即用，也有 Windows / macOS 桌面版；界面中英双语。
 
 [![Release](https://img.shields.io/github/v/release/lodebar2026/dolce?display_name=tag)](https://github.com/lodebar2026/dolce/releases)
 [![Live demo](https://img.shields.io/badge/%F0%9F%8C%90%20%E5%9C%A8%E7%BA%BF%E4%BD%BF%E7%94%A8-online-2b6cb0)](https://lodebar2026.github.io/dolce/)
