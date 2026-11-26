@@ -1,9 +1,9 @@
 //! tract 与 ort 对账：同一首曲子识别时每次推理两个后端都跑，比输出张量与贪心解码，各计耗时。
 //! `cargo run --release -p dolce-cli --example tract_vs_ort -- jianpu|staff 文件…`
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::native::NativeInfer;
-use dolce_omr_ocr::tract::TractInfer;
-use dolce_omr_ocr::{Infer, Model, Ocr, OcrCache};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::native::NativeInfer;
+use dolce_omr_core::ocr::tract::TractInfer;
+use dolce_omr_core::ocr::{Infer, Model, Ocr, OcrCache};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -101,8 +101,8 @@ fn main() {
 }
 
 fn run(kind: &str, f: &str, ocr: &CachedOcr) -> String {
-    use dolce_omr_source::raster::{image_file, page_image};
-    use dolce_omr_source::{ContentOpts, PdfDoc};
+    use dolce_omr_core::source::raster::{image_file, page_image};
+    use dolce_omr_core::source::{ContentOpts, PdfDoc};
     use dolce_omr_staff::page::{recognize_source, PageSource};
     let bytes = std::fs::read(f).unwrap();
     let srcs: Vec<PageSource> = if f.ends_with(".pdf") {
@@ -125,6 +125,6 @@ fn run(kind: &str, f: &str, ocr: &CachedOcr) -> String {
     } else {
         let pages: Vec<_> = srcs.iter().filter_map(|s| recognize_source(s, Some(ocr))).collect();
         let song = dolce_omr_staff::song::assemble(&pages, None);
-        format!("{} 页、{} 字节 MusicXML", pages.len(), dolce_omr_todoc::staff::score_to_music_xml(&song.score).len())
+        format!("{} 页、{} 字节 MusicXML", pages.len(), dolce_omr_core::todoc::staff::score_to_music_xml(&song.score).len())
     }
 }

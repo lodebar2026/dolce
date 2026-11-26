@@ -4,8 +4,8 @@
 //! 矢量对象本来分开画：弧压着歌词、贴着符头都不粘，不用细墨掩膜、不用跨谱线拼接。
 //! 同一条弧画两遍（填充的月牙 + 描边加粗）的，对象库已并成一组（`twin_of`），这里按组取外沿：只出一条笔画。
 use crate::spans::Piece;
-use dolce_omr_sheet::curves::Stroke;
-use dolce_omr_source::vector::{VKind, VLine, VObj, VecPage};
+use dolce_omr_core::sheet::curves::Stroke;
+use dolce_omr_core::source::vector::{VKind, VLine, VObj, VecPage};
 
 /// 细：直线段线宽不过这么多（相对线距；同位图的细墨上限）。更厚的是符杠、粗小节线。
 const THIN: f64 = 0.45;

@@ -14,8 +14,8 @@
 use crate::frame::systems::System;
 use crate::page::Page;
 use crate::song::{assemble_with, Added, Constraints, Context, Fact, NewNote, Song, ADD_BASE};
-use dolce_omr_sheet::result::{Rid, RidKind};
-use dolce_omr_sheet::score::Choice;
+use dolce_omr_core::sheet::result::{Rid, RidKind};
+use dolce_omr_core::sheet::score::Choice;
 use serde::{Deserialize, Serialize};
 
 /// 改系统切分：合并第 `system` 与下一个系统（同一页才行）；在第 `system` 个系统的第 `row` 行之前拆开。系统号按原始切分全曲连续编。

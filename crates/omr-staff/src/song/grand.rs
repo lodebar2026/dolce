@@ -2,7 +2,7 @@
 //! 下谱表的事件记第 2 谱表、声部号加 4（同 MusicXML 惯例的 5、6），圆滑线号加 [`SLUR_NUMBERS`]（两行各开一条长弧时号不撞），
 //! 下谱表小节起头的谱号进 `staff_attrs`、行中换的谱号进 `mid`（都记第 2 谱表）；调号、拍号两谱表共用，上面那行没读出的取下面那行的。
 use super::*;
-use dolce_omr_sheet::music::ClefSign;
+use dolce_omr_core::sheet::music::ClefSign;
 
 /// 哪几对相邻槽位（上面那个的下标）合成大谱表：同时印着这两个槽位的系统里，过半认出了花括号的；
 /// 全曲一处花括号都没认出时，退到「相邻两槽位一个 G 谱号一个 F 谱号、都不带歌词」（花括号没认出的钢琴伴奏）。
@@ -121,7 +121,7 @@ pub(super) fn merge(parts: Vec<Part>, pairs: &[usize], cross: &[super::spans::Cr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dolce_omr_sheet::score::NoteType;
+    use dolce_omr_core::sheet::score::NoteType;
 
     #[test]
     fn merge_moves_lower_staff() {

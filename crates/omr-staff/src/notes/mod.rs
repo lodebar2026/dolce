@@ -20,7 +20,7 @@ use crate::page::PageFrame;
 use heads::{Head, HeadKind, InkSum, Template};
 use ledgers::FILLED_HALF_W;
 use resolve::Claims;
-use dolce_omr_sheet::score::NoteType;
+use dolce_omr_core::sheet::score::NoteType;
 use serde::{Deserialize, Serialize};
 use stems::Stem;
 
@@ -69,10 +69,10 @@ pub struct Chord {
     pub dots: u8,
     /// 贴头奏法（[`artics`]）。
     #[serde(default)]
-    pub arts: Vec<dolce_omr_sheet::score::Art>,
+    pub arts: Vec<dolce_omr_core::sheet::score::Art>,
     /// 连音（满拍裁决收下的候选，[`tuplets`]）。
     #[serde(default)]
-    pub tuplet: Option<dolce_omr_sheet::score::Tuplet>,
+    pub tuplet: Option<dolce_omr_core::sheet::score::Tuplet>,
     /// 用户钉住的（时值、音高照钉的；满拍裁决不再动它，见 `song::Constraints`）。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,

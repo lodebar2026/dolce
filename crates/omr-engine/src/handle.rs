@@ -10,7 +10,7 @@
 use crate::{Doc, Opts, Recognition, RegionClass};
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::progress::{Hook, Step, CANCELLED};
-use dolce_omr_ocr::cache::{CachedOcr, OcrReq};
+use dolce_omr_core::ocr::cache::{CachedOcr, OcrReq};
 use dolce_omr_staff::session::{Op, Session};
 use serde::Deserialize;
 use serde_json::{json, Value};

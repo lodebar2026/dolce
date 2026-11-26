@@ -6,7 +6,7 @@
 use crate::recognize::open_ocr;
 use dolce_omr_core::progress::{Hook, Step};
 use dolce_omr_engine::{Doc, Kind, Opts, Recognition};
-use dolce_omr_sheet::jianpu::RecognizedScore;
+use dolce_omr_core::sheet::jianpu::RecognizedScore;
 use serde_json::json;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -47,7 +47,7 @@ pub enum Got {
 }
 
 /// 识别一个文件（判路同编辑器）；`progress`：各步进度按 JSON 一行一条写 stderr。
-pub fn recognize_file(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress: bool) -> Result<Got, String> {
+pub fn recognize_file(path: &Path, kind: Kind, ocr: &dolce_omr_core::ocr::cache::CachedOcr, progress: bool) -> Result<Got, String> {
     let doc = Doc::open(std::fs::read(path).map_err(|e| format!("读不了：{e}"))?)?;
     let file = path.display().to_string();
     let send = |s: Step| {
@@ -66,7 +66,7 @@ pub fn recognize_file(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::Cache
     })
 }
 
-fn one(path: &Path, kind: Kind, ocr: &dolce_omr_ocr::cache::CachedOcr, progress: bool) -> Result<serde_json::Value, String> {
+fn one(path: &Path, kind: Kind, ocr: &dolce_omr_core::ocr::cache::CachedOcr, progress: bool) -> Result<serde_json::Value, String> {
     let file = path.display().to_string();
     Ok(match recognize_file(path, kind, ocr, progress)? {
         Got::Staff(xml) => json!({ "file": file, "kind": "staff", "xml": xml }),

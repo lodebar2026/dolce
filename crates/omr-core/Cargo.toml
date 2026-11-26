@@ -1,6 +1,6 @@
 [package]
 name = "dolce-omr-core"
-description = "悦谱 Dolce 识别的基础层：图像类型、几何与统计、像素内核、JS 数值口径、阶段缓存。不做 IO 之外的平台依赖，能编到 wasm"
+description = "悦谱 Dolce 识别的共用底层（简谱、五线谱两条路线共用）：图像类型、几何与统计、像素内核、阶段缓存；文字处理（text：和弦文法、页眉、歌词切字与对音）；谱面元素层（sheet：谱表、元素库与证据、归属与互斥）；识别结果直出 ScoreDoc（todoc）；OCR 前后处理与推理后端（ocr；native / tract 特性）；取数层（source，pdf 特性：PDF（PDFium）与图片 → 页面对象、文字、内嵌图、整页渲染）。不开特性时无平台依赖，能编到 wasm"
 version.workspace = true
 edition.workspace = true
 publish = true
@@ -10,9 +10,64 @@ homepage.workspace = true
 readme = "../../README.md"
 keywords.workspace = true
 categories.workspace = true
+# 构建脚本（`pdf` 特性）把 PDFium 动态库所在目录交给直接依赖者（`DEP_PDFIUM_DIR`，桌面版打包时拷进资源）
+links = "pdfium"
+
+[features]
+# OCR 推理走原生 onnxruntime（桌面、命令行）
+native = ["dep:ort"]
+# OCR 推理走 tract 纯 Rust（网页 wasm）
+tract = ["dep:tract-onnx"]
+# 取数层 `source`：PDF（PDFium）与图片
+pdf = ["dep:pdfium-render", "dep:image", "dep:js-sys", "dep:wasm-bindgen"]
 
 [dependencies]
 dolce-model = { workspace = true }
 serde.workspace = true
+serde_json = "1"
 bincode.workspace = true
 sha2.workspace = true
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case", "perf"] }
+ort = { version = "=2.0.0-rc.14", optional = true }
+tract-onnx = { version = "0.23", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"], optional = true }
+# 绑定的 PDFium 版本要与随应用分发的动态库同一个 chromium 构建号，否则绑定时缺符号
+pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_7881", "thread_safe", "image_latest"], optional = true }
+
+# wasm 下绕开 pdfium-render wasm 绑定的两处毛病，直接调 PDFium 的 emscripten 模块（src/source/pdfium_wasm.rs）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "=0.2.120", optional = true }
+
+[dev-dependencies]
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+sha2.workspace = true
+
+[[example]]
+name = "probe"
+required-features = ["native"]
+
+[[example]]
+name = "content"
+required-features = ["pdf"]
+
+[[example]]
+name = "images"
+required-features = ["pdf"]
+
+[[example]]
+name = "rawglyph"
+required-features = ["pdf"]
+
+[[example]]
+name = "render"
+required-features = ["pdf"]
+
+[[example]]
+name = "vecdump"
+required-features = ["pdf"]
+
+[[example]]
+name = "vs_ts_raster"
+required-features = ["pdf"]

@@ -13,7 +13,7 @@ use dolce_layout::book::rebuild::{book_style_files, StyleFile};
 use dolce_layout::export::book::{book_pdf, BookFonts};
 use dolce_layout::export::fonts::FontBook;
 use dolce_layout::export::pdf::DocInfo;
-use dolce_omr_source::pdf::PdfDoc;
+use dolce_omr_core::source::pdf::PdfDoc;
 use serde_json::{json, Value};
 
 use crate::export::{raster_diff, read_back};

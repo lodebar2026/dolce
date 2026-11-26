@@ -8,9 +8,9 @@ use super::heads::{band, POS_MAX, POS_MIN, SEED_FILL, SEED_H, SEED_W};
 use crate::frame::ink::LINE;
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::prims::VSeg;
-use dolce_omr_sheet::score::NoteType;
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::sheet::prims::VSeg;
+use dolce_omr_core::sheet::score::NoteType;
+use dolce_omr_core::sheet::Staff;
 use serde::{Deserialize, Serialize};
 
 /// 块状休止的宽、高范围（相对线距；高里含贴着的那条线）与占包围盒的比例。
@@ -61,13 +61,13 @@ pub struct Rest {
     pub dots: u8,
     /// 延长记号（[`super::artics`]）。
     #[serde(default)]
-    pub arts: Vec<dolce_omr_sheet::score::Art>,
+    pub arts: Vec<dolce_omr_core::sheet::score::Art>,
     /// 多小节休止的小节数（[`multi_rests`]；普通休止为 0）。整曲拼接时展开成这么多个整小节休止。
     #[serde(default)]
     pub measures: u16,
     /// 识别 id（同 [`super::heads::Head::rid`]）。
     #[serde(default)]
-    pub rid: Option<dolce_omr_sheet::result::Rid>,
+    pub rid: Option<dolce_omr_core::sheet::result::Rid>,
     /// 用户钉住的（同 [`super::Chord::pinned`]）。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
@@ -275,7 +275,7 @@ pub fn rests(f: &PageFrame, si: usize, x_from: f64) -> Vec<Rest> {
 }
 
 /// 全 / 二分休止：实心扁方块，一沿贴线、另一沿在间里。
-fn block(s: &dolce_omr_sheet::Staff, m: &Mask, y: f64, bw: f64, cx: f64) -> Option<NoteType> {
+fn block(s: &dolce_omr_core::sheet::Staff, m: &Mask, y: f64, bw: f64, cx: f64) -> Option<NoteType> {
     if bw < BLOCK_W.0 || m.fill(0, 0, m.w, m.h) < BLOCK_FILL {
         return None;
     }

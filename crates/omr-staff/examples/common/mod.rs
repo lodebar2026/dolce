@@ -1,8 +1,8 @@
 //! 对账工具的公共件：逐页取底本二值图、读 TS 阶段快照。
 #![allow(dead_code)]
 use dolce_omr_core::image::Binary;
-use dolce_omr_source::raster::{fix_polarity, image_file, page_image, Binarizer, SourceImage};
-use dolce_omr_source::{ContentOpts, PdfDoc};
+use dolce_omr_core::source::raster::{fix_polarity, image_file, page_image, Binarizer, SourceImage};
+use dolce_omr_core::source::{ContentOpts, PdfDoc};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 

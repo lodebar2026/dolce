@@ -4,7 +4,7 @@ use crate::frame::{digit_cell, digit_of, Cell, CellKind, RowFrame};
 use crate::prep::{Comp, Ink};
 use crate::result::{Alt, AltKind, JpNum};
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::cache::CachedOcr;
 
 /// 一行谱的音符层产物。
 #[derive(Clone, Debug, Default)]
@@ -145,7 +145,7 @@ fn head_label(ink: &Ink, row: &RowFrame, ocr: &CachedOcr) -> Option<(usize, Stri
     // 框边带进来的冒号（「前奏：」）不算字
     let text = text.trim_end_matches([':', '：']).to_string();
     let n = text.chars().count();
-    if !(1..=4).contains(&n) || !text.chars().all(dolce_omr_text::chars::is_han) {
+    if !(1..=4).contains(&n) || !text.chars().all(dolce_omr_core::text::chars::is_han) {
         return None;
     }
     let end = blocks[k - 1].1 + 1;

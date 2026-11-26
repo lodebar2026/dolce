@@ -4,7 +4,7 @@ use dolce_omr_core::geom::quantile;
 use dolce_omr_core::image::Binary;
 use dolce_omr_core::pixel::morph::box_morph;
 use dolce_omr_core::pixel::texture::{drop_specks, halftone_counts, pinhole_counts};
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::sheet::Staff;
 
 /// 判半调网点的门槛（谱表带内、线上孤点不计的孤立点占比）。实测该去网的 0.169；满页网点水印、不该去网的 0.101；其余 0.03 以下。
 const HALFTONE_RATIO: f64 = 0.13;

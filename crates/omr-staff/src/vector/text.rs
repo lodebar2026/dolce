@@ -9,14 +9,14 @@ use crate::text::classify::{Mark, RowText};
 use crate::text::header::header_line_ok;
 use crate::text::lines::{Band, GeoLine, Seg};
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::score::Dir;
-use dolce_omr_source::vector::VecPage;
-use dolce_omr_text::header::{credits, Credit, WordLine};
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
-use dolce_omr_text::Ch;
+use dolce_omr_core::sheet::score::Dir;
+use dolce_omr_core::source::vector::VecPage;
+use dolce_omr_core::text::header::{credits, Credit, WordLine};
+use dolce_omr_core::text::spaces::{box_ink, recover_spaces, spread_all};
+use dolce_omr_core::text::Ch;
 use crate::attrs::DigitReader;
-use dolce_omr_ocr::surface::Gray;
-use dolce_omr_source::model::PageImage;
+use dolce_omr_core::ocr::surface::Gray;
+use dolce_omr_core::source::model::PageImage;
 
 /// 同一行：基线相差不过字号的这个比例。
 const SAME_BASE: f64 = 0.35;
@@ -60,7 +60,7 @@ struct TC {
 /// `rendered`：文字层有不可靠字体时的整页渲染图，那几段从它裁条重读。
 pub fn text_lines(vp: &VecPage, ocr: Option<&dyn DigitReader>, rendered: Option<&Gray>, tiles: &[PageImage], extra: &[(char, Rect)]) -> Vec<GeoLine> {
     let reread = rendered.zip(ocr);
-    let bad_fonts = dolce_omr_source::vector::unreliable_fonts_of(&vp.chars);
+    let bad_fonts = dolce_omr_core::source::vector::unreliable_fonts_of(&vp.chars);
     let mut cs: Vec<TC> = Vec::new();
     for c in vp.chars.iter() {
         if music_family(&c.font).is_some() {
@@ -304,7 +304,7 @@ pub fn dynamics(f: &Layout, syms: &[VSym], rows: &mut [RowText]) {
             let (x0, y0) = (r.x.min(s.rect.x), r.y.min(s.rect.y));
             r = Rect::new(x0, y0, r.right().max(s.rect.right()) - x0, r.bottom().max(s.rect.bottom()) - y0);
         }
-        let Some(d) = dolce_omr_text::words::dynamic(&text) else { continue };
+        let Some(d) = dolce_omr_core::text::words::dynamic(&text) else { continue };
         let (cx, cy) = (r.cx(), r.y + r.h / 2.0);
         let best = (0..f.staves.len())
             .filter(|&i| cx >= f.staves[i].left - f.staves[i].space() && cx <= f.staves[i].right)

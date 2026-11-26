@@ -4,9 +4,9 @@
 //! OCR 走一套原生会话池（[`infer`]）。
 use dolce_omr_core::progress::{Hook, Step};
 use dolce_omr_engine::{Handle, Opts};
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::native::{NativeInfer, DET_FILE, REC_FILE};
-use dolce_omr_ocr::{Infer, Model, Ocr, OcrCache};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::native::{NativeInfer, DET_FILE, REC_FILE};
+use dolce_omr_core::ocr::{Infer, Model, Ocr, OcrCache};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -58,7 +58,7 @@ pub fn setup(app: &tauri::AppHandle) {
         for name in ["libpdfium.dylib", "pdfium.dll", "libpdfium.so"] {
             let p = dir.join(name);
             if p.exists() {
-                dolce_omr_source::set_library_path(p);
+                dolce_omr_core::source::set_library_path(p);
                 break;
             }
         }

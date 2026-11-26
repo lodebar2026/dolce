@@ -935,8 +935,6 @@ dependencies = [
  "dolce-model",
  "dolce-omr-core",
  "dolce-omr-engine",
- "dolce-omr-ocr",
- "dolce-omr-source",
  "objc2",
  "objc2-avf-audio",
  "objc2-foundation",
@@ -1024,8 +1022,15 @@ version = "0.8.9"
 dependencies = [
  "bincode",
  "dolce-model",
+ "image",
+ "js-sys",
+ "ort",
+ "pdfium-render",
+ "regex",
  "serde",
+ "serde_json",
  "sha2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1034,11 +1039,7 @@ version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-jianpu",
- "dolce-omr-ocr",
- "dolce-omr-sheet",
- "dolce-omr-source",
  "dolce-omr-staff",
- "dolce-omr-todoc",
  "rayon",
  "serde",
  "serde_json",
@@ -1049,45 +1050,9 @@ name = "dolce-omr-jianpu"
 version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
- "dolce-omr-ocr",
- "dolce-omr-sheet",
- "dolce-omr-source",
- "dolce-omr-text",
  "regex",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dolce-omr-ocr"
-version = "0.8.9"
-dependencies = [
- "dolce-omr-core",
- "ort",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dolce-omr-sheet"
-version = "0.8.9"
-dependencies = [
- "dolce-omr-core",
- "dolce-omr-text",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dolce-omr-source"
-version = "0.8.9"
-dependencies = [
- "dolce-omr-core",
- "image",
- "js-sys",
- "pdfium-render",
- "serde",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1096,32 +1061,8 @@ version = "0.8.9"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-jianpu",
- "dolce-omr-ocr",
- "dolce-omr-sheet",
- "dolce-omr-source",
- "dolce-omr-text",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dolce-omr-text"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "regex",
- "serde",
-]
-
-[[package]]
-name = "dolce-omr-todoc"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "dolce-omr-core",
- "dolce-omr-sheet",
- "dolce-omr-text",
- "serde",
 ]
 
 [[package]]

@@ -8,9 +8,9 @@ use crate::mixed::band::{Band, Strip};
 use crate::mixed::JpRow;
 use crate::page::Layout;
 use dolce_omr_core::image::{Binary, Rect};
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_sheet::Staff;
-use dolce_omr_source::vector::VecPage;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::sheet::Staff;
+use dolce_omr_core::source::vector::VecPage;
 
 /// 外框 `r` 整个落在带里。
 pub fn inside(b: &Band, st: &Staff, r: &Rect) -> bool {
@@ -31,7 +31,7 @@ fn strip_of(vp: &VecPage, b: &Band, st: &Staff) -> Strip {
     let mut bin = Binary::new(w, h);
     for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && inside(b, st, &o.rect)) {
         let (bw, bh) = (bin.w, bin.h);
-        dolce_omr_source::vector::draw_obj(vp, o, x0, y0, 1.0, bw, bh, &mut |x, y| bin.data[y * bw + x] = 1);
+        dolce_omr_core::source::vector::draw_obj(vp, o, x0, y0, 1.0, bw, bh, &mut |x, y| bin.data[y * bw + x] = 1);
     }
     Strip { x: x0 as i64, y: y0 as i64, bin }
 }

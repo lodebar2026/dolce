@@ -2,8 +2,8 @@
 //! 两端旁边没挂着符头那样的一团墨（那是符干）的，按相邻几根并成一条（双线、终止线、反复记号的粗细两笔）。
 use crate::frame::ink::{Probe, VSeg, BG};
 use crate::frame::systems::System;
-pub use dolce_omr_sheet::music::BarStyle;
-use dolce_omr_sheet::{Staff, Unit};
+pub use dolce_omr_core::sheet::music::BarStyle;
+use dolce_omr_core::sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
 /// 两端可以超出首末线多少（相对线距）还算「不伸出谱表」。

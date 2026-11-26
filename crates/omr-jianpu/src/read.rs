@@ -5,9 +5,9 @@
 //! 判据一行不改：文字层只替换「读出来是什么字」，切格、定带、对位照旧看墨。
 use crate::prep::Ink;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::{CharPos, RankedChar};
-use dolce_omr_ocr::surface::Gray;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::{CharPos, RankedChar};
+use dolce_omr_core::ocr::surface::Gray;
 
 /// `ink.strip(r, pad)` 那张条盖住的框。
 pub fn strip_frame(r: &Rect, pad: i64) -> Rect {

@@ -1,11 +1,11 @@
 //! 矢量页的**块原语与身份**：文字层里音乐字体的字（以后加转曲路径的字形块）→ 带 SMuFL 名的符号。
 //! 身份一律经 `omr-sheet::shapes::identify`（签名字典 + 码位表），这里只管取轮廓与尺寸。
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::shapes::{identify, Family};
-use dolce_omr_source::model::Seg;
-use dolce_omr_source::vector::{VKind, VecPage};
+use dolce_omr_core::sheet::shapes::{identify, Family};
+use dolce_omr_core::source::model::Seg;
+use dolce_omr_core::source::vector::{VKind, VecPage};
 
-pub use dolce_omr_sheet::shapes::music_family;
+pub use dolce_omr_core::sheet::shapes::music_family;
 
 /// 一个认出身份的字形（工作坐标）。
 #[derive(Clone, Debug)]
@@ -60,7 +60,7 @@ pub(crate) fn raw_bounds(segs: &[Seg], vp: &VecPage) -> Option<(f64, f64, f64, f
 pub fn music_chars(vp: &VecPage) -> Vec<VSym> {
     let mut out = Vec::new();
     // 化成了线对象的字（谱线、符干、小节线，打击乐谱号的两道粗竖条）也认身份：谱号要它
-    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph || o.kind == VKind::Line && matches!(o.src, dolce_omr_source::vector::ObjSrc::Char(_))) {
+    for o in vp.objs.iter().filter(|o| o.kind == VKind::Glyph || o.kind == VKind::Line && matches!(o.src, dolce_omr_core::source::vector::ObjSrc::Char(_))) {
         let Some(c) = vp.char_of(o) else { continue };
         let Some(fam) = music_family(&c.font) else { continue };
         let size = (c.size_scaled > 0.0).then(|| (c.bbox.w / c.size_scaled, c.bbox.h / c.size_scaled));
@@ -77,14 +77,14 @@ pub fn family_of(vp: &VecPage, s: &VSym) -> Option<Family> {
     vp.char_of(&vp.objs[s.obj as usize]).and_then(|c| music_family(&c.font))
 }
 
-pub use dolce_omr_source::vector::{path_pieces, GlyphPiece};
+pub use dolce_omr_core::source::vector::{path_pieces, GlyphPiece};
 
 /// 转曲页的音乐字形：字形块跨字体认身份（1 em = 4 线距）；认不出的回 `name` 为空串（多半是文字，交给读字那一路）。
 /// 形状简单（一道横、一点、一竖、两竖）的符号从一个对象拆出来的块认成它们不算数（「到」「判」的立刀两竖认成打击乐谱号，
 /// 后面整段音读成打击乐）；圆点组成的字形，没有曲线的对象不认（还原号拆出来的两道横杠认成反复记号两点）。照 TS 转曲那一路。
 /// 签名的归一外框同字典建库（与 TS 转曲那一路同口径）：按路径的全部坐标（含曲线控制点）取；有的排版软件转曲后一个符头只用两段三次曲线画椭圆
 /// （CorelDRAW），控制点远在曲线外，控制点外框比曲线外框大出 [`CTRL_SLACK`] 以上时改按曲线外框取。从一个对象拆出来的块没有单独的控制点，按曲线外框取。
-pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_omr_source::PageContent) -> Vec<VSym> {
+pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_omr_core::source::PageContent) -> Vec<VSym> {
     let em = 4.0 * space;
     let mut per_obj: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for p in pieces {
@@ -94,7 +94,7 @@ pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_o
         if per_obj[&p.obj] != 1 {
             return None;
         }
-        let dolce_omr_source::vector::ObjSrc::Path(pi) = vp.objs[p.obj as usize].src else { return None };
+        let dolce_omr_core::source::vector::ObjSrc::Path(pi) = vp.objs[p.obj as usize].src else { return None };
         let b = raw_bounds(&pc.paths.get(pi)?.segs, vp)?;
         let (bw, bh) = (b.2 - b.0, b.3 - b.1);
         (bw <= p.rect.w.max(1e-9) * (1.0 + CTRL_SLACK) && bh <= p.rect.h.max(1e-9) * (1.0 + CTRL_SLACK)).then_some(b)
@@ -102,7 +102,7 @@ pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_o
     pieces
         .iter()
         .map(|p| {
-            let (mut name, dist) = dolce_omr_sheet::shapes::identify_outline_in(&p.rings, (p.rect.w / em, p.rect.h / em), ctrl(p)).unwrap_or(("", u32::MAX));
+            let (mut name, dist) = dolce_omr_core::sheet::shapes::identify_outline_in(&p.rings, (p.rect.w / em, p.rect.h / em), ctrl(p)).unwrap_or(("", u32::MAX));
             if per_obj[&p.obj] > 1 && PLAIN_SHAPES.contains(&name) || DOT_SHAPES.contains(&name) && !p.curved {
                 name = "";
             }
@@ -114,8 +114,8 @@ pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_o
 const CTRL_SLACK: f64 = 0.05;
 
 /// 转曲页画成细长曲线对象的字形（八分休止、符尾：对象库按形状归成曲线，不进字形块）：一个对象当一块认身份，只收认得出的。
-pub fn curve_glyphs(vp: &VecPage, space: f64, pc: &dolce_omr_source::PageContent, skip: &dyn Fn(&Rect) -> bool) -> Vec<VSym> {
-    use dolce_omr_source::vector::{ObjSrc, VKind};
+pub fn curve_glyphs(vp: &VecPage, space: f64, pc: &dolce_omr_core::source::PageContent, skip: &dyn Fn(&Rect) -> bool) -> Vec<VSym> {
+    use dolce_omr_core::source::vector::{ObjSrc, VKind};
     let pieces: Vec<GlyphPiece> = vp
         .objs
         .iter()
@@ -188,7 +188,7 @@ const WHOLE_W: f64 = 1.5;
 ///
 /// 竖笔长 1.5~3.3 格（同位图路调号的竖笔窗）。`skip`：不收的框（简谱带里的）。已有同位置升降号字形的不重复出。
 pub fn stroke_accidentals(vp: &VecPage, space: f64, have: &[VSym], skip: &dyn Fn(&Rect) -> bool) -> Vec<VSym> {
-    use dolce_omr_source::vector::VKind;
+    use dolce_omr_core::source::vector::VKind;
     let sp = space;
     let strokes: Vec<(f64, f64, f64, u32)> = vp
         .lines
@@ -202,7 +202,7 @@ pub fn stroke_accidentals(vp: &VecPage, space: f64, have: &[VSym], skip: &dyn Fn
     };
     let mut out: Vec<VSym> = Vec::new();
     let mut pairs: Vec<(u32, u32)> = Vec::new();
-    for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && matches!(o.src, dolce_omr_source::vector::ObjSrc::Path(_))) {
+    for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && matches!(o.src, dolce_omr_core::source::vector::ObjSrc::Path(_))) {
         let r = o.rect;
         // 横梁框高放到 2 格：转曲字体的升号横梁斜得陡，两道合起来 1.7 格高（裴克经文诗歌 181）；仍要两根竖笔夹着
         if r.w > sp * 1.5 || r.h > sp * 2.0 || skip(&r) {

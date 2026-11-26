@@ -7,9 +7,9 @@
 //! 多页按页竖排（同像素路的拼页），工作坐标每点 [`scale`] 单位：页宽折成与像素路工作图同宽（`prep::MAX_W`），下游按字号归一的常数不用改。
 use crate::prep::{Comp, JpInk};
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::surface::Gray;
-use dolce_omr_source::model::PageContent;
-use dolce_omr_source::vector::{draw_obj, path_pieces, ObjSrc, VKind, VecPage};
+use dolce_omr_core::ocr::surface::Gray;
+use dolce_omr_core::source::model::PageContent;
+use dolce_omr_core::source::vector::{draw_obj, path_pieces, ObjSrc, VKind, VecPage};
 
 /// 页宽折成这么多工作单位（同像素路工作图的宽上限）。
 pub const PAGE_W: f64 = 2200.0;

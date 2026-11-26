@@ -1,9 +1,9 @@
 //! 排查文字：某首某页各条带里切出的行、段与读出的字。
 //! 用法：`cargo run --release -p dolce-omr-staff --example dbg_text -- <solo|chorus|xinbian> <曲名子串> [页号]`
 mod common;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::native::NativeInfer;
-use dolce_omr_ocr::{Ocr, OcrCache};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::native::NativeInfer;
+use dolce_omr_core::ocr::{Ocr, OcrCache};
 use dolce_omr_staff::page::recognize_page;
 use dolce_omr_staff::text::lines::page_bands;
 

@@ -46,7 +46,7 @@ pub(super) fn expand_multi_rests(ms: &mut Vec<Measure>, extra: &[(usize, usize)]
         let (right, rep_end) = (ms[j].right.take(), std::mem::take(&mut ms[j].repeat_end));
         for n in 0..k {
             let mut m = Measure::default();
-            m.events.push(Event::new(vec![], dolce_omr_sheet::score::NoteType::Whole, 0, None));
+            m.events.push(Event::new(vec![], dolce_omr_core::sheet::score::NoteType::Whole, 0, None));
             if n + 1 == k {
                 (m.right, m.repeat_end) = (right, rep_end);
             }

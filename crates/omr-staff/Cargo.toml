@@ -12,15 +12,11 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-dolce-omr-text = { workspace = true }
-dolce-omr-core = { workspace = true }
-dolce-omr-ocr = { workspace = true }
-dolce-omr-sheet = { workspace = true }
-dolce-omr-source = { workspace = true }
+dolce-omr-core = { workspace = true, features = ["pdf"] }
 dolce-omr-jianpu = { workspace = true }
 serde.workspace = true
 serde_json = "1"
 
 [dev-dependencies]
-dolce-omr-ocr = { workspace = true, features = ["native"] }
+dolce-omr-core = { workspace = true, features = ["native"] }
 flate2 = "1"

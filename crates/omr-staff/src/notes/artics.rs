@@ -5,7 +5,7 @@
 use super::RowNotes;
 use crate::frame::ink::Blob;
 use crate::page::PageFrame;
-use dolce_omr_sheet::score::Art;
+use dolce_omr_core::sheet::score::Art;
 
 /// 延长记号的拱：宽、高（相对线距）与宽高比。
 const FERMATA_W: (f64, f64) = (1.4, 3.8);

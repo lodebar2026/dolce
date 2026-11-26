@@ -1,17 +1,17 @@
-//! 页眉（M4 4.6）：页顶到第一行谱之间用文字检测找行、逐行读，再按文字与位置分类（[`dolce_omr_text::header`]）。
+//! 页眉（M4 4.6）：页顶到第一行谱之间用文字检测找行、逐行读，再按文字与位置分类（[`dolce_omr_core::text::header`]）。
 //! 页眉的行左右各一块、上下错开，按投影切不开；这里又没有谱表干扰，检测模型够用。
 use crate::attrs::DigitReader;
 use crate::frame::ink::INK;
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::surface::{blit, Gray};
-use dolce_omr_source::raster::SourceImage;
-use dolce_omr_text::chars::{han_count, latin_count};
-use dolce_omr_text::header::{credits, Credit, WordLine};
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
-use dolce_omr_text::{chords, words};
+use dolce_omr_core::ocr::surface::{blit, Gray};
+use dolce_omr_core::source::raster::SourceImage;
+use dolce_omr_core::text::chars::{han_count, latin_count};
+use dolce_omr_core::text::header::{credits, Credit, WordLine};
+use dolce_omr_core::text::spaces::{box_ink, recover_spaces, spread_all};
+use dolce_omr_core::text::{chords, words};
 use super::classify::Mark;
-use dolce_omr_sheet::score::Dir;
+use dolce_omr_core::sheet::score::Dir;
 
 /// 行底离第一行谱至少这么多格（再近的是和弦、速度、压着谱表的杂墨）。
 const CLEAR: f64 = 0.3;
@@ -84,7 +84,7 @@ fn tempo_mark(t: &str) -> Option<Dir> {
     }
     // 后面紧跟的速度术语（「=88中速」）不算
     let tail = &t[eq..];
-    let tail = &tail[..tail.find(dolce_omr_text::chars::is_han).unwrap_or(tail.len())];
+    let tail = &tail[..tail.find(dolce_omr_core::text::chars::is_han).unwrap_or(tail.len())];
     let (per_minute, circa) = words::metronome(tail)?;
     Some(Dir::Metronome { per_minute, circa })
 }

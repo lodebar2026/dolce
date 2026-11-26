@@ -17,8 +17,7 @@ dolce-engrave = { workspace = true }
 dolce-layout = { workspace = true }
 dolce-model = { workspace = true }
 dolce-layout-jianpu = { workspace = true }
-dolce-omr-sheet = { workspace = true }
-dolce-omr-todoc = { workspace = true }
+dolce-omr-core = { workspace = true }
 serde = { workspace = true }
 bincode.workspace = true
 # 分数、时刻过边界要逐位还原（TS 侧 JSON.stringify 出的是最短往返写法）

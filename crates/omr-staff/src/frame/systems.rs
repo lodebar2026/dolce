@@ -4,8 +4,8 @@
 //! 直接在两行之间的缝里逐行数左端那一小条窗口里有没有墨。窗口只开在谱行左缘（往外几格、往里半格）：歌词、力度都在更右边，
 //! 页边框在更左边，都进不来。淡得断成虚线的系统线再看松阈值图里贴着左端的那一根。左端标记没印出来的单行按间距并回去。
 use dolce_omr_core::image::Binary;
-use dolce_omr_sheet::element::{Probe, BG};
-use dolce_omr_sheet::{Staff, Unit};
+use dolce_omr_core::sheet::element::{Probe, BG};
+use dolce_omr_core::sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
 /// 左端窗口：谱行左缘往外几格（谱线在谱号处断开时左端会量到谱号右边，系统线离它近三格）、往里几格。

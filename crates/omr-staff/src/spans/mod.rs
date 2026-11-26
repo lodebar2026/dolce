@@ -13,9 +13,9 @@ use crate::attrs::RowAttrs;
 use crate::frame::ink::{BG, INK, LINE};
 use crate::notes::RowNotes;
 use crate::page::{Layout, PageFrame};
-use dolce_omr_sheet::element::Probe;
+use dolce_omr_core::sheet::element::Probe;
 use crate::text::PageText;
-use dolce_omr_sheet::curves::{join_all, trace, JoinTol, Shape, Stroke};
+use dolce_omr_core::sheet::curves::{join_all, trace, JoinTol, Shape, Stroke};
 
 /// 细墨：纵向墨段不厚过这么多（相对线距）。弧最厚处两三成格，符杠半格起。
 const THIN: f64 = 0.45;

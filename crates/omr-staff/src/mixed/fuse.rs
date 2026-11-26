@@ -12,9 +12,9 @@ use crate::notes::heads::{Head, HeadKind};
 use crate::notes::meter::{chord_dur, rest_dur};
 use crate::notes::rests::Rest;
 use crate::notes::{Chord, RowNotes};
-use dolce_omr_sheet::music::{Clef, Key};
-use dolce_omr_sheet::score::{NoteType, DIVISIONS};
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::sheet::music::{Clef, Key};
+use dolce_omr_core::sheet::score::{NoteType, DIVISIONS};
+use dolce_omr_core::sheet::Staff;
 
 /// 配对的 x 容差（相对线距，扣掉平移之后）。相邻两个八分音符隔一格半上下。
 const PAIR_DX: f64 = 0.8;

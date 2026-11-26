@@ -1,12 +1,12 @@
 //! 一档语料的一首曲子 → 识别产物。五线谱走 `omr-staff`，简谱走 `omr-jianpu`。
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::native::{NativeInfer, REC_FILE};
-use dolce_omr_ocr::{Ocr, OcrCache};
-use dolce_omr_source::raster::SourceImage;
-use dolce_omr_source::PdfDoc;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::native::{NativeInfer, REC_FILE};
+use dolce_omr_core::ocr::{Ocr, OcrCache};
+use dolce_omr_core::source::raster::SourceImage;
+use dolce_omr_core::source::PdfDoc;
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::song::assemble;
-use dolce_omr_todoc::staff::score_to_music_xml;
+use dolce_omr_core::todoc::staff::score_to_music_xml;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -52,7 +52,7 @@ fn jianpu_output(score: &dolce_omr_jianpu::result::RecognizedScore) -> Result<Re
 
 /// 简谱识别结果 → 123（同编辑器识别的缺省输出格式 `convert/targets.ts` 的 123：直出模型、补纸张 meta、`emit_123`）。
 pub fn jianpu_123(score: &dolce_omr_jianpu::result::RecognizedScore) -> String {
-    let doc = dolce_omr_todoc::jianpu::recognized_to_doc(score).doc;
+    let doc = dolce_omr_core::todoc::jianpu::recognized_to_doc(score).doc;
     dolce_model::formats::abc::emit::emit_123(&dolce_model::pagemeta::with_page_meta(&doc, None))
 }
 
@@ -117,7 +117,7 @@ pub fn one(args: &[String]) -> Result<(), String> {
             .filter_map(|i| {
                 let r = doc.render(i, 300.0 / 72.0).ok()?;
                 let gray: Vec<u8> = r.rgba.as_chunks::<4>().0.iter().map(|p| ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114) / 1000) as u8).collect();
-                Some(SourceImage { w: r.w, h: r.h, gray, rgb: Vec::new(), kind: dolce_omr_source::model::ImageKind::Gray, rect: dolce_omr_core::image::Rect::new(0.0, 0.0, r.w as f64, r.h as f64), page_w: r.w as f64, page_h: r.h as f64, size_known: false })
+                Some(SourceImage { w: r.w, h: r.h, gray, rgb: Vec::new(), kind: dolce_omr_core::source::model::ImageKind::Gray, rect: dolce_omr_core::image::Rect::new(0.0, 0.0, r.w as f64, r.h as f64), page_w: r.w as f64, page_h: r.h as f64, size_known: false })
             })
             .collect();
         dolce_omr_jianpu::recognize(&srcs, &ocr)?

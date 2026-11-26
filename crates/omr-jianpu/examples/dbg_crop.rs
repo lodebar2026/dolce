@@ -1,8 +1,8 @@
 //! 排查：把工作图（二值）的一块写成 BMP（墨黑底白，放大 `倍数`）。用法：dbg_crop 图片|PDF x0 y0 x1 y1 出图.bmp [倍数]
 //! PDF 取各页的路径与文字层，看矢量证据（`vector::VecJpInk`）的墨。
 use dolce_omr_jianpu::prep::{JpInk, RasterInk};
-use dolce_omr_source::raster::image_file;
-use dolce_omr_source::{ContentOpts, PdfDoc};
+use dolce_omr_core::source::raster::image_file;
+use dolce_omr_core::source::{ContentOpts, PdfDoc};
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();

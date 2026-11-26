@@ -4,11 +4,11 @@ pub mod lead;
 pub mod units;
 
 use crate::page::PageFrame;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::surface::Gray;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::surface::Gray;
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::music::{Clef, Key, Time};
-use dolce_omr_sheet::score::Attrs;
+use dolce_omr_core::sheet::music::{Clef, Key, Time};
+use dolce_omr_core::sheet::score::Attrs;
 use serde::{Deserialize, Serialize};
 
 /// 行中的一处切换。
@@ -42,7 +42,7 @@ pub struct RowAttrs {
 pub trait DigitReader: Sync {
     fn read_digit(&self, cell: &Gray) -> Option<Vec<Vec<String>>>;
     /// 读一条文字：逐字与左右缘（占条宽的比例）。
-    fn read_line(&self, _strip: &Gray) -> Option<Vec<dolce_omr_ocr::CharPos>> {
+    fn read_line(&self, _strip: &Gray) -> Option<Vec<dolce_omr_core::ocr::CharPos>> {
         None
     }
     /// 检测画面里的文本行框（画面坐标）。
@@ -59,7 +59,7 @@ impl DigitReader for CachedOcr {
     fn read_digit(&self, cell: &Gray) -> Option<Vec<Vec<String>>> {
         Some(self.rank_chars(cell, 40).ok()?.into_iter().map(|c| c.alts).collect())
     }
-    fn read_line(&self, strip: &Gray) -> Option<Vec<dolce_omr_ocr::CharPos>> {
+    fn read_line(&self, strip: &Gray) -> Option<Vec<dolce_omr_core::ocr::CharPos>> {
         CachedOcr::read_line(self, strip).ok()
     }
     fn detect(&self, image: &Gray) -> Option<Vec<Rect>> {

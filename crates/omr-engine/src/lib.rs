@@ -9,11 +9,11 @@ use dolce_omr_core::image::Binary;
 use dolce_omr_core::pixel::preprocess::otsu;
 use dolce_omr_core::progress::Hook;
 use dolce_omr_jianpu::result::RecognizedScore;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::surface::Gray;
-use dolce_omr_sheet::prims::VEC_SCALE;
-use dolce_omr_source::raster::{image_file, page_image, SourceImage};
-use dolce_omr_source::{ContentOpts, PdfDoc, Rendered};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::surface::Gray;
+use dolce_omr_core::sheet::prims::VEC_SCALE;
+use dolce_omr_core::source::raster::{image_file, page_image, SourceImage};
+use dolce_omr_core::source::{ContentOpts, PdfDoc, Rendered};
 use dolce_omr_staff::page::{recognize_source, Page, PageSource};
 use dolce_omr_staff::session::Session;
 use serde::{Deserialize, Serialize};
@@ -153,7 +153,7 @@ impl Doc {
         };
         let pc = doc.content(i, ContentOpts { images: true, paths: true, text: true, outlines: true })?;
         let raster = page_image(&pc);
-        let rendered = (raster.is_none() && !dolce_omr_source::vector::unreliable_fonts(&pc).is_empty())
+        let rendered = (raster.is_none() && !dolce_omr_core::source::vector::unreliable_fonts(&pc).is_empty())
             .then(|| doc.render(i, VEC_SCALE).ok())
             .flatten()
             .map(|r| gray_of(&r));
@@ -312,7 +312,7 @@ pub fn staff_binary(doc: &Doc, page: usize) -> Result<(Binary, f64, Placement), 
 
 /// 五线谱会话的当前产物：带识别 id 的 MusicXML（直出模型、经唯一写出端写）与核对 JSON。
 pub fn staff_output(session: &Session) -> (String, String) {
-    (dolce_omr_todoc::staff::score_to_music_xml(&session.song().score), session.review_json())
+    (dolce_omr_core::todoc::staff::score_to_music_xml(&session.song().score), session.review_json())
 }
 
 /// 识别用的二值图打成字节：前 8 字节宽高（小端 u32），其后每像素一字节 0 / 1。
@@ -326,7 +326,7 @@ pub fn binary_bytes(b: &Binary) -> Vec<u8> {
 
 /// 点原图补认：第 `pi` 个结果页（`pages[pi]` 是它在文档里的页号）上的点 (x, y)（核对坐标）落到最近的一行谱，
 /// 在原图上开窗按模板找头（[`dolce_omr_staff::notes::head_near`]），找不到就按点的位置造一个四分音符；交会话补音，回新音的识别 id。
-pub fn insert(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, x: f64, y: f64) -> Result<dolce_omr_sheet::result::Rid, String> {
+pub fn insert(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, x: f64, y: f64) -> Result<dolce_omr_core::sheet::result::Rid, String> {
     use dolce_omr_staff::notes::heads::HeadKind;
     use dolce_omr_staff::song::NewNote;
     let page = session.pages().get(pi).ok_or("没有这一页")?;
@@ -373,7 +373,7 @@ pub enum RegionClass {
 /// 歌词：框里原有的歌词字按 x 分字（汉字一字一个，拉丁词一词一个，标点随前一个）给最近的那个；文字：框里第一条文字指示换成整串。
 /// 只换已有元素的文字（框里没有歌词 / 文字指示回 Err）；回换了几个。
 pub fn region(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, rect: dolce_omr_core::image::Rect, class: RegionClass, ocr: &CachedOcr) -> Result<usize, String> {
-    use dolce_omr_sheet::score::Dir;
+    use dolce_omr_core::sheet::score::Dir;
     let (g, k, _) = review_gray(doc, *pages.get(pi).ok_or("没有这一页")?)?;
     let (x0, y0) = ((rect.x * k).floor().max(0.0) as usize, (rect.y * k).floor().max(0.0) as usize);
     let (x1, y1) = ((((rect.x + rect.w) * k).ceil() as usize).min(g.w), (((rect.y + rect.h) * k).ceil() as usize).min(g.h));
@@ -382,13 +382,13 @@ pub fn region(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, rect
     }
     let strip = Gray { w: x1 - x0, h: y1 - y0, data: (y0..y1).flat_map(|y| g.data[y * g.w + x0..y * g.w + x1].iter().copied()).collect() };
     let chars = ocr.read_line(&strip)?;
-    let inside = |at: Option<dolce_omr_sheet::result::SrcBox>| at.filter(|a| a.page == pi + 1).map(|a| (a.rect.x + a.rect.w / 2.0, a.rect.y + a.rect.h / 2.0)).filter(|&(cx, cy)| cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h);
+    let inside = |at: Option<dolce_omr_core::sheet::result::SrcBox>| at.filter(|a| a.page == pi + 1).map(|a| (a.rect.x + a.rect.w / 2.0, a.rect.y + a.rect.h / 2.0)).filter(|&(cx, cy)| cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h);
     let score = &session.song().score;
     let events = || score.parts.iter().flat_map(|p| p.measures.iter()).flat_map(|m| m.events.iter());
     let mut ops = Vec::new();
     match class {
         RegionClass::Lyric => {
-            let mut targets: Vec<(f64, dolce_omr_sheet::result::Rid)> =
+            let mut targets: Vec<(f64, dolce_omr_core::sheet::result::Rid)> =
                 events().flat_map(|e| e.lyrics.iter()).filter_map(|l| Some((inside(l.src.at)?.0, l.src.rid?))).collect();
             if targets.is_empty() {
                 return Err("框里没有歌词".into());
@@ -424,7 +424,7 @@ pub fn region(doc: &Doc, session: &mut Session, pages: &[usize], pi: usize, rect
 }
 
 /// 读出的一行字切成分给音的单位：汉字一字一个，拉丁字母连成的词一个，标点随前一个；空格只作分隔。回 (字串, 中心占条宽的比例)。
-fn tokens(chars: &[dolce_omr_ocr::CharPos]) -> Vec<(String, f64)> {
+fn tokens(chars: &[dolce_omr_core::ocr::CharPos]) -> Vec<(String, f64)> {
     let mut out: Vec<(String, f64, f64)> = Vec::new();
     let mut prev_latin = false;
     for c in chars {

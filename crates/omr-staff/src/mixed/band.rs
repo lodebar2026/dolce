@@ -6,8 +6,8 @@
 use crate::frame::bars::Barline;
 use crate::frame::ink::VSeg;
 use dolce_omr_core::image::Binary;
-use dolce_omr_sheet::element::{Probe, BG};
-use dolce_omr_sheet::{Staff, Unit};
+use dolce_omr_core::sheet::element::{Probe, BG};
+use dolce_omr_core::sheet::{Staff, Unit};
 
 /// 简谱小节线的长度（相对线距）：简谱字号比线距大得多的谱面上，带高低音点的一行能到五格上下。
 const BAR_LEN: (f64, f64) = (1.2, 5.5);

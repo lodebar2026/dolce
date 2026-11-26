@@ -21,8 +21,8 @@ pub mod vector;
 
 use dolce_omr_core::image::Binary;
 use dolce_omr_core::progress::Hook;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_source::raster::SourceImage;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::source::raster::SourceImage;
 use result::{RecognizedScore, StaffRow};
 
 /// 认一条简谱行（混排谱里从谱表上方切下来的条）：回工作图相对条的缩放与读出音最多的那一行。
@@ -71,12 +71,12 @@ pub fn recognize_prepared(p: &Prepared, ocr: &CachedOcr, hook: &Hook) -> Result<
 }
 
 /// 识别一首纯矢量的简谱（各页的路径与文字层，按序）：证据换成对象库（[`vector::VecJpInk`]），判据同像素路。
-pub fn recognize_vector(pcs: &[dolce_omr_source::model::PageContent], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
+pub fn recognize_vector(pcs: &[dolce_omr_core::source::model::PageContent], ocr: &CachedOcr) -> Result<RecognizedScore, String> {
     recognize_vector_hooked(pcs, ocr, &Hook::NONE)
 }
 
 /// 同 [`recognize_vector`]，带进度与取消。
-pub fn recognize_vector_hooked(pcs: &[dolce_omr_source::model::PageContent], ocr: &CachedOcr, hook: &Hook) -> Result<RecognizedScore, String> {
+pub fn recognize_vector_hooked(pcs: &[dolce_omr_core::source::model::PageContent], ocr: &CachedOcr, hook: &Hook) -> Result<RecognizedScore, String> {
     let ink = vector::VecJpInk::new(pcs).ok_or("没有对象")?;
     let num_h = frame::estimate_num_h(ink.comps());
     recognize_ink_hooked(&ink, num_h, ocr, hook)

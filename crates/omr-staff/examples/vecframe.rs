@@ -1,8 +1,8 @@
 //! 矢量页的框架与字形身份（排查）：`cargo run --release -p dolce-omr-staff --example vecframe -- 文件.pdf [页号]`
-use dolce_omr_sheet::prims::VEC_SCALE;
-use dolce_omr_sheet::shapes::guess_by_code;
-use dolce_omr_source::vector::VecPage;
-use dolce_omr_source::{ContentOpts, PdfDoc};
+use dolce_omr_core::sheet::prims::VEC_SCALE;
+use dolce_omr_core::sheet::shapes::guess_by_code;
+use dolce_omr_core::source::vector::VecPage;
+use dolce_omr_core::source::{ContentOpts, PdfDoc};
 use dolce_omr_staff::vector::{frame_vector, glyphs};
 use std::collections::BTreeMap;
 
@@ -43,7 +43,7 @@ fn main() -> Result<(), String> {
         for s in &syms {
             let e = hist.entry(s.name).or_default();
             e.0 += 1;
-            if s.dist < dolce_omr_sheet::shapes::SIG_MAX {
+            if s.dist < dolce_omr_core::sheet::shapes::SIG_MAX {
                 e.1 += 1;
             }
             let c = vp.char_of(&vp.objs[s.obj as usize]).unwrap();

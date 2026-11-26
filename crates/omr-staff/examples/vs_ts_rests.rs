@@ -3,7 +3,7 @@
 #[path = "common/mod.rs"]
 mod common;
 use common::*;
-use dolce_omr_sheet::score::NoteType;
+use dolce_omr_core::sheet::score::NoteType;
 use dolce_omr_staff::page::recognize_page;
 
 const KINDS: [(&str, NoteType); 5] = [("restHBar", NoteType::Whole), ("restHalf", NoteType::Half), ("restQuarter", NoteType::Quarter), ("rest8th", NoteType::Eighth), ("rest16th", NoteType::N16th)];

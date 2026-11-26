@@ -1,8 +1,8 @@
 //! 歌本切分用的三样 OCR（都走 [`CachedOcr`]，第二遍起读缓存）：整片检测 + 逐框读字、单字格认数字、整条重读。
 //! 对应 web `paddleocr.ts` 的 `recognizeRegion` / `recognizeNumerals` / `recognizeTexts`。
 use dolce_omr_core::image::{Binary, Rect};
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::surface::{blit, fit_cell, Gray};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::surface::{blit, fit_cell, Gray};
 
 /// 一个字：左缘（`cx`，沿用 TS 的名字，其实是字段起点）与右缘，页面像素。
 #[derive(Clone, Debug, PartialEq)]

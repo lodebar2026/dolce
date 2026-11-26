@@ -12,9 +12,9 @@ use super::texture::clean_texture;
 use crate::frame::staves::find_staves;
 use dolce_omr_core::image::Binary;
 use dolce_omr_core::pixel::texture::merge_horizontal;
-use dolce_omr_sheet::{Staff, Unit};
-use dolce_omr_source::raster::{fix_polarity, Binarizer, SourceImage};
-use dolce_omr_source::ImageKind;
+use dolce_omr_core::sheet::{Staff, Unit};
+use dolce_omr_core::source::raster::{fix_polarity, Binarizer, SourceImage};
+use dolce_omr_core::source::ImageKind;
 
 /// 标准阈值档。
 const K: f64 = 0.5;

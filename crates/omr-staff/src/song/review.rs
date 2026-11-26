@@ -3,7 +3,7 @@
 //! `assignment`、`noteBoxes`、`markBoxes`、`stats`；另有 `doubts`（可疑清单）与 `alts`（各事件的落选候选，按事件第一个音的识别 id）。
 //! 坐标一律是原图像素（`scale` 恒为 1）；页下标 0 起。
 use super::*;
-use dolce_omr_sheet::score::{Choice, SpanKind};
+use dolce_omr_core::sheet::score::{Choice, SpanKind};
 use serde_json::{json, Map, Value};
 
 /// 核对 JSON 里的一个系统：第几页（0 起）、由页内哪几行谱组成（自上而下）。

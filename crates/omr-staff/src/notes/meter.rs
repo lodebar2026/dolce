@@ -1,14 +1,14 @@
-//! **满拍裁决**（3.9）：一个系统逐小节验各行的拍数（[`dolce_omr_sheet::meter`] 的时间线），不满的在把握不大的元素的备选里
+//! **满拍裁决**（3.9）：一个系统逐小节验各行的拍数（[`dolce_omr_core::sheet::meter`] 的时间线），不满的在把握不大的元素的备选里
 //! 选一组使本小节满拍、且与同系统别的行拍位对齐的；选出来的以**修正提案**（[`Fix`]）交回，由 [`apply`] 统一落到音符上。
 //! 凑不满的保持原判，记可疑。别的模块（跨谱表对齐、简谱互证）要改音符也走 [`Fix`]。
 use super::heads::HeadKind;
 use super::rests::Rest;
 use super::{Chord, RowNotes, SAME_ONSET};
 use crate::page::Layout;
-use dolce_omr_sheet::meter::{base_line, solve, Alt, Item, Line};
+use dolce_omr_core::sheet::meter::{base_line, solve, Alt, Item, Line};
 use super::tuplets::TupletCand;
-use dolce_omr_sheet::result::codes;
-use dolce_omr_sheet::score::{Choice, EventAlt, NoteType, Tuplet};
+use dolce_omr_core::sheet::result::codes;
+use dolce_omr_core::sheet::score::{Choice, EventAlt, NoteType, Tuplet};
 
 /// 各种改动的花费（越大越不情愿；只用来在几种改法之间排先后）：加一条符尾、删休止、删和弦。
 const COST_TAIL: f64 = 1.2;
@@ -33,7 +33,7 @@ pub enum Op {
     Kind(HeadKind),
     RestType(NoteType),
     /// 收下连音候选：这个和弦是连音里的一个。
-    Tuplet(dolce_omr_sheet::score::Tuplet),
+    Tuplet(dolce_omr_core::sheet::score::Tuplet),
     Drop,
 }
 

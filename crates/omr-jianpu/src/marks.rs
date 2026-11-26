@@ -7,7 +7,7 @@ use crate::prep::{Comp, Ink};
 use crate::result::{Grace, JpNum, RHYTHM_DIGIT};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::cache::CachedOcr;
 
 /// 框里各列最高墨点离框顶多少行（没墨的列是 None）。
 fn top_profile(ink: &Ink, r: &Rect) -> Vec<Option<f64>> {

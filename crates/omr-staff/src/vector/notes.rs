@@ -16,8 +16,8 @@ use crate::notes::rests::Rest;
 use crate::notes::stems::{find_stem, Stem};
 use crate::notes::{beams, build_rows, RowNotes};
 use crate::page::Layout;
-use dolce_omr_sheet::music::{Clef, Key, Time, TimeSymbol};
-use dolce_omr_sheet::score::{Art, Attrs, NoteType};
+use dolce_omr_core::sheet::music::{Clef, Key, Time, TimeSymbol};
+use dolce_omr_core::sheet::score::{Art, Attrs, NoteType};
 
 /// 头干尾一体的字形（`metNote*`）：头宽（相对线距，SMuFL 实心符头宽 1.18 格）；头心在谱表上方不出这么多个音级（再高的是速度记号里的音符）。
 const HEAD_W: f64 = 1.18;
@@ -441,7 +441,7 @@ pub fn page_notes(f: &Layout, ink: &VecInk, attrs: &[RowAttrs], syms: &[VSym]) -
 }
 
 /// 文字层里单独的「3」（非音乐字体；左右没有紧挨着的字，不是歌词、和弦里的一部分）。
-fn vp_threes(vp: &dolce_omr_source::vector::VecPage) -> Vec<dolce_omr_core::image::Rect> {
+fn vp_threes(vp: &dolce_omr_core::source::vector::VecPage) -> Vec<dolce_omr_core::image::Rect> {
     let cs = &vp.chars;
     (0..cs.len())
         .filter(|&i| cs[i].unicode == '3' as u32 && super::glyphs::music_family(&cs[i].font).is_none())

@@ -9,9 +9,9 @@ use crate::mixed::band::{self, Band};
 use crate::mixed::JpRow;
 use crate::prep::imaging::image_page;
 use dolce_omr_core::image::Binary;
-use dolce_omr_sheet::{Staff, Unit};
-use dolce_omr_source::raster::SourceImage;
-use dolce_omr_source::PageContent;
+use dolce_omr_core::sheet::{Staff, Unit};
+use dolce_omr_core::source::raster::SourceImage;
+use dolce_omr_core::source::PageContent;
 
 /// 一页的**版面**：只读版面的判断（文字分类、同系统互证、线性符号、整曲拼接）吃它，像素页、矢量页同一个形状。
 #[derive(Clone, Debug)]
@@ -82,7 +82,7 @@ pub struct Page {
 pub(crate) const SHORT_SEG: f64 = 1.2;
 
 /// 框架结构；页上没有谱表回 None。
-pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_ocr::cache::CachedOcr>) -> Option<PageFrame> {
+pub fn frame_page(src: &SourceImage, ocr: Option<&dolce_omr_core::ocr::cache::CachedOcr>) -> Option<PageFrame> {
     let im = image_page(src);
     let (unit, mut staves) = im.staves?;
     let (mut bin, mut soft, up) = (im.bin, im.soft, im.up);
@@ -140,7 +140,7 @@ pub struct PageSource {
     /// PDF 页的内容（路径、文字层与字形轮廓）；图片文件没有。
     pub content: Option<PageContent>,
     /// 文字层有不可靠字体时整页渲染的灰度图（每点 `VEC_SCALE` 像素，与矢量页工作坐标对齐），那几段字从它裁条读。
-    pub rendered: Option<dolce_omr_ocr::surface::Gray>,
+    pub rendered: Option<dolce_omr_core::ocr::surface::Gray>,
 }
 
 /// 识别一页：谱表从哪一层找到，框架与音符就以那一层为主——先试像素层，找不到谱表再试矢量层。
@@ -150,8 +150,8 @@ pub fn recognize_source(src: &PageSource, ocr: Option<&dyn DigitReader>) -> Opti
             // 混合页：谱面是内嵌大图、页眉页脚是文字层（干净合唱谱）。文字层按大图的像素格换进工作坐标，页眉两边合池
             if let Some(pc) = src.content.as_ref().filter(|pc| pc.chars.iter().any(|c| !c.generated)) {
                 let scale = p.layout.up * r.w as f64 / r.rect.w.max(1e-9);
-                let vp = dolce_omr_source::vector::VecPage::build(pc, scale, (r.rect.x, r.rect.y));
-                let tiles = dolce_omr_source::raster::side_tiles(pc, Some(&r.rect));
+                let vp = dolce_omr_core::source::vector::VecPage::build(pc, scale, (r.rect.x, r.rect.y));
+                let tiles = dolce_omr_core::source::raster::side_tiles(pc, Some(&r.rect));
                 let lines = crate::vector::text::text_lines(&vp, ocr, None, &tiles, &[]);
                 let pt = if r.size_known { r.pt_per_px() } else { 1.0 };
                 let layer = crate::vector::text::header(&p.layout, &vp, &lines, pt);

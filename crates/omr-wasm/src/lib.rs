@@ -6,10 +6,10 @@
 use dolce_omr_core::image::Rect;
 use dolce_omr_core::progress::{Hook, Step};
 use dolce_omr_engine::{Handle, Opts};
-use dolce_omr_ocr::cache::{decode_reqs, encode_reqs, exec, jobs, CachedOcr};
-use dolce_omr_ocr::surface::Gray;
-use dolce_omr_ocr::tract::TractInfer;
-use dolce_omr_ocr::{Ocr, OcrCache};
+use dolce_omr_core::ocr::cache::{decode_reqs, encode_reqs, exec, jobs, CachedOcr};
+use dolce_omr_core::ocr::surface::Gray;
+use dolce_omr_core::ocr::tract::TractInfer;
+use dolce_omr_core::ocr::{Ocr, OcrCache};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use wasm_bindgen::prelude::*;
@@ -33,7 +33,7 @@ fn ocr() -> Result<&'static CachedOcr, String> {
 /// （取数层有两个接口绕开绑定直接调模块，见 `omr-source/src/pdfium_wasm.rs`）。
 #[wasm_bindgen]
 pub fn set_pdfium_module(module: JsValue) {
-    dolce_omr_source::set_wasm_module(module);
+    dolce_omr_core::source::set_wasm_module(module);
 }
 
 /// 交 OCR 模型（rec / det 的 ONNX 字节与字典）；只第一次有效。

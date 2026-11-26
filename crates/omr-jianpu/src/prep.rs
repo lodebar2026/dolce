@@ -5,8 +5,8 @@
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::pixel::ccl::connected_components;
 use dolce_omr_core::pixel::preprocess::sauvola_multi;
-use dolce_omr_ocr::surface::{resize, Gray};
-use dolce_omr_source::raster::{fix_polarity, SourceImage};
+use dolce_omr_core::ocr::surface::{resize, Gray};
+use dolce_omr_core::source::raster::{fix_polarity, SourceImage};
 
 /// 工作图宽上限。
 const MAX_W: usize = 2200;

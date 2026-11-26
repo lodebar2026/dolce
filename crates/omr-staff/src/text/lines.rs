@@ -8,10 +8,10 @@ use crate::notes::RowNotes;
 use crate::page::PageFrame;
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::surface::Gray;
-use dolce_omr_source::raster::SourceImage;
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
-use dolce_omr_text::Ch;
+use dolce_omr_core::ocr::surface::Gray;
+use dolce_omr_core::source::raster::SourceImage;
+use dolce_omr_core::text::spaces::{box_ink, recover_spaces, spread_all};
+use dolce_omr_core::text::Ch;
 use std::collections::HashSet;
 
 /// 字身的墨块：高在这个范围（相对线距），宽不过上限。

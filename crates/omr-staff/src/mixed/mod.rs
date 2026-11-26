@@ -7,11 +7,11 @@ pub mod band;
 pub mod fuse;
 
 use band::{Band, Strip};
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_source::model::ImageKind;
-use dolce_omr_source::raster::SourceImage;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::source::model::ImageKind;
+use dolce_omr_core::source::raster::SourceImage;
 use dolce_omr_core::image::{Binary, Rect};
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::sheet::Staff;
 
 /// 简谱行里的一个音（页面像素坐标）。
 #[derive(Clone, Copy, Debug, PartialEq)]

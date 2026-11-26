@@ -3,10 +3,10 @@
 use super::lines::{Band, GeoLine, Seg};
 use crate::page::Layout;
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::score::Dir;
-use dolce_omr_text::chars::{han_count, latin_count, script_of, Script};
-use dolce_omr_text::lyrics::{syllables, LyricRow};
-use dolce_omr_text::{chords, words, Ch};
+use dolce_omr_core::sheet::score::Dir;
+use dolce_omr_core::text::chars::{han_count, latin_count, script_of, Script};
+use dolce_omr_core::text::lyrics::{syllables, LyricRow};
+use dolce_omr_core::text::{chords, words, Ch};
 
 /// 第一行歌词离谱表不过这么多格（下面还有谱行的带里，离上面谱表比离下面近的也收、两行谱的系统里两行之间的不限：低音多的谱行下歌词离谱表七格开外，新编 176；
 /// 副歌的歌词夹在高低音谱表正中，新编 294）；
@@ -246,7 +246,7 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
         let in_system = matches!((b.above, b.below), (Some(a), Some(z)) if f.systems.iter().any(|s| s.staves.len() == 2 && s.staves.contains(&a) && s.staves.contains(&z)));
         let lines: Vec<GeoLine> = b.lines.iter().filter_map(|l| strip_bar_numbers(f, b, l)).flat_map(|l| split_scripts(&l)).collect();
         // 页脚：从版权声明那行起往下都是（版权、复印说明、网址、页码），不当歌词与记号
-        let footer = lines.iter().position(|l| dolce_omr_text::header::is_rights(&line_chars(l).iter().map(|c| c.ch).collect::<String>())).filter(|_| b.below.is_none());
+        let footer = lines.iter().position(|l| dolce_omr_core::text::header::is_rights(&line_chars(l).iter().map(|c| c.ch).collect::<String>())).filter(|_| b.below.is_none());
         for l in &lines[..footer.unwrap_or(lines.len())] {
             let cx = l.cx();
             let d_above = b.above.map(|a| {
@@ -316,7 +316,7 @@ pub fn classify(f: &Layout, bands: &[Band]) -> Vec<RowText> {
                     let row = syllables(&lyric_chars);
                     // 一栏的头一行要有三个以上音节：碎墨读出来的一两个字（「二 一」）不开头
                     // 一栏的头一行：一两个音节的要像字——碎墨读出来的多是笔画极少的字（「二 一」「十」）
-                    let debris = row.syls.len() < LYRIC_START && row.syls.iter().all(|s| s.text.chars().all(|c| "一二三十丨口日中甲由田曰工上下".contains(c) || !dolce_omr_text::chars::is_han(c)) && s.text.chars().any(dolce_omr_text::chars::is_han));
+                    let debris = row.syls.len() < LYRIC_START && row.syls.iter().all(|s| s.text.chars().all(|c| "一二三十丨口日中甲由田曰工上下".contains(c) || !dolce_omr_core::text::chars::is_han(c)) && s.text.chars().any(dolce_omr_core::text::chars::is_han));
                     if !row.syls.is_empty() && !(prev.is_empty() && debris) {
                         let latin = script_of(&row.syls.iter().map(|s| s.text.as_str()).collect::<String>()) == Script::Latin;
                         // 行号 = 上方同种文字、横向盖得住它的行数 + 1（副歌一行夹在主歌几行右边，是它那一栏的第 1 行）

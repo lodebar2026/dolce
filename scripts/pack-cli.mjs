@@ -26,7 +26,7 @@ import { crtLibrary, crtClosure, peImports } from "./vcredist.mjs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const NAME = "dolce-cli";
 const OUT = join(ROOT, "out/pkg");
-/** 与 crates/omr-source/build.rs 同一个构建号 */
+/** 与 crates/omr-core/build.rs 同一个构建号 */
 const PDFIUM_BUILD = "7881";
 
 /** 目标 → Rust 三元组、PDFium 库名。 */

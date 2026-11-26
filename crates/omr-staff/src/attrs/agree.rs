@@ -2,7 +2,7 @@
 //! 全页共享（[`page_share`]）：同种记号读少了的行补成本页最长的那串。
 use super::RowAttrs;
 use crate::page::Layout;
-use dolce_omr_sheet::music::{ClefSign, Key, Time};
+use dolce_omr_core::sheet::music::{ClefSign, Key, Time};
 
 pub fn system_agree(f: &Layout, rows: &mut [RowAttrs]) {
     for sys in &f.systems {

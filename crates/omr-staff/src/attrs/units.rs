@@ -3,7 +3,7 @@
 use crate::frame::ink::{BG, INK};
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::sheet::Staff;
 
 /// 两块横向重叠到窄的那块的这个比例、上下相隔不过 `JOIN_GAP` 格，并成一个单元。
 const JOIN_OVERLAP: f64 = 0.5;

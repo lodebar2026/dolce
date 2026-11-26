@@ -5,7 +5,7 @@
 //! 识别不推平、不纠斜：交出的谱表带曲线，下游一律按谱表局部坐标（`Staff::pos`）读。
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Binary;
-use dolce_omr_sheet::{LineCurve, Staff, Unit};
+use dolce_omr_core::sheet::{LineCurve, Staff, Unit};
 use std::sync::Arc;
 
 /// 逐列取样的步长（像素）：谱线横跨整页，抽稀不影响。
@@ -591,7 +591,7 @@ const HSEG_SPAN: (f64, f64) = (0.8, 4.0);
 /// **横段成谱表**（精确几何的横段：矢量页的谱线对象；判据照「左端对齐、等距、连着五条」）：
 /// 拿每条候选当顶线、试后面几条当第二线定出线距，再按「已找到那几条的平均间距」往下推（误差不累积），推不出时按紧挨的五条平均间距等距兜底。
 /// `height`：谱表高的估计（音乐字号；没有就按页宽估），只用来卡线距上下限。回各谱表与所用横段的下标。
-pub fn staves_from_hsegs(hs: &[dolce_omr_sheet::prims::HSeg], height: f64) -> Vec<(Staff, [usize; 5])> {
+pub fn staves_from_hsegs(hs: &[dolce_omr_core::sheet::prims::HSeg], height: f64) -> Vec<(Staff, [usize; 5])> {
     let max_len = hs.iter().map(|h| h.len()).fold(0.0, f64::max);
     if max_len <= 0.0 {
         return vec![];

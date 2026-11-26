@@ -8,7 +8,7 @@
 //
 // 要：rustup target add wasm32-unknown-unknown；cargo install wasm-bindgen-cli --version <与 crates/Cargo.lock 一致>。
 // 都不过 wasm-opt（压缩后反而变大，见 buildOmr 里的注释）；dolce 几份走 `wasm-dolce` 编译档。源码没变就不重来（比 crates/ 下源码与 public/redist/omr/ 产物的修改时间）。
-// PDFium 的构建号与 crates/omr-source/build.rs 同一个（绑定按那一版的符号表取函数）。
+// PDFium 的构建号与 crates/omr-core/build.rs 同一个（绑定按那一版的符号表取函数）。
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -96,9 +96,9 @@ function buildOmr() {
 }
 
 /** 模型 / 格式 / 排版的 wasm：dolce_wasm 与按需载入的 dolce_jcx_wasm、dolce_export_wasm 三份（不用 SIMD 特性），共用自己的 target 目录；
- *  只看非识别 crate（除命令行与开发工具）、它引的那几个识别 crate（识别结果建模 omr-todoc 及其依赖）与锁文件、本脚本的修改时间。`--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
+ *  只看非识别 crate（除命令行与开发工具）、它引的那几个识别 crate（识别共用底层 omr-core，含识别结果建模 todoc）与锁文件、本脚本的修改时间。`--target web` 的胶水在 Node 里也能用（门面调 `initSync` 读文件）。 */
 /** dolce-wasm 依赖的识别 crate（目录名）；不进 wasm 的非识别 crate */
-const DOLCE_OMR_DEPS = ["omr-todoc", "omr-sheet", "omr-text", "omr-core"];
+const DOLCE_OMR_DEPS = ["omr-core"];
 const DOLCE_SKIP = ["dolce-cli", "dolce-dev", "cli", "dev"];
 
 export function buildDolce() {

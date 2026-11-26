@@ -5,12 +5,12 @@
 //! 空心头、全音符内腔里那一截谱线是存疑的：判内腔时它不算墨。
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::pixel::ccl::connected_components;
-use dolce_omr_sheet::{Staff, Unit};
+use dolce_omr_core::sheet::{Staff, Unit};
 use serde::{Deserialize, Serialize};
 
 /// 墨层里一个像素的三种状态（与矢量页同一套，见 `omr-sheet::element`）。
-pub use dolce_omr_sheet::element::{Probe, BG, INK, LINE};
-pub use dolce_omr_sheet::prims::VSeg;
+pub use dolce_omr_core::sheet::element::{Probe, BG, INK, LINE};
+pub use dolce_omr_core::sheet::prims::VSeg;
 
 /// 墨层带上松阈值图（挂干量断口时看淡笔画）。
 pub struct WithSoft<'a> {

@@ -7,7 +7,7 @@
 //! 探的是原图（谱线上的存疑像素算墨：杠压着线的地方本来就连着）；孤零零的谱线比杠薄得多，过不了厚度下限。
 use super::{Chord, RowNotes};
 use crate::frame::ink::{Probe, BG, INK};
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::sheet::Staff;
 
 /// 探测列离干多远（相对线距）：出了干的宽度、还在符尾根部最厚的那一段里。
 /// 弯出去的符尾到 `PROBE` 处可能已变细，无符杠时再贴近干根部（`FLAG_PROBE`）探一次，并要求 `PROBE` 处仍有实墨。

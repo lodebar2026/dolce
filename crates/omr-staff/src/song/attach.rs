@@ -109,7 +109,7 @@ pub(super) fn attach_text(ms: &mut [Measure], mut anchors: Vec<Anchor>, rests: &
             let e = &mut ms[pts[n].bar].events[pts[n].event];
             // 行首印的段号并在首字前（汉字 `1.道`，拉丁 `1 Be`）
             let text = match (&line.row.label, k) {
-                (Some(l), 0) if l.ends_with('.') && syl.text.chars().next().is_some_and(dolce_omr_text::chars::is_han) => format!("{l}{}", syl.text),
+                (Some(l), 0) if l.ends_with('.') && syl.text.chars().next().is_some_and(dolce_omr_core::text::chars::is_han) => format!("{l}{}", syl.text),
                 (Some(l), 0) => format!("{l} {}", syl.text),
                 _ => syl.text.clone(),
             };

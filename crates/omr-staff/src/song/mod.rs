@@ -6,19 +6,19 @@ use crate::attrs::RowAttrs;
 use crate::mixed::fuse;
 use crate::frame::bars::BarStyle;
 use crate::page::Page;
-use dolce_omr_sheet::music::{Clef, Key};
+use dolce_omr_core::sheet::music::{Clef, Key};
 use crate::notes::meter::{self, Bar, Stats};
 use crate::notes::rests::Rest;
 use crate::notes::{Chord, RowNotes, SAME_ONSET};
-use dolce_omr_sheet::meter::{timeline, SHARED};
+use dolce_omr_core::sheet::meter::{timeline, SHARED};
 use crate::text::classify::RowText;
 use crate::spans::arcs::{Arc, ChordRef};
 use crate::spans::wedges::Wedge;
-use dolce_omr_sheet::music::Pitch;
-use dolce_omr_sheet::result::{codes, Doubt, Locus, Rid, RidKind, RidSeq, Src, SrcBox};
+use dolce_omr_core::sheet::music::Pitch;
+use dolce_omr_core::sheet::result::{codes, Doubt, Locus, Rid, RidKind, RidSeq, Src, SrcBox};
 use dolce_omr_core::image::Rect;
-use dolce_omr_sheet::score::{self, measure_divisions, Attrs, Dir, HeadSrc, Placed, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
-use dolce_omr_text::lyrics::align;
+use dolce_omr_core::sheet::score::{self, measure_divisions, Attrs, Dir, HeadSrc, Placed, Ending, Event, Lyric, Measure, Part, Score, SpanKind, SpanMark};
+use dolce_omr_core::text::lyrics::align;
 use serde::Serialize;
 
 mod assign;
@@ -206,7 +206,7 @@ fn split_bars(parts: &mut [Part]) {
     let dur = |mi: usize| parts.iter().filter_map(|p| p.measures.get(mi)).flat_map(|m| m.events.iter()).map(|e| e.onset + e.divisions()).max().unwrap_or(0);
     let mut want = vec![0u32; n];
     let mut beat = vec![0u32; n];
-    let mut now: Option<dolce_omr_sheet::music::Time> = None;
+    let mut now: Option<dolce_omr_core::sheet::music::Time> = None;
     for mi in 0..n {
         for p in parts.iter() {
             if let Some(m) = p.measures.get(mi) {
@@ -337,7 +337,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
     // 上一个系统行末没印右线（跨行劈开的小节）
     let mut prev_open = false;
     // 现行拍号
-    let mut time: Option<dolce_omr_sheet::music::Time> = None;
+    let mut time: Option<dolce_omr_core::sheet::music::Time> = None;
     // 上一个系统末小节的宽度（相对它那一行常见的小节宽；没有为 0）
     let mut prev_tail = 0.0f64;
     let mut doubts: Vec<Doubt> = Vec::new();
@@ -423,7 +423,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
             let forced = c.time_at(sys_i);
             let read = forced.or_else(|| rows.iter().filter_map(|&i| page.attrs[i].time).next());
             let votes = if forced.is_some() { 2 } else { rows.iter().map(|&i| page.attrs[i].time_votes).max().unwrap_or(0) };
-            let mut now = read.filter(|t| from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal)).or(time);
+            let mut now = read.filter(|t| from == 0 || votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_core::sheet::music::TimeSymbol::Normal)).or(time);
             let bar_of = |x: f64| bs.iter().filter(|b| b.x < x).count().min(count - 1);
             let plain = |b: Option<&Bound>| b.is_none_or(|b| b.style == BarStyle::Regular && !b.rep_end && !b.rep_start);
             let bars: Vec<Bar> = (0..count)
@@ -519,14 +519,14 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                     at.clef = Some(c);
                 }
                 clef[p] = Some(c);
-                let kk = if a.clef.is_some_and(|c| c.sign == dolce_omr_sheet::music::ClefSign::Percussion) { Key::default() } else { sys_key };
+                let kk = if a.clef.is_some_and(|c| c.sign == dolce_omr_core::sheet::music::ClefSign::Percussion) { Key::default() } else { sys_key };
                 if first || key[p] != Some(kk) {
                     at.key = Some(kk);
                 }
                 key[p] = Some(kk);
                 // 拍号：曲首照读数；后面的系统只收「与现行不同、且同系统两行以上各自读出同一个」的（单行系统只收数字拍号）
                 if let Some(t) = forced.or(a.time) {
-                    let strong = forced.is_some() || a.time_votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_sheet::music::TimeSymbol::Normal);
+                    let strong = forced.is_some() || a.time_votes >= 2 || (rows.len() == 1 && t.symbol == dolce_omr_core::sheet::music::TimeSymbol::Normal);
                     if first || (time != Some(t) && strong) {
                         at.time = Some(t);
                     }
@@ -548,7 +548,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                 while n0 < items.len() {
                     let j = bar_of(items[n0].0);
                     let n1 = (n0..items.len()).find(|&n| bar_of(items[n].0) != j).unwrap_or(items.len());
-                    let want = bars[j].want.unwrap_or(4 * dolce_omr_sheet::score::DIVISIONS);
+                    let want = bars[j].want.unwrap_or(4 * dolce_omr_core::sheet::score::DIVISIONS);
                     let tl: Vec<(f64, f64, u32, Option<bool>)> = items[n0..n1]
                         .iter()
                         .map(|&(x, ch, rest)| match (ch, rest) {
@@ -717,7 +717,7 @@ pub fn assemble_with(pages: &[Page], title: Option<String>, c: &Constraints) -> 
                     // 混排谱里单行系统只印旋律，别的声部这几小节各记一个全休止，曲首就没印的照样交代谱号、调号、拍号。
                     // 别的谱不补：行数对不上多半是多认了假谱行，补出来的休止还得一个个删
                     for m in ms.iter_mut().filter(|_| mixed) {
-                        m.events.push(Event::new(vec![], dolce_omr_sheet::score::NoteType::Whole, 0, None));
+                        m.events.push(Event::new(vec![], dolce_omr_core::sheet::score::NoteType::Whole, 0, None));
                     }
                     if mixed && from == 0 {
                         let c = clefs[p][sys_i].unwrap_or(Clef::TREBLE);

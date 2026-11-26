@@ -1,7 +1,7 @@
 //! 矢量页某框里的对象（排查）：`cargo run --release -p dolce-omr-staff --example dbg_objs -- 文件.pdf 页号 x0 y0 x1 y1`（工作坐标）
-use dolce_omr_sheet::prims::VEC_SCALE;
-use dolce_omr_source::vector::VecPage;
-use dolce_omr_source::{ContentOpts, PdfDoc};
+use dolce_omr_core::sheet::prims::VEC_SCALE;
+use dolce_omr_core::source::vector::VecPage;
+use dolce_omr_core::source::{ContentOpts, PdfDoc};
 
 fn main() -> Result<(), String> {
     let a: Vec<String> = std::env::args().collect();
@@ -22,7 +22,7 @@ fn main() -> Result<(), String> {
     if let Some(f) = dolce_omr_staff::vector::frame_vector(&vp) {
         let sp = f.layout.unit.space;
         let mut pieces = dolce_omr_staff::vector::glyphs::path_pieces(&vp);
-        for o in vp.objs.iter().filter(|o| o.kind == dolce_omr_source::vector::VKind::Curve) {
+        for o in vp.objs.iter().filter(|o| o.kind == dolce_omr_core::source::vector::VKind::Curve) {
             pieces.push(dolce_omr_staff::vector::glyphs::GlyphPiece { obj: o.id, rings: o.rings.clone(), rect: o.rect, curved: true });
         }
         let syms = dolce_omr_staff::vector::glyphs::path_glyphs(&pieces, sp, &vp, &pc);
@@ -32,7 +32,7 @@ fn main() -> Result<(), String> {
                 continue;
             }
             let em = 4.0 * sp;
-            let near = dolce_omr_sheet::shapes::nearest_outline(&p.rings, (r.w / em, r.h / em), 3);
+            let near = dolce_omr_core::sheet::shapes::nearest_outline(&p.rings, (r.w / em, r.h / em), 3);
             println!("块 obj#{} {:.0},{:.0} {:.0}×{:.0}（{:.2}×{:.2}em）环{} 认{:?} 近{:?}", p.obj, r.x, r.y, r.w, r.h, r.w / em, r.h / em, p.rings.len(), s.name, near.iter().map(|(n, d, dw, dh)| format!("{n}:{d} Δ{dw:.2},{dh:.2}")).collect::<Vec<_>>());
         }
     }

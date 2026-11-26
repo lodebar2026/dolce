@@ -5,8 +5,8 @@
 use crate::prep::{Comp, Ink};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_ocr::surface::Gray;
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::surface::Gray;
 
 /// 数字高（字号）的估计。近方块的中位高为底；汉字碎块压低、歌词字压高时，改信「夹在小节线之间的瘦高块」。
 pub fn estimate_num_h(comps: &[Comp]) -> f64 {
@@ -148,7 +148,7 @@ impl RowFrame {
 
 /// 数字格送检的画面：墨的外框等比缩进 64×64 的白格、四周留 8。
 pub fn digit_cell(ink: &Ink, r: &Rect) -> Gray {
-    dolce_omr_ocr::surface::fit_cell(&ink.crop_bin(r))
+    dolce_omr_core::ocr::surface::fit_cell(&ink.crop_bin(r))
 }
 
 /// rec 读出的字 → 简谱数字：0–7；`X` 是节奏音符（9）；别的不是数字。
@@ -319,7 +319,7 @@ fn find_rows_at(ink: &Ink, num_h: f64, ocr: &CachedOcr, known: bool) -> Vec<RowF
             let y0 = row.cells.iter().map(|c| c.y0).min().unwrap_or(0);
             let y1 = row.cells.iter().map(|c| c.y1).max().unwrap_or(0);
             let r = Rect::new(x0 as f64, y0 as f64, (x1 - x0 + 1) as f64, (y1 - y0 + 1) as f64);
-            let han = crate::read::line(ink, ocr, &crate::read::strip_frame(&r, 4), || ink.strip(&r, 4)).map_or(0, |v| v.iter().filter(|c| c.ch.chars().any(dolce_omr_text::chars::is_han)).count());
+            let han = crate::read::line(ink, ocr, &crate::read::strip_frame(&r, 4), || ink.strip(&r, 4)).map_or(0, |v| v.iter().filter(|c| c.ch.chars().any(dolce_omr_core::text::chars::is_han)).count());
             if han >= 2 {
                 if std::env::var("OMR_JP_DEBUG").is_ok() {
                     eprintln!("  读出汉字 {han}，不收");

@@ -1,8 +1,8 @@
 //! 整本的页面来源：位图 PDF（每页取内嵌源图，不重采样）、转曲矢量 PDF（PDFium 整页渲染）、页图文件夹（文件名自然序、按 EXIF 摆正）。
 //! 对应 web `omr/booksplit/source.node.ts` 与 `vector.node.ts`。
 use dolce_omr_core::pixel::preprocess::to_gray;
-use dolce_omr_source::raster::{image_file, page_image};
-use dolce_omr_source::{ContentOpts, PageContent, PdfDoc};
+use dolce_omr_core::source::raster::{image_file, page_image};
+use dolce_omr_core::source::{ContentOpts, PageContent, PdfDoc};
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 

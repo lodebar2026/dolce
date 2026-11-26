@@ -8,12 +8,12 @@ use crate::prep::{Comp, Ink};
 use crate::result::{KeySig, RecognizedScore, TextRegion, TimeSig};
 use dolce_omr_core::geom::median;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_text::chars::{han_count, is_han};
-use dolce_omr_text::header::{credits, CreditType, WordLine};
-use dolce_omr_text::lyrics::{align, align_phrases, phrase_lens, syllables};
-use dolce_omr_text::spaces::{box_ink, recover_spaces, spread_all};
-use dolce_omr_text::{chords, words, Ch};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::text::chars::{han_count, is_han};
+use dolce_omr_core::text::header::{credits, CreditType, WordLine};
+use dolce_omr_core::text::lyrics::{align, align_phrases, phrase_lens, syllables};
+use dolce_omr_core::text::spaces::{box_ink, recover_spaces, spread_all};
+use dolce_omr_core::text::{chords, words, Ch};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -795,11 +795,11 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
                 continue;
             }
             // 英文按词左缘对位（同 TS：音节起始 x 对音心；长词的字心常落到后一个音上，`dear` 罩着 `1̲ 1̲`）
-            let latin = |s: &dolce_omr_text::lyrics::Syl| s.text.chars().any(|c| c.is_ascii_alphabetic()) && !s.text.chars().any(is_han);
+            let latin = |s: &dolce_omr_core::text::lyrics::Syl| s.text.chars().any(|c| c.is_ascii_alphabetic()) && !s.text.chars().any(is_han);
             let at0 = align(&lr.syls.iter().map(|s| if latin(s) { s.x - s.w / 2.0 } else { s.x }).collect::<Vec<_>>(), &note_xs);
             // 一个英文词底下罩着几个没人认领的音（整词印在两三个音底下、没印连字符）：等弧认完再按拼写切（`split_spanning_words`），
             // 这里先记下词的字迹范围
-            let placed: Vec<(dolce_omr_text::lyrics::Syl, usize)> = lr.syls.iter().cloned().zip(at0.iter().copied()).collect();
+            let placed: Vec<(dolce_omr_core::text::lyrics::Syl, usize)> = lr.syls.iter().cloned().zip(at0.iter().copied()).collect();
             let line_h = (y1 - y0 + 1) as f64;
             let at: Vec<usize> = placed.iter().map(|p| p.1).collect();
             lr.syls = placed.into_iter().map(|p| p.0).collect();
@@ -810,7 +810,7 @@ pub fn lyrics(ink: &Ink, rows: &[RowFrame], vruns: &VRuns, notes: &mut [RowNotes
                 .zip(&at)
                 .map(|(s, &k)| {
                     // 英文音节后面印着连字符（接下一个音节）的，字后带「-」（同 TS，写出端转 `\-`）
-                    let hy = matches!(s.syllabic, dolce_omr_text::lyrics::Syllabic::Begin | dolce_omr_text::lyrics::Syllabic::Middle);
+                    let hy = matches!(s.syllabic, dolce_omr_core::text::lyrics::Syllabic::Begin | dolce_omr_core::text::lyrics::Syllabic::Middle);
                     let text = if hy { format!("{}-", s.text) } else { s.text.clone() };
                     (note_ix[k], text, s.text.chars().any(is_han) && ranks.doubt_xs.iter().any(|&x| (x - s.x).abs() <= s.w / 2.0 + 0.5))
                 })
@@ -1180,7 +1180,7 @@ pub fn split_spanning_words(notes: &mut [RowNotes]) {
                 };
                 let mut parts = None;
                 while span.len() >= 2 {
-                    parts = dolce_omr_text::ensyllable::split_english_word(&word, span.len());
+                    parts = dolce_omr_core::text::ensyllable::split_english_word(&word, span.len());
                     if parts.is_some() {
                         break;
                     }

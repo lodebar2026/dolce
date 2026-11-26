@@ -6,8 +6,8 @@ use crate::frame::digit_cell;
 use dolce_omr_core::image::Rect;
 use crate::prep::Ink;
 use crate::result::Tuplet;
-use dolce_omr_ocr::cache::CachedOcr;
-use dolce_omr_sheet::curves::{join_all, trace, JoinTol, Stroke};
+use dolce_omr_core::ocr::cache::CachedOcr;
+use dolce_omr_core::sheet::curves::{join_all, trace, JoinTol, Stroke};
 
 /// 细墨：纵向墨段不厚过这么多（相对字号）。
 const THIN: f64 = 0.22;
@@ -815,14 +815,14 @@ pub fn endings(ink: &Ink, rows: &[RowFrame], notes: &mut [RowNotes], ocr: &Cache
 
 /// 窗里横穿两边的线（括线、弧）抹掉、只留数字：两侧窗边一两像素内都有墨的行是线行；线行以外有墨的列是数字的横向范围，
 /// 裁到这个范围（线行在范围外的墨随之裁掉）送检。
-fn strip_line_cell(ink: &Ink, r: &Rect) -> dolce_omr_ocr::surface::Gray {
+fn strip_line_cell(ink: &Ink, r: &Rect) -> dolce_omr_core::ocr::surface::Gray {
     let (x0, y0, x1, y1) = (r.x.round() as i64, r.y.round() as i64, r.right().round() as i64, r.bottom().round() as i64);
     let edge = |y: i64, xs: std::ops::RangeInclusive<i64>| xs.into_iter().any(|x| ink.at(x, y));
     let line: Vec<bool> = (y0..y1).map(|y| edge(y, x0..=x0 + 1) && edge(y, x1 - 2..=x1 - 1)).collect();
     let cols: Vec<i64> = (x0..x1).filter(|&x| (y0..y1).enumerate().any(|(k, y)| !line[k] && ink.at(x, y))).collect();
     let (Some(&a), Some(&b)) = (cols.first(), cols.last()) else { return digit_cell(ink, r) };
     let (w, h) = ((b - a + 1) as usize, (y1 - y0) as usize);
-    let mut g = dolce_omr_ocr::surface::Gray::new(w, h, 255);
+    let mut g = dolce_omr_core::ocr::surface::Gray::new(w, h, 255);
     for (k, y) in (y0..y1).enumerate() {
         for x in a..=b {
             if ink.at(x, y) {
@@ -830,17 +830,17 @@ fn strip_line_cell(ink: &Ink, r: &Rect) -> dolce_omr_ocr::surface::Gray {
             }
         }
     }
-    dolce_omr_ocr::surface::fit_cell(&trim_gray(&g))
+    dolce_omr_core::ocr::surface::fit_cell(&trim_gray(&g))
 }
 
 /// 裁掉四周的白边。
-fn trim_gray(g: &dolce_omr_ocr::surface::Gray) -> dolce_omr_ocr::surface::Gray {
+fn trim_gray(g: &dolce_omr_core::ocr::surface::Gray) -> dolce_omr_core::ocr::surface::Gray {
     let ink = |x: usize, y: usize| g.data[y * g.w + x] < 128;
     let rows: Vec<usize> = (0..g.h).filter(|&y| (0..g.w).any(|x| ink(x, y))).collect();
     let cols: Vec<usize> = (0..g.w).filter(|&x| (0..g.h).any(|y| ink(x, y))).collect();
     let (Some(&t), Some(&bt), Some(&l), Some(&rt)) = (rows.first(), rows.last(), cols.first(), cols.last()) else { return g.clone() };
     let (w, h) = (rt - l + 1, bt - t + 1);
-    let mut out = dolce_omr_ocr::surface::Gray::new(w, h, 255);
+    let mut out = dolce_omr_core::ocr::surface::Gray::new(w, h, 255);
     for y in 0..h {
         for x in 0..w {
             out.data[y * w + x] = g.data[(y + t) * g.w + x + l];

@@ -1,7 +1,7 @@
 //! 导出（L7）的命令：字体样本验证、PDF 读回比对。PDF 读回走识别取数层的 PDFium（`dolce-omr-source`）。
 
 use dolce_layout::export::fonts::FontBook;
-use dolce_omr_source::pdf::{ContentOpts, PdfDoc};
+use dolce_omr_core::source::pdf::{ContentOpts, PdfDoc};
 
 fn flag<'a>(args: &'a [String], k: &str) -> Option<&'a str> {
     args.iter().find_map(|a| a.strip_prefix(&format!("--{k}=")))

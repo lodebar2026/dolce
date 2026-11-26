@@ -1,9 +1,9 @@
 # Rust 工作区：识别（omr-*，职责见 docs/模块/识别-Rust.md）与模型 / 格式 / 排版（dolce-*，迁移中）。
 [workspace]
 resolver = "2"
-members = ["layout", "dolce-cli", "dolce-dev", "engrave", "dolce-export-wasm", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-wasm", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc", "omr-wasm"]
+members = ["layout", "dolce-cli", "dolce-dev", "engrave", "dolce-export-wasm", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-wasm", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-staff", "omr-wasm"]
 # omr-wasm、dolce-wasm、dolce-jcx-wasm、dolce-export-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
-default-members = ["layout", "dolce-cli", "dolce-dev", "engrave", "dolce-layout-jianpu", "dolce-layout-staff", "model", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc"]
+default-members = ["layout", "dolce-cli", "dolce-dev", "engrave", "dolce-layout-jianpu", "dolce-layout-staff", "model", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-staff"]
 
 [workspace.package]
 version = "0.8.9"
@@ -29,12 +29,7 @@ dolce-omr-book = { version = "0.8.9", path = "omr-book" }
 dolce-omr-core = { version = "0.8.9", path = "omr-core" }
 dolce-omr-engine = { version = "0.8.9", path = "omr-engine", default-features = false }
 dolce-omr-jianpu = { version = "0.8.9", path = "omr-jianpu" }
-dolce-omr-ocr = { version = "0.8.9", path = "omr-ocr", default-features = false }
-dolce-omr-sheet = { version = "0.8.9", path = "omr-sheet" }
-dolce-omr-source = { version = "0.8.9", path = "omr-source" }
 dolce-omr-staff = { version = "0.8.9", path = "omr-staff" }
-dolce-omr-text = { version = "0.8.9", path = "omr-text" }
-dolce-omr-todoc = { version = "0.8.9", path = "omr-todoc" }
 
 [profile.release]
 lto = "thin"

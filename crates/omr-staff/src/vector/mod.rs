@@ -15,10 +15,10 @@ use crate::frame::staves::staves_from_hsegs;
 use crate::frame::systems::find_systems;
 use crate::page::Layout;
 use dolce_omr_core::geom::median;
-use dolce_omr_sheet::element::{Probe, BG, INK, LINE};
-use dolce_omr_sheet::prims::{HSeg, VSeg};
-use dolce_omr_sheet::Unit;
-use dolce_omr_source::vector::{VKind, VLine, VecPage};
+use dolce_omr_core::sheet::element::{Probe, BG, INK, LINE};
+use dolce_omr_core::sheet::prims::{HSeg, VSeg};
+use dolce_omr_core::sheet::Unit;
+use dolce_omr_core::source::vector::{VKind, VLine, VecPage};
 
 /// 竖线段至少这么长（相对线距）才进小节线 / 系统线候选（同位图的竖段下限）。
 const VSEG_MIN: f64 = 3.0;
@@ -185,25 +185,25 @@ pub fn frame_vector(vp: &VecPage) -> Option<VecFrame> {
 
 /// 一个路径对象在外框 `r` 里的那部分画成白底黑字的小图（四周垫白，同位图读数字的 `attrs::lead::cell`）：只画这一个对象，
 /// 压着的谱线、穿过的干都不进图。
-fn piece_cell(vp: &VecPage, o: &dolce_omr_source::vector::VObj, r: &dolce_omr_core::image::Rect) -> dolce_omr_ocr::surface::Gray {
+fn piece_cell(vp: &VecPage, o: &dolce_omr_core::source::vector::VObj, r: &dolce_omr_core::image::Rect) -> dolce_omr_core::ocr::surface::Gray {
     let (x0, y0) = (r.x.floor() as i64, r.y.floor() as i64);
     let (w, h) = ((r.right().ceil() as i64 - x0 + 1).max(1) as usize, (r.bottom().ceil() as i64 - y0 + 1).max(1) as usize);
     let pad = (h / 5).max(2);
-    let mut g = dolce_omr_ocr::surface::Gray::new(w + 2 * pad, h + 2 * pad, 255);
+    let mut g = dolce_omr_core::ocr::surface::Gray::new(w + 2 * pad, h + 2 * pad, 255);
     let gw = g.w;
-    dolce_omr_source::vector::draw_obj(vp, o, x0 as f64, y0 as f64, 1.0, w, h, &mut |x, y| g.data[(y + pad) * gw + x + pad] = 0);
+    dolce_omr_core::source::vector::draw_obj(vp, o, x0 as f64, y0 as f64, 1.0, w, h, &mut |x, y| g.data[(y + pad) * gw + x + pad] = 0);
     g
 }
 
 /// 矢量页画成像素的页框：`keep` 收下的对象按工作坐标画进二值图，版面照搬矢量的。
 /// 字形字典在行首认不出谱号的行（转曲页换了一套字体，谱号、调号、拍号都不在字典里）把整页（简谱带里的不画）画成像素，
 /// 行首读法（谱号自举、调号按竖笔数、拍号读数字）与行中拍号走位图同一份 `attrs::lead`，不另写一套矢量判据。
-fn raster_frame(vp: &VecPage, f: &Layout, keep: &dyn Fn(&dolce_omr_source::vector::VObj) -> bool) -> crate::page::PageFrame {
+fn raster_frame(vp: &VecPage, f: &Layout, keep: &dyn Fn(&dolce_omr_core::source::vector::VObj) -> bool) -> crate::page::PageFrame {
     use dolce_omr_core::image::Binary;
     let (w, h) = (vp.w.max(1), vp.h.max(1));
     let mut bin = Binary::new(w, h);
     for o in vp.objs.iter().filter(|o| o.twin_of.is_none() && keep(o)) {
-        dolce_omr_source::vector::draw_obj(vp, o, 0.0, 0.0, 1.0, w, h, &mut |x, y| bin.data[y * w + x] = 1);
+        dolce_omr_core::source::vector::draw_obj(vp, o, 0.0, 0.0, 1.0, w, h, &mut |x, y| bin.data[y * w + x] = 1);
     }
     let unit = f.unit;
     let ink = crate::frame::ink::InkLayers::new(&bin, &f.staves, &unit);
@@ -228,8 +228,8 @@ fn text_frame(vp: &VecPage, f: &Layout, in_band: &dyn Fn(&dolce_omr_core::image:
     };
     // 整个落在谱线范围内的不画（位图读法本就剔掉贴着谱表的墨块，字不在谱表里）
     let in_staff = |r: &Rect| f.staves.iter().any(|st| r.x >= st.left - st.space() && r.right() <= st.right + st.space() && r.y >= st.ys[0] && r.bottom() <= st.ys[4]);
-    let objs: Vec<(&dolce_omr_source::vector::VObj, Vec<glyphs::GlyphPiece>)> =
-        vp.objs.iter().filter(|o| o.twin_of.is_none() && !in_band(&o.rect) && !in_staff(&o.rect)).map(|o| (o, dolce_omr_source::vector::obj_pieces(o))).collect();
+    let objs: Vec<(&dolce_omr_core::source::vector::VObj, Vec<glyphs::GlyphPiece>)> =
+        vp.objs.iter().filter(|o| o.twin_of.is_none() && !in_band(&o.rect) && !in_staff(&o.rect)).map(|o| (o, dolce_omr_core::source::vector::obj_pieces(o))).collect();
     let body: Vec<&Rect> = objs.iter().flat_map(|(_, ps)| ps.iter().map(|p| &p.rect)).filter(|r| r.h >= sp * TEXT_BODY_H && r.w <= sp * TEXT_BODY_W && off_lines(r)).collect();
     let (qw, qh) = (quantile(&body.iter().map(|r| r.w).collect::<Vec<_>>(), 0.85), quantile(&body.iter().map(|r| r.h).collect::<Vec<_>>(), 0.85));
     let fits = |r: &Rect| body.is_empty() || (r.w <= qw * TEXT_BLOCK && r.h <= qh * TEXT_BLOCK);
@@ -238,7 +238,7 @@ fn text_frame(vp: &VecPage, f: &Layout, in_band: &dyn Fn(&dolce_omr_core::image:
     for (o, ps) in &objs {
         let keep: Vec<&glyphs::GlyphPiece> = ps.iter().filter(|p| fits(&p.rect)).collect();
         if keep.len() == ps.len() {
-            dolce_omr_source::vector::draw_obj(vp, o, 0.0, 0.0, 1.0, w, h, &mut |x, y| bin.data[y * w + x] = 1);
+            dolce_omr_core::source::vector::draw_obj(vp, o, 0.0, 0.0, 1.0, w, h, &mut |x, y| bin.data[y * w + x] = 1);
         } else if o.fill {
             for p in keep {
                 dolce_omr_core::geom::fill_rings(&p.rings, w, h, &mut |x, y| bin.data[y * w + x] = 1);
@@ -262,8 +262,8 @@ const STAFF_ZONE_ABOVE: f64 = 4.5;
 const STAFF_ZONE_BELOW: f64 = 4.0;
 
 /// 识别一页纯矢量页；没有谱表回 None。
-pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&dolce_omr_ocr::surface::Gray>, ocr: Option<&dyn crate::attrs::DigitReader>) -> Option<crate::page::Page> {
-    let vp = VecPage::build(pc, dolce_omr_sheet::prims::VEC_SCALE, (0.0, 0.0));
+pub fn recognize_vector(pc: &dolce_omr_core::source::PageContent, rendered: Option<&dolce_omr_core::ocr::surface::Gray>, ocr: Option<&dyn crate::attrs::DigitReader>) -> Option<crate::page::Page> {
+    let vp = VecPage::build(pc, dolce_omr_core::sheet::prims::VEC_SCALE, (0.0, 0.0));
     let mut f = frame_vector(&vp)?;
     let ink = VecInk::new(&vp, &f.staff_lines);
     // 混排：简谱行（定位、认领、互证同位图；条只画落在带里的对象）
@@ -294,7 +294,7 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
     let lead_frame_of = || lead_frame.get_or_init(|| raster_frame(&vp, &f.layout, &|o| !in_band(&o.rect)));
     let lead = |si: usize| crate::attrs::lead::read_lead(lead_frame_of(), si, ocr);
     let mid_time = |si: usize, a: f64, b: f64| crate::attrs::lead::read_time_between(lead_frame_of(), si, a, b, ocr);
-    let mid_key = |si: usize, c: dolce_omr_sheet::music::Clef, a: f64| crate::attrs::lead::read_key_after(lead_frame_of(), si, c, a);
+    let mid_key = |si: usize, c: dolce_omr_core::sheet::music::Clef, a: f64| crate::attrs::lead::read_key_after(lead_frame_of(), si, c, a);
     let attrs = notes::page_attrs(&f.layout, &syms, Some(&lead), Some(&mid_time), Some(&mid_key));
     let mut notes = notes::page_notes(&f.layout, &ink, &attrs, &syms);
     // 转曲页（文字层里没有正文的字）：连音的「3」也是路径。候选取路径对象的块（外框精确，不与谱线、干粘连），
@@ -339,12 +339,12 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
         full.layout.up = 1.0;
         let gray: Vec<u8> = full.bin.data.iter().map(|&v| if v != 0 { 0 } else { 255 }).collect();
         let (w, h) = (full.bin.w, full.bin.h);
-        let src = dolce_omr_source::raster::SourceImage {
+        let src = dolce_omr_core::source::raster::SourceImage {
             w,
             h,
             gray,
             rgb: Vec::new(),
-            kind: dolce_omr_source::model::ImageKind::Mask,
+            kind: dolce_omr_core::source::model::ImageKind::Mask,
             rect: dolce_omr_core::image::Rect::new(vp.origin.0, vp.origin.1, w as f64 / vp.scale, h as f64 / vp.scale),
             page_w: pc.width,
             page_h: pc.height,
@@ -357,7 +357,7 @@ pub fn recognize_vector(pc: &dolce_omr_source::PageContent, rendered: Option<&do
         text::dynamics(&f.layout, &syms, &mut t.rows);
         t
     } else {
-        let tiles = dolce_omr_source::raster::side_tiles(pc, None);
+        let tiles = dolce_omr_core::source::raster::side_tiles(pc, None);
         let lines = text::text_lines(&vp, ocr, rendered, &tiles, &accs);
         let credits = text::header(&f.layout, &vp, &lines, 1.0);
         let bands = text::bands(&f.layout, lines);

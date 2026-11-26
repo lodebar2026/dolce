@@ -6,7 +6,7 @@
 #[path = "common/mod.rs"]
 mod common;
 use common::*;
-use dolce_omr_sheet::music::Pitch;
+use dolce_omr_core::sheet::music::Pitch;
 use dolce_omr_staff::notes::heads::{seeds, InkSum};
 use dolce_omr_staff::notes::hollow::{hollow_heads_traced, page_holes};
 use dolce_omr_staff::notes::ledgers::ledger_ok;

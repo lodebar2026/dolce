@@ -177,7 +177,7 @@ pub fn run(args: &[String]) -> Result<ExitCode, String> {
 }
 
 /// 逐首识别：各段取那一页的矢量对象裁出那一截（剔页码）当一页，走五线谱 / 混排路线拼整曲，曲名用切分认出的。
-fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Path, ocr: &dolce_omr_ocr::cache::CachedOcr, format: TargetFormat) -> (usize, Vec<(String, String)>) {
+fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Path, ocr: &dolce_omr_core::ocr::cache::CachedOcr, format: TargetFormat) -> (usize, Vec<(String, String)>) {
     let tick = ticker("识别");
     let done = AtomicUsize::new(0);
     let failed = Mutex::new(Vec::new());
@@ -198,7 +198,7 @@ fn recognize_songs(src: &BookSource, plan: &BookPlan, names: &[String], out: &Pa
             }
             let title = Some(plan.songs[k].title.clone()).filter(|t| !t.is_empty());
             let song = assemble(&pages, title);
-            let xml = dolce_omr_todoc::staff::score_to_music_xml(&song.score);
+            let xml = dolce_omr_core::todoc::staff::score_to_music_xml(&song.score);
             let write = |ext: &str, bytes: &[u8]| std::fs::write(out.join(format!("{}{ext}", names[k])), bytes).map_err(|e| e.to_string());
             match write_music_xml_as(format, &xml) {
                 Ok(enc) => write(format.ext(), &enc.bytes),

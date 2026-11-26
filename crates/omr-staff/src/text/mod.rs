@@ -8,8 +8,8 @@ use crate::attrs::DigitReader;
 use crate::notes::RowNotes;
 use crate::page::PageFrame;
 use classify::RowText;
-use dolce_omr_source::raster::SourceImage;
-use dolce_omr_text::header::Credit;
+use dolce_omr_core::source::raster::SourceImage;
+use dolce_omr_core::text::header::Credit;
 
 /// 一页的文字。
 #[derive(Clone, Debug, Default)]
@@ -31,7 +31,7 @@ pub fn page_text(f: &PageFrame, src: &SourceImage, notes: &[RowNotes], ocr: Opti
     let (credits, tempo) = header::page_credits(f, src, ocr);
     // 页眉里的速度记号归首行谱（那行谱上方的带里已认出节拍器的不重复记）
     if let Some(si) = (0..f.staves.len()).min_by(|&a, &b| f.staves[a].ys[0].total_cmp(&f.staves[b].ys[0])) {
-        if !rows[si].marks.iter().any(|m| matches!(m.dir, dolce_omr_sheet::score::Dir::Metronome { .. })) {
+        if !rows[si].marks.iter().any(|m| matches!(m.dir, dolce_omr_core::sheet::score::Dir::Metronome { .. })) {
             rows[si].marks.extend(tempo.into_iter().take(1));
         }
     }

@@ -6,7 +6,7 @@ use crate::source::PageImage;
 use dolce_omr_core::geom::overlap1d;
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::pixel::preprocess::{otsu, sauvola_multi, to_gray};
-use dolce_omr_ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::cache::CachedOcr;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;

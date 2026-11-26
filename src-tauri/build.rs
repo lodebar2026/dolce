@@ -1,4 +1,4 @@
-//! 打包前把 PDFium 动态库拷进 `pdfium/`（tauri.conf.json 的资源目录；不入库）：库由 crates/omr-source 的构建脚本
+//! 打包前把 PDFium 动态库拷进 `pdfium/`（tauri.conf.json 的资源目录；不入库）：库由 crates/omr-core 的构建脚本（pdf 特性）
 //! 找到或下载（固定构建号），经 `links = "pdfium"` 交来 `DEP_PDFIUM_DIR`。
 fn main() {
     if let Ok(dir) = std::env::var("DEP_PDFIUM_DIR") {

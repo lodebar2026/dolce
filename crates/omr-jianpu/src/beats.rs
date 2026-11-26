@@ -3,7 +3,7 @@
 //! 挑一组使它满拍；挑得出唯一的一组就改、记可疑，挑不出的保持原判、记可疑。把握大的元素不为凑满拍而改。
 use crate::notes::RowNotes;
 use crate::result::{Alt, AltKind, Doubt, JpNum, RecognizedScore};
-use dolce_omr_sheet::result::{codes, Locus};
+use dolce_omr_core::sheet::result::{codes, Locus};
 use dolce_omr_core::image::Rect;
 
 /// 一个四分音符的时值单位（容得下四条减时线、两个附点、三连音）。

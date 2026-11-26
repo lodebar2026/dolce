@@ -34,13 +34,10 @@ dolce-layout = { path = "../crates/layout", default-features = false, features =
 dolce-model = { path = "../crates/model" }
 dolce-layout-jianpu = { path = "../crates/dolce-layout-jianpu" }
 bincode = "1.3"
-# OCR 推理走原生 onnxruntime（crates/omr-ocr 的 native 特性；比浏览器 wasm 多线程快 ~3×），会话池在 src/omr.rs。
-# Rust 识别（迁移计划 P12）：识别、会话、取数、OCR 都在 crates/ 工作区
-dolce-omr-core = { path = "../crates/omr-core" }
+# Rust 识别：识别、会话、取数、OCR 都在 crates/ 工作区；OCR 推理走原生 onnxruntime（native 特性；比浏览器 wasm 多线程快 ~3×），会话池在 src/omr.rs。
+# 直接依赖 dolce-omr-core：它的构建脚本（pdf 特性）经 `links` 把 PDFium 动态库目录交给本包构建脚本（打包时拷进资源）
+dolce-omr-core = { path = "../crates/omr-core", features = ["native", "pdf"] }
 dolce-omr-engine = { path = "../crates/omr-engine" }
-dolce-omr-ocr = { path = "../crates/omr-ocr", features = ["native"] }
-# 直接依赖取数层：它的构建脚本经 `links` 把 PDFium 动态库目录交给本包构建脚本（打包时拷进资源）
-dolce-omr-source = { path = "../crates/omr-source" }
 
 # macOS 原生 MIDI 播放：AVFoundation 的 AVMIDIPlayer（系统内置 DLS GM 音源），音色比前端采样器丰满。
 [target.'cfg(target_os = "macos")'.dependencies]

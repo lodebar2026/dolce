@@ -17,7 +17,7 @@ pub mod scan;
 pub mod source;
 pub mod write;
 
-use dolce_omr_ocr::cache::CachedOcr;
+use dolce_omr_core::ocr::cache::CachedOcr;
 use plan::{assign_numbers, book_margins, build_toc, find_region, layout_song, plan_songs, segment_songs, BookRegion, Layout, Margins, SongPlan, Toc};
 use rayon::prelude::*;
 use scan::{prepare, scan_page, PageInfo};

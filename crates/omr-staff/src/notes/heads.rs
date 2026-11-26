@@ -58,7 +58,7 @@ pub struct Head {
     pub acc: Option<i8>,
     /// 识别 id：整曲拼接前按识别产物发（页序 → 系统 → 谱行 → x），之后裁决删改不动别的头的号。
     #[serde(default)]
-    pub rid: Option<dolce_omr_sheet::result::Rid>,
+    pub rid: Option<dolce_omr_core::sheet::result::Rid>,
 }
 
 /// 符号墨（存疑像素不算）的积分图。

@@ -8,9 +8,9 @@ use super::units::{carve_after_line, ink_in, merged, single, split_at, stems, st
 use super::{DigitReader, RowAttrs};
 use crate::page::PageFrame;
 use dolce_omr_core::image::Rect;
-use dolce_omr_ocr::surface::Gray;
-use dolce_omr_sheet::music::{Clef, Key, Time, TimeSymbol};
-use dolce_omr_sheet::Staff;
+use dolce_omr_core::ocr::surface::Gray;
+use dolce_omr_core::sheet::music::{Clef, Key, Time, TimeSymbol};
+use dolce_omr_core::sheet::Staff;
 
 /// 行首区找单元的范围（相对谱行左端，格）。
 const LEAD_FROM: f64 = -0.5;
@@ -248,7 +248,7 @@ pub fn read_clef(f: &PageFrame, s: &Staff, us: &[Unit]) -> Option<ClefHit> {
             }
         }
         // 高音谱号比它该有的宽（宽约为高的 0.38）：右边粘着第一个调号记号，调号从谱号本身的右缘起找
-        if clef.sign == dolce_omr_sheet::music::ClefSign::G && u.rect.w > u.rect.h.min(sp * 7.6) * 0.43 {
+        if clef.sign == dolce_omr_core::sheet::music::ClefSign::G && u.rect.w > u.rect.h.min(sp * 7.6) * 0.43 {
             right = u.rect.x + u.rect.h.min(sp * 7.6) * 0.38;
         }
         return Some(ClefHit { clef, sure, rect: u.rect, right, used });

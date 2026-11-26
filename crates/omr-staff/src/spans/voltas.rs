@@ -2,7 +2,7 @@
 use super::Piece;
 use crate::attrs::RowAttrs;
 use crate::page::Layout;
-use dolce_omr_sheet::element::{Probe, BG};
+use dolce_omr_core::sheet::element::{Probe, BG};
 
 /// 横线宽度下限（相对线距）、离两端连线最远不过、墨厚上限、两端相对谱表的高差上限（音级位置）。
 const MIN_W: f64 = 5.0;

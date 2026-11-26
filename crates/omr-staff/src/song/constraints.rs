@@ -10,8 +10,8 @@ use super::*;
 use crate::notes::heads::{Head, HeadKind};
 use crate::notes::stems::Stem;
 use crate::notes::Chord;
-use dolce_omr_sheet::music::Time;
-use dolce_omr_sheet::score::NoteType;
+use dolce_omr_core::sheet::music::Time;
+use dolce_omr_core::sheet::score::NoteType;
 use serde::{Deserialize, Serialize};
 
 /// 钉住的事实。
@@ -92,8 +92,8 @@ pub(super) fn apply_adds(notes: &mut [Vec<RowNotes>], adds: &[Added]) {
 }
 
 /// 改的字：歌词字、文字指示按识别 id 换文字。
-pub(super) fn apply_texts(score: &mut dolce_omr_sheet::score::Score, texts: &[(Rid, String)]) {
-    use dolce_omr_sheet::score::Dir;
+pub(super) fn apply_texts(score: &mut dolce_omr_core::sheet::score::Score, texts: &[(Rid, String)]) {
+    use dolce_omr_core::sheet::score::Dir;
     if texts.is_empty() {
         return;
     }
