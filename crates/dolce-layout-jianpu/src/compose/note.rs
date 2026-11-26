@@ -13,7 +13,7 @@ use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{high_dot_y, low_dot_y};
 use dolce_model::base::geom::Rect;
 use dolce_model::Accidental;
-use dolce_scene::{Identity, IdentityKind, Node, Role};
+use dolce_engrave::scene::{Identity, IdentityKind, Node, Role};
 use dolce_model::view::ast::{NoteElement, Ornament, Sound};
 
 use super::ctx::{digit_item, digit_origin, dot, eid, font, ident, octave_dot, rect, stroke, text, Ctx, ItemsKey};

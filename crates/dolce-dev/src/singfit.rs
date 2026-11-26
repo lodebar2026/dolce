@@ -18,13 +18,13 @@ pub fn sing_fit(args: &[String]) -> i32 {
     let text = std::fs::read_to_string(score).unwrap_or_else(|e| panic!("读不了 {score}：{e}"));
     let redist = std::path::PathBuf::from(args.iter().find_map(|a| a.strip_prefix("--redist=")).unwrap_or("public/redist"));
     let mut doc = parse_123(&text);
-    let backend = dolce_text::native::webview_measure(redist.exists().then_some(redist.as_path()), &[]);
-    let mc = dolce_text::MeasureCtx::new(&backend);
+    let backend = dolce_engrave::text::native::webview_measure(redist.exists().then_some(redist.as_path()), &[]);
+    let mc = dolce_engrave::text::MeasureCtx::new(&backend);
     let env = dolce_engrave::Env { mc: &mc, meta: None };
     let style = args.iter().find_map(|a| a.strip_prefix("--ss=")).map(|f| {
-        let rules = dolce_style::ss::parse_ss(&std::fs::read_to_string(f).unwrap_or_else(|e| panic!("读不了 {f}：{e}"))).unwrap_or_else(|e| panic!("{f}：{e:?}"));
-        let ctx = dolce_style::cascade::ctx(&[("mode", serde_json::Value::String("expanded".into())), ("engine", serde_json::Value::String("jianpu".into()))]);
-        dolce_style::themes::compute_style_for_paper(&[dolce_style::themes::theme(dolce_style::themes::ThemeId::Projection), &rules], &ctx).0
+        let rules = dolce_engrave::style::ss::parse_ss(&std::fs::read_to_string(f).unwrap_or_else(|e| panic!("读不了 {f}：{e}"))).unwrap_or_else(|e| panic!("{f}：{e:?}"));
+        let ctx = dolce_engrave::style::cascade::ctx(&[("mode", serde_json::Value::String("expanded".into())), ("engine", serde_json::Value::String("jianpu".into()))]);
+        dolce_engrave::style::themes::compute_style_for_paper(&[dolce_engrave::style::themes::theme(dolce_engrave::style::themes::ThemeId::Projection), &rules], &ctx).0
     });
     let req = projection_request(style);
     if args.iter().any(|a| a == "--phrase") {

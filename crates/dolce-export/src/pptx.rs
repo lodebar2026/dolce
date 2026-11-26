@@ -14,8 +14,8 @@
 use std::collections::HashMap;
 use std::io::Write;
 
-use dolce_scene::{Node, Page, PathOp, PathSeg, Role, Shape};
-use dolce_text::Font;
+use dolce_engrave::scene::{Node, Page, PathOp, PathSeg, Role, Shape};
+use dolce_engrave::text::Font;
 use serde::Deserialize;
 
 use crate::fonts::Face;

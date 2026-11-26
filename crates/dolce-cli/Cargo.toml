@@ -16,6 +16,7 @@ name = "dolce"
 path = "src/main.rs"
 
 [dependencies]
+dolce-engrave = { workspace = true, features = ["native"] }
 dolce-omr-book = { workspace = true }
 dolce-omr-core = { workspace = true }
 dolce-omr-engine = { workspace = true, features = ["parallel"] }
@@ -27,11 +28,7 @@ dolce-omr-staff = { workspace = true }
 dolce-omr-todoc = { workspace = true }
 dolce-export = { workspace = true, features = ["system", "book"] }
 dolce-model = { workspace = true }
-dolce-scene = { workspace = true }
-dolce-style = { workspace = true }
 dolce-session = { workspace = true }
-dolce-engrave = { workspace = true }
-dolce-text = { workspace = true, features = ["native"] }
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { workspace = true }

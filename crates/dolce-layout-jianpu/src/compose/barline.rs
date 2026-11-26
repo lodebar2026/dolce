@@ -1,7 +1,7 @@
 //! 小节线（含反复点、跳转记号）的绘制（照 `compose/barline.ts`）。
 
 use dolce_engrave::barline::{BarlineGlyph, BarlineStyle};
-use dolce_scene::Node;
+use dolce_engrave::scene::Node;
 use dolce_model::view::ast::{BarlineType, MusicElement};
 
 use super::ctx::{font, Ctx, ItemsKey};

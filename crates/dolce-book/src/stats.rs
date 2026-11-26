@@ -1,15 +1,15 @@
 //! 从原书的版面规格统计出 BookStyle（照 `src/pdflayout/stats.ts`）。
 //!
 //! 统计的是中位数（原件排好付印，抖动来自轮廓量测）；角色判定用 PageSpec 的具名字段位置。
-//! BookStyle 用 `serde_json::Value` 承载（同 `dolce_style::bookstyle`），BookProfile 只读用到的几项。
+//! BookStyle 用 `serde_json::Value` 承载（同 `dolce_engrave::style::bookstyle`），BookProfile 只读用到的几项。
 //! 判据阈值照搬 TS，量法说明与病例在 TS 原文注释里。
 
 use crate::measure::BookMeasure;
 use crate::meta::{fixed, jsre, max_of, min_of, or, u16len};
 use crate::spec::{MarkSpec, PageSpec, SChar, SRect, TextRun};
 use dolce_model::base::js;
-use dolce_style::bookstyle::{default_book_style, ink_sample_of, role_font_defaults};
-use dolce_style::sheet::STYLE_ROLES;
+use dolce_engrave::style::bookstyle::{default_book_style, ink_sample_of, role_font_defaults};
+use dolce_engrave::style::sheet::STYLE_ROLES;
 use indexmap::IndexMap;
 use regex::Regex;
 use serde::{Deserialize, Serialize};

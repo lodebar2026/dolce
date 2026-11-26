@@ -16,7 +16,7 @@ use dolce_model::base::js;
 use dolce_engrave::syllable::latin_word_break;
 use dolce_model::doc::{Oid, Placement};
 use dolce_model::xmlsurface::Position;
-use dolce_text::Font;
+use dolce_engrave::text::Font;
 
 use crate::model::*;
 

@@ -13,8 +13,8 @@ use dolce_engrave::Env;
 use dolce_model::base::geom::Rect;
 use dolce_model::doc::ScoreDoc;
 use dolce_session::layout::{self, JianpuRequest, Laid, StaffRequest};
-use dolce_scene::smufl::MetaData;
-use dolce_text::{FontMetrics, FontStyle, MeasureCtx, Positions, TextMeasurer, TextMetrics, Weight};
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::text::{FontMetrics, FontStyle, MeasureCtx, Positions, TextMeasurer, TextMetrics, Weight};
 use wasm_bindgen::prelude::*;
 
 use crate::model::{parse, to_json, with_surface};
@@ -118,7 +118,7 @@ impl Layout {
     pub fn svg(&self, i: u32) -> String {
         self.0.svg(i as usize).unwrap_or_default()
     }
-    /// 第 `i` 页的身份表 JSON（`dolce_scene::index::Hit` 数组）。
+    /// 第 `i` 页的身份表 JSON（`dolce_engrave::scene::index::Hit` 数组）。
     pub fn hits(&self, i: u32) -> String {
         to_json(&self.0.hits(i as usize).unwrap_or_default())
     }

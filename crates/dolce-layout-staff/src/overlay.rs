@@ -16,9 +16,9 @@ use dolce_engrave::spacing::{AccidentalSide, AccidentalStyleKind};
 use dolce_engrave::stack::{beam_y, high_dot_y, low_dot_y, stack_bottom};
 use dolce_engrave::timesig::{TimeSigGlyph, TimeSigStyle};
 use dolce_model::base::geom::Matrix33;
-use dolce_scene::build::Env;
-use dolce_scene::Node;
-use dolce_text::Font;
+use dolce_engrave::scene::build::Env;
+use dolce_engrave::scene::Node;
+use dolce_engrave::text::Font;
 
 use crate::jprow::{grace_row, main_row, melody_note};
 use crate::model::{ChordId, MeasId, NoteId, PmId, PsRef, StaffLayout, SysId};

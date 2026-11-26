@@ -18,7 +18,7 @@ use dolce_model::play::phraseinput::PhrasePart;
 use crate::parts::{self, AnnotationOptions, FrontPageSpec, IndexItem, KeyMeterSpec, PageFrameOptions, TocItem};
 use crate::scenedraw;
 use crate::template::{BookRegionEnv, KeyMeterComponent};
-use dolce_style::template::{FieldExtra, FieldValue, RegionEnv};
+use dolce_engrave::style::template::{FieldExtra, FieldValue, RegionEnv};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -243,7 +243,7 @@ impl Ctx<'_> {
     }
 
     /// 排好的页 → DrawPage[]（`drawPages`：首页给标题块让位的整页平移，不许推进页脚）
-    fn draw_pages(&self, list: &[dolce_scene::Node], id: &str, title: &str, delta: f64) -> Vec<DrawPage> {
+    fn draw_pages(&self, list: &[dolce_engrave::scene::Node], id: &str, title: &str, delta: f64) -> Vec<DrawPage> {
         let mut out: Vec<DrawPage> = Vec::new();
         let (w, h) = (self.page_w(), self.page_h());
         for g in list {
@@ -286,7 +286,7 @@ impl Ctx<'_> {
     fn render_song(&self, s: &SongIn, section_rows: &[(String, f64)], delta: f64, compact: bool) -> Result<SongRes, String> {
         let st = self.st;
         let mut natural_h = 0.0;
-        let render_pages = |score: &ScoreDoc, natural_h: &mut f64| -> Result<Vec<dolce_scene::Node>, String> {
+        let render_pages = |score: &ScoreDoc, natural_h: &mut f64| -> Result<Vec<dolce_engrave::scene::Node>, String> {
             let (mut pages, mut nh) = a_layout(score, st, self.page_h() - delta, false, self.env)?;
             *natural_h = nh;
             if compact {
@@ -1024,26 +1024,26 @@ fn region_items(sheet: &Value, name: &str, row: Option<usize>, env: &dyn RegionE
     let Some(rv) = sheet.get("template").and_then(|t| t.get("regions")).and_then(|r| r.get(name)) else {
         panic!("样式表里没有 @template {name}")
     };
-    let mut region: dolce_style::ss::Region = serde_json::from_value(rv.clone()).expect("模板区域");
+    let mut region: dolce_engrave::style::ss::Region = serde_json::from_value(rv.clone()).expect("模板区域");
     if let Some(r) = row {
         region.rows = vec![region.rows[r].clone()];
     }
-    let res = dolce_style::template::layout_region(Some(&region), env).unwrap_or_else(|e| panic!("模板 {name} 排不出：{}", e.message));
+    let res = dolce_engrave::style::template::layout_region(Some(&region), env).unwrap_or_else(|e| panic!("模板 {name} 排不出：{}", e.message));
     crate::template::placed_to_draw_items(&res.items).expect("模板图元")
 }
 
 /// 成书样式：歌本样式表（实测部分 + 模板与手调）按序叠，id 取最后一份的文件名。返回（层叠后的表, BookStyle）
-pub fn book_style_files(files: &[StyleFile]) -> Result<(dolce_style::sheet::StyleSheet, Value), String> {
+pub fn book_style_files(files: &[StyleFile]) -> Result<(dolce_engrave::style::sheet::StyleSheet, Value), String> {
     let mut rules = vec![];
     for f in files {
-        rules.extend(dolce_style::ss::parse_ss(&f.text).map_err(|e| format!("{}：{}", f.name, e.message))?);
+        rules.extend(dolce_engrave::style::ss::parse_ss(&f.text).map_err(|e| format!("{}：{}", f.name, e.message))?);
     }
-    let mut ctx = dolce_style::cascade::StyleContext::new();
+    let mut ctx = dolce_engrave::style::cascade::StyleContext::new();
     ctx.insert("engine".into(), json!("book"));
-    let sheet = dolce_style::cascade::compute_style(&[&rules], &ctx);
+    let sheet = dolce_engrave::style::cascade::compute_style(&[&rules], &ctx);
     let last = files.last().map_or("", |f| f.name.as_str());
     let id = last.rsplit('/').next().unwrap_or(last).trim_end_matches(".ss");
-    let st = dolce_style::bookss::book_style_of(&sheet, id).map_err(|e| e.to_string())?;
+    let st = dolce_engrave::style::bookss::book_style_of(&sheet, id).map_err(|e| e.to_string())?;
     Ok((sheet, st))
 }
 
@@ -1055,7 +1055,7 @@ pub fn rebuild(input: &RebuildInput, env: &Env, bm: &dyn BookMeasure) -> Result<
     let mut log = vec![];
 
     // 注解正文的行距比例
-    let story_ink = bm.ink_ratio("story", dolce_style::bookstyle::ink_sample_of("story"));
+    let story_ink = bm.ink_ratio("story", dolce_engrave::style::bookstyle::ink_sample_of("story"));
     let ann_gap_ratio = {
         let mut rs: Vec<f64> = vec![];
         for a in &input.meta.annotation {
@@ -1292,7 +1292,7 @@ fn strip_verse_no(t: &str) -> String {
 fn a_book_doc(xml: &str) -> Result<ScoreDoc, String> {
     scenedraw::book_doc_of(xml)
 }
-fn a_layout(doc: &ScoreDoc, st: &Value, page_h: f64, measure: bool, env: &Env) -> Result<(Vec<dolce_scene::Node>, f64), String> {
+fn a_layout(doc: &ScoreDoc, st: &Value, page_h: f64, measure: bool, env: &Env) -> Result<(Vec<dolce_engrave::scene::Node>, f64), String> {
     let r = scenedraw::layout_book_doc(doc, st, page_h, measure, env)?;
     Ok((r.layout.pages, r.natural_h))
 }
@@ -1304,7 +1304,7 @@ fn a_cells(mut doc: ScoreDoc, st: &Value, env: &Env) -> Result<f64, String> {
     scenedraw::book_cells_per_line(&mut doc, st, env)
 }
 #[allow(clippy::too_many_arguments)]
-fn a_to_draw(root: Option<&dolce_scene::Node>, w: f64, h: f64, _st: &Value, page_no: i64, meta: PageMeta, dy: f64, env: &Env) -> DrawPage {
+fn a_to_draw(root: Option<&dolce_engrave::scene::Node>, w: f64, h: f64, _st: &Value, page_no: i64, meta: PageMeta, dy: f64, env: &Env) -> DrawPage {
     let o = scenedraw::ToDrawOptions { role_of: scenedraw::RoleOf::Book, page_no, meta, scale: None, offset: Some((0.0, dy)) };
     scenedraw::page_items_to_draw_page(root, w, h, o, env).unwrap_or_else(|e| panic!("页面树转 DrawList：{e:?}"))
 }

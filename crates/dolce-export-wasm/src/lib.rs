@@ -86,7 +86,7 @@ impl PdfFonts {
         let v: serde_json::Value = serde_json::from_str(pages_json).map_err(|e| JsError::new(&format!("页 JSON：{e}")))?;
         let mut pages = Vec::new();
         for p in v.as_array().ok_or_else(|| JsError::new("页 JSON 要是数组"))? {
-            let scene: dolce_scene::Page = serde_json::from_value(p["scene"].clone()).map_err(|e| JsError::new(&format!("场景：{e}")))?;
+            let scene: dolce_engrave::scene::Page = serde_json::from_value(p["scene"].clone()).map_err(|e| JsError::new(&format!("场景：{e}")))?;
             pages.push(dolce_export::scene::ScenePage { scene, w_pt: p["w"].as_f64().unwrap_or(0.0), h_pt: p["h"].as_f64().unwrap_or(0.0) });
         }
         let info = dolce_export::pdf::DocInfo { title: (!title.is_empty()).then(|| title.to_string()), outline: Vec::new() };

@@ -1,9 +1,9 @@
 # Rust 工作区：识别（omr-*，职责见 docs/模块/识别-Rust.md）与模型 / 格式 / 排版（dolce-*，迁移中）。
 [workspace]
 resolver = "2"
-members = ["dolce-book", "dolce-cli", "dolce-dev", "dolce-engrave", "dolce-export", "dolce-export-wasm", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-scene", "dolce-session", "dolce-style", "dolce-text", "dolce-wasm", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc", "omr-wasm"]
+members = ["dolce-book", "dolce-cli", "dolce-dev", "engrave", "dolce-export", "dolce-export-wasm", "dolce-jcx-wasm", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-session", "dolce-wasm", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc", "omr-wasm"]
 # omr-wasm、dolce-wasm、dolce-jcx-wasm、dolce-export-wasm 只编 wasm32（scripts/build-wasm.mjs）；原生的 `cargo test` / `cargo build` 不带它
-default-members = ["dolce-book", "dolce-cli", "dolce-dev", "dolce-engrave", "dolce-export", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-scene", "dolce-session", "dolce-style", "dolce-text", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc"]
+default-members = ["dolce-book", "dolce-cli", "dolce-dev", "engrave", "dolce-export", "dolce-layout-jianpu", "dolce-layout-staff", "model", "dolce-session", "omr-book", "omr-core", "omr-engine", "omr-jianpu", "omr-ocr", "omr-sheet", "omr-source", "omr-staff", "omr-text", "omr-todoc"]
 
 [workspace.package]
 version = "0.8.9"
@@ -21,15 +21,12 @@ sha2 = "0.10"
 ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 # 工作区内部可发布 crate（版本号与 [workspace.package].version 同步）
 dolce-book = { version = "0.8.9", path = "dolce-book" }
-dolce-engrave = { version = "0.8.9", path = "dolce-engrave" }
+dolce-engrave = { version = "0.8.9", path = "engrave" }
 dolce-export = { version = "0.8.9", path = "dolce-export", default-features = false }
 dolce-layout-jianpu = { version = "0.8.9", path = "dolce-layout-jianpu" }
 dolce-layout-staff = { version = "0.8.9", path = "dolce-layout-staff" }
 dolce-model = { version = "0.8.9", path = "model" }
-dolce-scene = { version = "0.8.9", path = "dolce-scene" }
 dolce-session = { version = "0.8.9", path = "dolce-session" }
-dolce-style = { version = "0.8.9", path = "dolce-style" }
-dolce-text = { version = "0.8.9", path = "dolce-text" }
 dolce-omr-book = { version = "0.8.9", path = "omr-book" }
 dolce-omr-core = { version = "0.8.9", path = "omr-core" }
 dolce-omr-engine = { version = "0.8.9", path = "omr-engine", default-features = false }

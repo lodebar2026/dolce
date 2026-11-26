@@ -545,9 +545,6 @@ dependencies = [
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
  "indexmap",
  "regex",
  "serde",
@@ -570,10 +567,7 @@ dependencies = [
  "dolce-omr-source",
  "dolce-omr-staff",
  "dolce-omr-todoc",
- "dolce-scene",
  "dolce-session",
- "dolce-style",
- "dolce-text",
  "flate2",
  "image",
  "rayon",
@@ -593,10 +587,7 @@ dependencies = [
  "dolce-layout-staff",
  "dolce-model",
  "dolce-omr-source",
- "dolce-scene",
  "dolce-session",
- "dolce-style",
- "dolce-text",
  "half",
  "indexmap",
  "prost",
@@ -612,11 +603,19 @@ name = "dolce-engrave"
 version = "0.8.9"
 dependencies = [
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
+ "fontdb",
+ "indexmap",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-text",
+ "rustybuzz",
  "serde",
  "serde_json",
+ "ttf-parser",
+ "windows",
+ "windows-core",
+ "windows-numerics",
+ "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
@@ -625,9 +624,8 @@ version = "0.8.9"
 dependencies = [
  "crc32fast",
  "dolce-book",
+ "dolce-engrave",
  "dolce-model",
- "dolce-scene",
- "dolce-text",
  "flate2",
  "krilla",
  "serde",
@@ -639,9 +637,8 @@ name = "dolce-export-wasm"
 version = "0.8.9"
 dependencies = [
  "console_error_panic_hook",
+ "dolce-engrave",
  "dolce-export",
- "dolce-scene",
- "dolce-text",
  "serde_json",
  "wasm-bindgen",
 ]
@@ -661,9 +658,6 @@ version = "0.8.9"
 dependencies = [
  "dolce-engrave",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
  "regex",
  "serde",
  "serde_json",
@@ -675,9 +669,6 @@ version = "0.8.9"
 dependencies = [
  "dolce-engrave",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
  "serde",
  "serde_json",
 ]
@@ -837,16 +828,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-scene"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "dolce-text",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-session"
 version = "0.8.9"
 dependencies = [
@@ -854,40 +835,8 @@ dependencies = [
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dolce-style"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "dolce-text",
- "indexmap",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dolce-text"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "fontdb",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-core-text",
- "rustybuzz",
- "serde",
- "serde_json",
- "ttf-parser",
- "windows",
- "windows-core",
- "windows-numerics",
- "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
@@ -901,9 +850,7 @@ dependencies = [
  "dolce-model",
  "dolce-omr-sheet",
  "dolce-omr-todoc",
- "dolce-scene",
  "dolce-session",
- "dolce-text",
  "js-sys",
  "serde",
  "serde_json",

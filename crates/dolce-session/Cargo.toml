@@ -12,11 +12,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+dolce-engrave = { workspace = true }
 serde.workspace = true
 dolce-model = { workspace = true }
-dolce-scene = { workspace = true }
-dolce-style = { workspace = true }
-dolce-engrave = { workspace = true }
 dolce-layout-jianpu = { workspace = true }
 dolce-layout-staff = { workspace = true }
 serde_json = { version = "1", features = ["float_roundtrip"] }

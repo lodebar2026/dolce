@@ -33,25 +33,25 @@ use dolce_omr_source::pdf::PdfDoc;
 use dolce_omr_todoc::reflyrics::decode_lyrics_bytes;
 use dolce_model::play::midi::to_midi;
 use dolce_model::play::timeline::PlayOptions;
-use dolce_scene::smufl::MetaData;
-use dolce_scene::svg::page_svg;
-use dolce_scene::{Node, Page, Shape};
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::scene::svg::page_svg;
+use dolce_engrave::scene::{Node, Page, Shape};
 use dolce_session::layout::{
     engraved_music_xml, layout_jianpu_doc, layout_staff_doc, EngraveRequest, JianpuRequest, Laid, StaffRequest,
 };
-use dolce_style::cascade::{ctx, StyleRule};
-use dolce_style::paper::{doc_page_layer, song_page_decl};
-use dolce_style::staff::StaffPage;
-use dolce_style::themes::{
+use dolce_engrave::style::cascade::{ctx, StyleRule};
+use dolce_engrave::style::paper::{doc_page_layer, song_page_decl};
+use dolce_engrave::style::staff::StaffPage;
+use dolce_engrave::style::themes::{
     compute_style_for_paper, paper_size, staff_long_image_width, theme, ThemeId, LONG_IMAGE, PAGE_RATIOS,
     PAPER_WHITE, STAFF_PAPER_DEFAULT,
 };
-use dolce_text::native::NativeText;
-use dolce_text::{BrowserCompat, Font, FontStyle, MeasureCtx, Weight};
+use dolce_engrave::text::native::NativeText;
+use dolce_engrave::text::{BrowserCompat, Font, FontStyle, MeasureCtx, Weight};
 use dolce_model::view::playsong::{play_source_of, PlaySongOptions};
 use serde_json::{json, Value};
 
-use dolce_text::assets::{BRAVURA_METADATA as BRAVURA_META, BRAVURA_OTF};
+use dolce_engrave::text::assets::{BRAVURA_METADATA as BRAVURA_META, BRAVURA_OTF};
 
 pub fn usage() -> String {
     let text_list = OUT_FORMATS
@@ -604,7 +604,7 @@ struct RenderResources {
 impl RenderResources {
     fn new() -> Self {
         let redist = find_redist_dir();
-        let backend = Box::new(dolce_text::native::webview_measure(redist.as_deref(), &[]));
+        let backend = Box::new(dolce_engrave::text::native::webview_measure(redist.as_deref(), &[]));
         let meta = MetaData::from_json(BRAVURA_META).expect("内嵌 bravura_metadata.json 应合法");
         Self { backend, meta, font_book: None, bravura_face: None }
     }
@@ -649,14 +649,14 @@ fn normalize_paper_name(raw: &str) -> Result<String, String> {
     }
     // 标准纸名不区分大小写，并兼容 x / ×
     let canonical = t.replace(['x', 'X'], "×");
-    for name in dolce_style::themes::paper_names() {
+    for name in dolce_engrave::style::themes::paper_names() {
         if name.eq_ignore_ascii_case(&canonical) {
             return Ok(name.to_string());
         }
     }
     Err(format!(
         "不认识的纸张 {raw}，可选：{} / 16:9 / 4:3 / long",
-        dolce_style::themes::paper_names().join(" / ")
+        dolce_engrave::style::themes::paper_names().join(" / ")
     ))
 }
 

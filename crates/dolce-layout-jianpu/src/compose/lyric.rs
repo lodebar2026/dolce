@@ -1,9 +1,9 @@
 //! 歌词：音节、标点挤压、歌词联合括号与注记（照 `compose/lyric.ts`）。
 
 use dolce_engrave::syllable::lyric;
-use dolce_scene::{Identity, IdentityKind, Node};
-use dolce_text::syllable::syllable_run;
-use dolce_text::CompressMode;
+use dolce_engrave::scene::{Identity, IdentityKind, Node};
+use dolce_engrave::text::syllable::syllable_run;
+use dolce_engrave::text::CompressMode;
 use dolce_model::view::ast::LyricLine;
 
 use super::brace::{brace_item, BraceKind};

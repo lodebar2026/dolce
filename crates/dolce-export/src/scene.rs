@@ -1,4 +1,4 @@
-//! 场景（`dolce_scene::Page`）→ PDF：编辑器「导出 PDF」那一路。语义与 SVG 出口（`dolce_scene::svg`）同口径：
+//! 场景（`dolce_engrave::scene::Page`）→ PDF：编辑器「导出 PDF」那一路。语义与 SVG 出口（`dolce_engrave::scene::svg`）同口径：
 //! 两种方言的颜色规则（混排里线与字一律黑）、`invisible` 跳过、SMuFL 字在简谱方言里一律 Bravura。
 //!
 //! 文字：
@@ -8,7 +8,7 @@
 //!   两端对齐排版位置（[`crate::pdf::Report::reconciled`] 计数）。
 //! - 选字：族串（同量字展开）里第一个有这个字的面，再试平台的末位回退；都没有记缺字。
 
-use dolce_scene::{Dialect, Node, Page, Role, Shape, TextShape};
+use dolce_engrave::scene::{Dialect, Node, Page, Role, Shape, TextShape};
 
 use crate::fonts::{FaceRef, FontBook, PdfFace};
 use crate::pdf::{argb, Affine, Canvas, DocInfo, GlyphRun, PageSource, PlacedGlyph, Report, Seg};
@@ -70,10 +70,10 @@ impl Walker<'_> {
                     .iter()
                     .map(|s| {
                         let op = match s.op {
-                            dolce_scene::PathOp::M => 'M',
-                            dolce_scene::PathOp::L => 'L',
-                            dolce_scene::PathOp::C => 'C',
-                            dolce_scene::PathOp::Z => 'Z',
+                            dolce_engrave::scene::PathOp::M => 'M',
+                            dolce_engrave::scene::PathOp::L => 'L',
+                            dolce_engrave::scene::PathOp::C => 'C',
+                            dolce_engrave::scene::PathOp::Z => 'Z',
                         };
                         (op, s.pts.clone())
                     })
@@ -123,7 +123,7 @@ impl Walker<'_> {
         let (bold, italic, size) = (t.font.bold, t.font.italic, t.font.size);
         let chain = self.book.chain(family, bold, italic);
         let per_char = matches!(&t.char_xs, Some(xs) if xs.len() > 1);
-        let text: String = if per_char { t.text.clone() } else { dolce_text::svg_collapsed_text(&t.text) };
+        let text: String = if per_char { t.text.clone() } else { dolce_engrave::text::svg_collapsed_text(&t.text) };
         // 逐字定字体面
         let mut picks: Vec<(usize, char, Option<FaceRef>)> = Vec::new();
         for (bi, ch) in text.char_indices() {
@@ -157,12 +157,12 @@ impl Walker<'_> {
             }
         } else {
             // 浏览器缺省的相邻全角标点挤压（量字时 `BrowserCompat` 挤过，排版宽里已扣掉）：照同一判法逐字左挪
-            let cps = dolce_text::cjkpunct::code_points(&text);
+            let cps = dolce_engrave::text::cjkpunct::code_points(&text);
             let face_of = |c: &str| picks.iter().find(|(bi, _, _)| text[*bi..].starts_with(c)).and_then(|(_, _, f)| f.clone());
             let adv1 = |f: &FaceRef, c: &str, feats: &[&str]| f.face.shaped_width(c, feats);
-            let shifts = dolce_text::han_kern_shifts(
+            let shifts = dolce_engrave::text::han_kern_shifts(
                 &cps,
-                |c| dolce_text::cjkpunct::punct_class(c) != dolce_text::cjkpunct::PunctClass::None && face_of(c).is_some_and(|f| (adv1(&f, c, &[]) - 1.0).abs() <= 0.02),
+                |c| dolce_engrave::text::cjkpunct::punct_class(c) != dolce_engrave::text::cjkpunct::PunctClass::None && face_of(c).is_some_and(|f| (adv1(&f, c, &[]) - 1.0).abs() <= 0.02),
                 |c| face_of(c).map_or(0.0, |f| (adv1(&f, c, &[]) - adv1(&f, c, &["halt"])).max(0.0) * size),
             );
             let char_at: std::collections::HashMap<usize, usize> = picks.iter().enumerate().map(|(k, (bi, _, _))| (*bi, k)).collect();

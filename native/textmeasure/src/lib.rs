@@ -2,7 +2,7 @@
 //! 浏览器口径层在 `crates/dolce-text`（`BrowserCompat`），Rust 排版与这里用同一份。只编 macOS / Windows。
 //!
 //! 两组接口：
-//! - `compat*`：排版用的量字（`dolce_text::native::node_measure`，Chromium 口径：CSS 族串展开、单字宽取 1/64、全角标点挤压、f32），
+//! - `compat*`：排版用的量字（`dolce_engrave::text::native::node_measure`，Chromium 口径：CSS 族串展开、单字宽取 1/64、全角标点挤压、f32），
 //!   TS 侧 `src/cli/textmeasure.node.ts` 只是把它接成 `MeasureBackend`（Node 里的 dolce-wasm 回调它）；
 //! - 其余：系统文字引擎原样（具体族名列表、不套口径），冒烟测试与排查用。
 //!
@@ -11,8 +11,8 @@
 #[macro_use]
 extern crate napi_derive;
 
-use dolce_text::{BrowserCompat, FontStyle, SystemText, TextMeasurer, Weight};
-use dolce_text::native::NativeText;
+use dolce_engrave::text::{BrowserCompat, FontStyle, SystemText, TextMeasurer, Weight};
+use dolce_engrave::text::native::NativeText;
 use std::cell::RefCell;
 
 thread_local! {
@@ -23,7 +23,7 @@ thread_local! {
 fn with_compat<R>(f: impl FnOnce(&BrowserCompat<NativeText>) -> R) -> R {
     COMPAT.with(|c| {
         let mut c = c.borrow_mut();
-        let b = c.get_or_insert_with(|| dolce_text::native::node_measure(None, &[]));
+        let b = c.get_or_insert_with(|| dolce_engrave::text::native::node_measure(None, &[]));
         f(b)
     })
 }
@@ -48,7 +48,7 @@ const fn style(italic: bool) -> FontStyle {
 #[napi]
 pub fn compat_init(redist: String, files: Vec<Vec<String>>) {
     let files: Vec<(String, String)> = files.into_iter().filter_map(|f| Some((f.first()?.clone(), f.get(1)?.clone()))).collect();
-    let b = dolce_text::native::node_measure(Some(std::path::Path::new(&redist)), &files);
+    let b = dolce_engrave::text::native::node_measure(Some(std::path::Path::new(&redist)), &files);
     COMPAT.with(|c| *c.borrow_mut() = Some(b));
 }
 

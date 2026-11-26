@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use dolce_book::draw::{DrawItem, DrawPage, DrawText};
 use dolce_book::measure::BookMeasure;
-use dolce_text::cjkpunct::{code_points, compress_run, CompressMode, SlackLR};
+use dolce_engrave::text::cjkpunct::{code_points, compress_run, CompressMode, SlackLR};
 use serde_json::Value;
 
 use crate::fonts::{Face, FaceRef, FontBook, Ink, PdfFace};

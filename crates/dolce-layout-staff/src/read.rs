@@ -28,9 +28,9 @@ use dolce_model::jianpu::{melody_chords, top_note};
 use dolce_model::metakeys::get_meta;
 use dolce_model::multirest::compress_multi_rests;
 use dolce_model::xmlsurface::{Position, Surface};
-use dolce_scene::smufl::MetaData;
-use dolce_style::staff::MixedOptions;
-use dolce_text::{CompressMode, Font, MeasureCtx};
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::style::staff::MixedOptions;
+use dolce_engrave::text::{CompressMode, Font, MeasureCtx};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 

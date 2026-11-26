@@ -18,10 +18,10 @@ use dolce_engrave::spacing::AccidentalSide;
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
 use dolce_model::base::geom::{Matrix33, Point};
 use dolce_model::doc::BarStyle;
-use dolce_scene::build::Env;
-use dolce_scene::{Edge, ElementId, Identity, IdentityKind, Node};
-use dolce_text::cjkpunct::{punct_class, PunctClass};
-use dolce_text::{CompressMode, Font};
+use dolce_engrave::scene::build::Env;
+use dolce_engrave::scene::{Edge, ElementId, Identity, IdentityKind, Node};
+use dolce_engrave::text::cjkpunct::{punct_class, PunctClass};
+use dolce_engrave::text::{CompressMode, Font};
 use serde_json::{Map, Value};
 
 use crate::model::{

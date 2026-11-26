@@ -4,7 +4,7 @@
 use crate::draw::{DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta, PageSong};
 use crate::spec::{PageSpec, SChar, SRect, TextRun};
 use dolce_model::base::js;
-use dolce_style::bookstyle::role_of;
+use dolce_engrave::style::bookstyle::role_of;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

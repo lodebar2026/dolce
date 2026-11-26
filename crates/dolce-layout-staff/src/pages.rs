@@ -21,8 +21,8 @@ use dolce_engrave::upperband::{stack_upper_band, BandItem};
 use dolce_model::base::geom::Matrix33;
 use dolce_model::doc::Placement;
 use dolce_model::pagemeta::header_role_of_credit;
-use dolce_scene::{Identity, IdentityKind, Node};
-use dolce_text::{Font, MeasureCtx};
+use dolce_engrave::scene::{Identity, IdentityKind, Node};
+use dolce_engrave::text::{Font, MeasureCtx};
 use std::collections::HashMap;
 
 // -----------------------------------------------------------------------

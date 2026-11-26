@@ -4,7 +4,7 @@
 //!
 //! - `read` / `systems` / `layout` / `pages`：版面态 dump（`dolce_layout_staff::dump::staff_dump`，TS `cli/staffref.ts::staffDump`），
 //!   依次是读入建树后、分系统与 `layoutAttr` 之后、`layoutStaff` 返回、装页之后（另带 `placed`）；
-//! - `scene`：各页场景（`dolce_scene::dump::diff_pages`）。
+//! - `scene`：各页场景（`dolce_engrave::scene::dump::diff_pages`）。
 //!
 //! 表层：用例带了 MusicXML 原文的，Rust 重读一遍拿表层（`_oid` 由读入次序定，两边同号）；重读出的文档与用例的对不上时记「文档不符」
 //! （混排歌本用例带 `docEdited`：清单改过页眉、可能裁过声部，不比）。
@@ -16,11 +16,11 @@ use crate::jianpu::{judge_json, judge_pages, panic_text, Tally, Verdict, TOL};
 use crate::layout::{flag, lines, positional, show_n};
 use dolce_engrave::Env;
 use dolce_model::doc::ScoreDoc;
-use dolce_scene::build::freeze;
-use dolce_scene::{Dialect, Page};
-use dolce_scene::smufl::MetaData;
-use dolce_style::staff::MixedOptions;
-use dolce_text::{MeasureCtx, ReplayMeasurer};
+use dolce_engrave::scene::build::freeze;
+use dolce_engrave::scene::{Dialect, Page};
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::style::staff::MixedOptions;
+use dolce_engrave::text::{MeasureCtx, ReplayMeasurer};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -120,7 +120,7 @@ pub fn staff_check(args: &[String]) -> i32 {
     let replay: Option<ReplayMeasurer> = (!native).then(|| {
         ReplayMeasurer::from_jsonl(&std::fs::read_to_string(mpath.unwrap()).expect("读量字录制")).expect("量字录制").with_path_fallback()
     });
-    let native_backend = native.then(|| dolce_text::native::node_measure(Some(&redist), &[]));
+    let native_backend = native.then(|| dolce_engrave::text::native::node_measure(Some(&redist), &[]));
     if native {
         TOL.get_or_init(|| 0.5);
     }

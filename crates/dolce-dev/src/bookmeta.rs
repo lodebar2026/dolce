@@ -135,7 +135,7 @@ fn run(c: &Value, book: &Book, measure: &ReplayBookMeasure) -> Result<Value, Str
                 measure,
             };
             let (style, report) = stats::infer_book_style(&book.profile, pages, &c["fonts"], &opt)?;
-            let ss = dolce_style::bookss::print_book_ss(&style).map_err(|e| format!("printBookSs：{e}"))?;
+            let ss = dolce_engrave::style::bookss::print_book_ss(&style).map_err(|e| format!("printBookSs：{e}"))?;
             json!({ "style": style, "report": to_json(&report), "ss": ss })
         }
         other => return Err(format!("未知的用例种类 {other}")),

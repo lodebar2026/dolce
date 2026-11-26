@@ -5,9 +5,9 @@ use std::collections::HashSet;
 use dolce_engrave::dash::{sustain_dash, DashStyle};
 use dolce_engrave::jpnumber::beam_line;
 use dolce_engrave::stack::{beam_y, high_dot_y, low_dot_y, StackStyle};
-use dolce_scene::{Edge, Identity, IdentityKind, Node, Role};
-use dolce_text::syllable::syllable_run;
-use dolce_text::CompressMode;
+use dolce_engrave::scene::{Edge, Identity, IdentityKind, Node, Role};
+use dolce_engrave::text::syllable::syllable_run;
+use dolce_engrave::text::CompressMode;
 use dolce_model::view::ast::{LyricLine, MusicElement};
 
 use super::barline::paint_barline;

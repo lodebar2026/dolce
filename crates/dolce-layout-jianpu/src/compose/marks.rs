@@ -5,8 +5,8 @@ use dolce_engrave::ending::{add_ending_bracket, ending_drop, ending_label_dx, En
 use dolce_engrave::hairpin::{hairpin_path, jp_hairpin, jp_hairpin_halves, jp_hairpin_line_width, HairpinSpec};
 use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
 use dolce_model::base::geom::Point;
-use dolce_scene::build::update;
-use dolce_scene::{Identity, IdentityKind, Node};
+use dolce_engrave::scene::build::update;
+use dolce_engrave::scene::{Identity, IdentityKind, Node};
 use dolce_model::view::ast::MarkType;
 
 use super::ctx::{eid, font, ident, Ctx};

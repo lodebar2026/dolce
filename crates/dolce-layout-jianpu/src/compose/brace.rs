@@ -2,7 +2,7 @@
 
 use dolce_engrave::jpglyph::bracket;
 use dolce_model::base::geom::Matrix33;
-use dolce_scene::{Node, PathOp, PathSeg};
+use dolce_engrave::scene::{Node, PathOp, PathSeg};
 
 use super::ctx::{font, rect, text, Ctx};
 

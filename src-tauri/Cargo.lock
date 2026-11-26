@@ -937,9 +937,7 @@ dependencies = [
  "dolce-omr-engine",
  "dolce-omr-ocr",
  "dolce-omr-source",
- "dolce-scene",
  "dolce-session",
- "dolce-text",
  "objc2",
  "objc2-avf-audio",
  "objc2-foundation",
@@ -957,11 +955,19 @@ name = "dolce-engrave"
 version = "0.8.9"
 dependencies = [
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
+ "fontdb",
+ "indexmap 2.14.2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-text",
+ "rustybuzz",
  "serde",
  "serde_json",
+ "ttf-parser",
+ "windows",
+ "windows-core",
+ "windows-numerics",
+ "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
@@ -969,9 +975,8 @@ name = "dolce-export"
 version = "0.8.9"
 dependencies = [
  "crc32fast",
+ "dolce-engrave",
  "dolce-model",
- "dolce-scene",
- "dolce-text",
  "flate2",
  "krilla",
  "serde",
@@ -984,9 +989,6 @@ version = "0.8.9"
 dependencies = [
  "dolce-engrave",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
  "serde",
  "serde_json",
 ]
@@ -997,9 +999,6 @@ version = "0.8.9"
 dependencies = [
  "dolce-engrave",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
- "dolce-text",
  "serde",
  "serde_json",
 ]
@@ -1123,16 +1122,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dolce-scene"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "dolce-text",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dolce-session"
 version = "0.8.9"
 dependencies = [
@@ -1140,40 +1129,8 @@ dependencies = [
  "dolce-layout-jianpu",
  "dolce-layout-staff",
  "dolce-model",
- "dolce-scene",
- "dolce-style",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dolce-style"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "dolce-text",
- "indexmap 2.14.2",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dolce-text"
-version = "0.8.9"
-dependencies = [
- "dolce-model",
- "fontdb",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-core-text",
- "rustybuzz",
- "serde",
- "serde_json",
- "ttf-parser",
- "windows",
- "windows-core",
- "windows-numerics",
- "yeslogic-fontconfig-sys",
 ]
 
 [[package]]

@@ -60,8 +60,8 @@ fn write_jianpu(score: &RecognizedScore, format: TargetFormat, sing: Option<&str
 
 /// 系统量字的排版环境（投影档算行数用；没有 SMuFL 元数据，只影响记号的紧包围盒、不影响行数）
 fn with_native_env<R>(f: impl FnOnce(&dolce_engrave::Env) -> R) -> R {
-    let backend = dolce_text::native::webview_measure(None, &[]);
-    let mc = dolce_text::MeasureCtx::new(&backend);
+    let backend = dolce_engrave::text::native::webview_measure(None, &[]);
+    let mc = dolce_engrave::text::MeasureCtx::new(&backend);
     f(&dolce_engrave::Env { mc: &mc, meta: None })
 }
 

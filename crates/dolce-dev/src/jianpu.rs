@@ -3,11 +3,11 @@
 //!
 //! - `grid`：定稿栅格（`JianpuGrid::to_json`，TS `plainOf(metrics)`）；
 //! - `placed`：规范化定位结构（`placedjson::placed_json`，TS `layoutref.ts::placedJson`）；
-//! - `scene`：各页场景（`dolce_scene::dump::diff_pages`，同 `diff-scene`）；
+//! - `scene`：各页场景（`dolce_engrave::scene::dump::diff_pages`，同 `diff-scene`）；
 //! - `size`：页宽高、各行首音 id（`lineStarts`）与量宽档的自然跨度（`spans`：版心宽 + 按插入序的 `[id, {x0, x1, x1b}]`）。
 //!
 //! JSON 两段的比法：键、串、布尔、数组长要一样（缺键与 `null` 视同），数差 ≤ 1e-6（回放下两边吃同一份量字）。
-//! `--native` 代替 `--measure`：验收门，Rust 自己量字（`dolce_text::native::node_measure`），数差容差放到 0.5。
+//! `--native` 代替 `--measure`：验收门，Rust 自己量字（`dolce_engrave::text::native::node_measure`），数差容差放到 0.5。
 //! 每档 `catch_unwind` 包住：`todo!()` 记「未实现」、别的 panic 记「报错」，不中断。
 //!
 //! 选项：`--stage=grid|placed|scene|size`（逗号分隔，缺省全比）、`--limit=N`、`--key=子串`、`--cfg=档名`、`--show=N`、`--redist=<目录>`。
@@ -16,11 +16,11 @@ use crate::layout::{flag, lines, positional, show_n};
 use dolce_engrave::Env;
 use dolce_layout_jianpu::grid::GridPage;
 use dolce_model::doc::ScoreDoc;
-use dolce_scene::dump::diff_pages;
-use dolce_scene::Page;
-use dolce_scene::smufl::MetaData;
-use dolce_style::jianpustyle::JianpuStyle;
-use dolce_text::{MeasureCtx, ReplayMeasurer};
+use dolce_engrave::scene::dump::diff_pages;
+use dolce_engrave::scene::Page;
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::style::jianpustyle::JianpuStyle;
+use dolce_engrave::text::{MeasureCtx, ReplayMeasurer};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -48,7 +48,7 @@ pub struct CaseConfig {
     pub style: JianpuStyle,
     pub page: GridPage,
     pub user_margins: bool,
-    pub foot: Option<dolce_style::ss::Region>,
+    pub foot: Option<dolce_engrave::style::ss::Region>,
     pub no_reflow: bool,
     pub expanded: bool,
     pub break_desc: Option<String>,
@@ -93,8 +93,8 @@ struct Got {
 fn run(doc: &ScoreDoc, c: CaseConfig, env: &Env) -> Got {
     use dolce_layout_jianpu::compose::{layout_jianpu, JianpuConfig};
     use dolce_layout_jianpu::placedjson::placed_json;
-    use dolce_scene::build::freeze;
-    use dolce_scene::Dialect;
+    use dolce_engrave::scene::build::freeze;
+    use dolce_engrave::scene::Dialect;
     let cfg = JianpuConfig {
         style: c.style,
         page: c.page,
@@ -285,7 +285,7 @@ pub fn jianpu_check(args: &[String]) -> i32 {
     let replay: Option<ReplayMeasurer> = (!native).then(|| {
         ReplayMeasurer::from_jsonl(&std::fs::read_to_string(mpath.unwrap()).expect("读量字录制")).expect("量字录制").with_path_fallback()
     });
-    let native_backend = native.then(|| dolce_text::native::node_measure(Some(&redist), &[]));
+    let native_backend = native.then(|| dolce_engrave::text::native::node_measure(Some(&redist), &[]));
     if native {
         TOL.get_or_init(|| 0.5);
     }

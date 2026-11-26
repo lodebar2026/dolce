@@ -9,8 +9,8 @@ use dolce_engrave::accidental::AccidentalKind;
 use dolce_engrave::arc::{arc_height, SlurStyle};
 use dolce_engrave::grace::{GraceMetrics, GraceNote};
 use dolce_engrave::stack::{high_dot_y, low_dot_y, StackStyle};
-use dolce_style::jianpustyle::{JianpuStyle, Margin};
-use dolce_text::{Font, MeasureCtx};
+use dolce_engrave::style::jianpustyle::{JianpuStyle, Margin};
+use dolce_engrave::text::{Font, MeasureCtx};
 use dolce_model::view::ast::NoteElement;
 use serde_json::{json, Value};
 

@@ -13,11 +13,9 @@ crate-type = ["cdylib", "rlib"]
 probe = []
 
 [dependencies]
+dolce-engrave = { workspace = true }
 dolce-session = { workspace = true }
 dolce-model = { workspace = true }
-dolce-engrave = { workspace = true }
-dolce-scene = { workspace = true }
-dolce-text = { workspace = true }
 dolce-layout-jianpu = { workspace = true }
 dolce-omr-sheet = { workspace = true }
 dolce-omr-todoc = { workspace = true }

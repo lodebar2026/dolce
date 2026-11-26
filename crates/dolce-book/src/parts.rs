@@ -7,8 +7,8 @@
 use crate::draw::{match_number, DrawItem, DrawPage, DrawPath, DrawRect, DrawText, InkSpan, PageMeta};
 use crate::measure::BookMeasure;
 use dolce_model::base::js;
-use dolce_style::bookstyle::page_margins;
-use dolce_style::value::get_path;
+use dolce_engrave::style::bookstyle::page_margins;
+use dolce_engrave::style::value::get_path;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

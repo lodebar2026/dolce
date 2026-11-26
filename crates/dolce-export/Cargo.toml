@@ -14,14 +14,13 @@ categories.workspace = true
 [features]
 default = ["system", "book"]
 # 系统字体（fontdb 扫系统目录）。桌面与命令行开；wasm 不开，字体由宿主给字节
-system = ["dolce-text/fontfile-system"]
+system = ["dolce-engrave/fontfile-system"]
 # 成书 DrawList → PDF 与书级量字（引 dolce-book；wasm 不要）
 book = ["system", "dep:dolce-book"]
 
 [dependencies]
+dolce-engrave = { workspace = true, features = ["fontfile"] }
 dolce-model = { workspace = true }
-dolce-scene = { workspace = true }
-dolce-text = { workspace = true, features = ["fontfile"] }
 dolce-book = { workspace = true, optional = true }
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
 flate2 = "1"

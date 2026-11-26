@@ -214,7 +214,7 @@ pub fn relayout_cmd(args: &[String]) -> i32 {
         let fallback: std::collections::HashMap<String, Option<String>> = serde_json::from_value(v["fallback"].clone()).unwrap_or_default();
         let book = FontBook::system();
         let fonts = BookFonts::resolve(&style, &book, Path::new(flag(args, "base").unwrap_or(".")));
-        let ink = |role: &str| fonts.ink_ratio(role, dolce_style::bookstyle::ink_sample_of(role));
+        let ink = |role: &str| fonts.ink_ratio(role, dolce_engrave::style::bookstyle::ink_sample_of(role));
         let fb = |key: &str| fallback.get(key).cloned().flatten();
         let opt = dolce_book::relayout::SpecToDrawOptions { ink_ratio: &ink, fallback_char: Some(&fb), lyric2_cut: v["lyric2Cut"].as_f64() };
         let res: Vec<_> = specs.iter().map(|s| dolce_book::relayout::spec_to_draw_page(s, &style, &opt)).collect();

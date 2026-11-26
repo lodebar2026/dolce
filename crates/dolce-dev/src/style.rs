@@ -15,10 +15,10 @@
 //! `book` 预设的 `jianpu` 要量字（附点），用同 `nodeMeasure()` 口径的原生后端。
 
 use crate::layout::{flag, lines, positional, show_n};
-use dolce_style::cascade::{compute_style, layer_from_json, StyleContext, StyleRule};
-use dolce_style::sheet::StyleSheet;
-use dolce_style::themes::{compute_style_for_paper, theme, ThemeId};
-use dolce_text::MeasureCtx;
+use dolce_engrave::style::cascade::{compute_style, layer_from_json, StyleContext, StyleRule};
+use dolce_engrave::style::sheet::StyleSheet;
+use dolce_engrave::style::themes::{compute_style_for_paper, theme, ThemeId};
+use dolce_engrave::text::MeasureCtx;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -60,7 +60,7 @@ fn diff(path: &str, a: &Value, b: &Value, out: &mut Vec<String>) {
 
 fn sheet_of(v: &Value) -> StyleSheet {
     let mut v = v.clone();
-    dolce_style::value::normalize(&mut v);
+    dolce_engrave::style::value::normalize(&mut v);
     StyleSheet(v)
 }
 
@@ -98,9 +98,9 @@ impl SynthEnv {
     }
 }
 
-impl dolce_style::template::RegionEnv for SynthEnv {
-    fn field(&self, path: &str) -> Option<Vec<dolce_style::template::FieldValue>> {
-        use dolce_style::template::FieldValue;
+impl dolce_engrave::style::template::RegionEnv for SynthEnv {
+    fn field(&self, path: &str) -> Option<Vec<dolce_engrave::style::template::FieldValue>> {
+        use dolce_engrave::style::template::FieldValue;
         let len = path.encode_utf16().count();
         match len % 3 {
             0 => None,
@@ -129,11 +129,11 @@ impl dolce_style::template::RegionEnv for SynthEnv {
     fn measure(&self, _role: &str, text: &str, size: f64) -> f64 {
         text.encode_utf16().count() as f64 * size * 0.55
     }
-    fn component(&self, name: &str, c: &dolce_style::template::ComponentCall) -> Option<Result<Vec<Value>, dolce_style::ss::SsError>> {
+    fn component(&self, name: &str, c: &dolce_engrave::style::template::ComponentCall) -> Option<Result<Vec<Value>, dolce_engrave::style::ss::SsError>> {
         Some(Ok(vec![json!({ "c": name, "x": c.x, "y": c.y, "role": c.role, "size": c.size, "n": c.row.len(), "args": c.args.len() })]))
     }
-    fn font_metrics(&self, _role: &str, size: f64) -> Option<dolce_style::template::FontMetricsLike> {
-        self.metrics.then_some(dolce_style::template::FontMetricsLike { ascent: size * 0.8, height: size * 1.2 })
+    fn font_metrics(&self, _role: &str, size: f64) -> Option<dolce_engrave::style::template::FontMetricsLike> {
+        self.metrics.then_some(dolce_engrave::style::template::FontMetricsLike { ascent: size * 0.8, height: size * 1.2 })
     }
 }
 
@@ -142,8 +142,8 @@ fn run(case: &Value, mc: &MeasureCtx) -> Result<Value, String> {
     let kind = case["kind"].as_str().unwrap_or("");
     let g = |k: &str| case.get(k).unwrap_or(&Value::Null);
     Ok(match kind {
-        "parse" => rules_json(&dolce_style::ss::parse_ss(g("src").as_str().unwrap_or("")).map_err(|e| e.message)?),
-        "print" => Value::String(dolce_style::ss::print_ss(&layer(g("rules"))).map_err(|e| e.message)?),
+        "parse" => rules_json(&dolce_engrave::style::ss::parse_ss(g("src").as_str().unwrap_or("")).map_err(|e| e.message)?),
+        "print" => Value::String(dolce_engrave::style::ss::print_ss(&layer(g("rules"))).map_err(|e| e.message)?),
         "theme" => {
             let id = ThemeId::parse(g("id").as_str().unwrap_or("")).ok_or("认不出的主题")?;
             rules_json(theme(id))
@@ -152,22 +152,22 @@ fn run(case: &Value, mc: &MeasureCtx) -> Result<Value, String> {
             let layers: Vec<Vec<StyleRule>> = g("layers").as_array().ok_or("layers 要数组")?.iter().map(layer).collect();
             let refs: Vec<&[StyleRule]> = layers.iter().map(Vec::as_slice).collect();
             let mut c = g("ctx").clone();
-            dolce_style::value::normalize(&mut c);
+            dolce_engrave::style::value::normalize(&mut c);
             let c: StyleContext = c.as_object().cloned().unwrap_or_default();
             let s = if g("paper").as_bool() == Some(true) { compute_style_for_paper(&refs, &c) } else { compute_style(&refs, &c) };
             s.0
         }
-        "jianpu" => serde_json::to_value(dolce_style::jianpu::jianpu_style_of(&sheet_of(g("sheet")), mc)?).expect("可序列化"),
+        "jianpu" => serde_json::to_value(dolce_engrave::style::jianpu::jianpu_style_of(&sheet_of(g("sheet")), mc)?).expect("可序列化"),
         "staff" => {
             let s = (!g("sheet").is_null()).then(|| sheet_of(g("sheet")));
-            serde_json::to_value(dolce_style::staff::staff_options_of(s.as_ref())).expect("可序列化")
+            serde_json::to_value(dolce_engrave::style::staff::staff_options_of(s.as_ref())).expect("可序列化")
         }
-        "header" => serde_json::to_value(dolce_style::header::header_fonts_of(&sheet_of(g("sheet")))).expect("可序列化"),
-        "book" => dolce_style::bookss::book_style_of(&sheet_of(g("sheet")), g("id").as_str().unwrap_or(""))?,
+        "header" => serde_json::to_value(dolce_engrave::style::header::header_fonts_of(&sheet_of(g("sheet")))).expect("可序列化"),
+        "book" => dolce_engrave::style::bookss::book_style_of(&sheet_of(g("sheet")), g("id").as_str().unwrap_or(""))?,
         "printBook" => {
             let mut s = g("style").clone();
-            dolce_style::value::normalize(&mut s);
-            Value::String(dolce_style::bookss::print_book_ss(&s)?)
+            dolce_engrave::style::value::normalize(&mut s);
+            Value::String(dolce_engrave::style::bookss::print_book_ss(&s)?)
         }
         "songLayers" => {
             // MusicXML 来的谱带表层（`<word-font>` 之类的回退在那儿）：自己读原文件；别的格式用 TS 给的曲子
@@ -182,14 +182,14 @@ fn run(case: &Value, mc: &MeasureCtx) -> Result<Value, String> {
             };
             let sf = loaded.as_ref();
             json!({
-                "header": rules_json(&dolce_style::header::header_layer_of_song(Some(&song), sf, true, true)),
-                "headerNoSize": rules_json(&dolce_style::header::header_layer_of_song(Some(&song), sf, false, false)),
-                "page": rules_json(&dolce_style::paper::doc_page_layer(Some(&song))),
+                "header": rules_json(&dolce_engrave::style::header::header_layer_of_song(Some(&song), sf, true, true)),
+                "headerNoSize": rules_json(&dolce_engrave::style::header::header_layer_of_song(Some(&song), sf, false, false)),
+                "page": rules_json(&dolce_engrave::style::paper::doc_page_layer(Some(&song))),
             })
         }
         "region" => {
-            let region: Option<dolce_style::ss::Region> = serde_json::from_value(g("region").clone()).map_err(|e| format!("区域读不进：{e}"))?;
-            let r = dolce_style::template::layout_region(region.as_ref(), &SynthEnv::of(g("env"))).map_err(|e| e.message)?;
+            let region: Option<dolce_engrave::style::ss::Region> = serde_json::from_value(g("region").clone()).map_err(|e| format!("区域读不进：{e}"))?;
+            let r = dolce_engrave::style::template::layout_region(region.as_ref(), &SynthEnv::of(g("env"))).map_err(|e| e.message)?;
             serde_json::to_value(r).expect("可序列化")
         }
         _ => return Err(format!("认不出的用例种类 {kind}")),
@@ -203,7 +203,7 @@ pub fn style_check(args: &[String]) -> i32 {
         return 2;
     };
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
-    let backend = dolce_text::native::node_measure(Some(&redist), &[]);
+    let backend = dolce_engrave::text::native::node_measure(Some(&redist), &[]);
     let mc = MeasureCtx::new(&backend);
     let show = show_n(args);
     let mut by_kind: BTreeMap<String, (usize, usize)> = BTreeMap::new();

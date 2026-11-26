@@ -1,9 +1,9 @@
-//! 字体：定位、解析、整形、字形度量、合成粗斜的判定在 `dolce_text::fontfile`（与 Linux 的系统量字共用），这里再导出；
+//! 字体：定位、解析、整形、字形度量、合成粗斜的判定在 `dolce_engrave::text::fontfile`（与 Linux 的系统量字共用），这里再导出；
 //! 本模块只加 PDF 那部分——krilla 字体对象与嵌入可行性的判定（[`PdfFace`]）。
 //!
 //! 一份 [`FontBook`] 是一个 fontdb 库加字节缓存：桌面 / 命令行装系统字体（`system` 特性），
 //! wasm 只装宿主给的字节（本地字体访问授权拿到的、随包的 Bravura）。族名的展开（泛称、标准字体）与量字同一份
-//! （`dolce_text::css_families`），所以 PDF 选中的字体与排版量字时用的是同一族。
+//! （`dolce_engrave::text::css_families`），所以 PDF 选中的字体与排版量字时用的是同一族。
 //!
 //! **嵌不了退转曲**的判法（L7 样本验证定的，见 `probe`）：一个字体面第一次要嵌时，先单独拿它出一份只有几个字的 PDF；
 //! krilla 建不出字体对象（`Font::new` 返回空：表坏、只有位图）或写出时报字体错（子集化失败）就记成**转曲**，
@@ -13,8 +13,8 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-pub use dolce_text::fontfile::*;
-pub use dolce_text::Platform;
+pub use dolce_engrave::text::fontfile::*;
+pub use dolce_engrave::text::Platform;
 
 /// 挂在字体面上的 PDF 缓存（[`Face::ext`]）
 #[derive(Default)]

@@ -4,8 +4,8 @@
 use dolce_engrave::Env;
 use dolce_layout_jianpu::compose::layout_jianpu;
 use dolce_model::doc::ScoreDoc;
-use dolce_style::cascade::ctx;
-use dolce_style::themes::{compute_style_for_paper, theme, ThemeId};
+use dolce_engrave::style::cascade::ctx;
+use dolce_engrave::style::themes::{compute_style_for_paper, theme, ThemeId};
 use dolce_model::view::singfit::{fit_sing, SingFit};
 use serde_json::Value;
 

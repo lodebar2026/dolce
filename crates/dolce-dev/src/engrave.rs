@@ -20,12 +20,12 @@ use dolce_engrave::tuplet::{TupletGlyph, TupletKind, TupletStyle};
 use dolce_engrave::upperband::BandItem;
 use dolce_engrave::Env;
 use dolce_model::base::geom::{Point, Rect};
-use dolce_scene::build::{freeze, update};
-use dolce_scene::Node;
-use dolce_scene::smufl::MetaData;
-use dolce_text::cjkpunct::CompressMode;
-use dolce_text::ReplayMeasurer;
-use dolce_text::{Font, MeasureCtx};
+use dolce_engrave::scene::build::{freeze, update};
+use dolce_engrave::scene::Node;
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::text::cjkpunct::CompressMode;
+use dolce_engrave::text::ReplayMeasurer;
+use dolce_engrave::text::{Font, MeasureCtx};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -274,7 +274,7 @@ fn run(kind: &str, a: &Value, env: &Env) -> Result<Value, String> {
         "octaveDot" => raw_upd(el::jpnumber::jp_octave_dot(f(a, "r"), f(a, "color")), env),
         "jpNumber" => {
             let mut it = el::jpnumber::jp_number(s(a, "text"), font(&a["font"]));
-            if let Some(dolce_scene::Role::JpNumber { aug_dot_advance, .. }) = &mut it.role {
+            if let Some(dolce_engrave::scene::Role::JpNumber { aug_dot_advance, .. }) = &mut it.role {
                 *aug_dot_advance = f(a, "augDotAdvance");
             }
             upd(&mut it, env);
@@ -360,7 +360,7 @@ fn run(kind: &str, a: &Value, env: &Env) -> Result<Value, String> {
                 "dynamicKeys": dolce_model::marknames::DYNAMIC_NAMES,
                 "barlineKeys": ["fine", "dc", "ds", "ty", "hs", "sbf"],
                 "accidentalKeys": ["flat", "natural", "sharp", "double-sharp", "double-flat"],
-                "LYRIC_EDGE_PUNCT": dolce_text::syllable::lyric_edge_punct(),
+                "LYRIC_EDGE_PUNCT": dolce_engrave::text::syllable::lyric_edge_punct(),
             })
         }
         "tremolo" => {
@@ -542,7 +542,7 @@ fn run(kind: &str, a: &Value, env: &Env) -> Result<Value, String> {
             })
         }
         "header" => {
-            let hf: Option<dolce_style::header::HeaderFont> = a.get("hf").map(|v| serde_json::from_value(v.clone()).expect("页眉字体"));
+            let hf: Option<dolce_engrave::style::header::HeaderFont> = a.get("hf").map(|v| serde_json::from_value(v.clone()).expect("页眉字体"));
             let fo = el::header::header_role_font(hf.as_ref(), f(a, "size"), &font(&a["base"]));
             json!({ "family": fo.family, "size": n(fo.size), "bold": fo.bold, "italic": fo.italic })
         }

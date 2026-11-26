@@ -14,13 +14,13 @@ use dolce_model::breaks::clear_song_breaks;
 use dolce_model::doc::{Direction, DirectionPart, Element, ScoreDoc};
 use dolce_model::helpers::is_section_word;
 use dolce_model::melodyonly::keep_first_part;
-use dolce_scene::build::{bound, Env, SceneError};
-use dolce_scene::{Node, PathOp, PathShape, Role, Shape, TextShape, INVISIBLE};
-use dolce_style::cascade::{compute_style, ctx, StyleRule};
-use dolce_style::jianpu::jianpu_style_of;
-use dolce_style::jianpustyle::JianpuStyle;
-use dolce_style::themes::{theme, ThemeId};
-use dolce_text::Font;
+use dolce_engrave::scene::build::{bound, Env, SceneError};
+use dolce_engrave::scene::{Node, PathOp, PathShape, Role, Shape, TextShape, INVISIBLE};
+use dolce_engrave::style::cascade::{compute_style, ctx, StyleRule};
+use dolce_engrave::style::jianpu::jianpu_style_of;
+use dolce_engrave::style::jianpustyle::JianpuStyle;
+use dolce_engrave::style::themes::{theme, ThemeId};
+use dolce_engrave::text::Font;
 use serde_json::{json, Value};
 
 use crate::draw::{DrawItem, DrawLine, DrawPage, DrawPath, DrawText, PageMeta};
@@ -443,7 +443,7 @@ pub struct BookLayout {
 }
 
 fn style_num(style: &Value, path: &[&str]) -> f64 {
-    dolce_style::value::get_path(style, path).and_then(Value::as_f64).unwrap_or(f64::NAN)
+    dolce_engrave::style::value::get_path(style, path).and_then(Value::as_f64).unwrap_or(f64::NAN)
 }
 
 /// 成书这一路的尺子（TS `bookStyleOf`：简谱引擎吃的那份 `JianpuStyle`）。

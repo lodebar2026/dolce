@@ -2,9 +2,9 @@
 
 use dolce_model::base::js::trim;
 use dolce_engrave::Env;
-use dolce_scene::Node;
-use dolce_style::ss::Region;
-use dolce_style::template::{layout_region, FieldValue, FontMetricsLike, Placed, RegionEnv};
+use dolce_engrave::scene::Node;
+use dolce_engrave::style::ss::Region;
+use dolce_engrave::style::template::{layout_region, FieldValue, FontMetricsLike, Placed, RegionEnv};
 use dolce_model::view::ast::Metadata;
 
 use super::ctx::{font, text};

@@ -14,11 +14,8 @@ path = "src/main.rs"
 oldpdf = ["dep:svg2pdf"]
 
 [dependencies]
-dolce-scene = { workspace = true }
-dolce-text = { workspace = true, features = ["native"] }
-dolce-style = { workspace = true }
+dolce-engrave = { workspace = true, features = ["native"] }
 dolce-model = { workspace = true }
-dolce-engrave = { workspace = true }
 dolce-layout-jianpu = { workspace = true }
 dolce-layout-staff = { workspace = true }
 dolce-book = { workspace = true }

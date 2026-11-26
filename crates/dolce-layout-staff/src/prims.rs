@@ -2,9 +2,9 @@
 
 use dolce_engrave::prims::{line_item, text_item};
 use dolce_model::base::geom::Matrix33;
-use dolce_scene::build::Env;
-use dolce_scene::{ElementId, Identity, IdentityKind, Node};
-use dolce_text::Font;
+use dolce_engrave::scene::build::Env;
+use dolce_engrave::scene::{ElementId, Identity, IdentityKind, Node};
+use dolce_engrave::text::Font;
 
 /// 一个和弦画出来的那一组的类名（`.selected` 描蓝挂在它上面）。身份走标签（`note` + 元素 id）。
 pub const STAFF_CHORD: &str = "staff-chord";

@@ -1,5 +1,5 @@
 //! 排版接进桌面版（迁移计划 H 期）：简谱 / 五线谱排版在 Tauri 进程里跑原生 Rust（`crates/dolce-session/src/layout.rs`），
-//! 量字走系统文字引擎（`dolce_text::native`，外包浏览器口径层，与 WebView 画字对齐）。
+//! 量字走系统文字引擎（`dolce_engrave::text::native`，外包浏览器口径层，与 WebView 画字对齐）。
 //!
 //! - **一条专用线程**：系统量字的字体注册与缓存是线程局部的（CoreText / DirectWrite），量字上下文、表层、排好的结果都归这条线程，
 //!   命令把活儿递过去、等回话（[`run`]）。排版途中 panic 只丢这一单，线程照常接着干。
@@ -10,8 +10,8 @@ use dolce_engrave::Env;
 use dolce_model::doc::ScoreDoc;
 use dolce_model::xmlsurface::Surface;
 use dolce_session::layout::{self, JianpuRequest, Laid, StaffRequest};
-use dolce_scene::smufl::MetaData;
-use dolce_text::MeasureCtx;
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::text::MeasureCtx;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
@@ -59,7 +59,7 @@ pub fn setup(app: &tauri::AppHandle) {
     std::thread::Builder::new()
         .name("dolce-layout".into())
         .spawn(move || {
-            let backend = Box::leak(Box::new(dolce_text::native::webview_measure(redist.as_deref(), &[])));
+            let backend = Box::leak(Box::new(dolce_engrave::text::native::webview_measure(redist.as_deref(), &[])));
             let meta = MetaData::from_json(include_str!("../../public/redist/bravura_metadata.json")).expect("bravura_metadata.json");
             let mut host = Host { mc: MeasureCtx::new(backend), meta, surfaces: HashMap::new(), laid: HashMap::new(), next: 0, tick: 0 };
             for job in rx {

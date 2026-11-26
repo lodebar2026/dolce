@@ -4,7 +4,7 @@
 use crate::model::*;
 use crate::pages::Placed;
 use dolce_model::base::fraction::Fraction;
-use dolce_text::Font;
+use dolce_engrave::text::Font;
 use serde_json::{json, Map, Value};
 
 fn jn(x: f64) -> Value {

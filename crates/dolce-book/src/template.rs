@@ -1,5 +1,5 @@
 //! 成书那一路的模板件（照 `src/pdflayout/booktemplate.ts`）：模板排版结果 → DrawList 图元，外加 `key-meter()` 组件
-//! （调号 + 叠排拍号 + 避让首行）。模板排版本身在 `dolce_style::template`。
+//! （调号 + 叠排拍号 + 避让首行）。模板排版本身在 `dolce_engrave::style::template`。
 //!
 //! [`BookRegionEnv`] 是 dev `rebuild.mjs::regionEnv` 那份环境（字段经 `songFields(undefined, fields)`、字号取本曲回传或样式表、
 //! 书级量字、`key-meter` 组件），整本那一层（`rebuild`）与对拍共用。
@@ -7,8 +7,8 @@
 use crate::draw::DrawItem;
 use crate::measure::BookMeasure;
 use crate::parts::{key_meter_items, role_size, text_item, KeyMeterSpec};
-use dolce_style::ss::{parse_avoid, Cell, SsError};
-use dolce_style::template::{song_field, ComponentCall, FieldExtra, FieldValue, Placed, RegionEnv};
+use dolce_engrave::style::ss::{parse_avoid, Cell, SsError};
+use dolce_engrave::style::template::{song_field, ComponentCall, FieldExtra, FieldValue, Placed, RegionEnv};
 use indexmap::IndexMap;
 use serde_json::Value;
 

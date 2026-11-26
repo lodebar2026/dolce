@@ -1,9 +1,9 @@
 use tauri::Manager;
 
-/// 编辑器「导出 PDF」的一页：场景（`dolce_scene::Page`，前端 `scenejson.ts::pageScenes` 出的形状）+ 纸的大小（pt）
+/// 编辑器「导出 PDF」的一页：场景（`dolce_engrave::scene::Page`，前端 `scenejson.ts::pageScenes` 出的形状）+ 纸的大小（pt）
 #[derive(serde::Deserialize)]
 struct ScenePageIn {
-    scene: dolce_scene::Page,
+    scene: dolce_engrave::scene::Page,
     w: f64,
     h: f64,
 }

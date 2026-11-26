@@ -11,9 +11,9 @@ use dolce_engrave::jpnumber::{jp_number, jp_octave_dot};
 use dolce_engrave::prims::{fill_rect, stroke_path, text_item};
 use dolce_engrave::Env;
 use dolce_model::base::geom::Rect;
-use dolce_scene::{Identity, IdentityKind, Node};
-use dolce_style::ss::Region;
-use dolce_text::Font;
+use dolce_engrave::scene::{Identity, IdentityKind, Node};
+use dolce_engrave::style::ss::Region;
+use dolce_engrave::text::Font;
 
 use crate::grid::JianpuGrid;
 use crate::model::{PlacedScore, PlacedText};
@@ -118,7 +118,7 @@ pub fn digit_origin(c: &Ctx, ch: &str) -> (f64, f64, Rect) {
 }
 
 /// `addBarlineOwner`
-pub fn add_barline_owner(item: &mut Node, id: i64, edge: dolce_scene::Edge) {
+pub fn add_barline_owner(item: &mut Node, id: i64, edge: dolce_engrave::scene::Edge) {
     let id = eid(id);
     match &mut item.id {
         Some(cur) if cur.kind == IdentityKind::Barline && cur.id.is_some() => {

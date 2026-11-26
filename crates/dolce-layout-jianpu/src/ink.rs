@@ -5,8 +5,8 @@ use dolce_engrave::sectionword::section_word_run;
 use dolce_engrave::spacing::AccidentalSide;
 use dolce_engrave::Env;
 use dolce_model::base::geom::Rect;
-use dolce_text::syllable::syllable_run;
-use dolce_text::{CompressMode, Font};
+use dolce_engrave::text::syllable::syllable_run;
+use dolce_engrave::text::{CompressMode, Font};
 use dolce_model::view::ast::LyricSyllable;
 
 use crate::grid::{key_label_size, note_font, JianpuGrid};

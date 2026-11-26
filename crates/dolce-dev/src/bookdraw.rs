@@ -17,8 +17,8 @@ use dolce_book::scenedraw::{
 };
 use dolce_book::songbook::{layout_mixed_songbook, ManifestSong, SongSource, SongbookInput};
 use dolce_engrave::Env;
-use dolce_scene::smufl::MetaData;
-use dolce_text::{MeasureCtx, ReplayMeasurer};
+use dolce_engrave::scene::smufl::MetaData;
+use dolce_engrave::text::{MeasureCtx, ReplayMeasurer};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -118,7 +118,7 @@ fn songbook_input(case: &Value) -> Result<SongbookInput, String> {
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let rules = dolce_style::cascade::layer_from_json(&case["rules"]).map_err(|e| format!("规则读不进：{e}"))?;
+    let rules = dolce_engrave::style::cascade::layer_from_json(&case["rules"]).map_err(|e| format!("规则读不进：{e}"))?;
     let families = case["families"].as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string())).collect()).unwrap_or_default();
     Ok(SongbookInput { songs, rules, song_start: case["songStart"].as_str().map(str::to_string), families })
 }
@@ -149,7 +149,7 @@ pub fn songbook(args: &[String]) -> i32 {
         }
         None => vec![],
     };
-    let backend = dolce_text::native::node_measure(Some(&redist), &files);
+    let backend = dolce_engrave::text::native::node_measure(Some(&redist), &files);
     let mc = MeasureCtx::new(&backend);
     let meta = MetaData::from_json(&std::fs::read_to_string(redist.join("bravura_metadata.json")).expect("读 SMuFL 元数据")).expect("SMuFL 元数据");
     let env = Env { mc: &mc, meta: Some(&meta) };
@@ -184,7 +184,7 @@ pub fn book_draw_check(args: &[String]) -> i32 {
     let replay: Option<ReplayMeasurer> = (!native).then(|| {
         ReplayMeasurer::from_jsonl(&std::fs::read_to_string(mpath.unwrap()).expect("读量字录制")).expect("量字录制").with_path_fallback()
     });
-    let native_backend = native.then(|| dolce_text::native::node_measure(Some(&redist), &[]));
+    let native_backend = native.then(|| dolce_engrave::text::native::node_measure(Some(&redist), &[]));
     if native {
         TOL.get_or_init(|| 0.5);
     }

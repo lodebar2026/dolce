@@ -33,16 +33,16 @@ use dolce_model::base::fraction::Fraction;
 use dolce_model::base::js;
 use dolce_model::doc::Song;
 use dolce_model::xmlsurface::Surface;
-use dolce_scene::build::Env;
-use dolce_scene::smufl::{GlyphBBox, MetaData};
-use dolce_style::staff::MixedOptions;
-use dolce_text::{Font, MeasureCtx};
+use dolce_engrave::scene::build::Env;
+use dolce_engrave::scene::smufl::{GlyphBBox, MetaData};
+use dolce_engrave::style::staff::MixedOptions;
+use dolce_engrave::text::{Font, MeasureCtx};
 
 // ───────────────────────── 字形与小工具 ─────────────────────────
 
 /// SMuFL 字形名 → 码位（`GlyphCodes.xxx`）。名字写错是编程错误，panic。
 pub fn gc(name: &str) -> char {
-    dolce_scene::smufl::glyph_code(name).unwrap_or_else(|| panic!("没有这个 SMuFL 字形名：{name}"))
+    dolce_engrave::scene::smufl::glyph_code(name).unwrap_or_else(|| panic!("没有这个 SMuFL 字形名：{name}"))
 }
 
 /// SMuFL 字形名 → 一个字的串。
@@ -61,13 +61,13 @@ pub fn get_bbox<'m>(meta: &'m MetaData, glyph: &str) -> Option<&'m GlyphBBox> {
     let mut it = glyph.chars();
     match (it.next(), it.next()) {
         (Some(c), None) => meta.bbox(c).unwrap_or_else(|e| panic!("{e}")),
-        (Some(c), Some(_)) => panic!("{}", dolce_scene::smufl::UnknownGlyph(c)),
+        (Some(c), Some(_)) => panic!("{}", dolce_engrave::scene::smufl::UnknownGlyph(c)),
         (None, _) => panic!("unknown smufl glyph: NaN"),
     }
 }
 
 /// `meta.getAnchor(glyph)`：认不得给 None（TS 不抛）。
-pub fn get_anchor<'m>(meta: &'m MetaData, glyph: &str) -> Option<&'m dolce_scene::smufl::GlyphAnchor> {
+pub fn get_anchor<'m>(meta: &'m MetaData, glyph: &str) -> Option<&'m dolce_engrave::scene::smufl::GlyphAnchor> {
     let mut it = glyph.chars();
     match (it.next(), it.next()) {
         (Some(c), None) => meta.anchor(c),
@@ -499,7 +499,7 @@ ids! {
 /// MusicXML 生态惯用的 `<scaling>`：7mm 对 40 tenths，折成 pt / tenths。
 pub const DEFAULT_SCALING: f64 = (7.0 * 72.0) / 25.4 / 40.0;
 
-pub use dolce_style::staff::JP_FONT_FAMILY;
+pub use dolce_engrave::style::staff::JP_FONT_FAMILY;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixedDefaults {

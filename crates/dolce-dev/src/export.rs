@@ -110,8 +110,8 @@ pub fn raster_diff(a: &PageBack, b: &PageBack) -> (usize, usize) {
 
 /// 页面 SVG 补上宽高与命名空间（旧链 usvg 要）
 #[cfg(feature = "oldpdf")]
-fn old_page_pdf(page: &dolce_scene::Page, w: f64, h: f64, opt: &svg2pdf::usvg::Options) -> Result<Vec<u8>, String> {
-    let svg = dolce_scene::svg::page_svg(page);
+fn old_page_pdf(page: &dolce_engrave::scene::Page, w: f64, h: f64, opt: &svg2pdf::usvg::Options) -> Result<Vec<u8>, String> {
+    let svg = dolce_engrave::scene::svg::page_svg(page);
     let svg = svg.replacen("<svg ", &format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" "), 1);
     let tree = svg2pdf::usvg::Tree::from_str(&svg, opt).map_err(|e| format!("usvg: {e}"))?;
     svg2pdf::to_pdf(&tree, svg2pdf::ConversionOptions::default(), svg2pdf::PageOptions::default()).map_err(|e| format!("svg2pdf: {e}"))
@@ -181,10 +181,10 @@ pub fn scene_pdf(args: &[String]) -> i32 {
         } else if seen <= skip {
             continue;
         }
-        let page: dolce_scene::Page = serde_json::from_value(v).expect("场景页");
+        let page: dolce_engrave::scene::Page = serde_json::from_value(v).expect("场景页");
         let (w, h) = match page.dialect {
-            dolce_scene::Dialect::Jianpu => (page.w, page.h),
-            dolce_scene::Dialect::Mixed => (595.0, 595.0 * page.h / page.w.max(1.0)),
+            dolce_engrave::scene::Dialect::Jianpu => (page.w, page.h),
+            dolce_engrave::scene::Dialect::Mixed => (595.0, 595.0 * page.h / page.w.max(1.0)),
         };
         docs.last_mut().unwrap().1.push(dolce_export::scene::ScenePage { scene: page, w_pt: w, h_pt: h });
     }
@@ -216,7 +216,7 @@ pub fn scene_pdf(args: &[String]) -> i32 {
                     if n.is_invisible() {
                         return;
                     }
-                    if let dolce_scene::Shape::Text(t) = &n.shape {
+                    if let dolce_engrave::scene::Shape::Text(t) = &n.shape {
                         want.extend(t.text.chars().filter(|c| !c.is_whitespace() && !('\u{e000}'..='\u{f8ff}').contains(c)));
                     }
                 });

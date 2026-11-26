@@ -15,19 +15,19 @@ use dolce_model::doc::{ScoreDoc, Song};
 use dolce_model::melodyonly::keep_first_part;
 use dolce_model::metakeys::meta_flag;
 use dolce_model::xmlsurface::Surface;
-use dolce_scene::build::Env;
-use dolce_scene::{Node, TextShape};
-use dolce_style::cascade::{ctx, StyleRule};
-use dolce_style::fonts::{font_of_role, FamilyMap};
-use dolce_style::sheet::StyleSheet;
-use dolce_style::ss::{Expr, Region, Row, SsError};
-use dolce_style::staff::{apply_staff_style, MixedOptions};
-use dolce_style::template::{eval_num, layout_region, song_field, ComponentCall, FieldExtra, FieldValue, FontMetricsLike, Placed, PlacedText, RegionEnv};
-use dolce_style::themes::{compute_style_for_paper, theme, ThemeId};
-use dolce_style::units::{resolve_length, LengthContext};
-use dolce_style::value::js_to_string;
-use dolce_text::cjkpunct::{punct_class, PunctClass};
-use dolce_text::{Font, MeasureCtx};
+use dolce_engrave::scene::build::Env;
+use dolce_engrave::scene::{Node, TextShape};
+use dolce_engrave::style::cascade::{ctx, StyleRule};
+use dolce_engrave::style::fonts::{font_of_role, FamilyMap};
+use dolce_engrave::style::sheet::StyleSheet;
+use dolce_engrave::style::ss::{Expr, Region, Row, SsError};
+use dolce_engrave::style::staff::{apply_staff_style, MixedOptions};
+use dolce_engrave::style::template::{eval_num, layout_region, song_field, ComponentCall, FieldExtra, FieldValue, FontMetricsLike, Placed, PlacedText, RegionEnv};
+use dolce_engrave::style::themes::{compute_style_for_paper, theme, ThemeId};
+use dolce_engrave::style::units::{resolve_length, LengthContext};
+use dolce_engrave::style::value::js_to_string;
+use dolce_engrave::text::cjkpunct::{punct_class, PunctClass};
+use dolce_engrave::text::{Font, MeasureCtx};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -675,7 +675,7 @@ fn toc_pages(sheet: &StyleSheet, titles: &[String], starts: &[usize], families: 
         if expr_word(rep.as_ref()).as_deref() != Some("toc") {
             return Err(SsError { message: "目录区域的重复行只认 repeat: toc".into() });
         }
-        let role = row.cells.iter().flat_map(|c| c.lines.iter()).find(|l| matches!(l.content, dolce_style::ss::Content::Text { .. })).and_then(|l| l.role.clone()).unwrap_or_else(|| "toc".into());
+        let role = row.cells.iter().flat_map(|c| c.lines.iter()).find(|l| matches!(l.content, dolce_engrave::style::ss::Content::Text { .. })).and_then(|l| l.role.clone()).unwrap_or_else(|| "toc".into());
         let first = eval_num(row.props.get("baseline"), &e0, None)?;
         let step = eval_num(row.props.get("step"), &e0, Some(&role))?;
         let (Some(first), Some(step)) = (first, step) else {

@@ -1,0 +1,50 @@
+[package]
+name = "dolce-engrave"
+description = "悦谱 Dolce 的排版底座：谱面元素（每种元素一份画法与定位判据，简谱与五线谱 / 混排两条引擎共用）、量字层（text：量字 trait、标点挤压、浏览器口径层、回放；native 特性带系统文字引擎，fontfile 特性带字体文件层）、页面场景（scene：节点、身份、SVG 出口、SMuFL 元数据）、样式层（style：.ss、级联、主题、三把尺子）。不开 native / fontfile-system 时无平台依赖，能编到 wasm"
+version.workspace = true
+edition.workspace = true
+publish = true
+# assets 里的 Bravura 乐谱字体是 OFL-1.1
+license = "MIT AND OFL-1.1"
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+dolce-model = { workspace = true }
+serde.workspace = true
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+indexmap = { version = "2", features = ["serde"] }
+fontdb = { version = "0.23", default-features = false, features = ["std"], optional = true }
+rustybuzz = { version = "0.20.1", optional = true }
+
+[features]
+# 字体文件层（`fontfile` 模块：fontdb 定位 + rustybuzz 整形）：导出开；Linux 的系统量字也用它
+fontfile = ["dep:fontdb", "dep:rustybuzz"]
+# 同上再加扫系统字体目录、读字体文件（桌面与命令行；wasm 不开，字体由宿主给字节）
+fontfile-system = ["fontfile", "fontdb/fs", "fontdb/memmap", "dep:yeslogic-fontconfig-sys"]
+# 系统文字引擎（`native` 模块）：桌面与命令行开；wasm 不开，量字回调浏览器。
+# Linux 没有可用的系统排版 API，走 fontfile 层（特性不能按目标平台开，macOS / Windows 上只是多编一份）
+native = ["fontfile-system", "dep:objc2-core-foundation", "dep:objc2-core-graphics", "dep:objc2-core-text", "dep:windows", "dep:windows-core", "dep:windows-numerics"]
+
+# Linux：fontdb 读 fontconfig 的字体目录配置（纯 Rust，没有 fontconfig 库时扫目录用）；
+# 选字照 Chromium 问 fontconfig（fontfile::fc），运行时 dlopen libfontconfig.so.1，编译与打包不链接
+[target.'cfg(target_os = "linux")'.dependencies]
+fontdb = { version = "0.23", default-features = false, features = ["std", "fontconfig"], optional = true }
+yeslogic-fontconfig-sys = { version = "6.0.1", features = ["dlopen"], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = { version = "0.3", optional = true, features = ["CFArray", "CFAttributedString", "CFDictionary", "CFError", "CFNumber", "CFString", "CFCGTypes", "CFURL"] }
+objc2-core-graphics = { version = "0.3", optional = true, features = ["CGPath"] }
+objc2-core-text = { version = "0.3", optional = true, features = ["CTFont", "CTFontDescriptor", "CTFontManager", "CTFontTraits", "CTLine", "CTRun", "CTStringAttributes", "objc2-core-graphics"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", optional = true, features = ["Win32_Foundation", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite", "Win32_System_Com"] }
+windows-core = { version = "0.62", optional = true }
+windows-numerics = { version = "0.3", optional = true }
+
+[build-dependencies]
+# 编译期读仓库带的乐谱字体抽表（build.rs），运行时不带
+ttf-parser = "0.25.1"

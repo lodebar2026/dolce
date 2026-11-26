@@ -10,10 +10,10 @@
 use std::collections::HashMap;
 use std::io::BufRead;
 
-use dolce_scene::dump::{diff_pages, normalize};
-use dolce_scene::svg::page_svg;
-use dolce_scene::Page;
-use dolce_text::{MeasureRecord, TextMeasurer};
+use dolce_engrave::scene::dump::{diff_pages, normalize};
+use dolce_engrave::scene::svg::page_svg;
+use dolce_engrave::scene::Page;
+use dolce_engrave::text::{MeasureRecord, TextMeasurer};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -113,15 +113,15 @@ pub fn measure_check(args: &[String]) -> i32 {
         eprintln!("用法：dolce-dev measure-check <measure.jsonl> [--redist=<目录>] [--show=N] [--webview]");
         return 2;
     };
-    if !dolce_text::native::NativeText::available() {
+    if !dolce_engrave::text::native::NativeText::available() {
         eprintln!("本平台没有系统文字引擎");
         return 2;
     }
     let redist = std::path::PathBuf::from(flag(args, "redist").unwrap_or("public/redist"));
     let backend = if args.iter().any(|a| a == "--webview") {
-        dolce_text::native::webview_measure(Some(&redist), &[])
+        dolce_engrave::text::native::webview_measure(Some(&redist), &[])
     } else {
-        dolce_text::native::node_measure(Some(&redist), &[])
+        dolce_engrave::text::native::node_measure(Some(&redist), &[])
     };
     let show = show_n(args);
     let mut by_op: HashMap<&'static str, (usize, usize, f64)> = HashMap::new();
