@@ -6,7 +6,7 @@ members = ["cli", "dev", "engrave", "export-wasm", "jcx-wasm", "layout", "layout
 default-members = ["cli", "dev", "engrave", "layout", "layout-jianpu", "layout-staff", "model", "omr", "omr-core", "omr-jianpu", "omr-staff"]
 
 [workspace.package]
-version = "0.8.9"
+version = "0.9.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/lodebar2026/dolce"
@@ -23,15 +23,15 @@ bincode = "1.3"
 sha2 = "0.10"
 ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 # 工作区内部可发布 crate（版本号与 [workspace.package].version 同步）
-dolce-engrave = { version = "0.8.9", path = "engrave" }
-dolce-layout = { version = "0.8.9", path = "layout", default-features = false }
-dolce-layout-jianpu = { version = "0.8.9", path = "layout-jianpu" }
-dolce-layout-staff = { version = "0.8.9", path = "layout-staff" }
-dolce-model = { version = "0.8.9", path = "model" }
-dolce-omr-core = { version = "0.8.9", path = "omr-core" }
-dolce-omr = { version = "0.8.9", path = "omr", default-features = false }
-dolce-omr-jianpu = { version = "0.8.9", path = "omr-jianpu" }
-dolce-omr-staff = { version = "0.8.9", path = "omr-staff" }
+dolce-engrave = { version = "0.9.0", path = "engrave" }
+dolce-layout = { version = "0.9.0", path = "layout", default-features = false }
+dolce-layout-jianpu = { version = "0.9.0", path = "layout-jianpu" }
+dolce-layout-staff = { version = "0.9.0", path = "layout-staff" }
+dolce-model = { version = "0.9.0", path = "model" }
+dolce-omr-core = { version = "0.9.0", path = "omr-core" }
+dolce-omr = { version = "0.9.0", path = "omr", default-features = false }
+dolce-omr-jianpu = { version = "0.9.0", path = "omr-jianpu" }
+dolce-omr-staff = { version = "0.9.0", path = "omr-staff" }
 
 # release 不开 LTO：2026-11-26 量过 thin LTO 对命令行可执行文件体积、识别耗时、识别 wasm 体积都没有作用（差别在 0.1% 内），
 # 只让改一个文件后的 release 重编从 17 s 变成 45 s

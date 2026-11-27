@@ -926,7 +926,7 @@ dependencies = [
 
 [[package]]
 name = "dolce"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "bincode",
  "dolce-engrave",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-engrave"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "dolce-model",
  "fontdb",
@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-layout"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "crc32fast",
  "dolce-engrave",
@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-layout-jianpu"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "dolce-engrave",
  "dolce-model",
@@ -996,7 +996,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-layout-staff"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "dolce-engrave",
  "dolce-model",
@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-model"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "encoding_rs",
  "indexmap 2.14.2",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-jianpu",
@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-core"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "bincode",
  "dolce-model",
@@ -1047,7 +1047,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-jianpu"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "dolce-omr-core",
  "regex",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "dolce-omr-staff"
-version = "0.8.9"
+version = "0.9.0"
 dependencies = [
  "dolce-omr-core",
  "dolce-omr-jianpu",
