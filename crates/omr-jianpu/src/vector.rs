@@ -4,7 +4,7 @@
 //! - 块表：对象就是块（路径里画了几个字形的按子路径外框拆开，`path_pieces`），不做连通块；
 //! - 送 OCR 的裁条：只把与条相交的对象画进去（扫描线填充 / 按线宽描）。
 //!
-//! 多页按页竖排（同像素路的拼页），工作坐标每点 [`scale`] 单位：页宽折成与像素路工作图同宽（`prep::MAX_W`），下游按字号归一的常数不用改。
+//! 多页按页竖排（同像素路的拼页），工作坐标每点 `scale` 单位：页宽折成与像素路工作图同宽（`prep::MAX_W`），下游按字号归一的常数不用改。
 use crate::prep::{Comp, JpInk};
 use dolce_omr_core::image::Rect;
 use dolce_omr_core::ocr::surface::Gray;

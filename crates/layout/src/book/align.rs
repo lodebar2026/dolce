@@ -20,7 +20,7 @@ pub struct AlignResult {
     pub direct: bool,
 }
 
-/// 对齐参数；缺省值见 [`AlignOptions::resolved`]
+/// 对齐参数；缺省值见 `AlignOptions::resolved`
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlignOptions {

@@ -35,7 +35,7 @@ pub struct PaperWH {
 }
 
 /// 简谱这一路的请求（TS `JianpuPaintRequest` 去掉 `doc`，文档另给）。
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JianpuRequest {
     /// `original` / `expanded`

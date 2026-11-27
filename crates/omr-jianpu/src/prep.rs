@@ -1,6 +1,6 @@
 //! JM0 预处理：各页原图 → 一张灰度工作图与二值图、连通块。
 //!
-//! 多页竖着拼成一张（靠左、白底）；过宽的等比缩到 [`MAX_W`]（面积平均）。二值化用 Sauvola（窗口约短边的 1/30、k = 0.2）：
+//! 多页竖着拼成一张（靠左、白底）；过宽的等比缩到 `MAX_W`（面积平均）。二值化用 Sauvola（窗口约短边的 1/30、k = 0.2）：
 //! 水印、泛黄的底局部方差小，阈值贴着均值走，不当墨。
 use dolce_omr_core::image::{Binary, Rect};
 use dolce_omr_core::pixel::ccl::connected_components;

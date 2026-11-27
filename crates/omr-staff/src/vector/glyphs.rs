@@ -83,7 +83,7 @@ pub use dolce_omr_core::source::vector::{path_pieces, GlyphPiece};
 /// 形状简单（一道横、一点、一竖、两竖）的符号从一个对象拆出来的块认成它们不算数（「到」「判」的立刀两竖认成打击乐谱号，
 /// 后面整段音读成打击乐）；圆点组成的字形，没有曲线的对象不认（还原号拆出来的两道横杠认成反复记号两点）。照 TS 转曲那一路。
 /// 签名的归一外框同字典建库（与 TS 转曲那一路同口径）：按路径的全部坐标（含曲线控制点）取；有的排版软件转曲后一个符头只用两段三次曲线画椭圆
-/// （CorelDRAW），控制点远在曲线外，控制点外框比曲线外框大出 [`CTRL_SLACK`] 以上时改按曲线外框取。从一个对象拆出来的块没有单独的控制点，按曲线外框取。
+/// （CorelDRAW），控制点远在曲线外，控制点外框比曲线外框大出 `CTRL_SLACK` 以上时改按曲线外框取。从一个对象拆出来的块没有单独的控制点，按曲线外框取。
 pub fn path_glyphs(pieces: &[GlyphPiece], space: f64, vp: &VecPage, pc: &dolce_omr_core::source::PageContent) -> Vec<VSym> {
     let em = 4.0 * space;
     let mut per_obj: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
@@ -135,8 +135,8 @@ const PLAIN_SHAPES: &[&str] = &[
 const DOT_SHAPES: &[&str] = &["repeatDots", "augmentationDot"];
 
 /// 按实心符头认空心符头（转曲页）：字典里各字体的二分符头内腔斜着，有的书画成同心两个椭圆（裴克经文诗歌），签名对不上。
-/// 本页已认出至少 [`HEAD_MIN`] 个实心符头时，认不出的块里外框高与实心头中位相当、两道环套在一起（外圈与内腔）的是空心符头，
-/// 宽到实心头 [`WHOLE_W`] 倍上下的是全音符。原样照 TS 转曲那一路。
+/// 本页已认出至少 `HEAD_MIN` 个实心符头时，认不出的块里外框高与实心头中位相当、两道环套在一起（外圈与内腔）的是空心符头，
+/// 宽到实心头 `WHOLE_W` 倍上下的是全音符。原样照 TS 转曲那一路。
 /// `zone`：只收谱表区里的块（版权行的「©」也是两道环套着）。
 pub fn hollow_heads(pieces: &[GlyphPiece], syms: &mut [VSym], zone: &dyn Fn(&Rect) -> bool) {
     let solid: Vec<&VSym> = syms.iter().filter(|s| s.name == "noteheadBlack").collect();
@@ -182,8 +182,8 @@ const WHOLE_W: f64 = 1.5;
 
 /// 按**矢量结构**认升降还原号（转曲页：竖笔是线对象，升号、还原号的横杠是无曲线的填充块，降号的肚子是带曲线的块，三者分开、字典认不出）。
 /// 照 TS 转曲那一路（`accidentalByStrokes`）：
-/// - 两道竖笔夹着无曲线的横杠：两笔上下错开（左笔朝上伸、右笔朝下伸，错开过笔长 [`NATURAL_STAGGER`]）是还原号，否则是升号；
-/// - 一道竖笔在带曲线的肚子左半边、肚子底与竖笔下端差不过笔长 [`FLAT_FOOT`]、竖笔上端高出肚子顶过笔长 [`FLAT_FOOT`]：降号
+/// - 两道竖笔夹着无曲线的横杠：两笔上下错开（左笔朝上伸、右笔朝下伸，错开过笔长 `NATURAL_STAGGER`）是还原号，否则是升号；
+/// - 一道竖笔在带曲线的肚子左半边、肚子底与竖笔下端差不过笔长 `FLAT_FOOT`、竖笔上端高出肚子顶过笔长 `FLAT_FOOT`：降号
 ///   （倚音的符尾挂在符干上端往下弯，不是）。
 ///
 /// 竖笔长 1.5~3.3 格（同位图路调号的竖笔窗）。`skip`：不收的框（简谱带里的）。已有同位置升降号字形的不重复出。

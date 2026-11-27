@@ -4,7 +4,7 @@
 //! 读语料、读书级元数据库、写 PDF 与 CSV、打日志仍在脚本里；这里吃脚本导出的输入（[`RebuildInput`]：样式表原文、曲目与 musicxml、元数据行），
 //! 排版引擎量字经 [`Env`]、书级量字经 [`BookMeasure`] 注入（迁移期都回放 TS 的录制）。判据与常量照搬，曲目病例见 TS 那份注释。
 //!
-//! TS 靠对象引用认页（`b.pages[0] === dp`、`free` 按页作键、撤销半页起排比 `dp !== m.dp`）：这里所有页进一张表（[`Book::store`]），
+//! TS 靠对象引用认页（`b.pages[0] === dp`、`free` 按页作键、撤销半页起排比 `dp !== m.dp`）：这里所有页进一张表（`Book::store`），
 //! 乐谱页序列、各首的页、半页起排的现场一律存下标。`ownItems` 在独占页上是**活引用**（后面接排进来的曲子也在里面），照样区分。
 
 use crate::book::draw::{DrawItem, DrawPage, PageMeta, PageSong};

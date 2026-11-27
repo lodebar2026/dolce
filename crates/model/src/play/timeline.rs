@@ -23,7 +23,7 @@ pub const DEFAULT_VELOCITY: f64 = 100.0;
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub struct PlayOptions {
-    /// 各声部线性音量 [0,1]，下标 = 声部序；缺（JSON null）= 1
+    /// 各声部线性音量 `[0,1]`，下标 = 声部序；缺（JSON null）= 1
     #[serde(default)]
     pub part_volumes: Option<Vec<Option<f64>>>,
     /// 试听时打节拍器（每拍一声，小节第一拍重）
@@ -243,7 +243,7 @@ pub fn play_tempo(tempo: f64, opts: Option<&PlayOptions>) -> f64 {
     base * k
 }
 
-/// 各声部线性音量 [0,1]，没设为 1。
+/// 各声部线性音量 `[0,1]`，没设为 1。
 pub fn part_gain(opts: Option<&PlayOptions>, part: usize) -> f64 {
     match opts.and_then(|o| o.part_volumes.as_ref()).and_then(|v| v.get(part).copied().flatten()) {
         None => 1.0,

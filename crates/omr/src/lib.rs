@@ -1,10 +1,50 @@
-//! 识别的统一入口：桌面版（Tauri 命令）、网页版（wasm）、命令行都经这里，不各自拼「文件 → 页面 → 判路 → 识别」。
+//! 悦谱 Dolce **识别（OMR）的对外入口**：从 PDF 或图片认简谱、五线谱（含混排）。桌面版（Tauri）、网页版（wasm）、命令行都经这里，
+//! 不各自拼「文件 → 页面 → 判路 → 识别」。
 //!
-//! - [`Doc`]：打开 PDF（PDFium）或单张图片（图片直接当一页，不再像 TS 那样先封成 PDF）；页数、页尺寸、整页渲染
-//! - [`recognize`]：判路（先按五线谱认，没有一页找到谱表就走简谱）、带进度与取消（[`Hook`]）
-//! - [`Recognition`]：五线谱交会话（[`Session`]，改关联表 / 切分 / 钉住都在它上面），简谱交识别结果与识别用的二值图
-//! - [`staff_binary`]：五线谱核对视图的底图（坐标与核对 JSON 一致）
-//! - [`Handle`]：桌面版、网页版共用的文档句柄（请求与回应的字节 / JSON 格式）
+//! ## 入口
+//!
+//! - [`Doc`]：打开 PDF（PDFium）或一张 / 几张图片（图片直接当一页）；页数、页尺寸、整页渲染。
+//! - [`recognize`]：判路——先按五线谱认，没有一页找到谱表就走简谱；带进度与取消（[`Hook`]）。
+//! - [`Recognition`]：五线谱交会话（[`Session`]，改关联表 / 切分 / 钉住都在它上面），简谱交识别结果与识别用的二值图；
+//!   两样都经 `dolce_omr_core::todoc` 转成 `dolce_model::doc::ScoreDoc`。
+//! - [`staff_binary`]：五线谱核对视图的底图（坐标与核对 JSON 一致）。
+//! - [`Handle`]：桌面版、网页版共用的文档句柄（请求与回应的字节 / JSON 格式）。
+//! - **`book`**（`book` 特性）：歌本切分——整本歌谱拆成单曲图片，按书里的目录核对缺号、重号。
+//!
+//! ## 示例
+//!
+//! 打开一张谱图或 PDF、判路识别（要先备好 PP-OCR 模型；读 PDF 另要 PDFium 动态库）：
+//!
+//! ```no_run
+//! use dolce_omr::{recognize, Doc, Opts, Recognition};
+//! use dolce_omr_core::ocr::cache::CachedOcr;
+//! use dolce_omr_core::progress::Hook;
+//!
+//! fn run_omr(file_bytes: Vec<u8>, ocr: &CachedOcr) -> Result<(), String> {
+//!     let doc = Doc::open(file_bytes)?;
+//!     match recognize(&doc, ocr, &Opts::default(), &Hook::NONE)? {
+//!         Recognition::Staff { session, pages } => {
+//!             println!("识别为五线谱，共 {} 页，{} 个已解析页", pages.len(), session.pages().len());
+//!         }
+//!         Recognition::Jianpu { score, .. } => {
+//!             println!("识别为简谱，共 {} 行", score.rows.len());
+//!         }
+//!     }
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## 特性
+//!
+//! - `parallel`（默认开启）：页级并行（`rayon`）；wasm 下关掉。
+//! - `native`（默认开启）：OCR 推理走原生 ONNX Runtime（桌面、命令行）。
+//! - `tract`：OCR 推理走纯 Rust `tract`（网页 wasm）。
+//! - `book`：歌本切分（`book` 模块）。
+//!
+//! > 运行时要 PP-OCR 模型文件，读 PDF 还要 PDFium 动态库，两样都不随 crate 发布。
+
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use dolce_omr_core::image::Binary;
 use dolce_omr_core::pixel::preprocess::otsu;
 use dolce_omr_core::progress::Hook;

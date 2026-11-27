@@ -8,7 +8,7 @@ pub use crate::sheet::result::Doubt;
 use crate::image::Rect;
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// 几个取值固定的字段（升降号、奏法、终止线…）是字面量；写成别名，免得 serde 见了 `&'static str` 就要求 `'de: 'static`（读回走 [`de_static`]）。
+/// 几个取值固定的字段（升降号、奏法、终止线…）是字面量；写成别名，免得 serde 见了 `&'static str` 就要求 `'de: 'static`（读回走 `de_static`）。
 pub type Lit = &'static str;
 
 /// 读回时认回同一个字面量，认不得的报错。

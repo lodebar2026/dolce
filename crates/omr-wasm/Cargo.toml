@@ -18,3 +18,6 @@ js-sys = "0.3"
 console_error_panic_hook = "0.1"
 # tract 的随机数依赖在 wasm32-unknown-unknown 下要指定从 JS 取
 getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[lints]
+workspace = true

@@ -106,7 +106,7 @@ fn bare(bin: &dyn Probe, v: &VSeg) -> bool {
 }
 
 /// 定位各行谱的简谱行：先找谱表上方的；上方没有的再找下方的（闭合人声谱把简谱印在上行谱表与歌词之间）。
-/// `short`：不短于 [`BAR_LEN`] 下限的竖段；`bars`：各行谱的小节线（与 `staves` 同序）。
+/// `short`：不短于 `BAR_LEN` 下限的竖段；`bars`：各行谱的小节线（与 `staves` 同序）。
 /// `bin`：回看墨迹的探针（像素页的二值图、矢量页的对象库）。
 pub fn find(bin: &dyn Probe, short: &[VSeg], staves: &[Staff], bars: &[Vec<Barline>], unit: &Unit) -> Vec<Band> {
     let mut out: Vec<Band> = Vec::new();

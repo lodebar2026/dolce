@@ -4,7 +4,7 @@
 //!
 //! TS 里按对象作键的 `Set<ScoreCredit>` / `Set<PartLayout>` / `Map<Sys, …>` 换成下标；
 //! 页眉块（`FrameItem.credits`）记 `score.credits` 的下标——长图改写 credit 的 y 之后画页眉要看到改过的（TS 是同一对象）。
-//! `contentLimit` 的闭包换成带缓存的结构，`sourceFlow` 的闭包换成 [`SourceFlow`] 的方法（它要边改谱表距离边量）。
+//! `contentLimit` 的闭包换成带缓存的结构，`sourceFlow` 的闭包换成 `SourceFlow` 的方法（它要边改谱表距离边量）。
 
 // 照 TS 的写法（先声明后分支赋值、按下标走），便于逐行对照
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments)]

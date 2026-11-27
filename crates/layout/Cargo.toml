@@ -30,3 +30,10 @@ regex = { version = "1", default-features = false, features = ["std", "unicode-p
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"], optional = true }
 flate2 = { version = "1", optional = true }
 crc32fast = { version = "1", optional = true }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

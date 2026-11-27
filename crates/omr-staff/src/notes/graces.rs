@@ -29,7 +29,7 @@ pub fn attach(row: &mut RowNotes, sp: f64, graces: &[Grace]) -> usize {
     n
 }
 
-/// 矢量页的小号符头（中心 x、谱位）按横向 [`CHORD_DX`] 格以内并成倚音和弦。
+/// 矢量页的小号符头（中心 x、谱位）按横向 `CHORD_DX` 格以内并成倚音和弦。
 pub fn group_by_x(sp: f64, heads: &[(f64, i32)]) -> Vec<Grace> {
     let mut hs = heads.to_vec();
     hs.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -59,8 +59,8 @@ const HEAD_W: (f64, f64) = (0.45, 0.95);
 const NEAR_HEAD: f64 = 0.9;
 
 /// 位图页一行谱的倚音（中心 x、一根干上各头的谱位）：按本页符头缩小的种子框撑得满（[`super::heads::seeds_scaled`]），
-/// 不是已认出的头、不在休止符上，头宽在 [`HEAD_W`] 内且比本行实心头窄到 [`SMALL_OF_ROW`] 以下（低清图上漏认的普通连杠音符头不比别的小），挂得上朝上的干；挂在同一根干上的头是一个倚音和弦。
-/// 每根干只拿最上面那个头查（[`top_ok`]），过了的整根干上的头都收；干顶与邻干连着杠的是倚音串，按串里的口径查；
+/// 不是已认出的头、不在休止符上，头宽在 `HEAD_W` 内且比本行实心头窄到 `SMALL_OF_ROW` 以下（低清图上漏认的普通连杠音符头不比别的小），挂得上朝上的干；挂在同一根干上的头是一个倚音和弦。
+/// 每根干只拿最上面那个头查（`top_ok`），过了的整根干上的头都收；干顶与邻干连着杠的是倚音串，按串里的口径查；
 /// 干与头之间断开、找不着干的小头，旁边有竖笔通到串里倚音的干顶且连着杠的也收；杠接到已认出的音符干上的不收（普通连杠音符）；右边 [`REACH`] 格以内要有主音。
 /// 排查用 `OMR_GRACE_DEBUG`（给目录时写出候选局部图）。
 pub fn raster(f: &crate::page::PageFrame, solid: &crate::frame::ink::InkLayers, sum: &super::heads::InkSum, claims: &super::resolve::Claims, si: usize, x_from: f64, row: &RowNotes) -> Vec<Grace> {
@@ -208,7 +208,7 @@ fn row_head_w(f: &crate::page::PageFrame, sp: f64, row: &RowNotes) -> Option<f64
 const SMALL_OF_ROW: f64 = 0.85;
 
 /// 已当成普通和弦认进来的倚音（主识别的种子框撑得满小头时，带斜杠的旗会被数成两道尾）：朝上干、不连杠、有尾、没附点没连音，
-/// 各头都是实心、都在干左边（二度挤到右边的除外）、至少三分之二的头比本行实心头窄到 [`SMALL_OF_ROW`] 以下（碰着邻头、旁边全音符的那个量宽了；低清图上普通和弦里不挨干的头也量得窄，所以两个头的要都窄），最上面的头过 [`top_ok`]（几个头的只验干长——旗已数过，倚音和弦的头挨着、斜杠穿过；单个头的照样全验），右边 [`REACH`] 格以内另有主音。
+/// 各头都是实心、都在干左边（二度挤到右边的除外）、至少三分之二的头比本行实心头窄到 `SMALL_OF_ROW` 以下（碰着邻头、旁边全音符的那个量宽了；低清图上普通和弦里不挨干的头也量得窄，所以两个头的要都窄），最上面的头过 `top_ok`（几个头的只验干长——旗已数过，倚音和弦的头挨着、斜杠穿过；单个头的照样全验），右边 `REACH` 格以内另有主音。
 /// 从 `row` 里摘掉，回（中心 x、各头谱位）。
 pub fn from_chords(f: &crate::page::PageFrame, si: usize, row: &mut RowNotes) -> Vec<Grace> {
     use super::heads::HeadKind;

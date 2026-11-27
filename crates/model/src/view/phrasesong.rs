@@ -126,7 +126,7 @@ pub fn lines_of_voice(song: &SongView, voice: f64) -> Vec<&RowView> {
     song.pages.iter().flat_map(|p| p.groups.iter()).flat_map(|g| g.voices.iter()).filter(|v| v.line.voice == voice).collect()
 }
 
-/// 一首里出现过的声部号（按首次出现）。一个都没有退回 [1]
+/// 一首里出现过的声部号（按首次出现）。一个都没有退回 `[1]`
 pub fn voice_numbers(song: &SongView) -> Vec<f64> {
     let mut seen: Vec<f64> = vec![];
     for v in song.pages.iter().flat_map(|p| p.groups.iter()).flat_map(|g| g.voices.iter()) {

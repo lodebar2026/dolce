@@ -1,4 +1,8 @@
-//! 简谱路线（位图）：各页原图 → [`result::RecognizedScore`]。
+//! 悦谱 Dolce 的**简谱识别路线**：各页原图或矢量页 → [`result::RecognizedScore`]。
+//!
+//! > 内部实现；外部请用识别的对外入口 [`dolce-omr`](https://docs.rs/dolce-omr)。
+//!
+//! ## 模块
 //!
 //! - [`prep`]（JM0）：成像、连通块
 //! - [`frame`]（JM1）：数字高、数字行与行带、带内切格（数字 / 小节线 / 增时线 / 点）
@@ -7,6 +11,9 @@
 //! - [`spans`]（JM5）：弧
 //! - [`beats`]（JM6）：满拍裁决、可疑清单
 //! - [`text`]（JM2 / JM4）：歌词、页眉、调号拍号速度
+//! - [`vector`]：纯矢量简谱 PDF 路线
+//!
+//! 各模块的判据见仓库 `docs/模块/识别-Rust.md`。
 pub mod beats;
 pub mod frame;
 pub mod marks;

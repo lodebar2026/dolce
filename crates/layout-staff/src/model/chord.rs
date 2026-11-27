@@ -377,7 +377,7 @@ impl<'d> StaffLayout<'d> {
     pub fn note_staff(&self, n: NoteId) -> usize {
         (self[self[n].chord].src.staff - 1.0) as usize
     }
-    /// 显示尺寸：1=cue（小符头），0=正常（MusicXML <type size="cue">）。
+    /// 显示尺寸：1=cue（小符头），0=正常（MusicXML `<type size="cue">`）。
     pub fn note_size(&self, n: NoteId) -> f64 {
         let nt = &self[n];
         let ts = nt.src.and_then(|s| s.type_size.as_deref()).or(self[nt.chord].src.type_size.as_deref());

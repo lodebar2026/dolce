@@ -1,5 +1,5 @@
 //! PDF 文档：打开、逐页取内容（内嵌图、路径、文字层与字形轮廓）、整页渲染。
-//! 所有原生调用都在 [`crate::source::pdfium::with`] 的锁里；交出去的是 `model` 里的纯数据。
+//! 所有原生调用都在 `crate::source::pdfium::with` 的锁里；交出去的是 `model` 里的纯数据。
 use crate::source::model::*;
 use crate::source::pdfium::{with, Lib};
 use crate::image::Rect;

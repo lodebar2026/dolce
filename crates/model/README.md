@@ -19,6 +19,7 @@
 
 ## 链接
 
+- API 文档：<https://docs.rs/dolce-model>
 - 项目主页：<https://lodebar2026.github.io/dolce/>
 - 源代码：<https://github.com/lodebar2026/dolce>（分层与各 crate 的关系见 [docs/架构.md](https://github.com/lodebar2026/dolce/blob/main/docs/架构.md)「目录」）
 

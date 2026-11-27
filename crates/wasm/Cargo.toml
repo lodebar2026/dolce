@@ -25,3 +25,6 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 wasm-bindgen = "=0.2.120"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
+
+[lints]
+workspace = true

@@ -224,7 +224,7 @@ pub fn bands(f: &Layout, lines: Vec<GeoLine>) -> Vec<Band> {
     out
 }
 
-/// 页眉：第一行谱上方（离谱表 [`CLEAR`] 格以外）的字行，按与位图同一份的筛选与分类。坐标按版面的 `up` 折回源图单位
+/// 页眉：第一行谱上方（离谱表 `CLEAR` 格以外）的字行，按与位图同一份的筛选与分类。坐标按版面的 `up` 折回源图单位
 /// （纯矢量页是页面点；混合页是大图像素，与 OCR 那一路的页眉同一坐标系），字号乘 `pt`（源图单位 → 点）。
 pub fn header(f: &Layout, vp: &VecPage, lines: &[GeoLine], pt: f64) -> Vec<Credit> {
     let Some(first) = f.staves.iter().min_by(|a, b| a.ys[0].total_cmp(&b.ys[0])) else { return Vec::new() };
@@ -263,7 +263,7 @@ pub fn merge_credits(ocr: Vec<Credit>, layer: Vec<Credit>) -> Vec<Credit> {
     out
 }
 
-/// 音乐字体的力度字形 → 力度记号，归最近的那行谱（上下 [`DYN_REACH`] 格内）。分开画的字母（Doremi 的 m、f）挨着的拼成一个词。
+/// 音乐字体的力度字形 → 力度记号，归最近的那行谱（上下 `DYN_REACH` 格内）。分开画的字母（Doremi 的 m、f）挨着的拼成一个词。
 pub fn dynamics(f: &Layout, syms: &[VSym], rows: &mut [RowText]) {
     let letter = |n: &str| -> Option<&'static str> {
         Some(match n.strip_prefix("dynamic")? {

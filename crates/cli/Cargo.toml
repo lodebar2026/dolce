@@ -33,3 +33,6 @@ rayon = "1.10"
 
 [dev-dependencies]
 dolce-omr-core = { workspace = true, features = ["tract"] }
+
+[lints]
+workspace = true

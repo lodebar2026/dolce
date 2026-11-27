@@ -160,7 +160,7 @@ fn seed_stage(f: &PageFrame, attrs: &[RowAttrs], claims: &Claims) -> SeedStage {
     SeedStage { solid, cands, samples, tpl }
 }
 
-/// 本页符头比常见的大多少（不小于 1）：实心头模板量出的头宽比 [`HEAD_W`]。空心头的孔、外圈的尺寸上限照它放大。
+/// 本页符头比常见的大多少（不小于 1）：实心头模板量出的头宽比 `HEAD_W`。空心头的孔、外圈的尺寸上限照它放大。
 pub fn head_scale(f: &PageFrame, attrs: &[RowAttrs]) -> f64 {
     scale_of(&seed_stage(f, attrs, &Claims::new(f)).tpl)
 }
@@ -273,7 +273,7 @@ pub fn build_rows<P: crate::frame::ink::Probe + ?Sized>(f: &crate::page::Layout,
 }
 
 /// 点原图补认（会话的补音）：在 (x, y)（页内工作坐标）附近找一个头。
-/// 先看首轮的空心头检出在点周围有没有；没有再用同首轮一把尺子——本页自举的实心头模板（[`seed_stage`]），窗口限在点的周围（横向 ±1 格、音级 ±1）、门槛放宽一档。
+/// 先看首轮的空心头检出在点周围有没有；没有再用同首轮一把尺子——本页自举的实心头模板（`seed_stage`），窗口限在点的周围（横向 ±1 格、音级 ±1）、门槛放宽一档。
 /// 实心头再探干与杠尾（左右两侧都看，见 [`beams::lone_tails`]）；都找不到回 None（调用方按点的位置造一个四分音符）。回 (头, 干, 杠尾数)。
 pub fn head_near(f: &PageFrame, attrs: &[RowAttrs], si: usize, x: f64, y: f64) -> Option<(Head, Option<Stem>, u8)> {
     let st = f.staves.get(si)?;

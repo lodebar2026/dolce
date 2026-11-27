@@ -87,7 +87,7 @@ pub fn acc_kind(f: &PageFrame, u: &Unit, sp: f64) -> Option<Acc> {
     (a_short && b_short && (out as f64) < sp * sp * 0.06).then_some(Acc::Natural)
 }
 
-/// 升降号在谱表上「指着」的音级位置：升号、还原号是中心，降号是肚子的中心（下沿往上半格）。调号里的降号另用 [`flat_pos`] 量。
+/// 升降号在谱表上「指着」的音级位置：升号、还原号是中心，降号是肚子的中心（下沿往上半格）。调号里的降号另用 `flat_pos` 量。
 pub fn acc_pos(u: &Unit, kind: Acc) -> f64 {
     match kind {
         Acc::Flat => u.bottom - 1.0,

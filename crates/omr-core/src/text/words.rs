@@ -31,7 +31,7 @@ pub fn has_term(text: &str) -> bool {
     TERM.is_match(text)
 }
 
-/// 含表情 / 速度术语，连同五线谱谱面上的表情缩写与英文表情副词（[`EXPR`]）。
+/// 含表情 / 速度术语，连同五线谱谱面上的表情缩写与英文表情副词（`EXPR`）。
 pub fn has_staff_term(text: &str) -> bool {
     TERM.is_match(text) || EXPR.is_match(text)
 }

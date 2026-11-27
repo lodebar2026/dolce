@@ -48,3 +48,12 @@ windows-numerics = { version = "0.3", optional = true }
 [build-dependencies]
 # 编译期读仓库带的乐谱字体抽表（build.rs），运行时不带
 ttf-parser = "0.25.1"
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+# 量字后端按平台分（CoreText / DirectWrite / fontconfig），三个平台都出文档
+targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
+rustdoc-args = ["--cfg", "docsrs"]

@@ -186,8 +186,8 @@ fn menu(mut v: Vec<EventAlt>) -> Vec<EventAlt> {
     out
 }
 
-/// 一个和弦的落选候选（换候选菜单）：满拍裁决的备选（[`chord_alts`]：加一条符尾、删模板分低的头）照它的花费，
-/// 另给拉长的几样与删掉（按 [`COST_LONGER`]、[`COST_DROP`]）。
+/// 一个和弦的落选候选（换候选菜单）：满拍裁决的备选（`chord_alts`：加一条符尾、删模板分低的头）照它的花费，
+/// 另给拉长的几样与删掉（按 `COST_LONGER`、`COST_DROP`）。
 pub fn chord_menu(c: &Chord, med: f64) -> Vec<EventAlt> {
     let (t, d) = (c.ntype(), c.dots);
     let mut v: Vec<EventAlt> = chord_alts(c, med)

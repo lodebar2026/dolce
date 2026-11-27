@@ -1,8 +1,6 @@
-//! 五线谱 / 混排引擎（照 `src/mixed/`，原本从 C++ musicpp 移植）。对外经 `dolce-layout`（`layout::layout_staff_doc`）调；
-//! 判据与阈值照 TS 原版搬来（连 TS 的毛病一起），曲目病例见仓库文档。
+//! 悦谱 Dolce 的**五线谱 / 混排引擎**：读入建树（[`read`]）→ 横向 / 分系统 / 纵向（[`pass`]）→ 画系统与简谱叠层（[`render`]、[`overlay`]）→ 装页（[`pages`]）。
 //!
-//! 流程同 TS：`read::layout_staff`（`layout.ts`：读入建树，末尾调 `pass::finish_mixed_score`）→
-//! `pages::layout_staff_pages`（`staffpages.ts`：混排上方带、分页、画各系统 `render::draw_system`、简谱叠层 `overlay`）。
+//! > 内部实现；外部请用排版的对外入口 [`dolce-layout`](https://docs.rs/dolce-layout)（`layout::layout_staff_doc`、`layout::engraved_music_xml`）。
 //!
 //! ## 数据：arena + id（`model`）
 //!

@@ -4,7 +4,7 @@
 //! **接口约定**：调用方先 `prepare_song`（多小节休止并成一小节，并过的新对象清掉 oid——TS 里展开出来的新对象查不到表层身份），
 //! 留住那份歌，再 `layout_staff`。
 //!
-//! 与 TS 的对应：`DocPartLoader` 是 [`Loader`]；按对象作键的 `Map` / `Set` 换成按 id（和弦、音、歌词）或
+//! 与 TS 的对应：`DocPartLoader` 是 `Loader`；按对象作键的 `Map` / `Set` 换成按 id（和弦、音、歌词）或
 //! 按文档对象地址（`tieAboveOf` 的 `DocNote`）作键；要按插入序走的表用 `Vec` 记次序。
 
 // 照 TS 的写法（先声明后分支赋值、按下标走），便于逐行对照

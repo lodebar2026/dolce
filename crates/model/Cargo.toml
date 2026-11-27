@@ -36,3 +36,10 @@ hanconv-dict = []
 [[example]]
 name = "conv"
 required-features = ["hanconv-dict"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+features = ["hanconv-dict"]
+rustdoc-args = ["--cfg", "docsrs"]

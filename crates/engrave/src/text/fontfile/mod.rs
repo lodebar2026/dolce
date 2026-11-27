@@ -5,7 +5,7 @@
 //! 一份 [`FontBook`] 是一个 fontdb 库加字节缓存：桌面 / 命令行装系统字体（`fontfile-system` 特性），
 //! wasm 只装宿主给的字节。族名的展开（泛称、标准字体）与量字同一份（[`crate::text::css_families`]）。
 //!
-//! **Linux 选字照 Chromium**（[`fc`]）：有 fontconfig 时族名匹配与缺字回退都问它（度量兼容替身、用户配置都跟得上），
+//! **Linux 选字照 Chromium**（`fc`）：有 fontconfig 时族名匹配与缺字回退都问它（度量兼容替身、用户配置都跟得上），
 //! 只把注册的字体文件（Bravura 等）留在 fontdb 里先查；没有 fontconfig 时退回 fontdb 扫目录，族名查不到再试 [`LINUX_ALIASES`]。
 //!
 //! `fontfile` 特性才编；不开时本 crate 没有这些依赖。

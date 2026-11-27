@@ -82,7 +82,7 @@ const MR_END_NEAR: f64 = 0.3;
 const MR_NUM_UP: f64 = 4.0;
 
 /// **多小节休止**（两种证据共用的判据）：谱表中线上一道粗横条（`bars`：实心横条的外框），两端各一笔竖线（`vsegs`），
-/// 上方印小节数（`digits`：读出的数与外框，横向落在横条上方、离谱表顶不出 [`MR_NUM_UP`] 格）。没印数的不收。
+/// 上方印小节数（`digits`：读出的数与外框，横向落在横条上方、离谱表顶不出 `MR_NUM_UP` 格）。没印数的不收。
 pub fn multi_rests(staves: &[Staff], bars: &[Rect], vsegs: &[VSeg], digits: &[(u32, Rect)]) -> Vec<Rest> {
     let mut out = Vec::new();
     for b in bars {

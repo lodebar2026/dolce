@@ -89,7 +89,7 @@ fn tempo_mark(t: &str) -> Option<Dir> {
     Some(Dir::Metronome { per_minute, circa })
 }
 
-/// 页眉候选行要不要：没有汉字、拉丁字母不到三个、也没有数字的不要；离谱表 [`NEAR`] 格以内（`gap`，格）像和弦 / 节拍器 / 力度 / 速度术语的不要。
+/// 页眉候选行要不要：没有汉字、拉丁字母不到三个、也没有数字的不要；离谱表 `NEAR` 格以内（`gap`，格）像和弦 / 节拍器 / 力度 / 速度术语的不要。
 /// 两种证据共用（矢量页的行来自文字层）。
 pub fn header_line_ok(t: &str, gap: f64) -> bool {
     if han_count(t) == 0 && latin_count(t) < 3 && !t.chars().any(|c| c.is_ascii_digit()) {

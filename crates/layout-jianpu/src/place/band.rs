@@ -1,8 +1,8 @@
 //! 谱行**上方那一带**的定位（照 `place/band.ts`）：弧、连音、奏法记号、和弦、注释、松叶、转调标签、力度/术语/跳转字、
 //! 临时伴奏行、房号。堆叠走公共那一份（`dolce_engrave::upperband::stack_upper_band`）。
 //!
-//! TS 以对象身份当堆叠钥匙（`PlacedText` / `PlacedMark` / `PlacedSplit` / `PlacedLayer`），这里盒子自带 [`KeyRef`]
-//! 指回各自的表；送进公共堆叠时钥匙就是盒子的下标（各盒钥匙本来互不相同）。`topAt` 闭包换成可求值的 [`TopAt`]，
+//! TS 以对象身份当堆叠钥匙（`PlacedText` / `PlacedMark` / `PlacedSplit` / `PlacedLayer`），这里盒子自带 `KeyRef`
+//! 指回各自的表；送进公共堆叠时钥匙就是盒子的下标（各盒钥匙本来互不相同）。`topAt` 闭包换成可求值的 `TopAt`，
 //! 抬升时逐次记下位移、求值时依次加上（与 TS 层层包闭包的浮点次序一致）。
 
 use dolce_engrave::arc::{flat_hx, slur_tie, ArcKind, SlurStyle};

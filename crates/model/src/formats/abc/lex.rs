@@ -43,7 +43,7 @@ const BARLINES: &[(&str, &str)] = &[
     ("]", "final"),
 ];
 
-/// 房号列表展开：`1,3` → [1,3]；`1-3` → [1,2,3]；`1,3,5-7` → [1,3,5,6,7]
+/// 房号列表展开：`1,3` → `[1,3]`；`1-3` → `[1,2,3]`；`1,3,5-7` → `[1,3,5,6,7]`
 pub fn expand_ending_numbers(s: &U16) -> Vec<f64> {
     let mut out = vec![];
     for part in s.split(|&u| u == b',' as u16) {

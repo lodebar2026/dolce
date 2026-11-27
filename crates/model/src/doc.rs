@@ -197,7 +197,7 @@ pub struct PageLayout {
     #[serde(skip_serializing_if = "Option::is_none")] pub margins: Option<Vec<PageMargins>>,
 }
 
-/// [五线谱] `<defaults>` 里跨格式有人读写的几项：纸、scaling、歌词字号。
+/// \[五线谱\] `<defaults>` 里跨格式有人读写的几项：纸、scaling、歌词字号。
 /// `<system-layout>`、`<staff-layout>`、`<music-font>`、`<word-font>` 等是表层。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -214,7 +214,7 @@ str_enum! {
     pub enum GroupSymbol { Brace = "brace", Bracket = "bracket", Line = "line", Square = "square", NoSymbol = "none" }
 }
 
-/// [五线谱] `<part-group>`：SATB 的括号分组。← 123 的 `%%score {(S A) (T B)}`
+/// \[五线谱\] `<part-group>`：SATB 的括号分组。← 123 的 `%%score {(S A) (T B)}`
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
@@ -256,7 +256,7 @@ pub struct Key {
     #[serde(skip_serializing_if = "Option::is_none")] pub display: Option<String>,
     /// `<key>` 的显式临时记号（`K:D exp _b _e ^f`）
     #[serde(skip_serializing_if = "Option::is_none")] pub explicit_accidentals: Option<Vec<ExplicitAccidental>>,
-    /// [五线谱] `<cancel>`：转调时先印的还原号个数（带号，同 `fifths` 口径）
+    /// \[五线谱\] `<cancel>`：转调时先印的还原号个数（带号，同 `fifths` 口径）
     #[serde(skip_serializing_if = "Option::is_none")] pub cancel: Option<f64>,
 }
 
@@ -276,7 +276,7 @@ str_enum! {
     pub enum ClefSign { G = "G", F = "F", C = "C", Percussion = "percussion", Tab = "TAB", NoSign = "none" }
 }
 
-/// [五线谱] `<clef>`
+/// \[五线谱\] `<clef>`
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "doc.gen.ts", optional_fields))]
@@ -289,7 +289,7 @@ pub struct Clef {
     #[serde(skip_serializing_if = "Option::is_none")] pub staff: Option<f64>,
 }
 
-/// [五线谱] `<transpose>`：移调乐器
+/// \[五线谱\] `<transpose>`：移调乐器
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(Default)]
@@ -420,16 +420,16 @@ pub struct Harmony {
     #[serde(skip_serializing_if = "Option::is_none")] pub degrees: Option<Vec<HarmonyDegree>>,
     /// 整段和弦只有文字、解析不出结构时的原文兜底（识别结果常是这种）
     #[serde(skip_serializing_if = "Option::is_none")] pub text: Option<String>,
-    /// [五线谱] 字号（pt，`<root-step font-size>`）
+    /// \[五线谱\] 字号（pt，`<root-step font-size>`）
     #[serde(skip_serializing_if = "Option::is_none")] pub font_size: Option<f64>,
     /// `<offset>`：相对所修饰音符起点的 divisions
     #[serde(skip_serializing_if = "Option::is_none")] pub offset: Option<f64>,
-    /// [五线谱] `<kind use-symbols>` / `<kind parentheses-degrees>`
+    /// \[五线谱\] `<kind use-symbols>` / `<kind parentheses-degrees>`
     #[serde(skip_serializing_if = "Option::is_none")] pub use_symbols: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")] pub parentheses_degrees: Option<bool>,
-    /// [五线谱] `<harmony staff>`
+    /// \[五线谱\] `<harmony staff>`
     #[serde(skip_serializing_if = "Option::is_none")] pub staff: Option<f64>,
-    /// [五线谱] 见 `Chord.onset`。缺省 = 所挂元素的起点
+    /// \[五线谱\] 见 `Chord.onset`。缺省 = 所挂元素的起点
     #[serde(skip_serializing_if = "Option::is_none")] pub onset: Option<f64>,
     /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
     #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
@@ -453,13 +453,13 @@ pub struct Lyric {
     #[serde(skip_serializing_if = "Option::is_none")] pub syllabic: Option<Syllabic>,
     /// `<extend>`：续记号（一字多音），123 的 `_`
     #[serde(skip_serializing_if = "Option::is_none")] pub extend: Option<bool>,
-    /// [五线谱] `<extend type>`。有 stop 的谱按起止两两配对，裸 `<extend/>` 不写
+    /// \[五线谱\] `<extend type>`。有 stop 的谱按起止两两配对，裸 `<extend/>` 不写
     #[serde(skip_serializing_if = "Option::is_none")] pub extend_type: Option<SpanType>,
-    /// [五线谱] `<lyric number>` 不是纯数字时的原文
+    /// \[五线谱\] `<lyric number>` 不是纯数字时的原文
     #[serde(skip_serializing_if = "Option::is_none")] pub number_text: Option<String>,
-    /// [五线谱] `<lyric name>`
+    /// \[五线谱\] `<lyric name>`
     #[serde(skip_serializing_if = "Option::is_none")] pub name: Option<String>,
-    /// [五线谱] `<lyric placement>`：`above` = 这一行词印在谱表上方
+    /// \[五线谱\] `<lyric placement>`：`above` = 这一行词印在谱表上方
     #[serde(skip_serializing_if = "Option::is_none")] pub placement: Option<Placement>,
     /// `<elision>`：一音多字的连接（123 的 `{多字}` / ABC 的 `~`）
     #[serde(skip_serializing_if = "Option::is_none")] pub elision: Option<String>,
@@ -497,7 +497,7 @@ pub struct XY {
 pub struct Notations {
     /// accent / staccato / tenuto / marcato…
     #[serde(skip_serializing_if = "Option::is_none")] pub articulations: Option<Vec<String>>,
-    /// [五线谱] 奏法记号写明的上下，键是 `articulations` 里的名字
+    /// \[五线谱\] 奏法记号写明的上下，键是 `articulations` 里的名字
     #[serde(skip_serializing_if = "Option::is_none")] pub artic_placement: Option<IndexMap<String, Placement>>,
     /// trill-mark / mordent / turn…（单音震音不在这里，见 `tremolo`）
     #[serde(skip_serializing_if = "Option::is_none")] pub ornaments: Option<Vec<String>>,
@@ -505,10 +505,10 @@ pub struct Notations {
     #[serde(skip_serializing_if = "Option::is_none")] pub tremolo: Option<f64>,
     /// 全音符震音斜线的位置：`<tremolo default-x default-y>`
     #[serde(skip_serializing_if = "Option::is_none")] pub tremolo_pos: Option<XY>,
-    /// [五线谱] `<technical>`
+    /// \[五线谱\] `<technical>`
     #[serde(skip_serializing_if = "Option::is_none")] pub technical: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")] pub fermata: Option<bool>,
-    /// [五线谱] `<fermata type="inverted">`
+    /// \[五线谱\] `<fermata type="inverted">`
     #[serde(skip_serializing_if = "Option::is_none")] pub fermata_inverted: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")] pub arpeggiate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")] pub glissando: Option<bool>,
@@ -710,11 +710,11 @@ pub struct Chord {
     #[serde(skip_serializing_if = "Option::is_none")] pub before: Option<Vec<InlineItem>>,
     /// **小节中间换行**（见 `Sustain.line_break_after`）
     #[serde(skip_serializing_if = "Option::is_none")] pub line_break_after: Option<BreakKind>,
-    /// [五线谱] `<cue/>`
+    /// \[五线谱\] `<cue/>`
     #[serde(skip_serializing_if = "Option::is_none")] pub cue: Option<bool>,
-    /// [五线谱] `<type size>`：cue / grace-cue / large…
+    /// \[五线谱\] `<type size>`：cue / grace-cue / large…
     #[serde(skip_serializing_if = "Option::is_none")] pub type_size: Option<String>,
-    /// [五线谱] 小节内起点（divisions）。**缺省 = 前一个元素的终点**；只在与缺省不同时写
+    /// \[五线谱\] 小节内起点（divisions）。**缺省 = 前一个元素的终点**；只在与缺省不同时写
     #[serde(skip_serializing_if = "Option::is_none")] pub onset: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub attached_sources: Option<Vec<AttachedSource>>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
@@ -752,15 +752,15 @@ pub struct Note {
     #[serde(skip_serializing_if = "Option::is_none")] pub degree: Option<Degree>,
     /// 面上要印的临时记号（与 `pitch.alter` 不同：这个是**是否画出来**）
     #[serde(skip_serializing_if = "Option::is_none")] pub accidental: Option<Accidental>,
-    /// [五线谱] `<accidental parentheses="yes">`
+    /// \[五线谱\] `<accidental parentheses="yes">`
     #[serde(skip_serializing_if = "Option::is_none")] pub accidental_parentheses: Option<bool>,
     /// 延音线。跨小节、跨行都靠它
     #[serde(skip_serializing_if = "Option::is_none")] pub tie: Option<Tie>,
-    /// [五线谱] `<notehead>`
+    /// \[五线谱\] `<notehead>`
     #[serde(skip_serializing_if = "Option::is_none")] pub notehead: Option<String>,
-    /// [五线谱] 节奏音符的这个音画在谱表哪个位置（`<unpitched><display-step/octave>`）
+    /// \[五线谱\] 节奏音符的这个音画在谱表哪个位置（`<unpitched><display-step/octave>`）
     #[serde(skip_serializing_if = "Option::is_none")] pub unpitched: Option<Unpitched>,
-    /// [五线谱] 这个音自己的 `<type size>`
+    /// \[五线谱\] 这个音自己的 `<type size>`
     #[serde(skip_serializing_if = "Option::is_none")] pub type_size: Option<String>,
     /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
     #[serde(rename = "_oid", default, skip_serializing_if = "Oid::is_none")]
@@ -862,7 +862,7 @@ pub struct Ending {
     #[serde(skip_serializing_if = "Option::is_none")] pub captionless: Option<bool>,
     /// 起止倒置的空房号：只有 start，不画线段。挂在 start 上
     #[serde(skip_serializing_if = "Option::is_none")] pub collapsed: Option<bool>,
-    /// [五线谱] `<ending print-object="no">`：只记遍次、不画
+    /// \[五线谱\] `<ending print-object="no">`：只记遍次、不画
     #[serde(skip_serializing_if = "Option::is_none")] pub print_object: Option<bool>,
 }
 
@@ -916,11 +916,11 @@ pub struct MeasureAttrs {
     #[serde(skip_serializing_if = "Option::is_none")] pub divisions: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub key: Option<Key>,
     #[serde(skip_serializing_if = "Option::is_none")] pub time: Option<Time>,
-    /// [五线谱]
+    /// \[五线谱\]
     #[serde(skip_serializing_if = "Option::is_none")] pub clefs: Option<Vec<Clef>>,
-    /// [五线谱] 本小节起的谱表数
+    /// \[五线谱\] 本小节起的谱表数
     #[serde(skip_serializing_if = "Option::is_none")] pub staves: Option<f64>,
-    /// [五线谱]
+    /// \[五线谱\]
     #[serde(skip_serializing_if = "Option::is_none")] pub transpose: Option<Transpose>,
     /// 多小节休止：从本小节起 n 个整小节休止合成一个印（`<multiple-rest>`，123 的 `Zn`）
     #[serde(skip_serializing_if = "Option::is_none")] pub multi_rest: Option<f64>,
@@ -996,11 +996,11 @@ pub struct Direction {
     #[serde(skip_serializing_if = "Option::is_none")] pub sound: Option<Sound>,
     #[serde(skip_serializing_if = "Option::is_none")] pub voice: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub staff: Option<f64>,
-    /// [五线谱] `<pedal line>`
+    /// \[五线谱\] `<pedal line>`
     #[serde(skip_serializing_if = "Option::is_none")] pub line: Option<bool>,
-    /// [五线谱] 同一 `<direction>` 里其余的子元素（多行诗文写成几个 `<words>`）
+    /// \[五线谱\] 同一 `<direction>` 里其余的子元素（多行诗文写成几个 `<words>`）
     #[serde(skip_serializing_if = "Option::is_none")] pub more: Option<Vec<DirectionPart>>,
-    /// [五线谱] 见 `Chord.onset`
+    /// \[五线谱\] 见 `Chord.onset`
     #[serde(skip_serializing_if = "Option::is_none")] pub onset: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub source: Option<SourceSpan>,
     /// 身份放最后：JSON 里排在末尾，TS 镜像摘掉它时对象不退化
@@ -1094,13 +1094,13 @@ pub struct LaterAttrs {
 pub struct Measure {
     /// 小节号**原文**——可能是 "12a"
     pub number: String,
-    /// [五线谱] `<measure implicit="yes">`
+    /// \[五线谱\] `<measure implicit="yes">`
     #[serde(skip_serializing_if = "Option::is_none")] pub implicit: Option<bool>,
-    /// [五线谱] 小节时长（divisions）。**只在比元素的最远终点更长时写**
+    /// \[五线谱\] 小节时长（divisions）。**只在比元素的最远终点更长时写**
     #[serde(skip_serializing_if = "Option::is_none")] pub duration: Option<f64>,
     /// 本小节**第一个元素之前**的属性（多个 `<attributes>` 合并）
     #[serde(skip_serializing_if = "Option::is_none")] pub attrs: Option<MeasureAttrs>,
-    /// [五线谱] 小节中间的 `<attributes>`。**简谱侧只看 `attrs`**
+    /// \[五线谱\] 小节中间的 `<attributes>`。**简谱侧只看 `attrs`**
     #[serde(skip_serializing_if = "Option::is_none")] pub later_attrs: Option<Vec<LaterAttrs>>,
     /// 按时间序
     pub elements: Vec<Element>,
@@ -1127,7 +1127,7 @@ pub struct Part {
     #[serde(skip_serializing_if = "Option::is_none")] pub abbrev: Option<String>,
     /// 声部名的字号（pt）
     #[serde(skip_serializing_if = "Option::is_none")] pub name_size: Option<f64>,
-    /// [五线谱] 多谱表（钢琴谱）
+    /// \[五线谱\] 多谱表（钢琴谱）
     #[serde(skip_serializing_if = "Option::is_none")] pub staff_count: Option<f64>,
     /// 123 / ABC 的 `V:n part=m`：这个声部其实是声部 `m` 的下一条谱表。值是那个声部的 id
     #[serde(skip_serializing_if = "Option::is_none")] pub staff_of: Option<String>,
@@ -1168,15 +1168,15 @@ pub struct Mark {
     #[serde(skip_serializing_if = "Option::is_none")] pub number: Option<f64>,
     pub start: ElementId,
     pub end: ElementId,
-    /// [五线谱] 起止写在和弦的第几个音上（缺省 0）
+    /// \[五线谱\] 起止写在和弦的第几个音上（缺省 0）
     #[serde(skip_serializing_if = "Option::is_none")] pub start_note: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub end_note: Option<f64>,
     /// 嵌套层级（简谱的双弧 / 房号抬高）
     #[serde(skip_serializing_if = "Option::is_none")] pub level: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")] pub placement: Option<Placement>,
-    /// [五线谱] `<slur orientation>` / `<tied orientation>`
+    /// \[五线谱\] `<slur orientation>` / `<tied orientation>`
     #[serde(skip_serializing_if = "Option::is_none")] pub orientation: Option<Orientation>,
-    /// [五线谱] `<tuplet bracket>`
+    /// \[五线谱\] `<tuplet bracket>`
     #[serde(skip_serializing_if = "Option::is_none")] pub bracket: Option<bool>,
     /// 虚线弧（ABC 的 `.(cde)`）
     #[serde(skip_serializing_if = "Option::is_none")] pub dashed: Option<bool>,
@@ -1393,9 +1393,9 @@ pub struct Song {
     #[serde(skip_serializing_if = "Option::is_none")] pub tempos: Option<Vec<Tempo>>,
     /// `tempos` 里数字速度的拍单位（缺省四分 1/4）
     #[serde(skip_serializing_if = "Option::is_none")] pub tempo_beat: Option<Ratio>,
-    /// [五线谱]
+    /// \[五线谱\]
     #[serde(skip_serializing_if = "Option::is_none")] pub defaults: Option<Defaults>,
-    /// [五线谱]
+    /// \[五线谱\]
     #[serde(skip_serializing_if = "Option::is_none")] pub part_groups: Option<Vec<PartGroup>>,
     pub parts: Vec<Part>,
     pub marks: Vec<Mark>,

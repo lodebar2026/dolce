@@ -34,3 +34,10 @@ image = { version = "0.25", features = ["jpeg", "png"], optional = true }
 
 [dev-dependencies]
 dolce-omr-core = { workspace = true, features = ["native"] }
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
