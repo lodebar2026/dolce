@@ -10,6 +10,12 @@ use dolce_omr_core::ocr::surface::Gray;
 
 /// 数字高（字号）的估计。近方块的中位高为底；汉字碎块压低、歌词字压高时，改信「夹在小节线之间的瘦高块」。
 pub fn estimate_num_h(comps: &[Comp]) -> f64 {
+    num_h_estimates(comps).0
+}
+
+/// 同 [`estimate_num_h`]，另交出几样读数各自的值（首选、近方块中位、瘦高块中位、小节线锚出的高，去掉相近的）：
+/// 首选字号下一行数字都认不出时，拿它们当候选字号各找一遍行、让 OCR 裁决（[`find_rows_any`]）。
+fn num_h_estimates(comps: &[Comp]) -> (f64, Vec<f64>) {
     let ratio = |k: &Comp| k.rect.w / k.rect.h;
     let hs = |ks: &[&Comp]| ks.iter().map(|k| k.rect.h).collect::<Vec<_>>();
     let squarish: Vec<&Comp> = comps.iter().filter(|k| ratio(k) > 0.35 && ratio(k) < 1.6 && k.rect.h >= 6.0).collect();
@@ -17,8 +23,8 @@ pub fn estimate_num_h(comps: &[Comp]) -> f64 {
     let tall: Vec<&Comp> = squarish.iter().copied().filter(|k| ratio(k) <= 0.85).collect();
     let est2 = if tall.len() >= 20 { median(&hs(&tall), 0.0) } else { 0.0 };
     // 小节线：细高竖条。数字在它纵向中段、横向几个线高以内；歌词在线外，挨不上
-    let bars: Vec<&Comp> = comps.iter().filter(|k| k.rect.h >= 12.0 && k.rect.w <= (k.rect.h * 0.12).max(3.0)).collect();
-    let anchor_of = |ks: &[&Comp]| -> Vec<f64> {
+    let all_bars: Vec<&Comp> = comps.iter().filter(|k| k.rect.h >= 12.0 && k.rect.w <= (k.rect.h * 0.12).max(3.0)).collect();
+    let anchor_of = |bars: &[&Comp], ks: &[&Comp]| -> Vec<f64> {
         if bars.len() < 3 {
             return Vec::new();
         }
@@ -27,18 +33,62 @@ pub fn estimate_num_h(comps: &[Comp]) -> f64 {
             .map(|k| k.rect.h)
             .collect()
     };
-    let refh = median(&anchor_of(&tall), 0.0);
+    let bars = pick_bar_class(&all_bars, |bs| anchor_of(bs, &tall));
+    let refh = median(&anchor_of(&bars, &tall), 0.0);
     let mut slim = tall.clone();
     slim.extend(comps.iter().filter(|k| k.rect.h >= 6.0 && ratio(k) > 0.2 && ratio(k) <= 0.35 && (refh == 0.0 || k.rect.h <= refh * 1.15)));
-    let anchored = anchor_of(&slim);
+    let anchored = anchor_of(&bars, &slim);
     let n = anchored.len() as f64;
     let raw3 = if anchored.len() >= 15 || (anchored.len() >= 5 && n >= slim.len() as f64 * 0.6) { median(&anchored, 0.0) } else { 0.0 };
     let tight = raw3 > 0.0 && anchored.iter().filter(|&&h| (h - raw3).abs() <= raw3 * 0.06).count() as f64 >= n * 0.85;
     let est3 = if raw3 > 0.0 && (n >= slim.len() as f64 * 0.2 || tight) { raw3 } else { 0.0 };
-    if est3 > 0.0 && ((est > est3 * 1.15 && est3 >= est * 0.6) || (est3 > est * 1.2 && est2 > 0.0 && (est3 - est2).abs() <= est3 * 0.1) || (est3 > est * 1.2 && tight)) {
-        return est3;
+    let pick = if est3 > 0.0 && ((est > est3 * 1.15 && est3 >= est * 0.6) || (est3 > est * 1.2 && est2 > 0.0 && (est3 - est2).abs() <= est3 * 0.1) || (est3 > est * 1.2 && tight)) {
+        est3
+    } else if est2 > est * 1.3 {
+        est2
+    } else {
+        est
+    };
+    let mut cands: Vec<f64> = Vec::new();
+    for h in [pick, est, est2, raw3] {
+        if h > 0.0 && !cands.iter().any(|&c| (c - h).abs() <= h * NUM_H_SAME) {
+            cands.push(h);
+        }
     }
-    if est2 > est * 1.3 { est2 } else { est }
+    (pick, cands)
+}
+
+/// 两个字号读数差在这个比例以内算同一个（找行时行带高与字号差一成会照带高重找，见 [`RESCALE`]）。
+const NUM_H_SAME: f64 = 0.05;
+
+/// 细高竖条里挑出真小节线那一类。汉字竖笔（丨、刂）、行首连谱号、四声部跨两行的长线也是细高竖条，
+/// 歌词多、小节少的页数量还压过真小节线，按多数（高度中位）挑会挑成字笔。改按高度分类（排序后相邻高差过 15% 断开），
+/// 每类（至少 3 根）各自当小节线去锚瘦高块，取锚出的块高最齐（±6% 内最多）的一类：
+/// 真小节线中段夹着同字号的数字，锚出一大簇等高块；字笔旁是高矮不一的字的碎块；跨行长线中段没有数字。同分取高的一类。
+fn pick_bar_class<'a>(bars: &[&'a Comp], anchor_of: impl Fn(&[&'a Comp]) -> Vec<f64>) -> Vec<&'a Comp> {
+    if bars.len() < 3 {
+        return bars.to_vec();
+    }
+    let mut sorted = bars.to_vec();
+    sorted.sort_by(|a, b| a.rect.h.total_cmp(&b.rect.h));
+    let mut classes: Vec<Vec<&Comp>> = Vec::new();
+    for b in sorted {
+        match classes.last_mut() {
+            Some(c) if b.rect.h <= c.last().unwrap().rect.h * 1.15 => c.push(b),
+            _ => classes.push(vec![b]),
+        }
+    }
+    let score = |c: &[&'a Comp]| -> usize {
+        let a = anchor_of(c);
+        a.iter().map(|&h| a.iter().filter(|&&g| (g - h).abs() <= h * 0.06).count()).max().unwrap_or(0)
+    };
+    classes
+        .into_iter()
+        .filter(|c| c.len() >= 3)
+        .map(|c| (score(&c), c))
+        .max_by(|a, b| a.0.cmp(&b.0).then(a.1[0].rect.h.total_cmp(&b.1[0].rect.h)))
+        .map(|(_, c)| c)
+        .unwrap_or_default()
 }
 
 /// 行带：上下沿各一条同斜率的直线。
@@ -187,6 +237,23 @@ fn strict_digit(t: &str) -> Option<u8> {
 /// 由种子定行带，再在带内切格。只有两三个数字又没有小节线的排（曲号、拍号）不算。
 pub fn find_rows(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Vec<RowFrame> {
     find_rows_in(ink, num_h, ocr, false)
+}
+
+/// 同 [`find_rows`]，首选字号 `num_h` 下一行数字都认不出时换候选字号（[`num_h_estimates`] 的几样读数）各找一遍，
+/// 取认出数字最多的那个——估字号的几样读数都只看形状，整页歌词碎块压过数字、小节线又锚不准时首选会偏出找行的高度窗，
+/// 真数字一个都送不进 OCR；哪个字号对，交给「逐格读得出 0–7」这一条找行本来就用的判据裁决。回（字号, 行）。
+/// 首选那遍缺 OCR（分轮预取的一轮里）就先回 `DEFERRED`，不为没齐的读数白送候选的检。
+pub fn find_rows_any(ink: &Ink, num_h: f64, ocr: &CachedOcr) -> Result<(f64, Vec<RowFrame>), String> {
+    let rows = find_rows(ink, num_h, ocr);
+    if !rows.is_empty() {
+        return Ok((num_h, rows));
+    }
+    ocr.barrier()?;
+    let (_, alts) = num_h_estimates(ink.comps());
+    let tried: Vec<(f64, Vec<RowFrame>)> = alts.into_iter().filter(|&h| (h - num_h).abs() > num_h * NUM_H_SAME).map(|h| (h, find_rows(ink, h, ocr))).collect();
+    ocr.barrier()?;
+    let digits = |rs: &[RowFrame]| rs.iter().map(|r| r.digits().count()).sum::<usize>();
+    Ok(tried.into_iter().filter(|t| !t.1.is_empty()).max_by_key(|t| digits(&t.1)).unwrap_or((num_h, rows)))
 }
 
 /// 同 [`find_rows`]。`known`：这张图已知是一条简谱行（混排谱里按小节线对齐切下来的条），不再拿「多数格读得出数字」筛——

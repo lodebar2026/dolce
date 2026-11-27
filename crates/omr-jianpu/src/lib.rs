@@ -99,7 +99,7 @@ const STEPS: usize = 6;
 
 pub fn recognize_ink_hooked(ink: &Ink, num_h: f64, ocr: &CachedOcr, hook: &Hook) -> Result<RecognizedScore, String> {
     hook.step(0, STEPS, "rows")?;
-    let mut rows = frame::find_rows(ink, num_h, ocr);
+    let (num_h, mut rows) = frame::find_rows_any(ink, num_h, ocr)?;
     if rows.is_empty() {
         return Err("没有找到数字行".into());
     }
